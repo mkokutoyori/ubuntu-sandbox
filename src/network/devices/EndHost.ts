@@ -1512,6 +1512,18 @@ export abstract class EndHost extends Equipment {
         ? `Time to live exceeded (from ${ipPkt.sourceIP})`
         : `Destination unreachable (from ${ipPkt.sourceIP}) code ${icmp.code}`;
 
+      const isHardTcpError = icmp.icmpType === 'destination-unreachable'
+        && (icmp.code === ICMP_UNREACH_PORT || icmp.code === ICMP_UNREACH_ADMIN_PROHIBITED);
+      if (isHardTcpError && icmp.originalPacket) {
+        const origSeg = icmp.originalPacket.payload as TCPPacket | undefined;
+        if (origSeg && origSeg.type === 'tcp') {
+          this.tcpv2.onIcmpUnreachable(
+            origSeg.sourcePort, origSeg.destinationPort,
+            icmp.originalPacket.destinationIP.toString(),
+          );
+        }
+      }
+
       // Phase 5.6: emit host.icmp.echo-failed so awaiting `sendPing` promises
       // can settle through `waitForEvent`. Carries the original id/seq so the
       // awaiter can filter precisely.
@@ -2344,6 +2356,16 @@ export abstract class EndHost extends Equipment {
     const established = socket.state === 'established';
     socket.close();
     return established;
+  }
+
+  /**
+   * Connect probe whose verdict is read from the wire: 'open',
+   * 'refused' (RST or ICMP unreachable), or 'timeout' (silent drop / no
+   * route). Lets clients (nc, telnet, ssh) distinguish a filtered port
+   * from a closed one without inspecting the peer's firewall state.
+   */
+  tcpConnectOutcome(targetIP: IPAddress, port: number): 'open' | 'refused' | 'timeout' {
+    return this.tcpv2.connectOutcome(targetIP.toString(), port);
   }
 
   tcpProbeSyncIPv6(targetAddr: string, port: number): boolean {

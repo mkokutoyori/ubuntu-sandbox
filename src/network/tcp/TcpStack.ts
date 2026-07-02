@@ -64,6 +64,7 @@ export class TcpSocket {
   mss = TCP_DEFAULT_MSS;
   passive = false;
   closed = false;
+  connectRefused = false;
   pendingSendQueue: unknown[] = [];
   closeAfterFlush = false;
   recvBuffer = '';
@@ -280,6 +281,39 @@ export class TcpStack {
     return socket;
   }
 
+  /**
+   * Synchronous connect probe whose result is derived entirely from the
+   * wire: 'open' on an established handshake, 'refused' when the peer
+   * answers with a RST or an ICMP unreachable (host firewall REJECT / no
+   * listener), 'timeout' when nothing comes back (silent DROP / no route).
+   */
+  connectOutcome(remoteIp: string, remotePort: number): 'open' | 'refused' | 'timeout' {
+    const socket = this.connect(remoteIp, remotePort);
+    if (!socket) return 'timeout';
+    if (socket.state === 'established') {
+      socket.close();
+      return 'open';
+    }
+    return socket.connectRefused ? 'refused' : 'timeout';
+  }
+
+  /**
+   * An ICMP destination-unreachable carrying one of our outbound TCP
+   * segments: fail the matching half-open connection as refused (RFC 1122
+   * §4.2.3.9 — a hard error on a SYN aborts the connection attempt).
+   */
+  onIcmpUnreachable(origSourcePort: number, origDestPort: number, origDestIp: string): void {
+    for (const socket of this.sockets.values()) {
+      if (socket.localPort !== origSourcePort) continue;
+      if (socket.remotePort !== origDestPort) continue;
+      if (socket.remoteIp !== origDestIp) continue;
+      if (socket.state !== 'syn-sent' && socket.state !== 'syn-received') continue;
+      socket.connectRefused = true;
+      this._teardown(socket, 'rst');
+      return;
+    }
+  }
+
   private externalPortClaim: ((port: number) => boolean) | null = null;
   setExternalPortClaim(predicate: ((port: number) => boolean) | null): void {
     this.externalPortClaim = predicate;
@@ -433,6 +467,9 @@ export class TcpStack {
 
   private _processSegment(socket: TcpSocket, seg: TcpSegment, payloadSize: number): void {
     if (seg.flags.rst) {
+      if (socket.state === 'syn-sent' || socket.state === 'syn-received') {
+        socket.connectRefused = true;
+      }
       this._teardown(socket, 'rst');
       return;
     }

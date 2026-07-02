@@ -110,6 +110,8 @@ export interface LinuxNetKernel {
    */
   tcpProbe(target: string, port: number): boolean;
 
+  tcpConnectOutcome(target: string, port: number): 'open' | 'refused' | 'timeout';
+
   // ─── DHCP client ─────────────────────────────────────────────────
   getDhcpClient(): DHCPClient;
   autoDiscoverDHCPServers(): void;

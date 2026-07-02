@@ -1600,6 +1600,9 @@ export abstract class LinuxMachine extends EndHost
         if (target.includes(':')) return self.tcpProbeSyncIPv6(target, port);
         return self.tcpProbeSync(new IPAddress(target), port);
       },
+      tcpConnectOutcome(target: string, port: number): 'open' | 'refused' | 'timeout' {
+        return self.tcpConnectOutcome(new IPAddress(target), port);
+      },
       ping6Sequence(
         target: IPv6Address,
         count: number,

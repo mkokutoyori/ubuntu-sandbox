@@ -156,29 +156,16 @@ export const ncCommand: LinuxCommand = {
       if (verbose) return `nc: connect to ${found.ip} port ${port} (tcp) failed: Connection timed out`;
       return '';
     }
-    const dstIptables = (found.device as unknown as { executor?: {
-      iptables?: { filterPacket: (p: object) => 'accept' | 'drop' | 'reject' };
-    } }).executor?.iptables;
-    if (dstIptables?.filterPacket) {
-      const verdict = dstIptables.filterPacket({
-        direction: 'in', protocol: 6, srcIP: sourceIp, dstIP: found.ip,
-        srcPort: 50000, dstPort: port, iface: 'eth0',
-      });
-      if (verdict === 'drop') {
-        if (verbose) return `nc: connect to ${found.ip} port ${port} (tcp) failed: Connection timed out`;
-        return '';
-      }
-      if (verdict === 'reject') {
-        if (verbose) return `nc: connect to ${found.ip} port ${port} (tcp) failed: Connection refused`;
-        return '';
-      }
-    }
     if (!ctx.executor.hasFreeEphemeralPort()) {
       const msg = `nc: connect to ${found.ip} port ${port} (tcp) failed: Cannot assign requested address`;
       return verbose ? msg : '';
     }
-    const ok = ctx.net.tcpProbe(found.ip, port);
-    if (!ok) {
+    const outcome = ctx.net.tcpConnectOutcome(found.ip, port);
+    if (outcome === 'timeout') {
+      if (verbose) return `nc: connect to ${found.ip} port ${port} (tcp) failed: Connection timed out`;
+      return '';
+    }
+    if (outcome === 'refused') {
       if (verbose) return `nc: connect to ${found.ip} port ${port} (tcp) failed: Connection refused`;
       return '';
     }
