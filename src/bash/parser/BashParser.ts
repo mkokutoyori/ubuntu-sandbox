@@ -727,6 +727,13 @@ export class BashParser {
         modifier: '#', position: pos,
       };
     }
+    const opMatch = content.match(/^([A-Za-z_][A-Za-z_0-9]*|[0-9]+)([#%/^,].*)$/s);
+    if (opMatch) {
+      return {
+        type: 'VariableRef', name: opMatch[1], braced: true,
+        modifier: opMatch[2], position: pos,
+      };
+    }
     return { type: 'VariableRef', name: content, braced: true, position: pos };
   }
 

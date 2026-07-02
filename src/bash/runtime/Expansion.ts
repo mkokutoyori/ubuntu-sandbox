@@ -336,12 +336,27 @@ function shouldWordSplit(w: Word): boolean {
  * operators) into a JS regex source. Supports `*` `?` `[…]` and
  * literal-escapes everything else. Anchored by the caller via `^`/`$`.
  */
+const EXTGLOB_OPS = new Set(['?', '*', '+', '@', '!']);
+
 function globToRegexSource(pattern: string): string {
+  const [src] = convertGlob(pattern, 0);
+  return src;
+}
+
+function convertGlob(pattern: string, start: number, stopAtParen = false): [string, number] {
   let out = '';
-  for (let i = 0; i < pattern.length; i++) {
+  let i = start;
+  while (i < pattern.length) {
     const c = pattern[i];
-    if (c === '*') { out += '.*'; continue; }
-    if (c === '?') { out += '.';  continue; }
+    if (stopAtParen && (c === ')' || c === '|')) break;
+    if (EXTGLOB_OPS.has(c) && pattern[i + 1] === '(') {
+      const [alts, next] = convertGlobAlternatives(pattern, i + 2);
+      out += extglobToRegex(c, alts);
+      i = next;
+      continue;
+    }
+    if (c === '*') { out += '.*'; i++; continue; }
+    if (c === '?') { out += '.';  i++; continue; }
     if (c === '[') {
       let cls = '[';
       i++;
@@ -349,12 +364,40 @@ function globToRegexSource(pattern: string): string {
       while (i < pattern.length && pattern[i] !== ']') { cls += pattern[i]; i++; }
       cls += ']';
       out += cls;
+      i++;
       continue;
     }
     if (/[.+(){}^$|\\]/.test(c)) out += '\\' + c;
     else out += c;
+    i++;
   }
-  return out;
+  return [out, i];
+}
+
+function convertGlobAlternatives(pattern: string, start: number): [string[], number] {
+  const alts: string[] = [];
+  let i = start;
+  for (;;) {
+    const [branch, next] = convertGlob(pattern, i, true);
+    alts.push(branch);
+    i = next;
+    if (pattern[i] === '|') { i++; continue; }
+    if (pattern[i] === ')') { i++; break; }
+    break;
+  }
+  return [alts, i];
+}
+
+function extglobToRegex(op: string, alts: string[]): string {
+  const body = alts.join('|');
+  switch (op) {
+    case '?': return `(?:${body})?`;
+    case '*': return `(?:${body})*`;
+    case '+': return `(?:${body})+`;
+    case '@': return `(?:${body})`;
+    case '!': return `(?:(?!(?:${body})).)*`;
+    default:  return '';
+  }
 }
 
 /**
