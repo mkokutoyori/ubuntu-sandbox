@@ -72,8 +72,8 @@ import {
   formatIpMonitorNeigh,
 } from './linux/LinuxIpCommand';
 import { DnsService } from './linux/LinuxDnsService';
-import { UDP_PORT_DNS } from '../dns/DnsWire';
-import { bindDnsUdpServer } from '../dns/transport/DnsUdpTransport';
+
+import { bindDnsUdpServer, DNS_PORT } from '../dns/transport/DnsUdpTransport';
 import { DnsRcode } from '../dns/wire/DnsHeaderFlags';
 import type { DnsMessage } from '../dns/wire/DnsMessage';
 import { buildLegacyResponseMessage, rrTypeName } from '../dns/compat/DnsWireCompat';
@@ -257,7 +257,7 @@ export abstract class LinuxMachine extends EndHost
     //    resolution travels through the simulated network (cables, routing,
     //    firewalls) instead of bypassing it via the Equipment registry.
     this.dnsService.onStart(() => this.bindDnsServerPort());
-    this.dnsService.onStop(() => this.udpClose(UDP_PORT_DNS));
+    this.dnsService.onStop(() => this.udpClose(DNS_PORT));
   }
 
   // ─── DNS over the wire (server side) ─────────────────────────────────
@@ -266,7 +266,7 @@ export abstract class LinuxMachine extends EndHost
     // bindDnsUdpServer supersedes the systemd-resolved stub listener on
     // 127.0.0.53, like real dnsmasq taking over port 53 on Ubuntu.
     try {
-      bindDnsUdpServer(this, (query) => this.answerDnsQuery(query), UDP_PORT_DNS, 'dnsmasq');
+      bindDnsUdpServer(this, (query) => this.answerDnsQuery(query), DNS_PORT, 'dnsmasq');
     } catch { /* port already bound (e.g. service restarted) */ }
   }
 

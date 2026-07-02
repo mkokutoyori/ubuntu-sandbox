@@ -16,6 +16,8 @@
 
 import { EndHost, PingResult } from './EndHost';
 import { WindowsDnsCache } from './windows/WinDnsCache';
+import { RRType } from '../dns/wire/RRType';
+import type { ARecordData } from '../dns/wire/ResourceRecord';
 import type { UserAccountHost } from '../equipment/HostCapabilities';
 import { Port } from '../hardware/Port';
 import { IPAddress, SubnetMask, DeviceType, type IPv4Packet, type TCPPacket, IP_PROTO_TCP, IP_PROTO_UDP, IP_PROTO_ICMP, createIPv4Packet } from '../core/types';
@@ -777,9 +779,10 @@ export class WindowsPC extends EndHost implements UserAccountHost {
         let serverIP: IPAddress;
         try { serverIP = new IPAddress(server); } catch { continue; }
         const response = await this.queryDnsServer(serverIP, name, 'A');
-        if (response && response.answers.length > 0) {
-          this.dnsCache.store(name, response.answers);
-          try { return new IPAddress(response.answers[0].value); } catch { /* skip */ }
+        const aRecords = response?.answers.filter((rr) => rr.data.type === RRType.A) ?? [];
+        if (aRecords.length > 0) {
+          this.dnsCache.store(name, response!.answers);
+          return (aRecords[0].data as ARecordData).address;
         }
       }
     }

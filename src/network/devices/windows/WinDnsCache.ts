@@ -1,19 +1,22 @@
-import type { DnsRecord } from '@/network/dns/DnsWire';
+import type { ResourceRecord, ResourceRecordData } from '@/network/dns/wire/ResourceRecord';
+import { resourceRecordToLegacyRecord } from '@/network/dns/compat/DnsWireCompat';
 
 export class WindowsDnsCache {
   private readonly entries = new Map<string, CachedDnsEntry>();
   now: () => number = () => Date.now();
 
-  store(qname: string, records: readonly DnsRecord[]): void {
+  store(qname: string, records: readonly ResourceRecord<ResourceRecordData>[]): void {
     if (records.length === 0) return;
     const insertedAt = this.now();
-    for (const r of records) {
-      const key = this.key(r.name || qname, r.type);
+    for (const rr of records) {
+      const record = resourceRecordToLegacyRecord(rr);
+      if (!record) continue;
+      const key = this.key(record.name || qname, record.type);
       this.entries.set(key, {
-        name: r.name || qname,
-        type: r.type,
-        value: r.value,
-        ttl: r.ttl,
+        name: record.name || qname,
+        type: record.type,
+        value: record.value,
+        ttl: record.ttl,
         insertedAt,
       });
     }

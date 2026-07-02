@@ -24,6 +24,7 @@ import { queryDnsOverUdp } from '@/network/dns/transport/DnsUdpTransport';
 import { DnsRcode, DnsOpcode } from '@/network/dns/wire/DnsHeaderFlags';
 import { RRType, DnsClass } from '@/network/dns/wire/RRType';
 import { makeARecord } from '@/network/dns/wire/ResourceRecord';
+import type { ARecordData, PtrRecordData } from '@/network/dns/wire/ResourceRecord';
 import type { DnsMessage } from '@/network/dns/wire/DnsMessage';
 
 const SERVER_IP = '10.0.1.10';
@@ -86,10 +87,12 @@ describe('DNS on the wire is RFC 1035 binary', () => {
     const reply = await pc.queryDnsServer(new IPAddress(SERVER_IP), 'webserver', 'A', 50);
 
     expect(reply).not.toBeNull();
-    expect(reply!.rcode).toBe('NOERROR');
-    expect(reply!.answers).toEqual([
-      { name: 'webserver', ttl: 300, type: 'A', value: '10.0.1.88' },
-    ]);
+    expect(reply!.flags.rcode).toBe(DnsRcode.NOERROR);
+    expect(reply!.answers).toHaveLength(1);
+    expect(reply!.answers[0].name).toBe('webserver');
+    expect(reply!.answers[0].ttl).toBe(300);
+    expect(reply!.answers[0].data.type).toBe(RRType.A);
+    expect((reply!.answers[0].data as ARecordData).address.toString()).toBe('10.0.1.88');
   });
 
   it('ignores a spoofed response whose transaction id does not match', async () => {
@@ -211,8 +214,9 @@ describe('PTR lookups travel as in-addr.arpa QNAMEs', () => {
       qname: '88.1.0.10.in-addr.arpa', qtype: RRType.PTR, qclass: DnsClass.IN,
     });
     expect(reply).not.toBeNull();
-    expect(reply!.rcode).toBe('NOERROR');
-    expect(reply!.answers[0]).toMatchObject({ type: 'PTR', value: 'webserver.lan' });
+    expect(reply!.flags.rcode).toBe(DnsRcode.NOERROR);
+    expect(reply!.answers[0].data.type).toBe(RRType.PTR);
+    expect((reply!.answers[0].data as PtrRecordData).ptrdname).toBe('webserver.lan');
   });
 });
 

@@ -64,13 +64,12 @@ import {
   ICMP_TTL_EXPIRED_IN_TRANSIT,
   type ICMPErrorType,
 } from '../core/IcmpErrors';
-import { UDP_PORT_DNS, type DnsWireResponse } from '../dns/DnsWire';
+import { DNS_PORT } from '../dns/transport/DnsUdpTransport';
 import { encodeDnsMessage, decodeDnsMessage } from '../dns/wire/DnsMessageCodec';
 import type { DnsMessage } from '../dns/wire/DnsMessage';
 import {
   nextDnsTransactionId,
   buildLegacyQueryMessage,
-  messageToLegacyResponse,
 } from '../dns/compat/DnsWireCompat';
 import { HardwareProfile } from './host/hardware';
 import { HostLifecycle } from './host/lifecycle';
@@ -1797,20 +1796,12 @@ export abstract class EndHost extends Equipment {
     }
   }
 
-  // ─── DNS client (RFC 1035 over the UDP socket layer) ────────────
-
-  /**
-   * Send a DNS query to `serverIP` over UDP 53 and await the response.
-   * Resolves to null on timeout — which genuinely happens when the server
-   * is unreachable (unplugged cable, no route, firewall on UDP 53),
-   * exactly like a real stub resolver. Shared by Linux and Windows hosts.
-   */
   public async queryDnsServer(
     serverIP: IPAddress,
     name: string,
     qtype: string,
     timeoutMs: number = 2000,
-  ): Promise<DnsWireResponse | null> {
+  ): Promise<DnsMessage | null> {
     const wire = this.encodeDnsQuery(name, qtype);
     if (!wire) return null;
     let sourcePort: number;
@@ -1820,10 +1811,10 @@ export abstract class EndHost extends Equipment {
       return null;
     }
 
-    return new Promise<DnsWireResponse | null>((resolve) => {
+    return new Promise<DnsMessage | null>((resolve) => {
       let timer: symbol | null = null;
       let settled = false;
-      const finish = (result: DnsWireResponse | null) => {
+      const finish = (result: DnsMessage | null) => {
         if (settled) return;
         settled = true;
         this.hostTimers.clear(timer);
@@ -1834,7 +1825,7 @@ export abstract class EndHost extends Equipment {
       try {
         this.udpBind(sourcePort, ({ udp }) => {
           const response = this.decodeDnsReply(udp.payload, wire.id);
-          if (response) finish(messageToLegacyResponse(response, name, qtype));
+          if (response) finish(response);
         }, 'resolver');
       } catch {
         resolve(null);
@@ -1842,7 +1833,7 @@ export abstract class EndHost extends Equipment {
       }
 
       const sent = this.sendUdpDatagram(
-        serverIP, UDP_PORT_DNS, sourcePort, wire.bytes, wire.bytes.length,
+        serverIP, DNS_PORT, sourcePort, wire.bytes, wire.bytes.length,
       );
       if (!sent) {
         finish(null);
@@ -1852,16 +1843,11 @@ export abstract class EndHost extends Equipment {
     });
   }
 
-  /**
-   * Synchronous variant for callers bound to a sync contract (the NSS
-   * `dns` source). Cable delivery is synchronous, so a live server's
-   * response has been captured when the send returns; null = timeout.
-   */
   public queryDnsServerSync(
     serverIP: IPAddress,
     name: string,
     qtype: string,
-  ): DnsWireResponse | null {
+  ): DnsMessage | null {
     const wire = this.encodeDnsQuery(name, qtype);
     if (!wire) return null;
     let sourcePort: number;
@@ -1870,27 +1856,22 @@ export abstract class EndHost extends Equipment {
     } catch {
       return null;
     }
-    let reply: DnsWireResponse | null = null;
+    let reply: DnsMessage | null = null;
     try {
       this.udpBind(sourcePort, ({ udp }) => {
         const response = this.decodeDnsReply(udp.payload, wire.id);
-        if (response) reply = messageToLegacyResponse(response, name, qtype);
+        if (response) reply = response;
       }, 'resolver');
     } catch {
       return null;
     }
     this.sendUdpDatagram(
-      serverIP, UDP_PORT_DNS, sourcePort, wire.bytes, wire.bytes.length,
+      serverIP, DNS_PORT, sourcePort, wire.bytes, wire.bytes.length,
     );
     this.udpClose(sourcePort);
     return reply;
   }
 
-  /**
-   * RFC 1035 binary query for a (name, qtype) lookup. Null when the name
-   * or type cannot be put on the wire — the same lookups a real
-   * getaddrinfo() rejects before ever sending a packet.
-   */
   private encodeDnsQuery(name: string, qtype: string): { id: number; bytes: Uint8Array } | null {
     const id = nextDnsTransactionId();
     const query = buildLegacyQueryMessage(id, name, qtype);
@@ -1902,11 +1883,6 @@ export abstract class EndHost extends Equipment {
     }
   }
 
-  /**
-   * Decode a UDP payload as the response to transaction `id`: must be
-   * binary, well-formed, matching id, with QR set — anything else is
-   * ignored and the client keeps waiting, like a real stub resolver.
-   */
   private decodeDnsReply(payload: unknown, id: number): DnsMessage | null {
     if (!(payload instanceof Uint8Array)) return null;
     try {

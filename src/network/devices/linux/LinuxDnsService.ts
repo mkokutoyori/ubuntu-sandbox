@@ -1,25 +1,27 @@
-/**
- * LinuxDnsService - Simulated DNS server (dnsmasq) and client tools (dig, nslookup, host)
- *
- * Implements:
- *   - dnsmasq config parsing and DNS record storage
- *   - dig command (Linux DNS lookup utility)
- *   - nslookup command (cross-platform DNS lookup)
- *   - host command (simple DNS lookup)
- *
- * Queries travel over the simulated network as UDP/53 datagrams (see
- * `src/network/dns/DnsWire`): the client tools receive an injected async
- * `DnsQueryFn` transport, and the server side answers through the host's
- * UDP socket layer when the service is running.
- */
+import type { DnsMessage } from '../../dns/wire/DnsMessage';
+import {
+  type DnsRecord,
+  type DnsRcodeName,
+  type DnsQueryFn,
+  resourceRecordToLegacyRecord,
+  rcodeFromWire,
+} from '../../dns/compat/DnsWireCompat';
 
-import type { DnsRecord, DnsQueryFn } from '../../dns/DnsWire';
+export type { DnsRecord, DnsQueryFn };
 
-// ─── DNS Record Types ──────────────────────────────────────────────
+interface DecodedResponse {
+  rcode: DnsRcodeName;
+  answers: DnsRecord[];
+}
 
-// The record shape lives with the wire format (`src/network/dns/DnsWire`);
-// re-exported here so existing importers keep working.
-export type { DnsRecord };
+function toDecodedResponse(message: DnsMessage): DecodedResponse {
+  return {
+    rcode: rcodeFromWire(message.flags.rcode),
+    answers: message.answers
+      .map(resourceRecordToLegacyRecord)
+      .filter((record): record is DnsRecord => record !== null),
+  };
+}
 
 // ─── DNS Service (runs on a LinuxPC acting as DNS server) ─────────
 
@@ -216,11 +218,11 @@ export async function executeDig(args: string[], query: DnsQueryFn, resolverIP?:
     return '; <<>> DiG <<>> @' + server + ' ' + domain + '\n;; connection timed out; no servers could be reached';
   }
 
-  // Query over the wire (UDP/53 through the simulated network)
-  const response = await query(server, domain, isReverse ? 'PTR' : qtype, timeout * 1000);
-  if (!response) {
+  const message = await query(server, domain, isReverse ? 'PTR' : qtype, timeout * 1000);
+  if (!message) {
     return '; <<>> DiG <<>> ' + domain + '\n;; connection timed out; no servers could be reached';
   }
+  const response = toDecodedResponse(message);
   const records: DnsRecord[] = response.answers;
 
   // +short format
@@ -322,10 +324,11 @@ export async function executeNslookup(args: string[], query: DnsQueryFn, resolve
     return `** server can't find ${domain}: REFUSED`;
   }
 
-  const response = await query(server, domain, isReverse ? 'PTR' : qtype);
-  if (!response) {
+  const message = await query(server, domain, isReverse ? 'PTR' : qtype);
+  if (!message) {
     return `;; connection timed out; no servers could be reached`;
   }
+  const response = toDecodedResponse(message);
 
   const lines: string[] = [];
   lines.push(`Server:\t\t${server}`);
@@ -384,10 +387,11 @@ export async function executeHost(args: string[], query: DnsQueryFn, resolverIP?
     return `Host ${domain} not found: 5(REFUSED)`;
   }
 
-  const response = await query(server, domain, 'A');
-  if (!response) {
+  const message = await query(server, domain, 'A');
+  if (!message) {
     return `;; connection timed out; no servers could be reached`;
   }
+  const response = toDecodedResponse(message);
 
   if (response.answers.length === 0) {
     return `Host ${domain} not found: 3(NXDOMAIN)`;
