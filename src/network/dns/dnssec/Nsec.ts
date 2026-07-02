@@ -1,11 +1,8 @@
 import { RRType } from '@/network/dns/wire/RRType';
+import { normalizeDnsName as normalize } from '@/network/dns/wire/DnsName';
 import { makeNsecRecord } from '@/network/dns/wire/ResourceRecord';
 import type { ResourceRecord, ResourceRecordData, NsecRecordData } from '@/network/dns/wire/ResourceRecord';
 import type { Zone } from '@/network/dns/zone/Zone';
-
-function normalize(name: string): string {
-  return name.toLowerCase().replace(/\.$/, '');
-}
 
 export function canonicalNameCompare(a: string, b: string): number {
   const labelsA = normalize(a).split('.').reverse();

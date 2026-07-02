@@ -13,23 +13,7 @@ import {
   type ResourceRecord,
   type ResourceRecordData,
 } from '@/network/dns/wire/ResourceRecord';
-
-export interface DnsRecord {
-  name: string;
-  type: 'A' | 'AAAA' | 'PTR' | 'MX' | 'TXT' | 'CNAME' | 'NS' | 'SOA';
-  value: string;
-  ttl: number;
-  priority?: number;
-}
-
-export type DnsRcodeName = 'NOERROR' | 'NXDOMAIN' | 'SERVFAIL' | 'REFUSED';
-
-export type DnsQueryFn = (
-  serverIP: string,
-  name: string,
-  qtype: string,
-  timeoutMs?: number,
-) => Promise<DnsMessage | null>;
+import type { DnsRecord, DnsRcode, DnsWireResponse } from '@/network/dns/DnsWire';
 
 const RR_TYPE_NAMES: ReadonlyMap<number, string> = new Map(
   Object.entries(RRType).map(([name, value]) => [value, name]),
@@ -73,6 +57,7 @@ function legacySoaToResourceRecord(record: DnsRecord): ResourceRecord | null {
 }
 
 function legacyTxtToResourceRecord(record: DnsRecord): ResourceRecord {
+
   const segments: string[] = [];
   for (let i = 0; i < record.value.length; i += TXT_CHARACTER_STRING_MAX) {
     segments.push(record.value.slice(i, i + TXT_CHARACTER_STRING_MAX));
@@ -119,18 +104,18 @@ export function resourceRecordToLegacyRecord(rr: ResourceRecord<ResourceRecordDa
   }
 }
 
-const LEGACY_RCODE_TO_WIRE: Record<DnsRcodeName, number> = {
+const LEGACY_RCODE_TO_WIRE: Record<DnsRcode, number> = {
   NOERROR: WireRcode.NOERROR,
   NXDOMAIN: WireRcode.NXDOMAIN,
   SERVFAIL: WireRcode.SERVFAIL,
   REFUSED: WireRcode.REFUSED,
 };
 
-export function rcodeToWire(rcode: DnsRcodeName | number): number {
+export function rcodeToWire(rcode: DnsRcode | number): number {
   return typeof rcode === 'number' ? rcode : LEGACY_RCODE_TO_WIRE[rcode];
 }
 
-export function rcodeFromWire(rcode: number): DnsRcodeName {
+export function rcodeFromWire(rcode: number): DnsRcode {
   switch (rcode) {
     case WireRcode.NOERROR: return 'NOERROR';
     case WireRcode.NXDOMAIN: return 'NXDOMAIN';
@@ -158,7 +143,7 @@ export function buildLegacyQueryMessage(id: number, name: string, qtype: string)
 
 export function buildLegacyResponseMessage(
   query: DnsMessage,
-  rcode: DnsRcodeName | number,
+  rcode: DnsRcode | number,
   answers: readonly DnsRecord[],
 ): DnsMessage {
   return {
@@ -173,5 +158,23 @@ export function buildLegacyResponseMessage(
       .filter((rr): rr is ResourceRecord => rr !== null),
     authorities: [],
     additionals: [],
+  };
+}
+
+export function messageToLegacyResponse(
+  message: DnsMessage,
+  fallbackName: string,
+  fallbackQtype: string,
+): DnsWireResponse {
+  const question = message.questions[0];
+  return {
+    kind: 'dns-response',
+    id: message.id,
+    rcode: rcodeFromWire(message.flags.rcode),
+    name: question?.qname ?? fallbackName,
+    qtype: question ? rrTypeName(question.qtype as number) : fallbackQtype,
+    answers: message.answers
+      .map(resourceRecordToLegacyRecord)
+      .filter((record): record is DnsRecord => record !== null),
   };
 }

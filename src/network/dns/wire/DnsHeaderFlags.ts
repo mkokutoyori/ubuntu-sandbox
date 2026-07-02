@@ -1,16 +1,3 @@
-/**
- * DNS message header flags (RFC 1035 §4.1.1), extended with the AD/CD bits
- * introduced by DNSSEC (RFC 4035 §3.1.6, §3.2.2).
- *
- * Bit layout of the second 16-bit word of the header, MSB first:
- *
- *   QR(1) Opcode(4) AA(1) TC(1) RD(1) | RA(1) Z(1) AD(1) CD(1) RCODE(4)
- *
- * The Z bit is reserved and MUST be zero on the wire; a conformant receiver
- * ignores whatever a non-conformant sender put there rather than rejecting
- * the message.
- */
-
 export const DnsOpcode = {
   QUERY: 0,
   IQUERY: 1,
@@ -19,8 +6,6 @@ export const DnsOpcode = {
   UPDATE: 5,
 } as const;
 
-/** RFC 1035 §4.1.1 response codes. EDNS(0) (RFC 6891) extends this to 12
- *  bits via the OPT pseudo-RR — this 4-bit field alone cannot carry those. */
 export const DnsRcode = {
   NOERROR: 0,
   FORMERR: 1,

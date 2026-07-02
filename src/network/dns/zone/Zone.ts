@@ -1,4 +1,5 @@
 import { RRType } from '@/network/dns/wire/RRType';
+import { normalizeDnsName as normalize, parentName as parentOf, isWithinDomain as isWithinOrigin } from '@/network/dns/wire/DnsName';
 import { rdataKey } from '@/network/dns/wire/ResourceRecord';
 import type {
   ResourceRecord, ResourceRecordData, SoaRecordData, NsRecordData, CnameRecordData,
@@ -23,19 +24,6 @@ export type ZoneLookupResult =
   | { readonly kind: 'delegation'; readonly nsRecords: readonly ResourceRecord<NsRecordData>[] }
   | { readonly kind: 'nodata' }
   | { readonly kind: 'nxdomain' };
-
-function normalize(name: string): string {
-  return name.toLowerCase().replace(/\.$/, '');
-}
-
-function isWithinOrigin(name: string, origin: string): boolean {
-  return origin === '' || name === origin || name.endsWith(`.${origin}`);
-}
-
-function parentOf(name: string): string | null {
-  const dot = name.indexOf('.');
-  return dot === -1 ? null : name.slice(dot + 1);
-}
 
 export class Zone {
   readonly origin: string;

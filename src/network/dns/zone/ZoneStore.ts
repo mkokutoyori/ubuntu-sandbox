@@ -1,4 +1,5 @@
 import { Zone } from '@/network/dns/zone/Zone';
+import { normalizeDnsName as normalize, parentName as parentOf } from '@/network/dns/wire/DnsName';
 import { RRType } from '@/network/dns/wire/RRType';
 import { DnsRcode } from '@/network/dns/wire/DnsHeaderFlags';
 import { findCoveringNsec } from '@/network/dns/dnssec/Nsec';
@@ -22,15 +23,6 @@ export interface ZoneStoreAnswer {
 
 export interface ZoneStoreAnswerOptions {
   readonly dnssec?: boolean;
-}
-
-function normalize(name: string): string {
-  return name.toLowerCase().replace(/\.$/, '');
-}
-
-function parentOf(name: string): string | null {
-  const dot = name.indexOf('.');
-  return dot === -1 ? null : name.slice(dot + 1);
 }
 
 export class ZoneStore {

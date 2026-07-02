@@ -6,13 +6,6 @@ import type { DnsMessage } from '@/network/dns/wire/DnsMessage';
 import { DNS_PORT, queryDnsOverUdp } from '@/network/dns/transport/DnsUdpTransport';
 import type { DnsMessageHandler } from '@/network/dns/transport/DnsUdpTransport';
 
-/**
- * Bind a TCP/53 (or custom port) responder on `host` backed by `handler`.
- * One connection answers exactly one query, then closes — a real DNS
- * server keeps the connection open for pipelined queries, but nothing in
- * this simulator yet needs more than the single AXFR/truncation-retry
- * request per connection RFC 1035 §4.2.2 requires as a minimum.
- */
 export function bindDnsTcpServer(host: EndHost, handler: DnsMessageHandler, port: number = DNS_PORT): void {
   host.getTcpStack().listen(port, {
     onAccept: (socket: TcpSocket) => {
@@ -37,7 +30,6 @@ export function unbindDnsTcpServer(host: EndHost, port: number = DNS_PORT): void
   host.getTcpStack().closeListener(port);
 }
 
-/** Send a binary-encoded DNS query over TCP and await the binary-decoded reply. */
 export async function queryDnsOverTcp(
   host: EndHost,
   serverIP: IPAddress,
@@ -74,12 +66,6 @@ export async function queryDnsOverTcp(
   });
 }
 
-/**
- * RFC 1035 §4.2.1: query over UDP first; if the reply comes back truncated
- * (TC=1), repeat the exact same query over TCP and use that response
- * instead — the standard stub-resolver transport-selection algorithm,
- * reused by every DNS client on top of this engine (dig et al., §5 Phase 9).
- */
 export async function queryAuthoritativeServer(
   host: EndHost,
   serverIP: IPAddress,

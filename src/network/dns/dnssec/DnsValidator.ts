@@ -1,4 +1,5 @@
 import { RRType } from '@/network/dns/wire/RRType';
+import { normalizeDnsName as normalize } from '@/network/dns/wire/DnsName';
 import type {
   ResourceRecord, ResourceRecordData, DnskeyRecordData, RrsigRecordData, DsRecordData, NsecRecordData,
 } from '@/network/dns/wire/ResourceRecord';
@@ -26,10 +27,6 @@ interface ZoneKeysVerdict {
 }
 
 const DEFAULT_MAX_CHAIN_DEPTH = 8;
-
-function normalize(name: string): string {
-  return name.toLowerCase().replace(/\.$/, '');
-}
 
 function rrsigsOf(records: readonly ResourceRecord<ResourceRecordData>[]): ResourceRecord<RrsigRecordData>[] {
   return records.filter(

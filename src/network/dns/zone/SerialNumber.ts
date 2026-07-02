@@ -1,10 +1,3 @@
-/**
- * RFC 1982 serial number arithmetic, used for SOA serials (RFC 1035 §3.3.13)
- * and IXFR/NOTIFY freshness comparisons. Serials are unsigned 32-bit and
- * compared circularly: a serial can wrap from 0xFFFFFFFF back to 0 and still
- * be considered "greater" than what preceded it.
- */
-
 export class SerialNumberError extends Error {
   constructor(message: string) {
     super(message);
@@ -24,11 +17,6 @@ function validateSerial(serial: number, fieldName: string): void {
   }
 }
 
-/**
- * RFC 1982 §3.2: is `i1` "greater than" `i2` under circular serial space
- * arithmetic? Undefined (and rejected here) when the two serials are
- * exactly half the serial space apart.
- */
 export function serialGreaterThan(i1: number, i2: number): boolean {
   validateSerial(i1, 'i1');
   validateSerial(i2, 'i2');
@@ -44,10 +32,6 @@ export function serialGreaterThan(i1: number, i2: number): boolean {
   return diff < HALF_SERIAL_SPACE;
 }
 
-/**
- * RFC 1982 §3.1: add `n` to serial `s`, wrapping modulo 2^32. Only defined
- * for `0 <= n < 2^31` — larger increments have no well-defined result.
- */
 export function serialAdd(s: number, n: number): number {
   validateSerial(s, 's');
   if (!Number.isInteger(n) || n < 0 || n >= HALF_SERIAL_SPACE) {

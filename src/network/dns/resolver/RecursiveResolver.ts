@@ -1,4 +1,5 @@
 import type { IPAddress } from '@/network/core/types';
+import { normalizeDnsName as normalizeName } from '@/network/dns/wire/DnsName';
 import type { EndHost } from '@/network/devices/EndHost';
 import { DnsOpcode, DnsRcode } from '@/network/dns/wire/DnsHeaderFlags';
 import { RRType, DnsClass } from '@/network/dns/wire/RRType';
@@ -44,10 +45,6 @@ const DEFAULT_TIMEOUT_MS = 2000;
 const DEFAULT_MAX_REFERRALS = 16;
 const DEFAULT_MAX_DEPTH = 8;
 const QUERY_ID_SPACE = 0x10000;
-
-function normalizeName(name: string): string {
-  return name.toLowerCase().replace(/\.$/, '');
-}
 
 function servfail(): IterationOutcome {
   return { status: 'SERVFAIL', answers: [], authorities: [], negative: null };

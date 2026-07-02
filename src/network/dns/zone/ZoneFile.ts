@@ -6,7 +6,6 @@ import {
 } from '@/network/dns/wire/ResourceRecord';
 import { RRType } from '@/network/dns/wire/RRType';
 
-/** A zone master file (RFC 1035 §5) could not be parsed. */
 export class ZoneFileError extends Error {
   constructor(message: string) {
     super(message);
@@ -17,12 +16,6 @@ export class ZoneFileError extends Error {
 const CLASS_KEYWORD = /^(IN|CH|HS|ANY)$/i;
 const DIGITS_ONLY = /^\d+$/;
 
-/**
- * Strip `;`-comments and fold parenthesized multi-line records into a
- * single logical line each, preserving each logical line's original
- * leading whitespace (needed to detect the "blank owner reuses the
- * previous owner name" convention, RFC 1035 §5.1).
- */
 function preprocess(text: string): string[] {
   const lines: string[] = [];
   let current = '';
@@ -91,7 +84,6 @@ function resolveName(token: string, origin: string): string {
   return `${token}.${origin}`;
 }
 
-/** Parse an RFC 1035 §5 zone master file into a loaded {@link Zone}. */
 export function parseZoneFile(text: string, defaultOrigin?: string): Zone {
   const lines = preprocess(text);
 
