@@ -320,15 +320,161 @@ migrés un par un, avec la suite de tests existante comme filet de sécurité à
 
 ---
 
-## 8. Suite prévue : BIND 9
+## 8. PRD — BIND 9 (`named`)
 
-Une fois les phases 1 à 6 (a minima) livrées, un second PRD (`PRD-BIND9.md`) définira :
-- `named.conf` (parsing, directives `zone`, `options`, `acl`, `logging`)
-- CLI : `named-checkconf`, `named-checkzone`, `rndc` (reload/reconfig/notify/freeze)
-- Intégration avec `systemd` (service `named`/`bind9`) déjà modélisé pour d'autres
-  démons Linux dans ce simulateur
-- Journalisation `/var/log/named/*` fidèle au format BIND 9 réel
+**Version** : 1.0 · **Date** : 2026-07-02 · **Statut** : les phases 1 à 8 du §5 sont
+livrées ; ce chapitre est le PRD du projet consécutif annoncé, rédigé en place plutôt
+que dans un `PRD-BIND9.md` séparé.
 
-Ce second projet consommera le moteur DNS de ce PRD exactement comme
-`SqlPlusSession`/`Dnsmasq.ts` consomment leurs moteurs respectifs — aucune logique
-protocolaire ne sera dupliquée dans la couche BIND 9.
+### 8.1 Contexte et portée
+
+BIND 9 est la **couche distribution** au-dessus du moteur DNS du présent PRD : fichiers
+de configuration `named.conf`, outils CLI (`named-checkconf`, `named-checkzone`,
+`rndc`), unité systemd `named` (alias `bind9`), arborescence `/etc/bind/`,
+journalisation `/var/log/named/`. Aucune logique protocolaire n'est réécrite : la
+relation avec le moteur est exactement celle de `Dnsmasq.ts` avec `LinuxDnsService`,
+ou de `SqlPlusSession` avec `OracleExecutor` — une façade de configuration et de
+pilotage au-dessus de classes de domaine déjà testées.
+
+Cible simulée : **BIND 9.18 sur Ubuntu** (paquet `bind9`, unité `named.service`,
+utilisateur `bind`, configuration éclatée `/etc/bind/named.conf` →
+`named.conf.options` / `named.conf.local` / `named.conf.default-zones` via `include`).
+
+### 8.2 Points d'appui dans l'existant
+
+| Existant | Réutilisation par BIND 9 |
+|---|---|
+| `dns/wire/*` (codec RFC 1035, EDNS) | Inchangé — `named` ne touche jamais au binaire directement |
+| `dns/zone/ZoneFile.ts` (format maître §5) | Moteur de `named-checkzone` et du chargement des zones `type primary` |
+| `dns/zone/ZoneStore.ts` + `dns/resolver/AuthoritativeServer.ts` | Cœur du plan de réponse AA=1 de `named` |
+| `dns/resolver/RecursiveResolver.ts` + `DnsCache.ts` | Récursion (`recursion yes`, `forwarders`) |
+| `dns/transfer/{Primary,Secondary}ZoneAgent.ts`, `NotifyProtocol.ts` | Zones `type primary`/`type secondary`, `also-notify`, `primaries` |
+| `dns/transport/DnsUdpTransport.ts` (`bindDnsUdpServer`) et `DnsTcpTransport.ts` | Écoute réelle UDP/TCP 53 à travers la topologie simulée |
+| `LinuxServiceManager` (`SERVICE_LISTENERS`, `dynamicListeners`, `registerConfigCheck`) | Unité `named`, cohérence port/process/service, pré-check de reload (analogue `sshd -t`) |
+| `VirtualFileSystem` | `/etc/bind/*`, fichiers de zone, `/var/log/named/*`, `rndc.key` |
+| `LinuxCommand`/`LinuxCommandRegistry` (un fichier = une commande) | `named-checkconf`, `named-checkzone`, `rndc` |
+| `dig`/`nslookup`/`host` existants | Clients de test inchangés — ils interrogent `named` par le réseau |
+
+### 8.3 Objectifs
+
+1. **Parseur `named.conf`** — lexer + parseur du langage de configuration réel :
+   directives terminées par `;`, blocs `{ }`, chaînes quotées, commentaires `//`, `#`
+   et `/* */`, directive `include`. Erreurs avec fichier/ligne/colonne au format BIND
+   (`/etc/bind/named.conf:12: missing ';' before '}'`).
+2. **Modèle sémantique validé** — clauses supportées :
+   - `options` : `directory`, `recursion yes|no`, `forwarders { ip; … }`, `forward
+     only|first`, `allow-query`, `allow-recursion`, `allow-transfer`, `listen-on`
+     (port et address-match-list), `dnssec-validation auto|yes|no`, `querylog`.
+   - `zone "<nom>"` : `type primary|master|secondary|slave|forward|hint`, `file`,
+     `primaries`/`masters { ip; … }`, `also-notify { ip; … }`, `allow-transfer`,
+     `forwarders` (zones forward).
+   - `acl "<nom>" { … }` avec les ACL nommées, les littéraux IP/CIDR, la négation `!`
+     et les built-ins `any`, `none`, `localhost`, `localnets`.
+   - `logging { channel …; category …; }` : channels `file`/`null`, catégories
+     `default`, `queries`, `xfer-in`, `xfer-out`, `notify`, `security`.
+   - `key` + `controls` : clé rndc (`/etc/bind/rndc.key`, HMAC simulé) et canal de
+     contrôle `127.0.0.1:953`.
+3. **`named-checkconf [-z] [fichier]`** — validation syntaxique et sémantique ;
+   silencieux + code retour 0 si OK ; `-z` charge aussi chaque zone déclarée et
+   affiche `zone <nom>/IN: loaded serial <n>`.
+4. **`named-checkzone <zone> <fichier>`** — façade de `ZoneFile` ; sortie fidèle
+   (`zone example.com/IN: loaded serial 2024010101` puis `OK`, ou l'erreur du parseur).
+5. **Démon `named`** — `systemctl start named` : parse la configuration, charge les
+   zones, ouvre UDP/TCP 53 réels (répond à travers câbles/switches/routeurs),
+   applique les ACL par IP source (`allow-query` → REFUSED, `allow-recursion` → RA=0
+   et refus de récursion, `allow-transfer` → refus d'AXFR), récursion et forwarders
+   selon `options`. Configuration invalide au démarrage → l'unité passe `failed`,
+   message dans le journal, port 53 fermé — exactement le comportement du vrai `named`.
+6. **`rndc`** — via le canal de contrôle local : `status`, `reload [zone]`,
+   `reconfig`, `flush`, `freeze [zone]` / `thaw [zone]`, `notify <zone>`,
+   `querylog [on|off]`, `retransfer <zone>`. `rndc` refuse de parler à un démon
+   arrêté (`rndc: connect failed: 127.0.0.1#953: connection refused`).
+7. **Réplication pilotée par la configuration** — un `named` secondaire
+   (`type secondary` + `primaries`) obtient la zone par AXFR/IXFR réel sur TCP via
+   les agents de transfert existants ; un `rndc reload` côté primaire après édition
+   du fichier de zone (serial incrémenté) déclenche NOTIFY → transfert → le
+   secondaire sert la nouvelle donnée.
+8. **Journalisation** — `/var/log/named/` selon la clause `logging` ; catégorie
+   `queries` togglable à chaud par `rndc querylog` ; format des lignes fidèle
+   (`client @0x… 10.0.1.2#53124 (www.example.com): query: www.example.com IN A +E(0) (10.0.1.10)` simplifié raisonnablement).
+
+### 8.4 Non-objectifs
+
+- `views`, RPZ (response-policy zones), zones catalogue, DLZ, GeoIP, `statistics-channels`.
+- Mises à jour dynamiques RFC 2136 (`allow-update`, `nsupdate`) et GSS-TSIG.
+- `dnssec-policy` / rollover automatique de clés — la signature de zone reste celle
+  du moteur (§5 phase 7) ; `named` se contente de servir les zones signées.
+- TSIG cryptographique réel : la clé rndc est un secret partagé simulé, comme SSH/IPsec.
+- Le vrai réseau de la racine : les zones `type hint` pointent vers des serveurs
+  simulés du LAN.
+
+### 8.5 Architecture
+
+```
+src/network/devices/linux/bind9/
+  NamedConfLexer.ts        tokens (mots, chaînes, { } ; ), commentaires, positions
+  NamedConfParser.ts       AST brut : liste de clauses (statements imbriqués)
+  NamedConfig.ts           modèle sémantique validé + NamedConfigError (fichier:ligne)
+  NamedAcl.ts              address-match-list : littéraux, CIDR, !, built-ins, ACL nommées
+  Bind9Service.ts          démon : cycle de vie, ZoneStore, sockets 53, ACL, récursion
+  Bind9Logging.ts          channels/catégories → VFS /var/log/named/*
+  RndcChannel.ts           contrôle 953 : dispatch des commandes rndc vers le démon
+src/network/devices/linux/commands/dns/
+  NamedCheckconf.ts        façade CLI
+  NamedCheckzone.ts        façade CLI
+  Rndc.ts                  façade CLI
+```
+
+Intégration `LinuxMachine` : instancie `Bind9Service` (injection du VFS, de l'hôte
+réseau et du `ZoneStore`), enregistre l'unité `named` + son `ServiceListenerSpec`
+dynamique (process `named`, UDP/TCP 53), et `registerConfigCheck('named', …)` pour
+que `systemctl reload named` refuse une configuration invalide, comme pour `sshd`.
+
+Patterns : mêmes choix que le moteur — le parseur produit un AST **immuable** validé
+en aval (séparation lexer/parser/sémantique, comme `bash/` et `database/engine/`),
+`Bind9Service` est une **State Machine** de cycle de vie (stopped → running → failed),
+les ACL sont une **Chain of Responsibility** sur l'address-match-list, les commandes
+CLI restent des **façades fines**.
+
+### 8.6 Sémantique par défaut (fidèle à BIND 9.18)
+
+| Option absente | Défaut appliqué |
+|---|---|
+| `recursion` | `yes` |
+| `allow-query` | `any` |
+| `allow-recursion` | `localnets; localhost;` |
+| `allow-transfer` | `any` (avec avertissement `named-checkconf` si zone primaire sans restriction) |
+| `listen-on` | toutes les adresses IPv4 de la machine, port 53 |
+| `directory` | `/var/cache/bind` — les `file` relatifs s'y résolvent |
+| `dnssec-validation` | `auto` (trust anchor simulé du §5 phase 7) |
+
+### 8.7 Plan TDD (phases B1 → B7)
+
+Méthode identique au §5 : tests d'abord sur topologies réelles (vrais équipements
+câblés, jamais de mock du transport), implémentation jusqu'au vert, régression
+complète avant commit, pas de commentaires dans le code de production.
+
+| Phase | Contenu | Sortie testable |
+|---|---|---|
+| **B1** | Lexer + parseur `named.conf` (AST brut, `include`, 3 styles de commentaires) | Round-trip AST sur des configs Ubuntu réelles ; erreurs `fichier:ligne: message` exactes |
+| **B2** | Modèle sémantique `NamedConfig` + `NamedAcl` + commande `named-checkconf` | Config valide → silence/rc 0 ; clause inconnue, ACL indéfinie, zone sans `file` → erreurs au format BIND ; `-z` charge les zones |
+| **B3** | Commande `named-checkzone` (façade `ZoneFile`) | `loaded serial N` + `OK` ; fichier absent, SOA manquant, RR invalide → sorties d'erreur fidèles |
+| **B4** | `Bind9Service` + unité systemd `named` + écoute UDP/TCP 53 réelle | `systemctl start named` puis `dig @serveur` depuis un autre hôte du LAN → réponse AA=1 ; config cassée → unité `failed`, port fermé |
+| **B5** | ACL (`allow-query`, `allow-recursion`, `allow-transfer`) + récursion/forwarders | Client hors ACL → REFUSED ; `recursion no` → RA=0 ; forwarder joint à travers le LAN |
+| **B6** | `rndc` + canal 953 + `Bind9Logging` + `querylog` | `rndc status`/`reload` (serial rechargé)/`flush`/`freeze`/`querylog on` → lignes dans `/var/log/named/query.log` |
+| **B7** | Zones `type secondary`, `primaries`, `also-notify`, NOTIFY→XFR piloté par conf | Deux `named` sur un LAN : édition du fichier de zone + `rndc reload` côté primaire → le secondaire sert le nouveau serial |
+
+### 8.8 Risques et points d'attention
+
+1. **Fidélité des messages** — la valeur pédagogique du simulateur tient aux sorties
+   exactes (`named-checkconf`, journal systemd, logs) ; chaque message est vérifié
+   contre le comportement documenté de BIND 9.18 plutôt qu'inventé.
+2. **Concurrence de démons DNS** — `dnsmasq` (existant) et `named` peuvent être
+   installés sur la même machine : le port 53 est exclusif, le second à démarrer doit
+   échouer avec `address already in use` dans le journal, pas silencieusement.
+3. **Blast radius nul sur l'existant** — `LinuxDnsService`/`Dnsmasq.ts` et les suites
+   `dig`/`nslookup`/`host` restent intacts ; `named` est purement additif et la
+   régression complète doit rester verte à chaque phase.
+4. **Périmètre `rndc`** — le canal de contrôle est local (127.0.0.1:953) dans un
+   premier temps ; le pilotage distant (rndc -s) est préparé par l'architecture
+   (RndcChannel découplé) mais hors périmètre initial.
