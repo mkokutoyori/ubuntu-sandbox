@@ -32,6 +32,12 @@ export class LinuxService extends OSService implements ServiceUnit {
   restartSec?: number;
   startLimitBurst?: number;
   startLimitIntervalSec?: number;
+  listenStream?: number;
+  onActiveSec?: number;
+  onBootSec?: number;
+  onUnitActiveSec?: number;
+  onCalendar?: string;
+  activates?: string;
   lastExit?: { code?: number; signal?: string };
   failedReason?: string;
   startLimitHit?: boolean;
@@ -73,6 +79,12 @@ export class LinuxService extends OSService implements ServiceUnit {
     this.failedReason = init.failedReason;
     this.startLimitHit = init.startLimitHit;
     this.restartEpochs = init.restartEpochs;
+    this.listenStream = init.listenStream;
+    this.onActiveSec = init.onActiveSec;
+    this.onBootSec = init.onBootSec;
+    this.onUnitActiveSec = init.onUnitActiveSec;
+    this.onCalendar = init.onCalendar;
+    this.activates = init.activates;
   }
 
   /** Linux supervisor only resurrects these three restart policies. */

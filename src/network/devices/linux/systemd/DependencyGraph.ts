@@ -24,8 +24,14 @@ export function unitName(reference: string): string {
   return reference.replace(/\.service$/, '');
 }
 
+export type UnitSuffix = 'service' | 'target' | 'socket' | 'timer';
+
+export function unitSuffix(name: string): UnitSuffix {
+  return (name.match(/\.(target|socket|timer)$/)?.[1] as Exclude<UnitSuffix, 'service'>) ?? 'service';
+}
+
 export function fullUnitName(name: string): string {
-  return name.endsWith('.target') ? name : `${unitName(name)}.service`;
+  return unitSuffix(name) === 'service' ? `${unitName(name)}.service` : name;
 }
 
 export class DependencyGraph {

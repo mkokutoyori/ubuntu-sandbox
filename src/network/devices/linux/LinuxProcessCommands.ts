@@ -25,7 +25,7 @@ function loadAverage(running: number): string {
   return `${v}, ${v}, ${v}`;
 }
 import { LinuxService } from './service/LinuxService';
-import { fullUnitName } from './systemd/DependencyGraph';
+import { fullUnitName, unitSuffix } from './systemd/DependencyGraph';
 import { renderDependencyTree } from './systemd/DependencyTree';
 
 /** Parameters describing the calling shell, used to render `ps` output. */
@@ -358,10 +358,17 @@ function unitFailedResult(u: ServiceUnit): string {
   return 'exit-code';
 }
 
+const ACTIVE_SUBSTATE: Record<ReturnType<typeof unitSuffix>, string> = {
+  service: 'running',
+  target: 'active',
+  socket: 'listening',
+  timer: 'waiting',
+};
+
 function unitActiveLine(u: ServiceUnit): string {
   switch (u.state) {
     case 'active':
-      return `active (${u.name.endsWith('.target') ? 'active' : 'running'}) since ${u.activeSince?.toUTCString() ?? new Date().toUTCString()}`;
+      return `active (${ACTIVE_SUBSTATE[unitSuffix(u.name)]}) since ${u.activeSince?.toUTCString() ?? new Date().toUTCString()}`;
     case 'activating':
       return u.autoRestartPending ? 'activating (auto-restart)' : 'activating (start)';
     case 'deactivating':
@@ -380,6 +387,25 @@ function unitProcessLine(u: ServiceUnit): string | null {
     ? `code=killed, signal=${exit.signal.replace(/^SIG/, '')}`
     : `code=exited, status=${exit.code ?? 0}/${(exit.code ?? 0) === 0 ? 'SUCCESS' : 'FAILURE'}`;
   return `    Process: ExecStart=${u.execStart} (${cause})`;
+}
+
+const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+function formatTimerDate(d: Date | null): string {
+  if (!d) return 'n/a';
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${DAY_NAMES[d.getUTCDay()]} ${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())} ` +
+    `${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}:${pad(d.getUTCSeconds())} UTC`;
+}
+
+function formatTimerDelta(later: Date | null, earlier: Date | null): string {
+  if (!later || !earlier) return 'n/a';
+  const seconds = Math.round((later.getTime() - earlier.getTime()) / 1000);
+  if (seconds < 0) return 'n/a';
+  if (seconds < 120) return `${seconds}s`;
+  if (seconds < 7200) return `${Math.round(seconds / 60)}min`;
+  if (seconds < 172800) return `${Math.round(seconds / 3600)}h`;
+  return `${Math.round(seconds / 86400)} days`;
 }
 
 /** Render the multi-line `systemctl status NAME` block for one unit. */
@@ -536,19 +562,14 @@ export function cmdSystemctl(args: string[], sm: LinuxServiceManager): SysCtlRes
         : stateArg?.slice('--state='.length);
       const typeArg = args.find((a) => a.startsWith('--type='))?.slice('--type='.length)
         ?? (args.includes('-t') ? args[args.indexOf('-t') + 1] : undefined);
-      const matchesType = (name: string): boolean => {
-        if (!typeArg) return true;
-        if (typeArg === 'target') return name.endsWith('.target');
-        if (typeArg === 'service') return !name.endsWith('.target');
-        return false;
-      };
+      const matchesType = (name: string): boolean => !typeArg || unitSuffix(name) === typeArg;
       const allUnits = (stateFilter
         ? sm.list({ state: stateFilter as ServiceState })
         : sm.list()).filter((u) => matchesType(u.name));
       const lines = ['  UNIT                          LOAD   ACTIVE SUB     DESCRIPTION'];
       for (const u of allUnits) {
         const active = u.state === 'active' ? 'active' : u.state === 'failed' ? 'failed' : 'inactive';
-        const sub2 = u.state !== 'active' ? 'dead' : u.name.endsWith('.target') ? 'active' : 'running';
+        const sub2 = u.state !== 'active' ? 'dead' : ACTIVE_SUBSTATE[unitSuffix(u.name)];
         lines.push(
           `  ${fullUnitName(u.name).padEnd(30)} loaded ${active.padEnd(8)} ${sub2.padEnd(8)} ${u.description}`,
         );
@@ -655,11 +676,35 @@ export function cmdSystemctl(args: string[], sm: LinuxServiceManager): SysCtlRes
       return { output: '', exitCode: 0 };
     }
 
-    case 'list-timers':
-      return { output: 'NEXT LEFT LAST PASSED UNIT ACTIVATES\n\n0 timers listed.', exitCode: 0 };
+    case 'list-timers': {
+      const now = new Date();
+      const timers = sm.timerEntries();
+      const lines = ['NEXT                          LEFT      LAST                          PASSED    UNIT                ACTIVATES'];
+      for (const t of timers) {
+        lines.push([
+          formatTimerDate(t.next).padEnd(30),
+          formatTimerDelta(t.next, now).padEnd(10),
+          formatTimerDate(t.last).padEnd(30),
+          formatTimerDelta(now, t.last).padEnd(10),
+          t.unit.padEnd(20),
+          fullUnitName(t.activates),
+        ].join(''));
+      }
+      lines.push('');
+      lines.push(`${timers.length} timers listed.`);
+      return { output: lines.join('\n'), exitCode: 0 };
+    }
 
-    case 'list-sockets':
-      return { output: 'LISTEN UNIT ACTIVATES\n\n0 sockets listed.', exitCode: 0 };
+    case 'list-sockets': {
+      const sockets = sm.socketEntries();
+      const lines = ['LISTEN                UNIT                ACTIVATES'];
+      for (const s of sockets) {
+        lines.push(`${`0.0.0.0:${s.port}`.padEnd(22)}${s.unit.padEnd(20)}${fullUnitName(s.service)}`);
+      }
+      lines.push('');
+      lines.push(`${sockets.length} sockets listed.`);
+      return { output: lines.join('\n'), exitCode: 0 };
+    }
 
     case 'list-dependencies': {
       const root = unit || sm.defaultTarget();

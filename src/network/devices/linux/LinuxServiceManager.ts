@@ -16,8 +16,10 @@ import type { VirtualFileSystem } from './VirtualFileSystem';
 import type { LinuxProcessManager } from './LinuxProcessManager';
 import type { IEventBus } from '@/events/EventBus';
 import { LinuxService } from './service/LinuxService';
-import { DependencyGraph, fullUnitName, type UnitNode } from './systemd/DependencyGraph';
+import { DependencyGraph, fullUnitName, unitSuffix, type UnitNode } from './systemd/DependencyGraph';
 import { SystemdJobEngine } from './systemd/SystemdJobEngine';
+import { TimerScheduler, type TimerEntry } from './systemd/TimerScheduler';
+import { parseTimeSpan } from './systemd/TimeSpan';
 import type { DynamicUserTable } from './nss/DynamicUserTable';
 import type { PortSpec } from '../../core/ports/PortNumber';
 
@@ -62,6 +64,12 @@ export interface ServiceUnit {
   restartSec?: number;
   startLimitBurst?: number;
   startLimitIntervalSec?: number;
+  listenStream?: number;
+  onActiveSec?: number;
+  onBootSec?: number;
+  onUnitActiveSec?: number;
+  onCalendar?: string;
+  activates?: string;
   /** Source file the unit was loaded from. */
   loadedFrom: string;
   // ── Runtime state (mutated by start/stop/etc.) ────────────────
@@ -530,6 +538,35 @@ export class LinuxServiceManager {
     return this.jobEngine().isolate(unit.unit.name);
   }
 
+  private readonly timerScheduler = new TimerScheduler();
+
+  timerTick(now: Date = new Date()): void {
+    for (const service of this.timerScheduler.due(now)) this.start(service);
+  }
+
+  timerEntries(): TimerEntry[] {
+    return this.timerScheduler.entries();
+  }
+
+  socketEntries(): Array<{ unit: string; port: number; service: string }> {
+    return this.list()
+      .filter((u) => unitSuffix(u.name) === 'socket' && u.state === 'active' && u.listenStream !== undefined)
+      .map((u) => ({ unit: u.name, port: u.listenStream!, service: this.activatedUnit(u) }));
+  }
+
+  triggerSocket(name: string): OperationResult {
+    const unit = this.units.get(name);
+    if (!unit || unit.state !== 'active') {
+      return { ok: false, error: `Socket unit ${fullUnitName(name)} is not listening.` };
+    }
+    return this.start(this.activatedUnit(unit));
+  }
+
+  private activatedUnit(u: LinuxService): string {
+    const raw = u.activates ?? u.name.replace(/\.(socket|timer)$/, '');
+    return raw.replace(/\.service$/, '');
+  }
+
   private startOne(name: string): OperationResult {
     const unit = this.requireUnit(name);
     if (!unit.ok) return unit;
@@ -715,7 +752,7 @@ export class LinuxServiceManager {
     const u = unit.unit;
     if (u.enabled === 'enabled') return { ok: true };
     this.vfs.mkdirp(WANTS_DIR, 0o755, 0, 0);
-    const linkPath = `${WANTS_DIR}/${name}.service`;
+    const linkPath = `${WANTS_DIR}/${fullUnitName(u.name)}`;
     if (!this.vfs.existsNoFollow(linkPath)) {
       const target = `${u.loadedFrom}`;
       this.vfs.createSymlink(linkPath, target, 0, 0);
@@ -730,7 +767,7 @@ export class LinuxServiceManager {
     const unit = this.requireUnit(name);
     if (!unit.ok) return unit;
     const u = unit.unit;
-    const linkPath = `${WANTS_DIR}/${name}.service`;
+    const linkPath = `${WANTS_DIR}/${fullUnitName(u.name)}`;
     if (this.vfs.existsNoFollow(linkPath)) {
       this.vfs.deleteFile(linkPath);
     }
@@ -941,6 +978,12 @@ export class LinuxServiceManager {
         restartSec: parsed.restartSec,
         startLimitBurst: parsed.startLimitBurst,
         startLimitIntervalSec: parsed.startLimitIntervalSec,
+        listenStream: parsed.listenStream,
+        onActiveSec: parsed.onActiveSec,
+        onBootSec: parsed.onBootSec,
+        onUnitActiveSec: parsed.onUnitActiveSec,
+        onCalendar: parsed.onCalendar,
+        activates: parsed.activates,
         loadedFrom: src.path,
         // Preserve previous runtime state if the unit already existed.
         state: previous?.state ?? 'inactive',
@@ -959,6 +1002,7 @@ export class LinuxServiceManager {
       if (!merged.has(name)) {
         const u = this.units.get(name)!;
         if (u.mainPid !== undefined) this.processMgr.kill(u.mainPid, 'SIGKILL');
+        this.timerScheduler.disarm(name);
         this.units.delete(name);
       }
     }
@@ -991,6 +1035,14 @@ export class LinuxServiceManager {
 
   getPortBinding(name: string): ServicePortBinding | undefined {
     const unit = this.units.get(name);
+    if (unit && unitSuffix(unit.name) === 'socket' && unit.listenStream !== undefined) {
+      return {
+        name,
+        mainPid: 1,
+        processName: 'systemd',
+        sockets: [{ port: unit.listenStream, protocol: 'tcp' }],
+      };
+    }
     const listener = this.listenerSpecFor(name);
     if (!unit || !listener || listener.sockets.length === 0) return undefined;
     const override = unit.portOverride;
@@ -1031,9 +1083,19 @@ export class LinuxServiceManager {
 
   private activate(u: LinuxService): OperationResult {
     const prev = u.state;
-    if (u.name.endsWith('.target')) {
+    if (unitSuffix(u.name) !== 'service') {
       u.activeSince = new Date();
       u.state = 'active';
+      if (unitSuffix(u.name) === 'timer') {
+        this.timerScheduler.arm({
+          unit: u.name,
+          activates: this.activatedUnit(u),
+          onActiveSec: u.onActiveSec,
+          onBootSec: u.onBootSec,
+          onUnitActiveSec: u.onUnitActiveSec,
+          onCalendar: u.onCalendar,
+        }, u.activeSince);
+      }
       this.emitStateChanged(u.name, prev, 'active');
       return { ok: true };
     }
@@ -1071,6 +1133,7 @@ export class LinuxServiceManager {
   private deactivate(u: LinuxService): OperationResult {
     const prev = u.state;
     u.state = 'deactivating';
+    if (unitSuffix(u.name) === 'timer') this.timerScheduler.disarm(u.name);
     if (u.mainPid !== undefined) {
       this.processMgr.kill(u.mainPid, 'SIGTERM');
       u.mainPid = undefined;
@@ -1086,7 +1149,7 @@ export class LinuxServiceManager {
 
   private computeEnabledState(name: string): EnabledState {
     if (name.endsWith('.target')) return 'static';
-    return this.vfs.existsNoFollow(`${WANTS_DIR}/${name}.service`) ? 'enabled' : 'disabled';
+    return this.vfs.existsNoFollow(`${WANTS_DIR}/${fullUnitName(name)}`) ? 'enabled' : 'disabled';
   }
 
   private scanDir(dir: string): Array<{ name: string; path: string; content: string }> {
@@ -1095,7 +1158,7 @@ export class LinuxServiceManager {
     const out: Array<{ name: string; path: string; content: string }> = [];
     for (const entry of entries) {
       if (entry.name === '.' || entry.name === '..') continue;
-      if (!entry.name.endsWith('.service') && !entry.name.endsWith('.target')) continue;
+      if (!/\.(service|target|socket|timer)$/.test(entry.name)) continue;
       const path = `${dir}/${entry.name}`;
       const content = this.vfs.readFile(path);
       if (content === null) continue;
@@ -1198,18 +1261,25 @@ interface ParsedUnit {
   restartSec?: number;
   startLimitBurst?: number;
   startLimitIntervalSec?: number;
+  listenStream?: number;
+  onActiveSec?: number;
+  onBootSec?: number;
+  onUnitActiveSec?: number;
+  onCalendar?: string;
+  activates?: string;
 }
 
 /** Minimal ini-style parser for systemd unit files. */
 export function parseUnitFile(content: string): ParsedUnit {
   const out: ParsedUnit = {};
-  let section: 'Unit' | 'Service' | 'Install' | null = null;
+  const sections = ['Unit', 'Service', 'Install', 'Socket', 'Timer'] as const;
+  let section: typeof sections[number] | null = null;
   for (const rawLine of content.split('\n')) {
     const line = rawLine.trim();
     if (!line || line.startsWith('#') || line.startsWith(';')) continue;
     if (line.startsWith('[') && line.endsWith(']')) {
       const name = line.slice(1, -1);
-      section = name === 'Unit' || name === 'Service' || name === 'Install' ? name : null;
+      section = (sections as readonly string[]).includes(name) ? name as typeof sections[number] : null;
       continue;
     }
     const eq = line.indexOf('=');
@@ -1240,6 +1310,15 @@ export function parseUnitFile(content: string): ParsedUnit {
       else if (key === 'RestartSec') out.restartSec = parseFloat(val);
       else if (key === 'StartLimitBurst') out.startLimitBurst = parseInt(val, 10);
       else if (key === 'StartLimitIntervalSec') out.startLimitIntervalSec = parseFloat(val);
+    } else if (section === 'Socket') {
+      if (key === 'ListenStream' && /^\d+$/.test(val)) out.listenStream = parseInt(val, 10);
+      else if (key === 'Service') out.activates = val;
+    } else if (section === 'Timer') {
+      if (key === 'OnActiveSec') out.onActiveSec = parseTimeSpan(val);
+      else if (key === 'OnBootSec') out.onBootSec = parseTimeSpan(val);
+      else if (key === 'OnUnitActiveSec') out.onUnitActiveSec = parseTimeSpan(val);
+      else if (key === 'OnCalendar') out.onCalendar = val;
+      else if (key === 'Unit') out.activates = val;
     } else if (section === 'Install') {
       if (key === 'WantedBy') out.wantedBy = val.split(/\s+/);
     }

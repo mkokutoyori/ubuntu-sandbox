@@ -301,6 +301,35 @@ export abstract class LinuxMachine extends EndHost
       if (cmd.runWithStatus) return cmd.runWithStatus(ctx, args);
       return Promise.resolve(cmd.run(ctx, args)).then((output) => ({ output, exitCode: 0 }));
     });
+
+    this.executor.serviceMgr.onLifecycle((event, name) => {
+      if (!name.endsWith('.socket')) return;
+      if (event === 'start' || event === 'restart') this.openActivationSocket(name);
+      else if (event === 'stop') this.closeActivationSocket(name);
+    });
+  }
+
+  private readonly activationSockets = new Map<string, number>();
+
+  private openActivationSocket(name: string): void {
+    if (this.activationSockets.has(name)) return;
+    const entry = this.executor.serviceMgr.socketEntries().find((s) => s.unit === name);
+    if (!entry) return;
+    try {
+      this.getTcpStack().listen(entry.port, {
+        onAccept: () => { this.executor.serviceMgr.triggerSocket(name); },
+      });
+    } catch {
+      return;
+    }
+    this.activationSockets.set(name, entry.port);
+  }
+
+  private closeActivationSocket(name: string): void {
+    const port = this.activationSockets.get(name);
+    if (port === undefined) return;
+    this.getTcpStack().closeListener(port);
+    this.activationSockets.delete(name);
   }
 
   private readonly scriptRunners = new Map<string, ServiceScriptRunner>();
@@ -420,6 +449,7 @@ export abstract class LinuxMachine extends EndHost
     if (active && !engine.isRunning) engine.start();
     else if (!active && engine.isRunning) engine.stop();
     engine.tick(at);
+    this.executor.serviceMgr.timerTick(at);
   }
 
   private runCronJob(command: string, ctx: { user: string; env: Record<string, string> }): { output: string; exitCode: number } {
