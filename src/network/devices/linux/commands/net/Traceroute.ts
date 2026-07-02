@@ -2,6 +2,7 @@ import { IPAddress } from '@/network/core/types';
 import type { LinuxCommand } from '../LinuxCommand';
 import type { LinuxCommandContext } from '../LinuxCommandContext';
 import type { TracerouteHop } from '../../LinuxNetKernel';
+import { isValidIPv4 } from '@/network/core/ip';
 
 const TRACEROUTE_VERSION = 'Modern traceroute for Linux, version 2.1.0 (iputils-s20221126)';
 
@@ -52,15 +53,6 @@ export interface ParsedTracerouteArgs {
 function isInteger(s: string, allowNegative = false): boolean {
   if (allowNegative) return /^-?\d+$/.test(s);
   return /^\d+$/.test(s);
-}
-
-function isValidIPv4(addr: string): boolean {
-  const parts = addr.split('.');
-  if (parts.length !== 4) return false;
-  return parts.every(p => {
-    const n = parseInt(p, 10);
-    return !isNaN(n) && n >= 0 && n <= 255 && String(n) === p;
-  });
 }
 
 function unquote(s: string): string {

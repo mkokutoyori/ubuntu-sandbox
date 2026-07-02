@@ -1,6 +1,7 @@
 import type { WinCommandContext, PingResult } from './WinCommandExecutor';
 import { IPAddress } from '../../core/types';
 import { requireWindowsService } from './WinFeatureGate';
+import { isValidIPv4 } from '@/network/core/ip';
 
 const DEFAULT_MTU = 1500;
 
@@ -57,15 +58,6 @@ export interface ParsedWinPing {
   showHelp: boolean;
   parseError?: string;
   extraTargets: string[];
-}
-
-function isValidIPv4(addr: string): boolean {
-  const parts = addr.split('.');
-  if (parts.length !== 4) return false;
-  return parts.every(p => {
-    const n = parseInt(p, 10);
-    return !isNaN(n) && n >= 0 && n <= 255 && String(n) === p;
-  });
 }
 
 function isIntStrict(s: string, allowNeg = false): boolean {

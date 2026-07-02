@@ -13,6 +13,7 @@ import { isValidIPv4, isValidSubnetMask } from '../../../core/ip';
 import type { Router } from '../../Router';
 import { CommandTrie } from '../CommandTrie';
 import { resolveCiscoInterfaceName } from '../cli-utils';
+import { classfulMask as classfulMaskString } from '@/network/core/ip';
 
 // ─── Shell Context Interface ─────────────────────────────────────────
 
@@ -955,8 +956,5 @@ export function resolveInterfaceName(router: Router, input: string): string | nu
 // ─── Classful Mask (for RIP) ────────────────────────────────────────
 
 export function classfulMask(ip: IPAddress): SubnetMask {
-  const firstOctet = ip.getOctets()[0];
-  if (firstOctet < 128) return new SubnetMask('255.0.0.0');
-  if (firstOctet < 192) return new SubnetMask('255.255.0.0');
-  return new SubnetMask('255.255.255.0');
+  return new SubnetMask(classfulMaskString(ip.toString()));
 }

@@ -2,6 +2,7 @@ import { IPv6Address, IPAddress } from '@/network/core/types';
 import type { LinuxCommand } from '../LinuxCommand';
 import type { LinuxCommandContext } from '../LinuxCommandContext';
 import type { PingResult } from '../../EndHost';
+import { isValidIPv4 } from '@/network/core/ip';
 
 const IPUTILS_VERSION = 'ping utility, iputils-s20221126, https://github.com/iputils/iputils/';
 const DEFAULT_SIZE = 56;
@@ -63,15 +64,6 @@ export interface ParsedPingArgs {
 
 function isValidHexPattern(p: string): boolean {
   return /^[0-9a-fA-F]+$/.test(p) && p.length > 0;
-}
-
-function isValidIPv4(addr: string): boolean {
-  const parts = addr.split('.');
-  if (parts.length !== 4) return false;
-  return parts.every(p => {
-    const n = parseInt(p, 10);
-    return !isNaN(n) && n >= 0 && n <= 255 && String(n) === p;
-  });
 }
 
 function isBroadcastAddress(ip: string): boolean {

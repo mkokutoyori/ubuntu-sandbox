@@ -15,6 +15,7 @@ import { IPAddress, SubnetMask, MACAddress, IPv6Address } from '../../../core/ty
 import type { Router } from '../../Router';
 import type { CommandTrie } from '../CommandTrie';
 import { resolveHuaweiInterfaceName } from './HuaweiDisplayCommands';
+import { classfulMask as classfulMaskString } from '@/network/core/ip';
 
 // ─── Shell Context Interface ─────────────────────────────────────────
 
@@ -889,8 +890,5 @@ export function normalizeMAC(mac: string): string {
 }
 
 export function classfulMask(ip: IPAddress): SubnetMask {
-  const firstOctet = ip.getOctets()[0];
-  if (firstOctet < 128) return new SubnetMask('255.0.0.0');
-  if (firstOctet < 192) return new SubnetMask('255.255.0.0');
-  return new SubnetMask('255.255.255.0');
+  return new SubnetMask(classfulMaskString(ip.toString()));
 }

@@ -18,6 +18,7 @@
 import type { LinuxCommand } from '../LinuxCommand';
 import type { LinuxCommandContext } from '../LinuxCommandContext';
 import { IPAddress, SubnetMask } from '../../../../core/types';
+import { classfulMask } from '@/network/core/ip';
 
 export const ifconfigCommand: LinuxCommand = {
   name: 'ifconfig',
@@ -120,9 +121,3 @@ function isValidMask(mask: string): boolean {
   return parts.every(p => /^\d+$/.test(p) && Number(p) >= 0 && Number(p) <= 255);
 }
 
-function classfulMask(ip: string): string {
-  const first = parseInt(ip.split('.')[0], 10);
-  if (first < 128) return '255.0.0.0';
-  if (first < 192) return '255.255.0.0';
-  return '255.255.255.0';
-}
