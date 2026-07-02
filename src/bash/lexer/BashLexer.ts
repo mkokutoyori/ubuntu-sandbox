@@ -388,6 +388,9 @@ export class BashLexer {
   private scanGreat(): Token {
     const start = this.position();
     this.advance();
+    if (!this.isAtEnd() && this.peek() === '(') {
+      return this.scanBalancedParens(start, 'out');
+    }
     if (!this.isAtEnd() && this.peek() === '>') {
       this.advance();
       return { type: TokenType.DGREAT, value: '>>', position: start };
@@ -399,9 +402,36 @@ export class BashLexer {
     return { type: TokenType.GREAT, value: '>', position: start };
   }
 
+  private scanBalancedParens(start: SourcePosition, kind: 'in' | 'out'): Token {
+    this.advance();
+    let depth = 1;
+    let cmd = '';
+    while (!this.isAtEnd() && depth > 0) {
+      if (this.peek() === '(') depth++;
+      else if (this.peek() === ')') {
+        depth--;
+        if (depth === 0) break;
+      }
+      cmd += this.peek();
+      this.advance();
+    }
+    if (this.isAtEnd() && depth > 0) {
+      throw new LexerError('Unterminated process substitution', start);
+    }
+    this.advance();
+    return {
+      type: kind === 'in' ? TokenType.PROC_SUB_IN : TokenType.PROC_SUB_OUT,
+      value: cmd,
+      position: start,
+    };
+  }
+
   private scanLess(): Token {
     const start = this.position();
     this.advance();
+    if (!this.isAtEnd() && this.peek() === '(') {
+      return this.scanBalancedParens(start, 'in');
+    }
     if (!this.isAtEnd() && this.peek() === '<') {
       this.advance();
       if (!this.isAtEnd() && this.peek() === '<') {

@@ -686,6 +686,10 @@ export class BashParser {
         return { type: 'CommandSubstitution', command: tok.value, backtick: true, position: pos };
       case TokenType.ARITH_SUB:
         return { type: 'ArithmeticSubstitution', expression: tok.value, position: pos };
+      case TokenType.PROC_SUB_IN:
+        return { type: 'ProcessSubstitution', direction: 'in', command: tok.value, position: pos };
+      case TokenType.PROC_SUB_OUT:
+        return { type: 'ProcessSubstitution', direction: 'out', command: tok.value, position: pos };
       case TokenType.NUMBER:
         return makeLiteralWord(tok.value, pos);
       case TokenType.ASSIGNMENT_WORD:
@@ -893,6 +897,7 @@ export class BashParser {
     return t === TokenType.WORD || t === TokenType.SINGLE_QUOTED || t === TokenType.DOUBLE_QUOTED
       || t === TokenType.VAR_SIMPLE || t === TokenType.VAR_BRACED || t === TokenType.VAR_SPECIAL
       || t === TokenType.CMD_SUB || t === TokenType.CMD_SUB_BACKTICK || t === TokenType.ARITH_SUB
+      || t === TokenType.PROC_SUB_IN || t === TokenType.PROC_SUB_OUT
       || t === TokenType.NUMBER || t === TokenType.ASSIGNMENT_WORD
       || t === TokenType.LBRACKET || t === TokenType.RBRACKET
       || t === TokenType.DLBRACKET || t === TokenType.DRBRACKET;

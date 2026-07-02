@@ -195,7 +195,14 @@ export type Word =
   | VariableRef
   | CommandSubstitution
   | ArithmeticSubstitution
+  | ProcessSubstitution
   | CompoundWord;
+
+export interface ProcessSubstitution extends ASTBase {
+  type: 'ProcessSubstitution';
+  direction: 'in' | 'out';
+  command: string;
+}
 
 export interface LiteralWord extends ASTBase {
   type: 'LiteralWord';

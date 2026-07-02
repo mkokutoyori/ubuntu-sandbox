@@ -27,6 +27,7 @@ import {
   type TestFs, type TestEnv, type TailFs, type TailSink, type TailFollowHandle, type TailRunResult,
   type ArchiveCtx,
 } from './coreutils';
+import { cmdDiff } from './coreutils/DiffCommand';
 import { cmdUseradd, cmdUsermod, cmdUserdel, cmdPasswd, cmdChpasswd, cmdChage, cmdFaillock, cmdGroupadd, cmdGroupmod, cmdGroupdel, cmdGpasswd, cmdId, cmdWhoami, cmdGroups, cmdWho, cmdW, cmdLast, cmdLastb, cmdSudoCheck } from './LinuxUserCommands';
 import { parseUseraddArgs } from './iam/useraddOptions';
 import { CommandPrivilegePolicy, type PrivilegeActor } from './iam/policy/CommandPrivilegePolicy';
@@ -3731,6 +3732,10 @@ export class LinuxCommandExecutor {
         }
         return { output: lines.join('\n'), exitCode: 0 };
       }
+      case 'diff': return cmdDiff({
+        readFile: (p) => this.vfs.readFile(p),
+        normalizePath: (p, cwd) => this.vfs.normalizePath(p, cwd),
+      }, this.cwd, args);
       case 'tar': return cmdTar(this.archiveCtx(), args);
       case 'gzip': return cmdGzip(this.archiveCtx(), args, 'gzip');
       case 'gunzip': return cmdGzip(this.archiveCtx(), args, 'gunzip');

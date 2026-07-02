@@ -507,8 +507,64 @@ export class BashInterpreter {
     yield* this.visitSimpleCommandWithInput(node, '');
   }
 
-  private *visitSimpleCommandWithInput(node: SimpleCommand, pipeInput: string): Effects<void> {
+  private procSubCounter = 63;
+  private pendingOutSubs: Array<{ command: string; path: string }> = [];
+
+  private materializeProcSubs(node: SimpleCommand): SimpleCommand {
+    const hasProcSub = (w: Word): boolean =>
+      w.type === 'ProcessSubstitution'
+      || (w.type === 'CompoundWord' && w.parts.some(hasProcSub));
+    if (!node.words.some(hasProcSub)
+        && !node.redirections.some(r => hasProcSub(r.target))) {
+      return node;
+    }
+    return {
+      ...node,
+      words: node.words.map(w => this.materializeWord(w)),
+      redirections: node.redirections.map(r => ({ ...r, target: this.materializeWord(r.target) })),
+    };
+  }
+
+  private materializeWord(word: Word): Word {
+    if (word.type === 'ProcessSubstitution') {
+      const path = this.allocateProcSubPath();
+      if (word.direction === 'in') {
+        const output = this.executeSubcommand(word.command);
+        this.io?.writeFile(path, output, false);
+      } else {
+        this.io?.writeFile(path, '', false);
+        this.pendingOutSubs.push({ command: word.command, path });
+      }
+      return { type: 'LiteralWord', value: path, position: word.position };
+    }
+    if (word.type === 'CompoundWord') {
+      return { ...word, parts: word.parts.map(p => this.materializeWord(p)) };
+    }
+    return word;
+  }
+
+  private allocateProcSubPath(): string {
+    const fd = this.procSubCounter--;
+    if (this.procSubCounter < 20) this.procSubCounter = 63;
+    const devPath = `/dev/fd/${fd}`;
+    try {
+      this.io?.writeFile(devPath, '', false);
+      if (this.io?.readFile(devPath) !== null) return devPath;
+    } catch { /* fall through to /tmp */ }
+    return `/tmp/.psub-${fd}`;
+  }
+
+  private flushOutSubs(): void {
+    if (this.pendingOutSubs.length === 0) return;
+    const pending = this.pendingOutSubs.splice(0);
+    for (const sub of pending) {
+      this.executeSubcommand(`${sub.command} < ${sub.path}`);
+    }
+  }
+
+  private *visitSimpleCommandWithInput(rawNode: SimpleCommand, pipeInput: string): Effects<void> {
     yield* this.fireSignalTrap('DEBUG');
+    const node = this.materializeProcSubs(rawNode);
 
     // Check for input redirection (< file), herestring (<<<), or heredoc (<<)
     if (!pipeInput) {
@@ -525,6 +581,13 @@ export class BashInterpreter {
           // Heredoc: target word is the body content (from preprocessing)
           pipeInput = (yield* this.expandWordG(redir.target)) + '\n';
         }
+      }
+    }
+
+    if (!pipeInput && this.loopStdin) {
+      const head = node.words[0];
+      if (head && head.type === 'LiteralWord' && head.value === 'read') {
+        pipeInput = this.loopStdin.length > 0 ? this.loopStdin.shift()! + '\n' : '';
       }
     }
 
@@ -640,6 +703,8 @@ export class BashInterpreter {
         explicitStderr !== null ? capturedStderr : undefined,
       );
     }
+
+    this.flushOutSubs();
 
     // ERR honours the same guarded-context gate as `set -e`.
     if (this.errexitSuppress === 0 && this.env.lastExitCode !== 0) {
@@ -976,7 +1041,38 @@ export class BashInterpreter {
 
   // ─── While ────────────────────────────────────────────────────
 
+  private loopStdin: string[] | null = null;
+
+  private *compoundLoopInput(redirections: Redirection[]): Effects<string[] | null> {
+    if (!this.io) return null;
+    let content: string | null = null;
+    for (const redir of redirections) {
+      const target = this.materializeWord(redir.target);
+      if (redir.op === '<') {
+        const path = this.io.resolvePath(yield* this.expandWordG(target));
+        content = this.io.readFile(path);
+      } else if (redir.op === '<<<' || redir.op === '<<') {
+        content = (yield* this.expandWordG(target)) + '\n';
+      }
+    }
+    if (content === null) return null;
+    const lines = content.split('\n');
+    if (lines[lines.length - 1] === '') lines.pop();
+    return lines;
+  }
+
   private *visitWhile(node: WhileClause): Effects<void> {
+    const loopInput = yield* this.compoundLoopInput(node.redirections);
+    const savedLoopStdin = this.loopStdin;
+    if (loopInput) this.loopStdin = loopInput;
+    try {
+      yield* this.runWhileLoop(node);
+    } finally {
+      if (loopInput) this.loopStdin = savedLoopStdin;
+    }
+  }
+
+  private *runWhileLoop(node: WhileClause): Effects<void> {
     const MAX_ITERATIONS = 10000;
     let iterations = 0;
     while (iterations++ < MAX_ITERATIONS) {
