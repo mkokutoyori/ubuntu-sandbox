@@ -36,6 +36,14 @@ export class VtyLineConfigStore {
     this.byKey.clear();
   }
 
+  lineCapacity(defaultCount = 5): number {
+    let highest = -1;
+    for (const block of this.byKey.values()) {
+      if (block.last > highest) highest = block.last;
+    }
+    return highest >= 0 ? highest + 1 : defaultCount;
+  }
+
   /**
    * Verdict for an incoming VTY session (telnet/SSH). Rejected when a
    * configured line mandates a line password (`login`) that has not been set —

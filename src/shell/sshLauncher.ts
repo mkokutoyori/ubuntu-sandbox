@@ -305,6 +305,18 @@ export function finalisePendingAuth(
   const clientPort = 50_000 + (auth.user.length * 7 % 10_000);
   const sshConnection = `${clientIp} ${clientPort} ${serverIp} ${auth.port}`;
   const sshClient = `${clientIp} ${clientPort} ${auth.port}`;
+  const registry = (auth.target as unknown as {
+    getSshSessionRegistry?: () => {
+      open: (input: { user: string; fromIp: string; fromHost?: string; peerPort?: number }) => { id: string } | null;
+      close: (id: string, reason?: string) => unknown;
+    };
+  }).getSshSessionRegistry?.();
+  const session = registry?.open({
+    user: auth.user,
+    fromIp: clientIp,
+    fromHost: auth.sourceHostname,
+    peerPort: clientPort,
+  }) ?? null;
   const shell = new CrossVendorRemoteShell({
     device: auth.target,
     user: auth.user,
@@ -312,6 +324,7 @@ export function finalisePendingAuth(
     primaryKind: auth.primaryKind,
     sshConnection,
     sshClient,
+    onClose: () => { if (session) registry?.close(session.id, 'logout'); },
   });
   return { shell, banner };
 }

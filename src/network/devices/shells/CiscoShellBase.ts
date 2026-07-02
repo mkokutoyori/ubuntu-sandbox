@@ -1230,6 +1230,21 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       dev._clearDynamicRoutes?.();
       return '';
     });
+    this.privilegedTrie.registerGreedy('clear line', 'Terminate a vty session', (args) => {
+      const dev = this.d() as unknown as {
+        getSshSessionRegistry?: () => {
+          closeWhere: (p: (s: { lineIndex: number }) => boolean, reason?: string) => number;
+        };
+      };
+      const registry = dev.getSshSessionRegistry?.();
+      if (!registry) return '% Invalid input detected';
+      const index = args[0]?.toLowerCase() === 'vty'
+        ? Number.parseInt(args[1] ?? '', 10)
+        : Number.parseInt(args[0] ?? '', 10);
+      if (!Number.isInteger(index) || index < 0) return '% Incomplete command.';
+      const closed = registry.closeWhere(s => s.lineIndex === index, 'admin');
+      return closed > 0 ? '[confirm]\n [OK]' : '% Not allowed to clear that line';
+    });
     this.privilegedTrie.registerGreedy('sntp server', 'SNTP server (alias for ntp server)', (args) => {
       if (!args[0]) return '% Incomplete command.';
       const target = this.resolveNtpTarget(args[0]);

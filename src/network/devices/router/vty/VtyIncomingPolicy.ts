@@ -5,12 +5,13 @@ export type VtyTransportKind = 'ssh' | 'telnet';
 
 export type VtyAdmissionVerdict =
   | { accept: true }
-  | { accept: false; kind: 'acl' | 'line-password'; reason: string };
+  | { accept: false; kind: 'acl' | 'line-password' | 'no-line'; reason: string };
 
 export interface VtyIncomingPolicyDeps {
   lines: () => VtyLineConfigStore;
   evaluateAcl: (name: string, packet: IPv4Packet) => 'permit' | 'deny' | null;
   localIp: () => string | null;
+  hasFreeLine?: () => boolean;
 }
 
 export class VtyIncomingPolicy {
@@ -19,6 +20,9 @@ export class VtyIncomingPolicy {
   admit(transport: VtyTransportKind, sourceIp: string): VtyAdmissionVerdict {
     const aclRefusal = this.aclRefusal(sourceIp);
     if (aclRefusal) return aclRefusal;
+    if (this.deps.hasFreeLine && !this.deps.hasFreeLine()) {
+      return { accept: false, kind: 'no-line', reason: 'All vty lines are in use' };
+    }
     if (transport === 'telnet') {
       const lineVerdict = this.deps.lines().incomingVerdict();
       if (!lineVerdict.accept) {

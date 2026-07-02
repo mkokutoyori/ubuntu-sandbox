@@ -2208,6 +2208,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
         localIp: () => this.getPorts()
           .map(p => p.getIPAddress()?.toString())
           .find((ip): ip is string => !!ip) ?? null,
+        hasFreeLine: () => this.getSshSessionRegistry().hasFreeLine(),
       });
     }
     return this._vtyIncomingPolicy.admit(transport, sourceIp);
@@ -2416,7 +2417,11 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
   getCredentialStore(): NetworkOsCredentialStore {
     if (!this._credentialStore) {
       this._securityAuditLog = new SecurityAuditLog({ deviceId: this.id, bus: this.getBus() });
-      this._sshSessionRegistry = new SshSessionRegistry({ deviceId: this.id, bus: this.getBus() });
+      this._sshSessionRegistry = new SshSessionRegistry({
+        deviceId: this.id,
+        bus: this.getBus(),
+        capacity: () => this.vtyLineConfig.lineCapacity(),
+      });
       this._credentialStore = new NetworkOsCredentialStore({ deviceId: this.id, bus: this.getBus() });
       this._sshHost = new CrossVendorSshHost({
         deviceId: this.id,
