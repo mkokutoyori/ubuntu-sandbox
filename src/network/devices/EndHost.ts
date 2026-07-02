@@ -138,8 +138,8 @@ export interface TracerouteHopResult {
 export interface UdpDelivery {
   /** Interface the datagram arrived on ('lo' for local delivery). */
   inPort: string;
-  sourceIP: IPAddress;
-  destinationIP: IPAddress;
+  sourceIP: IPAddress | IPv6Address;
+  destinationIP: IPAddress | IPv6Address;
   udp: UDPPacket;
 }
 
@@ -147,6 +147,8 @@ export interface UdpDelivery {
 export type UdpListener = (delivery: UdpDelivery) => void;
 
 // ─── IPv6 Neighbor Cache (RFC 4861) ─────────────────────────────────
+
+const ICMPV6_UNREACH_PORT = 4;
 
 export type { NeighborState, NeighborCacheEntry } from './host/NeighborCache';
 
@@ -1242,6 +1244,13 @@ export abstract class EndHost extends Equipment {
     return 'accept';
   }
 
+  protected firewallFilter6(
+    _portName: string, _ipv6Pkt: IPv6Packet, _direction: 'in' | 'out' | 'forward',
+    _outPortName?: string,
+  ): 'accept' | 'drop' | 'reject' {
+    return 'accept';
+  }
+
   /**
    * Evaluate NAT table for a forwarded packet.
    * Subclasses (LinuxPC, LinuxServer) override this to use iptables nat table.
@@ -1282,6 +1291,13 @@ export abstract class EndHost extends Equipment {
     for (const [, port] of this.ports) {
       const portIP = port.getIPAddress();
       if (portIP && portIP.equals(ip)) return port;
+    }
+    return null;
+  }
+
+  protected getPortOwningIPv6(ip: IPv6Address): Port | null {
+    for (const [, port] of this.ports) {
+      if (port.isIPv6Enabled() && port.hasIPv6Address(ip)) return port;
     }
     return null;
   }
@@ -1779,26 +1795,90 @@ export abstract class EndHost extends Equipment {
     return true;
   }
 
+  public sendUdpDatagramTo(
+    destinationIP: IPAddress | IPv6Address,
+    destinationPort: number,
+    sourcePort: number,
+    payload: unknown,
+    payloadBytes: number = 0,
+  ): boolean {
+    return destinationIP instanceof IPv6Address
+      ? this.sendUdpDatagram6(destinationIP, destinationPort, sourcePort, payload, payloadBytes)
+      : this.sendUdpDatagram(destinationIP, destinationPort, sourcePort, payload, payloadBytes);
+  }
+
+  public sendUdpDatagram6(
+    destinationIP: IPv6Address,
+    destinationPort: number,
+    sourcePort: number,
+    payload: unknown,
+    payloadBytes: number = 0,
+  ): boolean {
+    const udp: UDPPacket = {
+      type: 'udp', sourcePort, destinationPort,
+      length: 8 + payloadBytes, checksum: 0, payload,
+    };
+
+    if (destinationIP.isLoopback() || this.getPortOwningIPv6(destinationIP)) {
+      const localPkt = createIPv6Packet(
+        destinationIP, destinationIP, IP_PROTO_UDP, this.defaultHopLimit, udp, udp.length,
+      );
+      this.deliverUDP6('lo', localPkt);
+      return true;
+    }
+
+    const route = this.resolveIPv6Route(destinationIP);
+    if (!route) return false;
+    const srcIP = destinationIP.isLinkLocal()
+      ? route.port.getLinkLocalIPv6()
+      : (route.port.getGlobalIPv6() || route.port.getLinkLocalIPv6());
+    if (!srcIP) return false;
+
+    const ipPkt = createIPv6Packet(
+      srcIP, destinationIP, IP_PROTO_UDP, this.defaultHopLimit, udp, udp.length,
+    );
+
+    const outPortName = route.port.getName();
+    if (this.firewallFilter6(outPortName, ipPkt, 'out') !== 'accept') return false;
+
+    const cached = this.neighborCache.get(route.nextHopIP.toString());
+    if (cached) {
+      this.sendFrame(outPortName, {
+        srcMAC: route.port.getMAC(), dstMAC: cached.mac,
+        etherType: ETHERTYPE_IPV6, payload: ipPkt,
+      });
+    } else {
+      void this.resolveNDP(outPortName, route.nextHopIP).then((mac) => {
+        this.sendFrame(outPortName, {
+          srcMAC: route.port.getMAC(), dstMAC: mac,
+          etherType: ETHERTYPE_IPV6, payload: ipPkt,
+        });
+      }).catch(() => {});
+    }
+    return true;
+  }
+
   /**
    * Deliver a locally-addressed UDP datagram to its bound listener.
    * RFC 1122 §4.1.3.1: a datagram for a port with no listener elicits
    * ICMP Destination Unreachable Code 3 (port unreachable) — never for
    * broadcast-directed datagrams.
    */
+  private dispatchUdpToListener(
+    portName: string, udp: UDPPacket,
+    sourceIP: IPAddress | IPv6Address, destinationIP: IPAddress | IPv6Address,
+  ): boolean {
+    const listener = this.udpListeners.get(udp.destinationPort);
+    if (!listener) return false;
+    listener({ inPort: portName, sourceIP, destinationIP, udp });
+    return true;
+  }
+
   private deliverUDP(portName: string, ipPkt: IPv4Packet, wasBroadcast: boolean): void {
     const udp = ipPkt.payload as UDPPacket;
     if (!udp || udp.type !== 'udp') return;
 
-    const listener = this.udpListeners.get(udp.destinationPort);
-    if (listener) {
-      listener({
-        inPort: portName,
-        sourceIP: ipPkt.sourceIP,
-        destinationIP: ipPkt.destinationIP,
-        udp,
-      });
-      return;
-    }
+    if (this.dispatchUdpToListener(portName, udp, ipPkt.sourceIP, ipPkt.destinationIP)) return;
 
     if (!wasBroadcast) {
       Logger.info(this.id, 'udp:port-unreachable',
@@ -1806,6 +1886,53 @@ export abstract class EndHost extends Equipment {
         `replying port unreachable to ${ipPkt.sourceIP}`);
       this.sendICMPError(portName, ipPkt, 'destination-unreachable', ICMP_UNREACH_PORT);
     }
+  }
+
+  private deliverUDP6(portName: string, ipv6: IPv6Packet): void {
+    const udp = ipv6.payload as UDPPacket;
+    if (!udp || udp.type !== 'udp') return;
+
+    if (this.firewallFilter6(portName, ipv6, 'in') !== 'accept') return;
+    if (this.dispatchUdpToListener(portName, udp, ipv6.sourceIP, ipv6.destinationIP)) return;
+
+    if (!ipv6.destinationIP.isMulticast()) {
+      this.sendICMPv6PortUnreachable(portName, ipv6);
+    }
+  }
+
+  private sendICMPv6PortUnreachable(portName: string, offendingPkt: IPv6Packet): void {
+    const port = this.ports.get(portName);
+    if (!port || !port.isIPv6Enabled()) return;
+    const srcIP = offendingPkt.destinationIP.isMulticast()
+      ? (port.getGlobalIPv6() || port.getLinkLocalIPv6())
+      : offendingPkt.destinationIP;
+    if (!srcIP) return;
+
+    const icmpError: ICMPv6Packet = {
+      type: 'icmpv6', icmpType: 'destination-unreachable', code: ICMPV6_UNREACH_PORT,
+    };
+    const errorPkt = createIPv6Packet(
+      srcIP, offendingPkt.sourceIP, IP_PROTO_ICMPV6, this.defaultHopLimit, icmpError, 48,
+    );
+
+    const route = this.resolveIPv6Route(offendingPkt.sourceIP);
+    if (!route) return;
+    if (this.firewallFilter6(route.port.getName(), errorPkt, 'out') !== 'accept') return;
+
+    const cached = this.neighborCache.get(route.nextHopIP.toString());
+    if (cached) {
+      this.sendFrame(route.port.getName(), {
+        srcMAC: route.port.getMAC(), dstMAC: cached.mac,
+        etherType: ETHERTYPE_IPV6, payload: errorPkt,
+      });
+      return;
+    }
+    void this.resolveNDP(route.port.getName(), route.nextHopIP).then((mac) => {
+      this.sendFrame(route.port.getName(), {
+        srcMAC: route.port.getMAC(), dstMAC: mac,
+        etherType: ETHERTYPE_IPV6, payload: errorPkt,
+      });
+    }).catch(() => {});
   }
 
   public async queryDnsServer(
@@ -2765,10 +2892,10 @@ export abstract class EndHost extends Equipment {
     if (isForUs || isMulticast || isLoopback) {
       if (ipv6.nextHeader === IP_PROTO_ICMPV6) {
         this.handleICMPv6(portName, ipv6);
+      } else if (ipv6.nextHeader === IP_PROTO_UDP) {
+        this.deliverUDP6(portName, ipv6);
       }
-      // Future: TCP, UDP dispatch here
     }
-    // End hosts don't forward IPv6 packets
   }
 
   // ─── ICMPv6 Handling (RFC 4443, RFC 4861) ──────────────────────

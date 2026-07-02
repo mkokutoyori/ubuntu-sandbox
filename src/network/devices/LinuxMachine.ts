@@ -80,7 +80,7 @@ import { buildLegacyResponseMessage, rrTypeName } from '../dns/compat/DnsWireCom
 import { CrossVendorSshHost } from '../protocols/ssh/server/CrossVendorSshHost';
 import { SshdServerConfig } from '../protocols/ssh/server/SshdServerConfig';
 import { LinuxUserManagerAuthority } from './linux/network/LinuxUserManagerAuthority';
-import type { PacketInfo } from './linux/LinuxIptablesManager';
+import type { PacketInfo, LinuxIptablesManager } from './linux/LinuxIptablesManager';
 
 // Façade + command registry
 import type { LinuxNetKernel, TracerouteHop } from './linux/LinuxNetKernel';
@@ -1664,7 +1664,7 @@ export abstract class LinuxMachine extends EndHost
     outPortName?: string,
   ): 'accept' | 'drop' | 'reject' {
     const ports = this.extractPorts(ipPkt);
-    const pkt: PacketInfo = {
+    return this.runFilterTable(this.executor.iptables, {
       direction,
       protocol: ipPkt.protocol,
       srcIP: ipPkt.sourceIP.toString(),
@@ -1673,15 +1673,39 @@ export abstract class LinuxMachine extends EndHost
       dstPort: ports.dstPort,
       iface: portName,
       outIface: outPortName,
-    };
-    const verdict = this.executor.iptables.filterPacket(pkt);
+    });
+  }
+
+  protected override firewallFilter6(
+    portName: string,
+    ipv6Pkt: import('../core/types').IPv6Packet,
+    direction: 'in' | 'out' | 'forward',
+    outPortName?: string,
+  ): 'accept' | 'drop' | 'reject' {
+    const transport = ipv6Pkt.payload as { sourcePort?: number; destinationPort?: number } | undefined;
+    return this.runFilterTable(this.executor.ip6tables, {
+      direction,
+      protocol: ipv6Pkt.nextHeader,
+      srcIP: ipv6Pkt.sourceIP.toString(),
+      dstIP: ipv6Pkt.destinationIP.toString(),
+      srcPort: transport?.sourcePort ?? 0,
+      dstPort: transport?.destinationPort ?? 0,
+      iface: portName,
+      outIface: outPortName,
+    });
+  }
+
+  private runFilterTable(
+    manager: LinuxIptablesManager, pkt: PacketInfo,
+  ): 'accept' | 'drop' | 'reject' {
+    const verdict = manager.filterPacket(pkt);
     if (verdict !== 'accept') {
-      this.logIptablesDrop(pkt, verdict, portName, outPortName);
+      this.logIptablesDrop(pkt, verdict, pkt.iface, pkt.outIface);
       this.getBus().publish({
         topic: 'linux.firewall.drop',
         payload: {
           deviceId: this.id, hostname: this.hostname,
-          inIface: portName, outIface: outPortName,
+          inIface: pkt.iface, outIface: pkt.outIface,
           sourceIp: pkt.srcIP, destinationIp: pkt.dstIP,
           sourcePort: pkt.srcPort, destinationPort: pkt.dstPort,
           protocol: pkt.protocol === 6 ? 'TCP'

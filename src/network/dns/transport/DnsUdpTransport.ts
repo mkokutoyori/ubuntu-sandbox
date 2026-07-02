@@ -60,7 +60,7 @@ export function bindDnsUdpServer(
     }
     const response = truncateForUdp(handler(query), negotiatedUdpSize(query));
     const bytes = encodeDnsMessage(response);
-    host.sendUdpDatagram(sourceIP, udp.sourcePort, port, bytes, bytes.length);
+    host.sendUdpDatagramTo(sourceIP, udp.sourcePort, port, bytes, bytes.length);
   }, processName);
 }
 

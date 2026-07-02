@@ -75,7 +75,7 @@ export function bindDnsQuicServer(host: EndHost, handler: DnsMessageHandler, opt
       streamId: dgram.streamId,
       ciphertext: encryptBytes(key, dgram.streamId + 1, responseBytes),
     };
-    host.sendUdpDatagram(sourceIP, udp.sourcePort, port, reply, reply.ciphertext.length);
+    host.sendUdpDatagramTo(sourceIP, udp.sourcePort, port, reply, reply.ciphertext.length);
   }, 'doq');
 }
 
