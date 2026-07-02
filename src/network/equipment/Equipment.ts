@@ -33,8 +33,8 @@ export abstract class Equipment {
   static getAllEquipment(): Equipment[] { return EquipmentRegistry.getInstance().getAll(); }
   static clearRegistry(): void { EquipmentRegistry.getInstance().clear(); }
 
-  protected readonly id: string;
-  protected name: string;
+  readonly id: string;
+  name: string;
   protected hostname: string;
   protected readonly deviceType: DeviceType;
   protected x: number;
@@ -227,7 +227,7 @@ export abstract class Equipment {
   /**
    * Send a frame out of a specific port
    */
-  protected sendFrame(portName: string, frame: EthernetFrame): boolean {
+  sendFrame(portName: string, frame: EthernetFrame): boolean {
     if (!this.isPoweredOn) {
       Logger.warn(this.id, 'equipment:send-blocked', `${this.name}: powered off, cannot send`);
       return false;

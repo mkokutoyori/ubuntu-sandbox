@@ -18,6 +18,7 @@ import { CiscoShellBase } from './CiscoShellBase';
 import { CommandTrie } from './CommandTrie';
 import type { ISwitchShell } from './ISwitchShell';
 import type { Switch } from '../Switch';
+import type { CiscoSwitch } from '../CiscoSwitch';
 import type { PromptMap } from './PromptBuilder';
 import { CISCO_SWITCH_PROMPTS } from './PromptBuilder';
 import { CLIStateMachine, CISCO_SWITCH_MODES } from './CLIStateMachine';
@@ -40,7 +41,7 @@ export type CLIMode =
   | 'user' | 'privileged' | 'config' | 'config-if' | 'config-vlan'
   | 'config-mst' | 'config-line' | 'config-acl' | 'config-dhcp';
 
-export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchShell {
+export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISwitchShell {
   // ─── Switch-specific state ───────────────────────────────────────
   private selectedInterface: string | null = null;
   private selectedInterfaceRange: string[] = [];
@@ -73,7 +74,7 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
 
   // ─── ISwitchShell ────────────────────────────────────────────────
 
-  execute(sw: Switch, input: string): string {
+  execute(sw: CiscoSwitch, input: string): string {
     const dbg = (sw as unknown as { getDebugService?: () => { subscribe(l: (line: string) => void): () => void; isStpEnabled(): boolean } }).getDebugService?.();
     this.attachDebugSource(dbg);
     if (input.trim() === '') return this.drainDebugConsole();
@@ -86,7 +87,7 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
     return out;
   }
 
-  private stpDebugEvents(sw: Switch, before: Map<string, import('../../devices/Switch').STPPortState>): string {
+  private stpDebugEvents(sw: CiscoSwitch, before: Map<string, import('../../devices/Switch').STPPortState>): string {
     const stamp = new Date().toISOString().slice(11, 19);
     const lines: string[] = [];
     for (const [port, state] of sw._getSTPStates()) {
@@ -98,7 +99,7 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
     return lines.join('\n');
   }
 
-  getPrompt(sw: Switch): string {
+  getPrompt(sw: CiscoSwitch): string {
     return this.buildDevicePrompt(sw);
   }
 
@@ -870,7 +871,7 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
     return `${hex.slice(0, 4)}.${hex.slice(4, 8)}.${hex.slice(8, 12)}`;
   }
 
-  private showPortSecurityOverview(sw: Switch): string {
+  private showPortSecurityOverview(sw: CiscoSwitch): string {
     const lines = [
       'Secure Port  MaxSecureAddr  CurrentAddr  SecurityViolation  Security Action',
       '             (Count)        (Count)      (Count)',
@@ -890,7 +891,7 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
     return lines.join('\n');
   }
 
-  private showPortSecurityInterface(sw: Switch, ifaceArg: string): string {
+  private showPortSecurityInterface(sw: CiscoSwitch, ifaceArg: string): string {
     const name = this.resolveInterfaceName(ifaceArg) ?? ifaceArg;
     const port = sw.getPort(name);
     if (!port) return `% Invalid interface "${ifaceArg}"`;
@@ -917,7 +918,7 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
     ].join('\n');
   }
 
-  private showPortSecurityAddress(sw: Switch): string {
+  private showPortSecurityAddress(sw: CiscoSwitch): string {
     const lines = [
       '          Secure Mac Address Table',
       '------------------------------------------------------------------------',
@@ -2260,7 +2261,7 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
 
   // ─── Running Config Builder ───────────────────────────────────────
 
-  buildRunningConfig(sw: Switch): string {
+  buildRunningConfig(sw: CiscoSwitch): string {
     const lines = [
       'Building configuration...',
       '',
@@ -2442,7 +2443,7 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
     return lines.join('\n');
   }
 
-  private renderSviFhrpLines(sw: Switch, vlan: number): string[] {
+  private renderSviFhrpLines(sw: CiscoSwitch, vlan: number): string[] {
     const iface = `Vlanif${vlan}`;
     const out: string[] = [];
 
@@ -2486,7 +2487,7 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
 
   // ─── Show Command Implementations ────────────────────────────────
 
-  private showMACAddressTable(sw: Switch): string {
+  private showMACAddressTable(sw: CiscoSwitch): string {
     const entries = sw.getMACTable();
     if (entries.length === 0) return 'Mac Address Table\n-------------------------------------------\nNo entries.';
 
@@ -2511,7 +2512,7 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
     return lines.join('\n');
   }
 
-  private showVlanBrief(sw: Switch, filter?: { id?: number; name?: string }): string {
+  private showVlanBrief(sw: CiscoSwitch, filter?: { id?: number; name?: string }): string {
     const vlans = sw.getVLANs();
     const configs = sw._getSwitchportConfigs();
 
@@ -2641,7 +2642,7 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
     return rows.join('\n');
   }
 
-  private showInterfacesStatus(sw: Switch): string {
+  private showInterfacesStatus(sw: CiscoSwitch): string {
     const ports = sw._getPortsInternal();
     const configs = sw._getSwitchportConfigs();
 
@@ -2666,7 +2667,7 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
     return lines.join('\n');
   }
 
-  private showSpanningTree(sw: Switch, vlanId = 1): string {
+  private showSpanningTree(sw: CiscoSwitch, vlanId = 1): string {
     const stpStates = sw._getSTPStates();
     const agent = (sw as unknown as { getStpAgent?: () => import('../../stp/StpAgent').StpAgent }).getStpAgent?.();
     const root = agent?.getRootBridgeForVlan(vlanId);
@@ -2719,11 +2720,11 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
     return lines.join('\n');
   }
 
-  private stpAgentOf(sw: Switch) {
+  private stpAgentOf(sw: CiscoSwitch) {
     return (sw as unknown as { getStpAgent?: () => import('../../stp/StpAgent').StpAgent }).getStpAgent?.();
   }
 
-  private stpSummaryCounts(sw: Switch): string {
+  private stpSummaryCounts(sw: CiscoSwitch): string {
     let blk = 0, lis = 0, lrn = 0, fwd = 0;
     const ports = sw._getPortsInternal();
     for (const [name, state] of sw._getSTPStates()) {
@@ -2738,7 +2739,7 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
     return `${String(blk).padEnd(9)}${String(lis).padEnd(10)}${String(lrn).padEnd(9)}${String(fwd).padEnd(11)}${active}`;
   }
 
-  private showStpRoot(sw: Switch, vlanId = 1): string {
+  private showStpRoot(sw: CiscoSwitch, vlanId = 1): string {
     const agent = this.stpAgentOf(sw);
     const root = agent?.getRootBridgeForVlan(vlanId);
     const cost = agent?.getRootPathCostForVlan(vlanId) ?? 0;
@@ -2758,7 +2759,7 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
     ].join('\n');
   }
 
-  private showStpBridge(sw: Switch, vlanId = 1): string {
+  private showStpBridge(sw: CiscoSwitch, vlanId = 1): string {
     const agent = this.stpAgentOf(sw);
     const own = agent?.ownBridgeId();
     const mac = own ? this.formatMacCisco(new MACAddress(own.mac)) : '0000.0000.0000';
@@ -2775,7 +2776,7 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
     ].join('\n');
   }
 
-  private showStpBlockedPorts(sw: Switch, vlanId = 1): string {
+  private showStpBlockedPorts(sw: CiscoSwitch, vlanId = 1): string {
     const agent = this.stpAgentOf(sw);
     const blocked: string[] = [];
     for (const [portName] of sw._getSTPStates()) {
@@ -2796,7 +2797,7 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
     ].join('\n');
   }
 
-  private showStpDetail(sw: Switch, vlanId = 1): string {
+  private showStpDetail(sw: CiscoSwitch, vlanId = 1): string {
     const agent = this.stpAgentOf(sw);
     const isRoot = agent?.isRootForVlan(vlanId) ?? true;
     const root = agent?.getRootBridgeForVlan(vlanId);
@@ -2829,7 +2830,7 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
 
   // ─── DHCP Snooping Display ───────────────────────────────────────
 
-  private showDHCPSnooping(sw: Switch): string {
+  private showDHCPSnooping(sw: CiscoSwitch): string {
     const cfg = sw._getDHCPSnoopingConfig();
     const lines: string[] = [];
 
@@ -2859,7 +2860,7 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
     return lines.join('\n');
   }
 
-  private showDHCPSnoopingBinding(sw: Switch): string {
+  private showDHCPSnoopingBinding(sw: CiscoSwitch): string {
     const bindings = sw._getSnoopingBindings();
     const lines: string[] = [];
 
@@ -2883,7 +2884,7 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
     return lines.join('\n');
   }
 
-  private showLogging(sw: Switch): string {
+  private showLogging(sw: CiscoSwitch): string {
     const logs = sw._getSnoopingLog();
     const lines: string[] = [];
 
@@ -2912,7 +2913,7 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
 
   // ─── DAI Display ──────────────────────────────────────────────────
 
-  private showArpInspection(sw: Switch): string {
+  private showArpInspection(sw: CiscoSwitch): string {
     const cfg = sw._getArpInspectionConfig();
     const lines: string[] = [];
     const vlans = Array.from(cfg.vlans).sort((a, b) => a - b);
@@ -2933,7 +2934,7 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
     return lines.join('\n');
   }
 
-  private showArpInspectionVlan(sw: Switch, spec: string): string {
+  private showArpInspectionVlan(sw: CiscoSwitch, spec: string): string {
     const wanted = new Set<number>();
     for (const part of spec.split(',')) {
       const m = part.match(/^(\d+)-(\d+)$/);
@@ -2954,7 +2955,7 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
     return lines.join('\n');
   }
 
-  private showArpInspectionStats(sw: Switch): string {
+  private showArpInspectionStats(sw: CiscoSwitch): string {
     const stats = sw._getArpInspectionStats();
     const lines = [
       ' Vlan  Forwarded     Dropped       DHCP-Drops    ACL-Drops',
@@ -2982,7 +2983,7 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
     return lines.join('\n');
   }
 
-  private showArpInspectionIfs(sw: Switch): string {
+  private showArpInspectionIfs(sw: CiscoSwitch): string {
     const cfg = sw._getArpInspectionConfig();
     const errd = sw._getArpErrDisabledPorts();
     const lines = [
@@ -3001,7 +3002,7 @@ export class CiscoSwitchShell extends CiscoShellBase<Switch> implements ISwitchS
     return lines.join('\n');
   }
 
-  private showArpAcls(sw: Switch): string {
+  private showArpAcls(sw: CiscoSwitch): string {
     const map = sw._getArpAccessLists();
     if (map.size === 0) return '';
     const lines: string[] = [];

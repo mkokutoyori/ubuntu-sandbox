@@ -284,7 +284,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
   protected syncSnmpAgent(): void {
     const dev = this.d() as unknown as {
       getSnmpAgent?: () => import('@/network/snmp/SnmpAgent').SnmpAgent;
-      getSnmpService?: () => import('./router/management/SnmpService').SnmpService;
+      getSnmpService?: () => import('../router/management/SnmpService').SnmpService;
     };
     const agent = dev.getSnmpAgent?.();
     const svc = dev.getSnmpService?.();
@@ -1133,7 +1133,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       return this.performImmediateReload();
     });
     this.privilegedTrie.register('debug arp', 'Enable ARP debug', () => {
-      const svc = (this.d() as unknown as { getDebugService?: () => { enable: (c: string) => string } }).getDebugService?.();
+      const svc = (this.d() as unknown as { getDebugService?: () => { enable: (c: string, scope?: string) => string } }).getDebugService?.();
       return svc ? svc.enable('ip.arp') : 'ARP packet debugging is on';
     });
     this.privilegedTrie.register('no debug arp', 'Disable ARP debug', () => {
@@ -1592,13 +1592,13 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     this.configTrie.registerGreedy('ip name-server', 'Configure DNS name servers', (args) => {
       if (args.length === 0) return CISCO_ERRORS.INCOMPLETE;
       for (const s of args) if (!isValidIPv4(s)) return CISCO_ERRORS.INVALID_INPUT;
-      const dev = this.d() as unknown as { getManagementService?: () => import('./router/management/RouterManagementService').RouterManagementService };
+      const dev = this.d() as unknown as { getManagementService?: () => import('../router/management/RouterManagementService').RouterManagementService };
       const mgmt = dev.getManagementService?.();
       if (mgmt) for (const s of args) if (!mgmt.nameServers.includes(s)) mgmt.nameServers.push(s);
       return '';
     });
     this.configTrie.registerGreedy('no ip name-server', 'Clear DNS name servers', (args) => {
-      const dev = this.d() as unknown as { getManagementService?: () => import('./router/management/RouterManagementService').RouterManagementService };
+      const dev = this.d() as unknown as { getManagementService?: () => import('../router/management/RouterManagementService').RouterManagementService };
       const mgmt = dev.getManagementService?.();
       if (mgmt) {
         if (args.length === 0) mgmt.nameServers.length = 0;
@@ -1610,13 +1610,13 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       return '';
     });
     this.configTrie.register('ip domain-lookup', 'Enable DNS lookups', () => {
-      const dev = this.d() as unknown as { getManagementService?: () => import('./router/management/RouterManagementService').RouterManagementService };
+      const dev = this.d() as unknown as { getManagementService?: () => import('../router/management/RouterManagementService').RouterManagementService };
       const mgmt = dev.getManagementService?.();
       if (mgmt) mgmt.ipDomainLookupEnabled = true;
       return '';
     });
     this.configTrie.register('no ip domain-lookup', 'Disable DNS lookups', () => {
-      const dev = this.d() as unknown as { getManagementService?: () => import('./router/management/RouterManagementService').RouterManagementService };
+      const dev = this.d() as unknown as { getManagementService?: () => import('../router/management/RouterManagementService').RouterManagementService };
       const mgmt = dev.getManagementService?.();
       if (mgmt) mgmt.ipDomainLookupEnabled = false;
       return '';
@@ -1724,7 +1724,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     this.configTrie.registerGreedy('ip domain-name', 'Set domain name', (args) => {
       if (!args[0]) return CISCO_ERRORS.INCOMPLETE;
       const dev = this.d() as unknown as {
-        getManagementService?: () => import('./router/management/RouterManagementService').RouterManagementService;
+        getManagementService?: () => import('../router/management/RouterManagementService').RouterManagementService;
         _setDomainName?: (name: string) => void;
       };
       const mgmt = dev.getManagementService?.();
@@ -1734,14 +1734,14 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     });
     this.configTrie.registerGreedy('ip domain', 'IP domain configuration', (args) => {
       if (args[0]?.toLowerCase() !== 'name' || !args[1]) return '';
-      const dev = this.d() as unknown as { getManagementService?: () => import('./router/management/RouterManagementService').RouterManagementService };
+      const dev = this.d() as unknown as { getManagementService?: () => import('../router/management/RouterManagementService').RouterManagementService };
       const mgmt = dev.getManagementService?.();
       if (mgmt) (mgmt as unknown as { domainName: string }).domainName = args[1];
       return '';
     });
     this.configTrie.registerGreedy('no ip domain-name', 'Clear domain name', () => {
       const dev = this.d() as unknown as {
-        getManagementService?: () => import('./router/management/RouterManagementService').RouterManagementService;
+        getManagementService?: () => import('../router/management/RouterManagementService').RouterManagementService;
         _setDomainName?: (name: string) => void;
       };
       const mgmt = dev.getManagementService?.();
@@ -1870,7 +1870,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       return '';
     });
     this.configTrie.registerGreedy('snmp-server', 'SNMP configuration', (args) => {
-      const dev = this.d() as unknown as { getSnmpService?: () => import('./router/management/SnmpService').SnmpService };
+      const dev = this.d() as unknown as { getSnmpService?: () => import('../router/management/SnmpService').SnmpService };
       const svc = dev.getSnmpService?.();
       if (!svc) return '';
       svc.configure(args);
@@ -1879,7 +1879,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     });
 
     this.configTrie.registerGreedy('clock timezone', 'Set timezone', (args) => {
-      const dev = this.d() as unknown as { getManagementService?: () => import('./router/management/RouterManagementService').RouterManagementService };
+      const dev = this.d() as unknown as { getManagementService?: () => import('../router/management/RouterManagementService').RouterManagementService };
       const mgmt = dev.getManagementService?.();
       if (mgmt && args[0] && args[1]) {
         const offsetHrs = parseInt(args[1], 10);
@@ -1891,7 +1891,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       return '';
     });
     this.configTrie.registerGreedy('clock summer-time', 'Configure daylight saving time', (args) => {
-      const dev = this.d() as unknown as { getManagementService?: () => import('./router/management/RouterManagementService').RouterManagementService };
+      const dev = this.d() as unknown as { getManagementService?: () => import('../router/management/RouterManagementService').RouterManagementService };
       const mgmt = dev.getManagementService?.();
       if (mgmt && args[0]) {
         const cfg = mgmt.getClock();
@@ -1918,7 +1918,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     // Management commands missing on BOTH switch & router → shared here
     // (DRY). Recognised; the sim has no AAA/crypto datapath.
     this.configTrie.registerGreedy('aaa', 'AAA configuration', (args, raw) => {
-      const dev = this.d() as unknown as { getManagementService?: () => import('./router/management/RouterManagementService').RouterManagementService };
+      const dev = this.d() as unknown as { getManagementService?: () => import('../router/management/RouterManagementService').RouterManagementService };
       const mgmt = dev.getManagementService?.();
       if (mgmt) (mgmt as unknown as { recordRaw: (f: string, l: string) => void }).recordRaw('aaa', raw ?? `aaa ${args.join(' ')}`);
       return '';
@@ -2052,7 +2052,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     });
     this.configTrie.registerGreedy('ip ssh', 'SSH server configuration', (args, raw) => {
       const dev = this.d() as unknown as {
-        getManagementService?: () => import('./router/management/RouterManagementService').RouterManagementService;
+        getManagementService?: () => import('../router/management/RouterManagementService').RouterManagementService;
         _recordUnhandledConfigLine?: (l: string) => void;
       };
       const mgmt = dev.getManagementService?.();

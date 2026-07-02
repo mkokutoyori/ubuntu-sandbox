@@ -45,6 +45,8 @@ export interface CiscoDevice extends ARPProvider {
   _getHostnameInternal(): string;
   /** Set the device hostname */
   _setHostnameInternal(name: string): void;
+  /** Get the device hostname as shown by `show inventory` and prompts */
+  getHostname(): string;
   /** Get a port by name */
   getPort(name: string): Port | undefined;
   /** Get all port names */
