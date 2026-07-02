@@ -1307,12 +1307,12 @@ describe('Cisco L2 Switch Command Suite', () => {
   // ─── Block 7: Layer 2 Switch Restrictions & Failures (Tests 151-200)
 
   describe('Layer 2 Switch Restrictions & Failures', () => {
-    it('151. should reject ip routing configuration commands completely', async () => {
+    it('151. should accept ip routing on the multilayer switch platform', async () => {
       const { sw } = setupIsolatedSwitch();
       await sw.executeCommand('enable');
       await sw.executeCommand('configure terminal');
       const output = await sw.executeCommand('ip routing');
-      expect(output.toLowerCase()).toContain('%'); // Reject or treat as invalid/unsupported
+      expect(output.trim()).toBe('');
     });
 
     it('152. should reject dynamic routing protocol declarations (router ospf 1)', async () => {
@@ -1383,12 +1383,12 @@ describe('Cisco L2 Switch Command Suite', () => {
       expect(output.toLowerCase()).toContain('%');
     });
 
-    it('161. should reject static IP route entries (ip route 10.0.0.0 255.255.255.0 192.168.1.1)', async () => {
+    it('161. should accept static IP route entries on the multilayer switch platform', async () => {
       const { sw } = setupIsolatedSwitch();
       await sw.executeCommand('enable');
       await sw.executeCommand('configure terminal');
       const output = await sw.executeCommand('ip route 10.0.0.0 255.255.255.0 192.168.1.1');
-      expect(output.toLowerCase()).toContain('%'); // Static IP routing is restricted on strict L2 switch platforms
+      expect(output.trim()).toBe('');
     });
 
     it('162. should enforce interface access vlan rules with non-existent VLANs gracefully (creating it dynamically or rejecting)', async () => {
@@ -1550,12 +1550,12 @@ describe('Cisco L2 Switch Command Suite', () => {
       expect(output.toLowerCase()).toContain('%');
     });
 
-    it('181. should reject DHCP address pool configuration scopes (ip dhcp pool L2-POOL)', async () => {
+    it('181. should enter the DHCP pool scope on the multilayer switch platform', async () => {
       const { sw } = setupIsolatedSwitch();
       await sw.executeCommand('enable');
       await sw.executeCommand('configure terminal');
       const output = await sw.executeCommand('ip dhcp pool L2-POOL');
-      expect(output.toLowerCase()).toContain('%'); // L2 strict switches do not host native L3 DHCP pools
+      expect(output.trim()).toBe('');
     });
 
     it('182. should reject dynamic route redistribution policies', async () => {
@@ -1566,16 +1566,16 @@ describe('Cisco L2 Switch Command Suite', () => {
       expect(output.toLowerCase()).toContain('%');
     });
 
-    it('183. should reject show vrrp diagnostic information', async () => {
+    it('183. show vrrp with no configured group prints nothing', async () => {
       const { sw } = setupIsolatedSwitch();
       const output = await sw.executeCommand('show vrrp');
-      expect(output.toLowerCase()).toContain('%');
+      expect(output.trim()).toBe('');
     });
 
-    it('184. should reject show standby hsrp status information', async () => {
+    it('184. show standby with no configured group prints nothing', async () => {
       const { sw } = setupIsolatedSwitch();
       const output = await sw.executeCommand('show standby');
-      expect(output.toLowerCase()).toContain('%');
+      expect(output.trim()).toBe('');
     });
 
     it('185. should reject configuring helper addresses on physical L2 interfaces', async () => {

@@ -35,6 +35,9 @@ const ROUTER_ALLOWED = new Set([
 
 const SWITCH_ALLOWED = new Set([
   'show mac address-table',     // base default ← CiscoSwitchShell (real table)
+  'no ip routing',              // base configState toggle ← CiscoSwitchShell ack
+  'show arp',                   // base ARP renderer ← CiscoSwitchShell SVI view
+  'show ip arp',                // base ARP renderer ← CiscoSwitchShell SVI view
 ]);
 
 describe('Cisco command tree has no accidental duplicate registrations', () => {

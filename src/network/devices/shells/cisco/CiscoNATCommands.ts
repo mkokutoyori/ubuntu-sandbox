@@ -62,8 +62,8 @@ export function buildNATConfigCommands(trie: CommandTrie, ctx: CiscoShellContext
     if (args.length < 2) return '% Incomplete command.';
     const engine = ctx.r()._getNATEngine();
     const aliasLookup = (router: ReturnType<typeof ctx.r>, name: string): string => {
-      const aliases = (router as unknown as { _ipHostAliases?: Map<string, string> })._ipHostAliases;
-      return aliases?.get(name) ?? name;
+      const hosts = (router as unknown as { _getHostsTable?: () => { resolve: (n: string) => string | null } })._getHostsTable?.();
+      return hosts?.resolve(name) ?? name;
     };
     args[0] = aliasLookup(ctx.r(), args[0]);
     if (args[1]) args[1] = aliasLookup(ctx.r(), args[1]);
@@ -380,16 +380,6 @@ export function buildNATConfigCommands(trie: CommandTrie, ctx: CiscoShellContext
     for (const e of engine.getStaticEntries()) {
       if (e.vrf === name) engine.removeStaticEntry(e.localIP, e.globalIP);
     }
-    return '';
-  });
-
-  trie.registerGreedy('ip host', 'Static hostname → IP alias', (args) => {
-    if (args.length < 2) return '% Incomplete command.';
-    const name = args[0];
-    const ip = args[1];
-    if (!isValidIPv4(ip)) return `% Invalid IP address ${ip}.`;
-    const r = ctx.r() as unknown as { _ipHostAliases?: Map<string, string> };
-    (r._ipHostAliases ??= new Map()).set(name, ip);
     return '';
   });
 
@@ -732,10 +722,8 @@ export function runningConfigNAT(router: Router): string[] {
   for (const o of engine.getOutsideStaticEntries()) {
     lines.push(`ip nat outside source static ${o.outsideGlobal} ${o.outsideLocal}`);
   }
-  const aliases = (router as unknown as { _ipHostAliases?: Map<string, string> })._ipHostAliases;
-  if (aliases) {
-    for (const [name, ip] of aliases) lines.unshift(`ip host ${name} ${ip}`);
-  }
+  const hosts = (router as unknown as { _getHostsTable?: () => { renderCisco: () => string[] } })._getHostsTable?.();
+  if (hosts) lines.unshift(...hosts.renderCisco());
 
   for (const r of engine.getDynamicRules()) {
     const vrfTail = (r as any).vrf ? ` vrf ${(r as any).vrf}` : '';

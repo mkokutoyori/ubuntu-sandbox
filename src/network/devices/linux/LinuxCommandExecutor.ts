@@ -1100,7 +1100,10 @@ export class LinuxCommandExecutor {
     }
 
     const stdinHas = (this as unknown as { _scenarioStdin?: string })._scenarioStdin;
-    if (this.tcpProbe && !this.tcpProbe(found.ip, port)) {
+    const wireCapable = typeof ((reachable ?? found.device) as unknown as {
+      getTcpStack?: () => unknown;
+    }).getTcpStack === 'function';
+    if (wireCapable && this.tcpProbe && !this.tcpProbe(found.ip, port)) {
       if (!stdinHas) {
         return { output: `Trying ${found.ip}...\ntelnet: connect to address ${found.ip}: Connection refused`, exitCode: 1 };
       }

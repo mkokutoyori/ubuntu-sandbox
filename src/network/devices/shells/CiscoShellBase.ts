@@ -967,10 +967,6 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
   getTerminalWidth(): number { return this.terminalWidth; }
 
   private registerCommonUserCommands(): void {
-    this.userTrie.register('enable', 'Enter privileged EXEC mode', () => {
-      this.mode = 'privileged';
-      return '';
-    });
     this.userTrie.registerGreedy('enable', 'Enter privileged EXEC at a specific level', (args) => {
       const lvl = args[0] ? parseInt(args[0], 10) : 15;
       if (!Number.isFinite(lvl) || lvl < 0 || lvl > 15) {
@@ -1768,6 +1764,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     // outbound ssh / stelnet / ping / traceroute before any DNS fallback.
     this.configTrie.registerGreedy('ip host', 'Configure a static host entry', (args) => {
       if (args.length < 2) return '% Incomplete command.';
+      if (!isValidIPv4(args[1])) return `% Invalid IP address ${args[1]}.`;
       const dev = this.d() as unknown as { _getHostsTable?: () => { upsert: (n: string, ip: string) => void } };
       dev._getHostsTable?.().upsert(args[0], args[1]);
       return '';
