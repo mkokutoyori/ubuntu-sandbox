@@ -13,6 +13,7 @@ import {
   type ResourceRecord,
   type ResourceRecordData,
 } from '@/network/dns/wire/ResourceRecord';
+import { makeOptRecord, DEFAULT_EDNS_PAYLOAD_SIZE } from '@/network/dns/wire/EdnsOptRecord';
 export interface DnsRecord {
   name: string;
   type: 'A' | 'AAAA' | 'PTR' | 'MX' | 'TXT' | 'CNAME' | 'NS' | 'SOA';
@@ -34,11 +35,19 @@ export interface DnsWireResponse {
   answers: DnsRecord[];
 }
 
+export interface DnsQueryOptions {
+  readonly recursionDesired?: boolean;
+  readonly tcp?: boolean;
+  readonly dnssecOk?: boolean;
+  readonly udpPayloadSize?: number;
+}
+
 export type DnsQueryFn = (
   serverIP: string,
   name: string,
   qtype: string,
   timeoutMs?: number,
+  options?: DnsQueryOptions,
 ) => Promise<DnsMessage | null>;
 
 const RR_TYPE_NAMES: ReadonlyMap<number, string> = new Map(
@@ -150,20 +159,33 @@ export function rcodeFromWire(rcode: number): DnsRcode {
   }
 }
 
-export function buildLegacyQueryMessage(id: number, name: string, qtype: string): DnsMessage | null {
+export function buildLegacyQueryMessage(
+  id: number,
+  name: string,
+  qtype: string,
+  options: DnsQueryOptions = {},
+): DnsMessage | null {
   const type = rrTypeFromName(qtype);
   if (type === null) return null;
   const qname = type === RRType.PTR ? ptrQName(name) : name;
+  const additionals: ResourceRecord<ResourceRecordData>[] = [];
+  if (options.dnssecOk || options.udpPayloadSize !== undefined) {
+    additionals.push(makeOptRecord(
+      options.udpPayloadSize ?? DEFAULT_EDNS_PAYLOAD_SIZE,
+      { dnssecOk: options.dnssecOk === true },
+    ));
+  }
   return {
     id,
     flags: {
       qr: false, opcode: DnsOpcode.QUERY, aa: false, tc: false,
-      rd: true, ra: false, ad: false, cd: false, rcode: WireRcode.NOERROR,
+      rd: options.recursionDesired ?? true, ra: false, ad: false, cd: false,
+      rcode: WireRcode.NOERROR,
     },
     questions: [{ qname, qtype: type, qclass: DnsClass.IN }],
     answers: [],
     authorities: [],
-    additionals: [],
+    additionals,
   };
 }
 

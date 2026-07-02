@@ -71,6 +71,8 @@ import {
   nextDnsTransactionId,
   buildLegacyQueryMessage,
 } from '../dns/compat/DnsWireCompat';
+import type { DnsQueryOptions } from '../dns/compat/DnsWireCompat';
+import { queryDnsOverTcp } from '../dns/transport/DnsTcpTransport';
 import { HardwareProfile } from './host/hardware';
 import { HostLifecycle } from './host/lifecycle';
 import { SystemIdentity } from './host/identity';
@@ -1953,8 +1955,14 @@ export abstract class EndHost extends Equipment {
     name: string,
     qtype: string,
     timeoutMs: number = 2000,
+    options: DnsQueryOptions = {},
   ): Promise<DnsMessage | null> {
-    const wire = this.encodeDnsQuery(name, qtype);
+    if (options.tcp) {
+      const query = buildLegacyQueryMessage(nextDnsTransactionId(), name, qtype, options);
+      if (!query) return null;
+      return queryDnsOverTcp(this, serverIP, query, DNS_PORT, timeoutMs);
+    }
+    const wire = this.encodeDnsQuery(name, qtype, options);
     if (!wire) return null;
     let sourcePort: number;
     try {
@@ -2024,9 +2032,13 @@ export abstract class EndHost extends Equipment {
     return reply;
   }
 
-  private encodeDnsQuery(name: string, qtype: string): { id: number; bytes: Uint8Array } | null {
+  private encodeDnsQuery(
+    name: string,
+    qtype: string,
+    options: DnsQueryOptions = {},
+  ): { id: number; bytes: Uint8Array } | null {
     const id = nextDnsTransactionId();
-    const query = buildLegacyQueryMessage(id, name, qtype);
+    const query = buildLegacyQueryMessage(id, name, qtype, options);
     if (!query) return null;
     try {
       return { id, bytes: encodeDnsMessage(query) };

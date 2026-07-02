@@ -78,6 +78,8 @@ import { bindDnsUdpServer, DNS_PORT } from '../dns/transport/DnsUdpTransport';
 import { DnsRcode } from '../dns/wire/DnsHeaderFlags';
 import type { DnsMessage } from '../dns/wire/DnsMessage';
 import { buildLegacyResponseMessage, rrTypeName } from '../dns/compat/DnsWireCompat';
+import type { DnsQueryOptions } from '../dns/compat/DnsWireCompat';
+import { bindDnsTcpServer, unbindDnsTcpServer } from '../dns/transport/DnsTcpTransport';
 import { CrossVendorSshHost } from '../protocols/ssh/server/CrossVendorSshHost';
 import { SshdServerConfig } from '../protocols/ssh/server/SshdServerConfig';
 import { LinuxUserManagerAuthority } from './linux/network/LinuxUserManagerAuthority';
@@ -263,7 +265,10 @@ export abstract class LinuxMachine extends EndHost
     //    resolution travels through the simulated network (cables, routing,
     //    firewalls) instead of bypassing it via the Equipment registry.
     this.dnsService.onStart(() => this.bindDnsServerPort());
-    this.dnsService.onStop(() => this.udpClose(DNS_PORT));
+    this.dnsService.onStop(() => {
+      this.udpClose(DNS_PORT);
+      unbindDnsTcpServer(this, DNS_PORT);
+    });
 
     this.bind9 = new Bind9Service(this, {
       read: (path) => this.executor.vfs.readFile(path),
@@ -297,6 +302,7 @@ export abstract class LinuxMachine extends EndHost
     // 127.0.0.53, like real dnsmasq taking over port 53 on Ubuntu.
     try {
       bindDnsUdpServer(this, (query) => this.answerDnsQuery(query), DNS_PORT, 'dnsmasq');
+      bindDnsTcpServer(this, (query) => this.answerDnsQuery(query), DNS_PORT);
     } catch { /* port already bound (e.g. service restarted) */ }
   }
 
@@ -1672,10 +1678,13 @@ export abstract class LinuxMachine extends EndHost
       resolveHostname(name: string): Promise<IPAddress | null> {
         return self.resolveHostnameOverWire(name);
       },
-      async queryDns(serverIP: string, name: string, qtype: string, timeoutMs?: number) {
+      async queryDns(
+        serverIP: string, name: string, qtype: string,
+        timeoutMs?: number, options?: DnsQueryOptions,
+      ) {
         let server: IPAddress;
         try { server = new IPAddress(serverIP); } catch { return null; }
-        return self.queryDnsServer(server, name, qtype, timeoutMs);
+        return self.queryDnsServer(server, name, qtype, timeoutMs, options);
       },
       readFile(path: string): string | null {
         return self.executor.readFile(path);

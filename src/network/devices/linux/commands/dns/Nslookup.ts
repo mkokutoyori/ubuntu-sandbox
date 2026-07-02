@@ -8,7 +8,7 @@
 
 import type { LinuxCommand } from '../LinuxCommand';
 import type { LinuxCommandContext } from '../LinuxCommandContext';
-import { executeNslookup } from '../../LinuxDnsService';
+import { executeNslookup } from './NslookupRunner';
 import { readResolverIP } from './resolverIP';
 
 export const nslookupCommand: LinuxCommand = {
