@@ -1,6 +1,7 @@
 import type { WinCommandContext } from './WinCommandExecutor';
 import { IPAddress } from '../../core/types';
 import { isValidIPv4 } from '@/network/core/ip';
+import { unquote } from '@/lib/format';
 
 const TRACERT_HELP = `
 Usage: tracert [-d] [-h maximum_hops] [-j host-list] [-w timeout]
@@ -42,10 +43,6 @@ export interface ParsedWinTracert {
 function isInteger(s: string, allowNeg = false): boolean {
   if (allowNeg) return /^-?\d+$/.test(s);
   return /^\d+$/.test(s);
-}
-
-function unquote(s: string): string {
-  return s.replace(/^['"]|['"]$/g, '');
 }
 
 export function parseWinTracertArgs(args: string[]): ParsedWinTracert {

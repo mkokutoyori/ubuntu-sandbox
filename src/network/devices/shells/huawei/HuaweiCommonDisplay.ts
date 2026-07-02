@@ -7,6 +7,7 @@
  * entry to these pure functions.
  */
 
+import { pad2 } from '@/lib/format';
 import {
   HuaweiHardwareProfile, S5720_HARDWARE_PROFILE,
   renderHardwareDevice, renderHardwareElabel,
@@ -15,10 +16,6 @@ import {
 const WEEKDAYS = [
   'Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday',
 ];
-
-function pad2(n: number): string {
-  return String(n).padStart(2, '0');
-}
 
 /** `display clock` — date, weekday, timezone (VRP layout). */
 export function displayClock(now: Date = new Date()): string {

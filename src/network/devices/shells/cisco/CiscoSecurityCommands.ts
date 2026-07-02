@@ -9,6 +9,7 @@ import {
 } from '../../router/security/CiscoSecurityConfig';
 import type { CiscoShellContext, CiscoShellMode } from './CiscoConfigCommands';
 import { encryptType7, md5Hex } from '@/crypto';
+import { pad2 } from '@/lib/format';
 
 const SECURITY_KEY = Symbol.for('CiscoSecurityConfig');
 
@@ -1003,8 +1004,6 @@ export function buildSecurityShowCommands(trie: CommandTrie, getRouter: () => Ro
     return lines.join('\n');
   });
 }
-
-function pad2(n: number): string { return n < 10 ? '0' + n : '' + n; }
 
 function secondsSince(ms: number): number {
   return Math.max(0, Math.floor((Date.now() - ms) / 1000));

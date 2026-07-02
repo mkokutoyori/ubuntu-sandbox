@@ -1,6 +1,7 @@
 import type { CpuSpec } from '../../host/hardware/CpuSpec';
 import type { KernelInfo } from '../../host/identity/KernelInfo';
 import type { LinuxProcessManager } from '../LinuxProcessManager';
+import { twelveHourClock as fmtTimestamp } from '@/lib/format';
 
 export interface MpstatArgs {
   intervalSeconds: number | null;
@@ -68,15 +69,6 @@ function fmtDateBanner(d: Date): string {
   const mm = String(d.getMonth() + 1).padStart(2, '0');
   const dd = String(d.getDate()).padStart(2, '0');
   return `${mm}/${dd}/${yyyy}`;
-}
-
-function fmtTimestamp(d: Date): string {
-  const h = d.getHours();
-  const ampm = h >= 12 ? 'PM' : 'AM';
-  const h12 = h % 12 === 0 ? 12 : h % 12;
-  const mm = String(d.getMinutes()).padStart(2, '0');
-  const ss = String(d.getSeconds()).padStart(2, '0');
-  return `${String(h12).padStart(2, '0')}:${mm}:${ss} ${ampm}`;
 }
 
 export function mpstatBanner(kernel: KernelInfo, hostname: string, cpu: CpuSpec, now: Date): string {

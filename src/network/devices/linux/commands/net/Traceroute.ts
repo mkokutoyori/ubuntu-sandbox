@@ -3,6 +3,7 @@ import type { LinuxCommand } from '../LinuxCommand';
 import type { LinuxCommandContext } from '../LinuxCommandContext';
 import type { TracerouteHop } from '../../LinuxNetKernel';
 import { isValidIPv4 } from '@/network/core/ip';
+import { unquote } from '@/lib/format';
 
 const TRACEROUTE_VERSION = 'Modern traceroute for Linux, version 2.1.0 (iputils-s20221126)';
 
@@ -53,10 +54,6 @@ export interface ParsedTracerouteArgs {
 function isInteger(s: string, allowNegative = false): boolean {
   if (allowNegative) return /^-?\d+$/.test(s);
   return /^\d+$/.test(s);
-}
-
-function unquote(s: string): string {
-  return s.replace(/^['"]|['"]$/g, '');
 }
 
 export function parseTracerouteArgs(args: string[]): ParsedTracerouteArgs {

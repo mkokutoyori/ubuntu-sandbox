@@ -3,6 +3,7 @@ import type { StorageDevice } from '../../host/hardware/StorageDevice';
 import type { KernelInfo } from '../../host/identity/KernelInfo';
 import type { LinuxProcessManager } from '../LinuxProcessManager';
 import { mpstatBanner, sampleMpstat } from './Mpstat';
+import { pad2 } from '@/lib/format';
 
 export interface IostatArgs {
   intervalSeconds: number | null;
@@ -104,10 +105,6 @@ export function parseIostatArgs(args: string[]): IostatArgs | { error: string } 
     intervalSeconds, count, cpuOnly, deviceOnly, extended, megabytes,
     showTimestamp, omitFirst, omitIdle, perPartition,
   };
-}
-
-function pad2(n: number): string {
-  return String(n).padStart(2, '0');
 }
 
 export function iostatBanner(kernel: KernelInfo, hostname: string, cpu: CpuSpec, now: Date): string {

@@ -3,6 +3,7 @@ import type { MemoryProfile } from '../../host/hardware/MemoryProfile';
 import type { KernelInfo } from '../../host/identity/KernelInfo';
 import type { LinuxProcessManager, ProcessInfo } from '../LinuxProcessManager';
 import { mpstatBanner } from './Mpstat';
+import { twelveHourClock as fmtTimestamp } from '@/lib/format';
 
 export type PidstatReport = 'cpu' | 'memory';
 
@@ -80,15 +81,6 @@ export function parsePidstatArgs(args: string[]): PidstatArgs | { error: string 
   if (positional.length > 2) return { error: 'pidstat: too many arguments' };
 
   return { intervalSeconds, count, report, selectedPids, selfOnly, humanReadable };
-}
-
-function fmtTimestamp(d: Date): string {
-  const h = d.getHours();
-  const ampm = h >= 12 ? 'PM' : 'AM';
-  const h12 = h % 12 === 0 ? 12 : h % 12;
-  const mm = String(d.getMinutes()).padStart(2, '0');
-  const ss = String(d.getSeconds()).padStart(2, '0');
-  return `${String(h12).padStart(2, '0')}:${mm}:${ss} ${ampm}`;
 }
 
 export function pidstatBanner(kernel: KernelInfo, hostname: string, cpu: CpuSpec, now: Date): string {

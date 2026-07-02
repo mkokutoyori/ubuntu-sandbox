@@ -10,8 +10,7 @@ import type { Port } from '@/network/hardware/Port';
 import type { DeviceType } from '@/network/core/types';
 import { EquipmentStateView } from '@/network/devices/inspection/EquipmentStateView';
 import type { NeighborDTO } from '@/network/devices/inspection/DeviceStateView';
-
-function pad2(n: number): string { return String(n).padStart(2, '0'); }
+import { pad2 } from '@/lib/format';
 
 /**
  * Minimal device surface these show helpers read real state from.

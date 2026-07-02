@@ -2,6 +2,7 @@ import type { CommandTrie } from '../CommandTrie';
 import type { Router } from '../../Router';
 import type { IgmpAgent } from '../../../igmp/IgmpAgent';
 import type { IgmpGroupRecord, IgmpInterfaceRuntime } from '../../../igmp/types';
+import { hms } from '@/lib/format';
 
 interface IfCtx {
   selectedPorts(): string[];
@@ -14,14 +15,6 @@ interface ShowCtx {
 
 function agent(router: Router): IgmpAgent | undefined {
   return (router as unknown as { getIgmpAgent?: () => IgmpAgent }).getIgmpAgent?.();
-}
-
-function hms(ms: number): string {
-  const totalSec = Math.max(0, Math.floor(ms / 1000));
-  const h = Math.floor(totalSec / 3600);
-  const m = Math.floor((totalSec % 3600) / 60);
-  const s = totalSec % 60;
-  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
 }
 
 function expiresIn(rt: IgmpInterfaceRuntime | undefined, g: IgmpGroupRecord): string {

@@ -15,6 +15,7 @@
  */
 import { ORACLE_CONFIG, TNS_ERRORS } from '../OracleConfig';
 import type { InstanceState } from '../OracleInstance';
+import { pad2 } from '@/lib/format';
 
 export type ListenerConnectOutcome = { ok: true } | { ok: false; error: string };
 
@@ -36,8 +37,6 @@ export interface ListenerConnectionLogEntry {
 }
 
 const MONTHS = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
-
-function pad2(n: number): string { return String(n).padStart(2, '0'); }
 
 function formatListenerTimestamp(d: Date): string {
   return `${pad2(d.getUTCDate())}-${MONTHS[d.getUTCMonth()]}-${d.getUTCFullYear()} `
