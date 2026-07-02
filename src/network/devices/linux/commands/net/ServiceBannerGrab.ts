@@ -24,3 +24,11 @@ export function grabBanner(device: Equipment, port: number): string | null {
 export function grabListenerProcess(device: Equipment, port: number): string | null {
   return socketTableOf(device)?.getListenerProcess('tcp', port) ?? null;
 }
+
+export function grabUdpListener(device: Equipment, port: number): string | null {
+  return socketTableOf(device)?.getListenerProcess('udp', port) ?? null;
+}
+
+export function grabUdpBanner(device: Equipment, port: number): string | null {
+  return socketTableOf(device)?.getBannerForPort('udp', port) ?? null;
+}
