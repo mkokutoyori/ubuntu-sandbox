@@ -73,12 +73,36 @@ export class Environment {
 
   // ─── Variable Access ──────────────────────────────────────────
 
+  private readonly namerefs = new Map<string, string>();
+
+  declareNameref(name: string, target: string): void {
+    this.namerefs.set(name, target);
+  }
+
+  private namerefTarget(name: string): string | undefined {
+    let cursor: Environment | null = this;
+    while (cursor) {
+      const target = cursor.namerefs.get(name);
+      if (target !== undefined) return target;
+      cursor = cursor.parent;
+    }
+    return undefined;
+  }
+
+  resolveName(name: string, depth = 0): string {
+    if (depth >= 16) return name;
+    const target = this.namerefTarget(name);
+    if (target === undefined || target === name) return name;
+    return this.resolveName(target, depth + 1);
+  }
+
   /** Get a variable value, searching up the scope chain. */
   get(name: string): string | undefined {
     // Special variables first
     const special = this.getSpecial(name);
     if (special !== undefined) return special;
 
+    name = this.resolveName(name);
     if (this.vars.has(name)) return this.vars.get(name);
     return this.parent?.get(name);
   }
@@ -92,6 +116,7 @@ export class Environment {
    * Throws when the chosen binding is readonly.
    */
   set(name: string, value: string): void {
+    name = this.resolveName(name);
     const target = this.localNames.has(name) ? this : this.resolveSetTarget(name);
     if (target.readonlyVars.has(name)) {
       throw new Error(`bash: ${name}: readonly variable`);

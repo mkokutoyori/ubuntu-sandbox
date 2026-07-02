@@ -611,10 +611,20 @@ export class BashInterpreter {
     const markReadonly = headName === 'readonly';
     const markExport = headName === 'export';
 
+    const namerefDecl = declScope && node.words.some(
+      w => w.type === 'LiteralWord' && /^-[a-zA-Z]*n[a-zA-Z]*$/.test(w.value),
+    );
     const absorbedDecl = node.assignments.length > 0 && (declScope || markReadonly || markExport);
     for (const assign of node.assignments) {
       try {
         if (declScope) this.env.declareLocal(assign.name);
+        if (namerefDecl && assign.value) {
+          const refTarget = yield* this.expandWordG(assign.value);
+          if (refTarget) {
+            this.env.declareNameref(assign.name, refTarget);
+            continue;
+          }
+        }
         yield* this.applyAssignment(assign);
         if (markReadonly) this.env.setReadonly(assign.name);
         if (markExport) this.env.export(assign.name);
