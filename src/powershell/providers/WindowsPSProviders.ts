@@ -662,7 +662,13 @@ class WindowsNetworkAdapter implements INetworkProvider {
     const probe = this.testPingProbe(target);
     return probe?.success ?? false;
   }
-  resolveDns(): string[]      { return []; }
+  resolveDns(name: string): string[] { return this.pc.resolveDnsSync(name); }
+  getDnsClientCache(): Array<{ name: string; type: string; value: string; ttl: number }> {
+    return this.pc.dnsCache.activeEntries().map(e => ({
+      name: e.name, type: e.type, value: e.value, ttl: e.ttl,
+    }));
+  }
+  clearDnsClientCache(): void { this.pc.dnsCache.flush(); }
   testPingProbe(target: string) {
     const ip = this.resolveTargetSync(target);
     if (!ip) return null;

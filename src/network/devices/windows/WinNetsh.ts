@@ -702,18 +702,12 @@ function handleShowConfig(ctx: WinCommandContext, ifFilter?: string): string {
     // Show DNS servers (static or DHCP-assigned)
     const dnsServers = ctx.getDnsServers(name);
     if (dnsServers.length > 0) {
-      lines.push(`    Statically Configured DNS Servers:    ${dnsServers[0]}`);
+      const label = ctx.getDnsMode(name) === 'static'
+        ? '    Statically Configured DNS Servers:    '
+        : '    DNS Servers Configured through DHCP:  ';
+      lines.push(`${label}${dnsServers[0]}`);
       for (let i = 1; i < dnsServers.length; i++) {
         lines.push(`                                        ${dnsServers[i]}`);
-      }
-    } else if (isDHCP) {
-      const dhcpState = ctx.getDHCPState(name);
-      const leaseDns = dhcpState?.lease?.dnsServers ?? [];
-      if (leaseDns.length > 0) {
-        lines.push(`    DNS Servers Configured through DHCP:  ${leaseDns[0]}`);
-        for (let i = 1; i < leaseDns.length; i++) {
-          lines.push(`                                        ${leaseDns[i]}`);
-        }
       }
     }
     lines.push(`    Register with which suffix:           Primary only`);
@@ -752,7 +746,10 @@ function handleShowDns(ctx: WinCommandContext, ifFilter?: string): string {
       lines.push(`    DNS servers configured through DHCP`);
     }
     if (servers.length > 0) {
-      lines.push(`    Statically Configured DNS Servers:    ${servers[0]}`);
+      const label = dnsMode === 'static'
+        ? '    Statically Configured DNS Servers:    '
+        : '    DNS Servers:                          ';
+      lines.push(`${label}${servers[0]}`);
       for (let i = 1; i < servers.length; i++) {
         lines.push(`                                          ${servers[i]}`);
       }

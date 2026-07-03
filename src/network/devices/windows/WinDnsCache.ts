@@ -22,6 +22,17 @@ export class WindowsDnsCache {
     }
   }
 
+  lookup(name: string, type: string): string | null {
+    const key = this.key(name, type);
+    const entry = this.entries.get(key);
+    if (!entry) return null;
+    if (this.now() - entry.insertedAt >= entry.ttl * 1000) {
+      this.entries.delete(key);
+      return null;
+    }
+    return entry.value;
+  }
+
   flush(): void { this.entries.clear(); }
 
   size(): number { return this.activeEntries().length; }

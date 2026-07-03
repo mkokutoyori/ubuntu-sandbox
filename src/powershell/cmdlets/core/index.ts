@@ -74,7 +74,7 @@ import {
   NewNetRouteCmdlet, RemoveNetRouteCmdlet,
   EnableNetAdapterCmdlet, DisableNetAdapterCmdlet, RenameNetAdapterCmdlet,
   GetDnsClientServerAddressCmdlet, SetDnsClientServerAddressCmdlet,
-  ClearDnsClientCacheCmdlet,
+  GetDnsClientCacheCmdlet, ClearDnsClientCacheCmdlet,
   GetNetFirewallRuleCmdlet, NewNetFirewallRuleCmdlet,
   SetNetFirewallRuleCmdlet, RemoveNetFirewallRuleCmdlet,
   EnableNetFirewallRuleCmdlet, DisableNetFirewallRuleCmdlet,
@@ -264,6 +264,7 @@ export function registerCoreCmdlets(registry: CmdletRegistry): void {
   registry.register(new RenameNetAdapterCmdlet());
   registry.register(new GetDnsClientServerAddressCmdlet());
   registry.register(new SetDnsClientServerAddressCmdlet());
+  registry.register(new GetDnsClientCacheCmdlet());
   registry.register(new ClearDnsClientCacheCmdlet());
   registry.register(new GetNetFirewallRuleCmdlet());
   registry.register(new NewNetFirewallRuleCmdlet());

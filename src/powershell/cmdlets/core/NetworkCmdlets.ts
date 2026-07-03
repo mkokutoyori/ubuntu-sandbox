@@ -641,14 +641,36 @@ export class SetDnsClientServerAddressCmdlet implements ICmdlet {
   }
 }
 
+export class GetDnsClientCacheCmdlet implements ICmdlet {
+  readonly name = 'get-dnsclientcache';
+  readonly displayName = 'Get-DnsClientCache';
+  readonly aliases = [] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const entries = requireNetwork(ctx).getDnsClientCache?.() ?? [];
+    const rawFilter = ctx.named['name'] ?? ctx.positional[0];
+    const nameFilter = rawFilter !== undefined ? psValueToString(rawFilter).toLowerCase() : null;
+    return entries
+      .filter(e => !nameFilter || e.name.toLowerCase() === nameFilter)
+      .map(e => ({
+        Entry:      e.name,
+        RecordName: e.name,
+        RecordType: e.type,
+        Status:     'Success',
+        Section:    'Answer',
+        TimeToLive: e.ttl,
+        Data:       e.value,
+      } as Record<string, PSValue>)) as PSValue;
+  }
+}
+
 export class ClearDnsClientCacheCmdlet implements ICmdlet {
   readonly name = 'clear-dnsclientcache';
   readonly displayName = 'Clear-DnsClientCache';
   readonly aliases = [] as const;
 
-  execute(): PSValue {
-    // No DNS cache simulated — silent no-op, matches real PowerShell when
-    // there are no entries to clear.
+  execute(ctx: CmdletContext): PSValue {
+    requireNetwork(ctx).clearDnsClientCache?.();
     return null;
   }
 }

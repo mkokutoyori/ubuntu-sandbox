@@ -127,9 +127,9 @@ export function cmdIpconfig(ctx: WinCommandContext, args: string[]): string {
 // ─── Basic output ─────────────────────────────────────────────────
 
 function ipconfigBasic(ctx: WinCommandContext): string {
-  const suffix = ctx.getDnsSuffix();
   const lines: string[] = ['Windows IP Configuration', ''];
-  for (const [, port] of ctx.ports) {
+  for (const [name, port] of ctx.ports) {
+    const suffix = ctx.getConnectionDnsSuffix(name);
     const ip = port.getIPAddress();
     const mask = port.getSubnetMask();
     const displayName = portDisplayName(port.getName());
@@ -192,7 +192,7 @@ function ipconfigAll(ctx: WinCommandContext): string {
       lines.push(`   DHCP Enabled. . . . . . . . . . . : ${isDHCP ? 'Yes' : 'No'}`);
       lines.push(`   Autoconfiguration Enabled . . . . : Yes`);
     } else {
-      lines.push(`   Connection-specific DNS Suffix  . :`);
+      lines.push(`   Connection-specific DNS Suffix  . : ${ctx.getConnectionDnsSuffix(name)}`.trimEnd());
       lines.push(`   Description . . . . . . . . . . . : Intel(R) Ethernet Connection`);
       lines.push(`   Physical Address. . . . . . . . . : ${mac}`);
       lines.push(`   DHCP Enabled. . . . . . . . . . . : ${isDHCP ? 'Yes' : 'No'}`);
@@ -359,7 +359,7 @@ function ipconfigRenew(ctx: WinCommandContext, args: string[]): string {
     const global6 = port.getGlobalIPv6();
     const linkLocal6 = port.getLinkLocalIPv6();
     lines.push(`Ethernet adapter ${dn}:`);
-    lines.push(`   Connection-specific DNS Suffix  . :`);
+    lines.push(`   Connection-specific DNS Suffix  . : ${ctx.getConnectionDnsSuffix(name)}`.trimEnd());
     if (global6) lines.push(`   IPv6 Address. . . . . . . . . . . : ${global6}`);
     if (linkLocal6) lines.push(`   Link-local IPv6 Address. . . . . . : ${linkLocal6}`);
     if (ip) {

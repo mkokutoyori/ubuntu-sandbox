@@ -123,6 +123,7 @@ export interface WinCommandContext {
   // DNS suffix
   getDnsSuffix(): string;
   setDnsSuffix(suffix: string): void;
+  getConnectionDnsSuffix(ifName: string): string;
 
   // Interface renaming
   renameInterface(oldName: string, newName: string): boolean;

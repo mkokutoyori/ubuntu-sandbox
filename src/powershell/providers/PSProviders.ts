@@ -266,6 +266,10 @@ export interface INetworkProvider {
   egressInfoFor(target: string): { sourceIp: string; interfaceAlias: string; nextHop: string } | null;
   /** Resolve-DnsName */
   resolveDns(name: string): string[];
+  /** Get-DnsClientCache */
+  getDnsClientCache?(): Array<{ name: string; type: string; value: string; ttl: number }>;
+  /** Clear-DnsClientCache */
+  clearDnsClientCache?(): void;
   /** Get-NetTCPConnection */
   getTcpConnections(): Array<{ localAddress: string; localPort: number; remoteAddress: string; remotePort: number; state: string; pid: number }>;
   getFirewallRules(): Array<{ name: string; displayName: string; enabled: boolean; action: string; direction: string; protocol: string; localPort: string; remotePort: string; description: string }>;

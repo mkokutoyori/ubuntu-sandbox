@@ -773,20 +773,82 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       return new IPAddress('127.0.0.1');
     }
 
-    // 4. DNS fallback — query every statically/DHCP-configured server.
-    for (const cfg of this.dnsConfig.values()) {
-      for (const server of cfg.servers) {
-        let serverIP: IPAddress;
-        try { serverIP = new IPAddress(server); } catch { continue; }
-        const response = await this.queryDnsServer(serverIP, name, 'A');
-        const aRecords = response?.answers.filter((rr) => rr.data.type === RRType.A) ?? [];
-        if (aRecords.length > 0) {
-          this.dnsCache.store(name, response!.answers);
-          return (aRecords[0].data as ARecordData).address;
-        }
+    // 4. Resolver cache, then DNS over the wire via every effective server.
+    for (const qname of this.dnsSearchCandidates(name)) {
+      const cached = this.dnsCache.lookup(qname, 'A');
+      if (cached) {
+        try { return new IPAddress(cached); } catch { void 0; }
+      }
+    }
+    for (const { server, qname } of this.dnsResolutionAttempts(name)) {
+      const response = await this.queryDnsServer(server, qname, 'A');
+      const aRecords = response?.answers.filter((rr) => rr.data.type === RRType.A) ?? [];
+      if (aRecords.length > 0) {
+        this.dnsCache.store(qname, response!.answers);
+        return (aRecords[0].data as ARecordData).address;
       }
     }
     return null;
+  }
+
+  resolveDnsSync(name: string): string[] {
+    const hostsIp = this.readHostsFile().resolve(name, 4);
+    if (hostsIp) return [hostsIp];
+    for (const qname of this.dnsSearchCandidates(name)) {
+      const cached = this.dnsCache.lookup(qname, 'A');
+      if (cached) return [cached];
+    }
+    for (const { server, qname } of this.dnsResolutionAttempts(name)) {
+      const response = this.queryDnsServerSync(server, qname, 'A');
+      const aRecords = response?.answers.filter((rr) => rr.data.type === RRType.A) ?? [];
+      if (aRecords.length > 0) {
+        this.dnsCache.store(qname, response!.answers);
+        return aRecords.map((rr) => (rr.data as ARecordData).address.toString());
+      }
+    }
+    return [];
+  }
+
+  private dhcpLease(ifName: string) {
+    return this.dhcpClient.getState(ifName)?.lease ?? null;
+  }
+
+  private effectiveDnsServers(ifName: string): string[] {
+    const cfg = this.dnsConfig.get(ifName);
+    if (cfg?.mode === 'static') return [...cfg.servers];
+    return this.dhcpLease(ifName)?.dnsServers ?? [];
+  }
+
+  getConnectionDnsSuffix(ifName: string): string {
+    const cfg = this.dnsConfig.get(ifName);
+    const leaseSuffix = cfg?.mode === 'static' ? '' : (this.dhcpLease(ifName)?.domainName ?? '');
+    return leaseSuffix || this.dnsSuffix;
+  }
+
+  private dnsSearchCandidates(name: string): string[] {
+    if (name.includes('.')) return [name];
+    const suffixes = new Set<string>();
+    if (this.dnsSuffix) suffixes.add(this.dnsSuffix);
+    for (const [ifName] of this.ports) {
+      const suffix = this.getConnectionDnsSuffix(ifName);
+      if (suffix) suffixes.add(suffix);
+    }
+    return [name, ...[...suffixes].map((s) => `${name}.${s}`)];
+  }
+
+  private dnsResolutionAttempts(name: string): Array<{ server: IPAddress; qname: string }> {
+    const attempts: Array<{ server: IPAddress; qname: string }> = [];
+    for (const qname of this.dnsSearchCandidates(name)) {
+      const seen = new Set<string>();
+      for (const [ifName] of this.ports) {
+        for (const server of this.effectiveDnsServers(ifName)) {
+          if (seen.has(server)) continue;
+          seen.add(server);
+          try { attempts.push({ server: new IPAddress(server), qname }); } catch { void 0; }
+        }
+      }
+    }
+    return attempts;
   }
 
   // ─── Terminal ──────────────────────────────────────────────────
@@ -1283,10 +1345,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       },
 
       // DNS management
-      getDnsServers: (ifName: string) => {
-        const cfg = this.dnsConfig.get(ifName);
-        return cfg ? [...cfg.servers] : [];
-      },
+      getDnsServers: (ifName: string) => this.effectiveDnsServers(ifName),
       setDnsServers: (ifName: string, servers: string[]) => {
         this.dnsConfig.set(ifName, { servers: [...servers], mode: 'static' });
       },
@@ -1333,6 +1392,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       // DNS suffix
       getDnsSuffix: () => this.dnsSuffix,
       setDnsSuffix: (suffix: string) => { this.dnsSuffix = suffix; },
+      getConnectionDnsSuffix: (ifName: string) => this.getConnectionDnsSuffix(ifName),
 
       // ARP table mutation
       addStaticARP: (ip: IPAddress, mac: any, iface: string) => this.addStaticARP(ip, mac, iface),
@@ -1527,8 +1587,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
   setCwd(path: string): void { this.cwd = path; }
   getDefaultGateway(): string | null { return this.defaultGateway?.toString() ?? null; }
   getDnsServers(ifName: string): string[] {
-    const cfg = this.dnsConfig.get(ifName);
-    return cfg ? [...cfg.servers] : [];
+    return this.effectiveDnsServers(ifName);
   }
 
   setDnsServers(ifName: string, servers: string[]): void {
