@@ -46,7 +46,8 @@ import { WindowsEventLogProjection } from './windows/WindowsEventLogProjection';
 import { WindowsServicePortProjection } from './windows/WindowsServicePortProjection';
 import { PortProxyTable } from './windows/PortProxyTable';
 import { PortProxySocketProjection } from './windows/PortProxySocketProjection';
-import { WindowsServiceManager } from './windows/WindowsServiceManager';
+import { WindowsServiceManager, START_TYPE_CODES } from './windows/WindowsServiceManager';
+import { WindowsAuditPolicy, cmdAuditpol } from './windows/WindowsAuditPolicy';
 import { WindowsProcessManager } from './windows/WindowsProcessManager';
 import { HostClock } from './host/lifecycle/HostClock';
 import { PSRegistryProvider } from './windows/PSRegistryProvider';
@@ -229,6 +230,8 @@ export class WindowsPC extends EndHost implements UserAccountHost {
   ]);
   /** Event-log store. */
   readonly eventLog: PSEventLogProvider = new PSEventLogProvider();
+  /** `auditpol` subcategory state — gates 4657/4670 object-access auditing. */
+  readonly auditPolicy: WindowsAuditPolicy = new WindowsAuditPolicy();
 
   private readonly clock = new HostClock();
   private readonly wallEpoch = new Date(2026, 5, 20).getTime();
@@ -264,7 +267,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     this.procMgr.attachBus(bus, this.id);
     this.securityAuditProjection?.dispose();
     this.securityAuditProjection = new WindowsSecurityAuditProjection(
-      bus, new WindowsSecurityAudit(this.eventLog), this.id,
+      bus, new WindowsSecurityAudit(this.eventLog), this.id, this.auditPolicy,
     );
     this.eventLogProjection?.dispose();
     this.eventLog.attachBus(bus, this.id);
@@ -279,6 +282,13 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       if (e.payload.deviceId !== this.id) return;
       this.runRecoveryCommand(e.payload.command);
     });
+
+    this._serviceRegistrySyncOff?.();
+    this._serviceRegistrySyncOff = bus.subscribe('windows.service.account-changed', (e) => {
+      if (e.payload.deviceId !== this.id) return;
+      this.syncServiceRegistryKey(e.payload.serviceName);
+    });
+    for (const svc of this.svcMgr.getAllServices()) this.syncServiceRegistryKey(svc.name);
 
     this._processSocketReaperOff?.();
     this._processSocketReaperOff = bus.subscribe('windows.process.stopped', (e) => {
@@ -304,6 +314,18 @@ export class WindowsPC extends EndHost implements UserAccountHost {
 
   private _processSocketReaperOff: (() => void) | null = null;
   private _recoveryRunOff: (() => void) | null = null;
+  private _serviceRegistrySyncOff: (() => void) | null = null;
+
+  /** Keeps `HKLM:\SYSTEM\CurrentControlSet\Services\<name>` coherent with the live service. */
+  private syncServiceRegistryKey(serviceName: string): void {
+    const svc = this.svcMgr.getService(serviceName);
+    if (!svc) return;
+    this.registry.upsertServiceKey(svc.name, {
+      objectName: svc.account,
+      startCode: START_TYPE_CODES[svc.startType] ?? 3,
+      imagePath: svc.binaryPath,
+    });
+  }
 
   private initDefaultSockets(): void {
     // OpenSSH Server — SFTP transport
@@ -982,7 +1004,9 @@ export class WindowsPC extends EndHost implements UserAccountHost {
         { processManager: this.procMgr, isAdmin: this.userMgr.isCurrentUserAdmin() }, args);
       case 'sc':
       case 'sc.exe': return cmdSc(
-        { serviceManager: this.svcMgr, processManager: this.procMgr, isAdmin: this.userMgr.isCurrentUserAdmin() }, args);
+        { serviceManager: this.svcMgr, processManager: this.procMgr, isAdmin: this.userMgr.isCurrentUserAdmin(), currentUser: this.userMgr.currentUser }, args);
+      case 'auditpol':
+      case 'auditpol.exe': return cmdAuditpol(this.auditPolicy, args);
       case 'netstat': return cmdNetstat(fileCtx, args, this.socketTable);
       case 'attrib':  return cmdAttrib(fileCtx, args);
       case 'find':    return cmdFind(fileCtx, args);
@@ -1519,9 +1543,12 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     if (lower === 'time') return this.cmdTime(args);
     if (lower === 'sc' || lower === 'sc.exe') {
       return cmdSc(
-        { serviceManager: this.svcMgr, processManager: this.procMgr, isAdmin: this.userMgr.isCurrentUserAdmin() },
+        { serviceManager: this.svcMgr, processManager: this.procMgr, isAdmin: this.userMgr.isCurrentUserAdmin(), currentUser: this.userMgr.currentUser },
         args,
       );
+    }
+    if (lower === 'auditpol' || lower === 'auditpol.exe') {
+      return cmdAuditpol(this.auditPolicy, args);
     }
     // `net` is a multi-subcommand router — all its subhandlers are sync
     // (cmdNetUser / cmdNetLocalgroup / cmdNetStart / cmdNetStop).

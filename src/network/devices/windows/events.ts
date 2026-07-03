@@ -38,6 +38,16 @@ export interface WindowsServiceCrashedPayload extends WindowsDeviceRef {
   failureCount: number;
 }
 
+/** `sc config <name> obj= "<account>"` changed a service's logon account. */
+export interface WindowsServiceAccountChangedPayload extends WindowsDeviceRef {
+  serviceName: string;
+  displayName: string;
+  previousAccount: string;
+  newAccount: string;
+  /** The username that made the change (for 4657 audit attribution). */
+  changedBy: string;
+}
+
 /** A `run` recovery action (`sc failure ... actions= run/...`) has fired. */
 export interface WindowsServiceRecoveryRunPayload extends WindowsDeviceRef {
   serviceName: string;
@@ -120,6 +130,8 @@ export type WindowsDomainEvent =
   | { topic: 'windows.service.started'; payload: WindowsServiceEventPayload }
   | { topic: 'windows.service.stopped'; payload: WindowsServiceEventPayload }
   | { topic: 'windows.service.crashed'; payload: WindowsServiceCrashedPayload }
+  | { topic: 'windows.service.account-changed'; payload: WindowsServiceAccountChangedPayload }
+  | { topic: 'windows.filesystem.acl-changed'; payload: WindowsFileAclChangedPayload }
   | { topic: 'windows.service.recovery-run'; payload: WindowsServiceRecoveryRunPayload }
   | { topic: 'windows.service.recovery-critical'; payload: WindowsServiceRecoveryCriticalPayload }
   | { topic: 'windows.account.changed'; payload: WindowsAccountChangedPayload }
@@ -133,6 +145,15 @@ export type WindowsDomainEvent =
   | { topic: 'windows.portproxy.added'; payload: WindowsPortProxyEventPayload }
   | { topic: 'windows.portproxy.removed'; payload: WindowsPortProxyEventPayload }
   | { topic: 'windows.firewall.drop'; payload: WindowsFirewallDropPayload };
+
+/** `Set-Acl`/`icacls` changed the discretionary ACL on a filesystem object. */
+export interface WindowsFileAclChangedPayload extends WindowsDeviceRef {
+  path: string;
+  identity: string;
+  permissions: string;
+  /** The username that made the change (for 4670 audit attribution). */
+  changedBy: string;
+}
 
 export interface WindowsFirewallDropPayload {
   deviceId: string;

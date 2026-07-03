@@ -629,6 +629,13 @@ export class PSParser {
         for (;;) {
           const nxt = this.peek();
           if (nxt.position.offset !== prevEnd) break;
+          // `key=value` / `key= value` — sc.exe/netsh-style native switches
+          // (`binPath=`, `start=`, `obj=`, `reset=`, …). The "=" is part of
+          // the switch bareword; whatever follows (possibly after a space)
+          // is a separate argument, parsed normally so it can be any
+          // expression — a variable, a member-access chain, a sub-expression
+          // — not just a literal.
+          if (nxt.type === PSTokenType.ASSIGN) { value += '='; this.advance(); break; }
           if (nxt.type === PSTokenType.MULTIPLY) value += '*';
           else if (nxt.type === PSTokenType.DOT) value += '.';
           else if (nxt.type === PSTokenType.WORD) value += nxt.value;

@@ -40,6 +40,8 @@ export const SECURITY_EVENT = {
   GROUP_DELETED: 4734,
   PROCESS_CREATED: 4688,
   PROCESS_TERMINATED: 4689,
+  REGISTRY_VALUE_MODIFIED: 4657,
+  PERMISSION_CHANGED: 4670,
 } as const;
 
 const SECURITY_LOG = 'Security';
@@ -119,6 +121,20 @@ export class WindowsSecurityAudit {
 
   processTerminated(name: string, pid: number): void {
     this.success(SECURITY_EVENT.PROCESS_TERMINATED, `A process has exited.\n\nProcess Information:\n\tProcess ID:\t0x${pid.toString(16)}\n\tProcess Name:\t${name}`);
+  }
+
+  // ─── Object access (registry / filesystem, requires auditpol + SACL) ───
+
+  registryValueModified(objectPath: string, previousValue: string, newValue: string, changedBy: string): void {
+    this.success(SECURITY_EVENT.REGISTRY_VALUE_MODIFIED,
+      `A registry value was modified.\n\nObject:\n\tObject Name:\t${objectPath}\n\t` +
+      `Old Value:\t${previousValue}\n\tNew Value:\t${newValue}\n\nSubject:\n\tAccount Name:\t${changedBy}`);
+  }
+
+  permissionChanged(objectPath: string, identity: string, permissions: string, changedBy: string): void {
+    this.success(SECURITY_EVENT.PERMISSION_CHANGED,
+      `Permissions on an object were changed.\n\nObject:\n\tObject Name:\t${objectPath}\n\t` +
+      `New Access:\t${identity}: ${permissions}\n\nSubject:\n\tAccount Name:\t${changedBy}`);
   }
 
   // ─── Internals ─────────────────────────────────────────────────────────

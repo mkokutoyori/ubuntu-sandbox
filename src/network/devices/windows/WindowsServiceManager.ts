@@ -124,7 +124,7 @@ const TYPE_CODES: Record<ServiceType, number> = {
 };
 
 /** Start type codes matching real sc.exe output */
-const START_TYPE_CODES: Record<ServiceStartType, number> = {
+export const START_TYPE_CODES: Record<ServiceStartType, number> = {
   Boot: 0, System: 1, Automatic: 2, AutomaticDelayedStart: 2,
   Manual: 3, Disabled: 4,
 };
@@ -581,6 +581,28 @@ export class WindowsServiceManager {
     const svc = this.services.get(name.toLowerCase());
     if (!svc) return `The specified service does not exist.`;
     svc.description = description;
+    return '';
+  }
+
+  /**
+   * `sc config <name> obj= "<account>"` — changes the service's logon
+   * account. Announces the change (with the previous value and who made it)
+   * so the registry-sync projection and the security-audit trail (4657)
+   * stay coherent with the live service state.
+   */
+  setAccount(name: string, account: string, isAdmin: boolean, changedBy: string): string {
+    if (!isAdmin) return 'Access is denied.';
+    const svc = this.services.get(name.toLowerCase());
+    if (!svc) return `The specified service does not exist.`;
+    const previousAccount = svc.account;
+    svc.account = account;
+    this.bus?.publish({
+      topic: 'windows.service.account-changed',
+      payload: {
+        deviceId: this.deviceId, serviceName: svc.name, displayName: svc.displayName,
+        previousAccount, newAccount: account, changedBy,
+      },
+    });
     return '';
   }
 

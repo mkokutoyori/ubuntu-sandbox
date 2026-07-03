@@ -373,6 +373,19 @@ export class PSRegistryProvider {
     return Array.from(key.subkeys.values()).map(k => k.name);
   }
 
+  /**
+   * Keeps `HKLM:\SYSTEM\CurrentControlSet\Services\<name>` coherent with the
+   * live `WindowsServiceManager` — the same account/start-type/binary a
+   * security audit script reads via `sc qc`/`Get-Service`, exposed through
+   * the registry surface real tooling (and real attackers) also targets.
+   */
+  upsertServiceKey(name: string, fields: { objectName: string; startCode: number; imagePath: string }): void {
+    const key = this.ensurePath({ hive: 'HKLM', segments: ['SYSTEM', 'CurrentControlSet', 'Services', name] });
+    seedValue(key, 'ObjectName', fields.objectName);
+    seedValue(key, 'Start', fields.startCode, 'DWord');
+    seedValue(key, 'ImagePath', fields.imagePath, 'ExpandString');
+  }
+
   setItemProperty(path: string, name: string, value: string | number): string {
     const parsed = parseRegistryPath(path);
     if (!parsed) return `Set-ItemProperty : Cannot find path '${path}' because it does not exist.`;

@@ -207,7 +207,10 @@ export class GetVolumeCmdlet implements ICmdlet {
 export class GetCimInstanceCmdlet implements ICmdlet {
   readonly name = 'get-ciminstance';
   readonly displayName = 'Get-CimInstance';
-  readonly aliases = [] as const;
+  // Get-WmiObject/gwmi are the legacy WMI names for the same query surface —
+  // an object pipeline (Where-Object/Select-Object/…) needs the real cmdlet,
+  // not the legacy string-formatting executor.
+  readonly aliases = ['get-wmiobject', 'gwmi'] as const;
 
   execute(ctx: CmdletContext): PSValue {
     const className = psValueToString(

@@ -11,6 +11,7 @@
 
 import type { IEventBus, Unsubscribe } from '@/events/EventBus';
 import type { WindowsSecurityAudit } from './WindowsSecurityAudit';
+import type { WindowsAuditPolicy } from './WindowsAuditPolicy';
 import type {
   WindowsAccountChangedPayload,
   WindowsLogonEventPayload,
@@ -18,6 +19,8 @@ import type {
   WindowsGroupEventPayload,
   WindowsGroupMemberEventPayload,
   WindowsProcessEventPayload,
+  WindowsServiceAccountChangedPayload,
+  WindowsFileAclChangedPayload,
 } from './events';
 
 export class WindowsSecurityAuditProjection {
@@ -27,6 +30,7 @@ export class WindowsSecurityAuditProjection {
     bus: IEventBus,
     private readonly audit: WindowsSecurityAudit,
     private readonly deviceId: string,
+    private readonly auditPolicy?: WindowsAuditPolicy,
   ) {
     this.subscriptions.push(
       bus.subscribe('windows.account.changed', (e) => this.onAccountChanged(e.payload)),
@@ -37,7 +41,24 @@ export class WindowsSecurityAuditProjection {
       bus.subscribe('windows.group.membership-changed', (e) => this.onMembership(e.payload)),
       bus.subscribe('windows.process.started', (e) => this.onProcess(e.payload)),
       bus.subscribe('windows.process.stopped', (e) => this.onProcess(e.payload)),
+      bus.subscribe('windows.service.account-changed', (e) => this.onServiceAccountChanged(e.payload)),
+      bus.subscribe('windows.filesystem.acl-changed', (e) => this.onAclChanged(e.payload)),
     );
+  }
+
+  private onServiceAccountChanged(p: WindowsServiceAccountChangedPayload): void {
+    if (p.deviceId !== this.deviceId) return;
+    if (!this.auditPolicy?.isEnabled('registry', 'success')) return;
+    this.audit.registryValueModified(
+      `HKLM\\SYSTEM\\CurrentControlSet\\Services\\${p.serviceName}\\ObjectName`,
+      p.previousAccount, p.newAccount, p.changedBy,
+    );
+  }
+
+  private onAclChanged(p: WindowsFileAclChangedPayload): void {
+    if (p.deviceId !== this.deviceId) return;
+    if (!this.auditPolicy?.isEnabled('file system', 'success')) return;
+    this.audit.permissionChanged(p.path, p.identity, p.permissions, p.changedBy);
   }
 
   /** Detach every subscription — call before discarding the projection. */

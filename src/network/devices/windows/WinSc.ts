@@ -25,6 +25,8 @@ export interface ScContext {
   serviceManager: WindowsServiceManager;
   processManager: WindowsProcessManager;
   isAdmin: boolean;
+  /** Acting username, for security-audit attribution (`obj=` account changes). */
+  currentUser: string;
 }
 
 export function cmdSc(ctx: ScContext, args: string[]): string {
@@ -202,6 +204,11 @@ function scConfig(ctx: ScContext, args: string[]): string {
   if (opts.depend !== undefined) {
     const deps = opts.depend.split('/').map(s => s.trim()).filter(Boolean);
     const err = ctx.serviceManager.setDependencies(name, deps, ctx.isAdmin);
+    if (err) return `[SC] ChangeServiceConfig FAILED:\n\n${err}`;
+  }
+
+  if (opts.obj !== undefined) {
+    const err = ctx.serviceManager.setAccount(name, opts.obj, ctx.isAdmin, ctx.currentUser);
     if (err) return `[SC] ChangeServiceConfig FAILED:\n\n${err}`;
   }
 

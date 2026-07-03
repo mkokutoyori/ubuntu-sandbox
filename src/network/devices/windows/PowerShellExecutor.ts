@@ -30,6 +30,7 @@ import {
 } from './PSServiceCmdlets';
 import { PSRegistryProvider, isRegistryPath } from './PSRegistryProvider';
 import { PSEventLogProvider, type EntryType } from './PSEventLogProvider';
+import type { IEventBus } from '@/events/EventBus';
 
 // ─── Constants ────────────────────────────────────────────────────
 
@@ -92,6 +93,9 @@ export interface PSDeviceContext {
   readonly vpnConnections:       Map<string, { name: string; serverAddress: string; tunnelType: string; encryptionLevel: string; authMethod: string }>;
   readonly registry:             PSRegistryProvider;
   readonly eventLog:             PSEventLogProvider;
+  /** Device id + bus, for handlers that must publish domain events directly. */
+  readonly id: string;
+  getBus(): IEventBus;
 }
 
 // ─── PowerShell Executor ──────────────────────────────────────────
@@ -5961,6 +5965,18 @@ export class PowerShellExecutor {
         });
       }
     }
+
+    const lastRule = aclObj.rules[aclObj.rules.length - 1];
+    this.device.getBus().publish({
+      topic: 'windows.filesystem.acl-changed',
+      payload: {
+        deviceId: this.device.id,
+        path: absPath,
+        identity: lastRule?.principal ?? '',
+        permissions: lastRule?.permission ?? '',
+        changedBy: this.device.getUserManager().currentUser,
+      },
+    });
     return '';
   }
 
