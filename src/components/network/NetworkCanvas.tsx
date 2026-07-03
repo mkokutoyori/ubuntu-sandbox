@@ -46,6 +46,11 @@ export function NetworkCanvas({ onOpenTerminal }: NetworkCanvasProps) {
   const [isPanning, setIsPanning] = useState(false);
   const [startPan, setStartPan] = useState({ x: 0, y: 0 });
   const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
+  // Tracks the in-progress pan gesture so a plain click on the empty
+  // background (no drag past the threshold) still clears the selection,
+  // while a drag pans the map. Distance in px before a press becomes a pan.
+  const panGestureRef = useRef<{ startX: number; startY: number; moved: boolean; fromBackground: boolean } | null>(null);
+  const PAN_CLICK_THRESHOLD = 4;
 
   // Once a source interface is picked the popover (and its Escape handler)
   // is gone, so without this the only ways out of connect mode were clicking
@@ -77,16 +82,21 @@ export function NetworkCanvas({ onOpenTerminal }: NetworkCanvasProps) {
   }, [setZoom]);
 
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
-    if (e.button === 1 || (e.button === 0 && e.altKey)) {
+    const middleOrAlt = e.button === 1 || (e.button === 0 && e.altKey);
+    const leftOnBackground = e.button === 0 && !e.altKey && e.target === e.currentTarget;
+    if (middleOrAlt || leftOnBackground) {
       setIsPanning(true);
       setStartPan({ x: e.clientX - panX, y: e.clientY - panY });
-    } else if (e.button === 0 && e.target === e.currentTarget) {
-      clearSelection();
-      if (isConnecting) {
-        cancelConnecting();
-      }
+      panGestureRef.current = {
+        startX: e.clientX,
+        startY: e.clientY,
+        moved: false,
+        // Only a plain left-press on the empty background can resolve to a
+        // "click" (clear selection). Middle/Alt drags are pans, never clicks.
+        fromBackground: leftOnBackground && !middleOrAlt,
+      };
     }
-  }, [panX, panY, clearSelection, isConnecting, cancelConnecting]);
+  }, [panX, panY]);
 
   const handleMouseMove = useCallback((e: React.MouseEvent) => {
     const canvas = canvasRef.current;
@@ -98,14 +108,30 @@ export function NetworkCanvas({ onOpenTerminal }: NetworkCanvasProps) {
       y: (e.clientY - rect.top) / zoom
     });
 
-    if (isPanning) {
+    if (!isPanning) return;
+    const gesture = panGestureRef.current;
+    if (gesture && !gesture.moved) {
+      const dist = Math.abs(e.clientX - gesture.startX) + Math.abs(e.clientY - gesture.startY);
+      if (dist > PAN_CLICK_THRESHOLD) gesture.moved = true;
+    }
+    // Hold a sub-threshold background press perfectly still so a click
+    // stays a click; middle/Alt pans (fromBackground=false) move at once.
+    if (!gesture || gesture.moved || !gesture.fromBackground) {
       setPan(e.clientX - startPan.x, e.clientY - startPan.y);
     }
   }, [isPanning, startPan, zoom, setPan]);
 
   const handleMouseUp = useCallback(() => {
+    const gesture = panGestureRef.current;
+    panGestureRef.current = null;
     setIsPanning(false);
-  }, []);
+    // A plain click on the empty background (no drag) clears the selection
+    // and cancels an in-progress connection — the drag path pans instead.
+    if (gesture?.fromBackground && !gesture.moved) {
+      clearSelection();
+      if (isConnecting) cancelConnecting();
+    }
+  }, [clearSelection, isConnecting, cancelConnecting]);
 
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -192,7 +218,7 @@ export function NetworkCanvas({ onOpenTerminal }: NetworkCanvasProps) {
         id="network-canvas"
         ref={canvasRef}
         className={cn(
-          "absolute inset-0 cursor-default",
+          "absolute inset-0 cursor-grab",
           isPanning && "cursor-grabbing",
           isConnecting && "cursor-crosshair"
         )}
