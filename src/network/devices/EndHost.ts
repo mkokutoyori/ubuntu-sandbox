@@ -2423,6 +2423,12 @@ export abstract class EndHost extends Equipment {
     return this.getEgressFor(targetIP)?.sourceIp ?? null;
   }
 
+  /** True if `targetIP` is locally delivered (loopback/self) or a route exists to reach it. */
+  hasRouteOrLocal(targetIP: IPAddress): boolean {
+    if (targetIP.isLoopback() || this.getPortOwningIP(targetIP)) return true;
+    return this.resolveRoute(targetIP) !== null;
+  }
+
   getEgressFor(targetIP: IPAddress): { sourceIp: IPAddress; interfaceName: string; nextHopIP: IPAddress } | null {
     const route = this.resolveRoute(targetIP);
     if (!route) return null;

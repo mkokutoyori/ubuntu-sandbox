@@ -366,6 +366,10 @@ async function runPing(
     return `ping: local error: Message too long, mtu=${DEFAULT_MTU}`;
   }
 
+  if (!ctx.net.hasRoute(targetIP)) {
+    return `ping: connect: Network is unreachable`;
+  }
+
   const isHostname = rawTarget !== targetStr;
   const results: PingResult[] = [];
   for (let seq = 1; seq <= parsed.count; seq++) {
@@ -373,7 +377,7 @@ async function runPing(
     if (batch.length > 0) {
       results.push({ ...batch[0], seq });
     } else {
-      results.push({ success: false, rttMs: 0, ttl: 0, seq, bytes: 0, fromIP: '', error: 'network unreachable' });
+      results.push({ success: false, rttMs: 0, ttl: 0, seq, bytes: 0, fromIP: '', error: 'Destination unreachable' });
     }
     if (seq < parsed.count && parsed.intervalMs > 0) {
       await new Promise<void>(resolve => setTimeout(resolve, parsed.intervalMs));

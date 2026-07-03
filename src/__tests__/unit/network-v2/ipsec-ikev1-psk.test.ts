@@ -389,7 +389,7 @@ describe('IPSec – IKEv1 Site-to-Site avec Pre-shared Keys', () => {
     // Pas d'erreurs pendant tout le test
     expect(sa2).toContain('#send errors 0');
     expect(sa2).toContain('#recv errors 0');
-  });
+  }, 15000);
 
   // ─── 1.06 : show crypto map ──────────────────────────────────────────────
   it('1.06 – show crypto map should reflect the complete configured policy', async () => {

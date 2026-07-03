@@ -79,7 +79,7 @@ export function buildIpCtx(net: LinuxNetKernel, xfrm?: IpXfrmContext): IpNetwork
       const port = net.getPorts().get(ifName);
       if (!port) return `Cannot find device "${ifName}"`;
       try {
-        port.configureIPv6(new IPv6Address(addr), prefixLength);
+        net.configureIPv6Interface(ifName, new IPv6Address(addr), prefixLength);
         return '';
       } catch (e) {
         return `Error: ${e instanceof Error ? e.message : String(e)}`;

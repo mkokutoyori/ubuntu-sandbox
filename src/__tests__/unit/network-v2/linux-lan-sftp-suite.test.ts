@@ -1124,14 +1124,20 @@ describe('§19 — sftp access denied for root / blocked users', () => {
     },
     {
       name: 'DenyUsers bob: sftp bob@pc2 is rejected',
-      setup: async (l) => { await l.pc2.executeCommand('printf "DenyUsers bob\\n"| sudo tee /etc/ssh/sshd_config > /dev/null'); },
+      setup: async (l) => {
+        await l.pc2.executeCommand('printf "DenyUsers bob\\n"| sudo tee /etc/ssh/sshd_config > /dev/null');
+        await l.pc2.executeCommand('sudo systemctl reload ssh');
+      },
       on: l => l.pc1,
       cmd: sftp('bob@10.0.0.2', ['pwd']),
       contains: [/Permission denied/],
     },
     {
       name: 'AllowUsers alice: bob refused, alice accepted',
-      setup: async (l) => { await l.pc2.executeCommand('printf "AllowUsers alice\\n"| sudo tee /etc/ssh/sshd_config > /dev/null'); },
+      setup: async (l) => {
+        await l.pc2.executeCommand('printf "AllowUsers alice\\n"| sudo tee /etc/ssh/sshd_config > /dev/null');
+        await l.pc2.executeCommand('sudo systemctl reload ssh');
+      },
       on: l => l.pc1,
       cmd: sftp('bob@10.0.0.2', ['pwd']),
       contains: [/Permission denied/],

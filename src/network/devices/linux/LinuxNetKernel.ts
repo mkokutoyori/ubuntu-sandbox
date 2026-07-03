@@ -64,6 +64,9 @@ export interface LinuxNetKernel {
   /** True if this interface was configured via DHCP (dynamic). */
   isDHCPConfigured(name: string): boolean;
 
+  /** Configure an IPv6 address on an interface, inserting its connected route. */
+  configureIPv6Interface(name: string, address: IPv6Address, prefixLength: number): boolean;
+
   // ─── Routing ─────────────────────────────────────────────────────
   getRoutingTable(): HostRouteEntry[];
   getIPv6RoutingTable(): HostIPv6RouteEntry[];
@@ -85,6 +88,9 @@ export interface LinuxNetKernel {
   clearARPTable(): void;
 
   // ─── L3 probes ───────────────────────────────────────────────────
+  /** True if the kernel has a route (default or specific) to reach `target`. */
+  hasRoute(target: IPAddress): boolean;
+
   pingSequence(
     target: IPAddress,
     count: number,

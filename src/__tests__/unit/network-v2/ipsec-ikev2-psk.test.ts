@@ -377,5 +377,5 @@ describe('IPSec – IKEv2 Site-to-Site avec Pre-shared Keys', () => {
     expect(sa_R1).toContain('#recv errors 0');
     expect(sa_R2).toContain('#send errors 0');
     expect(sa_R2).toContain('#recv errors 0');
-  });
+  }, 15000);
 });

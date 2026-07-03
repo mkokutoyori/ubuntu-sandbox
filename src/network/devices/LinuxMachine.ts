@@ -31,10 +31,10 @@ import { HostsFile } from './HostsFile';
 import { Port } from '../hardware/Port';
 import {
   IPAddress,
+  IPv6Address,
   SubnetMask,
   type DeviceType,
   type IPv4Packet,
-  type IPv6Address,
   type MACAddress,
 } from '../core/types';
 
@@ -1650,6 +1650,9 @@ export abstract class LinuxMachine extends EndHost
       configureInterface(name: string, ip: IPAddress, mask: SubnetMask): boolean {
         return self.configureInterface(name, ip, mask);
       },
+      configureIPv6Interface(name: string, address: IPv6Address, prefixLength: number): boolean {
+        return self.configureIPv6Interface(name, address, prefixLength);
+      },
       clearInterfaceIP(name: string): void {
         const port = self.ports.get(name);
         if (!port) return;
@@ -1707,6 +1710,9 @@ export abstract class LinuxMachine extends EndHost
       clearARPTable(): void {
         self.clearARPTable();
       },
+      hasRoute(target: IPAddress): boolean {
+        return self.hasRouteOrLocal(target);
+      },
       pingSequence(
         target: IPAddress,
         count: number,
@@ -1720,6 +1726,7 @@ export abstract class LinuxMachine extends EndHost
         return self.tcpProbeSync(new IPAddress(target), port);
       },
       tcpConnectOutcome(target: string, port: number): 'open' | 'refused' | 'timeout' {
+        if (target.includes(':')) return self.tcpConnectOutcome6(new IPv6Address(target), port);
         return self.tcpConnectOutcome(new IPAddress(target), port);
       },
       ping6Sequence(
