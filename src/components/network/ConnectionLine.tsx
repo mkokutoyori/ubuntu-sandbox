@@ -125,7 +125,8 @@ export function ConnectionLine({ connection, devices }: ConnectionLineProps) {
         cy={adjustedMidY}
         r={isSelected ? 6 : 4}
         fill={color}
-        className="transition-all"
+        className="transition-all cursor-pointer"
+        onClick={() => selectConnection(connection.id)}
       />
 
       {/* Type label below midpoint (visible on hover or selection) */}

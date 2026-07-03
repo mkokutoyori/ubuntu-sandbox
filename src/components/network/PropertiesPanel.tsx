@@ -5,7 +5,7 @@
 import { useState } from 'react';
 import { useMacTable, useConnectionPerf } from '@/react/hooks';
 import { X, Power, Wifi, Settings, Network, ChevronDown, ChevronRight, Trash2, Cable, Activity } from 'lucide-react';
-import { useNetworkStore } from '@/store/networkStore';
+import { useNetworkStore, isConnectionActive } from '@/store/networkStore';
 import { DeviceIcon } from './DeviceIcon';
 import { isFullyImplemented } from '@/network';
 import { getConnectionDetails } from './properties-panel-logic';
@@ -65,6 +65,14 @@ export function PropertiesPanel() {
 
   const selectedConnection = selectedConnectionId ? connections.find(c => c.id === selectedConnectionId) : null;
 
+  // Hooks must run on every render (Rules of Hooks): calling this inside the
+  // `if (selectedConnection)` branch below crashed the whole app the moment a
+  // cable was selected ("Rendered more hooks than during the previous render").
+  const perf = useConnectionPerf(
+    selectedConnection ?? null,
+    (id) => deviceInstances?.get(id),
+  );
+
   const toggleSection = (section: string) => {
     setExpandedSections(prev =>
       prev.includes(section) ? prev.filter(s => s !== section) : [...prev, section]
@@ -91,10 +99,6 @@ export function PropertiesPanel() {
     const sourceDevice = devices.find(d => d.id === selectedConnection.sourceDeviceId);
     const targetDevice = devices.find(d => d.id === selectedConnection.targetDeviceId);
     const details = getConnectionDetails(selectedConnection);
-    const perf = useConnectionPerf(
-      selectedConnection,
-      (id) => deviceInstances?.get(id),
-    );
 
     return (
       <div className="w-72 bg-card/30 backdrop-blur-xl border-l border-white/10 flex flex-col">
@@ -171,15 +175,15 @@ export function PropertiesPanel() {
             <label className="text-xs text-muted-foreground uppercase tracking-wider">Status</label>
             <div className={cn(
               "px-3 py-2 rounded-lg border text-sm flex items-center gap-2",
-              selectedConnection.isActive
+              isConnectionActive(selectedConnection)
                 ? "bg-green-500/10 border-green-500/30 text-green-400"
                 : "bg-red-500/10 border-red-500/30 text-red-400"
             )}>
               <div className={cn(
                 "w-2 h-2 rounded-full",
-                selectedConnection.isActive ? "bg-green-500" : "bg-red-500"
+                isConnectionActive(selectedConnection) ? "bg-green-500" : "bg-red-500"
               )} />
-              {selectedConnection.isActive ? 'Active' : 'Inactive'}
+              {isConnectionActive(selectedConnection) ? 'Active' : 'Inactive'}
             </div>
           </div>
         </div>
