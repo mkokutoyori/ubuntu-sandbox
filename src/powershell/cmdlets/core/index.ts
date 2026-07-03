@@ -53,6 +53,7 @@ import {
   GetServiceCmdlet, StartServiceCmdlet, StopServiceCmdlet,
   RestartServiceCmdlet, SuspendServiceCmdlet, ResumeServiceCmdlet,
   SetServiceCmdlet, NewServiceCmdlet, RemoveServiceCmdlet,
+  RegisterWmiEventCmdlet,
 } from './ServiceCmdlets';
 import {
   GetProcessCmdlet, StopProcessCmdlet, StartProcessCmdlet,
@@ -221,6 +222,7 @@ export function registerCoreCmdlets(registry: CmdletRegistry): void {
   registry.register(new SetServiceCmdlet());
   registry.register(new NewServiceCmdlet());
   registry.register(new RemoveServiceCmdlet());
+  registry.register(new RegisterWmiEventCmdlet());
 
   // ── Processes (provider-backed) ───────────────────────────────────────────
   registry.register(new GetProcessCmdlet());

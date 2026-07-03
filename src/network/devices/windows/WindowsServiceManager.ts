@@ -26,6 +26,32 @@ export type ServiceStartType =
 
 export type ServiceType = 'WIN32_OWN_PROCESS' | 'WIN32_SHARE_PROCESS' | 'KERNEL_DRIVER';
 
+/** One tier of `sc failure`'s `actions=` list. */
+export type RecoveryActionType = 'restart' | 'run' | 'reboot' | 'none';
+
+export interface RecoveryAction {
+  type: RecoveryActionType;
+  delayMs: number;
+}
+
+/** `sc failure <name> reset= <sec> actions= <tiers> command= <cmd>` state. */
+export interface FailureActionsConfig {
+  resetPeriodSec: number;
+  /** actions[0] = 1st failure, actions[1] = 2nd, actions[n>=length] clamp to the last tier. */
+  actions: RecoveryAction[];
+  /** Command line for `run` tiers (`sc failure ... command= "..."`). */
+  command?: string;
+}
+
+/** A callback invoked whenever a watched service's state changes — the
+ *  primitive `Register-WmiEvent`'s `__InstanceModificationEvent` polling
+ *  simulates on top of. */
+export type ServiceInstanceWatcher = (evt: {
+  previousState: ServiceState;
+  newState: ServiceState;
+  timestamp: Date;
+}) => void;
+
 export interface WindowsService {
   name: string;
   displayName: string;
@@ -116,6 +142,15 @@ export class WindowsServiceManager {
   private bus: IEventBus | null = null;
   private deviceId = '';
 
+  private failureConfigs: Map<string, FailureActionsConfig> = new Map();
+  private failureState: Map<string, { count: number; lastFailureAtMs: number }> = new Map();
+  private pendingRecoveries: Array<{
+    serviceName: string; dueAtMs: number; rank: number; action: RecoveryAction; command?: string;
+  }> = [];
+
+  private instanceWatchers: Map<string, { serviceName: string; cb: ServiceInstanceWatcher }> = new Map();
+  private watcherSeq = 0;
+
   constructor() {
     this.initDefaults();
   }
@@ -128,6 +163,26 @@ export class WindowsServiceManager {
   attachBus(bus: IEventBus, deviceId: string): void {
     this.bus = bus;
     this.deviceId = deviceId;
+    bus.subscribe('device.power-on', (e) => {
+      if (e.payload.id === deviceId) this.applyBootStartupPolicy();
+    });
+  }
+
+  /** Start types the SCM brings up unattended on boot, before any user logs on. */
+  private static readonly AUTO_START_TYPES: ReadonlySet<ServiceStartType> = new Set([
+    'Automatic', 'AutomaticDelayedStart', 'Boot', 'System',
+  ]);
+
+  /**
+   * Real Windows boot: every service comes up from Stopped, then the SCM
+   * starts whichever ones are configured Automatic/Boot/System. Manual and
+   * Disabled services stay stopped until explicitly started — this is what
+   * makes `Set-Service -StartupType Disabled` survive a reboot.
+   */
+  private applyBootStartupPolicy(): void {
+    for (const svc of this.services.values()) {
+      svc.state = WindowsServiceManager.AUTO_START_TYPES.has(svc.startType) ? 'Running' : 'Stopped';
+    }
   }
 
   /** Publish a service-lifecycle event on the central bus. */
@@ -283,6 +338,29 @@ export class WindowsServiceManager {
     return this.getDependents(serviceName).filter(s => s.state !== 'Stopped');
   }
 
+  /**
+   * Full transitive closure of services that depend on the given service,
+   * directly or through another dependent — what `services.msc`'s
+   * "Dependencies" tab and `sc enumdepend` show, and what `DependentServices`
+   * on a real `Get-Service` result reports.
+   */
+  getAllDependents(serviceName: string): WindowsService[] {
+    const seen = new Set<string>();
+    const out: WindowsService[] = [];
+    const queue = [serviceName];
+    while (queue.length > 0) {
+      const current = queue.shift()!;
+      for (const dep of this.getDependents(current)) {
+        const key = dep.name.toLowerCase();
+        if (seen.has(key)) continue;
+        seen.add(key);
+        out.push(dep);
+        queue.push(dep.name);
+      }
+    }
+    return out;
+  }
+
   /** Get all hosted service names for a given process name */
   getServicesForProcess(processName: string): string[] {
     const lower = processName.toLowerCase();
@@ -299,8 +377,10 @@ export class WindowsServiceManager {
     if (!svc) return `The specified service does not exist. [SC] OpenService FAILED 1060.`;
     if (svc.state === 'Running') return `An instance of the service is already running.`;
     if (svc.startType === 'Disabled') return `The service cannot be started because it is disabled.`;
+    const prev = svc.state;
     svc.state = 'Running';
     this.publishServiceState(svc, true);
+    this.notifyWatchers(svc, prev);
     return '';
   }
 
@@ -318,9 +398,137 @@ export class WindowsServiceManager {
       return `Cannot stop ${svc.displayName} because dependent services are running: ${depNames}.`;
     }
 
+    const prev = svc.state;
     svc.state = 'Stopped';
     this.publishServiceState(svc, false);
+    this.notifyWatchers(svc, prev);
     return '';
+  }
+
+  /**
+   * `Stop-Service -Force` / `Restart-Service -Force` semantics: stop every
+   * running dependent first (deepest dependents before their prerequisites),
+   * then the target itself — the exact reverse of Windows' start order.
+   * `onStopped` lets the caller keep a co-owned view (process table, ports)
+   * coherent with each individual stop as it happens, in order.
+   */
+  stopServiceCascade(name: string, isAdmin: boolean, onStopped?: (svc: WindowsService) => void): string {
+    if (!isAdmin) return 'Access is denied.';
+    const svc = this.services.get(name.toLowerCase());
+    if (!svc) return `The specified service does not exist. [SC] OpenService FAILED 1060.`;
+    for (const dep of this.getRunningDependents(svc.name)) {
+      this.stopServiceCascade(dep.name, isAdmin, onStopped);
+    }
+    const msg = this.stopService(name, isAdmin);
+    if (!msg) onStopped?.(svc);
+    return msg;
+  }
+
+  // ─── Recovery actions (`sc failure` / crash detection) ───────────
+
+  setFailureConfig(name: string, config: FailureActionsConfig, isAdmin: boolean): string {
+    if (!isAdmin) return 'Access is denied.';
+    const svc = this.services.get(name.toLowerCase());
+    if (!svc) return `The specified service does not exist.`;
+    this.failureConfigs.set(name.toLowerCase(), config);
+    return '';
+  }
+
+  getFailureConfig(name: string): FailureActionsConfig | undefined {
+    return this.failureConfigs.get(name.toLowerCase());
+  }
+
+  getFailureCount(name: string): number {
+    return this.failureState.get(name.toLowerCase())?.count ?? 0;
+  }
+
+  /**
+   * The service's hosting process died out from under it — a crash, not a
+   * graceful `Stop-Service`. Bumps the failure rank (resetting it first if
+   * more than `resetPeriodSec` elapsed since the last failure), fires the
+   * 7034 "unexpectedly terminated" notification, and schedules whichever
+   * recovery tier that rank selects (clamped to the last configured tier).
+   */
+  recordCrash(name: string, nowMs: number): void {
+    const key = name.toLowerCase();
+    const svc = this.services.get(key);
+    if (!svc) return;
+    const prev = svc.state;
+    svc.state = 'Stopped';
+    this.notifyWatchers(svc, prev);
+
+    const cfg = this.failureConfigs.get(key);
+    const resetMs = (cfg?.resetPeriodSec ?? 0) * 1000;
+    const prior = this.failureState.get(key);
+    const withinWindow = !!prior && resetMs > 0 && (nowMs - prior.lastFailureAtMs) <= resetMs;
+    const count = withinWindow ? prior!.count + 1 : 1;
+    this.failureState.set(key, { count, lastFailureAtMs: nowMs });
+
+    this.bus?.publish({
+      topic: 'windows.service.crashed',
+      payload: { deviceId: this.deviceId, serviceName: svc.name, displayName: svc.displayName, failureCount: count },
+    });
+
+    if (!cfg || cfg.actions.length === 0) return;
+    const action = cfg.actions[Math.min(count - 1, cfg.actions.length - 1)];
+    if (!action || action.type === 'none') return;
+    this.pendingRecoveries.push({
+      serviceName: svc.name, dueAtMs: nowMs + action.delayMs, rank: count, action, command: cfg.command,
+    });
+  }
+
+  /**
+   * Run whichever recovery tiers have come due, per the device's simulated
+   * clock. `onRestarted` lets the caller re-spawn the hosting process (the
+   * original one is long gone — it's what crashed), keeping Get-Process/
+   * `sc queryex` coherent with the newly-running service.
+   */
+  advanceRecoveryTimers(nowMs: number, onRestarted?: (svc: WindowsService) => void): void {
+    const due = this.pendingRecoveries.filter(r => r.dueAtMs <= nowMs);
+    if (due.length === 0) return;
+    this.pendingRecoveries = this.pendingRecoveries.filter(r => r.dueAtMs > nowMs);
+    for (const r of due) {
+      const svc = this.services.get(r.serviceName.toLowerCase());
+      if (!svc) continue;
+      if (r.action.type === 'restart') {
+        const prev = svc.state;
+        svc.state = 'Running';
+        this.publishServiceState(svc, true);
+        this.notifyWatchers(svc, prev);
+        onRestarted?.(svc);
+      } else if (r.action.type === 'run') {
+        this.bus?.publish({
+          topic: 'windows.service.recovery-run',
+          payload: { deviceId: this.deviceId, serviceName: svc.name, command: r.command ?? '', rank: r.rank },
+        });
+      } else if (r.action.type === 'reboot') {
+        this.bus?.publish({
+          topic: 'windows.service.recovery-critical',
+          payload: { deviceId: this.deviceId, serviceName: svc.name, displayName: svc.displayName, rank: r.rank },
+        });
+      }
+    }
+  }
+
+  // ─── WMI instance watchers (`Register-WmiEvent` primitive) ───────
+
+  /** Subscribe to state transitions of one service. Returns a subscription id. */
+  registerInstanceWatcher(serviceName: string, cb: ServiceInstanceWatcher): string {
+    const id = `wmi-${++this.watcherSeq}`;
+    this.instanceWatchers.set(id, { serviceName: serviceName.toLowerCase(), cb });
+    return id;
+  }
+
+  unregisterInstanceWatcher(id: string): void {
+    this.instanceWatchers.delete(id);
+  }
+
+  private notifyWatchers(svc: WindowsService, previousState: ServiceState): void {
+    if (previousState === svc.state) return;
+    for (const w of this.instanceWatchers.values()) {
+      if (w.serviceName !== svc.name.toLowerCase()) continue;
+      w.cb({ previousState, newState: svc.state, timestamp: new Date() });
+    }
   }
 
   pauseService(name: string, isAdmin: boolean): string {
@@ -352,6 +560,14 @@ export class WindowsServiceManager {
     return '';
   }
 
+  setDependencies(name: string, dependencies: string[], isAdmin: boolean): string {
+    if (!isAdmin) return 'Access is denied.';
+    const svc = this.services.get(name.toLowerCase());
+    if (!svc) return `The specified service does not exist.`;
+    svc.dependencies = dependencies;
+    return '';
+  }
+
   setDisplayName(name: string, displayName: string, isAdmin: boolean): string {
     if (!isAdmin) return 'Access is denied.';
     const svc = this.services.get(name.toLowerCase());
@@ -372,7 +588,7 @@ export class WindowsServiceManager {
 
   createService(name: string, opts: {
     binaryPath: string; displayName?: string; description?: string;
-    startType?: ServiceStartType; account?: string;
+    startType?: ServiceStartType; account?: string; dependencies?: string[];
   }, isAdmin: boolean): string {
     if (!isAdmin) return 'Access is denied.';
     if (this.services.has(name.toLowerCase())) return `The specified service already exists.`;
@@ -385,7 +601,7 @@ export class WindowsServiceManager {
       serviceType: 'WIN32_OWN_PROCESS',
       binaryPath: opts.binaryPath,
       account: opts.account ?? 'NT AUTHORITY\\SYSTEM',
-      dependencies: [],
+      dependencies: opts.dependencies ?? [],
       canPauseAndContinue: false,
       acceptsShutdown: false,
       processName: name.toLowerCase() + '.exe',
@@ -492,17 +708,32 @@ export class WindowsServiceManager {
   }
 
   formatScQfailure(svc: WindowsService): string {
-    return [
+    const cfg = this.failureConfigs.get(svc.name.toLowerCase());
+    const actionLabel = (a: RecoveryAction): string => {
+      switch (a.type) {
+        case 'restart': return 'RESTART';
+        case 'run':     return 'RUN PROCESS';
+        case 'reboot':  return 'REBOOT';
+        default:        return 'NONE';
+      }
+    };
+    const lines = [
       `[SC] QueryServiceConfig2 SUCCESS`,
       '',
       `SERVICE_NAME: ${svc.name}`,
       '',
-      `        RESET_PERIOD (in seconds)    : 86400`,
+      `        RESET_PERIOD (in seconds)    : ${cfg?.resetPeriodSec ?? 0}`,
       `        REBOOT_MESSAGE               :`,
-      `        COMMAND_LINE                  :`,
-      `        FAILURE_ACTIONS              : RESTART -- Delay = 120000 milliseconds.`,
-      `                                       RESTART -- Delay = 300000 milliseconds.`,
-      `                                       NONE    -- Delay = 0 milliseconds.`,
-    ].join('\n');
+      `        COMMAND_LINE                 : ${cfg?.command ?? ''}`,
+    ];
+    if (!cfg || cfg.actions.length === 0) {
+      lines.push(`        FAILURE_ACTIONS              : NONE`);
+    } else {
+      lines.push(`        FAILURE_ACTIONS              : ${actionLabel(cfg.actions[0])} -- Delay = ${cfg.actions[0].delayMs} milliseconds.`);
+      for (let i = 1; i < cfg.actions.length; i++) {
+        lines.push(`                                       ${actionLabel(cfg.actions[i])} -- Delay = ${cfg.actions[i].delayMs} milliseconds.`);
+      }
+    }
+    return lines.join('\n');
   }
 }

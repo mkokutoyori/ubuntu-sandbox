@@ -15,6 +15,7 @@ import type { ICmdlet } from '../ICmdlet';
 import type { CmdletContext } from '../CmdletContext';
 import { PSRuntimeError } from '@/powershell/runtime/PSRuntime';
 import type { PSValue } from '@/powershell/runtime/PSEnvironment';
+import type { PSScriptBlock } from '@/powershell/parser/PSASTNode';
 import type { ServiceInfo, IServiceProvider } from '@/powershell/providers/PSProviders';
 import { psValueToString } from '@/powershell/runtime/PSExpansion';
 
@@ -99,7 +100,7 @@ function toPSObject(s: ServiceInfo): Record<string, PSValue> {
     StartType:           s.startType,
     BinaryPath:          s.binaryPath,
     Account:             s.account,
-    DependentServices:   [...s.dependencies] as PSValue,
+    DependentServices:   [...s.dependents] as PSValue,
     ServicesDependedOn:  [...s.dependencies] as PSValue,
     CanPauseAndContinue: s.canPauseAndContinue,
   };
@@ -162,7 +163,7 @@ abstract class ServiceActionCmdlet implements ICmdlet {
   abstract readonly name: string;
   abstract readonly aliases: readonly string[];
   readonly parameters = ['Name', 'DisplayName', 'InputObject', 'Force', 'PassThru'] as const;
-  protected abstract act(svc: IServiceProvider, name: string): string;
+  protected abstract act(svc: IServiceProvider, name: string, force: boolean): string;
 
   execute(ctx: CmdletContext): PSValue {
     const svc = requireServices(ctx);
@@ -171,9 +172,10 @@ abstract class ServiceActionCmdlet implements ICmdlet {
       ctx.emitError(`Cannot bind ${this.name}: missing -Name`);
       return null;
     }
+    const force = ctx.named['force'] === true;
     const names = Array.isArray(name) ? name : [name];
     for (const n of names) {
-      const msg = this.act(svc, n);
+      const msg = this.act(svc, n, force);
       if (msg) ctx.emit(msg);
     }
     return null;
@@ -189,13 +191,13 @@ export class StartServiceCmdlet extends ServiceActionCmdlet {
 export class StopServiceCmdlet extends ServiceActionCmdlet {
   readonly name = 'stop-service';
   readonly aliases = ['spsv'] as const;
-  protected act(svc: IServiceProvider, name: string) { return svc.stopService(name); }
+  protected act(svc: IServiceProvider, name: string, force: boolean) { return svc.stopService(name, force); }
 }
 
 export class RestartServiceCmdlet extends ServiceActionCmdlet {
   readonly name = 'restart-service';
   readonly aliases = [] as const;
-  protected act(svc: IServiceProvider, name: string) { return svc.restartService(name); }
+  protected act(svc: IServiceProvider, name: string, force: boolean) { return svc.restartService(name, force); }
 }
 
 export class SuspendServiceCmdlet extends ServiceActionCmdlet {
@@ -248,6 +250,7 @@ export class SetServiceCmdlet implements ICmdlet {
 export class NewServiceCmdlet implements ICmdlet {
   readonly name = 'new-service';
   readonly aliases = [] as const;
+  readonly parameters = ['Name', 'BinaryPathName', 'DisplayName', 'Description', 'StartupType', 'DependsOn', 'Credential'] as const;
 
   execute(ctx: CmdletContext): PSValue {
     const svc = requireServices(ctx);
@@ -257,11 +260,16 @@ export class NewServiceCmdlet implements ICmdlet {
       ctx.emitError('New-Service requires -Name and -BinaryPathName');
       return null;
     }
+    const startupRaw = ctx.named['startuptype'] ?? ctx.named['starttype'];
+    const dependsOnRaw = ctx.named['dependson'];
     const msg = svc.newService(name, {
       binaryPath,
       displayName: ctx.named['displayname'] ? psValueToString(ctx.named['displayname']) : undefined,
-      startType:   ctx.named['starttype']   ? psValueToString(ctx.named['starttype'])   : undefined,
+      startType:   startupRaw !== undefined ? normalizeStartupType(psValueToString(startupRaw)) : undefined,
       description: ctx.named['description'] ? psValueToString(ctx.named['description']) : undefined,
+      dependsOn:   dependsOnRaw !== undefined
+        ? (Array.isArray(dependsOnRaw) ? dependsOnRaw.map(psValueToString) : [psValueToString(dependsOnRaw)])
+        : undefined,
     });
     if (msg) ctx.emit(msg);
     return null;
@@ -285,5 +293,65 @@ export class RemoveServiceCmdlet implements ICmdlet {
       if (msg) ctx.emit(msg);
     }
     return null;
+  }
+}
+
+// ── Register-WmiEvent ──────────────────────────────────────────────────────
+//
+// Simulates the `SELECT * FROM __InstanceModificationEvent … WHERE
+// TargetInstance ISA 'Win32_Service' AND TargetInstance.Name = '<name>'`
+// pattern: real WMI polls at the WITHIN interval, but since every state
+// change already flows through the service manager, we deliver the -Action
+// synchronously the instant it happens — indistinguishable from a WITHIN=2s
+// poll catching it, and with zero risk of missing a fast transition.
+
+const WMI_TARGET_NAME_RE = /TargetInstance\.Name\s*=\s*['"]([^'"]+)['"]/i;
+const WMI_CLASS_RE = /ISA\s+['"]([^'"]+)['"]/i;
+
+export class RegisterWmiEventCmdlet implements ICmdlet {
+  readonly name = 'register-wmievent';
+  readonly aliases = [] as const;
+  readonly parameters = ['Query', 'Class', 'Action', 'SourceIdentifier', 'Timeout'] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const query = psValueToString(ctx.named['query'] ?? '');
+    const action = ctx.named['action'] as PSScriptBlock | undefined;
+    if (!action) {
+      ctx.emitError('Register-WmiEvent requires -Action in this simulator (synchronous delivery, no Wait-Event queue)');
+      return null;
+    }
+    const classMatch = WMI_CLASS_RE.exec(query);
+    const wmiClass = classMatch ? classMatch[1] : psValueToString(ctx.named['class'] ?? '');
+    if (wmiClass.toLowerCase() !== 'win32_service') {
+      ctx.emitError(`Register-WmiEvent: class '${wmiClass}' is not supported in this simulator (only Win32_Service instance modification)`);
+      return null;
+    }
+    const nameMatch = WMI_TARGET_NAME_RE.exec(query);
+    if (!nameMatch) {
+      ctx.emitError('Register-WmiEvent: could not find "TargetInstance.Name = \'<service>\'" in -Query');
+      return null;
+    }
+    const serviceName = nameMatch[1];
+    const svc = requireServices(ctx);
+
+    const runtime = ctx.runtime;
+    const env = ctx.env;
+    const subId = svc.registerInstanceWatcher(serviceName, (evt) => {
+      const eventObj = {
+        SourceEventArgs: {
+          NewEvent: {
+            TargetInstance: {
+              Name: serviceName,
+              State: evt.newState,
+              PreviousState: evt.previousState,
+            },
+          },
+        },
+        TimeGenerated: evt.timestamp,
+      } as Record<string, PSValue>;
+      runtime.setVariable('Event', eventObj);
+      runtime.invokeScriptBlock(action, {}, [], env, null);
+    });
+    return { Id: 1, SourceIdentifier: psValueToString(ctx.named['sourceidentifier'] ?? subId) } as Record<string, PSValue>;
   }
 }

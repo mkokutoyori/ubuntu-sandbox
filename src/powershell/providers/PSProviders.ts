@@ -38,7 +38,10 @@ export interface ServiceInfo {
   serviceType: string;
   binaryPath: string;
   account: string;
+  /** Services this one depends on (ServicesDependedOn). */
   dependencies: string[];
+  /** Services that depend on this one (DependentServices) — reverse lookup. */
+  dependents: string[];
   canPauseAndContinue: boolean;
 }
 
@@ -178,13 +181,20 @@ export interface IServiceProvider {
   listServices(nameFilter?: string): ServiceInfo[];
   getService(name: string): ServiceInfo | null;
   startService(name: string): string;
-  stopService(name: string): string;
-  restartService(name: string): string;
+  stopService(name: string, force?: boolean): string;
+  restartService(name: string, force?: boolean): string;
   setService(name: string, opts: { startType?: string; description?: string; displayName?: string; status?: string }): string;
   suspendService(name: string): string;
   resumeService(name: string): string;
-  newService(name: string, opts: { binaryPath: string; displayName?: string; startType?: string; description?: string }): string;
+  newService(name: string, opts: { binaryPath: string; displayName?: string; startType?: string; description?: string; dependsOn?: string[] }): string;
   removeService(name: string): string;
+  /**
+   * The primitive `Register-WmiEvent … -Query "… WHERE TargetInstance ISA
+   * 'Win32_Service' …"` polls on top of: fires `cb` every time the named
+   * service's state changes. Returns a subscription id for unregistering.
+   */
+  registerInstanceWatcher(serviceName: string, cb: (evt: { previousState: string; newState: string; timestamp: Date }) => void): string;
+  unregisterInstanceWatcher(id: string): void;
 }
 
 export interface IProcessProvider {

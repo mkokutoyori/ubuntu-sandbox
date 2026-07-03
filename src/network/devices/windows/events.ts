@@ -30,6 +30,29 @@ export interface WindowsServiceEventPayload extends WindowsDeviceRef {
   running: boolean;
 }
 
+/** A service's hosting process died out from under it (not a graceful stop). */
+export interface WindowsServiceCrashedPayload extends WindowsDeviceRef {
+  serviceName: string;
+  displayName: string;
+  /** How many times this service has crashed within the current reset window. */
+  failureCount: number;
+}
+
+/** A `run` recovery action (`sc failure ... actions= run/...`) has fired. */
+export interface WindowsServiceRecoveryRunPayload extends WindowsDeviceRef {
+  serviceName: string;
+  command: string;
+  /** Failure rank (1 = first failure) that selected this action. */
+  rank: number;
+}
+
+/** A `reboot` recovery action fired — suppressed in the simulator, logged instead. */
+export interface WindowsServiceRecoveryCriticalPayload extends WindowsDeviceRef {
+  serviceName: string;
+  displayName: string;
+  rank: number;
+}
+
 // ─── Account lifecycle ──────────────────────────────────────────────────
 
 /** The kind of change applied to a local account. */
@@ -96,6 +119,9 @@ export interface WindowsPortProxyEventPayload extends WindowsDeviceRef {
 export type WindowsDomainEvent =
   | { topic: 'windows.service.started'; payload: WindowsServiceEventPayload }
   | { topic: 'windows.service.stopped'; payload: WindowsServiceEventPayload }
+  | { topic: 'windows.service.crashed'; payload: WindowsServiceCrashedPayload }
+  | { topic: 'windows.service.recovery-run'; payload: WindowsServiceRecoveryRunPayload }
+  | { topic: 'windows.service.recovery-critical'; payload: WindowsServiceRecoveryCriticalPayload }
   | { topic: 'windows.account.changed'; payload: WindowsAccountChangedPayload }
   | { topic: 'windows.account.logon'; payload: WindowsLogonEventPayload }
   | { topic: 'windows.account.logoff'; payload: WindowsLogoffEventPayload }

@@ -558,7 +558,10 @@ export function makeLiteral(value: PSLiteralValue, raw: string, kind: PSLiteralE
 
 export function makeVariable(name: string, pos?: SourcePosition): PSVariableExpression {
   const colonIdx = name.indexOf(':');
-  const scope = colonIdx >= 0 ? name.substring(0, colonIdx) : null;
+  // Scope modifiers are case-insensitive in PowerShell ($Global:x, $GLOBAL:x,
+  // $global:x are the same). Normalize here — the single source of truth —
+  // rather than at every runtime `scope === 'global'` comparison site.
+  const scope = colonIdx >= 0 ? name.substring(0, colonIdx).toLowerCase() : null;
   const varName = colonIdx >= 0 ? name.substring(colonIdx + 1) : name;
   return { type: 'VariableExpression', name, scope, varName, position: pos };
 }

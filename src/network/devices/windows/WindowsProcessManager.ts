@@ -56,8 +56,19 @@ export class WindowsProcessManager {
   private bus: IEventBus | null = null;
   private deviceId = '';
 
+  /** The service controller and the device's simulated clock — wired once
+   *  so a killed process that hosted a service is reported as a crash
+   *  (SCM recovery actions), not a graceful `Stop-Service`. */
+  private serviceManager: WindowsServiceManager | null = null;
+  private nowMs: () => number = () => Date.now();
+
   constructor() {
     this.initDefaults();
+  }
+
+  attachServiceManager(mgr: WindowsServiceManager, nowMs: () => number): void {
+    this.serviceManager = mgr;
+    this.nowMs = nowMs;
   }
 
   /**
@@ -262,6 +273,9 @@ export class WindowsProcessManager {
 
     this.processes.delete(pid);
     this.publishProcess(pid, proc.name, false);
+    for (const serviceName of proc.hostedServices) {
+      this.serviceManager?.recordCrash(serviceName, this.nowMs());
+    }
     return '';
   }
 

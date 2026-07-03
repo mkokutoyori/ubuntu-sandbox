@@ -245,6 +245,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     this.userMgr = new WindowsUserManager();
     this.svcMgr = new WindowsServiceManager();
     this.procMgr = new WindowsProcessManager();
+    this.procMgr.attachServiceManager(this.svcMgr, () => this.simulatedDate().getTime());
     this.initEnv();
     this.initDefaultSockets();
     this.wireReactiveProjections();
@@ -273,6 +274,12 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     this.portProxySocketProjection = new PortProxySocketProjection(bus, this.id, this.socketTable);
     this.portProxyTable.attachBus(bus, this.id);
 
+    this._recoveryRunOff?.();
+    this._recoveryRunOff = bus.subscribe('windows.service.recovery-run', (e) => {
+      if (e.payload.deviceId !== this.id) return;
+      this.runRecoveryCommand(e.payload.command);
+    });
+
     this._processSocketReaperOff?.();
     this._processSocketReaperOff = bus.subscribe('windows.process.stopped', (e) => {
       const payload = e.payload as { pid: number; name: string };
@@ -296,6 +303,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
   }
 
   private _processSocketReaperOff: (() => void) | null = null;
+  private _recoveryRunOff: (() => void) | null = null;
 
   private initDefaultSockets(): void {
     // OpenSSH Server — SFTP transport
@@ -1576,6 +1584,10 @@ export class WindowsPC extends EndHost implements UserAccountHost {
   advanceTime(ms: number): void {
     this.clock.advance(ms);
     this.fireDueScheduledTasks();
+    this.svcMgr.advanceRecoveryTimers(
+      this.simulatedDate().getTime(),
+      (svc) => this.procMgr.onServiceStarted(svc.name, svc.processName),
+    );
   }
 
   private fireDueScheduledTasks(): void {
@@ -1595,11 +1607,27 @@ export class WindowsPC extends EndHost implements UserAccountHost {
 
   private runScheduledPowerShellScript(command?: string): void {
     if (!command) return;
+    this.executePowerShellFileCommand(command);
+  }
+
+  /** Runs a `powershell(.exe) -File "<path>.ps1"` command line headlessly. Returns
+   *  whether the command matched and the script executed. */
+  private executePowerShellFileCommand(command: string): boolean {
     const match = /^\s*powershell(?:\.exe)?\s+-file\s+"?([^"]+\.ps1)"?/i.exec(command);
-    if (!match) return;
+    if (!match) return false;
     const result = this.fs.readFile(match[1]);
-    if (!result.ok || result.content === undefined) return;
+    if (!result.ok || result.content === undefined) return false;
     this.getPowerShellInterpreter().executeInteractive(result.content);
+    return true;
+  }
+
+  /** `sc failure ... actions= run/<delay>` fires: a transient `powershell.exe`
+   *  runs the configured command, matching real SCM recovery-action behavior. */
+  private runRecoveryCommand(command: string): void {
+    if (!command) return;
+    const proc = this.procMgr.spawnProcess('powershell.exe', 620, 'NT AUTHORITY\\SYSTEM', { systemOwned: true });
+    this.executePowerShellFileCommand(command);
+    this.procMgr.killProcess(proc.pid, true, true);
   }
 
   private cmdSysteminfo(): string {

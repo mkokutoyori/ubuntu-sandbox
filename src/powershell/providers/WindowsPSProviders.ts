@@ -162,24 +162,38 @@ class WindowsServiceAdapter implements IServiceProvider {
     const filtered = nameFilter
       ? all.filter(s => s.name.toLowerCase().includes(nameFilter.toLowerCase()))
       : all;
-    return filtered.map(toServiceInfo);
+    return filtered.map(s => toServiceInfo(s, this.mgr()));
   }
   getService(name: string): ServiceInfo | null {
     const s = this.mgr().getService(name);
-    return s ? toServiceInfo(s) : null;
+    return s ? toServiceInfo(s, this.mgr()) : null;
   }
   startService(name: string): string {
-    return this.mgr().startService(name, this.isAdmin());
+    const msg = this.mgr().startService(name, this.isAdmin());
+    if (!msg) {
+      const svc = this.mgr().getService(name);
+      if (svc) this.pc.getProcessManager().onServiceStarted(svc.name, svc.processName);
+    }
+    return msg;
   }
-  stopService(name: string): string {
-    return this.mgr().stopService(name, this.isAdmin());
+  stopService(name: string, force?: boolean): string {
+    const admin = this.isAdmin();
+    if (force) {
+      return this.mgr().stopServiceCascade(name, admin, svc => this.pc.getProcessManager().onServiceStopped(svc.name));
+    }
+    const msg = this.mgr().stopService(name, admin);
+    if (!msg) this.pc.getProcessManager().onServiceStopped(name);
+    return msg;
   }
-  restartService(name: string): string {
-    const stopRes = this.mgr().stopService(name, this.isAdmin());
+  restartService(name: string, force?: boolean): string {
+    const admin = this.isAdmin();
+    const stopRes = force
+      ? this.mgr().stopServiceCascade(name, admin, svc => this.pc.getProcessManager().onServiceStopped(svc.name))
+      : this.stopService(name);
     // Real PowerShell Restart-Service tolerates a pre-stopped target: it
     // just starts it. Only abort on permission errors or "service not found".
     if (stopRes && /denied|does not exist/i.test(stopRes)) return stopRes;
-    return this.mgr().startService(name, this.isAdmin());
+    return this.startService(name);
   }
   setService(name: string, opts: { startType?: string; description?: string; displayName?: string; status?: string }): string {
     const admin = this.isAdmin();
@@ -198,20 +212,30 @@ class WindowsServiceAdapter implements IServiceProvider {
   resumeService(name: string): string {
     return this.mgr().resumeService(name, this.isAdmin());
   }
-  newService(name: string, opts: { binaryPath: string; displayName?: string; startType?: string; description?: string }): string {
+  newService(name: string, opts: { binaryPath: string; displayName?: string; startType?: string; description?: string; dependsOn?: string[] }): string {
     return this.mgr().createService(name, {
       binaryPath: opts.binaryPath,
       displayName: opts.displayName ?? name,
       startType: opts.startType ?? 'Manual',
       description: opts.description ?? '',
+      dependencies: opts.dependsOn ?? [],
     }, this.isAdmin());
   }
   removeService(name: string): string {
     return this.mgr().deleteService(name, this.isAdmin());
   }
+  registerInstanceWatcher(serviceName: string, cb: (evt: { previousState: string; newState: string; timestamp: Date }) => void): string {
+    return this.mgr().registerInstanceWatcher(serviceName, cb);
+  }
+  unregisterInstanceWatcher(id: string): void {
+    this.mgr().unregisterInstanceWatcher(id);
+  }
 }
 
-function toServiceInfo(s: import('@/network/devices/windows/WindowsServiceManager').WindowsService): ServiceInfo {
+function toServiceInfo(
+  s: import('@/network/devices/windows/WindowsServiceManager').WindowsService,
+  mgr: import('@/network/devices/windows/WindowsServiceManager').WindowsServiceManager,
+): ServiceInfo {
   return {
     name: s.name,
     displayName: s.displayName,
@@ -222,6 +246,7 @@ function toServiceInfo(s: import('@/network/devices/windows/WindowsServiceManage
     binaryPath: s.binaryPath,
     account: s.account,
     dependencies: [...s.dependencies],
+    dependents: mgr.getAllDependents(s.name).map(d => d.name),
     canPauseAndContinue: s.canPauseAndContinue,
   };
 }

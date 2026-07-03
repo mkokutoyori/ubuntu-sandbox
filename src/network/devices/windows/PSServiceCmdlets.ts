@@ -210,12 +210,11 @@ export function psStopService(ctx: PSServiceContext, args: string[]): string {
       'CouldNotStopService,Microsoft.PowerShell.Commands.StopServiceCommand');
   }
 
-  // With -Force, recursively stop all dependent services first
-  if (force) {
-    stopDependentsRecursively(ctx, svc.name);
-  }
-
-  const err = ctx.serviceManager.stopService(name, true);
+  // With -Force, stop all dependents first (deepest ones before their
+  // prerequisites); without it, a running dependent blocks the stop below.
+  const err = force
+    ? ctx.serviceManager.stopServiceCascade(name, true, s => ctx.processManager.onServiceStopped(s.name))
+    : ctx.serviceManager.stopService(name, true);
   if (err) {
     if (err.includes('not been started')) {
       return psError('Stop-Service',
@@ -232,7 +231,7 @@ export function psStopService(ctx: PSServiceContext, args: string[]): string {
     return `Stop-Service : ${err}`;
   }
 
-  ctx.processManager.onServiceStopped(svc.name);
+  if (!force) ctx.processManager.onServiceStopped(svc.name);
   if (passThru) return formatServiceTable([svc]);
   return '';
 }
@@ -273,17 +272,16 @@ export function psRestartService(ctx: PSServiceContext, args: string[]): string 
 
   // Stop if running (with -Force, stop dependents too)
   if (svc.state !== 'Stopped') {
-    if (force) {
-      stopDependentsRecursively(ctx, svc.name);
-    }
-    const stopErr = ctx.serviceManager.stopService(name, true);
+    const stopErr = force
+      ? ctx.serviceManager.stopServiceCascade(name, true, s => ctx.processManager.onServiceStopped(s.name))
+      : ctx.serviceManager.stopService(name, true);
     if (stopErr && !stopErr.includes('not been started')) {
       return psError('Restart-Service',
         `Service '${svc.displayName} (${svc.name})' cannot be restarted due to the following error: ${stopErr}`,
         `OpenError: (System.ServiceProcess.ServiceController:ServiceController) [Restart-Service], ServiceCommandException`,
         'CouldNotRestartService,Microsoft.PowerShell.Commands.RestartServiceCommand');
     }
-    ctx.processManager.onServiceStopped(svc.name);
+    if (!force) ctx.processManager.onServiceStopped(svc.name);
   }
 
   // Start
@@ -483,6 +481,7 @@ export function psNewService(ctx: PSServiceContext, args: string[]): string {
   const displayName = params.get('displayname');
   const description = params.get('description');
   const startupType = params.get('startuptype');
+  const dependsOn = params.get('dependson');
 
   const typeMap: Record<string, ServiceStartType> = {
     automatic: 'Automatic', manual: 'Manual', disabled: 'Disabled',
@@ -493,6 +492,7 @@ export function psNewService(ctx: PSServiceContext, args: string[]): string {
     displayName: displayName || undefined,
     description: description || undefined,
     startType: startupType ? typeMap[startupType.toLowerCase()] : undefined,
+    dependencies: dependsOn ? dependsOn.split(',').map(s => s.trim()).filter(Boolean) : undefined,
   }, true);
 
   if (err) {
@@ -562,21 +562,9 @@ export function buildDynamicServiceObjects(ctx: PSServiceContext): Array<Record<
     StartType: s.startType,
     CanPauseAndContinue: s.canPauseAndContinue,
     CanShutdown: s.acceptsShutdown,
-    DependentServices: ctx.serviceManager.getDependents(s.name).map(d => d.name),
+    DependentServices: ctx.serviceManager.getAllDependents(s.name).map(d => d.name),
     ServicesDependedOn: s.dependencies,
   }));
-}
-
-// ─── Helper: recursively stop dependents ─────────────────────────
-
-function stopDependentsRecursively(ctx: PSServiceContext, serviceName: string): void {
-  const deps = ctx.serviceManager.getRunningDependents(serviceName);
-  for (const dep of deps) {
-    // Recurse to stop this dependent's dependents first
-    stopDependentsRecursively(ctx, dep.name);
-    ctx.serviceManager.stopService(dep.name, true);
-    ctx.processManager.onServiceStopped(dep.name);
-  }
 }
 
 // ─── Formatting (matches real PowerShell 5.1 Get-Service output) ──

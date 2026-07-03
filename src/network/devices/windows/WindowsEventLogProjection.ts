@@ -10,10 +10,16 @@
  */
 
 import type { IEventBus, Unsubscribe } from '@/events/EventBus';
-import type { WindowsServiceEventPayload } from './events';
+import type {
+  WindowsServiceEventPayload, WindowsServiceCrashedPayload, WindowsServiceRecoveryCriticalPayload,
+} from './events';
 
 /** SCM event ID for a service state transition (System log). */
 const SCM_STATE_CHANGE = 7036;
+/** SCM event ID for an unexpected service termination (System log). */
+const SCM_UNEXPECTED_TERMINATION = 7034;
+/** SCM event ID announcing the corrective action about to be taken (System log). */
+const SCM_RECOVERY_ACTION = 7031;
 /** Windows Filtering Platform — packet blocked (Security log). */
 const WFP_PACKET_BLOCKED = 5152;
 /** TCP listener started (System log). */
@@ -41,6 +47,8 @@ export class WindowsEventLogProjection {
     this.subscriptions.push(
       bus.subscribe('windows.service.started', (e) => this.onService(e.payload)),
       bus.subscribe('windows.service.stopped', (e) => this.onService(e.payload)),
+      bus.subscribe('windows.service.crashed', (e) => this.onServiceCrashed(e.payload)),
+      bus.subscribe('windows.service.recovery-critical', (e) => this.onRecoveryCritical(e.payload)),
       bus.subscribe('tcp.listener.changed', (e) => this.onTcpListener(e.payload)),
       bus.subscribe('tcp.connection.opened', (e) => this.onTcpAccepted(e.payload)),
       bus.subscribe('windows.firewall.drop', (e) => this.onFirewallDrop(e.payload)),
@@ -155,6 +163,29 @@ export class WindowsEventLogProjection {
       SCM_STATE_CHANGE,
       'Information',
       `The ${p.displayName} service entered the ${p.running ? 'running' : 'stopped'} state.`,
+    );
+  }
+
+  private onServiceCrashed(p: WindowsServiceCrashedPayload): void {
+    if (p.deviceId !== this.deviceId) return;
+    this.sink.writeEventLog(
+      'System',
+      'Service Control Manager',
+      SCM_UNEXPECTED_TERMINATION,
+      'Error',
+      `The ${p.displayName} service terminated unexpectedly. It has done this ${p.failureCount} time(s).`,
+    );
+  }
+
+  private onRecoveryCritical(p: WindowsServiceRecoveryCriticalPayload): void {
+    if (p.deviceId !== this.deviceId) return;
+    this.sink.writeEventLog(
+      'System',
+      'Service Control Manager',
+      SCM_RECOVERY_ACTION,
+      'Error',
+      `The ${p.displayName} service terminated unexpectedly. It has done this ${p.rank} time(s). ` +
+      `The configured corrective action is Reboot the Computer — suppressed by the simulator; the service remains stopped.`,
     );
   }
 }
