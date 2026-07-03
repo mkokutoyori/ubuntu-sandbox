@@ -1647,6 +1647,17 @@ export class LinuxCommandExecutor {
       captured = this.execute(cmdLine);
       exitCode = this.lastExitCode;
     } catch { /* background failures are silent */ }
+    if (exitCode === 127 && this.networkRunner) {
+      const netArgv = simpleTokenize(cmdLine.replace(/^sudo\s+/, ''));
+      const pending = netArgv.length > 0 ? this.networkRunner(netArgv, undefined) : null;
+      if (pending) {
+        captured = '';
+        exitCode = 0;
+        void pending
+          .then((r) => { job.capturedOutput = r.output; job.exitCode = r.exitCode; })
+          .catch(() => { job.exitCode = 1; });
+      }
+    }
     // The sync simulator executes the work eagerly. We still want
     // `jobs` to report the job as Running until the user explicitly
     // brings it forward with `fg`/`wait`/`bg`, mirroring how a real

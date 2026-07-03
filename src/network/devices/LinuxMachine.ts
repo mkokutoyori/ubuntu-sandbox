@@ -93,7 +93,6 @@ import {
   LinuxCommandRegistry,
   CORE_LINUX_COMMANDS,
   readDhcpLeaseFile,
-  dhclientPsLines,
   applyIptablesNatHook,
 } from './linux/commands';
 import {
@@ -1570,14 +1569,6 @@ export abstract class LinuxMachine extends EndHost
       }
       case 'ip6tables-restore': {
         return null;
-      }
-      case 'ps': {
-        // Run the executor's ps first (shows init, bash, oracle, etc.)
-        // then append dhclient process lines from EndHost.
-        const basePs = this.executor.execute(input);
-        const extra = dhclientPsLines(this.net);
-        if (extra.length === 0) return basePs;
-        return basePs + '\n' + extra.join('\n');
       }
       case 'cat': {
         const parts = noSudo.split(/\s+/);

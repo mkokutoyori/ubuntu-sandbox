@@ -30,7 +30,6 @@ import { dnsmasqCommand } from './dns/Dnsmasq';
 import { ipCommand } from './net/Ip';
 import { dhclientCommand } from './dhcp/Dhclient';
 import { readDhcpLeaseFile, isDhcpLeasePath } from './dhcp/DhcpLeaseFile';
-import { dhclientPsLines } from './dhcp/PsDhclientAugment';
 import { applyIptablesNatHook } from './net/IptablesNatHook';
 import { namedCheckconfCommand } from './dns/NamedCheckconf';
 import { namedCheckzoneCommand } from './dns/NamedCheckzone';
@@ -59,7 +58,6 @@ export {
   dhclientCommand,
   readDhcpLeaseFile,
   isDhcpLeasePath,
-  dhclientPsLines,
   applyIptablesNatHook,
   nmapCommand,
   curlCommand,

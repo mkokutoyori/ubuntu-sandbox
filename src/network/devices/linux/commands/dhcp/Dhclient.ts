@@ -83,12 +83,14 @@ export const dhclientCommand: LinuxCommand = {
       if (iface) {
         dhcp.stopProcess(iface);
         dhcp.releaseLease(iface);
+        syncDhclientProcesses(ctx);
         return '';
       }
       for (const [name] of ports) {
         dhcp.stopProcess(name);
         dhcp.releaseLease(name);
       }
+      syncDhclientProcesses(ctx);
       return '';
     }
 
@@ -99,6 +101,7 @@ export const dhclientCommand: LinuxCommand = {
         const result = dhcp.releaseLease(name);
         if (result) outputs.push(result);
       }
+      syncDhclientProcesses(ctx);
       return outputs.join('\n');
     }
 
@@ -106,7 +109,10 @@ export const dhclientCommand: LinuxCommand = {
     if (!ports.has(iface)) return `RTNETLINK answers: No such device ${iface}`;
 
     if (release) {
-      return dhcp.releaseLease(iface);
+      const out = dhcp.releaseLease(iface);
+      writeLeaseFiles(ctx);
+      syncDhclientProcesses(ctx);
+      return out;
     }
 
     // Discover DHCP servers via broadcast (simulated through topology)
@@ -125,6 +131,40 @@ export const dhclientCommand: LinuxCommand = {
     const opts: { verbose?: boolean; timeout?: number; daemon?: boolean } = { verbose, daemon };
     if (hasTimeout) opts.timeout = timeout;
     if (wait) opts.timeout = opts.timeout || 60; // -w: wait indefinitely (use long timeout)
-    return dhcp.requestLease(iface, opts);
+    const output = dhcp.requestLease(iface, opts);
+    writeLeaseFiles(ctx);
+    syncDhclientProcesses(ctx);
+    return output;
   },
 };
+
+function syncDhclientProcesses(ctx: LinuxCommandContext): void {
+  const dhcp = ctx.net.getDhcpClient();
+  const pm = ctx.executor.processMgr;
+  const entries = pm.list({ comm: 'dhclient' });
+  for (const [name] of ctx.net.getPorts()) {
+    const command = `dhclient ${name}`;
+    const existing = entries.find((p) => p.command === command);
+    if (dhcp.isProcessRunning(name) && !existing) {
+      pm.spawn({ command, comm: 'dhclient', user: 'root', uid: 0, gid: 0, ppid: 1, tty: '?' });
+    } else if (!dhcp.isProcessRunning(name) && existing) {
+      pm.kill(existing.pid, 'SIGTERM', { silent: true });
+    }
+  }
+}
+
+function writeLeaseFiles(ctx: LinuxCommandContext): void {
+  const dhcp = ctx.net.getDhcpClient();
+  const vfs = ctx.executor.vfs;
+  if (!vfs.exists('/var/lib/dhcp')) vfs.mkdirp('/var/lib/dhcp', 0o755, 0, 0);
+  const all: string[] = [];
+  for (const [name] of ctx.net.getPorts()) {
+    const content = dhcp.formatLeaseFile(name);
+    if (!content) continue;
+    all.push(content);
+    vfs.writeFile(`/var/lib/dhcp/dhclient.${name}.leases`, `${content}\n`, 0, 0, 0o022);
+  }
+  if (all.length > 0) {
+    vfs.writeFile('/var/lib/dhcp/dhclient.leases', `${all.join('\n\n')}\n`, 0, 0, 0o022);
+  }
+}
