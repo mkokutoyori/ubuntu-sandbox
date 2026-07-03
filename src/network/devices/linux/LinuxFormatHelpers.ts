@@ -153,7 +153,7 @@ function renderPingBody(header: string, targetStr: string, count: number, result
   return lines.join('\n');
 }
 
-function icmpCodeAnnotation(code: number | undefined): string {
+export function icmpCodeAnnotation(code: number | undefined): string {
   if (code === undefined) return '';
   switch (code) {
     case 0: return ' !N (Net unreachable)';

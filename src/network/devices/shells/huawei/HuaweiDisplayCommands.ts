@@ -9,6 +9,7 @@
 
 import type { Router } from '../../Router';
 import type { CommandTrie } from '../CommandTrie';
+import { HuaweiDebugService } from '../../router/diag/HuaweiDebugService';
 import { IPAddress } from '../../../core/types';
 import { huaweiCipher, huaweiIrreversibleCipher } from '@/crypto';
 import { resolveHuaweiInterfaceName as resolveHuaweiIfName } from '../cli-utils';
@@ -791,6 +792,14 @@ export function displayDebugging(router: Router): string {
   const lines: string[] = [];
   const flags = (router as unknown as { _huaweiDebugFlags?: Set<string> })._huaweiDebugFlags;
   if (flags) for (const f of [...flags].sort()) lines.push(f);
+  const debugSvc = (router as unknown as {
+    getDebugService?: () => HuaweiDebugService;
+  }).getDebugService?.();
+  if (debugSvc?.hasAnyFlag()) {
+    for (const f of debugSvc.list()) {
+      lines.push(`${HuaweiDebugService.label(f.category)} debugging is on`);
+    }
+  }
   const dhcp = router._getDHCPServerInternal();
   const dhcpDebug = dhcp.formatDebugShow();
   if (!dhcpDebug.includes('No')) {

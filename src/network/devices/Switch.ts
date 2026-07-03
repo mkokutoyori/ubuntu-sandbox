@@ -729,7 +729,13 @@ export abstract class Switch extends Equipment {
     return this.switchportConfigs.get(portName);
   }
 
-  setSwitchportMode(portName: string, mode: SwitchportMode): boolean {
+  /**
+   * VLAN-membership bookkeeping for a switchport mode change — no DTP
+   * admin-mode side effect. Used both by the CLI-facing `setSwitchportMode`
+   * below and by DTP's own operational-mode sync (which must update this
+   * bookkeeping without feeding back into DTP's own admin-mode state).
+   */
+  protected syncSwitchportMode(portName: string, mode: SwitchportMode): boolean {
     const cfg = this.switchportConfigs.get(portName);
     if (!cfg) return false;
 
@@ -746,10 +752,16 @@ export abstract class Switch extends Equipment {
       if (vlan) vlan.ports.add(portName);
     }
 
+    Logger.info(this.id, 'switch:switchport-mode', `${this.name}: ${portName} set to ${mode}`);
+    return true;
+  }
+
+  setSwitchportMode(portName: string, mode: SwitchportMode): boolean {
+    if (!this.syncSwitchportMode(portName, mode)) return false;
+
     const dtp = (this as unknown as { getDtpAgent?: () => { setAdminMode(p: string, m: string): void } }).getDtpAgent?.();
     dtp?.setAdminMode(portName, mode === 'trunk' ? 'trunk' : 'access');
 
-    Logger.info(this.id, 'switch:switchport-mode', `${this.name}: ${portName} set to ${mode}`);
     return true;
   }
 

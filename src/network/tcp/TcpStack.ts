@@ -75,6 +75,7 @@ export class TcpSocket {
   mss = TCP_DEFAULT_MSS;
   passive = false;
   closed = false;
+  closeReason: TcpCloseReason | null = null;
   connectRefused = false;
   pendingSendQueue: unknown[] = [];
   closeAfterFlush = false;
@@ -125,6 +126,10 @@ export class TcpSocket {
   }
 
   onClose(handler: TcpCloseHandler): () => void {
+    if (this.closed) {
+      handler(this.closeReason ?? 'shutdown');
+      return () => {};
+    }
     this.closeHandlers.push(handler);
     return () => {
       const i = this.closeHandlers.indexOf(handler);
@@ -145,6 +150,7 @@ export class TcpSocket {
   }
 
   _fireClose(reason: TcpCloseReason): void {
+    this.closeReason = reason;
     for (const h of [...this.closeHandlers]) {
       try { h(reason); } catch { /* swallow per-handler */ }
     }
@@ -309,15 +315,17 @@ export class TcpStack {
 
   /**
    * An ICMP destination-unreachable carrying one of our outbound TCP
-   * segments: fail the matching half-open connection as refused (RFC 1122
-   * §4.2.3.9 — a hard error on a SYN aborts the connection attempt).
+   * segments: fail the matching connection (RFC 1122 §4.2.3.9 — a hard
+   * error aborts the connection attempt on a SYN, and is a fatal error
+   * on an already-open connection too — e.g. the peer's firewall starts
+   * rejecting mid-session).
    */
   onIcmpUnreachable(origSourcePort: number, origDestPort: number, origDestIp: string): void {
     for (const socket of this.sockets.values()) {
       if (socket.localPort !== origSourcePort) continue;
       if (socket.remotePort !== origDestPort) continue;
       if (socket.remoteIp !== origDestIp) continue;
-      if (socket.state !== 'syn-sent' && socket.state !== 'syn-received') continue;
+      if (socket.state === 'closed' || socket.state === 'time-wait') continue;
       socket.connectRefused = true;
       this._teardown(socket, 'rst');
       return;

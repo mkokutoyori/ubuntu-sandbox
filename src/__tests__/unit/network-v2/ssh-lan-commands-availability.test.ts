@@ -50,7 +50,14 @@ const NORMALISE_IFCONFIG = (s: string) =>
   );
 
 const NORMALISE_TRACEROUTE = (s: string) =>
-  stripTrailing(s.replace(/[\d.]+\s*ms/g, '*ms'));
+  stripTrailing(
+    s
+      .replace(/[\d.]+\s*ms/g, '*ms')
+      // Numeric (-n) hop lines print bare "X.XXX" RTTs with no "ms" suffix,
+      // isolated by the formatter's two-space field separator — an IP
+      // address token (multiple dots) never matches this single-dot shape.
+      .replace(/(?<=  )\d+\.\d{3}(?=  |$)/gm, '*'),
+  );
 
 const NORMALISE_PING = (s: string) =>
   stripTrailing(

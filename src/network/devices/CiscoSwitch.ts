@@ -131,7 +131,7 @@ export class CiscoSwitch extends Switch {
     const cfg = this.getSwitchportConfig(portName);
     if (!cfg) return;
     if (cfg.mode === mode) return;
-    super.setSwitchportMode(portName, mode);
+    this.syncSwitchportMode(portName, mode);
   }
 
   private applyStpForwardState(portName: string, state: StpForwardState, vlan: number): void {

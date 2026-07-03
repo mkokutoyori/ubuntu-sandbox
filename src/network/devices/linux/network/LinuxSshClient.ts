@@ -935,8 +935,6 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
   if (auth.method === 'password' && verifyOfferedPassword(remoteExec, remoteUser, opts.offeredPassword) === 'wrong-password') {
     machine.recordSshLogin?.(remoteUser, opts.sourceIp, opts.sourceHostname, false, 'password');
     throttler?.recordFailure(opts.sourceIp, Date.now());
-    const ev = (machine as unknown as { getSshServerContext?: () => { events?: { emit: (e: { kind: 'auth_failure'; user: string; ip: string; method: 'password'; port?: number; fromHost?: string }) => void } } }).getSshServerContext?.()?.events;
-    ev?.emit({ kind: 'auth_failure', user: remoteUser, ip: opts.sourceIp, method: 'password', port: 22, fromHost: opts.sourceHostname });
     return {
       output: `${remoteUser}@${host}: Permission denied, please try again.\n`,
       exitCode: 255,

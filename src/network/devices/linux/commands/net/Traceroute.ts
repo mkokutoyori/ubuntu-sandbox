@@ -4,6 +4,7 @@ import type { LinuxCommandContext } from '../LinuxCommandContext';
 import type { TracerouteHop } from '../../LinuxNetKernel';
 import { isValidIPv4 } from '@/network/core/ip';
 import { unquote } from '@/lib/format';
+import { icmpCodeAnnotation } from '../../LinuxFormatHelpers';
 
 const TRACEROUTE_VERSION = 'Modern traceroute for Linux, version 2.1.0 (iputils-s20221126)';
 
@@ -218,10 +219,13 @@ function formatNumericHopLine(hop: TracerouteHop): string {
       if (!probe.responded) {
         line += '  *';
       } else {
-        line += `  ${(probe.rttMs ?? 0).toFixed(3)}`;
+        line += `  ${(probe.rttMs ?? 0).toFixed(3)}${icmpCodeAnnotation(probe.icmpCode)}`;
       }
     }
     return line;
+  }
+  if (hop.unreachable) {
+    return ` ${hop.hop}  ${hop.ip}  ${(hop.rttMs ?? 0).toFixed(3)}${icmpCodeAnnotation(hop.icmpCode)}`;
   }
   return ` ${hop.hop}  ${hop.ip}  ${(hop.rttMs ?? 0).toFixed(3)}`;
 }

@@ -188,6 +188,7 @@ describe('Cisco SPAN — port mirror config + forwarding', () => {
     await sw.executeCommand('monitor session 9 destination interface FastEthernet0/8');
     await sw.executeCommand('end');
 
+    await pcA.executeCommand('arp -d 10.0.0.2');
     const mirrored = captureFramesOn(pcMirror);
     await pcA.executeCommand('ping -c 1 10.0.0.2');
 

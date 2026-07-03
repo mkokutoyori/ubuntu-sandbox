@@ -351,16 +351,26 @@ export class SshSession implements ISshSession {
     payload: Record<string, unknown>,
   ): Promise<{ ok: boolean }> {
     return new Promise((resolve) => {
-      const off = conn.onData((data) => {
+      let settled = false;
+      const offData = conn.onData((data) => {
+        if (settled) return;
         try {
           const parsed = JSON.parse(data) as { ok?: boolean };
           if (typeof parsed.ok === 'boolean') {
-            off();
+            settled = true;
+            offData();
+            offClose?.();
             resolve({ ok: parsed.ok });
           }
         } catch {
           /* ignore */
         }
+      });
+      const offClose = conn.onClose?.(() => {
+        if (settled) return;
+        settled = true;
+        offData();
+        resolve({ ok: false });
       });
       conn.write(JSON.stringify(payload));
     });

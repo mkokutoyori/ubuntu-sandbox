@@ -560,7 +560,7 @@ describe('§U — Router & LinuxMachine expose a CrossVendorSshHost facade', () 
     const r = new CiscoRouter('r1', 0, 0);
     await r.executeCommand('enable');
     await r.executeCommand('configure terminal');
-    await r.executeCommand('banner motd # AUTH NOTICE #');
+    await r.executeCommand('banner motd #AUTH NOTICE#');
     await r.executeCommand('end');
     expect(r.getSshHost().banner).toBe('AUTH NOTICE');
   });
