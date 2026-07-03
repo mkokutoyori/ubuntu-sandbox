@@ -751,7 +751,7 @@ export class LinuxTerminalSession extends TerminalSession {
 
   // ── Command execution ───────────────────────────────────────────
 
-  protected onEnter(): void {
+  protected onEnter(): void | Promise<void> {
     // While a `tail -f` stream is active, Enter just emits a blank line
     // (matching real bash behaviour); the only way out is Ctrl+C.
     if (this.hasForegroundAsyncJob) {
@@ -773,8 +773,9 @@ export class LinuxTerminalSession extends TerminalSession {
     // The 'input' record event is emitted by addEchoLine inside
     // executeCommand — recording here too would duplicate every typed
     // command in the session transcript.
-    this.executeCommand(cmd);
+    const done = this.executeCommand(cmd);
     this.notify();
+    return done;
   }
 
   /**

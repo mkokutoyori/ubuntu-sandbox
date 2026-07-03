@@ -215,13 +215,14 @@ export abstract class CLITerminalSession extends TerminalSession {
 
   // ── Command execution ───────────────────────────────────────────
 
-  protected onEnter(): void {
+  protected onEnter(): void | Promise<void> {
     const cmd = this.input || this._inputBuf;
     this.input = '';
     this._inputBuf = '';
     this.recordEvent('input', cmd);
-    this.executeCommand(cmd);
+    const done = this.executeCommand(cmd);
     this.notify();
+    return done;
   }
 
   private async executeCommand(cmd: string): Promise<void> {

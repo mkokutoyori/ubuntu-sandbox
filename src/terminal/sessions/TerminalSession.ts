@@ -509,6 +509,72 @@ export abstract class TerminalSession {
   /** Current effective input mode. Override in subclasses for flow-aware modes. */
   get currentInputMode(): InputMode { return this.inputMode; }
 
+  /**
+   * Append a single line of text (newlines flattened to spaces) into
+   * whichever buffer the current input mode owns. Used by paste for the
+   * trailing, still-editable line and for every special-mode paste.
+   */
+  insertText(raw: string): void {
+    const flat = raw.replace(/[\r\n]+/g, ' ');
+    if (flat === '') return;
+    const mode = this.currentInputMode.type;
+    if (mode === 'password') {
+      this.setPasswordBuf(this.getPasswordBuf() + flat);
+    } else if (mode === 'interactive-text') {
+      this.setInputBuf(this.getInputBuf() + flat);
+    } else if (mode === 'reverse-search') {
+      this.updateReverseSearch(this.reverseSearchQuery + flat);
+    } else if (mode === 'normal') {
+      this.setInput(this.input + flat);
+    }
+  }
+
+  /**
+   * Paste (possibly multi-line) clipboard text. In the normal command
+   * line, every newline-terminated line is executed in turn — waiting
+   * for each to finish before the next — and the final unterminated line
+   * stays editable in the prompt, matching how a real terminal handles a
+   * pasted block of commands. Any special input mode (password, prompt,
+   * pager, editor, disconnected) never auto-executes: the text is
+   * flattened into the active buffer so a paste can't silently submit
+   * hidden input.
+   */
+  async pasteText(raw: string): Promise<void> {
+    if (this.disposed) return;
+    const normalized = raw.replace(/\r\n?/g, '\n');
+    if (!normalized.includes('\n') || this.currentInputMode.type !== 'normal') {
+      this.insertText(normalized);
+      return;
+    }
+    const lines = normalized.split('\n');
+    const trailing = lines.pop() ?? '';
+    for (let i = 0; i < lines.length; i++) {
+      if (this.disposed) return;
+      // A previously executed line may have opened a prompt (e.g. `ssh`
+      // asking for a password) or a pager: stop auto-executing and hand
+      // the remainder to the active buffer instead of blindly submitting.
+      if (this.currentInputMode.type !== 'normal') {
+        this.insertText([lines[i], ...lines.slice(i + 1), trailing].join(' '));
+        return;
+      }
+      this.setInput(this.input + lines[i]);
+      await this.submitPastedLine();
+    }
+    if (!this.disposed && this.currentInputMode.type === 'normal') {
+      this.setInput(this.input + trailing);
+    } else {
+      this.insertText(trailing);
+    }
+  }
+
+  /** Submit the current line and await its execution (paste serialisation). */
+  private async submitPastedLine(): Promise<void> {
+    const result = this.onEnter();
+    if (result && typeof (result as { then?: unknown }).then === 'function') {
+      await result;
+    }
+  }
+
   getPasswordBuf(): string {
     return this._children.length > 0 ? this.foreground.getPasswordBuf() : this._passwordBuf;
   }
@@ -1277,8 +1343,12 @@ export abstract class TerminalSession {
 
   // ── Template methods (override in subclasses) ───────────────────
 
-  /** Called on Enter in normal mode. */
-  protected abstract onEnter(): void;
+  /**
+   * Called on Enter in normal mode. May return a promise that resolves
+   * once the command has finished executing — {@link pasteText} awaits
+   * it to run pasted lines strictly one after another.
+   */
+  protected abstract onEnter(): void | Promise<void>;
 
   /** Called on Ctrl+C in normal mode. */
   protected onCtrlC(): void {

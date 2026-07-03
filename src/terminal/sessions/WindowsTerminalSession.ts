@@ -756,7 +756,7 @@ export class WindowsTerminalSession extends TerminalSession {
     return job !== null;
   }
 
-  protected onEnter(): void {
+  protected onEnter(): void | Promise<void> {
     if (this.hasForegroundAsyncJob) {
       this.input = '';
       this._inputBuf = '';
@@ -773,8 +773,9 @@ export class WindowsTerminalSession extends TerminalSession {
     // The 'input' record event is emitted by addEchoLine inside
     // executeCommand — recording here too would duplicate every typed
     // command in the session transcript.
-    this.executeCommand(cmd);
+    const done = this.executeCommand(cmd);
     this.notify();
+    return done;
   }
 
   private async executeCommand(cmd: string): Promise<void> {

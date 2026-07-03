@@ -107,23 +107,11 @@ export const TerminalView: React.FC<TerminalViewProps> = ({ session }) => {
       return;
     }
 
-    // Ctrl+Shift+V → paste from clipboard
+    // Ctrl+Shift+V → paste from clipboard (multi-line aware)
     if (e.key === 'V' && e.ctrlKey && e.shiftKey) {
       e.preventDefault();
       pasteFromClipboard().then(text => {
-        if (text) {
-          // Determine input mode and paste into the correct buffer
-          const currentMode = session.currentInputMode;
-          if (session.inputMode.type === 'reverse-search') {
-            session.updateReverseSearch(session.reverseSearchQuery + text);
-          } else if (currentMode.type === 'interactive-text') {
-            session.setInputBuf(session.getInputBuf() + text);
-          } else if (currentMode.type === 'password') {
-            session.setPasswordBuf(session.getPasswordBuf() + text);
-          } else {
-            session.setInput(session.input + text);
-          }
-        }
+        if (text) session.pasteText(text);
       });
       return;
     }
@@ -136,6 +124,17 @@ export const TerminalView: React.FC<TerminalViewProps> = ({ session }) => {
       shiftKey: e.shiftKey,
     });
     if (consumed) e.preventDefault();
+  }, [session]);
+
+  // Native paste (Ctrl+V / middle-click / context menu) — the single-line
+  // <input> silently drops embedded newlines, so intercept the paste event
+  // and route the raw clipboard text through the multi-line paste handler.
+  const handlePaste = useCallback((e: React.ClipboardEvent<HTMLInputElement>) => {
+    const text = e.clipboardData.getData('text');
+    if (text.includes('\n') || text.includes('\r')) {
+      e.preventDefault();
+      session.pasteText(text);
+    }
   }, [session]);
 
   // Global keydown for copy/paste when terminal div is focused but no input has focus
@@ -151,7 +150,7 @@ export const TerminalView: React.FC<TerminalViewProps> = ({ session }) => {
       if (e.key === 'V' && e.ctrlKey && e.shiftKey) {
         e.preventDefault();
         pasteFromClipboard().then(text => {
-          if (text) session.setInput(session.input + text);
+          if (text) session.pasteText(text);
         });
       }
     };
@@ -310,6 +309,7 @@ export const TerminalView: React.FC<TerminalViewProps> = ({ session }) => {
               value={session.getInputBuf()}
               onChange={(e) => session.setInputBuf(e.target.value)}
               onKeyDown={handleKeyDown}
+              onPaste={handlePaste}
               className="flex-1 bg-transparent outline-none border-none p-0 m-0"
               style={{ color: theme.textColor, caretColor: theme.textColor, fontFamily: 'inherit', fontSize: 'inherit' }}
               spellCheck={false}
@@ -355,6 +355,7 @@ export const TerminalView: React.FC<TerminalViewProps> = ({ session }) => {
                 session.setInput(e.target.value);
               }}
               onKeyDown={handleKeyDown}
+              onPaste={handlePaste}
               className="flex-1 bg-transparent outline-none border-none p-0 m-0"
               style={{ color: theme.textColor, caretColor: theme.textColor, fontFamily: 'inherit', fontSize: 'inherit' }}
               spellCheck={false}
