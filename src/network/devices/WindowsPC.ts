@@ -48,6 +48,7 @@ import { PortProxyTable } from './windows/PortProxyTable';
 import { PortProxySocketProjection } from './windows/PortProxySocketProjection';
 import { WindowsServiceManager, START_TYPE_CODES } from './windows/WindowsServiceManager';
 import { WindowsAuditPolicy, cmdAuditpol } from './windows/WindowsAuditPolicy';
+import { WindowsWinRmConfig, cmdWinrm } from './windows/WindowsWinRmConfig';
 import { WindowsProcessManager } from './windows/WindowsProcessManager';
 import { HostClock } from './host/lifecycle/HostClock';
 import { PSRegistryProvider } from './windows/PSRegistryProvider';
@@ -232,6 +233,8 @@ export class WindowsPC extends EndHost implements UserAccountHost {
   readonly eventLog: PSEventLogProvider = new PSEventLogProvider();
   /** `auditpol` subcategory state — gates 4657/4670 object-access auditing. */
   readonly auditPolicy: WindowsAuditPolicy = new WindowsAuditPolicy();
+  /** WinRM / PowerShell Remoting state — off by default until `Enable-PSRemoting`. */
+  readonly winrm: WindowsWinRmConfig = new WindowsWinRmConfig();
 
   private readonly clock = new HostClock();
   private readonly wallEpoch = new Date(2026, 5, 20).getTime();
@@ -1007,6 +1010,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
         { serviceManager: this.svcMgr, processManager: this.procMgr, isAdmin: this.userMgr.isCurrentUserAdmin(), currentUser: this.userMgr.currentUser }, args);
       case 'auditpol':
       case 'auditpol.exe': return cmdAuditpol(this.auditPolicy, args);
+      case 'winrm':   return cmdWinrm(this.winrm, args);
       case 'netstat': return cmdNetstat(fileCtx, args, this.socketTable);
       case 'attrib':  return cmdAttrib(fileCtx, args);
       case 'find':    return cmdFind(fileCtx, args);
@@ -1550,6 +1554,9 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     if (lower === 'auditpol' || lower === 'auditpol.exe') {
       return cmdAuditpol(this.auditPolicy, args);
     }
+    if (lower === 'winrm') {
+      return cmdWinrm(this.winrm, args);
+    }
     // `net` is a multi-subcommand router — all its subhandlers are sync
     // (cmdNetUser / cmdNetLocalgroup / cmdNetStart / cmdNetStop).
     if (lower === 'net' && args.length > 0) {
@@ -1610,6 +1617,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
 
   advanceTime(ms: number): void {
     this.clock.advance(ms);
+    this.procMgr.advanceTime(ms);
     this.fireDueScheduledTasks();
     this.svcMgr.advanceRecoveryTimers(
       this.simulatedDate().getTime(),

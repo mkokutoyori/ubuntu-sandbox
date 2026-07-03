@@ -21,6 +21,7 @@ import { NULL_PROVIDERS }            from '@/powershell/providers/NullProviders'
 import type { PSProviders }          from '@/powershell/providers/PSProviders';
 import { registerCoreCmdlets }       from '@/powershell/cmdlets/core/index';
 import type { PSValue }              from '@/powershell/runtime/PSEnvironment';
+import type { PSScriptBlock }        from '@/powershell/parser/PSASTNode';
 
 // Re-export PSRuntimeError so existing imports like
 // `import { PSRuntimeError } from '@/powershell/interpreter/PSInterpreter'`
@@ -68,6 +69,10 @@ export class PSInterpreter {
 
   setVariable(name: string, value: PSValue): void {
     this.runtime.setVariable(name, value);
+  }
+
+  invokeRemote(block: PSScriptBlock, positionalArgs: PSValue[] = []): PSValue {
+    return this.runtime.invokeScriptBlock(block, {}, positionalArgs, this.runtime.global);
   }
 
   /** All completable command names + aliases (for Tab completion). */

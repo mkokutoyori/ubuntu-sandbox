@@ -43,6 +43,8 @@ export interface ServiceInfo {
   /** Services that depend on this one (DependentServices) — reverse lookup. */
   dependents: string[];
   canPauseAndContinue: boolean;
+  /** PID of the hosting process, or 0 when not running. */
+  processId: number;
 }
 
 export interface ProcessInfo {
@@ -55,6 +57,8 @@ export interface ProcessInfo {
   pmK: number;
   wsK: number;
   cpuSec: number;
+  threads: number;
+  cpuPercent: number;
   status: string;
   sessionId: number;
   critical: boolean;
@@ -115,6 +119,30 @@ export interface RouteInfo {
   ifAlias: string;
   nextHop: string;
   routeMetric: number;
+}
+
+// ─── PowerShell Remoting (Invoke-Command -ComputerName / Test-WSMan) ───────
+
+export interface IRemoteComputer {
+  readonly hostname: string;
+  /** Genuinely execute the script block against the remote machine's OWN
+   *  runtime (its own services/processes/registry/event log), returning
+   *  whatever the block's pipeline produced. */
+  invoke(block: import('@/powershell/parser/PSASTNode').PSScriptBlock, positionalArgs: import('@/powershell/runtime/PSEnvironment').PSValue[]): import('@/powershell/runtime/PSEnvironment').PSValue;
+  /** Whether the target has `Enable-PSRemoting` applied (WinRM listening). */
+  isRemotingEnabled(): boolean;
+}
+
+export interface IRemotingProvider {
+  /** Resolve a computer name/IP to a remoting-capable target on the LAN.
+   *  Returns null when nothing on the topology answers to that address. */
+  resolveComputer(name: string): IRemoteComputer | null;
+  /** `Enable-PSRemoting` on THIS (local) device. */
+  enablePSRemoting(): void;
+  /** This device's own WinRM enabled state (Test-WSMan with no -ComputerName). */
+  isLocalRemotingEnabled(): boolean;
+  /** This device's own CredSSP delegation state (Get-WSManCredSSP). */
+  isLocalCredSSPEnabled(): boolean;
 }
 
 // ─── Provider interfaces ────────────────────────────────────────────────────
@@ -433,4 +461,5 @@ export interface PSProviders {
   readonly scheduledTasks: IScheduledTaskProvider  | null;
   readonly disks:          IDiskProvider           | null;
   readonly environment:    IEnvironmentProvider    | null;
+  readonly remoting:       IRemotingProvider       | null;
 }

@@ -21,7 +21,9 @@ const DEFAULT_SUBCATEGORIES: Record<string, AuditSetting> = {
 };
 
 export class WindowsAuditPolicy {
-  private subcategories = new Map<string, AuditSetting>(Object.entries(DEFAULT_SUBCATEGORIES));
+  private subcategories = new Map<string, AuditSetting>(
+    Object.entries(DEFAULT_SUBCATEGORIES).map(([k, v]) => [k, { ...v }]),
+  );
 
   isEnabled(subcategory: string, kind: 'success' | 'failure'): boolean {
     return this.subcategories.get(subcategory.toLowerCase())?.[kind] ?? false;

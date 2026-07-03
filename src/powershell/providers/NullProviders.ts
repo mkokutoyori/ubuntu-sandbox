@@ -24,4 +24,5 @@ export const NULL_PROVIDERS: PSProviders = {
   scheduledTasks: null,
   disks:          null,
   environment:    null,
+  remoting:       null,
 };

@@ -2528,7 +2528,11 @@ export class PSRuntime {
   private psLike(str: string, pattern: string, caseSensitive: boolean): boolean {
     const regex = '^' + pattern.replace(/[.+^${}()|[\]\\]/g, '\\$&')
       .replace(/\*/g, '.*').replace(/\?/g, '.') + '$';
-    return new RegExp(regex, caseSensitive ? '' : 'i').test(str);
+    // `s` (dotAll): PowerShell wildcard matching treats the whole string as
+    // one blob — `*` must span embedded newlines (multi-line event-log
+    // messages, multi-line file content, …), not stop at them like JS `.`
+    // does by default.
+    return new RegExp(regex, caseSensitive ? 's' : 'is').test(str);
   }
 
   private psMatch(str: string, pattern: string, caseSensitive: boolean, env: PSEnvironment): boolean {

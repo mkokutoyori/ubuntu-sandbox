@@ -611,23 +611,32 @@ export class WindowsServiceManager {
   createService(name: string, opts: {
     binaryPath: string; displayName?: string; description?: string;
     startType?: ServiceStartType; account?: string; dependencies?: string[];
-  }, isAdmin: boolean): string {
+  }, isAdmin: boolean, installedBy: string = 'NT AUTHORITY\\SYSTEM'): string {
     if (!isAdmin) return 'Access is denied.';
     if (this.services.has(name.toLowerCase())) return `The specified service already exists.`;
+    const displayName = opts.displayName ?? name;
+    const account = opts.account ?? 'NT AUTHORITY\\SYSTEM';
     this.services.set(name.toLowerCase(), {
       name,
-      displayName: opts.displayName ?? name,
+      displayName,
       description: opts.description ?? '',
       state: 'Stopped',
       startType: opts.startType ?? 'Manual',
       serviceType: 'WIN32_OWN_PROCESS',
       binaryPath: opts.binaryPath,
-      account: opts.account ?? 'NT AUTHORITY\\SYSTEM',
+      account,
       dependencies: opts.dependencies ?? [],
       canPauseAndContinue: false,
       acceptsShutdown: false,
       processName: name.toLowerCase() + '.exe',
       builtIn: false,
+    });
+    this.bus?.publish({
+      topic: 'windows.service.created',
+      payload: {
+        deviceId: this.deviceId, serviceName: name, displayName,
+        binaryPath: opts.binaryPath, account, installedBy,
+      },
     });
     return '';
   }

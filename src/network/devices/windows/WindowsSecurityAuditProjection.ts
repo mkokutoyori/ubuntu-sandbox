@@ -21,6 +21,7 @@ import type {
   WindowsProcessEventPayload,
   WindowsServiceAccountChangedPayload,
   WindowsFileAclChangedPayload,
+  WindowsServiceCreatedPayload,
 } from './events';
 
 export class WindowsSecurityAuditProjection {
@@ -43,7 +44,13 @@ export class WindowsSecurityAuditProjection {
       bus.subscribe('windows.process.stopped', (e) => this.onProcess(e.payload)),
       bus.subscribe('windows.service.account-changed', (e) => this.onServiceAccountChanged(e.payload)),
       bus.subscribe('windows.filesystem.acl-changed', (e) => this.onAclChanged(e.payload)),
+      bus.subscribe('windows.service.created', (e) => this.onServiceCreated(e.payload)),
     );
+  }
+
+  private onServiceCreated(p: WindowsServiceCreatedPayload): void {
+    if (p.deviceId !== this.deviceId) return;
+    this.audit.serviceInstalled(p.serviceName, p.binaryPath, p.account, p.installedBy);
   }
 
   private onServiceAccountChanged(p: WindowsServiceAccountChangedPayload): void {

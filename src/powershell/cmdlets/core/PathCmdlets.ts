@@ -820,3 +820,37 @@ export class GetFileHashCmdlet implements ICmdlet {
     } as Record<string, PSValue>;
   }
 }
+
+// ─── Get-AuthenticodeSignature ────────────────────────────────────────────
+
+const TRUSTED_SIGNED_ROOTS = [
+  'c:\\windows\\', 'c:\\program files\\', 'c:\\program files (x86)\\',
+];
+
+export class GetAuthenticodeSignatureCmdlet implements ICmdlet {
+  readonly name = 'get-authenticodesignature';
+  readonly displayName = 'Get-AuthenticodeSignature';
+  readonly parameters = ['FilePath', 'LiteralPath'] as const;
+  readonly aliases = [] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const path = psValueToString(ctx.named['filepath'] ?? ctx.named['literalpath'] ?? ctx.positional[0] ?? '');
+    if (!path) { ctx.emitError("Get-AuthenticodeSignature : Cannot bind argument to parameter 'FilePath' because it is an empty string."); return null; }
+    const fs = ctx.providers.filesystem;
+    if (!fs) { ctx.emitError('Get-AuthenticodeSignature is not recognized in this provider context'); return null; }
+    if (!fs.exists(path)) {
+      ctx.emitError(`Get-AuthenticodeSignature : Cannot find path '${path}' because it does not exist.`);
+      return null;
+    }
+    const lower = path.toLowerCase();
+    const trusted = TRUSTED_SIGNED_ROOTS.some(root => lower.startsWith(root));
+    return {
+      Path: path,
+      Status: trusted ? 'Valid' : 'NotSigned',
+      StatusMessage: trusted
+        ? 'Signature verified.'
+        : 'The file is not digitally signed. The publisher could not be verified.',
+      SignerCertificate: trusted ? { Subject: 'CN=Microsoft Windows, O=Microsoft Corporation', Thumbprint: 'A1B2C3D4E5F6A1B2C3D4E5F6A1B2C3D4E5F6A1B2' } : null,
+    } as Record<string, PSValue>;
+  }
+}

@@ -18,7 +18,7 @@ export class GetDateCmdlet implements ICmdlet {
   execute(ctx: CmdletContext): PSValue {
     const fmt     = ctx.named['format'] ? psValueToString(ctx.named['format']) : null;
     const dateArg = ctx.named['date'] ?? ctx.positional[0] ?? null;
-    const now = new Date();
+    const now = ctx.providers.scheduledTasks?.now?.() ?? new Date();
     let d: Date;
     if (dateArg !== null && dateArg !== undefined) {
       d = new Date(psValueToString(dateArg));

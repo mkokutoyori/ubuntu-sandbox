@@ -32,6 +32,62 @@ function taskToPSObject(t: ScheduledTaskInfo): Record<string, PSValue> {
   return { TaskPath: t.taskPath, TaskName: t.taskName, State: t.state };
 }
 
+// ── Get-Counter (per-process counter paths) ───────────────────────────────
+//
+// The terminal-session Get-Counter (GetCounter.ts) handles system-wide
+// counters (\Processor, \Memory, \Network Interface, …) as a plain-text
+// intercept and never touches the object pipeline. Scripts that need to
+// capture a numeric sample into a variable — `(Get-Counter ...).CounterSamples`
+// — need a real cmdlet; this one covers `\Process(<name>)\<counter>` paths,
+// the ones perf/leak-monitoring scripts actually sample.
+
+const PROCESS_COUNTER_RE = /^\\Process\(([^)]+)\)\\(.+)$/i;
+
+function processCounterCookedValue(
+  p: { wsK: number; cpuPercent: number; handles: number; threads: number },
+  counterName: string,
+): number | null {
+  const c = counterName.trim().toLowerCase();
+  if (c === 'working set - private' || c === 'working set') return Math.floor(p.wsK) * 1024;
+  if (c === '% processor time') return Math.round(p.cpuPercent * 100) / 100;
+  if (c === 'handle count') return p.handles;
+  if (c === 'thread count') return p.threads;
+  return null;
+}
+
+export class GetCounterCmdlet implements ICmdlet {
+  readonly name = 'get-counter';
+  readonly displayName = 'Get-Counter';
+  readonly aliases = [] as const;
+  readonly parameters = ['Counter', 'SampleInterval', 'MaxSamples', 'Continuous'] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const raw = ctx.named['counter'] ?? ctx.positional[0];
+    if (raw === undefined || raw === null) {
+      ctx.emitError('Get-Counter: -Counter is required');
+      return null;
+    }
+    const paths = Array.isArray(raw) ? raw.map(psValueToString) : [psValueToString(raw)];
+    const procs = ctx.providers.processes;
+    const samples: Record<string, PSValue>[] = [];
+    for (const path of paths) {
+      const m = PROCESS_COUNTER_RE.exec(path);
+      if (!m) { ctx.emitError(`Get-Counter: unsupported counter path "${path}"`); continue; }
+      const [, instanceName, counterName] = m;
+      if (!procs) { ctx.emitError('Get-Counter is not recognized in this provider context'); continue; }
+      const p = procs.getProcess(instanceName);
+      if (!p) { ctx.emitError(`Get-Counter: could not find the process "${instanceName}"`); continue; }
+      const value = processCounterCookedValue(p, counterName);
+      if (value === null) { ctx.emitError(`Get-Counter: unsupported counter "${counterName}"`); continue; }
+      samples.push({ Path: path.toLowerCase(), InstanceName: instanceName.toLowerCase(), CookedValue: value });
+    }
+    return {
+      Timestamp: new Date(),
+      CounterSamples: samples,
+    } as Record<string, PSValue>;
+  }
+}
+
 // ── Get-ScheduledTask ─────────────────────────────────────────────────────
 
 export class GetScheduledTaskCmdlet implements ICmdlet {
@@ -77,9 +133,11 @@ export class RegisterScheduledTaskCmdlet implements ICmdlet {
     let intervalMs: number | undefined;
     if (trigger) {
       const deviceNow = tasks.now?.() ?? new Date();
+      // `Get-Date` now reflects the device's own simulated clock (not real
+      // wall time), so a `-At (Get-Date)` argument already IS the correct
+      // simulated instant — no rebasing against the real clock needed.
       if (trigger.At instanceof Date) {
-        const driftMs = trigger.At.getTime() - Date.now();
-        runAt = new Date(deviceNow.getTime() + driftMs);
+        runAt = trigger.At;
       } else {
         runAt = deviceNow;
       }
@@ -243,6 +301,23 @@ export class GetCimInstanceCmdlet implements ICmdlet {
         StartMode:   s.startType,
         PathName:    s.binaryPath,
         StartName:   s.account,
+        ProcessId:   s.processId,
+      } as Record<string, PSValue>)) as PSValue;
+    }
+    // Win32_PerfFormattedData_PerfProc_Process → per-process performance
+    // counters (handles/threads/private working set/CPU), forwarded to the
+    // Process provider like Win32_Process above.
+    if (className === 'win32_perfformatteddata_perfproc_process') {
+      const procs = ctx.providers.processes;
+      if (!procs) throw new PSRuntimeError('Get-CimInstance Win32_PerfFormattedData_PerfProc_Process is not recognized in this context');
+      return procs.listProcesses().map(p => ({
+        Name:                 p.name.replace(/\.exe$/i, ''),
+        IDProcess:             p.pid,
+        HandleCount:           p.handles,
+        ThreadCount:           p.threads,
+        WorkingSetPrivate:     Math.floor(p.wsK) * 1024,
+        WorkingSet:            Math.floor(p.wsK) * 1024,
+        PercentProcessorTime:  Math.round(p.cpuPercent),
       } as Record<string, PSValue>)) as PSValue;
     }
     // Other classes — defer to the legacy executor (it has a wider catalog).

@@ -37,7 +37,7 @@ import {
   OutFileCmdlet as OutFilePathCmdlet,
   GetItemPropertyCmdlet, SetItemPropertyCmdlet, RemoveItemPropertyCmdlet, ClearItemPropertyCmdlet,
   GetItemCmdlet, SetItemCmdlet, GetAclCmdlet, SetAclCmdlet,
-  RenameItemCmdlet, MkdirCmdlet, GetFileHashCmdlet,
+  RenameItemCmdlet, MkdirCmdlet, GetFileHashCmdlet, GetAuthenticodeSignatureCmdlet,
 } from './PathCmdlets';
 import {
   NewObjectCmdlet, GetRandomCmdlet, InvokeExpressionCmdlet,
@@ -101,8 +101,11 @@ import {
   GetScheduledTaskCmdlet, RegisterScheduledTaskCmdlet,
   UnregisterScheduledTaskCmdlet, NewScheduledTaskTriggerCmdlet,
   NewScheduledTaskActionCmdlet, NewScheduledTaskPrincipalCmdlet, GetDiskCmdlet, GetVolumeCmdlet,
-  GetCimInstanceCmdlet,
+  GetCimInstanceCmdlet, GetCounterCmdlet,
 } from './SystemMgmtCmdlets';
+import {
+  EnablePSRemotingCmdlet, TestWSManCmdlet, GetWSManCredSSPCmdlet,
+} from './RemotingCmdlets';
 
 /**
  * Register all core (provider-independent) cmdlets into the given registry.
@@ -186,6 +189,7 @@ export function registerCoreCmdlets(registry: CmdletRegistry): void {
   registry.register(new RenameItemCmdlet());
   registry.register(new MkdirCmdlet());
   registry.register(new GetFileHashCmdlet());
+  registry.register(new GetAuthenticodeSignatureCmdlet());
 
   // ── Misc ──────────────────────────────────────────────────────────────────
   registry.register(new NewObjectCmdlet());
@@ -309,6 +313,12 @@ export function registerCoreCmdlets(registry: CmdletRegistry): void {
   registry.register(new GetDiskCmdlet());
   registry.register(new GetVolumeCmdlet());
   registry.register(new GetCimInstanceCmdlet());
+  registry.register(new GetCounterCmdlet());
+
+  // ── PowerShell Remoting (provider-backed) ─────────────────────────────────
+  registry.register(new EnablePSRemotingCmdlet());
+  registry.register(new TestWSManCmdlet());
+  registry.register(new GetWSManCredSSPCmdlet());
 
   // ── Native CLI shims (sync subset) ────────────────────────────────────────
   // ping / tracert stay in the legacy executor — they're async and the

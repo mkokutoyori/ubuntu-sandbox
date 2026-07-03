@@ -232,7 +232,7 @@ function scCreate(ctx: ScContext, args: string[]): string {
     displayName: opts.displayname || name,
     startType: opts.start ? startTypeMap[opts.start.toLowerCase()] : undefined,
     dependencies: opts.depend ? opts.depend.split('/').map(s => s.trim()).filter(Boolean) : undefined,
-  }, ctx.isAdmin);
+  }, ctx.isAdmin, ctx.currentUser);
 
   if (err) {
     if (err.includes('already exists')) return `[SC] CreateService FAILED 1073:\n\n${err}`;
@@ -278,13 +278,7 @@ function scQueryEx(ctx: ScContext, args: string[]): string {
 }
 
 function findServicePid(ctx: ScContext, serviceName: string): number {
-  const procs = ctx.processManager.getAllProcesses();
-  for (const p of procs) {
-    if (p.hostedServices.some(s => s.toLowerCase() === serviceName.toLowerCase())) {
-      return p.pid;
-    }
-  }
-  return 0;
+  return ctx.processManager.getPidForService(serviceName);
 }
 
 // ─── description — show service description ──────────────────────

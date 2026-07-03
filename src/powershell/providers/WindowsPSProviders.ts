@@ -18,6 +18,8 @@ import { PSRegistryProvider } from '@/network/devices/windows/PSRegistryProvider
 import { PSEventLogProvider } from '@/network/devices/windows/PSEventLogProvider';
 import { resolveAdapterName } from '@/network/devices/windows/WinNetsh';
 import { IPAddress, MACAddress, SubnetMask } from '@/network/core/types';
+import { findHostByAddress } from '@/network/devices/linux/network/HostLookup';
+import type { PSScriptBlock } from '@/powershell/parser/PSASTNode';
 
 type FwRow = {
   name: string; displayName: string; enabled: boolean;
@@ -43,10 +45,12 @@ import type {
   IFileSystemProvider, IRegistryProvider, IServiceProvider,
   INetworkProvider, IProcessProvider, IUserProvider, IEventLogProvider,
   IVpnProvider, IScheduledTaskProvider, IDiskProvider, IEnvironmentProvider,
+  IRemotingProvider, IRemoteComputer,
   DirEntry, ServiceInfo, ProcessInfo, UserInfo, GroupInfo,
   NetworkAdapterInfo, IPAddressInfo, RouteInfo, EventLogEntryInfo,
   VpnConnectionInfo, ScheduledTaskInfo, DiskInfo, VolumeInfo,
 } from '@/powershell/providers/PSProviders';
+import type { PSValue } from '@/powershell/runtime/PSEnvironment';
 
 // ── Filesystem adapter ────────────────────────────────────────────────────
 
@@ -162,11 +166,11 @@ class WindowsServiceAdapter implements IServiceProvider {
     const filtered = nameFilter
       ? all.filter(s => s.name.toLowerCase().includes(nameFilter.toLowerCase()))
       : all;
-    return filtered.map(s => toServiceInfo(s, this.mgr()));
+    return filtered.map(s => toServiceInfo(s, this.mgr(), this.pc.getProcessManager()));
   }
   getService(name: string): ServiceInfo | null {
     const s = this.mgr().getService(name);
-    return s ? toServiceInfo(s, this.mgr()) : null;
+    return s ? toServiceInfo(s, this.mgr(), this.pc.getProcessManager()) : null;
   }
   startService(name: string): string {
     const msg = this.mgr().startService(name, this.isAdmin());
@@ -219,7 +223,7 @@ class WindowsServiceAdapter implements IServiceProvider {
       startType: opts.startType ?? 'Manual',
       description: opts.description ?? '',
       dependencies: opts.dependsOn ?? [],
-    }, this.isAdmin());
+    }, this.isAdmin(), this.pc.getUserManager().currentUser);
   }
   removeService(name: string): string {
     return this.mgr().deleteService(name, this.isAdmin());
@@ -235,6 +239,7 @@ class WindowsServiceAdapter implements IServiceProvider {
 function toServiceInfo(
   s: import('@/network/devices/windows/WindowsServiceManager').WindowsService,
   mgr: import('@/network/devices/windows/WindowsServiceManager').WindowsServiceManager,
+  procMgr: import('@/network/devices/windows/WindowsProcessManager').WindowsProcessManager,
 ): ServiceInfo {
   return {
     name: s.name,
@@ -248,6 +253,7 @@ function toServiceInfo(
     dependencies: [...s.dependencies],
     dependents: mgr.getAllDependents(s.name).map(d => d.name),
     canPauseAndContinue: s.canPauseAndContinue,
+    processId: procMgr.getPidForService(s.name),
   };
 }
 
@@ -306,6 +312,8 @@ function toProcessInfo(p: import('@/network/devices/windows/WindowsProcessManage
     pmK: p.pmK,
     wsK: p.wsK,
     cpuSec: p.cpuSec,
+    threads: p.threads,
+    cpuPercent: p.cpuPercent,
     status: p.status,
     sessionId: p.sessionId,
     critical: p.critical,
@@ -1115,6 +1123,47 @@ class WindowsDiskAdapter implements IDiskProvider {
   }
 }
 
+// ── Remoting adapter (Invoke-Command -ComputerName / Test-WSMan) ──────────
+//
+// Resolves the target through the same simulated-topology lookup the SSH
+// clients use (`findHostByAddress`), then — when the target is genuinely a
+// WindowsPC — hands back a handle onto ITS OWN memoized PSInterpreter, so a
+// script block dispatched there truly runs against that device's services /
+// processes / registry / event log, not the caller's.
+
+interface RemotableDevice {
+  getHostname(): string;
+  getPowerShellInterpreter(): { invokeRemote(block: PSScriptBlock, positionalArgs: PSValue[]): PSValue };
+  winrm: { enabled: boolean };
+}
+
+class WindowsRemotingAdapter implements IRemotingProvider {
+  constructor(private readonly pc: WindowsPC) {}
+
+  private local(): { winrm: { enable(): void; enabled: boolean; credSSP: boolean } } {
+    return this.pc as unknown as { winrm: { enable(): void; enabled: boolean; credSSP: boolean } };
+  }
+
+  resolveComputer(name: string): IRemoteComputer | null {
+    const found = findHostByAddress(name);
+    if (!found || found.poweredOff || found.interfaceDown) return null;
+    const device = found.device as unknown as Partial<RemotableDevice>;
+    if (typeof device.getPowerShellInterpreter !== 'function' || !device.winrm) return null;
+    const interp = device.getPowerShellInterpreter();
+    const hostname = device.getHostname?.() ?? name;
+    const winrm = device.winrm;
+    return {
+      hostname,
+      invoke: (block, positionalArgs) => interp.invokeRemote(block, positionalArgs),
+      isRemotingEnabled: () => winrm.enabled,
+    };
+  }
+
+  enablePSRemoting(): void { this.local().winrm.enable(); }
+  isLocalRemotingEnabled(): boolean { return this.local().winrm.enabled; }
+  isLocalCredSSPEnabled(): boolean { return this.local().winrm.credSSP; }
+}
+
 // ── Public factory ─────────────────────────────────────────────────────────
 
 /**
@@ -1164,5 +1213,6 @@ export function createWindowsPSProviders(
     scheduledTasks: new WindowsScheduledTaskAdapter(pc),
     disks:          new WindowsDiskAdapter(pc),
     environment:    new WindowsEnvironmentAdapter(pc),
+    remoting:       new WindowsRemotingAdapter(pc),
   };
 }

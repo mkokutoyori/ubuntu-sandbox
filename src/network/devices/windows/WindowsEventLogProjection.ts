@@ -12,6 +12,7 @@
 import type { IEventBus, Unsubscribe } from '@/events/EventBus';
 import type {
   WindowsServiceEventPayload, WindowsServiceCrashedPayload, WindowsServiceRecoveryCriticalPayload,
+  WindowsServiceCreatedPayload,
 } from './events';
 
 /** SCM event ID for a service state transition (System log). */
@@ -20,6 +21,8 @@ const SCM_STATE_CHANGE = 7036;
 const SCM_UNEXPECTED_TERMINATION = 7034;
 /** SCM event ID announcing the corrective action about to be taken (System log). */
 const SCM_RECOVERY_ACTION = 7031;
+/** SCM event ID for a new service installed in the system (System log). */
+const SCM_SERVICE_INSTALLED = 7045;
 /** Windows Filtering Platform — packet blocked (Security log). */
 const WFP_PACKET_BLOCKED = 5152;
 /** TCP listener started (System log). */
@@ -48,6 +51,7 @@ export class WindowsEventLogProjection {
       bus.subscribe('windows.service.started', (e) => this.onService(e.payload)),
       bus.subscribe('windows.service.stopped', (e) => this.onService(e.payload)),
       bus.subscribe('windows.service.crashed', (e) => this.onServiceCrashed(e.payload)),
+      bus.subscribe('windows.service.created', (e) => this.onServiceCreated(e.payload)),
       bus.subscribe('windows.service.recovery-critical', (e) => this.onRecoveryCritical(e.payload)),
       bus.subscribe('tcp.listener.changed', (e) => this.onTcpListener(e.payload)),
       bus.subscribe('tcp.connection.opened', (e) => this.onTcpAccepted(e.payload)),
@@ -174,6 +178,22 @@ export class WindowsEventLogProjection {
       SCM_UNEXPECTED_TERMINATION,
       'Error',
       `The ${p.displayName} service terminated unexpectedly. It has done this ${p.failureCount} time(s).`,
+    );
+  }
+
+  private onServiceCreated(p: WindowsServiceCreatedPayload): void {
+    if (p.deviceId !== this.deviceId) return;
+    this.sink.writeEventLog(
+      'System',
+      'Service Control Manager',
+      SCM_SERVICE_INSTALLED,
+      'Information',
+      `A service was installed in the system.\n\n` +
+      `Service Name:  ${p.serviceName}\n` +
+      `Service File Name:  ${p.binaryPath}\n` +
+      `Service Type:  user mode service\n` +
+      `Service Start Type:  demand start\n` +
+      `Service Account:  ${p.account}`,
     );
   }
 

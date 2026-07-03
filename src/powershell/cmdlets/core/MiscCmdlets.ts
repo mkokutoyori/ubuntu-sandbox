@@ -334,12 +334,60 @@ export class ImportModuleCmdlet implements ICmdlet {
 
 export class InvokeCommandCmdlet implements ICmdlet {
   readonly name = 'invoke-command';
+  readonly parameters = ['ComputerName', 'ScriptBlock', 'ArgumentList', 'Session', 'AsJob', 'JobName'] as const;
   readonly aliases = ['icm'] as const;
 
   execute(ctx: CmdletContext): PSValue {
     const block = (ctx.named['scriptblock'] ?? ctx.positional[0]) as PSValue;
     if (!block) return null;
-    return ctx.invokeBlock(block as never, null);
+
+    const computerRaw = ctx.named['computername'];
+    if (computerRaw === undefined || computerRaw === null) {
+      return ctx.invokeBlock(block as never, null);
+    }
+
+    const computers = (Array.isArray(computerRaw) ? computerRaw : [computerRaw]).map(psValueToString);
+    const argListRaw = ctx.named['argumentlist'];
+    const argumentList = argListRaw === undefined || argListRaw === null
+      ? []
+      : (Array.isArray(argListRaw) ? argListRaw : [argListRaw]);
+
+    const remoting = ctx.providers.remoting;
+    if (!remoting) {
+      ctx.emitError('Invoke-Command : WinRM cannot complete the operation in this context.');
+      return null;
+    }
+
+    const results: PSValue[] = [];
+    for (const name of computers) {
+      const remote = remoting.resolveComputer(name);
+      if (!remote || !remote.isRemotingEnabled()) {
+        ctx.emitError(
+          `Invoke-Command : Connecting to remote server ${name} failed with the following error message: ` +
+          `WinRM cannot complete the operation. Verify that the specified computer name is valid, that the computer ` +
+          `is accessible over the network, and that a firewall exception for the WinRM service is enabled and allows ` +
+          `access from this computer.`,
+        );
+        continue;
+      }
+      const value = remote.invoke(block as never, argumentList);
+      const items = Array.isArray(value) ? value : (value !== null && value !== undefined ? [value] : []);
+      for (const item of items) {
+        if (item !== null && typeof item === 'object' && !Array.isArray(item)) {
+          (item as Record<string, PSValue>)['PSComputerName'] = remote.hostname;
+        }
+        results.push(item);
+      }
+    }
+
+    if (ctx.named['asjob'] === true) {
+      const jobs = ctx.providers.jobs;
+      if (!jobs) return null;
+      const jobName = ctx.named['jobname'] ? psValueToString(ctx.named['jobname']) : undefined;
+      return jobInfoToPS(jobs.startJob(jobName, results, 0));
+    }
+
+    return results.length === 1 ? results[0] : results;
   }
 }
 

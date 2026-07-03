@@ -42,6 +42,7 @@ export const SECURITY_EVENT = {
   PROCESS_TERMINATED: 4689,
   REGISTRY_VALUE_MODIFIED: 4657,
   PERMISSION_CHANGED: 4670,
+  SERVICE_INSTALLED: 4697,
 } as const;
 
 const SECURITY_LOG = 'Security';
@@ -135,6 +136,12 @@ export class WindowsSecurityAudit {
     this.success(SECURITY_EVENT.PERMISSION_CHANGED,
       `Permissions on an object were changed.\n\nObject:\n\tObject Name:\t${objectPath}\n\t` +
       `New Access:\t${identity}: ${permissions}\n\nSubject:\n\tAccount Name:\t${changedBy}`);
+  }
+
+  serviceInstalled(serviceName: string, binaryPath: string, account: string, installedBy: string): void {
+    this.success(SECURITY_EVENT.SERVICE_INSTALLED,
+      `A service was installed in the system.\n\nService Information:\n\tService Name:\t${serviceName}\n\t` +
+      `Service File Name:\t${binaryPath}\n\tService Account:\t${account}\n\nSubject:\n\tAccount Name:\t${installedBy}`);
   }
 
   // ─── Internals ─────────────────────────────────────────────────────────

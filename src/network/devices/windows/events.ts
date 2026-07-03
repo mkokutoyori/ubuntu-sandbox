@@ -63,6 +63,16 @@ export interface WindowsServiceRecoveryCriticalPayload extends WindowsDeviceRef 
   rank: number;
 }
 
+/** A new service was installed (`New-Service` / `sc create`). */
+export interface WindowsServiceCreatedPayload extends WindowsDeviceRef {
+  serviceName: string;
+  displayName: string;
+  binaryPath: string;
+  account: string;
+  /** The username that ran the install (for 4697 audit attribution). */
+  installedBy: string;
+}
+
 // ─── Account lifecycle ──────────────────────────────────────────────────
 
 /** The kind of change applied to a local account. */
@@ -130,6 +140,7 @@ export type WindowsDomainEvent =
   | { topic: 'windows.service.started'; payload: WindowsServiceEventPayload }
   | { topic: 'windows.service.stopped'; payload: WindowsServiceEventPayload }
   | { topic: 'windows.service.crashed'; payload: WindowsServiceCrashedPayload }
+  | { topic: 'windows.service.created'; payload: WindowsServiceCreatedPayload }
   | { topic: 'windows.service.account-changed'; payload: WindowsServiceAccountChangedPayload }
   | { topic: 'windows.filesystem.acl-changed'; payload: WindowsFileAclChangedPayload }
   | { topic: 'windows.service.recovery-run'; payload: WindowsServiceRecoveryRunPayload }
