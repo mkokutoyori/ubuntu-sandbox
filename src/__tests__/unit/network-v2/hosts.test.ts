@@ -394,7 +394,7 @@ describe('H-08 — Dynamic /etc/hosts editing and re-resolution', () => {
     // Overwrite with only a custom entry (no localhost!)
     await pc.executeCommand(`sudo sh -c 'echo "10.0.1.99 onlyhost" > /etc/hosts'`);
 
-    const out1 = await pc.executeCommand('ping -c 1 onlyhost');
+    const out1 = await pc.executeCommand('getent hosts onlyhost');
     expect(out1).toContain('10.0.1.99');
 
     // localhost no longer resolves from file
