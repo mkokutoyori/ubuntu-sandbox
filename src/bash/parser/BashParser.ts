@@ -94,6 +94,7 @@ export class BashParser {
     }
 
     commands.push(this.parseAndOrList());
+    this.markBackgroundIfAmp(commands);
 
     while (this.matchSeparator()) {
       this.skipNewlines();
@@ -103,9 +104,16 @@ export class BashParser {
         throw new Error(`bash: syntax error near unexpected token '${t.value}'`);
       }
       commands.push(this.parseAndOrList());
+      this.markBackgroundIfAmp(commands);
     }
 
     return makeCommandList(commands, pos);
+  }
+
+  private markBackgroundIfAmp(commands: AndOrList[]): void {
+    if (this.check(TokenType.AMP)) {
+      commands[commands.length - 1].background = true;
+    }
   }
 
   // ─── And/Or List (Grammar Rules 7-9) ──────────────────────────

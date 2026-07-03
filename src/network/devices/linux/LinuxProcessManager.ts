@@ -291,6 +291,7 @@ export class LinuxProcessManager {
       case 'SIGQUIT':
       case 'SIGTERM':
       case 'SIGKILL': {
+        this.lastKill.set(pid, signal);
         const reparented = this.terminate(pid);
         this.publish({
           topic: 'linux.process.exited',
@@ -299,6 +300,12 @@ export class LinuxProcessManager {
         return true;
       }
     }
+  }
+
+  private readonly lastKill = new Map<number, Signal>();
+
+  lastKillSignal(pid: number): Signal | undefined {
+    return this.lastKill.get(pid);
   }
 
   /** Deliver a non-lethal signal (a daemon trapping SIGHUP for reload). */

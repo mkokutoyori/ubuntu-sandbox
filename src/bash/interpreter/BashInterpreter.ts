@@ -47,6 +47,7 @@ export interface ExternalCommandResult {
    * whole `output` is treated as stderr iff the exit code is non-zero).
    */
   stderr?: string;
+  backgroundPid?: number;
 }
 
 /**
@@ -62,12 +63,14 @@ export interface ExternalCommandResult {
 export type ExternalCommandFn = (
   argv: string[],
   env?: Record<string, string>,
+  background?: boolean,
 ) => ExternalCommandResult | string | Promise<ExternalCommandResult | string>;
 
 /** A request the evaluation core yields to its driver. */
 export interface ExternalRequest {
   argv: string[];
   env?: Record<string, string>;
+  background?: boolean;
 }
 
 /** The sans-IO evaluation type: yields external requests, receives results. */
@@ -224,7 +227,7 @@ export class BashInterpreter {
     while (!step.done) {
       let feed: ExternalCommandResult;
       try {
-        const raw = this.executeCommand(step.value.argv, step.value.env);
+        const raw = this.executeCommand(step.value.argv, step.value.env, step.value.background);
         if (raw instanceof Promise) {
           feed = {
             output: `bash: ${step.value.argv[0]}: cannot run an asynchronous command in a synchronous shell\n`,
@@ -250,7 +253,7 @@ export class BashInterpreter {
     while (!step.done) {
       let feed: ExternalCommandResult;
       try {
-        feed = normalizeResult(await this.executeCommand(step.value.argv, step.value.env));
+        feed = normalizeResult(await this.executeCommand(step.value.argv, step.value.env, step.value.background));
       } catch (e) {
         if (e instanceof ExitSignal) {
           step = gen.throw(e);
@@ -427,7 +430,21 @@ export class BashInterpreter {
     }
   }
 
+  private pendingBackground = false;
+
   private *visitAndOrList(node: AndOrList): Effects<void> {
+    if (node.background && node.rest.length === 0
+        && node.first.commands.length === 1 && !node.first.negated
+        && node.first.commands[0].type === 'SimpleCommand') {
+      this.pendingBackground = true;
+      try {
+        yield* this.visitPipeline(node.first);
+      } finally {
+        this.pendingBackground = false;
+      }
+      this.env.lastExitCode = 0;
+      return;
+    }
     // `set -e` is suppressed for every stage EXCEPT the last in an
     // and-or chain (bash semantics: `cmd1 && cmd2` aborts on cmd2's
     // failure, never on cmd1's, because cmd1 is itself a guard).
@@ -696,7 +713,12 @@ export class BashInterpreter {
     } else {
       const fullArgs = pipeInput ? [...args, pipeInput] : args;
       const envSnapshot = Object.fromEntries(this.env.getAll());
-      const result = normalizeResult(yield { argv: fullArgs, env: envSnapshot });
+      const background = this.pendingBackground || undefined;
+      this.pendingBackground = false;
+      const result = normalizeResult(yield { argv: fullArgs, env: envSnapshot, background });
+      if (result.backgroundPid !== undefined) {
+        this.env.set('!', String(result.backgroundPid));
+      }
       if (result.stderr !== undefined) {
         // The command separates fd 1 / fd 2. Stdout flows normally;
         // stderr is mirrored to the pure stderr stream (and, with no

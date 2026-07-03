@@ -38,6 +38,7 @@ export interface AndOrList extends ASTBase {
   type: 'AndOrList';
   first: Pipeline;
   rest: AndOrPart[];
+  background?: boolean;
 }
 
 export interface AndOrPart {

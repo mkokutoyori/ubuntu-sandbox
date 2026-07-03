@@ -382,10 +382,12 @@ describe('Interpreter — External Commands', () => {
     const execCmd = vi.fn(() => '');
     run('ls -la /tmp', { execCmd });
     // The interpreter also passes an environment snapshot as a second
-    // argument so env-aware commands (ssh forwarding) can read it.
+    // argument so env-aware commands (ssh forwarding) can read it, and
+    // a background flag as a third (undefined for foreground commands).
     expect(execCmd).toHaveBeenCalledWith(
       ['ls', '-la', '/tmp'],
       expect.any(Object),
+      undefined,
     );
   });
 });

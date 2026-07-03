@@ -1607,6 +1607,15 @@ export class LinuxCommandExecutor {
       cmdLine = cmdLine.replace(/^nohup\s+/, '');
     }
 
+    const spawned = this.spawnBackgroundJob(cmdLine, nohup);
+    if (!spawned) return null;
+    const lines: string[] = [];
+    if (nohup) lines.push(`nohup: ignoring input and appending output to 'nohup.out'`);
+    lines.push(`[${spawned.jobId}] ${spawned.pid}`);
+    return lines.join('\n');
+  }
+
+  private spawnBackgroundJob(cmdLine: string, nohup: boolean): { pid: number; jobId: number } | null {
     const argv = simpleTokenize(cmdLine);
     if (argv.length === 0) return null;
     const c = this.ctx();
@@ -1616,7 +1625,7 @@ export class LinuxCommandExecutor {
       user: this.userMgr.currentUser,
       uid: c.uid,
       gid: c.gid,
-      ppid: nohup ? 1 : this.shellPid,
+      ppid: nohup ? 1 : this.currentBashPid(),
       tty: nohup ? '?' : 'pts/0',
       cwd: this.cwd,
     });
@@ -1646,10 +1655,7 @@ export class LinuxCommandExecutor {
     // to drain when the user actually waits on it.
     job.capturedOutput = captured;
     job.exitCode = exitCode;
-    const lines: string[] = [];
-    if (nohup) lines.push(`nohup: ignoring input and appending output to 'nohup.out'`);
-    lines.push(`[${job.id}] ${proc.pid}`);
-    return lines.join('\n');
+    return { pid: proc.pid, jobId: job.id };
   }
 
   /** Current simulated-clock time in milliseconds. */
@@ -2043,7 +2049,7 @@ export class LinuxCommandExecutor {
       trimmed,
       'bash',
       [],
-      (argv, env) => this.dispatchFromInterpreter(argv, env),
+      (argv, env, background) => this.dispatchFromInterpreter(argv, env, background),
       initialVars,
       io,
       { pid: this.currentBashPid(), ppid: this.shellPpid, initialExitCode: this.lastExitCode },
@@ -2150,7 +2156,7 @@ export class LinuxCommandExecutor {
       trimmed,
       'bash',
       [],
-      (argv, env) => this.dispatchMaybeNetwork(argv, env),
+      (argv, env, background) => this.dispatchMaybeNetwork(argv, env, background),
       initialVars,
       io,
       { pid: this.currentBashPid(), ppid: this.shellPpid, initialExitCode: this.lastExitCode },
@@ -2163,13 +2169,14 @@ export class LinuxCommandExecutor {
   private dispatchMaybeNetwork(
     argv: string[],
     env?: Record<string, string>,
+    background?: boolean,
   ): { output: string; exitCode: number } | Promise<{ output: string; exitCode: number }> {
-    if (this.networkRunner && argv.length > 0) {
+    if (!background && this.networkRunner && argv.length > 0) {
       const effective = argv[0] === 'sudo' ? argv.slice(1) : argv;
       const pending = effective.length > 0 ? this.networkRunner(effective, env) : null;
       if (pending) return pending;
     }
-    return this.dispatchFromInterpreter(argv, env);
+    return this.dispatchFromInterpreter(argv, env, background);
   }
 
   /**
@@ -2269,10 +2276,12 @@ export class LinuxCommandExecutor {
       tty: 'pts/0',
       cwd: this.cwd,
     });
-    const bridge = (argv: string[], env?: Record<string, string>) => {
-      if (!this.processMgr.get(proc.pid)) throw new ExitSignal(143);
-      const result = this.dispatchFromInterpreter(argv, env);
-      if (!this.processMgr.get(proc.pid)) throw new ExitSignal(143);
+    const killedCode = () =>
+      128 + (SIGNAL_NUMBERS[this.processMgr.lastKillSignal(proc.pid) ?? 'SIGTERM'] ?? 15);
+    const bridge = (argv: string[], env?: Record<string, string>, background?: boolean) => {
+      if (!this.processMgr.get(proc.pid)) throw new ExitSignal(killedCode());
+      const result = this.dispatchFromInterpreter(argv, env, background);
+      if (!this.processMgr.get(proc.pid)) throw new ExitSignal(killedCode());
       return result;
     };
     this.bashPids.push(proc.pid);
@@ -2288,12 +2297,18 @@ export class LinuxCommandExecutor {
   private dispatchFromInterpreter(
     argv: string[],
     env?: Record<string, string>,
-  ): { output: string; exitCode: number } {
+    background?: boolean,
+  ): { output: string; exitCode: number; backgroundPid?: number } {
     this._cmdEnv = env;
     if (env && env['PWD'] && env['PWD'] !== this.cwd && this.vfs.resolveInode(env['PWD'])) {
       this.cwd = env['PWD'];
     }
     if (argv.length === 0) return { output: '', exitCode: 0 };
+    if (background) {
+      const spawned = this.spawnBackgroundJob(argv.join(' '), false);
+      if (!spawned) return { output: '', exitCode: 0 };
+      return { output: '', exitCode: 0, backgroundPid: spawned.pid };
+    }
 
     const cmd = argv[0];
     const args = argv.slice(1);

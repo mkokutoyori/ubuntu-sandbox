@@ -160,6 +160,51 @@ describe('script execution ⇄ process table coherence', () => {
     expect(await pc.executeCommand('ps aux')).not.toContain('01probe');
   });
 
+  it('a background command inside a script is a real child process with $!', async () => {
+    const pc = new LinuxPC('linux-pc', 'PC1');
+    await writeScript(pc, '/usr/local/bin/bg.sh', [
+      'sleep 30 &',
+      'echo $! > /tmp/bg.pid',
+      'ps aux > /tmp/bg.ps',
+    ]);
+
+    await pc.executeCommand('/usr/local/bin/bg.sh');
+
+    const pid = readFile(pc, '/tmp/bg.pid').trim();
+    expect(pid).toMatch(/^\d+$/);
+    const inside = readFile(pc, '/tmp/bg.ps');
+    const sleepLine = inside.split('\n').find((l) => l.includes('sleep 30'));
+    expect(sleepLine).toBeDefined();
+    expect(sleepLine).toContain(pid);
+    expect(await pc.executeCommand('ps aux')).toContain('sleep 30');
+  });
+
+  it('kill $! stops the background child from within the script', async () => {
+    const pc = new LinuxPC('linux-pc', 'PC1');
+    await writeScript(pc, '/usr/local/bin/bgkill.sh', [
+      'sleep 30 &',
+      'kill $!',
+      'ps aux > /tmp/bgkill.ps',
+    ]);
+
+    await pc.executeCommand('/usr/local/bin/bgkill.sh');
+
+    expect(readFile(pc, '/tmp/bgkill.ps')).not.toContain('sleep 30');
+    expect(await pc.executeCommand('ps aux')).not.toContain('sleep 30');
+  });
+
+  it('kill -9 $$ reports 137, kill -TERM 143', async () => {
+    const pc = new LinuxPC('linux-pc', 'PC1');
+
+    await pc.executeCommand("bash -c 'kill -9 $$'");
+    const nine = (await pc.executeCommand('echo $?')).trim();
+    await pc.executeCommand("bash -c 'kill -TERM $$'");
+    const term = (await pc.executeCommand('echo $?')).trim();
+
+    expect(nine).toBe('137');
+    expect(term).toBe('143');
+  });
+
   it('a service ExecStart script sees the unit MainPID as $$', async () => {
     const pc = new LinuxPC('linux-pc', 'PC1');
     await writeScript(pc, '/usr/local/bin/svc.sh', ['echo $$ > /tmp/svc.pid']);
