@@ -2122,6 +2122,13 @@ export class LinuxCommandExecutor {
     this.networkRunner = runner;
   }
 
+  /** Side-effect-free companion to `networkRunner`: is `name` a network-routed command? */
+  private isNetworkCommandName: (name: string) => boolean = () => false;
+
+  setNetworkCommandNamePredicate(pred: (name: string) => boolean): void {
+    this.isNetworkCommandName = pred;
+  }
+
   /**
    * Async twin of {@link execute}: same pipeline, driven through the
    * interpreter's async driver so network commands compose with full
@@ -2186,6 +2193,8 @@ export class LinuxCommandExecutor {
       const effective = argv[0] === 'sudo' ? argv.slice(1) : argv;
       const pending = effective.length > 0 ? this.networkRunner(effective, env) : null;
       if (pending) return pending;
+      const suPending = this.trySuNetworkCommand(argv, env);
+      if (suPending) return suPending;
     }
     return this.dispatchFromInterpreter(argv, env, background);
   }
@@ -4590,7 +4599,7 @@ export class LinuxCommandExecutor {
     };
   }
 
-  private handleSu(args: string[], stdin?: string): { output: string; exitCode: number } {
+  private static parseSuArgs(args: string[]): { loginShell: boolean; targetUser: string; command: string | null } {
     let loginShell = false;
     let targetUser = 'root';
     let command: string | null = null;
@@ -4600,11 +4609,22 @@ export class LinuxCommandExecutor {
       if (arg === '-c' || arg === '--command') { command = args.slice(i + 1).join(' '); break; }
       if (!arg.startsWith('-')) targetUser = arg;
     }
+    return { loginShell, targetUser, command };
+  }
 
+  /**
+   * Authenticate and switch to the target user for `su`, mirroring real PAM
+   * session open/close and the suStack bookkeeping. Shared by the
+   * synchronous `-c` path (handleSu) and the network-command-aware async
+   * path (runSuNetworkCommand) so both stay consistent with real su.
+   */
+  private beginSuSession(
+    targetUser: string, loginShell: boolean, stdin?: string,
+  ): { ok: true; restore: () => void } | { ok: false; result: { output: string; exitCode: number } } {
     const user = this.userMgr.getUser(targetUser);
-    if (!user) return { output: `su: user ${targetUser} does not exist`, exitCode: 1 };
+    if (!user) return { ok: false, result: { output: `su: user ${targetUser} does not exist`, exitCode: 1 } };
     if (user.shell === '/sbin/nologin' || user.shell === '/usr/sbin/nologin') {
-      return { output: `su: user ${targetUser} does not have a login shell`, exitCode: 1 };
+      return { ok: false, result: { output: `su: user ${targetUser} does not have a login shell`, exitCode: 1 } };
     }
 
     if (this.userMgr.currentUid !== 0 && this.userMgr.currentUser !== user.username) {
@@ -4620,7 +4640,7 @@ export class LinuxCommandExecutor {
           acct: user.username, res: 'failed',
         });
         this.logMgr.logAuth('su', `FAILED su for ${user.username} by ${this.userMgr.currentUser}(uid=${byUid})`);
-        return { output: 'su: Authentication failure', exitCode: 1 };
+        return { ok: false, result: { output: 'su: Authentication failure', exitCode: 1 } };
       }
     }
 
@@ -4645,13 +4665,9 @@ export class LinuxCommandExecutor {
     this.userMgr.currentGid = user.gid;
     if (loginShell) this.cwd = user.home;
 
-    // `su <user> -c "<command>"` runs a single command as the target user
-    // and immediately restores the caller's identity.
-    if (command !== null) {
-      let output: string;
-      try {
-        output = this.execute(command);
-      } finally {
+    return {
+      ok: true,
+      restore: () => {
         const popped = this.suStack.pop();
         if (popped) {
           this.userMgr.currentUser = popped.user;
@@ -4661,11 +4677,62 @@ export class LinuxCommandExecutor {
           this.umask = popped.umask;
         }
         this.recordPamSession('USER_END', user.username, user.uid, prev.uid, 'PAM_session_close');
+      },
+    };
+  }
+
+  private handleSu(args: string[], stdin?: string): { output: string; exitCode: number } {
+    const { loginShell, targetUser, command } = LinuxCommandExecutor.parseSuArgs(args);
+    const session = this.beginSuSession(targetUser, loginShell, stdin);
+    if (!session.ok) return session.result;
+
+    // `su <user> -c "<command>"` runs a single command as the target user
+    // and immediately restores the caller's identity.
+    if (command !== null) {
+      let output: string;
+      try {
+        output = this.execute(command);
+      } finally {
+        session.restore();
       }
       return { output, exitCode: 0 };
     }
 
     return { output: '', exitCode: 0 };
+  }
+
+  /**
+   * `su <user> -c "<networkCommand>"` needs the async, network-aware
+   * dispatcher (ping/traceroute/curl/…) the same way a top-level command
+   * does — handleSu's own `-c` branch calls the synchronous `execute()`,
+   * which has no visibility into `networkRunner`. Only reachable from
+   * `dispatchMaybeNetwork` (the async entry point), so this never has to
+   * coexist with the fully-synchronous `execute()`/`dispatchFromInterpreter`
+   * call chain.
+   */
+  private trySuNetworkCommand(
+    argv: string[], env?: Record<string, string>,
+  ): Promise<{ output: string; exitCode: number }> | null {
+    if (argv[0] !== 'su' || !this.networkRunner) return null;
+    const { loginShell, targetUser, command } = LinuxCommandExecutor.parseSuArgs(argv.slice(1));
+    if (command === null || /[|;&<>]/.test(command)) return null;
+    const innerArgv = command.trim().split(/\s+/).filter(Boolean);
+    if (innerArgv.length === 0 || !this.isNetworkCommandName(innerArgv[0])) return null;
+
+    return this.runSuNetworkCommand(targetUser, loginShell, innerArgv, env);
+  }
+
+  private async runSuNetworkCommand(
+    targetUser: string, loginShell: boolean, innerArgv: string[], env?: Record<string, string>,
+  ): Promise<{ output: string; exitCode: number }> {
+    const session = this.beginSuSession(targetUser, loginShell, undefined);
+    if (!session.ok) return session.result;
+    try {
+      const pending = this.networkRunner!(innerArgv, env);
+      return await (pending ?? { output: '', exitCode: 0 });
+    } finally {
+      session.restore();
+    }
   }
 
   private recordPamSession(type: 'USER_START' | 'USER_END', acct: string, uid: number, byUid: number, op: string): void {

@@ -1128,10 +1128,10 @@ describe('Group 8: UFW (Uncomplicated Firewall)', () => {
       await srv.executeCommand('ufw allow from 10.0.0.0/24');
       await srv.executeCommand('ufw enable');
 
-      // Different subnet, no route, should fail
+      // Different subnet, no route — real Linux fails immediately at
+      // connect() time, before ever reaching the firewall on the peer.
       const result = await pc.executeCommand('ping -c 1 10.0.0.2');
-      // Even if the packet arrives, firewall should block it
-      expect(result).toContain('0 received');
+      expect(result).toContain('Network is unreachable');
     });
 
     it('should respect first-match wins: deny before allow', async () => {

@@ -213,7 +213,7 @@ describe('tcpdump Command Suite', () => {
         await pc2.executeCommand('ping -c 5 10.0.0.1');
       });
       expect(output).toContain('3 packets captured');
-    });
+    }, 10000);
 
     it('18. should reject zero packet count (-c 0) or interpret it as infinite', async () => {
       const { pc1 } = setupLAN();
@@ -610,6 +610,7 @@ describe('tcpdump Command Suite', () => {
       await pc1.executeCommand('ifconfig eth0 10.0.0.1 netmask 255.255.255.0');
       await pc2.executeCommand('ifconfig eth0 10.0.0.2 netmask 255.255.255.0');
 
+      await pc1.executeCommand('arp -d 10.0.0.2');
       const output = await captureWithTraffic(pc1, 'tcpdump -c 1 arp', async () => {
         // Trigger ARP request by resolving target address
         await pc1.executeCommand('ping -c 1 10.0.0.2');
@@ -711,6 +712,7 @@ describe('tcpdump Command Suite', () => {
       await pc1.executeCommand('ifconfig eth0 10.0.0.1 netmask 255.255.255.0');
       await pc2.executeCommand('ifconfig eth0 10.0.0.2 netmask 255.255.255.0');
 
+      await pc1.executeCommand('arp -d 10.0.0.2');
       const output = await captureWithTraffic(pc1, 'tcpdump -c 1 arp', async () => {
         await pc1.executeCommand('ping -c 1 10.0.0.2');
       });

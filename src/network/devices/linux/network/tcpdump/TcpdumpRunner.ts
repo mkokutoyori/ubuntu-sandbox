@@ -21,6 +21,7 @@ export interface TcpdumpDeps {
 }
 
 const CAPTURE_WINDOW_MS = 200;
+const CAPTURE_DEADLINE_WITH_TARGET_MS = 3000;
 const PCAP_MAGIC = 'TCPDUMPSIM1';
 const MAX_FILTER_TOKENS = 64;
 
@@ -85,7 +86,10 @@ async function runCapture(opt: TcpdumpOptions, deps: TcpdumpDeps): Promise<strin
         if (target !== null && collected.length >= target) finish();
       });
       if (settled) unsubscribe();
-      else deps.delay(CAPTURE_WINDOW_MS).then(finish);
+      else {
+        const deadline = target !== null ? CAPTURE_DEADLINE_WITH_TARGET_MS : CAPTURE_WINDOW_MS;
+        deps.delay(deadline).then(finish);
+      }
     });
   }
 

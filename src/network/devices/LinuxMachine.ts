@@ -300,6 +300,10 @@ export abstract class LinuxMachine extends EndHost
       if (cmd.runWithStatus) return cmd.runWithStatus(ctx, args);
       return Promise.resolve(cmd.run(ctx, args)).then((output) => ({ output, exitCode: 0 }));
     });
+    this.executor.setNetworkCommandNamePredicate((name) => {
+      const cmd = this.commands.get(name);
+      return !!cmd && !!cmd.needsNetworkContext;
+    });
 
     this.executor.serviceMgr.onLifecycle((event, name) => {
       if (!name.endsWith('.socket')) return;

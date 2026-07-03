@@ -340,7 +340,7 @@ describe('WAN-level Ping and Traceroute Command Suite', () => {
     it('32. should reject resolving nonexistent hostnames', async () => {
       const pc = new LinuxPC('PC', 0, 0);
       const output = await pc.executeCommand('ping -c 1 nonexistenthost');
-      expect(output.toLowerCase()).toMatch(/unknown host|failed to resolve/);
+      expect(output.toLowerCase()).toMatch(/name or service not known/);
     });
 
     it('33. should support pinging Class A addresses dynamically', async () => {
@@ -439,10 +439,10 @@ describe('WAN-level Ping and Traceroute Command Suite', () => {
       expect(output).toContain('2 received');
     });
 
-    it('47. should support showing timeout statistics correctly when 50% packet loss is observed', async () => {
+    it('47. should report "Network is unreachable" immediately when there is no route to the destination', async () => {
       const pc = new LinuxPC('PC', 0, 0);
-      const output = await pc.executeCommand('ping -c 2 1.1.1.1'); // timeout simulated
-      expect(output).toContain('packet loss');
+      const output = await pc.executeCommand('ping -c 2 1.1.1.1');
+      expect(output).toContain('Network is unreachable');
     });
 
     it('48. should support single quote wrapping of IP address parameters', async () => {
