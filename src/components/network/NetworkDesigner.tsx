@@ -46,6 +46,10 @@ export function NetworkDesigner() {
   // Minimized sessions (by session ID)
   const [minimizedSessions, setMinimizedSessions] = useState<Set<string>>(new Set());
 
+  // "Show desktop" peek — hides the terminal overlay to reveal the
+  // topology without closing or minimizing any session.
+  const [desktopPeek, setDesktopPeek] = useState(false);
+
   // Help dialog
   const [helpOpen, setHelpOpen] = useState(false);
 
@@ -173,6 +177,9 @@ export function NetworkDesigner() {
     // Open a new session (multi-terminal per device is supported)
     const sessionId = manager.openTerminal(device);
     if (sessionId) {
+      // Opening a terminal should surface it, even if the user was
+      // peeking at the desktop.
+      setDesktopPeek(false);
       // If it was somehow minimized, un-minimize it
       setMinimizedSessions(prev => {
         if (prev.has(sessionId)) {
@@ -198,6 +205,18 @@ export function NetworkDesigner() {
   }, [manager]);
 
   const handleToggleTerminal = useCallback((sessionId: string) => {
+    // Clicking a tab while peeking at the desktop brings the terminals
+    // back with that session shown, rather than toggling its minimized state.
+    if (desktopPeek) {
+      setDesktopPeek(false);
+      setMinimizedSessions(prev => {
+        if (!prev.has(sessionId)) return prev;
+        const next = new Set(prev);
+        next.delete(sessionId);
+        return next;
+      });
+      return;
+    }
     setMinimizedSessions(prev => {
       const next = new Set(prev);
       if (next.has(sessionId)) {
@@ -207,7 +226,7 @@ export function NetworkDesigner() {
       }
       return next;
     });
-  }, []);
+  }, [desktopPeek]);
 
   const handleMinimizeTerminal = useCallback((sessionId: string) => {
     setMinimizedSessions(prev => {
@@ -433,8 +452,8 @@ export function NetworkDesigner() {
         {logsOpen && <NetworkLogsPanel />}
       </div>
 
-      {/* ── Terminal tile overlay ── */}
-      {hasVisibleTerminals && (
+      {/* ── Terminal tile overlay (hidden while peeking at the desktop) ── */}
+      {hasVisibleTerminals && !desktopPeek && (
         <div className={cn(
           "fixed inset-0 z-50",
           "bg-black/60 backdrop-blur-sm",
@@ -460,6 +479,8 @@ export function NetworkDesigner() {
           focusedIndex={focusedIndex}
           visibleCount={visibleSessions.length}
           onFocusChange={setFocusedIndex}
+          desktopPeek={desktopPeek}
+          onToggleDesktop={() => setDesktopPeek(p => !p)}
         />
       )}
     </div>
