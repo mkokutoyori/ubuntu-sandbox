@@ -60,10 +60,43 @@ export class RegisterScheduledTaskCmdlet implements ICmdlet {
     const name = psValueToString(ctx.named['taskname'] ?? '');
     if (!name) { ctx.emitError('Register-ScheduledTask requires -TaskName'); return null; }
     const taskPath = psValueToString(ctx.named['taskpath'] ?? '\\');
-    const ack = tasks.registerTask({ taskName: name, taskPath, state: 'Ready' });
+
+    const actionRaw = ctx.named['action'];
+    const action = (Array.isArray(actionRaw) ? actionRaw[0] : actionRaw) as ScheduledTaskAction | undefined;
+    const command = action ? [action.Execute, action.Argument].filter(Boolean).join(' ') : undefined;
+
+    const triggerRaw = ctx.named['trigger'];
+    const trigger = (Array.isArray(triggerRaw) ? triggerRaw[0] : triggerRaw) as ScheduledTaskTrigger | undefined;
+
+    const principalRaw = ctx.named['principal'] as ScheduledTaskPrincipal | undefined;
+    const principal = principalRaw
+      ? { userId: principalRaw.UserId, runLevel: principalRaw.RunLevel }
+      : undefined;
+
+    let runAt: Date | undefined;
+    let intervalMs: number | undefined;
+    if (trigger) {
+      const deviceNow = tasks.now?.() ?? new Date();
+      if (trigger.At instanceof Date) {
+        const driftMs = trigger.At.getTime() - Date.now();
+        runAt = new Date(deviceNow.getTime() + driftMs);
+      } else {
+        runAt = deviceNow;
+      }
+      const repMs = Number(trigger.RepetitionIntervalMs ?? 0);
+      if (repMs > 0) intervalMs = repMs;
+    }
+
+    const ack = tasks.registerTask({
+      taskName: name, taskPath, state: 'Ready', command, runAt, intervalMs, principal,
+    });
     return ack;
   }
 }
+
+interface ScheduledTaskAction { Execute?: string; Argument?: string; WorkingDirectory?: string }
+interface ScheduledTaskTrigger { Once?: boolean; At?: Date; RepetitionIntervalMs?: number; RepetitionDurationMs?: number }
+interface ScheduledTaskPrincipal { UserId: string; LogonType: string; RunLevel: string }
 
 // ── Unregister-ScheduledTask ──────────────────────────────────────────────
 
@@ -82,21 +115,56 @@ export class UnregisterScheduledTaskCmdlet implements ICmdlet {
   }
 }
 
-// ── New-ScheduledTaskTrigger / -Action — silent shims ─────────────────────
-// Real PS returns CimInstance objects we don't model. Match the legacy
-// behaviour (silent return) so scripts that build then Register-* still work.
+// ── New-ScheduledTaskTrigger / -Action / -Principal ───────────────────────
 
 export class NewScheduledTaskTriggerCmdlet implements ICmdlet {
   readonly name = 'new-scheduledtasktrigger';
   readonly displayName = 'New-ScheduledTaskTrigger';
+  readonly parameters = ['Once', 'At', 'RepetitionInterval', 'RepetitionDuration', 'Daily', 'AtStartup', 'AtLogOn'] as const;
   readonly aliases = [] as const;
-  execute(): PSValue { return null; }
+
+  execute(ctx: CmdletContext): PSValue {
+    const atRaw = ctx.named['at'];
+    const at = atRaw instanceof Date ? atRaw : (atRaw !== undefined ? new Date(psValueToString(atRaw)) : undefined);
+    const rep = ctx.named['repetitioninterval'] as Record<string, PSValue> | undefined;
+    const dur = ctx.named['repetitionduration'] as Record<string, PSValue> | undefined;
+    return {
+      Once: ctx.named['once'] === true || ctx.named['once'] === undefined,
+      At: at as unknown as PSValue,
+      RepetitionIntervalMs: rep ? Number(rep['TotalMilliseconds'] ?? 0) : 0,
+      RepetitionDurationMs: dur ? Number(dur['TotalMilliseconds'] ?? 0) : 0,
+    } as Record<string, PSValue>;
+  }
 }
+
 export class NewScheduledTaskActionCmdlet implements ICmdlet {
   readonly name = 'new-scheduledtaskaction';
   readonly displayName = 'New-ScheduledTaskAction';
+  readonly parameters = ['Execute', 'Argument', 'WorkingDirectory'] as const;
   readonly aliases = [] as const;
-  execute(): PSValue { return null; }
+
+  execute(ctx: CmdletContext): PSValue {
+    return {
+      Execute: psValueToString(ctx.named['execute'] ?? ''),
+      Argument: ctx.named['argument'] !== undefined ? psValueToString(ctx.named['argument']) : '',
+      WorkingDirectory: ctx.named['workingdirectory'] !== undefined ? psValueToString(ctx.named['workingdirectory']) : '',
+    } as Record<string, PSValue>;
+  }
+}
+
+export class NewScheduledTaskPrincipalCmdlet implements ICmdlet {
+  readonly name = 'new-scheduledtaskprincipal';
+  readonly displayName = 'New-ScheduledTaskPrincipal';
+  readonly parameters = ['UserId', 'LogonType', 'RunLevel'] as const;
+  readonly aliases = [] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    return {
+      UserId: psValueToString(ctx.named['userid'] ?? ''),
+      LogonType: psValueToString(ctx.named['logontype'] ?? 'Interactive'),
+      RunLevel: psValueToString(ctx.named['runlevel'] ?? 'Limited'),
+    } as Record<string, PSValue>;
+  }
 }
 
 // ── Get-Disk ──────────────────────────────────────────────────────────────

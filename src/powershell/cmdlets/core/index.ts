@@ -37,7 +37,7 @@ import {
   OutFileCmdlet as OutFilePathCmdlet,
   GetItemPropertyCmdlet, SetItemPropertyCmdlet, RemoveItemPropertyCmdlet, ClearItemPropertyCmdlet,
   GetItemCmdlet, SetItemCmdlet, GetAclCmdlet, SetAclCmdlet,
-  RenameItemCmdlet, MkdirCmdlet,
+  RenameItemCmdlet, MkdirCmdlet, GetFileHashCmdlet,
 } from './PathCmdlets';
 import {
   NewObjectCmdlet, GetRandomCmdlet, InvokeExpressionCmdlet,
@@ -99,7 +99,7 @@ import {
 import {
   GetScheduledTaskCmdlet, RegisterScheduledTaskCmdlet,
   UnregisterScheduledTaskCmdlet, NewScheduledTaskTriggerCmdlet,
-  NewScheduledTaskActionCmdlet, GetDiskCmdlet, GetVolumeCmdlet,
+  NewScheduledTaskActionCmdlet, NewScheduledTaskPrincipalCmdlet, GetDiskCmdlet, GetVolumeCmdlet,
   GetCimInstanceCmdlet,
 } from './SystemMgmtCmdlets';
 
@@ -184,6 +184,7 @@ export function registerCoreCmdlets(registry: CmdletRegistry): void {
   registry.register(new SetAclCmdlet());
   registry.register(new RenameItemCmdlet());
   registry.register(new MkdirCmdlet());
+  registry.register(new GetFileHashCmdlet());
 
   // ── Misc ──────────────────────────────────────────────────────────────────
   registry.register(new NewObjectCmdlet());
@@ -302,6 +303,7 @@ export function registerCoreCmdlets(registry: CmdletRegistry): void {
   registry.register(new UnregisterScheduledTaskCmdlet());
   registry.register(new NewScheduledTaskTriggerCmdlet());
   registry.register(new NewScheduledTaskActionCmdlet());
+  registry.register(new NewScheduledTaskPrincipalCmdlet());
   registry.register(new GetDiskCmdlet());
   registry.register(new GetVolumeCmdlet());
   registry.register(new GetCimInstanceCmdlet());

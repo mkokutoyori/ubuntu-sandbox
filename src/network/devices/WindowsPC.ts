@@ -810,14 +810,17 @@ export class WindowsPC extends EndHost implements UserAccountHost {
   }
 
   resolveDnsViaServerSync(name: string, server: string): string[] {
+    return this.resolveDnsViaServerWithTtlSync(name, server).map(r => r.ip);
+  }
+
+  resolveDnsViaServerWithTtlSync(name: string, server: string): Array<{ ip: string; ttl: number }> {
     let serverIP: IPAddress;
     try { serverIP = new IPAddress(server); } catch { return []; }
     for (const qname of this.dnsSearchCandidates(name)) {
       const response = this.queryDnsServerSync(serverIP, qname, 'A');
       const aRecords = response?.answers.filter((rr) => rr.data.type === RRType.A) ?? [];
       if (aRecords.length > 0) {
-        this.dnsCache.store(qname, response!.answers);
-        return aRecords.map((rr) => (rr.data as ARecordData).address.toString());
+        return aRecords.map((rr) => ({ ip: (rr.data as ARecordData).address.toString(), ttl: rr.ttl }));
       }
     }
     return [];
@@ -1562,7 +1565,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     };
   }
 
-  private simulatedDate(): Date {
+  simulatedDate(): Date {
     return new Date(this.wallEpoch + this.clock.now());
   }
 
@@ -1582,11 +1585,21 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       let guard = 0;
       while (task.runAt && task.runAt.getTime() <= now.getTime() && guard++ < 20_000) {
         WinSys.runScheduledProgram(task, this.procMgr, now);
+        this.runScheduledPowerShellScript(task.command);
         task.runAt = task.intervalMs
           ? new Date(task.runAt.getTime() + task.intervalMs)
           : undefined;
       }
     }
+  }
+
+  private runScheduledPowerShellScript(command?: string): void {
+    if (!command) return;
+    const match = /^\s*powershell(?:\.exe)?\s+-file\s+"?([^"]+\.ps1)"?/i.exec(command);
+    if (!match) return;
+    const result = this.fs.readFile(match[1]);
+    if (!result.ok || result.content === undefined) return;
+    this.getPowerShellInterpreter().executeInteractive(result.content);
   }
 
   private cmdSysteminfo(): string {
@@ -1616,6 +1629,12 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     const remaining = Math.max(0, Math.floor((lease.expiration - Date.now()) / 1000));
     const preferred = Math.max(0, Math.min(remaining, Math.floor((lease.leaseStart + lease.renewalTime * 1000 - Date.now()) / 1000)));
     return { validSeconds: remaining, preferredSeconds: preferred };
+  }
+
+  getDhcpServer(ifName: string): string | null {
+    const lease = this.dhcpClient.getState(ifName)?.lease;
+    if (!lease || lease.serverIdentifier === '0.0.0.0') return null;
+    return lease.serverIdentifier;
   }
 
   setDnsServers(ifName: string, servers: string[]): void {

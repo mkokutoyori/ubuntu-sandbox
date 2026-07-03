@@ -96,6 +96,8 @@ export interface DHCPOfferResult {
   pool: DHCPPoolConfig;
   /** Option 54: Server Identifier */
   serverIdentifier: string;
+  /** Ethernet source MAC of the frame carrying this OFFER (wire channel only) */
+  serverMac?: string;
   /** XID echoed back from DISCOVER */
   xid: number;
   /** Option 58: T1 renewal time in seconds */
@@ -121,6 +123,8 @@ export interface DHCPAckResult {
   binding: DHCPBinding;
   /** Option 54: Server Identifier */
   serverIdentifier: string;
+  /** Ethernet source MAC of the frame carrying this ACK — see DHCPOfferResult.serverMac. */
+  serverMac?: string;
   /** XID echoed back */
   xid: number;
   /** Option 58: T1 renewal time in seconds */
@@ -178,6 +182,8 @@ export interface DHCPRequestWithNakResult {
   binding?: DHCPBinding;
   /** Server Identifier */
   serverIdentifier: string;
+  /** Ethernet source MAC of the frame carrying this reply — see DHCPOfferResult.serverMac. */
+  serverMac?: string;
   xid: number;
   /** NAK message (only for NAK) */
   message?: string;
@@ -265,6 +271,8 @@ export interface DHCPClientLease {
   domainName: string | null;
   /** Server identifier (DHCP server IP) */
   serverIdentifier: string;
+  /** Ethernet source MAC of the frame that answered (physical NIC, not option 54) */
+  serverMac: string | null;
   /** Lease start timestamp (ms) */
   leaseStart: number;
   /** Lease duration in seconds */

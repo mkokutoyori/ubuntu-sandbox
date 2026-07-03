@@ -177,14 +177,30 @@ export class ResolveDnsNameCmdlet implements ICmdlet {
     // bypassing the interface-configured servers — needed to compare a
     // forced lookup against the system default one.
     const server = ctx.named['server'] !== undefined ? psValueToString(ctx.named['server']) : null;
+
+    if (server && net.resolveDnsViaServerWithTtl) {
+      const records = builtin ? [{ ip: builtin, ttl: 300 }] : net.resolveDnsViaServerWithTtl(name, server);
+      if (records.length === 0) { ctx.emitError(`${name} : DNS name does not exist`); return null; }
+      return records.map(r => ({
+        Name: name,
+        Type: r.ip.includes(':') ? 'AAAA' : 'A',
+        TTL:  r.ttl,
+        Section: 'Answer',
+        IPAddress: r.ip,
+      } as Record<string, PSValue>)) as PSValue;
+    }
+
     const ips = builtin
       ? [builtin]
       : (server && net.resolveDnsViaServer ? net.resolveDnsViaServer(name, server) : net.resolveDns(name));
     if (ips.length === 0) { ctx.emitError(`${name} : DNS name does not exist`); return null; }
+    const cacheEntries = net.getDnsClientCache?.() ?? [];
+    const ttlFor = (ip: string): number =>
+      cacheEntries.find(e => e.name.toLowerCase() === name.toLowerCase() && e.value === ip)?.ttl ?? 300;
     return ips.map(ip => ({
       Name: name,
       Type: ip.includes(':') ? 'AAAA' : 'A',
-      TTL:  300,
+      TTL:  ttlFor(ip),
       Section: 'Answer',
       IPAddress: ip,
     } as Record<string, PSValue>)) as PSValue;
@@ -215,6 +231,7 @@ export class GetNetIPConfigurationCmdlet implements ICmdlet {
         IPv6Address:          ips.find(ip => ip.addressFamily === 'IPv6')?.ipAddress ?? '',
         IPv4DefaultGateway:   gateway,
         DNSServer:            net.getDnsServers(a.name).join(', '),
+        DhcpServer:           net.getDhcpServer?.(a.name) ?? '',
         NetAdapter:           { Status: a.status } as Record<string, PSValue>,
       } as Record<string, PSValue>;
     }) as PSValue;

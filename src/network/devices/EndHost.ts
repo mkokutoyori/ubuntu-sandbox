@@ -144,6 +144,8 @@ export interface UdpDelivery {
   sourceIP: IPAddress | IPv6Address;
   destinationIP: IPAddress | IPv6Address;
   udp: UDPPacket;
+  /** Ethernet source MAC of the frame; undefined for loopback delivery. */
+  sourceMAC?: string;
 }
 
 /** Callback invoked for every datagram delivered to a bound UDP port. */
@@ -580,6 +582,17 @@ export abstract class EndHost extends Equipment {
       },
     );
     this.dhcpClient.setWireChannelFactory((iface) => this.getDhcpWireChannel(iface));
+    this.dhcpClient.setServerObservationRecorder((iface, serverIp, serverMac) => {
+      if (!serverMac || serverIp === '0.0.0.0') return;
+      try {
+        this.arpTable.set(serverIp, {
+          mac: new MACAddress(serverMac),
+          iface,
+          timestamp: Date.now(),
+          type: 'dynamic',
+        });
+      } catch { /* malformed MAC */ }
+    });
   }
 
   private dhcpWireChannels = new Map<string, WireDhcpChannel>();
@@ -606,7 +619,7 @@ export abstract class EndHost extends Equipment {
     this.udpListeners.set(68, (dgram) => {
       const pkt = dgram.udp.payload;
       if (pkt instanceof DHCPPacket) {
-        this.dhcpWireChannels.get(dgram.inPort)?.deliver(pkt);
+        this.dhcpWireChannels.get(dgram.inPort)?.deliver(pkt, dgram.sourceMAC);
       }
     });
   }
@@ -886,16 +899,6 @@ export abstract class EndHost extends Equipment {
         remoteType.includes('switch')
         || typeof (remoteEquip as unknown as { getSvis?: unknown }).getSvis === 'function';
       if (looksLikeSwitch) {
-        for (const swPort of remoteEquip.getPorts()) {
-          if (swPort === remotePort) continue; // Skip the port we came from
-          const swCable = swPort.getCable();
-          if (!swCable) continue;
-          const farPort = swCable.getPortA() === swPort ? swCable.getPortB() : swCable.getPortA();
-          if (!farPort) continue;
-          const farId = farPort.getEquipmentId();
-          const farEquip = Equipment.getById(farId);
-          if (farEquip) tryRegisterRouter(farEquip);
-        }
         // DHCP relay (ip helper-address / dhcp relay server-ip): even
         // when the upstream DHCP server is several L3 hops away, the
         // L3 switch's SVI explicitly points clients at it. Resolve each
@@ -1129,7 +1132,7 @@ export abstract class EndHost extends Equipment {
     if (frame.etherType === ETHERTYPE_ARP) {
       this.handleARP(portName, frame.payload as ARPPacket);
     } else if (frame.etherType === ETHERTYPE_IPV4) {
-      this.handleIPv4(portName, frame.payload as IPv4Packet);
+      this.handleIPv4(portName, frame.payload as IPv4Packet, frame.srcMAC.toString());
     } else if (frame.etherType === ETHERTYPE_IPV6) {
       this.handleIPv6(portName, frame.payload as IPv6Packet);
     }
@@ -1334,7 +1337,7 @@ export abstract class EndHost extends Equipment {
     return false;
   }
 
-  private handleIPv4(portName: string, ipPkt: IPv4Packet): void {
+  private handleIPv4(portName: string, ipPkt: IPv4Packet, srcMac?: string): void {
     if (!ipPkt || ipPkt.type !== 'ipv4') return;
 
     // Verify checksum
@@ -1391,7 +1394,7 @@ export abstract class EndHost extends Equipment {
       } else if (ipPkt.protocol === IP_PROTO_TCP) {
         this.tcpv2.handleIp(portName, ipPkt.sourceIP, ipPkt);
       } else if (ipPkt.protocol === IP_PROTO_UDP) {
-        this.deliverUDP(portName, ipPkt, !!isBroadcast);
+        this.deliverUDP(portName, ipPkt, !!isBroadcast, srcMac);
       }
       return;
     }
@@ -1884,18 +1887,19 @@ export abstract class EndHost extends Equipment {
   private dispatchUdpToListener(
     portName: string, udp: UDPPacket,
     sourceIP: IPAddress | IPv6Address, destinationIP: IPAddress | IPv6Address,
+    sourceMAC?: string,
   ): boolean {
     const listener = this.udpListeners.get(udp.destinationPort);
     if (!listener) return false;
-    listener({ inPort: portName, sourceIP, destinationIP, udp });
+    listener({ inPort: portName, sourceIP, destinationIP, udp, sourceMAC });
     return true;
   }
 
-  private deliverUDP(portName: string, ipPkt: IPv4Packet, wasBroadcast: boolean): void {
+  private deliverUDP(portName: string, ipPkt: IPv4Packet, wasBroadcast: boolean, srcMac?: string): void {
     const udp = ipPkt.payload as UDPPacket;
     if (!udp || udp.type !== 'udp') return;
 
-    if (this.dispatchUdpToListener(portName, udp, ipPkt.sourceIP, ipPkt.destinationIP)) return;
+    if (this.dispatchUdpToListener(portName, udp, ipPkt.sourceIP, ipPkt.destinationIP, srcMac)) return;
 
     if (!wasBroadcast) {
       Logger.info(this.id, 'udp:port-unreachable',

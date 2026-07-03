@@ -30,6 +30,7 @@
 import { Equipment } from '../equipment/Equipment';
 import { Port } from '../hardware/Port';
 import { EthernetFrame, DeviceType, MACAddress, ETHERTYPE_ARP, ARPPacket, IPAddress, SubnetMask, ETHERTYPE_IPV4, IPv4Packet } from '../core/types';
+import { DHCPPacket } from '../dhcp/DHCPPacket';
 import { SwitchSvi, type SviInterface } from './SwitchSvi';
 import { DHCPServer } from '../dhcp/DHCPServer';
 import { VrrpAgent } from '../vrrp/VrrpAgent';
@@ -193,6 +194,7 @@ export abstract class Switch extends Equipment {
   private dhcpSnooping: DHCPSnoopingConfig = createDefaultSnoopingConfig();
   private snoopingBindings: DHCPSnoopingBinding[] = [];
   private snoopingLog: string[] = [];
+  private dhcpSnoopingViolations = 0;
 
   // ─── Interface Descriptions ──────────────────────────────────────
   private interfaceDescriptions: Map<string, string> = new Map();
@@ -1058,6 +1060,30 @@ export abstract class Switch extends Equipment {
       }
     }
 
+    // ─── Step 1.6: DHCP Snooping (drop server replies from untrusted ports)
+    if (this.dhcpSnooping.enabled
+        && (this.dhcpSnooping.vlans.size === 0 || this.dhcpSnooping.vlans.has(ingressVlan))
+        && !this.dhcpSnooping.trustedPorts.has(portName)
+        && frame.etherType === ETHERTYPE_IPV4) {
+      const ip = frame.payload as IPv4Packet | undefined;
+      if (ip && ip.type === 'ipv4' && ip.protocol === IP_PROTO_UDP) {
+        const udp = ip.payload as UDPPacket | undefined;
+        if (udp && udp.type === 'udp' && udp.sourcePort === 67) {
+          const dhcp = udp.payload;
+          const msgType = dhcp instanceof DHCPPacket ? dhcp.getMessageType() : undefined;
+          this.dhcpSnoopingViolations++;
+          this.snoopingLog.push(
+            `DHCP_SNOOPING: dropped ${msgType ?? 'server message'} from ${frame.srcMAC} ` +
+            `on untrusted port ${portName} VLAN ${ingressVlan}`,
+          );
+          Logger.warn(this.id, 'switch:dhcp-snooping-drop',
+            `${this.name}: dropped DHCP server message (${msgType ?? 'unknown'}) from ` +
+            `${frame.srcMAC} on untrusted ${portName} (VLAN ${ingressVlan})`);
+          return;
+        }
+      }
+    }
+
     // ─── Step 2: MAC Learning (allowed in learning + forwarding) ─
     const srcMAC = frame.srcMAC.toString().toLowerCase();
     const macKey = `${ingressVlan}:${srcMAC}`;
@@ -1602,6 +1628,8 @@ export abstract class Switch extends Equipment {
   _getSwitchportConfigs(): Map<string, SwitchportConfig> { return this.switchportConfigs; }
   _getSTPStates(): Map<string, STPPortState> { return this.stpStates; }
   _getDHCPSnoopingConfig(): DHCPSnoopingConfig { return this.dhcpSnooping; }
+  _getDHCPSnoopingViolations(): number { return this.dhcpSnoopingViolations; }
+  _getDHCPSnoopingLog(): readonly string[] { return this.snoopingLog; }
   _getSnoopingBindings(): DHCPSnoopingBinding[] { return this.snoopingBindings; }
   _getSnoopingLog(): string[] { return this.snoopingLog; }
   _addSnoopingLog(msg: string): void { this.snoopingLog.push(msg); }

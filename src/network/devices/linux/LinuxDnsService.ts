@@ -57,6 +57,12 @@ export class DnsService {
     this.records.push(record);
   }
 
+  /** Replace any existing record(s) for this name+type before adding the new one. */
+  updateRecord(record: DnsRecord): void {
+    this.records = this.records.filter(r => !(r.name === record.name && r.type === record.type));
+    this.records.push(record);
+  }
+
   /** Parse a dnsmasq-style config and populate records */
   parseConfig(config: string): void {
     for (const rawLine of config.split('\n')) {

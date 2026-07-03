@@ -251,6 +251,7 @@ export interface INetworkProvider {
   setDnsServers(ifAlias: string, servers: string[]): void;
   getDefaultGateway(): string | null;
   isDHCPConfigured(ifAlias: string): boolean;
+  getDhcpServer?(ifAlias: string): string | null;
   /** Test-Connection (ping) */
   testConnection(target: string): boolean;
   /**
@@ -271,6 +272,8 @@ export interface INetworkProvider {
   resolveDns(name: string): string[];
   /** Resolve-DnsName -Server: query a specific resolver over the wire. */
   resolveDnsViaServer?(name: string, server: string): string[];
+  /** Resolve-DnsName -Server, with each answer's real TTL (does not touch the client cache). */
+  resolveDnsViaServerWithTtl?(name: string, server: string): Array<{ ip: string; ttl: number }>;
   /** Get-DnsClientCache */
   getDnsClientCache?(): Array<{ name: string; type: string; value: string; ttl: number }>;
   /** Clear-DnsClientCache */
@@ -328,12 +331,18 @@ export interface ScheduledTaskInfo {
   taskName: string;
   taskPath: string;
   state: 'Ready' | 'Running' | 'Disabled';
+  command?: string;
+  runAt?: Date;
+  intervalMs?: number;
+  principal?: { userId: string; runLevel: string };
 }
 
 export interface IScheduledTaskProvider {
   listTasks(nameFilter?: string): ScheduledTaskInfo[];
   registerTask(task: ScheduledTaskInfo): string;
   unregisterTask(name: string): string;
+  /** The device's own simulated clock — anchors trigger `-At` times. */
+  now?(): Date;
 }
 
 export interface DiskInfo {

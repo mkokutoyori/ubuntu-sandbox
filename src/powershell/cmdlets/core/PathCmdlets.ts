@@ -9,6 +9,10 @@ import type { CmdletContext } from '../CmdletContext';
 import type { PSValue } from '@/powershell/runtime/PSEnvironment';
 import { PSRuntimeError } from '@/powershell/runtime/PSRuntime';
 import { psValueToString } from '@/powershell/runtime/PSExpansion';
+import { md5Hex } from '@/crypto/hash/md5';
+import { sha1Hex } from '@/crypto/hash/sha1';
+import { sha256Hex } from '@/crypto/hash/sha256';
+import { sha512Hex } from '@/crypto/hash/sha512';
 
 function isRegistryPath(path: string): boolean {
   return /^(HKLM|HKCU|HKCR|HKU|HKCC):/i.test(path) || /^HKEY_/i.test(path);
@@ -776,5 +780,43 @@ export class SetAclCmdlet implements ICmdlet {
     // simulate without parsing the full PSObject. We forward to the legacy
     // executor, which has a dedicated handler.
     throw new PSRuntimeError('Set-Acl is not recognized in this provider context');
+  }
+}
+
+const FILE_HASH_ALGORITHMS: Record<string, (s: string) => string> = {
+  MD5: md5Hex,
+  SHA1: sha1Hex,
+  SHA256: sha256Hex,
+  SHA512: sha512Hex,
+};
+
+export class GetFileHashCmdlet implements ICmdlet {
+  readonly name = 'get-filehash';
+  readonly parameters = ['Path', 'LiteralPath', 'Algorithm'] as const;
+  readonly aliases = [] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const path = psValueToString(ctx.named['path'] ?? ctx.named['literalpath'] ?? ctx.positional[0] ?? '');
+    if (!path) { ctx.emitError("Get-FileHash : Cannot bind argument to parameter 'Path' because it is an empty string."); return null; }
+    const algorithm = psValueToString(ctx.named['algorithm'] ?? 'SHA256').toUpperCase();
+    const hashFn = FILE_HASH_ALGORITHMS[algorithm];
+    if (!hashFn) {
+      ctx.emitError(`Get-FileHash : Cannot validate argument on parameter 'Algorithm'. The argument "${algorithm}" does not belong to the set "MD5,SHA1,SHA256,SHA512".`);
+      return null;
+    }
+    const fs = ctx.providers.filesystem;
+    if (!fs) { ctx.emitError('Get-FileHash is not recognized in this provider context'); return null; }
+    if (!fs.exists(path)) {
+      ctx.emitError(`Get-FileHash : Could not find file '${path}'.`);
+      return null;
+    }
+    let content: string;
+    try { content = fs.readFile(path); }
+    catch { ctx.emitError(`Get-FileHash : Could not find file '${path}'.`); return null; }
+    return {
+      Algorithm: algorithm,
+      Hash: hashFn(content).toUpperCase(),
+      Path: path,
+    } as Record<string, PSValue>;
   }
 }

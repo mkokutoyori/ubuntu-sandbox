@@ -41,8 +41,13 @@ const num = (v: unknown): number | undefined => {
 const strArray = (v: unknown): string[] =>
   Array.isArray(v) ? v.map(String) : v !== undefined && v !== null ? [String(v)] : [];
 
+interface InboxEntry {
+  pkt: DHCPPacket;
+  mac?: string;
+}
+
 export class WireDhcpChannel implements DhcpServerChannel {
-  private inbox: DHCPPacket[] = [];
+  private inbox: InboxEntry[] = [];
   private lastServerIp: string | null = null;
 
   constructor(
@@ -53,8 +58,8 @@ export class WireDhcpChannel implements DhcpServerChannel {
   get serverIP(): string | null { return this.lastServerIp; }
 
   /** Called by the host when a UDP/68 datagram arrives on this iface. */
-  deliver(pkt: DHCPPacket): void {
-    this.inbox.push(pkt);
+  deliver(pkt: DHCPPacket, mac?: string): void {
+    this.inbox.push({ pkt, mac });
   }
 
   private exchange(
@@ -62,13 +67,13 @@ export class WireDhcpChannel implements DhcpServerChannel {
     expect: ReadonlyArray<string>,
     xid: number,
     clientMAC: string,
-  ): DHCPPacket | null {
+  ): InboxEntry | null {
     this.inbox.length = 0;
     this.sendFrame(this.iface, pkt);
-    const reply = this.inbox.find(p =>
-      p.xid === xid
-      && p.chaddr.toLowerCase() === clientMAC.toLowerCase()
-      && expect.includes(p.getMessageType() ?? ''));
+    const reply = this.inbox.find(e =>
+      e.pkt.xid === xid
+      && e.pkt.chaddr.toLowerCase() === clientMAC.toLowerCase()
+      && expect.includes(e.pkt.getMessageType() ?? ''));
     this.inbox.length = 0;
     return reply ?? null;
   }
@@ -76,8 +81,9 @@ export class WireDhcpChannel implements DhcpServerChannel {
   processDiscover(params: DHCPDiscoverParams): DHCPOfferResult | null {
     const discover = DHCPPacket.createDiscover(params.clientMAC, params.xid);
     if (params.requestedIP) discover.setOption(DHCP_OPTION.REQUESTED_IP, params.requestedIP);
-    const offer = this.exchange(discover, ['DHCPOFFER'], params.xid, params.clientMAC);
-    if (!offer) return null;
+    const entry = this.exchange(discover, ['DHCPOFFER'], params.xid, params.clientMAC);
+    if (!entry) return null;
+    const offer = entry.pkt;
 
     const serverIdentifier = str(offer.getOption(DHCP_OPTION.SERVER_IDENTIFIER)) ?? offer.siaddr;
     this.lastServerIp = serverIdentifier;
@@ -100,6 +106,7 @@ export class WireDhcpChannel implements DhcpServerChannel {
       ip: offer.yiaddr,
       pool,
       serverIdentifier,
+      serverMac: entry.mac,
       xid: offer.xid,
       renewalTime,
       rebindingTime,
@@ -112,14 +119,16 @@ export class WireDhcpChannel implements DhcpServerChannel {
     // RENEWING/REBINDING/INIT-REBOOT REQUESTs carry no server id (RFC 2131 §4.3.2).
     if (!params.serverIdentifier) request.removeOption(DHCP_OPTION.SERVER_IDENTIFIER);
 
-    const reply = this.exchange(request, ['DHCPACK', 'DHCPNAK'], params.xid, params.clientMAC);
-    if (!reply) return null;
+    const entry = this.exchange(request, ['DHCPACK', 'DHCPNAK'], params.xid, params.clientMAC);
+    if (!entry) return null;
+    const reply = entry.pkt;
 
     const serverIdentifier = str(reply.getOption(DHCP_OPTION.SERVER_IDENTIFIER)) ?? reply.siaddr;
     if (reply.getMessageType() === 'DHCPNAK') {
       return {
         type: 'NAK',
         serverIdentifier,
+        serverMac: entry.mac,
         xid: reply.xid,
         message: str(reply.getOption(DHCP_OPTION.MESSAGE)) ?? undefined,
       };
@@ -139,6 +148,7 @@ export class WireDhcpChannel implements DhcpServerChannel {
         type: 'automatic',
       },
       serverIdentifier,
+      serverMac: entry.mac,
       xid: reply.xid,
       renewalTime: num(reply.getOption(DHCP_OPTION.RENEWAL_TIME)),
       rebindingTime: num(reply.getOption(DHCP_OPTION.REBINDING_TIME)),
@@ -151,6 +161,7 @@ export class WireDhcpChannel implements DhcpServerChannel {
     return {
       binding: reply.binding,
       serverIdentifier: reply.serverIdentifier,
+      serverMac: reply.serverMac,
       xid: reply.xid,
       renewalTime: reply.renewalTime,
       rebindingTime: reply.rebindingTime,

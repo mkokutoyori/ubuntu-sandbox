@@ -106,6 +106,12 @@ export class DHCPClient implements IProtocolEngine {
   /** Interface IP clear callback */
   private clearIP: (iface: string) => void;
 
+  private recordServerObservation: ((iface: string, serverIp: string, serverMac: string | null) => void) | null = null;
+
+  setServerObservationRecorder(cb: (iface: string, serverIp: string, serverMac: string | null) => void): void {
+    this.recordServerObservation = cb;
+  }
+
   /** ARP probe callback: returns true if the IP is already in use (conflict detected) */
   private checkAddressConflict: ((iface: string, ip: string) => boolean) | null = null;
 
@@ -499,6 +505,7 @@ export class DHCPClient implements IProtocolEngine {
       rebindingTime = Math.floor(leaseDuration * 0.875);
     }
 
+    const serverMac = ackResult.serverMac ?? offer.serverMac ?? null;
     const lease: DHCPClientLease = {
       iface,
       ipAddress: ackResult.binding.ipAddress,
@@ -507,6 +514,7 @@ export class DHCPClient implements IProtocolEngine {
       dnsServers: pool.dnsServers || [],
       domainName: pool.domainName,
       serverIdentifier: ackResult.serverIdentifier,
+      serverMac,
       leaseStart: ackResult.binding.leaseStart,
       leaseDuration,
       renewalTime,
@@ -520,6 +528,7 @@ export class DHCPClient implements IProtocolEngine {
     state.logs.push(`DHCPREQUEST of ${ackResult.binding.ipAddress} on ${iface}`);
     state.logs.push(`DHCPACK of ${ackResult.binding.ipAddress} from ${ackResult.serverIdentifier}`);
     state.logs.push(`bound to ${ackResult.binding.ipAddress}`);
+    this.recordServerObservation?.(iface, ackResult.serverIdentifier, serverMac);
 
     if (verbose) {
       lines.push(`DHCPREQUEST of ${ackResult.binding.ipAddress} on ${iface} to 255.255.255.255 port 67`);
@@ -644,6 +653,7 @@ export class DHCPClient implements IProtocolEngine {
     const rebindingTime = ackResult.rebindingTime ?? Math.floor(ackResult.binding.leaseExpiration - ackResult.binding.leaseStart) / 1000 * 0.875;
     const leaseDuration = Math.floor((ackResult.binding.leaseExpiration - ackResult.binding.leaseStart) / 1000);
 
+    const serverMac = ackResult.serverMac ?? null;
     const lease: DHCPClientLease = {
       iface,
       ipAddress: ackResult.binding.ipAddress,
@@ -652,6 +662,7 @@ export class DHCPClient implements IProtocolEngine {
       dnsServers: lastLease.dnsServers,
       domainName: lastLease.domainName,
       serverIdentifier: ackResult.serverIdentifier,
+      serverMac,
       leaseStart: ackResult.binding.leaseStart,
       leaseDuration,
       renewalTime: Math.floor(renewalTime),
@@ -662,6 +673,7 @@ export class DHCPClient implements IProtocolEngine {
 
     state.lease = lease;
     state.lastKnownLease = { ...lease };
+    this.recordServerObservation?.(iface, ackResult.serverIdentifier, serverMac);
     state.logs.push(`DHCPACK of ${ackResult.binding.ipAddress} from ${ackResult.serverIdentifier}`);
     state.logs.push(`bound to ${ackResult.binding.ipAddress} (INIT-REBOOT)`);
 
@@ -811,6 +823,7 @@ export class DHCPClient implements IProtocolEngine {
       dnsServers: [],
       domainName: null,
       serverIdentifier: '0.0.0.0',
+      serverMac: null,
       leaseStart: now,
       leaseDuration,
       renewalTime: Math.floor(leaseDuration * 0.5),
@@ -887,7 +900,9 @@ export class DHCPClient implements IProtocolEngine {
               lease.leaseDuration = Math.floor((ackResult.binding.leaseExpiration - ackResult.binding.leaseStart) / 1000);
               if (ackResult.renewalTime !== undefined) lease.renewalTime = ackResult.renewalTime;
               if (ackResult.rebindingTime !== undefined) lease.rebindingTime = ackResult.rebindingTime;
+              lease.serverMac = ackResult.serverMac ?? lease.serverMac;
               state.logs.push(`DHCPACK - lease renewed`);
+              this.recordServerObservation?.(iface, ackResult.serverIdentifier, lease.serverMac);
               // BUG FIX: Restart timers after successful renewal
               this.setupLeaseTimers(iface, state);
               return;
@@ -926,7 +941,10 @@ export class DHCPClient implements IProtocolEngine {
             lease.expiration = ackResult.binding.leaseExpiration;
             if (ackResult.renewalTime !== undefined) lease.renewalTime = ackResult.renewalTime;
             if (ackResult.rebindingTime !== undefined) lease.rebindingTime = ackResult.rebindingTime;
+            lease.serverIdentifier = ackResult.serverIdentifier;
+            lease.serverMac = ackResult.serverMac ?? null;
             state.logs.push(`DHCPACK - lease rebound`);
+            this.recordServerObservation?.(iface, ackResult.serverIdentifier, lease.serverMac);
             this.setupLeaseTimers(iface, state);
             return;
           }

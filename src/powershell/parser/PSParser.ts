@@ -805,11 +805,24 @@ export class PSParser {
 
   // ─── if / elseif / else ────────────────────────────────────────────────────
 
+  /**
+   * A parenthesized condition (if/elseif/while/do-until, switch subject) is a
+   * pipeline in PowerShell grammar, not a restricted expression — it must
+   * accept a bare command invocation with arguments, e.g. `if (Test-Path $p)`
+   * or `while (Get-Random -Maximum 1)`, and not just a zero-arg bareword.
+   */
+  private parseParenthesizedCondition(): PSExpression {
+    this.skipTerminators();
+    const condition = this.parseAssignmentRHS();
+    this.skipTerminators();
+    return condition;
+  }
+
   private parseIfStatement(): PSIfStatement {
     const pos = this.pos_();
     this.expectWord('if');
     this.expect(PSTokenType.LPAREN);
-    const condition = this.parseExpression();
+    const condition = this.parseParenthesizedCondition();
     this.expect(PSTokenType.RPAREN);
     const thenBody = this.parseScriptBlock();
 
@@ -822,7 +835,7 @@ export class PSParser {
     while (this.checkValue(PSTokenType.WORD, 'elseif')) {
       this.advance(); // elseif
       this.expect(PSTokenType.LPAREN);
-      const eic = this.parseExpression();
+      const eic = this.parseParenthesizedCondition();
       this.expect(PSTokenType.RPAREN);
       const eib = this.parseScriptBlock();
       elseifClauses.push({ condition: eic, body: eib });
@@ -843,7 +856,7 @@ export class PSParser {
     const pos = this.pos_();
     this.expectWord('while');
     this.expect(PSTokenType.LPAREN);
-    const condition = this.parseExpression();
+    const condition = this.parseParenthesizedCondition();
     this.expect(PSTokenType.RPAREN);
     const body = this.parseScriptBlock();
     return { type: 'WhileStatement', condition, body, position: pos };
@@ -859,7 +872,7 @@ export class PSParser {
     const keyword = this.peek().value; // 'while' or 'until'
     this.advance();
     this.expect(PSTokenType.LPAREN);
-    const condition = this.parseExpression();
+    const condition = this.parseParenthesizedCondition();
     this.expect(PSTokenType.RPAREN);
     if (keyword === 'until') {
       return { type: 'DoUntilStatement', body, condition, position: pos };
@@ -929,7 +942,7 @@ export class PSParser {
     }
 
     this.expect(PSTokenType.LPAREN);
-    const subject = this.parseExpression();
+    const subject = this.parseParenthesizedCondition();
     this.expect(PSTokenType.RPAREN);
     this.skipTerminators();
     this.expect(PSTokenType.LBRACE);

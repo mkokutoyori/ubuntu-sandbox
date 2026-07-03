@@ -685,6 +685,10 @@ class WindowsNetworkAdapter implements INetworkProvider {
     const m = this.pc as unknown as { getDefaultGateway?: () => string | null };
     return m.getDefaultGateway ? m.getDefaultGateway() : null;
   }
+  getDhcpServer(ifAlias: string): string | null {
+    const m = this.pc as unknown as { getDhcpServer?: (n: string) => string | null };
+    return m.getDhcpServer ? m.getDhcpServer(ifAlias) : null;
+  }
   isDHCPConfigured(): boolean { return false; }
   testConnection(target: string): boolean {
     const probe = this.testPingProbe(target);
@@ -692,6 +696,9 @@ class WindowsNetworkAdapter implements INetworkProvider {
   }
   resolveDns(name: string): string[] { return this.pc.resolveDnsSync(name); }
   resolveDnsViaServer(name: string, server: string): string[] { return this.pc.resolveDnsViaServerSync(name, server); }
+  resolveDnsViaServerWithTtl(name: string, server: string): Array<{ ip: string; ttl: number }> {
+    return this.pc.resolveDnsViaServerWithTtlSync(name, server);
+  }
   getDnsClientCache(): Array<{ name: string; type: string; value: string; ttl: number }> {
     return this.pc.dnsCache.activeEntries().map(e => ({
       name: e.name, type: e.type, value: e.value, ttl: e.ttl,
@@ -988,6 +995,9 @@ class WindowsScheduledTaskAdapter implements IScheduledTaskProvider {
   }
   unregisterTask(name: string): string {
     return this.store().delete(name.toLowerCase()) ? '' : `Cannot find scheduled task '${name}'.`;
+  }
+  now(): Date {
+    return this.pc.simulatedDate();
   }
 }
 
