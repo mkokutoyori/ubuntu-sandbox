@@ -10,6 +10,7 @@ import {
   grabUdpBanner,
 } from './ServiceBannerGrab';
 import { detectServiceFromBanner } from './nmap/BannerAnalyzer';
+import { serviceFromProcess } from './nmap/ProcessServiceMap';
 import { parseNmapArgs } from './nmap/NmapOptions';
 import { scan, type HostProbes, type HostState } from './nmap/ScanEngine';
 import { renderNormal, renderGreppable } from './nmap/NmapFormatter';
@@ -77,8 +78,7 @@ function buildProbes(ctx: LinuxCommandContext, noDns: boolean): HostProbes {
         if (detected) return detected;
       }
       const proc = grabListenerProcess(found.device, port) ?? grabUdpListener(found.device, port);
-      if (proc === 'sshd') return { service: 'ssh', version: 'OpenSSH (protocol 2.0)' };
-      if (proc) return { service: proc };
+      if (proc) return { service: serviceFromProcess(proc) ?? proc };
       return null;
     },
   };

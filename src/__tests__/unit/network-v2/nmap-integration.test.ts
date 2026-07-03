@@ -37,6 +37,12 @@ function startListener(server: LinuxServer, opts?: { noBanner?: boolean }) {
   return { listener, binding };
 }
 
+async function startTcpService(server: LinuxServer, unit: string, port: number): Promise<void> {
+  await server.executeCommand(`sudo systemctl start ${unit}`);
+  (server as unknown as { getTcpStack(): { listen(p: number, h: { onAccept: () => void }): void } })
+    .getTcpStack().listen(port, { onAccept: () => undefined });
+}
+
 describe('nmap — intégration sur topologie réelle', () => {
   beforeEach(() => {
     resetCounters();
@@ -122,5 +128,27 @@ describe('nmap — intégration sur topologie réelle', () => {
     startListener(lab.server);
     const out = await lab.attacker.executeCommand(`nmap -p 1521 ${SERVER_IP} ${ATTACKER_IP}`);
     expect(out.match(/Nmap scan report for/g)?.length).toBe(2);
+  });
+
+  it('-sV identifie le service via le processus réel du daemon (apache2 → http)', async () => {
+    const lab = await buildLab();
+    await startTcpService(lab.server, 'apache2', 80);
+    const out = await lab.attacker.executeCommand(`nmap -sV -p 80 ${SERVER_IP}`);
+    expect(out).toMatch(/80\/tcp\s+open\s+http/);
+  });
+
+  it('-sV identifie une base de données réelle via son processus (mysqld → mysql)', async () => {
+    const lab = await buildLab();
+    await startTcpService(lab.server, 'mysql', 3306);
+    const out = await lab.attacker.executeCommand(`nmap -sV -p 3306 ${SERVER_IP}`);
+    expect(out).toMatch(/3306\/tcp\s+open\s+mysql/);
+  });
+
+  it('sans -sV le service est deviné par le port, sans fabriquer de version', async () => {
+    const lab = await buildLab();
+    await startTcpService(lab.server, 'apache2', 80);
+    const out = await lab.attacker.executeCommand(`nmap -p 80 ${SERVER_IP}`);
+    expect(out).toMatch(/80\/tcp\s+open\s+http/);
+    expect(out).not.toMatch(/Apache/);
   });
 });
