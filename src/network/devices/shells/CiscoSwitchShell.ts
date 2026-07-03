@@ -3138,8 +3138,6 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
         this.showIpDhcpBinding());
       t.registerGreedy('show ip dhcp pool', 'Display DHCP pools', () =>
         this.showIpDhcpPool());
-      t.register('show arp', 'Display ARP cache', () => this.showArp());
-      t.register('show ip arp', 'Display IP ARP cache', () => this.showArp());
       t.registerGreedy('show ip interface', 'Display verbose L3 state per interface', (args) => {
         if (args.length === 0 || args[0]?.toLowerCase() === 'brief') {
           return this.showIpInterfaceBrief();
@@ -3469,17 +3467,6 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       const m = new SubnetMask(mask);
       return ipN.isInSameSubnet(netN, m);
     } catch { return false; }
-  }
-
-  /** IOS `show arp` — the switch's shared mgmt ARP cache. */
-  private showArp(): string {
-    const arp = this.d()._getArpTableInternal();
-    const lines: string[] = ['Protocol  Address          Age (min)  Hardware Addr   Type   Interface'];
-    for (const [ip, e] of arp.entries()) {
-      const age = e.type === 'static' ? '-' : '0';
-      lines.push(`Internet  ${ip.padEnd(17)}${age.padEnd(11)}${e.mac.toString().padEnd(16)}ARPA   ${e.iface}`);
-    }
-    return lines.join('\n');
   }
 
   /** `show ip interface brief` — the switch carries IPs only on SVIs. */
