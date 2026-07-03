@@ -21,6 +21,7 @@
 import { Equipment } from '../equipment/Equipment';
 import { EquipmentRegistry } from '../equipment/EquipmentRegistry';
 import { Port } from '../hardware/Port';
+import type { IPv4AddressOrigin } from '../hardware/Port';
 import { SocketTable } from '../core/SocketTable';
 import { TcpStack } from '../tcp/TcpStack';
 import { TimerSet } from '@/events/TimerSet';
@@ -559,8 +560,8 @@ export abstract class EndHost extends Equipment {
         const port = this.ports.get(iface);
         return port ? port.getMAC().toString() : '00:00:00:00:00:00';
       },
-      (iface: string, ip: string, mask: string, gateway: string | null) => {
-        this.configureInterface(iface, new IPAddress(ip), new SubnetMask(mask));
+      (iface: string, ip: string, mask: string, gateway: string | null, origin: IPv4AddressOrigin = 'dhcp') => {
+        this.configureInterface(iface, new IPAddress(ip), new SubnetMask(mask), origin);
         if (gateway) this.setDefaultGateway(new IPAddress(gateway));
         this.dhcpInterfaces.add(iface);
         this.onDhcpLeaseConfigured(iface);
@@ -682,11 +683,11 @@ export abstract class EndHost extends Equipment {
   /**
    * Configure an IP on an interface. Automatically adds a connected route.
    */
-  configureInterface(ifName: string, ip: IPAddress, mask: SubnetMask): boolean {
+  configureInterface(ifName: string, ip: IPAddress, mask: SubnetMask, origin: IPv4AddressOrigin = 'manual'): boolean {
     const port = this.ports.get(ifName);
     if (!port) return false;
 
-    port.configureIP(ip, mask);
+    port.configureIP(ip, mask, origin);
 
     // Remove old connected route for this interface
     this.routingTable = this.routingTable.filter(

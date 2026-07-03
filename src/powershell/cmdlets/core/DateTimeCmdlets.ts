@@ -7,6 +7,7 @@ import type { ICmdlet } from '../ICmdlet';
 import type { CmdletContext } from '../CmdletContext';
 import type { PSValue } from '@/powershell/runtime/PSEnvironment';
 import { psValueToString } from '@/powershell/runtime/PSExpansion';
+import type { PSScriptBlock } from '@/powershell/parser/PSASTNode';
 
 // ─── Get-Date ─────────────────────────────────────────────────────────────
 
@@ -146,6 +147,25 @@ export function makeTimeSpan(ms: number): Record<string, PSValue> {
     Seconds:      Math.floor(total % 60),
     Milliseconds: ms % 1000,
   } as Record<string, PSValue>;
+}
+
+// ─── Measure-Command ──────────────────────────────────────────────────────
+
+export class MeasureCommandCmdlet implements ICmdlet {
+  readonly name = 'measure-command';
+  readonly displayName = 'Measure-Command';
+  readonly aliases = [] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const raw = ctx.named['expression'] ?? ctx.positional[0] ?? null;
+    if (!raw || typeof raw !== 'object' || (raw as Record<string, unknown>).type !== 'ScriptBlock') {
+      ctx.emitError('Measure-Command requires a script block, e.g. Measure-Command { ... }');
+      return makeTimeSpan(0);
+    }
+    const start = Date.now();
+    ctx.invokeBlock(raw as PSScriptBlock);
+    return makeTimeSpan(Date.now() - start);
+  }
 }
 
 // ─── Start-Sleep ──────────────────────────────────────────────────────────

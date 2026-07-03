@@ -101,7 +101,7 @@ export class DHCPClient implements IProtocolEngine {
   private getMACForIface: (iface: string) => string;
 
   /** Interface IP configuration callback */
-  private configureIP: (iface: string, ip: string, mask: string, gateway: string | null) => void;
+  private configureIP: (iface: string, ip: string, mask: string, gateway: string | null, origin?: 'dhcp' | 'link-local') => void;
 
   /** Interface IP clear callback */
   private clearIP: (iface: string) => void;
@@ -189,7 +189,7 @@ export class DHCPClient implements IProtocolEngine {
 
   constructor(
     getMACForIface: (iface: string) => string,
-    configureIP: (iface: string, ip: string, mask: string, gateway: string | null) => void,
+    configureIP: (iface: string, ip: string, mask: string, gateway: string | null, origin?: 'dhcp' | 'link-local') => void,
     clearIP: (iface: string) => void,
   ) {
     this.getMACForIface = getMACForIface;
@@ -827,7 +827,7 @@ export class DHCPClient implements IProtocolEngine {
     state.logs.push(`No DHCP server available - using APIPA`);
     state.logs.push(`bound to ${ip} (link-local)`);
 
-    this.configureIP(iface, ip, mask, null);
+    this.configureIP(iface, ip, mask, null, 'link-local');
     this.setupLeaseTimers(iface, state);
 
     return ''; // Non-verbose: silent success

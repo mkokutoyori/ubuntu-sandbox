@@ -102,6 +102,9 @@ export interface IPAddressInfo {
   suffixOrigin: string;
   addressFamily: string;
   gateway?: string;
+  /** Residual DHCP lease lifetimes (seconds); undefined for non-leased addresses. */
+  validLifetimeSeconds?: number;
+  preferredLifetimeSeconds?: number;
 }
 
 export interface RouteInfo {
@@ -266,6 +269,8 @@ export interface INetworkProvider {
   egressInfoFor(target: string): { sourceIp: string; interfaceAlias: string; nextHop: string } | null;
   /** Resolve-DnsName */
   resolveDns(name: string): string[];
+  /** Resolve-DnsName -Server: query a specific resolver over the wire. */
+  resolveDnsViaServer?(name: string, server: string): string[];
   /** Get-DnsClientCache */
   getDnsClientCache?(): Array<{ name: string; type: string; value: string; ttl: number }>;
   /** Clear-DnsClientCache */

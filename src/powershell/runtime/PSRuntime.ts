@@ -1671,6 +1671,13 @@ export class PSRuntime {
     try {
       result = renderBody(node.tryBody);
     } catch (e) {
+      // Control-flow signals (return / break / continue) are not errors and
+      // must not be caught by `catch` — they propagate out of the try, with
+      // `finally` still running on the way. Mirrors PowerShell semantics.
+      if (e instanceof ReturnSignal || e instanceof BreakSignal || e instanceof ContinueSignal) {
+        if (node.finallyBody) renderBody(node.finallyBody);
+        throw e;
+      }
       const errRecord = this.makeErrorRecord(e);
       const errList = (this.global.get('Error') as PSValue[]) ?? [];
       this.global.set('Error', [errRecord, ...errList]);

@@ -427,7 +427,7 @@ describe('Windows Subnet and Route Configurations', () => {
       const { pc1 } = setupWindowsTopology();
       await pc1.executeCommand('netsh interface ip set address "Ethernet" static 192.168.1.10 255.255.255.0');
       const addCmd = await pc1.executeCommand('netsh interface ip add address "Ethernet" 10.0.0.5 255.255.255.0');
-      expect(addCmd.trim()).toBe('');
+      expect(addCmd.trim()).toBe('Ok.');
       const status = await pc1.executeCommand('netsh interface ip show addresses "Ethernet"');
       expect(status).toContain('192.168.1.10');
       expect(status).toContain('10.0.0.5');
@@ -438,7 +438,7 @@ describe('Windows Subnet and Route Configurations', () => {
       await pc1.executeCommand('netsh interface ip set address "Ethernet" static 192.168.1.10 255.255.255.0');
       await pc1.executeCommand('netsh interface ip add address "Ethernet" 10.0.0.5 255.255.255.0');
       const delCmd = await pc1.executeCommand('netsh interface ip delete address "Ethernet" 10.0.0.5');
-      expect(delCmd.trim()).toBe('');
+      expect(delCmd.trim()).toBe('Ok.');
       const status = await pc1.executeCommand('netsh interface ip show addresses "Ethernet"');
       expect(status).not.toContain('10.0.0.5');
     });

@@ -16,6 +16,7 @@ import type {
   NetworkAdapterInfo, IPAddressInfo, INetworkProvider,
 } from '@/powershell/providers/PSProviders';
 import { psValueToString } from '@/powershell/runtime/PSExpansion';
+import { makeTimeSpan } from './DateTimeCmdlets';
 
 function requireNetwork(ctx: CmdletContext): INetworkProvider {
   if (!ctx.providers.network) {
@@ -36,6 +37,12 @@ function adapterToPSObject(a: NetworkAdapterInfo): Record<string, PSValue> {
 }
 
 function ipToPSObject(ip: IPAddressInfo): Record<string, PSValue> {
+  // ValidLifetime/PreferredLifetime are TimeSpans on a real host; leased
+  // addresses carry the residual lease time, everything else is "forever"
+  // (TimeSpan.MaxValue, ~10675199 days — what Get-NetIPAddress prints).
+  const FOREVER_MS = 10675199.02 * 86400 * 1000;
+  const validMs = ip.validLifetimeSeconds !== undefined ? ip.validLifetimeSeconds * 1000 : FOREVER_MS;
+  const prefMs = ip.preferredLifetimeSeconds !== undefined ? ip.preferredLifetimeSeconds * 1000 : FOREVER_MS;
   return {
     IPAddress:     ip.ipAddress,
     PrefixLength:  ip.prefixLength,
@@ -44,6 +51,8 @@ function ipToPSObject(ip: IPAddressInfo): Record<string, PSValue> {
     PrefixOrigin:  ip.prefixOrigin,
     SuffixOrigin:  ip.suffixOrigin,
     AddressFamily: ip.addressFamily,
+    ValidLifetime: makeTimeSpan(validMs) as unknown as PSValue,
+    PreferredLifetime: makeTimeSpan(prefMs) as unknown as PSValue,
   };
 }
 
@@ -164,7 +173,13 @@ export class ResolveDnsNameCmdlet implements ICmdlet {
       ['example.com', '93.184.216.34'],
     ]);
     const builtin = builtinIPs.get(name.toLowerCase());
-    const ips = builtin ? [builtin] : net.resolveDns(name);
+    // -Server directs the query at a specific resolver (over the wire),
+    // bypassing the interface-configured servers — needed to compare a
+    // forced lookup against the system default one.
+    const server = ctx.named['server'] !== undefined ? psValueToString(ctx.named['server']) : null;
+    const ips = builtin
+      ? [builtin]
+      : (server && net.resolveDnsViaServer ? net.resolveDnsViaServer(name, server) : net.resolveDns(name));
     if (ips.length === 0) { ctx.emitError(`${name} : DNS name does not exist`); return null; }
     return ips.map(ip => ({
       Name: name,

@@ -21,15 +21,22 @@ function requireEventLog(ctx: CmdletContext): IEventLogProvider {
   return ctx.providers.eventLog;
 }
 
+function shortEventTime(d: Date): string {
+  const p2 = (n: number) => n.toString().padStart(2, '0');
+  return `${p2(d.getMonth() + 1)}/${p2(d.getDate())} ${p2(d.getHours())}:${p2(d.getMinutes())}`;
+}
+
 function entryToPSObject(e: EventLogEntryInfo): Record<string, PSValue> {
   return {
     Index:         e.index,
-    Time:          e.timeGenerated,
+    Time:          shortEventTime(e.timeGenerated),
     EntryType:     e.entryType,
     Source:        e.source,
-    InstanceId:    e.eventId,
+    InstanceID:    e.eventId,
+    EventID:       e.eventId,
     Category:      e.category,
     Message:       e.message,
+    TimeGenerated: e.timeGenerated,
   };
 }
 
@@ -50,11 +57,25 @@ export class GetEventLogCmdlet implements ICmdlet {
         OverflowAction: 'OverwriteAsNeeded',
       } as Record<string, PSValue>)) as PSValue;
     }
-    // Entry queries — defer to the legacy executor whose formatted
-    // column-table layout (Index / Time / EntryType / Source / Message)
-    // is what the existing scripts and tests expect. We still own -List
-    // because that variant is just a small structured table.
-    throw new PSRuntimeError('Get-EventLog entry query is not recognized in this provider context');
+
+    // Entry query — real Get-EventLog returns EventLogEntry objects (rendered
+    // as a table by the default formatter, but with live properties like
+    // EventID / EntryType / Message so scripts can filter and project them).
+    const logName = psValueToString(ctx.named['logname'] ?? ctx.positional[0] ?? '');
+    if (!logName) { ctx.emitError('Get-EventLog requires -LogName'); return null; }
+
+    const known = log.listLogs().some(l => l.logName.toLowerCase() === logName.toLowerCase());
+    if (!known) {
+      ctx.emitError(`The event log '${logName}' on computer '.' does not exist.`);
+      return null;
+    }
+
+    const opts: { newest?: number; entryType?: string; source?: string } = {};
+    if (ctx.named['newest'] !== undefined) opts.newest = Number(ctx.named['newest']);
+    if (ctx.named['entrytype'] !== undefined) opts.entryType = psValueToString(ctx.named['entrytype']);
+    if (ctx.named['source'] !== undefined) opts.source = psValueToString(ctx.named['source']);
+
+    return log.getEntries(logName, opts).map(entryToPSObject) as PSValue;
   }
 }
 

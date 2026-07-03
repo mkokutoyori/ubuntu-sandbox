@@ -800,6 +800,12 @@ function pickDefaultColumns(keys: string[]): string[] | null {
   if (lower.has('ipaddress') && lower.has('interfacealias') && lower.has('addressfamily')) {
     return ['IPAddress', 'InterfaceAlias', 'AddressFamily', 'PrefixLength'];
   }
+  // EventLogEntry: Index, Time, EntryType, Source, InstanceID, Message
+  // (matches real Get-EventLog's default table view).
+  if (lower.has('index') && lower.has('entrytype') && lower.has('source')
+      && (lower.has('instanceid') || lower.has('eventid'))) {
+    return ['Index', 'Time', 'EntryType', 'Source', 'InstanceID', 'Message'];
+  }
   // LocalUser: Name, Enabled, Description
   if (lower.has('enabled') && lower.has('name') && lower.has('description') && !lower.has('status')) {
     return ['Name', 'Enabled', 'Description'];

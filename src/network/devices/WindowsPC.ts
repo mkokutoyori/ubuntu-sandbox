@@ -809,6 +809,20 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     return [];
   }
 
+  resolveDnsViaServerSync(name: string, server: string): string[] {
+    let serverIP: IPAddress;
+    try { serverIP = new IPAddress(server); } catch { return []; }
+    for (const qname of this.dnsSearchCandidates(name)) {
+      const response = this.queryDnsServerSync(serverIP, qname, 'A');
+      const aRecords = response?.answers.filter((rr) => rr.data.type === RRType.A) ?? [];
+      if (aRecords.length > 0) {
+        this.dnsCache.store(qname, response!.answers);
+        return aRecords.map((rr) => (rr.data as ARecordData).address.toString());
+      }
+    }
+    return [];
+  }
+
   private dhcpLease(ifName: string) {
     return this.dhcpClient.getState(ifName)?.lease ?? null;
   }
@@ -1588,6 +1602,20 @@ export class WindowsPC extends EndHost implements UserAccountHost {
   getDefaultGateway(): string | null { return this.defaultGateway?.toString() ?? null; }
   getDnsServers(ifName: string): string[] {
     return this.effectiveDnsServers(ifName);
+  }
+
+  /**
+   * Residual DHCP-lease lifetimes for an interface, or null when the address
+   * is not leased. Feeds Get-NetIPAddress's ValidLifetime / PreferredLifetime,
+   * the way a real Windows host reports the time left on a DHCP address.
+   */
+  getInterfaceLeaseLifetimes(ifName: string): { validSeconds: number; preferredSeconds: number } | null {
+    const lease = this.dhcpClient.getState(ifName)?.lease;
+    if (!lease) return null;
+    if (lease.serverIdentifier === '0.0.0.0') return null;
+    const remaining = Math.max(0, Math.floor((lease.expiration - Date.now()) / 1000));
+    const preferred = Math.max(0, Math.min(remaining, Math.floor((lease.leaseStart + lease.renewalTime * 1000 - Date.now()) / 1000)));
+    return { validSeconds: remaining, preferredSeconds: preferred };
   }
 
   setDnsServers(ifName: string, servers: string[]): void {

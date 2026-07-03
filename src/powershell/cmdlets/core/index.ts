@@ -24,10 +24,11 @@ import {
 } from './CollectionCmdlets';
 import {
   ConvertToJsonCmdlet, ConvertFromJsonCmdlet,
-  ConvertToCsvCmdlet, ConvertFromCsvCmdlet,
+  ConvertToCsvCmdlet, ConvertFromCsvCmdlet, ExportCsvCmdlet,
 } from './ConversionCmdlets';
 import {
   GetDateCmdlet, SetDateCmdlet, NewTimespanCmdlet, StartSleepCmdlet,
+  MeasureCommandCmdlet,
 } from './DateTimeCmdlets';
 import {
   SplitPathCmdlet, JoinPathCmdlet, TestPathCmdlet, ResolvePathCmdlet,
@@ -151,12 +152,14 @@ export function registerCoreCmdlets(registry: CmdletRegistry): void {
   registry.register(new ConvertFromJsonCmdlet());
   registry.register(new ConvertToCsvCmdlet());
   registry.register(new ConvertFromCsvCmdlet());
+  registry.register(new ExportCsvCmdlet());
 
   // ── Date/Time ─────────────────────────────────────────────────────────────
   registry.register(new GetDateCmdlet());
   registry.register(new SetDateCmdlet());
   registry.register(new NewTimespanCmdlet());
   registry.register(new StartSleepCmdlet());
+  registry.register(new MeasureCommandCmdlet());
 
   // ── Path & IO ─────────────────────────────────────────────────────────────
   registry.register(new SplitPathCmdlet());

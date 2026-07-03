@@ -50,6 +50,14 @@ export interface IPv6AddressEntry {
   origin: 'link-local' | 'static' | 'slaac' | 'dhcpv6';
 }
 
+/**
+ * How the interface's primary IPv4 address was assigned. This is the single
+ * source of truth every OS view reads: Linux `ip addr` renders `dynamic` for
+ * 'dhcp', Windows `Get-NetIPAddress` maps it to PrefixOrigin/SuffixOrigin
+ * (Manual / Dhcp / WellKnown+Link for the RFC 3927 link-local fallback).
+ */
+export type IPv4AddressOrigin = 'manual' | 'dhcp' | 'link-local';
+
 export class Port {
   private readonly name: string;
   private readonly mac: MACAddress;
@@ -58,6 +66,7 @@ export class Port {
   // IPv4 configuration
   private ipAddress: IPAddress | null = null;
   private subnetMask: SubnetMask | null = null;
+  private ipv4Origin: IPv4AddressOrigin = 'manual';
   private secondaryIPs: Array<{ ip: IPAddress; mask: SubnetMask }> = [];
   // IPv6 configuration (multiple addresses per interface)
   private ipv6Addresses: IPv6AddressEntry[] = [];
@@ -192,9 +201,13 @@ export class Port {
   getIPAddress(): IPAddress | null { return this.ipAddress; }
   getSubnetMask(): SubnetMask | null { return this.subnetMask; }
 
-  configureIP(ip: IPAddress, mask: SubnetMask): void {
+  /** Provenance of the primary IPv4 address — see {@link IPv4AddressOrigin}. */
+  getIPv4Origin(): IPv4AddressOrigin { return this.ipv4Origin; }
+
+  configureIP(ip: IPAddress, mask: SubnetMask, origin: IPv4AddressOrigin = 'manual'): void {
     this.ipAddress = ip;
     this.subnetMask = mask;
+    this.ipv4Origin = origin;
     Logger.info(this.equipmentId, 'port:ip-config', `${this.name}: IP set to ${ip}/${mask.toCIDR()}`);
     this.getBus().publish({
       topic: 'port.config.ip-changed',
@@ -206,6 +219,7 @@ export class Port {
     if (this.ipAddress === null && this.subnetMask === null && this.secondaryIPs.length === 0) return;
     this.ipAddress = null;
     this.subnetMask = null;
+    this.ipv4Origin = 'manual';
     this.secondaryIPs = [];
     this.getBus().publish({
       topic: 'port.config.ip-changed',

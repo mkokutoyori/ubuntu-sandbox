@@ -24,6 +24,19 @@ type FwRow = {
   action: string; direction: string; protocol: string;
   localPort: string; remotePort: string; description: string;
 };
+
+/**
+ * Map a Port's IPv4 provenance to the Windows PrefixOrigin/SuffixOrigin pair
+ * reported by Get-NetIPAddress. The RFC 3927 link-local fallback (APIPA) is
+ * WellKnown/Link, matching a real host that failed to reach a DHCP server.
+ */
+function mapV4Origin(origin: 'manual' | 'dhcp' | 'link-local'): { prefixOrigin: string; suffixOrigin: string } {
+  switch (origin) {
+    case 'dhcp':       return { prefixOrigin: 'Dhcp', suffixOrigin: 'Dhcp' };
+    case 'link-local': return { prefixOrigin: 'WellKnown', suffixOrigin: 'Link' };
+    default:           return { prefixOrigin: 'Manual', suffixOrigin: 'Manual' };
+  }
+}
 import { JobProvider } from '@/powershell/providers/JobProvider';
 import type {
   PSProviders,
@@ -491,7 +504,16 @@ class WindowsNetworkAdapter implements INetworkProvider {
         addressFamily: 'IPv6',
       });
     }
-    const ports = (this.pc as unknown as { getPorts: () => Array<{ name: string; getIPAddress: () => unknown }> }).getPorts();
+    const pc = this.pc as unknown as {
+      getPorts: () => Array<{
+        name: string;
+        getIPAddress: () => unknown;
+        getSubnetMask?: () => { toCIDR?: () => number } | null;
+        getIPv4Origin?: () => 'manual' | 'dhcp' | 'link-local';
+      }>;
+      getInterfaceLeaseLifetimes?: (ifName: string) => { validSeconds: number; preferredSeconds: number } | null;
+    };
+    const ports = pc.getPorts();
     const filtered = ifAlias
       ? ports.filter(p => p.name.toLowerCase() === ifAlias.toLowerCase())
       : ports;
@@ -499,14 +521,20 @@ class WindowsNetworkAdapter implements INetworkProvider {
       const raw = p.getIPAddress();
       if (raw) {
         const ip = String((raw as { toString: () => string }).toString());
+        const origin = p.getIPv4Origin?.() ?? 'manual';
+        const { prefixOrigin, suffixOrigin } = mapV4Origin(origin);
+        const cidr = p.getSubnetMask?.()?.toCIDR?.();
+        const lease = origin === 'dhcp' ? (pc.getInterfaceLeaseLifetimes?.(p.name) ?? null) : null;
         out.push({
           ipAddress: ip,
-          prefixLength: 24,
+          prefixLength: typeof cidr === 'number' ? cidr : 24,
           ifAlias: p.name,
           ifIndex: idx + 1,
-          prefixOrigin: 'Manual',
-          suffixOrigin: 'Manual',
+          prefixOrigin,
+          suffixOrigin,
           addressFamily: ip.includes(':') ? 'IPv6' : 'IPv4',
+          validLifetimeSeconds: lease?.validSeconds,
+          preferredLifetimeSeconds: lease?.preferredSeconds,
         });
       }
     });
@@ -663,6 +691,7 @@ class WindowsNetworkAdapter implements INetworkProvider {
     return probe?.success ?? false;
   }
   resolveDns(name: string): string[] { return this.pc.resolveDnsSync(name); }
+  resolveDnsViaServer(name: string, server: string): string[] { return this.pc.resolveDnsViaServerSync(name, server); }
   getDnsClientCache(): Array<{ name: string; type: string; value: string; ttl: number }> {
     return this.pc.dnsCache.activeEntries().map(e => ({
       name: e.name, type: e.type, value: e.value, ttl: e.ttl,

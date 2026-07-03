@@ -974,7 +974,7 @@ function handleAddAddress(ctx: WinCommandContext, joined: string): string {
       ctx.configureInterface(portName, new IPAddress(ip), new SubnetMask(mask));
       if (gateway) ctx.setDefaultGateway(new IPAddress(gateway));
     }
-    return '';
+    return 'Ok.';
   } catch (e: any) {
     return `Error: ${e.message}`;
   }
@@ -1193,7 +1193,7 @@ function handleDeleteAddress(ctx: WinCommandContext, joined: string): string {
   } else {
     ctx.clearInterfaceIP(portName);
   }
-  return '';
+  return 'Ok.';
 }
 
 // ─── netsh interface ipv6 ───────────────────────────────────────────

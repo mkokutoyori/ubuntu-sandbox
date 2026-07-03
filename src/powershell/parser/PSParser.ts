@@ -375,10 +375,10 @@ export class PSParser {
       if (this.check(PSTokenType.PARAMETER)) {
         parameters.push(this.parseCommandParameter());
       } else if (this.canStartExpression() || this.check(PSTokenType.MODULO)
-                 || this.check(PSTokenType.MULTIPLY)) {
-        // A `%`- or `*`-led token here is a bareword argument (`echo
-        // %PATH%`, `Select-Object *`, `Get-Service *Tcp*`); `%`/`*` are
-        // only operators in expression position.
+                 || this.check(PSTokenType.MULTIPLY) || this.check(PSTokenType.DIVIDE)) {
+        // A `%`-, `*`- or `/`-led token here is a bareword argument (`echo
+        // %PATH%`, `Select-Object *`, `Get-Service *Tcp*`, `ipconfig /all`);
+        // those symbols are only operators in expression position.
         args.push(this.parseCommandArgument());
       } else {
         break;
@@ -571,6 +571,31 @@ export class PSParser {
         const nxt = this.peek();
         if (nxt.position.offset !== prevEnd) break;
         if (nxt.type === PSTokenType.MULTIPLY) value += '*';
+        else if (nxt.type === PSTokenType.DOT) value += '.';
+        else if (nxt.type === PSTokenType.WORD) value += nxt.value;
+        else if (nxt.type === PSTokenType.NUMBER) value += nxt.value;
+        else break;
+        this.advance();
+        prevEnd = nxt.position.offset + (
+          nxt.type === PSTokenType.WORD || nxt.type === PSTokenType.NUMBER
+            ? nxt.value.length : 1
+        );
+      }
+      return makeLiteral(value, value, 'string', pos);
+    }
+    // A command argument that begins with `/` is a native-command switch
+    // bareword (`ipconfig /release`, `/all`, `/flushdns`, `netsh /?`), NOT
+    // division — that only applies in expression position. Glue the adjacent
+    // run so `/release`, `/release6`, `/setclassid` stay a single token.
+    if (tok.type === PSTokenType.DIVIDE) {
+      const pos = this.pos_();
+      this.advance();
+      let value = '/';
+      let prevEnd = tok.position.offset + 1;
+      for (;;) {
+        const nxt = this.peek();
+        if (nxt.position.offset !== prevEnd) break;
+        if (nxt.type === PSTokenType.DIVIDE) value += '/';
         else if (nxt.type === PSTokenType.DOT) value += '.';
         else if (nxt.type === PSTokenType.WORD) value += nxt.value;
         else if (nxt.type === PSTokenType.NUMBER) value += nxt.value;
