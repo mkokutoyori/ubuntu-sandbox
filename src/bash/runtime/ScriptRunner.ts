@@ -40,6 +40,7 @@ export function runScript(
   aliases?: AliasTable,
   functions?: Map<string, import('@/bash/parser/ASTNode').Command>,
   invocation: 'direct' | 'interpreter' = 'direct',
+  identity?: { pid?: number; ppid?: number; initialExitCode?: number },
 ): ScriptResult {
   const absPath = ctx.vfs.normalizePath(scriptPath, ctx.cwd);
 
@@ -72,7 +73,7 @@ export function runScript(
   const io = buildIOContext(ctx);
   return runScriptContent(
     content, scriptPath, scriptArgs, executeCommand,
-    buildEnvVars(ctx), io, undefined, aliases, functions,
+    buildEnvVars(ctx), io, identity, aliases, functions,
   );
 }
 

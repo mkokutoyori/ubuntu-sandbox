@@ -39,7 +39,8 @@ import { HardwareProfile } from '../host/hardware';
 import { HostLifecycle } from '../host/lifecycle';
 import { HostClock } from '../host/lifecycle/HostClock';
 import { SystemIdentity } from '../host/identity';
-import { runScript, runScriptContent, runScriptContentAsync } from '@/bash/runtime/ScriptRunner';
+import { runScript, runScriptContent, runScriptContentAsync, type ScriptResult } from '@/bash/runtime/ScriptRunner';
+import { ExitSignal } from '@/bash/errors/BashError';
 import { AliasTable } from '@/bash/runtime/AliasTable';
 import { type IpNetworkContext } from './LinuxIpCommand';
 import { cmdDf, cmdDu, cmdFree, cmdLsblk } from './LinuxSystemCommands';
@@ -2045,7 +2046,7 @@ export class LinuxCommandExecutor {
       (argv, env) => this.dispatchFromInterpreter(argv, env),
       initialVars,
       io,
-      { pid: this.shellPid, ppid: this.shellPpid, initialExitCode: this.lastExitCode },
+      { pid: this.currentBashPid(), ppid: this.shellPpid, initialExitCode: this.lastExitCode },
       this.aliases,
       this.functions,
     );
@@ -2152,7 +2153,7 @@ export class LinuxCommandExecutor {
       (argv, env) => this.dispatchMaybeNetwork(argv, env),
       initialVars,
       io,
-      { pid: this.shellPid, ppid: this.shellPpid, initialExitCode: this.lastExitCode },
+      { pid: this.currentBashPid(), ppid: this.shellPpid, initialExitCode: this.lastExitCode },
       this.aliases,
       this.functions,
     );
@@ -2209,7 +2210,7 @@ export class LinuxCommandExecutor {
       collector,
       this.buildEnvVars(),
       io,
-      { pid: this.shellPid, ppid: this.shellPpid, initialExitCode: this.lastExitCode },
+      { pid: this.currentBashPid(), ppid: this.shellPpid, initialExitCode: this.lastExitCode },
       this.aliases,
       this.functions,
     );
@@ -2232,6 +2233,55 @@ export class LinuxCommandExecutor {
       this.userMgr.currentUser = prev.user;
       this.userMgr.currentUid = prev.uid;
       this.userMgr.currentGid = prev.gid;
+    }
+  }
+
+  private readonly bashPids: number[] = [];
+
+  private currentBashPid(): number {
+    return this.bashPids[this.bashPids.length - 1] ?? this.shellPid;
+  }
+
+  withProcessIdentity<T>(pid: number, fn: () => T): T {
+    this.bashPids.push(pid);
+    try {
+      return fn();
+    } finally {
+      this.bashPids.pop();
+    }
+  }
+
+  private runScriptProcess(
+    command: string,
+    run: (
+      identity: { pid: number; ppid: number },
+      bridge: (argv: string[], env?: Record<string, string>) => { output: string; exitCode: number },
+    ) => ScriptResult,
+  ): { output: string; exitCode: number } {
+    const ppid = this.currentBashPid();
+    const proc = this.processMgr.spawn({
+      command,
+      comm: 'bash',
+      user: this.userMgr.currentUser,
+      uid: this.userMgr.currentUid,
+      gid: this.userMgr.currentGid,
+      ppid,
+      tty: 'pts/0',
+      cwd: this.cwd,
+    });
+    const bridge = (argv: string[], env?: Record<string, string>) => {
+      if (!this.processMgr.get(proc.pid)) throw new ExitSignal(143);
+      const result = this.dispatchFromInterpreter(argv, env);
+      if (!this.processMgr.get(proc.pid)) throw new ExitSignal(143);
+      return result;
+    };
+    this.bashPids.push(proc.pid);
+    try {
+      const result = run({ pid: proc.pid, ppid }, bridge);
+      if (this.processMgr.get(proc.pid)) this.processMgr.exit(proc.pid, result.exitCode);
+      return { output: result.output, exitCode: result.exitCode };
+    } finally {
+      this.bashPids.pop();
     }
   }
 
@@ -3375,15 +3425,16 @@ export class LinuxCommandExecutor {
         }
         const arg0 = login ? '-bash' : cmd;
         if (cmdString !== null) {
-          const result = runScriptContent(
-            cmdString, arg0, args.slice(i), execCmd,
-            this.buildEnvVars(), this.buildIOContext(), undefined, this.aliases, this.functions,
-          );
-          return { output: result.output, exitCode: result.exitCode };
+          return this.runScriptProcess(`${cmd} -c ${cmdString}`, (identity, bridge) =>
+            runScriptContent(
+              cmdString!, arg0, args.slice(i), bridge,
+              this.buildEnvVars(), this.buildIOContext(), identity, this.aliases, this.functions,
+            ));
         }
         if (i < args.length) {
-          const result = runScript(c, args[i], args.slice(i + 1), execCmd, this.aliases, this.functions, 'interpreter');
-          return { output: result.output, exitCode: result.exitCode };
+          const scriptArgv = args.slice(i);
+          return this.runScriptProcess(`${cmd} ${scriptArgv.join(' ')}`, (identity, bridge) =>
+            runScript(c, scriptArgv[0], scriptArgv.slice(1), bridge, this.aliases, this.functions, 'interpreter', identity));
         }
         return { output: '', exitCode: 0 };
       }
@@ -4023,11 +4074,9 @@ export class LinuxCommandExecutor {
         if (cmd.startsWith('./') || cmd.startsWith('/')) {
           const absPath = this.vfs.normalizePath(cmd, this.cwd);
           if (this.vfs.exists(absPath)) {
-            const result = runScript(
-              c, cmd, args,
-              (argv) => this.dispatchFromInterpreter(argv), this.aliases, this.functions,
-            );
-            return { output: result.output, exitCode: result.exitCode };
+            const commandLine = ['/bin/bash', absPath, ...args].join(' ');
+            return this.runScriptProcess(commandLine, (identity, bridge) =>
+              runScript(c, cmd, args, bridge, this.aliases, this.functions, 'direct', identity));
           }
         }
 
@@ -4161,8 +4210,6 @@ export class LinuxCommandExecutor {
     }
   }
 
-  /** Monotonic source of per-child PIDs ($$) for run-parts' isolated scripts. */
-  private runPartsChildPid = 90000;
 
   private static readonly RUN_PARTS_USAGE =
     "Usage: run-parts [OPTION...] DIRECTORY\n" +
@@ -4386,25 +4433,28 @@ export class LinuxCommandExecutor {
     if (content === null) return { stdout: '', stderr: '', exitCode: 127 };
     if (content.includes('\u0000')) return { stdout: '', stderr: '', exitCode: 126 }; // binary, not a script
 
-    const childPid = ++this.runPartsChildPid;
     const savedUmask = this.umask;
     if (umaskOverride !== null) this.umask = umaskOverride;
     try {
-      const result = runScriptContent(
-        content,
-        absPath,
-        scriptArgs,
-        (argv, env) => this.dispatchFromInterpreter(argv, env),
-        childEnv,
-        this.buildIOContext(),
-        { pid: childPid, ppid: this.shellPid, initialExitCode: 0 },
-        this.aliases,
-        this.functions,
-      );
+      let scriptResult: ScriptResult = { output: '', exitCode: 0 };
+      this.runScriptProcess(`/bin/bash ${absPath}`, (identity, bridge) => {
+        scriptResult = runScriptContent(
+          content,
+          absPath,
+          scriptArgs,
+          bridge,
+          childEnv,
+          this.buildIOContext(),
+          { ...identity, initialExitCode: 0 },
+          this.aliases,
+          this.functions,
+        );
+        return scriptResult;
+      });
       return {
-        stdout: (result.output ?? '').replace(/\n$/, ''),
-        stderr: (result.stderr ?? '').replace(/\n$/, ''),
-        exitCode: result.exitCode ?? 0,
+        stdout: (scriptResult.output ?? '').replace(/\n$/, ''),
+        stderr: (scriptResult.stderr ?? '').replace(/\n$/, ''),
+        exitCode: scriptResult.exitCode ?? 0,
       };
     } finally {
       this.umask = savedUmask;

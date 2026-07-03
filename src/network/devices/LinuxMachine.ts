@@ -346,7 +346,7 @@ export abstract class LinuxMachine extends EndHost
     const pid = unit.mainPid;
     const runner = new ServiceScriptRunner({
       readFile: (path) => this.executor.vfs.readFile(path),
-      runAsRoot: (command) => this.runServiceScript(command),
+      runAsRoot: (command) => this.runServiceScript(command, pid),
       emitOutput: (line) =>
         this.executor.logMgr.logService(`${name}.service`, name, line, pid ?? 0),
       stillCurrent: () => {
@@ -368,14 +368,15 @@ export abstract class LinuxMachine extends EndHost
     this.scriptRunners.delete(name);
   }
 
-  private async runServiceScript(command: string): Promise<string> {
+  private async runServiceScript(command: string, pid?: number): Promise<string> {
     const um = this.executor.userMgr;
     const prev = { user: um.currentUser, uid: um.currentUid, gid: um.currentGid };
     um.currentUser = 'root';
     um.currentUid = 0;
     um.currentGid = 0;
     try {
-      return await this.executor.executeAsync(command);
+      const run = () => this.executor.executeAsync(command);
+      return await (pid !== undefined ? this.executor.withProcessIdentity(pid, run) : run());
     } catch {
       return '';
     } finally {

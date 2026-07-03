@@ -220,10 +220,9 @@ export class BashInterpreter {
   // ─── Drivers ──────────────────────────────────────────────────
 
   private driveSync<T>(gen: Effects<T>): T {
-    let feed: ExternalCommandResult | undefined;
-    for (;;) {
-      const step = feed === undefined ? gen.next() : gen.next(feed);
-      if (step.done) return step.value;
+    let step = gen.next();
+    while (!step.done) {
+      let feed: ExternalCommandResult;
       try {
         const raw = this.executeCommand(step.value.argv, step.value.env);
         if (raw instanceof Promise) {
@@ -234,23 +233,34 @@ export class BashInterpreter {
         } else {
           feed = normalizeResult(raw);
         }
-      } catch {
+      } catch (e) {
+        if (e instanceof ExitSignal) {
+          step = gen.throw(e);
+          continue;
+        }
         feed = { output: '', exitCode: 127 };
       }
+      step = gen.next(feed);
     }
+    return step.value;
   }
 
   private async driveAsync<T>(gen: Effects<T>): Promise<T> {
-    let feed: ExternalCommandResult | undefined;
-    for (;;) {
-      const step = feed === undefined ? gen.next() : gen.next(feed);
-      if (step.done) return step.value;
+    let step = gen.next();
+    while (!step.done) {
+      let feed: ExternalCommandResult;
       try {
         feed = normalizeResult(await this.executeCommand(step.value.argv, step.value.env));
-      } catch {
+      } catch (e) {
+        if (e instanceof ExitSignal) {
+          step = gen.throw(e);
+          continue;
+        }
         feed = { output: '', exitCode: 127 };
       }
+      step = gen.next(feed);
     }
+    return step.value;
   }
 
   private *runProgram(program: Program): Effects<{ output: string; exitCode: number; stderr: string }> {
