@@ -148,6 +148,13 @@ export function NetworkDesigner() {
     }
   }, [clearAll]);
 
+  // ── Clear All: destructive, so ask first (Reset already does) ──
+  const handleClearAll = useCallback(() => {
+    if (deviceInstances.size === 0) return;
+    if (!window.confirm(`Remove all ${deviceInstances.size} device(s) and their connections? This cannot be undone.`)) return;
+    clearAll();
+  }, [deviceInstances, clearAll]);
+
   // ── Reset: power-cycle every device on the canvas ──
   const handleReset = useCallback(() => {
     if (deviceInstances.size === 0) return;
@@ -372,7 +379,7 @@ export function NetworkDesigner() {
       <Toolbar
         projectName={projectName}
         onProjectNameChange={setProjectName}
-        onClearAll={clearAll}
+        onClearAll={handleClearAll}
         hasDevices={devices.length > 0}
         onExport={handleExport}
         onImport={handleImport}

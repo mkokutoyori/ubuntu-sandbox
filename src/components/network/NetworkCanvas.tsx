@@ -2,7 +2,7 @@
  * NetworkCanvas - Main canvas for network topology design
  */
 
-import { useRef, useCallback, useState } from 'react';
+import { useRef, useCallback, useState, useEffect } from 'react';
 import { ZoomIn, ZoomOut, Maximize2, X } from 'lucide-react';
 import { useNetworkStore } from '@/store/networkStore';
 import { NetworkDevice } from './NetworkDevice';
@@ -47,13 +47,34 @@ export function NetworkCanvas({ onOpenTerminal }: NetworkCanvasProps) {
   const [startPan, setStartPan] = useState({ x: 0, y: 0 });
   const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
 
-  const handleWheel = useCallback((e: React.WheelEvent) => {
-    if (e.ctrlKey || e.metaKey) {
-      e.preventDefault();
-      const delta = -e.deltaY * 0.001;
-      setZoom(zoom + delta);
-    }
-  }, [zoom, setZoom]);
+  // Once a source interface is picked the popover (and its Escape handler)
+  // is gone, so without this the only ways out of connect mode were clicking
+  // empty canvas or the banner's X button.
+  useEffect(() => {
+    if (!isConnecting) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') cancelConnecting();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [isConnecting, cancelConnecting]);
+
+  // React registers `onWheel` as a passive listener, so preventDefault()
+  // there is silently ignored and ctrl+wheel zoomed the whole browser page
+  // on top of the canvas. Bind manually with { passive: false }.
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const onWheel = (e: WheelEvent) => {
+      if (e.ctrlKey || e.metaKey) {
+        e.preventDefault();
+        const delta = -e.deltaY * 0.001;
+        setZoom(useNetworkStore.getState().zoom + delta);
+      }
+    };
+    canvas.addEventListener('wheel', onWheel, { passive: false });
+    return () => canvas.removeEventListener('wheel', onWheel);
+  }, [setZoom]);
 
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
     if (e.button === 1 || (e.button === 0 && e.altKey)) {
@@ -175,7 +196,6 @@ export function NetworkCanvas({ onOpenTerminal }: NetworkCanvasProps) {
           isPanning && "cursor-grabbing",
           isConnecting && "cursor-crosshair"
         )}
-        onWheel={handleWheel}
         onMouseDown={handleMouseDown}
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
