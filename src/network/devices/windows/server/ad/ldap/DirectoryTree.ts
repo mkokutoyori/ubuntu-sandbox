@@ -1,0 +1,158 @@
+/**
+ * DirectoryTree — a real LDAP Directory Information Tree (DIT): entries
+ * keyed by DN, each holding a real multi-valued attribute map, organized
+ * as a parent/child tree matching the DN hierarchy. This is the engine
+ * `LdapServer` operates on for real Add/Search/Modify/Delete/Compare —
+ * not a flat lookup table with cosmetic DN strings.
+ */
+
+import {
+  type DistinguishedName, type Rdn, parseDN, dnEquals, parentOf, isDescendantOf,
+} from './LdapDN';
+import { type LdapFilter, type AttributeSource, evaluateFilter } from './LdapFilter';
+
+export interface DirectoryEntry {
+  readonly dn: DistinguishedName;
+  /** lowercase attribute name → values (case preserved in the values themselves). */
+  readonly attributes: Map<string, string[]>;
+  readonly children: Map<string, DirectoryEntry>;
+}
+
+export type SearchScope = 'base' | 'one' | 'sub';
+
+export interface TreeOpResult { ok: boolean; message: string; }
+
+export type ModOperation = 'add' | 'delete' | 'replace';
+export interface Modification { op: ModOperation; type: string; values: string[]; }
+
+function attrKey(name: string): string { return name.toLowerCase(); }
+
+/** Canonical key for one RDN: AVAs sorted+lowercased, so `CN=Bob+OU=X` and `OU=X+CN=Bob` key identically (RFC 4514 §2.3 multi-valued RDNs are order-independent). */
+function rdnCanonicalKey(rdn: Rdn): string {
+  return [...rdn].map(a => `${a.type.toLowerCase()}=${a.value.toLowerCase()}`).sort().join('+');
+}
+
+/** Canonical key for a DN's leaf RDN — used as the child-map key under a parent entry. */
+function rdnKey(dn: DistinguishedName): string {
+  const leaf = dn[0];
+  return leaf ? rdnCanonicalKey(leaf) : '';
+}
+
+export function entryAttributeSource(entry: DirectoryEntry): AttributeSource {
+  return { get: (attr: string) => entry.attributes.get(attrKey(attr)) };
+}
+
+export class DirectoryTree {
+  private readonly root: DirectoryEntry;
+  private readonly byDn = new Map<string, DirectoryEntry>();
+
+  constructor(baseDn: string | DistinguishedName, rootAttributes: Record<string, string[]> = {}) {
+    const dn = typeof baseDn === 'string' ? parseDN(baseDn) : baseDn;
+    this.root = { dn, attributes: toAttrMap(rootAttributes), children: new Map() };
+    this.byDn.set(this.dnIndexKey(dn), this.root);
+  }
+
+  /** Canonical index key: each RDN's AVAs sorted+lowercased, so order-independent multi-valued RDNs (RFC 4514 §2.3) index identically — matches `dnEquals`. */
+  private dnIndexKey(dn: DistinguishedName): string { return dn.map(rdnCanonicalKey).join(','); }
+
+  getRootDn(): DistinguishedName { return this.root.dn; }
+
+  getByDn(dn: DistinguishedName): DirectoryEntry | null {
+    return this.byDn.get(this.dnIndexKey(dn)) ?? null;
+  }
+
+  /** RFC 4511 §4.6 AddRequest — fails with entryAlreadyExists / noSuchObject (missing parent). */
+  addEntry(dn: DistinguishedName, attributes: Record<string, string[]>): TreeOpResult {
+    if (dn.length === 0) return { ok: false, message: 'namingViolation: cannot add the root entry' };
+    if (this.getByDn(dn)) return { ok: false, message: 'entryAlreadyExists' };
+    const parentDn = parentOf(dn);
+    if (parentDn === null) return { ok: false, message: 'noSuchObject: no parent' };
+    const parent = this.getByDn(parentDn);
+    if (!parent) return { ok: false, message: 'noSuchObject: parent does not exist' };
+    const entry: DirectoryEntry = { dn, attributes: toAttrMap(attributes), children: new Map() };
+    parent.children.set(rdnKey(dn), entry);
+    this.byDn.set(this.dnIndexKey(dn), entry);
+    return { ok: true, message: '' };
+  }
+
+  /** RFC 4511 §4.8 DelRequest — real AD (and this tree) refuses to delete a non-leaf entry. */
+  deleteEntry(dn: DistinguishedName): TreeOpResult {
+    const entry = this.getByDn(dn);
+    if (!entry) return { ok: false, message: 'noSuchObject' };
+    if (entry.children.size > 0) return { ok: false, message: 'notAllowedOnNonLeaf' };
+    const parentDn = parentOf(dn);
+    const parent = parentDn ? this.getByDn(parentDn) : null;
+    parent?.children.delete(rdnKey(dn));
+    this.byDn.delete(this.dnIndexKey(dn));
+    return { ok: true, message: '' };
+  }
+
+  /** RFC 4511 §4.6 ModifyRequest — add/delete/replace on one or more attribute types. */
+  modifyEntry(dn: DistinguishedName, changes: readonly Modification[]): TreeOpResult {
+    const entry = this.getByDn(dn);
+    if (!entry) return { ok: false, message: 'noSuchObject' };
+    for (const change of changes) {
+      const key = attrKey(change.type);
+      const existing = entry.attributes.get(key) ?? [];
+      if (change.op === 'replace') {
+        if (change.values.length === 0) entry.attributes.delete(key);
+        else entry.attributes.set(key, [...change.values]);
+      } else if (change.op === 'add') {
+        const merged = [...existing];
+        for (const v of change.values) if (!merged.some(e => e.toLowerCase() === v.toLowerCase())) merged.push(v);
+        entry.attributes.set(key, merged);
+      } else { // delete
+        if (change.values.length === 0) { entry.attributes.delete(key); continue; }
+        const remaining = existing.filter(e => !change.values.some(v => v.toLowerCase() === e.toLowerCase()));
+        if (remaining.length === 0) entry.attributes.delete(key);
+        else entry.attributes.set(key, remaining);
+      }
+    }
+    return { ok: true, message: '' };
+  }
+
+  /** RFC 4511 §4.5 SearchRequest — real scope + filter evaluation over the tree. */
+  search(baseDn: DistinguishedName, scope: SearchScope, filter: LdapFilter): DirectoryEntry[] {
+    const base = this.getByDn(baseDn);
+    if (!base) return [];
+    const candidates: DirectoryEntry[] = [];
+    if (scope === 'base') {
+      candidates.push(base);
+    } else if (scope === 'one') {
+      candidates.push(...base.children.values());
+    } else {
+      const walk = (e: DirectoryEntry): void => {
+        candidates.push(e);
+        for (const c of e.children.values()) walk(c);
+      };
+      walk(base);
+    }
+    return candidates.filter(e => evaluateFilter(filter, entryAttributeSource(e)));
+  }
+
+  /** RFC 4511 §4.10 CompareRequest. */
+  compare(dn: DistinguishedName, attr: string, value: string): 'true' | 'false' | 'noSuchObject' {
+    const entry = this.getByDn(dn);
+    if (!entry) return 'noSuchObject';
+    const values = entry.attributes.get(attrKey(attr)) ?? [];
+    return values.some(v => v.toLowerCase() === value.toLowerCase()) ? 'true' : 'false';
+  }
+
+  /** All entries anywhere under (and including) `dn`, depth-first — a convenience for callers outside SearchRequest semantics. */
+  allDescendants(dn: DistinguishedName): DirectoryEntry[] {
+    const base = this.getByDn(dn);
+    if (!base) return [];
+    const out: DirectoryEntry[] = [];
+    const walk = (e: DirectoryEntry): void => { out.push(e); for (const c of e.children.values()) walk(c); };
+    walk(base);
+    return out;
+  }
+
+  isWithinTree(dn: DistinguishedName): boolean {
+    return dnEquals(dn, this.root.dn) || isDescendantOf(dn, this.root.dn);
+  }
+}
+
+function toAttrMap(attributes: Record<string, string[]>): Map<string, string[]> {
+  return new Map(Object.entries(attributes).map(([k, v]) => [attrKey(k), [...v]]));
+}
