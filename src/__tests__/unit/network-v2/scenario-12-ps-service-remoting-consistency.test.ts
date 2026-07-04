@@ -20,13 +20,19 @@ function buildLan() {
   const win1 = new WindowsPC('windows-pc', 'PC-WIN-1', 0, 0);
   const win2 = new WindowsPC('windows-pc', 'PC-WIN-2', 0, 0);
   const win3 = new WindowsPC('windows-pc', 'PC-WIN-3', 0, 0);
-  const sw = new GenericSwitch('switch', 'core-sw', 0, 0);
-  [admin, win1, win2, win3].forEach((d, i) => new Cable(d.getPorts()[0], sw.getPorts()[i]));
+  const sw = new GenericSwitch('switch-generic', 'core-sw', 8, 0, 0);
+  [admin, win1, win2, win3].forEach((d, i) => {
+    const cable = new Cable(`c-${d.getHostname()}`);
+    cable.connect(d.getPorts()[0], sw.getPorts()[i]);
+  });
   const mask = new SubnetMask('255.255.255.0');
   admin.getPorts()[0].configureIP(new IPAddress('10.0.0.1'), mask);
   win1.getPorts()[0].configureIP(new IPAddress('10.0.0.2'), mask);
   win2.getPorts()[0].configureIP(new IPAddress('10.0.0.3'), mask);
   win3.getPorts()[0].configureIP(new IPAddress('10.0.0.4'), mask);
+  admin.addHostsEntry('10.0.0.2', 'PC-WIN-1');
+  admin.addHostsEntry('10.0.0.3', 'PC-WIN-2');
+  admin.addHostsEntry('10.0.0.4', 'PC-WIN-3');
   for (const pc of [admin, win1, win2, win3]) pc.setCurrentUser('Administrator');
   return { admin, win1, win2, win3, sw };
 }

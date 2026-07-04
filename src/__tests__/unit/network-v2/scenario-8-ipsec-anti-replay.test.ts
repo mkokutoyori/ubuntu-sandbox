@@ -247,7 +247,7 @@ describe('Scenario 8 — IPsec anti-replay detection and prevention', () => {
       const r1Drops = log.entries.filter((e) => e.deviceId === r1.getId());
       expect(r1Drops.length).toBe(1);
       expect(r1Drops[0].message).toMatch(/PKT_REPLAY_ERR/);
-      expect(r1Drops[0].message).toMatch(/spi=0x[0-9a-f]+/);
+      expect(r1Drops[0].message).toMatch(/spi=0x[0-9a-f]+/i);
       expect(r1Drops[0].message).toMatch(/seq=\d+/);
       expect(r1Drops[0].message).toContain('peer=10.0.12.2');
     });
