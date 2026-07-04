@@ -368,6 +368,8 @@ export interface SACryptoKeys {
   espAuthKey: string;
   /** ESP authentication key length in bits */
   espAuthKeyLength: number;
+  /** GCM salt (RFC 4106 §5) — 4-byte hex string, combined with the per-packet explicit IV to form the 12-byte nonce. Only set for AEAD (aes-gcm-*) transforms. */
+  espEncSalt?: string;
 
   // ── AH keys (RFC 4302) ──
   /** AH authentication algorithm (e.g. 'hmac-sha-256', 'hmac-md5') */

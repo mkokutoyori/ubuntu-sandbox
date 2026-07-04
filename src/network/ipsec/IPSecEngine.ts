@@ -35,6 +35,7 @@ import {
   prfPlus, hmac, type HashAlgorithm, MD5, SHA1, SHA256, sha256,
   utf8ToBytes, bytesToHex, hexToBytes,
   aesCbcEncrypt, aesCbcDecrypt,
+  aesGcmEncrypt, aesGcmDecrypt,
 } from '@/crypto';
 import { encodePacket, decodePacket } from './packetCodec';
 import { computeOuterTos } from './DscpTunnelMarker';
@@ -205,9 +206,9 @@ function deriveCryptoKeys(transforms: string[], keymatSeed: string): SACryptoKey
       espEncAlgorithm = '3des-cbc'; espEncKeyLength = 192;
     } else if (t === 'esp-des') {
       espEncAlgorithm = 'des-cbc'; espEncKeyLength = 64;
-    } else if (t === 'esp-gcm' || t === 'esp-gcm-128') {
+    } else if (t === 'esp-gcm' || t === 'esp-gcm-128' || t === 'esp-gcm 128') {
       espEncAlgorithm = 'aes-gcm-128'; espEncKeyLength = 128; espAuthAlgorithm = 'aes-gcm'; espAuthKeyLength = 0;
-    } else if (t === 'esp-gcm-256') {
+    } else if (t === 'esp-gcm-256' || t === 'esp-gcm 256') {
       espEncAlgorithm = 'aes-gcm-256'; espEncKeyLength = 256; espAuthAlgorithm = 'aes-gcm'; espAuthKeyLength = 0;
     } else if (t === 'esp-null') {
       espEncAlgorithm = 'null'; espEncKeyLength = 0;
@@ -245,6 +246,7 @@ function deriveCryptoKeys(transforms: string[], keymatSeed: string): SACryptoKey
     espAuthAlgorithm,
     espAuthKey: espAuthKeyLength > 0 ? deriveKeymatHex(keymatSeed, 'esp-auth', espAuthKeyLength) : '',
     espAuthKeyLength,
+    espEncSalt: /^aes-gcm/.test(espEncAlgorithm) ? deriveKeymatHex(keymatSeed, 'esp-gcm-salt', 32) : undefined,
     ahAuthAlgorithm,
     ahAuthKey: ahAuthKeyLength > 0 ? deriveKeymatHex(keymatSeed, 'ah-auth', ahAuthKeyLength) : '',
     ahAuthKeyLength,
@@ -295,14 +297,37 @@ export function computeEspIcv(cryptoKeys: SACryptoKeys, esp: ESPPacket): string 
   return bytesToHex(hmac(hash, hexToBytes(cryptoKeys.espAuthKey), utf8ToBytes(espIcvMessage(esp))));
 }
 
-/** True when the SA negotiated a real (AES-CBC) confidentiality transform. */
+/** True when the SA negotiated AES-GCM (combined encryption + authentication). */
+function espIsGcm(espEncAlgorithm: string): boolean {
+  return /^aes-gcm/.test(espEncAlgorithm);
+}
+
+/** True when the SA negotiated a real (AES-CBC or AES-GCM) confidentiality transform. */
 function espEncrypts(cryptoKeys: SACryptoKeys): boolean {
-  return /^aes-cbc/.test(cryptoKeys.espEncAlgorithm) && cryptoKeys.espEncKey.length > 0;
+  return (/^aes-cbc/.test(cryptoKeys.espEncAlgorithm) || espIsGcm(cryptoKeys.espEncAlgorithm))
+    && cryptoKeys.espEncKey.length > 0;
 }
 
 /** Per-packet IV, derived deterministically (carried in the ciphertext). */
 function deterministicEspIV(spi: number, seq: number, keyHex: string): Uint8Array {
   return sha256(utf8ToBytes(`esp-iv:${spi}:${seq}:${keyHex}`)).subarray(0, 16);
+}
+
+/** RFC 4106 §5 ESP-GCM AAD: SPI || Sequence Number, both 32-bit big-endian. */
+function espGcmAAD(spi: number, sequenceNumber: number): Uint8Array {
+  const out = new Uint8Array(8);
+  const dv = new DataView(out.buffer);
+  dv.setUint32(0, spi >>> 0, false);
+  dv.setUint32(4, sequenceNumber >>> 0, false);
+  return out;
+}
+
+/** 12-byte GCM nonce: 4-byte per-SA salt (RFC 4106 §5) || 8-byte per-packet explicit IV. */
+function gcmNonce(salt: string | undefined, explicitIV: Uint8Array): Uint8Array {
+  const nonce = new Uint8Array(12);
+  nonce.set(hexToBytes(salt || '00000000'), 0);
+  nonce.set(explicitIV, 4);
+  return nonce;
 }
 
 /** Opaque inner packet placed in transit so the cleartext is hidden. */
@@ -311,11 +336,24 @@ function sealedInner(p: IPv4Packet): IPv4Packet {
 }
 
 /**
- * Apply confidentiality + integrity to an outbound ESP payload: AES-CBC
- * encrypt the serialized inner packet (when the SA encrypts), seal the inner
- * packet, then compute the ICV (over the ciphertext). Mutates `esp` in place.
+ * Apply confidentiality + integrity to an outbound ESP payload. AES-GCM
+ * (AEAD) encrypts and authenticates in one pass, producing its own tag —
+ * no separate HMAC. AES-CBC encrypts the serialized inner packet, then a
+ * separate HMAC ICV is computed over the ciphertext (RFC 4303 §3.4.4).
+ * Mutates `esp` in place.
  */
 export function sealAndSignEsp(cryptoKeys: SACryptoKeys, esp: ESPPacket): void {
+  if (espIsGcm(cryptoKeys.espEncAlgorithm) && cryptoKeys.espEncKey.length > 0) {
+    const key = hexToBytes(cryptoKeys.espEncKey);
+    const explicitIV = deterministicEspIV(esp.spi, esp.sequenceNumber, cryptoKeys.espEncKey).subarray(0, 8);
+    const nonce = gcmNonce(cryptoKeys.espEncSalt, explicitIV);
+    const aad = espGcmAAD(esp.spi, esp.sequenceNumber);
+    const { ciphertext, tag } = aesGcmEncrypt(key, nonce, aad, encodePacket(esp.innerPacket));
+    esp.ciphertext = bytesToHex(explicitIV) + bytesToHex(ciphertext);
+    esp.innerPacket = sealedInner(esp.innerPacket);
+    esp.icv = bytesToHex(tag);
+    return;
+  }
   if (espEncrypts(cryptoKeys)) {
     const key = hexToBytes(cryptoKeys.espEncKey);
     const iv = deterministicEspIV(esp.spi, esp.sequenceNumber, cryptoKeys.espEncKey);
@@ -330,6 +368,16 @@ export function sealAndSignEsp(cryptoKeys: SACryptoKeys, esp: ESPPacket): void {
 export function openEsp(cryptoKeys: SACryptoKeys, esp: ESPPacket): IPv4Packet | null {
   if (esp.ciphertext === undefined) return esp.innerPacket;
   try {
+    if (espIsGcm(cryptoKeys.espEncAlgorithm)) {
+      const key = hexToBytes(cryptoKeys.espEncKey);
+      const explicitIV = hexToBytes(esp.ciphertext.slice(0, 16));
+      const ct = hexToBytes(esp.ciphertext.slice(16));
+      const nonce = gcmNonce(cryptoKeys.espEncSalt, explicitIV);
+      const aad = espGcmAAD(esp.spi, esp.sequenceNumber);
+      const tag = hexToBytes(esp.icv ?? '');
+      const pt = aesGcmDecrypt(key, nonce, aad, ct, tag);
+      return pt ? decodePacket(pt) : null;
+    }
     const key = hexToBytes(cryptoKeys.espEncKey);
     const iv = hexToBytes(esp.ciphertext.slice(0, 32));
     const ct = hexToBytes(esp.ciphertext.slice(32));

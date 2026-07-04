@@ -636,6 +636,8 @@ export function buildHuaweiIPSecProposalCommands(
     const algoMap: Record<string, string> = {
       'des': 'esp-des', '3des': 'esp-3des',
       'aes-128': 'esp-aes', 'aes-192': 'esp-aes 192', 'aes-256': 'esp-aes 256',
+      'gcm-128': 'esp-gcm', 'aes-128-gcm': 'esp-gcm',
+      'gcm-256': 'esp-gcm 256', 'aes-256-gcm': 'esp-gcm 256',
     };
     const raw = args[0]?.toLowerCase() || 'aes-128';
     const transform = algoMap[raw] || `esp-${raw}`;
