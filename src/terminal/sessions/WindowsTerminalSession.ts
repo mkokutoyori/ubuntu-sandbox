@@ -801,6 +801,16 @@ export class WindowsTerminalSession extends TerminalSession {
       return;
     }
 
+    // `powershell <command>` / `powershell -Command <command>` — real
+    // powershell.exe treats an unswitched trailing argument as -Command,
+    // runs it non-interactively in a fresh process, prints the result and
+    // returns straight to cmd (no banner, no nested sub-shell).
+    const psExecMatch = /^(?:powershell(?:\.exe)?|pwsh(?:\.exe)?)\s+(.+)$/i.exec(trimmed);
+    if (psExecMatch) {
+      await this.runPowerShellOneShot(psExecMatch[1]);
+      return;
+    }
+
     if (lower === 'cls') {
       this.clear();
       this.bannerCleared = true;
@@ -1210,6 +1220,48 @@ export class WindowsTerminalSession extends TerminalSession {
 
   private pickPrimaryShellKind(eq: Equipment): string {
     return primaryShellKindFor(eq);
+  }
+
+  /**
+   * `powershell <command>` from cmd — real powershell.exe treats an
+   * unswitched trailing argument (or the value of an explicit
+   * `-Command`/`-c`) as a one-shot script: it runs in a fresh process,
+   * prints the result, and exits without ever showing the interactive
+   * banner or leaving cmd's prompt. Mirrors that by driving a throwaway
+   * `WindowsPowerShellShell` through a single `processLine()` instead of
+   * pushing it onto the sub-shell stack.
+   */
+  private async runPowerShellOneShot(argsText: string): Promise<void> {
+    let command = argsText.trim();
+    const commandFlag = /^-(?:command|c)\b\s*(.*)$/is.exec(command);
+    if (commandFlag) command = commandFlag[1].trim();
+    if ((command.startsWith('"') && command.endsWith('"'))
+      || (command.startsWith("'") && command.endsWith("'"))) {
+      command = command.slice(1, -1);
+    }
+    if (!command) {
+      this.enterPowerShell();
+      return;
+    }
+
+    installDefaultShells();
+    const shell = ShellFactory.create('powershell', {
+      device: this.device,
+      user: 'User',
+      cwd: this.shell?.cwd,
+      extras: { windowsSession: this.shell },
+    });
+    shell.setInputHost?.(this.getInputHost());
+    shell.activate();
+    const result = await shell.processLine(command);
+    if (result.styledOutput && result.styledOutput.length > 0) {
+      for (const styled of result.styledOutput) this.addStyledLine(styled.segments, styled.lineType);
+    } else if (result.output.length > 0) {
+      this.emitWindowsOutput(result.output.join('\n'));
+    }
+    shell.deactivate();
+    shell.dispose();
+    this.notify();
   }
 
   // ── Sub-shell management ───────────────────────────────────────
