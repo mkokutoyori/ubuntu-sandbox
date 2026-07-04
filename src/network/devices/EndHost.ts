@@ -82,6 +82,7 @@ import { DHCPPacket } from '../dhcp/DHCPPacket';
 import { WireDhcpChannel } from '../dhcp/DhcpServerChannel';
 import type { DHCPClientIfaceState } from '../dhcp/types';
 import type { DHCPServer } from '../dhcp/DHCPServer';
+import { DHCPv6Packet } from '../dhcpv6/DHCPv6Packet';
 
 // ─── Internal Types ────────────────────────────────────────────────
 
@@ -645,6 +646,77 @@ export abstract class EndHost extends Equipment {
   }
 
   protected onDhcpLeaseReleased(_iface: string): void {}
+
+  // ─── DHCPv6 client (RFC 8415) ─────────────────────────────────
+  // A one-shot SOLICIT->ADVERTISE->REQUEST->REPLY exchange rather than a
+  // full stateful FSM (no RENEW/REBIND background timers) — enough for a
+  // client to obtain a real, wire-negotiated address from a DHCPv6Server.
+  private dhcpv6Inbox: Map<string, DHCPv6Packet[]> = new Map();
+  private dhcpv6XidCounter = 1;
+
+  private ensureDhcpv6Udp546Listener(): void {
+    if (this.udpListeners.has(546)) return;
+    this.udpListeners.set(546, (dgram) => {
+      const pkt = dgram.udp.payload;
+      if (pkt instanceof DHCPv6Packet) {
+        const box = this.dhcpv6Inbox.get(dgram.inPort) ?? [];
+        box.push(pkt);
+        this.dhcpv6Inbox.set(dgram.inPort, box);
+      }
+    });
+  }
+
+  private buildDhcpv6ClientDuid(iface: string): string {
+    return `00:03:00:01:${this.ports.get(iface)!.getMAC().toString()}`;
+  }
+
+  private sendDhcpv6Frame(iface: string, pkt: DHCPv6Packet): void {
+    const port = this.ports.get(iface);
+    const srcIp = port?.getLinkLocalIPv6();
+    if (!port || !srcIp) return;
+    const dst = new IPv6Address('ff02::1:2');
+    const udp: UDPPacket = {
+      type: 'udp', sourcePort: 546, destinationPort: 547, length: 8 + 300, checksum: 0, payload: pkt,
+    };
+    const ipPkt = createIPv6Packet(srcIp, dst, IP_PROTO_UDP, 1, udp, 8 + 300);
+    this.sendFrame(iface, {
+      srcMAC: port.getMAC(), dstMAC: dst.toMulticastMAC(), etherType: ETHERTYPE_IPV6, payload: ipPkt,
+    });
+  }
+
+  /** Real DHCPv6 SOLICIT->ADVERTISE->REQUEST->REPLY. Returns a verbose transcript, or '' on failure/no verbose. */
+  requestDhcpv6Lease(iface: string, verbose = false): string {
+    const port = this.ports.get(iface);
+    if (!port) return verbose ? `${iface}: no such interface` : '';
+    if (!port.isIPv6Enabled()) port.enableIPv6();
+    this.ensureDhcpv6Udp546Listener();
+
+    const clientDuid = this.buildDhcpv6ClientDuid(iface);
+    const iaid = 1;
+    const xid = (this.dhcpv6XidCounter = (this.dhcpv6XidCounter + 1) & 0xffffff);
+    const lines: string[] = [];
+
+    this.dhcpv6Inbox.set(iface, []);
+    this.sendDhcpv6Frame(iface, DHCPv6Packet.createSolicit(clientDuid, iaid, xid));
+    if (verbose) lines.push('DHCPv6 SOLICIT');
+    const advertise = (this.dhcpv6Inbox.get(iface) ?? [])
+      .find(p => p.msgType === 'ADVERTISE' && p.transactionId === xid && p.ia?.addresses[0]);
+    if (!advertise) return verbose ? [...lines, 'No DHCPv6 ADVERTISE received'].join('\n') : '';
+    if (verbose) lines.push(`DHCPv6 ADVERTISE of ${advertise.ia!.addresses[0].address}`);
+
+    this.dhcpv6Inbox.set(iface, []);
+    this.sendDhcpv6Frame(iface, DHCPv6Packet.createRequest(
+      clientDuid, advertise.serverDuid!, iaid, advertise.ia!.addresses[0].address, xid));
+    if (verbose) lines.push('DHCPv6 REQUEST');
+    const reply = (this.dhcpv6Inbox.get(iface) ?? [])
+      .find(p => p.msgType === 'REPLY' && p.transactionId === xid && p.ia?.addresses[0]);
+    if (!reply) return verbose ? [...lines, 'No DHCPv6 REPLY received'].join('\n') : '';
+
+    const lease = reply.ia!.addresses[0];
+    port.addDHCPv6Address(new IPv6Address(lease.address), 64);
+    if (verbose) lines.push(`DHCPv6 REPLY of ${lease.address}`);
+    return lines.join('\n');
+  }
 
   // ─── Hardware inventory ─────────────────────────────────────────
 

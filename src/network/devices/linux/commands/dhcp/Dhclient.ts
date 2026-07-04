@@ -34,12 +34,13 @@ export const dhclientCommand: LinuxCommand = {
     { flag: '-w', description: 'Wait for a lease to be acquired.', takesArg: false },
     { flag: '-s', description: 'Send requests to a specific DHCP server.', takesArg: true, argName: 'server' },
     { flag: '-t', description: 'Timeout for the lease request in seconds.', takesArg: true, argName: 'timeout' },
+    { flag: '-6', description: 'Use DHCPv6 (RFC 8415) instead of DHCPv4.', takesArg: false },
   ],
 
   complete(ctx: LinuxCommandContext, args: string[]): string[] {
     const partial = args[args.length - 1] ?? '';
     if (partial.startsWith('-')) {
-      return ['-v', '-d', '-r', '-x', '-w', '-s', '-t'].filter(f => f.startsWith(partial));
+      return ['-v', '-d', '-r', '-x', '-w', '-s', '-t', '-6'].filter(f => f.startsWith(partial));
     }
     return Array.from(ctx.net.getPorts().keys());
   },
@@ -54,6 +55,7 @@ export const dhclientCommand: LinuxCommand = {
     let timeout = 30;
     let specificServer: string | null = null;
     let iface = '';
+    let v6 = false;
 
     for (let i = 0; i < args.length; i++) {
       switch (args[i]) {
@@ -62,6 +64,7 @@ export const dhclientCommand: LinuxCommand = {
         case '-r': release = true; break;
         case '-x': exit = true; break;
         case '-w': wait = true; break;
+        case '-6': v6 = true; break;
         case '-s':
           if (args[i + 1]) { specificServer = args[i + 1]; i++; }
           break;
@@ -73,6 +76,12 @@ export const dhclientCommand: LinuxCommand = {
           if (!args[i].startsWith('-')) iface = args[i];
           break;
       }
+    }
+
+    if (v6) {
+      if (!iface) return 'Usage: dhclient -6 [-v] <interface>';
+      if (!ctx.net.getPorts().has(iface)) return `RTNETLINK answers: No such device ${iface}`;
+      return ctx.net.requestDhcpv6Lease(iface, verbose);
     }
 
     const dhcp = ctx.net.getDhcpClient();

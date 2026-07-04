@@ -160,6 +160,8 @@ export function registerDhcpInterfaceCommands(trie: CommandTrie, ctx: HuaweiShel
   });
   trie.registerGreedy('dhcpv6 server', 'Assign DHCPv6 pool to interface', (args) => {
     const e = dhcpExtra(); if (e && args[0]) e.dhcpv6PoolRef = args[0];
+    const ifName = ctx.getSelectedInterface();
+    if (ifName && args[0]) ctx.r().setDhcpv6ServerPool(ifName, args[0]);
     return '';
   });
 }
@@ -174,21 +176,38 @@ export function registerDhcpv6SystemCommands(trie: CommandTrie, ctx: HuaweiShell
     const pools = v6();
     if (!pools.has(args[0])) pools.set(args[0], { name: args[0] });
     (ctx as any)._dhcpv6Selected = args[0];
+    if (!ctx.r()._getDHCPv6ServerInternal().getPool(args[0])) {
+      ctx.r()._getDHCPv6ServerInternal().createPool(args[0]);
+    }
     return '';
   });
   trie.registerGreedy('address prefix', 'DHCPv6 pool address prefix', (args) => {
     const p = (v6().get((ctx as any)._dhcpv6Selected));
     if (p && args[0]) p.prefix = args[0];
+    const name = (ctx as any)._dhcpv6Selected as string | undefined;
+    if (name && args[0]) {
+      const [prefix, lenStr] = args[0].split('/');
+      const len = parseInt(lenStr ?? '', 10);
+      if (prefix && !isNaN(len)) ctx.r()._getDHCPv6ServerInternal().configurePoolPrefix(name, prefix, len);
+    }
     return '';
   });
   trie.registerGreedy('dns-server', 'DHCPv6 DNS server', (args) => {
     const p = (v6().get((ctx as any)._dhcpv6Selected));
     if (p && args[0]) (p.dnsServers ??= []).push(args[0]);
+    const name = (ctx as any)._dhcpv6Selected as string | undefined;
+    if (name && args[0]) {
+      const server = ctx.r()._getDHCPv6ServerInternal();
+      const pool = server.getPool(name);
+      server.configurePoolDns(name, [...(pool?.dnsServers ?? []), args[0]]);
+    }
     return '';
   });
   trie.registerGreedy('dns-domain-name', 'DHCPv6 domain-name', (args) => {
     const p = (v6().get((ctx as any)._dhcpv6Selected));
     if (p && args[0]) p.domainName = args[0];
+    const name = (ctx as any)._dhcpv6Selected as string | undefined;
+    if (name && args[0]) ctx.r()._getDHCPv6ServerInternal().configurePoolDomain(name, args[0]);
     return '';
   });
 }

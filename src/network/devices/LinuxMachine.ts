@@ -1753,6 +1753,9 @@ export abstract class LinuxMachine extends EndHost
       autoDiscoverDHCPServers(): void {
         self.autoDiscoverDHCPServers();
       },
+      requestDhcpv6Lease(iface: string, verbose?: boolean): string {
+        return self.requestDhcpv6Lease(iface, verbose);
+      },
       setIpForward(enabled: boolean): void {
         self.ipForwardEnabled = enabled;
       },

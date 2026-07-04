@@ -121,6 +121,8 @@ export interface LinuxNetKernel {
   // ─── DHCP client ─────────────────────────────────────────────────
   getDhcpClient(): DHCPClient;
   autoDiscoverDHCPServers(): void;
+  /** Real DHCPv6 SOLICIT->ADVERTISE->REQUEST->REPLY exchange (RFC 8415). */
+  requestDhcpv6Lease(iface: string, verbose?: boolean): string;
 
   // ─── Forwarding / NAT (router-layer) ─────────────────────────────
   setIpForward(enabled: boolean): void;

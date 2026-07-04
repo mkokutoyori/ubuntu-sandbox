@@ -184,16 +184,40 @@ export function buildConfigIpv6DhcpCommands(trie: CommandTrie, ctx: CiscoShellCo
     if (!name) return null;
     return (r._ciscoIpv6DhcpPools as Map<string, any> | undefined)?.get(name) ?? null;
   };
+  const curName = (): string | null => (ctx.r() as any)._ciscoIpv6DhcpCurrent ?? null;
   trie.registerGreedy('address prefix', 'IPv6 DHCP pool prefix', (args, raw) => {
     const p = cur(); if (p) { p.prefix = args[0]; p.prefixLine = raw; }
+    const name = curName();
+    if (name && args[0]) {
+      const [prefix, lenStr] = args[0].split('/');
+      const len = parseInt(lenStr ?? '', 10);
+      if (prefix && !isNaN(len)) {
+        ctx.r()._getDHCPv6ServerInternal().configurePoolPrefix(name, prefix, len);
+        if (args[1]?.toLowerCase() === 'lifetime' && args[2] && args[3]) {
+          const valid = parseInt(args[2], 10);
+          const preferred = parseInt(args[3], 10);
+          if (!isNaN(valid) && !isNaN(preferred)) {
+            ctx.r()._getDHCPv6ServerInternal().configurePoolLifetime(name, preferred, valid);
+          }
+        }
+      }
+    }
     return '';
   });
   trie.registerGreedy('dns-server', 'IPv6 DNS server', (args) => {
     const p = cur(); if (p && args[0]) (p.dnsServers ??= []).push(args[0]);
+    const name = curName();
+    if (name && args[0]) {
+      const server = ctx.r()._getDHCPv6ServerInternal();
+      const pool = server.getPool(name);
+      server.configurePoolDns(name, [...(pool?.dnsServers ?? []), args[0]]);
+    }
     return '';
   });
   trie.registerGreedy('domain-name', 'IPv6 domain name', (args) => {
     const p = cur(); if (p && args[0]) p.domainName = args[0];
+    const name = curName();
+    if (name && args[0]) ctx.r()._getDHCPv6ServerInternal().configurePoolDomain(name, args[0]);
     return '';
   });
   trie.registerGreedy('link-address', 'IPv6 DHCP link-address', (args) => {

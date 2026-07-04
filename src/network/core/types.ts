@@ -390,6 +390,14 @@ export class IPv6Address {
            this.hextets[7] === 2;
   }
 
+  /** Check if this is All_DHCP_Relay_Agents_and_Servers (ff02::1:2, RFC 8415 §7.1) */
+  isAllDhcpRelayAgentsAndServersMulticast(): boolean {
+    return this.hextets[0] === 0xff02 &&
+           this.hextets.slice(1, 6).every(h => h === 0) &&
+           this.hextets[6] === 1 &&
+           this.hextets[7] === 2;
+  }
+
   /** Check if this is a solicited-node multicast address (ff02::1:ffXX:XXXX) */
   isSolicitedNodeMulticast(): boolean {
     return this.hextets[0] === 0xff02 &&

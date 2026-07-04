@@ -340,6 +340,29 @@ export class Port {
     return fullAddr;
   }
 
+  /** A real DHCPv6 IA_NA lease was obtained for this interface (RFC 8415). */
+  addDHCPv6Address(address: IPv6Address, prefixLength: number): void {
+    if (!this.ipv6Enabled) {
+      this.enableIPv6();
+    }
+
+    const exists = this.ipv6Addresses.some(e => e.address.equals(address));
+    if (exists) return;
+
+    this.ipv6Addresses.push({
+      address,
+      prefixLength,
+      origin: 'dhcpv6',
+    });
+
+    Logger.info(this.equipmentId, 'port:dhcpv6',
+      `${this.name}: DHCPv6 address ${address}/${prefixLength} configured`);
+    this.getBus().publish({
+      topic: 'port.config.ipv6-added',
+      payload: { ...this.portRef(), address, prefixLength, origin: 'dhcpv6' },
+    });
+  }
+
   removeIPv6Address(address: IPv6Address): boolean {
     const before = this.ipv6Addresses.length;
     this.ipv6Addresses = this.ipv6Addresses.filter(e => !e.address.equals(address));

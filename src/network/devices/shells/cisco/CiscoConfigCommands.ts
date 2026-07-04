@@ -176,6 +176,9 @@ export function buildConfigCommands(trie: CommandTrie, ctx: CiscoShellContext): 
     const pools = r._ciscoIpv6DhcpPools ?? (r._ciscoIpv6DhcpPools = new Map<string, any>());
     if (!pools.has(args[0])) pools.set(args[0], { name: args[0] });
     r._ciscoIpv6DhcpCurrent = args[0];
+    if (!ctx.r()._getDHCPv6ServerInternal().getPool(args[0])) {
+      ctx.r()._getDHCPv6ServerInternal().createPool(args[0]);
+    }
     ctx.setMode('config-ipv6-dhcp' as any);
     return '';
   });
@@ -596,6 +599,7 @@ export function buildConfigIfCommands(trie: CommandTrie, ctx: CiscoShellContext)
     if (!ifName || !args[0]) return '';
     const port = ctx.r().getPort(ifName);
     if (port) (port as any).ipv6DhcpPool = args[0];
+    ctx.r().setDhcpv6ServerPool(ifName, args[0]);
     return '';
   });
   trie.registerGreedy('ipv6 dhcp relay destination', 'IPv6 DHCP relay destination', (args) => {
@@ -603,6 +607,7 @@ export function buildConfigIfCommands(trie: CommandTrie, ctx: CiscoShellContext)
     if (!ifName || !args[0]) return '';
     const port = ctx.r().getPort(ifName);
     if (port) ((port as any).ipv6DhcpRelayDestinations ??= []).push(args[0]);
+    ctx.r().addDhcpv6RelayDestination(ifName, args[0]);
     return '';
   });
   trie.register('ipv6 nd managed-config-flag', 'Set IPv6 ND M flag', () => {

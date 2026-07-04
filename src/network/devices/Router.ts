@@ -77,6 +77,8 @@ import type { FhrpDataPlane } from '../fhrp/types';
 import { DHCPServer } from '../dhcp/DHCPServer';
 import { DHCPPacket } from '../dhcp/DHCPPacket';
 import type { DHCPDiscoverParams, DHCPOfferResult } from '../dhcp/types';
+import { DHCPv6Server } from '../dhcpv6/DHCPv6Server';
+import { DHCPv6Packet } from '../dhcpv6/DHCPv6Packet';
 import { IPSecEngine } from '../ipsec/IPSecEngine';
 import type { NetFlowAgent, NetFlowRecordInput } from '../netflow/NetFlowAgent';
 import { ACLEngine } from './router/ACLEngine';
@@ -263,6 +265,22 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
   // ── DHCP Server (RFC 2131) ──────────────────────────────────
   private dhcpServer: DHCPServer = new DHCPServer();
 
+  // ── DHCPv6 Server (RFC 8415) ─────────────────────────────────
+  private dhcpv6Server: DHCPv6Server = new DHCPv6Server();
+  _getDHCPv6ServerInternal(): DHCPv6Server { return this.dhcpv6Server; }
+  /** Interface → pool name (`ipv6 dhcp server <pool>` / Huawei `dhcpv6 server <pool>`). */
+  private dhcpv6InterfacePools: Map<string, string> = new Map();
+  setDhcpv6ServerPool(iface: string, poolName: string): void { this.dhcpv6InterfacePools.set(iface, poolName); }
+  getDhcpv6ServerPool(iface: string): string | undefined { return this.dhcpv6InterfacePools.get(iface); }
+  /** Interface → relay destination addresses (`ipv6 dhcp relay destination`). */
+  private dhcpv6RelayDestinations: Map<string, string[]> = new Map();
+  addDhcpv6RelayDestination(iface: string, addr: string): void {
+    const list = this.dhcpv6RelayDestinations.get(iface) ?? [];
+    if (!list.includes(addr)) list.push(addr);
+    this.dhcpv6RelayDestinations.set(iface, list);
+  }
+  getDhcpv6RelayDestinations(iface: string): string[] { return this.dhcpv6RelayDestinations.get(iface) ?? []; }
+
   // ── OSPF Integration (RFC 2328 / RFC 5340) — delegated to RouterOSPFIntegration ──
   private ospfIntegration!: RouterOSPFIntegration;
   private dynamicRouting!: RouterDynamicRouting;
@@ -315,6 +333,9 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       getCounters: () => this.counters,
       getBus: () => this.getBus(),
       getScheduler: () => this.getRouterScheduler(),
+      getDhcpv6Server: () => this.dhcpv6Server,
+      getDhcpv6ServerPool: (iface) => this.dhcpv6InterfacePools.get(iface),
+      getDhcpv6RelayDestinations: (iface) => this.dhcpv6RelayDestinations.get(iface) ?? [],
     });
     this.ospfIntegration = new RouterOSPFIntegration({
       id: this.id,
@@ -1026,7 +1047,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       this.processIPv4(portName, frame.payload as IPv4Packet);
     } else if (frame.etherType === ETHERTYPE_IPV6) {
       if (this.ipv6Engine.isRoutingEnabled() || isIpv6Multicast) {
-        this.ipv6Engine.processPacket(portName, frame.payload as IPv6Packet);
+        this.ipv6Engine.processPacket(portName, frame.payload as IPv6Packet, frame.srcMAC);
       }
     }
   }
