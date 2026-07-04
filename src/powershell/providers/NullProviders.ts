@@ -29,4 +29,5 @@ export const NULL_PROVIDERS: PSProviders = {
   smb:            null,
   ad:             null,
   computer:       null,
+  dns:            null,
 };

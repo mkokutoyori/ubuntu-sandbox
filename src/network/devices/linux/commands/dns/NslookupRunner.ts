@@ -56,6 +56,15 @@ function formatAnswerLines(
           `\tminimum = ${data.minimum}`,
         );
         break;
+      case RRType.SRV:
+        lines.push(
+          `${stripDot(rr.name)}\tSRV service location:`,
+          `\t  priority       = ${data.priority}`,
+          `\t  weight         = ${data.weight}`,
+          `\t  port           = ${data.port}`,
+          `\t  svr hostname    = ${absolute(data.target)}`,
+        );
+        break;
       default:
         break;
     }

@@ -121,6 +121,14 @@ import {
   NewADOrganizationalUnitCmdlet, GetADOrganizationalUnitCmdlet,
 } from './ActiveDirectoryCmdlets';
 import { AddComputerCmdlet } from './ComputerCmdlets';
+import {
+  AddDnsServerPrimaryZoneCmdlet, GetDnsServerZoneCmdlet,
+  AddDnsServerResourceRecordACmdlet, AddDnsServerResourceRecordAAAACmdlet,
+  AddDnsServerResourceRecordCNameCmdlet, AddDnsServerResourceRecordMXCmdlet,
+  AddDnsServerResourceRecordPtrCmdlet, AddDnsServerResourceRecordCmdlet,
+  RemoveDnsServerResourceRecordCmdlet, GetDnsServerResourceRecordCmdlet,
+  SetDnsServerForwarderCmdlet, GetDnsServerForwarderCmdlet,
+} from './DnsServerCmdlets';
 
 /**
  * Register all core (provider-independent) cmdlets into the given registry.
@@ -365,6 +373,20 @@ export function registerCoreCmdlets(registry: CmdletRegistry): void {
 
   // ── Domain join (PRD-Windows-Server.md §5 P6) ───────────────────────────────
   registry.register(new AddComputerCmdlet());
+
+  // ── DNS Server role (PRD-Windows-Server.md §5 P7) ───────────────────────────
+  registry.register(new AddDnsServerPrimaryZoneCmdlet());
+  registry.register(new GetDnsServerZoneCmdlet());
+  registry.register(new AddDnsServerResourceRecordACmdlet());
+  registry.register(new AddDnsServerResourceRecordAAAACmdlet());
+  registry.register(new AddDnsServerResourceRecordCNameCmdlet());
+  registry.register(new AddDnsServerResourceRecordMXCmdlet());
+  registry.register(new AddDnsServerResourceRecordPtrCmdlet());
+  registry.register(new AddDnsServerResourceRecordCmdlet());
+  registry.register(new RemoveDnsServerResourceRecordCmdlet());
+  registry.register(new GetDnsServerResourceRecordCmdlet());
+  registry.register(new SetDnsServerForwarderCmdlet());
+  registry.register(new GetDnsServerForwarderCmdlet());
 
   // ── Native CLI shims (sync subset) ────────────────────────────────────────
   // ping / tracert stay in the legacy executor — they're async and the

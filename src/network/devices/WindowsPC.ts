@@ -83,6 +83,7 @@ import { type DomainMembership, type DomainSession, parseDomainQualifiedUser } f
 import { joinDomain, type DomainJoinResult } from './windows/domain/DomainJoinClient';
 import { logonDomainUser } from './windows/domain/DomainLogonClient';
 import { cmdNltest, cmdDcdiag, cmdKlist } from './windows/WinDomainDiag';
+import { cmdDnscmd } from './windows/WinDnscmd';
 import { cmdPrint } from './windows/WinPrint';
 import { executeNslookup } from './linux/LinuxDnsService';
 import { SessionWorkQueue } from './host/session/SessionWorkQueue';
@@ -1382,6 +1383,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       }
       case 'klist':   return cmdKlist({ domainSession: this.domainSession, dnsName: this.domainMembership?.dnsName ?? null });
       case 'netdom':  return this.cmdNetdom(args);
+      case 'dnscmd':  return cmdDnscmd({ dns: this.getDnsServerRole() }, args);
     }
 
     // net user / net localgroup / net start / net stop / net help
@@ -2190,6 +2192,13 @@ export class WindowsPC extends EndHost implements UserAccountHost {
    * controller; always null on a client, overridden by `WindowsServer`.
    */
   getDirectoryStore(): import('./windows/server/ad/DirectoryStore').DirectoryStore | null { return null; }
+
+  /**
+   * DNS Server role (PRD-Windows-Server.md §5 P7) — null until
+   * `Install-WindowsFeature DNS` on a `WindowsServer`; always null on a
+   * client, overridden by `WindowsServer`.
+   */
+  getDnsServerRole(): import('./windows/server/dns/WindowsDnsServerRole').WindowsDnsServerRole | null { return null; }
 
   /** Get the process manager (for PowerShellExecutor and other integrations) */
   getProcessManager(): WindowsProcessManager { return this.procMgr; }

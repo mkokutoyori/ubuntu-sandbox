@@ -224,6 +224,31 @@ export interface IComputerProvider {
   getDomainInfo(): DomainMembershipInfo | null;
 }
 
+// ── DNS Server role (PRD-Windows-Server.md §5 P7) ───────────────────────────
+
+export interface DnsOpResult { ok: boolean; message: string }
+export interface DnsZoneInfo { name: string; recordCount: number }
+export interface DnsRecordInfo { name: string; type: string; ttl: number; text: string }
+
+export interface IDnsServerProvider {
+  addPrimaryZone(name: string, adminEmail?: string): DnsOpResult;
+  removeZone(name: string): DnsOpResult;
+  getZone(name: string): DnsZoneInfo | null;
+  listZones(): DnsZoneInfo[];
+
+  addARecord(zone: string, name: string, ipv4: string, ttl?: number): DnsOpResult;
+  addAaaaRecord(zone: string, name: string, ipv6: string, ttl?: number): DnsOpResult;
+  addCnameRecord(zone: string, name: string, hostNameAlias: string, ttl?: number): DnsOpResult;
+  addMxRecord(zone: string, name: string, preference: number, mailExchange: string, ttl?: number): DnsOpResult;
+  addPtrRecord(zone: string, name: string, ptrDomainName: string, ttl?: number): DnsOpResult;
+  addSrvRecord(zone: string, name: string, target: { priority: number; weight: number; port: number; target: string }, ttl?: number): DnsOpResult;
+  removeRecord(zone: string, name: string, type: string): DnsOpResult;
+  getRecords(zone: string, name?: string): DnsRecordInfo[] | null;
+
+  setForwarders(addresses: string[]): DnsOpResult;
+  getForwarders(): string[];
+}
+
 export interface IRemotingProvider {
   /**
    * Resolve a computer name/IP to a remoting-capable target — over the
@@ -572,4 +597,5 @@ export interface PSProviders {
   readonly smb:            ISmbProvider            | null;
   readonly ad:             IAdProvider             | null;
   readonly computer:       IComputerProvider       | null;
+  readonly dns:            IDnsServerProvider      | null;
 }

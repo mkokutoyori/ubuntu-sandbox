@@ -39,6 +39,16 @@ export class ZoneStore {
     return this.zonesByOrigin.delete(normalize(origin));
   }
 
+  /** Exact-origin lookup — unlike `findZone` (longest-suffix match for query resolution), this is what zone-admin surfaces (`Get-DnsServerZone`, `Add-DnsServerPrimaryZone`'s duplicate check) need. */
+  getZone(origin: string): Zone | null {
+    return this.zonesByOrigin.get(normalize(origin)) ?? null;
+  }
+
+  /** All zones currently loaded, for admin surfaces that enumerate rather than resolve one. */
+  listZones(): Zone[] {
+    return [...this.zonesByOrigin.values()];
+  }
+
   findZone(qname: string): Zone | null {
     let candidate: string | null = normalize(qname);
     while (candidate !== null) {

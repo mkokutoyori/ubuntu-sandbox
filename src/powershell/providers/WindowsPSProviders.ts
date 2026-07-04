@@ -52,6 +52,7 @@ import type {
   ISmbProvider, SmbShareInfo, SmbSessionInfo,
   IAdProvider, AdUserInfo, AdGroupInfo, AdComputerInfo, AdOrgUnitInfo, AdOpResult,
   IComputerProvider, DomainMembershipInfo,
+  IDnsServerProvider, DnsOpResult, DnsZoneInfo, DnsRecordInfo,
   DirEntry, ServiceInfo, ProcessInfo, UserInfo, GroupInfo,
   NetworkAdapterInfo, IPAddressInfo, RouteInfo, EventLogEntryInfo,
   VpnConnectionInfo, ScheduledTaskInfo, DiskInfo, VolumeInfo,
@@ -433,6 +434,44 @@ class WindowsAdAdapter implements IAdProvider {
     const ou = store.getOrgUnit(store.resolveIdentity(identity));
     return ou ? { name: ou.name, dn: ou.dn, gpLinks: [...ou.gpLinks] } : null;
   }
+}
+
+// ── DNS Server adapter (PRD-Windows-Server.md §5 P7) ─────────────────────
+
+class WindowsDnsServerAdapter implements IDnsServerProvider {
+  constructor(private readonly pc: WindowsPC) {}
+
+  private requireRole(cmdletName: string): void {
+    if (!this.pc.getRoleManager()?.isInstalled('DNS')) {
+      throw new Error(`${cmdletName} is not recognized as the name of a cmdlet, function, script file, or operable program`);
+    }
+  }
+
+  private role() {
+    this.requireRole('DnsServer cmdlet');
+    const role = this.pc.getDnsServerRole();
+    if (!role) throw new Error('DnsServer cmdlet : The DNS Server service is not available on this computer.');
+    return role;
+  }
+
+  addPrimaryZone(name: string, adminEmail?: string): DnsOpResult { return this.role().addPrimaryZone(name, { adminEmail }); }
+  removeZone(name: string): DnsOpResult { return this.role().removeZone(name); }
+  getZone(name: string): DnsZoneInfo | null { return this.role().getZone(name); }
+  listZones(): DnsZoneInfo[] { return this.role().listZones(); }
+
+  addARecord(zone: string, name: string, ipv4: string, ttl?: number): DnsOpResult { return this.role().addARecord(zone, name, ipv4, ttl); }
+  addAaaaRecord(zone: string, name: string, ipv6: string, ttl?: number): DnsOpResult { return this.role().addAaaaRecord(zone, name, ipv6, ttl); }
+  addCnameRecord(zone: string, name: string, hostNameAlias: string, ttl?: number): DnsOpResult { return this.role().addCnameRecord(zone, name, hostNameAlias, ttl); }
+  addMxRecord(zone: string, name: string, preference: number, mailExchange: string, ttl?: number): DnsOpResult { return this.role().addMxRecord(zone, name, preference, mailExchange, ttl); }
+  addPtrRecord(zone: string, name: string, ptrDomainName: string, ttl?: number): DnsOpResult { return this.role().addPtrRecord(zone, name, ptrDomainName, ttl); }
+  addSrvRecord(zone: string, name: string, target: { priority: number; weight: number; port: number; target: string }, ttl?: number): DnsOpResult {
+    return this.role().addSrvRecord(zone, name, target, ttl);
+  }
+  removeRecord(zone: string, name: string, type: string): DnsOpResult { return this.role().removeRecord(zone, name, type); }
+  getRecords(zone: string, name?: string): DnsRecordInfo[] | null { return this.role().getRecords(zone, name); }
+
+  setForwarders(addresses: string[]): DnsOpResult { return this.role().setForwarders(addresses); }
+  getForwarders(): string[] { return this.role().getForwarders(); }
 }
 
 function toServiceInfo(
@@ -1511,5 +1550,6 @@ export function createWindowsPSProviders(
     smb:            pc.getRoleManager() ? new WindowsSmbAdapter(pc) : null,
     ad:             pc.getRoleManager() ? new WindowsAdAdapter(pc) : null,
     computer:       new WindowsComputerAdapter(pc),
+    dns:            pc.getRoleManager() ? new WindowsDnsServerAdapter(pc) : null,
   };
 }

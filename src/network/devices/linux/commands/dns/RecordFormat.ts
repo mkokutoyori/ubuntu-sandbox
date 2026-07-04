@@ -30,6 +30,8 @@ export function formatRdata(rr: ResourceRecord<ResourceRecordData>): string {
     case RRType.SOA:
       return `${absolute(data.mname)} ${absolute(data.rname)} ` +
         `${data.serial} ${data.refresh} ${data.retry} ${data.expire} ${data.minimum}`;
+    case RRType.SRV:
+      return `${data.priority} ${data.weight} ${data.port} ${absolute(data.target)}`;
     default:
       return '';
   }
