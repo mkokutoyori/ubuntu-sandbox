@@ -103,6 +103,9 @@ import {
   buildIKEv2PolicyCommands, buildIKEv2KeyringCommands,
   buildIKEv2KeyringPeerCommands, buildIKEv2ProfileCommands,
 } from './cisco/CiscoIPSecIKEv2Commands';
+import {
+  buildGdoiGlobalCommands, buildGdoiGroupCommands,
+} from './cisco/CiscoGdoiCommands';
 import { registerIPSecShowCommands } from './cisco/CiscoIPSecShowCommands';
 import {
   buildSecurityConfigCommands, buildSecurityInterfaceCommands,
@@ -165,6 +168,7 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
   private selectedIKEv2Keyring: string | null = null;
   private selectedIKEv2KeyringPeer: string | null = null;
   private selectedIKEv2Profile: string | null = null;
+  private selectedGdoiGroup: string | null = null;
 
   // ─── FSM (router-specific mode hierarchy) ────────────────────────
   protected readonly fsm = new CLIStateMachine<CiscoShellMode>('user', CISCO_IOS_MODES, 'user', 'privileged');
@@ -197,6 +201,7 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
   private configIkev2KeyringTrie = new CommandTrie();
   private configIkev2KeyringPeerTrie = new CommandTrie();
   private configIkev2ProfileTrie = new CommandTrie();
+  private configGdoiGroupTrie = new CommandTrie();
   private configTimeRangeTrie = new CommandTrie();
   private configCmapTrie = new CommandTrie();
   private configPmapTrie = new CommandTrie();
@@ -343,6 +348,8 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
   setSelectedIKEv2KeyringPeer(p: string | null): void { this.selectedIKEv2KeyringPeer = p; }
   getSelectedIKEv2Profile(): string | null { return this.selectedIKEv2Profile; }
   setSelectedIKEv2Profile(p: string | null): void { this.selectedIKEv2Profile = p; }
+  getSelectedGdoiGroup(): string | null { return this.selectedGdoiGroup; }
+  setSelectedGdoiGroup(g: string | null): void { this.selectedGdoiGroup = g; }
 
   // ─── Per-vty state snapshot / swap (§5.1 of terminal_gap.md) ─────
 
@@ -483,6 +490,7 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       case 'config-ikev2-keyring': return this.configIkev2KeyringTrie;
       case 'config-ikev2-keyring-peer': return this.configIkev2KeyringPeerTrie;
       case 'config-ikev2-profile': return this.configIkev2ProfileTrie;
+      case 'config-gdoi-group': return this.configGdoiGroupTrie;
       case 'config-time-range': return this.configTimeRangeTrie;
       case 'config-cmap': return this.configCmapTrie;
       case 'config-pmap': return this.configPmapTrie;
@@ -530,6 +538,7 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       if (f === 'selectedIKEv2Keyring') this.selectedIKEv2Keyring = null;
       if (f === 'selectedIKEv2KeyringPeer') this.selectedIKEv2KeyringPeer = null;
       if (f === 'selectedIKEv2Profile') this.selectedIKEv2Profile = null;
+      if (f === 'selectedGdoiGroup') this.selectedGdoiGroup = null;
       if (f === 'selectedTimeRange') this.selectedTimeRange = null;
       if (f === 'selectedKeyChain') this.selectedKeyChain = null;
       if (f === 'selectedKeyChainKey') this.selectedKeyChainKey = null;
@@ -700,6 +709,8 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     buildIKEv2KeyringCommands(this.configIkev2KeyringTrie, this);
     buildIKEv2KeyringPeerCommands(this.configIkev2KeyringPeerTrie, this);
     buildIKEv2ProfileCommands(this.configIkev2ProfileTrie, this);
+    buildGdoiGlobalCommands(this.configTrie, this);
+    buildGdoiGroupCommands(this.configGdoiGroupTrie, this);
 
     buildSecurityConfigCommands(this.configTrie, this);
     buildSecurityInterfaceCommands(this.configIfTrie, this);

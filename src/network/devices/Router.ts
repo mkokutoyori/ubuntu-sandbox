@@ -1248,14 +1248,23 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       return;
     }
 
-    // IPSec inbound decapsulation
+    // IPSec inbound decapsulation. A multicast-destined ESP/AH packet (e.g.
+    // GDOI/GET-VPN group traffic) is keyed by (SPI, group address) in a
+    // separate SA table from unicast SAs, so it must be routed to the
+    // multicast decap path rather than the unicast SPI lookup.
     if (ipPkt.protocol === IP_PROTO_ESP && this.ipsecEngine) {
-      const inner = this.ipsecEngine.processInboundESP(ipPkt);
+      const isMcast = this.ipsecEngine.isMulticast(ipPkt.destinationIP.toString());
+      const inner = isMcast
+        ? this.ipsecEngine.processMulticastInboundESP(ipPkt)
+        : this.ipsecEngine.processInboundESP(ipPkt);
       if (inner) this.processIPv4(inPort, inner);
       return;
     }
     if (ipPkt.protocol === IP_PROTO_AH && this.ipsecEngine) {
-      const inner = this.ipsecEngine.processInboundAH(ipPkt);
+      const isMcast = this.ipsecEngine.isMulticast(ipPkt.destinationIP.toString());
+      const inner = isMcast
+        ? this.ipsecEngine.processMulticastInboundAH(ipPkt)
+        : this.ipsecEngine.processInboundAH(ipPkt);
       if (inner) this.processIPv4(inPort, inner);
       return;
     }

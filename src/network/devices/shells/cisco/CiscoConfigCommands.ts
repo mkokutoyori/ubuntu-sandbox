@@ -34,7 +34,8 @@ export type CiscoShellMode =
   | 'config-radius-server' | 'config-tacacs-server' | 'config-aaa-group'
   | 'config-ca-trustpoint'
   | 'config-applet' | 'config-flow-exporter' | 'config-flow-record' | 'config-flow-monitor'
-  | 'config-archive' | 'config-archive-log';
+  | 'config-archive' | 'config-archive-log'
+  | 'config-gdoi-group';
 
 export interface CiscoShellContext {
   /** Get the current router reference (set during execute) */
@@ -81,6 +82,8 @@ export interface CiscoShellContext {
   setSelectedIKEv2KeyringPeer(p: string | null): void;
   getSelectedIKEv2Profile(): string | null;
   setSelectedIKEv2Profile(p: string | null): void;
+  getSelectedGdoiGroup(): string | null;
+  setSelectedGdoiGroup(g: string | null): void;
 }
 
 // ─── Global Config Mode Commands ─────────────────────────────────────

@@ -72,6 +72,32 @@ export function registerIPSecShowCommands(
 
   trie.register('show crypto isakmp profile', 'Display ISAKMP profiles', () =>
     'No active ISAKMP profile sessions');
+  trie.register('show crypto gdoi', 'Display GDOI GET-VPN group status', () => {
+    const e = eng();
+    if (!e) return 'IPSec not configured.';
+    const groups = e.getGdoiGroups() as Map<string, {
+      name: string; identityNumber?: number; groupAddress?: string;
+      transformSetName?: string; localAddress?: string; keyServerAddress?: string;
+      isKeyServer: boolean;
+    }>;
+    if (groups.size === 0) return 'No GDOI groups configured.';
+    return [...groups.values()].map((g) => {
+      const lines = [
+        `Group Name: ${g.name}`,
+        `Group Identity: ${g.identityNumber ?? '<none>'}`,
+        `Group Members: ${g.isKeyServer ? 'Key Server' : 'Group Member'}`,
+      ];
+      if (g.isKeyServer) {
+        const msa = g.groupAddress ? e.findMulticastSAForOutbound?.(g.groupAddress) : null;
+        lines.push(`  Group Address: ${g.groupAddress ?? '<none>'}`);
+        lines.push(`  Transform Set: ${g.transformSetName ?? '<none>'}`);
+        lines.push(`  Registered Members: ${msa?.receivers?.length ?? 0}`);
+      } else {
+        lines.push(`  Key Server: ${g.keyServerAddress ?? '<none>'}`);
+      }
+      return lines.join('\n');
+    }).join('\n\n');
+  });
   trie.registerGreedy('show crypto ikev2 sa detailed', 'Detailed IKEv2 SAs', () =>
     eng()?.showCryptoIKEv2SADetail?.() ?? eng()?.showCryptoIKEv2SA?.() ?? 'IPSec not configured.');
   trie.register('show crypto ikev2 stats', 'IKEv2 statistics', () => {

@@ -28,7 +28,7 @@ import {
   IkeMessage, IkeOfferMessage, IkeAcceptMessage,
   IkePolicyProposal, IkeTransformProposal,
   IkeV2ProposalWire, IkeV2Chosen,
-  GdoiMessage, isIkeMessage, isGdoiMessage,
+  GdoiMessage, GdoiGroupRegister, GdoiGroupConfig, isIkeMessage, isGdoiMessage,
 } from './IPSecTypes';
 import { Equipment } from '../equipment/Equipment';
 import { Logger } from '../core/Logger';
@@ -578,6 +578,8 @@ export class IPSecEngine implements IProtocolEngine {
   private multicastSADB: Map<string, MulticastIPSecSA> = new Map();
   /** groupAddress → list of multicast SA keys for fast lookup by group */
   private multicastGroupIndex: Map<string, string[]> = new Map();
+  /** GDOI GET-VPN group configs (`crypto gdoi group NAME`), keyed by name */
+  private gdoiGroups: Map<string, GdoiGroupConfig> = new Map();
 
   // ── Fragment Reassembly Buffer (RFC 4301 §7) ─────────────────────
   /**
@@ -1428,7 +1430,7 @@ export class IPSecEngine implements IProtocolEngine {
       return;
     }
     if (isGdoiMessage(payload)) {
-      this.handleGdoiMessage(payload);
+      this.handleGdoiMessage(payload, srcIp);
       return;
     }
     const msg = payload as IsakmpDpdMessage | undefined;
@@ -2133,15 +2135,27 @@ export class IPSecEngine implements IProtocolEngine {
       return null;
     }
 
+    const expectedIcv = computeEspIcv(msa.cryptoKeys, esp);
+    if (expectedIcv !== undefined && esp.icv !== undefined && esp.icv !== expectedIcv) {
+      msa.recvErrors++;
+      return null;
+    }
+
+    const inner = openEsp(msa.cryptoKeys, esp);
+    if (inner === null) {
+      msa.recvErrors++;
+      return null;
+    }
+
     msa.pktsDecaps++;
-    msa.bytesDecaps += (esp.innerPacket?.totalLength || 0);
+    msa.bytesDecaps += (inner.totalLength || 0);
 
     if (this.debugIpsec) {
       Logger.info(this.router.id, 'debug:ipsec',
         `IPSEC(i): multicast decaps ok, group=${groupAddr}, spi=${spiHex(esp.spi)}, seqnum=${esp.sequenceNumber}`);
     }
 
-    return esp.innerPacket;
+    return inner;
   }
 
   /**
@@ -2174,6 +2188,73 @@ export class IPSecEngine implements IProtocolEngine {
    */
   isMulticast(ip: string): boolean {
     return isMulticastAddress(ip);
+  }
+
+  // ══════════════════════════════════════════════════════════════════
+  // GDOI / GET-VPN (RFC 6407) — group key management over the CLI
+  // ══════════════════════════════════════════════════════════════════
+
+  getOrCreateGdoiGroup(name: string): GdoiGroupConfig {
+    let group = this.gdoiGroups.get(name);
+    if (!group) {
+      group = { name, isKeyServer: false };
+      this.gdoiGroups.set(name, group);
+    }
+    return group;
+  }
+
+  removeGdoiGroup(name: string): void {
+    this.gdoiGroups.delete(name);
+  }
+
+  getGdoiGroups(): ReadonlyMap<string, GdoiGroupConfig> {
+    return this.gdoiGroups;
+  }
+
+  /**
+   * `server local` — activate this router as the GDOI key server for the
+   * group: builds (or returns the already-built) real multicast Group SA.
+   */
+  activateGdoiKeyServer(name: string): MulticastIPSecSA | null {
+    const group = this.gdoiGroups.get(name);
+    if (!group) return null;
+    group.isKeyServer = true;
+    if (!group.groupAddress || !group.transformSetName) return null;
+
+    const existingKeys = this.multicastGroupIndex.get(group.groupAddress);
+    if (existingKeys && existingKeys.length > 0) {
+      const existing = this.multicastSADB.get(existingKeys[0]);
+      if (existing) return existing;
+    }
+
+    const ts = this.transformSets.get(group.transformSetName);
+    if (!ts) return null;
+    const senderAddress = group.localAddress || this.getAllLocalIPs()[0];
+    if (!senderAddress) return null;
+
+    return this.createMulticastSA(
+      group.groupAddress, senderAddress, ts.transforms, 'Tunnel',
+      group.saLifetimeSeconds ?? 3600,
+    );
+  }
+
+  /**
+   * `server address ipv4 IP` — register this router as a group member with
+   * a remote GDOI key server over the real wire (UDP/500, routed/ARP'd).
+   */
+  registerWithGdoiKeyServer(name: string): boolean {
+    const group = this.gdoiGroups.get(name);
+    if (!group || !group.keyServerAddress) return false;
+    return this.router._sendIkeUdp(group.keyServerAddress, {
+      type: 'gdoi', op: 'register', groupName: name,
+    } satisfies GdoiGroupRegister);
+  }
+
+  /** Key-server side: a group member has registered — push it the group SA. */
+  private handleGdoiRegister(srcIp: string, groupName: string): void {
+    const group = this.gdoiGroups.get(groupName);
+    if (!group || !group.isKeyServer || !group.groupAddress) return;
+    this.addMulticastReceiver(group.groupAddress, srcIp);
   }
 
   // ══════════════════════════════════════════════════════════════════
@@ -3253,9 +3334,10 @@ export class IPSecEngine implements IProtocolEngine {
     }
   }
 
-  private handleGdoiMessage(msg: GdoiMessage): void {
+  private handleGdoiMessage(msg: GdoiMessage, srcIp: string): void {
     if (msg.op === 'install') this.installMulticastReceiverSA(msg.msa);
-    else this.removeMulticastReceiverSA(msg.spi, msg.groupAddress);
+    else if (msg.op === 'remove') this.removeMulticastReceiverSA(msg.spi, msg.groupAddress);
+    else this.handleGdoiRegister(srcIp, msg.groupName);
   }
 
   private handleIkeOffer(srcIp: string, dstIp: string, offer: IkeOfferMessage): void {

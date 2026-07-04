@@ -131,6 +131,7 @@ export const CISCO_IOS_MODES: ModeHierarchy = {
   'config-ikev2-keyring':      { parent: 'config', clearOnExit: ['selectedIKEv2Keyring'] },
   'config-ikev2-keyring-peer': { parent: 'config-ikev2-keyring', clearOnExit: ['selectedIKEv2KeyringPeer'] },
   'config-ikev2-profile':      { parent: 'config', clearOnExit: ['selectedIKEv2Profile'] },
+  'config-gdoi-group':         { parent: 'config', clearOnExit: ['selectedGdoiGroup'] },
   'config-time-range':         { parent: 'config', clearOnExit: ['selectedTimeRange'] },
   'config-cmap':               { parent: 'config', clearOnExit: ['selectedClassMap'] },
   'config-pmap':               { parent: 'config', clearOnExit: ['selectedPolicyMap'] },

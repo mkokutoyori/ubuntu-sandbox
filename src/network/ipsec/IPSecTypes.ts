@@ -312,12 +312,37 @@ export interface GdoiGroupSaRemove {
   groupAddress: string;
 }
 
-export type GdoiMessage = GdoiGroupSaInstall | GdoiGroupSaRemove;
+export interface GdoiGroupRegister {
+  type: 'gdoi';
+  op: 'register';
+  groupName: string;
+}
+
+export type GdoiMessage = GdoiGroupSaInstall | GdoiGroupSaRemove | GdoiGroupRegister;
 
 export function isGdoiMessage(p: unknown): p is GdoiMessage {
   if (!p || typeof p !== 'object') return false;
   const c = p as { type?: unknown; op?: unknown };
-  return c.type === 'gdoi' && (c.op === 'install' || c.op === 'remove');
+  return c.type === 'gdoi' && (c.op === 'install' || c.op === 'remove' || c.op === 'register');
+}
+
+/**
+ * Local CLI configuration for a `crypto gdoi group` — either a key-server
+ * role (owns the group SA, pushes it to registering members) or a group
+ * member role (registers with a remote key server to receive the SA).
+ */
+export interface GdoiGroupConfig {
+  name: string;
+  identityNumber?: number;
+  /** Protected multicast group address (`match address ipv4`). */
+  groupAddress?: string;
+  transformSetName?: string;
+  saLifetimeSeconds?: number;
+  /** Key server's own address override (`address ipv4`). */
+  localAddress?: string;
+  /** Group member's configured key server (`server address ipv4`). */
+  keyServerAddress?: string;
+  isKeyServer: boolean;
 }
 
 export type IkeWirePayload = IsakmpDpdMessage | IkeMessage | GdoiMessage;

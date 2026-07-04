@@ -79,6 +79,7 @@ export const CISCO_IOS_PROMPTS: PromptMap = {
   'config-ikev2-keyring':      '{host}(config-ikev2-keyring)#',
   'config-ikev2-keyring-peer': '{host}(config-ikev2-keyring-peer)#',
   'config-ikev2-profile':      '{host}(config-ikev2-profile)#',
+  'config-gdoi-group':         '{host}(config-gdoi-group)#',
   'config-time-range':         '{host}(config-time-range)#',
   'config-cmap':               '{host}(config-cmap)#',
   'config-pmap':               '{host}(config-pmap)#',
