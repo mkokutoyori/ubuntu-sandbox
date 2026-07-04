@@ -1,14 +1,16 @@
 import type { IEventBus } from '@/events/EventBus';
 import { hexToBytes } from '@/crypto/encoding';
+import { getDefaultScheduler, type IScheduler, type TimerHandle } from '@/events/Scheduler';
 import {
   type RadiusServerAgentConfig, type RadiusPacket, type RadiusUser,
   type RadiusAttribute,
   createDefaultServerConfig, attr, getAttr,
-  decryptUserPassword, isPrintablePassword,
+  decryptUserPassword, encryptUserPassword, isPrintablePassword,
 } from './types';
 import {
   verifyMessageAuthenticator, withMessageAuthenticator, withResponseAuthenticator,
-  randomOpaqueToken, verifyAccountingRequestAuthenticator,
+  randomOpaqueToken, randomRequestAuthenticator, verifyResponseAuthenticator,
+  verifyAccountingRequestAuthenticator,
 } from './authenticators';
 import { parseChapPasswordHex, verifyChapResponse } from './passwords';
 import {
@@ -52,6 +54,8 @@ export interface RadiusServerHost {
   sendFrame(portName: string, frame: EthernetFrame): void;
   /** ARP-resolved next-hop MAC, when known — falls back to broadcast otherwise (mirrors `TcpHost`). */
   resolveMac?(ip: string): MACAddress | null;
+  /** Real RIB lookup (LPM) — needed to reach a proxy realm's home server on another subnet (mirrors `RadiusClientHost`). */
+  resolveRoute?(targetIp: string): { iface: string; nextHopIp: string } | null;
 }
 
 /** How long a served response is kept for retransmission dedup (RFC 2865 §2). */
@@ -60,6 +64,30 @@ const DEDUP_TTL_MS = 30_000;
 const CHALLENGE_TTL_MS = 60_000;
 
 type RejectReason = 'unknown-user' | 'bad-password' | 'bad-secret' | 'client-not-authorized';
+
+/** RFC 2607 — a realm this server proxies to a home server instead of authenticating locally. */
+interface RealmRoute {
+  homeServerIp: string;
+  homePort: number;
+  homeSecret: string;
+  timeoutMs: number;
+}
+
+/** Context kept while an Access-Request forwarded to a realm's home server is in flight. */
+interface PendingProxyContext {
+  nasInPort: string;
+  nasIp: string;
+  nasPort: number;
+  originalIdentifier: number;
+  originalAuthenticator: string;
+  nasSecret: string;
+  homeServerIp: string;
+  homePort: number;
+  homeSecret: string;
+  outAuthenticator: string;
+  dedupKey: string;
+  timer: TimerHandle | null;
+}
 
 export class RadiusServerAgent {
   private config: RadiusServerAgentConfig = createDefaultServerConfig();
@@ -74,14 +102,26 @@ export class RadiusServerAgent {
   private readonly acctSessions = new Map<string, AcctSessionRecord>();
   /** EAP-MD5 relay sessions (RFC 3579), keyed by the opaque State handed out with the Access-Challenge carrying the MD5 challenge. */
   private readonly eapSessions = new Map<string, { username: string; challengeHex: string; expiresAt: number }>();
+  /** RFC 2607 §2 — realm → home-server route, keyed by the realm suffix in `user@realm`. */
+  private readonly realms = new Map<string, RealmRoute>();
+  /** Forwarded Access-Requests awaiting the home server's Access-Accept/Reject, keyed by the identifier this proxy issued to the home server (its own space, distinct from the NAS's). */
+  private readonly pendingProxy = new Map<number, PendingProxyContext>();
+  private nextProxyIdentifier = 1;
 
   constructor(
     private readonly host: RadiusServerHost,
     private readonly getBus: () => IEventBus,
+    private readonly getScheduler: () => IScheduler = () => getDefaultScheduler(),
   ) {}
 
   start(): void { if (!this.running) this.running = true; }
-  stop(): void { this.running = false; }
+  stop(): void {
+    this.running = false;
+    for (const ctx of this.pendingProxy.values()) {
+      if (ctx.timer !== null) this.getScheduler().clear(ctx.timer);
+    }
+    this.pendingProxy.clear();
+  }
 
   getConfig(): Readonly<RadiusServerAgentConfig> { return this.config; }
 
@@ -106,6 +146,27 @@ export class RadiusServerAgent {
 
   /** Accounting journal — last known state per Acct-Session-Id (RFC 2866). */
   listAccountingSessions(): AcctSessionRecord[] { return Array.from(this.acctSessions.values()); }
+
+  /**
+   * RFC 2607 — proxy every `user@realm` request to a home server instead of
+   * authenticating it locally. Scoped to PAP/CHAP only (both survive a hop:
+   * CHAP-Password doesn't depend on the RADIUS shared secret at all, and
+   * User-Password is decrypted with this server's NAS-facing secret then
+   * re-encrypted with the home server's) — no EAP or Access-Challenge
+   * proxying, no accounting proxying.
+   */
+  addRealm(realm: string, homeServerIp: string, homeSecret: string, opts: { port?: number; timeoutMs?: number } = {}): void {
+    this.realms.set(realm, {
+      homeServerIp, homeSecret,
+      homePort: opts.port ?? this.config.port,
+      timeoutMs: opts.timeoutMs ?? 2000,
+    });
+  }
+
+  removeRealm(realm: string): void { this.realms.delete(realm); }
+  listRealms(): Array<{ realm: string } & RealmRoute> {
+    return Array.from(this.realms.entries()).map(([realm, route]) => ({ realm, ...route }));
+  }
 
   /** RFC 2866: Accounting-Request/Response on the accounting port (default UDP/1813). */
   handleAcctUdp(inPort: string, srcIp: IPAddress, udp: UDPPacket): void {
@@ -174,6 +235,10 @@ export class RadiusServerAgent {
     if (udp.destinationPort !== this.config.port) return;
     const payload = udp.payload as RadiusPacket | undefined;
     if (!payload || payload.type !== 'radius') return;
+
+    if ((payload.code === 'access-accept' || payload.code === 'access-reject') && this.pendingProxy.size > 0) {
+      if (this.tryCompleteProxyReply(srcIp, udp, payload)) return;
+    }
     if (payload.code !== 'access-request') return;
 
     const eapAttr = getAttr(payload, 'eap-message');
@@ -216,6 +281,14 @@ export class RadiusServerAgent {
       return;
     }
     const username = String(usernameAttr.value);
+
+    const realm = this.extractRealm(username);
+    const realmRoute = realm ? this.realms.get(realm) : undefined;
+    if (realm && realmRoute) {
+      this.forwardToRealm(inPort, srcIp, udp.sourcePort, payload, username, realm, realmRoute, dedupKey);
+      return;
+    }
+
     const user = this.config.users.get(username);
 
     if (eapAttr) {
@@ -533,6 +606,145 @@ export class RadiusServerAgent {
     this.sendRadiusFrame(inPort, port, srcIp, dstIp, clientPort, this.config.acctPort, response);
     Logger.info(this.host.id, 'radius:resend',
       `${this.host.name}: accounting retransmission from ${dstIp} → cached ${response.code}`);
+  }
+
+  private extractRealm(username: string): string | null {
+    const m = /^.+@([^@]+)$/.exec(username);
+    return m ? m[1] : null;
+  }
+
+  /** RFC 2607 — forward this Access-Request to the realm's home server, tracking it under our own identifier space. */
+  private forwardToRealm(
+    inPort: string, nasIp: IPAddress, nasPort: number, request: RadiusPacket,
+    username: string, realm: string, route: RealmRoute, dedupKey: string,
+  ): void {
+    const egress = this.resolveEgress(route.homeServerIp);
+    if (!egress) {
+      this.publishRejected(nasIp.toString(), username, 'client-not-authorized');
+      this.reply(inPort, nasIp, nasPort, request, false, undefined, dedupKey);
+      return;
+    }
+
+    let outIdentifier = this.nextProxyIdentifier;
+    for (let i = 0; i < 256 && this.pendingProxy.has(outIdentifier); i++) {
+      outIdentifier = (outIdentifier + 1) & 0xff;
+    }
+    this.nextProxyIdentifier = (outIdentifier + 1) & 0xff;
+    const outAuthenticator = randomRequestAuthenticator();
+
+    const attrs: RadiusAttribute[] = [attr('user-name', username)];
+    const chapAttr = getAttr(request, 'chap-password');
+    if (chapAttr) {
+      // CHAP-Password doesn't depend on the RADIUS shared secret — safe to forward verbatim across hops.
+      attrs.push(attr('chap-password', String(chapAttr.value)));
+      const challengeAttr = getAttr(request, 'chap-challenge');
+      attrs.push(attr('chap-challenge', challengeAttr ? String(challengeAttr.value) : request.authenticator));
+    } else {
+      const passwordAttr = getAttr(request, 'user-password');
+      if (passwordAttr) {
+        // User-Password is encrypted per-hop: decrypt with the NAS-facing secret, re-encrypt with the home server's.
+        const decrypted = decryptUserPassword(String(passwordAttr.value), this.config.sharedSecret, request.authenticator);
+        attrs.push(attr('user-password', encryptUserPassword(decrypted, route.homeSecret, outAuthenticator)));
+      }
+    }
+    attrs.push(attr('nas-ip-address', egress.srcIp.toString()));
+
+    const outbound: RadiusPacket = {
+      type: 'radius', code: 'access-request', identifier: outIdentifier,
+      authenticator: outAuthenticator, attributes: attrs,
+    };
+
+    const timer = this.getScheduler().setTimeout(() => {
+      this.pendingProxy.delete(outIdentifier);
+    }, route.timeoutMs);
+
+    this.pendingProxy.set(outIdentifier, {
+      nasInPort: inPort, nasIp: nasIp.toString(), nasPort,
+      originalIdentifier: request.identifier, originalAuthenticator: request.authenticator,
+      nasSecret: this.config.sharedSecret,
+      homeServerIp: route.homeServerIp, homePort: route.homePort, homeSecret: route.homeSecret,
+      outAuthenticator, dedupKey, timer,
+    });
+
+    this.getBus().publish({
+      topic: 'radius.proxy.forwarded',
+      payload: {
+        deviceId: this.host.id, hostname: this.host.getHostname(),
+        username, realm, homeServerIp: route.homeServerIp,
+      },
+    });
+    Logger.info(this.host.id, 'radius:proxy',
+      `${this.host.name}: forwarding ${username} (realm ${realm}) → home server ${route.homeServerIp}`);
+    this.sendRadiusFrame(egress.name, egress.port, egress.srcIp, new IPAddress(route.homeServerIp), route.homePort, this.config.port, outbound);
+  }
+
+  /** The home server's Access-Accept/Reject for a request we forwarded — translate it back to the original NAS. Returns false when the reply doesn't match any pending proxied request (so the caller can fall through to normal handling). */
+  private tryCompleteProxyReply(srcIp: IPAddress, udp: UDPPacket, payload: RadiusPacket): boolean {
+    const ctx = this.pendingProxy.get(payload.identifier);
+    if (!ctx) return false;
+    if (srcIp.toString() !== ctx.homeServerIp || udp.sourcePort !== ctx.homePort) return false;
+    if (!verifyResponseAuthenticator(payload, ctx.outAuthenticator, ctx.homeSecret)) return false;
+
+    this.pendingProxy.delete(payload.identifier);
+    if (ctx.timer !== null) this.getScheduler().clear(ctx.timer);
+
+    const port = this.host.getPort(ctx.nasInPort);
+    if (!port) return true;
+    const nasSrcIp = port.getIPAddress();
+    if (!nasSrcIp) return true;
+
+    const forwardedAttrs = payload.attributes.filter(
+      (a) => a.type !== 'message-authenticator' && a.type !== 'state',
+    );
+    let response: RadiusPacket = {
+      type: 'radius', code: payload.code, identifier: ctx.originalIdentifier,
+      authenticator: '00'.repeat(16), attributes: forwardedAttrs,
+    };
+    response = withMessageAuthenticator(response, ctx.originalAuthenticator, ctx.nasSecret);
+    response = withResponseAuthenticator(response, ctx.originalAuthenticator, ctx.nasSecret);
+    this.recentReplies.set(ctx.dedupKey, { response, sentAt: Date.now() });
+    this.getBus().publish({
+      topic: 'radius.packet.sent',
+      payload: {
+        deviceId: this.host.id, hostname: this.host.getHostname(),
+        destinationIp: ctx.nasIp, code: response.code,
+        identifier: response.identifier, username: null,
+      },
+    });
+    this.sendRadiusFrame(ctx.nasInPort, port, nasSrcIp, new IPAddress(ctx.nasIp), ctx.nasPort, this.config.port, response);
+    Logger.info(this.host.id, 'radius:proxy',
+      `${this.host.name}: proxied ${response.code} from ${ctx.homeServerIp} → NAS ${ctx.nasIp}`);
+    return true;
+  }
+
+  /** Egress toward an arbitrary target IP (the home server, typically off-subnet) — mirrors `RadiusClientAgent`'s own resolver. */
+  private resolveEgress(targetIp: string): { name: string; port: Port; srcIp: IPAddress } | null {
+    if (this.host.resolveRoute) {
+      const route = this.host.resolveRoute(targetIp);
+      if (route) {
+        const port = this.host.getPort(route.iface);
+        const src = port?.getIPAddress();
+        if (port && src && port.getIsUp()) return { name: route.iface, port, srcIp: src };
+      }
+    }
+    const target = targetIp.split('.').map(Number);
+    for (const port of this.host.getPorts()) {
+      const ip = port.getIPAddress();
+      const mask = port.getSubnetMask();
+      if (!ip || !mask || !port.getIsUp()) continue;
+      const local = ip.toString().split('.').map(Number);
+      const maskBits = mask.toString().split('.').map(Number);
+      let same = true;
+      for (let i = 0; i < 4; i++) {
+        if ((local[i] & maskBits[i]) !== (target[i] & maskBits[i])) { same = false; break; }
+      }
+      if (same) return { name: port.getName(), port, srcIp: ip };
+    }
+    for (const port of this.host.getPorts()) {
+      const ip = port.getIPAddress();
+      if (ip && port.getIsUp() && port.isConnected()) return { name: port.getName(), port, srcIp: ip };
+    }
+    return null;
   }
 
   private sendRadiusFrame(

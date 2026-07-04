@@ -183,7 +183,16 @@ partiel. Le moteur doit être complété **sans casser** les suites existantes
   accounting de la machinerie UDP ; **RadSec (TLS, RFC 6614) reste hors
   périmètre** — coût disproportionné pour la valeur pédagogique. Voir
   `radius-tcp.test.ts`.
-- **Proxy/roaming RADIUS** (RFC 2607) : chaînes de proxys inter-domaines.
+- ~~**Proxy/roaming RADIUS** (RFC 2607) : chaînes de proxys inter-domaines.~~
+  🟡 **Un saut de proxy implémenté** : `RadiusServerAgent.addRealm(realm,
+  homeServerIp, homeSecret, opts)` route un `user@realm` vers un serveur
+  home au lieu de l'authentifier localement — même écoute (port 1812), même
+  logique de dédup/retransmission que l'auth locale. PAP (déchiffré avec le
+  secret NAS↔proxy, rechiffré avec le secret proxy↔home) et CHAP (transmis
+  tel quel, indépendant du secret) sont couverts ; pas de proxy EAP, pas de
+  proxy Access-Challenge/State, pas de proxy accounting, et **pas de
+  chaînage multi-sauts** (un realm pointe directement vers son home server,
+  pas vers un autre proxy) — voir `radius-proxy.test.ts`.
 - ~~**Attributs IPv6** (Framed-IPv6-*, RFC 3162) — suivront le chantier IPv6 global.~~
   ✅ **Implémenté** : NAS-IPv6-Address (95), Framed-Interface-Id (96),
   Framed-IPv6-Prefix (97), Login-IPv6-Host (98), Framed-IPv6-Route (99),

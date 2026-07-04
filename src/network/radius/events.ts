@@ -69,6 +69,13 @@ export interface RadiusTcpCompletedPayload extends RadiusDeviceRef {
   result: 'accept' | 'reject' | 'timeout';
 }
 
+/** RFC 2607 — a proxying `RadiusServerAgent` forwarded a `user@realm` request to that realm's home server. */
+export interface RadiusProxyForwardedPayload extends RadiusDeviceRef {
+  username: string;
+  realm: string;
+  homeServerIp: string;
+}
+
 export type RadiusDomainEvent =
   | { topic: 'radius.packet.sent'; payload: RadiusPacketSentPayload }
   | { topic: 'radius.packet.received'; payload: RadiusPacketReceivedPayload }
@@ -79,4 +86,5 @@ export type RadiusDomainEvent =
   | { topic: 'radius.server.alive'; payload: RadiusServerHealthPayload }
   | { topic: 'radius.coa.received'; payload: RadiusCoaReceivedPayload }
   | { topic: 'radius.coa.completed'; payload: RadiusCoaCompletedPayload }
-  | { topic: 'radius.tcp.completed'; payload: RadiusTcpCompletedPayload };
+  | { topic: 'radius.tcp.completed'; payload: RadiusTcpCompletedPayload }
+  | { topic: 'radius.proxy.forwarded'; payload: RadiusProxyForwardedPayload };
