@@ -1,5 +1,6 @@
 import type { IEventBus } from '@/events/EventBus';
 import { getDefaultScheduler, type IScheduler, type TimerHandle } from '@/events/Scheduler';
+import { hexToBytes } from '@/crypto/encoding';
 import {
   type RadiusClientConfig, type RadiusServerConfig, type RadiusPacket,
   type RadiusAttribute,
@@ -11,6 +12,7 @@ import {
   randomRequestAuthenticator, withMessageAuthenticator,
   verifyResponseAuthenticator, verifyMessageAuthenticator,
 } from './authenticators';
+import { buildChapPasswordHex } from './passwords';
 import {
   MACAddress, IPAddress,
   type EthernetFrame, type IPv4Packet, type UDPPacket,
@@ -31,17 +33,27 @@ export interface RadiusClientHost {
   resolveRoute?(targetIp: string): { iface: string; nextHopIp: string } | null;
 }
 
+type RadiusAuthMethod = 'pap' | 'chap';
+
 interface PendingRequest {
   identifier: number;
   serverIp: string;
   username: string;
+  password: string;
+  authMethod: RadiusAuthMethod;
   /** Request Authenticator sent with this identifier — reused verbatim across retransmissions (RFC 2865 §3) so the server's dedup cache recognizes them. */
   authenticator: string;
   secret: string;
+  /** State (24) to echo back — set when this request is a reply to a previous Access-Challenge. */
+  state: string | null;
+  /** How many more Access-Challenge round-trips this request will still follow before giving up. */
+  challengesLeft: number;
   resolve: (accepted: boolean) => void;
   timer: TimerHandle | null;
   attemptsLeft: number;
 }
+
+const DEFAULT_MAX_CHALLENGE_ROUNDS = 1;
 
 export class RadiusClientAgent {
   private config: RadiusClientConfig = createDefaultClientConfig();
@@ -97,26 +109,43 @@ export class RadiusClientAgent {
 
   listServers(): RadiusServerConfig[] { return this.config.servers.slice(); }
 
+  /** PAP authentication (RFC 2865 §5.2 User-Password). */
   authenticate(username: string, password: string, serverIp?: string): Promise<boolean> {
+    return this.run(username, password, 'pap', serverIp);
+  }
+
+  /** CHAP authentication (RFC 2865 §5.3, RFC 1994). */
+  authenticateChap(username: string, password: string, serverIp?: string): Promise<boolean> {
+    return this.run(username, password, 'chap', serverIp);
+  }
+
+  private run(username: string, password: string, authMethod: RadiusAuthMethod, serverIp?: string): Promise<boolean> {
     if (!this.config.enabled) return Promise.resolve(false);
     const server = serverIp
       ? this.config.servers.find((s) => s.ip === serverIp)
       : this.config.servers[0];
     if (!server) return Promise.resolve(false);
+    return new Promise<boolean>((resolve) => {
+      this.beginRequest(server, username, password, authMethod, null, DEFAULT_MAX_CHALLENGE_ROUNDS, resolve);
+    });
+  }
+
+  private beginRequest(
+    server: RadiusServerConfig, username: string, password: string, authMethod: RadiusAuthMethod,
+    state: string | null, challengesLeft: number, resolve: (accepted: boolean) => void,
+  ): void {
     const identifier = this.nextIdentifier;
     this.nextIdentifier = (this.nextIdentifier + 1) & 0xff;
     const authenticator = randomRequestAuthenticator();
-    return new Promise<boolean>((resolve) => {
-      const pending: PendingRequest = {
-        identifier, serverIp: server.ip, username,
-        authenticator, secret: server.sharedSecret,
-        resolve, timer: null,
-        attemptsLeft: server.retransmit,
-      };
-      this.pending.set(identifier, pending);
-      this.transmit(server, identifier, username, password, authenticator);
-      this.armTimeout(server, pending, username, password);
-    });
+    const pending: PendingRequest = {
+      identifier, serverIp: server.ip, username, password, authMethod,
+      authenticator, secret: server.sharedSecret, state, challengesLeft,
+      resolve, timer: null,
+      attemptsLeft: server.retransmit,
+    };
+    this.pending.set(identifier, pending);
+    this.transmit(server, pending);
+    this.armTimeout(server, pending);
   }
 
   handleUdp(_inPort: string, srcIp: IPAddress, udp: UDPPacket): void {
@@ -124,7 +153,7 @@ export class RadiusClientAgent {
     if (udp.sourcePort !== UDP_PORT_RADIUS_AUTH && udp.destinationPort !== UDP_PORT_RADIUS_AUTH) return;
     const payload = udp.payload as RadiusPacket | undefined;
     if (!payload || payload.type !== 'radius') return;
-    if (payload.code !== 'access-accept' && payload.code !== 'access-reject') return;
+    if (payload.code !== 'access-accept' && payload.code !== 'access-reject' && payload.code !== 'access-challenge') return;
     const pending = this.pending.get(payload.identifier);
     if (!pending) return;
     if (pending.serverIp !== srcIp.toString()) return;
@@ -148,6 +177,11 @@ export class RadiusClientAgent {
       },
     });
 
+    if (payload.code === 'access-challenge') {
+      this.continueChallenge(payload, pending);
+      return;
+    }
+
     if (pending.timer !== null) (this.scheduler ?? this.getScheduler()).clear(pending.timer);
     this.pending.delete(payload.identifier);
     const accepted = payload.code === 'access-accept';
@@ -166,15 +200,45 @@ export class RadiusClientAgent {
       `${this.host.name}: ${pending.username}@${srcIp} → ${accepted ? 'Access-Accept' : 'Access-Reject'}`);
   }
 
-  private armTimeout(server: RadiusServerConfig, pending: PendingRequest, username: string, password: string): void {
+  /** RFC 2865 §4.4: reply to an Access-Challenge with a fresh Access-Request carrying the received State. */
+  private continueChallenge(payload: RadiusPacket, pending: PendingRequest): void {
+    if (pending.timer !== null) (this.scheduler ?? this.getScheduler()).clear(pending.timer);
+    this.pending.delete(pending.identifier);
+
+    const stateAttr = getAttr(payload, 'state');
+    const state = stateAttr ? String(stateAttr.value) : null;
+    const giveUp = (reason: string) => {
+      pending.resolve(false);
+      this.getBus().publish({
+        topic: 'radius.auth.completed',
+        payload: {
+          deviceId: this.host.id, hostname: this.host.getHostname(),
+          serverIp: pending.serverIp, username: pending.username,
+          accepted: false, identifier: payload.identifier, reason,
+        },
+      });
+    };
+    if (!state || pending.challengesLeft <= 0) {
+      giveUp(!state ? 'bad-challenge' : 'too-many-challenges');
+      return;
+    }
+    const server = this.config.servers.find((s) => s.ip === pending.serverIp);
+    if (!server) { giveUp('no-server'); return; }
+    this.beginRequest(
+      server, pending.username, pending.password, pending.authMethod,
+      state, pending.challengesLeft - 1, pending.resolve,
+    );
+  }
+
+  private armTimeout(server: RadiusServerConfig, pending: PendingRequest): void {
     const s = this.getScheduler();
     this.scheduler = s;
     pending.timer = s.setTimeout(() => {
       if (!this.pending.has(pending.identifier)) return;
       if (pending.attemptsLeft > 0) {
         pending.attemptsLeft--;
-        this.transmit(server, pending.identifier, username, password, pending.authenticator);
-        this.armTimeout(server, pending, username, password);
+        this.transmit(server, pending);
+        this.armTimeout(server, pending);
       } else {
         this.pending.delete(pending.identifier);
         pending.resolve(false);
@@ -182,7 +246,7 @@ export class RadiusClientAgent {
           topic: 'radius.auth.completed',
           payload: {
             deviceId: this.host.id, hostname: this.host.getHostname(),
-            serverIp: server.ip, username,
+            serverIp: server.ip, username: pending.username,
             accepted: false, identifier: pending.identifier, reason: 'timeout',
           },
         });
@@ -190,32 +254,34 @@ export class RadiusClientAgent {
     }, server.timeoutMs);
   }
 
-  private transmit(
-    server: RadiusServerConfig, identifier: number, username: string, password: string,
-    authenticator: string,
-  ): void {
+  private transmit(server: RadiusServerConfig, pending: PendingRequest): void {
     const egress = this.resolveEgress(server.ip);
     if (!egress) return;
     const srcIp = egress.port.getIPAddress();
     if (!srcIp) return;
-    const encryptedPassword = encryptUserPassword(password, server.sharedSecret, authenticator);
-    const attrs: RadiusAttribute[] = [
-      attr('user-name', username),
-      attr('user-password', encryptedPassword),
-      attr('nas-ip-address', srcIp.toString()),
-    ];
+    const attrs: RadiusAttribute[] = [attr('user-name', pending.username)];
+    if (pending.authMethod === 'chap') {
+      const challenge = hexToBytes(pending.authenticator);
+      const chapId = pending.identifier & 0xff;
+      attrs.push(attr('chap-password', buildChapPasswordHex(chapId, pending.password, challenge)));
+      attrs.push(attr('chap-challenge', pending.authenticator));
+    } else {
+      attrs.push(attr('user-password', encryptUserPassword(pending.password, server.sharedSecret, pending.authenticator)));
+    }
+    attrs.push(attr('nas-ip-address', srcIp.toString()));
+    if (pending.state) attrs.push(attr('state', pending.state));
     if (this.config.nasIdentifier) attrs.push(attr('nas-identifier', this.config.nasIdentifier));
     let payload: RadiusPacket = {
-      type: 'radius', code: 'access-request', identifier,
-      authenticator,
+      type: 'radius', code: 'access-request', identifier: pending.identifier,
+      authenticator: pending.authenticator,
       attributes: attrs,
     };
-    payload = withMessageAuthenticator(payload, authenticator, server.sharedSecret);
+    payload = withMessageAuthenticator(payload, pending.authenticator, server.sharedSecret);
     const udp: UDPPacket = {
       type: 'udp',
-      sourcePort: 49152 + (identifier & 0x3fff),
+      sourcePort: 49152 + (pending.identifier & 0x3fff),
       destinationPort: server.authPort,
-      length: 20 + 32 + username.length + password.length,
+      length: 20 + 32 + pending.username.length + pending.password.length,
       checksum: 0, payload,
     };
     const ipPkt: IPv4Packet = {
@@ -232,14 +298,19 @@ export class RadiusClientAgent {
       dstMAC: this.host.resolveMac?.(server.ip) ?? MACAddress.broadcast(),
       etherType: ETHERTYPE_IPV4, payload: ipPkt,
     };
-    this.host.sendFrame(egress.name, eth);
+    // Published before the actual send: delivery is synchronous, so a
+    // multi-round exchange (e.g. an Access-Challenge round-trip) can run to
+    // completion *inside* this call — publishing after would report this
+    // request's own "sent" event only once everything it triggered is done.
     this.getBus().publish({
       topic: 'radius.packet.sent',
       payload: {
         deviceId: this.host.id, hostname: this.host.getHostname(),
-        destinationIp: server.ip, code: 'access-request', identifier, username,
+        destinationIp: server.ip, code: 'access-request',
+        identifier: pending.identifier, username: pending.username,
       },
     });
+    this.host.sendFrame(egress.name, eth);
   }
 
   private resolveEgress(targetIp: string): { name: string; port: import('../hardware/Port').Port } | null {

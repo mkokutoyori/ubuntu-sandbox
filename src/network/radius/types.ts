@@ -148,6 +148,8 @@ export interface RadiusUser {
   password: string;
   serviceType?: number;
   replyAttributes?: RadiusAttribute[];
+  /** When set, a first Access-Request is always answered Access-Challenge with this prompt before the real accept/reject (RFC 2865 §4.4). */
+  challenge?: { prompt: string };
 }
 
 export interface RadiusClientConfig {

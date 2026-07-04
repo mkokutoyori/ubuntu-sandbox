@@ -13,15 +13,22 @@ import { attr, getAttr, type RadiusPacket } from './types';
 const ZERO_MESSAGE_AUTHENTICATOR = '00'.repeat(16);
 
 /**
+ * `byteLength` random bytes as a hex string. Simulator-grade randomness —
+ * same class of unpredictability as the project's other transaction
+ * identifiers (DHCP XID, TCP ISN), not a CSPRNG guarantee.
+ */
+export function randomOpaqueToken(byteLength = 16): string {
+  const bytes = new Uint8Array(byteLength);
+  for (let i = 0; i < byteLength; i++) bytes[i] = Math.floor(Math.random() * 256);
+  return bytesToHex(bytes);
+}
+
+/**
  * A fresh, unpredictable 16-byte Request Authenticator for a new
- * Access-Request (RFC 2865 §3: "should be unpredictable"). Simulator-grade
- * randomness — same class of unpredictability as the project's other
- * transaction identifiers (DHCP XID, TCP ISN), not a CSPRNG guarantee.
+ * Access-Request (RFC 2865 §3: "should be unpredictable").
  */
 export function randomRequestAuthenticator(): string {
-  const bytes = new Uint8Array(16);
-  for (let i = 0; i < 16; i++) bytes[i] = Math.floor(Math.random() * 256);
-  return bytesToHex(bytes);
+  return randomOpaqueToken(16);
 }
 
 /**

@@ -1,4 +1,5 @@
 import type { IEventBus } from '@/events/EventBus';
+import { hexToBytes } from '@/crypto/encoding';
 import {
   type RadiusServerAgentConfig, type RadiusPacket, type RadiusUser,
   type RadiusAttribute,
@@ -6,7 +7,11 @@ import {
   decryptUserPassword, isPrintablePassword,
   UDP_PORT_RADIUS_AUTH,
 } from './types';
-import { verifyMessageAuthenticator, withMessageAuthenticator, withResponseAuthenticator } from './authenticators';
+import {
+  verifyMessageAuthenticator, withMessageAuthenticator, withResponseAuthenticator,
+  randomOpaqueToken,
+} from './authenticators';
+import { parseChapPasswordHex, verifyChapResponse } from './passwords';
 import {
   MACAddress, IPAddress,
   type EthernetFrame, type IPv4Packet, type UDPPacket,
@@ -28,12 +33,18 @@ export interface RadiusServerHost {
 
 /** How long a served response is kept for retransmission dedup (RFC 2865 §2). */
 const DEDUP_TTL_MS = 30_000;
+/** How long an issued Access-Challenge's State stays redeemable (RFC 2865 §4.4). */
+const CHALLENGE_TTL_MS = 60_000;
+
+type RejectReason = 'unknown-user' | 'bad-password' | 'bad-secret' | 'client-not-authorized';
 
 export class RadiusServerAgent {
   private config: RadiusServerAgentConfig = createDefaultServerConfig();
   private running = false;
   /** Keyed by client IP:port:identifier:authenticator — replays the exact response instead of re-processing a retransmission. */
   private readonly recentReplies = new Map<string, { response: RadiusPacket; sentAt: number }>();
+  /** Keyed by the opaque State value handed out with an Access-Challenge — redeemed exactly once. */
+  private readonly challenges = new Map<string, { username: string; expiresAt: number }>();
 
   constructor(
     private readonly host: RadiusServerHost,
@@ -49,8 +60,11 @@ export class RadiusServerAgent {
 
   setSharedSecret(secret: string): void { this.config.sharedSecret = secret; }
 
-  addUser(username: string, password: string, attrs: RadiusAttribute[] = []): void {
-    const user: RadiusUser = { username, password, replyAttributes: attrs };
+  addUser(
+    username: string, password: string, attrs: RadiusAttribute[] = [],
+    opts: { challenge?: { prompt: string } } = {},
+  ): void {
+    const user: RadiusUser = { username, password, replyAttributes: attrs, challenge: opts.challenge };
     this.config.users.set(username, user);
   }
 
@@ -97,25 +111,56 @@ export class RadiusServerAgent {
     }
 
     const usernameAttr = getAttr(payload, 'user-name');
-    const passwordAttr = getAttr(payload, 'user-password');
-    if (!usernameAttr || !passwordAttr) {
-      this.publishRejected(senderIp, usernameAttr ? String(usernameAttr.value) : '', 'bad-password');
+    if (!usernameAttr) {
+      this.publishRejected(senderIp, '', 'bad-password');
+      return;
+    }
+    const username = String(usernameAttr.value);
+    const user = this.config.users.get(username);
+
+    // RFC 2865 §4.4: a State means this request is the answer to a challenge
+    // we issued; redeem it before falling through to the normal PAP/CHAP
+    // check below. No State + a challenge-configured user means issue one
+    // instead of deciding accept/reject on this round.
+    const stateAttr = getAttr(payload, 'state');
+    const incomingState = stateAttr ? String(stateAttr.value) : null;
+    if (incomingState) {
+      this.pruneChallenges();
+      const ctx = this.challenges.get(incomingState);
+      this.challenges.delete(incomingState); // one-shot
+      if (!ctx || ctx.username !== username) {
+        this.publishRejected(senderIp, username, 'bad-password');
+        this.reply(inPort, srcIp, udp.sourcePort, payload, false, user, dedupKey);
+        return;
+      }
+    } else if (user?.challenge) {
+      this.issueChallenge(inPort, srcIp, udp.sourcePort, payload, user, dedupKey);
       return;
     }
 
-    const username = String(usernameAttr.value);
-    const encryptedPassword = String(passwordAttr.value);
-    const decrypted = decryptUserPassword(encryptedPassword, this.config.sharedSecret, payload.authenticator);
-    const user = this.config.users.get(username);
-    const secretLooksWrong = !isPrintablePassword(decrypted);
-    const accepted = !secretLooksWrong && !!user && user.password === decrypted;
-
-    if (!accepted) {
-      const reason: 'unknown-user' | 'bad-password' | 'bad-secret' =
-        secretLooksWrong ? 'bad-secret' : !user ? 'unknown-user' : 'bad-password';
-      this.publishRejected(senderIp, username, reason);
+    const chapAttr = getAttr(payload, 'chap-password');
+    const passwordAttr = getAttr(payload, 'user-password');
+    if (!chapAttr && !passwordAttr) {
+      this.publishRejected(senderIp, username, 'bad-password');
+      return;
     }
 
+    let accepted: boolean;
+    let reason: RejectReason;
+    if (chapAttr) {
+      const parsed = parseChapPasswordHex(String(chapAttr.value));
+      const challengeAttr = getAttr(payload, 'chap-challenge');
+      const challenge = challengeAttr ? hexToBytes(String(challengeAttr.value)) : hexToBytes(payload.authenticator);
+      accepted = !!parsed && !!user && verifyChapResponse(parsed.chapIdentifier, parsed.response, user.password, challenge);
+      reason = !user ? 'unknown-user' : 'bad-password';
+    } else {
+      const decrypted = decryptUserPassword(String(passwordAttr!.value), this.config.sharedSecret, payload.authenticator);
+      const secretLooksWrong = !isPrintablePassword(decrypted);
+      accepted = !secretLooksWrong && !!user && user.password === decrypted;
+      reason = secretLooksWrong ? 'bad-secret' : !user ? 'unknown-user' : 'bad-password';
+    }
+
+    if (!accepted) this.publishRejected(senderIp, username, reason);
     this.reply(inPort, srcIp, udp.sourcePort, payload, accepted, user, dedupKey);
   }
 
@@ -126,8 +171,14 @@ export class RadiusServerAgent {
     }
   }
 
-  private publishRejected(fromIp: string, username: string,
-                          reason: 'unknown-user' | 'bad-password' | 'bad-secret' | 'client-not-authorized'): void {
+  private pruneChallenges(): void {
+    const now = Date.now();
+    for (const [key, entry] of this.challenges) {
+      if (entry.expiresAt < now) this.challenges.delete(key);
+    }
+  }
+
+  private publishRejected(fromIp: string, username: string, reason: RejectReason): void {
     this.getBus().publish({
       topic: 'radius.auth.rejected',
       payload: {
@@ -135,6 +186,42 @@ export class RadiusServerAgent {
         fromIp, username, reason,
       },
     });
+  }
+
+  /** RFC 2865 §4.4: answer with Access-Challenge instead of a final decision, and remember the State so the next round can be redeemed. */
+  private issueChallenge(
+    inPort: string, dstIp: IPAddress, clientPort: number, request: RadiusPacket,
+    user: RadiusUser, dedupKey: string,
+  ): void {
+    const port = this.host.getPort(inPort);
+    if (!port) return;
+    const srcIp = port.getIPAddress();
+    if (!srcIp) return;
+    const state = randomOpaqueToken(16);
+    this.challenges.set(state, { username: user.username, expiresAt: Date.now() + CHALLENGE_TTL_MS });
+    let response: RadiusPacket = {
+      type: 'radius', code: 'access-challenge', identifier: request.identifier,
+      authenticator: '00'.repeat(16),
+      attributes: [attr('state', state), attr('reply-message', user.challenge!.prompt)],
+    };
+    response = withMessageAuthenticator(response, request.authenticator, this.config.sharedSecret);
+    response = withResponseAuthenticator(response, request.authenticator, this.config.sharedSecret);
+    this.recentReplies.set(dedupKey, { response, sentAt: Date.now() });
+    // Published before the actual send: delivery is synchronous, so the
+    // client may run the rest of the challenge round-trip to completion
+    // *inside* this call — publishing after would report this challenge's
+    // own "sent" event only once everything it triggered is done.
+    this.getBus().publish({
+      topic: 'radius.packet.sent',
+      payload: {
+        deviceId: this.host.id, hostname: this.host.getHostname(),
+        destinationIp: dstIp.toString(), code: response.code,
+        identifier: response.identifier, username: user.username,
+      },
+    });
+    this.sendRadiusFrame(inPort, port, srcIp, dstIp, clientPort, response);
+    Logger.info(this.host.id, 'radius:challenge',
+      `${this.host.name}: ${dstIp} Access-Challenge for ${user.username}`);
   }
 
   private reply(
@@ -160,7 +247,7 @@ export class RadiusServerAgent {
     response = withMessageAuthenticator(response, request.authenticator, this.config.sharedSecret);
     response = withResponseAuthenticator(response, request.authenticator, this.config.sharedSecret);
     this.recentReplies.set(dedupKey, { response, sentAt: Date.now() });
-    this.sendRadiusFrame(inPort, port, srcIp, dstIp, clientPort, response);
+    // Published before the actual send — see the comment in issueChallenge().
     this.getBus().publish({
       topic: 'radius.packet.sent',
       payload: {
@@ -170,6 +257,7 @@ export class RadiusServerAgent {
         username: user?.username ?? null,
       },
     });
+    this.sendRadiusFrame(inPort, port, srcIp, dstIp, clientPort, response);
     Logger.info(this.host.id, 'radius:reply',
       `${this.host.name}: ${dstIp} ${response.code} for ${user?.username ?? '(unknown)'}`);
   }
