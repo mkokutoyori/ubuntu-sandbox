@@ -30,16 +30,44 @@ export type RadiusAttrType =
   | 'nas-port'
   | 'service-type'
   | 'framed-protocol'
+  | 'framed-ip-address'
+  | 'framed-ip-netmask'
+  | 'framed-mtu'
+  | 'login-ip-host'
   | 'reply-message'
+  | 'callback-number'
   | 'state'
   | 'class'
   | 'vendor-specific'
+  | 'session-timeout'
+  | 'idle-timeout'
+  | 'termination-action'
   | 'called-station-id'
   | 'calling-station-id'
   | 'nas-identifier'
+  | 'proxy-state'
   | 'acct-status-type'
+  | 'acct-delay-time'
+  | 'acct-input-octets'
+  | 'acct-output-octets'
   | 'acct-session-id'
-  | 'message-authenticator';
+  | 'acct-authentic'
+  | 'acct-session-time'
+  | 'acct-input-packets'
+  | 'acct-output-packets'
+  | 'acct-terminate-cause'
+  | 'acct-input-gigawords'
+  | 'acct-output-gigawords'
+  | 'event-timestamp'
+  | 'chap-challenge'
+  | 'nas-port-type'
+  | 'tunnel-type'
+  | 'tunnel-medium-type'
+  | 'eap-message'
+  | 'message-authenticator'
+  | 'tunnel-private-group-id'
+  | 'nas-port-id'
+  | 'framed-pool';
 
 export const RADIUS_ATTR: Record<RadiusAttrType, number> = {
   'user-name': 1,
@@ -49,21 +77,51 @@ export const RADIUS_ATTR: Record<RadiusAttrType, number> = {
   'nas-port': 5,
   'service-type': 6,
   'framed-protocol': 7,
+  'framed-ip-address': 8,
+  'framed-ip-netmask': 9,
+  'framed-mtu': 12,
+  'login-ip-host': 14,
   'reply-message': 18,
+  'callback-number': 19,
   'state': 24,
   'class': 25,
   'vendor-specific': 26,
+  'session-timeout': 27,
+  'idle-timeout': 28,
+  'termination-action': 29,
   'called-station-id': 30,
   'calling-station-id': 31,
   'nas-identifier': 32,
+  'proxy-state': 33,
   'acct-status-type': 40,
+  'acct-delay-time': 41,
+  'acct-input-octets': 42,
+  'acct-output-octets': 43,
   'acct-session-id': 44,
+  'acct-authentic': 45,
+  'acct-session-time': 46,
+  'acct-input-packets': 47,
+  'acct-output-packets': 48,
+  'acct-terminate-cause': 49,
+  'acct-input-gigawords': 52,
+  'acct-output-gigawords': 53,
+  'event-timestamp': 55,
+  'chap-challenge': 60,
+  'nas-port-type': 61,
+  'tunnel-type': 64,
+  'tunnel-medium-type': 65,
+  'eap-message': 79,
   'message-authenticator': 80,
+  'tunnel-private-group-id': 81,
+  'nas-port-id': 87,
+  'framed-pool': 88,
 };
 
 export interface RadiusAttribute {
   type: RadiusAttrType;
   value: string | number;
+  /** Present only on 'vendor-specific' (26): Vendor-Id + sub-attribute Vendor-Type (RFC 2865 §5.26). */
+  vendor?: { id: number; type: number };
 }
 
 export interface RadiusPacket extends NetworkPdu {
@@ -72,6 +130,8 @@ export interface RadiusPacket extends NetworkPdu {
   identifier: number;
   authenticator: string;
   attributes: RadiusAttribute[];
+  /** Wire-format bytes, when produced by/decoded through `codec.ts` — optional, transport doesn't require it. */
+  raw?: Uint8Array;
 }
 
 export interface RadiusServerConfig {
@@ -126,8 +186,17 @@ export function defaultServerEntry(ip: string, sharedSecret: string): RadiusServ
   };
 }
 
-export function attr(type: RadiusAttrType, value: string | number): RadiusAttribute {
-  return { type, value };
+export function attr(
+  type: RadiusAttrType, value: string | number, vendor?: { id: number; type: number },
+): RadiusAttribute {
+  return vendor ? { type, value, vendor } : { type, value };
+}
+
+/** Find a Vendor-Specific (26) attribute by Vendor-Id + sub-attribute Vendor-Type. */
+export function getVsa(pkt: RadiusPacket, vendorId: number, vendorType: number): RadiusAttribute | undefined {
+  return pkt.attributes.find(
+    (a) => a.type === 'vendor-specific' && a.vendor?.id === vendorId && a.vendor?.type === vendorType,
+  );
 }
 
 export function getAttr(pkt: RadiusPacket, type: RadiusAttrType): RadiusAttribute | undefined {
