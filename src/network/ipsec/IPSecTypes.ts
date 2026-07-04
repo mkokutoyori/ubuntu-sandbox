@@ -155,6 +155,10 @@ export interface IKEv2Profile {
   authRemote: string;  // 'pre-share'
   keyringName?: string;
   keyringLocalName?: string;
+  identityLocal?: string;
+  selfIdentity?: string;
+  dpd?: { interval: number; retry: number; mode: string };
+  lifetime?: number;
 }
 
 // ─── IPSec Profile (for GRE over IPSec) ─────────────────────────────
@@ -338,6 +342,20 @@ export interface IKEv2_SA {
   dhGroupUsed: number;
   created: number;
   natT: boolean;
+  /** SA lifetime in seconds (RFC 7296 §2.8) — from the bound profile or the global default. */
+  lifetime: number;
+  dpdEnabled: boolean;
+  dpdIntervalSec?: number;
+  dpdRetries?: number;
+  dpdMode?: string;
+  /** Timestamp of last DPD activity (sent or received) */
+  lastDPDActivity?: number;
+  /** Number of consecutive DPD timeouts */
+  dpdTimeouts?: number;
+  /** Monotonic liveness-check sequence number */
+  dpdSeq?: number;
+  /** True between sending a liveness probe and receiving its ACK */
+  dpdAwaitingAck?: boolean;
 }
 
 // ─── SA Traffic Selectors (RFC 4301 §4.4.2.1) ────────────────────────

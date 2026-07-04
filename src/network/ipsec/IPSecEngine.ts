@@ -543,6 +543,12 @@ export class IPSecEngine implements IProtocolEngine {
   private ikev2Policies: Map<string, IKEv2Policy> = new Map();
   private ikev2Keyrings: Map<string, IKEv2Keyring> = new Map();
   private ikev2Profiles: Map<string, IKEv2Profile> = new Map();
+  private ikev2GlobalDpdInterval?: number;
+  private ikev2GlobalDpdRetry?: number;
+  private ikev2GlobalDpdMode?: string;
+  private ikev2NatKeepalive?: number;
+  private ikev2CookieChallenge?: number;
+  private ikev2WindowSize?: number;
 
   // ── IPSec Profiles (GRE/tunnel protection) ───────────────────────
   private ipsecProfiles: Map<string, IPSecProfile> = new Map();
@@ -1033,16 +1039,17 @@ export class IPSecEngine implements IProtocolEngine {
     }
   }
 
-  private rearmNatTKeepalive(peerIP: string): void {
+  private rearmNatTKeepalive(peerIP: string, version: 1 | 2 = 1): void {
     const existing = this.natKeepaliveTimers.get(peerIP);
     if (existing) {
       this.timers.clear(existing);
       this.natKeepaliveTimers.delete(peerIP);
     }
-    if (this.natKeepaliveInterval <= 0) return;
-    const periodMs = this.natKeepaliveInterval * 1000;
+    const interval = version === 2 ? (this.ikev2NatKeepalive ?? this.natKeepaliveInterval) : this.natKeepaliveInterval;
+    if (interval <= 0) return;
+    const periodMs = interval * 1000;
     const token = this.timers.setInterval(() => {
-      const sa = this.ikeSADB.get(peerIP);
+      const sa = version === 2 ? this.ikev2SADB.get(peerIP) : this.ikeSADB.get(peerIP);
       if (!sa || !sa.natT) {
         this.cancelNatTKeepalive(peerIP);
         return;
@@ -1192,6 +1199,47 @@ export class IPSecEngine implements IProtocolEngine {
       });
     }
     return this.ikev2Profiles.get(name)!;
+  }
+
+  setIkev2GlobalDpd(interval?: number, retry?: number, mode?: string): void {
+    if (interval !== undefined) this.ikev2GlobalDpdInterval = interval;
+    if (retry !== undefined) this.ikev2GlobalDpdRetry = retry;
+    if (mode !== undefined) this.ikev2GlobalDpdMode = mode;
+  }
+
+  setIkev2NatKeepalive(interval: number): void {
+    this.ikev2NatKeepalive = interval;
+    for (const [peerIP, sa] of this.ikev2SADB) {
+      if (sa.natT) this.rearmNatTKeepalive(peerIP, 2);
+    }
+  }
+
+  setIkev2CookieChallenge(threshold: number): void {
+    this.ikev2CookieChallenge = threshold;
+  }
+
+  setIkev2WindowSize(size: number): void {
+    this.ikev2WindowSize = size;
+  }
+
+  /** Resolve the IKEv2 SA lifetime for `entry`: its bound profile's lifetime, else the global default. */
+  private resolveIkev2Lifetime(entry: CryptoMapEntry | null): number {
+    const profile = entry?.ikev2ProfileName ? this.ikev2Profiles.get(entry.ikev2ProfileName) : undefined;
+    return profile?.lifetime ?? this.globalSALifetimeSeconds;
+  }
+
+  /** Resolve the IKEv2 DPD config for `entry`: its bound profile's dpd, else the global `crypto ikev2 dpd`, else disabled. */
+  private resolveIkev2Dpd(entry: CryptoMapEntry | null): { interval: number; retry: number; mode: string } | null {
+    const profile = entry?.ikev2ProfileName ? this.ikev2Profiles.get(entry.ikev2ProfileName) : undefined;
+    if (profile?.dpd) return profile.dpd;
+    if (this.ikev2GlobalDpdInterval !== undefined) {
+      return {
+        interval: this.ikev2GlobalDpdInterval,
+        retry: this.ikev2GlobalDpdRetry ?? 2,
+        mode: this.ikev2GlobalDpdMode ?? 'periodic',
+      };
+    }
+    return null;
   }
 
   getOrCreateIPSecProfile(name: string): IPSecProfile {
@@ -1387,10 +1435,10 @@ export class IPSecEngine implements IProtocolEngine {
     if (!msg || msg.type !== 'isakmp-dpd') return;
 
     if (msg.notify === 'R-U-THERE') {
-      const sa = this.ikeSADB.get(srcIp);
+      const sa = this.ikeSADB.get(srcIp) ?? this.ikev2SADB.get(srcIp);
       if (!sa) return;
       sa.lastDPDActivity = Date.now();
-      if (this.debugIsakmp) {
+      if (this.debugIsakmp || this.debugIkev2) {
         Logger.info(this.deviceRef().deviceId, 'debug:isakmp',
           `ISAKMP: DPD R-U-THERE seq ${msg.seq} from ${srcIp} — sending ACK`);
       }
@@ -1400,7 +1448,7 @@ export class IPSecEngine implements IProtocolEngine {
       return;
     }
 
-    const sa = this.ikeSADB.get(srcIp);
+    const sa = this.ikeSADB.get(srcIp) ?? this.ikev2SADB.get(srcIp);
     if (!sa || !sa.dpdAwaitingAck || sa.dpdSeq !== msg.seq) return;
     sa.dpdAwaitingAck = false;
   }
@@ -1412,26 +1460,98 @@ export class IPSecEngine implements IProtocolEngine {
    */
   runDPDCheck(): string[] {
     const events: string[] = [];
-    if (!this.dpdConfig) return events;
-
     const now = Date.now();
-    const intervalMs = this.dpdConfig.interval * 1000;
 
-    for (const [peerIP, ikeSA] of this.ikeSADB) {
-      if (!ikeSA.dpdEnabled || ikeSA.status !== 'QM_IDLE') continue;
+    if (this.dpdConfig) {
+      const intervalMs = this.dpdConfig.interval * 1000;
 
-      // Initialize DPD tracking on first check
+      for (const [peerIP, ikeSA] of this.ikeSADB) {
+        if (!ikeSA.dpdEnabled || ikeSA.status !== 'QM_IDLE') continue;
+
+        // Initialize DPD tracking on first check
+        if (ikeSA.lastDPDActivity === undefined) {
+          ikeSA.lastDPDActivity = now;
+          ikeSA.dpdTimeouts = 0;
+          continue;
+        }
+
+        // Check if it's time for a DPD probe
+        if (now - ikeSA.lastDPDActivity < intervalMs) continue;
+
+        // In on-demand mode, only probe if there are active IPsec SAs
+        if (this.dpdConfig.mode === 'on-demand') {
+          const sas = this.ipsecSADB.get(peerIP);
+          if (!sas || sas.length === 0) {
+            ikeSA.lastDPDActivity = now;
+            continue;
+          }
+        }
+
+        const seq = (ikeSA.dpdSeq ?? 0) + 1;
+        ikeSA.dpdSeq = seq;
+        ikeSA.dpdAwaitingAck = true;
+        this.router._sendIkeUdp(peerIP, {
+          type: 'isakmp-dpd', notify: 'R-U-THERE', seq,
+        } satisfies IsakmpDpdMessage);
+        if (!ikeSA.dpdAwaitingAck) {
+          ikeSA.lastDPDActivity = now;
+          ikeSA.dpdTimeouts = 0;
+          if (this.debugIsakmp) {
+            Logger.info(this.router.id, 'debug:isakmp',
+              `ISAKMP: DPD R-U-THERE-ACK received from ${peerIP} (seq ${seq})`);
+          }
+          continue;
+        }
+        ikeSA.dpdAwaitingAck = false;
+
+        // Peer unreachable — increment timeout counter
+        ikeSA.dpdTimeouts = (ikeSA.dpdTimeouts || 0) + 1;
+        ikeSA.lastDPDActivity = now;
+
+        // Reactive: announce the DPD probe attempt (telemetry, replay).
+        this.getBus().publish({
+          topic: 'ipsec.dpd.request-sent',
+          payload: { ...this.deviceRef(), peerIp: peerIP, attempt: ikeSA.dpdTimeouts },
+        });
+
+        if (this.debugIsakmp) {
+          Logger.info(this.router.id, 'debug:isakmp',
+            `ISAKMP: DPD R-U-THERE timeout ${ikeSA.dpdTimeouts}/${this.dpdConfig.retries} for peer ${peerIP}`);
+        }
+
+        if (ikeSA.dpdTimeouts >= this.dpdConfig.retries) {
+          events.push(`DPD: peer ${peerIP} declared dead after ${ikeSA.dpdTimeouts} timeouts`);
+          Logger.info(this.router.id, 'ipsec:dpd-dead',
+            `${this.router.name}: DPD declared peer ${peerIP} dead — clearing SAs`);
+          // Reactive: announce peer-down BEFORE clearing SAs so consumers
+          // see the cause-effect chain on the bus.
+          this.getBus().publish({
+            topic: 'ipsec.dpd.peer-down',
+            payload: { ...this.deviceRef(), peerIp: peerIP, retries: ikeSA.dpdTimeouts },
+          });
+          this.clearSAsForPeer(peerIP, 'dpd');
+        }
+      }
+    }
+
+    // IKEv2 liveness check (RFC 7296 §2.4) — same synchronous R-U-THERE
+    // mechanism, but the interval/retries are resolved per-SA (from the
+    // profile or global `crypto ikev2 dpd` at SA-creation time) rather
+    // than one engine-wide config, since different peers may use
+    // different IKEv2 profiles.
+    for (const [peerIP, ikeSA] of this.ikev2SADB) {
+      if (!ikeSA.dpdEnabled || ikeSA.status !== 'READY') continue;
+      const intervalMs = (ikeSA.dpdIntervalSec ?? 10) * 1000;
+      const retries = ikeSA.dpdRetries ?? 2;
+
       if (ikeSA.lastDPDActivity === undefined) {
         ikeSA.lastDPDActivity = now;
         ikeSA.dpdTimeouts = 0;
         continue;
       }
-
-      // Check if it's time for a DPD probe
       if (now - ikeSA.lastDPDActivity < intervalMs) continue;
 
-      // In on-demand mode, only probe if there are active IPsec SAs
-      if (this.dpdConfig.mode === 'on-demand') {
+      if (ikeSA.dpdMode === 'on-demand') {
         const sas = this.ipsecSADB.get(peerIP);
         if (!sas || sas.length === 0) {
           ikeSA.lastDPDActivity = now;
@@ -1448,35 +1568,31 @@ export class IPSecEngine implements IProtocolEngine {
       if (!ikeSA.dpdAwaitingAck) {
         ikeSA.lastDPDActivity = now;
         ikeSA.dpdTimeouts = 0;
-        if (this.debugIsakmp) {
-          Logger.info(this.router.id, 'debug:isakmp',
-            `ISAKMP: DPD R-U-THERE-ACK received from ${peerIP} (seq ${seq})`);
+        if (this.debugIkev2) {
+          Logger.info(this.router.id, 'debug:ikev2',
+            `IKEv2: DPD liveness check ACK received from ${peerIP} (seq ${seq})`);
         }
         continue;
       }
       ikeSA.dpdAwaitingAck = false;
 
-      // Peer unreachable — increment timeout counter
       ikeSA.dpdTimeouts = (ikeSA.dpdTimeouts || 0) + 1;
       ikeSA.lastDPDActivity = now;
 
-      // Reactive: announce the DPD probe attempt (telemetry, replay).
       this.getBus().publish({
         topic: 'ipsec.dpd.request-sent',
         payload: { ...this.deviceRef(), peerIp: peerIP, attempt: ikeSA.dpdTimeouts },
       });
 
-      if (this.debugIsakmp) {
-        Logger.info(this.router.id, 'debug:isakmp',
-          `ISAKMP: DPD R-U-THERE timeout ${ikeSA.dpdTimeouts}/${this.dpdConfig.retries} for peer ${peerIP}`);
+      if (this.debugIkev2) {
+        Logger.info(this.router.id, 'debug:ikev2',
+          `IKEv2: DPD liveness check timeout ${ikeSA.dpdTimeouts}/${retries} for peer ${peerIP}`);
       }
 
-      if (ikeSA.dpdTimeouts >= this.dpdConfig.retries) {
+      if (ikeSA.dpdTimeouts >= retries) {
         events.push(`DPD: peer ${peerIP} declared dead after ${ikeSA.dpdTimeouts} timeouts`);
         Logger.info(this.router.id, 'ipsec:dpd-dead',
           `${this.router.name}: DPD declared peer ${peerIP} dead — clearing SAs`);
-        // Reactive: announce peer-down BEFORE clearing SAs so consumers
-        // see the cause-effect chain on the bus.
         this.getBus().publish({
           topic: 'ipsec.dpd.peer-down',
           payload: { ...this.deviceRef(), peerIp: peerIP, retries: ikeSA.dpdTimeouts },
@@ -1510,6 +1626,19 @@ export class IPSecEngine implements IProtocolEngine {
     for (const peerIP of toRekey) {
       this.rekeyIKESA(peerIP);
     }
+
+    const toRekeyV2: string[] = [];
+    for (const [peerIP, ikev2SA] of this.ikev2SADB) {
+      if (ikev2SA.status !== 'READY') continue;
+      const elapsedSec = Math.floor((now - ikev2SA.created) / 1000);
+      if (elapsedSec >= ikev2SA.lifetime) {
+        toRekeyV2.push(peerIP);
+      }
+    }
+
+    for (const peerIP of toRekeyV2) {
+      this.rekeyIKEv2SA(peerIP);
+    }
   }
 
   private rekeyIKESA(peerIP: string): void {
@@ -1535,6 +1664,30 @@ export class IPSecEngine implements IProtocolEngine {
 
     Logger.info(this.router.id, 'ipsec:rekey-ike',
       `${this.router.name}: IKE SA with ${peerIP} rekeyed successfully`);
+  }
+
+  private rekeyIKEv2SA(peerIP: string): void {
+    const oldSA = this.ikev2SADB.get(peerIP);
+    if (!oldSA) return;
+
+    if (this.debugIkev2) {
+      Logger.info(this.router.id, 'debug:ikev2',
+        `IKEv2: IKE SA with ${peerIP} expired (lifetime ${oldSA.lifetime}s) — rekeying`);
+    }
+
+    const newSA: IKEv2_SA = {
+      ...oldSA,
+      spiLocal: spiHex(randomSPI()),
+      created: Date.now(),
+      lastDPDActivity: Date.now(),
+      dpdTimeouts: 0,
+    };
+    this.ikev2SADB.set(peerIP, newSA);
+
+    this.router._sendIkeUdp(peerIP, { type: 'ike', step: 'rekey' });
+
+    Logger.info(this.router.id, 'ipsec:rekey-ike',
+      `${this.router.name}: IKEv2 SA with ${peerIP} rekeyed successfully`);
   }
 
   // Port link-down handler (DPD simulation)
@@ -3045,11 +3198,20 @@ export class IPSecEngine implements IProtocolEngine {
 
   private refreshIkeSAFromWire(srcIp: string): void {
     const sa = this.ikeSADB.get(srcIp);
-    if (!sa) return;
-    sa.spi = spiHex(randomSPI());
-    sa.created = Date.now();
-    sa.lastDPDActivity = Date.now();
-    sa.dpdTimeouts = 0;
+    if (sa) {
+      sa.spi = spiHex(randomSPI());
+      sa.created = Date.now();
+      sa.lastDPDActivity = Date.now();
+      sa.dpdTimeouts = 0;
+      return;
+    }
+    const v2sa = this.ikev2SADB.get(srcIp);
+    if (v2sa) {
+      v2sa.spiLocal = spiHex(randomSPI());
+      v2sa.created = Date.now();
+      v2sa.lastDPDActivity = Date.now();
+      v2sa.dpdTimeouts = 0;
+    }
   }
 
   private handleGdoiMessage(msg: GdoiMessage): void {
@@ -3178,12 +3340,17 @@ export class IPSecEngine implements IProtocolEngine {
 
     const responderSpi = spiHex(randomSPI());
     if (isV2) {
+      const ikev2Dpd = this.resolveIkev2Dpd(peerEntry);
       this.ikev2SADB.set(srcIp, {
         peerIP: srcIp, localIP, status: 'READY',
         spiLocal: responderSpi, spiRemote: offer.initiatorSpi, role: 'Responder',
         proposalUsed: chosenIkev2!.propName, encryptionUsed: chosenIkev2!.enc,
         integrityUsed: chosenIkev2!.int, dhGroupUsed: chosenIkev2!.grp,
         created: Date.now(), natT,
+        lifetime: this.resolveIkev2Lifetime(peerEntry),
+        dpdEnabled: !!ikev2Dpd,
+        dpdIntervalSec: ikev2Dpd?.interval, dpdRetries: ikev2Dpd?.retry, dpdMode: ikev2Dpd?.mode,
+        lastDPDActivity: Date.now(), dpdTimeouts: 0,
       });
     } else {
       const useAggr = offer.exchangeMode === 'aggressive' || this.aggressiveMode;
@@ -3192,7 +3359,7 @@ export class IPSecEngine implements IProtocolEngine {
         lifetime: ikeLifetime, natT, exchangeMode: useAggr ? 'aggressive' : 'main',
       }));
     }
-    if (natT) this.rearmNatTKeepalive(srcIp);
+    if (natT) this.rearmNatTKeepalive(srcIp, isV2 ? 2 : 1);
     this.getBus().publish({
       topic: 'ipsec.ike.sa-installed',
       payload: { ...this.deviceRef(), peerIp: srcIp, localIp: localIP, version: isV2 ? 2 : 1, lifetimeSec: ikeLifetime },
@@ -3268,12 +3435,17 @@ export class IPSecEngine implements IProtocolEngine {
     this.installIpsecSALocal(srcIp, sa);
 
     if (isV2 && accept.chosenIkev2) {
+      const ikev2Dpd = this.resolveIkev2Dpd(pending.entry);
       this.ikev2SADB.set(srcIp, {
         peerIP: srcIp, localIP: pending.localIP, status: 'READY',
         spiLocal: pending.offer.initiatorSpi, spiRemote: accept.responderSpi, role: 'Initiator',
         proposalUsed: accept.chosenIkev2.propName, encryptionUsed: accept.chosenIkev2.enc,
         integrityUsed: accept.chosenIkev2.int, dhGroupUsed: accept.chosenIkev2.grp,
         created: Date.now(), natT: accept.natT,
+        lifetime: this.resolveIkev2Lifetime(pending.entry),
+        dpdEnabled: !!ikev2Dpd,
+        dpdIntervalSec: ikev2Dpd?.interval, dpdRetries: ikev2Dpd?.retry, dpdMode: ikev2Dpd?.mode,
+        lastDPDActivity: Date.now(), dpdTimeouts: 0,
       });
     } else if (accept.chosenPolicy) {
       this.ikeSADB.set(srcIp, this.buildIkeSAStruct({
@@ -3282,7 +3454,7 @@ export class IPSecEngine implements IProtocolEngine {
         exchangeMode: pending.offer.exchangeMode,
       }));
     }
-    if (accept.natT) this.rearmNatTKeepalive(srcIp);
+    if (accept.natT) this.rearmNatTKeepalive(srcIp, isV2 ? 2 : 1);
     this.getBus().publish({
       topic: 'ipsec.ike.sa-installed',
       payload: { ...this.deviceRef(), peerIp: srcIp, localIp: pending.localIP, version: isV2 ? 2 : 1, lifetimeSec: accept.ikeLifetimeSec },
@@ -3900,6 +4072,10 @@ export class IPSecEngine implements IProtocolEngine {
       extra.push(`  Status     : ${sa.status}`);
       extra.push(`  Auth method: pre-share`);
       if (sa.natT) extra.push(`  NAT-T      : enabled (port 4500)`);
+      extra.push(`  Lifetime: ${sa.lifetime}s, created ${Math.floor((Date.now() - sa.created) / 1000)}s ago`);
+      if (sa.dpdEnabled) {
+        extra.push(`  DPD: enabled, interval ${sa.dpdIntervalSec}s, retries ${sa.dpdRetries}${sa.dpdMode === 'on-demand' ? ' (on-demand)' : ''}`);
+      }
       extra.push(`  Child SA count: ${childCount}`);
     }
     return base + '\n' + extra.join('\n');
