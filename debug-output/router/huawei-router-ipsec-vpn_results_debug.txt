@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — huawei-router-ipsec-vpn
-Generated: 2026-06-12T11:49:24.080Z
+Generated: 2026-07-04T10:48:34.662Z
 Topology: R1(Huawei) GE0/0/1=L1 LAN 192.168.1.0/24, GE0/0/0=WAN 10.0.0.0/30; R2(Huawei) GE0/0/1=W1 LAN 192.168.2.0/24, GE0/0/0=WAN
 focus=VRP IKE/IKEv2/IPsec proposal-policy/profile/GRE-IPsec
 Total steps: 279
@@ -594,13 +594,12 @@ Total steps: 279
   	PFS (Y/N): Y
   	DH group: dh-group19
   	Transform sets={
-  		TP1: { esp-aes 256 esp-sha256-hmac },
   	}
   	Interfaces using crypto map PROF1:
 
 [139/279] r1 <R1> display ipsec profile
   IPsec Profile "PROF1"
-    Transform sets: { : {  } }
+    Transform sets: { TP1: { esp-aes 256 esp-sha256-hmac } }
     Mode: tunnel
 
 [140/279] r1 <R1> display interface Tunnel0/0/0
@@ -701,7 +700,7 @@ Total steps: 279
     Keychain    : KC1
 
 [166/279] r1 <R1> display ikev2 sa
-  Info: No IKEv2 SAs.
+  There are no IKEv2 SAs.
 
 
 --- [167] § crypto reset / debug ---
@@ -721,7 +720,7 @@ Total steps: 279
   Info: IPSec debugging is on.
 
 [172/279] r1 <R1> undo debugging all
-  Info: All debugging turned off.
+  All possible debugging has been turned off
 
 [173/279] r1 <R1> display ike error-info
    Info: No IKE error records.
@@ -848,9 +847,9 @@ Total steps: 279
   #
   ipsec policy PROF1 0 isakmp
    ike-peer PEER1
-   proposal TP1
   #
   ipsec profile PROF1
+   proposal TP1
   #
 
 [178/279] r1 <R1> display saved-configuration
@@ -952,9 +951,9 @@ Total steps: 279
   #
   ipsec policy PROF1 0 isakmp
    ike-peer PEER1
-   proposal TP1
   #
   ipsec profile PROF1
+   proposal TP1
   #
 
 [179/279] r1 <R1> display ip interface brief
@@ -962,19 +961,19 @@ Total steps: 279
   ^down: standby
   (l): loopback
   (s): spoofing
-  The number of interface that is UP in Physical is 0
-  The number of interface that is DOWN in Physical is 0
-  The number of interface that is UP in Protocol is 0
-  The number of interface that is DOWN in Protocol is 0
+  The number of interface that is UP in Physical is 2
+  The number of interface that is DOWN in Physical is 5
+  The number of interface that is UP in Protocol is 2
+  The number of interface that is DOWN in Protocol is 5
   
   Interface                         IP Address/Mask      Physical   Protocol
-  GE0/0/0                           192.168.1.1/24       UP         UP
-  GE0/0/1                           10.0.0.1/30          UP         UP
-  GE0/0/2                           unassigned           DOWN       DOWN
-  GE0/0/3                           unassigned           DOWN       DOWN
-  LoopBack0                         1.1.1.1/32           DOWN       DOWN
-  Tunnel0/0/0                       172.16.0.1/30        DOWN       DOWN
-  Tunnel0/0/1                       172.16.0.5/30        DOWN       DOWN
+  GigabitEthernet0/0/0              192.168.1.1/24       up         up
+  GigabitEthernet0/0/1              10.0.0.1/30          up         up
+  GigabitEthernet0/0/2              unassigned           down       down
+  GigabitEthernet0/0/3              unassigned           down       down
+  LoopBack0                         1.1.1.1/32           down       down
+  Tunnel0/0/0                       172.16.0.1/30        down       down
+  Tunnel0/0/1                       172.16.0.5/30        down       down
 
 [180/279] r1 <R1> display interface
   GE0/0/0 current state : UP
@@ -1082,10 +1081,12 @@ Total steps: 279
   Info: BGP is not running.
 
 [194/279] r1 <R1> display nat session all
-  Info: No NAT session is found.
+  NAT Session Table Information:
+   No active NAT sessions
 
 [195/279] r1 <R1> display nat address-group
-  No NAT address pools configured.
+  NAT Address Group Information:
+   (no address groups configured)
 
 [196/279] r1 <R1> display ip pool
   No DHCP pools configured.
@@ -1168,7 +1169,6 @@ Total steps: 279
   	PFS (Y/N): Y
   	DH group: dh-group19
   	Transform sets={
-  		TP1: { esp-aes 256 esp-sha256-hmac },
   	}
   	Interfaces using crypto map PROF1:
 
@@ -1238,8 +1238,8 @@ Total steps: 279
   No NTP associations
 
 [210/279] r1 <R1> display clock
-  2026-06-12 11:49:24
-  Friday
+  2026-07-04 10:48:34
+  Saturday
   Time Zone(UTC) : UTC
 
 [211/279] r1 <R1> display lldp neighbor
@@ -1251,13 +1251,13 @@ Total steps: 279
 [213/279] r1 <R1> display cpu-usage
   CPU Usage Stat. Cycle: 60 (Second)
   CPU Usage            : 11% Max: 38%
-  CPU Usage Stat. Time : 2026-06-12 11:49:24
+  CPU Usage Stat. Time : 2026-07-04 10:48:34
   CPU utilization for five seconds: 11%: one minute: 12%: five minutes: 10%
   
   Max CPU Usage Stat. Time : 0000-00-00 00:00:00.
 
 [214/279] r1 <R1> display memory-usage
-  Memory utilization statistics at 2026-06-12 11:49:24
+  Memory utilization statistics at 2026-07-04 10:48:34
   System Total Memory Is: 536870912 bytes
   Total Memory Used Is: 193273528 bytes
   Memory Using Percentage Is: 36%
@@ -1475,9 +1475,9 @@ Total steps: 279
   #
   ipsec policy PROF1 0 isakmp
    ike-peer PEER1
-   proposal TP1
   #
   ipsec profile PROF1
+   proposal TP1
   #
 
 [229/279] r1 <R1> display diagnostic-information
@@ -1519,8 +1519,9 @@ Total steps: 279
     38     VTY 4           -        -      0      0            N      -
 
 [235/279] r1 <R1> display port-security
-  Port-security is enabled on the following interfaces:
-   (configuration is recorded per interface; see display this)
+  % Invalid input detected at '^' marker.
+  display port-security
+          ^
 
 
 --- [236] § regression: pipe filters ---
@@ -1623,9 +1624,9 @@ Total steps: 279
   #
   ipsec policy PROF1 0 isakmp
    ike-peer PEER1
-   proposal TP1
   #
   ipsec profile PROF1
+   proposal TP1
   #
 
 [238/279] r1 <R1> display current-configuration | exclude #
@@ -1703,8 +1704,8 @@ Total steps: 279
   ipsec policy DYN1 100 isakmp
   ipsec policy PROF1 0 isakmp
    ike-peer PEER1
-   proposal TP1
   ipsec profile PROF1
+   proposal TP1
 
 [239/279] r1 <R1> display ip routing-table | include Direct
   192.168.1.0/24      Direct  0    0     D     192.168.1.1     GE0/0/0
@@ -1714,10 +1715,10 @@ Total steps: 279
   172.16.0.4/30       Direct  0    0     D     172.16.0.5      Tunnel0/0/1
 
 [240/279] r1 <R1> display ip interface brief | include up
-  The number of interface that is UP in Physical is 0
-  The number of interface that is UP in Protocol is 0
-  GE0/0/0                           192.168.1.1/24       UP         UP
-  GE0/0/1                           10.0.0.1/30          UP         UP
+  The number of interface that is UP in Physical is 2
+  The number of interface that is UP in Protocol is 2
+  GigabitEthernet0/0/0              192.168.1.1/24       up         up
+  GigabitEthernet0/0/1              10.0.0.1/30          up         up
 
 
 --- [241] § regression: view nav + undo ---

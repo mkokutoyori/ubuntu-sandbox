@@ -79,7 +79,7 @@ Total steps: 401
 [23/401] swhq SW-HQ# show vlan
   VLAN Name                             Status    Ports
   ---- -------------------------------- --------- -------------------------------
-  1    default                          active    Fa0/0, Fa0/1, Fa0/2, Fa0/3, Fa0/4, Fa0/5, Fa0/6, Fa0/7, Fa0/8, Fa0/9, Fa0/10, Fa0/11, Fa0/12, Fa0/13, Fa0/14, Fa0/15, Fa0/16, Fa0/17, Fa0/18, Fa0/19, Fa0/20, Fa0/21, Fa0/22, Fa0/23, Gi0/0, Gi0/1
+  1    default                          active    Fa0/1, Fa0/2, Fa0/3, Fa0/4, Fa0/5, Fa0/6, Fa0/7, Fa0/8, Fa0/9, Fa0/10, Fa0/11, Fa0/12, Fa0/13, Fa0/14, Fa0/15, Fa0/16, Fa0/17, Fa0/18, Fa0/19, Fa0/20, Fa0/21, Fa0/22, Fa0/23, Fa0/24, Gi0/1, Gi0/2
 
 [24/401] swhq SW-HQ# enable
 <empty>
@@ -129,7 +129,7 @@ Total steps: 401
 [39/401] swhq SW-HQ# show vlan brief
   VLAN Name                             Status    Ports
   ---- -------------------------------- --------- -------------------------------
-  1    default                          active    Fa0/0, Fa0/1, Fa0/2, Fa0/3, Fa0/4, Fa0/5, Fa0/6, Fa0/7, Fa0/8, Fa0/9, Fa0/10, Fa0/11, Fa0/12, Fa0/13, Fa0/14, Fa0/15, Fa0/16, Fa0/17, Fa0/18, Fa0/19, Fa0/20, Fa0/21, Fa0/22, Fa0/23, Gi0/0, Gi0/1
+  1    default                          active    Fa0/1, Fa0/2, Fa0/3, Fa0/4, Fa0/5, Fa0/6, Fa0/7, Fa0/8, Fa0/9, Fa0/10, Fa0/11, Fa0/12, Fa0/13, Fa0/14, Fa0/15, Fa0/16, Fa0/17, Fa0/18, Fa0/19, Fa0/20, Fa0/21, Fa0/22, Fa0/23, Fa0/24, Gi0/1, Gi0/2
   10   DATA                             active    
   20   VOICE                            active    
   30   MGMT                             active    
@@ -183,7 +183,7 @@ Total steps: 401
 [55/401] dsw1 DSW-HQ-1# show vlan brief
   VLAN Name                             Status    Ports
   ---- -------------------------------- --------- -------------------------------
-  1    default                          active    Fa0/0, Fa0/1, Fa0/2, Fa0/3, Fa0/4, Fa0/5, Fa0/6, Fa0/7, Fa0/8, Fa0/9, Fa0/10, Fa0/11, Fa0/12, Fa0/13, Fa0/14, Fa0/15, Fa0/16, Fa0/17, Fa0/18, Fa0/19, Fa0/20, Fa0/21, Fa0/22, Fa0/23, Gi0/0, Gi0/1
+  1    default                          active    Fa0/1, Fa0/2, Fa0/3, Fa0/4, Fa0/5, Fa0/6, Fa0/7, Fa0/8, Fa0/9, Fa0/10, Fa0/11, Fa0/12, Fa0/13, Fa0/14, Fa0/15, Fa0/16, Fa0/17, Fa0/18, Fa0/19, Fa0/20, Fa0/21, Fa0/22, Fa0/23, Fa0/24, Gi0/1, Gi0/2
   10   DATA                             active    
   20   VOICE                            active    
   30   MGMT                             active    
@@ -237,7 +237,7 @@ Total steps: 401
 [71/401] dsw2 DSW-HQ-2# show vlan brief
   VLAN Name                             Status    Ports
   ---- -------------------------------- --------- -------------------------------
-  1    default                          active    Fa0/0, Fa0/1, Fa0/2, Fa0/3, Fa0/4, Fa0/5, Fa0/6, Fa0/7, Fa0/8, Fa0/9, Fa0/10, Fa0/11, Fa0/12, Fa0/13, Fa0/14, Fa0/15, Fa0/16, Fa0/17, Fa0/18, Fa0/19, Fa0/20, Fa0/21, Fa0/22, Fa0/23, Gi0/0, Gi0/1
+  1    default                          active    Fa0/1, Fa0/2, Fa0/3, Fa0/4, Fa0/5, Fa0/6, Fa0/7, Fa0/8, Fa0/9, Fa0/10, Fa0/11, Fa0/12, Fa0/13, Fa0/14, Fa0/15, Fa0/16, Fa0/17, Fa0/18, Fa0/19, Fa0/20, Fa0/21, Fa0/22, Fa0/23, Fa0/24, Gi0/1, Gi0/2
   10   DATA                             active    
   20   VOICE                            active    
   30   MGMT                             active    
@@ -343,9 +343,9 @@ Total steps: 401
 
 --- [99] § VLAN — switch generic (best-effort) ---
 [99/401] swdc SW-DC> show vlan
-  % Invalid input detected at '^' marker.
-  show vlan
-       ^
+  VLAN Name                             Status    Ports
+  ---- -------------------------------- --------- -------------------------------
+  1    default                          active    eth0, eth1, eth2, eth3, eth4, eth5, eth6, eth7
 
 [100/401] swdc SW-DC> vlan 10
   % Invalid input detected at '^' marker.
@@ -353,16 +353,16 @@ Total steps: 401
   ^
 
 [101/401] swdc SW-DC> show vlan brief
-  % Invalid input detected at '^' marker.
-  show vlan brief
-       ^
+  VLAN Name                             Status    Ports
+  ---- -------------------------------- --------- -------------------------------
+  1    default                          active    eth0, eth1, eth2, eth3, eth4, eth5, eth6, eth7
 
 
 --- [102] § VLAN — inventaire & base de données ---
 [102/401] swhq SW-HQ# show vlan brief
   VLAN Name                             Status    Ports
   ---- -------------------------------- --------- -------------------------------
-  1    default                          active    Fa0/0, Fa0/1, Fa0/2, Fa0/3, Fa0/4, Fa0/5, Fa0/6, Fa0/7, Fa0/8, Fa0/9, Fa0/10, Fa0/11, Fa0/12, Fa0/13, Fa0/14, Fa0/15, Fa0/16, Fa0/17, Fa0/18, Fa0/19, Fa0/20, Fa0/21, Fa0/22, Fa0/23, Gi0/0, Gi0/1
+  1    default                          active    Fa0/1, Fa0/2, Fa0/3, Fa0/4, Fa0/5, Fa0/6, Fa0/7, Fa0/8, Fa0/9, Fa0/10, Fa0/11, Fa0/12, Fa0/13, Fa0/14, Fa0/15, Fa0/16, Fa0/17, Fa0/18, Fa0/19, Fa0/20, Fa0/21, Fa0/22, Fa0/23, Fa0/24, Gi0/1, Gi0/2
   10   DATA                             active    
   20   VOICE                            active    
   30   MGMT                             active    
@@ -379,7 +379,7 @@ Total steps: 401
   10   DATA                             active    
 
 [105/401] swhq SW-HQ# show vtp status
-  VTP Version capable             : 1 to 1
+  VTP Version capable             : 1 to 2
   VTP version running             : 1
   VTP Domain Name                 : <empty>
   VTP Pruning Mode                : Disabled
@@ -409,7 +409,7 @@ Total steps: 401
 [107/401] dsw1 DSW-HQ-1# show vlan brief
   VLAN Name                             Status    Ports
   ---- -------------------------------- --------- -------------------------------
-  1    default                          active    Fa0/0, Fa0/1, Fa0/2, Fa0/3, Fa0/4, Fa0/5, Fa0/6, Fa0/7, Fa0/8, Fa0/9, Fa0/10, Fa0/11, Fa0/12, Fa0/13, Fa0/14, Fa0/15, Fa0/16, Fa0/17, Fa0/18, Fa0/19, Fa0/20, Fa0/21, Fa0/22, Fa0/23, Gi0/0, Gi0/1
+  1    default                          active    Fa0/1, Fa0/2, Fa0/3, Fa0/4, Fa0/5, Fa0/6, Fa0/7, Fa0/8, Fa0/9, Fa0/10, Fa0/11, Fa0/12, Fa0/13, Fa0/14, Fa0/15, Fa0/16, Fa0/17, Fa0/18, Fa0/19, Fa0/20, Fa0/21, Fa0/22, Fa0/23, Fa0/24, Gi0/1, Gi0/2
   10   DATA                             active    
   20   VOICE                            active    
   30   MGMT                             active    
@@ -418,7 +418,7 @@ Total steps: 401
 [108/401] dsw2 DSW-HQ-2# show vlan brief
   VLAN Name                             Status    Ports
   ---- -------------------------------- --------- -------------------------------
-  1    default                          active    Fa0/0, Fa0/1, Fa0/2, Fa0/3, Fa0/4, Fa0/5, Fa0/6, Fa0/7, Fa0/8, Fa0/9, Fa0/10, Fa0/11, Fa0/12, Fa0/13, Fa0/14, Fa0/15, Fa0/16, Fa0/17, Fa0/18, Fa0/19, Fa0/20, Fa0/21, Fa0/22, Fa0/23, Gi0/0, Gi0/1
+  1    default                          active    Fa0/1, Fa0/2, Fa0/3, Fa0/4, Fa0/5, Fa0/6, Fa0/7, Fa0/8, Fa0/9, Fa0/10, Fa0/11, Fa0/12, Fa0/13, Fa0/14, Fa0/15, Fa0/16, Fa0/17, Fa0/18, Fa0/19, Fa0/20, Fa0/21, Fa0/22, Fa0/23, Fa0/24, Gi0/1, Gi0/2
   10   DATA                             active    
   20   VOICE                            active    
   30   MGMT                             active    
@@ -498,39 +498,32 @@ Total steps: 401
 <empty>
 
 [127/401] swhq SW-HQ# show interfaces trunk
-  Port      Mode  Encapsulation  Status   Native vlan
-  FastEthernet0/4on    802.1q         trunking 99
-  FastEthernet0/5on    802.1q         trunking 99
+  Port        Mode             Encapsulation  Status        Native vlan
+  Fa0/4       on               802.1q         trunking      99
+  Fa0/5       on               802.1q         trunking      99
+  
+  Port        Vlans allowed on trunk
+  Fa0/4       1,10,20,30
+  Fa0/5       1,10,20,30
+  
+  Port        Vlans allowed and active in management domain
+  Fa0/4       1,10,20,30
+  Fa0/5       1,10,20,30
+  
+  Port        Vlans in spanning tree forwarding state and not pruned
+  Fa0/4       1,10,20,30
+  Fa0/5       1,10,20,30
 
 [128/401] swhq SW-HQ# show interfaces FastEthernet0/4 switchport
-  Port        Name               Status       Vlan       Duplex  Speed Type
-  ----------  -----------------  -----------  ---------  ------  ----- ----
-  Fa0/0                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/1                          connected    1          a-full  a-100 10/100BaseTX
-  Fa0/2                          connected    1          a-full  a-100 10/100BaseTX
-  Fa0/3                          connected    1          a-full  a-100 10/100BaseTX
-  Fa0/4                          connected    trunk      a-full  a-100 10/100BaseTX
-  Fa0/5                          connected    trunk      a-full  a-100 10/100BaseTX
-  Fa0/6                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/7                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/8                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/9                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/10                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/11                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/12                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/13                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/14                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/15                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/16                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/17                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/18                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/19                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/20                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/21                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/22                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/23                         notconnect   1          a-full  a-100 10/100BaseTX
-  Gi0/0                          notconnect   1          a-full  a-10001000BASE-T
-  Gi0/1                          notconnect   1          a-full  a-10001000BASE-T
+  Name: Fa0/4
+  Switchport: Enabled
+  Administrative Mode: trunk
+  Operational Mode: trunk
+  Administrative Trunking Encapsulation: dot1q
+  Negotiation of Trunking: On
+  Access Mode VLAN: 1 (default)
+  Trunking Native Mode VLAN: 99
+  Trunking VLANs Enabled: 1,10,20,30
 
 [129/401] dsw1 DSW-HQ-1# configure terminal
   Enter configuration commands, one per line.  End with CNTL/Z.
@@ -566,9 +559,21 @@ Total steps: 401
 <empty>
 
 [140/401] dsw1 DSW-HQ-1# show interfaces trunk
-  Port      Mode  Encapsulation  Status   Native vlan
-  FastEthernet0/1on    802.1q         trunking 99
-  FastEthernet0/2on    802.1q         trunking 1
+  Port        Mode             Encapsulation  Status        Native vlan
+  Fa0/1       on               802.1q         trunking      99
+  Fa0/2       on               802.1q         trunking      1
+  
+  Port        Vlans allowed on trunk
+  Fa0/1       1,10,20,30
+  Fa0/2       1-4094
+  
+  Port        Vlans allowed and active in management domain
+  Fa0/1       1,10,20,30
+  Fa0/2       1,10,20,30,99
+  
+  Port        Vlans in spanning tree forwarding state and not pruned
+  Fa0/1       1,10,20,30
+  Fa0/2       1,10,20,30,99
 
 [141/401] dsw2 DSW-HQ-2# configure terminal
   Enter configuration commands, one per line.  End with CNTL/Z.
@@ -604,9 +609,21 @@ Total steps: 401
 <empty>
 
 [152/401] dsw2 DSW-HQ-2# show interfaces trunk
-  Port      Mode  Encapsulation  Status   Native vlan
-  FastEthernet0/1on    802.1q         trunking 99
-  FastEthernet0/2on    802.1q         trunking 1
+  Port        Mode             Encapsulation  Status        Native vlan
+  Fa0/1       on               802.1q         trunking      99
+  Fa0/2       on               802.1q         trunking      1
+  
+  Port        Vlans allowed on trunk
+  Fa0/1       1,10,20,30
+  Fa0/2       1-4094
+  
+  Port        Vlans allowed and active in management domain
+  Fa0/1       1,10,20,30
+  Fa0/2       1,10,20,30,99
+  
+  Port        Vlans in spanning tree forwarding state and not pruned
+  Fa0/1       1,10,20,30
+  Fa0/2       1,10,20,30,99
 
 
 --- [153] § VLAN — trunks 802.1Q inter-switch (Huawei SW-BR↔DSW-BR) ---
@@ -812,12 +829,12 @@ Total steps: 401
 
 [190/401] lbr lbr$ ping -c 2 10.2.2.10
   PING 10.2.2.10 (10.2.2.10) 56(84) bytes of data.
-  64 bytes from 10.2.2.10: icmp_seq=1 ttl=128 time=0.280 ms
-  64 bytes from 10.2.2.10: icmp_seq=2 ttl=128 time=0.348 ms
+  64 bytes from 10.2.2.10: icmp_seq=1 ttl=128 time=0.247 ms
+  64 bytes from 10.2.2.10: icmp_seq=2 ttl=128 time=0.682 ms
   
   --- 10.2.2.10 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.280/0.314/0.348/0.034 ms
+  rtt min/avg/max/mdev = 0.247/0.464/0.682/0.218 ms
 
 
 --- [191] § inter-VLAN routé — router-on-a-stick HQ (Cisco, fonctionnel) ---
@@ -869,7 +886,7 @@ Total steps: 401
 [206/401] swhq SW-HQ# show vlan brief
   VLAN Name                             Status    Ports
   ---- -------------------------------- --------- -------------------------------
-  1    default                          active    Fa0/0, Fa0/6, Fa0/7, Fa0/8, Fa0/9, Fa0/10, Fa0/11, Fa0/12, Fa0/13, Fa0/14, Fa0/15, Fa0/16, Fa0/17, Fa0/18, Fa0/19, Fa0/20, Fa0/21, Fa0/22, Fa0/23, Gi0/0, Gi0/1
+  1    default                          active    Fa0/6, Fa0/7, Fa0/8, Fa0/9, Fa0/10, Fa0/11, Fa0/12, Fa0/13, Fa0/14, Fa0/15, Fa0/16, Fa0/17, Fa0/18, Fa0/19, Fa0/20, Fa0/21, Fa0/22, Fa0/23, Fa0/24, Gi0/1, Gi0/2
   10   DATA                             active    Fa0/2
   20   VOICE                            active    Fa0/3
   30   MGMT                             active    
@@ -896,31 +913,31 @@ Total steps: 401
 [213/401] rhq R-HQ(config)# interface GigabitEthernet0/0.10
 <empty>
 
-[214/401] rhq R-HQ(config-if)# encapsulation dot1Q 10
+[214/401] rhq R-HQ(config-subif)# encapsulation dot1Q 10
 <empty>
 
-[215/401] rhq R-HQ(config-if)# ip address 10.1.1.1 255.255.255.0
+[215/401] rhq R-HQ(config-subif)# ip address 10.1.1.1 255.255.255.0
 <empty>
 
-[216/401] rhq R-HQ(config-if)# no shutdown
+[216/401] rhq R-HQ(config-subif)# no shutdown
 <empty>
 
-[217/401] rhq R-HQ(config-if)# exit
+[217/401] rhq R-HQ(config-subif)# exit
 <empty>
 
 [218/401] rhq R-HQ(config)# interface GigabitEthernet0/0.20
 <empty>
 
-[219/401] rhq R-HQ(config-if)# encapsulation dot1Q 20
+[219/401] rhq R-HQ(config-subif)# encapsulation dot1Q 20
 <empty>
 
-[220/401] rhq R-HQ(config-if)# ip address 10.1.20.1 255.255.255.0
+[220/401] rhq R-HQ(config-subif)# ip address 10.1.20.1 255.255.255.0
 <empty>
 
-[221/401] rhq R-HQ(config-if)# no shutdown
+[221/401] rhq R-HQ(config-subif)# no shutdown
 <empty>
 
-[222/401] rhq R-HQ(config-if)# exit
+[222/401] rhq R-HQ(config-subif)# exit
 <empty>
 
 [223/401] rhq R-HQ(config)# end
@@ -941,7 +958,7 @@ Total steps: 401
 
 --- [226] § inter-VLAN routé — bascule des hôtes & vérification ---
 [226/401] whq whq$ netsh interface ip set address eth0 static 10.1.20.11 255.255.255.0 10.1.20.1
-  Ok.
+<empty>
 
 [227/401] whq whq$ ipconfig
   Windows IP Configuration
@@ -977,31 +994,31 @@ Total steps: 401
 
 [230/401] lhq lhq$ ping -c 2 10.1.1.1
   PING 10.1.1.1 (10.1.1.1) 56(84) bytes of data.
-  64 bytes from 10.1.1.1: icmp_seq=1 ttl=255 time=0.460 ms
-  64 bytes from 10.1.1.1: icmp_seq=2 ttl=255 time=0.309 ms
+  64 bytes from 10.1.1.1: icmp_seq=1 ttl=255 time=0.344 ms
+  64 bytes from 10.1.1.1: icmp_seq=2 ttl=255 time=0.987 ms
   
   --- 10.1.1.1 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.309/0.385/0.460/0.076 ms
+  rtt min/avg/max/mdev = 0.344/0.665/0.987/0.321 ms
 
 [231/401] lhq lhq$ ping -c 2 10.1.20.1
   PING 10.1.20.1 (10.1.20.1) 56(84) bytes of data.
-  64 bytes from 10.1.20.1: icmp_seq=1 ttl=255 time=0.340 ms
-  64 bytes from 10.1.20.1: icmp_seq=2 ttl=255 time=0.190 ms
+  64 bytes from 10.1.20.1: icmp_seq=1 ttl=255 time=0.535 ms
+  64 bytes from 10.1.20.1: icmp_seq=2 ttl=255 time=0.619 ms
   
   --- 10.1.20.1 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.190/0.265/0.340/0.075 ms
+  rtt min/avg/max/mdev = 0.535/0.577/0.619/0.042 ms
 
 [232/401] lhq lhq$ ping -c 3 10.1.20.11
   PING 10.1.20.11 (10.1.20.11) 56(84) bytes of data.
-  64 bytes from 10.1.20.11: icmp_seq=1 ttl=127 time=4.471 ms
-  64 bytes from 10.1.20.11: icmp_seq=2 ttl=127 time=0.640 ms
-  64 bytes from 10.1.20.11: icmp_seq=3 ttl=127 time=0.440 ms
+  64 bytes from 10.1.20.11: icmp_seq=1 ttl=127 time=1.381 ms
+  64 bytes from 10.1.20.11: icmp_seq=2 ttl=127 time=0.893 ms
+  64 bytes from 10.1.20.11: icmp_seq=3 ttl=127 time=0.828 ms
   
   --- 10.1.20.11 ping statistics ---
   3 packets transmitted, 3 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.440/1.850/4.471/1.855 ms
+  rtt min/avg/max/mdev = 0.828/1.034/1.381/0.247 ms
 
 [233/401] whq whq$ ping -n 3 10.1.1.10
   
@@ -1013,7 +1030,7 @@ Total steps: 401
   Ping statistics for 10.1.1.10:
       Packets: Sent = 3, Received = 3, Lost = 0 (0% loss),
   Approximate round trip times in milli-seconds:
-      Minimum = 0ms, Maximum = 0ms, Average = 0ms
+      Minimum = 0ms, Maximum = 1ms, Average = 0ms
 
 [234/401] whq whq$ ping -n 2 10.1.20.1
   
@@ -1028,15 +1045,16 @@ Total steps: 401
 
 [235/401] lhq lhq$ ping -c 2 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
-  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=0.533 ms
-  64 bytes from 10.3.3.10: icmp_seq=2 ttl=62 time=0.478 ms
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=0.569 ms
+  64 bytes from 10.3.3.10: icmp_seq=2 ttl=62 time=1.065 ms
   
   --- 10.3.3.10 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.478/0.505/0.533/0.027 ms
+  rtt min/avg/max/mdev = 0.569/0.817/1.065/0.248 ms
 
 [236/401] rhq R-HQ# show ip route connected
   Codes: C - connected, S - static, R - RIP, O - OSPF, O IA - OSPF inter area
+  
   
   C    172.16.12.0/30 is directly connected, GigabitEthernet0/1
   C    172.16.13.0/30 is directly connected, GigabitEthernet0/2
@@ -1075,34 +1093,15 @@ Total steps: 401
 <empty>
 
 [245/401] swhq SW-HQ(config-if)# do show interfaces FastEthernet0/2 switchport
-  Port        Name               Status       Vlan       Duplex  Speed Type
-  ----------  -----------------  -----------  ---------  ------  ----- ----
-  Fa0/0                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/1                          connected    trunk      a-full  a-100 10/100BaseTX
-  Fa0/2                          connected    10         a-full  a-100 10/100BaseTX
-  Fa0/3                          connected    20         a-full  a-100 10/100BaseTX
-  Fa0/4                          connected    trunk      a-full  a-100 10/100BaseTX
-  Fa0/5                          connected    trunk      a-full  a-100 10/100BaseTX
-  Fa0/6                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/7                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/8                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/9                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/10                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/11                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/12                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/13                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/14                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/15                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/16                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/17                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/18                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/19                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/20                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/21                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/22                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/23                         notconnect   1          a-full  a-100 10/100BaseTX
-  Gi0/0                          notconnect   1          a-full  a-10001000BASE-T
-  Gi0/1                          notconnect   1          a-full  a-10001000BASE-T
+  Name: Fa0/2
+  Switchport: Enabled
+  Administrative Mode: static access
+  Operational Mode: static access
+  Administrative Trunking Encapsulation: dot1q
+  Negotiation of Trunking: Off
+  Access Mode VLAN: 10 (DATA)
+  Trunking Native Mode VLAN: 1 (default)
+  Voice VLAN: 20
 
 [246/401] swhq SW-HQ(config-if)# no switchport voice vlan
 <empty>
@@ -1113,7 +1112,7 @@ Total steps: 401
 
 --- [248] § VLAN — VTP (domaine/mode) ---
 [248/401] swhq SW-HQ# show vtp status
-  VTP Version capable             : 1 to 1
+  VTP Version capable             : 1 to 2
   VTP version running             : 1
   VTP Domain Name                 : <empty>
   VTP Pruning Mode                : Disabled
@@ -1177,7 +1176,7 @@ Total steps: 401
 <empty>
 
 [260/401] dsw1 DSW-HQ-1# show vtp status
-  VTP Version capable             : 1 to 1
+  VTP Version capable             : 1 to 2
   VTP version running             : 1
   VTP Domain Name                 : ACME
   VTP Pruning Mode                : Disabled
@@ -1203,7 +1202,7 @@ Total steps: 401
 <empty>
 
 [264/401] dsw2 DSW-HQ-2# show vtp status
-  VTP Version capable             : 1 to 1
+  VTP Version capable             : 1 to 2
   VTP version running             : 1
   VTP Domain Name                 : ACME
   VTP Pruning Mode                : Disabled
@@ -1222,34 +1221,15 @@ Total steps: 401
 
 --- [265] § VLAN — DTP / négociation de trunk ---
 [265/401] dsw1 DSW-HQ-1# show interfaces FastEthernet0/1 switchport
-  Port        Name               Status       Vlan       Duplex  Speed Type
-  ----------  -----------------  -----------  ---------  ------  ----- ----
-  Fa0/0                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/1                          connected    trunk      a-full  a-100 10/100BaseTX
-  Fa0/2                          connected    trunk      a-full  a-100 10/100BaseTX
-  Fa0/3                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/4                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/5                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/6                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/7                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/8                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/9                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/10                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/11                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/12                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/13                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/14                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/15                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/16                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/17                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/18                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/19                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/20                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/21                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/22                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/23                         notconnect   1          a-full  a-100 10/100BaseTX
-  Gi0/0                          notconnect   1          a-full  a-10001000BASE-T
-  Gi0/1                          notconnect   1          a-full  a-10001000BASE-T
+  Name: Fa0/1
+  Switchport: Enabled
+  Administrative Mode: trunk
+  Operational Mode: trunk
+  Administrative Trunking Encapsulation: dot1q
+  Negotiation of Trunking: On
+  Access Mode VLAN: 1 (default)
+  Trunking Native Mode VLAN: 99
+  Trunking VLANs Enabled: 1,10,20,30
 
 [266/401] dsw1 DSW-HQ-1# configure terminal
   Enter configuration commands, one per line.  End with CNTL/Z.
@@ -1261,34 +1241,15 @@ Total steps: 401
 <empty>
 
 [269/401] dsw1 DSW-HQ-1(config-if)# do show interfaces FastEthernet0/1 switchport
-  Port        Name               Status       Vlan       Duplex  Speed Type
-  ----------  -----------------  -----------  ---------  ------  ----- ----
-  Fa0/0                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/1                          connected    trunk      a-full  a-100 10/100BaseTX
-  Fa0/2                          connected    trunk      a-full  a-100 10/100BaseTX
-  Fa0/3                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/4                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/5                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/6                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/7                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/8                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/9                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/10                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/11                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/12                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/13                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/14                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/15                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/16                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/17                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/18                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/19                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/20                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/21                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/22                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/23                         notconnect   1          a-full  a-100 10/100BaseTX
-  Gi0/0                          notconnect   1          a-full  a-10001000BASE-T
-  Gi0/1                          notconnect   1          a-full  a-10001000BASE-T
+  Name: Fa0/1
+  Switchport: Enabled
+  Administrative Mode: dynamic desirable
+  Operational Mode: trunk
+  Administrative Trunking Encapsulation: dot1q
+  Negotiation of Trunking: On
+  Access Mode VLAN: 1 (default)
+  Trunking Native Mode VLAN: 99
+  Trunking VLANs Enabled: 1,10,20,30
 
 [270/401] dsw1 DSW-HQ-1(config-if)# switchport nonegotiate
 <empty>
@@ -1300,9 +1261,21 @@ Total steps: 401
 <empty>
 
 [273/401] dsw1 DSW-HQ-1# show interfaces trunk
-  Port      Mode  Encapsulation  Status   Native vlan
-  FastEthernet0/1on    802.1q         trunking 99
-  FastEthernet0/2on    802.1q         trunking 1
+  Port        Mode             Encapsulation  Status        Native vlan
+  Fa0/1       on               802.1q         trunking      99
+  Fa0/2       on               802.1q         trunking      1
+  
+  Port        Vlans allowed on trunk
+  Fa0/1       1,10,20,30
+  Fa0/2       1-4094
+  
+  Port        Vlans allowed and active in management domain
+  Fa0/1       1,10,20,30
+  Fa0/2       1,10,20,30,99
+  
+  Port        Vlans in spanning tree forwarding state and not pruned
+  Fa0/1       1,10,20,30
+  Fa0/2       1,10,20,30,99
 
 
 --- [274] § VLAN — élagage / allowed vlan add-remove ---
@@ -1316,34 +1289,15 @@ Total steps: 401
 <empty>
 
 [277/401] swhq SW-HQ(config-if)# do show interfaces FastEthernet0/4 switchport
-  Port        Name               Status       Vlan       Duplex  Speed Type
-  ----------  -----------------  -----------  ---------  ------  ----- ----
-  Fa0/0                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/1                          connected    trunk      a-full  a-100 10/100BaseTX
-  Fa0/2                          connected    10         a-full  a-100 10/100BaseTX
-  Fa0/3                          connected    20         a-full  a-100 10/100BaseTX
-  Fa0/4                          connected    trunk      a-full  a-100 10/100BaseTX
-  Fa0/5                          connected    trunk      a-full  a-100 10/100BaseTX
-  Fa0/6                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/7                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/8                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/9                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/10                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/11                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/12                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/13                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/14                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/15                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/16                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/17                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/18                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/19                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/20                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/21                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/22                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/23                         notconnect   1          a-full  a-100 10/100BaseTX
-  Gi0/0                          notconnect   1          a-full  a-10001000BASE-T
-  Gi0/1                          notconnect   1          a-full  a-10001000BASE-T
+  Name: Fa0/4
+  Switchport: Enabled
+  Administrative Mode: trunk
+  Operational Mode: trunk
+  Administrative Trunking Encapsulation: dot1q
+  Negotiation of Trunking: On
+  Access Mode VLAN: 1 (default)
+  Trunking Native Mode VLAN: 99
+  Trunking VLANs Enabled: 1,10,20
 
 [278/401] swhq SW-HQ(config-if)# switchport trunk allowed vlan add 30
 <empty>
@@ -1388,14 +1342,12 @@ Total steps: 401
   Vlan    Mac Address       Type        Ports
   ----    -----------       --------    -----
   1       02:00:00:00:00:01 DYNAMIC     FastEthernet0/1
-  1       02:00:00:00:00:47 DYNAMIC     FastEthernet0/2
-  1       02:00:00:00:00:4b DYNAMIC     FastEthernet0/3
   10      02:00:00:00:00:47 DYNAMIC     FastEthernet0/2
   10      02:00:00:00:00:ab DYNAMIC     FastEthernet0/1
   20      02:00:00:00:00:4b DYNAMIC     FastEthernet0/3
   20      02:00:00:00:00:ac DYNAMIC     FastEthernet0/1
   
-  Total Mac Addresses for this criterion: 7
+  Total Mac Addresses for this criterion: 5
 
 [289/401] swhq SW-HQ# show mac address-table vlan 10
   Mac Address Table
@@ -1414,14 +1366,12 @@ Total steps: 401
   Vlan    Mac Address       Type        Ports
   ----    -----------       --------    -----
   1       02:00:00:00:00:01 DYNAMIC     FastEthernet0/1
-  1       02:00:00:00:00:47 DYNAMIC     FastEthernet0/2
-  1       02:00:00:00:00:4b DYNAMIC     FastEthernet0/3
   10      02:00:00:00:00:47 DYNAMIC     FastEthernet0/2
   10      02:00:00:00:00:ab DYNAMIC     FastEthernet0/1
   20      02:00:00:00:00:4b DYNAMIC     FastEthernet0/3
   20      02:00:00:00:00:ac DYNAMIC     FastEthernet0/1
   
-  Total Mac Addresses for this criterion: 7
+  Total Mac Addresses for this criterion: 5
 
 [292/401] swbr <SW-BR> display mac-address
   MAC address table of slot 0:
@@ -1429,12 +1379,10 @@ Total steps: 401
   MAC Address    VLAN/VSI   Learned-From   Type
   -------------------------------------------------------------------------------
   02:00:00:00:00:051          GigabitEthernet0/0/1dynamic
-  02:00:00:00:00:531          GigabitEthernet0/0/3dynamic
-  02:00:00:00:00:4f1          GigabitEthernet0/0/2dynamic
   02:00:00:00:00:4f10         GigabitEthernet0/0/2dynamic
   02:00:00:00:00:5310         GigabitEthernet0/0/3dynamic
   -------------------------------------------------------------------------------
-  Total items displayed = 5
+  Total items displayed = 3
 
 [293/401] swbr <SW-BR> display mac-address vlan 10
   MAC address table of slot 0:
@@ -1457,150 +1405,60 @@ Total steps: 401
 [295/401] swhq SW-HQ# show spanning-tree vlan 10
   VLAN0010
     Spanning tree enabled protocol ieee
-    Root ID    Priority    32769
+    Root ID    Priority    32778
                Address     0200.0000.000d
                Cost        0
                This bridge is the root
   
   Interface        Role  Sts  Cost      Prio.Nbr  Type
   ---------------- ----  ---  --------  --------  ----
-  Fa0/0            Disa  FWD  19        128.00    P2p
-  Fa0/1            Desg  FWD  19        128.01    P2p
-  Fa0/2            Desg  FWD  19        128.02    P2p
-  Fa0/3            Desg  FWD  19        128.03    P2p
-  Fa0/4            Desg  FWD  19        128.04    P2p
-  Fa0/5            Desg  FWD  19        128.05    P2p
-  Fa0/6            Disa  FWD  19        128.06    P2p
-  Fa0/7            Disa  FWD  19        128.07    P2p
-  Fa0/8            Disa  FWD  19        128.08    P2p
-  Fa0/9            Disa  FWD  19        128.09    P2p
-  Fa0/10           Disa  FWD  19        128.010   P2p
-  Fa0/11           Disa  FWD  19        128.011   P2p
-  Fa0/12           Disa  FWD  19        128.012   P2p
-  Fa0/13           Disa  FWD  19        128.013   P2p
-  Fa0/14           Disa  FWD  19        128.014   P2p
-  Fa0/15           Disa  FWD  19        128.015   P2p
-  Fa0/16           Disa  FWD  19        128.016   P2p
-  Fa0/17           Disa  FWD  19        128.017   P2p
-  Fa0/18           Disa  FWD  19        128.018   P2p
-  Fa0/19           Disa  FWD  19        128.019   P2p
-  Fa0/20           Disa  FWD  19        128.020   P2p
-  Fa0/21           Disa  FWD  19        128.021   P2p
-  Fa0/22           Disa  FWD  19        128.022   P2p
-  Fa0/23           Disa  FWD  19        128.023   P2p
-  Gi0/0            Disa  FWD  19        128.00    P2p
-  Gi0/1            Disa  FWD  19        128.01    P2p
+  Fa0/1            Disa  DIS  19        128.1     P2p
+  Fa0/2            Disa  DIS  19        128.2     P2p Edge
+  Fa0/4            Disa  DIS  19        128.4     P2p
+  Fa0/5            Disa  DIS  19        128.5     P2p
 
 [296/401] swhq SW-HQ# show spanning-tree vlan 20
   VLAN0020
     Spanning tree enabled protocol ieee
-    Root ID    Priority    32769
+    Root ID    Priority    32788
                Address     0200.0000.000d
                Cost        0
                This bridge is the root
   
   Interface        Role  Sts  Cost      Prio.Nbr  Type
   ---------------- ----  ---  --------  --------  ----
-  Fa0/0            Disa  FWD  19        128.00    P2p
-  Fa0/1            Desg  FWD  19        128.01    P2p
-  Fa0/2            Desg  FWD  19        128.02    P2p
-  Fa0/3            Desg  FWD  19        128.03    P2p
-  Fa0/4            Desg  FWD  19        128.04    P2p
-  Fa0/5            Desg  FWD  19        128.05    P2p
-  Fa0/6            Disa  FWD  19        128.06    P2p
-  Fa0/7            Disa  FWD  19        128.07    P2p
-  Fa0/8            Disa  FWD  19        128.08    P2p
-  Fa0/9            Disa  FWD  19        128.09    P2p
-  Fa0/10           Disa  FWD  19        128.010   P2p
-  Fa0/11           Disa  FWD  19        128.011   P2p
-  Fa0/12           Disa  FWD  19        128.012   P2p
-  Fa0/13           Disa  FWD  19        128.013   P2p
-  Fa0/14           Disa  FWD  19        128.014   P2p
-  Fa0/15           Disa  FWD  19        128.015   P2p
-  Fa0/16           Disa  FWD  19        128.016   P2p
-  Fa0/17           Disa  FWD  19        128.017   P2p
-  Fa0/18           Disa  FWD  19        128.018   P2p
-  Fa0/19           Disa  FWD  19        128.019   P2p
-  Fa0/20           Disa  FWD  19        128.020   P2p
-  Fa0/21           Disa  FWD  19        128.021   P2p
-  Fa0/22           Disa  FWD  19        128.022   P2p
-  Fa0/23           Disa  FWD  19        128.023   P2p
-  Gi0/0            Disa  FWD  19        128.00    P2p
-  Gi0/1            Disa  FWD  19        128.01    P2p
+  Fa0/1            Disa  DIS  19        128.1     P2p
+  Fa0/3            Disa  DIS  19        128.3     P2p
+  Fa0/4            Disa  DIS  19        128.4     P2p
+  Fa0/5            Disa  DIS  19        128.5     P2p
 
 [297/401] swhq SW-HQ# show spanning-tree vlan 10 brief
   VLAN0010
     Spanning tree enabled protocol ieee
-    Root ID    Priority    32769
+    Root ID    Priority    32778
                Address     0200.0000.000d
                Cost        0
                This bridge is the root
   
   Interface        Role  Sts  Cost      Prio.Nbr  Type
   ---------------- ----  ---  --------  --------  ----
-  Fa0/0            Disa  FWD  19        128.00    P2p
-  Fa0/1            Desg  FWD  19        128.01    P2p
-  Fa0/2            Desg  FWD  19        128.02    P2p
-  Fa0/3            Desg  FWD  19        128.03    P2p
-  Fa0/4            Desg  FWD  19        128.04    P2p
-  Fa0/5            Desg  FWD  19        128.05    P2p
-  Fa0/6            Disa  FWD  19        128.06    P2p
-  Fa0/7            Disa  FWD  19        128.07    P2p
-  Fa0/8            Disa  FWD  19        128.08    P2p
-  Fa0/9            Disa  FWD  19        128.09    P2p
-  Fa0/10           Disa  FWD  19        128.010   P2p
-  Fa0/11           Disa  FWD  19        128.011   P2p
-  Fa0/12           Disa  FWD  19        128.012   P2p
-  Fa0/13           Disa  FWD  19        128.013   P2p
-  Fa0/14           Disa  FWD  19        128.014   P2p
-  Fa0/15           Disa  FWD  19        128.015   P2p
-  Fa0/16           Disa  FWD  19        128.016   P2p
-  Fa0/17           Disa  FWD  19        128.017   P2p
-  Fa0/18           Disa  FWD  19        128.018   P2p
-  Fa0/19           Disa  FWD  19        128.019   P2p
-  Fa0/20           Disa  FWD  19        128.020   P2p
-  Fa0/21           Disa  FWD  19        128.021   P2p
-  Fa0/22           Disa  FWD  19        128.022   P2p
-  Fa0/23           Disa  FWD  19        128.023   P2p
-  Gi0/0            Disa  FWD  19        128.00    P2p
-  Gi0/1            Disa  FWD  19        128.01    P2p
+  Fa0/1            Disa  DIS  19        128.1     P2p
+  Fa0/2            Disa  DIS  19        128.2     P2p Edge
+  Fa0/4            Disa  DIS  19        128.4     P2p
+  Fa0/5            Disa  DIS  19        128.5     P2p
 
 [298/401] dsw1 DSW-HQ-1# show spanning-tree vlan 10
   VLAN0010
     Spanning tree enabled protocol ieee
-    Root ID    Priority    32769
+    Root ID    Priority    32778
                Address     0200.0000.000d
-               Cost        200
+               Cost        19
                Port        Fa0/1
   
   Interface        Role  Sts  Cost      Prio.Nbr  Type
   ---------------- ----  ---  --------  --------  ----
-  Fa0/0            Disa  FWD  19        128.00    P2p
-  Fa0/1            Root  FWD  19        128.01    P2p
-  Fa0/2            Desg  FWD  19        128.02    P2p
-  Fa0/3            Disa  FWD  19        128.03    P2p
-  Fa0/4            Disa  FWD  19        128.04    P2p
-  Fa0/5            Disa  FWD  19        128.05    P2p
-  Fa0/6            Disa  FWD  19        128.06    P2p
-  Fa0/7            Disa  FWD  19        128.07    P2p
-  Fa0/8            Disa  FWD  19        128.08    P2p
-  Fa0/9            Disa  FWD  19        128.09    P2p
-  Fa0/10           Disa  FWD  19        128.010   P2p
-  Fa0/11           Disa  FWD  19        128.011   P2p
-  Fa0/12           Disa  FWD  19        128.012   P2p
-  Fa0/13           Disa  FWD  19        128.013   P2p
-  Fa0/14           Disa  FWD  19        128.014   P2p
-  Fa0/15           Disa  FWD  19        128.015   P2p
-  Fa0/16           Disa  FWD  19        128.016   P2p
-  Fa0/17           Disa  FWD  19        128.017   P2p
-  Fa0/18           Disa  FWD  19        128.018   P2p
-  Fa0/19           Disa  FWD  19        128.019   P2p
-  Fa0/20           Disa  FWD  19        128.020   P2p
-  Fa0/21           Disa  FWD  19        128.021   P2p
-  Fa0/22           Disa  FWD  19        128.022   P2p
-  Fa0/23           Disa  FWD  19        128.023   P2p
-  Gi0/0            Disa  FWD  19        128.00    P2p
-  Gi0/1            Disa  FWD  19        128.01    P2p
+  Fa0/1            Root  FWD  19        128.1     P2p
+  Fa0/2            Desg  FWD  19        128.2     P2p
 
 [299/401] swbr <SW-BR> display stp instance 0
    MSTID  Port                        Role  STP State     Protection
@@ -1678,42 +1536,66 @@ Total steps: 401
 [303/401] swhq SW-HQ# show interfaces status
   Port        Name               Status       Vlan       Duplex  Speed Type
   ----------  -----------------  -----------  ---------  ------  ----- ----
-  Fa0/0                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/1                          connected    trunk      a-full  a-100 10/100BaseTX
-  Fa0/2                          connected    10         a-full  a-100 10/100BaseTX
-  Fa0/3                          connected    20         a-full  a-100 10/100BaseTX
-  Fa0/4                          connected    trunk      a-full  a-100 10/100BaseTX
-  Fa0/5                          connected    trunk      a-full  a-100 10/100BaseTX
-  Fa0/6                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/7                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/8                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/9                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/10                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/11                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/12                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/13                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/14                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/15                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/16                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/17                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/18                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/19                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/20                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/21                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/22                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/23                         notconnect   1          a-full  a-100 10/100BaseTX
-  Gi0/0                          notconnect   1          a-full  a-10001000BASE-T
-  Gi0/1                          notconnect   1          a-full  a-10001000BASE-T
+  Fa0/1                          connected    trunk      a-full  a-100  10/100BaseTX
+  Fa0/2                          connected    10         a-full  a-100  10/100BaseTX
+  Fa0/3                          connected    20         a-full  a-100  10/100BaseTX
+  Fa0/4                          connected    trunk      a-full  a-100  10/100BaseTX
+  Fa0/5                          connected    trunk      a-full  a-100  10/100BaseTX
+  Fa0/6                          notconnect   1          a-full  a-100  10/100BaseTX
+  Fa0/7                          notconnect   1          a-full  a-100  10/100BaseTX
+  Fa0/8                          notconnect   1          a-full  a-100  10/100BaseTX
+  Fa0/9                          notconnect   1          a-full  a-100  10/100BaseTX
+  Fa0/10                         notconnect   1          a-full  a-100  10/100BaseTX
+  Fa0/11                         notconnect   1          a-full  a-100  10/100BaseTX
+  Fa0/12                         notconnect   1          a-full  a-100  10/100BaseTX
+  Fa0/13                         notconnect   1          a-full  a-100  10/100BaseTX
+  Fa0/14                         notconnect   1          a-full  a-100  10/100BaseTX
+  Fa0/15                         notconnect   1          a-full  a-100  10/100BaseTX
+  Fa0/16                         notconnect   1          a-full  a-100  10/100BaseTX
+  Fa0/17                         notconnect   1          a-full  a-100  10/100BaseTX
+  Fa0/18                         notconnect   1          a-full  a-100  10/100BaseTX
+  Fa0/19                         notconnect   1          a-full  a-100  10/100BaseTX
+  Fa0/20                         notconnect   1          a-full  a-100  10/100BaseTX
+  Fa0/21                         notconnect   1          a-full  a-100  10/100BaseTX
+  Fa0/22                         notconnect   1          a-full  a-100  10/100BaseTX
+  Fa0/23                         notconnect   1          a-full  a-100  10/100BaseTX
+  Fa0/24                         notconnect   1          a-full  a-100  10/100BaseTX
+  Gi0/1                          notconnect   1          a-full  a-1000 1000BASE-T
+  Gi0/2                          notconnect   1          a-full  a-1000 1000BASE-T
 
 [304/401] dsw1 DSW-HQ-1# show interfaces trunk
-  Port      Mode  Encapsulation  Status   Native vlan
-  FastEthernet0/1on    802.1q         trunking 99
-  FastEthernet0/2on    802.1q         trunking 1
+  Port        Mode             Encapsulation  Status        Native vlan
+  Fa0/1       on               802.1q         trunking      99
+  Fa0/2       on               802.1q         trunking      1
+  
+  Port        Vlans allowed on trunk
+  Fa0/1       1,10,20,30
+  Fa0/2       1-4094
+  
+  Port        Vlans allowed and active in management domain
+  Fa0/1       1,10,20,30
+  Fa0/2       1,10,20,30,99
+  
+  Port        Vlans in spanning tree forwarding state and not pruned
+  Fa0/1       1,10,20,30
+  Fa0/2       1,10,20,30,99
 
 [305/401] dsw2 DSW-HQ-2# show interfaces trunk
-  Port      Mode  Encapsulation  Status   Native vlan
-  FastEthernet0/1on    802.1q         trunking 99
-  FastEthernet0/2on    802.1q         trunking 1
+  Port        Mode             Encapsulation  Status        Native vlan
+  Fa0/1       on               802.1q         trunking      99
+  Fa0/2       on               802.1q         trunking      1
+  
+  Port        Vlans allowed on trunk
+  Fa0/1       1,10,20,30
+  Fa0/2       1-4094
+  
+  Port        Vlans allowed and active in management domain
+  Fa0/1       1,10,20,30
+  Fa0/2       1,10,20,30,99
+  
+  Port        Vlans in spanning tree forwarding state and not pruned
+  Fa0/1       1,10,20,30
+  Fa0/2       1,10,20,30,99
 
 [306/401] swbr <SW-BR> display current-configuration | include vlan
   vlan 10
@@ -1789,7 +1671,7 @@ Total steps: 401
 [309/401] swhq SW-HQ# show vlan brief
   VLAN Name                             Status    Ports
   ---- -------------------------------- --------- -------------------------------
-  1    default                          active    Fa0/0, Fa0/6, Fa0/7, Fa0/8, Fa0/9, Fa0/10, Fa0/11, Fa0/12, Fa0/13, Fa0/14, Fa0/15, Fa0/16, Fa0/17, Fa0/18, Fa0/19, Fa0/20, Fa0/21, Fa0/22, Fa0/23, Gi0/0, Gi0/1
+  1    default                          active    Fa0/6, Fa0/7, Fa0/8, Fa0/9, Fa0/10, Fa0/11, Fa0/12, Fa0/13, Fa0/14, Fa0/15, Fa0/16, Fa0/17, Fa0/18, Fa0/19, Fa0/20, Fa0/21, Fa0/22, Fa0/23, Fa0/24, Gi0/1, Gi0/2
   10   DATA                             active    Fa0/2
   20   VOICE                            active    Fa0/3
   30   MGMT                             active    
@@ -1798,7 +1680,7 @@ Total steps: 401
 [310/401] swhq SW-HQ# show vlan brief
   VLAN Name                             Status    Ports
   ---- -------------------------------- --------- -------------------------------
-  1    default                          active    Fa0/0, Fa0/6, Fa0/7, Fa0/8, Fa0/9, Fa0/10, Fa0/11, Fa0/12, Fa0/13, Fa0/14, Fa0/15, Fa0/16, Fa0/17, Fa0/18, Fa0/19, Fa0/20, Fa0/21, Fa0/22, Fa0/23, Gi0/0, Gi0/1
+  1    default                          active    Fa0/6, Fa0/7, Fa0/8, Fa0/9, Fa0/10, Fa0/11, Fa0/12, Fa0/13, Fa0/14, Fa0/15, Fa0/16, Fa0/17, Fa0/18, Fa0/19, Fa0/20, Fa0/21, Fa0/22, Fa0/23, Fa0/24, Gi0/1, Gi0/2
   10   DATA                             active    Fa0/2
   20   VOICE                            active    Fa0/3
   30   MGMT                             active    
@@ -1815,40 +1697,55 @@ Total steps: 401
   20   VOICE                            active    Fa0/3
 
 [313/401] swhq SW-HQ# show interfaces trunk
-  Port      Mode  Encapsulation  Status   Native vlan
-  FastEthernet0/1on    802.1q         trunking 1
-  FastEthernet0/4on    802.1q         trunking 99
-  FastEthernet0/5on    802.1q         trunking 99
+  Port        Mode             Encapsulation  Status        Native vlan
+  Fa0/1       on               802.1q         trunking      1
+  Fa0/4       on               802.1q         trunking      99
+  Fa0/5       on               802.1q         trunking      99
+  
+  Port        Vlans allowed on trunk
+  Fa0/1       1,10,20,30
+  Fa0/4       1,10,20,30
+  Fa0/5       1,10,20,30
+  
+  Port        Vlans allowed and active in management domain
+  Fa0/1       1,10,20,30
+  Fa0/4       1,10,20,30
+  Fa0/5       1,10,20,30
+  
+  Port        Vlans in spanning tree forwarding state and not pruned
+  Fa0/1       1,10,20,30
+  Fa0/4       1,10,20,30
+  Fa0/5       1,10,20,30
 
 [314/401] swhq SW-HQ# show interfaces status
   Port        Name               Status       Vlan       Duplex  Speed Type
   ----------  -----------------  -----------  ---------  ------  ----- ----
-  Fa0/0                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/1                          connected    trunk      a-full  a-100 10/100BaseTX
-  Fa0/2                          connected    10         a-full  a-100 10/100BaseTX
-  Fa0/3                          connected    20         a-full  a-100 10/100BaseTX
-  Fa0/4                          connected    trunk      a-full  a-100 10/100BaseTX
-  Fa0/5                          connected    trunk      a-full  a-100 10/100BaseTX
-  Fa0/6                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/7                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/8                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/9                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/10                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/11                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/12                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/13                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/14                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/15                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/16                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/17                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/18                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/19                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/20                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/21                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/22                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/23                         notconnect   1          a-full  a-100 10/100BaseTX
-  Gi0/0                          notconnect   1          a-full  a-10001000BASE-T
-  Gi0/1                          notconnect   1          a-full  a-10001000BASE-T
+  Fa0/1                          connected    trunk      a-full  a-100  10/100BaseTX
+  Fa0/2                          connected    10         a-full  a-100  10/100BaseTX
+  Fa0/3                          connected    20         a-full  a-100  10/100BaseTX
+  Fa0/4                          connected    trunk      a-full  a-100  10/100BaseTX
+  Fa0/5                          connected    trunk      a-full  a-100  10/100BaseTX
+  Fa0/6                          notconnect   1          a-full  a-100  10/100BaseTX
+  Fa0/7                          notconnect   1          a-full  a-100  10/100BaseTX
+  Fa0/8                          notconnect   1          a-full  a-100  10/100BaseTX
+  Fa0/9                          notconnect   1          a-full  a-100  10/100BaseTX
+  Fa0/10                         notconnect   1          a-full  a-100  10/100BaseTX
+  Fa0/11                         notconnect   1          a-full  a-100  10/100BaseTX
+  Fa0/12                         notconnect   1          a-full  a-100  10/100BaseTX
+  Fa0/13                         notconnect   1          a-full  a-100  10/100BaseTX
+  Fa0/14                         notconnect   1          a-full  a-100  10/100BaseTX
+  Fa0/15                         notconnect   1          a-full  a-100  10/100BaseTX
+  Fa0/16                         notconnect   1          a-full  a-100  10/100BaseTX
+  Fa0/17                         notconnect   1          a-full  a-100  10/100BaseTX
+  Fa0/18                         notconnect   1          a-full  a-100  10/100BaseTX
+  Fa0/19                         notconnect   1          a-full  a-100  10/100BaseTX
+  Fa0/20                         notconnect   1          a-full  a-100  10/100BaseTX
+  Fa0/21                         notconnect   1          a-full  a-100  10/100BaseTX
+  Fa0/22                         notconnect   1          a-full  a-100  10/100BaseTX
+  Fa0/23                         notconnect   1          a-full  a-100  10/100BaseTX
+  Fa0/24                         notconnect   1          a-full  a-100  10/100BaseTX
+  Gi0/1                          notconnect   1          a-full  a-1000 1000BASE-T
+  Gi0/2                          notconnect   1          a-full  a-1000 1000BASE-T
 
 [315/401] swhq SW-HQ# show mac address-table
   Mac Address Table
@@ -1857,19 +1754,17 @@ Total steps: 401
   Vlan    Mac Address       Type        Ports
   ----    -----------       --------    -----
   1       02:00:00:00:00:01 DYNAMIC     FastEthernet0/1
-  1       02:00:00:00:00:47 DYNAMIC     FastEthernet0/2
-  1       02:00:00:00:00:4b DYNAMIC     FastEthernet0/3
   10      02:00:00:00:00:47 DYNAMIC     FastEthernet0/2
   10      02:00:00:00:00:ab DYNAMIC     FastEthernet0/1
   20      02:00:00:00:00:4b DYNAMIC     FastEthernet0/3
   20      02:00:00:00:00:ac DYNAMIC     FastEthernet0/1
   
-  Total Mac Addresses for this criterion: 7
+  Total Mac Addresses for this criterion: 5
 
 [316/401] dsw1 DSW-HQ-1# show vlan brief
   VLAN Name                             Status    Ports
   ---- -------------------------------- --------- -------------------------------
-  1    default                          active    Fa0/0, Fa0/3, Fa0/4, Fa0/5, Fa0/6, Fa0/7, Fa0/8, Fa0/9, Fa0/10, Fa0/11, Fa0/12, Fa0/13, Fa0/14, Fa0/15, Fa0/16, Fa0/17, Fa0/18, Fa0/19, Fa0/20, Fa0/21, Fa0/22, Fa0/23, Gi0/0, Gi0/1
+  1    default                          active    Fa0/3, Fa0/4, Fa0/5, Fa0/6, Fa0/7, Fa0/8, Fa0/9, Fa0/10, Fa0/11, Fa0/12, Fa0/13, Fa0/14, Fa0/15, Fa0/16, Fa0/17, Fa0/18, Fa0/19, Fa0/20, Fa0/21, Fa0/22, Fa0/23, Fa0/24, Gi0/1, Gi0/2
   10   DATA                             active    
   20   VOICE                            active    
   30   MGMT                             active    
@@ -1886,39 +1781,51 @@ Total steps: 401
   20   VOICE                            active    
 
 [319/401] dsw1 DSW-HQ-1# show interfaces trunk
-  Port      Mode  Encapsulation  Status   Native vlan
-  FastEthernet0/1on    802.1q         trunking 99
-  FastEthernet0/2on    802.1q         trunking 1
+  Port        Mode             Encapsulation  Status        Native vlan
+  Fa0/1       on               802.1q         trunking      99
+  Fa0/2       on               802.1q         trunking      1
+  
+  Port        Vlans allowed on trunk
+  Fa0/1       1,10,20,30
+  Fa0/2       1-4094
+  
+  Port        Vlans allowed and active in management domain
+  Fa0/1       1,10,20,30
+  Fa0/2       1,10,20,30,99
+  
+  Port        Vlans in spanning tree forwarding state and not pruned
+  Fa0/1       1,10,20,30
+  Fa0/2       1,10,20,30,99
 
 [320/401] dsw1 DSW-HQ-1# show interfaces status
   Port        Name               Status       Vlan       Duplex  Speed Type
   ----------  -----------------  -----------  ---------  ------  ----- ----
-  Fa0/0                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/1                          connected    trunk      a-full  a-100 10/100BaseTX
-  Fa0/2                          connected    trunk      a-full  a-100 10/100BaseTX
-  Fa0/3                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/4                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/5                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/6                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/7                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/8                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/9                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/10                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/11                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/12                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/13                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/14                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/15                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/16                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/17                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/18                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/19                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/20                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/21                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/22                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/23                         notconnect   1          a-full  a-100 10/100BaseTX
-  Gi0/0                          notconnect   1          a-full  a-10001000BASE-T
-  Gi0/1                          notconnect   1          a-full  a-10001000BASE-T
+  Fa0/1                          connected    trunk      a-full  a-100  10/100BaseTX
+  Fa0/2                          connected    trunk      a-full  a-100  10/100BaseTX
+  Fa0/3                          notconnect   1          a-full  a-100  10/100BaseTX
+  Fa0/4                          notconnect   1          a-full  a-100  10/100BaseTX
+  Fa0/5                          notconnect   1          a-full  a-100  10/100BaseTX
+  Fa0/6                          notconnect   1          a-full  a-100  10/100BaseTX
+  Fa0/7                          notconnect   1          a-full  a-100  10/100BaseTX
+  Fa0/8                          notconnect   1          a-full  a-100  10/100BaseTX
+  Fa0/9                          notconnect   1          a-full  a-100  10/100BaseTX
+  Fa0/10                         notconnect   1          a-full  a-100  10/100BaseTX
+  Fa0/11                         notconnect   1          a-full  a-100  10/100BaseTX
+  Fa0/12                         notconnect   1          a-full  a-100  10/100BaseTX
+  Fa0/13                         notconnect   1          a-full  a-100  10/100BaseTX
+  Fa0/14                         notconnect   1          a-full  a-100  10/100BaseTX
+  Fa0/15                         notconnect   1          a-full  a-100  10/100BaseTX
+  Fa0/16                         notconnect   1          a-full  a-100  10/100BaseTX
+  Fa0/17                         notconnect   1          a-full  a-100  10/100BaseTX
+  Fa0/18                         notconnect   1          a-full  a-100  10/100BaseTX
+  Fa0/19                         notconnect   1          a-full  a-100  10/100BaseTX
+  Fa0/20                         notconnect   1          a-full  a-100  10/100BaseTX
+  Fa0/21                         notconnect   1          a-full  a-100  10/100BaseTX
+  Fa0/22                         notconnect   1          a-full  a-100  10/100BaseTX
+  Fa0/23                         notconnect   1          a-full  a-100  10/100BaseTX
+  Fa0/24                         notconnect   1          a-full  a-100  10/100BaseTX
+  Gi0/1                          notconnect   1          a-full  a-1000 1000BASE-T
+  Gi0/2                          notconnect   1          a-full  a-1000 1000BASE-T
 
 [321/401] dsw1 DSW-HQ-1# show mac address-table
   Mac Address Table
@@ -1939,7 +1846,7 @@ Total steps: 401
 [322/401] dsw2 DSW-HQ-2# show vlan brief
   VLAN Name                             Status    Ports
   ---- -------------------------------- --------- -------------------------------
-  1    default                          active    Fa0/0, Fa0/3, Fa0/4, Fa0/5, Fa0/6, Fa0/7, Fa0/8, Fa0/9, Fa0/10, Fa0/11, Fa0/12, Fa0/13, Fa0/14, Fa0/15, Fa0/16, Fa0/17, Fa0/18, Fa0/19, Fa0/20, Fa0/21, Fa0/22, Fa0/23, Gi0/0, Gi0/1
+  1    default                          active    Fa0/3, Fa0/4, Fa0/5, Fa0/6, Fa0/7, Fa0/8, Fa0/9, Fa0/10, Fa0/11, Fa0/12, Fa0/13, Fa0/14, Fa0/15, Fa0/16, Fa0/17, Fa0/18, Fa0/19, Fa0/20, Fa0/21, Fa0/22, Fa0/23, Fa0/24, Gi0/1, Gi0/2
   10   DATA                             active    
   20   VOICE                            active    
   30   MGMT                             active    
@@ -1956,39 +1863,51 @@ Total steps: 401
   20   VOICE                            active    
 
 [325/401] dsw2 DSW-HQ-2# show interfaces trunk
-  Port      Mode  Encapsulation  Status   Native vlan
-  FastEthernet0/1on    802.1q         trunking 99
-  FastEthernet0/2on    802.1q         trunking 1
+  Port        Mode             Encapsulation  Status        Native vlan
+  Fa0/1       on               802.1q         trunking      99
+  Fa0/2       on               802.1q         trunking      1
+  
+  Port        Vlans allowed on trunk
+  Fa0/1       1,10,20,30
+  Fa0/2       1-4094
+  
+  Port        Vlans allowed and active in management domain
+  Fa0/1       1,10,20,30
+  Fa0/2       1,10,20,30,99
+  
+  Port        Vlans in spanning tree forwarding state and not pruned
+  Fa0/1       1,10,20,30
+  Fa0/2       1,10,20,30,99
 
 [326/401] dsw2 DSW-HQ-2# show interfaces status
   Port        Name               Status       Vlan       Duplex  Speed Type
   ----------  -----------------  -----------  ---------  ------  ----- ----
-  Fa0/0                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/1                          connected    trunk      a-full  a-100 10/100BaseTX
-  Fa0/2                          connected    trunk      a-full  a-100 10/100BaseTX
-  Fa0/3                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/4                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/5                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/6                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/7                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/8                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/9                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/10                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/11                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/12                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/13                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/14                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/15                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/16                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/17                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/18                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/19                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/20                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/21                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/22                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/23                         notconnect   1          a-full  a-100 10/100BaseTX
-  Gi0/0                          notconnect   1          a-full  a-10001000BASE-T
-  Gi0/1                          notconnect   1          a-full  a-10001000BASE-T
+  Fa0/1                          connected    trunk      a-full  a-100  10/100BaseTX
+  Fa0/2                          connected    trunk      a-full  a-100  10/100BaseTX
+  Fa0/3                          notconnect   1          a-full  a-100  10/100BaseTX
+  Fa0/4                          notconnect   1          a-full  a-100  10/100BaseTX
+  Fa0/5                          notconnect   1          a-full  a-100  10/100BaseTX
+  Fa0/6                          notconnect   1          a-full  a-100  10/100BaseTX
+  Fa0/7                          notconnect   1          a-full  a-100  10/100BaseTX
+  Fa0/8                          notconnect   1          a-full  a-100  10/100BaseTX
+  Fa0/9                          notconnect   1          a-full  a-100  10/100BaseTX
+  Fa0/10                         notconnect   1          a-full  a-100  10/100BaseTX
+  Fa0/11                         notconnect   1          a-full  a-100  10/100BaseTX
+  Fa0/12                         notconnect   1          a-full  a-100  10/100BaseTX
+  Fa0/13                         notconnect   1          a-full  a-100  10/100BaseTX
+  Fa0/14                         notconnect   1          a-full  a-100  10/100BaseTX
+  Fa0/15                         notconnect   1          a-full  a-100  10/100BaseTX
+  Fa0/16                         notconnect   1          a-full  a-100  10/100BaseTX
+  Fa0/17                         notconnect   1          a-full  a-100  10/100BaseTX
+  Fa0/18                         notconnect   1          a-full  a-100  10/100BaseTX
+  Fa0/19                         notconnect   1          a-full  a-100  10/100BaseTX
+  Fa0/20                         notconnect   1          a-full  a-100  10/100BaseTX
+  Fa0/21                         notconnect   1          a-full  a-100  10/100BaseTX
+  Fa0/22                         notconnect   1          a-full  a-100  10/100BaseTX
+  Fa0/23                         notconnect   1          a-full  a-100  10/100BaseTX
+  Fa0/24                         notconnect   1          a-full  a-100  10/100BaseTX
+  Gi0/1                          notconnect   1          a-full  a-1000 1000BASE-T
+  Gi0/2                          notconnect   1          a-full  a-1000 1000BASE-T
 
 [327/401] dsw2 DSW-HQ-2# show mac address-table
   Mac Address Table
@@ -2067,12 +1986,10 @@ Total steps: 401
   MAC Address    VLAN/VSI   Learned-From   Type
   -------------------------------------------------------------------------------
   02:00:00:00:00:051          GigabitEthernet0/0/1dynamic
-  02:00:00:00:00:531          GigabitEthernet0/0/3dynamic
-  02:00:00:00:00:4f1          GigabitEthernet0/0/2dynamic
   02:00:00:00:00:4f10         GigabitEthernet0/0/2dynamic
   02:00:00:00:00:5310         GigabitEthernet0/0/3dynamic
   -------------------------------------------------------------------------------
-  Total items displayed = 5
+  Total items displayed = 3
 
 [334/401] dswbr <DSW-BR> display vlan
   VLAN ID  Name                          Status   Ports
@@ -2144,19 +2061,19 @@ Total steps: 401
 
 [340/401] lbr lbr$ ping -c 1 10.2.2.10
   PING 10.2.2.10 (10.2.2.10) 56(84) bytes of data.
-  64 bytes from 10.2.2.10: icmp_seq=1 ttl=128 time=0.259 ms
+  64 bytes from 10.2.2.10: icmp_seq=1 ttl=128 time=0.295 ms
   
   --- 10.2.2.10 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.259/0.259/0.259/0.000 ms
+  rtt min/avg/max/mdev = 0.295/0.295/0.295/0.000 ms
 
 [341/401] lhq lhq$ ping -c 1 10.1.20.11
   PING 10.1.20.11 (10.1.20.11) 56(84) bytes of data.
-  64 bytes from 10.1.20.11: icmp_seq=1 ttl=127 time=0.537 ms
+  64 bytes from 10.1.20.11: icmp_seq=1 ttl=127 time=0.398 ms
   
   --- 10.1.20.11 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.537/0.537/0.537/0.000 ms
+  rtt min/avg/max/mdev = 0.398/0.398/0.398/0.000 ms
 
 [342/401] whq whq$ ping -n 1 10.1.1.10
   
@@ -2192,154 +2109,57 @@ Total steps: 401
 
 --- [347] § VLAN — récapitulatif config trunk/access ---
 [347/401] swhq SW-HQ# show interfaces FastEthernet0/2 switchport
-  Port        Name               Status       Vlan       Duplex  Speed Type
-  ----------  -----------------  -----------  ---------  ------  ----- ----
-  Fa0/0                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/1                          connected    trunk      a-full  a-100 10/100BaseTX
-  Fa0/2                          connected    10         a-full  a-100 10/100BaseTX
-  Fa0/3                          connected    20         a-full  a-100 10/100BaseTX
-  Fa0/4                          connected    trunk      a-full  a-100 10/100BaseTX
-  Fa0/5                          connected    trunk      a-full  a-100 10/100BaseTX
-  Fa0/6                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/7                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/8                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/9                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/10                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/11                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/12                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/13                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/14                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/15                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/16                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/17                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/18                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/19                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/20                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/21                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/22                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/23                         notconnect   1          a-full  a-100 10/100BaseTX
-  Gi0/0                          notconnect   1          a-full  a-10001000BASE-T
-  Gi0/1                          notconnect   1          a-full  a-10001000BASE-T
+  Name: Fa0/2
+  Switchport: Enabled
+  Administrative Mode: static access
+  Operational Mode: static access
+  Administrative Trunking Encapsulation: dot1q
+  Negotiation of Trunking: Off
+  Access Mode VLAN: 10 (DATA)
+  Trunking Native Mode VLAN: 1 (default)
 
 [348/401] swhq SW-HQ# show interfaces FastEthernet0/3 switchport
-  Port        Name               Status       Vlan       Duplex  Speed Type
-  ----------  -----------------  -----------  ---------  ------  ----- ----
-  Fa0/0                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/1                          connected    trunk      a-full  a-100 10/100BaseTX
-  Fa0/2                          connected    10         a-full  a-100 10/100BaseTX
-  Fa0/3                          connected    20         a-full  a-100 10/100BaseTX
-  Fa0/4                          connected    trunk      a-full  a-100 10/100BaseTX
-  Fa0/5                          connected    trunk      a-full  a-100 10/100BaseTX
-  Fa0/6                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/7                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/8                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/9                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/10                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/11                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/12                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/13                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/14                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/15                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/16                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/17                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/18                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/19                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/20                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/21                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/22                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/23                         notconnect   1          a-full  a-100 10/100BaseTX
-  Gi0/0                          notconnect   1          a-full  a-10001000BASE-T
-  Gi0/1                          notconnect   1          a-full  a-10001000BASE-T
+  Name: Fa0/3
+  Switchport: Enabled
+  Administrative Mode: static access
+  Operational Mode: static access
+  Administrative Trunking Encapsulation: dot1q
+  Negotiation of Trunking: Off
+  Access Mode VLAN: 20 (VOICE)
+  Trunking Native Mode VLAN: 1 (default)
 
 [349/401] swhq SW-HQ# show interfaces FastEthernet0/1 switchport
-  Port        Name               Status       Vlan       Duplex  Speed Type
-  ----------  -----------------  -----------  ---------  ------  ----- ----
-  Fa0/0                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/1                          connected    trunk      a-full  a-100 10/100BaseTX
-  Fa0/2                          connected    10         a-full  a-100 10/100BaseTX
-  Fa0/3                          connected    20         a-full  a-100 10/100BaseTX
-  Fa0/4                          connected    trunk      a-full  a-100 10/100BaseTX
-  Fa0/5                          connected    trunk      a-full  a-100 10/100BaseTX
-  Fa0/6                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/7                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/8                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/9                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/10                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/11                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/12                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/13                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/14                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/15                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/16                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/17                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/18                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/19                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/20                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/21                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/22                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/23                         notconnect   1          a-full  a-100 10/100BaseTX
-  Gi0/0                          notconnect   1          a-full  a-10001000BASE-T
-  Gi0/1                          notconnect   1          a-full  a-10001000BASE-T
+  Name: Fa0/1
+  Switchport: Enabled
+  Administrative Mode: trunk
+  Operational Mode: trunk
+  Administrative Trunking Encapsulation: dot1q
+  Negotiation of Trunking: On
+  Access Mode VLAN: 1 (default)
+  Trunking Native Mode VLAN: 1 (default)
+  Trunking VLANs Enabled: 1,10,20,30
 
 [350/401] swhq SW-HQ# show interfaces FastEthernet0/4 switchport
-  Port        Name               Status       Vlan       Duplex  Speed Type
-  ----------  -----------------  -----------  ---------  ------  ----- ----
-  Fa0/0                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/1                          connected    trunk      a-full  a-100 10/100BaseTX
-  Fa0/2                          connected    10         a-full  a-100 10/100BaseTX
-  Fa0/3                          connected    20         a-full  a-100 10/100BaseTX
-  Fa0/4                          connected    trunk      a-full  a-100 10/100BaseTX
-  Fa0/5                          connected    trunk      a-full  a-100 10/100BaseTX
-  Fa0/6                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/7                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/8                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/9                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/10                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/11                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/12                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/13                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/14                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/15                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/16                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/17                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/18                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/19                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/20                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/21                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/22                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/23                         notconnect   1          a-full  a-100 10/100BaseTX
-  Gi0/0                          notconnect   1          a-full  a-10001000BASE-T
-  Gi0/1                          notconnect   1          a-full  a-10001000BASE-T
+  Name: Fa0/4
+  Switchport: Enabled
+  Administrative Mode: trunk
+  Operational Mode: trunk
+  Administrative Trunking Encapsulation: dot1q
+  Negotiation of Trunking: On
+  Access Mode VLAN: 1 (default)
+  Trunking Native Mode VLAN: 99
+  Trunking VLANs Enabled: 1,10,20,30
 
 [351/401] dsw1 DSW-HQ-1# show interfaces FastEthernet0/1 switchport
-  Port        Name               Status       Vlan       Duplex  Speed Type
-  ----------  -----------------  -----------  ---------  ------  ----- ----
-  Fa0/0                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/1                          connected    trunk      a-full  a-100 10/100BaseTX
-  Fa0/2                          connected    trunk      a-full  a-100 10/100BaseTX
-  Fa0/3                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/4                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/5                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/6                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/7                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/8                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/9                          notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/10                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/11                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/12                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/13                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/14                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/15                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/16                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/17                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/18                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/19                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/20                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/21                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/22                         notconnect   1          a-full  a-100 10/100BaseTX
-  Fa0/23                         notconnect   1          a-full  a-100 10/100BaseTX
-  Gi0/0                          notconnect   1          a-full  a-10001000BASE-T
-  Gi0/1                          notconnect   1          a-full  a-10001000BASE-T
+  Name: Fa0/1
+  Switchport: Enabled
+  Administrative Mode: trunk
+  Operational Mode: trunk
+  Administrative Trunking Encapsulation: dot1q
+  Negotiation of Trunking: On
+  Access Mode VLAN: 1 (default)
+  Trunking Native Mode VLAN: 99
+  Trunking VLANs Enabled: 1,10,20,30
 
 [352/401] swbr <SW-BR> display interface GigabitEthernet0/0/2
   GigabitEthernet0/0/2 current state : UP
@@ -2373,7 +2193,7 @@ Total steps: 401
 [355/401] swhq SW-HQ# show vlan brief
   VLAN Name                             Status    Ports
   ---- -------------------------------- --------- -------------------------------
-  1    default                          active    Fa0/0, Fa0/6, Fa0/7, Fa0/8, Fa0/9, Fa0/10, Fa0/11, Fa0/12, Fa0/13, Fa0/14, Fa0/15, Fa0/16, Fa0/17, Fa0/18, Fa0/19, Fa0/20, Fa0/21, Fa0/22, Fa0/23, Gi0/0, Gi0/1
+  1    default                          active    Fa0/6, Fa0/7, Fa0/8, Fa0/9, Fa0/10, Fa0/11, Fa0/12, Fa0/13, Fa0/14, Fa0/15, Fa0/16, Fa0/17, Fa0/18, Fa0/19, Fa0/20, Fa0/21, Fa0/22, Fa0/23, Fa0/24, Gi0/1, Gi0/2
   10   DATA                             active    Fa0/2
   20   VOICE                            active    Fa0/3
   30   MGMT                             active    
@@ -2390,24 +2210,51 @@ Total steps: 401
   10   DATA                             active    Fa0/2
 
 [358/401] swhq SW-HQ# show interfaces trunk
-  Port      Mode  Encapsulation  Status   Native vlan
-  FastEthernet0/1on    802.1q         trunking 1
-  FastEthernet0/4on    802.1q         trunking 99
-  FastEthernet0/5on    802.1q         trunking 99
+  Port        Mode             Encapsulation  Status        Native vlan
+  Fa0/1       on               802.1q         trunking      1
+  Fa0/4       on               802.1q         trunking      99
+  Fa0/5       on               802.1q         trunking      99
+  
+  Port        Vlans allowed on trunk
+  Fa0/1       1,10,20,30
+  Fa0/4       1,10,20,30
+  Fa0/5       1,10,20,30
+  
+  Port        Vlans allowed and active in management domain
+  Fa0/1       1,10,20,30
+  Fa0/4       1,10,20,30
+  Fa0/5       1,10,20,30
+  
+  Port        Vlans in spanning tree forwarding state and not pruned
+  Fa0/1       1,10,20,30
+  Fa0/4       1,10,20,30
+  Fa0/5       1,10,20,30
 
 [359/401] dsw1 DSW-HQ-1# show vlan brief
   VLAN Name                             Status    Ports
   ---- -------------------------------- --------- -------------------------------
-  1    default                          active    Fa0/0, Fa0/3, Fa0/4, Fa0/5, Fa0/6, Fa0/7, Fa0/8, Fa0/9, Fa0/10, Fa0/11, Fa0/12, Fa0/13, Fa0/14, Fa0/15, Fa0/16, Fa0/17, Fa0/18, Fa0/19, Fa0/20, Fa0/21, Fa0/22, Fa0/23, Gi0/0, Gi0/1
+  1    default                          active    Fa0/3, Fa0/4, Fa0/5, Fa0/6, Fa0/7, Fa0/8, Fa0/9, Fa0/10, Fa0/11, Fa0/12, Fa0/13, Fa0/14, Fa0/15, Fa0/16, Fa0/17, Fa0/18, Fa0/19, Fa0/20, Fa0/21, Fa0/22, Fa0/23, Fa0/24, Gi0/1, Gi0/2
   10   DATA                             active    
   20   VOICE                            active    
   30   MGMT                             active    
   99   NATIVE                           active    
 
 [360/401] dsw2 DSW-HQ-2# show interfaces trunk
-  Port      Mode  Encapsulation  Status   Native vlan
-  FastEthernet0/1on    802.1q         trunking 99
-  FastEthernet0/2on    802.1q         trunking 1
+  Port        Mode             Encapsulation  Status        Native vlan
+  Fa0/1       on               802.1q         trunking      99
+  Fa0/2       on               802.1q         trunking      1
+  
+  Port        Vlans allowed on trunk
+  Fa0/1       1,10,20,30
+  Fa0/2       1-4094
+  
+  Port        Vlans allowed and active in management domain
+  Fa0/1       1,10,20,30
+  Fa0/2       1,10,20,30,99
+  
+  Port        Vlans in spanning tree forwarding state and not pruned
+  Fa0/1       1,10,20,30
+  Fa0/2       1,10,20,30,99
 
 [361/401] swbr <SW-BR> display vlan
   VLAN ID  Name                          Status   Ports
@@ -2460,12 +2307,10 @@ Total steps: 401
   MAC Address    VLAN/VSI   Learned-From   Type
   -------------------------------------------------------------------------------
   02:00:00:00:00:051          GigabitEthernet0/0/1dynamic
-  02:00:00:00:00:531          GigabitEthernet0/0/3dynamic
-  02:00:00:00:00:4f1          GigabitEthernet0/0/2dynamic
   02:00:00:00:00:4f10         GigabitEthernet0/0/2dynamic
   02:00:00:00:00:5310         GigabitEthernet0/0/3dynamic
   -------------------------------------------------------------------------------
-  Total items displayed = 5
+  Total items displayed = 3
 
 
 --- [365] § VLAN — cas négatifs / mal formés ---
@@ -2509,27 +2354,66 @@ Total steps: 401
 [376/401] swhq SW-HQ# show vlan brief
   VLAN Name                             Status    Ports
   ---- -------------------------------- --------- -------------------------------
-  1    default                          active    Fa0/0, Fa0/6, Fa0/7, Fa0/8, Fa0/9, Fa0/10, Fa0/11, Fa0/12, Fa0/13, Fa0/14, Fa0/15, Fa0/16, Fa0/17, Fa0/18, Fa0/19, Fa0/20, Fa0/21, Fa0/22, Fa0/23, Gi0/0, Gi0/1
+  1    default                          active    Fa0/6, Fa0/7, Fa0/8, Fa0/9, Fa0/10, Fa0/11, Fa0/12, Fa0/13, Fa0/14, Fa0/15, Fa0/16, Fa0/17, Fa0/18, Fa0/19, Fa0/20, Fa0/21, Fa0/22, Fa0/23, Fa0/24, Gi0/1, Gi0/2
   10   DATA                             active    Fa0/2
   20   VOICE                            active    Fa0/3
   30   MGMT                             active    
   99   NATIVE                           active    
 
 [377/401] swhq SW-HQ# show interfaces trunk
-  Port      Mode  Encapsulation  Status   Native vlan
-  FastEthernet0/1on    802.1q         trunking 1
-  FastEthernet0/4on    802.1q         trunking 99
-  FastEthernet0/5on    802.1q         trunking 99
+  Port        Mode             Encapsulation  Status        Native vlan
+  Fa0/1       on               802.1q         trunking      1
+  Fa0/4       on               802.1q         trunking      99
+  Fa0/5       on               802.1q         trunking      99
+  
+  Port        Vlans allowed on trunk
+  Fa0/1       1,10,20,30
+  Fa0/4       1,10,20,30
+  Fa0/5       1,10,20,30
+  
+  Port        Vlans allowed and active in management domain
+  Fa0/1       1,10,20,30
+  Fa0/4       1,10,20,30
+  Fa0/5       1,10,20,30
+  
+  Port        Vlans in spanning tree forwarding state and not pruned
+  Fa0/1       1,10,20,30
+  Fa0/4       1,10,20,30
+  Fa0/5       1,10,20,30
 
 [378/401] dsw1 DSW-HQ-1# show interfaces trunk
-  Port      Mode  Encapsulation  Status   Native vlan
-  FastEthernet0/1on    802.1q         trunking 99
-  FastEthernet0/2on    802.1q         trunking 1
+  Port        Mode             Encapsulation  Status        Native vlan
+  Fa0/1       on               802.1q         trunking      99
+  Fa0/2       on               802.1q         trunking      1
+  
+  Port        Vlans allowed on trunk
+  Fa0/1       1,10,20,30
+  Fa0/2       1-4094
+  
+  Port        Vlans allowed and active in management domain
+  Fa0/1       1,10,20,30
+  Fa0/2       1,10,20,30,99
+  
+  Port        Vlans in spanning tree forwarding state and not pruned
+  Fa0/1       1,10,20,30
+  Fa0/2       1,10,20,30,99
 
 [379/401] dsw2 DSW-HQ-2# show interfaces trunk
-  Port      Mode  Encapsulation  Status   Native vlan
-  FastEthernet0/1on    802.1q         trunking 99
-  FastEthernet0/2on    802.1q         trunking 1
+  Port        Mode             Encapsulation  Status        Native vlan
+  Fa0/1       on               802.1q         trunking      99
+  Fa0/2       on               802.1q         trunking      1
+  
+  Port        Vlans allowed on trunk
+  Fa0/1       1,10,20,30
+  Fa0/2       1-4094
+  
+  Port        Vlans allowed and active in management domain
+  Fa0/1       1,10,20,30
+  Fa0/2       1,10,20,30,99
+  
+  Port        Vlans in spanning tree forwarding state and not pruned
+  Fa0/1       1,10,20,30
+  Fa0/2       1,10,20,30,99
 
 [380/401] swbr [SW-BR] display port vlan
   Port                    Link Type    PVID  Trunk VLAN List
@@ -2599,19 +2483,19 @@ Total steps: 401
 
 [384/401] lhq lhq$ ping -c 1 10.1.20.11
   PING 10.1.20.11 (10.1.20.11) 56(84) bytes of data.
-  64 bytes from 10.1.20.11: icmp_seq=1 ttl=127 time=0.478 ms
+  64 bytes from 10.1.20.11: icmp_seq=1 ttl=127 time=0.450 ms
   
   --- 10.1.20.11 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.478/0.478/0.478/0.000 ms
+  rtt min/avg/max/mdev = 0.450/0.450/0.450/0.000 ms
 
 [385/401] lhq lhq$ ping -c 1 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
-  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=2.092 ms
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=0.428 ms
   
   --- 10.3.3.10 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 2.092/2.092/2.092/0.000 ms
+  rtt min/avg/max/mdev = 0.428/0.428/0.428/0.000 ms
 
 [386/401] wbr wbr$ ping -n 1 10.2.2.11
   
@@ -2630,14 +2514,12 @@ Total steps: 401
   Vlan    Mac Address       Type        Ports
   ----    -----------       --------    -----
   1       02:00:00:00:00:01 DYNAMIC     FastEthernet0/1
-  1       02:00:00:00:00:47 DYNAMIC     FastEthernet0/2
-  1       02:00:00:00:00:4b DYNAMIC     FastEthernet0/3
   10      02:00:00:00:00:47 DYNAMIC     FastEthernet0/2
   10      02:00:00:00:00:ab DYNAMIC     FastEthernet0/1
   20      02:00:00:00:00:4b DYNAMIC     FastEthernet0/3
   20      02:00:00:00:00:ac DYNAMIC     FastEthernet0/1
   
-  Total Mac Addresses for this criterion: 7
+  Total Mac Addresses for this criterion: 5
 
 [388/401] swbr [SW-BR] display mac-address total-number
   MAC address table of slot 0:
@@ -2645,12 +2527,10 @@ Total steps: 401
   MAC Address    VLAN/VSI   Learned-From   Type
   -------------------------------------------------------------------------------
   02:00:00:00:00:051          GigabitEthernet0/0/1dynamic
-  02:00:00:00:00:531          GigabitEthernet0/0/3dynamic
-  02:00:00:00:00:4f1          GigabitEthernet0/0/2dynamic
   02:00:00:00:00:4f10         GigabitEthernet0/0/2dynamic
   02:00:00:00:00:5310         GigabitEthernet0/0/3dynamic
   -------------------------------------------------------------------------------
-  Total items displayed = 5
+  Total items displayed = 3
 
 [389/401] swhq SW-HQ# show vtp status
   VTP Version capable             : 1 to 2
@@ -2672,7 +2552,7 @@ Total steps: 401
 [390/401] dsw1 DSW-HQ-1# show vlan brief
   VLAN Name                             Status    Ports
   ---- -------------------------------- --------- -------------------------------
-  1    default                          active    Fa0/0, Fa0/3, Fa0/4, Fa0/5, Fa0/6, Fa0/7, Fa0/8, Fa0/9, Fa0/10, Fa0/11, Fa0/12, Fa0/13, Fa0/14, Fa0/15, Fa0/16, Fa0/17, Fa0/18, Fa0/19, Fa0/20, Fa0/21, Fa0/22, Fa0/23, Gi0/0, Gi0/1
+  1    default                          active    Fa0/3, Fa0/4, Fa0/5, Fa0/6, Fa0/7, Fa0/8, Fa0/9, Fa0/10, Fa0/11, Fa0/12, Fa0/13, Fa0/14, Fa0/15, Fa0/16, Fa0/17, Fa0/18, Fa0/19, Fa0/20, Fa0/21, Fa0/22, Fa0/23, Fa0/24, Gi0/1, Gi0/2
   10   DATA                             active    
   20   VOICE                            active    
   30   MGMT                             active    
@@ -2681,7 +2561,7 @@ Total steps: 401
 [391/401] dsw2 DSW-HQ-2# show vlan brief
   VLAN Name                             Status    Ports
   ---- -------------------------------- --------- -------------------------------
-  1    default                          active    Fa0/0, Fa0/3, Fa0/4, Fa0/5, Fa0/6, Fa0/7, Fa0/8, Fa0/9, Fa0/10, Fa0/11, Fa0/12, Fa0/13, Fa0/14, Fa0/15, Fa0/16, Fa0/17, Fa0/18, Fa0/19, Fa0/20, Fa0/21, Fa0/22, Fa0/23, Gi0/0, Gi0/1
+  1    default                          active    Fa0/3, Fa0/4, Fa0/5, Fa0/6, Fa0/7, Fa0/8, Fa0/9, Fa0/10, Fa0/11, Fa0/12, Fa0/13, Fa0/14, Fa0/15, Fa0/16, Fa0/17, Fa0/18, Fa0/19, Fa0/20, Fa0/21, Fa0/22, Fa0/23, Fa0/24, Gi0/1, Gi0/2
   10   DATA                             active    
   20   VOICE                            active    
   30   MGMT                             active    
@@ -2706,24 +2586,16 @@ Total steps: 401
 [394/401] rhq R-HQ# show ip route connected
   Codes: C - connected, S - static, R - RIP, O - OSPF, O IA - OSPF inter area
   
+  
   C    172.16.12.0/30 is directly connected, GigabitEthernet0/1
   C    172.16.13.0/30 is directly connected, GigabitEthernet0/2
   C    10.1.1.0/24 is directly connected, GigabitEthernet0/0.10
   C    10.1.20.0/24 is directly connected, GigabitEthernet0/0.20
 
 [395/401] lhq lhq$ ip -4 addr show eth0
-  1: eth0: <BROADCAST,UP,MULTICAST,LOWER_UP> mtu 1500 qdisc fq_codel state UP group default qlen 1000
+  2: eth0: <BROADCAST,UP,MULTICAST,LOWER_UP> mtu 1500 qdisc fq_codel state UP group default qlen 1000
       link/ether 02:00:00:00:00:47 brd ff:ff:ff:ff:ff:ff
       inet 10.1.1.10/24 brd 10.1.1.255 scope global eth0
-  
-  2: eth1: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
-      link/ether 02:00:00:00:00:48 brd ff:ff:ff:ff:ff:ff
-  
-  3: eth2: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
-      link/ether 02:00:00:00:00:49 brd ff:ff:ff:ff:ff:ff
-  
-  4: eth3: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
-      link/ether 02:00:00:00:00:4a brd ff:ff:ff:ff:ff:ff
 
 [396/401] whq whq$ ipconfig
   Windows IP Configuration
@@ -2753,11 +2625,11 @@ Total steps: 401
 
 [397/401] lhq lhq$ ping -c 1 10.1.20.1
   PING 10.1.20.1 (10.1.20.1) 56(84) bytes of data.
-  64 bytes from 10.1.20.1: icmp_seq=1 ttl=255 time=0.442 ms
+  64 bytes from 10.1.20.1: icmp_seq=1 ttl=255 time=0.323 ms
   
   --- 10.1.20.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.442/0.442/0.442/0.000 ms
+  rtt min/avg/max/mdev = 0.323/0.323/0.323/0.000 ms
 
 [398/401] whq whq$ ping -n 1 10.1.1.1
   
@@ -2770,10 +2642,25 @@ Total steps: 401
       Minimum = 0ms, Maximum = 0ms, Average = 0ms
 
 [399/401] swhq SW-HQ# show interfaces trunk
-  Port      Mode  Encapsulation  Status   Native vlan
-  FastEthernet0/1on    802.1q         trunking 1
-  FastEthernet0/4on    802.1q         trunking 99
-  FastEthernet0/5on    802.1q         trunking 99
+  Port        Mode             Encapsulation  Status        Native vlan
+  Fa0/1       on               802.1q         trunking      1
+  Fa0/4       on               802.1q         trunking      99
+  Fa0/5       on               802.1q         trunking      99
+  
+  Port        Vlans allowed on trunk
+  Fa0/1       1,10,20,30
+  Fa0/4       1,10,20,30
+  Fa0/5       1,10,20,30
+  
+  Port        Vlans allowed and active in management domain
+  Fa0/1       1,10,20,30
+  Fa0/4       1,10,20,30
+  Fa0/5       1,10,20,30
+  
+  Port        Vlans in spanning tree forwarding state and not pruned
+  Fa0/1       1,10,20,30
+  Fa0/4       1,10,20,30
+  Fa0/5       1,10,20,30
 
 [400/401] swbr [SW-BR] display port vlan active
   Port                    Link Type    PVID  Trunk VLAN List
@@ -2805,36 +2692,14 @@ Total steps: 401
 [401/401] swhq SW-HQ# show spanning-tree vlan 10 brief
   VLAN0010
     Spanning tree enabled protocol ieee
-    Root ID    Priority    32769
+    Root ID    Priority    32778
                Address     0200.0000.000d
                Cost        0
                This bridge is the root
   
   Interface        Role  Sts  Cost      Prio.Nbr  Type
   ---------------- ----  ---  --------  --------  ----
-  Fa0/0            Disa  FWD  19        128.00    P2p
-  Fa0/1            Desg  FWD  19        128.01    P2p
-  Fa0/2            Desg  FWD  19        128.02    P2p
-  Fa0/3            Desg  FWD  19        128.03    P2p
-  Fa0/4            Desg  FWD  19        128.04    P2p
-  Fa0/5            Desg  FWD  19        128.05    P2p
-  Fa0/6            Disa  FWD  19        128.06    P2p
-  Fa0/7            Disa  FWD  19        128.07    P2p
-  Fa0/8            Disa  FWD  19        128.08    P2p
-  Fa0/9            Disa  FWD  19        128.09    P2p
-  Fa0/10           Disa  FWD  19        128.010   P2p
-  Fa0/11           Disa  FWD  19        128.011   P2p
-  Fa0/12           Disa  FWD  19        128.012   P2p
-  Fa0/13           Disa  FWD  19        128.013   P2p
-  Fa0/14           Disa  FWD  19        128.014   P2p
-  Fa0/15           Disa  FWD  19        128.015   P2p
-  Fa0/16           Disa  FWD  19        128.016   P2p
-  Fa0/17           Disa  FWD  19        128.017   P2p
-  Fa0/18           Disa  FWD  19        128.018   P2p
-  Fa0/19           Disa  FWD  19        128.019   P2p
-  Fa0/20           Disa  FWD  19        128.020   P2p
-  Fa0/21           Disa  FWD  19        128.021   P2p
-  Fa0/22           Disa  FWD  19        128.022   P2p
-  Fa0/23           Disa  FWD  19        128.023   P2p
-  Gi0/0            Disa  FWD  19        128.00    P2p
-  Gi0/1            Disa  FWD  19        128.01    P2p
+  Fa0/1            Disa  DIS  19        128.1     P2p
+  Fa0/2            Disa  DIS  19        128.2     P2p Edge
+  Fa0/4            Disa  DIS  19        128.4     P2p
+  Fa0/5            Disa  DIS  19        128.5     P2p

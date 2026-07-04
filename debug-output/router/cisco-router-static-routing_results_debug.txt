@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-static-routing
-Generated: 2026-06-12T11:49:13.537Z
+Generated: 2026-07-04T10:43:31.997Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=static/default/floating, IPv6, prefix-list, PBR, SLA/track
 Total steps: 325
@@ -173,6 +173,8 @@ Total steps: 325
   Codes: C - connected, S - static, R - RIP, O - OSPF, O IA - OSPF inter area
          O E1 - OSPF external type 1, O E2 - OSPF external type 2, D - EIGRP, B - BGP
   
+  Gateway of last resort is not set
+  
   C    192.168.1.0/24 is directly connected, GigabitEthernet0/0
   C    10.0.0.0/30 is directly connected, GigabitEthernet0/1
   S    172.17.1.0/24 [1/0] via 10.0.0.2
@@ -218,6 +220,7 @@ Total steps: 325
 
 [55/325] r1 R1# show ip route static
   Codes: C - connected, S - static, R - RIP, O - OSPF, O IA - OSPF inter area
+  
   
   S    172.17.1.0/24 [1/0] via 10.0.0.2
   S    172.18.2.0/24 [1/0] via 10.0.0.2
@@ -336,6 +339,8 @@ Total steps: 325
   Codes: C - connected, S - static, R - RIP, O - OSPF, O IA - OSPF inter area
          O E1 - OSPF external type 1, O E2 - OSPF external type 2, D - EIGRP, B - BGP
   
+  Gateway of last resort is 10.0.0.6 to network 0.0.0.0
+  
   C    192.168.1.0/24 is directly connected, GigabitEthernet0/0
   C    10.0.0.0/30 is directly connected, GigabitEthernet0/1
   S    172.17.1.0/24 [1/0] via 10.0.0.2
@@ -380,7 +385,7 @@ Total steps: 325
   S    172.24.40.0/24 [1/0] via 10.0.0.2
   S*    0.0.0.0/0 [1/0] via 10.0.0.6
   S    192.168.50.0/24 [1/0] via 10.0.0.2
-  S    192.168.51.0/24 [1/0] via 10.0.0.2
+  S    192.168.51.0/24 [250/0] via 10.0.0.2
   S    192.168.52.0/24 [1/0] via 0.0.0.0
   S    192.168.53.0/24 [1/0] via 10.0.0.2
   S    8.8.8.0/24 [1/0] via 10.0.0.2
@@ -1118,6 +1123,8 @@ Total steps: 325
   Codes: C - connected, S - static, R - RIP, O - OSPF, O IA - OSPF inter area
          O E1 - OSPF external type 1, O E2 - OSPF external type 2, D - EIGRP, B - BGP
   
+  Gateway of last resort is 10.0.0.6 to network 0.0.0.0
+  
   C    192.168.1.0/24 is directly connected, GigabitEthernet0/0
   C    10.0.0.0/30 is directly connected, GigabitEthernet0/1
   S    172.17.1.0/24 [1/0] via 10.0.0.2
@@ -1162,7 +1169,7 @@ Total steps: 325
   S    172.24.40.0/24 [1/0] via 10.0.0.2
   S*    0.0.0.0/0 [1/0] via 10.0.0.6
   S    192.168.50.0/24 [1/0] via 10.0.0.2
-  S    192.168.51.0/24 [1/0] via 10.0.0.2
+  S    192.168.51.0/24 [250/0] via 10.0.0.2
   S    192.168.52.0/24 [1/0] via 0.0.0.0
   S    192.168.53.0/24 [1/0] via 10.0.0.2
   S    8.8.8.0/24 [1/0] via 10.0.0.2
@@ -1170,6 +1177,7 @@ Total steps: 325
 
 [207/325] r1 R1# show ip route static
   Codes: C - connected, S - static, R - RIP, O - OSPF, O IA - OSPF inter area
+  
   
   S    172.17.1.0/24 [1/0] via 10.0.0.2
   S    172.18.2.0/24 [1/0] via 10.0.0.2
@@ -1213,7 +1221,7 @@ Total steps: 325
   S    172.24.40.0/24 [1/0] via 10.0.0.2
   S*    0.0.0.0/0 [1/0] via 10.0.0.6
   S    192.168.50.0/24 [1/0] via 10.0.0.2
-  S    192.168.51.0/24 [1/0] via 10.0.0.2
+  S    192.168.51.0/24 [250/0] via 10.0.0.2
   S    192.168.52.0/24 [1/0] via 0.0.0.0
   S    192.168.53.0/24 [1/0] via 10.0.0.2
   S    8.8.8.0/24 [1/0] via 10.0.0.2
@@ -1224,6 +1232,7 @@ Total steps: 325
 
 [209/325] r1 R1# show ip route connected
   Codes: C - connected, S - static, R - RIP, O - OSPF, O IA - OSPF inter area
+  
   
   C    192.168.1.0/24 is directly connected, GigabitEthernet0/0
   C    10.0.0.0/30 is directly connected, GigabitEthernet0/1
@@ -1240,9 +1249,7 @@ Total steps: 325
   S* 0.0.0.0/0 via 10.0.0.6
 
 [212/325] r1 R1# show ip route vrf CUST
-  Routing entry for 0.0.0.0/0
-    Known via "static", distance 1, metric 0
-  S* 0.0.0.0/0 via 10.0.0.6
+  % No such VRF, CUST
 
 [213/325] r1 R1# show ip protocols
   No routing protocol is configured.
@@ -1303,6 +1310,8 @@ Total steps: 325
 
 [215/325] r1 R1# show ip static route
   Codes: C - connected, S - static, R - RIP, O - OSPF, D - EIGRP, B - BGP, * - candidate default
+  
+  Gateway of last resort is 10.0.0.6 to network 0.0.0.0
   
   C    192.168.1.0/24 is directly connected, GigabitEthernet0/0
   C    10.0.0.0/30 is directly connected, GigabitEthernet0/1
@@ -1388,17 +1397,13 @@ Total steps: 325
   !
   interface GigabitEthernet0/0
    ip address 192.168.1.1 255.255.255.0
-   no shutdown
   !
   interface GigabitEthernet0/1
    ip address 10.0.0.1 255.255.255.252
-   no shutdown
   !
   interface GigabitEthernet0/2
-   no shutdown
   !
   interface GigabitEthernet0/3
-   no shutdown
   !
   access-list 101 permit ip 192.168.1.0 0.0.0.255 any
   access-list 102 permit ip 192.168.2.0 0.0.0.255 any
@@ -1451,6 +1456,8 @@ Total steps: 325
   ip route 192.168.53.0 255.255.255.0 10.0.0.2
   ip route 8.8.8.0 255.255.255.0 10.0.0.2
   ip route 192.168.99.0 255.255.255.0 10.0.0.2
+  !
+  router ospf 1
   end
 
 [219/325] r1 R1# show startup-config
@@ -1473,6 +1480,17 @@ Total steps: 325
     Full-duplex, 1000Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
+    Last input 00:00:00, output 00:00:00, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       2 packets output, 128 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
   GigabitEthernet0/1 is up, line protocol is up
     Hardware is iGbE, address is 02:00:00:00:00:02 (bia 02:00:00:00:00:02)
     Internet address is 10.0.0.1/30
@@ -1482,6 +1500,17 @@ Total steps: 325
     Full-duplex, 1000Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
+    Last input 00:00:00, output 00:00:00, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       2 packets input, 128 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       3 packets output, 192 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
   GigabitEthernet0/2 is down, line protocol is down
     Hardware is iGbE, address is 02:00:00:00:00:03 (bia 02:00:00:00:00:03)
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
@@ -1490,6 +1519,17 @@ Total steps: 325
     Full-duplex, 1000Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
+    Last input never, output never, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
   GigabitEthernet0/3 is down, line protocol is down
     Hardware is iGbE, address is 02:00:00:00:00:04 (bia 02:00:00:00:00:04)
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
@@ -1498,10 +1538,23 @@ Total steps: 325
     Full-duplex, 1000Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
+    Last input never, output never, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
 
 [222/325] r1 R1# show ip route
   Codes: C - connected, S - static, R - RIP, O - OSPF, O IA - OSPF inter area
          O E1 - OSPF external type 1, O E2 - OSPF external type 2, D - EIGRP, B - BGP
+  
+  Gateway of last resort is 10.0.0.6 to network 0.0.0.0
   
   C    192.168.1.0/24 is directly connected, GigabitEthernet0/0
   C    10.0.0.0/30 is directly connected, GigabitEthernet0/1
@@ -1547,7 +1600,7 @@ Total steps: 325
   S    172.24.40.0/24 [1/0] via 10.0.0.2
   S*    0.0.0.0/0 [1/0] via 10.0.0.6
   S    192.168.50.0/24 [1/0] via 10.0.0.2
-  S    192.168.51.0/24 [1/0] via 10.0.0.2
+  S    192.168.51.0/24 [250/0] via 10.0.0.2
   S    192.168.52.0/24 [1/0] via 0.0.0.0
   S    192.168.53.0/24 [1/0] via 10.0.0.2
   S    8.8.8.0/24 [1/0] via 10.0.0.2
@@ -1607,17 +1660,22 @@ Total steps: 325
 <empty>
 
 [236/325] r1 R1# show ip nat translations
+  Pro  Inside global          Inside local           Outside local          Outside global
   No NAT translations.
 
 [237/325] r1 R1# show ip nat statistics
   Total active translations: 0 (0 static, 0 dynamic; 0 extended)
+  Total translations: 0
+  Static translations: 0
+  Dynamic translations: 0
+  Translation errors: 0
   Outside interfaces:  none
   Inside interfaces:   none
   Hits: 0  Misses: 0
-  Expired translations: 0
   Session timeouts (seconds): tcp 86400  udp 300  icmp 60  syn 30
   Dynamic mappings:
   -- No dynamic NAT rules configured --
+  Application Layer Gateways: none (FTP/SIP ALG and NAT64 not supported in this simulator)
 
 [238/325] r1 R1# show ip dhcp binding
   IP address       Client-id/              Lease expiration        Type
@@ -1696,7 +1754,7 @@ Total steps: 325
 [253/325] r1 R1# show ntp status
   Clock is unsynchronized, stratum 16, reference is .INIT.
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
-  reference time is EDD670B9.953F7CED (11:49:13.583 UTC Fri Jun 12 2026)
+  reference time is EDF36254.07EF9DB2 (10:43:32.031 UTC Sat Jul 4 2026)
   clock offset is 0.00 msec
 
 [254/325] r1 R1# show ntp associations
@@ -1705,7 +1763,7 @@ Total steps: 325
   No NTP associations configured.
 
 [255/325] r1 R1# show clock
-  *11:49:13.000 UTC Fri Jun 12 2026
+  *10:43:32.000 UTC Sat Jul 4 2026
 
 [256/325] r1 R1# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
@@ -1752,6 +1810,7 @@ Total steps: 325
     Interface    User               Mode         Idle     Peer Address
 
 [262/325] r1 R1# show history
+  show crypto isakmp sa
   show crypto ipsec sa
   show crypto session
   show crypto map
@@ -1771,7 +1830,6 @@ Total steps: 325
   show memory statistics
   show flash
   show users
-  show history
 
 [263/325] r1 R1# show ip cef
   Prefix               Next Hop             Interface
@@ -1837,6 +1895,17 @@ Total steps: 325
     Full-duplex, 1000Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
+    Last input 00:00:00, output 00:00:00, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       2 packets output, 128 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
 
 [265/325] r1 R1# show interfaces GigabitEthernet0/1
   GigabitEthernet0/1 is up, line protocol is up
@@ -1848,6 +1917,17 @@ Total steps: 325
     Full-duplex, 1000Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
+    Last input 00:00:00, output 00:00:00, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       2 packets input, 128 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       3 packets output, 192 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
 
 [266/325] r1 R1# show ip interface GigabitEthernet0/1
   GigabitEthernet0/1 is up, line protocol is up
@@ -1859,6 +1939,17 @@ Total steps: 325
     Full-duplex, 1000Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
+    Last input 00:00:00, output 00:00:00, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       2 packets input, 128 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       3 packets output, 192 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
 
 [267/325] r1 R1# show controllers
   GigabitEthernet0/0 -
@@ -1907,17 +1998,13 @@ Total steps: 325
   !
   interface GigabitEthernet0/0
    ip address 192.168.1.1 255.255.255.0
-   no shutdown
   !
   interface GigabitEthernet0/1
    ip address 10.0.0.1 255.255.255.252
-   no shutdown
   !
   interface GigabitEthernet0/2
-   no shutdown
   !
   interface GigabitEthernet0/3
-   no shutdown
   !
   access-list 101 permit ip 192.168.1.0 0.0.0.255 any
   access-list 102 permit ip 192.168.2.0 0.0.0.255 any
@@ -1970,6 +2057,8 @@ Total steps: 325
   ip route 192.168.53.0 255.255.255.0 10.0.0.2
   ip route 8.8.8.0 255.255.255.0 10.0.0.2
   ip route 192.168.99.0 255.255.255.0 10.0.0.2
+  !
+  router ospf 1
   end
   
   ------------------ show ip interface brief ------------------
@@ -1981,6 +2070,8 @@ Total steps: 325
   
   ------------------ show ip route ------------------
   Codes: C - connected, S - static, R - RIP, O - OSPF, D - EIGRP, B - BGP, * - candidate default
+  
+  Gateway of last resort is 10.0.0.6 to network 0.0.0.0
   
   C    192.168.1.0/24 is directly connected, GigabitEthernet0/0
   C    10.0.0.0/30 is directly connected, GigabitEthernet0/1
@@ -2043,6 +2134,17 @@ Total steps: 325
     Full-duplex, 1000Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
+    Last input 00:00:00, output 00:00:00, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       2 packets output, 128 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
   GigabitEthernet0/1 is up, line protocol is up
     Hardware is iGbE, address is 02:00:00:00:00:02 (bia 02:00:00:00:00:02)
     Internet address is 10.0.0.1/30
@@ -2052,6 +2154,17 @@ Total steps: 325
     Full-duplex, 1000Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
+    Last input 00:00:00, output 00:00:00, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       2 packets input, 128 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       3 packets output, 192 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
   GigabitEthernet0/2 is down, line protocol is down
     Hardware is iGbE, address is 02:00:00:00:00:03 (bia 02:00:00:00:00:03)
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
@@ -2060,6 +2173,17 @@ Total steps: 325
     Full-duplex, 1000Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
+    Last input never, output never, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
   GigabitEthernet0/3 is down, line protocol is down
     Hardware is iGbE, address is 02:00:00:00:00:04 (bia 02:00:00:00:00:04)
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
@@ -2068,6 +2192,17 @@ Total steps: 325
     Full-duplex, 1000Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
+    Last input never, output never, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
   
   ------------------ show ip protocols ------------------
   Routing Protocol is "ospf 1"
@@ -2137,6 +2272,7 @@ Total steps: 325
   Length: 24 lines, Width: 80 columns
   Editing is enabled.
   History is enabled, history size is 20.
+  Monitor parameter: disabled
 
 [278/325] r1 R1# show aliases
   Exec mode aliases:
@@ -2152,19 +2288,15 @@ Total steps: 325
 
 --- [279] § regression: pipe filters ---
 [279/325] r1 R1# show running-config | include router
-<empty>
+  router ospf 1
 
 [280/325] r1 R1# show running-config | section interface
   interface GigabitEthernet0/0
    ip address 192.168.1.1 255.255.255.0
-   no shutdown
   interface GigabitEthernet0/1
    ip address 10.0.0.1 255.255.255.252
-   no shutdown
   interface GigabitEthernet0/2
-   no shutdown
   interface GigabitEthernet0/3
-   no shutdown
 
 [281/325] r1 R1# show running-config | begin line
 <empty>
@@ -2177,14 +2309,10 @@ Total steps: 325
   service dhcp
   interface GigabitEthernet0/0
    ip address 192.168.1.1 255.255.255.0
-   no shutdown
   interface GigabitEthernet0/1
    ip address 10.0.0.1 255.255.255.252
-   no shutdown
   interface GigabitEthernet0/2
-   no shutdown
   interface GigabitEthernet0/3
-   no shutdown
   access-list 101 permit ip 192.168.1.0 0.0.0.255 any
   access-list 102 permit ip 192.168.2.0 0.0.0.255 any
   ip route 172.17.1.0 255.255.255.0 10.0.0.2
@@ -2235,6 +2363,7 @@ Total steps: 325
   ip route 192.168.53.0 255.255.255.0 10.0.0.2
   ip route 8.8.8.0 255.255.255.0 10.0.0.2
   ip route 192.168.99.0 255.255.255.0 10.0.0.2
+  router ospf 1
   end
 
 [283/325] r1 R1# show ip route | include via
@@ -2280,7 +2409,7 @@ Total steps: 325
   S    172.24.40.0/24 [1/0] via 10.0.0.2
   S*    0.0.0.0/0 [1/0] via 10.0.0.6
   S    192.168.50.0/24 [1/0] via 10.0.0.2
-  S    192.168.51.0/24 [1/0] via 10.0.0.2
+  S    192.168.51.0/24 [250/0] via 10.0.0.2
   S    192.168.52.0/24 [1/0] via 0.0.0.0
   S    192.168.53.0/24 [1/0] via 10.0.0.2
   S    8.8.8.0/24 [1/0] via 10.0.0.2
@@ -2399,15 +2528,24 @@ Total steps: 325
   Enter configuration commands, one per line.  End with CNTL/Z.
 
 [318/325] r1 R1(config)# interface ?
-    WORD  Select an interface to configure
-    <cr>  
+    GigabitEthernet     GigabitEthernet IEEE 802.3z
+    FastEthernet        FastEthernet IEEE 802.3u
+    Ethernet            IEEE 802.3
+    TenGigabitEthernet  TenGigabitEthernet IEEE 802.3ae
+    Loopback            Loopback interface
+    Serial              Serial
+    Tunnel              Tunnel interface
+    Vlan                Catalyst VLANs
+    Port-channel        Ethernet Channel of interfaces
+    BVI                 Bridge-Group Virtual Interface
+    <cr>                
 
 [319/325] r1 R1(config)# ip ?
     cef              Enable CEF
     http             http
     source-route     IP source-route
-    domain-lookup    Enable DNS lookups
     name-server      Configure DNS name servers
+    domain-lookup    Enable DNS lookups
     bootp            bootp
     finger           Enable finger service
     gratuitous-arps  Enable gratuitous ARP
@@ -2426,6 +2564,7 @@ Total steps: 325
     sla              Configure an IP SLA operation
     access-list      access-list
     nat              nat
+    vrf              Define a VRF instance
     routing          Enable IP routing
     flow-export      Legacy NetFlow export
     flow-cache       NetFlow cache timeout
@@ -2443,37 +2582,43 @@ Total steps: 325
     map          Define a crypto map entry
     dynamic-map  Define a dynamic crypto map
     ikev2        ikev2
-    key          key
+    key          Key management
     pki          pki
     <cr>         
 
 [322/325] r1 R1(config)# no ?
+    sntp         Configure SNTP
     hostname     Reset hostname
     alias        Remove a command alias
-    cdp          cdp
-    lldp         lldp
-    ip           ip
-    ipv6         ipv6
-    banner       banner
+    cdp          CDP global configuration
+    lldp         LLDP global configuration
+    ip           Global IP configuration subcommands
+    ipv6         Global IPv6 configuration subcommands
+    banner       Remove a banner
+    privilege    Remove privilege command rule
     logging      Disable logging
     ntp          Remove NTP config
+    enable       Modify enable password parameters
     service      Disable a service
     username     Remove a local user
     arp          Remove ARP entry
-    router       router
+    router       Enable a routing protocol
     shutdown     Enable (no-op in global config)
     route-map    Remove a route-map
     track        Remove a tracked object
     access-list  Remove an access list
-    key          key
+    key          Key management
     crypto       crypto
-    event        event
+    event        Embedded Event Manager
+    interface    Remove an interface
+    vlan         Remove a VLAN
+    line         Remove line configuration
 
 [323/325] r1 R1(config)# end
 <empty>
 
 [324/325] r1 R1# show running-config | count !
-  10
+  11
 
 [325/325] r1 R1# write memory
   Building configuration...

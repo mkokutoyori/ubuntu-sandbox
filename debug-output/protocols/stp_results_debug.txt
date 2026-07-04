@@ -32,7 +32,7 @@ Total steps: 300
   Spanning Tree events debugging is on
 
 [8/300] swhq SW-HQ# show debugging
-  Spanning Tree events debugging is on
+  Spanning Tree event debugging is on
 
 [9/300] dsw1 DSW-HQ-1# terminal monitor
 <empty>
@@ -41,7 +41,7 @@ Total steps: 300
   Spanning Tree events debugging is on
 
 [11/300] dsw1 DSW-HQ-1# show debugging
-  Spanning Tree events debugging is on
+  Spanning Tree event debugging is on
 
 [12/300] dsw2 DSW-HQ-2# terminal monitor
 <empty>
@@ -50,7 +50,7 @@ Total steps: 300
   Spanning Tree events debugging is on
 
 [14/300] dsw2 DSW-HQ-2# show debugging
-  Spanning Tree events debugging is on
+  Spanning Tree event debugging is on
 
 
 --- [15] § STP — activation logs & debug (Huawei) ---
@@ -87,32 +87,11 @@ Total steps: 300
   
   Interface        Role  Sts  Cost      Prio.Nbr  Type
   ---------------- ----  ---  --------  --------  ----
-  Fa0/0            Disa  FWD  4         128.00    P2p
-  Fa0/1            Desg  FWD  4         128.01    P2p
-  Fa0/2            Desg  FWD  4         128.02    P2p
-  Fa0/3            Desg  FWD  4         128.03    P2p
-  Fa0/4            Desg  FWD  4         128.04    P2p
-  Fa0/5            Desg  FWD  4         128.05    P2p
-  Fa0/6            Disa  FWD  4         128.06    P2p
-  Fa0/7            Disa  FWD  4         128.07    P2p
-  Fa0/8            Disa  FWD  4         128.08    P2p
-  Fa0/9            Disa  FWD  4         128.09    P2p
-  Fa0/10           Disa  FWD  4         128.010   P2p
-  Fa0/11           Disa  FWD  4         128.011   P2p
-  Fa0/12           Disa  FWD  4         128.012   P2p
-  Fa0/13           Disa  FWD  4         128.013   P2p
-  Fa0/14           Disa  FWD  4         128.014   P2p
-  Fa0/15           Disa  FWD  4         128.015   P2p
-  Fa0/16           Disa  FWD  4         128.016   P2p
-  Fa0/17           Disa  FWD  4         128.017   P2p
-  Fa0/18           Disa  FWD  4         128.018   P2p
-  Fa0/19           Disa  FWD  4         128.019   P2p
-  Fa0/20           Disa  FWD  4         128.020   P2p
-  Fa0/21           Disa  FWD  4         128.021   P2p
-  Fa0/22           Disa  FWD  4         128.022   P2p
-  Fa0/23           Disa  FWD  4         128.023   P2p
-  Gi0/0            Disa  FWD  4         128.00    P2p
-  Gi0/1            Disa  FWD  4         128.01    P2p
+  Fa0/1            Desg  FWD  19        128.1     P2p
+  Fa0/2            Desg  FWD  19        128.2     P2p
+  Fa0/3            Desg  FWD  19        128.3     P2p
+  Fa0/4            Desg  FWD  19        128.4     P2p
+  Fa0/5            Desg  FWD  19        128.5     P2p
 
 [23/300] swhq SW-HQ# show spanning-tree
   VLAN0001
@@ -124,42 +103,27 @@ Total steps: 300
   
   Interface        Role  Sts  Cost      Prio.Nbr  Type
   ---------------- ----  ---  --------  --------  ----
-  Fa0/0            Disa  FWD  4         128.00    P2p
-  Fa0/1            Desg  FWD  4         128.01    P2p
-  Fa0/2            Desg  FWD  4         128.02    P2p
-  Fa0/3            Desg  FWD  4         128.03    P2p
-  Fa0/4            Desg  FWD  4         128.04    P2p
-  Fa0/5            Desg  FWD  4         128.05    P2p
-  Fa0/6            Disa  FWD  4         128.06    P2p
-  Fa0/7            Disa  FWD  4         128.07    P2p
-  Fa0/8            Disa  FWD  4         128.08    P2p
-  Fa0/9            Disa  FWD  4         128.09    P2p
-  Fa0/10           Disa  FWD  4         128.010   P2p
-  Fa0/11           Disa  FWD  4         128.011   P2p
-  Fa0/12           Disa  FWD  4         128.012   P2p
-  Fa0/13           Disa  FWD  4         128.013   P2p
-  Fa0/14           Disa  FWD  4         128.014   P2p
-  Fa0/15           Disa  FWD  4         128.015   P2p
-  Fa0/16           Disa  FWD  4         128.016   P2p
-  Fa0/17           Disa  FWD  4         128.017   P2p
-  Fa0/18           Disa  FWD  4         128.018   P2p
-  Fa0/19           Disa  FWD  4         128.019   P2p
-  Fa0/20           Disa  FWD  4         128.020   P2p
-  Fa0/21           Disa  FWD  4         128.021   P2p
-  Fa0/22           Disa  FWD  4         128.022   P2p
-  Fa0/23           Disa  FWD  4         128.023   P2p
-  Gi0/0            Disa  FWD  4         128.00    P2p
-  Gi0/1            Disa  FWD  4         128.01    P2p
+  Fa0/1            Desg  FWD  19        128.1     P2p
+  Fa0/2            Desg  FWD  19        128.2     P2p
+  Fa0/3            Desg  FWD  19        128.3     P2p
+  Fa0/4            Desg  FWD  19        128.4     P2p
+  Fa0/5            Desg  FWD  19        128.5     P2p
 
 [24/300] swhq SW-HQ# show spanning-tree summary
   Switch is in pvst mode
   Root bridge for: VLAN0001
   Extended system ID           is enabled
   Portfast Default             is disabled
+  PortFast BPDU Guard Default  is disabled
+  Portfast BPDU Filter Default is disabled
+  Loopguard Default            is disabled
+  UplinkFast                   is disabled
+  BackboneFast                 is disabled
+  Configured Pathcost method used is short
   
   Name                   Blocking Listening Learning Forwarding STP Active
   ---------------------- -------- --------- -------- ---------- ----------
-  VLAN0001                      0         0        0         26         26
+  VLAN0001                      0         0        0          5          5
 
 [25/300] swhq SW-HQ# show spanning-tree root
                                           Root    Hello Max Fwd
@@ -183,85 +147,46 @@ Total steps: 300
   
   Interface        Role  Sts  Cost      Prio.Nbr  Type
   ---------------- ----  ---  --------  --------  ----
-  Fa0/0            Disa  FWD  4         128.00    P2p
-  Fa0/1            Desg  FWD  4         128.01    P2p
-  Fa0/2            Desg  FWD  4         128.02    P2p
-  Fa0/3            Desg  FWD  4         128.03    P2p
-  Fa0/4            Desg  FWD  4         128.04    P2p
-  Fa0/5            Desg  FWD  4         128.05    P2p
-  Fa0/6            Disa  FWD  4         128.06    P2p
-  Fa0/7            Disa  FWD  4         128.07    P2p
-  Fa0/8            Disa  FWD  4         128.08    P2p
-  Fa0/9            Disa  FWD  4         128.09    P2p
-  Fa0/10           Disa  FWD  4         128.010   P2p
-  Fa0/11           Disa  FWD  4         128.011   P2p
-  Fa0/12           Disa  FWD  4         128.012   P2p
-  Fa0/13           Disa  FWD  4         128.013   P2p
-  Fa0/14           Disa  FWD  4         128.014   P2p
-  Fa0/15           Disa  FWD  4         128.015   P2p
-  Fa0/16           Disa  FWD  4         128.016   P2p
-  Fa0/17           Disa  FWD  4         128.017   P2p
-  Fa0/18           Disa  FWD  4         128.018   P2p
-  Fa0/19           Disa  FWD  4         128.019   P2p
-  Fa0/20           Disa  FWD  4         128.020   P2p
-  Fa0/21           Disa  FWD  4         128.021   P2p
-  Fa0/22           Disa  FWD  4         128.022   P2p
-  Fa0/23           Disa  FWD  4         128.023   P2p
-  Gi0/0            Disa  FWD  4         128.00    P2p
-  Gi0/1            Disa  FWD  4         128.01    P2p
+  Fa0/1            Desg  FWD  19        128.1     P2p
+  Fa0/2            Desg  FWD  19        128.2     P2p
+  Fa0/3            Desg  FWD  19        128.3     P2p
+  Fa0/4            Desg  FWD  19        128.4     P2p
+  Fa0/5            Desg  FWD  19        128.5     P2p
 
 [28/300] dsw1 DSW-HQ-1# show spanning-tree
   VLAN0001
     Spanning tree enabled protocol ieee
     Root ID    Priority    32769
                Address     0200.0000.000d
-               Cost        4
+               Cost        19
                Port        Fa0/1
   
   Interface        Role  Sts  Cost      Prio.Nbr  Type
   ---------------- ----  ---  --------  --------  ----
-  Fa0/0            Disa  FWD  4         128.00    P2p
-  Fa0/1            Root  FWD  4         128.01    P2p
-  Fa0/2            Desg  FWD  4         128.02    P2p
-  Fa0/3            Disa  FWD  4         128.03    P2p
-  Fa0/4            Disa  FWD  4         128.04    P2p
-  Fa0/5            Disa  FWD  4         128.05    P2p
-  Fa0/6            Disa  FWD  4         128.06    P2p
-  Fa0/7            Disa  FWD  4         128.07    P2p
-  Fa0/8            Disa  FWD  4         128.08    P2p
-  Fa0/9            Disa  FWD  4         128.09    P2p
-  Fa0/10           Disa  FWD  4         128.010   P2p
-  Fa0/11           Disa  FWD  4         128.011   P2p
-  Fa0/12           Disa  FWD  4         128.012   P2p
-  Fa0/13           Disa  FWD  4         128.013   P2p
-  Fa0/14           Disa  FWD  4         128.014   P2p
-  Fa0/15           Disa  FWD  4         128.015   P2p
-  Fa0/16           Disa  FWD  4         128.016   P2p
-  Fa0/17           Disa  FWD  4         128.017   P2p
-  Fa0/18           Disa  FWD  4         128.018   P2p
-  Fa0/19           Disa  FWD  4         128.019   P2p
-  Fa0/20           Disa  FWD  4         128.020   P2p
-  Fa0/21           Disa  FWD  4         128.021   P2p
-  Fa0/22           Disa  FWD  4         128.022   P2p
-  Fa0/23           Disa  FWD  4         128.023   P2p
-  Gi0/0            Disa  FWD  4         128.00    P2p
-  Gi0/1            Disa  FWD  4         128.01    P2p
+  Fa0/1            Root  FWD  19        128.1     P2p
+  Fa0/2            Desg  FWD  19        128.2     P2p
 
 [29/300] dsw1 DSW-HQ-1# show spanning-tree summary
   Switch is in pvst mode
   Root bridge for: none
   Extended system ID           is enabled
   Portfast Default             is disabled
+  PortFast BPDU Guard Default  is disabled
+  Portfast BPDU Filter Default is disabled
+  Loopguard Default            is disabled
+  UplinkFast                   is disabled
+  BackboneFast                 is disabled
+  Configured Pathcost method used is short
   
   Name                   Blocking Listening Learning Forwarding STP Active
   ---------------------- -------- --------- -------- ---------- ----------
-  VLAN0001                      0         0        0         26         26
+  VLAN0001                      0         0        0          2          2
 
 [30/300] dsw1 DSW-HQ-1# show spanning-tree root
                                           Root    Hello Max Fwd
   Vlan             Root ID              Cost    Port    Time  Age Dly
   ---------------- -------------------- ------- ------- ----- --- ---
-  VLAN0001         32769 0200.0000.000d  4       Fa0/1   2     20  15
+  VLAN0001         32769 0200.0000.000d  19      Fa0/1   2     20  15
 
 [31/300] dsw1 DSW-HQ-1# show spanning-tree bridge
                                                      Hello  Max  Fwd
@@ -274,90 +199,48 @@ Total steps: 300
     Spanning tree enabled protocol ieee
     Root ID    Priority    32769
                Address     0200.0000.000d
-               Cost        4
+               Cost        19
                Port        Fa0/1
   
   Interface        Role  Sts  Cost      Prio.Nbr  Type
   ---------------- ----  ---  --------  --------  ----
-  Fa0/0            Disa  FWD  4         128.00    P2p
-  Fa0/1            Root  FWD  4         128.01    P2p
-  Fa0/2            Desg  FWD  4         128.02    P2p
-  Fa0/3            Disa  FWD  4         128.03    P2p
-  Fa0/4            Disa  FWD  4         128.04    P2p
-  Fa0/5            Disa  FWD  4         128.05    P2p
-  Fa0/6            Disa  FWD  4         128.06    P2p
-  Fa0/7            Disa  FWD  4         128.07    P2p
-  Fa0/8            Disa  FWD  4         128.08    P2p
-  Fa0/9            Disa  FWD  4         128.09    P2p
-  Fa0/10           Disa  FWD  4         128.010   P2p
-  Fa0/11           Disa  FWD  4         128.011   P2p
-  Fa0/12           Disa  FWD  4         128.012   P2p
-  Fa0/13           Disa  FWD  4         128.013   P2p
-  Fa0/14           Disa  FWD  4         128.014   P2p
-  Fa0/15           Disa  FWD  4         128.015   P2p
-  Fa0/16           Disa  FWD  4         128.016   P2p
-  Fa0/17           Disa  FWD  4         128.017   P2p
-  Fa0/18           Disa  FWD  4         128.018   P2p
-  Fa0/19           Disa  FWD  4         128.019   P2p
-  Fa0/20           Disa  FWD  4         128.020   P2p
-  Fa0/21           Disa  FWD  4         128.021   P2p
-  Fa0/22           Disa  FWD  4         128.022   P2p
-  Fa0/23           Disa  FWD  4         128.023   P2p
-  Gi0/0            Disa  FWD  4         128.00    P2p
-  Gi0/1            Disa  FWD  4         128.01    P2p
+  Fa0/1            Root  FWD  19        128.1     P2p
+  Fa0/2            Desg  FWD  19        128.2     P2p
 
 [33/300] dsw2 DSW-HQ-2# show spanning-tree
   VLAN0001
     Spanning tree enabled protocol ieee
     Root ID    Priority    32769
                Address     0200.0000.000d
-               Cost        4
+               Cost        19
                Port        Fa0/1
   
   Interface        Role  Sts  Cost      Prio.Nbr  Type
   ---------------- ----  ---  --------  --------  ----
-  Fa0/0            Disa  FWD  4         128.00    P2p
-  Fa0/1            Root  FWD  4         128.01    P2p
-  Fa0/2            Altn  BLK  4         128.02    P2p
-  Fa0/3            Disa  FWD  4         128.03    P2p
-  Fa0/4            Disa  FWD  4         128.04    P2p
-  Fa0/5            Disa  FWD  4         128.05    P2p
-  Fa0/6            Disa  FWD  4         128.06    P2p
-  Fa0/7            Disa  FWD  4         128.07    P2p
-  Fa0/8            Disa  FWD  4         128.08    P2p
-  Fa0/9            Disa  FWD  4         128.09    P2p
-  Fa0/10           Disa  FWD  4         128.010   P2p
-  Fa0/11           Disa  FWD  4         128.011   P2p
-  Fa0/12           Disa  FWD  4         128.012   P2p
-  Fa0/13           Disa  FWD  4         128.013   P2p
-  Fa0/14           Disa  FWD  4         128.014   P2p
-  Fa0/15           Disa  FWD  4         128.015   P2p
-  Fa0/16           Disa  FWD  4         128.016   P2p
-  Fa0/17           Disa  FWD  4         128.017   P2p
-  Fa0/18           Disa  FWD  4         128.018   P2p
-  Fa0/19           Disa  FWD  4         128.019   P2p
-  Fa0/20           Disa  FWD  4         128.020   P2p
-  Fa0/21           Disa  FWD  4         128.021   P2p
-  Fa0/22           Disa  FWD  4         128.022   P2p
-  Fa0/23           Disa  FWD  4         128.023   P2p
-  Gi0/0            Disa  FWD  4         128.00    P2p
-  Gi0/1            Disa  FWD  4         128.01    P2p
+  Fa0/1            Root  FWD  19        128.1     P2p
+  Fa0/2            Altn  BLK  19        128.2     P2p
 
 [34/300] dsw2 DSW-HQ-2# show spanning-tree summary
   Switch is in pvst mode
   Root bridge for: none
   Extended system ID           is enabled
   Portfast Default             is disabled
+  PortFast BPDU Guard Default  is disabled
+  Portfast BPDU Filter Default is disabled
+  Loopguard Default            is disabled
+  UplinkFast                   is disabled
+  BackboneFast                 is disabled
+  Configured Pathcost method used is short
   
   Name                   Blocking Listening Learning Forwarding STP Active
   ---------------------- -------- --------- -------- ---------- ----------
-  VLAN0001                      1         0        0         25         26
+  VLAN0001                      1         0        0          1          2
 
 [35/300] dsw2 DSW-HQ-2# show spanning-tree root
                                           Root    Hello Max Fwd
   Vlan             Root ID              Cost    Port    Time  Age Dly
   ---------------- -------------------- ------- ------- ----- --- ---
-  VLAN0001         32769 0200.0000.000d  4       Fa0/1   2     20  15
+  VLAN0001         32769 0200.0000.000d  19      Fa0/1   2     20  15
 
 [36/300] dsw2 DSW-HQ-2# show spanning-tree bridge
                                                      Hello  Max  Fwd
@@ -370,37 +253,13 @@ Total steps: 300
     Spanning tree enabled protocol ieee
     Root ID    Priority    32769
                Address     0200.0000.000d
-               Cost        4
+               Cost        19
                Port        Fa0/1
   
   Interface        Role  Sts  Cost      Prio.Nbr  Type
   ---------------- ----  ---  --------  --------  ----
-  Fa0/0            Disa  FWD  4         128.00    P2p
-  Fa0/1            Root  FWD  4         128.01    P2p
-  Fa0/2            Altn  BLK  4         128.02    P2p
-  Fa0/3            Disa  FWD  4         128.03    P2p
-  Fa0/4            Disa  FWD  4         128.04    P2p
-  Fa0/5            Disa  FWD  4         128.05    P2p
-  Fa0/6            Disa  FWD  4         128.06    P2p
-  Fa0/7            Disa  FWD  4         128.07    P2p
-  Fa0/8            Disa  FWD  4         128.08    P2p
-  Fa0/9            Disa  FWD  4         128.09    P2p
-  Fa0/10           Disa  FWD  4         128.010   P2p
-  Fa0/11           Disa  FWD  4         128.011   P2p
-  Fa0/12           Disa  FWD  4         128.012   P2p
-  Fa0/13           Disa  FWD  4         128.013   P2p
-  Fa0/14           Disa  FWD  4         128.014   P2p
-  Fa0/15           Disa  FWD  4         128.015   P2p
-  Fa0/16           Disa  FWD  4         128.016   P2p
-  Fa0/17           Disa  FWD  4         128.017   P2p
-  Fa0/18           Disa  FWD  4         128.018   P2p
-  Fa0/19           Disa  FWD  4         128.019   P2p
-  Fa0/20           Disa  FWD  4         128.020   P2p
-  Fa0/21           Disa  FWD  4         128.021   P2p
-  Fa0/22           Disa  FWD  4         128.022   P2p
-  Fa0/23           Disa  FWD  4         128.023   P2p
-  Gi0/0            Disa  FWD  4         128.00    P2p
-  Gi0/1            Disa  FWD  4         128.01    P2p
+  Fa0/1            Root  FWD  19        128.1     P2p
+  Fa0/2            Altn  BLK  19        128.2     P2p
 
 
 --- [38] § STP — état initial (Huawei) ---
@@ -436,8 +295,8 @@ Total steps: 300
   CIST Bridge         :32768.SW-BR
   Config Times        :Hello 2s MaxAge 20s FwDly 15s MaxHop 20
   Active Times        :Hello 2s MaxAge 20s FwDly 15s MaxHop 20
-  CIST Root/ERPC      :32768.02:0-0:00-:00:00:27 / 0
-  CIST RegRoot/IRPC   :32768.02:0-0:00-:00:00:27 / 0
+  CIST Root/ERPC      :32768.0200-0000-0027 / 0
+  CIST RegRoot/IRPC   :32768.0200-0000-0027 / 0
   CIST RootPortId     :0.0
   BPDU-Protection     :Disabled
   TC or TCN received  :0
@@ -475,8 +334,8 @@ Total steps: 300
   CIST Bridge         :32768.SW-BR
   Config Times        :Hello 2s MaxAge 20s FwDly 15s MaxHop 20
   Active Times        :Hello 2s MaxAge 20s FwDly 15s MaxHop 20
-  CIST Root/ERPC      :32768.02:0-0:00-:00:00:27 / 0
-  CIST RegRoot/IRPC   :32768.02:0-0:00-:00:00:27 / 0
+  CIST Root/ERPC      :32768.0200-0000-0027 / 0
+  CIST RegRoot/IRPC   :32768.0200-0000-0027 / 0
   CIST RootPortId     :0.0
   BPDU-Protection     :Disabled
   TC or TCN received  :0
@@ -487,8 +346,8 @@ Total steps: 300
   CIST Bridge         :32768.DSW-BR
   Config Times        :Hello 2s MaxAge 20s FwDly 15s MaxHop 20
   Active Times        :Hello 2s MaxAge 20s FwDly 15s MaxHop 20
-  CIST Root/ERPC      :32768.02:0-0:00-:00:00:27 / 4
-  CIST RegRoot/IRPC   :32768.02:0-0:00-:00:00:27 / 0
+  CIST Root/ERPC      :32768.0200-0000-0027 / 4
+  CIST RegRoot/IRPC   :32768.0200-0000-0027 / 0
   CIST RootPortId     :2.2
   BPDU-Protection     :Disabled
   TC or TCN received  :0
@@ -526,8 +385,8 @@ Total steps: 300
   CIST Bridge         :32768.DSW-BR
   Config Times        :Hello 2s MaxAge 20s FwDly 15s MaxHop 20
   Active Times        :Hello 2s MaxAge 20s FwDly 15s MaxHop 20
-  CIST Root/ERPC      :32768.02:0-0:00-:00:00:27 / 4
-  CIST RegRoot/IRPC   :32768.02:0-0:00-:00:00:27 / 0
+  CIST Root/ERPC      :32768.0200-0000-0027 / 4
+  CIST RegRoot/IRPC   :32768.0200-0000-0027 / 0
   CIST RootPortId     :2.2
   BPDU-Protection     :Disabled
   TC or TCN received  :0
@@ -581,60 +440,60 @@ Total steps: 300
    VLAN0001 is executing the pvst compatible Spanning Tree protocol
     Bridge Identifier has priority 32768, sysid 1, address 0200.0000.005f
     Current root has priority 32768, address 0200.0000.000d
-    Root port is Fa0/1, cost of root path is 4
+    Root port is Fa0/1, cost of root path is 19
     Hello Time 2 sec  Max Age 20 sec  Forward Delay 15 sec
   
-   Port FastEthernet0/0 of VLAN0001 is disabled forwarding
-     Port path cost 19, Port priority 128
    Port FastEthernet0/1 of VLAN0001 is root forwarding
      Port path cost 19, Port priority 128
    Port FastEthernet0/2 of VLAN0001 is designated forwarding
      Port path cost 19, Port priority 128
-   Port FastEthernet0/3 of VLAN0001 is disabled forwarding
+   Port FastEthernet0/3 of VLAN0001 is disabled disabled
      Port path cost 19, Port priority 128
-   Port FastEthernet0/4 of VLAN0001 is disabled forwarding
+   Port FastEthernet0/4 of VLAN0001 is disabled disabled
      Port path cost 19, Port priority 128
-   Port FastEthernet0/5 of VLAN0001 is disabled forwarding
+   Port FastEthernet0/5 of VLAN0001 is disabled disabled
      Port path cost 19, Port priority 128
-   Port FastEthernet0/6 of VLAN0001 is disabled forwarding
+   Port FastEthernet0/6 of VLAN0001 is disabled disabled
      Port path cost 19, Port priority 128
-   Port FastEthernet0/7 of VLAN0001 is disabled forwarding
+   Port FastEthernet0/7 of VLAN0001 is disabled disabled
      Port path cost 19, Port priority 128
-   Port FastEthernet0/8 of VLAN0001 is disabled forwarding
+   Port FastEthernet0/8 of VLAN0001 is disabled disabled
      Port path cost 19, Port priority 128
-   Port FastEthernet0/9 of VLAN0001 is disabled forwarding
+   Port FastEthernet0/9 of VLAN0001 is disabled disabled
      Port path cost 19, Port priority 128
-   Port FastEthernet0/10 of VLAN0001 is disabled forwarding
+   Port FastEthernet0/10 of VLAN0001 is disabled disabled
      Port path cost 19, Port priority 128
-   Port FastEthernet0/11 of VLAN0001 is disabled forwarding
+   Port FastEthernet0/11 of VLAN0001 is disabled disabled
      Port path cost 19, Port priority 128
-   Port FastEthernet0/12 of VLAN0001 is disabled forwarding
+   Port FastEthernet0/12 of VLAN0001 is disabled disabled
      Port path cost 19, Port priority 128
-   Port FastEthernet0/13 of VLAN0001 is disabled forwarding
+   Port FastEthernet0/13 of VLAN0001 is disabled disabled
      Port path cost 19, Port priority 128
-   Port FastEthernet0/14 of VLAN0001 is disabled forwarding
+   Port FastEthernet0/14 of VLAN0001 is disabled disabled
      Port path cost 19, Port priority 128
-   Port FastEthernet0/15 of VLAN0001 is disabled forwarding
+   Port FastEthernet0/15 of VLAN0001 is disabled disabled
      Port path cost 19, Port priority 128
-   Port FastEthernet0/16 of VLAN0001 is disabled forwarding
+   Port FastEthernet0/16 of VLAN0001 is disabled disabled
      Port path cost 19, Port priority 128
-   Port FastEthernet0/17 of VLAN0001 is disabled forwarding
+   Port FastEthernet0/17 of VLAN0001 is disabled disabled
      Port path cost 19, Port priority 128
-   Port FastEthernet0/18 of VLAN0001 is disabled forwarding
+   Port FastEthernet0/18 of VLAN0001 is disabled disabled
      Port path cost 19, Port priority 128
-   Port FastEthernet0/19 of VLAN0001 is disabled forwarding
+   Port FastEthernet0/19 of VLAN0001 is disabled disabled
      Port path cost 19, Port priority 128
-   Port FastEthernet0/20 of VLAN0001 is disabled forwarding
+   Port FastEthernet0/20 of VLAN0001 is disabled disabled
      Port path cost 19, Port priority 128
-   Port FastEthernet0/21 of VLAN0001 is disabled forwarding
+   Port FastEthernet0/21 of VLAN0001 is disabled disabled
      Port path cost 19, Port priority 128
-   Port FastEthernet0/22 of VLAN0001 is disabled forwarding
+   Port FastEthernet0/22 of VLAN0001 is disabled disabled
      Port path cost 19, Port priority 128
-   Port FastEthernet0/23 of VLAN0001 is disabled forwarding
+   Port FastEthernet0/23 of VLAN0001 is disabled disabled
      Port path cost 19, Port priority 128
-   Port GigabitEthernet0/0 of VLAN0001 is disabled forwarding
+   Port FastEthernet0/24 of VLAN0001 is disabled disabled
      Port path cost 19, Port priority 128
-   Port GigabitEthernet0/1 of VLAN0001 is disabled forwarding
+   Port GigabitEthernet0/1 of VLAN0001 is disabled disabled
+     Port path cost 19, Port priority 128
+   Port GigabitEthernet0/2 of VLAN0001 is disabled disabled
      Port path cost 19, Port priority 128
 
 
@@ -694,7 +553,7 @@ Total steps: 300
                                           Root    Hello Max Fwd
   Vlan             Root ID              Cost    Port    Time  Age Dly
   ---------------- -------------------- ------- ------- ----- --- ---
-  VLAN0001         4097 0200.0000.005f  4       Fa0/4   2     20  15
+  VLAN0001         4097 0200.0000.005f  19      Fa0/4   2     20  15
 
 [70/300] dsw1 DSW-HQ-1# show spanning-tree root
                                           Root    Hello Max Fwd
@@ -706,54 +565,39 @@ Total steps: 300
                                           Root    Hello Max Fwd
   Vlan             Root ID              Cost    Port    Time  Age Dly
   ---------------- -------------------- ------- ------- ----- --- ---
-  VLAN0001         4097 0200.0000.005f  4       Fa0/2   2     20  15
+  VLAN0001         4097 0200.0000.005f  19      Fa0/2   2     20  15
 
 [72/300] dsw1 DSW-HQ-1# show spanning-tree summary
   Switch is in pvst mode
   Root bridge for: VLAN0001
   Extended system ID           is enabled
   Portfast Default             is disabled
+  PortFast BPDU Guard Default  is disabled
+  Portfast BPDU Filter Default is disabled
+  Loopguard Default            is disabled
+  UplinkFast                   is disabled
+  BackboneFast                 is disabled
+  Configured Pathcost method used is short
   
   Name                   Blocking Listening Learning Forwarding STP Active
   ---------------------- -------- --------- -------- ---------- ----------
-  VLAN0001                      0         0        0         26         26
+  VLAN0001                      0         0        0          2          2
 
 [73/300] swhq SW-HQ# show spanning-tree
   VLAN0001
     Spanning tree enabled protocol ieee
     Root ID    Priority    4097
                Address     0200.0000.005f
-               Cost        4
+               Cost        19
                Port        Fa0/4
   
   Interface        Role  Sts  Cost      Prio.Nbr  Type
   ---------------- ----  ---  --------  --------  ----
-  Fa0/0            Disa  FWD  4         128.00    P2p
-  Fa0/1            Desg  FWD  4         128.01    P2p
-  Fa0/2            Desg  FWD  4         128.02    P2p
-  Fa0/3            Desg  FWD  4         128.03    P2p
-  Fa0/4            Root  FWD  4         128.04    P2p
-  Fa0/5            Desg  FWD  4         128.05    P2p
-  Fa0/6            Disa  FWD  4         128.06    P2p
-  Fa0/7            Disa  FWD  4         128.07    P2p
-  Fa0/8            Disa  FWD  4         128.08    P2p
-  Fa0/9            Disa  FWD  4         128.09    P2p
-  Fa0/10           Disa  FWD  4         128.010   P2p
-  Fa0/11           Disa  FWD  4         128.011   P2p
-  Fa0/12           Disa  FWD  4         128.012   P2p
-  Fa0/13           Disa  FWD  4         128.013   P2p
-  Fa0/14           Disa  FWD  4         128.014   P2p
-  Fa0/15           Disa  FWD  4         128.015   P2p
-  Fa0/16           Disa  FWD  4         128.016   P2p
-  Fa0/17           Disa  FWD  4         128.017   P2p
-  Fa0/18           Disa  FWD  4         128.018   P2p
-  Fa0/19           Disa  FWD  4         128.019   P2p
-  Fa0/20           Disa  FWD  4         128.020   P2p
-  Fa0/21           Disa  FWD  4         128.021   P2p
-  Fa0/22           Disa  FWD  4         128.022   P2p
-  Fa0/23           Disa  FWD  4         128.023   P2p
-  Gi0/0            Disa  FWD  4         128.00    P2p
-  Gi0/1            Disa  FWD  4         128.01    P2p
+  Fa0/1            Desg  FWD  19        128.1     P2p
+  Fa0/2            Desg  FWD  19        128.2     P2p
+  Fa0/3            Desg  FWD  19        128.3     P2p
+  Fa0/4            Root  FWD  19        128.4     P2p
+  Fa0/5            Desg  FWD  19        128.5     P2p
 
 [74/300] dsw2 DSW-HQ-2# show spanning-tree blockedports
   Name                 Blocked Interfaces List
@@ -786,13 +630,13 @@ Total steps: 300
                                           Root    Hello Max Fwd
   Vlan             Root ID              Cost    Port    Time  Age Dly
   ---------------- -------------------- ------- ------- ----- --- ---
-  VLAN0001         4097 0200.0000.005f  0               2     20  15
+  VLAN0001         24577 0200.0000.005f  0               2     20  15
 
 [82/300] swhq SW-HQ# show spanning-tree root
                                           Root    Hello Max Fwd
   Vlan             Root ID              Cost    Port    Time  Age Dly
   ---------------- -------------------- ------- ------- ----- --- ---
-  VLAN0001         4097 0200.0000.005f  4       Fa0/4   2     20  15
+  VLAN0001         24577 0200.0000.005f  19      Fa0/4   2     20  15
 
 
 --- [83] § STP — élection de la racine BR (Huawei priority) ---
@@ -873,8 +717,8 @@ Total steps: 300
   CIST Bridge         :32768.DSW-BR
   Config Times        :Hello 2s MaxAge 20s FwDly 15s MaxHop 20
   Active Times        :Hello 2s MaxAge 20s FwDly 15s MaxHop 20
-  CIST Root/ERPC      :4096.02:0-0:00-:00:00:27 / 4
-  CIST RegRoot/IRPC   :4096.02:0-0:00-:00:00:27 / 0
+  CIST Root/ERPC      :4096.0200-0000-0027 / 4
+  CIST RegRoot/IRPC   :4096.0200-0000-0027 / 0
   CIST RootPortId     :2.2
   BPDU-Protection     :Disabled
   TC or TCN received  :0
@@ -943,39 +787,15 @@ Total steps: 300
 [103/300] dsw2 DSW-HQ-2# show spanning-tree
   VLAN0001
     Spanning tree enabled protocol ieee
-    Root ID    Priority    4097
+    Root ID    Priority    24577
                Address     0200.0000.005f
-               Cost        4
+               Cost        19
                Port        Fa0/2
   
   Interface        Role  Sts  Cost      Prio.Nbr  Type
   ---------------- ----  ---  --------  --------  ----
-  Fa0/0            Disa  FWD  4         128.00    P2p
-  Fa0/1            Altn  BLK  4         128.01    P2p
-  Fa0/2            Root  LIS  4         128.02    P2p
-  Fa0/3            Disa  FWD  4         128.03    P2p
-  Fa0/4            Disa  FWD  4         128.04    P2p
-  Fa0/5            Disa  FWD  4         128.05    P2p
-  Fa0/6            Disa  FWD  4         128.06    P2p
-  Fa0/7            Disa  FWD  4         128.07    P2p
-  Fa0/8            Disa  FWD  4         128.08    P2p
-  Fa0/9            Disa  FWD  4         128.09    P2p
-  Fa0/10           Disa  FWD  4         128.010   P2p
-  Fa0/11           Disa  FWD  4         128.011   P2p
-  Fa0/12           Disa  FWD  4         128.012   P2p
-  Fa0/13           Disa  FWD  4         128.013   P2p
-  Fa0/14           Disa  FWD  4         128.014   P2p
-  Fa0/15           Disa  FWD  4         128.015   P2p
-  Fa0/16           Disa  FWD  4         128.016   P2p
-  Fa0/17           Disa  FWD  4         128.017   P2p
-  Fa0/18           Disa  FWD  4         128.018   P2p
-  Fa0/19           Disa  FWD  4         128.019   P2p
-  Fa0/20           Disa  FWD  4         128.020   P2p
-  Fa0/21           Disa  FWD  4         128.021   P2p
-  Fa0/22           Disa  FWD  4         128.022   P2p
-  Fa0/23           Disa  FWD  4         128.023   P2p
-  Gi0/0            Disa  FWD  4         128.00    P2p
-  Gi0/1            Disa  FWD  4         128.01    P2p
+  Fa0/1            Altn  BLK  19        128.1     P2p
+  Fa0/2            Root  LIS  19        128.2     P2p
 
 
 --- [104] § STP — coût & priorité de port (Huawei) ---
@@ -1018,7 +838,7 @@ Total steps: 300
   Root bridge for: none
                        Blocking Listening Learning Forwarding STP Active
   -------------------- -------- --------- -------- ---------- ----------
-  1 vlan               0        0         0        26         26
+  1 vlan               0        0         0        5          5
 
 [114/300] swhq SW-HQ# configure terminal
   Enter configuration commands, one per line.  End with CNTL/Z.
@@ -1031,10 +851,16 @@ Total steps: 300
   Root bridge for: none
   Extended system ID           is enabled
   Portfast Default             is disabled
+  PortFast BPDU Guard Default  is disabled
+  Portfast BPDU Filter Default is disabled
+  Loopguard Default            is disabled
+  UplinkFast                   is disabled
+  BackboneFast                 is disabled
+  Configured Pathcost method used is short
   
   Name                   Blocking Listening Learning Forwarding STP Active
   ---------------------- -------- --------- -------- ---------- ----------
-  VLAN0001                      0         0        0         26         26
+  VLAN0001                      0         0        0          5          5
 
 [117/300] swhq SW-HQ(config)# spanning-tree mode mst
 <empty>
@@ -1058,10 +884,16 @@ Total steps: 300
   Root bridge for: none
   Extended system ID           is enabled
   Portfast Default             is disabled
+  PortFast BPDU Guard Default  is disabled
+  Portfast BPDU Filter Default is disabled
+  Loopguard Default            is disabled
+  UplinkFast                   is disabled
+  BackboneFast                 is disabled
+  Configured Pathcost method used is short
   
   Name                   Blocking Listening Learning Forwarding STP Active
   ---------------------- -------- --------- -------- ---------- ----------
-  VLAN0001                      0         0        0         26         26
+  VLAN0001                      0         0        0          5          5
 
 
 --- [122] § STP — modes STP/RSTP/MSTP (Huawei) ---
@@ -1224,11 +1056,17 @@ Total steps: 300
   Switch is in pvst mode
   Root bridge for: none
   Extended system ID           is enabled
-  Portfast Default             is disabled
+  Portfast Default             is enabled
+  PortFast BPDU Guard Default  is enabled
+  Portfast BPDU Filter Default is disabled
+  Loopguard Default            is enabled
+  UplinkFast                   is disabled
+  BackboneFast                 is disabled
+  Configured Pathcost method used is short
   
   Name                   Blocking Listening Learning Forwarding STP Active
   ---------------------- -------- --------- -------- ---------- ----------
-  VLAN0001                      0         0        0         26         26
+  VLAN0001                      0         0        0          5          5
 
 [162/300] swhq SW-HQ# show spanning-tree inconsistentports
   Name                 Interface                Inconsistency
@@ -1304,39 +1142,15 @@ Total steps: 300
 [183/300] dsw1 DSW-HQ-1(config)# do show spanning-tree vlan 1
   VLAN0001
     Spanning tree enabled protocol ieee
-    Root ID    Priority    4097
+    Root ID    Priority    24577
                Address     0200.0000.005f
                Cost        0
                This bridge is the root
   
   Interface        Role  Sts  Cost      Prio.Nbr  Type
   ---------------- ----  ---  --------  --------  ----
-  Fa0/0            Disa  FWD  4         128.00    P2p
-  Fa0/1            Desg  FWD  4         128.01    P2p
-  Fa0/2            Desg  FWD  4         128.02    P2p
-  Fa0/3            Disa  FWD  4         128.03    P2p
-  Fa0/4            Disa  FWD  4         128.04    P2p
-  Fa0/5            Disa  FWD  4         128.05    P2p
-  Fa0/6            Disa  FWD  4         128.06    P2p
-  Fa0/7            Disa  FWD  4         128.07    P2p
-  Fa0/8            Disa  FWD  4         128.08    P2p
-  Fa0/9            Disa  FWD  4         128.09    P2p
-  Fa0/10           Disa  FWD  4         128.010   P2p
-  Fa0/11           Disa  FWD  4         128.011   P2p
-  Fa0/12           Disa  FWD  4         128.012   P2p
-  Fa0/13           Disa  FWD  4         128.013   P2p
-  Fa0/14           Disa  FWD  4         128.014   P2p
-  Fa0/15           Disa  FWD  4         128.015   P2p
-  Fa0/16           Disa  FWD  4         128.016   P2p
-  Fa0/17           Disa  FWD  4         128.017   P2p
-  Fa0/18           Disa  FWD  4         128.018   P2p
-  Fa0/19           Disa  FWD  4         128.019   P2p
-  Fa0/20           Disa  FWD  4         128.020   P2p
-  Fa0/21           Disa  FWD  4         128.021   P2p
-  Fa0/22           Disa  FWD  4         128.022   P2p
-  Fa0/23           Disa  FWD  4         128.023   P2p
-  Gi0/0            Disa  FWD  4         128.00    P2p
-  Gi0/1            Disa  FWD  4         128.01    P2p
+  Fa0/1            Desg  FWD  19        128.1     P2p
+  Fa0/2            Desg  FWD  19        128.2     P2p
 
 [184/300] dsw1 DSW-HQ-1(config)# no spanning-tree vlan 1 hello-time
 <empty>
@@ -1361,8 +1175,8 @@ Total steps: 300
   CIST Bridge         :0.SW-BR
   Config Times        :Hello 2s MaxAge 20s FwDly 15s MaxHop 20
   Active Times        :Hello 2s MaxAge 20s FwDly 15s MaxHop 20
-  CIST Root/ERPC      :0.02:0-0:00-:00:00:27 / 0
-  CIST RegRoot/IRPC   :0.02:0-0:00-:00:00:27 / 0
+  CIST Root/ERPC      :0.0200-0000-0027 / 0
+  CIST RegRoot/IRPC   :0.0200-0000-0027 / 0
   CIST RootPortId     :0.0
   BPDU-Protection     :Enabled
   TC or TCN received  :0
@@ -1378,11 +1192,11 @@ Total steps: 300
 --- [193] § STP — convergence sur panne de lien (HQ) ---
 [193/300] lhq lhq$ ping -c 1 10.1.1.11
   PING 10.1.1.11 (10.1.1.11) 56(84) bytes of data.
-  64 bytes from 10.1.1.11: icmp_seq=1 ttl=128 time=0.391 ms
+  64 bytes from 10.1.1.11: icmp_seq=1 ttl=128 time=0.506 ms
   
   --- 10.1.1.11 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.391/0.391/0.391/0.000 ms
+  rtt min/avg/max/mdev = 0.506/0.506/0.506/0.000 ms
 
 [194/300] swhq SW-HQ# show spanning-tree blockedports
   Name                 Blocked Interfaces List
@@ -1398,7 +1212,7 @@ Total steps: 300
 <empty>
 
 [197/300] swhq SW-HQ(config-if)# shutdown
-<empty>
+  *08:00:00: STP: VLAN0001 Fa0/4 -> disabled
 
 [198/300] swhq SW-HQ(config-if)# end
 <empty>
@@ -1406,45 +1220,23 @@ Total steps: 300
 [199/300] swhq SW-HQ# show spanning-tree
   VLAN0001
     Spanning tree enabled protocol ieee
-    Root ID    Priority    8193
+    Root ID    Priority    28673
                Address     0200.0000.000d
                Cost        0
                This bridge is the root
   
   Interface        Role  Sts  Cost      Prio.Nbr  Type
   ---------------- ----  ---  --------  --------  ----
-  Fa0/0            Disa  FWD  4         128.00    P2p
-  Fa0/1            Desg  FWD  4         128.01    P2p
-  Fa0/2            Desg  FWD  4         128.02    P2p Edge
-  Fa0/3            Desg  FWD  4         128.03    P2p Edge
-  Fa0/4            Disa  FWD  4         128.04    P2p
-  Fa0/5            Desg  FWD  4         128.05    P2p
-  Fa0/6            Disa  FWD  4         128.06    P2p
-  Fa0/7            Disa  FWD  4         128.07    P2p
-  Fa0/8            Disa  FWD  4         128.08    P2p
-  Fa0/9            Disa  FWD  4         128.09    P2p
-  Fa0/10           Disa  FWD  4         128.010   P2p
-  Fa0/11           Disa  FWD  4         128.011   P2p
-  Fa0/12           Disa  FWD  4         128.012   P2p
-  Fa0/13           Disa  FWD  4         128.013   P2p
-  Fa0/14           Disa  FWD  4         128.014   P2p
-  Fa0/15           Disa  FWD  4         128.015   P2p
-  Fa0/16           Disa  FWD  4         128.016   P2p
-  Fa0/17           Disa  FWD  4         128.017   P2p
-  Fa0/18           Disa  FWD  4         128.018   P2p
-  Fa0/19           Disa  FWD  4         128.019   P2p
-  Fa0/20           Disa  FWD  4         128.020   P2p
-  Fa0/21           Disa  FWD  4         128.021   P2p
-  Fa0/22           Disa  FWD  4         128.022   P2p
-  Fa0/23           Disa  FWD  4         128.023   P2p
-  Gi0/0            Disa  FWD  4         128.00    P2p
-  Gi0/1            Disa  FWD  4         128.01    P2p
+  Fa0/1            Desg  FWD  19        128.1     P2p
+  Fa0/2            Desg  FWD  19        128.2     P2p Edge
+  Fa0/3            Desg  FWD  19        128.3     P2p Edge
+  Fa0/5            Desg  FWD  19        128.5     P2p
 
 [200/300] dsw1 DSW-HQ-1# show spanning-tree root
                                           Root    Hello Max Fwd
   Vlan             Root ID              Cost    Port    Time  Age Dly
   ---------------- -------------------- ------- ------- ----- --- ---
-  VLAN0001         4097 0200.0000.005f  0               2     20  15
+  VLAN0001         24577 0200.0000.005f  0               1     6   4
 
 [201/300] dsw2 DSW-HQ-2# show spanning-tree blockedports
   Name                 Blocked Interfaces List
@@ -1455,21 +1247,21 @@ Total steps: 300
 
 [202/300] lhq lhq$ ping -c 2 10.1.1.11
   PING 10.1.1.11 (10.1.1.11) 56(84) bytes of data.
-  64 bytes from 10.1.1.11: icmp_seq=1 ttl=128 time=0.401 ms
-  64 bytes from 10.1.1.11: icmp_seq=2 ttl=128 time=0.206 ms
+  64 bytes from 10.1.1.11: icmp_seq=1 ttl=128 time=0.414 ms
+  64 bytes from 10.1.1.11: icmp_seq=2 ttl=128 time=0.581 ms
   
   --- 10.1.1.11 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.206/0.303/0.401/0.097 ms
+  rtt min/avg/max/mdev = 0.414/0.497/0.581/0.083 ms
 
 [203/300] lhq lhq$ ping -c 2 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
-  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=0.657 ms
-  64 bytes from 10.3.3.10: icmp_seq=2 ttl=62 time=0.580 ms
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=1.059 ms
+  64 bytes from 10.3.3.10: icmp_seq=2 ttl=62 time=1.542 ms
   
   --- 10.3.3.10 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.580/0.618/0.657/0.038 ms
+  rtt min/avg/max/mdev = 1.059/1.301/1.542/0.241 ms
 
 [204/300] swhq SW-HQ# configure terminal
   Enter configuration commands, one per line.  End with CNTL/Z.
@@ -1478,7 +1270,7 @@ Total steps: 300
 <empty>
 
 [206/300] swhq SW-HQ(config-if)# no shutdown
-<empty>
+  *08:00:00: STP: VLAN0001 Fa0/4 -> forwarding
 
 [207/300] swhq SW-HQ(config-if)# end
 <empty>
@@ -1486,48 +1278,27 @@ Total steps: 300
 [208/300] swhq SW-HQ# show spanning-tree
   VLAN0001
     Spanning tree enabled protocol ieee
-    Root ID    Priority    8193
-               Address     0200.0000.000d
-               Cost        0
-               This bridge is the root
+    Root ID    Priority    24577
+               Address     0200.0000.005f
+               Cost        38
+               Port        Fa0/5
   
   Interface        Role  Sts  Cost      Prio.Nbr  Type
   ---------------- ----  ---  --------  --------  ----
-  Fa0/0            Disa  FWD  4         128.00    P2p
-  Fa0/1            Desg  FWD  4         128.01    P2p
-  Fa0/2            Desg  FWD  4         128.02    P2p Edge
-  Fa0/3            Desg  FWD  4         128.03    P2p Edge
-  Fa0/4            Desg  FWD  4         128.04    P2p
-  Fa0/5            Desg  FWD  4         128.05    P2p
-  Fa0/6            Disa  FWD  4         128.06    P2p
-  Fa0/7            Disa  FWD  4         128.07    P2p
-  Fa0/8            Disa  FWD  4         128.08    P2p
-  Fa0/9            Disa  FWD  4         128.09    P2p
-  Fa0/10           Disa  FWD  4         128.010   P2p
-  Fa0/11           Disa  FWD  4         128.011   P2p
-  Fa0/12           Disa  FWD  4         128.012   P2p
-  Fa0/13           Disa  FWD  4         128.013   P2p
-  Fa0/14           Disa  FWD  4         128.014   P2p
-  Fa0/15           Disa  FWD  4         128.015   P2p
-  Fa0/16           Disa  FWD  4         128.016   P2p
-  Fa0/17           Disa  FWD  4         128.017   P2p
-  Fa0/18           Disa  FWD  4         128.018   P2p
-  Fa0/19           Disa  FWD  4         128.019   P2p
-  Fa0/20           Disa  FWD  4         128.020   P2p
-  Fa0/21           Disa  FWD  4         128.021   P2p
-  Fa0/22           Disa  FWD  4         128.022   P2p
-  Fa0/23           Disa  FWD  4         128.023   P2p
-  Gi0/0            Disa  FWD  4         128.00    P2p
-  Gi0/1            Disa  FWD  4         128.01    P2p
+  Fa0/1            Desg  FWD  19        128.1     P2p
+  Fa0/2            Desg  FWD  19        128.2     P2p Edge
+  Fa0/3            Desg  FWD  19        128.3     P2p Edge
+  Fa0/4            Desg  FWD  19        128.4     P2p
+  Fa0/5            Root  FWD  19        128.5     P2p
 
 [209/300] lhq lhq$ ping -c 2 10.1.1.11
   PING 10.1.1.11 (10.1.1.11) 56(84) bytes of data.
-  64 bytes from 10.1.1.11: icmp_seq=1 ttl=128 time=0.286 ms
-  64 bytes from 10.1.1.11: icmp_seq=2 ttl=128 time=0.215 ms
+  64 bytes from 10.1.1.11: icmp_seq=1 ttl=128 time=0.363 ms
+  64 bytes from 10.1.1.11: icmp_seq=2 ttl=128 time=0.573 ms
   
   --- 10.1.1.11 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.215/0.250/0.286/0.036 ms
+  rtt min/avg/max/mdev = 0.363/0.468/0.573/0.105 ms
 
 
 --- [210] § STP — convergence sur panne de lien (BR Huawei) ---
@@ -1754,13 +1525,11 @@ Total steps: 300
 --- [243] § STP — compteurs & changements de topologie ---
 [243/300] swhq SW-HQ# show spanning-tree detail
    VLAN0001 is executing the pvst compatible Spanning Tree protocol
-    Bridge Identifier has priority 8192, sysid 1, address 0200.0000.000d
-    We are the root of the spanning tree
-    Root port is N/A, cost of root path is 0
+    Bridge Identifier has priority 28672, sysid 1, address 0200.0000.000d
+    Current root has priority 24576, address 0200.0000.005f
+    Root port is Fa0/5, cost of root path is 38
     Hello Time 2 sec  Max Age 20 sec  Forward Delay 15 sec
   
-   Port FastEthernet0/0 of VLAN0001 is disabled forwarding
-     Port path cost 19, Port priority 128
    Port FastEthernet0/1 of VLAN0001 is designated forwarding
      Port path cost 19, Port priority 128
    Port FastEthernet0/2 of VLAN0001 is designated forwarding
@@ -1769,47 +1538,49 @@ Total steps: 300
      Port path cost 19, Port priority 128
    Port FastEthernet0/4 of VLAN0001 is designated forwarding
      Port path cost 19, Port priority 128
-   Port FastEthernet0/5 of VLAN0001 is designated forwarding
+   Port FastEthernet0/5 of VLAN0001 is root forwarding
      Port path cost 19, Port priority 128
-   Port FastEthernet0/6 of VLAN0001 is disabled forwarding
+   Port FastEthernet0/6 of VLAN0001 is disabled disabled
      Port path cost 19, Port priority 128
-   Port FastEthernet0/7 of VLAN0001 is disabled forwarding
+   Port FastEthernet0/7 of VLAN0001 is disabled disabled
      Port path cost 19, Port priority 128
-   Port FastEthernet0/8 of VLAN0001 is disabled forwarding
+   Port FastEthernet0/8 of VLAN0001 is disabled disabled
      Port path cost 19, Port priority 128
-   Port FastEthernet0/9 of VLAN0001 is disabled forwarding
+   Port FastEthernet0/9 of VLAN0001 is disabled disabled
      Port path cost 19, Port priority 128
-   Port FastEthernet0/10 of VLAN0001 is disabled forwarding
+   Port FastEthernet0/10 of VLAN0001 is disabled disabled
      Port path cost 19, Port priority 128
-   Port FastEthernet0/11 of VLAN0001 is disabled forwarding
+   Port FastEthernet0/11 of VLAN0001 is disabled disabled
      Port path cost 19, Port priority 128
-   Port FastEthernet0/12 of VLAN0001 is disabled forwarding
+   Port FastEthernet0/12 of VLAN0001 is disabled disabled
      Port path cost 19, Port priority 128
-   Port FastEthernet0/13 of VLAN0001 is disabled forwarding
+   Port FastEthernet0/13 of VLAN0001 is disabled disabled
      Port path cost 19, Port priority 128
-   Port FastEthernet0/14 of VLAN0001 is disabled forwarding
+   Port FastEthernet0/14 of VLAN0001 is disabled disabled
      Port path cost 19, Port priority 128
-   Port FastEthernet0/15 of VLAN0001 is disabled forwarding
+   Port FastEthernet0/15 of VLAN0001 is disabled disabled
      Port path cost 19, Port priority 128
-   Port FastEthernet0/16 of VLAN0001 is disabled forwarding
+   Port FastEthernet0/16 of VLAN0001 is disabled disabled
      Port path cost 19, Port priority 128
-   Port FastEthernet0/17 of VLAN0001 is disabled forwarding
+   Port FastEthernet0/17 of VLAN0001 is disabled disabled
      Port path cost 19, Port priority 128
-   Port FastEthernet0/18 of VLAN0001 is disabled forwarding
+   Port FastEthernet0/18 of VLAN0001 is disabled disabled
      Port path cost 19, Port priority 128
-   Port FastEthernet0/19 of VLAN0001 is disabled forwarding
+   Port FastEthernet0/19 of VLAN0001 is disabled disabled
      Port path cost 19, Port priority 128
-   Port FastEthernet0/20 of VLAN0001 is disabled forwarding
+   Port FastEthernet0/20 of VLAN0001 is disabled disabled
      Port path cost 19, Port priority 128
-   Port FastEthernet0/21 of VLAN0001 is disabled forwarding
+   Port FastEthernet0/21 of VLAN0001 is disabled disabled
      Port path cost 19, Port priority 128
-   Port FastEthernet0/22 of VLAN0001 is disabled forwarding
+   Port FastEthernet0/22 of VLAN0001 is disabled disabled
      Port path cost 19, Port priority 128
-   Port FastEthernet0/23 of VLAN0001 is disabled forwarding
+   Port FastEthernet0/23 of VLAN0001 is disabled disabled
      Port path cost 19, Port priority 128
-   Port GigabitEthernet0/0 of VLAN0001 is disabled forwarding
+   Port FastEthernet0/24 of VLAN0001 is disabled disabled
      Port path cost 19, Port priority 128
-   Port GigabitEthernet0/1 of VLAN0001 is disabled forwarding
+   Port GigabitEthernet0/1 of VLAN0001 is disabled disabled
+     Port path cost 19, Port priority 128
+   Port GigabitEthernet0/2 of VLAN0001 is disabled disabled
      Port path cost 19, Port priority 128
 
 [244/300] dsw1 DSW-HQ-1# show spanning-tree summary totals
@@ -1817,7 +1588,7 @@ Total steps: 300
   Root bridge for: VLAN0001
                        Blocking Listening Learning Forwarding STP Active
   -------------------- -------- --------- -------- ---------- ----------
-  1 vlan               0        0         0        26         26
+  1 vlan               0        0         0        2          2
 
 [245/300] swbr <SW-BR> display stp topology-change
   CIST topology change information
@@ -1836,8 +1607,8 @@ Total steps: 300
   CIST Bridge         :0.SW-BR
   Config Times        :Hello 2s MaxAge 20s FwDly 15s MaxHop 20
   Active Times        :Hello 2s MaxAge 20s FwDly 15s MaxHop 20
-  CIST Root/ERPC      :0.02:0-0:00-:00:00:27 / 0
-  CIST RegRoot/IRPC   :0.02:0-0:00-:00:00:27 / 0
+  CIST Root/ERPC      :0.0200-0000-0027 / 0
+  CIST RegRoot/IRPC   :0.0200-0000-0027 / 0
   CIST RootPortId     :0.0
   BPDU-Protection     :Enabled
   TC or TCN received  :0
@@ -1866,27 +1637,27 @@ Total steps: 300
 
 [251/300] lhq lhq$ ping -c 1 10.1.1.11
   PING 10.1.1.11 (10.1.1.11) 56(84) bytes of data.
-  64 bytes from 10.1.1.11: icmp_seq=1 ttl=128 time=0.196 ms
+  64 bytes from 10.1.1.11: icmp_seq=1 ttl=128 time=0.368 ms
   
   --- 10.1.1.11 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.196/0.196/0.196/0.000 ms
+  rtt min/avg/max/mdev = 0.368/0.368/0.368/0.000 ms
 
 [252/300] lbr lbr$ ping -c 1 10.2.2.10
   PING 10.2.2.10 (10.2.2.10) 56(84) bytes of data.
-  64 bytes from 10.2.2.10: icmp_seq=1 ttl=128 time=0.124 ms
+  64 bytes from 10.2.2.10: icmp_seq=1 ttl=128 time=0.212 ms
   
   --- 10.2.2.10 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.124/0.124/0.124/0.000 ms
+  rtt min/avg/max/mdev = 0.212/0.212/0.212/0.000 ms
 
 [253/300] ldc ldc$ ping -c 1 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
-  64 bytes from 10.3.3.10: icmp_seq=1 ttl=64 time=0.182 ms
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=64 time=0.256 ms
   
   --- 10.3.3.10 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.182/0.182/0.182/0.000 ms
+  rtt min/avg/max/mdev = 0.256/0.256/0.256/0.000 ms
 
 [254/300] whq whq$ getmac
   Physical Address  Transport Name          
@@ -1925,125 +1696,56 @@ Total steps: 300
 [261/300] swhq SW-HQ# show spanning-tree vlan 1
   VLAN0001
     Spanning tree enabled protocol ieee
-    Root ID    Priority    8193
-               Address     0200.0000.000d
-               Cost        0
-               This bridge is the root
+    Root ID    Priority    24577
+               Address     0200.0000.005f
+               Cost        38
+               Port        Fa0/5
   
   Interface        Role  Sts  Cost      Prio.Nbr  Type
   ---------------- ----  ---  --------  --------  ----
-  Fa0/0            Disa  FWD  4         128.00    P2p
-  Fa0/1            Desg  FWD  4         128.01    P2p
-  Fa0/2            Desg  FWD  4         128.02    P2p Edge
-  Fa0/3            Desg  FWD  4         128.03    P2p Edge
-  Fa0/4            Desg  FWD  4         128.04    P2p
-  Fa0/5            Desg  FWD  4         128.05    P2p
-  Fa0/6            Disa  FWD  4         128.06    P2p
-  Fa0/7            Disa  FWD  4         128.07    P2p
-  Fa0/8            Disa  FWD  4         128.08    P2p
-  Fa0/9            Disa  FWD  4         128.09    P2p
-  Fa0/10           Disa  FWD  4         128.010   P2p
-  Fa0/11           Disa  FWD  4         128.011   P2p
-  Fa0/12           Disa  FWD  4         128.012   P2p
-  Fa0/13           Disa  FWD  4         128.013   P2p
-  Fa0/14           Disa  FWD  4         128.014   P2p
-  Fa0/15           Disa  FWD  4         128.015   P2p
-  Fa0/16           Disa  FWD  4         128.016   P2p
-  Fa0/17           Disa  FWD  4         128.017   P2p
-  Fa0/18           Disa  FWD  4         128.018   P2p
-  Fa0/19           Disa  FWD  4         128.019   P2p
-  Fa0/20           Disa  FWD  4         128.020   P2p
-  Fa0/21           Disa  FWD  4         128.021   P2p
-  Fa0/22           Disa  FWD  4         128.022   P2p
-  Fa0/23           Disa  FWD  4         128.023   P2p
-  Gi0/0            Disa  FWD  4         128.00    P2p
-  Gi0/1            Disa  FWD  4         128.01    P2p
+  Fa0/1            Desg  FWD  19        128.1     P2p
+  Fa0/2            Desg  FWD  19        128.2     P2p Edge
+  Fa0/3            Desg  FWD  19        128.3     P2p Edge
+  Fa0/4            Desg  FWD  19        128.4     P2p
+  Fa0/5            Root  FWD  19        128.5     P2p
 
 [262/300] swhq SW-HQ# show spanning-tree bridge
                                                      Hello  Max  Fwd
   Vlan             Bridge ID                          Time  Age  Dly  Protocol
   ---------------- ---------------------------------- -----  ---  ---  --------
-  VLAN0001         8193 (8192, 1)  0200.0000.000d  2     20   15   ieee
+  VLAN0001         28673 (28672, 1)  0200.0000.000d  2     20   15   ieee
 
 [263/300] dsw1 DSW-HQ-1# show spanning-tree vlan 1
   VLAN0001
     Spanning tree enabled protocol ieee
-    Root ID    Priority    4097
+    Root ID    Priority    24577
                Address     0200.0000.005f
                Cost        0
                This bridge is the root
   
   Interface        Role  Sts  Cost      Prio.Nbr  Type
   ---------------- ----  ---  --------  --------  ----
-  Fa0/0            Disa  FWD  4         128.00    P2p
-  Fa0/1            Desg  FWD  4         128.01    P2p
-  Fa0/2            Desg  FWD  4         128.02    P2p
-  Fa0/3            Disa  FWD  4         128.03    P2p
-  Fa0/4            Disa  FWD  4         128.04    P2p
-  Fa0/5            Disa  FWD  4         128.05    P2p
-  Fa0/6            Disa  FWD  4         128.06    P2p
-  Fa0/7            Disa  FWD  4         128.07    P2p
-  Fa0/8            Disa  FWD  4         128.08    P2p
-  Fa0/9            Disa  FWD  4         128.09    P2p
-  Fa0/10           Disa  FWD  4         128.010   P2p
-  Fa0/11           Disa  FWD  4         128.011   P2p
-  Fa0/12           Disa  FWD  4         128.012   P2p
-  Fa0/13           Disa  FWD  4         128.013   P2p
-  Fa0/14           Disa  FWD  4         128.014   P2p
-  Fa0/15           Disa  FWD  4         128.015   P2p
-  Fa0/16           Disa  FWD  4         128.016   P2p
-  Fa0/17           Disa  FWD  4         128.017   P2p
-  Fa0/18           Disa  FWD  4         128.018   P2p
-  Fa0/19           Disa  FWD  4         128.019   P2p
-  Fa0/20           Disa  FWD  4         128.020   P2p
-  Fa0/21           Disa  FWD  4         128.021   P2p
-  Fa0/22           Disa  FWD  4         128.022   P2p
-  Fa0/23           Disa  FWD  4         128.023   P2p
-  Gi0/0            Disa  FWD  4         128.00    P2p
-  Gi0/1            Disa  FWD  4         128.01    P2p
+  Fa0/1            Desg  FWD  19        128.1     P2p
+  Fa0/2            Desg  FWD  19        128.2     P2p
 
 [264/300] dsw1 DSW-HQ-1# show spanning-tree bridge
                                                      Hello  Max  Fwd
   Vlan             Bridge ID                          Time  Age  Dly  Protocol
   ---------------- ---------------------------------- -----  ---  ---  --------
-  VLAN0001         4097 (4096, 1)  0200.0000.005f  2     20   15   ieee
+  VLAN0001         24577 (24576, 1)  0200.0000.005f  1     6    4    ieee
 
 [265/300] dsw2 DSW-HQ-2# show spanning-tree vlan 1
   VLAN0001
     Spanning tree enabled protocol ieee
-    Root ID    Priority    4097
+    Root ID    Priority    24577
                Address     0200.0000.005f
-               Cost        4
+               Cost        19
                Port        Fa0/2
   
   Interface        Role  Sts  Cost      Prio.Nbr  Type
   ---------------- ----  ---  --------  --------  ----
-  Fa0/0            Disa  FWD  4         128.00    P2p
-  Fa0/1            Desg  LIS  4         128.01    P2p
-  Fa0/2            Root  LIS  4         128.02    P2p
-  Fa0/3            Disa  FWD  4         128.03    P2p
-  Fa0/4            Disa  FWD  4         128.04    P2p
-  Fa0/5            Disa  FWD  4         128.05    P2p
-  Fa0/6            Disa  FWD  4         128.06    P2p
-  Fa0/7            Disa  FWD  4         128.07    P2p
-  Fa0/8            Disa  FWD  4         128.08    P2p
-  Fa0/9            Disa  FWD  4         128.09    P2p
-  Fa0/10           Disa  FWD  4         128.010   P2p
-  Fa0/11           Disa  FWD  4         128.011   P2p
-  Fa0/12           Disa  FWD  4         128.012   P2p
-  Fa0/13           Disa  FWD  4         128.013   P2p
-  Fa0/14           Disa  FWD  4         128.014   P2p
-  Fa0/15           Disa  FWD  4         128.015   P2p
-  Fa0/16           Disa  FWD  4         128.016   P2p
-  Fa0/17           Disa  FWD  4         128.017   P2p
-  Fa0/18           Disa  FWD  4         128.018   P2p
-  Fa0/19           Disa  FWD  4         128.019   P2p
-  Fa0/20           Disa  FWD  4         128.020   P2p
-  Fa0/21           Disa  FWD  4         128.021   P2p
-  Fa0/22           Disa  FWD  4         128.022   P2p
-  Fa0/23           Disa  FWD  4         128.023   P2p
-  Gi0/0            Disa  FWD  4         128.00    P2p
-  Gi0/1            Disa  FWD  4         128.01    P2p
+  Fa0/1            Desg  LIS  19        128.1     P2p
+  Fa0/2            Root  LIS  19        128.2     P2p
 
 [266/300] dsw2 DSW-HQ-2# show spanning-tree bridge
                                                      Hello  Max  Fwd
@@ -2074,8 +1776,8 @@ Total steps: 300
   CIST Bridge         :0.SW-BR
   Config Times        :Hello 2s MaxAge 20s FwDly 15s MaxHop 20
   Active Times        :Hello 2s MaxAge 20s FwDly 15s MaxHop 20
-  CIST Root/ERPC      :0.02:0-0:00-:00:00:27 / 0
-  CIST RegRoot/IRPC   :0.02:0-0:00-:00:00:27 / 0
+  CIST Root/ERPC      :0.0200-0000-0027 / 0
+  CIST RegRoot/IRPC   :0.0200-0000-0027 / 0
   CIST RootPortId     :0.0
   BPDU-Protection     :Enabled
   TC or TCN received  :0
@@ -2113,8 +1815,8 @@ Total steps: 300
   CIST Bridge         :32768.DSW-BR
   Config Times        :Hello 2s MaxAge 20s FwDly 15s MaxHop 20
   Active Times        :Hello 2s MaxAge 20s FwDly 15s MaxHop 20
-  CIST Root/ERPC      :0.02:0-0:00-:00:00:27 / 4
-  CIST RegRoot/IRPC   :0.02:0-0:00-:00:00:27 / 0
+  CIST Root/ERPC      :0.0200-0000-0027 / 4
+  CIST RegRoot/IRPC   :0.0200-0000-0027 / 0
   CIST RootPortId     :2.2
   BPDU-Protection     :Disabled
   TC or TCN received  :0
@@ -2164,39 +1866,13 @@ Total steps: 300
 [279/300] swhq SW-HQ# show spanning-tree vlan 4094
   VLAN4094
     Spanning tree enabled protocol ieee
-    Root ID    Priority    4097
+    Root ID    Priority    8190
                Address     0200.0000.000d
                Cost        0
                This bridge is the root
   
   Interface        Role  Sts  Cost      Prio.Nbr  Type
   ---------------- ----  ---  --------  --------  ----
-  Fa0/0            Disa  FWD  4         128.00    P2p
-  Fa0/1            Desg  FWD  4         128.01    P2p
-  Fa0/2            Desg  FWD  4         128.02    P2p Edge
-  Fa0/3            Desg  FWD  4         128.03    P2p Edge
-  Fa0/4            Desg  FWD  4         128.04    P2p
-  Fa0/5            Desg  FWD  4         128.05    P2p
-  Fa0/6            Disa  FWD  4         128.06    P2p
-  Fa0/7            Disa  FWD  4         128.07    P2p
-  Fa0/8            Disa  FWD  4         128.08    P2p
-  Fa0/9            Disa  FWD  4         128.09    P2p
-  Fa0/10           Disa  FWD  4         128.010   P2p
-  Fa0/11           Disa  FWD  4         128.011   P2p
-  Fa0/12           Disa  FWD  4         128.012   P2p
-  Fa0/13           Disa  FWD  4         128.013   P2p
-  Fa0/14           Disa  FWD  4         128.014   P2p
-  Fa0/15           Disa  FWD  4         128.015   P2p
-  Fa0/16           Disa  FWD  4         128.016   P2p
-  Fa0/17           Disa  FWD  4         128.017   P2p
-  Fa0/18           Disa  FWD  4         128.018   P2p
-  Fa0/19           Disa  FWD  4         128.019   P2p
-  Fa0/20           Disa  FWD  4         128.020   P2p
-  Fa0/21           Disa  FWD  4         128.021   P2p
-  Fa0/22           Disa  FWD  4         128.022   P2p
-  Fa0/23           Disa  FWD  4         128.023   P2p
-  Gi0/0            Disa  FWD  4         128.00    P2p
-  Gi0/1            Disa  FWD  4         128.01    P2p
 
 [280/300] swbr <SW-BR> system-view
   Enter system view, return user view with return command.
@@ -2216,16 +1892,16 @@ Total steps: 300
 
 --- [285] § STP — désactivation debug & état final ---
 [285/300] swhq SW-HQ# undebug all
-  All possible debugging has been turned off
+  All possible debugging has been turned off (disabled)
 
 [286/300] swhq SW-HQ# undebug all
-  All possible debugging has been turned off
+  All possible debugging has been turned off (disabled)
 
 [287/300] dsw1 DSW-HQ-1# undebug all
-  All possible debugging has been turned off
+  All possible debugging has been turned off (disabled)
 
 [288/300] dsw2 DSW-HQ-2# undebug all
-  All possible debugging has been turned off
+  All possible debugging has been turned off (disabled)
 
 [289/300] swbr <SW-BR> undo debugging all
   Info: All possible debugging functions are off.
@@ -2237,31 +1913,49 @@ Total steps: 300
   Switch is in bidon mode
   Root bridge for: VLAN0001
   Extended system ID           is enabled
-  Portfast Default             is disabled
+  Portfast Default             is enabled
+  PortFast BPDU Guard Default  is enabled
+  Portfast BPDU Filter Default is disabled
+  Loopguard Default            is enabled
+  UplinkFast                   is disabled
+  BackboneFast                 is disabled
+  Configured Pathcost method used is short
   
   Name                   Blocking Listening Learning Forwarding STP Active
   ---------------------- -------- --------- -------- ---------- ----------
-  VLAN0001                      0         0        0         26         26
+  VLAN0001                      0         0        0          5          5
 
 [292/300] dsw1 DSW-HQ-1# show spanning-tree summary
   Switch is in pvst mode
   Root bridge for: VLAN0001
   Extended system ID           is enabled
   Portfast Default             is disabled
+  PortFast BPDU Guard Default  is disabled
+  Portfast BPDU Filter Default is disabled
+  Loopguard Default            is disabled
+  UplinkFast                   is disabled
+  BackboneFast                 is disabled
+  Configured Pathcost method used is short
   
   Name                   Blocking Listening Learning Forwarding STP Active
   ---------------------- -------- --------- -------- ---------- ----------
-  VLAN0001                      0         0        0         26         26
+  VLAN0001                      0         0        0          2          2
 
 [293/300] dsw2 DSW-HQ-2# show spanning-tree summary
   Switch is in pvst mode
   Root bridge for: none
   Extended system ID           is enabled
   Portfast Default             is disabled
+  PortFast BPDU Guard Default  is disabled
+  Portfast BPDU Filter Default is disabled
+  Loopguard Default            is disabled
+  UplinkFast                   is disabled
+  BackboneFast                 is disabled
+  Configured Pathcost method used is short
   
   Name                   Blocking Listening Learning Forwarding STP Active
   ---------------------- -------- --------- -------- ---------- ----------
-  VLAN0001                      0         2        0         24         26
+  VLAN0001                      0         2        0          0          2
 
 [294/300] swbr <SW-BR> display stp brief
    MSTID  Port                        Role  STP State     Protection
@@ -2387,8 +2081,8 @@ Total steps: 300
 
 [300/300] lhq lhq$ ping -c 1 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
-  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=0.495 ms
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=0.617 ms
   
   --- 10.3.3.10 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.495/0.495/0.495/0.000 ms
+  rtt min/avg/max/mdev = 0.617/0.617/0.617/0.000 ms

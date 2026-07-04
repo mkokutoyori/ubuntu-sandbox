@@ -239,11 +239,11 @@ Total steps: 300
 
 [57/300] lhq lhq$ ping -c 1 10.1.1.1
   PING 10.1.1.1 (10.1.1.1) 56(84) bytes of data.
-  64 bytes from 10.1.1.1: icmp_seq=1 ttl=255 time=0.372 ms
+  64 bytes from 10.1.1.1: icmp_seq=1 ttl=255 time=0.313 ms
   
   --- 10.1.1.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.372/0.372/0.372/0.000 ms
+  rtt min/avg/max/mdev = 0.313/0.313/0.313/0.000 ms
 
 [58/300] whq whq$ ipconfig /release
   Windows IP Configuration
@@ -279,22 +279,10 @@ Total steps: 300
      DHCP ACK received
   
   Ethernet adapter Ethernet 0:
-     Connection-specific DNS Suffix  . :
+     Connection-specific DNS Suffix  . : acme.example
      IPv4 Address. . . . . . . . . . . : 10.1.1.11
      Subnet Mask . . . . . . . . . . . : 255.255.255.0
      Default Gateway . . . . . . . . . : 10.1.1.1
-  
-  Ethernet adapter Ethernet 1:
-     Connection-specific DNS Suffix  . :
-     Media State . . . . . . . . . . . : Media disconnected
-  
-  Ethernet adapter Ethernet 2:
-     Connection-specific DNS Suffix  . :
-     Media State . . . . . . . . . . . : Media disconnected
-  
-  Ethernet adapter Ethernet 3:
-     Connection-specific DNS Suffix  . :
-     Media State . . . . . . . . . . . : Media disconnected
   
 
 [60/300] whq whq$ ipconfig /all
@@ -308,7 +296,7 @@ Total steps: 300
   
   Ethernet adapter Ethernet 0:
   
-     Connection-specific DNS Suffix  . :
+     Connection-specific DNS Suffix  . : acme.example
      Description . . . . . . . . . . . : Intel(R) Ethernet Connection
      Physical Address. . . . . . . . . : 02-00-00-00-00-4B
      DHCP Enabled. . . . . . . . . . . : Yes
@@ -386,11 +374,11 @@ Total steps: 300
 
 [66/300] lbr lbr$ ping -c 1 10.2.2.1
   PING 10.2.2.1 (10.2.2.1) 56(84) bytes of data.
-  64 bytes from 10.2.2.1: icmp_seq=1 ttl=255 time=0.364 ms
+  64 bytes from 10.2.2.1: icmp_seq=1 ttl=255 time=0.380 ms
   
   --- 10.2.2.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.364/0.364/0.364/0.000 ms
+  rtt min/avg/max/mdev = 0.380/0.380/0.380/0.000 ms
 
 [67/300] wbr wbr$ ipconfig /release
   Windows IP Configuration
@@ -430,18 +418,6 @@ Total steps: 300
      IPv4 Address. . . . . . . . . . . : 10.2.2.11
      Subnet Mask . . . . . . . . . . . : 255.255.255.0
      Default Gateway . . . . . . . . . : 10.2.2.1
-  
-  Ethernet adapter Ethernet 1:
-     Connection-specific DNS Suffix  . :
-     Media State . . . . . . . . . . . : Media disconnected
-  
-  Ethernet adapter Ethernet 2:
-     Connection-specific DNS Suffix  . :
-     Media State . . . . . . . . . . . : Media disconnected
-  
-  Ethernet adapter Ethernet 3:
-     Connection-specific DNS Suffix  . :
-     Media State . . . . . . . . . . . : Media disconnected
   
 
 [69/300] wbr wbr$ ipconfig /all
@@ -533,29 +509,29 @@ Total steps: 300
 
 [75/300] ldc ldc$ ping -c 1 10.3.3.1
   PING 10.3.3.1 (10.3.3.1) 56(84) bytes of data.
-  64 bytes from 10.3.3.1: icmp_seq=1 ttl=255 time=0.351 ms
+  64 bytes from 10.3.3.1: icmp_seq=1 ttl=255 time=0.343 ms
   
   --- 10.3.3.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.351/0.351/0.351/0.000 ms
+  rtt min/avg/max/mdev = 0.343/0.343/0.343/0.000 ms
 
 
 --- [76] § DHCP — joignabilité avec adresses obtenues ---
 [76/300] lhq lhq$ ping -c 1 10.1.1.1
   PING 10.1.1.1 (10.1.1.1) 56(84) bytes of data.
-  64 bytes from 10.1.1.1: icmp_seq=1 ttl=255 time=0.229 ms
+  64 bytes from 10.1.1.1: icmp_seq=1 ttl=255 time=0.276 ms
   
   --- 10.1.1.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.229/0.229/0.229/0.000 ms
+  rtt min/avg/max/mdev = 0.276/0.276/0.276/0.000 ms
 
 [77/300] lhq lhq$ ping -c 1 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
-  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=0.399 ms
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=0.551 ms
   
   --- 10.3.3.10 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.399/0.399/0.399/0.000 ms
+  rtt min/avg/max/mdev = 0.551/0.551/0.551/0.000 ms
 
 [78/300] wbr wbr$ ping -n 1 10.1.1.1
   
@@ -565,23 +541,23 @@ Total steps: 300
   Ping statistics for 10.1.1.1:
       Packets: Sent = 1, Received = 1, Lost = 0 (0% loss),
   Approximate round trip times in milli-seconds:
-      Minimum = 0ms, Maximum = 0ms, Average = 0ms
+      Minimum = 1ms, Maximum = 1ms, Average = 1ms
 
 [79/300] ldc ldc$ ping -c 1 10.2.2.1
   PING 10.2.2.1 (10.2.2.1) 56(84) bytes of data.
-  64 bytes from 10.2.2.1: icmp_seq=1 ttl=253 time=0.518 ms
+  64 bytes from 10.2.2.1: icmp_seq=1 ttl=253 time=0.507 ms
   
   --- 10.2.2.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.518/0.518/0.518/0.000 ms
+  rtt min/avg/max/mdev = 0.507/0.507/0.507/0.000 ms
 
 [80/300] lbr lbr$ ping -c 1 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
-  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=0.356 ms
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=0.550 ms
   
   --- 10.3.3.10 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.356/0.356/0.356/0.000 ms
+  rtt min/avg/max/mdev = 0.550/0.550/0.550/0.000 ms
 
 [81/300] whq whq$ ping -n 1 10.2.2.1
   
@@ -757,7 +733,7 @@ Total steps: 300
   
   Ethernet adapter Ethernet 0:
   
-     Connection-specific DNS Suffix  . : 
+     Connection-specific DNS Suffix  . : acme.example
      IPv4 Address. . . . . . . . . . . : 10.1.1.11
      Subnet Mask . . . . . . . . . . . : 255.255.255.0
      Default Gateway . . . . . . . . . : 10.1.1.1
@@ -853,22 +829,10 @@ Total steps: 300
      DHCP ACK received
   
   Ethernet adapter Ethernet 0:
-     Connection-specific DNS Suffix  . :
+     Connection-specific DNS Suffix  . : acme.example
      IPv4 Address. . . . . . . . . . . : 10.1.1.11
      Subnet Mask . . . . . . . . . . . : 255.255.255.0
      Default Gateway . . . . . . . . . : 10.1.1.1
-  
-  Ethernet adapter Ethernet 1:
-     Connection-specific DNS Suffix  . :
-     Media State . . . . . . . . . . . : Media disconnected
-  
-  Ethernet adapter Ethernet 2:
-     Connection-specific DNS Suffix  . :
-     Media State . . . . . . . . . . . : Media disconnected
-  
-  Ethernet adapter Ethernet 3:
-     Connection-specific DNS Suffix  . :
-     Media State . . . . . . . . . . . : Media disconnected
   
 
 [108/300] whq whq$ ipconfig | findstr IPv4
@@ -904,18 +868,6 @@ Total steps: 300
      IPv4 Address. . . . . . . . . . . : 10.2.2.11
      Subnet Mask . . . . . . . . . . . : 255.255.255.0
      Default Gateway . . . . . . . . . : 10.2.2.1
-  
-  Ethernet adapter Ethernet 1:
-     Connection-specific DNS Suffix  . :
-     Media State . . . . . . . . . . . : Media disconnected
-  
-  Ethernet adapter Ethernet 2:
-     Connection-specific DNS Suffix  . :
-     Media State . . . . . . . . . . . : Media disconnected
-  
-  Ethernet adapter Ethernet 3:
-     Connection-specific DNS Suffix  . :
-     Media State . . . . . . . . . . . : Media disconnected
   
 
 [112/300] wbr wbr$ ipconfig | findstr IPv4
@@ -1110,22 +1062,10 @@ Total steps: 300
      DHCP ACK received
   
   Ethernet adapter Ethernet 0:
-     Connection-specific DNS Suffix  . :
+     Connection-specific DNS Suffix  . : acme.example
      IPv4 Address. . . . . . . . . . . : 10.1.1.11
      Subnet Mask . . . . . . . . . . . : 255.255.255.0
      Default Gateway . . . . . . . . . : 
-  
-  Ethernet adapter Ethernet 1:
-     Connection-specific DNS Suffix  . :
-     Media State . . . . . . . . . . . : Media disconnected
-  
-  Ethernet adapter Ethernet 2:
-     Connection-specific DNS Suffix  . :
-     Media State . . . . . . . . . . . : Media disconnected
-  
-  Ethernet adapter Ethernet 3:
-     Connection-specific DNS Suffix  . :
-     Media State . . . . . . . . . . . : Media disconnected
   
 
 [132/300] lbr lbr$ ip addr flush dev eth0
@@ -1178,18 +1118,6 @@ Total steps: 300
      IPv4 Address. . . . . . . . . . . : 10.2.2.11
      Subnet Mask . . . . . . . . . . . : 255.255.255.0
      Default Gateway . . . . . . . . . : 
-  
-  Ethernet adapter Ethernet 1:
-     Connection-specific DNS Suffix  . :
-     Media State . . . . . . . . . . . : Media disconnected
-  
-  Ethernet adapter Ethernet 2:
-     Connection-specific DNS Suffix  . :
-     Media State . . . . . . . . . . . : Media disconnected
-  
-  Ethernet adapter Ethernet 3:
-     Connection-specific DNS Suffix  . :
-     Media State . . . . . . . . . . . : Media disconnected
   
 
 [136/300] ldc ldc$ ip addr flush dev eth0
@@ -1370,18 +1298,14 @@ Total steps: 300
 <empty>
 
 [181/300] swbr <SW-BR> display dhcp snooping
-  DHCP snooping running information :
-   DHCP snooping                : Enable
-   Static user max number       : 0
-   Check dhcp-giaddr            : Disable
-   Check dhcp-chaddr            : Disable
+  Error: Incomplete command.
 
 [182/300] swbr <SW-BR> display dhcp snooping user-bind all
-  DHCP snooping running information :
-   DHCP snooping                : Enable
-   Static user max number       : 0
-   Check dhcp-giaddr            : Disable
-   Check dhcp-chaddr            : Disable
+   MAC Address    IP Address       Lease            Type       VLAN  Interface
+  ----------------------------------------------------------------------------
+  ----------------------------------------------------------------------------
+  Print count: 0
+  Total count: 0
 
 
 --- [183] § DHCP relay — R-DC relaie vers serveur central HQ ---
@@ -1566,7 +1490,7 @@ Total steps: 300
     option dhcp-server-identifier 10.3.3.1;
     renew 1780776000 Saturday 2026-06-06 20:00:00.000;
     rebind 1780808400 Sunday 2026-06-07 05:00:00.000;
-    expire 1780761600 Saturday 2026-06-06 16:00:00.000;
+    expire 1780819200 Sunday 2026-06-07 08:00:00.000;
   }
 
 [208/300] whq whq$ ipconfig /all
@@ -1580,7 +1504,7 @@ Total steps: 300
   
   Ethernet adapter Ethernet 0:
   
-     Connection-specific DNS Suffix  . :
+     Connection-specific DNS Suffix  . : acme.example
      Description . . . . . . . . . . . : Intel(R) Ethernet Connection
      Physical Address. . . . . . . . . : 02-00-00-00-00-4B
      DHCP Enabled. . . . . . . . . . . : Yes
@@ -1635,33 +1559,34 @@ Total steps: 300
 
 [210/300] lhq lhq$ ping -c 1 10.1.1.1
   PING 10.1.1.1 (10.1.1.1) 56(84) bytes of data.
-  64 bytes from 10.1.1.1: icmp_seq=1 ttl=255 time=0.132 ms
+  64 bytes from 10.1.1.1: icmp_seq=1 ttl=255 time=0.171 ms
   
   --- 10.1.1.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.132/0.132/0.132/0.000 ms
+  rtt min/avg/max/mdev = 0.171/0.171/0.171/0.000 ms
 
 [211/300] lhq lhq$ ping -c 1 10.2.2.1
   PING 10.2.2.1 (10.2.2.1) 56(84) bytes of data.
-  64 bytes from 10.2.2.1: icmp_seq=1 ttl=253 time=0.211 ms
+  64 bytes from 10.2.2.1: icmp_seq=1 ttl=253 time=0.394 ms
   
   --- 10.2.2.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.211/0.211/0.211/0.000 ms
+  rtt min/avg/max/mdev = 0.394/0.394/0.394/0.000 ms
 
 [212/300] lhq lhq$ ping -c 1 10.3.3.1
   PING 10.3.3.1 (10.3.3.1) 56(84) bytes of data.
-  64 bytes from 10.3.3.1: icmp_seq=1 ttl=253 time=0.322 ms
+  64 bytes from 10.3.3.1: icmp_seq=1 ttl=253 time=0.272 ms
   
   --- 10.3.3.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.322/0.322/0.322/0.000 ms
+  rtt min/avg/max/mdev = 0.272/0.272/0.272/0.000 ms
 
 [213/300] lhq lhq$ ping -c 1 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
   
   --- 10.3.3.10 ping statistics ---
   1 packets transmitted, 0 received, 100% packet loss
+  ping: destination host unreachable
 
 [214/300] whq whq$ ping -n 1 10.1.1.1
   
@@ -1700,36 +1625,38 @@ Total steps: 300
   
   Ping statistics for 10.3.3.10:
       Packets: Sent = 1, Received = 0, Lost = 1 (100% loss),
+  Request timed out. Destination host unreachable.
 
 [218/300] lbr lbr$ ping -c 1 10.1.1.1
   PING 10.1.1.1 (10.1.1.1) 56(84) bytes of data.
-  64 bytes from 10.1.1.1: icmp_seq=1 ttl=253 time=0.427 ms
+  64 bytes from 10.1.1.1: icmp_seq=1 ttl=253 time=0.524 ms
   
   --- 10.1.1.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.427/0.427/0.427/0.000 ms
+  rtt min/avg/max/mdev = 0.524/0.524/0.524/0.000 ms
 
 [219/300] lbr lbr$ ping -c 1 10.2.2.1
   PING 10.2.2.1 (10.2.2.1) 56(84) bytes of data.
-  64 bytes from 10.2.2.1: icmp_seq=1 ttl=255 time=0.107 ms
+  64 bytes from 10.2.2.1: icmp_seq=1 ttl=255 time=0.234 ms
   
   --- 10.2.2.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.107/0.107/0.107/0.000 ms
+  rtt min/avg/max/mdev = 0.234/0.234/0.234/0.000 ms
 
 [220/300] lbr lbr$ ping -c 1 10.3.3.1
   PING 10.3.3.1 (10.3.3.1) 56(84) bytes of data.
-  64 bytes from 10.3.3.1: icmp_seq=1 ttl=253 time=0.226 ms
+  64 bytes from 10.3.3.1: icmp_seq=1 ttl=253 time=0.751 ms
   
   --- 10.3.3.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.226/0.226/0.226/0.000 ms
+  rtt min/avg/max/mdev = 0.751/0.751/0.751/0.000 ms
 
 [221/300] lbr lbr$ ping -c 1 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
   
   --- 10.3.3.10 ping statistics ---
   1 packets transmitted, 0 received, 100% packet loss
+  ping: destination host unreachable
 
 [222/300] wbr wbr$ ping -n 1 10.1.1.1
   
@@ -1768,18 +1695,21 @@ Total steps: 300
   
   Ping statistics for 10.3.3.10:
       Packets: Sent = 1, Received = 0, Lost = 1 (100% loss),
+  Request timed out. Destination host unreachable.
 
 [226/300] ldc ldc$ ping -c 1 10.1.1.1
   PING 10.1.1.1 (10.1.1.1) 56(84) bytes of data.
   
   --- 10.1.1.1 ping statistics ---
   1 packets transmitted, 0 received, 100% packet loss
+  ping: destination host unreachable
 
 [227/300] ldc ldc$ ping -c 1 10.2.2.1
   PING 10.2.2.1 (10.2.2.1) 56(84) bytes of data.
   
   --- 10.2.2.1 ping statistics ---
   1 packets transmitted, 0 received, 100% packet loss
+  ping: destination host unreachable
 
 [228/300] ldc ldc$ ping -c 1 10.3.3.1
   PING 10.3.3.1 (10.3.3.1) 56(84) bytes of data.
@@ -1791,11 +1721,11 @@ Total steps: 300
 
 [229/300] ldc ldc$ ping -c 1 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
-  64 bytes from 10.3.3.10: icmp_seq=1 ttl=64 time=0.466 ms
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=64 time=0.385 ms
   
   --- 10.3.3.10 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.466/0.466/0.466/0.000 ms
+  rtt min/avg/max/mdev = 0.385/0.385/0.385/0.000 ms
 
 
 --- [230] § DHCP — inspection détaillée des pools/baux ---
@@ -1945,22 +1875,10 @@ Total steps: 300
      DHCP ACK received
   
   Ethernet adapter Ethernet 0:
-     Connection-specific DNS Suffix  . :
+     Connection-specific DNS Suffix  . : acme.example
      IPv4 Address. . . . . . . . . . . : 10.1.1.11
      Subnet Mask . . . . . . . . . . . : 255.255.255.0
      Default Gateway . . . . . . . . . : 
-  
-  Ethernet adapter Ethernet 1:
-     Connection-specific DNS Suffix  . :
-     Media State . . . . . . . . . . . : Media disconnected
-  
-  Ethernet adapter Ethernet 2:
-     Connection-specific DNS Suffix  . :
-     Media State . . . . . . . . . . . : Media disconnected
-  
-  Ethernet adapter Ethernet 3:
-     Connection-specific DNS Suffix  . :
-     Media State . . . . . . . . . . . : Media disconnected
   
 
 [254/300] whq whq$ ipconfig /all
@@ -1974,7 +1892,7 @@ Total steps: 300
   
   Ethernet adapter Ethernet 0:
   
-     Connection-specific DNS Suffix  . :
+     Connection-specific DNS Suffix  . : acme.example
      Description . . . . . . . . . . . : Intel(R) Ethernet Connection
      Physical Address. . . . . . . . . : 02-00-00-00-00-4B
      DHCP Enabled. . . . . . . . . . . : Yes
@@ -2066,19 +1984,14 @@ Total steps: 300
     DNS servers: 2001:4860:4860::8888
 
 [269/300] lhq lhq$ dhclient -6 -v eth0
-  Internet Systems Consortium DHCP Client 4.4.1
-  Listening on LPF/eth0/02:00:00:00:00:47
-  Sending on   LPF/eth0/02:00:00:00:00:47
-  DHCPDISCOVER on eth0 to 255.255.255.255 port 67 interval 3
-  INIT state
-  DHCPOFFER of 10.1.1.10 from 10.1.1.1
-  DHCPREQUEST of 10.1.1.10 on eth0 to 255.255.255.255 port 67
-  DHCPACK of 10.1.1.10 from 10.1.1.1
-  bound to 10.1.1.10 -- renewal in 14400 seconds.
+  DHCPv6 SOLICIT
+  No DHCPv6 ADVERTISE received
 
 [270/300] lhq lhq$ ip -6 addr show eth0
   2: eth0: <BROADCAST,UP,MULTICAST,LOWER_UP> mtu 1500 qdisc fq_codel state UP group default qlen 1000
       link/ether 02:00:00:00:00:47 brd ff:ff:ff:ff:ff:ff
+      inet6 fe80::ff:fe00:47%eth0/64 scope link
+         valid_lft forever preferred_lft forever
 
 [271/300] whq whq$ ipconfig /all
   Windows IP Configuration
@@ -2091,7 +2004,7 @@ Total steps: 300
   
   Ethernet adapter Ethernet 0:
   
-     Connection-specific DNS Suffix  . :
+     Connection-specific DNS Suffix  . : acme.example
      Description . . . . . . . . . . . : Intel(R) Ethernet Connection
      Physical Address. . . . . . . . . : 02-00-00-00-00-4B
      DHCP Enabled. . . . . . . . . . . : Yes
@@ -2173,30 +2086,7 @@ Total steps: 300
 [282/300] whq whq$ ipconfig /renew eth99
   Windows IP Configuration
   
-  Ethernet adapter Ethernet 0:
-     DHCP Discover - Broadcast on eth0
-     DHCP Offer received from 10.1.1.1
-     DHCP Request - Broadcast
-     DHCP ACK received
-  
-  Ethernet adapter Ethernet 0:
-     Connection-specific DNS Suffix  . :
-     IPv4 Address. . . . . . . . . . . : 10.1.1.11
-     Subnet Mask . . . . . . . . . . . : 255.255.255.0
-     Default Gateway . . . . . . . . . : 10.1.1.1
-  
-  Ethernet adapter Ethernet 1:
-     Connection-specific DNS Suffix  . :
-     Media State . . . . . . . . . . . : Media disconnected
-  
-  Ethernet adapter Ethernet 2:
-     Connection-specific DNS Suffix  . :
-     Media State . . . . . . . . . . . : Media disconnected
-  
-  Ethernet adapter Ethernet 3:
-     Connection-specific DNS Suffix  . :
-     Media State . . . . . . . . . . . : Media disconnected
-  
+  No adapter matched "eth99".
 
 
 --- [283] § DHCP — désactivation debug & état final ---
@@ -2207,7 +2097,7 @@ Total steps: 300
   All possible debugging has been turned off
 
 [285/300] rbr <R-BR> undo debugging all
-  Info: All debugging turned off.
+  All possible debugging has been turned off
 
 [286/300] rhq R-HQ# show ip dhcp binding
   IP address       Client-id/              Lease expiration        Type
@@ -2265,11 +2155,11 @@ Total steps: 300
   Total number of bindings: 2
 
 [290/300] swbr <SW-BR> display dhcp snooping user-bind all
-  DHCP snooping running information :
-   DHCP snooping                : Enable
-   Static user max number       : 0
-   Check dhcp-giaddr            : Disable
-   Check dhcp-chaddr            : Disable
+   MAC Address    IP Address       Lease            Type       VLAN  Interface
+  ----------------------------------------------------------------------------
+  ----------------------------------------------------------------------------
+  Print count: 0
+  Total count: 0
 
 [291/300] lhq lhq$ ip -4 addr show eth0
   2: eth0: <BROADCAST,UP,MULTICAST,LOWER_UP> mtu 1500 qdisc fq_codel state UP group default qlen 1000
@@ -2281,7 +2171,7 @@ Total steps: 300
   
   Ethernet adapter Ethernet 0:
   
-     Connection-specific DNS Suffix  . : 
+     Connection-specific DNS Suffix  . : acme.example
      IPv4 Address. . . . . . . . . . . : 10.1.1.11
      Subnet Mask . . . . . . . . . . . : 255.255.255.0
      Default Gateway . . . . . . . . . : 10.1.1.1
@@ -2344,15 +2234,15 @@ Total steps: 300
   Automatic bindings   3
   
   Message              Received
-  DHCPDISCOVER         12
-  DHCPREQUEST          12
+  DHCPDISCOVER         10
+  DHCPREQUEST          10
   DHCPINFORM           0
   DHCPRELEASE          4
   DHCPDECLINE          0
   
   Message              Sent
-  DHCPOFFER            12
-  DHCPACK              12
+  DHCPOFFER            10
+  DHCPACK              10
   DHCPNAK              0
 
 [297/300] rdc R-DC# show ip dhcp relay statistics

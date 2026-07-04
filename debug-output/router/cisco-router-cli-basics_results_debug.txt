@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-cli-basics
-Generated: 2026-06-12T11:48:11.207Z
+Generated: 2026-07-04T10:43:16.418Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=IOS router CLI: show family, mode nav, pipes, no, save
 Total steps: 482
@@ -43,10 +43,10 @@ Total steps: 482
   Configuration register is 0x2102
 
 [3/482] r1 R1> show clock
-  *11:48:11.000 UTC Fri Jun 12 2026
+  *10:43:16.000 UTC Sat Jul 4 2026
 
 [4/482] r1 R1> show calendar
-  11:48:11 UTC Fri Jun 12 2026
+  10:43:16 UTC Sat Jul 4 2026
 
 [5/482] r1 R1> show users
       Line       User       Host(s)              Idle       Location
@@ -60,7 +60,6 @@ Total steps: 482
   show clock
   show calendar
   show users
-  show history
 
 [7/482] r1 R1> show inventory
   NAME: "R1", DESCR: "Cisco ISR 2911 Integrated Services Router"
@@ -102,16 +101,12 @@ Total steps: 482
   service dhcp
   !
   interface GigabitEthernet0/0
-   no shutdown
   !
   interface GigabitEthernet0/1
-   no shutdown
   !
   interface GigabitEthernet0/2
-   no shutdown
   !
   interface GigabitEthernet0/3
-   no shutdown
   !
   end
 
@@ -137,6 +132,17 @@ Total steps: 482
     Full-duplex, 1000Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
+    Last input 00:00:00, output 00:00:00, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       1 packets output, 64 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
   GigabitEthernet0/1 is up, line protocol is up
     Hardware is iGbE, address is 02:00:00:00:00:02 (bia 02:00:00:00:00:02)
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
@@ -145,6 +151,17 @@ Total steps: 482
     Full-duplex, 1000Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
+    Last input 00:00:00, output 00:00:00, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       2 packets input, 128 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       2 packets output, 128 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
   GigabitEthernet0/2 is down, line protocol is down
     Hardware is iGbE, address is 02:00:00:00:00:03 (bia 02:00:00:00:00:03)
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
@@ -153,6 +170,17 @@ Total steps: 482
     Full-duplex, 1000Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
+    Last input never, output never, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
   GigabitEthernet0/3 is down, line protocol is down
     Hardware is iGbE, address is 02:00:00:00:00:04 (bia 02:00:00:00:00:04)
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
@@ -161,6 +189,17 @@ Total steps: 482
     Full-duplex, 1000Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
+    Last input never, output never, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
 
 [18/482] r1 R1> show interfaces description
   Interface                      Status         Protocol Description
@@ -214,6 +253,8 @@ Total steps: 482
   Codes: C - connected, S - static, R - RIP, O - OSPF, O IA - OSPF inter area
          O E1 - OSPF external type 1, O E2 - OSPF external type 2, D - EIGRP, B - BGP
   
+  Gateway of last resort is not set
+  
 
 [23/482] r1 R1> show ip route summary
   IP routing table name is Default-IP-Routing-Table(0)
@@ -230,6 +271,7 @@ Total steps: 482
 
 [24/482] r1 R1> show ip route connected
   Codes: C - connected, S - static, R - RIP, O - OSPF, O IA - OSPF inter area
+  
   
 
 [25/482] r1 R1> show ip protocols
@@ -334,17 +376,22 @@ Total steps: 482
   DHCPNAK              0
 
 [37/482] r1 R1> show ip nat translations
+  Pro  Inside global          Inside local           Outside local          Outside global
   No NAT translations.
 
 [38/482] r1 R1> show ip nat statistics
   Total active translations: 0 (0 static, 0 dynamic; 0 extended)
+  Total translations: 0
+  Static translations: 0
+  Dynamic translations: 0
+  Translation errors: 0
   Outside interfaces:  none
   Inside interfaces:   none
   Hits: 0  Misses: 0
-  Expired translations: 0
   Session timeouts (seconds): tcp 86400  udp 300  icmp 60  syn 30
   Dynamic mappings:
   -- No dynamic NAT rules configured --
+  Application Layer Gateways: none (FTP/SIP ALG and NAT64 not supported in this simulator)
 
 [39/482] r1 R1> show access-lists
 <empty>
@@ -371,7 +418,7 @@ Total steps: 482
 [43/482] r1 R1> show ntp status
   Clock is unsynchronized, stratum 16, reference is .INIT.
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
-  reference time is EDD6707B.3AE147AE (11:48:11.230 UTC Fri Jun 12 2026)
+  reference time is EDF36244.6D916872 (10:43:16.428 UTC Sat Jul 4 2026)
   clock offset is 0.00 msec
 
 [44/482] r1 R1> show ntp associations
@@ -492,6 +539,7 @@ Total steps: 482
   Length: 24 lines, Width: 80 columns
   Editing is enabled.
   History is enabled, history size is 20.
+  Monitor parameter: disabled
 
 [65/482] r1 R1> show privilege
   Current privilege level is 1
@@ -530,16 +578,12 @@ Total steps: 482
   service dhcp
   !
   interface GigabitEthernet0/0
-   no shutdown
   !
   interface GigabitEthernet0/1
-   no shutdown
   !
   interface GigabitEthernet0/2
-   no shutdown
   !
   interface GigabitEthernet0/3
-   no shutdown
   !
   end
   
@@ -551,7 +595,10 @@ Total steps: 482
   GigabitEthernet0/3         unassigned      YES manual down                  down
   
   ------------------ show ip route ------------------
-  No routes configured.
+  Codes: C - connected, S - static, R - RIP, O - OSPF, D - EIGRP, B - BGP, * - candidate default
+  
+  Gateway of last resort is not set
+  
   
   ------------------ show interfaces ------------------
   GigabitEthernet0/0 is up, line protocol is up
@@ -562,6 +609,17 @@ Total steps: 482
     Full-duplex, 1000Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
+    Last input 00:00:00, output 00:00:00, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       1 packets output, 64 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
   GigabitEthernet0/1 is up, line protocol is up
     Hardware is iGbE, address is 02:00:00:00:00:02 (bia 02:00:00:00:00:02)
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
@@ -570,6 +628,17 @@ Total steps: 482
     Full-duplex, 1000Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
+    Last input 00:00:00, output 00:00:00, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       2 packets input, 128 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       2 packets output, 128 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
   GigabitEthernet0/2 is down, line protocol is down
     Hardware is iGbE, address is 02:00:00:00:00:03 (bia 02:00:00:00:00:03)
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
@@ -578,6 +647,17 @@ Total steps: 482
     Full-duplex, 1000Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
+    Last input never, output never, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
   GigabitEthernet0/3 is down, line protocol is down
     Hardware is iGbE, address is 02:00:00:00:00:04 (bia 02:00:00:00:00:04)
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
@@ -586,6 +666,17 @@ Total steps: 482
     Full-duplex, 1000Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
+    Last input never, output never, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
   
   ------------------ show ip protocols ------------------
   No routing protocol is configured.
@@ -610,27 +701,29 @@ Total steps: 482
   IDPROM for backplane: serial number, PID match show inventory
 
 [71/482] r1 R1> ?
-    enable      Enter privileged EXEC mode
-    show        show
+    enable      Enter privileged EXEC at a specific level
+    show        Show running system information
+    where       List open outgoing connections
+    disconnect  Close an outgoing connection
+    resume      Resume an outgoing connection
+    clear       Reset functions
     terminal    Set terminal parameters
-    copy        Copy file/configuration
     ssh         Open an SSH connection to a remote host
     telnet      Open a Telnet session
-    clear       clear
-    debug       debug
-    no          no
-    undebug     undebug
+    debug       Enable debugging functions
+    no          Negate a command or set its defaults
     ping        Send echo messages
     traceroute  Trace route to destination
-    event       event
+    event       Embedded Event Manager
 
 [72/482] r1 R1> show ?
     clock           Display the system clock
     users           Display active lines
+    sessions        Display open outgoing connections
     inventory       Display hardware inventory
-    processes       processes
+    processes       Display active processes
     memory          Display memory statistics
-    flash           Display flash filesystem
+    flash:          Display flash filesystem
     platform        Display platform information
     license         Display licenses
     diag            Display chassis diagnostics
@@ -678,8 +771,8 @@ Total steps: 482
     table-map       Display table-maps
     mls             mls
     queueing        queueing
-    interfaces      Display interface status
     traffic-shape   Display traffic shaping
+    interfaces      Display interface status
     startup-config  Display saved configuration
     configuration   Display saved configuration
     counters        Display traffic counters
@@ -701,9 +794,10 @@ Total steps: 482
     zone-pair       zone-pair
     class-map       Show class-map
     time-range      Show time-range
-    event           event
+    event           Embedded Event Manager
     flow            flow
     archive         Display archive status
+    sntp            Show SNTP
 
 [73/482] r1 R1> ping
   % Ping requires a target IP address.
@@ -712,8 +806,8 @@ Total steps: 482
   % Traceroute requires a target IP address.
 
 [75/482] r1 R1> telnet 10.0.0.2
-  Trying 10.0.0.2 ... 
-  % Connection refused by remote host
+  Trying 10.0.0.2 ...
+  % Destination unreachable; no source interface for outbound Telnet
 
 [76/482] r1 R1> ssh -l admin 10.0.0.2
   % No usable interface IP for outbound SSH
@@ -744,10 +838,10 @@ Total steps: 482
   Configuration register is 0x2102
 
 [80/482] r1 R1# show clock
-  *11:48:11.000 UTC Fri Jun 12 2026
+  *10:43:16.000 UTC Sat Jul 4 2026
 
 [81/482] r1 R1# show calendar
-  11:48:11 UTC Fri Jun 12 2026
+  10:43:16 UTC Sat Jul 4 2026
 
 [82/482] r1 R1# show users
       Line       User       Host(s)              Idle       Location
@@ -756,6 +850,7 @@ Total steps: 482
     Interface    User               Mode         Idle     Peer Address
 
 [83/482] r1 R1# show history
+  show ip ssh
   show ssh
   show line
   show terminal
@@ -775,7 +870,6 @@ Total steps: 482
   show clock
   show calendar
   show users
-  show history
 
 [84/482] r1 R1# show inventory
   NAME: "R1", DESCR: "Cisco ISR 2911 Integrated Services Router"
@@ -817,16 +911,12 @@ Total steps: 482
   service dhcp
   !
   interface GigabitEthernet0/0
-   no shutdown
   !
   interface GigabitEthernet0/1
-   no shutdown
   !
   interface GigabitEthernet0/2
-   no shutdown
   !
   interface GigabitEthernet0/3
-   no shutdown
   !
   end
 
@@ -852,6 +942,17 @@ Total steps: 482
     Full-duplex, 1000Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
+    Last input 00:00:00, output 00:00:00, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       1 packets output, 64 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
   GigabitEthernet0/1 is up, line protocol is up
     Hardware is iGbE, address is 02:00:00:00:00:02 (bia 02:00:00:00:00:02)
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
@@ -860,6 +961,17 @@ Total steps: 482
     Full-duplex, 1000Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
+    Last input 00:00:00, output 00:00:00, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       2 packets input, 128 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       2 packets output, 128 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
   GigabitEthernet0/2 is down, line protocol is down
     Hardware is iGbE, address is 02:00:00:00:00:03 (bia 02:00:00:00:00:03)
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
@@ -868,6 +980,17 @@ Total steps: 482
     Full-duplex, 1000Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
+    Last input never, output never, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
   GigabitEthernet0/3 is down, line protocol is down
     Hardware is iGbE, address is 02:00:00:00:00:04 (bia 02:00:00:00:00:04)
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
@@ -876,6 +999,17 @@ Total steps: 482
     Full-duplex, 1000Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
+    Last input never, output never, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
 
 [95/482] r1 R1# show interfaces description
   Interface                      Status         Protocol Description
@@ -929,6 +1063,8 @@ Total steps: 482
   Codes: C - connected, S - static, R - RIP, O - OSPF, O IA - OSPF inter area
          O E1 - OSPF external type 1, O E2 - OSPF external type 2, D - EIGRP, B - BGP
   
+  Gateway of last resort is not set
+  
 
 [100/482] r1 R1# show ip route summary
   IP routing table name is Default-IP-Routing-Table(0)
@@ -945,6 +1081,7 @@ Total steps: 482
 
 [101/482] r1 R1# show ip route connected
   Codes: C - connected, S - static, R - RIP, O - OSPF, O IA - OSPF inter area
+  
   
 
 [102/482] r1 R1# show ip protocols
@@ -1049,17 +1186,22 @@ Total steps: 482
   DHCPNAK              0
 
 [114/482] r1 R1# show ip nat translations
+  Pro  Inside global          Inside local           Outside local          Outside global
   No NAT translations.
 
 [115/482] r1 R1# show ip nat statistics
   Total active translations: 0 (0 static, 0 dynamic; 0 extended)
+  Total translations: 0
+  Static translations: 0
+  Dynamic translations: 0
+  Translation errors: 0
   Outside interfaces:  none
   Inside interfaces:   none
   Hits: 0  Misses: 0
-  Expired translations: 0
   Session timeouts (seconds): tcp 86400  udp 300  icmp 60  syn 30
   Dynamic mappings:
   -- No dynamic NAT rules configured --
+  Application Layer Gateways: none (FTP/SIP ALG and NAT64 not supported in this simulator)
 
 [116/482] r1 R1# show access-lists
 <empty>
@@ -1086,7 +1228,7 @@ Total steps: 482
 [120/482] r1 R1# show ntp status
   Clock is unsynchronized, stratum 16, reference is .INIT.
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
-  reference time is EDD6707B.3C28F5C2 (11:48:11.235 UTC Fri Jun 12 2026)
+  reference time is EDF36244.6ED91687 (10:43:16.433 UTC Sat Jul 4 2026)
   clock offset is 0.00 msec
 
 [121/482] r1 R1# show ntp associations
@@ -1207,6 +1349,7 @@ Total steps: 482
   Length: 24 lines, Width: 80 columns
   Editing is enabled.
   History is enabled, history size is 20.
+  Monitor parameter: disabled
 
 [142/482] r1 R1# show privilege
   Current privilege level is 15
@@ -1245,16 +1388,12 @@ Total steps: 482
   service dhcp
   !
   interface GigabitEthernet0/0
-   no shutdown
   !
   interface GigabitEthernet0/1
-   no shutdown
   !
   interface GigabitEthernet0/2
-   no shutdown
   !
   interface GigabitEthernet0/3
-   no shutdown
   !
   end
   
@@ -1266,7 +1405,10 @@ Total steps: 482
   GigabitEthernet0/3         unassigned      YES manual down                  down
   
   ------------------ show ip route ------------------
-  No routes configured.
+  Codes: C - connected, S - static, R - RIP, O - OSPF, D - EIGRP, B - BGP, * - candidate default
+  
+  Gateway of last resort is not set
+  
   
   ------------------ show interfaces ------------------
   GigabitEthernet0/0 is up, line protocol is up
@@ -1277,6 +1419,17 @@ Total steps: 482
     Full-duplex, 1000Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
+    Last input 00:00:00, output 00:00:00, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       1 packets output, 64 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
   GigabitEthernet0/1 is up, line protocol is up
     Hardware is iGbE, address is 02:00:00:00:00:02 (bia 02:00:00:00:00:02)
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
@@ -1285,6 +1438,17 @@ Total steps: 482
     Full-duplex, 1000Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
+    Last input 00:00:00, output 00:00:00, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       2 packets input, 128 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       2 packets output, 128 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
   GigabitEthernet0/2 is down, line protocol is down
     Hardware is iGbE, address is 02:00:00:00:00:03 (bia 02:00:00:00:00:03)
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
@@ -1293,6 +1457,17 @@ Total steps: 482
     Full-duplex, 1000Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
+    Last input never, output never, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
   GigabitEthernet0/3 is down, line protocol is down
     Hardware is iGbE, address is 02:00:00:00:00:04 (bia 02:00:00:00:00:04)
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
@@ -1301,6 +1476,17 @@ Total steps: 482
     Full-duplex, 1000Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
+    Last input never, output never, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
   
   ------------------ show ip protocols ------------------
   No routing protocol is configured.
@@ -1339,14 +1525,25 @@ Total steps: 482
     Full-duplex, 1000Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
+    Last input 00:00:00, output 00:00:00, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       1 packets output, 64 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
 
 [150/482] r1 R1# show interfaces GigabitEthernet0/0 stats
   GigabitEthernet0/0
             Switching path    Pkts In    Chars In    Pkts Out   Chars Out
-                 Processor          0           0           1           0
+                 Processor          0           0           1          64
                Route cache          0           0           0           0
         Distributed cache          0           0           0           0
-                    Total          0           0           1           0
+                    Total          0           0           1          64
 
 [151/482] r1 R1# show interfaces accounting
   GigabitEthernet0/0
@@ -1376,7 +1573,7 @@ Total steps: 482
 <empty>
 
 [157/482] r1 R1(config-if)# do show clock
-  *11:48:11.000 UTC Fri Jun 12 2026
+  *10:43:16.000 UTC Sat Jul 4 2026
 
 [158/482] r1 R1(config-if)# exit
 <empty>
@@ -1385,7 +1582,7 @@ Total steps: 482
 <empty>
 
 [160/482] r1 R1(config-if)# do show clock
-  *11:48:11.000 UTC Fri Jun 12 2026
+  *10:43:16.000 UTC Sat Jul 4 2026
 
 [161/482] r1 R1(config-if)# exit
 <empty>
@@ -1394,7 +1591,7 @@ Total steps: 482
 <empty>
 
 [163/482] r1 R1(config-if)# do show clock
-  *11:48:11.000 UTC Fri Jun 12 2026
+  *10:43:16.000 UTC Sat Jul 4 2026
 
 [164/482] r1 R1(config-if)# exit
 <empty>
@@ -1403,7 +1600,7 @@ Total steps: 482
 <empty>
 
 [166/482] r1 R1(config-router)# do show clock
-  *11:48:11.000 UTC Fri Jun 12 2026
+  *10:43:16.000 UTC Sat Jul 4 2026
 
 [167/482] r1 R1(config-router)# exit
 <empty>
@@ -1412,7 +1609,7 @@ Total steps: 482
 <empty>
 
 [169/482] r1 R1(config-router)# do show clock
-  *11:48:11.000 UTC Fri Jun 12 2026
+  *10:43:16.000 UTC Sat Jul 4 2026
 
 [170/482] r1 R1(config-router)# exit
 <empty>
@@ -1421,7 +1618,7 @@ Total steps: 482
 <empty>
 
 [172/482] r1 R1(config-router)# do show clock
-  *11:48:11.000 UTC Fri Jun 12 2026
+  *10:43:16.000 UTC Sat Jul 4 2026
 
 [173/482] r1 R1(config-router)# exit
 <empty>
@@ -1430,7 +1627,7 @@ Total steps: 482
 <empty>
 
 [175/482] r1 R1(config-router)# do show clock
-  *11:48:11.000 UTC Fri Jun 12 2026
+  *10:43:16.000 UTC Sat Jul 4 2026
 
 [176/482] r1 R1(config-router)# exit
 <empty>
@@ -1439,7 +1636,7 @@ Total steps: 482
 <empty>
 
 [178/482] r1 R1(dhcp-config)# do show clock
-  *11:48:11.000 UTC Fri Jun 12 2026
+  *10:43:16.000 UTC Sat Jul 4 2026
 
 [179/482] r1 R1(dhcp-config)# exit
 <empty>
@@ -1448,7 +1645,7 @@ Total steps: 482
 <empty>
 
 [181/482] r1 R1(config-line)# do show clock
-  *11:48:11.000 UTC Fri Jun 12 2026
+  *10:43:16.000 UTC Sat Jul 4 2026
 
 [182/482] r1 R1(config-line)# exit
 <empty>
@@ -1457,7 +1654,7 @@ Total steps: 482
 <empty>
 
 [184/482] r1 R1(config-line)# do show clock
-  *11:48:11.000 UTC Fri Jun 12 2026
+  *10:43:16.000 UTC Sat Jul 4 2026
 
 [185/482] r1 R1(config-line)# exit
 <empty>
@@ -1466,7 +1663,7 @@ Total steps: 482
 <empty>
 
 [187/482] r1 R1(config-line)# do show clock
-  *11:48:11.000 UTC Fri Jun 12 2026
+  *10:43:16.000 UTC Sat Jul 4 2026
 
 [188/482] r1 R1(config-line)# exit
 <empty>
@@ -1475,7 +1672,7 @@ Total steps: 482
 <empty>
 
 [190/482] r1 R1(config-std-nacl)# do show clock
-  *11:48:11.000 UTC Fri Jun 12 2026
+  *10:43:16.000 UTC Sat Jul 4 2026
 
 [191/482] r1 R1(config-std-nacl)# exit
 <empty>
@@ -1484,7 +1681,7 @@ Total steps: 482
 <empty>
 
 [193/482] r1 R1(config-ext-nacl)# do show clock
-  *11:48:11.000 UTC Fri Jun 12 2026
+  *10:43:16.000 UTC Sat Jul 4 2026
 
 [194/482] r1 R1(config-ext-nacl)# exit
 <empty>
@@ -1493,7 +1690,7 @@ Total steps: 482
 <empty>
 
 [196/482] r1 R1(config-route-map)# do show clock
-  *11:48:11.000 UTC Fri Jun 12 2026
+  *10:43:16.000 UTC Sat Jul 4 2026
 
 [197/482] r1 R1(config-route-map)# exit
 <empty>
@@ -1502,7 +1699,7 @@ Total steps: 482
 <empty>
 
 [199/482] r1 R1(config-cmap)# do show clock
-  *11:48:11.000 UTC Fri Jun 12 2026
+  *10:43:16.000 UTC Sat Jul 4 2026
 
 [200/482] r1 R1(config-cmap)# exit
 <empty>
@@ -1511,7 +1708,7 @@ Total steps: 482
 <empty>
 
 [202/482] r1 R1(config-pmap)# do show clock
-  *11:48:11.000 UTC Fri Jun 12 2026
+  *10:43:16.000 UTC Sat Jul 4 2026
 
 [203/482] r1 R1(config-pmap)# exit
 <empty>
@@ -1520,7 +1717,7 @@ Total steps: 482
 <empty>
 
 [205/482] r1 R1(config-isakmp)# do show clock
-  *11:48:11.000 UTC Fri Jun 12 2026
+  *10:43:16.000 UTC Sat Jul 4 2026
 
 [206/482] r1 R1(config-isakmp)# exit
 <empty>
@@ -1529,7 +1726,7 @@ Total steps: 482
 <empty>
 
 [208/482] r1 R1(cfg-crypto-trans)# do show clock
-  *11:48:11.000 UTC Fri Jun 12 2026
+  *10:43:16.000 UTC Sat Jul 4 2026
 
 [209/482] r1 R1(cfg-crypto-trans)# exit
 <empty>
@@ -1538,7 +1735,7 @@ Total steps: 482
 <empty>
 
 [211/482] r1 R1(config-crypto-map)# do show clock
-  *11:48:11.000 UTC Fri Jun 12 2026
+  *10:43:16.000 UTC Sat Jul 4 2026
 
 [212/482] r1 R1(config-crypto-map)# exit
 <empty>
@@ -1547,7 +1744,7 @@ Total steps: 482
 <empty>
 
 [214/482] r1 R1(config-keychain)# do show clock
-  *11:48:11.000 UTC Fri Jun 12 2026
+  *10:43:16.000 UTC Sat Jul 4 2026
 
 [215/482] r1 R1(config-keychain)# exit
 <empty>
@@ -1556,7 +1753,7 @@ Total steps: 482
 <empty>
 
 [217/482] r1 R1(config-track)# do show clock
-  *11:48:11.000 UTC Fri Jun 12 2026
+  *10:43:16.000 UTC Sat Jul 4 2026
 
 [218/482] r1 R1(config-track)# exit
 <empty>
@@ -1565,7 +1762,7 @@ Total steps: 482
 <empty>
 
 [220/482] r1 R1(config)# do show clock
-  *11:48:11.000 UTC Fri Jun 12 2026
+  *10:43:16.000 UTC Sat Jul 4 2026
 
 [221/482] r1 R1(config)# exit
 <empty>
@@ -1618,7 +1815,8 @@ Total steps: 482
 <empty>
 
 [237/482] r1 R1-CORE# show running-config | include banner
-<empty>
+  banner login ^C Login banner ^
+  banner exec ^ Exec banner ^
 
 
 --- [238] § abbreviations ---
@@ -1673,19 +1871,20 @@ Total steps: 482
   !
   interface GigabitEthernet0/0
    ip address 192.168.1.1 255.255.255.0
-   no shutdown
   end
 
 [247/482] r1 R1-EDGE(config-if)# exi
 <empty>
 
 [248/482] r1 R1-EDGE(config)# rou ospf 1
-<empty>
+  % Ambiguous command: "rou" (matches: router, route-map)
 
-[249/482] r1 R1-EDGE(config-router)# net 192.168.1.0 0.0.0.255 a 0
-<empty>
+[249/482] r1 R1-EDGE(config)# net 192.168.1.0 0.0.0.255 a 0
+  % Invalid input detected at '^' marker.
+  net 192.168.1.0 0.0.0.255 a 0
+  ^
 
-[250/482] r1 R1-EDGE(config-router)# end
+[250/482] r1 R1-EDGE(config)# end
 <empty>
 
 [251/482] r1 R1-EDGE# sh ip int br
@@ -1701,6 +1900,8 @@ Total steps: 482
   Codes: C - connected, S - static, R - RIP, O - OSPF, O IA - OSPF inter area
          O E1 - OSPF external type 1, O E2 - OSPF external type 2, D - EIGRP, B - BGP
   
+  Gateway of last resort is not set
+  
   C    192.168.1.0/24 is directly connected, GigabitEthernet0/0
 
 [253/482] r1 R1-EDGE# wr
@@ -1712,15 +1913,24 @@ Total steps: 482
   Enter configuration commands, one per line.  End with CNTL/Z.
 
 [255/482] r1 R1-EDGE(config)# interface ?
-    WORD  Select an interface to configure
-    <cr>  
+    GigabitEthernet     GigabitEthernet IEEE 802.3z
+    FastEthernet        FastEthernet IEEE 802.3u
+    Ethernet            IEEE 802.3
+    TenGigabitEthernet  TenGigabitEthernet IEEE 802.3ae
+    Loopback            Loopback interface
+    Serial              Serial
+    Tunnel              Tunnel interface
+    Vlan                Catalyst VLANs
+    Port-channel        Ethernet Channel of interfaces
+    BVI                 Bridge-Group Virtual Interface
+    <cr>                
 
 [256/482] r1 R1-EDGE(config)# ip ?
     cef              Enable CEF
     http             http
     source-route     IP source-route
-    domain-lookup    Enable DNS lookups
     name-server      Configure DNS name servers
+    domain-lookup    Enable DNS lookups
     bootp            bootp
     finger           Enable finger service
     gratuitous-arps  Enable gratuitous ARP
@@ -1739,6 +1949,7 @@ Total steps: 482
     sla              Configure an IP SLA operation
     access-list      access-list
     nat              nat
+    vrf              Define a VRF instance
     routing          Enable IP routing
     flow-export      Legacy NetFlow export
     flow-cache       NetFlow cache timeout
@@ -1751,26 +1962,32 @@ Total steps: 482
     ospf   Enter OSPF routing protocol configuration
 
 [258/482] r1 R1-EDGE(config)# no ?
+    sntp         Configure SNTP
     hostname     Reset hostname
     alias        Remove a command alias
-    cdp          cdp
-    lldp         lldp
-    ip           ip
-    ipv6         ipv6
-    banner       banner
+    cdp          CDP global configuration
+    lldp         LLDP global configuration
+    ip           Global IP configuration subcommands
+    ipv6         Global IPv6 configuration subcommands
+    banner       Remove a banner
+    privilege    Remove privilege command rule
     logging      Disable logging
     ntp          Remove NTP config
+    enable       Modify enable password parameters
     service      Disable a service
     username     Remove a local user
     arp          Remove ARP entry
-    router       router
+    router       Enable a routing protocol
     shutdown     Enable (no-op in global config)
     route-map    Remove a route-map
     track        Remove a tracked object
     access-list  Remove an access list
-    key          key
+    key          Key management
     crypto       crypto
-    event        event
+    event        Embedded Event Manager
+    interface    Remove an interface
+    vlan         Remove a VLAN
+    line         Remove line configuration
 
 [259/482] r1 R1-EDGE(config)# crypto ?
     isakmp       isakmp
@@ -1778,7 +1995,7 @@ Total steps: 482
     map          Define a crypto map entry
     dynamic-map  Define a dynamic crypto map
     ikev2        ikev2
-    key          key
+    key          Key management
     pki          pki
     <cr>         
 
@@ -1817,8 +2034,11 @@ Total steps: 482
     <cr>  
 
 [268/482] r1 R1-EDGE(config)# line ?
-    WORD  Enter line configuration
-    <cr>  
+    console  Primary terminal line
+    vty      Virtual terminal
+    aux      Auxiliary line
+    tty      Terminal controller
+    <cr>     
 
 [269/482] r1 R1-EDGE(config)# service ?
     dhcp                 Enable DHCP service
@@ -1837,6 +2057,7 @@ Total steps: 482
     directed-broadcast  Enable directed broadcast
     unnumbered          Borrow IP from another interface
     mtu                 Set IP MTU
+    tcp                 tcp
     proxy-arp           Enable proxy-ARP
     redirects           Enable ICMP redirects
     accounting          Enable IP accounting
@@ -1854,6 +2075,7 @@ Total steps: 482
     pim                 pim
     access-group        Set access group on interface
     nat                 nat
+    vrf                 vrf
     ospf                OSPF interface configuration
     nhrp                NHRP configuration
     unreachables        Enable ICMP unreachables
@@ -2008,30 +2230,34 @@ Total steps: 482
   
   Current configuration:
   hostname R1-EDGE
+  banner login ^C Login banner ^
+  banner exec ^ Exec banner ^
   service dhcp
   ip dhcp pool LAN
   interface GigabitEthernet0/0
    ip address 192.168.1.1 255.255.255.0
-   no shutdown
   interface GigabitEthernet0/1
-   no shutdown
   interface GigabitEthernet0/2
-   no shutdown
   interface GigabitEthernet0/3
-   no shutdown
   interface Loopback0
-   no shutdown
   interface Tunnel0
-   no shutdown
   router rip
    version 2
+  router ospf 1
   line vty 0 4
   no ip routing
+  no service timestamps
+  no service password-encryption
+  no service bootp-server
+  no service finger
+  no service config
+  no service pad
+  no service gratuitous-arps
+  ip domain-name lab.local
   vrf definition CUST
   clock summer-time CEST recurring  
   key chain KC1
   no cdp run
-  ip domain-name lab.local
   no ip cef
   class-map match-all CM1
   policy-map PM1
@@ -2047,30 +2273,34 @@ Total steps: 482
 [314/482] r1 R1-EDGE# show running-config | begin interface
   interface GigabitEthernet0/0
    ip address 192.168.1.1 255.255.255.0
-   no shutdown
   !
   interface GigabitEthernet0/1
-   no shutdown
   !
   interface GigabitEthernet0/2
-   no shutdown
   !
   interface GigabitEthernet0/3
-   no shutdown
   !
   interface Loopback0
-   no shutdown
   !
   interface Tunnel0
-   no shutdown
   !
   !
   router rip
    version 2
+  !
+  router ospf 1
   line vty 0 4
   !
   no ip routing
   !
+  no service timestamps
+  no service password-encryption
+  no service bootp-server
+  no service finger
+  no service config
+  no service pad
+  no service gratuitous-arps
+  ip domain-name lab.local
   !
   vrf definition CUST
   clock summer-time CEST recurring  
@@ -2079,7 +2309,6 @@ Total steps: 482
   !
   no cdp run
   !
-  ip domain-name lab.local
   no ip cef
   class-map match-all CM1
   policy-map PM1
@@ -2097,21 +2326,16 @@ Total steps: 482
 [315/482] r1 R1-EDGE# show running-config | section interface
   interface GigabitEthernet0/0
    ip address 192.168.1.1 255.255.255.0
-   no shutdown
   interface GigabitEthernet0/1
-   no shutdown
   interface GigabitEthernet0/2
-   no shutdown
   interface GigabitEthernet0/3
-   no shutdown
   interface Loopback0
-   no shutdown
   interface Tunnel0
-   no shutdown
 
 [316/482] r1 R1-EDGE# show running-config | section router
   router rip
    version 2
+  router ospf 1
 
 [317/482] r1 R1-EDGE# show ip interface brief | include up
   GigabitEthernet0/0         192.168.1.1     YES manual up                    up
@@ -2128,7 +2352,9 @@ Total steps: 482
   C    192.168.1.0/24 is directly connected, GigabitEthernet0/0
 
 [320/482] r1 R1-EDGE# show ip route | begin Gateway
-<empty>
+  Gateway of last resort is not set
+  
+  C    192.168.1.0/24 is directly connected, GigabitEthernet0/0
 
 [321/482] r1 R1-EDGE# show interfaces | include line protocol
   GigabitEthernet0/0 is up, line protocol is up
@@ -2149,36 +2375,44 @@ Total steps: 482
   !
   hostname R1-EDGE
   !
+  banner login ^C Login banner ^
+  !
+  banner exec ^ Exec banner ^
+  !
   service dhcp
   !
   ip dhcp pool LAN
   !
   interface GigabitEthernet0/0
    ip address 192.168.1.1 255.255.255.0
-   no shutdown
   !
   interface GigabitEthernet0/1
-   no shutdown
   !
   interface GigabitEthernet0/2
-   no shutdown
   !
   interface GigabitEthernet0/3
-   no shutdown
   !
   interface Loopback0
-   no shutdown
   !
   interface Tunnel0
-   no shutdown
   !
   !
   router rip
    version 2
+  !
+  router ospf 1
   line vty 0 4
   !
   no ip routing
   !
+  no service timestamps
+  no service password-encryption
+  no service bootp-server
+  no service finger
+  no service config
+  no service pad
+  no service gratuitous-arps
+  ip domain-name lab.local
   !
   vrf definition CUST
   clock summer-time CEST recurring  
@@ -2187,7 +2421,6 @@ Total steps: 482
   !
   no cdp run
   !
-  ip domain-name lab.local
   no ip cef
   class-map match-all CM1
   policy-map PM1
@@ -2209,36 +2442,44 @@ Total steps: 482
   !
   hostname R1-EDGE
   !
+  banner login ^C Login banner ^
+  !
+  banner exec ^ Exec banner ^
+  !
   service dhcp
   !
   ip dhcp pool LAN
   !
   interface GigabitEthernet0/0
    ip address 192.168.1.1 255.255.255.0
-   no shutdown
   !
   interface GigabitEthernet0/1
-   no shutdown
   !
   interface GigabitEthernet0/2
-   no shutdown
   !
   interface GigabitEthernet0/3
-   no shutdown
   !
   interface Loopback0
-   no shutdown
   !
   interface Tunnel0
-   no shutdown
   !
   !
   router rip
    version 2
+  !
+  router ospf 1
   line vty 0 4
   !
   no ip routing
   !
+  no service timestamps
+  no service password-encryption
+  no service bootp-server
+  no service finger
+  no service config
+  no service pad
+  no service gratuitous-arps
+  ip domain-name lab.local
   !
   vrf definition CUST
   clock summer-time CEST recurring  
@@ -2247,7 +2488,6 @@ Total steps: 482
   !
   no cdp run
   !
-  ip domain-name lab.local
   no ip cef
   class-map match-all CM1
   policy-map PM1
@@ -2269,36 +2509,44 @@ Total steps: 482
   !
   hostname R1-EDGE
   !
+  banner login ^C Login banner ^
+  !
+  banner exec ^ Exec banner ^
+  !
   service dhcp
   !
   ip dhcp pool LAN
   !
   interface GigabitEthernet0/0
    ip address 192.168.1.1 255.255.255.0
-   no shutdown
   !
   interface GigabitEthernet0/1
-   no shutdown
   !
   interface GigabitEthernet0/2
-   no shutdown
   !
   interface GigabitEthernet0/3
-   no shutdown
   !
   interface Loopback0
-   no shutdown
   !
   interface Tunnel0
-   no shutdown
   !
   !
   router rip
    version 2
+  !
+  router ospf 1
   line vty 0 4
   !
   no ip routing
   !
+  no service timestamps
+  no service password-encryption
+  no service bootp-server
+  no service finger
+  no service config
+  no service pad
+  no service gratuitous-arps
+  ip domain-name lab.local
   !
   vrf definition CUST
   clock summer-time CEST recurring  
@@ -2307,7 +2555,6 @@ Total steps: 482
   !
   no cdp run
   !
-  ip domain-name lab.local
   no ip cef
   class-map match-all CM1
   policy-map PM1
@@ -2432,45 +2679,60 @@ Total steps: 482
   !
   hostname R1-EDGE
   !
+  banner login ^C Login banner ^
+  !
+  banner exec ^ Exec banner ^
+  !
+  alias exec sr show running-config
+  alias exec sib show ip interface brief
+  !
+  line console 0
+   privilege level 15
+   exec-timeout 0 0
+  !
   service dhcp
   !
   ip dhcp pool LAN
   !
   interface GigabitEthernet0/0
    ip address 192.168.1.1 255.255.255.0
-   no shutdown
   !
   interface GigabitEthernet0/1
-   no shutdown
   !
   interface GigabitEthernet0/2
-   no shutdown
   !
   interface GigabitEthernet0/3
-   no shutdown
   !
   interface Loopback0
-   no shutdown
   !
   interface Tunnel0
-   no shutdown
   !
   !
   router rip
    version 2
+  !
+  router ospf 1
   !
   username admin privilege 15 secret 5 $1$76c8bf3e$wtAaiUZ0lwgtTcpBPIZje.
   username operator privilege 5 secret 0 oper
   line vty 0 4
    exec-timeout 5 0
    access-class 10 in
+   login local
    transport input telnet
   !
   no ip routing
   !
   enable secret 5 $1$7898c160$qJMjddehPZNCbjupkaDhB.
   enable password 7 111E1C041C020A1F17
+  no service timestamps
   service password-encryption
+  no service bootp-server
+  no service finger
+  no service config
+  no service pad
+  no service gratuitous-arps
+  ip domain-name lab.local
   !
   vrf definition CUST
   privilege exec level 5 show running-config
@@ -2480,7 +2742,6 @@ Total steps: 482
   !
   no cdp run
   !
-  ip domain-name lab.local
   no ip cef
   class-map match-all CM1
   policy-map PM1
@@ -2524,29 +2785,30 @@ Total steps: 482
   [OK]
 
 [363/482] r1 R1-EDGE# copy running-config startup-config
+  Destination filename [startup-config]?
   Building configuration...
   [OK]
 
 [364/482] r1 R1-EDGE# copy startup-config running-config
-  startup-config → running-config: copy complete
+  %% Non-volatile configuration memory is not present
 
 [365/482] r1 R1-EDGE# copy running-config tftp:
-  % Invalid input detected at '^' marker.
-  copy running-config tftp:
-                      ^
+  Destination filename [tftp:]?
+  Writing tftp: ... [OK]
 
 [366/482] r1 R1-EDGE# copy running-config flash:backup.cfg
-  % Invalid input detected at '^' marker.
-  copy running-config flash:backup.cfg
-                      ^
+  Destination filename [flash:backup.cfg]?
+  Writing flash:backup.cfg ... [OK]
 
 [367/482] r1 R1-EDGE# write erase
   Erasing the nvram filesystem will remove all configuration files! Continue? [confirm]
   [OK]
+  Erase of nvram: complete
 
 [368/482] r1 R1-EDGE# erase startup-config
   Erasing the nvram filesystem will remove all configuration files! Continue? [confirm]
   [OK]
+  Erase of nvram: complete
 
 [369/482] r1 R1-EDGE# show startup-config
   Building configuration...
@@ -2555,45 +2817,60 @@ Total steps: 482
   !
   hostname R1-EDGE
   !
+  banner login ^C Login banner ^
+  !
+  banner exec ^ Exec banner ^
+  !
+  alias exec sr show running-config
+  alias exec sib show ip interface brief
+  !
+  line console 0
+   privilege level 15
+   exec-timeout 0 0
+  !
   service dhcp
   !
   ip dhcp pool LAN
   !
   interface GigabitEthernet0/0
    ip address 192.168.1.1 255.255.255.0
-   no shutdown
   !
   interface GigabitEthernet0/1
-   no shutdown
   !
   interface GigabitEthernet0/2
-   no shutdown
   !
   interface GigabitEthernet0/3
-   no shutdown
   !
   interface Loopback0
-   no shutdown
   !
   interface Tunnel0
-   no shutdown
   !
   !
   router rip
    version 2
+  !
+  router ospf 1
   !
   username admin privilege 15 secret 5 $1$76c8bf3e$wtAaiUZ0lwgtTcpBPIZje.
   username operator privilege 5 secret 0 oper
   line vty 0 4
    exec-timeout 5 0
    access-class 10 in
+   login local
    transport input telnet
   !
   no ip routing
   !
   enable secret 5 $1$7898c160$qJMjddehPZNCbjupkaDhB.
   enable password 7 111E1C041C020A1F17
+  no service timestamps
   service password-encryption
+  no service bootp-server
+  no service finger
+  no service config
+  no service pad
+  no service gratuitous-arps
+  ip domain-name lab.local
   !
   vrf definition CUST
   privilege exec level 5 show running-config
@@ -2603,7 +2880,6 @@ Total steps: 482
   !
   no cdp run
   !
-  ip domain-name lab.local
   no ip cef
   class-map match-all CM1
   policy-map PM1
@@ -2627,10 +2903,11 @@ Total steps: 482
 [372/482] r1 R1-EDGE# reload
   Proceed with reload? [confirm]
   Reload requested.
+  System restarting...
 
 
 --- [373] § regression: show family ---
-[373/482] r1 R1-EDGE# enable
+[373/482] r1 R1-EDGE> enable
 <empty>
 
 [374/482] r1 R1-EDGE# show version
@@ -2657,45 +2934,60 @@ Total steps: 482
   !
   hostname R1-EDGE
   !
+  banner login ^C Login banner ^
+  !
+  banner exec ^ Exec banner ^
+  !
+  alias exec sr show running-config
+  alias exec sib show ip interface brief
+  !
+  line console 0
+   privilege level 15
+   exec-timeout 0 0
+  !
   service dhcp
   !
   ip dhcp pool LAN
   !
   interface GigabitEthernet0/0
    ip address 192.168.1.1 255.255.255.0
-   no shutdown
   !
   interface GigabitEthernet0/1
-   no shutdown
   !
   interface GigabitEthernet0/2
-   no shutdown
   !
   interface GigabitEthernet0/3
-   no shutdown
   !
   interface Loopback0
-   no shutdown
   !
   interface Tunnel0
-   no shutdown
   !
   !
   router rip
    version 2
+  !
+  router ospf 1
   !
   username admin privilege 15 secret 5 $1$76c8bf3e$wtAaiUZ0lwgtTcpBPIZje.
   username operator privilege 5 secret 0 oper
   line vty 0 4
    exec-timeout 5 0
    access-class 10 in
+   login local
    transport input telnet
   !
   no ip routing
   !
   enable secret 5 $1$7898c160$qJMjddehPZNCbjupkaDhB.
   enable password 7 111E1C041C020A1F17
+  no service timestamps
   service password-encryption
+  no service bootp-server
+  no service finger
+  no service config
+  no service pad
+  no service gratuitous-arps
+  ip domain-name lab.local
   !
   vrf definition CUST
   privilege exec level 5 show running-config
@@ -2705,7 +2997,6 @@ Total steps: 482
   !
   no cdp run
   !
-  ip domain-name lab.local
   no ip cef
   class-map match-all CM1
   policy-map PM1
@@ -2727,45 +3018,60 @@ Total steps: 482
   !
   hostname R1-EDGE
   !
+  banner login ^C Login banner ^
+  !
+  banner exec ^ Exec banner ^
+  !
+  alias exec sr show running-config
+  alias exec sib show ip interface brief
+  !
+  line console 0
+   privilege level 15
+   exec-timeout 0 0
+  !
   service dhcp
   !
   ip dhcp pool LAN
   !
   interface GigabitEthernet0/0
    ip address 192.168.1.1 255.255.255.0
-   no shutdown
   !
   interface GigabitEthernet0/1
-   no shutdown
   !
   interface GigabitEthernet0/2
-   no shutdown
   !
   interface GigabitEthernet0/3
-   no shutdown
   !
   interface Loopback0
-   no shutdown
   !
   interface Tunnel0
-   no shutdown
   !
   !
   router rip
    version 2
+  !
+  router ospf 1
   !
   username admin privilege 15 secret 5 $1$76c8bf3e$wtAaiUZ0lwgtTcpBPIZje.
   username operator privilege 5 secret 0 oper
   line vty 0 4
    exec-timeout 5 0
    access-class 10 in
+   login local
    transport input telnet
   !
   no ip routing
   !
   enable secret 5 $1$7898c160$qJMjddehPZNCbjupkaDhB.
   enable password 7 111E1C041C020A1F17
+  no service timestamps
   service password-encryption
+  no service bootp-server
+  no service finger
+  no service config
+  no service pad
+  no service gratuitous-arps
+  ip domain-name lab.local
   !
   vrf definition CUST
   privilege exec level 5 show running-config
@@ -2775,7 +3081,6 @@ Total steps: 482
   !
   no cdp run
   !
-  ip domain-name lab.local
   no ip cef
   class-map match-all CM1
   policy-map PM1
@@ -2809,6 +3114,17 @@ Total steps: 482
     Full-duplex, 1000Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
+    Last input 00:00:00, output 00:00:00, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       3 packets output, 192 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
   GigabitEthernet0/1 is up, line protocol is up
     Hardware is iGbE, address is 02:00:00:00:00:02 (bia 02:00:00:00:00:02)
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
@@ -2817,6 +3133,17 @@ Total steps: 482
     Full-duplex, 1000Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
+    Last input 00:00:00, output 00:00:00, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       2 packets input, 128 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       3 packets output, 192 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
   GigabitEthernet0/2 is down, line protocol is down
     Hardware is iGbE, address is 02:00:00:00:00:03 (bia 02:00:00:00:00:03)
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
@@ -2825,6 +3152,17 @@ Total steps: 482
     Full-duplex, 1000Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
+    Last input never, output never, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
   GigabitEthernet0/3 is down, line protocol is down
     Hardware is iGbE, address is 02:00:00:00:00:04 (bia 02:00:00:00:00:04)
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
@@ -2833,6 +3171,17 @@ Total steps: 482
     Full-duplex, 1000Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
+    Last input never, output never, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
   Loopback0 is up, line protocol is up
     Hardware is Loopback
   Tunnel0 is up, line protocol is up
@@ -2842,6 +3191,8 @@ Total steps: 482
 [379/482] r1 R1-EDGE# show ip route
   Codes: C - connected, S - static, R - RIP, O - OSPF, O IA - OSPF inter area
          O E1 - OSPF external type 1, O E2 - OSPF external type 2, D - EIGRP, B - BGP
+  
+  Gateway of last resort is not set
   
   C    192.168.1.0/24 is directly connected, GigabitEthernet0/0
 
@@ -2863,10 +3214,9 @@ Total steps: 482
     Outgoing update filter list for all interfaces is not set
     Incoming update filter list for all interfaces is not set
     Router ID 0.0.0.0
-    Number of areas in this router is 1
+    Number of areas in this router is 0
     Reference bandwidth unit is 100 mbps
     Routing for Networks:
-      192.168.1.0 0.0.0.255 area 0
     Routing Information Sources:
       Gateway         Distance      Last Update
     Distance: (default is 110)
@@ -2896,14 +3246,8 @@ Total steps: 482
 
 [384/482] r1 R1-EDGE# show ip ospf
   Routing Process "ospf 1" with ID 0.0.0.0
-   Number of areas in this router is 1
+   Number of areas in this router is 0
    Reference bandwidth unit is 100 mbps
-  
-      Area 0
-          Number of interfaces in this area is 1
-          Area type: NORMAL
-          SPF algorithm last executed: recently
-          Number of LSA 1
   
 
 [385/482] r1 R1-EDGE# show ip ospf neighbor
@@ -2912,15 +3256,9 @@ Total steps: 482
 [386/482] r1 R1-EDGE# show ip ospf database
               OSPF Router with ID (0.0.0.0) (Process ID 1)
   
-                  Router Link States (Area 0)
-  
-  Link ID         ADV Router      Age         Seq#            Checksum  Link count
-  0.0.0.0         0.0.0.0         0           0x80000009        0x2002      1
-  
 
 [387/482] r1 R1-EDGE# show ip ospf interface brief
   Interface    PID   Area            IP Address/Mask    Cost  State Nbrs F/C
-  GigabitEthernet0/0   1     0               192.168.1.1/24     1     DR    0/0
 
 [388/482] r1 R1-EDGE# show ip eigrp neighbors
   EIGRP-IPv4 Neighbors for AS(100)
@@ -2943,17 +3281,22 @@ Total steps: 482
   RIP routing database is empty
 
 [393/482] r1 R1-EDGE# show ip nat translations
+  Pro  Inside global          Inside local           Outside local          Outside global
   No NAT translations.
 
 [394/482] r1 R1-EDGE# show ip nat statistics
   Total active translations: 0 (0 static, 0 dynamic; 0 extended)
+  Total translations: 0
+  Static translations: 0
+  Dynamic translations: 0
+  Translation errors: 0
   Outside interfaces:  none
   Inside interfaces:   none
   Hits: 0  Misses: 0
-  Expired translations: 0
   Session timeouts (seconds): tcp 86400  udp 300  icmp 60  syn 30
   Dynamic mappings:
   -- No dynamic NAT rules configured --
+  Application Layer Gateways: none (FTP/SIP ALG and NAT64 not supported in this simulator)
 
 [395/482] r1 R1-EDGE# show ip dhcp binding
   IP address       Client-id/              Lease expiration        Type
@@ -3034,7 +3377,7 @@ Total steps: 482
 [410/482] r1 R1-EDGE# show ntp status
   Clock is unsynchronized, stratum 16, reference is .INIT.
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
-  reference time is EDD6707B.4E147AE1 (11:48:11.305 UTC Fri Jun 12 2026)
+  reference time is EDF36244.7EF9DB22 (10:43:16.496 UTC Sat Jul 4 2026)
   clock offset is 0.00 msec
 
 [411/482] r1 R1-EDGE# show ntp associations
@@ -3043,7 +3386,7 @@ Total steps: 482
   No NTP associations configured.
 
 [412/482] r1 R1-EDGE# show clock
-  *11:48:11.000 UTC Fri Jun 12 2026
+  *10:43:16.000 UTC Sat Jul 4 2026
 
 [413/482] r1 R1-EDGE# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
@@ -3088,6 +3431,33 @@ Total steps: 482
     Interface    User               Mode         Idle     Peer Address
 
 [419/482] r1 R1-EDGE# show history
+  enable
+  show version
+  show running-config
+  show startup-config
+  show ip interface brief
+  show interfaces
+  show ip route
+  show ip route summary
+  show ip protocols
+  show ip arp
+  show arp
+  show ip ospf
+  show ip ospf neighbor
+  show ip ospf database
+  show ip ospf interface brief
+  show ip eigrp neighbors
+  show ip eigrp topology
+  show ip bgp
+  show ip bgp summary
+  show ip rip database
+  show ip nat translations
+  show ip nat statistics
+  show ip dhcp binding
+  show ip dhcp pool
+  show access-lists
+  show ip access-lists
+  show crypto isakmp sa
   show crypto ipsec sa
   show crypto session
   show crypto map
@@ -3107,7 +3477,6 @@ Total steps: 482
   show memory statistics
   show flash
   show users
-  show history
 
 [420/482] r1 R1-EDGE# show ip cef
   IP CEF is not enabled
@@ -3122,6 +3491,17 @@ Total steps: 482
     Full-duplex, 1000Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
+    Last input 00:00:00, output 00:00:00, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       3 packets output, 192 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
 
 [422/482] r1 R1-EDGE# show interfaces GigabitEthernet0/1
   GigabitEthernet0/1 is up, line protocol is up
@@ -3132,6 +3512,17 @@ Total steps: 482
     Full-duplex, 1000Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
+    Last input 00:00:00, output 00:00:00, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       2 packets input, 128 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       3 packets output, 192 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
 
 [423/482] r1 R1-EDGE# show ip interface GigabitEthernet0/1
   GigabitEthernet0/1 is up, line protocol is up
@@ -3142,6 +3533,17 @@ Total steps: 482
     Full-duplex, 1000Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
+    Last input 00:00:00, output 00:00:00, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       2 packets input, 128 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       3 packets output, 192 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
 
 [424/482] r1 R1-EDGE# show controllers
   GigabitEthernet0/0 -
@@ -3194,45 +3596,60 @@ Total steps: 482
   !
   hostname R1-EDGE
   !
+  banner login ^C Login banner ^
+  !
+  banner exec ^ Exec banner ^
+  !
+  alias exec sr show running-config
+  alias exec sib show ip interface brief
+  !
+  line console 0
+   privilege level 15
+   exec-timeout 0 0
+  !
   service dhcp
   !
   ip dhcp pool LAN
   !
   interface GigabitEthernet0/0
    ip address 192.168.1.1 255.255.255.0
-   no shutdown
   !
   interface GigabitEthernet0/1
-   no shutdown
   !
   interface GigabitEthernet0/2
-   no shutdown
   !
   interface GigabitEthernet0/3
-   no shutdown
   !
   interface Loopback0
-   no shutdown
   !
   interface Tunnel0
-   no shutdown
   !
   !
   router rip
    version 2
+  !
+  router ospf 1
   !
   username admin privilege 15 secret 5 $1$76c8bf3e$wtAaiUZ0lwgtTcpBPIZje.
   username operator privilege 5 secret 0 oper
   line vty 0 4
    exec-timeout 5 0
    access-class 10 in
+   login local
    transport input telnet
   !
   no ip routing
   !
   enable secret 5 $1$7898c160$qJMjddehPZNCbjupkaDhB.
   enable password 7 111E1C041C020A1F17
+  no service timestamps
   service password-encryption
+  no service bootp-server
+  no service finger
+  no service config
+  no service pad
+  no service gratuitous-arps
+  ip domain-name lab.local
   !
   vrf definition CUST
   privilege exec level 5 show running-config
@@ -3242,7 +3659,6 @@ Total steps: 482
   !
   no cdp run
   !
-  ip domain-name lab.local
   no ip cef
   class-map match-all CM1
   policy-map PM1
@@ -3269,6 +3685,8 @@ Total steps: 482
   ------------------ show ip route ------------------
   Codes: C - connected, S - static, R - RIP, O - OSPF, D - EIGRP, B - BGP, * - candidate default
   
+  Gateway of last resort is not set
+  
   C    192.168.1.0/24 is directly connected, GigabitEthernet0/0
   
   ------------------ show interfaces ------------------
@@ -3281,6 +3699,17 @@ Total steps: 482
     Full-duplex, 1000Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
+    Last input 00:00:00, output 00:00:00, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       3 packets output, 192 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
   GigabitEthernet0/1 is up, line protocol is up
     Hardware is iGbE, address is 02:00:00:00:00:02 (bia 02:00:00:00:00:02)
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
@@ -3289,6 +3718,17 @@ Total steps: 482
     Full-duplex, 1000Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
+    Last input 00:00:00, output 00:00:00, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       2 packets input, 128 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       3 packets output, 192 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
   GigabitEthernet0/2 is down, line protocol is down
     Hardware is iGbE, address is 02:00:00:00:00:03 (bia 02:00:00:00:00:03)
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
@@ -3297,6 +3737,17 @@ Total steps: 482
     Full-duplex, 1000Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
+    Last input never, output never, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
   GigabitEthernet0/3 is down, line protocol is down
     Hardware is iGbE, address is 02:00:00:00:00:04 (bia 02:00:00:00:00:04)
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
@@ -3305,6 +3756,17 @@ Total steps: 482
     Full-duplex, 1000Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
+    Last input never, output never, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
   Loopback0 is up, line protocol is up
     Hardware is Loopback
   Tunnel0 is up, line protocol is up
@@ -3316,10 +3778,9 @@ Total steps: 482
     Outgoing update filter list for all interfaces is not set
     Incoming update filter list for all interfaces is not set
     Router ID 0.0.0.0
-    Number of areas in this router is 1
+    Number of areas in this router is 0
     Reference bandwidth unit is 100 mbps
     Routing for Networks:
-      192.168.1.0 0.0.0.255 area 0
     Routing Information Sources:
       Gateway         Distance      Last Update
     Distance: (default is 110)
@@ -3368,7 +3829,7 @@ Total steps: 482
     Name                             Default RD            Protocols   Interfaces
 
 [431/482] r1 R1-EDGE# show hosts
-  Default domain is not set
+  Default domain is lab.local
   Name servers are 8.8.8.8, 8.8.4.4, 1.1.1.1
   Name/address lookup is disabled
   
@@ -3389,9 +3850,10 @@ Total steps: 482
 
 [434/482] r1 R1-EDGE# show terminal
   Line 0, Location: "", Type: ""
-  Length: 24 lines, Width: 80 columns
+  Length: 24 lines, Width: 132 columns
   Editing is enabled.
-  History is enabled, history size is 20.
+  History is enabled, history size is 100.
+  Monitor parameter: disabled
 
 [435/482] r1 R1-EDGE# show aliases
   Exec mode aliases:
@@ -3410,33 +3872,66 @@ Total steps: 482
 --- [436] § regression: pipe filters ---
 [436/482] r1 R1-EDGE# show running-config | include router
   router rip
+  router ospf 1
 
 [437/482] r1 R1-EDGE# show running-config | section interface
+  alias exec sib show ip interface brief
   interface GigabitEthernet0/0
    ip address 192.168.1.1 255.255.255.0
-   no shutdown
   interface GigabitEthernet0/1
-   no shutdown
   interface GigabitEthernet0/2
-   no shutdown
   interface GigabitEthernet0/3
-   no shutdown
   interface Loopback0
-   no shutdown
   interface Tunnel0
-   no shutdown
 
 [438/482] r1 R1-EDGE# show running-config | begin line
+  line console 0
+   privilege level 15
+   exec-timeout 0 0
+  !
+  service dhcp
+  !
+  ip dhcp pool LAN
+  !
+  interface GigabitEthernet0/0
+   ip address 192.168.1.1 255.255.255.0
+  !
+  interface GigabitEthernet0/1
+  !
+  interface GigabitEthernet0/2
+  !
+  interface GigabitEthernet0/3
+  !
+  interface Loopback0
+  !
+  interface Tunnel0
+  !
+  !
+  router rip
+   version 2
+  !
+  router ospf 1
+  !
+  username admin privilege 15 secret 5 $1$76c8bf3e$wtAaiUZ0lwgtTcpBPIZje.
+  username operator privilege 5 secret 0 oper
   line vty 0 4
    exec-timeout 5 0
    access-class 10 in
+   login local
    transport input telnet
   !
   no ip routing
   !
   enable secret 5 $1$7898c160$qJMjddehPZNCbjupkaDhB.
   enable password 7 111E1C041C020A1F17
+  no service timestamps
   service password-encryption
+  no service bootp-server
+  no service finger
+  no service config
+  no service pad
+  no service gratuitous-arps
+  ip domain-name lab.local
   !
   vrf definition CUST
   privilege exec level 5 show running-config
@@ -3446,7 +3941,6 @@ Total steps: 482
   !
   no cdp run
   !
-  ip domain-name lab.local
   no ip cef
   class-map match-all CM1
   policy-map PM1
@@ -3466,39 +3960,48 @@ Total steps: 482
   
   Current configuration:
   hostname R1-EDGE
+  banner login ^C Login banner ^
+  banner exec ^ Exec banner ^
+  alias exec sr show running-config
+  alias exec sib show ip interface brief
+  line console 0
+   privilege level 15
+   exec-timeout 0 0
   service dhcp
   ip dhcp pool LAN
   interface GigabitEthernet0/0
    ip address 192.168.1.1 255.255.255.0
-   no shutdown
   interface GigabitEthernet0/1
-   no shutdown
   interface GigabitEthernet0/2
-   no shutdown
   interface GigabitEthernet0/3
-   no shutdown
   interface Loopback0
-   no shutdown
   interface Tunnel0
-   no shutdown
   router rip
    version 2
+  router ospf 1
   username admin privilege 15 secret 5 $1$76c8bf3e$wtAaiUZ0lwgtTcpBPIZje.
   username operator privilege 5 secret 0 oper
   line vty 0 4
    exec-timeout 5 0
    access-class 10 in
+   login local
    transport input telnet
   no ip routing
   enable secret 5 $1$7898c160$qJMjddehPZNCbjupkaDhB.
   enable password 7 111E1C041C020A1F17
+  no service timestamps
   service password-encryption
+  no service bootp-server
+  no service finger
+  no service config
+  no service pad
+  no service gratuitous-arps
+  ip domain-name lab.local
   vrf definition CUST
   privilege exec level 5 show running-config
   clock summer-time CEST recurring  
   key chain KC1
   no cdp run
-  ip domain-name lab.local
   no ip cef
   class-map match-all CM1
   policy-map PM1
@@ -3612,10 +4115,9 @@ Total steps: 482
     Outgoing update filter list for all interfaces is not set
     Incoming update filter list for all interfaces is not set
     Router ID 0.0.0.0
-    Number of areas in this router is 1
+    Number of areas in this router is 0
     Reference bandwidth unit is 100 mbps
     Routing for Networks:
-      192.168.1.0 0.0.0.255 area 0
     Routing Information Sources:
       Gateway         Distance      Last Update
     Distance: (default is 110)
@@ -3655,15 +4157,24 @@ Total steps: 482
   Enter configuration commands, one per line.  End with CNTL/Z.
 
 [475/482] r1 R1-EDGE(config)# interface ?
-    WORD  Select an interface to configure
-    <cr>  
+    GigabitEthernet     GigabitEthernet IEEE 802.3z
+    FastEthernet        FastEthernet IEEE 802.3u
+    Ethernet            IEEE 802.3
+    TenGigabitEthernet  TenGigabitEthernet IEEE 802.3ae
+    Loopback            Loopback interface
+    Serial              Serial
+    Tunnel              Tunnel interface
+    Vlan                Catalyst VLANs
+    Port-channel        Ethernet Channel of interfaces
+    BVI                 Bridge-Group Virtual Interface
+    <cr>                
 
 [476/482] r1 R1-EDGE(config)# ip ?
     cef              Enable CEF
     http             http
     source-route     IP source-route
-    domain-lookup    Enable DNS lookups
     name-server      Configure DNS name servers
+    domain-lookup    Enable DNS lookups
     bootp            bootp
     finger           Enable finger service
     gratuitous-arps  Enable gratuitous ARP
@@ -3682,6 +4193,7 @@ Total steps: 482
     sla              Configure an IP SLA operation
     access-list      access-list
     nat              nat
+    vrf              Define a VRF instance
     routing          Enable IP routing
     flow-export      Legacy NetFlow export
     flow-cache       NetFlow cache timeout
@@ -3699,37 +4211,43 @@ Total steps: 482
     map          Define a crypto map entry
     dynamic-map  Define a dynamic crypto map
     ikev2        ikev2
-    key          key
+    key          Key management
     pki          pki
     <cr>         
 
 [479/482] r1 R1-EDGE(config)# no ?
+    sntp         Configure SNTP
     hostname     Reset hostname
     alias        Remove a command alias
-    cdp          cdp
-    lldp         lldp
-    ip           ip
-    ipv6         ipv6
-    banner       banner
+    cdp          CDP global configuration
+    lldp         LLDP global configuration
+    ip           Global IP configuration subcommands
+    ipv6         Global IPv6 configuration subcommands
+    banner       Remove a banner
+    privilege    Remove privilege command rule
     logging      Disable logging
     ntp          Remove NTP config
+    enable       Modify enable password parameters
     service      Disable a service
     username     Remove a local user
     arp          Remove ARP entry
-    router       router
+    router       Enable a routing protocol
     shutdown     Enable (no-op in global config)
     route-map    Remove a route-map
     track        Remove a tracked object
     access-list  Remove an access list
-    key          key
+    key          Key management
     crypto       crypto
-    event        event
+    event        Embedded Event Manager
+    interface    Remove an interface
+    vlan         Remove a VLAN
+    line         Remove line configuration
 
 [480/482] r1 R1-EDGE(config)# end
 <empty>
 
 [481/482] r1 R1-EDGE# show running-config | count !
-  19
+  24
 
 [482/482] r1 R1-EDGE# write memory
   Building configuration...

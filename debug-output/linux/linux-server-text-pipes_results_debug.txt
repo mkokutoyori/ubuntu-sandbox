@@ -1,6 +1,6 @@
 ============================================================
 Shell debug transcript — linux-server-text-pipes
-Generated: 2026-06-12T11:47:50.017Z
+Generated: 2026-07-04T10:45:17.188Z
 Engine: linux
 host=L-SRV-TXT-DBG (linux-server) — focus: traitement de texte, filtres & pipelines
 Total commands: 303
@@ -500,7 +500,7 @@ $ [90/303]> cat fruits.txt | wc -l
   6
 
 $ [91/303]> ls /etc | wc -l
-  9
+  10
 
 
 --- [92] § sort — tri ---
@@ -989,9 +989,10 @@ $ [177/303]> cat /etc/passwd | wc -l
   7
 
 $ [178/303]> ls /etc | grep conf | sort | head
-  adduser.conf   gshadow-       networks       security       sudoers
-  cron.daily     hostname       nsswitch.conf  services       sudoers.d
-  group-         machine-id     resolv.conf    subgid
+  adduser.conf    group-          lsb-release     protocols       subgid
+  audit           gshadow         machine-id      resolv.conf     subuid
+  cron.monthly    iptables        nsswitch.conf   shadow          timezone
+  default         logrotate.conf  passwd          skel
 
 $ [179/303]> sort fruits.txt | uniq -c | sort -rn | head -3
         1 CERISE
@@ -1088,19 +1089,31 @@ $ [204/303]> sed -i 's/fraise/mangue/' fruits2.txt
 <empty>
 
 $ [205/303]> diff fruits.txt fruits2.txt
-  diff: command not found
+  5c5
+  < fraise
+  ---
+  > mangue
 
 $ [206/303]> diff -u fruits.txt fruits2.txt
-  diff: command not found
+  5c5
+  < fraise
+  ---
+  > mangue
 
 $ [207/303]> diff -y fruits.txt fruits2.txt
-  diff: command not found
+  5c5
+  < fraise
+  ---
+  > mangue
 
 $ [208/303]> diff -q fruits.txt fruits2.txt
-  diff: command not found
+  5c5
+  < fraise
+  ---
+  > mangue
 
 $ [209/303]> diff fruits.txt fruits.txt
-  diff: command not found
+<empty>
 
 $ [210/303]> sort fruits.txt > a.sorted
 <empty>
@@ -1124,7 +1137,7 @@ $ [216/303]> cmp fruits.txt fruits.txt
   cmp: command not found
 
 $ [217/303]> diff fichier_inexistant_xyz fruits.txt
-  diff: command not found
+  diff: fichier_inexistant_xyz: No such file or directory
 
 
 --- [218] § découpe & assemblage — split/csplit ---
@@ -1189,6 +1202,7 @@ $ [235/303]> echo "fichier1 fichier2 fichier3" | xargs -n1
 $ [236/303]> ls /etc/*.conf | xargs -n1 basename
   -n1 /etc/resolv.conf
   -n1 /etc/adduser.conf
+  -n1 /etc/logrotate.conf
   -n1 /etc/nsswitch.conf
 
 $ [237/303]> echo "1 2 3" | xargs -I{} echo "valeur={}"
@@ -1204,6 +1218,7 @@ $ [238/303]> seq 1 5 | xargs echo
 $ [239/303]> find /etc -maxdepth 1 -name "*.conf" | xargs wc -l
   wc /etc/resolv.conf
   wc /etc/adduser.conf
+  wc /etc/logrotate.conf
   wc /etc/nsswitch.conf
 
 $ [240/303]> echo "pomme banane" | xargs -d" " -n1 echo

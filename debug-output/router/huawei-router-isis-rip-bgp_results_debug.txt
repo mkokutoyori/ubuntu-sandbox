@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — huawei-router-isis-rip-bgp
-Generated: 2026-06-12T11:49:17.051Z
+Generated: 2026-07-04T10:48:47.580Z
 Topology: R1(Huawei) GE0/0/1=L1 LAN 192.168.1.0/24, GE0/0/0=WAN 10.0.0.0/30; R2(Huawei) GE0/0/1=W1 LAN 192.168.2.0/24, GE0/0/0=WAN
 focus=VRP RIP/IS-IS/BGP: peers, import-route, policy, display
 Total steps: 260
@@ -230,10 +230,10 @@ Total steps: 260
 <empty>
 
 [51/260] r1 <R1> debugging rip 1
-<empty>
+  RIP debugging is on
 
 [52/260] r1 <R1> undo debugging all
-  Info: All debugging turned off.
+  1 debug switch(s) have been turned off
 
 
 --- [53] § IS-IS ---
@@ -352,7 +352,7 @@ Total steps: 260
 <empty>
 
 [87/260] r1 <R1> undo debugging all
-  Info: All debugging turned off.
+  All possible debugging has been turned off
 
 
 --- [88] § BGP ---
@@ -597,10 +597,10 @@ Total steps: 260
 <empty>
 
 [154/260] r1 <R1> debugging bgp event
-<empty>
+  BGP debugging is on
 
 [155/260] r1 <R1> undo debugging all
-  Info: All debugging turned off.
+  1 debug switch(s) have been turned off
 
 
 --- [156] § regression: display family ---
@@ -685,16 +685,16 @@ Total steps: 260
   ^down: standby
   (l): loopback
   (s): spoofing
-  The number of interface that is UP in Physical is 0
-  The number of interface that is DOWN in Physical is 0
-  The number of interface that is UP in Protocol is 0
-  The number of interface that is DOWN in Protocol is 0
+  The number of interface that is UP in Physical is 2
+  The number of interface that is DOWN in Physical is 2
+  The number of interface that is UP in Protocol is 2
+  The number of interface that is DOWN in Protocol is 2
   
   Interface                         IP Address/Mask      Physical   Protocol
-  GE0/0/0                           192.168.1.1/24       UP         UP
-  GE0/0/1                           10.0.0.1/30          UP         UP
-  GE0/0/2                           unassigned           DOWN       DOWN
-  GE0/0/3                           unassigned           DOWN       DOWN
+  GigabitEthernet0/0/0              192.168.1.1/24       up         up
+  GigabitEthernet0/0/1              10.0.0.1/30          up         up
+  GigabitEthernet0/0/2              unassigned           down       down
+  GigabitEthernet0/0/3              unassigned           down       down
 
 [161/260] r1 <R1> display interface
   GE0/0/0 current state : UP
@@ -943,10 +943,12 @@ Total steps: 260
    10.0.0.0/255.255.255.2520.0.0.0         0          100       0       i
 
 [175/260] r1 <R1> display nat session all
-  Info: No NAT session is found.
+  NAT Session Table Information:
+   No active NAT sessions
 
 [176/260] r1 <R1> display nat address-group
-  No NAT address pools configured.
+  NAT Address Group Information:
+   (no address groups configured)
 
 [177/260] r1 <R1> display ip pool
   No DHCP pools configured.
@@ -1003,8 +1005,8 @@ Total steps: 260
   No NTP associations
 
 [191/260] r1 <R1> display clock
-  2026-06-12 11:49:17
-  Friday
+  2026-07-04 10:48:47
+  Saturday
   Time Zone(UTC) : UTC
 
 [192/260] r1 <R1> display lldp neighbor
@@ -1016,13 +1018,13 @@ Total steps: 260
 [194/260] r1 <R1> display cpu-usage
   CPU Usage Stat. Cycle: 60 (Second)
   CPU Usage            : 11% Max: 38%
-  CPU Usage Stat. Time : 2026-06-12 11:49:17
+  CPU Usage Stat. Time : 2026-07-04 10:48:47
   CPU utilization for five seconds: 11%: one minute: 12%: five minutes: 10%
   
   Max CPU Usage Stat. Time : 0000-00-00 00:00:00.
 
 [195/260] r1 <R1> display memory-usage
-  Memory utilization statistics at 2026-06-12 11:49:17
+  Memory utilization statistics at 2026-07-04 10:48:47
   System Total Memory Is: 536870912 bytes
   Total Memory Used Is: 193273528 bytes
   Memory Using Percentage Is: 36%
@@ -1206,8 +1208,9 @@ Total steps: 260
     38     VTY 4           -        -      0      0            N      -
 
 [216/260] r1 <R1> display port-security
-  Port-security is enabled on the following interfaces:
-   (configuration is recorded per interface; see display this)
+  % Invalid input detected at '^' marker.
+  display port-security
+          ^
 
 
 --- [217] § regression: pipe filters ---
@@ -1266,10 +1269,10 @@ Total steps: 260
   10.0.0.0/30         Direct  0    0     D     10.0.0.1        GE0/0/1
 
 [221/260] r1 <R1> display ip interface brief | include up
-  The number of interface that is UP in Physical is 0
-  The number of interface that is UP in Protocol is 0
-  GE0/0/0                           192.168.1.1/24       UP         UP
-  GE0/0/1                           10.0.0.1/30          UP         UP
+  The number of interface that is UP in Physical is 2
+  The number of interface that is UP in Protocol is 2
+  GigabitEthernet0/0/0              192.168.1.1/24       up         up
+  GigabitEthernet0/0/1              10.0.0.1/30          up         up
 
 
 --- [222] § regression: view nav + undo ---

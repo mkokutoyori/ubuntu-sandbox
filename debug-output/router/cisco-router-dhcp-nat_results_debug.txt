@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-dhcp-nat
-Generated: 2026-06-20T00:13:57.783Z
+Generated: 2026-07-04T10:48:25.236Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=DHCP server/relay/snoop/v6/client + NAT static/PAT/pool
 Total steps: 369
@@ -937,73 +937,79 @@ Total steps: 369
   tcp  10.0.0.100:2222        192.168.1.101:22       ---                    ---
   udp  10.0.0.100:53          192.168.1.102:53       ---                    ---
   ---  10.0.0.150             192.168.1.150          ---                    ---
+  ---  ---                    ---                    192.168.1.200          8.8.8.8
 
 [231/369] r1 R1# show ip nat translations verbose
   Pro  Inside global          Inside local           Outside local          Outside global
   ---  10.0.0.11              192.168.1.11           ---                    ---
       create: 0d:00h:00m:00s, use: 0d:00h:00m:00s, left: --
+      flags: static
   
-  Pro  Inside global          Inside local           Outside local          Outside global
   ---  10.0.0.12              192.168.1.12           ---                    ---
       create: 0d:00h:00m:00s, use: 0d:00h:00m:00s, left: --
+      flags: static
   
-  Pro  Inside global          Inside local           Outside local          Outside global
   ---  10.0.0.13              192.168.1.13           ---                    ---
       create: 0d:00h:00m:00s, use: 0d:00h:00m:00s, left: --
+      flags: static
   
-  Pro  Inside global          Inside local           Outside local          Outside global
   ---  10.0.0.14              192.168.1.14           ---                    ---
       create: 0d:00h:00m:00s, use: 0d:00h:00m:00s, left: --
+      flags: static
   
-  Pro  Inside global          Inside local           Outside local          Outside global
   ---  10.0.0.15              192.168.1.15           ---                    ---
       create: 0d:00h:00m:00s, use: 0d:00h:00m:00s, left: --
+      flags: static
   
-  Pro  Inside global          Inside local           Outside local          Outside global
   ---  10.0.0.16              192.168.1.16           ---                    ---
       create: 0d:00h:00m:00s, use: 0d:00h:00m:00s, left: --
+      flags: static
   
-  Pro  Inside global          Inside local           Outside local          Outside global
   ---  10.0.0.17              192.168.1.17           ---                    ---
       create: 0d:00h:00m:00s, use: 0d:00h:00m:00s, left: --
+      flags: static
   
-  Pro  Inside global          Inside local           Outside local          Outside global
   ---  10.0.0.18              192.168.1.18           ---                    ---
       create: 0d:00h:00m:00s, use: 0d:00h:00m:00s, left: --
+      flags: static
   
-  Pro  Inside global          Inside local           Outside local          Outside global
   ---  10.0.0.19              192.168.1.19           ---                    ---
       create: 0d:00h:00m:00s, use: 0d:00h:00m:00s, left: --
+      flags: static
   
-  Pro  Inside global          Inside local           Outside local          Outside global
   ---  10.0.0.20              192.168.1.20           ---                    ---
       create: 0d:00h:00m:00s, use: 0d:00h:00m:00s, left: --
+      flags: static
   
-  Pro  Inside global          Inside local           Outside local          Outside global
   tcp  10.0.0.100:8080        192.168.1.100:80       ---                    ---
       create: 0d:00h:00m:00s, use: 0d:00h:00m:00s, left: --
+      flags: extended
   
-  Pro  Inside global          Inside local           Outside local          Outside global
   tcp  10.0.0.100:2222        192.168.1.101:22       ---                    ---
       create: 0d:00h:00m:00s, use: 0d:00h:00m:00s, left: --
+      flags: extended
   
-  Pro  Inside global          Inside local           Outside local          Outside global
   udp  10.0.0.100:53          192.168.1.102:53       ---                    ---
       create: 0d:00h:00m:00s, use: 0d:00h:00m:00s, left: --
+      flags: extended
   
-  Pro  Inside global          Inside local           Outside local          Outside global
   ---  10.0.0.150             192.168.1.150          ---                    ---
       create: 0d:00h:00m:00s, use: 0d:00h:00m:00s, left: --
+      flags: static
 
 [232/369] r1 R1# show ip nat statistics
   Total active translations: 14 (14 static, 0 dynamic; 0 extended)
+  Total translations: 14
+  Static translations: 14
+  Dynamic translations: 0
+  Translation errors: 0
   Outside interfaces:  GigabitEthernet0/1
   Inside interfaces:   GigabitEthernet0/0
   Hits: 0  Misses: 0
-  Expired translations: 0
   Session timeouts (seconds): tcp 86400  udp 300  icmp 60  syn 30
   Dynamic mappings:
   -- No dynamic NAT rules configured --
+  Application Layer Gateways: none (FTP/SIP ALG and NAT64 not supported in this simulator)
 
 
 --- [233] § NAT dynamic / PAT ---
@@ -1014,7 +1020,7 @@ Total steps: 369
 <empty>
 
 [235/369] r1 R1(config)# ip nat pool POOL2 10.0.0.70 10.0.0.80 prefix-length 24
-  % Expected "netmask" keyword.
+<empty>
 
 [236/369] r1 R1(config)# access-list 1 permit 192.168.1.0 0.0.0.255
 <empty>
@@ -1080,19 +1086,28 @@ Total steps: 369
   tcp  10.0.0.100:2222        192.168.1.101:22       ---                    ---
   udp  10.0.0.100:53          192.168.1.102:53       ---                    ---
   ---  10.0.0.150             192.168.1.150          ---                    ---
+  ---  ---                    ---                    192.168.1.200          8.8.8.8
 
 [253/369] r1 R1# show ip nat statistics
   Total active translations: 14 (14 static, 0 dynamic; 0 extended)
+  Total translations: 14
+  Static translations: 14
+  Dynamic translations: 0
+  Translation errors: 0
   Outside interfaces:  GigabitEthernet0/1
   Inside interfaces:   GigabitEthernet0/0
   Hits: 0  Misses: 0
-  Expired translations: 0
   Session timeouts (seconds): tcp 600  udp 120  icmp 30  syn 30
+  Overloaded mappings: yes
+  max-entries 10000
   Dynamic mappings:
    -- Inside Source [acl 1] pool POOL1
    -- Inside Source [acl 1] pool POOL1
    -- Inside Source [acl 2] overload
-  Pools: 1 configured
+  Pools:
+   POOL1: 10.0.0.50 - 10.0.0.60 — used 0/11 (0%)
+   POOL2: 10.0.0.70 - 10.0.0.80 — used 0/11 (0%)
+  Application Layer Gateways: none (FTP/SIP ALG and NAT64 not supported in this simulator)
 
 [254/369] r1 R1# show ip nat nvi translations
   Pro  Inside global          Inside local           Outside local          Outside global
@@ -1110,6 +1125,7 @@ Total steps: 369
   tcp  10.0.0.100:2222        192.168.1.101:22       ---                    ---
   udp  10.0.0.100:53          192.168.1.102:53       ---                    ---
   ---  10.0.0.150             192.168.1.150          ---                    ---
+  ---  ---                    ---                    192.168.1.200          8.8.8.8
 
 [255/369] r1 R1# clear ip nat translation *
 <empty>
@@ -1224,26 +1240,23 @@ Total steps: 369
   !
   interface GigabitEthernet0/0
    ip address 192.168.1.1 255.255.255.0
-   no shutdown
    ip helper-address 10.0.0.2
    ip helper-address 10.0.0.3
    ip nat inside
   !
   interface GigabitEthernet0/1
    ip address 10.0.0.1 255.255.255.252
-   no shutdown
    ip nat outside
   !
   interface GigabitEthernet0/2
-   no shutdown
   !
   interface GigabitEthernet0/3
-   no shutdown
   !
   access-list 1 permit 192.168.1.0 0.0.0.255
   access-list 2 permit 192.168.2.0 0.0.0.255
   !
-  ip nat pool POOL1 10.0.0.50 10.0.0.60 netmask 255.255.255.0
+  ip nat pool POOL1 10.0.0.50 10.0.0.60 prefix-length 24
+  ip nat pool POOL2 10.0.0.70 10.0.0.80 prefix-length 24
   ip nat inside source static 192.168.1.11 10.0.0.11
   ip nat inside source static 192.168.1.12 10.0.0.12
   ip nat inside source static 192.168.1.13 10.0.0.13
@@ -1258,6 +1271,7 @@ Total steps: 369
   ip nat inside source static tcp 192.168.1.101 22 10.0.0.100 2222
   ip nat inside source static udp 192.168.1.102 53 10.0.0.100 53
   ip nat inside source static 192.168.1.150 10.0.0.150
+  ip nat outside source static 8.8.8.8 192.168.1.200
   ip nat inside source list 1 pool POOL1
   ip nat inside source list 1 pool POOL1
   ip nat inside source list 2 interface GigabitEthernet0/1 overload
@@ -1431,19 +1445,28 @@ Total steps: 369
   tcp  10.0.0.100:2222        192.168.1.101:22       ---                    ---
   udp  10.0.0.100:53          192.168.1.102:53       ---                    ---
   ---  10.0.0.150             192.168.1.150          ---                    ---
+  ---  ---                    ---                    192.168.1.200          8.8.8.8
 
 [281/369] r1 R1# show ip nat statistics
   Total active translations: 14 (14 static, 0 dynamic; 0 extended)
+  Total translations: 14
+  Static translations: 14
+  Dynamic translations: 0
+  Translation errors: 0
   Outside interfaces:  GigabitEthernet0/1
   Inside interfaces:   GigabitEthernet0/0
   Hits: 0  Misses: 0
-  Expired translations: 0
   Session timeouts (seconds): tcp 600  udp 120  icmp 30  syn 30
+  Overloaded mappings: yes
+  max-entries 10000
   Dynamic mappings:
    -- Inside Source [acl 1] pool POOL1
    -- Inside Source [acl 1] pool POOL1
    -- Inside Source [acl 2] overload
-  Pools: 1 configured
+  Pools:
+   POOL1: 10.0.0.50 - 10.0.0.60 — used 0/11 (0%)
+   POOL2: 10.0.0.70 - 10.0.0.80 — used 0/11 (0%)
+  Application Layer Gateways: none (FTP/SIP ALG and NAT64 not supported in this simulator)
 
 [282/369] r1 R1# show ip dhcp binding
   IP address       Client-id/              Lease expiration        Type
@@ -1642,7 +1665,7 @@ Total steps: 369
 [297/369] r1 R1# show ntp status
   Clock is unsynchronized, stratum 16, reference is .INIT.
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
-  reference time is EDE059C5.CD4FDF3B (00:13:57.802 UTC Sat Jun 20 2026)
+  reference time is EDF36379.43126E97 (10:48:25.262 UTC Sat Jul 4 2026)
   clock offset is 0.00 msec
 
 [298/369] r1 R1# show ntp associations
@@ -1651,7 +1674,7 @@ Total steps: 369
   No NTP associations configured.
 
 [299/369] r1 R1# show clock
-  *00:13:57.000 UTC Sat Jun 20 2026
+  *10:48:25.000 UTC Sat Jul 4 2026
 
 [300/369] r1 R1# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
@@ -1698,6 +1721,7 @@ Total steps: 369
     Interface    User               Mode         Idle     Peer Address
 
 [306/369] r1 R1# show history
+  show crypto isakmp sa
   show crypto ipsec sa
   show crypto session
   show crypto map
@@ -1717,7 +1741,6 @@ Total steps: 369
   show memory statistics
   show flash
   show users
-  show history
 
 [307/369] r1 R1# show ip cef
   Prefix               Next Hop             Interface
@@ -1903,26 +1926,23 @@ Total steps: 369
   !
   interface GigabitEthernet0/0
    ip address 192.168.1.1 255.255.255.0
-   no shutdown
    ip helper-address 10.0.0.2
    ip helper-address 10.0.0.3
    ip nat inside
   !
   interface GigabitEthernet0/1
    ip address 10.0.0.1 255.255.255.252
-   no shutdown
    ip nat outside
   !
   interface GigabitEthernet0/2
-   no shutdown
   !
   interface GigabitEthernet0/3
-   no shutdown
   !
   access-list 1 permit 192.168.1.0 0.0.0.255
   access-list 2 permit 192.168.2.0 0.0.0.255
   !
-  ip nat pool POOL1 10.0.0.50 10.0.0.60 netmask 255.255.255.0
+  ip nat pool POOL1 10.0.0.50 10.0.0.60 prefix-length 24
+  ip nat pool POOL2 10.0.0.70 10.0.0.80 prefix-length 24
   ip nat inside source static 192.168.1.11 10.0.0.11
   ip nat inside source static 192.168.1.12 10.0.0.12
   ip nat inside source static 192.168.1.13 10.0.0.13
@@ -1937,6 +1957,7 @@ Total steps: 369
   ip nat inside source static tcp 192.168.1.101 22 10.0.0.100 2222
   ip nat inside source static udp 192.168.1.102 53 10.0.0.100 53
   ip nat inside source static 192.168.1.150 10.0.0.150
+  ip nat outside source static 8.8.8.8 192.168.1.200
   ip nat inside source list 1 pool POOL1
   ip nat inside source list 1 pool POOL1
   ip nat inside source list 2 interface GigabitEthernet0/1 overload
@@ -2128,18 +2149,14 @@ Total steps: 369
 [324/369] r1 R1# show running-config | section interface
   interface GigabitEthernet0/0
    ip address 192.168.1.1 255.255.255.0
-   no shutdown
    ip helper-address 10.0.0.2
    ip helper-address 10.0.0.3
    ip nat inside
   interface GigabitEthernet0/1
    ip address 10.0.0.1 255.255.255.252
-   no shutdown
    ip nat outside
   interface GigabitEthernet0/2
-   no shutdown
   interface GigabitEthernet0/3
-   no shutdown
   ip nat inside source list 2 interface GigabitEthernet0/1 overload
 
 [325/369] r1 R1# show running-config | begin line
@@ -2207,21 +2224,18 @@ Total steps: 369
   ip dhcp excluded-address 192.168.1.250 192.168.1.254
   interface GigabitEthernet0/0
    ip address 192.168.1.1 255.255.255.0
-   no shutdown
    ip helper-address 10.0.0.2
    ip helper-address 10.0.0.3
    ip nat inside
   interface GigabitEthernet0/1
    ip address 10.0.0.1 255.255.255.252
-   no shutdown
    ip nat outside
   interface GigabitEthernet0/2
-   no shutdown
   interface GigabitEthernet0/3
-   no shutdown
   access-list 1 permit 192.168.1.0 0.0.0.255
   access-list 2 permit 192.168.2.0 0.0.0.255
-  ip nat pool POOL1 10.0.0.50 10.0.0.60 netmask 255.255.255.0
+  ip nat pool POOL1 10.0.0.50 10.0.0.60 prefix-length 24
+  ip nat pool POOL2 10.0.0.70 10.0.0.80 prefix-length 24
   ip nat inside source static 192.168.1.11 10.0.0.11
   ip nat inside source static 192.168.1.12 10.0.0.12
   ip nat inside source static 192.168.1.13 10.0.0.13
@@ -2236,6 +2250,7 @@ Total steps: 369
   ip nat inside source static tcp 192.168.1.101 22 10.0.0.100 2222
   ip nat inside source static udp 192.168.1.102 53 10.0.0.100 53
   ip nat inside source static 192.168.1.150 10.0.0.150
+  ip nat outside source static 8.8.8.8 192.168.1.200
   ip nat inside source list 1 pool POOL1
   ip nat inside source list 1 pool POOL1
   ip nat inside source list 2 interface GigabitEthernet0/1 overload
@@ -2360,15 +2375,24 @@ Total steps: 369
   Enter configuration commands, one per line.  End with CNTL/Z.
 
 [362/369] r1 R1(config)# interface ?
-    WORD  Select an interface to configure
-    <cr>  
+    GigabitEthernet     GigabitEthernet IEEE 802.3z
+    FastEthernet        FastEthernet IEEE 802.3u
+    Ethernet            IEEE 802.3
+    TenGigabitEthernet  TenGigabitEthernet IEEE 802.3ae
+    Loopback            Loopback interface
+    Serial              Serial
+    Tunnel              Tunnel interface
+    Vlan                Catalyst VLANs
+    Port-channel        Ethernet Channel of interfaces
+    BVI                 Bridge-Group Virtual Interface
+    <cr>                
 
 [363/369] r1 R1(config)# ip ?
     cef              Enable CEF
     http             http
     source-route     IP source-route
-    domain-lookup    Enable DNS lookups
     name-server      Configure DNS name servers
+    domain-lookup    Enable DNS lookups
     bootp            bootp
     finger           Enable finger service
     gratuitous-arps  Enable gratuitous ARP
@@ -2387,6 +2411,7 @@ Total steps: 369
     sla              Configure an IP SLA operation
     access-list      access-list
     nat              nat
+    vrf              Define a VRF instance
     routing          Enable IP routing
     flow-export      Legacy NetFlow export
     flow-cache       NetFlow cache timeout
@@ -2409,15 +2434,18 @@ Total steps: 369
     <cr>         
 
 [366/369] r1 R1(config)# no ?
+    sntp         Configure SNTP
     hostname     Reset hostname
     alias        Remove a command alias
     cdp          CDP global configuration
     lldp         LLDP global configuration
     ip           Global IP configuration subcommands
     ipv6         Global IPv6 configuration subcommands
-    banner       banner
+    banner       Remove a banner
+    privilege    Remove privilege command rule
     logging      Disable logging
     ntp          Remove NTP config
+    enable       Modify enable password parameters
     service      Disable a service
     username     Remove a local user
     arp          Remove ARP entry
@@ -2429,12 +2457,15 @@ Total steps: 369
     key          Key management
     crypto       crypto
     event        Embedded Event Manager
+    interface    Remove an interface
+    vlan         Remove a VLAN
+    line         Remove line configuration
 
 [367/369] r1 R1(config)# end
 <empty>
 
 [368/369] r1 R1# show running-config | count !
-  22
+  23
 
 [369/369] r1 R1# write memory
   Building configuration...

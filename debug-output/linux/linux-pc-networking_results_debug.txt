@@ -1,6 +1,6 @@
 ============================================================
 Shell debug transcript — linux-pc-networking
-Generated: 2026-06-20T00:13:58.863Z
+Generated: 2026-07-04T10:36:14.504Z
 Engine: linux
 host=L-PC-NET-DBG (linux-pc) — focus: réseau (ip/ping/route/dns/sockets/firewall)
 Total commands: 302
@@ -311,7 +311,7 @@ $ [37/302]> ip addr add 192.168.10.2/24 dev eth0
 <empty>
 
 $ [38/302]> ip addr add 256.1.1.1/24 dev eth0
-  Error: Invalid IP octet: 256
+  Error: 256.1.1.1 is not a valid IPv4 address.
 
 $ [39/302]> ip addr add 192.168.10.5 dev interface_inexistante_xyz
   Error: either "local" or "peer" address is required.
@@ -535,7 +535,7 @@ $ [73/302]> route
   Kernel IP routing table
   Destination     Gateway         Genmask         Flags Metric Ref    Use Iface
   192.168.20.0    0.0.0.0         255.255.255.0   U     0      0      0 eth0
-  0.0.0.0         192.168.10.1    0.0.0.0         UG    0      0      0 
+  default         192.168.10.1    0.0.0.0         UG    0      0      0 
 
 $ [74/302]> route -n
   Kernel IP routing table
@@ -556,7 +556,7 @@ $ [77/302]> route -n
   0.0.0.0         192.168.10.1    0.0.0.0         UG    0      0      0 
 
 $ [78/302]> route add -net 172.20.0.0 netmask 255.255.0.0 gw 192.168.10.254
-<empty>
+  SIOCADDRT: Network is unreachable
 
 $ [79/302]> route -n
   Kernel IP routing table
@@ -565,7 +565,7 @@ $ [79/302]> route -n
   0.0.0.0         192.168.10.1    0.0.0.0         UG    0      0      0 
 
 $ [80/302]> route del -net 172.20.0.0 netmask 255.255.0.0
-  Usage: route del [-net|-host] target [netmask Nm] [gw Gw]
+  SIOCDELRT: No such process
 
 $ [81/302]> route -n
   Kernel IP routing table
@@ -656,11 +656,7 @@ $ [102/302]> ping -c 2 127.0.0.1
   rtt min/avg/max/mdev = 0.010/0.010/0.010/0.000 ms
 
 $ [103/302]> ping -c 1 192.168.10.2
-  PING 192.168.10.2 (192.168.10.2) 56(84) bytes of data.
-  connect: Network is unreachable
-  
-  --- 192.168.10.2 ping statistics ---
-  1 packets transmitted, 0 received, 100% packet loss
+  ping: connect: Network is unreachable
 
 $ [104/302]> ping -c 3 -i 1 127.0.0.1
   PING 127.0.0.1 (127.0.0.1) 56(84) bytes of data.
@@ -673,11 +669,7 @@ $ [104/302]> ping -c 3 -i 1 127.0.0.1
   rtt min/avg/max/mdev = 0.010/0.010/0.010/0.000 ms
 
 $ [105/302]> ping -c 1 -W 1 192.168.10.99
-  PING 192.168.10.99 (192.168.10.99) 56(84) bytes of data.
-  connect: Network is unreachable
-  
-  --- 192.168.10.99 ping statistics ---
-  1 packets transmitted, 0 received, 100% packet loss
+  ping: connect: Network is unreachable
 
 $ [106/302]> ping -c 1 -s 100 127.0.0.1
   PING 127.0.0.1 (127.0.0.1) 100(128) bytes of data.
@@ -705,18 +697,13 @@ $ [108/302]> ping -c 1 -n 127.0.0.1
 
 $ [109/302]> ping -c 1 -q 127.0.0.1
   PING 127.0.0.1 (127.0.0.1) 56(84) bytes of data.
-  64 bytes from 127.0.0.1: icmp_seq=1 ttl=64 time=0.010 ms
   
   --- 127.0.0.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
   rtt min/avg/max/mdev = 0.010/0.010/0.010/0.000 ms
 
 $ [110/302]> ping -c 1 10.255.255.254
-  PING 10.255.255.254 (10.255.255.254) 56(84) bytes of data.
-  connect: Network is unreachable
-  
-  --- 10.255.255.254 ping statistics ---
-  1 packets transmitted, 0 received, 100% packet loss
+  ping: connect: Network is unreachable
 
 $ [111/302]> ping -c 1 hote_inexistant_xyz
   ping: hote_inexistant_xyz: Name or service not known
@@ -730,35 +717,58 @@ $ [112/302]> ping6 -c 1 ::1
   rtt min/avg/max/mdev = 0.010/0.010/0.010/0.000 ms
 
 $ [113/302]> ping -c abc 127.0.0.1
-  PING 127.0.0.1 (127.0.0.1) 56(84) bytes of data.
-  connect: Network is unreachable
-  
-  --- 127.0.0.1 ping statistics ---
-  NaN packets transmitted, 0 received, NaN% packet loss
+  ping: invalid argument: 'abc'
 
 $ [114/302]> ping
   Usage: ping [-c count] [-t ttl] [-s size] <destination>
+  
+  Usage: ping [-aAbBdDfhLnOqrRUvV64] [-c count] [-i interval] [-I interface]
+              [-M pmtudisc_opt] [-p pattern] [-s packetsize] [-S sndbuf]
+              [-t ttl] [-w deadline] [-W timeout] destination
+  
+  Options:
+    -c count         Stop after sending count ECHO_REQUEST packets.
+    -s packetsize    Specifies the number of data bytes to be sent.
+    -t ttl           Set the IP Time to Live.
+    -W timeout       Time to wait for a response, in seconds.
+    -i interval      Wait interval seconds between sending each packet.
+    -I interface     Set source address to specified interface address.
+    -p pattern       Fill ECHO_REQUEST packet with given hex pattern.
+    -q               Quiet output (only summary at end).
+    -v               Verbose output.
+    -n               Numeric output only.
+    -D               Print timestamp (unix time) before each line.
+    -b               Allow pinging a broadcast address.
+    -M pmtudisc_opt  Select Path MTU Discovery strategy: do, want, dont.
+    -f               Flood ping. Root privilege required.
+    -L               Suppress loopback of multicast packets. (deprecated)
+    -V               Print version and exit.
+    -4               Use IPv4 only.
+    -6               Use IPv6 only.
 
 
 --- [115] § traçage de chemin — traceroute/mtr ---
 $ [115/302]> traceroute 127.0.0.1
   traceroute to 127.0.0.1 (127.0.0.1), 30 hops max, 60 byte packets
-   * * * Network is unreachable
+   1  localhost (127.0.0.1)  0.000 ms  0.000 ms  0.000 ms
 
 $ [116/302]> traceroute -n 127.0.0.1
-  traceroute to 127.0.0.1 (127.0.0.1), 30 hops max, 60 byte packets
-   * * * Network is unreachable
+   1  127.0.0.1  0.000  0.000  0.000
 
 $ [117/302]> traceroute -m 5 192.168.10.1
   traceroute to 192.168.10.1 (192.168.10.1), 5 hops max, 60 byte packets
-   * * * Network is unreachable
+   1  192.168.10.1 (192.168.10.1)  1.000 ms  1.000 ms  1.000 ms
+   2  * * *
+   3  * * *
 
 $ [118/302]> traceroute -w 1 192.168.10.99
   traceroute to 192.168.10.99 (192.168.10.99), 30 hops max, 60 byte packets
-   * * * Network is unreachable
+   1  192.168.10.1 (192.168.10.1)  1.000 ms  1.000 ms  1.000 ms
+   2  * * *
+   3  * * *
 
 $ [119/302]> traceroute hote_inexistant_xyz
-  traceroute: unknown host hote_inexistant_xyz
+  traceroute: unknown host hote_inexistant_xyz (failed to resolve)
 
 $ [120/302]> tracepath 127.0.0.1
   tracepath: command not found
@@ -780,27 +790,27 @@ $ [124/302]> dig +short example.com
   ;; connection timed out; no servers could be reached
 
 $ [125/302]> dig A example.com
-  ; <<>> DiG <<>> example.com
+  ; <<>> DiG <<>> A
   ;; connection timed out; no servers could be reached
 
 $ [126/302]> dig AAAA example.com
-  ; <<>> DiG <<>> example.com
+  ; <<>> DiG <<>> AAAA
   ;; connection timed out; no servers could be reached
 
 $ [127/302]> dig MX example.com
-  ; <<>> DiG <<>> example.com
+  ; <<>> DiG <<>> MX
   ;; connection timed out; no servers could be reached
 
 $ [128/302]> dig NS example.com
-  ; <<>> DiG <<>> example.com
+  ; <<>> DiG <<>> NS
   ;; connection timed out; no servers could be reached
 
 $ [129/302]> dig TXT example.com
-  ; <<>> DiG <<>> example.com
+  ; <<>> DiG <<>> TXT
   ;; connection timed out; no servers could be reached
 
 $ [130/302]> dig @8.8.8.8 example.com
-  ; <<>> DiG <<>> example.com
+  ; <<>> DiG <<>> @8.8.8.8 example.com
   ;; connection timed out; no servers could be reached
 
 $ [131/302]> dig -x 8.8.8.8
@@ -851,70 +861,66 @@ $ [142/302]> dig domaine_inexistant_xyz.invalid
 --- [143] § sockets — ss / netstat ---
 $ [143/302]> ss
   State      Recv-Q  Send-Q   Local Address:Port     Peer Address:Port  Process
-  LISTEN     0       0        0.0.0.0:22             0.0.0.0:*         
-  LISTEN     0       0        127.0.0.53:53          0.0.0.0:*         
-  LISTEN     0       0        127.0.0.53:53          0.0.0.0:*         
 
 $ [144/302]> ss -t
   State      Recv-Q  Send-Q   Local Address:Port     Peer Address:Port  Process
-  LISTEN     0       0        0.0.0.0:22             0.0.0.0:*         
-  LISTEN     0       0        127.0.0.53:53          0.0.0.0:*         
 
 $ [145/302]> ss -u
   State      Recv-Q  Send-Q   Local Address:Port     Peer Address:Port  Process
-  LISTEN     0       0        127.0.0.53:53          0.0.0.0:*         
 
 $ [146/302]> ss -l
   State      Recv-Q  Send-Q   Local Address:Port     Peer Address:Port  Process
-  LISTEN     0       0        0.0.0.0:22             0.0.0.0:*         
-  LISTEN     0       0        127.0.0.53:53          0.0.0.0:*         
-  LISTEN     0       0        127.0.0.53:53          0.0.0.0:*         
+  LISTEN     0       0        0.0.0.0:ssh            0.0.0.0:*         
+  LISTEN     0       0        [::]:ssh               [::]:*            
+  UNCONN     0       0        127.0.0.53:domain      0.0.0.0:*         
+  LISTEN     0       0        127.0.0.53:domain      0.0.0.0:*         
 
 $ [147/302]> ss -tln
   State      Recv-Q  Send-Q   Local Address:Port     Peer Address:Port  Process
   LISTEN     0       0        0.0.0.0:22             0.0.0.0:*         
+  LISTEN     0       0        [::]:22                [::]:*            
   LISTEN     0       0        127.0.0.53:53          0.0.0.0:*         
 
 $ [148/302]> ss -uln
   State      Recv-Q  Send-Q   Local Address:Port     Peer Address:Port  Process
-  LISTEN     0       0        127.0.0.53:53          0.0.0.0:*         
+  UNCONN     0       0        127.0.0.53:53          0.0.0.0:*         
 
 $ [149/302]> ss -tlnp
   State      Recv-Q  Send-Q   Local Address:Port     Peer Address:Port  Process
   LISTEN     0       0        0.0.0.0:22             0.0.0.0:*          users:(("sshd",pid=985,fd=3))
+  LISTEN     0       0        [::]:22                [::]:*             users:(("sshd",pid=985,fd=3))
   LISTEN     0       0        127.0.0.53:53          0.0.0.0:*          users:(("systemd-resolved",pid=7,fd=3))
 
 $ [150/302]> ss -a
   State      Recv-Q  Send-Q   Local Address:Port     Peer Address:Port  Process
-  LISTEN     0       0        0.0.0.0:22             0.0.0.0:*         
-  LISTEN     0       0        127.0.0.53:53          0.0.0.0:*         
-  LISTEN     0       0        127.0.0.53:53          0.0.0.0:*         
+  LISTEN     0       0        0.0.0.0:ssh            0.0.0.0:*         
+  LISTEN     0       0        [::]:ssh               [::]:*            
+  UNCONN     0       0        127.0.0.53:domain      0.0.0.0:*         
+  LISTEN     0       0        127.0.0.53:domain      0.0.0.0:*         
 
 $ [151/302]> ss -s
-  Total: 3
-  TCP:   2 (estab 0, closed 0, orphaned 0, timewait 0)
+  Total: 4
+  TCP:   3 (estab 0, closed 0, orphaned 0, timewait 0)
   
   Transport Total     IP        IPv6
   RAW       0         0         0
   UDP       1         1         0
-  TCP       2         2         0
-  INET      3         3         0
+  TCP       3         3         0
+  INET      4         4         0
   FRAG      0         0         0
 
 $ [152/302]> ss -tn state established
   State      Recv-Q  Send-Q   Local Address:Port     Peer Address:Port  Process
 
 $ [153/302]> netstat
-  Active Internet connections (only servers)
+  Active Internet connections (w/o servers)
   Proto Recv-Q Send-Q Local Address           Foreign Address         State       PID/Program name
-  tcp             0      0 0.0.0.0:22              0.0.0.0:*               LISTEN
-  udp             0      0 127.0.0.53:53           0.0.0.0:*
-  tcp             0      0 127.0.0.53:53           0.0.0.0:*               LISTEN
 
 $ [154/302]> netstat -tln
   Active Internet connections (only servers)
   Proto Recv-Q Send-Q Local Address           Foreign Address         State       PID/Program name
   tcp             0      0 0.0.0.0:22              0.0.0.0:*               LISTEN
+  tcp6            0      0 :::22                   :::*                    LISTEN
   tcp             0      0 127.0.0.53:53           0.0.0.0:*               LISTEN
 
 $ [155/302]> netstat -uln
@@ -926,12 +932,14 @@ $ [156/302]> netstat -tlnp
   Active Internet connections (only servers)
   Proto Recv-Q Send-Q Local Address           Foreign Address         State       PID/Program name
   tcp             0      0 0.0.0.0:22              0.0.0.0:*               LISTEN      985/sshd
+  tcp6            0      0 :::22                   :::*                    LISTEN      985/sshd
   tcp             0      0 127.0.0.53:53           0.0.0.0:*               LISTEN      7/systemd-resolved
 
 $ [157/302]> netstat -an | head
-  Active Internet connections (only servers)
+  Active Internet connections (servers and established)
   Proto Recv-Q Send-Q Local Address           Foreign Address         State       PID/Program name
   tcp             0      0 0.0.0.0:22              0.0.0.0:*               LISTEN
+  tcp6            0      0 :::22                   :::*                    LISTEN
   udp             0      0 127.0.0.53:53           0.0.0.0:*
   tcp             0      0 127.0.0.53:53           0.0.0.0:*               LISTEN
 
@@ -966,11 +974,12 @@ $ [160/302]> netstat -rn
 $ [161/302]> lsof -i :22
   COMMAND     PID   USER   FD    TYPE DEVICE SIZE/OFF NODE NAME
   sshd         985  root     4u  IPv4 10000      0t0  TCP *:22 (LISTEN)
+  sshd         985  root     5u  IPv6 10001      0t0  TCP *:22 (LISTEN)
 
 $ [162/302]> ss -tln sport = :22
   State      Recv-Q  Send-Q   Local Address:Port     Peer Address:Port  Process
   LISTEN     0       0        0.0.0.0:22             0.0.0.0:*         
-  LISTEN     0       0        127.0.0.53:53          0.0.0.0:*         
+  LISTEN     0       0        [::]:22                [::]:*            
 
 
 --- [163] § HTTP — curl / wget ---
@@ -1002,22 +1011,22 @@ $ [170/302]> curl http://hote_inexistant_xyz
   curl: (6) Could not resolve host: hote_inexistant_xyz
 
 $ [171/302]> wget http://192.168.10.1
-  --2026-06-20 00:13:58--  http://192.168.10.1
+  --2026-07-04 10:36:17--  http://192.168.10.1
   Resolving 192.168.10.1... failed: Temporary failure in name resolution.
   wget: unable to resolve host address '192.168.10.1'
 
 $ [172/302]> wget -q http://192.168.10.1
-  --2026-06-20 00:13:58--  http://192.168.10.1
+  --2026-07-04 10:36:17--  http://192.168.10.1
   Resolving 192.168.10.1... failed: Temporary failure in name resolution.
   wget: unable to resolve host address '192.168.10.1'
 
 $ [173/302]> wget -O /tmp/dl.html http://192.168.10.1
-  --2026-06-20 00:13:58--  http://192.168.10.1
+  --2026-07-04 10:36:17--  http://192.168.10.1
   Resolving 192.168.10.1... failed: Temporary failure in name resolution.
   wget: unable to resolve host address '192.168.10.1'
 
 $ [174/302]> wget --timeout=2 http://192.168.10.99
-  --2026-06-20 00:13:58--  http://192.168.10.99
+  --2026-07-04 10:36:17--  http://192.168.10.99
   Resolving 192.168.10.99... failed: Temporary failure in name resolution.
   wget: unable to resolve host address '192.168.10.99'
 
@@ -1238,11 +1247,11 @@ $ [218/302]> ssh-keygen -t rsa -b 2048 -f /tmp/id_rsa -N ""
 <empty>
 
 $ [219/302]> ls -l /tmp/id_rsa /tmp/id_rsa.pub
-  -rw------- 1 user user 77 Jun 20 00:13 /tmp/id_rsa
-  -rw-r--r-- 1 user user 38 Jun 20 00:13 /tmp/id_rsa.pub
+  -rw------- 1 user user 77 Jul  4 10:36 /tmp/id_rsa
+  -rw-r--r-- 1 user user 38 Jul  4 10:36 /tmp/id_rsa.pub
 
 $ [220/302]> cat /tmp/id_rsa.pub
-  ssh-rsa AAAAhw7j15ofgwv user@linux-pc
+  ssh-rsa AAAA6oer5iraa8l user@linux-pc
 
 $ [221/302]> ssh-keygen -t ed25519 -f /tmp/id_ed25519 -N ""
 <empty>
@@ -1251,7 +1260,7 @@ $ [222/302]> ssh-keygen -lf /tmp/id_rsa.pub
 <empty>
 
 $ [223/302]> ssh-keygen -y -f /tmp/id_rsa
-  ssh-ed25519 AAAA36ld2innm5g user@localhost
+  ssh-ed25519 AAAA5g3fcf8dyyk user@localhost
 
 $ [224/302]> ssh -V
   usage: ssh [-options] destination [command]
@@ -1358,10 +1367,10 @@ $ [245/302]> ip -br addr
   eth3            DOWN          
 
 $ [246/302]> ip route show | wc -l
-  1
+  2
 
 $ [247/302]> ss -tln | wc -l
-  3
+  4
 
 $ [248/302]> cat /proc/net/dev | head
   cat: /proc/net/dev: No such file or directory
@@ -1370,7 +1379,7 @@ $ [249/302]> cat /proc/net/route | head
   cat: /proc/net/route: No such file or directory
 
 $ [250/302]> hostname -I
-  -I
+  127.0.1.1
 
 $ [251/302]> hostname
   linux-pc
@@ -1411,17 +1420,21 @@ $ [256/302]> ip -6 neigh show
 <empty>
 
 $ [257/302]> ip addr add 2001:db8::10/64 dev eth0
-  Error: invalid prefix length.
+<empty>
 
 $ [258/302]> ip -6 addr show eth0
   2: eth0: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
       link/ether 02:00:00:00:00:01 brd ff:ff:ff:ff:ff:ff
+      inet6 fe80::ff:fe00:1%eth0/64 scope link
+         valid_lft forever preferred_lft forever
+      inet6 2001:db8::10/64 scope global
+         valid_lft forever preferred_lft forever
 
 $ [259/302]> ip -6 route add default via 2001:db8::1
   Command "add" is unknown, try "ip route help".
 
 $ [260/302]> ip -6 route show
-<empty>
+  2001:db8::/64 dev eth0 proto kernel metric 0 pref medium
 
 $ [261/302]> ping6 -c 1 ::1
   PING ::1(::1) 56 data bytes
@@ -1433,10 +1446,11 @@ $ [261/302]> ping6 -c 1 ::1
 
 $ [262/302]> ping -6 -c 1 2001:db8::10
   PING 2001:db8::10(2001:db8::10) 56 data bytes
-  connect: Network is unreachable
+  64 bytes from 2001:db8::10: icmp_seq=1 ttl=64 time=0.010 ms
   
   --- 2001:db8::10 ping statistics ---
-  1 packets transmitted, 0 received, 100% packet loss
+  1 packets transmitted, 1 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.010/0.010/0.010/0.000 ms
 
 $ [263/302]> ip addr del 2001:db8::10/64 dev eth0
   RTNETLINK answers: Cannot assign requested address
@@ -1444,6 +1458,10 @@ $ [263/302]> ip addr del 2001:db8::10/64 dev eth0
 $ [264/302]> ip -6 addr show eth0
   2: eth0: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
       link/ether 02:00:00:00:00:01 brd ff:ff:ff:ff:ff:ff
+      inet6 fe80::ff:fe00:1%eth0/64 scope link
+         valid_lft forever preferred_lft forever
+      inet6 2001:db8::10/64 scope global
+         valid_lft forever preferred_lft forever
 
 $ [265/302]> ip -6 route flush
   Command "flush" is unknown, try "ip route help".
@@ -1491,14 +1509,14 @@ $ [271/302]> netstat -i
   lo        65536      128      0      0 0           128      0      0      0 LRU
 
 $ [272/302]> ss -s
-  Total: 3
-  TCP:   2 (estab 0, closed 0, orphaned 0, timewait 0)
+  Total: 4
+  TCP:   3 (estab 0, closed 0, orphaned 0, timewait 0)
   
   Transport Total     IP        IPv6
   RAW       0         0         0
   UDP       1         1         0
-  TCP       2         2         0
-  INET      3         3         0
+  TCP       3         3         0
+  INET      4         4         0
   FRAG      0         0         0
 
 $ [273/302]> cat /proc/net/snmp | head
@@ -1535,19 +1553,19 @@ $ [276/302]> hostname
   linux-pc
 
 $ [277/302]> hostname -f
-  -f
+  linux-pc
 
 $ [278/302]> hostname -i
-  -i
+  127.0.1.1
 
 $ [279/302]> hostname -I
-  -I
+  127.0.1.1
 
 $ [280/302]> hostname -s
-  -s
+  linux-pc
 
 $ [281/302]> hostname -d
-  -d
+<empty>
 
 $ [282/302]> cat /etc/nsswitch.conf
   # /etc/nsswitch.conf
@@ -1576,12 +1594,12 @@ $ [283/302]> getent hosts localhost
   ::1             localhost ip6-localhost ip6-loopback
 
 $ [284/302]> getent ahosts localhost
-  127.0.0.1                               STREAM localhost
-  127.0.0.1                               DGRAM 
-  127.0.0.1                               RAW   
-  ::1                                     STREAM localhost
-  ::1                                     DGRAM 
-  ::1                                     RAW   
+  127.0.0.1       STREAM localhost
+  127.0.0.1       DGRAM
+  127.0.0.1       RAW
+  ::1             STREAM localhost
+  ::1             DGRAM
+  ::1             RAW
 
 $ [285/302]> nslookup -type=any example.com
   ** server can't find example.com: REFUSED
@@ -1604,16 +1622,16 @@ $ [289/302]> ip link show eth0 | grep mtu
   4: eth3: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN mode DEFAULT group default qlen 1000
 
 $ [290/302]> cat /sys/class/net/eth0/mtu
-  cat: /sys/class/net/eth0/mtu: No such file or directory
+  1500
 
 $ [291/302]> cat /sys/class/net/eth0/address
-  cat: /sys/class/net/eth0/address: No such file or directory
+  02:00:00:00:00:01
 
 $ [292/302]> cat /sys/class/net/eth0/operstate
-  cat: /sys/class/net/eth0/operstate: No such file or directory
+  up
 
 $ [293/302]> ls /sys/class/net
-  ls: cannot access '/sys/class/net': No such file or directory
+  eth0  lo
 
 
 --- [294] § mal formées — fin de transcript ---
@@ -1661,9 +1679,6 @@ $ [300/302]> netstatt
 
 $ [301/302]> ss --zorglub
   State      Recv-Q  Send-Q   Local Address:Port     Peer Address:Port  Process
-  LISTEN     0       0        0.0.0.0:22             0.0.0.0:*         
-  LISTEN     0       0        127.0.0.53:53          0.0.0.0:*         
-  LISTEN     0       0        127.0.0.53:53          0.0.0.0:*         
 
 $ [302/302]> echo "fin du transcript networking"
   fin du transcript networking

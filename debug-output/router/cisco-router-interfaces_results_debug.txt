@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-interfaces
-Generated: 2026-06-12T11:49:11.893Z
+Generated: 2026-07-04T10:48:19.873Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=IPv4/IPv6 addressing, subinterfaces, tunnels, relay, show
 Total steps: 343
@@ -231,7 +231,7 @@ Total steps: 343
 
 [74/343] r1 R1# show ip interface brief
   Interface                  IP-Address      OK? Method Status                Protocol
-  GigabitEthernet0/0         192.168.100.1   YES manual up                    up
+  GigabitEthernet0/0         192.168.1.1     YES manual up                    up
   GigabitEthernet0/1         unassigned      YES manual up                    up
   GigabitEthernet0/2         unassigned      YES manual down                  down
   GigabitEthernet0/3         unassigned      YES manual down                  down
@@ -293,163 +293,163 @@ Total steps: 343
 [89/343] r1 R1(config)# interface GigabitEthernet0/0.10
 <empty>
 
-[90/343] r1 R1(config-if)# encapsulation dot1Q 10
+[90/343] r1 R1(config-subif)# encapsulation dot1Q 10
 <empty>
 
-[91/343] r1 R1(config-if)# ip address 192.168.1.1 255.255.255.0
+[91/343] r1 R1(config-subif)# ip address 192.168.1.1 255.255.255.0
 <empty>
 
-[92/343] r1 R1(config-if)# encapsulation dot1Q 10 native
+[92/343] r1 R1(config-subif)# encapsulation dot1Q 10 native
 <empty>
 
-[93/343] r1 R1(config-if)# exit
+[93/343] r1 R1(config-subif)# exit
 <empty>
 
 [94/343] r1 R1(config)# interface GigabitEthernet0/0.20
 <empty>
 
-[95/343] r1 R1(config-if)# encapsulation dot1Q 20
+[95/343] r1 R1(config-subif)# encapsulation dot1Q 20
 <empty>
 
-[96/343] r1 R1(config-if)# ip address 192.168.2.1 255.255.255.0
+[96/343] r1 R1(config-subif)# ip address 192.168.2.1 255.255.255.0
 <empty>
 
-[97/343] r1 R1(config-if)# description VLAN20
+[97/343] r1 R1(config-subif)# description VLAN20
 <empty>
 
-[98/343] r1 R1(config-if)# exit
+[98/343] r1 R1(config-subif)# exit
 <empty>
 
 [99/343] r1 R1(config)# interface GigabitEthernet0/0.30
 <empty>
 
-[100/343] r1 R1(config-if)# encapsulation dot1Q 30
+[100/343] r1 R1(config-subif)# encapsulation dot1Q 30
 <empty>
 
-[101/343] r1 R1(config-if)# ip address 192.168.3.1 255.255.255.0
+[101/343] r1 R1(config-subif)# ip address 192.168.3.1 255.255.255.0
 <empty>
 
-[102/343] r1 R1(config-if)# description VLAN30
+[102/343] r1 R1(config-subif)# description VLAN30
 <empty>
 
-[103/343] r1 R1(config-if)# exit
+[103/343] r1 R1(config-subif)# exit
 <empty>
 
 [104/343] r1 R1(config)# interface GigabitEthernet0/0.40
 <empty>
 
-[105/343] r1 R1(config-if)# encapsulation dot1Q 40
+[105/343] r1 R1(config-subif)# encapsulation dot1Q 40
 <empty>
 
-[106/343] r1 R1(config-if)# ip address 192.168.4.1 255.255.255.0
+[106/343] r1 R1(config-subif)# ip address 192.168.4.1 255.255.255.0
 <empty>
 
-[107/343] r1 R1(config-if)# description VLAN40
+[107/343] r1 R1(config-subif)# description VLAN40
 <empty>
 
-[108/343] r1 R1(config-if)# exit
+[108/343] r1 R1(config-subif)# exit
 <empty>
 
 [109/343] r1 R1(config)# interface GigabitEthernet0/0.50
 <empty>
 
-[110/343] r1 R1(config-if)# encapsulation dot1Q 50
+[110/343] r1 R1(config-subif)# encapsulation dot1Q 50
 <empty>
 
-[111/343] r1 R1(config-if)# ip address 192.168.5.1 255.255.255.0
+[111/343] r1 R1(config-subif)# ip address 192.168.5.1 255.255.255.0
 <empty>
 
-[112/343] r1 R1(config-if)# description VLAN50
+[112/343] r1 R1(config-subif)# description VLAN50
 <empty>
 
-[113/343] r1 R1(config-if)# exit
+[113/343] r1 R1(config-subif)# exit
 <empty>
 
 [114/343] r1 R1(config)# interface GigabitEthernet0/0.60
 <empty>
 
-[115/343] r1 R1(config-if)# encapsulation dot1Q 60
+[115/343] r1 R1(config-subif)# encapsulation dot1Q 60
 <empty>
 
-[116/343] r1 R1(config-if)# ip address 192.168.6.1 255.255.255.0
+[116/343] r1 R1(config-subif)# ip address 192.168.6.1 255.255.255.0
 <empty>
 
-[117/343] r1 R1(config-if)# description VLAN60
+[117/343] r1 R1(config-subif)# description VLAN60
 <empty>
 
-[118/343] r1 R1(config-if)# exit
+[118/343] r1 R1(config-subif)# exit
 <empty>
 
 [119/343] r1 R1(config)# interface GigabitEthernet0/0.70
 <empty>
 
-[120/343] r1 R1(config-if)# encapsulation dot1Q 70
+[120/343] r1 R1(config-subif)# encapsulation dot1Q 70
 <empty>
 
-[121/343] r1 R1(config-if)# ip address 192.168.7.1 255.255.255.0
+[121/343] r1 R1(config-subif)# ip address 192.168.7.1 255.255.255.0
 <empty>
 
-[122/343] r1 R1(config-if)# description VLAN70
+[122/343] r1 R1(config-subif)# description VLAN70
 <empty>
 
-[123/343] r1 R1(config-if)# exit
+[123/343] r1 R1(config-subif)# exit
 <empty>
 
 [124/343] r1 R1(config)# interface GigabitEthernet0/0.80
 <empty>
 
-[125/343] r1 R1(config-if)# encapsulation dot1Q 80
+[125/343] r1 R1(config-subif)# encapsulation dot1Q 80
 <empty>
 
-[126/343] r1 R1(config-if)# ip address 192.168.8.1 255.255.255.0
+[126/343] r1 R1(config-subif)# ip address 192.168.8.1 255.255.255.0
 <empty>
 
-[127/343] r1 R1(config-if)# description VLAN80
+[127/343] r1 R1(config-subif)# description VLAN80
 <empty>
 
-[128/343] r1 R1(config-if)# exit
+[128/343] r1 R1(config-subif)# exit
 <empty>
 
 [129/343] r1 R1(config)# interface GigabitEthernet0/0.90
 <empty>
 
-[130/343] r1 R1(config-if)# encapsulation dot1Q 90
+[130/343] r1 R1(config-subif)# encapsulation dot1Q 90
 <empty>
 
-[131/343] r1 R1(config-if)# ip address 192.168.9.1 255.255.255.0
+[131/343] r1 R1(config-subif)# ip address 192.168.9.1 255.255.255.0
 <empty>
 
-[132/343] r1 R1(config-if)# description VLAN90
+[132/343] r1 R1(config-subif)# description VLAN90
 <empty>
 
-[133/343] r1 R1(config-if)# exit
+[133/343] r1 R1(config-subif)# exit
 <empty>
 
 [134/343] r1 R1(config)# interface GigabitEthernet0/0.100
 <empty>
 
-[135/343] r1 R1(config-if)# encapsulation dot1Q 100
+[135/343] r1 R1(config-subif)# encapsulation dot1Q 100
 <empty>
 
-[136/343] r1 R1(config-if)# ip address 192.168.10.1 255.255.255.0
+[136/343] r1 R1(config-subif)# ip address 192.168.10.1 255.255.255.0
 <empty>
 
-[137/343] r1 R1(config-if)# description VLAN100
+[137/343] r1 R1(config-subif)# description VLAN100
 <empty>
 
-[138/343] r1 R1(config-if)# exit
+[138/343] r1 R1(config-subif)# exit
 <empty>
 
 [139/343] r1 R1(config)# interface GigabitEthernet0/0.999
 <empty>
 
-[140/343] r1 R1(config-if)# encapsulation isl 999
+[140/343] r1 R1(config-subif)# encapsulation isl 999
 <empty>
 
-[141/343] r1 R1(config-if)# ip address 192.168.99.1 255.255.255.0
+[141/343] r1 R1(config-subif)# ip address 192.168.99.1 255.255.255.0
 <empty>
 
-[142/343] r1 R1(config-if)# exit
+[142/343] r1 R1(config-subif)# exit
 <empty>
 
 [143/343] r1 R1(config)# end
@@ -457,7 +457,7 @@ Total steps: 343
 
 [144/343] r1 R1# show ip interface brief
   Interface                  IP-Address      OK? Method Status                Protocol
-  GigabitEthernet0/0         192.168.100.1   YES manual up                    up
+  GigabitEthernet0/0         192.168.1.1     YES manual up                    up
   GigabitEthernet0/1         10.0.0.1        YES manual up                    up
   GigabitEthernet0/2         unassigned      YES manual down                  down
   GigabitEthernet0/3         unassigned      YES manual down                  down
@@ -492,6 +492,17 @@ Total steps: 343
     Full-duplex, 1000Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
+    Last input never, output never, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
 
 [146/343] r1 R1# show vlans
   No Virtual LAN sub-interfaces are configured
@@ -563,7 +574,7 @@ Total steps: 343
 
 [168/343] r1 R1# show ip interface brief
   Interface                  IP-Address      OK? Method Status                Protocol
-  GigabitEthernet0/0         192.168.100.1   YES manual up                    up
+  GigabitEthernet0/0         192.168.1.1     YES manual up                    up
   GigabitEthernet0/1         10.0.0.1        YES manual up                    up
   GigabitEthernet0/2         unassigned      YES manual down                  down
   GigabitEthernet0/3         unassigned      YES manual down                  down
@@ -636,7 +647,7 @@ Total steps: 343
 
 [181/343] r1 R1(config-if)# do show ip interface brief
   Interface                  IP-Address      OK? Method Status                Protocol
-  GigabitEthernet0/0         192.168.100.1   YES manual administratively down down
+  GigabitEthernet0/0         192.168.1.1     YES manual administratively down down
   GigabitEthernet0/1         10.0.0.1        YES manual up                    up
   GigabitEthernet0/2         unassigned      YES manual down                  down
   GigabitEthernet0/3         unassigned      YES manual down                  down
@@ -678,7 +689,7 @@ Total steps: 343
 
 [186/343] r1 R1(config-if)# do show ip interface brief
   Interface                  IP-Address      OK? Method Status                Protocol
-  GigabitEthernet0/0         192.168.100.1   YES manual up                    up
+  GigabitEthernet0/0         192.168.1.1     YES manual up                    up
   GigabitEthernet0/1         10.0.0.1        YES manual administratively down down
   GigabitEthernet0/2         unassigned      YES manual down                  down
   GigabitEthernet0/3         unassigned      YES manual down                  down
@@ -716,7 +727,7 @@ Total steps: 343
 <empty>
 
 [190/343] r1 R1# clear counters GigabitEthernet0/0
-<empty>
+  Clear "show interface" counters on interface GigabitEthernet0/0 [confirm]
 
 [191/343] r1 R1# clear ip route *
 <empty>
@@ -732,13 +743,24 @@ Total steps: 343
 [194/343] r1 R1# show interfaces
   GigabitEthernet0/0 is up, line protocol is up
     Hardware is iGbE, address is 02:00:00:00:00:01 (bia 02:00:00:00:00:01)
-    Internet address is 192.168.100.1/24
-    MTU 1500 bytes, BW 100000 Kbit/sec, DLY 1000 usec,
+    Internet address is 192.168.1.1/24
+    MTU 1400 bytes, BW 100000 Kbit/sec, DLY 1000 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
     Full-duplex, 1000Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 00:10:00
+    Last input 00:00:00, output 00:00:00, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
   GigabitEthernet0/1 is up, line protocol is up
     Hardware is iGbE, address is 02:00:00:00:00:02 (bia 02:00:00:00:00:02)
     Internet address is 10.0.0.1/30
@@ -748,6 +770,17 @@ Total steps: 343
     Full-duplex, 1000Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
+    Last input 00:00:00, output 00:00:00, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       3 packets input, 192 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       4 packets output, 256 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
   GigabitEthernet0/2 is down, line protocol is down
     Hardware is iGbE, address is 02:00:00:00:00:03 (bia 02:00:00:00:00:03)
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
@@ -756,6 +789,17 @@ Total steps: 343
     Full-duplex, 1000Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
+    Last input never, output never, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
   GigabitEthernet0/3 is down, line protocol is down
     Hardware is iGbE, address is 02:00:00:00:00:04 (bia 02:00:00:00:00:04)
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
@@ -764,6 +808,17 @@ Total steps: 343
     Full-duplex, 1000Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
+    Last input never, output never, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
   Loopback1 is up, line protocol is up
     Hardware is Loopback
     Internet address is 10.255.255.1/32
@@ -800,6 +855,17 @@ Total steps: 343
     Full-duplex, 1000Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
+    Last input never, output never, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
   GigabitEthernet0/0.20 is down, line protocol is down
     Hardware is iGbE, address is 02:00:00:00:00:1b (bia 02:00:00:00:00:1b)
     Internet address is 192.168.2.1/24
@@ -809,6 +875,17 @@ Total steps: 343
     Full-duplex, 1000Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
+    Last input never, output never, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
   GigabitEthernet0/0.30 is down, line protocol is down
     Hardware is iGbE, address is 02:00:00:00:00:1c (bia 02:00:00:00:00:1c)
     Internet address is 192.168.3.1/24
@@ -818,6 +895,17 @@ Total steps: 343
     Full-duplex, 1000Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
+    Last input never, output never, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
   GigabitEthernet0/0.40 is down, line protocol is down
     Hardware is iGbE, address is 02:00:00:00:00:1d (bia 02:00:00:00:00:1d)
     Internet address is 192.168.4.1/24
@@ -827,6 +915,17 @@ Total steps: 343
     Full-duplex, 1000Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
+    Last input never, output never, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
   GigabitEthernet0/0.50 is down, line protocol is down
     Hardware is iGbE, address is 02:00:00:00:00:1e (bia 02:00:00:00:00:1e)
     Internet address is 192.168.5.1/24
@@ -836,6 +935,17 @@ Total steps: 343
     Full-duplex, 1000Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
+    Last input never, output never, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
   GigabitEthernet0/0.60 is down, line protocol is down
     Hardware is iGbE, address is 02:00:00:00:00:1f (bia 02:00:00:00:00:1f)
     Internet address is 192.168.6.1/24
@@ -845,6 +955,17 @@ Total steps: 343
     Full-duplex, 1000Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
+    Last input never, output never, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
   GigabitEthernet0/0.70 is down, line protocol is down
     Hardware is iGbE, address is 02:00:00:00:00:20 (bia 02:00:00:00:00:20)
     Internet address is 192.168.7.1/24
@@ -854,6 +975,17 @@ Total steps: 343
     Full-duplex, 1000Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
+    Last input never, output never, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
   GigabitEthernet0/0.80 is down, line protocol is down
     Hardware is iGbE, address is 02:00:00:00:00:21 (bia 02:00:00:00:00:21)
     Internet address is 192.168.8.1/24
@@ -863,6 +995,17 @@ Total steps: 343
     Full-duplex, 1000Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
+    Last input never, output never, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
   GigabitEthernet0/0.90 is down, line protocol is down
     Hardware is iGbE, address is 02:00:00:00:00:22 (bia 02:00:00:00:00:22)
     Internet address is 192.168.9.1/24
@@ -872,6 +1015,17 @@ Total steps: 343
     Full-duplex, 1000Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
+    Last input never, output never, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
   GigabitEthernet0/0.100 is down, line protocol is down
     Hardware is iGbE, address is 02:00:00:00:00:23 (bia 02:00:00:00:00:23)
     Internet address is 192.168.10.1/24
@@ -881,6 +1035,17 @@ Total steps: 343
     Full-duplex, 1000Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
+    Last input never, output never, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
   GigabitEthernet0/0.999 is down, line protocol is down
     Hardware is iGbE, address is 02:00:00:00:00:24 (bia 02:00:00:00:00:24)
     Internet address is 192.168.99.1/24
@@ -890,6 +1055,17 @@ Total steps: 343
     Full-duplex, 1000Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
+    Last input never, output never, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
   Tunnel0 is up, line protocol is up
     Hardware is Tunnel
     Internet address is 172.16.0.1/30
@@ -906,31 +1082,53 @@ Total steps: 343
 [195/343] r1 R1# show interfaces GigabitEthernet0/0
   GigabitEthernet0/0 is up, line protocol is up
     Hardware is iGbE, address is 02:00:00:00:00:01 (bia 02:00:00:00:00:01)
-    Internet address is 192.168.100.1/24
-    MTU 1500 bytes, BW 100000 Kbit/sec, DLY 1000 usec,
+    Internet address is 192.168.1.1/24
+    MTU 1400 bytes, BW 100000 Kbit/sec, DLY 1000 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
     Full-duplex, 1000Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 00:10:00
+    Last input 00:00:00, output 00:00:00, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
 
 [196/343] r1 R1# show ip interface GigabitEthernet0/0
   GigabitEthernet0/0 is up, line protocol is up
     Hardware is iGbE, address is 02:00:00:00:00:01 (bia 02:00:00:00:00:01)
-    Internet address is 192.168.100.1/24
-    MTU 1500 bytes, BW 100000 Kbit/sec, DLY 1000 usec,
+    Internet address is 192.168.1.1/24
+    MTU 1400 bytes, BW 100000 Kbit/sec, DLY 1000 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
     Full-duplex, 1000Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 00:10:00
+    Last input 00:00:00, output 00:00:00, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
 
 [197/343] r1 R1# show ipv6 interface GigabitEthernet0/0
   GigabitEthernet0/0 is up, line protocol is up
     IPv6 is enabled
     Address: [object Object]
     Address: [object Object]
-    MTU is 1500 bytes
+    MTU is 1400 bytes
 
 [198/343] r1 R1# show interfaces GigabitEthernet0/0 accounting
   GigabitEthernet0/0
@@ -1005,8 +1203,9 @@ Total steps: 343
   Current configuration : interface GigabitEthernet0/0
   !
   interface GigabitEthernet0/0
-   ip address 192.168.100.1 255.255.255.0
-   no shutdown
+   description ## LAN to L1 ##
+   ip address 192.168.1.1 255.255.255.0
+   ip address 192.168.100.1 255.255.255.0 secondary
    ip helper-address 10.0.0.2
   end
 
@@ -1020,6 +1219,17 @@ Total steps: 343
     Full-duplex, 1000Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
+    Last input 00:00:00, output 00:00:00, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       3 packets input, 192 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       4 packets output, 256 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
 
 [204/343] r1 R1# show ip interface GigabitEthernet0/1
   GigabitEthernet0/1 is up, line protocol is up
@@ -1031,6 +1241,17 @@ Total steps: 343
     Full-duplex, 1000Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
+    Last input 00:00:00, output 00:00:00, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       3 packets input, 192 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       4 packets output, 256 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
 
 [205/343] r1 R1# show ipv6 interface GigabitEthernet0/1
   GigabitEthernet0/1 is up, line protocol is up
@@ -1040,7 +1261,7 @@ Total steps: 343
 [206/343] r1 R1# show interfaces GigabitEthernet0/1 accounting
   GigabitEthernet0/1
                   Protocol    Pkts In    Chars In    Pkts Out   Chars Out
-                      IP           3           0           4           0
+                      IP           3         192           4         256
 
 [207/343] r1 R1# show interfaces GigabitEthernet0/1 switchport
   Name: GigabitEthernet0/1
@@ -1049,10 +1270,10 @@ Total steps: 343
 [208/343] r1 R1# show interfaces GigabitEthernet0/1 stats
   GigabitEthernet0/1
             Switching path    Pkts In    Chars In    Pkts Out   Chars Out
-                 Processor          3           0           4           0
+                 Processor          3         192           4         256
                Route cache          0           0           0           0
         Distributed cache          0           0           0           0
-                    Total          3           0           4           0
+                    Total          3         192           4         256
 
 [209/343] r1 R1# show controllers GigabitEthernet0/1
   GigabitEthernet0/1 -
@@ -1067,7 +1288,6 @@ Total steps: 343
   !
   interface GigabitEthernet0/1
    ip address 10.0.0.1 255.255.255.252
-   no shutdown
   end
 
 [211/343] r1 R1# show interfaces Loopback0
@@ -1149,7 +1369,6 @@ Total steps: 343
   !
   interface Tunnel0
    ip address 172.16.0.1 255.255.255.252
-   no shutdown
   end
 
 [227/343] r1 R1# show interfaces description
@@ -1214,7 +1433,7 @@ Total steps: 343
 
 [229/343] r1 R1# show ip interface brief
   Interface                  IP-Address      OK? Method Status                Protocol
-  GigabitEthernet0/0         192.168.100.1   YES manual up                    up
+  GigabitEthernet0/0         192.168.1.1     YES manual up                    up
   GigabitEthernet0/1         10.0.0.1        YES manual up                    up
   GigabitEthernet0/2         unassigned      YES manual down                  down
   GigabitEthernet0/3         unassigned      YES manual down                  down
@@ -1305,7 +1524,7 @@ Total steps: 343
   (none — this is a router, no L2 trunks)
 
 [232/343] r1 R1# show ip interface brief | include up
-  GigabitEthernet0/0         192.168.100.1   YES manual up                    up
+  GigabitEthernet0/0         192.168.1.1     YES manual up                    up
   GigabitEthernet0/1         10.0.0.1        YES manual up                    up
   Loopback1                  10.255.255.1    YES manual up                    up
   Loopback2                  10.255.255.2    YES manual up                    up
@@ -1356,8 +1575,8 @@ Total steps: 343
   !
   interface GigabitEthernet0/0
    description ## LAN to L1 ##
-   ip address 192.168.100.1 255.255.255.0
-   no shutdown
+   ip address 192.168.1.1 255.255.255.0
+   ip address 192.168.100.1 255.255.255.0 secondary
    ip helper-address 10.0.0.2
    no ip unreachables
    no ip redirects
@@ -1367,114 +1586,101 @@ Total steps: 343
   !
   interface GigabitEthernet0/1
    ip address 10.0.0.1 255.255.255.252
-   no shutdown
   !
   interface GigabitEthernet0/2
-   no shutdown
   !
   interface GigabitEthernet0/3
-   no shutdown
   !
   interface Loopback1
    description LOOP-1
    ip address 10.255.255.1 255.255.255.255
-   no shutdown
   !
   interface Loopback2
    description LOOP-2
    ip address 10.255.255.2 255.255.255.255
-   no shutdown
   !
   interface Loopback3
    description LOOP-3
    ip address 10.255.255.3 255.255.255.255
-   no shutdown
   !
   interface Loopback4
    description LOOP-4
    ip address 10.255.255.4 255.255.255.255
-   no shutdown
   !
   interface Loopback5
    description LOOP-5
    ip address 10.255.255.5 255.255.255.255
-   no shutdown
   !
   interface Loopback6
    description LOOP-6
    ip address 10.255.255.6 255.255.255.255
-   no shutdown
   !
   interface Loopback7
    description LOOP-7
    ip address 10.255.255.7 255.255.255.255
-   no shutdown
   !
   interface Loopback8
    description LOOP-8
    ip address 10.255.255.8 255.255.255.255
-   no shutdown
   !
   interface Loopback100
    ip address 172.31.0.1 255.255.255.255
-   no shutdown
   !
   interface GigabitEthernet0/0.10
+   encapsulation dot1q 10 native
    ip address 192.168.1.1 255.255.255.0
-   no shutdown
   !
   interface GigabitEthernet0/0.20
    description VLAN20
+   encapsulation dot1q 20
    ip address 192.168.2.1 255.255.255.0
-   no shutdown
   !
   interface GigabitEthernet0/0.30
    description VLAN30
+   encapsulation dot1q 30
    ip address 192.168.3.1 255.255.255.0
-   no shutdown
   !
   interface GigabitEthernet0/0.40
    description VLAN40
+   encapsulation dot1q 40
    ip address 192.168.4.1 255.255.255.0
-   no shutdown
   !
   interface GigabitEthernet0/0.50
    description VLAN50
+   encapsulation dot1q 50
    ip address 192.168.5.1 255.255.255.0
-   no shutdown
   !
   interface GigabitEthernet0/0.60
    description VLAN60
+   encapsulation dot1q 60
    ip address 192.168.6.1 255.255.255.0
-   no shutdown
   !
   interface GigabitEthernet0/0.70
    description VLAN70
+   encapsulation dot1q 70
    ip address 192.168.7.1 255.255.255.0
-   no shutdown
   !
   interface GigabitEthernet0/0.80
    description VLAN80
+   encapsulation dot1q 80
    ip address 192.168.8.1 255.255.255.0
-   no shutdown
   !
   interface GigabitEthernet0/0.90
    description VLAN90
+   encapsulation dot1q 90
    ip address 192.168.9.1 255.255.255.0
-   no shutdown
   !
   interface GigabitEthernet0/0.100
    description VLAN100
+   encapsulation dot1q 100
    ip address 192.168.10.1 255.255.255.0
-   no shutdown
   !
   interface GigabitEthernet0/0.999
+   encapsulation isl 999
    ip address 192.168.99.1 255.255.255.0
-   no shutdown
   !
   interface Tunnel0
    ip address 172.16.0.1 255.255.255.252
-   no shutdown
    tunnel mode gre ip
    tunnel source GigabitEthernet0/1
    tunnel destination 10.0.0.2
@@ -1482,13 +1688,11 @@ Total steps: 343
   !
   interface Tunnel1
    ip address 172.16.0.5 255.255.255.252
-   no shutdown
    tunnel mode ipip
    tunnel source Loopback0
    tunnel destination 10.0.0.2
   !
   interface Tunnel2
-   no shutdown
    tunnel mode ipv6ip
   !
   end
@@ -1498,7 +1702,7 @@ Total steps: 343
 
 [238/343] r1 R1# show ip interface brief
   Interface                  IP-Address      OK? Method Status                Protocol
-  GigabitEthernet0/0         192.168.100.1   YES manual up                    up
+  GigabitEthernet0/0         192.168.1.1     YES manual up                    up
   GigabitEthernet0/1         10.0.0.1        YES manual up                    up
   GigabitEthernet0/2         unassigned      YES manual down                  down
   GigabitEthernet0/3         unassigned      YES manual down                  down
@@ -1529,13 +1733,24 @@ Total steps: 343
 [239/343] r1 R1# show interfaces
   GigabitEthernet0/0 is up, line protocol is up
     Hardware is iGbE, address is 02:00:00:00:00:01 (bia 02:00:00:00:00:01)
-    Internet address is 192.168.100.1/24
-    MTU 1500 bytes, BW 100000 Kbit/sec, DLY 1000 usec,
+    Internet address is 192.168.1.1/24
+    MTU 1400 bytes, BW 100000 Kbit/sec, DLY 1000 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
     Full-duplex, 1000Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 00:10:00
+    Last input 00:00:00, output 00:00:00, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
   GigabitEthernet0/1 is up, line protocol is up
     Hardware is iGbE, address is 02:00:00:00:00:02 (bia 02:00:00:00:00:02)
     Internet address is 10.0.0.1/30
@@ -1545,6 +1760,17 @@ Total steps: 343
     Full-duplex, 1000Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
+    Last input 00:00:00, output 00:00:00, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       3 packets input, 192 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       4 packets output, 256 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
   GigabitEthernet0/2 is down, line protocol is down
     Hardware is iGbE, address is 02:00:00:00:00:03 (bia 02:00:00:00:00:03)
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
@@ -1553,6 +1779,17 @@ Total steps: 343
     Full-duplex, 1000Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
+    Last input never, output never, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
   GigabitEthernet0/3 is down, line protocol is down
     Hardware is iGbE, address is 02:00:00:00:00:04 (bia 02:00:00:00:00:04)
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
@@ -1561,6 +1798,17 @@ Total steps: 343
     Full-duplex, 1000Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
+    Last input never, output never, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
   Loopback1 is up, line protocol is up
     Hardware is Loopback
     Internet address is 10.255.255.1/32
@@ -1597,6 +1845,17 @@ Total steps: 343
     Full-duplex, 1000Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
+    Last input never, output never, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
   GigabitEthernet0/0.20 is down, line protocol is down
     Hardware is iGbE, address is 02:00:00:00:00:1b (bia 02:00:00:00:00:1b)
     Internet address is 192.168.2.1/24
@@ -1606,6 +1865,17 @@ Total steps: 343
     Full-duplex, 1000Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
+    Last input never, output never, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
   GigabitEthernet0/0.30 is down, line protocol is down
     Hardware is iGbE, address is 02:00:00:00:00:1c (bia 02:00:00:00:00:1c)
     Internet address is 192.168.3.1/24
@@ -1615,6 +1885,17 @@ Total steps: 343
     Full-duplex, 1000Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
+    Last input never, output never, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
   GigabitEthernet0/0.40 is down, line protocol is down
     Hardware is iGbE, address is 02:00:00:00:00:1d (bia 02:00:00:00:00:1d)
     Internet address is 192.168.4.1/24
@@ -1624,6 +1905,17 @@ Total steps: 343
     Full-duplex, 1000Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
+    Last input never, output never, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
   GigabitEthernet0/0.50 is down, line protocol is down
     Hardware is iGbE, address is 02:00:00:00:00:1e (bia 02:00:00:00:00:1e)
     Internet address is 192.168.5.1/24
@@ -1633,6 +1925,17 @@ Total steps: 343
     Full-duplex, 1000Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
+    Last input never, output never, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
   GigabitEthernet0/0.60 is down, line protocol is down
     Hardware is iGbE, address is 02:00:00:00:00:1f (bia 02:00:00:00:00:1f)
     Internet address is 192.168.6.1/24
@@ -1642,6 +1945,17 @@ Total steps: 343
     Full-duplex, 1000Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
+    Last input never, output never, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
   GigabitEthernet0/0.70 is down, line protocol is down
     Hardware is iGbE, address is 02:00:00:00:00:20 (bia 02:00:00:00:00:20)
     Internet address is 192.168.7.1/24
@@ -1651,6 +1965,17 @@ Total steps: 343
     Full-duplex, 1000Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
+    Last input never, output never, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
   GigabitEthernet0/0.80 is down, line protocol is down
     Hardware is iGbE, address is 02:00:00:00:00:21 (bia 02:00:00:00:00:21)
     Internet address is 192.168.8.1/24
@@ -1660,6 +1985,17 @@ Total steps: 343
     Full-duplex, 1000Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
+    Last input never, output never, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
   GigabitEthernet0/0.90 is down, line protocol is down
     Hardware is iGbE, address is 02:00:00:00:00:22 (bia 02:00:00:00:00:22)
     Internet address is 192.168.9.1/24
@@ -1669,6 +2005,17 @@ Total steps: 343
     Full-duplex, 1000Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
+    Last input never, output never, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
   GigabitEthernet0/0.100 is down, line protocol is down
     Hardware is iGbE, address is 02:00:00:00:00:23 (bia 02:00:00:00:00:23)
     Internet address is 192.168.10.1/24
@@ -1678,6 +2025,17 @@ Total steps: 343
     Full-duplex, 1000Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
+    Last input never, output never, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
   GigabitEthernet0/0.999 is down, line protocol is down
     Hardware is iGbE, address is 02:00:00:00:00:24 (bia 02:00:00:00:00:24)
     Internet address is 192.168.99.1/24
@@ -1687,6 +2045,17 @@ Total steps: 343
     Full-duplex, 1000Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
+    Last input never, output never, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
   Tunnel0 is up, line protocol is up
     Hardware is Tunnel
     Internet address is 172.16.0.1/30
@@ -1704,6 +2073,9 @@ Total steps: 343
   Codes: C - connected, S - static, R - RIP, O - OSPF, O IA - OSPF inter area
          O E1 - OSPF external type 1, O E2 - OSPF external type 2, D - EIGRP, B - BGP
   
+  Gateway of last resort is not set
+  
+  C    192.168.1.0/24 is directly connected, GigabitEthernet0/0
   C    192.168.100.0/24 is directly connected, GigabitEthernet0/0
   C    10.255.255.1/32 is directly connected, Loopback1
   C    10.255.255.2/32 is directly connected, Loopback2
@@ -1715,7 +2087,6 @@ Total steps: 343
   C    10.255.255.8/32 is directly connected, Loopback8
   C    172.31.0.1/32 is directly connected, Loopback100
   C    10.0.0.0/30 is directly connected, GigabitEthernet0/1
-  C    192.168.1.0/24 is directly connected, GigabitEthernet0/0.10
   C    192.168.2.0/24 is directly connected, GigabitEthernet0/0.20
   C    192.168.3.0/24 is directly connected, GigabitEthernet0/0.30
   C    192.168.4.0/24 is directly connected, GigabitEthernet0/0.40
@@ -1733,14 +2104,14 @@ Total steps: 343
   IP routing table name is Default-IP-Routing-Table(0)
   IP routing table maximum-paths is 32
   Route Source    Networks    Subnets     Replicates  Overhead    Memory (bytes)
-  connected       24          24          0           3648        8640
+  connected       25          25          0           3800        9000
   static          0           0           0           0           0
   ospf            0           0           0           0           0
   eigrp           0           0           0           0           0
   bgp             0           0           0           0           0
   rip             0           0           0           0           0
   default         0           0           0           0           0
-  Total           24          24          0           3648        8640
+  Total           25          25          0           3800        9000
 
 [242/343] r1 R1# show ip protocols
   No routing protocol is configured.
@@ -1779,17 +2150,22 @@ Total steps: 343
 <empty>
 
 [254/343] r1 R1# show ip nat translations
+  Pro  Inside global          Inside local           Outside local          Outside global
   No NAT translations.
 
 [255/343] r1 R1# show ip nat statistics
   Total active translations: 0 (0 static, 0 dynamic; 0 extended)
+  Total translations: 0
+  Static translations: 0
+  Dynamic translations: 0
+  Translation errors: 0
   Outside interfaces:  none
   Inside interfaces:   none
   Hits: 0  Misses: 0
-  Expired translations: 0
   Session timeouts (seconds): tcp 86400  udp 300  icmp 60  syn 30
   Dynamic mappings:
   -- No dynamic NAT rules configured --
+  Application Layer Gateways: none (FTP/SIP ALG and NAT64 not supported in this simulator)
 
 [256/343] r1 R1# show ip dhcp binding
   IP address       Client-id/              Lease expiration        Type
@@ -1855,7 +2231,7 @@ Total steps: 343
 [271/343] r1 R1# show ntp status
   Clock is unsynchronized, stratum 16, reference is .INIT.
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
-  reference time is EDD670B7.EE560418 (11:49:11.931 UTC Fri Jun 12 2026)
+  reference time is EDF36373.E6A7EF9D (10:48:19.901 UTC Sat Jul 4 2026)
   clock offset is 0.00 msec
 
 [272/343] r1 R1# show ntp associations
@@ -1864,7 +2240,7 @@ Total steps: 343
   No NTP associations configured.
 
 [273/343] r1 R1# show clock
-  *11:49:11.000 UTC Fri Jun 12 2026
+  *10:48:19.000 UTC Sat Jul 4 2026
 
 [274/343] r1 R1# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
@@ -1911,6 +2287,7 @@ Total steps: 343
     Interface    User               Mode         Idle     Peer Address
 
 [280/343] r1 R1# show history
+  show crypto isakmp sa
   show crypto ipsec sa
   show crypto session
   show crypto map
@@ -1930,11 +2307,11 @@ Total steps: 343
   show memory statistics
   show flash
   show users
-  show history
 
 [281/343] r1 R1# show ip cef
   Prefix               Next Hop             Interface
   0.0.0.0/0            no route
+  192.168.1.0/24       attached             GigabitEthernet0/0
   192.168.100.0/24     attached             GigabitEthernet0/0
   10.255.255.1/32      attached             Loopback1
   10.255.255.2/32      attached             Loopback2
@@ -1963,13 +2340,24 @@ Total steps: 343
 [282/343] r1 R1# show interfaces GigabitEthernet0/0
   GigabitEthernet0/0 is up, line protocol is up
     Hardware is iGbE, address is 02:00:00:00:00:01 (bia 02:00:00:00:00:01)
-    Internet address is 192.168.100.1/24
-    MTU 1500 bytes, BW 100000 Kbit/sec, DLY 1000 usec,
+    Internet address is 192.168.1.1/24
+    MTU 1400 bytes, BW 100000 Kbit/sec, DLY 1000 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
     Full-duplex, 1000Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 00:10:00
+    Last input 00:00:00, output 00:00:00, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
 
 [283/343] r1 R1# show interfaces GigabitEthernet0/1
   GigabitEthernet0/1 is up, line protocol is up
@@ -1981,6 +2369,17 @@ Total steps: 343
     Full-duplex, 1000Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
+    Last input 00:00:00, output 00:00:00, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       3 packets input, 192 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       4 packets output, 256 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
 
 [284/343] r1 R1# show ip interface GigabitEthernet0/1
   GigabitEthernet0/1 is up, line protocol is up
@@ -1992,6 +2391,17 @@ Total steps: 343
     Full-duplex, 1000Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
+    Last input 00:00:00, output 00:00:00, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       3 packets input, 192 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       4 packets output, 256 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
 
 [285/343] r1 R1# show controllers
   GigabitEthernet0/0 -
@@ -2132,8 +2542,8 @@ Total steps: 343
   !
   interface GigabitEthernet0/0
    description ## LAN to L1 ##
-   ip address 192.168.100.1 255.255.255.0
-   no shutdown
+   ip address 192.168.1.1 255.255.255.0
+   ip address 192.168.100.1 255.255.255.0 secondary
    ip helper-address 10.0.0.2
    no ip unreachables
    no ip redirects
@@ -2143,114 +2553,101 @@ Total steps: 343
   !
   interface GigabitEthernet0/1
    ip address 10.0.0.1 255.255.255.252
-   no shutdown
   !
   interface GigabitEthernet0/2
-   no shutdown
   !
   interface GigabitEthernet0/3
-   no shutdown
   !
   interface Loopback1
    description LOOP-1
    ip address 10.255.255.1 255.255.255.255
-   no shutdown
   !
   interface Loopback2
    description LOOP-2
    ip address 10.255.255.2 255.255.255.255
-   no shutdown
   !
   interface Loopback3
    description LOOP-3
    ip address 10.255.255.3 255.255.255.255
-   no shutdown
   !
   interface Loopback4
    description LOOP-4
    ip address 10.255.255.4 255.255.255.255
-   no shutdown
   !
   interface Loopback5
    description LOOP-5
    ip address 10.255.255.5 255.255.255.255
-   no shutdown
   !
   interface Loopback6
    description LOOP-6
    ip address 10.255.255.6 255.255.255.255
-   no shutdown
   !
   interface Loopback7
    description LOOP-7
    ip address 10.255.255.7 255.255.255.255
-   no shutdown
   !
   interface Loopback8
    description LOOP-8
    ip address 10.255.255.8 255.255.255.255
-   no shutdown
   !
   interface Loopback100
    ip address 172.31.0.1 255.255.255.255
-   no shutdown
   !
   interface GigabitEthernet0/0.10
+   encapsulation dot1q 10 native
    ip address 192.168.1.1 255.255.255.0
-   no shutdown
   !
   interface GigabitEthernet0/0.20
    description VLAN20
+   encapsulation dot1q 20
    ip address 192.168.2.1 255.255.255.0
-   no shutdown
   !
   interface GigabitEthernet0/0.30
    description VLAN30
+   encapsulation dot1q 30
    ip address 192.168.3.1 255.255.255.0
-   no shutdown
   !
   interface GigabitEthernet0/0.40
    description VLAN40
+   encapsulation dot1q 40
    ip address 192.168.4.1 255.255.255.0
-   no shutdown
   !
   interface GigabitEthernet0/0.50
    description VLAN50
+   encapsulation dot1q 50
    ip address 192.168.5.1 255.255.255.0
-   no shutdown
   !
   interface GigabitEthernet0/0.60
    description VLAN60
+   encapsulation dot1q 60
    ip address 192.168.6.1 255.255.255.0
-   no shutdown
   !
   interface GigabitEthernet0/0.70
    description VLAN70
+   encapsulation dot1q 70
    ip address 192.168.7.1 255.255.255.0
-   no shutdown
   !
   interface GigabitEthernet0/0.80
    description VLAN80
+   encapsulation dot1q 80
    ip address 192.168.8.1 255.255.255.0
-   no shutdown
   !
   interface GigabitEthernet0/0.90
    description VLAN90
+   encapsulation dot1q 90
    ip address 192.168.9.1 255.255.255.0
-   no shutdown
   !
   interface GigabitEthernet0/0.100
    description VLAN100
+   encapsulation dot1q 100
    ip address 192.168.10.1 255.255.255.0
-   no shutdown
   !
   interface GigabitEthernet0/0.999
+   encapsulation isl 999
    ip address 192.168.99.1 255.255.255.0
-   no shutdown
   !
   interface Tunnel0
    ip address 172.16.0.1 255.255.255.252
-   no shutdown
    tunnel mode gre ip
    tunnel source GigabitEthernet0/1
    tunnel destination 10.0.0.2
@@ -2258,20 +2655,18 @@ Total steps: 343
   !
   interface Tunnel1
    ip address 172.16.0.5 255.255.255.252
-   no shutdown
    tunnel mode ipip
    tunnel source Loopback0
    tunnel destination 10.0.0.2
   !
   interface Tunnel2
-   no shutdown
    tunnel mode ipv6ip
   !
   end
   
   ------------------ show ip interface brief ------------------
   Interface                  IP-Address      OK? Method Status                Protocol
-  GigabitEthernet0/0         192.168.100.1   YES manual up                    up
+  GigabitEthernet0/0         192.168.1.1     YES manual up                    up
   GigabitEthernet0/1         10.0.0.1        YES manual up                    up
   GigabitEthernet0/2         unassigned      YES manual down                  down
   GigabitEthernet0/3         unassigned      YES manual down                  down
@@ -2302,6 +2697,9 @@ Total steps: 343
   ------------------ show ip route ------------------
   Codes: C - connected, S - static, R - RIP, O - OSPF, D - EIGRP, B - BGP, * - candidate default
   
+  Gateway of last resort is not set
+  
+  C    192.168.1.0/24 is directly connected, GigabitEthernet0/0
   C    192.168.100.0/24 is directly connected, GigabitEthernet0/0
   C    10.255.255.1/32 is directly connected, Loopback1
   C    10.255.255.2/32 is directly connected, Loopback2
@@ -2330,13 +2728,24 @@ Total steps: 343
   ------------------ show interfaces ------------------
   GigabitEthernet0/0 is up, line protocol is up
     Hardware is iGbE, address is 02:00:00:00:00:01 (bia 02:00:00:00:00:01)
-    Internet address is 192.168.100.1/24
-    MTU 1500 bytes, BW 100000 Kbit/sec, DLY 1000 usec,
+    Internet address is 192.168.1.1/24
+    MTU 1400 bytes, BW 100000 Kbit/sec, DLY 1000 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
     Full-duplex, 1000Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 00:10:00
+    Last input 00:00:00, output 00:00:00, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
   GigabitEthernet0/1 is up, line protocol is up
     Hardware is iGbE, address is 02:00:00:00:00:02 (bia 02:00:00:00:00:02)
     Internet address is 10.0.0.1/30
@@ -2346,6 +2755,17 @@ Total steps: 343
     Full-duplex, 1000Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
+    Last input 00:00:00, output 00:00:00, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       3 packets input, 192 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       4 packets output, 256 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
   GigabitEthernet0/2 is down, line protocol is down
     Hardware is iGbE, address is 02:00:00:00:00:03 (bia 02:00:00:00:00:03)
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
@@ -2354,6 +2774,17 @@ Total steps: 343
     Full-duplex, 1000Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
+    Last input never, output never, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
   GigabitEthernet0/3 is down, line protocol is down
     Hardware is iGbE, address is 02:00:00:00:00:04 (bia 02:00:00:00:00:04)
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
@@ -2362,6 +2793,17 @@ Total steps: 343
     Full-duplex, 1000Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
+    Last input never, output never, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
   Loopback1 is up, line protocol is up
     Hardware is Loopback
     Internet address is 10.255.255.1/32
@@ -2398,6 +2840,17 @@ Total steps: 343
     Full-duplex, 1000Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
+    Last input never, output never, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
   GigabitEthernet0/0.20 is down, line protocol is down
     Hardware is iGbE, address is 02:00:00:00:00:1b (bia 02:00:00:00:00:1b)
     Internet address is 192.168.2.1/24
@@ -2407,6 +2860,17 @@ Total steps: 343
     Full-duplex, 1000Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
+    Last input never, output never, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
   GigabitEthernet0/0.30 is down, line protocol is down
     Hardware is iGbE, address is 02:00:00:00:00:1c (bia 02:00:00:00:00:1c)
     Internet address is 192.168.3.1/24
@@ -2416,6 +2880,17 @@ Total steps: 343
     Full-duplex, 1000Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
+    Last input never, output never, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
   GigabitEthernet0/0.40 is down, line protocol is down
     Hardware is iGbE, address is 02:00:00:00:00:1d (bia 02:00:00:00:00:1d)
     Internet address is 192.168.4.1/24
@@ -2425,6 +2900,17 @@ Total steps: 343
     Full-duplex, 1000Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
+    Last input never, output never, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
   GigabitEthernet0/0.50 is down, line protocol is down
     Hardware is iGbE, address is 02:00:00:00:00:1e (bia 02:00:00:00:00:1e)
     Internet address is 192.168.5.1/24
@@ -2434,6 +2920,17 @@ Total steps: 343
     Full-duplex, 1000Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
+    Last input never, output never, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
   GigabitEthernet0/0.60 is down, line protocol is down
     Hardware is iGbE, address is 02:00:00:00:00:1f (bia 02:00:00:00:00:1f)
     Internet address is 192.168.6.1/24
@@ -2443,6 +2940,17 @@ Total steps: 343
     Full-duplex, 1000Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
+    Last input never, output never, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
   GigabitEthernet0/0.70 is down, line protocol is down
     Hardware is iGbE, address is 02:00:00:00:00:20 (bia 02:00:00:00:00:20)
     Internet address is 192.168.7.1/24
@@ -2452,6 +2960,17 @@ Total steps: 343
     Full-duplex, 1000Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
+    Last input never, output never, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
   GigabitEthernet0/0.80 is down, line protocol is down
     Hardware is iGbE, address is 02:00:00:00:00:21 (bia 02:00:00:00:00:21)
     Internet address is 192.168.8.1/24
@@ -2461,6 +2980,17 @@ Total steps: 343
     Full-duplex, 1000Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
+    Last input never, output never, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
   GigabitEthernet0/0.90 is down, line protocol is down
     Hardware is iGbE, address is 02:00:00:00:00:22 (bia 02:00:00:00:00:22)
     Internet address is 192.168.9.1/24
@@ -2470,6 +3000,17 @@ Total steps: 343
     Full-duplex, 1000Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
+    Last input never, output never, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
   GigabitEthernet0/0.100 is down, line protocol is down
     Hardware is iGbE, address is 02:00:00:00:00:23 (bia 02:00:00:00:00:23)
     Internet address is 192.168.10.1/24
@@ -2479,6 +3020,17 @@ Total steps: 343
     Full-duplex, 1000Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
+    Last input never, output never, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
   GigabitEthernet0/0.999 is down, line protocol is down
     Hardware is iGbE, address is 02:00:00:00:00:24 (bia 02:00:00:00:00:24)
     Internet address is 192.168.99.1/24
@@ -2488,6 +3040,17 @@ Total steps: 343
     Full-duplex, 1000Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
+    Last input never, output never, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
   Tunnel0 is up, line protocol is up
     Hardware is Tunnel
     Internet address is 172.16.0.1/30
@@ -2560,6 +3123,7 @@ Total steps: 343
   Length: 24 lines, Width: 80 columns
   Editing is enabled.
   History is enabled, history size is 20.
+  Monitor parameter: disabled
 
 [296/343] r1 R1# show aliases
   Exec mode aliases:
@@ -2580,8 +3144,8 @@ Total steps: 343
 [298/343] r1 R1# show running-config | section interface
   interface GigabitEthernet0/0
    description ## LAN to L1 ##
-   ip address 192.168.100.1 255.255.255.0
-   no shutdown
+   ip address 192.168.1.1 255.255.255.0
+   ip address 192.168.100.1 255.255.255.0 secondary
    ip helper-address 10.0.0.2
    no ip unreachables
    no ip redirects
@@ -2590,103 +3154,88 @@ Total steps: 343
    ip flow egress
   interface GigabitEthernet0/1
    ip address 10.0.0.1 255.255.255.252
-   no shutdown
   interface GigabitEthernet0/2
-   no shutdown
   interface GigabitEthernet0/3
-   no shutdown
   interface Loopback1
    description LOOP-1
    ip address 10.255.255.1 255.255.255.255
-   no shutdown
   interface Loopback2
    description LOOP-2
    ip address 10.255.255.2 255.255.255.255
-   no shutdown
   interface Loopback3
    description LOOP-3
    ip address 10.255.255.3 255.255.255.255
-   no shutdown
   interface Loopback4
    description LOOP-4
    ip address 10.255.255.4 255.255.255.255
-   no shutdown
   interface Loopback5
    description LOOP-5
    ip address 10.255.255.5 255.255.255.255
-   no shutdown
   interface Loopback6
    description LOOP-6
    ip address 10.255.255.6 255.255.255.255
-   no shutdown
   interface Loopback7
    description LOOP-7
    ip address 10.255.255.7 255.255.255.255
-   no shutdown
   interface Loopback8
    description LOOP-8
    ip address 10.255.255.8 255.255.255.255
-   no shutdown
   interface Loopback100
    ip address 172.31.0.1 255.255.255.255
-   no shutdown
   interface GigabitEthernet0/0.10
+   encapsulation dot1q 10 native
    ip address 192.168.1.1 255.255.255.0
-   no shutdown
   interface GigabitEthernet0/0.20
    description VLAN20
+   encapsulation dot1q 20
    ip address 192.168.2.1 255.255.255.0
-   no shutdown
   interface GigabitEthernet0/0.30
    description VLAN30
+   encapsulation dot1q 30
    ip address 192.168.3.1 255.255.255.0
-   no shutdown
   interface GigabitEthernet0/0.40
    description VLAN40
+   encapsulation dot1q 40
    ip address 192.168.4.1 255.255.255.0
-   no shutdown
   interface GigabitEthernet0/0.50
    description VLAN50
+   encapsulation dot1q 50
    ip address 192.168.5.1 255.255.255.0
-   no shutdown
   interface GigabitEthernet0/0.60
    description VLAN60
+   encapsulation dot1q 60
    ip address 192.168.6.1 255.255.255.0
-   no shutdown
   interface GigabitEthernet0/0.70
    description VLAN70
+   encapsulation dot1q 70
    ip address 192.168.7.1 255.255.255.0
-   no shutdown
   interface GigabitEthernet0/0.80
    description VLAN80
+   encapsulation dot1q 80
    ip address 192.168.8.1 255.255.255.0
-   no shutdown
   interface GigabitEthernet0/0.90
    description VLAN90
+   encapsulation dot1q 90
    ip address 192.168.9.1 255.255.255.0
-   no shutdown
   interface GigabitEthernet0/0.100
    description VLAN100
+   encapsulation dot1q 100
    ip address 192.168.10.1 255.255.255.0
-   no shutdown
   interface GigabitEthernet0/0.999
+   encapsulation isl 999
    ip address 192.168.99.1 255.255.255.0
-   no shutdown
   interface Tunnel0
    ip address 172.16.0.1 255.255.255.252
-   no shutdown
    tunnel mode gre ip
    tunnel source GigabitEthernet0/1
    tunnel destination 10.0.0.2
    tunnel key 1234
   interface Tunnel1
    ip address 172.16.0.5 255.255.255.252
-   no shutdown
    tunnel mode ipip
    tunnel source Loopback0
    tunnel destination 10.0.0.2
   interface Tunnel2
-   no shutdown
    tunnel mode ipv6ip
 
 [299/343] r1 R1# show running-config | begin line
@@ -2700,8 +3249,8 @@ Total steps: 343
   service dhcp
   interface GigabitEthernet0/0
    description ## LAN to L1 ##
-   ip address 192.168.100.1 255.255.255.0
-   no shutdown
+   ip address 192.168.1.1 255.255.255.0
+   ip address 192.168.100.1 255.255.255.0 secondary
    ip helper-address 10.0.0.2
    no ip unreachables
    no ip redirects
@@ -2710,103 +3259,88 @@ Total steps: 343
    ip flow egress
   interface GigabitEthernet0/1
    ip address 10.0.0.1 255.255.255.252
-   no shutdown
   interface GigabitEthernet0/2
-   no shutdown
   interface GigabitEthernet0/3
-   no shutdown
   interface Loopback1
    description LOOP-1
    ip address 10.255.255.1 255.255.255.255
-   no shutdown
   interface Loopback2
    description LOOP-2
    ip address 10.255.255.2 255.255.255.255
-   no shutdown
   interface Loopback3
    description LOOP-3
    ip address 10.255.255.3 255.255.255.255
-   no shutdown
   interface Loopback4
    description LOOP-4
    ip address 10.255.255.4 255.255.255.255
-   no shutdown
   interface Loopback5
    description LOOP-5
    ip address 10.255.255.5 255.255.255.255
-   no shutdown
   interface Loopback6
    description LOOP-6
    ip address 10.255.255.6 255.255.255.255
-   no shutdown
   interface Loopback7
    description LOOP-7
    ip address 10.255.255.7 255.255.255.255
-   no shutdown
   interface Loopback8
    description LOOP-8
    ip address 10.255.255.8 255.255.255.255
-   no shutdown
   interface Loopback100
    ip address 172.31.0.1 255.255.255.255
-   no shutdown
   interface GigabitEthernet0/0.10
+   encapsulation dot1q 10 native
    ip address 192.168.1.1 255.255.255.0
-   no shutdown
   interface GigabitEthernet0/0.20
    description VLAN20
+   encapsulation dot1q 20
    ip address 192.168.2.1 255.255.255.0
-   no shutdown
   interface GigabitEthernet0/0.30
    description VLAN30
+   encapsulation dot1q 30
    ip address 192.168.3.1 255.255.255.0
-   no shutdown
   interface GigabitEthernet0/0.40
    description VLAN40
+   encapsulation dot1q 40
    ip address 192.168.4.1 255.255.255.0
-   no shutdown
   interface GigabitEthernet0/0.50
    description VLAN50
+   encapsulation dot1q 50
    ip address 192.168.5.1 255.255.255.0
-   no shutdown
   interface GigabitEthernet0/0.60
    description VLAN60
+   encapsulation dot1q 60
    ip address 192.168.6.1 255.255.255.0
-   no shutdown
   interface GigabitEthernet0/0.70
    description VLAN70
+   encapsulation dot1q 70
    ip address 192.168.7.1 255.255.255.0
-   no shutdown
   interface GigabitEthernet0/0.80
    description VLAN80
+   encapsulation dot1q 80
    ip address 192.168.8.1 255.255.255.0
-   no shutdown
   interface GigabitEthernet0/0.90
    description VLAN90
+   encapsulation dot1q 90
    ip address 192.168.9.1 255.255.255.0
-   no shutdown
   interface GigabitEthernet0/0.100
    description VLAN100
+   encapsulation dot1q 100
    ip address 192.168.10.1 255.255.255.0
-   no shutdown
   interface GigabitEthernet0/0.999
+   encapsulation isl 999
    ip address 192.168.99.1 255.255.255.0
-   no shutdown
   interface Tunnel0
    ip address 172.16.0.1 255.255.255.252
-   no shutdown
    tunnel mode gre ip
    tunnel source GigabitEthernet0/1
    tunnel destination 10.0.0.2
    tunnel key 1234
   interface Tunnel1
    ip address 172.16.0.5 255.255.255.252
-   no shutdown
    tunnel mode ipip
    tunnel source Loopback0
    tunnel destination 10.0.0.2
   interface Tunnel2
-   no shutdown
    tunnel mode ipv6ip
   end
 
@@ -2815,7 +3349,7 @@ Total steps: 343
 
 [302/343] r1 R1# show ip interface brief | exclude unassigned
   Interface                  IP-Address      OK? Method Status                Protocol
-  GigabitEthernet0/0         192.168.100.1   YES manual up                    up
+  GigabitEthernet0/0         192.168.1.1     YES manual up                    up
   GigabitEthernet0/1         10.0.0.1        YES manual up                    up
   Loopback1                  10.255.255.1    YES manual up                    up
   Loopback2                  10.255.255.2    YES manual up                    up
@@ -2910,7 +3444,7 @@ Total steps: 343
 
 [325/343] r1 R1(config-if)# do show ip interface brief
   Interface                  IP-Address      OK? Method Status                Protocol
-  GigabitEthernet0/0         192.168.100.1   YES manual up                    up
+  GigabitEthernet0/0         192.168.1.1     YES manual up                    up
   GigabitEthernet0/1         10.0.0.1        YES manual up                    up
   GigabitEthernet0/2         unassigned      YES manual down                  down
   GigabitEthernet0/3         unassigned      YES manual down                  down
@@ -2971,15 +3505,24 @@ Total steps: 343
   Enter configuration commands, one per line.  End with CNTL/Z.
 
 [336/343] r1 R1(config)# interface ?
-    WORD  Select an interface to configure
-    <cr>  
+    GigabitEthernet     GigabitEthernet IEEE 802.3z
+    FastEthernet        FastEthernet IEEE 802.3u
+    Ethernet            IEEE 802.3
+    TenGigabitEthernet  TenGigabitEthernet IEEE 802.3ae
+    Loopback            Loopback interface
+    Serial              Serial
+    Tunnel              Tunnel interface
+    Vlan                Catalyst VLANs
+    Port-channel        Ethernet Channel of interfaces
+    BVI                 Bridge-Group Virtual Interface
+    <cr>                
 
 [337/343] r1 R1(config)# ip ?
     cef              Enable CEF
     http             http
     source-route     IP source-route
-    domain-lookup    Enable DNS lookups
     name-server      Configure DNS name servers
+    domain-lookup    Enable DNS lookups
     bootp            bootp
     finger           Enable finger service
     gratuitous-arps  Enable gratuitous ARP
@@ -2998,6 +3541,7 @@ Total steps: 343
     sla              Configure an IP SLA operation
     access-list      access-list
     nat              nat
+    vrf              Define a VRF instance
     routing          Enable IP routing
     flow-export      Legacy NetFlow export
     flow-cache       NetFlow cache timeout
@@ -3015,37 +3559,43 @@ Total steps: 343
     map          Define a crypto map entry
     dynamic-map  Define a dynamic crypto map
     ikev2        ikev2
-    key          key
+    key          Key management
     pki          pki
     <cr>         
 
 [340/343] r1 R1(config)# no ?
+    sntp         Configure SNTP
     hostname     Reset hostname
     alias        Remove a command alias
-    cdp          cdp
-    lldp         lldp
-    ip           ip
-    ipv6         ipv6
-    banner       banner
+    cdp          CDP global configuration
+    lldp         LLDP global configuration
+    ip           Global IP configuration subcommands
+    ipv6         Global IPv6 configuration subcommands
+    banner       Remove a banner
+    privilege    Remove privilege command rule
     logging      Disable logging
     ntp          Remove NTP config
+    enable       Modify enable password parameters
     service      Disable a service
     username     Remove a local user
     arp          Remove ARP entry
-    router       router
+    router       Enable a routing protocol
     shutdown     Enable (no-op in global config)
     route-map    Remove a route-map
     track        Remove a tracked object
     access-list  Remove an access list
-    key          key
+    key          Key management
     crypto       crypto
-    event        event
+    event        Embedded Event Manager
+    interface    Remove an interface
+    vlan         Remove a VLAN
+    line         Remove line configuration
 
 [341/343] r1 R1(config)# end
 <empty>
 
 [342/343] r1 R1# show running-config | count !
-  32
+  33
 
 [343/343] r1 R1# write memory
   Building configuration...

@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — huawei-router-interfaces
-Generated: 2026-06-12T11:49:28.910Z
+Generated: 2026-07-04T10:48:40.336Z
 Topology: R1(Huawei) GE0/0/1=L1 LAN 192.168.1.0/24, GE0/0/0=WAN 10.0.0.0/30; R2(Huawei) GE0/0/1=W1 LAN 192.168.2.0/24, GE0/0/0=WAN
 focus=VRP IPv4/IPv6 addressing, dot1q sub-if, tunnels, display
 Total steps: 286
@@ -207,24 +207,24 @@ Total steps: 286
   ^down: standby
   (l): loopback
   (s): spoofing
-  The number of interface that is UP in Physical is 0
-  The number of interface that is DOWN in Physical is 0
-  The number of interface that is UP in Protocol is 0
-  The number of interface that is DOWN in Protocol is 0
+  The number of interface that is UP in Physical is 2
+  The number of interface that is DOWN in Physical is 10
+  The number of interface that is UP in Protocol is 2
+  The number of interface that is DOWN in Protocol is 10
   
   Interface                         IP Address/Mask      Physical   Protocol
-  GE0/0/0                           192.168.100.1/24     UP         UP
-  GE0/0/1                           unassigned           UP         UP
-  GE0/0/2                           unassigned           DOWN       DOWN
-  GE0/0/3                           unassigned           DOWN       DOWN
-  LoopBack1                         10.255.255.1/32      DOWN       DOWN
-  LoopBack2                         10.255.255.2/32      DOWN       DOWN
-  LoopBack3                         10.255.255.3/32      DOWN       DOWN
-  LoopBack4                         10.255.255.4/32      DOWN       DOWN
-  LoopBack5                         10.255.255.5/32      DOWN       DOWN
-  LoopBack6                         10.255.255.6/32      DOWN       DOWN
-  LoopBack7                         10.255.255.7/32      DOWN       DOWN
-  LoopBack8                         10.255.255.8/32      DOWN       DOWN
+  GigabitEthernet0/0/0              192.168.100.1/24     up         up
+  GigabitEthernet0/0/1              unassigned           up         up
+  GigabitEthernet0/0/2              unassigned           down       down
+  GigabitEthernet0/0/3              unassigned           down       down
+  LoopBack1                         10.255.255.1/32      down       down
+  LoopBack2                         10.255.255.2/32      down       down
+  LoopBack3                         10.255.255.3/32      down       down
+  LoopBack4                         10.255.255.4/32      down       down
+  LoopBack5                         10.255.255.5/32      down       down
+  LoopBack6                         10.255.255.6/32      down       down
+  LoopBack7                         10.255.255.7/32      down       down
+  LoopBack8                         10.255.255.8/32      down       down
 
 
 --- [66] § dot1q sub-interfaces ---
@@ -389,34 +389,34 @@ Total steps: 286
   ^down: standby
   (l): loopback
   (s): spoofing
-  The number of interface that is UP in Physical is 0
-  The number of interface that is DOWN in Physical is 0
-  The number of interface that is UP in Protocol is 0
-  The number of interface that is DOWN in Protocol is 0
+  The number of interface that is UP in Physical is 2
+  The number of interface that is DOWN in Physical is 20
+  The number of interface that is UP in Protocol is 2
+  The number of interface that is DOWN in Protocol is 20
   
   Interface                         IP Address/Mask      Physical   Protocol
-  GE0/0/0                           192.168.100.1/24     UP         UP
-  GE0/0/1                           unassigned           UP         UP
-  GE0/0/2                           unassigned           DOWN       DOWN
-  GE0/0/3                           unassigned           DOWN       DOWN
-  LoopBack1                         10.255.255.1/32      DOWN       DOWN
-  LoopBack2                         10.255.255.2/32      DOWN       DOWN
-  LoopBack3                         10.255.255.3/32      DOWN       DOWN
-  LoopBack4                         10.255.255.4/32      DOWN       DOWN
-  LoopBack5                         10.255.255.5/32      DOWN       DOWN
-  LoopBack6                         10.255.255.6/32      DOWN       DOWN
-  LoopBack7                         10.255.255.7/32      DOWN       DOWN
-  LoopBack8                         10.255.255.8/32      DOWN       DOWN
-  GE0/0/0.10                        192.168.1.1/24       DOWN       DOWN
-  GE0/0/0.20                        192.168.2.1/24       DOWN       DOWN
-  GE0/0/0.30                        192.168.3.1/24       DOWN       DOWN
-  GE0/0/0.40                        192.168.4.1/24       DOWN       DOWN
-  GE0/0/0.50                        192.168.5.1/24       DOWN       DOWN
-  GE0/0/0.60                        192.168.6.1/24       DOWN       DOWN
-  GE0/0/0.70                        192.168.7.1/24       DOWN       DOWN
-  GE0/0/0.80                        192.168.8.1/24       DOWN       DOWN
-  GE0/0/0.90                        192.168.9.1/24       DOWN       DOWN
-  GE0/0/0.100                       192.168.10.1/24      DOWN       DOWN
+  GigabitEthernet0/0/0              192.168.100.1/24     up         up
+  GigabitEthernet0/0/1              unassigned           up         up
+  GigabitEthernet0/0/2              unassigned           down       down
+  GigabitEthernet0/0/3              unassigned           down       down
+  LoopBack1                         10.255.255.1/32      down       down
+  LoopBack2                         10.255.255.2/32      down       down
+  LoopBack3                         10.255.255.3/32      down       down
+  LoopBack4                         10.255.255.4/32      down       down
+  LoopBack5                         10.255.255.5/32      down       down
+  LoopBack6                         10.255.255.6/32      down       down
+  LoopBack7                         10.255.255.7/32      down       down
+  LoopBack8                         10.255.255.8/32      down       down
+  GigabitEthernet0/0/0.10           192.168.1.1/24       down       down
+  GigabitEthernet0/0/0.20           192.168.2.1/24       down       down
+  GigabitEthernet0/0/0.30           192.168.3.1/24       down       down
+  GigabitEthernet0/0/0.40           192.168.4.1/24       down       down
+  GigabitEthernet0/0/0.50           192.168.5.1/24       down       down
+  GigabitEthernet0/0/0.60           192.168.6.1/24       down       down
+  GigabitEthernet0/0/0.70           192.168.7.1/24       down       down
+  GigabitEthernet0/0/0.80           192.168.8.1/24       down       down
+  GigabitEthernet0/0/0.90           192.168.9.1/24       down       down
+  GigabitEthernet0/0/0.100          192.168.10.1/24      down       down
 
 [119/286] r1 <R1> display interface GigabitEthernet0/0/0.10
   GE0/0/0.10 current state : DOWN
@@ -928,36 +928,36 @@ Total steps: 286
   ^down: standby
   (l): loopback
   (s): spoofing
-  The number of interface that is UP in Physical is 0
-  The number of interface that is DOWN in Physical is 0
-  The number of interface that is UP in Protocol is 0
-  The number of interface that is DOWN in Protocol is 0
+  The number of interface that is UP in Physical is 2
+  The number of interface that is DOWN in Physical is 22
+  The number of interface that is UP in Protocol is 2
+  The number of interface that is DOWN in Protocol is 22
   
   Interface                         IP Address/Mask      Physical   Protocol
-  GE0/0/0                           192.168.100.1/24     UP         UP
-  GE0/0/1                           unassigned           UP         UP
-  GE0/0/2                           unassigned           DOWN       DOWN
-  GE0/0/3                           unassigned           DOWN       DOWN
-  LoopBack1                         10.255.255.1/32      DOWN       DOWN
-  LoopBack2                         10.255.255.2/32      DOWN       DOWN
-  LoopBack3                         10.255.255.3/32      DOWN       DOWN
-  LoopBack4                         10.255.255.4/32      DOWN       DOWN
-  LoopBack5                         10.255.255.5/32      DOWN       DOWN
-  LoopBack6                         10.255.255.6/32      DOWN       DOWN
-  LoopBack7                         10.255.255.7/32      DOWN       DOWN
-  LoopBack8                         10.255.255.8/32      DOWN       DOWN
-  GE0/0/0.10                        192.168.1.1/24       DOWN       DOWN
-  GE0/0/0.20                        192.168.2.1/24       DOWN       DOWN
-  GE0/0/0.30                        192.168.3.1/24       DOWN       DOWN
-  GE0/0/0.40                        192.168.4.1/24       DOWN       DOWN
-  GE0/0/0.50                        192.168.5.1/24       DOWN       DOWN
-  GE0/0/0.60                        192.168.6.1/24       DOWN       DOWN
-  GE0/0/0.70                        192.168.7.1/24       DOWN       DOWN
-  GE0/0/0.80                        192.168.8.1/24       DOWN       DOWN
-  GE0/0/0.90                        192.168.9.1/24       DOWN       DOWN
-  GE0/0/0.100                       192.168.10.1/24      DOWN       DOWN
-  Tunnel0/0/0                       172.16.0.1/30        DOWN       DOWN
-  Tunnel0/0/1                       172.16.0.5/30        DOWN       DOWN
+  GigabitEthernet0/0/0              192.168.100.1/24     up         up
+  GigabitEthernet0/0/1              unassigned           up         up
+  GigabitEthernet0/0/2              unassigned           down       down
+  GigabitEthernet0/0/3              unassigned           down       down
+  LoopBack1                         10.255.255.1/32      down       down
+  LoopBack2                         10.255.255.2/32      down       down
+  LoopBack3                         10.255.255.3/32      down       down
+  LoopBack4                         10.255.255.4/32      down       down
+  LoopBack5                         10.255.255.5/32      down       down
+  LoopBack6                         10.255.255.6/32      down       down
+  LoopBack7                         10.255.255.7/32      down       down
+  LoopBack8                         10.255.255.8/32      down       down
+  GigabitEthernet0/0/0.10           192.168.1.1/24       down       down
+  GigabitEthernet0/0/0.20           192.168.2.1/24       down       down
+  GigabitEthernet0/0/0.30           192.168.3.1/24       down       down
+  GigabitEthernet0/0/0.40           192.168.4.1/24       down       down
+  GigabitEthernet0/0/0.50           192.168.5.1/24       down       down
+  GigabitEthernet0/0/0.60           192.168.6.1/24       down       down
+  GigabitEthernet0/0/0.70           192.168.7.1/24       down       down
+  GigabitEthernet0/0/0.80           192.168.8.1/24       down       down
+  GigabitEthernet0/0/0.90           192.168.9.1/24       down       down
+  GigabitEthernet0/0/0.100          192.168.10.1/24      down       down
+  Tunnel0/0/0                       172.16.0.1/30        down       down
+  Tunnel0/0/1                       172.16.0.5/30        down       down
 
 
 --- [182] § regression: display family ---
@@ -1232,36 +1232,36 @@ Total steps: 286
   ^down: standby
   (l): loopback
   (s): spoofing
-  The number of interface that is UP in Physical is 0
-  The number of interface that is DOWN in Physical is 0
-  The number of interface that is UP in Protocol is 0
-  The number of interface that is DOWN in Protocol is 0
+  The number of interface that is UP in Physical is 2
+  The number of interface that is DOWN in Physical is 22
+  The number of interface that is UP in Protocol is 2
+  The number of interface that is DOWN in Protocol is 22
   
   Interface                         IP Address/Mask      Physical   Protocol
-  GE0/0/0                           192.168.100.1/24     UP         UP
-  GE0/0/1                           unassigned           UP         UP
-  GE0/0/2                           unassigned           DOWN       DOWN
-  GE0/0/3                           unassigned           DOWN       DOWN
-  LoopBack1                         10.255.255.1/32      DOWN       DOWN
-  LoopBack2                         10.255.255.2/32      DOWN       DOWN
-  LoopBack3                         10.255.255.3/32      DOWN       DOWN
-  LoopBack4                         10.255.255.4/32      DOWN       DOWN
-  LoopBack5                         10.255.255.5/32      DOWN       DOWN
-  LoopBack6                         10.255.255.6/32      DOWN       DOWN
-  LoopBack7                         10.255.255.7/32      DOWN       DOWN
-  LoopBack8                         10.255.255.8/32      DOWN       DOWN
-  GE0/0/0.10                        192.168.1.1/24       DOWN       DOWN
-  GE0/0/0.20                        192.168.2.1/24       DOWN       DOWN
-  GE0/0/0.30                        192.168.3.1/24       DOWN       DOWN
-  GE0/0/0.40                        192.168.4.1/24       DOWN       DOWN
-  GE0/0/0.50                        192.168.5.1/24       DOWN       DOWN
-  GE0/0/0.60                        192.168.6.1/24       DOWN       DOWN
-  GE0/0/0.70                        192.168.7.1/24       DOWN       DOWN
-  GE0/0/0.80                        192.168.8.1/24       DOWN       DOWN
-  GE0/0/0.90                        192.168.9.1/24       DOWN       DOWN
-  GE0/0/0.100                       192.168.10.1/24      DOWN       DOWN
-  Tunnel0/0/0                       172.16.0.1/30        DOWN       DOWN
-  Tunnel0/0/1                       172.16.0.5/30        DOWN       DOWN
+  GigabitEthernet0/0/0              192.168.100.1/24     up         up
+  GigabitEthernet0/0/1              unassigned           up         up
+  GigabitEthernet0/0/2              unassigned           down       down
+  GigabitEthernet0/0/3              unassigned           down       down
+  LoopBack1                         10.255.255.1/32      down       down
+  LoopBack2                         10.255.255.2/32      down       down
+  LoopBack3                         10.255.255.3/32      down       down
+  LoopBack4                         10.255.255.4/32      down       down
+  LoopBack5                         10.255.255.5/32      down       down
+  LoopBack6                         10.255.255.6/32      down       down
+  LoopBack7                         10.255.255.7/32      down       down
+  LoopBack8                         10.255.255.8/32      down       down
+  GigabitEthernet0/0/0.10           192.168.1.1/24       down       down
+  GigabitEthernet0/0/0.20           192.168.2.1/24       down       down
+  GigabitEthernet0/0/0.30           192.168.3.1/24       down       down
+  GigabitEthernet0/0/0.40           192.168.4.1/24       down       down
+  GigabitEthernet0/0/0.50           192.168.5.1/24       down       down
+  GigabitEthernet0/0/0.60           192.168.6.1/24       down       down
+  GigabitEthernet0/0/0.70           192.168.7.1/24       down       down
+  GigabitEthernet0/0/0.80           192.168.8.1/24       down       down
+  GigabitEthernet0/0/0.90           192.168.9.1/24       down       down
+  GigabitEthernet0/0/0.100          192.168.10.1/24      down       down
+  Tunnel0/0/0                       172.16.0.1/30        down       down
+  Tunnel0/0/1                       172.16.0.5/30        down       down
 
 [187/286] r1 <R1> display interface
   GE0/0/0 current state : UP
@@ -1495,10 +1495,16 @@ Total steps: 286
   Info: BGP is not running.
 
 [201/286] r1 <R1> display nat session all
-  Info: No NAT session is found.
+  NAT Session Table Information:
+   Total sessions: 1
+  
+   Proto  Inside Local           Inside Global          Outside Global
+   ---------------------------------------------------------------------------
+   tcp    192.168.1.10:80        10.0.0.1:80            ---
 
 [202/286] r1 <R1> display nat address-group
-  No NAT address pools configured.
+  NAT Address Group Information:
+   (no address groups configured)
 
 [203/286] r1 <R1> display ip pool
   No DHCP pools configured.
@@ -1564,8 +1570,8 @@ Total steps: 286
   No NTP associations
 
 [217/286] r1 <R1> display clock
-  2026-06-12 11:49:28
-  Friday
+  2026-07-04 10:48:40
+  Saturday
   Time Zone(UTC) : UTC
 
 [218/286] r1 <R1> display lldp neighbor
@@ -1577,13 +1583,13 @@ Total steps: 286
 [220/286] r1 <R1> display cpu-usage
   CPU Usage Stat. Cycle: 60 (Second)
   CPU Usage            : 11% Max: 38%
-  CPU Usage Stat. Time : 2026-06-12 11:49:28
+  CPU Usage Stat. Time : 2026-07-04 10:48:40
   CPU utilization for five seconds: 11%: one minute: 12%: five minutes: 10%
   
   Max CPU Usage Stat. Time : 0000-00-00 00:00:00.
 
 [221/286] r1 <R1> display memory-usage
-  Memory utilization statistics at 2026-06-12 11:49:28
+  Memory utilization statistics at 2026-07-04 10:48:40
   System Total Memory Is: 536870912 bytes
   Total Memory Used Is: 193273528 bytes
   Memory Using Percentage Is: 36%
@@ -1883,8 +1889,9 @@ Total steps: 286
     38     VTY 4           -        -      0      0            N      -
 
 [242/286] r1 <R1> display port-security
-  Port-security is enabled on the following interfaces:
-   (configuration is recorded per interface; see display this)
+  % Invalid input detected at '^' marker.
+  display port-security
+          ^
 
 
 --- [243] § regression: pipe filters ---
@@ -2132,10 +2139,10 @@ Total steps: 286
   172.16.0.4/30       Direct  0    0     D     172.16.0.5      Tunnel0/0/1
 
 [247/286] r1 <R1> display ip interface brief | include up
-  The number of interface that is UP in Physical is 0
-  The number of interface that is UP in Protocol is 0
-  GE0/0/0                           192.168.100.1/24     UP         UP
-  GE0/0/1                           unassigned           UP         UP
+  The number of interface that is UP in Physical is 2
+  The number of interface that is UP in Protocol is 2
+  GigabitEthernet0/0/0              192.168.100.1/24     up         up
+  GigabitEthernet0/0/1              unassigned           up         up
 
 
 --- [248] § regression: view nav + undo ---
