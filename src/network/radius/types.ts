@@ -162,6 +162,7 @@ export interface RadiusClientConfig {
 export interface RadiusServerAgentConfig {
   enabled: boolean;
   port: number;
+  acctPort: number;
   sharedSecret: string;
   users: Map<string, RadiusUser>;
   clients: Set<string>;
@@ -175,6 +176,7 @@ export function createDefaultServerConfig(secret = 'shared'): RadiusServerAgentC
   return {
     enabled: true,
     port: UDP_PORT_RADIUS_AUTH,
+    acctPort: UDP_PORT_RADIUS_ACCT,
     sharedSecret: secret,
     users: new Map(),
     clients: new Set(),

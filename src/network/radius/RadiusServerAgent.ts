@@ -5,13 +5,15 @@ import {
   type RadiusAttribute,
   createDefaultServerConfig, attr, getAttr,
   decryptUserPassword, isPrintablePassword,
-  UDP_PORT_RADIUS_AUTH,
 } from './types';
 import {
   verifyMessageAuthenticator, withMessageAuthenticator, withResponseAuthenticator,
-  randomOpaqueToken,
+  randomOpaqueToken, verifyAccountingRequestAuthenticator,
 } from './authenticators';
 import { parseChapPasswordHex, verifyChapResponse } from './passwords';
+import {
+  ACCT_STATUS_TYPE, ACCT_TERMINATE_CAUSE, type AcctStatusType, type AcctTerminateCause,
+} from './accounting';
 import {
   MACAddress, IPAddress,
   type EthernetFrame, type IPv4Packet, type UDPPacket,
@@ -19,6 +21,26 @@ import {
 } from '../core/types';
 import type { Port } from '../hardware/Port';
 import { Logger } from '../core/Logger';
+
+const ACCT_STATUS_BY_NUMBER = new Map<number, AcctStatusType>(
+  (Object.keys(ACCT_STATUS_TYPE) as AcctStatusType[]).map((k) => [ACCT_STATUS_TYPE[k], k]),
+);
+const ACCT_TERMINATE_CAUSE_BY_NUMBER = new Map<number, AcctTerminateCause>(
+  (Object.keys(ACCT_TERMINATE_CAUSE) as AcctTerminateCause[]).map((k) => [ACCT_TERMINATE_CAUSE[k], k]),
+);
+
+export interface AcctSessionRecord {
+  sessionId: string;
+  username: string;
+  nasIp: string;
+  status: AcctStatusType;
+  startedAt: number;
+  updatedAt: number;
+  sessionTimeSec: number;
+  inputOctets: number;
+  outputOctets: number;
+  terminateCause?: AcctTerminateCause;
+}
 
 export interface RadiusServerHost {
   readonly id: string;
@@ -45,6 +67,10 @@ export class RadiusServerAgent {
   private readonly recentReplies = new Map<string, { response: RadiusPacket; sentAt: number }>();
   /** Keyed by the opaque State value handed out with an Access-Challenge — redeemed exactly once. */
   private readonly challenges = new Map<string, { username: string; expiresAt: number }>();
+  /** Accounting dedup cache, same shape/purpose as recentReplies but for Accounting-Request/Response. */
+  private readonly recentAcctReplies = new Map<string, { response: RadiusPacket; sentAt: number }>();
+  /** Accounting journal, keyed by Acct-Session-Id — last known state per session (Start → Interim-Update* → Stop). */
+  private readonly acctSessions = new Map<string, AcctSessionRecord>();
 
   constructor(
     private readonly host: RadiusServerHost,
@@ -74,6 +100,71 @@ export class RadiusServerAgent {
   revokeClient(clientIp: string): void { this.config.clients.delete(clientIp); }
 
   listUsers(): RadiusUser[] { return Array.from(this.config.users.values()); }
+
+  /** Accounting journal — last known state per Acct-Session-Id (RFC 2866). */
+  listAccountingSessions(): AcctSessionRecord[] { return Array.from(this.acctSessions.values()); }
+
+  /** RFC 2866: Accounting-Request/Response on the accounting port (default UDP/1813). */
+  handleAcctUdp(inPort: string, srcIp: IPAddress, udp: UDPPacket): void {
+    if (!this.running || !this.config.enabled) return;
+    if (udp.destinationPort !== this.config.acctPort) return;
+    const payload = udp.payload as RadiusPacket | undefined;
+    if (!payload || payload.type !== 'radius' || payload.code !== 'accounting-request') return;
+
+    if (!verifyAccountingRequestAuthenticator(payload, this.config.sharedSecret)) {
+      Logger.warn(this.host.id, 'radius:bad-accounting-authenticator',
+        `${this.host.name}: dropped Accounting-Request from ${srcIp} — invalid Authenticator (shared secret mismatch?)`);
+      return;
+    }
+
+    const senderIp = srcIp.toString();
+    const dedupKey = `acct:${senderIp}:${udp.sourcePort}:${payload.identifier}:${payload.authenticator}`;
+    this.pruneAcctDedupCache();
+    const cached = this.recentAcctReplies.get(dedupKey);
+    if (cached) {
+      this.resendAcct(inPort, srcIp, udp.sourcePort, cached.response);
+      return;
+    }
+
+    const sessionIdAttr = getAttr(payload, 'acct-session-id');
+    const usernameAttr = getAttr(payload, 'user-name');
+    const statusAttr = getAttr(payload, 'acct-status-type');
+    if (!sessionIdAttr || !usernameAttr || !statusAttr) return; // malformed — nothing sane to journal or ack
+    const status = ACCT_STATUS_BY_NUMBER.get(Number(statusAttr.value));
+    if (status !== 'start' && status !== 'interim-update' && status !== 'stop') return;
+
+    const sessionId = String(sessionIdAttr.value);
+    const username = String(usernameAttr.value);
+    const nasIp = String(getAttr(payload, 'nas-ip-address')?.value ?? senderIp);
+    const sessionTimeSec = Number(getAttr(payload, 'acct-session-time')?.value ?? 0);
+    const inputOctets = Number(getAttr(payload, 'acct-input-octets')?.value ?? 0);
+    const outputOctets = Number(getAttr(payload, 'acct-output-octets')?.value ?? 0);
+    const terminateCauseAttr = getAttr(payload, 'acct-terminate-cause');
+    const terminateCause = terminateCauseAttr
+      ? ACCT_TERMINATE_CAUSE_BY_NUMBER.get(Number(terminateCauseAttr.value)) : undefined;
+
+    const now = Date.now();
+    const existing = this.acctSessions.get(sessionId);
+    this.acctSessions.set(sessionId, {
+      sessionId, username, nasIp, status,
+      startedAt: status === 'start' ? now : (existing?.startedAt ?? now),
+      updatedAt: now, sessionTimeSec, inputOctets, outputOctets, terminateCause,
+    });
+
+    this.getBus().publish({
+      topic: 'radius.accounting.record',
+      payload: {
+        deviceId: this.host.id, hostname: this.host.getHostname(),
+        serverIp: senderIp, sessionId, username, status,
+        sessionTimeSec, inputOctets, outputOctets,
+        terminateCause: terminateCause ?? null,
+      },
+    });
+    Logger.info(this.host.id, 'radius:accounting',
+      `${this.host.name}: ${status} for ${username} (session ${sessionId})`);
+
+    this.replyAcct(inPort, srcIp, udp.sourcePort, payload, dedupKey);
+  }
 
   handleUdp(inPort: string, srcIp: IPAddress, udp: UDPPacket): void {
     if (!this.running || !this.config.enabled) return;
@@ -178,6 +269,13 @@ export class RadiusServerAgent {
     }
   }
 
+  private pruneAcctDedupCache(): void {
+    const cutoff = Date.now() - DEDUP_TTL_MS;
+    for (const [key, entry] of this.recentAcctReplies) {
+      if (entry.sentAt < cutoff) this.recentAcctReplies.delete(key);
+    }
+  }
+
   private publishRejected(fromIp: string, username: string, reason: RejectReason): void {
     this.getBus().publish({
       topic: 'radius.auth.rejected',
@@ -219,7 +317,7 @@ export class RadiusServerAgent {
         identifier: response.identifier, username: user.username,
       },
     });
-    this.sendRadiusFrame(inPort, port, srcIp, dstIp, clientPort, response);
+    this.sendRadiusFrame(inPort, port, srcIp, dstIp, clientPort, this.config.port, response);
     Logger.info(this.host.id, 'radius:challenge',
       `${this.host.name}: ${dstIp} Access-Challenge for ${user.username}`);
   }
@@ -257,7 +355,7 @@ export class RadiusServerAgent {
         username: user?.username ?? null,
       },
     });
-    this.sendRadiusFrame(inPort, port, srcIp, dstIp, clientPort, response);
+    this.sendRadiusFrame(inPort, port, srcIp, dstIp, clientPort, this.config.port, response);
     Logger.info(this.host.id, 'radius:reply',
       `${this.host.name}: ${dstIp} ${response.code} for ${user?.username ?? '(unknown)'}`);
   }
@@ -268,18 +366,45 @@ export class RadiusServerAgent {
     if (!port) return;
     const srcIp = port.getIPAddress();
     if (!srcIp) return;
-    this.sendRadiusFrame(inPort, port, srcIp, dstIp, clientPort, response);
+    this.sendRadiusFrame(inPort, port, srcIp, dstIp, clientPort, this.config.port, response);
     Logger.info(this.host.id, 'radius:resend',
       `${this.host.name}: retransmission from ${dstIp} → cached ${response.code}`);
   }
 
+  /** RFC 2866 §3: Accounting-Response, signed with the plain Response Authenticator (no Message-Authenticator). */
+  private replyAcct(
+    inPort: string, dstIp: IPAddress, clientPort: number, request: RadiusPacket, dedupKey: string,
+  ): void {
+    const port = this.host.getPort(inPort);
+    if (!port) return;
+    const srcIp = port.getIPAddress();
+    if (!srcIp) return;
+    let response: RadiusPacket = {
+      type: 'radius', code: 'accounting-response', identifier: request.identifier,
+      authenticator: '00'.repeat(16), attributes: [],
+    };
+    response = withResponseAuthenticator(response, request.authenticator, this.config.sharedSecret);
+    this.recentAcctReplies.set(dedupKey, { response, sentAt: Date.now() });
+    this.sendRadiusFrame(inPort, port, srcIp, dstIp, clientPort, this.config.acctPort, response);
+  }
+
+  private resendAcct(inPort: string, dstIp: IPAddress, clientPort: number, response: RadiusPacket): void {
+    const port = this.host.getPort(inPort);
+    if (!port) return;
+    const srcIp = port.getIPAddress();
+    if (!srcIp) return;
+    this.sendRadiusFrame(inPort, port, srcIp, dstIp, clientPort, this.config.acctPort, response);
+    Logger.info(this.host.id, 'radius:resend',
+      `${this.host.name}: accounting retransmission from ${dstIp} → cached ${response.code}`);
+  }
+
   private sendRadiusFrame(
     inPort: string, port: Port, srcIp: IPAddress, dstIp: IPAddress,
-    clientPort: number, response: RadiusPacket,
+    clientPort: number, sourcePort: number, response: RadiusPacket,
   ): void {
     const udp: UDPPacket = {
       type: 'udp',
-      sourcePort: this.config.port,
+      sourcePort,
       destinationPort: clientPort,
       length: 20 + 16, checksum: 0, payload: response,
     };

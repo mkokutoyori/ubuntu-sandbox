@@ -116,6 +116,28 @@ export function verifyMessageAuthenticator(
   return constantTimeEqualHex(expected, String(existing.value));
 }
 
+/**
+ * RFC 2866 §3 Accounting-Request Authenticator:
+ *   MD5(Code + Identifier + Length + 16 zero octets + Attributes + Secret)
+ * — self-referential (there's no preceding request to borrow an
+ * authenticator from, unlike Access-Request replies), so the "request
+ * authenticator" slot in the shared formula is just sixteen zero octets.
+ */
+export function computeAccountingRequestAuthenticator(request: RadiusPacket, secret: string): string {
+  return computeResponseAuthenticator(request, ZERO_MESSAGE_AUTHENTICATOR, secret);
+}
+
+/** Return `request` with its `authenticator` field set per RFC 2866 §3. */
+export function withAccountingRequestAuthenticator(request: RadiusPacket, secret: string): RadiusPacket {
+  return { ...request, authenticator: computeAccountingRequestAuthenticator(request, secret) };
+}
+
+/** Verify an incoming Accounting-Request's Authenticator against the shared secret. */
+export function verifyAccountingRequestAuthenticator(request: RadiusPacket, secret: string): boolean {
+  const expected = computeAccountingRequestAuthenticator(request, secret);
+  return constantTimeEqualHex(expected, request.authenticator);
+}
+
 /** Case-insensitive, length-checked, non-short-circuiting hex comparison. */
 function constantTimeEqualHex(a: string, b: string): boolean {
   const x = a.toLowerCase();

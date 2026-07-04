@@ -39,7 +39,8 @@ import { IP_PROTO_PIM, PIM_ALL_ROUTERS_MAC } from '../pim/types';
 import { SyslogAgent } from '../syslog/SyslogAgent';
 import { RadiusClientAgent } from '../radius/RadiusClientAgent';
 import { RadiusServerAgent } from '../radius/RadiusServerAgent';
-import { UDP_PORT_RADIUS_AUTH } from '../radius/types';
+import { RadiusAccountingClient } from '../radius/RadiusAccountingClient';
+import { UDP_PORT_RADIUS_AUTH, UDP_PORT_RADIUS_ACCT } from '../radius/types';
 import { GreAgent } from '../gre/GreAgent';
 import { IP_PROTO_GRE } from '../gre/types';
 import { SnmpAgent } from '../snmp/SnmpAgent';
@@ -120,6 +121,7 @@ export class CiscoRouter extends Router {
   private readonly syslogAgent: SyslogAgent;
   private readonly radiusClient: RadiusClientAgent;
   private readonly radiusServer: RadiusServerAgent;
+  private readonly radiusAccountingClient: RadiusAccountingClient;
   private readonly greAgent: GreAgent;
   private readonly snmpAgent: SnmpAgent;
   private readonly netflowAgent: NetFlowAgent;
@@ -150,6 +152,7 @@ export class CiscoRouter extends Router {
     this.syslogAgent = new SyslogAgent(hostBase, () => this.getBus());
     this.radiusClient = new RadiusClientAgent(hostBase, () => this.getBus());
     this.radiusServer = new RadiusServerAgent(hostBase, () => this.getBus());
+    this.radiusAccountingClient = new RadiusAccountingClient(hostBase, () => this.getBus());
     this.greAgent = new GreAgent(hostBase, () => this.getBus());
     this.snmpAgent = new SnmpAgent({
       ...hostBase,
@@ -164,6 +167,7 @@ export class CiscoRouter extends Router {
       this.cdpAgent, this.lldpAgent, this.hsrpAgent, this.vrrpAgent,
       this.ntpAgent, this.glbpAgent, this.bfdAgent, this.igmpAgent,
       this.pimAgent, this.syslogAgent, this.radiusClient, this.radiusServer,
+      this.radiusAccountingClient,
       this.greAgent, this.snmpAgent, this.netflowAgent, this.tacacsClient,
       this.tacacsServer, this.vxlanAgent,
     );
@@ -217,6 +221,14 @@ export class CiscoRouter extends Router {
         }
         if (udp.sourcePort === UDP_PORT_RADIUS_AUTH) {
           this.radiusClient.handleUdp(inPort, ipPkt.sourceIP, udp);
+          return;
+        }
+        if (udp.destinationPort === UDP_PORT_RADIUS_ACCT) {
+          this.radiusServer.handleAcctUdp(inPort, ipPkt.sourceIP, udp);
+          return;
+        }
+        if (udp.sourcePort === UDP_PORT_RADIUS_ACCT) {
+          this.radiusAccountingClient.handleUdp(inPort, ipPkt.sourceIP, udp);
           return;
         }
         if (udp.destinationPort === UDP_PORT_SNMP || udp.sourcePort === UDP_PORT_SNMP) {
@@ -293,6 +305,7 @@ export class CiscoRouter extends Router {
   getSyslogAgent(): SyslogAgent { return this.syslogAgent; }
   getRadiusClient(): RadiusClientAgent { return this.radiusClient; }
   getRadiusServer(): RadiusServerAgent { return this.radiusServer; }
+  getRadiusAccountingClient(): RadiusAccountingClient { return this.radiusAccountingClient; }
   getGreAgent(): GreAgent { return this.greAgent; }
   getSnmpAgent(): SnmpAgent { return this.snmpAgent; }
   override getNetFlowAgent(): NetFlowAgent { return this.netflowAgent; }
