@@ -76,6 +76,7 @@ import { SmbSessionTable } from './windows/server/smb/SmbSessionTable';
 import { SmbServerHandler } from './windows/server/smb/SmbServer';
 import { dialSmbShare, type SmbDialResult } from './windows/server/smb/SmbClient';
 import { WinRmServerHandler } from './windows/server/winrm/WinRmServer';
+import { LdapServerHandler } from './windows/server/ad/ldap/LdapServer';
 import { dialWinRm, type WinRmDialResult } from './windows/server/winrm/WinRmClient';
 import { cmdPrint } from './windows/WinPrint';
 import { executeNslookup } from './linux/LinuxDnsService';
@@ -391,6 +392,17 @@ export class WindowsPC extends EndHost implements UserAccountHost {
           return;
         }
         this.getWinRmServerHandler().register(socket);
+      },
+    });
+
+    // TCP LDAP server on port 389 (RFC 4511) — real AD DS directory queries
+    // (PRD-Windows-Server.md §5 P5). Refuses (drops) the connection until
+    // `Install-ADDSForest` promotes this server to a domain controller.
+    this.getTcpStack().listen(389, {
+      onAccept: (socket) => {
+        const store = this.getDirectoryStore();
+        if (!store) { socket.close(); return; }
+        new LdapServerHandler({ tree: store.getTree(), auth: store.getBindCheck() }).register(socket);
       },
     });
   }
@@ -1298,7 +1310,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       }
       const subCmd = args[0].toLowerCase();
       const subArgs = args.slice(1);
-      const netCtx2 = { hostname: this.hostname, userManager: this.userMgr };
+      const netCtx2 = { hostname: this.hostname, userManager: this.userMgr, directoryStore: this.getDirectoryStore() };
       if (subCmd === 'user') return cmdNetUser(netCtx2, subArgs);
       if (subCmd === 'localgroup') return cmdNetLocalgroup(netCtx2, subArgs);
       const netSvcCtx = { serviceManager: this.svcMgr, processManager: this.procMgr, isAdmin: this.userMgr.isCurrentUserAdmin() };
@@ -1814,7 +1826,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     if (lower === 'net' && args.length > 0) {
       const subCmd = args[0].toLowerCase();
       const subArgs = args.slice(1);
-      const netUserCtx = { hostname: this.hostname, userManager: this.userMgr };
+      const netUserCtx = { hostname: this.hostname, userManager: this.userMgr, directoryStore: this.getDirectoryStore() };
       if (subCmd === 'user')        return cmdNetUser(netUserCtx, subArgs);
       if (subCmd === 'localgroup')  return cmdNetLocalgroup(netUserCtx, subArgs);
       const netSvcCtx = { serviceManager: this.svcMgr, processManager: this.procMgr, isAdmin: this.userMgr.isCurrentUserAdmin() };
@@ -2089,6 +2101,13 @@ export class WindowsPC extends EndHost implements UserAccountHost {
    * `windows-pc`, matching real Windows.
    */
   getRoleManager(): import('./windows/server/RoleManager').RoleManager | null { return null; }
+
+  /**
+   * AD DS directory (PRD-Windows-Server.md §5 P5) — null until
+   * `Install-ADDSForest` promotes a `WindowsServer` to a domain
+   * controller; always null on a client, overridden by `WindowsServer`.
+   */
+  getDirectoryStore(): import('./windows/server/ad/DirectoryStore').DirectoryStore | null { return null; }
 
   /** Get the process manager (for PowerShellExecutor and other integrations) */
   getProcessManager(): WindowsProcessManager { return this.procMgr; }

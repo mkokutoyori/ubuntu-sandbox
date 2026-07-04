@@ -174,6 +174,40 @@ export interface ISmbProvider {
   listSessions(): SmbSessionInfo[];
 }
 
+// ── AD DS (Active Directory Domain Services) ────────────────────────────────
+
+export interface AdUserInfo {
+  sam: string; upn: string; dn: string; enabled: boolean; memberOf: string[]; fullName: string;
+}
+export interface AdGroupInfo {
+  sam: string; dn: string; scope: 'DomainLocal' | 'Global' | 'Universal'; members: string[];
+}
+export interface AdComputerInfo { name: string; dn: string; enabled: boolean }
+export interface AdOrgUnitInfo { name: string; dn: string; gpLinks: string[] }
+export interface AdOpResult { ok: boolean; message: string }
+
+export interface IAdProvider {
+  /** `Install-ADDSForest` — promotes this server to a new forest's first DC. Fails if already promoted. */
+  installForest(domainName: string, netbiosName: string | undefined, safeModeAdminPassword: string): AdOpResult;
+  /** Whether this server has already been promoted (`Install-ADDSForest` succeeded). */
+  isForestInstalled(): boolean;
+
+  newUser(sam: string, opts: { password: string; fullName?: string; path?: string; enabled?: boolean }): AdOpResult;
+  getUser(identity: string): AdUserInfo | null;
+  setUser(identity: string, opts: { enabled?: boolean; fullName?: string; password?: string }): AdOpResult;
+  removeUser(identity: string): AdOpResult;
+
+  newGroup(sam: string, scope: AdGroupInfo['scope'], path?: string): AdOpResult;
+  getGroup(identity: string): AdGroupInfo | null;
+  addGroupMember(groupIdentity: string, members: string[]): AdOpResult;
+  removeGroupMember(groupIdentity: string, members: string[]): AdOpResult;
+
+  getComputer(identity: string): AdComputerInfo | null;
+
+  newOrganizationalUnit(name: string, path?: string): AdOpResult;
+  getOrganizationalUnit(identity: string): AdOrgUnitInfo | null;
+}
+
 export interface IRemotingProvider {
   /**
    * Resolve a computer name/IP to a remoting-capable target — over the
@@ -512,4 +546,5 @@ export interface PSProviders {
   readonly remoting:       IRemotingProvider       | null;
   readonly roles:          IRoleProvider           | null;
   readonly smb:            ISmbProvider            | null;
+  readonly ad:             IAdProvider             | null;
 }

@@ -6,15 +6,18 @@
  * doubles as the integration test tying Ber/LdapDN/LdapFilter/
  * LdapMessage/DirectoryTree together over the network layer.
  *
- * `LdapServerHandler`/`LdapClient` are not yet wired into `WindowsServer`'s
- * boot sequence (that lands with the AD DS cmdlet layer), so this test
- * registers the listener directly on the device's own `TcpStack` — exactly
- * the pattern `WindowsPC`'s `listen(445, ...)`/`listen(5985, ...)` blocks
- * already use for SMB/WinRM.
+ * Uses a `LinuxServer` (not `WindowsServer`) as the LDAP listener host:
+ * `WindowsPC`'s boot sequence now unconditionally claims port 389 itself
+ * (closing the connection unless `getDirectoryStore()` is non-null, i.e.
+ * `Install-ADDSForest` has run — see `windows-server-addsforest.test.ts`
+ * for that real, DirectoryStore-backed path). This test instead exercises
+ * a bespoke `DirectoryTree`/`LdapBindCheck` pairing directly against the
+ * wire protocol layer, so it registers the listener directly on a plain
+ * host's own `TcpStack` to avoid that port already being claimed.
  */
 import { describe, it, expect, beforeEach } from 'vitest';
 import { resetCounters, IPAddress, SubnetMask } from '@/network/core/types';
-import { WindowsServer } from '@/network/devices/WindowsServer';
+import { LinuxServer } from '@/network/devices/LinuxServer';
 import { WindowsPC } from '@/network/devices/WindowsPC';
 import { GenericSwitch } from '@/network/devices/GenericSwitch';
 import { Cable } from '@/network/hardware/Cable';
@@ -38,7 +41,7 @@ function fixedPasswordAuth(dn: string, password: string): LdapBindCheck {
 
 describe('LDAP wire round-trip — real BER PDUs over a real TcpStack', () => {
   it('binds, adds an entry, searches for it, compares an attribute, modifies it, then deletes it', () => {
-    const srv = new WindowsServer('DC1');
+    const srv = new LinuxServer('linux-server', 'DC1');
     const client = new WindowsPC('windows-pc', 'CLIENT1');
     const sw = new GenericSwitch('switch-generic', 'SW1');
     const cSrv = new Cable('c-srv'); cSrv.connect(srv.getPorts()[0], sw.getPorts()[0]);
@@ -104,7 +107,7 @@ describe('LDAP wire round-trip — real BER PDUs over a real TcpStack', () => {
   });
 
   it('rejects a bad bind password with invalidCredentials', () => {
-    const srv = new WindowsServer('DC1');
+    const srv = new LinuxServer('linux-server', 'DC1');
     const client = new WindowsPC('windows-pc', 'CLIENT1');
     const sw = new GenericSwitch('switch-generic', 'SW1');
     const cSrv = new Cable('c-srv'); cSrv.connect(srv.getPorts()[0], sw.getPorts()[0]);
@@ -124,7 +127,7 @@ describe('LDAP wire round-trip — real BER PDUs over a real TcpStack', () => {
   });
 
   it('refuses search/add/modify/delete/compare before a successful bind (operationsError)', () => {
-    const srv = new WindowsServer('DC1');
+    const srv = new LinuxServer('linux-server', 'DC1');
     const client = new WindowsPC('windows-pc', 'CLIENT1');
     const sw = new GenericSwitch('switch-generic', 'SW1');
     const cSrv = new Cable('c-srv'); cSrv.connect(srv.getPorts()[0], sw.getPorts()[0]);
@@ -145,7 +148,7 @@ describe('LDAP wire round-trip — real BER PDUs over a real TcpStack', () => {
   });
 
   it('allows anonymous bind (empty name and password)', () => {
-    const srv = new WindowsServer('DC1');
+    const srv = new LinuxServer('linux-server', 'DC1');
     const client = new WindowsPC('windows-pc', 'CLIENT1');
     const sw = new GenericSwitch('switch-generic', 'SW1');
     const cSrv = new Cable('c-srv'); cSrv.connect(srv.getPorts()[0], sw.getPorts()[0]);
@@ -164,7 +167,7 @@ describe('LDAP wire round-trip — real BER PDUs over a real TcpStack', () => {
   });
 
   it('fails to dial when the cable is unplugged', () => {
-    const srv = new WindowsServer('DC1');
+    const srv = new LinuxServer('linux-server', 'DC1');
     const client = new WindowsPC('windows-pc', 'CLIENT1');
     const sw = new GenericSwitch('switch-generic', 'SW1');
     const cSrv = new Cable('c-srv'); cSrv.connect(srv.getPorts()[0], sw.getPorts()[0]);

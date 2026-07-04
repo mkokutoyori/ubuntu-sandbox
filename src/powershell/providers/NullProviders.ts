@@ -27,4 +27,5 @@ export const NULL_PROVIDERS: PSProviders = {
   remoting:       null,
   roles:          null,
   smb:            null,
+  ad:             null,
 };

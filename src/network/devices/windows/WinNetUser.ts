@@ -19,15 +19,20 @@
  */
 
 import type { WindowsUserManager } from './WindowsUserManager';
+import type { DirectoryStore } from './server/ad/DirectoryStore';
 
 export interface NetUserContext {
   hostname: string;
   userManager: WindowsUserManager;
+  /** Non-null only on a promoted DC (`Install-ADDSForest` succeeded) — backs `net user /domain` (PRD-Windows-Server.md §5 P5). */
+  directoryStore?: DirectoryStore | null;
 }
 
 // ─── net user ─────────────────────────────────────────────────────
 
 export function cmdNetUser(ctx: NetUserContext, args: string[]): string {
+  const domainErr = 'System error 1355 has occurred.\n\nThe specified domain either does not exist or could not be contacted.';
+
   if (args.length === 0) {
     return formatUserList(ctx);
   }
@@ -35,6 +40,7 @@ export function cmdNetUser(ctx: NetUserContext, args: string[]): string {
   // Parse flags
   const flags = new Map<string, string>();
   const positional: string[] = [];
+  let domain = false;
 
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
@@ -42,6 +48,8 @@ export function cmdNetUser(ctx: NetUserContext, args: string[]): string {
       flags.set('add', 'true');
     } else if (arg.toLowerCase() === '/delete') {
       flags.set('delete', 'true');
+    } else if (arg.toLowerCase() === '/domain') {
+      domain = true;
     } else if (arg.toLowerCase().startsWith('/active:')) {
       flags.set('active', arg.substring(8));
     } else if (arg.toLowerCase().startsWith('/fullname:')) {
@@ -51,6 +59,15 @@ export function cmdNetUser(ctx: NetUserContext, args: string[]): string {
     } else {
       positional.push(arg);
     }
+  }
+
+  // `net user [name] /domain` — real AD DS scope: view/list only (creation and
+  // deletion of domain accounts go through the modern New-ADUser/Remove-ADUser
+  // cmdlets, which is the real-world convention this simulator mirrors).
+  if (domain) {
+    if (!ctx.directoryStore) return domainErr;
+    const username = positional[0];
+    return username ? formatDomainUserDetails(ctx.directoryStore, username) : formatDomainUserList(ctx.directoryStore, ctx.hostname);
   }
 
   const username = positional[0];
@@ -230,6 +247,51 @@ function formatUserDetails(ctx: NetUserContext, username: string): string {
   lines.push(``);
   lines.push(`Local Group Memberships      ${localGroups || '(none)'}`);
   lines.push(`Global Group memberships     *None`);
+  lines.push(`The command completed successfully.`);
+  return lines.join('\n');
+}
+
+function formatDomainUserList(store: DirectoryStore, hostname: string): string {
+  const names = store.listUsers().map(u => u.sam);
+  const lines: string[] = [];
+  lines.push('');
+  lines.push(`User accounts for \\\\${hostname}`);
+  lines.push('');
+  lines.push('-'.repeat(60));
+  for (let i = 0; i < names.length; i += 3) {
+    lines.push(names.slice(i, i + 3).map(n => n.padEnd(24)).join(''));
+  }
+  lines.push('-'.repeat(60));
+  lines.push('The command completed successfully.');
+  return lines.join('\n');
+}
+
+function formatDomainUserDetails(store: DirectoryStore, username: string): string {
+  const user = store.getUser(username);
+  if (!user) return 'The user name could not be found.\n\nMore help is available by typing NET HELPMSG 2221.';
+  const globalGroups = store.groupsForUser(user.sam).map(g => `*${g.sam}`).join('  ');
+
+  const lines: string[] = [];
+  lines.push(`User name                    ${user.sam}`);
+  lines.push(`Full Name                    ${user.fullName}`);
+  lines.push(`Comment`);
+  lines.push(`User's comment`);
+  lines.push(`Country/region code          000 (System Default)`);
+  lines.push(`Account active               ${user.enabled ? 'Yes' : 'No'}`);
+  lines.push(`Account expires              Never`);
+  lines.push(``);
+  lines.push(`Password expires             Never`);
+  lines.push(``);
+  lines.push(`Workstations allowed         All`);
+  lines.push(`Logon script`);
+  lines.push(`User profile`);
+  lines.push(`Home directory`);
+  lines.push(`Last logon                   Never`);
+  lines.push(``);
+  lines.push(`Logon hours allowed          All`);
+  lines.push(``);
+  lines.push(`Local Group Memberships`);
+  lines.push(`Global Group memberships     ${globalGroups || '*None'}`);
   lines.push(`The command completed successfully.`);
   return lines.join('\n');
 }

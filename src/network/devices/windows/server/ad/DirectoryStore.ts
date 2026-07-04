@@ -1,166 +1,389 @@
 /**
- * DirectoryStore — in-memory AD DS directory (PRD-Windows-Server.md §5 P5).
- * One instance per promoted domain (created by `Install-ADDSForest`),
- * owned by the DC's `WindowsServer`. LDAP-lite: DNs are cosmetic strings
- * for display fidelity, not a real queryable tree — search is a flat
- * scan (§2.2 non-goals rule out a full LDAP wire protocol).
+ * DirectoryStore — real AD DS directory (PRD-Windows-Server.md §5 P5),
+ * backed by the genuine LDAP `DirectoryTree` engine (RFC 4511 DIT) rather
+ * than a flat-Maps shortcut: every user/group/computer/OU is a real entry
+ * at a real DN, with real AD schema attributes (objectClass chains,
+ * sAMAccountName, userPrincipalName, userAccountControl bit flags,
+ * groupType bit flags, member/memberOf linked attributes). One instance
+ * per promoted domain (created by `Install-ADDSForest`), owned by the
+ * DC's `WindowsServer`.
+ *
+ * `newUser`/`getUser`/`newGroup`/etc. are a convenience façade projecting
+ * `DirectoryEntry` attributes to/from the plain `AdUser`/`AdGroup`/...
+ * shapes AD cmdlets consume — `getTree()` exposes the real tree directly
+ * so `LdapServerHandler` can serve the very same data over TCP/389 to a
+ * genuine LDAP client.
  */
 
+import { DirectoryTree, type DirectoryEntry } from './ldap/DirectoryTree';
+import { parseDN, formatDN, leafValue, type DistinguishedName } from './ldap/LdapDN';
+import type { LdapBindCheck } from './ldap/LdapServer';
 import type { AdUser, AdGroup, AdComputer, AdOrgUnit } from './AdTypes';
 
 export interface DirOpResult { ok: boolean; message: string }
 
+/** RFC-faithful AD userAccountControl bit flags (the subset this simulator needs). */
+const UAC = {
+  ACCOUNTDISABLE: 0x0002,
+  NORMAL_ACCOUNT: 0x0200,
+  WORKSTATION_TRUST_ACCOUNT: 0x1000,
+  SERVER_TRUST_ACCOUNT: 0x2000,
+} as const;
+
+/** Real AD groupType bit-flag values (security groups only — no distribution-group support). */
+const GROUP_TYPE: Record<AdGroup['scope'], number> = {
+  Global: -2147483646,
+  DomainLocal: -2147483644,
+  Universal: -2147483640,
+};
+const SCOPE_OF_GROUP_TYPE = new Map<number, AdGroup['scope']>(
+  (Object.keys(GROUP_TYPE) as AdGroup['scope'][]).map(scope => [GROUP_TYPE[scope], scope]),
+);
+
+function firstOf(values: string[] | undefined): string { return values?.[0] ?? ''; }
+function isEnabledFromUac(values: string[] | undefined): boolean {
+  const uac = Number(firstOf(values));
+  return Number.isFinite(uac) && (uac & UAC.ACCOUNTDISABLE) === 0;
+}
+function hasObjectClass(entry: DirectoryEntry, oc: string): boolean {
+  return (entry.attributes.get('objectclass') ?? []).some(v => v.toLowerCase() === oc.toLowerCase());
+}
+/** Drop attribute keys with no values so we don't materialize empty multi-valued attributes on the entry. */
+function compact(attrs: Record<string, string[]>): Record<string, string[]> {
+  return Object.fromEntries(Object.entries(attrs).filter(([, v]) => v.length > 0));
+}
+
 export class DirectoryStore {
-  private readonly users = new Map<string, AdUser>();
-  private readonly groups = new Map<string, AdGroup>();
-  private readonly computers = new Map<string, AdComputer>();
-  private readonly orgUnits = new Map<string, AdOrgUnit>();
+  private readonly tree: DirectoryTree;
+  private readonly usersOuDn: DistinguishedName;
+  private readonly computersOuDn: DistinguishedName;
 
   constructor(
     readonly dnsName: string,
     readonly netbiosName: string,
     adminPassword: string,
   ) {
+    const rootDn = parseDN(this.dnsName.split('.').map(p => `DC=${p}`).join(','));
+    this.tree = new DirectoryTree(rootDn, { objectClass: ['top', 'domain', 'domainDNS'] });
+    this.usersOuDn = [...parseDN('CN=Users'), ...rootDn];
+    this.computersOuDn = [...parseDN('CN=Computers'), ...rootDn];
     this.seedDefaults(adminPassword);
   }
 
-  private get dc(): string {
-    return this.dnsName.split('.').map(p => `DC=${p}`).join(',');
-  }
+  /** The real DIT this store operates on — `LdapServerHandler` serves this same tree over TCP/389. */
+  getTree(): DirectoryTree { return this.tree; }
+
+  private ouDn(name: string): DistinguishedName { return [...parseDN(`OU=${name}`), ...this.tree.getRootDn()]; }
+  private cnDn(cn: string, containerDn: DistinguishedName): DistinguishedName { return [...parseDN(`CN=${cn}`), ...containerDn]; }
+  private computerDn(name: string): DistinguishedName { return this.cnDn(name, this.computersOuDn); }
 
   private seedDefaults(adminPassword: string): void {
-    this.orgUnits.set('domain controllers', {
-      name: 'Domain Controllers', dn: `OU=Domain Controllers,${this.dc}`, gpLinks: [],
-    });
-    this.groups.set('domain admins', {
-      sam: 'Domain Admins', dn: `CN=Domain Admins,CN=Users,${this.dc}`, scope: 'Global', members: ['Administrator'],
-    });
-    this.groups.set('domain users', {
-      sam: 'Domain Users', dn: `CN=Domain Users,CN=Users,${this.dc}`, scope: 'Global', members: ['Administrator'],
-    });
-    this.groups.set('domain computers', {
-      sam: 'Domain Computers', dn: `CN=Domain Computers,CN=Users,${this.dc}`, scope: 'Global', members: [],
-    });
-    this.users.set('administrator', {
-      sam: 'Administrator', upn: `Administrator@${this.dnsName}`,
-      dn: `CN=Administrator,CN=Users,${this.dc}`, ou: 'Users',
-      enabled: true, password: adminPassword,
-      memberOf: ['Domain Admins', 'Domain Users'], fullName: 'Administrator',
-    });
+    this.tree.addEntry(this.usersOuDn, { objectClass: ['top', 'container'], cn: ['Users'] });
+    this.tree.addEntry(this.computersOuDn, { objectClass: ['top', 'container'], cn: ['Computers'] });
+    this.tree.addEntry(this.ouDn('Domain Controllers'), { objectClass: ['top', 'organizationalUnit'], ou: ['Domain Controllers'] });
+
+    this.createGroupEntry('Domain Admins', 'Global', this.usersOuDn);
+    this.createGroupEntry('Domain Users', 'Global', this.usersOuDn);
+    this.createGroupEntry('Domain Computers', 'Global', this.usersOuDn);
+
+    this.createUserEntry('Administrator', { password: adminPassword, fullName: 'Administrator', containerDn: this.usersOuDn });
+    this.addGroupMember('Domain Admins', 'Administrator');
+    this.addGroupMember('Domain Users', 'Administrator');
   }
 
   // ─── Organizational Units ───────────────────────────────────────────
 
   newOrgUnit(name: string): DirOpResult {
-    const key = name.toLowerCase();
-    if (this.orgUnits.has(key)) return { ok: false, message: 'An object with that name already exists.' };
-    this.orgUnits.set(key, { name, dn: `OU=${name},${this.dc}`, gpLinks: [] });
-    return { ok: true, message: '' };
+    const res = this.tree.addEntry(this.ouDn(name), { objectClass: ['top', 'organizationalUnit'], ou: [name] });
+    return res.ok ? { ok: true, message: '' } : { ok: false, message: 'An object with that name already exists.' };
   }
-  getOrgUnit(name: string): AdOrgUnit | null { return this.orgUnits.get(name.toLowerCase()) ?? null; }
-  listOrgUnits(): AdOrgUnit[] { return [...this.orgUnits.values()]; }
+
+  getOrgUnit(name: string): AdOrgUnit | null {
+    const entry = this.tree.getByDn(this.ouDn(name));
+    return entry ? this.projectOrgUnit(entry) : null;
+  }
+
+  listOrgUnits(): AdOrgUnit[] {
+    return this.tree.allDescendants(this.tree.getRootDn())
+      .filter(e => hasObjectClass(e, 'organizationalUnit'))
+      .map(e => this.projectOrgUnit(e));
+  }
+
+  private projectOrgUnit(entry: DirectoryEntry): AdOrgUnit {
+    return { name: firstOf(entry.attributes.get('ou')), dn: formatDN(entry.dn), gpLinks: entry.attributes.get('gplink') ?? [] };
+  }
 
   // ─── Users ──────────────────────────────────────────────────────────
 
   newUser(sam: string, opts: { password: string; fullName?: string; ou?: string; enabled?: boolean }): DirOpResult {
-    const key = sam.toLowerCase();
-    if (this.users.has(key)) return { ok: false, message: 'An object with that name already exists.' };
-    const ou = opts.ou ?? 'Users';
-    if (ou !== 'Users' && !this.orgUnits.has(ou.toLowerCase())) {
-      return { ok: false, message: `Cannot find an object with identity: '${ou}'.` };
+    const containerDn = opts.ou ? this.ouDn(opts.ou) : this.usersOuDn;
+    if (opts.ou && !this.tree.getByDn(containerDn)) {
+      return { ok: false, message: `Cannot find an object with identity: '${opts.ou}'.` };
     }
-    const container = ou === 'Users' ? `CN=Users,${this.dc}` : `OU=${ou},${this.dc}`;
-    this.users.set(key, {
-      sam, upn: `${sam}@${this.dnsName}`, dn: `CN=${sam},${container}`, ou,
-      enabled: opts.enabled ?? true, password: opts.password,
-      memberOf: ['Domain Users'], fullName: opts.fullName ?? '',
-    });
-    const domainUsers = this.groups.get('domain users');
-    if (domainUsers && !domainUsers.members.includes(sam)) domainUsers.members.push(sam);
+    const res = this.createUserEntry(sam, { password: opts.password, fullName: opts.fullName ?? '', containerDn, enabled: opts.enabled });
+    if (!res.ok) return res;
+    this.addGroupMember('Domain Users', sam);
     return { ok: true, message: '' };
   }
 
-  getUser(sam: string): AdUser | null { return this.users.get(sam.toLowerCase()) ?? null; }
-  listUsers(): AdUser[] { return [...this.users.values()]; }
+  private createUserEntry(sam: string, opts: { password: string; fullName: string; containerDn: DistinguishedName; enabled?: boolean }): DirOpResult {
+    const enabled = opts.enabled ?? true;
+    const res = this.tree.addEntry(this.cnDn(sam, opts.containerDn), compact({
+      objectClass: ['top', 'person', 'organizationalPerson', 'user'],
+      cn: [sam],
+      sAMAccountName: [sam],
+      userPrincipalName: [`${sam}@${this.dnsName}`],
+      userAccountControl: [String(enabled ? UAC.NORMAL_ACCOUNT : UAC.NORMAL_ACCOUNT | UAC.ACCOUNTDISABLE)],
+      userPassword: [opts.password],
+      displayName: opts.fullName ? [opts.fullName] : [],
+    }));
+    return res.ok ? { ok: true, message: '' } : { ok: false, message: 'An object with that name already exists.' };
+  }
+
+  private findUserEntry(sam: string): DirectoryEntry | null {
+    const [entry] = this.tree.search(this.tree.getRootDn(), 'sub', { kind: 'equalityMatch', attr: 'sAMAccountName', value: sam })
+      .filter(e => hasObjectClass(e, 'user') && !hasObjectClass(e, 'computer'));
+    return entry ?? null;
+  }
+
+  getUser(sam: string): AdUser | null {
+    const entry = this.findUserEntry(sam);
+    return entry ? this.projectUser(entry) : null;
+  }
+
+  listUsers(): AdUser[] {
+    return this.tree.allDescendants(this.tree.getRootDn())
+      .filter(e => hasObjectClass(e, 'user') && !hasObjectClass(e, 'computer'))
+      .map(e => this.projectUser(e));
+  }
+
+  private projectUser(entry: DirectoryEntry): AdUser {
+    const containerDn = entry.dn.slice(1);
+    return {
+      sam: firstOf(entry.attributes.get('samaccountname')),
+      upn: firstOf(entry.attributes.get('userprincipalname')),
+      dn: formatDN(entry.dn),
+      ou: dnEqualsOu(containerDn, this.usersOuDn) ? 'Users' : firstOf(entry.attributes.get('ou')) || leafOuName(containerDn),
+      enabled: isEnabledFromUac(entry.attributes.get('useraccountcontrol')),
+      password: firstOf(entry.attributes.get('userpassword')),
+      memberOf: (entry.attributes.get('memberof') ?? []).map(dnStr => this.samOfDn(dnStr)).filter((s): s is string => s !== null),
+      fullName: firstOf(entry.attributes.get('displayname')),
+    };
+  }
 
   setUser(sam: string, opts: { enabled?: boolean; fullName?: string; password?: string }): DirOpResult {
-    const user = this.users.get(sam.toLowerCase());
-    if (!user) return { ok: false, message: `Cannot find an object with identity: '${sam}'.` };
-    if (opts.enabled !== undefined) user.enabled = opts.enabled;
-    if (opts.fullName !== undefined) user.fullName = opts.fullName;
-    if (opts.password !== undefined) user.password = opts.password;
+    const entry = this.findUserEntry(sam);
+    if (!entry) return { ok: false, message: `Cannot find an object with identity: '${sam}'.` };
+    const changes: { op: 'replace'; type: string; values: string[] }[] = [];
+    if (opts.enabled !== undefined) {
+      changes.push({ op: 'replace', type: 'userAccountControl', values: [String(opts.enabled ? UAC.NORMAL_ACCOUNT : UAC.NORMAL_ACCOUNT | UAC.ACCOUNTDISABLE)] });
+    }
+    if (opts.fullName !== undefined) changes.push({ op: 'replace', type: 'displayName', values: opts.fullName ? [opts.fullName] : [] });
+    if (opts.password !== undefined) changes.push({ op: 'replace', type: 'userPassword', values: [opts.password] });
+    this.tree.modifyEntry(entry.dn, changes);
     return { ok: true, message: '' };
   }
 
   removeUser(sam: string): DirOpResult {
-    const key = sam.toLowerCase();
-    if (!this.users.has(key)) return { ok: false, message: `Cannot find an object with identity: '${sam}'.` };
-    this.users.delete(key);
-    for (const g of this.groups.values()) g.members = g.members.filter(m => m.toLowerCase() !== key);
-    return { ok: true, message: '' };
+    const entry = this.findUserEntry(sam);
+    if (!entry) return { ok: false, message: `Cannot find an object with identity: '${sam}'.` };
+    const userDn = formatDN(entry.dn);
+    for (const group of this.listGroupEntries()) {
+      if ((group.attributes.get('member') ?? []).some(m => m.toLowerCase() === userDn.toLowerCase())) {
+        this.tree.modifyEntry(group.dn, [{ op: 'delete', type: 'member', values: [userDn] }]);
+      }
+    }
+    const res = this.tree.deleteEntry(entry.dn);
+    return res.ok ? { ok: true, message: '' } : { ok: false, message: res.message };
   }
 
   checkPassword(sam: string, password: string): boolean {
-    const user = this.users.get(sam.toLowerCase());
-    return user !== undefined && user.enabled && user.password === password;
+    const entry = this.findUserEntry(sam);
+    if (!entry) return false;
+    return isEnabledFromUac(entry.attributes.get('useraccountcontrol')) && firstOf(entry.attributes.get('userpassword')) === password;
   }
 
-  /** Full transitive set of group SAMs `sam` belongs to (direct only — no nested-group expansion, per LDAP-lite scope). */
+  /** Direct group membership only (real AD's `memberOf` linked attribute reflects direct membership — no nested-group expansion, per PRD §2.2 scope). */
   groupsForUser(sam: string): AdGroup[] {
-    const user = this.users.get(sam.toLowerCase());
-    if (!user) return [];
-    return user.memberOf.map(g => this.groups.get(g.toLowerCase())).filter((g): g is AdGroup => g !== undefined);
+    const entry = this.findUserEntry(sam);
+    if (!entry) return [];
+    return (entry.attributes.get('memberof') ?? [])
+      .map(dnStr => this.tree.getByDn(parseDN(dnStr)))
+      .filter((e): e is DirectoryEntry => e !== null && hasObjectClass(e, 'group'))
+      .map(e => this.projectGroup(e));
   }
 
   // ─── Groups ─────────────────────────────────────────────────────────
 
-  newGroup(sam: string, scope: AdGroup['scope'] = 'Global'): DirOpResult {
-    const key = sam.toLowerCase();
-    if (this.groups.has(key)) return { ok: false, message: 'An object with that name already exists.' };
-    this.groups.set(key, { sam, dn: `CN=${sam},CN=Users,${this.dc}`, scope, members: [] });
-    return { ok: true, message: '' };
+  newGroup(sam: string, scope: AdGroup['scope'] = 'Global', ou?: string): DirOpResult {
+    const containerDn = ou ? this.ouDn(ou) : this.usersOuDn;
+    if (ou && !this.tree.getByDn(containerDn)) {
+      return { ok: false, message: `Cannot find an object with identity: '${ou}'.` };
+    }
+    const res = this.createGroupEntry(sam, scope, containerDn);
+    return res.ok ? { ok: true, message: '' } : { ok: false, message: 'An object with that name already exists.' };
   }
-  getGroup(sam: string): AdGroup | null { return this.groups.get(sam.toLowerCase()) ?? null; }
-  listGroups(): AdGroup[] { return [...this.groups.values()]; }
+
+  private createGroupEntry(sam: string, scope: AdGroup['scope'], containerDn: DistinguishedName): DirOpResult {
+    return this.tree.addEntry(this.cnDn(sam, containerDn), {
+      objectClass: ['top', 'group'],
+      cn: [sam],
+      sAMAccountName: [sam],
+      groupType: [String(GROUP_TYPE[scope])],
+    });
+  }
+
+  private findGroupEntry(sam: string): DirectoryEntry | null {
+    const [entry] = this.tree.search(this.tree.getRootDn(), 'sub', { kind: 'equalityMatch', attr: 'sAMAccountName', value: sam })
+      .filter(e => hasObjectClass(e, 'group'));
+    return entry ?? null;
+  }
+
+  private listGroupEntries(): DirectoryEntry[] {
+    return this.tree.allDescendants(this.tree.getRootDn()).filter(e => hasObjectClass(e, 'group'));
+  }
+
+  getGroup(sam: string): AdGroup | null {
+    const entry = this.findGroupEntry(sam);
+    return entry ? this.projectGroup(entry) : null;
+  }
+
+  listGroups(): AdGroup[] { return this.listGroupEntries().map(e => this.projectGroup(e)); }
+
+  private projectGroup(entry: DirectoryEntry): AdGroup {
+    const groupType = Number(firstOf(entry.attributes.get('grouptype')));
+    return {
+      sam: firstOf(entry.attributes.get('samaccountname')),
+      dn: formatDN(entry.dn),
+      scope: SCOPE_OF_GROUP_TYPE.get(groupType) ?? 'Global',
+      members: (entry.attributes.get('member') ?? []).map(dnStr => this.samOfDn(dnStr)).filter((s): s is string => s !== null),
+    };
+  }
 
   addGroupMember(groupSam: string, memberSam: string): DirOpResult {
-    const group = this.groups.get(groupSam.toLowerCase());
+    const group = this.findGroupEntry(groupSam);
     if (!group) return { ok: false, message: `Cannot find an object with identity: '${groupSam}'.` };
-    const user = this.users.get(memberSam.toLowerCase());
-    if (!user) return { ok: false, message: `Cannot find an object with identity: '${memberSam}'.` };
-    if (!group.members.some(m => m.toLowerCase() === user.sam.toLowerCase())) group.members.push(user.sam);
-    if (!user.memberOf.some(g => g.toLowerCase() === group.sam.toLowerCase())) user.memberOf.push(group.sam);
+    const member = this.findUserEntry(memberSam) ?? this.findComputerEntry(memberSam);
+    if (!member) return { ok: false, message: `Cannot find an object with identity: '${memberSam}'.` };
+    const memberDn = formatDN(member.dn);
+    const groupDn = formatDN(group.dn);
+    this.tree.modifyEntry(group.dn, [{ op: 'add', type: 'member', values: [memberDn] }]);
+    this.tree.modifyEntry(member.dn, [{ op: 'add', type: 'memberOf', values: [groupDn] }]);
     return { ok: true, message: '' };
   }
 
   removeGroupMember(groupSam: string, memberSam: string): DirOpResult {
-    const group = this.groups.get(groupSam.toLowerCase());
+    const group = this.findGroupEntry(groupSam);
     if (!group) return { ok: false, message: `Cannot find an object with identity: '${groupSam}'.` };
-    group.members = group.members.filter(m => m.toLowerCase() !== memberSam.toLowerCase());
-    const user = this.users.get(memberSam.toLowerCase());
-    if (user) user.memberOf = user.memberOf.filter(g => g.toLowerCase() !== group.sam.toLowerCase());
+    const member = this.findUserEntry(memberSam) ?? this.findComputerEntry(memberSam);
+    const groupDn = formatDN(group.dn);
+    this.tree.modifyEntry(group.dn, [{ op: 'delete', type: 'member', values: member ? [formatDN(member.dn)] : [] }]);
+    if (member) this.tree.modifyEntry(member.dn, [{ op: 'delete', type: 'memberOf', values: [groupDn] }]);
     return { ok: true, message: '' };
+  }
+
+  /** Resolve a member DN string back to its sAMAccountName (real AD's `member`/`memberOf` store DNs, not names — callers want the friendlier sam). */
+  private samOfDn(dnStr: string): string | null {
+    let dn: DistinguishedName;
+    try { dn = parseDN(dnStr); } catch { return null; }
+    const entry = this.tree.getByDn(dn);
+    return entry ? firstOf(entry.attributes.get('samaccountname')) || null : null;
   }
 
   // ─── Computers ──────────────────────────────────────────────────────
 
   /** Creates the computer account — the side effect of a successful domain join (P6), or DC promotion for the DC's own account. */
   newComputer(name: string, machineSecret: string): DirOpResult {
-    const key = name.toLowerCase();
-    if (this.computers.has(key)) return { ok: false, message: 'An object with that name already exists.' };
-    this.computers.set(key, {
-      name, dn: `CN=${name},CN=Computers,${this.dc}`, machineSecret, enabled: true,
+    const res = this.tree.addEntry(this.computerDn(name), {
+      objectClass: ['top', 'person', 'organizationalPerson', 'user', 'computer'],
+      cn: [name],
+      sAMAccountName: [`${name}$`],
+      userAccountControl: [String(UAC.WORKSTATION_TRUST_ACCOUNT)],
+      userPassword: [machineSecret],
     });
-    const domainComputers = this.groups.get('domain computers');
-    if (domainComputers && !domainComputers.members.includes(name)) domainComputers.members.push(name);
+    if (!res.ok) return { ok: false, message: 'An object with that name already exists.' };
+    this.addGroupMemberByDn('Domain Computers', this.computerDn(name));
     return { ok: true, message: '' };
   }
 
-  getComputer(name: string): AdComputer | null { return this.computers.get(name.toLowerCase()) ?? null; }
-  listComputers(): AdComputer[] { return [...this.computers.values()]; }
+  private addGroupMemberByDn(groupSam: string, memberDn: DistinguishedName): void {
+    const group = this.findGroupEntry(groupSam);
+    if (!group) return;
+    this.tree.modifyEntry(group.dn, [{ op: 'add', type: 'member', values: [formatDN(memberDn)] }]);
+    this.tree.modifyEntry(memberDn, [{ op: 'add', type: 'memberOf', values: [formatDN(group.dn)] }]);
+  }
+
+  private findComputerEntry(name: string): DirectoryEntry | null {
+    const [entry] = this.tree.search(this.tree.getRootDn(), 'sub', { kind: 'equalityMatch', attr: 'cn', value: name })
+      .filter(e => hasObjectClass(e, 'computer'));
+    return entry ?? null;
+  }
+
+  /** Creates the DC's own computer account under the Domain Controllers OU at promotion time — a distinct container and UAC flag (SERVER_TRUST_ACCOUNT) from a regular domain-joined workstation, matching real AD. */
+  promoteDomainController(name: string, machineSecret: string): DirOpResult {
+    const dcOuDn = this.ouDn('Domain Controllers');
+    const res = this.tree.addEntry(this.cnDn(name, dcOuDn), {
+      objectClass: ['top', 'person', 'organizationalPerson', 'user', 'computer'],
+      cn: [name],
+      sAMAccountName: [`${name}$`],
+      userAccountControl: [String(UAC.SERVER_TRUST_ACCOUNT)],
+      userPassword: [machineSecret],
+    });
+    return res.ok ? { ok: true, message: '' } : { ok: false, message: 'An object with that name already exists.' };
+  }
+
+  getComputer(name: string): AdComputer | null {
+    const entry = this.findComputerEntry(name);
+    return entry ? this.projectComputer(entry) : null;
+  }
+
+  listComputers(): AdComputer[] {
+    return this.tree.allDescendants(this.tree.getRootDn()).filter(e => hasObjectClass(e, 'computer')).map(e => this.projectComputer(e));
+  }
+
+  private projectComputer(entry: DirectoryEntry): AdComputer {
+    return {
+      name: firstOf(entry.attributes.get('cn')),
+      dn: formatDN(entry.dn),
+      machineSecret: firstOf(entry.attributes.get('userpassword')),
+      enabled: isEnabledFromUac(entry.attributes.get('useraccountcontrol')),
+    };
+  }
 
   checkComputerSecret(name: string, secret: string): boolean {
-    const computer = this.computers.get(name.toLowerCase());
-    return computer !== undefined && computer.enabled && computer.machineSecret === secret;
+    const entry = this.findComputerEntry(name);
+    if (!entry) return false;
+    return isEnabledFromUac(entry.attributes.get('useraccountcontrol')) && firstOf(entry.attributes.get('userpassword')) === secret;
   }
+
+  // ─── Identity resolution / LDAP bind ────────────────────────────────
+
+  /** Resolves an AD "-Identity"-style argument (a full DN, a UPN, or a bare sAMAccountName) down to a plain sam, for cmdlets and LDAP simple-bind names alike. */
+  resolveIdentity(identity: string): string {
+    if (identity.includes('=')) {
+      try {
+        const v = leafValue(parseDN(identity));
+        if (v !== null) return v;
+      } catch { /* not a valid DN — fall through to UPN/bare handling */ }
+    }
+    if (identity.includes('@')) return identity.split('@')[0];
+    return identity;
+  }
+
+  /** An `LdapBindCheck` backed by this directory's user/computer passwords — for `LdapServerHandler` to authenticate simple binds against. */
+  getBindCheck(): LdapBindCheck {
+    return {
+      checkBind: (name, password) => {
+        const sam = this.resolveIdentity(name);
+        return this.checkPassword(sam, password) || this.checkComputerSecret(sam.replace(/\$$/, ''), password);
+      },
+    };
+  }
+}
+
+function dnEqualsOu(dn: DistinguishedName, ou: DistinguishedName): boolean {
+  return formatDN(dn).toLowerCase() === formatDN(ou).toLowerCase();
+}
+function leafOuName(dn: DistinguishedName): string {
+  return dn[0]?.[0]?.value ?? '';
 }

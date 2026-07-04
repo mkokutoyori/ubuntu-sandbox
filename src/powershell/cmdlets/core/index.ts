@@ -112,6 +112,13 @@ import {
 import {
   GetSmbShareCmdlet, NewSmbShareCmdlet, RemoveSmbShareCmdlet, GetSmbSessionCmdlet,
 } from './SmbCmdlets';
+import {
+  InstallADDSForestCmdlet,
+  NewADUserCmdlet, GetADUserCmdlet, SetADUserCmdlet, RemoveADUserCmdlet,
+  NewADGroupCmdlet, GetADGroupCmdlet, AddADGroupMemberCmdlet, RemoveADGroupMemberCmdlet,
+  GetADComputerCmdlet,
+  NewADOrganizationalUnitCmdlet, GetADOrganizationalUnitCmdlet,
+} from './ActiveDirectoryCmdlets';
 
 /**
  * Register all core (provider-independent) cmdlets into the given registry.
@@ -336,6 +343,20 @@ export function registerCoreCmdlets(registry: CmdletRegistry): void {
   registry.register(new NewSmbShareCmdlet());
   registry.register(new RemoveSmbShareCmdlet());
   registry.register(new GetSmbSessionCmdlet());
+
+  // ── AD DS (PRD-Windows-Server.md §5 P5) ─────────────────────────────────────
+  registry.register(new InstallADDSForestCmdlet());
+  registry.register(new NewADUserCmdlet());
+  registry.register(new GetADUserCmdlet());
+  registry.register(new SetADUserCmdlet());
+  registry.register(new RemoveADUserCmdlet());
+  registry.register(new NewADGroupCmdlet());
+  registry.register(new GetADGroupCmdlet());
+  registry.register(new AddADGroupMemberCmdlet());
+  registry.register(new RemoveADGroupMemberCmdlet());
+  registry.register(new GetADComputerCmdlet());
+  registry.register(new NewADOrganizationalUnitCmdlet());
+  registry.register(new GetADOrganizationalUnitCmdlet());
 
   // ── Native CLI shims (sync subset) ────────────────────────────────────────
   // ping / tracert stay in the legacy executor — they're async and the

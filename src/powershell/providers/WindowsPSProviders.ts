@@ -14,6 +14,7 @@
  */
 
 import type { WindowsPC } from '@/network/devices/WindowsPC';
+import type { WindowsServer } from '@/network/devices/WindowsServer';
 import { PSRegistryProvider } from '@/network/devices/windows/PSRegistryProvider';
 import { PSEventLogProvider } from '@/network/devices/windows/PSEventLogProvider';
 import { resolveAdapterName } from '@/network/devices/windows/WinNetsh';
@@ -48,6 +49,7 @@ import type {
   IRemotingProvider, IRemoteComputer,
   IRoleProvider, WindowsFeatureInfo,
   ISmbProvider, SmbShareInfo, SmbSessionInfo,
+  IAdProvider, AdUserInfo, AdGroupInfo, AdComputerInfo, AdOrgUnitInfo, AdOpResult,
   DirEntry, ServiceInfo, ProcessInfo, UserInfo, GroupInfo,
   NetworkAdapterInfo, IPAddressInfo, RouteInfo, EventLogEntryInfo,
   VpnConnectionInfo, ScheduledTaskInfo, DiskInfo, VolumeInfo,
@@ -306,6 +308,128 @@ class WindowsSmbAdapter implements ISmbProvider {
   listSessions(): SmbSessionInfo[] {
     this.requireRole();
     return this.pc.smbSessions.list().map(s => this.pc.smbSessions.toView(s));
+  }
+}
+
+// ── AD DS adapter (Server Manager — WindowsServer only, gated on AD-Domain-Services) ──
+
+class WindowsAdAdapter implements IAdProvider {
+  constructor(private readonly pc: WindowsPC) {}
+
+  /** `Get/New/Set/Remove-AD*` only exist once the AD-Domain-Services role is installed — checked live, matching `WindowsSmbAdapter`'s FS-FileServer gate. */
+  private requireRole(cmdletName: string): void {
+    if (!this.pc.getRoleManager()?.isInstalled('AD-Domain-Services')) {
+      throw new Error(`${cmdletName} is not recognized as the name of a cmdlet, function, script file, or operable program`);
+    }
+  }
+
+  /** Most AD cmdlets additionally need this server to actually be a promoted DC (`Install-ADDSForest` succeeded) — the real error a real DC-less member gets is a domain-controller-locator failure. */
+  private requireStore(cmdletName: string) {
+    this.requireRole(cmdletName);
+    const store = this.pc.getDirectoryStore();
+    if (!store) throw new Error(`${cmdletName} : Unable to find a default server with Active Directory Web Services running.`);
+    return store;
+  }
+
+  private isAdmin(): boolean { return this.pc.getUserManager().isCurrentUserAdmin(); }
+  private requireAdmin(cmdletName: string): AdOpResult | null {
+    return this.isAdmin() ? null : { ok: false, message: `${cmdletName} : Access is denied.` };
+  }
+
+  installForest(domainName: string, netbiosName: string | undefined, safeModeAdminPassword: string): AdOpResult {
+    this.requireRole('Install-ADDSForest');
+    const denied = this.requireAdmin('Install-ADDSForest');
+    if (denied) return denied;
+    const server = this.pc as WindowsServer;
+    if (typeof server.installADDSForest !== 'function') {
+      return { ok: false, message: 'Install-ADDSForest : This computer cannot be promoted to a domain controller.' };
+    }
+    return server.installADDSForest(domainName, netbiosName, safeModeAdminPassword);
+  }
+
+  isForestInstalled(): boolean {
+    this.requireRole('Get-ADDomain');
+    return this.pc.getDirectoryStore() !== null;
+  }
+
+  newUser(sam: string, opts: { password: string; fullName?: string; path?: string; enabled?: boolean }): AdOpResult {
+    const store = this.requireStore('New-ADUser');
+    const denied = this.requireAdmin('New-ADUser');
+    if (denied) return denied;
+    return store.newUser(sam, {
+      password: opts.password, fullName: opts.fullName, enabled: opts.enabled,
+      ou: opts.path ? store.resolveIdentity(opts.path) : undefined,
+    });
+  }
+  getUser(identity: string): AdUserInfo | null {
+    const store = this.requireStore('Get-ADUser');
+    const u = store.getUser(store.resolveIdentity(identity));
+    return u ? { sam: u.sam, upn: u.upn, dn: u.dn, enabled: u.enabled, memberOf: u.memberOf, fullName: u.fullName } : null;
+  }
+  setUser(identity: string, opts: { enabled?: boolean; fullName?: string; password?: string }): AdOpResult {
+    const store = this.requireStore('Set-ADUser');
+    const denied = this.requireAdmin('Set-ADUser');
+    if (denied) return denied;
+    return store.setUser(store.resolveIdentity(identity), opts);
+  }
+  removeUser(identity: string): AdOpResult {
+    const store = this.requireStore('Remove-ADUser');
+    const denied = this.requireAdmin('Remove-ADUser');
+    if (denied) return denied;
+    return store.removeUser(store.resolveIdentity(identity));
+  }
+
+  newGroup(sam: string, scope: AdGroupInfo['scope'], path?: string): AdOpResult {
+    const store = this.requireStore('New-ADGroup');
+    const denied = this.requireAdmin('New-ADGroup');
+    if (denied) return denied;
+    return store.newGroup(sam, scope, path ? store.resolveIdentity(path) : undefined);
+  }
+  getGroup(identity: string): AdGroupInfo | null {
+    const store = this.requireStore('Get-ADGroup');
+    const g = store.getGroup(store.resolveIdentity(identity));
+    return g ? { sam: g.sam, dn: g.dn, scope: g.scope, members: g.members } : null;
+  }
+  addGroupMember(groupIdentity: string, members: string[]): AdOpResult {
+    const store = this.requireStore('Add-ADGroupMember');
+    const denied = this.requireAdmin('Add-ADGroupMember');
+    if (denied) return denied;
+    const group = store.resolveIdentity(groupIdentity);
+    for (const m of members) {
+      const res = store.addGroupMember(group, store.resolveIdentity(m));
+      if (!res.ok) return res;
+    }
+    return { ok: true, message: '' };
+  }
+  removeGroupMember(groupIdentity: string, members: string[]): AdOpResult {
+    const store = this.requireStore('Remove-ADGroupMember');
+    const denied = this.requireAdmin('Remove-ADGroupMember');
+    if (denied) return denied;
+    const group = store.resolveIdentity(groupIdentity);
+    for (const m of members) {
+      const res = store.removeGroupMember(group, store.resolveIdentity(m));
+      if (!res.ok) return res;
+    }
+    return { ok: true, message: '' };
+  }
+
+  getComputer(identity: string): AdComputerInfo | null {
+    const store = this.requireStore('Get-ADComputer');
+    const name = store.resolveIdentity(identity).replace(/\$$/, '');
+    const c = store.getComputer(name);
+    return c ? { name: c.name, dn: c.dn, enabled: c.enabled } : null;
+  }
+
+  newOrganizationalUnit(name: string): AdOpResult {
+    const store = this.requireStore('New-ADOrganizationalUnit');
+    const denied = this.requireAdmin('New-ADOrganizationalUnit');
+    if (denied) return denied;
+    return store.newOrgUnit(name);
+  }
+  getOrganizationalUnit(identity: string): AdOrgUnitInfo | null {
+    const store = this.requireStore('Get-ADOrganizationalUnit');
+    const ou = store.getOrgUnit(store.resolveIdentity(identity));
+    return ou ? { name: ou.name, dn: ou.dn, gpLinks: [...ou.gpLinks] } : null;
   }
 }
 
@@ -1313,5 +1437,6 @@ export function createWindowsPSProviders(
     remoting:       new WindowsRemotingAdapter(pc),
     roles:          pc.getRoleManager() ? new WindowsRoleAdapter(pc) : null,
     smb:            pc.getRoleManager() ? new WindowsSmbAdapter(pc) : null,
+    ad:             pc.getRoleManager() ? new WindowsAdAdapter(pc) : null,
   };
 }
