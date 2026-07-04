@@ -35,6 +35,7 @@ const VALUE_TYPE_BY_NAME: Record<RadiusAttrType, RadiusValueType> = {
   'framed-ip-address': 'address',
   'framed-ip-netmask': 'address',
   'framed-mtu': 'integer',
+  'filter-id': 'text',
   'login-ip-host': 'address',
   'reply-message': 'text',
   'callback-number': 'string',

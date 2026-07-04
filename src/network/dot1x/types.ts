@@ -1,4 +1,9 @@
 import type { NetworkPdu } from '@/network/core/NetworkPdu';
+// EAP itself (RFC 3748) lives under radius/ — 802.1X is only a transport for
+// it, and the RADIUS server terminates the same packets via EAP-Message.
+export { EAP_CODE, EAP_TYPE, type EapCode, type EapType, type EapPacket } from '@/network/radius/eap';
+import type { EapPacket } from '@/network/radius/eap';
+
 export const ETHERTYPE_EAPOL = 0x888e;
 export const EAPOL_PAE_GROUP_MAC = '01:80:c2:00:00:03';
 
@@ -16,40 +21,6 @@ export const EAPOL_PACKET_TYPE: Record<EapolPacketType, number> = {
   'eapol-key': 3,
   'eapol-encapsulated-asf-alert': 4,
 };
-
-export type EapCode = 'request' | 'response' | 'success' | 'failure';
-
-export const EAP_CODE: Record<EapCode, number> = {
-  request: 1,
-  response: 2,
-  success: 3,
-  failure: 4,
-};
-
-export type EapType =
-  | 'identity'
-  | 'notification'
-  | 'nak'
-  | 'md5-challenge'
-  | 'tls'
-  | 'peap';
-
-export const EAP_TYPE: Record<EapType, number> = {
-  identity: 1,
-  notification: 2,
-  nak: 3,
-  'md5-challenge': 4,
-  tls: 13,
-  peap: 25,
-};
-
-export interface EapPacket extends NetworkPdu {
-  type: 'eap';
-  code: EapCode;
-  identifier: number;
-  eapType?: EapType;
-  payload?: string;
-}
 
 export interface EapolPacket extends NetworkPdu {
   type: 'eapol';
@@ -84,6 +55,8 @@ export interface Dot1xPortRuntime {
   identity: string | null;
   pendingEapId: number | null;
   lastSupplicantMac: string | null;
+  /** RADIUS State (RFC 2865 §4.4) to echo on the next EAP relay round — set while an EAP-MD5 exchange is in flight. */
+  radiusState: string | null;
   reauthCount: number;
   lastTransitionMs: number;
   maxReauthReq: number;
@@ -117,6 +90,7 @@ export function defaultPortRuntime(port: string, mode: Dot1xPortMode = 'auto'): 
   return {
     port, mode, state,
     identity: null, pendingEapId: null, lastSupplicantMac: null,
+    radiusState: null,
     reauthCount: 0,
     lastTransitionMs: Date.now(),
     maxReauthReq: 2,

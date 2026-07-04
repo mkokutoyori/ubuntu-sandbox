@@ -13,6 +13,7 @@ import {
   verifyResponseAuthenticator, verifyMessageAuthenticator,
 } from './authenticators';
 import { buildChapPasswordHex } from './passwords';
+import { NAS_PORT_TYPE_ETHERNET } from './eap';
 import {
   MACAddress, IPAddress,
   type EthernetFrame, type IPv4Packet, type UDPPacket,
@@ -73,9 +74,38 @@ export interface RadiusServerStatus {
 
 const DEFAULT_MAX_CHALLENGE_ROUNDS = 1;
 
+/**
+ * Outcome of one EAP-relay round (RFC 3579). Unlike authenticate()/
+ * authenticateChap(), the caller (an 802.1X authenticator) drives the
+ * multi-round conversation itself — each round waits for its own external
+ * party (the supplicant) between RADIUS legs, so it can't be automatic like
+ * the generic Access-Challenge continuation.
+ */
+export type EapRoundOutcome =
+  | { kind: 'challenge'; eapMessageHex: string; state: string | null }
+  | { kind: 'accept'; eapMessageHex: string | null; attributes: RadiusAttribute[] }
+  | { kind: 'reject'; eapMessageHex: string | null }
+  | { kind: 'timeout' };
+
+interface PendingEapRound {
+  identifier: number;
+  serverIp: string;
+  secret: string;
+  authenticator: string;
+  username: string;
+  eapMessageHex: string;
+  state: string | null;
+  callingStationId?: string;
+  calledStationId?: string;
+  resolve: (outcome: EapRoundOutcome) => void;
+  timer: TimerHandle | null;
+  attemptsLeft: number;
+}
+
 export class RadiusClientAgent {
   private config: RadiusClientConfig = createDefaultClientConfig();
   private pending = new Map<number, PendingRequest>();
+  private pendingEap = new Map<number, PendingEapRound>();
   private nextIdentifier = 1;
   private scheduler: IScheduler | null = null;
   private running = false;
@@ -99,6 +129,11 @@ export class RadiusClientAgent {
       p.resolve('timeout'); // the !this.running guard in tryServers() stops this from cascading to another server
     }
     this.pending.clear();
+    for (const p of this.pendingEap.values()) {
+      if (p.timer !== null) (this.scheduler ?? this.getScheduler()).clear(p.timer);
+      p.resolve({ kind: 'timeout' });
+    }
+    this.pendingEap.clear();
   }
 
   getConfig(): Readonly<RadiusClientConfig> { return this.config; }
@@ -155,6 +190,147 @@ export class RadiusClientAgent {
   /** CHAP authentication (RFC 2865 §5.3, RFC 1994). */
   authenticateChap(username: string, password: string, serverIp?: string): Promise<boolean> {
     return this.run(username, password, 'chap', serverIp);
+  }
+
+  /**
+   * Send one EAP-relay round (RFC 3579): a single Access-Request carrying
+   * `eapMessageHex` (and `state`, when replying to a previous
+   * Access-Challenge), with retransmission. The caller (802.1X) is
+   * responsible for driving further rounds after relaying the outcome to
+   * the supplicant — this does not try other servers on timeout, unlike
+   * authenticate()/authenticateChap(), since an EAP conversation is bound
+   * to whichever server issued the challenge being answered.
+   */
+  sendEapRound(
+    username: string, eapMessageHex: string, state: string | null,
+    nas: { callingStationId?: string; calledStationId?: string } = {},
+    serverIp?: string,
+  ): Promise<EapRoundOutcome> {
+    if (!this.config.enabled) return Promise.resolve({ kind: 'timeout' });
+    const server = serverIp
+      ? this.config.servers.find((s) => s.ip === serverIp)
+      : this.config.servers[0];
+    if (!server) return Promise.resolve({ kind: 'timeout' });
+    const identifier = this.nextIdentifier;
+    this.nextIdentifier = (this.nextIdentifier + 1) & 0xff;
+    const authenticator = randomRequestAuthenticator();
+    return new Promise<EapRoundOutcome>((resolve) => {
+      const pending: PendingEapRound = {
+        identifier, serverIp: server.ip, secret: server.sharedSecret, authenticator,
+        username, eapMessageHex, state,
+        callingStationId: nas.callingStationId, calledStationId: nas.calledStationId,
+        resolve, timer: null, attemptsLeft: server.retransmit,
+      };
+      this.pendingEap.set(identifier, pending);
+      this.transmitEap(server, pending);
+      this.armEapTimeout(server, pending);
+    });
+  }
+
+  private transmitEap(server: RadiusServerConfig, pending: PendingEapRound): void {
+    const egress = this.resolveEgress(server.ip);
+    if (!egress) return;
+    const srcIp = egress.port.getIPAddress();
+    if (!srcIp) return;
+    const attrs: RadiusAttribute[] = [
+      attr('user-name', pending.username),
+      attr('nas-ip-address', srcIp.toString()),
+      attr('nas-port-type', NAS_PORT_TYPE_ETHERNET),
+      attr('eap-message', pending.eapMessageHex),
+    ];
+    if (pending.callingStationId) attrs.push(attr('calling-station-id', pending.callingStationId));
+    if (pending.calledStationId) attrs.push(attr('called-station-id', pending.calledStationId));
+    if (pending.state) attrs.push(attr('state', pending.state));
+    if (this.config.nasIdentifier) attrs.push(attr('nas-identifier', this.config.nasIdentifier));
+    let payload: RadiusPacket = {
+      type: 'radius', code: 'access-request', identifier: pending.identifier,
+      authenticator: pending.authenticator, attributes: attrs,
+    };
+    payload = withMessageAuthenticator(payload, pending.authenticator, server.sharedSecret);
+    const udp: UDPPacket = {
+      type: 'udp',
+      sourcePort: 49180 + (pending.identifier & 0x3fff),
+      destinationPort: server.authPort,
+      length: 20, checksum: 0, payload,
+    };
+    const ipPkt: IPv4Packet = {
+      type: 'ipv4', version: 4, ihl: 5, tos: 0,
+      totalLength: 20 + udp.length,
+      identification: nextIPv4Id(), flags: 0, fragmentOffset: 0,
+      ttl: 64, protocol: IP_PROTO_UDP, headerChecksum: 0,
+      sourceIP: srcIp, destinationIP: new IPAddress(server.ip),
+      payload: udp,
+    };
+    ipPkt.headerChecksum = computeIPv4Checksum(ipPkt);
+    const eth: EthernetFrame = {
+      srcMAC: egress.port.getMAC(),
+      dstMAC: this.host.resolveMac?.(server.ip) ?? MACAddress.broadcast(),
+      etherType: ETHERTYPE_IPV4, payload: ipPkt,
+    };
+    this.getBus().publish({
+      topic: 'radius.packet.sent',
+      payload: {
+        deviceId: this.host.id, hostname: this.host.getHostname(),
+        destinationIp: server.ip, code: 'access-request',
+        identifier: pending.identifier, username: pending.username,
+      },
+    });
+    this.host.sendFrame(egress.name, eth);
+  }
+
+  private armEapTimeout(server: RadiusServerConfig, pending: PendingEapRound): void {
+    const s = this.getScheduler();
+    this.scheduler = s;
+    pending.timer = s.setTimeout(() => {
+      if (!this.pendingEap.has(pending.identifier)) return;
+      if (pending.attemptsLeft > 0) {
+        pending.attemptsLeft--;
+        this.transmitEap(server, pending);
+        this.armEapTimeout(server, pending);
+      } else {
+        this.pendingEap.delete(pending.identifier);
+        pending.resolve({ kind: 'timeout' });
+      }
+    }, server.timeoutMs);
+  }
+
+  private handleEapUdp(payload: RadiusPacket, srcIp: IPAddress, pending: PendingEapRound): void {
+    if (pending.serverIp !== srcIp.toString()) return;
+    if (!verifyResponseAuthenticator(payload, pending.authenticator, pending.secret)) {
+      Logger.warn(this.host.id, 'radius:bad-response-authenticator',
+        `${this.host.name}: dropped ${payload.code} from ${srcIp} — invalid Response Authenticator (EAP relay)`);
+      return;
+    }
+    // RFC 3579 §3.2: Message-Authenticator is mandatory whenever EAP-Message
+    // is being carried — unlike the generic case, its absence is a drop too.
+    if (!getAttr(payload, 'message-authenticator')
+        || !verifyMessageAuthenticator(payload, pending.authenticator, pending.secret)) {
+      Logger.warn(this.host.id, 'radius:bad-message-authenticator',
+        `${this.host.name}: dropped ${payload.code} from ${srcIp} — missing/invalid Message-Authenticator (EAP relay)`);
+      return;
+    }
+    if (pending.timer !== null) (this.scheduler ?? this.getScheduler()).clear(pending.timer);
+    this.pendingEap.delete(pending.identifier);
+    this.getBus().publish({
+      topic: 'radius.packet.received',
+      payload: {
+        deviceId: this.host.id, hostname: this.host.getHostname(),
+        fromIp: srcIp.toString(), code: payload.code, identifier: payload.identifier,
+      },
+    });
+    const eapAttr = getAttr(payload, 'eap-message');
+    const eapMessageHex = eapAttr ? String(eapAttr.value) : null;
+    const stateAttr = getAttr(payload, 'state');
+    const state = stateAttr ? String(stateAttr.value) : null;
+    if (payload.code === 'access-challenge') {
+      pending.resolve({ kind: 'challenge', eapMessageHex: eapMessageHex ?? '', state });
+      return;
+    }
+    if (payload.code === 'access-accept') {
+      pending.resolve({ kind: 'accept', eapMessageHex, attributes: payload.attributes });
+      return;
+    }
+    pending.resolve({ kind: 'reject', eapMessageHex });
   }
 
   private run(username: string, password: string, authMethod: RadiusAuthMethod, serverIp?: string): Promise<boolean> {
@@ -271,6 +447,10 @@ export class RadiusClientAgent {
     const payload = udp.payload as RadiusPacket | undefined;
     if (!payload || payload.type !== 'radius') return;
     if (payload.code !== 'access-accept' && payload.code !== 'access-reject' && payload.code !== 'access-challenge') return;
+
+    const eapPending = this.pendingEap.get(payload.identifier);
+    if (eapPending) { this.handleEapUdp(payload, srcIp, eapPending); return; }
+
     const pending = this.pending.get(payload.identifier);
     if (!pending) return;
     if (pending.serverIp !== srcIp.toString()) return;

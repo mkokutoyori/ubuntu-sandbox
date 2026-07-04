@@ -33,6 +33,7 @@ export type RadiusAttrType =
   | 'framed-ip-address'
   | 'framed-ip-netmask'
   | 'framed-mtu'
+  | 'filter-id'
   | 'login-ip-host'
   | 'reply-message'
   | 'callback-number'
@@ -80,6 +81,7 @@ export const RADIUS_ATTR: Record<RadiusAttrType, number> = {
   'framed-ip-address': 8,
   'framed-ip-netmask': 9,
   'framed-mtu': 12,
+  'filter-id': 11,
   'login-ip-host': 14,
   'reply-message': 18,
   'callback-number': 19,

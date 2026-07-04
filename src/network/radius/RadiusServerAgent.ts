@@ -14,6 +14,7 @@ import { parseChapPasswordHex, verifyChapResponse } from './passwords';
 import {
   ACCT_STATUS_TYPE, ACCT_TERMINATE_CAUSE, type AcctStatusType, type AcctTerminateCause,
 } from './accounting';
+import { type EapPacket, eapPacketFromWireHex, eapPacketToWireHex, verifyEapMd5Response } from './eap';
 import {
   MACAddress, IPAddress,
   type EthernetFrame, type IPv4Packet, type UDPPacket,
@@ -71,6 +72,8 @@ export class RadiusServerAgent {
   private readonly recentAcctReplies = new Map<string, { response: RadiusPacket; sentAt: number }>();
   /** Accounting journal, keyed by Acct-Session-Id — last known state per session (Start → Interim-Update* → Stop). */
   private readonly acctSessions = new Map<string, AcctSessionRecord>();
+  /** EAP-MD5 relay sessions (RFC 3579), keyed by the opaque State handed out with the Access-Challenge carrying the MD5 challenge. */
+  private readonly eapSessions = new Map<string, { username: string; challengeHex: string; expiresAt: number }>();
 
   constructor(
     private readonly host: RadiusServerHost,
@@ -173,6 +176,12 @@ export class RadiusServerAgent {
     if (!payload || payload.type !== 'radius') return;
     if (payload.code !== 'access-request') return;
 
+    const eapAttr = getAttr(payload, 'eap-message');
+    if (eapAttr && !getAttr(payload, 'message-authenticator')) {
+      Logger.warn(this.host.id, 'radius:missing-message-authenticator',
+        `${this.host.name}: dropped Access-Request from ${srcIp} — EAP-Message without Message-Authenticator (RFC 3579 §3.2)`);
+      return;
+    }
     if (!verifyMessageAuthenticator(payload, payload.authenticator, this.config.sharedSecret)) {
       Logger.warn(this.host.id, 'radius:bad-message-authenticator',
         `${this.host.name}: dropped Access-Request from ${srcIp} — invalid Message-Authenticator`);
@@ -208,6 +217,11 @@ export class RadiusServerAgent {
     }
     const username = String(usernameAttr.value);
     const user = this.config.users.get(username);
+
+    if (eapAttr) {
+      this.handleEapRequest(inPort, srcIp, udp.sourcePort, payload, username, user, dedupKey);
+      return;
+    }
 
     // RFC 2865 §4.4: a State means this request is the answer to a challenge
     // we issued; redeem it before falling through to the normal PAP/CHAP
@@ -274,6 +288,129 @@ export class RadiusServerAgent {
     for (const [key, entry] of this.recentAcctReplies) {
       if (entry.sentAt < cutoff) this.recentAcctReplies.delete(key);
     }
+  }
+
+  private pruneEapSessions(): void {
+    const now = Date.now();
+    for (const [key, entry] of this.eapSessions) {
+      if (entry.expiresAt < now) this.eapSessions.delete(key);
+    }
+  }
+
+  /**
+   * EAP relayed over RADIUS (RFC 3579): the request carries an EAP-Message
+   * instead of (or alongside) User-Password/CHAP-Password. EAP-MD5 is
+   * structurally CHAP (RFC 3748 §4.2) — the challenge/response math is
+   * shared with `passwords.ts` via `eap.ts`'s wrappers.
+   */
+  private handleEapRequest(
+    inPort: string, dstIp: IPAddress, clientPort: number, request: RadiusPacket,
+    username: string, user: RadiusUser | undefined, dedupKey: string,
+  ): void {
+    const eapAttr = getAttr(request, 'eap-message')!;
+    const eap = eapPacketFromWireHex(String(eapAttr.value));
+    if (!eap) return; // malformed EAP-Message — nothing sane to answer
+
+    const stateAttr = getAttr(request, 'state');
+    const incomingState = stateAttr ? String(stateAttr.value) : null;
+
+    if (eap.code === 'response' && eap.eapType === 'identity' && !incomingState) {
+      if (!user) {
+        this.publishRejected(dstIp.toString(), username, 'unknown-user');
+        this.replyEap(inPort, dstIp, clientPort, request, { type: 'eap', code: 'failure', identifier: eap.identifier }, false, undefined, dedupKey);
+        return;
+      }
+      const challengeHex = randomOpaqueToken(16);
+      const state = randomOpaqueToken(16);
+      const eapIdentifier = (eap.identifier + 1) & 0xff;
+      this.eapSessions.set(state, { username, challengeHex, expiresAt: Date.now() + CHALLENGE_TTL_MS });
+      const eapRequest: EapPacket = {
+        type: 'eap', code: 'request', identifier: eapIdentifier,
+        eapType: 'md5-challenge', md5Challenge: challengeHex,
+      };
+      this.replyEapChallenge(inPort, dstIp, clientPort, request, eapRequest, state, dedupKey);
+      return;
+    }
+
+    if (eap.code === 'response' && eap.eapType === 'md5-challenge' && incomingState) {
+      this.pruneEapSessions();
+      const session = this.eapSessions.get(incomingState);
+      this.eapSessions.delete(incomingState); // one-shot
+      const sessionOk = !!session && session.username === username;
+      const accepted = sessionOk && !!user && !!eap.md5Response
+        && verifyEapMd5Response(eap.identifier, eap.md5Response, user.password, session!.challengeHex);
+      if (!accepted) this.publishRejected(dstIp.toString(), username, !user ? 'unknown-user' : 'bad-password');
+      this.replyEap(
+        inPort, dstIp, clientPort, request,
+        { type: 'eap', code: accepted ? 'success' : 'failure', identifier: eap.identifier },
+        accepted, user, dedupKey,
+      );
+      return;
+    }
+
+    // Unrecognized shape mid-conversation (e.g. Nak, replayed Identity with a
+    // stale State) — fail cleanly instead of leaving the supplicant hanging.
+    this.replyEap(inPort, dstIp, clientPort, request, { type: 'eap', code: 'failure', identifier: eap.identifier }, false, user, dedupKey);
+  }
+
+  /** Access-Challenge carrying an EAP-Request (RFC 3579 §3.1) — always Message-Authenticator-signed. */
+  private replyEapChallenge(
+    inPort: string, dstIp: IPAddress, clientPort: number, request: RadiusPacket,
+    eapRequest: EapPacket, state: string, dedupKey: string,
+  ): void {
+    const port = this.host.getPort(inPort);
+    if (!port) return;
+    const srcIp = port.getIPAddress();
+    if (!srcIp) return;
+    let response: RadiusPacket = {
+      type: 'radius', code: 'access-challenge', identifier: request.identifier,
+      authenticator: '00'.repeat(16),
+      attributes: [attr('eap-message', eapPacketToWireHex(eapRequest)), attr('state', state)],
+    };
+    response = withMessageAuthenticator(response, request.authenticator, this.config.sharedSecret);
+    response = withResponseAuthenticator(response, request.authenticator, this.config.sharedSecret);
+    this.recentReplies.set(dedupKey, { response, sentAt: Date.now() });
+    this.getBus().publish({
+      topic: 'radius.packet.sent',
+      payload: {
+        deviceId: this.host.id, hostname: this.host.getHostname(),
+        destinationIp: dstIp.toString(), code: response.code,
+        identifier: response.identifier, username: null,
+      },
+    });
+    this.sendRadiusFrame(inPort, port, srcIp, dstIp, clientPort, this.config.port, response);
+    Logger.info(this.host.id, 'radius:eap', `${this.host.name}: ${dstIp} EAP-Request/MD5-Challenge issued`);
+  }
+
+  /** Final Access-Accept/Reject carrying EAP-Success/Failure, plus any authorization attributes on accept. */
+  private replyEap(
+    inPort: string, dstIp: IPAddress, clientPort: number, request: RadiusPacket,
+    eapResult: EapPacket, accepted: boolean, user: RadiusUser | undefined, dedupKey: string,
+  ): void {
+    const port = this.host.getPort(inPort);
+    if (!port) return;
+    const srcIp = port.getIPAddress();
+    if (!srcIp) return;
+    const attrs: RadiusAttribute[] = [attr('eap-message', eapPacketToWireHex(eapResult))];
+    if (accepted && user?.replyAttributes) attrs.push(...user.replyAttributes);
+    let response: RadiusPacket = {
+      type: 'radius', code: accepted ? 'access-accept' : 'access-reject', identifier: request.identifier,
+      authenticator: '00'.repeat(16), attributes: attrs,
+    };
+    response = withMessageAuthenticator(response, request.authenticator, this.config.sharedSecret);
+    response = withResponseAuthenticator(response, request.authenticator, this.config.sharedSecret);
+    this.recentReplies.set(dedupKey, { response, sentAt: Date.now() });
+    this.getBus().publish({
+      topic: 'radius.packet.sent',
+      payload: {
+        deviceId: this.host.id, hostname: this.host.getHostname(),
+        destinationIp: dstIp.toString(), code: response.code,
+        identifier: response.identifier, username: user?.username ?? null,
+      },
+    });
+    this.sendRadiusFrame(inPort, port, srcIp, dstIp, clientPort, this.config.port, response);
+    Logger.info(this.host.id, 'radius:eap',
+      `${this.host.name}: ${dstIp} ${response.code} (EAP-${eapResult.code}) for ${user?.username ?? '(unknown)'}`);
   }
 
   private publishRejected(fromIp: string, username: string, reason: RejectReason): void {
