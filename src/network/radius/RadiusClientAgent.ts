@@ -34,6 +34,8 @@ export interface RadiusClientHost {
 }
 
 type RadiusAuthMethod = 'pap' | 'chap';
+/** Outcome of a single request/response round, distinct from the public accept/reject boolean: only 'timeout' triggers failover to the next server — an explicit reject is authoritative. */
+type RadiusRoundResult = 'accept' | 'reject' | 'timeout';
 
 interface PendingRequest {
   identifier: number;
@@ -48,9 +50,25 @@ interface PendingRequest {
   state: string | null;
   /** How many more Access-Challenge round-trips this request will still follow before giving up. */
   challengesLeft: number;
-  resolve: (accepted: boolean) => void;
+  resolve: (result: RadiusRoundResult) => void;
   timer: TimerHandle | null;
   attemptsLeft: number;
+}
+
+interface ServerRuntimeState {
+  /** ms epoch until which the server is treated as dead (skipped in ordering); null = alive. */
+  deadUntil: number | null;
+  stats: { requests: number; accepts: number; rejects: number; timeouts: number };
+}
+
+export interface RadiusServerStatus {
+  ip: string;
+  alive: boolean;
+  deadUntil: number | null;
+  requests: number;
+  accepts: number;
+  rejects: number;
+  timeouts: number;
 }
 
 const DEFAULT_MAX_CHALLENGE_ROUNDS = 1;
@@ -61,6 +79,9 @@ export class RadiusClientAgent {
   private nextIdentifier = 1;
   private scheduler: IScheduler | null = null;
   private running = false;
+  private serverStates = new Map<string, ServerRuntimeState>();
+  /** `radius-server deadtime` equivalent — 0 disables cross-request server avoidance (Cisco default). */
+  private deadtimeMs = 0;
 
   constructor(
     private readonly host: RadiusClientHost,
@@ -75,7 +96,7 @@ export class RadiusClientAgent {
     this.running = false;
     for (const p of this.pending.values()) {
       if (p.timer !== null) (this.scheduler ?? this.getScheduler()).clear(p.timer);
-      p.resolve(false);
+      p.resolve('timeout'); // the !this.running guard in tryServers() stops this from cascading to another server
     }
     this.pending.clear();
   }
@@ -102,12 +123,29 @@ export class RadiusClientAgent {
 
   removeServer(ip: string): void {
     this.config.servers = this.config.servers.filter((s) => s.ip !== ip);
+    this.serverStates.delete(ip);
   }
 
   setNasIdentifier(id: string | null): void { this.config.nasIdentifier = id; }
   setSourceInterface(iface: string | null): void { this.config.sourceInterface = iface; }
 
+  /** `radius-server deadtime <minutes>` equivalent, taking milliseconds. 0 (default) disables it. */
+  setDeadtimeMs(ms: number): void { this.deadtimeMs = Math.max(0, ms); }
+
   listServers(): RadiusServerConfig[] { return this.config.servers.slice(); }
+
+  /** Per-server liveness + request/accept/reject/timeout counters (`show radius statistics` material). */
+  listServerStatus(): RadiusServerStatus[] {
+    const now = Date.now();
+    return this.config.servers.map((s) => {
+      const state = this.stateFor(s.ip);
+      return {
+        ip: s.ip, alive: !this.isDead(s.ip, now), deadUntil: state.deadUntil,
+        requests: state.stats.requests, accepts: state.stats.accepts,
+        rejects: state.stats.rejects, timeouts: state.stats.timeouts,
+      };
+    });
+  }
 
   /** PAP authentication (RFC 2865 §5.2 User-Password). */
   authenticate(username: string, password: string, serverIp?: string): Promise<boolean> {
@@ -121,18 +159,97 @@ export class RadiusClientAgent {
 
   private run(username: string, password: string, authMethod: RadiusAuthMethod, serverIp?: string): Promise<boolean> {
     if (!this.config.enabled) return Promise.resolve(false);
-    const server = serverIp
-      ? this.config.servers.find((s) => s.ip === serverIp)
-      : this.config.servers[0];
-    if (!server) return Promise.resolve(false);
+    const order = this.candidateServers(serverIp);
+    if (order.length === 0) return Promise.resolve(false);
     return new Promise<boolean>((resolve) => {
-      this.beginRequest(server, username, password, authMethod, null, DEFAULT_MAX_CHALLENGE_ROUNDS, resolve);
+      this.tryServers(order, 0, username, password, authMethod, resolve);
     });
+  }
+
+  /** Servers in configured order, skipping ones currently marked dead — unless *all* are dead, in which case try them anyway (fail open, matching real `deadtime` semantics). */
+  private candidateServers(serverIp?: string): RadiusServerConfig[] {
+    if (serverIp) {
+      const s = this.config.servers.find((sv) => sv.ip === serverIp);
+      return s ? [s] : [];
+    }
+    const now = Date.now();
+    const alive = this.config.servers.filter((s) => !this.isDead(s.ip, now));
+    return alive.length > 0 ? alive : this.config.servers.slice();
+  }
+
+  /** Attempt `order[idx]`; on an explicit accept/reject resolve immediately (authoritative — no failover), on timeout mark it dead and move to the next server. */
+  private tryServers(
+    order: RadiusServerConfig[], idx: number, username: string, password: string,
+    authMethod: RadiusAuthMethod, resolve: (accepted: boolean) => void,
+  ): void {
+    if (idx >= order.length) { resolve(false); return; }
+    const server = order[idx];
+    const state = this.stateFor(server.ip);
+    state.stats.requests++;
+    this.beginRequest(server, username, password, authMethod, null, DEFAULT_MAX_CHALLENGE_ROUNDS, (result) => {
+      if (result === 'accept') {
+        state.stats.accepts++;
+        this.markAlive(server.ip);
+        resolve(true);
+        return;
+      }
+      if (result === 'reject') {
+        state.stats.rejects++;
+        this.markAlive(server.ip);
+        resolve(false);
+        return;
+      }
+      state.stats.timeouts++;
+      this.markDead(server.ip);
+      if (!this.running) { resolve(false); return; } // agent stopped mid-flight — don't start a new request
+      this.tryServers(order, idx + 1, username, password, authMethod, resolve);
+    });
+  }
+
+  private stateFor(ip: string): ServerRuntimeState {
+    let s = this.serverStates.get(ip);
+    if (!s) {
+      s = { deadUntil: null, stats: { requests: 0, accepts: 0, rejects: 0, timeouts: 0 } };
+      this.serverStates.set(ip, s);
+    }
+    return s;
+  }
+
+  private isDead(ip: string, now: number): boolean {
+    const deadUntil = this.serverStates.get(ip)?.deadUntil;
+    return !!deadUntil && deadUntil > now;
+  }
+
+  private markDead(ip: string): void {
+    if (this.deadtimeMs <= 0) return;
+    const state = this.stateFor(ip);
+    const wasAlive = !this.isDead(ip, Date.now());
+    state.deadUntil = Date.now() + this.deadtimeMs;
+    if (wasAlive) {
+      this.getBus().publish({
+        topic: 'radius.server.dead',
+        payload: { deviceId: this.host.id, hostname: this.host.getHostname(), serverIp: ip },
+      });
+      Logger.warn(this.host.id, 'radius:server-dead',
+        `${this.host.name}: RADIUS server ${ip} marked dead for ${this.deadtimeMs}ms`);
+    }
+  }
+
+  private markAlive(ip: string): void {
+    const state = this.serverStates.get(ip);
+    if (state?.deadUntil) {
+      state.deadUntil = null;
+      this.getBus().publish({
+        topic: 'radius.server.alive',
+        payload: { deviceId: this.host.id, hostname: this.host.getHostname(), serverIp: ip },
+      });
+      Logger.info(this.host.id, 'radius:server-alive', `${this.host.name}: RADIUS server ${ip} responsive again`);
+    }
   }
 
   private beginRequest(
     server: RadiusServerConfig, username: string, password: string, authMethod: RadiusAuthMethod,
-    state: string | null, challengesLeft: number, resolve: (accepted: boolean) => void,
+    state: string | null, challengesLeft: number, resolve: (result: RadiusRoundResult) => void,
   ): void {
     const identifier = this.nextIdentifier;
     this.nextIdentifier = (this.nextIdentifier + 1) & 0xff;
@@ -187,7 +304,7 @@ export class RadiusClientAgent {
     const accepted = payload.code === 'access-accept';
     const reasonAttr = getAttr(payload, 'reply-message');
     const reason = reasonAttr ? String(reasonAttr.value) : null;
-    pending.resolve(accepted);
+    pending.resolve(accepted ? 'accept' : 'reject');
     this.getBus().publish({
       topic: 'radius.auth.completed',
       payload: {
@@ -208,7 +325,7 @@ export class RadiusClientAgent {
     const stateAttr = getAttr(payload, 'state');
     const state = stateAttr ? String(stateAttr.value) : null;
     const giveUp = (reason: string) => {
-      pending.resolve(false);
+      pending.resolve('reject'); // the server did respond validly — this is a client-side give-up, not a server failure
       this.getBus().publish({
         topic: 'radius.auth.completed',
         payload: {
@@ -241,7 +358,7 @@ export class RadiusClientAgent {
         this.armTimeout(server, pending);
       } else {
         this.pending.delete(pending.identifier);
-        pending.resolve(false);
+        pending.resolve('timeout');
         this.getBus().publish({
           topic: 'radius.auth.completed',
           payload: {

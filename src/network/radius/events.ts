@@ -43,9 +43,15 @@ export interface RadiusAccountingRecordPayload extends RadiusDeviceRef {
   terminateCause: string | null;
 }
 
+export interface RadiusServerHealthPayload extends RadiusDeviceRef {
+  serverIp: string;
+}
+
 export type RadiusDomainEvent =
   | { topic: 'radius.packet.sent'; payload: RadiusPacketSentPayload }
   | { topic: 'radius.packet.received'; payload: RadiusPacketReceivedPayload }
   | { topic: 'radius.auth.completed'; payload: RadiusAuthCompletedPayload }
   | { topic: 'radius.auth.rejected'; payload: RadiusAuthRejectedByServerPayload }
-  | { topic: 'radius.accounting.record'; payload: RadiusAccountingRecordPayload };
+  | { topic: 'radius.accounting.record'; payload: RadiusAccountingRecordPayload }
+  | { topic: 'radius.server.dead'; payload: RadiusServerHealthPayload }
+  | { topic: 'radius.server.alive'; payload: RadiusServerHealthPayload };
