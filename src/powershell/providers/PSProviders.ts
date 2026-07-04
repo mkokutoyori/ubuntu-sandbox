@@ -249,6 +249,25 @@ export interface IDnsServerProvider {
   getForwarders(): string[];
 }
 
+// ── DHCP Server role (PRD-Windows-Server.md §5 P8) ──────────────────────────
+
+export interface DhcpOpResult { ok: boolean; message: string }
+export interface DhcpScopeInfo { name: string; startRange: string; endRange: string; subnetMask: string; leaseDuration: number }
+export interface DhcpLeaseInfo { ipAddress: string; clientId: string; scopeName: string; leaseExpiration: number; type: 'automatic' | 'manual' }
+
+export interface IDhcpServerProvider {
+  addScope(name: string, startRange: string, endRange: string, subnetMask: string, leaseDurationSeconds?: number): DhcpOpResult;
+  getScope(name: string): DhcpScopeInfo | null;
+  listScopes(): DhcpScopeInfo[];
+
+  addExclusionRange(startRange: string, endRange: string): DhcpOpResult;
+  addReservation(scopeName: string, ipAddress: string, clientId: string): DhcpOpResult;
+  setOptionValue(scopeName: string, optionId: number, values: string[]): DhcpOpResult;
+  getLeases(scopeName?: string): DhcpLeaseInfo[];
+
+  authorizeInDC(): DhcpOpResult;
+}
+
 export interface IRemotingProvider {
   /**
    * Resolve a computer name/IP to a remoting-capable target — over the
@@ -598,4 +617,5 @@ export interface PSProviders {
   readonly ad:             IAdProvider             | null;
   readonly computer:       IComputerProvider       | null;
   readonly dns:            IDnsServerProvider      | null;
+  readonly dhcp:           IDhcpServerProvider     | null;
 }

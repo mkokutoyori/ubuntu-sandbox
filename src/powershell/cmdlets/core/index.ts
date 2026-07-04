@@ -129,6 +129,12 @@ import {
   RemoveDnsServerResourceRecordCmdlet, GetDnsServerResourceRecordCmdlet,
   SetDnsServerForwarderCmdlet, GetDnsServerForwarderCmdlet,
 } from './DnsServerCmdlets';
+import {
+  AddDhcpServerv4ScopeCmdlet, GetDhcpServerv4ScopeCmdlet,
+  AddDhcpServerv4ExclusionRangeCmdlet, AddDhcpServerv4ReservationCmdlet,
+  SetDhcpServerv4OptionValueCmdlet, GetDhcpServerv4LeaseCmdlet,
+  AddDhcpServerInDCCmdlet,
+} from './DhcpServerCmdlets';
 
 /**
  * Register all core (provider-independent) cmdlets into the given registry.
@@ -387,6 +393,15 @@ export function registerCoreCmdlets(registry: CmdletRegistry): void {
   registry.register(new GetDnsServerResourceRecordCmdlet());
   registry.register(new SetDnsServerForwarderCmdlet());
   registry.register(new GetDnsServerForwarderCmdlet());
+
+  // ── DHCP Server role (PRD-Windows-Server.md §5 P8) ──────────────────────────
+  registry.register(new AddDhcpServerv4ScopeCmdlet());
+  registry.register(new GetDhcpServerv4ScopeCmdlet());
+  registry.register(new AddDhcpServerv4ExclusionRangeCmdlet());
+  registry.register(new AddDhcpServerv4ReservationCmdlet());
+  registry.register(new SetDhcpServerv4OptionValueCmdlet());
+  registry.register(new GetDhcpServerv4LeaseCmdlet());
+  registry.register(new AddDhcpServerInDCCmdlet());
 
   // ── Native CLI shims (sync subset) ────────────────────────────────────────
   // ping / tracert stay in the legacy executor — they're async and the

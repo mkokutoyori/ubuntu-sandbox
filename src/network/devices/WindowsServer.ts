@@ -20,6 +20,7 @@ import { WindowsPC } from './WindowsPC';
 import { RoleManager } from './windows/server/RoleManager';
 import { DirectoryStore } from './windows/server/ad/DirectoryStore';
 import { WindowsDnsServerRole } from './windows/server/dns/WindowsDnsServerRole';
+import { WindowsDhcpServerRole } from './windows/server/dhcp/WindowsDhcpServerRole';
 
 export interface AdDsOpResult { ok: boolean; message: string }
 
@@ -27,6 +28,7 @@ export class WindowsServer extends WindowsPC {
   private readonly roleManager: RoleManager = new RoleManager(this.getServiceManager());
   private directoryStore: DirectoryStore | null = null;
   private dnsServerRoleInstance: WindowsDnsServerRole | null = null;
+  private dhcpServerRoleInstance: WindowsDhcpServerRole | null = null;
 
   constructor(name: string = 'WinServer', x: number = 0, y: number = 0) {
     super('windows-server', name, x, y);
@@ -58,6 +60,28 @@ export class WindowsServer extends WindowsPC {
       this.dnsServerRoleInstance.start();
     }
     return this.dnsServerRoleInstance;
+  }
+
+  /**
+   * PRD Phase 8 (§5 P8): the DHCP Server role, hosting the real DHCP engine
+   * over UDP 67/68 — null while the `DHCP` role isn't installed. Domain
+   * context is refreshed on every access (not just at creation) since
+   * `Add-Computer`/`Install-ADDSForest` can join/promote this server to a
+   * domain after the role was already installed and started.
+   */
+  getDhcpServerRole(): WindowsDhcpServerRole | null {
+    if (!this.roleManager.isInstalled('DHCP')) {
+      if (this.dhcpServerRoleInstance) { this.dhcpServerRoleInstance.stop(); this.dhcpServerRoleInstance = null; }
+      return null;
+    }
+    if (!this.dhcpServerRoleInstance) {
+      this.dhcpServerRoleInstance = new WindowsDhcpServerRole(this);
+      this.dhcpServerRoleInstance.start();
+    }
+    this.dhcpServerRoleInstance.setDomainContext(
+      this.getDirectoryStore() !== null || this.getDomainMembership() !== null,
+    );
+    return this.dhcpServerRoleInstance;
   }
 
   /**

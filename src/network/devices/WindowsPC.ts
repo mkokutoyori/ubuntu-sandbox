@@ -2200,6 +2200,13 @@ export class WindowsPC extends EndHost implements UserAccountHost {
    */
   getDnsServerRole(): import('./windows/server/dns/WindowsDnsServerRole').WindowsDnsServerRole | null { return null; }
 
+  /**
+   * DHCP Server role (PRD-Windows-Server.md §5 P8) — null until
+   * `Install-WindowsFeature DHCP` on a `WindowsServer`; always null on a
+   * client, overridden by `WindowsServer`.
+   */
+  getDhcpServerRole(): import('./windows/server/dhcp/WindowsDhcpServerRole').WindowsDhcpServerRole | null { return null; }
+
   /** Get the process manager (for PowerShellExecutor and other integrations) */
   getProcessManager(): WindowsProcessManager { return this.procMgr; }
 

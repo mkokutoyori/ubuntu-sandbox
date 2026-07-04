@@ -53,6 +53,7 @@ import type {
   IAdProvider, AdUserInfo, AdGroupInfo, AdComputerInfo, AdOrgUnitInfo, AdOpResult,
   IComputerProvider, DomainMembershipInfo,
   IDnsServerProvider, DnsOpResult, DnsZoneInfo, DnsRecordInfo,
+  IDhcpServerProvider, DhcpOpResult, DhcpScopeInfo, DhcpLeaseInfo,
   DirEntry, ServiceInfo, ProcessInfo, UserInfo, GroupInfo,
   NetworkAdapterInfo, IPAddressInfo, RouteInfo, EventLogEntryInfo,
   VpnConnectionInfo, ScheduledTaskInfo, DiskInfo, VolumeInfo,
@@ -472,6 +473,38 @@ class WindowsDnsServerAdapter implements IDnsServerProvider {
 
   setForwarders(addresses: string[]): DnsOpResult { return this.role().setForwarders(addresses); }
   getForwarders(): string[] { return this.role().getForwarders(); }
+}
+
+// ── DHCP Server adapter (PRD-Windows-Server.md §5 P8) ────────────────────
+
+class WindowsDhcpServerAdapter implements IDhcpServerProvider {
+  constructor(private readonly pc: WindowsPC) {}
+
+  private requireRole(cmdletName: string): void {
+    if (!this.pc.getRoleManager()?.isInstalled('DHCP')) {
+      throw new Error(`${cmdletName} is not recognized as the name of a cmdlet, function, script file, or operable program`);
+    }
+  }
+
+  private role() {
+    this.requireRole('DhcpServer cmdlet');
+    const role = this.pc.getDhcpServerRole();
+    if (!role) throw new Error('DhcpServer cmdlet : The DHCP Server service is not available on this computer.');
+    return role;
+  }
+
+  addScope(name: string, startRange: string, endRange: string, subnetMask: string, leaseDurationSeconds?: number): DhcpOpResult {
+    return this.role().addScope(name, startRange, endRange, subnetMask, leaseDurationSeconds);
+  }
+  getScope(name: string): DhcpScopeInfo | null { return this.role().getScope(name); }
+  listScopes(): DhcpScopeInfo[] { return this.role().listScopes(); }
+
+  addExclusionRange(startRange: string, endRange: string): DhcpOpResult { return this.role().addExclusionRange(startRange, endRange); }
+  addReservation(scopeName: string, ipAddress: string, clientId: string): DhcpOpResult { return this.role().addReservation(scopeName, ipAddress, clientId); }
+  setOptionValue(scopeName: string, optionId: number, values: string[]): DhcpOpResult { return this.role().setOptionValue(scopeName, optionId, values); }
+  getLeases(scopeName?: string): DhcpLeaseInfo[] { return this.role().getLeases(scopeName); }
+
+  authorizeInDC(): DhcpOpResult { return this.role().authorizeInDC(); }
 }
 
 function toServiceInfo(
@@ -1551,5 +1584,6 @@ export function createWindowsPSProviders(
     ad:             pc.getRoleManager() ? new WindowsAdAdapter(pc) : null,
     computer:       new WindowsComputerAdapter(pc),
     dns:            pc.getRoleManager() ? new WindowsDnsServerAdapter(pc) : null,
+    dhcp:           pc.getRoleManager() ? new WindowsDhcpServerAdapter(pc) : null,
   };
 }
