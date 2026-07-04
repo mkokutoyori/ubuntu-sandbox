@@ -691,6 +691,14 @@ export function buildHuaweiIPSecPolicyCommands(
     const name = ctx.getSelectedIPSecPolicy();
     const seq = ctx.getSelectedIPSecPolicySeq();
     if (!name || seq === null) return 'Error: No IPSec policy selected.';
+    if (seq === 0) {
+      // Entered via 'ipsec profile NAME' (tunnel-protection profile), not a
+      // numbered crypto-map entry — real VRP 'ipsec policy' sequence numbers
+      // start at 1, so seq 0 is the profile-mode sentinel set by that command.
+      const profile = eng(ctx).getOrCreateIPSecProfile(name);
+      profile.transformSetName = args.filter(a => a.trim())[0] || '';
+      return '';
+    }
     const entry = eng(ctx).getOrCreateCryptoMapEntry(name, seq);
     entry.transformSets = args.filter(a => a.trim());
     return '';
@@ -1143,7 +1151,11 @@ export function registerHuaweiIPSecDisplayCommands(
     return lines.join('\n');
   });
 
-  trie.register('display ikev2 sa', 'Display IKEv2 SAs', () => 'Info: No IKEv2 SAs.');
+  trie.register('display ikev2 sa', 'Display IKEv2 SAs', () => {
+    const e = engOrNull(getRouter());
+    if (!e) return 'Info: No IKEv2 SAs.';
+    return e.showCryptoIKEv2SA?.() ?? 'Info: No IKEv2 SAs.';
+  });
 
   trie.register('display ipsec sa verbose', 'Display detailed IPSec SAs', () => {
     const e = engOrNull(getRouter());
