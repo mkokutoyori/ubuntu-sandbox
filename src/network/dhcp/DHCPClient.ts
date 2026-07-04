@@ -22,6 +22,7 @@
  */
 
 import { DHCPServer } from './DHCPServer';
+import { encodeNetbiosNodeType } from './DHCPPacket';
 import {
   DHCPClientState, DHCPClientIfaceState, DHCPClientLease,
   DHCPOfferResult, DHCPAckResult,
@@ -521,6 +522,11 @@ export class DHCPClient implements IProtocolEngine {
       rebindingTime,
       expiration: ackResult.binding.leaseExpiration,
       xid: state.xid,
+      nextServer: pool.nextServer ?? null,
+      bootfileName: pool.bootfile ?? null,
+      netbiosServers: pool.netbiosServers ?? [],
+      netbiosNodeType: pool.netbiosNodeType ? encodeNetbiosNodeType(pool.netbiosNodeType) ?? null : null,
+      vendorOptions: offer.vendorOptions ?? {},
     };
 
     state.lease = lease;
@@ -669,6 +675,11 @@ export class DHCPClient implements IProtocolEngine {
       rebindingTime: Math.floor(rebindingTime),
       expiration: ackResult.binding.leaseExpiration,
       xid: state.xid,
+      nextServer: lastLease.nextServer,
+      bootfileName: lastLease.bootfileName,
+      netbiosServers: lastLease.netbiosServers,
+      netbiosNodeType: lastLease.netbiosNodeType,
+      vendorOptions: lastLease.vendorOptions,
     };
 
     state.lease = lease;
@@ -830,6 +841,11 @@ export class DHCPClient implements IProtocolEngine {
       rebindingTime: Math.floor(leaseDuration * 0.875),
       expiration: now + leaseDuration * 1000,
       xid: state.xid,
+      nextServer: null,
+      bootfileName: null,
+      netbiosServers: [],
+      netbiosNodeType: null,
+      vendorOptions: {},
     };
 
     state.lease = lease;

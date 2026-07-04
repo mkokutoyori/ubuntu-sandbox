@@ -88,6 +88,9 @@ export interface DHCPDiscoverParams {
   requestedIP?: string;
   /** Relay agent IP (giaddr) — set by relay agent for remote subnet selection */
   giaddr?: string;
+  /** IP of the local (non-relayed) ingress interface — used for subnet-based
+   *  pool selection when giaddr is absent (directly-attached client). */
+  localGatewayIP?: string;
 }
 
 /** Result returned by server for DHCPOFFER */
@@ -104,6 +107,8 @@ export interface DHCPOfferResult {
   renewalTime?: number;
   /** Option 59: T2 rebinding time in seconds */
   rebindingTime?: number;
+  /** Generic/vendor options (43, 150, …) decoded to display strings, keyed by code (wire channel only) */
+  vendorOptions?: Record<number, string>;
 }
 
 /** Parameters sent in DHCPREQUEST (client → server) */
@@ -285,6 +290,16 @@ export interface DHCPClientLease {
   expiration: number;
   /** Transaction ID */
   xid: number;
+  /** Option 66 — TFTP/next server */
+  nextServer: string | null;
+  /** Option 67 — boot filename */
+  bootfileName: string | null;
+  /** Option 44 — NetBIOS (WINS) name servers */
+  netbiosServers: string[];
+  /** Option 46 — NetBIOS node type, decoded to its RFC 2132 byte value */
+  netbiosNodeType: number | null;
+  /** Generic/vendor options (43, 150, …), keyed by code */
+  vendorOptions: Record<number, string>;
 }
 
 // ─── DHCP Client Interface State ─────────────────────────────────────

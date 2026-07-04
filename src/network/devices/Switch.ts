@@ -60,6 +60,7 @@ import {
   createDefaultArpInspectionConfig,
 } from '../arp/types';
 import { ArpInspectionPipeline } from '../arp/ArpInspectionPipeline';
+import { ArpRateLimiter } from '../arp/ArpRateLimiter';
 import type { ISwitchShell } from './shells/ISwitchShell';
 import { SwitchSecurityService } from './switch/SwitchSecurityService';
 import { PortMirror, type MirrorDirection, type MirrorSession } from './switch/PortMirror';
@@ -195,6 +196,7 @@ export abstract class Switch extends Equipment {
   private snoopingBindings: DHCPSnoopingBinding[] = [];
   private snoopingLog: string[] = [];
   private dhcpSnoopingViolations = 0;
+  private readonly dhcpSnoopingRateLimiter = new ArpRateLimiter();
 
   // ─── Interface Descriptions ──────────────────────────────────────
   private interfaceDescriptions: Map<string, string> = new Map();
@@ -1072,7 +1074,7 @@ export abstract class Switch extends Equipment {
       }
     }
 
-    // ─── Step 1.6: DHCP Snooping (drop server replies from untrusted ports)
+    // ─── Step 1.6: DHCP Snooping (untrusted ports: rate limit, verify-mac, drop server replies)
     if (this.dhcpSnooping.enabled
         && (this.dhcpSnooping.vlans.size === 0 || this.dhcpSnooping.vlans.has(ingressVlan))
         && !this.dhcpSnooping.trustedPorts.has(portName)
@@ -1080,18 +1082,49 @@ export abstract class Switch extends Equipment {
       const ip = frame.payload as IPv4Packet | undefined;
       if (ip && ip.type === 'ipv4' && ip.protocol === IP_PROTO_UDP) {
         const udp = ip.payload as UDPPacket | undefined;
-        if (udp && udp.type === 'udp' && udp.sourcePort === 67) {
+        if (udp && udp.type === 'udp' && (udp.sourcePort === 67 || udp.sourcePort === 68)) {
           const dhcp = udp.payload;
           const msgType = dhcp instanceof DHCPPacket ? dhcp.getMessageType() : undefined;
-          this.dhcpSnoopingViolations++;
-          this.snoopingLog.push(
-            `DHCP_SNOOPING: dropped ${msgType ?? 'server message'} from ${frame.srcMAC} ` +
-            `on untrusted port ${portName} VLAN ${ingressVlan}`,
-          );
-          Logger.warn(this.id, 'switch:dhcp-snooping-drop',
-            `${this.name}: dropped DHCP server message (${msgType ?? 'unknown'}) from ` +
-            `${frame.srcMAC} on untrusted ${portName} (VLAN ${ingressVlan})`);
-          return;
+
+          const limit = this.dhcpSnooping.rateLimits.get(portName);
+          if (limit && limit > 0) {
+            const r = this.dhcpSnoopingRateLimiter.consume(portName, limit, 1);
+            if (!r.ok) {
+              this.dhcpSnoopingViolations++;
+              this.snoopingLog.push(
+                `DHCP_SNOOPING: rate limit (${r.limit} pps) exceeded on ${portName} VLAN ${ingressVlan}, dropped ${msgType ?? 'message'}`,
+              );
+              Logger.warn(this.id, 'switch:dhcp-snooping-rate-limit',
+                `${this.name}: DHCP rate limit exceeded on ${portName} (VLAN ${ingressVlan}) — dropped`);
+              return;
+            }
+          }
+
+          if (udp.sourcePort === 68 && this.dhcpSnooping.verifyMac
+              && dhcp instanceof DHCPPacket
+              && dhcp.chaddr.toLowerCase() !== frame.srcMAC.toString().toLowerCase()) {
+            this.dhcpSnoopingViolations++;
+            this.snoopingLog.push(
+              `DHCP_SNOOPING: verify mac-address failed — chaddr ${dhcp.chaddr} != source MAC ${frame.srcMAC} ` +
+              `on untrusted port ${portName} VLAN ${ingressVlan}`,
+            );
+            Logger.warn(this.id, 'switch:dhcp-snooping-mac-mismatch',
+              `${this.name}: dropped DHCP client message (chaddr ${dhcp.chaddr} != source MAC ${frame.srcMAC}) ` +
+              `on untrusted ${portName} (VLAN ${ingressVlan})`);
+            return;
+          }
+
+          if (udp.sourcePort === 67) {
+            this.dhcpSnoopingViolations++;
+            this.snoopingLog.push(
+              `DHCP_SNOOPING: dropped ${msgType ?? 'server message'} from ${frame.srcMAC} ` +
+              `on untrusted port ${portName} VLAN ${ingressVlan}`,
+            );
+            Logger.warn(this.id, 'switch:dhcp-snooping-drop',
+              `${this.name}: dropped DHCP server message (${msgType ?? 'unknown'}) from ` +
+              `${frame.srcMAC} on untrusted ${portName} (VLAN ${ingressVlan})`);
+            return;
+          }
         }
       }
     }

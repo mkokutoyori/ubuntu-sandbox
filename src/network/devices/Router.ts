@@ -2078,10 +2078,11 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     }
     let reply: DHCPPacket | null = null;
     if (type === 'DHCPDISCOVER') {
+      const localGatewayIP = giaddr ? undefined : this.ports.get(inPort)?.getIPAddress()?.toString();
       const offer = this.dhcpServer.processDiscover({
         clientMAC: pkt.chaddr, xid: pkt.xid,
         clientIdentifier: pkt.chaddr, parameterRequestList: [],
-        giaddr,
+        giaddr, localGatewayIP,
       });
       if (!offer) return;
       reply = DHCPPacket.createOffer(pkt.chaddr, pkt.xid, offer.ip,
@@ -2092,6 +2093,11 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
           domainName: offer.pool.domainName ?? undefined,
           leaseDuration: offer.pool.leaseDuration ?? 86400,
           renewalTime: offer.renewalTime, rebindingTime: offer.rebindingTime,
+          nextServer: offer.pool.nextServer,
+          bootfile: offer.pool.bootfile,
+          netbiosServers: offer.pool.netbiosServers,
+          netbiosNodeType: offer.pool.netbiosNodeType,
+          rawOptions: offer.pool.options,
         });
     } else if (type === 'DHCPREQUEST') {
       const requested = String(pkt.getOption(50) ?? pkt.ciaddr);
@@ -2106,7 +2112,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
         reply = DHCPPacket.createNak(pkt.chaddr, pkt.xid,
           result.serverIdentifier, result.message ?? 'requested address not available');
       } else {
-        const pool = this.dhcpServer.getAllPools().values().next().value;
+        const pool = this.dhcpServer.getPool(result.binding.poolName);
         reply = DHCPPacket.createAck(pkt.chaddr, pkt.xid,
           result.binding.ipAddress, result.serverIdentifier, {
             mask: pool?.mask ?? '255.255.255.0',
@@ -2116,6 +2122,11 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
             leaseDuration: pool?.leaseDuration ?? 86400,
             renewalTime: pool?.renewalTime,
             rebindingTime: pool?.rebindingTime,
+            nextServer: pool?.nextServer,
+            bootfile: pool?.bootfile,
+            netbiosServers: pool?.netbiosServers,
+            netbiosNodeType: pool?.netbiosNodeType,
+            rawOptions: pool?.options,
           });
       }
     } else if (type === 'DHCPDECLINE') {

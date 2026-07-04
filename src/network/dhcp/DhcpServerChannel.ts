@@ -41,6 +41,20 @@ const num = (v: unknown): number | undefined => {
 const strArray = (v: unknown): string[] =>
   Array.isArray(v) ? v.map(String) : v !== undefined && v !== null ? [String(v)] : [];
 
+/** Named/well-known option codes — anything else is treated as a generic
+ *  vendor option (43, 150, …), decoded via DHCPPacket.decodeVendorOption. */
+const NAMED_OPTION_CODES = new Set<number>(Object.values(DHCP_OPTION));
+
+function extractVendorOptions(pkt: DHCPPacket): Record<number, string> {
+  const out: Record<number, string> = {};
+  for (const code of pkt.getOptionCodes()) {
+    if (NAMED_OPTION_CODES.has(code)) continue;
+    const raw = pkt.getOption(code);
+    if (raw instanceof Uint8Array) out[code] = DHCPPacket.decodeVendorOption(raw);
+  }
+  return out;
+}
+
 interface InboxEntry {
   pkt: DHCPPacket;
   mac?: string;
@@ -101,10 +115,15 @@ export class WireDhcpChannel implements DhcpServerChannel {
       denyPatterns: [],
       renewalTime,
       rebindingTime,
+      nextServer: str(offer.getOption(DHCP_OPTION.TFTP_SERVER_NAME)) ?? undefined,
+      bootfile: str(offer.getOption(DHCP_OPTION.BOOTFILE_NAME)) ?? undefined,
+      netbiosServers: strArray(offer.getOption(DHCP_OPTION.NETBIOS_NAME_SERVER)),
+      netbiosNodeType: str(offer.getOption(DHCP_OPTION.NETBIOS_NODE_TYPE)) ?? undefined,
     };
     return {
       ip: offer.yiaddr,
       pool,
+      vendorOptions: extractVendorOptions(offer),
       serverIdentifier,
       serverMac: entry.mac,
       xid: offer.xid,

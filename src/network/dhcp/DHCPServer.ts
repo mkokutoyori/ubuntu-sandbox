@@ -409,14 +409,16 @@ export class DHCPServer implements IProtocolEngine {
     // Clean expired pending offers
     this.cleanExpiredPendingOffers();
 
-    // Determine pool iteration order: if giaddr is set, prioritize matching pool
-    const poolEntries = this.getPoolsForDiscover(params.giaddr);
+    // Subnet anchor for pool selection: giaddr when relayed, otherwise the
+    // local ingress interface's own IP for a directly-attached client.
+    const subnetAnchor = params.giaddr ?? params.localGatewayIP;
+    const poolEntries = this.getPoolsForDiscover(subnetAnchor);
 
     for (const pool of poolEntries) {
       if (!pool.network || !pool.mask) continue;
 
-      // If giaddr is set, only consider pools whose subnet contains the giaddr
-      if (params.giaddr && !this.isIPInPool(params.giaddr, pool)) continue;
+      // Only consider pools whose subnet actually contains the anchor.
+      if (subnetAnchor && !this.isIPInPool(subnetAnchor, pool)) continue;
 
       // Check deny patterns
       if (this.isClientDenied(params.clientMAC, pool)) continue;
@@ -1112,17 +1114,17 @@ export class DHCPServer implements IProtocolEngine {
   // ─── Internal Helpers ─────────────────────────────────────────────
 
   /**
-   * Get pools for DISCOVER, prioritizing pools matching giaddr if present.
+   * Get pools for DISCOVER, prioritizing pools matching the subnet anchor
+   * (giaddr when relayed, or the local ingress interface's own IP when not).
    */
-  private getPoolsForDiscover(giaddr?: string): DHCPPoolConfig[] {
+  private getPoolsForDiscover(subnetAnchor?: string): DHCPPoolConfig[] {
     const allPools = Array.from(this.pools.values());
-    if (!giaddr) return allPools;
+    if (!subnetAnchor) return allPools;
 
-    // If giaddr is present, put matching pools first
     const matching: DHCPPoolConfig[] = [];
     const others: DHCPPoolConfig[] = [];
     for (const pool of allPools) {
-      if (pool.network && pool.mask && this.isIPInPool(giaddr, pool)) {
+      if (pool.network && pool.mask && this.isIPInPool(subnetAnchor, pool)) {
         matching.push(pool);
       } else {
         others.push(pool);
