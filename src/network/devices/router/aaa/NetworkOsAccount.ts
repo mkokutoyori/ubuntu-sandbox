@@ -23,6 +23,8 @@ export interface NetworkOsAccountSnapshot {
   readonly lastFailedLoginFrom: string | null;
   readonly expireAt: number | null;
   readonly passwordExpireAt: number | null;
+  /** Previous secrets, most-recent-first — checked against a history policy (Huawei `password-policy history-record`). */
+  readonly passwordHistory: readonly string[];
   readonly idleTimeoutSeconds: number;
   readonly maxConcurrentSessions: number;
   readonly accessClassIn: number | null;
@@ -74,6 +76,7 @@ export class NetworkOsAccount {
   readonly lastFailedLoginFrom: string | null;
   readonly expireAt: number | null;
   readonly passwordExpireAt: number | null;
+  readonly passwordHistory: readonly string[];
   readonly idleTimeoutSeconds: number;
   readonly maxConcurrentSessions: number;
   readonly accessClassIn: number | null;
@@ -103,6 +106,7 @@ export class NetworkOsAccount {
     this.lastFailedLoginFrom = s.lastFailedLoginFrom;
     this.expireAt = s.expireAt;
     this.passwordExpireAt = s.passwordExpireAt;
+    this.passwordHistory = s.passwordHistory;
     this.idleTimeoutSeconds = s.idleTimeoutSeconds;
     this.maxConcurrentSessions = s.maxConcurrentSessions;
     this.accessClassIn = s.accessClassIn;
@@ -135,6 +139,7 @@ export class NetworkOsAccount {
       lastFailedLoginFrom: null,
       expireAt: init.expireAt ?? null,
       passwordExpireAt: init.passwordExpireAt ?? null,
+      passwordHistory: Object.freeze([]),
       idleTimeoutSeconds: init.idleTimeoutSeconds ?? 0,
       maxConcurrentSessions: init.maxConcurrentSessions ?? 0,
       accessClassIn: init.accessClassIn ?? null,
@@ -165,7 +170,8 @@ export class NetworkOsAccount {
       lastLoginAt: this.lastLoginAt, lastLoginFrom: this.lastLoginFrom,
       lastLoginMethod: this.lastLoginMethod, lastFailedLoginAt: this.lastFailedLoginAt,
       lastFailedLoginFrom: this.lastFailedLoginFrom, expireAt: this.expireAt,
-      passwordExpireAt: this.passwordExpireAt, idleTimeoutSeconds: this.idleTimeoutSeconds,
+      passwordExpireAt: this.passwordExpireAt, passwordHistory: this.passwordHistory,
+      idleTimeoutSeconds: this.idleTimeoutSeconds,
       maxConcurrentSessions: this.maxConcurrentSessions, accessClassIn: this.accessClassIn,
       accessClassOut: this.accessClassOut, ftpDirectory: this.ftpDirectory,
       homeDirectory: this.homeDirectory, publicKeys: this.publicKeys,
@@ -184,6 +190,25 @@ export class NetworkOsAccount {
 
   withSecret(secret: string, algo: PasswordHashAlgorithm = 'plain'): NetworkOsAccount {
     return this.mutate({ secret, passwordHashAlgorithm: algo });
+  }
+
+  withPasswordExpireAt(at: number | null): NetworkOsAccount {
+    return this.mutate({ passwordExpireAt: at });
+  }
+
+  /** True when `secret` matches the current password or one still retained in history (Huawei `password-policy history-record`). */
+  wouldReuseSecret(secret: string, maxHistory: number): boolean {
+    if (maxHistory <= 0) return false;
+    if (this.secret !== '' && this.secret === secret) return true;
+    return this.passwordHistory.slice(0, maxHistory).includes(secret);
+  }
+
+  /** Like withSecret(), but pushes the outgoing secret onto the history list (bounded to maxHistory). */
+  withSecretRetainingHistory(secret: string, algo: PasswordHashAlgorithm, maxHistory: number): NetworkOsAccount {
+    const history = maxHistory > 0
+      ? Object.freeze([this.secret, ...this.passwordHistory].filter(s => s !== '').slice(0, maxHistory))
+      : this.passwordHistory;
+    return this.mutate({ secret, passwordHashAlgorithm: algo, passwordHistory: history });
   }
 
   withPrivilege(level: number): NetworkOsAccount {

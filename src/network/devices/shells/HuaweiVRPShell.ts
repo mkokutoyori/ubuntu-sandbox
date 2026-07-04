@@ -1912,7 +1912,20 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
       const algo: PasswordHashAlgorithm = idx >= 0
         ? (args[idx] === 'irreversible-cipher' ? 'irreversible-cipher' : 'cipher')
         : 'plain';
-      next = existing.withSecret(args[idx >= 0 ? idx + 1 : args.length - 1] ?? existing.secret, algo);
+      const raw = args[idx >= 0 ? idx + 1 : args.length - 1] ?? existing.secret;
+      const policy = router.getHuaweiAaaService().passwordPolicy;
+      // Length only applies to a cleartext entry — a cipher/irreversible-cipher
+      // value is already hashed, exactly like Cisco's `secret 5|8|9` forms.
+      if (algo === 'plain' && policy.minLength && raw.length < policy.minLength) {
+        return `Error: The password must contain at least ${policy.minLength} characters.`;
+      }
+      if (existing.wouldReuseSecret(raw, policy.historyMaxRecords ?? 0)) {
+        return 'Error: The password has been used before. Please choose a different one.';
+      }
+      next = existing.withSecretRetainingHistory(raw, algo, policy.historyMaxRecords ?? 0);
+      if (policy.expireDays) {
+        next = next.withPasswordExpireAt(Date.now() + policy.expireDays * 86_400_000);
+      }
     } else if (kw === 'privilege' && args[2] === 'level' && args[3]) {
       next = existing.withPrivilege(Number(args[3]) || existing.privilege);
     } else if (kw === 'service-type') {
@@ -2044,6 +2057,34 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
       a.registerGreedy('local-user', 'Configure a local user', (args) => this.handleLocalUserCommand(args));
       a.registerGreedy('undo local-user', 'Remove a local user', (args) => {
         if (args[0]) this.r()._removeLocalUser(args[0]);
+        return '';
+      });
+      a.registerGreedy('password-policy', 'Local-user password policy', (args) => {
+        const policy = aaa().passwordPolicy;
+        const sub = args[0]?.toLowerCase();
+        if (sub === 'level' && (args[1] === 'common' || args[1] === 'high')) {
+          policy.level = args[1]; return '';
+        }
+        if (sub === 'min-length' && args[1]) {
+          const n = parseInt(args[1], 10);
+          if (!isNaN(n)) policy.minLength = n;
+          return '';
+        }
+        if (sub === 'expire' && args[1]) {
+          const n = parseInt(args[1], 10);
+          if (!isNaN(n)) policy.expireDays = n;
+          return '';
+        }
+        if (sub === 'alert-before-expire' && args[1]) {
+          const n = parseInt(args[1], 10);
+          if (!isNaN(n)) policy.alertBeforeExpireDays = n;
+          return '';
+        }
+        if (sub === 'history-record' && args[1] === 'max-record-number' && args[2]) {
+          const n = parseInt(args[2], 10);
+          if (!isNaN(n)) policy.historyMaxRecords = n;
+          return '';
+        }
         return '';
       });
     }

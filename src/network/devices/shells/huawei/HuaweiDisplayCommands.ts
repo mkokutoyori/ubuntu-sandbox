@@ -614,8 +614,15 @@ export function displayCurrentConfig(
   })._listLocalUsers;
   if (listUsers) {
     const users = listUsers.call(router).filter(u => !u.factoryDefault);
-    if (users.length > 0) {
+    const p = router.getHuaweiAaaService().passwordPolicy;
+    const hasPasswordPolicy = Object.keys(p).length > 0;
+    if (users.length > 0 || hasPasswordPolicy) {
       lines.push('aaa');
+      if (p.level) lines.push(` password-policy level ${p.level}`);
+      if (p.minLength) lines.push(` password-policy min-length ${p.minLength}`);
+      if (p.expireDays) lines.push(` password-policy expire ${p.expireDays}`);
+      if (p.alertBeforeExpireDays) lines.push(` password-policy alert-before-expire ${p.alertBeforeExpireDays}`);
+      if (p.historyMaxRecords) lines.push(` password-policy history-record max-record-number ${p.historyMaxRecords}`);
       for (const u of users) {
         // Real VRP never echoes the cleartext: 'cipher' is reversible
         // (AES), everything else is hashed one-way (irreversible-cipher).

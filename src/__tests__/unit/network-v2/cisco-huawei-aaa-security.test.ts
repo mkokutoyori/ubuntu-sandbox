@@ -894,3 +894,107 @@ describe('§R — aaa local authentication attempts max-fail locks out the accou
     expect(store.get('admin')?.locked).toBe(false);
   });
 });
+
+describe('§S — Huawei password-policy under aaa view', () => {
+  let lab: Lab;
+  beforeEach(async () => { lab = await buildLab(); });
+
+  test('min-length rejects a cleartext local-user password that is too short', async () => {
+    await lab.hwR1.executeCommand('system-view');
+    await lab.hwR1.executeCommand('aaa');
+    await lab.hwR1.executeCommand('password-policy min-length 8');
+    const out = await lab.hwR1.executeCommand('local-user admin password short');
+    expect(out).toMatch(/must contain at least 8 characters/);
+    expect(lab.hwR1.getCredentialStore().get('admin')).toBeUndefined();
+  });
+
+  test('min-length accepts a cleartext password meeting the minimum', async () => {
+    await lab.hwR1.executeCommand('system-view');
+    await lab.hwR1.executeCommand('aaa');
+    await lab.hwR1.executeCommand('password-policy min-length 8');
+    const out = await lab.hwR1.executeCommand('local-user admin password longenough1');
+    expect(out).not.toMatch(/must contain/);
+    expect(lab.hwR1.getCredentialStore().get('admin')?.secret).toBe('longenough1');
+  });
+
+  test('min-length does not apply to an already-hashed cipher password', async () => {
+    await lab.hwR1.executeCommand('system-view');
+    await lab.hwR1.executeCommand('aaa');
+    await lab.hwR1.executeCommand('password-policy min-length 20');
+    const out = await lab.hwR1.executeCommand('local-user admin password cipher %^%#shorthash%^%#');
+    expect(out).not.toMatch(/must contain/);
+  });
+
+  test('history-record rejects reusing the current password', async () => {
+    await lab.hwR1.executeCommand('system-view');
+    await lab.hwR1.executeCommand('aaa');
+    await lab.hwR1.executeCommand('password-policy history-record max-record-number 3');
+    await lab.hwR1.executeCommand('local-user admin password FirstPass1');
+    const out = await lab.hwR1.executeCommand('local-user admin password FirstPass1');
+    expect(out).toMatch(/has been used before/);
+  });
+
+  test('history-record rejects a password still within the retained window', async () => {
+    await lab.hwR1.executeCommand('system-view');
+    await lab.hwR1.executeCommand('aaa');
+    await lab.hwR1.executeCommand('password-policy history-record max-record-number 2');
+    await lab.hwR1.executeCommand('local-user admin password FirstPass1');
+    await lab.hwR1.executeCommand('local-user admin password SecondPass2');
+    const out = await lab.hwR1.executeCommand('local-user admin password FirstPass1');
+    expect(out).toMatch(/has been used before/);
+  });
+
+  test('history-record allows a brand-new password', async () => {
+    await lab.hwR1.executeCommand('system-view');
+    await lab.hwR1.executeCommand('aaa');
+    await lab.hwR1.executeCommand('password-policy history-record max-record-number 3');
+    await lab.hwR1.executeCommand('local-user admin password FirstPass1');
+    const out = await lab.hwR1.executeCommand('local-user admin password BrandNewPass9');
+    expect(out).not.toMatch(/has been used before/);
+  });
+
+  test('expire sets passwordExpireAt on the account when the password is set', async () => {
+    await lab.hwR1.executeCommand('system-view');
+    await lab.hwR1.executeCommand('aaa');
+    await lab.hwR1.executeCommand('password-policy expire 90');
+    await lab.hwR1.executeCommand('local-user admin password Admin@123');
+    const acc = lab.hwR1.getCredentialStore().get('admin');
+    expect(acc?.passwordExpireAt).not.toBeNull();
+    expect(acc!.passwordExpireAt!).toBeGreaterThan(Date.now() + 89 * 86_400_000);
+  });
+
+  test('an expired password blocks SSH login via the lifecycle gate', async () => {
+    await lab.hwR1.executeCommand('system-view');
+    await lab.hwR1.executeCommand('aaa');
+    await lab.hwR1.executeCommand('password-policy expire 90');
+    await lab.hwR1.executeCommand('local-user admin password Admin@123');
+    const acc = lab.hwR1.getCredentialStore().get('admin')!;
+    lab.hwR1.getCredentialStore().upsert(acc.withPasswordExpireAt(Date.now() - 1000));
+    expect(lab.hwR1.getCredentialStore().get('admin')?.isPasswordExpired()).toBe(true);
+  });
+
+  test('password-policy settings are persisted in current-configuration', async () => {
+    await lab.hwR1.executeCommand('system-view');
+    await lab.hwR1.executeCommand('aaa');
+    await lab.hwR1.executeCommand('password-policy min-length 8');
+    await lab.hwR1.executeCommand('password-policy expire 90');
+    await lab.hwR1.executeCommand('password-policy alert-before-expire 7');
+    await lab.hwR1.executeCommand('password-policy history-record max-record-number 4');
+    await lab.hwR1.executeCommand('password-policy level high');
+    await lab.hwR1.executeCommand('quit');
+    await lab.hwR1.executeCommand('quit');
+    const out = await lab.hwR1.executeCommand('display current-configuration');
+    expect(out).toMatch(/password-policy min-length 8/);
+    expect(out).toMatch(/password-policy expire 90/);
+    expect(out).toMatch(/password-policy alert-before-expire 7/);
+    expect(out).toMatch(/password-policy history-record max-record-number 4/);
+    expect(out).toMatch(/password-policy level high/);
+  });
+
+  test('with no policy configured, short passwords are still accepted', async () => {
+    await lab.hwR1.executeCommand('system-view');
+    await lab.hwR1.executeCommand('aaa');
+    const out = await lab.hwR1.executeCommand('local-user admin password ab');
+    expect(out).not.toMatch(/must contain/);
+  });
+});
