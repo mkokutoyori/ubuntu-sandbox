@@ -16,7 +16,10 @@ export type RadiusValueType =
   | 'time'            // 4-byte unsigned big-endian, seconds since 1970-01-01 (RFC 2865 §5.55)
   | 'octets'          // raw bytes, hex-encoded on the JS side
   | 'tagged-integer'  // RFC 2868 §3.1: 1 tag byte (0x00 or 0x01-0x1F) + 3-byte integer
-  | 'tagged-string';  // RFC 2868 §3.1: 1 tag byte + UTF-8 string
+  | 'tagged-string'   // RFC 2868 §3.1: 1 tag byte + UTF-8 string
+  | 'ipv6addr'        // RFC 3162 §2.1/§2.4: 16-byte IPv6 address, colon-hex on the JS side
+  | 'ipv6prefix'      // RFC 3162 §2.3: 1 reserved byte + 1 prefix-length byte + prefix bytes, "addr/len" on the JS side
+  | 'ifid';           // RFC 3162 §2.2: 8-byte interface identifier, "xxxx:xxxx:xxxx:xxxx" on the JS side
 
 export interface RadiusAttrDef {
   type: number;
@@ -72,6 +75,12 @@ const VALUE_TYPE_BY_NAME: Record<RadiusAttrType, RadiusValueType> = {
   'nas-port-id': 'text',
   'framed-pool': 'text',
   'error-cause': 'integer',
+  'nas-ipv6-address': 'ipv6addr',
+  'framed-interface-id': 'ifid',
+  'framed-ipv6-prefix': 'ipv6prefix',
+  'login-ipv6-host': 'ipv6addr',
+  'framed-ipv6-route': 'text',
+  'framed-ipv6-pool': 'text',
 };
 
 /** Dictionary entry per standard attribute, keyed by name. */

@@ -5,6 +5,7 @@
  * exact bytes a real NAS/server would put on the wire, and back.
  */
 import { bytesToHex, bytesToUtf8, hexToBytes, utf8ToBytes } from '@/crypto/encoding';
+import { IPv6Address } from '../core/types';
 import {
   RADIUS_CODE, RADIUS_ATTR,
   type RadiusCode, type RadiusAttribute, type RadiusPacket,
@@ -118,6 +119,12 @@ function encodeValue(valueType: RadiusValueType, value: string | number): Uint8A
       out.set(strBytes, 1);
       return out;
     }
+    case 'ipv6addr':
+      return ipv6ToBytes(String(value));
+    case 'ipv6prefix':
+      return ipv6PrefixToBytes(String(value));
+    case 'ifid':
+      return ifidToBytes(String(value));
   }
 }
 
@@ -202,6 +209,12 @@ function decodeValue(valueType: RadiusValueType, bytes: Uint8Array): string | nu
       return ((bytes[1] << 16) | (bytes[2] << 8) | bytes[3]) >>> 0;
     case 'tagged-string':
       return bytesToUtf8(bytes.subarray(1));
+    case 'ipv6addr':
+      return bytesToIpv6(bytes);
+    case 'ipv6prefix':
+      return bytesToIpv6Prefix(bytes);
+    case 'ifid':
+      return bytesToIfid(bytes);
   }
 }
 
@@ -217,6 +230,77 @@ function ipToBytes(ip: string): Uint8Array {
 
 function bytesToIp(bytes: Uint8Array): string {
   return Array.from(bytes.subarray(0, 4)).join('.');
+}
+
+function ipv6ToBytes(ip: string): Uint8Array {
+  let addr: IPv6Address;
+  try {
+    addr = new IPv6Address(ip);
+  } catch (e) {
+    throw new Error(`encodeRadiusPacket: invalid IPv6 address "${ip}": ${(e as Error).message}`);
+  }
+  const bytes = new Uint8Array(16);
+  const hextets = addr.getHextets();
+  for (let i = 0; i < 8; i++) {
+    bytes[i * 2] = (hextets[i] >> 8) & 0xff;
+    bytes[i * 2 + 1] = hextets[i] & 0xff;
+  }
+  return bytes;
+}
+
+function bytesToIpv6(bytes: Uint8Array): string {
+  const hextets: number[] = [];
+  for (let i = 0; i < 8; i++) {
+    hextets.push(((bytes[i * 2] << 8) | bytes[i * 2 + 1]) & 0xffff);
+  }
+  return new IPv6Address(hextets).toString();
+}
+
+/** RFC 3162 §2.3: 1 reserved byte (0) + 1 prefix-length byte + ceil(len/8) prefix bytes. */
+function ipv6PrefixToBytes(value: string): Uint8Array {
+  const [addrPart, lenPart] = String(value).split('/');
+  const prefixLen = Number(lenPart);
+  if (!Number.isInteger(prefixLen) || prefixLen < 0 || prefixLen > 128) {
+    throw new Error(`encodeRadiusPacket: invalid IPv6 prefix length in "${value}"`);
+  }
+  const full = ipv6ToBytes(addrPart);
+  const prefixByteCount = Math.ceil(prefixLen / 8);
+  const out = new Uint8Array(2 + prefixByteCount);
+  out[0] = 0;
+  out[1] = prefixLen;
+  out.set(full.subarray(0, prefixByteCount), 2);
+  return out;
+}
+
+function bytesToIpv6Prefix(bytes: Uint8Array): string {
+  const prefixLen = bytes[1] ?? 0;
+  const full = new Uint8Array(16);
+  full.set(bytes.subarray(2, 2 + Math.ceil(prefixLen / 8)));
+  return `${bytesToIpv6(full)}/${prefixLen}`;
+}
+
+/** RFC 3162 §2.2: 8-byte interface identifier, formatted as four colon-separated hex groups. */
+function ifidToBytes(value: string): Uint8Array {
+  const groups = String(value).split(':');
+  if (groups.length !== 4 || groups.some((g) => !/^[0-9a-fA-F]{1,4}$/.test(g))) {
+    throw new Error(`encodeRadiusPacket: invalid Interface-Id "${value}" (expected xxxx:xxxx:xxxx:xxxx)`);
+  }
+  const bytes = new Uint8Array(8);
+  groups.forEach((g, i) => {
+    const n = parseInt(g, 16);
+    bytes[i * 2] = (n >> 8) & 0xff;
+    bytes[i * 2 + 1] = n & 0xff;
+  });
+  return bytes;
+}
+
+function bytesToIfid(bytes: Uint8Array): string {
+  const groups: string[] = [];
+  for (let i = 0; i < 4; i++) {
+    const n = ((bytes[i * 2] << 8) | bytes[i * 2 + 1]) & 0xffff;
+    groups.push(n.toString(16).padStart(4, '0'));
+  }
+  return groups.join(':');
 }
 
 function uint32ToBytes(n: number): Uint8Array {

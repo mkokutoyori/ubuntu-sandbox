@@ -83,7 +83,13 @@ export type RadiusAttrType =
   | 'tunnel-private-group-id'
   | 'nas-port-id'
   | 'framed-pool'
-  | 'error-cause';
+  | 'error-cause'
+  | 'nas-ipv6-address'
+  | 'framed-interface-id'
+  | 'framed-ipv6-prefix'
+  | 'login-ipv6-host'
+  | 'framed-ipv6-route'
+  | 'framed-ipv6-pool';
 
 export const RADIUS_ATTR: Record<RadiusAttrType, number> = {
   'user-name': 1,
@@ -133,6 +139,13 @@ export const RADIUS_ATTR: Record<RadiusAttrType, number> = {
   'nas-port-id': 87,
   'framed-pool': 88,
   'error-cause': 101,
+  // RFC 3162 §2 — RADIUS extensions for IPv6.
+  'nas-ipv6-address': 95,
+  'framed-interface-id': 96,
+  'framed-ipv6-prefix': 97,
+  'login-ipv6-host': 98,
+  'framed-ipv6-route': 99,
+  'framed-ipv6-pool': 100,
 };
 
 export interface RadiusAttribute {

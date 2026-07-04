@@ -176,7 +176,12 @@ partiel. Le moteur doit être complété **sans casser** les suites existantes
   côté supplicant/serveur — phase ultérieure, une fois EAP-MD5 en place.
 - **RADIUS/TCP et RadSec (TLS)** (RFC 6613/6614) — valeur pédagogique faible ici.
 - **Proxy/roaming RADIUS** (RFC 2607) : chaînes de proxys inter-domaines.
-- **Attributs IPv6** (Framed-IPv6-*, RFC 3162) — suivront le chantier IPv6 global.
+- ~~**Attributs IPv6** (Framed-IPv6-*, RFC 3162) — suivront le chantier IPv6 global.~~
+  ✅ **Implémenté** : NAS-IPv6-Address (95), Framed-Interface-Id (96),
+  Framed-IPv6-Prefix (97), Login-IPv6-Host (98), Framed-IPv6-Route (99),
+  Framed-IPv6-Pool (100) — dictionnaire (`ipv6addr`/`ipv6prefix`/`ifid`) +
+  codec (`codec.ts`) uniquement, aucune nouvelle logique protocolaire ; voir
+  `radius-ipv6-attrs.test.ts`.
 - **L'implémentation freeradius sur Linux** (clients.conf, users, radtest) —
   projet consécutif consommant ce moteur.
 - **L'implémentation NPS sur Windows Server** (console, politiques réseau
