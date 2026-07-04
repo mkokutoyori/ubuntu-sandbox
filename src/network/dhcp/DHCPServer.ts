@@ -65,6 +65,11 @@ export class DHCPServer implements IProtocolEngine {
   /** Pending offers: IP → pending (reserved between DISCOVER and REQUEST) */
   private pendingOffers: Map<string, DHCPPendingOffer> = new Map();
 
+  /** `ip dhcp ping packets` (0 = disabled, the default — no ping-before-offer check) */
+  private pingPacketCount = 0;
+  /** `ip dhcp ping timeout` in milliseconds */
+  private pingTimeoutMs = 500;
+
   /** Server statistics */
   private stats: DHCPServerStats = createDefaultStats();
 
@@ -883,6 +888,18 @@ export class DHCPServer implements IProtocolEngine {
 
   clearStats(): void {
     this.stats = createDefaultStats();
+  }
+
+  // ─── Ping-before-offer (`ip dhcp ping packets`/`ip dhcp ping timeout`) ──
+
+  setPingPacketCount(n: number): void { this.pingPacketCount = n; }
+  getPingPacketCount(): number { return this.pingPacketCount; }
+  setPingTimeoutMs(ms: number): void { this.pingTimeoutMs = ms; }
+  getPingTimeoutMs(): number { return this.pingTimeoutMs; }
+
+  /** Release a candidate reserved by processDiscover so a retry can pick a different address. */
+  cancelPendingOffer(ip: string): void {
+    this.pendingOffers.delete(ip);
   }
 
   // ─── Conflicts ────────────────────────────────────────────────────

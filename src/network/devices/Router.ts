@@ -76,6 +76,7 @@ import { buildICMPError, mayGenerateICMPError, type ICMPErrorType } from '../cor
 import type { FhrpDataPlane } from '../fhrp/types';
 import { DHCPServer } from '../dhcp/DHCPServer';
 import { DHCPPacket } from '../dhcp/DHCPPacket';
+import type { DHCPDiscoverParams, DHCPOfferResult } from '../dhcp/types';
 import { IPSecEngine } from '../ipsec/IPSecEngine';
 import type { NetFlowAgent, NetFlowRecordInput } from '../netflow/NetFlowAgent';
 import { ACLEngine } from './router/ACLEngine';
@@ -2093,26 +2094,24 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     let reply: DHCPPacket | null = null;
     if (type === 'DHCPDISCOVER') {
       const localGatewayIP = giaddr ? undefined : this.ports.get(inPort)?.getIPAddress()?.toString();
-      const offer = this.dhcpServer.processDiscover({
+      const discoverParams: DHCPDiscoverParams = {
         clientMAC: pkt.chaddr, xid: pkt.xid,
         clientIdentifier: pkt.chaddr, parameterRequestList: [],
         giaddr, localGatewayIP,
-      });
+      };
+      let offer = this.dhcpServer.processDiscover(discoverParams);
+      if (offer && this.dhcpServer.getPingPacketCount() > 0) {
+        let attemptsLeft = 4;
+        while (offer && attemptsLeft > 0 && this.isCandidateAddressInUse(new IPAddress(offer.ip))) {
+          this.dhcpServer.addConflict(offer.ip, 'ping');
+          this.dhcpServer.cancelPendingOffer(offer.ip);
+          const next = this.dhcpServer.processDiscover(discoverParams);
+          offer = (next && next.ip !== offer.ip) ? next : null;
+          attemptsLeft--;
+        }
+      }
       if (!offer) return;
-      reply = DHCPPacket.createOffer(pkt.chaddr, pkt.xid, offer.ip,
-        offer.serverIdentifier, {
-          mask: offer.pool.mask ?? '255.255.255.0',
-          router: offer.pool.defaultRouter ?? '0.0.0.0',
-          dns: offer.pool.dnsServers,
-          domainName: offer.pool.domainName ?? undefined,
-          leaseDuration: offer.pool.leaseDuration ?? 86400,
-          renewalTime: offer.renewalTime, rebindingTime: offer.rebindingTime,
-          nextServer: offer.pool.nextServer,
-          bootfile: offer.pool.bootfile,
-          netbiosServers: offer.pool.netbiosServers,
-          netbiosNodeType: offer.pool.netbiosNodeType,
-          rawOptions: offer.pool.options,
-        });
+      reply = this.buildDhcpOfferPacket(pkt, offer);
     } else if (type === 'DHCPREQUEST') {
       const requested = String(pkt.getOption(50) ?? pkt.ciaddr);
       const serverId = String(pkt.getOption(54) ?? '');
@@ -2161,6 +2160,31 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       return;
     }
     if (!reply) return;
+    this.dispatchDhcpReply(inPort, pkt, reply, option82, giaddr);
+  }
+
+  private buildDhcpOfferPacket(pkt: DHCPPacket, offer: DHCPOfferResult): DHCPPacket {
+    return DHCPPacket.createOffer(pkt.chaddr, pkt.xid, offer.ip,
+      offer.serverIdentifier, {
+        mask: offer.pool.mask ?? '255.255.255.0',
+        router: offer.pool.defaultRouter ?? '0.0.0.0',
+        dns: offer.pool.dnsServers,
+        domainName: offer.pool.domainName ?? undefined,
+        leaseDuration: offer.pool.leaseDuration ?? 86400,
+        renewalTime: offer.renewalTime, rebindingTime: offer.rebindingTime,
+        nextServer: offer.pool.nextServer,
+        bootfile: offer.pool.bootfile,
+        netbiosServers: offer.pool.netbiosServers,
+        netbiosNodeType: offer.pool.netbiosNodeType,
+        rawOptions: offer.pool.options,
+      });
+  }
+
+  private dispatchDhcpReply(
+    inPort: string, pkt: DHCPPacket, reply: DHCPPacket,
+    option82: { circuitId: string; remoteId: string } | undefined,
+    giaddr: string | undefined,
+  ): void {
     if (option82) reply.setOption(82, option82);
     reply.giaddr = pkt.giaddr;
     if (giaddr) {
@@ -2172,6 +2196,39 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     } else {
       this.sendDhcpFrameOnPort(inPort, reply, new IPAddress('255.255.255.255'), MACAddress.broadcast());
     }
+  }
+
+  /**
+   * `ip dhcp ping packets` — probe a candidate address before offering it,
+   * the way real DHCP servers ping-check to avoid double-assigning an
+   * address some non-DHCP host already holds (the server's own binding
+   * table has no record of it, since it was never leased).
+   *
+   * DHCP DISCOVER→OFFER is handled synchronously end-to-end on this wire
+   * (see DhcpServerChannel.exchange), so the probe uses the router's own
+   * synchronous ARP path rather than the timer-driven `executePingSequence`
+   * used by the interactive `ping`/`traceroute` commands: an in-use address
+   * answers the ARP request within the same call, same as real frame
+   * delivery already does for ordinary IP forwarding.
+   */
+  private isCandidateAddressInUse(candidateIP: IPAddress): boolean {
+    const key = candidateIP.toString();
+    if (this.arpTable.has(key)) return true;
+    const route = this.lookupRoute(candidateIP);
+    if (!route) return false;
+    const port = this.ports.get(route.iface);
+    const myIP = port?.getIPAddress();
+    if (!port || !myIP) return false;
+    const arpReq: ARPPacket = {
+      type: 'arp', operation: 'request',
+      senderMAC: port.getMAC(), senderIP: myIP,
+      targetMAC: MACAddress.broadcast(), targetIP: candidateIP,
+    };
+    this.sendFrame(route.iface, {
+      srcMAC: port.getMAC(), dstMAC: MACAddress.broadcast(),
+      etherType: ETHERTYPE_ARP, payload: arpReq,
+    });
+    return this.arpTable.has(key);
   }
 
   private sendDhcpFrameOnPort(

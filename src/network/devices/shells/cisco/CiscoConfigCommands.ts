@@ -184,12 +184,16 @@ export function buildConfigCommands(trie: CommandTrie, ctx: CiscoShellContext): 
     (ctx.r() as any)._ciscoDhcpUseClass = true;
     return '';
   });
-  trie.registerGreedy('ip dhcp ping packets', 'Set DHCP ping packets', (args) => {
-    (ctx.r() as any)._ciscoDhcpPingPackets = parseInt(args[0] ?? '', 10) || 0;
+  trie.registerGreedy('ip dhcp ping packets', 'Number of ping packets sent before offering an address', (args) => {
+    const n = parseInt(args[0] ?? '', 10);
+    if (isNaN(n) || n < 0 || n > 10) return '% Invalid input detected.';
+    ctx.r()._getDHCPServerInternal().setPingPacketCount(n);
     return '';
   });
-  trie.registerGreedy('ip dhcp ping timeout', 'Set DHCP ping timeout (ms)', (args) => {
-    (ctx.r() as any)._ciscoDhcpPingTimeout = parseInt(args[0] ?? '', 10) || 0;
+  trie.registerGreedy('ip dhcp ping timeout', 'Ping-before-offer reply timeout (milliseconds)', (args) => {
+    const n = parseInt(args[0] ?? '', 10);
+    if (isNaN(n) || n < 1) return '% Invalid input detected.';
+    ctx.r()._getDHCPServerInternal().setPingTimeoutMs(n);
     return '';
   });
   trie.registerGreedy('ip dhcp database', 'Set DHCP database URL', (args, raw) => {
