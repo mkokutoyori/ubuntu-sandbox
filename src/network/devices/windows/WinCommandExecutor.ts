@@ -168,4 +168,14 @@ export interface WinCommandContext {
     protocol: string; localPort: string; remotePort: string;
     description: string;
   }>;
+
+  /** Per-device SMB share table (`net share` / `New-SmbShare`) — instance-owned. */
+  smbShares: import('./server/smb/SmbShareTable').SmbShareTable;
+  /** Per-device `net use` drive-letter mapping table — instance-owned. */
+  netUseTable: Map<string, import('./WinNetUse').NetUseEntry>;
+  /** Live inbound SMB sessions on this device (`net session`). */
+  smbSessions: import('./server/smb/SmbSessionTable').SmbSessionTable;
+  /** Dial a remote SMB share over the real network (`net use` add-form). */
+  dialSmbShare(targetIp: string, shareName: string, username: string, password: string):
+    import('./server/smb/SmbClient').SmbDialResult;
 }

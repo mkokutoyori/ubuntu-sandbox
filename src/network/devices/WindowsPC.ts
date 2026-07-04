@@ -69,8 +69,12 @@ import { cmdTasklist as cmdTasklistDynamic } from './windows/WinTasklist';
 import { cmdTaskkill } from './windows/WinTaskkill';
 import { cmdSc } from './windows/WinSc';
 import { cmdNetStart, cmdNetStop } from './windows/WinNetStart';
-import { cmdNetUse } from './windows/WinNetUse';
+import { cmdNetUse, type NetUseEntry } from './windows/WinNetUse';
 import { cmdNetShare } from './windows/WinNetShare';
+import { SmbShareTable } from './windows/server/smb/SmbShareTable';
+import { SmbSessionTable } from './windows/server/smb/SmbSessionTable';
+import { SmbServerHandler } from './windows/server/smb/SmbServer';
+import { dialSmbShare, type SmbDialResult } from './windows/server/smb/SmbClient';
 import { cmdPrint } from './windows/WinPrint';
 import { executeNslookup } from './linux/LinuxDnsService';
 import { SessionWorkQueue } from './host/session/SessionWorkQueue';
@@ -237,6 +241,12 @@ export class WindowsPC extends EndHost implements UserAccountHost {
   readonly auditPolicy: WindowsAuditPolicy = new WindowsAuditPolicy();
   /** WinRM / PowerShell Remoting state — off by default until `Enable-PSRemoting`. */
   readonly winrm: WindowsWinRmConfig = new WindowsWinRmConfig();
+  /** SMB share table (`net share` / `New-SmbShare`) — instance-owned (PRD-Windows-Server.md §7 risk 6). */
+  readonly smbShares: SmbShareTable = new SmbShareTable();
+  /** `net use` drive-letter mappings — instance-owned. */
+  readonly netUseTable: Map<string, NetUseEntry> = new Map();
+  /** Live inbound SMB sessions (`Get-SmbSession` / `net session`). */
+  readonly smbSessions: SmbSessionTable = new SmbSessionTable();
 
   private readonly clock = new HostClock();
   private readonly wallEpoch = new Date(2026, 5, 20).getTime();
@@ -353,6 +363,26 @@ export class WindowsPC extends EndHost implements UserAccountHost {
         this.getSshServerHandler().register(socket, socket.remoteIp);
       },
     });
+
+    // TCP SMB server on port 445 (LanmanServer) — real `net use`/UNC traffic.
+    // Refuses (drops) the connection when LanmanServer isn't Running, so the
+    // client's negotiate gets no reply — same "network path not found" a
+    // real client sees when the Server service is stopped.
+    this.getTcpStack().listen(445, {
+      onAccept: (socket) => {
+        if (this.svcMgr.getService('LanmanServer')?.state !== 'Running') {
+          socket.close();
+          return;
+        }
+        const clientHost = this.reverseLookupClient(socket.remoteIp);
+        this.getSmbServerHandler().register(socket, socket.remoteIp, clientHost);
+      },
+    });
+  }
+
+  /** Best-effort reverse DNS for the SMB session table's ClientComputerName column. */
+  private reverseLookupClient(ip: string): string {
+    return this.readHostsFile().reverse(ip)?.canonicalName ?? ip;
   }
 
   /** Build a fresh ISshServerContext bound to this machine's NTFS / users. */
@@ -415,6 +445,172 @@ export class WindowsPC extends EndHost implements UserAccountHost {
   /** Build a SshServerHandler ready to be hooked onto a TcpConnection. */
   getSshServerHandler(): SshServerHandler {
     return new SshServerHandler(this.getSshServerContext());
+  }
+
+  /** Build a SmbServerHandler ready to be hooked onto a TcpConnection (one per accept, like SSH). */
+  getSmbServerHandler(): SmbServerHandler {
+    return new SmbServerHandler({
+      fs: this.fs,
+      userMgr: this.userMgr,
+      shares: this.smbShares,
+      sessions: this.smbSessions,
+      now: () => this.simulatedDate().getTime(),
+    });
+  }
+
+  /**
+   * Dial a remote SMB share over the real network (`net use`, UNC access
+   * from cmd/PowerShell). Real TCP handshake through `tcpv2` — routing,
+   * cables and a stopped `LanmanServer` on the far end all behave exactly
+   * as they do for any other TCP client on this device.
+   */
+  dialSmbShare(targetIp: string, shareName: string, username: string, password: string): SmbDialResult {
+    return dialSmbShare({ tcpStack: this.getTcpStack(), targetIp, shareName, username, password });
+  }
+
+  /** `net session` — inbound SMB sessions from other computers connected to shares on THIS device. */
+  private cmdNetSession(args: string[]): string {
+    if (args.some(a => a.toLowerCase() === '/delete')) {
+      const target = args.find(a => a.startsWith('\\\\'));
+      const before = this.smbSessions.list();
+      for (const s of before) {
+        if (!target || s.clientIp === target.slice(2) || s.clientComputerName === target.slice(2)) {
+          this.smbSessions.close(s.id);
+        }
+      }
+      return 'The command completed successfully.';
+    }
+    const sessions = this.smbSessions.list();
+    const header =
+      'Computer             User name            Client Type       Opens Idle time\n' +
+      '-------------------------------------------------------------------------\n';
+    if (sessions.length === 0) return header + 'There are no entries in the list.';
+    const rows = sessions.map(s =>
+      `\\\\${s.clientComputerName}`.padEnd(22) + s.user.padEnd(21) + ''.padEnd(18) + String(s.numOpens).padStart(5) + '  00:00:00',
+    );
+    return header + rows.join('\n') + '\nThe command completed successfully.';
+  }
+
+  /** Parsed target for a UNC path or a `net use`-mapped drive letter. */
+  private resolveSmbPath(raw: string):
+    | { unc: true; server: string; share: string; subPath: string }
+    | { unc: false; mapped: NetUseEntry; subPath: string }
+    | null {
+    const uncMatch = /^\\\\([^\\]+)\\([^\\]+)\\?(.*)$/.exec(raw);
+    if (uncMatch) return { unc: true, server: uncMatch[1], share: uncMatch[2], subPath: uncMatch[3] ?? '' };
+    const driveMatch = /^([A-Za-z]):\\?(.*)$/.exec(raw);
+    if (driveMatch) {
+      const mapped = this.netUseTable.get(`${driveMatch[1].toUpperCase()}:`);
+      if (mapped) return { unc: false, mapped, subPath: driveMatch[2] ?? '' };
+    }
+    return null;
+  }
+
+  /**
+   * Obtain an `SmbConnection` for a resolved target: the persistent
+   * session already open on a mapped drive, or a fresh ad-hoc dial (as
+   * the current user, no password) for a bare UNC path with no mapping —
+   * matching how real Windows opens an implicit admin session for a
+   * one-off `dir \\srv\share`.
+   */
+  private async smbConnectionFor(
+    target: NonNullable<ReturnType<WindowsPC['resolveSmbPath']>>,
+  ): Promise<{ connection: import('./windows/server/smb/SmbClient').SmbConnection; adHoc: boolean } | { error: string }> {
+    if (!target.unc) {
+      if (!target.mapped.connection) return { error: 'The specified network name is no longer available.' };
+      return { connection: target.mapped.connection, adHoc: false };
+    }
+    const targetIp = await this.resolveHostname(target.server);
+    if (!targetIp) return { error: 'System error 53 has occurred.\n\nThe network path was not found.' };
+    const dial = this.dialSmbShare(targetIp.toString(), target.share, this.userMgr.currentUser, '');
+    if (!dial.ok || !dial.connection) {
+      return { error: dial.error ?? 'System error 53 has occurred.\n\nThe network path was not found.' };
+    }
+    return { connection: dial.connection, adHoc: true };
+  }
+
+  /**
+   * Handle `dir`/`copy`/`type` when a UNC path or a mapped drive letter is
+   * involved (PRD-Windows-Server.md §5 P3). Returns null when neither
+   * source nor destination is remote, so the caller falls back to the
+   * normal local-VFS command.
+   */
+  private async tryUncFileCommand(cmd: string, args: string[]): Promise<string | null> {
+    if (cmd === 'type') {
+      if (args.length === 0) return null;
+      const target = this.resolveSmbPath(args.join(' '));
+      if (!target) return null;
+      const conn = await this.smbConnectionFor(target);
+      if ('error' in conn) return conn.error;
+      const result = conn.connection.read(target.subPath);
+      if (conn.adHoc) conn.connection.disconnect();
+      return result.ok ? (result.content ?? '') : (result.error ?? 'The system cannot find the file specified.');
+    }
+
+    if (cmd === 'dir') {
+      const positional = args.find(a => !a.startsWith('/'));
+      if (!positional) return null;
+      const target = this.resolveSmbPath(positional);
+      if (!target) return null;
+      const conn = await this.smbConnectionFor(target);
+      if ('error' in conn) return conn.error;
+      const result = conn.connection.list(target.subPath);
+      if (conn.adHoc) conn.connection.disconnect();
+      if (!result.ok) return result.error ?? 'The network name cannot be found.';
+      const lines = [` Directory of ${positional}`, ''];
+      let fileCount = 0, dirCount = 0, totalBytes = 0;
+      for (const e of result.entries ?? []) {
+        if (e.isDirectory) { lines.push(`    <DIR>          ${e.name}`); dirCount++; }
+        else { lines.push(`${String(e.size).padStart(14)} ${e.name}`); fileCount++; totalBytes += e.size; }
+      }
+      lines.push(`               ${fileCount} File(s) ${totalBytes.toLocaleString('en-US')} bytes`);
+      lines.push(`               ${dirCount} Dir(s)`);
+      return lines.join('\n');
+    }
+
+    if (cmd === 'copy') {
+      if (args.length < 2) return null;
+      const srcTarget = this.resolveSmbPath(args[0]);
+      const dstTarget = this.resolveSmbPath(args[1]);
+      if (!srcTarget && !dstTarget) return null;
+
+      const baseNameOf = (p: string) => p.split(/[\\/]/).filter(Boolean).pop() ?? p;
+      const srcBaseName = baseNameOf(srcTarget ? srcTarget.subPath : args[0]);
+
+      let content: string;
+      if (srcTarget) {
+        const conn = await this.smbConnectionFor(srcTarget);
+        if ('error' in conn) return conn.error;
+        const result = conn.connection.read(srcTarget.subPath);
+        if (conn.adHoc) conn.connection.disconnect();
+        if (!result.ok) return result.error ?? 'The system cannot find the file specified.';
+        content = result.content ?? '';
+      } else {
+        const srcAbs = this.fs.normalizePath(args[0], this.cwd);
+        const local = this.fs.readFile(srcAbs);
+        if (!local.ok) return local.error!;
+        content = local.content ?? '';
+      }
+
+      if (dstTarget) {
+        // Destination is a share/subdirectory rather than a file name — keep the source's basename.
+        const dstSubPath = dstTarget.subPath === '' || dstTarget.subPath.endsWith('\\')
+          ? `${dstTarget.subPath}${srcBaseName}` : dstTarget.subPath;
+        const conn = await this.smbConnectionFor(dstTarget);
+        if ('error' in conn) return conn.error;
+        const result = conn.connection.write(dstSubPath, content);
+        if (conn.adHoc) conn.connection.disconnect();
+        if (!result.ok) return result.error ?? 'Access is denied.';
+      } else {
+        let dstAbs = this.fs.normalizePath(args[1], this.cwd);
+        if (this.fs.isDirectory(dstAbs)) dstAbs = `${dstAbs.replace(/\\$/, '')}\\${srcBaseName}`;
+        const result = this.fs.createFile(dstAbs, content);
+        if (!result.ok) return result.error!;
+      }
+      return '        1 file(s) copied.';
+    }
+
+    return null;
   }
 
   // ─── SSH server surface (consumed by the outbound ssh client) ───────
@@ -991,6 +1187,13 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       return this.switchActiveDrive(letter, drivePath ? parts[0] : null);
     }
 
+    // UNC (`\\srv\share\...`) / net-use-mapped-drive access for dir/copy/type
+    // (PRD-Windows-Server.md §5 P3) — real SMB traffic, not the local VFS.
+    if (cmd === 'dir' || cmd === 'copy' || cmd === 'type') {
+      const uncResult = await this.tryUncFileCommand(cmd, args);
+      if (uncResult !== null) return uncResult;
+    }
+
     // File commands (use file context)
     const fileCtx = this.buildFileContext();
     switch (cmd) {
@@ -1073,6 +1276,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       if (subCmd === 'stop') return cmdNetStop(netSvcCtx, subArgs);
       if (subCmd === 'use') return cmdNetUse(this.buildNetContext(), subArgs);
       if (subCmd === 'share') return cmdNetShare(this.buildNetContext(), subArgs);
+      if (subCmd === 'session') return this.cmdNetSession(subArgs);
       if (subCmd === 'accounts') {
         if (subArgs.length === 0) return this.accountsPolicy.render();
         for (const a of subArgs) {
@@ -1499,6 +1703,12 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       dynamicFirewallRules: this.dynamicFirewallRules,
       eventLog: this.eventLog,
       dnsCache: this.dnsCache,
+
+      smbShares: this.smbShares,
+      netUseTable: this.netUseTable,
+      smbSessions: this.smbSessions,
+      dialSmbShare: (targetIp: string, shareName: string, username: string, password: string) =>
+        this.dialSmbShare(targetIp, shareName, username, password),
     };
   }
 
@@ -1567,7 +1777,10 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       return cmdWinrm(this.winrm, args);
     }
     // `net` is a multi-subcommand router — all its subhandlers are sync
-    // (cmdNetUser / cmdNetLocalgroup / cmdNetStart / cmdNetStop).
+    // (cmdNetUser / cmdNetLocalgroup / cmdNetStart / cmdNetStop). `net use`
+    // now dials the network for its add-form (PRD-Windows-Server.md §5 P3)
+    // so — like ping/tracert — it no longer has a sync path here; it falls
+    // through to `null` and callers retry via executeCmdCommand().
     if (lower === 'net' && args.length > 0) {
       const subCmd = args[0].toLowerCase();
       const subArgs = args.slice(1);
@@ -1577,8 +1790,8 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       const netSvcCtx = { serviceManager: this.svcMgr, processManager: this.procMgr, isAdmin: this.userMgr.isCurrentUserAdmin() };
       if (subCmd === 'start')       return cmdNetStart(netSvcCtx, subArgs);
       if (subCmd === 'stop')        return cmdNetStop(netSvcCtx, subArgs);
-      if (subCmd === 'use')         return cmdNetUse(this.buildNetContext(), subArgs);
       if (subCmd === 'share')       return cmdNetShare(this.buildNetContext(), subArgs);
+      if (subCmd === 'session')     return this.cmdNetSession(subArgs);
     }
     const netCtx = this.buildNetContext();
     switch (lower) {

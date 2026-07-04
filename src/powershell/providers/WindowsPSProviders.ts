@@ -47,6 +47,7 @@ import type {
   IVpnProvider, IScheduledTaskProvider, IDiskProvider, IEnvironmentProvider,
   IRemotingProvider, IRemoteComputer,
   IRoleProvider, WindowsFeatureInfo,
+  ISmbProvider, SmbShareInfo, SmbSessionInfo,
   DirEntry, ServiceInfo, ProcessInfo, UserInfo, GroupInfo,
   NetworkAdapterInfo, IPAddressInfo, RouteInfo, EventLogEntryInfo,
   VpnConnectionInfo, ScheduledTaskInfo, DiskInfo, VolumeInfo,
@@ -253,6 +254,58 @@ class WindowsRoleAdapter implements IRoleProvider {
   }
   uninstallFeature(name: string) {
     return this.mgr().uninstall(name, this.isAdmin());
+  }
+}
+
+// ── SMB adapter (Server Manager — WindowsServer only, gated on FS-FileServer) ──
+
+class WindowsSmbAdapter implements ISmbProvider {
+  constructor(private readonly pc: WindowsPC) {}
+
+  /**
+   * `New-SmbShare`/`Get-SmbShare`/`Remove-SmbShare` only exist once the
+   * FS-FileServer role is installed (PRD-Windows-Server.md §8 acceptance
+   * criterion 2) — checked live on every call (not baked in at provider
+   * construction) so installing the role mid-session takes effect
+   * immediately. `net share`/the wire-level SMB server are NOT gated this
+   * way: real Windows shares admin shares and serves SMB on every SKU
+   * regardless of any role.
+   */
+  private requireRole(): void {
+    if (!this.pc.getRoleManager()?.isInstalled('FS-FileServer')) {
+      throw new Error('New-SmbShare is not recognized as the name of a cmdlet, function, script file, or operable program');
+    }
+  }
+
+  private toShareInfo(view: { name: string; path: string; description: string; special: boolean }): SmbShareInfo {
+    return { name: view.name, path: view.path, description: view.description, special: view.special };
+  }
+
+  listShares(): SmbShareInfo[] {
+    this.requireRole();
+    return this.pc.smbShares.list().map(s => this.toShareInfo(this.pc.smbShares.toView(s)));
+  }
+  getShare(name: string): SmbShareInfo | null {
+    this.requireRole();
+    const s = this.pc.smbShares.get(name);
+    return s ? this.toShareInfo(this.pc.smbShares.toView(s)) : null;
+  }
+  newShare(name: string, path: string, opts?: { fullAccess?: string[]; changeAccess?: string[]; readAccess?: string[] }) {
+    this.requireRole();
+    const permissions = new Map<string, 'Full' | 'Change' | 'Read'>();
+    for (const p of opts?.fullAccess ?? []) permissions.set(p, 'Full');
+    for (const p of opts?.changeAccess ?? []) permissions.set(p, 'Change');
+    for (const p of opts?.readAccess ?? []) permissions.set(p, 'Read');
+    if (permissions.size === 0) permissions.set('Everyone', 'Read');
+    return this.pc.smbShares.add(name, path, { permissions });
+  }
+  removeShare(name: string) {
+    this.requireRole();
+    return this.pc.smbShares.remove(name);
+  }
+  listSessions(): SmbSessionInfo[] {
+    this.requireRole();
+    return this.pc.smbSessions.list().map(s => this.pc.smbSessions.toView(s));
   }
 }
 
@@ -1235,5 +1288,6 @@ export function createWindowsPSProviders(
     environment:    new WindowsEnvironmentAdapter(pc),
     remoting:       new WindowsRemotingAdapter(pc),
     roles:          pc.getRoleManager() ? new WindowsRoleAdapter(pc) : null,
+    smb:            pc.getRoleManager() ? new WindowsSmbAdapter(pc) : null,
   };
 }

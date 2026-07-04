@@ -26,19 +26,21 @@ describe('Phase G — net use / net share / schtasks / print', () => {
     expect(out).toContain('Remote');
   });
 
-  it('net use Z: \\\\server\\share — adds a mapping', async () => {
+  // PRD-Windows-Server.md §5 P3: `net use` now dials the real network
+  // instead of cosmetically recording any UNC path. `server` doesn't
+  // resolve to anything reachable from this bare, uncabled `pc`, so the
+  // add-form must fail exactly like real Windows with nothing to talk to
+  // — see windows-server-smb.test.ts for the full two-device success path.
+  it('net use Z: \\\\server\\share — fails when the server is unreachable', async () => {
     const add = await pc.executeCommand('net use Z: \\\\server\\share');
-    expect(add).toContain('command completed successfully');
+    expect(add).toMatch(/network path was not found/i);
     const list = await pc.executeCommand('net use');
-    expect(list).toContain('Z:');
-    expect(list).toContain('\\\\server\\share');
+    expect(list).not.toContain('Z:');
   });
 
-  it('net use Z: /delete — removes the mapping', async () => {
-    await pc.executeCommand('net use Z: \\\\server\\share');
+  it('net use Z: /delete — reports no such mapping when nothing was ever added', async () => {
     const del = await pc.executeCommand('net use Z: /delete');
-    expect(del).toMatch(/deleted successfully|removed/i);
-    expect(await pc.executeCommand('net use')).not.toContain('Z:');
+    expect(del).toMatch(/could not be found/i);
   });
 
   it('refuses every form when LanmanWorkstation is stopped', async () => {

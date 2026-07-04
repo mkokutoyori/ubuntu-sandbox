@@ -109,6 +109,9 @@ import {
 import {
   GetWindowsFeatureCmdlet, InstallWindowsFeatureCmdlet, UninstallWindowsFeatureCmdlet,
 } from './ServerManagerCmdlets';
+import {
+  GetSmbShareCmdlet, NewSmbShareCmdlet, RemoveSmbShareCmdlet, GetSmbSessionCmdlet,
+} from './SmbCmdlets';
 
 /**
  * Register all core (provider-independent) cmdlets into the given registry.
@@ -327,6 +330,12 @@ export function registerCoreCmdlets(registry: CmdletRegistry): void {
   registry.register(new GetWindowsFeatureCmdlet());
   registry.register(new InstallWindowsFeatureCmdlet());
   registry.register(new UninstallWindowsFeatureCmdlet());
+
+  // ── SMB file server (provider-backed, Server-only + FS-FileServer) ───────
+  registry.register(new GetSmbShareCmdlet());
+  registry.register(new NewSmbShareCmdlet());
+  registry.register(new RemoveSmbShareCmdlet());
+  registry.register(new GetSmbSessionCmdlet());
 
   // ── Native CLI shims (sync subset) ────────────────────────────────────────
   // ping / tracert stay in the legacy executor — they're async and the

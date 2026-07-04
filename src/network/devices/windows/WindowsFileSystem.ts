@@ -957,4 +957,31 @@ export class WindowsFileSystem {
     entry.acl = entry.acl.filter(a => a.principal.toLowerCase() !== principal.toLowerCase());
     return entry.acl.length !== before;
   }
+
+  /**
+   * NTFS access check for `principal` (plus its group memberships),
+   * composed by the SMB layer with the share-level permission (real
+   * Windows takes the most-restrictive of the two). No other command
+   * in this simulator enforces `acl` today — an entry with an empty
+   * ACL is treated as fully open (matching that established, unenforced
+   * baseline) so this only becomes restrictive once ACEs are actually
+   * set, e.g. via `icacls` or a share created with explicit permissions.
+   * Deny entries win over allow entries, as in real NTFS.
+   */
+  checkAccess(absPath: string, principal: string, groups: string[], need: 'read' | 'write'): boolean {
+    const entry = this.resolve(absPath);
+    if (!entry) return false;
+    if (entry.acl.length === 0) return true;
+    const principals = new Set([principal.toLowerCase(), 'everyone', ...groups.map(g => g.toLowerCase())]);
+    const matches = (ace: WinACE) => principals.has(ace.principal.toLowerCase());
+    const grants = (perms: string[]) => perms.some((p) => {
+      const lp = p.toLowerCase();
+      if (lp === 'fullcontrol' || lp === 'modify') return true;
+      return need === 'read'
+        ? (lp === 'read' || lp === 'readandexecute')
+        : lp === 'write';
+    });
+    if (entry.acl.some(a => a.type === 'deny' && matches(a) && grants(a.permissions))) return false;
+    return entry.acl.some(a => a.type === 'allow' && matches(a) && grants(a.permissions));
+  }
 }

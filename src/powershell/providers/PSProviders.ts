@@ -149,6 +149,31 @@ export interface IRoleProvider {
   uninstallFeature(name: string): { ok: boolean; message: string; changed: WindowsFeatureInfo[] };
 }
 
+export interface SmbShareInfo {
+  name: string;
+  path: string;
+  description: string;
+  special: boolean;
+}
+
+export interface SmbSessionInfo {
+  id: number;
+  clientComputerName: string;
+  clientIp: string;
+  user: string;
+  shares: string[];
+  numOpens: number;
+}
+
+export interface ISmbProvider {
+  listShares(): SmbShareInfo[];
+  getShare(name: string): SmbShareInfo | null;
+  newShare(name: string, path: string, opts?: { fullAccess?: string[]; changeAccess?: string[]; readAccess?: string[] }):
+    { ok: boolean; message: string };
+  removeShare(name: string): { ok: boolean; message: string };
+  listSessions(): SmbSessionInfo[];
+}
+
 export interface IRemotingProvider {
   /** Resolve a computer name/IP to a remoting-capable target on the LAN.
    *  Returns null when nothing on the topology answers to that address. */
@@ -479,4 +504,5 @@ export interface PSProviders {
   readonly environment:    IEnvironmentProvider    | null;
   readonly remoting:       IRemotingProvider       | null;
   readonly roles:          IRoleProvider           | null;
+  readonly smb:            ISmbProvider            | null;
 }
