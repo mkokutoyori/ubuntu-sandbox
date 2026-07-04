@@ -127,7 +127,28 @@ export class WindowsServer extends WindowsPC {
     this.provisionSysvol(domainName);
     this.registerDcServices();
     this.provisionDomainDnsZone(domainName);
+    this.provisionDefaultDomainPolicy();
     return { ok: true, message: '' };
+  }
+
+  /**
+   * Real DC promotion auto-creates "Default Domain Policy", linked to
+   * the domain root, carrying the domain's password/lockout policy
+   * (PRD §5 P10) — applied to members via `gpupdate /force` in place of
+   * their local `WindowsAccountsPolicy`. Values mirror real Windows
+   * Server's fresh-forest defaults.
+   */
+  private provisionDefaultDomainPolicy(): void {
+    const store = this.getDirectoryStore()!;
+    store.newGpo('Default Domain Policy');
+    store.setGpoSettings('Default Domain Policy', {
+      accountPolicy: {
+        minPasswordLength: 7, passwordHistoryLength: 24,
+        maxPasswordAge: 42, minPasswordAge: 1,
+        lockoutThreshold: 5, lockoutDurationMinutes: 30, lockoutWindowMinutes: 30,
+      },
+    });
+    store.newGPLink('Default Domain Policy', store.getDomainDn());
   }
 
   /**

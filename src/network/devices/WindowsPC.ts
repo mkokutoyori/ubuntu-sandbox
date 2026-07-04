@@ -82,6 +82,8 @@ import { dialWinRm, type WinRmDialResult } from './windows/server/winrm/WinRmCli
 import { type DomainMembership, type DomainSession, parseDomainQualifiedUser } from './windows/domain/DomainTypes';
 import { joinDomain, type DomainJoinResult } from './windows/domain/DomainJoinClient';
 import { logonDomainUser } from './windows/domain/DomainLogonClient';
+import { pullGroupPolicy } from './windows/domain/GpoPullClient';
+import type { GpoSettings } from './windows/server/ad/AdTypes';
 import { cmdNltest, cmdDcdiag, cmdKlist } from './windows/WinDomainDiag';
 import { cmdDnscmd } from './windows/WinDnscmd';
 import { cmdPrint } from './windows/WinPrint';
@@ -570,6 +572,81 @@ export class WindowsPC extends EndHost implements UserAccountHost {
    */
   dialWinRm(targetIp: string, username: string, password: string): WinRmDialResult {
     return dialWinRm({ tcpStack: this.getTcpStack(), targetIp, username, password });
+  }
+
+  // ─── Group Policy (PRD-Windows-Server.md §5 P10) ────────────────────
+
+  private gpoAppliedNames: string[] = [];
+  private gpoLastAppliedAt: Date | null = null;
+  private gpoLogonBanner: { title: string; text: string } | null = null;
+  private gpoStartupScript: string | null = null;
+
+  /**
+   * `gpupdate /force` — pulls RSoP from the DC over the real network
+   * (`GpoPullClient`, real LDAP) and applies it: the account-policy
+   * settings replace this machine's local `WindowsAccountsPolicy`
+   * (PRD §5 P10 — Default Domain Policy applies in place of the local
+   * policy), and the logon banner/startup script are recorded for
+   * `gpresult /r` to report. A domain controller applies its own
+   * directory's RSoP directly (no need to dial itself over the wire).
+   */
+  gpupdateForce(): { ok: boolean; message: string } {
+    if (!this.domainMembership) {
+      return { ok: false, message: 'gpupdate : This computer is not joined to a domain.' };
+    }
+    let appliedGpoNames: string[];
+    let settings: GpoSettings;
+    const localStore = this.getDirectoryStore();
+    if (localStore) {
+      const rsop = localStore.resultantSetOfPolicy(this.getHostname());
+      appliedGpoNames = rsop.appliedGpoNames;
+      settings = rsop.settings;
+    } else {
+      const result = pullGroupPolicy(this.getTcpStack(), this.domainMembership, this.getHostname());
+      if (!result.ok) return { ok: false, message: `gpupdate : ${result.message}` };
+      appliedGpoNames = result.appliedGpoNames;
+      settings = result.settings;
+    }
+    if (settings.accountPolicy) this.accountsPolicy.applyGpoOverrides(settings.accountPolicy);
+    if (settings.logonBanner !== undefined) this.gpoLogonBanner = settings.logonBanner;
+    if (settings.startupScript !== undefined) this.gpoStartupScript = settings.startupScript;
+    this.gpoAppliedNames = appliedGpoNames;
+    this.gpoLastAppliedAt = new Date();
+    return { ok: true, message: '' };
+  }
+
+  /** `gpresult /r` — RSoP summary text, matching the real tool's section layout. */
+  cmdGpresult(): string {
+    if (!this.domainMembership) {
+      return 'gpresult : The processing of Group Policy failed. This computer is not a member of a domain.';
+    }
+    const lines: string[] = [
+      'Microsoft (R) Windows (R) Operating System Group Policy Result tool v2.0',
+      'Copyright (C) Microsoft Corp. 1981-2001',
+      '',
+      `RSOP data for ${this.domainMembership.netbiosName}\\${this.userMgr.currentUser} on ${this.getHostname()} : Logging Mode`,
+      '-------------------------------------------------------------',
+      '',
+      'COMPUTER SETTINGS',
+      '------------------',
+      `    Last time Group Policy was applied: ${this.gpoLastAppliedAt ? this.gpoLastAppliedAt.toString() : 'N/A'}`,
+      `    Group Policy was applied from:      ${this.domainMembership.dcAddress}`,
+      `    Domain Name:                        ${this.domainMembership.netbiosName}`,
+      `    Domain Type:                        Windows Active Directory`,
+      '',
+      '    Applied Group Policy Objects',
+      '    -----------------------------',
+    ];
+    if (this.gpoAppliedNames.length === 0) lines.push('        N/A');
+    else for (const name of this.gpoAppliedNames) lines.push(`        ${name}`);
+    if (this.gpoLogonBanner) {
+      lines.push('', '    Legal Notice', '    ------------', `        Caption: ${this.gpoLogonBanner.title}`, `        Text:    ${this.gpoLogonBanner.text}`);
+    }
+    if (this.gpoStartupScript) {
+      lines.push('', '    Startup Scripts', '    ---------------', `        ${this.gpoStartupScript}`);
+    }
+    lines.push('', 'USER SETTINGS', '------------------', '    N/A');
+    return lines.join('\n');
   }
 
   /** `net session` — inbound SMB sessions from other computers connected to shares on THIS device. */
@@ -1387,6 +1464,13 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       case 'klist':   return cmdKlist({ domainSession: this.domainSession, dnsName: this.domainMembership?.dnsName ?? null });
       case 'netdom':  return this.cmdNetdom(args);
       case 'dnscmd':  return cmdDnscmd({ dns: this.getDnsServerRole() }, args);
+      case 'gpupdate': {
+        const res = this.gpupdateForce();
+        return res.ok
+          ? 'Updating policy...\n\nComputer Policy update has completed successfully.'
+          : res.message;
+      }
+      case 'gpresult': return this.cmdGpresult();
     }
 
     // net user / net localgroup / net start / net stop / net help

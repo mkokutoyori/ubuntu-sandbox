@@ -224,6 +224,19 @@ export interface IComputerProvider {
   getDomainInfo(): DomainMembershipInfo | null;
 }
 
+// ── Group Policy (PRD-Windows-Server.md §5 P10) ─────────────────────────────
+
+export interface GpoInfo { id: string; name: string; links: string[] }
+
+export interface IGpoProvider {
+  newGpo(name: string): AdOpResult;
+  getGpo(name: string): GpoInfo | null;
+  listGpos(): GpoInfo[];
+  /** `New-GPLink -Target` accepts a distinguished name (domain root or an OU's DN, e.g. from `Get-ADOrganizationalUnit`). */
+  newGPLink(gpoName: string, targetDn: string): AdOpResult;
+  getDomainDn(): string;
+}
+
 // ── DNS Server role (PRD-Windows-Server.md §5 P7) ───────────────────────────
 
 export interface DnsOpResult { ok: boolean; message: string }
@@ -636,4 +649,5 @@ export interface PSProviders {
   readonly dns:            IDnsServerProvider      | null;
   readonly dhcp:           IDhcpServerProvider     | null;
   readonly nps:            INpsProvider            | null;
+  readonly gpo:            IGpoProvider            | null;
 }

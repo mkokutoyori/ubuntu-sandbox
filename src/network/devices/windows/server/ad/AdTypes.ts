@@ -25,6 +25,31 @@ export interface AdGroup {
   members: string[];
 }
 
+/** Subset of `WindowsAccountsPolicyState` a GPO can carry (PRD-Windows-Server.md §5 P10 — "politique de mots de passe et de verrouillage du domaine"). */
+export interface GpoAccountPolicy {
+  minPasswordLength?: number;
+  maxPasswordAge?: number;
+  minPasswordAge?: number;
+  passwordHistoryLength?: number;
+  lockoutThreshold?: number;
+  lockoutDurationMinutes?: number;
+  lockoutWindowMinutes?: number;
+}
+
+export interface GpoSettings {
+  accountPolicy?: GpoAccountPolicy;
+  logonBanner?: { title: string; text: string };
+  startupScript?: string;
+}
+
+/** `Gpo { id; name; links; settings }` — the exact minimal model from PRD-Windows-Server.md §4.4. */
+export interface Gpo {
+  readonly id: string;
+  readonly name: string;
+  links: string[];
+  settings: GpoSettings;
+}
+
 export interface AdComputer {
   readonly name: string;
   readonly dn: string;

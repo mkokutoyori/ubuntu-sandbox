@@ -139,6 +139,7 @@ import {
   NewNpsRadiusClientCmdlet, GetNpsRadiusClientCmdlet, RemoveNpsRadiusClientCmdlet,
   NewNpsNetworkPolicyCmdlet, GetNpsNetworkPolicyCmdlet, RemoveNpsNetworkPolicyCmdlet,
 } from './NpsCmdlets';
+import { NewGPOCmdlet, GetGPOCmdlet, NewGPLinkCmdlet } from './GroupPolicyCmdlets';
 
 /**
  * Register all core (provider-independent) cmdlets into the given registry.
@@ -414,6 +415,11 @@ export function registerCoreCmdlets(registry: CmdletRegistry): void {
   registry.register(new NewNpsNetworkPolicyCmdlet());
   registry.register(new GetNpsNetworkPolicyCmdlet());
   registry.register(new RemoveNpsNetworkPolicyCmdlet());
+
+  // ── Group Policy (PRD-Windows-Server.md §5 P10) ─────────────────────────────
+  registry.register(new NewGPOCmdlet());
+  registry.register(new GetGPOCmdlet());
+  registry.register(new NewGPLinkCmdlet());
 
   // ── Native CLI shims (sync subset) ────────────────────────────────────────
   // ping / tracert stay in the legacy executor — they're async and the

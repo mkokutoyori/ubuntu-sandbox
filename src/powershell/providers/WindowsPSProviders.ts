@@ -15,6 +15,7 @@
 
 import type { WindowsPC } from '@/network/devices/WindowsPC';
 import type { WindowsServer } from '@/network/devices/WindowsServer';
+import type { DirectoryStore } from '@/network/devices/windows/server/ad/DirectoryStore';
 import { RemoteAccessVpnClient } from '@/network/ipsec/RemoteAccessVpnClient';
 import { PSRegistryProvider } from '@/network/devices/windows/PSRegistryProvider';
 import { PSEventLogProvider } from '@/network/devices/windows/PSEventLogProvider';
@@ -52,6 +53,7 @@ import type {
   ISmbProvider, SmbShareInfo, SmbSessionInfo,
   IAdProvider, AdUserInfo, AdGroupInfo, AdComputerInfo, AdOrgUnitInfo, AdOpResult,
   IComputerProvider, DomainMembershipInfo,
+  IGpoProvider, GpoInfo,
   IDnsServerProvider, DnsOpResult, DnsZoneInfo, DnsRecordInfo,
   IDhcpServerProvider, DhcpOpResult, DhcpScopeInfo, DhcpLeaseInfo,
   INpsProvider, NpsOpResult, NasClientInfo, NetworkPolicyInfo,
@@ -1495,6 +1497,42 @@ class WindowsComputerAdapter implements IComputerProvider {
   }
 }
 
+// ── Group Policy adapter (PRD-Windows-Server.md §5 P10) ──────────────────
+// GPO authoring requires the GroupPolicy module, which (like ActiveDirectory)
+// is only available on a domain controller in this simulator's scope — gated
+// on `getDirectoryStore()` rather than a RoleManager feature.
+
+class WindowsGpoAdapter implements IGpoProvider {
+  constructor(private readonly pc: WindowsPC) {}
+
+  private requireDc(cmdletName: string): DirectoryStore {
+    const store = this.pc.getDirectoryStore();
+    if (!store) throw new Error(`${cmdletName} is not recognized as the name of a cmdlet, function, script file, or operable program`);
+    return store;
+  }
+
+  newGpo(name: string): AdOpResult {
+    return this.requireDc('New-GPO').newGpo(name);
+  }
+
+  getGpo(name: string): GpoInfo | null {
+    const gpo = this.requireDc('Get-GPO').getGpo(name);
+    return gpo ? { id: gpo.id, name: gpo.name, links: gpo.links } : null;
+  }
+
+  listGpos(): GpoInfo[] {
+    return this.requireDc('Get-GPO').listGpos().map(g => ({ id: g.id, name: g.name, links: g.links }));
+  }
+
+  newGPLink(gpoName: string, targetDn: string): AdOpResult {
+    return this.requireDc('New-GPLink').newGPLink(gpoName, targetDn);
+  }
+
+  getDomainDn(): string {
+    return this.requireDc('New-GPLink').getDomainDn();
+  }
+}
+
 // ── Remoting adapter (Invoke-Command -ComputerName / Test-WSMan) ──────────
 //
 // Resolves the target through the same simulated-topology lookup the SSH
@@ -1617,5 +1655,6 @@ export function createWindowsPSProviders(
     dns:            pc.getRoleManager() ? new WindowsDnsServerAdapter(pc) : null,
     dhcp:           pc.getRoleManager() ? new WindowsDhcpServerAdapter(pc) : null,
     nps:            pc.getRoleManager() ? new WindowsNpsAdapter(pc) : null,
+    gpo:            new WindowsGpoAdapter(pc),
   };
 }
