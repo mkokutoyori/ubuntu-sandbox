@@ -1950,6 +1950,20 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
   /** @internal Used by CLI shells */
   _getArpTableInternal(): Map<string, ARPEntry> { return this.arpTable; }
 
+  /**
+   * Real RIB lookup (LPM) exposed to UDP/TCP agents hosted on this router
+   * (e.g. RADIUS) that need genuine egress resolution instead of a
+   * same-subnet/first-up-port heuristic — mirrors `resolveRoute` on
+   * `TcpHost`. Read-only: no packet mutation, same freshness refresh as
+   * the data-path lookup in `forwardPacket`.
+   */
+  resolveRouteForHost(destIp: string): { iface: string; nextHopIp: string } | null {
+    const dest = new IPAddress(destIp);
+    const route = this.lookupRoute(dest);
+    if (!route) return null;
+    return { iface: route.iface, nextHopIp: (route.nextHop ?? dest).toString() };
+  }
+
   /** Add a static ARP entry */
   _addStaticARP(ip: IPAddress, mac: MACAddress, iface: string): void {
     this.arpTable.set(ip.toString(), { mac, iface, timestamp: Date.now(), type: 'static' });

@@ -21,6 +21,10 @@ export interface RadiusClientHost {
   getPort(name: string): import('../hardware/Port').Port | undefined;
   getPorts(): import('../hardware/Port').Port[];
   sendFrame(portName: string, frame: EthernetFrame): void;
+  /** ARP-resolved next-hop MAC, when known — falls back to broadcast otherwise (mirrors `TcpHost`). */
+  resolveMac?(ip: string): MACAddress | null;
+  /** Real RIB lookup (LPM) — falls back to same-subnet/first-up-port heuristics when unset. */
+  resolveRoute?(targetIp: string): { iface: string; nextHopIp: string } | null;
 }
 
 interface PendingRequest {
@@ -202,7 +206,7 @@ export class RadiusClientAgent {
     ipPkt.headerChecksum = computeIPv4Checksum(ipPkt);
     const eth: EthernetFrame = {
       srcMAC: egress.port.getMAC(),
-      dstMAC: MACAddress.broadcast(),
+      dstMAC: this.host.resolveMac?.(server.ip) ?? MACAddress.broadcast(),
       etherType: ETHERTYPE_IPV4, payload: ipPkt,
     };
     this.host.sendFrame(egress.name, eth);
@@ -219,6 +223,13 @@ export class RadiusClientAgent {
     if (this.config.sourceInterface) {
       const p = this.host.getPort(this.config.sourceInterface);
       if (p) return { name: this.config.sourceInterface, port: p };
+    }
+    if (this.host.resolveRoute) {
+      const route = this.host.resolveRoute(targetIp);
+      if (route) {
+        const port = this.host.getPort(route.iface);
+        if (port && port.getIsUp()) return { name: route.iface, port };
+      }
     }
     const target = targetIp.split('.').map(Number);
     for (const port of this.host.getPorts()) {

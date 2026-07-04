@@ -135,6 +135,8 @@ export class CiscoRouter extends Router {
       getPort: (n: string) => this.getPort(n),
       getPorts: () => this.getPorts(),
       sendFrame: (p: string, f: EthernetFrame) => { this.sendFrame(p, f); },
+      resolveMac: (ip: string) => this._getArpTableInternal().get(ip)?.mac ?? null,
+      resolveRoute: (ip: string) => this.resolveRouteForHost(ip),
     };
     this.cdpAgent = new CdpAgent(hostBase, () => this.getBus());
     this.lldpAgent = new LldpAgent(hostBase, () => this.getBus());

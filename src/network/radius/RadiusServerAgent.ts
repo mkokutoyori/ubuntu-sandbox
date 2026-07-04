@@ -11,6 +11,7 @@ import {
   type EthernetFrame, type IPv4Packet, type UDPPacket,
   IP_PROTO_UDP, ETHERTYPE_IPV4, nextIPv4Id, computeIPv4Checksum,
 } from '../core/types';
+import type { Port } from '../hardware/Port';
 import { Logger } from '../core/Logger';
 
 export interface RadiusServerHost {
@@ -20,11 +21,18 @@ export interface RadiusServerHost {
   getPort(name: string): import('../hardware/Port').Port | undefined;
   getPorts(): import('../hardware/Port').Port[];
   sendFrame(portName: string, frame: EthernetFrame): void;
+  /** ARP-resolved next-hop MAC, when known — falls back to broadcast otherwise (mirrors `TcpHost`). */
+  resolveMac?(ip: string): MACAddress | null;
 }
+
+/** How long a served response is kept for retransmission dedup (RFC 2865 §2). */
+const DEDUP_TTL_MS = 30_000;
 
 export class RadiusServerAgent {
   private config: RadiusServerAgentConfig = createDefaultServerConfig();
   private running = false;
+  /** Keyed by client IP:port:identifier:authenticator — replays the exact response instead of re-processing a retransmission. */
+  private readonly recentReplies = new Map<string, { response: RadiusPacket; sentAt: number }>();
 
   constructor(
     private readonly host: RadiusServerHost,
@@ -60,6 +68,14 @@ export class RadiusServerAgent {
     if (payload.code !== 'access-request') return;
 
     const senderIp = srcIp.toString();
+    const dedupKey = `${senderIp}:${udp.sourcePort}:${payload.identifier}:${payload.authenticator}`;
+    this.pruneDedupCache();
+    const cached = this.recentReplies.get(dedupKey);
+    if (cached) {
+      this.resend(inPort, srcIp, udp.sourcePort, cached.response);
+      return;
+    }
+
     this.getBus().publish({
       topic: 'radius.packet.received',
       payload: {
@@ -93,7 +109,14 @@ export class RadiusServerAgent {
       this.publishRejected(senderIp, username, reason);
     }
 
-    this.reply(inPort, srcIp, payload, accepted, user);
+    this.reply(inPort, srcIp, udp.sourcePort, payload, accepted, user, dedupKey);
+  }
+
+  private pruneDedupCache(): void {
+    const cutoff = Date.now() - DEDUP_TTL_MS;
+    for (const [key, entry] of this.recentReplies) {
+      if (entry.sentAt < cutoff) this.recentReplies.delete(key);
+    }
   }
 
   private publishRejected(fromIp: string, username: string,
@@ -107,7 +130,10 @@ export class RadiusServerAgent {
     });
   }
 
-  private reply(inPort: string, dstIp: IPAddress, request: RadiusPacket, accepted: boolean, user: RadiusUser | undefined): void {
+  private reply(
+    inPort: string, dstIp: IPAddress, clientPort: number, request: RadiusPacket,
+    accepted: boolean, user: RadiusUser | undefined, dedupKey: string,
+  ): void {
     const port = this.host.getPort(inPort);
     if (!port) return;
     const srcIp = port.getIPAddress();
@@ -115,18 +141,48 @@ export class RadiusServerAgent {
     const replyAttrs: RadiusAttribute[] = [];
     if (accepted && user?.replyAttributes) replyAttrs.push(...user.replyAttributes);
     if (!accepted) replyAttrs.push(attr('reply-message', 'Authentication failed'));
-    const payload: RadiusPacket = {
+    const response: RadiusPacket = {
       type: 'radius',
       code: accepted ? 'access-accept' : 'access-reject',
       identifier: request.identifier,
       authenticator: makeAuthenticator(request.identifier ^ (Date.now() & 0xffff)),
       attributes: replyAttrs,
     };
+    this.recentReplies.set(dedupKey, { response, sentAt: Date.now() });
+    this.sendRadiusFrame(inPort, port, srcIp, dstIp, clientPort, response);
+    this.getBus().publish({
+      topic: 'radius.packet.sent',
+      payload: {
+        deviceId: this.host.id, hostname: this.host.getHostname(),
+        destinationIp: dstIp.toString(), code: response.code,
+        identifier: response.identifier,
+        username: user?.username ?? null,
+      },
+    });
+    Logger.info(this.host.id, 'radius:reply',
+      `${this.host.name}: ${dstIp} ${response.code} for ${user?.username ?? '(unknown)'}`);
+  }
+
+  /** Retransmission of a request already answered: replay the cached response on the wire without re-processing (no duplicate accept/reject decision, no duplicate received/rejected events). */
+  private resend(inPort: string, dstIp: IPAddress, clientPort: number, response: RadiusPacket): void {
+    const port = this.host.getPort(inPort);
+    if (!port) return;
+    const srcIp = port.getIPAddress();
+    if (!srcIp) return;
+    this.sendRadiusFrame(inPort, port, srcIp, dstIp, clientPort, response);
+    Logger.info(this.host.id, 'radius:resend',
+      `${this.host.name}: retransmission from ${dstIp} → cached ${response.code}`);
+  }
+
+  private sendRadiusFrame(
+    inPort: string, port: Port, srcIp: IPAddress, dstIp: IPAddress,
+    clientPort: number, response: RadiusPacket,
+  ): void {
     const udp: UDPPacket = {
       type: 'udp',
       sourcePort: this.config.port,
-      destinationPort: 49152 + (request.identifier & 0x3fff),
-      length: 20 + 16, checksum: 0, payload,
+      destinationPort: clientPort,
+      length: 20 + 16, checksum: 0, payload: response,
     };
     const ipPkt: IPv4Packet = {
       type: 'ipv4', version: 4, ihl: 5, tos: 0,
@@ -139,20 +195,9 @@ export class RadiusServerAgent {
     ipPkt.headerChecksum = computeIPv4Checksum(ipPkt);
     const eth: EthernetFrame = {
       srcMAC: port.getMAC(),
-      dstMAC: MACAddress.broadcast(),
+      dstMAC: this.host.resolveMac?.(dstIp.toString()) ?? MACAddress.broadcast(),
       etherType: ETHERTYPE_IPV4, payload: ipPkt,
     };
     this.host.sendFrame(inPort, eth);
-    this.getBus().publish({
-      topic: 'radius.packet.sent',
-      payload: {
-        deviceId: this.host.id, hostname: this.host.getHostname(),
-        destinationIp: dstIp.toString(), code: payload.code,
-        identifier: payload.identifier,
-        username: user?.username ?? null,
-      },
-    });
-    Logger.info(this.host.id, 'radius:reply',
-      `${this.host.name}: ${dstIp} ${payload.code} for ${user?.username ?? '(unknown)'}`);
   }
 }
