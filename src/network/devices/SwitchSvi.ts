@@ -1,11 +1,12 @@
 import {
   EthernetFrame, MACAddress, IPAddress, SubnetMask,
-  ARPPacket, ICMPPacket, IPv4Packet,
-  ETHERTYPE_ARP, ETHERTYPE_IPV4, IP_PROTO_ICMP,
+  ARPPacket, ICMPPacket, IPv4Packet, UDPPacket,
+  ETHERTYPE_ARP, ETHERTYPE_IPV4, IP_PROTO_ICMP, IP_PROTO_UDP,
   createIPv4Packet, computeIPv4Checksum,
 } from '../core/types';
 import { Logger } from '../core/Logger';
 import type { CiscoPingRow } from './shells/cisco/ciscoPing';
+import { DHCPPacket } from '../dhcp/DHCPPacket';
 
 /** A Switched Virtual Interface. Exists (IP-less) once `interface Vlan N` is
  *  entered; gains an address on `ip address`. */
@@ -46,6 +47,8 @@ export interface SviHost {
    * with the Vlanif name (e.g. `Vlanif10`) and the requester's IP.
    */
   fhrpVipArpOwner?(vlanIf: string, targetIp: string, requesterIp: string): string | null;
+  /** RFC 3046 Option 82 insertion on relay, shared with the box's DHCP server config. */
+  isDhcpRelayInfoEnabled?(): boolean;
 }
 
 export interface SwitchStaticRoute {
@@ -206,7 +209,7 @@ export class SwitchSvi {
     const selfIp = svi.ip;
 
     const myMac = this.host.getBridgeMac();
-    const forUs = frame.dstMAC.equals(myMac);
+    let forUs = frame.dstMAC.equals(myMac);
 
     if (frame.etherType === ETHERTYPE_ARP) {
       const arp = frame.payload as ARPPacket;
@@ -238,9 +241,29 @@ export class SwitchSvi {
       return false;
     }
 
-    if (frame.etherType === ETHERTYPE_IPV4 && forUs) {
+    if (frame.etherType === ETHERTYPE_IPV4) {
       const ip = frame.payload as IPv4Packet;
-      if (!ip || ip.type !== 'ipv4') return true;
+      if (!ip || ip.type !== 'ipv4') return forUs;
+
+      // A relay hop may reply with a broadcast dstMAC but an IP destination
+      // that's genuinely one of our own SVIs (mirrors Router's own local-
+      // delivery check, which is IP- not MAC-driven) — still "for us".
+      if (!forUs && frame.dstMAC.isBroadcast()) {
+        forUs = [...this.svis.values()].some(s => s.adminUp && s.ip?.equals(ip.destinationIP));
+      }
+
+      // DHCP relay: a client's DISCOVER/REQUEST is broadcast (dstMAC is not
+      // ours), so this runs ahead of the forUs gate below — same treatment
+      // as a broadcast ARP request, answered/relayed but still flooded.
+      if (!forUs && ip.protocol === IP_PROTO_UDP && svi.helperAddresses.length > 0) {
+        const udp = ip.payload as UDPPacket | undefined;
+        const dhcp = udp?.type === 'udp' ? udp.payload : undefined;
+        if (udp?.destinationPort === 67 && dhcp instanceof DHCPPacket && dhcp.op === 1) {
+          this.relayDhcpToHelpers(svi, dhcp);
+        }
+      }
+
+      if (!forUs) return false;
 
       const dstIsOwnSvi = [...this.svis.values()].some(s => s.adminUp && s.ip?.equals(ip.destinationIP));
       if (dstIsOwnSvi) {
@@ -254,6 +277,12 @@ export class SwitchSvi {
               fromIp: ip.sourceIP.toString(), ttl: ip.ttl,
             };
           }
+        } else if (ip.protocol === IP_PROTO_UDP) {
+          const udp = ip.payload as UDPPacket | undefined;
+          const dhcp = udp?.type === 'udp' ? udp.payload : undefined;
+          if (dhcp instanceof DHCPPacket && dhcp.op === 2) {
+            this.relayDhcpReplyToClientVlan(dhcp);
+          }
         }
         return true;
       }
@@ -263,6 +292,53 @@ export class SwitchSvi {
     }
 
     return false;
+  }
+
+  /**
+   * `ip helper-address` (Cisco) / `dhcp relay server-ip` (Huawei) on this
+   * SVI: stamp giaddr/hop-count (and Option 82 when enabled) and unicast
+   * the client's broadcast DISCOVER/REQUEST to each configured helper,
+   * routed the same way any other packet the SVI originates would be.
+   */
+  private relayDhcpToHelpers(svi: SviInterface, pkt: DHCPPacket): void {
+    if (pkt.hops >= 16) return;
+    pkt.hops++;
+    if (pkt.giaddr === '0.0.0.0') pkt.giaddr = svi.ip!.toString();
+    if (this.host.isDhcpRelayInfoEnabled?.()) {
+      pkt.setOption(82, { circuitId: `Vlanif${svi.vlan}`, remoteId: this.host.getHostname() });
+    }
+    for (const helper of svi.helperAddresses) {
+      const dst = new IPAddress(helper);
+      const route = this.lookupRoute(dst);
+      if (!route || !route.egress.ip) continue;
+      const nextHopMac = this.resolveArp(route.egress.vlan, route.egress.ip, route.nextHop);
+      if (!nextHopMac) continue;
+      const udp: UDPPacket = {
+        type: 'udp', sourcePort: 67, destinationPort: 67, length: 8 + 300, checksum: 0, payload: pkt,
+      };
+      const relayed = createIPv4Packet(new IPAddress(pkt.giaddr), dst, IP_PROTO_UDP, 64, udp, 8 + 300);
+      this.host.egressOnVlan(route.egress.vlan, {
+        srcMAC: this.host.getBridgeMac(), dstMAC: nextHopMac,
+        etherType: ETHERTYPE_IPV4, payload: relayed,
+      });
+    }
+  }
+
+  /** A relayed OFFER/ACK/NAK addressed back to one of our SVIs (giaddr): strip Option 82 and broadcast it onto the client's own VLAN. */
+  private relayDhcpReplyToClientVlan(pkt: DHCPPacket): void {
+    for (const svi of this.svis.values()) {
+      if (!svi.adminUp || !svi.ip || pkt.giaddr !== svi.ip.toString()) continue;
+      pkt.removeOption(82);
+      const udp: UDPPacket = {
+        type: 'udp', sourcePort: 67, destinationPort: 68, length: 8 + 300, checksum: 0, payload: pkt,
+      };
+      const relayed = createIPv4Packet(svi.ip, new IPAddress('255.255.255.255'), IP_PROTO_UDP, 64, udp, 8 + 300);
+      this.host.egressOnVlan(svi.vlan, {
+        srcMAC: this.host.getBridgeMac(), dstMAC: MACAddress.broadcast(),
+        etherType: ETHERTYPE_IPV4, payload: relayed,
+      });
+      return;
+    }
   }
 
   private forwardIpPacket(ingressVlan: number, ip: IPv4Packet): void {
