@@ -27,6 +27,8 @@ function toPSObject(c: VpnConnectionInfo): Record<string, PSValue> {
     TunnelType:      c.tunnelType,
     EncryptionLevel: c.encryptionLevel,
     AuthenticationMethod: c.authMethod,
+    SplitTunneling:  c.splitTunneling,
+    ConnectionStatus: c.connectionStatus,
   };
 }
 
@@ -51,6 +53,9 @@ export class AddVpnConnectionCmdlet implements ICmdlet {
       tunnelType:      ctx.named['tunneltype']            ? psValueToString(ctx.named['tunneltype'])            : 'Automatic',
       encryptionLevel: ctx.named['encryptionlevel']       ? psValueToString(ctx.named['encryptionlevel'])       : 'Required',
       authMethod:      ctx.named['authenticationmethod']  ? psValueToString(ctx.named['authenticationmethod'])  : 'MSChapv2',
+      splitTunneling:  ctx.named['splittunneling'] === true,
+      destinationPrefixes: [],
+      connectionStatus: 'Disconnected',
     });
     return null;
   }
@@ -96,8 +101,64 @@ export class SetVpnConnectionCmdlet implements ICmdlet {
     if (ctx.named['tunneltype']           !== undefined) opts.tunnelType      = psValueToString(ctx.named['tunneltype']);
     if (ctx.named['encryptionlevel']      !== undefined) opts.encryptionLevel = psValueToString(ctx.named['encryptionlevel']);
     if (ctx.named['authenticationmethod'] !== undefined) opts.authMethod     = psValueToString(ctx.named['authenticationmethod']);
+    if (ctx.named['splittunneling']       !== undefined) opts.splitTunneling = ctx.named['splittunneling'] === true;
 
     const msg = vpn.setConnection(name, opts);
+    if (msg) ctx.emitError(msg);
+    return null;
+  }
+}
+
+// ── Add-VpnConnectionRoute ───────────────────────────────────────────────
+
+export class AddVpnConnectionRouteCmdlet implements ICmdlet {
+  readonly name = 'add-vpnconnectionroute';
+  readonly displayName = 'Add-VpnConnectionRoute';
+  readonly aliases = [] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const vpn = requireVpn(ctx);
+    const name = psValueToString(ctx.named['connectionname'] ?? ctx.named['name'] ?? '');
+    const prefix = psValueToString(ctx.named['destinationprefix'] ?? '');
+    if (!name || !prefix) {
+      ctx.emitError('Add-VpnConnectionRoute requires -ConnectionName and -DestinationPrefix');
+      return null;
+    }
+    const msg = vpn.addConnectionRoute(name, prefix);
+    if (msg) ctx.emitError(msg);
+    return null;
+  }
+}
+
+// ── Connect-VpnConnection ────────────────────────────────────────────────
+
+export class ConnectVpnConnectionCmdlet implements ICmdlet {
+  readonly name = 'connect-vpnconnection';
+  readonly displayName = 'Connect-VpnConnection';
+  readonly aliases = [] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const vpn = requireVpn(ctx);
+    const name = psValueToString(ctx.named['name'] ?? ctx.positional[0] ?? '');
+    if (!name) { ctx.emitError('Connect-VpnConnection requires -Name'); return null; }
+    const msg = vpn.connect(name);
+    if (msg) ctx.emitError(msg);
+    return null;
+  }
+}
+
+// ── Disconnect-VpnConnection ─────────────────────────────────────────────
+
+export class DisconnectVpnConnectionCmdlet implements ICmdlet {
+  readonly name = 'disconnect-vpnconnection';
+  readonly displayName = 'Disconnect-VpnConnection';
+  readonly aliases = [] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const vpn = requireVpn(ctx);
+    const name = psValueToString(ctx.named['name'] ?? ctx.positional[0] ?? '');
+    if (!name) { ctx.emitError('Disconnect-VpnConnection requires -Name'); return null; }
+    const msg = vpn.disconnect(name);
     if (msg) ctx.emitError(msg);
     return null;
   }

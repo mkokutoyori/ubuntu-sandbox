@@ -80,6 +80,8 @@ export interface CryptoMapEntry {
   saLifetimeSeconds?: number;
   ikev2ProfileName?: string;
   isakmpProfileName?: string;
+  /** `set peer <hostname> dynamic` — DDNS-tracked peer name (RFC 2136-style). */
+  peerHostname?: string;
 }
 
 // ─── IKEv1 keyring + ISAKMP profile (crypto keyring / crypto isakmp profile) ──

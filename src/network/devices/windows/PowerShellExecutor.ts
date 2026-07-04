@@ -30,6 +30,7 @@ import {
 } from './PSServiceCmdlets';
 import { PSRegistryProvider, isRegistryPath } from './PSRegistryProvider';
 import { PSEventLogProvider, type EntryType } from './PSEventLogProvider';
+import type { VpnConnectionInfo } from '@/powershell/providers/PSProviders';
 import type { IEventBus } from '@/events/EventBus';
 
 // ─── Constants ────────────────────────────────────────────────────
@@ -90,7 +91,7 @@ export interface PSDeviceContext {
   readonly adapterOverrides:     Map<string, { status?: string; displayName?: string }>;
   readonly dynamicFirewallRules: Map<string, { name: string; displayName: string; enabled: boolean; action: string; direction: string; protocol: string; localPort: string; remotePort: string; description: string }>;
   readonly networkProfiles:      Map<number, string>;
-  readonly vpnConnections:       Map<string, { name: string; serverAddress: string; tunnelType: string; encryptionLevel: string; authMethod: string }>;
+  readonly vpnConnections:       Map<string, VpnConnectionInfo>;
   readonly registry:             PSRegistryProvider;
   readonly eventLog:             PSEventLogProvider;
   /** Device id + bus, for handlers that must publish domain events directly. */
@@ -178,7 +179,7 @@ export class PowerShellExecutor {
   /** Network connection profiles — relocated to the device. */
   get networkProfiles() { return (this.device as unknown as { networkProfiles: Map<number, string> }).networkProfiles; }
   /** VPN connections — relocated to the device. */
-  get vpnConnections() { return (this.device as unknown as { vpnConnections: Map<string, { name: string; serverAddress: string; tunnelType: string; encryptionLevel: string; authMethod: string }> }).vpnConnections; }
+  get vpnConnections() { return (this.device as unknown as { vpnConnections: Map<string, VpnConnectionInfo> }).vpnConnections; }
 
   constructor(device: PSDeviceContext, initialCwd = 'C:\\Users\\User') {
     this.cwd = initialCwd;
@@ -5129,7 +5130,10 @@ export class PowerShellExecutor {
 
     if (!name) return `Add-VpnConnection : -Name is required.`;
 
-    this.vpnConnections.set(name.toLowerCase(), { name, serverAddress, tunnelType, encryptionLevel, authMethod });
+    this.vpnConnections.set(name.toLowerCase(), {
+      name, serverAddress, tunnelType, encryptionLevel, authMethod,
+      splitTunneling: false, destinationPrefixes: [], connectionStatus: 'Disconnected',
+    });
     return '';
   }
 
@@ -5152,7 +5156,7 @@ export class PowerShellExecutor {
       `TunnelType            : ${v.tunnelType}`,
       `EncryptionLevel       : ${v.encryptionLevel}`,
       `AuthenticationMethod  : ${v.authMethod}`,
-      `ConnectionStatus      : Disconnected`,
+      `ConnectionStatus      : ${v.connectionStatus}`,
     ].join('\n')).join('\n\n');
   }
 
@@ -5162,7 +5166,10 @@ export class PowerShellExecutor {
     if (!name) return '';
 
     const key = name.toLowerCase();
-    const existing = this.vpnConnections.get(key) ?? { name, serverAddress: '', tunnelType: 'Automatic', encryptionLevel: 'Optional', authMethod: 'MSChapv2' };
+    const existing = this.vpnConnections.get(key) ?? {
+      name, serverAddress: '', tunnelType: 'Automatic', encryptionLevel: 'Optional', authMethod: 'MSChapv2',
+      splitTunneling: false, destinationPrefixes: [], connectionStatus: 'Disconnected' as const,
+    };
 
     if (params.has('serveraddress')) existing.serverAddress = params.get('serveraddress')!.replace(/^["']|["']$/g, '');
     if (params.has('tunneltype')) existing.tunnelType = params.get('tunneltype')!.replace(/^["']|["']$/g, '');

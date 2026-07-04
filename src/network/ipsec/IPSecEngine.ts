@@ -68,6 +68,7 @@ import { IPSecSignalRefreshActor } from './actors';
 import { PkiKeyPair } from '../pki/PkiKeyPair';
 import { verificationToIkeReason } from './IkeCertAuthConfig';
 import type { X509Certificate } from '../pki/X509Certificate';
+import { DdnsResolver } from './DdnsResolver';
 
 // Forward reference — resolved at runtime to avoid circular imports
 type Router = import('../devices/Router').Router;
@@ -517,6 +518,8 @@ export class IPSecEngine implements IProtocolEngine {
   private preSharedKeys: Map<string, string> = new Map();
   private transformSets: Map<string, TransformSet> = new Map();
   private cryptoMaps: Map<string, CryptoMap> = new Map();
+  /** `mapName:seq` → DDNS resolver for a `set peer <hostname> dynamic` entry. */
+  private ddnsResolvers: Map<string, DdnsResolver> = new Map();
   private dynamicCryptoMaps: Map<string, DynamicCryptoMap> = new Map();
   /** interface name → crypto map name */
   private ifaceCryptoMap: Map<string, string> = new Map();
@@ -1147,6 +1150,64 @@ export class IPSecEngine implements IProtocolEngine {
     return map.staticEntries.get(seq)!;
   }
 
+  /**
+   * `set peer <hostname> dynamic` — resolve now via the router's real hosts
+   * table (the same lookup ping/ssh already use) and track the hostname so a
+   * later DPD-detected dead peer triggers re-resolution instead of retrying
+   * the same stale address forever. Returns an error message, or null on
+   * success.
+   */
+  setDdnsPeer(mapName: string, seq: number, hostname: string, ttlMs: number = 300_000): string | null {
+    const entry = this.getOrCreateCryptoMapEntry(mapName, seq);
+    const resolver = new DdnsResolver({
+      hostname,
+      ttlMs,
+      lookup: (h) => {
+        const ip = this.router._getHostsTable().resolve(h);
+        if (!ip) throw new Error(`Unable to resolve host ${h}`);
+        return ip;
+      },
+    });
+    let ip: string;
+    try {
+      ip = resolver.resolve();
+    } catch (e) {
+      return (e as Error).message;
+    }
+    this.ddnsResolvers.set(`${mapName}:${seq}`, resolver);
+    entry.peerHostname = hostname;
+    entry.peers = [ip];
+    return null;
+  }
+
+  /**
+   * Called after DPD declares a peer dead: if that peer is tracked by a
+   * `set peer <hostname> dynamic` entry, invalidate the cached answer and
+   * re-resolve. A changed answer re-homes the crypto-map entry so the next
+   * negotiation attempt targets the peer's current (DDNS-updated) address.
+   */
+  private reresolveDdnsPeer(deadPeerIP: string): void {
+    for (const cmap of this.cryptoMaps.values()) {
+      for (const entry of cmap.staticEntries.values()) {
+        if (!entry.peerHostname || !entry.peers.includes(deadPeerIP)) continue;
+        const resolver = this.ddnsResolvers.get(`${cmap.name}:${entry.seq}`);
+        if (!resolver) continue;
+        resolver.invalidate();
+        let newIp: string;
+        try {
+          newIp = resolver.resolve();
+        } catch {
+          continue;
+        }
+        if (newIp !== deadPeerIP) {
+          entry.peers = [newIp];
+          Logger.info(this.router.id, 'ipsec:ddns-rehome',
+            `${this.router.name}: DDNS peer ${entry.peerHostname} re-resolved ${deadPeerIP} -> ${newIp}`);
+        }
+      }
+    }
+  }
+
   getOrCreateDynamicMapEntry(dynMapName: string, seq: number): DynamicCryptoMapEntry {
     if (!this.dynamicCryptoMaps.has(dynMapName)) {
       this.dynamicCryptoMaps.set(dynMapName, { name: dynMapName, entries: new Map() });
@@ -1532,6 +1593,7 @@ export class IPSecEngine implements IProtocolEngine {
             payload: { ...this.deviceRef(), peerIp: peerIP, retries: ikeSA.dpdTimeouts },
           });
           this.clearSAsForPeer(peerIP, 'dpd');
+          this.reresolveDdnsPeer(peerIP);
         }
       }
     }
@@ -1600,6 +1662,7 @@ export class IPSecEngine implements IProtocolEngine {
           payload: { ...this.deviceRef(), peerIp: peerIP, retries: ikeSA.dpdTimeouts },
         });
         this.clearSAsForPeer(peerIP, 'dpd');
+        this.reresolveDdnsPeer(peerIP);
       }
     }
 

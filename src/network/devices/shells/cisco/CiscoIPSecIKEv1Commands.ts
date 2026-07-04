@@ -16,6 +16,9 @@
 import { CommandTrie } from '../CommandTrie';
 import type { CiscoShellContext } from './CiscoConfigCommands';
 
+const IPV4_LITERAL_RE = /^(?:(?:25[0-5]|2[0-4]\d|[01]?\d?\d)\.){3}(?:25[0-5]|2[0-4]\d|[01]?\d?\d)$/;
+function isIPv4Literal(s: string): boolean { return IPV4_LITERAL_RE.test(s); }
+
 // ─── Helper: get or create IPSec engine on the router ───────────────
 
 function eng(ctx: CiscoShellContext) {
@@ -513,8 +516,14 @@ export function buildCryptoMapEntryCommands(trie: CommandTrie, ctx: CiscoShellCo
     const seq     = ctx.getSelectedCryptoMapSeq();
     if (!mapName || seq === null) return '% No crypto map selected';
     if (ctx.getSelectedCryptoMapIsDynamic()) return '% Dynamic maps do not have static peers';
+    const filtered = args.filter(a => a && a !== 'default' && a.toLowerCase() !== 'dynamic');
+    if (filtered.length === 1 && !isIPv4Literal(filtered[0])) {
+      const err = eng(ctx).setDdnsPeer(mapName, seq, filtered[0]);
+      return err ? `% ${err}` : '';
+    }
     const entry = eng(ctx).getOrCreateCryptoMapEntry(mapName, seq);
-    entry.peers = args.filter(a => a && a !== 'default');
+    entry.peerHostname = undefined;
+    entry.peers = filtered;
     return '';
   });
 

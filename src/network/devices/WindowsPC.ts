@@ -34,6 +34,7 @@ import { DoskeyTable } from './windows/cli/DoskeyTable';
 import { runPowerShellShim, createShimState, type PsShimState } from './windows/PowerShellCmdShim';
 import { PSInterpreter } from '@/powershell/interpreter/PSInterpreter';
 import { createWindowsPSProviders } from '@/powershell/providers/WindowsPSProviders';
+import type { VpnConnectionInfo } from '@/powershell/providers/PSProviders';
 import type { WinCommandContext, RouteEntry, TracerouteHop } from './windows/WinCommandExecutor';
 import type { WinFileCommandContext } from './windows/WinFileCommands';
 import { WindowsFileSystem } from './windows/WindowsFileSystem';
@@ -221,7 +222,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
   /** Network connection profiles: ifIndex → category. */
   readonly networkProfiles: Map<number, string> = new Map();
   /** VPN connections: lowercase name → details. */
-  readonly vpnConnections: Map<string, { name: string; serverAddress: string; tunnelType: string; encryptionLevel: string; authMethod: string }> = new Map();
+  readonly vpnConnections: Map<string, VpnConnectionInfo> = new Map();
   /** In-memory registry hive (HKLM / HKCU). */
   readonly registry: PSRegistryProvider = new PSRegistryProvider(
     this.getDeviceType() === 'windows-server' ? WINDOWS_SERVER_PRODUCT_IDENTITY : WINDOWS_CLIENT_PRODUCT_IDENTITY,

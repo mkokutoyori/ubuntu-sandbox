@@ -502,6 +502,9 @@ export interface VpnConnectionInfo {
   tunnelType: string;
   encryptionLevel: string;
   authMethod: string;
+  splitTunneling: boolean;
+  destinationPrefixes: string[];
+  connectionStatus: 'Disconnected' | 'Connected';
 }
 
 export interface IVpnProvider {
@@ -510,6 +513,11 @@ export interface IVpnProvider {
   addConnection(conn: VpnConnectionInfo): void;
   setConnection(name: string, opts: Partial<Omit<VpnConnectionInfo, 'name'>>): string;
   removeConnection(name: string): string;
+  addConnectionRoute(name: string, destinationPrefix: string): string;
+  /** Actually establish the tunnel: real routes installed against the host's routing table. */
+  connect(name: string): string;
+  /** Tear down the tunnel: removes the routes installed by connect(). */
+  disconnect(name: string): string;
 }
 
 export interface IEventLogProvider {

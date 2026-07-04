@@ -15,6 +15,7 @@
 
 import type { WindowsPC } from '@/network/devices/WindowsPC';
 import type { WindowsServer } from '@/network/devices/WindowsServer';
+import { RemoteAccessVpnClient } from '@/network/ipsec/RemoteAccessVpnClient';
 import { PSRegistryProvider } from '@/network/devices/windows/PSRegistryProvider';
 import { PSEventLogProvider } from '@/network/devices/windows/PSEventLogProvider';
 import { resolveAdapterName } from '@/network/devices/windows/WinNetsh';
@@ -1162,7 +1163,9 @@ interface VpnState {
 }
 
 class WindowsVpnAdapter implements IVpnProvider {
-  constructor(private readonly state: VpnState) {}
+  private readonly activeClients = new Map<string, RemoteAccessVpnClient>();
+
+  constructor(private readonly pc: WindowsPC, private readonly state: VpnState) {}
 
   listConnections(nameFilter?: string): VpnConnectionInfo[] {
     const all = Array.from(this.state.vpnConnections.values());
@@ -1186,6 +1189,45 @@ class WindowsVpnAdapter implements IVpnProvider {
     return this.state.vpnConnections.delete(name.toLowerCase())
       ? ''
       : `Cannot find VPN connection '${name}'.`;
+  }
+  addConnectionRoute(name: string, destinationPrefix: string): string {
+    const key = name.toLowerCase();
+    const cur = this.state.vpnConnections.get(key);
+    if (!cur) return `Cannot find VPN connection '${name}'.`;
+    this.state.vpnConnections.set(key, {
+      ...cur, destinationPrefixes: [...cur.destinationPrefixes, destinationPrefix],
+    });
+    return '';
+  }
+  connect(name: string): string {
+    const key = name.toLowerCase();
+    const conn = this.state.vpnConnections.get(key);
+    if (!conn) return `Cannot find VPN connection '${name}'.`;
+    if (this.activeClients.has(key)) return `VPN connection '${name}' is already connected.`;
+    const client = new RemoteAccessVpnClient({
+      gatewayPublicIp: conn.serverAddress,
+      corporateSubnets: conn.destinationPrefixes,
+      mode: conn.splitTunneling ? 'split' : 'full',
+    }, this.pc);
+    try {
+      client.connect();
+    } catch (e) {
+      return `Connect-VpnConnection : ${(e as Error).message}`;
+    }
+    this.activeClients.set(key, client);
+    this.state.vpnConnections.set(key, { ...conn, connectionStatus: 'Connected' });
+    return '';
+  }
+  disconnect(name: string): string {
+    const key = name.toLowerCase();
+    const conn = this.state.vpnConnections.get(key);
+    if (!conn) return `Cannot find VPN connection '${name}'.`;
+    const client = this.activeClients.get(key);
+    if (!client) return `VPN connection '${name}' is not connected.`;
+    client.disconnect();
+    this.activeClients.delete(key);
+    this.state.vpnConnections.set(key, { ...conn, connectionStatus: 'Disconnected' });
+    return '';
   }
 }
 
@@ -1430,7 +1472,7 @@ export function createWindowsPSProviders(
     registry:       new WindowsRegistryAdapter(reg),
     eventLog:       new WindowsEventLogAdapter(log),
     network:        new WindowsNetworkAdapter(pc, net),
-    vpn:            new WindowsVpnAdapter(vpn),
+    vpn:            new WindowsVpnAdapter(pc, vpn),
     scheduledTasks: new WindowsScheduledTaskAdapter(pc),
     disks:          new WindowsDiskAdapter(pc),
     environment:    new WindowsEnvironmentAdapter(pc),

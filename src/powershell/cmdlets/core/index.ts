@@ -87,6 +87,7 @@ import {
 import {
   AddVpnConnectionCmdlet, GetVpnConnectionCmdlet,
   SetVpnConnectionCmdlet, RemoveVpnConnectionCmdlet,
+  AddVpnConnectionRouteCmdlet, ConnectVpnConnectionCmdlet, DisconnectVpnConnectionCmdlet,
 } from './VpnCmdlets';
 import {
   GetEventLogCmdlet, WriteEventLogCmdlet, ClearEventLogCmdlet,
@@ -307,6 +308,9 @@ export function registerCoreCmdlets(registry: CmdletRegistry): void {
   registry.register(new GetVpnConnectionCmdlet());
   registry.register(new SetVpnConnectionCmdlet());
   registry.register(new RemoveVpnConnectionCmdlet());
+  registry.register(new AddVpnConnectionRouteCmdlet());
+  registry.register(new ConnectVpnConnectionCmdlet());
+  registry.register(new DisconnectVpnConnectionCmdlet());
 
   // ── Event log (provider-backed) ───────────────────────────────────────────
   registry.register(new GetEventLogCmdlet());
