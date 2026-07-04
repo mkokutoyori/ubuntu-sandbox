@@ -1,19 +1,21 @@
 import type { IEventBus } from '@/events/EventBus';
 import { getDefaultScheduler, type IScheduler, type TimerHandle } from '@/events/Scheduler';
-import { hexToBytes } from '@/crypto/encoding';
+import { hexToBytes, bytesToHex, bytesToUtf8 } from '@/crypto/encoding';
 import {
   type RadiusClientConfig, type RadiusServerConfig, type RadiusPacket,
   type RadiusAttribute,
-  createDefaultClientConfig, defaultServerEntry, attr, getAttr,
+  createDefaultClientConfig, defaultServerEntry, attr, getAttr, getVsa,
   encryptUserPassword,
   UDP_PORT_RADIUS_AUTH,
 } from './types';
 import {
-  randomRequestAuthenticator, withMessageAuthenticator,
+  randomRequestAuthenticator, randomOpaqueToken, withMessageAuthenticator,
   verifyResponseAuthenticator, verifyMessageAuthenticator,
 } from './authenticators';
 import { buildChapPasswordHex } from './passwords';
 import { NAS_PORT_TYPE_ETHERNET } from './eap';
+import { MICROSOFT_VENDOR_ID } from './dictionary';
+import { generateNtResponse, generateAuthenticatorResponse } from './mschapv2';
 import {
   MACAddress, IPAddress,
   type EthernetFrame, type IPv4Packet, type UDPPacket,
@@ -102,10 +104,37 @@ interface PendingEapRound {
   attemptsLeft: number;
 }
 
+/**
+ * Outcome of an MS-CHAPv2 authentication (RFC 2759, carried per RFC 2548).
+ * Unlike EAP, all the crypto (challenges, NT-Response) is computed by the
+ * peer *before* the RADIUS exchange, so this is a single round-trip like
+ * authenticate()/authenticateChap() — no external party to wait on mid-flight.
+ */
+export type MsChapV2Outcome =
+  | { kind: 'accept'; authenticatorResponseValid: boolean; attributes: RadiusAttribute[] }
+  | { kind: 'reject' }
+  | { kind: 'timeout' };
+
+interface PendingMsChapRound {
+  identifier: number;
+  serverIp: string;
+  secret: string;
+  authenticator: string;
+  username: string;
+  password: string;
+  authChallenge: Uint8Array;
+  peerChallenge: Uint8Array;
+  ntResponse: Uint8Array;
+  resolve: (outcome: MsChapV2Outcome) => void;
+  timer: TimerHandle | null;
+  attemptsLeft: number;
+}
+
 export class RadiusClientAgent {
   private config: RadiusClientConfig = createDefaultClientConfig();
   private pending = new Map<number, PendingRequest>();
   private pendingEap = new Map<number, PendingEapRound>();
+  private pendingMsChap = new Map<number, PendingMsChapRound>();
   private nextIdentifier = 1;
   private scheduler: IScheduler | null = null;
   private running = false;
@@ -134,6 +163,11 @@ export class RadiusClientAgent {
       p.resolve({ kind: 'timeout' });
     }
     this.pendingEap.clear();
+    for (const p of this.pendingMsChap.values()) {
+      if (p.timer !== null) (this.scheduler ?? this.getScheduler()).clear(p.timer);
+      p.resolve({ kind: 'timeout' });
+    }
+    this.pendingMsChap.clear();
   }
 
   getConfig(): Readonly<RadiusClientConfig> { return this.config; }
@@ -190,6 +224,39 @@ export class RadiusClientAgent {
   /** CHAP authentication (RFC 2865 §5.3, RFC 1994). */
   authenticateChap(username: string, password: string, serverIp?: string): Promise<boolean> {
     return this.run(username, password, 'chap', serverIp);
+  }
+
+  /**
+   * MS-CHAPv2 authentication (RFC 2759, carried as Microsoft VSAs per RFC
+   * 2548 §2.3): generates the AuthenticatorChallenge/PeerChallenge/NT-Response
+   * itself (this simulator collapses the NAS and the dial-in peer into one
+   * caller, same simplification `authenticate()`/`authenticateChap()` already
+   * make), sends a single Access-Request, and — on accept — checks the
+   * server's MS-CHAP2-Success mutual-auth proof against what the real
+   * password would produce.
+   */
+  authenticateMsChapV2(username: string, password: string, serverIp?: string): Promise<MsChapV2Outcome> {
+    if (!this.config.enabled) return Promise.resolve({ kind: 'timeout' });
+    const server = serverIp
+      ? this.config.servers.find((s) => s.ip === serverIp)
+      : this.config.servers[0];
+    if (!server) return Promise.resolve({ kind: 'timeout' });
+    const identifier = this.nextIdentifier;
+    this.nextIdentifier = (this.nextIdentifier + 1) & 0xff;
+    const authenticator = randomRequestAuthenticator();
+    const authChallenge = hexToBytes(randomOpaqueToken(16));
+    const peerChallenge = hexToBytes(randomOpaqueToken(16));
+    const ntResponse = generateNtResponse(authChallenge, peerChallenge, username, password);
+    return new Promise<MsChapV2Outcome>((resolve) => {
+      const pending: PendingMsChapRound = {
+        identifier, serverIp: server.ip, secret: server.sharedSecret, authenticator,
+        username, password, authChallenge, peerChallenge, ntResponse,
+        resolve, timer: null, attemptsLeft: server.retransmit,
+      };
+      this.pendingMsChap.set(identifier, pending);
+      this.transmitMsChap(server, pending);
+      this.armMsChapTimeout(server, pending);
+    });
   }
 
   /**
@@ -333,6 +400,115 @@ export class RadiusClientAgent {
     pending.resolve({ kind: 'reject', eapMessageHex });
   }
 
+  private transmitMsChap(server: RadiusServerConfig, pending: PendingMsChapRound): void {
+    const egress = this.resolveEgress(server.ip);
+    if (!egress) return;
+    const srcIp = egress.port.getIPAddress();
+    if (!srcIp) return;
+    const msChap2Response = new Uint8Array(50);
+    msChap2Response[0] = pending.identifier & 0xff; // Ident
+    msChap2Response[1] = 0; // Flags
+    msChap2Response.set(pending.peerChallenge, 2);
+    // bytes [18, 26) are the reserved 8 zero bytes
+    msChap2Response.set(pending.ntResponse, 26);
+    const attrs: RadiusAttribute[] = [
+      attr('user-name', pending.username),
+      attr('nas-ip-address', srcIp.toString()),
+      attr('nas-port-type', NAS_PORT_TYPE_ETHERNET),
+      attr('vendor-specific', bytesToHex(pending.authChallenge), { id: MICROSOFT_VENDOR_ID, type: 11 }),
+      attr('vendor-specific', bytesToHex(msChap2Response), { id: MICROSOFT_VENDOR_ID, type: 25 }),
+    ];
+    if (this.config.nasIdentifier) attrs.push(attr('nas-identifier', this.config.nasIdentifier));
+    let payload: RadiusPacket = {
+      type: 'radius', code: 'access-request', identifier: pending.identifier,
+      authenticator: pending.authenticator, attributes: attrs,
+    };
+    payload = withMessageAuthenticator(payload, pending.authenticator, server.sharedSecret);
+    const udp: UDPPacket = {
+      type: 'udp',
+      sourcePort: 49180 + (pending.identifier & 0x3fff),
+      destinationPort: server.authPort,
+      length: 20, checksum: 0, payload,
+    };
+    const ipPkt: IPv4Packet = {
+      type: 'ipv4', version: 4, ihl: 5, tos: 0,
+      totalLength: 20 + udp.length,
+      identification: nextIPv4Id(), flags: 0, fragmentOffset: 0,
+      ttl: 64, protocol: IP_PROTO_UDP, headerChecksum: 0,
+      sourceIP: srcIp, destinationIP: new IPAddress(server.ip),
+      payload: udp,
+    };
+    ipPkt.headerChecksum = computeIPv4Checksum(ipPkt);
+    const eth: EthernetFrame = {
+      srcMAC: egress.port.getMAC(),
+      dstMAC: this.host.resolveMac?.(server.ip) ?? MACAddress.broadcast(),
+      etherType: ETHERTYPE_IPV4, payload: ipPkt,
+    };
+    this.getBus().publish({
+      topic: 'radius.packet.sent',
+      payload: {
+        deviceId: this.host.id, hostname: this.host.getHostname(),
+        destinationIp: server.ip, code: 'access-request',
+        identifier: pending.identifier, username: pending.username,
+      },
+    });
+    this.host.sendFrame(egress.name, eth);
+  }
+
+  private armMsChapTimeout(server: RadiusServerConfig, pending: PendingMsChapRound): void {
+    const s = this.getScheduler();
+    this.scheduler = s;
+    pending.timer = s.setTimeout(() => {
+      if (!this.pendingMsChap.has(pending.identifier)) return;
+      if (pending.attemptsLeft > 0) {
+        pending.attemptsLeft--;
+        this.transmitMsChap(server, pending);
+        this.armMsChapTimeout(server, pending);
+      } else {
+        this.pendingMsChap.delete(pending.identifier);
+        pending.resolve({ kind: 'timeout' });
+      }
+    }, server.timeoutMs);
+  }
+
+  private handleMsChapUdp(payload: RadiusPacket, srcIp: IPAddress, pending: PendingMsChapRound): void {
+    if (pending.serverIp !== srcIp.toString()) return;
+    if (!verifyResponseAuthenticator(payload, pending.authenticator, pending.secret)) {
+      Logger.warn(this.host.id, 'radius:bad-response-authenticator',
+        `${this.host.name}: dropped ${payload.code} from ${srcIp} for ${pending.username} — invalid Response Authenticator (MS-CHAPv2)`);
+      return;
+    }
+    if (!verifyMessageAuthenticator(payload, pending.authenticator, pending.secret)) {
+      Logger.warn(this.host.id, 'radius:bad-message-authenticator',
+        `${this.host.name}: dropped ${payload.code} from ${srcIp} for ${pending.username} — invalid Message-Authenticator (MS-CHAPv2)`);
+      return;
+    }
+    if (pending.timer !== null) (this.scheduler ?? this.getScheduler()).clear(pending.timer);
+    this.pendingMsChap.delete(pending.identifier);
+    this.getBus().publish({
+      topic: 'radius.packet.received',
+      payload: {
+        deviceId: this.host.id, hostname: this.host.getHostname(),
+        fromIp: srcIp.toString(), code: payload.code, identifier: payload.identifier,
+      },
+    });
+    if (payload.code === 'access-accept') {
+      const successVsa = getVsa(payload, MICROSOFT_VENDOR_ID, 26);
+      let authenticatorResponseValid = false;
+      if (successVsa) {
+        const bytes = hexToBytes(String(successVsa.value));
+        const message = bytesToUtf8(bytes.subarray(1)); // byte 0 is Ident
+        const expected = generateAuthenticatorResponse(
+          pending.password, pending.ntResponse, pending.peerChallenge, pending.authChallenge, pending.username,
+        );
+        authenticatorResponseValid = message.startsWith(expected);
+      }
+      pending.resolve({ kind: 'accept', authenticatorResponseValid, attributes: payload.attributes });
+      return;
+    }
+    pending.resolve({ kind: 'reject' });
+  }
+
   private run(username: string, password: string, authMethod: RadiusAuthMethod, serverIp?: string): Promise<boolean> {
     if (!this.config.enabled) return Promise.resolve(false);
     const order = this.candidateServers(serverIp);
@@ -450,6 +626,9 @@ export class RadiusClientAgent {
 
     const eapPending = this.pendingEap.get(payload.identifier);
     if (eapPending) { this.handleEapUdp(payload, srcIp, eapPending); return; }
+
+    const msChapPending = this.pendingMsChap.get(payload.identifier);
+    if (msChapPending) { this.handleMsChapUdp(payload, srcIp, msChapPending); return; }
 
     const pending = this.pending.get(payload.identifier);
     if (!pending) return;

@@ -1,10 +1,11 @@
 import type { IEventBus } from '@/events/EventBus';
-import { hexToBytes } from '@/crypto/encoding';
+import { hexToBytes, bytesToHex, utf8ToBytes } from '@/crypto/encoding';
+import { md4 } from '@/crypto/hash';
 import { getDefaultScheduler, type IScheduler, type TimerHandle } from '@/events/Scheduler';
 import {
   type RadiusServerAgentConfig, type RadiusPacket, type RadiusUser,
   type RadiusAttribute,
-  createDefaultServerConfig, attr, getAttr,
+  createDefaultServerConfig, attr, getAttr, getVsa,
   decryptUserPassword, encryptUserPassword, isPrintablePassword,
 } from './types';
 import {
@@ -17,6 +18,11 @@ import {
   ACCT_STATUS_TYPE, ACCT_TERMINATE_CAUSE, type AcctStatusType, type AcctTerminateCause,
 } from './accounting';
 import { type EapPacket, eapPacketFromWireHex, eapPacketToWireHex, verifyEapMd5Response } from './eap';
+import { MICROSOFT_VENDOR_ID } from './dictionary';
+import {
+  ntPasswordHash, generateNtResponse, generateAuthenticatorResponse,
+  deriveMppeKeys, encryptMppeKey,
+} from './mschapv2';
 import {
   MACAddress, IPAddress,
   type EthernetFrame, type IPv4Packet, type UDPPacket,
@@ -24,6 +30,11 @@ import {
 } from '../core/types';
 import type { Port } from '../hardware/Port';
 import { Logger } from '../core/Logger';
+
+/** RFC 2548 §2.4.1 — Salt only needs to be unique-ish per attribute; `encryptMppeKey` forces its top bit to 1. */
+function randomSalt(): number {
+  return Math.floor(Math.random() * 0x10000);
+}
 
 const ACCT_STATUS_BY_NUMBER = new Map<number, AcctStatusType>(
   (Object.keys(ACCT_STATUS_TYPE) as AcctStatusType[]).map((k) => [ACCT_STATUS_TYPE[k], k]),
@@ -296,6 +307,12 @@ export class RadiusServerAgent {
       return;
     }
 
+    const msChap2ResponseVsa = getVsa(payload, MICROSOFT_VENDOR_ID, 25);
+    if (msChap2ResponseVsa) {
+      this.handleMsChapV2Request(inPort, srcIp, udp.sourcePort, payload, username, user, msChap2ResponseVsa, dedupKey);
+      return;
+    }
+
     // RFC 2865 §4.4: a State means this request is the answer to a challenge
     // we issued; redeem it before falling through to the normal PAP/CHAP
     // check below. No State + a challenge-configured user means issue one
@@ -424,6 +441,92 @@ export class RadiusServerAgent {
     // Unrecognized shape mid-conversation (e.g. Nak, replayed Identity with a
     // stale State) — fail cleanly instead of leaving the supplicant hanging.
     this.replyEap(inPort, dstIp, clientPort, request, { type: 'eap', code: 'failure', identifier: eap.identifier }, false, user, dedupKey);
+  }
+
+  /**
+   * MS-CHAPv2 over RADIUS (RFC 2759, RFC 2548 §2.3/2.4): unlike EAP, every
+   * crypto value the peer will ever send is already in this one
+   * Access-Request (MS-CHAP-Challenge + MS-CHAP2-Response) — a single
+   * accept/reject decision, no challenge round-trip of our own.
+   */
+  private handleMsChapV2Request(
+    inPort: string, dstIp: IPAddress, clientPort: number, request: RadiusPacket,
+    username: string, user: RadiusUser | undefined, responseVsa: RadiusAttribute, dedupKey: string,
+  ): void {
+    const challengeVsa = getVsa(request, MICROSOFT_VENDOR_ID, 11);
+    const blob = hexToBytes(String(responseVsa.value));
+    if (!challengeVsa || blob.length < 50) {
+      this.publishRejected(dstIp.toString(), username, 'bad-password');
+      this.reply(inPort, dstIp, clientPort, request, false, undefined, dedupKey);
+      return;
+    }
+    if (!user) {
+      this.publishRejected(dstIp.toString(), username, 'unknown-user');
+      this.reply(inPort, dstIp, clientPort, request, false, undefined, dedupKey);
+      return;
+    }
+
+    const authChallenge = hexToBytes(String(challengeVsa.value));
+    const peerChallenge = blob.subarray(2, 18);
+    const ntResponse = blob.subarray(26, 50);
+
+    const expected = generateNtResponse(authChallenge, peerChallenge, username, user.password);
+    if (bytesToHex(expected) !== bytesToHex(ntResponse)) {
+      this.publishRejected(dstIp.toString(), username, 'bad-password');
+      this.reply(inPort, dstIp, clientPort, request, false, undefined, dedupKey);
+      return;
+    }
+
+    this.replyMsChapV2Success(inPort, dstIp, clientPort, request, username, user, peerChallenge, authChallenge, ntResponse, dedupKey);
+  }
+
+  /** Access-Accept carrying MS-CHAP2-Success (mutual-auth proof) and the MPPE session-key VSAs (RFC 3079/2548). */
+  private replyMsChapV2Success(
+    inPort: string, dstIp: IPAddress, clientPort: number, request: RadiusPacket,
+    username: string, user: RadiusUser, peerChallenge: Uint8Array, authChallenge: Uint8Array,
+    ntResponse: Uint8Array, dedupKey: string,
+  ): void {
+    const port = this.host.getPort(inPort);
+    if (!port) return;
+    const srcIp = port.getIPAddress();
+    if (!srcIp) return;
+
+    const authenticatorResponse = generateAuthenticatorResponse(user.password, ntResponse, peerChallenge, authChallenge, username);
+    const authResponseBytes = utf8ToBytes(authenticatorResponse);
+    const successBlob = new Uint8Array(1 + authResponseBytes.length);
+    successBlob.set(authResponseBytes, 1); // byte 0 (Ident) left at 0
+
+    const passwordHashHash = md4(ntPasswordHash(user.password));
+    const { sendKey, recvKey } = deriveMppeKeys(passwordHashHash, ntResponse);
+    // RFC 2548 §2.4.3: encrypted against the Access-Request's own Request
+    // Authenticator (not this Access-Accept's Response Authenticator, which
+    // isn't known yet) — the same convention `encryptUserPassword` already
+    // uses for User-Password.
+    const attrs: RadiusAttribute[] = [
+      attr('vendor-specific', bytesToHex(successBlob), { id: MICROSOFT_VENDOR_ID, type: 26 }),
+      attr('vendor-specific', encryptMppeKey(sendKey, this.config.sharedSecret, request.authenticator, randomSalt()), { id: MICROSOFT_VENDOR_ID, type: 16 }),
+      attr('vendor-specific', encryptMppeKey(recvKey, this.config.sharedSecret, request.authenticator, randomSalt()), { id: MICROSOFT_VENDOR_ID, type: 17 }),
+    ];
+    if (user.replyAttributes) attrs.push(...user.replyAttributes);
+
+    let response: RadiusPacket = {
+      type: 'radius', code: 'access-accept', identifier: request.identifier,
+      authenticator: '00'.repeat(16), attributes: attrs,
+    };
+    response = withMessageAuthenticator(response, request.authenticator, this.config.sharedSecret);
+    response = withResponseAuthenticator(response, request.authenticator, this.config.sharedSecret);
+    this.recentReplies.set(dedupKey, { response, sentAt: Date.now() });
+    this.getBus().publish({
+      topic: 'radius.packet.sent',
+      payload: {
+        deviceId: this.host.id, hostname: this.host.getHostname(),
+        destinationIp: dstIp.toString(), code: response.code,
+        identifier: response.identifier, username: user.username,
+      },
+    });
+    this.sendRadiusFrame(inPort, port, srcIp, dstIp, clientPort, this.config.port, response);
+    Logger.info(this.host.id, 'radius:mschapv2',
+      `${this.host.name}: ${dstIp} access-accept (MS-CHAPv2) for ${user.username}`);
   }
 
   /** Access-Challenge carrying an EAP-Request (RFC 3579 §3.1) — always Message-Authenticator-signed. */

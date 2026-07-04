@@ -204,8 +204,20 @@ partiel. Le moteur doit être complété **sans casser** les suites existantes
 - **L'implémentation NPS sur Windows Server** (console, politiques réseau
   riches) — couverte par `PRD-Windows-Server.md` ; ce PRD ne fournit que le
   moteur et le contrat d'hébergement.
-- MS-CHAPv2 complet et dérivation de clés MPPE — seul le squelette VSA
-  Microsoft est posé.
+- ~~MS-CHAPv2 complet et dérivation de clés MPPE — seul le squelette VSA
+  Microsoft est posé.~~
+  ✅ **Implémenté** : `mschapv2.ts` (RFC 2759 NT-Response/AuthenticatorResponse
+  + RFC 3079 dérivation MPPE + RFC 2548 §2.4.3 chiffrement des VSA
+  MS-MPPE-Send/Recv-Key), câblé dans `RadiusClientAgent.authenticateMsChapV2()`
+  et `RadiusServerAgent` (MS-CHAP2-Response/Challenge en entrée,
+  MS-CHAP2-Success + clés MPPE chiffrées en sortie). A nécessité d'ajouter
+  MD4 (`src/crypto/hash/md4.ts`) — vérifié contre les 7 vecteurs de test
+  officiels RFC 1320 — les primitives DES/SHA1 sous-jacentes étaient déjà
+  vérifiées dans le projet. La dérivation MPPE elle-même n'a pas de vecteurs
+  de test externes disponibles ; ses tests sont structurels (déterminisme,
+  longueur, Send ≠ Recv, garantie de rôles miroir serveur/client de la RFC
+  3079) plutôt que vérifiés octet-par-octet — voir `mschapv2.test.ts` et
+  `radius-mschapv2.test.ts`.
 
 ---
 
