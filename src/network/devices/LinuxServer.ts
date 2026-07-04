@@ -9,15 +9,20 @@
  * `STARTUP` / `SHUTDOWN` reactively.
  */
 
-import type { DeviceType } from '../core/types';
+import { IPAddress, type DeviceType, type EthernetFrame } from '../core/types';
 import { LinuxMachine } from './LinuxMachine';
 import { LINUX_SERVER_PROFILE } from './linux/LinuxProfile';
 import { getOracleDatabase, createSQLPlusSession } from '@/terminal/commands/database';
 import { handleLsnrctl, handleTnsping, handleAdrci, handleExpdp, handleImpdp } from '@/terminal/commands/OracleCommands';
 import { ReactiveRmanSubShell } from '@/terminal/subshells/rman';
 import type { HostCapableDevice } from '@/network';
+import { RadiusServerAgent } from '../radius/RadiusServerAgent';
+import { UDP_PORT_RADIUS_AUTH, UDP_PORT_RADIUS_ACCT } from '../radius/types';
 
 export class LinuxServer extends LinuxMachine {
+  /** freeradius-equivalent: a Linux Server can host the RADIUS protocol server (PRD-RADIUS P8) — not just Cisco/Huawei routers. */
+  private readonly radiusServer: RadiusServerAgent;
+
   constructor(
     type: DeviceType = 'linux-server',
     name: string = 'Server',
@@ -25,6 +30,30 @@ export class LinuxServer extends LinuxMachine {
     y: number = 0,
   ) {
     super(type, name, x, y, LINUX_SERVER_PROFILE);
+
+    const radiusHost = {
+      id: this.id, name: this.name,
+      getHostname: () => this.getHostname(),
+      getPort: (n: string) => this.getPort(n),
+      getPorts: () => this.getPorts(),
+      sendFrame: (p: string, f: EthernetFrame) => { this.sendFrame(p, f); },
+      resolveMac: (ip: string) => this.arpTable.get(ip)?.mac ?? null,
+      resolveRoute: (ip: string) => {
+        const addr = IPAddress.tryParse(ip);
+        if (!addr) return null;
+        const r = this.resolveRoute(addr);
+        return r ? { iface: r.port.getName(), nextHopIp: r.nextHopIP.toString() } : null;
+      },
+    };
+    this.radiusServer = new RadiusServerAgent(radiusHost, () => this.getBus());
+    this.radiusServer.start();
+    this.udpBind(UDP_PORT_RADIUS_AUTH, (dgram) => {
+      if (dgram.sourceIP instanceof IPAddress) this.radiusServer.handleUdp(dgram.inPort, dgram.sourceIP, dgram.udp);
+    }, 'radiusd');
+    this.udpBind(UDP_PORT_RADIUS_ACCT, (dgram) => {
+      if (dgram.sourceIP instanceof IPAddress) this.radiusServer.handleAcctUdp(dgram.inPort, dgram.sourceIP, dgram.udp);
+    }, 'radiusd');
+
     // Wire Oracle bootstrap so `sqlplus` from the bash interpreter
     // actually boots the instance (pmon/smon/lgwr appear in ps -ef).
     this.executor._oracleBootstrap = (args: string[], stdin?: string) => {
@@ -117,6 +146,8 @@ export class LinuxServer extends LinuxMachine {
       return out.join('\n');
     };
   }
+
+  getRadiusServer(): RadiusServerAgent { return this.radiusServer; }
 
   /** Expose a background process in `ps` output (used by Oracle DBMS). */
   registerProcess(pid: number, user: string, command: string): void {
