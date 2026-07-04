@@ -1659,6 +1659,7 @@ export class IPSecEngine implements IProtocolEngine {
       dpdTimeouts: 0,
     };
     this.ikeSADB.set(peerIP, newSA);
+    this.rekeyChildSAs(peerIP, newSA.spi);
 
     this.router._sendIkeUdp(peerIP, { type: 'ike', step: 'rekey' });
 
@@ -1683,11 +1684,49 @@ export class IPSecEngine implements IProtocolEngine {
       dpdTimeouts: 0,
     };
     this.ikev2SADB.set(peerIP, newSA);
+    this.rekeyChildSAs(peerIP, newSA.spiLocal);
 
     this.router._sendIkeUdp(peerIP, { type: 'ike', step: 'rekey' });
 
     Logger.info(this.router.id, 'ipsec:rekey-ike',
       `${this.router.name}: IKEv2 SA with ${peerIP} rekeyed successfully`);
+  }
+
+  /**
+   * RFC 7296 §2.8 / RFC 2409 §8: rekeying the parent IKE SA also rotates the
+   * Child (IPsec/ESP) SAs — fresh SPIs and fresh keying material, so a
+   * compromise of the old keys doesn't expose new traffic. When the crypto
+   * map negotiated PFS, the new keymat folds in the DH group (`pfsGroup`)
+   * so it's derived independently per group, exactly as a real fresh DH
+   * exchange at rekey would be. The very first (non-rekey) negotiation
+   * deliberately does NOT fold in pfsGroup — PFS only applies at rekey.
+   */
+  private rekeyChildSAs(peerIP: string, newIkeSpi: string): void {
+    const oldChildSAs = this.ipsecSADB.get(peerIP);
+    if (!oldChildSAs || oldChildSAs.length === 0) return;
+    const oldSA = oldChildSAs[0];
+
+    const entry = this.findEntryForPeer(peerIP, null);
+    const myPSK = this.ikeCertAuth ? 'cert-auth-key' : this.findISAKMPPSK(entry, peerIP);
+    const spiIn = randomSPI();
+    const spiOut = randomSPI();
+    const loSpi = Math.min(spiIn, spiOut);
+    const hiSpi = Math.max(spiIn, spiOut);
+    const pfsTag = oldSA.pfsGroup ? `pfs:${oldSA.pfsGroup}` : 'no-pfs';
+    const keymatSeed = `ipsec-keymat|${myPSK}|${loSpi}|${hiSpi}|${oldSA.transforms.join(',')}|rekey:${pfsTag}:${newIkeSpi}`;
+    const cryptoKeys = deriveCryptoKeys(oldSA.transforms, keymatSeed);
+
+    const newSA = this.buildIpsecSAStruct({
+      peerIP, localIP: oldSA.localIP, spiIn, spiOut, cryptoKeys,
+      lifetime: oldSA.lifetime, lifetimeKB: oldSA.lifetimeKB, mode: oldSA.mode,
+      trafficSelectors: oldSA.trafficSelectors, transforms: oldSA.transforms,
+      aclName: oldSA.aclName, pfsGroup: oldSA.pfsGroup, natT: oldSA.natT,
+      outIface: oldSA.outIface, hasESP: oldSA.hasESP, hasAH: oldSA.hasAH,
+    });
+    this.installIpsecSALocal(peerIP, newSA);
+
+    Logger.info(this.router.id, 'ipsec:rekey-child-sa',
+      `${this.router.name}: Child SA with ${peerIP} rekeyed (new SPIs, ${pfsTag})`);
   }
 
   // Port link-down handler (DPD simulation)
