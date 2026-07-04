@@ -58,6 +58,16 @@ export interface EapPacket extends NetworkPdu {
   md5Challenge?: string;
   /** MD5-Challenge (Type 4) Response: the response Value, hex-encoded. */
   md5Response?: string;
+  /**
+   * EAP-TLS (Type 13, RFC 5216 §2.1) Type-Data: the L/M/S flag byte, the
+   * optional 4-byte TLS Message Length (present when `length` is set —
+   * only on the first fragment of a multi-fragment TLS message), and the
+   * TLS Data fragment itself (hex). `{start:true}` with empty `tlsData`
+   * models the server's initial EAP-Request/EAP-TLS (TLS Start, no data).
+   */
+  tlsFlags?: { length: boolean; more: boolean; start: boolean };
+  tlsMessageLength?: number;
+  tlsData?: string;
 }
 
 /** Encode an `EapPacket` to its real RFC 3748 §4 wire bytes. */
@@ -72,6 +82,21 @@ export function encodeEapPacket(eap: EapPacket): Uint8Array {
     typeData = new Uint8Array(1 + value.length);
     typeData[0] = value.length;
     typeData.set(value, 1);
+  } else if (hasType && eap.eapType === 'tls') {
+    const dataBytes = hexToBytes(eap.tlsData ?? '');
+    const flags = eap.tlsFlags ?? { length: false, more: false, start: false };
+    const flagByte = (flags.length ? 0x80 : 0) | (flags.more ? 0x40 : 0) | (flags.start ? 0x20 : 0);
+    const lengthFieldSize = flags.length ? 4 : 0;
+    typeData = new Uint8Array(1 + lengthFieldSize + dataBytes.length);
+    typeData[0] = flagByte;
+    if (flags.length) {
+      const len = (eap.tlsMessageLength ?? dataBytes.length) >>> 0;
+      typeData[1] = (len >>> 24) & 0xff;
+      typeData[2] = (len >>> 16) & 0xff;
+      typeData[3] = (len >>> 8) & 0xff;
+      typeData[4] = len & 0xff;
+    }
+    typeData.set(dataBytes, 1 + lengthFieldSize);
   }
   const length = 4 + (hasType ? 1 + typeData.length : 0);
   const out = new Uint8Array(length);
@@ -108,6 +133,23 @@ export function decodeEapPacket(bytes: Uint8Array): EapPacket | null {
     return code === 'request'
       ? { type: 'eap', code, identifier, eapType, md5Challenge: value }
       : { type: 'eap', code, identifier, eapType, md5Response: value };
+  }
+  if (eapType === 'tls') {
+    if (typeData.length < 1) return null;
+    const flagByte = typeData[0];
+    const tlsFlags = {
+      length: !!(flagByte & 0x80), more: !!(flagByte & 0x40), start: !!(flagByte & 0x20),
+    };
+    let offset = 1;
+    let tlsMessageLength: number | undefined;
+    if (tlsFlags.length) {
+      if (typeData.length < 5) return null;
+      tlsMessageLength =
+        ((typeData[1] << 24) | (typeData[2] << 16) | (typeData[3] << 8) | typeData[4]) >>> 0;
+      offset = 5;
+    }
+    const tlsData = bytesToHex(typeData.subarray(offset));
+    return { type: 'eap', code, identifier, eapType, tlsFlags, tlsMessageLength, tlsData };
   }
   return { type: 'eap', code, identifier, eapType };
 }

@@ -23,6 +23,8 @@ import {
   ntPasswordHash, generateNtResponse, generateAuthenticatorResponse,
   deriveMppeKeys, encryptMppeKey,
 } from './mschapv2';
+import { EapTlsServerSession } from './eaptls/EapTlsServerSession';
+import type { EapTlsConfig } from './eaptls/EapTlsConfig';
 import {
   MACAddress, IPAddress,
   type EthernetFrame, type IPv4Packet, type UDPPacket,
@@ -113,6 +115,9 @@ export class RadiusServerAgent {
   private readonly acctSessions = new Map<string, AcctSessionRecord>();
   /** EAP-MD5 relay sessions (RFC 3579), keyed by the opaque State handed out with the Access-Challenge carrying the MD5 challenge. */
   private readonly eapSessions = new Map<string, { username: string; challengeHex: string; expiresAt: number }>();
+  /** RFC 5216 EAP-TLS sessions, keyed by the (single, reused-for-the-whole-conversation) opaque State. Only one EAP method is offered per server — no NAK negotiation — selected by whether `eapTlsConfig` is set. */
+  private readonly eapTlsSessions = new Map<string, { session: EapTlsServerSession; username: string; expiresAt: number }>();
+  private eapTlsConfig: EapTlsConfig | null = null;
   /** RFC 2607 §2 — realm → home-server route, keyed by the realm suffix in `user@realm`. */
   private readonly realms = new Map<string, RealmRoute>();
   /** Forwarded Access-Requests awaiting the home server's Access-Accept/Reject, keyed by the identifier this proxy issued to the home server (its own space, distinct from the NAS's). */
@@ -139,6 +144,9 @@ export class RadiusServerAgent {
   setEnabled(on: boolean): void { this.config.enabled = on; }
 
   setSharedSecret(secret: string): void { this.config.sharedSecret = secret; }
+
+  /** RFC 5216 EAP-TLS — when set, an Access-Request's EAP-Response/Identity starts an EAP-TLS conversation instead of EAP-MD5 (no NAK negotiation between the two: one method is offered, chosen by this setting). `null` restores EAP-MD5 (the default). */
+  setEapTlsConfig(config: EapTlsConfig | null): void { this.eapTlsConfig = config; }
 
   addUser(
     username: string, password: string, attrs: RadiusAttribute[] = [],
@@ -405,6 +413,14 @@ export class RadiusServerAgent {
     const incomingState = stateAttr ? String(stateAttr.value) : null;
 
     if (eap.code === 'response' && eap.eapType === 'identity' && !incomingState) {
+      if (this.eapTlsConfig) {
+        const session = new EapTlsServerSession(this.eapTlsConfig);
+        const state = randomOpaqueToken(16);
+        const eapIdentifier = (eap.identifier + 1) & 0xff;
+        this.eapTlsSessions.set(state, { session, username, expiresAt: Date.now() + CHALLENGE_TTL_MS });
+        this.replyEapChallenge(inPort, dstIp, clientPort, request, session.start(eapIdentifier), state, dedupKey);
+        return;
+      }
       if (!user) {
         this.publishRejected(dstIp.toString(), username, 'unknown-user');
         this.replyEap(inPort, dstIp, clientPort, request, { type: 'eap', code: 'failure', identifier: eap.identifier }, false, undefined, dedupKey);
@@ -438,9 +454,45 @@ export class RadiusServerAgent {
       return;
     }
 
+    if (eap.code === 'response' && eap.eapType === 'tls' && incomingState) {
+      this.handleEapTlsResponse(inPort, dstIp, clientPort, request, username, eap, incomingState, dedupKey);
+      return;
+    }
+
     // Unrecognized shape mid-conversation (e.g. Nak, replayed Identity with a
     // stale State) — fail cleanly instead of leaving the supplicant hanging.
     this.replyEap(inPort, dstIp, clientPort, request, { type: 'eap', code: 'failure', identifier: eap.identifier }, false, user, dedupKey);
+  }
+
+  private pruneEapTlsSessions(): void {
+    const now = Date.now();
+    for (const [key, entry] of this.eapTlsSessions) {
+      if (entry.expiresAt < now) this.eapTlsSessions.delete(key);
+    }
+  }
+
+  /** RFC 5216 — one round of an ongoing EAP-TLS conversation: unlike EAP-MD5's single challenge/response, this can take many rounds (fragmentation both ways), all sharing the same State. */
+  private handleEapTlsResponse(
+    inPort: string, dstIp: IPAddress, clientPort: number, request: RadiusPacket,
+    username: string, eap: EapPacket, state: string, dedupKey: string,
+  ): void {
+    this.pruneEapTlsSessions();
+    const ctx = this.eapTlsSessions.get(state);
+    if (!ctx) {
+      this.replyEap(inPort, dstIp, clientPort, request, { type: 'eap', code: 'failure', identifier: eap.identifier }, false, undefined, dedupKey);
+      return;
+    }
+    ctx.expiresAt = Date.now() + CHALLENGE_TTL_MS;
+    const nextRequest = ctx.session.handle(eap);
+    if (ctx.session.result === null) {
+      this.replyEapChallenge(inPort, dstIp, clientPort, request, nextRequest, state, dedupKey);
+      return;
+    }
+    this.eapTlsSessions.delete(state);
+    const accepted = ctx.session.result === 'accept';
+    const eapUser = this.config.users.get(ctx.username);
+    if (!accepted) this.publishRejected(dstIp.toString(), ctx.username, 'bad-password');
+    this.replyEap(inPort, dstIp, clientPort, request, nextRequest, accepted, eapUser, dedupKey);
   }
 
   /**

@@ -178,7 +178,8 @@ export class Dot1xAgent {
       rt.radiusState = null;
       this.transition(rt, 'authenticating', 'eap-response');
       this.startAuth(rt, eap, identity);
-    } else if (eap.eapType === 'md5-challenge' && rt.identity !== null && rt.radiusState !== null) {
+    } else if ((eap.eapType === 'md5-challenge' || eap.eapType === 'tls')
+        && rt.identity !== null && rt.radiusState !== null) {
       this.continueRadiusEap(rt, eap);
     }
   }

@@ -172,8 +172,36 @@ partiel. Le moteur doit être complété **sans casser** les suites existantes
 
 ### 2.2 Non-objectifs (explicitement hors périmètre)
 
-- **EAP-TLS / PEAP / EAP-TTLS** : nécessitent une infrastructure de certificats
-  côté supplicant/serveur — phase ultérieure, une fois EAP-MD5 en place.
+- ~~**EAP-TLS** / PEAP / EAP-TTLS : nécessitent une infrastructure de
+  certificats côté supplicant/serveur — phase ultérieure, une fois EAP-MD5
+  en place.~~
+  🟡 **EAP-TLS (RFC 5216) implémenté** — `radius/eaptls/` : fragmentation/
+  réassemblage §2.1 réel (bit par bit conforme, testé avec MTU minuscule
+  forçant la fragmentation dans les deux sens), `EapTlsServerSession`/
+  `EapTlsPeerSession` (machines à états explicites), et le certificat/la
+  vérification réutilisent le module PKI existant (`@/network/pki` —
+  `CertificateAuthority`/`CertificateVerifier`, déjà utilisé par IKE cert
+  auth) sans aucune nouvelle crypto. Comme le reste de la crypto simulée du
+  projet (`PkiKeyPair`, `SimulatedTls.ts`), le contenu du handshake TLS
+  lui-même est une abstraction JSON sérialisée (pas d'ASN.1/DER réel), et
+  le « Finished » est un MAC simulé déterministe plutôt qu'un vrai PRF —
+  la correction du **protocole EAP-TLS** (fragmentation, échange de
+  certificats, accept/reject) est réelle, pas la cryptographie TLS
+  sous-jacente. Câblé de bout en bout : `RadiusServerAgent.setEapTlsConfig()`
+  bascule l'identité EAP-Response vers EAP-TLS (pas de négociation NAK —
+  une seule méthode offerte par serveur), et `Dot1xAgent` relaie les rounds
+  EAP-TLS exactement comme EAP-MD5 (un seul `if` étendu, `sendEapRound`
+  étant déjà agnostique au type). A révélé et documenté une vraie limite
+  RFC 2865 : l'attribut EAP-Message (79) ne peut porter que 253 octets et
+  ce codec ne le fragmente pas sur plusieurs attributs (`codec.ts`) — le
+  MTU par défaut d'EAP-TLS (200 octets de TLS Data) est choisi pour rester
+  sous cette limite RADIUS, pas pour des raisons EAP-TLS elles-mêmes.
+  **PEAP et EAP-TTLS restent hors périmètre** : tous deux ont besoin, en
+  plus de ce qui précède, d'un tunnel interne chiffré portant une SECONDE
+  méthode d'authentification (souvent MS-CHAPv2, déjà implémenté ici) —
+  une couche supplémentaire non construite dans cette passe. Voir
+  `eaptls-fragmentation.test.ts`, `eaptls-handshake.test.ts`,
+  `dot1x-radius-eaptls.test.ts`.
 - ~~**RADIUS/TCP et RadSec (TLS)** (RFC 6613/6614) — valeur pédagogique faible ici.~~
   🟡 **RADIUS/TCP implémenté** (`RadiusTcpClient`/`RadiusTcpServer` dans
   `RadiusTcpTransport.ts`, câblés sur Cisco/Huawei/Linux Server via le
