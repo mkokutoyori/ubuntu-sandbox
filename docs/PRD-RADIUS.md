@@ -199,8 +199,23 @@ partiel. Le moteur doit être complété **sans casser** les suites existantes
   Framed-IPv6-Pool (100) — dictionnaire (`ipv6addr`/`ipv6prefix`/`ifid`) +
   codec (`codec.ts`) uniquement, aucune nouvelle logique protocolaire ; voir
   `radius-ipv6-attrs.test.ts`.
-- **L'implémentation freeradius sur Linux** (clients.conf, users, radtest) —
-  projet consécutif consommant ce moteur.
+- ~~**L'implémentation freeradius sur Linux** (clients.conf, users, radtest) —
+  projet consécutif consommant ce moteur.~~
+  🟡 **Implémenté** : `RadiusdService` (`devices/linux/freeradius/`) parse
+  `/etc/freeradius/3.0/clients.conf` + `users` (grammaire réduite : blocs
+  `client { secret = … }` et lignes `user Cleartext-Password := "…"` — pas
+  le langage de config freeradius complet) et pilote le moteur
+  `RadiusServerAgent`/`RadiusTcpServer` déjà existant ; câblé comme le
+  service `named` (`systemctl start/stop/restart/reload freeradius`,
+  `registerConfigCheck`, config par défaut fonctionnelle dès le boot —
+  identique au comportement d'avant cet item pour ne rien casser). Un seul
+  secret partagé global (limite déjà connue du moteur, pas nouvelle ici) :
+  le premier bloc `client { }` fait foi. `radtest` est un vrai client CLI
+  (`-t pap|chap|mschap`) adossé à un `RadiusClientAgent` dédié — a nécessité
+  un point d'extension mineur (`setFixedSourcePort`) car un hôte Linux
+  dispatche l'UDP par port de destination lié (contrairement à un routeur,
+  qui inspecte chaque paquet en ligne). Voir `freeradius-service.test.ts`,
+  `freeradius-config-parsers.test.ts`.
 - **L'implémentation NPS sur Windows Server** (console, politiques réseau
   riches) — couverte par `PRD-Windows-Server.md` ; ce PRD ne fournit que le
   moteur et le contrat d'hébergement.

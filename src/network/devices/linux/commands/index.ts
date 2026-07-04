@@ -38,6 +38,7 @@ import { nmapCommand } from './net/Nmap';
 import { curlCommand } from './net/Curl';
 import { ssCommand } from './net/Ss';
 import { ncCommand } from './net/Nc';
+import { radtestCommand } from './net/Radtest';
 
 export {
   sysctlCommand,
@@ -63,6 +64,7 @@ export {
   curlCommand,
   ssCommand,
   ncCommand,
+  radtestCommand,
 };
 
 /**
@@ -92,4 +94,5 @@ export const CORE_LINUX_COMMANDS: readonly LinuxCommand[] = [
   curlCommand,
   ssCommand,
   ncCommand,
+  radtestCommand,
 ];

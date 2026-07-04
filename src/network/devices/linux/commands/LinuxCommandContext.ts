@@ -21,6 +21,7 @@ import type { Bind9Service } from '../bind9/Bind9Service';
 import type { IpXfrmContext } from '../LinuxIpCommand';
 import type { LinuxProfile } from '../LinuxProfile';
 import type { LinuxFormatHelpers } from '../LinuxFormatHelpers';
+import type { RadiusClientAgent } from '@/network/radius/RadiusClientAgent';
 
 export interface LinuxCommandContext {
   /** Kernel-level services: VFS, users, iptables, services, processes. */
@@ -43,4 +44,11 @@ export interface LinuxCommandContext {
 
   /** Shared formatting helpers for ping/traceroute/ifconfig output. */
   readonly fmt: LinuxFormatHelpers;
+
+  /**
+   * Backs the `radtest` CLI tool (freeradius-utils) — only present on a
+   * `LinuxServer` (mirrors how the Oracle client tools are server-only).
+   * A one-shot probe client, not persistent NAS configuration.
+   */
+  readonly radtestClient?: RadiusClientAgent;
 }

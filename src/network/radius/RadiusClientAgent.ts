@@ -141,6 +141,15 @@ export class RadiusClientAgent {
   private serverStates = new Map<string, ServerRuntimeState>();
   /** `radius-server deadtime` equivalent — 0 disables cross-request server avoidance (Cisco default). */
   private deadtimeMs = 0;
+  /**
+   * Override the identifier-derived ephemeral source port with a fixed one.
+   * Needed on hosts whose UDP model is destination-port-bound (`EndHost`'s
+   * socket table) rather than Router's inline per-packet dispatch — a
+   * client agent hosted there (e.g. `radtest`) must reply-listen on one
+   * `udpBind`-registered port, not whichever port a given request happens
+   * to pick. `null` (default) preserves the original identifier-derived port.
+   */
+  private fixedSourcePort: number | null = null;
 
   constructor(
     private readonly host: RadiusClientHost,
@@ -200,6 +209,9 @@ export class RadiusClientAgent {
 
   /** `radius-server deadtime <minutes>` equivalent, taking milliseconds. 0 (default) disables it. */
   setDeadtimeMs(ms: number): void { this.deadtimeMs = Math.max(0, ms); }
+
+  /** See `fixedSourcePort`'s doc comment. */
+  setFixedSourcePort(port: number | null): void { this.fixedSourcePort = port; }
 
   listServers(): RadiusServerConfig[] { return this.config.servers.slice(); }
 
@@ -426,7 +438,7 @@ export class RadiusClientAgent {
     payload = withMessageAuthenticator(payload, pending.authenticator, server.sharedSecret);
     const udp: UDPPacket = {
       type: 'udp',
-      sourcePort: 49180 + (pending.identifier & 0x3fff),
+      sourcePort: this.fixedSourcePort ?? (49180 + (pending.identifier & 0x3fff)),
       destinationPort: server.authPort,
       length: 20, checksum: 0, payload,
     };
@@ -755,7 +767,7 @@ export class RadiusClientAgent {
     payload = withMessageAuthenticator(payload, pending.authenticator, server.sharedSecret);
     const udp: UDPPacket = {
       type: 'udp',
-      sourcePort: 49152 + (pending.identifier & 0x3fff),
+      sourcePort: this.fixedSourcePort ?? (49152 + (pending.identifier & 0x3fff)),
       destinationPort: server.authPort,
       length: 20 + 32 + pending.username.length + pending.password.length,
       checksum: 0, payload,

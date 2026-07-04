@@ -319,6 +319,22 @@ const SERVER_UNITS: DefaultUnit[] = [
     enabledByDefault: true,
     startByDefault: true,
   },
+  {
+    name: 'freeradius',
+    description: 'FreeRADIUS multi-protocol policy server',
+    type: 'forking',
+    execStart: '/usr/sbin/freeradius',
+    execReload: '/usr/sbin/freeradius -c',
+    user: 'freerad',
+    after: ['network.target'],
+    // Active out of the box, like oracle-ohasd — the RADIUS engine has
+    // been reachable unconditionally on LinuxServer since PRD-RADIUS
+    // Phase 8; this unit adds real `systemctl stop/start/restart/reload`
+    // control (and clients.conf/users-driven config) on top of that,
+    // without changing the default-on behaviour existing labs rely on.
+    enabledByDefault: true,
+    startByDefault: true,
+  },
 ];
 
 /**
