@@ -85,6 +85,7 @@ export class WindowsSecurityAuditProjection {
       case 'enabled': this.audit.accountEnabled(p.account); break;
       case 'disabled': this.audit.accountDisabled(p.account); break;
       case 'modified': this.audit.accountChanged(p.account); break;
+      case 'locked-out': this.audit.accountLockedOut(p.account); break;
     }
   }
 

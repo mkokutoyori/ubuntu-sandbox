@@ -297,6 +297,8 @@ export interface ParameterMapInspect {
 export class CiscoSecurityConfig {
   aaaNewModel = false;
   aaaSessionId?: string;
+  /** `aaa local authentication attempts max-fail <n>` — per-account lockout threshold. */
+  localAuthMaxFailAttempts?: number;
   aaaMethods: AaaMethodEntry[] = [];
   radiusServers: Map<string, RadiusServer> = new Map();
   tacacsServers: Map<string, TacacsServer> = new Map();
@@ -387,6 +389,7 @@ export class CiscoSecurityConfig {
         lines.push(this.renderAaaMethod(m));
       }
       if (this.aaaSessionId) lines.push(`aaa session-id ${this.aaaSessionId}`);
+      if (this.localAuthMaxFailAttempts) lines.push(`aaa local authentication attempts max-fail ${this.localAuthMaxFailAttempts}`);
     }
     // Local usernames are rendered (and password-encoded) by the credential
     // store path in CiscoShowCommands (_listLocalUsers). Rendering them here

@@ -789,3 +789,108 @@ describe('§P — Cisco username captures hash algorithm + secret form', () => {
     expect(acc?.passwordHashAlgorithm).toBe('scrypt');
   });
 });
+
+describe('§Q — security passwords min-length is actually enforced', () => {
+  let lab: Lab;
+  beforeEach(async () => { lab = await buildLab(); });
+
+  test('rejects a username secret shorter than the configured minimum', async () => {
+    await lab.ciscoR1.executeCommand('configure terminal');
+    await lab.ciscoR1.executeCommand('security passwords min-length 8');
+    const out = await lab.ciscoR1.executeCommand('username admin secret short');
+    expect(out).toMatch(/Password too short/);
+    expect(lab.ciscoR1.getCredentialStore().get('admin')).toBeUndefined();
+  });
+
+  test('accepts a username secret meeting the configured minimum', async () => {
+    await lab.ciscoR1.executeCommand('configure terminal');
+    await lab.ciscoR1.executeCommand('security passwords min-length 8');
+    const out = await lab.ciscoR1.executeCommand('username admin secret longenough1');
+    expect(out).not.toMatch(/Password too short/);
+    expect(lab.ciscoR1.getCredentialStore().get('admin')?.secret).toBe('longenough1');
+  });
+
+  test('does not check length against an already-hashed secret (type 5)', async () => {
+    await lab.ciscoR1.executeCommand('configure terminal');
+    await lab.ciscoR1.executeCommand('security passwords min-length 20');
+    const out = await lab.ciscoR1.executeCommand('username admin secret 5 $1$short$hash');
+    expect(out).not.toMatch(/Password too short/);
+  });
+
+  test('rejects an enable secret shorter than the configured minimum', async () => {
+    await lab.ciscoR1.executeCommand('configure terminal');
+    await lab.ciscoR1.executeCommand('security passwords min-length 8');
+    const out = await lab.ciscoR1.executeCommand('enable secret short');
+    expect(out).toMatch(/Password too short/);
+  });
+
+  test('rejects an enable password shorter than the configured minimum', async () => {
+    await lab.ciscoR1.executeCommand('configure terminal');
+    await lab.ciscoR1.executeCommand('security passwords min-length 8');
+    const out = await lab.ciscoR1.executeCommand('enable password short');
+    expect(out).toMatch(/Password too short/);
+  });
+
+  test('with no min-length configured, short passwords are still accepted', async () => {
+    await lab.ciscoR1.executeCommand('configure terminal');
+    const out = await lab.ciscoR1.executeCommand('username admin secret ab');
+    expect(out).not.toMatch(/Password too short/);
+  });
+});
+
+describe('§R — aaa local authentication attempts max-fail locks out the account', () => {
+  let lab: Lab;
+  beforeEach(async () => {
+    lab = await buildLab();
+    await lab.ciscoR1.executeCommand('configure terminal');
+    await lab.ciscoR1.executeCommand('aaa new-model');
+    await lab.ciscoR1.executeCommand('aaa local authentication attempts max-fail 3');
+    await lab.ciscoR1.executeCommand('username admin privilege 15 secret Admin@123');
+    await lab.ciscoR1.executeCommand('end');
+  });
+
+  test('is persisted in running-config', async () => {
+    const out = await lab.ciscoR1.executeCommand('show running-config');
+    expect(out).toMatch(/aaa local authentication attempts max-fail 3/);
+  });
+
+  test('locks the account after the configured number of consecutive failures', () => {
+    const store = lab.ciscoR1.getCredentialStore();
+    store.recordLoginFailure('admin', '10.0.0.9', 'bad password');
+    store.recordLoginFailure('admin', '10.0.0.9', 'bad password');
+    expect(store.get('admin')?.locked).toBe(false);
+    store.recordLoginFailure('admin', '10.0.0.9', 'bad password');
+    expect(store.get('admin')?.locked).toBe(true);
+  });
+
+  test('a locked account can no longer authenticate even with the right password', () => {
+    const store = lab.ciscoR1.getCredentialStore();
+    for (let i = 0; i < 3; i++) store.recordLoginFailure('admin', '10.0.0.9', 'bad password');
+    expect(store.get('admin')?.isLoginPermitted().ok).toBe(false);
+  });
+
+  test('show aaa local user lockout lists the locked account', async () => {
+    const store = lab.ciscoR1.getCredentialStore();
+    for (let i = 0; i < 3; i++) store.recordLoginFailure('admin', '10.0.0.9', 'bad password');
+    const out = await lab.ciscoR1.executeCommand('show aaa local user lockout');
+    expect(out).toMatch(/admin/);
+  });
+
+  test('clear aaa local user lockout username unlocks the account', async () => {
+    const store = lab.ciscoR1.getCredentialStore();
+    for (let i = 0; i < 3; i++) store.recordLoginFailure('admin', '10.0.0.9', 'bad password');
+    expect(store.get('admin')?.locked).toBe(true);
+    await lab.ciscoR1.executeCommand('clear aaa local user lockout username admin');
+    expect(store.get('admin')?.locked).toBe(false);
+  });
+
+  test('a successful login before the threshold resets the failure counter', () => {
+    const store = lab.ciscoR1.getCredentialStore();
+    store.recordLoginFailure('admin', '10.0.0.9', 'bad password');
+    store.recordLoginFailure('admin', '10.0.0.9', 'bad password');
+    store.recordLoginSuccess('admin', '10.0.0.9', 'password');
+    store.recordLoginFailure('admin', '10.0.0.9', 'bad password');
+    store.recordLoginFailure('admin', '10.0.0.9', 'bad password');
+    expect(store.get('admin')?.locked).toBe(false);
+  });
+});

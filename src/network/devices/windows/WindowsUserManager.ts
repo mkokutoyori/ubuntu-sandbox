@@ -12,6 +12,7 @@
 
 import type { IEventBus } from '@/events/EventBus';
 import type { WindowsAccountChange } from './events';
+import type { WindowsAccountsPolicy } from './security/WindowsAccountsPolicy';
 
 export interface WindowsUser {
   name: string;
@@ -25,6 +26,12 @@ export interface WindowsUser {
   passwordLastSet: Date;
   lastLogon: Date | null;
   builtIn: boolean;
+  /** Previous passwords, most-recent-first — checked against /uniquepw. */
+  passwordHistory: string[];
+  /** Consecutive failed logons since the last success or unlock. */
+  failedLogonCount: number;
+  /** Set once failedLogonCount reaches the lockout threshold; cleared when it elapses. */
+  lockedUntil: Date | null;
 }
 
 export interface WindowsGroup {
@@ -99,6 +106,8 @@ export class WindowsUserManager {
   /** Reactive sink — null until the device attaches its bus. */
   private bus: IEventBus | null = null;
   private deviceId = '';
+  /** LSA account policy (net accounts) — null until the device attaches it. */
+  private policy: WindowsAccountsPolicy | null = null;
 
   constructor() {
     this.initDefaults();
@@ -112,6 +121,11 @@ export class WindowsUserManager {
   attachBus(bus: IEventBus, deviceId: string): void {
     this.bus = bus;
     this.deviceId = deviceId;
+  }
+
+  /** Attach the machine's `net accounts` policy so it is actually enforced. */
+  attachPolicy(policy: WindowsAccountsPolicy): void {
+    this.policy = policy;
   }
 
   /** Publish an account-change event on the central bus. */
@@ -137,6 +151,7 @@ export class WindowsUserManager {
       sid: WELL_KNOWN_SIDS['Administrator'], enabled: true, password: 'x',
       passwordRequired: true, userMayChangePassword: true,
       passwordLastSet: new Date(), lastLogon: null, builtIn: true,
+      passwordHistory: [], failedLogonCount: 0, lockedUntil: null,
     });
     this.passwords.set('administrator', 'admin');
 
@@ -145,6 +160,7 @@ export class WindowsUserManager {
       sid: WELL_KNOWN_SIDS['Guest'], enabled: false, password: '',
       passwordRequired: false, userMayChangePassword: false,
       passwordLastSet: new Date(), lastLogon: null, builtIn: true,
+      passwordHistory: [], failedLogonCount: 0, lockedUntil: null,
     });
 
     this.addUser({
@@ -152,6 +168,7 @@ export class WindowsUserManager {
       sid: WELL_KNOWN_SIDS['DefaultAccount'], enabled: false, password: '',
       passwordRequired: false, userMayChangePassword: false,
       passwordLastSet: new Date(), lastLogon: null, builtIn: true,
+      passwordHistory: [], failedLogonCount: 0, lockedUntil: null,
     });
 
     this.addUser({
@@ -159,6 +176,7 @@ export class WindowsUserManager {
       sid: `${MACHINE_SID_PREFIX}-${this.nextRid++}`, enabled: true, password: 'x',
       passwordRequired: true, userMayChangePassword: true,
       passwordLastSet: new Date(), lastLogon: new Date(), builtIn: false,
+      passwordHistory: [], failedLogonCount: 0, lockedUntil: null,
     });
     this.passwords.set('user', 'user');
 
@@ -170,6 +188,7 @@ export class WindowsUserManager {
         sid: `${MACHINE_SID_PREFIX}-${this.nextRid++}`, enabled: true, password: 'x',
         passwordRequired: true, userMayChangePassword: true,
         passwordLastSet: new Date(), lastLogon: null, builtIn: false,
+        passwordHistory: [], failedLogonCount: 0, lockedUntil: null,
       });
       this.passwords.set(u.toLowerCase(), u);
     }
@@ -283,6 +302,7 @@ export class WindowsUserManager {
       sid, enabled: true, password: opts.noPassword ? '' : 'x',
       passwordRequired: !opts.noPassword, userMayChangePassword: true,
       passwordLastSet: new Date(), lastLogon: null, builtIn: false,
+      passwordHistory: [], failedLogonCount: 0, lockedUntil: null,
     });
     if (!opts.noPassword) {
       this.passwords.set(name.toLowerCase(), password);
@@ -291,8 +311,18 @@ export class WindowsUserManager {
     return '';
   }
 
-  private validatePasswordComplexity(password: string): string {
-    if (password.length < 2) {
+  /**
+   * Enforce the LSA account policy (`net accounts`) the same way the real
+   * SAM does when a password is set: minimum length and reuse against the
+   * account's password history. Both violations share the one generic
+   * Windows error string — real `net user` doesn't distinguish them either.
+   */
+  private validatePasswordComplexity(password: string, previousPasswords: readonly string[] = []): string {
+    const policy = this.policy?.snapshot();
+    const minLength = policy?.minPasswordLength ?? 0;
+    const historyLength = policy?.passwordHistoryLength ?? 0;
+    const reused = historyLength > 0 && previousPasswords.slice(0, historyLength).includes(password);
+    if (password.length < minLength || reused) {
       return 'The password does not meet the password policy requirements. Check the minimum password length, password complexity, and password history requirements.';
     }
     return '';
@@ -329,16 +359,29 @@ export class WindowsUserManager {
         user.description = value;
         this.publishAccount(user.name, 'modified');
         break;
-      case 'password':
+      case 'password': {
+        const current = this.passwords.get(name.toLowerCase()) ?? '';
+        const pwErr = this.validatePasswordComplexity(value, [current, ...user.passwordHistory]);
+        if (pwErr) return pwErr;
+        const historyLength = this.policy?.snapshot().passwordHistoryLength ?? 0;
+        if (current) {
+          user.passwordHistory = [current, ...user.passwordHistory].slice(0, historyLength);
+        }
         this.passwords.set(name.toLowerCase(), value);
         user.passwordLastSet = new Date();
         this.publishAccount(user.name, 'password-reset');
         break;
+      }
       case 'active': {
         const enabled = value.toLowerCase() === 'yes' || value.toLowerCase() === 'true';
         user.enabled = enabled;
-        if (enabled) this.publishAccount(user.name, 'enabled');
-        else this.publishAccount(user.name, 'disabled');
+        if (enabled) {
+          user.lockedUntil = null;
+          user.failedLogonCount = 0;
+          this.publishAccount(user.name, 'enabled');
+        } else {
+          this.publishAccount(user.name, 'disabled');
+        }
         break;
       }
       default:
@@ -365,12 +408,49 @@ export class WindowsUserManager {
     return '';
   }
 
+  /** Whether the account is currently locked out (auto-clears once the observation window elapses). */
+  isLockedOut(name: string): boolean {
+    const user = this.users.get(name.toLowerCase());
+    if (!user?.lockedUntil) return false;
+    if (user.lockedUntil.getTime() > Date.now()) return true;
+    user.lockedUntil = null;
+    user.failedLogonCount = 0;
+    return false;
+  }
+
   /**
    * Verify a password. Publishes a logon event so the security-audit
    * projection journals a 4624 (success) or 4625 (failure) Security entry.
+   * Enforces the LSA lockout policy (`net accounts /lockoutthreshold`):
+   * once a user's consecutive failures reach the threshold, further
+   * attempts are rejected until the lockout duration elapses, exactly the
+   * way `accountLockedOut` (Security 4740) is meant to be triggered.
    */
   checkPassword(name: string, password: string): boolean {
+    const user = this.users.get(name.toLowerCase());
+    if (user && this.isLockedOut(name)) {
+      this.bus?.publish({
+        topic: 'windows.account.logon',
+        payload: { deviceId: this.deviceId, account: name, success: false, logonType: 2 },
+      });
+      return false;
+    }
+
     const ok = this.passwords.get(name.toLowerCase()) === password;
+    if (user) {
+      if (ok) {
+        user.failedLogonCount = 0;
+      } else {
+        user.failedLogonCount++;
+        const threshold = this.policy?.snapshot().lockoutThreshold ?? 0;
+        if (threshold > 0 && user.failedLogonCount >= threshold) {
+          const durationMinutes = this.policy?.snapshot().lockoutDurationMinutes ?? 30;
+          user.lockedUntil = new Date(Date.now() + durationMinutes * 60_000);
+          this.publishAccount(user.name, 'locked-out');
+        }
+      }
+    }
+
     this.bus?.publish({
       topic: 'windows.account.logon',
       payload: { deviceId: this.deviceId, account: name, success: ok, logonType: 2 },
@@ -482,6 +562,9 @@ export class WindowsUserManager {
         passwordLastSet: new Date(),
         lastLogon: null,
         builtIn: false,
+        passwordHistory: [],
+        failedLogonCount: 0,
+        lockedUntil: null,
       };
       this.users.set(name.toLowerCase(), user);
       const usersGroup = this.groups.get('users');

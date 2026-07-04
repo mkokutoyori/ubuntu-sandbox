@@ -77,7 +77,7 @@ export interface WindowsServiceCreatedPayload extends WindowsDeviceRef {
 
 /** The kind of change applied to a local account. */
 export type WindowsAccountChange =
-  | 'created' | 'deleted' | 'password-reset' | 'enabled' | 'disabled' | 'modified';
+  | 'created' | 'deleted' | 'password-reset' | 'enabled' | 'disabled' | 'modified' | 'locked-out';
 
 export interface WindowsAccountChangedPayload extends WindowsDeviceRef {
   account: string;

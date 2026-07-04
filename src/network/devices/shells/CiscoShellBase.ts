@@ -1939,15 +1939,23 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       const dev = this.d() as unknown as { _setEnableSecret?: (s: string, algo: 'plain' | 'md5' | 'sha256' | 'scrypt' | 'type-7') => void };
       let algo: 'plain' | 'md5' | 'sha256' | 'scrypt' | 'type-7' = 'md5';
       let secret = '';
-      if (args[0] === '0') { algo = 'plain'; secret = args.slice(1).join(' '); }
+      // Cleartext forms (0, level N, or bare) are what `security passwords
+      // min-length` validates — a pasted hash (5/7/8/9) is exempt, same as
+      // `username ... secret` (CiscoSecurityCommands.ts).
+      let plaintextEntered: string | undefined;
+      if (args[0] === '0') { algo = 'plain'; secret = args.slice(1).join(' '); plaintextEntered = secret; }
       else if (args[0] === '5') { algo = 'md5'; secret = args.slice(1).join(' '); }
       else if (args[0] === '7') { algo = 'type-7'; secret = args.slice(1).join(' '); }
       else if (args[0] === '8') { algo = 'sha256'; secret = args.slice(1).join(' '); }
       else if (args[0] === '9') { algo = 'scrypt'; secret = args.slice(1).join(' '); }
       else if (args[0] === 'level' && /^\d+$/.test(args[1] ?? '')) {
-        secret = args.slice(2).join(' ');
-      } else { secret = args.join(' '); }
+        secret = args.slice(2).join(' '); plaintextEntered = secret;
+      } else { secret = args.join(' '); plaintextEntered = secret; }
       if (secret === '') return '% Incomplete command.';
+      const minLength = getSecurityConfig(this.d()).passwords.minLength;
+      if (plaintextEntered !== undefined && minLength && plaintextEntered.length < minLength) {
+        return `Password too short - must be at least ${minLength} characters. Password configuration failed`;
+      }
       dev._setEnableSecret?.(secret, algo);
       return '';
     });
@@ -1958,10 +1966,15 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       };
       let algo: 'plain' | 'type-7' = 'plain';
       let password = '';
-      if (args[0] === '0') { algo = 'plain'; password = args.slice(1).join(' '); }
+      let plaintextEntered: string | undefined;
+      if (args[0] === '0') { algo = 'plain'; password = args.slice(1).join(' '); plaintextEntered = password; }
       else if (args[0] === '7') { algo = 'type-7'; password = args.slice(1).join(' '); }
-      else { password = args.join(' '); }
+      else { password = args.join(' '); plaintextEntered = password; }
       if (password === '') return '% Incomplete command.';
+      const minLength = getSecurityConfig(this.d()).passwords.minLength;
+      if (plaintextEntered !== undefined && minLength && plaintextEntered.length < minLength) {
+        return `Password too short - must be at least ${minLength} characters. Password configuration failed`;
+      }
       if (algo === 'plain' && dev.getServiceFlags?.().get('password-encryption') === true) {
         const salt = parseInt(_md5Hex(`cisco-type7:${password}`).slice(0, 1), 16);
         dev._setEnablePassword?.(_encryptType7(password, salt), 'type-7');

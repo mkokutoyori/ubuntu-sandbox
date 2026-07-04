@@ -50,6 +50,14 @@ export function buildSecurityConfigCommands(trie: CommandTrie, ctx: CiscoSecurit
   trie.registerGreedy('aaa', 'AAA configuration', (args) => {
     if (args[0] === 'new-model') { sec().aaaNewModel = true; return ''; }
     if (args[0] === 'session-id' && args[1]) { sec().aaaSessionId = args[1]; return ''; }
+    if (args[0] === 'local' && args[1] === 'authentication' && args[2] === 'attempts' && args[3] === 'max-fail' && args[4]) {
+      const n = parseInt(args[4], 10);
+      if (isNaN(n)) return '% Incomplete command.';
+      sec().localAuthMaxFailAttempts = n;
+      const r = ctx.r() as unknown as { _configureLocalAuthMaxFail?: (n: number) => void };
+      r._configureLocalAuthMaxFail?.(n);
+      return '';
+    }
     if (args[0] === 'authentication' || args[0] === 'authorization' || args[0] === 'accounting') {
       return parseAaaMethod(sec(), args[0] as AaaPhase, args.slice(1));
     }
@@ -127,6 +135,11 @@ export function buildSecurityConfigCommands(trie: CommandTrie, ctx: CiscoSecurit
     let secretAlgo: 'plain' | 'md5' | 'sha256' | 'scrypt' | 'type-7' = 'plain';
     let nopassword = false;
     let description: string | undefined;
+    // Set only for forms where the operator typed a real cleartext password
+    // (type 0, or the bare/unqualified form) — never for a pre-computed
+    // hash pasted in via `secret 5|8|9|4` / `password 7`, which `security
+    // passwords min-length` does not (and cannot) validate.
+    let plaintextEntered: string | undefined;
     for (let i = 1; i < args.length; i++) {
       const t = args[i];
       if (t === 'privilege' && args[i + 1]) { privilege = parseInt(args[i + 1], 10); i++; }
@@ -134,20 +147,24 @@ export function buildSecurityConfigCommands(trie: CommandTrie, ctx: CiscoSecurit
       else if (t === 'description') { description = args.slice(i + 1).join(' '); break; }
       else if (t === 'secret') {
         const next = args[i + 1];
-        if (next === '0') { secret = args.slice(i + 2).join(' '); secretAlgo = 'plain'; break; }
+        if (next === '0') { secret = args.slice(i + 2).join(' '); secretAlgo = 'plain'; plaintextEntered = secret; break; }
         if (next === '5') { secret = args.slice(i + 2).join(' '); secretAlgo = 'md5'; break; }
         if (next === '8') { secret = args.slice(i + 2).join(' '); secretAlgo = 'sha256'; break; }
         if (next === '9') { secret = args.slice(i + 2).join(' '); secretAlgo = 'scrypt'; break; }
         if (next === '4') { secret = args.slice(i + 2).join(' '); secretAlgo = 'sha256'; break; }
         // Bare `secret <pwd>` is hashed (type 5) by real IOS, like CiscoShellBase.
-        secret = args.slice(i + 1).join(' '); secretAlgo = 'md5'; break;
+        secret = args.slice(i + 1).join(' '); secretAlgo = 'md5'; plaintextEntered = secret; break;
       }
       else if (t === 'password') {
         const next = args[i + 1];
-        if (next === '0') { secret = args.slice(i + 2).join(' '); secretAlgo = 'plain'; break; }
+        if (next === '0') { secret = args.slice(i + 2).join(' '); secretAlgo = 'plain'; plaintextEntered = secret; break; }
         if (next === '7') { secret = args.slice(i + 2).join(' '); secretAlgo = 'type-7'; break; }
-        secret = args.slice(i + 1).join(' '); secretAlgo = 'plain'; break;
+        secret = args.slice(i + 1).join(' '); secretAlgo = 'plain'; plaintextEntered = secret; break;
       }
+    }
+    const minLength = sec().passwords.minLength;
+    if (!nopassword && plaintextEntered !== undefined && minLength && plaintextEntered.length < minLength) {
+      return `Password too short - must be at least ${minLength} characters. Password configuration failed`;
     }
     const router = ctx.r() as unknown as {
       _upsertCiscoUsername?: (n: string, kv: {
@@ -731,6 +748,20 @@ export function buildSecurityShowCommands(trie: CommandTrie, getRouter: () => Ro
       lines.push(`    Authen: request ${st.authRequests}, success ${st.authAccepts}, fail ${st.authRejects}`);
     }
     return lines.length ? lines.join('\n') : 'No AAA servers configured';
+  });
+
+  trie.register('show aaa local user lockout', 'Local users currently locked out', () => {
+    const locked = getRouter().getCredentialStore().list().filter(a => a.locked);
+    if (locked.length === 0) return 'No users are presently locked out';
+    const lines = ['User                             Lock time'];
+    for (const a of locked) lines.push(`${a.name.padEnd(33)}${a.lockReason ?? 'locked'}`);
+    return lines.join('\n');
+  });
+
+  trie.registerGreedy('clear aaa local user lockout', 'Unlock a locally-locked-out user', (args) => {
+    if (args[0] !== 'username' || !args[1]) return '% Incomplete command.';
+    getRouter().getCredentialStore().unlock(args[1]);
+    return '';
   });
 
   trie.register('show aaa sessions', 'Display AAA sessions', () => {

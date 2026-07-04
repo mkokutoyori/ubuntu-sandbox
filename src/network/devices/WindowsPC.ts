@@ -249,6 +249,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     // Materialise the event logs as .evtx files under winevt\Logs.
     this.eventLog.attachFilesystem(this.fs);
     this.userMgr = new WindowsUserManager();
+    this.userMgr.attachPolicy(this.accountsPolicy);
     this.svcMgr = new WindowsServiceManager();
     this.procMgr = new WindowsProcessManager();
     this.procMgr.attachServiceManager(this.svcMgr, () => this.simulatedDate().getTime());

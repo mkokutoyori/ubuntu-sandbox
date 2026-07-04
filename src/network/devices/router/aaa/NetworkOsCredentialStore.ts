@@ -12,10 +12,25 @@ export class NetworkOsCredentialStore implements IAccountAuthority {
   private readonly deviceId: string;
   private readonly bus: IEventBus;
   private readonly accounts: Map<string, NetworkOsAccount> = new Map();
+  /**
+   * Per-account failed-attempt lockout threshold (Cisco `aaa local
+   * authentication attempts max-fail`, Huawei `password-policy` alarm/
+   * lockout). 0 (the default) disables it — matches both vendors, which
+   * only auto-lock a *local* account when this is explicitly configured.
+   */
+  private maxFailedAttempts = 0;
 
   constructor(opts: NetworkOsCredentialStoreOptions) {
     this.deviceId = opts.deviceId;
     this.bus = opts.bus;
+  }
+
+  setMaxFailedAttempts(n: number): void {
+    this.maxFailedAttempts = n;
+  }
+
+  getMaxFailedAttempts(): number {
+    return this.maxFailedAttempts;
   }
 
   size(): number { return this.accounts.size; }
@@ -82,6 +97,9 @@ export class NetworkOsCredentialStore implements IAccountAuthority {
     const updated = this.mutateSilent(name, a => a.withFailedLogin(at, from));
     if (updated) {
       publishAccountEvent(this.bus, 'router.aaa.account.login.failure', this.deviceId, updated, { from, reason, at });
+      if (this.maxFailedAttempts > 0 && !updated.locked && updated.failedLoginCount >= this.maxFailedAttempts) {
+        this.lock(name, `exceeded ${this.maxFailedAttempts} failed authentication attempts`, at);
+      }
     } else {
       publishAccountEvent(this.bus, 'router.aaa.account.login.failure', this.deviceId, NetworkOsAccount.create({ name, now: at }), { from, reason, at });
     }

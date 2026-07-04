@@ -2424,6 +2424,11 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     });
   }
 
+  /** `aaa local authentication attempts max-fail <n>` — per-account lockout. */
+  _configureLocalAuthMaxFail(n: number): void {
+    this.getCredentialStore().setMaxFailedAttempts(n);
+  }
+
   _configureSshAuthRetries(retries: number): void {
     this._sshAuthRetries = retries;
     if (this._loginBlocker) this._loginBlocker.detach();
