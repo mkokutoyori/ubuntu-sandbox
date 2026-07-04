@@ -35,7 +35,9 @@ import { SyslogAgent } from '../syslog/SyslogAgent';
 import { RadiusClientAgent } from '../radius/RadiusClientAgent';
 import { RadiusServerAgent } from '../radius/RadiusServerAgent';
 import { RadiusAccountingClient } from '../radius/RadiusAccountingClient';
-import { UDP_PORT_RADIUS_AUTH, UDP_PORT_RADIUS_ACCT } from '../radius/types';
+import { CoaListener, type CoaSessionHandler } from '../radius/CoaListener';
+import { CoaClient } from '../radius/CoaClient';
+import { UDP_PORT_RADIUS_AUTH, UDP_PORT_RADIUS_ACCT, UDP_PORT_RADIUS_COA } from '../radius/types';
 import { GreAgent } from '../gre/GreAgent';
 import { IP_PROTO_GRE } from '../gre/types';
 import { SnmpAgent } from '../snmp/SnmpAgent';
@@ -64,6 +66,8 @@ export class HuaweiRouter extends Router {
   private readonly agents = new AgentRegistry();
   private readonly radiusServer: RadiusServerAgent;
   private readonly radiusAccountingClient: RadiusAccountingClient;
+  private readonly coaListener: CoaListener;
+  private readonly coaClient: CoaClient;
   private readonly greAgent: GreAgent;
   private readonly snmpAgent: SnmpAgent;
   private readonly netflowAgent: NetFlowAgent;
@@ -92,6 +96,9 @@ export class HuaweiRouter extends Router {
     this.radiusClient = new RadiusClientAgent(hostBase, () => this.getBus());
     this.radiusServer = new RadiusServerAgent(hostBase, () => this.getBus());
     this.radiusAccountingClient = new RadiusAccountingClient(hostBase, () => this.getBus());
+    this.coaListener = new CoaListener(hostBase, () => this.getBus());
+    this.coaListener.setSessionHandler(this.defaultCoaSessionHandler());
+    this.coaClient = new CoaClient(hostBase, () => this.getBus());
     this.greAgent = new GreAgent(hostBase, () => this.getBus());
     this.snmpAgent = new SnmpAgent({
       ...hostBase,
@@ -105,11 +112,29 @@ export class HuaweiRouter extends Router {
     this.agents.registerAll(
       this.lldpAgent, this.vrrpAgent, this.ntpAgent, this.bfdAgent,
       this.igmpAgent, this.pimAgent, this.syslogAgent, this.radiusClient,
-      this.radiusServer, this.radiusAccountingClient,
+      this.radiusServer, this.radiusAccountingClient, this.coaListener, this.coaClient,
       this.greAgent, this.snmpAgent, this.netflowAgent,
       this.tacacsClient, this.tacacsServer, this.vxlanAgent,
     );
     this.agents.startAll();
+  }
+
+  /** See CiscoRouter's identical helper — RFC 5176 CoA/Disconnect acting on this NAS's VTY/SSH sessions. */
+  private defaultCoaSessionHandler(): CoaSessionHandler {
+    return {
+      disconnect: (ids) => {
+        if (!ids.username) return { ok: false, errorCause: 'missing-attribute' };
+        const closed = this.getSshSessionRegistry().closeWhere(
+          (s) => s.user === ids.username, 'radius-disconnect',
+        );
+        return closed > 0 ? { ok: true } : { ok: false, errorCause: 'session-context-not-found' };
+      },
+      reauthorize: (ids) => {
+        if (!ids.username) return { ok: false, errorCause: 'missing-attribute' };
+        const hasSession = this.getSshSessionRegistry().list().some((s) => s.user === ids.username && s.state !== 'closed');
+        return hasSession ? { ok: true } : { ok: false, errorCause: 'session-context-not-found' };
+      },
+    };
   }
 
   override setEventBus(bus: IEventBus | null): void {
@@ -170,6 +195,14 @@ export class HuaweiRouter extends Router {
         this.radiusAccountingClient.handleUdp(inPort, ipPkt.sourceIP, udp);
         return;
       }
+      if (udp && udp.type === 'udp' && udp.destinationPort === UDP_PORT_RADIUS_COA) {
+        this.coaListener.handleUdp(inPort, ipPkt.sourceIP, udp);
+        return;
+      }
+      if (udp && udp.type === 'udp' && udp.sourcePort === UDP_PORT_RADIUS_COA) {
+        this.coaClient.handleUdp(inPort, ipPkt.sourceIP, udp);
+        return;
+      }
       if (udp && udp.type === 'udp'
           && (udp.destinationPort === UDP_PORT_SNMP || udp.sourcePort === UDP_PORT_SNMP)) {
         this.snmpAgent.handleUdp(inPort, ipPkt.sourceIP, udp);
@@ -227,6 +260,8 @@ export class HuaweiRouter extends Router {
   getRadiusClient(): RadiusClientAgent { return this.radiusClient; }
   getRadiusServer(): RadiusServerAgent { return this.radiusServer; }
   getRadiusAccountingClient(): RadiusAccountingClient { return this.radiusAccountingClient; }
+  getCoaListener(): CoaListener { return this.coaListener; }
+  getCoaClient(): CoaClient { return this.coaClient; }
   getGreAgent(): GreAgent { return this.greAgent; }
   getSnmpAgent(): SnmpAgent { return this.snmpAgent; }
   override getNetFlowAgent(): NetFlowAgent { return this.netflowAgent; }

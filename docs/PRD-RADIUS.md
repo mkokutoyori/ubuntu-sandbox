@@ -316,7 +316,7 @@ ServerState { config: RadiusServerConfig, alive: boolean, deadUntil?: number,
 | **P4 — Accounting** 🟡 | `accounting.ts`, `RadiusAccountingClient`, traitement serveur + journal ; ~~câblage aaa accounting Cisco/Huawei~~ **[reporté]** ; événements | P1 |
 | **P5 — Failover & observabilité** 🟡 | Groupes ordonnés, deadtime, compteurs par serveur ; ~~`show radius statistics` réels, `debug radius`, `test aaa group radius`~~ **[CLI reportée]** | P2 |
 | **P6 — EAP 802.1X & autorisation** 🟡 | `eap.ts` (EAP-MD5), relais EAP-Message dans Dot1xAgent, attributs RFC 3580 ; `authorization.ts` : priv-lvl, Filter-Id, **VLAN dynamique**, Session-Timeout, Reply-Message ; ~~application effective côté switch (changement de VLAN réel, priv-lvl CLI)~~ **[reportée]** | P3 |
-| **P7 — CoA/Disconnect** | `coa.ts`, `CoaListener` NAS, client CoA serveur ; Disconnect → fermeture session/port, CoA → ré-autorisation VLAN ; Error-Cause | P4, P6 |
+| **P7 — CoA/Disconnect** ✅ | `coa.ts`, `CoaListener` NAS (ferme les sessions VTY/SSH réelles via `SshSessionRegistry`), `CoaClient` serveur ; Disconnect/CoA avec Error-Cause ; ~~ré-autorisation VLAN 802.1X~~ **[reportée — pas de session 802.1X trackée par un NAS routeur]** | P4, P6 |
 | **P8 — Hébergement générique** 🟡 | Contrat `RadiusServerHost` consommable par LinuxServer/WindowsPC ; ~~egress client via table de routage + `source-interface`~~ **[fait]** ; ~~cache anti-duplication serveur~~ **[fait]** | P2 |
 
 Chaque phase suit le cycle rouge → vert → refactor, avec interdiction de casser

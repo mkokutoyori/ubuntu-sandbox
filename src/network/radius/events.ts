@@ -47,6 +47,21 @@ export interface RadiusServerHealthPayload extends RadiusDeviceRef {
   serverIp: string;
 }
 
+export interface RadiusCoaReceivedPayload extends RadiusDeviceRef {
+  fromIp: string;
+  code: 'disconnect-request' | 'coa-request';
+  username: string | null;
+  accepted: boolean;
+  errorCause: string | null;
+}
+
+export interface RadiusCoaCompletedPayload extends RadiusDeviceRef {
+  nasIp: string;
+  code: 'disconnect-request' | 'coa-request';
+  result: 'ack' | 'nak' | 'timeout';
+  errorCause: string | null;
+}
+
 export type RadiusDomainEvent =
   | { topic: 'radius.packet.sent'; payload: RadiusPacketSentPayload }
   | { topic: 'radius.packet.received'; payload: RadiusPacketReceivedPayload }
@@ -54,4 +69,6 @@ export type RadiusDomainEvent =
   | { topic: 'radius.auth.rejected'; payload: RadiusAuthRejectedByServerPayload }
   | { topic: 'radius.accounting.record'; payload: RadiusAccountingRecordPayload }
   | { topic: 'radius.server.dead'; payload: RadiusServerHealthPayload }
-  | { topic: 'radius.server.alive'; payload: RadiusServerHealthPayload };
+  | { topic: 'radius.server.alive'; payload: RadiusServerHealthPayload }
+  | { topic: 'radius.coa.received'; payload: RadiusCoaReceivedPayload }
+  | { topic: 'radius.coa.completed'; payload: RadiusCoaCompletedPayload };

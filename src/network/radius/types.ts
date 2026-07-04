@@ -4,6 +4,8 @@ import type { NetworkPdu } from '@/network/core/NetworkPdu';
 
 export const UDP_PORT_RADIUS_AUTH = 1812;
 export const UDP_PORT_RADIUS_ACCT = 1813;
+/** RFC 5176 §3: Dynamic Authorization (CoA/Disconnect) default port. */
+export const UDP_PORT_RADIUS_COA = 3799;
 
 export type RadiusCode =
   | 'access-request'
@@ -11,7 +13,13 @@ export type RadiusCode =
   | 'access-reject'
   | 'access-challenge'
   | 'accounting-request'
-  | 'accounting-response';
+  | 'accounting-response'
+  | 'disconnect-request'
+  | 'disconnect-ack'
+  | 'disconnect-nak'
+  | 'coa-request'
+  | 'coa-ack'
+  | 'coa-nak';
 
 export const RADIUS_CODE: Record<RadiusCode, number> = {
   'access-request': 1,
@@ -20,6 +28,12 @@ export const RADIUS_CODE: Record<RadiusCode, number> = {
   'access-challenge': 11,
   'accounting-request': 4,
   'accounting-response': 5,
+  'disconnect-request': 40,
+  'disconnect-ack': 41,
+  'disconnect-nak': 42,
+  'coa-request': 43,
+  'coa-ack': 44,
+  'coa-nak': 45,
 };
 
 export type RadiusAttrType =
@@ -68,7 +82,8 @@ export type RadiusAttrType =
   | 'message-authenticator'
   | 'tunnel-private-group-id'
   | 'nas-port-id'
-  | 'framed-pool';
+  | 'framed-pool'
+  | 'error-cause';
 
 export const RADIUS_ATTR: Record<RadiusAttrType, number> = {
   'user-name': 1,
@@ -117,6 +132,7 @@ export const RADIUS_ATTR: Record<RadiusAttrType, number> = {
   'tunnel-private-group-id': 81,
   'nas-port-id': 87,
   'framed-pool': 88,
+  'error-cause': 101,
 };
 
 export interface RadiusAttribute {

@@ -71,6 +71,7 @@ const VALUE_TYPE_BY_NAME: Record<RadiusAttrType, RadiusValueType> = {
   'tunnel-private-group-id': 'tagged-string',
   'nas-port-id': 'text',
   'framed-pool': 'text',
+  'error-cause': 'integer',
 };
 
 /** Dictionary entry per standard attribute, keyed by name. */
