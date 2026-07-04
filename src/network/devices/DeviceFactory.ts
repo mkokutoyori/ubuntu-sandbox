@@ -8,6 +8,7 @@ import { Equipment } from '../equipment/Equipment';
 import { LinuxPC } from './LinuxPC';
 import { LinuxServer } from './LinuxServer';
 import { WindowsPC } from './WindowsPC';
+import { WindowsServer } from './WindowsServer';
 import { CiscoSwitch } from './CiscoSwitch';
 import { HuaweiSwitch } from './HuaweiSwitch';
 import { GenericSwitch } from './GenericSwitch';
@@ -38,7 +39,7 @@ export function createDevice(type: DeviceType, x: number = 0, y: number = 0): Eq
     case 'linux-server':
       return new LinuxServer('linux-server', name, x, y);
     case 'windows-server':
-      return new WindowsPC('windows-server', name, x, y);
+      return new WindowsServer(name, x, y);
 
     // Switches
     case 'switch-cisco':

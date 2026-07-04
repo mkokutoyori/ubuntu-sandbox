@@ -31,7 +31,32 @@ function seedValue(key: RegistryKey, name: string, value: string | number, type:
 
 // ─── Seed data ───────────────────────────────────────────────────────────────
 
-function buildHKLM(): RegistryKey {
+/** The subset of registry values that differ between a Windows client and a Windows Server install. */
+export interface WindowsProductIdentity {
+  productName: string;
+  currentBuildNumber: string;
+  releaseId: string;
+  editionId: string;
+  installationType: 'Client' | 'Server';
+}
+
+export const WINDOWS_CLIENT_PRODUCT_IDENTITY: WindowsProductIdentity = {
+  productName: 'Windows 10 Pro',
+  currentBuildNumber: '22631',
+  releaseId: '2009',
+  editionId: 'Professional',
+  installationType: 'Client',
+};
+
+export const WINDOWS_SERVER_PRODUCT_IDENTITY: WindowsProductIdentity = {
+  productName: 'Windows Server 2022 Standard',
+  currentBuildNumber: '20348',
+  releaseId: '2009',
+  editionId: 'ServerStandard',
+  installationType: 'Server',
+};
+
+function buildHKLM(product: WindowsProductIdentity): RegistryKey {
   const root = makeKey('HKEY_LOCAL_MACHINE');
 
   // HKLM:\SOFTWARE
@@ -49,13 +74,13 @@ function buildHKLM(): RegistryKey {
   // HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion
   const currentVersion = makeKey('CurrentVersion');
   windowsNT.subkeys.set('currentversion', currentVersion);
-  seedValue(currentVersion, 'ProductName', 'Windows 11 Pro');
+  seedValue(currentVersion, 'ProductName', product.productName);
   seedValue(currentVersion, 'CurrentVersion', '10.0');
-  seedValue(currentVersion, 'CurrentBuildNumber', '22621');
-  seedValue(currentVersion, 'ReleaseId', '2009');
-  seedValue(currentVersion, 'EditionID', 'Professional');
+  seedValue(currentVersion, 'CurrentBuildNumber', product.currentBuildNumber);
+  seedValue(currentVersion, 'ReleaseId', product.releaseId);
+  seedValue(currentVersion, 'EditionID', product.editionId);
   seedValue(currentVersion, 'RegisteredOwner', 'User');
-  seedValue(currentVersion, 'InstallationType', 'Client');
+  seedValue(currentVersion, 'InstallationType', product.installationType);
 
   // HKLM:\SOFTWARE\Microsoft\Windows
   const windows = makeKey('Windows');
@@ -194,8 +219,12 @@ function parseRegistryPath(path: string): ParsedRegPath | null {
 // ─── Registry Provider ────────────────────────────────────────────────────────
 
 export class PSRegistryProvider {
-  private hklm: RegistryKey = buildHKLM();
+  private hklm: RegistryKey;
   private hkcu: RegistryKey = buildHKCU();
+
+  constructor(product: WindowsProductIdentity = WINDOWS_CLIENT_PRODUCT_IDENTITY) {
+    this.hklm = buildHKLM(product);
+  }
 
   // ─── Internal navigation ──────────────────────────────────────────
 

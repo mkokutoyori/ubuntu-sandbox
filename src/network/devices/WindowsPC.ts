@@ -51,7 +51,7 @@ import { WindowsAuditPolicy, cmdAuditpol } from './windows/WindowsAuditPolicy';
 import { WindowsWinRmConfig, cmdWinrm } from './windows/WindowsWinRmConfig';
 import { WindowsProcessManager } from './windows/WindowsProcessManager';
 import { HostClock } from './host/lifecycle/HostClock';
-import { PSRegistryProvider } from './windows/PSRegistryProvider';
+import { PSRegistryProvider, WINDOWS_CLIENT_PRODUCT_IDENTITY, WINDOWS_SERVER_PRODUCT_IDENTITY } from './windows/PSRegistryProvider';
 import { PSEventLogProvider } from './windows/PSEventLogProvider';
 import { cmdHelp } from './windows/WinHelp';
 import { cmdIpconfig } from './windows/WinIpconfig';
@@ -216,7 +216,9 @@ export class WindowsPC extends EndHost implements UserAccountHost {
   /** VPN connections: lowercase name → details. */
   readonly vpnConnections: Map<string, { name: string; serverAddress: string; tunnelType: string; encryptionLevel: string; authMethod: string }> = new Map();
   /** In-memory registry hive (HKLM / HKCU). */
-  readonly registry: PSRegistryProvider = new PSRegistryProvider();
+  readonly registry: PSRegistryProvider = new PSRegistryProvider(
+    this.getDeviceType() === 'windows-server' ? WINDOWS_SERVER_PRODUCT_IDENTITY : WINDOWS_CLIENT_PRODUCT_IDENTITY,
+  );
 
   /**
    * Shared scheduled-task table. Both `schtasks` (cmd) and the Get/Register/
@@ -1767,7 +1769,8 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       return ['Name  ', ...drives.map(d => d.padEnd(6))].join('\n');
     }
     if (joined.includes('os get caption')) {
-      return 'Caption                              \nMicrosoft Windows 10 Enterprise      ';
+      const caption = this.getIdentity().os.prettyName;
+      return `Caption                              \n${caption.padEnd(38)}`;
     }
     if (joined.includes('cpu get name')) {
       return 'Name                                              \nIntel(R) Core(TM) i7 CPU @ 2.50GHz                ';

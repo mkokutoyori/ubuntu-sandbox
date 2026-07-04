@@ -126,6 +126,17 @@ export class PowerShellExecutor {
   private commandHistory: string[];
   /** Registry hive — relocated to the device (Phase 4). */
   get registry(): PSRegistryProvider { return (this.device as unknown as { registry: PSRegistryProvider }).registry; }
+  /**
+   * `$PSVersionTable.OS` build string ("10.0.22631") — read from the same
+   * registry values `systeminfo`/`wmic os get caption` already source, so a
+   * Windows Server device reports its own build instead of the client's.
+   */
+  private currentVersionBuild(): string {
+    const values = this.registry.getItemPropertyValues('HKLM:\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion');
+    const currentVersion = values?.['CurrentVersion'] ?? '10.0';
+    const buildNumber = values?.['CurrentBuildNumber'] ?? '22631';
+    return `${currentVersion}.${buildNumber}`;
+  }
   /** Event log — relocated to the device. */
   get eventLog(): PSEventLogProvider { return (this.device as unknown as { eventLog: PSEventLogProvider }).eventLog; }
   /** Session variables: $name → string value */
@@ -277,7 +288,7 @@ export class PowerShellExecutor {
         case 'wsmanbuildversion':    return '3.0.0.0';
         case 'pscompatibleversions': return '1.0 2.0 3.0 4.0 5.0 5.1.19041.4412';
         case 'platform':             return 'Win32NT';
-        case 'os':                   return 'Microsoft Windows 10.0.19041';
+        case 'os':                   return `Microsoft Windows ${this.currentVersionBuild()}`;
         default:                     return '';
       }
     }
@@ -2299,6 +2310,30 @@ export class PowerShellExecutor {
     // Start-Process / saps / start
     if (cmdLower === 'start-process' || cmdLower === 'saps') {
       return psStartProcess(this.buildPSProcessCtx(), args);
+    }
+
+    // Get-ComputerInfo — OS-identity subset, sourced from the same registry
+    // values `systeminfo`/`wmic os get caption` read, so a Windows Server
+    // device reports its own identity here too instead of the client's.
+    if (cmdLower === 'get-computerinfo') {
+      const values = this.registry.getItemPropertyValues('HKLM:\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion') ?? {};
+      const productName = String(values['ProductName'] ?? 'Windows 10 Pro');
+      const editionId = String(values['EditionID'] ?? 'Professional');
+      const installationType = String(values['InstallationType'] ?? 'Client');
+      const buildNumber = String(values['CurrentBuildNumber'] ?? '22631');
+      const releaseId = String(values['ReleaseId'] ?? '2009');
+      return [
+        `WindowsProductName       : ${productName}`,
+        `WindowsEditionId         : ${editionId}`,
+        `WindowsInstallationType  : ${installationType}`,
+        `WindowsVersion           : ${releaseId}`,
+        `WindowsBuildLabEx        : ${buildNumber}.1.amd64fre.ni_release`,
+        `OsName                   : Microsoft ${productName}`,
+        `OsVersion                : ${this.currentVersionBuild()}`,
+        `OsHardwareAbstractionLayer: ${this.currentVersionBuild()}`,
+        `CsDNSHostName            : ${this.device.getHostname()}`,
+        `CsName                   : ${this.device.getHostname()}`,
+      ].join('\n');
     }
 
     // Get-Help / man / help

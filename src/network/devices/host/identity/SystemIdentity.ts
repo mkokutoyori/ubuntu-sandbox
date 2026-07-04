@@ -108,6 +108,36 @@ export class SystemIdentity {
     });
   }
 
+  /**
+   * Windows Server 2022 Standard identity preset — the server counterpart
+   * of {@link windows}. Every consumer that currently reads `identity.os`
+   * (systeminfo, wmic, the registry, `Get-ComputerInfo`) picks this up
+   * automatically once `EndHost` selects it for a `windows-server` device,
+   * so the four sources stay coherent instead of hardcoding "Windows 10"
+   * independently.
+   */
+  static windowsServer(): SystemIdentity {
+    return new SystemIdentity({
+      os: new OsRelease({
+        id: 'windows-server',
+        idLike: '',
+        name: 'Microsoft Windows Server',
+        prettyName: 'Microsoft Windows Server 2022 Standard',
+        version: '10.0.20348 N/A Build 20348',
+        versionId: '20348',
+        versionCodename: '21H2',
+      }),
+      kernel: new KernelInfo({
+        sysname: 'Windows_NT',
+        release: '10.0.20348',
+        version: '10.0.20348.0',
+        operatingSystem: 'Windows',
+      }),
+      chassis: 'server',
+      iconName: 'computer-server',
+    });
+  }
+
   /** Attach the owning device's event bus so identity changes are observable. */
   attachBus(bus: IEventBus, deviceId: string): void {
     this.bus = bus;

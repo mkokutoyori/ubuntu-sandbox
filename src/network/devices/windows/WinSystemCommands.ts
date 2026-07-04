@@ -69,7 +69,8 @@ export function cmdSysteminfo(ctx: WinSystemContext): string {
   lines.push(`OS Name:                   ${ctx.os.prettyName}`);
   lines.push(`OS Version:                ${ctx.os.version}`);
   lines.push(`OS Manufacturer:           Microsoft Corporation`);
-  lines.push(`OS Configuration:          Member Workstation`);
+  const memberRole = ctx.os.prettyName.includes('Server') ? 'Member Server' : 'Member Workstation';
+  lines.push(`OS Configuration:          ${memberRole}`);
   lines.push(`OS Build Type:             Multiprocessor Free`);
   const bootedAt = ctx.bootedAt();
   if (bootedAt) {
@@ -345,14 +346,14 @@ export function cmdNbtstat(ctx: WinSystemContext, args: string[]): string {
 }
 
 /** `wmic logicaldisk get name` / minimal WMI stub. */
-export function cmdWmic(args: string[]): string {
+export function cmdWmic(ctx: WinSystemContext, args: string[]): string {
   if (args.length === 0) return 'wmic:root\\cli>';
   const joined = args.join(' ').toLowerCase();
   if (joined.includes('logicaldisk') && joined.includes('get name')) {
     return 'Name  \nC:    ';
   }
   if (joined.includes('os get caption')) {
-    return 'Caption                              \nMicrosoft Windows 10 Enterprise      ';
+    return `Caption                              \n${ctx.os.prettyName.padEnd(38)}`;
   }
   if (joined.includes('cpu get name')) {
     return 'Name                                              \nIntel(R) Core(TM) i7 CPU @ 2.50GHz                ';

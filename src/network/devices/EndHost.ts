@@ -553,7 +553,7 @@ export abstract class EndHost extends Equipment {
     this.lifecycle = new HostLifecycle();
     this.lifecycle.attachBus(this.getBus(), this.id, name);
     this.identity = String(type).includes('windows')
-      ? SystemIdentity.windows()
+      ? (String(type).includes('server') ? SystemIdentity.windowsServer() : SystemIdentity.windows())
       : SystemIdentity.ubuntu();
     this.identity.attachBus(this.getBus(), this.id);
     this.attachHostActors();
