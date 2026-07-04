@@ -419,14 +419,22 @@ export class LinuxTerminalSession extends TerminalSession {
     user: string; hostname: string; path: string; promptChar: string;
     foreign?: boolean;
   } {
-    if (this.hasActiveChild && this.foreground.getSessionType() !== 'linux') {
-      return {
-        user: this.currentUser,
-        hostname: this.device.getHostname() || 'localhost',
-        path: this.currentPath,
-        promptChar: '$',
-        foreign: true,
-      };
+    if (this.hasActiveChild) {
+      if (this.foreground.getSessionType() !== 'linux') {
+        return {
+          user: this.currentUser,
+          hostname: this.device.getHostname() || 'localhost',
+          path: this.currentPath,
+          promptChar: '$',
+          foreign: true,
+        };
+      }
+      // The foreground child is itself a Linux session (SSH'd into
+      // another Linux box) — its own currentUser/device/currentPath are
+      // the ones that must render, not this (parent) session's. Delegate
+      // recursively so multi-hop Linux→Linux→Linux chains each show
+      // their own remote hostname in turn.
+      return (this.foreground as LinuxTerminalSession).getPromptParts();
     }
     if (this.activeSubShell) {
       const kind = (this.activeSubShell as { kind?: string; inner?: { kind?: string } }).kind

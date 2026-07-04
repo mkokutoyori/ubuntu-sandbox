@@ -50,6 +50,8 @@ export class HuaweiTerminalSession extends CLITerminalSession {
   getSessionType(): SessionType { return 'huawei'; }
   getTheme(): TerminalTheme { return HUAWEI_THEME; }
 
+  protected override sshInteractiveVerbs(): string[] { return ['ssh', 'stelnet']; }
+
   protected override prepareAsRemoteUser(_user: string): void {
     if (this.vty) {
       this.vty.state.privilegeLevel = 15;

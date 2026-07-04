@@ -52,6 +52,8 @@ export interface WindowsSshTarget {
   recordSshLogin(user: string, fromIp: string, fromHost: string, accepted: boolean): void;
   /** The remote's command-prompt version banner. */
   sshBanner(): string;
+  /** The remote's post-auth MOTD (Windows: the cmd.exe version banner). */
+  getSshMotd(): string;
   /** Run a command on the remote as `user`, in exec mode. */
   runSshCommand(
     user: string,
@@ -224,6 +226,6 @@ export async function runWindowsSshClient(
 
   // Interactive form: the remote command-prompt banner, then the
   // OpenSSH "Connection to <host> closed." line.
-  const lines = [remote.sshBanner().replace(/^\n+/, ''), '', `Connection to ${host} closed.`];
+  const lines = [remote.getSshMotd().replace(/^\n+/, ''), '', `Connection to ${host} closed.`];
   return { output: lines.join('\n'), exitCode: 0 };
 }

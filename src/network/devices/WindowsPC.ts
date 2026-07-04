@@ -445,10 +445,13 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     });
   }
 
-  /** The remote command-prompt banner shown to an interactive SSH client. */
+  /**
+   * Pre-auth banner shown to an interactive SSH client, before the MOTD.
+   * Mirrors Router.sshBanner() — delegates to the LegalNoticeText-backed
+   * getSshBanner() so the version banner (getSshMotd()) isn't echoed twice.
+   */
   sshBanner(): string {
-    return 'Microsoft Windows [Version 10.0.22631.6649]\n' +
-      '(c) Microsoft Corporation. All rights reserved.';
+    return this.getSshBanner();
   }
 
   /** Run a command on this machine for an SSH exec-mode request. */
@@ -506,7 +509,10 @@ export class WindowsPC extends EndHost implements UserAccountHost {
   }
 
   /** Post-auth MOTD; Windows shows the cmd.exe version line. */
-  getSshMotd(): string { return this.sshBanner(); }
+  getSshMotd(): string {
+    return 'Microsoft Windows [Version 10.0.22631.6649]\n' +
+      '(c) Microsoft Corporation. All rights reserved.';
+  }
 
   /** Polymorphic alias for `isSshActive` so any caller can ask by name. */
   isServiceActive(name: string): boolean {
@@ -585,7 +591,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     }
     // `ver` → cmd.exe Windows-version banner.
     if (/^ver\s*$/i.test(cmd)) {
-      return { output: `\n${this.sshBanner().split('\n')[0]}\n\n`, exitCode: 0 };
+      return { output: `\n${this.getSshMotd().split('\n')[0]}\n\n`, exitCode: 0 };
     }
     // `whoami` → the SSH user. Real Windows returns "host\user"; we
     // keep that shape so AD-aware scripts see something coherent.

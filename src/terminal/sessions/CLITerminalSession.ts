@@ -13,13 +13,16 @@
  *   - Dynamic prompt from device.getPrompt()
  */
 
-import type { ICLIDevice } from '@/network';
+import type { Equipment, ICLIDevice } from '@/network';
 import {
   TerminalSession, TerminalTheme, SessionType,
   KeyEvent, InputMode,
 } from './TerminalSession';
 import { PlainOutputFormatter, type IOutputFormatter } from '@/terminal/core/OutputFormatter';
 import type { InteractiveStep } from '@/terminal/core/types';
+import { findHostByAddress } from '@/network/devices/linux/network/HostLookup';
+import { createSessionForDevice } from './sessionFactory';
+import { SshConnectionRequest } from '@/network/protocols/ssh/server/SshConnectionRequest';
 
 /** Default pager page size — matches Cisco/Huawei `terminal length 24`. */
 const DEFAULT_PAGE_SIZE = 24;
@@ -233,6 +236,15 @@ export abstract class CLITerminalSession extends TerminalSession {
       this.pushHistory(trimmed);
     }
 
+    const firstWord = trimmed.split(/\s+/)[0]?.toLowerCase();
+    if (firstWord && this.sshInteractiveVerbs().includes(firstWord) && this.sshInteractiveModeAllowed()) {
+      const sshSteps = this.buildSshInteractiveFlowSteps(trimmed);
+      if (sshSteps) {
+        this.startFlowFromSteps(sshSteps, trimmed);
+        return;
+      }
+    }
+
     const steps = this.buildInteractiveFlow(trimmed);
     if (steps) {
       this.startFlowFromSteps(steps, trimmed);
@@ -289,6 +301,195 @@ export abstract class CLITerminalSession extends TerminalSession {
    * device's post-command state.
    */
   protected afterCommandExecuted(_command: string): void {}
+
+  // ── Outbound SSH interactive push ──────────────────────────────
+
+  /**
+   * Verbs the CLI recognises as an outbound SSH client launch. Huawei
+   * additionally accepts `stelnet` as a synonym.
+   */
+  protected sshInteractiveVerbs(): string[] { return ['ssh']; }
+
+  /**
+   * Only user/privileged exec mode has an outbound `ssh` client on real
+   * IOS/VRP gear; other modes (config, …) fall through to the device's
+   * own trie so it reports its usual "invalid input" for the mode.
+   */
+  protected sshInteractiveModeAllowed(): boolean {
+    const mode = (this as unknown as { vty?: { state: { mode: string } } | null }).vty?.state.mode;
+    // Huawei's vty starts life in 'user-view' (Router.openVtySession's
+    // initialMode) and only gets rewritten to the shell's own 'user'
+    // string once the first command has round-tripped through
+    // snapshotVtyState/applyVtyState — so a freshly-opened session's
+    // very first command must still recognise 'user-view'.
+    return mode === undefined || mode === 'user' || mode === 'privileged' || mode === 'user-view';
+  }
+
+  /**
+   * Parse `ssh|stelnet [-l user] [-p port] host [command...]`. Returns
+   * null for a malformed invocation or for exec mode (`command` present)
+   * — both fall through to the device's synchronous one-shot client,
+   * which already handles those correctly.
+   */
+  private parseSshInteractiveTarget(
+    trimmed: string,
+  ): { user: string | null; host: string; port: number } | null {
+    const args = trimmed.split(/\s+/).slice(1);
+    let user: string | null = null;
+    let port = 22;
+    const rest: string[] = [];
+    for (let i = 0; i < args.length; i++) {
+      const a = args[i];
+      if (a === '-l' && args[i + 1]) { user = args[++i]; continue; }
+      if (a === '-p' && args[i + 1]) {
+        const n = Number.parseInt(args[++i], 10);
+        if (Number.isFinite(n) && n > 0 && n < 65536) port = n;
+        continue;
+      }
+      if (a.startsWith('-')) continue;
+      rest.push(a);
+    }
+    if (rest.length !== 1) return null;
+    const m = /^(?:([\w.-]+)@)?([\w.-]+)$/.exec(rest[0]);
+    if (!m) return null;
+    return { user: user ?? m[1] ?? null, host: m[2], port };
+  }
+
+  /**
+   * Build the interactive-login flow for an outbound `ssh`/`stelnet`
+   * launch: resolve the target, gate it the same way an inbound SSH
+   * connection would be gated, prompt for a password (OpenSSH-style
+   * retry wording), then push a full nested {@link TerminalSession} for
+   * the remote device so commands genuinely execute there — mirroring
+   * what Linux and Windows already do for outbound SSH.
+   */
+  private buildSshInteractiveFlowSteps(trimmed: string): InteractiveStep[] | null {
+    const parsed = this.parseSshInteractiveTarget(trimmed);
+    if (!parsed) return null;
+    const { host, port } = parsed;
+
+    const sourceIp = this.firstLocalIp();
+    const localHostname = this.device.getHostname?.() ?? '';
+    if (!sourceIp) {
+      return [{ type: 'output', outputLines: [`ssh: connect to host ${host} port ${port}: Network is unreachable`] }];
+    }
+    // Matches the exec-mode client's own default (runOutboundSshClient) —
+    // real IOS/VRP `ssh host` with no `-l`/`user@` defaults to 'admin'.
+    const user = parsed.user ?? 'admin';
+
+    const found = findHostByAddress(host);
+    if (!found) {
+      return [{ type: 'output', outputLines: [`ssh: Could not resolve hostname ${host}: Name or service not known`] }];
+    }
+    if (found.poweredOff || found.interfaceDown) {
+      return [{ type: 'output', outputLines: [`ssh: connect to host ${host} port ${port}: No route to host`] }];
+    }
+
+    type RemoteSurface = {
+      isSshActive?: () => boolean;
+      sshdAcceptsLogin?: (u: string) => { ok: boolean; reason?: string };
+      recordSshLogin?: (u: string, fromIp: string, fromHost: string, accepted: boolean) => void;
+      getSshHost?: () => {
+        isSshActive?: () => boolean;
+        acceptsLogin?: (u: string) => { ok: boolean; reason?: string };
+        evaluate?: (req: unknown) => { outcome: string };
+      };
+    };
+    const remoteDevice = found.device;
+    const remote = remoteDevice as unknown as RemoteSurface;
+    const sshActive = typeof remote.isSshActive === 'function'
+      ? remote.isSshActive()
+      : remote.getSshHost?.()?.isSshActive?.() ?? false;
+    if (!sshActive) {
+      remote.recordSshLogin?.(user, sourceIp, localHostname, false);
+      return [{ type: 'output', outputLines: [`ssh: connect to host ${host} port ${port}: Connection refused`] }];
+    }
+
+    const gate = remote.sshdAcceptsLogin?.(user) ?? remote.getSshHost?.()?.acceptsLogin?.(user) ?? { ok: true };
+    if (!gate.ok) {
+      remote.recordSshLogin?.(user, sourceIp, localHostname, false);
+      return [{ type: 'output', outputLines: [`${user}@${host}: Permission denied (publickey,password).`] }];
+    }
+
+    let attempts = 0;
+    return [
+      {
+        type: 'password',
+        prompt: `${user}@${host}'s password: `,
+        mask: 'hidden',
+        storeAs: 'cli_ssh_password',
+        validation: (pwd: string) => {
+          const ok = this.verifySshCredentials(remoteDevice, user, host, port, sourceIp, localHostname, pwd);
+          if (ok) return { valid: true };
+          attempts++;
+          remote.recordSshLogin?.(user, sourceIp, localHostname, false);
+          if (attempts >= 3) {
+            return { valid: false, maxRetries: 2, errorMessage: `${user}@${host}: Permission denied (publickey,password).` };
+          }
+          return { valid: false, maxRetries: 2, errorMessage: 'Permission denied, please try again.' };
+        },
+      },
+      {
+        type: 'execute',
+        action: async () => {
+          const child = createSessionForDevice(remoteDevice, `${this.id}>ssh`);
+          if (!child) return;
+          const clientPort = 50_000 + (user.length * 7 % 10_000);
+          const serverIp = this.firstDeviceIp(remoteDevice) ?? host;
+          this.adoptRemoteChild(child, user, host, {
+            SSH_CONNECTION: `${sourceIp} ${clientPort} ${serverIp} ${port}`,
+            SSH_CLIENT: `${sourceIp} ${clientPort} ${port}`,
+          });
+        },
+      },
+    ];
+  }
+
+  /** First configured IPv4 address on `dev`, or null. */
+  private firstDeviceIp(dev: Equipment): string | null {
+    for (const port of dev.getPorts()) {
+      const ip = port.getIPAddress();
+      if (ip) return ip.toString();
+    }
+    return null;
+  }
+
+  /**
+   * Validate <user, password> against whatever credential store the
+   * remote vendor exposes — direct `checkPassword` for Linux/Windows
+   * hosts, or the SSH host's AAA evaluator for routers/switches.
+   */
+  private verifySshCredentials(
+    device: Equipment, user: string, host: string, port: number,
+    sourceIp: string, sourceHostname: string, password: string,
+  ): boolean {
+    const dev = device as unknown as {
+      checkPassword?: (u: string, p: string) => boolean;
+      userMgr?: { checkPassword?: (u: string, p: string) => boolean };
+      getSshHost?: () => { evaluate?: (req: unknown) => { outcome: string } };
+    };
+    if (typeof dev.checkPassword === 'function') return dev.checkPassword(user, password);
+    if (typeof dev.userMgr?.checkPassword === 'function') return dev.userMgr.checkPassword(user, password);
+    if (typeof dev.getSshHost === 'function') {
+      try {
+        const req = SshConnectionRequest.create({
+          requestedUser: user,
+          requestedHost: host,
+          requestedPort: port,
+          sourceIp,
+          sourceHostname,
+          command: null,
+          offeredAuthMethods: ['password'],
+          credentials: { password },
+        });
+        const decision = dev.getSshHost()?.evaluate?.(req);
+        return decision?.outcome === 'accepted';
+      } catch {
+        return false;
+      }
+    }
+    return true;
+  }
 
   /**
    * Hook fired before a command is dispatched to the device. A subclass returns

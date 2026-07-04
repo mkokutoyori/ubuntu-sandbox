@@ -234,13 +234,14 @@ test.describe('SSH – graphical terminal', () => {
 
     // Realistic OpenSSH behaviour over three failed attempts: a
     // "Permission denied, please try again." after each of the first two,
-    // then a single final "Permission denied (password)." — three distinct
-    // messages, none of them duplicated within a given attempt.
+    // then a single final "Permission denied (publickey,password)." —
+    // OpenSSH lists every auth method it tried, not just the last one —
+    // three distinct messages, none of them duplicated within a given attempt.
     const tryAgain = page.locator('[data-testid="terminal-modal"]')
       .getByText('Permission denied, please try again.', { exact: false });
     await expect(tryAgain).toHaveCount(2, { timeout: 8_000 });
     const finalDenied = page.locator('[data-testid="terminal-modal"]')
-      .getByText('Permission denied (password).', { exact: false });
+      .getByText('Permission denied (publickey,password).', { exact: false });
     await expect(finalDenied).toHaveCount(1, { timeout: 8_000 });
   });
 

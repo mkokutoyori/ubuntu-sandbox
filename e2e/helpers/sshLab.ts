@@ -147,7 +147,9 @@ export interface SshTarget {
 }
 
 export const TARGETS: Record<'linux2' | 'win1' | 'ciscoR1' | 'hwR1', SshTarget> = {
-  linux2: { ip: '10.0.0.2', user: 'user', pass: 'admin', prompt: /user@PC\d:~\$/, label: 'Linux' },
+  // Exact hostname (not /PC\d/, which also matches the source PC1 prompt
+  // and would silently pass even if the terminal never switched hosts).
+  linux2: { ip: '10.0.0.2', user: 'user', pass: 'admin', prompt: /user@PC2:~\$/, label: 'Linux' },
   win1: { ip: '10.0.0.4', user: 'carl', pass: 'carl', prompt: /C:\\Users\\carl>/, label: 'Windows' },
   ciscoR1: { ip: '10.0.0.6', user: 'admin', pass: 'Admin@123', prompt: /ciscoR1#/, label: 'Cisco' },
   hwR1: { ip: '10.0.0.8', user: 'admin', pass: 'Admin@123', prompt: /<hwR1>/, label: 'Huawei' },
