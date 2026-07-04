@@ -1,4 +1,5 @@
 import type { Router } from '../../Router';
+import type { CiscoRouter } from '../../CiscoRouter';
 import { CommandTrie } from '../CommandTrie';
 import {
   CiscoSecurityConfig,
@@ -10,6 +11,8 @@ import {
 import type { CiscoShellContext, CiscoShellMode } from './CiscoConfigCommands';
 import { encryptType7, md5Hex } from '@/crypto';
 import { pad2 } from '@/lib/format';
+import { getOrCreateCA } from '../../../pki/PkiCaRegistry';
+import type { RevocationCheckMode } from '../../../pki/CertificateVerifier';
 
 const SECURITY_KEY = Symbol.for('CiscoSecurityConfig');
 
@@ -325,19 +328,39 @@ export function buildSecurityConfigCommands(trie: CommandTrie, ctx: CiscoSecurit
     return '';
   });
 
-  trie.registerGreedy('crypto pki enroll', 'Enroll trustpoint', (args) => {
-    const name = args[0];
-    if (!name) return '% Incomplete command.';
-    const tp = sec().pkiTrustpoints.get(name);
-    if (!tp) return `% Trustpoint ${name} not configured`;
-    return `% Start certificate enrollment for trustpoint ${name}\n% Certificate request sent to Certificate Authority`;
-  });
   trie.registerGreedy('crypto pki authenticate', 'Authenticate trustpoint CA', (args) => {
     const name = args[0];
     if (!name) return '% Incomplete command.';
     const tp = sec().pkiTrustpoints.get(name);
     if (!tp) return `% Trustpoint ${name} not configured`;
+    const ca = getOrCreateCA(tp.enrollmentUrl || `trustpoint:${name}`);
+    tp.caCert = ca.rootCertificate;
     return `% Trustpoint ${name} CA certificate accepted`;
+  });
+  trie.registerGreedy('crypto pki enroll', 'Enroll trustpoint', (args) => {
+    const name = args[0];
+    if (!name) return '% Incomplete command.';
+    const tp = sec().pkiTrustpoints.get(name);
+    if (!tp) return `% Trustpoint ${name} not configured`;
+    if (!tp.caCert) return `% Trustpoint ${name} is not authenticated — run 'crypto pki authenticate ${name}' first`;
+    const ca = getOrCreateCA(tp.enrollmentUrl || `trustpoint:${name}`);
+    const now = Date.now();
+    const subject = tp.subjectName || `CN=${ctx.r()._getHostnameInternal()}`;
+    const issued = ca.issueCertificate({
+      subject, notBefore: now, notAfter: now + 365 * 24 * 3600 * 1000,
+      subjectAltNames: tp.fqdn ? [tp.fqdn] : undefined,
+    });
+    tp.localCert = issued.cert;
+    tp.localKey = issued.privateKey;
+    (ctx.r() as CiscoRouter).installIkeCertAuth({
+      localCert: issued.cert,
+      localKey: issued.privateKey,
+      trustAnchors: [tp.caCert],
+      revocationCheck: mapRevocationCheck(tp.revocationCheck),
+    });
+    return `% Start certificate enrollment for trustpoint ${name}\n`
+      + '% Certificate request sent to Certificate Authority\n'
+      + '% Certificate successfully received and installed';
   });
   trie.registerGreedy('crypto pki import', 'Import certificate', (args) => {
     const name = args[0];
@@ -350,6 +373,14 @@ export function buildSecurityConfigCommands(trie: CommandTrie, ctx: CiscoSecurit
         format: what,
         importedAtMs: Date.now(),
       };
+      if (tp.localCert && tp.localKey && tp.caCert) {
+        (ctx.r() as CiscoRouter).installIkeCertAuth({
+          localCert: tp.localCert,
+          localKey: tp.localKey,
+          trustAnchors: [tp.caCert],
+          revocationCheck: mapRevocationCheck(tp.revocationCheck),
+        });
+      }
       return `% Certificate imported into trustpoint ${name}`;
     }
     return `% Unknown import type "${what}"`;
@@ -382,6 +413,12 @@ export function buildSecurityConfigCommands(trie: CommandTrie, ctx: CiscoSecurit
     ctx.setMode('config-zone-pair' as CiscoShellMode);
     return '';
   });
+}
+
+function mapRevocationCheck(mode: string | undefined): RevocationCheckMode {
+  if (mode === 'ocsp') return 'ocsp';
+  if (mode === 'crl' || mode === 'crl-or-ocsp' || mode === 'crl-then-ocsp') return 'crl';
+  return 'none';
 }
 
 function parseAaaMethod(sec: CiscoSecurityConfig, phase: AaaPhase, args: string[]): string {
@@ -818,7 +855,26 @@ export function buildSecurityShowCommands(trie: CommandTrie, getRouter: () => Ro
   trie.register('show crypto pki certificates', 'PKI certificates', () => {
     const tps = [...sec().pkiTrustpoints.values()];
     if (tps.length === 0) return 'No PKI certificates installed';
-    return tps.map(tp => `Certificate (Trustpoint ${tp.name}):\n  Status: Pending enrollment`).join('\n\n');
+    return tps.map(tp => {
+      if (!tp.localCert) return `Certificate (Trustpoint ${tp.name}):\n  Status: Pending enrollment`;
+      const lines = [
+        `Certificate (Trustpoint ${tp.name}):`,
+        '  Status: Available',
+        `  Certificate Serial Number: ${tp.localCert.serialNumber}`,
+        `  Subject: ${tp.localCert.subject}`,
+        `  Issuer: ${tp.localCert.issuer}`,
+        `  Validity: ${new Date(tp.localCert.notBefore).toISOString()} to ${new Date(tp.localCert.notAfter).toISOString()}`,
+      ];
+      if (tp.caCert) {
+        lines.push(
+          `CA Certificate (Trustpoint ${tp.name}):`,
+          '  Status: Available',
+          `  Certificate Serial Number: ${tp.caCert.serialNumber}`,
+          `  Subject: ${tp.caCert.subject}`,
+        );
+      }
+      return lines.join('\n');
+    }).join('\n\n');
   });
 
   trie.register('show login', 'Display login config', () => {

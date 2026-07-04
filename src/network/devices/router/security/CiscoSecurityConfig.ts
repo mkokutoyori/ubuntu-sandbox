@@ -279,6 +279,11 @@ export interface PkiTrustpoint {
   serialNumber?: 'none' | string;
   autoEnroll?: { percent?: number; regenerate?: boolean };
   source?: 'self-signed' | 'scep' | 'terminal';
+  /** Set by 'crypto pki authenticate': the CA's root cert, this trustpoint's trust anchor. */
+  caCert?: import('../../../pki/X509Certificate').X509Certificate;
+  /** Set by 'crypto pki enroll': this router's own CA-issued cert + private key. */
+  localCert?: import('../../../pki/X509Certificate').X509Certificate;
+  localKey?: import('../../../pki/PkiKeyPair').PkiPrivateKey;
 }
 
 export interface ParameterMapInspect {
