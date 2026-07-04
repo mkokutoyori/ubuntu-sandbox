@@ -175,9 +175,16 @@ export interface ISmbProvider {
 }
 
 export interface IRemotingProvider {
-  /** Resolve a computer name/IP to a remoting-capable target on the LAN.
-   *  Returns null when nothing on the topology answers to that address. */
-  resolveComputer(name: string): IRemoteComputer | null;
+  /**
+   * Resolve a computer name/IP to a remoting-capable target — over the
+   * REAL network (TCP/5985 dial through cables/routing/firewalls, not a
+   * topology-wide lookup). Without `credential`, only reachability and a
+   * listening WinRM service are checked (Test-WSMan's semantics — no
+   * auth). With `credential`, a full connect+negotiate+auth handshake is
+   * required (Invoke-Command/Enter-PSSession's semantics); returns null
+   * on any failure (unreachable, WinRM not listening, or bad credentials).
+   */
+  resolveComputer(name: string, credential?: { username: string; password: string }): IRemoteComputer | null;
   /** `Enable-PSRemoting` on THIS (local) device. */
   enablePSRemoting(): void;
   /** This device's own WinRM enabled state (Test-WSMan with no -ComputerName). */

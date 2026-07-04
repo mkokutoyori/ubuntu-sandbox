@@ -75,6 +75,8 @@ import { SmbShareTable } from './windows/server/smb/SmbShareTable';
 import { SmbSessionTable } from './windows/server/smb/SmbSessionTable';
 import { SmbServerHandler } from './windows/server/smb/SmbServer';
 import { dialSmbShare, type SmbDialResult } from './windows/server/smb/SmbClient';
+import { WinRmServerHandler } from './windows/server/winrm/WinRmServer';
+import { dialWinRm, type WinRmDialResult } from './windows/server/winrm/WinRmClient';
 import { cmdPrint } from './windows/WinPrint';
 import { executeNslookup } from './linux/LinuxDnsService';
 import { SessionWorkQueue } from './host/session/SessionWorkQueue';
@@ -378,6 +380,19 @@ export class WindowsPC extends EndHost implements UserAccountHost {
         this.getSmbServerHandler().register(socket, socket.remoteIp, clientHost);
       },
     });
+
+    // TCP WinRM server on port 5985 — real Invoke-Command/Enter-PSSession/
+    // Test-WSMan reachability (PRD-Windows-Server.md §5 P4). Refuses
+    // (drops) the connection until `winrm quickconfig`/Enable-PSRemoting.
+    this.getTcpStack().listen(5985, {
+      onAccept: (socket) => {
+        if (!this.winrm.enabled) {
+          socket.close();
+          return;
+        }
+        this.getWinRmServerHandler().register(socket);
+      },
+    });
   }
 
   /** Best-effort reverse DNS for the SMB session table's ClientComputerName column. */
@@ -466,6 +481,21 @@ export class WindowsPC extends EndHost implements UserAccountHost {
    */
   dialSmbShare(targetIp: string, shareName: string, username: string, password: string): SmbDialResult {
     return dialSmbShare({ tcpStack: this.getTcpStack(), targetIp, shareName, username, password });
+  }
+
+  /** Build a WinRmServerHandler ready to be hooked onto a TcpConnection (one per accept). */
+  getWinRmServerHandler(): WinRmServerHandler {
+    return new WinRmServerHandler({ userMgr: this.userMgr });
+  }
+
+  /**
+   * Dial WinRM on a remote device over the real network (`Invoke-Command
+   * -ComputerName`, `Enter-PSSession`, `Test-WSMan`). Real TCP handshake —
+   * routing, cables, a stopped/unconfigured WinRM listener, and bad
+   * credentials all behave exactly as they do for any other TCP client.
+   */
+  dialWinRm(targetIp: string, username: string, password: string): WinRmDialResult {
+    return dialWinRm({ tcpStack: this.getTcpStack(), targetIp, username, password });
   }
 
   /** `net session` — inbound SMB sessions from other computers connected to shares on THIS device. */

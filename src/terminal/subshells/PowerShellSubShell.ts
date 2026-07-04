@@ -21,6 +21,8 @@ import { PSParserError } from '@/powershell/parser/PSParserError';
 import { createWindowsPSProviders } from '@/powershell/providers/WindowsPSProviders';
 import { WindowsPC } from '@/network/devices/WindowsPC';
 import type { WindowsShellSession } from '@/network/devices/windows/shell/WindowsShellSession';
+import { findHostByAddress } from '@/network/devices/linux/network/HostLookup';
+import { parseCredentialArg } from '@/powershell/cmdlets/core/RemotingCmdlets';
 
 /**
  * Tokens that bypass the interpreter and go straight to the legacy
@@ -56,6 +58,8 @@ export class PowerShellSubShell implements ISubShell {
    * shared fields (terminal_gap.md §7.x).
    */
   private session: WindowsShellSession | null = null;
+  /** Set for a sub-shell pushed by `Enter-PSSession` — prefixes every prompt with `[computername]: `. */
+  private promptPrefix = '';
 
   private constructor(device: Equipment) {
     this.device = device;
@@ -94,10 +98,11 @@ export class PowerShellSubShell implements ISubShell {
    */
   static create(
     device: Equipment,
-    opts?: { initialCwd?: string; session?: WindowsShellSession | null },
+    opts?: { initialCwd?: string; session?: WindowsShellSession | null; promptPrefix?: string },
   ): { subShell: PowerShellSubShell; banner: string[] } {
     const subShell = new PowerShellSubShell(device);
     subShell.session = opts?.session ?? null;
+    subShell.promptPrefix = opts?.promptPrefix ?? '';
     // Prefer the caller-provided cwd (per-terminal session); fall back to
     // the device's shared cwd so legacy call sites still work.
     const startCwd = opts?.initialCwd ?? opts?.session?.cwd ?? (device as any).getCwd();
@@ -113,7 +118,7 @@ export class PowerShellSubShell implements ISubShell {
   }
 
   getPrompt(): string {
-    return this.psExecutor.getPrompt();
+    return this.promptPrefix + this.psExecutor.getPrompt();
   }
 
   handleKey(e: KeyEvent): boolean {
@@ -161,6 +166,15 @@ export class PowerShellSubShell implements ISubShell {
       } as SubShellResult & { _enterCmd: boolean };
     }
 
+    // "Enter-PSSession" / "etsn" — real network reachability + auth over
+    // TCP/5985 (PRD-Windows-Server.md §5 P4), then the session pushes a
+    // nested PowerShellSubShell bound to the remote device (its prompt
+    // prefixed "[computername]: ", matching real WinRM).
+    const enterPsMatch = /^(?:enter-pssession|etsn)\b(.*)$/i.exec(trimmed);
+    if (enterPsMatch) {
+      return this.tryEnterPSSession(enterPsMatch[1]);
+    }
+
     // cls / clear-host / clear → clear screen
     const lower = trimmed.toLowerCase();
     if (lower === 'cls' || lower === 'clear-host' || lower === 'clear') {
@@ -189,8 +203,56 @@ export class PowerShellSubShell implements ISubShell {
     return {
       output,
       exit: false,
-      prompt: this.psExecutor.getPrompt(),
+      prompt: this.getPrompt(),
     };
+  }
+
+  /**
+   * `Enter-PSSession -ComputerName X [-Credential user[:password]]` — real
+   * TCP/5985 dial + auth (PRD-Windows-Server.md §5 P4). On success returns
+   * a marker the host terminal session uses to push a nested
+   * PowerShellSubShell bound to the remote device.
+   */
+  private tryEnterPSSession(argsStr: string): SubShellResult {
+    const compMatch = /-ComputerName\s+(\S+)/i.exec(argsStr);
+    const bareMatch = !compMatch ? /^\s*(\S+)/.exec(argsStr) : null;
+    const computerName = (compMatch?.[1] ?? bareMatch?.[1] ?? '').replace(/^["']|["']$/g, '');
+    const credMatch = /-Credential\s+(\S+)/i.exec(argsStr);
+
+    if (!computerName) {
+      return { output: ['Enter-PSSession : Cannot bind argument to parameter \'ComputerName\' because it is an empty string.'], exit: false, prompt: this.getPrompt() };
+    }
+    if (!(this.device instanceof WindowsPC)) {
+      return { output: [`Enter-PSSession : Connecting to remote server ${computerName} failed.`], exit: false, prompt: this.getPrompt() };
+    }
+
+    const fail = () => ({
+      output: [
+        `Enter-PSSession : Connecting to remote server ${computerName} failed with the following error message: ` +
+        `WinRM cannot complete the operation. Verify that the specified computer name is valid, that the computer ` +
+        `is accessible over the network, and that a firewall exception for the WinRM service is enabled and allows ` +
+        `access from this computer.`,
+      ],
+      exit: false,
+      prompt: this.getPrompt(),
+    });
+
+    const targetIp = this.device.resolveHostnameSync(computerName);
+    if (!targetIp) return fail();
+    const found = findHostByAddress(targetIp.toString());
+    if (!found || found.poweredOff || found.interfaceDown) return fail();
+
+    const credential = credMatch ? parseCredentialArg(credMatch[1]) : { username: this.device.getUserManager().currentUser, password: '' };
+    const dial = this.device.dialWinRm(targetIp.toString(), credential.username, credential.password);
+    if (!dial.ok) return fail();
+
+    const hostname = (found.device as unknown as { getHostname?: () => string }).getHostname?.() ?? computerName;
+    return {
+      output: [],
+      exit: false,
+      prompt: '',
+      _enterRemotePS: { device: found.device, promptPrefix: `[${hostname}]: ` },
+    } as SubShellResult & { _enterRemotePS: { device: Equipment; promptPrefix: string } };
   }
 
   /**

@@ -3,6 +3,19 @@ import type { CmdletContext } from '../CmdletContext';
 import type { PSValue } from '@/powershell/runtime/PSEnvironment';
 import { psValueToString } from '@/powershell/runtime/PSExpansion';
 
+/**
+ * This simulator has no `PSCredential`/`Get-Credential` object model, so
+ * `-Credential` is accepted as a plain string: `"user:password"`, or bare
+ * `"user"` (password defaults to the username — matching the seeded demo
+ * accounts' "password equals username" convention; a real account with
+ * an actual password must be spelled out as `"user:password"`).
+ */
+export function parseCredentialArg(raw: string): { username: string; password: string } {
+  const idx = raw.indexOf(':');
+  if (idx === -1) return { username: raw, password: raw };
+  return { username: raw.slice(0, idx), password: raw.slice(idx + 1) };
+}
+
 export class EnablePSRemotingCmdlet implements ICmdlet {
   readonly name = 'enable-psremoting';
   readonly displayName = 'Enable-PSRemoting';

@@ -9,6 +9,7 @@ import type { ICmdlet } from '../ICmdlet';
 import type { CmdletContext } from '../CmdletContext';
 import type { PSValue } from '@/powershell/runtime/PSEnvironment';
 import { psValueToString } from '@/powershell/runtime/PSExpansion';
+import { parseCredentialArg } from './RemotingCmdlets';
 
 // ─── New-Object ───────────────────────────────────────────────────────────
 
@@ -334,7 +335,7 @@ export class ImportModuleCmdlet implements ICmdlet {
 
 export class InvokeCommandCmdlet implements ICmdlet {
   readonly name = 'invoke-command';
-  readonly parameters = ['ComputerName', 'ScriptBlock', 'ArgumentList', 'Session', 'AsJob', 'JobName'] as const;
+  readonly parameters = ['ComputerName', 'ScriptBlock', 'ArgumentList', 'Credential', 'Session', 'AsJob', 'JobName'] as const;
   readonly aliases = ['icm'] as const;
 
   execute(ctx: CmdletContext): PSValue {
@@ -351,6 +352,9 @@ export class InvokeCommandCmdlet implements ICmdlet {
     const argumentList = argListRaw === undefined || argListRaw === null
       ? []
       : (Array.isArray(argListRaw) ? argListRaw : [argListRaw]);
+    const credentialRaw = ctx.named['credential'];
+    const credential = credentialRaw !== undefined && credentialRaw !== null
+      ? parseCredentialArg(psValueToString(credentialRaw)) : undefined;
 
     const remoting = ctx.providers.remoting;
     if (!remoting) {
@@ -360,7 +364,7 @@ export class InvokeCommandCmdlet implements ICmdlet {
 
     const results: PSValue[] = [];
     for (const name of computers) {
-      const remote = remoting.resolveComputer(name);
+      const remote = remoting.resolveComputer(name, credential);
       if (!remote || !remote.isRemotingEnabled()) {
         ctx.emitError(
           `Invoke-Command : Connecting to remote server ${name} failed with the following error message: ` +

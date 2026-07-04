@@ -1217,11 +1217,35 @@ class WindowsRemotingAdapter implements IRemotingProvider {
     return this.pc as unknown as { winrm: { enable(): void; enabled: boolean; credSSP: boolean } };
   }
 
-  resolveComputer(name: string): IRemoteComputer | null {
-    const found = findHostByAddress(name);
+  /**
+   * PRD-Windows-Server.md §5 P4: reachability (and, when a credential is
+   * supplied, authentication) is now decided by a real TCP/5985 dial
+   * through this device's own `TcpStack` — genuine routing/cables/
+   * firewalls — rather than a topology-wide `findHostByAddress` lookup.
+   * `findHostByAddress` is still used to obtain the target DEVICE OBJECT
+   * once the real dial has confirmed reachability: this simulator runs
+   * every device in one JS process, so script execution itself still
+   * delegates to the target's own interpreter (`invokeRemote`) — there is
+   * no real wire representation of a `PSScriptBlock` AST to ship, only
+   * the connection-establishment step is real.
+   */
+  resolveComputer(name: string, credential?: { username: string; password: string }): IRemoteComputer | null {
+    const targetIp = this.pc.resolveHostnameSync(name);
+    if (!targetIp) return null;
+    const found = findHostByAddress(targetIp.toString());
     if (!found || found.poweredOff || found.interfaceDown) return null;
     const device = found.device as unknown as Partial<RemotableDevice>;
     if (typeof device.getPowerShellInterpreter !== 'function' || !device.winrm) return null;
+
+    if (credential) {
+      const dial = this.pc.dialWinRm(targetIp.toString(), credential.username, credential.password);
+      if (!dial.ok) return null;
+    } else {
+      const probe = this.pc.getTcpStack().connect(targetIp.toString(), 5985);
+      if (!probe || probe.state !== 'established') return null;
+      probe.close();
+    }
+
     const interp = device.getPowerShellInterpreter();
     const hostname = device.getHostname?.() ?? name;
     const winrm = device.winrm;
