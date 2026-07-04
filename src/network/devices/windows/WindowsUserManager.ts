@@ -418,17 +418,36 @@ export class WindowsUserManager {
     return false;
   }
 
+  /** The instant this account's password stops being valid, or null if `net accounts /maxpwage` is Never/unset. */
+  passwordExpiresAt(name: string): number | null {
+    const user = this.users.get(name.toLowerCase());
+    if (!user) return null;
+    const maxAge = this.policy?.snapshot().maxPasswordAge ?? -1;
+    if (maxAge < 0) return null;
+    return user.passwordLastSet.getTime() + maxAge * 86_400_000;
+  }
+
+  /** Whether the account's password is past `net accounts /maxpwage`. */
+  isPasswordExpired(name: string): boolean {
+    const expiresAt = this.passwordExpiresAt(name);
+    return expiresAt !== null && expiresAt < Date.now();
+  }
+
   /**
    * Verify a password. Publishes a logon event so the security-audit
    * projection journals a 4624 (success) or 4625 (failure) Security entry.
    * Enforces the LSA lockout policy (`net accounts /lockoutthreshold`):
    * once a user's consecutive failures reach the threshold, further
    * attempts are rejected until the lockout duration elapses, exactly the
-   * way `accountLockedOut` (Security 4740) is meant to be triggered.
+   * way `accountLockedOut` (Security 4740) is meant to be triggered. Also
+   * enforces `/maxpwage` — real Windows refuses logon with an expired
+   * password until it's changed (no self-service change-at-logon flow
+   * here, so it's a straightforward denial, same as Cisco/Huawei's
+   * `passwordExpireAt` gate).
    */
   checkPassword(name: string, password: string): boolean {
     const user = this.users.get(name.toLowerCase());
-    if (user && this.isLockedOut(name)) {
+    if (user && (this.isLockedOut(name) || this.isPasswordExpired(name))) {
       this.bus?.publish({
         topic: 'windows.account.logon',
         payload: { deviceId: this.deviceId, account: name, success: false, logonType: 2 },

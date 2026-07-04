@@ -453,15 +453,25 @@ function resolveSshAuthMethod(
  * (no password supplied, or password matches, or the user has no
  * password at all — keep the simulator's existing "trust"  default
  * intact for callers that don't drive sshpass).
+ *
+ * A faillock-locked account is always denied here regardless of whether
+ * a password was offered — an account tripped into lockout must reject
+ * every password-method login attempt (ssh, and the scp/sftp commands
+ * that probe through this same function), not just ones that happen to
+ * pass a password explicitly.
  */
 function verifyOfferedPassword(
   exec: RemoteExecLike | undefined,
   remoteUser: string,
   offeredPassword: string | undefined,
 ): 'ok' | 'wrong-password' {
-  if (offeredPassword === undefined) return 'ok';
   if (!exec) return 'ok';
-  const mgr = exec.userMgr as unknown as { checkPassword?: (u: string, p: string) => boolean };
+  const mgr = exec.userMgr as unknown as {
+    checkPassword?: (u: string, p: string) => boolean;
+    isAccountLockedOut?: (u: string) => boolean;
+  };
+  if (mgr.isAccountLockedOut?.(remoteUser)) return 'wrong-password';
+  if (offeredPassword === undefined) return 'ok';
   if (typeof mgr.checkPassword !== 'function') return 'ok';
   return mgr.checkPassword(remoteUser, offeredPassword) ? 'ok' : 'wrong-password';
 }

@@ -586,10 +586,14 @@ export class LinuxUserManager {
    * publishes a `linux.iam.user.locked-out` event.
    */
   checkPassword(username: string, password: string): boolean {
+    const account = this.users.get(username);
+    // pam_faillock denies every attempt — even the correct password — once
+    // an account has tripped the lockout threshold, until it's reset.
+    if (account && this.isAccountLockedOut(username)) return false;
+
     const stored = this.passwords.get(username);
     const correct = stored !== undefined && stored === password;
 
-    const account = this.users.get(username);
     if (account) {
       if (correct) {
         account.recordLogin();
