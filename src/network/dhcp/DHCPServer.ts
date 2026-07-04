@@ -374,7 +374,7 @@ export class DHCPServer implements IProtocolEngine {
   addStaticBinding(poolName: string, clientMAC: string, ipAddress: string): { ok: boolean; error?: string } {
     const existing = this.staticBindings.get(poolName) || [];
     const already = existing.find(b => b.ipAddress === ipAddress);
-    if (already && already.clientId !== clientMAC) {
+    if (already && already.clientId.toLowerCase() !== clientMAC.toLowerCase()) {
       return { ok: false, error: `IP address ${ipAddress} is already bound to ${already.clientId} in this pool` };
     }
     if (!already) {
@@ -415,7 +415,8 @@ export class DHCPServer implements IProtocolEngine {
   /** Find static binding for a client MAC in a specific pool */
   private findStaticBinding(clientMAC: string, poolName: string): DHCPStaticBinding | null {
     const bindings = this.staticBindings.get(poolName) || [];
-    return bindings.find(b => b.clientId === clientMAC) || null;
+    const mac = clientMAC.toLowerCase();
+    return bindings.find(b => b.clientId.toLowerCase() === mac) || null;
   }
 
   // ─── Address Allocation (DORA Server-Side) ────────────────────────

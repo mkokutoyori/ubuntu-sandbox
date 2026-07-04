@@ -14,6 +14,7 @@ import { IPAddress } from '../../../core/types';
 import { huaweiCipher, huaweiIrreversibleCipher } from '@/crypto';
 import { resolveHuaweiInterfaceName as resolveHuaweiIfName } from '../cli-utils';
 import { runningConfigACL, runningConfigInterfaceACL } from './HuaweiAclCommands';
+import { isInterfacePoolName } from './HuaweiDhcpCommands';
 import {
   displayClock as commonDisplayClock,
   displayCpuUsage as commonDisplayCpuUsage,
@@ -118,10 +119,10 @@ export function displayIpPool(router: Router, poolName: string): string {
 
 export function displayIpPoolAll(router: Router): string {
   const dhcp = router._getDHCPServerInternal();
-  const pools = dhcp.getAllPools();
-  if (pools.size === 0) return 'No DHCP pools configured.';
+  const pools = [...dhcp.getAllPools().values()].filter(p => !isInterfacePoolName(p.name));
+  if (pools.length === 0) return 'No DHCP pools configured.';
   const lines: string[] = [];
-  for (const [, pool] of pools) {
+  for (const pool of pools) {
     lines.push(displayIpPool(router, pool.name));
     lines.push('');
   }
@@ -430,6 +431,7 @@ export function displayCurrentConfig(
   // DHCP pool config
   const dhcp = router._getDHCPServerInternal();
   for (const [, pool] of dhcp.getAllPools()) {
+    if (isInterfacePoolName(pool.name)) continue;
     lines.push(`ip pool ${pool.name}`);
     if (pool.network && pool.mask) lines.push(` network ${pool.network} mask ${pool.mask}`);
     if (pool.defaultRouter) lines.push(` gateway-list ${pool.defaultRouter}`);
@@ -1225,7 +1227,7 @@ export function registerDisplayCommands(
 
   trie.register('display dhcp server statistics', 'Display DHCP server statistics', () => {
     const dhcp = getRouter()._getDHCPServerInternal();
-    const pools = dhcp.getAllPools();
+    const poolCount = [...dhcp.getAllPools().keys()].filter(n => !isInterfacePoolName(n)).length;
     const s = (dhcp as unknown as { getStats?: () => { discovers: number; offers: number; requests: number; acks: number; naks: number; releases: number; informs: number; declines: number } }).getStats?.() ?? {
       discovers: 0, offers: 0, requests: 0, acks: 0, naks: 0, releases: 0, informs: 0, declines: 0,
     };
@@ -1239,7 +1241,7 @@ export function registerDisplayCommands(
       `  Request: ${s.requests}       Ack: ${s.acks}`,
       `  Nak: ${s.naks}           Release: ${s.releases}`,
       `  Inform: ${s.informs}        Decline: ${s.declines}`,
-      `Pool number: ${pools.size}`,
+      `Pool number: ${poolCount}`,
     ].join('\n');
   });
 

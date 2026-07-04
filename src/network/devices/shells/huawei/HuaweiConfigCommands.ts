@@ -16,6 +16,7 @@ import type { Router } from '../../Router';
 import type { CommandTrie } from '../CommandTrie';
 import { resolveHuaweiInterfaceName } from './HuaweiDisplayCommands';
 import { classfulMask as classfulMaskString } from '@/network/core/ip';
+import { interfacePoolName } from './HuaweiDhcpCommands';
 
 // ─── Shell Context Interface ─────────────────────────────────────────
 
@@ -799,8 +800,18 @@ export function buildInterfaceCommands(trie: CommandTrie, ctx: HuaweiShellContex
   trie.register('dhcp select interface', 'Use interface DHCP pool', () => {
     const ifName = ctx.getSelectedInterface();
     if (!ifName) return '';
-    const dhcp = ctx.r()._getDHCPServerInternal() as unknown as { setInterfaceMode?: (i: string, m: string) => void };
-    dhcp.setInterfaceMode?.(ifName, 'interface');
+    const router = ctx.r();
+    const dhcp = router._getDHCPServerInternal();
+    const poolName = interfacePoolName(ifName);
+    if (!dhcp.getPool(poolName)) dhcp.createPool(poolName);
+    const port = router.getPort(ifName);
+    const ip = port?.getIPAddress();
+    const mask = port?.getSubnetMask();
+    if (ip && mask) {
+      dhcp.configurePoolNetwork(poolName, ip.networkAddress(mask).toString(), mask.toString());
+      dhcp.configurePoolRouter(poolName, ip.toString());
+    }
+    (dhcp as unknown as { setInterfaceMode?: (i: string, m: string) => void }).setInterfaceMode?.(ifName, 'interface');
     return '';
   });
 
