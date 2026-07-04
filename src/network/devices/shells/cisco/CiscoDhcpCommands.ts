@@ -107,8 +107,8 @@ export function buildConfigDhcpCommands(trie: CommandTrie, ctx: CiscoShellContex
   trie.registerGreedy('host', 'Manual binding host address', (args) => {
     if (args.length < 1) return '% Incomplete command.';
     if (!pool()) return '% No DHCP pool selected';
-    dhcp().configurePoolManual(pool()!, 'host', args[0], args[1]);
-    return '';
+    const result = dhcp().configurePoolManual(pool()!, 'host', args[0], args[1]);
+    return result.ok ? '' : `% ${result.error}`;
   });
   trie.registerGreedy('hardware-address', 'Manual binding hardware address', (args) => {
     if (args.length < 1) return '% Incomplete command.';

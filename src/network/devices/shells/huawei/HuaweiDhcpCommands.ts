@@ -273,8 +273,9 @@ export function buildDhcpPoolCommands(trie: CommandTrie, ctx: HuaweiShellContext
       if (a === 'ip-address' && args[i + 1]) { ip = args[++i]; }
       else if (a === 'mac-address' && args[i + 1]) { mac = args[++i]; }
     }
-    if (ip && mac) getRouter()._getDHCPServerInternal().addStaticBinding(ctx.getSelectedPool()!, mac, ip);
-    return '';
+    if (!ip || !mac) return '';
+    const result = getRouter()._getDHCPServerInternal().addStaticBinding(ctx.getSelectedPool()!, mac, ip);
+    return result.ok ? '' : `Error: ${result.error}`;
   });
   trie.registerGreedy('undo static-bind', 'Remove a static binding', (args) => {
     if (!ctx.getSelectedPool()) return '';

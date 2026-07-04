@@ -312,16 +312,34 @@ export class DHCPServer implements IProtocolEngine {
     return true;
   }
 
+  /** Pool name already holding `ip` as a static reservation (`host` or `static-bind`), if any other than `excludePool`. */
+  private findReservedIPConflict(ip: string, excludePool: string): string | null {
+    for (const [name, pool] of this.pools) {
+      if (name !== excludePool && pool.manual?.host === ip) return name;
+    }
+    for (const [name, bindings] of this.staticBindings) {
+      if (name === excludePool) continue;
+      if (bindings.some(b => b.ipAddress === ip)) return name;
+    }
+    return null;
+  }
+
   configurePoolManual(
     name: string, field: keyof NonNullable<DHCPPoolConfig['manual']>,
     value: string, mask?: string,
-  ): boolean {
+  ): { ok: boolean; error?: string } {
     const pool = this.pools.get(name);
-    if (!pool) return false;
+    if (!pool) return { ok: false, error: `pool ${name} does not exist` };
+    if (field === 'host') {
+      const conflictPool = this.findReservedIPConflict(value, name);
+      if (conflictPool) {
+        return { ok: false, error: `IP address ${value} is already reserved in DHCP pool ${conflictPool}` };
+      }
+    }
     pool.manual ??= {};
     pool.manual[field] = value;
     if (field === 'host' && mask) pool.manual.hostMask = mask;
-    return true;
+    return { ok: true };
   }
 
   isPoolComplete(name: string): boolean {
@@ -353,15 +371,26 @@ export class DHCPServer implements IProtocolEngine {
   // ─── Static Bindings (Manual Reservations) ─────────────────────────
 
   /** Add a static MAC → IP binding to a pool */
-  addStaticBinding(poolName: string, clientMAC: string, ipAddress: string): void {
+  addStaticBinding(poolName: string, clientMAC: string, ipAddress: string): { ok: boolean; error?: string } {
     const existing = this.staticBindings.get(poolName) || [];
-    existing.push({
-      clientId: clientMAC,
-      ipAddress,
-      poolName,
-      type: 'manual',
-    });
-    this.staticBindings.set(poolName, existing);
+    const already = existing.find(b => b.ipAddress === ipAddress);
+    if (already && already.clientId !== clientMAC) {
+      return { ok: false, error: `IP address ${ipAddress} is already bound to ${already.clientId} in this pool` };
+    }
+    if (!already) {
+      const conflictPool = this.findReservedIPConflict(ipAddress, poolName);
+      if (conflictPool) {
+        return { ok: false, error: `IP address ${ipAddress} is already reserved in DHCP pool ${conflictPool}` };
+      }
+      existing.push({
+        clientId: clientMAC,
+        ipAddress,
+        poolName,
+        type: 'manual',
+      });
+      this.staticBindings.set(poolName, existing);
+    }
+    return { ok: true };
   }
 
   /** Get all static bindings for a pool */
