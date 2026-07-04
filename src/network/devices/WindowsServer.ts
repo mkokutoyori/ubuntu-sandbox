@@ -17,9 +17,15 @@
  */
 
 import { WindowsPC } from './WindowsPC';
+import { RoleManager } from './windows/server/RoleManager';
 
 export class WindowsServer extends WindowsPC {
+  private readonly roleManager: RoleManager = new RoleManager(this.getServiceManager());
+
   constructor(name: string = 'WinServer', x: number = 0, y: number = 0) {
     super('windows-server', name, x, y);
   }
+
+  /** PRD Phase 2 (§5 P2): Server Manager's role/feature model. */
+  getRoleManager(): RoleManager { return this.roleManager; }
 }

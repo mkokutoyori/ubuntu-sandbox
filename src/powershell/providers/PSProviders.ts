@@ -133,6 +133,22 @@ export interface IRemoteComputer {
   isRemotingEnabled(): boolean;
 }
 
+export interface WindowsFeatureInfo {
+  name: string;
+  displayName: string;
+  installState: 'Installed' | 'Available';
+  psModule?: string;
+}
+
+export interface IRoleProvider {
+  listFeatures(): WindowsFeatureInfo[];
+  getFeature(name: string): WindowsFeatureInfo | null;
+  isInstalled(name: string): boolean;
+  installFeature(name: string, opts?: { includeManagementTools?: boolean }):
+    { ok: boolean; message: string; changed: WindowsFeatureInfo[] };
+  uninstallFeature(name: string): { ok: boolean; message: string; changed: WindowsFeatureInfo[] };
+}
+
 export interface IRemotingProvider {
   /** Resolve a computer name/IP to a remoting-capable target on the LAN.
    *  Returns null when nothing on the topology answers to that address. */
@@ -462,4 +478,5 @@ export interface PSProviders {
   readonly disks:          IDiskProvider           | null;
   readonly environment:    IEnvironmentProvider    | null;
   readonly remoting:       IRemotingProvider       | null;
+  readonly roles:          IRoleProvider           | null;
 }

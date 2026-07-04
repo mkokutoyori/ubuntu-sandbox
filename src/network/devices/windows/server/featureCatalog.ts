@@ -1,0 +1,64 @@
+/**
+ * featureCatalog — Windows Server 2022 feature/role definitions consumed
+ * by `RoleManager` (PRD-Windows-Server.md §5 P2, §2.1.2). A deliberate
+ * subset: the 7 roles named in the PRD plus the one RSAT tool feature
+ * needed by `-IncludeManagementTools`, not the full real-world tree
+ * (hundreds of sub-role-services) — see PRD §2.2 non-objectifs.
+ *
+ * `services` are the WindowsServiceManager entries a feature's install
+ * brings up. `FS-FileServer`/`Print-Services` point at services that
+ * already exist as OS built-ins (`LanmanServer`/`Spooler`) — installing
+ * the role only has to ensure they're running, never create them, since
+ * real Windows ships those services on every SKU. The others are
+ * role-only services `RoleManager` creates on install and retires on
+ * uninstall.
+ */
+
+export interface WindowsFeatureDef {
+  /** Canonical `Name` column value (e.g. `FS-FileServer`). */
+  readonly name: string;
+  /** `Display Name` column value (e.g. `File Server`). */
+  readonly displayName: string;
+  /** WindowsServiceManager service names this feature's install brings up. */
+  readonly services: readonly string[];
+  /** PowerShell module the feature unlocks (e.g. `SmbShare`, `DnsServer`). */
+  readonly psModule?: string;
+  /** Companion tool feature installed when `-IncludeManagementTools` is passed. */
+  readonly managementToolsFeature?: string;
+}
+
+export const WINDOWS_FEATURE_CATALOG: readonly WindowsFeatureDef[] = [
+  {
+    name: 'FS-FileServer', displayName: 'File Server',
+    services: ['LanmanServer'], psModule: 'SmbShare',
+  },
+  {
+    name: 'AD-Domain-Services', displayName: 'Active Directory Domain Services',
+    services: ['NTDS', 'Netlogon', 'Kdc'], psModule: 'ActiveDirectory',
+    managementToolsFeature: 'RSAT-AD-PowerShell',
+  },
+  {
+    name: 'DNS', displayName: 'DNS Server',
+    services: ['DNS'], psModule: 'DnsServer',
+  },
+  {
+    name: 'DHCP', displayName: 'DHCP Server',
+    services: ['DHCPServer'], psModule: 'DhcpServer',
+  },
+  {
+    name: 'NPAS', displayName: 'Network Policy and Access Services',
+    services: ['IAS'], psModule: 'NPS',
+  },
+  {
+    name: 'Web-Server', displayName: 'Web Server (IIS)',
+    services: ['W3SVC'], psModule: 'WebAdministration',
+  },
+  {
+    name: 'Print-Services', displayName: 'Print and Document Services',
+    services: ['Spooler'], psModule: 'PrintManagement',
+  },
+  {
+    name: 'RSAT-AD-PowerShell', displayName: 'Active Directory module for Windows PowerShell',
+    services: [], psModule: 'ActiveDirectory',
+  },
+] as const;

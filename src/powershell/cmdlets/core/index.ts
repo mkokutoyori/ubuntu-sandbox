@@ -106,6 +106,9 @@ import {
 import {
   EnablePSRemotingCmdlet, TestWSManCmdlet, GetWSManCredSSPCmdlet,
 } from './RemotingCmdlets';
+import {
+  GetWindowsFeatureCmdlet, InstallWindowsFeatureCmdlet, UninstallWindowsFeatureCmdlet,
+} from './ServerManagerCmdlets';
 
 /**
  * Register all core (provider-independent) cmdlets into the given registry.
@@ -319,6 +322,11 @@ export function registerCoreCmdlets(registry: CmdletRegistry): void {
   registry.register(new EnablePSRemotingCmdlet());
   registry.register(new TestWSManCmdlet());
   registry.register(new GetWSManCredSSPCmdlet());
+
+  // ── Server Manager roles/features (provider-backed, Server-only) ─────────
+  registry.register(new GetWindowsFeatureCmdlet());
+  registry.register(new InstallWindowsFeatureCmdlet());
+  registry.register(new UninstallWindowsFeatureCmdlet());
 
   // ── Native CLI shims (sync subset) ────────────────────────────────────────
   // ping / tracert stay in the legacy executor — they're async and the

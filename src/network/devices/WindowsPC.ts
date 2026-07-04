@@ -1838,6 +1838,15 @@ export class WindowsPC extends EndHost implements UserAccountHost {
   /** Get the service manager (for PowerShellExecutor and other integrations) */
   getServiceManager(): WindowsServiceManager { return this.svcMgr; }
 
+  /**
+   * Server Manager's role/feature model — null on a client (the
+   * ServerManager module doesn't ship on Windows client), overridden by
+   * `WindowsServer`. This null default is what makes
+   * `Get/Install-WindowsFeature` fall through to "not recognized" on a
+   * `windows-pc`, matching real Windows.
+   */
+  getRoleManager(): import('./windows/server/RoleManager').RoleManager | null { return null; }
+
   /** Get the process manager (for PowerShellExecutor and other integrations) */
   getProcessManager(): WindowsProcessManager { return this.procMgr; }
 

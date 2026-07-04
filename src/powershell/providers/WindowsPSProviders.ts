@@ -46,6 +46,7 @@ import type {
   INetworkProvider, IProcessProvider, IUserProvider, IEventLogProvider,
   IVpnProvider, IScheduledTaskProvider, IDiskProvider, IEnvironmentProvider,
   IRemotingProvider, IRemoteComputer,
+  IRoleProvider, WindowsFeatureInfo,
   DirEntry, ServiceInfo, ProcessInfo, UserInfo, GroupInfo,
   NetworkAdapterInfo, IPAddressInfo, RouteInfo, EventLogEntryInfo,
   VpnConnectionInfo, ScheduledTaskInfo, DiskInfo, VolumeInfo,
@@ -233,6 +234,25 @@ class WindowsServiceAdapter implements IServiceProvider {
   }
   unregisterInstanceWatcher(id: string): void {
     this.mgr().unregisterInstanceWatcher(id);
+  }
+}
+
+// ── Role adapter (Server Manager — WindowsServer only) ─────────────────────
+
+class WindowsRoleAdapter implements IRoleProvider {
+  constructor(private readonly pc: WindowsPC) {}
+
+  private mgr() { return this.pc.getRoleManager()!; }
+  private isAdmin(): boolean { return this.pc.getUserManager().isCurrentUserAdmin(); }
+
+  listFeatures(): WindowsFeatureInfo[] { return this.mgr().listFeatures(); }
+  getFeature(name: string): WindowsFeatureInfo | null { return this.mgr().getFeature(name); }
+  isInstalled(name: string): boolean { return this.mgr().isInstalled(name); }
+  installFeature(name: string, opts?: { includeManagementTools?: boolean }) {
+    return this.mgr().install(name, opts, this.isAdmin());
+  }
+  uninstallFeature(name: string) {
+    return this.mgr().uninstall(name, this.isAdmin());
   }
 }
 
@@ -1214,5 +1234,6 @@ export function createWindowsPSProviders(
     disks:          new WindowsDiskAdapter(pc),
     environment:    new WindowsEnvironmentAdapter(pc),
     remoting:       new WindowsRemotingAdapter(pc),
+    roles:          pc.getRoleManager() ? new WindowsRoleAdapter(pc) : null,
   };
 }
