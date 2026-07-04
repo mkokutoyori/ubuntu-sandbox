@@ -42,6 +42,7 @@ import { RadiusServerAgent } from '../radius/RadiusServerAgent';
 import { RadiusAccountingClient } from '../radius/RadiusAccountingClient';
 import { CoaListener, type CoaSessionHandler } from '../radius/CoaListener';
 import { CoaClient } from '../radius/CoaClient';
+import { RadiusTcpClient, RadiusTcpServer } from '../radius/RadiusTcpTransport';
 import { UDP_PORT_RADIUS_AUTH, UDP_PORT_RADIUS_ACCT, UDP_PORT_RADIUS_COA } from '../radius/types';
 import { GreAgent } from '../gre/GreAgent';
 import { IP_PROTO_GRE } from '../gre/types';
@@ -126,6 +127,8 @@ export class CiscoRouter extends Router {
   private readonly radiusAccountingClient: RadiusAccountingClient;
   private readonly coaListener: CoaListener;
   private readonly coaClient: CoaClient;
+  private readonly radiusTcpClient: RadiusTcpClient;
+  private readonly radiusTcpServer: RadiusTcpServer;
   private readonly greAgent: GreAgent;
   private readonly snmpAgent: SnmpAgent;
   private readonly netflowAgent: NetFlowAgent;
@@ -160,6 +163,8 @@ export class CiscoRouter extends Router {
     this.coaListener = new CoaListener(hostBase, () => this.getBus());
     this.coaListener.setSessionHandler(this.defaultCoaSessionHandler());
     this.coaClient = new CoaClient(hostBase, () => this.getBus());
+    this.radiusTcpClient = new RadiusTcpClient(hostBase, () => this.getBus(), () => this.tcpv2);
+    this.radiusTcpServer = new RadiusTcpServer(hostBase, () => this.getBus(), () => this.tcpv2);
     this.greAgent = new GreAgent(hostBase, () => this.getBus());
     this.snmpAgent = new SnmpAgent({
       ...hostBase,
@@ -175,6 +180,7 @@ export class CiscoRouter extends Router {
       this.ntpAgent, this.glbpAgent, this.bfdAgent, this.igmpAgent,
       this.pimAgent, this.syslogAgent, this.radiusClient, this.radiusServer,
       this.radiusAccountingClient, this.coaListener, this.coaClient,
+      this.radiusTcpClient, this.radiusTcpServer,
       this.greAgent, this.snmpAgent, this.netflowAgent, this.tacacsClient,
       this.tacacsServer, this.vxlanAgent,
     );
@@ -346,6 +352,8 @@ export class CiscoRouter extends Router {
   getRadiusAccountingClient(): RadiusAccountingClient { return this.radiusAccountingClient; }
   getCoaListener(): CoaListener { return this.coaListener; }
   getCoaClient(): CoaClient { return this.coaClient; }
+  getRadiusTcpClient(): RadiusTcpClient { return this.radiusTcpClient; }
+  getRadiusTcpServer(): RadiusTcpServer { return this.radiusTcpServer; }
   getGreAgent(): GreAgent { return this.greAgent; }
   getSnmpAgent(): SnmpAgent { return this.snmpAgent; }
   override getNetFlowAgent(): NetFlowAgent { return this.netflowAgent; }

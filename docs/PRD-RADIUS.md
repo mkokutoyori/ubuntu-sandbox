@@ -174,7 +174,15 @@ partiel. Le moteur doit être complété **sans casser** les suites existantes
 
 - **EAP-TLS / PEAP / EAP-TTLS** : nécessitent une infrastructure de certificats
   côté supplicant/serveur — phase ultérieure, une fois EAP-MD5 en place.
-- **RADIUS/TCP et RadSec (TLS)** (RFC 6613/6614) — valeur pédagogique faible ici.
+- ~~**RADIUS/TCP et RadSec (TLS)** (RFC 6613/6614) — valeur pédagogique faible ici.~~
+  🟡 **RADIUS/TCP implémenté** (`RadiusTcpClient`/`RadiusTcpServer` dans
+  `RadiusTcpTransport.ts`, câblés sur Cisco/Huawei/Linux Server via le
+  `TcpStack` déjà utilisé par TACACS+) — scope volontairement réduit au PAP,
+  une requête par connexion (RFC 6613 §2.4 : TCP gère déjà la fiabilité, pas
+  de retransmission côté RADIUS), sans les rondes CHAP/EAP/challenge/
+  accounting de la machinerie UDP ; **RadSec (TLS, RFC 6614) reste hors
+  périmètre** — coût disproportionné pour la valeur pédagogique. Voir
+  `radius-tcp.test.ts`.
 - **Proxy/roaming RADIUS** (RFC 2607) : chaînes de proxys inter-domaines.
 - ~~**Attributs IPv6** (Framed-IPv6-*, RFC 3162) — suivront le chantier IPv6 global.~~
   ✅ **Implémenté** : NAS-IPv6-Address (95), Framed-Interface-Id (96),

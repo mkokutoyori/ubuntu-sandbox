@@ -62,6 +62,13 @@ export interface RadiusCoaCompletedPayload extends RadiusDeviceRef {
   errorCause: string | null;
 }
 
+/** RFC 6613 — RADIUS/TCP. Fired by both `RadiusTcpClient` (NAS) and `RadiusTcpServer` on each PAP round. */
+export interface RadiusTcpCompletedPayload extends RadiusDeviceRef {
+  serverIp: string;
+  username: string;
+  result: 'accept' | 'reject' | 'timeout';
+}
+
 export type RadiusDomainEvent =
   | { topic: 'radius.packet.sent'; payload: RadiusPacketSentPayload }
   | { topic: 'radius.packet.received'; payload: RadiusPacketReceivedPayload }
@@ -71,4 +78,5 @@ export type RadiusDomainEvent =
   | { topic: 'radius.server.dead'; payload: RadiusServerHealthPayload }
   | { topic: 'radius.server.alive'; payload: RadiusServerHealthPayload }
   | { topic: 'radius.coa.received'; payload: RadiusCoaReceivedPayload }
-  | { topic: 'radius.coa.completed'; payload: RadiusCoaCompletedPayload };
+  | { topic: 'radius.coa.completed'; payload: RadiusCoaCompletedPayload }
+  | { topic: 'radius.tcp.completed'; payload: RadiusTcpCompletedPayload };

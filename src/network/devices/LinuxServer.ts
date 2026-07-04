@@ -17,11 +17,14 @@ import { handleLsnrctl, handleTnsping, handleAdrci, handleExpdp, handleImpdp } f
 import { ReactiveRmanSubShell } from '@/terminal/subshells/rman';
 import type { HostCapableDevice } from '@/network';
 import { RadiusServerAgent } from '../radius/RadiusServerAgent';
+import { RadiusTcpServer } from '../radius/RadiusTcpTransport';
 import { UDP_PORT_RADIUS_AUTH, UDP_PORT_RADIUS_ACCT } from '../radius/types';
 
 export class LinuxServer extends LinuxMachine {
   /** freeradius-equivalent: a Linux Server can host the RADIUS protocol server (PRD-RADIUS P8) — not just Cisco/Huawei routers. */
   private readonly radiusServer: RadiusServerAgent;
+  /** RFC 6613 RADIUS/TCP counterpart, hosted the same way. */
+  private readonly radiusTcpServer: RadiusTcpServer;
 
   constructor(
     type: DeviceType = 'linux-server',
@@ -53,6 +56,8 @@ export class LinuxServer extends LinuxMachine {
     this.udpBind(UDP_PORT_RADIUS_ACCT, (dgram) => {
       if (dgram.sourceIP instanceof IPAddress) this.radiusServer.handleAcctUdp(dgram.inPort, dgram.sourceIP, dgram.udp);
     }, 'radiusd');
+    this.radiusTcpServer = new RadiusTcpServer(radiusHost, () => this.getBus(), () => this.getTcpStack());
+    this.radiusTcpServer.start();
 
     // Wire Oracle bootstrap so `sqlplus` from the bash interpreter
     // actually boots the instance (pmon/smon/lgwr appear in ps -ef).
@@ -148,6 +153,7 @@ export class LinuxServer extends LinuxMachine {
   }
 
   getRadiusServer(): RadiusServerAgent { return this.radiusServer; }
+  getRadiusTcpServer(): RadiusTcpServer { return this.radiusTcpServer; }
 
   /** Expose a background process in `ps` output (used by Oracle DBMS). */
   registerProcess(pid: number, user: string, command: string): void {
