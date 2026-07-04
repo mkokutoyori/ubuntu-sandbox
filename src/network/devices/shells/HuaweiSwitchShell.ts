@@ -649,6 +649,24 @@ export class HuaweiSwitchShell implements ISwitchShell {
       this.swRef._getDHCPServerInternal().disable();
       return '';
     });
+    this.systemTrie.register('dhcp snooping enable', 'Enable DHCP snooping globally', () => {
+      this.swRef.getSecurityService().configureDhcpSnooping(['snooping', 'enable']);
+      this.swRef._getDHCPSnoopingConfig().enabled = true;
+      return '';
+    });
+    this.systemTrie.registerGreedy('dhcp snooping enable vlan', 'Enable DHCP snooping on VLANs', (args) => {
+      this.swRef.getSecurityService().configureDhcpSnooping(['snooping', 'enable', 'vlan', ...args]);
+      const cfg = this.swRef._getDHCPSnoopingConfig();
+      for (const a of args) {
+        const n = parseInt(a, 10);
+        if (!isNaN(n)) cfg.vlans.add(n);
+      }
+      return '';
+    });
+    this.systemTrie.register('dhcp snooping check dhcp-chaddr enable', 'Enable DHCP snooping CHADDR verification', () => {
+      this.swRef._getDHCPSnoopingConfig().verifyMac = true;
+      return '';
+    });
     this.systemTrie.registerGreedy('dhcp', 'DHCP snooping configuration', (args) => {
       this.swRef.getSecurityService().configureDhcpSnooping(args);
       return '';
@@ -888,6 +906,35 @@ export class HuaweiSwitchShell implements ISwitchShell {
         return '';
       });
     }
+    // The three commands below shadow the generic `dhcp snooping ...`
+    // catch-all above (CommandTrie prefers the more specific children) so
+    // they can additionally reach the switch's real enforcement config —
+    // trust/rate-limit/verify-mac only take effect from there.
+    this.interfaceTrie.register('dhcp snooping trusted', 'Mark interface as DHCP snooping trusted', () => {
+      if (!this.selectedInterface || !this.swRef) return 'Error: Incomplete command.';
+      const list = this.ifCfg.get(this.selectedInterface) ?? [];
+      list.push('dhcp snooping trusted');
+      this.ifCfg.set(this.selectedInterface, list);
+      this.swRef._getDHCPSnoopingConfig().trustedPorts.add(this.selectedInterface);
+      return '';
+    });
+    this.interfaceTrie.register('dhcp snooping check dhcp-rate enable', 'Enable DHCP snooping rate check', () => {
+      if (!this.selectedInterface) return 'Error: Incomplete command.';
+      const list = this.ifCfg.get(this.selectedInterface) ?? [];
+      list.push('dhcp snooping check dhcp-rate enable');
+      this.ifCfg.set(this.selectedInterface, list);
+      return '';
+    });
+    this.interfaceTrie.registerGreedy('dhcp snooping check dhcp-rate', 'Set DHCP snooping rate limit (pps)', (args) => {
+      if (!this.selectedInterface || !this.swRef) return 'Error: Incomplete command.';
+      const rate = parseInt(args[0] ?? '', 10);
+      if (isNaN(rate) || rate < 1) return 'Error: Wrong parameter found at \'^\' position.';
+      const list = this.ifCfg.get(this.selectedInterface) ?? [];
+      list.push(`dhcp snooping check dhcp-rate ${rate}`);
+      this.ifCfg.set(this.selectedInterface, list);
+      this.swRef._getDHCPSnoopingConfig().rateLimits.set(this.selectedInterface, rate);
+      return '';
+    });
     // voice-vlan / qinq — recognised L2 features (recorded for display).
     for (const kw of ['voice-vlan', 'qinq']) {
       this.interfaceTrie.registerGreedy(kw, `Interface ${kw} configuration`, (args) => {
@@ -1519,6 +1566,11 @@ export class HuaweiSwitchShell implements ISwitchShell {
 
     // Shared management `display` commands (DRY).
     registerHuaweiCommonSecurityDisplay(trie, () => this.localUsers);
+
+    // Real DHCP snooping binding table — shadows the generic hardcoded
+    // `display dhcp ...` catch-all above with the switch's actual bindings.
+    trie.register('display dhcp snooping user-bind all', 'Display DHCP snooping binding table', () =>
+      this.swRef ? this.displayDhcpSnoopingUserBind(this.swRef) : 'Error: Incomplete command.');
 
     // display acl {all | <number|name>}
     trie.registerGreedy('display acl', 'Display ACL configuration', (args) => {
@@ -2226,6 +2278,23 @@ export class HuaweiSwitchShell implements ISwitchShell {
 
   private displayMacAgingTime(sw: Switch): string {
     return `Aging time: ${sw.getMACAgingTime()} seconds`;
+  }
+
+  private displayDhcpSnoopingUserBind(sw: Switch): string {
+    const bindings = sw._getSnoopingBindings();
+    const lines = [
+      ' MAC Address    IP Address       Lease            Type       VLAN  Interface',
+      '----------------------------------------------------------------------------',
+    ];
+    for (const b of bindings) {
+      lines.push(
+        ` ${b.macAddress.padEnd(15)}${b.ipAddress.padEnd(17)}${String(b.lease).padEnd(17)}${b.type.padEnd(11)}${String(b.vlan).padEnd(6)}${b.port}`,
+      );
+    }
+    lines.push('----------------------------------------------------------------------------');
+    lines.push(`Print count: ${bindings.length}`);
+    lines.push(`Total count: ${bindings.length}`);
+    return lines.join('\n');
   }
 
   private displayCurrentConfig(sw: Switch): string {
