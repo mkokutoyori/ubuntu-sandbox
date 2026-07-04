@@ -70,6 +70,7 @@ export const CISCO_IOS_PROMPTS: PromptMap = {
   'config-ipv6-nacl':          '{host}(config-ipv6-nacl)#',
   'config-isakmp':             '{host}(config-isakmp)#',
   'config-isakmp-profile':     '{host}(conf-isa-prof)#',
+  'config-keyring':            '{host}(config-keyring)#',
   'config-tfset':              '{host}(cfg-crypto-trans)#',
   'config-crypto-map':         '{host}(config-crypto-map)#',
   'config-ipsec-profile':      '{host}(ipsec-profile)#',

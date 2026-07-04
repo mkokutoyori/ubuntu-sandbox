@@ -79,6 +79,26 @@ export interface CryptoMapEntry {
   pfsGroup?: string;                 // e.g. 'group14'
   saLifetimeSeconds?: number;
   ikev2ProfileName?: string;
+  isakmpProfileName?: string;
+}
+
+// ─── IKEv1 keyring + ISAKMP profile (crypto keyring / crypto isakmp profile) ──
+
+/** `crypto keyring NAME` — peer address (or '0.0.0.0' wildcard) → pre-shared key. */
+export interface ISAKMPKeyring {
+  name: string;
+  peers: Map<string, string>;
+}
+
+/** `crypto isakmp profile NAME` — binds a keyring + peer-identity match criteria. */
+export interface ISAKMPProfile {
+  name: string;
+  keyring?: string;
+  matchAddress?: string;
+  matchAddressMask?: string;
+  matchHostname?: string;
+  selfIdentity?: string;
+  vrf?: string;
 }
 
 export interface DynamicCryptoMapEntry {

@@ -26,7 +26,7 @@ export type CiscoShellMode =
   | 'config-dhcp-pool-class'
   // IPSec modes
   | 'config-isakmp' | 'config-isakmp-profile' | 'config-tfset' | 'config-crypto-map'
-  | 'config-ipsec-profile'
+  | 'config-ipsec-profile' | 'config-keyring'
   | 'config-ikev2-proposal' | 'config-ikev2-policy'
   | 'config-ikev2-keyring' | 'config-ikev2-keyring-peer' | 'config-ikev2-profile'
   | 'config-time-range' | 'config-cmap' | 'config-pmap' | 'config-pmap-c'
@@ -59,6 +59,8 @@ export interface CiscoShellContext {
   setSelectedISAKMPPriority(p: number | null): void;
   getSelectedISAKMPProfile(): string | null;
   setSelectedISAKMPProfile(p: string | null): void;
+  getSelectedISAKMPKeyring(): string | null;
+  setSelectedISAKMPKeyring(k: string | null): void;
   getSelectedTransformSet(): string | null;
   setSelectedTransformSet(ts: string | null): void;
   getSelectedCryptoMap(): string | null;

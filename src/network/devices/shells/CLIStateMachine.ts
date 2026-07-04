@@ -122,6 +122,7 @@ export const CISCO_IOS_MODES: ModeHierarchy = {
   'config-ipv6-nacl':          { parent: 'config', clearOnExit: ['selectedACL', 'selectedACLType'] },
   'config-isakmp':             { parent: 'config', clearOnExit: ['selectedISAKMPPriority'] },
   'config-isakmp-profile':     { parent: 'config', clearOnExit: ['selectedISAKMPProfile'] },
+  'config-keyring':            { parent: 'config', clearOnExit: ['selectedISAKMPKeyring'] },
   'config-tfset':              { parent: 'config', clearOnExit: ['selectedTransformSet'] },
   'config-crypto-map':         { parent: 'config', clearOnExit: ['selectedCryptoMap', 'selectedCryptoMapSeq'] },
   'config-ipsec-profile':      { parent: 'config', clearOnExit: ['selectedIPSecProfile'] },

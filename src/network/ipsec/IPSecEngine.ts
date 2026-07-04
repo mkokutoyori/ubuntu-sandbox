@@ -19,6 +19,7 @@ import {
 import {
   ISAKMPPolicy, TransformSet, CryptoMapEntry, CryptoMap, DynamicCryptoMap,
   DynamicCryptoMapEntry, IKEv2Proposal, IKEv2Policy, IKEv2Keyring, IKEv2Profile,
+  ISAKMPKeyring, ISAKMPProfile,
   IPSecProfile, TunnelProtection,
   IKE_SA, IKEv2_SA, IPSec_SA, DPDConfig, IsakmpDpdMessage,
   SecurityPolicy, SPDAction, SPDDirection,
@@ -532,6 +533,10 @@ export class IPSecEngine implements IProtocolEngine {
   private debugIsakmp: boolean = false;
   private debugIpsec: boolean = false;
   private debugIkev2: boolean = false;
+  private isakmpKeyrings: Map<string, ISAKMPKeyring> = new Map();
+  private isakmpProfiles: Map<string, ISAKMPProfile> = new Map();
+  private isakmpIdentity: string | null = null;
+  private invalidSpiRecovery: boolean = false;
 
   // ── IKEv2 Configuration ──────────────────────────────────────────
   private ikev2Proposals: Map<string, IKEv2Proposal> = new Map();
@@ -946,6 +951,79 @@ export class IPSecEngine implements IProtocolEngine {
 
   addPreSharedKey(address: string, key: string): void {
     this.preSharedKeys.set(address, key);
+  }
+
+  getOrCreateISAKMPKeyring(name: string): ISAKMPKeyring {
+    if (!this.isakmpKeyrings.has(name)) {
+      this.isakmpKeyrings.set(name, { name, peers: new Map() });
+    }
+    return this.isakmpKeyrings.get(name)!;
+  }
+
+  removeISAKMPKeyring(name: string): void {
+    this.isakmpKeyrings.delete(name);
+  }
+
+  getOrCreateISAKMPProfile(name: string): ISAKMPProfile {
+    if (!this.isakmpProfiles.has(name)) {
+      this.isakmpProfiles.set(name, { name });
+    }
+    return this.isakmpProfiles.get(name)!;
+  }
+
+  removeISAKMPProfile(name: string): void {
+    this.isakmpProfiles.delete(name);
+  }
+
+  setIsakmpIdentity(identity: string): void {
+    this.isakmpIdentity = identity;
+  }
+
+  setInvalidSpiRecovery(enabled: boolean): void {
+    this.invalidSpiRecovery = enabled;
+  }
+
+  /**
+   * Resolve the real PSK for an IKEv1 exchange with `candidateIPs` (tried in
+   * order). When the crypto-map entry references an ISAKMP profile with a
+   * keyring, and the profile's identity match (if any) is satisfied by one
+   * of the candidates, that keyring's PSK takes precedence — mirroring real
+   * IOS's profile-scoped keyring resolution. Falls back to the flat
+   * `crypto isakmp key ... address ...` table otherwise.
+   */
+  private findISAKMPPSK(entry: CryptoMapEntry | null, ...candidateIPs: string[]): string {
+    const profile = entry?.isakmpProfileName ? this.isakmpProfiles.get(entry.isakmpProfileName) : undefined;
+    if (profile?.keyring) {
+      const identityOk = !profile.matchAddress || candidateIPs.includes(profile.matchAddress);
+      if (identityOk) {
+        const kr = this.isakmpKeyrings.get(profile.keyring);
+        if (kr) {
+          for (const ip of candidateIPs) {
+            const key = kr.peers.get(ip);
+            if (key) return key;
+          }
+          const wildcard = kr.peers.get('0.0.0.0');
+          if (wildcard) return wildcard;
+        }
+      }
+    }
+    for (const ip of candidateIPs) {
+      const key = this.preSharedKeys.get(ip);
+      if (key) return key;
+    }
+    return this.preSharedKeys.get('0.0.0.0') || '';
+  }
+
+  /**
+   * `self-identity address|fqdn NAME|user-fqdn NAME` (RFC 2408 §3.8): 'address'
+   * is the default (use the apparent source IP, i.e. no override — returns
+   * null), 'fqdn'/'user-fqdn' present a named identity instead.
+   */
+  private resolveSelfIdentity(raw: string | undefined): string | null {
+    if (!raw) return null;
+    const parts = raw.trim().split(/\s+/);
+    if ((parts[0] === 'fqdn' || parts[0] === 'user-fqdn') && parts[1]) return parts[1];
+    return null;
   }
 
   setNATKeepalive(interval: number): void {
@@ -2919,12 +2997,18 @@ export class IPSecEngine implements IProtocolEngine {
     }
     const myPSK = version === 2
       ? (this.findIKEv2PSK(peerIP) ?? '')
-      : (this.preSharedKeys.get(peerIP) || this.preSharedKeys.get('0.0.0.0') || '');
+      : this.findISAKMPPSK(entry, peerIP);
+    const profile = version === 1 && entry.isakmpProfileName
+      ? this.isakmpProfiles.get(entry.isakmpProfileName) : undefined;
+    const identity = version === 1
+      ? (this.resolveSelfIdentity(profile?.selfIdentity)
+        ?? (this.isakmpIdentity === 'hostname' ? this.router._getHostnameInternal() : apparentSrcIP))
+      : apparentSrcIP;
     const spiInitIn = randomSPI();
     const offer: IkeOfferMessage = {
       type: 'ike', step: 'offer', version,
       exchangeMode: this.aggressiveMode ? 'aggressive' : 'main',
-      initiatorSpi: spiHex(randomSPI()), identity: apparentSrcIP,
+      initiatorSpi: spiHex(randomSPI()), identity,
       destination: peerIP,
       pskProof: this.ikePskProof(myPSK),
       policies, ikev2Proposals, transforms, pfsGroup: entry.pfsGroup,
@@ -3037,18 +3121,18 @@ export class IPSecEngine implements IProtocolEngine {
         return;
       }
     }
+    const peerEntry = this.findEntryForPeer(offer.identity, null) || this.findEntryForPeer(srcIp, null);
     const myPSK = usingCert
       ? 'cert-auth-key'
       : (isV2
         ? (this.findIKEv2PSK(offer.identity) ?? this.findIKEv2PSK(srcIp) ?? '')
-        : (this.preSharedKeys.get(offer.identity) || this.preSharedKeys.get(srcIp) || this.preSharedKeys.get('0.0.0.0') || ''));
+        : this.findISAKMPPSK(peerEntry, offer.identity, srcIp));
     if (!usingCert && (!myPSK || !offer.pskProof || this.ikePskProof(myPSK) !== offer.pskProof)) {
       this.rejectIke(srcIp, 'PSK mismatch');
       if (!isV2) this.createFailedIKESA(srcIp, '', 'PSK mismatch');
       return;
     }
 
-    const peerEntry = this.findEntryForPeer(offer.identity, null) || this.findEntryForPeer(srcIp, null);
     const myTSets = peerEntry
       ? peerEntry.transformSets.map((n) => this.transformSets.get(n)).filter(Boolean) as TransformSet[]
       : [...this.transformSets.values()];
@@ -3156,14 +3240,14 @@ export class IPSecEngine implements IProtocolEngine {
     } else {
       const myPSK = isV2
         ? (this.findIKEv2PSK(srcIp) ?? this.findIKEv2PSK(pending.apparentSrcIP) ?? '')
-        : (this.preSharedKeys.get(srcIp) || this.preSharedKeys.get(pending.apparentSrcIP) || this.preSharedKeys.get('0.0.0.0') || '');
+        : this.findISAKMPPSK(pending.entry, srcIp, pending.apparentSrcIP);
       if (!myPSK || this.ikePskProof(myPSK) !== accept.pskProof) {
         this.createFailedIKESA(srcIp, pending.egressIface, 'PSK mismatch'); return;
       }
     }
     const myPSK = isV2
       ? (this.findIKEv2PSK(srcIp) ?? this.findIKEv2PSK(pending.apparentSrcIP) ?? 'cert-auth-key')
-      : (this.preSharedKeys.get(srcIp) || this.preSharedKeys.get(pending.apparentSrcIP) || this.preSharedKeys.get('0.0.0.0') || 'cert-auth-key');
+      : (this.findISAKMPPSK(pending.entry, srcIp, pending.apparentSrcIP) || 'cert-auth-key');
     const spiInitIn = pending.spiInitIn;
     const transforms = accept.chosenTransform.transforms;
     const loSpi = Math.min(spiInitIn, accept.ipsecSpiIn);

@@ -93,7 +93,7 @@ import {
   registerOSPFInterfaceCommands, registerOSPFShowCommands,
 } from './cisco/CiscoOspfCommands';
 import {
-  buildIPSecGlobalCommands, buildISAKMPPolicyCommands, buildISAKMPProfileCommands,
+  buildIPSecGlobalCommands, buildISAKMPPolicyCommands, buildISAKMPProfileCommands, buildISAKMPKeyringCommands,
   buildTransformSetCommands, buildCryptoMapEntryCommands,
   buildIPSecProfileCommands, buildIPSecIfCommands,
   buildIPSecPrivilegedCommands,
@@ -154,6 +154,7 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
   // IPSec selection state
   private selectedISAKMPPriority: number | null = null;
   private selectedISAKMPProfile: string | null = null;
+  private selectedISAKMPKeyring: string | null = null;
   private selectedTransformSet: string | null = null;
   private selectedCryptoMap: string | null = null;
   private selectedCryptoMapSeq: number | null = null;
@@ -187,6 +188,7 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
   // IPSec sub-mode tries
   private configIsakmpTrie = new CommandTrie();
   private configIsakmpProfileTrie = new CommandTrie();
+  private configKeyringTrie = new CommandTrie();
   private configTfsetTrie = new CommandTrie();
   private configCryptoMapTrie = new CommandTrie();
   private configIpsecProfileTrie = new CommandTrie();
@@ -319,6 +321,8 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
   setSelectedISAKMPPriority(p: number | null): void { this.selectedISAKMPPriority = p; }
   getSelectedISAKMPProfile(): string | null { return this.selectedISAKMPProfile; }
   setSelectedISAKMPProfile(p: string | null): void { this.selectedISAKMPProfile = p; }
+  getSelectedISAKMPKeyring(): string | null { return this.selectedISAKMPKeyring; }
+  setSelectedISAKMPKeyring(k: string | null): void { this.selectedISAKMPKeyring = k; }
   getSelectedTransformSet(): string | null { return this.selectedTransformSet; }
   setSelectedTransformSet(ts: string | null): void { this.selectedTransformSet = ts; }
   getSelectedCryptoMap(): string | null { return this.selectedCryptoMap; }
@@ -470,6 +474,7 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       case 'config-ipv6-nacl': return this.configIpv6NaclTrie;
       case 'config-isakmp': return this.configIsakmpTrie;
       case 'config-isakmp-profile': return this.configIsakmpProfileTrie;
+      case 'config-keyring': return this.configKeyringTrie;
       case 'config-tfset': return this.configTfsetTrie;
       case 'config-crypto-map': return this.configCryptoMapTrie;
       case 'config-ipsec-profile': return this.configIpsecProfileTrie;
@@ -514,6 +519,8 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       if (f === 'selectedACL') { this.selectedACL = null; this.selectedACLType = null; }
       if (f === 'selectedACLType') this.selectedACLType = null;
       if (f === 'selectedISAKMPPriority') this.selectedISAKMPPriority = null;
+      if (f === 'selectedISAKMPProfile') this.selectedISAKMPProfile = null;
+      if (f === 'selectedISAKMPKeyring') this.selectedISAKMPKeyring = null;
       if (f === 'selectedTransformSet') this.selectedTransformSet = null;
       if (f === 'selectedCryptoMap') { this.selectedCryptoMap = null; this.selectedCryptoMapSeq = null; this.selectedCryptoMapIsDynamic = false; }
       if (f === 'selectedCryptoMapSeq') this.selectedCryptoMapSeq = null;
@@ -683,6 +690,7 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     buildIPSecIfCommands(this.configIfTrie, this);
     buildISAKMPPolicyCommands(this.configIsakmpTrie, this);
     buildISAKMPProfileCommands(this.configIsakmpProfileTrie, this);
+    buildISAKMPKeyringCommands(this.configKeyringTrie, this);
     buildTransformSetCommands(this.configTfsetTrie, this);
     buildCryptoMapEntryCommands(this.configCryptoMapTrie, this);
     buildIPSecProfileCommands(this.configIpsecProfileTrie, this);

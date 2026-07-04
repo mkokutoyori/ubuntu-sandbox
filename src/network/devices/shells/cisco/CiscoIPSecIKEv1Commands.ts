@@ -58,13 +58,11 @@ export function buildIPSecGlobalCommands(trie: CommandTrie, ctx: CiscoShellConte
 
   // ── crypto isakmp keepalive N R [periodic|on-demand] ─────────────
   trie.register('crypto isakmp invalid-spi-recovery', 'Enable invalid SPI recovery', () => {
-    const e = eng(ctx) as unknown as Record<string, unknown>;
-    e.invalidSpiRecovery = true;
+    eng(ctx).setInvalidSpiRecovery(true);
     return '';
   });
   trie.registerGreedy('crypto isakmp identity', 'Set IKE identity', (args) => {
-    const e = eng(ctx) as unknown as Record<string, unknown>;
-    e.isakmpIdentity = args.join(' ').toLowerCase();
+    eng(ctx).setIsakmpIdentity(args.join(' ').toLowerCase());
     return '';
   });
 
@@ -168,17 +166,29 @@ export function buildIPSecGlobalCommands(trie: CommandTrie, ctx: CiscoShellConte
   trie.registerGreedy('crypto isakmp profile', 'Define an ISAKMP profile', (args) => {
     if (args.length < 1) return '% Incomplete command.';
     const name = args[0];
-    const e = eng(ctx) as any;
-    const profiles: Map<string, any> = e.isakmpProfiles ?? (e.isakmpProfiles = new Map());
-    if (!profiles.has(name)) profiles.set(name, { name });
+    eng(ctx).getOrCreateISAKMPProfile(name);
     ctx.setSelectedISAKMPProfile(name);
     ctx.setMode('config-isakmp-profile');
     return '';
   });
   trie.registerGreedy('no crypto isakmp profile', 'Remove an ISAKMP profile', (args) => {
     if (args.length < 1) return '% Incomplete command.';
-    const e = eng(ctx) as any;
-    (e.isakmpProfiles as Map<string, any> | undefined)?.delete(args[0]);
+    eng(ctx).removeISAKMPProfile(args[0]);
+    return '';
+  });
+
+  // ── crypto keyring NAME ───────────────────────────────────────────
+  trie.registerGreedy('crypto keyring', 'Define an ISAKMP keyring', (args) => {
+    if (args.length < 1) return '% Incomplete command.';
+    const name = args[0];
+    eng(ctx).getOrCreateISAKMPKeyring(name);
+    ctx.setSelectedISAKMPKeyring(name);
+    ctx.setMode('config-keyring');
+    return '';
+  });
+  trie.registerGreedy('no crypto keyring', 'Remove an ISAKMP keyring', (args) => {
+    if (args.length < 1) return '% Incomplete command.';
+    eng(ctx).removeISAKMPKeyring(args[0]);
     return '';
   });
 
@@ -375,13 +385,9 @@ export function buildISAKMPPolicyCommands(trie: CommandTrie, ctx: CiscoShellCont
 
 export function buildISAKMPProfileCommands(trie: CommandTrie, ctx: CiscoShellContext): void {
   const profile = () => {
-    const e = eng(ctx) as any;
     const name = ctx.getSelectedISAKMPProfile();
     if (!name) return null;
-    const profiles: Map<string, any> = e.isakmpProfiles ?? (e.isakmpProfiles = new Map());
-    let p = profiles.get(name);
-    if (!p) { p = { name }; profiles.set(name, p); }
-    return p;
+    return eng(ctx).getOrCreateISAKMPProfile(name);
   };
   trie.registerGreedy('keyring', 'Reference a keyring', (args) => {
     const p = profile(); if (!p) return '';
@@ -407,6 +413,26 @@ export function buildISAKMPProfileCommands(trie: CommandTrie, ctx: CiscoShellCon
   trie.registerGreedy('vrf', 'Bind to a VRF', (args) => {
     const p = profile(); if (!p) return '';
     p.vrf = args[0];
+    return '';
+  });
+}
+
+// ─── config-keyring sub-mode ──────────────────────────────────────────
+
+export function buildISAKMPKeyringCommands(trie: CommandTrie, ctx: CiscoShellContext): void {
+  trie.registerGreedy('pre-shared-key', 'Configure a pre-shared key for a peer', (args) => {
+    const name = ctx.getSelectedISAKMPKeyring();
+    if (!name) return '% No keyring selected';
+    if (args[0]?.toLowerCase() !== 'address' || !args[1]) {
+      return '% Usage: pre-shared-key address IP [MASK] key SECRET';
+    }
+    const address = args[1];
+    const keyIdx = args.indexOf('key');
+    if (keyIdx === -1 || !args[keyIdx + 1]) {
+      return '% Usage: pre-shared-key address IP [MASK] key SECRET';
+    }
+    const kr = eng(ctx).getOrCreateISAKMPKeyring(name);
+    kr.peers.set(address, args.slice(keyIdx + 1).join(' '));
     return '';
   });
 }
@@ -553,6 +579,15 @@ export function buildCryptoMapEntryCommands(trie: CommandTrie, ctx: CiscoShellCo
     if (!mapName || seq === null || ctx.getSelectedCryptoMapIsDynamic()) return '';
     const entry = eng(ctx).getOrCreateCryptoMapEntry(mapName, seq);
     entry.ikev2ProfileName = args[0] || '';
+    return '';
+  });
+
+  trie.registerGreedy('set isakmp-profile', 'Associate ISAKMP profile', (args) => {
+    const mapName = ctx.getSelectedCryptoMap();
+    const seq     = ctx.getSelectedCryptoMapSeq();
+    if (!mapName || seq === null || ctx.getSelectedCryptoMapIsDynamic()) return '';
+    const entry = eng(ctx).getOrCreateCryptoMapEntry(mapName, seq);
+    entry.isakmpProfileName = args[0] || '';
     return '';
   });
 }
