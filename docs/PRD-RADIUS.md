@@ -311,7 +311,7 @@ ServerState { config: RadiusServerConfig, alive: boolean, deadUntil?: number,
 | Phase | Contenu | Dépend de |
 |---|---|---|
 | **P1 — Codec & dictionnaire** ✅ | `dictionary.ts`, `codec.ts` : encode/décode binaire, vecteurs de test issus de captures réelles ; champ `raw` sur le PDU | — |
-| **P2 — Intégrité** 🟡 | `authenticators.ts` : Response Authenticator conforme + **vérification client** (réponse invalide ignorée → retransmission), Message-Authenticator HMAC-MD5, Request Authenticator aléatoire ; ~~correction du port de réponse serveur et de la MAC destination~~ **[fait]** | P1 |
+| **P2 — Intégrité** ✅ | `authenticators.ts` : Response Authenticator conforme + **vérification client** (réponse invalide ignorée → retransmission), Message-Authenticator HMAC-MD5, Request Authenticator aléatoire ; ~~correction du port de réponse serveur et de la MAC destination~~ **[fait]** | P1 |
 | **P3 — CHAP & Challenge** | CHAP client/serveur ; Access-Challenge + State + FSM client ; scénario challenge de bout en bout | P2 |
 | **P4 — Accounting** | `accounting.ts`, `RadiusAccountingClient`, traitement serveur + journal ; câblage `aaa accounting` Cisco/Huawei ; événements | P1 |
 | **P5 — Failover & observabilité** | Groupes ordonnés, deadtime, compteurs par serveur ; `show radius statistics` réels, `debug radius`, `test aaa group radius` | P2 |

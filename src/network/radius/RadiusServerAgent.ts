@@ -2,10 +2,11 @@ import type { IEventBus } from '@/events/EventBus';
 import {
   type RadiusServerAgentConfig, type RadiusPacket, type RadiusUser,
   type RadiusAttribute,
-  createDefaultServerConfig, attr, getAttr, makeAuthenticator,
+  createDefaultServerConfig, attr, getAttr,
   decryptUserPassword, isPrintablePassword,
   UDP_PORT_RADIUS_AUTH,
 } from './types';
+import { verifyMessageAuthenticator, withMessageAuthenticator, withResponseAuthenticator } from './authenticators';
 import {
   MACAddress, IPAddress,
   type EthernetFrame, type IPv4Packet, type UDPPacket,
@@ -66,6 +67,12 @@ export class RadiusServerAgent {
     const payload = udp.payload as RadiusPacket | undefined;
     if (!payload || payload.type !== 'radius') return;
     if (payload.code !== 'access-request') return;
+
+    if (!verifyMessageAuthenticator(payload, payload.authenticator, this.config.sharedSecret)) {
+      Logger.warn(this.host.id, 'radius:bad-message-authenticator',
+        `${this.host.name}: dropped Access-Request from ${srcIp} — invalid Message-Authenticator`);
+      return; // RFC 3579 §3.2 — silently discarded, no reply, no event
+    }
 
     const senderIp = srcIp.toString();
     const dedupKey = `${senderIp}:${udp.sourcePort}:${payload.identifier}:${payload.authenticator}`;
@@ -141,13 +148,17 @@ export class RadiusServerAgent {
     const replyAttrs: RadiusAttribute[] = [];
     if (accepted && user?.replyAttributes) replyAttrs.push(...user.replyAttributes);
     if (!accepted) replyAttrs.push(attr('reply-message', 'Authentication failed'));
-    const response: RadiusPacket = {
+    let response: RadiusPacket = {
       type: 'radius',
       code: accepted ? 'access-accept' : 'access-reject',
       identifier: request.identifier,
-      authenticator: makeAuthenticator(request.identifier ^ (Date.now() & 0xffff)),
+      authenticator: '00'.repeat(16), // placeholder — replaced below once Message-Authenticator is finalized
       attributes: replyAttrs,
     };
+    // RFC 2869 §5.14: Message-Authenticator must be computed and folded in
+    // before the Response Authenticator itself is computed over the packet.
+    response = withMessageAuthenticator(response, request.authenticator, this.config.sharedSecret);
+    response = withResponseAuthenticator(response, request.authenticator, this.config.sharedSecret);
     this.recentReplies.set(dedupKey, { response, sentAt: Date.now() });
     this.sendRadiusFrame(inPort, port, srcIp, dstIp, clientPort, response);
     this.getBus().publish({

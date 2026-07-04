@@ -203,16 +203,6 @@ export function getAttr(pkt: RadiusPacket, type: RadiusAttrType): RadiusAttribut
   return pkt.attributes.find((a) => a.type === type);
 }
 
-export function makeAuthenticator(seed: number): string {
-  const out: string[] = [];
-  let s = seed >>> 0;
-  for (let i = 0; i < 16; i++) {
-    s = (s * 1103515245 + 12345 + i * 7) >>> 0;
-    out.push(((s >>> 16) & 0xff).toString(16).padStart(2, '0'));
-  }
-  return out.join('');
-}
-
 export function encryptUserPassword(plain: string, secret: string, authenticatorHex: string): string {
   const plainBytes = utf8ToBytes(plain);
   const padded = new Uint8Array(Math.max(16, Math.ceil(plainBytes.length / 16) * 16));

@@ -3,10 +3,14 @@ import { getDefaultScheduler, type IScheduler, type TimerHandle } from '@/events
 import {
   type RadiusClientConfig, type RadiusServerConfig, type RadiusPacket,
   type RadiusAttribute,
-  createDefaultClientConfig, defaultServerEntry, attr, getAttr, makeAuthenticator,
+  createDefaultClientConfig, defaultServerEntry, attr, getAttr,
   encryptUserPassword,
   UDP_PORT_RADIUS_AUTH,
 } from './types';
+import {
+  randomRequestAuthenticator, withMessageAuthenticator,
+  verifyResponseAuthenticator, verifyMessageAuthenticator,
+} from './authenticators';
 import {
   MACAddress, IPAddress,
   type EthernetFrame, type IPv4Packet, type UDPPacket,
@@ -31,6 +35,9 @@ interface PendingRequest {
   identifier: number;
   serverIp: string;
   username: string;
+  /** Request Authenticator sent with this identifier — reused verbatim across retransmissions (RFC 2865 §3) so the server's dedup cache recognizes them. */
+  authenticator: string;
+  secret: string;
   resolve: (accepted: boolean) => void;
   timer: TimerHandle | null;
   attemptsLeft: number;
@@ -98,14 +105,16 @@ export class RadiusClientAgent {
     if (!server) return Promise.resolve(false);
     const identifier = this.nextIdentifier;
     this.nextIdentifier = (this.nextIdentifier + 1) & 0xff;
+    const authenticator = randomRequestAuthenticator();
     return new Promise<boolean>((resolve) => {
       const pending: PendingRequest = {
         identifier, serverIp: server.ip, username,
+        authenticator, secret: server.sharedSecret,
         resolve, timer: null,
         attemptsLeft: server.retransmit,
       };
       this.pending.set(identifier, pending);
-      this.transmit(server, identifier, username, password);
+      this.transmit(server, identifier, username, password, authenticator);
       this.armTimeout(server, pending, username, password);
     });
   }
@@ -119,6 +128,17 @@ export class RadiusClientAgent {
     const pending = this.pending.get(payload.identifier);
     if (!pending) return;
     if (pending.serverIp !== srcIp.toString()) return;
+
+    if (!verifyResponseAuthenticator(payload, pending.authenticator, pending.secret)) {
+      Logger.warn(this.host.id, 'radius:bad-response-authenticator',
+        `${this.host.name}: dropped ${payload.code} from ${srcIp} for ${pending.username} — invalid Response Authenticator`);
+      return; // silently ignored (RFC 2865 §3) — retransmission/timeout proceeds as if nothing arrived
+    }
+    if (!verifyMessageAuthenticator(payload, pending.authenticator, pending.secret)) {
+      Logger.warn(this.host.id, 'radius:bad-message-authenticator',
+        `${this.host.name}: dropped ${payload.code} from ${srcIp} for ${pending.username} — invalid Message-Authenticator`);
+      return;
+    }
 
     this.getBus().publish({
       topic: 'radius.packet.received',
@@ -153,7 +173,7 @@ export class RadiusClientAgent {
       if (!this.pending.has(pending.identifier)) return;
       if (pending.attemptsLeft > 0) {
         pending.attemptsLeft--;
-        this.transmit(server, pending.identifier, username, password);
+        this.transmit(server, pending.identifier, username, password, pending.authenticator);
         this.armTimeout(server, pending, username, password);
       } else {
         this.pending.delete(pending.identifier);
@@ -170,12 +190,14 @@ export class RadiusClientAgent {
     }, server.timeoutMs);
   }
 
-  private transmit(server: RadiusServerConfig, identifier: number, username: string, password: string): void {
+  private transmit(
+    server: RadiusServerConfig, identifier: number, username: string, password: string,
+    authenticator: string,
+  ): void {
     const egress = this.resolveEgress(server.ip);
     if (!egress) return;
     const srcIp = egress.port.getIPAddress();
     if (!srcIp) return;
-    const authenticator = makeAuthenticator(identifier ^ Date.now());
     const encryptedPassword = encryptUserPassword(password, server.sharedSecret, authenticator);
     const attrs: RadiusAttribute[] = [
       attr('user-name', username),
@@ -183,11 +205,12 @@ export class RadiusClientAgent {
       attr('nas-ip-address', srcIp.toString()),
     ];
     if (this.config.nasIdentifier) attrs.push(attr('nas-identifier', this.config.nasIdentifier));
-    const payload: RadiusPacket = {
+    let payload: RadiusPacket = {
       type: 'radius', code: 'access-request', identifier,
       authenticator,
       attributes: attrs,
     };
+    payload = withMessageAuthenticator(payload, authenticator, server.sharedSecret);
     const udp: UDPPacket = {
       type: 'udp',
       sourcePort: 49152 + (identifier & 0x3fff),
