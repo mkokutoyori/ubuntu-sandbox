@@ -135,6 +135,10 @@ import {
   SetDhcpServerv4OptionValueCmdlet, GetDhcpServerv4LeaseCmdlet,
   AddDhcpServerInDCCmdlet,
 } from './DhcpServerCmdlets';
+import {
+  NewNpsRadiusClientCmdlet, GetNpsRadiusClientCmdlet, RemoveNpsRadiusClientCmdlet,
+  NewNpsNetworkPolicyCmdlet, GetNpsNetworkPolicyCmdlet, RemoveNpsNetworkPolicyCmdlet,
+} from './NpsCmdlets';
 
 /**
  * Register all core (provider-independent) cmdlets into the given registry.
@@ -402,6 +406,14 @@ export function registerCoreCmdlets(registry: CmdletRegistry): void {
   registry.register(new SetDhcpServerv4OptionValueCmdlet());
   registry.register(new GetDhcpServerv4LeaseCmdlet());
   registry.register(new AddDhcpServerInDCCmdlet());
+
+  // ── NPS (RADIUS) role (PRD-Windows-Server.md §5 P9) ─────────────────────────
+  registry.register(new NewNpsRadiusClientCmdlet());
+  registry.register(new GetNpsRadiusClientCmdlet());
+  registry.register(new RemoveNpsRadiusClientCmdlet());
+  registry.register(new NewNpsNetworkPolicyCmdlet());
+  registry.register(new GetNpsNetworkPolicyCmdlet());
+  registry.register(new RemoveNpsNetworkPolicyCmdlet());
 
   // ── Native CLI shims (sync subset) ────────────────────────────────────────
   // ping / tracert stay in the legacy executor — they're async and the

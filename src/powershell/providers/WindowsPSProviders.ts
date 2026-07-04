@@ -54,6 +54,7 @@ import type {
   IComputerProvider, DomainMembershipInfo,
   IDnsServerProvider, DnsOpResult, DnsZoneInfo, DnsRecordInfo,
   IDhcpServerProvider, DhcpOpResult, DhcpScopeInfo, DhcpLeaseInfo,
+  INpsProvider, NpsOpResult, NasClientInfo, NetworkPolicyInfo,
   DirEntry, ServiceInfo, ProcessInfo, UserInfo, GroupInfo,
   NetworkAdapterInfo, IPAddressInfo, RouteInfo, EventLogEntryInfo,
   VpnConnectionInfo, ScheduledTaskInfo, DiskInfo, VolumeInfo,
@@ -505,6 +506,36 @@ class WindowsDhcpServerAdapter implements IDhcpServerProvider {
   getLeases(scopeName?: string): DhcpLeaseInfo[] { return this.role().getLeases(scopeName); }
 
   authorizeInDC(): DhcpOpResult { return this.role().authorizeInDC(); }
+}
+
+// ── NPS (RADIUS) adapter (PRD-Windows-Server.md §5 P9) ───────────────────
+
+class WindowsNpsAdapter implements INpsProvider {
+  constructor(private readonly pc: WindowsPC) {}
+
+  private requireRole(cmdletName: string): void {
+    if (!this.pc.getRoleManager()?.isInstalled('NPAS')) {
+      throw new Error(`${cmdletName} is not recognized as the name of a cmdlet, function, script file, or operable program`);
+    }
+  }
+
+  private role() {
+    this.requireRole('NPS cmdlet');
+    const role = this.pc.getNpsRole();
+    if (!role) throw new Error('NPS cmdlet : The Network Policy Server service is not available on this computer.');
+    return role;
+  }
+
+  addNasClient(name: string, ipAddress: string, sharedSecret: string): NpsOpResult { return this.role().addNasClient(name, ipAddress, sharedSecret); }
+  removeNasClient(name: string): NpsOpResult { return this.role().removeNasClient(name); }
+  getNasClient(name: string): NasClientInfo | null { return this.role().getNasClient(name); }
+  listNasClients(): NasClientInfo[] { return this.role().listNasClients(); }
+
+  addNetworkPolicy(name: string, group: string, vlanId?: number, sessionTimeoutSec?: number): NpsOpResult {
+    return this.role().addNetworkPolicy(name, group, { vlanId, sessionTimeoutSec });
+  }
+  removeNetworkPolicy(name: string): NpsOpResult { return this.role().removeNetworkPolicy(name); }
+  listNetworkPolicies(): NetworkPolicyInfo[] { return this.role().listNetworkPolicies(); }
 }
 
 function toServiceInfo(
@@ -1585,5 +1616,6 @@ export function createWindowsPSProviders(
     computer:       new WindowsComputerAdapter(pc),
     dns:            pc.getRoleManager() ? new WindowsDnsServerAdapter(pc) : null,
     dhcp:           pc.getRoleManager() ? new WindowsDhcpServerAdapter(pc) : null,
+    nps:            pc.getRoleManager() ? new WindowsNpsAdapter(pc) : null,
   };
 }

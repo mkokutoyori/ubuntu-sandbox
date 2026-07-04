@@ -445,6 +445,12 @@ export class WindowsUserManager {
    * here, so it's a straightforward denial, same as Cisco/Huawei's
    * `passwordExpireAt` gate).
    */
+  /** Plaintext password for `name`, or null if the account doesn't exist — used by the NPS/RADIUS role (PRD-Windows-Server.md §5 P9), which needs the raw secret for CHAP/MSCHAPv2/EAP-MD5 crypto, not just a match check like `checkPassword`. */
+  getPlaintextPassword(name: string): string | null {
+    if (!this.users.has(name.toLowerCase())) return null;
+    return this.passwords.get(name.toLowerCase()) ?? null;
+  }
+
   checkPassword(name: string, password: string): boolean {
     const user = this.users.get(name.toLowerCase());
     if (user && (this.isLockedOut(name) || this.isPasswordExpired(name))) {

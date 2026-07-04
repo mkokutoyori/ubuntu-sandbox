@@ -31,4 +31,5 @@ export const NULL_PROVIDERS: PSProviders = {
   computer:       null,
   dns:            null,
   dhcp:           null,
+  nps:            null,
 };

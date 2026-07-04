@@ -789,6 +789,9 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     this.userMgr.setUserProperty(username, 'password', password);
   }
 
+  /** The local SAM (users/groups) — used by the NPS role (PRD-Windows-Server.md §5 P9) to resolve RADIUS auth against the local account database. */
+  getUserManager(): WindowsUserManager { return this.userMgr; }
+
   /** True iff the named account exists in the local SAM. */
   userExists(username: string): boolean {
     return this.userMgr.getUser(username) !== undefined;
@@ -1835,6 +1838,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       dialSmbShare: (targetIp: string, shareName: string, username: string, password: string) =>
         this.dialSmbShare(targetIp, shareName, username, password),
       dhcpServerRole: this.getDhcpServerRole(),
+      npsRole: this.getNpsRole(),
     };
   }
 
@@ -2207,6 +2211,13 @@ export class WindowsPC extends EndHost implements UserAccountHost {
    * client, overridden by `WindowsServer`.
    */
   getDhcpServerRole(): import('./windows/server/dhcp/WindowsDhcpServerRole').WindowsDhcpServerRole | null { return null; }
+
+  /**
+   * NPS (RADIUS) role (PRD-Windows-Server.md §5 P9) — null until
+   * `Install-WindowsFeature NPAS` on a `WindowsServer`; always null on a
+   * client, overridden by `WindowsServer`.
+   */
+  getNpsRole(): import('./windows/server/nps/WindowsNpsRole').WindowsNpsRole | null { return null; }
 
   /** Get the process manager (for PowerShellExecutor and other integrations) */
   getProcessManager(): WindowsProcessManager { return this.procMgr; }

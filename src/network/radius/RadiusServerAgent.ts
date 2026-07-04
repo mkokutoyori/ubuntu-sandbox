@@ -187,6 +187,10 @@ export class RadiusServerAgent {
     return Array.from(this.realms.entries()).map(([realm, route]) => ({ realm, ...route }));
   }
 
+  /** External user store lookup (e.g. Windows NPS resolving against the SAM/AD directory), tried when `username` isn't in the static `addUser` table — RFC 2865 doesn't mandate a static user list; this keeps that model without hosts needing to mirror a live directory into it. */
+  private userResolver: ((username: string) => RadiusUser | undefined) | null = null;
+  setUserResolver(fn: ((username: string) => RadiusUser | undefined) | null): void { this.userResolver = fn; }
+
   /** RFC 2866: Accounting-Request/Response on the accounting port (default UDP/1813). */
   handleAcctUdp(inPort: string, srcIp: IPAddress, udp: UDPPacket): void {
     if (!this.running || !this.config.enabled) return;
@@ -308,7 +312,7 @@ export class RadiusServerAgent {
       return;
     }
 
-    const user = this.config.users.get(username);
+    const user = this.config.users.get(username) ?? this.userResolver?.(username);
 
     if (eapAttr) {
       this.handleEapRequest(inPort, srcIp, udp.sourcePort, payload, username, user, dedupKey);

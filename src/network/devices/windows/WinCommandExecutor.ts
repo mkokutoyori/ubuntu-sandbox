@@ -181,4 +181,7 @@ export interface WinCommandContext {
 
   /** DHCP Server role (PRD-Windows-Server.md §5 P8) — null/undefined unless this is a `WindowsServer` with the `DHCP` feature installed. Backs `netsh dhcp server`. */
   dhcpServerRole?: import('./server/dhcp/WindowsDhcpServerRole').WindowsDhcpServerRole | null;
+
+  /** NPS (RADIUS) role (PRD-Windows-Server.md §5 P9) — null/undefined unless this is a `WindowsServer` with the `NPAS` feature installed. Backs `netsh nps`. */
+  npsRole?: import('./server/nps/WindowsNpsRole').WindowsNpsRole | null;
 }

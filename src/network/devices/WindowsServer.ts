@@ -21,6 +21,7 @@ import { RoleManager } from './windows/server/RoleManager';
 import { DirectoryStore } from './windows/server/ad/DirectoryStore';
 import { WindowsDnsServerRole } from './windows/server/dns/WindowsDnsServerRole';
 import { WindowsDhcpServerRole } from './windows/server/dhcp/WindowsDhcpServerRole';
+import { WindowsNpsRole } from './windows/server/nps/WindowsNpsRole';
 
 export interface AdDsOpResult { ok: boolean; message: string }
 
@@ -29,6 +30,7 @@ export class WindowsServer extends WindowsPC {
   private directoryStore: DirectoryStore | null = null;
   private dnsServerRoleInstance: WindowsDnsServerRole | null = null;
   private dhcpServerRoleInstance: WindowsDhcpServerRole | null = null;
+  private npsRoleInstance: WindowsNpsRole | null = null;
 
   constructor(name: string = 'WinServer', x: number = 0, y: number = 0) {
     super('windows-server', name, x, y);
@@ -82,6 +84,24 @@ export class WindowsServer extends WindowsPC {
       this.getDirectoryStore() !== null || this.getDomainMembership() !== null,
     );
     return this.dhcpServerRoleInstance;
+  }
+
+  /**
+   * PRD Phase 9 (§5 P9): the NPS (RADIUS) role, hosting the real RADIUS
+   * engine over UDP 1812/1813 — null while the `NPAS` role isn't
+   * installed. Resolves users against the local SAM/AD (never a
+   * dedicated NPS-only user list).
+   */
+  getNpsRole(): WindowsNpsRole | null {
+    if (!this.roleManager.isInstalled('NPAS')) {
+      if (this.npsRoleInstance) { this.npsRoleInstance.stop(); this.npsRoleInstance = null; }
+      return null;
+    }
+    if (!this.npsRoleInstance) {
+      this.npsRoleInstance = new WindowsNpsRole(this, this, this.eventLog);
+      this.npsRoleInstance.start();
+    }
+    return this.npsRoleInstance;
   }
 
   /**

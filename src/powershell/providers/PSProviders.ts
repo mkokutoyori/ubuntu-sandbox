@@ -268,6 +268,23 @@ export interface IDhcpServerProvider {
   authorizeInDC(): DhcpOpResult;
 }
 
+// ── NPS (RADIUS) role (PRD-Windows-Server.md §5 P9) ─────────────────────────
+
+export interface NpsOpResult { ok: boolean; message: string }
+export interface NasClientInfo { name: string; ipAddress: string }
+export interface NetworkPolicyInfo { name: string; group: string; vlanId?: number; sessionTimeoutSec?: number }
+
+export interface INpsProvider {
+  addNasClient(name: string, ipAddress: string, sharedSecret: string): NpsOpResult;
+  removeNasClient(name: string): NpsOpResult;
+  getNasClient(name: string): NasClientInfo | null;
+  listNasClients(): NasClientInfo[];
+
+  addNetworkPolicy(name: string, group: string, vlanId?: number, sessionTimeoutSec?: number): NpsOpResult;
+  removeNetworkPolicy(name: string): NpsOpResult;
+  listNetworkPolicies(): NetworkPolicyInfo[];
+}
+
 export interface IRemotingProvider {
   /**
    * Resolve a computer name/IP to a remoting-capable target — over the
@@ -618,4 +635,5 @@ export interface PSProviders {
   readonly computer:       IComputerProvider       | null;
   readonly dns:            IDnsServerProvider      | null;
   readonly dhcp:           IDhcpServerProvider     | null;
+  readonly nps:            INpsProvider            | null;
 }

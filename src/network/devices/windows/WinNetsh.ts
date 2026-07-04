@@ -226,6 +226,11 @@ export function cmdNetsh(ctx: WinCommandContext, args: string[]): string {
     return handleNetshDhcpServer(ctx, args.slice(1));
   }
 
+  // netsh nps ... (PRD-Windows-Server.md §5 P9 — NAS clients)
+  if (args[0].toLowerCase() === 'nps') {
+    return handleNetshNps(ctx, args.slice(1));
+  }
+
   // netsh ipsec ...
   if (args[0].toLowerCase() === 'ipsec') {
     return handleNetshIPSec(args.slice(1));
@@ -1425,6 +1430,50 @@ function handleNetshDhcpServer(ctx: WinCommandContext, args: string[]): string {
   }
 
   return NETSH_DHCP_SERVER_HELP;
+}
+
+// ─── netsh nps (PRD-Windows-Server.md §5 P9) ─────────────────────────
+// NAS-client declaration only — network policies go through the
+// New/Get/Remove-NpsNetworkPolicy cmdlets (no real-world `netsh nps`
+// equivalent for policy authoring; real NPS policies live in an XML
+// policy store this simulator doesn't model at the wire-config level).
+
+const NETSH_NPS_HELP = `Usage: netsh nps add client name="<Name>" address="<IPAddress>" secret="<SharedSecret>"
+       netsh nps show clients`;
+
+function parseNetshKeyValueArgs(args: string[]): Map<string, string> {
+  const out = new Map<string, string>();
+  for (const a of args) {
+    const m = /^([a-zA-Z]+)=(?:"([^"]*)"|(\S+))$/.exec(a);
+    if (m) out.set(m[1].toLowerCase(), m[2] ?? m[3] ?? '');
+  }
+  return out;
+}
+
+function handleNetshNps(ctx: WinCommandContext, args: string[]): string {
+  const role = ctx.npsRole;
+  if (!role) return 'The Network Policy Server service is not available on this computer.';
+  if (args.length === 0 || args[0] === '?' || args[0] === '/?') return NETSH_NPS_HELP;
+
+  const verb = args[0].toLowerCase();
+
+  if (verb === 'add' && args[1]?.toLowerCase() === 'client') {
+    const kv = parseNetshKeyValueArgs(args.slice(2));
+    const name = kv.get('name');
+    const address = kv.get('address');
+    const secret = kv.get('secret');
+    if (!name || !address || !secret) return NETSH_NPS_HELP;
+    const res = role.addNasClient(name, address, secret);
+    return res.ok ? 'Command completed successfully.' : res.message;
+  }
+
+  if (verb === 'show' && args[1]?.toLowerCase() === 'clients') {
+    const clients = role.listNasClients();
+    if (clients.length === 0) return 'No RADIUS clients configured on this NPS server.';
+    return clients.map(c => `Name - ${c.name}\tAddress - ${c.ipAddress}`).join('\n');
+  }
+
+  return NETSH_NPS_HELP;
 }
 
 // ─── netsh dhcpclient ───────────────────────────────────────────────
