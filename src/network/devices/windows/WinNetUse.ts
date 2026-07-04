@@ -92,10 +92,11 @@ export async function cmdNetUse(ctx: WinCommandContext, args: string[]): Promise
     }
     const userArg = args.find(a => a.toLowerCase().startsWith('/user:'));
     const persistArg = args.find(a => a.toLowerCase().startsWith('/persistent:'));
-    const rawUser = userArg ? userArg.slice('/user:'.length) : 'Administrator';
-    // `/user:DOMAIN\name` or `/user:name@domain` — this simulator has a
-    // flat single-machine SAM, so only the bare account name matters.
-    const username = rawUser.includes('\\') ? rawUser.split('\\').pop()! : rawUser.split('@')[0];
+    // `/user:computername\name` (local) or `/user:DOMAIN\name`/`name@dns` (domain,
+    // PRD-Windows-Server.md §5 P6) — kept verbatim; only the target SERVER
+    // knows its own hostname, so distinguishing "this is me" from "this is
+    // my domain" happens in `SmbServerHandler.session_setup`, not here.
+    const username = userArg ? userArg.slice('/user:'.length) : 'Administrator';
     const password = args[2] && !args[2].startsWith('/') ? args[2] : '';
 
     const targetIp = await ctx.resolveHostname(unc.server);

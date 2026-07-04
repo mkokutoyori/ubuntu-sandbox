@@ -120,6 +120,7 @@ import {
   GetADComputerCmdlet,
   NewADOrganizationalUnitCmdlet, GetADOrganizationalUnitCmdlet,
 } from './ActiveDirectoryCmdlets';
+import { AddComputerCmdlet } from './ComputerCmdlets';
 
 /**
  * Register all core (provider-independent) cmdlets into the given registry.
@@ -361,6 +362,9 @@ export function registerCoreCmdlets(registry: CmdletRegistry): void {
   registry.register(new GetADComputerCmdlet());
   registry.register(new NewADOrganizationalUnitCmdlet());
   registry.register(new GetADOrganizationalUnitCmdlet());
+
+  // ── Domain join (PRD-Windows-Server.md §5 P6) ───────────────────────────────
+  registry.register(new AddComputerCmdlet());
 
   // ── Native CLI shims (sync subset) ────────────────────────────────────────
   // ping / tracert stay in the legacy executor — they're async and the

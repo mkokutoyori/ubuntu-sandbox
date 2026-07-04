@@ -311,6 +311,35 @@ export class WindowsServiceManager {
     if (spooler) spooler.binaryPath = 'C:\\Windows\\System32\\spoolsv.exe';
   }
 
+  /**
+   * Register a service after construction — real Windows' SCM gains new
+   * services when a role/feature is installed (e.g. `NTDS`/`Netlogon`/`Kdc`
+   * at `Install-ADDSForest` promotion, PRD-Windows-Server.md §5 P6).
+   * Defaults mirror the private `svc()` seeding helper. No-op if a service
+   * with that name is already registered.
+   */
+  addService(
+    name: string, displayName: string, description: string,
+    opts: Partial<Pick<WindowsService, 'startType' | 'dependencies' | 'canPauseAndContinue'
+      | 'acceptsShutdown' | 'processName' | 'account' | 'serviceType' | 'state' | 'critical'>> = {},
+  ): void {
+    if (this.services.has(name.toLowerCase())) return;
+    this.services.set(name.toLowerCase(), {
+      name, displayName, description,
+      state: opts.state ?? 'Running',
+      startType: opts.startType ?? 'Automatic',
+      serviceType: opts.serviceType ?? 'WIN32_SHARE_PROCESS',
+      binaryPath: `C:\\Windows\\System32\\svchost.exe -k ${name.toLowerCase()}`,
+      account: opts.account ?? 'NT AUTHORITY\\LocalService',
+      dependencies: opts.dependencies ?? [],
+      canPauseAndContinue: opts.canPauseAndContinue ?? false,
+      acceptsShutdown: opts.acceptsShutdown ?? true,
+      processName: opts.processName ?? 'svchost.exe',
+      builtIn: true,
+      critical: opts.critical ?? false,
+    });
+  }
+
   // ─── Queries ─────────────────────────────────────────────────────
 
   getService(name: string): WindowsService | undefined {

@@ -57,7 +57,19 @@ export class WindowsServer extends WindowsPC {
     this.directoryStore = new DirectoryStore(domainName, netbios, safeModeAdminPassword);
     this.directoryStore.promoteDomainController(this.getHostname(), safeModeAdminPassword);
     this.provisionSysvol(domainName);
+    this.registerDcServices();
     return { ok: true, message: '' };
+  }
+
+  /** Real DC promotion registers `NTDS`/`Netlogon`/`Kdc` with the SCM (PRD §5 P6) — `dcdiag`/`nltest` read their state. */
+  private registerDcServices(): void {
+    const svcMgr = this.getServiceManager();
+    svcMgr.addService('NTDS', 'Active Directory Domain Services', 'AD DS Domain Controller service',
+      { account: 'NT AUTHORITY\\SYSTEM', processName: 'lsass.exe', binaryPath: 'C:\\Windows\\System32\\lsass.exe' });
+    svcMgr.addService('Netlogon', 'Netlogon', 'Maintains a secure channel to a domain controller for authentication of users and services',
+      { dependencies: ['NTDS'], account: 'NT AUTHORITY\\SYSTEM' });
+    svcMgr.addService('Kdc', 'Kerberos Key Distribution Center', 'Issues session tickets and temporary session keys used in the Windows Kerberos SSO scheme',
+      { dependencies: ['NTDS'], account: 'NT AUTHORITY\\SYSTEM' });
   }
 
   /** Minimal SYSVOL: real DC promotion auto-shares `C:\Windows\SYSVOL\sysvol\<domain>` as `\\<dc>\SYSVOL` (Domain Admins-writable, everyone-readable) — no GPO/FRS/DFSR replication content, per PRD §2.2 scope. */

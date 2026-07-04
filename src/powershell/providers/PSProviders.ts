@@ -208,6 +208,22 @@ export interface IAdProvider {
   getOrganizationalUnit(identity: string): AdOrgUnitInfo | null;
 }
 
+export interface DomainMembershipInfo { dnsName: string; netbiosName: string; dcAddress: string }
+
+export interface IComputerProvider {
+  /**
+   * `Add-Computer -DomainName` — real LDAP `AddRequest` join dialogue
+   * against the DC (PRD-Windows-Server.md §5 P6), not a direct method
+   * call into the DC's directory. `server` is an explicit DC hostname/IP
+   * fallback — there is no DNS SRV `_ldap._tcp.dc._msdcs` discovery yet
+   * (depends on the DNS Server role, P7); when omitted, the domain name
+   * itself is resolved as a hostname.
+   */
+  join(domainName: string, credential: { username: string; password: string }, server?: string): AdOpResult;
+  /** This machine's domain-join state, or null while in a workgroup. */
+  getDomainInfo(): DomainMembershipInfo | null;
+}
+
 export interface IRemotingProvider {
   /**
    * Resolve a computer name/IP to a remoting-capable target — over the
@@ -555,4 +571,5 @@ export interface PSProviders {
   readonly roles:          IRoleProvider           | null;
   readonly smb:            ISmbProvider            | null;
   readonly ad:             IAdProvider             | null;
+  readonly computer:       IComputerProvider       | null;
 }

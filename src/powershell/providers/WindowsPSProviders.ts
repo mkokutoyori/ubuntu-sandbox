@@ -51,6 +51,7 @@ import type {
   IRoleProvider, WindowsFeatureInfo,
   ISmbProvider, SmbShareInfo, SmbSessionInfo,
   IAdProvider, AdUserInfo, AdGroupInfo, AdComputerInfo, AdOrgUnitInfo, AdOpResult,
+  IComputerProvider, DomainMembershipInfo,
   DirEntry, ServiceInfo, ProcessInfo, UserInfo, GroupInfo,
   NetworkAdapterInfo, IPAddressInfo, RouteInfo, EventLogEntryInfo,
   VpnConnectionInfo, ScheduledTaskInfo, DiskInfo, VolumeInfo,
@@ -1362,6 +1363,35 @@ class WindowsDiskAdapter implements IDiskProvider {
   }
 }
 
+// ── Computer adapter (Add-Computer / domain join, PRD §5 P6) ─────────────
+//
+// Available on every Windows host (client or server) — unlike `ad`, this
+// isn't gated by a role: any machine can join a domain someone else hosts.
+
+interface JoinableDevice {
+  resolveHostnameSync(name: string): { toString(): string } | null;
+  joinDomainNow(domainName: string, dcAddress: string, credentialUser: string, credentialPassword: string): AdOpResult;
+  getDomainMembership(): DomainMembershipInfo | null;
+}
+
+class WindowsComputerAdapter implements IComputerProvider {
+  constructor(private readonly pc: WindowsPC) {}
+
+  private device(): JoinableDevice { return this.pc as unknown as JoinableDevice; }
+
+  join(domainName: string, credential: { username: string; password: string }, server?: string): AdOpResult {
+    const dcAddress = server ?? this.pc.resolveHostnameSync(domainName)?.toString();
+    if (!dcAddress) {
+      return { ok: false, message: `Computer '${this.pc.getHostname()}' failed to join domain '${domainName}': The specified domain either does not exist or could not be contacted.` };
+    }
+    return this.device().joinDomainNow(domainName, dcAddress, credential.username, credential.password);
+  }
+
+  getDomainInfo(): DomainMembershipInfo | null {
+    return this.device().getDomainMembership();
+  }
+}
+
 // ── Remoting adapter (Invoke-Command -ComputerName / Test-WSMan) ──────────
 //
 // Resolves the target through the same simulated-topology lookup the SSH
@@ -1480,5 +1510,6 @@ export function createWindowsPSProviders(
     roles:          pc.getRoleManager() ? new WindowsRoleAdapter(pc) : null,
     smb:            pc.getRoleManager() ? new WindowsSmbAdapter(pc) : null,
     ad:             pc.getRoleManager() ? new WindowsAdAdapter(pc) : null,
+    computer:       new WindowsComputerAdapter(pc),
   };
 }

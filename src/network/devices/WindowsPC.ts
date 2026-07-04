@@ -79,6 +79,10 @@ import { dialSmbShare, type SmbDialResult } from './windows/server/smb/SmbClient
 import { WinRmServerHandler } from './windows/server/winrm/WinRmServer';
 import { LdapServerHandler } from './windows/server/ad/ldap/LdapServer';
 import { dialWinRm, type WinRmDialResult } from './windows/server/winrm/WinRmClient';
+import { type DomainMembership, type DomainSession, parseDomainQualifiedUser } from './windows/domain/DomainTypes';
+import { joinDomain, type DomainJoinResult } from './windows/domain/DomainJoinClient';
+import { logonDomainUser } from './windows/domain/DomainLogonClient';
+import { cmdNltest, cmdDcdiag, cmdKlist } from './windows/WinDomainDiag';
 import { cmdPrint } from './windows/WinPrint';
 import { executeNslookup } from './linux/LinuxDnsService';
 import { SessionWorkQueue } from './host/session/SessionWorkQueue';
@@ -164,6 +168,10 @@ export class WindowsPC extends EndHost implements UserAccountHost {
   private dnsSuffix: string = '';
   /** User and group manager (access control / privileges) */
   private userMgr: WindowsUserManager;
+  /** Domain-join state (`Add-Computer`/`netdom join`) — null while this machine is in a workgroup (PRD-Windows-Server.md §5 P6). */
+  private domainMembership: DomainMembership | null = null;
+  /** The active domain logon (`LAB\alice`/`alice@lab.local`), if any — distinct from `userMgr.currentUser`, which domain logon also updates for prompt/env-var purposes. */
+  private domainSession: DomainSession | null = null;
   /** LSA account policy mirrored by `net accounts`. */
   readonly accountsPolicy: WindowsAccountsPolicy = new WindowsAccountsPolicy();
   /** cmd.exe doskey macro table. */
@@ -483,6 +491,8 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       shares: this.smbShares,
       sessions: this.smbSessions,
       now: () => this.simulatedDate().getTime(),
+      hostname: this.hostname,
+      domainAuth: (u, p) => this.tryDomainAuth(u, p),
     });
   }
 
@@ -498,7 +508,57 @@ export class WindowsPC extends EndHost implements UserAccountHost {
 
   /** Build a WinRmServerHandler ready to be hooked onto a TcpConnection (one per accept). */
   getWinRmServerHandler(): WinRmServerHandler {
-    return new WinRmServerHandler({ userMgr: this.userMgr });
+    return new WinRmServerHandler({ userMgr: this.userMgr, domainAuth: (u, p) => this.tryDomainAuth(u, p) });
+  }
+
+  // ─── Domain join / logon (PRD-Windows-Server.md §5 P6) ──────────────
+
+  getDomainMembership(): DomainMembership | null { return this.domainMembership; }
+  getDomainSession(): DomainSession | null { return this.domainSession; }
+
+  /**
+   * `Add-Computer -DomainName`/`netdom join` — real LDAP `AddRequest`
+   * dialogue against the DC at `dcAddress` (no DNS SRV discovery yet,
+   * P7 dependency — callers resolve the DC address themselves).
+   */
+  joinDomainNow(domainName: string, dcAddress: string, credentialUser: string, credentialPassword: string): DomainJoinResult {
+    if (this.domainMembership) {
+      return { ok: false, message: `The computer '${this.getHostname()}' is already joined to a domain.` };
+    }
+    const result = joinDomain({
+      tcpStack: this.getTcpStack(),
+      computerName: this.getHostname(),
+      domainName,
+      dcAddress,
+      credentialUser,
+      credentialPassword,
+    });
+    if (result.ok && result.membership) this.domainMembership = result.membership;
+    return result;
+  }
+
+  /** Domain logon (`LAB\alice`/`alice@lab.local`) — validated against the DC over the real network, not a topology shortcut. */
+  logonDomain(rawUser: string, password: string): { ok: boolean; message: string } {
+    if (!this.domainMembership) {
+      return { ok: false, message: 'The trust relationship between this workstation and the primary domain failed.' };
+    }
+    const parsed = parseDomainQualifiedUser(rawUser, this.domainMembership);
+    if (!parsed) return { ok: false, message: 'The user name or password is incorrect.' };
+    const result = logonDomainUser(this.getTcpStack(), this.domainMembership, parsed.sam, password);
+    if (!result.ok) return { ok: false, message: result.message };
+    this.setCurrentUser(parsed.sam);
+    this.domainSession = result.session ?? null;
+    return { ok: true, message: '' };
+  }
+
+  /** Domain-qualified credential check for inbound SMB/WinRM auth — real LDAP bind, not a topology shortcut. Returns null when unqualified/not domain-joined (caller should fall back to local auth). */
+  tryDomainAuth(rawUser: string, password: string): { ok: boolean; sam: string; groups: string[] } | null {
+    if (!this.domainMembership) return null;
+    const parsed = parseDomainQualifiedUser(rawUser, this.domainMembership);
+    if (!parsed) return null;
+    const result = logonDomainUser(this.getTcpStack(), this.domainMembership, parsed.sam, password);
+    if (!result.ok) return { ok: false, sam: parsed.sam, groups: [] };
+    return { ok: true, sam: parsed.sam, groups: result.session?.groups ?? [] };
   }
 
   /**
@@ -1288,7 +1348,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       case 'ver':     return WindowsPC.VER_STRING;
       case 'hostname': return this.hostname;
       case 'systeminfo': return this.cmdSysteminfo();
-      case 'whoami':  return cmdWhoami({ hostname: this.hostname, userManager: this.userMgr }, args);
+      case 'whoami':  return cmdWhoami({ hostname: this.hostname, userManager: this.userMgr, domainSession: this.domainSession }, args);
       case 'icacls':  return cmdIcacls({ fs: this.fs, cwd: this.cwd, userManager: this.userMgr }, args);
       case 'runas':   return this.cmdRunas(args);
       case 'vol':     return this.cmdVol(args);
@@ -1302,6 +1362,26 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       case 'nbtstat': return this.cmdNbtstat(args);
       case 'wmic':    return this.cmdWmic(args);
       case 'reg':     return this.cmdReg(args);
+      case 'nltest':  return cmdNltest({
+        domainMembership: this.domainMembership,
+        probeDc: (address) => this.probeTcpReachable(address, 389),
+      }, args);
+      case 'dcdiag': {
+        const store = this.getDirectoryStore();
+        return cmdDcdiag({
+          hostname: this.hostname,
+          dnsName: store?.dnsName ?? '',
+          isDc: store !== null,
+          servicesRunning: {
+            ntds: this.svcMgr.getService('NTDS')?.state === 'Running',
+            netlogon: this.svcMgr.getService('Netlogon')?.state === 'Running',
+            kdc: this.svcMgr.getService('Kdc')?.state === 'Running',
+          },
+          sysvolShareExists: this.smbShares.get('SYSVOL') !== undefined,
+        });
+      }
+      case 'klist':   return cmdKlist({ domainSession: this.domainSession, dnsName: this.domainMembership?.dnsName ?? null });
+      case 'netdom':  return this.cmdNetdom(args);
     }
 
     // net user / net localgroup / net start / net stop / net help
@@ -2075,8 +2155,9 @@ export class WindowsPC extends EndHost implements UserAccountHost {
 
   // ─── User / Access Control ──────────────────────────────────────
 
-  /** Switch current user context (for testing & runas) */
+  /** Switch current user context (for testing & runas). Always drops any active domain logon — `logonDomain` re-establishes it right after calling this. */
   setCurrentUser(name: string): void {
+    this.domainSession = null;
     if (this.userMgr.setCurrentUser(name)) {
       this.env.set('USERNAME', this.userMgr.currentUser);
       this.env.set('USERPROFILE', `C:\\Users\\${this.userMgr.currentUser}`);
@@ -2158,6 +2239,44 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     } finally {
       this.setCurrentUser(previousUser);
     }
+  }
+
+  /** Real TCP connect+close reachability probe, used by `nltest /dsgetdc:` — not a topology shortcut. */
+  private probeTcpReachable(address: string, port: number): boolean {
+    const socket = this.getTcpStack().connect(address, port);
+    if (!socket || socket.state !== 'established') return false;
+    socket.close();
+    return true;
+  }
+
+  /** `netdom join` — cmd-level equivalent of `Add-Computer -DomainName`, same real LDAP join dialogue underneath. */
+  private cmdNetdom(args: string[]): string {
+    if (args.length === 0 || args[0].toLowerCase() !== 'join') {
+      return 'NETDOM JOIN /Domain:<Domain> /UserD:<User> /PasswordD:<Password> [/Server:<DC>]';
+    }
+    let domain = '';
+    let server = '';
+    let userD = '';
+    let passwordD = '';
+    for (const arg of args.slice(1)) {
+      const m = /^\/([a-z]+):(.*)$/i.exec(arg);
+      if (!m) continue;
+      const key = m[1].toLowerCase();
+      if (key === 'domain') domain = m[2];
+      else if (key === 'server') server = m[2];
+      else if (key === 'userd') userD = m[2];
+      else if (key === 'passwordd') passwordD = m[2];
+    }
+    if (!domain || !userD) {
+      return 'NETDOM JOIN /Domain:<Domain> /UserD:<User> /PasswordD:<Password> [/Server:<DC>]';
+    }
+    const dcAddress = server || this.resolveHostnameSync(domain)?.toString() || '';
+    if (!dcAddress) {
+      return `The specified domain either does not exist or could not be contacted.\nThe command failed to complete successfully.`;
+    }
+    const result = this.joinDomainNow(domain, dcAddress, userD, passwordD);
+    if (!result.ok) return `${result.message}\nThe command failed to complete successfully.`;
+    return `The computer name '${this.getHostname()}' has been successfully joined to the domain '${domain}'.\nThe command completed successfully.`;
   }
 
   // ─── OS Info ───────────────────────────────────────────────────

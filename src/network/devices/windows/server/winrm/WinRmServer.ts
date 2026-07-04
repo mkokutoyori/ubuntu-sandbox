@@ -20,6 +20,8 @@ import type { WindowsUserManager } from '../../WindowsUserManager';
 
 export interface WinRmServerContext {
   userMgr: WindowsUserManager;
+  /** Domain-account fallback (PRD-Windows-Server.md §5 P6) — see `SmbServerContext.domainAuth`. */
+  domainAuth?: (username: string, password: string) => { ok: boolean; sam: string; groups: string[] } | null;
 }
 
 export class WinRmServerHandler {
@@ -42,7 +44,9 @@ export class WinRmServerHandler {
         const username = String(parsed.username ?? '');
         const password = String(parsed.password ?? '');
         const account = this.ctx.userMgr.getUser(username);
-        if (!account || !account.enabled || !this.ctx.userMgr.checkPassword(username, password)) {
+        const localOk = account?.enabled && this.ctx.userMgr.checkPassword(username, password);
+        const domainOk = !localOk && this.ctx.domainAuth?.(username, password)?.ok;
+        if (!localOk && !domainOk) {
           reply({ ok: false, message: 'The user name or password is incorrect.' });
           return;
         }
