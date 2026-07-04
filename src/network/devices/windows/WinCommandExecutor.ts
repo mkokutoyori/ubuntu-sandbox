@@ -178,4 +178,7 @@ export interface WinCommandContext {
   /** Dial a remote SMB share over the real network (`net use` add-form). */
   dialSmbShare(targetIp: string, shareName: string, username: string, password: string):
     import('./server/smb/SmbClient').SmbDialResult;
+
+  /** DHCP Server role (PRD-Windows-Server.md §5 P8) — null/undefined unless this is a `WindowsServer` with the `DHCP` feature installed. Backs `netsh dhcp server`. */
+  dhcpServerRole?: import('./server/dhcp/WindowsDhcpServerRole').WindowsDhcpServerRole | null;
 }

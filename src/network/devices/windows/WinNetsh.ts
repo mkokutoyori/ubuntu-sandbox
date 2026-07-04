@@ -221,6 +221,11 @@ export function cmdNetsh(ctx: WinCommandContext, args: string[]): string {
     return handleNetshDnsclient(ctx, args.slice(1));
   }
 
+  // netsh dhcp server ... (PRD-Windows-Server.md §5 P8 — legacy DHCP Server admin context)
+  if (args[0].toLowerCase() === 'dhcp') {
+    return handleNetshDhcpServer(ctx, args.slice(1));
+  }
+
   // netsh ipsec ...
   if (args[0].toLowerCase() === 'ipsec') {
     return handleNetshIPSec(args.slice(1));
@@ -1337,6 +1342,89 @@ To view help for a command, type the command, followed by a space, and then
   }
 
   return IPV6_HELP;
+}
+
+// ─── netsh dhcp server (PRD-Windows-Server.md §5 P8) ─────────────────
+// Legacy DHCP Server admin context — usual forms only (add scope,
+// exclude/reserved ranges, show scope), not the full historical surface
+// (set scope state, delete scope, per-scope option sets via this path, …).
+
+function findDhcpScope(role: NonNullable<WinCommandContext['dhcpServerRole']>, scopeAddress: string) {
+  return role.listScopes().find(s => {
+    if (s.name === scopeAddress) return true;
+    try {
+      return new IPAddress(s.startRange).networkAddress(new SubnetMask(s.subnetMask)).toString() === scopeAddress;
+    } catch {
+      return false;
+    }
+  });
+}
+
+const NETSH_DHCP_SERVER_HELP = `Usage: netsh dhcp server add scope <ScopeAddress> <SubnetMask> <ScopeName>
+       netsh dhcp server scope <ScopeAddress> add excluderange <StartIP> <EndIP>
+       netsh dhcp server scope <ScopeAddress> add reservedip <ReservedIP> <ClientMACAddress> [Name]
+       netsh dhcp server show scope`;
+
+function handleNetshDhcpServer(ctx: WinCommandContext, args: string[]): string {
+  const role = ctx.dhcpServerRole;
+  if (!role) return 'The DHCP Server service is not available on this computer.';
+  if (args.length > 0 && args[0].toLowerCase() === 'server') args = args.slice(1);
+  if (args.length === 0 || args[0] === '?' || args[0] === '/?') return NETSH_DHCP_SERVER_HELP;
+
+  const verb = args[0].toLowerCase();
+
+  if (verb === 'add' && args[1]?.toLowerCase() === 'scope') {
+    const [scopeAddress, subnetMask, ...nameParts] = args.slice(2);
+    if (!scopeAddress || !subnetMask) return NETSH_DHCP_SERVER_HELP;
+    const scopeName = nameParts.join(' ') || scopeAddress;
+    let network: IPAddress;
+    try {
+      network = new IPAddress(scopeAddress).networkAddress(new SubnetMask(subnetMask));
+    } catch {
+      return 'The scope parameters are incorrect.';
+    }
+    const networkNum = network.toUint32();
+    const mask = new SubnetMask(subnetMask);
+    const broadcastNum = (networkNum | (~mask.toUint32() >>> 0)) >>> 0;
+    const start = IPAddress.fromUint32(networkNum + 1).toString();
+    const end = IPAddress.fromUint32(broadcastNum - 1).toString();
+    const res = role.addScope(scopeName, start, end, subnetMask);
+    return res.ok ? 'Command completed successfully.' : res.message;
+  }
+
+  if (verb === 'show' && args[1]?.toLowerCase() === 'scope') {
+    const scopes = role.listScopes();
+    if (scopes.length === 0) return 'No scopes configured on this DHCP server.';
+    return scopes
+      .map(s => `Scope Address - ${s.name}\tSubnetMask - ${s.subnetMask}\tState - Active`)
+      .join('\n');
+  }
+
+  if (verb === 'scope') {
+    const scopeAddress = args[1];
+    const scope = scopeAddress ? findDhcpScope(role, scopeAddress) : undefined;
+    if (!scope) return `The scope parameters are incorrect.\nThe scope ${scopeAddress ?? ''} does not exist.`;
+    const sub = args[2]?.toLowerCase();
+
+    if (sub === 'add' && args[3]?.toLowerCase() === 'excluderange') {
+      const [, , , , startIp, endIp] = args;
+      if (!startIp || !endIp) return 'Usage: netsh dhcp server scope <ScopeAddress> add excluderange <StartIP> <EndIP>';
+      const res = role.addExclusionRange(startIp, endIp);
+      return res.ok ? 'Command completed successfully.' : res.message;
+    }
+
+    if (sub === 'add' && args[3]?.toLowerCase() === 'reservedip') {
+      const reservedIp = args[4];
+      const clientMac = args[5];
+      if (!reservedIp || !clientMac) return 'Usage: netsh dhcp server scope <ScopeAddress> add reservedip <ReservedIP> <ClientMACAddress> [Name]';
+      const res = role.addReservation(scope.name, reservedIp, clientMac);
+      return res.ok ? 'Command completed successfully.' : res.message;
+    }
+
+    return NETSH_DHCP_SERVER_HELP;
+  }
+
+  return NETSH_DHCP_SERVER_HELP;
 }
 
 // ─── netsh dhcpclient ───────────────────────────────────────────────

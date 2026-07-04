@@ -1834,6 +1834,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       smbSessions: this.smbSessions,
       dialSmbShare: (targetIp: string, shareName: string, username: string, password: string) =>
         this.dialSmbShare(targetIp, shareName, username, password),
+      dhcpServerRole: this.getDhcpServerRole(),
     };
   }
 

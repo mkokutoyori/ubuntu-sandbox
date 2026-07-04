@@ -101,6 +101,31 @@ describe('Add-DhcpServerv4ExclusionRange / Add-DhcpServerv4Reservation', () => {
   });
 });
 
+describe('netsh dhcp server — usual forms', () => {
+  it('add scope / show scope', async () => {
+    const { dhcp } = await buildLan();
+    await run(ps(dhcp), 'Install-WindowsFeature DHCP');
+    const add = await dhcp.executeCmdCommand('netsh dhcp server add scope 192.168.80.0 255.255.255.0 LAN');
+    expect(add).toMatch(/completed successfully/i);
+    const show = await dhcp.executeCmdCommand('netsh dhcp server show scope');
+    expect(show).toContain('LAN');
+  });
+
+  it('scope ... add excluderange / add reservedip', async () => {
+    const { dhcp, winClient } = await buildLan();
+    await run(ps(dhcp), 'Install-WindowsFeature DHCP');
+    await dhcp.executeCmdCommand('netsh dhcp server add scope 192.168.80.0 255.255.255.0 LAN');
+    const excl = await dhcp.executeCmdCommand('netsh dhcp server scope 192.168.80.0 add excluderange 192.168.80.1 192.168.80.149');
+    expect(excl).toMatch(/completed successfully/i);
+    const mac = winClient.getPorts()[0].getMAC().toString();
+    const resv = await dhcp.executeCmdCommand(`netsh dhcp server scope 192.168.80.0 add reservedip 192.168.80.150 ${mac}`);
+    expect(resv).toMatch(/completed successfully/i);
+
+    winClient.getDHCPClient().requestLease('eth0');
+    expect(winClient.getDHCPClient().getState('eth0').lease?.ipAddress).toBe('192.168.80.150');
+  });
+});
+
 describe('Set-DhcpServerv4OptionValue', () => {
   it('configures router/DNS options reflected in a real client lease', async () => {
     const { dhcp, linuxClient } = await buildLan();
