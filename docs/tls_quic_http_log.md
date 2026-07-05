@@ -117,7 +117,7 @@ ci-dessous.
 | P3 | Cache (9111) | P1, P2 | ✅ terminé | Arthur |
 | P4 | Cookies (6265) | P2 | ✅ terminé | Arthur |
 | P5 | Authentification (7617/7616) | P2 | ✅ terminé | Arthur |
-| P6 | WebSocket (6455) | P2 | ⬜ disponible | — |
+| P6 | WebSocket (6455) | P2 | 🟡 en cours | Arthur |
 | P7 | HTTPS | P2, **PRD-TLS.md implémenté** | ⬜ disponible | — |
 | P8 | HTTP/2 (9113 + HPACK) | P1, P7 (`h2c` sans) | ⬜ disponible | — |
 | P9 | Intégration QUIC | **PRD-QUIC.md implémenté** | ⬜ disponible | — |
@@ -364,3 +364,16 @@ seulement le consommer.
 - Suggestion pour la suite : `PRD-HTTP.md`/P6 (WebSocket, RFC 6455)
   reste disponible, sans dépendance croisée avec ce P5. P7 (HTTPS)
   reste bloqué sur `PRD-TLS.md`.
+
+### [2026-07-05 (heure non horodatée par l'outil) UTC] Arthur — PRD-HTTP/P6 — ANNONCE
+- Tâche : `src/network/http/websocket/` — `WebSocketHandshake.ts`
+  (upgrade HTTP/1.1, `Sec-WebSocket-Accept` = base64(SHA-1(clé + GUID
+  magique RFC 6455 §1.3), vecteur de test connu de la RFC),
+  `WebSocketFrame.ts` (framing binaire : FIN, opcode, bit MASK,
+  longueurs étendues 126/127, masquage client obligatoire/démasquage
+  serveur), `WebSocketConnection.ts` (API évènementielle send/
+  onMessage/onClose/ping, fragmentation, fermeture avec code de
+  statut) au-dessus de `Http1ServerSession`/`TcpStack` (P2).
+- Fichiers concernés : nouveaux fichiers sous
+  `src/network/http/websocket/` uniquement — purement additif.
+- Statut / résultat : en cours.
