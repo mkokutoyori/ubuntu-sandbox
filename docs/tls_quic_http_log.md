@@ -1871,7 +1871,10 @@ seulement le consommer.
   + `linux-commands-and-oracle-tools` + `linux-lan-sftp-suite` : 8
   fichiers / 385 tests, tous passants — y compris la suite debug
   `linux-networking.debug.test.ts` (transcript, exit 0). Régression
-  complète `src/__tests__/unit/network-v2/` lancée (portée large :
-  consommateurs IIS/curl/Invoke-WebRequest modifiés) ; résultat à suivre.
+  complète `src/__tests__/unit/network-v2/` (portée large : consommateurs
+  IIS/curl/Invoke-WebRequest modifiés) : 688/690 fichiers, 12790/12851
+  tests, les 11 échecs restants sont les échecs Oracle RAC pré-existants
+  déjà documentés (baseline inchangée, aucune régression introduite par
+  cette migration).
 - **`docs/PRD-HTTP.md` est maintenant 100% livré (P1-P13, toutes
   ✅ terminé, toutes attribuées à Arthur).**
