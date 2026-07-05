@@ -100,7 +100,7 @@ ci-dessous.
 | P4 | Recouvrement de pertes | P2, P3 | ✅ terminé | Arthur |
 | P5 | Contrôle de congestion | P4 | ✅ terminé | Arthur |
 | P6 | Streams | P2 | ✅ terminé | Arthur |
-| P7 | Machine à états de connexion (sans TLS réel) | P3–P6 | 🟡 en cours | Arthur |
+| P7 | Machine à états de connexion (sans TLS réel) | P3–P6 | ✅ terminé | Arthur |
 | P8 | Intégration TLS 1.3 réelle | **PRD-TLS.md implémenté**, P7 | ⬜ disponible | — |
 | P9 | 0-RTT | P8 | ⬜ disponible | — |
 | P10 | Retry & validation d'adresse | P7 | ⬜ disponible | — |
@@ -810,4 +810,24 @@ seulement le consommer.
   drainage.
 - Fichiers concernés : nouveau fichier
   `src/network/quic/QuicConnection.ts` — purement additif.
-- Statut / résultat : en cours.
+- Statut / résultat : ✅ terminé. 6 tests d'intégration sur un vrai
+  `EndHost`/UDP câblé (port de test 9443) : établissement des deux
+  côtés (`established`), un message sur un stream livré au pair,
+  **multiplexage réel** de deux streams indépendants correctement
+  séparés par `streamId`, échange bidirectionnel (client→serveur puis
+  serveur→client sur le même stream), fermeture propre — l'initiateur
+  passe par `closing`, le pair passe **directement** par `draining`
+  (RFC 9000 §10.2.2) avec le code d'erreur transmis au handler
+  `onClose`, et `advanceClosing` fait transitionner vers `closed` après
+  le délai de drainage (pas avant). Tous verts dès la première
+  exécution — aucun bug trouvé cette fois (contrairement à P8-h2c où
+  un bug de réentrance avait été détecté). `tsc`/`eslint` propres.
+  Régression ciblée (les 7 fichiers `quic-*` + dns-encrypted-transports) :
+  8 fichiers, 110 tests, 0 échec.
+- Suggestion pour la suite : c'est la dernière phase QUIC accessible
+  sans dépendance bloquante — P8 (intégration TLS 1.3 réelle) et tout
+  ce qui en découle (P9 0-RTT, P13 migration DoQ) nécessitent que
+  `PRD-TLS.md` soit entièrement implémenté ; P10 (Retry) et P11
+  (Connection IDs multiples) dépendent de P7 (terminé) mais restent
+  disponibles sans attendre TLS si un agent veut les prendre. P12
+  (observabilité) dépend de P4-P11.
