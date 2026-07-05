@@ -11,6 +11,7 @@
  */
 import type { TcpStack } from '@/network/tcp/TcpStack';
 import type { ISftpFileSystem, SftpDirEntry } from '@/network/protocols/ssh/sftp/ISftpFileSystem';
+import { ChrootedSftpFileSystem } from '@/network/protocols/ssh/sftp/ChrootedSftpFileSystem';
 import type { FtpCommand, FtpReply, FtpTransferType, FtpFileStructure, FtpTransferMode } from './types';
 import { reply } from './replies';
 import {
@@ -22,8 +23,10 @@ export interface FtpServerConfig {
   /** username -> password. RFC 959 doesn't mandate a specific credential store; this mirrors the ad hoc user maps used elsewhere in this project's protocol tests (RADIUS, EAP-TTLS). */
   readonly users: ReadonlyMap<string, string>;
   readonly fs: ISftpFileSystem;
-  /** Initial working directory; defaults to `/`. */
+  /** Initial working directory; defaults to `/`. Ignored for a user with a chroot entry (§2.1.9 — the chroot's own root is always `/`). */
   readonly rootPath?: string;
+  /** username -> confinement root, applied via `ChrootedSftpFileSystem` once login succeeds (§2.1.9, same principle as the SFTP side). */
+  readonly chroots?: ReadonlyMap<string, string>;
 }
 
 type SessionState = 'awaiting-user' | 'awaiting-password' | 'authenticated' | 'closed';
@@ -45,6 +48,8 @@ export class FtpServerSession {
 
   private state: SessionState = 'awaiting-user';
   private dataChannel: FtpDataChannel | null = null;
+  private renameFrom: string | null = null;
+  private fs: ISftpFileSystem;
 
   constructor(
     private readonly config: FtpServerConfig,
@@ -60,6 +65,7 @@ export class FtpServerSession {
      */
     private readonly onUnsolicitedReply: (r: FtpReply) => void = () => {},
   ) {
+    this.fs = config.fs;
     this.cwd = config.rootPath ?? '/';
   }
 
@@ -93,6 +99,14 @@ export class FtpServerSession {
       case 'APPE': return this.handleStor(cmd, { unique: false, append: true });
       case 'LIST': return this.handleList(cmd, 'long');
       case 'NLST': return this.handleList(cmd, 'names');
+      case 'PWD': return [this.handlePwd()];
+      case 'CWD': return [this.handleCwd(cmd)];
+      case 'CDUP': return [this.handleCwd({ verb: 'CDUP', argument: '..' })];
+      case 'MKD': return [this.handleMkd(cmd)];
+      case 'RMD': return [this.handleRmd(cmd)];
+      case 'DELE': return [this.handleDele(cmd)];
+      case 'RNFR': return [this.handleRnfr(cmd)];
+      case 'RNTO': return [this.handleRnto(cmd)];
       default: return [reply(500, `'${cmd.verb}' not understood.`)];
     }
   }
@@ -102,7 +116,7 @@ export class FtpServerSession {
   }
 
   private resolvePath(argument: string | undefined): string {
-    return this.config.fs.normalizePath(argument ?? '', this.cwd);
+    return this.fs.normalizePath(argument ?? '', this.cwd);
   }
 
   private closeDataChannel(): void {
@@ -129,6 +143,11 @@ export class FtpServerSession {
     }
     this.state = 'authenticated';
     this.authenticated = true;
+    const chrootDir = this.config.chroots?.get(this.username!);
+    if (chrootDir !== undefined) {
+      this.fs = new ChrootedSftpFileSystem(this.config.fs, chrootDir);
+      this.cwd = '/';
+    }
     return reply(230, `User ${this.username} logged in.`);
   }
 
@@ -193,7 +212,7 @@ export class FtpServerSession {
     if (authFailure) return [authFailure];
     if (!cmd.argument) return [reply(501, 'Syntax error in parameters.')];
     const path = this.resolvePath(cmd.argument);
-    const file = this.config.fs.readFile(path);
+    const file = this.fs.readFile(path);
     if (!file.ok) return [reply(550, `${cmd.argument}: No such file or directory.`)];
 
     const socket = this.dataChannel ? openDataConnection(this.dataChannel, this.tcpStack) : null;
@@ -214,7 +233,7 @@ export class FtpServerSession {
       const base = cmd.argument ? this.resolvePath(cmd.argument) : this.resolvePath('STOU');
       path = base;
       let n = 1;
-      while (this.config.fs.exists(path)) { path = `${base}.${n}`; n++; }
+      while (this.fs.exists(path)) { path = `${base}.${n}`; n++; }
     }
 
     const socket = this.dataChannel ? openDataConnection(this.dataChannel, this.tcpStack) : null;
@@ -225,10 +244,10 @@ export class FtpServerSession {
     socket.onClose(() => {
       this.closeDataChannel();
       if (opts.append) {
-        const existing = this.config.fs.readFile(path);
+        const existing = this.fs.readFile(path);
         received = (existing.ok ? existing.value : '') + received;
       }
-      const written = this.config.fs.writeFile(path, received);
+      const written = this.fs.writeFile(path, received);
       if (!written.ok) {
         this.onUnsolicitedReply(reply(550, `${cmd.argument ?? path}: Permission denied.`));
         return;
@@ -243,7 +262,7 @@ export class FtpServerSession {
     const authFailure = this.requireAuth();
     if (authFailure) return [authFailure];
     const path = this.resolvePath(cmd.argument);
-    const listing = this.config.fs.listDirectory(path);
+    const listing = this.fs.listDirectory(path);
     if (!listing.ok) return [reply(450, `${cmd.argument ?? path}: No such file or directory.`)];
 
     const socket = this.dataChannel ? openDataConnection(this.dataChannel, this.tcpStack) : null;
@@ -255,5 +274,74 @@ export class FtpServerSession {
     socket.close();
     this.closeDataChannel();
     return [reply(150, 'Here comes the directory listing.'), reply(226, 'Directory send OK.')];
+  }
+
+  private handlePwd(): FtpReply {
+    const authFailure = this.requireAuth();
+    if (authFailure) return authFailure;
+    return reply(257, `"${this.cwd}" is the current directory.`);
+  }
+
+  private handleCwd(cmd: FtpCommand): FtpReply {
+    const authFailure = this.requireAuth();
+    if (authFailure) return authFailure;
+    if (!cmd.argument) return reply(501, 'Syntax error in parameters.');
+    const path = this.resolvePath(cmd.argument);
+    if (this.fs.getEntryType(path) !== 'directory') return reply(550, `${cmd.argument}: No such file or directory.`);
+    this.cwd = path;
+    return reply(250, 'Directory successfully changed.');
+  }
+
+  private handleMkd(cmd: FtpCommand): FtpReply {
+    const authFailure = this.requireAuth();
+    if (authFailure) return authFailure;
+    if (!cmd.argument) return reply(501, 'Syntax error in parameters.');
+    const path = this.resolvePath(cmd.argument);
+    const result = this.fs.mkdir(path);
+    if (!result.ok) return reply(550, `${cmd.argument}: Operation failed.`);
+    return reply(257, `"${path}" created.`);
+  }
+
+  private handleRmd(cmd: FtpCommand): FtpReply {
+    const authFailure = this.requireAuth();
+    if (authFailure) return authFailure;
+    if (!cmd.argument) return reply(501, 'Syntax error in parameters.');
+    const path = this.resolvePath(cmd.argument);
+    const result = this.fs.rmdir(path);
+    if (!result.ok) return reply(550, `${cmd.argument}: Operation failed.`);
+    return reply(250, 'Directory removed.');
+  }
+
+  private handleDele(cmd: FtpCommand): FtpReply {
+    const authFailure = this.requireAuth();
+    if (authFailure) return authFailure;
+    if (!cmd.argument) return reply(501, 'Syntax error in parameters.');
+    const path = this.resolvePath(cmd.argument);
+    const result = this.fs.deleteFile(path);
+    if (!result.ok) return reply(550, `${cmd.argument}: Operation failed.`);
+    return reply(250, 'File deleted.');
+  }
+
+  private handleRnfr(cmd: FtpCommand): FtpReply {
+    const authFailure = this.requireAuth();
+    if (authFailure) return authFailure;
+    if (!cmd.argument) return reply(501, 'Syntax error in parameters.');
+    const path = this.resolvePath(cmd.argument);
+    if (this.fs.getEntryType(path) === null) return reply(550, `${cmd.argument}: No such file or directory.`);
+    this.renameFrom = path;
+    return reply(350, 'Requested file action pending further information.');
+  }
+
+  private handleRnto(cmd: FtpCommand): FtpReply {
+    const authFailure = this.requireAuth();
+    if (authFailure) return authFailure;
+    if (!this.renameFrom) return reply(503, 'RNFR required first.');
+    const src = this.renameFrom;
+    this.renameFrom = null;
+    if (!cmd.argument) return reply(501, 'Syntax error in parameters.');
+    const dest = this.resolvePath(cmd.argument);
+    const result = this.fs.rename(src, dest);
+    if (!result.ok) return reply(550, 'Rename failed.');
+    return reply(250, 'Rename successful.');
   }
 }
