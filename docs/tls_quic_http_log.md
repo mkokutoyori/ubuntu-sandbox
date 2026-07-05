@@ -108,7 +108,7 @@ ci-dessous.
 | P1 | Sémantique HTTP (9110) | — | ✅ terminé | Arthur |
 | P2 | HTTP/1.1 en clair (9112) | P1 | ✅ terminé | Arthur |
 | P3 | Cache (9111) | P1, P2 | ✅ terminé | Arthur |
-| P4 | Cookies (6265) | P2 | 🟡 en cours | Arthur |
+| P4 | Cookies (6265) | P2 | ✅ terminé | Arthur |
 | P5 | Authentification (7617/7616) | P2 | ⬜ disponible | — |
 | P6 | WebSocket (6455) | P2 | ⬜ disponible | — |
 | P7 | HTTPS | P2, **PRD-TLS.md implémenté** | ⬜ disponible | — |
@@ -292,4 +292,15 @@ seulement le consommer.
   `SameSite`).
 - Fichiers concernés : nouveaux fichiers sous
   `src/network/http/cookies/` uniquement — purement additif.
-- Statut / résultat : en cours.
+- Statut / résultat : ✅ terminé. 2 fichiers livrés (`SetCookie.ts`,
+  `CookieJar.ts`) + `http-cookies.test.ts` (27 tests : parsing des
+  attributs, `domainMatch`/`pathMatch` §5.1.3/§5.1.4, `hostOnly` vs
+  `Domain` explicite, rejet d'un `Domain` ne domain-matchant pas
+  l'hôte, `Secure`/`SameSite` (Strict/Lax bloqués en cross-site, None
+  toujours envoyé), expiration Max-Age, remplacement/suppression par
+  identité name+domain+path). `tsc` et `eslint` propres.
+  Non-régression confirmée (114 tests, 0 échec) — aucun fichier
+  existant modifié.
+- Suggestion pour la suite : `PRD-HTTP.md`/P5 (auth Basic/Digest) et P6
+  (WebSocket) restent disponibles, sans dépendance croisée entre eux
+  ni avec ce P4.
