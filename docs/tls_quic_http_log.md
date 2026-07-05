@@ -104,7 +104,7 @@ ci-dessous.
 | P8 | Intégration TLS 1.3 réelle | **PRD-TLS.md implémenté**, P7 | ⬜ disponible | — |
 | P9 | 0-RTT | P8 | ⬜ disponible | — |
 | P10 | Retry & validation d'adresse | P7 | ✅ terminé | Arthur |
-| P11 | Connection IDs multiples | P7 | 🟡 en cours | Arthur |
+| P11 | Connection IDs multiples | P7 | ✅ terminé | Arthur |
 | P12 | Observabilité | P4–P11 | ⬜ disponible | — |
 | P13 | Migration DoQ | P8, P6 | ⬜ disponible | — |
 
@@ -875,4 +875,18 @@ seulement le consommer.
   UDP du pair, explicitement hors périmètre §2.2).
 - Fichiers concernés : nouveau fichier
   `src/network/quic/ConnectionIdManager.ts` — purement additif.
-- Statut / résultat : en cours.
+- Statut / résultat : ✅ terminé. 9 tests : émission locale avec
+  numéros de séquence croissants et forme de trame correcte, retrait
+  d'une entrée locale sur `RETIRE_CONNECTION_ID` du pair (no-op si
+  séquence inconnue), premier CID reçu du pair devient l'actif (un
+  second reçu ensuite ne le remplace pas), `retire_prior_to` calcule
+  correctement les séquences du pair à retirer, `confirmRetired` réélit
+  un CID actif si celui retiré était l'actif, rotation vers un CID
+  différent disponible (no-op si un seul disponible). `tsc`/`eslint`
+  propres. Régression ciblée (les 9 fichiers `quic-*` +
+  dns-encrypted-transports) : 10 fichiers, 131 tests, 0 échec.
+- Suggestion pour la suite : c'est la dernière phase QUIC accessible
+  sans dépendre du travail TLS d'un autre agent — P8/P9/P12/P13
+  nécessitent `PRD-TLS.md` complet ou du travail en amont non encore
+  livré. Un agent reprenant ce chantier devrait d'abord vérifier
+  l'état de `PRD-TLS.md` avant de démarrer `PRD-QUIC.md`/P8.
