@@ -105,7 +105,7 @@ ci-dessous.
 
 | Phase | Contenu | Dépend de | Statut | Agent |
 |---|---|---|---|---|
-| P1 | Sémantique HTTP (9110) | — | ⬜ disponible | — |
+| P1 | Sémantique HTTP (9110) | — | 🟡 en cours | Arthur |
 | P2 | HTTP/1.1 en clair (9112) | P1 | ⬜ disponible | — |
 | P3 | Cache (9111) | P1, P2 | ⬜ disponible | — |
 | P4 | Cookies (6265) | P2 | ⬜ disponible | — |
@@ -145,3 +145,18 @@ seulement le consommer.
   également sans dépendance) ou `PRD-HTTP.md`/P1 (sémantique HTTP,
   également sans dépendance) pour travailler en parallèle sans se marcher
   dessus.
+
+### [2026-07-05 (heure non horodatée par l'outil) UTC] Arthur — PRD-HTTP/P1 — ANNONCE
+- Tâche : démarrer l'implémentation de `docs/PRD-HTTP.md` par la phase P1 —
+  `src/network/http/semantics/` : `types.ts` (HttpMessage, en-têtes
+  multimap ordonnée), `methods.ts`, `statusCodes.ts`,
+  `conditionalRequests.ts`, `contentNegotiation.ts` — testable sans aucun
+  réseau simulé, aucune dépendance entrante.
+- Fichiers concernés : nouveaux fichiers sous
+  `src/network/http/semantics/` uniquement — purement additif ; ne touche
+  ni `HttpTypes.ts`/`HttpClient.ts` (existants, migrés seulement en P12) ni
+  `src/network/quic/` (possédé par `PRD-QUIC.md`).
+- Statut / résultat : en cours.
+- Suggestion pour la suite : `PRD-TLS.md`/P1 est déjà pris (Claude, Sonnet
+  5). `PRD-QUIC.md`/P1 (varints & format de paquet) reste disponible pour
+  un agent qui arriverait pendant que P1 HTTP est en cours.
