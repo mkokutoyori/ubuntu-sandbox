@@ -28,6 +28,7 @@ import type { FtpCommand, FtpReply } from './types';
 import { encodeCommand, decodeReply } from './replies';
 import { FTP_CONTROL_PORT } from './FtpServer';
 import { encodePortArgument, decodePortArgument, encodeEprtArgument, decodeEpsvReplyArgument, type NetProtocol } from './DataChannel';
+import { encodeCompressedMode, decodeCompressedMode } from './compressedMode';
 
 export class FtpClientSession {
   private socket: TcpSocket | null = null;
@@ -35,6 +36,8 @@ export class FtpClientSession {
   private dataSocket: TcpSocket | null = null;
   private activeListener: TcpListener | null = null;
   private pendingDataHandler: ((data: unknown) => void) | null = null;
+  /** Mirrors the server's negotiated `MODE S`/`MODE C` (RFC 959 §3.4.2), set once `setTransferMode()`'s `MODE` command succeeds. */
+  private transferMode: 'S' | 'C' = 'S';
 
   constructor(
     private readonly tcpStack: TcpStack,
@@ -60,6 +63,13 @@ export class FtpClientSession {
     this.lastReply = null;
     this.socket.write(encodeCommand(cmd));
     return this.lastReply;
+  }
+
+  /** `MODE S`/`MODE C` (RFC 959 §3.4.2) — updates local state only once the server confirms it. */
+  setTransferMode(mode: 'S' | 'C'): FtpReply | null {
+    const r = this.sendCommand({ verb: 'MODE', argument: mode });
+    if (r?.code === 200) this.transferMode = mode;
+    return r;
   }
 
   /** `PASV` — the server listens, and the client connects in immediately. */
@@ -129,6 +139,7 @@ export class FtpClientSession {
     const r = this.sendCommand({ verb: 'RETR', argument: remotePath });
     this.pendingDataHandler = null;
     this.dataSocket = null;
+    if (content !== null && this.transferMode === 'C') content = decodeCompressedMode(content);
     return { reply: r, content };
   }
 
@@ -140,7 +151,7 @@ export class FtpClientSession {
     const socket = this.dataSocket;
     this.dataSocket = null;
     if (!socket) return null;
-    socket.write(content);
+    socket.write(this.transferMode === 'C' ? encodeCompressedMode(content) : content);
     socket.close();
     return this.lastReply;
   }

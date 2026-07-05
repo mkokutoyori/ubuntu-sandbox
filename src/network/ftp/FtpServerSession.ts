@@ -18,6 +18,7 @@ import {
   type FtpDataChannel, PassiveDataChannel, decodePortArgument, encodePortArgument, openDataConnection,
   allocatePassivePort, decodeEprtArgument, encodeEpsvReplyArgument,
 } from './DataChannel';
+import { encodeCompressedMode, decodeCompressedMode } from './compressedMode';
 
 export interface FtpServerConfig {
   /** username -> password. RFC 959 doesn't mandate a specific credential store; this mirrors the ad hoc user maps used elsewhere in this project's protocol tests (RADIUS, EAP-TTLS). */
@@ -204,9 +205,9 @@ export class FtpServerSession {
     const authFailure = this.requireAuth();
     if (authFailure) return authFailure;
     const code = (cmd.argument ?? '').trim().toUpperCase();
-    if (code === 'S') {
-      this.transferMode = 'S';
-      return reply(200, 'Mode set to S.');
+    if (code === 'S' || code === 'C') {
+      this.transferMode = code;
+      return reply(200, `Mode set to ${code}.`);
     }
     return reply(504, `Mode not implemented for parameter '${cmd.argument ?? ''}'.`);
   }
@@ -260,7 +261,8 @@ export class FtpServerSession {
 
     const socket = this.dataChannel ? openDataConnection(this.dataChannel, this.tcpStack) : null;
     if (!socket) return [reply(425, "Can't open data connection.")];
-    socket.write(offset > 0 ? file.value.slice(offset) : file.value);
+    const outgoing = offset > 0 ? file.value.slice(offset) : file.value;
+    socket.write(this.transferMode === 'C' ? encodeCompressedMode(outgoing) : outgoing);
     socket.close();
     this.closeDataChannel();
     return [reply(150, `Opening ${this.transferType === 'A' ? 'ASCII' : 'BINARY'} mode data connection for ${cmd.argument}.`), reply(226, 'Transfer complete.')];
@@ -287,6 +289,14 @@ export class FtpServerSession {
     socket.onData((data) => { received += String(data); });
     socket.onClose(() => {
       this.closeDataChannel();
+      if (this.transferMode === 'C') {
+        const decoded = decodeCompressedMode(received);
+        if (decoded === null) {
+          this.onUnsolicitedReply(reply(550, 'Malformed MODE C data.'));
+          return;
+        }
+        received = decoded;
+      }
       if (offset > 0) {
         const existing = this.fs.readFile(path);
         received = (existing.ok ? existing.value.slice(0, offset) : '') + received;
