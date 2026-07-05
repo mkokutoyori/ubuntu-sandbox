@@ -15,6 +15,8 @@ import type { TlsRecord } from '@/network/tls/recordLayer';
 import { encodeRecords, decodeRecords } from './TlsRecordWire';
 import { encryptApplicationData, decryptApplicationData } from './ApplicationDataCipher';
 import { HstsStore } from './HstsStore';
+import type { IEventBus } from '@/events/EventBus';
+import { randomRequestId } from '../events';
 
 function bytesToBinaryString(bytes: Uint8Array): string {
   let out = '';
@@ -58,6 +60,7 @@ export class HttpsClientSession {
     private readonly port = 443,
     private readonly tlsConfig: HttpsClientConfig,
     hstsStore?: HstsStore,
+    private readonly eventBus?: IEventBus,
   ) {
     this.hstsStore = hstsStore ?? new HstsStore();
   }
@@ -98,8 +101,18 @@ export class HttpsClientSession {
   }
 
   send(request: HttpMessage, opts?: Http1EncodeOptions): HttpsSendResult {
+    const requestId = randomRequestId();
+    const method = request.method ?? 'GET';
+    const target = request.target ?? '';
+    this.eventBus?.publish({ topic: 'http.request.started', payload: { requestId, method, target } });
+
+    const fail = (error: string): HttpsSendResult => {
+      this.eventBus?.publish({ topic: 'http.request.failed', payload: { requestId, method, target, error } });
+      return { ok: false, error };
+    };
+
     if (!this.connectIfNeeded() || !this.socket || !this.tls) {
-      return { ok: false, error: `TLS handshake with ${this.targetIp} port ${this.port} failed` };
+      return fail(`TLS handshake with ${this.targetIp} port ${this.port} failed`);
     }
     const socket = this.socket;
     const tls = this.tls;
@@ -115,13 +128,13 @@ export class HttpsClientSession {
     unsubscribe();
     this.clientSeq = clientNextSeq;
 
-    if (!responseRecords) return { ok: false, error: 'Empty reply from server' };
+    if (!responseRecords) return fail('Empty reply from server');
 
     const { plaintext, nextSeq: serverNextSeq } = decryptApplicationData(tls.serverApplicationTrafficSecret!, this.serverSeq, responseRecords);
     this.serverSeq = serverNextSeq;
 
     const parsed = parseResponse(decoder.decode(plaintext), { suppressBody: request.method === 'HEAD' });
-    if (parsed.ok === false) return { ok: false, error: parsed.reason };
+    if (parsed.ok === false) return fail(parsed.reason);
 
     const hsts = parsed.message.headers.get('Strict-Transport-Security');
     if (hsts) this.hstsStore.record(this.targetIp, hsts, Date.now());
@@ -131,6 +144,7 @@ export class HttpsClientSession {
       this.socket = null;
       this.tls = null;
     }
+    this.eventBus?.publish({ topic: 'http.request.completed', payload: { requestId, method, target, statusCode: parsed.message.statusCode ?? 0 } });
     return { ok: true, response: parsed.message, alpnProtocol: tls.negotiatedAlpnProtocol };
   }
 

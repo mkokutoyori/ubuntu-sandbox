@@ -2,6 +2,7 @@ import type { HttpMessage, HttpMethod } from '../semantics/types';
 import { isSafeMethod } from '../semantics/methods';
 import { parseETag, type ConditionalHeaders } from '../semantics/conditionalRequests';
 import { parseCacheControl, type CacheControlDirectives } from './CacheControl';
+import type { IEventBus } from '@/events/EventBus';
 
 export interface CacheKey {
   method: HttpMethod;
@@ -55,6 +56,8 @@ export function computeFreshnessLifetimeMs(
 export class HttpCacheStore {
   private entries = new Map<string, CacheEntry>();
 
+  constructor(private readonly eventBus?: IEventBus) {}
+
   private keyString(method: HttpMethod, uri: string, vary: Record<string, string>): string {
     const sorted = Object.keys(vary).sort().map((k) => `${k}=${vary[k]}`);
     return `${method} ${uri} ${sorted.join('&')}`;
@@ -106,13 +109,15 @@ export class HttpCacheStore {
   }
 
   get(request: HttpMessage): CacheEntry | undefined {
-    if (request.method !== 'GET') return undefined;
     const uri = request.target ?? '';
+    if (request.method !== 'GET') return undefined;
     for (const entry of this.entries.values()) {
       if (entry.key.method === request.method && entry.key.uri === uri && this.matchesVary(entry, request)) {
+        if (this.isFresh(entry)) this.eventBus?.publish({ topic: 'http.cache.hit', payload: { uri } });
         return entry;
       }
     }
+    this.eventBus?.publish({ topic: 'http.cache.miss', payload: { uri } });
     return undefined;
   }
 
@@ -136,18 +141,21 @@ export class HttpCacheStore {
 
   /** RFC 9111 §4.3.3 — 304 refreshes stored metadata/freshness in place; anything else replaces the entry. */
   applyRevalidationResponse(request: HttpMessage, revalidationResponse: HttpMessage, now = Date.now()): void {
+    const uri = request.target ?? '';
     if (revalidationResponse.statusCode === 304) {
-      const entry = this.get(request);
-      if (!entry) return;
+      const found = [...this.entries.values()].find((e) => e.key.uri === uri && this.matchesVary(e, request));
+      if (!found) return;
       const cc = parseCacheControl(revalidationResponse.headers.get('Cache-Control'));
-      entry.storedAt = now;
-      entry.freshnessLifetimeMs = computeFreshnessLifetimeMs(entry.response, cc, now, entry.lastModified);
-      entry.mustRevalidate = cc.noCache || cc.mustRevalidate;
+      found.storedAt = now;
+      found.freshnessLifetimeMs = computeFreshnessLifetimeMs(found.response, cc, now, found.lastModified);
+      found.mustRevalidate = cc.noCache || cc.mustRevalidate;
       for (const [k, v] of revalidationResponse.headers.entries()) {
-        if (k.toLowerCase() !== 'content-length') entry.response.headers.set(k, v);
+        if (k.toLowerCase() !== 'content-length') found.response.headers.set(k, v);
       }
+      this.eventBus?.publish({ topic: 'http.cache.revalidated', payload: { uri } });
     } else {
       this.put(request, revalidationResponse, now);
+      this.eventBus?.publish({ topic: 'http.cache.miss', payload: { uri } });
     }
   }
 

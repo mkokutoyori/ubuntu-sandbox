@@ -12,6 +12,8 @@ import { parseRequest, encodeResponse } from '../http1/Http1Wire';
 import { TlsServerSession, type TlsServerConfig } from '@/network/tls/TlsServerSession';
 import { encodeRecords, decodeRecords } from './TlsRecordWire';
 import { encryptApplicationData, decryptApplicationData } from './ApplicationDataCipher';
+import type { IEventBus } from '@/events/EventBus';
+import { randomRequestId } from '../events';
 
 function bytesToBinaryString(bytes: Uint8Array): string {
   let out = '';
@@ -43,6 +45,7 @@ export class HttpsServerSession {
     private readonly port: number,
     private readonly tlsConfig: HttpsServerConfig,
     private readonly handler: Http1RequestHandler,
+    private readonly eventBus?: IEventBus,
   ) {}
 
   start(): void {
@@ -81,15 +84,22 @@ export class HttpsServerSession {
       );
       clientSeq = clientNextSeq;
 
+      const requestId = randomRequestId();
       const parsed = parseRequest(decoder.decode(requestBytes));
       let response: HttpMessage;
       let shouldClose: boolean;
       if (parsed.ok === false) {
+        this.eventBus?.publish({ topic: 'http.request.started', payload: { requestId, method: 'GET', target: '' } });
+        this.eventBus?.publish({ topic: 'http.request.failed', payload: { requestId, method: 'GET', target: '', error: parsed.reason } });
         response = createResponse(400, 'Bad Request');
         response.headers.set('Connection', 'close');
         shouldClose = true;
       } else {
+        const method = parsed.message.method ?? 'GET';
+        const target = parsed.message.target ?? '';
+        this.eventBus?.publish({ topic: 'http.request.started', payload: { requestId, method, target } });
         response = this.handler(parsed.message);
+        this.eventBus?.publish({ topic: 'http.request.completed', payload: { requestId, method, target, statusCode: response.statusCode ?? 0 } });
         shouldClose =
           parsed.message.headers.get('Connection')?.toLowerCase() === 'close' ||
           response.headers.get('Connection')?.toLowerCase() === 'close';

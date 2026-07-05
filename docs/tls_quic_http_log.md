@@ -122,7 +122,7 @@ ci-dessous.
 | P8 | HTTP/2 (9113 + HPACK) | P1, P7 (`h2c` sans) | ✅ terminé (h2c seul, sans ALPN — P7/ALPN `h2` restent à faire séparément) | Arthur |
 | P9 | Intégration QUIC | **PRD-QUIC.md implémenté** | ✅ terminé | Arthur |
 | P10 | HTTP/3 (9114 + QPACK) | P1, P9 | ✅ terminé | Arthur |
-| P11 | Observabilité | P2–P10 | ⬜ disponible | — |
+| P11 | Observabilité | P2–P10 | ✅ terminé | Arthur |
 | P12 | Migration IIS/curl/wget | P2, P7 | ⬜ disponible | — |
 | P13 | Migration DoH | P7 | ✅ terminé | Arthur |
 
@@ -1748,3 +1748,53 @@ seulement le consommer.
 - Suggestion pour la suite : `PRD-HTTP.md`/P11 (observabilité, transverse
   à P2-P10) et P12 (migration IIS/curl/wget sur le moteur HTTP/1.1+HTTPS
   réel) sont maintenant toutes les deux disponibles et indépendantes.
+
+### [2026-07-05 (heure non horodatée par l'outil) UTC] Arthur — PRD-HTTP/P11 — ANNONCE + TERMINÉ
+- Tâche : `PRD-HTTP.md`/P11 — observabilité (§2.1.L), transverse à P2-P10 :
+  `events.ts`/`observables.ts` au niveau `src/network/http/` (comme
+  `src/network/quic/events.ts`/`observables.ts`, P12 QUIC). Topics visés
+  par le PRD : `http.request.started/completed/failed`,
+  `http.cache.hit/miss/revalidated`, `websocket.opened/closed`,
+  `http2.stream.opened/closed`, `quic.connection.established/closed`
+  (ce dernier déjà émis par `QuicConnection` lui-même — rien à ré-émettre
+  ici, seulement à consommer depuis le même `DomainEvent` central).
+  Nouveaux fichiers :
+  - `src/network/http/events.ts` — `HttpDomainEvent` (10 topics),
+    `randomRequestId()`/`randomHttpConnectionId()`. Ajouté à l'union
+    centrale `DomainEvent` (`src/events/types.ts`), comme `QuicDomainEvent`.
+  - `src/network/http/observables.ts` — `HttpSignalStore`/
+    `subscribeHttpObservables`/`metricsSignal` : contrairement à
+    `quic/observables.ts` (une entité longue-durée par `connectionId`,
+    naturellement un modèle par-entité), les requêtes/lookups cache HTTP
+    sont éphémères et à forte cardinalité — le read-model utile ici est un
+    unique agrégat de compteurs (vue façon tableau de bord de métriques).
+  - Instrumentation (paramètre `eventBus` optionnel, rétrocompatible,
+    aucun changement de comportement si omis) sur les 7 points de
+    décision réels : `Http1ClientSession`/`Http1ServerSession` et
+    `HttpsClientSession`/`HttpsServerSession` (`http.request.*`, un
+    `requestId` par échange, câblé aussi côté serveur) ; `HttpCacheStore`
+    (`http.cache.hit`/`miss` dans `get()` selon fraîcheur,
+    `revalidated`/`miss` dans `applyRevalidationResponse()` selon 304 ou
+    remplacement complet) ; `WebSocketConnection` (`opened` au
+    constructeur, `closed` sur les deux chemins de fermeture) ;
+    `Http2Connection` (`stream.opened`/`closed` via un nouvel helper privé
+    `closeStream()` centralisant les 3 points d'suppression de stream).
+    `Http3Connection` n'émet volontairement rien de nouveau : le PRD ne
+    liste que les topics `http2.stream.*`, pas d'équivalent HTTP/3 — hors
+    périmètre strict de ce qui est demandé.
+  - `src/__tests__/unit/network-v2/http-observability.test.ts` — NOUVEAU,
+    7 tests couvrant les 4 sources d'événements + le read-model agrégé,
+    sur une topologie volontairement hétérogène (serveur `LinuxPC`,
+    client `WindowsPC`).
+- Statut / résultat : ✅ terminé. `tsc --noEmit -p tsconfig.app.json`
+  propre sur tous les fichiers touchés ; `eslint` propre (les 4 erreurs
+  restantes dans `events/types.ts` sont pré-existantes, vérifiées via
+  `git stash`, sans rapport avec ce changement). Régression ciblée
+  `http-*` + `http1-wire` + `http2` + `http3*` + `https` + DNS chiffré +
+  `quic-observability` + `tls-observability` : 14 fichiers / 231 tests,
+  tous passants. Régression complète `src/__tests__/unit/network-v2/`
+  lancée (portée large : 7 classes centrales modifiées) ; résultat à
+  suivre dans une entrée de suivi si un écart apparaît.
+- Suggestion pour la suite : `PRD-HTTP.md`/P12 (migration IIS/curl/wget
+  sur le moteur HTTP/1.1+HTTPS réel) est la dernière phase P1-P13 restante
+  et devient donc la prochaine cible naturelle.

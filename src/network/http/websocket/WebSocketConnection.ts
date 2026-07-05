@@ -1,5 +1,7 @@
 import type { TcpSocket } from '@/network/tcp/TcpStack';
 import { encodeFrame, decodeFrame, type WebSocketOpcode } from './WebSocketFrame';
+import type { IEventBus } from '@/events/EventBus';
+import { randomHttpConnectionId } from '../events';
 
 export type WebSocketRole = 'client' | 'server';
 
@@ -67,9 +69,11 @@ export class WebSocketConnection {
   private messageHandlers: Array<(msg: WebSocketMessage) => void> = [];
   private closeHandlers: Array<(code: number, reason: string) => void> = [];
   private pongHandlers: Array<(payload: Uint8Array) => void> = [];
+  private readonly connectionId = randomHttpConnectionId();
 
-  constructor(private readonly socket: TcpSocket, private readonly role: WebSocketRole) {
+  constructor(private readonly socket: TcpSocket, private readonly role: WebSocketRole, private readonly eventBus?: IEventBus) {
     socket.onData((data) => this.handleIncoming(binaryStringToBytes(String(data))));
+    this.eventBus?.publish({ topic: 'websocket.opened', payload: { connectionId: this.connectionId } });
   }
 
   private sendFrame(opcode: WebSocketOpcode, payload: Uint8Array, fin = true): void {
@@ -129,6 +133,7 @@ export class WebSocketConnection {
     this.closed = true;
     this.sendFrame('close', encodeCloseBody(code, reason));
     this.socket.close();
+    this.eventBus?.publish({ topic: 'websocket.closed', payload: { connectionId: this.connectionId, code, reason } });
     for (const h of this.closeHandlers) h(code, reason);
   }
 
@@ -169,6 +174,7 @@ export class WebSocketConnection {
           this.closed = true;
           this.sendFrame('close', encodeCloseBody(code, reason));
           this.socket.close();
+          this.eventBus?.publish({ topic: 'websocket.closed', payload: { connectionId: this.connectionId, code, reason } });
         }
         for (const h of this.closeHandlers) h(code, reason);
         return;

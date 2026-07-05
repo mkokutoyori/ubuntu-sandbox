@@ -6,6 +6,8 @@ import {
   encodeWindowUpdatePayload, decodeWindowUpdatePayload,
 } from './Http2Frame';
 import { HpackContext, encodeHeaderBlock, decodeHeaderBlock } from './Hpack';
+import type { IEventBus } from '@/events/EventBus';
+import { randomHttpConnectionId } from '../events';
 
 // RFC 9113 §3.4 — h2c "prior knowledge": the client sends this fixed
 // 24-octet preface immediately, no HTTP/1.1 Upgrade dance.
@@ -73,8 +75,14 @@ export class Http2Connection {
   private incomingBuffer = new Uint8Array(0);
   private prefaceConsumed: boolean;
   private readonly responseWaiters = new Map<number, (result: Http2RequestResult) => void>();
+  private readonly connectionId = randomHttpConnectionId();
 
-  constructor(private readonly socket: TcpSocket, private readonly role: Http2Role, private readonly onRequest?: Http2RequestHandler) {
+  constructor(
+    private readonly socket: TcpSocket,
+    private readonly role: Http2Role,
+    private readonly onRequest?: Http2RequestHandler,
+    private readonly eventBus?: IEventBus,
+  ) {
     this.nextStreamId = role === 'client' ? 1 : 2;
     this.prefaceConsumed = role === 'client';
     socket.onData((data) => this.handleIncoming(binaryStringToBytes(String(data))));
@@ -84,14 +92,14 @@ export class Http2Connection {
     }
   }
 
-  static connect(tcpStack: TcpStack, targetIp: string, port: number): Http2Connection | null {
+  static connect(tcpStack: TcpStack, targetIp: string, port: number, eventBus?: IEventBus): Http2Connection | null {
     const socket = tcpStack.connect(targetIp, port);
     if (!socket || socket.state !== 'established') return null;
-    return new Http2Connection(socket, 'client');
+    return new Http2Connection(socket, 'client', undefined, eventBus);
   }
 
-  static listen(tcpStack: TcpStack, port: number, onRequest: Http2RequestHandler): void {
-    tcpStack.listen(port, { onAccept: (socket) => new Http2Connection(socket, 'server', onRequest) });
+  static listen(tcpStack: TcpStack, port: number, onRequest: Http2RequestHandler, eventBus?: IEventBus): void {
+    tcpStack.listen(port, { onAccept: (socket) => new Http2Connection(socket, 'server', onRequest, eventBus) });
   }
 
   /** Client-only: opens a new stream, sends the request, and returns the response captured synchronously (this simulator's TCP delivery is inline end to end). */
@@ -114,7 +122,13 @@ export class Http2Connection {
       pendingSend: null, pendingEndStream: false,
     };
     this.streams.set(id, stream);
+    this.eventBus?.publish({ topic: 'http2.stream.opened', payload: { connectionId: this.connectionId, streamId: id } });
     return stream;
+  }
+
+  private closeStream(id: number): void {
+    this.streams.delete(id);
+    this.eventBus?.publish({ topic: 'http2.stream.closed', payload: { connectionId: this.connectionId, streamId: id } });
   }
 
   private sendHeadersAndData(stream: StreamState, headers: [string, string][], body: Uint8Array): void {
@@ -251,7 +265,7 @@ export class Http2Connection {
       }
 
       case 'RST_STREAM':
-        this.streams.delete(frame.streamId);
+        this.closeStream(frame.streamId);
         return;
 
       case 'PING':
@@ -291,10 +305,10 @@ export class Http2Connection {
         const result = this.onRequest(stream.headers, body);
         this.sendHeadersAndData(stream, result.headers, result.body);
       }
-      this.streams.delete(stream.id);
+      this.closeStream(stream.id);
     } else {
       const waiter = this.responseWaiters.get(stream.id);
-      this.streams.delete(stream.id);
+      this.closeStream(stream.id);
       if (waiter) {
         this.responseWaiters.delete(stream.id);
         waiter({ headers: stream.headers, body });
