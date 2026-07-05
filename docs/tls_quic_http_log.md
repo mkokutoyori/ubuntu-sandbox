@@ -785,5 +785,9 @@ seulement le consommer.
   connexion, sans TLS réel) dépend de P3-P6 — tous terminés — et est
   maintenant disponible. C'est la dernière phase QUIC accessible sans
   attendre `PRD-TLS.md` (P8) ; P9-P13 restent bloquées derrière P7/P8.
-  La régression complète lancée en arrière-plan plus tôt tourne
-  toujours ; son résultat sera rapporté dès qu'elle se termine.
+  **Résultat de la régression complète** lancée en arrière-plan à la
+  phase précédente : 664/666 fichiers, 12566/12627 tests — seuls les
+  11 échecs déjà connus de
+  `scenario-oracle-08-rac-cache-fusion-interconnect.test.ts` (timing
+  RAC, aucun rapport avec HTTP/QUIC) subsistent. Zéro régression sur
+  les 12 phases HTTP+QUIC livrées jusqu'ici.
