@@ -22,14 +22,15 @@ import { HELLO_RETRY_REQUEST_RANDOM, type CipherSuite } from './types';
 import {
   type ClientHello, type ServerHello, type HelloRetryRequest, type EncryptedExtensionsMessage,
   type CertificateRequest, type CertificateMessage, type CertificateVerify, type Finished,
-  type TlsHandshakeMessage,
+  type NewSessionTicket, type TlsHandshakeMessage,
   encodeHandshakeMessage, decodeHandshakeMessage, encodeMessages, decodeMessages, randomNonce,
 } from './messages';
-import { fragmentAsRecords, reassembleRecords, type TlsRecord } from './recordLayer';
+import { fragmentAsRecords, reassembleRecords, splitLeadingContentType, type TlsRecord } from './recordLayer';
 import { deriveKeySchedule, computeFinished, transcriptHash, ZERO_IKM } from './keySchedule';
 import { certificateAlert, fatalAlert, type AlertDescription, type TlsAlert } from './alerts';
 import { MANDATORY_CIPHER_SUITES, selectCipherSuite } from './cipherSuites';
 import { selectAlpnProtocol } from './alpn';
+import { type SessionTicket, SessionTicketStore, deriveResumptionPsk } from './sessionTickets';
 
 export interface TlsServerConfig {
   readonly serverCert: X509Certificate;
@@ -44,6 +45,8 @@ export interface TlsServerConfig {
   readonly supportedGroups?: readonly string[];
   /** RFC 7301 — protocols this server supports, in preference order. */
   readonly alpnProtocols?: readonly string[];
+  /** Shared session-ticket registry (§4.6.1) — set to issue tickets and accept PSK/0-RTT resumption. */
+  readonly sessionTicketStore?: SessionTicketStore;
 }
 
 function groupOf(keyShare: string): string {
@@ -60,12 +63,16 @@ export class TlsServerSession {
   negotiatedCipherSuite: CipherSuite | null = null;
   /** RFC 7301 — the protocol actually negotiated, if any. */
   negotiatedAlpnProtocol: string | null = null;
+  /** RFC 8446 §2.3/§4.2.10 — 0-RTT data received alongside a validly-resumed ClientHello, if any. */
+  receivedEarlyData: Uint8Array | null = null;
 
   private state: ServerState = 'idle';
   private readonly cipherSuitePreference: readonly CipherSuite[];
   private readonly supportedGroups: readonly string[];
   private readonly alpnProtocols: readonly string[];
   private clientHandshakeTrafficSecret: string | null = null;
+  private resumptionMasterSecret: string | null = null;
+  private earlyDataAccepted = false;
   private readonly transcript: Uint8Array[] = [];
 
   constructor(private readonly config: TlsServerConfig) {
@@ -97,13 +104,19 @@ export class TlsServerSession {
   }
 
   private handleFirstClientHello(incoming: readonly TlsRecord[]): readonly TlsRecord[] | null {
-    const { contentType, plaintext: clientHelloBytes } = reassembleRecords(incoming, false);
+    const { leading, rest } = splitLeadingContentType(incoming, 'handshake');
+    const { contentType, plaintext: clientHelloBytes } = reassembleRecords(leading, false);
     if (contentType !== 'handshake') return this.reject('decode_error');
     const clientHello = decodeHandshakeMessage(clientHelloBytes) as ClientHello;
     this.transcript.push(clientHelloBytes);
 
     if (this.supportedGroups.includes(groupOf(clientHello.extensions.keyShare))) {
-      return this.proceedWithServerFlight(clientHello);
+      const pskInput = this.resolvePsk(clientHello);
+      if (pskInput && rest.length > 0) {
+        this.earlyDataAccepted = true;
+        this.receivedEarlyData = reassembleRecords(rest, true).plaintext;
+      }
+      return this.proceedWithServerFlight(clientHello, pskInput ?? ZERO_IKM, pskInput !== null);
     }
 
     const mutualGroup = this.supportedGroups.find((g) => clientHello.extensions.supportedGroups.includes(g));
@@ -118,16 +131,26 @@ export class TlsServerSession {
     return fragmentAsRecords('handshake', hrrBytes, false);
   }
 
+  /** Redeems the client's PSK ticket, if offered and valid; null if not offered, unknown, or expired. */
+  private resolvePsk(clientHello: ClientHello): string | null {
+    if (!clientHello.extensions.preSharedKey || !this.config.sessionTicketStore) return null;
+    const ticket = this.config.sessionTicketStore.redeem(clientHello.extensions.preSharedKey, Date.now());
+    if (!ticket) return null;
+    return deriveResumptionPsk(ticket);
+  }
+
   private handleSecondClientHello(incoming: readonly TlsRecord[]): readonly TlsRecord[] | null {
     const { contentType, plaintext: clientHelloBytes } = reassembleRecords(incoming, false);
     if (contentType !== 'handshake') return this.reject('decode_error');
     const clientHello = decodeHandshakeMessage(clientHelloBytes) as ClientHello;
     if (!this.supportedGroups.includes(groupOf(clientHello.extensions.keyShare))) return this.reject('handshake_failure');
     this.transcript.push(clientHelloBytes);
-    return this.proceedWithServerFlight(clientHello);
+    return this.proceedWithServerFlight(clientHello, ZERO_IKM, false);
   }
 
-  private proceedWithServerFlight(clientHello: ClientHello): readonly TlsRecord[] | null {
+  private proceedWithServerFlight(
+    clientHello: ClientHello, pskInput: string, pskAccepted: boolean,
+  ): readonly TlsRecord[] | null {
     const negotiatedSuite = selectCipherSuite(clientHello.cipherSuites, this.cipherSuitePreference);
     if (!negotiatedSuite) return this.reject('handshake_failure');
     this.negotiatedCipherSuite = negotiatedSuite;
@@ -137,7 +160,10 @@ export class TlsServerSession {
     const serverKeyShare = randomNonce('ks-srv');
     const serverHello: ServerHello = {
       kind: 'server_hello', random: serverRandom, cipherSuite: negotiatedSuite,
-      extensions: { supportedVersions: '1.3', keyShare: serverKeyShare },
+      extensions: {
+        supportedVersions: '1.3', keyShare: serverKeyShare,
+        preSharedKey: pskAccepted ? 'accepted' : undefined,
+      },
     };
     const serverHelloBytes = encodeHandshakeMessage(serverHello);
     this.transcript.push(serverHelloBytes);
@@ -145,15 +171,23 @@ export class TlsServerSession {
     const dheSharedSecret = simulatedDigest(
       [clientHello.random, serverRandom, clientHello.extensions.keyShare, serverKeyShare].join('|'),
     );
+    // Simplification: application/resumption secrets are derived from the
+    // CH+SH transcript checkpoint rather than the true through-Finished
+    // one — per-session uniqueness already comes from dheSharedSecret/
+    // pskInput (both random-nonce-derived), and neither is ever used to
+    // decrypt anything for real at this fidelity level (§2.1's convention).
+    const shTranscript = transcriptHash(this.transcript);
     const handshakePhase = deriveKeySchedule(
-      { clientHello: transcriptHash([this.transcript[0]]), serverHello: transcriptHash(this.transcript), serverFinished: '', clientFinished: '' },
-      ZERO_IKM, dheSharedSecret,
+      { clientHello: transcriptHash([this.transcript[0]]), serverHello: shTranscript, serverFinished: shTranscript, clientFinished: shTranscript },
+      pskInput, dheSharedSecret,
     );
     this.clientHandshakeTrafficSecret = handshakePhase.clientHandshakeTrafficSecret;
+    this.resumptionMasterSecret = handshakePhase.resumptionMasterSecret;
 
     const bundle: TlsHandshakeMessage[] = [];
     const encryptedExtensions: EncryptedExtensionsMessage = {
-      kind: 'encrypted_extensions', extensions: { alpn: this.negotiatedAlpnProtocol ?? undefined },
+      kind: 'encrypted_extensions',
+      extensions: { alpn: this.negotiatedAlpnProtocol ?? undefined, earlyData: this.earlyDataAccepted || undefined },
     };
     bundle.push(encryptedExtensions);
     this.transcript.push(encodeHandshakeMessage(encryptedExtensions));
@@ -191,7 +225,7 @@ export class TlsServerSession {
     ];
   }
 
-  private handleClientFinal(incoming: readonly TlsRecord[]): null {
+  private handleClientFinal(incoming: readonly TlsRecord[]): readonly TlsRecord[] | null {
     const { contentType, plaintext } = reassembleRecords(incoming, true);
     if (contentType !== 'handshake') return this.reject('decode_error');
     const messages = decodeMessages(plaintext);
@@ -224,6 +258,22 @@ export class TlsServerSession {
     if (finished.verifyData !== expected) return this.reject('decrypt_error');
     this.state = 'done';
     this.result = 'accept';
-    return null;
+
+    if (!this.config.sessionTicketStore) return null;
+    const ticket: SessionTicket = {
+      ticket: randomNonce('ticket'),
+      resumptionMasterSecret: this.resumptionMasterSecret!,
+      ticketNonce: randomNonce('ticket-nonce'),
+      cipherSuite: this.negotiatedCipherSuite!,
+      ticketLifetime: 7200,
+      issuedAt: Date.now(),
+      consumed: false,
+    };
+    this.config.sessionTicketStore.issue(ticket);
+    const newSessionTicket: NewSessionTicket = {
+      kind: 'new_session_ticket', ticketLifetime: ticket.ticketLifetime, ticketAgeAdd: randomNonce('age-add'),
+      ticketNonce: ticket.ticketNonce, ticket: ticket.ticket, extensions: { earlyData: true },
+    };
+    return fragmentAsRecords('handshake', encodeHandshakeMessage(newSessionTicket), true);
   }
 }
