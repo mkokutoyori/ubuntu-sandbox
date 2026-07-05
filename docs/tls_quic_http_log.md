@@ -85,8 +85,8 @@ ci-dessous.
 | P5 | HelloRetryRequest | P3 | ✅ terminé | Claude (Sonnet 5) |
 | P6 | Alertes complètes | P3 | ✅ terminé | Claude (Sonnet 5) |
 | P7 | ALPN & suites cryptographiques | P3 | ✅ terminé | Claude (Sonnet 5) |
-| P8 | Résumption PSK & 0-RTT | P2, P3 | 🟡 en cours | Claude (Sonnet 5) |
-| P9 | KeyUpdate | P3 | ⬜ disponible | — |
+| P8 | Résumption PSK & 0-RTT | P2, P3 | ✅ terminé | Claude (Sonnet 5) |
+| P9 | KeyUpdate | P3 | 🟡 en cours | Claude (Sonnet 5) |
 | P10 | Observabilité | P3–P9 | ⬜ disponible | — |
 | P11 | Migration DoT & EAP-TLS/PEAP/EAP-TTLS | P1–P10 | ⬜ disponible | — |
 
@@ -890,3 +890,70 @@ seulement le consommer.
   nécessitent `PRD-TLS.md` complet ou du travail en amont non encore
   livré. Un agent reprenant ce chantier devrait d'abord vérifier
   l'état de `PRD-TLS.md` avant de démarrer `PRD-QUIC.md`/P8.
+
+### [2026-07-05 (heure non horodatée par l'outil) UTC] Claude (Sonnet 5) — PRD-TLS/P8 — TERMINÉ
+- Tâche : `src/network/tls/sessionTickets.ts` (nouveau) — `SessionTicket`,
+  `deriveResumptionPsk` (§7.5.1 `HKDF-Expand-Label(resumption_master_secret,
+  "resumption", ticket_nonce, ...)`), `isTicketFresh`, `SessionTicketStore`
+  (registre côté serveur partagé entre instances `TlsServerSession`, anti-rejeu
+  simplifié « un ticket = un usage », documenté en tête de fichier comme
+  simplification légitime — RFC 8446 §8 laisse la stratégie anti-rejeu 0-RTT
+  non spécifiée). Extension de `TlsServerSession.ts`/`TlsClientSession.ts` :
+  émission de `NewSessionTicket` après un handshake complet si un
+  `sessionTicketStore` est configuré, reprise PSK (`psk_dhe_ke`), livraison de
+  données 0-RTT côté client (`earlyData`) et acceptation côté serveur
+  (`receivedEarlyData`).
+- Bug protocolaire trouvé et corrigé *avant* toute exécution de test (par
+  relecture du protocole, pas par un test en échec) : le client utilisait
+  inconditionnellement son PSK dérivé du ticket, alors que le serveur retombe
+  silencieusement sur `ZERO_IKM` si le ticket est invalide/expiré/consommé —
+  sans écho explicite, client et serveur auraient dérivé des secrets
+  différents à chaque repli sur handshake complet, garantissant un échec de
+  vérification du Finished qui aurait masqué le vrai comportement de repli.
+  Corrigé en ajoutant un écho d'acceptation PSK côté serveur
+  (`ServerHello.extensions.preSharedKey = 'accepted'` uniquement si un ticket
+  valide a été racheté) que le client vérifie avant de dériver son propre key
+  schedule — reproduit fidèlement le mécanisme d'index `pre_shared_key` de
+  RFC 8446 §4.2.11.
+- Bugs de test trouvés et corrigés : (1) le helper `setUpCaAndServer(store?)`
+  régénérait une CA fraîche à chaque appel, donc le `server2` d'un test de
+  reprise était émis par une CA différente de celle que le `verifier` réutilisé
+  faisait confiance → échecs `unknown_ca` côté client qui ressemblaient à un
+  bug de reprise ; diagnostiqué via un script `npx tsx` manuel réutilisant le
+  même matériel de certificat, corrigé en scindant le helper en `setUpCa()`
+  (une seule fois) + `newServer(issued, store?)` (matériel partagé) ;
+  (2) un test de rachat de ticket utilisait une constante `NOW` capturée au
+  chargement du fichier, antérieure à l'`issuedAt` réel du ticket → corrigé en
+  utilisant `Date.now()` au moment du rachat.
+- Statut / résultat : ✅ terminé. `tsc --noEmit` propre, `eslint` propre.
+  6 nouveaux tests (`tls-session-resumption.test.ts`) : émission de ticket
+  avec/sans store configuré, reprise réussie sur une paire client/serveur
+  fraîche réutilisant le même matériel de certificat, livraison de données
+  0-RTT quand le ticket est valide, repli sans données 0-RTT quand le ticket
+  est déjà consommé, repli sans données 0-RTT quand le ticket est expiré.
+  Régression : 68 tests TLS (P1–P8 combinés) au vert. Régression complète
+  (4ᵉ phase depuis la dernière, cadence désormais en vigueur) :
+  663 fichiers, 12535 tests, 11 échecs — tous pré-existants (Oracle RAC),
+  aucun nouvel échec.
+- Suggestion pour la suite : `PRD-QUIC.md`/P8 (intégration TLS 1.3 réelle)
+  est maintenant *presque* accessible — `PRD-TLS.md` a un moteur 1-RTT/mTLS/
+  HRR/alertes/ALPN/PSK+0-RTT fonctionnel à travers P8, il ne manque que P9
+  (KeyUpdate) et P10 (observabilité) qui ne sont pas bloquants pour
+  l'intégration côté QUIC (KeyUpdate concerne le rekey en session longue,
+  hors périmètre du handshake initial que QUIC consomme). Un agent QUIC
+  pourrait donc raisonnablement démarrer P8 dès maintenant en s'appuyant sur
+  `deriveKeySchedule`/`TlsClientSession`/`TlsServerSession` tels quels.
+
+### [2026-07-05 (heure non horodatée par l'outil) UTC] Claude (Sonnet 5) — PRD-TLS/P9 — ANNONCE
+- Tâche : `PRD-TLS.md`/P9 — KeyUpdate (RFC 8446 §4.6.3) : rekey en session
+  longue, indépendamment dans chaque direction (client→serveur et
+  serveur→client ne sont pas forcément mis à jour ensemble), avec
+  `request_update` optionnel (`update_requested` déclenche un KeyUpdate en
+  retour, `update_not_requested` non). Le type de message `KeyUpdate`
+  (`{kind: 'key_update', requestUpdate: boolean}`) existe déjà dans
+  `messages.ts` depuis P1, inutilisé jusqu'ici.
+- Fichiers concernés : extension de `TlsClientSession.ts`/`TlsServerSession.ts`
+  (dérivation du prochain traffic secret via `expandLabel(secret, "traffic
+  upd", "", Hash.length)` par direction, application indépendante), nouveau
+  fichier de test `tls-key-update.test.ts`.
+- Statut / résultat : 🟡 en cours.
