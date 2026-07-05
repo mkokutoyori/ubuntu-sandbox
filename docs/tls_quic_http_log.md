@@ -109,7 +109,7 @@ ci-dessous.
 | P2 | HTTP/1.1 en clair (9112) | P1 | ✅ terminé | Arthur |
 | P3 | Cache (9111) | P1, P2 | ✅ terminé | Arthur |
 | P4 | Cookies (6265) | P2 | ✅ terminé | Arthur |
-| P5 | Authentification (7617/7616) | P2 | ⬜ disponible | — |
+| P5 | Authentification (7617/7616) | P2 | 🟡 en cours | Arthur |
 | P6 | WebSocket (6455) | P2 | ⬜ disponible | — |
 | P7 | HTTPS | P2, **PRD-TLS.md implémenté** | ⬜ disponible | — |
 | P8 | HTTP/2 (9113 + HPACK) | P1, P7 (`h2c` sans) | ⬜ disponible | — |
@@ -304,3 +304,18 @@ seulement le consommer.
 - Suggestion pour la suite : `PRD-HTTP.md`/P5 (auth Basic/Digest) et P6
   (WebSocket) restent disponibles, sans dépendance croisée entre eux
   ni avec ce P4.
+
+### [2026-07-05 (heure non horodatée par l'outil) UTC] Arthur — PRD-HTTP/P5 — ANNONCE
+- Tâche : `src/network/http/auth/` — `BasicAuth.ts` (RFC 7617 :
+  challenge `WWW-Authenticate: Basic`, encodage/décodage
+  `Authorization: Basic base64(user:pass)`), `DigestAuth.ts` (RFC 7616 :
+  challenge realm/nonce/qop/opaque/algorithm, calcul
+  HA1/HA2/response côté client, vérification côté serveur, MD5 et
+  SHA-256, détection de rejeu via `nc` déjà vu). Réutilise
+  `md5Hex`/`sha256Hex` de `@/crypto/hash` (vérifiés bit-exacts contre
+  le module crypto Node avant implémentation) — aucune primitive
+  cryptographique dupliquée. Vecteurs de test RFC 7616 Annexe B (MD5
+  et SHA-256) utilisés tels quels.
+- Fichiers concernés : nouveaux fichiers sous
+  `src/network/http/auth/` uniquement — purement additif.
+- Statut / résultat : en cours.
