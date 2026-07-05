@@ -9,9 +9,10 @@
  * server can be pointed at any of the adapters that interface already
  * has (Linux VFS, Windows, router flash, or a bare in-memory VFS).
  */
-import type { TcpStack } from '@/network/tcp/TcpStack';
+import type { TcpSocket, TcpStack } from '@/network/tcp/TcpStack';
 import type { ISftpFileSystem, SftpDirEntry, SftpFileAttrs } from '@/network/protocols/ssh/sftp/ISftpFileSystem';
 import { ChrootedSftpFileSystem } from '@/network/protocols/ssh/sftp/ChrootedSftpFileSystem';
+import type { TlsServerConfig, TlsServerSession } from '@/network/tls/TlsServerSession';
 import type { FtpCommand, FtpReply, FtpTransferType, FtpFileStructure, FtpTransferMode } from './types';
 import { reply } from './replies';
 import {
@@ -19,6 +20,7 @@ import {
   allocatePassivePort, decodeEprtArgument, encodeEpsvReplyArgument,
 } from './DataChannel';
 import { encodeCompressedMode, decodeCompressedMode } from './compressedMode';
+import { startServerHandshake, encryptText, decryptText } from './ftps';
 
 export interface FtpServerConfig {
   /** username -> password. RFC 959 doesn't mandate a specific credential store; this mirrors the ad hoc user maps used elsewhere in this project's protocol tests (RADIUS, EAP-TTLS). */
@@ -28,6 +30,16 @@ export interface FtpServerConfig {
   readonly rootPath?: string;
   /** username -> confinement root, applied via `ChrootedSftpFileSystem` once login succeeds (§2.1.9, same principle as the SFTP side). */
   readonly chroots?: ReadonlyMap<string, string>;
+  /**
+   * RFC 2228/4217 — set to accept `AUTH TLS`. Absent means FTPS is simply
+   * unsupported (`AUTH` replies `502`), same as a plain vsftpd without
+   * `ssl_enable`. `PROT P` (RFC 4217 §4) reuses this same certificate for
+   * each data channel's own TLS handshake — scoped to `PASV`/`EPSV` data
+   * channels only (§2.1.7's non-objectifs): the FTP server is always the
+   * TCP listener there, so it's naturally also the TLS server, with no
+   * role ambiguity to resolve; `PORT`/`EPRT` + `PROT P` isn't wired up.
+   */
+  readonly ftps?: TlsServerConfig;
 }
 
 type SessionState = 'awaiting-user' | 'awaiting-password' | 'authenticated' | 'closed';
@@ -60,12 +72,21 @@ export class FtpServerSession {
   transferMode: FtpTransferMode = 'S';
   cwd: string;
 
+  /** RFC 2228 — set once `AUTH TLS`'s handshake actually completes (via `markControlProtected()`), not merely once it's requested. */
+  controlProtected = false;
+  /** RFC 4217 §4 — `PROT C` (data in the clear) or `PROT P` (data TLS-protected too); only meaningful once `controlProtected`. */
+  dataProtectionLevel: 'C' | 'P' = 'C';
+
   private state: SessionState = 'awaiting-user';
   private dataChannel: FtpDataChannel | null = null;
   private renameFrom: string | null = null;
   private fs: ISftpFileSystem;
   /** Set by `REST`; consumed by the immediately following `RETR`/`STOR`-family command, whether it succeeds or not (RFC 3659 §5). */
   private restOffset: number | null = null;
+  /** Set by `handleAuth()`; consumed once by the wire layer (`FtpServer.ts`) right after it writes the `234` reply in the clear. */
+  private pendingTlsUpgrade = false;
+  /** The current data channel's TLS session under `PROT P` (§2.1.7), set at `PASV`/`EPSV` accept time. */
+  private dataTls: TlsServerSession | null = null;
 
   constructor(
     private readonly config: FtpServerConfig,
@@ -90,6 +111,18 @@ export class FtpServerSession {
     return reply(220, 'Ubuntu Sandbox FTP server ready.');
   }
 
+  /** `FtpServer.ts` calls this right after writing the `234` reply in the clear, then starts the actual handshake. */
+  consumeTlsUpgradeSignal(): boolean {
+    const v = this.pendingTlsUpgrade;
+    this.pendingTlsUpgrade = false;
+    return v;
+  }
+
+  /** `FtpServer.ts` calls this once the control channel's TLS handshake actually completes. */
+  markControlProtected(): void {
+    this.controlProtected = true;
+  }
+
   handle(cmd: FtpCommand): readonly FtpReply[] {
     switch (cmd.verb) {
       case 'USER': return [this.handleUser(cmd)];
@@ -98,6 +131,9 @@ export class FtpServerSession {
       case 'TYPE': return [this.handleType(cmd)];
       case 'STRU': return [this.handleStru(cmd)];
       case 'MODE': return [this.handleMode(cmd)];
+      case 'AUTH': return [this.handleAuth(cmd)];
+      case 'PBSZ': return [this.handlePbsz(cmd)];
+      case 'PROT': return [this.handleProt(cmd)];
       case 'SYST': return [reply(215, 'UNIX Type: L8')];
       case 'NOOP': return [reply(200, 'NOOP command successful.')];
       case 'QUIT': {
@@ -146,6 +182,7 @@ export class FtpServerSession {
   private closeDataChannel(): void {
     if (this.dataChannel?.mode === 'passive') this.dataChannel.close(this.tcpStack);
     this.dataChannel = null;
+    this.dataTls = null;
   }
 
   private handleUser(cmd: FtpCommand): FtpReply {
@@ -212,6 +249,33 @@ export class FtpServerSession {
     return reply(504, `Mode not implemented for parameter '${cmd.argument ?? ''}'.`);
   }
 
+  // RFC 2228/4217 — deliberately exempt from requireAuth(): AUTH TLS's whole
+  // point is to protect the USER/PASS exchange itself, so it must be usable
+  // before login, exactly like SYST/NOOP/FEAT.
+  private handleAuth(cmd: FtpCommand): FtpReply {
+    const mechanism = (cmd.argument ?? '').trim().toUpperCase();
+    if (mechanism !== 'TLS') return reply(504, `Unsupported security mechanism '${cmd.argument ?? ''}'.`);
+    if (!this.config.ftps) return reply(502, 'AUTH TLS not supported.');
+    if (this.controlProtected) return reply(503, 'Control connection already protected.');
+    this.pendingTlsUpgrade = true;
+    return reply(234, 'AUTH TLS successful.');
+  }
+
+  private handlePbsz(cmd: FtpCommand): FtpReply {
+    if (!this.controlProtected) return reply(503, 'PBSZ requires a protected control connection.');
+    if ((cmd.argument ?? '').trim() !== '0') return reply(501, 'PBSZ only supports a size of 0.');
+    return reply(200, 'PBSZ=0');
+  }
+
+  private handleProt(cmd: FtpCommand): FtpReply {
+    if (!this.controlProtected) return reply(503, 'PROT requires a protected control connection.');
+    const level = (cmd.argument ?? '').trim().toUpperCase();
+    if (level !== 'C' && level !== 'P') return reply(504, `Unrecognized PROT type '${cmd.argument ?? ''}'.`);
+    if (level === 'P' && !this.config.ftps) return reply(502, 'No TLS support for data channel protection.');
+    this.dataProtectionLevel = level;
+    return reply(200, `PROT ${level} successful.`);
+  }
+
   private handlePort(cmd: FtpCommand): FtpReply {
     const authFailure = this.requireAuth();
     if (authFailure) return authFailure;
@@ -226,7 +290,7 @@ export class FtpServerSession {
     const authFailure = this.requireAuth();
     if (authFailure) return authFailure;
     this.closeDataChannel();
-    const channel = new PassiveDataChannel(allocatePassivePort(), this.tcpStack);
+    const channel = new PassiveDataChannel(allocatePassivePort(), this.tcpStack, (socket) => this.startDataTlsIfProtected(socket));
     this.dataChannel = channel;
     return reply(227, `Entering Passive Mode (${encodePortArgument(this.localIp, channel.port)}).`);
   }
@@ -245,9 +309,14 @@ export class FtpServerSession {
     const authFailure = this.requireAuth();
     if (authFailure) return authFailure;
     this.closeDataChannel();
-    const channel = new PassiveDataChannel(allocatePassivePort(), this.tcpStack);
+    const channel = new PassiveDataChannel(allocatePassivePort(), this.tcpStack, (socket) => this.startDataTlsIfProtected(socket));
     this.dataChannel = channel;
     return reply(229, `Entering Extended Passive Mode ${encodeEpsvReplyArgument(channel.port)}.`);
+  }
+
+  private startDataTlsIfProtected(socket: TcpSocket): void {
+    if (this.dataProtectionLevel !== 'P' || !this.config.ftps) return;
+    this.dataTls = startServerHandshake(socket, this.config.ftps);
   }
 
   private handleRetr(cmd: FtpCommand): readonly FtpReply[] {
@@ -261,8 +330,9 @@ export class FtpServerSession {
 
     const socket = this.dataChannel ? openDataConnection(this.dataChannel, this.tcpStack) : null;
     if (!socket) return [reply(425, "Can't open data connection.")];
+    const dataTls = this.dataTls;
     const outgoing = offset > 0 ? file.value.slice(offset) : file.value;
-    socket.write(this.transferMode === 'C' ? encodeCompressedMode(outgoing) : outgoing);
+    socket.write(this.encryptForDataChannel(dataTls, this.transferMode === 'C' ? encodeCompressedMode(outgoing) : outgoing));
     socket.close();
     this.closeDataChannel();
     return [reply(150, `Opening ${this.transferType === 'A' ? 'ASCII' : 'BINARY'} mode data connection for ${cmd.argument}.`), reply(226, 'Transfer complete.')];
@@ -284,9 +354,13 @@ export class FtpServerSession {
 
     const socket = this.dataChannel ? openDataConnection(this.dataChannel, this.tcpStack) : null;
     if (!socket) return [reply(425, "Can't open data connection.")];
+    const dataTls = this.dataTls;
 
     let received = '';
-    socket.onData((data) => { received += String(data); });
+    const seqRef = { seq: 0 };
+    socket.onData((data) => {
+      received += this.decryptForDataChannel(dataTls, seqRef, String(data));
+    });
     socket.onClose(() => {
       this.closeDataChannel();
       if (this.transferMode === 'C') {
@@ -324,10 +398,11 @@ export class FtpServerSession {
 
     const socket = this.dataChannel ? openDataConnection(this.dataChannel, this.tcpStack) : null;
     if (!socket) return [reply(425, "Can't open data connection.")];
+    const dataTls = this.dataTls;
 
     const entries = listing.value.filter((e) => e.name !== '.' && e.name !== '..');
     const lines = format === 'long' ? entries.map(formatListLine) : entries.map((e) => e.name);
-    socket.write(lines.length > 0 ? `${lines.join('\r\n')}\r\n` : '');
+    socket.write(this.encryptForDataChannel(dataTls, lines.length > 0 ? `${lines.join('\r\n')}\r\n` : ''));
     socket.close();
     this.closeDataChannel();
     return [reply(150, 'Here comes the directory listing.'), reply(226, 'Directory send OK.')];
@@ -459,12 +534,25 @@ export class FtpServerSession {
 
     const socket = this.dataChannel ? openDataConnection(this.dataChannel, this.tcpStack) : null;
     if (!socket) return [reply(425, "Can't open data connection.")];
+    const dataTls = this.dataTls;
 
     const entries = listing.value.filter((e) => e.name !== '.' && e.name !== '..');
     const lines = entries.map((e) => `${formatMlstFacts(e)} ${e.name}`);
-    socket.write(lines.length > 0 ? `${lines.join('\r\n')}\r\n` : '');
+    socket.write(this.encryptForDataChannel(dataTls, lines.length > 0 ? `${lines.join('\r\n')}\r\n` : ''));
     socket.close();
     this.closeDataChannel();
     return [reply(150, 'Here comes the directory listing.'), reply(226, 'Directory send OK.')];
+  }
+
+  private encryptForDataChannel(dataTls: TlsServerSession | null, content: string): string {
+    if (dataTls?.result !== 'accept') return content;
+    return encryptText(dataTls.serverApplicationTrafficSecret!, 0, content).wire;
+  }
+
+  private decryptForDataChannel(dataTls: TlsServerSession | null, seqRef: { seq: number }, raw: string): string {
+    if (dataTls?.result !== 'accept') return raw;
+    const { text, nextSeq } = decryptText(dataTls.clientApplicationTrafficSecret!, seqRef.seq, raw);
+    seqRef.seq = nextSeq;
+    return text;
   }
 }

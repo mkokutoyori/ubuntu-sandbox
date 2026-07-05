@@ -89,8 +89,12 @@ export class PassiveDataChannel {
   socket: TcpSocket | null = null;
   private readonly listener: TcpListener;
 
-  constructor(readonly port: number, tcpStack: TcpStack) {
-    this.listener = tcpStack.listen(port, { onAccept: (socket) => { this.socket = socket; } });
+  /** `onAccept`, if given, fires right after `socket` is populated — e.g. `FtpServerSession` starting a `PROT P` TLS handshake before any transfer bytes flow (RFC 4217 §4). */
+  constructor(readonly port: number, tcpStack: TcpStack, onAccept?: (socket: TcpSocket) => void) {
+    this.listener = tcpStack.listen(port, { onAccept: (socket) => {
+      this.socket = socket;
+      onAccept?.(socket);
+    } });
   }
 
   close(tcpStack: TcpStack): void {

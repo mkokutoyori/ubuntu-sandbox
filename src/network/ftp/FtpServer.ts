@@ -9,10 +9,15 @@
  * (`FtpServerSession.ts`'s doc comment on `onUnsolicitedReply`).
  */
 import type { TcpStack, TcpSocket, TcpListener } from '@/network/tcp/TcpStack';
+import { TlsServerSession } from '@/network/tls/TlsServerSession';
 import { FtpServerSession, type FtpServerConfig } from './FtpServerSession';
+import type { FtpReply } from './types';
 import { decodeCommand, encodeReply, reply } from './replies';
+import { stepHandshake, encryptText, decryptText } from './ftps';
 
 export const FTP_CONTROL_PORT = 21;
+
+type ControlWireState = 'plaintext' | 'tls-handshake' | 'tls-established';
 
 export class FtpServer {
   private listener: TcpListener | null = null;
@@ -35,19 +40,60 @@ export class FtpServer {
   }
 
   private handleConnection(socket: TcpSocket): void {
-    const session = new FtpServerSession(
-      this.config, this.tcpStack, this.localIp,
-      (r) => socket.write(encodeReply(r)),
-    );
-    socket.write(encodeReply(session.greeting()));
+    let wireState: ControlWireState = 'plaintext';
+    let tls: TlsServerSession | null = null;
+    let clientSeq = 0;
+    let serverSeq = 0;
+
+    const writeReply = (r: FtpReply): void => {
+      const text = encodeReply(r);
+      if (wireState === 'tls-established' && tls) {
+        const { wire, nextSeq } = encryptText(tls.serverApplicationTrafficSecret!, serverSeq, text);
+        serverSeq = nextSeq;
+        socket.write(wire);
+      } else {
+        socket.write(text);
+      }
+    };
+
+    const session = new FtpServerSession(this.config, this.tcpStack, this.localIp, writeReply);
+    writeReply(session.greeting());
 
     const unsubscribe = socket.onData((data) => {
-      const cmd = decodeCommand(String(data));
-      if (!cmd) {
-        socket.write(encodeReply(reply(500, 'Syntax error, command unrecognized.')));
+      if (wireState === 'tls-handshake' && tls) {
+        const flight = stepHandshake(tls, String(data));
+        if (flight) socket.write(flight);
+        if (tls.result === 'accept') {
+          wireState = 'tls-established';
+          session.markControlProtected();
+        } else if (tls.result === 'reject') {
+          unsubscribe();
+          socket.close();
+        }
         return;
       }
-      for (const r of session.handle(cmd)) socket.write(encodeReply(r));
+
+      let text: string;
+      if (wireState === 'tls-established' && tls) {
+        const { text: decrypted, nextSeq } = decryptText(tls.clientApplicationTrafficSecret!, clientSeq, String(data));
+        clientSeq = nextSeq;
+        text = decrypted;
+      } else {
+        text = String(data);
+      }
+
+      const cmd = decodeCommand(text);
+      if (!cmd) {
+        writeReply(reply(500, 'Syntax error, command unrecognized.'));
+        return;
+      }
+      for (const r of session.handle(cmd)) writeReply(r);
+
+      if (session.consumeTlsUpgradeSignal() && this.config.ftps) {
+        tls = new TlsServerSession(this.config.ftps);
+        wireState = 'tls-handshake';
+      }
+
       if (session.result === 'closed') {
         unsubscribe();
         socket.close();
