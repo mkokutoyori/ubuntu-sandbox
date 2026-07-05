@@ -108,7 +108,7 @@ ci-dessous.
 | P1 | Sémantique HTTP (9110) | — | ✅ terminé | Arthur |
 | P2 | HTTP/1.1 en clair (9112) | P1 | ✅ terminé | Arthur |
 | P3 | Cache (9111) | P1, P2 | ✅ terminé | Arthur |
-| P4 | Cookies (6265) | P2 | ⬜ disponible | — |
+| P4 | Cookies (6265) | P2 | 🟡 en cours | Arthur |
 | P5 | Authentification (7617/7616) | P2 | ⬜ disponible | — |
 | P6 | WebSocket (6455) | P2 | ⬜ disponible | — |
 | P7 | HTTPS | P2, **PRD-TLS.md implémenté** | ⬜ disponible | — |
@@ -281,4 +281,15 @@ seulement le consommer.
 - Fichiers concernés : nouveaux fichiers sous `src/network/tls/` +
   nouveau fichier de test — n'importe P1/P2, ne touche aucun fichier
   existant hors `src/network/tls/`.
+- Statut / résultat : en cours.
+
+### [2026-07-05 (heure non horodatée par l'outil) UTC] Arthur — PRD-HTTP/P4 — ANNONCE
+- Tâche : `src/network/http/cookies/` — `CookieJar.ts` (magasin de
+  cookies par agent, correspondance domaine/chemin §5.1.3/§5.1.4,
+  `hostOnly` selon présence d'un `Domain` explicite, expiration),
+  `SetCookie.ts` (parsing/sérialisation `Set-Cookie`/`Cookie`,
+  attributs `Domain`/`Path`/`Expires`/`Max-Age`/`Secure`/`HttpOnly`/
+  `SameSite`).
+- Fichiers concernés : nouveaux fichiers sous
+  `src/network/http/cookies/` uniquement — purement additif.
 - Statut / résultat : en cours.
