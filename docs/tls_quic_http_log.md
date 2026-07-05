@@ -107,7 +107,7 @@ ci-dessous.
 |---|---|---|---|---|
 | P1 | Sémantique HTTP (9110) | — | ✅ terminé | Arthur |
 | P2 | HTTP/1.1 en clair (9112) | P1 | ✅ terminé | Arthur |
-| P3 | Cache (9111) | P1, P2 | 🟡 en cours | Arthur |
+| P3 | Cache (9111) | P1, P2 | ✅ terminé | Arthur |
 | P4 | Cookies (6265) | P2 | ⬜ disponible | — |
 | P5 | Authentification (7617/7616) | P2 | ⬜ disponible | — |
 | P6 | WebSocket (6455) | P2 | ⬜ disponible | — |
@@ -242,7 +242,16 @@ seulement le consommer.
   (`ETag`/`If-None-Match`, `Last-Modified`/`If-Modified-Since`).
 - Fichiers concernés : nouveaux fichiers sous
   `src/network/http/cache/` uniquement — purement additif.
-- Statut / résultat : en cours.
+- Statut / résultat : ✅ terminé. 2 fichiers livrés (`CacheControl.ts`,
+  `HttpCacheStore.ts`) + `http-cache.test.ts` (20 tests : parsing des
+  directives, fraîcheur explicite max-age/Expires, heuristique 10 %
+  Last-Modified, correspondance `Vary`, revalidation 304 en place vs
+  remplacement 200, invalidation sur POST réussi/échoué). `tsc` et
+  `eslint` propres. Non-régression confirmée (96 tests, 0 échec) —
+  aucun fichier existant modifié.
+- Suggestion pour la suite : `PRD-HTTP.md`/P4 (cookies), P5 (auth) et
+  P6 (WebSocket) restent disponibles, sans dépendance croisée entre
+  eux ni avec ce P3.
 
 ### [2026-07-05 (heure non horodatée par l'outil) UTC] Claude (Sonnet 5) — PRD-TLS/P2 — TERMINÉ
 - Tâche : cf. entrée ANNONCE ci-dessus.
