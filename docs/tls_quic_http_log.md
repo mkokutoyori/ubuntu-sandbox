@@ -71,8 +71,8 @@ ci-dessous.
 
 | Phase | Contenu | Dépend de | Statut | Agent |
 |---|---|---|---|---|
-| P1 | Types, messages, record layer | — | 🟡 en cours | Claude (Sonnet 5) |
-| P2 | Key schedule | P1 | ⬜ disponible | — |
+| P1 | Types, messages, record layer | — | ✅ terminé | Claude (Sonnet 5) |
+| P2 | Key schedule | P1 | 🟡 en cours | Claude (Sonnet 5) |
 | P3 | Handshake 1-RTT nominal | P1, P2 | ⬜ disponible | — |
 | P4 | mTLS | P3 | ⬜ disponible | — |
 | P5 | HelloRetryRequest | P3 | ⬜ disponible | — |
@@ -170,6 +170,38 @@ seulement le consommer.
   `PRD-TLS.md`/P1 reste pris (Claude, Sonnet 5). `PRD-QUIC.md`/P1
   (varints & format de paquet) reste disponible pour un agent qui
   voudrait travailler en parallèle sans dépendance.
+
+### [2026-07-05 (heure non horodatée par l'outil) UTC] Claude (Sonnet 5) — PRD-TLS/P1 — TERMINÉ
+- Tâche : cf. entrée ANNONCE ci-dessus.
+- Fichiers concernés : `src/network/tls/{types.ts,messages.ts,recordLayer.ts}` +
+  `src/__tests__/unit/network-v2/tls-messages-recordlayer.test.ts` (23 tests).
+  Aucun fichier existant touché.
+- Statut / résultat : ✅ terminé. `npx tsc --noEmit` et `npx eslint` propres.
+  Bug trouvé et corrigé en cours de route : `reassembleRecords` renvoyait le
+  résultat brut de `decodeInnerPlaintext` (`{content, contentType}`) au lieu
+  de le mapper vers `{plaintext, contentType}` — capturé par les tests
+  d'obfuscation avant tout commit. Régression complète `network-v2` : 650
+  fichiers, 12365 tests, 11 échecs — tous dans les suites Oracle-RAC
+  préexistantes et déjà connues (`scenario-oracle-07`/`-08`), sans rapport
+  avec ce module.
+- Suggestion pour la suite : je continue sur `PRD-TLS.md`/P2 (key schedule,
+  § 2.1.2) — voir l'annonce ci-dessous. `PRD-QUIC.md`/P1 (varints & format de
+  paquet) reste disponible pour un agent qui voudrait travailler en
+  parallèle sans dépendance, tout comme la suite de `PRD-HTTP.md` déjà prise
+  par Arthur.
+
+### [2026-07-05 (heure non horodatée par l'outil) UTC] Claude (Sonnet 5) — PRD-TLS/P2 — ANNONCE
+- Tâche : `src/network/tls/keySchedule.ts` — arborescence de secrets §7.1
+  (Early Secret → Handshake Secret → Master Secret, labels nommés
+  `"derived"`/`"c hs traffic"`/`"s hs traffic"`/`"c ap traffic"`/
+  `"s ap traffic"`/`"exp master"`/`"res master"`), dérivation simulée via
+  `simulatedDigest` mais arborescence/ordre fidèles à la RFC ; tests de
+  déterminisme structurel (randoms différents → clés différentes,
+  handshake ≠ application, client ≠ serveur, early ≠ handshake ≠ master).
+- Fichiers concernés : nouveau fichier `src/network/tls/keySchedule.ts`
+  uniquement — additif, aucune dépendance vers P3+ (les sessions
+  client/serveur qui la consommeront viennent après).
+- Statut / résultat : en cours.
 
 ### [2026-07-05 (heure non horodatée par l'outil) UTC] Arthur — PRD-HTTP/P2 — ANNONCE
 - Tâche : `src/network/http/http1/` — `Http1Wire.ts` (RFC 9112 :
