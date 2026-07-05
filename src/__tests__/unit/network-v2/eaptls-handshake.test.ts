@@ -17,7 +17,10 @@ function runHandshake(server: EapTlsServerSession, peer: EapTlsPeerSession): { s
   let rounds = 0;
   while (server.result === null) {
     rounds++;
-    if (rounds > 50) throw new Error('handshake did not converge');
+    // RFC 8446 flights carry a full certificate chain + signature, so a
+    // tiny 40-byte MTU now needs noticeably more fragments/rounds than the
+    // old ad hoc 2-RTT model did — 150 comfortably covers that case.
+    if (rounds > 150) throw new Error('handshake did not converge');
     const resp = peer.handle(req);
     req = server.handle(resp);
   }
@@ -38,8 +41,8 @@ describe('EAP-TLS handshake (RFC 5216) — direct server/peer session FSM', () =
     const clientIssued = issuedPair(ca, 'CN=alice');
     const verifier = new CertificateVerifier({ trustAnchors: [ca.rootCertificate], clock: () => NOW });
 
-    const server = new EapTlsServerSession({ serverCert: serverIssued.cert, verifier });
-    const peer = new EapTlsPeerSession(clientIssued.cert, verifier);
+    const server = new EapTlsServerSession({ serverCert: serverIssued.cert, serverPrivateKey: serverIssued.privateKey, verifier });
+    const peer = new EapTlsPeerSession(clientIssued.cert, verifier, { clientPrivateKey: clientIssued.privateKey });
 
     const { serverResult, peerResult } = runHandshake(server, peer);
     expect(serverResult).toBe('accept');
@@ -52,8 +55,8 @@ describe('EAP-TLS handshake (RFC 5216) — direct server/peer session FSM', () =
     const serverVerifier = new CertificateVerifier({ trustAnchors: [ca.rootCertificate], clock: () => NOW });
     const peerVerifier = new CertificateVerifier({ trustAnchors: [ca.rootCertificate], clock: () => NOW });
 
-    const server = new EapTlsServerSession({ serverCert: serverIssued.cert, verifier: serverVerifier });
-    const peer = new EapTlsPeerSession(clientIssued.cert, peerVerifier);
+    const server = new EapTlsServerSession({ serverCert: serverIssued.cert, serverPrivateKey: serverIssued.privateKey, verifier: serverVerifier });
+    const peer = new EapTlsPeerSession(clientIssued.cert, peerVerifier, { clientPrivateKey: clientIssued.privateKey });
 
     const { serverResult } = runHandshake(server, peer);
     expect(serverResult).toBe('reject');
@@ -65,8 +68,8 @@ describe('EAP-TLS handshake (RFC 5216) — direct server/peer session FSM', () =
     const serverVerifier = new CertificateVerifier({ trustAnchors: [ca.rootCertificate], clock: () => NOW });
     const peerVerifier = new CertificateVerifier({ trustAnchors: [ca.rootCertificate], clock: () => NOW });
 
-    const server = new EapTlsServerSession({ serverCert: serverIssued.cert, verifier: serverVerifier });
-    const peer = new EapTlsPeerSession(clientIssued.cert, peerVerifier);
+    const server = new EapTlsServerSession({ serverCert: serverIssued.cert, serverPrivateKey: serverIssued.privateKey, verifier: serverVerifier });
+    const peer = new EapTlsPeerSession(clientIssued.cert, peerVerifier, { clientPrivateKey: clientIssued.privateKey });
 
     // The peer detects the bad server cert once its (possibly fragmented)
     // flight fully arrives and stops cooperating — from the server's
@@ -88,7 +91,7 @@ describe('EAP-TLS handshake (RFC 5216) — direct server/peer session FSM', () =
     const serverIssued = issuedPair(ca, 'CN=radius-server');
     const verifier = new CertificateVerifier({ trustAnchors: [ca.rootCertificate], clock: () => NOW });
 
-    const server = new EapTlsServerSession({ serverCert: serverIssued.cert, verifier, requireClientCert: true });
+    const server = new EapTlsServerSession({ serverCert: serverIssued.cert, serverPrivateKey: serverIssued.privateKey, verifier, requireClientCert: true });
     const peer = new EapTlsPeerSession(null, verifier);
 
     const { serverResult } = runHandshake(server, peer);
@@ -100,8 +103,8 @@ describe('EAP-TLS handshake (RFC 5216) — direct server/peer session FSM', () =
     const expiredClient = ca.issueCertificate({ subject: 'CN=alice', notBefore: NOW - 20000, notAfter: NOW - 10000 });
     const verifier = new CertificateVerifier({ trustAnchors: [ca.rootCertificate], clock: () => NOW });
 
-    const server = new EapTlsServerSession({ serverCert: serverIssued.cert, verifier });
-    const peer = new EapTlsPeerSession(expiredClient.cert, verifier);
+    const server = new EapTlsServerSession({ serverCert: serverIssued.cert, serverPrivateKey: serverIssued.privateKey, verifier });
+    const peer = new EapTlsPeerSession(expiredClient.cert, verifier, { clientPrivateKey: expiredClient.privateKey });
 
     const { serverResult } = runHandshake(server, peer);
     expect(serverResult).toBe('reject');
@@ -112,8 +115,8 @@ describe('EAP-TLS handshake (RFC 5216) — direct server/peer session FSM', () =
     const clientIssued = issuedPair(ca, 'CN=alice');
     const verifier = new CertificateVerifier({ trustAnchors: [ca.rootCertificate], clock: () => NOW });
 
-    const server = new EapTlsServerSession({ serverCert: serverIssued.cert, verifier, mtu: 40 });
-    const peer = new EapTlsPeerSession(clientIssued.cert, verifier, 40);
+    const server = new EapTlsServerSession({ serverCert: serverIssued.cert, serverPrivateKey: serverIssued.privateKey, verifier, mtu: 40 });
+    const peer = new EapTlsPeerSession(clientIssued.cert, verifier, { mtu: 40, clientPrivateKey: clientIssued.privateKey });
 
     const { serverResult, peerResult, rounds } = runHandshake(server, peer);
     expect(serverResult).toBe('accept');

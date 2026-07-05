@@ -128,7 +128,7 @@ describe('802.1X → RADIUS EAP-TTLS relay, end to end (RFC 5281)', () => {
     const { sw, supplicantSw, server } = setupLab(bus, (srv) => {
       srv.getRadiusServer().addUser('alice', 'wonderland');
       return {
-        serverCert: serverIssued.cert, verifier, requireClientCert: false,
+        serverCert: serverIssued.cert, serverPrivateKey: serverIssued.privateKey, verifier, requireClientCert: false,
         eapType: 'ttls', innerAuth: new TtlsPapInnerAuthServer(lookupUserFn(srv)),
       };
     });
@@ -152,7 +152,7 @@ describe('802.1X → RADIUS EAP-TTLS relay, end to end (RFC 5281)', () => {
     const { sw, supplicantSw } = setupLab(bus, (srv) => {
       srv.getRadiusServer().addUser('alice', 'wonderland');
       return {
-        serverCert: serverIssued.cert, verifier, requireClientCert: false,
+        serverCert: serverIssued.cert, serverPrivateKey: serverIssued.privateKey, verifier, requireClientCert: false,
         eapType: 'ttls', innerAuth: new TtlsPapInnerAuthServer(lookupUserFn(srv)),
       };
     });
@@ -176,7 +176,7 @@ describe('802.1X → RADIUS PEAP relay, end to end (inner EAP-MD5)', () => {
     const { sw, supplicantSw } = setupLab(bus, (srv) => {
       srv.getRadiusServer().addUser('alice', 'wonderland');
       return {
-        serverCert: serverIssued.cert, verifier, requireClientCert: false,
+        serverCert: serverIssued.cert, serverPrivateKey: serverIssued.privateKey, verifier, requireClientCert: false,
         eapType: 'peap', innerAuth: new PeapMd5InnerAuthServer(lookupUserFn(srv)),
       };
     });
@@ -198,7 +198,7 @@ describe('802.1X → RADIUS PEAP relay, end to end (inner EAP-MD5)', () => {
     const { sw, supplicantSw } = setupLab(bus, (srv) => {
       srv.getRadiusServer().addUser('alice', 'wonderland');
       return {
-        serverCert: serverIssued.cert, verifier, requireClientCert: false,
+        serverCert: serverIssued.cert, serverPrivateKey: serverIssued.privateKey, verifier, requireClientCert: false,
         eapType: 'peap', innerAuth: new PeapMd5InnerAuthServer(lookupUserFn(srv)),
       };
     });

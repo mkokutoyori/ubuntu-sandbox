@@ -1,46 +1,61 @@
 /**
  * RFC 5216 EAP-TLS (and, sharing the same outer tunnel mechanics, PEAP and
- * RFC 5281 EAP-TTLS) — RADIUS-server (EAP server) side of one conversation.
+ * RFC 5281 EAP-TTLS) — RADIUS-server (EAP server) side of one conversation,
+ * now backed by the real RFC 8446 1-RTT engine (`TlsServerSession`,
+ * `@/network/tls`) instead of `EapTlsHandshake.ts`'s old ad hoc 2-RTT
+ * stand-in (`PRD-TLS.md` §2.1.14). `EapTlsFragmentation.ts`'s RFC 5216
+ * §2.1 fragmentation is unchanged — only the content being fragmented
+ * differs (real TLS wire records instead of ad hoc flight objects).
+ *
+ * Because TLS 1.3 bundles the server's Finished into its first flight
+ * (unlike the TLS-1.2-shaped exchange RFC 5216 illustrates, where the
+ * server's Finished follows the client's in a distinct final round), this
+ * outer tunnel now completes in one fewer round trip than before:
+ * ClientHello -> ServerHello+cert+Finished -> ClientFinal(+client
+ * cert/Finished) -> accept/reject, with no separate "server Finished"
+ * round. Neither side here offers more than the default `x25519` group,
+ * so `HelloRetryRequest` never triggers in practice — this session does
+ * not model that branch.
+ *
+ * Once the tunnel is up, PEAP/EAP-TTLS's inner authentication rides inside
+ * real TLS `application_data` records (`fragmentAsRecords`/
+ * `reassembleRecords`) rather than the old bespoke `EapTlsInnerData`
+ * wrapper — a fidelity increase, since the inner conversation now
+ * genuinely travels inside the tunnel's (simulated) encrypted channel.
+ *
  * Tracked per-State by `RadiusServerAgent`, one instance per in-flight
  * session, mirroring how EAP-MD5 sessions are tracked there.
- *
- * Plain EAP-TLS concludes in accept/reject right after the tunnel
- * handshake. PEAP/EAP-TTLS (`config.innerAuth` set) instead hand off to an
- * inner authentication method once the tunnel is up — see `InnerAuth.ts`.
  */
 import type { EapPacket } from '../eap';
 import { FragmentSender, EapTlsReassembler, DEFAULT_EAP_TLS_MTU } from './EapTlsFragmentation';
-import {
-  type EapTlsClientHello, type EapTlsServerFlight, type EapTlsClientFlight,
-  type EapTlsServerFinished, type EapTlsInnerData,
-  encodeFlight, decodeFlight, computeFinished, randomNonce,
-} from './EapTlsHandshake';
-import { bytesToHex, hexToBytes } from '@/crypto/encoding';
+import { encodeFlight, decodeFlight } from './EapTlsHandshake';
+import { TlsServerSession } from '@/network/tls/TlsServerSession';
+import { fragmentAsRecords, reassembleRecords, type TlsRecord } from '@/network/tls/recordLayer';
 import type { EapTlsConfig } from './EapTlsConfig';
 
 type State =
-  | 'sent-start' | 'sending-server-flight' | 'awaiting-client-flight'
-  | 'sending-server-finished' | 'awaiting-final-ack'
-  | 'sending-inner-request' | 'awaiting-inner-response' | 'done';
+  | 'sent-start' | 'sending' | 'awaiting-client-flight' | 'awaiting-inner-response' | 'done';
 
 export type EapTlsSessionResult = 'accept' | 'reject' | null;
 
 export class EapTlsServerSession {
   private state: State = 'sent-start';
-  private clientRandom: string | null = null;
-  private readonly serverRandom = randomNonce('srv');
+  private readonly tls: TlsServerSession;
   private outgoing: FragmentSender | null = null;
+  private outgoingFinalState: State = 'done';
   private readonly incoming = new EapTlsReassembler();
   private readonly mtu: number;
-  private readonly requireClientCert: boolean;
   private readonly eapType: 'tls' | 'peap' | 'ttls';
 
   result: EapTlsSessionResult = null;
 
   constructor(private readonly config: EapTlsConfig) {
     this.mtu = config.mtu ?? DEFAULT_EAP_TLS_MTU;
-    this.requireClientCert = config.requireClientCert ?? true;
     this.eapType = config.eapType ?? 'tls';
+    this.tls = new TlsServerSession({
+      serverCert: config.serverCert, serverPrivateKey: config.serverPrivateKey,
+      requestClientCert: config.requireClientCert ?? true, verifier: config.verifier,
+    });
   }
 
   /** The initial EAP-Request (TLS Start, no data) that kicks off the conversation. */
@@ -60,53 +75,41 @@ export class EapTlsServerSession {
     if (this.state === 'sent-start') {
       const flightBytes = this.incoming.feed({ tlsData, tlsFlags });
       if (flightBytes === null) return this.ackRequest(nextId);
-      let hello: EapTlsClientHello;
+      let records: readonly TlsRecord[];
       try {
-        hello = decodeFlight(flightBytes) as EapTlsClientHello;
+        records = decodeFlight(flightBytes);
       } catch {
         return this.reject(nextId);
       }
-      this.clientRandom = hello.random;
-      return this.startServerFlight(nextId);
+      const reply = this.tls.handle(records);
+      if (this.tls.result === 'reject' || !reply) return this.reject(nextId);
+      return this.sendFlight(nextId, reply, 'awaiting-client-flight');
     }
 
-    if (this.state === 'sending-server-flight') {
+    if (this.state === 'sending') {
       this.outgoing!.advance();
-      if (this.outgoing!.isLastFragment()) this.state = 'awaiting-client-flight';
+      if (this.outgoing!.isLastFragment()) this.state = this.outgoingFinalState;
       return this.currentFragmentRequest(nextId);
     }
 
     if (this.state === 'awaiting-client-flight') {
       const flightBytes = this.incoming.feed({ tlsData, tlsFlags });
       if (flightBytes === null) return this.ackRequest(nextId);
-      let clientFlight: EapTlsClientFlight;
+      let records: readonly TlsRecord[];
       try {
-        clientFlight = decodeFlight(flightBytes) as EapTlsClientFlight;
+        records = decodeFlight(flightBytes);
       } catch {
         return this.reject(nextId);
       }
-      return this.finishHandshake(nextId, clientFlight);
-    }
-
-    if (this.state === 'sending-server-finished') {
-      this.outgoing!.advance();
-      if (this.outgoing!.isLastFragment()) this.state = 'awaiting-final-ack';
-      return this.currentFragmentRequest(nextId);
-    }
-
-    if (this.state === 'awaiting-final-ack') {
+      this.tls.handle(records);
+      if (this.tls.result !== 'accept') return this.reject(nextId);
       if (!this.config.innerAuth) {
         this.state = 'done';
         this.result = 'accept';
         return { type: 'eap', code: 'success', identifier: nextId };
       }
-      return this.sendInnerRequest(nextId, this.config.innerAuth.start());
-    }
-
-    if (this.state === 'sending-inner-request') {
-      this.outgoing!.advance();
-      if (this.outgoing!.isLastFragment()) this.state = 'awaiting-inner-response';
-      return this.currentFragmentRequest(nextId);
+      const innerRequest = fragmentAsRecords('application_data', this.config.innerAuth.start(), true);
+      return this.sendFlight(nextId, innerRequest, 'awaiting-inner-response');
     }
 
     if (this.state === 'awaiting-inner-response') {
@@ -114,7 +117,7 @@ export class EapTlsServerSession {
       if (flightBytes === null) return this.ackRequest(nextId);
       let innerBytes: Uint8Array;
       try {
-        innerBytes = hexToBytes((decodeFlight(flightBytes) as EapTlsInnerData).hex);
+        innerBytes = reassembleRecords(decodeFlight(flightBytes), true).plaintext;
       } catch {
         return this.reject(nextId);
       }
@@ -124,7 +127,8 @@ export class EapTlsServerSession {
         this.result = result;
         return { type: 'eap', code: result === 'accept' ? 'success' : 'failure', identifier: nextId };
       }
-      return this.sendInnerRequest(nextId, next!);
+      const innerRequest = fragmentAsRecords('application_data', next!, true);
+      return this.sendFlight(nextId, innerRequest, 'awaiting-inner-response');
     }
 
     return this.reject(nextId);
@@ -136,39 +140,10 @@ export class EapTlsServerSession {
     return { type: 'eap', code: 'failure', identifier: nextId };
   }
 
-  private startServerFlight(nextId: number): EapPacket {
-    const flight: EapTlsServerFlight = {
-      kind: 'server-flight', random: this.serverRandom,
-      certificate: this.config.serverCert, requestClientCert: this.requireClientCert,
-    };
-    this.outgoing = FragmentSender.forFlight(encodeFlight(flight), this.mtu);
-    this.state = this.outgoing.isLastFragment() ? 'awaiting-client-flight' : 'sending-server-flight';
-    return this.currentFragmentRequest(nextId);
-  }
-
-  private finishHandshake(nextId: number, clientFlight: EapTlsClientFlight): EapPacket {
-    const certOk = this.requireClientCert
-      ? (!!clientFlight.certificate && this.config.verifier.verify(clientFlight.certificate).ok)
-      : true;
-    const expectedFinished = computeFinished(this.clientRandom!, this.serverRandom, 'client');
-    const finishedOk = clientFlight.finished === expectedFinished;
-
-    if (!certOk || !finishedOk) {
-      return this.reject(nextId);
-    }
-
-    const serverFinished: EapTlsServerFinished = {
-      kind: 'server-finished', finished: computeFinished(this.clientRandom!, this.serverRandom, 'server'),
-    };
-    this.outgoing = FragmentSender.forFlight(encodeFlight(serverFinished), this.mtu);
-    this.state = this.outgoing.isLastFragment() ? 'awaiting-final-ack' : 'sending-server-finished';
-    return this.currentFragmentRequest(nextId);
-  }
-
-  private sendInnerRequest(nextId: number, bytes: Uint8Array): EapPacket {
-    const inner: EapTlsInnerData = { kind: 'inner-data', hex: bytesToHex(bytes) };
-    this.outgoing = FragmentSender.forFlight(encodeFlight(inner), this.mtu);
-    this.state = this.outgoing.isLastFragment() ? 'awaiting-inner-response' : 'sending-inner-request';
+  private sendFlight(nextId: number, records: readonly TlsRecord[], finalState: State): EapPacket {
+    this.outgoing = FragmentSender.forFlight(encodeFlight(records), this.mtu);
+    this.outgoingFinalState = finalState;
+    this.state = this.outgoing.isLastFragment() ? finalState : 'sending';
     return this.currentFragmentRequest(nextId);
   }
 

@@ -14,6 +14,7 @@ import { CertificateAuthority } from '@/network/pki/CertificateAuthority';
 import { CertificateVerifier } from '@/network/pki/CertificateVerifier';
 import { EapTlsPeerSession } from '@/network/radius/eaptls/EapTlsPeerSession';
 import type { X509Certificate } from '@/network/pki/X509Certificate';
+import type { PkiPrivateKey } from '@/network/pki/PkiKeyPair';
 
 beforeEach(() => {
   resetCounters();
@@ -43,7 +44,10 @@ function buildEapResponseTls(srcMac: string, eap: EapPacket): EthernetFrame {
 }
 
 /** Mirrors dot1x-radius-eap.test.ts's setupLab, but arms the RADIUS server for EAP-TLS instead of EAP-MD5. */
-function setupLab(bus: EventBus, serverCert: X509Certificate, verifier: CertificateVerifier, opts: { requireClientCert?: boolean; mtu?: number } = {}) {
+function setupLab(
+  bus: EventBus, serverCert: X509Certificate, serverPrivateKey: PkiPrivateKey, verifier: CertificateVerifier,
+  opts: { requireClientCert?: boolean; mtu?: number } = {},
+) {
   const sw = new CiscoSwitch('switch-cisco', 'SW', 4);
   const supplicantSw = new CiscoSwitch('switch-cisco', 'SUP', 4);
   const nas = new CiscoRouter('NAS');
@@ -64,7 +68,7 @@ function setupLab(bus: EventBus, serverCert: X509Certificate, verifier: Certific
   nas.getRadiusClient().addServer('10.0.0.2', 'shared', { timeoutMs: 500, retransmit: 0 });
   server.getRadiusServer().setSharedSecret('shared');
   server.getRadiusServer().setEapTlsConfig({
-    serverCert, verifier,
+    serverCert, serverPrivateKey, verifier,
     requireClientCert: opts.requireClientCert ?? true,
     mtu: opts.mtu,
   });
@@ -98,7 +102,10 @@ async function runEapTlsSupplicant(
   await flushMicrotasks();
 
   try {
-    for (let round = 0; round < 100; round++) {
+    // RFC 8446 flights carry a full certificate chain + signature, so a
+    // tiny 40-byte MTU now needs noticeably more fragments/rounds than the
+    // old ad hoc 2-RTT model did — 150 comfortably covers that case.
+    for (let round = 0; round < 150; round++) {
       if (!latestEap) return 'timeout';
       const eap: EapPacket = latestEap;
       if (eap.code === 'success') return 'success';
@@ -122,8 +129,8 @@ describe('802.1X → RADIUS EAP-TLS relay, end to end (RFC 5216)', () => {
     const clientIssued = ca.issueCertificate({ subject: 'CN=alice', notBefore: NOW - 1000, notAfter: NOW + 1e9 });
     const verifier = new CertificateVerifier({ trustAnchors: [ca.rootCertificate], clock: () => NOW });
 
-    const { sw, supplicantSw } = setupLab(bus, serverIssued.cert, verifier);
-    const peer = new EapTlsPeerSession(clientIssued.cert, verifier);
+    const { sw, supplicantSw } = setupLab(bus, serverIssued.cert, serverIssued.privateKey, verifier);
+    const peer = new EapTlsPeerSession(clientIssued.cert, verifier, { clientPrivateKey: clientIssued.privateKey });
 
     const outcome = await runEapTlsSupplicant(sw, supplicantSw, bus, peer, 'alice');
 
@@ -141,8 +148,8 @@ describe('802.1X → RADIUS EAP-TLS relay, end to end (RFC 5216)', () => {
     const serverVerifier = new CertificateVerifier({ trustAnchors: [ca.rootCertificate], clock: () => NOW });
     const peerVerifier = new CertificateVerifier({ trustAnchors: [ca.rootCertificate], clock: () => NOW });
 
-    const { sw, supplicantSw } = setupLab(bus, serverIssued.cert, serverVerifier);
-    const peer = new EapTlsPeerSession(roguedClient.cert, peerVerifier);
+    const { sw, supplicantSw } = setupLab(bus, serverIssued.cert, serverIssued.privateKey, serverVerifier);
+    const peer = new EapTlsPeerSession(roguedClient.cert, peerVerifier, { clientPrivateKey: roguedClient.privateKey });
 
     const outcome = await runEapTlsSupplicant(sw, supplicantSw, bus, peer, 'mallory');
 
@@ -158,8 +165,8 @@ describe('802.1X → RADIUS EAP-TLS relay, end to end (RFC 5216)', () => {
     const clientIssued = ca.issueCertificate({ subject: 'CN=alice', notBefore: NOW - 1000, notAfter: NOW + 1e9 });
     const verifier = new CertificateVerifier({ trustAnchors: [ca.rootCertificate], clock: () => NOW });
 
-    const { sw, supplicantSw } = setupLab(bus, serverIssued.cert, verifier, { mtu: 40 });
-    const peer = new EapTlsPeerSession(clientIssued.cert, verifier, 40);
+    const { sw, supplicantSw } = setupLab(bus, serverIssued.cert, serverIssued.privateKey, verifier, { mtu: 40 });
+    const peer = new EapTlsPeerSession(clientIssued.cert, verifier, { mtu: 40, clientPrivateKey: clientIssued.privateKey });
 
     const outcome = await runEapTlsSupplicant(sw, supplicantSw, bus, peer, 'alice');
 

@@ -1,4 +1,5 @@
 import type { X509Certificate } from '@/network/pki/X509Certificate';
+import type { PkiPrivateKey } from '@/network/pki/PkiKeyPair';
 import type { CertificateVerifier } from '@/network/pki/CertificateVerifier';
 import type { InnerAuthServer } from './InnerAuth';
 
@@ -12,6 +13,8 @@ import type { InnerAuthServer } from './InnerAuth';
  */
 export interface EapTlsConfig {
   readonly serverCert: X509Certificate;
+  /** Signs the outer tunnel's `CertificateVerify` (RFC 8446 §4.4.2) — the real 1-RTT engine needs it even though the old ad hoc 2-RTT model didn't. */
+  readonly serverPrivateKey: PkiPrivateKey;
   readonly verifier: CertificateVerifier;
   /** RFC 5216 mandates mutual authentication; default true. PEAP/EAP-TTLS callers should pass false (client auth happens inside the tunnel instead, via `innerAuth`). */
   readonly requireClientCert?: boolean;

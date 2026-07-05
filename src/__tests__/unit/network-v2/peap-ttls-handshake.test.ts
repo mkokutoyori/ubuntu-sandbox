@@ -40,7 +40,7 @@ describe('EAP-TTLS (RFC 5281) — outer tunnel + inner PAP', () => {
   it('accepts correct inner PAP credentials, with no client certificate needed', () => {
     const users = usersMap({ username: 'alice', password: 'wonderland', replyAttributes: [] });
     const server = new EapTlsServerSession({
-      serverCert: serverCert.cert, verifier, requireClientCert: false,
+      serverCert: serverCert.cert, serverPrivateKey: serverCert.privateKey, verifier, requireClientCert: false,
       eapType: 'ttls', innerAuth: new TtlsPapInnerAuthServer((u) => users.get(u)),
     });
     const peer = new EapTlsPeerSession(null, verifier, {
@@ -54,7 +54,7 @@ describe('EAP-TTLS (RFC 5281) — outer tunnel + inner PAP', () => {
   it('rejects a wrong inner PAP password', () => {
     const users = usersMap({ username: 'alice', password: 'wonderland', replyAttributes: [] });
     const server = new EapTlsServerSession({
-      serverCert: serverCert.cert, verifier, requireClientCert: false,
+      serverCert: serverCert.cert, serverPrivateKey: serverCert.privateKey, verifier, requireClientCert: false,
       eapType: 'ttls', innerAuth: new TtlsPapInnerAuthServer((u) => users.get(u)),
     });
     const peer = new EapTlsPeerSession(null, verifier, {
@@ -68,7 +68,7 @@ describe('EAP-TTLS (RFC 5281) — outer tunnel + inner PAP', () => {
   it('completes even when a tiny MTU forces fragmentation of the outer tunnel and the inner exchange', () => {
     const users = usersMap({ username: 'alice', password: 'wonderland', replyAttributes: [] });
     const server = new EapTlsServerSession({
-      serverCert: serverCert.cert, verifier, requireClientCert: false, mtu: 40,
+      serverCert: serverCert.cert, serverPrivateKey: serverCert.privateKey, verifier, requireClientCert: false, mtu: 40,
       eapType: 'ttls', innerAuth: new TtlsPapInnerAuthServer((u) => users.get(u)),
     });
     const peer = new EapTlsPeerSession(null, verifier, {
@@ -95,7 +95,7 @@ describe('PEAP — outer tunnel + inner EAP-MD5', () => {
   it('accepts a correct inner EAP-MD5 password, with no client certificate needed', () => {
     const users = usersMap({ username: 'alice', password: 'wonderland', replyAttributes: [] });
     const server = new EapTlsServerSession({
-      serverCert: serverCert.cert, verifier, requireClientCert: false,
+      serverCert: serverCert.cert, serverPrivateKey: serverCert.privateKey, verifier, requireClientCert: false,
       eapType: 'peap', innerAuth: new PeapMd5InnerAuthServer((u) => users.get(u)),
     });
     const peer = new EapTlsPeerSession(null, verifier, {
@@ -109,7 +109,7 @@ describe('PEAP — outer tunnel + inner EAP-MD5', () => {
   it('rejects a wrong inner password', () => {
     const users = usersMap({ username: 'alice', password: 'wonderland', replyAttributes: [] });
     const server = new EapTlsServerSession({
-      serverCert: serverCert.cert, verifier, requireClientCert: false,
+      serverCert: serverCert.cert, serverPrivateKey: serverCert.privateKey, verifier, requireClientCert: false,
       eapType: 'peap', innerAuth: new PeapMd5InnerAuthServer((u) => users.get(u)),
     });
     const peer = new EapTlsPeerSession(null, verifier, {
@@ -125,7 +125,7 @@ describe('PEAP — outer tunnel + inner EAP-MD5', () => {
     const rogueServerCert = rogueCa.issueCertificate({ subject: 'CN=aaa-server', notBefore: NOW - 1000, notAfter: NOW + 1e9 });
     const users = usersMap({ username: 'alice', password: 'wonderland', replyAttributes: [] });
     const server = new EapTlsServerSession({
-      serverCert: rogueServerCert.cert, verifier, requireClientCert: false,
+      serverCert: rogueServerCert.cert, serverPrivateKey: rogueServerCert.privateKey, verifier, requireClientCert: false,
       eapType: 'peap', innerAuth: new PeapMd5InnerAuthServer((u) => users.get(u)),
     });
     const peer = new EapTlsPeerSession(null, verifier, {

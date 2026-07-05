@@ -1,78 +1,37 @@
 /**
- * EAP-TLS (RFC 5216) handshake content — deliberately abstracted at the
- * same fidelity level as the rest of this project's simulated crypto
- * (`PkiKeyPair`, `SimulatedTls.ts`): real X.509 certificate issuance/
- * verification (`@/network/pki`), but TLS handshake messages are grouped
- * into JSON-serializable "flights" rather than real ASN.1/DER-encoded TLS
- * records, and the Finished value is a deterministic simulated MAC over
- * both random nonces rather than a real PRF. `EapTlsFragmentation.ts`
- * chops a flight's encoded bytes into RFC 5216 §2.1 fragments; this module
- * only knows the flights' content and how to compute/check "Finished".
+ * EAP-TLS (RFC 5216 §2.1) outer-tunnel wire codec — a "flight" is a real
+ * RFC 8446 flight (`readonly TlsRecord[]`, `@/network/tls/recordLayer`)
+ * produced by `TlsClientSession`/`TlsServerSession`; this module only
+ * serializes/deserializes that array to/from the bytes
+ * `EapTlsFragmentation.ts` chops into Type-Data fragments. Before the
+ * `PRD-TLS.md` §2.1.14 migration this module also modeled the handshake
+ * content itself (ad hoc client-hello/server-flight/client-flight/
+ * server-finished messages, a simulated 2-RTT stand-in) — that's now the
+ * real engine's job, so only the wire codec remains.
  */
-import { utf8ToBytes, bytesToUtf8 } from '@/crypto/encoding';
-import { simulatedDigest } from '@/network/dns/dnssec/Digest';
-import type { X509Certificate } from '@/network/pki/X509Certificate';
+import { utf8ToBytes, bytesToUtf8, bytesToHex, hexToBytes } from '@/crypto/encoding';
+import type { TlsRecord } from '@/network/tls/recordLayer';
+import type { ContentType } from '@/network/tls/types';
 
-export interface EapTlsClientHello {
-  readonly kind: 'client-hello';
-  readonly random: string;
-}
-
-export interface EapTlsServerFlight {
-  readonly kind: 'server-flight';
-  readonly random: string;
-  readonly certificate: X509Certificate;
-  readonly requestClientCert: boolean;
-}
-
-export interface EapTlsClientFlight {
-  readonly kind: 'client-flight';
-  readonly certificate: X509Certificate | null;
-  readonly finished: string;
-}
-
-export interface EapTlsServerFinished {
-  readonly kind: 'server-finished';
-  readonly finished: string;
+interface WireRecord {
+  readonly contentType: ContentType;
+  readonly legacyVersion: number;
+  readonly fragmentHex: string;
 }
 
 /**
- * PEAP/EAP-TTLS "tunneled data" — once the outer TLS tunnel is established,
- * both an inner authentication method's own messages ride inside one of
- * these instead of a real TLS `application_data` record (matching this
- * module's existing abstraction level: real framing/fragmentation, no real
- * record-layer encryption underneath).
+ * Serializes a TLS flight to bytes for RFC 5216 §2.1 fragmentation —
+ * hex-encodes each record's `fragment` so it survives a JSON round trip
+ * (a bare `Uint8Array` would not).
  */
-export interface EapTlsInnerData {
-  readonly kind: 'inner-data';
-  readonly hex: string;
+export function encodeFlight(records: readonly TlsRecord[]): Uint8Array {
+  const wire: WireRecord[] = records.map((r) => ({
+    contentType: r.contentType, legacyVersion: r.legacyVersion, fragmentHex: bytesToHex(r.fragment),
+  }));
+  return utf8ToBytes(JSON.stringify(wire));
 }
 
-export type EapTlsFlight =
-  | EapTlsClientHello | EapTlsServerFlight | EapTlsClientFlight | EapTlsServerFinished
-  | EapTlsInnerData;
-
-export function encodeFlight(flight: EapTlsFlight): Uint8Array {
-  return utf8ToBytes(JSON.stringify(flight));
-}
-
-export function decodeFlight(bytes: Uint8Array): EapTlsFlight {
-  return JSON.parse(bytesToUtf8(bytes)) as EapTlsFlight;
-}
-
-/**
- * A deterministic stand-in for the TLS Finished MAC: both sides derive the
- * same value from the two random nonces plus their role, so a mismatched
- * or tampered handshake (different nonce seen, wrong role) produces a
- * different value and is detected — without implementing a real PRF/MAC.
- */
-export function computeFinished(clientRandom: string, serverRandom: string, role: 'client' | 'server'): string {
-  return simulatedDigest(`${clientRandom}|${serverRandom}|${role}|finished`);
-}
-
-let nonceCounter = 0;
-
-export function randomNonce(prefix: string): string {
-  nonceCounter += 1;
-  return `${prefix}-${nonceCounter.toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+export function decodeFlight(bytes: Uint8Array): TlsRecord[] {
+  const wire = JSON.parse(bytesToUtf8(bytes)) as WireRecord[];
+  return wire.map((r) => ({ contentType: r.contentType, legacyVersion: r.legacyVersion, fragment: hexToBytes(r.fragmentHex) }));
 }
