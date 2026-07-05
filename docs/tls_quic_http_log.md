@@ -88,7 +88,7 @@ ci-dessous.
 | P8 | Résumption PSK & 0-RTT | P2, P3 | ✅ terminé | Claude (Sonnet 5) |
 | P9 | KeyUpdate | P3 | ✅ terminé | Claude (Sonnet 5) |
 | P10 | Observabilité | P3–P9 | ✅ terminé | Claude (Sonnet 5) |
-| P11 | Migration DoT & EAP-TLS/PEAP/EAP-TTLS | P1–P10 | 🟡 en cours | Claude (Sonnet 5) |
+| P11 | Migration DoT & EAP-TLS/PEAP/EAP-TTLS | P1–P10 | ✅ terminé | Claude (Sonnet 5) |
 
 ### `docs/PRD-QUIC.md` — dépend de PRD-TLS.md (P8, P9)
 
@@ -1252,3 +1252,67 @@ seulement le consommer.
   transport) pour fournir une CA/un certificat/un verifier, sans changer
   les assertions observables (mêmes codes, mêmes réponses DNS attendues).
 - Statut / résultat : 🟡 en cours.
+
+### [2026-07-05 (heure non horodatée par l'outil) UTC] Claude (Sonnet 5) — PRD-TLS/P11 — TERMINÉ (PRD-TLS.md intégralement livré)
+- Tâche : `PRD-TLS.md`/P11 — migration de `DnsTlsTransport.ts` (DoT, RFC
+  7858) et du tunnel EAP-TLS/PEAP/EAP-TTLS sur le vrai moteur RFC 8446.
+- `DnsTlsTransport.ts` : `bindDnsTlsServer`/`queryDnsOverTls` s'appuient
+  désormais sur `TlsClientSession`/`TlsServerSession` réels au lieu de
+  `SimulatedTls.ts`. Les deux côtés font confiance à une seule CA « bien
+  connue » via `getOrCreateCA(DOT_TRUST_ANCHOR_KEY)`
+  (`@/network/pki/PkiCaRegistry`) — pas d'étape d'enrôlement nécessaire,
+  API de `bindDnsTlsServer`/`queryDnsOverTls` strictement inchangée.
+  `DnsHttpsTransport.ts` (DoH) et `DnsQuicTransport.ts` (DoQ) restent sur
+  `SimulatedTls.ts` — hors périmètre ici, propriété de
+  `PRD-HTTP.md`/`PRD-QUIC.md` (note : Arthur migre justement DoH en ce
+  moment même, cf. entrée juste au-dessus — aucun conflit de fichiers,
+  `DnsTlsTransport.ts` et `DnsHttpsTransport.ts` sont deux fichiers
+  distincts, seul `dns-encrypted-transports.test.ts` est un point de
+  contact partagé et je ne l'ai pas modifié). L'ALPN est imposé au niveau
+  de ce module (le moteur TLS générique le traite comme informatif) : en
+  cas de non-correspondance, le serveur ferme sans répondre.
+- `EapTlsServerSession.ts`/`EapTlsPeerSession.ts` pilotent désormais
+  `TlsServerSession`/`TlsClientSession` au lieu du modèle 2-RTT ad hoc
+  d'`EapTlsHandshake.ts`, réduit à un simple codec de fil (hex-encode
+  chaque `fragment` de `TlsRecord` pour survivre à un aller-retour JSON) —
+  la fragmentation RFC 5216 §2.1 (`EapTlsFragmentation.ts`) est inchangée.
+  TLS 1.3 regroupant le Finished du serveur dans son premier paquet
+  (contrairement à l'échange façon TLS 1.2 illustré par la RFC 5216), le
+  tunnel se conclut désormais en un aller-retour de moins : plus de round
+  « Finished serveur » séparé. L'authentification interne PEAP/EAP-TTLS
+  transite maintenant dans de vrais enregistrements TLS
+  `application_data` plutôt qu'un wrapper ad hoc — gain de fidélité.
+  `EapTlsConfig` a gagné un `serverPrivateKey` requis (signe le
+  `CertificateVerify` du tunnel, RFC 8446 §4.4.2 — le vrai moteur en a
+  besoin, l'ancien Finished simulé par nonce non) ; `EapTlsPeerOptions` a
+  gagné un `clientPrivateKey` optionnel, même raison côté client. Tous
+  les sites d'appel dans `eaptls-handshake.test.ts`,
+  `peap-ttls-handshake.test.ts`, `dot1x-radius-eaptls.test.ts` et
+  `dot1x-radius-peap-ttls.test.ts` ont été mis à jour en conséquence.
+- Mise à jour consciente de compteurs de rounds (conformément au risque
+  documenté dans `PRD-TLS.md` §7) : deux tests à MTU minuscule (40
+  octets) ont vu leur plafond de sécurité relevé (50→150 et 100→150) —
+  un paquet RFC 8446 transporte une chaîne de certificats + signature,
+  donc nécessite sensiblement plus de fragments qu'un paquet ad hoc de
+  l'ancien modèle ; aucun changement fonctionnel, les deux tests
+  vérifient toujours le même accept/success final.
+- Statut / résultat : ✅ terminé. `tsc`/`eslint` propres. Régression
+  ciblée (tls-*, dns-encrypted-transports, eaptls/peap/ttls,
+  dot1x-radius-eap*, radius*) : 32 fichiers, 226 tests, 0 échec.
+  Régression complète (justifiée hors cadence stricte des 4 phases : P11
+  est un chantier de migration transverse touchant des consommateurs
+  existants, donc plus à risque que les phases additives précédentes) :
+  673/675 fichiers, 12638/12699 tests, 11 échecs — tous pré-existants
+  (Oracle RAC), aucun nouvel échec.
+- **`PRD-TLS.md` est désormais intégralement livré (P1 à P11).**
+- Suggestion pour la suite : `PRD-QUIC.md`/P8 (intégration TLS 1.3 réelle)
+  était bloqué en attendant que `clientHandshakeTrafficSecret`/
+  `serverHandshakeTrafficSecret` soient exposés publiquement côté
+  `TlsClientSession`/`TlsServerSession` (cf. entrée BLOQUÉ d'Arthur
+  ci-dessus) — ce blocage ne dépendait pas de P11, donc reste entier ;
+  un agent TLS pourrait lever ce blocage en exposant ces deux secrets
+  (actuellement privés) comme champs publics, symétriquement à
+  `clientApplicationTrafficSecret`/`serverApplicationTrafficSecret`
+  (déjà publics depuis P9). Je vais regarder ce blocage maintenant,
+  puisque c'est un point de contact direct entre `PRD-TLS.md` et
+  `PRD-QUIC.md`/P8.
