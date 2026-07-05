@@ -417,6 +417,21 @@ export function buildNATConfigCommands(trie: CommandTrie, ctx: CiscoShellContext
     (ctx.r() as any)._ciscoNatLogTranslations = args.join(' ') || 'syslog';
     return '';
   });
+
+  trie.registerGreedy('ip nat service', 'Enable an ALG for a protocol', (args) => {
+    const proto = (args[0] ?? '').toLowerCase();
+    if (!['dns', 'ftp', 'tftp', 'h323', 'sip', 'rtsp', 'pptp'].includes(proto)) {
+      return `% Unknown ALG protocol "${args[0] ?? ''}".`;
+    }
+    ctx.r()._getNATEngine().setAlgEnabled(proto, true);
+    return '';
+  });
+
+  trie.registerGreedy('no ip nat service', 'Disable an ALG for a protocol', (args) => {
+    const proto = (args[0] ?? '').toLowerCase();
+    ctx.r()._getNATEngine().setAlgEnabled(proto, false);
+    return '';
+  });
 }
 
 // ─── Interface Config Mode ────────────────────────────────────────────────────

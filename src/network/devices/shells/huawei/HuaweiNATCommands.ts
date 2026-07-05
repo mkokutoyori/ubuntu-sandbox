@@ -213,15 +213,12 @@ export function registerHuaweiNATSystemCommands(trie: CommandTrie, ctx: HuaweiSh
       return `Error: Unknown ALG protocol "${args[0]}".`;
     }
     if (!['enable', 'disable'].includes(action)) return 'Error: Expected enable or disable.';
-    const router = ctx.r() as any;
-    const alg: Map<string, boolean> = router._huaweiNatAlg ??= new Map();
-    alg.set(proto, action === 'enable');
+    ctx.r()._getNATEngine().setAlgEnabled(proto, action === 'enable');
     return '';
   });
   trie.registerGreedy('undo nat alg', 'Disable NAT ALG for a protocol', (args) => {
     const proto = stripQ(args[0] ?? '').toLowerCase();
-    const router = ctx.r() as any;
-    router._huaweiNatAlg?.delete?.(proto);
+    ctx.r()._getNATEngine().setAlgEnabled(proto, false);
     return '';
   });
 }

@@ -267,6 +267,41 @@ export class NATEngine {
     this.dynamicRules = this.dynamicRules.filter(r => String(r.aclId) !== String(aclId));
   }
 
+  // ─── ALG (Application Layer Gateway, PRD-FTP-SFTP.md §2.1.10) ────────────
+  // `nat alg ftp enable/disable` (Huawei) and `ip nat service ftp`/`no ip nat
+  // service ftp` (Cisco) both drive this same per-protocol toggle. FTP's ALG
+  // is on by default, matching real vsftpd-adjacent router defaults.
+  private algEnabled = new Set<string>(['ftp']);
+
+  setAlgEnabled(protocol: string, enabled: boolean): void {
+    if (enabled) this.algEnabled.add(protocol); else this.algEnabled.delete(protocol);
+  }
+  isAlgEnabled(protocol: string): boolean { return this.algEnabled.has(protocol); }
+
+  /**
+   * Opens a temporary inbound pinhole for a data channel whose address/port
+   * was just announced (and rewritten) in a `PORT`/`PASV` payload — the ALG's
+   * dynamic-binding counterpart to a real router's translation table entry.
+   * Reuses the exact same session shape `translateInbound()`'s reverse-session
+   * lookup (step 1) already knows how to consume, so nothing else changes.
+   */
+  openAlgPinhole(opts: {
+    protocol: number; insideIP: string; insidePort: number;
+    globalIP: string; globalPort: number; outsideIP: string; outsidePort: number;
+  }): void {
+    const session: NatSession = {
+      protocol: opts.protocol,
+      localIP: opts.insideIP, localPort: opts.insidePort,
+      globalIP: opts.globalIP, globalPort: opts.globalPort,
+      outsideIP: opts.outsideIP, outsidePort: opts.outsidePort,
+      timestamp: Date.now(),
+      tcpState: opts.protocol === IP_PROTO_TCP ? 'syn-seen' : undefined,
+    };
+    const key = makeKey4(opts.protocol, opts.insideIP, opts.insidePort, opts.outsideIP, opts.outsidePort);
+    this.sessions.set(key, session);
+    this.reverseSessions.set(makeKey(opts.protocol, opts.globalIP, opts.globalPort), session);
+  }
+
   /** Provide ACL matching function (injected by Router) */
   setACLMatchFn(fn: (aclId: string | number, srcIP: string, pkt?: IPv4Packet) => boolean): void {
     this.matchACLFn = fn;

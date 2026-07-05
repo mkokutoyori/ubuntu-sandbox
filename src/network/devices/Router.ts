@@ -99,6 +99,7 @@ import { CrossVendorSshHost, type CrossVendorSshVendor } from '../protocols/ssh/
 export type { OSPFExtraConfig, OSPFRouterContext } from './router/RouterOSPFIntegration';
 export { RouterOSPFIntegration } from './router/RouterOSPFIntegration';
 import { NATEngine } from './router/NATEngine';
+import { inspectAndRewriteFtpAlg } from './router/nat/FtpAlg';
 import { RouterDebugService } from './router/diag/RouterDebugService';
 import { NhrpService } from './router/nhrp/NhrpService';
 import { DmvpnService } from './router/nhrp/DmvpnService';
@@ -1577,7 +1578,12 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
 
     // NAT POSTROUTING (SNAT/PAT): rewrite source before sending
     const natOutbound = this.natEngine.translateOutbound(fwdPkt, route.iface, inPort);
-    if (natOutbound) fwdPkt = natOutbound;
+    if (natOutbound) {
+      // FTP ALG (§2.1.10): rewrite any PORT/PASV-embedded address surviving
+      // in the payload, and open a pinhole for the data channel it names.
+      const outsideIP = this.ports.get(route.iface)?.getIPAddress()?.toString();
+      fwdPkt = outsideIP ? inspectAndRewriteFtpAlg(natOutbound, this.natEngine, outsideIP) : natOutbound;
+    }
 
     this.sampleNetflowForward(fwdPkt, nextHopIP);
 
