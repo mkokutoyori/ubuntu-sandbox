@@ -52,16 +52,16 @@ function buildTopology() {
   const engine = new AuthoritativeServer(store);
   const handler = (q: DnsMessage) => engine.answer(q);
 
-  const ca = CertificateAuthority.generate('CN=doh-test-ca', { now: NOW });
+  const ca = CertificateAuthority.generate('CN=doh-doq-test-ca', { now: NOW });
   const issued = ca.issueCertificate({ subject: 'CN=10.0.1.10', notBefore: NOW - 1000, notAfter: NOW + 1e9 });
-  const dohVerifier = new CertificateVerifier({ trustAnchors: [ca.rootCertificate], clock: () => NOW });
+  const verifier = new CertificateVerifier({ trustAnchors: [ca.rootCertificate], clock: () => NOW });
 
   bindDnsUdpServer(srv, handler);
   bindDnsTlsServer(srv, handler);
   bindDnsHttpsServer(srv, handler, { serverCert: issued.cert, serverPrivateKey: issued.privateKey });
-  bindDnsQuicServer(srv, handler);
+  bindDnsQuicServer(srv, handler, { serverCert: issued.cert, serverPrivateKey: issued.privateKey });
 
-  return { pc, srv, dohVerifier };
+  return { pc, srv, dohVerifier: verifier, doqVerifier: verifier };
 }
 
 const SERVER = () => new IPAddress('10.0.1.10');
@@ -155,8 +155,8 @@ describe('DoH — DNS over HTTPS (RFC 8484)', () => {
 
 describe('DoQ — DNS over QUIC on UDP/853 (RFC 9250)', () => {
   it('answers over a QUIC stream with the same semantics as UDP', async () => {
-    const { pc } = buildTopology();
-    const client = new DnsQuicClient(pc, SERVER());
+    const { pc, doqVerifier } = buildTopology();
+    const client = new DnsQuicClient(pc, SERVER(), { verifier: doqVerifier });
 
     const reply = await client.query(makeQuery('www.example.com', 41));
 
@@ -166,8 +166,8 @@ describe('DoQ — DNS over QUIC on UDP/853 (RFC 9250)', () => {
   }, 15000);
 
   it('opens a new client-initiated bidirectional stream per query', async () => {
-    const { pc } = buildTopology();
-    const client = new DnsQuicClient(pc, SERVER());
+    const { pc, doqVerifier } = buildTopology();
+    const client = new DnsQuicClient(pc, SERVER(), { verifier: doqVerifier });
 
     await client.query(makeQuery('www.example.com', 42));
     const firstStream = client.lastStreamId;
@@ -188,8 +188,8 @@ describe('DoQ — DNS over QUIC on UDP/853 (RFC 9250)', () => {
 
 describe('Transport parity (PRD Phase 8 exit criterion)', () => {
   it('returns the same answer over UDP, DoT, DoH and DoQ', async () => {
-    const { pc, dohVerifier } = buildTopology();
-    const quic = new DnsQuicClient(pc, SERVER());
+    const { pc, dohVerifier, doqVerifier } = buildTopology();
+    const quic = new DnsQuicClient(pc, SERVER(), { verifier: doqVerifier });
 
     const answers = await Promise.all([
       queryDnsOverUdp(pc, SERVER(), makeQuery('www.example.com', 51)),

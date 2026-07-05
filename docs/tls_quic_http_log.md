@@ -106,7 +106,7 @@ ci-dessous.
 | P10 | Retry & validation d'adresse | P7 | ✅ terminé | Arthur |
 | P11 | Connection IDs multiples | P7 | ✅ terminé | Arthur |
 | P12 | Observabilité | P4–P11 | ✅ terminé | Arthur |
-| P13 | Migration DoQ | P8, P6 | 🟡 en cours | Arthur |
+| P13 | Migration DoQ | P8, P6 | ✅ terminé | Arthur |
 
 ### `docs/PRD-HTTP.md` — dépend de PRD-TLS.md (P7) et PRD-QUIC.md (P9, P10)
 
@@ -1610,3 +1610,48 @@ seulement le consommer.
   pour fournir une CA/un certificat/un verifier — assertions observables
   inchangées.
 - Statut / résultat : 🟡 en cours.
+
+### [2026-07-05 (heure non horodatée par l'outil) UTC] Arthur — PRD-QUIC/P13 — TERMINÉ
+- Réalisé exactement le périmètre annoncé : `DnsQuicTransport.ts` réécrit
+  sur `QuicConnection`/`TlsClientSession`/`TlsServerSession` réels —
+  `bindDnsQuicServer(host, handler, tlsConfig, options?)`,
+  `DnsQuicClient`/`queryDnsOverQuic(..., tlsConfig, options?)`. DNS
+  encapsulé en stream préfixé-longueur (2 octets big-endian + message DNS,
+  RFC 9250 §4.2/RFC 1035 §4.2.2) sur un nouveau stream bidirectionnel
+  client par requête (`conn.openStream('bidirectional')`), connexion
+  unique réutilisée entre requêtes plutôt que reconstruite à chaque appel
+  (`DnsQuicClient` garde son `QuicConnection` établi). `dcid` client fixe
+  documenté (`FIXED_CLIENT_DEST_CONNECTION_ID`), cohérent avec la
+  limitation déjà existante d'une connexion point-à-point par instance.
+- **Bug trouvé et corrigé** : `QuicConnection.handleDatagram` levait une
+  exception non interceptée (`no application keys available yet`) dès
+  qu'un datagramme UDP arrivait sur le port QUIC sans que les clés de
+  l'espace correspondant soient encore dérivées — cas normal pour un
+  paquet non-QUIC ou prématuré (RFC 9000 §12.2/§17.2 : un tel paquet doit
+  être silencieusement ignoré, pas faire planter la connexion). Trouvé
+  par le test déjà existant « ignores a cleartext DNS datagram sent to the
+  QUIC port » (un datagramme DNS-sur-UDP brut, dont les premiers octets
+  passent accidentellement la validation minimale d'un en-tête court QUIC,
+  arrivait au port DoQ avant toute poignée de main). Corrigé en supprimant
+  le `throw` de `keysFor` au profit d'une nouvelle méthode `keysSlot`
+  (retourne `null` sans lever), avec un retour anticipé silencieux dans
+  `handleDatagram` quand les clés de réception ne sont pas encore prêtes ;
+  `keysFor` (utilisée uniquement à l'envoi, où l'absence de clés est un
+  vrai bug interne) continue de lever. Ce correctif profite à tout
+  consommateur de `QuicConnection`, pas seulement DoQ.
+- Statut / résultat : ✅ terminé. `tsc --noEmit -p tsconfig.app.json`
+  propre (hormis deux erreurs pré-existantes sans rapport,
+  `new LinuxServer('DNS1')`, inchangées par ce diff). `eslint` propre.
+  Régression ciblée : 250 tests (24 fichiers — quic-*, tls-*, https,
+  dns-encrypted-transports) au vert. 3ᵉ phase depuis la dernière
+  régression complète (QUIC/P13/HTTP), pas encore la 4ᵉ.
+- **`PRD-QUIC.md` est désormais quasiment intégralement livré** : il ne
+  reste que P12 (Observabilité — déjà fait, en fait vérifié terminé plus
+  haut) — en relisant le tableau de bord, toutes les phases P1-P13 de
+  `PRD-QUIC.md` sont maintenant ✅ terminé. `PRD-QUIC.md` est donc
+  intégralement livré.
+- Suggestion pour la suite : `PRD-HTTP.md`/P9 (intégration QUIC pour
+  HTTP/3) est désormais débloqué (`PRD-QUIC.md` intégralement livré) et
+  devient la phase la plus importante restante côté HTTP, avec P10
+  (HTTP/3 proprement dit) juste derrière. P12 (migration IIS/curl/wget)
+  reste aussi disponible et indépendante.

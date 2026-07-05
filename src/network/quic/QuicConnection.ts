@@ -149,8 +149,12 @@ export class QuicConnection {
     }
   }
 
+  private keysSlot(space: PacketNumberSpace): DirectionalKeys | null {
+    return space === 'initial' ? this.initialKeys : space === 'handshake' ? this.handshakeKeys : this.applicationKeys;
+  }
+
   private keysFor(space: PacketNumberSpace): DirectionalKeys {
-    const keys = space === 'initial' ? this.initialKeys : space === 'handshake' ? this.handshakeKeys : this.applicationKeys;
+    const keys = this.keysSlot(space);
     if (!keys) throw new Error(`QuicConnection: no ${space} keys available yet`);
     return keys;
   }
@@ -291,8 +295,13 @@ export class QuicConnection {
 
     const space: PacketNumberSpace =
       decoded.packet.form !== 'long' ? 'application' : decoded.packet.type === 'handshake' ? 'handshake' : 'initial';
+    // A packet for a space whose keys aren't derived yet is either premature (out-of-order
+    // delivery, not modeled here) or not a real QUIC packet at all (RFC 9000 §12.2/§17.2) — drop
+    // it rather than treat "no keys yet" as a fatal condition of this connection.
+    const receiveKeys = this.keysSlot(space);
+    if (!receiveKeys) return;
     const packetNumber = decoded.packet.packetNumber ?? 0;
-    const plaintext = unprotectBody(this.keysFor(space).receive, packetNumber, decoded.packet.payload);
+    const plaintext = unprotectBody(receiveKeys.receive, packetNumber, decoded.packet.payload);
     const { frames } = decodeFrames(plaintext);
     this.emit({ topic: 'quic.packet.received', payload: { connectionId: this.connectionId, role: this.role, space, packetNumber, size: bytes.length } });
 
