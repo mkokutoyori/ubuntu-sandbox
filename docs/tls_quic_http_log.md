@@ -83,7 +83,7 @@ ci-dessous.
 | P3 | Handshake 1-RTT nominal | P1, P2 | ✅ terminé | Claude (Sonnet 5) |
 | P4 | mTLS | P3 | ✅ terminé | Claude (Sonnet 5) |
 | P5 | HelloRetryRequest | P3 | ✅ terminé | Claude (Sonnet 5) |
-| P6 | Alertes complètes | P3 | ⬜ disponible | — |
+| P6 | Alertes complètes | P3 | 🟡 en cours | Claude (Sonnet 5) |
 | P7 | ALPN & suites cryptographiques | P3 | ⬜ disponible | — |
 | P8 | Résumption PSK & 0-RTT | P2, P3 | ⬜ disponible | — |
 | P9 | KeyUpdate | P3 | ⬜ disponible | — |
@@ -468,3 +468,22 @@ seulement le consommer.
   d'intégration `TcpStack` (toutes les sessions actuelles sont pilotées
   directement par flights, pas encore par socket réel) — vérifier ce que
   `PRD-HTTP.md`/P7 nécessite exactement avant de démarrer.
+
+### [2026-07-05 (heure non horodatée par l'outil) UTC] Claude (Sonnet 5) — PRD-TLS/P6 — ANNONCE
+- Tâche : `src/network/tls/alerts.ts` — dictionnaire complet des
+  `AlertDescription` pertinents (`close_notify`, `unexpected_message`,
+  `bad_record_mac`, `handshake_failure`, `bad_certificate`,
+  `certificate_expired`, `certificate_unknown`, `unknown_ca`,
+  `decode_error`, `decrypt_error`, `protocol_version`,
+  `no_application_protocol`, `missing_extension`,
+  `unsupported_extension`), avec mapping systématique depuis les raisons
+  de `CertificateVerifier.verify()` (`VerificationReason`). Câble ce
+  mapping dans `TlsClientSession`/`TlsServerSession` : au lieu de
+  simplement passer en échec silencieux (`result = 'failure'/'reject'`),
+  les deux sessions exposent désormais la raison structurée (alerte)
+  associée à un échec de vérification de certificat.
+- Fichiers concernés : nouveau fichier `src/network/tls/alerts.ts` +
+  modification additive de `TlsClientSession.ts`/`TlsServerSession.ts`
+  (nouveau champ optionnel `lastAlert` exposé, aucun changement de
+  signature publique existante) + nouveau fichier de test.
+- Statut / résultat : en cours.
