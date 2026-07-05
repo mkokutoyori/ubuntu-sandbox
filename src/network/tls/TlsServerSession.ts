@@ -1,23 +1,26 @@
 /**
  * TLS 1.3 (RFC 8446 §4) server-side handshake — nominal 1-RTT path, plus
- * optional mutual authentication (§4.3.2 `CertificateRequest`): `ClientHello`
- * -> `ServerHello` (unprotected) + `EncryptedExtensions`/[`CertificateRequest`]/
+ * optional mutual authentication (§4.3.2 `CertificateRequest`) and
+ * `HelloRetryRequest` (§4.1.4): `ClientHello` -> `ServerHello`
+ * (unprotected) + `EncryptedExtensions`/[`CertificateRequest`]/
  * `Certificate`/`CertificateVerify`/`Finished` (protected, one flight) ->
  * client `Finished` (plus, if requested, the client's own `Certificate`/
- * `CertificateVerify`) -> established. Both `CertificateVerify` messages
- * carry a real (simulated) `PkiKeyPair` signature over the transcript, and
- * `Finished` is bound to the correct handshake traffic secret — a step up
- * in fidelity from `EapTlsHandshake.ts`'s 2-RTT model, which this module
- * does not reuse (see `PRD-TLS.md` §2.1.1/§2.1.6). No `HelloRetryRequest`
- * in this phase (see `PRD-TLS.md` §2.1.5, a later phase).
+ * `CertificateVerify`) -> established. If the client's offered group
+ * isn't supported but a mutual one exists in its `supported_groups` list,
+ * the server instead replies with a `HelloRetryRequest` and waits for a
+ * second `ClientHello`. Both `CertificateVerify` messages carry a real
+ * (simulated) `PkiKeyPair` signature over the transcript, and `Finished`
+ * is bound to the correct handshake traffic secret — a step up in
+ * fidelity from `EapTlsHandshake.ts`'s 2-RTT model, which this module
+ * does not reuse (see `PRD-TLS.md` §2.1.1/§2.1.5/§2.1.6).
  */
 import { simulatedDigest } from '@/network/dns/dnssec/Digest';
 import { PkiKeyPair, type PkiPrivateKey } from '@/network/pki/PkiKeyPair';
 import type { CertificateVerifier } from '@/network/pki/CertificateVerifier';
 import type { X509Certificate } from '@/network/pki/X509Certificate';
-import type { CipherSuite } from './types';
+import { HELLO_RETRY_REQUEST_RANDOM, type CipherSuite } from './types';
 import {
-  type ClientHello, type ServerHello, type EncryptedExtensionsMessage,
+  type ClientHello, type ServerHello, type HelloRetryRequest, type EncryptedExtensionsMessage,
   type CertificateRequest, type CertificateMessage, type CertificateVerify, type Finished,
   type TlsHandshakeMessage,
   encodeHandshakeMessage, decodeHandshakeMessage, encodeMessages, decodeMessages, randomNonce,
@@ -33,26 +36,35 @@ export interface TlsServerConfig {
   readonly requestClientCert?: boolean;
   /** Verifies the client's certificate chain; required when `requestClientCert` is set. */
   readonly verifier?: CertificateVerifier;
+  /** Groups this server accepts a key_share for; defaults to `['x25519']`. */
+  readonly supportedGroups?: readonly string[];
 }
 
-type ServerState = 'idle' | 'awaiting-client-final' | 'done';
+function groupOf(keyShare: string): string {
+  return keyShare.split(':')[0];
+}
+
+type ServerState = 'idle' | 'awaiting-second-client-hello' | 'awaiting-client-final' | 'done';
 
 export class TlsServerSession {
   result: 'accept' | 'reject' | null = null;
 
   private state: ServerState = 'idle';
   private readonly cipherSuite: CipherSuite;
+  private readonly supportedGroups: readonly string[];
   private clientHandshakeTrafficSecret: string | null = null;
   private readonly transcript: Uint8Array[] = [];
 
   constructor(private readonly config: TlsServerConfig) {
     this.cipherSuite = config.cipherSuite ?? 'TLS_AES_128_GCM_SHA256';
+    this.supportedGroups = config.supportedGroups ?? ['x25519'];
   }
 
   /** Feeds the peer's flight in; returns this side's next flight, or null once nothing more is to be sent. */
   handle(incoming: readonly TlsRecord[]): readonly TlsRecord[] | null {
     try {
-      if (this.state === 'idle') return this.handleClientHello(incoming);
+      if (this.state === 'idle') return this.handleFirstClientHello(incoming);
+      if (this.state === 'awaiting-second-client-hello') return this.handleSecondClientHello(incoming);
       if (this.state === 'awaiting-client-final') return this.handleClientFinal(incoming);
       return null;
     } catch {
@@ -66,12 +78,38 @@ export class TlsServerSession {
     return null;
   }
 
-  private handleClientHello(incoming: readonly TlsRecord[]): readonly TlsRecord[] | null {
+  private handleFirstClientHello(incoming: readonly TlsRecord[]): readonly TlsRecord[] | null {
     const { contentType, plaintext: clientHelloBytes } = reassembleRecords(incoming, false);
     if (contentType !== 'handshake') return this.reject();
     const clientHello = decodeHandshakeMessage(clientHelloBytes) as ClientHello;
     this.transcript.push(clientHelloBytes);
 
+    if (this.supportedGroups.includes(groupOf(clientHello.extensions.keyShare))) {
+      return this.proceedWithServerFlight(clientHello);
+    }
+
+    const mutualGroup = this.supportedGroups.find((g) => clientHello.extensions.supportedGroups.includes(g));
+    if (!mutualGroup) return this.reject();
+
+    const helloRetryRequest: HelloRetryRequest = {
+      kind: 'hello_retry_request', random: HELLO_RETRY_REQUEST_RANDOM, selectedGroup: mutualGroup,
+    };
+    const hrrBytes = encodeHandshakeMessage(helloRetryRequest);
+    this.transcript.push(hrrBytes);
+    this.state = 'awaiting-second-client-hello';
+    return fragmentAsRecords('handshake', hrrBytes, false);
+  }
+
+  private handleSecondClientHello(incoming: readonly TlsRecord[]): readonly TlsRecord[] | null {
+    const { contentType, plaintext: clientHelloBytes } = reassembleRecords(incoming, false);
+    if (contentType !== 'handshake') return this.reject();
+    const clientHello = decodeHandshakeMessage(clientHelloBytes) as ClientHello;
+    if (!this.supportedGroups.includes(groupOf(clientHello.extensions.keyShare))) return this.reject();
+    this.transcript.push(clientHelloBytes);
+    return this.proceedWithServerFlight(clientHello);
+  }
+
+  private proceedWithServerFlight(clientHello: ClientHello): readonly TlsRecord[] {
     const serverRandom = randomNonce('srv');
     const serverKeyShare = randomNonce('ks-srv');
     const serverHello: ServerHello = {
@@ -85,7 +123,7 @@ export class TlsServerSession {
       [clientHello.random, serverRandom, clientHello.extensions.keyShare, serverKeyShare].join('|'),
     );
     const handshakePhase = deriveKeySchedule(
-      { clientHello: transcriptHash([clientHelloBytes]), serverHello: transcriptHash(this.transcript), serverFinished: '', clientFinished: '' },
+      { clientHello: transcriptHash([this.transcript[0]]), serverHello: transcriptHash(this.transcript), serverFinished: '', clientFinished: '' },
       ZERO_IKM, dheSharedSecret,
     );
     this.clientHandshakeTrafficSecret = handshakePhase.clientHandshakeTrafficSecret;
