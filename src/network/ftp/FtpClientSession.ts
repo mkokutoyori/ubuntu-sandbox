@@ -145,8 +145,8 @@ export class FtpClientSession {
     return this.lastReply;
   }
 
-  /** Lists a directory via `LIST`/`NLST`; call after `enterPassiveMode()`/`enterActiveMode()`. */
-  list(remotePath: string | undefined, verb: 'LIST' | 'NLST' = 'LIST'): { reply: FtpReply | null; lines: string[] } {
+  /** Lists a directory via `LIST`/`NLST`/`MLSD` (RFC 3659 §7); call after `enterPassiveMode()`/`enterActiveMode()`. */
+  list(remotePath: string | undefined, verb: 'LIST' | 'NLST' | 'MLSD' = 'LIST'): { reply: FtpReply | null; lines: string[] } {
     let raw = '';
     const handler = (data: unknown) => { raw += String(data); };
     if (this.dataSocket) this.dataSocket.onData(handler);

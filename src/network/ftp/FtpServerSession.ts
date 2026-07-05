@@ -10,7 +10,7 @@
  * has (Linux VFS, Windows, router flash, or a bare in-memory VFS).
  */
 import type { TcpStack } from '@/network/tcp/TcpStack';
-import type { ISftpFileSystem, SftpDirEntry } from '@/network/protocols/ssh/sftp/ISftpFileSystem';
+import type { ISftpFileSystem, SftpDirEntry, SftpFileAttrs } from '@/network/protocols/ssh/sftp/ISftpFileSystem';
 import { ChrootedSftpFileSystem } from '@/network/protocols/ssh/sftp/ChrootedSftpFileSystem';
 import type { FtpCommand, FtpReply, FtpTransferType, FtpFileStructure, FtpTransferMode } from './types';
 import { reply } from './replies';
@@ -37,6 +37,19 @@ function formatListLine(entry: SftpDirEntry): string {
   return `${kind}${perm} 1 ${entry.uid} ${entry.gid} ${entry.size} ${new Date(entry.mtime).toISOString()} ${entry.name}`;
 }
 
+/** RFC 3659 §2.3 — `MDTM`/`MLST`'s `modify=` fact both use `YYYYMMDDHHMMSS` in UTC. */
+function formatMdtm(epochMs: number): string {
+  const d = new Date(epochMs);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getUTCFullYear()}${pad(d.getUTCMonth() + 1)}${pad(d.getUTCDate())}${pad(d.getUTCHours())}${pad(d.getUTCMinutes())}${pad(d.getUTCSeconds())}`;
+}
+
+/** RFC 3659 §7.5 — one `type=...;size=...;modify=...;` fact list per `MLST`/`MLSD` entry. */
+function formatMlstFacts(attrs: Pick<SftpFileAttrs, 'type' | 'size' | 'mtime'>): string {
+  const type = attrs.type === 'directory' ? 'dir' : 'file';
+  return `type=${type};size=${attrs.size};modify=${formatMdtm(attrs.mtime)};`;
+}
+
 export class FtpServerSession {
   result: 'open' | 'closed' = 'open';
   username: string | null = null;
@@ -50,6 +63,8 @@ export class FtpServerSession {
   private dataChannel: FtpDataChannel | null = null;
   private renameFrom: string | null = null;
   private fs: ISftpFileSystem;
+  /** Set by `REST`; consumed by the immediately following `RETR`/`STOR`-family command, whether it succeeds or not (RFC 3659 §5). */
+  private restOffset: number | null = null;
 
   constructor(
     private readonly config: FtpServerConfig,
@@ -109,6 +124,12 @@ export class FtpServerSession {
       case 'DELE': return [this.handleDele(cmd)];
       case 'RNFR': return [this.handleRnfr(cmd)];
       case 'RNTO': return [this.handleRnto(cmd)];
+      case 'FEAT': return [this.handleFeat()];
+      case 'SIZE': return [this.handleSize(cmd)];
+      case 'MDTM': return [this.handleMdtm(cmd)];
+      case 'REST': return [this.handleRest(cmd)];
+      case 'MLST': return [this.handleMlst(cmd)];
+      case 'MLSD': return this.handleMlsd(cmd);
       default: return [reply(500, `'${cmd.verb}' not understood.`)];
     }
   }
@@ -231,6 +252,7 @@ export class FtpServerSession {
   private handleRetr(cmd: FtpCommand): readonly FtpReply[] {
     const authFailure = this.requireAuth();
     if (authFailure) return [authFailure];
+    const offset = this.consumeRestOffset();
     if (!cmd.argument) return [reply(501, 'Syntax error in parameters.')];
     const path = this.resolvePath(cmd.argument);
     const file = this.fs.readFile(path);
@@ -238,7 +260,7 @@ export class FtpServerSession {
 
     const socket = this.dataChannel ? openDataConnection(this.dataChannel, this.tcpStack) : null;
     if (!socket) return [reply(425, "Can't open data connection.")];
-    socket.write(file.value);
+    socket.write(offset > 0 ? file.value.slice(offset) : file.value);
     socket.close();
     this.closeDataChannel();
     return [reply(150, `Opening ${this.transferType === 'A' ? 'ASCII' : 'BINARY'} mode data connection for ${cmd.argument}.`), reply(226, 'Transfer complete.')];
@@ -247,6 +269,7 @@ export class FtpServerSession {
   private handleStor(cmd: FtpCommand, opts: { unique: boolean; append: boolean }): readonly FtpReply[] {
     const authFailure = this.requireAuth();
     if (authFailure) return [authFailure];
+    const offset = this.consumeRestOffset();
     if (!opts.unique && !cmd.argument) return [reply(501, 'Syntax error in parameters.')];
 
     let path = this.resolvePath(cmd.argument);
@@ -264,7 +287,10 @@ export class FtpServerSession {
     socket.onData((data) => { received += String(data); });
     socket.onClose(() => {
       this.closeDataChannel();
-      if (opts.append) {
+      if (offset > 0) {
+        const existing = this.fs.readFile(path);
+        received = (existing.ok ? existing.value.slice(0, offset) : '') + received;
+      } else if (opts.append) {
         const existing = this.fs.readFile(path);
         received = (existing.ok ? existing.value : '') + received;
       }
@@ -364,5 +390,71 @@ export class FtpServerSession {
     const result = this.fs.rename(src, dest);
     if (!result.ok) return reply(550, 'Rename failed.');
     return reply(250, 'Rename successful.');
+  }
+
+  private handleFeat(): FtpReply {
+    return reply(211, 'Extensions supported:', 'SIZE', 'MDTM', 'REST STREAM', 'MLST type*;size*;modify*;', 'EPRT', 'EPSV', 'END');
+  }
+
+  private handleSize(cmd: FtpCommand): FtpReply {
+    const authFailure = this.requireAuth();
+    if (authFailure) return authFailure;
+    if (!cmd.argument) return reply(501, 'Syntax error in parameters.');
+    const path = this.resolvePath(cmd.argument);
+    const stat = this.fs.stat(path);
+    if (!stat.ok || stat.value.type !== 'file') return reply(550, `${cmd.argument}: No such file or directory.`);
+    return reply(213, String(stat.value.size));
+  }
+
+  private handleMdtm(cmd: FtpCommand): FtpReply {
+    const authFailure = this.requireAuth();
+    if (authFailure) return authFailure;
+    if (!cmd.argument) return reply(501, 'Syntax error in parameters.');
+    const path = this.resolvePath(cmd.argument);
+    const stat = this.fs.stat(path);
+    if (!stat.ok) return reply(550, `${cmd.argument}: No such file or directory.`);
+    return reply(213, formatMdtm(stat.value.mtime));
+  }
+
+  private handleRest(cmd: FtpCommand): FtpReply {
+    const authFailure = this.requireAuth();
+    if (authFailure) return authFailure;
+    const offset = parseInt(cmd.argument ?? '', 10);
+    if (!cmd.argument || Number.isNaN(offset) || offset < 0) return reply(501, 'Syntax error in parameters.');
+    this.restOffset = offset;
+    return reply(350, `Restarting at ${offset}. Send STORE or RETRIEVE to initiate transfer.`);
+  }
+
+  private consumeRestOffset(): number {
+    const offset = this.restOffset ?? 0;
+    this.restOffset = null;
+    return offset;
+  }
+
+  private handleMlst(cmd: FtpCommand): FtpReply {
+    const authFailure = this.requireAuth();
+    if (authFailure) return authFailure;
+    const path = this.resolvePath(cmd.argument);
+    const stat = this.fs.stat(path);
+    if (!stat.ok) return reply(550, `${cmd.argument ?? path}: No such file or directory.`);
+    return reply(250, `Listing ${path}`, ` ${formatMlstFacts(stat.value)} ${path}`, 'End');
+  }
+
+  private handleMlsd(cmd: FtpCommand): readonly FtpReply[] {
+    const authFailure = this.requireAuth();
+    if (authFailure) return [authFailure];
+    const path = this.resolvePath(cmd.argument);
+    const listing = this.fs.listDirectory(path);
+    if (!listing.ok) return [reply(450, `${cmd.argument ?? path}: No such file or directory.`)];
+
+    const socket = this.dataChannel ? openDataConnection(this.dataChannel, this.tcpStack) : null;
+    if (!socket) return [reply(425, "Can't open data connection.")];
+
+    const entries = listing.value.filter((e) => e.name !== '.' && e.name !== '..');
+    const lines = entries.map((e) => `${formatMlstFacts(e)} ${e.name}`);
+    socket.write(lines.length > 0 ? `${lines.join('\r\n')}\r\n` : '');
+    socket.close();
+    this.closeDataChannel();
+    return [reply(150, 'Here comes the directory listing.'), reply(226, 'Directory send OK.')];
   }
 }
