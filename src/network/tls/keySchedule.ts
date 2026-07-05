@@ -105,3 +105,15 @@ export function deriveKeySchedule(
     exporterMasterSecret, resumptionMasterSecret,
   };
 }
+
+/**
+ * Simulated stand-in for computing a Finished message's `verify_data`
+ * (real RFC 8446 §4.4.4: `HMAC(finished_key, Transcript-Hash(...))`, where
+ * `finished_key = HKDF-Expand-Label(BaseKey, "finished", "", Hash.length)`).
+ * Binding the traffic secret directly into the digest still catches both a
+ * wrong role/secret (impersonation) and a tampered transcript (integrity),
+ * without needing to model the intermediate `finished_key` derivation step.
+ */
+export function computeFinished(trafficSecret: string, transcript: string): string {
+  return simulatedDigest(`finished|${trafficSecret}|${transcript}`);
+}

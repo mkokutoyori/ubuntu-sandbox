@@ -109,6 +109,21 @@ export function decodeHandshakeMessage(bytes: Uint8Array): TlsHandshakeMessage {
   return JSON.parse(bytesToUtf8(bytes)) as TlsHandshakeMessage;
 }
 
+/**
+ * Several handshake messages can share the same flight of records (e.g. the
+ * server's EncryptedExtensions/Certificate/CertificateVerify/Finished all
+ * travel together once protection is active). Bundled as a JSON array
+ * rather than individually length-prefixed, consistent with this module's
+ * "message = JSON blob" abstraction level.
+ */
+export function encodeMessages(messages: readonly TlsHandshakeMessage[]): Uint8Array {
+  return utf8ToBytes(JSON.stringify(messages));
+}
+
+export function decodeMessages(bytes: Uint8Array): TlsHandshakeMessage[] {
+  return JSON.parse(bytesToUtf8(bytes)) as TlsHandshakeMessage[];
+}
+
 let nonceCounter = 0;
 
 /** Deterministic-but-unique nonce generator, same shape as `EapTlsHandshake.randomNonce`. */

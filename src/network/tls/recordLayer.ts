@@ -113,3 +113,20 @@ export function reassembleRecords(
   const inner = decodeInnerPlaintext(plaintext);
   return { contentType: inner.contentType, plaintext: inner.content };
 }
+
+/**
+ * Splits a flight into its leading run of records still labeled
+ * `leadingType` (e.g. the unprotected `ServerHello`) and everything after
+ * (e.g. the protected `application_data`-obfuscated bundle that follows it
+ * once protection is active) — lets a single flight carry both an
+ * unprotected and a protected message without the receiver needing to know
+ * message boundaries ahead of time.
+ */
+export function splitLeadingContentType(
+  records: readonly TlsRecord[],
+  leadingType: ContentType,
+): { leading: TlsRecord[]; rest: TlsRecord[] } {
+  let i = 0;
+  while (i < records.length && records[i].contentType === leadingType) i++;
+  return { leading: records.slice(0, i), rest: records.slice(i) };
+}
