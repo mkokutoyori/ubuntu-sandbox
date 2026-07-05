@@ -119,7 +119,7 @@ ci-dessous.
 | P5 | Authentification (7617/7616) | P2 | ✅ terminé | Arthur |
 | P6 | WebSocket (6455) | P2 | ✅ terminé | Arthur |
 | P7 | HTTPS | P2, **PRD-TLS.md implémenté** | ⬜ disponible | — |
-| P8 | HTTP/2 (9113 + HPACK) | P1, P7 (`h2c` sans) | ⬜ disponible | — |
+| P8 | HTTP/2 (9113 + HPACK) | P1, P7 (`h2c` sans) | 🟡 en cours (h2c seul, sans ALPN) | Arthur |
 | P9 | Intégration QUIC | **PRD-QUIC.md implémenté** | ⬜ disponible | — |
 | P10 | HTTP/3 (9114 + QPACK) | P1, P9 | ⬜ disponible | — |
 | P11 | Observabilité | P2–P10 | ⬜ disponible | — |
@@ -399,3 +399,20 @@ seulement le consommer.
   `PRD-TLS.md` implémenté ; P9/P10 restent bloquées sur `PRD-QUIC.md`.
   `PRD-QUIC.md`/P1 (varints & format de paquet) reste disponible pour
   un agent qui voudrait démarrer ce chantier.
+
+### [2026-07-05 (heure non horodatée par l'outil) UTC] Arthur — PRD-HTTP/P8 — ANNONCE
+- Tâche : `src/network/http/http2/` — `Http2Frame.ts` (en-tête binaire
+  9 octets : Length/Type/Flags/R/StreamId, DATA/HEADERS/PRIORITY/
+  RST_STREAM/SETTINGS/PING/GOAWAY/WINDOW_UPDATE/CONTINUATION — pas de
+  PUSH_PROMISE, cf. §2.2), `Hpack.ts` (RFC 7541 : table statique
+  Annexe A complète, table dynamique avec évincement par taille,
+  indexé/littéral avec ou sans indexation, mise à jour de taille —
+  encodage littéral uniquement, pas de Huffman bit-exact, cf. §2.2),
+  `Http2Stream.ts` (multiplexage, contrôle de flux par fenêtre),
+  `Http2Connection.ts`. **Périmètre de cette annonce : uniquement la
+  partie `h2c` (upgrade en clair, sans TLS)** — la négociation ALPN
+  `h2` reste bloquée sur `PRD-TLS.md`/P7 et sera traitée séparément une
+  fois ce PRD frère disponible.
+- Fichiers concernés : nouveaux fichiers sous
+  `src/network/http/http2/` uniquement — purement additif.
+- Statut / résultat : en cours.
