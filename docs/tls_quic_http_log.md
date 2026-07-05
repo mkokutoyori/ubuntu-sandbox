@@ -1793,8 +1793,10 @@ seulement le consommer.
   `http-*` + `http1-wire` + `http2` + `http3*` + `https` + DNS chiffré +
   `quic-observability` + `tls-observability` : 14 fichiers / 231 tests,
   tous passants. Régression complète `src/__tests__/unit/network-v2/`
-  lancée (portée large : 7 classes centrales modifiées) ; résultat à
-  suivre dans une entrée de suivi si un écart apparaît.
+  (portée large : 7 classes centrales modifiées) : 683/685 fichiers,
+  12746/12807 tests, les 11 échecs restants sont les échecs Oracle RAC
+  pré-existants déjà documentés (baseline inchangée, aucune régression
+  introduite par cette instrumentation).
 - Suggestion pour la suite : `PRD-HTTP.md`/P12 (migration IIS/curl/wget
   sur le moteur HTTP/1.1+HTTPS réel) est la dernière phase P1-P13 restante
   et devient donc la prochaine cible naturelle.
