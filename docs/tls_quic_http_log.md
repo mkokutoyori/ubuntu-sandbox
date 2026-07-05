@@ -104,7 +104,7 @@ ci-dessous.
 | P8 | Intégration TLS 1.3 réelle | **PRD-TLS.md implémenté**, P7 | ⬜ disponible | — |
 | P9 | 0-RTT | P8 | ⬜ disponible | — |
 | P10 | Retry & validation d'adresse | P7 | ✅ terminé | Arthur |
-| P11 | Connection IDs multiples | P7 | ⬜ disponible | — |
+| P11 | Connection IDs multiples | P7 | 🟡 en cours | Arthur |
 | P12 | Observabilité | P4–P11 | ⬜ disponible | — |
 | P13 | Migration DoQ | P8, P6 | ⬜ disponible | — |
 
@@ -862,3 +862,17 @@ seulement le consommer.
   un agent qui le prendrait devrait d'abord relire l'état exact de
   `PRD-TLS.md` (P8 fait, P9-P11 pas encore) pour vérifier que tout le
   nécessaire est bien livré.
+
+### [2026-07-05 (heure non horodatée par l'outil) UTC] Arthur — PRD-QUIC/P11 — ANNONCE
+- Tâche : `src/network/quic/ConnectionIdManager.ts` — §19.15/§19.16 :
+  gestion d'un jeu de Connection IDs actifs des deux côtés
+  (`NEW_CONNECTION_ID` émis localement avec numéro de séquence
+  croissant, `NEW_CONNECTION_ID` reçus du pair mémorisés,
+  `RETIRE_CONNECTION_ID` reçu retire l'entrée locale correspondante,
+  champ `retire_prior_to` calcule quels CID émis par le pair doivent
+  être retirés), et rotation du CID actif utilisé comme DCID sortant
+  **sans migration active** (aucune réaction à un changement d'adresse
+  UDP du pair, explicitement hors périmètre §2.2).
+- Fichiers concernés : nouveau fichier
+  `src/network/quic/ConnectionIdManager.ts` — purement additif.
+- Statut / résultat : en cours.
