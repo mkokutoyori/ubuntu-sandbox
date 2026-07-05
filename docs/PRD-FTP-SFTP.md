@@ -14,10 +14,12 @@ autonome, indépendant de FTP au-delà du nom), RFC 2347/2348/2349
 (extensions d'option TFTP : négociation générique, `blksize`,
 `timeout`/`tsize`), RFC 8446 (TLS 1.3 — prérequis externe pour FTPS, cf.
 `PRD-TLS.md`, **déjà livré**), draft-ietf-secsh-filexfer-13 (SSH File
-Transfer Protocol, versions 3 à 6 — jamais publié en RFC ; la version 3,
-implémentée par OpenSSH, en est le standard de facto), RFC 4253/RFC 4254
-(SSH Transport/Connection — déjà implémentés dans ce projet, référence
-seulement).
+Transfer Protocol, versions 3 à 6 — jamais publié en RFC ; **la version 6
+(attributs étendus, ACL, opérations POSIX) est la cible de ce PRD**, la
+version 3 — implémentée par OpenSSH, très répandue — n'étant conservée
+que comme plancher d'interopérabilité, cf. § 2.1.16-17), RFC 4253/
+RFC 4254 (SSH Transport/Connection — déjà implémentés dans ce projet,
+référence seulement).
 
 ---
 
@@ -393,24 +395,29 @@ existant (la couche sémantique garde son modèle d'erreur interne ; seule
 la traduction en sortie de fil change). `SYMLINK`/`READLINK` complètent
 le dispatcher de commandes existant. Négociation de version réelle
 (`SSH_FXP_INIT`/`SSH_FXP_VERSION`, extensions en paires nom/donnée) — la
-version 3 reste la version proposée par défaut (compatibilité OpenSSH la
-plus large), mais l'échange lui-même devient réel au lieu d'être une
-constante figée.
+version 3 (compatibilité OpenSSH la plus large) est le **plancher
+d'interopérabilité**, pas la cible : ce moteur propose la version 6
+(objectif 17) et ne redescend à 3 que face à un pair qui ne propose rien
+de plus récent. L'échange lui-même devient réel au lieu d'être une
+constante figée, dans les deux cas.
 
 **17. draft-ietf-secsh-filexfer versions 4 à 6 — Attributs étendus, ACL
-et opérations POSIX.** Négociation de version étendue (objectif 16)
-jusqu'à la version 6 si le pair la propose : encodage `ATTRS` avec un
-champ `type` explicite (fichier/répertoire/lien symbolique/spécial/
-inconnu, introduit en v4), attributs étendus nommés (paires clé/valeur
-arbitraires), une liste d'entrées ACL (sujet, type, indicateurs, masque
-de permission — modélisées et **transportées fidèlement sur le fil**,
-cf. § 2.2 pour la limite d'application réelle), `SSH_FXP_RENAME` avec
-indicateurs (`OVERWRITE`/`ATOMIC`/`NATIVE`, v5), lien physique
-(hardlink, v6). `ISftpFileSystem` (§ 1.2) est étendu de façon **additive**
-(nouveaux champs optionnels sur les types d'attributs existants) pour
-porter ces informations, sans réécriture de son contrat existant — les
-objectifs 14-16 restent valides tels quels pour un pair qui négocie la
-version 3.
+et opérations POSIX (cible principale de ce PRD).** Contrairement à un
+simple bonus optionnel, **la version 6 est la version que ce moteur
+négocie par défaut** — la version 3 (objectif 16) n'est conservée que
+comme repli d'interopérabilité pour un pair qui n'offre rien de plus
+récent (OpenSSH, très répandu, ne parle que la version 3). Encodage
+`ATTRS` avec un champ `type` explicite (fichier/répertoire/lien
+symbolique/spécial/inconnu, introduit en v4), attributs étendus nommés
+(paires clé/valeur arbitraires), une liste d'entrées ACL (sujet, type,
+indicateurs, masque de permission — modélisées et **transportées
+fidèlement sur le fil**, cf. § 2.2 pour la limite d'application réelle),
+`SSH_FXP_RENAME` avec indicateurs (`OVERWRITE`/`ATOMIC`/`NATIVE`, v5),
+lien physique (hardlink, v6). `ISftpFileSystem` (§ 1.2) est étendu de
+façon **additive** (nouveaux champs optionnels sur les types d'attributs
+existants) pour porter ces informations, sans réécriture de son contrat
+existant — les objectifs 14-16 restent valides tels quels et servent de
+socle commun, exercés dès qu'un pair ne négocie que la version 3.
 
 **18. Observabilité SFTP.** Événements bus dédiés
 (`sftp.packet.sent/received`, `sftp.handle.opened/closed`,
@@ -792,7 +799,7 @@ type ScpAck = 0 | 1 | 2;               // succès / avertissement / erreur fatal
 | **P13 — Encodage fil SFTP réel (draft-secsh-filexfer §4)** | `SftpWireCodec.ts` : paquets `SSH_FXP_*` + `request-id`, négociation `INIT`/`VERSION` réelle — branché entre `SshSftpChannel` et `SftpCommandDispatcher` sans modifier ce dernier | infrastructure SSH/SFTP existante (§ 1.2) |
 | **P14 — Modèle de handle SFTP réel (§6.4-6.7)** | `SftpHandleTable.ts` : `OPEN`/`OPENDIR` → handle, `READ`/`WRITE` par offset+longueur, `CLOSE` | P13 |
 | **P15 — Codes de statut réels + liens symboliques (§7/§9.1)** | `SftpStatusCodes.ts` (table `SSH_FX_*` + correspondance depuis `Result`/`err`), `SYMLINK`/`READLINK` dans le dispatcher existant | P13, P14 |
-| **P16 — SFTP versions 4-6 (attributs étendus/ACL/rename-hardlink)** | Extension additive d'`ISftpFileSystem`, encodage `ATTRS` v4-v6, `SSH_FXP_RENAME` avec indicateurs, lien physique | P13–P15 |
+| **P16 — SFTP version 6, cible principale (attributs étendus/ACL/rename-hardlink)** | Extension additive d'`ISftpFileSystem`, encodage `ATTRS` v4-v6, `SSH_FXP_RENAME` avec indicateurs, lien physique ; le moteur propose désormais la version 6 par défaut (la version 3 de P13-P15 devient le repli d'interopérabilité, pas la cible) | P13–P15 |
 | **P17 — Observabilité SFTP** | `events.ts`/`observables.ts` dans `src/network/protocols/ssh/sftp/` | P13–P16 |
 | **P18 — Protocole SCP réel sur le fil** | `ScpWireCodec.ts` : lignes de contrôle `C`/`D`/`E`, octets `0x00`/`0x01`/`0x02` | infrastructure SSH/SFTP existante (`ISftpFileSystem`) |
 | **P19 — Migration des consommateurs existants (§ 2.1.20)** | `HuaweiVRPShell.ts` (« ftp server enable » → vrai serveur FTP) ; `CiscoNATCommands.ts`/`HuaweiNATCommands.ts` → ALG réel ; `SshSftpChannel.ts`/`SftpCommandDispatcher.ts` → nouvel encodage SFTP ; `ScpSession.ts`/`ScpTransfer.ts` → nouveau codec SCP, comportement observable inchangé pour tous | P1–P18 |
