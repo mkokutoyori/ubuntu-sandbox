@@ -27,28 +27,53 @@ frame réel HTTP/1.1 (RFC 9112), HTTP/2 (RFC 9113 + HPACK), HTTP/3 sur QUIC
 HTTP/3, intrinsèquement chiffré) transporté par TLS 1.3. Ce PRD **consomme**
 le moteur TLS décrit par `docs/PRD-TLS.md` (§2.1) plutôt que de redéfinir TLS
 — tant que ce moteur n'est pas construit, les objectifs qui en dépendent
-(§2.1.J, P7, P9, P10 ci-dessous) restent bloqués en amont, cf. § 7 « Risques ».
-**QUIC (RFC 9000/9001/9002)** n'a en revanche **aucun PRD dédié existant** —
-il est donc traité ici comme un sous-chantier à part entière, prérequis de
-HTTP/3.
+(§2.1.K « HTTPS générique », P7, et transitivement P9/P10 via QUIC)
+restent bloqués en amont, cf. § 7 « Risques ». **QUIC (RFC 9000/9001/9002)**
+est couvert par le PRD frère `docs/PRD-QUIC.md`, dont ce document consomme
+le transport pour HTTP/3 (§2.1.F) sans en redéfinir la conception (cf. § 0.1).
 
-Ce PRD **ne couvre pas** la refonte des consommateurs HTTP déjà en place :
+Ce PRD **couvre aussi la migration** de deux des trois consommateurs HTTP
+déjà en place (§ 2.1.M) :
 
 - `src/network/http/{HttpTypes.ts,HttpClient.ts}` — le PDU JSON-sur-TCP qui
   sert le rôle IIS (`WindowsIisRole.ts`, `PRD-Windows-Server.md` §5 P11) et
   les commandes `curl`/`wget`/`Invoke-WebRequest` ;
 - `src/network/dns/transport/DnsHttpsTransport.ts` — sa propre implémentation
   ad hoc et minimaliste du framing texte HTTP/1.1, écrite spécifiquement pour
-  DoH, incompatible avec le PDU JSON ci-dessus ;
-- `src/network/dns/transport/DnsQuicTransport.ts` — un « QUIC » ad hoc pour
-  DoQ, sans rapport structurel avec RFC 9000.
+  DoH, incompatible avec le PDU JSON ci-dessus.
 
-Une migration de ces trois consommateurs vers le moteur unifié décrit ici est
-un chantier **explicitement différé** (§ 2.2) — construire ce PRD ne doit
-casser aucune de leurs suites de tests.
+`src/network/dns/transport/DnsQuicTransport.ts` (DoQ) **n'est pas migré
+ici** : DoQ (RFC 9250) encapsule DNS directement dans un stream QUIC, sans
+aucune sémantique HTTP — sa migration est portée par `docs/PRD-QUIC.md`
+§2.1.13 (cf. § 0.1).
 
 Aucune ligne de code n'est écrite dans le cadre de ce document — il sert de
 base à la planification et à la revue avant le premier commit TDD.
+
+### 0.1 Chaîne de dépendances entre PRDs
+
+```
+PRD-TLS.md (RFC 8446)
+   │  fondation, aucune dépendance vers QUIC ou HTTP
+   │
+   ├──▶ PRD-QUIC.md (RFC 9000/9001/9002)
+   │       dépend de PRD-TLS.md pour RFC 9001 ; migre DnsQuicTransport.ts (DoQ)
+   │
+   └──▶ PRD-HTTP.md                                          ◄── VOUS ÊTES ICI
+           dépend de PRD-TLS.md directement pour HTTPS (§2.1.K, P7)
+           dépend de PRD-QUIC.md pour HTTP/3 (§2.1.F, P9/P10)
+           migre WindowsIisRole/HttpClient/HttpFetch/Curl (§2.1.M, P12)
+           migre DnsHttpsTransport.ts — DoH (§2.1.M, P13)
+           NE migre PAS DnsQuicTransport.ts — DoQ (→ PRD-QUIC.md)
+```
+
+Ce PRD a donc **deux dépendances entrantes bloquantes**, chacune limitée à
+un sous-ensemble de phases (§ 7) : le moteur TLS de `PRD-TLS.md` (P7, P9,
+P10, et la partie HTTPS de P12/P13), et le moteur QUIC de `PRD-QUIC.md`
+(P9, P10). Les phases P1 à P6, P8 (partie `h2c`) et la partie HTTP/1.1
+en clair de P12 sont indépendantes des deux et peuvent être livrées sans
+attendre. C'est le PRD terminal de la chaîne — aucun autre PRD de ce
+groupe ne dépend de lui.
 
 ---
 
@@ -216,14 +241,21 @@ completed/failed`, `http.cache.hit/miss/revalidated`, `websocket.opened/
 closed`, `http2.stream.opened/closed`, `quic.connection.established/closed`)
 exploitables par les logs réseau et les tests, à l'image du reste du projet.
 
+**M. Migration des consommateurs existants.** Une fois le noyau sémantique
+et l'adaptateur HTTP/1.1 stabilisés (P1/P2), `WindowsIisRole.ts` et
+`HttpClient.ts`/`HttpFetch.ts`/`Curl.ts` basculent sur le vrai framing
+texte RFC 9112 du nouveau moteur à la place du PDU JSON — port 80 en clair
+inchangé (le rôle IIS reste hors HTTPS, cf. `PRD-Windows-Server.md` §2.2,
+que ce PRD ne redéfinit pas) ; l'heuristique de détection de `Curl.ts`
+(bannière non-TLS sur 443) est remplacée par une vraie tentative de
+négociation TLS une fois P7 disponible, contre tout serveur qui parle
+réellement HTTPS via ce moteur. `DnsHttpsTransport.ts` (DoH) bascule sur
+l'adaptateur HTTP/1.1 + HTTPS de ce même moteur (P7) à la place de son
+framing texte fait main. `DnsQuicTransport.ts` (DoQ) n'est **pas** migré
+ici (§ 0.1 — porté par `docs/PRD-QUIC.md`).
+
 ### 2.2 Non-objectifs (explicitement hors périmètre)
 
-- **Migration des consommateurs existants** (`WindowsIisRole.ts`,
-  `HttpClient.ts`/`HttpFetch.ts`/`Curl.ts`, `DnsHttpsTransport.ts`,
-  `DnsQuicTransport.ts`) vers ce nouveau moteur unifié — risque de régression
-  disproportionné ; ils continuent d'utiliser leurs implémentations actuelles
-  **inchangées**. Une convergence éventuelle serait un chantier séparé, une
-  fois ce moteur stabilisé.
 - **Compression de contenu réelle** (gzip/deflate/br) — les noms d'encodage
   sont négociés (`Accept-Encoding`/`Content-Encoding`) mais le corps n'est
   jamais réellement compressé/décompressé octet-à-octet, cohérent avec la
@@ -267,22 +299,29 @@ exploitables par les logs réseau et les tests, à l'image du reste du projet.
 
 ### 3.1 Principe directeur
 
-**Sémantique d'abord, transport ensuite.** Un noyau RFC 9110 indépendant de
-la version de transport, avec un adaptateur de framing par version (texte
-1.1, binaire+HPACK pour 2, QUIC+QPACK pour 3), et des couches transverses
-(cache, cookies, authentification) qui n'opèrent que sur le modèle
-sémantique commun — jamais directement sur le fil. TLS 1.3 (`PRD-TLS.md`) et
-QUIC (construit ici) sont des dépendances de transport, pas des
-préoccupations du noyau sémantique. Comme pour `PRD-TLS.md`, ce chantier est
-**greenfield** : aucun fichier existant n'est modifié tant qu'une migration
-explicite n'est pas décidée.
+**Sémantique d'abord, transport ensuite, migration en dernier.** Un noyau
+RFC 9110 indépendant de la version de transport, avec un adaptateur de
+framing par version (texte 1.1, binaire+HPACK pour 2, QUIC+QPACK pour 3), et
+des couches transverses (cache, cookies, authentification) qui n'opèrent que
+sur le modèle sémantique commun — jamais directement sur le fil. TLS 1.3
+(`PRD-TLS.md`) et QUIC (`PRD-QUIC.md`) sont des dépendances de transport, pas
+des préoccupations du noyau sémantique. Les phases P1 à P11 (§ 5) démarrent
+**greenfield** : aucun fichier existant n'est modifié pendant leur
+construction. La phase P12/P13 migre ensuite `WindowsIisRole.ts`/
+`HttpClient.ts`/`HttpFetch.ts`/`Curl.ts` et `DnsHttpsTransport.ts` sur ce
+moteur — contrairement à une simple « convergence éventuelle », cette
+migration fait partie du périmètre livré par ce PRD (§ 2.1.M).
 
 ### 3.2 Diagramme de couches
 
 ```
 ┌──────────────────────────────────────────────────────────────────────┐
-│ Futurs consommateurs (hors périmètre immédiat) :                     │
-│   convergence IIS/curl/DoH/DoQ vers ce moteur                        │
+│ Migrés par ce PRD (§ 2.1.M, P12/P13) :                                │
+│   WindowsIisRole.ts · HttpClient.ts/HttpFetch.ts/Curl.ts (P12)        │
+│   DnsHttpsTransport.ts — DoH (P13)                                    │
+├──────────────────────────────────────────────────────────────────────┤
+│ Migré par un PRD frère (§ 0.1) : DnsQuicTransport.ts — DoQ →          │
+│   docs/PRD-QUIC.md §2.1.13                                            │
 ├──────────────────────────────────────────────────────────────────────┤
 │ Middlewares transverses : Cache (9111) · Cookies (6265) ·             │
 │   Auth Basic/Digest (7617/7616) — n'opèrent que sur HttpMessage       │
@@ -306,7 +345,7 @@ explicite n'est pas décidée.
 ### 3.3 Modules proposés (arborescence)
 
 ```
-src/network/http/                    # existant : HttpTypes.ts/HttpClient.ts INCHANGÉS
+src/network/http/                    # existant : HttpTypes.ts/HttpClient.ts migrés en P12 (§2.1.M)
 ├── semantics/
 │   ├── types.ts                     # NOUVEAU — HttpMessage, en-têtes multimap ordonnée
 │   ├── methods.ts                   # NOUVEAU — dictionnaire méthodes (sûre/idempotente/cacheable)
@@ -370,10 +409,14 @@ src/network/quic/                    # NOUVEAU — indépendant de HTTP, réutil
 - **Réutilisation stricte de PKI/TLS** : `PacketProtection.ts` et le futur
   adaptateur HTTPS de `http1/`/`http2/` importent `src/network/tls/`
   (une fois construit) sans dupliquer la moindre primitive cryptographique.
-- **Aucune dépendance vers les consommateurs existants** : `HttpTypes.ts`,
-  `HttpClient.ts`, `DnsHttpsTransport.ts`, `DnsQuicTransport.ts` ne sont ni
-  importés ni modifiés — zéro risque de régression sur IIS/curl/DoH/DoQ déjà
-  verts.
+- **Additif d'abord (P1–P11), migration en un point de bascule net
+  (P12/P13)** : pendant P1–P11, `HttpTypes.ts`, `HttpClient.ts`,
+  `DnsHttpsTransport.ts` ne sont ni importés ni modifiés — zéro risque de
+  régression sur IIS/curl/DoH déjà verts. En P12/P13, la migration
+  remplace l'**implémentation interne** de ces fichiers par des appels au
+  nouveau moteur, sans changer les signatures publiques consommées ailleurs
+  (`dialHttp`/`fetchHttp`, l'API de `WindowsIisRole`) — `DnsQuicTransport.ts`
+  n'est jamais touché par ce PRD (§ 0.1).
 - **Masquage WebSocket appliqué à la lettre** : même si la cryptographie
   environnante est simulée ailleurs dans le projet, le masquage RFC 6455
   §5.3 est une opération de correction protocolaire bon marché (XOR avec une
@@ -483,10 +526,16 @@ QuicPacket {
 | **P9 — QUIC (9000/9001/9002)** | `src/network/quic/` : format de paquet, espaces de paquets, intégration TLS 1.3 (RFC 9001), recouvrement de pertes + congestion NewReno (RFC 9002) | **moteur TLS de `PRD-TLS.md` implémenté** |
 | **P10 — HTTP/3 (9114 + QPACK)** | `http3/` : mapping des sémantiques sur streams QUIC, QPACK (table statique) | P1, P9 |
 | **P11 — Observabilité** | `events.ts`/`observables.ts` transverses à toutes les phases précédentes | P2–P10 |
+| **P12 — Migration IIS/curl/wget (§ 2.1.M)** | `WindowsIisRole.ts` et `HttpClient.ts`/`HttpFetch.ts` basculent sur `http1/` (RFC 9112 réel) à la place du PDU JSON, port 80 inchangé ; `Curl.ts` remplace son heuristique de détection HTTPS par une vraie tentative TLS (P7) | P2, P7 |
+| **P13 — Migration DoH (§ 2.1.M)** | `DnsHttpsTransport.ts` bascule sur l'adaptateur HTTP/1.1 + HTTPS de ce moteur à la place de son framing texte fait main | P7 |
 
-Chaque phase suit le cycle rouge → vert → refactor. Ce module est strictement
-additif (§ 3.4) : aucune suite existante (`http-*`, `windows-iis-*`,
-`dns-encrypted-transports`, `eaptls-*`) n'est censée changer.
+Chaque phase suit le cycle rouge → vert → refactor. Pendant P1–P11, ce
+module reste strictement additif (§ 3.4) : aucune suite existante
+(`http-*`, `windows-iis-*`, `dns-encrypted-transports`) n'est censée
+changer. **P12/P13 changent délibérément ce principe** pour les seules
+suites IIS/curl/DoH : leur comportement observable (codes de statut, corps,
+en-têtes, résolution DNS-over-HTTPS correcte) doit rester identique, mais
+la représentation interne du PDU change (§ 7).
 
 ---
 
@@ -523,18 +572,28 @@ additif (§ 3.4) : aucune suite existante (`http-*`, `windows-iis-*`,
 9. **Intégration HTTPS/HTTP/2/HTTP/3** : handshake TLS réussi puis requête/
    réponse complète, sur une topologie câblée simple, une fois P7/P9
    disponibles.
-10. **Non-régression** : exécution complète des suites HTTP/IIS/DoH/DoQ
-    existantes après chaque phase, garantissant l'absence d'effet de bord.
+10. **Non-régression (P1–P11)** : exécution complète des suites
+    HTTP/IIS/DoH/DoQ existantes après chaque phase, garantissant l'absence
+    d'effet de bord tant que P12/P13 ne sont pas atteintes.
+11. **Migration (P12/P13)** : suites `windows-iis-role`, `windows-server-iis`
+    et le sous-ensemble DoH de `dns-encrypted-transports` ré-exécutées après
+    bascule sur le nouveau moteur — vérifier que les comportements
+    observables (codes de statut, corps, en-têtes, `Server:
+    Microsoft-IIS/10.0`, résolution DNS-over-HTTPS correcte) sont
+    **identiques** à l'avant-migration.
 
 ---
 
 ## 7. Risques et points d'attention
 
-1. **Dépendance bloquante sur `PRD-TLS.md`** : les phases P7, P9 et P10 ne
-   peuvent démarrer que si le moteur TLS 1.3 décrit par `PRD-TLS.md` est
-   implémenté. Les phases P1 à P6 et P8 (partie `h2c`) sont **indépendantes**
-   et peuvent être livrées sans attendre — l'ordre du tableau § 5 reflète
-   cette contrainte, pas un ordre de priorité pédagogique.
+1. **Dépendance bloquante sur `PRD-TLS.md` et `PRD-QUIC.md`** : les phases
+   P7 (HTTPS) et la partie HTTPS de P12 ne peuvent démarrer que si le moteur
+   TLS 1.3 décrit par `PRD-TLS.md` est implémenté ; P9/P10 (QUIC/HTTP/3) ne
+   peuvent démarrer que si `PRD-QUIC.md` est implémenté (qui dépend lui-même
+   de `PRD-TLS.md`, cf. § 0.1). Les phases P1 à P6, P8 (partie `h2c`), P11
+   et la partie HTTP/1.1 en clair de P12 sont **indépendantes** et peuvent
+   être livrées sans attendre — l'ordre du tableau § 5 reflète cette
+   contrainte, pas un ordre de priorité pédagogique.
 2. **Ampleur du chantier** : c'est le PRD le plus large du dépôt à ce jour
    (dix RFC). Refuser tout ajout non listé en § 2.1 sans mise à jour
    explicite de ce document ; ne pas laisser une phase déborder sur la
@@ -543,28 +602,44 @@ additif (§ 3.4) : aucune suite existante (`http-*`, `windows-iis-*`,
    une **troisième** implémentation HTTP (après le PDU JSON et le framing ad
    hoc de DoH) — c'est un choix assumé (aucune des deux existantes n'est
    assez générale pour porter cache/cookies/auth/WebSocket/HTTP2/3), mais
-   cela ne doit pas être vécu comme une régression : les trois coexistent
-   sciemment tant qu'aucune migration n'est décidée.
-4. **HPACK/QPACK simplifiés** : documenter clairement que seul l'encodage
+   cela ne doit pas être vécu comme une régression pendant P1–P11 : les
+   trois coexistent sciemment jusqu'à P12/P13, qui éliminent la
+   fragmentation en migrant IIS/curl/DoH vers ce moteur unique (DoQ
+   excepté, cf. § 0.1).
+4. **Coordination avec `PRD-Windows-Server.md`** : la migration P12 ne
+   doit **pas** élargir silencieusement le périmètre du rôle IIS —
+   `WindowsIisRole.ts` continue de n'écouter que sur le port 80 (pas de
+   443/HTTPS pour IIS), conformément à `PRD-Windows-Server.md` §2.2 qui
+   exclut « IIS avancé (…, HTTPS/TLS, …) ». Seule la représentation interne
+   du framing change ; toute extension de scope IIS relève de l'autre PRD.
+5. **Tests IIS existants et représentation interne** : les tests
+   `windows-iis-role`/`windows-server-iis` actuels valident des
+   comportements observables (codes de statut, corps, en-têtes) plutôt que
+   la structure interne du PDU — ils devraient passer sans modification si
+   P12 préserve exactement ces comportements ; toute divergence doit être
+   corrigée avant de considérer P12 terminée, pas contournée en modifiant
+   les assertions de test.
+6. **HPACK/QPACK simplifiés** : documenter clairement que seul l'encodage
    littéral est fidèle bit-à-bit ; toute inférence de compression réelle
    (taille de trame observée) ne doit pas être testée comme si le Huffman
    était implémenté.
-5. **Digest RFC 7616 §6.1** : la RFC autorise plusieurs algorithmes
+7. **Digest RFC 7616 §6.1** : la RFC autorise plusieurs algorithmes
    (`MD5`, `MD5-sess`, `SHA-256`, `SHA-256-sess`) — n'implémenter que `MD5`
    et `SHA-256` (sans les variantes `-sess`) est un choix de portée à
    documenter explicitement dans le code et les tests.
-6. **Masquage WebSocket = point de correction, pas de simulation** :
+8. **Masquage WebSocket = point de correction, pas de simulation** :
    contrairement au reste de la crypto simulée du projet, le masquage
    RFC 6455 est peu coûteux et doit être bit-exact — à ne pas simplifier par
    erreur d'analogie avec `SimulatedTls.ts`.
-7. **QUIC sur UDP brut** : ce projet n'a pas de classe `UdpStack` dédiée
-   (contrairement à `TcpStack`) — `src/network/quic/` devra construire ses
-   propres `UDPPacket` comme le font déjà DNS/RADIUS, sans introduire de
-   nouvelle abstraction de transport générique non demandée par ce PRD.
-8. **Contrôle de congestion simplifié** : documenter que le NewReno simulé
-   ne vise qu'à exercer le protocole (fenêtre qui grandit/rétrécit selon les
-   événements RFC 9002), pas à reproduire un comportement de performance
-   réseau réaliste ou comparable à une vraie pile QUIC.
+9. **QUIC sur UDP brut** : ce projet n'a pas de classe `UdpStack` dédiée
+   (contrairement à `TcpStack`) — `src/network/quic/` (`PRD-QUIC.md`) devra
+   construire ses propres `UDPPacket` comme le font déjà DNS/RADIUS, sans
+   introduire de nouvelle abstraction de transport générique non demandée.
+10. **Contrôle de congestion simplifié** : documenter que le NewReno simulé
+    (`PRD-QUIC.md`) ne vise qu'à exercer le protocole (fenêtre qui
+    grandit/rétrécit selon les événements RFC 9002), pas à reproduire un
+    comportement de performance réseau réaliste ou comparable à une vraie
+    pile QUIC.
 
 ---
 
@@ -598,7 +673,16 @@ additif (§ 3.4) : aucune suite existante (`http-*`, `windows-iis-*`,
    1-RTT dans les bons espaces de paquets, une perte de paquet simulée est
    détectée et retransmise, et une requête HTTP/3 complète (au moins un
    stream de requête/réponse + un stream de contrôle) aboutit avec succès.
-9. Toutes les suites existantes (`windows-iis-role`, `windows-server-iis`,
-   `dns-encrypted-transports`, `eaptls-*`, `peap-ttls-handshake`,
-   `dot1x-radius-eaptls`, `dot1x-radius-peap-ttls`) passent **sans aucune
-   modification**, confirmant que ce module est strictement additif.
+9. Pendant P1–P11, toutes les suites existantes (`windows-iis-role`,
+   `windows-server-iis`, `dns-encrypted-transports`, `eaptls-*`,
+   `peap-ttls-handshake`, `dot1x-radius-eaptls`, `dot1x-radius-peap-ttls`)
+   passent **sans aucune modification**, confirmant que le module reste
+   strictement additif jusqu'à P12/P13.
+10. Après P12 : `curl http://srv1.lab.local/` et `Invoke-WebRequest` depuis
+    un client vers un `WindowsIisRole` utilisent réellement le framing
+    RFC 9112 (vérifiable par un import direct dans le code), avec le même
+    résultat observable qu'avant migration (200, corps, en-têtes) ; `curl
+    https://...` contre un serveur qui parle réellement HTTPS via ce moteur
+    négocie un vrai handshake TLS au lieu de son ancienne heuristique.
+11. Après P13 : `DnsHttpsTransport.ts` utilise réellement l'adaptateur
+    HTTP/1.1 + HTTPS de ce moteur ; les résolutions DoH restent correctes.

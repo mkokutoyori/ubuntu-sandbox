@@ -35,15 +35,41 @@ schedule §7.1) plutôt que de redéfinir TLS — tant que ce moteur n'est pas
 implémenté, les phases qui en dépendent (§5, P2 et suivantes) restent
 bloquées en amont, cf. § 7 « Risques ».
 
+Ce PRD **couvre en revanche** la migration de
+`src/network/dns/transport/DnsQuicTransport.ts` (le transport ad hoc DoQ
+existant) vers ce nouveau moteur (§ 2.1.13) — une fois l'intégration TLS 1.3
+réelle disponible (P8), puisque DoQ a besoin d'un vrai handshake TLS pour
+migrer, pas seulement d'un format de paquet.
+
 Ce PRD **ne couvre pas** :
 
-- la migration de `src/network/dns/transport/DnsQuicTransport.ts` (le
-  transport ad hoc DoQ existant) vers ce nouveau moteur — chantier
-  explicitement différé (§ 2.2), comme pour TLS et HTTP ;
 - HTTP/3 lui-même (mapping des sémantiques HTTP sur des streams QUIC,
   QPACK) — couvert par `docs/PRD-HTTP.md` §2.1.F, qui consomme ce PRD ;
 - les extensions QUIC ultérieures (multipath, QUIC v2 RFC 9369, datagrammes
   non fiables RFC 9221) — hors périmètre, cf. § 2.2.
+
+### 0.1 Chaîne de dépendances entre PRDs
+
+```
+PRD-TLS.md (RFC 8446)
+   │  fondation, aucune dépendance vers QUIC ou HTTP
+   │
+   ▼  key schedule (§7.1), TlsClientSession/TlsServerSession
+PRD-QUIC.md (RFC 9000/9001/9002)               ◄── VOUS ÊTES ICI
+   │  dépend de PRD-TLS.md pour RFC 9001 (P8/P9, § 5)
+   │  migre DnsQuicTransport.ts (DoQ) une fois P8 disponible (§ 2.1.13)
+   │
+   ▼  transport QuicConnection/QuicStream
+PRD-HTTP.md (RFC 9110–9114, cookies, auth, WebSocket)
+      dépend de PRD-QUIC.md pour HTTP/3 (§2.1.F), et de PRD-TLS.md
+      directement pour HTTPS (HTTP/1.1 et HTTP/2 sur TLS)
+```
+
+Ce PRD a donc **une seule dépendance entrante bloquante** : le moteur TLS de
+`PRD-TLS.md`, et seulement pour les phases P8/P9/§2.1.13 (§ 7). Les phases
+P1–P7 et P10–P12 sont indépendantes et peuvent être livrées sans attendre
+`PRD-TLS.md`. `PRD-HTTP.md` dépend à son tour de ce PRD pour HTTP/3, mais
+aucune décision prise dans `PRD-HTTP.md` ne rejaillit sur celui-ci.
 
 Aucune ligne de code n'est écrite dans le cadre de ce document — il sert de
 base à la planification et à la revue avant le premier commit TDD.
@@ -172,13 +198,19 @@ dépendance externe bloquante : le moteur TLS de `PRD-TLS.md`.
 12. **Transport** : construit directement sur les primitives UDP déjà
     existantes (`EndHost.sendUdpDatagram`/`udpBind`) — aucune nouvelle
     abstraction de transport générique introduite.
+13. **Migration de `DnsQuicTransport.ts` (DoQ, RFC 9250)** : une fois P8
+    (intégration TLS réelle) disponible, `DnsQuicClient`/
+    `bindDnsQuicServer` basculent sur une vraie `QuicConnection` — DNS
+    encapsulé dans un stream QUIC bidirectionnel préfixé par sa longueur
+    (RFC 9250 §4.2, comme sur TCP), à la place du datagramme JSON chiffré
+    par requête. Ceci change aussi le **modèle de connexion** de DoQ : une
+    connexion QUIC établie une fois et réutilisée pour plusieurs requêtes
+    DNS multiplexées sur des streams différents, au lieu d'un
+    connect/close par requête (§ 7 documente cette différence de
+    comportement observable).
 
 ### 2.2 Non-objectifs (explicitement hors périmètre)
 
-- **Migration de `DnsQuicTransport.ts` (DoQ)** vers ce nouveau moteur —
-  risque de régression disproportionné pour un premier chantier ; DoQ
-  continue d'utiliser son transport ad hoc **inchangé**. Une migration
-  éventuelle serait un chantier séparé, une fois ce moteur stabilisé.
 - **HTTP/3 lui-même** (mapping des sémantiques HTTP, QPACK) — couvert par
   `docs/PRD-HTTP.md` §2.1.F ; ce PRD s'arrête à la couche transport.
 - **Vraie cryptographie AEAD** (AES-128-GCM réel des suites obligatoires
@@ -213,19 +245,23 @@ dépendance externe bloquante : le moteur TLS de `PRD-TLS.md`.
 
 QUIC est construit comme un **transport générique indépendant**, au même
 niveau architectural que `TcpStack` — il ne connaît rien de HTTP/3 ni
-d'aucun protocole applicatif. Comme `PRD-TLS.md`, ce chantier est
-**greenfield** : `DnsQuicTransport.ts` n'est ni modifié ni consommé par ce
-nouveau module. Le point d'intégration avec la cryptographie est unique et
-explicite : `PacketProtection.ts` importe le moteur TLS 1.3 de
-`src/network/tls/` (une fois construit) pour obtenir les secrets par espace
-de paquets — aucune autre partie du module ne connaît TLS.
+d'aucun protocole applicatif. Comme `PRD-TLS.md`, les phases P1–P7 et
+P10–P12 démarrent **greenfield** : `DnsQuicTransport.ts` n'est ni modifié ni
+consommé pendant leur construction. Le point d'intégration avec la
+cryptographie est unique et explicite : `PacketProtection.ts` importe le
+moteur TLS 1.3 de `src/network/tls/` (P8) pour obtenir les secrets par
+espace de paquets — aucune autre partie du module ne connaît TLS. Une fois
+P8 vert, la phase § 2.1.13 migre DoQ sur ce moteur — la migration fait
+partie du périmètre livré par ce PRD, pas d'un chantier « éventuel ».
 
 ### 3.2 Diagramme de couches
 
 ```
 ┌────────────────────────────────────────────────────────────────────┐
-│ Futurs consommateurs (hors périmètre immédiat) :                    │
-│   HTTP/3 (docs/PRD-HTTP.md §2.1.F) · migration éventuelle de DoQ    │
+│ Migré par ce PRD (§ 2.1.13, après P8) : DnsQuicTransport.ts (DoQ)   │
+├────────────────────────────────────────────────────────────────────┤
+│ Futur consommateur (hors périmètre, couvert par un PRD frère) :     │
+│   HTTP/3 (docs/PRD-HTTP.md §2.1.F)                                  │
 ├────────────────────────────────────────────────────────────────────┤
 │ QuicConnection : machine à états (§5, §9), gère streams,             │
 │   recouvrement de pertes, congestion, fermeture                      │
@@ -391,10 +427,15 @@ QuicStreamState {
 | **P10 — Retry & validation d'adresse** | `retry.ts` : jeton simulé, limite d'amplification 3x | P7 |
 | **P11 — Connection IDs multiples** | `NEW_CONNECTION_ID`/`RETIRE_CONNECTION_ID`, rotation testée (sans migration active, cf. § 2.2) | P7 |
 | **P12 — Observabilité** | `events.ts`/`observables.ts` transverses | P4–P11 |
+| **P13 — Migration DoQ (§ 2.1.13)** | `DnsQuicClient`/`bindDnsQuicServer` basculent sur `QuicConnection`/`QuicStream` réels ; DNS encapsulé en stream préfixé-longueur (RFC 9250 §4.2) ; passage d'un modèle « une connexion par requête » à « une connexion réutilisée, streams multiplexés » | P8, P6 |
 
-Chaque phase suit le cycle rouge → vert → refactor. Ce module est
-strictement additif : aucune suite existante (`dns-encrypted-transports`,
-`eaptls-*`) n'est censée changer.
+Chaque phase suit le cycle rouge → vert → refactor. Pendant P1–P12, ce
+module reste strictement additif : aucune suite existante
+(`dns-encrypted-transports`, `eaptls-*`) n'est censée changer. **P13 change
+délibérément ce principe** pour la seule suite DoQ : son comportement
+observable (requête DNS → réponse correcte) doit rester identique, mais son
+modèle de connexion et donc certaines de ses assertions internes
+changeront (§ 7).
 
 ---
 
@@ -430,8 +471,13 @@ strictement additif : aucune suite existante (`dns-encrypted-transports`,
 9. **0-RTT** : session précédente valide → données 0-RTT acceptées ; ticket
    invalide/expiré → retombée sur handshake complet sans perte de données
    applicatives (mises en attente puis renvoyées après établissement).
-10. **Non-régression** : suite `dns-encrypted-transports` (DoQ) inchangée
-    après l'ajout de ce module.
+10. **Non-régression (P1–P12)** : suite `dns-encrypted-transports` (DoQ)
+    inchangée après l'ajout de ce module, tant que P13 n'est pas atteinte.
+11. **Migration DoQ (P13)** : une requête/réponse DNS-over-QUIC round-trip
+    correctement sur une vraie `QuicConnection` ; un scénario de plusieurs
+    requêtes consécutives sur la **même** connexion (streams différents,
+    multiplexés) confirme que le modèle « connexion réutilisée » fonctionne,
+    remplaçant l'ancien modèle « une connexion par requête ».
 
 ---
 
@@ -446,11 +492,12 @@ strictement additif : aucune suite existante (`dns-encrypted-transports`,
    validation d'adresse, multiples Connection IDs, versions) — se limiter
    strictement aux objectifs § 2.1 ; toute extension non listée (§ 2.2)
    nécessite une mise à jour explicite de ce document.
-3. **Confusion possible avec `DnsQuicTransport.ts`** : nommage proche
-   (« QUIC ») pour deux implémentations très différentes — documenter
-   clairement dans le code que `src/network/quic/` est le moteur conforme
-   RFC 9000 et que `DnsQuicTransport.ts` reste un stand-in ad hoc,
-   consciemment non migré (cf. § 2.2).
+3. **Confusion possible avec `DnsQuicTransport.ts` avant P13** : nommage
+   proche (« QUIC ») pour deux implémentations très différentes tant que la
+   migration n'a pas eu lieu — documenter clairement dans le code que
+   `src/network/quic/` est le moteur conforme RFC 9000 et que
+   `DnsQuicTransport.ts` est l'implémentation ad hoc **en cours de
+   remplacement**, pas une alternative permanente.
 4. **Séparation protection d'en-tête / chiffrement de corps** : point
    souvent simplifié à tort dans les implémentations pédagogiques — RFC 9001
    §5.4 les distingue explicitement (le masque de protection d'en-tête est
@@ -468,6 +515,19 @@ strictement additif : aucune suite existante (`dns-encrypted-transports`,
 7. **Pas de nouvelle abstraction de transport générique** : construire
    directement sur `EndHost.sendUdpDatagram`/`udpBind`, ne pas céder à la
    tentation d'introduire un `UdpStack` générique non demandé par ce PRD.
+8. **Changement de modèle de connexion en P13** : `DnsQuicClient.query()`
+   actuel ouvre/ferme une connexion par requête — la migration vers une
+   vraie `QuicConnection` réutilisable change ce comportement en profondeur
+   (une connexion établie une fois, des streams multiplexés par requête).
+   Ce n'est pas une régression si le résultat DNS observable est inchangé,
+   mais les tests qui inspectent le cycle de vie de la connexion (ouverture/
+   fermeture de port éphémère par requête) devront être réécrits, pas
+   simplement corrigés.
+9. **RFC 9250 §4.2 (framing DNS-sur-QUIC)** : chaque message DNS sur un
+   stream QUIC est précédé de sa longueur sur 2 octets (comme sur TCP,
+   RFC 1035 §4.2.2) — à ne pas confondre avec le framing de `STREAM` de QUIC
+   lui-même (qui a son propre champ de longueur au niveau transport) ; les
+   deux longueurs coexistent à des couches différentes.
 
 ---
 
@@ -501,5 +561,11 @@ strictement additif : aucune suite existante (`dns-encrypted-transports`,
 8. Une fermeture de connexion (`CONNECTION_CLOSE`) transite par les états
    `closing` puis `draining` avant libération complète des ressources, dans
    les deux sens (fermeture initiée par le client et par le serveur).
-9. La suite existante `dns-encrypted-transports.test.ts` (DoQ) passe **sans
-   aucune modification**, confirmant que ce module est strictement additif.
+9. Pendant P1–P12, la suite existante `dns-encrypted-transports.test.ts`
+   (DoQ) passe **sans aucune modification**, confirmant que le module reste
+   strictement additif jusqu'à P13.
+10. Après P13 : `DnsQuicClient`/`bindDnsQuicServer` utilisent réellement
+    `QuicConnection`/`QuicStream` (vérifiable par un import direct dans le
+    code) ; une connexion DoQ unique sert plusieurs requêtes DNS
+    consécutives sur des streams distincts, sans réouverture de connexion
+    entre elles ; les résultats DNS observables restent corrects.

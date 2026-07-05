@@ -19,21 +19,49 @@ d'enregistrement (§5), le protocole d'alerte (§6), la négociation ALPN
 
 Il **ne couvre pas** :
 
-- la migration des consommateurs déjà existants (DNS-over-TLS/HTTPS/QUIC,
-  EAP-TLS/PEAP/EAP-TTLS) vers ce nouveau moteur — cf. § 2.2 ;
 - une implémentation cryptographique réelle (AEAD, HKDF-SHA256, signatures
   RSA/ECDSA/Ed25519) — ce projet simule systématiquement la cryptographie
   (`PkiKeyPair`, `SimulatedTls.ts`, `EapTlsHandshake.ts`) et ce PRD **poursuit
   cette convention délibérément**, en visant la fidélité **protocolaire**
   (ordre des messages, extensions, machine à états, arborescence de secrets
-  nommés) plutôt que la fidélité cryptographique.
+  nommés) plutôt que la fidélité cryptographique ;
+- la migration de **tous** les consommateurs potentiels : ce PRD migre
+  lui-même `DnsTlsTransport.ts` (DoT) et le tunnel EAP-TLS/PEAP/EAP-TTLS
+  (§ 2.1.14), mais **pas** `DnsHttpsTransport.ts` (DoH) ni
+  `DnsQuicTransport.ts` (DoQ) — leur dépendance TLS est migrée en même temps
+  que leur framing HTTP/QUIC respectif, sous la responsabilité de
+  `PRD-HTTP.md` et `PRD-QUIC.md` (cf. § 0.1 et § 2.2), pour éviter tout
+  chevauchement de responsabilité entre PRDs.
 
-Il sert de **fondation potentielle** à des chantiers ultérieurs qui pourraient
-consommer ce moteur une fois stabilisé : RadSec (RFC 6614, déjà noté comme
-hors périmètre dans `PRD-RADIUS.md` §2.2), un `curl` HTTPS qui négocierait
-réellement au lieu de son heuristique actuelle, une éventuelle migration des
-tunnels EAP-TLS/PEAP/EAP-TTLS. Aucun de ces chantiers consommateurs n'est
-engagé par ce document.
+Ce PRD est la **fondation** de deux chantiers consommateurs déjà planifiés :
+`docs/PRD-QUIC.md` (RFC 9001 — intégration TLS 1.3 pour la protection de
+paquets QUIC) et `docs/PRD-HTTP.md` (HTTPS = HTTP sur ce moteur). Il sert
+aussi de fondation potentielle à des chantiers non encore engagés : RadSec
+(RFC 6614, déjà noté comme hors périmètre dans `PRD-RADIUS.md` §2.2), un
+`curl` HTTPS qui négocierait réellement au lieu de son heuristique actuelle
+(repris par `PRD-HTTP.md`).
+
+### 0.1 Chaîne de dépendances entre PRDs
+
+```
+PRD-TLS.md  (RFC 8446)                     ◄── VOUS ÊTES ICI
+   │  fondation — aucune dépendance vers un autre PRD de ce groupe
+   │
+   ├──▶ PRD-QUIC.md (RFC 9000/9001/9002)
+   │       consomme le key schedule (§7.1) et les sessions TLS pour RFC 9001
+   │       (protection de paquets par espace Initial/Handshake/1-RTT)
+   │
+   └──▶ PRD-HTTP.md (RFC 9110–9114, cookies, auth, WebSocket)
+           consomme directement ce moteur pour HTTPS (HTTP/1.1 et HTTP/2
+           sur TLS), et indirectement via PRD-QUIC.md pour HTTP/3
+```
+
+Ce PRD n'a donc **aucune dépendance entrante** depuis `PRD-QUIC.md` ou
+`PRD-HTTP.md` : il peut être développé et livré intégralement en premier.
+Ses phases de migration (§ 2.1.14, § 5 P11) peuvent en revanche être
+livrées en parallèle des chantiers QUIC/HTTP, puisqu'elles ne touchent que
+des consommateurs déjà existants (DoT, EAP-TLS/PEAP/EAP-TTLS) sans rapport
+avec QUIC ou HTTP.
 
 Aucune ligne de code n'est écrite dans le cadre de ce document — il sert de
 base à la planification et à la revue avant le premier commit TDD.
@@ -181,16 +209,22 @@ existants.
     réseau et les tests.
 13. **Transport** : le moteur s'appuie sur `TcpStack`/`TcpSocket` existant
     (comme `SimulatedTls.ts`) — aucun nouveau transport, pas de QUIC.
+14. **Migration des consommateurs TLS directs existants** : une fois le
+    moteur stabilisé (§ 5, phases P1–P10 vertes), `DnsTlsTransport.ts` (DoT,
+    RFC 7858, port 853) bascule sur de vraies `TlsClientSession`/
+    `TlsServerSession` (ALPN `dot`) à la place de `SimulatedTls.ts`. Le
+    tunnel EAP-TLS/PEAP/EAP-TTLS (`EapTlsServerSession.ts`/
+    `EapTlsPeerSession.ts`) remplace son modèle de flights ad hoc (2-RTT
+    façon TLS 1.2, `EapTlsHandshake.ts`) par de vrais appels au moteur 1-RTT
+    RFC 8446 — la fragmentation EAP §2.1 (`EapTlsFragmentation.ts`, RFC 5216)
+    reste une couche distincte au-dessus, inchangée : c'est le contenu des
+    flights transportées qui migre, pas leur transport EAP. `DnsHttpsTransport.ts`
+    (DoH) et `DnsQuicTransport.ts` (DoQ) ne sont **volontairement pas** migrés
+    ici — cf. § 0.1 : leur dépendance TLS migre avec leur framing HTTP/QUIC
+    respectif, sous la responsabilité de `PRD-HTTP.md`/`PRD-QUIC.md`.
 
 ### 2.2 Non-objectifs (explicitement hors périmètre)
 
-- **Migration des consommateurs existants** (`DnsHttpsTransport`,
-  `DnsTlsTransport`, `DnsQuicTransport`, `EapTlsServerSession`/
-  `EapTlsPeerSession`) vers ce nouveau moteur générique — risque de
-  régression disproportionné pour un premier chantier ; ils continuent
-  d'utiliser `SimulatedTls.ts`/`EapTlsHandshake.ts` **inchangés**. Une
-  migration éventuelle serait un chantier séparé, une fois ce moteur
-  stabilisé et testé de façon autonome.
 - **RadSec (RFC 6614, RADIUS/TLS)** et **`curl` HTTPS « profond »**
   (négociation réelle au lieu du stub heuristique actuel) — consommateurs
   potentiels de ce moteur, explicitement différés à des chantiers ultérieurs
@@ -220,21 +254,34 @@ existants.
 ### 3.1 Principe directeur
 
 Contrairement au PRD RADIUS (où un moteur existant est refondu sous des
-façades déjà en place), ce chantier est **greenfield** : il n'y a aucun
-consommateur à préserver dans l'immédiat. Principe retenu : **moteur
-autonome d'abord, consommateurs ensuite**. Le module `src/network/tls/` est
-construit et testé de façon indépendante (sessions client/serveur directes,
-sans passer par TCP dans un premier temps, puis end-to-end via `TcpStack`),
-sans qu'aucun fichier existant (`SimulatedTls.ts`, `EapTlsHandshake.ts`, leurs
-consommateurs) ne soit modifié. Toute intégration avec un consommateur réel
-est un chantier ultérieur explicite (cf. § 2.2).
+façades déjà en place), ce chantier démarre **greenfield** : les phases
+P1–P10 (§ 5) construisent et testent `src/network/tls/` de façon
+indépendante (sessions client/serveur directes, sans passer par TCP dans un
+premier temps, puis end-to-end via `TcpStack`), **sans modifier** un seul
+fichier existant (`SimulatedTls.ts`, `EapTlsHandshake.ts`, leurs
+consommateurs). Principe retenu : **moteur autonome d'abord, migration
+ensuite, dans ce même PRD**. Une fois ces phases vertes, la phase P11
+migre les deux consommateurs TLS directs (DoT, EAP-TLS/PEAP/EAP-TTLS,
+§ 2.1.14) sur le nouveau moteur — contrairement à `PRD-RADIUS.md`, la
+migration fait ici partie du périmètre livré, pas d'un chantier
+« éventuel » non engagé. Les consommateurs dont la migration dépend d'un
+autre PRD (DoH → `PRD-HTTP.md`, DoQ → `PRD-QUIC.md`) restent hors
+périmètre de ce document (§ 0.1, § 2.2).
 
 ### 3.2 Diagramme de couches
 
 ```
 ┌────────────────────────────────────────────────────────────────────┐
-│ Futurs consommateurs (hors périmètre immédiat de ce PRD) :         │
-│   RadSec, curl HTTPS profond, migration DoH/DoT/EAP-TLS             │
+│ Migrés par ce PRD (P11, § 2.1.14) :                                 │
+│   DnsTlsTransport.ts (DoT) · EapTlsServerSession/EapTlsPeerSession  │
+│   (EAP-TLS/PEAP/EAP-TTLS)                                           │
+├────────────────────────────────────────────────────────────────────┤
+│ Consommateurs migrés par un PRD frère (§ 0.1) :                     │
+│   DnsHttpsTransport.ts (DoH) → PRD-HTTP.md                          │
+│   DnsQuicTransport.ts (DoQ) → PRD-QUIC.md (via RFC 9001)            │
+├────────────────────────────────────────────────────────────────────┤
+│ Futurs consommateurs (hors périmètre, non engagés) : RadSec,        │
+│   curl HTTPS profond (repris par PRD-HTTP.md)                       │
 ├────────────────────────────────────────────────────────────────────┤
 │ Sessions : TlsClientSession / TlsServerSession                      │
 │   (machine à états RFC 8446 §4 : HRR, mTLS, 0-RTT, KeyUpdate)      │
@@ -301,9 +348,15 @@ src/network/tls/
 - **Réutilisation PKI stricte** : aucune nouvelle primitive de signature ou de
   vérification de certificat n'est introduite ; `Certificate`/
   `CertificateVerify` délèguent entièrement à `@/network/pki`.
-- **Aucune dépendance vers les consommateurs existants** : `SimulatedTls.ts`
-  et `EapTlsHandshake.ts` ne sont ni importés ni modifiés — zéro risque de
-  régression sur les suites DNS/EAP-TLS déjà vertes.
+- **Additif d'abord, migration ensuite en un point de bascule net** :
+  pendant P1–P10, `SimulatedTls.ts` et `EapTlsHandshake.ts` ne sont ni
+  importés ni modifiés — zéro risque de régression sur les suites DNS/
+  EAP-TLS déjà vertes. En P11 (§ 2.1.14), la migration remplace
+  l'**implémentation interne** de `EapTlsServerSession`/`EapTlsPeerSession`
+  et de `DnsTlsTransport.ts` par des appels au nouveau moteur, sans changer
+  leurs signatures publiques (`EapTlsConfig`, `EapTlsPeerOptions`, l'API de
+  `DnsTlsTransport.ts`) — les consommateurs de ces classes (`RadiusServerAgent`,
+  `Dot1xAgent`) n'ont rien à changer.
 - **Séparation record layer / messages de handshake** : contrairement à
   `EapTlsFragmentation.ts` (fragmentation *par flight*, propre au cadre EAP),
   `recordLayer.ts` fragmente indépendamment de la taille des messages qu'il
@@ -395,13 +448,18 @@ déjà utilisé est rejeté, sans fenêtre de rejeu par Bloom filter réelle.
 | **P8 — Résumption PSK & 0-RTT** | `sessionTickets.ts`, extension `pre_shared_key`/`early_data`, anti-rejeu « un ticket = un usage » | P2, P3 |
 | **P9 — KeyUpdate** | Rekey bidirectionnel en session longue, `request_update` | P3 |
 | **P10 — Observabilité** | `events.ts`/`observables.ts` : événements bus, exploitables par logs et tests | P3–P9 |
+| **P11 — Migration DoT & EAP-TLS/PEAP/EAP-TTLS** | `DnsTlsTransport.ts` bascule sur `TlsClientSession`/`TlsServerSession` réels ; `EapTlsServerSession.ts`/`EapTlsPeerSession.ts` remplacent `EapTlsHandshake.ts` par le moteur 1-RTT (la fragmentation EAP §2.1 reste inchangée, seul son contenu change) ; mise à jour des assertions de test dépendant de l'ancien modèle 2-RTT (cf. § 7 risque « comptage de rounds ») | P1–P10 |
 
-Chaque phase suit le cycle rouge → vert → refactor. Aucune suite existante
-(`dns-encrypted-transports.test.ts`, `eaptls-*.test.ts`,
+Chaque phase suit le cycle rouge → vert → refactor. Pendant P1–P10, aucune
+suite existante (`dns-encrypted-transports.test.ts`, `eaptls-*.test.ts`,
 `peap-ttls-handshake.test.ts`, `dot1x-radius-eaptls.test.ts`,
-`dot1x-radius-peap-ttls.test.ts`) n'est censée changer, puisque ce module est
-strictement additif et n'est importé par aucun fichier existant avant qu'un
-chantier de migration explicite ne soit décidé.
+`dot1x-radius-peap-ttls.test.ts`) n'est censée changer, puisque le module
+reste strictement additif jusque-là. **P11 change délibérément ce
+principe** pour les seules suites DoT/EAP-TLS/PEAP/EAP-TTLS : leur
+comportement observable (accept/reject, port 802.1X autorisé ou non) doit
+rester identique, mais leurs assertions numériques calibrées sur l'ancien
+modèle 2-RTT (nombre de rounds, nombre de flights) sont attendues comme
+devant être mises à jour (§ 7).
 
 ---
 
@@ -435,9 +493,15 @@ chantier de migration explicite ne soit décidé.
 9. **Intégration TCP** : sessions client/serveur pilotées via `TcpStack`/
    `TcpSocket` réels, sur une topologie câblée simple, pour vérifier que la
    fragmentation du record layer survit à la segmentation TCP sous-jacente.
-10. **Non-régression** : exécution complète des suites DNS-over-TLS/HTTPS/QUIC
-    et EAP-TLS/PEAP/EAP-TTLS existantes, garantissant qu'aucune n'est
-    affectée par l'ajout du nouveau module.
+10. **Non-régression (P1–P10)** : exécution complète des suites
+    DNS-over-TLS/HTTPS/QUIC et EAP-TLS/PEAP/EAP-TTLS existantes, garantissant
+    qu'aucune n'est affectée par l'ajout du nouveau module.
+11. **Migration (P11)** : suites DoT et EAP-TLS/PEAP/EAP-TTLS ré-exécutées
+    après bascule sur le nouveau moteur — vérifier que les résultats
+    observables (accept/reject, port 802.1X autorisé/refusé, échec avant
+    tout `application_data` si le certificat est rejeté) sont **identiques**
+    à l'avant-migration, même si le nombre de rounds/flights change (1-RTT
+    au lieu de 2-RTT).
 
 ---
 
@@ -466,11 +530,24 @@ chantier de migration explicite ne soit décidé.
    implémentation de la fenêtre de rejeu réelle de la RFC (§8, hors périmètre
    de ce document — RFC 8446 §8 est explicitement une annexe informative sur
    les stratégies anti-rejeu, non un algorithme unique imposé).
-6. **Pas de consommateur dans cette phase** : sans intégration réelle, le
-   risque est de construire un moteur qui ne « colle » pas aux besoins
-   effectifs d'un futur consommateur (RadSec, curl) — atténué en construisant
-   les scénarios de test § 6 à partir des flux RFC 8446 eux-mêmes plutôt que
-   d'hypothèses sur un consommateur particulier.
+6. **Pas de consommateur avant P11** : pendant P1–P10, le risque est de
+   construire un moteur qui ne « colle » pas aux besoins effectifs d'un
+   futur consommateur — atténué en construisant les scénarios de test § 6 à
+   partir des flux RFC 8446 eux-mêmes, puis validé concrètement dès P11 par
+   la migration de deux consommateurs réels (DoT, EAP-TLS/PEAP/EAP-TTLS).
+7. **Assertions de test calibrées sur l'ancien modèle 2-RTT** : des tests
+   comme `peap-ttls-handshake.test.ts` (« completes even when a tiny MTU
+   forces fragmentation… », qui vérifie un nombre minimal de rounds) sont
+   écrits contre le raccourci 2-RTT d'`EapTlsHandshake.ts`. La migration P11
+   vers un vrai handshake 1-RTT **changera nécessairement** ces comptages —
+   ce n'est pas une régression tant que le résultat final (accept/reject)
+   est inchangé, mais les assertions numériques devront être mises à jour
+   consciemment, pas juste « corrigées jusqu'à ce que ça passe ».
+8. **Compatibilité de signature pendant la migration** : `EapTlsConfig`/
+   `EapTlsPeerOptions` et l'API publique de `DnsTlsTransport.ts` ne doivent
+   pas changer de forme en P11 — seule l'implémentation interne bascule,
+   pour que `RadiusServerAgent`/`Dot1xAgent` et les appelants de
+   `DnsTlsTransport.ts` n'aient rien à modifier.
 
 ---
 
@@ -502,7 +579,13 @@ chantier de migration explicite ne soit décidé.
    l'image du `mtu: 40` d'EAP-TLS) aboutit malgré tout à un handshake réussi,
    prouvant l'indépendance du record layer vis-à-vis de la taille des
    messages de handshake.
-9. Toutes les suites existantes (`dns-encrypted-transports`, `eaptls-*`,
-   `peap-ttls-handshake`, `dot1x-radius-eaptls`, `dot1x-radius-peap-ttls`)
-   passent **sans aucune modification**, confirmant que ce module est
-   strictement additif.
+9. Pendant P1–P10, toutes les suites existantes (`dns-encrypted-transports`,
+   `eaptls-*`, `peap-ttls-handshake`, `dot1x-radius-eaptls`,
+   `dot1x-radius-peap-ttls`) passent **sans aucune modification**,
+   confirmant que le module reste strictement additif jusqu'à P11.
+10. Après P11 : `DnsTlsTransport.ts` et le tunnel EAP-TLS/PEAP/EAP-TTLS
+    utilisent réellement `src/network/tls/` (vérifiable par un import direct
+    dans le code, pas seulement par les tests) ; les suites migrées
+    produisent les mêmes résultats observables qu'avant migration
+    (accept/reject, port 802.1X autorisé/refusé), avec des assertions de
+    comptage de rounds mises à jour consciemment plutôt que supprimées.
