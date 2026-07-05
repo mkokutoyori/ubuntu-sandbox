@@ -84,8 +84,8 @@ ci-dessous.
 | P4 | mTLS | P3 | ✅ terminé | Claude (Sonnet 5) |
 | P5 | HelloRetryRequest | P3 | ✅ terminé | Claude (Sonnet 5) |
 | P6 | Alertes complètes | P3 | ✅ terminé | Claude (Sonnet 5) |
-| P7 | ALPN & suites cryptographiques | P3 | 🟡 en cours | Claude (Sonnet 5) |
-| P8 | Résumption PSK & 0-RTT | P2, P3 | ⬜ disponible | — |
+| P7 | ALPN & suites cryptographiques | P3 | ✅ terminé | Claude (Sonnet 5) |
+| P8 | Résumption PSK & 0-RTT | P2, P3 | 🟡 en cours | Claude (Sonnet 5) |
 | P9 | KeyUpdate | P3 | ⬜ disponible | — |
 | P10 | Observabilité | P3–P9 | ⬜ disponible | — |
 | P11 | Migration DoT & EAP-TLS/PEAP/EAP-TTLS | P1–P10 | ⬜ disponible | — |
@@ -596,4 +596,42 @@ seulement le consommer.
   modification additive de `TlsServerSession.ts` (et éventuellement
   `TlsClientSession.ts` si la vérification de suite négociée s'avère
   utile côté client) + nouveau fichier de test.
+- Statut / résultat : en cours.
+
+### [2026-07-05 (heure non horodatée par l'outil) UTC] Claude (Sonnet 5) — PRD-TLS/P7 — TERMINÉ
+- Tâche : cf. entrée ANNONCE précédente.
+- Fichiers concernés : nouveaux `cipherSuites.ts`/`alpn.ts` +
+  `TlsClientSession.ts`/`TlsServerSession.ts` (modifiés, additivement) +
+  `tls-alpn-cipher-suites.test.ts` (9 tests).
+- Statut / résultat : ✅ terminé. Vraie lacune comblée au passage : le
+  serveur utilisait sa suite configurée telle quelle dans `ServerHello`
+  **sans jamais vérifier** que le client l'avait effectivement offerte —
+  ce n'était pas une négociation. Le serveur construit désormais une
+  liste de préférence (suite configurée en tête, repli sur les 4 autres
+  suites obligatoires) et rejette (`handshake_failure`) en l'absence
+  totale d'intersection ; l'ALPN passe par la même intersection réelle au
+  lieu d'un simple `?.[0]`. Les deux sessions exposent
+  `negotiatedCipherSuite`/`negotiatedAlpnProtocol`. `tsc`/`eslint` propres,
+  9/9 tests verts dès la première exécution ; suites P3-P6 (19 tests)
+  toujours vertes sans modification. Régression ciblée (tls-*, eaptls-*,
+  peap-ttls-handshake, dns-encrypted-transports) : 11 fichiers, 90 tests,
+  tout vert.
+- Suggestion pour la suite : je continue sur `PRD-TLS.md`/P8 (résumption
+  PSK & 0-RTT) — voir l'annonce ci-dessous. Ce sera ma 4ᵉ phase depuis la
+  dernière régression complète (P4) → régression complète prévue à la fin
+  de P8, comme convenu.
+
+### [2026-07-05 (heure non horodatée par l'outil) UTC] Claude (Sonnet 5) — PRD-TLS/P8 — ANNONCE
+- Tâche : `sessionTickets.ts` (§4.6.1/§4.2.11) — `NewSessionTicket` émis
+  par le serveur en fin de handshake complet (réutilisant
+  `resumptionMasterSecret` du key schedule), stocké côté client ;
+  reprise de session par PSK sur un futur `ClientHello` (extension
+  `pre_shared_key`) avec données 0-RTT optionnelles dans le tout premier
+  flight (`early_data`, acceptées ou rejetées côté serveur). Anti-rejeu
+  simplifié : « un ticket = un usage » (limite documentée dans
+  `PRD-TLS.md` § 2.1.7/§ 7.5, pas de fenêtre Bloom-filter réelle).
+- Fichiers concernés : nouveau fichier `sessionTickets.ts` + modification
+  additive de `TlsServerSession.ts`/`TlsClientSession.ts` (émission/
+  consommation du ticket, chemin 0-RTT optionnel) + nouveau fichier de
+  test.
 - Statut / résultat : en cours.
