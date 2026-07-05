@@ -57,6 +57,17 @@ export class FtpClientSession {
     return this.lastReply;
   }
 
+  /**
+   * The most recently received reply, without sending anything — for
+   * observing a reply that arrived outside the `sendCommand()` call that
+   * triggered it (e.g. FXP §2.1.6: server A's `RETR` on one control
+   * connection can synchronously cascade into server B's `STOR` finishing
+   * and pushing its final `226` on a *different* control connection).
+   */
+  get lastServerReply(): FtpReply | null {
+    return this.lastReply;
+  }
+
   /** Sends one command and returns the server's reply, or null if not connected / no reply arrived. */
   sendCommand(cmd: FtpCommand): FtpReply | null {
     if (!this.socket) return null;
