@@ -81,8 +81,8 @@ ci-dessous.
 | P1 | Types, messages, record layer | — | ✅ terminé | Claude (Sonnet 5) |
 | P2 | Key schedule | P1 | ✅ terminé | Claude (Sonnet 5) |
 | P3 | Handshake 1-RTT nominal | P1, P2 | ✅ terminé | Claude (Sonnet 5) |
-| P4 | mTLS | P3 | 🟡 en cours | Claude (Sonnet 5) |
-| P5 | HelloRetryRequest | P3 | ⬜ disponible | — |
+| P4 | mTLS | P3 | ✅ terminé | Claude (Sonnet 5) |
+| P5 | HelloRetryRequest | P3 | 🟡 en cours | Claude (Sonnet 5) |
 | P6 | Alertes complètes | P3 | ⬜ disponible | — |
 | P7 | ALPN & suites cryptographiques | P3 | ⬜ disponible | — |
 | P8 | Résumption PSK & 0-RTT | P2, P3 | ⬜ disponible | — |
@@ -415,4 +415,35 @@ seulement le consommer.
   fois ce PRD frère disponible.
 - Fichiers concernés : nouveaux fichiers sous
   `src/network/http/http2/` uniquement — purement additif.
+- Statut / résultat : en cours.
+
+### [2026-07-05 (heure non horodatée par l'outil) UTC] Claude (Sonnet 5) — PRD-TLS/P4 — TERMINÉ
+- Tâche : cf. entrée ANNONCE précédente.
+- Fichiers concernés : `TlsServerSession.ts`/`TlsClientSession.ts`
+  (modifiés, additivement — `requestClientCert`/`verifier` côté serveur,
+  `clientCert`/`clientPrivateKey` côté client) + `tls-mtls.test.ts` (4
+  tests).
+- Statut / résultat : ✅ terminé. `tsc`/`eslint` propres, 4/4 tests verts
+  dès la première exécution ; suite P3 (5 tests) toujours verte sans
+  modification, confirmant la rétrocompatibilité. Régression ciblée
+  (tls-*, eaptls-*, peap-ttls-handshake, dns-encrypted-transports) : 8
+  fichiers, 71 tests, tout vert. **4ᵉ phase TLS d'affilée** → régression
+  **complète** exécutée comme convenu (cadence toutes-les-4-phases) :
+  656 fichiers, 12446 tests, 11 échecs — tous dans les suites Oracle-RAC
+  préexistantes déjà connues (`scenario-oracle-07`/`-08`), sans rapport
+  avec ce module.
+- Suggestion pour la suite : je continue sur `PRD-TLS.md`/P5
+  (HelloRetryRequest) — voir l'annonce ci-dessous. `PRD-QUIC.md`/P1
+  (varints & format de paquet) reste disponible et sans dépendance pour
+  un agent qui voudrait démarrer ce chantier en parallèle.
+
+### [2026-07-05 (heure non horodatée par l'outil) UTC] Claude (Sonnet 5) — PRD-TLS/P5 — ANNONCE
+- Tâche : `HelloRetryRequest` (§4.1.4) — quand le groupe proposé dans le
+  `key_share` du `ClientHello` n'est pas supporté par le serveur (config
+  `supportedGroups` explicite côté serveur), celui-ci répond par un
+  `HelloRetryRequest` (random spécial `HELLO_RETRY_REQUEST_RANDOM`,
+  §4.1.3) et le client renvoie un second `ClientHello` avec le groupe
+  correct.
+- Fichiers concernés : `TlsServerSession.ts`/`TlsClientSession.ts`
+  (modifiés, additivement) + nouveau fichier de test.
 - Statut / résultat : en cours.
