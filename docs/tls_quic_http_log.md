@@ -121,7 +121,7 @@ ci-dessous.
 | P7 | HTTPS | P2, **PRD-TLS.md implémenté** | ✅ terminé | Arthur |
 | P8 | HTTP/2 (9113 + HPACK) | P1, P7 (`h2c` sans) | ✅ terminé (h2c seul, sans ALPN — P7/ALPN `h2` restent à faire séparément) | Arthur |
 | P9 | Intégration QUIC | **PRD-QUIC.md implémenté** | ✅ terminé | Arthur |
-| P10 | HTTP/3 (9114 + QPACK) | P1, P9 | ⬜ disponible | — |
+| P10 | HTTP/3 (9114 + QPACK) | P1, P9 | ✅ terminé | Arthur |
 | P11 | Observabilité | P2–P10 | ⬜ disponible | — |
 | P12 | Migration IIS/curl/wget | P2, P7 | ⬜ disponible | — |
 | P13 | Migration DoH | P7 | ✅ terminé | Arthur |
@@ -1691,11 +1691,60 @@ seulement le consommer.
   fichier ajouté et sur `quic/QuicConnection.ts` ; `eslint` propre ;
   régression ciblée `quic-*` + `tls-*` + `https` + DNS chiffré + ce
   fichier : 25 fichiers / 254 tests, tous passants. Régression complète
-  `src/__tests__/unit/network-v2/` lancée en tâche de fond (4e phase
-  depuis la dernière régression complète — QUIC/P8, P9, P13, HTTP/P9) ;
-  résultat à suivre.
+  `src/__tests__/unit/network-v2/` (4e phase depuis la dernière régression
+  complète — QUIC/P8, P9, P13, HTTP/P9) : 679/681 fichiers, 12697/12758
+  tests, les 11 échecs restants sont les échecs Oracle RAC pré-existants
+  déjà documentés (baseline inchangée, aucune régression introduite).
 - Suggestion pour la suite : `PRD-HTTP.md`/P10 (HTTP/3, RFC 9114 + QPACK)
   est maintenant directement débloqué — c'est la phase naturelle
   suivante. P12 (migration IIS/curl/wget sur le moteur HTTP/1.1+HTTPS
   réel) et P11 (observabilité HTTP) restent aussi disponibles et
   indépendantes.
+
+### [2026-07-05 (heure non horodatée par l'outil) UTC] Arthur — PRD-HTTP/P10 — ANNONCE + TERMINÉ
+- Tâche : `PRD-HTTP.md`/P10 — HTTP/3 (RFC 9114) + QPACK (RFC 9204, table
+  statique seule — table dynamique explicitement hors périmètre, §2.2).
+  Débloqué par HTTP/P9 (vérification de l'API `QuicConnection`) tout juste
+  terminé. Nouveaux fichiers, arborescence conforme à `docs/PRD-HTTP.md`
+  §3.3 :
+  - `src/network/http/http3/Http3Frame.ts` — format générique
+    `Type(varint) Length(varint) Payload` (§7.1/§7.2), réutilisant le
+    codec varint QUIC (`@/network/quic/varint`, même format RFC 9000 §16).
+    Frames DATA/HEADERS/SETTINGS/GOAWAY ; tout type inconnu est renvoyé
+    comme `UNKNOWN` plutôt que rejeté (§7.2.8, compatibilité amont). Type
+    de stream unidirectionnel `CONTROL_STREAM_TYPE = 0x00` (§6.2.1).
+  - `src/network/http/http3/Qpack.ts` — table statique RFC 9204 Annexe A
+    (indexée à partir de 0, contrairement à HPACK), encodage littéral
+    uniquement (pas de Huffman, même convention que HPACK). Réutilise
+    `encodeInteger`/`decodeInteger`/`encodeString`/`decodeString` de
+    `http2/Hpack.ts` (RFC 9204 §4.1.1/§4.1.2 : format d'entier préfixé et
+    de chaîne littérale identique à HPACK). Les 3 représentations de ligne
+    de champ sans table dynamique sont implémentées (§4.5.2/§4.5.4/§4.5.6) ;
+    le préfixe de section de champs (Required Insert Count/Delta Base) est
+    toujours `[0x00, 0x00]` puisque la table dynamique n'existe jamais
+    (§4.5.1.1, cas particulier RIC=0).
+  - `src/network/http/http3/Http3Connection.ts` — mappe requête/réponse
+    sur un stream bidirectionnel par requête (§4.1) ; un stream de contrôle
+    unidirectionnel par extrémité portant une trame SETTINGS unique à la
+    connexion (§6.2.1/§7.2.4) ; `close()` envoie GOAWAY (§5.2) avant de
+    fermer la connexion QUIC. Consomme `QuicConnection`/`classifyStreamId`
+    tels qu'exposés par `PRD-QUIC.md`, **aucun fichier sous
+    `src/network/quic/` touché**.
+  - `src/__tests__/unit/network-v2/http3.test.ts` — 14 tests : frames
+    (round-trip, frame inconnue, SETTINGS/GOAWAY), QPACK (les 3
+    représentations + table statique), et `Http3Connection` sur une vraie
+    connexion QUIC/TLS (poignée de main réelle, requête/réponse avec corps,
+    multiplexage de deux requêtes sur des streams séparés, échange
+    SETTINGS sur les streams de contrôle, requête sans corps).
+  - Topologie volontairement hétérogène (serveur `LinuxPC`, client
+    `WindowsPC`) suite à une demande explicite de l'utilisateur de
+    privilégier des paires de systèmes d'exploitation différents dans les
+    topologies de test à partir de maintenant.
+- Statut / résultat : ✅ terminé. `tsc --noEmit -p tsconfig.app.json`
+  propre sur les 3 nouveaux fichiers + le test ; `eslint` propre.
+  Régression ciblée `http1-wire` + `http2` + `http3` +
+  `http3-quic-integration` + `quic-*` + `tls-*` + `https` +
+  `http-semantics` : 28 fichiers / 337 tests, tous passants.
+- Suggestion pour la suite : `PRD-HTTP.md`/P11 (observabilité, transverse
+  à P2-P10) et P12 (migration IIS/curl/wget sur le moteur HTTP/1.1+HTTPS
+  réel) sont maintenant toutes les deux disponibles et indépendantes.
