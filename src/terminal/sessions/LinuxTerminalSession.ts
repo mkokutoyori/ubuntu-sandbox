@@ -64,6 +64,8 @@ import {
 import { SqlPlusSubShell } from '@/terminal/subshells/SqlPlusSubShell';
 import { ReactiveRmanSubShell } from '@/terminal/subshells/rman/ReactiveRmanSubShell';
 import { SftpSubShell } from '@/terminal/subshells/SftpSubShell';
+import { FtpSubShell } from '@/terminal/subshells/FtpSubShell';
+import { FtpClientSession } from '@/network/ftp/FtpClientSession';
 import { RemoteShellSubShell } from '@/terminal/subshells/RemoteShellSubShell';
 import { installDefaultShells } from '@/shell/registerDefaults';
 import { ShellFactory } from '@/shell/ShellFactory';
@@ -1500,6 +1502,10 @@ export class LinuxTerminalSession extends TerminalSession {
         this.enterSftp(parts.slice(1));
         return;
       }
+      if (parts[0] === 'ftp') {
+        this.enterFtp(parts.slice(1));
+        return;
+      }
       if (parts[0] === 'ssh') {
         await this.enterSsh(parts.slice(1));
         return;
@@ -2006,6 +2012,13 @@ export class LinuxTerminalSession extends TerminalSession {
       this.connectAndEnterSftp(userAtHost, password, batchFile ?? null);
       return;
     }
+    const ftpMeta = ctx.metadata.get('enter_ftp') as string | undefined;
+    if (ftpMeta) {
+      const { host, port, user } = JSON.parse(ftpMeta) as { host: string; port?: number; user: string };
+      const password = ctx.values.get('ftp_password') ?? '';
+      this.connectAndEnterFtp(host, port, user, password);
+      return;
+    }
     // enter_ssh is no longer set — enterSsh() now calls connectAndEnterSsh()
     // directly using the reactive QueuedTerminalIO approach.
     const sshKeygenMeta = ctx.metadata.get('enter_ssh_keygen') as string | undefined;
@@ -2222,6 +2235,88 @@ export class LinuxTerminalSession extends TerminalSession {
     });
     this.activeSubShell = new ShellSubShellAdapter(shell);
     shell.activate();
+    this._inputBuf = '';
+    this.notify();
+  }
+
+  /** `ftp [user@]host [port]` (PRD-FTP-SFTP.md §2.1.11) — like `enterSftp()`, but for the plain FTP engine (`FtpClientSession`). */
+  private enterFtp(args: string[]): void {
+    const positional = args.filter((a) => !a.startsWith('-'));
+    const target = positional[0] ?? '';
+    if (!target) {
+      this.addLine('usage: ftp [user@]host [port]', 'error');
+      this.notify();
+      return;
+    }
+    const user = target.includes('@') ? target.split('@')[0] : this.currentUser;
+    const host = target.includes('@') ? target.split('@')[1] : target;
+    const port = positional[1] ? parseInt(positional[1], 10) : undefined;
+
+    const steps: InteractiveStep[] = [
+      {
+        type: 'password',
+        prompt: 'Password: ',
+        mask: 'hidden',
+        storeAs: 'ftp_password',
+      },
+      {
+        type: 'execute',
+        action: async (ctx: FlowContext) => {
+          ctx.metadata.set('enter_ftp', JSON.stringify({ host, port, user }));
+        },
+      },
+    ];
+    this.startFlowFromSteps(steps, `ftp ${target}`);
+  }
+
+  private connectAndEnterFtp(host: string, port: number | undefined, user: string, password: string): void {
+    const dev = this.device as unknown as {
+      executor?: {
+        vfs?: import('@/network/devices/linux/VirtualFileSystem').VirtualFileSystem;
+        userMgr?: { getUser(name: string): { uid?: number; gid?: number; home?: string } | undefined };
+      };
+      getTcpStack?: () => import('@/network/tcp/TcpStack').TcpStack;
+    };
+    const localVfs = dev.executor?.vfs;
+    if (!localVfs || !dev.getTcpStack) {
+      this.addLine('ftp: this device does not support FTP', 'error');
+      this.notify();
+      return;
+    }
+
+    const userEntry = dev.executor?.userMgr?.getUser(this.currentUser);
+    const homeDir = userEntry?.home ?? `/home/${this.currentUser}`;
+    const localIp = this.lookupSourceIp();
+    const client = new FtpClientSession(dev.getTcpStack(), host, localIp, port);
+
+    const banner = client.connect();
+    if (!banner || banner.code !== 220) {
+      this.addLine(`ftp: connect: Connection refused`, 'error');
+      this.notify();
+      return;
+    }
+    this.addLine(banner.lines.join('\n'));
+
+    const userReply = client.sendCommand({ verb: 'USER', argument: user });
+    const passReply = client.sendCommand({ verb: 'PASS', argument: password });
+    if (!passReply || passReply.code !== 230) {
+      this.addLine(passReply?.lines.join('\n') ?? 'Login failed.', 'error');
+      client.close();
+      this.notify();
+      return;
+    }
+    if (userReply) this.addLine(userReply.lines.join('\n'));
+    this.addLine(passReply.lines.join('\n'));
+
+    const shell = new FtpSubShell({
+      client,
+      localVfs,
+      localUid: userEntry?.uid ?? 1000,
+      localGid: userEntry?.gid ?? 1000,
+      localHome: homeDir,
+      localCwd: this.currentPath,
+    });
+    this.activeSubShell = shell;
     this._inputBuf = '';
     this.notify();
   }
