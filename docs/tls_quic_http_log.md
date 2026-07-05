@@ -107,7 +107,7 @@ ci-dessous.
 |---|---|---|---|---|
 | P1 | Sémantique HTTP (9110) | — | ✅ terminé | Arthur |
 | P2 | HTTP/1.1 en clair (9112) | P1 | ✅ terminé | Arthur |
-| P3 | Cache (9111) | P1, P2 | ⬜ disponible | — |
+| P3 | Cache (9111) | P1, P2 | 🟡 en cours | Arthur |
 | P4 | Cookies (6265) | P2 | ⬜ disponible | — |
 | P5 | Authentification (7617/7616) | P2 | ⬜ disponible | — |
 | P6 | WebSocket (6455) | P2 | ⬜ disponible | — |
@@ -230,3 +230,16 @@ seulement le consommer.
   sont maintenant disponibles en parallèle les uns des autres (aucune
   dépendance croisée entre eux). P7 (HTTPS) reste bloqué sur
   `PRD-TLS.md`.
+
+### [2026-07-05 (heure non horodatée par l'outil) UTC] Arthur — PRD-HTTP/P3 — ANNONCE
+- Tâche : `src/network/http/cache/` — `HttpCacheStore.ts` (magasin
+  clé méthode+URI(+Vary), fraîcheur/âge via `Cache-Control`
+  `max-age`/`s-maxage`/`no-store`/`no-cache`/`private`/`public`/
+  `must-revalidate`/`immutable`, heuristique `Last-Modified`/10 % en
+  l'absence de directive explicite, invalidation sur méthode non sûre
+  réussie), `CacheControl.ts` (parsing des directives). Revalidation
+  conditionnelle réutilise `conditionalRequests.ts` de P1
+  (`ETag`/`If-None-Match`, `Last-Modified`/`If-Modified-Since`).
+- Fichiers concernés : nouveaux fichiers sous
+  `src/network/http/cache/` uniquement — purement additif.
+- Statut / résultat : en cours.
