@@ -220,7 +220,7 @@ ouvert séparément si plusieurs agents doivent s'y coordonner.
 - **`DomainJoinClient`/`DomainLogonClient`** — la logique de haut niveau
   (résolution DNS du DC, construction de l'objet ordinateur/session) est
   conservée ; seul le mécanisme d'authentification qu'ils invoquent
-  change (Kerberos AS/TGS au lieu du bind LDAP direct, § 5 P25).
+  change (Kerberos AS/TGS au lieu du bind LDAP direct, § 5 P24).
 - **`EventBus`/`Signal`** (`src/events/`) — convention d'observabilité déjà
   utilisée par TLS/QUIC/HTTP/RADIUS, réutilisée telle quelle pour
   `kerberos.*`/`replication.*`/`trust.*`.
@@ -319,7 +319,7 @@ clé de session) au lieu de chaînes figées.
 `AuthenticationChoice` de l'enveloppe LDAP déjà réelle (comble le gap #6) :
 un client muni d'un ticket de service `ldap/<dc>` peut se lier sans
 transmettre de mot de passe sur le fil. `DomainJoinClient`/
-`DomainLogonClient` basculent sur ce mécanisme (§ 5 P25) — l'authentification
+`DomainLogonClient` basculent sur ce mécanisme (§ 5 P24) — l'authentification
 de domaine devient réellement Kerberos, pas un bind en clair déguisé.
 
 **4. Délégation Kerberos contrainte minimale (S4U2Proxy).** Un service
@@ -600,7 +600,7 @@ au bind simple ni aux opérations déjà câblées.
 │  cluster/          │  wsus/    │  print/           │  licensing/│ nps/ │
 │  ClusterService.ts │  WsusRole │  PrintServerRole  │  (RoleMgr) │ (ext)│
 ├───────────────────────────────────────────────────────────────────────┤
-│ DomainJoinClient/DomainLogonClient — basculent sur Kerberos (§5 P25)  │
+│ DomainJoinClient/DomainLogonClient — basculent sur Kerberos (§5 P24)  │
 │ WinDomainDiag.ts (klist réel) — basculé sur l'état réel (§5 P2)       │
 ├───────────────────────────────────────────────────────────────────────┤
 │ Sous-systèmes déjà livrés, tous inchangés :                           │
@@ -932,31 +932,30 @@ type LicenseState = 'Unlicensed' | 'Licensed' | 'OutOfBoxGrace' | 'Notification'
 | **P9 — Trusts inter-domaine/inter-forêt + référé cross-realm** | `kerberos/crossRealm.ts`, `ad/forest/TrustRelationship.ts`, `New-ADTrust`/`netdom trust` | P8, P2 |
 | **P10 — Délégation Kerberos contrainte (S4U2Proxy)** | `kerberos/delegation.ts`, attribut `msDS-AllowedToDelegateTo` | P2 |
 | **P11 — LDAP filaire complet restant** | `modifyDNRequest`, `extendedRequest` (StartTLS), `abandonRequest`, champ `controls` + pagination RFC 2696, référés (`searchResultReference`, utile pour P8/P9) | LDAP existant, P8 (pour les référés) |
-| **P12 — Migration des consommateurs existants** | `DomainJoinClient.ts`/`DomainLogonClient.ts` basculent réellement sur Kerberos (P2/P3) au lieu du bind LDAP direct en clair ; comportement observable (jonction/logon réussissent ou échouent dans les mêmes cas) inchangé | P3 |
-| **P13 — Observabilité AD DS/Kerberos** | `kerberos/events.ts`/`observables.ts`, `ad/replication/events.ts`/`observables.ts` transverses à P1-P12 | P1–P12 |
-| **P14 — AD CS (Certificate Services)** | `adcs/CaRole.ts`/`CertificateTemplate.ts`, service `CertSvc`, `Install-AdcsCertificationAuthority`/`certreq -submit`/`Get-Certificate` — instancie une `CertificateAuthority` (`src/network/pki/`, réutilisée) | — (indépendant de Kerberos/réplication) |
-| **P15 — IIS avancé : HTTPS/TLS** | `iis/IisHttpsBinding.ts`, `New-WebBinding -Protocol https`, consomme `HttpsServerSession`/`TlsServerSession` et, optionnellement, un certificat émis par P14 | P14 (pour un certificat AD CS) ou un certificat auto-signé existant |
-| **P16 — IIS avancé : app pools et modules** | Modèle métadonnées `New-WebAppPool`/`Get-IISAppPool`, registre statique `Get-WebGlobalModule` | P15 |
-| **P17 — DFS Namespaces + DFSR** | `dfs/DfsNamespace.ts` (cible `smbShares` existant), `dfs/DfsReplicationGroup.ts` (réutilise le modèle USN/high-watermark de P4) | P4 (réplication AD, patron réutilisé) |
-| **P18 — RDP (négociation de connexion)** | `rdp/RdpSession.ts` (TPKT/X.224), `rdp/CredSsp.ts` (NLA simplifié sur `TlsClientSession`/`TlsServerSession`), `query session`/`Get-RDUserSession`/`logoff` | — (indépendant) |
-| **P19 — Clustering/failover (WSFC) minimal** | `cluster/ClusterService.ts` (adhésion, heartbeat, quorum par majorité), `cluster/ClusterResourceGroup.ts` (bascule du rôle Serveur de fichiers) | — (indépendant) |
-| **P20 — WSUS minimal** | `wsus/WsusRole.ts` (catalogue, approbation), clients redirigés (`Set-WUSettings -WUServer`) | — (indépendant) |
-| **P21 — Impression réseau (Print Services)** | `print/PrintServerRole.ts`/`LpdTransport.ts` (RFC 1179 réel, port 515), réutilise `PrintJob` de `WinPrint.ts` | — (indépendant) |
-| **P22 — Activation/licences** | `licensing/LicensingState.ts`, `slmgr.vbs`, `Get-CimInstance SoftwareLicensingProduct` | — (indépendant) |
-| **P23 — NPS avancé (sans NAP)** | Extension additive de `WindowsNpsRole` : `New-NpsConnectionRequestPolicy` multi-conditions, `Set-NpsAccountingConfiguration -SqlLogging` vers une table simulée | `WindowsNpsRole` existant (`PRD-RADIUS.md`, livré) |
-| **P24 — Observabilité transverse des nouveaux rôles** | `events.ts`/`observables.ts` pour `adcs.*`/`rdp.*`/`cluster.*`/`dfs.*` — mêmes conventions que P13 | P14–P23 |
-| **P25 — Migration des consommateurs existants** | `DomainJoinClient.ts`/`DomainLogonClient.ts` basculent réellement sur Kerberos (P2/P3) au lieu du bind LDAP direct en clair ; comportement observable (jonction/logon réussissent ou échouent dans les mêmes cas) inchangé | P3 |
+| **P12 — Observabilité AD DS/Kerberos** | `kerberos/events.ts`/`observables.ts`, `ad/replication/events.ts`/`observables.ts` transverses à P1-P11 | P1–P11 |
+| **P13 — AD CS (Certificate Services)** | `adcs/CaRole.ts`/`CertificateTemplate.ts`, service `CertSvc`, `Install-AdcsCertificationAuthority`/`certreq -submit`/`Get-Certificate` — instancie une `CertificateAuthority` (`src/network/pki/`, réutilisée) | — (indépendant de Kerberos/réplication) |
+| **P14 — IIS avancé : HTTPS/TLS** | `iis/IisHttpsBinding.ts`, `New-WebBinding -Protocol https`, consomme `HttpsServerSession`/`TlsServerSession` et, optionnellement, un certificat émis par P13 | P13 (pour un certificat AD CS) ou un certificat auto-signé existant |
+| **P15 — IIS avancé : app pools et modules** | Modèle métadonnées `New-WebAppPool`/`Get-IISAppPool`, registre statique `Get-WebGlobalModule` | P14 |
+| **P16 — DFS Namespaces + DFSR** | `dfs/DfsNamespace.ts` (cible `smbShares` existant), `dfs/DfsReplicationGroup.ts` (réutilise le modèle USN/high-watermark de P4) | P4 (réplication AD, patron réutilisé) |
+| **P17 — RDP (négociation de connexion)** | `rdp/RdpSession.ts` (TPKT/X.224), `rdp/CredSsp.ts` (NLA simplifié sur `TlsClientSession`/`TlsServerSession`), `query session`/`Get-RDUserSession`/`logoff` | — (indépendant) |
+| **P18 — Clustering/failover (WSFC) minimal** | `cluster/ClusterService.ts` (adhésion, heartbeat, quorum par majorité), `cluster/ClusterResourceGroup.ts` (bascule du rôle Serveur de fichiers) | — (indépendant) |
+| **P19 — WSUS minimal** | `wsus/WsusRole.ts` (catalogue, approbation), clients redirigés (`Set-WUSettings -WUServer`) | — (indépendant) |
+| **P20 — Impression réseau (Print Services)** | `print/PrintServerRole.ts`/`LpdTransport.ts` (RFC 1179 réel, port 515), réutilise `PrintJob` de `WinPrint.ts` | — (indépendant) |
+| **P21 — Activation/licences** | `licensing/LicensingState.ts`, `slmgr.vbs`, `Get-CimInstance SoftwareLicensingProduct` | — (indépendant) |
+| **P22 — NPS avancé (sans NAP)** | Extension additive de `WindowsNpsRole` : `New-NpsConnectionRequestPolicy` multi-conditions, `Set-NpsAccountingConfiguration -SqlLogging` vers une table simulée | `WindowsNpsRole` existant (`PRD-RADIUS.md`, livré) |
+| **P23 — Observabilité transverse des nouveaux rôles** | `events.ts`/`observables.ts` pour `adcs.*`/`rdp.*`/`cluster.*`/`dfs.*` — mêmes conventions que P12 | P13–P22 |
+| **P24 — Migration des consommateurs existants** | `DomainJoinClient.ts`/`DomainLogonClient.ts` basculent réellement sur Kerberos (P2/P3) au lieu du bind LDAP direct en clair ; comportement observable (jonction/logon réussissent ou échouent dans les mêmes cas) inchangé | P3 |
 
-Chaque phase suit le cycle rouge → vert → refactor. Pendant P1-P24, ce
+Chaque phase suit le cycle rouge → vert → refactor. Pendant P1-P23, ce
 travail reste strictement additif (comme `PRD-FTP-SFTP.md` P1-P18) :
 aucune suite existante (`windows-server-addsforest`, `windows-server-
 domain-join`, `windows-server-ldap`, `windows-server-iis`, tests de
-`klist`/`dcdiag`) n'est censée changer avant P25. **P25 change
+`klist`/`dcdiag`) n'est censée changer avant P24. **P24 change
 délibérément ce principe**, pour la seule suite d'authentification de
 domaine : son comportement observable (jonction/logon réussissent ou
 échouent dans les mêmes cas qu'aujourd'hui) doit rester identique, seul le
 mécanisme interne (Kerberos au lieu du bind LDAP direct) change. Les
-phases P14 à P23 sont, comme les phases FTP/TFTP/SFTP/SCP de
+phases P13 à P22 sont, comme les phases FTP/TFTP/SFTP/SCP de
 `PRD-FTP-SFTP.md`, largement indépendantes entre elles — aucun ordre
 imposé au-delà de leurs propres dépendances internes indiquées ci-dessus.
 
@@ -1049,10 +1048,10 @@ imposé au-delà de leurs propres dépendances internes indiquées ci-dessus.
     bon ordre de priorité ; les enregistrements de comptabilité
     apparaissent dans la table simulée quand `SqlLogging` est activé ;
     aucun test n'exerce de fonctionnalité NAP (absente par conception).
-22. **Non-régression (P1-P24)** : exécution complète des suites AD DS/
+22. **Non-régression (P1-P23)** : exécution complète des suites AD DS/
     LDAP/domaine/IIS/NPS existantes après chaque phase, garantissant
-    l'absence d'effet de bord tant que P25 n'est pas atteinte.
-23. **Migration (P25)** : les suites de jonction/logon de domaine
+    l'absence d'effet de bord tant que P24 n'est pas atteinte.
+23. **Migration (P24)** : les suites de jonction/logon de domaine
     existantes ré-exécutées après bascule sur Kerberos — comportement
     observable (succès/échec dans les mêmes cas, mêmes messages
     d'erreur PowerShell/cmd) identique à l'avant-migration.
@@ -1100,7 +1099,7 @@ imposé au-delà de leurs propres dépendances internes indiquées ci-dessus.
    forêt (plutôt que des entrées dans l'arbre existant) serait une
    régression architecturale et casserait la réplication uniforme de
    l'objectif 5.
-7. **P12 est le seul point de bascule à risque de régression réelle** :
+7. **P24 est le seul point de bascule à risque de régression réelle** :
    toutes les phases précédentes sont additives ; ne pas anticiper la
    migration de `DomainJoinClient`/`DomainLogonClient` avant que P2/P3
    soient vertes et stables.
@@ -1175,8 +1174,8 @@ imposé au-delà de leurs propres dépendances internes indiquées ci-dessus.
    LDAP existant, sans régression des opérations déjà livrées (bind
    simple, search, add, modify, delete, compare).
 9. La régression complète des suites AD DS/LDAP/domaine déjà livrées par
-   `PRD-Windows-Server.md` reste verte à chaque phase P1-P24, et de
-   nouveau verte après la migration P25 (comportement observable
+   `PRD-Windows-Server.md` reste verte à chaque phase P1-P23, et de
+   nouveau verte après la migration P24 (comportement observable
    identique).
 10. Un administrateur émet un certificat via AD CS (`certreq -submit`)
     et le lie à un site IIS (`New-WebBinding -Protocol https`) ; un
