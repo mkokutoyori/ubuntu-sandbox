@@ -29,6 +29,43 @@ export function decodePortArgument(arg: string): { address: string; port: number
   return { address: `${a}.${b}.${c}.${d}`, port: (p1 << 8) | p2 };
 }
 
+/** RFC 2428 §2 — IPv4 (1) or IPv6 (2) net-prt tag inside `EPRT`/`EPSV`. */
+export type NetProtocol = 1 | 2;
+
+/** RFC 2428 §2 — `EPRT`'s `<d><net-prt><d><net-addr><d><tcp-port><d>`; `<d>` is any printable ASCII delimiter, conventionally `|`. Generalizes `PORT` to IPv6 without hardcoding the 4-octet form. */
+export function encodeEprtArgument(protocol: NetProtocol, address: string, port: number, delimiter = '|'): string {
+  return `${delimiter}${protocol}${delimiter}${address}${delimiter}${port}${delimiter}`;
+}
+
+export function decodeEprtArgument(arg: string): { protocol: NetProtocol; address: string; port: number } | null {
+  if (arg.length < 2) return null;
+  const delimiter = arg[0];
+  const parts = arg.split(delimiter);
+  if (parts.length < 5) return null;
+  const protocol = parseInt(parts[1], 10);
+  if (protocol !== 1 && protocol !== 2) return null;
+  const address = parts[2];
+  const port = parseInt(parts[3], 10);
+  if (!address || Number.isNaN(port) || port <= 0 || port > 65535) return null;
+  return { protocol, address, port };
+}
+
+/** RFC 2428 §3 — the `229` reply's `(<d><d><d><tcp-port><d>)`: net-prt/net-addr are omitted, since the client is expected to reuse the control connection's peer address. */
+export function encodeEpsvReplyArgument(port: number, delimiter = '|'): string {
+  return `(${delimiter}${delimiter}${delimiter}${port}${delimiter})`;
+}
+
+export function decodeEpsvReplyArgument(text: string): number | null {
+  const match = /\(([^)]*)\)/.exec(text);
+  if (!match) return null;
+  const inner = match[1];
+  if (inner.length < 1) return null;
+  const delimiter = inner[0];
+  const parts = inner.split(delimiter);
+  const port = parseInt(parts[3] ?? '', 10);
+  return Number.isNaN(port) ? null : port;
+}
+
 /** RFC 959 §4.6 recommends the passive port come from a bounded range; real servers (vsftpd's `pasv_min_port`/`pasv_max_port`) do the same. */
 const PASSIVE_PORT_MIN = 30000;
 const PASSIVE_PORT_MAX = 30999;

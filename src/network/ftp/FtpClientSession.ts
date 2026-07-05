@@ -27,7 +27,7 @@ import type { TcpStack, TcpSocket, TcpListener } from '@/network/tcp/TcpStack';
 import type { FtpCommand, FtpReply } from './types';
 import { encodeCommand, decodeReply } from './replies';
 import { FTP_CONTROL_PORT } from './FtpServer';
-import { encodePortArgument, decodePortArgument } from './DataChannel';
+import { encodePortArgument, decodePortArgument, encodeEprtArgument, decodeEpsvReplyArgument, type NetProtocol } from './DataChannel';
 
 export class FtpClientSession {
   private socket: TcpSocket | null = null;
@@ -89,6 +89,34 @@ export class FtpClientSession {
       },
     });
     return this.sendCommand({ verb: 'PORT', argument: encodePortArgument(this.localIp, port) });
+  }
+
+  /** `EPSV` (RFC 2428) — like `enterPassiveMode()`, but via the protocol-agnostic extended command. */
+  enterExtendedPassiveMode(): FtpReply | null {
+    this.closeActiveListener();
+    this.dataSocket = null;
+    const r = this.sendCommand({ verb: 'EPSV' });
+    if (r?.code === 229) {
+      const port = decodeEpsvReplyArgument(r.lines[0]);
+      if (port !== null) {
+        const socket = this.tcpStack.connect(this.targetIp, port);
+        this.dataSocket = socket && socket.state === 'established' ? socket : null;
+      }
+    }
+    return r;
+  }
+
+  /** `EPRT` (RFC 2428) — like `enterActiveMode()`, but via the protocol-agnostic extended command; `protocol` is `1` for IPv4, `2` for IPv6. */
+  enterExtendedActiveMode(port: number, protocol: NetProtocol = 1): FtpReply | null {
+    this.closeActiveListener();
+    this.dataSocket = null;
+    this.activeListener = this.tcpStack.listen(port, {
+      onAccept: (socket) => {
+        this.dataSocket = socket;
+        if (this.pendingDataHandler) socket.onData(this.pendingDataHandler);
+      },
+    });
+    return this.sendCommand({ verb: 'EPRT', argument: encodeEprtArgument(protocol, this.localIp, port) });
   }
 
   /** Downloads via `RETR`; call after `enterPassiveMode()`/`enterActiveMode()`. */

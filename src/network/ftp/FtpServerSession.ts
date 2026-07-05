@@ -16,7 +16,7 @@ import type { FtpCommand, FtpReply, FtpTransferType, FtpFileStructure, FtpTransf
 import { reply } from './replies';
 import {
   type FtpDataChannel, PassiveDataChannel, decodePortArgument, encodePortArgument, openDataConnection,
-  allocatePassivePort,
+  allocatePassivePort, decodeEprtArgument, encodeEpsvReplyArgument,
 } from './DataChannel';
 
 export interface FtpServerConfig {
@@ -93,6 +93,8 @@ export class FtpServerSession {
       case 'ABOR': return [reply(225, 'No transfer in progress.')];
       case 'PORT': return [this.handlePort(cmd)];
       case 'PASV': return [this.handlePasv()];
+      case 'EPRT': return [this.handleEprt(cmd)];
+      case 'EPSV': return [this.handleEpsv()];
       case 'RETR': return this.handleRetr(cmd);
       case 'STOR': return this.handleStor(cmd, { unique: false, append: false });
       case 'STOU': return this.handleStor(cmd, { unique: true, append: false });
@@ -205,6 +207,25 @@ export class FtpServerSession {
     const channel = new PassiveDataChannel(allocatePassivePort(), this.tcpStack);
     this.dataChannel = channel;
     return reply(227, `Entering Passive Mode (${encodePortArgument(this.localIp, channel.port)}).`);
+  }
+
+  private handleEprt(cmd: FtpCommand): FtpReply {
+    const authFailure = this.requireAuth();
+    if (authFailure) return authFailure;
+    const parsed = decodeEprtArgument(cmd.argument ?? '');
+    if (!parsed) return reply(501, 'Syntax error in parameters.');
+    this.closeDataChannel();
+    this.dataChannel = { mode: 'active', address: parsed.address, port: parsed.port };
+    return reply(200, 'EPRT command successful.');
+  }
+
+  private handleEpsv(): FtpReply {
+    const authFailure = this.requireAuth();
+    if (authFailure) return authFailure;
+    this.closeDataChannel();
+    const channel = new PassiveDataChannel(allocatePassivePort(), this.tcpStack);
+    this.dataChannel = channel;
+    return reply(229, `Entering Extended Passive Mode ${encodeEpsvReplyArgument(channel.port)}.`);
   }
 
   private handleRetr(cmd: FtpCommand): readonly FtpReply[] {
