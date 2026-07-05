@@ -119,7 +119,7 @@ ci-dessous.
 | P5 | Authentification (7617/7616) | P2 | ✅ terminé | Arthur |
 | P6 | WebSocket (6455) | P2 | ✅ terminé | Arthur |
 | P7 | HTTPS | P2, **PRD-TLS.md implémenté** | ⬜ disponible | — |
-| P8 | HTTP/2 (9113 + HPACK) | P1, P7 (`h2c` sans) | 🟡 en cours (h2c seul, sans ALPN) | Arthur |
+| P8 | HTTP/2 (9113 + HPACK) | P1, P7 (`h2c` sans) | ✅ terminé (h2c seul, sans ALPN — P7/ALPN `h2` restent à faire séparément) | Arthur |
 | P9 | Intégration QUIC | **PRD-QUIC.md implémenté** | ⬜ disponible | — |
 | P10 | HTTP/3 (9114 + QPACK) | P1, P9 | ⬜ disponible | — |
 | P11 | Observabilité | P2–P10 | ⬜ disponible | — |
@@ -414,8 +414,54 @@ seulement le consommer.
   `h2` reste bloquée sur `PRD-TLS.md`/P7 et sera traitée séparément une
   fois ce PRD frère disponible.
 - Fichiers concernés : nouveaux fichiers sous
-  `src/network/http/http2/` uniquement — purement additif.
-- Statut / résultat : en cours.
+  `src/network/http/http2/` uniquement — purement additif. Note :
+  l'état par stream (`Http2Stream` de l'arborescence proposée §3.3) a
+  été fusionné dans `Http2Connection.ts` comme interface interne
+  plutôt qu'un fichier séparé — le couplage entre comptabilité de
+  fenêtre par stream et par connexion rendait la séparation
+  artificielle ; les deux préoccupations (multiplexage, contrôle de
+  flux) restent bien couvertes et testées.
+- Statut / résultat : ✅ terminé. 3 fichiers livrés (`Http2Frame.ts`,
+  `Hpack.ts`, `Http2Connection.ts`) + `http2.test.ts` (22 tests :
+  round-trip framing binaire (en-tête 9 octets, types, flags),
+  `decodeFrames` multi-trames avec reste partiel, SETTINGS/
+  WINDOW_UPDATE/RST_STREAM/GOAWAY, HPACK (entiers/chaînes RFC 7541
+  §5, table statique 61 entrées vérifiée exhaustivement, indexation
+  dynamique, évincement par taille, mise à jour de taille, round-trip
+  d'un bloc d'en-têtes complet), et 4 tests d'intégration sur un vrai
+  `TcpStack` câblé (port de test 8720) : handshake préface+SETTINGS
+  "prior knowledge", requête/réponse, **multiplexage réel** (deux
+  requêtes concurrentes sur une même connexion, réponses correctement
+  séparées), **contrôle de flux réel** (corps de 100 000 octets >
+  fenêtre initiale 65535 — transfert fractionné + `WINDOW_UPDATE`
+  automatique vérifiés de bout en bout), rejet d'une préface invalide.
+  **Bug de réentrance trouvé et corrigé pendant l'écriture des tests** :
+  la délivrance TCP 100 % synchrone de ce simulateur fait qu'un
+  `socket.write()` peut ré-entrer la même méthode (le pair répond par
+  `WINDOW_UPDATE`, qui relance l'envoi en attente) avant que l'appel
+  englobant ne reprenne la main — mettre à jour la fenêtre d'envoi et
+  la file d'attente *après* le `write()` écrasait donc l'état déjà
+  posé par l'appel ré-entrant, provoquant une boucle infinie
+  (détectée via un script autonome qui ne rendait jamais la main,
+  timeout 2 min) ; corrigé en committant tout l'état *avant* le
+  `write()`. `tsc` et `eslint` propres. Régression ciblée HTTP (9
+  fichiers, 179 tests, 0 échec). Une régression complète
+  `network-v2/` a aussi été lancée pendant cette phase (656/658
+  fichiers verts, 12459/12520 tests) : 1 seul fichier en échec,
+  `scenario-oracle-08-rac-cache-fusion-interconnect.test.ts` (4 tests,
+  timing d'un lien dégradé RAC) — aucun rapport avec ce PRD (aucun
+  import HTTP/crypto), probablement un test pré-existant sensible au
+  timing ou une régression d'un autre chantier ; signalé ici pour
+  transparence, non traité par cet agent (hors périmètre `PRD-HTTP.md`).
+  Corroboré indépendamment par la régression complète de
+  `PRD-TLS.md`/P4 ci-dessous (mêmes 11 échecs Oracle-RAC déjà connus).
+- Suggestion pour la suite : les 7 phases sans dépendance bloquante de
+  `PRD-HTTP.md` (P1-P6, P8-h2c) sont terminées. Restent : P7 (HTTPS,
+  bloqué sur `PRD-TLS.md`), P9/P10 (bloqués sur `PRD-QUIC.md`), P11
+  (observabilité, peut démarrer dès maintenant — transverse à P2-P8),
+  P12/P13 (migration, bloqués sur P7). Si un agent veut enquêter sur
+  `scenario-oracle-08-rac-cache-fusion-interconnect.test.ts`, c'est
+  indépendant des trois PRD de ce journal.
 
 ### [2026-07-05 (heure non horodatée par l'outil) UTC] Claude (Sonnet 5) — PRD-TLS/P4 — TERMINÉ
 - Tâche : cf. entrée ANNONCE précédente.
