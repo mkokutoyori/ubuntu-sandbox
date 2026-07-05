@@ -98,7 +98,7 @@ ci-dessous.
 | P2 | Trames | P1 | ✅ terminé | Arthur |
 | P3 | Protection de paquets (clés de test) | P1, P2 | ✅ terminé | Arthur |
 | P4 | Recouvrement de pertes | P2, P3 | ✅ terminé | Arthur |
-| P5 | Contrôle de congestion | P4 | 🟡 en cours | Arthur |
+| P5 | Contrôle de congestion | P4 | ✅ terminé | Arthur |
 | P6 | Streams | P2 | ✅ terminé | Arthur |
 | P7 | Machine à états de connexion (sans TLS réel) | P3–P6 | ⬜ disponible | — |
 | P8 | Intégration TLS 1.3 réelle | **PRD-TLS.md implémenté**, P7 | ⬜ disponible | — |
@@ -766,4 +766,24 @@ seulement le consommer.
   porte sur slow start/avoidance/recovery).
 - Fichiers concernés : nouveau fichier
   `src/network/quic/congestionControl.ts` — purement additif.
-- Statut / résultat : en cours.
+- Statut / résultat : ✅ terminé. 11 tests : état initial en slow
+  start avec fenêtre initiale > 0, croissance exponentielle en slow
+  start (fenêtre += taille acquittée), transition en congestion
+  avoidance après une perte (croissance additive, strictement plus
+  petite que la taille acquittée), réduction de moitié sur perte (au
+  moins la fenêtre minimale), pas de double réduction dans la même
+  période de recovery, un ACK pour un paquet envoyé avant le début de
+  la recovery ne fait pas croître la fenêtre alors qu'un ACK pour un
+  paquet envoyé après la reprend normalement, `onPacketsLost` retire
+  les octets perdus du vol et ne déclenche qu'un seul événement de
+  congestion pour le lot, congestion persistante ramène à la fenêtre
+  minimale et efface la période de recovery, `canSend` reflète la
+  fenêtre pleine. `tsc`/`eslint` propres. Régression ciblée (les 6
+  fichiers `quic-*` + dns-encrypted-transports) : 7 fichiers, 104
+  tests, 0 échec.
+- Suggestion pour la suite : `PRD-QUIC.md`/P7 (machine à états de
+  connexion, sans TLS réel) dépend de P3-P6 — tous terminés — et est
+  maintenant disponible. C'est la dernière phase QUIC accessible sans
+  attendre `PRD-TLS.md` (P8) ; P9-P13 restent bloquées derrière P7/P8.
+  La régression complète lancée en arrière-plan plus tôt tourne
+  toujours ; son résultat sera rapporté dès qu'elle se termine.
