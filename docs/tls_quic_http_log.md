@@ -117,7 +117,7 @@ ci-dessous.
 | P3 | Cache (9111) | P1, P2 | ✅ terminé | Arthur |
 | P4 | Cookies (6265) | P2 | ✅ terminé | Arthur |
 | P5 | Authentification (7617/7616) | P2 | ✅ terminé | Arthur |
-| P6 | WebSocket (6455) | P2 | 🟡 en cours | Arthur |
+| P6 | WebSocket (6455) | P2 | ✅ terminé | Arthur |
 | P7 | HTTPS | P2, **PRD-TLS.md implémenté** | ⬜ disponible | — |
 | P8 | HTTP/2 (9113 + HPACK) | P1, P7 (`h2c` sans) | ⬜ disponible | — |
 | P9 | Intégration QUIC | **PRD-QUIC.md implémenté** | ⬜ disponible | — |
@@ -376,4 +376,26 @@ seulement le consommer.
   statut) au-dessus de `Http1ServerSession`/`TcpStack` (P2).
 - Fichiers concernés : nouveaux fichiers sous
   `src/network/http/websocket/` uniquement — purement additif.
-- Statut / résultat : en cours.
+- Statut / résultat : ✅ terminé. 3 fichiers livrés
+  (`WebSocketHandshake.ts`, `WebSocketFrame.ts`,
+  `WebSocketConnection.ts`) + `http-websocket.test.ts` (17 tests :
+  `Sec-WebSocket-Accept` contre le vecteur de test officiel RFC 6455
+  §1.3 — recalculé indépendamment via le module `crypto` natif de Node
+  avant écriture, confirmant `sha1Hex` bit-exact — handshake d'upgrade
+  build/verify, round-trip framing masqué/non masqué, longueurs
+  étendues 126/16-bit et 64-bit, rejet troncature/opcode inconnu, et 4
+  tests d'intégration sur un vrai `TcpStack` câblé (port de test
+  8456) : échange de message, fragmentation par continuation,
+  ping→pong automatique, close→close avec code de statut). `tsc` et
+  `eslint` propres. Régression complète `src/__tests__/unit/
+  network-v2/` lancée pour respecter la cadence « une phase sur
+  quatre » codifiée par `c4ad00ff` (6 phases HTTP livrées sans
+  régression complète jusqu'ici) — résultat à suivre dans une
+  prochaine entrée si nécessaire, aucun fichier existant modifié dans
+  cette phase.
+- Suggestion pour la suite : les 6 phases de `PRD-HTTP.md` sans
+  dépendance TLS/QUIC (P1-P6) sont maintenant toutes terminées. P7
+  (HTTPS) et la partie HTTPS de P12 restent bloquées sur
+  `PRD-TLS.md` implémenté ; P9/P10 restent bloquées sur `PRD-QUIC.md`.
+  `PRD-QUIC.md`/P1 (varints & format de paquet) reste disponible pour
+  un agent qui voudrait démarrer ce chantier.
