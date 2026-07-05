@@ -7,11 +7,12 @@
  */
 
 import {
-  type BerNode, parseTLV, parseAll,
+  type BerNode, UNIVERSAL_TAG, parseTLV, parseAll,
   encodeInteger, decodeInteger, encodeEnumerated,
   encodeBoolean, decodeBoolean,
   encodeOctetString, decodeOctetString, encodeRawOctetString,
   encodeSequence, encodeSet, encodeApplication, encodeContextPrimitiveString, encodeContextConstructed,
+  encodeContextPrimitive,
   concat,
 } from './Ber';
 import { type LdapFilter, encodeFilter, decodeFilter } from './LdapFilter';
@@ -37,6 +38,7 @@ export const LdapResultCode = {
   objectClassViolation: 65,
   notAllowedOnNonLeaf: 66,
   entryAlreadyExists: 68,
+  referral: 10,
   other: 80,
 } as const;
 export type LdapResultCodeValue = typeof LdapResultCode[keyof typeof LdapResultCode];
@@ -69,11 +71,38 @@ export type ProtocolOp =
   | { kind: 'delRequest'; entry: string }
   | { kind: 'delResponse'; result: LdapResult }
   | { kind: 'compareRequest'; entry: string; attributeDesc: string; assertionValue: string }
-  | { kind: 'compareResponse'; result: LdapResult };
+  | { kind: 'compareResponse'; result: LdapResult }
+  | { kind: 'abandonRequest'; messageID: number }
+  | { kind: 'searchResultReference'; uris: string[] }
+  | { kind: 'modifyDNRequest'; entry: string; newRdn: string; deleteOldRdn: boolean; newSuperior?: string }
+  | { kind: 'modifyDNResponse'; result: LdapResult }
+  | { kind: 'extendedRequest'; requestName: string; requestValue?: Uint8Array }
+  | { kind: 'extendedResponse'; result: LdapResult; responseName?: string };
+
+/** RFC 4511 §4.14.1 — StartTLS's request OID, the only `extendedRequest` this simulator issues/serves. */
+export const START_TLS_OID = '1.3.6.1.4.1.1466.20037';
+
+/** RFC 4511 §4.1.11 Controls / §4.1.9 Control — `criticality` defaults to `false` per the ASN.1 DEFAULT. */
+export interface LdapControl { controlType: string; criticality: boolean; controlValue?: Uint8Array }
+
+/** RFC 2696 — the paged-results control's OID and controlValue payload shape. */
+export const PAGED_RESULTS_CONTROL_OID = '1.2.840.113556.1.4.319';
+export interface PagedResultsValue { size: number; cookie: Uint8Array }
+
+export function encodePagedResultsValue(v: PagedResultsValue): Uint8Array {
+  return encodeSequence([encodeInteger(v.size), encodeRawOctetString(v.cookie)]);
+}
+export function decodePagedResultsValue(bytes: Uint8Array): PagedResultsValue {
+  const seq = parseTLV(bytes, 0);
+  const [sizeNode, cookieNode] = parseAll(seq.content);
+  return { size: decodeInteger(sizeNode.content), cookie: cookieNode.content };
+}
 
 export interface LdapMessage {
   messageID: number;
   protocolOp: ProtocolOp;
+  /** RFC 4511 §4.1.11 — optional `[0] Controls`, e.g. RFC 2696 paged results. */
+  controls?: LdapControl[];
 }
 
 const APP_TAG = {
@@ -82,7 +111,11 @@ const APP_TAG = {
   modifyRequest: 6, modifyResponse: 7,
   addRequest: 8, addResponse: 9,
   delRequest: 10, delResponse: 11,
+  modifyDNRequest: 12, modifyDNResponse: 13,
   compareRequest: 14, compareResponse: 15,
+  abandonRequest: 16,
+  searchResultReference: 19,
+  extendedRequest: 23, extendedResponse: 24,
 } as const;
 
 const SCOPE_TO_NUM: Record<SearchScope, number> = { base: 0, one: 1, sub: 2 };
@@ -187,6 +220,31 @@ export function encodeProtocolOp(op: ProtocolOp): Uint8Array {
       ]));
     case 'compareResponse':
       return encodeApplication(APP_TAG.compareResponse, true, concat(encodeLdapResult(op.result)));
+    case 'abandonRequest': {
+      const intTlv = parseTLV(encodeInteger(op.messageID), 0);
+      return encodeApplication(APP_TAG.abandonRequest, false, intTlv.content);
+    }
+    case 'searchResultReference':
+      return encodeApplication(APP_TAG.searchResultReference, true, concat(op.uris.map(encodeOctetString)));
+    case 'modifyDNRequest':
+      return encodeApplication(APP_TAG.modifyDNRequest, true, concat([
+        encodeOctetString(op.entry),
+        encodeOctetString(op.newRdn),
+        encodeBoolean(op.deleteOldRdn),
+        ...(op.newSuperior !== undefined ? [encodeContextPrimitiveString(0, op.newSuperior)] : []),
+      ]));
+    case 'modifyDNResponse':
+      return encodeApplication(APP_TAG.modifyDNResponse, true, concat(encodeLdapResult(op.result)));
+    case 'extendedRequest':
+      return encodeApplication(APP_TAG.extendedRequest, true, concat([
+        encodeContextPrimitiveString(0, op.requestName),
+        ...(op.requestValue !== undefined ? [encodeContextPrimitive(1, op.requestValue)] : []),
+      ]));
+    case 'extendedResponse':
+      return encodeApplication(APP_TAG.extendedResponse, true, concat([
+        ...encodeLdapResult(op.result),
+        ...(op.responseName !== undefined ? [encodeContextPrimitiveString(10, op.responseName)] : []),
+      ]));
   }
 }
 
@@ -278,18 +336,76 @@ export function decodeProtocolOp(node: BerNode): ProtocolOp {
       const { result } = decodeLdapResult(parseAll(node.content), 0);
       return { kind: 'compareResponse', result };
     }
+    case APP_TAG.abandonRequest:
+      return { kind: 'abandonRequest', messageID: decodeInteger(node.content) };
+    case APP_TAG.searchResultReference:
+      return { kind: 'searchResultReference', uris: parseAll(node.content).map(u => decodeOctetString(u.content)) };
+    case APP_TAG.modifyDNRequest: {
+      const parts = parseAll(node.content);
+      const entry = decodeOctetString(parts[0].content);
+      const newRdn = decodeOctetString(parts[1].content);
+      const deleteOldRdn = decodeBoolean(parts[2].content);
+      const newSuperiorNode = parts[3];
+      const newSuperior = newSuperiorNode && newSuperiorNode.tagClass === 'context' && newSuperiorNode.tagNumber === 0
+        ? decodeOctetString(newSuperiorNode.content) : undefined;
+      return { kind: 'modifyDNRequest', entry, newRdn, deleteOldRdn, newSuperior };
+    }
+    case APP_TAG.modifyDNResponse: {
+      const { result } = decodeLdapResult(parseAll(node.content), 0);
+      return { kind: 'modifyDNResponse', result };
+    }
+    case APP_TAG.extendedRequest: {
+      const parts = parseAll(node.content);
+      const requestName = decodeOctetString(parts[0].content);
+      const valueNode = parts.find(p => p.tagClass === 'context' && p.tagNumber === 1);
+      return { kind: 'extendedRequest', requestName, requestValue: valueNode?.content };
+    }
+    case APP_TAG.extendedResponse: {
+      const parts = parseAll(node.content);
+      const { result, next } = decodeLdapResult(parts, 0);
+      const responseNameNode = parts[next];
+      const responseName = responseNameNode && responseNameNode.tagClass === 'context' && responseNameNode.tagNumber === 10
+        ? decodeOctetString(responseNameNode.content) : undefined;
+      return { kind: 'extendedResponse', result, responseName };
+    }
     default:
       throw new Error(`LdapMessage: unknown protocolOp APPLICATION tag ${node.tagNumber}`);
   }
 }
 
+// ── Controls (RFC 4511 §4.1.9/§4.1.11) ──────────────────────────────────────
+
+function encodeControl(c: LdapControl): Uint8Array {
+  const parts = [encodeOctetString(c.controlType)];
+  if (c.criticality) parts.push(encodeBoolean(true));
+  if (c.controlValue !== undefined) parts.push(encodeRawOctetString(c.controlValue));
+  return encodeSequence(parts);
+}
+
+function decodeControl(node: BerNode): LdapControl {
+  const parts = parseAll(node.content);
+  const controlType = decodeOctetString(parts[0].content);
+  let idx = 1;
+  let criticality = false;
+  if (parts[idx] && parts[idx].tagClass === 'universal' && parts[idx].tagNumber === UNIVERSAL_TAG.BOOLEAN) {
+    criticality = decodeBoolean(parts[idx].content);
+    idx++;
+  }
+  const controlValue = parts[idx] ? parts[idx].content : undefined;
+  return { controlType, criticality, controlValue };
+}
+
 // ── LDAPMessage envelope ─────────────────────────────────────────────────────
 
 export function encodeLdapMessage(msg: LdapMessage): Uint8Array {
-  return encodeSequence([
+  const parts = [
     encodeInteger(msg.messageID),
     encodeProtocolOp(msg.protocolOp),
-  ]);
+  ];
+  if (msg.controls && msg.controls.length > 0) {
+    parts.push(encodeContextConstructed(0, msg.controls.map(encodeControl)));
+  }
+  return encodeSequence(parts);
 }
 
 export function decodeLdapMessage(bytes: Uint8Array): LdapMessage {
@@ -297,7 +413,10 @@ export function decodeLdapMessage(bytes: Uint8Array): LdapMessage {
   const parts = parseAll(node.content);
   const messageID = decodeInteger(parts[0].content);
   const protocolOp = decodeProtocolOp(parts[1]);
-  return { messageID, protocolOp };
+  const controlsNode = parts[2];
+  const controls = controlsNode && controlsNode.tagClass === 'context' && controlsNode.tagNumber === 0
+    ? parseAll(controlsNode.content).map(decodeControl) : undefined;
+  return { messageID, protocolOp, controls };
 }
 
 export function ldapResult(resultCode: number, matchedDN = '', diagnosticMessage = ''): LdapResult {

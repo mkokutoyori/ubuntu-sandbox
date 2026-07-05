@@ -184,6 +184,69 @@ export class DirectoryTree {
     this.byDn.set(this.dnIndexKey(dn), entry);
   }
 
+  /**
+   * RFC 4511 §4.9 ModifyDNRequest — renames `dn` to `newRdnStr`, optionally
+   * moving it under `newSuperior` and/or stripping the old RDN's
+   * attribute values (`deleteOldRdn`). Every descendant's DN embeds this
+   * entry's own DN, so they're all rewritten too.
+   */
+  renameEntry(dn: DistinguishedName, newRdnStr: string, deleteOldRdn: boolean, newSuperior?: DistinguishedName): TreeOpResult {
+    const entry = this.getByDn(dn);
+    if (!entry) return { ok: false, message: 'noSuchObject' };
+    const oldParentDn = parentOf(dn);
+    const oldParent = oldParentDn ? this.getByDn(oldParentDn) : null;
+    if (!oldParent || !oldParentDn) return { ok: false, message: 'noSuchObject: parent does not exist' };
+
+    const targetParentDn = newSuperior ?? oldParentDn;
+    const targetParent = newSuperior ? this.getByDn(newSuperior) : oldParent;
+    if (!targetParent) return { ok: false, message: 'noSuchObject: new superior does not exist' };
+
+    let newRdn: Rdn;
+    try {
+      const parsed = parseDN(newRdnStr);
+      if (parsed.length !== 1) throw new Error('not a single RDN');
+      newRdn = parsed[0];
+    } catch {
+      return { ok: false, message: 'invalidDNSyntax' };
+    }
+
+    const newDn: DistinguishedName = [newRdn, ...targetParentDn];
+    if (!dnEquals(newDn, dn) && this.getByDn(newDn)) return { ok: false, message: 'entryAlreadyExists' };
+
+    if (deleteOldRdn) {
+      for (const ava of dn[0]) {
+        const key = attrKey(ava.type);
+        const remaining = (entry.attributes.get(key) ?? []).filter(v => v.toLowerCase() !== ava.value.toLowerCase());
+        if (remaining.length === 0) entry.attributes.delete(key);
+        else entry.attributes.set(key, remaining);
+      }
+    }
+    for (const ava of newRdn) {
+      const key = attrKey(ava.type);
+      const existing = entry.attributes.get(key) ?? [];
+      if (!existing.some(v => v.toLowerCase() === ava.value.toLowerCase())) entry.attributes.set(key, [...existing, ava.value]);
+    }
+
+    oldParent.children.delete(rdnKey(dn));
+    this.reindexSubtree(entry, dn, newDn);
+    targetParent.children.set(rdnKey(newDn), entry);
+    if (this.replication) entry.replMeta = this.stampFor();
+    return { ok: true, message: '' };
+  }
+
+  /** Rewrites `entry`'s own DN plus every descendant's — each keeps whatever RDN chain it had *above* `oldBase`, now rooted at `newBase` instead — and reindexes `byDn` to match. */
+  private reindexSubtree(entry: DirectoryEntry, oldBase: DistinguishedName, newBase: DistinguishedName): void {
+    const rewrite = (e: DirectoryEntry): void => {
+      this.byDn.delete(this.dnIndexKey(e.dn));
+      const suffix = e.dn.slice(0, e.dn.length - oldBase.length);
+      const newEntryDn = [...suffix, ...newBase];
+      (e as unknown as { dn: DistinguishedName }).dn = newEntryDn;
+      this.byDn.set(this.dnIndexKey(newEntryDn), e);
+      for (const child of e.children.values()) rewrite(child);
+    };
+    rewrite(entry);
+  }
+
   /** RFC 4511 §4.5 SearchRequest — real scope + filter evaluation over the tree. */
   search(baseDn: DistinguishedName, scope: SearchScope, filter: LdapFilter): DirectoryEntry[] {
     const base = this.getByDn(baseDn);

@@ -78,6 +78,8 @@ import { SmbServerHandler } from './windows/server/smb/SmbServer';
 import { dialSmbShare, type SmbDialResult } from './windows/server/smb/SmbClient';
 import { WinRmServerHandler } from './windows/server/winrm/WinRmServer';
 import { LdapServerHandler } from './windows/server/ad/ldap/LdapServer';
+import { selfSignedLdapCert } from './windows/server/ad/ldap/ldapStartTls';
+import { getForestForDomain } from './windows/server/ad/forest/Forest';
 import { KdcSessionHandler } from '@/network/kerberos/KdcSession';
 import { dialKdc } from '@/network/kerberos/KerberosClient';
 import { KerberosTicketCache } from '@/network/kerberos/KerberosTicketCache';
@@ -187,6 +189,8 @@ export class WindowsPC extends EndHost implements UserAccountHost {
   private readonly kerberosTicketCache: KerberosTicketCache = new KerberosTicketCache();
   /** One entry per `replicateFrom` cycle, annotated intra-/inter-site (PRD-Windows-Server-Advanced.md §5 P6) — this simulator's minimal stand-in for a real replication event log (full observability arrives at §5 P12). */
   private readonly replicationLog: ReplicationLogEntry[] = [];
+  /** This DC's own StartTLS identity (PRD-Windows-Server-Advanced.md §5 P11) — lazily created once and reused across connections, mirroring a real DC's stable machine certificate. */
+  private ldapStartTlsIdentity: ReturnType<typeof selfSignedLdapCert> | null = null;
   /** LSA account policy mirrored by `net accounts`. */
   readonly accountsPolicy: WindowsAccountsPolicy = new WindowsAccountsPolicy();
   /** cmd.exe doskey macro table. */
@@ -427,9 +431,18 @@ export class WindowsPC extends EndHost implements UserAccountHost {
         const store = this.getDirectoryStore();
         if (!store) { socket.close(); return; }
         const serviceSecret = store.getComputerSecret(this.getHostname());
+        if (!this.ldapStartTlsIdentity) this.ldapStartTlsIdentity = selfSignedLdapCert(store.getRealm());
+        const forest = getForestForDomain(store.dnsName);
+        const otherDomainRoots = forest
+          ? forest.listDomains()
+            .filter(d => d.dnsName.toLowerCase() !== store.dnsName.toLowerCase())
+            .map(d => d.dnsName.split('.').map(p => `DC=${p}`).join(','))
+          : [];
         new LdapServerHandler({
           tree: store.getTree(), auth: store.getBindCheck(),
           kerberos: serviceSecret !== null ? { realm: store.getRealm(), serviceSecret } : undefined,
+          startTls: { serverCert: this.ldapStartTlsIdentity.cert, serverPrivateKey: this.ldapStartTlsIdentity.keyPair.privateKey },
+          otherForestDomainRoots: () => otherDomainRoots,
         }).register(socket);
       },
     });
