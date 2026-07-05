@@ -13,11 +13,13 @@
  * the connection — failure at any of these three checks happens before
  * any `application_data` is exchanged.
  */
+import type { IEventBus } from '@/events/EventBus';
 import { simulatedDigest } from '@/network/dns/dnssec/Digest';
 import { PkiKeyPair, type PkiPrivateKey } from '@/network/pki/PkiKeyPair';
 import type { CertificateVerifier } from '@/network/pki/CertificateVerifier';
 import type { X509Certificate } from '@/network/pki/X509Certificate';
 import type { CipherSuite } from './types';
+import type { TlsDomainEvent } from './events';
 import {
   type ClientHello, type ServerHello, type EncryptedExtensionsMessage,
   type CertificateRequest, type CertificateMessage, type CertificateVerify, type Finished,
@@ -45,6 +47,8 @@ export interface TlsClientConfig {
   readonly resumptionTicket?: SessionTicket;
   /** Sent as 0-RTT data alongside ClientHello (§2.3) — only honored together with `resumptionTicket`. */
   readonly earlyData?: Uint8Array;
+  /** RFC 8446 §2.1.12 observability — publishes `tls.*` events (`events.ts`) if set. */
+  readonly eventBus?: IEventBus;
 }
 
 type ClientState = 'idle' | 'awaiting-server-flight' | 'done';
@@ -68,6 +72,8 @@ export class TlsClientSession {
    */
   clientApplicationTrafficSecret: string | null = null;
   serverApplicationTrafficSecret: string | null = null;
+  /** Stable per-connection correlator for `events.ts` payloads (§2.1.12). */
+  readonly sessionId = randomNonce('tls-session');
 
   private state: ClientState = 'idle';
   private readonly supportedGroups: readonly string[];
@@ -84,6 +90,7 @@ export class TlsClientSession {
 
   /** Produces the initial `ClientHello` flight, offering a key_share for the first supported group. */
   start(): readonly TlsRecord[] {
+    this.emit({ topic: 'tls.handshake.started', payload: { sessionId: this.sessionId, role: 'client' } });
     this.clientRandom = randomNonce('cli');
     const records = this.sendClientHello(this.supportedGroups[0]);
     if (!this.config.resumptionTicket || !this.config.earlyData) return records;
@@ -121,10 +128,16 @@ export class TlsClientSession {
     }
   }
 
+  private emit(event: TlsDomainEvent): void {
+    this.config.eventBus?.publish(event);
+  }
+
   private fail(description: AlertDescription = 'handshake_failure'): null {
     this.lastAlert = fatalAlert(description);
     this.state = 'done';
     this.result = 'failure';
+    this.emit({ topic: 'tls.handshake.failed', payload: { sessionId: this.sessionId, role: 'client', alert: this.lastAlert } });
+    this.emit({ topic: 'tls.alert.sent', payload: { sessionId: this.sessionId, role: 'client', alert: this.lastAlert } });
     return null;
   }
 
@@ -185,6 +198,13 @@ export class TlsClientSession {
     this.resumptionMasterSecret = handshakePhase.resumptionMasterSecret;
     this.clientApplicationTrafficSecret = handshakePhase.clientApplicationTrafficSecret;
     this.serverApplicationTrafficSecret = handshakePhase.serverApplicationTrafficSecret;
+    const sessionResumed = Boolean(serverHello.extensions.preSharedKey);
+    if (sessionResumed) {
+      this.emit({
+        topic: 'tls.session.resumed',
+        payload: { sessionId: this.sessionId, role: 'client', ticket: this.config.resumptionTicket!.ticket },
+      });
+    }
 
     const leafCert = certificate.certificateList[0];
     if (!leafCert) return this.fail('certificate_unknown');
@@ -193,6 +213,8 @@ export class TlsClientSession {
       this.lastAlert = certificateAlert(verification.reason);
       this.state = 'done';
       this.result = 'failure';
+      this.emit({ topic: 'tls.handshake.failed', payload: { sessionId: this.sessionId, role: 'client', alert: this.lastAlert } });
+      this.emit({ topic: 'tls.alert.sent', payload: { sessionId: this.sessionId, role: 'client', alert: this.lastAlert } });
       return null;
     }
 
@@ -235,6 +257,13 @@ export class TlsClientSession {
 
     this.state = 'done';
     this.result = 'success';
+    this.emit({
+      topic: 'tls.handshake.completed',
+      payload: {
+        sessionId: this.sessionId, role: 'client', cipherSuite: this.negotiatedCipherSuite!,
+        alpnProtocol: this.negotiatedAlpnProtocol, resumed: sessionResumed,
+      },
+    });
     return fragmentAsRecords('handshake', encodeMessages(finalBundle), true);
   }
 
@@ -271,6 +300,10 @@ export class TlsClientSession {
     const keyUpdate: KeyUpdate = { kind: 'key_update', requestUpdate };
     const records = fragmentAsRecords('handshake', encodeHandshakeMessage(keyUpdate), true);
     this.clientApplicationTrafficSecret = nextTrafficSecret(this.clientApplicationTrafficSecret!);
+    this.emit({
+      topic: 'tls.key_update',
+      payload: { sessionId: this.sessionId, role: 'client', direction: 'client-to-server', requestUpdate },
+    });
     return records;
   }
 
@@ -286,6 +319,10 @@ export class TlsClientSession {
     const message = decodeHandshakeMessage(plaintext);
     if (message.kind !== 'key_update') return null;
     this.serverApplicationTrafficSecret = nextTrafficSecret(this.serverApplicationTrafficSecret!);
+    this.emit({
+      topic: 'tls.key_update',
+      payload: { sessionId: this.sessionId, role: 'client', direction: 'server-to-client', requestUpdate: message.requestUpdate },
+    });
     return message.requestUpdate ? this.sendKeyUpdate(false) : null;
   }
 }

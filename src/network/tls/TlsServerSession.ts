@@ -14,11 +14,13 @@
  * fidelity from `EapTlsHandshake.ts`'s 2-RTT model, which this module
  * does not reuse (see `PRD-TLS.md` §2.1.1/§2.1.5/§2.1.6).
  */
+import type { IEventBus } from '@/events/EventBus';
 import { simulatedDigest } from '@/network/dns/dnssec/Digest';
 import { PkiKeyPair, type PkiPrivateKey } from '@/network/pki/PkiKeyPair';
 import type { CertificateVerifier } from '@/network/pki/CertificateVerifier';
 import type { X509Certificate } from '@/network/pki/X509Certificate';
 import { HELLO_RETRY_REQUEST_RANDOM, type CipherSuite } from './types';
+import type { TlsDomainEvent } from './events';
 import {
   type ClientHello, type ServerHello, type HelloRetryRequest, type EncryptedExtensionsMessage,
   type CertificateRequest, type CertificateMessage, type CertificateVerify, type Finished,
@@ -47,6 +49,8 @@ export interface TlsServerConfig {
   readonly alpnProtocols?: readonly string[];
   /** Shared session-ticket registry (§4.6.1) — set to issue tickets and accept PSK/0-RTT resumption. */
   readonly sessionTicketStore?: SessionTicketStore;
+  /** RFC 8446 §2.1.12 observability — publishes `tls.*` events (`events.ts`) if set. */
+  readonly eventBus?: IEventBus;
 }
 
 function groupOf(keyShare: string): string {
@@ -72,6 +76,8 @@ export class TlsServerSession {
    */
   clientApplicationTrafficSecret: string | null = null;
   serverApplicationTrafficSecret: string | null = null;
+  /** Stable per-connection correlator for `events.ts` payloads (§2.1.12). */
+  readonly sessionId = randomNonce('tls-session');
 
   private state: ServerState = 'idle';
   private readonly cipherSuitePreference: readonly CipherSuite[];
@@ -80,6 +86,7 @@ export class TlsServerSession {
   private clientHandshakeTrafficSecret: string | null = null;
   private resumptionMasterSecret: string | null = null;
   private earlyDataAccepted = false;
+  private sessionResumed = false;
   private readonly transcript: Uint8Array[] = [];
 
   constructor(private readonly config: TlsServerConfig) {
@@ -103,14 +110,21 @@ export class TlsServerSession {
     }
   }
 
+  private emit(event: TlsDomainEvent): void {
+    this.config.eventBus?.publish(event);
+  }
+
   private reject(description: AlertDescription = 'handshake_failure'): null {
     this.lastAlert = fatalAlert(description);
     this.state = 'done';
     this.result = 'reject';
+    this.emit({ topic: 'tls.handshake.failed', payload: { sessionId: this.sessionId, role: 'server', alert: this.lastAlert } });
+    this.emit({ topic: 'tls.alert.sent', payload: { sessionId: this.sessionId, role: 'server', alert: this.lastAlert } });
     return null;
   }
 
   private handleFirstClientHello(incoming: readonly TlsRecord[]): readonly TlsRecord[] | null {
+    this.emit({ topic: 'tls.handshake.started', payload: { sessionId: this.sessionId, role: 'server' } });
     const { leading, rest } = splitLeadingContentType(incoming, 'handshake');
     const { contentType, plaintext: clientHelloBytes } = reassembleRecords(leading, false);
     if (contentType !== 'handshake') return this.reject('decode_error');
@@ -192,6 +206,13 @@ export class TlsServerSession {
     this.resumptionMasterSecret = handshakePhase.resumptionMasterSecret;
     this.clientApplicationTrafficSecret = handshakePhase.clientApplicationTrafficSecret;
     this.serverApplicationTrafficSecret = handshakePhase.serverApplicationTrafficSecret;
+    if (pskAccepted) {
+      this.sessionResumed = true;
+      this.emit({
+        topic: 'tls.session.resumed',
+        payload: { sessionId: this.sessionId, role: 'server', ticket: clientHello.extensions.preSharedKey! },
+      });
+    }
 
     const bundle: TlsHandshakeMessage[] = [];
     const encryptedExtensions: EncryptedExtensionsMessage = {
@@ -252,6 +273,8 @@ export class TlsServerSession {
         this.lastAlert = certificateAlert(verification.reason);
         this.state = 'done';
         this.result = 'reject';
+        this.emit({ topic: 'tls.handshake.failed', payload: { sessionId: this.sessionId, role: 'server', alert: this.lastAlert } });
+        this.emit({ topic: 'tls.alert.sent', payload: { sessionId: this.sessionId, role: 'server', alert: this.lastAlert } });
         return null;
       }
 
@@ -267,6 +290,13 @@ export class TlsServerSession {
     if (finished.verifyData !== expected) return this.reject('decrypt_error');
     this.state = 'done';
     this.result = 'accept';
+    this.emit({
+      topic: 'tls.handshake.completed',
+      payload: {
+        sessionId: this.sessionId, role: 'server', cipherSuite: this.negotiatedCipherSuite!,
+        alpnProtocol: this.negotiatedAlpnProtocol, resumed: this.sessionResumed,
+      },
+    });
 
     if (!this.config.sessionTicketStore) return null;
     const ticket: SessionTicket = {
@@ -296,6 +326,10 @@ export class TlsServerSession {
     const keyUpdate: KeyUpdate = { kind: 'key_update', requestUpdate };
     const records = fragmentAsRecords('handshake', encodeHandshakeMessage(keyUpdate), true);
     this.serverApplicationTrafficSecret = nextTrafficSecret(this.serverApplicationTrafficSecret!);
+    this.emit({
+      topic: 'tls.key_update',
+      payload: { sessionId: this.sessionId, role: 'server', direction: 'server-to-client', requestUpdate },
+    });
     return records;
   }
 
@@ -311,6 +345,10 @@ export class TlsServerSession {
     const message = decodeHandshakeMessage(plaintext);
     if (message.kind !== 'key_update') return null;
     this.clientApplicationTrafficSecret = nextTrafficSecret(this.clientApplicationTrafficSecret!);
+    this.emit({
+      topic: 'tls.key_update',
+      payload: { sessionId: this.sessionId, role: 'server', direction: 'client-to-server', requestUpdate: message.requestUpdate },
+    });
     return message.requestUpdate ? this.sendKeyUpdate(false) : null;
   }
 }

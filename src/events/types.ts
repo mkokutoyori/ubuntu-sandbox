@@ -50,6 +50,7 @@ import type { TacacsDomainEvent } from '@/network/tacacs/events';
 import type { VxlanDomainEvent } from '@/network/vxlan/events';
 import type { TcpDomainEvent } from '@/network/tcp/events';
 import type { BgpDomainEvent } from '@/network/bgp/events';
+import type { TlsDomainEvent } from '@/network/tls/events';
 import type { NetworkOsAccountEventEnvelope } from '@/network/devices/router/aaa/NetworkOsAccount';
 import type { SshSessionRecord } from '@/network/devices/router/aaa/SshSessionRegistry';
 import type { EigrpDomainEvent } from '@/network/eigrp/events';
@@ -343,6 +344,7 @@ export type DomainEvent =
   | VxlanDomainEvent
   | TcpDomainEvent
   | BgpDomainEvent
+  | TlsDomainEvent
   | DistributeTopics<NetworkOsAccountEventEnvelope['topic'], NetworkOsAccountEventEnvelope['payload']>
   | { topic: 'router.ssh.session.opened'; payload: { deviceId: string; session: SshSessionRecord } }
   | { topic: 'router.ssh.session.closed'; payload: { deviceId: string; session: SshSessionRecord; reason: string } }
