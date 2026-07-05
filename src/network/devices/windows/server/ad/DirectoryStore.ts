@@ -24,6 +24,9 @@ import {
   type HighWatermarkVector, emptyHighWatermarkVector, recordUsn, cloneHighWatermarkVector,
 } from './replication/HighWatermarkVector';
 import { SiteRegistry, type SiteOpResult, type SiteInfo } from './forest/sites';
+import { SchemaValidator } from './schema/SchemaValidator';
+import { SchemaPartition, seedDefaultSchema } from './schema/SchemaPartition';
+import type { AttributeSchema, ObjectClassSchema, SchemaOpResult } from './schema/SchemaValidator';
 
 export interface DirOpResult { ok: boolean; message: string }
 
@@ -69,6 +72,8 @@ export class DirectoryStore {
   /** Highest USN already absorbed from each other known DC, via any replication partner — advances as `applyReplicatedEntry` runs. */
   private readonly inboundHighWatermark: HighWatermarkVector = emptyHighWatermarkVector();
   private readonly sites: SiteRegistry;
+  private readonly schemaValidator: SchemaValidator;
+  private readonly schema: SchemaPartition;
 
   /**
    * `opts.skipSeed` (PRD-Windows-Server-Advanced.md §5 P5): an additional
@@ -86,15 +91,27 @@ export class DirectoryStore {
     opts: { skipSeed?: boolean } = {},
   ) {
     const rootDn = parseDN(this.dnsName.split('.').map(p => `DC=${p}`).join(','));
+    this.schemaValidator = new SchemaValidator();
     this.tree = new DirectoryTree(rootDn, { objectClass: ['top', 'domain', 'domainDNS'] }, {
       invocationId: this.invocationId, nextUsn: () => ++this.localUsn,
-    });
+    }, this.schemaValidator);
     this.usersOuDn = [...parseDN('CN=Users'), ...rootDn];
     this.computersOuDn = [...parseDN('CN=Computers'), ...rootDn];
     this.policiesDn = [...parseDN('CN=Policies'), ...parseDN('CN=System'), ...rootDn];
     this.sites = new SiteRegistry(this.tree);
-    if (!opts.skipSeed) this.seedDefaults(adminPassword);
+    this.schema = new SchemaPartition(this.tree, this.schemaValidator);
+    if (!opts.skipSeed) {
+      seedDefaultSchema(this.schema);
+      this.seedDefaults(adminPassword);
+    }
   }
+
+  // ─── Schema (PRD-Windows-Server-Advanced.md §5 P7) ─────────────────────
+
+  newAttribute(schema: AttributeSchema): SchemaOpResult { return this.schema.newAttribute(schema); }
+  newObjectClass(schema: ObjectClassSchema): SchemaOpResult { return this.schema.newObjectClass(schema); }
+  listSchemaAttributes(): AttributeSchema[] { return this.schema.listAttributes(); }
+  listSchemaObjectClasses(): ObjectClassSchema[] { return this.schema.listObjectClasses(); }
 
   // ─── Sites (PRD-Windows-Server-Advanced.md §5 P6) ──────────────────────
 

@@ -52,6 +52,7 @@ import type {
   IRoleProvider, WindowsFeatureInfo,
   ISmbProvider, SmbShareInfo, SmbSessionInfo,
   IAdProvider, AdUserInfo, AdGroupInfo, AdComputerInfo, AdOrgUnitInfo, AdOpResult, AdSiteInfo,
+  AdAttributeSchemaInfo, AdObjectClassSchemaInfo,
   IComputerProvider, DomainMembershipInfo,
   IGpoProvider, GpoInfo,
   IIisProvider, IisOpResult, WebsiteInfo,
@@ -474,6 +475,19 @@ class WindowsAdAdapter implements IAdProvider {
     const denied = this.requireAdmin('New-ADReplicationSubnet');
     if (denied) return denied;
     return store.newSubnet(cidr, siteName);
+  }
+
+  newAttribute(schema: AdAttributeSchemaInfo): AdOpResult {
+    const store = this.requireStore('New-ADAttribute');
+    const denied = this.requireAdmin('New-ADAttribute');
+    if (denied) return denied;
+    return store.newAttribute(schema);
+  }
+  newObjectClass(schema: AdObjectClassSchemaInfo): AdOpResult {
+    const store = this.requireStore('New-ADObjectClass');
+    const denied = this.requireAdmin('New-ADObjectClass');
+    if (denied) return denied;
+    return store.newObjectClass(schema);
   }
 }
 

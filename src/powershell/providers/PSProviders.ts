@@ -220,9 +220,19 @@ export interface IAdProvider {
   listReplicationSites(): AdSiteInfo[];
   /** `New-ADReplicationSubnet -Name <cidr> -Site <site>`. */
   newReplicationSubnet(cidr: string, siteName: string): AdOpResult;
+
+  /** `New-ADAttribute` (PRD-Windows-Server-Advanced.md §5 P7, RFC 4512 §4). */
+  newAttribute(schema: AdAttributeSchemaInfo): AdOpResult;
+  /** `New-ADObjectClass`. */
+  newObjectClass(schema: AdObjectClassSchemaInfo): AdOpResult;
 }
 
 export interface AdSiteInfo { name: string; dn: string }
+export interface AdAttributeSchemaInfo { ldapDisplayName: string; attributeSyntax: string; isSingleValued: boolean }
+export interface AdObjectClassSchemaInfo {
+  ldapDisplayName: string; objectClassCategory: 'structural' | 'auxiliary' | 'abstract';
+  mustContain: string[]; mayContain: string[]; subClassOf?: string;
+}
 
 export interface DomainMembershipInfo { dnsName: string; netbiosName: string; dcAddress: string }
 

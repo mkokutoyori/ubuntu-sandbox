@@ -120,6 +120,7 @@ import {
   GetADComputerCmdlet,
   NewADOrganizationalUnitCmdlet, GetADOrganizationalUnitCmdlet,
   NewADReplicationSiteCmdlet, GetADReplicationSiteCmdlet, NewADReplicationSubnetCmdlet,
+  NewADAttributeCmdlet, NewADObjectClassCmdlet,
 } from './ActiveDirectoryCmdlets';
 import { AddComputerCmdlet } from './ComputerCmdlets';
 import {
@@ -380,6 +381,8 @@ export function registerCoreCmdlets(registry: CmdletRegistry): void {
   registry.register(new NewADReplicationSiteCmdlet());
   registry.register(new GetADReplicationSiteCmdlet());
   registry.register(new NewADReplicationSubnetCmdlet());
+  registry.register(new NewADAttributeCmdlet());
+  registry.register(new NewADObjectClassCmdlet());
   registry.register(new NewADUserCmdlet());
   registry.register(new GetADUserCmdlet());
   registry.register(new SetADUserCmdlet());

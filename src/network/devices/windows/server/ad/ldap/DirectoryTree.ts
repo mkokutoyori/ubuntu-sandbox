@@ -11,6 +11,7 @@ import {
 } from './LdapDN';
 import { type LdapFilter, type AttributeSource, evaluateFilter } from './LdapFilter';
 import type { HighWatermarkVector } from '../replication/HighWatermarkVector';
+import type { SchemaValidator } from '../schema/SchemaValidator';
 
 /**
  * Multi-DC replication stamp (PRD-Windows-Server-Advanced.md §5 P4,
@@ -71,6 +72,8 @@ export class DirectoryTree {
     baseDn: string | DistinguishedName,
     rootAttributes: Record<string, string[]> = {},
     private readonly replication?: ReplicationIdentity,
+    /** RFC 4512 schema validation (PRD-Windows-Server-Advanced.md §5 P7) — absent on any `DirectoryTree` with no schema partition (e.g. the LDAP wire-protocol unit tests), which behaves exactly as before this phase. */
+    private readonly schema?: SchemaValidator,
   ) {
     const dn = typeof baseDn === 'string' ? parseDN(baseDn) : baseDn;
     this.root = { dn, attributes: toAttrMap(rootAttributes), children: new Map(), replMeta: this.stampFor() };
@@ -91,7 +94,7 @@ export class DirectoryTree {
     return this.byDn.get(this.dnIndexKey(dn)) ?? null;
   }
 
-  /** RFC 4511 §4.6 AddRequest — fails with entryAlreadyExists / noSuchObject (missing parent). */
+  /** RFC 4511 §4.6 AddRequest — fails with entryAlreadyExists / noSuchObject (missing parent) / objectClassViolation (RFC 4512 schema, §5 P7 — only for `objectClass` values that have a registered `classSchema`; permissive for everything else). */
   addEntry(dn: DistinguishedName, attributes: Record<string, string[]>): TreeOpResult {
     if (dn.length === 0) return { ok: false, message: 'namingViolation: cannot add the root entry' };
     if (this.getByDn(dn)) return { ok: false, message: 'entryAlreadyExists' };
@@ -99,6 +102,11 @@ export class DirectoryTree {
     if (parentDn === null) return { ok: false, message: 'noSuchObject: no parent' };
     const parent = this.getByDn(parentDn);
     if (!parent) return { ok: false, message: 'noSuchObject: parent does not exist' };
+    if (this.schema) {
+      const objectClasses = attributes.objectClass ?? attributes.objectclass ?? [];
+      const validation = this.schema.validateNewEntry(objectClasses, attributes);
+      if (!validation.ok) return validation;
+    }
     const entry: DirectoryEntry = { dn, attributes: toAttrMap(attributes), children: new Map(), replMeta: this.stampFor() };
     parent.children.set(rdnKey(dn), entry);
     this.byDn.set(this.dnIndexKey(dn), entry);

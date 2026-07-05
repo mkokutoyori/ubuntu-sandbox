@@ -15,7 +15,10 @@ import type { ICmdlet } from '../ICmdlet';
 import type { CmdletContext } from '../CmdletContext';
 import { PSRuntimeError } from '@/powershell/runtime/PSRuntime';
 import type { PSValue } from '@/powershell/runtime/PSEnvironment';
-import type { IAdProvider, AdUserInfo, AdGroupInfo, AdComputerInfo, AdOrgUnitInfo, AdSiteInfo } from '@/powershell/providers/PSProviders';
+import type {
+  IAdProvider, AdUserInfo, AdGroupInfo, AdComputerInfo, AdOrgUnitInfo, AdSiteInfo,
+  AdAttributeSchemaInfo, AdObjectClassSchemaInfo,
+} from '@/powershell/providers/PSProviders';
 import { psValueToString } from '@/powershell/runtime/PSExpansion';
 import { parseCredentialArg } from './RemotingCmdlets';
 
@@ -409,6 +412,60 @@ export class NewADReplicationSubnetCmdlet implements ICmdlet {
     }
     const res = ad.newReplicationSubnet(cidr, site);
     if (!res.ok) { ctx.emitError(`New-ADReplicationSubnet : ${res.message}`); return null; }
+    return null;
+  }
+}
+
+// ── Extensible schema (PRD-Windows-Server-Advanced.md §5 P7, RFC 4512) ─────
+
+function stringArrayOf(ctx: CmdletContext, key: string): string[] {
+  const raw = ctx.named[key];
+  if (raw === undefined) return [];
+  return Array.isArray(raw) ? raw.map(psValueToString) : [psValueToString(raw)];
+}
+
+export class NewADAttributeCmdlet implements ICmdlet {
+  readonly name = 'new-adattribute';
+  readonly aliases = [] as const;
+  readonly parameters = ['Name', 'AttributeSyntax', 'SingleValued'] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const ad = requireAd(ctx, 'New-ADAttribute');
+    const name = psValueToString(ctx.named['name'] ?? ctx.positional[0] ?? '');
+    if (!name) {
+      ctx.emitError('New-ADAttribute : Cannot process command because of one or more missing mandatory parameters: Name.');
+      return null;
+    }
+    const syntax = ctx.named['attributesyntax'] !== undefined ? psValueToString(ctx.named['attributesyntax']) : 'string';
+    const singleValued = ctx.named['singlevalued'] !== undefined ? Boolean(ctx.named['singlevalued']) : true;
+    const res = ad.newAttribute({ ldapDisplayName: name, attributeSyntax: syntax, isSingleValued: singleValued });
+    if (!res.ok) { ctx.emitError(`New-ADAttribute : ${res.message}`); return null; }
+    return null;
+  }
+}
+
+export class NewADObjectClassCmdlet implements ICmdlet {
+  readonly name = 'new-adobjectclass';
+  readonly aliases = [] as const;
+  readonly parameters = ['Name', 'Category', 'MustContain', 'MayContain', 'SubClassOf'] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const ad = requireAd(ctx, 'New-ADObjectClass');
+    const name = psValueToString(ctx.named['name'] ?? ctx.positional[0] ?? '');
+    if (!name) {
+      ctx.emitError('New-ADObjectClass : Cannot process command because of one or more missing mandatory parameters: Name.');
+      return null;
+    }
+    const categoryRaw = ctx.named['category'] !== undefined ? psValueToString(ctx.named['category']) : 'structural';
+    const category = (['structural', 'auxiliary', 'abstract'] as const).includes(categoryRaw as never)
+      ? (categoryRaw as 'structural' | 'auxiliary' | 'abstract') : 'structural';
+    const subClassOf = ctx.named['subclassof'] !== undefined ? psValueToString(ctx.named['subclassof']) : undefined;
+    const res = ad.newObjectClass({
+      ldapDisplayName: name, objectClassCategory: category,
+      mustContain: stringArrayOf(ctx, 'mustcontain'), mayContain: stringArrayOf(ctx, 'maycontain'),
+      subClassOf,
+    });
+    if (!res.ok) { ctx.emitError(`New-ADObjectClass : ${res.message}`); return null; }
     return null;
   }
 }
