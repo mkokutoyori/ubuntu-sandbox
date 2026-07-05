@@ -126,8 +126,18 @@ export class KerberosClient {
    * ticket) plus a fresh Authenticator built from `tgtSessionKey`/`cname`/
    * `crealm`, requesting a service ticket for `serviceName` (a computer
    * account's bare name, e.g. `SRV1` for a `HOST/SRV1`-style SPN).
+   *
+   * `targetRealm` (PRD-Windows-Server-Advanced.md §5 P9) is the realm the
+   * desired service lives in — defaults to `crealm` (the ordinary same-
+   * realm case, unchanged from P2). Passing a *different* realm asks this
+   * KDC for a ticket into a foreign realm; if a trust permits it, the KDC
+   * returns an inter-realm referral TGT instead of a KDC_ERR_S_PRINCIPAL_
+   * UNKNOWN (see `kerberos/crossRealm.ts`).
    */
-  tgsExchange(tgt: Ticket, tgtSessionKey: string, cname: PrincipalName, crealm: string, serviceName: string): TgsExchangeResult {
+  tgsExchange(
+    tgt: Ticket, tgtSessionKey: string, cname: PrincipalName, crealm: string, serviceName: string,
+    targetRealm: string = crealm,
+  ): TgsExchangeResult {
     const sname = principalName(PrincipalNameType.NT_SRV_HST, serviceName);
     const nonce = this.nextNonce++;
     const till = Math.floor(Date.now() / 1000) + TICKET_REQUEST_LIFETIME_SECONDS;
@@ -135,7 +145,7 @@ export class KerberosClient {
 
     const req: KdcReq = {
       msgType: 'TGS-REQ', padata: [{ type: PA_TGS_REQ, value: paValue }],
-      reqBody: { kdcOptions: 0, realm: crealm, sname, till, nonce, etype: [AES256_CTS_HMAC_SHA1_96] },
+      reqBody: { kdcOptions: 0, realm: targetRealm, sname, till, nonce, etype: [AES256_CTS_HMAC_SHA1_96] },
     };
     const reply = this.roundTrip(encodeKdcReq(req));
     if (!reply) return { ok: false, eText: 'no reply from KDC' };

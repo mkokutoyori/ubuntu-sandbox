@@ -2499,9 +2499,11 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     return true;
   }
 
-  /** `netdom join` — cmd-level equivalent of `Add-Computer -DomainName`, same real LDAP join dialogue underneath. */
+  /** `netdom join`/`netdom trust` — cmd-level equivalents of `Add-Computer -DomainName`/`New-ADTrust`, same real wire dialogue underneath. */
   private cmdNetdom(args: string[]): string {
-    if (args.length === 0 || args[0].toLowerCase() !== 'join') {
+    const sub = args[0]?.toLowerCase();
+    if (sub === 'trust') return this.cmdNetdomTrust(args.slice(1));
+    if (args.length === 0 || sub !== 'join') {
       return 'NETDOM JOIN /Domain:<Domain> /UserD:<User> /PasswordD:<Password> [/Server:<DC>]';
     }
     let domain = '';
@@ -2527,6 +2529,37 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     const result = this.joinDomainNow(domain, dcAddress, userD, passwordD);
     if (!result.ok) return `${result.message}\nThe command failed to complete successfully.`;
     return `The computer name '${this.getHostname()}' has been successfully joined to the domain '${domain}'.\nThe command completed successfully.`;
+  }
+
+  /** `netdom trust /d:<RemoteRealm> /Direction:<Inbound|Outbound|Bidirectional> /Server:<RemoteDC> /UserD:<User> /PasswordD:<Password> [/Transitive:No]` — cmd-level equivalent of `New-ADTrust` (PRD-Windows-Server-Advanced.md §5 P9). Server-only: this is a no-op stub on a plain workstation. */
+  private cmdNetdomTrust(args: string[]): string {
+    let remoteRealm = '';
+    let server = '';
+    let userD = '';
+    let passwordD = '';
+    let direction: 'Inbound' | 'Outbound' | 'Bidirectional' = 'Bidirectional';
+    let transitive = true;
+    for (const arg of args) {
+      const m = /^\/([a-z]+):(.*)$/i.exec(arg);
+      if (!m) continue;
+      const key = m[1].toLowerCase();
+      if (key === 'd') remoteRealm = m[2];
+      else if (key === 'server') server = m[2];
+      else if (key === 'userd') userD = m[2];
+      else if (key === 'passwordd') passwordD = m[2];
+      else if (key === 'direction' && (m[2] === 'Inbound' || m[2] === 'Outbound' || m[2] === 'Bidirectional')) direction = m[2];
+      else if (key === 'transitive') transitive = m[2].toLowerCase() !== 'no';
+    }
+    if (!remoteRealm || !server || !userD) {
+      return 'NETDOM TRUST /d:<RemoteRealm> /Server:<RemoteDC> /UserD:<User> /PasswordD:<Password> [/Direction:<Inbound|Outbound|Bidirectional>] [/Transitive:No]';
+    }
+    const server_ = this as unknown as { newADTrust?: (r: string, s: string, d: typeof direction, t: boolean, u: string, p: string) => { ok: boolean; message: string } };
+    if (typeof server_.newADTrust !== 'function') {
+      return 'The trust could not be established. This computer is not a domain controller.\nThe command failed to complete successfully.';
+    }
+    const result = server_.newADTrust(remoteRealm, server, direction, transitive, userD, passwordD);
+    if (!result.ok) return `${result.message}\nThe command failed to complete successfully.`;
+    return `The trust with '${remoteRealm}' has been successfully established.\nThe command completed successfully.`;
   }
 
   // ─── OS Info ───────────────────────────────────────────────────

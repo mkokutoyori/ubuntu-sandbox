@@ -52,7 +52,7 @@ import type {
   IRoleProvider, WindowsFeatureInfo,
   ISmbProvider, SmbShareInfo, SmbSessionInfo,
   IAdProvider, AdUserInfo, AdGroupInfo, AdComputerInfo, AdOrgUnitInfo, AdOpResult, AdSiteInfo,
-  AdAttributeSchemaInfo, AdObjectClassSchemaInfo, AdForestInfo,
+  AdAttributeSchemaInfo, AdObjectClassSchemaInfo, AdForestInfo, AdTrustInfo,
   IComputerProvider, DomainMembershipInfo,
   IGpoProvider, GpoInfo,
   IIisProvider, IisOpResult, WebsiteInfo,
@@ -510,6 +510,35 @@ class WindowsAdAdapter implements IAdProvider {
     const forest = typeof server.getForest === 'function' ? server.getForest() : null;
     if (!forest) return null;
     return { functionalLevel: forest.functionalLevel, domains: forest.listDomains().map(d => ({ ...d })) };
+  }
+
+  newTrust(
+    remoteRealm: string, remoteDcAddress: string, direction: AdTrustInfo['direction'], transitive: boolean,
+    credentialUser: string, credentialPassword: string,
+  ): AdOpResult {
+    this.requireRole('New-ADTrust');
+    const denied = this.requireAdmin('New-ADTrust');
+    if (denied) return denied;
+    const server = this.pc as WindowsServer;
+    if (typeof server.newADTrust !== 'function') {
+      return { ok: false, message: 'New-ADTrust : This computer cannot be promoted to a domain controller.' };
+    }
+    return server.newADTrust(remoteRealm, remoteDcAddress, direction, transitive, credentialUser, credentialPassword);
+  }
+
+  getTrust(remoteRealm: string): AdTrustInfo | null {
+    this.requireRole('Get-ADTrust');
+    const server = this.pc as WindowsServer;
+    const trust = typeof server.getTrust === 'function' ? server.getTrust(remoteRealm) : null;
+    if (!trust) return null;
+    return { remoteRealm: trust.remoteRealm, direction: trust.direction, transitive: trust.transitive };
+  }
+
+  listTrusts(): AdTrustInfo[] {
+    this.requireRole('Get-ADTrust');
+    const server = this.pc as WindowsServer;
+    const trusts = typeof server.listTrusts === 'function' ? server.listTrusts() : [];
+    return trusts.map(t => ({ ...t }));
   }
 }
 

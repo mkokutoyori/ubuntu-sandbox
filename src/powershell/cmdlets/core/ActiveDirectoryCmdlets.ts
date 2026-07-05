@@ -17,7 +17,7 @@ import { PSRuntimeError } from '@/powershell/runtime/PSRuntime';
 import type { PSValue } from '@/powershell/runtime/PSEnvironment';
 import type {
   IAdProvider, AdUserInfo, AdGroupInfo, AdComputerInfo, AdOrgUnitInfo, AdSiteInfo,
-  AdAttributeSchemaInfo, AdObjectClassSchemaInfo, AdForestInfo,
+  AdAttributeSchemaInfo, AdObjectClassSchemaInfo, AdForestInfo, AdTrustInfo,
 } from '@/powershell/providers/PSProviders';
 import { psValueToString } from '@/powershell/runtime/PSExpansion';
 import { parseCredentialArg } from './RemotingCmdlets';
@@ -530,5 +530,69 @@ function forestToPSObject(f: AdForestInfo): Record<string, PSValue> {
     ForestMode: f.functionalLevel,
     Domains: f.domains.map(d => d.dnsName),
     RootDomain: f.domains.find(d => !d.parentDnsName)?.dnsName ?? '',
+  };
+}
+
+// ── Trusts + cross-realm referrals (PRD-Windows-Server-Advanced.md §5 P9) ──
+
+const TRUST_DIRECTIONS = ['Inbound', 'Outbound', 'Bidirectional'] as const;
+
+export class NewADTrustCmdlet implements ICmdlet {
+  readonly name = 'new-adtrust';
+  readonly aliases = [] as const;
+  readonly parameters = ['Target', 'Direction', 'Transitive', 'Credential', 'Server'] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const ad = requireAd(ctx, 'New-ADTrust');
+    const target = psValueToString(ctx.named['target'] ?? ctx.positional[0] ?? '');
+    if (!target) {
+      ctx.emitError('New-ADTrust : Cannot process command because of one or more missing mandatory parameters: Target.');
+      return null;
+    }
+    const server = ctx.named['server'] !== undefined ? psValueToString(ctx.named['server']) : '';
+    if (!server) {
+      ctx.emitError('New-ADTrust : Cannot process command because of one or more missing mandatory parameters: Server.');
+      return null;
+    }
+    const credentialRaw = ctx.named['credential'] !== undefined ? psValueToString(ctx.named['credential']) : '';
+    if (!credentialRaw) {
+      ctx.emitError('New-ADTrust : Cannot process command because of one or more missing mandatory parameters: Credential.');
+      return null;
+    }
+    const directionRaw = ctx.named['direction'] !== undefined ? psValueToString(ctx.named['direction']) : 'Bidirectional';
+    const direction = (TRUST_DIRECTIONS as readonly string[]).includes(directionRaw)
+      ? (directionRaw as AdTrustInfo['direction']) : 'Bidirectional';
+    const transitive = ctx.named['transitive'] === undefined ? true : Boolean(ctx.named['transitive']);
+    const { username, password } = parseCredentialArg(credentialRaw);
+
+    const res = ad.newTrust(target, server, direction, transitive, username, password);
+    if (!res.ok) { ctx.emitError(res.message); return null; }
+    return null;
+  }
+}
+
+export class GetADTrustCmdlet implements ICmdlet {
+  readonly name = 'get-adtrust';
+  readonly aliases = [] as const;
+  readonly parameters = ['Identity', 'Filter'] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const ad = requireAd(ctx, 'Get-ADTrust');
+    const identity = ctx.named['identity'] !== undefined ? psValueToString(ctx.named['identity']) : psValueToString(ctx.positional[0] ?? '');
+    if (identity) {
+      const trust = ad.getTrust(identity);
+      if (!trust) { ctx.emitError(`Get-ADTrust : Cannot find a trust with identity: '${identity}'.`); return null; }
+      return trustToPSObject(trust);
+    }
+    return ad.listTrusts().map(trustToPSObject);
+  }
+}
+
+function trustToPSObject(t: AdTrustInfo): Record<string, PSValue> {
+  return {
+    Target: t.remoteRealm,
+    Direction: t.direction,
+    TrustAttributes: t.transitive ? 'transitive' : 'nonTransitive',
+    ForestTransitive: t.transitive,
   };
 }

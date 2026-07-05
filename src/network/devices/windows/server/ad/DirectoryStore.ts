@@ -27,6 +27,7 @@ import { SiteRegistry, type SiteOpResult, type SiteInfo } from './forest/sites';
 import { SchemaValidator } from './schema/SchemaValidator';
 import { SchemaPartition, seedDefaultSchema } from './schema/SchemaPartition';
 import type { AttributeSchema, ObjectClassSchema, SchemaOpResult } from './schema/SchemaValidator';
+import { TrustRegistry, type TrustDirection, type TrustOpResult, type TrustInfo, type TrustRecord } from './forest/TrustRelationship';
 
 export interface DirOpResult { ok: boolean; message: string }
 
@@ -74,6 +75,7 @@ export class DirectoryStore {
   private readonly sites: SiteRegistry;
   private readonly schemaValidator: SchemaValidator;
   private readonly schema: SchemaPartition;
+  private readonly trustRegistry: TrustRegistry;
 
   /**
    * `opts.skipSeed` (PRD-Windows-Server-Advanced.md §5 P5): an additional
@@ -100,6 +102,7 @@ export class DirectoryStore {
     this.policiesDn = [...parseDN('CN=Policies'), ...parseDN('CN=System'), ...rootDn];
     this.sites = new SiteRegistry(this.tree);
     this.schema = new SchemaPartition(this.tree, this.schemaValidator);
+    this.trustRegistry = new TrustRegistry(this.tree);
     if (!opts.skipSeed) {
       // A shared validator (PRD §5 P8 — a child domain joining an existing
       // forest) is already seeded by its forest root; seeding again would
@@ -125,6 +128,14 @@ export class DirectoryStore {
   newSubnet(cidr: string, siteName: string): SiteOpResult { return this.sites.newSubnet(cidr, siteName); }
   /** The name of the site whose subnet contains `ip`, or null if none does (§2.2 scope — no fallback-site guessing). */
   siteForIp(ip: string): string | null { return this.sites.siteForIp(ip); }
+
+  // ─── Trusts (PRD-Windows-Server-Advanced.md §5 P9) ─────────────────────
+
+  addTrust(remoteRealm: string, direction: TrustDirection, transitive: boolean, interrealmKey: string): TrustOpResult {
+    return this.trustRegistry.addTrust(remoteRealm, direction, transitive, interrealmKey);
+  }
+  getTrust(remoteRealm: string): TrustRecord | null { return this.trustRegistry.getTrust(remoteRealm); }
+  listTrusts(): TrustInfo[] { return this.trustRegistry.listTrusts(); }
 
   /** The domain root's DN — the default `New-GPLink -Target` for a domain-wide policy (Default Domain Policy). */
   getDomainDn(): string { return formatDN(this.tree.getRootDn()); }

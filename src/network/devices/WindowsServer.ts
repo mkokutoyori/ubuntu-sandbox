@@ -27,6 +27,7 @@ import { randomSessionKey } from '@/network/kerberos/crypto';
 import { dialLdap } from './windows/server/ad/ldap/LdapClient';
 import { pullReplication } from './windows/server/ad/replication/ReplicationSession';
 import { createForest, joinForestAsChildDomain, getForestForDomain, type Forest } from './windows/server/ad/forest/Forest';
+import { mirroredDirection, type TrustDirection, type TrustInfo, type TrustRecord } from './windows/server/ad/forest/TrustRelationship';
 
 export interface AdDsOpResult { ok: boolean; message: string }
 
@@ -212,6 +213,72 @@ export class WindowsServer extends WindowsPC {
   getForest(): Forest | null {
     if (!this.directoryStore) return null;
     return getForestForDomain(this.directoryStore.dnsName);
+  }
+
+  /**
+   * `New-ADTrust`/`netdom trust` (PRD-Windows-Server-Advanced.md §5 P9):
+   * establishes a simple trust with the domain reached at
+   * `remoteDcAddress` — a real LDAP dial+bind verifies reachability/
+   * credentials (mirrors `New-ADDomain`), then a freshly generated
+   * interrealm key is recorded locally and pushed, direction-flipped, to
+   * the remote domain's own directory via a real LDAP `AddRequest`.
+   * Unlike the forest's shared `SchemaValidator` (§5 P8), a trust spans
+   * two genuinely independent directories, so there is no single object
+   * to share by reference — see `TrustRelationship.ts`'s header comment.
+   */
+  newADTrust(
+    remoteRealm: string, remoteDcAddress: string, direction: TrustDirection, transitive: boolean,
+    credentialUser: string, credentialPassword: string,
+  ): AdDsOpResult {
+    if (!this.directoryStore) {
+      return { ok: false, message: 'New-ADTrust : This computer is not configured as a domain controller.' };
+    }
+    const localRealm = this.directoryStore.getRealm();
+    if (remoteRealm.toUpperCase() === localRealm.toUpperCase()) {
+      return { ok: false, message: 'New-ADTrust : A trust cannot be created between a domain and itself.' };
+    }
+
+    const conn = dialLdap(this.getTcpStack(), remoteDcAddress);
+    if (!conn.ok || !conn.client) {
+      return { ok: false, message: 'New-ADTrust : The specified domain either does not exist or could not be contacted.' };
+    }
+    const bind = conn.client.bind(credentialUser, credentialPassword);
+    if (!bind.ok) {
+      conn.client.unbind();
+      return { ok: false, message: 'New-ADTrust : Logon failure: unknown user name or bad password.' };
+    }
+
+    const interrealmSecret = randomSessionKey();
+    const localAdd = this.directoryStore.addTrust(remoteRealm, direction, transitive, interrealmSecret);
+    if (!localAdd.ok) {
+      conn.client.unbind();
+      return { ok: false, message: `New-ADTrust : ${localAdd.message}` };
+    }
+
+    const remoteRootDn = remoteRealm.split('.').map(p => `DC=${p}`).join(',');
+    const remoteTrustDn = `CN=${localRealm},CN=System,${remoteRootDn}`;
+    const push = conn.client.add(remoteTrustDn, [
+      { type: 'objectClass', values: ['top', 'trustedDomain'] },
+      { type: 'cn', values: [localRealm] },
+      { type: 'trustPartner', values: [localRealm] },
+      { type: 'trustDirection', values: [mirroredDirection(direction)] },
+      { type: 'trustAttributes', values: [transitive ? 'transitive' : 'nonTransitive'] },
+      { type: 'trustAuthIncoming', values: [interrealmSecret] },
+    ]);
+    conn.client.unbind();
+    if (!push.ok) {
+      return { ok: false, message: `New-ADTrust : ${push.result.diagnosticMessage || 'failed to establish the remote side of the trust'}` };
+    }
+    return { ok: true, message: '' };
+  }
+
+  /** `Get-ADTrust` — null if no trust with `remoteRealm` exists (or this server isn't a DC). */
+  getTrust(remoteRealm: string): TrustRecord | null {
+    return this.directoryStore?.getTrust(remoteRealm) ?? null;
+  }
+
+  listTrusts(): TrustInfo[] {
+    return this.directoryStore?.listTrusts() ?? [];
   }
 
   /**

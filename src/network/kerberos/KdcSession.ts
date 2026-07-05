@@ -18,13 +18,14 @@ import {
 } from './codec';
 import {
   NO_TICKET_FLAGS, PA_ENC_TIMESTAMP, PA_TGS_REQ, KrbErrorCode,
-  type KdcReq, type KdcRep, type Ticket, type EncTicketPart, type EncKdcRepPart,
+  type KdcReq, type KdcRep, type Ticket, type EncTicketPart, type EncKdcRepPart, type PrincipalName,
 } from './types';
 import {
   AES256_CTS_HMAC_SHA1_96, stringToKey, encryptWithUsage, decryptWithUsage,
   randomSessionKey, KU_PA_ENC_TIMESTAMP, KU_TICKET, KU_AS_REP_ENC_PART,
   KU_TGS_REQ_AUTHENTICATOR, KU_TGS_REP_ENC_PART,
 } from './crypto';
+import { deriveInterrealmKey, referralPrincipal } from './crossRealm';
 
 const TICKET_LIFETIME_SECONDS = 8 * 3600; // real Kerberos policy default-ish (10h in AD; kept simple here)
 const CLOCK_SKEW_SECONDS = 5 * 60; // RFC 4120 §5.2.7.2's usual 5-minute default
@@ -145,18 +146,43 @@ export class KdcSessionHandler {
     }
 
     const realm = this.ctx.store.getRealm();
-    const krbtgtSecret = this.ctx.store.getUserSecret('krbtgt');
-    if (krbtgtSecret === null) {
-      this.sendError(socket, req, KrbErrorCode.KDC_ERR_S_PRINCIPAL_UNKNOWN);
-      return;
-    }
-    const krbtgtKey = stringToKey(krbtgtSecret, realm);
 
     let apReq: ReturnType<typeof decodeApReq>;
-    let ticketPart: EncTicketPart;
     try {
       apReq = decodeApReq(paTgsReq.value);
-      ticketPart = decodeEncTicketPart(decryptWithUsage(krbtgtKey, KU_TICKET, apReq.ticket.encPart.cipher));
+    } catch {
+      this.sendError(socket, req, KrbErrorCode.KRB_AP_ERR_TKT_EXPIRED, 'Decryption failed');
+      return;
+    }
+
+    /**
+     * RFC 4120 §3.3.3 — a ticket whose own `realm` differs from ours is an
+     * inter-realm TGT presented back to us by a client that got it from
+     * `presentedRealm`'s KDC as a referral; it's encrypted under the
+     * shared interrealm key (PRD §5 P9), not our krbtgt secret.
+     */
+    const presentedRealm = apReq.ticket.realm;
+    const isInboundReferral = presentedRealm.toUpperCase() !== realm.toUpperCase();
+    let ticketDecryptKey: string;
+    if (isInboundReferral) {
+      const trust = this.ctx.store.getTrust(presentedRealm);
+      if (!trust || (trust.direction !== 'Inbound' && trust.direction !== 'Bidirectional')) {
+        this.sendError(socket, req, KrbErrorCode.KDC_ERR_POLICY, 'No trust path from the presenting realm');
+        return;
+      }
+      ticketDecryptKey = deriveInterrealmKey(trust.interrealmKey, presentedRealm, realm);
+    } else {
+      const krbtgtSecret = this.ctx.store.getUserSecret('krbtgt');
+      if (krbtgtSecret === null) {
+        this.sendError(socket, req, KrbErrorCode.KDC_ERR_S_PRINCIPAL_UNKNOWN);
+        return;
+      }
+      ticketDecryptKey = stringToKey(krbtgtSecret, realm);
+    }
+
+    let ticketPart: EncTicketPart;
+    try {
+      ticketPart = decodeEncTicketPart(decryptWithUsage(ticketDecryptKey, KU_TICKET, apReq.ticket.encPart.cipher));
     } catch {
       this.sendError(socket, req, KrbErrorCode.KRB_AP_ERR_TKT_EXPIRED, 'Decryption failed');
       return;
@@ -178,32 +204,53 @@ export class KdcSessionHandler {
       return;
     }
 
-    const serviceName = req.reqBody.sname.nameString[0];
-    const serviceSecret = serviceName === 'krbtgt' ? krbtgtSecret : this.ctx.store.getComputerSecret(serviceName);
-    if (serviceSecret === null) {
-      this.sendError(socket, req, KrbErrorCode.KDC_ERR_S_PRINCIPAL_UNKNOWN);
-      return;
-    }
-    const serviceKey = stringToKey(serviceSecret, realm);
-
     const sessionKey = randomSessionKey();
     const sessionKeyValue = new TextEncoder().encode(sessionKey);
     const endtime = Math.min(req.reqBody.till, ticketPart.endtime);
     const flags = { ...NO_TICKET_FLAGS, renewable: ticketPart.flags.renewable };
+
+    /**
+     * RFC 4120 §3.3.3 — the client wants a ticket for a realm other than
+     * ours: if a trust allows it, issue an inter-realm referral TGT
+     * (`krbtgt/<targetRealm>`, encrypted under the shared interrealm key)
+     * instead of resolving `sname` against our own computer accounts.
+     */
+    const targetRealm = req.reqBody.realm;
+    const isOutboundReferral = targetRealm.toUpperCase() !== realm.toUpperCase();
+    let sname: PrincipalName;
+    let serviceKey: string;
+    if (isOutboundReferral) {
+      const trust = this.ctx.store.getTrust(targetRealm);
+      if (!trust || (trust.direction !== 'Outbound' && trust.direction !== 'Bidirectional')) {
+        this.sendError(socket, req, KrbErrorCode.KDC_ERR_POLICY, 'No trust path to the target realm');
+        return;
+      }
+      sname = referralPrincipal(targetRealm);
+      serviceKey = deriveInterrealmKey(trust.interrealmKey, realm, targetRealm);
+    } else {
+      const serviceName = req.reqBody.sname.nameString[0];
+      const serviceSecret = serviceName === 'krbtgt' ? this.ctx.store.getUserSecret('krbtgt') : this.ctx.store.getComputerSecret(serviceName);
+      if (serviceSecret === null) {
+        this.sendError(socket, req, KrbErrorCode.KDC_ERR_S_PRINCIPAL_UNKNOWN);
+        return;
+      }
+      sname = req.reqBody.sname;
+      serviceKey = stringToKey(serviceSecret, realm);
+    }
 
     const encTicketPart: EncTicketPart = {
       flags, key: { keyType: AES256_CTS_HMAC_SHA1_96, keyValue: sessionKeyValue },
       crealm: ticketPart.crealm, cname: ticketPart.cname, authtime: ticketPart.authtime, starttime: now, endtime,
     };
     const ticket: Ticket = {
-      tktVno: 5, realm, sname: req.reqBody.sname,
+      tktVno: 5, realm, sname,
       encPart: { etype: AES256_CTS_HMAC_SHA1_96, cipher: encryptWithUsage(serviceKey, KU_TICKET, encodeEncTicketPart(encTicketPart)) },
     };
 
     const encKdcRepPart: EncKdcRepPart = {
       key: { keyType: AES256_CTS_HMAC_SHA1_96, keyValue: sessionKeyValue },
       nonce: req.reqBody.nonce, flags, authtime: ticketPart.authtime, starttime: now, endtime,
-      srealm: realm, sname: req.reqBody.sname,
+      srealm: realm, sname,
     };
     const rep: KdcRep = {
       msgType: 'TGS-REP', padata: [], crealm: ticketPart.crealm, cname: ticketPart.cname, ticket,

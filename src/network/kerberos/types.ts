@@ -122,6 +122,7 @@ export const enum KrbErrorCode {
   KDC_ERR_PREAUTH_FAILED = 24,
   KDC_ERR_PREAUTH_REQUIRED = 25,
   KRB_AP_ERR_TKT_EXPIRED = 32,
+  KDC_ERR_POLICY = 65,
 }
 
 export interface KrbError {

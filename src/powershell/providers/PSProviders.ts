@@ -233,11 +233,27 @@ export interface IAdProvider {
   ): AdOpResult;
   /** `Get-ADForest` — null if this server isn't a DC. */
   getForest(): AdForestInfo | null;
+
+  /** `New-ADTrust`/`netdom trust` (PRD-Windows-Server-Advanced.md §5 P9) — a simple trust with the domain reached at `remoteDcAddress`. */
+  newTrust(
+    remoteRealm: string, remoteDcAddress: string, direction: AdTrustInfo['direction'], transitive: boolean,
+    credentialUser: string, credentialPassword: string,
+  ): AdOpResult;
+  /** `Get-ADTrust -Identity <remoteRealm>` — null if no such trust exists (or this server isn't a DC). */
+  getTrust(remoteRealm: string): AdTrustInfo | null;
+  /** `Get-ADTrust` with no `-Identity`: every trust this DC knows about. */
+  listTrusts(): AdTrustInfo[];
 }
 
 export interface AdForestInfo {
   functionalLevel: string;
   domains: { dnsName: string; netbiosName: string; parentDnsName?: string }[];
+}
+
+export interface AdTrustInfo {
+  remoteRealm: string;
+  direction: 'Inbound' | 'Outbound' | 'Bidirectional';
+  transitive: boolean;
 }
 
 export interface AdSiteInfo { name: string; dn: string }
