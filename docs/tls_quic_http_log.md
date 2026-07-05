@@ -106,7 +106,7 @@ ci-dessous.
 | Phase | Contenu | Dépend de | Statut | Agent |
 |---|---|---|---|---|
 | P1 | Sémantique HTTP (9110) | — | ✅ terminé | Arthur |
-| P2 | HTTP/1.1 en clair (9112) | P1 | 🟡 en cours | Arthur |
+| P2 | HTTP/1.1 en clair (9112) | P1 | ✅ terminé | Arthur |
 | P3 | Cache (9111) | P1, P2 | ⬜ disponible | — |
 | P4 | Cookies (6265) | P2 | ⬜ disponible | — |
 | P5 | Authentification (7617/7616) | P2 | ⬜ disponible | — |
@@ -215,4 +215,18 @@ seulement le consommer.
   `src/network/http/http1/` uniquement — n'importe le noyau sémantique
   de P1 (`semantics/`) mais ne touche ni `HttpTypes.ts`/`HttpClient.ts`
   (migration en P12) ni `WindowsIisRole.ts`.
-- Statut / résultat : en cours.
+- Statut / résultat : ✅ terminé. 3 fichiers livrés
+  (`Http1Wire.ts`, `Http1ClientSession.ts`, `Http1ServerSession.ts`) +
+  `http1-wire.test.ts` (15 tests, round-trip encode/décode pur, chunked
+  + trailers, rejet 400 Content-Length/Transfer-Encoding incohérents,
+  et 5 tests d'intégration sur un vrai `TcpStack` câblé — port de test
+  8123, jamais 80/443 — couvrant connexion persistante réutilisée,
+  `Connection: close`, réponse chunked, et refus de connexion). `tsc`
+  et `eslint` propres. Non-régression confirmée (142 tests, 0 échec,
+  incluant `windows-iis-role`/`windows-server-iis`/`linux-commands-and-
+  oracle-tools`) — aucun fichier existant modifié.
+- Suggestion pour la suite : `PRD-HTTP.md`/P3 (cache, RFC 9111) et P4
+  (cookies) et P5 (auth) et P6 (WebSocket) dépendent tous de ce P2 et
+  sont maintenant disponibles en parallèle les uns des autres (aucune
+  dépendance croisée entre eux). P7 (HTTPS) reste bloqué sur
+  `PRD-TLS.md`.
