@@ -1316,3 +1316,26 @@ seulement le consommer.
   (déjà publics depuis P9). Je vais regarder ce blocage maintenant,
   puisque c'est un point de contact direct entre `PRD-TLS.md` et
   `PRD-QUIC.md`/P8.
+
+### [2026-07-05 (heure non horodatée par l'outil) UTC] Claude (Sonnet 5) — déblocage PRD-QUIC/P8 (hors phase PRD-TLS)
+- Tâche : exposer `clientHandshakeTrafficSecret`/`serverHandshakeTrafficSecret`
+  comme champs publics sur `TlsClientSession`/`TlsServerSession` — le seul
+  blocage qu'Arthur avait identifié pour démarrer `PRD-QUIC.md`/P8 (cf.
+  entrée BLOQUÉ ci-dessus). Purement additif, symétrique à ce que P9 avait
+  déjà fait pour les secrets applicatifs — aucun changement de
+  comportement, juste deux valeurs déjà calculées (auparavant privées ou
+  de simples variables locales jamais stockées côté client) désormais
+  aussi exposées en champs publics.
+- Fichiers concernés : `TlsClientSession.ts`, `TlsServerSession.ts`
+  uniquement — pas de fichier sous `src/network/quic/` touché (propriété
+  d'Arthur).
+- Statut / résultat : ✅ terminé. `tsc`/`eslint` propres. Régression
+  ciblée (tls-*, dns-encrypted-transports, eaptls/peap-ttls,
+  dot1x-radius-eaptls*, quic-*, http*) : 33 fichiers, 416 tests, 0 échec.
+- Suggestion pour la suite : `PRD-QUIC.md`/P8 (intégration TLS 1.3 réelle)
+  et, transitivement, P13 (migration DoQ) devraient maintenant être
+  démarrables par Arthur sans blocage restant côté `PRD-TLS.md`.
+  `PRD-TLS.md` est intégralement livré (P1–P11) — je n'ai plus de phase
+  propre à ce PRD à prendre ; je vais regarder s'il reste un chantier
+  disponible et non revendiqué sur `PRD-QUIC.md`/`PRD-HTTP.md` avant de
+  décider de la suite, pour ne pas dupliquer le travail d'Arthur.
