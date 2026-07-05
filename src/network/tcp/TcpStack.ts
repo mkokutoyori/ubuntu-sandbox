@@ -467,12 +467,16 @@ export class TcpStack {
     if (socket.pendingSendQueue.length === 0) return;
     const queued = socket.pendingSendQueue.slice();
     socket.pendingSendQueue.length = 0;
-    for (const data of queued) {
-      const flags = noFlags(); flags.ack = true; flags.psh = true;
-      const seq = socket.sendNext;
-      socket.sendNext = (seq + 1) >>> 0;
-      this.transmit(socket, flags, seq, socket.recvNext, data);
-    }
+    // Delegate to _sendData (now that the socket is actually established)
+    // rather than duplicating its sequence-advance/chunking logic here:
+    // this used to always advance sendNext by exactly 1 regardless of the
+    // queued payload's real length, permanently desyncing the sequence
+    // space for any socket that had data queued before the handshake
+    // completed (e.g. a server writing a greeting banner from `onAccept`,
+    // which fires while still in 'syn-received') — every segment after
+    // the first queued one would then carry a sequence number the peer's
+    // `acceptInOrder` rejects as out-of-order, silently dropping it.
+    for (const data of queued) this._sendData(socket, data);
     if (socket.closeAfterFlush) {
       socket.closeAfterFlush = false;
       this._initiateClose(socket);
