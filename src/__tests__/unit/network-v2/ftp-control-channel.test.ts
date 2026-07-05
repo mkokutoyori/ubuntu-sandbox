@@ -7,6 +7,8 @@ import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';
 import { FtpServer, FTP_CONTROL_PORT } from '@/network/ftp/FtpServer';
 import { FtpClientSession } from '@/network/ftp/FtpClientSession';
+import { VirtualFileSystem } from '@/network/devices/linux/VirtualFileSystem';
+import { LinuxSftpFSAdapter } from '@/network/protocols/ssh/sftp/LinuxSftpFSAdapter';
 
 beforeEach(() => {
   resetCounters();
@@ -22,10 +24,11 @@ function buildTopology() {
   new Cable('c1').connect(pc.getPort('eth0')!, srv.getPort('eth0')!);
 
   const users = new Map([['alice', 'wonderland']]);
-  const server = new FtpServer(srv.getTcpStack(), { users });
+  const fs = new LinuxSftpFSAdapter(new VirtualFileSystem(), 1000, 1000);
+  const server = new FtpServer(srv.getTcpStack(), '10.0.1.10', { users, fs });
   server.start();
 
-  const client = new FtpClientSession(pc.getTcpStack(), '10.0.1.10');
+  const client = new FtpClientSession(pc.getTcpStack(), '10.0.1.10', '10.0.1.2');
   return { pc, srv, server, client };
 }
 
