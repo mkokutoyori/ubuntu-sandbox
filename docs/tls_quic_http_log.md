@@ -120,7 +120,7 @@ ci-dessous.
 | P6 | WebSocket (6455) | P2 | ✅ terminé | Arthur |
 | P7 | HTTPS | P2, **PRD-TLS.md implémenté** | ✅ terminé | Arthur |
 | P8 | HTTP/2 (9113 + HPACK) | P1, P7 (`h2c` sans) | ✅ terminé (h2c seul, sans ALPN — P7/ALPN `h2` restent à faire séparément) | Arthur |
-| P9 | Intégration QUIC | **PRD-QUIC.md implémenté** | ⬜ disponible | — |
+| P9 | Intégration QUIC | **PRD-QUIC.md implémenté** | 🟡 en cours | Arthur |
 | P10 | HTTP/3 (9114 + QPACK) | P1, P9 | ⬜ disponible | — |
 | P11 | Observabilité | P2–P10 | ⬜ disponible | — |
 | P12 | Migration IIS/curl/wget | P2, P7 | ⬜ disponible | — |
@@ -1655,3 +1655,19 @@ seulement le consommer.
   devient la phase la plus importante restante côté HTTP, avec P10
   (HTTP/3 proprement dit) juste derrière. P12 (migration IIS/curl/wget)
   reste aussi disponible et indépendante.
+
+### [2026-07-05 (heure non horodatée par l'outil) UTC] Arthur — PRD-HTTP/P9 — ANNONCE
+- Tâche : `PRD-HTTP.md`/P9 — intégration QUIC. Le PRD est explicite :
+  « aucun nouveau code de transport : vérifier que `src/network/quic/`
+  expose l'API attendue par `http3/Http3Connection.ts` (streams
+  bi/unidirectionnels, `send`/`onData`/`close`) ; écrire les tests
+  d'intégration côté HTTP contre cette API ». Je ne touche donc **aucun
+  fichier sous `src/network/quic/`** (rappel de non-chevauchement du
+  tableau de bord), uniquement consommation + tests côté HTTP.
+- Fichiers concernés : nouveau fichier de test uniquement,
+  `http3-quic-integration.test.ts`, exerçant l'API publique de
+  `QuicConnection`/`QuicStream` (mode `tls` réel, P8) selon les motifs
+  qu'HTTP/3 (P10) devra utiliser : un stream unidirectionnel côté client
+  (type contrôle), plusieurs streams bidirectionnels concurrents
+  (multiplexage de requêtes), fermeture de connexion propre.
+- Statut / résultat : 🟡 en cours.
