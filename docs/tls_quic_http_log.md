@@ -109,7 +109,7 @@ ci-dessous.
 | P2 | HTTP/1.1 en clair (9112) | P1 | ✅ terminé | Arthur |
 | P3 | Cache (9111) | P1, P2 | ✅ terminé | Arthur |
 | P4 | Cookies (6265) | P2 | ✅ terminé | Arthur |
-| P5 | Authentification (7617/7616) | P2 | 🟡 en cours | Arthur |
+| P5 | Authentification (7617/7616) | P2 | ✅ terminé | Arthur |
 | P6 | WebSocket (6455) | P2 | ⬜ disponible | — |
 | P7 | HTTPS | P2, **PRD-TLS.md implémenté** | ⬜ disponible | — |
 | P8 | HTTP/2 (9113 + HPACK) | P1, P7 (`h2c` sans) | ⬜ disponible | — |
@@ -318,4 +318,17 @@ seulement le consommer.
   et SHA-256) utilisés tels quels.
 - Fichiers concernés : nouveaux fichiers sous
   `src/network/http/auth/` uniquement — purement additif.
-- Statut / résultat : en cours.
+- Statut / résultat : ✅ terminé. 2 fichiers livrés (`BasicAuth.ts`,
+  `DigestAuth.ts`) + `http-auth.test.ts` (17 tests : round-trip Basic,
+  mot de passe contenant `:`, échec sur mauvais mot de passe, les deux
+  vecteurs officiels RFC 2617/7616 Annexe B — MD5 `6629fae4...` et
+  SHA-256 `753927fa...` — recalculés indépendamment via le module
+  `crypto` natif de Node avant écriture des tests pour confirmer que
+  `md5Hex`/`sha256Hex` du projet sont bit-exacts, cycle client→serveur
+  MD5/SHA-256, échec si méthode différente, détection de rejeu `nc`
+  (répété ou décroissant) par nonce). `tsc` et `eslint` propres.
+  Non-régression confirmée (131 tests, 0 échec) — aucun fichier
+  existant modifié.
+- Suggestion pour la suite : `PRD-HTTP.md`/P6 (WebSocket, RFC 6455)
+  reste disponible, sans dépendance croisée avec ce P5. P7 (HTTPS)
+  reste bloqué sur `PRD-TLS.md`.
