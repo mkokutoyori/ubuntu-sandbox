@@ -76,6 +76,15 @@ export class TlsServerSession {
    */
   clientApplicationTrafficSecret: string | null = null;
   serverApplicationTrafficSecret: string | null = null;
+  /**
+   * RFC 9001 §5.3 — the Handshake-space secrets (`client_handshake_traffic_secret`/
+   * `server_handshake_traffic_secret`), set once the server flight is built.
+   * Exposed for consumers deriving Handshake-space keys on top of this
+   * engine (e.g. QUIC's `PacketProtection.ts`), not just this module's own
+   * Finished computation.
+   */
+  clientHandshakeTrafficSecret: string | null = null;
+  serverHandshakeTrafficSecret: string | null = null;
   /** Stable per-connection correlator for `events.ts` payloads (§2.1.12). */
   readonly sessionId = randomNonce('tls-session');
 
@@ -83,7 +92,6 @@ export class TlsServerSession {
   private readonly cipherSuitePreference: readonly CipherSuite[];
   private readonly supportedGroups: readonly string[];
   private readonly alpnProtocols: readonly string[];
-  private clientHandshakeTrafficSecret: string | null = null;
   private resumptionMasterSecret: string | null = null;
   private earlyDataAccepted = false;
   private sessionResumed = false;
@@ -203,6 +211,7 @@ export class TlsServerSession {
       pskInput, dheSharedSecret,
     );
     this.clientHandshakeTrafficSecret = handshakePhase.clientHandshakeTrafficSecret;
+    this.serverHandshakeTrafficSecret = handshakePhase.serverHandshakeTrafficSecret;
     this.resumptionMasterSecret = handshakePhase.resumptionMasterSecret;
     this.clientApplicationTrafficSecret = handshakePhase.clientApplicationTrafficSecret;
     this.serverApplicationTrafficSecret = handshakePhase.serverApplicationTrafficSecret;
