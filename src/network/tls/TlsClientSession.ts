@@ -26,6 +26,7 @@ import {
 } from './messages';
 import { fragmentAsRecords, reassembleRecords, splitLeadingContentType, type TlsRecord } from './recordLayer';
 import { deriveKeySchedule, computeFinished, transcriptHash, ZERO_IKM } from './keySchedule';
+import { certificateAlert, fatalAlert, type AlertDescription, type TlsAlert } from './alerts';
 
 export interface TlsClientConfig {
   readonly verifier: CertificateVerifier;
@@ -41,6 +42,8 @@ type ClientState = 'idle' | 'awaiting-server-flight' | 'done';
 
 export class TlsClientSession {
   result: 'success' | 'failure' | null = null;
+  /** RFC 8446 §6 alert explaining the last failure, if any. */
+  lastAlert: TlsAlert | null = null;
 
   private state: ClientState = 'idle';
   private readonly supportedGroups: readonly string[];
@@ -80,11 +83,12 @@ export class TlsClientSession {
     try {
       return this.handleServerMessage(incoming);
     } catch {
-      return this.fail();
+      return this.fail('decode_error');
     }
   }
 
-  private fail(): null {
+  private fail(description: AlertDescription = 'handshake_failure'): null {
+    this.lastAlert = fatalAlert(description);
     this.state = 'done';
     this.result = 'failure';
     return null;
@@ -93,16 +97,16 @@ export class TlsClientSession {
   private handleServerMessage(incoming: readonly TlsRecord[]): readonly TlsRecord[] | null {
     const { leading, rest } = splitLeadingContentType(incoming, 'handshake');
     const { contentType: leadType, plaintext: leadBytes } = reassembleRecords(leading, false);
-    if (leadType !== 'handshake') return this.fail();
+    if (leadType !== 'handshake') return this.fail('decode_error');
     const leadMessage = decodeHandshakeMessage(leadBytes);
 
     if (leadMessage.kind === 'hello_retry_request') {
-      if (rest.length > 0) return this.fail();
-      if (!this.supportedGroups.includes(leadMessage.selectedGroup)) return this.fail();
+      if (rest.length > 0) return this.fail('unexpected_message');
+      if (!this.supportedGroups.includes(leadMessage.selectedGroup)) return this.fail('handshake_failure');
       this.transcript.push(leadBytes);
       return this.sendClientHello(leadMessage.selectedGroup);
     }
-    if (leadMessage.kind !== 'server_hello') return this.fail();
+    if (leadMessage.kind !== 'server_hello') return this.fail('unexpected_message');
 
     return this.handleServerFlight(leadMessage, leadBytes, rest);
   }
@@ -113,7 +117,7 @@ export class TlsClientSession {
     this.transcript.push(serverHelloBytes);
 
     const { contentType: bundleType, plaintext: bundleBytes } = reassembleRecords(rest, true);
-    if (bundleType !== 'handshake') return this.fail();
+    if (bundleType !== 'handshake') return this.fail('decode_error');
     const messages = decodeMessages(bundleBytes);
 
     const encryptedExtensions = messages.find((m): m is EncryptedExtensionsMessage => m.kind === 'encrypted_extensions');
@@ -121,7 +125,7 @@ export class TlsClientSession {
     const certificate = messages.find((m): m is CertificateMessage => m.kind === 'certificate');
     const certificateVerify = messages.find((m): m is CertificateVerify => m.kind === 'certificate_verify');
     const serverFinished = messages.find((m): m is Finished => m.kind === 'finished');
-    if (!encryptedExtensions || !certificate || !certificateVerify || !serverFinished) return this.fail();
+    if (!encryptedExtensions || !certificate || !certificateVerify || !serverFinished) return this.fail('unexpected_message');
 
     const dheSharedSecret = simulatedDigest(
       [this.clientRandom, serverHello.random, this.clientKeyShare, serverHello.extensions.keyShare ?? ''].join('|'),
@@ -132,19 +136,26 @@ export class TlsClientSession {
     );
 
     const leafCert = certificate.certificateList[0];
-    if (!leafCert || !this.config.verifier.verify(leafCert).ok) return this.fail();
+    if (!leafCert) return this.fail('certificate_unknown');
+    const verification = this.config.verifier.verify(leafCert);
+    if (!verification.ok) {
+      this.lastAlert = certificateAlert(verification.reason);
+      this.state = 'done';
+      this.result = 'failure';
+      return null;
+    }
 
     this.transcript.push(encodeHandshakeMessage(encryptedExtensions));
     if (certificateRequest) this.transcript.push(encodeHandshakeMessage(certificateRequest));
     this.transcript.push(encodeHandshakeMessage(certificate));
 
     const preVerify = transcriptHash(this.transcript);
-    if (!PkiKeyPair.verify(leafCert.publicKey, preVerify, certificateVerify.signature)) return this.fail();
+    if (!PkiKeyPair.verify(leafCert.publicKey, preVerify, certificateVerify.signature)) return this.fail('decrypt_error');
     this.transcript.push(encodeHandshakeMessage(certificateVerify));
 
     const preFinished = transcriptHash(this.transcript);
     const expectedServerFinished = computeFinished(handshakePhase.serverHandshakeTrafficSecret, preFinished);
-    if (serverFinished.verifyData !== expectedServerFinished) return this.fail();
+    if (serverFinished.verifyData !== expectedServerFinished) return this.fail('decrypt_error');
     this.transcript.push(encodeHandshakeMessage(serverFinished));
 
     const finalBundle: TlsHandshakeMessage[] = [];
