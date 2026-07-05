@@ -106,7 +106,7 @@ ci-dessous.
 | P10 | Retry & validation d'adresse | P7 | ✅ terminé | Arthur |
 | P11 | Connection IDs multiples | P7 | ✅ terminé | Arthur |
 | P12 | Observabilité | P4–P11 | ✅ terminé | Arthur |
-| P13 | Migration DoQ | P8, P6 | ⬜ disponible | — |
+| P13 | Migration DoQ | P8, P6 | 🟡 en cours | Arthur |
 
 ### `docs/PRD-HTTP.md` — dépend de PRD-TLS.md (P7) et PRD-QUIC.md (P9, P10)
 
@@ -1580,3 +1580,33 @@ seulement le consommer.
   IIS/curl/wget) et P9 (intégration QUIC pour HTTP/3, maintenant que
   `PRD-QUIC.md` est presque intégralement livré — il ne reste que P12
   Observabilité et P13 Migration DoQ) devraient être réexaminées bientôt.
+
+### [2026-07-05 (heure non horodatée par l'outil) UTC] Arthur — PRD-QUIC/P13 — ANNONCE
+- Tâche : `PRD-QUIC.md`/P13 — migration de `DnsQuicTransport.ts` (DoQ,
+  RFC 9250) sur `QuicConnection`/`QuicStream` réels, à la place du stand-in
+  actuel (un datagramme UDP = un message applicatif chiffré par XOR via
+  `SimulatedTls.ts`, aucun format de paquet QUIC réel). DNS encapsulé en
+  stream préfixé-longueur (RFC 9250 §4.2, même principe que DNS-sur-TCP
+  RFC 1035 §4.2.2 : 2 octets de longueur big-endian + message DNS),
+  passage d'un modèle « une connexion par requête » à « une connexion
+  réutilisée, streams multiplexés » (un nouveau stream bidirectionnel
+  client par requête, RFC 9250 §5.1).
+- Limite déjà présente dans `QuicConnection.ts` depuis P1-P9, non
+  introduite ici : un objet `QuicConnection` représente une seule connexion
+  point-à-point (lié à un port UDP via `host.udpBind`, pas un motif
+  listener/accept multi-clients comme `TcpStack`). Le stand-in actuel de
+  DoQ supportait implicitement plusieurs clients concurrents (dcid/
+  clientRandom encodés dans chaque datagramme) ; la migration réduit ce
+  périmètre à un client à la fois par instance serveur — cohérent avec la
+  portée déjà couverte par la suite de tests (`DnsQuicClient` unique),
+  documenté explicitement comme simplification plutôt que découvert en
+  cours de route.
+- Fichiers concernés : réécriture de `DnsQuicTransport.ts` sur
+  `QuicConnection` — `bindDnsQuicServer`/`unbindDnsQuicServer`/
+  `DnsQuicClient`/`queryDnsOverQuic` avec un nouveau paramètre `tlsConfig`
+  requis (certificat/clé serveur, `CertificateVerifier` client), comme
+  pour la migration DoH (P13 de `PRD-HTTP.md`). Mise à jour de
+  `dns-encrypted-transports.test.ts` (section DoQ + parité de transport)
+  pour fournir une CA/un certificat/un verifier — assertions observables
+  inchangées.
+- Statut / résultat : 🟡 en cours.
