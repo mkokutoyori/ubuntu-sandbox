@@ -4,15 +4,25 @@
  *
  * Pulls and pushes go through the SAME orchestrator: the source endpoint
  * decides which side reads, the destination decides which side writes.
- * `-r` recurses into directories, `-p` preserves mtime + mode, `-q` is
- * honoured by callers who want to suppress the summary line.
+ * `-r` recurses into directories, `-p` preserves mode (real scp also
+ * preserves mtime via a `T` control line this codec's target model
+ * doesn't carry, §4.9), `-q` is honoured by callers who want to
+ * suppress the summary line.
+ *
+ * §2.1.20/P19: the actual copy now goes through `ScpWireTransfer`
+ * (the real `C`/`D`/`E` control-line + ack-byte wire protocol,
+ * `ScpWireCodec.ts`/§2.1.19/P18) instead of calling `readFile`/
+ * `writeFile` directly — this class's own public surface
+ * (`run()`/`ScpTransferOptions`/`ScpTransferResult`) is unchanged, only
+ * the internal mechanism moved onto the real wire sequence.
  *
  * Designed in the SFTP layer so it works the same against any
  * ISftpFileSystem — Linux VFS, Windows NTFS adapter, Cisco flash:, etc.
  */
 
-import type { ISftpFileSystem, SftpDirEntry } from '../sftp/ISftpFileSystem';
+import type { ISftpFileSystem } from '../sftp/ISftpFileSystem';
 import type { ScpEndpoint } from '../Scp';
+import { ScpWireTransfer } from './ScpWireTransfer';
 
 export interface ScpTransferOptions {
   readonly recursive: boolean;
@@ -57,110 +67,29 @@ export class ScpTransfer {
   private push(): ScpTransferResult {
     const srcAbs = this.fs.local.normalizePath(this.source.path, this.opts.localCwd);
     const dstAbs = this.fs.remote.normalizePath(this.destination.path, this.opts.remoteCwd);
-    const type = this.fs.local.getEntryType(srcAbs);
-    if (type === null) return this.fail(`${srcAbs}: No such file or directory`);
-    if (type === 'directory' && !this.opts.recursive) {
-      return this.fail(`${srcAbs}: not a regular file`);
-    }
-    if (type === 'directory') return this.pushDir(srcAbs, dstAbs);
-    return this.pushFile(srcAbs, dstAbs);
+    return this.runWire(this.fs.local, this.fs.remote, srcAbs, dstAbs);
   }
 
   private pull(): ScpTransferResult {
     const srcAbs = this.fs.remote.normalizePath(this.source.path, this.opts.remoteCwd);
     const dstAbs = this.fs.local.normalizePath(this.destination.path, this.opts.localCwd);
-    const type = this.fs.remote.getEntryType(srcAbs);
+    return this.runWire(this.fs.remote, this.fs.local, srcAbs, dstAbs);
+  }
+
+  private runWire(src: ISftpFileSystem, dst: ISftpFileSystem, srcAbs: string, dstAbs: string): ScpTransferResult {
+    const type = src.getEntryType(srcAbs);
     if (type === null) return this.fail(`${srcAbs}: No such file or directory`);
     if (type === 'directory' && !this.opts.recursive) {
       return this.fail(`${srcAbs}: not a regular file`);
     }
-    if (type === 'directory') return this.pullDir(srcAbs, dstAbs);
-    return this.pullFile(srcAbs, dstAbs);
-  }
-
-  private pushFile(srcAbs: string, dstAbs: string): ScpTransferResult {
-    const data = this.fs.local.readFile(srcAbs);
-    if (!data.ok) return this.fail(`read ${srcAbs}`);
-    const finalDst = this.fs.remote.getEntryType(dstAbs) === 'directory'
-      ? `${dstAbs.replace(/\/$/, '')}/${baseName(srcAbs)}`
-      : dstAbs;
-    const w = this.fs.remote.writeFile(finalDst, data.value);
-    if (!w.ok) return this.fail(`write ${finalDst}`);
-    this.preserveAttrs(this.fs.local, this.fs.remote, srcAbs, finalDst);
-    const size = data.value.length;
-    return this.summary(1, size, srcAbs);
-  }
-
-  private pullFile(srcAbs: string, dstAbs: string): ScpTransferResult {
-    const data = this.fs.remote.readFile(srcAbs);
-    if (!data.ok) return this.fail(`read ${srcAbs}`);
-    const finalDst = this.fs.local.getEntryType(dstAbs) === 'directory'
-      ? `${dstAbs.replace(/\/$/, '')}/${baseName(srcAbs)}`
-      : dstAbs;
-    const w = this.fs.local.writeFile(finalDst, data.value);
-    if (!w.ok) return this.fail(`write ${finalDst}`);
-    this.preserveAttrs(this.fs.remote, this.fs.local, srcAbs, finalDst);
-    const size = data.value.length;
-    return this.summary(1, size, srcAbs);
-  }
-
-  private pushDir(srcAbs: string, dstAbs: string): ScpTransferResult {
-    this.fs.remote.mkdir(dstAbs);
-    const entries = this.fs.local.listDirectory(srcAbs);
-    if (!entries.ok) return this.fail(`read dir ${srcAbs}`);
-    let files = 0, bytes = 0;
-    for (const e of entries.value) {
-      const sub = this.recurse(this.fs.local, this.fs.remote, `${srcAbs}/${e.name}`, `${dstAbs}/${e.name}`, e);
-      files += sub.filesTransferred;
-      bytes += sub.bytesTransferred;
-      if (!sub.ok) return sub;
+    const result = new ScpWireTransfer(src, dst).push(srcAbs, dstAbs, {
+      recursive: this.opts.recursive,
+      preserve: this.opts.preserve,
+    });
+    if (!result.ok) {
+      return { ok: false, filesTransferred: 0, bytesTransferred: 0, summary: '', error: result.error };
     }
-    return this.summary(files, bytes, srcAbs);
-  }
-
-  private pullDir(srcAbs: string, dstAbs: string): ScpTransferResult {
-    this.fs.local.mkdir(dstAbs);
-    const entries = this.fs.remote.listDirectory(srcAbs);
-    if (!entries.ok) return this.fail(`read dir ${srcAbs}`);
-    let files = 0, bytes = 0;
-    for (const e of entries.value) {
-      const sub = this.recurse(this.fs.remote, this.fs.local, `${srcAbs}/${e.name}`, `${dstAbs}/${e.name}`, e);
-      files += sub.filesTransferred;
-      bytes += sub.bytesTransferred;
-      if (!sub.ok) return sub;
-    }
-    return this.summary(files, bytes, srcAbs);
-  }
-
-  private recurse(
-    src: ISftpFileSystem, dst: ISftpFileSystem,
-    srcAbs: string, dstAbs: string, entry: SftpDirEntry,
-  ): ScpTransferResult {
-    if (entry.type === 'directory') {
-      dst.mkdir(dstAbs);
-      const sub = src.listDirectory(srcAbs);
-      if (!sub.ok) return this.fail(`read dir ${srcAbs}`);
-      let files = 0, bytes = 0;
-      for (const e of sub.value) {
-        const r = this.recurse(src, dst, `${srcAbs}/${e.name}`, `${dstAbs}/${e.name}`, e);
-        files += r.filesTransferred; bytes += r.bytesTransferred;
-        if (!r.ok) return r;
-      }
-      return { ok: true, filesTransferred: files, bytesTransferred: bytes, summary: '' };
-    }
-    const data = src.readFile(srcAbs);
-    if (!data.ok) return this.fail(`read ${srcAbs}`);
-    const w = dst.writeFile(dstAbs, data.value);
-    if (!w.ok) return this.fail(`write ${dstAbs}`);
-    this.preserveAttrs(src, dst, srcAbs, dstAbs);
-    return { ok: true, filesTransferred: 1, bytesTransferred: data.value.length, summary: '' };
-  }
-
-  private preserveAttrs(src: ISftpFileSystem, dst: ISftpFileSystem, srcAbs: string, dstAbs: string): void {
-    if (!this.opts.preserve) return;
-    const stat = src.stat(srcAbs);
-    if (!stat.ok) return;
-    dst.setPermissions(dstAbs, stat.value.mode);
+    return this.summary(result.filesTransferred, result.bytesTransferred, srcAbs);
   }
 
   private summary(files: number, bytes: number, src: string): ScpTransferResult {
@@ -176,12 +105,6 @@ export class ScpTransfer {
   private fail(error: string): ScpTransferResult {
     return { ok: false, filesTransferred: 0, bytesTransferred: 0, summary: '', error };
   }
-}
-
-function baseName(p: string): string {
-  const trimmed = p.replace(/\/+$/, '');
-  const i = trimmed.lastIndexOf('/');
-  return i >= 0 ? trimmed.slice(i + 1) : trimmed;
 }
 
 function scaleRate(bytes: number): string {
