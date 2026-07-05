@@ -67,6 +67,15 @@ export interface ReplicationPullResult {
   applied: number;
 }
 
+/** PRD-Windows-Server-Advanced.md §5 P6 — one past replication cycle, annotated by site (a minimal stand-in for a real replication event log; full observability arrives at §5 P12). */
+export interface ReplicationLogEntry {
+  readonly timestamp: number;
+  readonly partnerAddress: string;
+  readonly applied: number;
+  readonly ok: boolean;
+  readonly siteRelation: 'intra-site' | 'inter-site';
+}
+
 /**
  * One replication cycle: dial `partnerIp`'s TCP/135, send this DC's
  * outbound high-watermark vector, and apply every object the partner

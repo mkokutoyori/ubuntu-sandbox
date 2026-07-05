@@ -119,6 +119,7 @@ import {
   NewADGroupCmdlet, GetADGroupCmdlet, AddADGroupMemberCmdlet, RemoveADGroupMemberCmdlet,
   GetADComputerCmdlet,
   NewADOrganizationalUnitCmdlet, GetADOrganizationalUnitCmdlet,
+  NewADReplicationSiteCmdlet, GetADReplicationSiteCmdlet, NewADReplicationSubnetCmdlet,
 } from './ActiveDirectoryCmdlets';
 import { AddComputerCmdlet } from './ComputerCmdlets';
 import {
@@ -376,6 +377,9 @@ export function registerCoreCmdlets(registry: CmdletRegistry): void {
   registry.register(new InstallADDSForestCmdlet());
   registry.register(new InstallADDSDomainControllerCmdlet());
   registry.register(new GetADDomainControllerCmdlet());
+  registry.register(new NewADReplicationSiteCmdlet());
+  registry.register(new GetADReplicationSiteCmdlet());
+  registry.register(new NewADReplicationSubnetCmdlet());
   registry.register(new NewADUserCmdlet());
   registry.register(new GetADUserCmdlet());
   registry.register(new SetADUserCmdlet());

@@ -51,7 +51,7 @@ import type {
   IRemotingProvider, IRemoteComputer,
   IRoleProvider, WindowsFeatureInfo,
   ISmbProvider, SmbShareInfo, SmbSessionInfo,
-  IAdProvider, AdUserInfo, AdGroupInfo, AdComputerInfo, AdOrgUnitInfo, AdOpResult,
+  IAdProvider, AdUserInfo, AdGroupInfo, AdComputerInfo, AdOrgUnitInfo, AdOpResult, AdSiteInfo,
   IComputerProvider, DomainMembershipInfo,
   IGpoProvider, GpoInfo,
   IIisProvider, IisOpResult, WebsiteInfo,
@@ -457,6 +457,23 @@ class WindowsAdAdapter implements IAdProvider {
     const store = this.requireStore('Get-ADOrganizationalUnit');
     const ou = store.getOrgUnit(store.resolveIdentity(identity));
     return ou ? { name: ou.name, dn: ou.dn, gpLinks: [...ou.gpLinks] } : null;
+  }
+
+  newReplicationSite(name: string): AdOpResult {
+    const store = this.requireStore('New-ADReplicationSite');
+    const denied = this.requireAdmin('New-ADReplicationSite');
+    if (denied) return denied;
+    return store.newSite(name);
+  }
+  listReplicationSites(): AdSiteInfo[] {
+    const store = this.requireStore('Get-ADReplicationSite');
+    return store.listSites();
+  }
+  newReplicationSubnet(cidr: string, siteName: string): AdOpResult {
+    const store = this.requireStore('New-ADReplicationSubnet');
+    const denied = this.requireAdmin('New-ADReplicationSubnet');
+    if (denied) return denied;
+    return store.newSubnet(cidr, siteName);
   }
 }
 

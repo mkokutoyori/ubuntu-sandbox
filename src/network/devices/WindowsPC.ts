@@ -81,7 +81,10 @@ import { LdapServerHandler } from './windows/server/ad/ldap/LdapServer';
 import { KdcSessionHandler } from '@/network/kerberos/KdcSession';
 import { dialKdc } from '@/network/kerberos/KerberosClient';
 import { KerberosTicketCache } from '@/network/kerberos/KerberosTicketCache';
-import { ReplicationServerHandler, AD_REPLICATION_PORT, pullReplication, type ReplicationPullResult } from './windows/server/ad/replication/ReplicationSession';
+import {
+  ReplicationServerHandler, AD_REPLICATION_PORT, pullReplication,
+  type ReplicationPullResult, type ReplicationLogEntry,
+} from './windows/server/ad/replication/ReplicationSession';
 import { dialWinRm, type WinRmDialResult } from './windows/server/winrm/WinRmClient';
 import { type DomainMembership, type DomainSession, parseDomainQualifiedUser } from './windows/domain/DomainTypes';
 import { joinDomain, type DomainJoinResult } from './windows/domain/DomainJoinClient';
@@ -182,6 +185,8 @@ export class WindowsPC extends EndHost implements UserAccountHost {
   private domainSession: DomainSession | null = null;
   /** Real Kerberos ticket cache (PRD-Windows-Server-Advanced.md §5 P2) — populated by an actual AS exchange as a side effect of domain logon, backing `klist`. */
   private readonly kerberosTicketCache: KerberosTicketCache = new KerberosTicketCache();
+  /** One entry per `replicateFrom` cycle, annotated intra-/inter-site (PRD-Windows-Server-Advanced.md §5 P6) — this simulator's minimal stand-in for a real replication event log (full observability arrives at §5 P12). */
+  private readonly replicationLog: ReplicationLogEntry[] = [];
   /** LSA account policy mirrored by `net accounts`. */
   readonly accountsPolicy: WindowsAccountsPolicy = new WindowsAccountsPolicy();
   /** cmd.exe doskey macro table. */
@@ -464,8 +469,21 @@ export class WindowsPC extends EndHost implements UserAccountHost {
   replicateFrom(partnerIp: string): ReplicationPullResult {
     const store = this.getDirectoryStore();
     if (!store) return { ok: false, error: 'This computer is not a domain controller.', applied: 0 };
-    return pullReplication(this.getTcpStack(), partnerIp, store);
+    const result = pullReplication(this.getTcpStack(), partnerIp, store);
+
+    const ownIp = this.getInterfaces().map(p => p.getIPAddress()).find((ip): ip is NonNullable<typeof ip> => ip !== null)?.toString();
+    const ownSite = ownIp ? store.siteForIp(ownIp) : null;
+    const partnerSite = store.siteForIp(partnerIp);
+    const siteRelation: 'intra-site' | 'inter-site' =
+      ownSite !== null && partnerSite !== null && ownSite !== partnerSite ? 'inter-site' : 'intra-site';
+    this.replicationLog.push({
+      timestamp: Math.floor(Date.now() / 1000), partnerAddress: partnerIp, applied: result.applied, ok: result.ok, siteRelation,
+    });
+    return result;
   }
+
+  /** PRD-Windows-Server-Advanced.md §5 P6 — every past `replicateFrom` cycle, annotated intra-/inter-site. */
+  getReplicationLog(): readonly ReplicationLogEntry[] { return this.replicationLog; }
 
   /** Best-effort reverse DNS for the SMB session table's ClientComputerName column. */
   private reverseLookupClient(ip: string): string {

@@ -213,7 +213,16 @@ export interface IAdProvider {
 
   newOrganizationalUnit(name: string, path?: string): AdOpResult;
   getOrganizationalUnit(identity: string): AdOrgUnitInfo | null;
+
+  /** `New-ADReplicationSite` (PRD-Windows-Server-Advanced.md §5 P6). */
+  newReplicationSite(name: string): AdOpResult;
+  /** `Get-ADReplicationSite` (no `-Identity`: every site this DC knows about). */
+  listReplicationSites(): AdSiteInfo[];
+  /** `New-ADReplicationSubnet -Name <cidr> -Site <site>`. */
+  newReplicationSubnet(cidr: string, siteName: string): AdOpResult;
 }
+
+export interface AdSiteInfo { name: string; dn: string }
 
 export interface DomainMembershipInfo { dnsName: string; netbiosName: string; dcAddress: string }
 

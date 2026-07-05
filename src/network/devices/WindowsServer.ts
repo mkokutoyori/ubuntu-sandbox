@@ -29,6 +29,9 @@ import { pullReplication } from './windows/server/ad/replication/ReplicationSess
 
 export interface AdDsOpResult { ok: boolean; message: string }
 
+/** Real DC promotion auto-creates this site (PRD-Windows-Server-Advanced.md §5 P6) — matches the name `WinDomainDiag.cmdNltest` has always reported. */
+const DEFAULT_SITE_NAME = 'Default-First-Site-Name';
+
 export class WindowsServer extends WindowsPC {
   private readonly roleManager: RoleManager = new RoleManager(this.getServiceManager());
   private directoryStore: DirectoryStore | null = null;
@@ -147,6 +150,7 @@ export class WindowsServer extends WindowsPC {
     this.directoryStore = new DirectoryStore(domainName, netbios, safeModeAdminPassword);
     this.directoryStore.promoteDomainController(this.getHostname(), safeModeAdminPassword);
     this.directoryStore.ensureKrbtgtPrincipal(randomSessionKey());
+    this.directoryStore.newSite(DEFAULT_SITE_NAME);
     this.provisionSysvol(domainName);
     this.registerDcServices();
     this.provisionDomainDnsZone(domainName);

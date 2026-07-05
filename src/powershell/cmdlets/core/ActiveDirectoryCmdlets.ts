@@ -15,7 +15,7 @@ import type { ICmdlet } from '../ICmdlet';
 import type { CmdletContext } from '../CmdletContext';
 import { PSRuntimeError } from '@/powershell/runtime/PSRuntime';
 import type { PSValue } from '@/powershell/runtime/PSEnvironment';
-import type { IAdProvider, AdUserInfo, AdGroupInfo, AdComputerInfo, AdOrgUnitInfo } from '@/powershell/providers/PSProviders';
+import type { IAdProvider, AdUserInfo, AdGroupInfo, AdComputerInfo, AdOrgUnitInfo, AdSiteInfo } from '@/powershell/providers/PSProviders';
 import { psValueToString } from '@/powershell/runtime/PSExpansion';
 import { parseCredentialArg } from './RemotingCmdlets';
 
@@ -345,5 +345,70 @@ export class GetADOrganizationalUnitCmdlet implements ICmdlet {
     const ou = ad.getOrganizationalUnit(identity);
     if (!ou) { ctx.emitError(`Get-ADOrganizationalUnit : Cannot find an object with identity: '${identity}'.`); return null; }
     return ouToPSObject(ou);
+  }
+}
+
+// ── Sites (PRD-Windows-Server-Advanced.md §5 P6) ────────────────────────────
+
+function siteToPSObject(s: AdSiteInfo): Record<string, PSValue> {
+  return { Name: s.name, DistinguishedName: s.dn };
+}
+
+export class NewADReplicationSiteCmdlet implements ICmdlet {
+  readonly name = 'new-adreplicationsite';
+  readonly aliases = [] as const;
+  readonly parameters = ['Name'] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const ad = requireAd(ctx, 'New-ADReplicationSite');
+    const name = psValueToString(ctx.named['name'] ?? ctx.positional[0] ?? '');
+    if (!name) {
+      ctx.emitError('New-ADReplicationSite : Cannot process command because of one or more missing mandatory parameters: Name.');
+      return null;
+    }
+    const res = ad.newReplicationSite(name);
+    if (!res.ok) { ctx.emitError(`New-ADReplicationSite : ${res.message}`); return null; }
+    const sites = ad.listReplicationSites();
+    const created = sites.find(s => s.name.toLowerCase() === name.toLowerCase());
+    return created ? siteToPSObject(created) : null;
+  }
+}
+
+export class GetADReplicationSiteCmdlet implements ICmdlet {
+  readonly name = 'get-adreplicationsite';
+  readonly aliases = [] as const;
+  readonly parameters = ['Identity', 'Filter'] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const ad = requireAd(ctx, 'Get-ADReplicationSite');
+    const sites = ad.listReplicationSites();
+    const identity = identityOf(ctx);
+    if (!identity) return sites.map(siteToPSObject);
+    const match = sites.find(s => s.name.toLowerCase() === identity.toLowerCase());
+    if (!match) { ctx.emitError(`Get-ADReplicationSite : Cannot find an object with identity: '${identity}'.`); return null; }
+    return siteToPSObject(match);
+  }
+}
+
+export class NewADReplicationSubnetCmdlet implements ICmdlet {
+  readonly name = 'new-adreplicationsubnet';
+  readonly aliases = [] as const;
+  readonly parameters = ['Name', 'Site'] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const ad = requireAd(ctx, 'New-ADReplicationSubnet');
+    const cidr = psValueToString(ctx.named['name'] ?? ctx.positional[0] ?? '');
+    if (!cidr) {
+      ctx.emitError('New-ADReplicationSubnet : Cannot process command because of one or more missing mandatory parameters: Name.');
+      return null;
+    }
+    const site = ctx.named['site'] !== undefined ? psValueToString(ctx.named['site']) : '';
+    if (!site) {
+      ctx.emitError('New-ADReplicationSubnet : Cannot process command because of one or more missing mandatory parameters: Site.');
+      return null;
+    }
+    const res = ad.newReplicationSubnet(cidr, site);
+    if (!res.ok) { ctx.emitError(`New-ADReplicationSubnet : ${res.message}`); return null; }
+    return null;
   }
 }

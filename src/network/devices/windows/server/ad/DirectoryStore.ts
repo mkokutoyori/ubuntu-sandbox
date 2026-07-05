@@ -23,6 +23,7 @@ import { generateId } from '@/network/core/types';
 import {
   type HighWatermarkVector, emptyHighWatermarkVector, recordUsn, cloneHighWatermarkVector,
 } from './replication/HighWatermarkVector';
+import { SiteRegistry, type SiteOpResult, type SiteInfo } from './forest/sites';
 
 export interface DirOpResult { ok: boolean; message: string }
 
@@ -67,6 +68,7 @@ export class DirectoryStore {
   private localUsn = 0;
   /** Highest USN already absorbed from each other known DC, via any replication partner — advances as `applyReplicatedEntry` runs. */
   private readonly inboundHighWatermark: HighWatermarkVector = emptyHighWatermarkVector();
+  private readonly sites: SiteRegistry;
 
   /**
    * `opts.skipSeed` (PRD-Windows-Server-Advanced.md §5 P5): an additional
@@ -90,8 +92,17 @@ export class DirectoryStore {
     this.usersOuDn = [...parseDN('CN=Users'), ...rootDn];
     this.computersOuDn = [...parseDN('CN=Computers'), ...rootDn];
     this.policiesDn = [...parseDN('CN=Policies'), ...parseDN('CN=System'), ...rootDn];
+    this.sites = new SiteRegistry(this.tree);
     if (!opts.skipSeed) this.seedDefaults(adminPassword);
   }
+
+  // ─── Sites (PRD-Windows-Server-Advanced.md §5 P6) ──────────────────────
+
+  newSite(name: string): SiteOpResult { return this.sites.newSite(name); }
+  listSites(): SiteInfo[] { return this.sites.listSites(); }
+  newSubnet(cidr: string, siteName: string): SiteOpResult { return this.sites.newSubnet(cidr, siteName); }
+  /** The name of the site whose subnet contains `ip`, or null if none does (§2.2 scope — no fallback-site guessing). */
+  siteForIp(ip: string): string | null { return this.sites.siteForIp(ip); }
 
   /** The domain root's DN — the default `New-GPLink -Target` for a domain-wide policy (Default Domain Policy). */
   getDomainDn(): string { return formatDN(this.tree.getRootDn()); }
