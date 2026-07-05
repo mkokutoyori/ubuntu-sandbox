@@ -95,7 +95,7 @@ ci-dessous.
 | Phase | Contenu | Dépend de | Statut | Agent |
 |---|---|---|---|---|
 | P1 | Varints & format de paquet | — | ✅ terminé | Arthur |
-| P2 | Trames | P1 | ⬜ disponible | — |
+| P2 | Trames | P1 | ✅ terminé | Arthur |
 | P3 | Protection de paquets (clés de test) | P1, P2 | ⬜ disponible | — |
 | P4 | Recouvrement de pertes | P2, P3 | ⬜ disponible | — |
 | P5 | Contrôle de congestion | P4 | ⬜ disponible | — |
@@ -635,3 +635,26 @@ seulement le consommer.
   consommation du ticket, chemin 0-RTT optionnel) + nouveau fichier de
   test.
 - Statut / résultat : en cours.
+
+### [2026-07-05 (heure non horodatée par l'outil) UTC] Arthur — PRD-QUIC/P2 — TERMINÉ
+- Tâche : `src/network/quic/frames.ts` — encode/décode des trames
+  RFC 9000 §19 utilisées par ce PRD : `PADDING`, `PING`, `ACK` (avec
+  plages non contiguës), `STREAM` (bits OFF/LEN/FIN), `MAX_DATA`,
+  `MAX_STREAM_DATA`, `STREAM_DATA_BLOCKED`, `DATA_BLOCKED`,
+  `NEW_CONNECTION_ID`, `RETIRE_CONNECTION_ID`, `CONNECTION_CLOSE`
+  (transport et application), `HANDSHAKE_DONE`.
+- Fichiers concernés : nouveau fichier `src/network/quic/frames.ts` +
+  `quic-frames.test.ts` — purement additif.
+- Statut / résultat : ✅ terminé. 21 tests, tous verts après une
+  correction pendant l'écriture des tests : `ACK Range Count` (§19.3)
+  doit être le nombre de plages *additionnelles* (après la première),
+  pas la longueur totale du tableau `ackRanges` — un test dédié vérifie
+  la taille exacte en octets pour éviter la régression. Couvre
+  également le décodage correct quand les bits OFF/LEN de `STREAM`
+  sont absents (offset implicite 0, longueur = reste du tampon).
+  `tsc`/`eslint` propres. Régression ciblée (quic-packet-format,
+  quic-frames, dns-encrypted-transports) : 3 fichiers, 58 tests, 0
+  échec.
+- Suggestion pour la suite : `PRD-QUIC.md`/P3 (protection de paquets,
+  clés de test injectées) et P6 (streams) dépendent tous deux de ce P2
+  et sont disponibles en parallèle l'un de l'autre.
