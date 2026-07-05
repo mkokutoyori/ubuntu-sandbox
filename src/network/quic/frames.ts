@@ -10,6 +10,7 @@ export type QuicFrame =
   | { type: 'PADDING' }
   | { type: 'PING' }
   | { type: 'ACK'; largestAcknowledged: number; ackDelay: number; ackRanges: AckRange[] }
+  | { type: 'CRYPTO'; offset: number; length: number; data: Uint8Array }
   | { type: 'STREAM'; streamId: number; offset: number; length: number; fin: boolean; data: Uint8Array }
   | { type: 'MAX_DATA'; maximumData: number }
   | { type: 'MAX_STREAM_DATA'; streamId: number; maximumStreamData: number }
@@ -50,6 +51,19 @@ export function encodeFrame(frame: QuicFrame): Uint8Array {
         parts.push(Array.from(encodeVarint(frame.ackRanges[i].gap)));
         parts.push(Array.from(encodeVarint(frame.ackRanges[i].ackRangeLength)));
       }
+      return concatArrays(parts);
+    }
+
+    // RFC 9000 §19.6 — carries a contiguous range of the TLS handshake
+    // byte stream (CRYPTO frames have no stream ID: each packet-number
+    // space has its own independent CRYPTO stream).
+    case 'CRYPTO': {
+      const parts: number[][] = [
+        [0x06],
+        Array.from(encodeVarint(frame.offset)),
+        Array.from(encodeVarint(frame.length)),
+        Array.from(frame.data),
+      ];
       return concatArrays(parts);
     }
 
@@ -159,6 +173,22 @@ export function decodeFrame(bytes: Uint8Array, offset = 0): DecodedFrame | null 
     }
     return {
       frame: { type: 'ACK', largestAcknowledged: largest.value, ackDelay: delay.value, ackRanges },
+      bytesConsumed: off - offset,
+    };
+  }
+
+  if (typeByte === 0x06) {
+    const offsetField = decodeVarint(bytes, off);
+    if (!offsetField) return null;
+    off += offsetField.bytesConsumed;
+    const lengthField = decodeVarint(bytes, off);
+    if (!lengthField) return null;
+    off += lengthField.bytesConsumed;
+    if (bytes.length < off + lengthField.value) return null;
+    const data = bytes.slice(off, off + lengthField.value);
+    off += lengthField.value;
+    return {
+      frame: { type: 'CRYPTO', offset: offsetField.value, length: lengthField.value, data },
       bytesConsumed: off - offset,
     };
   }

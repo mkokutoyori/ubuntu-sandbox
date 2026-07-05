@@ -50,6 +50,21 @@ describe('ACK frame (RFC 9000 §19.3)', () => {
   });
 });
 
+describe('CRYPTO frame (RFC 9000 §19.6)', () => {
+  it('round-trips with a non-zero offset', () => {
+    roundTrip({ type: 'CRYPTO', offset: 200, length: 5, data: new TextEncoder().encode('hello') });
+  });
+
+  it('round-trips a zero-offset crypto frame', () => {
+    roundTrip({ type: 'CRYPTO', offset: 0, length: 3, data: new Uint8Array([1, 2, 3]) });
+  });
+
+  it('rejects a frame whose declared length exceeds the available bytes', () => {
+    const bytes = new Uint8Array([0x06, 0, 10, 1, 2]); // declares length 10, only 2 bytes follow
+    expect(decodeFrame(bytes)).toBeNull();
+  });
+});
+
 describe('STREAM frame (RFC 9000 §19.8)', () => {
   it('round-trips with offset, explicit length, and FIN', () => {
     roundTrip({ type: 'STREAM', streamId: 4, offset: 128, length: 5, fin: true, data: new TextEncoder().encode('hello') });

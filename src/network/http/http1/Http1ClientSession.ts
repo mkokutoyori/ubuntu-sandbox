@@ -39,7 +39,7 @@ export class Http1ClientSession {
 
     if (raw === null) return { ok: false, error: 'Empty reply from server' };
     const parsed = parseResponse(raw, { suppressBody: request.method === 'HEAD' });
-    if (!parsed.ok) return { ok: false, error: parsed.reason };
+    if (parsed.ok === false) return { ok: false, error: parsed.reason };
 
     if (parsed.message.headers.get('Connection')?.toLowerCase() === 'close') {
       this.socket = null;

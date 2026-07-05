@@ -11,6 +11,7 @@ import {
   protectBody, unprotectBody,
   protectHeader, unprotectHeader,
   computeHeaderProtectionMask,
+  deriveInitialSecrets, deriveQuicKeys,
 } from '@/network/quic/packetProtection';
 import type { PacketProtectionKeys } from '@/network/quic/types';
 
@@ -72,6 +73,42 @@ describe('protectHeader / unprotectHeader', () => {
     const firstByte = 0xc0; // long header, Initial type
     const protectedHeader = protectHeader(testKeys, firstByte, new Uint8Array([0x01]), sample);
     expect(protectedHeader.maskedFirstByte & 0xf0).toBe(0xc0);
+  });
+});
+
+describe('deriveInitialSecrets / deriveQuicKeys (RFC 9001 §5.1/§5.2 — real TLS key schedule integration, P8)', () => {
+  it('both endpoints derive the same client/server Initial secrets from the same destination connection ID', () => {
+    const a = deriveInitialSecrets('abcd1234');
+    const b = deriveInitialSecrets('abcd1234');
+    expect(a).toEqual(b);
+    expect(a.client).not.toBe(a.server);
+  });
+
+  it('a different destination connection ID yields different Initial secrets', () => {
+    const a = deriveInitialSecrets('abcd1234');
+    const b = deriveInitialSecrets('ffff0000');
+    expect(a.client).not.toBe(b.client);
+    expect(a.server).not.toBe(b.server);
+  });
+
+  it('deriveQuicKeys produces distinct key/iv/headerProtectionKey material tagged with the given space', () => {
+    const keys = deriveQuicKeys('handshake', 'some-handshake-traffic-secret');
+    expect(keys.space).toBe('handshake');
+    expect(keys.key).not.toBe(keys.iv);
+    expect(keys.iv).not.toBe(keys.headerProtectionKey);
+  });
+
+  it('a different traffic secret yields different derived keys', () => {
+    const a = deriveQuicKeys('application', 'secret-a');
+    const b = deriveQuicKeys('application', 'secret-b');
+    expect(a.key).not.toBe(b.key);
+  });
+
+  it('the derived keys are directly usable by protectBody/unprotectBody', () => {
+    const keys = deriveQuicKeys('initial', deriveInitialSecrets('cid').client);
+    const plaintext = new TextEncoder().encode('client initial payload');
+    const ciphertext = protectBody(keys, 0, plaintext);
+    expect(unprotectBody(keys, 0, ciphertext)).toEqual(plaintext);
   });
 });
 

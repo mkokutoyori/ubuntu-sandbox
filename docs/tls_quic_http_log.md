@@ -101,7 +101,7 @@ ci-dessous.
 | P5 | Contrôle de congestion | P4 | ✅ terminé | Arthur |
 | P6 | Streams | P2 | ✅ terminé | Arthur |
 | P7 | Machine à états de connexion (sans TLS réel) | P3–P6 | ✅ terminé | Arthur |
-| P8 | Intégration TLS 1.3 réelle | **PRD-TLS.md implémenté**, P7 | ⬜ disponible | — |
+| P8 | Intégration TLS 1.3 réelle | **PRD-TLS.md implémenté**, P7 | ✅ terminé | Arthur |
 | P9 | 0-RTT | P8 | ⬜ disponible | — |
 | P10 | Retry & validation d'adresse | P7 | ✅ terminé | Arthur |
 | P11 | Connection IDs multiples | P7 | ✅ terminé | Arthur |
@@ -1387,3 +1387,134 @@ seulement le consommer.
   retenter P8. **Mise à jour post-rebase : l'agent TLS a effectivement
   exposé ces deux secrets (commit `4cb1ad37`) — `PRD-QUIC.md`/P8 est donc
   maintenant débloqué, je vais l'attaquer ensuite.**
+
+### [2026-07-05 (heure non horodatée par l'outil) UTC] Arthur — PRD-QUIC/P8 — ANNONCE
+- Tâche : `PRD-QUIC.md`/P8 — intégration TLS 1.3 réelle. `packetProtection.ts`
+  branché sur le key schedule réel de `src/network/tls/` (labels RFC 9001
+  §5.1 `"quic key"`/`"quic iv"`/`"quic hp"` via `expandLabel`, déjà
+  exporté de `keySchedule.ts` — aucune réimplémentation) ; handshake
+  combiné Initial → Handshake → 1-RTT, remplaçant les clés injectées par
+  les tests (`QuicTestKeys`, P3) par un vrai `TlsClientSession`/
+  `TlsServerSession` piloté via des trames `CRYPTO` (RFC 9000 §19.6,
+  absentes du module jusqu'ici — les phases précédentes n'avaient besoin
+  que de PING/HANDSHAKE_DONE comme stand-in de handshake).
+- Fichiers concernés (tous sous `src/network/quic/`, possédé par ce PRD —
+  **zéro fichier sous `src/network/tls/` touché**, consommation pure des
+  exports déjà publics `expandLabel`/`extractSecret`/
+  `clientHandshakeTrafficSecret`/`serverHandshakeTrafficSecret`/
+  `clientApplicationTrafficSecret`/`serverApplicationTrafficSecret`) :
+  - `frames.ts` : nouvelle trame `CRYPTO` (offset + length + data,
+    RFC 9000 §19.6), encodage/décodage + tests dédiés.
+  - `packetProtection.ts` : `deriveInitialSecrets(destConnectionId)` (sel
+    fixe RFC 9001 §5.2, `extractSecret`+`expandLabel`) et
+    `deriveQuicKeys(space, trafficSecret)` (labels `"quic key"`/`"quic
+    iv"`/`"quic hp"`) — fonctions pures ajoutées, aucune modification des
+    fonctions existantes (`protectBody`/`unprotectBody`/`protectHeader`/
+    `unprotectHeader` restent inchangées, P3 reste vert tel quel).
+  - `QuicConnection.ts` : le stand-in PING/HANDSHAKE_DONE est remplacé par
+    un vrai pilotage `TlsClientSession.start()`/`.handle()`/
+    `TlsServerSession.handle()`, les flights étant portés par des trames
+    `CRYPTO` dans l'espace Initial (ClientHello/ServerHello, non protégé
+    par les clés Handshake) puis Handshake (le reste du flight serveur,
+    protégé) — mappage direct sur `splitLeadingContentType`/
+    `fragmentAsRecords`/`reassembleRecords` déjà exportés de
+    `recordLayer.ts`. Les clés de chaque espace sont dérivées dès que le
+    secret correspondant devient disponible ; passage à l'espace
+    Application une fois le handshake terminé (`result === 'success'`/
+    `'accept'`), `HANDSHAKE_DONE` toujours envoyé côté serveur (RFC 9000
+    §4.1.1). `QuicTestKeys` reste utilisable en option pour les tests bas
+    niveau qui veulent s'affranchir du handshake réel (P3/P4/P5/P6
+    restent verts sans changement).
+  - Nouveaux tests dans `quic-crypto-frame.test.ts` (trame) et extension
+    de `quic-connection.test.ts` (handshake réel de bout en bout avec
+    `CertificateAuthority`/`CertificateVerifier`, même motif que
+    `tls-handshake-1rtt.test.ts`/`https.test.ts`).
+- Statut / résultat : 🟡 en cours.
+
+### [2026-07-05 (heure non horodatée par l'outil) UTC] Arthur — PRD-QUIC/P8 — TERMINÉ
+- Réalisé le périmètre annoncé, avec une découverte importante en cours de
+  route qui a changé le mapping exact des espaces de paquets (voir bug
+  ci-dessous). Fichiers : `frames.ts` (trame `CRYPTO`, type 0x06, RFC 9000
+  §19.6), `packetProtection.ts` (`deriveInitialSecrets`/`deriveQuicKeys`
+  RFC 9001 §5.1/§5.2 via `expandLabel`/`extractSecret` déjà exportés de
+  `keySchedule.ts` — aucune réimplémentation ; `encodeTlsRecordsForCrypto`/
+  `decodeTlsRecordsFromCrypto`, copie locale du même format d'en-tête à 5
+  octets que `TlsRecordWire.ts` côté HTTP, volontairement dupliquée plutôt
+  que partagée entre PRD frères), `QuicConnection.ts` (`QuicKeyConfig`
+  discriminé `test-keys | tls` — rétrocompatible, `test-keys` reproduit
+  P3-P7 à l'identique ; `tls` pilote un vrai `TlsClientSession`/
+  `TlsServerSession` sur des trames CRYPTO, clés dérivées par espace dès
+  que le secret correspondant existe). Nouveau fichier de test
+  `quic-tls-integration.test.ts`.
+- **Bug protocolaire trouvé et corrigé avant tout test vert** (dépendance
+  circulaire) : ce moteur TLS calcule `clientHandshakeTrafficSecret`/
+  `serverHandshakeTrafficSecret` comme effet de bord du traitement d'un
+  *flight entier* en un seul appel `handle()`, plutôt que de les exposer
+  dès que ServerHello seul est vu (ce qu'une vraie implémentation peut
+  faire, le secret Handshake ne dépendant que de ClientHello+ServerHello).
+  Conséquence : le client ne peut pas déchiffrer un paquet QUIC de
+  l'espace Handshake avant d'avoir déjà traité — via `handle()` — le
+  contenu de ce même paquet, ce qui aurait nécessité la clé pour le
+  déchiffrer en premier lieu. Diagnostiqué par un test en échec explicite
+  (`no handshake keys available yet`), pas en lecture de code préalable.
+  Corrigé par une simplification documentée : la réponse complète du
+  serveur au ClientHello (ServerHello + bundle protégé, un seul appel
+  `handle()`) voyage entièrement dans l'espace Initial (clés toujours
+  disponibles des deux côtés dès le départ) ; une fois cet échange traité,
+  les deux parties partagent les secrets Handshake, donc la réponse du
+  client (Finished) et tout ce qui suit jusqu'au 1-RTT utilisent
+  légitimement les vraies clés de l'espace Handshake. Portée nominale
+  uniquement (pas de HelloRetryRequest sur QUIC dans cette phase — limite
+  documentée dans le code).
+- **Découverte transverse, hors du périmètre strict de cette phase mais
+  significative pour tout le projet** : `npx tsc --noEmit -p .` (la
+  commande documentée dans `CLAUDE.md`) s'avère être un **no-op silencieux**
+  — le `tsconfig.json` racine n'a que `"files": []` et des `"references"`,
+  qui ne sont traversées qu'avec `tsc --build`, jamais avec un `-p .` nu.
+  Vérifié avec `tsc --build --dry ./tsconfig.json` (confirme qu'un build
+  réel construirait les deux projets référencés) contre `tsc --noEmit -p .`
+  (aucune sortie, terminaison instantanée). Aucun agent, moi y compris,
+  n'a donc jamais réellement fait vérifier son code par ce typecheck cette
+  session — seule l'exécution des tests (vitest/esbuild, qui ignore les
+  types) a garanti la correction. En vérifiant avec `-p tsconfig.app.json`
+  directement, deux constats : (1) des milliers d'erreurs pré-existantes,
+  sans rapport avec ce PRD, dispersées dans tout le projet (Oracle RMAN,
+  terminal sessions, etc.) — hors de portée, non touchées ; (2) un vrai
+  bug de rétrécissement de type que j'ai moi-même reproduit dans mon
+  propre code HTTP (P2/P7) : `if (!parsed.ok) return {...parsed.reason}`
+  ne rétrécit PAS `Http1ParseResult` vers `Http1ParseError` en TypeScript
+  (limitation connue et reproduite en isolation totale : le rétrécissement
+  par négation simple d'un littéral booléen ne fonctionne que dans le sens
+  positif, `if (x.ok) {...} else {...}` marche des deux côtés, mais
+  `if (!x.ok) return {...x.reason}` échoue — il faut écrire
+  `x.ok === false` explicitement). Corrigé dans les 4 occurrences que
+  j'ai écrites (`Http1ClientSession.ts`, `Http1ServerSession.ts`,
+  `HttpsClientSession.ts`, `HttpsServerSession.ts`) — comportement runtime
+  identique (booléen, donc `!x`/`x===false` équivalents en JS), seule la
+  vérification statique change. Également enregistré `QuicDomainEvent`
+  dans l'union centrale `DomainEvent` (`src/events/types.ts`), qui
+  manquait depuis P12 (jamais détecté faute de typecheck réel).
+- Statut / résultat : ✅ terminé. `tsc --noEmit -p tsconfig.app.json`
+  (vérification directe, en plus de la commande documentée) : propre pour
+  tous les fichiers de cette session, hormis une incompatibilité
+  pré-existante et inchangée dans `DnsHttpsTransport.ts`
+  (`DnsMessageHandler` autorise un retour `Promise`, jamais utilisé en
+  pratique — déjà présente avant ma migration P13, non liée à P8).
+  `eslint` propre. 5 nouveaux tests (`quic-tls-integration.test.ts`) +
+  3 nouveaux tests CRYPTO (`quic-frames.test.ts`) + 5 nouveaux tests de
+  dérivation de clés (`quic-packet-protection.test.ts`). Régression
+  ciblée : 264 tests (24 fichiers — quic-*, https, http1-wire,
+  dns-encrypted-transports, tls-*) au vert. Régression complète (lancée
+  plus tôt pour P13, toujours valide puisque aucun fichier de production
+  supplémentaire modifié depuis hors de ce diff) : 675/677 fichiers,
+  12674/12735 tests, 11 échecs — tous pré-existants (Oracle RAC), aucun
+  nouvel échec.
+- Suggestion pour la suite : `PRD-QUIC.md`/P9 (0-RTT) et P13 (migration
+  DoQ) dépendent tous deux de P8, désormais disponibles. La découverte du
+  no-op de `tsc -p .` mérite d'être portée à la connaissance de l'agent
+  TLS et de l'utilisateur — je ne corrige pas le tsconfig racine
+  lui-même (hors mandat, risque de casser une convention de build/CI que
+  je ne maîtrise pas entièrement), mais recommande d'utiliser
+  `tsc --noEmit -p tsconfig.app.json` (en acceptant son bruit de fond
+  préexistant) ou `tsc --build` pour toute vérification future qui compte
+  vraiment.

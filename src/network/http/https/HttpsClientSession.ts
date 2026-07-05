@@ -121,7 +121,7 @@ export class HttpsClientSession {
     this.serverSeq = serverNextSeq;
 
     const parsed = parseResponse(decoder.decode(plaintext), { suppressBody: request.method === 'HEAD' });
-    if (!parsed.ok) return { ok: false, error: parsed.reason };
+    if (parsed.ok === false) return { ok: false, error: parsed.reason };
 
     const hsts = parsed.message.headers.get('Strict-Transport-Security');
     if (hsts) this.hstsStore.record(this.targetIp, hsts, Date.now());

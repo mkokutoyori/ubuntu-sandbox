@@ -40,9 +40,11 @@ const testKeys = {
 
 const PORT = 9443;
 
+const testKeyConfig = { mode: 'test-keys' as const, keys: testKeys };
+
 function connectPair(server: EndHost, client: EndHost) {
-  const serverConn = new QuicConnection(server, 'server', PORT, testKeys);
-  const clientConn = new QuicConnection(client, 'client', PORT, testKeys);
+  const serverConn = new QuicConnection(server, 'server', PORT, testKeyConfig);
+  const clientConn = new QuicConnection(client, 'client', PORT, testKeyConfig);
   clientConn.connect('192.168.99.10', PORT);
   return { serverConn, clientConn };
 }

@@ -31,7 +31,7 @@ export class Http1ServerSession {
       let response: HttpMessage;
       let shouldClose: boolean;
 
-      if (!parsed.ok) {
+      if (parsed.ok === false) {
         response = createResponse(400, 'Bad Request');
         response.headers.set('Connection', 'close');
         shouldClose = true;

@@ -1,10 +1,16 @@
 import type { EndHost, UdpDelivery } from '@/network/devices/EndHost';
 import type { IEventBus } from '@/events/EventBus';
+import type { TlsClientSession } from '@/network/tls/TlsClientSession';
+import type { TlsServerSession } from '@/network/tls/TlsServerSession';
+import type { TlsRecord } from '@/network/tls/recordLayer';
 import { IPAddress } from '@/network/core/types';
 import { QUIC_VERSION_1, type PacketProtectionKeys, type PacketNumberSpace } from './types';
 import { encodeLongHeader, decodeLongHeader, encodeShortHeader, decodeShortHeader } from './packetFormat';
 import { encodeFrame, decodeFrames, type QuicFrame } from './frames';
-import { protectBody, unprotectBody } from './packetProtection';
+import {
+  protectBody, unprotectBody, deriveInitialSecrets, deriveQuicKeys,
+  encodeTlsRecordsForCrypto, decodeTlsRecordsFromCrypto,
+} from './packetProtection';
 import { QuicStreamManager, type StreamDirection } from './QuicStream';
 import { LossDetectionState, onPacketSent as onLossPacketSent, onAckReceived } from './lossRecovery';
 import { createCongestionState, isInSlowStart, onPacketSent as onCongestionPacketSent, onPacketAcked, onPacketsLost, type CongestionState } from './congestionControl';
@@ -17,6 +23,28 @@ export interface QuicTestKeys {
   initial: PacketProtectionKeys;
   application: PacketProtectionKeys;
 }
+
+/**
+ * RFC 9001 — real TLS 1.3 integration (PRD-QUIC.md §5 P8). `tls` is the
+ * peer-role-appropriate session (`TlsClientSession` for a client
+ * connection, `TlsServerSession` for a server one) the caller has already
+ * configured (certificates, verifier, ALPN, ...); `clientDestConnectionId`
+ * is the client's chosen destination connection ID for its first Initial
+ * packet (RFC 9001 §5.2) — both peers must be given the same value so
+ * they derive the same Initial secrets. `QuicConnection` drives the
+ * handshake (CRYPTO frames, Initial → Handshake → 1-RTT key transitions)
+ * but never touches `src/network/tls/` itself beyond holding this
+ * reference — all secret-to-QUIC-key derivation lives in
+ * `packetProtection.ts`.
+ */
+export interface QuicTlsConfig {
+  readonly tls: TlsClientSession | TlsServerSession;
+  readonly clientDestConnectionId: string;
+}
+
+export type QuicKeyConfig =
+  | { readonly mode: 'test-keys'; readonly keys: QuicTestKeys }
+  | ({ readonly mode: 'tls' } & QuicTlsConfig);
 
 export interface QuicMessage {
   streamId: number;
@@ -44,20 +72,25 @@ function concatFrameBytes(chunks: Uint8Array[]): Uint8Array {
   return out;
 }
 
-const ACK_ELICITING_TYPES = new Set<QuicFrame['type']>(['PING', 'STREAM', 'HANDSHAKE_DONE']);
+interface DirectionalKeys {
+  readonly send: PacketProtectionKeys;
+  readonly receive: PacketProtectionKeys;
+}
+
+const ACK_ELICITING_TYPES = new Set<QuicFrame['type']>(['PING', 'CRYPTO', 'STREAM', 'HANDSHAKE_DONE']);
 const DEFAULT_DRAIN_MS = 3000;
 
 /**
  * A QUIC connection state machine (RFC 9000 §5/§9/§10) over the project's
  * real UDP transport (`EndHost.sendUdpDatagram`/`udpBind`) — no new
- * transport abstraction. Handshake uses test-injected keys, not real TLS
- * (that integration is P8, once PRD-TLS.md is implemented): the "Initial"
- * exchange here is a minimal stand-in that exercises the real state
- * transitions, framing, and packet protection without modeling CRYPTO
- * frames/TLS flights. Once established, streams (P6), loss recovery (P4)
- * and congestion control (P5) are wired together for real: every
- * ack-eliciting packet gets an immediate ACK reply, which feeds both
- * subsystems.
+ * transport abstraction. Two key-supply modes: `test-keys` (P3–P7's
+ * minimal PING/HANDSHAKE_DONE stand-in, unchanged, for low-level tests
+ * that don't need a real handshake) and `tls` (P8: a real
+ * `TlsClientSession`/`TlsServerSession` drives the actual Initial →
+ * Handshake → 1-RTT flight exchange over CRYPTO frames, RFC 9001).
+ * Streams (P6), loss recovery (P4) and congestion control (P5) are wired
+ * together for real in both modes: every ack-eliciting packet gets an
+ * immediate ACK reply, which feeds both subsystems.
  */
 export class QuicConnection {
   state: QuicConnectionState = 'idle';
@@ -74,15 +107,52 @@ export class QuicConnection {
   private readonly closeHandlers: Array<(errorCode: number, reason: string) => void> = [];
   private closingSince: number | null = null;
 
+  private initialKeys: DirectionalKeys | null = null;
+  private handshakeKeys: DirectionalKeys | null = null;
+  private applicationKeys: DirectionalKeys | null = null;
+  private readonly cryptoSendOffset: Record<PacketNumberSpace, number> = { initial: 0, handshake: 0, application: 0 };
+
   constructor(
     private readonly host: EndHost,
     private readonly role: QuicRole,
     private readonly localPort: number,
-    private readonly keys: QuicTestKeys,
+    private readonly config: QuicKeyConfig,
     private readonly eventBus?: IEventBus,
   ) {
     this.streams = new QuicStreamManager(role);
     host.udpBind(localPort, (delivery) => this.handleDatagram(delivery));
+
+    if (this.config.mode === 'test-keys') {
+      this.initialKeys = { send: this.config.keys.initial, receive: this.config.keys.initial };
+      this.applicationKeys = { send: this.config.keys.application, receive: this.config.keys.application };
+    } else {
+      const secrets = deriveInitialSecrets(this.config.clientDestConnectionId);
+      this.initialKeys = this.directionalKeys('initial', secrets.client, secrets.server);
+    }
+  }
+
+  private directionalKeys(space: PacketNumberSpace, clientSecret: string, serverSecret: string): DirectionalKeys {
+    return this.role === 'client'
+      ? { send: deriveQuicKeys(space, clientSecret), receive: deriveQuicKeys(space, serverSecret) }
+      : { send: deriveQuicKeys(space, serverSecret), receive: deriveQuicKeys(space, clientSecret) };
+  }
+
+  /** Once the TLS session has computed its Handshake/Application secrets (available together, this simulator's key schedule derives them at the same checkpoint), derive the corresponding QUIC keys. */
+  private refreshTlsDerivedKeys(): void {
+    if (this.config.mode !== 'tls') return;
+    const tls = this.config.tls;
+    if (!this.handshakeKeys && tls.clientHandshakeTrafficSecret && tls.serverHandshakeTrafficSecret) {
+      this.handshakeKeys = this.directionalKeys('handshake', tls.clientHandshakeTrafficSecret, tls.serverHandshakeTrafficSecret);
+    }
+    if (!this.applicationKeys && tls.clientApplicationTrafficSecret && tls.serverApplicationTrafficSecret) {
+      this.applicationKeys = this.directionalKeys('application', tls.clientApplicationTrafficSecret, tls.serverApplicationTrafficSecret);
+    }
+  }
+
+  private keysFor(space: PacketNumberSpace): DirectionalKeys {
+    const keys = space === 'initial' ? this.initialKeys : space === 'handshake' ? this.handshakeKeys : this.applicationKeys;
+    if (!keys) throw new Error(`QuicConnection: no ${space} keys available yet`);
+    return keys;
   }
 
   private emit(event: QuicDomainEvent): void {
@@ -110,10 +180,24 @@ export class QuicConnection {
     this.emit({ topic: 'quic.stream.closed', payload: { connectionId: this.connectionId, role: this.role, streamId } });
   }
 
+  /** Client only — establishes the peer and, in `tls` mode, sends the initial ClientHello; in `test-keys` mode, sends the minimal PING stand-in. */
   connect(remoteIp: string, remotePort: number): void {
     this.peer = { ip: remoteIp, port: remotePort };
     this.state = 'handshaking';
-    this.sendPacket('initial', [{ type: 'PING' }], true);
+    if (this.config.mode === 'test-keys') {
+      this.sendPacket('initial', [{ type: 'PING' }], true);
+      return;
+    }
+    const flight = (this.config.tls as TlsClientSession).start();
+    this.sendCryptoRecords('initial', flight);
+  }
+
+  private sendCryptoRecords(space: PacketNumberSpace, records: readonly TlsRecord[]): void {
+    if (records.length === 0) return;
+    const data = encodeTlsRecordsForCrypto(records);
+    const offset = this.cryptoSendOffset[space];
+    this.cryptoSendOffset[space] += data.length;
+    this.sendPacket(space, [{ type: 'CRYPTO', offset, length: data.length, data }], true);
   }
 
   openStream(direction: StreamDirection): number {
@@ -176,12 +260,14 @@ export class QuicConnection {
     if (!this.peer) return;
     const pn = this.nextPacketNumber++;
     const plaintext = concatFrameBytes(frames.map((f) => encodeFrame(f)));
-    const keys = space === 'application' ? this.keys.application : this.keys.initial;
-    const ciphertext = protectBody(keys, pn, plaintext);
+    const ciphertext = protectBody(this.keysFor(space).send, pn, plaintext);
 
     const bytes = space === 'application'
       ? encodeShortHeader({ form: 'short', destConnectionId: '', packetNumber: pn, payload: ciphertext })
-      : encodeLongHeader({ form: 'long', type: 'initial', version: QUIC_VERSION_1, destConnectionId: '', srcConnectionId: '', packetNumber: pn, payload: ciphertext });
+      : encodeLongHeader({
+          form: 'long', type: space === 'handshake' ? 'handshake' : 'initial',
+          version: QUIC_VERSION_1, destConnectionId: '', srcConnectionId: '', packetNumber: pn, payload: ciphertext,
+        });
 
     onLossPacketSent(this.lossState, space, pn, bytes.length, ackEliciting, frames, Date.now());
     onCongestionPacketSent(this.congestionState, bytes.length);
@@ -203,10 +289,10 @@ export class QuicConnection {
 
     if (!this.peer) this.peer = { ip: delivery.sourceIP.toString(), port: delivery.udp.sourcePort };
 
-    const space: PacketNumberSpace = decoded.packet.form === 'long' ? 'initial' : 'application';
-    const keys = space === 'application' ? this.keys.application : this.keys.initial;
+    const space: PacketNumberSpace =
+      decoded.packet.form !== 'long' ? 'application' : decoded.packet.type === 'handshake' ? 'handshake' : 'initial';
     const packetNumber = decoded.packet.packetNumber ?? 0;
-    const plaintext = unprotectBody(keys, packetNumber, decoded.packet.payload);
+    const plaintext = unprotectBody(this.keysFor(space).receive, packetNumber, decoded.packet.payload);
     const { frames } = decodeFrames(plaintext);
     this.emit({ topic: 'quic.packet.received', payload: { connectionId: this.connectionId, role: this.role, space, packetNumber, size: bytes.length } });
 
@@ -218,21 +304,73 @@ export class QuicConnection {
     if (sawAckEliciting && this.state !== 'closed') this.sendAck(space, packetNumber);
   }
 
+  private establish(): void {
+    this.state = 'established';
+    this.emit({ topic: 'quic.connection.established', payload: { connectionId: this.connectionId, role: this.role } });
+  }
+
+  /**
+   * `tls` mode — processes CRYPTO frame data.
+   *
+   * This simulator's `TlsClientSession`/`TlsServerSession` derive the
+   * Handshake-space traffic secrets as part of processing a *whole*
+   * incoming flight in one `handle()` call, rather than exposing them the
+   * moment ServerHello alone is seen (as a real implementation can, since
+   * the Handshake secret only depends on ClientHello+ServerHello). That
+   * means the client cannot derive its Handshake receive key before it
+   * has *already* decrypted the server's protected bundle — a circular
+   * dependency if that bundle is itself QUIC-protected with a Handshake
+   * key. Simplification adopted here: the server's ServerHello + protected
+   * bundle (its one reply to ClientHello) travels entirely over the
+   * Initial space, whose keys both sides always have upfront. Once the
+   * client has processed that flight, both sides share the Handshake
+   * secrets, so the client's own reply (Finished) — and everything the
+   * server sends afterward until 1-RTT — legitimately uses real
+   * Handshake-space keys.
+   */
+  private handleCryptoFrame(frame: Extract<QuicFrame, { type: 'CRYPTO' }>, space: PacketNumberSpace): void {
+    if (this.config.mode !== 'tls') return;
+    const records = decodeTlsRecordsFromCrypto(frame.data);
+
+    if (this.role === 'server') {
+      if (space === 'initial') {
+        const reply = (this.config.tls as TlsServerSession).handle(records);
+        this.refreshTlsDerivedKeys();
+        if (reply) this.sendCryptoRecords('initial', reply);
+        return;
+      }
+      // The client's Finished, over the Handshake space.
+      const reply = (this.config.tls as TlsServerSession).handle(records);
+      if (reply) this.sendCryptoRecords('handshake', reply);
+      if ((this.config.tls as TlsServerSession).result === 'accept') {
+        this.establish();
+        this.sendPacket('application', [{ type: 'HANDSHAKE_DONE' }], true);
+      }
+      return;
+    }
+
+    // Client: the server's whole reply to ClientHello arrives as one Initial-space flight.
+    const reply = (this.config.tls as TlsClientSession).handle(records);
+    this.refreshTlsDerivedKeys();
+    if (reply) this.sendCryptoRecords('handshake', reply);
+    // Established only once HANDSHAKE_DONE is received (RFC 9000 §4.1.2) — handled below.
+  }
+
   private handleFrame(frame: QuicFrame, space: PacketNumberSpace): void {
     switch (frame.type) {
       case 'PING':
-        if (this.role === 'server' && this.state !== 'established') {
-          this.state = 'established';
+        if (this.config.mode === 'test-keys' && this.role === 'server' && this.state !== 'established') {
           this.sendPacket('initial', [{ type: 'HANDSHAKE_DONE' }], true);
-          this.emit({ topic: 'quic.connection.established', payload: { connectionId: this.connectionId, role: this.role } });
+          this.establish();
         }
         return;
 
+      case 'CRYPTO':
+        this.handleCryptoFrame(frame, space);
+        return;
+
       case 'HANDSHAKE_DONE':
-        if (this.role === 'client') {
-          this.state = 'established';
-          this.emit({ topic: 'quic.connection.established', payload: { connectionId: this.connectionId, role: this.role } });
-        }
+        if (this.role === 'client') this.establish();
         return;
 
       case 'STREAM': {
