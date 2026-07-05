@@ -118,7 +118,7 @@ ci-dessous.
 | P4 | Cookies (6265) | P2 | ✅ terminé | Arthur |
 | P5 | Authentification (7617/7616) | P2 | ✅ terminé | Arthur |
 | P6 | WebSocket (6455) | P2 | ✅ terminé | Arthur |
-| P7 | HTTPS | P2, **PRD-TLS.md implémenté** | ⬜ disponible | — |
+| P7 | HTTPS | P2, **PRD-TLS.md implémenté** | 🟡 en cours | Arthur |
 | P8 | HTTP/2 (9113 + HPACK) | P1, P7 (`h2c` sans) | ✅ terminé (h2c seul, sans ALPN — P7/ALPN `h2` restent à faire séparément) | Arthur |
 | P9 | Intégration QUIC | **PRD-QUIC.md implémenté** | ⬜ disponible | — |
 | P10 | HTTP/3 (9114 + QPACK) | P1, P9 | ⬜ disponible | — |
@@ -1028,4 +1028,35 @@ seulement le consommer.
   `EapTlsPeerSession.ts`, `EapTlsFragmentation.ts` et de leurs suites de
   tests existantes avant toute modification, pour cerner précisément ce
   qui doit changer et ce qui doit rester identique.
+- Statut / résultat : 🟡 en cours.
+
+### [2026-07-05 (heure non horodatée par l'outil) UTC] Arthur — PRD-HTTP/P7 — ANNONCE
+- Tâche : `PRD-HTTP.md`/P7 — HTTPS. Cette phase ne nécessite aucune
+  modification de `src/network/tls/`. `PRD-TLS.md`/P9 (KeyUpdate), déjà
+  fusionné (commit `24aa1867`), a exposé `clientApplicationTrafficSecret` /
+  `serverApplicationTrafficSecret` comme champs publics sur
+  `TlsClientSession`/`TlsServerSession` — c'est exactement le crochet de
+  chiffrement de données applicatives qui manquait. `TlsRecord` (défini dans
+  `recordLayer.ts`) n'a en revanche aucune sérialisation binaire de niveau
+  fil existante (RFC 8446 §5.1 : 1 octet ContentType + 2 octets
+  legacyVersion + 2 octets length + fragment) — je la construis dans ce
+  périmètre HTTP.
+- Fichiers concernés (tous nouveaux, sous `src/network/http/https/`
+  uniquement — **zéro fichier sous `src/network/tls/` touché**) :
+  - `TlsRecordWire.ts` — encodage/décodage binaire d'un `TlsRecord` (RFC 8446
+    §5.1), en réutilisant `CONTENT_TYPE_CODE`/`CONTENT_TYPE_FROM_CODE`/
+    `TLS_LEGACY_RECORD_VERSION` de `@/network/tls/types.ts`.
+  - Chiffrement de données applicatives simulé par réutilisation directe
+    (pas de réimplémentation) de `encryptBytes`/`decryptBytes` de
+    `@/network/dns/transport/SimulatedTls.ts`, clé = secret de trafic
+    applicatif exposé publiquement, compteur de séquence par direction.
+  - `HttpsClientSession.ts`/`HttpsServerSession.ts` — pilotage du handshake
+    `TlsClientSession`/`TlsServerSession` sur un vrai `TcpSocket`
+    (topologie `LinuxPC`/`TcpStack`), négociation ALPN `http/1.1`, puis
+    réutilisation de `Http1Wire.ts` (`encodeRequest`/`parseRequest`/
+    `encodeResponse`/`parseResponse`) pour la charge HTTP/1.1 une fois le
+    canal établi. Support HSTS et redirection HTTP→HTTPS.
+  - Nouveau fichier de test `https.test.ts` suivant le motif de
+    `tls-handshake-1rtt.test.ts` (`CertificateAuthority.generate`/
+    `CertificateVerifier`).
 - Statut / résultat : 🟡 en cours.
