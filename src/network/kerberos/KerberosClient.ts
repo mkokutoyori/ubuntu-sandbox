@@ -4,21 +4,26 @@
  * KDC-REQ/KDC-REP/KRB-ERROR PDUs sent as raw `Uint8Array`s (mirrors
  * `LdapClient`'s dial/round-trip pattern for TCP/389).
  *
- * PRD-Windows-Server-Advanced.md §5 P1 — AS exchange only (no TGS-REQ yet,
- * that's §5 P2): sends AS-REQ without pre-auth, expects
- * KDC_ERR_PREAUTH_REQUIRED, retries with PA-ENC-TIMESTAMP derived from the
- * user's password, and decrypts the resulting AS-REP.
+ * PRD-Windows-Server-Advanced.md §5 P1/P2 — the AS exchange (§3.1): sends
+ * AS-REQ without pre-auth, expects KDC_ERR_PREAUTH_REQUIRED, retries with
+ * PA-ENC-TIMESTAMP derived from the user's password, and decrypts the
+ * resulting AS-REP; and the TGS exchange (§3.3): presents the TGT plus a
+ * fresh Authenticator (PA-TGS-REQ) to obtain a service ticket.
  */
 import type { TcpStack, TcpSocket } from '@/network/tcp/TcpStack';
 import {
   encodeKdcReq, decodeKdcRep, decodeKrbError, isKrbError,
   encodeEncryptedData, encodePaEncTsEnc, decodeEncKdcRepPart,
+  encodeAuthenticator, encodeApReq,
 } from './codec';
 import {
-  principalName, PrincipalNameType, PA_ENC_TIMESTAMP, KrbErrorCode,
-  type KdcReq, type Ticket, type EncKdcRepPart,
+  principalName, PrincipalNameType, PA_ENC_TIMESTAMP, PA_TGS_REQ, KrbErrorCode,
+  type KdcReq, type Ticket, type EncKdcRepPart, type PrincipalName,
 } from './types';
-import { AES256_CTS_HMAC_SHA1_96, stringToKey, encryptWithUsage, decryptWithUsage, KU_PA_ENC_TIMESTAMP, KU_AS_REP_ENC_PART } from './crypto';
+import {
+  AES256_CTS_HMAC_SHA1_96, stringToKey, encryptWithUsage, decryptWithUsage,
+  KU_PA_ENC_TIMESTAMP, KU_AS_REP_ENC_PART, KU_TGS_REQ_AUTHENTICATOR, KU_TGS_REP_ENC_PART,
+} from './crypto';
 
 export interface KerberosConnectResult { ok: boolean; error?: string; client?: KerberosClient }
 
@@ -30,6 +35,8 @@ export interface AsExchangeResult {
   ticket?: Ticket;
   encKdcRepPart?: EncKdcRepPart;
 }
+
+export type TgsExchangeResult = AsExchangeResult;
 
 const TICKET_REQUEST_LIFETIME_SECONDS = 8 * 3600;
 
@@ -83,15 +90,52 @@ export class KerberosClient {
   }
 
   private finishFromRep(bytes: Uint8Array, password: string, realm: string, nonce: number): AsExchangeResult {
-    const rep = decodeKdcRep(bytes);
     const clientKey = stringToKey(password, realm);
-    const plaintext = decryptWithUsage(clientKey, KU_AS_REP_ENC_PART, rep.encPart.cipher);
+    return this.decodeRep(bytes, clientKey, KU_AS_REP_ENC_PART, nonce);
+  }
+
+  private decodeRep(bytes: Uint8Array, key: string, usage: number, nonce: number): AsExchangeResult {
+    const rep = decodeKdcRep(bytes);
+    const plaintext = decryptWithUsage(key, usage, rep.encPart.cipher);
     const encKdcRepPart = decodeEncKdcRepPart(plaintext);
     if (encKdcRepPart.nonce !== nonce) return { ok: false, eText: 'nonce mismatch (possible replay)' };
     return {
       ok: true, ticket: rep.ticket, encKdcRepPart,
       sessionKey: new TextDecoder().decode(encKdcRepPart.key.keyValue),
     };
+  }
+
+  /**
+   * RFC 4120 §3.3 — the TGS exchange: presents `tgt` (already-obtained
+   * ticket) plus a fresh Authenticator built from `tgtSessionKey`/`cname`/
+   * `crealm`, requesting a service ticket for `serviceName` (a computer
+   * account's bare name, e.g. `SRV1` for a `HOST/SRV1`-style SPN).
+   */
+  tgsExchange(tgt: Ticket, tgtSessionKey: string, cname: PrincipalName, crealm: string, serviceName: string): TgsExchangeResult {
+    const sname = principalName(PrincipalNameType.NT_SRV_HST, serviceName);
+    const nonce = this.nextNonce++;
+    const till = Math.floor(Date.now() / 1000) + TICKET_REQUEST_LIFETIME_SECONDS;
+
+    const authenticatorCipher = encryptWithUsage(
+      tgtSessionKey, KU_TGS_REQ_AUTHENTICATOR,
+      encodeAuthenticator({ crealm, cname, ctime: Math.floor(Date.now() / 1000), cusec: 0 }),
+    );
+    const paValue = encodeApReq({
+      apOptions: 0, ticket: tgt,
+      authenticator: { etype: AES256_CTS_HMAC_SHA1_96, cipher: authenticatorCipher },
+    });
+
+    const req: KdcReq = {
+      msgType: 'TGS-REQ', padata: [{ type: PA_TGS_REQ, value: paValue }],
+      reqBody: { kdcOptions: 0, realm: crealm, sname, till, nonce, etype: [AES256_CTS_HMAC_SHA1_96] },
+    };
+    const reply = this.roundTrip(encodeKdcReq(req));
+    if (!reply) return { ok: false, eText: 'no reply from KDC' };
+    if (isKrbError(reply)) {
+      const err = decodeKrbError(reply);
+      return { ok: false, errorCode: err.errorCode, eText: err.eText };
+    }
+    return this.decodeRep(reply, tgtSessionKey, KU_TGS_REP_ENC_PART, nonce);
   }
 }
 

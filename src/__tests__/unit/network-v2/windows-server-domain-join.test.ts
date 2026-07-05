@@ -244,7 +244,7 @@ describe('klist', () => {
     expect(out).toMatch(/Cached Tickets: \(0\)/);
   });
 
-  it('shows a simulated TGT after a successful domain logon', async () => {
+  it('shows a real TGT (from a genuine Kerberos AS exchange) after a successful domain logon', async () => {
     const { member } = await buildLan();
     await run(ps(member), 'Add-Computer -DomainName lab.local -Credential "Administrator:P@ssw0rd" -Server 192.168.40.10');
     member.logonDomain('LAB\\alice', 'alicepw');

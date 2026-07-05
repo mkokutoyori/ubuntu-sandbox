@@ -79,6 +79,8 @@ import { dialSmbShare, type SmbDialResult } from './windows/server/smb/SmbClient
 import { WinRmServerHandler } from './windows/server/winrm/WinRmServer';
 import { LdapServerHandler } from './windows/server/ad/ldap/LdapServer';
 import { KdcSessionHandler } from '@/network/kerberos/KdcSession';
+import { dialKdc } from '@/network/kerberos/KerberosClient';
+import { KerberosTicketCache } from '@/network/kerberos/KerberosTicketCache';
 import { dialWinRm, type WinRmDialResult } from './windows/server/winrm/WinRmClient';
 import { type DomainMembership, type DomainSession, parseDomainQualifiedUser } from './windows/domain/DomainTypes';
 import { joinDomain, type DomainJoinResult } from './windows/domain/DomainJoinClient';
@@ -177,6 +179,8 @@ export class WindowsPC extends EndHost implements UserAccountHost {
   private domainMembership: DomainMembership | null = null;
   /** The active domain logon (`LAB\alice`/`alice@lab.local`), if any — distinct from `userMgr.currentUser`, which domain logon also updates for prompt/env-var purposes. */
   private domainSession: DomainSession | null = null;
+  /** Real Kerberos ticket cache (PRD-Windows-Server-Advanced.md §5 P2) — populated by an actual AS exchange as a side effect of domain logon, backing `klist`. */
+  private readonly kerberosTicketCache: KerberosTicketCache = new KerberosTicketCache();
   /** LSA account policy mirrored by `net accounts`. */
   readonly accountsPolicy: WindowsAccountsPolicy = new WindowsAccountsPolicy();
   /** cmd.exe doskey macro table. */
@@ -565,8 +569,35 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     if (!result.ok) return { ok: false, message: result.message };
     this.setCurrentUser(parsed.sam);
     this.domainSession = result.session ?? null;
+    this.acquireKerberosTgt(parsed.sam, password);
     return { ok: true, message: '' };
   }
+
+  /**
+   * Real Kerberos AS exchange (PRD-Windows-Server-Advanced.md §5 P1/P2), run
+   * as a side effect of a successful domain logon — mirrors real Windows'
+   * SSO behavior of silently acquiring a TGT at logon time. Best-effort:
+   * the LDAP simple-bind above remains the actual logon decision until
+   * DomainLogonClient itself migrates onto Kerberos (§5 P25), so a KDC
+   * unreachable/erroring here doesn't fail the logon, it just leaves
+   * `klist` showing no cached tickets.
+   */
+  private acquireKerberosTgt(sam: string, password: string): void {
+    if (!this.domainMembership) return;
+    this.kerberosTicketCache.clear();
+    const conn = dialKdc(this.getTcpStack(), this.domainMembership.dcAddress);
+    if (!conn.ok || !conn.client) return;
+    const realm = this.domainMembership.dnsName.toUpperCase();
+    const result = conn.client.asExchange(sam, password, realm);
+    if (!result.ok || !result.ticket || !result.encKdcRepPart || !result.sessionKey) return;
+    this.kerberosTicketCache.add({
+      clientPrincipal: `${sam} @ ${realm}`,
+      serverPrincipal: `krbtgt/${realm} @ ${realm}`,
+      ticket: result.ticket, sessionKey: result.sessionKey, encKdcRepPart: result.encKdcRepPart,
+    });
+  }
+
+  getKerberosTicketCache(): KerberosTicketCache { return this.kerberosTicketCache; }
 
   /** Domain-qualified credential check for inbound SMB/WinRM auth — real LDAP bind, not a topology shortcut. Returns null when unqualified/not domain-joined (caller should fall back to local auth). */
   tryDomainAuth(rawUser: string, password: string): { ok: boolean; sam: string; groups: string[] } | null {
@@ -1506,7 +1537,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
           sysvolShareExists: this.smbShares.get('SYSVOL') !== undefined,
         });
       }
-      case 'klist':   return cmdKlist({ domainSession: this.domainSession, dnsName: this.domainMembership?.dnsName ?? null });
+      case 'klist':   return cmdKlist({ ticketCache: this.kerberosTicketCache });
       case 'netdom':  return this.cmdNetdom(args);
       case 'dnscmd':  return cmdDnscmd({ dns: this.getDnsServerRole() }, args);
       case 'gpupdate': {
@@ -2300,6 +2331,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
   /** Switch current user context (for testing & runas). Always drops any active domain logon — `logonDomain` re-establishes it right after calling this. */
   setCurrentUser(name: string): void {
     this.domainSession = null;
+    this.kerberosTicketCache.clear();
     if (this.userMgr.setCurrentUser(name)) {
       this.env.set('USERNAME', this.userMgr.currentUser);
       this.env.set('USERPROFILE', `C:\\Users\\${this.userMgr.currentUser}`);

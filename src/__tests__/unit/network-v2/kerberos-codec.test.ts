@@ -10,6 +10,7 @@ import {
   encodeEncTicketPart, decodeEncTicketPart, encodeEncKdcRepPart, decodeEncKdcRepPart,
   encodeKrbError, decodeKrbError, encodeEncryptedData, decodeEncryptedData,
   encodePaEncTsEnc, decodePaEncTsEnc, isKrbError,
+  encodeAuthenticator, decodeAuthenticator, encodeApReq, decodeApReq, ticketFlagsToHex,
 } from '@/network/kerberos/codec';
 import { principalName, PrincipalNameType, NO_TICKET_FLAGS, PA_ENC_TIMESTAMP, type KdcReq, type KdcRep, type Ticket } from '@/network/kerberos/types';
 import { parseTLV } from '@/network/devices/windows/server/ad/ldap/Ber';
@@ -182,5 +183,44 @@ describe('Kerberos codec — EncryptedData (RFC 4120 §5.2.9)', () => {
     expect(decoded.etype).toBe(18);
     expect(decoded.kvno).toBe(3);
     expect(decoded.cipher).toEqual(new Uint8Array([1, 2, 3]));
+  });
+});
+
+describe('Kerberos codec — Authenticator / AP-REQ (RFC 4120 §5.5.1)', () => {
+  it('round-trips an Authenticator', () => {
+    const decoded = decodeAuthenticator(encodeAuthenticator({
+      crealm: 'LAB.LOCAL', cname: principalName(PrincipalNameType.NT_PRINCIPAL, 'alice'), ctime: NOW, cusec: 12345,
+    }));
+    expect(decoded.crealm).toBe('LAB.LOCAL');
+    expect(decoded.cname.nameString).toEqual(['alice']);
+    expect(decoded.ctime).toBe(NOW);
+    expect(decoded.cusec).toBe(12345);
+  });
+
+  it('round-trips an AP-REQ carrying a Ticket with arbitrary binary cipher bytes', () => {
+    const ticket: Ticket = {
+      tktVno: 5, realm: 'LAB.LOCAL',
+      sname: principalName(PrincipalNameType.NT_SRV_INST, 'krbtgt', 'LAB.LOCAL'),
+      encPart: { etype: 18, cipher: new Uint8Array([9, 8, 7, 255, 0]) },
+    };
+    const decoded = decodeApReq(encodeApReq({
+      apOptions: 0, ticket,
+      authenticator: { etype: 18, cipher: new Uint8Array([1, 2, 3]) },
+    }));
+    expect(decoded.apOptions).toBe(0);
+    expect(decoded.ticket.realm).toBe('LAB.LOCAL');
+    expect(decoded.ticket.encPart.cipher).toEqual(new Uint8Array([9, 8, 7, 255, 0]));
+    expect(decoded.authenticator.cipher).toEqual(new Uint8Array([1, 2, 3]));
+  });
+});
+
+describe('Kerberos codec — ticketFlagsToHex (klist rendering helper)', () => {
+  it('renders no flags as 0x00000000', () => {
+    expect(ticketFlagsToHex(NO_TICKET_FLAGS)).toBe('0x00000000');
+  });
+
+  it('renders forwardable+renewable+initial+preAuthent as the matching bit pattern', () => {
+    const flags = { ...NO_TICKET_FLAGS, forwardable: true, renewable: true, initial: true, preAuthent: true };
+    expect(ticketFlagsToHex(flags)).toBe('0x40e00000');
   });
 });

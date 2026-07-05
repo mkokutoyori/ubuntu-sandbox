@@ -44,6 +44,8 @@ export function decryptWithUsage(key: string, usage: number, ciphertext: Uint8Ar
 export const KU_PA_ENC_TIMESTAMP = 1;
 export const KU_TICKET = 2;
 export const KU_AS_REP_ENC_PART = 3;
+export const KU_TGS_REQ_AUTHENTICATOR = 7;
+export const KU_TGS_REP_ENC_PART = 8;
 
 let sessionKeyCounter = 0;
 

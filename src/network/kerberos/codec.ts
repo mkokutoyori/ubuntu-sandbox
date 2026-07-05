@@ -19,7 +19,7 @@ import {
 import {
   type PrincipalName, type EncryptionKey, type EncryptedData, type TicketFlags, NO_TICKET_FLAGS,
   type Ticket, type EncTicketPart, type PaData, type KdcReqBody, type KdcReq,
-  type EncKdcRepPart, type KdcRep, type KrbError,
+  type EncKdcRepPart, type KdcRep, type KrbError, type Authenticator, type ApReq,
 } from './types';
 
 const GENERALIZED_TIME_TAG = 0x18;
@@ -78,6 +78,13 @@ function decodeTicketFlags(content: Uint8Array): TicketFlags {
   const flags = { ...NO_TICKET_FLAGS };
   for (const [key, bitIndex] of FLAG_BITS) (flags as Record<string, boolean>)[key] = (bits & (1 << (31 - bitIndex))) !== 0;
   return flags;
+}
+
+/** The real klist-style hex rendering of a `TicketFlags` set (e.g. `0x40e10000`) — for `klist`'s output, not part of the wire codec proper. */
+export function ticketFlagsToHex(flags: TicketFlags): string {
+  let bits = 0;
+  for (const [key, bitIndex] of FLAG_BITS) if (flags[key]) bits |= (1 << (31 - bitIndex));
+  return '0x' + (bits >>> 0).toString(16).padStart(8, '0');
 }
 
 // ─── PrincipalName (RFC 4120 §5.2.2) ─────────────────────────────────────────
@@ -393,4 +400,53 @@ export function decodeKrbError(bytes: Uint8Array): KrbError {
 /** RFC 4120 §5.10 — every KDC reply on the wire is either a KDC-REP or a KRB-ERROR; the application tag alone disambiguates. */
 export function isKrbError(bytes: Uint8Array): boolean {
   return parseTLV(bytes, 0).tagNumber === 30;
+}
+
+// ─── Authenticator / AP-REQ (RFC 4120 §5.5.1) ───────────────────────────────
+// cksum/subkey/seq-number/authorization-data omitted — no cross-realm
+// authorization data or session-key renegotiation modeled yet (PRD scope).
+
+export function encodeAuthenticator(a: Authenticator): Uint8Array {
+  const body = encodeSequence([
+    explicit(0, encodeInteger(KRB_PVNO)),
+    explicit(1, encodeOctetString(a.crealm)),
+    explicit(2, encodePrincipalName(a.cname)),
+    explicit(4, encodeInteger(a.cusec)),
+    explicit(5, encodeKerberosTime(a.ctime)),
+  ]);
+  return encodeApplication(2, true, body);
+}
+
+export function decodeAuthenticator(bytes: Uint8Array): Authenticator {
+  const app = parseTLV(bytes, 0);
+  const seq = parseTLV(app.content, 0);
+  const fields = fieldsOf(seq.content);
+  return {
+    crealm: decodeOctetString(fields.get(1)!.content),
+    cname: decodePrincipalName(fields.get(2)!),
+    cusec: decodeInteger(fields.get(4)!.content),
+    ctime: decodeKerberosTime(fields.get(5)!.content),
+  };
+}
+
+export function encodeApReq(req: ApReq): Uint8Array {
+  const body = encodeSequence([
+    explicit(0, encodeInteger(KRB_PVNO)),
+    explicit(1, encodeInteger(14)),
+    explicit(2, encodeBitmask32(req.apOptions)),
+    explicit(3, encodeTicket(req.ticket)),
+    explicit(4, encodeEncryptedData(req.authenticator)),
+  ]);
+  return encodeApplication(14, true, body);
+}
+
+export function decodeApReq(bytes: Uint8Array): ApReq {
+  const app = parseTLV(bytes, 0);
+  const seq = parseTLV(app.content, 0);
+  const fields = fieldsOf(seq.content);
+  return {
+    apOptions: decodeBitmask32(fields.get(2)!.content),
+    ticket: decodeTicket(encodeApplicationBytesOf(fields.get(3)!)),
+    authenticator: decodeEncryptedData(fields.get(4)!),
+  };
 }

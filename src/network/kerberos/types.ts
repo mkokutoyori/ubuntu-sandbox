@@ -133,6 +133,23 @@ export interface KrbError {
   readonly eText?: string;
 }
 
+// RFC 4120 §5.5.1 — Authenticator/AP-REQ, the TGS exchange's proof that the
+// client already holds the ticket it's presenting (cksum/subkey/seq-number/
+// authorization-data omitted, per PRD scope — no cross-realm authorization
+// data or session-key renegotiation modeled yet).
+export interface Authenticator {
+  readonly crealm: string;
+  readonly cname: PrincipalName;
+  readonly ctime: number; // epoch seconds
+  readonly cusec: number;
+}
+
+export interface ApReq {
+  readonly apOptions: number;
+  readonly ticket: Ticket;
+  readonly authenticator: EncryptedData; // encrypts an Authenticator
+}
+
 export function principalName(nameType: number, ...parts: string[]): PrincipalName {
   return { nameType, nameString: parts };
 }

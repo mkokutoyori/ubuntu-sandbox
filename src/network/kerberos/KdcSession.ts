@@ -13,15 +13,17 @@ import { parseTLV } from '@/network/devices/windows/server/ad/ldap/Ber';
 import type { DirectoryStore } from '@/network/devices/windows/server/ad/DirectoryStore';
 import {
   encodeKdcRep, decodeKdcReq, encodeKrbError, decodeEncryptedData,
-  encodeEncTicketPart, encodeEncKdcRepPart, encodePaEncTsEnc, decodePaEncTsEnc,
+  encodeEncTicketPart, decodeEncTicketPart, encodeEncKdcRepPart, encodePaEncTsEnc, decodePaEncTsEnc,
+  decodeApReq, decodeAuthenticator,
 } from './codec';
 import {
-  NO_TICKET_FLAGS, PA_ENC_TIMESTAMP, KrbErrorCode,
+  NO_TICKET_FLAGS, PA_ENC_TIMESTAMP, PA_TGS_REQ, KrbErrorCode,
   type KdcReq, type KdcRep, type Ticket, type EncTicketPart, type EncKdcRepPart,
 } from './types';
 import {
   AES256_CTS_HMAC_SHA1_96, stringToKey, encryptWithUsage, decryptWithUsage,
   randomSessionKey, KU_PA_ENC_TIMESTAMP, KU_TICKET, KU_AS_REP_ENC_PART,
+  KU_TGS_REQ_AUTHENTICATOR, KU_TGS_REP_ENC_PART,
 } from './crypto';
 
 const TICKET_LIFETIME_SECONDS = 8 * 3600; // real Kerberos policy default-ish (10h in AD; kept simple here)
@@ -40,7 +42,7 @@ export class KdcSessionHandler {
       let req: KdcReq;
       try { req = decodeKdcReq(data); } catch { return; }
       if (req.msgType === 'AS-REQ') this.handleAsReq(socket, req);
-      // TGS-REQ handling arrives in PRD-Windows-Server-Advanced.md §5 P2.
+      else this.handleTgsReq(socket, req);
     });
   }
 
@@ -123,5 +125,93 @@ export class KdcSessionHandler {
     } catch {
       return false;
     }
+  }
+
+  /**
+   * RFC 4120 §3.3/§5.4/§5.5.1 — the TGS exchange: the client presents its
+   * TGT plus a fresh Authenticator (PA-TGS-REQ) instead of a long-term
+   * secret, and receives a new service ticket for `req.reqBody.sname`.
+   * Service tickets are issued for a computer principal (its account
+   * secret is the service key) — this simulator has no separate SPN/
+   * service-account registry yet, so `sname`'s bare name must match an
+   * existing computer account (the common real-world case for HOST/CIFS-
+   * style SPNs, which map to the machine account itself).
+   */
+  private handleTgsReq(socket: TcpSocket, req: KdcReq): void {
+    const paTgsReq = req.padata.find((p) => p.type === PA_TGS_REQ);
+    if (!paTgsReq) {
+      this.sendError(socket, req, KrbErrorCode.KDC_ERR_PREAUTH_REQUIRED, 'A TGT and Authenticator are required');
+      return;
+    }
+
+    const realm = this.ctx.store.getRealm();
+    const krbtgtSecret = this.ctx.store.getUserSecret('krbtgt');
+    if (krbtgtSecret === null) {
+      this.sendError(socket, req, KrbErrorCode.KDC_ERR_S_PRINCIPAL_UNKNOWN);
+      return;
+    }
+    const krbtgtKey = stringToKey(krbtgtSecret, realm);
+
+    let apReq: ReturnType<typeof decodeApReq>;
+    let ticketPart: EncTicketPart;
+    try {
+      apReq = decodeApReq(paTgsReq.value);
+      ticketPart = decodeEncTicketPart(decryptWithUsage(krbtgtKey, KU_TICKET, apReq.ticket.encPart.cipher));
+    } catch {
+      this.sendError(socket, req, KrbErrorCode.KRB_AP_ERR_TKT_EXPIRED, 'Decryption failed');
+      return;
+    }
+    const now = Math.floor(Date.now() / 1000);
+    if (ticketPart.endtime < now) {
+      this.sendError(socket, req, KrbErrorCode.KRB_AP_ERR_TKT_EXPIRED);
+      return;
+    }
+
+    const ticketSessionKey = new TextDecoder().decode(ticketPart.key.keyValue);
+    try {
+      const authenticator = decodeAuthenticator(decryptWithUsage(ticketSessionKey, KU_TGS_REQ_AUTHENTICATOR, apReq.authenticator.cipher));
+      const validCname = authenticator.cname.nameString.join('/') === ticketPart.cname.nameString.join('/');
+      const validSkew = Math.abs(now - authenticator.ctime) <= CLOCK_SKEW_SECONDS;
+      if (!validCname || !validSkew) throw new Error('authenticator mismatch');
+    } catch {
+      this.sendError(socket, req, KrbErrorCode.KRB_AP_ERR_TKT_EXPIRED, 'Authenticator verification failed');
+      return;
+    }
+
+    const serviceName = req.reqBody.sname.nameString[0];
+    const serviceSecret = serviceName === 'krbtgt' ? krbtgtSecret : this.ctx.store.getComputerSecret(serviceName);
+    if (serviceSecret === null) {
+      this.sendError(socket, req, KrbErrorCode.KDC_ERR_S_PRINCIPAL_UNKNOWN);
+      return;
+    }
+    const serviceKey = stringToKey(serviceSecret, realm);
+
+    const sessionKey = randomSessionKey();
+    const sessionKeyValue = new TextEncoder().encode(sessionKey);
+    const endtime = Math.min(req.reqBody.till, ticketPart.endtime);
+    const flags = { ...NO_TICKET_FLAGS, renewable: ticketPart.flags.renewable };
+
+    const encTicketPart: EncTicketPart = {
+      flags, key: { keyType: AES256_CTS_HMAC_SHA1_96, keyValue: sessionKeyValue },
+      crealm: ticketPart.crealm, cname: ticketPart.cname, authtime: ticketPart.authtime, starttime: now, endtime,
+    };
+    const ticket: Ticket = {
+      tktVno: 5, realm, sname: req.reqBody.sname,
+      encPart: { etype: AES256_CTS_HMAC_SHA1_96, cipher: encryptWithUsage(serviceKey, KU_TICKET, encodeEncTicketPart(encTicketPart)) },
+    };
+
+    const encKdcRepPart: EncKdcRepPart = {
+      key: { keyType: AES256_CTS_HMAC_SHA1_96, keyValue: sessionKeyValue },
+      nonce: req.reqBody.nonce, flags, authtime: ticketPart.authtime, starttime: now, endtime,
+      srealm: realm, sname: req.reqBody.sname,
+    };
+    const rep: KdcRep = {
+      msgType: 'TGS-REP', padata: [], crealm: ticketPart.crealm, cname: ticketPart.cname, ticket,
+      encPart: {
+        etype: AES256_CTS_HMAC_SHA1_96,
+        cipher: encryptWithUsage(ticketSessionKey, KU_TGS_REP_ENC_PART, encodeEncKdcRepPart('TGS-REP', encKdcRepPart)),
+      },
+    };
+    socket.send(encodeKdcRep(rep));
   }
 }

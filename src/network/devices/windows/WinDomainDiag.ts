@@ -1,10 +1,15 @@
 /**
- * Domain diagnostic commands (PRD-Windows-Server.md §5 P6): `nltest
- * /dsgetdc:`, `dcdiag` (basic checks), `klist` (simulated tickets — real
- * Kerberos ticket cryptography is out of scope per PRD §2.2).
+ * Domain diagnostic commands: `nltest /dsgetdc:` and `dcdiag` (basic
+ * checks) from PRD-Windows-Server.md §5 P6; `klist` now reflects the real
+ * `KerberosTicketCache` populated by a genuine AS/TGS exchange
+ * (PRD-Windows-Server-Advanced.md §5 P2) rather than a cosmetic canned
+ * string.
  */
 
-import type { DomainMembership, DomainSession } from './domain/DomainTypes';
+import type { DomainMembership } from './domain/DomainTypes';
+import type { KerberosTicketCache } from '@/network/kerberos/KerberosTicketCache';
+import { ticketFlagsToHex } from '@/network/kerberos/codec';
+import type { TicketFlags } from '@/network/kerberos/types';
 
 // ─── nltest ───────────────────────────────────────────────────────────────
 
@@ -81,27 +86,45 @@ export function cmdDcdiag(ctx: DcdiagContext): string {
 // ─── klist ────────────────────────────────────────────────────────────────
 
 export interface KlistContext {
-  domainSession: DomainSession | null;
-  dnsName: string | null;
+  ticketCache: KerberosTicketCache;
 }
 
+const FLAG_NAMES: ReadonlyArray<[keyof TicketFlags, string]> = [
+  ['forwardable', 'forwardable'], ['forwarded', 'forwarded'],
+  ['proxiable', 'proxiable'], ['proxy', 'proxy'],
+  ['renewable', 'renewable'], ['initial', 'initial'],
+  ['preAuthent', 'pre_authent'], ['hwAuthent', 'hw_authent'],
+];
+
+function formatFlags(flags: TicketFlags): string {
+  const names = FLAG_NAMES.filter(([key]) => flags[key]).map(([, name]) => name);
+  return `${ticketFlagsToHex(flags)} -> ${names.join(' ')}`;
+}
+
+function formatTime(epochSeconds: number): string {
+  return new Date(epochSeconds * 1000).toUTCString();
+}
+
+/** `klist` — real ticket cache state (PRD-Windows-Server-Advanced.md §5 P2), populated by an actual AS/TGS exchange rather than a canned string. */
 export function cmdKlist(ctx: KlistContext): string {
-  if (!ctx.domainSession || !ctx.dnsName) {
+  const tickets = ctx.ticketCache.list();
+  if (tickets.length === 0) {
     return 'Current LogonId is 0:0x3e7\n\nCached Tickets: (0)\n';
   }
-  const realm = ctx.dnsName.toUpperCase();
-  return [
-    'Current LogonId is 0:0x186a5',
-    '',
-    'Cached Tickets: (1)',
-    '',
-    `#0>     Client: ${ctx.domainSession.sam} @ ${realm}`,
-    `        Server: krbtgt/${realm} @ ${realm}`,
-    '        KerbTicket Encryption Type: AES-256-CTS-HMAC-SHA1-96',
-    '        Ticket Flags 0x40e10000 -> forwardable renewable initial pre_authent name_canonicalize',
-    '        Start Time: (simulated)',
-    '        End Time:   (simulated)',
-    '        Renew Time: (simulated)',
-    '        Session Key Type: AES-256-CTS-HMAC-SHA1-96',
-  ].join('\n');
+  const lines = ['Current LogonId is 0:0x186a5', '', `Cached Tickets: (${tickets.length})`, ''];
+  tickets.forEach((t, i) => {
+    const e = t.encKdcRepPart;
+    lines.push(
+      `#${i}>     Client: ${t.clientPrincipal}`,
+      `        Server: ${t.serverPrincipal}`,
+      `        KerbTicket Encryption Type: AES-256-CTS-HMAC-SHA1-96`,
+      `        Ticket Flags ${formatFlags(e.flags)}`,
+      `        Start Time: ${formatTime(e.starttime ?? e.authtime)}`,
+      `        End Time:   ${formatTime(e.endtime)}`,
+      `        Renew Time: ${e.renewTill !== undefined ? formatTime(e.renewTill) : 'none'}`,
+      '        Session Key Type: AES-256-CTS-HMAC-SHA1-96',
+      '',
+    );
+  });
+  return lines.join('\n').trimEnd() + '\n';
 }
