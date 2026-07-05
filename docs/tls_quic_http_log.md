@@ -97,7 +97,7 @@ ci-dessous.
 | P1 | Varints & format de paquet | — | ✅ terminé | Arthur |
 | P2 | Trames | P1 | ✅ terminé | Arthur |
 | P3 | Protection de paquets (clés de test) | P1, P2 | ✅ terminé | Arthur |
-| P4 | Recouvrement de pertes | P2, P3 | ⬜ disponible | — |
+| P4 | Recouvrement de pertes | P2, P3 | 🟡 en cours | Arthur |
 | P5 | Contrôle de congestion | P4 | ⬜ disponible | — |
 | P6 | Streams | P2 | ✅ terminé | Arthur |
 | P7 | Machine à états de connexion (sans TLS réel) | P3–P6 | ⬜ disponible | — |
@@ -724,3 +724,16 @@ seulement le consommer.
   `network-v2/` est en cours en arrière-plan, comme convenu par la
   cadence toutes-les-4-phases ; résultat à suivre dans une prochaine
   entrée.
+
+### [2026-07-05 (heure non horodatée par l'outil) UTC] Arthur — PRD-QUIC/P4 — ANNONCE
+- Tâche : `src/network/quic/lossRecovery.ts` — RFC 9002 §5/§6 :
+  échantillon de RTT et lissage (`smoothed_rtt`/`rttvar`/`min_rtt`),
+  détection de perte par seuil de paquets (`kPacketThreshold`=3) et
+  par seuil temporel (`kTimeThreshold`=9/8 × max RTT), retransmission
+  des **données** perdues (les trames originales du paquet perdu sont
+  restituées à l'appelant pour ré-encapsulation dans un nouveau
+  paquet, pas le paquet lui-même retransmis à l'identique), PTO avec
+  recul exponentiel (`ptoCount`) remis à zéro dès qu'un ACK progresse.
+- Fichiers concernés : nouveau fichier
+  `src/network/quic/lossRecovery.ts` — purement additif.
+- Statut / résultat : en cours.
