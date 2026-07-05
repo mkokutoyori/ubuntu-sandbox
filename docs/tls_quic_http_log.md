@@ -83,8 +83,8 @@ ci-dessous.
 | P3 | Handshake 1-RTT nominal | P1, P2 | ✅ terminé | Claude (Sonnet 5) |
 | P4 | mTLS | P3 | ✅ terminé | Claude (Sonnet 5) |
 | P5 | HelloRetryRequest | P3 | ✅ terminé | Claude (Sonnet 5) |
-| P6 | Alertes complètes | P3 | 🟡 en cours | Claude (Sonnet 5) |
-| P7 | ALPN & suites cryptographiques | P3 | ⬜ disponible | — |
+| P6 | Alertes complètes | P3 | ✅ terminé | Claude (Sonnet 5) |
+| P7 | ALPN & suites cryptographiques | P3 | 🟡 en cours | Claude (Sonnet 5) |
 | P8 | Résumption PSK & 0-RTT | P2, P3 | ⬜ disponible | — |
 | P9 | KeyUpdate | P3 | ⬜ disponible | — |
 | P10 | Observabilité | P3–P9 | ⬜ disponible | — |
@@ -545,4 +545,39 @@ seulement le consommer.
   injectées par les tests).
 - Fichiers concernés : nouveaux fichiers sous `src/network/quic/`
   uniquement — purement additif.
+- Statut / résultat : en cours.
+
+### [2026-07-05 (heure non horodatée par l'outil) UTC] Claude (Sonnet 5) — PRD-TLS/P6 — TERMINÉ
+- Tâche : cf. entrée ANNONCE précédente.
+- Fichiers concernés : nouveau `alerts.ts` + `TlsClientSession.ts`/
+  `TlsServerSession.ts` (modifiés, additivement — nouveau champ
+  `lastAlert`) + `tls-alerts.test.ts` (6 tests).
+- Statut / résultat : ✅ terminé. Dictionnaire `AlertDescription` complet
+  avec codes RFC 8446 §6, mapping systématique depuis
+  `CertificateVerifier.VerificationReason` (`unknown_ca`,
+  `certificate_expired`, `bad_certificate`, `certificate_revoked`,
+  `certificate_unknown`) ; `decrypt_error` câblé pour les échecs
+  CertificateVerify/Finished (conforme §4.4.3/§4.4.4), `handshake_failure`
+  pour HRR sans groupe mutuel, `decode_error`/`unexpected_message` pour
+  les erreurs de structure. `tsc`/`eslint` propres, 6/6 tests verts dès la
+  première exécution ; suites P3/P4/P5 (14 tests) toujours vertes sans
+  modification. Régression ciblée (tls-*, eaptls-*, peap-ttls-handshake,
+  dns-encrypted-transports) : 10 fichiers, 81 tests, tout vert.
+- Suggestion pour la suite : je continue sur `PRD-TLS.md`/P7 (ALPN &
+  suites cryptographiques) — voir l'annonce ci-dessous.
+
+### [2026-07-05 (heure non horodatée par l'outil) UTC] Claude (Sonnet 5) — PRD-TLS/P7 — ANNONCE
+- Tâche : `alpn.ts` (RFC 7301 — négociation générique : liste ordonnée
+  côté client, premier match côté serveur) et `cipherSuites.ts`
+  (dictionnaire des 5 suites obligatoires §B.4 déjà typées dans
+  `types.ts`, + sélection serveur explicite parmi celles offertes par le
+  client). Câblage additif dans les sessions : le serveur choisit
+  réellement une suite parmi `clientHello.cipherSuites` (au lieu de
+  toujours utiliser sa suite par défaut/configurée sans vérifier
+  l'intersection) et négocie l'ALPN via la nouvelle logique partagée au
+  lieu du `?.[0]` actuel dans `EncryptedExtensions`.
+- Fichiers concernés : nouveaux fichiers `alpn.ts`/`cipherSuites.ts` +
+  modification additive de `TlsServerSession.ts` (et éventuellement
+  `TlsClientSession.ts` si la vérification de suite négociée s'avère
+  utile côté client) + nouveau fichier de test.
 - Statut / résultat : en cours.
