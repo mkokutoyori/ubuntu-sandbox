@@ -575,6 +575,22 @@ export class DirectoryStore {
     return entry ? firstOf(entry.attributes.get('userpassword')) || null : null;
   }
 
+  /** `Set-ADComputer -Identity <name> -AllowedToDelegateTo <svc1,svc2,...>` (PRD-Windows-Server-Advanced.md §5 P10) — the `msDS-AllowedToDelegateTo` multi-valued attribute S4U2Proxy checks. */
+  setAllowedToDelegateTo(name: string, targetServiceNames: string[]): DirOpResult {
+    const entry = this.findComputerEntry(name);
+    if (!entry) return { ok: false, message: `Cannot find an object with identity: '${name}'.` };
+    this.tree.modifyEntry(entry.dn, [{ op: 'replace', type: 'msDS-AllowedToDelegateTo', values: targetServiceNames }]);
+    return { ok: true, message: '' };
+  }
+
+  /** Whether `delegatingComputerName`'s `msDS-AllowedToDelegateTo` lists `targetServiceName` — the S4U2Proxy gate (`KdcSession.handleS4U2Proxy`). */
+  isDelegationAllowedFrom(delegatingComputerName: string, targetServiceName: string): boolean {
+    const entry = this.findComputerEntry(delegatingComputerName);
+    if (!entry) return false;
+    const allowed = entry.attributes.get('msds-allowedtodelegateto') ?? [];
+    return allowed.some(v => v.toLowerCase() === targetServiceName.toLowerCase());
+  }
+
   /**
    * Creates the `krbtgt` account the KDC uses to encrypt every ticket-
    * granting ticket, if it doesn't already exist (idempotent — real DC

@@ -84,6 +84,13 @@ export interface KdcReqBody {
   readonly till: number;
   readonly nonce: number;
   readonly etype: readonly number[];
+  /**
+   * RFC 4120 §5.4.1's additional-tickets, tag [11] — this simulator only
+   * ever populates it for MS-SFU's S4U2Proxy (PRD-Windows-Server-Advanced.md
+   * §5 P10): the single "evidence ticket" a delegating service presents
+   * alongside its own TGT, proving a user already authenticated to it.
+   */
+  readonly additionalTickets?: readonly Ticket[];
 }
 
 export interface KdcReq {
@@ -116,6 +123,7 @@ export interface KdcRep {
 // RFC 4120 §7.5.9 — only the codes this simulator's KDC actually emits.
 export const enum KrbErrorCode {
   KDC_ERR_NAME_EXP = 1,
+  KDC_ERR_BADOPTION = 13,
   KDC_ERR_C_PRINCIPAL_UNKNOWN = 6,
   KDC_ERR_S_PRINCIPAL_UNKNOWN = 7,
   KDC_ERR_ETYPE_NOSUPP = 14,

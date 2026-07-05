@@ -178,8 +178,7 @@ export function encodeTicket(t: Ticket): Uint8Array {
   return encodeApplication(1, true, body);
 }
 
-export function decodeTicket(bytes: Uint8Array): Ticket {
-  const app = parseTLV(bytes, 0);
+function decodeTicketFromNode(app: ParsedTLV): Ticket {
   const seq = parseTLV(app.content, 0);
   const fields = fieldsOf(seq.content);
   return {
@@ -188,6 +187,10 @@ export function decodeTicket(bytes: Uint8Array): Ticket {
     sname: decodePrincipalName(fields.get(2)!),
     encPart: decodeEncryptedData(fields.get(3)!),
   };
+}
+
+export function decodeTicket(bytes: Uint8Array): Ticket {
+  return decodeTicketFromNode(parseTLV(bytes, 0));
 }
 
 // RFC 4120 §5.3.4 — TransitedEncoding; no cross-realm transit modeled yet (§ PRD 2.1.10), always empty DOMAIN-X500-COMPRESS.
@@ -254,6 +257,9 @@ function encodeKdcReqBody(b: KdcReqBody): Uint8Array {
   parts.push(explicit(5, encodeKerberosTime(b.till)));
   parts.push(explicit(7, encodeInteger(b.nonce)));
   parts.push(explicit(8, encodeSequence(b.etype.map(encodeInteger))));
+  if (b.additionalTickets && b.additionalTickets.length > 0) {
+    parts.push(explicit(11, encodeSequence(b.additionalTickets.map(encodeTicket))));
+  }
   return encodeSequence(parts);
 }
 
@@ -261,6 +267,7 @@ function decodeKdcReqBody(node: ParsedTLV): KdcReqBody {
   const fields = fieldsOf(node.content);
   const kdcOptions = decodeBitmask32(fields.get(0)!.content);
   const cnameNode = fields.get(1);
+  const additionalTicketsNode = fields.get(11);
   return {
     kdcOptions,
     cname: cnameNode ? decodePrincipalName(cnameNode) : undefined,
@@ -269,6 +276,7 @@ function decodeKdcReqBody(node: ParsedTLV): KdcReqBody {
     till: decodeKerberosTime(fields.get(5)!.content),
     nonce: decodeInteger(fields.get(7)!.content),
     etype: parseAll(fields.get(8)!.content).map((n) => decodeInteger(n.content)),
+    additionalTickets: additionalTicketsNode ? parseAll(additionalTicketsNode.content).map(decodeTicketFromNode) : undefined,
   };
 }
 

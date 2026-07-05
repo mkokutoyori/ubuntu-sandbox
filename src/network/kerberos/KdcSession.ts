@@ -61,7 +61,13 @@ export class KdcSessionHandler {
       return;
     }
     const sam = cname.nameString[0];
-    const secret = this.ctx.store.getUserSecret(sam);
+    /**
+     * A computer account (sam ending in `$`) is as much a Kerberos
+     * principal as a user is — a delegating service needs its own TGT
+     * for S4U2Proxy (PRD-Windows-Server-Advanced.md §5 P10), obtained
+     * exactly the same way a user's is.
+     */
+    const secret = sam.endsWith('$') ? this.ctx.store.getComputerSecret(sam.slice(0, -1)) : this.ctx.store.getUserSecret(sam);
     if (secret === null) {
       this.sendError(socket, req, KrbErrorCode.KDC_ERR_C_PRINCIPAL_UNKNOWN);
       return;
@@ -204,6 +210,23 @@ export class KdcSessionHandler {
       return;
     }
 
+    /**
+     * MS-SFU S4U2Proxy (PRD-Windows-Server-Advanced.md §5 P10): the
+     * already-verified ticket above is the *delegating service's own TGT*
+     * (its cname is that service's computer account), and
+     * `additionalTickets[0]` is the "evidence ticket" — the service
+     * ticket a user presented to that service, proving they're already
+     * authenticated. Decrypting it with the delegating service's own key
+     * (the same key it would use to accept an ordinary AP-REQ) recovers
+     * the user's real identity; `msDS-AllowedToDelegateTo` then gates
+     * whether that service may obtain a ticket to `req.reqBody.sname` on
+     * the user's behalf.
+     */
+    if (req.reqBody.additionalTickets && req.reqBody.additionalTickets.length > 0) {
+      this.handleS4U2Proxy(socket, req, realm, ticketPart);
+      return;
+    }
+
     const sessionKey = randomSessionKey();
     const sessionKeyValue = new TextEncoder().encode(sessionKey);
     const endtime = Math.min(req.reqBody.till, ticketPart.endtime);
@@ -257,6 +280,76 @@ export class KdcSessionHandler {
       encPart: {
         etype: AES256_CTS_HMAC_SHA1_96,
         cipher: encryptWithUsage(ticketSessionKey, KU_TGS_REP_ENC_PART, encodeEncKdcRepPart('TGS-REP', encKdcRepPart)),
+      },
+    };
+    socket.send(encodeKdcRep(rep));
+  }
+
+  /**
+   * MS-SFU S4U2Proxy (PRD-Windows-Server-Advanced.md §5 P10): `ticketPart`
+   * is the delegating service's own already-verified TGT contents (its
+   * `cname` is that service's computer account); `req.reqBody.
+   * additionalTickets[0]` is the evidence ticket. On success, the issued
+   * ticket's `cname`/`crealm` are the *user's* (from the evidence ticket),
+   * not the delegating service's — exactly as if the user had asked
+   * directly.
+   */
+  private handleS4U2Proxy(socket: TcpSocket, req: KdcReq, realm: string, ticketPart: EncTicketPart): void {
+    const delegatingService = ticketPart.cname.nameString[0].replace(/\$$/, '');
+    const delegatingSecret = this.ctx.store.getComputerSecret(delegatingService);
+    if (delegatingSecret === null) {
+      this.sendError(socket, req, KrbErrorCode.KDC_ERR_C_PRINCIPAL_UNKNOWN);
+      return;
+    }
+    const delegatingKey = stringToKey(delegatingSecret, realm);
+
+    const evidenceTicket = req.reqBody.additionalTickets![0];
+    let evidencePart: EncTicketPart;
+    try {
+      evidencePart = decodeEncTicketPart(decryptWithUsage(delegatingKey, KU_TICKET, evidenceTicket.encPart.cipher));
+    } catch {
+      this.sendError(socket, req, KrbErrorCode.KRB_AP_ERR_TKT_EXPIRED, 'Evidence ticket decryption failed');
+      return;
+    }
+
+    const targetServiceName = req.reqBody.sname.nameString[0];
+    if (!this.ctx.store.isDelegationAllowedFrom(delegatingService, targetServiceName)) {
+      this.sendError(socket, req, KrbErrorCode.KDC_ERR_BADOPTION, 'Delegation to this service is not permitted');
+      return;
+    }
+    const targetSecret = this.ctx.store.getComputerSecret(targetServiceName);
+    if (targetSecret === null) {
+      this.sendError(socket, req, KrbErrorCode.KDC_ERR_S_PRINCIPAL_UNKNOWN);
+      return;
+    }
+    const targetKey = stringToKey(targetSecret, realm);
+
+    const now = Math.floor(Date.now() / 1000);
+    const sessionKey = randomSessionKey();
+    const sessionKeyValue = new TextEncoder().encode(sessionKey);
+    const endtime = Math.min(req.reqBody.till, evidencePart.endtime);
+    const flags = { ...NO_TICKET_FLAGS, forwarded: true };
+
+    const encTicketPart: EncTicketPart = {
+      flags, key: { keyType: AES256_CTS_HMAC_SHA1_96, keyValue: sessionKeyValue },
+      crealm: evidencePart.crealm, cname: evidencePart.cname, authtime: evidencePart.authtime, starttime: now, endtime,
+    };
+    const ticket: Ticket = {
+      tktVno: 5, realm, sname: req.reqBody.sname,
+      encPart: { etype: AES256_CTS_HMAC_SHA1_96, cipher: encryptWithUsage(targetKey, KU_TICKET, encodeEncTicketPart(encTicketPart)) },
+    };
+
+    const delegatingTicketSessionKey = new TextDecoder().decode(ticketPart.key.keyValue);
+    const encKdcRepPart: EncKdcRepPart = {
+      key: { keyType: AES256_CTS_HMAC_SHA1_96, keyValue: sessionKeyValue },
+      nonce: req.reqBody.nonce, flags, authtime: evidencePart.authtime, starttime: now, endtime,
+      srealm: realm, sname: req.reqBody.sname,
+    };
+    const rep: KdcRep = {
+      msgType: 'TGS-REP', padata: [], crealm: evidencePart.crealm, cname: evidencePart.cname, ticket,
+      encPart: {
+        etype: AES256_CTS_HMAC_SHA1_96,
+        cipher: encryptWithUsage(delegatingTicketSessionKey, KU_TGS_REP_ENC_PART, encodeEncKdcRepPart('TGS-REP', encKdcRepPart)),
       },
     };
     socket.send(encodeKdcRep(rep));

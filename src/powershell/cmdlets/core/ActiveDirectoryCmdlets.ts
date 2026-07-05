@@ -318,6 +318,24 @@ export class GetADComputerCmdlet implements ICmdlet {
   }
 }
 
+// ── Set-ADComputer (PRD-Windows-Server-Advanced.md §5 P10) ──────────────────
+
+export class SetADComputerCmdlet implements ICmdlet {
+  readonly name = 'set-adcomputer';
+  readonly aliases = [] as const;
+  readonly parameters = ['Identity', 'AllowedToDelegateTo'] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const ad = requireAd(ctx, 'Set-ADComputer');
+    const identity = identityOf(ctx);
+    if (!identity) { ctx.emitError('Set-ADComputer : Cannot process command because of one or more missing mandatory parameters: Identity.'); return null; }
+    const targets = stringArrayOf(ctx, 'allowedtodelegateto');
+    const res = ad.setComputerAllowedToDelegateTo(identity, targets);
+    if (!res.ok) { ctx.emitError(`Set-ADComputer : ${res.message}`); return null; }
+    return null;
+  }
+}
+
 // ── New/Get-ADOrganizationalUnit ─────────────────────────────────────────────
 
 export class NewADOrganizationalUnitCmdlet implements ICmdlet {

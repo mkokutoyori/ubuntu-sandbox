@@ -448,6 +448,14 @@ class WindowsAdAdapter implements IAdProvider {
     return c ? { name: c.name, dn: c.dn, enabled: c.enabled } : null;
   }
 
+  setComputerAllowedToDelegateTo(identity: string, targetServiceNames: string[]): AdOpResult {
+    const store = this.requireStore('Set-ADComputer');
+    const denied = this.requireAdmin('Set-ADComputer');
+    if (denied) return denied;
+    const name = store.resolveIdentity(identity).replace(/\$$/, '');
+    return store.setAllowedToDelegateTo(name, targetServiceNames);
+  }
+
   newOrganizationalUnit(name: string): AdOpResult {
     const store = this.requireStore('New-ADOrganizationalUnit');
     const denied = this.requireAdmin('New-ADOrganizationalUnit');

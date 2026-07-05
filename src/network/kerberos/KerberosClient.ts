@@ -155,6 +155,43 @@ export class KerberosClient {
     }
     return this.decodeRep(reply, tgtSessionKey, KU_TGS_REP_ENC_PART, nonce);
   }
+
+  /**
+   * MS-SFU's S4U2Proxy (PRD-Windows-Server-Advanced.md §5 P10, RFC 4120
+   * §5.4.1's additional-tickets): a *service* already holding its own TGT
+   * (`serviceTgt`/`serviceTgtSessionKey`/`serviceCname`/`serviceCrealm`)
+   * asks its realm's KDC for a ticket to `targetServiceName` on behalf of
+   * a user who already authenticated to it, proven by presenting
+   * `evidenceTicket` — the service ticket that user's own AP-REQ carried.
+   * If `msDS-AllowedToDelegateTo` on the service's computer account lists
+   * `targetServiceName`, the KDC returns a ticket whose `cname`/`crealm`
+   * are the *user's*, not the service's — exactly as if the user had
+   * requested it directly.
+   */
+  s4u2Proxy(
+    serviceTgt: Ticket, serviceTgtSessionKey: string, serviceCname: PrincipalName, serviceCrealm: string,
+    evidenceTicket: Ticket, targetServiceName: string,
+  ): TgsExchangeResult {
+    const sname = principalName(PrincipalNameType.NT_SRV_HST, targetServiceName);
+    const nonce = this.nextNonce++;
+    const till = Math.floor(Date.now() / 1000) + TICKET_REQUEST_LIFETIME_SECONDS;
+    const paValue = buildApReq(serviceTgt, serviceTgtSessionKey, serviceCname, serviceCrealm, KU_TGS_REQ_AUTHENTICATOR);
+
+    const req: KdcReq = {
+      msgType: 'TGS-REQ', padata: [{ type: PA_TGS_REQ, value: paValue }],
+      reqBody: {
+        kdcOptions: 0, realm: serviceCrealm, sname, till, nonce, etype: [AES256_CTS_HMAC_SHA1_96],
+        additionalTickets: [evidenceTicket],
+      },
+    };
+    const reply = this.roundTrip(encodeKdcReq(req));
+    if (!reply) return { ok: false, eText: 'no reply from KDC' };
+    if (isKrbError(reply)) {
+      const err = decodeKrbError(reply);
+      return { ok: false, errorCode: err.errorCode, eText: err.eText };
+    }
+    return this.decodeRep(reply, serviceTgtSessionKey, KU_TGS_REP_ENC_PART, nonce);
+  }
 }
 
 /** Dial TCP/88 on `targetIp` and wrap the socket in a `KerberosClient`. */

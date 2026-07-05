@@ -210,6 +210,8 @@ export interface IAdProvider {
   removeGroupMember(groupIdentity: string, members: string[]): AdOpResult;
 
   getComputer(identity: string): AdComputerInfo | null;
+  /** `Set-ADComputer -Identity <name> -AllowedToDelegateTo <svc1,svc2,...>` (PRD-Windows-Server-Advanced.md §5 P10) — the `msDS-AllowedToDelegateTo` list S4U2Proxy checks. */
+  setComputerAllowedToDelegateTo(identity: string, targetServiceNames: string[]): AdOpResult;
 
   newOrganizationalUnit(name: string, path?: string): AdOpResult;
   getOrganizationalUnit(identity: string): AdOrgUnitInfo | null;
