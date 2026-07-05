@@ -78,6 +78,7 @@ import { SmbServerHandler } from './windows/server/smb/SmbServer';
 import { dialSmbShare, type SmbDialResult } from './windows/server/smb/SmbClient';
 import { WinRmServerHandler } from './windows/server/winrm/WinRmServer';
 import { LdapServerHandler } from './windows/server/ad/ldap/LdapServer';
+import { KdcSessionHandler } from '@/network/kerberos/KdcSession';
 import { dialWinRm, type WinRmDialResult } from './windows/server/winrm/WinRmClient';
 import { type DomainMembership, type DomainSession, parseDomainQualifiedUser } from './windows/domain/DomainTypes';
 import { joinDomain, type DomainJoinResult } from './windows/domain/DomainJoinClient';
@@ -416,6 +417,18 @@ export class WindowsPC extends EndHost implements UserAccountHost {
         const store = this.getDirectoryStore();
         if (!store) { socket.close(); return; }
         new LdapServerHandler({ tree: store.getTree(), auth: store.getBindCheck() }).register(socket);
+      },
+    });
+
+    // TCP KDC listener on port 88 (RFC 4120 §7.2.1) — real AS-REQ/AS-REP
+    // Kerberos exchange (PRD-Windows-Server-Advanced.md §5 P1). Refuses
+    // (drops) the connection until this server is a domain controller,
+    // mirroring the LDAP port-389 listener above.
+    this.getTcpStack().listen(88, {
+      onAccept: (socket) => {
+        const store = this.getDirectoryStore();
+        if (!store) { socket.close(); return; }
+        new KdcSessionHandler({ store }).register(socket);
       },
     });
   }

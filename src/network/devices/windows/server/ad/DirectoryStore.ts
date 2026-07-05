@@ -75,6 +75,9 @@ export class DirectoryStore {
   /** The domain root's DN — the default `New-GPLink -Target` for a domain-wide policy (Default Domain Policy). */
   getDomainDn(): string { return formatDN(this.tree.getRootDn()); }
 
+  /** Kerberos realm name (RFC 4120 §6.1: the DNS domain name, uppercased) — used by `KdcSession`/`KerberosClient`. */
+  getRealm(): string { return this.dnsName.toUpperCase(); }
+
   /** The real DIT this store operates on — `LdapServerHandler` serves this same tree over TCP/389. */
   getTree(): DirectoryTree { return this.tree; }
 
@@ -312,6 +315,12 @@ export class DirectoryStore {
     return isEnabledFromUac(entry.attributes.get('useraccountcontrol')) && firstOf(entry.attributes.get('userpassword')) === password;
   }
 
+  /** The user's (or krbtgt's) long-term secret — for `KdcSession` to derive the client's/service's Kerberos key from, not for authentication (see `checkPassword`). Null if absent, matching `KDC_ERR_C_PRINCIPAL_UNKNOWN`. */
+  getUserSecret(sam: string): string | null {
+    const entry = this.findUserEntry(sam);
+    return entry ? firstOf(entry.attributes.get('userpassword')) || null : null;
+  }
+
   /** Direct group membership only (real AD's `memberOf` linked attribute reflects direct membership — no nested-group expansion, per PRD §2.2 scope). */
   groupsForUser(sam: string): AdGroup[] {
     const entry = this.findUserEntry(sam);
@@ -463,6 +472,27 @@ export class DirectoryStore {
     const entry = this.findComputerEntry(name);
     if (!entry) return false;
     return isEnabledFromUac(entry.attributes.get('useraccountcontrol')) && firstOf(entry.attributes.get('userpassword')) === secret;
+  }
+
+  /** The computer account's long-term secret — for `KdcSession` to derive a machine principal's Kerberos key from (mirrors `getUserSecret`). */
+  getComputerSecret(name: string): string | null {
+    const entry = this.findComputerEntry(name);
+    return entry ? firstOf(entry.attributes.get('userpassword')) || null : null;
+  }
+
+  /**
+   * Creates the `krbtgt` account the KDC uses to encrypt every ticket-
+   * granting ticket, if it doesn't already exist (idempotent — real DC
+   * promotion creates it exactly once). Disabled and excluded from
+   * `Domain Users`, matching real AD's krbtgt: it never interactively
+   * logs on, it only exists to hold the KDC's own long-term key.
+   */
+  ensureKrbtgtPrincipal(secret: string): DirOpResult {
+    if (this.findUserEntry('krbtgt')) return { ok: true, message: '' };
+    return this.createUserEntry('krbtgt', {
+      password: secret, fullName: 'Key Distribution Center Service Account',
+      containerDn: this.usersOuDn, enabled: false,
+    });
   }
 
   // ─── Identity resolution / LDAP bind ────────────────────────────────

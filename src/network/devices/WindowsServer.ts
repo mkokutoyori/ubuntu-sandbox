@@ -23,6 +23,7 @@ import { WindowsDnsServerRole } from './windows/server/dns/WindowsDnsServerRole'
 import { WindowsDhcpServerRole } from './windows/server/dhcp/WindowsDhcpServerRole';
 import { WindowsNpsRole } from './windows/server/nps/WindowsNpsRole';
 import { WindowsIisRole } from './windows/server/iis/WindowsIisRole';
+import { randomSessionKey } from '@/network/kerberos/crypto';
 
 export interface AdDsOpResult { ok: boolean; message: string }
 
@@ -143,6 +144,7 @@ export class WindowsServer extends WindowsPC {
     const netbios = netbiosName ?? domainName.split('.')[0].toUpperCase();
     this.directoryStore = new DirectoryStore(domainName, netbios, safeModeAdminPassword);
     this.directoryStore.promoteDomainController(this.getHostname(), safeModeAdminPassword);
+    this.directoryStore.ensureKrbtgtPrincipal(randomSessionKey());
     this.provisionSysvol(domainName);
     this.registerDcServices();
     this.provisionDomainDnsZone(domainName);
