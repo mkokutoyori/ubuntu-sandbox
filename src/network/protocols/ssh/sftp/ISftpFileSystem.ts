@@ -9,6 +9,18 @@ import type { Result } from '../Result';
 
 export type EntryType = 'file' | 'directory' | 'symlink';
 
+/**
+ * v4-v6 ACL entry (draft-ietf-secsh-filexfer §5.2, PRD-FTP-SFTP.md
+ * §2.1.17/P16). Modeled and transported faithfully on the wire; not
+ * enforced against any actual access check (§2.2) — `checkAclAccess`
+ * above is this codebase's own, older, separate ACL mechanism.
+ */
+export interface SftpAclEntry {
+  readonly type: 'allow' | 'deny' | 'audit' | 'alarm';
+  readonly subject: string;
+  readonly permissions: number;
+}
+
 export interface SftpFileAttrs {
   readonly type: EntryType;
   readonly mode: number;
@@ -16,6 +28,10 @@ export interface SftpFileAttrs {
   readonly gid: number;
   readonly size: number;
   readonly mtime: number;
+  /** Optional v4-v6 named extended attributes (arbitrary key/value pairs), carried faithfully on the wire. */
+  readonly extended?: Readonly<Record<string, string>>;
+  /** Optional v4-v6 ACL entries, carried faithfully on the wire (see `SftpAclEntry`). */
+  readonly acl?: readonly SftpAclEntry[];
 }
 
 export interface SftpDirEntry extends SftpFileAttrs {
@@ -56,4 +72,6 @@ export interface ISftpFileSystem
   createSymlink?(linkPath: string, targetPath: string): Result<void>;
   /** Optional: reads the raw target of the symlink at `path`. */
   readSymlink?(path: string): Result<string>;
+  /** Optional (v6, §3.3): creates a hard link at `newPath` pointing at the same inode as `existingPath`. */
+  createHardLink?(newPath: string, existingPath: string): Result<void>;
 }

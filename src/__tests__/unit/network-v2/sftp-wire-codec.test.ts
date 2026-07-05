@@ -136,7 +136,7 @@ describe('SftpWireSession — bridges the codec to a real ISftpFileSystem/SftpCo
     const { session } = buildSession();
     const reply = session.handle({ type: 'REALPATH', requestId: 1, path: 'hello.txt' });
     expect(reply.type).toBe('NAME');
-    expect((reply as { entries: { filename: string }[] }).entries[0].filename).toBe('/home/alice/hello.txt');
+    expect((reply as unknown as { entries: { filename: string }[] }).entries[0].filename).toBe('/home/alice/hello.txt');
   });
 
   it('LSTAT reports real ATTRS for an existing file', () => {
@@ -164,7 +164,7 @@ describe('SftpWireSession — bridges the codec to a real ISftpFileSystem/SftpCo
     const first = session.handle({ type: 'READDIR', requestId: 3, handle });
     expect(first.type).toBe('NAME');
     // Real sftp-server behavior: an "empty" directory still lists `.`/`..`.
-    const names = (first as { entries: { filename: string }[] }).entries.map((e) => e.filename);
+    const names = (first as unknown as { entries: { filename: string }[] }).entries.map((e) => e.filename);
     expect(names.sort()).toEqual(['.', '..']);
 
     const second = session.handle({ type: 'READDIR', requestId: 4, handle });
@@ -178,7 +178,7 @@ describe('SftpWireSession — bridges the codec to a real ISftpFileSystem/SftpCo
     const handle = (openReply as { handle: string }).handle;
     const reply = session.handle({ type: 'READDIR', requestId: 2, handle });
     expect(reply.type).toBe('NAME');
-    const names = (reply as { entries: { filename: string }[] }).entries.map((e) => e.filename);
+    const names = (reply as unknown as { entries: { filename: string }[] }).entries.map((e) => e.filename);
     expect(names).toContain('hello.txt');
   });
 
@@ -212,7 +212,7 @@ describe('SftpWireSession — bridges the codec to a real ISftpFileSystem/SftpCo
 
     const readlinkReply = session.handle({ type: 'READLINK', requestId: 2, path: 'link' });
     expect(readlinkReply.type).toBe('NAME');
-    expect((readlinkReply as { entries: { filename: string }[] }).entries[0].filename).toBe('hello.txt');
+    expect((readlinkReply as unknown as { entries: { filename: string }[] }).entries[0].filename).toBe('hello.txt');
   });
 
   it('SYMLINK on an already-existing path fails without creating anything', () => {

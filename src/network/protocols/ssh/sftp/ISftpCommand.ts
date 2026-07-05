@@ -23,6 +23,8 @@ export interface SftpRequestPayload {
   readonly mode?: number;
   readonly uid?: number;
   readonly gid?: number;
+  /** v5+ `SSH_FXP_RENAME` OVERWRITE flag (§2.1.17/P16): replace an existing `dst` instead of failing. */
+  readonly overwrite?: boolean;
 }
 
 export interface ISftpCommand<T = unknown> {

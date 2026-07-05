@@ -18,20 +18,45 @@ export const SFTP_TYPE = {
   INIT: 1, VERSION: 2, OPEN: 3, CLOSE: 4, READ: 5, WRITE: 6,
   LSTAT: 7, FSTAT: 8, SETSTAT: 9, FSETSTAT: 10, OPENDIR: 11, READDIR: 12,
   REMOVE: 13, MKDIR: 14, RMDIR: 15, REALPATH: 16, STAT: 17, RENAME: 18,
-  READLINK: 19, SYMLINK: 20,
+  READLINK: 19, SYMLINK: 20, LINK: 21,
   STATUS: 101, HANDLE: 102, DATA: 103, NAME: 104, ATTRS: 105,
 } as const;
 
 const TYPE_NAME_FROM_CODE: Readonly<Record<number, keyof typeof SFTP_TYPE>> =
   Object.fromEntries(Object.entries(SFTP_TYPE).map(([name, code]) => [code, name])) as Record<number, keyof typeof SFTP_TYPE>;
 
-/** draft-ietf-secsh-filexfer §5 — `ATTRS` flags selecting which fields are present. */
+/** draft-ietf-secsh-filexfer §5 — `ATTRS` flags selecting which fields are present. TYPE/ACL/EXTENDED are v4-v6 additions (§2.1.17/P16). */
 const ATTR_FLAG = {
   SIZE: 0x00000001,
   UIDGID: 0x00000002,
   PERMISSIONS: 0x00000004,
   ACMODTIME: 0x00000008,
+  TYPE: 0x00000010,
+  ACL: 0x00000020,
+  EXTENDED: 0x00000040,
 } as const;
+
+/** v4-v6 explicit attribute `type` (§5) — the v3 codec had no such field. */
+export type SftpWireEntryType = 'file' | 'directory' | 'symlink' | 'special' | 'unknown';
+
+const ENTRY_TYPE_CODE: Readonly<Record<SftpWireEntryType, number>> = { file: 1, directory: 2, symlink: 3, special: 4, unknown: 5 };
+const ENTRY_TYPE_FROM_CODE: Readonly<Record<number, SftpWireEntryType>> = { 1: 'file', 2: 'directory', 3: 'symlink', 4: 'special', 5: 'unknown' };
+
+/** v4-v6 ACL entry (§5.2) — carried faithfully on the wire; not enforced by this simulator (PRD-FTP-SFTP.md §2.2). */
+export interface SftpWireAclEntry {
+  readonly type: 'allow' | 'deny' | 'audit' | 'alarm';
+  readonly subject: string;
+  readonly permissions: number;
+}
+
+const ACL_TYPE_CODE: Readonly<Record<SftpWireAclEntry['type'], number>> = { allow: 0, deny: 1, audit: 2, alarm: 3 };
+const ACL_TYPE_FROM_CODE: Readonly<Record<number, SftpWireAclEntry['type']>> = { 0: 'allow', 1: 'deny', 2: 'audit', 3: 'alarm' };
+
+/** v4-v6 named extended attribute (§5) — arbitrary key/value pair. */
+export interface SftpWireExtendedAttr {
+  readonly name: string;
+  readonly value: string;
+}
 
 export interface SftpWireAttrs {
   readonly size?: number;
@@ -40,7 +65,13 @@ export interface SftpWireAttrs {
   readonly permissions?: number;
   readonly atime?: number;
   readonly mtime?: number;
+  readonly entryType?: SftpWireEntryType;
+  readonly acl?: readonly SftpWireAclEntry[];
+  readonly extended?: readonly SftpWireExtendedAttr[];
 }
+
+/** v5+ `SSH_FXP_RENAME` flags (§6.5). ATOMIC/NATIVE are accepted but no-ops: this simulator's rename is already atomic and single-namespace. */
+export const SFTP_RENAME_FLAG = { OVERWRITE: 0x00000001, ATOMIC: 0x00000002, NATIVE: 0x00000004 } as const;
 
 export interface SftpInitPacket { readonly type: 'INIT'; readonly version: number; }
 export interface SftpVersionPacket { readonly type: 'VERSION'; readonly version: number; }
@@ -60,9 +91,11 @@ export interface SftpMkdirPacket { readonly type: 'MKDIR'; readonly requestId: n
 export interface SftpRmdirPacket { readonly type: 'RMDIR'; readonly requestId: number; readonly path: string; }
 export interface SftpRealpathPacket { readonly type: 'REALPATH'; readonly requestId: number; readonly path: string; }
 export interface SftpStatPacket { readonly type: 'STAT'; readonly requestId: number; readonly path: string; }
-export interface SftpRenamePacket { readonly type: 'RENAME'; readonly requestId: number; readonly oldPath: string; readonly newPath: string; }
+export interface SftpRenamePacket { readonly type: 'RENAME'; readonly requestId: number; readonly oldPath: string; readonly newPath: string; readonly flags?: number; }
 export interface SftpReadlinkPacket { readonly type: 'READLINK'; readonly requestId: number; readonly path: string; }
 export interface SftpSymlinkPacket { readonly type: 'SYMLINK'; readonly requestId: number; readonly linkpath: string; readonly targetpath: string; }
+/** v6 hard link (§3.3) — spec argument order is (newlinkpath, existingpath). */
+export interface SftpLinkPacket { readonly type: 'LINK'; readonly requestId: number; readonly newLinkPath: string; readonly existingPath: string; }
 
 export interface SftpStatusPacket { readonly type: 'STATUS'; readonly requestId: number; readonly code: number; readonly message: string; readonly languageTag?: string; }
 export interface SftpHandlePacket { readonly type: 'HANDLE'; readonly requestId: number; readonly handle: string; }
@@ -77,7 +110,7 @@ export type SftpWirePacket =
   | SftpLstatPacket | SftpFstatPacket | SftpSetstatPacket | SftpFsetstatPacket
   | SftpOpendirPacket | SftpReaddirPacket | SftpRemovePacket | SftpMkdirPacket
   | SftpRmdirPacket | SftpRealpathPacket | SftpStatPacket | SftpRenamePacket
-  | SftpReadlinkPacket | SftpSymlinkPacket
+  | SftpReadlinkPacket | SftpSymlinkPacket | SftpLinkPacket
   | SftpStatusPacket | SftpHandlePacket | SftpDataPacket | SftpNamePacket | SftpAttrsPacket;
 
 const encoder = new TextEncoder();
@@ -119,11 +152,23 @@ class ByteWriter {
     if (attrs.uid !== undefined || attrs.gid !== undefined) flags |= ATTR_FLAG.UIDGID;
     if (attrs.permissions !== undefined) flags |= ATTR_FLAG.PERMISSIONS;
     if (attrs.atime !== undefined || attrs.mtime !== undefined) flags |= ATTR_FLAG.ACMODTIME;
+    if (attrs.entryType !== undefined) flags |= ATTR_FLAG.TYPE;
+    if (attrs.acl !== undefined) flags |= ATTR_FLAG.ACL;
+    if (attrs.extended !== undefined) flags |= ATTR_FLAG.EXTENDED;
     this.writeUint32(flags);
     if (flags & ATTR_FLAG.SIZE) this.writeUint64(attrs.size!);
     if (flags & ATTR_FLAG.UIDGID) this.writeUint32(attrs.uid ?? 0).writeUint32(attrs.gid ?? 0);
     if (flags & ATTR_FLAG.PERMISSIONS) this.writeUint32(attrs.permissions!);
     if (flags & ATTR_FLAG.ACMODTIME) this.writeUint32(attrs.atime ?? attrs.mtime ?? 0).writeUint32(attrs.mtime ?? 0);
+    if (flags & ATTR_FLAG.TYPE) this.writeByte(ENTRY_TYPE_CODE[attrs.entryType!]);
+    if (flags & ATTR_FLAG.ACL) {
+      this.writeUint32(attrs.acl!.length);
+      for (const e of attrs.acl!) this.writeByte(ACL_TYPE_CODE[e.type]).writeString(e.subject).writeUint32(e.permissions);
+    }
+    if (flags & ATTR_FLAG.EXTENDED) {
+      this.writeUint32(attrs.extended!.length);
+      for (const kv of attrs.extended!) this.writeString(kv.name).writeString(kv.value);
+    }
     return this;
   }
 
@@ -179,11 +224,29 @@ class ByteReader {
 
   readAttrs(): SftpWireAttrs {
     const flags = this.readUint32();
-    const attrs: { size?: number; uid?: number; gid?: number; permissions?: number; atime?: number; mtime?: number } = {};
+    const attrs: {
+      size?: number; uid?: number; gid?: number; permissions?: number; atime?: number; mtime?: number;
+      entryType?: SftpWireEntryType; acl?: SftpWireAclEntry[]; extended?: SftpWireExtendedAttr[];
+    } = {};
     if (flags & ATTR_FLAG.SIZE) attrs.size = this.readUint64();
     if (flags & ATTR_FLAG.UIDGID) { attrs.uid = this.readUint32(); attrs.gid = this.readUint32(); }
     if (flags & ATTR_FLAG.PERMISSIONS) attrs.permissions = this.readUint32();
     if (flags & ATTR_FLAG.ACMODTIME) { attrs.atime = this.readUint32(); attrs.mtime = this.readUint32(); }
+    if (flags & ATTR_FLAG.TYPE) attrs.entryType = ENTRY_TYPE_FROM_CODE[this.readByte()];
+    if (flags & ATTR_FLAG.ACL) {
+      const count = this.readUint32();
+      const acl: SftpWireAclEntry[] = [];
+      for (let i = 0; i < count; i++) {
+        acl.push({ type: ACL_TYPE_FROM_CODE[this.readByte()], subject: this.readString(), permissions: this.readUint32() });
+      }
+      attrs.acl = acl;
+    }
+    if (flags & ATTR_FLAG.EXTENDED) {
+      const count = this.readUint32();
+      const extended: SftpWireExtendedAttr[] = [];
+      for (let i = 0; i < count; i++) extended.push({ name: this.readString(), value: this.readString() });
+      attrs.extended = extended;
+    }
     return attrs;
   }
 
@@ -232,9 +295,13 @@ export function encodeSftpWirePacket(pkt: SftpWirePacket): Uint8Array {
       break;
     case 'RENAME':
       w.writeUint32(pkt.requestId).writeString(pkt.oldPath).writeString(pkt.newPath);
+      if (pkt.flags !== undefined) w.writeUint32(pkt.flags);
       break;
     case 'SYMLINK':
       w.writeUint32(pkt.requestId).writeString(pkt.linkpath).writeString(pkt.targetpath);
+      break;
+    case 'LINK':
+      w.writeUint32(pkt.requestId).writeString(pkt.newLinkPath).writeString(pkt.existingPath);
       break;
     case 'STATUS':
       w.writeUint32(pkt.requestId).writeUint32(pkt.code).writeString(pkt.message).writeString(pkt.languageTag ?? 'en');
@@ -305,9 +372,16 @@ export function decodeSftpWirePacket(bytes: Uint8Array): SftpWirePacket | null {
       case 'RMDIR': return { type: 'RMDIR', requestId: r.readUint32(), path: r.readString() };
       case 'REALPATH': return { type: 'REALPATH', requestId: r.readUint32(), path: r.readString() };
       case 'STAT': return { type: 'STAT', requestId: r.readUint32(), path: r.readString() };
-      case 'RENAME': { const requestId = r.readUint32(); const oldPath = r.readString(); return { type: 'RENAME', requestId, oldPath, newPath: r.readString() }; }
+      case 'RENAME': {
+        const requestId = r.readUint32();
+        const oldPath = r.readString();
+        const newPath = r.readString();
+        const flags = r.remaining > 0 ? r.readUint32() : undefined;
+        return { type: 'RENAME', requestId, oldPath, newPath, flags };
+      }
       case 'READLINK': return { type: 'READLINK', requestId: r.readUint32(), path: r.readString() };
       case 'SYMLINK': { const requestId = r.readUint32(); const linkpath = r.readString(); return { type: 'SYMLINK', requestId, linkpath, targetpath: r.readString() }; }
+      case 'LINK': { const requestId = r.readUint32(); const newLinkPath = r.readString(); return { type: 'LINK', requestId, newLinkPath, existingPath: r.readString() }; }
       case 'STATUS': {
         const requestId = r.readUint32();
         const code = r.readUint32();

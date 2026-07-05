@@ -152,6 +152,13 @@ export class LinuxSftpFSAdapter implements ISftpFileSystem {
     if (inode.type !== 'symlink') return err({ kind: 'IO_ERROR', message: `${path}: not a symlink` });
     return ok(inode.target);
   }
+
+  createHardLink(newPath: string, existingPath: string): Result<void> {
+    const success = this.vfs.createHardLink(newPath, existingPath);
+    return success
+      ? ok(undefined)
+      : err({ kind: 'IO_ERROR', message: `${newPath}: hard link to ${existingPath} failed` });
+  }
 }
 
 function mapFileType(ft: INode['type']): EntryType {

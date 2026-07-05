@@ -12,8 +12,14 @@
  * dispatcher's new `symlink`/`readlink` commands (§2.1.15/P15), which
  * fall back to `SSH_FX_OP_UNSUPPORTED` on any `ISftpFileSystem` that
  * doesn't implement the optional `createSymlink`/`readSymlink`
- * capability. `FSTAT`/`SETSTAT`/`FSETSTAT` still reply
- * `SSH_FX_OP_UNSUPPORTED` (no matching dispatcher command exists yet).
+ * capability. `LINK` (v6 hard link, §2.1.17/P16) dispatches the same
+ * way to a `hardlink` command. `INIT` negotiates a real version
+ * (floor 3, ceiling 6, §2.1.16-17/P15-P16) instead of a fixed constant;
+ * `RENAME`'s v5+ `OVERWRITE` flag is honored (`ATOMIC`/`NATIVE` are
+ * accepted but no-ops); `ATTRS` carries the v4-v6 `type`/`acl`/
+ * `extended` fields whenever the backing `SftpFileAttrs` has them.
+ * `FSTAT`/`SETSTAT`/`FSETSTAT` still reply `SSH_FX_OP_UNSUPPORTED` (no
+ * matching dispatcher command exists yet).
  */
 import { SftpCommandDispatcher } from './SftpCommandDispatcher';
 import type { SftpCommandContext } from './ISftpCommand';
@@ -22,17 +28,29 @@ import type { SshUserContext } from '../SshUserContext';
 import { isOk } from '../Result';
 import type { SshError } from '../Result';
 import type { SftpWirePacket, SftpWireAttrs } from './SftpWireCodec';
+import { SFTP_RENAME_FLAG } from './SftpWireCodec';
 import { SftpHandleTable } from './SftpHandleTable';
 import { SSH_FX, statusFromError } from './SftpStatusCodes';
 
-/** P16 raises the negotiated default to 6; P13-P15 stay at the dispatcher's current (v3-shaped) fidelity level. */
-const SFTP_PROTOCOL_VERSION = 3;
+/**
+ * §2.1.16-17/P15-P16 — this engine's negotiation ceiling. It proposes
+ * (and accepts) up to version 6, the real target; version 3 is only
+ * the interoperability floor for a peer offering nothing newer
+ * (widespread OpenSSH), never a value the engine invents on its own.
+ */
+const SFTP_SERVER_MAX_VERSION = 6;
+const SFTP_MIN_VERSION = 3;
 
 /** draft-ietf-secsh-filexfer §6.3 `pflags` bits relevant here. */
 const SSH_FXF = { READ: 0x01, WRITE: 0x02, APPEND: 0x04 } as const;
 
 function attrsFrom(a: SftpFileAttrs): SftpWireAttrs {
-  return { size: a.size, uid: a.uid, gid: a.gid, permissions: a.mode, mtime: Math.floor(a.mtime / 1000) };
+  return {
+    size: a.size, uid: a.uid, gid: a.gid, permissions: a.mode, mtime: Math.floor(a.mtime / 1000),
+    entryType: a.type,
+    acl: a.acl,
+    extended: a.extended && Object.entries(a.extended).map(([name, value]) => ({ name, value })),
+  };
 }
 
 function longnameOf(e: SftpDirEntry): string {
@@ -71,9 +89,15 @@ export class SftpWireSession {
   private readonly dispatcher = SftpCommandDispatcher.defaults();
   private readonly handles = new SftpHandleTable();
   private cwd: string;
+  private negotiatedVersion = SFTP_MIN_VERSION;
 
   constructor(private readonly config: SftpWireSessionConfig) {
     this.cwd = config.rootPath ?? config.userCtx.homeDirectory;
+  }
+
+  /** The version this session settled on after `INIT`/`VERSION` (§2.1.16/P15) — floor 3, ceiling 6. */
+  get version(): number {
+    return this.negotiatedVersion;
   }
 
   private ctx(): SftpCommandContext {
@@ -91,7 +115,8 @@ export class SftpWireSession {
   handle(pkt: SftpWirePacket): SftpWirePacket {
     switch (pkt.type) {
       case 'INIT':
-        return { type: 'VERSION', version: SFTP_PROTOCOL_VERSION };
+        this.negotiatedVersion = Math.max(SFTP_MIN_VERSION, Math.min(pkt.version, SFTP_SERVER_MAX_VERSION));
+        return { type: 'VERSION', version: this.negotiatedVersion };
 
       case 'REALPATH': {
         const path = this.config.vfs.normalizePath(pkt.path, this.cwd);
@@ -124,7 +149,9 @@ export class SftpWireSession {
       }
 
       case 'RENAME': {
-        const result = this.dispatcher.dispatch('rename', { src: pkt.oldPath, dst: pkt.newPath }, this.ctx());
+        // v5+ OVERWRITE (§6.5); ATOMIC/NATIVE are accepted but no-ops (this simulator's rename is already atomic).
+        const overwrite = pkt.flags !== undefined && (pkt.flags & SFTP_RENAME_FLAG.OVERWRITE) !== 0;
+        const result = this.dispatcher.dispatch('rename', { src: pkt.oldPath, dst: pkt.newPath, overwrite }, this.ctx());
         if (!isOk(result)) { const s = statusFromError(result.error as SshError); return this.status(pkt.requestId, s.code, s.message); }
         return this.okStatus(pkt.requestId);
       }
@@ -206,6 +233,12 @@ export class SftpWireSession {
         if (!isOk(result)) { const s = statusFromError(result.error as SshError); return this.status(pkt.requestId, s.code, s.message); }
         const target = (result.value as { target: string }).target;
         return { type: 'NAME', requestId: pkt.requestId, entries: [{ filename: target, longname: target, attrs: {} }] };
+      }
+
+      case 'LINK': {
+        const result = this.dispatcher.dispatch('hardlink', { src: pkt.existingPath, dst: pkt.newLinkPath }, this.ctx());
+        if (!isOk(result)) { const s = statusFromError(result.error as SshError); return this.status(pkt.requestId, s.code, s.message); }
+        return this.okStatus(pkt.requestId);
       }
 
       case 'FSTAT':
