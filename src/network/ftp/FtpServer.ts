@@ -57,6 +57,9 @@ export class FtpServer {
     };
 
     const session = new FtpServerSession(this.config, this.tcpStack, this.localIp, writeReply);
+    this.config.eventBus?.publish({
+      topic: 'ftp.control.connected', payload: { connectionId: session.connectionId },
+    });
     writeReply(session.greeting());
 
     const unsubscribe = socket.onData((data) => {
@@ -66,6 +69,10 @@ export class FtpServer {
         if (tls.result === 'accept') {
           wireState = 'tls-established';
           session.markControlProtected();
+          this.config.eventBus?.publish({
+            topic: 'ftps.tls.established',
+            payload: { connectionId: session.connectionId, negotiatedCipherSuite: tls.negotiatedCipherSuite },
+          });
         } else if (tls.result === 'reject') {
           unsubscribe();
           socket.close();

@@ -13,6 +13,7 @@ import type { TcpSocket, TcpStack } from '@/network/tcp/TcpStack';
 import type { ISftpFileSystem, SftpDirEntry, SftpFileAttrs } from '@/network/protocols/ssh/sftp/ISftpFileSystem';
 import { ChrootedSftpFileSystem } from '@/network/protocols/ssh/sftp/ChrootedSftpFileSystem';
 import type { TlsServerConfig, TlsServerSession } from '@/network/tls/TlsServerSession';
+import type { IEventBus } from '@/events/EventBus';
 import type { FtpCommand, FtpReply, FtpTransferType, FtpFileStructure, FtpTransferMode } from './types';
 import { reply } from './replies';
 import {
@@ -21,6 +22,7 @@ import {
 } from './DataChannel';
 import { encodeCompressedMode, decodeCompressedMode } from './compressedMode';
 import { startServerHandshake, encryptText, decryptText } from './ftps';
+import { randomFtpConnectionId } from './events';
 
 export interface FtpServerConfig {
   /** username -> password. RFC 959 doesn't mandate a specific credential store; this mirrors the ad hoc user maps used elsewhere in this project's protocol tests (RADIUS, EAP-TTLS). */
@@ -40,6 +42,8 @@ export interface FtpServerConfig {
    * role ambiguity to resolve; `PORT`/`EPRT` + `PROT P` isn't wired up.
    */
   readonly ftps?: TlsServerConfig;
+  /** §2.1.12 observability — publishes `ftp.*`/`ftps.*` events (`events.ts`) if set. */
+  readonly eventBus?: IEventBus;
 }
 
 type SessionState = 'awaiting-user' | 'awaiting-password' | 'authenticated' | 'closed';
@@ -87,6 +91,8 @@ export class FtpServerSession {
   private pendingTlsUpgrade = false;
   /** The current data channel's TLS session under `PROT P` (§2.1.7), set at `PASV`/`EPSV` accept time. */
   private dataTls: TlsServerSession | null = null;
+  /** §2.1.12 — stable per-connection correlator for emitted events. */
+  readonly connectionId = randomFtpConnectionId();
 
   constructor(
     private readonly config: FtpServerConfig,
@@ -124,6 +130,9 @@ export class FtpServerSession {
   }
 
   handle(cmd: FtpCommand): readonly FtpReply[] {
+    this.config.eventBus?.publish({
+      topic: 'ftp.command.received', payload: { connectionId: this.connectionId, verb: cmd.verb },
+    });
     switch (cmd.verb) {
       case 'USER': return [this.handleUser(cmd)];
       case 'PASS': return [this.handlePass(cmd)];
@@ -140,6 +149,9 @@ export class FtpServerSession {
         this.closeDataChannel();
         this.state = 'closed';
         this.result = 'closed';
+        this.config.eventBus?.publish({
+          topic: 'ftp.control.closed', payload: { connectionId: this.connectionId, reason: 'QUIT' },
+        });
         return [reply(221, 'Goodbye.')];
       }
       case 'ABOR': return [reply(225, 'No transfer in progress.')];
@@ -180,9 +192,12 @@ export class FtpServerSession {
   }
 
   private closeDataChannel(): void {
-    if (this.dataChannel?.mode === 'passive') this.dataChannel.close(this.tcpStack);
+    if (!this.dataChannel) return;
+    const mode = this.dataChannel.mode;
+    if (this.dataChannel.mode === 'passive') this.dataChannel.close(this.tcpStack);
     this.dataChannel = null;
     this.dataTls = null;
+    this.config.eventBus?.publish({ topic: 'ftp.data.closed', payload: { connectionId: this.connectionId, mode } });
   }
 
   private handleUser(cmd: FtpCommand): FtpReply {
@@ -209,6 +224,9 @@ export class FtpServerSession {
       this.fs = new ChrootedSftpFileSystem(this.config.fs, chrootDir);
       this.cwd = '/';
     }
+    this.config.eventBus?.publish({
+      topic: 'ftp.control.authenticated', payload: { connectionId: this.connectionId, username: this.username! },
+    });
     return reply(230, `User ${this.username} logged in.`);
   }
 
@@ -283,6 +301,7 @@ export class FtpServerSession {
     if (!parsed) return reply(501, 'Syntax error in parameters.');
     this.closeDataChannel();
     this.dataChannel = { mode: 'active', address: parsed.address, port: parsed.port };
+    this.emitDataOpened('active');
     return reply(200, 'PORT command successful.');
   }
 
@@ -292,6 +311,7 @@ export class FtpServerSession {
     this.closeDataChannel();
     const channel = new PassiveDataChannel(allocatePassivePort(), this.tcpStack, (socket) => this.startDataTlsIfProtected(socket));
     this.dataChannel = channel;
+    this.emitDataOpened('passive');
     return reply(227, `Entering Passive Mode (${encodePortArgument(this.localIp, channel.port)}).`);
   }
 
@@ -302,6 +322,7 @@ export class FtpServerSession {
     if (!parsed) return reply(501, 'Syntax error in parameters.');
     this.closeDataChannel();
     this.dataChannel = { mode: 'active', address: parsed.address, port: parsed.port };
+    this.emitDataOpened('active');
     return reply(200, 'EPRT command successful.');
   }
 
@@ -311,7 +332,12 @@ export class FtpServerSession {
     this.closeDataChannel();
     const channel = new PassiveDataChannel(allocatePassivePort(), this.tcpStack, (socket) => this.startDataTlsIfProtected(socket));
     this.dataChannel = channel;
+    this.emitDataOpened('passive');
     return reply(229, `Entering Extended Passive Mode ${encodeEpsvReplyArgument(channel.port)}.`);
+  }
+
+  private emitDataOpened(mode: 'active' | 'passive'): void {
+    this.config.eventBus?.publish({ topic: 'ftp.data.opened', payload: { connectionId: this.connectionId, mode } });
   }
 
   private startDataTlsIfProtected(socket: TcpSocket): void {
@@ -329,12 +355,17 @@ export class FtpServerSession {
     if (!file.ok) return [reply(550, `${cmd.argument}: No such file or directory.`)];
 
     const socket = this.dataChannel ? openDataConnection(this.dataChannel, this.tcpStack) : null;
-    if (!socket) return [reply(425, "Can't open data connection.")];
+    if (!socket) {
+      this.emitTransferFailed('RETR', path, "Can't open data connection.");
+      return [reply(425, "Can't open data connection.")];
+    }
+    this.emitTransferStarted('RETR', path);
     const dataTls = this.dataTls;
     const outgoing = offset > 0 ? file.value.slice(offset) : file.value;
     socket.write(this.encryptForDataChannel(dataTls, this.transferMode === 'C' ? encodeCompressedMode(outgoing) : outgoing));
     socket.close();
     this.closeDataChannel();
+    this.emitTransferCompleted('RETR', path, outgoing.length);
     return [reply(150, `Opening ${this.transferType === 'A' ? 'ASCII' : 'BINARY'} mode data connection for ${cmd.argument}.`), reply(226, 'Transfer complete.')];
   }
 
@@ -353,7 +384,11 @@ export class FtpServerSession {
     }
 
     const socket = this.dataChannel ? openDataConnection(this.dataChannel, this.tcpStack) : null;
-    if (!socket) return [reply(425, "Can't open data connection.")];
+    if (!socket) {
+      this.emitTransferFailed('STOR', path, "Can't open data connection.");
+      return [reply(425, "Can't open data connection.")];
+    }
+    this.emitTransferStarted('STOR', path);
     const dataTls = this.dataTls;
 
     let received = '';
@@ -366,6 +401,7 @@ export class FtpServerSession {
       if (this.transferMode === 'C') {
         const decoded = decodeCompressedMode(received);
         if (decoded === null) {
+          this.emitTransferFailed('STOR', path, 'Malformed MODE C data.');
           this.onUnsolicitedReply(reply(550, 'Malformed MODE C data.'));
           return;
         }
@@ -380,13 +416,27 @@ export class FtpServerSession {
       }
       const written = this.fs.writeFile(path, received);
       if (!written.ok) {
+        this.emitTransferFailed('STOR', path, 'Permission denied.');
         this.onUnsolicitedReply(reply(550, `${cmd.argument ?? path}: Permission denied.`));
         return;
       }
+      this.emitTransferCompleted('STOR', path, received.length);
       this.onUnsolicitedReply(reply(226, opts.unique ? `FILE: ${path}` : 'Transfer complete.'));
     });
 
     return [reply(150, `Opening ${this.transferType === 'A' ? 'ASCII' : 'BINARY'} mode data connection.`)];
+  }
+
+  private emitTransferStarted(verb: string, path: string): void {
+    this.config.eventBus?.publish({ topic: 'ftp.transfer.started', payload: { connectionId: this.connectionId, verb, path } });
+  }
+
+  private emitTransferCompleted(verb: string, path: string, bytes: number): void {
+    this.config.eventBus?.publish({ topic: 'ftp.transfer.completed', payload: { connectionId: this.connectionId, verb, path, bytes } });
+  }
+
+  private emitTransferFailed(verb: string, path: string, reason: string): void {
+    this.config.eventBus?.publish({ topic: 'ftp.transfer.failed', payload: { connectionId: this.connectionId, verb, path, reason } });
   }
 
   private handleList(cmd: FtpCommand, format: 'long' | 'names'): readonly FtpReply[] {
