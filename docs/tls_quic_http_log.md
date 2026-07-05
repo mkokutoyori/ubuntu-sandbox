@@ -82,7 +82,7 @@ ci-dessous.
 | P2 | Key schedule | P1 | ✅ terminé | Claude (Sonnet 5) |
 | P3 | Handshake 1-RTT nominal | P1, P2 | ✅ terminé | Claude (Sonnet 5) |
 | P4 | mTLS | P3 | ✅ terminé | Claude (Sonnet 5) |
-| P5 | HelloRetryRequest | P3 | 🟡 en cours | Claude (Sonnet 5) |
+| P5 | HelloRetryRequest | P3 | ✅ terminé | Claude (Sonnet 5) |
 | P6 | Alertes complètes | P3 | ⬜ disponible | — |
 | P7 | ALPN & suites cryptographiques | P3 | ⬜ disponible | — |
 | P8 | Résumption PSK & 0-RTT | P2, P3 | ⬜ disponible | — |
@@ -446,4 +446,25 @@ seulement le consommer.
   correct.
 - Fichiers concernés : `TlsServerSession.ts`/`TlsClientSession.ts`
   (modifiés, additivement) + nouveau fichier de test.
-- Statut / résultat : en cours.
+- Statut / résultat : ✅ terminé. `supportedGroups` optionnel ajouté des
+  deux côtés (défaut `['x25519']`, comportement P3/P4 inchangé) ;
+  `tls-hello-retry-request.test.ts` (4 tests, verts dès la première
+  exécution) : round-trip HRR complet en exactement 5 flights (CH1, HRR,
+  CH2, ServerFlight, ClientFinished) vs 3 sans HRR, contenu de l'HRR
+  vérifié contre le random magique RFC, rejet immédiat si aucun groupe
+  mutuel. `tsc`/`eslint` propres ; suites P3 (5 tests) et P4 (4 tests)
+  toujours vertes sans modification. Régression ciblée (tls-*, eaptls-*,
+  peap-ttls-handshake, dns-encrypted-transports) : 9 fichiers, 75 tests,
+  tout vert.
+- Suggestion pour la suite : P6 (alertes complètes) et P7 (ALPN & suites
+  cryptographiques) dépendent tous deux de P3 uniquement et sont
+  disponibles en parallèle l'un de l'autre — je m'arrête ici pour cette
+  session (5 phases TLS livrées : P1-P5). `PRD-QUIC.md`/P1 (varints &
+  format de paquet) et `PRD-HTTP.md`/P7 (HTTPS, maintenant que
+  `PRD-TLS.md` a un moteur 1-RTT/mTLS/HRR fonctionnel jusqu'à P5, même si
+  pas encore P6-P11) restent disponibles pour la suite. Note pour le
+  prochain agent qui prendrait `PRD-HTTP.md`/P7 : le moteur TLS n'a pas
+  encore d'alertes structurées (P6) ni de négociation ALPN/suites (P7) ni
+  d'intégration `TcpStack` (toutes les sessions actuelles sont pilotées
+  directement par flights, pas encore par socket réel) — vérifier ce que
+  `PRD-HTTP.md`/P7 nécessite exactement avant de démarrer.
