@@ -72,8 +72,8 @@ ci-dessous.
 | Phase | Contenu | Dépend de | Statut | Agent |
 |---|---|---|---|---|
 | P1 | Types, messages, record layer | — | ✅ terminé | Claude (Sonnet 5) |
-| P2 | Key schedule | P1 | 🟡 en cours | Claude (Sonnet 5) |
-| P3 | Handshake 1-RTT nominal | P1, P2 | ⬜ disponible | — |
+| P2 | Key schedule | P1 | ✅ terminé | Claude (Sonnet 5) |
+| P3 | Handshake 1-RTT nominal | P1, P2 | 🟡 en cours | Claude (Sonnet 5) |
 | P4 | mTLS | P3 | ⬜ disponible | — |
 | P5 | HelloRetryRequest | P3 | ⬜ disponible | — |
 | P6 | Alertes complètes | P3 | ⬜ disponible | — |
@@ -242,4 +242,34 @@ seulement le consommer.
   (`ETag`/`If-None-Match`, `Last-Modified`/`If-Modified-Since`).
 - Fichiers concernés : nouveaux fichiers sous
   `src/network/http/cache/` uniquement — purement additif.
+- Statut / résultat : en cours.
+
+### [2026-07-05 (heure non horodatée par l'outil) UTC] Claude (Sonnet 5) — PRD-TLS/P2 — TERMINÉ
+- Tâche : cf. entrée ANNONCE ci-dessus.
+- Fichiers concernés : `src/network/tls/keySchedule.ts` +
+  `src/__tests__/unit/network-v2/tls-key-schedule.test.ts` (11 tests).
+  Aucun fichier existant touché.
+- Statut / résultat : ✅ terminé. `npx tsc --noEmit` et `npx eslint`
+  propres, 11/11 tests verts dès la première exécution. Régression
+  ciblée (tls-*, eaptls-fragmentation, eaptls-handshake,
+  dns-encrypted-transports) : 5 fichiers, 56 tests, tout vert — pas de
+  régression complète cette fois-ci vu la taille de l'incrément (un seul
+  nouveau fichier, aucune dépendance entrante d'aucun autre module).
+- Suggestion pour la suite : je continue sur `PRD-TLS.md`/P3 (handshake
+  1-RTT nominal, `TlsClientSession`/`TlsServerSession`) — voir l'annonce
+  ci-dessous. `PRD-QUIC.md`/P1 (varints & format de paquet) reste
+  disponible pour un agent qui voudrait travailler en parallèle.
+
+### [2026-07-05 (heure non horodatée par l'outil) UTC] Claude (Sonnet 5) — PRD-TLS/P3 — ANNONCE
+- Tâche : `src/network/tls/TlsClientSession.ts`/`TlsServerSession.ts` — cas
+  nominal du handshake 1-RTT (§4) sans HelloRetryRequest ni certificat
+  client : `ClientHello` → `ServerHello` → `EncryptedExtensions` →
+  `Certificate` → `CertificateVerify` → `Finished` (serveur) → `Finished`
+  (client), réutilisant `@/network/pki` (`CertificateVerifier`) pour la
+  vérification de certificat et `keySchedule.ts` (P2) pour les secrets.
+  Succès/échec (certificat non fiable → alerte, avant tout
+  `application_data`).
+- Fichiers concernés : nouveaux fichiers sous `src/network/tls/` +
+  nouveau fichier de test — n'importe P1/P2, ne touche aucun fichier
+  existant hors `src/network/tls/`.
 - Statut / résultat : en cours.
