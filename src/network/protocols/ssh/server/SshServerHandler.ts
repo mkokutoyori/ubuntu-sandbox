@@ -11,10 +11,17 @@ import type { TcpStream as TcpConnection } from '@/network/core/TcpConnection';
 import { TimerSet } from '@/events/TimerSet';
 import { getDefaultScheduler } from '@/events/Scheduler';
 import type { ChannelType } from '../channels/ISshChannel';
+import {
+  encodeSftpChannelFrame,
+  decodeSftpChannelFrame,
+  isSftpChannelFrame,
+} from '../channels/SftpChannelFraming';
 import { isErr, isOk } from '../Result';
 import { PermissionCheckingFSDecorator } from '../sftp/PermissionCheckingFSDecorator';
 import { SftpCommandDispatcher } from '../sftp/SftpCommandDispatcher';
 import type { SftpRequestPayload } from '../sftp/ISftpCommand';
+import { SftpWireSession } from '../sftp/SftpWireSession';
+import { encodeSftpWirePacket, decodeSftpWirePacket } from '../sftp/SftpWireCodec';
 import { SshUserContext } from '../SshUserContext';
 import type { ISshServerContext } from './ISshServerContext';
 import {
@@ -110,6 +117,7 @@ export class SshServerHandler {
 
   private handleConnection(conn: TcpConnection, clientIp: string): void {
     const channels = new Map<number, OpenChannelInfo>();
+    const sftpWireSessions = new Map<number, SftpWireSession>();
     let userCtx: SshUserContext | null = null;
     let authFailures = 0;
     const preauth = preauthSlot(this.ctx);
@@ -161,6 +169,7 @@ export class SshServerHandler {
       keepaliveTimer = null;
       decPreauth();
       channels.clear();
+      sftpWireSessions.clear();
       this.eventBus.emit({
         kind: 'client_disconnected',
         user: userCtx?.username ?? '',
@@ -171,7 +180,30 @@ export class SshServerHandler {
       userCtx = null;
     });
 
+    // §2.1.20/P19 — real SSH_FXP_* wire frames arrive as a `\0`-tagged
+    // binary sub-channel message (SftpChannelFraming.ts), which can never
+    // collide with the JSON `{op, ...}` control messages every other case
+    // below still uses (JSON.stringify always starts with `{`). Handled
+    // first, before any JSON.parse is attempted, and short-circuits.
+    const handleSftpWireFrame = (data: string): void => {
+      const { channelId, wireBytes } = decodeSftpChannelFrame(data);
+      const pkt = decodeSftpWirePacket(wireBytes);
+      if (!pkt || !userCtx) return;
+      let session = sftpWireSessions.get(channelId);
+      if (!session) {
+        const fs = new PermissionCheckingFSDecorator(this.ctx.getFilesystem(userCtx), userCtx);
+        session = new SftpWireSession({ vfs: fs, userCtx, rootPath: userCtx.homeDirectory });
+        sftpWireSessions.set(channelId, session);
+      }
+      const reply = session.handle(pkt);
+      conn.write(encodeSftpChannelFrame(channelId, encodeSftpWirePacket(reply)));
+    };
+
     conn.onData((data) => {
+      if (isSftpChannelFrame(data)) {
+        handleSftpWireFrame(data);
+        return;
+      }
       let parsed: Record<string, unknown>;
       try {
         parsed = JSON.parse(data) as Record<string, unknown>;
@@ -284,6 +316,7 @@ export class SshServerHandler {
             });
           }
           channels.delete(channelId);
+          sftpWireSessions.delete(channelId);
           break;
         }
 

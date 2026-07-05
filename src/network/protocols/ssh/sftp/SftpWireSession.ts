@@ -287,8 +287,20 @@ export class SftpWireSession {
         return this.okStatus(pkt.requestId);
       }
 
+      case 'SETSTAT': {
+        // §2.1.20/P19 — real chmod/chown backing for the SETSTAT attribute flags a client actually sends.
+        if (pkt.attrs.permissions !== undefined) {
+          const result = this.dispatcher.dispatch('chmod', { path: pkt.path, mode: pkt.attrs.permissions }, this.ctx());
+          if (!isOk(result)) { const s = statusFromError(result.error as SshError); return this.status(pkt.requestId, s.code, s.message); }
+        }
+        if (pkt.attrs.uid !== undefined && pkt.attrs.gid !== undefined) {
+          const result = this.dispatcher.dispatch('chown', { path: pkt.path, uid: pkt.attrs.uid, gid: pkt.attrs.gid }, this.ctx());
+          if (!isOk(result)) { const s = statusFromError(result.error as SshError); return this.status(pkt.requestId, s.code, s.message); }
+        }
+        return this.okStatus(pkt.requestId);
+      }
+
       case 'FSTAT':
-      case 'SETSTAT':
       case 'FSETSTAT':
         return this.status(pkt.requestId, SSH_FX.OP_UNSUPPORTED, 'Operation not yet supported by this server.');
 
