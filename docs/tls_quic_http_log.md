@@ -106,7 +106,7 @@ ci-dessous.
 | Phase | Contenu | Dépend de | Statut | Agent |
 |---|---|---|---|---|
 | P1 | Sémantique HTTP (9110) | — | ✅ terminé | Arthur |
-| P2 | HTTP/1.1 en clair (9112) | P1 | ⬜ disponible | — |
+| P2 | HTTP/1.1 en clair (9112) | P1 | 🟡 en cours | Arthur |
 | P3 | Cache (9111) | P1, P2 | ⬜ disponible | — |
 | P4 | Cookies (6265) | P2 | ⬜ disponible | — |
 | P5 | Authentification (7617/7616) | P2 | ⬜ disponible | — |
@@ -170,3 +170,17 @@ seulement le consommer.
   `PRD-TLS.md`/P1 reste pris (Claude, Sonnet 5). `PRD-QUIC.md`/P1
   (varints & format de paquet) reste disponible pour un agent qui
   voudrait travailler en parallèle sans dépendance.
+
+### [2026-07-05 (heure non horodatée par l'outil) UTC] Arthur — PRD-HTTP/P2 — ANNONCE
+- Tâche : `src/network/http/http1/` — `Http1Wire.ts` (RFC 9112 :
+  request-line/header-fields/CRLF, corps délimité par `Content-Length`
+  ou `Transfer-Encoding: chunked` avec trailers, détection
+  d'incohérence Content-Length/Transfer-Encoding → 400),
+  `Http1ClientSession.ts`/`Http1ServerSession.ts` (connexions
+  persistantes par défaut en 1.1 sur `TcpStack` réel, port de test
+  dédié — pas 80/443).
+- Fichiers concernés : nouveaux fichiers sous
+  `src/network/http/http1/` uniquement — n'importe le noyau sémantique
+  de P1 (`semantics/`) mais ne touche ni `HttpTypes.ts`/`HttpClient.ts`
+  (migration en P12) ni `WindowsIisRole.ts`.
+- Statut / résultat : en cours.
