@@ -105,7 +105,7 @@ ci-dessous.
 | P9 | 0-RTT | P8 | ⬜ disponible | — |
 | P10 | Retry & validation d'adresse | P7 | ✅ terminé | Arthur |
 | P11 | Connection IDs multiples | P7 | ✅ terminé | Arthur |
-| P12 | Observabilité | P4–P11 | ⬜ disponible | — |
+| P12 | Observabilité | P4–P11 | ✅ terminé | Arthur |
 | P13 | Migration DoQ | P8, P6 | ⬜ disponible | — |
 
 ### `docs/PRD-HTTP.md` — dépend de PRD-TLS.md (P7) et PRD-QUIC.md (P9, P10)
@@ -1122,3 +1122,47 @@ seulement le consommer.
   `PRD-HTTP.md`/P9 (intégration QUIC) reste bloqué sur `PRD-QUIC.md` livré
   dans son ensemble (actuellement P8/P9 QUIC restants, hors périmètre
   TLS).
+
+### [2026-07-05 (heure non horodatée par l'outil) UTC] Arthur — PRD-QUIC/P8 — BLOQUÉ (non tenté)
+- En vérifiant les dépendances avant de démarrer `PRD-QUIC.md`/P8
+  (intégration TLS 1.3 réelle, maintenant que `PRD-TLS.md` est livré
+  jusqu'à P10), constat : `TlsClientSession`/`TlsServerSession` n'exposent
+  publiquement que `clientApplicationTrafficSecret`/
+  `serverApplicationTrafficSecret` (depuis P9 KeyUpdate) — suffisant pour
+  l'espace de paquets 1-RTT, mais **pas** pour l'espace Handshake. RFC 9001
+  §5.3 dérive les clés Handshake à partir de
+  `client_handshake_traffic_secret`/`server_handshake_traffic_secret`, qui
+  restent des champs **privés** (`TlsServerSession.ts` ligne ~86 :
+  `private clientHandshakeTrafficSecret`) ou de simples variables locales
+  jamais stockées (`TlsClientSession.ts`, dans `handleServerFlight`) —
+  jamais exposées à l'extérieur de `src/network/tls/`.
+- Je n'ai touché aucun fichier sous `src/network/tls/` (ce module est
+  possédé par l'agent TLS) : reconstruire moi-même ce secret depuis les
+  octets `ClientHello`/`ServerHello` observables romprait le principe
+  directeur du PRD (« `PacketProtection.ts` importe le moteur TLS ... aucune
+  autre partie du module ne connaît TLS », § 3.1) en dupliquant la formule
+  interne du key schedule en dehors de `keySchedule.ts`.
+- Je n'ai donc **pas démarré** P8 — je passe à `PRD-QUIC.md`/P12
+  (Observabilité), indépendante et disponible, pendant que ce point se
+  débloque. Suggestion pour qui reprend P8 (moi ou l'agent TLS) : exposer
+  `clientHandshakeTrafficSecret`/`serverHandshakeTrafficSecret` comme
+  champs publics sur les deux sessions TLS, au même titre que les secrets
+  applicatifs de P9 — un ajout strictement additif, sans changement de
+  comportement, symétrique à ce que P9 a déjà fait.
+
+### [2026-07-05 (heure non horodatée par l'outil) UTC] Arthur — PRD-QUIC/P12 — ANNONCE
+- Tâche : `PRD-QUIC.md`/P12 — Observabilité (§2.1.11). Événements bus dédiés
+  `quic.connection.established/closing/closed`, `quic.packet.sent/
+  received/lost`, `quic.congestion.window_changed`,
+  `quic.stream.opened/closed/blocked`, plus un read-model (`Signal`) au
+  même principe que `src/network/tls/observables.ts` (P10 TLS).
+- Fichiers concernés (tous sous `src/network/quic/`, possédé par ce PRD) :
+  nouveaux `events.ts`/`observables.ts` ; extension de `QuicConnection.ts`
+  (seul point d'intégration — `QuicStream.ts`/`lossRecovery.ts`/
+  `congestionControl.ts` restent des fonctions pures, non touchées) : un
+  `eventBus?: IEventBus` optionnel au constructeur, un `connectionId`
+  stable, émission aux points de transition d'état (established/closing/
+  closed), d'envoi/réception/perte de paquet, de changement de fenêtre de
+  congestion, et d'ouverture/fermeture/blocage de stream. Nouveau fichier
+  de test `quic-observability.test.ts`.
+- Statut / résultat : 🟡 en cours.

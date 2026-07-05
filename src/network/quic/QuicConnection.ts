@@ -1,4 +1,5 @@
 import type { EndHost, UdpDelivery } from '@/network/devices/EndHost';
+import type { IEventBus } from '@/events/EventBus';
 import { IPAddress } from '@/network/core/types';
 import { QUIC_VERSION_1, type PacketProtectionKeys, type PacketNumberSpace } from './types';
 import { encodeLongHeader, decodeLongHeader, encodeShortHeader, decodeShortHeader } from './packetFormat';
@@ -6,7 +7,8 @@ import { encodeFrame, decodeFrames, type QuicFrame } from './frames';
 import { protectBody, unprotectBody } from './packetProtection';
 import { QuicStreamManager, type StreamDirection } from './QuicStream';
 import { LossDetectionState, onPacketSent as onLossPacketSent, onAckReceived } from './lossRecovery';
-import { createCongestionState, onPacketSent as onCongestionPacketSent, onPacketAcked, onPacketsLost, type CongestionState } from './congestionControl';
+import { createCongestionState, isInSlowStart, onPacketSent as onCongestionPacketSent, onPacketAcked, onPacketsLost, type CongestionState } from './congestionControl';
+import { randomConnectionId, type QuicDomainEvent, type CongestionPhase } from './events';
 
 export type QuicRole = 'client' | 'server';
 export type QuicConnectionState = 'idle' | 'handshaking' | 'established' | 'closing' | 'draining' | 'closed';
@@ -59,12 +61,15 @@ const DEFAULT_DRAIN_MS = 3000;
  */
 export class QuicConnection {
   state: QuicConnectionState = 'idle';
+  /** Stable per-connection correlator for `events.ts` payloads (§2.1.11). */
+  readonly connectionId = randomConnectionId();
   private nextPacketNumber = 0;
   private peer: { ip: string; port: number } | null = null;
   private readonly streams: QuicStreamManager;
   private readonly lossState = new LossDetectionState();
   private readonly congestionState: CongestionState = createCongestionState();
   private readonly packetSizes = new Map<number, number>();
+  private readonly closedStreamIds = new Set<number>();
   private readonly messageHandlers: Array<(msg: QuicMessage) => void> = [];
   private readonly closeHandlers: Array<(errorCode: number, reason: string) => void> = [];
   private closingSince: number | null = null;
@@ -74,9 +79,35 @@ export class QuicConnection {
     private readonly role: QuicRole,
     private readonly localPort: number,
     private readonly keys: QuicTestKeys,
+    private readonly eventBus?: IEventBus,
   ) {
     this.streams = new QuicStreamManager(role);
     host.udpBind(localPort, (delivery) => this.handleDatagram(delivery));
+  }
+
+  private emit(event: QuicDomainEvent): void {
+    this.eventBus?.publish(event);
+  }
+
+  private congestionPhase(): CongestionPhase {
+    if (this.congestionState.congestionRecoveryStartTime !== null) return 'recovery';
+    return isInSlowStart(this.congestionState) ? 'slow-start' : 'congestion-avoidance';
+  }
+
+  private emitWindowChanged(previousWindow: number): void {
+    if (this.congestionState.congestionWindow === previousWindow) return;
+    this.emit({
+      topic: 'quic.congestion.window_changed',
+      payload: { connectionId: this.connectionId, role: this.role, congestionWindow: this.congestionState.congestionWindow, phase: this.congestionPhase() },
+    });
+  }
+
+  private markStreamClosedIfDone(streamId: number): void {
+    if (this.closedStreamIds.has(streamId)) return;
+    const stream = this.streams.get(streamId);
+    if (!stream || !stream.finSent || !stream.finReceived) return;
+    this.closedStreamIds.add(streamId);
+    this.emit({ topic: 'quic.stream.closed', payload: { connectionId: this.connectionId, role: this.role, streamId } });
   }
 
   connect(remoteIp: string, remotePort: number): void {
@@ -86,7 +117,9 @@ export class QuicConnection {
   }
 
   openStream(direction: StreamDirection): number {
-    return this.streams.openStream(direction).id;
+    const stream = this.streams.openStream(direction);
+    this.emit({ topic: 'quic.stream.opened', payload: { connectionId: this.connectionId, role: this.role, streamId: stream.id } });
+    return stream.id;
   }
 
   sendData(streamId: number, data: string | Uint8Array, fin = false): void {
@@ -94,8 +127,13 @@ export class QuicConnection {
     const stream = this.streams.get(streamId) ?? this.streams.getOrCreatePeerStream(streamId);
     const bytes = typeof data === 'string' ? new TextEncoder().encode(data) : data;
     const result = this.streams.trySend(stream, bytes, fin);
-    if (result.frame) this.sendPacket('application', [result.frame], true);
-    else if (result.blockedFrame) this.sendPacket('application', [result.blockedFrame], true);
+    if (result.frame) {
+      this.sendPacket('application', [result.frame], true);
+      this.markStreamClosedIfDone(streamId);
+    } else if (result.blockedFrame) {
+      this.sendPacket('application', [result.blockedFrame], true);
+      this.emit({ topic: 'quic.stream.blocked', payload: { connectionId: this.connectionId, role: this.role, streamId } });
+    }
   }
 
   onMessage(handler: (msg: QuicMessage) => void): () => void {
@@ -118,6 +156,7 @@ export class QuicConnection {
     if (this.state === 'closing' || this.state === 'draining' || this.state === 'closed') return;
     this.state = 'closing';
     this.closingSince = Date.now();
+    this.emit({ topic: 'quic.connection.closing', payload: { connectionId: this.connectionId, role: this.role, errorCode, reason } });
     this.sendPacket('application', [{ type: 'CONNECTION_CLOSE', errorCode, reasonPhrase: reason, layer: 'application' }], false);
   }
 
@@ -127,6 +166,7 @@ export class QuicConnection {
     if (this.state !== 'closing' && this.state !== 'draining') return false;
     if (this.closingSince !== null && now - this.closingSince >= drainMs) {
       this.state = 'closed';
+      this.emit({ topic: 'quic.connection.closed', payload: { connectionId: this.connectionId, role: this.role } });
       return true;
     }
     return false;
@@ -148,6 +188,7 @@ export class QuicConnection {
     this.packetSizes.set(pn, bytes.length);
 
     this.host.sendUdpDatagram(new IPAddress(this.peer.ip), this.peer.port, this.localPort, bytesToBinaryString(bytes), bytes.length);
+    this.emit({ topic: 'quic.packet.sent', payload: { connectionId: this.connectionId, role: this.role, space, packetNumber: pn, size: bytes.length } });
   }
 
   private sendAck(space: PacketNumberSpace, packetNumber: number): void {
@@ -167,6 +208,7 @@ export class QuicConnection {
     const packetNumber = decoded.packet.packetNumber ?? 0;
     const plaintext = unprotectBody(keys, packetNumber, decoded.packet.payload);
     const { frames } = decodeFrames(plaintext);
+    this.emit({ topic: 'quic.packet.received', payload: { connectionId: this.connectionId, role: this.role, space, packetNumber, size: bytes.length } });
 
     let sawAckEliciting = false;
     for (const frame of frames) {
@@ -182,16 +224,23 @@ export class QuicConnection {
         if (this.role === 'server' && this.state !== 'established') {
           this.state = 'established';
           this.sendPacket('initial', [{ type: 'HANDSHAKE_DONE' }], true);
+          this.emit({ topic: 'quic.connection.established', payload: { connectionId: this.connectionId, role: this.role } });
         }
         return;
 
       case 'HANDSHAKE_DONE':
-        if (this.role === 'client') this.state = 'established';
+        if (this.role === 'client') {
+          this.state = 'established';
+          this.emit({ topic: 'quic.connection.established', payload: { connectionId: this.connectionId, role: this.role } });
+        }
         return;
 
       case 'STREAM': {
+        const isNewPeerStream = this.streams.get(frame.streamId) === undefined;
         const stream = this.streams.receiveStreamFrame(frame);
+        if (isNewPeerStream) this.emit({ topic: 'quic.stream.opened', payload: { connectionId: this.connectionId, role: this.role, streamId: stream.id } });
         for (const h of this.messageHandlers) h({ streamId: stream.id, data: frame.data, fin: frame.fin });
+        this.markStreamClosedIfDone(stream.id);
         return;
       }
 
@@ -206,16 +255,23 @@ export class QuicConnection {
       case 'ACK': {
         const acked = expandSingleRangeAck(frame);
         const { newlyAcked, lostPackets } = onAckReceived(this.lossState, space, acked, frame.ackDelay, Date.now());
+        const windowBeforeAck = this.congestionState.congestionWindow;
         for (const pn of newlyAcked) {
           const size = this.packetSizes.get(pn);
           this.packetSizes.delete(pn);
           if (size !== undefined) onPacketAcked(this.congestionState, 0, size);
         }
+        this.emitWindowChanged(windowBeforeAck);
         if (lostPackets.length > 0) {
+          const windowBeforeLoss = this.congestionState.congestionWindow;
           const accounting = lostPackets
             .map((p) => ({ sentTime: 0, size: this.packetSizes.get(p.packetNumber) ?? 0 }));
-          for (const p of lostPackets) this.packetSizes.delete(p.packetNumber);
+          for (const p of lostPackets) {
+            this.packetSizes.delete(p.packetNumber);
+            this.emit({ topic: 'quic.packet.lost', payload: { connectionId: this.connectionId, role: this.role, space, packetNumber: p.packetNumber } });
+          }
           onPacketsLost(this.congestionState, accounting, Date.now());
+          this.emitWindowChanged(windowBeforeLoss);
         }
         return;
       }
@@ -223,6 +279,10 @@ export class QuicConnection {
       case 'CONNECTION_CLOSE':
         this.state = 'draining';
         this.closingSince = Date.now();
+        this.emit({
+          topic: 'quic.connection.closing',
+          payload: { connectionId: this.connectionId, role: this.role, errorCode: frame.errorCode, reason: frame.reasonPhrase },
+        });
         for (const h of this.closeHandlers) h(frame.errorCode, frame.reasonPhrase);
         return;
 
