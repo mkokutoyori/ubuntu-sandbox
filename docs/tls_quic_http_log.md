@@ -99,7 +99,7 @@ ci-dessous.
 | P3 | Protection de paquets (clés de test) | P1, P2 | ⬜ disponible | — |
 | P4 | Recouvrement de pertes | P2, P3 | ⬜ disponible | — |
 | P5 | Contrôle de congestion | P4 | ⬜ disponible | — |
-| P6 | Streams | P2 | 🟡 en cours | Arthur |
+| P6 | Streams | P2 | ✅ terminé | Arthur |
 | P7 | Machine à états de connexion (sans TLS réel) | P3–P6 | ⬜ disponible | — |
 | P8 | Intégration TLS 1.3 réelle | **PRD-TLS.md implémenté**, P7 | ⬜ disponible | — |
 | P9 | 0-RTT | P8 | ⬜ disponible | — |
@@ -669,4 +669,19 @@ seulement le consommer.
   d'émission.
 - Fichiers concernés : nouveau fichier `src/network/quic/QuicStream.ts`
   — purement additif.
-- Statut / résultat : en cours.
+- Statut / résultat : ✅ terminé. 16 tests : classification des 4
+  combinaisons initiateur/direction, allocation séquentielle (pas de
+  4) avec compteurs indépendants par catégorie, envoi dans la fenêtre,
+  `STREAM_DATA_BLOCKED` quand la fenêtre du stream est épuisée (pas la
+  connexion), `DATA_BLOCKED` quand c'est la connexion (pas le stream),
+  déblocage après `MAX_STREAM_DATA`/`MAX_DATA`, troncature d'un envoi
+  plus grand que la fenêtre (FIN correctement retardé), création à la
+  volée d'un stream initié par le pair sur réception d'une trame
+  `STREAM`, multiplexage : deux streams sur une même connexion avec
+  états de contrôle de flux indépendants. `tsc`/`eslint` propres.
+  Régression ciblée (quic-packet-format, quic-frames, quic-stream,
+  dns-encrypted-transports) : 4 fichiers, 74 tests, 0 échec.
+- Suggestion pour la suite : `PRD-QUIC.md`/P3 (protection de paquets,
+  clés de test injectées) reste disponible (dépend de P1+P2, tous deux
+  terminés). P7 (machine à états de connexion) dépend de P3-P6 et n'est
+  pas encore accessible tant que P3-P5 ne sont pas faits.
