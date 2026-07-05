@@ -22,6 +22,7 @@ import { DirectoryStore } from './windows/server/ad/DirectoryStore';
 import { WindowsDnsServerRole } from './windows/server/dns/WindowsDnsServerRole';
 import { WindowsDhcpServerRole } from './windows/server/dhcp/WindowsDhcpServerRole';
 import { WindowsNpsRole } from './windows/server/nps/WindowsNpsRole';
+import { WindowsIisRole } from './windows/server/iis/WindowsIisRole';
 
 export interface AdDsOpResult { ok: boolean; message: string }
 
@@ -31,6 +32,7 @@ export class WindowsServer extends WindowsPC {
   private dnsServerRoleInstance: WindowsDnsServerRole | null = null;
   private dhcpServerRoleInstance: WindowsDhcpServerRole | null = null;
   private npsRoleInstance: WindowsNpsRole | null = null;
+  private iisRoleInstance: WindowsIisRole | null = null;
 
   constructor(name: string = 'WinServer', x: number = 0, y: number = 0) {
     super('windows-server', name, x, y);
@@ -102,6 +104,23 @@ export class WindowsServer extends WindowsPC {
       this.npsRoleInstance.start();
     }
     return this.npsRoleInstance;
+  }
+
+  /**
+   * PRD Phase 11 (§5 P11): the Web Server (IIS) role, hosting a minimal
+   * `W3SVC` + "Default Web Site" over real TCP/80 — null while the
+   * `Web-Server` role isn't installed.
+   */
+  getIisRole(): WindowsIisRole | null {
+    if (!this.roleManager.isInstalled('Web-Server')) {
+      if (this.iisRoleInstance) { this.iisRoleInstance.stop(); this.iisRoleInstance = null; }
+      return null;
+    }
+    if (!this.iisRoleInstance) {
+      this.iisRoleInstance = new WindowsIisRole(this, this.getFileSystem());
+      this.iisRoleInstance.start();
+    }
+    return this.iisRoleInstance;
   }
 
   /**

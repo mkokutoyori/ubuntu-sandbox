@@ -237,6 +237,20 @@ export interface IGpoProvider {
   getDomainDn(): string;
 }
 
+// ── Web Server / IIS role (PRD-Windows-Server.md §5 P11) ────────────────────
+
+export interface IisOpResult { ok: boolean; message: string }
+export interface WebsiteInfo { name: string; physicalPath: string; port: number; state: 'Started' | 'Stopped' }
+
+export interface IIisProvider {
+  newWebsite(name: string, physicalPath: string, port: number): IisOpResult;
+  removeWebsite(name: string): IisOpResult;
+  getWebsite(name: string): WebsiteInfo | null;
+  listWebsites(): WebsiteInfo[];
+  startWebsite(name: string): IisOpResult;
+  stopWebsite(name: string): IisOpResult;
+}
+
 // ── DNS Server role (PRD-Windows-Server.md §5 P7) ───────────────────────────
 
 export interface DnsOpResult { ok: boolean; message: string }
@@ -488,6 +502,13 @@ export interface INetworkProvider {
   getDnsClientCache?(): Array<{ name: string; type: string; value: string; ttl: number }>;
   /** Clear-DnsClientCache */
   clearDnsClientCache?(): void;
+  /**
+   * `Invoke-WebRequest -Uri` (PRD-Windows-Server.md §5 P11): resolves the
+   * host (same real DNS chain as `Resolve-DnsName`) then dials a real
+   * HTTP request over `TcpStack` — reaches the IIS role (or any other
+   * real HTTP-hosting device) on the simulated network, not a stub.
+   */
+  invokeWebRequest?(url: string): { ok: boolean; error?: string; statusCode?: number; statusDescription?: string; content?: string; headers?: Record<string, string> };
   /** Get-NetTCPConnection */
   getTcpConnections(): Array<{ localAddress: string; localPort: number; remoteAddress: string; remotePort: number; state: string; pid: number }>;
   getFirewallRules(): Array<{ name: string; displayName: string; enabled: boolean; action: string; direction: string; protocol: string; localPort: string; remotePort: string; description: string }>;
@@ -650,4 +671,5 @@ export interface PSProviders {
   readonly dhcp:           IDhcpServerProvider     | null;
   readonly nps:            INpsProvider            | null;
   readonly gpo:            IGpoProvider            | null;
+  readonly iis:            IIisProvider            | null;
 }

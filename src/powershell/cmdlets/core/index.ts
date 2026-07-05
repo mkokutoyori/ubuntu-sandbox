@@ -69,7 +69,7 @@ import {
 import {
   GetNetAdapterCmdlet, GetNetIPAddressCmdlet, GetNetNeighborCmdlet,
   NewNetNeighborCmdlet, RemoveNetNeighborCmdlet, SetNetNeighborCmdlet,
-  TestConnectionCmdlet, ResolveDnsNameCmdlet,
+  TestConnectionCmdlet, ResolveDnsNameCmdlet, InvokeWebRequestCmdlet,
   GetNetIPConfigurationCmdlet, GetNetRouteCmdlet,
   GetNetTCPConnectionCmdlet, HostnameCmdlet, WhoamiCmdlet,
   NewNetIPAddressCmdlet, RemoveNetIPAddressCmdlet,
@@ -140,6 +140,9 @@ import {
   NewNpsNetworkPolicyCmdlet, GetNpsNetworkPolicyCmdlet, RemoveNpsNetworkPolicyCmdlet,
 } from './NpsCmdlets';
 import { NewGPOCmdlet, GetGPOCmdlet, NewGPLinkCmdlet } from './GroupPolicyCmdlets';
+import {
+  NewWebsiteCmdlet, GetWebsiteCmdlet, StartWebsiteCmdlet, StopWebsiteCmdlet, RemoveWebsiteCmdlet,
+} from './WebAdminCmdlets';
 
 /**
  * Register all core (provider-independent) cmdlets into the given registry.
@@ -288,6 +291,7 @@ export function registerCoreCmdlets(registry: CmdletRegistry): void {
   registry.register(new GetNetIPAddressCmdlet());
   registry.register(new TestConnectionCmdlet());
   registry.register(new ResolveDnsNameCmdlet());
+  registry.register(new InvokeWebRequestCmdlet());
   registry.register(new GetNetIPConfigurationCmdlet());
   registry.register(new GetNetRouteCmdlet());
   registry.register(new GetNetTCPConnectionCmdlet());
@@ -420,6 +424,13 @@ export function registerCoreCmdlets(registry: CmdletRegistry): void {
   registry.register(new NewGPOCmdlet());
   registry.register(new GetGPOCmdlet());
   registry.register(new NewGPLinkCmdlet());
+
+  // ── Web Server / IIS role (PRD-Windows-Server.md §5 P11) ────────────────────
+  registry.register(new NewWebsiteCmdlet());
+  registry.register(new GetWebsiteCmdlet());
+  registry.register(new StartWebsiteCmdlet());
+  registry.register(new StopWebsiteCmdlet());
+  registry.register(new RemoveWebsiteCmdlet());
 
   // ── Native CLI shims (sync subset) ────────────────────────────────────────
   // ping / tracert stay in the legacy executor — they're async and the

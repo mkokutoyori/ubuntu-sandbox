@@ -83,6 +83,7 @@ import { type DomainMembership, type DomainSession, parseDomainQualifiedUser } f
 import { joinDomain, type DomainJoinResult } from './windows/domain/DomainJoinClient';
 import { logonDomainUser } from './windows/domain/DomainLogonClient';
 import { pullGroupPolicy } from './windows/domain/GpoPullClient';
+import { dialHttp as dialHttpClient, parseHttpUrl } from '@/network/http/HttpClient';
 import type { GpoSettings } from './windows/server/ad/AdTypes';
 import { cmdNltest, cmdDcdiag, cmdKlist } from './windows/WinDomainDiag';
 import { cmdDnscmd } from './windows/WinDnscmd';
@@ -572,6 +573,37 @@ export class WindowsPC extends EndHost implements UserAccountHost {
    */
   dialWinRm(targetIp: string, username: string, password: string): WinRmDialResult {
     return dialWinRm({ tcpStack: this.getTcpStack(), targetIp, username, password });
+  }
+
+  /**
+   * `Invoke-WebRequest -Uri` (PRD-Windows-Server.md §5 P11): resolves the
+   * host via the same real DNS chain `resolveDnsSync` uses (hosts file,
+   * search domains, cache, real DNS query), then dials a real HTTP
+   * request over `TcpStack` — reaches the IIS role (or any other real
+   * HTTP-hosting device), not a stub.
+   */
+  invokeWebRequest(url: string): { ok: boolean; error?: string; statusCode?: number; statusDescription?: string; content?: string; headers?: Record<string, string> } {
+    const parsed = parseHttpUrl(url);
+    if (!parsed) return { ok: false, error: 'Invoke-WebRequest : Invalid URI: The format of the URI could not be determined.' };
+    const ips = this.resolveDnsSync(parsed.host);
+    const targetIp = ips[0] ?? (IPAddress.tryParse(parsed.host)?.toString());
+    if (!targetIp) return { ok: false, error: `Invoke-WebRequest : The remote name could not be resolved: '${parsed.host}'` };
+    const result = dialHttpClient({ tcpStack: this.getTcpStack(), targetIp, port: parsed.port, path: parsed.path });
+    if (!result.ok || !result.response) {
+      return { ok: false, error: `Invoke-WebRequest : Unable to connect to the remote server` };
+    }
+    const { response } = result;
+    if (response.statusCode >= 400) {
+      return {
+        ok: false,
+        error: `Invoke-WebRequest : The remote server returned an error: (${response.statusCode}) ${response.statusText}.`,
+        statusCode: response.statusCode, statusDescription: response.statusText,
+      };
+    }
+    return {
+      ok: true, statusCode: response.statusCode, statusDescription: response.statusText,
+      content: response.body, headers: response.headers,
+    };
   }
 
   // ─── Group Policy (PRD-Windows-Server.md §5 P10) ────────────────────
@@ -1471,6 +1503,12 @@ export class WindowsPC extends EndHost implements UserAccountHost {
           : res.message;
       }
       case 'gpresult': return this.cmdGpresult();
+      case 'iisreset': {
+        const iis = this.getIisRole();
+        if (!iis) return "'iisreset' is not recognized as an internal or external command,\noperable program or batch file.";
+        iis.iisreset();
+        return `Attempting stop...\nInternet services successfully stopped\nAttempting start...\nInternet services successfully restarted`;
+      }
     }
 
     // net user / net localgroup / net start / net stop / net help
@@ -2302,6 +2340,13 @@ export class WindowsPC extends EndHost implements UserAccountHost {
    * client, overridden by `WindowsServer`.
    */
   getNpsRole(): import('./windows/server/nps/WindowsNpsRole').WindowsNpsRole | null { return null; }
+
+  /**
+   * Web Server (IIS) role (PRD-Windows-Server.md §5 P11) — null until
+   * `Install-WindowsFeature Web-Server` on a `WindowsServer`; always null
+   * on a client, overridden by `WindowsServer`.
+   */
+  getIisRole(): import('./windows/server/iis/WindowsIisRole').WindowsIisRole | null { return null; }
 
   /** Get the process manager (for PowerShellExecutor and other integrations) */
   getProcessManager(): WindowsProcessManager { return this.procMgr; }

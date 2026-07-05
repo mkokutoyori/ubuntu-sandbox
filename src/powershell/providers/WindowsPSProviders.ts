@@ -54,6 +54,7 @@ import type {
   IAdProvider, AdUserInfo, AdGroupInfo, AdComputerInfo, AdOrgUnitInfo, AdOpResult,
   IComputerProvider, DomainMembershipInfo,
   IGpoProvider, GpoInfo,
+  IIisProvider, IisOpResult, WebsiteInfo,
   IDnsServerProvider, DnsOpResult, DnsZoneInfo, DnsRecordInfo,
   IDhcpServerProvider, DhcpOpResult, DhcpScopeInfo, DhcpLeaseInfo,
   INpsProvider, NpsOpResult, NasClientInfo, NetworkPolicyInfo,
@@ -1042,6 +1043,7 @@ class WindowsNetworkAdapter implements INetworkProvider {
     }));
   }
   clearDnsClientCache(): void { this.pc.dnsCache.flush(); }
+  invokeWebRequest(url: string) { return this.pc.invokeWebRequest(url); }
   testPingProbe(target: string) {
     const ip = this.resolveTargetSync(target);
     if (!ip) return null;
@@ -1533,6 +1535,28 @@ class WindowsGpoAdapter implements IGpoProvider {
   }
 }
 
+// ── IIS adapter (PRD-Windows-Server.md §5 P11) ────────────────────────────
+
+class WindowsIisAdapter implements IIisProvider {
+  constructor(private readonly pc: WindowsPC) {}
+
+  private requireRole(cmdletName: string) {
+    if (!this.pc.getRoleManager()?.isInstalled('Web-Server')) {
+      throw new Error(`${cmdletName} is not recognized as the name of a cmdlet, function, script file, or operable program`);
+    }
+    const role = this.pc.getIisRole();
+    if (!role) throw new Error(`${cmdletName} : The Web Server (IIS) service is not available on this computer.`);
+    return role;
+  }
+
+  newWebsite(name: string, physicalPath: string, port: number): IisOpResult { return this.requireRole('New-Website').newWebsite(name, physicalPath, port); }
+  removeWebsite(name: string): IisOpResult { return this.requireRole('Remove-Website').removeWebsite(name); }
+  getWebsite(name: string): WebsiteInfo | null { return this.requireRole('Get-Website').getWebsite(name); }
+  listWebsites(): WebsiteInfo[] { return this.requireRole('Get-Website').listWebsites(); }
+  startWebsite(name: string): IisOpResult { return this.requireRole('Start-Website').startSite(name); }
+  stopWebsite(name: string): IisOpResult { return this.requireRole('Stop-Website').stopSite(name); }
+}
+
 // ── Remoting adapter (Invoke-Command -ComputerName / Test-WSMan) ──────────
 //
 // Resolves the target through the same simulated-topology lookup the SSH
@@ -1656,5 +1680,6 @@ export function createWindowsPSProviders(
     dhcp:           pc.getRoleManager() ? new WindowsDhcpServerAdapter(pc) : null,
     nps:            pc.getRoleManager() ? new WindowsNpsAdapter(pc) : null,
     gpo:            new WindowsGpoAdapter(pc),
+    iis:            pc.getRoleManager() ? new WindowsIisAdapter(pc) : null,
   };
 }

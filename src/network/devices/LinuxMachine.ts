@@ -26,6 +26,7 @@ import { EndHost, type PingResult, type ARPEntry, type HostRouteEntry, getNUDSta
 import type { UserAccountHost, ShellIdentityHost, FileEditorHost } from '../equipment/HostCapabilities';
 import type { PathActor } from './linux/VfsPath';
 import type { NssHostEntry } from './linux/nss/types';
+import type { TcpStack } from '../tcp/TcpStack';
 import { SshConnectionThrottler } from './linux/security/SshConnectionThrottler';
 import { HostsFile } from './HostsFile';
 import { Port } from '../hardware/Port';
@@ -1773,6 +1774,20 @@ export abstract class LinuxMachine extends EndHost
       },
       resolveHostname(name: string): Promise<IPAddress | null> {
         return self.resolveHostnameOverWire(name);
+      },
+      resolveHostnameSync(name: string): IPAddress | null {
+        try { return new IPAddress(name); } catch { /* not a literal address */ }
+        const r = self.executor.nss.lookup<NssHostEntry[]>('hosts', s => s.gethostbyname?.(name, 2));
+        if (r.status === 'SUCCESS' && r.entry) {
+          for (const h of r.entry) {
+            if (h.addressFamily !== 2) continue;
+            try { return new IPAddress(h.address); } catch { continue; }
+          }
+        }
+        return null;
+      },
+      getTcpStack(): TcpStack {
+        return self.getTcpStack();
       },
       async queryDns(
         serverIP: string, name: string, qtype: string,

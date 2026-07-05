@@ -21,6 +21,7 @@ import type { IPAddress, IPv6Address, SubnetMask, MACAddress, IPv4Packet } from 
 import type { ARPEntry, HostRouteEntry, HostIPv6RouteEntry, PingResult } from '../EndHost';
 import type { DHCPClient } from '../../dhcp/DHCPClient';
 import type { DnsQueryFn } from '../../dns/compat/DnsWireCompat';
+import type { TcpStack } from '../../tcp/TcpStack';
 
 export interface TracerouteProbe {
   /** True if this probe got a response (Time Exceeded, echo-reply, Port Unreachable, …). */
@@ -146,8 +147,20 @@ export interface LinuxNetKernel {
    */
   resolveHostname(name: string): Promise<IPAddress | null>;
 
+  /**
+   * Synchronous variant of the same NSS `hosts: files dns` lookup —
+   * `curl`/`wget` (PRD-Windows-Server.md §5 P11) need a real hostname
+   * resolution step before dialing, but their own TCP round trip is
+   * synchronous in this simulator, so a Promise-returning API would just
+   * add an artificial microtask hop for no benefit.
+   */
+  resolveHostnameSync(name: string): IPAddress | null;
+
   queryDns: DnsQueryFn;
 
   /** Read a file from the virtual filesystem (returns null if not found). */
   readFile(path: string): string | null;
+
+  /** Raw TCP stack access for client protocols hosted at this layer (HTTP dial for curl/wget). */
+  getTcpStack(): TcpStack;
 }

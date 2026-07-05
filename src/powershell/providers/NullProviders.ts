@@ -33,4 +33,5 @@ export const NULL_PROVIDERS: PSProviders = {
   dhcp:           null,
   nps:            null,
   gpo:            null,
+  iis:            null,
 };

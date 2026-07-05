@@ -207,6 +207,27 @@ export class ResolveDnsNameCmdlet implements ICmdlet {
   }
 }
 
+// ── Invoke-WebRequest (PRD-Windows-Server.md §5 P11) ───────────────────────
+
+export class InvokeWebRequestCmdlet implements ICmdlet {
+  readonly name = 'invoke-webrequest';
+  readonly displayName = 'Invoke-WebRequest';
+  readonly aliases = ['iwr'] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const net = requireNetwork(ctx);
+    const url = psValueToString(ctx.named['uri'] ?? ctx.positional[0] ?? '');
+    if (!url) { ctx.emitError('Invoke-WebRequest : Cannot process command because of one or more missing mandatory parameters: Uri.'); return null; }
+    if (!net.invokeWebRequest) { ctx.emitError('Invoke-WebRequest : not supported on this device.'); return null; }
+    const res = net.invokeWebRequest(url);
+    if (!res.ok) { ctx.emitError(res.error ?? 'Invoke-WebRequest : request failed'); return null; }
+    return {
+      StatusCode: res.statusCode, StatusDescription: res.statusDescription,
+      Content: res.content, Headers: res.headers,
+    } as Record<string, PSValue>;
+  }
+}
+
 // ── Get-NetIPConfiguration ────────────────────────────────────────────────
 // Composite: rolls adapter + IP + DNS + gateway into one row per adapter
 // (matches what real PS prints when invoked without arguments).
