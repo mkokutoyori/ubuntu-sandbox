@@ -8,7 +8,8 @@
 (HTTP/1.1), RFC 9113 (HTTP/2), RFC 9114 (HTTP/3), RFC 7541 (HPACK — nécessaire à
 RFC 9113), RFC 9204 (QPACK — nécessaire à RFC 9114), RFC 8446 (TLS 1.3 —
 prérequis externe, cf. `PRD-TLS.md`), RFC 9000/RFC 9001/RFC 9002 (QUIC —
-transport, intégration TLS 1.3, recouvrement de pertes/congestion), RFC 6265
+prérequis externe, cf. `PRD-QUIC.md` — construit et possédé par ce PRD frère,
+pas par ce document), RFC 6265
 (cookies), RFC 7617 (authentification Basic), RFC 7616 (authentification
 Digest), RFC 6455 (WebSocket)
 
@@ -68,9 +69,11 @@ PRD-TLS.md (RFC 8446)
 ```
 
 Ce PRD a donc **deux dépendances entrantes bloquantes**, chacune limitée à
-un sous-ensemble de phases (§ 7) : le moteur TLS de `PRD-TLS.md` (P7, P9,
-P10, et la partie HTTPS de P12/P13), et le moteur QUIC de `PRD-QUIC.md`
-(P9, P10). Les phases P1 à P6, P8 (partie `h2c`) et la partie HTTP/1.1
+un sous-ensemble de phases (§ 7) : le moteur TLS de `PRD-TLS.md` (P7, et la
+partie HTTPS de P12/P13), et le moteur QUIC de `PRD-QUIC.md` (P9, P10 —
+qui dépend lui-même de `PRD-TLS.md`, cf. § 0.1 de `PRD-QUIC.md`, mais ce
+PRD n'a besoin que de `PRD-QUIC.md` livré, pas de connaître son détail
+interne). Les phases P1 à P6, P8 (partie `h2c`) et la partie HTTP/1.1
 en clair de P12 sont indépendantes des deux et peuvent être livrées sans
 attendre. C'est le PRD terminal de la chaîne — aucun autre PRD de ce
 groupe ne dépend de lui.
@@ -90,8 +93,8 @@ groupe ne dépend de lui.
 | `src/network/dns/transport/DnsQuicTransport.ts` | DoQ (DNS-over-QUIC) | Un datagramme UDP = un message applicatif chiffré par XOR (`SimulatedTls.ts`) ; **aucun format de paquet QUIC réel** (pas de connection ID, pas d'espaces de paquets Initial/Handshake/1-RTT, pas de contrôle de congestion) |
 | `src/network/pki/*` | PKI (CA, vérification, CRL, OCSP) | Réel dans sa logique, réutilisable tel quel pour HTTPS |
 | `docs/PRD-TLS.md` | Moteur TLS 1.3 générique | **PRD écrit, code pas encore implémenté** à la date de ce document — prérequis externe pour toute variante HTTPS/QUIC ci-dessous |
+| `docs/PRD-QUIC.md` | Moteur QUIC générique (transport de HTTP/3) | **PRD écrit, code pas encore implémenté** à la date de ce document — possède et construit `src/network/quic/` en totalité ; ce PRD ne fait que le consommer (§ 2.1.E) |
 | `src/network/tcp/TcpStack.ts` | Pile TCP réelle | Suffisante pour porter HTTP/1.1 et HTTP/2 (multiplexés sur une seule connexion) |
-| — | Émission/réception UDP brute (`UDPPacket`) | Déjà utilisée telle quelle par DNS/RADIUS pour construire des datagrammes UDP réels — base de transport suffisante pour QUIC (pas de classe `UdpStack` dédiée à ce jour, ce PRD n'en introduit pas non plus) |
 | `src/network/core/WellKnownPorts.ts` | Registre de ports | `80`→http, `443`→https, `8080`→http-alt, `8443`→https-alt déjà déclarés |
 
 ### 1.2 Ce qui existe déjà et est réutilisable
@@ -123,8 +126,8 @@ groupe ne dépend de lui.
 | 2 | **Aucun framing HTTP/1.1 réel et réutilisable** : le PDU JSON (IIS/curl) n'a pas de request-line/header-fields/CRLF ; le framing texte de `DnsHttpsTransport.ts` est fait main, non partagé, sans chunked transfer-encoding, sans connexions persistantes réelles, sans détection d'incohérence Content-Length/Transfer-Encoding | RFC 9112 | Élevée |
 | 3 | **Aucun cache HTTP** : pas de `Cache-Control`, pas d'`ETag`/`If-None-Match`, pas de `Last-Modified`/`If-Modified-Since`, pas de calcul de fraîcheur/âge, pas de revalidation | RFC 9111 | Élevée |
 | 4 | **Aucun HTTP/2** : pas de framing binaire, pas de HPACK, pas de multiplexage de streams, pas de contrôle de flux, pas de négociation ALPN `h2` | RFC 9113, RFC 7541 | Élevée |
-| 5 | **Aucun vrai QUIC** : `DnsQuicTransport.ts` est un stand-in très éloigné — pas de format de paquet, pas de connection ID, pas d'espaces de paquets, pas de recouvrement de pertes ni de contrôle de congestion | RFC 9000, RFC 9002 | Élevée |
-| 6 | **Aucune intégration TLS 1.3 pour un transport de type QUIC** (clés dérivées par espace de paquets, Initial/Handshake/1-RTT) | RFC 9001 | Élevée |
+| 5 | **Aucun vrai QUIC** : `DnsQuicTransport.ts` est un stand-in très éloigné — pas de format de paquet, pas de connection ID, pas d'espaces de paquets, pas de recouvrement de pertes ni de contrôle de congestion. **Comblé par `docs/PRD-QUIC.md`, pas par ce document** (§ 2.1.E) | RFC 9000, RFC 9002 | Élevée |
+| 6 | **Aucune intégration TLS 1.3 pour un transport de type QUIC** (clés dérivées par espace de paquets, Initial/Handshake/1-RTT). **Comblé par `docs/PRD-QUIC.md`, pas par ce document** (§ 2.1.E) | RFC 9001 | Élevée |
 | 7 | **Aucun HTTP/3** : ni mapping des sémantiques 9110 sur des streams QUIC, ni QPACK, ni streams de contrôle unidirectionnels | RFC 9114, RFC 9204 | Élevée |
 | 8 | **Aucun cookie** : ni `Set-Cookie`/`Cookie`, ni magasin de cookies par agent, ni algorithme de correspondance domaine/chemin, ni attributs `Secure`/`HttpOnly`/`SameSite` | RFC 6265 | Élevée |
 | 9 | **Aucune authentification HTTP** : ni Basic (RFC 7617), ni Digest (RFC 7616) — le PDU `HttpRequestPdu` n'a même pas de champ `Authorization` | RFC 7617, RFC 7616 | Élevée |
@@ -188,17 +191,12 @@ fois HTTPS disponible) ou upgrade `h2c` en clair pour les besoins de test,
 priorisation simplifiée (dépendance simple stream-vers-stream, pas l'arbre de
 poids complet de la RFC).
 
-**E. RFC 9000/9001/9002 — QUIC (prérequis de HTTP/3).** Nouveau module
-`src/network/quic/` : format de paquet réel simplifié (en-têtes long/court,
-connection IDs, espaces de paquets Initial/Handshake/1-RTT), établissement de
-connexion combiné au handshake TLS 1.3 du moteur `PRD-TLS.md` (dérivation de
-clés par espace de paquets, RFC 9001), streams bidirectionnels et
-unidirectionnels avec contrôle de flux, 0-RTT (réutilise le 0-RTT déjà
-prévu par `PRD-TLS.md`), fermeture propre (`CONNECTION_CLOSE`). Recouvrement
-de pertes et congestion (RFC 9002) : trames `ACK` par plages, détection de
-perte par seuil temporel et par seuil de paquets, algorithme de congestion
-simplifié type NewReno (pas de CUBIC/BBR réels, cf. § 2.2) — fidélité
-protocolaire, pas fidélité de performance réseau réaliste.
+**E. RFC 9000/9001/9002 — QUIC : dépendance, pas objectif de ce PRD.**
+`src/network/quic/` (format de paquet, espaces de paquets, intégration
+TLS 1.3, recouvrement de pertes/congestion) est **entièrement construit et
+possédé par `docs/PRD-QUIC.md`** — ce PRD ne le reconstruit pas. L'objectif
+F ci-dessous ne fait que **consommer** l'API de `QuicConnection`/
+`QuicStream` exposée par ce module une fois livré (cf. § 0.1).
 
 **F. RFC 9114 + RFC 9204 — HTTP/3.** Mapping des sémantiques 9110 sur des
 streams QUIC (un stream bidirectionnel par requête/réponse), QPACK simplifié
@@ -337,7 +335,7 @@ migration fait partie du périmètre livré par ce PRD (§ 2.1.M).
 ├──────────────────────────────────────────────────────────────────────┤
 │ Transport :                                                           │
 │   TcpStack/TcpSocket (existant, 1.1 clair/TLS, 2 clair/TLS)           │
-│   src/network/quic/ (nouveau, RFC 9000/9001/9002 — 3)                 │
+│   src/network/quic/ (PRD-QUIC.md, prérequis externe — 3)              │
 │   src/network/tls/ (PRD-TLS.md, prérequis externe — HTTPS, 9001)      │
 └──────────────────────────────────────────────────────────────────────┘
 ```
@@ -380,17 +378,12 @@ src/network/http/                    # existant : HttpTypes.ts/HttpClient.ts mig
 │   └── Http3Connection.ts           # NOUVEAU — s'appuie sur src/network/quic/
 ├── events.ts                        # NOUVEAU
 └── observables.ts                   # NOUVEAU
-
-src/network/quic/                    # NOUVEAU — indépendant de HTTP, réutilisable ailleurs
-├── types.ts                         # en-têtes long/court, connection IDs, espaces de paquets
-├── PacketProtection.ts              # RFC 9001 — intégration avec src/network/tls/
-├── LossRecovery.ts                  # RFC 9002 — ACK ranges, détection de perte
-├── CongestionControl.ts             # NewReno simplifié
-├── QuicStream.ts                    # streams bi/unidirectionnels, contrôle de flux
-├── QuicConnection.ts                # établissement combiné handshake + 0-RTT
-├── events.ts
-└── observables.ts
 ```
+
+`src/network/quic/` **n'apparaît volontairement pas ci-dessus** : c'est un
+module externe, entièrement spécifié et possédé par `docs/PRD-QUIC.md`
+(§3.3 de ce document frère) — `Http3Connection.ts` l'importe une fois livré,
+mais ce PRD n'en redéfinit ni l'arborescence ni le contenu.
 
 ### 3.4 Design patterns retenus
 
@@ -401,11 +394,12 @@ src/network/quic/                    # NOUVEAU — indépendant de HTTP, réutil
   exposent tous la même interface `HttpTransportSession { send(HttpMessage),
   onMessage(cb) }` — les middlewares (cache/cookies/auth) sont écrits une
   seule fois contre cette interface commune.
-- **QUIC indépendant de HTTP** : `src/network/quic/` ne connaît pas HTTP —
-  c'est un transport générique (comme `TcpStack`), qui pourrait en théorie
-  porter autre chose que HTTP/3 (à l'image de la relation TCP/HTTP1-2
-  existante). Cohérent avec la convention CLAUDE.md de protocoles en
-  répertoires top-level indépendants.
+- **QUIC est possédé par `PRD-QUIC.md`, pas reconstruit ici** :
+  `src/network/quic/` ne connaît pas HTTP — c'est un transport générique
+  (comme `TcpStack`), spécifié et livré intégralement par le PRD frère
+  `docs/PRD-QUIC.md` (cohérent avec la convention CLAUDE.md de protocoles en
+  répertoires top-level indépendants). Ce PRD n'y touche qu'en consommateur,
+  via `Http3Connection.ts`.
 - **Réutilisation stricte de PKI/TLS** : `PacketProtection.ts` et le futur
   adaptateur HTTPS de `http1/`/`http2/` importent `src/network/tls/`
   (une fois construit) sans dupliquer la moindre primitive cryptographique.
@@ -495,18 +489,14 @@ WebSocketFrame {
 }
 ```
 
-### 4.6 Trame HTTP/2 (RFC 9113 §4) et paquet QUIC (RFC 9000 §17)
+### 4.6 Trame HTTP/2 (RFC 9113 §4)
+
+`QuicPacket` (format de paquet QUIC, RFC 9000 §17) n'est **pas** défini ici
+— c'est un type possédé par `docs/PRD-QUIC.md` §4.1 ; ce PRD ne fait que
+consommer les streams qu'il expose.
 
 ```
 Http2Frame { length: number; type: number; flags: number; streamId: number; payload: Uint8Array }
-QuicPacket {
-  form: 'long' | 'short'
-  type?: 'initial' | 'handshake' | '0-rtt' | 'retry'   // si long header
-  version?: number
-  destConnectionId: string; srcConnectionId?: string
-  packetNumber: number
-  payload: Uint8Array   // trames QUIC chiffrées selon l'espace de paquets
-}
 ```
 
 ---
@@ -523,7 +513,7 @@ QuicPacket {
 | **P6 — WebSocket (6455)** | `websocket/` : handshake d'upgrade sur P2, framing, opcodes, fragmentation, fermeture | P2 |
 | **P7 — HTTPS (dépend de `PRD-TLS.md`)** | Adaptateur HTTP/1.1 par-dessus `TlsClientSession`/`TlsServerSession`, ALPN `http/1.1`, HSTS, redirection HTTP→HTTPS | P2, **moteur TLS de `PRD-TLS.md` implémenté** |
 | **P8 — HTTP/2 (9113 + HPACK)** | `http2/` : framing binaire, HPACK (table statique + dynamique, littéral), multiplexage, contrôle de flux ; upgrade `h2c` en clair pour les tests, ALPN `h2` une fois P7 disponible | P1, P7 (pour ALPN — `h2c` peut être testé sans) |
-| **P9 — QUIC (9000/9001/9002)** | `src/network/quic/` : format de paquet, espaces de paquets, intégration TLS 1.3 (RFC 9001), recouvrement de pertes + congestion NewReno (RFC 9002) | **moteur TLS de `PRD-TLS.md` implémenté** |
+| **P9 — Intégration QUIC (dépend de `PRD-QUIC.md`)** | Aucun nouveau code de transport : vérifier que `src/network/quic/` (livré par `PRD-QUIC.md`) expose l'API attendue par `http3/Http3Connection.ts` (streams bi/unidirectionnels, `send`/`onData`/`close`) ; écrire les tests d'intégration côté HTTP contre cette API | **`PRD-QUIC.md` implémenté** |
 | **P10 — HTTP/3 (9114 + QPACK)** | `http3/` : mapping des sémantiques sur streams QUIC, QPACK (table statique) | P1, P9 |
 | **P11 — Observabilité** | `events.ts`/`observables.ts` transverses à toutes les phases précédentes | P2–P10 |
 | **P12 — Migration IIS/curl/wget (§ 2.1.M)** | `WindowsIisRole.ts` et `HttpClient.ts`/`HttpFetch.ts` basculent sur `http1/` (RFC 9112 réel) à la place du PDU JSON, port 80 inchangé ; `Curl.ts` remplace son heuristique de détection HTTPS par une vraie tentative TLS (P7) | P2, P7 |
@@ -566,9 +556,11 @@ la représentation interne du PDU change (§ 7).
    évincement quand la table dépasse sa taille annoncée), multiplexage de
    plusieurs streams sur une connexion, contrôle de flux (fenêtre épuisée →
    `DATA` bloqué jusqu'à `WINDOW_UPDATE`).
-8. **Unitaires QUIC** : format de paquet par espace, recouvrement de pertes
-   (paquet perdu détecté par seuil temporel, retransmis), fenêtre de
-   congestion qui se réduit après perte.
+8. **Intégration QUIC (P9)** : contre l'API de `QuicConnection`/`QuicStream`
+   livrée par `PRD-QUIC.md` — pas de test unitaire de format de paquet ou de
+   recouvrement de pertes ici (couvert par `PRD-QUIC.md` §6), seulement des
+   tests d'intégration côté HTTP (ouverture de streams, envoi/réception,
+   fermeture propre).
 9. **Intégration HTTPS/HTTP/2/HTTP/3** : handshake TLS réussi puis requête/
    réponse complète, sur une topologie câblée simple, une fois P7/P9
    disponibles.
@@ -669,10 +661,11 @@ la représentation interne du PDU change (§ 7).
    négocie `h2` ou `http/1.1`) aboutit à une requête/réponse chiffrée de
    bout en bout, avec échec propre (alerte TLS) si le certificat serveur
    n'est pas approuvé.
-8. Une fois QUIC implémenté : une connexion QUIC établit ses clés Initial et
-   1-RTT dans les bons espaces de paquets, une perte de paquet simulée est
-   détectée et retransmise, et une requête HTTP/3 complète (au moins un
-   stream de requête/réponse + un stream de contrôle) aboutit avec succès.
+8. Une fois `docs/PRD-QUIC.md` implémenté (ses propres critères
+   d'acceptation — établissement de clés, recouvrement de pertes — relevant
+   de ce PRD frère, pas de celui-ci) : une requête HTTP/3 complète (au moins
+   un stream de requête/réponse + un stream de contrôle) aboutit avec succès
+   par-dessus une `QuicConnection` réelle.
 9. Pendant P1–P11, toutes les suites existantes (`windows-iis-role`,
    `windows-server-iis`, `dns-encrypted-transports`, `eaptls-*`,
    `peap-ttls-handshake`, `dot1x-radius-eaptls`, `dot1x-radius-peap-ttls`)
