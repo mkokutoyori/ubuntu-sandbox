@@ -120,7 +120,7 @@ ci-dessous.
 | P6 | WebSocket (6455) | P2 | ✅ terminé | Arthur |
 | P7 | HTTPS | P2, **PRD-TLS.md implémenté** | ✅ terminé | Arthur |
 | P8 | HTTP/2 (9113 + HPACK) | P1, P7 (`h2c` sans) | ✅ terminé (h2c seul, sans ALPN — P7/ALPN `h2` restent à faire séparément) | Arthur |
-| P9 | Intégration QUIC | **PRD-QUIC.md implémenté** | 🟡 en cours | Arthur |
+| P9 | Intégration QUIC | **PRD-QUIC.md implémenté** | ✅ terminé | Arthur |
 | P10 | HTTP/3 (9114 + QPACK) | P1, P9 | ⬜ disponible | — |
 | P11 | Observabilité | P2–P10 | ⬜ disponible | — |
 | P12 | Migration IIS/curl/wget | P2, P7 | ⬜ disponible | — |
@@ -1670,4 +1670,32 @@ seulement le consommer.
   qu'HTTP/3 (P10) devra utiliser : un stream unidirectionnel côté client
   (type contrôle), plusieurs streams bidirectionnels concurrents
   (multiplexage de requêtes), fermeture de connexion propre.
-- Statut / résultat : 🟡 en cours.
+
+### [2026-07-05 (heure non horodatée par l'outil) UTC] Arthur — PRD-HTTP/P9 — TERMINÉ
+- Statut / résultat : ✅ terminé. `http3-quic-integration.test.ts` (4
+  tests) vérifie contre l'API réelle et publique de `QuicConnection`
+  (mode `tls`, P8) exactement les 4 propriétés dont `Http3Connection.ts`
+  (P10) aura besoin : (1) poignée de main QUIC/TLS réelle avec
+  négociation ALPN `h3` des deux côtés ; (2) stream unidirectionnel
+  initié par le client (forme des streams de contrôle/QPACK HTTP/3),
+  vérifié via `classifyStreamId` (initiateur + direction) et une trame
+  sans FIN (SETTINGS jamais close, RFC 9114 §3.2) ; (3) plusieurs streams
+  bidirectionnels concurrents avec des IDs distincts, données
+  indépendantes dans les deux sens (requête/réponse multiplexées) ; (4)
+  fermeture propre `close()`/`onClose` (analogue GOAWAY). Aucun fichier
+  sous `src/network/quic/` n'a été touché — uniquement consommation de
+  l'API publique existante, conformément à la portée explicite du PRD
+  (« aucun nouveau code de transport ») et au rappel de non-chevauchement
+  du tableau de bord.
+- Vérifications : `tsc --noEmit -p tsconfig.app.json` propre sur le
+  fichier ajouté et sur `quic/QuicConnection.ts` ; `eslint` propre ;
+  régression ciblée `quic-*` + `tls-*` + `https` + DNS chiffré + ce
+  fichier : 25 fichiers / 254 tests, tous passants. Régression complète
+  `src/__tests__/unit/network-v2/` lancée en tâche de fond (4e phase
+  depuis la dernière régression complète — QUIC/P8, P9, P13, HTTP/P9) ;
+  résultat à suivre.
+- Suggestion pour la suite : `PRD-HTTP.md`/P10 (HTTP/3, RFC 9114 + QPACK)
+  est maintenant directement débloqué — c'est la phase naturelle
+  suivante. P12 (migration IIS/curl/wget sur le moteur HTTP/1.1+HTTPS
+  réel) et P11 (observabilité HTTP) restent aussi disponibles et
+  indépendantes.
