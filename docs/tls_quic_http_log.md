@@ -99,7 +99,7 @@ ci-dessous.
 | P3 | Protection de paquets (clés de test) | P1, P2 | ⬜ disponible | — |
 | P4 | Recouvrement de pertes | P2, P3 | ⬜ disponible | — |
 | P5 | Contrôle de congestion | P4 | ⬜ disponible | — |
-| P6 | Streams | P2 | ⬜ disponible | — |
+| P6 | Streams | P2 | 🟡 en cours | Arthur |
 | P7 | Machine à états de connexion (sans TLS réel) | P3–P6 | ⬜ disponible | — |
 | P8 | Intégration TLS 1.3 réelle | **PRD-TLS.md implémenté**, P7 | ⬜ disponible | — |
 | P9 | 0-RTT | P8 | ⬜ disponible | — |
@@ -658,3 +658,15 @@ seulement le consommer.
 - Suggestion pour la suite : `PRD-QUIC.md`/P3 (protection de paquets,
   clés de test injectées) et P6 (streams) dépendent tous deux de ce P2
   et sont disponibles en parallèle l'un de l'autre.
+
+### [2026-07-05 (heure non horodatée par l'outil) UTC] Arthur — PRD-QUIC/P6 — ANNONCE
+- Tâche : `src/network/quic/QuicStream.ts` — IDs de stream encodant
+  initiateur (client/serveur) et direction (bi/uni-directionnel) dans
+  les 2 bits bas (§2.1), allocation séquentielle par catégorie,
+  contrôle de flux par stream (`sendMaxData`/`recvMaxData`) et par
+  connexion, génération des trames `STREAM`/`MAX_STREAM_DATA`/
+  `MAX_DATA`/`STREAM_DATA_BLOCKED`/`DATA_BLOCKED` de P2 selon l'état
+  d'émission.
+- Fichiers concernés : nouveau fichier `src/network/quic/QuicStream.ts`
+  — purement additif.
+- Statut / résultat : en cours.
