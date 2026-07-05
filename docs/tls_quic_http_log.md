@@ -102,7 +102,7 @@ ci-dessous.
 | P6 | Streams | P2 | ✅ terminé | Arthur |
 | P7 | Machine à états de connexion (sans TLS réel) | P3–P6 | ✅ terminé | Arthur |
 | P8 | Intégration TLS 1.3 réelle | **PRD-TLS.md implémenté**, P7 | ✅ terminé | Arthur |
-| P9 | 0-RTT | P8 | 🟡 en cours | Arthur |
+| P9 | 0-RTT | P8 | ✅ terminé | Arthur |
 | P10 | Retry & validation d'adresse | P7 | ✅ terminé | Arthur |
 | P11 | Connection IDs multiples | P7 | ✅ terminé | Arthur |
 | P12 | Observabilité | P4–P11 | ✅ terminé | Arthur |
@@ -1547,3 +1547,36 @@ seulement le consommer.
   scénario de rejet avec ticket déjà consommé). Aucun fichier de
   production modifié si la validation confirme l'hypothèse ci-dessus.
 - Statut / résultat : 🟡 en cours.
+
+### [2026-07-05 (heure non horodatée par l'outil) UTC] Arthur — PRD-QUIC/P9 — TERMINÉ
+- L'hypothèse de l'annonce s'est confirmée : le transport 0-RTT lui-même
+  ne nécessitait aucun changement — mais en écrivant le test, un vrai bug
+  latent de P8 est apparu et a été corrigé avant que le test ne passe.
+- **Bug trouvé et corrigé** : côté client, `handleCryptoFrame` appelait
+  systématiquement `TlsClientSession.handle(records)` pour tout ce qui
+  arrive dans l'espace Handshake — correct pour le Finished du serveur,
+  mais faux pour un `NewSessionTicket` post-handshake (§4.6.1), qui arrive
+  dans le *même* espace une fois la poignée de main terminée : `handle()`
+  se contente de renvoyer `null` silencieusement dès que
+  `state !== 'awaiting-server-flight'`, donc le ticket n'était jamais
+  transmis à `receiveSessionTicket()` — aucune erreur visible, juste un
+  ticket perdu. Corrigé dans `QuicConnection.ts` : si
+  `clientTls.result !== null` (poignée de main déjà conclue), router vers
+  `receiveSessionTicket(records)` au lieu de `handle(records)`. Trouvé en
+  écrivant le test 0-RTT (qui a d'abord besoin d'un vrai ticket obtenu sur
+  une première connexion), pas par relecture préalable du code.
+- Fichiers concernés : `QuicConnection.ts` (le correctif ci-dessus,
+  4 lignes) ; nouveau fichier de test `quic-0rtt.test.ts` — deux connexions
+  QUIC/TLS réelles et successives (obtention du ticket, puis reprise avec
+  données 0-RTT), et un scénario de repli sans 0-RTT quand le ticket est
+  déjà consommé. Aucun nouveau mécanisme de fil ajouté (pas d'espace de
+  paquets 0-RTT séparé, cf. justification dans l'annonce).
+- Statut / résultat : ✅ terminé. `tsc --noEmit -p tsconfig.app.json`
+  propre, `eslint` propre. 2 nouveaux tests. Régression ciblée : 250 tests
+  (24 fichiers — quic-*, tls-*, https, dns-encrypted-transports) au vert.
+- Suggestion pour la suite : `PRD-QUIC.md`/P13 (migration DoQ) dépend de
+  P8+P6, tous deux désormais disponibles — c'est la phase QUIC la plus
+  substantielle restante. Côté HTTP, `PRD-HTTP.md`/P12 (migration
+  IIS/curl/wget) et P9 (intégration QUIC pour HTTP/3, maintenant que
+  `PRD-QUIC.md` est presque intégralement livré — il ne reste que P12
+  Observabilité et P13 Migration DoQ) devraient être réexaminées bientôt.

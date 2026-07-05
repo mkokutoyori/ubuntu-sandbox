@@ -350,7 +350,15 @@ export class QuicConnection {
     }
 
     // Client: the server's whole reply to ClientHello arrives as one Initial-space flight.
-    const reply = (this.config.tls as TlsClientSession).handle(records);
+    const clientTls = this.config.tls as TlsClientSession;
+    if (clientTls.result !== null) {
+      // Handshake already concluded — a later Handshake-space flight from the server
+      // (e.g. a post-handshake NewSessionTicket, §4.6.1) isn't part of `handle()`'s
+      // state machine, which only ever answers `awaiting-server-flight`.
+      clientTls.receiveSessionTicket(records);
+      return;
+    }
+    const reply = clientTls.handle(records);
     this.refreshTlsDerivedKeys();
     if (reply) this.sendCryptoRecords('handshake', reply);
     // Established only once HANDSHAKE_DONE is received (RFC 9000 §4.1.2) — handled below.
