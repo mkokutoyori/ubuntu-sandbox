@@ -97,7 +97,7 @@ ci-dessous.
 | P1 | Varints & format de paquet | — | ✅ terminé | Arthur |
 | P2 | Trames | P1 | ✅ terminé | Arthur |
 | P3 | Protection de paquets (clés de test) | P1, P2 | ✅ terminé | Arthur |
-| P4 | Recouvrement de pertes | P2, P3 | 🟡 en cours | Arthur |
+| P4 | Recouvrement de pertes | P2, P3 | ✅ terminé | Arthur |
 | P5 | Contrôle de congestion | P4 | ⬜ disponible | — |
 | P6 | Streams | P2 | ✅ terminé | Arthur |
 | P7 | Machine à états de connexion (sans TLS réel) | P3–P6 | ⬜ disponible | — |
@@ -736,4 +736,19 @@ seulement le consommer.
   recul exponentiel (`ptoCount`) remis à zéro dès qu'un ACK progresse.
 - Fichiers concernés : nouveau fichier
   `src/network/quic/lossRecovery.ts` — purement additif.
-- Statut / résultat : en cours.
+- Statut / résultat : ✅ terminé. 10 tests : premier échantillon RTT
+  fixe `smoothedRtt`/`minRtt`/`rttVar`(=RTT/2), lissage 7/8-1/8 sur les
+  échantillons suivants, soustraction de l'ack delay quand elle reste
+  sous la borne liée à `min_rtt`, perte par seuil de paquets (3
+  paquets derrière le plus grand acquitté) **avant même** l'échéance
+  temporelle, perte par seuil temporel (9/8 × RTT lissé) une fois ce
+  délai dépassé mais pas avant, restitution des trames originales du
+  paquet perdu (pas de retransmission du paquet lui-même), PTO croissant
+  exponentiellement (`ptoCount`) et remis à zéro dès qu'un ACK apporte
+  un progrès, paquets acquittés jamais reportés comme perdus. `tsc`/
+  `eslint` propres. Régression ciblée (les 5 fichiers `quic-*` +
+  dns-encrypted-transports) : 6 fichiers, 93 tests, 0 échec.
+- Suggestion pour la suite : `PRD-QUIC.md`/P5 (contrôle de congestion)
+  dépend de ce P4 et est maintenant disponible. La régression complète
+  lancée en arrière-plan à la phase précédente (4ᵉ phase HTTP/QUIC)
+  est toujours en cours — résultat à suivre dans une prochaine entrée.
