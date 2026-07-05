@@ -94,7 +94,7 @@ ci-dessous.
 
 | Phase | Contenu | Dépend de | Statut | Agent |
 |---|---|---|---|---|
-| P1 | Varints & format de paquet | — | ⬜ disponible | — |
+| P1 | Varints & format de paquet | — | 🟡 en cours | Arthur |
 | P2 | Trames | P1 | ⬜ disponible | — |
 | P3 | Protection de paquets (clés de test) | P1, P2 | ⬜ disponible | — |
 | P4 | Recouvrement de pertes | P2, P3 | ⬜ disponible | — |
@@ -532,4 +532,17 @@ seulement le consommer.
   modification additive de `TlsClientSession.ts`/`TlsServerSession.ts`
   (nouveau champ optionnel `lastAlert` exposé, aucun changement de
   signature publique existante) + nouveau fichier de test.
+- Statut / résultat : en cours.
+
+### [2026-07-05 (heure non horodatée par l'outil) UTC] Arthur — PRD-QUIC/P1 — ANNONCE
+- Tâche : les 7 phases de `PRD-HTTP.md` sans dépendance bloquante
+  (P1-P6, P8-h2c) sont terminées ; je passe sur `docs/PRD-QUIC.md` par
+  sa phase P1 (seule sans dépendance) — `src/network/quic/types.ts`,
+  `varint.ts` (encodage/décodage RFC 9000 §16, préfixe 2 bits de
+  longueur 1/2/4/8 octets), `packetFormat.ts` (en-têtes long/court
+  §17.2/§17.3, round-trip complet y compris `Version Negotiation`
+  §17.2.1). Pas de `packetProtection.ts` dans cette phase (P3, clés
+  injectées par les tests).
+- Fichiers concernés : nouveaux fichiers sous `src/network/quic/`
+  uniquement — purement additif.
 - Statut / résultat : en cours.
