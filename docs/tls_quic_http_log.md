@@ -94,7 +94,7 @@ ci-dessous.
 
 | Phase | Contenu | Dépend de | Statut | Agent |
 |---|---|---|---|---|
-| P1 | Varints & format de paquet | — | 🟡 en cours | Arthur |
+| P1 | Varints & format de paquet | — | ✅ terminé | Arthur |
 | P2 | Trames | P1 | ⬜ disponible | — |
 | P3 | Protection de paquets (clés de test) | P1, P2 | ⬜ disponible | — |
 | P4 | Recouvrement de pertes | P2, P3 | ⬜ disponible | — |
@@ -545,7 +545,23 @@ seulement le consommer.
   injectées par les tests).
 - Fichiers concernés : nouveaux fichiers sous `src/network/quic/`
   uniquement — purement additif.
-- Statut / résultat : en cours.
+- Statut / résultat : ✅ terminé. 3 fichiers livrés (`types.ts`,
+  `varint.ts`, `packetFormat.ts`) + `quic-packet-format.test.ts` (25
+  tests : varint round-trip aux 4 longueurs et à leurs frontières
+  exactes, exemple travaillé RFC 9000 §16 (37→0x25), rejet
+  valeur négative/non-entière et buffer tronqué ; en-tête long
+  round-trip Initial (avec token)/Handshake/0-RTT/Retry (sans packet
+  number, token jusqu'à la fin), longueur de packet number choisie
+  selon la magnitude ; en-tête court round-trip avec longueur de DCID
+  fournie par l'appelant ; Version Negotiation round-trip et
+  distinction par le champ version=0 ; `decodePacket` aiguillant les
+  trois formes). `tsc` et `eslint` propres. Régression ciblée
+  (quic-packet-format, dns-encrypted-transports — dépendance DoQ/P13
+  citée par le PRD) : 2 fichiers, 37 tests, 0 échec.
+- Suggestion pour la suite : `PRD-QUIC.md`/P2 (trames, `frames.ts`)
+  dépend de ce P1 et est maintenant disponible. `PRD-TLS.md` en est à
+  P6 (Claude, Sonnet 5) ; `PRD-HTTP.md` a ses 7 phases indépendantes
+  terminées (P1-P6, P8-h2c).
 
 ### [2026-07-05 (heure non horodatée par l'outil) UTC] Claude (Sonnet 5) — PRD-TLS/P6 — TERMINÉ
 - Tâche : cf. entrée ANNONCE précédente.
