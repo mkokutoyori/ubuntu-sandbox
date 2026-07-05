@@ -17,6 +17,7 @@ import { PSRuntimeError } from '@/powershell/runtime/PSRuntime';
 import type { PSValue } from '@/powershell/runtime/PSEnvironment';
 import type { IAdProvider, AdUserInfo, AdGroupInfo, AdComputerInfo, AdOrgUnitInfo } from '@/powershell/providers/PSProviders';
 import { psValueToString } from '@/powershell/runtime/PSExpansion';
+import { parseCredentialArg } from './RemotingCmdlets';
 
 function requireAd(ctx: CmdletContext, cmdletName: string): IAdProvider {
   if (!ctx.providers.ad) {
@@ -83,6 +84,62 @@ export class InstallADDSForestCmdlet implements ICmdlet {
     if (!res.ok) { ctx.emitError(res.message); return null; }
     return { Message: 'Success.', Context: 'DCPromo', RebootRequired: false, Status: 0 } as Record<string, PSValue>;
   }
+}
+
+// ── Install-ADDSDomainController (PRD-Windows-Server-Advanced.md §5 P5) ─────
+
+export class InstallADDSDomainControllerCmdlet implements ICmdlet {
+  readonly name = 'install-addsdomaincontroller';
+  readonly aliases = [] as const;
+  readonly parameters = ['DomainName', 'DomainNetbiosName', 'Credential', 'Server', 'SafeModeAdministratorPassword', 'Force'] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const ad = requireAd(ctx, 'Install-ADDSDomainController');
+    const domainName = psValueToString(ctx.named['domainname'] ?? ctx.positional[0] ?? '');
+    if (!domainName) {
+      ctx.emitError('Install-ADDSDomainController : Cannot process command because of one or more missing mandatory parameters: DomainName.');
+      return null;
+    }
+    const credentialRaw = ctx.named['credential'] !== undefined ? psValueToString(ctx.named['credential']) : '';
+    if (!credentialRaw) {
+      ctx.emitError('Install-ADDSDomainController : Cannot process command because of one or more missing mandatory parameters: Credential.');
+      return null;
+    }
+    const server = ctx.named['server'] !== undefined ? psValueToString(ctx.named['server']) : undefined;
+    if (!server) {
+      ctx.emitError('Install-ADDSDomainController : Cannot process command because of one or more missing mandatory parameters: Server.');
+      return null;
+    }
+    const password = securePasswordOf(ctx, 'safemodeadministratorpassword');
+    if (!password) {
+      ctx.emitError('Install-ADDSDomainController : Cannot process command because of one or more missing mandatory parameters: SafeModeAdministratorPassword.');
+      return null;
+    }
+    const { username, password: credentialPassword } = parseCredentialArg(credentialRaw);
+    const netbiosName = ctx.named['domainnetbiosname'] !== undefined ? psValueToString(ctx.named['domainnetbiosname']) : undefined;
+    const res = ad.installDomainController(domainName, netbiosName, server, username, credentialPassword, password);
+    if (!res.ok) { ctx.emitError(res.message); return null; }
+    return { Message: 'Success.', Context: 'DCPromo', RebootRequired: false, Status: 0 } as Record<string, PSValue>;
+  }
+}
+
+// ── Get-ADDomainController ───────────────────────────────────────────────────
+
+export class GetADDomainControllerCmdlet implements ICmdlet {
+  readonly name = 'get-addomaincontroller';
+  readonly aliases = [] as const;
+  readonly parameters = ['Filter', 'Identity'] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const ad = requireAd(ctx, 'Get-ADDomainController');
+    const dcs = ad.listDomainControllers().map(dcToPSObject);
+    if (dcs.length === 0) { ctx.emitError('Get-ADDomainController : Cannot find any domain controller in the domain.'); return null; }
+    return dcs.length === 1 ? dcs[0] : dcs;
+  }
+}
+
+function dcToPSObject(c: AdComputerInfo): Record<string, PSValue> {
+  return { Name: c.name, HostName: c.name, Enabled: c.enabled, DistinguishedName: c.dn };
 }
 
 // ── New/Get/Set/Remove-ADUser ────────────────────────────────────────────────

@@ -68,10 +68,20 @@ export class DirectoryStore {
   /** Highest USN already absorbed from each other known DC, via any replication partner — advances as `applyReplicatedEntry` runs. */
   private readonly inboundHighWatermark: HighWatermarkVector = emptyHighWatermarkVector();
 
+  /**
+   * `opts.skipSeed` (PRD-Windows-Server-Advanced.md §5 P5): an additional
+   * DC joining an *existing* domain (`Install-ADDSDomainController`) must
+   * not independently create its own Users/Computers OUs and default
+   * groups — those already exist on the domain and would replicate in as
+   * duplicates. It instead starts with an empty tree and relies entirely
+   * on the initial replication sync (§5 P4) to populate everything,
+   * exactly like real DCPromo's initial-sync-from-a-source-DC step.
+   */
   constructor(
     readonly dnsName: string,
     readonly netbiosName: string,
     adminPassword: string,
+    opts: { skipSeed?: boolean } = {},
   ) {
     const rootDn = parseDN(this.dnsName.split('.').map(p => `DC=${p}`).join(','));
     this.tree = new DirectoryTree(rootDn, { objectClass: ['top', 'domain', 'domainDNS'] }, {
@@ -80,7 +90,7 @@ export class DirectoryStore {
     this.usersOuDn = [...parseDN('CN=Users'), ...rootDn];
     this.computersOuDn = [...parseDN('CN=Computers'), ...rootDn];
     this.policiesDn = [...parseDN('CN=Policies'), ...parseDN('CN=System'), ...rootDn];
-    this.seedDefaults(adminPassword);
+    if (!opts.skipSeed) this.seedDefaults(adminPassword);
   }
 
   /** The domain root's DN — the default `New-GPLink -Target` for a domain-wide policy (Default Domain Policy). */
@@ -484,6 +494,11 @@ export class DirectoryStore {
       userPassword: [machineSecret],
     });
     return res.ok ? { ok: true, message: '' } : { ok: false, message: 'An object with that name already exists.' };
+  }
+
+  /** `Get-ADDomainController` (PRD-Windows-Server-Advanced.md §5 P5) — every computer account under the Domain Controllers OU, real or replicated in from a partner. */
+  listDomainControllers(): AdComputer[] {
+    return this.listComputers().filter(c => c.dn.toLowerCase().includes('ou=domain controllers,'));
   }
 
   getComputer(name: string): AdComputer | null {

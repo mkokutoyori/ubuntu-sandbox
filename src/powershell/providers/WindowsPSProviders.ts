@@ -360,6 +360,25 @@ class WindowsAdAdapter implements IAdProvider {
     return this.pc.getDirectoryStore() !== null;
   }
 
+  installDomainController(
+    domainName: string, netbiosName: string | undefined, sourceDcAddress: string,
+    credentialUser: string, credentialPassword: string, safeModeAdminPassword: string,
+  ): AdOpResult {
+    this.requireRole('Install-ADDSDomainController');
+    const denied = this.requireAdmin('Install-ADDSDomainController');
+    if (denied) return denied;
+    const server = this.pc as WindowsServer;
+    if (typeof server.installADDSDomainController !== 'function') {
+      return { ok: false, message: 'Install-ADDSDomainController : This computer cannot be promoted to a domain controller.' };
+    }
+    return server.installADDSDomainController(domainName, netbiosName, sourceDcAddress, credentialUser, credentialPassword, safeModeAdminPassword);
+  }
+
+  listDomainControllers(): AdComputerInfo[] {
+    const store = this.requireStore('Get-ADDomainController');
+    return store.listDomainControllers().map(c => ({ name: c.name, dn: c.dn, enabled: c.enabled }));
+  }
+
   newUser(sam: string, opts: { password: string; fullName?: string; path?: string; enabled?: boolean }): AdOpResult {
     const store = this.requireStore('New-ADUser');
     const denied = this.requireAdmin('New-ADUser');

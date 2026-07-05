@@ -24,6 +24,8 @@ import { WindowsDhcpServerRole } from './windows/server/dhcp/WindowsDhcpServerRo
 import { WindowsNpsRole } from './windows/server/nps/WindowsNpsRole';
 import { WindowsIisRole } from './windows/server/iis/WindowsIisRole';
 import { randomSessionKey } from '@/network/kerberos/crypto';
+import { dialLdap } from './windows/server/ad/ldap/LdapClient';
+import { pullReplication } from './windows/server/ad/replication/ReplicationSession';
 
 export interface AdDsOpResult { ok: boolean; message: string }
 
@@ -149,6 +151,55 @@ export class WindowsServer extends WindowsPC {
     this.registerDcServices();
     this.provisionDomainDnsZone(domainName);
     this.provisionDefaultDomainPolicy();
+    return { ok: true, message: '' };
+  }
+
+  /**
+   * `Install-ADDSDomainController` (PRD-Windows-Server-Advanced.md §5 P5)
+   * — promotes this server as an *additional* DC of a domain that
+   * already exists elsewhere, reached at `sourceDcAddress`. Real DCPromo
+   * order: verify the domain is reachable and the credential is valid
+   * (a real LDAP bind — the same wire dialogue `Add-Computer` uses),
+   * then create an empty local `DirectoryStore` and perform one full
+   * replication pull from the source DC (§5 P4) *before* adding this
+   * server's own computer account, since that account's parent OU only
+   * exists once the sync has populated it.
+   */
+  installADDSDomainController(
+    domainName: string, netbiosName: string | undefined, sourceDcAddress: string,
+    credentialUser: string, credentialPassword: string, safeModeAdminPassword: string,
+  ): AdDsOpResult {
+    if (!this.roleManager.isInstalled('AD-Domain-Services')) {
+      return { ok: false, message: 'Install-ADDSDomainController : The Active Directory Domain Services role is not installed on this computer.' };
+    }
+    if (this.directoryStore) {
+      return { ok: false, message: 'Install-ADDSDomainController : This computer is already configured as a domain controller.' };
+    }
+
+    const conn = dialLdap(this.getTcpStack(), sourceDcAddress);
+    if (!conn.ok || !conn.client) {
+      return { ok: false, message: 'Install-ADDSDomainController : The specified domain either does not exist or could not be contacted.' };
+    }
+    const bind = conn.client.bind(credentialUser, credentialPassword);
+    conn.client.unbind();
+    if (!bind.ok) {
+      return { ok: false, message: 'Install-ADDSDomainController : Logon failure: unknown user name or bad password.' };
+    }
+
+    const netbios = netbiosName ?? domainName.split('.')[0].toUpperCase();
+    const store = new DirectoryStore(domainName, netbios, safeModeAdminPassword, { skipSeed: true });
+    const sync = pullReplication(this.getTcpStack(), sourceDcAddress, store);
+    if (!sync.ok) {
+      return { ok: false, message: `Install-ADDSDomainController : Initial synchronization with ${sourceDcAddress} failed: ${sync.error}` };
+    }
+    const promote = store.promoteDomainController(this.getHostname(), safeModeAdminPassword);
+    if (!promote.ok) {
+      return { ok: false, message: `Install-ADDSDomainController : ${promote.message}` };
+    }
+    this.directoryStore = store;
+    this.provisionSysvol(domainName);
+    this.registerDcServices();
+    this.provisionDomainDnsZone(domainName);
     return { ok: true, message: '' };
   }
 

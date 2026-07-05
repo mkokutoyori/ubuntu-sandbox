@@ -114,7 +114,7 @@ import {
   GetSmbShareCmdlet, NewSmbShareCmdlet, RemoveSmbShareCmdlet, GetSmbSessionCmdlet,
 } from './SmbCmdlets';
 import {
-  InstallADDSForestCmdlet,
+  InstallADDSForestCmdlet, InstallADDSDomainControllerCmdlet, GetADDomainControllerCmdlet,
   NewADUserCmdlet, GetADUserCmdlet, SetADUserCmdlet, RemoveADUserCmdlet,
   NewADGroupCmdlet, GetADGroupCmdlet, AddADGroupMemberCmdlet, RemoveADGroupMemberCmdlet,
   GetADComputerCmdlet,
@@ -374,6 +374,8 @@ export function registerCoreCmdlets(registry: CmdletRegistry): void {
 
   // ── AD DS (PRD-Windows-Server.md §5 P5) ─────────────────────────────────────
   registry.register(new InstallADDSForestCmdlet());
+  registry.register(new InstallADDSDomainControllerCmdlet());
+  registry.register(new GetADDomainControllerCmdlet());
   registry.register(new NewADUserCmdlet());
   registry.register(new GetADUserCmdlet());
   registry.register(new SetADUserCmdlet());
