@@ -1166,3 +1166,52 @@ seulement le consommer.
   congestion, et d'ouverture/fermeture/blocage de stream. Nouveau fichier
   de test `quic-observability.test.ts`.
 - Statut / résultat : 🟡 en cours.
+
+### [2026-07-05 (heure non horodatée par l'outil) UTC] Arthur — PRD-QUIC/P12 — TERMINÉ
+- Réalisé exactement le périmètre annoncé :
+  - `events.ts` — `QuicDomainEvent` (10 topics : connection.established/
+    closing/closed, packet.sent/received/lost, congestion.window_changed,
+    stream.opened/closed/blocked), `randomConnectionId()`.
+  - `observables.ts` — `QuicSignalStore`/`connectionSignal`/
+    `subscribeQuicObservables`, même forme que le pendant TLS : statut,
+    compteurs de paquets envoyés/reçus/perdus, fenêtre de congestion
+    courante, liste des streams ouverts.
+  - `QuicConnection.ts` : `connectionId` stable, `eventBus?` optionnel
+    injecté au constructeur (rétrocompatible — tous les appels existants
+    sans 5ᵉ argument continuent de fonctionner à l'identique, aucun
+    comportement changé quand `eventBus` est omis) ; émission aux 10
+    points identifiés dans l'annonce ; `quic.stream.closed` déclenché une
+    seule fois par stream (`finSent && finReceived`, ensemble
+    `closedStreamIds` pour éviter les doublons) ; phase de congestion
+    dérivée de `congestionRecoveryStartTime`/`isInSlowStart` (approximation
+    déjà cohérente avec la limite connue du module : `sentTime` n'est pas
+    suivi précisément pour la détection de recovery, cf. le `sentTime: 0`
+    déjà présent dans le code existant — la classification 'recovery' se
+    base donc sur « une perte a déjà déclenché un événement de congestion
+    et n'en est pas encore sorti », pas sur la fenêtre temporelle exacte du
+    paquet perdu).
+- Bugs de test trouvés et corrigés (aucun bug d'implémentation — la
+  fenêtre de flux/l'algorithme `trySend` existants avaient un
+  comportement plus subtil que prévu) : (1) `trySend` ne renvoie un frame
+  bloquant que si la fenêtre disponible est *déjà* à zéro avant l'appel —
+  un envoi qui dépasse la fenêtre restante est simplement tronqué (RFC
+  9000 §4.1), donc `quic.stream.blocked` teste désormais deux envois
+  successifs (le premier épuise exactement la fenêtre, le second — sans
+  aucune marge — se bloque) plutôt qu'un seul envoi surdimensionné ; (2) un
+  stream ne se ferme que quand les *deux* directions ont vu un fin (RFC
+  9000 §3.4/§3.5) — les tests `stream.closed` et le read-model font donc
+  émettre un fin par le pair en retour avant de vérifier la fermeture,
+  plutôt qu'un fin unidirectionnel.
+- Statut / résultat : ✅ terminé. `tsc --noEmit` propre, `eslint` propre.
+  7 nouveaux tests (`quic-observability.test.ts`). Régression ciblée :
+  126 tests QUIC (10 fichiers, P1–P7/P10–P12 combinés) au vert. Aucun
+  autre fichier du projet n'importe encore `QuicConnection.ts` (vérifié par
+  recherche) — changement rétrocompatible sans risque de régression
+  externe.
+- Suggestion pour la suite : `PRD-QUIC.md`/P8 reste bloqué (cf. entrée
+  BLOQUÉ ci-dessus) tant que `clientHandshakeTrafficSecret`/
+  `serverHandshakeTrafficSecret` ne sont pas exposés publiquement côté
+  TLS ; P13 (migration DoQ) dépend de P8 et P6, donc bloqué transitivement
+  par la même chose. `PRD-HTTP.md`/P12 (migration IIS/curl/wget) et P13
+  (migration DoH) restent les phases les plus substantielles actuellement
+  disponibles pour la suite.
