@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { IPAddress, SubnetMask, resetCounters } from '@/network/core/types';
-import { LinuxPC } from '@/network/devices/LinuxPC';
+import { WindowsPC } from '@/network/devices/WindowsPC';
 import { LinuxServer } from '@/network/devices/LinuxServer';
 import { Cable } from '@/network/hardware/Cable';
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
@@ -17,8 +17,12 @@ beforeEach(() => {
   Logger.clear();
 });
 
+// Cross-platform on purpose (Windows client <-> Linux FTP server): FTP is a
+// wire protocol, so nothing here should depend on the client's OS — this
+// topology exercises that the client/server split doesn't secretly assume
+// a Linux peer on both ends.
 function buildTopology(configOverrides: Partial<FtpServerConfig> = {}) {
-  const pc = new LinuxPC('linux-pc', 'PC1');
+  const pc = new WindowsPC('windows-pc', 'PC1');
   const srv = new LinuxServer('FTP1');
   pc.configureInterface('eth0', new IPAddress('10.0.1.2'), new SubnetMask('255.255.255.0'));
   srv.configureInterface('eth0', new IPAddress('10.0.1.10'), new SubnetMask('255.255.255.0'));
