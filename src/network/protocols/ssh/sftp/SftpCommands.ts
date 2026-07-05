@@ -225,3 +225,36 @@ export class SftpStatCommand implements ISftpCommand<SftpFileAttrs> {
     return ctx.vfs.stat(path);
   }
 }
+
+export class SftpSymlinkCommand implements ISftpCommand<void> {
+  readonly op = 'symlink';
+  execute(req: SftpRequestPayload, ctx: SftpCommandContext): Result<void> {
+    if (req.src === undefined || req.dst === undefined) {
+      return err({ kind: 'INVALID_ARGUMENT', message: 'symlink: missing src or dst' });
+    }
+    if (!ctx.vfs.createSymlink) {
+      return err({ kind: 'UNKNOWN_OP', op: 'symlink' });
+    }
+    // req.dst is the new link's path (normalized); req.src is the raw target, kept as given (may be relative).
+    const linkPath = ctx.vfs.normalizePath(req.dst, ctx.cwd);
+    if (ctx.vfs.exists(linkPath)) {
+      return err({ kind: 'IO_ERROR', message: `symlink: ${linkPath} already exists` });
+    }
+    return ctx.vfs.createSymlink(linkPath, req.src);
+  }
+}
+
+export class SftpReadlinkCommand implements ISftpCommand<{ target: string }> {
+  readonly op = 'readlink';
+  execute(req: SftpRequestPayload, ctx: SftpCommandContext): Result<{ target: string }> {
+    const p = requirePath(req);
+    if (!p.ok) return propagateErr(p);
+    if (!ctx.vfs.readSymlink) {
+      return err({ kind: 'UNKNOWN_OP', op: 'readlink' });
+    }
+    const path = ctx.vfs.normalizePath(p.value, ctx.cwd);
+    const result = ctx.vfs.readSymlink(path);
+    if (!result.ok) return propagateErr(result);
+    return ok({ target: result.value });
+  }
+}

@@ -9,6 +9,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { resetCounters } from '@/network/core/types';
 import { VirtualFileSystem } from '@/network/devices/linux/VirtualFileSystem';
 import { LinuxSftpFSAdapter } from '@/network/protocols/ssh/sftp/LinuxSftpFSAdapter';
+import type { ISftpFileSystem } from '@/network/protocols/ssh/sftp/ISftpFileSystem';
 import { SshUserContext } from '@/network/protocols/ssh/SshUserContext';
 import {
   encodeSftpWirePacket, decodeSftpWirePacket, SFTP_TYPE, type SftpWirePacket,
@@ -203,10 +204,62 @@ describe('SftpWireSession — bridges the codec to a real ISftpFileSystem/SftpCo
     expect(vfs.exists('/home/alice/empty')).toBe(false);
   });
 
-  it('SYMLINK/READLINK reply SSH_FX_OP_UNSUPPORTED (dispatcher command is P15)', () => {
+  it('SYMLINK creates a real symlink, then READLINK reads its target back', () => {
+    const { session, vfs } = buildSession();
+    const symlinkReply = session.handle({ type: 'SYMLINK', requestId: 1, linkpath: 'link', targetpath: 'hello.txt' });
+    expect(symlinkReply).toEqual({ type: 'STATUS', requestId: 1, code: 0, message: 'OK' });
+    expect(vfs.getType('/home/alice/link', false)).toBe('symlink');
+
+    const readlinkReply = session.handle({ type: 'READLINK', requestId: 2, path: 'link' });
+    expect(readlinkReply.type).toBe('NAME');
+    expect((readlinkReply as { entries: { filename: string }[] }).entries[0].filename).toBe('hello.txt');
+  });
+
+  it('SYMLINK on an already-existing path fails without creating anything', () => {
     const { session } = buildSession();
-    const reply = session.handle({ type: 'SYMLINK', requestId: 1, linkpath: 'link', targetpath: 'hello.txt' });
+    const reply = session.handle({ type: 'SYMLINK', requestId: 1, linkpath: 'hello.txt', targetpath: 'irrelevant' });
     expect(reply.type).toBe('STATUS');
-    expect((reply as { code: number }).code).toBe(8);
+    expect((reply as { code: number }).code).toBeGreaterThan(0);
+  });
+
+  it('READLINK on a non-symlink path fails', () => {
+    const { session } = buildSession();
+    const reply = session.handle({ type: 'READLINK', requestId: 1, path: 'hello.txt' });
+    expect(reply.type).toBe('STATUS');
+    expect((reply as { code: number }).code).toBeGreaterThan(0);
+  });
+
+  it('SYMLINK/READLINK reply SSH_FX_OP_UNSUPPORTED on a backing filesystem without symlink support', () => {
+    const vfs = new VirtualFileSystem();
+    vfs.mkdirp('/home/alice', 0o755, 1000, 1000);
+    vfs.writeFile('/home/alice/hello.txt', 'hello sftp wire', 1000, 1000, 0o022);
+    const base = new LinuxSftpFSAdapter(vfs, 1000, 1000);
+    // Simulate a backing ISftpFileSystem that doesn't implement the optional symlink capability
+    // (e.g. WindowsSftpFSAdapter/RouterSftpFileSystem today) — must degrade gracefully, not throw.
+    const noSymlinkFs: ISftpFileSystem = {
+      normalizePath: (p, cwd) => base.normalizePath(p, cwd),
+      exists: (p) => base.exists(p),
+      getEntryType: (p) => base.getEntryType(p),
+      readFile: (p) => base.readFile(p),
+      listDirectory: (p) => base.listDirectory(p),
+      stat: (p) => base.stat(p),
+      writeFile: (p, c) => base.writeFile(p, c),
+      mkdir: (p) => base.mkdir(p),
+      deleteFile: (p) => base.deleteFile(p),
+      rmdir: (p) => base.rmdir(p),
+      rename: (s, d) => base.rename(s, d),
+      setPermissions: (p, m) => base.setPermissions(p, m),
+      setOwner: (p, u, g) => base.setOwner(p, u, g),
+    };
+    const userCtx = new SshUserContext('alice', 1000, 1000, [], '/home/alice');
+    const session = new SftpWireSession({ vfs: noSymlinkFs, userCtx, rootPath: '/home/alice' });
+
+    const symlinkReply = session.handle({ type: 'SYMLINK', requestId: 1, linkpath: 'link', targetpath: 'hello.txt' });
+    expect(symlinkReply.type).toBe('STATUS');
+    expect((symlinkReply as { code: number }).code).toBe(8); // SSH_FX_OP_UNSUPPORTED
+
+    const readlinkReply = session.handle({ type: 'READLINK', requestId: 2, path: 'hello.txt' });
+    expect(readlinkReply.type).toBe('STATUS');
+    expect((readlinkReply as { code: number }).code).toBe(8);
   });
 });

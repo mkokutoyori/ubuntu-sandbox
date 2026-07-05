@@ -8,9 +8,12 @@
  * length)` against it; `CLOSE` releases it (§2.1.15/P14) — the handle
  * is a logical cursor over the same atomic `get`/`put` commands the
  * dispatcher already exposes, since the underlying filesystem has no
- * streaming read/write primitive. `SYMLINK`/`READLINK` still reply
- * `SSH_FX_OP_UNSUPPORTED`: the dispatcher has no matching command yet
- * (P15).
+ * streaming read/write primitive. `SYMLINK`/`READLINK` dispatch to the
+ * dispatcher's new `symlink`/`readlink` commands (§2.1.15/P15), which
+ * fall back to `SSH_FX_OP_UNSUPPORTED` on any `ISftpFileSystem` that
+ * doesn't implement the optional `createSymlink`/`readSymlink`
+ * capability. `FSTAT`/`SETSTAT`/`FSETSTAT` still reply
+ * `SSH_FX_OP_UNSUPPORTED` (no matching dispatcher command exists yet).
  */
 import { SftpCommandDispatcher } from './SftpCommandDispatcher';
 import type { SftpCommandContext } from './ISftpCommand';
@@ -20,17 +23,13 @@ import { isOk } from '../Result';
 import type { SshError } from '../Result';
 import type { SftpWirePacket, SftpWireAttrs } from './SftpWireCodec';
 import { SftpHandleTable } from './SftpHandleTable';
+import { SSH_FX, statusFromError } from './SftpStatusCodes';
 
 /** P16 raises the negotiated default to 6; P13-P15 stay at the dispatcher's current (v3-shaped) fidelity level. */
 const SFTP_PROTOCOL_VERSION = 3;
 
 /** draft-ietf-secsh-filexfer §6.3 `pflags` bits relevant here. */
 const SSH_FXF = { READ: 0x01, WRITE: 0x02, APPEND: 0x04 } as const;
-
-const SSH_FX = {
-  OK: 0, EOF: 1, NO_SUCH_FILE: 2, PERMISSION_DENIED: 3, FAILURE: 4,
-  BAD_MESSAGE: 5, NO_CONNECTION: 6, CONNECTION_LOST: 7, OP_UNSUPPORTED: 8,
-} as const;
 
 function attrsFrom(a: SftpFileAttrs): SftpWireAttrs {
   return { size: a.size, uid: a.uid, gid: a.gid, permissions: a.mode, mtime: Math.floor(a.mtime / 1000) };
@@ -60,16 +59,6 @@ function writeAt(buffer: string, offset: number, data: string): string {
   const end = offset + data.length;
   const tail = end < buffer.length ? buffer.slice(end) : '';
   return buffer.slice(0, offset) + data + tail;
-}
-
-function statusFromError(error: SshError): { code: number; message: string } {
-  switch (error.kind) {
-    case 'PERMISSION_DENIED': return { code: SSH_FX.PERMISSION_DENIED, message: 'Permission denied.' };
-    case 'UNKNOWN_OP': return { code: SSH_FX.OP_UNSUPPORTED, message: `Unsupported operation: ${error.op}` };
-    case 'IO_ERROR': return { code: /no such|not found/i.test(error.message) ? SSH_FX.NO_SUCH_FILE : SSH_FX.FAILURE, message: error.message };
-    case 'INVALID_ARGUMENT': return { code: SSH_FX.BAD_MESSAGE, message: error.message };
-    default: return { code: SSH_FX.FAILURE, message: 'Failure.' };
-  }
 }
 
 export interface SftpWireSessionConfig {
@@ -206,11 +195,22 @@ export class SftpWireSession {
         return this.okStatus(pkt.requestId);
       }
 
+      case 'SYMLINK': {
+        const result = this.dispatcher.dispatch('symlink', { src: pkt.targetpath, dst: pkt.linkpath }, this.ctx());
+        if (!isOk(result)) { const s = statusFromError(result.error as SshError); return this.status(pkt.requestId, s.code, s.message); }
+        return this.okStatus(pkt.requestId);
+      }
+
+      case 'READLINK': {
+        const result = this.dispatcher.dispatch('readlink', { path: pkt.path }, this.ctx());
+        if (!isOk(result)) { const s = statusFromError(result.error as SshError); return this.status(pkt.requestId, s.code, s.message); }
+        const target = (result.value as { target: string }).target;
+        return { type: 'NAME', requestId: pkt.requestId, entries: [{ filename: target, longname: target, attrs: {} }] };
+      }
+
       case 'FSTAT':
       case 'SETSTAT':
       case 'FSETSTAT':
-      case 'READLINK':
-      case 'SYMLINK':
         return this.status(pkt.requestId, SSH_FX.OP_UNSUPPORTED, 'Operation not yet supported by this server.');
 
       default:

@@ -136,6 +136,22 @@ export class LinuxSftpFSAdapter implements ISftpFileSystem {
       ? ok(undefined)
       : err({ kind: 'IO_ERROR', message: `${path}: chown failed` });
   }
+
+  // ── symlinks (optional capability) ──────────────────────────────────
+
+  createSymlink(linkPath: string, targetPath: string): Result<void> {
+    const success = this.vfs.createSymlink(linkPath, targetPath, this.defaultUid, this.defaultGid);
+    return success
+      ? ok(undefined)
+      : err({ kind: 'IO_ERROR', message: `${linkPath}: symlink failed` });
+  }
+
+  readSymlink(path: string): Result<string> {
+    const inode = this.vfs.lstat(path);
+    if (!inode) return err({ kind: 'IO_ERROR', message: `${path}: no such file` });
+    if (inode.type !== 'symlink') return err({ kind: 'IO_ERROR', message: `${path}: not a symlink` });
+    return ok(inode.target);
+  }
 }
 
 function mapFileType(ft: INode['type']): EntryType {

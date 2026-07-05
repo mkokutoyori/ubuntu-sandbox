@@ -20,10 +20,12 @@ import {
   SftpMkdirCommand,
   SftpPutCommand,
   SftpPwdCommand,
+  SftpReadlinkCommand,
   SftpRenameCommand,
   SftpRmCommand,
   SftpRmdirCommand,
   SftpStatCommand,
+  SftpSymlinkCommand,
   SftpVersionCommand,
 } from './SftpCommands';
 
@@ -51,6 +53,8 @@ export class SftpCommandDispatcher {
       new SftpChmodCommand(),
       new SftpChownCommand(),
       new SftpStatCommand(),
+      new SftpSymlinkCommand(),
+      new SftpReadlinkCommand(),
       new SftpVersionCommand(),
       new SftpDfCommand(),
       new SftpCdCommand(),

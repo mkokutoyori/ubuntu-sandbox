@@ -52,4 +52,8 @@ export interface ISftpFileSystem
   checkAclAccess?(path: string, user: string, groups: readonly string[], need: number): boolean | null;
   /** Optional: true if `path` carries any explicit ACL entry. */
   hasAcl?(path: string): boolean;
+  /** Optional: creates a symlink at `linkPath` pointing to `targetPath` (not all backing filesystems model symlinks). */
+  createSymlink?(linkPath: string, targetPath: string): Result<void>;
+  /** Optional: reads the raw target of the symlink at `path`. */
+  readSymlink?(path: string): Result<string>;
 }
