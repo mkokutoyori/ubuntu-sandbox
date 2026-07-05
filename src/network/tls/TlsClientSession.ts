@@ -27,15 +27,19 @@ import {
 import { fragmentAsRecords, reassembleRecords, splitLeadingContentType, type TlsRecord } from './recordLayer';
 import { deriveKeySchedule, computeFinished, transcriptHash, ZERO_IKM } from './keySchedule';
 import { certificateAlert, fatalAlert, type AlertDescription, type TlsAlert } from './alerts';
+import { MANDATORY_CIPHER_SUITES } from './cipherSuites';
 
 export interface TlsClientConfig {
   readonly verifier: CertificateVerifier;
+  /** Suites offered, in preference order; defaults to all 5 mandatory suites (RFC 8446 §B.4). */
   readonly cipherSuites?: readonly CipherSuite[];
   /** Presented only if the server actually sends a CertificateRequest (mTLS). */
   readonly clientCert?: X509Certificate;
   readonly clientPrivateKey?: PkiPrivateKey;
   /** Groups this client can offer a key_share for; defaults to `['x25519']`. The first entry is offered up front. */
   readonly supportedGroups?: readonly string[];
+  /** RFC 7301 — protocols offered, in preference order (e.g. `['h2', 'http/1.1']`). */
+  readonly alpn?: readonly string[];
 }
 
 type ClientState = 'idle' | 'awaiting-server-flight' | 'done';
@@ -44,6 +48,10 @@ export class TlsClientSession {
   result: 'success' | 'failure' | null = null;
   /** RFC 8446 §6 alert explaining the last failure, if any. */
   lastAlert: TlsAlert | null = null;
+  /** The cipher suite the server actually chose, once ServerHello is processed. */
+  negotiatedCipherSuite: CipherSuite | null = null;
+  /** RFC 7301 — the protocol the server actually chose, if any. */
+  negotiatedAlpnProtocol: string | null = null;
 
   private state: ClientState = 'idle';
   private readonly supportedGroups: readonly string[];
@@ -65,10 +73,11 @@ export class TlsClientSession {
     this.clientKeyShare = `${group}:${randomNonce('ks-cli')}`;
     const clientHello: ClientHello = {
       kind: 'client_hello', legacyVersion: '1.2', random: this.clientRandom,
-      cipherSuites: this.config.cipherSuites ?? ['TLS_AES_128_GCM_SHA256'],
+      cipherSuites: this.config.cipherSuites ?? MANDATORY_CIPHER_SUITES,
       extensions: {
         supportedVersions: ['1.3'], keyShare: this.clientKeyShare,
         supportedGroups: this.supportedGroups, signatureAlgorithms: ['ecdsa_secp256r1_sha256'],
+        alpn: this.config.alpn,
       },
     };
     const clientHelloBytes = encodeHandshakeMessage(clientHello);
@@ -126,6 +135,11 @@ export class TlsClientSession {
     const certificateVerify = messages.find((m): m is CertificateVerify => m.kind === 'certificate_verify');
     const serverFinished = messages.find((m): m is Finished => m.kind === 'finished');
     if (!encryptedExtensions || !certificate || !certificateVerify || !serverFinished) return this.fail('unexpected_message');
+
+    const offeredSuites = this.config.cipherSuites ?? MANDATORY_CIPHER_SUITES;
+    if (!offeredSuites.includes(serverHello.cipherSuite)) return this.fail('handshake_failure');
+    this.negotiatedCipherSuite = serverHello.cipherSuite;
+    this.negotiatedAlpnProtocol = encryptedExtensions.extensions.alpn ?? null;
 
     const dheSharedSecret = simulatedDigest(
       [this.clientRandom, serverHello.random, this.clientKeyShare, serverHello.extensions.keyShare ?? ''].join('|'),

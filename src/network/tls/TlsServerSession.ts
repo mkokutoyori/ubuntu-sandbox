@@ -28,10 +28,13 @@ import {
 import { fragmentAsRecords, reassembleRecords, type TlsRecord } from './recordLayer';
 import { deriveKeySchedule, computeFinished, transcriptHash, ZERO_IKM } from './keySchedule';
 import { certificateAlert, fatalAlert, type AlertDescription, type TlsAlert } from './alerts';
+import { MANDATORY_CIPHER_SUITES, selectCipherSuite } from './cipherSuites';
+import { selectAlpnProtocol } from './alpn';
 
 export interface TlsServerConfig {
   readonly serverCert: X509Certificate;
   readonly serverPrivateKey: PkiPrivateKey;
+  /** Top preference; tried first against what the client actually offered (RFC 8446 §4.1.1). */
   readonly cipherSuite?: CipherSuite;
   /** RFC 8446 §4.3.2 — request the peer's certificate (mTLS). Requires `verifier`. */
   readonly requestClientCert?: boolean;
@@ -39,6 +42,8 @@ export interface TlsServerConfig {
   readonly verifier?: CertificateVerifier;
   /** Groups this server accepts a key_share for; defaults to `['x25519']`. */
   readonly supportedGroups?: readonly string[];
+  /** RFC 7301 — protocols this server supports, in preference order. */
+  readonly alpnProtocols?: readonly string[];
 }
 
 function groupOf(keyShare: string): string {
@@ -51,16 +56,25 @@ export class TlsServerSession {
   result: 'accept' | 'reject' | null = null;
   /** RFC 8446 §6 alert explaining the last failure, if any. */
   lastAlert: TlsAlert | null = null;
+  /** The cipher suite actually negotiated, once a ClientHello has been processed. */
+  negotiatedCipherSuite: CipherSuite | null = null;
+  /** RFC 7301 — the protocol actually negotiated, if any. */
+  negotiatedAlpnProtocol: string | null = null;
 
   private state: ServerState = 'idle';
-  private readonly cipherSuite: CipherSuite;
+  private readonly cipherSuitePreference: readonly CipherSuite[];
   private readonly supportedGroups: readonly string[];
+  private readonly alpnProtocols: readonly string[];
   private clientHandshakeTrafficSecret: string | null = null;
   private readonly transcript: Uint8Array[] = [];
 
   constructor(private readonly config: TlsServerConfig) {
-    this.cipherSuite = config.cipherSuite ?? 'TLS_AES_128_GCM_SHA256';
+    const preferred = config.cipherSuite;
+    this.cipherSuitePreference = preferred
+      ? [preferred, ...MANDATORY_CIPHER_SUITES.filter((s) => s !== preferred)]
+      : MANDATORY_CIPHER_SUITES;
     this.supportedGroups = config.supportedGroups ?? ['x25519'];
+    this.alpnProtocols = config.alpnProtocols ?? [];
   }
 
   /** Feeds the peer's flight in; returns this side's next flight, or null once nothing more is to be sent. */
@@ -113,11 +127,16 @@ export class TlsServerSession {
     return this.proceedWithServerFlight(clientHello);
   }
 
-  private proceedWithServerFlight(clientHello: ClientHello): readonly TlsRecord[] {
+  private proceedWithServerFlight(clientHello: ClientHello): readonly TlsRecord[] | null {
+    const negotiatedSuite = selectCipherSuite(clientHello.cipherSuites, this.cipherSuitePreference);
+    if (!negotiatedSuite) return this.reject('handshake_failure');
+    this.negotiatedCipherSuite = negotiatedSuite;
+    this.negotiatedAlpnProtocol = selectAlpnProtocol(clientHello.extensions.alpn, this.alpnProtocols);
+
     const serverRandom = randomNonce('srv');
     const serverKeyShare = randomNonce('ks-srv');
     const serverHello: ServerHello = {
-      kind: 'server_hello', random: serverRandom, cipherSuite: this.cipherSuite,
+      kind: 'server_hello', random: serverRandom, cipherSuite: negotiatedSuite,
       extensions: { supportedVersions: '1.3', keyShare: serverKeyShare },
     };
     const serverHelloBytes = encodeHandshakeMessage(serverHello);
@@ -134,7 +153,7 @@ export class TlsServerSession {
 
     const bundle: TlsHandshakeMessage[] = [];
     const encryptedExtensions: EncryptedExtensionsMessage = {
-      kind: 'encrypted_extensions', extensions: { alpn: clientHello.extensions.alpn?.[0] },
+      kind: 'encrypted_extensions', extensions: { alpn: this.negotiatedAlpnProtocol ?? undefined },
     };
     bundle.push(encryptedExtensions);
     this.transcript.push(encodeHandshakeMessage(encryptedExtensions));
