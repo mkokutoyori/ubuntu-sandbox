@@ -117,3 +117,14 @@ export function deriveKeySchedule(
 export function computeFinished(trafficSecret: string, transcript: string): string {
   return simulatedDigest(`finished|${trafficSecret}|${transcript}`);
 }
+
+/**
+ * RFC 8446 §7.2 `KeyUpdate` — `application_traffic_secret_N+1 =
+ * HKDF-Expand-Label(application_traffic_secret_N, "traffic upd", "",
+ * Hash.length)`. Each direction (client-to-server, server-to-client) is
+ * ratcheted independently by calling this on that direction's current
+ * secret alone (§4.6.3).
+ */
+export function nextTrafficSecret(secret: string): string {
+  return expandLabel(secret, 'traffic upd', '');
+}

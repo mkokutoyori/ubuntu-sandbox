@@ -22,11 +22,11 @@ import { HELLO_RETRY_REQUEST_RANDOM, type CipherSuite } from './types';
 import {
   type ClientHello, type ServerHello, type HelloRetryRequest, type EncryptedExtensionsMessage,
   type CertificateRequest, type CertificateMessage, type CertificateVerify, type Finished,
-  type NewSessionTicket, type TlsHandshakeMessage,
+  type NewSessionTicket, type KeyUpdate, type TlsHandshakeMessage,
   encodeHandshakeMessage, decodeHandshakeMessage, encodeMessages, decodeMessages, randomNonce,
 } from './messages';
 import { fragmentAsRecords, reassembleRecords, splitLeadingContentType, type TlsRecord } from './recordLayer';
-import { deriveKeySchedule, computeFinished, transcriptHash, ZERO_IKM } from './keySchedule';
+import { deriveKeySchedule, computeFinished, transcriptHash, nextTrafficSecret, ZERO_IKM } from './keySchedule';
 import { certificateAlert, fatalAlert, type AlertDescription, type TlsAlert } from './alerts';
 import { MANDATORY_CIPHER_SUITES, selectCipherSuite } from './cipherSuites';
 import { selectAlpnProtocol } from './alpn';
@@ -65,6 +65,13 @@ export class TlsServerSession {
   negotiatedAlpnProtocol: string | null = null;
   /** RFC 8446 §2.3/§4.2.10 — 0-RTT data received alongside a validly-resumed ClientHello, if any. */
   receivedEarlyData: Uint8Array | null = null;
+  /**
+   * RFC 8446 §7.2 — this side's current application traffic secrets, set
+   * once the handshake completes and ratcheted independently per direction
+   * by `sendKeyUpdate`/`receiveKeyUpdate` (§4.6.3).
+   */
+  clientApplicationTrafficSecret: string | null = null;
+  serverApplicationTrafficSecret: string | null = null;
 
   private state: ServerState = 'idle';
   private readonly cipherSuitePreference: readonly CipherSuite[];
@@ -183,6 +190,8 @@ export class TlsServerSession {
     );
     this.clientHandshakeTrafficSecret = handshakePhase.clientHandshakeTrafficSecret;
     this.resumptionMasterSecret = handshakePhase.resumptionMasterSecret;
+    this.clientApplicationTrafficSecret = handshakePhase.clientApplicationTrafficSecret;
+    this.serverApplicationTrafficSecret = handshakePhase.serverApplicationTrafficSecret;
 
     const bundle: TlsHandshakeMessage[] = [];
     const encryptedExtensions: EncryptedExtensionsMessage = {
@@ -275,5 +284,33 @@ export class TlsServerSession {
       ticketNonce: ticket.ticketNonce, ticket: ticket.ticket, extensions: { earlyData: true },
     };
     return fragmentAsRecords('handshake', encodeHandshakeMessage(newSessionTicket), true);
+  }
+
+  /**
+   * RFC 8446 §4.6.3 — ratchets this side's own sending secret
+   * (`serverApplicationTrafficSecret`) and returns the wire flight; the peer
+   * must feed it into `receiveKeyUpdate` to stay in sync. `requestUpdate`
+   * asks the peer to reciprocate with its own KeyUpdate.
+   */
+  sendKeyUpdate(requestUpdate = false): readonly TlsRecord[] {
+    const keyUpdate: KeyUpdate = { kind: 'key_update', requestUpdate };
+    const records = fragmentAsRecords('handshake', encodeHandshakeMessage(keyUpdate), true);
+    this.serverApplicationTrafficSecret = nextTrafficSecret(this.serverApplicationTrafficSecret!);
+    return records;
+  }
+
+  /**
+   * RFC 8446 §4.6.3 — processes a peer KeyUpdate: ratchets the matching
+   * receiving secret (`clientApplicationTrafficSecret`) and, if the peer
+   * requested a reciprocal update, returns this side's own KeyUpdate (never
+   * itself setting `requestUpdate`, to avoid an update ping-pong).
+   */
+  receiveKeyUpdate(records: readonly TlsRecord[]): readonly TlsRecord[] | null {
+    const { contentType, plaintext } = reassembleRecords(records, true);
+    if (contentType !== 'handshake') return null;
+    const message = decodeHandshakeMessage(plaintext);
+    if (message.kind !== 'key_update') return null;
+    this.clientApplicationTrafficSecret = nextTrafficSecret(this.clientApplicationTrafficSecret!);
+    return message.requestUpdate ? this.sendKeyUpdate(false) : null;
   }
 }
