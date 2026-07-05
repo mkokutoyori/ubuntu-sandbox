@@ -1,20 +1,13 @@
 /**
- * HttpTypes — the HTTP/1.1 request/response shape hosted by the IIS role
- * (PRD-Windows-Server.md §5 P11). Follows the project's established
- * convention for application-layer protocols the PRD explicitly scopes
- * out of full binary wire fidelity (see §3 "PDU objets sur le transport
- * réel", the same convention `SmbServerHandler`/`SmbClient` use): a typed
- * PDU serialized as JSON text over a real `TcpConnection` — real TCP
- * handshake/routing/firewall/refused-connection semantics, RFC 9112
- * status-code/header semantics, but no hand-rolled HTTP/1.1 text framing.
+ * HttpTypes — shared IIS/curl/`Invoke-WebRequest` helpers
+ * (PRD-Windows-Server.md §5 P11). `HttpClient.ts`/`WindowsIisRole.ts` were
+ * migrated onto the real RFC 9112 engine (`http1/`) by `PRD-HTTP.md` §5
+ * P12 — `HttpResponsePdu` survives only as the public response shape
+ * `dialHttp()` still returns (unchanged signature for its callers,
+ * `HttpFetch.ts`/`Curl.ts`/`WindowsPC.invokeWebRequest`); the JSON-PDU
+ * wire format itself (`HttpRequestPdu`, `isHttpRequestPdu`/
+ * `isHttpResponsePdu`) is gone.
  */
-
-export interface HttpRequestPdu {
-  readonly type: 'http-request';
-  readonly method: string;
-  readonly path: string;
-  readonly headers: Record<string, string>;
-}
 
 export interface HttpResponsePdu {
   readonly type: 'http-response';
@@ -36,12 +29,4 @@ export function contentTypeForPath(path: string): string {
   const dot = path.lastIndexOf('.');
   if (dot === -1) return 'application/octet-stream';
   return CONTENT_TYPES[path.slice(dot).toLowerCase()] ?? 'application/octet-stream';
-}
-
-export function isHttpRequestPdu(v: unknown): v is HttpRequestPdu {
-  return typeof v === 'object' && v !== null && (v as { type?: unknown }).type === 'http-request';
-}
-
-export function isHttpResponsePdu(v: unknown): v is HttpResponsePdu {
-  return typeof v === 'object' && v !== null && (v as { type?: unknown }).type === 'http-response';
 }

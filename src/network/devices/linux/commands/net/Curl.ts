@@ -1,22 +1,33 @@
 /**
  * `curl` — deep-inspection wrapper around the network-agnostic `cmdCurl`.
  *
- * When the target scheme is HTTPS but the listener on the port speaks a
- * non-TLS protocol (SSH, SMTP, Oracle TNS, …), report the OpenSSL-style
- * failure a real curl would emit. This is what makes Scenario 7's
- * "port 443 = HTTPS" assumption falsifiable from the command line.
+ * PRD-HTTP.md §5 P12: the HTTPS path attempts a real TLS 1.3 handshake
+ * (`HttpsClientSession`, `PRD-TLS.md`) instead of the previous banner-
+ * sniffing heuristic. Since this simulator gives `curl` no configured CA
+ * trust store, every real handshake either fails at the record-decode
+ * level (peer isn't TLS at all — SSH, SMTP, Oracle TNS, …, an unrecognized
+ * ContentType byte throws) or completes but fails certificate verification
+ * (no trust anchors to match against) — both are reported with the
+ * matching real-curl OpenSSL-style error. This is what makes Scenario 7's
+ * "port 443 = HTTPS" assumption falsifiable from the command line, now via
+ * a genuine protocol-level failure rather than a banner heuristic.
  *
- * Non-HTTPS or non-hijacked cases fall through to the pre-existing
- * `cmdCurl` renderer.
+ * Non-HTTPS cases fall through to the pre-existing `cmdCurl` renderer.
  */
 
 import type { LinuxCommand } from '../LinuxCommand';
 import type { LinuxCommandContext } from '../LinuxCommandContext';
-import { findHostByAddress } from '../../network/HostLookup';
-import { grabBanner } from './ServiceBannerGrab';
-import { detectServiceFromBanner } from './Nmap';
 import { cmdCurl } from '../../LinuxNetCommands';
 import { fetchHttp } from './HttpFetch';
+import { HttpsClientSession } from '@/network/http/https/HttpsClientSession';
+import { CertificateVerifier } from '@/network/pki/CertificateVerifier';
+import { createRequest } from '@/network/http/semantics/types';
+
+function bytesToBinaryString(bytes: Uint8Array): string {
+  let out = '';
+  for (const b of bytes) out += String.fromCharCode(b);
+  return out;
+}
 
 export const curlCommand: LinuxCommand = {
   name: 'curl',
@@ -40,25 +51,46 @@ export const curlCommand: LinuxCommand = {
     const scheme = m[1].toLowerCase();
     const host = m[2];
     const port = m[3] ? parseInt(m[3], 10) : scheme === 'https' ? 443 : 80;
+    const path = m[4] || '/';
 
     if (scheme === 'https') {
-      const vfs = ctx.executor.vfs;
-      const found = findHostByAddress(host, { readFile: (p) => vfs.readFile(p) });
-      if (!found) return cmdCurl(args);
+      const ip = ctx.net.resolveHostnameSync(host);
+      if (!ip) return `curl: (6) Could not resolve host: ${host}`;
 
-      const banner = grabBanner(found.device, port);
-      if (banner && !banner.startsWith('HTTP/')) {
-        const detected = detectServiceFromBanner(banner);
-        const svc = detected?.service ?? 'unknown';
-        return `curl: (35) OpenSSL SSL_connect: SSL_ERROR_SYSCALL in connection to ${host}:${port} — peer sent non-TLS bytes (${svc} banner detected)`;
+      try {
+        // No CA trust store is threaded through LinuxCommandContext in
+        // this phase (out of scope — cf. PRD-HTTP.md §5 P12 note), so
+        // every real handshake fails certificate verification; `-k` can't
+        // change that outcome since TlsClientSession (owned by
+        // PRD-TLS.md) fails the session itself once verification fails.
+        const verifier = new CertificateVerifier({ trustAnchors: [] });
+        const session = new HttpsClientSession(ctx.net.getTcpStack(), ip.toString(), port, { verifier });
+        const request = createRequest('GET', path);
+        request.headers.set('Host', host);
+        const result = session.send(request);
+        session.close();
+
+        if (!result.ok || !result.response) {
+          return `curl: (60) SSL certificate problem: unable to get local issuer certificate`;
+        }
+        const { response } = result;
+        if (head) {
+          return [
+            `HTTP/${response.httpVersion} ${response.statusCode} ${response.reasonPhrase ?? ''}`,
+            ...response.headers.entries().map(([k, v]) => `${k}: ${v}`),
+            '',
+          ].join('\n');
+        }
+        return response.body ? bytesToBinaryString(response.body) : '';
+      } catch {
+        return `curl: (35) OpenSSL SSL_connect: SSL routines::wrong version number in connection to ${host}:${port}`;
       }
-      return cmdCurl(args);
     }
 
-    // PRD-Windows-Server.md §5 P11: a real HTTP dial (IIS/W3SVC, or any
-    // other real HTTP-hosting device), not the pre-existing localhost stub.
+    // PRD-Windows-Server.md §5 P11 / PRD-HTTP.md §5 P12: a real HTTP dial
+    // (IIS/W3SVC, or any other real HTTP-hosting device), not a stub.
     const fetched = fetchHttp(ctx, url);
-    if (!fetched.ok) {
+    if (fetched.ok === false) {
       if (fetched.reason === 'unresolved-host') return `curl: (6) Could not resolve host: ${fetched.host}`;
       if (fetched.reason === 'refused') return `curl: (7) Failed to connect to ${fetched.host} port ${fetched.port}: Connection refused`;
       return 'curl: (3) URL using bad/illegal format or missing URL';

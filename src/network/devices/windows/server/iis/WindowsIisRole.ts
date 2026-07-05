@@ -7,16 +7,16 @@
  * Microsoft-IIS/10.0`, `Content-Type`). No app pools, no HTTPS/TLS, no
  * ASP.NET — PRD §2.2 explicitly scopes "IIS avancé" out.
  *
- * Wire convention: see `HttpTypes.ts` — a typed request/response PDU
- * (JSON text) over a real `TcpConnection`, matching this codebase's
- * established SMB convention rather than hand-rolled HTTP/1.1 text
- * framing (PRD §3 "PDU objets sur le transport réel").
+ * Wire convention: migrated by `PRD-HTTP.md` §5 P12 from a JSON-PDU stand-in
+ * onto real RFC 9112 framing (`Http1ServerSession`) — one server instance
+ * per started site, matching that site's own listening port.
  */
 
 import type { EndHost } from '@/network/devices/EndHost';
 import type { WindowsFileSystem } from '@/network/devices/windows/WindowsFileSystem';
-import type { TcpSocket } from '@/network/tcp/TcpStack';
-import { type HttpRequestPdu, type HttpResponsePdu, isHttpRequestPdu, contentTypeForPath } from '@/network/http/HttpTypes';
+import { contentTypeForPath } from '@/network/http/HttpTypes';
+import { Http1ServerSession } from '@/network/http/http1/Http1ServerSession';
+import { createResponse, type HttpMessage } from '@/network/http/semantics/types';
 
 export interface IisOpResult { ok: boolean; message: string }
 export interface WebsiteInfo { name: string; physicalPath: string; port: number; state: 'Started' | 'Stopped' }
@@ -27,7 +27,15 @@ const DEFAULT_PHYSICAL_PATH = 'C:\\inetpub\\wwwroot';
 const DEFAULT_DOCUMENT = 'iisstart.htm';
 const DEFAULT_PAGE = '<html><head><title>IIS Windows Server</title></head><body><h1>IIS Windows Server</h1><p>This is the default web site.</p></body></html>';
 
-type SiteState = WebsiteInfo;
+function binaryStringToBytes(text: string): Uint8Array {
+  const bytes = new Uint8Array(text.length);
+  for (let i = 0; i < text.length; i++) bytes[i] = text.charCodeAt(i) & 0xff;
+  return bytes;
+}
+
+interface SiteState extends WebsiteInfo {
+  server: Http1ServerSession | null;
+}
 
 export class WindowsIisRole {
   private readonly sites = new Map<string, SiteState>();
@@ -37,7 +45,7 @@ export class WindowsIisRole {
     const indexPath = `${DEFAULT_PHYSICAL_PATH}\\${DEFAULT_DOCUMENT}`;
     if (!this.fs.exists(indexPath)) this.fs.createFile(indexPath, DEFAULT_PAGE);
     this.sites.set(DEFAULT_SITE_NAME, {
-      name: DEFAULT_SITE_NAME, physicalPath: DEFAULT_PHYSICAL_PATH, port: 80, state: 'Stopped',
+      name: DEFAULT_SITE_NAME, physicalPath: DEFAULT_PHYSICAL_PATH, port: 80, state: 'Stopped', server: null,
     });
   }
 
@@ -50,7 +58,7 @@ export class WindowsIisRole {
   newWebsite(name: string, physicalPath: string, port: number): IisOpResult {
     if (this.sites.has(name)) return { ok: false, message: `New-Website : A website named "${name}" already exists.` };
     this.fs.mkdirp(physicalPath);
-    this.sites.set(name, { name, physicalPath, port, state: 'Stopped' });
+    this.sites.set(name, { name, physicalPath, port, state: 'Stopped', server: null });
     this.startSite(name);
     return { ok: true, message: '' };
   }
@@ -67,9 +75,9 @@ export class WindowsIisRole {
     const site = this.sites.get(name);
     if (!site) return { ok: false, message: `Start-Website : A website named "${name}" does not exist.` };
     if (site.state === 'Started') return { ok: true, message: '' };
-    this.host.getTcpStack().listen(site.port, {
-      onAccept: (socket: TcpSocket) => this.handleConnection(socket, site),
-    });
+    const server = new Http1ServerSession(this.host.getTcpStack(), site.port, (req) => this.buildResponse(site, req));
+    server.start();
+    site.server = server;
     site.state = 'Started';
     return { ok: true, message: '' };
   }
@@ -78,7 +86,8 @@ export class WindowsIisRole {
     const site = this.sites.get(name);
     if (!site) return { ok: false, message: `Stop-Website : A website named "${name}" does not exist.` };
     if (site.state === 'Stopped') return { ok: true, message: '' };
-    this.host.getTcpStack().closeListener(site.port);
+    site.server?.stop();
+    site.server = null;
     site.state = 'Stopped';
     return { ok: true, message: '' };
   }
@@ -101,31 +110,21 @@ export class WindowsIisRole {
 
   // ─── Request handling ────────────────────────────────────────────────
 
-  private handleConnection(socket: TcpSocket, site: SiteState): void {
-    socket.onData((data) => {
-      let parsed: unknown;
-      try { parsed = JSON.parse(String(data)); } catch { socket.close(); return; }
-      if (!isHttpRequestPdu(parsed)) { socket.close(); return; }
-      socket.write(JSON.stringify(this.buildResponse(site, parsed)));
-      socket.close();
-    });
-  }
-
-  private buildResponse(site: SiteState, req: HttpRequestPdu): HttpResponsePdu {
-    const reqPath = req.path === '/' || req.path === '' ? `/${DEFAULT_DOCUMENT}` : req.path;
+  private buildResponse(site: SiteState, req: HttpMessage): HttpMessage {
+    const reqPath = !req.target || req.target === '/' ? `/${DEFAULT_DOCUMENT}` : req.target;
     const fsPath = `${site.physicalPath}${reqPath.replace(/\//g, '\\')}`;
     const file = this.fs.readFile(fsPath);
     if (!file.ok) {
-      return {
-        type: 'http-response', statusCode: 404, statusText: 'Not Found',
-        headers: { Server: IIS_SERVER_HEADER, 'Content-Type': 'text/html' },
-        body: '<html><body><h1>404 - File or directory not found.</h1></body></html>',
-      };
+      const res = createResponse(404, 'Not Found');
+      res.headers.set('Server', IIS_SERVER_HEADER);
+      res.headers.set('Content-Type', 'text/html');
+      res.body = binaryStringToBytes('<html><body><h1>404 - File or directory not found.</h1></body></html>');
+      return res;
     }
-    return {
-      type: 'http-response', statusCode: 200, statusText: 'OK',
-      headers: { Server: IIS_SERVER_HEADER, 'Content-Type': contentTypeForPath(fsPath) },
-      body: file.content ?? '',
-    };
+    const res = createResponse(200, 'OK');
+    res.headers.set('Server', IIS_SERVER_HEADER);
+    res.headers.set('Content-Type', contentTypeForPath(fsPath));
+    res.body = binaryStringToBytes(file.content ?? '');
+    return res;
   }
 }

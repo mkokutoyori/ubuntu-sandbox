@@ -123,7 +123,7 @@ ci-dessous.
 | P9 | Intégration QUIC | **PRD-QUIC.md implémenté** | ✅ terminé | Arthur |
 | P10 | HTTP/3 (9114 + QPACK) | P1, P9 | ✅ terminé | Arthur |
 | P11 | Observabilité | P2–P10 | ✅ terminé | Arthur |
-| P12 | Migration IIS/curl/wget | P2, P7 | ⬜ disponible | — |
+| P12 | Migration IIS/curl/wget | P2, P7 | ✅ terminé | Arthur |
 | P13 | Migration DoH | P7 | ✅ terminé | Arthur |
 
 **Rappel de non-chevauchement** : `src/network/quic/` est possédé en
@@ -1800,3 +1800,78 @@ seulement le consommer.
 - Suggestion pour la suite : `PRD-HTTP.md`/P12 (migration IIS/curl/wget
   sur le moteur HTTP/1.1+HTTPS réel) est la dernière phase P1-P13 restante
   et devient donc la prochaine cible naturelle.
+
+### [2026-07-05 (heure non horodatée par l'outil) UTC] Arthur — PRD-HTTP/P12 — ANNONCE + TERMINÉ
+- Tâche : `PRD-HTTP.md`/P12 (§2.1.M) — dernière phase restante de ce PRD.
+  Bascule de `HttpClient.ts`/`WindowsIisRole.ts` (le PDU JSON-sur-TCP
+  hérité de `PRD-Windows-Server.md`/P11) sur le vrai moteur RFC 9112
+  (`http1/`), et remplacement de l'heuristique de détection HTTPS de
+  `Curl.ts` par une vraie tentative TLS 1.3, **sans changer aucune
+  signature publique consommée ailleurs** (`dialHttp`/`parseHttpUrl`,
+  l'API de `WindowsIisRole`, `WindowsPC.invokeWebRequest`), conformément
+  à la contrainte explicite du PRD (§3.4).
+  - `src/network/http/HttpClient.ts` — `dialHttp()` construit maintenant
+    une vraie requête (`createRequest`/`Http1ClientSession`) au lieu d'un
+    JSON `{type:'http-request',...}` brut sur le socket ; la réponse
+    `Http1ClientSession` (un vrai `HttpMessage`) est reconvertie vers
+    l'exacte forme `HttpResponsePdu` que les appelants attendaient déjà
+    (statusCode/statusText/headers en `Record<string,string>`/body en
+    chaîne binaire-un-octet-par-caractère, même convention que
+    `Http1Wire.ts`) — `HttpFetch.ts`, `Curl.ts` et
+    `WindowsPC.invokeWebRequest` n'ont donc nécessité **aucune
+    modification**.
+  - `src/network/http/HttpTypes.ts` — `HttpRequestPdu` et les gardes de
+    type `isHttpRequestPdu`/`isHttpResponsePdu` (le format JSON lui-même)
+    sont supprimés, plus aucun appelant ne les utilise après la bascule ;
+    `HttpResponsePdu` (forme publique) et `contentTypeForPath` (toujours
+    utilisé pour le Content-Type des fichiers statiques IIS) sont
+    conservés.
+  - `src/network/devices/windows/server/iis/WindowsIisRole.ts` — chaque
+    site démarré possède désormais sa propre `Http1ServerSession` (créée
+    dans `startSite()`, arrêtée dans `stopSite()`) au lieu d'un
+    `tcpStack.listen`/parsing JSON manuel ; `buildResponse()` construit un
+    vrai `HttpMessage` (`createResponse` + `res.body` en octets) au lieu
+    d'un `HttpResponsePdu`.
+  - `src/network/devices/linux/commands/net/Curl.ts` — la branche HTTPS
+    résout l'hôte via `ctx.net.resolveHostnameSync` (même chemin que
+    `HttpFetch.ts` côté HTTP), puis tente une vraie poignée de main
+    (`HttpsClientSession`, `PRD-TLS.md`) avec un `CertificateVerifier`
+    sans ancre de confiance (aucun magasin de CA n'est câblé jusqu'à
+    `LinuxCommandContext` dans cette phase — limitation explicitement
+    documentée, hors périmètre). Deux issues réalistes : (1) le pair ne
+    parle pas TLS du tout (SSH, SMTP, …) → l'octet de ContentType inconnu
+    fait lever `TlsRecordWire.decodeRecord`, intercepté et reformulé en
+    message OpenSSL réaliste (« SSL routines::wrong version number ») —
+    exactement ce que `scenario-7-ssh-on-443.test.ts` attend, désormais
+    via un vrai échec protocolaire plutôt qu'une heuristique de bannière ;
+    (2) le pair parle vraiment TLS mais curl n'a aucune ancre de confiance
+    correspondante → `HttpsClientSession.send()` échoue proprement
+    (`ok:false`), reformulé en « SSL certificate problem » façon curl
+    réel. `-k`/`--insecure` ne peut pas contourner ce second cas dans
+    cette phase : une fois la vérification échouée, `TlsClientSession`
+    (possédé par `PRD-TLS.md`, jamais modifié ici) fait échouer la session
+    elle-même — un vrai bypass nécessiterait un mode de vérification
+    « insecure » dans le moteur TLS lui-même, hors périmètre de ce PRD.
+  - `Curl.ts` avait aussi un bug de narrowing booléen TypeScript
+    pré-existant (`if (!fetched.ok)` sur une union discriminée par
+    `ok: true|false`, déjà rencontré et corrigé 4 fois ailleurs cette
+    session) sur la branche HTTP simple, corrigé au passage
+    (`fetched.ok === false`).
+  - `src/__tests__/unit/network-v2/http-p12-migration.test.ts` — NOUVEAU,
+    3 tests : `dialHttp` transporte bien `Host` + en-têtes personnalisés
+    et la méthode HTTP jusqu'au serveur via le vrai moteur ; `curl -k
+    https://` contre un vrai serveur `HttpsServerSession` (CA inconnue de
+    curl) rapporte « SSL certificate problem ».
+- Statut / résultat : ✅ terminé. `tsc --noEmit -p tsconfig.app.json`
+  propre sur tous les fichiers touchés ; `eslint` propre (l'unique erreur
+  restante dans `Curl.ts`, `no-useless-escape` sur la regex d'URL
+  pré-existante, vérifiée pré-existante via `git stash`, sans rapport).
+  Régression ciblée `http-p12-migration` + `windows-iis-role` +
+  `windows-server-iis` + `scenario-7-ssh-on-443` + `https` + `http1-wire`
+  + `linux-commands-and-oracle-tools` + `linux-lan-sftp-suite` : 8
+  fichiers / 385 tests, tous passants — y compris la suite debug
+  `linux-networking.debug.test.ts` (transcript, exit 0). Régression
+  complète `src/__tests__/unit/network-v2/` lancée (portée large :
+  consommateurs IIS/curl/Invoke-WebRequest modifiés) ; résultat à suivre.
+- **`docs/PRD-HTTP.md` est maintenant 100% livré (P1-P13, toutes
+  ✅ terminé, toutes attribuées à Arthur).**
