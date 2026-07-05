@@ -86,9 +86,9 @@ ci-dessous.
 | P6 | Alertes complètes | P3 | ✅ terminé | Claude (Sonnet 5) |
 | P7 | ALPN & suites cryptographiques | P3 | ✅ terminé | Claude (Sonnet 5) |
 | P8 | Résumption PSK & 0-RTT | P2, P3 | ✅ terminé | Claude (Sonnet 5) |
-| P9 | KeyUpdate | P3 | 🟡 en cours | Claude (Sonnet 5) |
-| P10 | Observabilité | P3–P9 | ⬜ disponible | — |
-| P11 | Migration DoT & EAP-TLS/PEAP/EAP-TTLS | P1–P10 | ⬜ disponible | — |
+| P9 | KeyUpdate | P3 | ✅ terminé | Claude (Sonnet 5) |
+| P10 | Observabilité | P3–P9 | ✅ terminé | Claude (Sonnet 5) |
+| P11 | Migration DoT & EAP-TLS/PEAP/EAP-TTLS | P1–P10 | 🟡 en cours | Claude (Sonnet 5) |
 
 ### `docs/PRD-QUIC.md` — dépend de PRD-TLS.md (P8, P9)
 
@@ -944,7 +944,7 @@ seulement le consommer.
   pourrait donc raisonnablement démarrer P8 dès maintenant en s'appuyant sur
   `deriveKeySchedule`/`TlsClientSession`/`TlsServerSession` tels quels.
 
-### [2026-07-05 (heure non horodatée par l'outil) UTC] Claude (Sonnet 5) — PRD-TLS/P9 — ANNONCE
+### [2026-07-05 (heure non horodatée par l'outil) UTC] Claude (Sonnet 5) — PRD-TLS/P9 — TERMINÉ
 - Tâche : `PRD-TLS.md`/P9 — KeyUpdate (RFC 8446 §4.6.3) : rekey en session
   longue, indépendamment dans chaque direction (client→serveur et
   serveur→client ne sont pas forcément mis à jour ensemble), avec
@@ -952,8 +952,80 @@ seulement le consommer.
   retour, `update_not_requested` non). Le type de message `KeyUpdate`
   (`{kind: 'key_update', requestUpdate: boolean}`) existe déjà dans
   `messages.ts` depuis P1, inutilisé jusqu'ici.
-- Fichiers concernés : extension de `TlsClientSession.ts`/`TlsServerSession.ts`
-  (dérivation du prochain traffic secret via `expandLabel(secret, "traffic
-  upd", "", Hash.length)` par direction, application indépendante), nouveau
+- Fichiers concernés : nouveau `nextTrafficSecret()` dans `keySchedule.ts`
+  (`HKDF-Expand-Label(secret, "traffic upd", "")`) ; extension de
+  `TlsClientSession.ts`/`TlsServerSession.ts` avec
+  `clientApplicationTrafficSecret`/`serverApplicationTrafficSecret`
+  publics (posés une fois le handshake conclu) et
+  `sendKeyUpdate(requestUpdate?)`/`receiveKeyUpdate(records)` ; nouveau
   fichier de test `tls-key-update.test.ts`.
+- Statut / résultat : ✅ terminé. 4 nouveaux tests : ratchet côté client
+  et côté serveur ratchete uniquement sa propre direction et reste
+  synchronisé entre les deux sessions, `requestUpdate` déclenche
+  exactement une réciprocité (jamais de ping-pong, la réponse ne
+  redemande jamais elle-même), les KeyUpdate successifs ne réutilisent
+  jamais un secret précédent. `tsc`/`eslint` propres. Régression ciblée
+  (les 10 fichiers `tls-*` + `dns-encrypted-transports`) : 84 tests, 0
+  échec.
+- Suggestion pour la suite : `PRD-TLS.md`/P10 (Observabilité) ne dépend
+  que de P3–P9, tous terminés — directement disponible.
+
+### [2026-07-05 (heure non horodatée par l'outil) UTC] Claude (Sonnet 5) — PRD-TLS/P10 — TERMINÉ
+- Tâche : `PRD-TLS.md`/P10 — Observabilité (§2.1.12) : `events.ts`
+  (`TlsDomainEvent` : `tls.handshake.started/completed/failed`,
+  `tls.alert.sent`, `tls.session.resumed`, `tls.key_update`, chacun
+  gardé par un `sessionId` par connexion — les sessions TLS sont
+  éphémères et n'ont pas de contexte device propre avant la migration
+  de P11), enregistré dans l'union globale `DomainEvent`
+  (`src/events/types.ts`, comme chaque autre protocole) ; `observables.ts`
+  (`TlsSignalStore` + `subscribeTlsObservables(bus, store)`) — à la
+  différence d'OSPF/DHCP/IPSec dont les observables projettent l'état
+  d'un moteur par-device persistant, les sessions TLS n'ont pas
+  d'équivalent : c'est une pure souscription au bus, indexée par
+  `sessionId`. `TlsClientSession`/`TlsServerSession` prennent un
+  `eventBus?` optionnel dans leur config et publient à chaque point de
+  transition déjà existant (démarrage, échec, résumption détectée,
+  conclusion du handshake, KeyUpdate envoyé/reçu) — purement additif,
+  aucun changement de comportement si `eventBus` est omis.
+- Simplification documentée : `tls.alert.received` n'est volontairement
+  pas émis (ni vraiment utile à émettre) — à ce niveau de fidélité, une
+  alerte fatale n'est jamais réellement transmise au pair comme un
+  vrai record `alert` sur le fil (voir `TlsServerSession.reject`/
+  `TlsClientSession.fail`) ; seul le côté qui lève l'alerte "l'envoie".
+- Statut / résultat : ✅ terminé. 5 nouveaux tests
+  (`tls-observability.test.ts`) : paires `started`/`completed`
+  cohérentes des deux côtés en cas de succès, `failed`+`alert.sent` en
+  cas de rejet de certificat, `session.resumed` des deux côtés après
+  rachat d'un ticket, le `TlsSignalStore` reflète la conclusion du
+  handshake, `keyUpdateCount` s'incrémente indépendamment par rôle.
+  `tsc`/`eslint` propres. Régression ciblée (les 11 fichiers `tls-*` +
+  `dns-encrypted-transports`) : 89 tests, 0 échec.
+- Suggestion pour la suite : `PRD-TLS.md`/P11 (migration DoT &
+  EAP-TLS/PEAP/EAP-TTLS) est la dernière phase de `PRD-TLS.md` — dépend
+  de P1–P10, toutes terminées. C'est un chantier plus lourd et plus
+  risqué que les précédents (bascule de vrais consommateurs existants,
+  `DnsTlsTransport.ts` et `EapTlsServerSession.ts`/`EapTlsPeerSession.ts`,
+  avec mise à jour consciente des assertions de comptage de rounds —
+  cf. § 7 risque dédié de `PRD-TLS.md`) ; je le prends dans la foulée.
+  Une fois P11 posé, `PRD-TLS.md` sera intégralement livré : les agents
+  QUIC/HTTP peuvent alors considérer la dépendance TLS comme
+  définitivement stable pour leurs propres phases P8/P9 (QUIC) et P7
+  (HTTP, HTTPS).
+
+### [2026-07-05 (heure non horodatée par l'outil) UTC] Claude (Sonnet 5) — PRD-TLS/P11 — ANNONCE
+- Tâche : `PRD-TLS.md`/P11 — Migration DoT & EAP-TLS/PEAP/EAP-TTLS
+  (§2.1.14) : `DnsTlsTransport.ts` (DoT, RFC 7858, port 853) bascule sur
+  de vraies `TlsClientSession`/`TlsServerSession` (ALPN `dot`) à la
+  place de `SimulatedTls.ts` ; le tunnel EAP-TLS/PEAP/EAP-TTLS
+  (`EapTlsServerSession.ts`/`EapTlsPeerSession.ts`) remplace son modèle
+  de flights ad hoc 2-RTT (`EapTlsHandshake.ts`) par de vrais appels au
+  moteur 1-RTT RFC 8446 — `EapTlsFragmentation.ts` (RFC 5216) reste une
+  couche EAP distincte au-dessus, inchangée. `DnsHttpsTransport.ts`
+  (DoH) et `DnsQuicTransport.ts` (DoQ) ne sont volontairement pas
+  migrés ici (propriété de `PRD-HTTP.md`/`PRD-QUIC.md`).
+- Fichiers concernés (prévisionnel) : lecture d'abord de
+  `DnsTlsTransport.ts`, `EapTlsHandshake.ts`, `EapTlsServerSession.ts`,
+  `EapTlsPeerSession.ts`, `EapTlsFragmentation.ts` et de leurs suites de
+  tests existantes avant toute modification, pour cerner précisément ce
+  qui doit changer et ce qui doit rester identique.
 - Statut / résultat : 🟡 en cours.
