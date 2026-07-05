@@ -118,7 +118,7 @@ ci-dessous.
 | P4 | Cookies (6265) | P2 | ✅ terminé | Arthur |
 | P5 | Authentification (7617/7616) | P2 | ✅ terminé | Arthur |
 | P6 | WebSocket (6455) | P2 | ✅ terminé | Arthur |
-| P7 | HTTPS | P2, **PRD-TLS.md implémenté** | 🟡 en cours | Arthur |
+| P7 | HTTPS | P2, **PRD-TLS.md implémenté** | ✅ terminé | Arthur |
 | P8 | HTTP/2 (9113 + HPACK) | P1, P7 (`h2c` sans) | ✅ terminé (h2c seul, sans ALPN — P7/ALPN `h2` restent à faire séparément) | Arthur |
 | P9 | Intégration QUIC | **PRD-QUIC.md implémenté** | ⬜ disponible | — |
 | P10 | HTTP/3 (9114 + QPACK) | P1, P9 | ⬜ disponible | — |
@@ -1060,3 +1060,65 @@ seulement le consommer.
     `tls-handshake-1rtt.test.ts` (`CertificateAuthority.generate`/
     `CertificateVerifier`).
 - Statut / résultat : 🟡 en cours.
+
+### [2026-07-05 (heure non horodatée par l'outil) UTC] Arthur — PRD-HTTP/P7 — TERMINÉ
+- Réalisé exactement le périmètre annoncé, zéro fichier sous
+  `src/network/tls/` touché :
+  - `TlsRecordWire.ts` — `encodeRecord`/`decodeRecord`/`encodeRecords`/
+    `decodeRecords`, en-tête 5 octets (ContentType 1 octet + legacyVersion
+    2 octets + length 16 bits big-endian) + fragment, RFC 8446 §5.1.
+  - `ApplicationDataCipher.ts` — `encryptApplicationData`/
+    `decryptApplicationData` : compose `fragmentAsRecords`/
+    `reassembleRecords` (déjà existants, §5.2, uniquement l'enveloppe du
+    content-type réel) avec `encryptBytes`/`decryptBytes` réutilisés tels
+    quels depuis `SimulatedTls.ts`, un numéro de séquence consommé par
+    fragment (fidèle à l'esprit RFC même si en pratique un seul record par
+    message ici).
+  - `HstsStore.ts` — mémorisation par hôte de `Strict-Transport-Security`
+    (`max-age`, `includeSubDomains`, expiration, `max-age=0` efface une
+    entrée), pas de liste de préchargement globale (RFC 6797, conforme au
+    non-objectif § 2.2 du PRD).
+  - `HttpToHttpsRedirect.ts` — `createHttpToHttpsRedirectHandler(host,
+    port?)`, un `Http1RequestHandler` (donc branchable directement sur
+    `Http1ServerSession` de P2) répondant 308 avec `Location: https://...`
+    en préservant méthode/chemin.
+  - `HttpsClientSession.ts`/`HttpsServerSession.ts` — pilotage du handshake
+    `TlsClientSession`/`TlsServerSession` octet par octet sur un vrai
+    `TcpSocket` (convention « chaîne binaire un caractère = un octet » déjà
+    établie par `Http2Connection.ts`/`QuicConnection.ts`/
+    `WebSocketConnection.ts`, tracée à `DnsHttpsTransport.ts`), ALPN
+    négociable (`http/1.1` par défaut, `h2` testé aussi), connexions
+    persistantes (RFC 9112 §9.3, même modèle que `Http1ClientSession`/
+    `Http1ServerSession`), `Strict-Transport-Security` appliqué côté
+    serveur si configuré et mémorisé côté client via `HstsStore`.
+  - Nouveau fichier de test `https.test.ts` : `TlsRecordWire` en
+    autonome (round-trip, en-tête tronqué, fragment tronqué, ContentType
+    inconnu), `ApplicationDataCipher` en autonome (round-trip, échec sur
+    mauvais numéro de séquence), `HstsStore` en autonome (5 cas), puis
+    handshake/HTTPS de bout en bout sur une vraie topologie `LinuxPC`/
+    `GenericSwitch`/`TcpStack` (port de test 8443, jamais 443) : succès
+    avec CA de confiance + ALPN `http/1.1`, rejet avant tout échange
+    applicatif si la CA n'est pas de confiance, connexion persistante
+    réutilisée sur plusieurs requêtes, mémorisation HSTS effective côté
+    client, négociation ALPN `h2` quand les deux parties l'offrent, et
+    échec propre contre un port sans listener. Plus deux tests pour
+    `createHttpToHttpsRedirectHandler` (port par défaut et port explicite).
+- Aucun bug trouvé à l'exécution des tests — tous verts dès la première
+  exécution (le point le plus délicat, la boucle synchrone de handshake
+  réentrante par-dessus l'écriture TCP déjà réentrante de ce simulateur,
+  avait été raisonné à l'avance : chaque `onData` du client réécrit
+  immédiatement le prochain vol s'il y en a un, exactement comme le test
+  `runHandshake` de `tls-handshake-1rtt.test.ts` le fait en boucle
+  manuelle — aucune mutation d'état externe après un `socket.write()` ici,
+  contrairement au bug de réentrance déjà rencontré sur
+  `Http2Connection.ts`).
+- Statut / résultat : ✅ terminé. `tsc --noEmit` propre, `eslint` propre.
+  20 nouveaux tests (`https.test.ts`). Régression ciblée : 258 tests
+  (suites HTTP P1–P6/P8 + TLS P1–P10 combinées) au vert — 3ᵉ phase depuis
+  la dernière régression complète (TLS/P8), pas encore la 4ᵉ, régression
+  complète non déclenchée par ce commit.
+- Suggestion pour la suite : `PRD-HTTP.md`/P12 (migration IIS/curl/wget) et
+  P13 (migration DoH) dépendent maintenant de P7 et sont accessibles ;
+  `PRD-HTTP.md`/P9 (intégration QUIC) reste bloqué sur `PRD-QUIC.md` livré
+  dans son ensemble (actuellement P8/P9 QUIC restants, hors périmètre
+  TLS).
