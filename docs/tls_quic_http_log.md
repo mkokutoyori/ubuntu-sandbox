@@ -103,7 +103,7 @@ ci-dessous.
 | P7 | Machine à états de connexion (sans TLS réel) | P3–P6 | ✅ terminé | Arthur |
 | P8 | Intégration TLS 1.3 réelle | **PRD-TLS.md implémenté**, P7 | ⬜ disponible | — |
 | P9 | 0-RTT | P8 | ⬜ disponible | — |
-| P10 | Retry & validation d'adresse | P7 | 🟡 en cours | Arthur |
+| P10 | Retry & validation d'adresse | P7 | ✅ terminé | Arthur |
 | P11 | Connection IDs multiples | P7 | ⬜ disponible | — |
 | P12 | Observabilité | P4–P11 | ⬜ disponible | — |
 | P13 | Migration DoQ | P8, P6 | ⬜ disponible | — |
@@ -842,4 +842,23 @@ seulement le consommer.
 - Fichiers concernés : nouveau fichier `src/network/quic/retry.ts` —
   purement additif ; module autonome pour cette phase (non câblé dans
   `QuicConnection.ts`, comme P1-P6 avant l'intégration de P7).
-- Statut / résultat : en cours.
+- Statut / résultat : ✅ terminé. 12 tests : round-trip jeton pour la
+  même adresse cliente, rejet si IP/port différent, rejet si expiré,
+  acceptation pile à la frontière d'expiration, rejet si altéré
+  (digest invalide) ou vérifié avec le mauvais secret serveur, rejet
+  d'un jeton malformé ; `AmplificationLimiter` : autorise jusqu'à 3×
+  les octets reçus avant validation, tient compte des octets déjà
+  envoyés dans le budget, limite totalement levée après
+  `onAddressValidated()`, cesse de comptabiliser les octets reçus une
+  fois validée. `tsc`/`eslint` propres. Régression ciblée (les 8
+  fichiers `quic-*` + dns-encrypted-transports) : 9 fichiers, 122
+  tests, 0 échec.
+- Suggestion pour la suite : `PRD-QUIC.md`/P11 (Connection IDs
+  multiples) dépend de P7 (terminé) et reste disponible. `PRD-TLS.md`
+  vient d'atteindre P8 (résumption PSK & 0-RTT) — `PRD-QUIC.md`/P8
+  (intégration TLS 1.3 réelle) devient donc théoriquement accessible,
+  mais c'est un chantier lourd (brancher `packetProtection.ts` sur le
+  vrai key schedule TLS + handshake combiné Initial→Handshake→1-RTT) ;
+  un agent qui le prendrait devrait d'abord relire l'état exact de
+  `PRD-TLS.md` (P8 fait, P9-P11 pas encore) pour vérifier que tout le
+  nécessaire est bien livré.
