@@ -203,13 +203,6 @@ describe('SftpWireSession — bridges the codec to a real ISftpFileSystem/SftpCo
     expect(vfs.exists('/home/alice/empty')).toBe(false);
   });
 
-  it('OPEN/READ/WRITE/CLOSE reply SSH_FX_OP_UNSUPPORTED (real handle model is P14)', () => {
-    const { session } = buildSession();
-    const openReply = session.handle({ type: 'OPEN', requestId: 1, filename: 'hello.txt', pflags: 0x01, attrs: {} });
-    expect(openReply.type).toBe('STATUS');
-    expect((openReply as { code: number }).code).toBe(8);
-  });
-
   it('SYMLINK/READLINK reply SSH_FX_OP_UNSUPPORTED (dispatcher command is P15)', () => {
     const { session } = buildSession();
     const reply = session.handle({ type: 'SYMLINK', requestId: 1, linkpath: 'link', targetpath: 'hello.txt' });
