@@ -103,7 +103,7 @@ ci-dessous.
 | P7 | Machine à états de connexion (sans TLS réel) | P3–P6 | ✅ terminé | Arthur |
 | P8 | Intégration TLS 1.3 réelle | **PRD-TLS.md implémenté**, P7 | ⬜ disponible | — |
 | P9 | 0-RTT | P8 | ⬜ disponible | — |
-| P10 | Retry & validation d'adresse | P7 | ⬜ disponible | — |
+| P10 | Retry & validation d'adresse | P7 | 🟡 en cours | Arthur |
 | P11 | Connection IDs multiples | P7 | ⬜ disponible | — |
 | P12 | Observabilité | P4–P11 | ⬜ disponible | — |
 | P13 | Migration DoQ | P8, P6 | ⬜ disponible | — |
@@ -831,3 +831,15 @@ seulement le consommer.
   (Connection IDs multiples) dépendent de P7 (terminé) mais restent
   disponibles sans attendre TLS si un agent veut les prendre. P12
   (observabilité) dépend de P4-P11.
+
+### [2026-07-05 (heure non horodatée par l'outil) UTC] Arthur — PRD-QUIC/P10 — ANNONCE
+- Tâche : `src/network/quic/retry.ts` — §8 : jeton de `Retry` simulé
+  (déterministe, incluant IP/port client + horodatage + secret serveur
+  via `simulatedDigest`, vérifiable et expirable), et
+  `AmplificationLimiter` : limite d'amplification 3x (le serveur ne
+  peut envoyer plus de 3× les octets reçus d'une adresse cliente non
+  validée) levée après validation d'adresse.
+- Fichiers concernés : nouveau fichier `src/network/quic/retry.ts` —
+  purement additif ; module autonome pour cette phase (non câblé dans
+  `QuicConnection.ts`, comme P1-P6 avant l'intégration de P7).
+- Statut / résultat : en cours.
