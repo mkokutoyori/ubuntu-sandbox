@@ -96,7 +96,7 @@ ci-dessous.
 |---|---|---|---|---|
 | P1 | Varints & format de paquet | — | ✅ terminé | Arthur |
 | P2 | Trames | P1 | ✅ terminé | Arthur |
-| P3 | Protection de paquets (clés de test) | P1, P2 | ⬜ disponible | — |
+| P3 | Protection de paquets (clés de test) | P1, P2 | 🟡 en cours | Arthur |
 | P4 | Recouvrement de pertes | P2, P3 | ⬜ disponible | — |
 | P5 | Contrôle de congestion | P4 | ⬜ disponible | — |
 | P6 | Streams | P2 | ✅ terminé | Arthur |
@@ -685,3 +685,20 @@ seulement le consommer.
   clés de test injectées) reste disponible (dépend de P1+P2, tous deux
   terminés). P7 (machine à états de connexion) dépend de P3-P6 et n'est
   pas encore accessible tant que P3-P5 ne sont pas faits.
+
+### [2026-07-05 (heure non horodatée par l'outil) UTC] Arthur — PRD-QUIC/P3 — ANNONCE
+- Tâche : `src/network/quic/packetProtection.ts` — avec des clés de
+  test injectées directement (pas encore via le key schedule TLS,
+  cf. § 5 : « clés de test », dépendance réelle sur `PRD-TLS.md`
+  reportée à P8). Chiffrement du corps simulé en réutilisant la
+  convention `keystreamByte`/XOR de `SimulatedTls.ts`/
+  `EapTlsHandshake.ts` (pas de crypto réelle). Protection d'en-tête
+  modélisée comme une opération **séparée** (masque dérivé de
+  `headerProtectionKey` + un échantillon de corps chiffré, appliqué à
+  l'octet d'en-tête et au numéro de paquet) — propriété testée :
+  un en-tête corrompu n'empêche pas de déchiffrer un corps valide, et
+  réciproquement (§6.3 du PRD).
+- Fichiers concernés : nouveau fichier
+  `src/network/quic/packetProtection.ts` (+ `PacketProtectionKeys`
+  ajouté à `types.ts`) — purement additif.
+- Statut / résultat : en cours.
