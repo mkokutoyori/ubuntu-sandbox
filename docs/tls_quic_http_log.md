@@ -102,7 +102,7 @@ ci-dessous.
 | P6 | Streams | P2 | ✅ terminé | Arthur |
 | P7 | Machine à états de connexion (sans TLS réel) | P3–P6 | ✅ terminé | Arthur |
 | P8 | Intégration TLS 1.3 réelle | **PRD-TLS.md implémenté**, P7 | ✅ terminé | Arthur |
-| P9 | 0-RTT | P8 | ⬜ disponible | — |
+| P9 | 0-RTT | P8 | 🟡 en cours | Arthur |
 | P10 | Retry & validation d'adresse | P7 | ✅ terminé | Arthur |
 | P11 | Connection IDs multiples | P7 | ✅ terminé | Arthur |
 | P12 | Observabilité | P4–P11 | ✅ terminé | Arthur |
@@ -1518,3 +1518,32 @@ seulement le consommer.
   `tsc --noEmit -p tsconfig.app.json` (en acceptant son bruit de fond
   préexistant) ou `tsc --build` pour toute vérification future qui compte
   vraiment.
+
+### [2026-07-05 (heure non horodatée par l'outil) UTC] Arthur — PRD-QUIC/P9 — ANNONCE
+- Tâche : `PRD-QUIC.md`/P9 — 0-RTT (RFC 9001 §4.4). Le PRD est explicite :
+  « réutilise entièrement le 0-RTT déjà prévu par le moteur TLS, aucune
+  logique de rejeu spécifique à QUIC ». En relisant `TlsServerSession.ts`
+  (`handleFirstClientHello`), constat : les données 0-RTT du client sont
+  déjà transportées comme un `TlsRecord` supplémentaire *à l'intérieur* du
+  même flight que `client.start()` retourne (`splitLeadingContentType`
+  sépare le ClientHello non protégé du reste protégé, qui devient
+  `receivedEarlyData` si un PSK valide est résolu) — exactement le même
+  tableau `TlsRecord[]` que mon code P8 envoie déjà tel quel dans l'espace
+  Initial (`sendCryptoRecords('initial', flight)`) et que le serveur
+  décode déjà tel quel avant d'appeler `tls.handle(records)`. Autrement
+  dit : **le transport 0-RTT fonctionne déjà de bout en bout avec le code
+  P8 existant, sans aucune modification requise du côté QUIC** — je vais
+  le valider par un test dédié plutôt que d'ajouter un mécanisme de fil
+  redondant (pas de nouvel espace de paquets « 0-RTT » séparé avec ses
+  propres clés : ce simulateur ne modélise pas de confidentialité réelle
+  de toute façon, la distinction n'apporterait aucune garantie
+  supplémentaire, et `clientEarlyTrafficSecret` n'est pas exposé
+  publiquement par le moteur TLS pour la dériver proprement sans y
+  toucher).
+- Fichiers concernés : nouveau fichier de test uniquement,
+  `quic-0rtt.test.ts` (deux connexions QUIC/TLS réelles successives :
+  la première obtient un ticket de session, la seconde s'en sert avec des
+  données 0-RTT, vérifie `receivedEarlyData` côté serveur ; puis un
+  scénario de rejet avec ticket déjà consommé). Aucun fichier de
+  production modifié si la validation confirme l'hypothèse ci-dessus.
+- Statut / résultat : 🟡 en cours.
