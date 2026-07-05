@@ -33,9 +33,16 @@ ci-dessous.
    tant qu'elle n'est pas poussée, un autre agent peut légitimement
    commencer la même tâche.
 3. **Pendant la tâche** : les commits de code habituels (typecheck, lint,
-   régression ciblée, rebase avant push — cf. `CLAUDE.md` et les
-   conventions déjà en usage sur ce dépôt) suivent leur cours normal. Pas
-   besoin de mettre à jour ce journal à chaque commit intermédiaire.
+   rebase avant push — cf. `CLAUDE.md` et les conventions déjà en usage sur
+   ce dépôt) suivent leur cours normal. Pas besoin de mettre à jour ce
+   journal à chaque commit intermédiaire.
+   **Cadence de régression** (consigne explicite, pour éviter de perdre du
+   temps) : à la fin de chaque phase, exécuter uniquement une régression
+   **ciblée** sur les fichiers/suites concernés (le nouveau module + ses
+   voisins directs — `tls-*`, `eaptls-*`, `dns-encrypted-transports`, etc.
+   selon le PRD). Réserver la régression **complète** (`npx vitest run
+   src/__tests__/unit/network-v2/`) à **une phase sur quatre** (toutes
+   PRD confondues pour l'agent qui l'exécute), pas à chaque phase.
 4. **À la fin d'une tâche** : mettre à jour l'entrée (statut ✅ terminé ou
    🔴 bloqué + raison), la ligne du tableau de bord, lister les fichiers
    livrés et le résultat des tests/régression, et — si pertinent —
@@ -73,8 +80,8 @@ ci-dessous.
 |---|---|---|---|---|
 | P1 | Types, messages, record layer | — | ✅ terminé | Claude (Sonnet 5) |
 | P2 | Key schedule | P1 | ✅ terminé | Claude (Sonnet 5) |
-| P3 | Handshake 1-RTT nominal | P1, P2 | 🟡 en cours | Claude (Sonnet 5) |
-| P4 | mTLS | P3 | ⬜ disponible | — |
+| P3 | Handshake 1-RTT nominal | P1, P2 | ✅ terminé | Claude (Sonnet 5) |
+| P4 | mTLS | P3 | 🟡 en cours | Claude (Sonnet 5) |
 | P5 | HelloRetryRequest | P3 | ⬜ disponible | — |
 | P6 | Alertes complètes | P3 | ⬜ disponible | — |
 | P7 | ALPN & suites cryptographiques | P3 | ⬜ disponible | — |
@@ -281,6 +288,31 @@ seulement le consommer.
 - Fichiers concernés : nouveaux fichiers sous `src/network/tls/` +
   nouveau fichier de test — n'importe P1/P2, ne touche aucun fichier
   existant hors `src/network/tls/`.
+- Statut / résultat : ✅ terminé. `TlsClientSession.ts`/`TlsServerSession.ts`
+  + `tls-handshake-1rtt.test.ts` (5 tests, verts dès la première
+  exécution) ; extensions additives mineures à `messages.ts`
+  (`encodeMessages`/`decodeMessages`), `recordLayer.ts`
+  (`splitLeadingContentType`) et `keySchedule.ts` (`computeFinished`).
+  `CertificateVerify` porte une vraie signature simulée
+  (`PkiKeyPair.sign`/`verify`) sur le transcript, pas un raccourci — plus
+  fidèle que le modèle 2-RTT d'`EapTlsHandshake.ts`. `tsc`/`eslint`
+  propres. Régression **ciblée uniquement** (nouvelle consigne : régression
+  complète réservée à une phase sur quatre) : `tls-*` + `eaptls-*` +
+  `peap-ttls-handshake` + `dns-encrypted-transports`, 7 fichiers, 67 tests,
+  tout vert.
+- Suggestion pour la suite : je continue sur `PRD-TLS.md`/P4 (mTLS) — voir
+  l'annonce ci-dessous. `PRD-QUIC.md`/P1 reste disponible pour un agent
+  qui voudrait travailler en parallèle sans dépendance.
+
+### [2026-07-05 (heure non horodatée par l'outil) UTC] Claude (Sonnet 5) — PRD-TLS/P4 — ANNONCE
+- Tâche : mTLS (§2.1.6) — `CertificateRequest`/`Certificate`/
+  `CertificateVerify` côté client, réutilisant `@/network/pki` sans
+  nouvelle crypto. Étend `TlsServerConfig`/`TlsClientConfig` avec un champ
+  optionnel (`requestClientCert`/`clientCert`+`clientPrivateKey`) — additif,
+  comportement P3 inchangé quand absent.
+- Fichiers concernés : `src/network/tls/{TlsServerSession.ts,
+  TlsClientSession.ts}` (modifiés, additivement) + nouveau fichier de
+  test.
 - Statut / résultat : en cours.
 
 ### [2026-07-05 (heure non horodatée par l'outil) UTC] Arthur — PRD-HTTP/P4 — ANNONCE
