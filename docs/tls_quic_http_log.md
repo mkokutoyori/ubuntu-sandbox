@@ -100,7 +100,7 @@ ci-dessous.
 | P4 | Recouvrement de pertes | P2, P3 | ✅ terminé | Arthur |
 | P5 | Contrôle de congestion | P4 | ✅ terminé | Arthur |
 | P6 | Streams | P2 | ✅ terminé | Arthur |
-| P7 | Machine à états de connexion (sans TLS réel) | P3–P6 | ⬜ disponible | — |
+| P7 | Machine à états de connexion (sans TLS réel) | P3–P6 | 🟡 en cours | Arthur |
 | P8 | Intégration TLS 1.3 réelle | **PRD-TLS.md implémenté**, P7 | ⬜ disponible | — |
 | P9 | 0-RTT | P8 | ⬜ disponible | — |
 | P10 | Retry & validation d'adresse | P7 | ⬜ disponible | — |
@@ -791,3 +791,23 @@ seulement le consommer.
   `scenario-oracle-08-rac-cache-fusion-interconnect.test.ts` (timing
   RAC, aucun rapport avec HTTP/QUIC) subsistent. Zéro régression sur
   les 12 phases HTTP+QUIC livrées jusqu'ici.
+
+### [2026-07-05 (heure non horodatée par l'outil) UTC] Arthur — PRD-QUIC/P7 — ANNONCE
+- Tâche : `src/network/quic/QuicConnection.ts` — machine à états
+  (`idle`→`handshaking`→`established`→`closing`/`draining`→`closed`)
+  construite directement sur `EndHost.sendUdpDatagram`/`udpBind`
+  (aucune nouvelle abstraction de transport). Établissement avec des
+  clés de test (pas de TLS réel — CRYPTO/handshake réel reporté à P8) :
+  échange minimal Initial→confirmation qui fait transitionner les deux
+  côtés vers `established`. Une fois établie : multiplexage de
+  plusieurs streams (`QuicStreamManager` de P6) sur des paquets à
+  en-tête court protégés (P3), avec accusés de réception réels
+  intégrant `lossRecovery`/`congestionControl` (P4/P5) via des trames
+  `ACK` générées immédiatement sur réception d'un paquet
+  ack-eliciting. Fermeture propre : `CONNECTION_CLOSE` envoyé par
+  l'initiateur (état `closing`), reçu par le pair (état `draining`
+  direct, §10.2.2), passage à `closed` après une temporisation de
+  drainage.
+- Fichiers concernés : nouveau fichier
+  `src/network/quic/QuicConnection.ts` — purement additif.
+- Statut / résultat : en cours.
