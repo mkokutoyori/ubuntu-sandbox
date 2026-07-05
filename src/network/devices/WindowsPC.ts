@@ -420,7 +420,11 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       onAccept: (socket) => {
         const store = this.getDirectoryStore();
         if (!store) { socket.close(); return; }
-        new LdapServerHandler({ tree: store.getTree(), auth: store.getBindCheck() }).register(socket);
+        const serviceSecret = store.getComputerSecret(this.getHostname());
+        new LdapServerHandler({
+          tree: store.getTree(), auth: store.getBindCheck(),
+          kerberos: serviceSecret !== null ? { realm: store.getRealm(), serviceSecret } : undefined,
+        }).register(socket);
       },
     });
 

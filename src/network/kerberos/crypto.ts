@@ -46,6 +46,7 @@ export const KU_TICKET = 2;
 export const KU_AS_REP_ENC_PART = 3;
 export const KU_TGS_REQ_AUTHENTICATOR = 7;
 export const KU_TGS_REP_ENC_PART = 8;
+export const KU_AP_REQ_AUTHENTICATOR = 11;
 
 let sessionKeyCounter = 0;
 

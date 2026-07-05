@@ -10,8 +10,8 @@ import {
   type BerNode, parseTLV, parseAll,
   encodeInteger, decodeInteger, encodeEnumerated,
   encodeBoolean, decodeBoolean,
-  encodeOctetString, decodeOctetString,
-  encodeSequence, encodeSet, encodeApplication, encodeContextPrimitiveString,
+  encodeOctetString, decodeOctetString, encodeRawOctetString,
+  encodeSequence, encodeSet, encodeApplication, encodeContextPrimitiveString, encodeContextConstructed,
   concat,
 } from './Ber';
 import { type LdapFilter, encodeFilter, decodeFilter } from './LdapFilter';
@@ -49,8 +49,11 @@ export interface LdapResult {
 
 export interface PartialAttribute { type: string; values: string[] }
 
+/** RFC 4511 §4.2 AuthenticationChoice — `simple [0] OCTET STRING` (password) or `sasl [3] SaslCredentials` (GSSAPI/Kerberos, PRD-Windows-Server-Advanced.md §5 P3). `sasl` is undefined for a simple bind. */
+export interface SaslCredentials { mechanism: string; credentials: Uint8Array }
+
 export type ProtocolOp =
-  | { kind: 'bindRequest'; version: number; name: string; password: string }
+  | { kind: 'bindRequest'; version: number; name: string; password: string; sasl?: SaslCredentials }
   | { kind: 'bindResponse'; result: LdapResult }
   | { kind: 'unbindRequest' }
   | {
@@ -129,8 +132,10 @@ export function encodeProtocolOp(op: ProtocolOp): Uint8Array {
       return encodeApplication(APP_TAG.bindRequest, true, concat([
         encodeInteger(op.version),
         encodeOctetString(op.name),
-        // AuthenticationChoice ::= CHOICE { simple [0] OCTET STRING, ... } — simple bind only.
-        encodeContextPrimitiveString(0, op.password),
+        // AuthenticationChoice ::= CHOICE { simple [0] OCTET STRING, sasl [3] SaslCredentials }.
+        op.sasl
+          ? encodeContextConstructed(3, [encodeOctetString(op.sasl.mechanism), encodeRawOctetString(op.sasl.credentials)])
+          : encodeContextPrimitiveString(0, op.password),
       ]));
     case 'bindResponse':
       return encodeApplication(APP_TAG.bindResponse, true, concat(encodeLdapResult(op.result)));
@@ -193,7 +198,13 @@ export function decodeProtocolOp(node: BerNode): ProtocolOp {
       const parts = parseAll(node.content);
       const version = decodeInteger(parts[0].content);
       const name = decodeOctetString(parts[1].content);
-      const password = decodeOctetString(parts[2].content); // AuthenticationChoice simple [0]
+      const authChoice = parts[2];
+      if (authChoice.tagNumber === 3) {
+        const [mechNode, credNode] = parseAll(authChoice.content);
+        const sasl: SaslCredentials = { mechanism: decodeOctetString(mechNode.content), credentials: credNode.content };
+        return { kind: 'bindRequest', version, name, password: '', sasl };
+      }
+      const password = decodeOctetString(authChoice.content); // AuthenticationChoice simple [0]
       return { kind: 'bindRequest', version, name, password };
     }
     case APP_TAG.bindResponse: {

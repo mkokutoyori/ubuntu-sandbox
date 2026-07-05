@@ -190,6 +190,11 @@ export function decodeOctetString(content: Uint8Array): string {
   return utf8Decoder.decode(content);
 }
 
+/** Raw-bytes OCTET STRING (no UTF-8 round-trip) — for genuinely binary values like SASL/GSSAPI credentials, where `encodeOctetString`'s text convention would corrupt arbitrary bytes. */
+export function encodeRawOctetString(bytes: Uint8Array): Uint8Array {
+  return encodeTLV('universal', UNIVERSAL_TAG.OCTET_STRING, false, bytes);
+}
+
 export function encodeNull(): Uint8Array {
   return encodeTLV('universal', UNIVERSAL_TAG.NULL, false, new Uint8Array(0));
 }

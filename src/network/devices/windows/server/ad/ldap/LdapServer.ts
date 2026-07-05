@@ -15,19 +15,40 @@ import type { TcpSocket } from '@/network/tcp/TcpStack';
 import { DirectoryTree, type DirectoryEntry } from './DirectoryTree';
 import { parseDN, formatDN } from './LdapDN';
 import {
-  type LdapMessage, type ProtocolOp, type PartialAttribute, type LdapResult,
+  type LdapMessage, type ProtocolOp, type PartialAttribute, type LdapResult, type SaslCredentials,
   encodeLdapMessage, decodeLdapMessage, ldapResult, LdapResultCode,
 } from './LdapMessage';
+import { decodeApReq, decodeAuthenticator, decodeEncTicketPart } from '@/network/kerberos/codec';
+import { stringToKey, decryptWithUsage, KU_TICKET, KU_AP_REQ_AUTHENTICATOR } from '@/network/kerberos/crypto';
 
 export interface LdapBindCheck {
   /** Validate a simple-bind DN + password. Anonymous bind (empty name and password) is always accepted per RFC 4511 §5.1.2, matching real DCs' default anonymous-bind allowance. */
   checkBind(name: string, password: string): boolean;
 }
 
+/**
+ * Real Kerberos material a GSSAPI SASL bind (RFC 4511 §4.2,
+ * PRD-Windows-Server-Advanced.md §5 P3) needs to validate an AP-REQ — the
+ * presented service ticket (for this DC's own `ldap/<hostname>`-style SPN,
+ * §5 P2's simplification: a computer-account ticket) is decrypted with
+ * this DC's own computer-account secret (`serviceSecret`), the same key
+ * `KdcSession`'s TGS-REQ handler encrypted it under — never krbtgt's key,
+ * which only the KDC itself holds. Its session key then decrypts the
+ * Authenticator. Omitted (`undefined`) on hosts with no `DirectoryStore`
+ * (mirrors the port-389 listener itself being gated on that).
+ */
+export interface LdapKerberosContext {
+  realm: string;
+  serviceSecret: string;
+}
+
 export interface LdapServerContext {
   tree: DirectoryTree;
   auth: LdapBindCheck;
+  kerberos?: LdapKerberosContext;
 }
+
+const CLOCK_SKEW_SECONDS = 5 * 60;
 
 function treeMessageToResultCode(message: string): number {
   if (message.startsWith('noSuchObject')) return LdapResultCode.noSuchObject;
@@ -68,6 +89,14 @@ export class LdapServerHandler {
     const op = msg.protocolOp;
     switch (op.kind) {
       case 'bindRequest': {
+        if (op.sasl) {
+          this.bound = this.checkSaslBind(op.sasl);
+          this.reply(socket, msg.messageID, {
+            kind: 'bindResponse',
+            result: this.bound ? ldapResult(LdapResultCode.success) : ldapResult(LdapResultCode.invalidCredentials),
+          });
+          return;
+        }
         const anonymous = op.name === '' && op.password === '';
         this.bound = anonymous || this.ctx.auth.checkBind(op.name, op.password);
         this.reply(socket, msg.messageID, {
@@ -148,5 +177,33 @@ export class LdapServerHandler {
 
   private tryParseDn(s: string): ReturnType<typeof parseDN> | null {
     try { return parseDN(s); } catch { return null; }
+  }
+
+  /**
+   * RFC 4511 §4.2 SASL bind, GSSAPI mechanism only: the `credentials` are
+   * a real Kerberos AP-REQ (PRD-Windows-Server-Advanced.md §5 P3) — decrypt
+   * the presented ticket with krbtgt's key, then the Authenticator with
+   * the ticket's session key, and check the Authenticator's principal/
+   * clock skew. No SASL security-layer negotiation (integrity/
+   * confidentiality) is modeled — a single round-trip either grants or
+   * refuses the bind.
+   */
+  private checkSaslBind(sasl: SaslCredentials): boolean {
+    if (sasl.mechanism !== 'GSSAPI' || !this.ctx.kerberos) return false;
+    const { realm, serviceSecret } = this.ctx.kerberos;
+    try {
+      const apReq = decodeApReq(sasl.credentials);
+      const serviceKey = stringToKey(serviceSecret, realm);
+      const ticketPart = decodeEncTicketPart(decryptWithUsage(serviceKey, KU_TICKET, apReq.ticket.encPart.cipher));
+      if (ticketPart.endtime < Math.floor(Date.now() / 1000)) return false;
+
+      const ticketSessionKey = new TextDecoder().decode(ticketPart.key.keyValue);
+      const authenticator = decodeAuthenticator(decryptWithUsage(ticketSessionKey, KU_AP_REQ_AUTHENTICATOR, apReq.authenticator.cipher));
+      const sameCname = authenticator.cname.nameString.join('/') === ticketPart.cname.nameString.join('/');
+      const withinSkew = Math.abs(Math.floor(Date.now() / 1000) - authenticator.ctime) <= CLOCK_SKEW_SECONDS;
+      return sameCname && withinSkew;
+    } catch {
+      return false;
+    }
   }
 }

@@ -25,6 +25,22 @@ import {
   KU_PA_ENC_TIMESTAMP, KU_AS_REP_ENC_PART, KU_TGS_REQ_AUTHENTICATOR, KU_TGS_REP_ENC_PART,
 } from './crypto';
 
+/**
+ * RFC 4120 §5.5.1 — builds an AP-REQ presenting `ticket` (already obtained,
+ * e.g. from an AS or TGS exchange) plus a fresh Authenticator encrypted
+ * under `sessionKey` with the given key-usage number. Shared by the TGS
+ * exchange (usage 7, `KU_TGS_REQ_AUTHENTICATOR`) and any direct
+ * application-server AP-REQ such as LDAP's GSSAPI SASL bind (usage 11,
+ * `KU_AP_REQ_AUTHENTICATOR`, PRD-Windows-Server-Advanced.md §5 P3).
+ */
+export function buildApReq(ticket: Ticket, sessionKey: string, cname: PrincipalName, crealm: string, usage: number): Uint8Array {
+  const authenticatorCipher = encryptWithUsage(
+    sessionKey, usage,
+    encodeAuthenticator({ crealm, cname, ctime: Math.floor(Date.now() / 1000), cusec: 0 }),
+  );
+  return encodeApReq({ apOptions: 0, ticket, authenticator: { etype: AES256_CTS_HMAC_SHA1_96, cipher: authenticatorCipher } });
+}
+
 export interface KerberosConnectResult { ok: boolean; error?: string; client?: KerberosClient }
 
 export interface AsExchangeResult {
@@ -115,15 +131,7 @@ export class KerberosClient {
     const sname = principalName(PrincipalNameType.NT_SRV_HST, serviceName);
     const nonce = this.nextNonce++;
     const till = Math.floor(Date.now() / 1000) + TICKET_REQUEST_LIFETIME_SECONDS;
-
-    const authenticatorCipher = encryptWithUsage(
-      tgtSessionKey, KU_TGS_REQ_AUTHENTICATOR,
-      encodeAuthenticator({ crealm, cname, ctime: Math.floor(Date.now() / 1000), cusec: 0 }),
-    );
-    const paValue = encodeApReq({
-      apOptions: 0, ticket: tgt,
-      authenticator: { etype: AES256_CTS_HMAC_SHA1_96, cipher: authenticatorCipher },
-    });
+    const paValue = buildApReq(tgt, tgtSessionKey, cname, crealm, KU_TGS_REQ_AUTHENTICATOR);
 
     const req: KdcReq = {
       msgType: 'TGS-REQ', padata: [{ type: PA_TGS_REQ, value: paValue }],

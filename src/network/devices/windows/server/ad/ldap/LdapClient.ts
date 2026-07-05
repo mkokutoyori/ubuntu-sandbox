@@ -45,6 +45,13 @@ export class LdapClient {
     return { ok: reply.protocolOp.result.resultCode === LdapResultCode.success, result: reply.protocolOp.result };
   }
 
+  /** RFC 4511 §4.2 SASL bind — `credentials` is the mechanism-specific token (a real Kerberos AP-REQ for `GSSAPI`, PRD-Windows-Server-Advanced.md §5 P3). */
+  bindSasl(mechanism: string, credentials: Uint8Array): LdapOpResult {
+    const [reply] = this.roundTrip({ kind: 'bindRequest', version: 3, name: '', password: '', sasl: { mechanism, credentials } });
+    if (!reply || reply.protocolOp.kind !== 'bindResponse') return { ok: false, result: NO_RESPONSE('bindResponse') };
+    return { ok: reply.protocolOp.result.resultCode === LdapResultCode.success, result: reply.protocolOp.result };
+  }
+
   search(baseObject: string, scope: SearchScope, filter: LdapFilter, attributes: string[] = []): LdapSearchOutcome {
     const replies = this.roundTrip({
       kind: 'searchRequest', baseObject, scope, derefAliases: 0,
