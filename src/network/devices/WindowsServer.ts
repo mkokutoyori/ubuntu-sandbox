@@ -26,6 +26,7 @@ import { WindowsIisRole } from './windows/server/iis/WindowsIisRole';
 import { randomSessionKey } from '@/network/kerberos/crypto';
 import { dialLdap } from './windows/server/ad/ldap/LdapClient';
 import { pullReplication } from './windows/server/ad/replication/ReplicationSession';
+import { createForest, joinForestAsChildDomain, getForestForDomain, type Forest } from './windows/server/ad/forest/Forest';
 
 export interface AdDsOpResult { ok: boolean; message: string }
 
@@ -151,11 +152,66 @@ export class WindowsServer extends WindowsPC {
     this.directoryStore.promoteDomainController(this.getHostname(), safeModeAdminPassword);
     this.directoryStore.ensureKrbtgtPrincipal(randomSessionKey());
     this.directoryStore.newSite(DEFAULT_SITE_NAME);
+    createForest(domainName, netbios, this.directoryStore.getSchemaValidatorForSharing());
     this.provisionSysvol(domainName);
     this.registerDcServices();
     this.provisionDomainDnsZone(domainName);
     this.provisionDefaultDomainPolicy();
     return { ok: true, message: '' };
+  }
+
+  /**
+   * `New-ADDomain -NewDomainName ... -ParentDomainName ...`
+   * (PRD-Windows-Server-Advanced.md §5 P8): creates a new *child* domain
+   * of an existing forest — a genuinely separate `DirectoryStore` (its
+   * own Users/Computers/default groups, its own domain root), but wired
+   * to the SAME `SchemaValidator` instance as the parent's forest so a
+   * schema change made through either domain is enforced in both — see
+   * `forest/Forest.ts`'s header comment for why this is shared by
+   * reference rather than replicated as a separate NC.
+   */
+  newADDomain(
+    newDomainDnsName: string, netbiosName: string | undefined, parentDomainName: string, parentDcAddress: string,
+    credentialUser: string, credentialPassword: string, safeModeAdminPassword: string,
+  ): AdDsOpResult {
+    if (!this.roleManager.isInstalled('AD-Domain-Services')) {
+      return { ok: false, message: 'New-ADDomain : The Active Directory Domain Services role is not installed on this computer.' };
+    }
+    if (this.directoryStore) {
+      return { ok: false, message: 'New-ADDomain : This computer is already configured as a domain controller.' };
+    }
+
+    const conn = dialLdap(this.getTcpStack(), parentDcAddress);
+    if (!conn.ok || !conn.client) {
+      return { ok: false, message: 'New-ADDomain : The specified domain either does not exist or could not be contacted.' };
+    }
+    const bind = conn.client.bind(credentialUser, credentialPassword);
+    conn.client.unbind();
+    if (!bind.ok) {
+      return { ok: false, message: 'New-ADDomain : Logon failure: unknown user name or bad password.' };
+    }
+
+    const netbios = netbiosName ?? newDomainDnsName.split('.')[0].toUpperCase();
+    const join = joinForestAsChildDomain(parentDomainName, newDomainDnsName, netbios);
+    if (!join.ok) {
+      return { ok: false, message: `New-ADDomain : ${join.message}` };
+    }
+
+    this.directoryStore = new DirectoryStore(newDomainDnsName, netbios, safeModeAdminPassword, { sharedSchemaValidator: join.schemaValidator });
+    this.directoryStore.promoteDomainController(this.getHostname(), safeModeAdminPassword);
+    this.directoryStore.ensureKrbtgtPrincipal(randomSessionKey());
+    this.directoryStore.newSite(DEFAULT_SITE_NAME);
+    this.provisionSysvol(newDomainDnsName);
+    this.registerDcServices();
+    this.provisionDomainDnsZone(newDomainDnsName);
+    this.provisionDefaultDomainPolicy();
+    return { ok: true, message: '' };
+  }
+
+  /** `Get-ADForest` — the forest this domain belongs to, or null if this server isn't a DC. */
+  getForest(): Forest | null {
+    if (!this.directoryStore) return null;
+    return getForestForDomain(this.directoryStore.dnsName);
   }
 
   /**

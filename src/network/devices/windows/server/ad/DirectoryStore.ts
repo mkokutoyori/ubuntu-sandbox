@@ -88,10 +88,10 @@ export class DirectoryStore {
     readonly dnsName: string,
     readonly netbiosName: string,
     adminPassword: string,
-    opts: { skipSeed?: boolean } = {},
+    opts: { skipSeed?: boolean; sharedSchemaValidator?: SchemaValidator } = {},
   ) {
     const rootDn = parseDN(this.dnsName.split('.').map(p => `DC=${p}`).join(','));
-    this.schemaValidator = new SchemaValidator();
+    this.schemaValidator = opts.sharedSchemaValidator ?? new SchemaValidator();
     this.tree = new DirectoryTree(rootDn, { objectClass: ['top', 'domain', 'domainDNS'] }, {
       invocationId: this.invocationId, nextUsn: () => ++this.localUsn,
     }, this.schemaValidator);
@@ -101,7 +101,10 @@ export class DirectoryStore {
     this.sites = new SiteRegistry(this.tree);
     this.schema = new SchemaPartition(this.tree, this.schemaValidator);
     if (!opts.skipSeed) {
-      seedDefaultSchema(this.schema);
+      // A shared validator (PRD §5 P8 — a child domain joining an existing
+      // forest) is already seeded by its forest root; seeding again would
+      // just hit harmless-but-noisy "already exists" errors.
+      if (!opts.sharedSchemaValidator) seedDefaultSchema(this.schema);
       this.seedDefaults(adminPassword);
     }
   }
@@ -112,6 +115,8 @@ export class DirectoryStore {
   newObjectClass(schema: ObjectClassSchema): SchemaOpResult { return this.schema.newObjectClass(schema); }
   listSchemaAttributes(): AttributeSchema[] { return this.schema.listAttributes(); }
   listSchemaObjectClasses(): ObjectClassSchema[] { return this.schema.listObjectClasses(); }
+  /** The live schema validator — shared by reference across every domain of a forest (§5 P8). */
+  getSchemaValidatorForSharing(): SchemaValidator { return this.schemaValidator; }
 
   // ─── Sites (PRD-Windows-Server-Advanced.md §5 P6) ──────────────────────
 

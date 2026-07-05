@@ -17,7 +17,7 @@ import { PSRuntimeError } from '@/powershell/runtime/PSRuntime';
 import type { PSValue } from '@/powershell/runtime/PSEnvironment';
 import type {
   IAdProvider, AdUserInfo, AdGroupInfo, AdComputerInfo, AdOrgUnitInfo, AdSiteInfo,
-  AdAttributeSchemaInfo, AdObjectClassSchemaInfo,
+  AdAttributeSchemaInfo, AdObjectClassSchemaInfo, AdForestInfo,
 } from '@/powershell/providers/PSProviders';
 import { psValueToString } from '@/powershell/runtime/PSExpansion';
 import { parseCredentialArg } from './RemotingCmdlets';
@@ -468,4 +468,67 @@ export class NewADObjectClassCmdlet implements ICmdlet {
     if (!res.ok) { ctx.emitError(`New-ADObjectClass : ${res.message}`); return null; }
     return null;
   }
+}
+
+// ── Multi-domain forest (PRD-Windows-Server-Advanced.md §5 P8) ─────────────
+
+export class NewADDomainCmdlet implements ICmdlet {
+  readonly name = 'new-addomain';
+  readonly aliases = [] as const;
+  readonly parameters = ['NewDomainName', 'DomainNetbiosName', 'ParentDomainName', 'Credential', 'Server', 'SafeModeAdministratorPassword'] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const ad = requireAd(ctx, 'New-ADDomain');
+    const newDomainName = psValueToString(ctx.named['newdomainname'] ?? ctx.positional[0] ?? '');
+    if (!newDomainName) {
+      ctx.emitError('New-ADDomain : Cannot process command because of one or more missing mandatory parameters: NewDomainName.');
+      return null;
+    }
+    const parentDomainName = ctx.named['parentdomainname'] !== undefined ? psValueToString(ctx.named['parentdomainname']) : '';
+    if (!parentDomainName) {
+      ctx.emitError('New-ADDomain : Cannot process command because of one or more missing mandatory parameters: ParentDomainName.');
+      return null;
+    }
+    const credentialRaw = ctx.named['credential'] !== undefined ? psValueToString(ctx.named['credential']) : '';
+    if (!credentialRaw) {
+      ctx.emitError('New-ADDomain : Cannot process command because of one or more missing mandatory parameters: Credential.');
+      return null;
+    }
+    const server = ctx.named['server'] !== undefined ? psValueToString(ctx.named['server']) : '';
+    if (!server) {
+      ctx.emitError('New-ADDomain : Cannot process command because of one or more missing mandatory parameters: Server.');
+      return null;
+    }
+    const password = securePasswordOf(ctx, 'safemodeadministratorpassword');
+    if (!password) {
+      ctx.emitError('New-ADDomain : Cannot process command because of one or more missing mandatory parameters: SafeModeAdministratorPassword.');
+      return null;
+    }
+    const { username, password: credentialPassword } = parseCredentialArg(credentialRaw);
+    const netbiosName = ctx.named['domainnetbiosname'] !== undefined ? psValueToString(ctx.named['domainnetbiosname']) : undefined;
+    const res = ad.newDomain(newDomainName, netbiosName, parentDomainName, server, username, credentialPassword, password);
+    if (!res.ok) { ctx.emitError(res.message); return null; }
+    return { Message: 'Success.', Context: 'DCPromo', RebootRequired: false, Status: 0 } as Record<string, PSValue>;
+  }
+}
+
+export class GetADForestCmdlet implements ICmdlet {
+  readonly name = 'get-adforest';
+  readonly aliases = [] as const;
+  readonly parameters = ['Identity'] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const ad = requireAd(ctx, 'Get-ADForest');
+    const forest = ad.getForest();
+    if (!forest) { ctx.emitError('Get-ADForest : Unable to contact the server.'); return null; }
+    return forestToPSObject(forest);
+  }
+}
+
+function forestToPSObject(f: AdForestInfo): Record<string, PSValue> {
+  return {
+    ForestMode: f.functionalLevel,
+    Domains: f.domains.map(d => d.dnsName),
+    RootDomain: f.domains.find(d => !d.parentDnsName)?.dnsName ?? '',
+  };
 }

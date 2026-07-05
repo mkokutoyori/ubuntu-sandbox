@@ -121,6 +121,7 @@ import {
   NewADOrganizationalUnitCmdlet, GetADOrganizationalUnitCmdlet,
   NewADReplicationSiteCmdlet, GetADReplicationSiteCmdlet, NewADReplicationSubnetCmdlet,
   NewADAttributeCmdlet, NewADObjectClassCmdlet,
+  NewADDomainCmdlet, GetADForestCmdlet,
 } from './ActiveDirectoryCmdlets';
 import { AddComputerCmdlet } from './ComputerCmdlets';
 import {
@@ -394,6 +395,8 @@ export function registerCoreCmdlets(registry: CmdletRegistry): void {
   registry.register(new GetADComputerCmdlet());
   registry.register(new NewADOrganizationalUnitCmdlet());
   registry.register(new GetADOrganizationalUnitCmdlet());
+  registry.register(new NewADDomainCmdlet());
+  registry.register(new GetADForestCmdlet());
 
   // ── Domain join (PRD-Windows-Server.md §5 P6) ───────────────────────────────
   registry.register(new AddComputerCmdlet());

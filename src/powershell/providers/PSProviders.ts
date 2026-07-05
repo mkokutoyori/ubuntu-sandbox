@@ -225,6 +225,19 @@ export interface IAdProvider {
   newAttribute(schema: AdAttributeSchemaInfo): AdOpResult;
   /** `New-ADObjectClass`. */
   newObjectClass(schema: AdObjectClassSchemaInfo): AdOpResult;
+
+  /** `New-ADDomain -NewDomainName ... -ParentDomainName ...` (PRD-Windows-Server-Advanced.md §5 P8) — a new child domain of the forest reached via `parentDcAddress`. */
+  newDomain(
+    newDomainDnsName: string, netbiosName: string | undefined, parentDomainName: string, parentDcAddress: string,
+    credentialUser: string, credentialPassword: string, safeModeAdminPassword: string,
+  ): AdOpResult;
+  /** `Get-ADForest` — null if this server isn't a DC. */
+  getForest(): AdForestInfo | null;
+}
+
+export interface AdForestInfo {
+  functionalLevel: string;
+  domains: { dnsName: string; netbiosName: string; parentDnsName?: string }[];
 }
 
 export interface AdSiteInfo { name: string; dn: string }
