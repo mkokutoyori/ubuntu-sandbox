@@ -96,7 +96,7 @@ ci-dessous.
 |---|---|---|---|---|
 | P1 | Varints & format de paquet | — | ✅ terminé | Arthur |
 | P2 | Trames | P1 | ✅ terminé | Arthur |
-| P3 | Protection de paquets (clés de test) | P1, P2 | 🟡 en cours | Arthur |
+| P3 | Protection de paquets (clés de test) | P1, P2 | ✅ terminé | Arthur |
 | P4 | Recouvrement de pertes | P2, P3 | ⬜ disponible | — |
 | P5 | Contrôle de congestion | P4 | ⬜ disponible | — |
 | P6 | Streams | P2 | ✅ terminé | Arthur |
@@ -701,4 +701,26 @@ seulement le consommer.
 - Fichiers concernés : nouveau fichier
   `src/network/quic/packetProtection.ts` (+ `PacketProtectionKeys`
   ajouté à `types.ts`) — purement additif.
-- Statut / résultat : en cours.
+- Statut / résultat : ✅ terminé. 9 tests : round-trip corps (XOR
+  keystream simulé, clé+iv+numéro de paquet), ciphertext différent
+  selon le numéro de paquet, masque d'en-tête déterministe pour un
+  même échantillon et différent pour un échantillon différent,
+  round-trip en-tête (octet + numéro de paquet), seuls les 4 bits bas
+  de l'octet d'en-tête sont masqués (bits de forme/type préservés), et
+  **propriété d'indépendance structurelle exigée par §6.3** : un
+  en-tête corrompu n'empêche pas `unprotectBody` de récupérer le corps
+  valide (clé/numéro de paquet/ciphertext suffisent, jamais l'en-tête),
+  et un corps corrompu n'empêche pas `unprotectHeader` de récupérer
+  l'en-tête valide à partir de l'échantillon déjà établi (l'extraction
+  de l'échantillon depuis un tampon fil en direct est un souci
+  d'intégration transport reporté à une phase ultérieure, hors
+  périmètre de cette unité). `tsc`/`eslint` propres. Régression ciblée
+  (les 4 fichiers `quic-*` + dns-encrypted-transports) : 5 fichiers, 83
+  tests, 0 échec.
+- Suggestion pour la suite : `PRD-QUIC.md`/P4 (recouvrement de pertes)
+  dépend de P2+P3 (tous deux terminés) et est maintenant disponible.
+  C'est ma 4ᵉ phase HTTP/QUIC depuis la dernière régression complète
+  (P8-h2c, QUIC-P1, QUIC-P2, QUIC-P6) — une régression complète
+  `network-v2/` est en cours en arrière-plan, comme convenu par la
+  cadence toutes-les-4-phases ; résultat à suivre dans une prochaine
+  entrée.

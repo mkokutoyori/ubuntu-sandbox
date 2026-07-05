@@ -29,6 +29,18 @@ export type QuicPacket = QuicLongHeaderPacket | QuicShortHeaderPacket | QuicVers
 
 export const QUIC_VERSION_1 = 0x00000001;
 
+export type PacketNumberSpace = 'initial' | 'handshake' | 'application';
+
+// RFC 9000 §5.1 — keys derived per packet-number space. In P3 these are
+// supplied directly by tests; from P8 onward they come from the real TLS
+// key schedule (labels "quic key"/"quic iv"/"quic hp", §5.1) of PRD-TLS.md.
+export interface PacketProtectionKeys {
+  space: PacketNumberSpace;
+  key: string;
+  iv: string;
+  headerProtectionKey: string;
+}
+
 // Connection IDs (RFC 9000 §5.1) are raw byte sequences of 0-20 bytes;
 // represented here as hex strings, matching the project's convention for
 // other wire addresses (MACAddress, IPAddress).
