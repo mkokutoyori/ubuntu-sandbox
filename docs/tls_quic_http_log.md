@@ -98,7 +98,7 @@ ci-dessous.
 | P2 | Trames | P1 | ✅ terminé | Arthur |
 | P3 | Protection de paquets (clés de test) | P1, P2 | ✅ terminé | Arthur |
 | P4 | Recouvrement de pertes | P2, P3 | ✅ terminé | Arthur |
-| P5 | Contrôle de congestion | P4 | ⬜ disponible | — |
+| P5 | Contrôle de congestion | P4 | 🟡 en cours | Arthur |
 | P6 | Streams | P2 | ✅ terminé | Arthur |
 | P7 | Machine à états de connexion (sans TLS réel) | P3–P6 | ⬜ disponible | — |
 | P8 | Intégration TLS 1.3 réelle | **PRD-TLS.md implémenté**, P7 | ⬜ disponible | — |
@@ -752,3 +752,18 @@ seulement le consommer.
   dépend de ce P4 et est maintenant disponible. La régression complète
   lancée en arrière-plan à la phase précédente (4ᵉ phase HTTP/QUIC)
   est toujours en cours — résultat à suivre dans une prochaine entrée.
+
+### [2026-07-05 (heure non horodatée par l'outil) UTC] Arthur — PRD-QUIC/P5 — ANNONCE
+- Tâche : `src/network/quic/congestionControl.ts` — RFC 9002 §7,
+  NewReno simplifié : fenêtre initiale (`kInitialWindow`), croissance
+  exponentielle en slow start, croissance additive en congestion
+  avoidance une fois le seuil atteint, réduction de moitié
+  (`kLossReductionFactor`) sur événement de congestion avec période de
+  recovery (pas de double réduction dans la même période), fenêtre
+  minimale (`kMinimumWindow`) exposée séparément pour la congestion
+  persistante (détection de la congestion persistante elle-même laissée
+  à l'appelant — non explicitement exigée par le test §6.5 du PRD, qui
+  porte sur slow start/avoidance/recovery).
+- Fichiers concernés : nouveau fichier
+  `src/network/quic/congestionControl.ts` — purement additif.
+- Statut / résultat : en cours.
