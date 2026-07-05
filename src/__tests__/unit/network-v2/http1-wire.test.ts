@@ -93,6 +93,22 @@ describe('Http1Wire — encode/decode round-trip (no network)', () => {
     expect(parsed.ok).toBe(false);
     if (!parsed.ok) expect(parsed.status).toBe(400);
   });
+
+  it('round-trips an arbitrary binary body byte-for-byte, not just valid UTF-8 text', () => {
+    // Bytes deliberately including values that are not valid standalone
+    // UTF-8 (e.g. 0xC0, 0xFF): a real TextEncoder/TextDecoder round-trip
+    // would corrupt these (replaced with U+FFFD), which matters for any
+    // non-text media type (e.g. application/dns-message).
+    const original = new Uint8Array([0xc0, 0x00, 0x02, 0x0a, 0xff, 0x80, 0x81, 0x00, 0x41, 0x42]);
+    const req = createRequest('POST', '/binary');
+    req.headers.append('Content-Type', 'application/octet-stream');
+    req.body = original;
+    const raw = encodeRequest(req);
+
+    const parsed = parseRequest(raw);
+    expect(parsed.ok).toBe(true);
+    if (parsed.ok) expect(parsed.message.body).toEqual(original);
+  });
 });
 
 describe('Http1Wire — chunked transfer-encoding (RFC 9112 §7.1)', () => {

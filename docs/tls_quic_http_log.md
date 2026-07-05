@@ -124,7 +124,7 @@ ci-dessous.
 | P10 | HTTP/3 (9114 + QPACK) | P1, P9 | ⬜ disponible | — |
 | P11 | Observabilité | P2–P10 | ⬜ disponible | — |
 | P12 | Migration IIS/curl/wget | P2, P7 | ⬜ disponible | — |
-| P13 | Migration DoH | P7 | ⬜ disponible | — |
+| P13 | Migration DoH | P7 | 🟡 en cours | Arthur |
 
 **Rappel de non-chevauchement** : `src/network/quic/` est possédé en
 intégralité par `PRD-QUIC.md` (voir sa note de fusion `336960e0` corrigeant
@@ -1215,3 +1215,40 @@ seulement le consommer.
   par la même chose. `PRD-HTTP.md`/P12 (migration IIS/curl/wget) et P13
   (migration DoH) restent les phases les plus substantielles actuellement
   disponibles pour la suite.
+
+### [2026-07-05 (heure non horodatée par l'outil) UTC] Arthur — PRD-HTTP/P13 — ANNONCE
+- Tâche : `PRD-HTTP.md`/P13 — migration de `DnsHttpsTransport.ts` (DoH,
+  RFC 8484) sur l'adaptateur HTTP/1.1 + HTTPS de ce moteur (P7), à la place
+  de son framing texte fait main par-dessus `SimulatedTls.ts`.
+- Bug trouvé et corrigé *avant* la migration elle-même, en investiguant les
+  risques : `Http1Wire.ts` (P2, déjà fusionné) traitait le corps des
+  messages via un aller-retour `TextEncoder`/`TextDecoder` (UTF-8 réel), ce
+  qui corrompt silencieusement tout corps binaire n'étant pas de l'UTF-8
+  valide (remplacement par U+FFFD) — vérifié empiriquement avec des octets
+  comme `0xC0`/`0xFF` (un simple octet d'adresse IPv4 ≥128 suffit). Comme
+  `application/dns-message` (le corps que DoH doit transporter) est du
+  binaire arbitraire, migrer DoH tel quel aurait silencieusement corrompu
+  des réponses DNS contenant des adresses IP courantes. Corrigé dans
+  `Http1Wire.ts` (fichier possédé par ce PRD, P2, aucune collision) en
+  remplaçant l'aller-retour `TextEncoder`/`TextDecoder` du corps par la
+  convention « chaîne binaire, un caractère = un octet » déjà utilisée
+  ailleurs dans le projet (`Http2Connection.ts`/`QuicConnection.ts`/
+  `WebSocketConnection.ts`/`DnsHttpsTransport.ts`) — strictement
+  rétrocompatible pour tout corps ASCII pur (100 % des tests existants),
+  correct de surcroît pour du binaire arbitraire. Nouveau test dédié dans
+  `http1-wire.test.ts` (octets non-UTF-8 valides, round-trip byte-exact).
+  Régression ciblée immédiate : 151 tests (http1-wire, https, http2,
+  http-cache, http-cookies, http-auth, http-websocket,
+  dns-encrypted-transports) au vert avant de poursuivre.
+- Fichiers concernés pour la migration elle-même : réécriture de
+  `DnsHttpsTransport.ts` sur `HttpsClientSession`/`HttpsServerSession` (P7)
+  — signature étendue de `bindDnsHttpsServer`/`queryDnsOverHttps` pour
+  accepter respectivement un certificat serveur réel et un
+  `CertificateVerifier` (la négociation TLS est désormais réelle, donc
+  nécessite une vraie PKI, contrairement au stand-in `SimulatedTls.ts` qui
+  n'en avait pas) ; ALPN `http/1.1` (le stand-in prétendait `h2` sans
+  jamais faire de vrai framing HTTP/2). Mise à jour de
+  `dns-encrypted-transports.test.ts` (section DoH + test de parité de
+  transport) pour fournir une CA/un certificat/un verifier, sans changer
+  les assertions observables (mêmes codes, mêmes réponses DNS attendues).
+- Statut / résultat : 🟡 en cours.

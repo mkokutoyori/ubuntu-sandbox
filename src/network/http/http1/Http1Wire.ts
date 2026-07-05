@@ -2,8 +2,27 @@ import { OrderedMultimap, type HttpMessage, type HttpMethod } from '../semantics
 import { reasonPhraseFor } from '../semantics/statusCodes';
 
 const CRLF = '\r\n';
-const encoder = new TextEncoder();
-const decoder = new TextDecoder();
+
+// A body is arbitrary bytes (RFC 9112 doesn't require it to be text at
+// all — e.g. `application/dns-message`, images, or any other binary media
+// type), so it's carried through this module one byte per JS string
+// character rather than through a real UTF-8 `TextEncoder`/`TextDecoder`
+// round-trip: the latter is lossy for any byte sequence that isn't valid
+// UTF-8 (silently replaced with U+FFFD), which would corrupt binary
+// bodies. For pure-ASCII bodies (the common case in this project's own
+// tests) the two conventions are byte-for-byte identical, so this is a
+// strict superset fix, not a behavior change for existing callers.
+function bytesToBinaryString(bytes: Uint8Array): string {
+  let out = '';
+  for (const b of bytes) out += String.fromCharCode(b);
+  return out;
+}
+
+function binaryStringToBytes(text: string): Uint8Array {
+  const bytes = new Uint8Array(text.length);
+  for (let i = 0; i < text.length; i++) bytes[i] = text.charCodeAt(i) & 0xff;
+  return bytes;
+}
 
 export interface Http1EncodeOptions {
   chunked?: boolean;
@@ -23,7 +42,7 @@ export interface Http1ParseSuccess {
 export type Http1ParseResult = Http1ParseSuccess | Http1ParseError;
 
 function bodyTextOf(msg: HttpMessage): string {
-  return msg.body ? decoder.decode(msg.body) : '';
+  return msg.body ? bytesToBinaryString(msg.body) : '';
 }
 
 function encodeHead(startLine: string, headers: OrderedMultimap<string>, bodyText: string, opts?: Http1EncodeOptions): string {
@@ -37,7 +56,7 @@ function encodeHead(startLine: string, headers: OrderedMultimap<string>, bodyTex
     payload = encodeChunkedBody([bodyText]);
   } else {
     out.delete('Transfer-Encoding');
-    out.set('Content-Length', String(encoder.encode(bodyText).length));
+    out.set('Content-Length', String(bodyText.length));
   }
 
   const lines = [startLine, ...out.entries().map(([k, v]) => `${k}: ${v}`)];
@@ -66,7 +85,7 @@ export function encodeResponse(msg: HttpMessage, opts?: Http1EncodeOptions): str
 export function encodeChunkedBody(chunks: string[], trailers?: OrderedMultimap<string>): string {
   const parts: string[] = [];
   for (const chunk of chunks) {
-    const size = encoder.encode(chunk).length;
+    const size = chunk.length;
     parts.push(size.toString(16) + CRLF + chunk + CRLF);
   }
   parts.push('0' + CRLF);
@@ -199,7 +218,7 @@ export function parseRequest(raw: string): Http1ParseResult {
       method: method as HttpMethod,
       target,
       headers: head.headers,
-      body: bodyResult.body.length > 0 ? encoder.encode(bodyResult.body) : null,
+      body: bodyResult.body.length > 0 ? binaryStringToBytes(bodyResult.body) : null,
       httpVersion: '1.1',
     },
   };
@@ -229,7 +248,7 @@ export function parseResponse(raw: string, opts?: Http1ParseResponseOptions): Ht
       statusCode,
       reasonPhrase,
       headers: head.headers,
-      body: bodyResult.body.length > 0 ? encoder.encode(bodyResult.body) : null,
+      body: bodyResult.body.length > 0 ? binaryStringToBytes(bodyResult.body) : null,
       httpVersion: '1.1',
     },
   };
