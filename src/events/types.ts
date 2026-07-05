@@ -55,6 +55,7 @@ import type { QuicDomainEvent } from '@/network/quic/events';
 import type { HttpDomainEvent } from '@/network/http/events';
 import type { FtpDomainEvent } from '@/network/ftp/events';
 import type { TftpDomainEvent } from '@/network/tftp/events';
+import type { SftpDomainEvent } from '@/network/protocols/ssh/sftp/events';
 import type { NetworkOsAccountEventEnvelope } from '@/network/devices/router/aaa/NetworkOsAccount';
 import type { SshSessionRecord } from '@/network/devices/router/aaa/SshSessionRegistry';
 import type { EigrpDomainEvent } from '@/network/eigrp/events';
@@ -353,6 +354,7 @@ export type DomainEvent =
   | HttpDomainEvent
   | FtpDomainEvent
   | TftpDomainEvent
+  | SftpDomainEvent
   | DistributeTopics<NetworkOsAccountEventEnvelope['topic'], NetworkOsAccountEventEnvelope['payload']>
   | { topic: 'router.ssh.session.opened'; payload: { deviceId: string; session: SshSessionRecord } }
   | { topic: 'router.ssh.session.closed'; payload: { deviceId: string; session: SshSessionRecord; reason: string } }

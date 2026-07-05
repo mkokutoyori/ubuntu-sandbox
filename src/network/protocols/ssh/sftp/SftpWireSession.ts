@@ -19,7 +19,13 @@
  * accepted but no-ops); `ATTRS` carries the v4-v6 `type`/`acl`/
  * `extended` fields whenever the backing `SftpFileAttrs` has them.
  * `FSTAT`/`SETSTAT`/`FSETSTAT` still reply `SSH_FX_OP_UNSUPPORTED` (no
- * matching dispatcher command exists yet).
+ * matching dispatcher command exists yet). Every `handle()` call emits
+ * `sftp.packet.received`/`sftp.packet.sent`; handle allocation/release
+ * emits `sftp.handle.opened`/`sftp.handle.closed`; `READ`/`WRITE` emit
+ * `sftp.transfer.progress` (§2.1.18/P17, `events.ts`/`observables.ts`),
+ * via an optional `eventBus` — mirrors `network/ftp/`'s inline,
+ * server-side-only emission (no timer-driven actor engine needed for a
+ * synchronous request/response protocol).
  */
 import { SftpCommandDispatcher } from './SftpCommandDispatcher';
 import type { SftpCommandContext } from './ISftpCommand';
@@ -29,8 +35,10 @@ import { isOk } from '../Result';
 import type { SshError } from '../Result';
 import type { SftpWirePacket, SftpWireAttrs } from './SftpWireCodec';
 import { SFTP_RENAME_FLAG } from './SftpWireCodec';
-import { SftpHandleTable } from './SftpHandleTable';
+import { SftpHandleTable, type SftpHandleState } from './SftpHandleTable';
 import { SSH_FX, statusFromError } from './SftpStatusCodes';
+import type { IEventBus } from '@/events/EventBus';
+import { randomSftpSessionId } from './events';
 
 /**
  * §2.1.16-17/P15-P16 — this engine's negotiation ceiling. It proposes
@@ -83,11 +91,13 @@ export interface SftpWireSessionConfig {
   readonly vfs: ISftpFileSystem;
   readonly userCtx: SshUserContext;
   readonly rootPath?: string;
+  readonly eventBus?: IEventBus;
 }
 
 export class SftpWireSession {
   private readonly dispatcher = SftpCommandDispatcher.defaults();
   private readonly handles = new SftpHandleTable();
+  private readonly sessionId = randomSftpSessionId();
   private cwd: string;
   private negotiatedVersion = SFTP_MIN_VERSION;
 
@@ -112,7 +122,41 @@ export class SftpWireSession {
     return this.status(requestId, SSH_FX.OK, 'OK');
   }
 
+  private openHandle(state: SftpHandleState): string {
+    const handle = this.handles.open(state);
+    this.config.eventBus?.publish({
+      topic: 'sftp.handle.opened',
+      payload: { sessionId: this.sessionId, handle, kind: state.kind, path: state.path },
+    });
+    return handle;
+  }
+
+  private closeHandle(handle: string): void {
+    this.handles.close(handle);
+    this.config.eventBus?.publish({ topic: 'sftp.handle.closed', payload: { sessionId: this.sessionId, handle } });
+  }
+
+  private reportProgress(handle: string, bytesTransferred: number): void {
+    this.config.eventBus?.publish({
+      topic: 'sftp.transfer.progress',
+      payload: { sessionId: this.sessionId, handle, bytesTransferred },
+    });
+  }
+
   handle(pkt: SftpWirePacket): SftpWirePacket {
+    this.config.eventBus?.publish({
+      topic: 'sftp.packet.received',
+      payload: { sessionId: this.sessionId, packetType: pkt.type, requestId: 'requestId' in pkt ? pkt.requestId : undefined },
+    });
+    const reply = this.dispatchPacket(pkt);
+    this.config.eventBus?.publish({
+      topic: 'sftp.packet.sent',
+      payload: { sessionId: this.sessionId, packetType: reply.type, requestId: 'requestId' in reply ? reply.requestId : undefined },
+    });
+    return reply;
+  }
+
+  private dispatchPacket(pkt: SftpWirePacket): SftpWirePacket {
     switch (pkt.type) {
       case 'INIT':
         this.negotiatedVersion = Math.max(SFTP_MIN_VERSION, Math.min(pkt.version, SFTP_SERVER_MAX_VERSION));
@@ -161,7 +205,7 @@ export class SftpWireSession {
         if (this.config.vfs.getEntryType(path) !== 'directory') {
           return this.status(pkt.requestId, SSH_FX.NO_SUCH_FILE, 'No such directory.');
         }
-        const handle = this.handles.open({ kind: 'dir', path, drained: false });
+        const handle = this.openHandle({ kind: 'dir', path, drained: false });
         return { type: 'HANDLE', requestId: pkt.requestId, handle };
       }
 
@@ -187,12 +231,12 @@ export class SftpWireSession {
             const existing = this.config.vfs.readFile(path);
             if (existing.ok) initial = existing.value;
           }
-          const handle = this.handles.open({ kind: 'file-write', path, buffer: initial });
+          const handle = this.openHandle({ kind: 'file-write', path, buffer: initial });
           return { type: 'HANDLE', requestId: pkt.requestId, handle };
         }
         const result = this.dispatcher.dispatch('get', { path: pkt.filename }, this.ctx());
         if (!isOk(result)) { const s = statusFromError(result.error as SshError); return this.status(pkt.requestId, s.code, s.message); }
-        const handle = this.handles.open({ kind: 'file-read', path, content: (result.value as { content: string }).content });
+        const handle = this.openHandle({ kind: 'file-read', path, content: (result.value as { content: string }).content });
         return { type: 'HANDLE', requestId: pkt.requestId, handle };
       }
 
@@ -201,6 +245,7 @@ export class SftpWireSession {
         if (!state || state.kind !== 'file-read') return this.status(pkt.requestId, SSH_FX.FAILURE, 'Invalid handle.');
         if (pkt.offset >= state.content.length) return this.status(pkt.requestId, SSH_FX.EOF, 'End of file.');
         const slice = state.content.slice(pkt.offset, pkt.offset + pkt.length);
+        this.reportProgress(pkt.handle, slice.length);
         return { type: 'DATA', requestId: pkt.requestId, data: stringToBytes(slice) };
       }
 
@@ -208,13 +253,14 @@ export class SftpWireSession {
         const state = this.handles.get(pkt.handle);
         if (!state || state.kind !== 'file-write') return this.status(pkt.requestId, SSH_FX.FAILURE, 'Invalid handle.');
         state.buffer = writeAt(state.buffer, pkt.offset, bytesToString(pkt.data));
+        this.reportProgress(pkt.handle, pkt.data.length);
         return this.okStatus(pkt.requestId);
       }
 
       case 'CLOSE': {
         const state = this.handles.get(pkt.handle);
         if (!state) return this.status(pkt.requestId, SSH_FX.FAILURE, 'Invalid handle.');
-        this.handles.close(pkt.handle);
+        this.closeHandle(pkt.handle);
         if (state.kind === 'file-write') {
           const result = this.dispatcher.dispatch('put', { path: state.path, content: state.buffer }, this.ctx());
           if (!isOk(result)) { const s = statusFromError(result.error as SshError); return this.status(pkt.requestId, s.code, s.message); }
