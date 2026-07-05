@@ -1650,7 +1650,7 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
 
     this.registerSecurityDisplayCommands(t);
 
-    for (const kw of ['ftp server enable', 'snmp-agent', 'info-center enable',
+    for (const kw of ['snmp-agent', 'info-center enable',
       'ntp-service enable', 'telnet server enable', 'http server',
       'icmp ttl-exceeded send', 'icmp host-unreachable send']) {
       t.register(kw, `Toggle: ${kw}`, () => {
@@ -1658,6 +1658,10 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
         return '';
       });
     }
+    t.register('ftp server enable', 'Start the FTP server', () => {
+      this.r()._setFtpServerEnabled(true);
+      return '';
+    });
     t.registerGreedy('ip routing-table limit', 'Configure IPv4 routing-table limit', (args) => {
       const r = this.routerRef as unknown as { _setRoutingTableLimit?: (max: number, thresholdPct?: number) => void } | null;
       if (!r) return '';
@@ -1673,7 +1677,7 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     });
     t.registerGreedy('ftp', 'FTP server config', (args) => {
       if (args[0] === 'server' && (args[1] === 'enable' || !args[1])) {
-        this.r()._setGlobalToggle?.('ftp', true);
+        this.r()._setFtpServerEnabled(true);
       }
       return '';
     });

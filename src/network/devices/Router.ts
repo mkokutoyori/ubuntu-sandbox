@@ -55,6 +55,8 @@ import { TcpStack } from '../tcp/TcpStack';
 import { SshServerHandler } from '../protocols/ssh/server/SshServerHandler';
 import { RouterSshServerContext } from '../protocols/ssh/server/RouterSshServerContext';
 import { SshHostKey } from '../protocols/ssh/SshHostKey';
+import { FtpServer } from '../ftp/FtpServer';
+import { RouterSftpFileSystem } from '../protocols/ssh/sftp/RouterSftpFileSystem';
 import type { SshExecTarget } from '../protocols/ssh/server/SshExecTarget';
 import { getDefaultScheduler, type IScheduler } from '@/events/Scheduler';
 import { waitForEvent, WaitForEventTimeoutError } from '@/events/waitForEvent';
@@ -2299,6 +2301,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     this._globalToggles.set(key, false);
     if (key === 'ssh' || /^stelnet/.test(commandTail)) this._setSshServerEnabled(false);
     if (key === 'dhcp') this._getDHCPServerInternal().disable();
+    if (key === 'ftp server' || key === 'ftp') this._setFtpServerEnabled(false);
   }
 
   // ─── SSH server surface (SshExecTarget) ────────────────────────
@@ -2637,6 +2640,66 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     this.sshServerEnabled = enabled;
     if (this._sshHost) this._sshHost.setSshActive(enabled);
     this.syncSshListener();
+  }
+
+  // ─── FTP server surface (§2.1.20/P19) ───────────────────────────
+  //
+  // `ftp server enable` used to just flip a write-only toggle nothing
+  // ever read (`_setGlobalToggle('ftp', true)`); this mounts a real
+  // FtpServer on the router's own TcpStack, authenticated through the
+  // same AAA-backed credential store as SSH (`checkPassword`), serving
+  // a minimal flash: file surface (§2.1.19's `RouterSftpFileSystem`,
+  // the same adapter the SCP/SFTP side uses for running-config-style
+  // files) — real STOR/RETR/LIST against real files, not a config
+  // serializer.
+
+  protected ftpServerEnabled = false;
+  private ftpServer: FtpServer | null = null;
+  private flashFiles = new Map<string, string>();
+
+  _writeFlashFile(name: string, content: string): void { this.flashFiles.set(name, content); }
+  _readFlashFile(name: string): string | null { return this.flashFiles.get(name) ?? null; }
+  _listFlashFiles(): readonly string[] { return [...this.flashFiles.keys()]; }
+
+  isFtpServerEnabled(): boolean { return this.ftpServerEnabled; }
+
+  _setFtpServerEnabled(enabled: boolean): void {
+    this.ftpServerEnabled = enabled;
+    this.syncFtpListener();
+  }
+
+  private syncFtpListener(): void {
+    if (this.ftpServerEnabled && !this.ftpServer) {
+      this.ftpServer = this.buildFtpServer();
+      this.ftpServer.start();
+    }
+    if (!this.ftpServerEnabled && this.ftpServer) {
+      this.ftpServer.stop();
+      this.ftpServer = null;
+    }
+  }
+
+  private primaryIpAddress(): string {
+    for (const port of this.ports.values()) {
+      const ip = port.getIPAddress();
+      if (ip) return ip.toString();
+    }
+    return '0.0.0.0';
+  }
+
+  private buildFtpServer(): FtpServer {
+    const fs = new RouterSftpFileSystem({
+      read: (path) => this._readFlashFile(path),
+      write: (path, content) => { this._writeFlashFile(path, content); return true; },
+      list: () => this._listFlashFiles(),
+    });
+    return new FtpServer(this.tcpv2, this.primaryIpAddress(), {
+      users: new Map(),
+      authenticate: (user, password) => this.checkPassword(user, password),
+      fs,
+      rootPath: '/',
+      eventBus: this.getBus(),
+    });
   }
   _setVtyTransportInput(t: 'ssh' | 'telnet' | 'all' | 'none'): void {
     this.vtyTransportInput = t;

@@ -27,6 +27,13 @@ import { randomFtpConnectionId } from './events';
 export interface FtpServerConfig {
   /** username -> password. RFC 959 doesn't mandate a specific credential store; this mirrors the ad hoc user maps used elsewhere in this project's protocol tests (RADIUS, EAP-TTLS). */
   readonly users: ReadonlyMap<string, string>;
+  /**
+   * Optional pluggable authenticator, checked instead of `users` when set
+   * (§2.1.20/P19 — lets a host whose real credential store only holds
+   * hashed secrets, e.g. a router's AAA store, authenticate FTP logins
+   * without needing a parallel plaintext-password map).
+   */
+  readonly authenticate?: (username: string, password: string) => boolean;
   readonly fs: ISftpFileSystem;
   /** Initial working directory; defaults to `/`. Ignored for a user with a chroot entry (§2.1.9 — the chroot's own root is always `/`). */
   readonly rootPath?: string;
@@ -211,8 +218,11 @@ export class FtpServerSession {
 
   private handlePass(cmd: FtpCommand): FtpReply {
     if (this.state !== 'awaiting-password') return reply(503, 'Login with USER first.');
-    const expected = this.username !== null ? this.config.users.get(this.username) : undefined;
-    if (expected === undefined || expected !== (cmd.argument ?? '')) {
+    const password = cmd.argument ?? '';
+    const ok = this.username === null ? false
+      : this.config.authenticate ? this.config.authenticate(this.username, password)
+      : this.config.users.get(this.username) === password;
+    if (!ok) {
       this.state = 'awaiting-user';
       this.authenticated = false;
       return reply(530, 'Login incorrect.');
