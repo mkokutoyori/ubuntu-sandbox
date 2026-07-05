@@ -1,16 +1,27 @@
+/**
+ * DNS-over-HTTPS (RFC 8484), migrated onto the shared HTTP/1.1 + HTTPS
+ * engine (PRD-HTTP.md §5 P7/P13) instead of the hand-rolled framing this
+ * module previously built directly over `SimulatedTls.ts`. A real TLS 1.3
+ * handshake now backs every query, so the caller must supply real PKI
+ * material (a server certificate/key to bind, a `CertificateVerifier` to
+ * query) — `SimulatedTls.ts`'s stand-in handshake had none.
+ */
 import type { IPAddress } from '@/network/core/types';
 import type { EndHost } from '@/network/devices/EndHost';
+import type { X509Certificate } from '@/network/pki/X509Certificate';
+import type { PkiPrivateKey } from '@/network/pki/PkiKeyPair';
+import type { CertificateVerifier } from '@/network/pki/CertificateVerifier';
 import { encodeDnsMessage, decodeDnsMessage } from '@/network/dns/wire/DnsMessageCodec';
 import type { DnsMessage } from '@/network/dns/wire/DnsMessage';
 import type { DnsMessageHandler } from '@/network/dns/transport/DnsUdpTransport';
-import { bindTlsByteService, unbindTlsByteService, sendTlsRequest } from '@/network/dns/transport/SimulatedTls';
+import { createRequest, createResponse } from '@/network/http/semantics/types';
+import { HttpsClientSession } from '@/network/http/https/HttpsClientSession';
+import { HttpsServerSession } from '@/network/http/https/HttpsServerSession';
 
 export const DOH_PORT = 443;
-export const DOH_ALPN = 'h2';
+export const DOH_ALPN = 'http/1.1';
 export const DOH_PATH = '/dns-query';
 export const DOH_CONTENT_TYPE = 'application/dns-message';
-
-const HEADER_SEPARATOR = '\r\n\r\n';
 
 export interface DohOptions {
   readonly port?: number;
@@ -19,126 +30,73 @@ export interface DohOptions {
   readonly timeoutMs?: number;
 }
 
-interface HttpRequest {
-  readonly method: string;
-  readonly path: string;
-  readonly headers: ReadonlyMap<string, string>;
-  readonly body: Uint8Array;
+export interface DohServerTlsConfig {
+  readonly serverCert: X509Certificate;
+  readonly serverPrivateKey: PkiPrivateKey;
 }
 
-function textToBytes(text: string): number[] {
-  const bytes: number[] = [];
-  for (let i = 0; i < text.length; i++) bytes.push(text.charCodeAt(i) & 0xff);
-  return bytes;
+export interface DohClientTlsConfig {
+  readonly verifier: CertificateVerifier;
 }
 
-function bytesToText(bytes: Uint8Array): string {
-  let text = '';
-  for (const byte of bytes) text += String.fromCharCode(byte);
-  return text;
-}
+const runningServers = new Map<string, HttpsServerSession>();
 
-function findHeaderEnd(bytes: Uint8Array): number {
-  const marker = textToBytes(HEADER_SEPARATOR);
-  for (let i = 0; i + marker.length <= bytes.length; i++) {
-    if (marker.every((b, j) => bytes[i + j] === b)) return i;
-  }
-  return -1;
-}
-
-function serializeHttpRequest(hostName: string, path: string, body: Uint8Array): Uint8Array {
-  const head =
-    `POST ${path} HTTP/1.1\r\n` +
-    `host: ${hostName}\r\n` +
-    `content-type: ${DOH_CONTENT_TYPE}\r\n` +
-    `accept: ${DOH_CONTENT_TYPE}\r\n` +
-    `content-length: ${body.length}${HEADER_SEPARATOR}`;
-  return Uint8Array.from([...textToBytes(head), ...body]);
-}
-
-function serializeHttpResponse(status: number, reason: string, body: Uint8Array): Uint8Array {
-  const head =
-    `HTTP/1.1 ${status} ${reason}\r\n` +
-    `content-type: ${DOH_CONTENT_TYPE}\r\n` +
-    `content-length: ${body.length}${HEADER_SEPARATOR}`;
-  return Uint8Array.from([...textToBytes(head), ...body]);
-}
-
-function parseHttpRequest(bytes: Uint8Array): HttpRequest | null {
-  const headerEnd = findHeaderEnd(bytes);
-  if (headerEnd === -1) return null;
-
-  const lines = bytesToText(bytes.slice(0, headerEnd)).split('\r\n');
-  const [method, path] = lines[0].split(' ');
-  if (!method || !path) return null;
-
-  const headers = new Map<string, string>();
-  for (const line of lines.slice(1)) {
-    const colon = line.indexOf(':');
-    if (colon > 0) headers.set(line.slice(0, colon).trim().toLowerCase(), line.slice(colon + 1).trim());
-  }
-  return { method, path, headers, body: bytes.slice(headerEnd + HEADER_SEPARATOR.length) };
-}
-
-function parseHttpResponse(bytes: Uint8Array): { status: number; body: Uint8Array } | null {
-  const headerEnd = findHeaderEnd(bytes);
-  if (headerEnd === -1) return null;
-
-  const statusLine = bytesToText(bytes.slice(0, headerEnd)).split('\r\n')[0];
-  const status = parseInt(statusLine.split(' ')[1], 10);
-  if (Number.isNaN(status)) return null;
-
-  return { status, body: bytes.slice(headerEnd + HEADER_SEPARATOR.length) };
-}
-
-export function bindDnsHttpsServer(host: EndHost, handler: DnsMessageHandler, options: DohOptions = {}): void {
+export function bindDnsHttpsServer(
+  host: EndHost, handler: DnsMessageHandler, tlsConfig: DohServerTlsConfig, options: DohOptions = {},
+): void {
   const path = options.path ?? DOH_PATH;
-  bindTlsByteService(host, options.port ?? DOH_PORT, DOH_ALPN, (requestBytes) => {
-    const request = parseHttpRequest(requestBytes);
-    if (!request || request.method !== 'POST') {
-      return serializeHttpResponse(400, 'Bad Request', new Uint8Array());
-    }
-    if (request.path !== path) {
-      return serializeHttpResponse(404, 'Not Found', new Uint8Array());
-    }
-    if (request.headers.get('content-type') !== DOH_CONTENT_TYPE) {
-      return serializeHttpResponse(415, 'Unsupported Media Type', new Uint8Array());
-    }
-    let query: DnsMessage;
-    try {
-      query = decodeDnsMessage(request.body);
-    } catch {
-      return serializeHttpResponse(400, 'Bad Request', new Uint8Array());
-    }
-    return serializeHttpResponse(200, 'OK', encodeDnsMessage(handler(query)));
-  });
+  const port = options.port ?? DOH_PORT;
+
+  const server = new HttpsServerSession(
+    host.getTcpStack(), port,
+    { serverCert: tlsConfig.serverCert, serverPrivateKey: tlsConfig.serverPrivateKey, alpnProtocols: [DOH_ALPN] },
+    (request) => {
+      if (request.method !== 'POST') return createResponse(400, 'Bad Request');
+      if (request.target !== path) return createResponse(404, 'Not Found');
+      if (request.headers.get('Content-Type') !== DOH_CONTENT_TYPE) return createResponse(415, 'Unsupported Media Type');
+
+      let query: DnsMessage;
+      try {
+        query = decodeDnsMessage(request.body ?? new Uint8Array());
+      } catch {
+        return createResponse(400, 'Bad Request');
+      }
+
+      const response = createResponse(200, 'OK');
+      response.headers.set('Content-Type', DOH_CONTENT_TYPE);
+      response.body = encodeDnsMessage(handler(query));
+      return response;
+    },
+  );
+  server.start();
+  runningServers.set(`${host.id}:${port}`, server);
 }
 
 export function unbindDnsHttpsServer(host: EndHost, port: number = DOH_PORT): void {
-  unbindTlsByteService(host, port);
+  const key = `${host.id}:${port}`;
+  runningServers.get(key)?.stop();
+  runningServers.delete(key);
 }
 
 export async function queryDnsOverHttps(
-  host: EndHost,
-  serverIP: IPAddress,
-  query: DnsMessage,
-  options: DohOptions = {},
+  host: EndHost, serverIP: IPAddress, query: DnsMessage, tlsConfig: DohClientTlsConfig, options: DohOptions = {},
 ): Promise<DnsMessage | null> {
-  const request = serializeHttpRequest(
-    options.sni ?? serverIP.toString(),
-    options.path ?? DOH_PATH,
-    encodeDnsMessage(query),
+  const client = new HttpsClientSession(
+    host.getTcpStack(), serverIP.toString(), options.port ?? DOH_PORT,
+    { verifier: tlsConfig.verifier, alpn: [DOH_ALPN] },
   );
-  const responseBytes = await sendTlsRequest(
-    host, serverIP.toString(), options.port ?? DOH_PORT, DOH_ALPN, request,
-    { sni: options.sni, timeoutMs: options.timeoutMs },
-  );
-  if (!responseBytes) return null;
 
-  const response = parseHttpResponse(responseBytes);
-  if (!response || response.status !== 200) return null;
+  const request = createRequest('POST', options.path ?? DOH_PATH);
+  request.headers.set('Host', options.sni ?? serverIP.toString());
+  request.headers.set('Content-Type', DOH_CONTENT_TYPE);
+  request.body = encodeDnsMessage(query);
+
+  const result = client.send(request);
+  client.close();
+  if (!result.ok || result.response?.statusCode !== 200) return null;
+
   try {
-    const message = decodeDnsMessage(response.body);
+    const message = decodeDnsMessage(result.response.body ?? new Uint8Array());
     return message.id === query.id ? message : null;
   } catch {
     return null;

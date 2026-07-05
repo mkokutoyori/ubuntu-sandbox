@@ -18,6 +18,10 @@ import { bindDnsTlsServer, queryDnsOverTls, DOT_PORT } from '@/network/dns/trans
 import { bindDnsHttpsServer, queryDnsOverHttps } from '@/network/dns/transport/DnsHttpsTransport';
 import { bindDnsQuicServer, DnsQuicClient } from '@/network/dns/transport/DnsQuicTransport';
 import type { DnsMessage } from '@/network/dns/wire/DnsMessage';
+import { CertificateAuthority } from '@/network/pki/CertificateAuthority';
+import { CertificateVerifier } from '@/network/pki/CertificateVerifier';
+
+const NOW = Date.now();
 
 function makeQuery(qname: string, id = 5): DnsMessage {
   return {
@@ -48,12 +52,16 @@ function buildTopology() {
   const engine = new AuthoritativeServer(store);
   const handler = (q: DnsMessage) => engine.answer(q);
 
+  const ca = CertificateAuthority.generate('CN=doh-test-ca', { now: NOW });
+  const issued = ca.issueCertificate({ subject: 'CN=10.0.1.10', notBefore: NOW - 1000, notAfter: NOW + 1e9 });
+  const dohVerifier = new CertificateVerifier({ trustAnchors: [ca.rootCertificate], clock: () => NOW });
+
   bindDnsUdpServer(srv, handler);
   bindDnsTlsServer(srv, handler);
-  bindDnsHttpsServer(srv, handler);
+  bindDnsHttpsServer(srv, handler, { serverCert: issued.cert, serverPrivateKey: issued.privateKey });
   bindDnsQuicServer(srv, handler);
 
-  return { pc, srv };
+  return { pc, srv, dohVerifier };
 }
 
 const SERVER = () => new IPAddress('10.0.1.10');
@@ -125,9 +133,9 @@ describe('DoT — DNS over TLS on TCP/853 (RFC 7858)', () => {
 
 describe('DoH — DNS over HTTPS (RFC 8484)', () => {
   it('answers a POST /dns-query carrying application/dns-message', async () => {
-    const { pc } = buildTopology();
+    const { pc, dohVerifier } = buildTopology();
 
-    const reply = await queryDnsOverHttps(pc, SERVER(), makeQuery('www.example.com', 31));
+    const reply = await queryDnsOverHttps(pc, SERVER(), makeQuery('www.example.com', 31), { verifier: dohVerifier });
 
     expect(reply).not.toBeNull();
     expect(reply!.flags.aa).toBe(true);
@@ -135,9 +143,9 @@ describe('DoH — DNS over HTTPS (RFC 8484)', () => {
   }, 15000);
 
   it('rejects a request for a path other than /dns-query', async () => {
-    const { pc } = buildTopology();
+    const { pc, dohVerifier } = buildTopology();
 
-    const reply = await queryDnsOverHttps(pc, SERVER(), makeQuery('www.example.com'), {
+    const reply = await queryDnsOverHttps(pc, SERVER(), makeQuery('www.example.com'), { verifier: dohVerifier }, {
       path: '/not-dns', timeoutMs: 500,
     });
 
@@ -180,13 +188,13 @@ describe('DoQ — DNS over QUIC on UDP/853 (RFC 9250)', () => {
 
 describe('Transport parity (PRD Phase 8 exit criterion)', () => {
   it('returns the same answer over UDP, DoT, DoH and DoQ', async () => {
-    const { pc } = buildTopology();
+    const { pc, dohVerifier } = buildTopology();
     const quic = new DnsQuicClient(pc, SERVER());
 
     const answers = await Promise.all([
       queryDnsOverUdp(pc, SERVER(), makeQuery('www.example.com', 51)),
       queryDnsOverTls(pc, SERVER(), makeQuery('www.example.com', 52)),
-      queryDnsOverHttps(pc, SERVER(), makeQuery('www.example.com', 53)),
+      queryDnsOverHttps(pc, SERVER(), makeQuery('www.example.com', 53), { verifier: dohVerifier }),
       quic.query(makeQuery('www.example.com', 54)),
     ]);
 

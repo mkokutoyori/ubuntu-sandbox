@@ -124,7 +124,7 @@ ci-dessous.
 | P10 | HTTP/3 (9114 + QPACK) | P1, P9 | ⬜ disponible | — |
 | P11 | Observabilité | P2–P10 | ⬜ disponible | — |
 | P12 | Migration IIS/curl/wget | P2, P7 | ⬜ disponible | — |
-| P13 | Migration DoH | P7 | 🟡 en cours | Arthur |
+| P13 | Migration DoH | P7 | ✅ terminé | Arthur |
 
 **Rappel de non-chevauchement** : `src/network/quic/` est possédé en
 intégralité par `PRD-QUIC.md` (voir sa note de fusion `336960e0` corrigeant
@@ -1339,3 +1339,51 @@ seulement le consommer.
   propre à ce PRD à prendre ; je vais regarder s'il reste un chantier
   disponible et non revendiqué sur `PRD-QUIC.md`/`PRD-HTTP.md` avant de
   décider de la suite, pour ne pas dupliquer le travail d'Arthur.
+
+### [2026-07-05 (heure non horodatée par l'outil) UTC] Arthur — PRD-HTTP/P13 — TERMINÉ
+- Réalisé exactement le périmètre annoncé :
+  - `DnsHttpsTransport.ts` réécrit sur `HttpsClientSession`/
+    `HttpsServerSession` (P7) : `bindDnsHttpsServer(host, handler,
+    tlsConfig, options?)` et `queryDnsOverHttps(host, serverIP, query,
+    tlsConfig, options?)` — signature étendue d'un paramètre `tlsConfig`
+    obligatoire (`{ serverCert, serverPrivateKey }` côté serveur,
+    `{ verifier }` côté client), puisque la négociation TLS est
+    désormais réelle et nécessite une vraie PKI, contrairement au
+    stand-in `SimulatedTls.ts` qui n'en avait aucune. `DOH_ALPN` passe de
+    `'h2'` (jamais un vrai framing HTTP/2 dans l'ancien code — une simple
+    étiquette) à `'http/1.1'` (le seul protocole que P7 sait réellement
+    parler par-dessus TLS). Le corps `application/dns-message` est
+    transporté par le `HttpMessage.body` (`Uint8Array`) du moteur HTTP
+    partagé plutôt que par un framing texte fait main.
+  - `dns-encrypted-transports.test.ts` (section DoH + test de parité de
+    transport) mis à jour pour générer une CA/un certificat/un verifier
+    (`CertificateAuthority.generate`/`CertificateVerifier`, même motif que
+    `https.test.ts`) et les transmettre — assertions observables
+    inchangées (mêmes codes de statut, mêmes réponses DNS).
+- Bug trouvé et corrigé *avant* la migration (détaillé dans l'annonce
+  ci-dessus) : `Http1Wire.ts` corrompait silencieusement tout corps
+  binaire non-UTF-8 valide via un aller-retour `TextEncoder`/
+  `TextDecoder` — corrigé par la convention « chaîne binaire, un
+  caractère = un octet », strictement rétrocompatible.
+- Aucun autre bug trouvé à l'exécution — les 12 tests de
+  `dns-encrypted-transports.test.ts` (DoT/DoH/DoQ/parité) sont passés au
+  vert dès la première exécution après la migration, la correction
+  préalable de `Http1Wire.ts` ayant déjà éliminé le risque de corruption
+  identifié.
+- Statut / résultat : ✅ terminé. `tsc --noEmit` propre, `eslint` propre.
+  Régression ciblée : 377 tests (24 fichiers — dns-*, http-*, http1-*,
+  http2*, https) au vert. Aucun autre fichier du projet n'importe
+  `DnsHttpsTransport.ts` en dehors de ce test (vérifié par recherche) —
+  pas de risque de régression externe. Régression complète en cours
+  d'exécution en tâche de fond au moment de ce commit (5ᵉ phase depuis la
+  dernière régression complète, cadence des 4 phases dépassée) ; résultat
+  à suivre dans une entrée ultérieure si un échec inattendu apparaît,
+  sinon considérer le silence comme confirmation.
+- Suggestion pour la suite : `PRD-HTTP.md`/P12 (migration IIS/curl/wget)
+  reste la phase la plus substantielle actuellement disponible et
+  indépendante. `PRD-QUIC.md`/P8 reste bloqué en l'état — l'agent TLS a
+  indiqué regarder l'exposition de `clientHandshakeTrafficSecret`/
+  `serverHandshakeTrafficSecret` à l'instant, donc à surveiller avant de
+  retenter P8. **Mise à jour post-rebase : l'agent TLS a effectivement
+  exposé ces deux secrets (commit `4cb1ad37`) — `PRD-QUIC.md`/P8 est donc
+  maintenant débloqué, je vais l'attaquer ensuite.**
