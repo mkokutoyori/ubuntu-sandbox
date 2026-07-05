@@ -10,12 +10,33 @@ import {
   type DistinguishedName, type Rdn, parseDN, dnEquals, parentOf, isDescendantOf,
 } from './LdapDN';
 import { type LdapFilter, type AttributeSource, evaluateFilter } from './LdapFilter';
+import type { HighWatermarkVector } from '../replication/HighWatermarkVector';
+
+/**
+ * Multi-DC replication stamp (PRD-Windows-Server-Advanced.md §5 P4,
+ * inspired by MS-DRSR's per-object USN, simplified to entry granularity
+ * rather than real AD's per-attribute versioning — this simulator's scope
+ * excludes attribute-level conflict resolution/tombstones/USN rollback).
+ */
+export interface EntryReplMeta {
+  readonly originatingInvocationId: string;
+  readonly originatingUsn: number;
+  readonly timestamp: number; // epoch seconds — last-writer-wins tiebreak across invocationIds
+}
+
+/** Supplied by a replicating `DirectoryStore` so every local write is auto-stamped; absent (`undefined`) for any `DirectoryTree` that doesn't participate in replication (e.g. the LDAP wire-protocol unit tests), which never touch `replMeta`. */
+export interface ReplicationIdentity {
+  readonly invocationId: string;
+  nextUsn(): number;
+}
 
 export interface DirectoryEntry {
   readonly dn: DistinguishedName;
   /** lowercase attribute name → values (case preserved in the values themselves). */
   readonly attributes: Map<string, string[]>;
   readonly children: Map<string, DirectoryEntry>;
+  /** Null on a non-replicating tree, or before this entry has ever been written on a replicating one (never true after `addEntry`, since that always stamps). */
+  replMeta: EntryReplMeta | null;
 }
 
 export type SearchScope = 'base' | 'one' | 'sub';
@@ -46,10 +67,19 @@ export class DirectoryTree {
   private readonly root: DirectoryEntry;
   private readonly byDn = new Map<string, DirectoryEntry>();
 
-  constructor(baseDn: string | DistinguishedName, rootAttributes: Record<string, string[]> = {}) {
+  constructor(
+    baseDn: string | DistinguishedName,
+    rootAttributes: Record<string, string[]> = {},
+    private readonly replication?: ReplicationIdentity,
+  ) {
     const dn = typeof baseDn === 'string' ? parseDN(baseDn) : baseDn;
-    this.root = { dn, attributes: toAttrMap(rootAttributes), children: new Map() };
+    this.root = { dn, attributes: toAttrMap(rootAttributes), children: new Map(), replMeta: this.stampFor() };
     this.byDn.set(this.dnIndexKey(dn), this.root);
+  }
+
+  private stampFor(): EntryReplMeta | null {
+    if (!this.replication) return null;
+    return { originatingInvocationId: this.replication.invocationId, originatingUsn: this.replication.nextUsn(), timestamp: Math.floor(Date.now() / 1000) };
   }
 
   /** Canonical index key: each RDN's AVAs sorted+lowercased, so order-independent multi-valued RDNs (RFC 4514 §2.3) index identically — matches `dnEquals`. */
@@ -69,7 +99,7 @@ export class DirectoryTree {
     if (parentDn === null) return { ok: false, message: 'noSuchObject: no parent' };
     const parent = this.getByDn(parentDn);
     if (!parent) return { ok: false, message: 'noSuchObject: parent does not exist' };
-    const entry: DirectoryEntry = { dn, attributes: toAttrMap(attributes), children: new Map() };
+    const entry: DirectoryEntry = { dn, attributes: toAttrMap(attributes), children: new Map(), replMeta: this.stampFor() };
     parent.children.set(rdnKey(dn), entry);
     this.byDn.set(this.dnIndexKey(dn), entry);
     return { ok: true, message: '' };
@@ -108,7 +138,42 @@ export class DirectoryTree {
         else entry.attributes.set(key, remaining);
       }
     }
+    if (this.replication) entry.replMeta = this.stampFor();
     return { ok: true, message: '' };
+  }
+
+  /** Every entry whose replication stamp is newer than what `vector` already reflects for its originating DC — what a replication partner pulling from this tree hasn't seen yet (PRD-Windows-Server-Advanced.md §5 P4). No-op (`[]`) on a non-replicating tree. */
+  changedSince(vector: HighWatermarkVector): DirectoryEntry[] {
+    return this.allDescendants(this.root.dn).filter((e) => {
+      if (!e.replMeta) return false;
+      return e.replMeta.originatingUsn > (vector.usnByInvocationId.get(e.replMeta.originatingInvocationId) ?? 0);
+    });
+  }
+
+  /**
+   * Writes a peer DC's own version of an entry, preserving its
+   * originating stamp (never re-stamped as a local write) — last-writer-
+   * wins by timestamp if the entry already exists locally. Creates the
+   * entry if absent (silently skipped if its parent hasn't replicated
+   * yet — picked up on a later cycle, same as MS-DRSR's linked-attribute
+   * convergence-over-multiple-cycles behavior). Deletions are not
+   * replicated (no tombstones modeled, per PRD §2.2 scope).
+   */
+  applyReplicatedEntry(dn: DistinguishedName, attributes: Record<string, string[]>, stamp: EntryReplMeta): void {
+    const existing = this.getByDn(dn);
+    if (existing) {
+      if (existing.replMeta && existing.replMeta.timestamp > stamp.timestamp) return;
+      existing.attributes.clear();
+      for (const [k, v] of toAttrMap(attributes)) existing.attributes.set(k, v);
+      existing.replMeta = stamp;
+      return;
+    }
+    const parentDn = parentOf(dn);
+    const parent = parentDn ? this.getByDn(parentDn) : null;
+    if (!parent) return;
+    const entry: DirectoryEntry = { dn, attributes: toAttrMap(attributes), children: new Map(), replMeta: stamp };
+    parent.children.set(rdnKey(dn), entry);
+    this.byDn.set(this.dnIndexKey(dn), entry);
   }
 
   /** RFC 4511 §4.5 SearchRequest — real scope + filter evaluation over the tree. */

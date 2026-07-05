@@ -81,6 +81,7 @@ import { LdapServerHandler } from './windows/server/ad/ldap/LdapServer';
 import { KdcSessionHandler } from '@/network/kerberos/KdcSession';
 import { dialKdc } from '@/network/kerberos/KerberosClient';
 import { KerberosTicketCache } from '@/network/kerberos/KerberosTicketCache';
+import { ReplicationServerHandler, AD_REPLICATION_PORT, pullReplication, type ReplicationPullResult } from './windows/server/ad/replication/ReplicationSession';
 import { dialWinRm, type WinRmDialResult } from './windows/server/winrm/WinRmClient';
 import { type DomainMembership, type DomainSession, parseDomainQualifiedUser } from './windows/domain/DomainTypes';
 import { joinDomain, type DomainJoinResult } from './windows/domain/DomainJoinClient';
@@ -439,6 +440,31 @@ export class WindowsPC extends EndHost implements UserAccountHost {
         new KdcSessionHandler({ store }).register(socket);
       },
     });
+
+    // TCP replication listener on port 135 (simplified real-shaped
+    // MS-DRSR pull endpoint — PRD-Windows-Server-Advanced.md §5 P4).
+    // Refuses (drops) the connection until this server is a domain
+    // controller, mirroring the LDAP/KDC listeners above.
+    this.getTcpStack().listen(AD_REPLICATION_PORT, {
+      onAccept: (socket) => {
+        const store = this.getDirectoryStore();
+        if (!store) { socket.close(); return; }
+        new ReplicationServerHandler(store).register(socket);
+      },
+    });
+  }
+
+  /**
+   * One AD replication pull cycle against `partnerIp` (PRD-Windows-
+   * Server-Advanced.md §5 P4) — dials the partner's TCP/135, exchanges
+   * high-watermark vectors, and applies whatever the partner has that
+   * this DC doesn't. Manually triggered (no KCC/scheduled replication
+   * modeled, per PRD §2.2 scope).
+   */
+  replicateFrom(partnerIp: string): ReplicationPullResult {
+    const store = this.getDirectoryStore();
+    if (!store) return { ok: false, error: 'This computer is not a domain controller.', applied: 0 };
+    return pullReplication(this.getTcpStack(), partnerIp, store);
   }
 
   /** Best-effort reverse DNS for the SMB session table's ClientComputerName column. */

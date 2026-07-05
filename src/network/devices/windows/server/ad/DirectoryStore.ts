@@ -15,10 +15,14 @@
  * genuine LDAP client.
  */
 
-import { DirectoryTree, type DirectoryEntry } from './ldap/DirectoryTree';
+import { DirectoryTree, type DirectoryEntry, type EntryReplMeta } from './ldap/DirectoryTree';
 import { parseDN, formatDN, leafValue, type DistinguishedName } from './ldap/LdapDN';
 import type { LdapBindCheck } from './ldap/LdapServer';
 import type { AdUser, AdGroup, AdComputer, AdOrgUnit, Gpo, GpoSettings } from './AdTypes';
+import { generateId } from '@/network/core/types';
+import {
+  type HighWatermarkVector, emptyHighWatermarkVector, recordUsn, cloneHighWatermarkVector,
+} from './replication/HighWatermarkVector';
 
 export interface DirOpResult { ok: boolean; message: string }
 
@@ -58,6 +62,11 @@ export class DirectoryStore {
   private readonly usersOuDn: DistinguishedName;
   private readonly computersOuDn: DistinguishedName;
   private readonly policiesDn: DistinguishedName;
+  /** This DC's stable replication identity (PRD-Windows-Server-Advanced.md §5 P4, MS-DRSR's invocationId) — one per `DirectoryStore` instance, for its whole lifetime. */
+  private readonly invocationId = `invocation-${generateId()}`;
+  private localUsn = 0;
+  /** Highest USN already absorbed from each other known DC, via any replication partner — advances as `applyReplicatedEntry` runs. */
+  private readonly inboundHighWatermark: HighWatermarkVector = emptyHighWatermarkVector();
 
   constructor(
     readonly dnsName: string,
@@ -65,7 +74,9 @@ export class DirectoryStore {
     adminPassword: string,
   ) {
     const rootDn = parseDN(this.dnsName.split('.').map(p => `DC=${p}`).join(','));
-    this.tree = new DirectoryTree(rootDn, { objectClass: ['top', 'domain', 'domainDNS'] });
+    this.tree = new DirectoryTree(rootDn, { objectClass: ['top', 'domain', 'domainDNS'] }, {
+      invocationId: this.invocationId, nextUsn: () => ++this.localUsn,
+    });
     this.usersOuDn = [...parseDN('CN=Users'), ...rootDn];
     this.computersOuDn = [...parseDN('CN=Computers'), ...rootDn];
     this.policiesDn = [...parseDN('CN=Policies'), ...parseDN('CN=System'), ...rootDn];
@@ -80,6 +91,31 @@ export class DirectoryStore {
 
   /** The real DIT this store operates on — `LdapServerHandler` serves this same tree over TCP/389. */
   getTree(): DirectoryTree { return this.tree; }
+
+  // ─── Multi-DC replication (PRD-Windows-Server-Advanced.md §5 P4) ──────
+
+  getInvocationId(): string { return this.invocationId; }
+  getLocalUsn(): number { return this.localUsn; }
+
+  /** The vector to send a replication partner: what this DC already knows, from itself and from every other DC it's absorbed via replication — so the partner only returns genuinely new objects. */
+  getOutboundHighWatermark(): HighWatermarkVector {
+    const vector = cloneHighWatermarkVector(this.inboundHighWatermark);
+    recordUsn(vector, this.invocationId, this.localUsn);
+    return vector;
+  }
+
+  /** Every local entry a partner requesting `partnerVector` hasn't seen yet. */
+  changesSince(partnerVector: HighWatermarkVector): DirectoryEntry[] {
+    return this.tree.changedSince(partnerVector);
+  }
+
+  /** Applies one entry pulled from a replication partner and advances this DC's record of how caught-up it is with that entry's originating DC. */
+  applyReplicatedEntry(dn: string, attributes: Record<string, string[]>, stamp: EntryReplMeta): void {
+    let parsed: DistinguishedName;
+    try { parsed = parseDN(dn); } catch { return; }
+    this.tree.applyReplicatedEntry(parsed, attributes, stamp);
+    recordUsn(this.inboundHighWatermark, stamp.originatingInvocationId, stamp.originatingUsn);
+  }
 
   private ouDn(name: string): DistinguishedName { return [...parseDN(`OU=${name}`), ...this.tree.getRootDn()]; }
   private cnDn(cn: string, containerDn: DistinguishedName): DistinguishedName { return [...parseDN(`CN=${cn}`), ...containerDn]; }
