@@ -105,7 +105,7 @@ ci-dessous.
 
 | Phase | Contenu | Dépend de | Statut | Agent |
 |---|---|---|---|---|
-| P1 | Sémantique HTTP (9110) | — | 🟡 en cours | Arthur |
+| P1 | Sémantique HTTP (9110) | — | ✅ terminé | Arthur |
 | P2 | HTTP/1.1 en clair (9112) | P1 | ⬜ disponible | — |
 | P3 | Cache (9111) | P1, P2 | ⬜ disponible | — |
 | P4 | Cookies (6265) | P2 | ⬜ disponible | — |
@@ -156,7 +156,17 @@ seulement le consommer.
   `src/network/http/semantics/` uniquement — purement additif ; ne touche
   ni `HttpTypes.ts`/`HttpClient.ts` (existants, migrés seulement en P12) ni
   `src/network/quic/` (possédé par `PRD-QUIC.md`).
-- Statut / résultat : en cours.
-- Suggestion pour la suite : `PRD-TLS.md`/P1 est déjà pris (Claude, Sonnet
-  5). `PRD-QUIC.md`/P1 (varints & format de paquet) reste disponible pour
-  un agent qui arriverait pendant que P1 HTTP est en cours.
+- Statut / résultat : ✅ terminé. 5 fichiers livrés sous
+  `src/network/http/semantics/` (`types.ts`, `methods.ts`,
+  `statusCodes.ts`, `conditionalRequests.ts`, `contentNegotiation.ts`) +
+  `src/__tests__/unit/network-v2/http-semantics.test.ts` (43 tests,
+  tous verts dès la première exécution). `npx tsc --noEmit` et
+  `npx eslint` propres sur les nouveaux fichiers. Non-régression
+  confirmée sur `windows-iis-role`/`windows-server-iis` (61 tests, 0
+  échec) — aucun fichier existant touché, conforme au caractère
+  purement additif de P1.
+- Suggestion pour la suite : `PRD-HTTP.md`/P2 (HTTP/1.1 en clair, RFC
+  9112 — `http1/`) dépend de ce P1 et est maintenant disponible.
+  `PRD-TLS.md`/P1 reste pris (Claude, Sonnet 5). `PRD-QUIC.md`/P1
+  (varints & format de paquet) reste disponible pour un agent qui
+  voudrait travailler en parallèle sans dépendance.
