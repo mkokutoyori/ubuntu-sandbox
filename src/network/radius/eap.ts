@@ -32,6 +32,7 @@ export type EapType =
   | 'nak'
   | 'md5-challenge'
   | 'tls'
+  | 'ttls'
   | 'peap';
 
 export const EAP_TYPE: Record<EapType, number> = {
@@ -40,6 +41,7 @@ export const EAP_TYPE: Record<EapType, number> = {
   nak: 3,
   'md5-challenge': 4,
   tls: 13,
+  ttls: 21,
   peap: 25,
 };
 
@@ -82,7 +84,10 @@ export function encodeEapPacket(eap: EapPacket): Uint8Array {
     typeData = new Uint8Array(1 + value.length);
     typeData[0] = value.length;
     typeData.set(value, 1);
-  } else if (hasType && eap.eapType === 'tls') {
+  } else if (hasType && (eap.eapType === 'tls' || eap.eapType === 'peap' || eap.eapType === 'ttls')) {
+    // RFC 5216 §2.1's L/M/S flag-byte Type-Data framing, reused verbatim by
+    // PEAP and RFC 5281 EAP-TTLS (both wrap the same kind of TLS-record
+    // fragment stream — only the EAP Type number differs).
     const dataBytes = hexToBytes(eap.tlsData ?? '');
     const flags = eap.tlsFlags ?? { length: false, more: false, start: false };
     const flagByte = (flags.length ? 0x80 : 0) | (flags.more ? 0x40 : 0) | (flags.start ? 0x20 : 0);
@@ -134,7 +139,7 @@ export function decodeEapPacket(bytes: Uint8Array): EapPacket | null {
       ? { type: 'eap', code, identifier, eapType, md5Challenge: value }
       : { type: 'eap', code, identifier, eapType, md5Response: value };
   }
-  if (eapType === 'tls') {
+  if (eapType === 'tls' || eapType === 'peap' || eapType === 'ttls') {
     if (typeData.length < 1) return null;
     const flagByte = typeData[0];
     const tlsFlags = {

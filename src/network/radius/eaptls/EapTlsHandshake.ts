@@ -36,8 +36,21 @@ export interface EapTlsServerFinished {
   readonly finished: string;
 }
 
+/**
+ * PEAP/EAP-TTLS "tunneled data" — once the outer TLS tunnel is established,
+ * both an inner authentication method's own messages ride inside one of
+ * these instead of a real TLS `application_data` record (matching this
+ * module's existing abstraction level: real framing/fragmentation, no real
+ * record-layer encryption underneath).
+ */
+export interface EapTlsInnerData {
+  readonly kind: 'inner-data';
+  readonly hex: string;
+}
+
 export type EapTlsFlight =
-  | EapTlsClientHello | EapTlsServerFlight | EapTlsClientFlight | EapTlsServerFinished;
+  | EapTlsClientHello | EapTlsServerFlight | EapTlsClientFlight | EapTlsServerFinished
+  | EapTlsInnerData;
 
 export function encodeFlight(flight: EapTlsFlight): Uint8Array {
   return utf8ToBytes(JSON.stringify(flight));

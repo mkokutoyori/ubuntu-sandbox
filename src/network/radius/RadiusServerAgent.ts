@@ -145,7 +145,7 @@ export class RadiusServerAgent {
 
   setSharedSecret(secret: string): void { this.config.sharedSecret = secret; }
 
-  /** RFC 5216 EAP-TLS — when set, an Access-Request's EAP-Response/Identity starts an EAP-TLS conversation instead of EAP-MD5 (no NAK negotiation between the two: one method is offered, chosen by this setting). `null` restores EAP-MD5 (the default). */
+  /** RFC 5216 EAP-TLS / PEAP / RFC 5281 EAP-TTLS — when set, an Access-Request's EAP-Response/Identity starts a TLS-tunnel conversation instead of EAP-MD5 (no NAK negotiation between methods: exactly one is offered, chosen by `config.eapType`, default 'tls'). PEAP/EAP-TTLS additionally need `config.innerAuth` (see `InnerAuth.ts`) — without it they'd behave like plain EAP-TLS under a different wire type. `null` restores EAP-MD5 (the default). */
   setEapTlsConfig(config: EapTlsConfig | null): void { this.eapTlsConfig = config; }
 
   addUser(
@@ -458,7 +458,9 @@ export class RadiusServerAgent {
       return;
     }
 
-    if (eap.code === 'response' && eap.eapType === 'tls' && incomingState) {
+    if (eap.code === 'response'
+        && (eap.eapType === 'tls' || eap.eapType === 'peap' || eap.eapType === 'ttls')
+        && incomingState) {
       this.handleEapTlsResponse(inPort, dstIp, clientPort, request, username, eap, incomingState, dedupKey);
       return;
     }

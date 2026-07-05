@@ -196,12 +196,26 @@ partiel. Le moteur doit être complété **sans casser** les suites existantes
   ce codec ne le fragmente pas sur plusieurs attributs (`codec.ts`) — le
   MTU par défaut d'EAP-TLS (200 octets de TLS Data) est choisi pour rester
   sous cette limite RADIUS, pas pour des raisons EAP-TLS elles-mêmes.
-  **PEAP et EAP-TTLS restent hors périmètre** : tous deux ont besoin, en
-  plus de ce qui précède, d'un tunnel interne chiffré portant une SECONDE
-  méthode d'authentification (souvent MS-CHAPv2, déjà implémenté ici) —
-  une couche supplémentaire non construite dans cette passe. Voir
+  ✅ **PEAP et EAP-TTLS également implémentés**, en réutilisant le même
+  tunnel externe (`EapTlsServerSession`/`EapTlsPeerSession` acceptent
+  maintenant un `eapType: 'tls'|'peap'|'ttls'` et un `innerAuth` optionnel
+  — champs additifs, zéro changement de comportement pour l'EAP-TLS pur
+  déjà livré) : une fois le tunnel établi, la conversation bascule vers
+  une méthode interne au lieu de conclure directement (`InnerAuth.ts`).
+  **EAP-TTLS** : authentification interne PAP en clair (« TTLS-PAP », le
+  cas réel le plus courant) plutôt que les AVP Diameter complètes du
+  RFC 5281 §9. **PEAP** : une VRAIE conversation EAP imbriquée
+  (Identity → MD5-Challenge), réutilisant tel quel le codec `eap.ts` et la
+  crypto MD5 déjà testée — les déploiements réels imbriquent presque
+  toujours EAP-MSCHAPv2 (RFC 2759, EAP-Type 26) plutôt qu'EAP-MD5, mais ce
+  format d'encapsulation EAP-MSCHAPv2 est distinct du MS-CHAPv2-en-VSA-RADIUS
+  déjà implémenté (`mschapv2.ts`) et n'a pas été construit — EAP-MD5 est un
+  choix légitime au sens du protocole (le cadre PEAP est agnostique à la
+  méthode interne), juste pas le plus répandu. Ni client cert requis pour
+  les deux (l'authentification du pair se fait dans le tunnel). Voir
   `eaptls-fragmentation.test.ts`, `eaptls-handshake.test.ts`,
-  `dot1x-radius-eaptls.test.ts`.
+  `eaptls-inner-auth.test.ts`, `peap-ttls-handshake.test.ts`,
+  `dot1x-radius-eaptls.test.ts`, `dot1x-radius-peap-ttls.test.ts`.
 - ~~**RADIUS/TCP et RadSec (TLS)** (RFC 6613/6614) — valeur pédagogique faible ici.~~
   🟡 **RADIUS/TCP implémenté** (`RadiusTcpClient`/`RadiusTcpServer` dans
   `RadiusTcpTransport.ts`, câblés sur Cisco/Huawei/Linux Server via le
