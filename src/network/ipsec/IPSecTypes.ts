@@ -462,7 +462,7 @@ export interface SADscpEcnConfig {
   /** Fixed DSCP value when mode='set' (0-63) */
   dscpValue: number;
   /** DSCP mapping table inner→outer when mode='map' */
-  dscpMap: Map<number, number>;
+  dscpMap: ReadonlyMap<number, number>;
   /**
    * ECN handling per RFC 6040:
    *   - true  : copy ECN bits from inner to outer on encap;
