@@ -147,7 +147,9 @@ describe('dig / nslookup / host over UDP/53', () => {
   it('dig times out when the server is not cabled', async () => {
     const { pc } = buildDnsTopology({ cabled: false });
 
-    const out = await pc.executeCommand('dig @10.0.1.10 webserver.example');
+    // +tries=1: this test only cares that dig times out at all, not about the
+    // (now honored) default of 3 attempts — see PRD-Nslookup-Dig-Rndc-Runas.md P3.
+    const out = await pc.executeCommand('dig @10.0.1.10 webserver.example +tries=1');
 
     expect(out).toContain('connection timed out; no servers could be reached');
   }, 15000);

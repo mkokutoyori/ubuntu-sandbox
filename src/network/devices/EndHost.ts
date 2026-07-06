@@ -2034,10 +2034,11 @@ export abstract class EndHost extends Equipment {
     timeoutMs: number = 2000,
     options: DnsQueryOptions = {},
   ): Promise<DnsMessage | null> {
+    const port = options.port ?? DNS_PORT;
     if (options.tcp) {
       const query = buildLegacyQueryMessage(nextDnsTransactionId(), name, qtype, options);
       if (!query) return null;
-      return queryDnsOverTcp(this, serverIP, query, DNS_PORT, timeoutMs);
+      return queryDnsOverTcp(this, serverIP, query, port, timeoutMs);
     }
     const wire = this.encodeDnsQuery(name, qtype, options);
     if (!wire) return null;
@@ -2070,7 +2071,7 @@ export abstract class EndHost extends Equipment {
       }
 
       const sent = this.sendUdpDatagramTo(
-        serverIP, DNS_PORT, sourcePort, wire.bytes, wire.bytes.length,
+        serverIP, port, sourcePort, wire.bytes, wire.bytes.length,
       );
       if (!sent) {
         finish(null);

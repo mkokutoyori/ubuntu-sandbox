@@ -8,6 +8,7 @@ import { serialGreaterThan } from '@/network/dns/zone/SerialNumber';
 import { DnsOpcode, DnsRcode } from '@/network/dns/wire/DnsHeaderFlags';
 import { RRType, DnsClass } from '@/network/dns/wire/RRType';
 import { IPAddress } from '@/network/core/types';
+import { makeTxtRecord } from '@/network/dns/wire/ResourceRecord';
 import { normalizeDnsName, parentName } from '@/network/dns/wire/DnsName';
 import {
   isTransferQuery, buildAxfrAnswers, buildTransferResponse, refuseTransfer, zoneFromTransferAnswers,
@@ -289,6 +290,34 @@ export class Bind9Service {
     return { localAddresses, localNetworks };
   }
 
+  /**
+   * BIND9's built-in CHAOS-class identification names (RFC 4892 §2.1,
+   * `named(8)` "Built-in Zones"): `version.bind`/`authors.bind` are answered
+   * from the running version regardless of any configured zone, and
+   * `hostname.bind`/`id.server` report this server's identity.
+   */
+  private chaosAnswer(query: DnsMessage): DnsMessage | null {
+    const question = query.questions[0];
+    if (!question || question.qclass !== DnsClass.CH) return null;
+    const qname = normalizeDnsName(question.qname);
+    let text: string;
+    if (qname === 'version.bind' || qname === 'authors.bind') text = 'bind-simulator';
+    else if (qname === 'hostname.bind' || qname === 'id.server') text = this.host.getHostname();
+    else return null;
+
+    return {
+      id: query.id,
+      flags: {
+        qr: true, opcode: DnsOpcode.QUERY, aa: true, tc: false,
+        rd: query.flags.rd, ra: false, ad: false, cd: false, rcode: DnsRcode.NOERROR,
+      },
+      questions: query.questions,
+      answers: [{ ...makeTxtRecord(question.qname, 0, [text]), rrClass: DnsClass.CH }],
+      authorities: [],
+      additionals: [],
+    };
+  }
+
   private zoneFor(qname: string): NamedZone | null {
     const zones = this.config?.zones ?? [];
     let candidate: string | null = normalizeDnsName(qname);
@@ -329,6 +358,9 @@ export class Bind9Service {
     if (!config.options.allowQuery.matches(source, env)) {
       return this.refuse(query, recursionAllowed);
     }
+
+    const chaos = this.chaosAnswer(query);
+    if (chaos) return chaos;
 
     const question = query.questions[0];
     if (this.queryLogEnabled && question) {

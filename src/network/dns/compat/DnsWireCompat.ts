@@ -41,6 +41,10 @@ export interface DnsQueryOptions {
   readonly tcp?: boolean;
   readonly dnssecOk?: boolean;
   readonly udpPayloadSize?: number;
+  /** Destination port override (`dig -p <port>`). Defaults to 53. */
+  readonly port?: number;
+  /** Query class override (`dig -c CH`/bare `chaos` keyword), e.g. `DnsClass.CH`. Defaults to IN. */
+  readonly qclass?: number;
 }
 
 export type DnsQueryFn = (
@@ -217,7 +221,7 @@ export function buildLegacyQueryMessage(
       rd: options.recursionDesired ?? true, ra: false, ad: false, cd: false,
       rcode: WireRcode.NOERROR,
     },
-    questions: [{ qname, qtype: type, qclass: DnsClass.IN }],
+    questions: [{ qname, qtype: type, qclass: options.qclass ?? DnsClass.IN }],
     answers: [],
     authorities: [],
     additionals,

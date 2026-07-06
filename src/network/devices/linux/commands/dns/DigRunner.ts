@@ -1,16 +1,18 @@
 import { DnsRcode } from '@/network/dns/wire/DnsHeaderFlags';
+import { DnsClass } from '@/network/dns/wire/RRType';
 import { encodeDnsMessage } from '@/network/dns/wire/DnsMessageCodec';
 import { findOpt } from '@/network/dns/wire/EdnsOptRecord';
 import { rrTypeFromName, rrTypeName, rcodeFromWire, isIpLiteral } from '@/network/dns/compat/DnsWireCompat';
 import type { DnsQueryFn, DnsQueryOptions } from '@/network/dns/compat/DnsWireCompat';
 import type { DnsMessage } from '@/network/dns/wire/DnsMessage';
 import type { ResourceRecord, ResourceRecordData } from '@/network/dns/wire/ResourceRecord';
-import { formatRdata, formatRecordLine, isDisplayableRecord } from './RecordFormat';
+import { formatRdata, formatRecordLine, isDisplayableRecord, rrClassName } from './RecordFormat';
 
 interface DigInvocation {
   server: string;
   domain: string;
   qtype: string;
+  qclass: number;
   reverse: boolean;
   short: boolean;
   noAll: boolean;
@@ -19,16 +21,24 @@ interface DigInvocation {
   recurse: boolean;
   dnssec: boolean;
   bufsize: number | null;
+  port: number | null;
+  tries: number;
   timeoutSeconds: number;
 }
 
 const DEFAULT_TIMEOUT_SECONDS = 5;
+const DEFAULT_TRIES = 3;
+
+const CLASS_NAMES: Readonly<Record<string, number>> = {
+  IN: DnsClass.IN, CH: DnsClass.CH, CHAOS: DnsClass.CH, HS: DnsClass.HS,
+};
 
 function parseDigArgs(args: string[], resolverIP: string | undefined): DigInvocation {
   const invocation: DigInvocation = {
     server: resolverIP ?? '',
     domain: '',
     qtype: 'A',
+    qclass: DnsClass.IN,
     reverse: false,
     short: false,
     noAll: false,
@@ -37,6 +47,8 @@ function parseDigArgs(args: string[], resolverIP: string | undefined): DigInvoca
     recurse: true,
     dnssec: false,
     bufsize: null,
+    port: null,
+    tries: DEFAULT_TRIES,
     timeoutSeconds: DEFAULT_TIMEOUT_SECONDS,
   };
 
@@ -52,13 +64,18 @@ function parseDigArgs(args: string[], resolverIP: string | undefined): DigInvoca
     else if (arg === '+dnssec') invocation.dnssec = true;
     else if (arg.startsWith('+bufsize=')) invocation.bufsize = parseInt(arg.slice(9), 10) || null;
     else if (arg.startsWith('+time=')) invocation.timeoutSeconds = parseInt(arg.slice(6), 10) || DEFAULT_TIMEOUT_SECONDS;
-    else if (arg.startsWith('+tries=')) continue;
+    else if (arg.startsWith('+tries=')) invocation.tries = parseInt(arg.slice(7), 10) || DEFAULT_TRIES;
     else if (arg === '-x') invocation.reverse = true;
-    else if (arg === '-t' && args[i + 1]) {
+    else if (arg === '-p' && args[i + 1]) {
+      invocation.port = parseInt(args[++i], 10) || null;
+    } else if (arg === '-c' && args[i + 1]) {
+      invocation.qclass = CLASS_NAMES[args[++i].toUpperCase()] ?? DnsClass.IN;
+    } else if (arg === '-t' && args[i + 1]) {
       invocation.qtype = args[++i].toUpperCase();
     } else if (arg.startsWith('+') || arg.startsWith('-')) continue;
     else if (!invocation.domain) invocation.domain = arg;
     else if (rrTypeFromName(arg) !== null) invocation.qtype = arg.toUpperCase();
+    else if (CLASS_NAMES[arg.toUpperCase()] !== undefined) invocation.qclass = CLASS_NAMES[arg.toUpperCase()];
   }
 
   if (invocation.reverse) {
@@ -90,7 +107,7 @@ function transferOutput(invocation: DigInvocation, message: DnsMessage): string 
   }
   for (const rr of records) lines.push(formatRecordLine(rr));
   lines.push(`;; Query time: ${Math.floor(Math.random() * 10) + 1} msec`);
-  lines.push(`;; SERVER: ${invocation.server}#53(${invocation.server})`);
+  lines.push(`;; SERVER: ${invocation.server}#${invocation.port ?? 53}(${invocation.server})`);
   lines.push(`;; WHEN: ${new Date().toUTCString()}`);
   lines.push(`;; XFR size: ${records.length} records (messages 1, bytes ${encodeDnsMessage(message).length})`);
   return lines.join('\n');
@@ -146,7 +163,7 @@ function fullOutput(invocation: DigInvocation, message: DnsMessage): string {
   lines.push(';; QUESTION SECTION:');
   for (const question of message.questions) {
     const qname = question.qname.endsWith('.') ? question.qname : `${question.qname}.`;
-    lines.push(`;${qname}\t\t\tIN\t${rrTypeName(question.qtype)}`);
+    lines.push(`;${qname}\t\t\t${rrClassName(question.qclass)}\t${rrTypeName(question.qtype)}`);
   }
   lines.push('');
 
@@ -155,7 +172,7 @@ function fullOutput(invocation: DigInvocation, message: DnsMessage): string {
   pushSection(lines, 'ADDITIONAL', message.additionals);
 
   lines.push(`;; Query time: ${Math.floor(Math.random() * 10) + 1} msec`);
-  lines.push(`;; SERVER: ${invocation.server}#53(${invocation.server})`);
+  lines.push(`;; SERVER: ${invocation.server}#${invocation.port ?? 53}(${invocation.server})`);
   lines.push(`;; WHEN: ${new Date().toUTCString()}`);
   lines.push(`;; MSG SIZE  rcvd: ${encodeDnsMessage(message).length}`);
   return lines.join('\n');
@@ -180,11 +197,17 @@ export async function executeDig(
     tcp: invocation.tcp,
     dnssecOk: invocation.dnssec,
     udpPayloadSize: invocation.bufsize ?? (invocation.dnssec ? 4096 : undefined),
+    port: invocation.port ?? undefined,
+    qclass: invocation.qclass,
   };
-  const message = await query(
-    invocation.server, invocation.domain, invocation.qtype,
-    invocation.timeoutSeconds * 1000, options,
-  );
+  let message: DnsMessage | null = null;
+  for (let attempt = 0; attempt < Math.max(1, invocation.tries); attempt++) {
+    message = await query(
+      invocation.server, invocation.domain, invocation.qtype,
+      invocation.timeoutSeconds * 1000, options,
+    );
+    if (message) break;
+  }
   if (!message) return noServersLine(banner);
 
   if (invocation.qtype === 'AXFR' || invocation.qtype === 'IXFR') {

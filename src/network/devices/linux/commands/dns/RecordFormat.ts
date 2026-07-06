@@ -1,6 +1,10 @@
-import { RRType } from '@/network/dns/wire/RRType';
+import { RRType, DnsClass } from '@/network/dns/wire/RRType';
 import { rrTypeName } from '@/network/dns/compat/DnsWireCompat';
 import type { ResourceRecord, ResourceRecordData } from '@/network/dns/wire/ResourceRecord';
+
+export function rrClassName(rrClass: number): string {
+  return rrClass === DnsClass.CH ? 'CH' : rrClass === DnsClass.HS ? 'HS' : 'IN';
+}
 
 export function absolute(name: string): string {
   return name.endsWith('.') ? name : `${name}.`;
@@ -43,7 +47,7 @@ export function formatRdata(rr: ResourceRecord<ResourceRecordData>): string {
 }
 
 export function formatRecordLine(rr: ResourceRecord<ResourceRecordData>): string {
-  return `${absolute(rr.name)}\t${rr.ttl}\tIN\t${rrTypeName(rr.data.type)}\t${formatRdata(rr)}`;
+  return `${absolute(rr.name)}\t${rr.ttl}\t${rrClassName(rr.rrClass)}\t${rrTypeName(rr.data.type)}\t${formatRdata(rr)}`;
 }
 
 export function isDisplayableRecord(rr: ResourceRecord<ResourceRecordData>): boolean {
