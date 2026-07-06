@@ -36,8 +36,15 @@ export interface HsrpActiveChangedPayload extends HsrpDeviceRef {
   activePriority: number;
 }
 
+export interface HsrpVipLearnedPayload extends HsrpDeviceRef {
+  iface: string;
+  group: number;
+  vip: string;
+}
+
 export type HsrpDomainEvent =
   | { topic: 'hsrp.packet.sent'; payload: HsrpPacketSentPayload }
   | { topic: 'hsrp.packet.received'; payload: HsrpPacketReceivedPayload }
   | { topic: 'hsrp.state.changed'; payload: HsrpStateChangedPayload }
-  | { topic: 'hsrp.active.changed'; payload: HsrpActiveChangedPayload };
+  | { topic: 'hsrp.active.changed'; payload: HsrpActiveChangedPayload }
+  | { topic: 'hsrp.vip.learned'; payload: HsrpVipLearnedPayload };

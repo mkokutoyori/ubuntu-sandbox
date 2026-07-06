@@ -32,6 +32,7 @@ import type { DtpDomainEvent } from '@/network/dtp/events';
 import type { StpDomainEvent } from '@/network/stp/events';
 import type { LacpDomainEvent } from '@/network/lacp/events';
 import type { VtpDomainEvent } from '@/network/vtp/events';
+import type { FhrpDomainEvent } from '@/network/fhrp/events';
 import type { HsrpDomainEvent } from '@/network/hsrp/events';
 import type { VrrpDomainEvent } from '@/network/vrrp/events';
 import type { GlbpDomainEvent } from '@/network/glbp/events';
@@ -337,6 +338,7 @@ export type DomainEvent =
   | StpDomainEvent
   | LacpDomainEvent
   | VtpDomainEvent
+  | FhrpDomainEvent
   | HsrpDomainEvent
   | VrrpDomainEvent
   | GlbpDomainEvent

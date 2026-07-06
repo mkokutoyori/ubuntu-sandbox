@@ -36,8 +36,9 @@ export class GlbpAgent extends FhrpAgentBase<GlbpGroupRuntime> {
   }
 
   protected isSpeakingState(g: GlbpGroupRuntime): boolean {
-    return g.avgState === 'active' || g.avgState === 'standby'
-      || g.avgState === 'speak' || g.avgState === 'listen';
+    // GlbpAvgState only models 'disabled' | 'init' | 'standby' | 'active' —
+    // this simulator's AVG FSM collapses HSRP-style Listen/Speak into 'init'.
+    return g.avgState === 'active' || g.avgState === 'standby';
   }
 
   protected clearPeerState(g: GlbpGroupRuntime): void {
