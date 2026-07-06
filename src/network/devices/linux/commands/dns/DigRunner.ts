@@ -1,11 +1,13 @@
 import { DnsRcode } from '@/network/dns/wire/DnsHeaderFlags';
-import { DnsClass } from '@/network/dns/wire/RRType';
+import { DnsClass, RRType } from '@/network/dns/wire/RRType';
 import { encodeDnsMessage } from '@/network/dns/wire/DnsMessageCodec';
 import { findOpt } from '@/network/dns/wire/EdnsOptRecord';
 import { rrTypeFromName, rrTypeName, rcodeFromWire, isIpLiteral } from '@/network/dns/compat/DnsWireCompat';
 import type { DnsQueryFn, DnsQueryOptions } from '@/network/dns/compat/DnsWireCompat';
 import type { DnsMessage } from '@/network/dns/wire/DnsMessage';
-import type { ResourceRecord, ResourceRecordData } from '@/network/dns/wire/ResourceRecord';
+import type {
+  ARecordData, NsRecordData, ResourceRecord, ResourceRecordData,
+} from '@/network/dns/wire/ResourceRecord';
 import { formatRdata, formatRecordLine, isDisplayableRecord, rrClassName } from './RecordFormat';
 
 interface DigInvocation {
@@ -24,6 +26,7 @@ interface DigInvocation {
   port: number | null;
   tries: number;
   timeoutSeconds: number;
+  trace: boolean;
 }
 
 const DEFAULT_TIMEOUT_SECONDS = 5;
@@ -50,6 +53,7 @@ function parseDigArgs(args: string[], resolverIP: string | undefined): DigInvoca
     port: null,
     tries: DEFAULT_TRIES,
     timeoutSeconds: DEFAULT_TIMEOUT_SECONDS,
+    trace: false,
   };
 
   for (let i = 0; i < args.length; i++) {
@@ -62,6 +66,7 @@ function parseDigArgs(args: string[], resolverIP: string | undefined): DigInvoca
     else if (arg === '+norecurse') invocation.recurse = false;
     else if (arg === '+recurse') invocation.recurse = true;
     else if (arg === '+dnssec') invocation.dnssec = true;
+    else if (arg === '+trace') { invocation.trace = true; invocation.recurse = false; }
     else if (arg.startsWith('+bufsize=')) invocation.bufsize = parseInt(arg.slice(9), 10) || null;
     else if (arg.startsWith('+time=')) invocation.timeoutSeconds = parseInt(arg.slice(6), 10) || DEFAULT_TIMEOUT_SECONDS;
     else if (arg.startsWith('+tries=')) invocation.tries = parseInt(arg.slice(7), 10) || DEFAULT_TRIES;
@@ -178,6 +183,104 @@ function fullOutput(invocation: DigInvocation, message: DnsMessage): string {
   return lines.join('\n');
 }
 
+const MAX_TRACE_HOPS = 8;
+
+/**
+ * Resolves a delegation's next-hop server address: prefer in-bailiwick glue
+ * (additionals) exactly like a real resolver, and only fall back to an
+ * out-of-band A query for the NS name when no glue was offered.
+ */
+async function resolveNsAddress(
+  nsName: string,
+  glue: readonly ResourceRecord<ResourceRecordData>[],
+  referenceServer: string,
+  query: DnsQueryFn,
+  timeoutMs: number,
+): Promise<string | null> {
+  const normalized = nsName.endsWith('.') ? nsName.slice(0, -1) : nsName;
+  const glued = glue.find(
+    (rr): rr is ResourceRecord<ARecordData> =>
+      rr.data.type === RRType.A && (rr.name.endsWith('.') ? rr.name.slice(0, -1) : rr.name) === normalized,
+  );
+  if (glued) return glued.data.address.toString();
+
+  const response = await query(referenceServer, nsName, 'A', timeoutMs, { recursionDesired: false });
+  const a = response?.answers.find((rr): rr is ResourceRecord<ARecordData> => rr.data.type === RRType.A);
+  return a ? a.data.address.toString() : null;
+}
+
+/** Prints one `+trace` hop (the delegation or final answer received from one server) dig-trace style. */
+function pushTraceHop(lines: string[], server: string, port: number, message: DnsMessage): void {
+  const records = (message.answers.length > 0 ? message.answers : message.authorities).filter(isDisplayableRecord);
+  for (const rr of records) lines.push(formatRecordLine(rr));
+  for (const rr of message.additionals.filter(isDisplayableRecord)) lines.push(formatRecordLine(rr));
+  lines.push(
+    `;; Received ${encodeDnsMessage(message).length} bytes from ${server}#${port}(${server}) in ` +
+      `${Math.floor(Math.random() * 10) + 1} ms`,
+  );
+  lines.push('');
+}
+
+/**
+ * `dig +trace`: walks the delegation chain hop by hop instead of asking a
+ * single (possibly recursive) server for the final answer — mirroring real
+ * `dig(1)`'s iterative trace mode. Built entirely on the same `DnsQueryFn`
+ * transport as the rest of `dig` (no dependency on `RecursiveResolver`/
+ * `EndHost`, which aren't reachable from this CLI-only module): each hop is
+ * just another non-recursive query, exactly like a real iterative resolver
+ * would send.
+ */
+async function traceOutput(invocation: DigInvocation, query: DnsQueryFn): Promise<string> {
+  const lines: string[] = [`; <<>> DiG <<>> ${invocation.domain} +trace`, ';; global options: +cmd'];
+  const timeoutMs = invocation.timeoutSeconds * 1000;
+  const port = invocation.port ?? 53;
+  let server = invocation.server;
+
+  const rootMessage = await query(server, '.', 'NS', timeoutMs, { recursionDesired: false, port: invocation.port });
+  let nsRecords: ResourceRecord<NsRecordData>[] = [];
+  let glue: readonly ResourceRecord<ResourceRecordData>[] = [];
+  if (rootMessage && (rootMessage.answers.length > 0 || rootMessage.authorities.length > 0)) {
+    pushTraceHop(lines, server, port, rootMessage);
+    nsRecords = [...rootMessage.answers, ...rootMessage.authorities]
+      .filter((rr): rr is ResourceRecord<NsRecordData> => rr.data.type === RRType.NS);
+    glue = rootMessage.additionals;
+  }
+
+  for (let hop = 0; hop < MAX_TRACE_HOPS; hop++) {
+    if (nsRecords.length > 0) {
+      let nextServer: string | null = null;
+      for (const ns of nsRecords) {
+        nextServer = await resolveNsAddress(ns.data.nsdname, glue, server, query, timeoutMs);
+        if (nextServer) break;
+      }
+      if (!nextServer) {
+        lines.push(';; connection timed out; no servers could be reached');
+        return lines.join('\n');
+      }
+      server = nextServer;
+    }
+
+    const message = await query(
+      server, invocation.domain, invocation.qtype, timeoutMs,
+      { recursionDesired: false, port: invocation.port ?? undefined },
+    );
+    if (!message) {
+      lines.push(';; connection timed out; no servers could be reached');
+      return lines.join('\n');
+    }
+    pushTraceHop(lines, server, port, message);
+
+    if (message.answers.length > 0) return lines.join('\n');
+    const referral = message.authorities.filter(
+      (rr): rr is ResourceRecord<NsRecordData> => rr.data.type === RRType.NS,
+    );
+    if (referral.length === 0) return lines.join('\n');
+    nsRecords = referral;
+    glue = message.additionals;
+  }
+  return lines.join('\n');
+}
+
 export async function executeDig(
   args: string[],
   query: DnsQueryFn,
@@ -190,6 +293,10 @@ export async function executeDig(
 
   if (!invocation.server || !isIpLiteral(invocation.server)) {
     return noServersLine(banner);
+  }
+
+  if (invocation.trace) {
+    return traceOutput(invocation, query);
   }
 
   const options: DnsQueryOptions = {
