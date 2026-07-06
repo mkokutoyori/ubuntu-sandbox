@@ -8,7 +8,7 @@ import {
   computeTcpChecksum, verifyTcpChecksum, seqLt,
   TCP_DEFAULT_MSS, TCP_DEFAULT_WINDOW, TCP_TIME_WAIT_MS,
 } from './types';
-import { RttEstimator, TCP_MAX_RETRANSMITS } from './RttEstimator';
+import { RttEstimator, TCP_MAX_RETRANSMITS, TCP_INITIAL_RTO_MS, TCP_MAX_RTO_MS } from './RttEstimator';
 import {
   MACAddress, IPAddress, IPv6Address,
   type EthernetFrame, type IPv4Packet, type IPv6Packet,
@@ -96,6 +96,14 @@ export class TcpSocket {
   /** Retransmission-timeout token for the head of `unackedQueue`, or null when nothing is outstanding. */
   rtoTimer: symbol | null = null;
   readonly rtt: RttEstimator = new RttEstimator();
+
+  /** Peer's last-advertised receive window (PRD-TCP.md P3) — bounds how much unacked data we may have in flight. */
+  peerWindow = TCP_DEFAULT_WINDOW;
+  /** String chunks queued because the peer's window couldn't take them yet, in send order. `psh` marks the chunk that ends its original write. */
+  sendBacklog: Array<{ payload: string; psh: boolean }> = [];
+  /** Zero-window persist-probe timer (RFC 9293 §3.8.6.1). */
+  persistTimer: symbol | null = null;
+  persistBackoffMs = 0;
 
   private readonly openHandlers: TcpOpenHandler[] = [];
   private readonly dataHandlers: TcpDataHandler[] = [];
@@ -451,24 +459,99 @@ export class TcpStack {
       return;
     }
     if (socket.state !== 'established' && socket.state !== 'close-wait') return;
-    if (typeof data === 'string' && data.length > socket.mss) {
+
+    if (typeof data !== 'string') {
+      // Object payloads keep the pre-P3 behaviour: a single, non-chunked
+      // segment that isn't subject to window-based backlogging — bulk
+      // flow control only matters for the string data this stack actually
+      // splits by MSS.
+      const flags = noFlags(); flags.ack = true; flags.psh = true;
+      const seq = socket.sendNext;
+      socket.sendNext = (seq + 1) >>> 0;
+      this.transmitTracked(socket, flags, seq, socket.recvNext, data, 1);
+      return;
+    }
+
+    if (data.length === 0) {
+      socket.sendBacklog.push({ payload: '', psh: true });
+    } else {
       let offset = 0;
       while (offset < data.length) {
         const chunk = data.slice(offset, offset + socket.mss);
         offset += chunk.length;
-        const isLast = offset >= data.length;
-        const flags = noFlags(); flags.ack = true; if (isLast) flags.psh = true;
-        const seq = socket.sendNext;
-        socket.sendNext = (seq + chunk.length) >>> 0;
-        this.transmitTracked(socket, flags, seq, socket.recvNext, chunk, chunk.length);
+        socket.sendBacklog.push({ payload: chunk, psh: offset >= data.length });
       }
+    }
+    this.flushSendBacklog(socket);
+  }
+
+  /**
+   * Sends as much of `socket.sendBacklog` as the peer's advertised window
+   * (PRD-TCP.md P3, RFC 9293 §3.8.6) currently allows, splitting a queued
+   * chunk if only part of it fits. Whatever doesn't fit stays queued in
+   * order until a future ACK/window-update frees enough room.
+   */
+  private flushSendBacklog(socket: TcpSocket): void {
+    while (socket.sendBacklog.length > 0) {
+      const inFlight = (socket.sendNext - socket.sendUnacked) >>> 0;
+      const available = socket.peerWindow > inFlight ? socket.peerWindow - inFlight : 0;
+      if (available === 0) break;
+      const next = socket.sendBacklog[0];
+      const take = Math.min(available, next.payload.length);
+      const chunk = next.payload.slice(0, take);
+      const remainder = next.payload.slice(take);
+      socket.sendBacklog.shift();
+      if (remainder.length > 0) {
+        socket.sendBacklog.unshift({ payload: remainder, psh: next.psh });
+      }
+      const flags = noFlags(); flags.ack = true;
+      if (next.psh && remainder.length === 0) flags.psh = true;
+      const seq = socket.sendNext;
+      socket.sendNext = (seq + chunk.length) >>> 0;
+      this.transmitTracked(socket, flags, seq, socket.recvNext, chunk, chunk.length);
+      if (chunk.length === 0) break; // nothing consumed (zero window) — avoid spinning forever
+    }
+    this.maybeArmPersistTimer(socket);
+  }
+
+  /** (Re)arm or disarm the zero-window persist-probe timer based on current window/backlog state. */
+  private maybeArmPersistTimer(socket: TcpSocket): void {
+    if (socket.peerWindow > 0 || socket.sendBacklog.length === 0) {
+      this.timers.clear(socket.persistTimer);
+      socket.persistTimer = null;
+      socket.persistBackoffMs = 0;
       return;
     }
-    const flags = noFlags(); flags.ack = true; flags.psh = true;
+    if (socket.persistTimer) return;
+    socket.persistBackoffMs = socket.persistBackoffMs > 0
+      ? Math.min(socket.persistBackoffMs * 2, TCP_MAX_RTO_MS)
+      : TCP_INITIAL_RTO_MS;
+    socket.persistTimer = this.timers.setTimeout(() => this.onPersistFired(socket), socket.persistBackoffMs);
+  }
+
+  /**
+   * RFC 9293 §3.8.6.1 — a closed window (`peerWindow === 0`) stalls
+   * everything forever unless someone probes it: send exactly one byte of
+   * real, already-queued data so the peer's ACK carries a fresh window
+   * value even if it has nothing else to say.
+   */
+  private onPersistFired(socket: TcpSocket): void {
+    socket.persistTimer = null;
+    if (socket.closed || socket.sendBacklog.length === 0) { socket.persistBackoffMs = 0; return; }
+    const next = socket.sendBacklog[0];
+    if (next.payload.length === 0) { this.maybeArmPersistTimer(socket); return; }
+    const probe = next.payload.slice(0, 1);
+    const remainder = next.payload.slice(1);
+    socket.sendBacklog.shift();
+    if (remainder.length > 0) {
+      socket.sendBacklog.unshift({ payload: remainder, psh: next.psh });
+    }
+    const flags = noFlags(); flags.ack = true;
+    if (next.psh && remainder.length === 0) flags.psh = true;
     const seq = socket.sendNext;
-    const length = typeof data === 'string' ? data.length : 1;
-    socket.sendNext = (seq + length) >>> 0;
-    this.transmitTracked(socket, flags, seq, socket.recvNext, data, length);
+    socket.sendNext = (seq + probe.length) >>> 0;
+    this.transmitTracked(socket, flags, seq, socket.recvNext, probe, probe.length);
+    this.maybeArmPersistTimer(socket);
   }
 
   private flushPendingSends(socket: TcpSocket): void {
@@ -527,6 +610,12 @@ export class TcpStack {
     // than in each state branch below, since several of them only update
     // `sendUnacked` in narrower sub-cases than "seg.flags.ack is set".
     if (seg.flags.ack) this.pruneUnackedQueue(socket, seg.acknowledgement);
+    // Every real segment carries a current window value (PRD-TCP.md P3) —
+    // a pure window-update segment (no new ACK progress, no data) is how a
+    // peer reopens a previously-advertised zero window, so this must run
+    // unconditionally, not just alongside pruneUnackedQueue above.
+    socket.peerWindow = seg.window;
+    this.flushSendBacklog(socket);
     switch (socket.state) {
       case 'syn-sent':
         if (seg.flags.syn && seg.flags.ack) {
@@ -694,6 +783,9 @@ export class TcpStack {
     this.timers.clear(socket.rtoTimer);
     socket.rtoTimer = null;
     socket.unackedQueue = [];
+    this.timers.clear(socket.persistTimer);
+    socket.persistTimer = null;
+    socket.sendBacklog = [];
     this._transition(socket, 'closed');
     this.sockets.delete(socket.key());
     this.getBus().publish({
@@ -781,6 +873,12 @@ export class TcpStack {
 
   /** Drop every fully-acknowledged segment off the head of the queue and reset the RTO on real progress. */
   private pruneUnackedQueue(socket: TcpSocket, ackNum: number): void {
+    // Advance SND.UNA on any forward progress. Several state branches in
+    // `_processSegment` already set `sendUnacked` themselves, but only in
+    // narrower sub-cases (e.g. established only does it when the incoming
+    // segment carries no data) — flow control (P3) needs a value that's
+    // always current, since a peer piggybacks ACKs on data constantly.
+    if (seqLt(socket.sendUnacked, ackNum)) socket.sendUnacked = ackNum;
     let progressed = false;
     while (socket.unackedQueue.length > 0) {
       const head = socket.unackedQueue[0];
