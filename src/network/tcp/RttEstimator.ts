@@ -42,3 +42,28 @@ export class RttEstimator {
     this.rtoMs = this.initialRtoMs;
   }
 }
+
+/**
+ * Worst-case elapsed time before a connection with no way to recover gives
+ * up (RTO fires `TCP_MAX_RETRANSMITS + 1` times — the queue is retransmitted
+ * once per fired timer, and only the retransmission *after* the count
+ * exceeds the max aborts the connection — before `_teardown(..., 'timeout')`
+ * runs). Tests fast-forwarding a `VirtualTimeScheduler` (or vitest fake
+ * timers) past a hopeless connection attempt should advance by at least
+ * this much, not by hand-summing the backoff series (easy to be off by one
+ * term, since the final firing that pushes past the limit still needs to
+ * be *reached* before it can be judged as "too many").
+ */
+export function worstCaseRetransmitWindowMs(
+  initialRtoMs: number = TCP_INITIAL_RTO_MS,
+  maxRtoMs: number = TCP_MAX_RTO_MS,
+  maxRetransmits: number = TCP_MAX_RETRANSMITS,
+): number {
+  let total = 0;
+  let rto = initialRtoMs;
+  for (let i = 0; i <= maxRetransmits; i++) {
+    total += rto;
+    rto = Math.min(rto * 2, maxRtoMs);
+  }
+  return total;
+}

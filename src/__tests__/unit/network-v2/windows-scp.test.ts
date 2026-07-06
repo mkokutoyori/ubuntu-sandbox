@@ -1,4 +1,5 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { worstCaseRetransmitWindowMs } from '@/network/tcp/RttEstimator';
 import { WindowsPC } from '@/network/devices/WindowsPC';
 import { LinuxServer } from '@/network/devices/LinuxServer';
 import { Cable } from '@/network/hardware/Cable';
@@ -91,17 +92,34 @@ describe('Windows scp.exe — OpenSSH for Windows', () => {
   });
 
   it('fails with a real TCP error when the remote IP has no route', async () => {
-    const { win } = await buildLab();
-    win.fs.createFile('C:\\Users\\User\\x.txt', 'x');
-    const out = await win.executeCommand('scp C:\\Users\\User\\x.txt alice@10.99.99.99:/tmp/x.txt');
-    expect(out).toMatch(/ssh: connect to host 10\.99\.99\.99 port 22: (Connection refused|No route to host)/);
-  });
+    // PRD-TCP.md P2: a SYN to an address nothing ever answers now really
+    // waits through the RTO retry window (P1) instead of failing on the
+    // same tick — fast-forward fake timers so the retries actually fire.
+    vi.useFakeTimers();
+    try {
+      const { win } = await buildLab();
+      win.fs.createFile('C:\\Users\\User\\x.txt', 'x');
+      const pending = win.executeCommand('scp C:\\Users\\User\\x.txt alice@10.99.99.99:/tmp/x.txt');
+      await vi.advanceTimersByTimeAsync(worstCaseRetransmitWindowMs() + 1000);
+      const out = await pending;
+      expect(out).toMatch(/ssh: connect to host 10\.99\.99\.99 port 22: (Connection refused|No route to host)/);
+    } finally {
+      vi.useRealTimers();
+    }
+  }, 15_000);
 
   it('fails over a downed link (TCP probe cannot complete the handshake)', async () => {
-    const { win, srv } = await buildLab();
-    srv.getPorts()[0].setUp(false);
-    win.fs.createFile('C:\\Users\\User\\x.txt', 'x');
-    const out = await win.executeCommand('scp C:\\Users\\User\\x.txt alice@10.0.0.20:/tmp/x.txt');
-    expect(out).toMatch(/Connection refused|No route to host/);
-  });
+    vi.useFakeTimers();
+    try {
+      const { win, srv } = await buildLab();
+      srv.getPorts()[0].setUp(false);
+      win.fs.createFile('C:\\Users\\User\\x.txt', 'x');
+      const pending = win.executeCommand('scp C:\\Users\\User\\x.txt alice@10.0.0.20:/tmp/x.txt');
+      await vi.advanceTimersByTimeAsync(worstCaseRetransmitWindowMs() + 1000);
+      const out = await pending;
+      expect(out).toMatch(/Connection refused|No route to host/);
+    } finally {
+      vi.useRealTimers();
+    }
+  }, 15_000);
 });

@@ -18,7 +18,8 @@
  * Every PC auto-runs sshd (port 22) with user `user` / password `admin`.
  */
 
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { worstCaseRetransmitWindowMs } from '@/network/tcp/RttEstimator';
 import { LinuxPC } from '@/network/devices/LinuxPC';
 import { GenericSwitch } from '@/network/devices/GenericSwitch';
 import { Cable } from '@/network/hardware/Cable';
@@ -229,10 +230,20 @@ describe('SSH terminal — direct SshSession (single host)', () => {
   });
 
   it('refuses an unreachable IP', async () => {
-    await expect(openSession(lan.pc1, '99.99.99.99')).rejects.toThrow(
-      /CONNECTION_REFUSED|connect/i,
-    );
-  });
+    // PRD-TCP.md P2: a SYN to an address nothing ever answers now really
+    // waits through the RTO retry window (P1) instead of failing on the
+    // same tick — fast-forward fake timers so the retries actually fire.
+    vi.useFakeTimers();
+    try {
+      const pending = expect(openSession(lan.pc1, '99.99.99.99')).rejects.toThrow(
+        /CONNECTION_REFUSED|connect/i,
+      );
+      await vi.advanceTimersByTimeAsync(worstCaseRetransmitWindowMs() + 1000);
+      await pending;
+    } finally {
+      vi.useRealTimers();
+    }
+  }, 15_000);
 
   it('runs hostname remotely and gets the server hostname', async () => {
     const s = await openSession(lan.pc1, PC2_IP);

@@ -20,7 +20,7 @@ import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';
 import type { TcpSocket } from '@/network/tcp/TcpStack';
 import type { TcpCloseReason } from '@/network/tcp/types';
-import { TCP_INITIAL_RTO_MS, TCP_MAX_RETRANSMITS } from '@/network/tcp/RttEstimator';
+import { TCP_INITIAL_RTO_MS, worstCaseRetransmitWindowMs } from '@/network/tcp/RttEstimator';
 
 beforeEach(() => {
   resetCounters();
@@ -42,7 +42,7 @@ function alwaysLossyRng(): () => number {
 
 function buildPair() {
   const cli = new LinuxPC('CLI');
-  const srv = new LinuxServer('SRV');
+  const srv = new LinuxServer('linux-server', 'SRV');
   cli.powerOn(); srv.powerOn();
   const cable = new Cable('a');
   cable.connect(cli.getPort('eth0')!, srv.getPort('eth0')!);
@@ -112,15 +112,7 @@ describe('TCP retransmission (PRD-TCP.md P1)', () => {
     let closeReason: TcpCloseReason | null = null;
     clientSocket.onClose((reason) => { closeReason = reason; });
 
-    // Advance past every backed-off retry (1s, 2s, 4s, 8s, 16s = 31s total
-    // for TCP_MAX_RETRANSMITS = 5) plus margin.
-    let totalMs = 0;
-    let rto = TCP_INITIAL_RTO_MS;
-    for (let i = 0; i <= TCP_MAX_RETRANSMITS; i++) {
-      totalMs += rto;
-      rto *= 2;
-    }
-    scheduler.advance(totalMs + 100);
+    scheduler.advance(worstCaseRetransmitWindowMs() + 100);
 
     expect(clientSocket.state).toBe('closed');
     expect(closeReason).toBe('timeout');

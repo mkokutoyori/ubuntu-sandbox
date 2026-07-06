@@ -8,7 +8,8 @@
  * file-system operations.
  */
 
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { worstCaseRetransmitWindowMs } from '@/network/tcp/RttEstimator';
 import { resetCounters, MACAddress } from '@/network/core/types';
 import { Logger } from '@/network/core/Logger';
 import { VirtualFileSystem } from '@/network/devices/linux/VirtualFileSystem';
@@ -264,15 +265,21 @@ describe('SSH LAN — advanced scenarios', () => {
 
   // 80
   it('S80 — connection refused for an unreachable host', async () => {
+    // PRD-TCP.md P2: a SYN to an address nothing ever answers now really
+    // waits through the RTO retry window (P1) instead of failing on the
+    // same tick — fast-forward fake timers so the retries actually fire.
+    vi.useFakeTimers();
     let failed = false;
     try {
       // 192.0.2.99 is in TEST-NET-1, not present in our LAN.
-      await openSshSession(lan.pc1, '192.0.2.99');
-    } catch {
-      failed = true;
+      const pending = openSshSession(lan.pc1, '192.0.2.99').catch(() => { failed = true; });
+      await vi.advanceTimersByTimeAsync(worstCaseRetransmitWindowMs() + 1000);
+      await pending;
+    } finally {
+      vi.useRealTimers();
     }
     expect(failed).toBe(true);
-  });
+  }, 15_000);
 
   // 81
   it('S81 — SFTP `cd` updates the remote cwd reported by `pwd`', async () => {

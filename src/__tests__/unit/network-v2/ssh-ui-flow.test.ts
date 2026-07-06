@@ -26,6 +26,8 @@ import { Cable } from '@/network/hardware/Cable';
 import { LinuxTerminalSession } from '@/terminal/sessions/LinuxTerminalSession';
 import type { KeyEvent } from '@/terminal/sessions/TerminalSession';
 import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
+import { VirtualTimeScheduler } from '@/events/Scheduler';
+import { worstCaseRetransmitWindowMs } from '@/network/tcp/RttEstimator';
 
 // ── LAN fixture ────────────────────────────────────────────────────
 
@@ -215,7 +217,14 @@ describe('SSH UI — basic password authentication flow', () => {
   });
 
   it('shows "No route to host" when the target is unreachable', async () => {
+    // PRD-TCP.md P2: a SYN to an address nothing ever answers now really
+    // waits through the RTO retry window (P1) instead of failing on the
+    // same tick — fast-forward a virtual clock so the retries actually
+    // fire without the test waiting on real wall-clock time.
+    const scheduler = new VirtualTimeScheduler();
+    lan.pc1.setScheduler(scheduler);
     await typeNormal(session, `ssh user@99.99.99.99`);
+    scheduler.advance(worstCaseRetransmitWindowMs() + 1000);
     // Unreachable target — connect fails at TCP level before the auth phase,
     // so the password prompt never opens. Just wait for the error line.
     await waitFor(() =>

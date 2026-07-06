@@ -1801,11 +1801,26 @@ export abstract class EndHost extends Equipment {
    */
   public getTcpStack(): TcpStack { return this.tcpv2; }
 
+  /**
+   * PRD-TCP.md P2 — genuinely waits for the handshake to resolve instead
+   * of judging it in the same synchronous tick. A SYN lost on a lossy
+   * link now gets a real chance to succeed via P1's RTO retransmission
+   * (the caller's `await` simply takes longer); the promise only settles
+   * once the socket actually opens or actually closes (RST/timeout).
+   * Already-resolved cases (instant established/refused, the common
+   * loss-free path every existing caller exercises) still resolve on the
+   * same tick — this is additive latency for the failure path only.
+   */
   public async tcpConnect(dstIp: string, dstPort: number): Promise<import('../tcp/TcpStack').TcpSocket | null> {
     const socket = this.tcpv2.connect(dstIp, dstPort);
     if (!socket) return null;
-    if (socket.state !== 'established') return null;
-    return socket;
+    if (socket.state === 'established') return socket;
+    return new Promise((resolve) => {
+      let offOpen: () => void = () => {};
+      let offClose: () => void = () => {};
+      offOpen = socket.onOpen(() => { offOpen(); offClose(); resolve(socket); });
+      offClose = socket.onClose(() => { offOpen(); offClose(); resolve(null); });
+    });
   }
 
   // ─── UDP Transport (RFC 768) ───────────────────────────────────

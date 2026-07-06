@@ -1,4 +1,5 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { worstCaseRetransmitWindowMs } from '@/network/tcp/RttEstimator';
 import { WindowsPC } from '@/network/devices/WindowsPC';
 import { LinuxServer } from '@/network/devices/LinuxServer';
 import { Cable } from '@/network/hardware/Cable';
@@ -39,10 +40,20 @@ describe('Windows telnet.exe — real TCP', () => {
   });
 
   it('reports unreachable IP', async () => {
-    const { win } = await buildPair();
-    const out = await win.executeCommand('telnet 10.99.99.99 22');
-    expect(out).toMatch(/Could not open connection/);
-  });
+    // PRD-TCP.md P2: a SYN to an address nothing ever answers now really
+    // waits through the RTO retry window (P1) instead of failing on the
+    // same tick — fast-forward fake timers so the retries actually fire.
+    vi.useFakeTimers();
+    try {
+      const { win } = await buildPair();
+      const pending = win.executeCommand('telnet 10.99.99.99 22');
+      await vi.advanceTimersByTimeAsync(worstCaseRetransmitWindowMs() + 1000);
+      const out = await pending;
+      expect(out).toMatch(/Could not open connection/);
+    } finally {
+      vi.useRealTimers();
+    }
+  }, 15_000);
 
   it('prints the Microsoft Telnet help when called with no host', async () => {
     const { win } = await buildPair();
