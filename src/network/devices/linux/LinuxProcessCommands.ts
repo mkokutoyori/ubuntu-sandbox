@@ -194,8 +194,10 @@ export function cmdKill(args: string[], ctx: ProcessCmdContext): KillResult {
   // (e.g. SIGINT → 130). Common pattern used by tests that simulate
   // Ctrl-C: `bash -c 'kill -INT \$\$'`.
   const sigNum = SIGNAL_NUMBERS[signal] ?? 0;
+  // SIGABRT/SIGSEGV aren't part of the Signal union this simulator
+  // supports (no core-dump signals) - `signal` can never equal them.
   const TERMINATING_SIGS = new Set<Signal>([
-    'SIGTERM', 'SIGINT', 'SIGQUIT', 'SIGKILL', 'SIGHUP', 'SIGPIPE', 'SIGABRT', 'SIGSEGV',
+    'SIGTERM', 'SIGINT', 'SIGQUIT', 'SIGKILL', 'SIGHUP', 'SIGPIPE',
   ]);
   if (TERMINATING_SIGS.has(signal)) {
     for (const pidStr of pidArgs) {

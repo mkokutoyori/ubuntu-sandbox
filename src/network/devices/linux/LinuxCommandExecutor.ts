@@ -114,6 +114,7 @@ import { cmdNice, cmdRenice, cmdChrt, cmdIonice, cmdTaskset } from './process/Pr
 import type { LinuxShellSession } from './shell/LinuxShellSession';
 import { LinuxLastlogRegistry } from './LinuxLastlogRegistry';
 import { NameServiceSwitch } from './nss/NameServiceSwitch';
+import type { INssSource } from './nss/INssSource';
 import { FilesNssSource } from './nss/FilesNssSource';
 import { DnsNssSource } from './nss/DnsNssSource';
 import { DynamicUserTable } from './nss/DynamicUserTable';
@@ -437,7 +438,7 @@ export class LinuxCommandExecutor {
     this.filesNss = new FilesNssSource(this.vfs, this.userMgr);
     this.nss = new NameServiceSwitch(
       this.vfs,
-      new Map([
+      new Map<string, INssSource>([
         ['files',   this.filesNss],
         ['dns',     this.dnsNss],
         ['systemd', this.systemdNss],
@@ -819,7 +820,7 @@ export class LinuxCommandExecutor {
     this.nss.dispose();
     (this as { nss: NameServiceSwitch }).nss = new NameServiceSwitch(
       this.vfs,
-      new Map([
+      new Map<string, INssSource>([
         ['files',   this.filesNss],
         ['dns',     this.dnsNss],
         ['systemd', this.systemdNss],
@@ -3534,7 +3535,7 @@ export class LinuxCommandExecutor {
         if (args.includes('-I') || args.includes('--all-ip-addresses')) return { output: '127.0.1.1', exitCode: 0 };
         if (args.includes('-A') || args.includes('--all-fqdns')) return { output: hn, exitCode: 0 };
         if (args.length > 0 && !args[0].startsWith('-')) {
-          this.vfs.writeFile('/etc/hostname', args[0] + '\n');
+          this.vfs.writeFile('/etc/hostname', args[0] + '\n', 0, 0, 0o022);
           return { output: '', exitCode: 0 };
         }
         return { output: hn, exitCode: 0 };

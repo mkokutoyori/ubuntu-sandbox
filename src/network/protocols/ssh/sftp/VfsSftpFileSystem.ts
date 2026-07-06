@@ -16,8 +16,6 @@ import { ok, err, type Result, type SshError } from '../Result';
 interface VfsLike {
   normalizePath(path: string, cwd?: string): string;
   exists(path: string): boolean;
-  isDirectory(path: string): boolean;
-  isFile(path: string): boolean;
   resolveInode(path: string, followSymlinks?: boolean): {
     type: string; permissions: number; uid: number; gid: number; size: number; mtime: number;
     children?: Map<string, number>;
