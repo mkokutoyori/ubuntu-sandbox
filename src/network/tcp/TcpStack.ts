@@ -9,6 +9,7 @@ import {
   TCP_DEFAULT_MSS, TCP_DEFAULT_WINDOW, TCP_TIME_WAIT_MS,
 } from './types';
 import { RttEstimator, TCP_MAX_RETRANSMITS, TCP_INITIAL_RTO_MS, TCP_MAX_RTO_MS } from './RttEstimator';
+import { TcpCongestionControl } from './TcpCongestionControl';
 import {
   MACAddress, IPAddress, IPv6Address,
   type EthernetFrame, type IPv4Packet, type IPv6Packet,
@@ -104,6 +105,9 @@ export class TcpSocket {
   /** Zero-window persist-probe timer (RFC 9293 §3.8.6.1). */
   persistTimer: symbol | null = null;
   persistBackoffMs = 0;
+
+  /** RFC 5681 congestion control (PRD-TCP.md P5) — slow start/congestion avoidance/fast recovery. */
+  readonly cc: TcpCongestionControl = new TcpCongestionControl(this.mss);
 
   private readonly openHandlers: TcpOpenHandler[] = [];
   private readonly dataHandlers: TcpDataHandler[] = [];
@@ -494,7 +498,10 @@ export class TcpStack {
   private flushSendBacklog(socket: TcpSocket): void {
     while (socket.sendBacklog.length > 0) {
       const inFlight = (socket.sendNext - socket.sendUnacked) >>> 0;
-      const available = socket.peerWindow > inFlight ? socket.peerWindow - inFlight : 0;
+      // PRD-TCP.md P3+P5: bounded by whichever is smaller — the peer's
+      // advertised receive window, or our own congestion window.
+      const effectiveWindow = Math.min(socket.peerWindow, socket.cc.cwnd);
+      const available = effectiveWindow > inFlight ? effectiveWindow - inFlight : 0;
       if (available === 0) break;
       const next = socket.sendBacklog[0];
       const take = Math.min(available, next.payload.length);
@@ -609,11 +616,25 @@ export class TcpStack {
     // retransmittable segments (PRD-TCP.md P1) — checked once here rather
     // than in each state branch below, since several of them only update
     // `sendUnacked` in narrower sub-cases than "seg.flags.ack is set".
-    if (seg.flags.ack) this.pruneUnackedQueue(socket, seg.acknowledgement);
+    if (seg.flags.ack) {
+      // A duplicate ACK (RFC 5681 §3.2): no new data acknowledged, this
+      // segment itself carries none either, and it's not a handshake/FIN
+      // control segment — only meaningful while we actually have
+      // something outstanding to protect.
+      const isDuplicateAck = payloadSize === 0 && !seg.flags.syn && !seg.flags.fin
+        && seg.acknowledgement === socket.sendUnacked && socket.unackedQueue.length > 0;
+      if (isDuplicateAck) {
+        const flightSize = (socket.sendNext - socket.sendUnacked) >>> 0;
+        if (socket.cc.onDuplicateAck(flightSize)) this.fastRetransmit(socket);
+      } else {
+        const ackedBytes = this.pruneUnackedQueue(socket, seg.acknowledgement);
+        if (ackedBytes > 0) socket.cc.onNewAck(ackedBytes);
+      }
+    }
     // Every real segment carries a current window value (PRD-TCP.md P3) —
     // a pure window-update segment (no new ACK progress, no data) is how a
     // peer reopens a previously-advertised zero window, so this must run
-    // unconditionally, not just alongside pruneUnackedQueue above.
+    // unconditionally, not just alongside the ack-handling above.
     socket.peerWindow = seg.window;
     this.flushSendBacklog(socket);
     switch (socket.state) {
@@ -872,12 +893,14 @@ export class TcpStack {
   }
 
   /** Drop every fully-acknowledged segment off the head of the queue and reset the RTO on real progress. */
-  private pruneUnackedQueue(socket: TcpSocket, ackNum: number): void {
+  /** Returns the number of genuinely new bytes this ACK covered (0 if it was stale/duplicate). */
+  private pruneUnackedQueue(socket: TcpSocket, ackNum: number): number {
     // Advance SND.UNA on any forward progress. Several state branches in
     // `_processSegment` already set `sendUnacked` themselves, but only in
     // narrower sub-cases (e.g. established only does it when the incoming
     // segment carries no data) — flow control (P3) needs a value that's
     // always current, since a peer piggybacks ACKs on data constantly.
+    const priorUnacked = socket.sendUnacked;
     if (seqLt(socket.sendUnacked, ackNum)) socket.sendUnacked = ackNum;
     let progressed = false;
     while (socket.unackedQueue.length > 0) {
@@ -896,6 +919,7 @@ export class TcpStack {
     }
     if (progressed) socket.rtt.reset();
     this.rearmRtoTimer(socket);
+    return progressed ? (ackNum - priorUnacked) >>> 0 : 0;
   }
 
   /** (Re)start the RTO timer for the current head of the queue, or clear it when nothing is outstanding. */
@@ -916,6 +940,8 @@ export class TcpStack {
       this._teardown(socket, 'timeout');
       return;
     }
+    // RFC 5681 §3.1 — a real timeout means slow start starts over.
+    socket.cc.onRtoTimeout((socket.sendNext - socket.sendUnacked) >>> 0);
     const rtoMs = socket.rtt.backoff();
     this.getBus().publish({
       topic: 'tcp.retransmit',
@@ -933,6 +959,23 @@ export class TcpStack {
     // only actually used for segments that genuinely carry an ACK.
     this.transmit(socket, head.flags, head.sequence, socket.recvNext, head.payload);
     socket.rtoTimer = this.timers.setTimeout(() => this.onRtoFired(socket), rtoMs);
+  }
+
+  /** RFC 5681 §3.2 — the 3rd duplicate ACK fast-retransmits without waiting for the RTO timer. */
+  private fastRetransmit(socket: TcpSocket): void {
+    const head = socket.unackedQueue[0];
+    if (!head) return;
+    head.retransmitCount++;
+    this.getBus().publish({
+      topic: 'tcp.retransmit',
+      payload: {
+        deviceId: this.host.id, hostname: this.host.getHostname(),
+        localIp: socket.localIp, localPort: socket.localPort,
+        remoteIp: socket.remoteIp, remotePort: socket.remotePort,
+        sequence: head.sequence, attempt: head.retransmitCount, rtoMs: socket.rtt.currentRto(),
+      },
+    });
+    this.transmit(socket, head.flags, head.sequence, socket.recvNext, head.payload);
   }
 
   private shipSegment(
