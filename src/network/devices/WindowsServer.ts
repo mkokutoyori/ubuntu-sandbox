@@ -316,6 +316,26 @@ export class WindowsServer extends WindowsPC {
     const netbios = netbiosName ?? domainName.split('.')[0].toUpperCase();
     const store = new DirectoryStore(domainName, netbios, safeModeAdminPassword, { skipSeed: true });
     const sync = pullReplication(this.getTcpStack(), sourceDcAddress, store);
+    /**
+     * The initial sync (PRD-Windows-Server-Advanced.md §5 P12) has no
+     * site topology yet to classify intra-/inter-site (this DC isn't
+     * promoted until just below) — recorded as `intra-site`, matching
+     * real DCPromo's own initial-sync step, which always targets a
+     * source DC the installer explicitly chose as reachable. Publishing
+     * only (no direct store write) — a `ReplicationSignalRefreshActor`
+     * subscribing on this device's bus feeds the `ReplicationSignalStore`.
+     */
+    this.getBus().publish(
+      sync.ok
+        ? {
+            topic: 'replication.pull.completed',
+            payload: { deviceId: this.getHostname(), invocationId: store.getInvocationId(), partnerAddress: sourceDcAddress, applied: sync.applied, siteRelation: 'intra-site' },
+          }
+        : {
+            topic: 'replication.pull.failed',
+            payload: { deviceId: this.getHostname(), invocationId: store.getInvocationId(), partnerAddress: sourceDcAddress, error: sync.error ?? 'unknown error', siteRelation: 'intra-site' },
+          },
+    );
     if (!sync.ok) {
       return { ok: false, message: `Install-ADDSDomainController : Initial synchronization with ${sourceDcAddress} failed: ${sync.error}` };
     }

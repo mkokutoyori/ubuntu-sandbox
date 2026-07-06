@@ -18,6 +18,7 @@ import { formatDN } from '../ldap/LdapDN';
 import {
   type HighWatermarkVectorWire, encodeHighWatermarkVector, decodeHighWatermarkVector,
 } from './HighWatermarkVector';
+import { getDefaultEventBus, type IEventBus } from '@/events/EventBus';
 
 export const AD_REPLICATION_PORT = 135;
 
@@ -37,7 +38,17 @@ interface ReplicationPullResponse {
 }
 
 export class ReplicationServerHandler {
-  constructor(private readonly store: DirectoryStore) {}
+  /**
+   * `deviceId`/`bus` (PRD-Windows-Server-Advanced.md §5 P12) are optional —
+   * omitted keeps behavior identical to before this phase. This handler
+   * only publishes `replication.served`; a `ReplicationSignalRefreshActor`
+   * subscribing elsewhere is what feeds a `ReplicationSignalStore`.
+   */
+  constructor(
+    private readonly store: DirectoryStore,
+    private readonly deviceId?: string,
+    private readonly bus: IEventBus = getDefaultEventBus(),
+  ) {}
 
   register(socket: TcpSocket): void {
     socket.onData((data) => {
@@ -56,6 +67,11 @@ export class ReplicationServerHandler {
         kind: 'pullResponse', responderInvocationId: this.store.getInvocationId(), changes,
       };
       socket.send(new TextEncoder().encode(JSON.stringify(response)));
+
+      this.bus.publish({
+        topic: 'replication.served',
+        payload: { deviceId: this.deviceId ?? this.store.dnsName, invocationId: this.store.getInvocationId(), changesSent: changes.length },
+      });
     });
   }
 }

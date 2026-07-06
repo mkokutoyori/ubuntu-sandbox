@@ -26,12 +26,17 @@ import {
   KU_TGS_REQ_AUTHENTICATOR, KU_TGS_REP_ENC_PART,
 } from './crypto';
 import { deriveInterrealmKey, referralPrincipal } from './crossRealm';
+import { getDefaultEventBus, type IEventBus } from '@/events/EventBus';
 
 const TICKET_LIFETIME_SECONDS = 8 * 3600; // real Kerberos policy default-ish (10h in AD; kept simple here)
 const CLOCK_SKEW_SECONDS = 5 * 60; // RFC 4120 §5.2.7.2's usual 5-minute default
 
 export interface KdcContext {
   store: DirectoryStore;
+  /** Device id of this KDC — only used for event payloads (PRD-Windows-Server-Advanced.md §5 P12), defaults to the realm name if omitted. */
+  deviceId?: string;
+  /** Event bus to publish `kerberos.*` events on (§5 P12) — a `KerberosSignalRefreshActor` subscribing elsewhere is what actually feeds a `KerberosSignalStore`; defaults to the process-wide default bus. */
+  bus?: IEventBus;
 }
 
 export class KdcSessionHandler {
@@ -54,12 +59,37 @@ export class KdcSessionHandler {
     }));
   }
 
+  private kdcRef(): { deviceId: string; realm: string } {
+    const realm = this.ctx.store.getRealm();
+    return { deviceId: this.ctx.deviceId ?? realm, realm };
+  }
+
+  /** Bus to publish `kerberos.*` events on (§5 P12) — a `KerberosSignalRefreshActor` subscribing elsewhere, not this handler, is what feeds a `KerberosSignalStore`. */
+  private bus(): IEventBus {
+    return this.ctx.bus ?? getDefaultEventBus();
+  }
+
+  /** Sends the KRB-ERROR and, unless it's the expected first-round PREAUTH_REQUIRED (part of every normal AS exchange, not a real failure), publishes an `as.failed` event (§5 P12). */
+  private failAs(socket: TcpSocket, req: KdcReq, cname: string, errorCode: number, eText?: string): void {
+    this.sendError(socket, req, errorCode, eText);
+    if (errorCode === KrbErrorCode.KDC_ERR_PREAUTH_REQUIRED) return;
+    this.bus().publish({ topic: 'kerberos.as.failed', payload: { ...this.kdcRef(), cname, errorCode } });
+  }
+
+  /** Publishes a `tgs.failed` event (§5 P12) alongside the KRB-ERROR already sent by `sendError`. */
+  private failTgs(socket: TcpSocket, req: KdcReq, cname: string, errorCode: number, eText?: string): void {
+    this.sendError(socket, req, errorCode, eText);
+    const serviceName = req.reqBody.sname.nameString.join('/');
+    this.bus().publish({ topic: 'kerberos.tgs.failed', payload: { ...this.kdcRef(), cname, serviceName, errorCode } });
+  }
+
   private handleAsReq(socket: TcpSocket, req: KdcReq): void {
     const cname = req.reqBody.cname;
     if (!cname || cname.nameString.length === 0) {
-      this.sendError(socket, req, KrbErrorCode.KDC_ERR_C_PRINCIPAL_UNKNOWN);
+      this.failAs(socket, req, '', KrbErrorCode.KDC_ERR_C_PRINCIPAL_UNKNOWN);
       return;
     }
+    const cnameStr = cname.nameString.join('/');
     const sam = cname.nameString[0];
     /**
      * A computer account (sam ending in `$`) is as much a Kerberos
@@ -69,7 +99,7 @@ export class KdcSessionHandler {
      */
     const secret = sam.endsWith('$') ? this.ctx.store.getComputerSecret(sam.slice(0, -1)) : this.ctx.store.getUserSecret(sam);
     if (secret === null) {
-      this.sendError(socket, req, KrbErrorCode.KDC_ERR_C_PRINCIPAL_UNKNOWN);
+      this.failAs(socket, req, cnameStr, KrbErrorCode.KDC_ERR_C_PRINCIPAL_UNKNOWN);
       return;
     }
     const realm = this.ctx.store.getRealm();
@@ -77,17 +107,17 @@ export class KdcSessionHandler {
 
     const paEncTs = req.padata.find((p) => p.type === PA_ENC_TIMESTAMP);
     if (!paEncTs) {
-      this.sendError(socket, req, KrbErrorCode.KDC_ERR_PREAUTH_REQUIRED, 'Additional pre-authentication required');
+      this.failAs(socket, req, cnameStr, KrbErrorCode.KDC_ERR_PREAUTH_REQUIRED, 'Additional pre-authentication required');
       return;
     }
     if (!this.verifyPreAuth(paEncTs.value, clientKey)) {
-      this.sendError(socket, req, KrbErrorCode.KDC_ERR_PREAUTH_FAILED, 'Pre-authentication information was invalid');
+      this.failAs(socket, req, cnameStr, KrbErrorCode.KDC_ERR_PREAUTH_FAILED, 'Pre-authentication information was invalid');
       return;
     }
 
     const krbtgtSecret = this.ctx.store.getUserSecret('krbtgt');
     if (krbtgtSecret === null) {
-      this.sendError(socket, req, KrbErrorCode.KDC_ERR_S_PRINCIPAL_UNKNOWN);
+      this.failAs(socket, req, cnameStr, KrbErrorCode.KDC_ERR_S_PRINCIPAL_UNKNOWN);
       return;
     }
     const krbtgtKey = stringToKey(krbtgtSecret, realm);
@@ -120,6 +150,7 @@ export class KdcSessionHandler {
       },
     };
     socket.send(encodeKdcRep(rep));
+    this.bus().publish({ topic: 'kerberos.as.succeeded', payload: { ...this.kdcRef(), cname: cnameStr } });
   }
 
   /** RFC 4120 §5.2.7.2: decrypt PA-ENC-TIMESTAMP with the client's key and check it's within the allowed clock skew. */
@@ -147,7 +178,7 @@ export class KdcSessionHandler {
   private handleTgsReq(socket: TcpSocket, req: KdcReq): void {
     const paTgsReq = req.padata.find((p) => p.type === PA_TGS_REQ);
     if (!paTgsReq) {
-      this.sendError(socket, req, KrbErrorCode.KDC_ERR_PREAUTH_REQUIRED, 'A TGT and Authenticator are required');
+      this.failTgs(socket, req, '', KrbErrorCode.KDC_ERR_PREAUTH_REQUIRED, 'A TGT and Authenticator are required');
       return;
     }
 
@@ -157,7 +188,7 @@ export class KdcSessionHandler {
     try {
       apReq = decodeApReq(paTgsReq.value);
     } catch {
-      this.sendError(socket, req, KrbErrorCode.KRB_AP_ERR_TKT_EXPIRED, 'Decryption failed');
+      this.failTgs(socket, req, '', KrbErrorCode.KRB_AP_ERR_TKT_EXPIRED, 'Decryption failed');
       return;
     }
 
@@ -173,14 +204,14 @@ export class KdcSessionHandler {
     if (isInboundReferral) {
       const trust = this.ctx.store.getTrust(presentedRealm);
       if (!trust || (trust.direction !== 'Inbound' && trust.direction !== 'Bidirectional')) {
-        this.sendError(socket, req, KrbErrorCode.KDC_ERR_POLICY, 'No trust path from the presenting realm');
+        this.failTgs(socket, req, '', KrbErrorCode.KDC_ERR_POLICY, 'No trust path from the presenting realm');
         return;
       }
       ticketDecryptKey = deriveInterrealmKey(trust.interrealmKey, presentedRealm, realm);
     } else {
       const krbtgtSecret = this.ctx.store.getUserSecret('krbtgt');
       if (krbtgtSecret === null) {
-        this.sendError(socket, req, KrbErrorCode.KDC_ERR_S_PRINCIPAL_UNKNOWN);
+        this.failTgs(socket, req, '', KrbErrorCode.KDC_ERR_S_PRINCIPAL_UNKNOWN);
         return;
       }
       ticketDecryptKey = stringToKey(krbtgtSecret, realm);
@@ -190,12 +221,12 @@ export class KdcSessionHandler {
     try {
       ticketPart = decodeEncTicketPart(decryptWithUsage(ticketDecryptKey, KU_TICKET, apReq.ticket.encPart.cipher));
     } catch {
-      this.sendError(socket, req, KrbErrorCode.KRB_AP_ERR_TKT_EXPIRED, 'Decryption failed');
+      this.failTgs(socket, req, '', KrbErrorCode.KRB_AP_ERR_TKT_EXPIRED, 'Decryption failed');
       return;
     }
     const now = Math.floor(Date.now() / 1000);
     if (ticketPart.endtime < now) {
-      this.sendError(socket, req, KrbErrorCode.KRB_AP_ERR_TKT_EXPIRED);
+      this.failTgs(socket, req, ticketPart.cname.nameString.join('/'), KrbErrorCode.KRB_AP_ERR_TKT_EXPIRED);
       return;
     }
 
@@ -206,7 +237,7 @@ export class KdcSessionHandler {
       const validSkew = Math.abs(now - authenticator.ctime) <= CLOCK_SKEW_SECONDS;
       if (!validCname || !validSkew) throw new Error('authenticator mismatch');
     } catch {
-      this.sendError(socket, req, KrbErrorCode.KRB_AP_ERR_TKT_EXPIRED, 'Authenticator verification failed');
+      this.failTgs(socket, req, ticketPart.cname.nameString.join('/'), KrbErrorCode.KRB_AP_ERR_TKT_EXPIRED, 'Authenticator verification failed');
       return;
     }
 
@@ -242,10 +273,11 @@ export class KdcSessionHandler {
     const isOutboundReferral = targetRealm.toUpperCase() !== realm.toUpperCase();
     let sname: PrincipalName;
     let serviceKey: string;
+    const cnameStr = ticketPart.cname.nameString.join('/');
     if (isOutboundReferral) {
       const trust = this.ctx.store.getTrust(targetRealm);
       if (!trust || (trust.direction !== 'Outbound' && trust.direction !== 'Bidirectional')) {
-        this.sendError(socket, req, KrbErrorCode.KDC_ERR_POLICY, 'No trust path to the target realm');
+        this.failTgs(socket, req, cnameStr, KrbErrorCode.KDC_ERR_POLICY, 'No trust path to the target realm');
         return;
       }
       sname = referralPrincipal(targetRealm);
@@ -254,7 +286,7 @@ export class KdcSessionHandler {
       const serviceName = req.reqBody.sname.nameString[0];
       const serviceSecret = serviceName === 'krbtgt' ? this.ctx.store.getUserSecret('krbtgt') : this.ctx.store.getComputerSecret(serviceName);
       if (serviceSecret === null) {
-        this.sendError(socket, req, KrbErrorCode.KDC_ERR_S_PRINCIPAL_UNKNOWN);
+        this.failTgs(socket, req, cnameStr, KrbErrorCode.KDC_ERR_S_PRINCIPAL_UNKNOWN);
         return;
       }
       sname = req.reqBody.sname;
@@ -283,6 +315,11 @@ export class KdcSessionHandler {
       },
     };
     socket.send(encodeKdcRep(rep));
+    const snameStr = sname.nameString.join('/');
+    this.bus().publish({
+      topic: 'kerberos.tgs.succeeded',
+      payload: { ...this.kdcRef(), cname: cnameStr, serviceName: snameStr, referral: isOutboundReferral },
+    });
   }
 
   /**
@@ -315,6 +352,9 @@ export class KdcSessionHandler {
     const targetServiceName = req.reqBody.sname.nameString[0];
     if (!this.ctx.store.isDelegationAllowedFrom(delegatingService, targetServiceName)) {
       this.sendError(socket, req, KrbErrorCode.KDC_ERR_BADOPTION, 'Delegation to this service is not permitted');
+      this.bus().publish({
+        topic: 'kerberos.delegation.denied', payload: { ...this.kdcRef(), delegatingService, targetService: targetServiceName },
+      });
       return;
     }
     const targetSecret = this.ctx.store.getComputerSecret(targetServiceName);
@@ -353,5 +393,10 @@ export class KdcSessionHandler {
       },
     };
     socket.send(encodeKdcRep(rep));
+    const onBehalfOf = evidencePart.cname.nameString.join('/');
+    this.bus().publish({
+      topic: 'kerberos.delegation.granted',
+      payload: { ...this.kdcRef(), delegatingService, onBehalfOf, targetService: targetServiceName },
+    });
   }
 }

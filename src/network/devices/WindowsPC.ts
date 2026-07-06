@@ -83,10 +83,14 @@ import { getForestForDomain } from './windows/server/ad/forest/Forest';
 import { KdcSessionHandler } from '@/network/kerberos/KdcSession';
 import { dialKdc } from '@/network/kerberos/KerberosClient';
 import { KerberosTicketCache } from '@/network/kerberos/KerberosTicketCache';
+import { KerberosSignalStore } from '@/network/kerberos/observables';
+import { KerberosSignalRefreshActor } from '@/network/kerberos/actors/KerberosSignalRefreshActor';
 import {
   ReplicationServerHandler, AD_REPLICATION_PORT, pullReplication,
   type ReplicationPullResult, type ReplicationLogEntry,
 } from './windows/server/ad/replication/ReplicationSession';
+import { ReplicationSignalStore } from './windows/server/ad/replication/observables';
+import { ReplicationSignalRefreshActor } from './windows/server/ad/replication/actors/ReplicationSignalRefreshActor';
 import { dialWinRm, type WinRmDialResult } from './windows/server/winrm/WinRmClient';
 import { type DomainMembership, type DomainSession, parseDomainQualifiedUser } from './windows/domain/DomainTypes';
 import { joinDomain, type DomainJoinResult } from './windows/domain/DomainJoinClient';
@@ -191,6 +195,18 @@ export class WindowsPC extends EndHost implements UserAccountHost {
   private readonly replicationLog: ReplicationLogEntry[] = [];
   /** This DC's own StartTLS identity (PRD-Windows-Server-Advanced.md §5 P11) — lazily created once and reused across connections, mirroring a real DC's stable machine certificate. */
   private ldapStartTlsIdentity: ReturnType<typeof selfSignedLdapCert> | null = null;
+  /**
+   * Observable read-models (PRD-Windows-Server-Advanced.md §5 P12) — purely
+   * additive, no existing behavior depends on these. `KdcSessionHandler`/
+   * `ReplicationServerHandler`/`replicateFrom` only publish `kerberos.*`/
+   * `replication.*` events; a `KerberosSignalRefreshActor`/
+   * `ReplicationSignalRefreshActor` subscribing on this device's bus (see
+   * `wireReactiveProjections`) is what actually feeds these stores.
+   */
+  private readonly kerberosSignals = new KerberosSignalStore();
+  private readonly replicationSignals = new ReplicationSignalStore();
+  private kerberosSignalActor: KerberosSignalRefreshActor | null = null;
+  private replicationSignalActor: ReplicationSignalRefreshActor | null = null;
   /** LSA account policy mirrored by `net accounts`. */
   readonly accountsPolicy: WindowsAccountsPolicy = new WindowsAccountsPolicy();
   /** cmd.exe doskey macro table. */
@@ -324,6 +340,13 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     this.portProxySocketProjection = new PortProxySocketProjection(bus, this.id, this.socketTable);
     this.portProxyTable.attachBus(bus, this.id);
 
+    this.kerberosSignalActor?.stop();
+    this.kerberosSignalActor = new KerberosSignalRefreshActor(bus, this.getHostname(), this.kerberosSignals);
+    this.kerberosSignalActor.start();
+    this.replicationSignalActor?.stop();
+    this.replicationSignalActor = new ReplicationSignalRefreshActor(bus, this.getHostname(), this.replicationSignals);
+    this.replicationSignalActor.start();
+
     this._recoveryRunOff?.();
     this._recoveryRunOff = bus.subscribe('windows.service.recovery-run', (e) => {
       if (e.payload.deviceId !== this.id) return;
@@ -455,7 +478,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       onAccept: (socket) => {
         const store = this.getDirectoryStore();
         if (!store) { socket.close(); return; }
-        new KdcSessionHandler({ store }).register(socket);
+        new KdcSessionHandler({ store, deviceId: this.getHostname(), bus: this.getBus() }).register(socket);
       },
     });
 
@@ -467,7 +490,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       onAccept: (socket) => {
         const store = this.getDirectoryStore();
         if (!store) { socket.close(); return; }
-        new ReplicationServerHandler(store).register(socket);
+        new ReplicationServerHandler(store, this.getHostname(), this.getBus()).register(socket);
       },
     });
   }
@@ -489,14 +512,36 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     const partnerSite = store.siteForIp(partnerIp);
     const siteRelation: 'intra-site' | 'inter-site' =
       ownSite !== null && partnerSite !== null && ownSite !== partnerSite ? 'inter-site' : 'intra-site';
-    this.replicationLog.push({
+    const logEntry: ReplicationLogEntry = {
       timestamp: Math.floor(Date.now() / 1000), partnerAddress: partnerIp, applied: result.applied, ok: result.ok, siteRelation,
-    });
+    };
+    this.replicationLog.push(logEntry);
+    this.getBus().publish(
+      result.ok
+        ? {
+            topic: 'replication.pull.completed',
+            payload: {
+              deviceId: this.getHostname(), invocationId: store.getInvocationId(), partnerAddress: partnerIp,
+              applied: result.applied, siteRelation,
+            },
+          }
+        : {
+            topic: 'replication.pull.failed',
+            payload: {
+              deviceId: this.getHostname(), invocationId: store.getInvocationId(), partnerAddress: partnerIp,
+              error: result.error ?? 'unknown error', siteRelation,
+            },
+          },
+    );
     return result;
   }
 
   /** PRD-Windows-Server-Advanced.md §5 P6 — every past `replicateFrom` cycle, annotated intra-/inter-site. */
   getReplicationLog(): readonly ReplicationLogEntry[] { return this.replicationLog; }
+
+  /** PRD-Windows-Server-Advanced.md §5 P12 — observable read-models for this DC's Kerberos KDC and AD replication activity. */
+  getKerberosSignals(): KerberosSignalStore { return this.kerberosSignals; }
+  getReplicationSignals(): ReplicationSignalStore { return this.replicationSignals; }
 
   /** Best-effort reverse DNS for the SMB session table's ClientComputerName column. */
   private reverseLookupClient(ip: string): string {

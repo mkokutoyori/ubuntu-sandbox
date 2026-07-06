@@ -65,6 +65,8 @@ import type { HostDomainEvent } from '@/network/devices/host/events';
 import type { LinuxProcessServiceDomainEvent } from '@/network/devices/linux/events';
 import type { LinuxIamDomainEvent } from '@/network/devices/linux/iam/events';
 import type { WindowsDomainEvent } from '@/network/devices/windows/events';
+import type { KerberosDomainEvent } from '@/network/kerberos/events';
+import type { ReplicationDomainEvent } from '@/network/devices/windows/server/ad/replication/events';
 import type { OracleDomainEvent } from '@/database/oracle/events';
 import type { RmanDomainEvent } from '@/terminal/subshells/rman/events';
 
@@ -374,7 +376,13 @@ export type DomainEvent =
   | RmanDomainEvent
   // Windows device: services, accounts, groups, processes
   // (sub-union, see src/network/devices/windows/events.ts)
-  | WindowsDomainEvent;
+  | WindowsDomainEvent
+  // Kerberos: AS/TGS exchange, cross-realm referrals, S4U2Proxy delegation
+  // (sub-union, see src/network/kerberos/events.ts)
+  | KerberosDomainEvent
+  // AD replication: pull cycles (sub-union, see
+  // src/network/devices/windows/server/ad/replication/events.ts)
+  | ReplicationDomainEvent;
 
 export interface SwitchMacEntryPayload {
   deviceId: string;
