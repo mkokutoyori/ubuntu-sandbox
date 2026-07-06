@@ -92,7 +92,7 @@ export class OracleStorage extends BaseStorage {
 
   private initDefaultTablespaces(): void {
     const oradata = ORACLE_CONFIG.ORADATA;
-    const seed: Array<Omit<TablespaceMeta, 'logging' | 'forceLogging' | 'extentManagement' | 'segmentSpaceManagement' | 'allocationType' | 'bigfile' | 'encrypted' | 'flashbackOn'>> = [
+    const seed: Array<Omit<TablespaceMeta, 'logging' | 'forceLogging' | 'extentManagement' | 'segmentSpaceManagement' | 'allocationType' | 'bigfile' | 'encrypted' | 'flashbackOn' | 'initialExtent' | 'nextExtent' | 'minExtentLength'>> = [
       { name: 'SYSTEM', type: 'PERMANENT', status: 'ONLINE', datafiles: [{ path: `${oradata}/system01.dbf`, size: '800M', autoextend: true }], blockSize: 8192 },
       { name: 'SYSAUX', type: 'PERMANENT', status: 'ONLINE', datafiles: [{ path: `${oradata}/sysaux01.dbf`, size: '550M', autoextend: true }], blockSize: 8192 },
       { name: 'UNDOTBS1', type: 'UNDO', status: 'ONLINE', datafiles: [{ path: `${oradata}/undotbs01.dbf`, size: '200M', autoextend: true }], blockSize: 8192 },

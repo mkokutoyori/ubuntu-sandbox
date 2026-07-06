@@ -87,7 +87,13 @@ export interface OracleSessionDisconnectedPayload extends OracleDeviceRef {
   sessionId: string;
 }
 
-export interface OracleSessionDeadConnectionPayload extends OracleDeviceRef {
+/**
+ * `sid` here is the numeric V$SESSION.SID (session id), a different concept
+ * from `OracleDeviceRef.sid` (the string instance SID, e.g. "ORCL") — so
+ * this deliberately doesn't extend OracleDeviceRef.
+ */
+export interface OracleSessionDeadConnectionPayload {
+  deviceId: string;
   sid: number;
   rolledBack: boolean;
 }
@@ -133,7 +139,9 @@ export interface OracleErrorRaisedPayload extends OracleSessionRef {
 // V$LOCK, V$LATCHHOLDER, V$SQLSTATS, V$BACKUP_SET, V$ACTIVE_SERVICES,
 // etc. Emitters publish onto the same bus the instance owns.
 
-export interface OracleWaitRecordedPayload extends OracleDeviceRef {
+/** `sid` is the numeric V$SESSION.SID, not OracleDeviceRef's string instance SID. */
+export interface OracleWaitRecordedPayload {
+  deviceId: string;
   sid: number;
   sessionId?: string;
   event: string;
@@ -143,7 +151,9 @@ export interface OracleWaitRecordedPayload extends OracleDeviceRef {
   sqlId?: string;
 }
 
-export interface OracleLatchEventPayload extends OracleDeviceRef {
+/** `sid` is the numeric V$SESSION.SID, not OracleDeviceRef's string instance SID. */
+export interface OracleLatchEventPayload {
+  deviceId: string;
   sid: number;
   latch: string;
   level: number;
@@ -152,7 +162,9 @@ export interface OracleLatchEventPayload extends OracleDeviceRef {
   spinCount?: number;
 }
 
-export interface OracleLockEventPayload extends OracleDeviceRef {
+/** `sid` is the numeric V$SESSION.SID, not OracleDeviceRef's string instance SID. */
+export interface OracleLockEventPayload {
+  deviceId: string;
   sid: number;
   sessionId: string;
   type: string;
@@ -213,7 +225,9 @@ export interface OracleSessionLongopsPayload extends OracleSessionRef {
   units: string;
 }
 
-export interface OracleSessionMetricPayload extends OracleDeviceRef {
+/** `sid` is the numeric V$SESSION.SID, not OracleDeviceRef's string instance SID. */
+export interface OracleSessionMetricPayload {
+  deviceId: string;
   sid: number;
   metricName: string;
   value: number;
