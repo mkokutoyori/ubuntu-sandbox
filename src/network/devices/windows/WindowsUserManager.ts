@@ -245,6 +245,25 @@ export class WindowsUserManager {
     return [...this.users.values()];
   }
 
+  /**
+   * Renders a plain-text account roster (name / password / groups) for
+   * `C:\users.txt` — the single source of truth is this manager, so the
+   * file always matches whatever accounts actually exist on this device
+   * (built-ins plus the standard alice/bob/carl/dave cast), instead of a
+   * second, hand-maintained copy of the same data living in
+   * `WindowsFileSystem.ts`.
+   */
+  renderUsersDoc(): string {
+    const lines = ['# Windows local users (name / password / groups)', ''];
+    for (const u of this.getAllUsers()) {
+      const password = this.getPlaintextPassword(u.name) ?? '(none)';
+      const groups = this.getGroupsForUser(u.name).map(g => g.name);
+      const groupsText = groups.length > 0 ? groups.join(', ') : '(none)';
+      lines.push(`${u.name} / ${password || '(none)'} / ${groupsText}`);
+    }
+    return lines.join('\n') + '\n';
+  }
+
   getUserSID(name: string): string | undefined {
     return this.users.get(name.toLowerCase())?.sid;
   }

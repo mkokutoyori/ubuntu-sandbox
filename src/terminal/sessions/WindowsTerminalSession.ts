@@ -45,6 +45,7 @@ import { PlainOutputFormatter, type IOutputFormatter } from '@/terminal/core/Out
 import { classifyWindowsLines } from '@/terminal/core/windowsOutputStyle';
 import { completeInputCaseInsensitive } from '@/terminal/core/TabCompletionHelper';
 import type { ISubShell, SubShellResult } from '@/terminal/subshells/ISubShell';
+import { NslookupSubShell } from '@/terminal/subshells/NslookupSubShell';
 import { findHostByAddress } from '@/network/devices/linux/network/HostLookup';
 import { installDefaultShells } from '@/shell/registerDefaults';
 import { PromiseInputBroker as PromiseInputBrokerCtor } from '@/shell/input';
@@ -884,6 +885,11 @@ export class WindowsTerminalSession extends TerminalSession {
       }
     }
 
+    if (lower === 'nslookup') {
+      this.enterNslookup();
+      return;
+    }
+
     // Execute on device (root cmd)
     try {
       const result = await this.executeOnDevice(trimmed);
@@ -1281,6 +1287,28 @@ export class WindowsTerminalSession extends TerminalSession {
     this.inputMode = { type: 'password', promptText };
     this.addLine(promptText, 'prompt');
     return true;
+  }
+
+  /**
+   * `nslookup` with no arguments (PRD-Nslookup-Dig-Rndc-Runas.md §2.1.1) —
+   * the same interactive `>` REPL as Linux. Windows previously had no
+   * interactive mode at all; this reuses `NslookupSubShell` as-is (DRY)
+   * instead of writing a second, parallel implementation.
+   */
+  private enterNslookup(): void {
+    const dev = this.device instanceof WindowsPC ? this.device : null;
+    const deps = dev?.getInteractiveNslookupDeps() ?? null;
+    if (!deps) {
+      this.addLine("*** Can't find UnKnown: No DNS servers available", 'error');
+      this.addLine('The DNS Client (Dnscache) service is not running.', 'error');
+      this.notify();
+      return;
+    }
+    const shell = new NslookupSubShell(deps);
+    for (const line of shell.bannerLines()) this.addLine(line);
+    this.activeSubShell = shell;
+    this._inputBuf = '';
+    this.notify();
   }
 
   private async submitRunasPassword(password: string): Promise<void> {
