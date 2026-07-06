@@ -36,9 +36,9 @@ const CLASS_NAMES: Readonly<Record<string, number>> = {
   IN: DnsClass.IN, CH: DnsClass.CH, CHAOS: DnsClass.CH, HS: DnsClass.HS,
 };
 
-function parseDigArgs(args: string[], resolverIP: string | undefined): DigInvocation {
-  const invocation: DigInvocation = {
-    server: resolverIP ?? '',
+function newInvocation(): DigInvocation {
+  return {
+    server: '',
     domain: '',
     qtype: 'A',
     qclass: DnsClass.IN,
@@ -55,41 +55,96 @@ function parseDigArgs(args: string[], resolverIP: string | undefined): DigInvoca
     timeoutSeconds: DEFAULT_TIMEOUT_SECONDS,
     trace: false,
   };
+}
+
+/**
+ * Parses one dig invocation into one or more query groups: `@server` and
+ * `+`/most `-` options are global (apply to every group), but each bare
+ * `name [type] [class]` positional run starts its own group — real dig's
+ * `dig www.example.com MX mail.example.com A` runs two lookups.
+ */
+function parseDigInvocations(args: string[], resolverIP: string | undefined): DigInvocation[] {
+  let server = resolverIP ?? '';
+  let short = false;
+  let tcp = false;
+  let noAll = false;
+  let showAnswer = false;
+  let recurse = true;
+  let dnssec = false;
+  let bufsize: number | null = null;
+  let port: number | null = null;
+  let tries = DEFAULT_TRIES;
+  let timeoutSeconds = DEFAULT_TIMEOUT_SECONDS;
+  let trace = false;
+  let globalReverse = false;
+  let pendingQtype = 'A';
+  let pendingQclass: number = DnsClass.IN;
+
+  const groups: DigInvocation[] = [];
+  let current: DigInvocation | null = null;
 
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
-    if (arg.startsWith('@')) invocation.server = arg.slice(1);
-    else if (arg === '+short') invocation.short = true;
-    else if (arg === '+tcp' || arg === '+vc') invocation.tcp = true;
-    else if (arg === '+noall') invocation.noAll = true;
-    else if (arg === '+answer') invocation.showAnswer = true;
-    else if (arg === '+norecurse') invocation.recurse = false;
-    else if (arg === '+recurse') invocation.recurse = true;
-    else if (arg === '+dnssec') invocation.dnssec = true;
-    else if (arg === '+trace') { invocation.trace = true; invocation.recurse = false; }
-    else if (arg.startsWith('+bufsize=')) invocation.bufsize = parseInt(arg.slice(9), 10) || null;
-    else if (arg.startsWith('+time=')) invocation.timeoutSeconds = parseInt(arg.slice(6), 10) || DEFAULT_TIMEOUT_SECONDS;
-    else if (arg.startsWith('+tries=')) invocation.tries = parseInt(arg.slice(7), 10) || DEFAULT_TRIES;
-    else if (arg === '-x') invocation.reverse = true;
+    if (arg.startsWith('@')) server = arg.slice(1);
+    else if (arg === '+short') short = true;
+    else if (arg === '+tcp' || arg === '+vc') tcp = true;
+    else if (arg === '+noall') noAll = true;
+    else if (arg === '+answer') showAnswer = true;
+    else if (arg === '+norecurse') recurse = false;
+    else if (arg === '+recurse') recurse = true;
+    else if (arg === '+dnssec') dnssec = true;
+    else if (arg === '+trace') { trace = true; recurse = false; }
+    else if (arg.startsWith('+bufsize=')) bufsize = parseInt(arg.slice(9), 10) || null;
+    else if (arg.startsWith('+time=')) timeoutSeconds = parseInt(arg.slice(6), 10) || DEFAULT_TIMEOUT_SECONDS;
+    else if (arg.startsWith('+tries=')) tries = parseInt(arg.slice(7), 10) || DEFAULT_TRIES;
+    else if (arg === '-x') globalReverse = true;
     else if (arg === '-p' && args[i + 1]) {
-      invocation.port = parseInt(args[++i], 10) || null;
+      port = parseInt(args[++i], 10) || null;
     } else if (arg === '-c' && args[i + 1]) {
-      invocation.qclass = CLASS_NAMES[args[++i].toUpperCase()] ?? DnsClass.IN;
+      pendingQclass = CLASS_NAMES[args[++i].toUpperCase()] ?? DnsClass.IN;
+      if (current) current.qclass = pendingQclass;
     } else if (arg === '-t' && args[i + 1]) {
-      invocation.qtype = args[++i].toUpperCase();
+      pendingQtype = args[++i].toUpperCase();
+      if (current) current.qtype = pendingQtype;
     } else if (arg.startsWith('+') || arg.startsWith('-')) continue;
-    else if (!invocation.domain) invocation.domain = arg;
-    else if (rrTypeFromName(arg) !== null) invocation.qtype = arg.toUpperCase();
-    else if (CLASS_NAMES[arg.toUpperCase()] !== undefined) invocation.qclass = CLASS_NAMES[arg.toUpperCase()];
+    else if (current && rrTypeFromName(arg) !== null) current.qtype = arg.toUpperCase();
+    else if (current && CLASS_NAMES[arg.toUpperCase()] !== undefined) current.qclass = CLASS_NAMES[arg.toUpperCase()];
+    else {
+      if (current) groups.push(current);
+      current = newInvocation();
+      current.domain = arg;
+      current.qtype = pendingQtype;
+      current.qclass = pendingQclass;
+    }
+  }
+  if (current) groups.push(current);
+  if (groups.length === 0) {
+    const empty = newInvocation();
+    empty.qtype = pendingQtype;
+    empty.qclass = pendingQclass;
+    groups.push(empty);
   }
 
-  if (invocation.reverse) {
-    const target = args.find((a) => isIpLiteral(a));
-    if (target) invocation.domain = target;
-    invocation.qtype = 'PTR';
+  for (const g of groups) {
+    g.server = server;
+    g.short = short;
+    g.tcp = tcp;
+    g.noAll = noAll;
+    g.showAnswer = showAnswer;
+    g.recurse = recurse;
+    g.dnssec = dnssec;
+    g.bufsize = bufsize;
+    g.port = port;
+    g.tries = tries;
+    g.timeoutSeconds = timeoutSeconds;
+    g.trace = trace;
+    if (globalReverse && isIpLiteral(g.domain)) {
+      g.reverse = true;
+      g.qtype = 'PTR';
+    }
+    if (g.qtype === 'AXFR' || g.qtype === 'IXFR') g.tcp = true;
   }
-  if (invocation.qtype === 'AXFR' || invocation.qtype === 'IXFR') invocation.tcp = true;
-  return invocation;
+  return groups;
 }
 
 function noServersLine(banner: string): string {
@@ -281,12 +336,7 @@ async function traceOutput(invocation: DigInvocation, query: DnsQueryFn): Promis
   return lines.join('\n');
 }
 
-export async function executeDig(
-  args: string[],
-  query: DnsQueryFn,
-  resolverIP?: string,
-): Promise<string> {
-  const invocation = parseDigArgs(args, resolverIP);
+async function executeSingleQuery(invocation: DigInvocation, query: DnsQueryFn): Promise<string> {
   const banner = invocation.server
     ? `@${invocation.server} ${invocation.domain}`
     : invocation.domain;
@@ -325,4 +375,40 @@ export async function executeDig(
     return message.answers.filter(isDisplayableRecord).map(formatRecordLine).join('\n');
   }
   return fullOutput(invocation, message);
+}
+
+/** Reads a `dig -f <file>` batch file: one query per non-empty, non-comment line. */
+function batchLines(content: string): string[] {
+  return content.split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0 && !line.startsWith(';'));
+}
+
+export async function executeDig(
+  args: string[],
+  query: DnsQueryFn,
+  resolverIP?: string,
+  readFile?: (path: string) => string | null,
+): Promise<string> {
+  const fIndex = args.findIndex((a) => a === '-f');
+  if (fIndex !== -1 && args[fIndex + 1] !== undefined) {
+    const path = args[fIndex + 1];
+    if (!readFile) return `dig: batch mode (-f) is not supported here`;
+    const content = readFile(path);
+    if (content === null) return `dig: couldn't open ${path}: No such file or directory`;
+
+    const globalArgs = [...args.slice(0, fIndex), ...args.slice(fIndex + 2)];
+    const outputs: string[] = [];
+    for (const line of batchLines(content)) {
+      outputs.push(await executeDig([...globalArgs, ...line.split(/\s+/)], query, resolverIP, readFile));
+    }
+    return outputs.join('\n\n');
+  }
+
+  const invocations = parseDigInvocations(args, resolverIP);
+  const outputs: string[] = [];
+  for (const invocation of invocations) {
+    outputs.push(await executeSingleQuery(invocation, query));
+  }
+  return outputs.join(invocations[0]?.short ? '\n' : '\n\n');
 }
