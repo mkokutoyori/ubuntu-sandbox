@@ -5572,6 +5572,9 @@ export class LinuxCommandExecutor {
   /** Get current working directory */
   getCwd(): string { return this.cwd; }
 
+  /** Set current working directory (used when temporarily impersonating another user, e.g. cron/su) */
+  setCwd(path: string): void { this.cwd = path; }
+
   /** Read a file from the virtual filesystem (returns null if not found) */
   readFile(path: string): string | null {
     const absPath = this.vfs.normalizePath(path, this.cwd);

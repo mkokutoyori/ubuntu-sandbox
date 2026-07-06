@@ -582,7 +582,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     return null;
   }
 
-  protected sendFrame(portName: string, frame: EthernetFrame): boolean {
+  override sendFrame(portName: string, frame: EthernetFrame): boolean {
     const dotIdx = portName.indexOf('.');
     if (dotIdx > 0) {
       const parent = portName.slice(0, dotIdx);

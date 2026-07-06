@@ -802,8 +802,8 @@ export function displayDebugging(router: Router): string {
   const flags = (router as unknown as { _huaweiDebugFlags?: Set<string> })._huaweiDebugFlags;
   if (flags) for (const f of [...flags].sort()) lines.push(f);
   const debugSvc = (router as unknown as {
-    getDebugService?: () => HuaweiDebugService;
-  }).getDebugService?.();
+    getHuaweiDebugService?: () => HuaweiDebugService;
+  }).getHuaweiDebugService?.();
   if (debugSvc?.hasAnyFlag()) {
     for (const f of debugSvc.list()) {
       lines.push(`${HuaweiDebugService.label(f.category)} debugging is on`);

@@ -762,22 +762,22 @@ export function registerOSPFDisplayCommands(trie: CommandTrie, getRouter: () => 
     return '';
   });
   trie.register('debugging ospf event', 'Enable OSPF event debugging', () => {
-    const svc = (getRouter() as any).getDebugService?.();
+    const svc = (getRouter() as any).getHuaweiDebugService?.();
     if (svc) svc.enable('ospf-event');
     return '';
   });
   trie.register('debugging ospf packet', 'Enable OSPF packet debugging', () => {
-    const svc = (getRouter() as any).getDebugService?.();
+    const svc = (getRouter() as any).getHuaweiDebugService?.();
     if (svc) svc.enable('ospf-packet');
     return '';
   });
   trie.register('undo debugging ospf event', 'Disable OSPF event debugging', () => {
-    const svc = (getRouter() as any).getDebugService?.();
+    const svc = (getRouter() as any).getHuaweiDebugService?.();
     if (svc) svc.disable('ospf-event');
     return '';
   });
   trie.register('undo debugging ospf packet', 'Disable OSPF packet debugging', () => {
-    const svc = (getRouter() as any).getDebugService?.();
+    const svc = (getRouter() as any).getHuaweiDebugService?.();
     if (svc) svc.disable('ospf-packet');
     return '';
   });

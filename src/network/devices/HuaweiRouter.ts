@@ -154,7 +154,16 @@ export class HuaweiRouter extends Router {
 
   private _huaweiDebugService: HuaweiDebugService | null = null;
 
-  override getDebugService(): HuaweiDebugService {
+  /**
+   * Not named `getDebugService` (and not an `override` of `Router`'s
+   * method): `Router.getDebugService()` is typed to return the
+   * Cisco-flavoured `RouterDebugService`, and `HuaweiDebugService` has an
+   * incompatible category type, so overriding it would violate Liskov
+   * substitution. Huawei-side callers look this up by name via a cast
+   * (see HuaweiOspfCommands.ts, HuaweiDisplayCommands.ts, HuaweiVRPShell.ts,
+   * HuaweiTerminalSession.ts).
+   */
+  getHuaweiDebugService(): HuaweiDebugService {
     if (!this._huaweiDebugService) this._huaweiDebugService = new HuaweiDebugService();
     this._huaweiDebugService.attachToBus(this.getBus(), this.id);
     return this._huaweiDebugService;

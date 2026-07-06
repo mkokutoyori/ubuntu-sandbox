@@ -178,6 +178,20 @@ export interface MountChangedPayload extends LinuxDeviceRef {
   bind: boolean;
 }
 
+/** A packet was dropped by netfilter (iptables/ip6tables). */
+export interface FirewallDropPayload extends LinuxDeviceRef {
+  hostname: string;
+  inIface?: string;
+  outIface?: string;
+  sourceIp: string;
+  destinationIp: string;
+  sourcePort: number;
+  destinationPort: number;
+  protocol: string;
+  verdict: 'accept' | 'drop' | 'reject';
+  chain: string;
+}
+
 // ── Discriminated union ────────────────────────────────────────────────
 
 export type LinuxProcessServiceDomainEvent =
@@ -205,4 +219,5 @@ export type LinuxProcessServiceDomainEvent =
   | { topic: 'linux.fs.accessed'; payload: FileAccessedPayload }
   | { topic: 'linux.syscall.invoked'; payload: SyscallInvokedPayload }
   | { topic: 'linux.mount.mounted'; payload: MountChangedPayload }
-  | { topic: 'linux.mount.unmounted'; payload: MountChangedPayload };
+  | { topic: 'linux.mount.unmounted'; payload: MountChangedPayload }
+  | { topic: 'linux.firewall.drop'; payload: FirewallDropPayload };

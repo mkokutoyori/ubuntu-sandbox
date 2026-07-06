@@ -1228,7 +1228,7 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     t.registerGreedy('reset bgp', 'Reset BGP data', (_args) => '');
 
     const svc = (): import('../router/diag/HuaweiDebugService').HuaweiDebugService | null => {
-      return (getRouter() as unknown as { getDebugService?: () => import('../router/diag/HuaweiDebugService').HuaweiDebugService }).getDebugService?.() ?? null;
+      return (getRouter() as unknown as { getHuaweiDebugService?: () => import('../router/diag/HuaweiDebugService').HuaweiDebugService }).getHuaweiDebugService?.() ?? null;
     };
 
     t.register('debugging ospf spf', 'Enable OSPF SPF debugging', () => svc()?.enable('ospf-spf') ?? '');

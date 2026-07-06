@@ -197,7 +197,7 @@ export class HuaweiTerminalSession extends CLITerminalSession {
   }
 
   private reconcileDebugSubscription(): void {
-    const svc = (this.device as unknown as { getDebugService?: () => TerminalDebugSource }).getDebugService?.();
+    const svc = (this.device as unknown as { getHuaweiDebugService?: () => TerminalDebugSource }).getHuaweiDebugService?.();
     if (!svc) return;
     const wantSubscription = svc.hasAnyFlag() && (this.vty?.state.terminalDebugging ?? false);
     if (wantSubscription && !this.debugJob) {

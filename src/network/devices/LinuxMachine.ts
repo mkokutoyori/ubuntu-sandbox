@@ -465,13 +465,13 @@ export abstract class LinuxMachine extends EndHost
 
   private runCronJob(command: string, ctx: { user: string; env: Record<string, string> }): { output: string; exitCode: number } {
     const um = this.executor.userMgr;
-    const prev = { user: um.currentUser, uid: um.currentUid, gid: um.currentGid, cwd: this.executor.cwd };
+    const prev = { user: um.currentUser, uid: um.currentUid, gid: um.currentGid, cwd: this.executor.getCwd() };
     const entry = um.getUser(ctx.user);
     if (entry) {
       um.currentUser = ctx.user;
       um.currentUid = entry.uid;
       um.currentGid = entry.gid;
-      this.executor.cwd = entry.home ?? `/home/${ctx.user}`;
+      this.executor.setCwd(entry.home ?? `/home/${ctx.user}`);
     }
     try {
       const output = this.executor.executeWithEnv(command, ctx.env);
@@ -482,7 +482,7 @@ export abstract class LinuxMachine extends EndHost
       um.currentUser = prev.user;
       um.currentUid = prev.uid;
       um.currentGid = prev.gid;
-      this.executor.cwd = prev.cwd;
+      this.executor.setCwd(prev.cwd);
     }
   }
 
@@ -844,13 +844,13 @@ export abstract class LinuxMachine extends EndHost
     const previousUser = um.currentUser;
     const previousUid = um.currentUid;
     const previousGid = um.currentGid;
-    const previousCwd = this.executor.cwd;
+    const previousCwd = this.executor.getCwd();
     const userEntry = um.getUser(user);
     if (userEntry) {
       um.currentUser = user;
       um.currentUid = userEntry.uid;
       um.currentGid = userEntry.gid;
-      this.executor.cwd = userEntry.home ?? `/home/${user}`;
+      this.executor.setCwd(userEntry.home ?? `/home/${user}`);
     }
     try {
       const output = this.executor.execute(command);
@@ -860,7 +860,7 @@ export abstract class LinuxMachine extends EndHost
       um.currentUser = previousUser;
       um.currentUid = previousUid;
       um.currentGid = previousGid;
-      this.executor.cwd = previousCwd;
+      this.executor.setCwd(previousCwd);
     }
   }
 
@@ -2415,7 +2415,7 @@ export abstract class LinuxMachine extends EndHost
         return new Promise((resolve) => setTimeout(resolve, ms));
       },
       readFile(path: string): string | null {
-        const v = self.executor.vfs.readFile(self.executor.vfs.normalizePath(path, self.executor.cwd));
+        const v = self.executor.vfs.readFile(self.executor.vfs.normalizePath(path, self.executor.getCwd()));
         if (v != null) return v;
         const cap = self.executor.captureLog.all();
         if (cap.length === 0) return null;
@@ -2426,11 +2426,11 @@ export abstract class LinuxMachine extends EndHost
         return `TCPDUMPSIM1\n${JSON.stringify(fakeFrames)}`;
       },
       writeFile(path: string, content: string): boolean {
-        const abs = self.executor.vfs.normalizePath(path, self.executor.cwd);
+        const abs = self.executor.vfs.normalizePath(path, self.executor.getCwd());
         return self.executor.vfs.writeFile(abs, content, 0, 0, 0o022);
       },
       dirWritable(path: string): boolean {
-        const abs = self.executor.vfs.normalizePath(path, self.executor.cwd);
+        const abs = self.executor.vfs.normalizePath(path, self.executor.getCwd());
         const dir = abs.slice(0, abs.lastIndexOf('/')) || '/';
         return self.executor.vfs.exists(dir) && !dir.startsWith('/sys') && !dir.startsWith('/proc');
       },
