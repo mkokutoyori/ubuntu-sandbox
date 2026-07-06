@@ -143,7 +143,7 @@ export function getOracleDatabase(deviceId: string): OracleDatabase {
     listenerTcp.start();
     oracleListenerTcpSyncs.set(deviceId, listenerTcp);
 
-    db.instance.startup('OPEN');
+    db.instance.startup();
     // A freshly provisioned server boots with the listener running
     // (dbstart/systemd would have started it); `lsnrctl stop` still
     // takes it down realistically (ORA-12541 on @connects).
@@ -196,8 +196,8 @@ export function createSQLPlusSession(
   let viaOracleNet = false;
   if (connectIdentifier && localDevice) {
     const res = resolveOracleConnectTarget(localDevice, connectIdentifier, getOracleDatabase);
-    if (res.ok) { db = res.db; viaOracleNet = true; }
-    else netError = res.error;
+    if (res.ok === false) { netError = res.error; }
+    else { db = res.db; viaOracleNet = true; }
   }
 
   const session = new SQLPlusSession(db);

@@ -16,7 +16,7 @@
 
 import type { IEventBus } from './EventBus';
 import type { IScheduler } from './Scheduler';
-import type { DomainEventTopic, EventOf, PayloadOf } from './types';
+import type { DomainEventTopic, PayloadOf } from './types';
 
 export interface WaitForEventOptions {
   timeoutMs: number;
@@ -47,7 +47,7 @@ export function waitForEvent<T extends DomainEventTopic>(
   predicate: (payload: PayloadOf<T>) => boolean,
   opts: WaitForEventOptions,
 ): Promise<PayloadOf<T>> {
-  return new Promise((resolve, reject) => {
+  return new Promise<PayloadOf<T>>((resolve, reject) => {
     let settled = false;
 
     const cleanup = () => {
@@ -68,10 +68,19 @@ export function waitForEvent<T extends DomainEventTopic>(
 
     const unsubscribe = bus.subscribe(topic, (event) => {
       if (settled) return;
-      const typed = event as EventOf<T>;
+      // T stays generic inside this function body, so EventOf<T>'s
+      // Extract<DomainEvent, { topic: T }> can't distribute precisely —
+      // it resolves to the union of every topic's payload. Narrow through
+      // unknown to the shape we actually know holds: the payload for
+      // whichever concrete topic the caller instantiated T with.
+      const typed = event as unknown as { payload: PayloadOf<T> };
       if (predicate(typed.payload)) {
         cleanup();
-        resolve(typed.payload);
+        // Two separate references to the same deferred conditional type
+        // PayloadOf<T> aren't always considered mutually assignable by TS
+        // inside a generic function body — go through Parameters<> to
+        // match resolve's actual parameter type exactly.
+        resolve(typed.payload as unknown as Parameters<typeof resolve>[0]);
       }
     });
 

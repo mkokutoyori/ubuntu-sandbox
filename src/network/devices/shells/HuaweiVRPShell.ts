@@ -443,7 +443,7 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
 
   // ─── Main Execute ──────────────────────────────────────────────────
 
-  execute(router: Router, rawInput: string): string {
+  execute(router: Router, rawInput: string): string | Promise<string> {
     const trimmed = rawInput.trim();
     if (!trimmed) return '';
 
@@ -1015,7 +1015,7 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
         } else {
           update.rawLine = raw ?? `${kw} ${args.join(' ')}`.trim();
         }
-        lc.upsert(update as Parameters<typeof lc.upsert>[0]);
+        lc.upsert(update as unknown as Parameters<typeof lc.upsert>[0]);
         return '';
       });
     }

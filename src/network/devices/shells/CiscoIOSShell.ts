@@ -391,6 +391,11 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       terminalLength: this.terminalLength,
       terminalWidth: this.terminalWidth,
       terminalMonitor: this.terminalMonitor,
+      // Cisco IOS has no separate "terminal debugging" toggle — `terminal
+      // monitor` alone gates whether debug/log output reaches this vty
+      // (unlike Huawei VRP, which distinguishes the two). Mirror it here
+      // purely to satisfy the shared VtySnapshot shape.
+      terminalDebugging: this.terminalMonitor,
       privilegeLevel: this.mode === 'user' ? 1 : 15,
       historySize: 10,
       cmdHistory: this.cmdHistory,
@@ -451,7 +456,7 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
 
   protected override cmdExit(): string {
     if (this.mode === 'user') { this.terminalMonitor = false; return 'Connection closed.'; }
-    this.fsm.mode = this.mode;
+    this.fsm.mode = this.mode as CiscoShellMode;
     const { newMode, fieldsToCllear } = this.fsm.exit();
     this.mode = newMode;
     this.clearFields(fieldsToCllear);

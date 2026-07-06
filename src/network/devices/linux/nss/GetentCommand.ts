@@ -139,7 +139,7 @@ export function runGetent(
   fallbackFilesSource: FilesNssSource,
 ): GetentResult {
   const parsed = parseArgs(argv);
-  if (!parsed.ok) return { output: parsed.output, exitCode: parsed.exitCode };
+  if (parsed.ok === false) return { output: parsed.output, exitCode: parsed.exitCode };
 
   const overrideFor = (database: string): string | null =>
     parsed.service.perDb.get(database) ?? parsed.service.global;

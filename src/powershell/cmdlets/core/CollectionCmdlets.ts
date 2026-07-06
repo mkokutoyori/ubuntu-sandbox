@@ -13,7 +13,7 @@ import type { CmdletContext } from '../CmdletContext';
 import type { PSValue } from '@/powershell/runtime/PSEnvironment';
 import type { PSScriptBlock } from '@/powershell/parser/PSASTNode';
 import { psValueToString } from '@/powershell/runtime/PSExpansion';
-import { formatTable as renderTable, formatList as renderList } from '@/network/devices/windows/PSPipeline';
+import { formatTable as renderTable, formatList as renderList, type PSObject } from '@/network/devices/windows/PSPipeline';
 
 // ─── Helpers ───────────────────────────────────────────────────────────────
 
@@ -725,7 +725,7 @@ export class FormatTableCmdlet implements ICmdlet {
             ? it as Record<string, PSValue>
             : { Value: it } as Record<string, PSValue>);
     const autoSize = ctx.named['autosize'] === true || ctx.named['autosize'] === 'true';
-    const rendered = renderTable(objects as Array<Record<string, unknown>>, autoSize ? '-AutoSize' : '');
+    const rendered = renderTable(objects as unknown as PSObject[], autoSize ? '-AutoSize' : '');
     if (ctx.named['hidetableheaders'] === true) {
       return rendered.split('\n').slice(2).join('\n');
     }
@@ -762,7 +762,7 @@ export class FormatListCmdlet implements ICmdlet {
         for (const c of cols) rec[c.name] = c.get(item) ?? '';
         return rec;
       });
-    return renderList(objects as Array<Record<string, unknown>>, '');
+    return renderList(objects as unknown as PSObject[], '');
   }
 }
 

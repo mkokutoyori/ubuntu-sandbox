@@ -1592,9 +1592,9 @@ export class HuaweiSwitchShell implements ISwitchShell {
         const filter = vIdx >= 0 ? parseInt(args[vIdx + 1] ?? '', 10) : NaN;
         const rows: string[] = [];
         for (const { vlan, group } of agent.listGroups(Number.isNaN(filter) ? undefined : filter)) {
-          rows.push(` Group address: ${group.group}`);
+          rows.push(` Group address: ${group.groupAddress}`);
           rows.push(`  VLAN ID: ${vlan}`);
-          rows.push(`  Member ports: ${[...group.memberPorts].join(' ') || '(none)'}`);
+          rows.push(`  Member ports: ${[...group.members.keys()].join(' ') || '(none)'}`);
         }
         return rows.length ? rows.join('\n') : 'Info: No multicast group entry is found.';
       }

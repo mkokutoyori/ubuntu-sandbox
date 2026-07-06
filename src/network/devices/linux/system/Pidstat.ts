@@ -212,7 +212,7 @@ export class PidstatAccumulator<R extends PidstatCpuRow | PidstatMemRow> {
   add(rows: R[]): void {
     if (this.kind === 'cpu') {
       for (const row of rows as PidstatCpuRow[]) {
-        const existing = this.sums.get(row.pid) as (PidstatCpuRow & { samples: number }) | undefined;
+        const existing = this.sums.get(row.pid) as unknown as (PidstatCpuRow & { samples: number }) | undefined;
         if (!existing) {
           this.sums.set(row.pid, { ...(row as R), samples: 1 });
           continue;
@@ -223,7 +223,7 @@ export class PidstatAccumulator<R extends PidstatCpuRow | PidstatMemRow> {
       }
     } else {
       for (const row of rows as PidstatMemRow[]) {
-        const existing = this.sums.get(row.pid) as (PidstatMemRow & { samples: number }) | undefined;
+        const existing = this.sums.get(row.pid) as unknown as (PidstatMemRow & { samples: number }) | undefined;
         if (!existing) {
           this.sums.set(row.pid, { ...(row as R), samples: 1 });
           continue;
