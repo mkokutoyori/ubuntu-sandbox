@@ -97,7 +97,7 @@ describe('nslookup/dig – Basic A Record Lookups', () => {
     await client.executeCommand('echo "nameserver 192.168.1.10" | sudo tee /etc/resolv.conf');
 
     // Connect client and server via switch
-    const sw = new Switch('switch', 'SW');
+    const sw = new Switch('switch-generic', 'SW');
     const cable1 = new Cable('c1');
     cable1.connect(client.getPort('eth0')!, sw.getPort('eth0')!);
     const cable2 = new Cable('c2');
@@ -116,7 +116,7 @@ describe('nslookup/dig – Basic A Record Lookups', () => {
     await client.executeCommand('netsh interface ip set address name="eth0" static 192.168.1.21 255.255.255.0 192.168.1.1');
     await client.executeCommand('netsh interface ip set dns name="eth0" static 192.168.1.10');
 
-    const sw = new Switch('switch', 'SW');
+    const sw = new Switch('switch-generic', 'SW');
     const cable1 = new Cable('c1');
     cable1.connect(client.getPort('eth0')!, sw.getPort('eth0')!);
     const cable2 = new Cable('c2');
@@ -134,7 +134,7 @@ describe('nslookup/dig – Basic A Record Lookups', () => {
     await client.executeCommand('sudo ip addr add 192.168.1.20/24 dev eth0');
     await client.executeCommand('sudo ip link set eth0 up');
 
-    const sw = new Switch('switch', 'SW');
+    const sw = new Switch('switch-generic', 'SW');
     const cable1 = new Cable('c1');
     cable1.connect(client.getPort('eth0')!, sw.getPort('eth0')!);
     const cable2 = new Cable('c2');
@@ -151,7 +151,7 @@ describe('nslookup/dig – Basic A Record Lookups', () => {
     await setupDnsServer(dnsServer);
     await client.executeCommand('netsh interface ip set address name="eth0" static 192.168.1.21 255.255.255.0 192.168.1.1');
 
-    const sw = new Switch('switch', 'SW');
+    const sw = new Switch('switch-generic', 'SW');
     const cable1 = new Cable('c1');
     cable1.connect(client.getPort('eth0')!, sw.getPort('eth0')!);
     const cable2 = new Cable('c2');
@@ -177,7 +177,7 @@ describe('nslookup/dig – Basic A Record Lookups', () => {
     await client.executeCommand('sudo ip link set eth0 up');
     await client.executeCommand(`sudo sh -c 'echo "nameserver 192.168.1.10" > /etc/resolv.conf'`);
 
-    const sw = new Switch('switch', 'SW');
+    const sw = new Switch('switch-generic', 'SW');
     const cable1 = new Cable('c1');
     cable1.connect(client.getPort('eth0')!, sw.getPort('eth0')!);
     const cable2 = new Cable('c2');
@@ -204,7 +204,7 @@ describe('nslookup/dig – Reverse Lookups (PTR)', () => {
     await client.executeCommand('sudo ip link set eth0 up');
     await client.executeCommand(`sudo sh -c 'echo "nameserver 192.168.1.10" > /etc/resolv.conf'`);
 
-    const sw = new Switch('switch', 'SW');
+    const sw = new Switch('switch-generic', 'SW');
     const cable1 = new Cable('c1');
     cable1.connect(client.getPort('eth0')!, sw.getPort('eth0')!);
     const cable2 = new Cable('c2');
@@ -222,7 +222,7 @@ describe('nslookup/dig – Reverse Lookups (PTR)', () => {
     await client.executeCommand('netsh interface ip set address name="eth0" static 192.168.1.21 255.255.255.0 192.168.1.1');
     await client.executeCommand('netsh interface ip set dns name="eth0" static 192.168.1.10');
 
-    const sw = new Switch('switch', 'SW');
+    const sw = new Switch('switch-generic', 'SW');
     const cable1 = new Cable('c1');
     cable1.connect(client.getPort('eth0')!, sw.getPort('eth0')!);
     const cable2 = new Cable('c2');
@@ -248,7 +248,7 @@ describe('nslookup/dig – Other Record Types', () => {
     await client.executeCommand('sudo ip link set eth0 up');
     await client.executeCommand(`sudo sh -c 'echo "nameserver 192.168.1.10" > /etc/resolv.conf'`);
 
-    const sw = new Switch('switch', 'SW');
+    const sw = new Switch('switch-generic', 'SW');
     const cable1 = new Cable('c1');
     cable1.connect(client.getPort('eth0')!, sw.getPort('eth0')!);
     const cable2 = new Cable('c2');
@@ -266,7 +266,7 @@ describe('nslookup/dig – Other Record Types', () => {
     await client.executeCommand('netsh interface ip set address name="eth0" static 192.168.1.21 255.255.255.0 192.168.1.1');
     await client.executeCommand('netsh interface ip set dns name="eth0" static 192.168.1.10');
 
-    const sw = new Switch('switch', 'SW');
+    const sw = new Switch('switch-generic', 'SW');
     const cable1 = new Cable('c1');
     cable1.connect(client.getPort('eth0')!, sw.getPort('eth0')!);
     const cable2 = new Cable('c2');
@@ -294,7 +294,7 @@ describe('nslookup/dig – Other Record Types', () => {
     await client.executeCommand('sudo ip link set eth0 up');
     await client.executeCommand(`sudo sh -c 'echo "nameserver 192.168.1.10" > /etc/resolv.conf'`);
 
-    const sw = new Switch('switch', 'SW');
+    const sw = new Switch('switch-generic', 'SW');
     const cable1 = new Cable('c1');
     cable1.connect(client.getPort('eth0')!, sw.getPort('eth0')!);
     const cable2 = new Cable('c2');
@@ -313,7 +313,7 @@ describe('nslookup/dig – Other Record Types', () => {
     await client.executeCommand('sudo ip link set eth0 up');
     await client.executeCommand(`sudo sh -c 'echo "nameserver 192.168.1.10" > /etc/resolv.conf'`);
 
-    const sw = new Switch('switch', 'SW');
+    const sw = new Switch('switch-generic', 'SW');
     const cable1 = new Cable('c1');
     cable1.connect(client.getPort('eth0')!, sw.getPort('eth0')!);
     const cable2 = new Cable('c2');
@@ -332,7 +332,7 @@ describe('nslookup/dig – Other Record Types', () => {
     await client.executeCommand('sudo ip link set eth0 up');
     await client.executeCommand(`sudo sh -c 'echo "nameserver 192.168.1.10" > /etc/resolv.conf'`);
 
-    const sw = new Switch('switch', 'SW');
+    const sw = new Switch('switch-generic', 'SW');
     const cable1 = new Cable('c1');
     cable1.connect(client.getPort('eth0')!, sw.getPort('eth0')!);
     const cable2 = new Cable('c2');
@@ -359,7 +359,7 @@ describe('nslookup/dig – Query Options', () => {
     await client.executeCommand('sudo ip link set eth0 up');
     await client.executeCommand(`sudo sh -c 'echo "nameserver 192.168.1.10" > /etc/resolv.conf'`);
 
-    const sw = new Switch('switch', 'SW');
+    const sw = new Switch('switch-generic', 'SW');
     const cable1 = new Cable('c1');
     cable1.connect(client.getPort('eth0')!, sw.getPort('eth0')!);
     const cable2 = new Cable('c2');
@@ -380,7 +380,7 @@ describe('nslookup/dig – Query Options', () => {
     await client.executeCommand('sudo ip link set eth0 up');
     await client.executeCommand(`sudo sh -c 'echo "nameserver 192.168.1.10" > /etc/resolv.conf'`);
 
-    const sw = new Switch('switch', 'SW');
+    const sw = new Switch('switch-generic', 'SW');
     const cable1 = new Cable('c1');
     cable1.connect(client.getPort('eth0')!, sw.getPort('eth0')!);
     const cable2 = new Cable('c2');
@@ -405,7 +405,7 @@ describe('nslookup/dig – Query Options', () => {
     await client.executeCommand('sudo ip link set eth0 up');
     await client.executeCommand(`sudo sh -c 'echo "nameserver 192.168.1.10" > /etc/resolv.conf'`);
 
-    const sw = new Switch('switch', 'SW');
+    const sw = new Switch('switch-generic', 'SW');
     const cable1 = new Cable('c1');
     cable1.connect(client.getPort('eth0')!, sw.getPort('eth0')!);
     const cable2 = new Cable('c2');
@@ -447,7 +447,7 @@ describe('nslookup/dig – Error Handling', () => {
     await client.executeCommand('sudo ip link set eth0 up');
     await client.executeCommand(`sudo sh -c 'echo "nameserver 192.168.1.10" > /etc/resolv.conf'`);
 
-    const sw = new Switch('switch', 'SW');
+    const sw = new Switch('switch-generic', 'SW');
     const cable1 = new Cable('c1');
     cable1.connect(client.getPort('eth0')!, sw.getPort('eth0')!);
     const cable2 = new Cable('c2');
@@ -466,7 +466,7 @@ describe('nslookup/dig – Error Handling', () => {
     await client.executeCommand('sudo ip link set eth0 up');
     await client.executeCommand(`sudo sh -c 'echo "nameserver 192.168.1.10" > /etc/resolv.conf'`);
 
-    const sw = new Switch('switch', 'SW');
+    const sw = new Switch('switch-generic', 'SW');
     const cable1 = new Cable('c1');
     cable1.connect(client.getPort('eth0')!, sw.getPort('eth0')!);
     const cable2 = new Cable('c2');
@@ -527,7 +527,7 @@ describe('nslookup/dig – Advanced Features', () => {
     await client.executeCommand('netsh interface ip set address name="eth0" static 192.168.1.21 255.255.255.0 192.168.1.1');
     await client.executeCommand('netsh interface ip set dns name="eth0" static 192.168.1.10');
 
-    const sw = new Switch('switch', 'SW');
+    const sw = new Switch('switch-generic', 'SW');
     const cable1 = new Cable('c1');
     cable1.connect(client.getPort('eth0')!, sw.getPort('eth0')!);
     const cable2 = new Cable('c2');
@@ -552,7 +552,7 @@ describe('nslookup/dig – Advanced Features', () => {
     await client.executeCommand('sudo ip link set eth0 up');
     await client.executeCommand(`sudo sh -c 'echo "nameserver 192.168.1.10" > /etc/resolv.conf'`);
 
-    const sw = new Switch('switch', 'SW');
+    const sw = new Switch('switch-generic', 'SW');
     const cable1 = new Cable('c1');
     cable1.connect(client.getPort('eth0')!, sw.getPort('eth0')!);
     const cable2 = new Cable('c2');
@@ -601,7 +601,7 @@ describe('nslookup/dig – IPv6 AAAA Records', () => {
     await client.executeCommand('sudo ip link set eth0 up');
     await client.executeCommand(`sudo sh -c 'echo "nameserver 192.168.1.10" > /etc/resolv.conf'`);
 
-    const sw = new Switch('switch', 'SW');
+    const sw = new Switch('switch-generic', 'SW');
     const cable1 = new Cable('c1');
     cable1.connect(client.getPort('eth0')!, sw.getPort('eth0')!);
     const cable2 = new Cable('c2');
@@ -683,7 +683,7 @@ describe('nslookup/dig – Security Options', () => {
     await client.executeCommand('sudo ip link set eth0 up');
     await client.executeCommand(`sudo sh -c 'echo "nameserver 192.168.1.10" > /etc/resolv.conf'`);
 
-    const sw = new Switch('switch', 'SW');
+    const sw = new Switch('switch-generic', 'SW');
     const cable1 = new Cable('c1');
     cable1.connect(client.getPort('eth0')!, sw.getPort('eth0')!);
     const cable2 = new Cable('c2');
@@ -714,7 +714,7 @@ describe('nslookup – Windows Specific Features', () => {
     await client.executeCommand('netsh interface ip set address name="eth0" static 192.168.1.21 255.255.255.0 192.168.1.1');
     await client.executeCommand('netsh interface ip set dns name="eth0" static 192.168.1.10');
 
-    const sw = new Switch('switch', 'SW');
+    const sw = new Switch('switch-generic', 'SW');
     const cable1 = new Cable('c1');
     cable1.connect(client.getPort('eth0')!, sw.getPort('eth0')!);
     const cable2 = new Cable('c2');
@@ -741,7 +741,7 @@ describe('Linux – dig vs host', () => {
     await client.executeCommand('sudo ip link set eth0 up');
     await client.executeCommand(`sudo sh -c 'echo "nameserver 192.168.1.10" > /etc/resolv.conf'`);
 
-    const sw = new Switch('switch', 'SW');
+    const sw = new Switch('switch-generic', 'SW');
     const cable1 = new Cable('c1');
     cable1.connect(client.getPort('eth0')!, sw.getPort('eth0')!);
     const cable2 = new Cable('c2');
@@ -766,7 +766,7 @@ describe('Integration – dig with ping and traceroute', () => {
     await client.executeCommand('sudo ip link set eth0 up');
     await client.executeCommand(`sudo sh -c 'echo "nameserver 192.168.1.10" > /etc/resolv.conf'`);
 
-    const sw = new Switch('switch', 'SW');
+    const sw = new Switch('switch-generic', 'SW');
     const cable1 = new Cable('c1');
     cable1.connect(client.getPort('eth0')!, sw.getPort('eth0')!);
     const cable2 = new Cable('c2');

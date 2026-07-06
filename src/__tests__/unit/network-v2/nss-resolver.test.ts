@@ -61,7 +61,7 @@ describe('NSS — config parsing', () => {
 
 describe('NSS — lookup dispatch', () => {
   let bus: EventBus;
-  let pc: LinuxPC;
+  let pc: any;
 
   beforeEach(() => {
     EquipmentRegistry.resetInstance();
@@ -165,7 +165,7 @@ describe('NSS — lookup dispatch', () => {
 
 describe('NSS — reactive cache invalidation', () => {
   let bus: EventBus;
-  let pc: LinuxPC;
+  let pc: any;
 
   beforeEach(() => {
     EquipmentRegistry.resetInstance();
@@ -230,7 +230,7 @@ describe('NSS — reactive cache invalidation', () => {
 
 describe('NSS — FilesNssSource shadow privilege check', () => {
   let bus: EventBus;
-  let pc: LinuxPC;
+  let pc: any;
 
   beforeEach(() => {
     EquipmentRegistry.resetInstance();
@@ -260,7 +260,7 @@ describe('NSS — FilesNssSource shadow privilege check', () => {
 
 describe('NSS — DNS source', () => {
   let bus: EventBus;
-  let pc: LinuxPC;
+  let pc: any;
 
   beforeEach(() => {
     EquipmentRegistry.resetInstance();
@@ -291,7 +291,7 @@ describe('NSS — DNS source', () => {
 
 describe('NSS — files source initgroups', () => {
   let bus: EventBus;
-  let pc: LinuxPC;
+  let pc: any;
 
   beforeEach(() => {
     EquipmentRegistry.resetInstance();
@@ -304,7 +304,7 @@ describe('NSS — files source initgroups', () => {
   });
 
   it('returns the user\'s primary GID + supplementary GIDs', () => {
-    const r = pc.executor.nss.lookup<number[]>('initgroups', s => s.initgroups?.('user'));
+    const r = pc.executor.nss.lookup('initgroups', s => s.initgroups?.('user'));
     expect(r.status).toBe('SUCCESS');
     // Default LinuxPC user is in sudo + adm. Includes the primary 1000.
     expect(r.entry).toContain(1000);
@@ -313,7 +313,7 @@ describe('NSS — files source initgroups', () => {
 
 describe('NSS — files source factories', () => {
   let bus: EventBus;
-  let pc: LinuxPC;
+  let pc: any;
 
   beforeEach(() => {
     EquipmentRegistry.resetInstance();
