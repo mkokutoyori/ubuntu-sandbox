@@ -47,8 +47,8 @@ describe('LiveDeviceStats', () => {
     expect(screen.getByText((c) => c.includes('ARP cache: 0'))).toBeTruthy();
 
     act(() => {
-      pc.addStaticARP(new IPAddress('10.0.0.1'), MACAddress.parse('aa:bb:cc:dd:ee:01'), 'eth0');
-      pc.addStaticARP(new IPAddress('10.0.0.2'), MACAddress.parse('aa:bb:cc:dd:ee:02'), 'eth0');
+      pc.addStaticARP(new IPAddress('10.0.0.1'), new MACAddress('aa:bb:cc:dd:ee:01'), 'eth0');
+      pc.addStaticARP(new IPAddress('10.0.0.2'), new MACAddress('aa:bb:cc:dd:ee:02'), 'eth0');
     });
 
     expect(screen.getByText((c) => c.includes('ARP cache: 2'))).toBeTruthy();

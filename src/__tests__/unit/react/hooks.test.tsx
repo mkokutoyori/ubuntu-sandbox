@@ -80,7 +80,7 @@ describe('Phase 6 — React hooks', () => {
     expect(result.current).toEqual([]);
 
     act(() => {
-      pc.addStaticARP(new IPAddress('10.0.0.42'), MACAddress.parse('aa:bb:cc:dd:ee:ff'), 'eth0');
+      pc.addStaticARP(new IPAddress('10.0.0.42'), new MACAddress('aa:bb:cc:dd:ee:ff'), 'eth0');
     });
     expect(result.current.length).toBe(1);
     expect(result.current[0].ip).toBe('10.0.0.42');
@@ -93,8 +93,8 @@ describe('Phase 6 — React hooks', () => {
     const { result } = renderHook(() => useHostStats(pc.getId()));
     expect(result.current.arpCacheSize).toBe(0);
     act(() => {
-      pc.addStaticARP(new IPAddress('10.0.0.1'), MACAddress.parse('aa:bb:cc:dd:ee:01'), 'eth0');
-      pc.addStaticARP(new IPAddress('10.0.0.2'), MACAddress.parse('aa:bb:cc:dd:ee:02'), 'eth0');
+      pc.addStaticARP(new IPAddress('10.0.0.1'), new MACAddress('aa:bb:cc:dd:ee:01'), 'eth0');
+      pc.addStaticARP(new IPAddress('10.0.0.2'), new MACAddress('aa:bb:cc:dd:ee:02'), 'eth0');
     });
     expect(result.current.arpCacheSize).toBe(2);
   });
@@ -110,7 +110,7 @@ describe('Phase 6 — React hooks', () => {
 
     for (let i = 0; i < 5; i++) {
       act(() => {
-        pc.addStaticARP(new IPAddress(`10.0.0.${i + 1}`), MACAddress.parse(`aa:bb:cc:dd:ee:0${i}`), 'eth0');
+        pc.addStaticARP(new IPAddress(`10.0.0.${i + 1}`), new MACAddress(`aa:bb:cc:dd:ee:0${i}`), 'eth0');
       });
     }
     expect(result.current.length).toBe(3);
