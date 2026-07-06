@@ -574,6 +574,13 @@ export interface IProcessProvider {
    * Returns the new ProcessInfo (or `null` if the call was rejected).
    */
   startProcess?(imageName: string, opts?: { arguments?: string; user?: string }): ProcessInfo | null;
+  /**
+   * Verifies a local account's password — used by `Start-Process -Credential`
+   * (PRD-Nslookup-Dig-Rndc-Runas.md §2.1.7/P14) before spawning the process
+   * under that identity. The runas/PSCredential counterpart of
+   * WindowsUserManager.checkPassword.
+   */
+  checkCredential?(userName: string, password: string): boolean;
 }
 
 export interface JobInfo {

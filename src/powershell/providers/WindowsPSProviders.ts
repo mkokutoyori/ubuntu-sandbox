@@ -718,6 +718,9 @@ class WindowsProcessAdapter implements IProcessProvider {
     );
     return spawned ? toProcessInfo(spawned) : null;
   }
+  checkCredential(userName: string, password: string): boolean {
+    return this.pc.checkPassword(userName, password);
+  }
 }
 
 function toProcessInfo(p: import('@/network/devices/windows/WindowsProcessManager').WindowsProcess): ProcessInfo {
