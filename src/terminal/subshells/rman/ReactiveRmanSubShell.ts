@@ -125,7 +125,7 @@ export class ReactiveRmanSubShell implements ISubShell {
 
     const result = this._session.processLine(trimmed);
 
-    if (!result.ok) {
+    if (result.ok === false) {
       return {
         output: this._formatRmanError(result.error),
         exit: false,

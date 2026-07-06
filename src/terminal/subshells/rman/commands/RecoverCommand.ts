@@ -54,7 +54,7 @@ export class RecoverCommand implements IRmanCommand<void> {
       const scn = trailing.match(/^UNTIL\s+SCN\s+(\S+)/i);
       if (scn) {
         const v = Scn.of(scn[1]);
-        if (!v.ok) return v;
+        if (v.ok === false) return v;
         opts.untilScn = v.value.value;
       } else {
         const time = trailing.match(/^UNTIL\s+TIME\s+'([^']+)'/i);

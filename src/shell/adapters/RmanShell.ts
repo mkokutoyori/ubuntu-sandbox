@@ -41,7 +41,9 @@ export class RmanShell extends AbstractShell {
   }
 
   override getCompletions(line: string): readonly string[] {
-    return this.subShell?.getCompletions?.(line) ?? [];
+    // ReactiveRmanSubShell doesn't implement tab-completion (ISubShell
+    // declares it optional) — this stays defensive in case it ever does.
+    return (this.subShell as { getCompletions?: (line: string) => string[] } | null)?.getCompletions?.(line) ?? [];
   }
 
   protected override onDispose(): void { this.subShell?.dispose(); }

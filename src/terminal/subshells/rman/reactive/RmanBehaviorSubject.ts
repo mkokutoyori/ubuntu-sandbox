@@ -8,7 +8,13 @@
 
 import { RmanSubject, type RmanObservable, type RmanOperator } from './RmanSubject';
 
-export class RmanBehaviorSubject<T> implements RmanObservable<T> {
+/**
+ * Deliberately does NOT `implements RmanObservable<T>` — same reason as
+ * RmanSubject: its `pipe` is a single rest-arg method, which can't satisfy
+ * RmanObservable<T>'s overloaded `pipe`. Use `asObservable()` for the
+ * fully-typed surface.
+ */
+export class RmanBehaviorSubject<T> {
   private readonly _inner = new RmanSubject<T>();
   private _value: T;
 

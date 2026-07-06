@@ -57,7 +57,7 @@ export class ListBackupCommand implements IRmanCommand<string[]> {
       ]);
     }
     const snap = catalog.listAll();
-    if (!snap.ok) return snap;
+    if (snap.ok === false) return snap;
 
     if (this.variant === 'ARCHIVELOG') {
       const arc = snap.value.sets.filter(s => s.type === 'ARCHIVELOG');

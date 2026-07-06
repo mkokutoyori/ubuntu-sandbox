@@ -31,7 +31,7 @@ export class ReportCommand implements IRmanCommand<string[]> {
     const activePolicy = suffix ? parsePolicySuffix(suffix, policy) : policy;
     if (this.mode === 'OBSOLETE') {
       const snap = catalog.listAll();
-      if (!snap.ok) return snap;
+      if (snap.ok === false) return snap;
       const obsolete = activePolicy.findObsolete(snap.value.sets);
       const lines = [
         '',
@@ -89,7 +89,7 @@ export class ReportCommand implements IRmanCommand<string[]> {
     }
     // NEED_BACKUP: a file is "in need" when no backup covers it
     const snap = catalog.listAll();
-    if (!snap.ok) return snap;
+    if (snap.ok === false) return snap;
     const covered = new Set<number>();
     for (const s of snap.value.sets) for (const df of s.datafiles) covered.add(df.fileNo);
 
