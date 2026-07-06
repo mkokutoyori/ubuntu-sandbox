@@ -128,6 +128,14 @@ export class TcpSocket {
   /** Out-of-order segments buffered for reassembly instead of being dropped (PRD-TCP.md P6), bounded by `TCP_REASSEMBLY_MAX_BYTES`. */
   reassemblyBuffer: Array<{ sequence: number; payload: string; psh: boolean }> = [];
 
+  /** PRD-TCP.md P8 (RFC 9293 §3.8.4, SO_KEEPALIVE) — optional idle-probe timer, off by default. */
+  keepAliveEnabled = false;
+  keepAliveIdleMs = 0;
+  keepAliveIntervalMs = 0;
+  keepAliveMaxProbes = 0;
+  keepAliveProbesSent = 0;
+  keepAliveTimer: symbol | null = null;
+
   private readonly openHandlers: TcpOpenHandler[] = [];
   private readonly dataHandlers: TcpDataHandler[] = [];
   private readonly closeHandlers: TcpCloseHandler[] = [];
@@ -147,6 +155,26 @@ export class TcpSocket {
   send(data: unknown): void { this.stack._sendData(this, data); }
   write(data: string): void { this.stack._sendData(this, data); }
   close(): void { this.stack._initiateClose(this); }
+
+  /**
+   * Abandon the connection immediately with an RST (RFC 9293 §3.10.4),
+   * bypassing the graceful FIN sequence `close()` uses — analogous to a
+   * real socket's `SO_LINGER` with `l_onoff=1, l_linger=0`. `reset()` is
+   * the same operation under the name PRD-TCP.md also uses for it.
+   */
+  abort(): void { this.stack._abort(this); }
+  reset(): void { this.stack._abort(this); }
+
+  /**
+   * Enable RFC 9293 §3.8.4 (SO_KEEPALIVE) idle-probe monitoring: after
+   * `idleMs` with no segment received from the peer, send a probe every
+   * `intervalMs`; if `maxProbes` probes go unanswered, close the
+   * connection as if it had timed out.
+   */
+  enableKeepAlive(idleMs: number, intervalMs: number = idleMs, maxProbes = 3): void {
+    this.stack._enableKeepAlive(this, idleMs, intervalMs, maxProbes);
+  }
+  disableKeepAlive(): void { this.stack._disableKeepAlive(this); }
 
   onOpen(handler: TcpOpenHandler): () => void {
     this.openHandlers.push(handler);
@@ -799,6 +827,16 @@ export class TcpStack {
           this.transmit(socket, ackFlags, socket.sendNext, socket.recvNext, undefined);
         } else if (seg.flags.ack && !seg.flags.fin) {
           socket.sendUnacked = seg.acknowledgement;
+          // RFC 9293 §3.8.4/§3.10.7.4 — a no-payload segment behind our
+          // current RCV.NXT carries no new data (this is exactly what a
+          // keepalive probe looks like: the peer deliberately resends an
+          // already-acknowledged sequence number). Real stacks still ACK
+          // an unacceptable/duplicate segment, which is what lets a
+          // keepalive probe actually confirm the peer is alive.
+          if (seqLt(seg.sequence, socket.recvNext)) {
+            const ackFlags = noFlags(); ackFlags.ack = true;
+            this.transmit(socket, ackFlags, socket.sendNext, socket.recvNext, undefined);
+          }
         }
         if (seg.flags.fin) this.handleIncomingFin(socket);
         break;
@@ -852,6 +890,13 @@ export class TcpStack {
         break;
       default:
         break;
+    }
+    // PRD-TCP.md P8 — any segment from the peer is real activity: reset
+    // the idle clock (and the failed-probe count, since the peer just
+    // proved it's alive) rather than letting keepalive fire needlessly.
+    if (socket.keepAliveEnabled && socket.state === 'established') {
+      socket.keepAliveProbesSent = 0;
+      this.rearmKeepAliveTimer(socket);
     }
   }
 
@@ -974,6 +1019,8 @@ export class TcpStack {
     socket.unackedQueue = [];
     this.timers.clear(socket.persistTimer);
     socket.persistTimer = null;
+    this.timers.clear(socket.keepAliveTimer);
+    socket.keepAliveTimer = null;
     socket.sendBacklog = [];
     socket.reassemblyBuffer = [];
     this._transition(socket, 'closed');
@@ -1003,6 +1050,64 @@ export class TcpStack {
         oldState, newState,
       },
     });
+  }
+
+  /**
+   * PRD-TCP.md P8 — abrupt, application-initiated abort (RFC 9293 §3.10.4):
+   * send one real RST at the connection's actual current sequence/ack
+   * (unlike `sendRst`'s zeroed-sequence reply to an incoming segment we're
+   * rejecting), then tear down locally right away instead of going
+   * through FIN-WAIT like `close()` does.
+   */
+  _abort(socket: TcpSocket): void {
+    if (socket.closed) return;
+    const flags = noFlags(); flags.rst = true; flags.ack = true;
+    this.transmit(socket, flags, socket.sendNext, socket.recvNext, undefined);
+    this._teardown(socket, 'rst');
+  }
+
+  /** PRD-TCP.md P8 — arm idle-probe keepalive monitoring for this socket. */
+  _enableKeepAlive(socket: TcpSocket, idleMs: number, intervalMs: number, maxProbes: number): void {
+    socket.keepAliveEnabled = true;
+    socket.keepAliveIdleMs = idleMs;
+    socket.keepAliveIntervalMs = intervalMs;
+    socket.keepAliveMaxProbes = maxProbes;
+    socket.keepAliveProbesSent = 0;
+    this.rearmKeepAliveTimer(socket);
+  }
+
+  /** PRD-TCP.md P8 — disable idle-probe keepalive monitoring for this socket. */
+  _disableKeepAlive(socket: TcpSocket): void {
+    socket.keepAliveEnabled = false;
+    this.timers.clear(socket.keepAliveTimer);
+    socket.keepAliveTimer = null;
+  }
+
+  /** (Re)start the keepalive idle/probe-interval timer, or leave it disarmed when not applicable. */
+  private rearmKeepAliveTimer(socket: TcpSocket): void {
+    this.timers.clear(socket.keepAliveTimer);
+    socket.keepAliveTimer = null;
+    if (!socket.keepAliveEnabled || socket.state !== 'established') return;
+    const delay = socket.keepAliveProbesSent === 0 ? socket.keepAliveIdleMs : socket.keepAliveIntervalMs;
+    socket.keepAliveTimer = this.timers.setTimeout(() => this.onKeepAliveFired(socket), delay);
+  }
+
+  /** RFC 9293 §3.8.4 — no traffic for the idle period: probe, and give up after `keepAliveMaxProbes` unanswered probes. */
+  private onKeepAliveFired(socket: TcpSocket): void {
+    socket.keepAliveTimer = null;
+    if (socket.closed || socket.state !== 'established') return;
+    socket.keepAliveProbesSent++;
+    if (socket.keepAliveProbesSent > socket.keepAliveMaxProbes) {
+      this._teardown(socket, 'timeout');
+      return;
+    }
+    // Probe with a sequence number one behind SND.UNA — already
+    // acknowledged, so it doesn't disturb real data or sequence-space
+    // bookkeeping, just elicits a duplicate ACK from a still-alive peer.
+    const flags = noFlags(); flags.ack = true;
+    const probeSeq = (socket.sendUnacked - 1) >>> 0;
+    this.transmit(socket, flags, probeSeq, socket.recvNext, undefined);
+    this.rearmKeepAliveTimer(socket);
   }
 
   private sendRst(localIp: string, localPort: number, remoteIp: string, remotePort: number, ackForSeq: number): void {
