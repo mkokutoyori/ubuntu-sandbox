@@ -9,6 +9,7 @@ import { DnsOpcode, DnsRcode } from '@/network/dns/wire/DnsHeaderFlags';
 import { RRType, DnsClass } from '@/network/dns/wire/RRType';
 import { IPAddress } from '@/network/core/types';
 import { makeTxtRecord } from '@/network/dns/wire/ResourceRecord';
+import { formatRecordLine } from '../commands/dns/RecordFormat';
 import { normalizeDnsName, parentName } from '@/network/dns/wire/DnsName';
 import {
   isTransferQuery, buildAxfrAnswers, buildTransferResponse, refuseTransfer, zoneFromTransferAnswers,
@@ -63,6 +64,7 @@ export class Bind9Service {
   private readonly logging: Bind9Logging;
   private readonly readFile: (path: string) => string | null;
   private queryLogEnabled = false;
+  private dnssecValidationEnabled = true;
   private running = false;
   private activePort = DNS_PORT;
   private readonly rndcChannel: RndcChannel;
@@ -101,6 +103,47 @@ export class Bind9Service {
 
   setQueryLog(enabled: boolean): void {
     this.queryLogEnabled = enabled;
+  }
+
+  isDnssecValidationEnabled(): boolean {
+    return this.dnssecValidationEnabled;
+  }
+
+  setDnssecValidation(enabled: boolean): void {
+    this.dnssecValidationEnabled = enabled;
+  }
+
+  /** `rndc dumpdb [-all]` — dumps every loaded zone's records, real `named_dump.db`-style, via the existing Bind9Files API. */
+  dumpDatabase(): OperationResult {
+    if (!this.running || !this.store) return { ok: false, error: 'not running' };
+    const lines: string[] = [';', `; Dumped at ${new Date().toUTCString()}`, ';'];
+    for (const zone of this.store.listZones()) {
+      lines.push(`; Zone dump of '${zone.origin || '.'}'`);
+      for (const rr of zone.allRecords()) lines.push(formatRecordLine(rr));
+      lines.push('');
+    }
+    this.files.append('/var/cache/bind/named_dump.db', lines.join('\n') + '\n');
+    return { ok: true };
+  }
+
+  /**
+   * `rndc secroots` — dumps the resolver's DNSSEC trust anchors. This
+   * simulator doesn't yet wire a live trust-anchor set into
+   * Bind9Service's resolver (RecursiveResolver's DNSSEC validation
+   * support already exists and is exercised directly in dns-dnssec.test.ts,
+   * just not threaded through named.conf here) — the dump honestly
+   * reports that instead of fabricating anchors.
+   */
+  secureRootsReport(): OperationResult {
+    if (!this.running) return { ok: false, error: 'not running' };
+    const lines = [
+      ';', `; Secure roots as of ${new Date().toUTCString()}`, ';',
+      this.dnssecValidationEnabled
+        ? ' (no trust anchors configured)'
+        : ' DNSSEC validation is disabled; no secure roots.',
+    ];
+    this.files.append('/var/cache/bind/named.secroots', lines.join('\n') + '\n');
+    return { ok: true };
   }
 
   flushCache(): void {
@@ -271,6 +314,7 @@ export class Bind9Service {
     this.authoritative = new AuthoritativeServer(store);
     this.resolver = this.buildResolver(config);
     this.queryLogEnabled = config.options.queryLog;
+    this.dnssecValidationEnabled = config.options.dnssecValidation !== 'no';
   }
 
   private buildResolver(config: NamedConfig): RecursiveResolver | null {

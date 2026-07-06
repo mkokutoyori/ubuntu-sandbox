@@ -42,6 +42,20 @@ export class RndcChannel {
         const result = this.bind9.retransferZone(rest[0] ?? '');
         return result.ok ? '' : `rndc: 'retransfer' failed: ${result.error}`;
       }
+      case 'stop':
+      case 'halt':
+        this.bind9.stop();
+        return '';
+      case 'dumpdb': {
+        const result = this.bind9.dumpDatabase();
+        return result.ok ? '' : `rndc: 'dumpdb' failed: ${result.error}`;
+      }
+      case 'secroots': {
+        const result = this.bind9.secureRootsReport();
+        return result.ok ? '' : `rndc: 'secroots' failed: ${result.error}`;
+      }
+      case 'validation':
+        return this.validation(rest[0]);
       default:
         return `rndc: unknown command '${command}'`;
     }
@@ -78,5 +92,20 @@ export class RndcChannel {
     else if (mode === undefined) this.bind9.setQueryLog(!this.bind9.isQueryLogEnabled());
     else return `rndc: syntax error, unexpected '${mode}'`;
     return '';
+  }
+
+  private validation(mode: string | undefined): string {
+    if (mode === 'on') {
+      this.bind9.setDnssecValidation(true);
+      return '';
+    }
+    if (mode === 'off') {
+      this.bind9.setDnssecValidation(false);
+      return '';
+    }
+    if (mode === 'status' || mode === undefined) {
+      return `DNSSEC validation is ${this.bind9.isDnssecValidationEnabled() ? 'enabled' : 'disabled'}.`;
+    }
+    return `rndc: syntax error, unexpected '${mode}'`;
   }
 }
