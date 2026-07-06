@@ -221,8 +221,9 @@ class Parser {
       if (id < 0 || id > 4094) {
         return { ok: false, message: `tcpdump: error: vlan id ${id} out of range (0-4094)` };
       }
+      return { ok: true, predicate: (f) => f.vlanId === id };
     }
-    return { ok: true, predicate: () => false };
+    return { ok: true, predicate: (f) => f.vlanId !== undefined };
   }
 
   private parseSize(kind: 'less' | 'greater'): FilterResult {
@@ -374,19 +375,149 @@ class Parser {
   }
 
   private parseByteSlice(token: string): FilterResult {
-    const m = /^[a-z0-9]+\[(\d+)(?::\d+)?\]$|^[a-z0-9]+\[([a-z]+)\]$/.exec(token);
-    if (m && m[1] !== undefined) {
-      const offset = parseInt(m[1], 10);
-      if (offset > 1500) {
-        return { ok: false, message: `tcpdump: error: byte offset ${offset} out of bounds` };
-      }
+    const spec = parseByteSliceSpec(token);
+    if (spec === null) {
+      return { ok: false, message: `tcpdump: error: syntax error in filter expression near '${token}'` };
     }
-    while (this.peek() !== undefined) {
-      const t = this.peek()!;
-      if (t === 'and' || t === 'or' || t === '&&' || t === '||' || t === ')') break;
+    if (spec.offset > 1500) {
+      return { ok: false, message: `tcpdump: error: byte offset ${spec.offset} out of bounds` };
+    }
+
+    let mask: number | null = null;
+    if (this.peek() === '&') {
       this.next();
+      const maskTok = this.next();
+      const maskVal = maskTok === undefined ? null : resolveByteSliceValue(maskTok);
+      if (maskVal === null) {
+        return { ok: false, message: `tcpdump: error: invalid mask '${maskTok ?? ''}'` };
+      }
+      mask = maskVal;
     }
-    return { ok: true, predicate: ALWAYS };
+
+    const cmpTok = this.peek();
+    if (cmpTok === undefined || !COMPARATORS.has(cmpTok)) {
+      return { ok: true, predicate: (f) => readByteSliceValue(f, spec) !== null };
+    }
+    this.next();
+    const value = this.parseByteSliceValue();
+    if (value === null) {
+      return { ok: false, message: `tcpdump: error: invalid value in filter expression near '${cmpTok}'` };
+    }
+    return {
+      ok: true,
+      predicate: (f) => {
+        const raw = readByteSliceValue(f, spec);
+        if (raw === null) return false;
+        return compareByteSliceValue(mask !== null ? raw & mask : raw, cmpTok, value);
+      },
+    };
+  }
+
+  private parseByteSliceValue(): number | null {
+    if (this.peek() === '(') {
+      this.next();
+      const orTok = this.next();
+      if (orTok === undefined) return null;
+      let combined = 0;
+      for (const part of orTok.split('|')) {
+        const v = resolveByteSliceValue(part);
+        if (v === null) return null;
+        combined |= v;
+      }
+      if (this.peek() !== ')') return null;
+      this.next();
+      return combined;
+    }
+    const tok = this.next();
+    return tok === undefined ? null : resolveByteSliceValue(tok);
+  }
+}
+
+interface ByteSliceSpec {
+  proto: 'ip' | 'tcp' | 'udp' | 'icmp';
+  offset: number;
+  length: number;
+}
+
+const SYMBOLIC_FIELD_OFFSET: Record<string, { proto: ByteSliceSpec['proto']; offset: number }> = {
+  tcpflags: { proto: 'tcp', offset: 13 },
+  icmptype: { proto: 'icmp', offset: 0 },
+  icmpcode: { proto: 'icmp', offset: 1 },
+};
+
+const BPF_NAMED_CONSTANTS: Record<string, number> = {
+  'tcp-fin': 0x01,
+  'tcp-syn': 0x02,
+  'tcp-rst': 0x04,
+  'tcp-push': 0x08,
+  'tcp-ack': 0x10,
+  'tcp-urg': 0x20,
+  'icmp-echoreply': 0,
+  'icmp-unreach': 3,
+  'icmp-sourcequench': 4,
+  'icmp-redirect': 5,
+  'icmp-echo': 8,
+  'icmp-routeradvert': 9,
+  'icmp-routersolicit': 10,
+  'icmp-timxceed': 11,
+  'icmp-paramprob': 12,
+  'icmp-tstamp': 13,
+  'icmp-tstampreply': 14,
+};
+
+const COMPARATORS = new Set(['=', '==', '!=', '<', '>', '<=', '>=']);
+
+function parseByteSliceSpec(token: string): ByteSliceSpec | null {
+  const numeric = /^(ip|tcp|udp|icmp)\[(\d+)(?::([124]))?\]$/.exec(token);
+  if (numeric) {
+    return {
+      proto: numeric[1] as ByteSliceSpec['proto'],
+      offset: parseInt(numeric[2], 10),
+      length: numeric[3] ? parseInt(numeric[3], 10) : 1,
+    };
+  }
+  const symbolic = /^(ip|tcp|udp|icmp)\[([a-z]+)\]$/.exec(token);
+  if (symbolic) {
+    const field = SYMBOLIC_FIELD_OFFSET[symbolic[2]];
+    if (!field || field.proto !== symbolic[1]) return null;
+    return { proto: field.proto, offset: field.offset, length: 1 };
+  }
+  return null;
+}
+
+function resolveByteSliceValue(token: string): number | null {
+  if (token in BPF_NAMED_CONSTANTS) return BPF_NAMED_CONSTANTS[token];
+  if (/^0x[0-9a-fA-F]+$/.test(token)) return parseInt(token, 16);
+  if (/^\d+$/.test(token)) return parseInt(token, 10);
+  return null;
+}
+
+function byteSliceProtoMatches(frame: CaptureFrame, proto: ByteSliceSpec['proto']): boolean {
+  if (proto === 'ip') return frame.l3 === 'ipv4' || frame.l3 === 'ipv6';
+  if (proto === 'icmp') return frame.l4 === 'icmp' || frame.l4 === 'icmp6';
+  return frame.l4 === proto;
+}
+
+function readByteSliceValue(frame: CaptureFrame, spec: ByteSliceSpec): number | null {
+  if (!byteSliceProtoMatches(frame, spec.proto)) return null;
+  const base = spec.proto === 'ip' ? frame.rawLinkOffset : frame.rawLinkOffset + (frame.ipHeaderLen ?? 20);
+  const abs = base + spec.offset;
+  if (abs < 0 || abs + spec.length > frame.raw.length) return null;
+  let value = 0;
+  for (let i = 0; i < spec.length; i++) value = (value << 8) | frame.raw[abs + i];
+  return value >>> 0;
+}
+
+function compareByteSliceValue(actual: number, comparator: string, expected: number): boolean {
+  switch (comparator) {
+    case '=':
+    case '==': return actual === expected;
+    case '!=': return actual !== expected;
+    case '<': return actual < expected;
+    case '>': return actual > expected;
+    case '<=': return actual <= expected;
+    case '>=': return actual >= expected;
+    default: return false;
   }
 }
 

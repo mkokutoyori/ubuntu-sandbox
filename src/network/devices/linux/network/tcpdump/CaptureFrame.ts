@@ -16,6 +16,7 @@ import {
   type TCPPacket,
   type UDPPacket,
 } from '@/network/core/types';
+import type { Dot1QTag, TaggedEthernetFrame } from '../../../Switch';
 
 export type CaptureDirection = 'in' | 'out';
 export type CaptureL3 = 'arp' | 'ipv4' | 'ipv6' | 'other';
@@ -67,6 +68,7 @@ export interface CaptureFrame {
   raw: number[];
   rawLinkOffset: number;
   tcpPayload?: number[];
+  vlanId?: number;
 }
 
 function macBytes(mac: string): number[] {
@@ -123,13 +125,26 @@ function synthIcmpBytes(icmp: ICMPPacket): number[] {
   return [...header, ...data];
 }
 
+function tcpFlagsByte(flags: TCPPacket['flags']): number {
+  return (flags.urg ? 0x20 : 0) | (flags.ack ? 0x10 : 0) | (flags.psh ? 0x08 : 0)
+    | (flags.rst ? 0x04 : 0) | (flags.syn ? 0x02 : 0) | (flags.fin ? 0x01 : 0);
+}
+
+function synthTcpBytes(tcp: TCPPacket): number[] {
+  return [
+    ...u16(tcp.sourcePort), ...u16(tcp.destinationPort),
+    ...u32(tcp.sequenceNumber >>> 0), ...u32(tcp.acknowledgementNumber >>> 0),
+    5 << 4, tcpFlagsByte(tcp.flags),
+    ...u16(tcp.windowSize & 0xffff),
+    ...u16(tcp.checksum & 0xffff),
+    ...u16(0),
+  ];
+}
+
 function synthL4Bytes(pkt: IPv4Packet): number[] {
   const payload = pkt.payload as { type?: string };
   if (payload?.type === 'icmp') return synthIcmpBytes(pkt.payload as ICMPPacket);
-  if (payload?.type === 'tcp') {
-    const tcp = pkt.payload as TCPPacket;
-    return [...u16(tcp.sourcePort), ...u16(tcp.destinationPort)];
-  }
+  if (payload?.type === 'tcp') return synthTcpBytes(pkt.payload as TCPPacket);
   if (payload?.type === 'udp') {
     const udp = pkt.payload as UDPPacket;
     return [...u16(udp.sourcePort), ...u16(udp.destinationPort), ...u16(udp.length), ...u16(0)];
@@ -169,10 +184,7 @@ function synthIcmpv6Bytes(icmp: ICMPv6Packet): number[] {
 function synthL4BytesV6(pkt: IPv6Packet): number[] {
   const payload = pkt.payload as { type?: string };
   if (payload?.type === 'icmpv6') return synthIcmpv6Bytes(pkt.payload as ICMPv6Packet);
-  if (payload?.type === 'tcp') {
-    const tcp = pkt.payload as TCPPacket;
-    return [...u16(tcp.sourcePort), ...u16(tcp.destinationPort)];
-  }
+  if (payload?.type === 'tcp') return synthTcpBytes(pkt.payload as TCPPacket);
   if (payload?.type === 'udp') {
     const udp = pkt.payload as UDPPacket;
     return [...u16(udp.sourcePort), ...u16(udp.destinationPort), ...u16(udp.length), ...u16(0)];
@@ -207,12 +219,21 @@ function synthArpBytes(arp: ARPPacket): number[] {
   ];
 }
 
+function dot1qTagOf(frame: EthernetFrame): Dot1QTag | undefined {
+  return (frame as TaggedEthernetFrame).dot1q;
+}
+
 function withEthernet(frame: EthernetFrame, l3Bytes: number[]): { raw: number[]; offset: number } {
   const eth = [
     ...macBytes(frame.dstMAC.toString()),
     ...macBytes(frame.srcMAC.toString()),
-    ...u16(frame.etherType),
   ];
+  const tag = dot1qTagOf(frame);
+  if (tag) {
+    const tci = ((tag.pcp & 0x7) << 13) | ((tag.dei & 0x1) << 12) | (tag.vid & 0xfff);
+    eth.push(...u16(tag.tpid), ...u16(tci));
+  }
+  eth.push(...u16(frame.etherType));
   return { raw: [...eth, ...l3Bytes], offset: eth.length };
 }
 
@@ -235,6 +256,7 @@ export function decodeEthernetFrame(
     length: ethernetFrameBytes(frame),
     raw: [],
     rawLinkOffset: 0,
+    vlanId: dot1qTagOf(frame)?.vid,
   };
 
   if (frame.etherType === ETHERTYPE_ARP) {
@@ -380,7 +402,14 @@ export function makeTcpFrame(
     0x45, 0, ...u16(total), ...u16(0), ...u16(0x4000), 64, IP_PROTO_TCP, ...u16(0),
     ...ipBytes(pkt.srcIp), ...ipBytes(pkt.dstIp),
   ];
-  const tcp = [...u16(pkt.srcPort), ...u16(pkt.dstPort)];
+  const tcp = [
+    ...u16(pkt.srcPort), ...u16(pkt.dstPort),
+    ...u32(pkt.seq >>> 0), ...u32(pkt.ack >>> 0),
+    5 << 4, tcpFlagsByte(flags),
+    ...u16(0),
+    ...u16(0),
+    ...u16(0),
+  ];
   return {
     at: pkt.at,
     iface,
