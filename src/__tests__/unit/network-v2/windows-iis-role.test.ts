@@ -14,6 +14,7 @@ import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';
 import { WindowsIisRole } from '@/network/devices/windows/server/iis/WindowsIisRole';
 import { WindowsFileSystem } from '@/network/devices/windows/WindowsFileSystem';
+import { WindowsCertStore } from '@/network/devices/windows/CertStore';
 import { dialHttp } from '@/network/http/HttpClient';
 import type { EndHost } from '@/network/devices/EndHost';
 
@@ -39,7 +40,7 @@ describe('WindowsIisRole — site admin surface', () => {
   it('auto-creates "Default Web Site" on port 80 with C:\\inetpub\\wwwroot', () => {
     const { server } = topology();
     const fs = new WindowsFileSystem();
-    const role = new WindowsIisRole(server, fs);
+    const role = new WindowsIisRole(server, fs, new WindowsCertStore());
     const site = role.getWebsite('Default Web Site')!;
     expect(site.port).toBe(80);
     expect(site.physicalPath).toBe('C:\\inetpub\\wwwroot');
@@ -49,7 +50,7 @@ describe('WindowsIisRole — site admin surface', () => {
   it('New-Website creates and auto-starts an additional site on its own port', () => {
     const { server } = topology();
     const fs = new WindowsFileSystem();
-    const role = new WindowsIisRole(server, fs);
+    const role = new WindowsIisRole(server, fs, new WindowsCertStore());
     const res = role.newWebsite('Contoso', 'C:\\inetpub\\contoso', 8080);
     expect(res.ok).toBe(true);
     expect(role.getWebsite('Contoso')!.state).toBe('Started');
@@ -57,14 +58,14 @@ describe('WindowsIisRole — site admin surface', () => {
 
   it('refuses a duplicate site name', () => {
     const { server } = topology();
-    const role = new WindowsIisRole(server, new WindowsFileSystem());
+    const role = new WindowsIisRole(server, new WindowsFileSystem(), new WindowsCertStore());
     const res = role.newWebsite('Default Web Site', 'C:\\x', 8081);
     expect(res.ok).toBe(false);
   });
 
   it('Stop-Website/Start-Website toggle a site\'s listener', () => {
     const { server } = topology();
-    const role = new WindowsIisRole(server, new WindowsFileSystem());
+    const role = new WindowsIisRole(server, new WindowsFileSystem(), new WindowsCertStore());
     role.start();
     expect(role.getWebsite('Default Web Site')!.state).toBe('Started');
     role.stopSite('Default Web Site');
@@ -77,7 +78,7 @@ describe('WindowsIisRole — site admin surface', () => {
 describe('WindowsIisRole — real HTTP over TCP/80', () => {
   it('serves the default document with 200 and the IIS Server header', () => {
     const { server, client } = topology();
-    const role = new WindowsIisRole(server, new WindowsFileSystem());
+    const role = new WindowsIisRole(server, new WindowsFileSystem(), new WindowsCertStore());
     role.start();
 
     const result = dialHttp({ tcpStack: client.getTcpStack(), targetIp: '192.168.95.10', port: 80 });
@@ -89,7 +90,7 @@ describe('WindowsIisRole — real HTTP over TCP/80', () => {
 
   it('returns 404 for a nonexistent file', () => {
     const { server, client } = topology();
-    const role = new WindowsIisRole(server, new WindowsFileSystem());
+    const role = new WindowsIisRole(server, new WindowsFileSystem(), new WindowsCertStore());
     role.start();
 
     const result = dialHttp({ tcpStack: client.getTcpStack(), targetIp: '192.168.95.10', port: 80, path: '/ghost.html' });
@@ -102,7 +103,7 @@ describe('WindowsIisRole — real HTTP over TCP/80', () => {
     const fs = new WindowsFileSystem();
     fs.mkdirp('C:\\inetpub\\wwwroot');
     fs.createFile('C:\\inetpub\\wwwroot\\notes.txt', 'hello from IIS');
-    const role = new WindowsIisRole(server, fs);
+    const role = new WindowsIisRole(server, fs, new WindowsCertStore());
     role.start();
 
     const result = dialHttp({ tcpStack: client.getTcpStack(), targetIp: '192.168.95.10', port: 80, path: '/notes.txt' });
@@ -114,7 +115,7 @@ describe('WindowsIisRole — real HTTP over TCP/80', () => {
 
   it('a stopped site refuses the connection', () => {
     const { server, client } = topology();
-    const role = new WindowsIisRole(server, new WindowsFileSystem());
+    const role = new WindowsIisRole(server, new WindowsFileSystem(), new WindowsCertStore());
     role.start();
     role.stopSite('Default Web Site');
 
@@ -127,7 +128,7 @@ describe('WindowsIisRole — real HTTP over TCP/80', () => {
     const fs = new WindowsFileSystem();
     fs.mkdirp('C:\\inetpub\\contoso');
     fs.createFile('C:\\inetpub\\contoso\\iisstart.htm', '<h1>Contoso</h1>');
-    const role = new WindowsIisRole(server, fs);
+    const role = new WindowsIisRole(server, fs, new WindowsCertStore());
     role.start();
     role.newWebsite('Contoso', 'C:\\inetpub\\contoso', 8080);
 
