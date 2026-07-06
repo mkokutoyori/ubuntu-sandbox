@@ -323,7 +323,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
    * Unregister-ScheduledTask cmdlets read and write here so a task created
    * from one shell is visible from the other.
    */
-  readonly scheduledTasks: Map<string, { taskName: string; taskPath: string; state: string }> = new Map([
+  readonly scheduledTasks: Map<string, WinSys.WinScheduledTask> = new Map([
     ['googleupdatetaskuser',           { taskName: 'GoogleUpdateTaskUser',            taskPath: '\\',                         state: 'Ready' }],
     ['onedrive standalone update task',{ taskName: 'OneDrive Standalone Update Task', taskPath: '\\',                         state: 'Ready' }],
     ['.net framework ngen v4.0.30319', { taskName: '.NET Framework NGEN v4.0.30319',  taskPath: '\\Microsoft\\Windows\\.NET', state: 'Ready' }],
@@ -1024,7 +1024,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
   private async smbConnectionFor(
     target: NonNullable<ReturnType<WindowsPC['resolveSmbPath']>>,
   ): Promise<{ connection: import('./windows/server/smb/SmbClient').SmbConnection; adHoc: boolean } | { error: string }> {
-    if (!target.unc) {
+    if (target.unc === false) {
       if (!target.mapped.connection) return { error: 'The specified network name is no longer available.' };
       return { connection: target.mapped.connection, adHoc: false };
     }
@@ -2465,7 +2465,14 @@ export class WindowsPC extends EndHost implements UserAccountHost {
   getPortsMap(): Map<string, Port> { return this.ports; }
   getCwd(): string { return this.cwd; }
   setCwd(path: string): void { this.cwd = path; }
-  getDefaultGateway(): string | null { return this.defaultGateway?.toString() ?? null; }
+  /**
+   * String-returning surface for PowerShell/cmd consumers (PSDeviceContext).
+   * Deliberately NOT named `getDefaultGateway` - that name is EndHost's own
+   * IPAddress-returning method, and overriding it here with a different
+   * return type would violate that base contract for every generic
+   * EndHost-typed caller (Linux/router/switch code all expect IPAddress).
+   */
+  getDefaultGatewayString(): string | null { return this.defaultGateway?.toString() ?? null; }
   getDnsServers(ifName: string): string[] {
     return this.effectiveDnsServers(ifName);
   }

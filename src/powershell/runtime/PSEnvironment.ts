@@ -15,7 +15,10 @@ export type PSValue =
   | number
   | string
   | PSValue[]
-  | Record<string, PSValue>
+  // A recursive Record<string, PSValue> trips TS's circular-alias check
+  // (mapped-type instantiation, unlike arrays/functions, isn't deferred) -
+  // an inline index signature is structurally identical and legal here.
+  | { [key: string]: PSValue }
   | ((...args: PSValue[]) => PSValue)
   | object;
 

@@ -9,6 +9,7 @@
  */
 
 import type { Port } from '../../hardware/Port';
+import type { ProcessSession } from './WindowsProcessManager';
 
 /** Minimal process-manager surface needed by `start`. */
 export interface WinSystemProcessManager {
@@ -17,7 +18,7 @@ export interface WinSystemProcessManager {
     imageName: string,
     ppid: number,
     user: string,
-    options: { session: string; sessionId: number },
+    options?: { session?: ProcessSession; sessionId?: number },
   ): unknown;
 }
 
@@ -50,7 +51,7 @@ export interface WinSystemContext {
   /** Volume serial source — same serial `dir` prints (single source of truth). */
   getVolumeSerialNumber(letter: string): string;
   readonly doskey: {
-    entries(): Array<{ head: string; body: string }>;
+    entries(): readonly { head: string; body: string }[];
     define(definition: string): void;
   };
   readonly env: Map<string, string>;

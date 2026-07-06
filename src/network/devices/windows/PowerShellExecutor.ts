@@ -16,6 +16,7 @@ import type { WindowsUserManager } from './WindowsUserManager';
 import type { WindowsServiceManager } from './WindowsServiceManager';
 import type { WindowsProcessManager } from './WindowsProcessManager';
 import { isValidIPv4, isValidIPv6 } from '../../core/ip';
+import type { IPAddress } from '../../core/types';
 import {
   runPipeline, formatDefault, formatTable,
   buildProcessObjects, buildServiceObjects, buildCommandObjects,
@@ -68,7 +69,15 @@ export interface PSDeviceContext {
   /** Get current working directory */
   getCwd(): string;
   /** Get default gateway IP or null */
-  getDefaultGateway(): string | null;
+  getDefaultGatewayString(): string | null;
+  /** Resolve a hostname to an IP synchronously (Test-NetConnection). */
+  resolveHostnameSync(name: string): IPAddress | null;
+  /** Synchronous ICMP probe (Test-NetConnection). */
+  sendPingProbeSync(targetIP: IPAddress, opts?: { ttl?: number }): { success: boolean; rttMs: number; ttl: number };
+  /** Egress interface/next-hop for a target IP (Test-NetConnection). */
+  getEgressFor(targetIP: IPAddress): { sourceIp: IPAddress; interfaceName: string; nextHopIP: IPAddress } | null;
+  /** Synchronous TCP reachability probe (Test-NetConnection -Port). */
+  tcpProbeSync(targetIP: IPAddress, port: number): boolean;
   /** Get DNS servers for an interface */
   getDnsServers(ifName: string): string[];
   /** Set DNS servers for an interface (optional - for Set-DnsClientServerAddress) */
@@ -4302,7 +4311,7 @@ export class PowerShellExecutor {
       if (ifFilter && !displayName.toLowerCase().includes(ifFilter) && displayName.toLowerCase() !== ifFilter) continue;
       const ip = port.getIPAddress()?.toString() ?? '';
       const mask = port.getSubnetMask()?.toString() ?? '';
-      const gw = this.device.getDefaultGateway() ?? '';
+      const gw = this.device.getDefaultGatewayString() ?? '';
       const dns = this.device.getDnsServers(name);
       addEntry(displayName, ip, mask, gw, dns);
     }
@@ -4521,7 +4530,7 @@ export class PowerShellExecutor {
 
   private buildDefaultRoutes(): Array<{ dest: string; ifAlias: string; nextHop: string; metric: number }> {
     const routes: Array<{ dest: string; ifAlias: string; nextHop: string; metric: number }> = [];
-    const gw = this.device.getDefaultGateway();
+    const gw = this.device.getDefaultGatewayString();
     const ports = this.device.getPortsMap();
     let firstIF = '';
     for (const [name] of ports) { firstIF = this.portToDisplayName(name); break; }
@@ -5303,7 +5312,7 @@ export class PowerShellExecutor {
 
     // Listening ports based on running services
     const serviceMgr = this.device.getServiceManager();
-    const runningServices = serviceMgr.getAllServices().filter(s => s.status === 'Running');
+    const runningServices = serviceMgr.getAllServices().filter(s => s.state === 'Running');
     const listeningPorts: Array<{ port: number; name: string }> = [
       { port: 135, name: 'RpcSs' },
       { port: 445, name: 'LanmanServer' },
@@ -5316,7 +5325,7 @@ export class PowerShellExecutor {
     let localIp = '0.0.0.0';
     for (const port of ports.values()) {
       const ip = port.getIPAddress();
-      if (ip) { localIp = ip; break; }
+      if (ip) { localIp = ip.toString(); break; }
     }
 
     const params = this.parsePSArgs(args);

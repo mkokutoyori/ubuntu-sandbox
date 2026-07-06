@@ -145,8 +145,8 @@ export interface IRoleProvider {
   getFeature(name: string): WindowsFeatureInfo | null;
   isInstalled(name: string): boolean;
   installFeature(name: string, opts?: { includeManagementTools?: boolean }):
-    { ok: boolean; message: string; changed: WindowsFeatureInfo[] };
-  uninstallFeature(name: string): { ok: boolean; message: string; changed: WindowsFeatureInfo[] };
+    { ok: boolean; message: string; changed: readonly WindowsFeatureInfo[] };
+  uninstallFeature(name: string): { ok: boolean; message: string; changed: readonly WindowsFeatureInfo[] };
 }
 
 export interface SmbShareInfo {

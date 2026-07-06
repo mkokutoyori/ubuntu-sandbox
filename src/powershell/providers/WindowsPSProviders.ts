@@ -14,6 +14,7 @@
  */
 
 import type { WindowsPC } from '@/network/devices/WindowsPC';
+import type { ServiceStartType } from '@/network/devices/windows/WindowsServiceManager';
 import type { WindowsServer } from '@/network/devices/WindowsServer';
 import type { DirectoryStore } from '@/network/devices/windows/server/ad/DirectoryStore';
 import { RemoteAccessVpnClient } from '@/network/ipsec/RemoteAccessVpnClient';
@@ -227,7 +228,10 @@ class WindowsServiceAdapter implements IServiceProvider {
     const admin = this.isAdmin();
     const m = this.mgr();
     const msgs: string[] = [];
-    if (opts.startType)   msgs.push(m.setStartType(name, opts.startType, admin));
+    // normalizeStartupType (ServiceCmdlets.ts) maps known -StartupType values
+    // onto ServiceStartType and passes unrecognized input through verbatim -
+    // setStartType itself does no runtime validation either (pre-existing).
+    if (opts.startType)   msgs.push(m.setStartType(name, opts.startType as ServiceStartType, admin));
     if (opts.displayName) msgs.push(m.setDisplayName(name, opts.displayName, admin));
     if (opts.description) msgs.push(m.setDescription(name, opts.description, admin));
     if (opts.status === 'Running') msgs.push(m.startService(name, admin));
@@ -244,7 +248,7 @@ class WindowsServiceAdapter implements IServiceProvider {
     return this.mgr().createService(name, {
       binaryPath: opts.binaryPath,
       displayName: opts.displayName ?? name,
-      startType: opts.startType ?? 'Manual',
+      startType: (opts.startType as ServiceStartType) ?? 'Manual',
       description: opts.description ?? '',
       dependencies: opts.dependsOn ?? [],
     }, this.isAdmin(), this.pc.getUserManager().currentUser);
@@ -741,7 +745,7 @@ class WindowsProcessAdapter implements IProcessProvider {
       imageName,
       ppid,
       opts?.user ?? (this.pc as unknown as { getCurrentUser?: () => string }).getCurrentUser?.() ?? 'User',
-      { session: 'Console', sessionId: 1, commandLine: opts?.arguments },
+      { session: 'Console', sessionId: 1 },
     );
     return spawned ? toProcessInfo(spawned) : null;
   }
@@ -1164,8 +1168,8 @@ class WindowsNetworkAdapter implements INetworkProvider {
     if (m.setDnsServers) m.setDnsServers(ifAlias, servers);
   }
   getDefaultGateway(): string | null {
-    const m = this.pc as unknown as { getDefaultGateway?: () => string | null };
-    return m.getDefaultGateway ? m.getDefaultGateway() : null;
+    const m = this.pc as unknown as { getDefaultGatewayString?: () => string | null };
+    return m.getDefaultGatewayString ? m.getDefaultGatewayString() : null;
   }
   getDhcpServer(ifAlias: string): string | null {
     const m = this.pc as unknown as { getDhcpServer?: (n: string) => string | null };

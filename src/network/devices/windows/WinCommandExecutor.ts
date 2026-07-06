@@ -7,6 +7,7 @@
 
 import { Port } from '../../hardware/Port';
 import { IPAddress, SubnetMask } from '../../core/types';
+import type { ARPEntry } from '../EndHost';
 
 /** Ping result from EndHost.executePingSequence */
 export interface PingResult {
@@ -66,7 +67,7 @@ export interface WinCommandContext {
   /** IPv6 default gateway string or null (router-advertised or static) */
   defaultGateway6: string | null;
   /** ARP table */
-  arpTable: Map<string, { mac: any; iface: string; type?: 'dynamic' | 'static' }>;
+  arpTable: Map<string, ARPEntry>;
 
   // ARP table mutation
   addStaticARP(ip: IPAddress, mac: any, iface: string): void;
