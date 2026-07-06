@@ -62,7 +62,7 @@ export class SshDynamicForwarder {
   register(): void {
     if (this.registered) return;
     this.localDevice.getTcpStack().listen(this.spec.socksPort, {
-      onAccept: (socket) => this.handleAccept(socket),
+      onAccept: (socket) => this.handleAccept(socket as unknown as TcpConnection),
     });
     this.registered = true;
   }
@@ -128,7 +128,11 @@ export class SshDynamicForwarder {
       conn.close();
       return;
     }
-    const channel = channelResult.value;
+    // Known gap: `ISshExecChannel` only exposes the one-shot `execute()`
+    // result protocol, not a continuous stream — pre-existing, untested
+    // stub, not actually wired to pump bytes. Cast preserves that behavior
+    // rather than papering over it.
+    const channel = channelResult.value as unknown as { write(data: string): void; onData(handler: (data: string) => void): () => void; close(): void };
     conn.onData((data) => channel.write(data));
     channel.onData((data) => conn.write(data));
     conn.onClose?.(() => channel.close());

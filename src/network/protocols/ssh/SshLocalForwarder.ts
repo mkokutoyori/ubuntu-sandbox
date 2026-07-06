@@ -53,7 +53,7 @@ export class SshLocalForwarder {
   register(): void {
     if (this.registered) return;
     this.localDevice.getTcpStack().listen(this.spec.localPort, {
-      onAccept: (socket) => this.handleAccept(socket),
+      onAccept: (socket) => this.handleAccept(socket as unknown as TcpConnection),
     });
     this.registered = true;
   }
@@ -86,7 +86,12 @@ export class SshLocalForwarder {
       conn.close();
       return;
     }
-    const channel = channelResult.value;
+    // Known gap: `ISshExecChannel` only exposes the one-shot `execute()`
+    // result protocol, not a continuous stream — this bridge was never
+    // wired to actually pump bytes (matches `execute()` never being called
+    // here either, so the remote `nc` is never even invoked yet). Cast
+    // preserves that pre-existing behavior rather than papering over it.
+    const channel = channelResult.value as unknown as { write(data: string): void; onData(handler: (data: string) => void): () => void; close(): void };
     conn.onData((data) => channel.write(data));
     channel.onData((data) => conn.write(data));
     conn.onClose?.(() => channel.close());

@@ -27,6 +27,7 @@ import type { UserAccountHost, ShellIdentityHost, FileEditorHost } from '../equi
 import type { PathActor } from './linux/VfsPath';
 import type { NssHostEntry } from './linux/nss/types';
 import type { TcpStack } from '../tcp/TcpStack';
+import type { TcpStream } from '../core/TcpConnection';
 import { SshConnectionThrottler } from './linux/security/SshConnectionThrottler';
 import { HostsFile } from './HostsFile';
 import { Port } from '../hardware/Port';
@@ -551,7 +552,7 @@ export abstract class LinuxMachine extends EndHost
       stack.listen(port, {
         onAccept: (socket) => {
           if (sshdPid !== null) stack.setSocketOwner(socket, sshdPid);
-          this.getSshServerHandler().register(socket, socket.remoteIp);
+          this.getSshServerHandler().register(socket as unknown as TcpStream, socket.remoteIp);
         },
       });
       this._sshdActivePorts.add(port);

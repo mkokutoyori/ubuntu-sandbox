@@ -959,24 +959,6 @@ export class WindowsTerminalSession extends TerminalSession {
     return { user: m[1] ?? loginUser, host: m[2], port, quiet };
   }
 
-  /**
-   * Pick the interactive prompt strategy from the remote device's class
-   * name — the same dispatch the Linux session uses, kept in sync so a
-   * Cisco IOS peer always gets `Router#` regardless of the client side.
-   */
-  private pickRemoteStrategy(eq: { getOSType?: () => string }): RemotePromptStrategy {
-    return strategyForShellKind(primaryShellKindFor(eq));
-  }
-
-  /** First configured IPv4 on the local Windows machine, or null. */
-  private firstLocalIp(): string | null {
-    for (const port of this.device.getPorts()) {
-      const ip = port.getIPAddress();
-      if (ip && port.getIsUp()) return ip.toString();
-    }
-    return null;
-  }
-
   private firstDeviceIp(dev: Equipment): string | null {
     for (const port of dev.getPorts()) {
       const ip = port.getIPAddress();

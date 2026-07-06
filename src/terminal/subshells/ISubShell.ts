@@ -9,7 +9,7 @@
 import type { KeyEvent } from '@/terminal/sessions/TerminalSession';
 import type { RichOutputLine } from '@/terminal/core/types';
 import type { IShellBase } from '@/shell/IShellBase';
-import type { PendingInputDirective } from '@/shell/IShell';
+import type { IShell, PendingInputDirective } from '@/shell/IShell';
 
 export interface SubShellResult {
   /** Lines to display in the terminal. */
@@ -33,6 +33,12 @@ export interface SubShellResult {
    * collected after Enter to `handleInput` on the sub-shell.
    */
   pendingInput?: PendingInputDirective;
+  /**
+   * When set, the host terminal pushes this `IShell` as the new active
+   * sub-shell (e.g. an interactive `ssh`/`sudo -i` handled inside another
+   * sub-shell's own `handleInput`, not the top-level `processLine` path).
+   */
+  childShell?: IShell;
 }
 
 /**

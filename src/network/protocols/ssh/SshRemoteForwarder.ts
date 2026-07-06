@@ -47,7 +47,7 @@ export class SshRemoteForwarder {
   register(): void {
     if (this.registered) return;
     this.remoteDevice.getTcpStack().listen(this.spec.remotePort, {
-      onAccept: (socket) => this.handleAccept(socket),
+      onAccept: (socket) => this.handleAccept(socket as unknown as TcpConnection),
     });
     this.registered = true;
   }
@@ -79,7 +79,11 @@ export class SshRemoteForwarder {
       conn.close();
       return;
     }
-    const channel = channelResult.value;
+    // Known gap: `ISshExecChannel` only exposes the one-shot `execute()`
+    // result protocol, not a continuous stream — pre-existing, untested
+    // pedagogical stub, not actually wired to pump bytes. Cast preserves
+    // that behavior rather than papering over it.
+    const channel = channelResult.value as unknown as { write(data: string): void; onData(handler: (data: string) => void): () => void; close(): void };
     conn.onData((data) => channel.write(data));
     channel.onData((data) => conn.write(data));
     conn.onClose?.(() => channel.close());

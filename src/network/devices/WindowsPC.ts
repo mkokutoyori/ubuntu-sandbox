@@ -23,6 +23,7 @@ import { Port } from '../hardware/Port';
 import { IPAddress, SubnetMask, DeviceType, type IPv4Packet, type TCPPacket, IP_PROTO_TCP, IP_PROTO_UDP, IP_PROTO_ICMP, createIPv4Packet } from '../core/types';
 import { WindowsSshServerContext } from '../protocols/ssh/server/WindowsSshServerContext';
 import { SshServerHandler } from '../protocols/ssh/server/SshServerHandler';
+import type { TcpStream } from '../core/TcpConnection';
 import { CrossVendorSshHost } from '../protocols/ssh/server/CrossVendorSshHost';
 import { WindowsUserManagerAuthority } from './windows/network/WindowsUserManagerAuthority';
 import { runWindowsSshClient } from './windows/network/WindowsSshClient';
@@ -477,7 +478,11 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     // TCP SSH server on port 22 — handles SSH auth + SFTP subsystem.
     this.getTcpStack().listen(22, {
       onAccept: (socket) => {
-        this.getSshServerHandler().register(socket, socket.remoteIp);
+        // TcpSocket structurally satisfies TcpStream (write/send/close/onData/
+        // onClose all present) — the two abstractions just predate a shared
+        // interface, so the handler's nested onData parameter variance needs
+        // an explicit assertion here.
+        this.getSshServerHandler().register(socket as unknown as TcpStream, socket.remoteIp);
       },
     });
 
@@ -492,7 +497,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
           return;
         }
         const clientHost = this.reverseLookupClient(socket.remoteIp);
-        this.getSmbServerHandler().register(socket, socket.remoteIp, clientHost);
+        this.getSmbServerHandler().register(socket as unknown as TcpStream, socket.remoteIp, clientHost);
       },
     });
 
@@ -505,7 +510,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
           socket.close();
           return;
         }
-        this.getWinRmServerHandler().register(socket);
+        this.getWinRmServerHandler().register(socket as unknown as TcpStream);
       },
     });
 
@@ -2635,9 +2640,6 @@ export class WindowsPC extends EndHost implements UserAccountHost {
   /** Override Equipment's hard-coded 'user' default so syncDeviceState
    *  reports the real currently-logged-in account on this Windows host. */
   getCurrentUser(): string { return this.userMgr.currentUser; }
-
-  /** Get the user manager (for PowerShellExecutor and other integrations) */
-  getUserManager(): WindowsUserManager { return this.userMgr; }
 
   /** Get the service manager (for PowerShellExecutor and other integrations) */
   getServiceManager(): WindowsServiceManager { return this.svcMgr; }

@@ -52,6 +52,7 @@ import { Port } from '../hardware/Port';
 import { CliShellSession } from './shells/vty/CliShellSession';
 import { TimerSet } from '@/events/TimerSet';
 import { TcpStack } from '../tcp/TcpStack';
+import type { TcpStream } from '../core/TcpConnection';
 import { SshServerHandler } from '../protocols/ssh/server/SshServerHandler';
 import { RouterSshServerContext } from '../protocols/ssh/server/RouterSshServerContext';
 import { SshHostKey } from '../protocols/ssh/SshHostKey';
@@ -430,7 +431,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     this.tcpv2.listen(22, {
       onAccept: (socket) => {
         const handler = this.buildRouterSshServerHandler();
-        handler.register(socket, socket.remoteIp);
+        handler.register(socket as unknown as TcpStream, socket.remoteIp);
       },
     });
   }
