@@ -6,7 +6,7 @@ let executor: ReturnType<OracleDatabase['connectAsSysdba']>['executor'];
 
 beforeEach(() => {
   db = new OracleDatabase();
-  db.instance.startup('OPEN');
+  db.instance.startup();
   const conn = db.connectAsSysdba();
   executor = conn.executor;
   db.executeSql(executor, "CREATE TABLE emp_test (empno NUMBER, ename VARCHAR2(50), sal NUMBER)");

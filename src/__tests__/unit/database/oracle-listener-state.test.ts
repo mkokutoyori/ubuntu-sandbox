@@ -41,7 +41,7 @@ describe('ListenerControl service registration', () => {
 
   it('uptime and start date come from the real listener start', () => {
     const db = new OracleDatabase();
-    db.instance.startup('OPEN');
+    db.instance.startup();
     db.instance.startListener();
     const status = db.instance.getListenerStatus();
     expect(status).toMatch(/Uptime\s+0 days 0 hr\. 0 min\. \d+ sec/);

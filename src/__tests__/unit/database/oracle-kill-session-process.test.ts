@@ -7,7 +7,7 @@ let sysExecutor: ReturnType<OracleDatabase['connectAsSysdba']>['executor'];
 
 beforeEach(() => {
   db = new OracleDatabase();
-  db.instance.startup('OPEN');
+  db.instance.startup();
   sysExecutor = db.connectAsSysdba().executor;
   db.executeSql(sysExecutor, 'CREATE USER u1 IDENTIFIED BY pw');
   db.executeSql(sysExecutor, 'GRANT CREATE SESSION TO u1');

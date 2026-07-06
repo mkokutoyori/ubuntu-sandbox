@@ -13,7 +13,7 @@ function exec(sql: string, on: OracleExecutor = sys) {
 
 beforeEach(() => {
   db = new OracleDatabase();
-  db.instance.startup('OPEN');
+  db.instance.startup();
   hostFiles = new Map();
   db.instance.setDeviceFileReader((p) => (hostFiles.has(p) ? hostFiles.get(p)! : null));
   db.instance.setDeviceFileWriter((p, c) => { hostFiles.set(p, c); return true; });

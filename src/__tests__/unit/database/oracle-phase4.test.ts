@@ -20,7 +20,7 @@ describe('Window / Analytic Functions', () => {
 
   beforeEach(() => {
     db = new OracleDatabase();
-    db.instance.startup('OPEN');
+    db.instance.startup();
     const conn = db.connectAsSysdba();
     executor = conn.executor;
 
@@ -329,7 +329,7 @@ describe('PL/SQL Anonymous Blocks', () => {
 
   beforeEach(() => {
     db = new OracleDatabase();
-    db.instance.startup('OPEN');
+    db.instance.startup();
     const conn = db.connectAsSysdba();
     executor = conn.executor;
   });
@@ -531,7 +531,7 @@ describe('Listener Control (lsnrctl)', () => {
 
   beforeEach(() => {
     db = new OracleDatabase();
-    db.instance.startup('OPEN');
+    db.instance.startup();
     const conn = db.connectAsSysdba();
     executor = conn.executor;
   });
@@ -574,7 +574,7 @@ describe('Oracle Filesystem and Config', () => {
 
   beforeEach(() => {
     db = new OracleDatabase();
-    db.instance.startup('OPEN');
+    db.instance.startup();
     const conn = db.connectAsSysdba();
     executor = conn.executor;
   });
@@ -634,7 +634,7 @@ describe('CREATE VIEW and EXPLAIN PLAN', () => {
 
   beforeEach(() => {
     db = new OracleDatabase();
-    db.instance.startup('OPEN');
+    db.instance.startup();
     const conn = db.connectAsSysdba();
     executor = conn.executor;
 
@@ -736,7 +736,7 @@ describe('Additional Oracle Functions', () => {
 
   beforeEach(() => {
     db = new OracleDatabase();
-    db.instance.startup('OPEN');
+    db.instance.startup();
     const conn = db.connectAsSysdba();
     executor = conn.executor;
 

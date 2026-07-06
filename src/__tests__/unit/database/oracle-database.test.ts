@@ -12,7 +12,7 @@ let sysExecutor: ReturnType<OracleDatabase['connectAsSysdba']>['executor'] | nul
 
 beforeEach(() => {
   db = new OracleDatabase();
-  db.instance.startup('OPEN');
+  db.instance.startup();
   sysExecutor = null;
 });
 

@@ -23,7 +23,7 @@ let session: SQLPlusSession;
 
 beforeEach(() => {
   db = new OracleDatabase();
-  db.instance.startup('OPEN');
+  db.instance.startup();
   session = new SQLPlusSession(db);
   session.login('SYS', 'oracle', true);
 });

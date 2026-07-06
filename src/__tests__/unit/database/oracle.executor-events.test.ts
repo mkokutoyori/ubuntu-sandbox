@@ -22,7 +22,7 @@ function setupDb(deviceId = 'server-A'): { db: OracleDatabase; bus: EventBus; tr
   const db = new OracleDatabase();
   db.instance.setEventBus(bus);
   db.instance.setDeviceId(deviceId);
-  db.instance.startup('OPEN');
+  db.instance.startup();
   installAllDemoSchemas(db);
   const trace: DomainEvent[] = [];
   bus.subscribeAll((e) => trace.push(e));

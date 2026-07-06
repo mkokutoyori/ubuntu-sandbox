@@ -12,7 +12,7 @@ const tryRun = (c: typeof a, q: string): string => {
 
 beforeEach(() => {
   db = new OracleDatabase();
-  db.instance.startup('OPEN');
+  db.instance.startup();
   a = db.connectAsSysdba();
   sql(a, 'CREATE TABLE hr.t (id NUMBER PRIMARY KEY, v VARCHAR2(10))');
   sql(a, "INSERT INTO hr.t VALUES (1, 'x')");

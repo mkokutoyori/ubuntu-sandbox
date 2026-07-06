@@ -17,7 +17,7 @@ describe('CTE / WITH clause', () => {
 
   beforeEach(() => {
     db = new OracleDatabase();
-    db.instance.startup('OPEN');
+    db.instance.startup();
     installAllDemoSchemas(db);
     const conn = db.connectAsSysdba();
     executor = conn.executor;
@@ -63,7 +63,7 @@ describe('CONNECT BY hierarchical queries', () => {
 
   beforeEach(() => {
     db = new OracleDatabase();
-    db.instance.startup('OPEN');
+    db.instance.startup();
     installAllDemoSchemas(db);
     const conn = db.connectAsSysdba();
     executor = conn.executor;
@@ -90,7 +90,7 @@ describe('MERGE statement', () => {
 
   beforeEach(() => {
     db = new OracleDatabase();
-    db.instance.startup('OPEN');
+    db.instance.startup();
     installAllDemoSchemas(db);
     const conn = db.connectAsSysdba();
     executor = conn.executor;
@@ -133,7 +133,7 @@ describe('PL/SQL anonymous blocks', () => {
 
   beforeEach(() => {
     db = new OracleDatabase();
-    db.instance.startup('OPEN');
+    db.instance.startup();
     installAllDemoSchemas(db);
     const conn = db.connectAsSysdba();
     executor = conn.executor;
@@ -210,7 +210,7 @@ describe('PL/SQL in SQL*Plus session', () => {
 
   beforeEach(() => {
     db = new OracleDatabase();
-    db.instance.startup('OPEN');
+    db.instance.startup();
     installAllDemoSchemas(db);
     session = new SQLPlusSession(db);
     session.login('SYS', '', true);

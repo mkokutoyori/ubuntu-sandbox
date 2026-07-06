@@ -20,7 +20,7 @@ function exec(sql: string) {
 
 beforeEach(() => {
   db = new OracleDatabase();
-  db.instance.startup('OPEN');
+  db.instance.startup();
   const conn = db.connectAsSysdba();
   executor = conn.executor;
   session = new SQLPlusSession(db);

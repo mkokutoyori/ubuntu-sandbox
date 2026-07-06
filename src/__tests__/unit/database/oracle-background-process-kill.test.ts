@@ -70,7 +70,7 @@ describe('Killing a critical background process crashes the instance', () => {
     sh(srv, 'pkill -9 ora_lgwr');
     expect(db.instance.state).toBe('SHUTDOWN');
 
-    db.instance.startup('OPEN');
+    db.instance.startup();
     expect(db.instance.state).toBe('OPEN');
     expect(sh(srv, 'ps -ef')).toMatch(/ora_pmon/);
   });

@@ -499,7 +499,7 @@ describe('SecurityEngine — authentication flow', () => {
 
   beforeEach(() => {
     db = new OracleDatabase();
-    db.instance.startup('OPEN');
+    db.instance.startup();
     engine = (db as any).securityEngine as SecurityEngine;
   });
 
@@ -541,7 +541,7 @@ describe('SecurityEngine — profile enforcement via SQL', () => {
 
   beforeEach(() => {
     db = new OracleDatabase();
-    db.instance.startup('OPEN');
+    db.instance.startup();
   });
 
   test('CREATE PROFILE stores limits in engine', () => {
@@ -586,7 +586,7 @@ describe('SecurityEngine — INACTIVE_ACCOUNT_TIME enforcement', () => {
 
   beforeEach(() => {
     db = new OracleDatabase();
-    db.instance.startup('OPEN');
+    db.instance.startup();
     engine = (db as any).securityEngine as SecurityEngine;
     const conn = db.connectAsSysdba();
     db.executeSql(conn.executor, "CREATE PROFILE app_p LIMIT INACTIVE_ACCOUNT_TIME 30");
@@ -643,7 +643,7 @@ describe('SecurityEngine — PASSWORD_ROLLOVER_TIME enforcement (19c)', () => {
 
   beforeEach(() => {
     db = new OracleDatabase();
-    db.instance.startup('OPEN');
+    db.instance.startup();
     const conn = db.connectAsSysdba();
     db.executeSql(conn.executor, "CREATE PROFILE roll_p LIMIT PASSWORD_ROLLOVER_TIME 7");
     db.executeSql(conn.executor, 'CREATE USER carol IDENTIFIED BY "Old#Pwd1" PROFILE roll_p');

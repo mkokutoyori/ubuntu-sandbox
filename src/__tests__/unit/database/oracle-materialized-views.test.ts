@@ -22,7 +22,7 @@ const run = (sql: string) => session.processLine(sql).output.join('\n');
 
 beforeEach(() => {
   db = new OracleDatabase();
-  db.instance.startup('OPEN');
+  db.instance.startup();
   session = new SQLPlusSession(db);
   session.login('SYS', '', true);
   run('CREATE TABLE hr.emp (id NUMBER, dept VARCHAR2(20), sal NUMBER);');

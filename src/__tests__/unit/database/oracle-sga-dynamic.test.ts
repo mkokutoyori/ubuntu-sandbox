@@ -13,7 +13,7 @@ let session: SQLPlusSession;
 
 beforeEach(() => {
   db = new OracleDatabase();
-  db.instance.startup('OPEN');
+  db.instance.startup();
   session = new SQLPlusSession(db);
   session.login('SYS', 'oracle', true);
 });
@@ -40,7 +40,7 @@ describe('SGA sizing follows sga_target', () => {
 
   test('startup banner prints exact byte counts from the live target', () => {
     db.instance.shutdown('IMMEDIATE');
-    const banner = db.instance.startup('OPEN').join('\n');
+    const banner = db.instance.startup().join('\n');
     expect(banner).toMatch(/Total System Global Area\s+536870912 bytes/);
     expect(banner).toMatch(/Database Buffers\s+268435456 bytes/);
   });

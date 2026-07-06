@@ -99,7 +99,7 @@ describe('V$PROCESS and V$SESSION tell the same story as ps', () => {
 describe('Oracle Net connections fork LOCAL=NO servers', () => {
   it('engine: a tcp-transport connect is tracked as non-local', () => {
     const db = new OracleDatabase();
-    db.instance.startup('OPEN');
+    db.instance.startup();
     const sys = db.connectAsSysdba();
     db.executeSql(sys.executor, "CREATE USER netuser IDENTIFIED BY pw");
     db.executeSql(sys.executor, 'GRANT CREATE SESSION TO netuser');
@@ -124,7 +124,7 @@ describe('Oracle Net connections fork LOCAL=NO servers', () => {
 describe('disconnect no longer leaks the live session', () => {
   it('getOpenSessions shrinks back after disconnect', () => {
     const db = new OracleDatabase();
-    db.instance.startup('OPEN');
+    db.instance.startup();
     const before = db.getOpenSessions().length;
     const sys = db.connectAsSysdba();
     expect(db.getOpenSessions().length).toBe(before + 1);
