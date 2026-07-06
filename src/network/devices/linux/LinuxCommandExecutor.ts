@@ -4,6 +4,7 @@
 
 import { VirtualFileSystem, type INode } from './VirtualFileSystem';
 import { LinuxUserManager } from './LinuxUserManager';
+import type { UserEntry } from './iam/LinuxUserAccount';
 import { SshAgent } from '../../protocols/ssh/SshAgent';
 import { LinuxCronManager } from './LinuxCronManager';
 import { cronAllowed } from './cron/CronPermissions';
@@ -930,12 +931,8 @@ export class LinuxCommandExecutor {
       return { output: `Connected to ${hostPart}.\n${session.transcript}\nsftp> `, exitCode: 0 };
     }
 
-    // Success: simulate a typical line of output per tool.
-    const summary = cmd === 'sftp'
-      ? `Connected to ${hostPart}.\nsftp> `
-      : cmd === 'scp'
-        ? `${positional[0]}                                     100% 1024     1.0KB/s   00:00`
-        : `sent 128 bytes  received 32 bytes  ${'160.00 bytes/sec'}\ntotal size is 1024  speedup is 6.40`;
+    // Only rsync falls through to here — scp/sftp both return above.
+    const summary = `sent 128 bytes  received 32 bytes  160.00 bytes/sec\ntotal size is 1024  speedup is 6.40`;
     return { output: summary, exitCode: 0 };
   }
 
@@ -3763,10 +3760,10 @@ export class LinuxCommandExecutor {
       case 'mkfs.xfs':
       case 'mkfs.btrfs':
       case 'mkfs':
-        if (this.userMgr.currentUid !== 0) return { output: `${cmdName}: Permission denied`, exitCode: 1 };
-        return { output: `${cmdName} ${args.join(' ')}\nWriting superblocks and filesystem accounting information: done`, exitCode: 0 };
+        if (this.userMgr.currentUid !== 0) return { output: `${cmd}: Permission denied`, exitCode: 1 };
+        return { output: `${cmd} ${args.join(' ')}\nWriting superblocks and filesystem accounting information: done`, exitCode: 0 };
       case 'lvdisplay': case 'vgdisplay': case 'pvdisplay':
-        if (this.userMgr.currentUid !== 0) return { output: `${cmdName}: Permission denied`, exitCode: 1 };
+        if (this.userMgr.currentUid !== 0) return { output: `${cmd}: Permission denied`, exitCode: 1 };
         return { output: `  No volume groups found`, exitCode: 0 };
       case 'lspci': return cmdLspci(this.hardware.pciBus, args);
       case 'lsusb': return cmdLsusb(this.hardware.usbBus, args);
@@ -4684,7 +4681,7 @@ export class LinuxCommandExecutor {
   private handleSu(args: string[], stdin?: string): { output: string; exitCode: number } {
     const { loginShell, targetUser, command } = LinuxCommandExecutor.parseSuArgs(args);
     const session = this.beginSuSession(targetUser, loginShell, stdin);
-    if (!session.ok) return session.result;
+    if (session.ok === false) return session.result;
 
     // `su <user> -c "<command>"` runs a single command as the target user
     // and immediately restores the caller's identity.
@@ -4726,7 +4723,7 @@ export class LinuxCommandExecutor {
     targetUser: string, loginShell: boolean, innerArgv: string[], env?: Record<string, string>,
   ): Promise<{ output: string; exitCode: number }> {
     const session = this.beginSuSession(targetUser, loginShell, undefined);
-    if (!session.ok) return session.result;
+    if (session.ok === false) return session.result;
     try {
       const pending = this.networkRunner!(innerArgv, env);
       return await (pending ?? { output: '', exitCode: 0 });
