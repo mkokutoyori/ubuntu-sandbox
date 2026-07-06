@@ -16,7 +16,14 @@ import type { RevocationCheckMode } from '../../../pki/CertificateVerifier';
 
 const SECURITY_KEY = Symbol.for('CiscoSecurityConfig');
 
-export function getSecurityConfig(router: Router): CiscoSecurityConfig {
+/**
+ * Accepts any Cisco device (router or switch) — the config is stashed
+ * under a private symbol key, so it works identically regardless of the
+ * concrete device class; only CiscoShellBase's `enable secret`/`enable
+ * password` handlers (shared across router and switch shells) rely on
+ * the wider parameter type.
+ */
+export function getSecurityConfig(router: object): CiscoSecurityConfig {
   const r = router as unknown as Record<symbol, CiscoSecurityConfig>;
   if (!r[SECURITY_KEY]) r[SECURITY_KEY] = new CiscoSecurityConfig();
   return r[SECURITY_KEY];

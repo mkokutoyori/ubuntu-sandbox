@@ -1255,7 +1255,7 @@ export class SQLPlusSession {
       password = password.slice(0, atIdx);
       if (this.tnsResolver) {
         const res = this.tnsResolver(alias);
-        if (!res.ok) {
+        if (res.ok === false) {
           return {
             output: ['ERROR:', res.error],
             exit: false, needsMoreInput: false, prompt: this.getPrompt(),
@@ -1266,7 +1266,7 @@ export class SQLPlusSession {
         this.transport = 'tcp';
       } else {
         const outcome = this.db.instance.listener.attemptConnect(alias);
-        if (!outcome.ok) {
+        if (outcome.ok === false) {
           return {
             output: ['ERROR:', outcome.error],
             exit: false, needsMoreInput: false, prompt: this.getPrompt(),
@@ -1325,7 +1325,7 @@ export class SQLPlusSession {
     const upper = rest.toUpperCase();
     const inst = this.db.instance;
     if (upper === 'TRACEFILE_NAME') {
-      const path = `${inst.config.diagDest ?? '/u01/app/oracle'}/diag/rdbms/${inst.config.sid.toLowerCase()}/${inst.config.sid}/trace/${inst.config.sid.toLowerCase()}_ora_${process.pid ?? 1000}.trc`;
+      const path = `/u01/app/oracle/diag/rdbms/${inst.config.sid.toLowerCase()}/${inst.config.sid}/trace/${inst.config.sid.toLowerCase()}_ora_${process.pid ?? 1000}.trc`;
       return { output: [path], exit: false, needsMoreInput: false, prompt: this.getPrompt() };
     }
     if (upper.startsWith('SETMYPID')) {

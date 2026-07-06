@@ -204,7 +204,6 @@ export class NATEngine {
 
   setInsideInterface(iface: string): void   { this.insideIfaces.add(iface); }
   setOutsideInterface(iface: string): void  { this.outsideIfaces.add(iface); }
-  getOutsideInterfaces(): ReadonlySet<string> { return this.outsideIfaces; }
   removeInsideInterface(iface: string): void  { this.insideIfaces.delete(iface); }
   removeOutsideInterface(iface: string): void { this.outsideIfaces.delete(iface); }
 

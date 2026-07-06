@@ -13,6 +13,7 @@
 import type { Port } from '../../hardware/Port';
 import {
   EthernetFrame, IPv4Packet, MACAddress, IPAddress, SubnetMask,
+  IPv6Address,
   ETHERTYPE_IPV4, IP_PROTO_OSPF,
   createIPv4Packet,
 } from '../../core/types';
@@ -920,7 +921,7 @@ export class RouterOSPFIntegration {
           );
           if (!alreadyHave) {
             ipv6Engine.getRoutingTableInternal().push({
-              prefix: { toString: () => '::' },
+              prefix: new IPv6Address('::'),
               prefixLength: 0,
               nextHop: nhInfo.nextHop,
               iface: nhInfo.iface,
@@ -948,7 +949,7 @@ export class RouterOSPFIntegration {
           );
           if (!alreadyHave) {
             ipv6Engine.getRoutingTableInternal().push({
-              prefix: { toString: () => '::' },
+              prefix: new IPv6Address('::'),
               prefixLength: 0,
               nextHop: nhInfo.nextHop,
               iface: nhInfo.iface,
@@ -989,7 +990,7 @@ export class RouterOSPFIntegration {
             const nhInfo = this.findIPv6NextHopTo(peer) || this.findIPv6NextHopViaBFS(peer, allPeers);
             if (nhInfo) {
               ipv6Engine.getRoutingTableInternal().push({
-                prefix: { toString: () => rangePrefix },
+                prefix: new IPv6Address(rangePrefix),
                 prefixLength: rangePrefLen,
                 nextHop: nhInfo.nextHop,
                 iface: nhInfo.iface,

@@ -1138,7 +1138,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     });
     this.privilegedTrie.registerGreedy('debug ip', 'Enable IP debug', (args) => {
       const sub = args.join(' ').toLowerCase();
-      const dev = this.d() as unknown as { getDebugService?: () => { enable: (c: 'ip.icmp' | 'ip.packet' | 'ip.tcp' | 'ip.udp' | 'ip.nat' | 'ip.arp' | 'ip.routing' | 'ip.dhcp.server' | 'ip.ssh' | 'ip.rip' | 'ip.eigrp' | 'ip.bgp' | 'ip.nhrp') => string } };
+      const dev = this.d() as unknown as { getDebugService?: () => { enable: (c: 'ip.icmp' | 'ip.packet' | 'ip.tcp' | 'ip.udp' | 'ip.nat' | 'ip.arp' | 'ip.routing' | 'ip.dhcp.server' | 'ip.ssh' | 'ip.rip' | 'ip.eigrp' | 'ip.bgp' | 'ip.nhrp', scope?: string) => string } };
       const svc = dev.getDebugService?.();
       if (!svc) return 'IP debugging is on';
       if (sub === 'packet') return svc.enable('ip.packet');

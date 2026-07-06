@@ -72,7 +72,7 @@ export class ArpInspectionPipeline {
       const limit = cfg.rateLimits.get(port);
       if (limit && limit > 0) {
         const r = this.limiter.consume(port, limit, cfg.rateBurstSec);
-        if (!r.ok) {
+        if (r.ok === false) {
           s.dropped++;
           s.droppedRateLimit++;
           this.host._arpErrDisable(port);
