@@ -14,6 +14,7 @@ describe('WindowsProcess entity', () => {
     pid: 620, name: 'svchost.exe', ppid: 368,
     session: 'Services' as const, sessionId: 0, owner: 'NT AUTHORITY\\LocalService',
     handles: 320, npmK: 16, pmK: 9000, wsK: 12000, cpuSec: 1.5,
+    threads: 8, cpuPercent: 0,
     status: 'Running' as const, windowTitle: '',
     critical: false, systemOwned: true,
     hostedServices: ['Dhcp', 'Dnscache'],

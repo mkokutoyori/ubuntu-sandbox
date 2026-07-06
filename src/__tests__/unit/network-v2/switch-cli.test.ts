@@ -26,7 +26,7 @@ import { CommandTrie } from '@/network/devices/shells/CommandTrie';
 // ═══════════════════════════════════════════════════════════════════
 
 describe('T-CLI-01: Navigation & Hierarchy', () => {
-  let sw: Switch;
+  let sw: CiscoSwitch;
 
   beforeEach(() => {
     MACAddress.resetCounter();
@@ -108,7 +108,7 @@ describe('T-CLI-01: Navigation & Hierarchy', () => {
 // ═══════════════════════════════════════════════════════════════════
 
 describe('T-CLI-02: Abbreviation & Ambiguity', () => {
-  let sw: Switch;
+  let sw: CiscoSwitch;
 
   beforeEach(() => {
     MACAddress.resetCounter();
@@ -165,7 +165,7 @@ describe('T-CLI-02: Abbreviation & Ambiguity', () => {
 // ═══════════════════════════════════════════════════════════════════
 
 describe('T-CLI-03: Configuration Persistence', () => {
-  let sw: Switch;
+  let sw: CiscoSwitch;
 
   beforeEach(() => {
     MACAddress.resetCounter();
@@ -608,7 +608,7 @@ describe('T-L2-05: Interface Range', () => {
 // ═══════════════════════════════════════════════════════════════════
 
 describe('T-L2-06: Show Commands', () => {
-  let sw: Switch;
+  let sw: CiscoSwitch;
 
   beforeEach(() => {
     MACAddress.resetCounter();
@@ -732,7 +732,7 @@ describe('CommandTrie', () => {
 // ═══════════════════════════════════════════════════════════════════
 
 describe('Error Messages', () => {
-  let sw: Switch;
+  let sw: CiscoSwitch;
 
   beforeEach(() => {
     MACAddress.resetCounter();

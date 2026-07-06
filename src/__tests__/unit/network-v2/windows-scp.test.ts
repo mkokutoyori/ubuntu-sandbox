@@ -20,7 +20,7 @@ function scpWithPassword(win: WindowsPC, args: string, password: string) {
     sourceIp: '10.0.0.10',
     sourceUser: 'User',
     sourceHome: 'C:\\Users\\User',
-    localFs: win.fs,
+    localFs: win.getFileSystem(),
     tcpConnector,
     password,
   });
@@ -53,7 +53,7 @@ async function buildLab() {
 describe('Windows scp.exe — OpenSSH for Windows', () => {
   it('uploads a local Windows file to a remote Linux server (real TCP SFTP)', async () => {
     const { win, srv } = await buildLab();
-    win.fs.createFile('C:\\Users\\User\\notes.txt', 'hello-from-windows');
+    win.getFileSystem().createFile('C:\\Users\\User\\notes.txt', 'hello-from-windows');
     const r = await scpWithPassword(win, 'C:\\Users\\User\\notes.txt alice@10.0.0.20:/tmp/notes.txt', 'admin');
     expect(r.exitCode).toBe(0);
     expect(r.output).toMatch(/100%/);
@@ -68,7 +68,7 @@ describe('Windows scp.exe — OpenSSH for Windows', () => {
     const r = await scpWithPassword(win, 'alice@10.0.0.20:/tmp/remote.txt C:\\Users\\User\\fetched.txt', 'admin');
     expect(r.exitCode).toBe(0);
     expect(r.output).toMatch(/100%/);
-    const got = win.fs.readFile('C:\\Users\\User\\fetched.txt');
+    const got = win.getFileSystem().readFile('C:\\Users\\User\\fetched.txt');
     expect(got.ok).toBe(true);
     expect(got.content).toBe('pulled-from-linux');
   });
@@ -98,7 +98,7 @@ describe('Windows scp.exe — OpenSSH for Windows', () => {
     vi.useFakeTimers();
     try {
       const { win } = await buildLab();
-      win.fs.createFile('C:\\Users\\User\\x.txt', 'x');
+      win.getFileSystem().createFile('C:\\Users\\User\\x.txt', 'x');
       const pending = win.executeCommand('scp C:\\Users\\User\\x.txt alice@10.99.99.99:/tmp/x.txt');
       await vi.advanceTimersByTimeAsync(worstCaseRetransmitWindowMs() + 1000);
       const out = await pending;
@@ -113,7 +113,7 @@ describe('Windows scp.exe — OpenSSH for Windows', () => {
     try {
       const { win, srv } = await buildLab();
       srv.getPorts()[0].setUp(false);
-      win.fs.createFile('C:\\Users\\User\\x.txt', 'x');
+      win.getFileSystem().createFile('C:\\Users\\User\\x.txt', 'x');
       const pending = win.executeCommand('scp C:\\Users\\User\\x.txt alice@10.0.0.20:/tmp/x.txt');
       await vi.advanceTimersByTimeAsync(worstCaseRetransmitWindowMs() + 1000);
       const out = await pending;
