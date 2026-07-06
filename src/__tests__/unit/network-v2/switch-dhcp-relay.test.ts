@@ -47,8 +47,8 @@ async function configureCentralDhcpRouter(router: CiscoRouter, gwIp: string) {
 
 describe('Cisco L3 switch — ip helper-address relays DHCP to a central server', () => {
   async function buildLan() {
-    const sw = new CiscoSwitch('cs', 'L3SW', 26, 0, 0);
-    const router = new CiscoRouter('cr', 'DHCP-SRV');
+    const sw = new CiscoSwitch('switch-cisco', 'L3SW', 26, 0, 0);
+    const router = new CiscoRouter('DHCP-SRV');
     const pc1 = new LinuxPC('pc1', 'PC1', 0, 0);
 
     new Cable('c1').connect(pc1.getPorts()[0], sw.getPort('FastEthernet0/1')!);
@@ -113,8 +113,8 @@ describe('Cisco L3 switch — ip helper-address relays DHCP to a central server'
 
 describe('Huawei L3 switch — dhcp select relay + dhcp relay server-ip', () => {
   async function buildLan() {
-    const sw = new HuaweiSwitch('hs', 'L3SW', 8, 0, 0);
-    const router = new CiscoRouter('cr', 'DHCP-SRV');
+    const sw = new HuaweiSwitch('switch-huawei', 'L3SW', 8, 0, 0);
+    const router = new CiscoRouter('DHCP-SRV');
     const pc1 = new LinuxPC('pc1', 'PC1', 0, 0);
 
     new Cable('c1').connect(pc1.getPorts()[0], sw.getPort('GigabitEthernet0/0/1')!);

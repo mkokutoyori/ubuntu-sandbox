@@ -26,7 +26,7 @@ import { Logger } from '@/network/core/Logger';
 function setupLAN() {
   const pc1 = new LinuxPC('PC1', 0, 0);
   const pc2 = new LinuxPC('PC2', 100, 0);
-  const sw = new CiscoSwitch('sw-id', 'SW1', 24, 50, 50);
+  const sw = new CiscoSwitch('switch-cisco', 'SW1', 24, 50, 50);
 
   const cable1 = new Cable('c1');
   cable1.connect(pc1.getPort('eth0')!, sw.getPort('FastEthernet0/1')!);
@@ -37,9 +37,9 @@ function setupLAN() {
 }
 
 function setupWindowsLAN() {
-  const pc1 = new WindowsPC('WPC1', 0, 0);
-  const pc2 = new WindowsPC('WPC2', 100, 0);
-  const sw = new CiscoSwitch('sw-id', 'SW1', 24, 50, 50);
+  const pc1 = new WindowsPC('windows-pc', 'WPC1', 0, 0);
+  const pc2 = new WindowsPC('windows-pc', 'WPC2', 100, 0);
+  const sw = new CiscoSwitch('switch-cisco', 'SW1', 24, 50, 50);
 
   const cable1 = new Cable('c1');
   cable1.connect(pc1.getPort('eth0')!, sw.getPort('FastEthernet0/1')!);
