@@ -17,7 +17,7 @@
 
 // ─── Core types ──────────────────────────────────────────────────
 
-export type PSValue = string | number | boolean | null;
+export type PSValue = string | number | boolean | null | Date;
 
 export interface PSObject {
   [key: string]: PSValue;
