@@ -31,7 +31,7 @@ beforeEach(() => {
 
 describe('named-checkconf', () => {
   it('is silent on a valid configuration', async () => {
-    const srv = new LinuxServer('NS1');
+    const srv = new LinuxServer('linux-server', 'NS1');
     writeRoot(srv, '/etc/bind/named.conf', 'options { recursion no; };');
 
     const out = await srv.executeCommand('named-checkconf');
@@ -40,7 +40,7 @@ describe('named-checkconf', () => {
   });
 
   it('follows include directives like the Ubuntu default layout', async () => {
-    const srv = new LinuxServer('NS1');
+    const srv = new LinuxServer('linux-server', 'NS1');
     writeRoot(srv, '/etc/bind/named.conf',
       'include "/etc/bind/named.conf.options";\ninclude "/etc/bind/named.conf.local";\n');
     writeRoot(srv, '/etc/bind/named.conf.options', 'options { directory "/var/cache/bind"; };');
@@ -53,7 +53,7 @@ describe('named-checkconf', () => {
   });
 
   it('reports syntax errors with file and line', async () => {
-    const srv = new LinuxServer('NS1');
+    const srv = new LinuxServer('linux-server', 'NS1');
     writeRoot(srv, '/etc/bind/named.conf', 'options {\n  recursion no\n};');
 
     const out = await srv.executeCommand('named-checkconf');
@@ -62,7 +62,7 @@ describe('named-checkconf', () => {
   });
 
   it('reports semantic errors in included files under their own name', async () => {
-    const srv = new LinuxServer('NS1');
+    const srv = new LinuxServer('linux-server', 'NS1');
     writeRoot(srv, '/etc/bind/named.conf', 'include "/etc/bind/named.conf.local";');
     writeRoot(srv, '/etc/bind/named.conf.local', 'zone "lan" { type primary; };');
 
@@ -72,7 +72,7 @@ describe('named-checkconf', () => {
   });
 
   it('reports a missing configuration file', async () => {
-    const srv = new LinuxServer('NS1');
+    const srv = new LinuxServer('linux-server', 'NS1');
 
     const out = await srv.executeCommand('named-checkconf');
 
@@ -80,7 +80,7 @@ describe('named-checkconf', () => {
   });
 
   it('checks an alternative file passed as argument', async () => {
-    const srv = new LinuxServer('NS1');
+    const srv = new LinuxServer('linux-server', 'NS1');
     writeRoot(srv, '/tmp/test.conf', 'optionz { };');
 
     const out = await srv.executeCommand('named-checkconf /tmp/test.conf');
@@ -89,7 +89,7 @@ describe('named-checkconf', () => {
   });
 
   it('loads primary zones with -z and prints their serial', async () => {
-    const srv = new LinuxServer('NS1');
+    const srv = new LinuxServer('linux-server', 'NS1');
     writeRoot(srv, '/etc/bind/named.conf',
       'zone "example.com" { type primary; file "/etc/bind/db.example"; };');
     writeRoot(srv, '/etc/bind/db.example', ZONE_DB);
@@ -100,7 +100,7 @@ describe('named-checkconf', () => {
   });
 
   it('reports a zone file that fails to load with -z', async () => {
-    const srv = new LinuxServer('NS1');
+    const srv = new LinuxServer('linux-server', 'NS1');
     writeRoot(srv, '/etc/bind/named.conf',
       'zone "example.com" { type primary; file "/etc/bind/db.example"; };');
 

@@ -48,8 +48,8 @@ interface Lab {
 
 function buildLab(options: { alsoNotify?: boolean } = {}): Lab {
   const sw = new GenericSwitch('switch-generic', 'sw1', 8, 0, 0);
-  const primary = new LinuxServer('NS1');
-  const secondary = new LinuxServer('NS2');
+  const primary = new LinuxServer('linux-server', 'NS1');
+  const secondary = new LinuxServer('linux-server', 'NS2');
   const pc1 = new LinuxPC('linux-pc', 'PC1');
 
   const mask = new SubnetMask('255.255.255.0');

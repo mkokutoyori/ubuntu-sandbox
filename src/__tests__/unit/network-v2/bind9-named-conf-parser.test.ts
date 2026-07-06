@@ -9,7 +9,7 @@ function parse(source: string, readInclude?: (path: string) => string | null): N
   return parseNamedConf(source, { file: CONF, readInclude });
 }
 
-function keywords(statements: NamedConfStatement[]): string[] {
+function keywords(statements: readonly NamedConfStatement[]): string[] {
   return statements.map((s) => s.values[0].text);
 }
 

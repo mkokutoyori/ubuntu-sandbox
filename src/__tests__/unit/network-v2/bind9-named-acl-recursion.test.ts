@@ -56,8 +56,8 @@ interface Lab {
 
 async function buildLab(ns1Options: string): Promise<Lab> {
   const sw = new GenericSwitch('switch-generic', 'sw1', 8, 0, 0);
-  const ns1 = new LinuxServer('NS1');
-  const ns2 = new LinuxServer('NS2');
+  const ns1 = new LinuxServer('linux-server', 'NS1');
+  const ns2 = new LinuxServer('linux-server', 'NS2');
   const pc1 = new LinuxPC('linux-pc', 'PC1');
   const pc2 = new LinuxPC('linux-pc', 'PC2');
 

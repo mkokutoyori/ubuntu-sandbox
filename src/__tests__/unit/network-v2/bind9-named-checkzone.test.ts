@@ -31,7 +31,7 @@ beforeEach(() => {
 
 describe('named-checkzone', () => {
   it('loads a valid zone and prints its serial then OK', async () => {
-    const srv = new LinuxServer('NS1');
+    const srv = new LinuxServer('linux-server', 'NS1');
     writeRoot(srv, '/etc/bind/db.example', VALID_ZONE);
 
     const out = await srv.executeCommand('named-checkzone example.com /etc/bind/db.example');
@@ -41,7 +41,7 @@ describe('named-checkzone', () => {
   });
 
   it('reports a missing zone file', async () => {
-    const srv = new LinuxServer('NS1');
+    const srv = new LinuxServer('linux-server', 'NS1');
 
     const out = await srv.executeCommand('named-checkzone example.com /etc/bind/db.absent');
 
@@ -52,7 +52,7 @@ describe('named-checkzone', () => {
   });
 
   it('reports a zone file without SOA', async () => {
-    const srv = new LinuxServer('NS1');
+    const srv = new LinuxServer('linux-server', 'NS1');
     writeRoot(srv, '/etc/bind/db.broken', '$ORIGIN example.com.\n$TTL 3600\nwww IN A 10.0.1.80\n');
 
     const out = await srv.executeCommand('named-checkzone example.com /etc/bind/db.broken');
@@ -63,7 +63,7 @@ describe('named-checkzone', () => {
   });
 
   it('prints usage when arguments are missing', async () => {
-    const srv = new LinuxServer('NS1');
+    const srv = new LinuxServer('linux-server', 'NS1');
 
     const out = await srv.executeCommand('named-checkzone example.com');
 
@@ -71,7 +71,7 @@ describe('named-checkzone', () => {
   });
 
   it('strips the trailing dot from the zone name', async () => {
-    const srv = new LinuxServer('NS1');
+    const srv = new LinuxServer('linux-server', 'NS1');
     writeRoot(srv, '/etc/bind/db.example', VALID_ZONE);
 
     const out = await srv.executeCommand('named-checkzone example.com. /etc/bind/db.example');

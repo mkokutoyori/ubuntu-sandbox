@@ -55,8 +55,8 @@ interface Lab {
 
 async function buildLab(options: { ns1Extra?: string; started?: boolean } = {}): Promise<Lab> {
   const sw = new GenericSwitch('switch-generic', 'sw1', 8, 0, 0);
-  const ns1 = new LinuxServer('NS1');
-  const ns2 = new LinuxServer('NS2');
+  const ns1 = new LinuxServer('linux-server', 'NS1');
+  const ns2 = new LinuxServer('linux-server', 'NS2');
   const pc1 = new LinuxPC('linux-pc', 'PC1');
 
   const mask = new SubnetMask('255.255.255.0');
