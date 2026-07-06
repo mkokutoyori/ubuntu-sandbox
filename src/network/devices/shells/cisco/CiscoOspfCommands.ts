@@ -71,7 +71,7 @@ export function registerOSPFConfigCommands(configTrie: CommandTrie, ctx: CiscoSh
 // ─── Config-Router Mode: OSPF sub-commands ───────────────────────────
 
 export function buildConfigRouterOSPFCommands(trie: CommandTrie, ctx: CiscoShellContext): void {
-  const extra = () => ctx.r()._getOSPFExtraConfig() as Record<string, unknown> & {
+  const extra = () => ctx.r()._getOSPFExtraConfig() as unknown as Record<string, unknown> & {
     maximumPaths?: number; defaultMetric?: number; compatibleRfc1583?: boolean;
     logAdjacencyChanges?: boolean; logAdjacencyChangesDetail?: boolean;
     distance?: { intraArea?: number; interArea?: number; external?: number };
@@ -945,7 +945,7 @@ export function registerOSPFInterfaceCommands(configIfTrie: CommandTrie, ctx: Ci
     const port = router._getPortsInternal().get(ifName);
     if (port) {
       const ipv6Addrs = port.getIPv6Addresses();
-      const globalAddr = ipv6Addrs.find(a => a.scope === 'global');
+      const globalAddr = ipv6Addrs.find(a => a.origin !== 'link-local');
       const addr = globalAddr ? globalAddr.address.toString() : '::';
       const v3Pending = router._getOSPFExtraConfig().pendingV3IfConfig.get(ifName);
       if (!v3.getInterface(ifName)) {
@@ -2040,7 +2040,7 @@ function showIpOspfEvents(router: Router): string {
 function showIpOspfTimers(router: Router): string {
   const ospf = router._getOSPFEngineInternal();
   if (!ospf) return '% OSPF is not enabled.';
-  const extra = router._getOSPFExtraConfig() as Record<string, unknown> & {
+  const extra = router._getOSPFExtraConfig() as unknown as Record<string, unknown> & {
     timersThrottleLsa?: { startMs: number; holdMs: number; maxMs: number };
     timersLsaArrivalMs?: number;
     timersPacingFloodMs?: number;
@@ -2153,7 +2153,7 @@ function showIpOspfSummaryAddress(router: Router): string {
 function showIpOspfSegmentRouting(router: Router): string {
   const ospf = router._getOSPFEngineInternal();
   if (!ospf) return '% OSPF is not enabled.';
-  const extra = router._getOSPFExtraConfig() as Record<string, unknown> & { segmentRoutingMpls?: boolean };
+  const extra = router._getOSPFExtraConfig() as unknown as Record<string, unknown> & { segmentRoutingMpls?: boolean };
   if (!extra.segmentRoutingMpls) return 'OSPF Segment Routing is not enabled';
   return `OSPF Router with ID (${ospf.getConfig().routerId})\n  Segment Routing MPLS: enabled\n  SRGB: 16000 - 23999`;
 }

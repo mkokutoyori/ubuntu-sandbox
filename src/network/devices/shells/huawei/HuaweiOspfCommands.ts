@@ -216,8 +216,8 @@ export function buildOSPFViewCommands(
   trie.registerGreedy('filter-policy', 'Filter routes in routing updates', (args) => {
     if (args.length < 2) return 'Error: Incomplete command.';
     const extra = ctx.r()._getOSPFExtraConfig();
-    const direction = args[1].toLowerCase() as 'in' | 'out';
-    extra.distributeList = { aclId: args[0], direction: direction === 'export' ? 'out' : direction === 'import' ? 'in' : direction };
+    const direction = args[1].toLowerCase();
+    extra.distributeList = { aclId: args[0], direction: direction === 'export' ? 'out' : direction === 'import' ? 'in' : (direction as 'in' | 'out') };
     return '';
   });
 
@@ -680,7 +680,7 @@ export function registerOSPFInterfaceCommands(
     const port = router._getPortsInternal().get(ifName);
     if (port) {
       const ipv6Addrs = port.getIPv6Addresses();
-      const globalAddr = ipv6Addrs.find(a => a.scope === 'global');
+      const globalAddr = ipv6Addrs.find(a => a.origin !== 'link-local');
       const addr = globalAddr ? globalAddr.address.toString() : '::';
       if (!v3.getInterface(ifName)) {
         v3.activateInterface(ifName, areaId, { ipAddress: addr });

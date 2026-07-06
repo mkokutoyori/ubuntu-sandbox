@@ -89,7 +89,7 @@ export function buildNATConfigCommands(trie: CommandTrie, ctx: CiscoShellContext
       }
       const vrf = parseVrf(args);
       const res = engine.addStaticEntry({ localIP: local, globalIP: global, isNetwork: true, prefixLen, vrf });
-      return res.ok ? '' : `% ${errorMessageFor(res.reason)}`;
+      return res.ok === false ? `% ${errorMessageFor(res.reason)}` : '';
     }
 
     if (first === 'tcp' || first === 'udp') {
@@ -111,7 +111,7 @@ export function buildNATConfigCommands(trie: CommandTrie, ctx: CiscoShellContext
           return `% Interface ${ifName} does not exist.`;
         }
         const ip = port?.getIPAddress?.();
-        globalIP = ip ?? '0.0.0.0';
+        globalIP = ip ? ip.toString() : '0.0.0.0';
         ifaceTarget = ifName;
         globalPort = parseInt(args[5] ?? args[2], 10);
         if (isNaN(globalPort) || globalPort < 1 || globalPort > 65535) return '% Invalid port number.';
@@ -123,7 +123,7 @@ export function buildNATConfigCommands(trie: CommandTrie, ctx: CiscoShellContext
       }
       const vrf = parseVrf(args);
       const res = engine.addStaticEntry({ localIP, globalIP, protocol: first as 'tcp' | 'udp', localPort, globalPort, vrf, ...(ifaceTarget ? { rawConfig: `ip nat inside source static ${first} ${localIP} ${localPort} interface ${ifaceTarget} ${globalPort}` } : {}) });
-      return res.ok ? '' : `% ${errorMessageFor(res.reason)}`;
+      return res.ok === false ? `% ${errorMessageFor(res.reason)}` : '';
     }
 
     if (/^[a-z_]+$/i.test(first) && first !== 'tcp' && first !== 'udp' && first !== 'network') {
@@ -143,7 +143,7 @@ export function buildNATConfigCommands(trie: CommandTrie, ctx: CiscoShellContext
     const rawGlobal = rawArgs[1].replace(/^["']|["']$/g, '');
     const rawConfig = vrf ? `ip nat inside source static ${rawLocal} ${rawGlobal} vrf ${vrf}` : `ip nat inside source static ${rawLocal} ${rawGlobal}`;
     const res = engine.addStaticEntry({ localIP, globalIP, vrf, rawConfig });
-    return res.ok ? '' : `% ${errorMessageFor(res.reason)}`;
+    return res.ok === false ? `% ${errorMessageFor(res.reason)}` : '';
   });
 
   // no ip nat inside source static <localIP> <globalIP>

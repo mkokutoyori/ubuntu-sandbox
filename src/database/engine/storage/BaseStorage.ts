@@ -464,7 +464,7 @@ export abstract class BaseStorage {
 
   // ── Internals ────────────────────────────────────────────────────
 
-  protected getTableData(schema: string, tableName: string): { meta: TableMeta; rows: StorageRow[] } {
+  protected getTableData(schema: string, tableName: string): { meta: TableMeta; rows: StorageRow[]; epoch: number } {
     const s = schema.toUpperCase();
     const n = tableName.toUpperCase();
     const table = this.tables.get(s)?.get(n);
