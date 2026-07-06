@@ -3,13 +3,19 @@ import { getDefaultScheduler, type IScheduler } from '@/events/Scheduler';
 import { TimerSet } from '@/events/TimerSet';
 import {
   type TcpSegment, type TcpFlags, type TcpState, type TcpCloseReason,
-  type UnackedSegment,
+  type UnackedSegment, type TcpOption,
   noFlags, flagsString, nextIsn, makeSocketKey, makeListenerKey,
   computeTcpChecksum, verifyTcpChecksum, seqLt,
   TCP_DEFAULT_MSS, TCP_DEFAULT_WINDOW, TCP_TIME_WAIT_MS,
 } from './types';
 import { RttEstimator, TCP_MAX_RETRANSMITS, TCP_INITIAL_RTO_MS, TCP_MAX_RTO_MS } from './RttEstimator';
 import { TcpCongestionControl } from './TcpCongestionControl';
+import { encodeOptions, decodeOptions, optionsDataOffset } from './TcpOptionsCodec';
+
+/** RFC 7323 §2.2 — our own advertised window-scale shift (always offered on SYN). */
+const TCP_WINDOW_SCALE_SHIFT = 7;
+/** Bound on out-of-order data buffered for reassembly (PRD-TCP.md P6) — one window's worth. */
+const TCP_REASSEMBLY_MAX_BYTES = TCP_DEFAULT_WINDOW;
 import {
   MACAddress, IPAddress, IPv6Address,
   type EthernetFrame, type IPv4Packet, type IPv6Packet,
@@ -108,6 +114,19 @@ export class TcpSocket {
 
   /** RFC 5681 congestion control (PRD-TCP.md P5) — slow start/congestion avoidance/fast recovery. */
   readonly cc: TcpCongestionControl = new TcpCongestionControl(this.mss);
+
+  /** Our own advertised window-scale shift (PRD-TCP.md P6, RFC 7323 §2.2) — always offered on SYN. */
+  readonly windowScale = TCP_WINDOW_SCALE_SHIFT;
+  /** Peer's window-scale shift, present only if negotiated (both sides must offer it on their SYN). */
+  peerWindowScale: number | null = null;
+  /** True only when both sides negotiated SACK on their SYN (RFC 2018). */
+  sackEnabled = false;
+  /** True only when both sides negotiated timestamps on their SYN (RFC 7323 §3). */
+  timestampsEnabled = false;
+  /** Highest timestamp value seen from the peer — echoed back, and used for PAWS (RFC 7323 §5). */
+  peerLastTsVal: number | null = null;
+  /** Out-of-order segments buffered for reassembly instead of being dropped (PRD-TCP.md P6), bounded by `TCP_REASSEMBLY_MAX_BYTES`. */
+  reassemblyBuffer: Array<{ sequence: number; payload: string; psh: boolean }> = [];
 
   private readonly openHandlers: TcpOpenHandler[] = [];
   private readonly dataHandlers: TcpDataHandler[] = [];
@@ -313,7 +332,13 @@ export class TcpStack {
     const flags = noFlags(); flags.syn = true;
     const synSeq = socket.sendNext;
     socket.sendNext = (socket.sendNext + 1) >>> 0;
-    this.transmitTracked(socket, flags, synSeq, 0, undefined, 1);
+    // PRD-TCP.md P6 — offer our real capabilities on the SYN itself; the
+    // peer's SYN-ACK tells us which ones it actually supports.
+    const synOptions = encodeOptions({
+      mss: socket.mss, windowScale: socket.windowScale, sackPermitted: true,
+      timestamp: { tsVal: Math.floor(this.getScheduler().now()), tsEcr: 0 },
+    });
+    this.transmitTracked(socket, flags, synSeq, 0, undefined, 1, synOptions);
     return socket;
   }
 
@@ -436,6 +461,15 @@ export class TcpStack {
       socket.recvNext = (seg.sequence + 1) >>> 0;
       socket.sendNext = nextIsn();
       socket.sendUnacked = socket.sendNext;
+      // PRD-TCP.md P6 — negotiate against whatever the peer's SYN offered.
+      const peerOpts = decodeOptions(seg.options);
+      if (peerOpts.mss !== undefined) socket.mss = Math.min(socket.mss, peerOpts.mss);
+      socket.peerWindowScale = peerOpts.windowScale ?? null;
+      socket.sackEnabled = peerOpts.sackPermitted === true;
+      if (peerOpts.timestamp) {
+        socket.timestampsEnabled = true;
+        socket.peerLastTsVal = peerOpts.timestamp.tsVal;
+      }
       this.sockets.set(socket.key(), socket);
       this._transition(socket, 'syn-received');
       try { listener.onAccept(socket); } catch (e) { Logger.warn(this.host.id, 'tcp:accept', String(e)); }
@@ -445,7 +479,15 @@ export class TcpStack {
       // consume sendNext before the post-send increment would run.
       const synAckSeq = socket.sendNext;
       socket.sendNext = (socket.sendNext + 1) >>> 0;
-      this.transmitTracked(socket, flags, synAckSeq, socket.recvNext, undefined, 1);
+      // Timestamp (if negotiated) is attached automatically by transmit()
+      // below, since `socket.timestampsEnabled` is already set above —
+      // including it here too would duplicate the option on the wire.
+      const synAckOptions = encodeOptions({
+        mss: socket.mss,
+        windowScale: socket.peerWindowScale !== null ? socket.windowScale : undefined,
+        sackPermitted: socket.sackEnabled || undefined,
+      });
+      this.transmitTracked(socket, flags, synAckSeq, socket.recvNext, undefined, 1, synAckOptions);
       return true;
     }
     if (seg.flags.rst) {
@@ -616,6 +658,13 @@ export class TcpStack {
     // retransmittable segments (PRD-TCP.md P1) — checked once here rather
     // than in each state branch below, since several of them only update
     // `sendUnacked` in narrower sub-cases than "seg.flags.ack is set".
+    // Decode once — timestamps (PRD-TCP.md P6, RFC 7323) apply uniformly
+    // to any segment once negotiated, independent of ACK/data content.
+    const incomingOpts = decodeOptions(seg.options);
+    if (incomingOpts.timestamp
+      && (socket.peerLastTsVal === null || seqLt(socket.peerLastTsVal, incomingOpts.timestamp.tsVal))) {
+      socket.peerLastTsVal = incomingOpts.timestamp.tsVal;
+    }
     if (seg.flags.ack) {
       // A duplicate ACK (RFC 5681 §3.2): no new data acknowledged, this
       // segment itself carries none either, and it's not a handshake/FIN
@@ -627,7 +676,7 @@ export class TcpStack {
         const flightSize = (socket.sendNext - socket.sendUnacked) >>> 0;
         if (socket.cc.onDuplicateAck(flightSize)) this.fastRetransmit(socket);
       } else {
-        const ackedBytes = this.pruneUnackedQueue(socket, seg.acknowledgement);
+        const ackedBytes = this.pruneUnackedQueue(socket, seg.acknowledgement, incomingOpts.timestamp?.tsEcr);
         if (ackedBytes > 0) socket.cc.onNewAck(ackedBytes);
       }
     }
@@ -642,6 +691,13 @@ export class TcpStack {
         if (seg.flags.syn && seg.flags.ack) {
           socket.recvNext = (seg.sequence + 1) >>> 0;
           socket.sendUnacked = seg.acknowledgement;
+          // PRD-TCP.md P6 — finalize negotiation against what the peer's
+          // SYN-ACK actually echoed back (`incomingOpts` was already
+          // decoded above, alongside the generic peerLastTsVal update).
+          if (incomingOpts.mss !== undefined) socket.mss = Math.min(socket.mss, incomingOpts.mss);
+          socket.peerWindowScale = incomingOpts.windowScale ?? null;
+          socket.sackEnabled = incomingOpts.sackPermitted === true;
+          socket.timestampsEnabled = incomingOpts.timestamp !== undefined;
           this._transition(socket, 'established');
           const ackFlags = noFlags(); ackFlags.ack = true;
           this.transmit(socket, ackFlags, socket.sendNext, socket.recvNext, undefined);
@@ -732,15 +788,54 @@ export class TcpStack {
 
   /**
    * In-order acceptance check (RFC 9293 §3.10.7.4): only a segment
-   * starting exactly at RCV.NXT is delivered. Duplicates and
-   * out-of-order segments are answered with a duplicate ACK carrying
-   * the expected sequence, and never delivered twice to the app.
+   * starting exactly at RCV.NXT is delivered immediately. A genuinely
+   * out-of-order segment (sequence ahead of RCV.NXT) is buffered for
+   * reassembly instead of being dropped once SACK is negotiated
+   * (PRD-TCP.md P6) — either way, the duplicate ACK answering it now
+   * carries real SACK blocks describing what's already buffered, so the
+   * sender knows exactly what's still missing.
    */
   private acceptInOrder(socket: TcpSocket, seg: TcpSegment): boolean {
     if (seg.sequence === socket.recvNext) return true;
+    // PAWS (RFC 7323 §5) — a segment timestamped older than the highest
+    // we've already seen from this peer cannot be useful new data (it
+    // predates a legitimate wraparound-safe ordering); drop it silently,
+    // matching the rest of "old duplicate" handling.
+    if (socket.timestampsEnabled) {
+      const opts = decodeOptions(seg.options);
+      if (opts.timestamp && socket.peerLastTsVal !== null && seqLt(opts.timestamp.tsVal, socket.peerLastTsVal)) {
+        return false;
+      }
+    }
+    if (socket.sackEnabled && typeof seg.payload === 'string' && seqLt(socket.recvNext, seg.sequence)) {
+      this.bufferOutOfOrder(socket, seg);
+    }
     const ackFlags = noFlags(); ackFlags.ack = true;
     this.transmit(socket, ackFlags, socket.sendNext, socket.recvNext, undefined);
     return false;
+  }
+
+  /** Buffer a genuinely out-of-order segment for reassembly (PRD-TCP.md P6), bounded by `TCP_REASSEMBLY_MAX_BYTES`. */
+  private bufferOutOfOrder(socket: TcpSocket, seg: TcpSegment): void {
+    if (typeof seg.payload !== 'string') return;
+    if (socket.reassemblyBuffer.some((e) => e.sequence === seg.sequence)) return; // already buffered
+    const bufferedBytes = socket.reassemblyBuffer.reduce((n, e) => n + e.payload.length, 0);
+    if (bufferedBytes + seg.payload.length > TCP_REASSEMBLY_MAX_BYTES) return; // over budget — drop, same as before P6
+    socket.reassemblyBuffer.push({ sequence: seg.sequence, payload: seg.payload, psh: seg.flags.psh });
+  }
+
+  /** Pull any now-contiguous buffered segments into recvBuffer/RCV.NXT (PRD-TCP.md P6). Returns true if any pulled-in segment carried PSH. */
+  private drainReassemblyBuffer(socket: TcpSocket): boolean {
+    let pshSeen = false;
+    while (socket.reassemblyBuffer.length > 0) {
+      const idx = socket.reassemblyBuffer.findIndex((e) => e.sequence === socket.recvNext);
+      if (idx === -1) break;
+      const [entry] = socket.reassemblyBuffer.splice(idx, 1);
+      socket.recvBuffer += entry.payload;
+      socket.recvNext = (entry.sequence + entry.payload.length) >>> 0;
+      if (entry.psh) pshSeen = true;
+    }
+    return pshSeen;
   }
 
   /** Hold the pair in TIME-WAIT for 2×MSL before releasing it. */
@@ -759,7 +854,11 @@ export class TcpStack {
     if (seg.payload === undefined) return;
     if (typeof seg.payload === 'string') {
       socket.recvBuffer += seg.payload;
-      if (!seg.flags.psh) return;
+      // PRD-TCP.md P6 — filling this gap may make previously-buffered
+      // out-of-order segments contiguous now; pull them in too before
+      // deciding whether to flush to the application.
+      const laterPsh = this.drainReassemblyBuffer(socket);
+      if (!seg.flags.psh && !laterPsh) return;
       const full = socket.recvBuffer;
       socket.recvBuffer = '';
       try { socket._fireData(full); } catch (e) { Logger.warn(this.host.id, 'tcp:onData', String(e)); }
@@ -807,6 +906,7 @@ export class TcpStack {
     this.timers.clear(socket.persistTimer);
     socket.persistTimer = null;
     socket.sendBacklog = [];
+    socket.reassemblyBuffer = [];
     this._transition(socket, 'closed');
     this.sockets.delete(socket.key());
     this.getBus().publish({
@@ -852,19 +952,71 @@ export class TcpStack {
     void localIp;
   }
 
-  private transmit(socket: TcpSocket, flags: TcpFlags, sequence: number, ackNum: number, payload: unknown): void {
+  /**
+   * `extraOptions` carries SYN-specific capability offers (mss/window-scale/
+   * sack-permitted) that only make sense on a handshake segment — callers
+   * building a SYN/SYN-ACK pass them explicitly (and `UnackedSegment`
+   * remembers them so a retransmitted SYN offers the same capabilities,
+   * not a bare one). Timestamps (PRD-TCP.md P6, RFC 7323) and outstanding
+   * SACK blocks are attached automatically here instead, since they apply
+   * uniformly to every segment once negotiated, independent of call site.
+   */
+  /**
+   * Returns the `tsVal` this call actually put on the wire (for the
+   * caller's RTTM bookkeeping — PRD-TCP.md P6), or `undefined` if none
+   * was sent. That's `socket.timestampsEnabled`'s auto-attached value for
+   * any post-negotiation segment, but also covers the one case where
+   * `timestampsEnabled` is still false yet a timestamp genuinely goes out
+   * anyway: the client's very first SYN, which manually offers a
+   * timestamp in `extraOptions` before negotiation has had a chance to
+   * complete. Without this fallback, a lost-and-retransmitted initial SYN
+   * could never be RTTM-sampled, only Karn-restricted (i.e. never).
+   */
+  private transmit(
+    socket: TcpSocket, flags: TcpFlags, sequence: number, ackNum: number, payload: unknown,
+    extraOptions: TcpOption[] = [],
+  ): number | undefined {
     const egress = this.resolveEgress(socket.remoteIp);
-    if (!egress) { this.dropped(socket.remoteIp, socket.remotePort, 'no-egress'); return; }
+    if (!egress) { this.dropped(socket.remoteIp, socket.remotePort, 'no-egress'); return undefined; }
+    const options = [...extraOptions];
+    let sentTsVal: number | undefined;
+    if (socket.timestampsEnabled) {
+      sentTsVal = Math.floor(this.getScheduler().now());
+      options.push({ kind: 'timestamp', tsVal: sentTsVal, tsEcr: socket.peerLastTsVal ?? 0 });
+    } else {
+      const manualTs = extraOptions.find((o): o is Extract<TcpOption, { kind: 'timestamp' }> => o.kind === 'timestamp');
+      if (manualTs) sentTsVal = manualTs.tsVal;
+    }
+    if (socket.sackEnabled && flags.ack && socket.reassemblyBuffer.length > 0) {
+      options.push({ kind: 'sack', blocks: this.sackBlocksFor(socket) });
+    }
     const seg: TcpSegment = {
       type: 'tcp',
       sourcePort: socket.localPort, destinationPort: socket.remotePort,
       sequence, acknowledgement: flags.ack ? ackNum : 0,
-      dataOffset: 5, flags,
+      dataOffset: optionsDataOffset(options), flags,
       window: socket.windowSize, checksum: 0, urgentPointer: 0,
-      options: [], payload,
+      options, payload,
     };
     seg.checksum = computeTcpChecksum(seg, egress.srcIp, socket.remoteIp);
     this.shipSegment(egress, egress.srcIp, socket.remoteIp, seg);
+    return sentTsVal;
+  }
+
+  /** Merge buffered out-of-order ranges (PRD-TCP.md P6) into RFC 2018 SACK blocks. */
+  private sackBlocksFor(socket: TcpSocket): Array<{ start: number; end: number }> {
+    const sorted = [...socket.reassemblyBuffer].sort((a, b) => (seqLt(a.sequence, b.sequence) ? -1 : 1));
+    const blocks: Array<{ start: number; end: number }> = [];
+    for (const entry of sorted) {
+      const end = (entry.sequence + entry.payload.length) >>> 0;
+      const last = blocks[blocks.length - 1];
+      if (last && last.end === entry.sequence) {
+        last.end = end;
+      } else {
+        blocks.push({ start: entry.sequence, end });
+      }
+    }
+    return blocks;
   }
 
   /**
@@ -876,25 +1028,31 @@ export class TcpStack {
    */
   private transmitTracked(
     socket: TcpSocket, flags: TcpFlags, sequence: number, ackNum: number, payload: unknown, length: number,
+    extraOptions: TcpOption[] = [],
   ): void {
     // Queue BEFORE transmitting: Cable delivery is synchronous, so the
     // peer's ACK can re-enter this stack and prune the queue before
     // `transmit()` even returns (same reentrancy this file already works
     // around for `sendNext` above) — pruning an entry that was never
     // pushed would leave it stuck in the queue forever, retransmitting a
-    // segment the peer already acknowledged.
-    socket.unackedQueue.push({
-      sequence, length, flags, payload,
-      firstSentAtMs: this.getScheduler().now(),
+    // segment the peer already acknowledged. The entry is a live object
+    // reference, so filling in `lastSentTsVal`/`lastSentAtMs` from
+    // `transmit()`'s return value after the fact still lands correctly
+    // even if a reentrant ACK already looked at (or even pruned) it.
+    const now = this.getScheduler().now();
+    const entry: UnackedSegment = {
+      sequence, length, flags, payload, extraOptions,
+      firstSentAtMs: now,
       retransmitCount: 0,
-    });
-    this.transmit(socket, flags, sequence, ackNum, payload);
+    };
+    socket.unackedQueue.push(entry);
+    const sentTsVal = this.transmit(socket, flags, sequence, ackNum, payload, extraOptions);
+    if (sentTsVal !== undefined) { entry.lastSentTsVal = sentTsVal; entry.lastSentAtMs = now; }
     this.rearmRtoTimer(socket);
   }
 
-  /** Drop every fully-acknowledged segment off the head of the queue and reset the RTO on real progress. */
   /** Returns the number of genuinely new bytes this ACK covered (0 if it was stale/duplicate). */
-  private pruneUnackedQueue(socket: TcpSocket, ackNum: number): number {
+  private pruneUnackedQueue(socket: TcpSocket, ackNum: number, ackTsEcr?: number): number {
     // Advance SND.UNA on any forward progress. Several state branches in
     // `_processSegment` already set `sendUnacked` themselves, but only in
     // narrower sub-cases (e.g. established only does it when the incoming
@@ -908,10 +1066,20 @@ export class TcpStack {
       const coveredUpTo = (head.sequence + head.length) >>> 0;
       const fullyAcked = coveredUpTo === ackNum || seqLt(coveredUpTo, ackNum);
       if (!fullyAcked) break;
-      // Karn's algorithm (PRD-TCP.md P4, RFC 6298 §2.3): only clock a
-      // segment that was never retransmitted — an ACK covering a
-      // retransmission is ambiguous about which attempt it acknowledges.
-      if (head.retransmitCount === 0) {
+      // RTTM (PRD-TCP.md P6, RFC 7323 §4.3) bypasses Karn's restriction:
+      // if this ACK echoes the timestamp of this segment's most recent
+      // (re)transmission, we know unambiguously which attempt it covers.
+      // Otherwise fall back to Karn's algorithm (P4, RFC 6298 §2.3): only
+      // clock a segment that was never retransmitted at all. Deliberately
+      // NOT gated on `socket.timestampsEnabled`: for the handshake-completing
+      // SYN-ACK, this prune runs (from `_processSegment`'s generic ack
+      // handling) *before* the `syn-sent` case below flips that flag, so
+      // gating on it would always miss the one segment (the SYN itself)
+      // RTTM most needs to rescue from Karn's restriction.
+      if (ackTsEcr !== undefined
+        && head.lastSentTsVal === ackTsEcr && head.lastSentAtMs !== undefined) {
+        socket.rtt.sample(this.getScheduler().now() - head.lastSentAtMs);
+      } else if (head.retransmitCount === 0) {
         socket.rtt.sample(this.getScheduler().now() - head.firstSentAtMs);
       }
       socket.unackedQueue.shift();
@@ -952,12 +1120,15 @@ export class TcpStack {
         sequence: head.sequence, attempt: head.retransmitCount, rtoMs,
       },
     });
-    // Resend with the segment's ORIGINAL flags — a bare SYN must stay a
+    // Resend with the segment's ORIGINAL flags (and, for a SYN, its
+    // original capability offer — `extraOptions`) — a bare SYN must stay a
     // bare SYN (no ack piggybacked) or the peer stops treating it as a
     // connection request; `transmit()` already zeroes `acknowledgement`
     // itself whenever `flags.ack` is false, so `socket.recvNext` here is
     // only actually used for segments that genuinely carry an ACK.
-    this.transmit(socket, head.flags, head.sequence, socket.recvNext, head.payload);
+    const now = this.getScheduler().now();
+    const sentTsVal = this.transmit(socket, head.flags, head.sequence, socket.recvNext, head.payload, head.extraOptions ?? []);
+    if (sentTsVal !== undefined) { head.lastSentTsVal = sentTsVal; head.lastSentAtMs = now; }
     socket.rtoTimer = this.timers.setTimeout(() => this.onRtoFired(socket), rtoMs);
   }
 
@@ -975,7 +1146,9 @@ export class TcpStack {
         sequence: head.sequence, attempt: head.retransmitCount, rtoMs: socket.rtt.currentRto(),
       },
     });
-    this.transmit(socket, head.flags, head.sequence, socket.recvNext, head.payload);
+    const now = this.getScheduler().now();
+    const sentTsVal = this.transmit(socket, head.flags, head.sequence, socket.recvNext, head.payload, head.extraOptions ?? []);
+    if (sentTsVal !== undefined) { head.lastSentTsVal = sentTsVal; head.lastSentAtMs = now; }
   }
 
   private shipSegment(

@@ -39,6 +39,11 @@ export class RttEstimator {
     return this.rtoMs;
   }
 
+  /** Whether `sample()` has ever actually run (test/observability convenience). */
+  hasMeasurement(): boolean {
+    return this.srttMs !== null;
+  }
+
   /** A retransmission timer fired — double the RTO (capped), per RFC 6298 §5.5 (Karn's algorithm: back off regardless of SRTT until a clean sample arrives). */
   backoff(): number {
     this.rtoMs = Math.min(this.rtoMs * 2, this.maxRtoMs);

@@ -47,6 +47,7 @@ export type TcpOption =
   | { kind: 'mss'; value: number }
   | { kind: 'window-scale'; shift: number }
   | { kind: 'sack-permitted' }
+  | { kind: 'sack'; blocks: ReadonlyArray<{ start: number; end: number }> }
   | { kind: 'timestamp'; tsVal: number; tsEcr: number }
   | { kind: 'nop' }
   | { kind: 'end' };
@@ -63,9 +64,22 @@ export interface UnackedSegment {
   length: number;
   flags: TcpFlags;
   payload: unknown;
+  /** SYN-specific options (mss/window-scale/sack-permitted/timestamp offer) that must be re-sent identically on every retransmission of this segment (PRD-TCP.md P6) — a retransmitted SYN missing them would silently break negotiation. */
+  extraOptions?: TcpOption[];
   /** When this segment was first sent — Karn's algorithm (P4) only clock-samples RTT off a segment with `retransmitCount === 0`. */
   firstSentAtMs: number;
   retransmitCount: number;
+  /**
+   * PRD-TCP.md P6 (RFC 7323 §4.3, RTTM) — the timestamp value/send time of
+   * the *most recent* (re)transmission of this segment. When timestamps
+   * are negotiated, an ACK echoing `lastSentTsVal` unambiguously identifies
+   * which attempt it acknowledges, so RTT can be sampled even off a
+   * retransmitted segment — bypassing Karn's algorithm's restriction,
+   * which exists only because a plain cumulative ACK can't tell attempts
+   * apart.
+   */
+  lastSentTsVal?: number;
+  lastSentAtMs?: number;
 }
 
 export const TCP_DEFAULT_MSS = 1460;
