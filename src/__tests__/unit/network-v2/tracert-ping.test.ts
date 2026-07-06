@@ -25,13 +25,13 @@ import { Equipment } from '@/network/equipment/Equipment';
 
 function setupWANTopology() {
   const pc1 = new LinuxPC('PC1', 0, 0);
-  const pc2 = new WindowsPC('PC2', 200, 0);
+  const pc2 = new WindowsPC('windows-pc', 'PC2', 200, 0);
 
-  const sw1 = new CiscoSwitch('sw1', 'SW1', 24, 50, 50);
-  const r1 = new CiscoRouter('r1', 'R1', 100, 50);
-  const r2 = new CiscoRouter('r2', 'R2', 100, 150); // Huawei routeur simulé ou Cisco
-  const hw_sw1 = new HuaweiSwitch('hw_sw1', 'HW_SW1', 24, 150, 150); // Huawei L3 Switch
-  const sw2 = new CiscoSwitch('sw2', 'SW2', 24, 50, 150);
+  const sw1 = new CiscoSwitch('switch-cisco', 'SW1', 24, 50, 50);
+  const r1 = new CiscoRouter('R1', 100, 50);
+  const r2 = new CiscoRouter('R2', 100, 150); // Huawei routeur simulé ou Cisco
+  const hw_sw1 = new HuaweiSwitch('switch-huawei', 'HW_SW1', 24, 150, 150); // Huawei L3 Switch
+  const sw2 = new CiscoSwitch('switch-cisco', 'SW2', 24, 50, 150);
 
   const c1 = new Cable('c1');
   c1.connect(pc1.getPort('eth0')!, sw1.getPort('FastEthernet0/1')!);
@@ -470,7 +470,7 @@ describe('WAN-level Ping and Traceroute Command Suite', () => {
 
   describe('Section 2: Windows ping Command & Advanced Parameters', () => {
     it('51. should ping local loopback on Windows PC', async () => {
-      const pc = new WindowsPC('PC', 0, 0);
+      const pc = new WindowsPC('windows-pc', 'PC', 0, 0);
       const output = await pc.executeCommand('ping 127.0.0.1');
       expect(output).toContain('Reply from 127.0.0.1: bytes=32');
     });
@@ -518,7 +518,7 @@ describe('WAN-level Ping and Traceroute Command Suite', () => {
     });
 
     it('58. should display help manual on Windows ping /?', async () => {
-      const pc = new WindowsPC('PC', 0, 0);
+      const pc = new WindowsPC('windows-pc', 'PC', 0, 0);
       const output = await pc.executeCommand('ping /?');
       expect(output).toContain('Usage: ping');
     });
@@ -531,43 +531,43 @@ describe('WAN-level Ping and Traceroute Command Suite', () => {
     });
 
     it('60. should reject negative packet counts (-n -5)', async () => {
-      const pc = new WindowsPC('PC', 0, 0);
+      const pc = new WindowsPC('windows-pc', 'PC', 0, 0);
       const output = await pc.executeCommand('ping -n -5 127.0.0.1');
       expect(output.toLowerCase()).toMatch(/invalid|error/);
     });
 
     it('61. should reject zero packet counts (-n 0)', async () => {
-      const pc = new WindowsPC('PC', 0, 0);
+      const pc = new WindowsPC('windows-pc', 'PC', 0, 0);
       const output = await pc.executeCommand('ping -n 0 127.0.0.1');
       expect(output.toLowerCase()).toMatch(/invalid|error/);
     });
 
     it('62. should reject negative buffer size payload (-l -10)', async () => {
-      const pc = new WindowsPC('PC', 0, 0);
+      const pc = new WindowsPC('windows-pc', 'PC', 0, 0);
       const output = await pc.executeCommand('ping -l -10 127.0.0.1');
       expect(output.toLowerCase()).toMatch(/invalid|error/);
     });
 
     it('63. should reject out-of-range TTL values (-i 256)', async () => {
-      const pc = new WindowsPC('PC', 0, 0);
+      const pc = new WindowsPC('windows-pc', 'PC', 0, 0);
       const output = await pc.executeCommand('ping -i 256 127.0.0.1');
       expect(output.toLowerCase()).toMatch(/invalid|error|range/);
     });
 
     it('64. should reject negative TTL values (-i -5)', async () => {
-      const pc = new WindowsPC('PC', 0, 0);
+      const pc = new WindowsPC('windows-pc', 'PC', 0, 0);
       const output = await pc.executeCommand('ping -i -5 127.0.0.1');
       expect(output.toLowerCase()).toMatch(/invalid|error/);
     });
 
     it('65. should reject negative timeout values (-w -1000)', async () => {
-      const pc = new WindowsPC('PC', 0, 0);
+      const pc = new WindowsPC('windows-pc', 'PC', 0, 0);
       const output = await pc.executeCommand('ping -w -1000 127.0.0.1');
       expect(output.toLowerCase()).toMatch(/invalid|error/);
     });
 
     it('66. should reject invalid source IP parameter formats (-S 300.1.1.1)', async () => {
-      const pc = new WindowsPC('PC', 0, 0);
+      const pc = new WindowsPC('windows-pc', 'PC', 0, 0);
       const output = await pc.executeCommand('ping -S 300.1.1.1 127.0.0.1');
       expect(output.toLowerCase()).toMatch(/invalid|error/);
     });
@@ -593,34 +593,34 @@ describe('WAN-level Ping and Traceroute Command Suite', () => {
     });
 
     it('69. should support loopback alias resolution by localhost string', async () => {
-      const pc = new WindowsPC('PC', 0, 0);
+      const pc = new WindowsPC('windows-pc', 'PC', 0, 0);
       const output = await pc.executeCommand('ping localhost');
       expect(output).toContain('127.0.0.1');
     });
 
     it('70. should support pinging Class A networks from Windows environment', async () => {
-      const pc = new WindowsPC('PC', 0, 0);
+      const pc = new WindowsPC('windows-pc', 'PC', 0, 0);
       await pc.executeCommand('netsh interface ip set address "Ethernet" static 10.0.0.5 255.0.0.0');
       const output = await pc.executeCommand('ping 10.0.0.5');
       expect(output).toContain('Reply from 10.0.0.5');
     });
 
     it('71. should support pinging Class B networks from Windows environment', async () => {
-      const pc = new WindowsPC('PC', 0, 0);
+      const pc = new WindowsPC('windows-pc', 'PC', 0, 0);
       await pc.executeCommand('netsh interface ip set address "Ethernet" static 172.16.50.5 255.255.0.0');
       const output = await pc.executeCommand('ping 172.16.50.5');
       expect(output).toContain('Reply from 172.16.50.5');
     });
 
     it('72. should support pinging Class C networks from Windows environment', async () => {
-      const pc = new WindowsPC('PC', 0, 0);
+      const pc = new WindowsPC('windows-pc', 'PC', 0, 0);
       await pc.executeCommand('netsh interface ip set address "Ethernet" static 192.168.100.5 255.255.255.0');
       const output = await pc.executeCommand('ping 192.168.100.5');
       expect(output).toContain('Reply from 192.168.100.5');
     });
 
     it('73. should show correct metrics inside statistics summaries on total loss', async () => {
-      const pc = new WindowsPC('PC', 0, 0);
+      const pc = new WindowsPC('windows-pc', 'PC', 0, 0);
       const output = await pc.executeCommand('ping -n 1 -w 500 1.1.1.1');
       expect(output).toContain('Lost = 1 (100% loss)');
     });
@@ -668,13 +668,13 @@ describe('WAN-level Ping and Traceroute Command Suite', () => {
     });
 
     it('80. should reject pinging invalid IP formats (such as 255.255.255.256)', async () => {
-      const pc = new WindowsPC('PC', 0, 0);
+      const pc = new WindowsPC('windows-pc', 'PC', 0, 0);
       const output = await pc.executeCommand('ping 255.255.255.256');
       expect(output.toLowerCase()).toMatch(/invalid|error/);
     });
 
     it('81. should reject pinging if destination IP is completely omitted', async () => {
-      const pc = new WindowsPC('PC', 0, 0);
+      const pc = new WindowsPC('windows-pc', 'PC', 0, 0);
       const output = await pc.executeCommand('ping');
       expect(output.toLowerCase()).toContain('usage');
     });
@@ -702,25 +702,25 @@ describe('WAN-level Ping and Traceroute Command Suite', () => {
     });
 
     it('85. should support setting Type Of Service (TOS) field inside packet headers via -v', async () => {
-      const pc = new WindowsPC('PC', 0, 0);
+      const pc = new WindowsPC('windows-pc', 'PC', 0, 0);
       const output = await pc.executeCommand('ping -v 64 127.0.0.1');
       expect(output).toContain('Reply from');
     });
 
     it('86. should reject -v if TOS parameter value is out of range (greater than 255)', async () => {
-      const pc = new WindowsPC('PC', 0, 0);
+      const pc = new WindowsPC('windows-pc', 'PC', 0, 0);
       const output = await pc.executeCommand('ping -v 256 127.0.0.1');
       expect(output.toLowerCase()).toMatch(/invalid|error|range/);
     });
 
     it('87. should reject -v if TOS parameter value is negative', async () => {
-      const pc = new WindowsPC('PC', 0, 0);
+      const pc = new WindowsPC('windows-pc', 'PC', 0, 0);
       const output = await pc.executeCommand('ping -v -5 127.0.0.1');
       expect(output.toLowerCase()).toMatch(/invalid|error/);
     });
 
     it('88. should reject DNS resolution attempts on unreachable systems', async () => {
-      const pc = new WindowsPC('PC', 0, 0);
+      const pc = new WindowsPC('windows-pc', 'PC', 0, 0);
       const output = await pc.executeCommand('ping nonexistentdomain.local');
       expect(output.toLowerCase()).toMatch(/could not find host|failed to resolve/);
     });
@@ -733,13 +733,13 @@ describe('WAN-level Ping and Traceroute Command Suite', () => {
     });
 
     it('90. should support space-free numeric parameters passing cleanly', async () => {
-      const pc = new WindowsPC('PC', 0, 0);
+      const pc = new WindowsPC('windows-pc', 'PC', 0, 0);
       const output = await pc.executeCommand('ping -n 1 -l 100 127.0.0.1');
       expect(output).toContain('bytes=100');
     });
 
     it('91. should show correct metrics inside statistics summaries on 50% packet loss', async () => {
-      const pc = new WindowsPC('PC', 0, 0);
+      const pc = new WindowsPC('windows-pc', 'PC', 0, 0);
       const output = await pc.executeCommand('ping -n 2 1.1.1.1'); // mock timeout
       expect(output).toContain('Lost = 2 (100% loss)');
     });
@@ -768,38 +768,38 @@ describe('WAN-level Ping and Traceroute Command Suite', () => {
     });
 
     it('95. should support record route options via -r', async () => {
-      const pc = new WindowsPC('PC', 0, 0);
+      const pc = new WindowsPC('windows-pc', 'PC', 0, 0);
       const output = await pc.executeCommand('ping -r 5 127.0.0.1');
       expect(output).toContain('Route:');
     });
 
     it('96. should reject -r if hop count parameter value is invalid (greater than 9)', async () => {
-      const pc = new WindowsPC('PC', 0, 0);
+      const pc = new WindowsPC('windows-pc', 'PC', 0, 0);
       const output = await pc.executeCommand('ping -r 10 127.0.0.1');
       expect(output.toLowerCase()).toMatch(/invalid|error|range/);
     });
 
     it('97. should support showing timestamp mappings inside -s', async () => {
-      const pc = new WindowsPC('PC', 0, 0);
+      const pc = new WindowsPC('windows-pc', 'PC', 0, 0);
       const output = await pc.executeCommand('ping -s 4 127.0.0.1');
       expect(output).toContain('Timestamp:');
     });
 
     it('98. should reject -s if hop count parameter value is invalid (greater than 4)', async () => {
-      const pc = new WindowsPC('PC', 0, 0);
+      const pc = new WindowsPC('windows-pc', 'PC', 0, 0);
       const output = await pc.executeCommand('ping -s 5 127.0.0.1');
       expect(output.toLowerCase()).toMatch(/invalid|error|range/);
     });
 
     it('99. should preserve all TCP/IP profiles configurations after ping reset triggers', async () => {
-      const pc = new WindowsPC('PC', 0, 0);
+      const pc = new WindowsPC('windows-pc', 'PC', 0, 0);
       await pc.executeCommand('ping 127.0.0.1');
       const output = await pc.executeCommand('netsh interface ip show config');
       expect(output).toContain('Ethernet');
     });
 
     it('100. should execute successfully and return status 0 on complete Windows ping runs', async () => {
-      const pc = new WindowsPC('PC', 0, 0);
+      const pc = new WindowsPC('windows-pc', 'PC', 0, 0);
       const output = await pc.executeCommand('ping -n 1 127.0.0.1 && echo "PING_OK"');
       expect(output).toContain('PING_OK');
     });
@@ -1185,7 +1185,7 @@ describe('WAN-level Ping and Traceroute Command Suite', () => {
     });
 
     it('155. should display help manual on Windows tracert with no args', async () => {
-      const pc = new WindowsPC('PC', 0, 0);
+      const pc = new WindowsPC('windows-pc', 'PC', 0, 0);
       const output = await pc.executeCommand('tracert');
       expect(output).toContain('Usage: tracert');
     });
@@ -1198,19 +1198,19 @@ describe('WAN-level Ping and Traceroute Command Suite', () => {
     });
 
     it('157. should reject negative max-hops values (-h -5)', async () => {
-      const pc = new WindowsPC('PC', 0, 0);
+      const pc = new WindowsPC('windows-pc', 'PC', 0, 0);
       const output = await pc.executeCommand('tracert -h -5 127.0.0.1');
       expect(output.toLowerCase()).toMatch(/invalid|error/);
     });
 
     it('158. should reject zero max-hops values (-h 0)', async () => {
-      const pc = new WindowsPC('PC', 0, 0);
+      const pc = new WindowsPC('windows-pc', 'PC', 0, 0);
       const output = await pc.executeCommand('tracert -h 0 127.0.0.1');
       expect(output.toLowerCase()).toMatch(/invalid|error/);
     });
 
     it('159. should reject negative timeout values (-w -1000)', async () => {
-      const pc = new WindowsPC('PC', 0, 0);
+      const pc = new WindowsPC('windows-pc', 'PC', 0, 0);
       const output = await pc.executeCommand('tracert -w -1000 127.0.0.1');
       expect(output.toLowerCase()).toMatch(/invalid|error/);
     });
@@ -1230,7 +1230,7 @@ describe('WAN-level Ping and Traceroute Command Suite', () => {
     });
 
     it('162. should support forcing IPv6 specifically using -6', async () => {
-      const pc = new WindowsPC('PC', 0, 0);
+      const pc = new WindowsPC('windows-pc', 'PC', 0, 0);
       const output = await pc.executeCommand('tracert -6 ::1');
       expect(output).toBeDefined();
     });
@@ -1250,13 +1250,13 @@ describe('WAN-level Ping and Traceroute Command Suite', () => {
     });
 
     it('165. should reject tracing invalid IP formats (such as 255.255.255.256)', async () => {
-      const pc = new WindowsPC('PC', 0, 0);
+      const pc = new WindowsPC('windows-pc', 'PC', 0, 0);
       const output = await pc.executeCommand('tracert 255.255.255.256');
       expect(output.toLowerCase()).toMatch(/invalid|error/);
     });
 
     it('166. should reject tracing if destination IP is completely omitted', async () => {
-      const pc = new WindowsPC('PC', 0, 0);
+      const pc = new WindowsPC('windows-pc', 'PC', 0, 0);
       const output = await pc.executeCommand('tracert');
       expect(output.toLowerCase()).toContain('usage');
     });
@@ -1276,7 +1276,7 @@ describe('WAN-level Ping and Traceroute Command Suite', () => {
     });
 
     it('169. should support loopback alias resolution by localhost string inside Windows tracert', async () => {
-      const pc = new WindowsPC('PC', 0, 0);
+      const pc = new WindowsPC('windows-pc', 'PC', 0, 0);
       const output = await pc.executeCommand('tracert localhost');
       expect(output).toContain('127.0.0.1');
     });
@@ -1347,32 +1347,32 @@ describe('WAN-level Ping and Traceroute Command Suite', () => {
     });
 
     it('177. should reject tracing if multiple targets are specified in Windows (tracert 10.0.2.1 10.0.1.10)', async () => {
-      const pc = new WindowsPC('PC', 0, 0);
+      const pc = new WindowsPC('windows-pc', 'PC', 0, 0);
       const output = await pc.executeCommand('tracert 10.0.2.1 10.0.1.10');
       expect(output.toLowerCase()).toMatch(/invalid|error/);
     });
 
     it('178. should support Windows tracert loopback self-validation', async () => {
-      const pc = new WindowsPC('PC', 0, 0);
+      const pc = new WindowsPC('windows-pc', 'PC', 0, 0);
       const output = await pc.executeCommand('tracert 127.0.0.1');
       expect(output).toContain('127.0.0.1');
     });
 
     it('179. should preserve all TCP/IP configurations after tracert executions', async () => {
-      const pc = new WindowsPC('PC', 0, 0);
+      const pc = new WindowsPC('windows-pc', 'PC', 0, 0);
       await pc.executeCommand('tracert 127.0.0.1');
       const output = await pc.executeCommand('netsh interface ip show config');
       expect(output).toContain('Ethernet');
     });
 
     it('180. should execute successfully and return status 0 on complete Windows tracert runs', async () => {
-      const pc = new WindowsPC('PC', 0, 0);
+      const pc = new WindowsPC('windows-pc', 'PC', 0, 0);
       const output = await pc.executeCommand('tracert 127.0.0.1 && echo "TRACE_OK"');
       expect(output).toContain('TRACE_OK');
     });
 
     it('181. should reject -j option if host list contains invalid IP formatting', async () => {
-      const pc = new WindowsPC('PC', 0, 0);
+      const pc = new WindowsPC('windows-pc', 'PC', 0, 0);
       const output = await pc.executeCommand('tracert -j 300.1.1.1 127.0.0.1');
       expect(output.toLowerCase()).toMatch(/invalid|error/);
     });
@@ -1386,28 +1386,28 @@ describe('WAN-level Ping and Traceroute Command Suite', () => {
     });
 
     it('183. should support tracing Class A networks from Windows tracert environment', async () => {
-      const pc = new WindowsPC('PC', 0, 0);
+      const pc = new WindowsPC('windows-pc', 'PC', 0, 0);
       await pc.executeCommand('netsh interface ip set address "Ethernet" static 10.0.0.5 255.0.0.0');
       const output = await pc.executeCommand('tracert 10.0.0.5');
       expect(output).toContain('10.0.0.5');
     });
 
     it('184. should support tracing Class B networks from Windows tracert environment', async () => {
-      const pc = new WindowsPC('PC', 0, 0);
+      const pc = new WindowsPC('windows-pc', 'PC', 0, 0);
       await pc.executeCommand('netsh interface ip set address "Ethernet" static 172.16.50.5 255.255.0.0');
       const output = await pc.executeCommand('tracert 172.16.50.5');
       expect(output).toContain('172.16.50.5');
     });
 
     it('185. should support tracing Class C networks from Windows tracert environment', async () => {
-      const pc = new WindowsPC('PC', 0, 0);
+      const pc = new WindowsPC('windows-pc', 'PC', 0, 0);
       await pc.executeCommand('netsh interface ip set address "Ethernet" static 192.168.100.5 255.255.255.0');
       const output = await pc.executeCommand('tracert 192.168.100.5');
       expect(output).toContain('192.168.100.5');
     });
 
     it('186. should support timeout response markers with custom hops ranges (* * *) on total loss', async () => {
-      const pc = new WindowsPC('PC', 0, 0);
+      const pc = new WindowsPC('windows-pc', 'PC', 0, 0);
       const output = await pc.executeCommand('tracert -h 2 -w 500 1.1.1.1');
       expect(output).toContain('* * *');
     });
@@ -1420,25 +1420,25 @@ describe('WAN-level Ping and Traceroute Command Suite', () => {
     });
 
     it('188. should reject -w if timeout parameter is completely missing', async () => {
-      const pc = new WindowsPC('PC', 0, 0);
+      const pc = new WindowsPC('windows-pc', 'PC', 0, 0);
       const output = await pc.executeCommand('tracert -w');
       expect(output.toLowerCase()).toContain('usage');
     });
 
     it('189. should reject -h if hop parameter is completely missing', async () => {
-      const pc = new WindowsPC('PC', 0, 0);
+      const pc = new WindowsPC('windows-pc', 'PC', 0, 0);
       const output = await pc.executeCommand('tracert -h');
       expect(output.toLowerCase()).toContain('usage');
     });
 
     it('190. should reject -j if host list parameter is completely missing', async () => {
-      const pc = new WindowsPC('PC', 0, 0);
+      const pc = new WindowsPC('windows-pc', 'PC', 0, 0);
       const output = await pc.executeCommand('tracert -j');
       expect(output.toLowerCase()).toContain('usage');
     });
 
     it('191. should handle space-free numeric parameters cleanly inside Windows tracert', async () => {
-      const pc = new WindowsPC('PC', 0, 0);
+      const pc = new WindowsPC('windows-pc', 'PC', 0, 0);
       const output = await pc.executeCommand('tracert -h 10 -w 1000 127.0.0.1');
       expect(output).toBeDefined();
     });
@@ -1459,45 +1459,45 @@ describe('WAN-level Ping and Traceroute Command Suite', () => {
     });
 
     it('194. should support Windows tracert formatting with custom IP domains', async () => {
-      const pc = new WindowsPC('PC', 0, 0);
+      const pc = new WindowsPC('windows-pc', 'PC', 0, 0);
       const output = await pc.executeCommand('tracert -4 127.0.0.1');
       expect(output).toContain('127.0.0.1');
     });
 
     it('195. should print trace destination header explicitly on startup', async () => {
-      const pc = new WindowsPC('PC', 0, 0);
+      const pc = new WindowsPC('windows-pc', 'PC', 0, 0);
       const output = await pc.executeCommand('tracert 127.0.0.1');
       expect(output).toContain('over a maximum of 30 hops');
     });
 
     it('196. should show correct metrics inside detailed tables on loopback trace', async () => {
-      const pc = new WindowsPC('PC', 0, 0);
+      const pc = new WindowsPC('windows-pc', 'PC', 0, 0);
       const output = await pc.executeCommand('tracert 127.0.0.1');
       expect(output).toContain('<1 ms');
     });
 
     it('197. should support timeout response markers if gateways drop ICMP over multiple hops', async () => {
-      const pc = new WindowsPC('PC', 0, 0);
+      const pc = new WindowsPC('windows-pc', 'PC', 0, 0);
       const output = await pc.executeCommand('tracert -w 100 1.1.1.1');
       expect(output).toContain('* * *');
     });
 
     it('198. should handle long customized device paths safely inside tracert rules', async () => {
-      const pc = new WindowsPC('PC', 0, 0);
+      const pc = new WindowsPC('windows-pc', 'PC', 0, 0);
       const longName = '127.0.0.1' + 's'.repeat(240);
       const output = await pc.executeCommand(`tracert ${longName}`);
       expect(output.toLowerCase()).toMatch(/error|invalid|failed to resolve/);
     });
 
     it('199. should preserve all TCP/IP configurations after tracert executions', async () => {
-      const pc = new WindowsPC('PC', 0, 0);
+      const pc = new WindowsPC('windows-pc', 'PC', 0, 0);
       await pc.executeCommand('tracert 127.0.0.1');
       const output = await pc.executeCommand('netsh interface ip show config');
       expect(output).toContain('Ethernet');
     });
 
     it('200. should execute successfully and return status 0 on complete Windows tracert runs', async () => {
-      const pc = new WindowsPC('PC', 0, 0);
+      const pc = new WindowsPC('windows-pc', 'PC', 0, 0);
       const output = await pc.executeCommand('tracert 127.0.0.1 && echo "TRACE_OK"');
       expect(output).toContain('TRACE_OK');
     });
@@ -1807,7 +1807,7 @@ describe('WAN-level Ping and Traceroute Command Suite', () => {
     });
 
     it('236. should reject Windows loose routing if host list contains typos', async () => {
-      const pc = new WindowsPC('PC', 0, 0);
+      const pc = new WindowsPC('windows-pc', 'PC', 0, 0);
       const output = await pc.executeCommand('ping -j 300.1.1.1 127.0.0.1');
       expect(output.toLowerCase()).toMatch(/invalid|error/);
     });
@@ -1833,7 +1833,7 @@ describe('WAN-level Ping and Traceroute Command Suite', () => {
     });
 
     it('240. should support loopback self-validation inside Windows tracert', async () => {
-      const pc = new WindowsPC('PC', 0, 0);
+      const pc = new WindowsPC('windows-pc', 'PC', 0, 0);
       const output = await pc.executeCommand('tracert 127.0.0.1');
       expect(output).toContain('127.0.0.1');
     });
@@ -1969,7 +1969,7 @@ describe('WAN-level Ping and Traceroute Command Suite', () => {
     });
 
     it('256. should handle blank command inputs on Windows ping gracefully', async () => {
-      const pc = new WindowsPC('PC', 0, 0);
+      const pc = new WindowsPC('windows-pc', 'PC', 0, 0);
       const output = await pc.executeCommand('ping ""');
       expect(output.toLowerCase()).toContain('usage');
     });
@@ -1987,7 +1987,7 @@ describe('WAN-level Ping and Traceroute Command Suite', () => {
     });
 
     it('259. should reject tracert commands with invalid target domain syntax', async () => {
-      const pc = new WindowsPC('PC', 0, 0);
+      const pc = new WindowsPC('windows-pc', 'PC', 0, 0);
       const output = await pc.executeCommand('tracert 10.0.0.300');
       expect(output.toLowerCase()).toMatch(/invalid|error|failed to resolve/);
     });
@@ -2049,7 +2049,7 @@ describe('WAN-level Ping and Traceroute Command Suite', () => {
     });
 
     it('267. should reject Windows ping if multiple targets are specified (ping 127.0.0.1 127.0.0.2)', async () => {
-      const pc = new WindowsPC('PC', 0, 0);
+      const pc = new WindowsPC('windows-pc', 'PC', 0, 0);
       const output = await pc.executeCommand('ping 127.0.0.1 127.0.0.2');
       expect(output.toLowerCase()).toMatch(/invalid|error/);
     });
@@ -2147,13 +2147,13 @@ describe('WAN-level Ping and Traceroute Command Suite', () => {
     });
 
     it('280. should reject Windows ping if target is not a valid address format (ping 255.255.255.256)', async () => {
-      const pc = new WindowsPC('PC', 0, 0);
+      const pc = new WindowsPC('windows-pc', 'PC', 0, 0);
       const output = await pc.executeCommand('ping 255.255.255.256');
       expect(output.toLowerCase()).toMatch(/invalid|error/);
     });
 
     it('281. should reject Windows ping if multiple flags conflict (-n 5 -t)', async () => {
-      const pc = new WindowsPC('PC', 0, 0);
+      const pc = new WindowsPC('windows-pc', 'PC', 0, 0);
       const output = await pc.executeCommand('ping -n 5 -t 127.0.0.1');
       expect(output.toLowerCase()).toMatch(/invalid|error/);
     });
@@ -2165,7 +2165,7 @@ describe('WAN-level Ping and Traceroute Command Suite', () => {
     });
 
     it('283. should log error if the target interface is administratively down on Windows PC', async () => {
-      const pc = new WindowsPC('PC', 0, 0);
+      const pc = new WindowsPC('windows-pc', 'PC', 0, 0);
       await pc.executeCommand('netsh interface set interface "Ethernet" admin=disabled');
       const output = await pc.executeCommand('ping 127.0.0.1');
       expect(output.toLowerCase()).toMatch(/transmit failed|error|hardware error/);
@@ -2199,13 +2199,13 @@ describe('WAN-level Ping and Traceroute Command Suite', () => {
     });
 
     it('288. should reject Windows tracert if max-hops is too high (-h 256)', async () => {
-      const pc = new WindowsPC('PC', 0, 0);
+      const pc = new WindowsPC('windows-pc', 'PC', 0, 0);
       const output = await pc.executeCommand('tracert -h 256 127.0.0.1');
       expect(output.toLowerCase()).toMatch(/invalid|error|range/);
     });
 
     it('289. should support Windows tracert with dns resolution explicitly enabled', async () => {
-      const pc = new WindowsPC('PC', 0, 0);
+      const pc = new WindowsPC('windows-pc', 'PC', 0, 0);
       const output = await pc.executeCommand('tracert 127.0.0.1');
       expect(output).toContain('127.0.0.1');
     });
@@ -2223,7 +2223,7 @@ describe('WAN-level Ping and Traceroute Command Suite', () => {
     });
 
     it('292. should handle space-free numeric parameters cleanly inside Windows tracert', async () => {
-      const pc = new WindowsPC('PC', 0, 0);
+      const pc = new WindowsPC('windows-pc', 'PC', 0, 0);
       const output = await pc.executeCommand('tracert -h10 -w1000 127.0.0.1');
       expect(output).toBeDefined();
     });
@@ -2241,7 +2241,7 @@ describe('WAN-level Ping and Traceroute Command Suite', () => {
     });
 
     it('294. should restore default configurations when network stack is reset on Windows PC', async () => {
-      const pc = new WindowsPC('PC', 0, 0);
+      const pc = new WindowsPC('windows-pc', 'PC', 0, 0);
       await pc.executeCommand('ping 127.0.0.1');
       await pc.executeCommand('netsh interface ip reset');
       const status = await pc.executeCommand('netsh interface ip show config');
@@ -2263,7 +2263,7 @@ describe('WAN-level Ping and Traceroute Command Suite', () => {
     });
 
     it('297. should reject Windows ping if source address has quote mismatch (-S "10.0.0.1)', async () => {
-      const pc = new WindowsPC('PC', 0, 0);
+      const pc = new WindowsPC('windows-pc', 'PC', 0, 0);
       const output = await pc.executeCommand('ping -S "10.0.0.1 127.0.0.1');
       expect(output.toLowerCase()).toMatch(/invalid|quote|syntax/);
     });

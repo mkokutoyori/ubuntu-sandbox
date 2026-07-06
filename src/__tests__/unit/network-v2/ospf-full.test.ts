@@ -40,8 +40,8 @@ describe('OSPFv2 – Basic Single Area', () => {
   // 1.01 – Two routers, point-to-point link, basic OSPF configuration
   it('should establish OSPF neighbor adjacency and exchange routes over a point-to-point link', async () => {
     // Topology: R1 (G0/0) --- R2 (G0/0)  (10.0.12.0/30)
-    const r1 = new Router('router-cisco', 'R1');
-    const r2 = new Router('router-cisco', 'R2');
+    const r1 = Router('router-cisco', 'R1');
+    const r2 = Router('router-cisco', 'R2');
 
     // Configure interfaces on R1
     await r1.executeCommand('enable');
@@ -88,12 +88,12 @@ describe('OSPFv2 – Basic Single Area', () => {
   // 1.02 – OSPF on broadcast multi-access (Ethernet) with DR/BDR election
   it('should elect DR and BDR on a broadcast multi-access segment', async () => {
     // Topology: R1, R2, R3 connected to same switch (Ethernet segment 192.168.1.0/24)
-    const r1 = new Router('router-cisco', 'R1');
-    const r2 = new Router('router-cisco', 'R2');
-    const r3 = new Router('router-cisco', 'R3');
+    const r1 = Router('router-cisco', 'R1');
+    const r2 = Router('router-cisco', 'R2');
+    const r3 = Router('router-cisco', 'R3');
 
     // Helper to configure OSPF on each router
-    const configRouter = async (r: Router, ip: string, id: string) => {
+    const configRouter = async (r: CiscoRouter, ip: string, id: string) => {
       await r.executeCommand('enable');
       await r.executeCommand('configure terminal');
       await r.executeCommand('interface GigabitEthernet0/0');
@@ -113,7 +113,7 @@ describe('OSPFv2 – Basic Single Area', () => {
     // Connect all to same switch – we can use a Switch device or simply connect each to a common hub?
     // For simplicity, we'll create cables to a dummy switch, but in our framework we can just connect each pair?
     // Actually to simulate broadcast, we need a common LAN. We'll create a switch and connect all three.
-    const sw = new Switch('switch-cisco', 'SW1'); // Assuming Switch class exists
+    const sw = Switch('switch-cisco', 'SW1'); // Assuming Switch class exists
     // (If Switch not available, we can connect them in a star but the simulation must support broadcast.
     // For test, we'll rely on framework ability to simulate broadcast domain.)
 
@@ -137,8 +137,8 @@ describe('OSPFv2 – Basic Single Area', () => {
   // 1.03 – Verify OSPF database (show ip ospf database)
   it('should display LSAs in the OSPF database', async () => {
     // Simple two-router topology as in 1.01
-    const r1 = new Router('router-cisco', 'R1');
-    const r2 = new Router('router-cisco', 'R2');
+    const r1 = Router('router-cisco', 'R1');
+    const r2 = Router('router-cisco', 'R2');
 
     // Configure as before (p2p)
     await r1.executeCommand('enable');
@@ -177,7 +177,7 @@ describe('OSPFv2 – Basic Single Area', () => {
 
   // 1.04 – OSPF interface parameters (show ip ospf interface)
   it('should display correct OSPF interface parameters', async () => {
-    const r = new Router('router-cisco', 'R1');
+    const r = Router('router-cisco', 'R1');
     await r.executeCommand('enable');
     await r.executeCommand('configure terminal');
     await r.executeCommand('interface GigabitEthernet0/0');
@@ -202,9 +202,9 @@ describe('OSPFv2 – Basic Single Area', () => {
   it('should prefer route with lower cost when multiple paths exist', async () => {
     // Topology: R1 -- R2 (cost 10) and R1 -- R3 -- R2 (cost 5+5=10) but we need unequal costs
     // Better: R1 connected to R2 directly (cost 10) and via R3 (cost 20). R1 should choose direct.
-    const r1 = new Router('router-cisco', 'R1');
-    const r2 = new Router('router-cisco', 'R2');
-    const r3 = new Router('router-cisco', 'R3');
+    const r1 = Router('router-cisco', 'R1');
+    const r2 = Router('router-cisco', 'R2');
+    const r3 = Router('router-cisco', 'R3');
 
     // Configure interfaces and OSPF
     // R1 G0/0 to R2 G0/0: 10.0.12.0/30
@@ -245,9 +245,9 @@ describe('OSPFv2 – Basic Single Area', () => {
   // 1.06 – OSPF priority and DR/BDR election
   it('should elect router with highest priority as DR', async () => {
     // R1 priority 100, R2 priority 50, R3 priority 0 (won't be DR/BDR)
-    const r1 = new Router('router-cisco', 'R1');
-    const r2 = new Router('router-cisco', 'R2');
-    const r3 = new Router('router-cisco', 'R3');
+    const r1 = Router('router-cisco', 'R1');
+    const r2 = Router('router-cisco', 'R2');
+    const r3 = Router('router-cisco', 'R3');
 
     await r1.executeCommand('enable'); await r1.executeCommand('configure terminal');
     await r1.executeCommand('interface GigabitEthernet0/0'); await r1.executeCommand('ip address 192.168.1.1 255.255.255.0'); await r1.executeCommand('ip ospf priority 100'); await r1.executeCommand('no shutdown'); await r1.executeCommand('exit');
@@ -261,7 +261,7 @@ describe('OSPFv2 – Basic Single Area', () => {
     await r3.executeCommand('interface GigabitEthernet0/0'); await r3.executeCommand('ip address 192.168.1.3 255.255.255.0'); await r3.executeCommand('ip ospf priority 0'); await r3.executeCommand('no shutdown'); await r3.executeCommand('exit');
     await r3.executeCommand('router ospf 1'); await r3.executeCommand('router-id 3.3.3.3'); await r3.executeCommand('network 192.168.1.0 0.0.0.255 area 0'); await r3.executeCommand('end');
 
-    const sw = new Switch('switch-cisco', 'SW1');
+    const sw = Switch('switch-cisco', 'SW1');
     const c1 = new Cable('c1'); c1.connect(r1.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/2')!);
     const c2 = new Cable('c2'); c2.connect(r2.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/3')!);
     const c3 = new Cable('c3'); c3.connect(r3.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/4')!);
@@ -275,8 +275,8 @@ describe('OSPFv2 – Basic Single Area', () => {
 
   // 1.07 – OSPF network type change (broadcast to point-to-point)
   it('should suppress DR/BDR election when network type is point-to-point', async () => {
-    const r1 = new Router('router-cisco', 'R1');
-    const r2 = new Router('router-cisco', 'R2');
+    const r1 = Router('router-cisco', 'R1');
+    const r2 = Router('router-cisco', 'R2');
 
     await r1.executeCommand('enable'); await r1.executeCommand('configure terminal');
     await r1.executeCommand('interface GigabitEthernet0/0'); await r1.executeCommand('ip address 192.168.1.1 255.255.255.0'); await r1.executeCommand('ip ospf network point-to-point'); await r1.executeCommand('no shutdown'); await r1.executeCommand('exit');
@@ -295,8 +295,8 @@ describe('OSPFv2 – Basic Single Area', () => {
 
   // 1.08 – OSPF passive-interface
   it('should not form adjacency on a passive interface', async () => {
-    const r1 = new Router('router-cisco', 'R1');
-    const r2 = new Router('router-cisco', 'R2');
+    const r1 = Router('router-cisco', 'R1');
+    const r2 = Router('router-cisco', 'R2');
 
     await r1.executeCommand('enable'); await r1.executeCommand('configure terminal');
     await r1.executeCommand('interface GigabitEthernet0/0'); await r1.executeCommand('ip address 10.0.12.1 255.255.255.252'); await r1.executeCommand('no shutdown'); await r1.executeCommand('exit');
@@ -315,8 +315,8 @@ describe('OSPFv2 – Basic Single Area', () => {
 
   // 1.09 – OSPF default-information originate
   it('should inject default route into OSPF domain', async () => {
-    const r1 = new Router('router-cisco', 'R1'); // ASBR
-    const r2 = new Router('router-cisco', 'R2');
+    const r1 = Router('router-cisco', 'R1'); // ASBR
+    const r2 = Router('router-cisco', 'R2');
 
     // R1 has a default route (static) and originates default into OSPF
     await r1.executeCommand('enable'); await r1.executeCommand('configure terminal');
@@ -337,8 +337,8 @@ describe('OSPFv2 – Basic Single Area', () => {
 
   // 1.10 – OSPF metric-type for default route (E1 vs E2)
   it('should originate default route as E1 with metric-type 1', async () => {
-    const r1 = new Router('router-cisco', 'R1');
-    const r2 = new Router('router-cisco', 'R2');
+    const r1 = Router('router-cisco', 'R1');
+    const r2 = Router('router-cisco', 'R2');
 
     await r1.executeCommand('enable'); await r1.executeCommand('configure terminal');
     await r1.executeCommand('ip route 0.0.0.0 0.0.0.0 203.0.113.1');
@@ -366,9 +366,9 @@ describe('OSPFv2 – Multi‑Area', () => {
   it('should install inter‑area routes on ABR and backbone routers', async () => {
     // Topology: R1 (area 1) -- R2 (ABR) -- R3 (area 0)
     // R1 has loopback 1.1.1.1/32 in area 1
-    const r1 = new Router('router-cisco', 'R1');
-    const r2 = new Router('router-cisco', 'R2');
-    const r3 = new Router('router-cisco', 'R3');
+    const r1 = Router('router-cisco', 'R1');
+    const r2 = Router('router-cisco', 'R2');
+    const r3 = Router('router-cisco', 'R3');
 
     // R1 (Area 1)
     await r1.executeCommand('enable'); await r1.executeCommand('configure terminal');
@@ -400,9 +400,9 @@ describe('OSPFv2 – Multi‑Area', () => {
   // 2.12 – ABR route summarization (area range)
   it('should summarize prefixes on ABR using area range', async () => {
     // R1 has multiple /24 in area 1 (192.168.1.0/24, 192.168.2.0/24). ABR R2 summarizes to 192.168.0.0/16.
-    const r1 = new Router('router-cisco', 'R1');
-    const r2 = new Router('router-cisco', 'R2');
-    const r3 = new Router('router-cisco', 'R3');
+    const r1 = Router('router-cisco', 'R1');
+    const r2 = Router('router-cisco', 'R2');
+    const r3 = Router('router-cisco', 'R3');
 
     // R1 (area 1)
     await r1.executeCommand('enable'); await r1.executeCommand('configure terminal');
@@ -434,8 +434,8 @@ describe('OSPFv2 – Multi‑Area', () => {
 
   // 2.13 – ASBR external route redistribution (static)
   it('should redistribute static routes into OSPF as external LSAs', async () => {
-    const r1 = new Router('router-cisco', 'R1'); // ASBR
-    const r2 = new Router('router-cisco', 'R2'); // Internal router
+    const r1 = Router('router-cisco', 'R1'); // ASBR
+    const r2 = Router('router-cisco', 'R2'); // Internal router
 
     // R1 has static route and redistributes
     await r1.executeCommand('enable'); await r1.executeCommand('configure terminal');
@@ -455,9 +455,9 @@ describe('OSPFv2 – Multi‑Area', () => {
 
   // 2.14 – External route type 1 vs type 2
   it('should respect metric-type (E1) and include internal cost', async () => {
-    const r1 = new Router('router-cisco', 'R1'); // ASBR
-    const r2 = new Router('router-cisco', 'R2'); // ABR/Internal
-    const r3 = new Router('router-cisco', 'R3'); // Remote router
+    const r1 = Router('router-cisco', 'R1'); // ASBR
+    const r2 = Router('router-cisco', 'R2'); // ABR/Internal
+    const r3 = Router('router-cisco', 'R3'); // Remote router
 
     // Build topology: R1 -- R2 -- R3, R1 redistributes static as E1, R2 redistributes as E2
     // For E1, cost increases with distance.
@@ -488,8 +488,8 @@ describe('OSPFv2 – Multi‑Area', () => {
 
   // 2.15 – Stub area configuration
   it('should replace external routes with default route in stub area', async () => {
-    const r1 = new Router('router-cisco', 'R1'); // ABR, connects area 0 and area 1 (stub)
-    const r2 = new Router('router-cisco', 'R2'); // Internal router in area 1
+    const r1 = Router('router-cisco', 'R1'); // ABR, connects area 0 and area 1 (stub)
+    const r2 = Router('router-cisco', 'R2'); // Internal router in area 1
 
     await r1.executeCommand('enable'); await r1.executeCommand('configure terminal');
     await r1.executeCommand('interface G0/0'); await r1.executeCommand('ip address 10.0.12.1 255.255.255.252'); await r1.executeCommand('no shutdown'); await r1.executeCommand('exit');
@@ -510,8 +510,8 @@ describe('OSPFv2 – Multi‑Area', () => {
 
   // 2.16 – Totally stubby area (no summary LSAs)
   it('should block inter-area routes as well, only default route in totally stubby area', async () => {
-    const r1 = new Router('router-cisco', 'R1'); // ABR
-    const r2 = new Router('router-cisco', 'R2'); // Internal in area 1 (totally stubby)
+    const r1 = Router('router-cisco', 'R1'); // ABR
+    const r2 = Router('router-cisco', 'R2'); // Internal in area 1 (totally stubby)
 
     await r1.executeCommand('enable'); await r1.executeCommand('configure terminal');
     await r1.executeCommand('interface G0/0'); await r1.executeCommand('ip address 10.0.12.1 255.255.255.252'); await r1.executeCommand('no shutdown'); await r1.executeCommand('exit');
@@ -532,9 +532,9 @@ describe('OSPFv2 – Multi‑Area', () => {
 
   // 2.17 – NSSA area with redistribution
   it('should allow external routes in NSSA area via Type 7 LSAs', async () => {
-    const r1 = new Router('router-cisco', 'R1'); // ASBR in NSSA area 1
-    const r2 = new Router('router-cisco', 'R2'); // ABR
-    const r3 = new Router('router-cisco', 'R3'); // Backbone router
+    const r1 = Router('router-cisco', 'R1'); // ASBR in NSSA area 1
+    const r2 = Router('router-cisco', 'R2'); // ABR
+    const r3 = Router('router-cisco', 'R3'); // Backbone router
 
     // R1 in area 1 (NSSA), redistributes static
     await r1.executeCommand('enable'); await r1.executeCommand('configure terminal');
@@ -565,10 +565,10 @@ describe('OSPFv2 – Multi‑Area', () => {
   it('should connect two parts of area 0 via virtual link through area 1', async () => {
     // R1 (area 0) -- R2 (area 1) -- R3 (area 0) - but R2 and R3 are not directly connected to same area 0.
     // Virtual link between R2 and R3 through area 1.
-    const r1 = new Router('router-cisco', 'R1'); // area 0
-    const r2 = new Router('router-cisco', 'R2'); // ABR (area 0 & area 1)
-    const r3 = new Router('router-cisco', 'R3'); // ABR (area 1 & area 0)
-    const r4 = new Router('router-cisco', 'R4'); // area 0 remote
+    const r1 = Router('router-cisco', 'R1'); // area 0
+    const r2 = Router('router-cisco', 'R2'); // ABR (area 0 & area 1)
+    const r3 = Router('router-cisco', 'R3'); // ABR (area 1 & area 0)
+    const r4 = Router('router-cisco', 'R4'); // area 0 remote
 
     // R1 (area 0)
     await r1.executeCommand('enable'); await r1.executeCommand('configure terminal');
@@ -616,8 +616,8 @@ describe('OSPFv2 – Multi‑Area', () => {
 
   // 2.19 – OSPF authentication (plaintext)
   it('should require correct plaintext password to form adjacency', async () => {
-    const r1 = new Router('router-cisco', 'R1');
-    const r2 = new Router('router-cisco', 'R2');
+    const r1 = Router('router-cisco', 'R1');
+    const r2 = Router('router-cisco', 'R2');
 
     // R1 with auth
     await r1.executeCommand('enable'); await r1.executeCommand('configure terminal');
@@ -646,8 +646,8 @@ describe('OSPFv2 – Multi‑Area', () => {
 
   // 2.20 – OSPF authentication (MD5)
   it('should form adjacency with MD5 authentication', async () => {
-    const r1 = new Router('router-cisco', 'R1');
-    const r2 = new Router('router-cisco', 'R2');
+    const r1 = Router('router-cisco', 'R1');
+    const r2 = Router('router-cisco', 'R2');
 
     await r1.executeCommand('enable'); await r1.executeCommand('configure terminal');
     await r1.executeCommand('interface G0/0'); await r1.executeCommand('ip address 10.0.12.1 255.255.255.252'); await r1.executeCommand('ip ospf message-digest-key 1 md5 secretkey'); await r1.executeCommand('ip ospf authentication message-digest'); await r1.executeCommand('no shutdown'); await r1.executeCommand('exit');
@@ -672,8 +672,8 @@ describe('OSPFv2 – Advanced Features', () => {
 
   // 3.21 – OSPF timers (hello/dead) adjustment
   it('should match hello/dead intervals to form adjacency', async () => {
-    const r1 = new Router('router-cisco', 'R1');
-    const r2 = new Router('router-cisco', 'R2');
+    const r1 = Router('router-cisco', 'R1');
+    const r2 = Router('router-cisco', 'R2');
 
     await r1.executeCommand('enable'); await r1.executeCommand('configure terminal');
     await r1.executeCommand('interface G0/0'); await r1.executeCommand('ip address 10.0.12.1 255.255.255.252'); await r1.executeCommand('ip ospf hello-interval 5'); await r1.executeCommand('ip ospf dead-interval 20'); await r1.executeCommand('no shutdown'); await r1.executeCommand('exit');
@@ -699,7 +699,7 @@ describe('OSPFv2 – Advanced Features', () => {
 
   // 3.22 – OSPF LSA throttling (timers throttle spf)
   it('should configure SPF throttling timers', async () => {
-    const r = new Router('router-cisco', 'R1');
+    const r = Router('router-cisco', 'R1');
     await r.executeCommand('enable'); await r.executeCommand('configure terminal');
     await r.executeCommand('router ospf 1');
     await r.executeCommand('timers throttle spf 100 500 5000');
@@ -713,7 +713,7 @@ describe('OSPFv2 – Advanced Features', () => {
 
   // 3.23 – OSPF database overflow
   it('should limit number of external LSAs and handle overflow', async () => {
-    const r = new Router('router-cisco', 'R1');
+    const r = Router('router-cisco', 'R1');
     await r.executeCommand('enable'); await r.executeCommand('configure terminal');
     await r.executeCommand('router ospf 1');
     await r.executeCommand('max-lsa 1000');
@@ -725,8 +725,8 @@ describe('OSPFv2 – Advanced Features', () => {
 
   // 3.24 – OSPF neighbor authentication mismatch
   it('should not form adjacency if authentication type mismatches', async () => {
-    const r1 = new Router('router-cisco', 'R1');
-    const r2 = new Router('router-cisco', 'R2');
+    const r1 = Router('router-cisco', 'R1');
+    const r2 = Router('router-cisco', 'R2');
 
     await r1.executeCommand('enable'); await r1.executeCommand('configure terminal');
     await r1.executeCommand('interface G0/0'); await r1.executeCommand('ip address 10.0.12.1 255.255.255.252'); await r1.executeCommand('ip ospf authentication message-digest'); await r1.executeCommand('ip ospf message-digest-key 1 md5 secret'); await r1.executeCommand('no shutdown'); await r1.executeCommand('exit');
@@ -746,8 +746,8 @@ describe('OSPFv2 – Advanced Features', () => {
   // 3.25 – OSPF route filtering with distribute-list
   it('should filter routes using distribute-list in/out', async () => {
     // R1 advertises multiple prefixes. R2 uses distribute-list to block one.
-    const r1 = new Router('router-cisco', 'R1');
-    const r2 = new Router('router-cisco', 'R2');
+    const r1 = Router('router-cisco', 'R1');
+    const r2 = Router('router-cisco', 'R2');
 
     // R1: loopbacks 192.168.1.1/32 and 192.168.2.1/32
     await r1.executeCommand('enable'); await r1.executeCommand('configure terminal');
@@ -774,8 +774,8 @@ describe('OSPFv2 – Advanced Features', () => {
   it('should set forwarding address in Type 5 LSA when next-hop is not on the same network', async () => {
     // Complex scenario not trivial; we'll simulate a basic check.
     // For the sake of test, we'll assume the simulation can set forwarding address.
-    const r1 = new Router('router-cisco', 'R1'); // ASBR
-    const r2 = new Router('router-cisco', 'R2'); // Internal
+    const r1 = Router('router-cisco', 'R1'); // ASBR
+    const r2 = Router('router-cisco', 'R2'); // Internal
 
     await r1.executeCommand('enable'); await r1.executeCommand('configure terminal');
     await r1.executeCommand('interface G0/0'); await r1.executeCommand('ip address 10.0.12.1 255.255.255.252'); await r1.executeCommand('no shutdown'); await r1.executeCommand('exit');
@@ -794,8 +794,8 @@ describe('OSPFv2 – Advanced Features', () => {
 
   // 3.27 – OSPF demand circuit
   it('should suppress periodic hello on demand circuit', async () => {
-    const r1 = new Router('router-cisco', 'R1');
-    const r2 = new Router('router-cisco', 'R2');
+    const r1 = Router('router-cisco', 'R1');
+    const r2 = Router('router-cisco', 'R2');
 
     await r1.executeCommand('enable'); await r1.executeCommand('configure terminal');
     await r1.executeCommand('interface G0/0'); await r1.executeCommand('ip address 10.0.12.1 255.255.255.252'); await r1.executeCommand('ip ospf demand-circuit'); await r1.executeCommand('no shutdown'); await r1.executeCommand('exit');
@@ -813,7 +813,7 @@ describe('OSPFv2 – Advanced Features', () => {
 
   // 3.28 – OSPF graceful restart
   it('should enable graceful restart (IETF) and show status', async () => {
-    const r = new Router('router-cisco', 'R1');
+    const r = Router('router-cisco', 'R1');
     await r.executeCommand('enable'); await r.executeCommand('configure terminal');
     await r.executeCommand('router ospf 1');
     await r.executeCommand('graceful-restart grace-period 120');
@@ -826,7 +826,7 @@ describe('OSPFv2 – Advanced Features', () => {
 
   // 3.29 – OSPF with BFD
   it('should enable BFD on OSPF interface', async () => {
-    const r = new Router('router-cisco', 'R1');
+    const r = Router('router-cisco', 'R1');
     await r.executeCommand('enable'); await r.executeCommand('configure terminal');
     await r.executeCommand('interface G0/0'); await r.executeCommand('ip address 10.0.12.1 255.255.255.252'); await r.executeCommand('bfd interval 50 min_rx 50 multiplier 3'); await r.executeCommand('no shutdown'); await r.executeCommand('exit');
     await r.executeCommand('router ospf 1'); await r.executeCommand('bfd all-interfaces'); await r.executeCommand('network 10.0.12.0 0.0.0.3 area 0'); await r.executeCommand('end');
@@ -837,8 +837,8 @@ describe('OSPFv2 – Advanced Features', () => {
 
   // 3.30 – OSPF over GRE tunnel
   it('should form OSPF adjacency over a GRE tunnel', async () => {
-    const r1 = new Router('router-cisco', 'R1');
-    const r2 = new Router('router-cisco', 'R2');
+    const r1 = Router('router-cisco', 'R1');
+    const r2 = Router('router-cisco', 'R2');
 
     // Configure physical interfaces for tunnel endpoints
     await r1.executeCommand('enable'); await r1.executeCommand('configure terminal');
@@ -868,8 +868,8 @@ describe('OSPFv3 – IPv6 Basics', () => {
 
   // 4.31 – Basic OSPFv3 configuration on two routers
   it('should establish OSPFv3 adjacency and exchange IPv6 routes', async () => {
-    const r1 = new Router('router-cisco', 'R1');
-    const r2 = new Router('router-cisco', 'R2');
+    const r1 = Router('router-cisco', 'R1');
+    const r2 = Router('router-cisco', 'R2');
 
     // Enable IPv6 unicast routing
     await r1.executeCommand('enable'); await r1.executeCommand('configure terminal');
@@ -902,9 +902,9 @@ describe('OSPFv3 – IPv6 Basics', () => {
 
   // 4.32 – OSPFv3 multi-access DR/BDR
   it('should elect DR and BDR for OSPFv3 on broadcast network', async () => {
-    const r1 = new Router('router-cisco', 'R1');
-    const r2 = new Router('router-cisco', 'R2');
-    const r3 = new Router('router-cisco', 'R3');
+    const r1 = Router('router-cisco', 'R1');
+    const r2 = Router('router-cisco', 'R2');
+    const r3 = Router('router-cisco', 'R3');
 
     // Enable IPv6 and OSPFv3 on all with explicit addresses (not eui-64)
     await r1.executeCommand('enable'); await r1.executeCommand('configure terminal');
@@ -926,7 +926,7 @@ describe('OSPFv3 – IPv6 Basics', () => {
     await r3.executeCommand('interface G0/0'); await r3.executeCommand('ipv6 ospf 1 area 0'); await r3.executeCommand('end');
 
     // Connect to switch
-    const sw = new Switch('switch-cisco', 'SW1');
+    const sw = Switch('switch-cisco', 'SW1');
     const c1 = new Cable('c1'); c1.connect(r1.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/2')!);
     const c2 = new Cable('c2'); c2.connect(r2.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/3')!);
     const c3 = new Cable('c3'); c3.connect(r3.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/4')!);
@@ -940,8 +940,8 @@ describe('OSPFv3 – IPv6 Basics', () => {
 
   // 4.33 – OSPFv3 cost, priority
   it('should honor ipv6 ospf cost and priority settings', async () => {
-    const r1 = new Router('router-cisco', 'R1');
-    const r2 = new Router('router-cisco', 'R2');
+    const r1 = Router('router-cisco', 'R1');
+    const r2 = Router('router-cisco', 'R2');
 
     await r1.executeCommand('enable'); await r1.executeCommand('configure terminal');
     await r1.executeCommand('ipv6 unicast-routing');
@@ -965,8 +965,8 @@ describe('OSPFv3 – IPv6 Basics', () => {
 
   // 4.34 – OSPFv3 network types
   it('should set network type to point-to-point in OSPFv3', async () => {
-    const r1 = new Router('router-cisco', 'R1');
-    const r2 = new Router('router-cisco', 'R2');
+    const r1 = Router('router-cisco', 'R1');
+    const r2 = Router('router-cisco', 'R2');
 
     await r1.executeCommand('enable'); await r1.executeCommand('configure terminal');
     await r1.executeCommand('ipv6 unicast-routing');
@@ -988,8 +988,8 @@ describe('OSPFv3 – IPv6 Basics', () => {
 
   // 4.35 – OSPFv3 passive-interface
   it('should suppress OSPFv3 hellos on passive interface', async () => {
-    const r1 = new Router('router-cisco', 'R1');
-    const r2 = new Router('router-cisco', 'R2');
+    const r1 = Router('router-cisco', 'R1');
+    const r2 = Router('router-cisco', 'R2');
 
     await r1.executeCommand('enable'); await r1.executeCommand('configure terminal');
     await r1.executeCommand('ipv6 unicast-routing');
@@ -1011,9 +1011,9 @@ describe('OSPFv3 – IPv6 Basics', () => {
 
   // 4.36 – OSPFv3 inter-area routes
   it('should install inter-area IPv6 routes via ABR', async () => {
-    const r1 = new Router('router-cisco', 'R1'); // area 1
-    const r2 = new Router('router-cisco', 'R2'); // ABR
-    const r3 = new Router('router-cisco', 'R3'); // area 0
+    const r1 = Router('router-cisco', 'R1'); // area 1
+    const r2 = Router('router-cisco', 'R2'); // ABR
+    const r3 = Router('router-cisco', 'R3'); // area 0
 
     // R1 (area 1) loopback
     await r1.executeCommand('enable'); await r1.executeCommand('configure terminal');
@@ -1049,9 +1049,9 @@ describe('OSPFv3 – IPv6 Basics', () => {
 
   // 4.37 – OSPFv3 route summarization
   it('should summarize IPv6 prefixes on ABR with area range', async () => {
-    const r1 = new Router('router-cisco', 'R1'); // area 1
-    const r2 = new Router('router-cisco', 'R2'); // ABR
-    const r3 = new Router('router-cisco', 'R3'); // area 0
+    const r1 = Router('router-cisco', 'R1'); // area 1
+    const r2 = Router('router-cisco', 'R2'); // ABR
+    const r3 = Router('router-cisco', 'R3'); // area 0
 
     // R1 has multiple /64 loops
     await r1.executeCommand('enable'); await r1.executeCommand('configure terminal');
@@ -1087,8 +1087,8 @@ describe('OSPFv3 – IPv6 Basics', () => {
 
   // 4.38 – OSPFv3 stub area
   it('should inject default route into OSPFv3 stub area', async () => {
-    const r1 = new Router('router-cisco', 'R1'); // ABR
-    const r2 = new Router('router-cisco', 'R2'); // stub router
+    const r1 = Router('router-cisco', 'R1'); // ABR
+    const r2 = Router('router-cisco', 'R2'); // stub router
 
     await r1.executeCommand('enable'); await r1.executeCommand('configure terminal');
     await r1.executeCommand('ipv6 unicast-routing');
@@ -1111,8 +1111,8 @@ describe('OSPFv3 – IPv6 Basics', () => {
 
   // 4.39 – OSPFv3 authentication (IPsec)
   it('should enable IPsec authentication for OSPFv3', async () => {
-    const r1 = new Router('router-cisco', 'R1');
-    const r2 = new Router('router-cisco', 'R2');
+    const r1 = Router('router-cisco', 'R1');
+    const r2 = Router('router-cisco', 'R2');
 
     await r1.executeCommand('enable'); await r1.executeCommand('configure terminal');
     await r1.executeCommand('ipv6 unicast-routing');
@@ -1134,8 +1134,8 @@ describe('OSPFv3 – IPv6 Basics', () => {
 
   // 4.40 – OSPFv3 redistribution
   it('should redistribute static IPv6 routes into OSPFv3', async () => {
-    const r1 = new Router('router-cisco', 'R1'); // ASBR
-    const r2 = new Router('router-cisco', 'R2');
+    const r1 = Router('router-cisco', 'R1'); // ASBR
+    const r2 = Router('router-cisco', 'R2');
 
     await r1.executeCommand('enable'); await r1.executeCommand('configure terminal');
     await r1.executeCommand('ipv6 unicast-routing');
@@ -1165,9 +1165,9 @@ describe('OSPFv3 – Advanced & Dual Stack', () => {
 
   // 5.41 – OSPFv3 virtual link
   it('should connect partitioned area 0 via virtual link in OSPFv3', async () => {
-    const r1 = new Router('router-cisco', 'R1'); // area 0
-    const r2 = new Router('router-cisco', 'R2'); // area 1
-    const r3 = new Router('router-cisco', 'R3'); // area 0
+    const r1 = Router('router-cisco', 'R1'); // area 0
+    const r2 = Router('router-cisco', 'R2'); // area 1
+    const r3 = Router('router-cisco', 'R3'); // area 0
 
     // Configure IPv6 and OSPFv3 similar to 2.18 but for IPv6
     await r1.executeCommand('enable'); await r1.executeCommand('configure terminal');
@@ -1216,8 +1216,8 @@ describe('OSPFv3 – Advanced & Dual Stack', () => {
 
   // 5.42 – OSPFv3 default-information originate
   it('should inject default route into OSPFv3 domain', async () => {
-    const r1 = new Router('router-cisco', 'R1'); // ASBR
-    const r2 = new Router('router-cisco', 'R2');
+    const r1 = Router('router-cisco', 'R1'); // ASBR
+    const r2 = Router('router-cisco', 'R2');
 
     await r1.executeCommand('enable'); await r1.executeCommand('configure terminal');
     await r1.executeCommand('ipv6 unicast-routing');
@@ -1240,7 +1240,7 @@ describe('OSPFv3 – Advanced & Dual Stack', () => {
 
   // 5.43 – OSPFv3 LSA types (Link, Intra, Inter, External)
   it('should display different LSA types in database', async () => {
-    const r = new Router('router-cisco', 'R1');
+    const r = Router('router-cisco', 'R1');
     // Configure OSPFv3 with some LSAs
     await r.executeCommand('enable'); await r.executeCommand('configure terminal');
     await r.executeCommand('ipv6 unicast-routing');
@@ -1258,7 +1258,7 @@ describe('OSPFv3 – Advanced & Dual Stack', () => {
 
   // 5.44 – OSPFv3 multiple instances
   it('should run multiple OSPFv3 processes', async () => {
-    const r = new Router('router-cisco', 'R1');
+    const r = Router('router-cisco', 'R1');
     await r.executeCommand('enable'); await r.executeCommand('configure terminal');
     await r.executeCommand('ipv6 unicast-routing');
     await r.executeCommand('ipv6 router ospf 1'); await r.executeCommand('router-id 1.1.1.1'); await r.executeCommand('exit');
@@ -1273,7 +1273,7 @@ describe('OSPFv3 – Advanced & Dual Stack', () => {
 
   // 5.45 – OSPFv3 graceful restart
   it('should enable graceful restart in OSPFv3', async () => {
-    const r = new Router('router-cisco', 'R1');
+    const r = Router('router-cisco', 'R1');
     await r.executeCommand('enable'); await r.executeCommand('configure terminal');
     await r.executeCommand('ipv6 router ospf 1');
     await r.executeCommand('graceful-restart grace-period 90');
@@ -1285,8 +1285,8 @@ describe('OSPFv3 – Advanced & Dual Stack', () => {
 
   // 5.46 – OSPFv3 loopback advertisement between two routers
   it('should advertise and learn OSPFv3 loopback prefixes between two routers', async () => {
-    const r1 = new Router('router-cisco', 'R1');
-    const r2 = new Router('router-cisco', 'R2');
+    const r1 = Router('router-cisco', 'R1');
+    const r2 = Router('router-cisco', 'R2');
 
     await r1.executeCommand('enable'); await r1.executeCommand('configure terminal');
     await r1.executeCommand('ipv6 unicast-routing');
@@ -1313,7 +1313,7 @@ describe('OSPFv3 – Advanced & Dual Stack', () => {
 
   // 5.47 – OSPFv3 and BFD
   it('should enable BFD for OSPFv3', async () => {
-    const r = new Router('router-cisco', 'R1');
+    const r = Router('router-cisco', 'R1');
     await r.executeCommand('enable'); await r.executeCommand('configure terminal');
     await r.executeCommand('interface G0/0'); await r.executeCommand('ipv6 address 2001:db8:12::1/64'); await r.executeCommand('bfd interval 50 min_rx 50 multiplier 3'); await r.executeCommand('no shutdown'); await r.executeCommand('exit');
     await r.executeCommand('ipv6 router ospf 1'); await r.executeCommand('bfd all-interfaces'); await r.executeCommand('router-id 1.1.1.1'); await r.executeCommand('exit');
@@ -1325,7 +1325,7 @@ describe('OSPFv3 – Advanced & Dual Stack', () => {
 
   // 5.48 – Dual-stack OSPFv2 and OSPFv3 on same router
   it('should run OSPFv2 and OSPFv3 concurrently on same interfaces', async () => {
-    const r = new Router('router-cisco', 'R1');
+    const r = Router('router-cisco', 'R1');
     await r.executeCommand('enable'); await r.executeCommand('configure terminal');
     await r.executeCommand('ip routing');
     await r.executeCommand('ipv6 unicast-routing');
@@ -1343,8 +1343,8 @@ describe('OSPFv3 – Advanced & Dual Stack', () => {
 
   // 5.49 – OSPFv3 route filtering with distribute-list
   it('should filter IPv6 routes using distribute-list in/out', async () => {
-    const r1 = new Router('router-cisco', 'R1');
-    const r2 = new Router('router-cisco', 'R2');
+    const r1 = Router('router-cisco', 'R1');
+    const r2 = Router('router-cisco', 'R2');
 
     await r1.executeCommand('enable'); await r1.executeCommand('configure terminal');
     await r1.executeCommand('ipv6 unicast-routing');
@@ -1375,11 +1375,11 @@ describe('OSPFv3 – Advanced & Dual Stack', () => {
     // Actually, we'll create a 5-router topology with area 0, area 1 (stub), area 2 (NSSA), ASBR, ABRs, summaries, etc.
     // Due to length, we'll just mark it as placeholder but will add a concise version.
 
-    const r1 = new Router('router-cisco', 'R1'); // ASBR in area 2 (NSSA)
-    const r2 = new Router('router-cisco', 'R2'); // ABR area 2<->0
-    const r3 = new Router('router-cisco', 'R3'); // Backbone
-    const r4 = new Router('router-cisco', 'R4'); // ABR area 0<->1 (stub)
-    const r5 = new Router('router-cisco', 'R5'); // Internal in area 1 (stub)
+    const r1 = Router('router-cisco', 'R1'); // ASBR in area 2 (NSSA)
+    const r2 = Router('router-cisco', 'R2'); // ABR area 2<->0
+    const r3 = Router('router-cisco', 'R3'); // Backbone
+    const r4 = Router('router-cisco', 'R4'); // ABR area 0<->1 (stub)
+    const r5 = Router('router-cisco', 'R5'); // Internal in area 1 (stub)
 
     // Configure each briefly; we'll skip full commands but assume they work.
     // The test would verify that all routes appear correctly.

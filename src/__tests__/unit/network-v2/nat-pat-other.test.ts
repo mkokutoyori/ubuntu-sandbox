@@ -27,10 +27,10 @@ import { Equipment } from '@/network/equipment/Equipment';
 
 function setupNATTopology() {
   const inside_pc1 = new LinuxPC('InsidePC1', 0, 0);
-  const inside_pc2 = new WindowsPC('InsidePC2', 0, 100);
-  const sw1 = new CiscoSwitch('sw1', 'SW1', 24, 100, 50);
-  const r1 = new CiscoRouter('r1', 'R1', 200, 50); // NAT Router
-  const r2 = new CiscoRouter('r2', 'R2', 300, 50); // ISP Router
+  const inside_pc2 = new WindowsPC('windows-pc', 'InsidePC2', 0, 100);
+  const sw1 = new CiscoSwitch('switch-cisco', 'SW1', 24, 100, 50);
+  const r1 = new CiscoRouter('R1', 200, 50); // NAT Router
+  const r2 = new CiscoRouter('R2', 300, 50); // ISP Router
   const outside_pc1 = new LinuxPC('OutsidePC1', 400, 50);
 
   const c1 = new Cable('c1');
@@ -523,7 +523,7 @@ describe('Cisco and Huawei NAT/PAT Command System', () => {
     });
 
     it('40. should support static NAT maps configurations on Cisco switches supporting L3 SVIs', async () => {
-      const sw = new CiscoSwitch('sw1', 'SW1', 24, 0, 0);
+      const sw = new CiscoSwitch('switch-cisco', 'SW1', 24, 0, 0);
       await sw.executeCommand('enable');
       await sw.executeCommand('configure terminal');
       await sw.executeCommand('interface Vlan1');
@@ -2781,14 +2781,14 @@ describe('Cisco and Huawei NAT/PAT Command System', () => {
 
   describe('Section 6: Huawei NAT Outbound, Address Groups & NAT Server', () => {
     it('251. should configure NAT address group on Huawei switch/router via nat address-group', async () => {
-      const sw = new HuaweiSwitch('sw1', 'SW1', 24, 0, 0);
+      const sw = new HuaweiSwitch('switch-huawei', 'SW1', 24, 0, 0);
       await sw.executeCommand('system-view');
       const output = await sw.executeCommand('nat address-group 1 203.0.113.10 203.0.113.20');
       expect(output.trim()).toBe('');
     });
 
     it('252. should configure acl rule to match inside local traffic in Huawei VRP', async () => {
-      const sw = new HuaweiSwitch('sw1', 'SW1', 24, 0, 0);
+      const sw = new HuaweiSwitch('switch-huawei', 'SW1', 24, 0, 0);
       await sw.executeCommand('system-view');
       await sw.executeCommand('acl 2000');
       const output = await sw.executeCommand('rule 5 permit source 192.168.1.0 0.0.0.255');
@@ -2796,7 +2796,7 @@ describe('Cisco and Huawei NAT/PAT Command System', () => {
     });
 
     it('253. should bind acl to address-group on Huawei interface via nat outbound', async () => {
-      const sw = new HuaweiSwitch('sw1', 'SW1', 24, 0, 0);
+      const sw = new HuaweiSwitch('switch-huawei', 'SW1', 24, 0, 0);
       await sw.executeCommand('system-view');
       await sw.executeCommand('nat address-group 1 203.0.113.10 203.0.113.20');
       await sw.executeCommand('acl 2000');
@@ -2808,7 +2808,7 @@ describe('Cisco and Huawei NAT/PAT Command System', () => {
     });
 
     it('254. should configure Huawei Easy IP (NAT outbound interface) using nat outbound 2000', async () => {
-      const sw = new HuaweiSwitch('sw1', 'SW1', 24, 0, 0);
+      const sw = new HuaweiSwitch('switch-huawei', 'SW1', 24, 0, 0);
       await sw.executeCommand('system-view');
       await sw.executeCommand('acl 2000');
       await sw.executeCommand('rule 5 permit source 192.168.1.0 0.0.0.255');
@@ -2819,7 +2819,7 @@ describe('Cisco and Huawei NAT/PAT Command System', () => {
     });
 
     it('255. should configure Huawei NAT Server (static port forwarding) via nat server', async () => {
-      const sw = new HuaweiSwitch('sw1', 'SW1', 24, 0, 0);
+      const sw = new HuaweiSwitch('switch-huawei', 'SW1', 24, 0, 0);
       await sw.executeCommand('system-view');
       await sw.executeCommand('interface GigabitEthernet0/0/1');
       const output = await sw.executeCommand('nat server protocol tcp global 203.0.113.1 8080 inside 192.168.1.10 80');
@@ -2827,42 +2827,42 @@ describe('Cisco and Huawei NAT/PAT Command System', () => {
     });
 
     it('256. should show NAT session translations table using display nat session', async () => {
-      const sw = new HuaweiSwitch('sw1', 'SW1', 24, 0, 0);
+      const sw = new HuaweiSwitch('switch-huawei', 'SW1', 24, 0, 0);
       await sw.executeCommand('system-view');
       const output = await sw.executeCommand('display nat session all');
       expect(output).toContain('NAT Session Table');
     });
 
     it('257. should show NAT configuration metrics using display nat outbound', async () => {
-      const sw = new HuaweiSwitch('sw1', 'SW1', 24, 0, 0);
+      const sw = new HuaweiSwitch('switch-huawei', 'SW1', 24, 0, 0);
       await sw.executeCommand('system-view');
       const output = await sw.executeCommand('display nat outbound');
       expect(output).toContain('NAT Outbound Information');
     });
 
     it('258. should show NAT server configuration metrics using display nat server', async () => {
-      const sw = new HuaweiSwitch('sw1', 'SW1', 24, 0, 0);
+      const sw = new HuaweiSwitch('switch-huawei', 'SW1', 24, 0, 0);
       await sw.executeCommand('system-view');
       const output = await sw.executeCommand('display nat server');
       expect(output).toContain('NAT Server Information');
     });
 
     it('259. should show NAT address groups using display nat address-group', async () => {
-      const sw = new HuaweiSwitch('sw1', 'SW1', 24, 0, 0);
+      const sw = new HuaweiSwitch('switch-huawei', 'SW1', 24, 0, 0);
       await sw.executeCommand('system-view');
       const output = await sw.executeCommand('display nat address-group');
       expect(output).toContain('NAT Address Group Information');
     });
 
     it('260. should show NAT statistics using display nat statistics', async () => {
-      const sw = new HuaweiSwitch('sw1', 'SW1', 24, 0, 0);
+      const sw = new HuaweiSwitch('switch-huawei', 'SW1', 24, 0, 0);
       await sw.executeCommand('system-view');
       const output = await sw.executeCommand('display nat statistics');
       expect(output).toContain('NAT Statistics Information');
     });
 
     it('261. should disable dynamic NAT outbound binding using undo nat outbound', async () => {
-      const sw = new HuaweiSwitch('sw1', 'SW1', 24, 0, 0);
+      const sw = new HuaweiSwitch('switch-huawei', 'SW1', 24, 0, 0);
       await sw.executeCommand('system-view');
       await sw.executeCommand('interface GigabitEthernet0/0/1');
       const output = await sw.executeCommand('undo nat outbound 2000');
@@ -2870,7 +2870,7 @@ describe('Cisco and Huawei NAT/PAT Command System', () => {
     });
 
     it('262. should disable NAT Server port forwarding using undo nat server', async () => {
-      const sw = new HuaweiSwitch('sw1', 'SW1', 24, 0, 0);
+      const sw = new HuaweiSwitch('switch-huawei', 'SW1', 24, 0, 0);
       await sw.executeCommand('system-view');
       await sw.executeCommand('interface GigabitEthernet0/0/1');
       const output = await sw.executeCommand('undo nat server protocol tcp global 203.0.113.1 8080');
@@ -2878,21 +2878,21 @@ describe('Cisco and Huawei NAT/PAT Command System', () => {
     });
 
     it('263. should disable address group using undo nat address-group', async () => {
-      const sw = new HuaweiSwitch('sw1', 'SW1', 24, 0, 0);
+      const sw = new HuaweiSwitch('switch-huawei', 'SW1', 24, 0, 0);
       await sw.executeCommand('system-view');
       const output = await sw.executeCommand('undo nat address-group 1');
       expect(output.trim()).toBe('');
     });
 
     it('264. should reject nat address-group if start IP is greater than end IP', async () => {
-      const sw = new HuaweiSwitch('sw1', 'SW1', 24, 0, 0);
+      const sw = new HuaweiSwitch('switch-huawei', 'SW1', 24, 0, 0);
       await sw.executeCommand('system-view');
       const output = await sw.executeCommand('nat address-group 1 203.0.113.20 203.0.113.10');
       expect(output.toLowerCase()).toContain('error');
     });
 
     it('265. should reject nat outbound if target ACL does not exist', async () => {
-      const sw = new HuaweiSwitch('sw1', 'SW1', 24, 0, 0);
+      const sw = new HuaweiSwitch('switch-huawei', 'SW1', 24, 0, 0);
       await sw.executeCommand('system-view');
       await sw.executeCommand('interface GigabitEthernet0/0/1');
       const output = await sw.executeCommand('nat outbound 9999'); // ACL 9999 doesn't exist
@@ -2900,7 +2900,7 @@ describe('Cisco and Huawei NAT/PAT Command System', () => {
     });
 
     it('266. should reject nat outbound if target address-group does not exist', async () => {
-      const sw = new HuaweiSwitch('sw1', 'SW1', 24, 0, 0);
+      const sw = new HuaweiSwitch('switch-huawei', 'SW1', 24, 0, 0);
       await sw.executeCommand('system-view');
       await sw.executeCommand('acl 2000');
       await sw.executeCommand('rule 5 permit source 192.168.1.0 0.0.0.255');
@@ -2911,7 +2911,7 @@ describe('Cisco and Huawei NAT/PAT Command System', () => {
     });
 
     it('267. should reject nat server config if global port is out of range', async () => {
-      const sw = new HuaweiSwitch('sw1', 'SW1', 24, 0, 0);
+      const sw = new HuaweiSwitch('switch-huawei', 'SW1', 24, 0, 0);
       await sw.executeCommand('system-view');
       await sw.executeCommand('interface GigabitEthernet0/0/1');
       const output = await sw.executeCommand('nat server protocol tcp global 203.0.113.1 70000 inside 192.168.1.10 80');
@@ -2919,7 +2919,7 @@ describe('Cisco and Huawei NAT/PAT Command System', () => {
     });
 
     it('268. should reject nat server config if inside port is out of range', async () => {
-      const sw = new HuaweiSwitch('sw1', 'SW1', 24, 0, 0);
+      const sw = new HuaweiSwitch('switch-huawei', 'SW1', 24, 0, 0);
       await sw.executeCommand('system-view');
       await sw.executeCommand('interface GigabitEthernet0/0/1');
       const output = await sw.executeCommand('nat server protocol tcp global 203.0.113.1 80 inside 192.168.1.10 70000');
@@ -2927,7 +2927,7 @@ describe('Cisco and Huawei NAT/PAT Command System', () => {
     });
 
     it('269. should support dynamic NAT outbound no-pat options (ip address mapping without port translation)', async () => {
-      const sw = new HuaweiSwitch('sw1', 'SW1', 24, 0, 0);
+      const sw = new HuaweiSwitch('switch-huawei', 'SW1', 24, 0, 0);
       await sw.executeCommand('system-view');
       await sw.executeCommand('nat address-group 1 203.0.113.10 203.0.113.20');
       await sw.executeCommand('acl 2000');
@@ -2939,7 +2939,7 @@ describe('Cisco and Huawei NAT/PAT Command System', () => {
     });
 
     it('270. should show no-pat flag correctly inside display nat outbound', async () => {
-      const sw = new HuaweiSwitch('sw1', 'SW1', 24, 0, 0);
+      const sw = new HuaweiSwitch('switch-huawei', 'SW1', 24, 0, 0);
       await sw.executeCommand('system-view');
       await sw.executeCommand('nat address-group 1 203.0.113.10 203.0.113.20');
       await sw.executeCommand('acl 2000');
@@ -2952,21 +2952,21 @@ describe('Cisco and Huawei NAT/PAT Command System', () => {
     });
 
     it('271. should support clear NAT session table entries explicitly on Huawei using reset nat session', async () => {
-      const sw = new HuaweiSwitch('sw1', 'SW1', 24, 0, 0);
+      const sw = new HuaweiSwitch('switch-huawei', 'SW1', 24, 0, 0);
       await sw.executeCommand('system-view');
       const output = await sw.executeCommand('reset nat session all');
       expect(output.trim()).toBe('');
     });
 
     it('272. should reject reset nat session if target parameters have typos', async () => {
-      const sw = new HuaweiSwitch('sw1', 'SW1', 24, 0, 0);
+      const sw = new HuaweiSwitch('switch-huawei', 'SW1', 24, 0, 0);
       await sw.executeCommand('system-view');
       const output = await sw.executeCommand('reset nat session allll');
       expect(output.toLowerCase()).toContain('error');
     });
 
     it('273. should support display current-configuration on Huawei switches to verify NAT persists', async () => {
-      const sw = new HuaweiSwitch('sw1', 'SW1', 24, 0, 0);
+      const sw = new HuaweiSwitch('switch-huawei', 'SW1', 24, 0, 0);
       await sw.executeCommand('system-view');
       await sw.executeCommand('interface GigabitEthernet0/0/1');
       await sw.executeCommand('nat server protocol tcp global 203.0.113.1 8080 inside 192.168.1.10 80');
@@ -2975,13 +2975,13 @@ describe('Cisco and Huawei NAT/PAT Command System', () => {
     });
 
     it('274. should deny unprivileged users access to enter system-view on Huawei (checking privilege level limits)', async () => {
-      const sw = new HuaweiSwitch('sw1', 'SW1', 24, 0, 0);
+      const sw = new HuaweiSwitch('switch-huawei', 'SW1', 24, 0, 0);
       const output = await sw.executeCommand('system-view'); // if privilege level is restricted in mock user, verify refusal
       expect(sw).toBeDefined();
     });
 
     it('275. should support static NAT server mapping on Huawei L3 VLAN Interface (Vlanif)', async () => {
-      const sw = new HuaweiSwitch('sw1', 'SW1', 24, 0, 0);
+      const sw = new HuaweiSwitch('switch-huawei', 'SW1', 24, 0, 0);
       await sw.executeCommand('system-view');
       await sw.executeCommand('interface Vlanif10');
       const output = await sw.executeCommand('nat server protocol tcp global 203.0.113.1 8080 inside 192.168.1.10 80');
@@ -2989,7 +2989,7 @@ describe('Cisco and Huawei NAT/PAT Command System', () => {
     });
 
     it('276. should display vlanif configuration in display current-configuration', async () => {
-      const sw = new HuaweiSwitch('sw1', 'SW1', 24, 0, 0);
+      const sw = new HuaweiSwitch('switch-huawei', 'SW1', 24, 0, 0);
       await sw.executeCommand('system-view');
       await sw.executeCommand('interface Vlanif10');
       await sw.executeCommand('nat server protocol tcp global 203.0.113.1 8080 inside 192.168.1.10 80');
@@ -2998,28 +2998,28 @@ describe('Cisco and Huawei NAT/PAT Command System', () => {
     });
 
     it('277. should reject nat address-group if the ID parameter is out of range', async () => {
-      const sw = new HuaweiSwitch('sw1', 'SW1', 24, 0, 0);
+      const sw = new HuaweiSwitch('switch-huawei', 'SW1', 24, 0, 0);
       await sw.executeCommand('system-view');
       const output = await sw.executeCommand('nat address-group 99999 203.0.113.10 203.0.113.20');
       expect(output.toLowerCase()).toContain('error');
     });
 
     it('278. should support single quotes around address-group IP targets in VRP terminal', async () => {
-      const sw = new HuaweiSwitch('sw1', 'SW1', 24, 0, 0);
+      const sw = new HuaweiSwitch('switch-huawei', 'SW1', 24, 0, 0);
       await sw.executeCommand('system-view');
       const output = await sw.executeCommand("nat address-group 1 '203.0.113.10' '203.0.113.20'");
       expect(output.trim()).toBe('');
     });
 
     it('279. should support double quotes around address-group IP targets in VRP terminal', async () => {
-      const sw = new HuaweiSwitch('sw1', 'SW1', 24, 0, 0);
+      const sw = new HuaweiSwitch('switch-huawei', 'SW1', 24, 0, 0);
       await sw.executeCommand('system-view');
       const output = await sw.executeCommand('nat address-group 1 "203.0.113.10" "203.0.113.20"');
       expect(output.trim()).toBe('');
     });
 
     it('280. should reject nat outbound configuration if target ACL number is invalid (e.g. 100)', async () => {
-      const sw = new HuaweiSwitch('sw1', 'SW1', 24, 0, 0);
+      const sw = new HuaweiSwitch('switch-huawei', 'SW1', 24, 0, 0);
       await sw.executeCommand('system-view');
       await sw.executeCommand('interface GigabitEthernet0/0/1');
       const output = await sw.executeCommand('nat outbound 100'); // Huawei standard ACLs start from 2000
@@ -3027,14 +3027,14 @@ describe('Cisco and Huawei NAT/PAT Command System', () => {
     });
 
     it('281. should support advanced numbered ACLs up to 3999 in VRP (ACL 3000)', async () => {
-      const sw = new HuaweiSwitch('sw1', 'SW1', 24, 0, 0);
+      const sw = new HuaweiSwitch('switch-huawei', 'SW1', 24, 0, 0);
       await sw.executeCommand('system-view');
       const output = await sw.executeCommand('acl 3000');
       expect(output.trim()).toBe('');
     });
 
     it('282. should support binding dynamic NAT outbound to advanced ACL 3000', async () => {
-      const sw = new HuaweiSwitch('sw1', 'SW1', 24, 0, 0);
+      const sw = new HuaweiSwitch('switch-huawei', 'SW1', 24, 0, 0);
       await sw.executeCommand('system-view');
       await sw.executeCommand('nat address-group 1 203.0.113.10 203.0.113.20');
       await sw.executeCommand('acl 3000');
@@ -3046,7 +3046,7 @@ describe('Cisco and Huawei NAT/PAT Command System', () => {
     });
 
     it('283. should reject nat outbound if the parameters key has typos', async () => {
-      const sw = new HuaweiSwitch('sw1', 'SW1', 24, 0, 0);
+      const sw = new HuaweiSwitch('switch-huawei', 'SW1', 24, 0, 0);
       await sw.executeCommand('system-view');
       await sw.executeCommand('interface GigabitEthernet0/0/1');
       const output = await sw.executeCommand('nat outboundd 2000');
@@ -3054,7 +3054,7 @@ describe('Cisco and Huawei NAT/PAT Command System', () => {
     });
 
     it('284. should reject nat server if the parameters key has typos', async () => {
-      const sw = new HuaweiSwitch('sw1', 'SW1', 24, 0, 0);
+      const sw = new HuaweiSwitch('switch-huawei', 'SW1', 24, 0, 0);
       await sw.executeCommand('system-view');
       await sw.executeCommand('interface GigabitEthernet0/0/1');
       const output = await sw.executeCommand('nat serverr protocol tcp global 203.0.113.1 80 inside 192.168.1.10 80');
@@ -3062,7 +3062,7 @@ describe('Cisco and Huawei NAT/PAT Command System', () => {
     });
 
     it('285. should support displaying Vlanif NAT bindings in display interface Vlanif command', async () => {
-      const sw = new HuaweiSwitch('sw1', 'SW1', 24, 0, 0);
+      const sw = new HuaweiSwitch('switch-huawei', 'SW1', 24, 0, 0);
       await sw.executeCommand('system-view');
       await sw.executeCommand('interface Vlanif10');
       await sw.executeCommand('ip address 203.0.113.1 255.255.255.0');
@@ -3071,7 +3071,7 @@ describe('Cisco and Huawei NAT/PAT Command System', () => {
     });
 
     it('286. should support displaying GigabitEthernet NAT bindings in display interface GigabitEthernet command', async () => {
-      const sw = new HuaweiSwitch('sw1', 'SW1', 24, 0, 0);
+      const sw = new HuaweiSwitch('switch-huawei', 'SW1', 24, 0, 0);
       await sw.executeCommand('system-view');
       await sw.executeCommand('interface GigabitEthernet0/0/1');
       const output = await sw.executeCommand('display interface GigabitEthernet0/0/1');
@@ -3079,27 +3079,27 @@ describe('Cisco and Huawei NAT/PAT Command System', () => {
     });
 
     it('287. should reject reset nat session if session matching IP is completely invalid', async () => {
-      const sw = new HuaweiSwitch('sw1', 'SW1', 24, 0, 0);
+      const sw = new HuaweiSwitch('switch-huawei', 'SW1', 24, 0, 0);
       await sw.executeCommand('system-view');
       const output = await sw.executeCommand('reset nat session inside 300.1.1.1');
       expect(output.toLowerCase()).toContain('error');
     });
 
     it('288. should handle empty commands strings execution gracefully on Huawei terminal', async () => {
-      const sw = new HuaweiSwitch('sw1', 'SW1', 24, 0, 0);
+      const sw = new HuaweiSwitch('switch-huawei', 'SW1', 24, 0, 0);
       const output = await sw.executeCommand('system-view ""');
       expect(output.toLowerCase()).toContain('error');
     });
 
     it('289. should show correct NAT session ports mappings inside display nat session outputs', async () => {
-      const sw = new HuaweiSwitch('sw1', 'SW1', 24, 0, 0);
+      const sw = new HuaweiSwitch('switch-huawei', 'SW1', 24, 0, 0);
       await sw.executeCommand('system-view');
       const output = await sw.executeCommand('display nat session all');
       expect(output).toContain('NAT Session Table');
     });
 
     it('290. should preserve address groups tables after they are configured on Huawei', async () => {
-      const sw = new HuaweiSwitch('sw1', 'SW1', 24, 0, 0);
+      const sw = new HuaweiSwitch('switch-huawei', 'SW1', 24, 0, 0);
       await sw.executeCommand('system-view');
       await sw.executeCommand('nat address-group 1 203.0.113.10 203.0.113.20');
       const output = await sw.executeCommand('display nat address-group');
@@ -3108,7 +3108,7 @@ describe('Cisco and Huawei NAT/PAT Command System', () => {
     });
 
     it('291. should negate address group mappings via undo nat address-group', async () => {
-      const sw = new HuaweiSwitch('sw1', 'SW1', 24, 0, 0);
+      const sw = new HuaweiSwitch('switch-huawei', 'SW1', 24, 0, 0);
       await sw.executeCommand('system-view');
       await sw.executeCommand('nat address-group 1 203.0.113.10 203.0.113.20');
       await sw.executeCommand('undo nat address-group 1');
@@ -3117,7 +3117,7 @@ describe('Cisco and Huawei NAT/PAT Command System', () => {
     });
 
     it('292. should preserve NAT Server rules after interface configurations status changes (shutdown -> undo shutdown)', async () => {
-      const sw = new HuaweiSwitch('sw1', 'SW1', 24, 0, 0);
+      const sw = new HuaweiSwitch('switch-huawei', 'SW1', 24, 0, 0);
       await sw.executeCommand('system-view');
       await sw.executeCommand('interface GigabitEthernet0/0/1');
       await sw.executeCommand('nat server protocol tcp global 203.0.113.1 8080 inside 192.168.1.10 80');
@@ -3128,7 +3128,7 @@ describe('Cisco and Huawei NAT/PAT Command System', () => {
     });
 
     it('293. should show correct server translations inside display nat server after deletions', async () => {
-      const sw = new HuaweiSwitch('sw1', 'SW1', 24, 0, 0);
+      const sw = new HuaweiSwitch('switch-huawei', 'SW1', 24, 0, 0);
       await sw.executeCommand('system-view');
       await sw.executeCommand('interface GigabitEthernet0/0/1');
       await sw.executeCommand('nat server protocol tcp global 203.0.113.1 8080 inside 192.168.1.10 80');
@@ -3138,7 +3138,7 @@ describe('Cisco and Huawei NAT/PAT Command System', () => {
     });
 
     it('294. should support NAT Server UDP protocol configurations', async () => {
-      const sw = new HuaweiSwitch('sw1', 'SW1', 24, 0, 0);
+      const sw = new HuaweiSwitch('switch-huawei', 'SW1', 24, 0, 0);
       await sw.executeCommand('system-view');
       await sw.executeCommand('interface GigabitEthernet0/0/1');
       const output = await sw.executeCommand('nat server protocol udp global 203.0.113.1 53 inside 192.168.1.10 53');
@@ -3146,7 +3146,7 @@ describe('Cisco and Huawei NAT/PAT Command System', () => {
     });
 
     it('295. should support NAT Server wildcard global ports (any)', async () => {
-      const sw = new HuaweiSwitch('sw1', 'SW1', 24, 0, 0);
+      const sw = new HuaweiSwitch('switch-huawei', 'SW1', 24, 0, 0);
       await sw.executeCommand('system-view');
       await sw.executeCommand('interface GigabitEthernet0/0/1');
       const output = await sw.executeCommand('nat server protocol tcp global 203.0.113.1 any inside 192.168.1.10 any');
@@ -3154,7 +3154,7 @@ describe('Cisco and Huawei NAT/PAT Command System', () => {
     });
 
     it('296. should reject NAT Server configuration if the global protocol sub-modifier is completely unknown', async () => {
-      const sw = new HuaweiSwitch('sw1', 'SW1', 24, 0, 0);
+      const sw = new HuaweiSwitch('switch-huawei', 'SW1', 24, 0, 0);
       await sw.executeCommand('system-view');
       await sw.executeCommand('interface GigabitEthernet0/0/1');
       const output = await sw.executeCommand('nat server protocol unknown global 203.0.113.1 80 inside 192.168.1.10 80');
@@ -3162,7 +3162,7 @@ describe('Cisco and Huawei NAT/PAT Command System', () => {
     });
 
     it('297. should support showing NAT Server configuration mappings inside VRP display interface command', async () => {
-      const sw = new HuaweiSwitch('sw1', 'SW1', 24, 0, 0);
+      const sw = new HuaweiSwitch('switch-huawei', 'SW1', 24, 0, 0);
       await sw.executeCommand('system-view');
       await sw.executeCommand('interface GigabitEthernet0/0/1');
       await sw.executeCommand('nat server protocol tcp global 203.0.113.1 8080 inside 192.168.1.10 80');
@@ -3171,7 +3171,7 @@ describe('Cisco and Huawei NAT/PAT Command System', () => {
     });
 
     it('298. should preserve all SVI VLAN interfaces status configurations inside Huawei switch across multiple NAT reboots', async () => {
-      const sw = new HuaweiSwitch('sw1', 'SW1', 24, 0, 0);
+      const sw = new HuaweiSwitch('switch-huawei', 'SW1', 24, 0, 0);
       await sw.executeCommand('system-view');
       await sw.executeCommand('interface Vlanif10');
       await sw.executeCommand('nat server protocol tcp global 203.0.113.1 8080 inside 192.168.1.10 80');
@@ -3185,7 +3185,7 @@ describe('Cisco and Huawei NAT/PAT Command System', () => {
     });
 
     it('299. should reject NAT server config if the local IP is missing inside VRP system view', async () => {
-      const sw = new HuaweiSwitch('sw1', 'SW1', 24, 0, 0);
+      const sw = new HuaweiSwitch('switch-huawei', 'SW1', 24, 0, 0);
       await sw.executeCommand('system-view');
       await sw.executeCommand('interface GigabitEthernet0/0/1');
       const output = await sw.executeCommand('nat server protocol tcp global 203.0.113.1 8080 inside 80'); // missing local IP
@@ -3193,7 +3193,7 @@ describe('Cisco and Huawei NAT/PAT Command System', () => {
     });
 
     it('300. should execute successfully and return empty output on default VRP nat server configuration', async () => {
-      const sw = new HuaweiSwitch('sw1', 'SW1', 24, 0, 0);
+      const sw = new HuaweiSwitch('switch-huawei', 'SW1', 24, 0, 0);
       await sw.executeCommand('system-view');
       await sw.executeCommand('interface GigabitEthernet0/0/1');
       const output = await sw.executeCommand('nat server protocol tcp global 203.0.113.1 8080 inside 192.168.1.10 80');
@@ -3344,7 +3344,7 @@ describe('Cisco and Huawei NAT/PAT Command System', () => {
     });
 
     it('311. should translate inside local source IP to inside global SVI interface IP inside Huawei VRP (NAT server order of operations)', async () => {
-      const sw = new HuaweiSwitch('sw1', 'SW1', 24, 0, 0);
+      const sw = new HuaweiSwitch('switch-huawei', 'SW1', 24, 0, 0);
       await sw.executeCommand('system-view');
       await sw.executeCommand('interface Vlanif10');
       await sw.executeCommand('ip address 203.0.113.1 255.255.255.0');
@@ -3354,21 +3354,21 @@ describe('Cisco and Huawei NAT/PAT Command System', () => {
     });
 
     it('312. should configure Huawei DNS ALG explicitly (nat alg dns enable)', async () => {
-      const sw = new HuaweiSwitch('sw1', 'SW1', 24, 0, 0);
+      const sw = new HuaweiSwitch('switch-huawei', 'SW1', 24, 0, 0);
       await sw.executeCommand('system-view');
       const output = await sw.executeCommand('nat alg dns enable');
       expect(output.trim()).toBe('');
     });
 
     it('313. should configure Huawei FTP ALG explicitly (nat alg ftp enable)', async () => {
-      const sw = new HuaweiSwitch('sw1', 'SW1', 24, 0, 0);
+      const sw = new HuaweiSwitch('switch-huawei', 'SW1', 24, 0, 0);
       await sw.executeCommand('system-view');
       const output = await sw.executeCommand('nat alg ftp enable');
       expect(output.trim()).toBe('');
     });
 
     it('314. should show correct state in display nat statistics on heavy fragmented traffic sessions', async () => {
-      const sw = new HuaweiSwitch('sw1', 'SW1', 24, 0, 0);
+      const sw = new HuaweiSwitch('switch-huawei', 'SW1', 24, 0, 0);
       await sw.executeCommand('system-view');
       const output = await sw.executeCommand('display nat statistics');
       expect(output).toContain('NAT Statistics Information');
@@ -3405,7 +3405,7 @@ describe('Cisco and Huawei NAT/PAT Command System', () => {
     });
 
     it('318. should translate successfully inside NAT/PAT overloaded environments if target is in suboptimal routing paths on Huawei VRP', async () => {
-      const sw = new HuaweiSwitch('sw1', 'SW1', 24, 0, 0);
+      const sw = new HuaweiSwitch('switch-huawei', 'SW1', 24, 0, 0);
       await sw.executeCommand('system-view');
       await sw.executeCommand('acl 2000');
       await sw.executeCommand('rule 5 permit source 192.168.1.0 0.0.0.255');
@@ -3416,7 +3416,7 @@ describe('Cisco and Huawei NAT/PAT Command System', () => {
     });
 
     it('319. should negate Huawei DNS ALG configuration via undo nat alg dns', async () => {
-      const sw = new HuaweiSwitch('sw1', 'SW1', 24, 0, 0);
+      const sw = new HuaweiSwitch('switch-huawei', 'SW1', 24, 0, 0);
       await sw.executeCommand('system-view');
       await sw.executeCommand('undo nat alg dns');
       const output = await sw.executeCommand('display current-configuration');
@@ -3424,7 +3424,7 @@ describe('Cisco and Huawei NAT/PAT Command System', () => {
     });
 
     it('320. should negate Huawei FTP ALG configuration via undo nat alg ftp', async () => {
-      const sw = new HuaweiSwitch('sw1', 'SW1', 24, 0, 0);
+      const sw = new HuaweiSwitch('switch-huawei', 'SW1', 24, 0, 0);
       await sw.executeCommand('system-view');
       await sw.executeCommand('undo nat alg ftp');
       const output = await sw.executeCommand('display current-configuration');
@@ -3821,7 +3821,7 @@ describe('Cisco and Huawei NAT/PAT Command System', () => {
     });
 
     it('356. should reject NAT Server configuration if the global IP parameter has typo on Huawei VRP', async () => {
-      const sw = new HuaweiSwitch('sw1', 'SW1', 24, 0, 0);
+      const sw = new HuaweiSwitch('switch-huawei', 'SW1', 24, 0, 0);
       await sw.executeCommand('system-view');
       await sw.executeCommand('interface GigabitEthernet0/0/1');
       const output = await sw.executeCommand('nat server protocol tcp global 300.0.113.1 8080 inside 192.168.1.10 80');
@@ -3829,7 +3829,7 @@ describe('Cisco and Huawei NAT/PAT Command System', () => {
     });
 
     it('357. should reject NAT Server configuration if the inside IP parameter has typo on Huawei VRP', async () => {
-      const sw = new HuaweiSwitch('sw1', 'SW1', 24, 0, 0);
+      const sw = new HuaweiSwitch('switch-huawei', 'SW1', 24, 0, 0);
       await sw.executeCommand('system-view');
       await sw.executeCommand('interface GigabitEthernet0/0/1');
       const output = await sw.executeCommand('nat server protocol tcp global 203.0.113.1 8080 inside 300.168.1.10 80');
@@ -3837,7 +3837,7 @@ describe('Cisco and Huawei NAT/PAT Command System', () => {
     });
 
     it('358. should reject NAT Server configuration if the global port parameter is missing on Huawei VRP', async () => {
-      const sw = new HuaweiSwitch('sw1', 'SW1', 24, 0, 0);
+      const sw = new HuaweiSwitch('switch-huawei', 'SW1', 24, 0, 0);
       await sw.executeCommand('system-view');
       await sw.executeCommand('interface GigabitEthernet0/0/1');
       const output = await sw.executeCommand('nat server protocol tcp global 203.0.113.1 inside 192.168.1.10 80'); // missing global port
@@ -3845,7 +3845,7 @@ describe('Cisco and Huawei NAT/PAT Command System', () => {
     });
 
     it('359. should reject NAT Server configuration if the inside port parameter is missing on Huawei VRP', async () => {
-      const sw = new HuaweiSwitch('sw1', 'SW1', 24, 0, 0);
+      const sw = new HuaweiSwitch('switch-huawei', 'SW1', 24, 0, 0);
       await sw.executeCommand('system-view');
       await sw.executeCommand('interface GigabitEthernet0/0/1');
       const output = await sw.executeCommand('nat server protocol tcp global 203.0.113.1 8080 inside 192.168.1.10'); // missing inside port
@@ -3853,7 +3853,7 @@ describe('Cisco and Huawei NAT/PAT Command System', () => {
     });
 
     it('360. should reject NAT Server configuration if the global protocol parameter has typo on Huawei VRP', async () => {
-      const sw = new HuaweiSwitch('sw1', 'SW1', 24, 0, 0);
+      const sw = new HuaweiSwitch('switch-huawei', 'SW1', 24, 0, 0);
       await sw.executeCommand('system-view');
       await sw.executeCommand('interface GigabitEthernet0/0/1');
       const output = await sw.executeCommand('nat server protocol tcpp global 203.0.113.1 8080 inside 192.168.1.10 80');
@@ -3861,7 +3861,7 @@ describe('Cisco and Huawei NAT/PAT Command System', () => {
     });
 
     it('361. should reject dynamic NAT outbound binding if the target ACL number is out of range on Huawei VRP', async () => {
-      const sw = new HuaweiSwitch('sw1', 'SW1', 24, 0, 0);
+      const sw = new HuaweiSwitch('switch-huawei', 'SW1', 24, 0, 0);
       await sw.executeCommand('system-view');
       await sw.executeCommand('interface GigabitEthernet0/0/1');
       const output = await sw.executeCommand('nat outbound 99999'); // Huawei standard ACLs range 2000-2999, advanced 3000-3999
@@ -3869,7 +3869,7 @@ describe('Cisco and Huawei NAT/PAT Command System', () => {
     });
 
     it('362. should reject dynamic NAT outbound binding if the target address-group number is out of range on Huawei VRP', async () => {
-      const sw = new HuaweiSwitch('sw1', 'SW1', 24, 0, 0);
+      const sw = new HuaweiSwitch('switch-huawei', 'SW1', 24, 0, 0);
       await sw.executeCommand('system-view');
       await sw.executeCommand('acl 2000');
       await sw.executeCommand('rule 5 permit source 192.168.1.0 0.0.0.255');
@@ -3882,7 +3882,7 @@ describe('Cisco and Huawei NAT/PAT Command System', () => {
     // ─── Section 8: Continuation (Tests 363-400) ───────────────────
 
     it('363. should reject undo nat outbound if the parameters key has typos on Huawei VRP', async () => {
-      const sw = new HuaweiSwitch('sw1', 'SW1', 24, 0, 0);
+      const sw = new HuaweiSwitch('switch-huawei', 'SW1', 24, 0, 0);
       await sw.executeCommand('system-view');
       await sw.executeCommand('interface GigabitEthernet0/0/1');
       const output = await sw.executeCommand('undo nat outboundd 2000');
@@ -3890,7 +3890,7 @@ describe('Cisco and Huawei NAT/PAT Command System', () => {
     });
 
     it('364. should reject undo nat server if the parameters key has typos on Huawei VRP', async () => {
-      const sw = new HuaweiSwitch('sw1', 'SW1', 24, 0, 0);
+      const sw = new HuaweiSwitch('switch-huawei', 'SW1', 24, 0, 0);
       await sw.executeCommand('system-view');
       await sw.executeCommand('interface GigabitEthernet0/0/1');
       const output = await sw.executeCommand('undo nat serverr protocol tcp global 203.0.113.1 8080');
@@ -3898,14 +3898,14 @@ describe('Cisco and Huawei NAT/PAT Command System', () => {
     });
 
     it('365. should reject undo nat address-group if the parameters key has typos on Huawei VRP', async () => {
-      const sw = new HuaweiSwitch('sw1', 'SW1', 24, 0, 0);
+      const sw = new HuaweiSwitch('switch-huawei', 'SW1', 24, 0, 0);
       await sw.executeCommand('system-view');
       const output = await sw.executeCommand('undo nat address-groupp 1');
       expect(output.toLowerCase()).toContain('error');
     });
 
     it('366. should reject conflicting Huawei NAT Server configuration mapping same global IP/port to different inside targets', async () => {
-      const sw = new HuaweiSwitch('sw1', 'SW1', 24, 0, 0);
+      const sw = new HuaweiSwitch('switch-huawei', 'SW1', 24, 0, 0);
       await sw.executeCommand('system-view');
       await sw.executeCommand('interface GigabitEthernet0/0/1');
       await sw.executeCommand('nat server protocol tcp global 203.0.113.1 8080 inside 192.168.1.10 80');
@@ -3914,7 +3914,7 @@ describe('Cisco and Huawei NAT/PAT Command System', () => {
     });
 
     it('367. should support multiple Huawei NAT Outbound rules configured on the same interface', async () => {
-      const sw = new HuaweiSwitch('sw1', 'SW1', 24, 0, 0);
+      const sw = new HuaweiSwitch('switch-huawei', 'SW1', 24, 0, 0);
       await sw.executeCommand('system-view');
       await sw.executeCommand('nat address-group 1 203.0.113.10 203.0.113.15');
       await sw.executeCommand('nat address-group 2 203.0.113.20 203.0.113.25');
@@ -4056,42 +4056,42 @@ describe('Cisco and Huawei NAT/PAT Command System', () => {
     });
 
     it('379. should display only TCP session entries inside Huawei display nat session protocol tcp', async () => {
-      const sw = new HuaweiSwitch('sw1', 'SW1', 24, 0, 0);
+      const sw = new HuaweiSwitch('switch-huawei', 'SW1', 24, 0, 0);
       await sw.executeCommand('system-view');
       const output = await sw.executeCommand('display nat session protocol tcp');
       expect(output).toContain('NAT Session Table');
     });
 
     it('380. should display only UDP session entries inside Huawei display nat session protocol udp', async () => {
-      const sw = new HuaweiSwitch('sw1', 'SW1', 24, 0, 0);
+      const sw = new HuaweiSwitch('switch-huawei', 'SW1', 24, 0, 0);
       await sw.executeCommand('system-view');
       const output = await sw.executeCommand('display nat session protocol udp');
       expect(output).toContain('NAT Session Table');
     });
 
     it('381. should display only ICMP session entries inside Huawei display nat session protocol icmp', async () => {
-      const sw = new HuaweiSwitch('sw1', 'SW1', 24, 0, 0);
+      const sw = new HuaweiSwitch('switch-huawei', 'SW1', 24, 0, 0);
       await sw.executeCommand('system-view');
       const output = await sw.executeCommand('display nat session protocol icmp');
       expect(output).toContain('NAT Session Table');
     });
 
     it('382. should display sessions matched by specific source IP inside display nat session source', async () => {
-      const sw = new HuaweiSwitch('sw1', 'SW1', 24, 0, 0);
+      const sw = new HuaweiSwitch('switch-huawei', 'SW1', 24, 0, 0);
       await sw.executeCommand('system-view');
       const output = await sw.executeCommand('display nat session source 192.168.1.10');
       expect(output).toContain('NAT Session Table');
     });
 
     it('383. should display sessions matched by specific destination IP inside display nat session destination', async () => {
-      const sw = new HuaweiSwitch('sw1', 'SW1', 24, 0, 0);
+      const sw = new HuaweiSwitch('switch-huawei', 'SW1', 24, 0, 0);
       await sw.executeCommand('system-view');
       const output = await sw.executeCommand('display nat session destination 198.51.100.10');
       expect(output).toContain('NAT Session Table');
     });
 
     it('384. should display empty stats cleanly on unconfigured Huawei interface', async () => {
-      const sw = new HuaweiSwitch('sw1', 'SW1', 24, 0, 0);
+      const sw = new HuaweiSwitch('switch-huawei', 'SW1', 24, 0, 0);
       await sw.executeCommand('system-view');
       const output = await sw.executeCommand('display nat statistics interface GigabitEthernet0/0/1');
       expect(output).toContain('NAT Statistics Information');
@@ -4145,7 +4145,7 @@ describe('Cisco and Huawei NAT/PAT Command System', () => {
     });
 
     it('389. should reject Huawei VRP NAT Server configuration using icmp protocol', async () => {
-      const sw = new HuaweiSwitch('sw1', 'SW1', 24, 0, 0);
+      const sw = new HuaweiSwitch('switch-huawei', 'SW1', 24, 0, 0);
       await sw.executeCommand('system-view');
       await sw.executeCommand('interface GigabitEthernet0/0/1');
       const output = await sw.executeCommand('nat server protocol icmp global 203.0.113.1 inside 192.168.1.10'); // Invalid, icmp doesn't support port mapping
@@ -4153,7 +4153,7 @@ describe('Cisco and Huawei NAT/PAT Command System', () => {
     });
 
     it('390. should support configuring nat outbound on a Huawei loopback interface', async () => {
-      const sw = new HuaweiSwitch('sw1', 'SW1', 24, 0, 0);
+      const sw = new HuaweiSwitch('switch-huawei', 'SW1', 24, 0, 0);
       await sw.executeCommand('system-view');
       await sw.executeCommand('interface LoopBack0');
       await sw.executeCommand('acl 2000');
@@ -4247,7 +4247,7 @@ describe('Cisco and Huawei NAT/PAT Command System', () => {
     });
 
     it('398. should reject Huawei VRP nat server configuration using hostname instead of IP address', async () => {
-      const sw = new HuaweiSwitch('sw1', 'SW1', 24, 0, 0);
+      const sw = new HuaweiSwitch('switch-huawei', 'SW1', 24, 0, 0);
       await sw.executeCommand('system-view');
       await sw.executeCommand('interface GigabitEthernet0/0/1');
       const output = await sw.executeCommand('nat server protocol tcp global my_gateway_host 8080 inside 192.168.1.10 80');
