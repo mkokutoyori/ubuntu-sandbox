@@ -106,6 +106,8 @@ import { DFSR_PORT, DfsrServerHandler } from './windows/server/dfs/DfsReplicatio
 import { WindowsRdpConfig } from './windows/WindowsRdpConfig';
 import { cmdQuerySession, cmdLogoff } from './windows/WinRdpCommands';
 import { RDP_PORT, RdpServerHandler, dialRdp, type RdpDialResult } from './windows/server/rdp/RdpSession';
+import { WindowsWsusClientConfig } from './windows/WindowsWsusClientConfig';
+import { WSUS_PORT, WsusServerHandler, queryWsusApprovedUpdates, type WsusUpdate } from './windows/server/wsus/WsusRole';
 import { generateSelfSignedCertificate } from '@/network/pki/SelfSignedCertificate';
 import { CertificateVerifier } from '@/network/pki/CertificateVerifier';
 import type { X509Certificate } from '@/network/pki/X509Certificate';
@@ -208,6 +210,8 @@ export class WindowsPC extends EndHost implements UserAccountHost {
   private ldapStartTlsIdentity: ReturnType<typeof selfSignedLdapCert> | null = null;
   /** Remote Desktop (PRD-Windows-Server-Advanced.md §5 P17) — disabled by default; toggled via `Enable-RemoteDesktop`. */
   readonly rdp: WindowsRdpConfig = new WindowsRdpConfig();
+  /** Windows Update client redirection toward a WSUS server (PRD-Windows-Server-Advanced.md §5 P19) — unset by default (points at Windows Update directly, out of this simulator's scope); set via `Set-WUSettings -WUServer`. */
+  readonly wsus: WindowsWsusClientConfig = new WindowsWsusClientConfig();
   /** This host's own RDP TLS identity (§5 P17) — lazily created once, mirroring `ldapStartTlsIdentity`'s own convention. */
   private rdpTlsIdentity: ReturnType<typeof generateSelfSignedCertificate> | null = null;
   /**
@@ -539,6 +543,18 @@ export class WindowsPC extends EndHost implements UserAccountHost {
             checkDomain: (u, p) => Boolean(this.tryDomainAuth(u, p)?.ok),
           },
         }).register(socket);
+      },
+    });
+
+    // TCP WSUS listener on port 8530 (WSUS's real default site port —
+    // PRD-Windows-Server-Advanced.md §5 P19). Refuses (drops) the
+    // connection until the UpdateServices role is installed, mirroring
+    // the DFSR/RDP listeners above.
+    this.getTcpStack().listen(WSUS_PORT, {
+      onAccept: (socket) => {
+        const role = this.getWsusRole();
+        if (!role) { socket.close(); return; }
+        new WsusServerHandler(role).register(socket);
       },
     });
   }
@@ -2606,6 +2622,20 @@ export class WindowsPC extends EndHost implements UserAccountHost {
    * client, overridden by `WindowsServer`.
    */
   getClusterRole(): import('./windows/server/cluster/ClusterService').ClusterService | null { return null; }
+
+  /**
+   * WSUS role (PRD-Windows-Server-Advanced.md §5 P19) — null until
+   * `Install-WindowsFeature UpdateServices` on a `WindowsServer`; always
+   * null on a client, overridden by `WindowsServer`.
+   */
+  getWsusRole(): import('./windows/server/wsus/WsusRole').WindowsWsusRole | null { return null; }
+
+  /** `Get-WindowsUpdate` — this client's WSUS-approved updates for its configured target group (PRD-Windows-Server-Advanced.md §5 P19); empty if `Set-WUSettings -WUServer` was never run or the server can't be reached. */
+  getWindowsUpdates(): WsusUpdate[] {
+    if (!this.wsus.wuServer) return [];
+    const res = queryWsusApprovedUpdates(this.getTcpStack(), this.wsus.wuServer, this.wsus.targetGroup ?? '');
+    return res.ok ? res.updates : [];
+  }
 
   /** Get the process manager (for PowerShellExecutor and other integrations) */
   getProcessManager(): WindowsProcessManager { return this.procMgr; }

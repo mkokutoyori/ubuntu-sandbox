@@ -74,6 +74,10 @@ export const WINDOWS_FEATURE_CATALOG: readonly WindowsFeatureDef[] = [
     services: ['ClusSvc'], psModule: 'FailoverClusters',
   },
   {
+    name: 'UpdateServices', displayName: 'Windows Server Update Services',
+    services: ['WsusService'], psModule: 'UpdateServices',
+  },
+  {
     name: 'RSAT-AD-PowerShell', displayName: 'Active Directory module for Windows PowerShell',
     services: [], psModule: 'ActiveDirectory',
   },

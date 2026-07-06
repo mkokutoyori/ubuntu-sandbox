@@ -110,7 +110,7 @@ describe('RoleManager — real feature catalog', () => {
     expect(names).toEqual([
       'AD-Domain-Services', 'DHCP', 'DNS', 'FS-FileServer',
       'NPAS', 'Print-Services', 'RSAT-AD-PowerShell', 'Web-Server',
-      'AD-Certificate', 'FS-DFS-Namespace', 'FS-DFS-Replication', 'Failover-Clustering',
+      'AD-Certificate', 'FS-DFS-Namespace', 'FS-DFS-Replication', 'Failover-Clustering', 'UpdateServices',
     ].sort());
   });
 });

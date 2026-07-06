@@ -27,6 +27,7 @@ import { WindowsAdcsRole } from './windows/server/adcs/CaRole';
 import { DfsNamespaceRegistry } from './windows/server/dfs/DfsNamespace';
 import { WindowsDfsrRole } from './windows/server/dfs/DfsReplicationGroup';
 import { ClusterService, type ClusterPeerConfig } from './windows/server/cluster/ClusterService';
+import { WindowsWsusRole } from './windows/server/wsus/WsusRole';
 import { randomSessionKey } from '@/network/kerberos/crypto';
 import { dialLdap } from './windows/server/ad/ldap/LdapClient';
 import { pullReplication } from './windows/server/ad/replication/ReplicationSession';
@@ -49,6 +50,7 @@ export class WindowsServer extends WindowsPC {
   private dfsNamespaceRoleInstance: DfsNamespaceRegistry | null = null;
   private dfsrRoleInstance: WindowsDfsrRole | null = null;
   private clusterServiceInstance: ClusterService | null = null;
+  private wsusRoleInstance: WindowsWsusRole | null = null;
 
   constructor(name: string = 'WinServer', x: number = 0, y: number = 0) {
     super('windows-server', name, x, y);
@@ -222,6 +224,21 @@ export class WindowsServer extends WindowsPC {
     this.clusterServiceInstance = new ClusterService(this, clusterName, selfNodeName, peers, () => this.getScheduler());
     this.clusterServiceInstance.start();
     return { ok: true, message: '' };
+  }
+
+  /**
+   * PRD Phase 19 (§5 P19): the WSUS role, `WsusService` — null while the
+   * `UpdateServices` role isn't installed. Purely local business logic (no
+   * network listener config beyond the always-open TCP/8530 registered in
+   * `WindowsPC.initDefaultSockets`, gated on this getter like DFSR/RDP).
+   */
+  getWsusRole(): WindowsWsusRole | null {
+    if (!this.roleManager.isInstalled('UpdateServices')) {
+      this.wsusRoleInstance = null;
+      return null;
+    }
+    if (!this.wsusRoleInstance) this.wsusRoleInstance = new WindowsWsusRole();
+    return this.wsusRoleInstance;
   }
 
   /**

@@ -428,6 +428,31 @@ export interface IClusterProvider {
   moveClusterGroup(name: string, targetNode: string): ClusterOpResult;
 }
 
+// ── WSUS (PRD-Windows-Server-Advanced.md §5 P19) ────────────────────────────
+
+export interface WsusOpResult { ok: boolean; message: string }
+export type WsusSeverityInfo = 'Critical' | 'Important' | 'Moderate' | 'Low';
+export interface WsusUpdateInfo { kbId: string; title: string; category: string; severity: WsusSeverityInfo }
+export type WsusApprovalActionInfo = 'Install' | 'Decline';
+
+export interface IWsusProvider {
+  /** `Get-WsusUpdate` — the full catalog this WSUS server knows about (metadata only, no binary patch content). */
+  listCatalog(): WsusUpdateInfo[];
+  /** `Approve-WsusUpdate -Updates <kbId> -TargetGroupName <group> -Action Install|Decline`. */
+  approveUpdate(kbId: string, targetGroup: string, action: WsusApprovalActionInfo): WsusOpResult;
+}
+
+// ── Windows Update client (PRD-Windows-Server-Advanced.md §5 P19) ──────────
+// Unconditional (no RoleManager gate): every Windows SKU has a Windows
+// Update client, not just servers with the WSUS role installed.
+
+export interface IWindowsUpdateProvider {
+  /** `Set-WUSettings -WUServer <address> -TargetGroup <name>` — redirects this client to a WSUS server instead of Windows Update directly. */
+  setWuSettings(wuServer: string, targetGroup?: string): void;
+  /** `Get-WindowsUpdate` — every update approved for this client's configured target group; empty if unconfigured or unreachable. */
+  getWindowsUpdates(): WsusUpdateInfo[];
+}
+
 // ── DNS Server role (PRD-Windows-Server.md §5 P7) ───────────────────────────
 
 export interface DnsOpResult { ok: boolean; message: string }
@@ -861,4 +886,6 @@ export interface PSProviders {
   readonly dfs:            IDfsProvider            | null;
   readonly rdp:            IRdpProvider            | null;
   readonly cluster:        IClusterProvider        | null;
+  readonly wsus:           IWsusProvider           | null;
+  readonly windowsUpdate:  IWindowsUpdateProvider  | null;
 }

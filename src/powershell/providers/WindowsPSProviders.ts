@@ -62,6 +62,8 @@ import type {
   IDfsProvider, DfsOpResult, DfsTargetInfo, DfsFolderInfo, DfsrSyncResultInfo,
   IRdpProvider, RdpOpResult, RdpSessionInfo,
   IClusterProvider, ClusterOpResult, ClusterNodeInfo, ClusterPeerInfo, ClusterGroupInfo,
+  IWsusProvider, WsusOpResult, WsusUpdateInfo, WsusApprovalActionInfo,
+  IWindowsUpdateProvider,
   IDnsServerProvider, DnsOpResult, DnsZoneInfo, DnsRecordInfo,
   IDhcpServerProvider, DhcpOpResult, DhcpScopeInfo, DhcpLeaseInfo,
   INpsProvider, NpsOpResult, NasClientInfo, NetworkPolicyInfo,
@@ -1850,6 +1852,40 @@ class WindowsClusterAdapter implements IClusterProvider {
   }
 }
 
+// ── WSUS adapter (Server Manager — WindowsServer only, gated on UpdateServices) ──
+
+class WindowsWsusAdapter implements IWsusProvider {
+  constructor(private readonly pc: WindowsPC) {}
+
+  private requireRole(cmdletName: string) {
+    if (!this.pc.getRoleManager()?.isInstalled('UpdateServices')) {
+      throw new Error(`${cmdletName} is not recognized as the name of a cmdlet, function, script file, or operable program`);
+    }
+    const role = this.pc.getWsusRole();
+    if (!role) throw new Error(`${cmdletName} : Windows Server Update Services is not available on this computer.`);
+    return role;
+  }
+
+  listCatalog(): WsusUpdateInfo[] { return this.requireRole('Get-WsusUpdate').listCatalog(); }
+
+  approveUpdate(kbId: string, targetGroup: string, action: WsusApprovalActionInfo): WsusOpResult {
+    return this.requireRole('Approve-WsusUpdate').approve(kbId, targetGroup, action);
+  }
+}
+
+// ── Windows Update client adapter (unconditional — every SKU) ────────────
+
+class WindowsUpdateClientAdapter implements IWindowsUpdateProvider {
+  constructor(private readonly pc: WindowsPC) {}
+
+  setWuSettings(wuServer: string, targetGroup?: string): void {
+    this.pc.wsus.setWuServer(wuServer);
+    if (targetGroup !== undefined) this.pc.wsus.setTargetGroup(targetGroup);
+  }
+
+  getWindowsUpdates(): WsusUpdateInfo[] { return this.pc.getWindowsUpdates(); }
+}
+
 // ── Remoting adapter (Invoke-Command -ComputerName / Test-WSMan) ──────────
 //
 // Resolves the target through the same simulated-topology lookup the SSH
@@ -1979,5 +2015,7 @@ export function createWindowsPSProviders(
     dfs:            pc.getRoleManager() ? new WindowsDfsAdapter(pc) : null,
     rdp:            new WindowsRdpAdapter(pc),
     cluster:        pc.getRoleManager() ? new WindowsClusterAdapter(pc) : null,
+    wsus:           pc.getRoleManager() ? new WindowsWsusAdapter(pc) : null,
+    windowsUpdate:  new WindowsUpdateClientAdapter(pc),
   };
 }

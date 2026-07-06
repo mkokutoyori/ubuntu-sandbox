@@ -165,6 +165,9 @@ import {
   NewClusterCmdlet, GetClusterNodeCmdlet, GetClusterCmdlet,
   AddClusterFileServerRoleCmdlet, GetClusterGroupCmdlet, MoveClusterGroupCmdlet,
 } from './ClusterCmdlets';
+import {
+  GetWsusUpdateCmdlet, ApproveWsusUpdateCmdlet, SetWUSettingsCmdlet, GetWindowsUpdateCmdlet,
+} from './WsusCmdlets';
 
 /**
  * Register all core (provider-independent) cmdlets into the given registry.
@@ -503,6 +506,12 @@ export function registerCoreCmdlets(registry: CmdletRegistry): void {
   registry.register(new AddClusterFileServerRoleCmdlet());
   registry.register(new GetClusterGroupCmdlet());
   registry.register(new MoveClusterGroupCmdlet());
+
+  // ── WSUS (PRD-Windows-Server-Advanced.md §5 P19) ────────────────────────────
+  registry.register(new GetWsusUpdateCmdlet());
+  registry.register(new ApproveWsusUpdateCmdlet());
+  registry.register(new SetWUSettingsCmdlet());
+  registry.register(new GetWindowsUpdateCmdlet());
 
   // ── Native CLI shims (sync subset) ────────────────────────────────────────
   // ping / tracert stay in the legacy executor — they're async and the
