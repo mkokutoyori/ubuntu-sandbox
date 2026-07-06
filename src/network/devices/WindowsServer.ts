@@ -157,7 +157,7 @@ export class WindowsServer extends WindowsPC {
       return null;
     }
     if (!this.adcsRoleInstance) {
-      this.adcsRoleInstance = new WindowsAdcsRole(() => this.simulatedDate().getTime());
+      this.adcsRoleInstance = new WindowsAdcsRole(() => this.simulatedDate().getTime(), this.getBus(), this.getHostname());
     }
     return this.adcsRoleInstance;
   }
@@ -187,7 +187,7 @@ export class WindowsServer extends WindowsPC {
       this.dfsrRoleInstance = null;
       return null;
     }
-    if (!this.dfsrRoleInstance) this.dfsrRoleInstance = new WindowsDfsrRole(this, this.getFileSystem());
+    if (!this.dfsrRoleInstance) this.dfsrRoleInstance = new WindowsDfsrRole(this, this.getFileSystem(), this.getBus(), this.getHostname());
     return this.dfsrRoleInstance;
   }
 
@@ -223,7 +223,7 @@ export class WindowsServer extends WindowsPC {
     if (this.clusterServiceInstance) {
       return { ok: false, message: `New-Cluster : This computer is already a member of cluster "${this.clusterServiceInstance.clusterName}".` };
     }
-    this.clusterServiceInstance = new ClusterService(this, clusterName, selfNodeName, peers, () => this.getScheduler());
+    this.clusterServiceInstance = new ClusterService(this, clusterName, selfNodeName, peers, () => this.getScheduler(), this.getBus());
     this.clusterServiceInstance.start();
     return { ok: true, message: '' };
   }

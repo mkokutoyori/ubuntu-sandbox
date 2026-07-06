@@ -91,6 +91,14 @@ import {
 } from './windows/server/ad/replication/ReplicationSession';
 import { ReplicationSignalStore } from './windows/server/ad/replication/observables';
 import { ReplicationSignalRefreshActor } from './windows/server/ad/replication/actors/ReplicationSignalRefreshActor';
+import { AdcsSignalStore } from './windows/server/adcs/observables';
+import { AdcsSignalRefreshActor } from './windows/server/adcs/actors/AdcsSignalRefreshActor';
+import { RdpSignalStore } from './windows/server/rdp/observables';
+import { RdpSignalRefreshActor } from './windows/server/rdp/actors/RdpSignalRefreshActor';
+import { ClusterSignalStore } from './windows/server/cluster/observables';
+import { ClusterSignalRefreshActor } from './windows/server/cluster/actors/ClusterSignalRefreshActor';
+import { DfsSignalStore } from './windows/server/dfs/observables';
+import { DfsSignalRefreshActor } from './windows/server/dfs/actors/DfsSignalRefreshActor';
 import { dialWinRm, type WinRmDialResult } from './windows/server/winrm/WinRmClient';
 import { type DomainMembership, type DomainSession, parseDomainQualifiedUser } from './windows/domain/DomainTypes';
 import { joinDomain, type DomainJoinResult } from './windows/domain/DomainJoinClient';
@@ -233,6 +241,15 @@ export class WindowsPC extends EndHost implements UserAccountHost {
   private readonly replicationSignals = new ReplicationSignalStore();
   private kerberosSignalActor: KerberosSignalRefreshActor | null = null;
   private replicationSignalActor: ReplicationSignalRefreshActor | null = null;
+  /** PRD Phase 23 (§5 P23): same signal-store/refresh-actor convention, transverse to the new roles §5 P13-P22 named by the PRD (`adcs.*`/`rdp.*`/`cluster.*`/`dfs.*`). */
+  private readonly adcsSignals = new AdcsSignalStore();
+  private readonly rdpSignals = new RdpSignalStore();
+  private readonly clusterSignals = new ClusterSignalStore();
+  private readonly dfsSignals = new DfsSignalStore();
+  private adcsSignalActor: AdcsSignalRefreshActor | null = null;
+  private rdpSignalActor: RdpSignalRefreshActor | null = null;
+  private clusterSignalActor: ClusterSignalRefreshActor | null = null;
+  private dfsSignalActor: DfsSignalRefreshActor | null = null;
   /** `Cert:\LocalMachine\My` stand-in (PRD-Windows-Server-Advanced.md §5 P13/P14) — available on every Windows host, not just servers, matching real Windows' personal certificate store. */
   private readonly certStore = new WindowsCertStore();
   getCertStore(): WindowsCertStore { return this.certStore; }
@@ -372,6 +389,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     this.servicePortProjection = new WindowsServicePortProjection(bus, this.id, this.socketTable);
     this.portProxySocketProjection = new PortProxySocketProjection(bus, this.id, this.socketTable);
     this.portProxyTable.attachBus(bus, this.id);
+    this.rdp.sessions.attachBus(bus, this.getHostname());
 
     this.kerberosSignalActor?.stop();
     this.kerberosSignalActor = new KerberosSignalRefreshActor(bus, this.getHostname(), this.kerberosSignals);
@@ -379,6 +397,18 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     this.replicationSignalActor?.stop();
     this.replicationSignalActor = new ReplicationSignalRefreshActor(bus, this.getHostname(), this.replicationSignals);
     this.replicationSignalActor.start();
+    this.adcsSignalActor?.stop();
+    this.adcsSignalActor = new AdcsSignalRefreshActor(bus, this.getHostname(), this.adcsSignals);
+    this.adcsSignalActor.start();
+    this.rdpSignalActor?.stop();
+    this.rdpSignalActor = new RdpSignalRefreshActor(bus, this.getHostname(), this.rdpSignals);
+    this.rdpSignalActor.start();
+    this.clusterSignalActor?.stop();
+    this.clusterSignalActor = new ClusterSignalRefreshActor(bus, this.getHostname(), this.clusterSignals);
+    this.clusterSignalActor.start();
+    this.dfsSignalActor?.stop();
+    this.dfsSignalActor = new DfsSignalRefreshActor(bus, this.getHostname(), this.dfsSignals);
+    this.dfsSignalActor.start();
 
     this._recoveryRunOff?.();
     this._recoveryRunOff = bus.subscribe('windows.service.recovery-run', (e) => {
@@ -646,6 +676,12 @@ export class WindowsPC extends EndHost implements UserAccountHost {
   /** PRD-Windows-Server-Advanced.md §5 P12 — observable read-models for this DC's Kerberos KDC and AD replication activity. */
   getKerberosSignals(): KerberosSignalStore { return this.kerberosSignals; }
   getReplicationSignals(): ReplicationSignalStore { return this.replicationSignals; }
+
+  /** PRD-Windows-Server-Advanced.md §5 P23 — observable read-models for AD CS/RDP/cluster/DFSR activity. */
+  getAdcsSignals(): AdcsSignalStore { return this.adcsSignals; }
+  getRdpSignals(): RdpSignalStore { return this.rdpSignals; }
+  getClusterSignals(): ClusterSignalStore { return this.clusterSignals; }
+  getDfsSignals(): DfsSignalStore { return this.dfsSignals; }
 
   /** Best-effort reverse DNS for the SMB session table's ClientComputerName column. */
   private reverseLookupClient(ip: string): string {

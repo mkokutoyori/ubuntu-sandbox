@@ -67,6 +67,10 @@ import type { LinuxIamDomainEvent } from '@/network/devices/linux/iam/events';
 import type { WindowsDomainEvent } from '@/network/devices/windows/events';
 import type { KerberosDomainEvent } from '@/network/kerberos/events';
 import type { ReplicationDomainEvent } from '@/network/devices/windows/server/ad/replication/events';
+import type { AdcsDomainEvent } from '@/network/devices/windows/server/adcs/events';
+import type { RdpDomainEvent } from '@/network/devices/windows/server/rdp/events';
+import type { ClusterDomainEvent } from '@/network/devices/windows/server/cluster/events';
+import type { DfsDomainEvent } from '@/network/devices/windows/server/dfs/events';
 import type { OracleDomainEvent } from '@/database/oracle/events';
 import type { RmanDomainEvent } from '@/terminal/subshells/rman/events';
 
@@ -382,7 +386,19 @@ export type DomainEvent =
   | KerberosDomainEvent
   // AD replication: pull cycles (sub-union, see
   // src/network/devices/windows/server/ad/replication/events.ts)
-  | ReplicationDomainEvent;
+  | ReplicationDomainEvent
+  // AD CS: certificate issuance (sub-union, see
+  // src/network/devices/windows/server/adcs/events.ts)
+  | AdcsDomainEvent
+  // RDP: session lifecycle (sub-union, see
+  // src/network/devices/windows/server/rdp/events.ts)
+  | RdpDomainEvent
+  // WSFC cluster: node liveness, resource-group failover (sub-union, see
+  // src/network/devices/windows/server/cluster/events.ts)
+  | ClusterDomainEvent
+  // DFSR: replication cycles (sub-union, see
+  // src/network/devices/windows/server/dfs/events.ts)
+  | DfsDomainEvent;
 
 export interface SwitchMacEntryPayload {
   deviceId: string;

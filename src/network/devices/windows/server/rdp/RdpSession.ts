@@ -20,6 +20,7 @@ import {
   encodeCredSspRequest, decodeCredSspRequest, encodeCredSspResponse, decodeCredSspResponse,
   verifyCredSsp, type CredSspAuthContext,
 } from './CredSsp';
+import { getDefaultEventBus, type IEventBus } from '@/events/EventBus';
 
 export const RDP_PORT = 3389;
 
@@ -122,10 +123,19 @@ export interface RdpSessionState {
 export class RdpSessionTable {
   private readonly sessions = new Map<number, { userName: string; state: 'Active' | 'Disconnected'; clientAddress: string }>();
   private nextId = 1;
+  private bus: IEventBus = getDefaultEventBus();
+  private deviceId = '';
+
+  /** Wires this table into the reactive bus (PRD-Windows-Server-Advanced.md §5 P23) — mirrors `WindowsUserManager.attachBus`'s own convention, called once from `WindowsPC.wireReactiveProjections`. */
+  attachBus(bus: IEventBus, deviceId: string): void {
+    this.bus = bus;
+    this.deviceId = deviceId;
+  }
 
   create(userName: string, clientAddress: string): number {
     const id = this.nextId++;
     this.sessions.set(id, { userName, state: 'Active', clientAddress });
+    this.bus.publish({ topic: 'rdp.session.established', payload: { deviceId: this.deviceId, sessionId: id, userName, clientAddress } });
     return id;
   }
 
@@ -140,7 +150,9 @@ export class RdpSessionTable {
 
   /** `logoff`/`rwinsta` — closes the session cleanly, removing it from the table (real `logoff` ends the session outright rather than just disconnecting it). */
   logoff(sessionId: number): boolean {
-    return this.sessions.delete(sessionId);
+    const existed = this.sessions.delete(sessionId);
+    if (existed) this.bus.publish({ topic: 'rdp.session.closed', payload: { deviceId: this.deviceId, sessionId } });
+    return existed;
   }
 }
 

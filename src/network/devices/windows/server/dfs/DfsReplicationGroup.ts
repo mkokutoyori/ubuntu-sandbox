@@ -15,6 +15,7 @@
 import type { TcpStack, TcpSocket } from '@/network/tcp/TcpStack';
 import type { WindowsFileSystem } from '@/network/devices/windows/WindowsFileSystem';
 import type { EndHost } from '@/network/devices/EndHost';
+import { getDefaultEventBus, type IEventBus } from '@/events/EventBus';
 
 export const DFSR_PORT = 5722;
 
@@ -166,7 +167,12 @@ export interface DfsOpResult { ok: boolean; message: string }
 export class WindowsDfsrRole {
   private readonly groups = new Map<string, DfsReplicatedFolder>();
 
-  constructor(private readonly host: EndHost, private readonly fs: WindowsFileSystem) {}
+  constructor(
+    private readonly host: EndHost,
+    private readonly fs: WindowsFileSystem,
+    private readonly bus: IEventBus = getDefaultEventBus(),
+    private readonly deviceId: string = '',
+  ) {}
 
   getGroups(): ReadonlyMap<string, DfsReplicatedFolder> { return this.groups; }
 
@@ -182,7 +188,17 @@ export class WindowsDfsrRole {
   sync(groupName: string, partnerAddress: string): DfsrPullResult {
     const key = groupName.toLowerCase();
     const folder = this.groups.get(key);
-    if (!folder) return { ok: false, error: `Sync-DfsReplicationGroup : A replication group named "${groupName}" does not exist.`, applied: 0 };
-    return pullDfsReplication(this.host.getTcpStack(), partnerAddress, key, folder);
+    if (!folder) {
+      const error = `Sync-DfsReplicationGroup : A replication group named "${groupName}" does not exist.`;
+      this.bus.publish({ topic: 'dfs.replication.failed', payload: { deviceId: this.deviceId, groupName, error } });
+      return { ok: false, error, applied: 0 };
+    }
+    const result = pullDfsReplication(this.host.getTcpStack(), partnerAddress, key, folder);
+    if (result.ok) {
+      this.bus.publish({ topic: 'dfs.replication.synced', payload: { deviceId: this.deviceId, groupName, filesApplied: result.applied } });
+    } else {
+      this.bus.publish({ topic: 'dfs.replication.failed', payload: { deviceId: this.deviceId, groupName, error: result.error ?? 'unknown error' } });
+    }
+    return result;
   }
 }

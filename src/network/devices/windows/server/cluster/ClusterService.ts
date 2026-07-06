@@ -12,11 +12,19 @@
  * one) — this is why a 2-node cluster loses quorum the moment either node
  * goes silent, matching real WSFC's own node-majority behaviour without a
  * witness.
+ *
+ * `cluster.node.up`/`cluster.node.down` (PRD-Windows-Server-Advanced.md
+ * §5 P23) are detected on every heartbeat tick by diffing this instance's
+ * own computed node states against the last-published baseline — the
+ * same tick also asks `groups` to re-check every resource group's owner,
+ * covering automatic failover the same way `Move-ClusterGroup` covers a
+ * manual one.
  */
 import type { EndHost, UdpDelivery } from '@/network/devices/EndHost';
 import { IPAddress } from '@/network/core/types';
 import type { IScheduler, TimerHandle } from '@/events/Scheduler';
 import { getDefaultScheduler } from '@/events/Scheduler';
+import { getDefaultEventBus, type IEventBus } from '@/events/EventBus';
 import { ClusterGroupRegistry } from './ClusterResourceGroup';
 
 export const CLUSTER_HEARTBEAT_PORT = 3343;
@@ -47,8 +55,10 @@ interface ClusterHeartbeatPdu {
 /** One node's view of a cluster it belongs to — membership, heartbeat, quorum, and (via `.groups`) resource-group failover. */
 export class ClusterService {
   private readonly peerState = new Map<string, { ip: string; lastHeartbeatAt: number }>();
+  private readonly lastKnownNodeStates = new Map<string, ClusterNodeState>();
   private heartbeatTimer: TimerHandle | null = null;
   private bound = false;
+  private readonly deviceId: string;
   readonly groups: ClusterGroupRegistry;
 
   constructor(
@@ -57,17 +67,23 @@ export class ClusterService {
     readonly selfNodeName: string,
     peers: readonly ClusterPeerConfig[],
     private readonly getScheduler: () => IScheduler = () => getDefaultScheduler(),
+    private readonly bus: IEventBus = getDefaultEventBus(),
   ) {
     const now = this.getScheduler().now();
     for (const p of peers) this.peerState.set(p.name, { ip: p.ip, lastHeartbeatAt: now });
-    this.groups = new ClusterGroupRegistry(this);
+    this.deviceId = this.host.getHostname();
+    this.groups = new ClusterGroupRegistry(this, this.bus, this.deviceId);
+    // Baseline: every configured node starts `Up` at cluster formation — this
+    // is cluster membership, not a resurrection, so it must never itself
+    // publish `cluster.node.up`.
+    for (const node of this.listNodes()) this.lastKnownNodeStates.set(node.name, node.state);
   }
 
   start(): void {
     if (this.bound) return;
     this.bound = true;
     this.host.udpBind(CLUSTER_HEARTBEAT_PORT, (dgram) => this.onHeartbeat(dgram));
-    this.heartbeatTimer = this.getScheduler().setInterval(() => this.sendHeartbeats(), HEARTBEAT_INTERVAL_MS);
+    this.heartbeatTimer = this.getScheduler().setInterval(() => this.onHeartbeatTick(), HEARTBEAT_INTERVAL_MS);
     this.sendHeartbeats();
   }
 
@@ -86,11 +102,30 @@ export class ClusterService {
     peer.lastHeartbeatAt = this.getScheduler().now();
   }
 
+  private onHeartbeatTick(): void {
+    this.sendHeartbeats();
+    this.refreshNodeStatesAndPublish();
+  }
+
   private sendHeartbeats(): void {
     const pdu: ClusterHeartbeatPdu = { kind: 'heartbeat', clusterName: this.clusterName, nodeName: this.selfNodeName };
     for (const peer of this.peerState.values()) {
       this.host.sendUdpDatagram(new IPAddress(peer.ip), CLUSTER_HEARTBEAT_PORT, CLUSTER_HEARTBEAT_PORT, pdu);
     }
+  }
+
+  /** Diffs every node's freshly computed state against the last-published baseline (PRD-Windows-Server-Advanced.md §5 P23), then lets `groups` do the same for resource-group ownership (covers automatic failover). */
+  private refreshNodeStatesAndPublish(): void {
+    for (const node of this.listNodes()) {
+      const previous = this.lastKnownNodeStates.get(node.name);
+      if (previous === node.state) continue;
+      this.lastKnownNodeStates.set(node.name, node.state);
+      this.bus.publish({
+        topic: node.state === 'Up' ? 'cluster.node.up' : 'cluster.node.down',
+        payload: { deviceId: this.deviceId, clusterName: this.clusterName, nodeName: node.name },
+      });
+    }
+    this.groups.refreshOwnersAndPublish();
   }
 
   /** Total membership (self + configured peers) — the denominator for majority quorum. */

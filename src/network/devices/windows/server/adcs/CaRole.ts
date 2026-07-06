@@ -13,6 +13,7 @@ import { CertificateAuthority, type IssuedCertificate } from '@/network/pki/Cert
 import type { X509Certificate } from '@/network/pki/X509Certificate';
 import type { PkiPrivateKey } from '@/network/pki/PkiKeyPair';
 import { DEFAULT_CERT_TEMPLATES, type CertTemplateDef } from './CertificateTemplate';
+import { getDefaultEventBus, type IEventBus } from '@/events/EventBus';
 
 export interface AdcsOpResult { ok: boolean; message: string }
 
@@ -42,7 +43,11 @@ export class WindowsAdcsRole {
   /** Issued certs kept by serial number so `Get-Certificate` can re-fetch a prior `certreq -submit` result. */
   private readonly issued = new Map<string, IssuedCertificate>();
 
-  constructor(private readonly now: () => number) {}
+  constructor(
+    private readonly now: () => number,
+    private readonly bus: IEventBus = getDefaultEventBus(),
+    private readonly deviceId: string = '',
+  ) {}
 
   isInstalled(): boolean { return this.ca !== null; }
 
@@ -97,6 +102,10 @@ export class WindowsAdcsRole {
       extKeyUsage: template.eku,
     });
     this.issued.set(issued.cert.serialNumber, issued);
+    this.bus.publish({
+      topic: 'adcs.certificate.issued',
+      payload: { deviceId: this.deviceId, subject, templateName: template.name, serialNumber: issued.cert.serialNumber },
+    });
     return { ok: true, message: 'Certificate issued.', certificate: issued.cert, privateKey: issued.privateKey };
   }
 
