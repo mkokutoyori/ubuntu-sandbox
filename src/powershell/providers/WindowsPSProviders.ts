@@ -56,7 +56,7 @@ import type {
   AdAttributeSchemaInfo, AdObjectClassSchemaInfo, AdForestInfo, AdTrustInfo,
   IComputerProvider, DomainMembershipInfo,
   IGpoProvider, GpoInfo,
-  IIisProvider, IisOpResult, WebsiteInfo,
+  IIisProvider, IisOpResult, WebsiteInfo, AppPoolInfo, NewAppPoolOptions, WebModuleInfo,
   IAdcsProvider, AdcsOpResult, CaTemplateInfo, CertificateRequestResultInfo,
   IPkiProvider, IssuedCertInfo,
   IDnsServerProvider, DnsOpResult, DnsZoneInfo, DnsRecordInfo,
@@ -1661,7 +1661,9 @@ class WindowsIisAdapter implements IIisProvider {
     return role;
   }
 
-  newWebsite(name: string, physicalPath: string, port: number): IisOpResult { return this.requireRole('New-Website').newWebsite(name, physicalPath, port); }
+  newWebsite(name: string, physicalPath: string, port: number, applicationPool?: string): IisOpResult {
+    return this.requireRole('New-Website').newWebsite(name, physicalPath, port, applicationPool);
+  }
   removeWebsite(name: string): IisOpResult { return this.requireRole('Remove-Website').removeWebsite(name); }
   getWebsite(name: string): WebsiteInfo | null { return this.requireRole('Get-Website').getWebsite(name); }
   listWebsites(): WebsiteInfo[] { return this.requireRole('Get-Website').listWebsites(); }
@@ -1670,6 +1672,15 @@ class WindowsIisAdapter implements IIisProvider {
   newBinding(name: string, protocol: 'http' | 'https', port: number, certificateThumbprint?: string): IisOpResult {
     return this.requireRole('New-WebBinding').newBinding(name, protocol, port, certificateThumbprint);
   }
+
+  newAppPool(name: string, opts?: NewAppPoolOptions): IisOpResult { return this.requireRole('New-WebAppPool').newAppPool(name, opts); }
+  removeAppPool(name: string): IisOpResult { return this.requireRole('Remove-WebAppPool').removeAppPool(name); }
+  startAppPool(name: string): IisOpResult { return this.requireRole('Start-WebAppPool').startAppPool(name); }
+  stopAppPool(name: string): IisOpResult { return this.requireRole('Stop-WebAppPool').stopAppPool(name); }
+  recycleAppPool(name: string): IisOpResult { return this.requireRole('Restart-WebAppPool').recycleAppPool(name); }
+  getAppPool(name: string): AppPoolInfo | null { return this.requireRole('Get-IISAppPool').getAppPool(name); }
+  listAppPools(): AppPoolInfo[] { return this.requireRole('Get-IISAppPool').listAppPools(); }
+  listGlobalModules(): WebModuleInfo[] { return this.requireRole('Get-WebGlobalModule').listGlobalModules(); }
 }
 
 // ── AD CS adapter (PRD-Windows-Server-Advanced.md §5 P13) ────────────────

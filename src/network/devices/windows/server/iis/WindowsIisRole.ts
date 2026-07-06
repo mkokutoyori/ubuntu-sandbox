@@ -24,8 +24,42 @@ import { createResponse, type HttpMessage } from '@/network/http/semantics/types
 export interface IisOpResult { ok: boolean; message: string }
 export interface WebsiteInfo {
   name: string; physicalPath: string; port: number; state: 'Started' | 'Stopped';
-  httpsPort?: number; certificateThumbprint?: string;
+  httpsPort?: number; certificateThumbprint?: string; applicationPool: string;
 }
+
+/**
+ * App pool (PRD-Windows-Server-Advanced.md §5 P15, §2.1.14) — purely
+ * process/isolation metadata (identity, recycling, worker count): this
+ * simulator never executes real .NET application code in any app pool,
+ * matching the already-established convention for simulated Oracle
+ * PL/SQL.
+ */
+export type AppPoolIdentityType = 'ApplicationPoolIdentity' | 'NetworkService' | 'LocalService' | 'LocalSystem';
+export interface AppPoolInfo {
+  name: string;
+  state: 'Started' | 'Stopped';
+  managedRuntimeVersion: string;
+  identityType: AppPoolIdentityType;
+  periodicRestartMinutes: number;
+  workerProcessCount: number;
+  recycleCount: number;
+}
+export interface NewAppPoolOptions {
+  managedRuntimeVersion?: string;
+  identityType?: AppPoolIdentityType;
+  periodicRestartMinutes?: number;
+  workerProcessCount?: number;
+}
+
+/** A static registry of the IIS modules already relevant to this role's own request pipeline — no dynamic third-party module loading. */
+export interface WebModuleInfo { name: string; type: string }
+const GLOBAL_MODULES: readonly WebModuleInfo[] = [
+  { name: 'StaticFileModule', type: 'IIS.WebServer.StaticContent' },
+  { name: 'DefaultDocumentModule', type: 'IIS.WebServer.Common' },
+  { name: 'HttpErrorsModule', type: 'IIS.WebServer.HttpErrors' },
+] as const;
+
+const DEFAULT_APP_POOL = 'DefaultAppPool';
 
 const IIS_SERVER_HEADER = 'Microsoft-IIS/10.0';
 const DEFAULT_SITE_NAME = 'Default Web Site';
@@ -46,6 +80,7 @@ interface SiteState extends WebsiteInfo {
 
 export class WindowsIisRole {
   private readonly sites = new Map<string, SiteState>();
+  private readonly appPools = new Map<string, AppPoolInfo>();
 
   constructor(
     private readonly host: EndHost,
@@ -55,9 +90,10 @@ export class WindowsIisRole {
     this.fs.mkdirp(DEFAULT_PHYSICAL_PATH);
     const indexPath = `${DEFAULT_PHYSICAL_PATH}\\${DEFAULT_DOCUMENT}`;
     if (!this.fs.exists(indexPath)) this.fs.createFile(indexPath, DEFAULT_PAGE);
+    this.appPools.set(DEFAULT_APP_POOL, this.makeAppPool(DEFAULT_APP_POOL, {}));
     this.sites.set(DEFAULT_SITE_NAME, {
       name: DEFAULT_SITE_NAME, physicalPath: DEFAULT_PHYSICAL_PATH, port: 80, state: 'Stopped',
-      server: null, httpsServer: null,
+      applicationPool: DEFAULT_APP_POOL, server: null, httpsServer: null,
     });
   }
 
@@ -67,10 +103,12 @@ export class WindowsIisRole {
 
   // ─── Sites (New-Website / Get-Website / Start-Website / Stop-Website) ──
 
-  newWebsite(name: string, physicalPath: string, port: number): IisOpResult {
+  newWebsite(name: string, physicalPath: string, port: number, applicationPool: string = DEFAULT_APP_POOL): IisOpResult {
     if (this.sites.has(name)) return { ok: false, message: `New-Website : A website named "${name}" already exists.` };
     this.fs.mkdirp(physicalPath);
-    this.sites.set(name, { name, physicalPath, port, state: 'Stopped', server: null, httpsServer: null });
+    this.sites.set(name, {
+      name, physicalPath, port, state: 'Stopped', applicationPool, server: null, httpsServer: null,
+    });
     this.startSite(name);
     return { ok: true, message: '' };
   }
@@ -153,7 +191,7 @@ export class WindowsIisRole {
   private toInfo(s: SiteState): WebsiteInfo {
     return {
       name: s.name, physicalPath: s.physicalPath, port: s.port, state: s.state,
-      httpsPort: s.httpsPort, certificateThumbprint: s.certificateThumbprint,
+      httpsPort: s.httpsPort, certificateThumbprint: s.certificateThumbprint, applicationPool: s.applicationPool,
     };
   }
 
@@ -164,6 +202,69 @@ export class WindowsIisRole {
 
   listWebsites(): WebsiteInfo[] {
     return [...this.sites.values()].map(s => this.toInfo(s));
+  }
+
+  // ─── App pools (New-WebAppPool / Get-IISAppPool) — PRD §5 P15 ─────────
+
+  private makeAppPool(name: string, opts: NewAppPoolOptions): AppPoolInfo {
+    return {
+      name, state: 'Started',
+      managedRuntimeVersion: opts.managedRuntimeVersion ?? 'v4.0',
+      identityType: opts.identityType ?? 'ApplicationPoolIdentity',
+      periodicRestartMinutes: opts.periodicRestartMinutes ?? 1740,
+      workerProcessCount: opts.workerProcessCount ?? 1,
+      recycleCount: 0,
+    };
+  }
+
+  newAppPool(name: string, opts: NewAppPoolOptions = {}): IisOpResult {
+    if (this.appPools.has(name)) return { ok: false, message: `New-WebAppPool : An application pool named "${name}" already exists.` };
+    this.appPools.set(name, this.makeAppPool(name, opts));
+    return { ok: true, message: '' };
+  }
+
+  removeAppPool(name: string): IisOpResult {
+    if (name === DEFAULT_APP_POOL) return { ok: false, message: 'Remove-WebAppPool : The default application pool cannot be removed.' };
+    if (!this.appPools.has(name)) return { ok: false, message: `Remove-WebAppPool : An application pool named "${name}" does not exist.` };
+    this.appPools.delete(name);
+    return { ok: true, message: '' };
+  }
+
+  startAppPool(name: string): IisOpResult {
+    const pool = this.appPools.get(name);
+    if (!pool) return { ok: false, message: `Start-WebAppPool : An application pool named "${name}" does not exist.` };
+    pool.state = 'Started';
+    return { ok: true, message: '' };
+  }
+
+  stopAppPool(name: string): IisOpResult {
+    const pool = this.appPools.get(name);
+    if (!pool) return { ok: false, message: `Stop-WebAppPool : An application pool named "${name}" does not exist.` };
+    pool.state = 'Stopped';
+    return { ok: true, message: '' };
+  }
+
+  /** `Restart-WebAppPool` — a purely cosmetic recycle: bumps `recycleCount`, no process/state actually restarts (this simulator runs no real worker process). */
+  recycleAppPool(name: string): IisOpResult {
+    const pool = this.appPools.get(name);
+    if (!pool) return { ok: false, message: `Restart-WebAppPool : An application pool named "${name}" does not exist.` };
+    pool.recycleCount += 1;
+    return { ok: true, message: '' };
+  }
+
+  getAppPool(name: string): AppPoolInfo | null {
+    const pool = this.appPools.get(name);
+    return pool ? { ...pool } : null;
+  }
+
+  listAppPools(): AppPoolInfo[] {
+    return [...this.appPools.values()].map(p => ({ ...p }));
+  }
+
+  // ─── Global modules (Get-WebGlobalModule) — PRD §5 P15 ─────────────────
+
+  listGlobalModules(): WebModuleInfo[] {
+    return [...GLOBAL_MODULES];
   }
 
   // ─── Request handling ────────────────────────────────────────────────

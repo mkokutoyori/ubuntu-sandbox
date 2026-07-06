@@ -150,6 +150,8 @@ import { NewGPOCmdlet, GetGPOCmdlet, NewGPLinkCmdlet } from './GroupPolicyCmdlet
 import {
   NewWebsiteCmdlet, GetWebsiteCmdlet, StartWebsiteCmdlet, StopWebsiteCmdlet, RemoveWebsiteCmdlet,
   NewWebBindingCmdlet,
+  NewWebAppPoolCmdlet, GetIISAppPoolCmdlet, RemoveWebAppPoolCmdlet, StartWebAppPoolCmdlet, StopWebAppPoolCmdlet,
+  RestartWebAppPoolCmdlet, GetWebGlobalModuleCmdlet,
 } from './WebAdminCmdlets';
 import { NewSelfSignedCertificateCmdlet } from './PkiCmdlets';
 
@@ -458,6 +460,13 @@ export function registerCoreCmdlets(registry: CmdletRegistry): void {
   registry.register(new StopWebsiteCmdlet());
   registry.register(new RemoveWebsiteCmdlet());
   registry.register(new NewWebBindingCmdlet());
+  registry.register(new NewWebAppPoolCmdlet());
+  registry.register(new GetIISAppPoolCmdlet());
+  registry.register(new RemoveWebAppPoolCmdlet());
+  registry.register(new StartWebAppPoolCmdlet());
+  registry.register(new StopWebAppPoolCmdlet());
+  registry.register(new RestartWebAppPoolCmdlet());
+  registry.register(new GetWebGlobalModuleCmdlet());
 
   // ── Personal certificate store (PRD-Windows-Server-Advanced.md §5 P14) ─────
   registry.register(new NewSelfSignedCertificateCmdlet());

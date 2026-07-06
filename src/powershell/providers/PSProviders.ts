@@ -299,11 +299,22 @@ export interface IGpoProvider {
 export interface IisOpResult { ok: boolean; message: string }
 export interface WebsiteInfo {
   name: string; physicalPath: string; port: number; state: 'Started' | 'Stopped';
-  httpsPort?: number; certificateThumbprint?: string;
+  httpsPort?: number; certificateThumbprint?: string; applicationPool: string;
 }
 
+export type AppPoolIdentityType = 'ApplicationPoolIdentity' | 'NetworkService' | 'LocalService' | 'LocalSystem';
+export interface AppPoolInfo {
+  name: string; state: 'Started' | 'Stopped'; managedRuntimeVersion: string; identityType: AppPoolIdentityType;
+  periodicRestartMinutes: number; workerProcessCount: number; recycleCount: number;
+}
+export interface NewAppPoolOptions {
+  managedRuntimeVersion?: string; identityType?: AppPoolIdentityType;
+  periodicRestartMinutes?: number; workerProcessCount?: number;
+}
+export interface WebModuleInfo { name: string; type: string }
+
 export interface IIisProvider {
-  newWebsite(name: string, physicalPath: string, port: number): IisOpResult;
+  newWebsite(name: string, physicalPath: string, port: number, applicationPool?: string): IisOpResult;
   removeWebsite(name: string): IisOpResult;
   getWebsite(name: string): WebsiteInfo | null;
   listWebsites(): WebsiteInfo[];
@@ -311,6 +322,17 @@ export interface IIisProvider {
   stopWebsite(name: string): IisOpResult;
   /** `New-WebBinding -Protocol https -Port <port> -CertificateHash <thumbprint>` (PRD-Windows-Server-Advanced.md §5 P14). */
   newBinding(name: string, protocol: 'http' | 'https', port: number, certificateThumbprint?: string): IisOpResult;
+
+  /** `New-WebAppPool`/`Get-IISAppPool` (PRD-Windows-Server-Advanced.md §5 P15) — process/isolation metadata only, no real .NET execution. */
+  newAppPool(name: string, opts?: NewAppPoolOptions): IisOpResult;
+  removeAppPool(name: string): IisOpResult;
+  startAppPool(name: string): IisOpResult;
+  stopAppPool(name: string): IisOpResult;
+  recycleAppPool(name: string): IisOpResult;
+  getAppPool(name: string): AppPoolInfo | null;
+  listAppPools(): AppPoolInfo[];
+  /** `Get-WebGlobalModule` — the static module registry already relevant to this role's own pipeline. */
+  listGlobalModules(): WebModuleInfo[];
 }
 
 // ── AD CS (Certificate Services) role (PRD-Windows-Server-Advanced.md §5 P13) ──
