@@ -3007,7 +3007,7 @@ export abstract class EndHost extends Equipment {
       if (verdict === 'reject') {
         if (ipv6.nextHeader === IP_PROTO_TCP) {
           this.tcpv2.sendResetForSegment(
-            ipv6.destinationIP.toString(), ipv6.sourceIP.toString(), ipv6.payload as TCPPacket,
+            ipv6.destinationIP.toString(), ipv6.sourceIP.toString(), ipv6.payload as TcpSegment,
           );
         } else {
           this.sendICMPv6PortUnreachable(portName, ipv6);

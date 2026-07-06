@@ -1331,7 +1331,7 @@ export abstract class Switch extends Equipment {
     }
   }
 
-  protected override sendFrame(portName: string, frame: EthernetFrame): boolean {
+  override sendFrame(portName: string, frame: EthernetFrame): boolean {
     if (!this.mirrorReentrant) this.mirrorEgress(portName, frame);
     return super.sendFrame(portName, frame);
   }

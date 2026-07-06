@@ -101,7 +101,7 @@ export interface AuditActorContext {
 }
 
 const OK: RuleOpResult = { ok: true };
-const fail = (error: string): RuleOpResult => ({ ok: false, error });
+const fail = (error: string): RuleOpResult & { ok: false } => ({ ok: false, error });
 const LOCKED_MSG = 'error: audit system is in immutable mode (locked), cannot change rules until reboot';
 
 export class LinuxAuditRules {
