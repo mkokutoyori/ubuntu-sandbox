@@ -110,6 +110,8 @@ import { generateSelfSignedCertificate } from '@/network/pki/SelfSignedCertifica
 import { CertificateVerifier } from '@/network/pki/CertificateVerifier';
 import type { X509Certificate } from '@/network/pki/X509Certificate';
 import { cmdPrint } from './windows/WinPrint';
+import { runRunasNonInteractive, runAsUser } from './windows/WinRunas';
+import type { RunasHost } from './windows/WinRunas';
 import { executeNslookup } from './linux/LinuxDnsService';
 import { SessionWorkQueue } from './host/session/SessionWorkQueue';
 import { SessionSwapWindow } from './host/session/SessionSwapWindow';
@@ -1100,6 +1102,11 @@ export class WindowsPC extends EndHost implements UserAccountHost {
    */
   checkPassword(username: string, password: string): boolean {
     return this.userMgr.checkPassword(username, password);
+  }
+
+  /** Look up a local account without reaching into the private user manager — used by `runas`'s interactive validation (WindowsTerminalSession.tryStartRunasInteractive). */
+  getUser(username: string): { name: string; enabled: boolean } | undefined {
+    return this.userMgr.getUser(username);
   }
 
   /**
@@ -2596,51 +2603,32 @@ export class WindowsPC extends EndHost implements UserAccountHost {
   /** Get the process manager (for PowerShellExecutor and other integrations) */
   getProcessManager(): WindowsProcessManager { return this.procMgr; }
 
-  /** runas command — simplified non-interactive version */
+  /** Adapts this device to `WinRunas.ts`'s narrow `RunasHost` contract. */
+  private runasHost(): RunasHost {
+    return {
+      getUser: (name) => this.userMgr.getUser(name),
+      getCurrentUser: () => this.userMgr.currentUser,
+      setCurrentUser: (name) => this.setCurrentUser(name),
+      executeCmdCommand: (command) => this.executeCmdCommand(command),
+    };
+  }
+
+  /**
+   * `runas` — non-interactive path (no password prompt: this is
+   * `device.executeCommand()`, with no terminal to prompt through). The
+   * real, password-verified interactive prompt lives in
+   * `WindowsTerminalSession` (PRD-Nslookup-Dig-Rndc-Runas.md P11), which
+   * calls {@link runAsUserVerified} after collecting and checking the
+   * password via the same masked-prompt mechanism SSH's top-level password
+   * challenge already uses.
+   */
   private async cmdRunas(args: string[]): Promise<string> {
-    if (args.length === 0) {
-      return 'RUNAS USAGE:\n\nRUNAS /user:<UserName> program';
-    }
+    return runRunasNonInteractive(this.runasHost(), args);
+  }
 
-    let userName = '';
-    const cmdParts: string[] = [];
-
-    for (const arg of args) {
-      const lower = arg.toLowerCase();
-      if (lower.startsWith('/user:')) {
-        userName = arg.substring(6);
-      } else {
-        cmdParts.push(arg);
-      }
-    }
-
-    if (!userName) {
-      return 'RUNAS USAGE:\n\nRUNAS /user:<UserName> program';
-    }
-
-    const user = this.userMgr.getUser(userName);
-    if (!user) {
-      return `RUNAS ERROR: The user name "${userName}" is not recognized.`;
-    }
-
-    if (!user.enabled) {
-      return `RUNAS ERROR: The account "${userName}" is disabled.`;
-    }
-
-    if (cmdParts.length === 0) {
-      return 'RUNAS ERROR: No command specified.';
-    }
-
-    // Real runas launches the program AS the target user in a separate
-    // logon session — the calling shell keeps its own identity. Run the
-    // command under the switched context, then restore the caller.
-    const previousUser = this.userMgr.currentUser;
-    this.setCurrentUser(user.name);
-    try {
-      return await this.executeCmdCommand(cmdParts.join(' '));
-    } finally {
-      this.setCurrentUser(previousUser);
-    }
+  /** Runs `command` as `userName` — called by `WindowsTerminalSession` once the password has already been verified via `checkPassword`. */
+  async runAsUserVerified(userName: string, command: string): Promise<string> {
+    return runAsUser(this.runasHost(), userName, command);
   }
 
   /** Real TCP connect+close reachability probe, used by `nltest /dsgetdc:` — not a topology shortcut. */

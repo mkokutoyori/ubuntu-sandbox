@@ -53,6 +53,8 @@ import { ShellSubShellAdapter } from '@/shell/ShellSubShellAdapter';
 import type { IShell } from '@/shell/IShell';
 import { SshConnectionRequest } from '@/network/protocols/ssh/server/SshConnectionRequest';
 import { SshKnownHostsFile } from '@/network/protocols/ssh/SshKnownHostsFile';
+import { parseRunasArgs, validateRunasUser, runasIncorrectPasswordMessage } from '@/network/devices/windows/WinRunas';
+import type { RunasUserSource } from '@/network/devices/windows/WinRunas';
 
 const WINDOWS_THEME: TerminalTheme = {
   sessionType: 'windows',
@@ -270,6 +272,27 @@ export class WindowsTerminalSession extends TerminalSession {
       }
       // Let the view drive the character-by-character input into the
       // masked password buffer.
+      return false;
+    }
+
+    // `runas` password challenge — same masked-input pattern as the SSH
+    // one above, but a single attempt (no retry): real runas.exe fails
+    // immediately on a wrong password rather than re-prompting.
+    if (this.pendingRunas && this.inputMode.type === 'password') {
+      if (e.key === 'Enter') {
+        const pw = this.getPasswordBuf();
+        this.setPasswordBuf('');
+        void this.submitRunasPassword(pw);
+        return true;
+      }
+      if (e.key === 'c' && e.ctrlKey) {
+        this.pendingRunas = null;
+        this.setPasswordBuf('');
+        this.inputMode = { type: 'normal' };
+        this.addLine('^C');
+        this.notify();
+        return true;
+      }
       return false;
     }
 
@@ -854,6 +877,13 @@ export class WindowsTerminalSession extends TerminalSession {
       }
     }
 
+    if (lower === 'runas' || lower.startsWith('runas ')) {
+      if (this.tryStartRunasInteractive(trimmed)) {
+        this.notify();
+        return;
+      }
+    }
+
     // Execute on device (root cmd)
     try {
       const result = await this.executeOnDevice(trimmed);
@@ -1082,6 +1112,14 @@ export class WindowsTerminalSession extends TerminalSession {
   } | null = null;
 
   /**
+   * Pending `runas` invocation waiting for the password challenge to
+   * complete. Set by {@link tryStartRunasInteractive} once the target
+   * account is confirmed to exist and be enabled — real `runas.exe`
+   * always prompts before checking the password (PRD-Nslookup-Dig-Rndc-Runas.md P11).
+   */
+  private pendingRunas: { userName: string; command: string } | null = null;
+
+  /**
    * Drive the SSH password challenge. Up to three attempts are allowed
    * (OpenSSH default); a wrong password is logged via `recordSshLogin`
    * and surfaces as "Permission denied (publickey,password).".
@@ -1185,6 +1223,58 @@ export class WindowsTerminalSession extends TerminalSession {
       }
     }
     return true;
+  }
+
+  /**
+   * `runas /user:X program` — real runas.exe always prompts for the
+   * password (never leaks whether the account exists via that prompt),
+   * but this simulator's pre-P11 messages already distinguish
+   * "not recognized"/"disabled" before any prompt, and windows-access-cmd.test.ts
+   * already asserts those exact messages via the non-interactive
+   * `device.executeCommand()` path — so the interactive path here keeps
+   * the same ordering for consistency rather than hiding account existence.
+   * Returns false for malformed input (missing /user:, no command) so the
+   * caller falls through to the device-level usage message.
+   */
+  private tryStartRunasInteractive(line: string): boolean {
+    const args = line.split(/\s+/).slice(1);
+    const parsed = parseRunasArgs(args);
+    if (parsed.ok === false) return false;
+
+    const dev = this.device as unknown as RunasUserSource;
+    const validation = validateRunasUser(dev, parsed.invocation.userName);
+    if (validation.ok === false) {
+      this.addLine(validation.error, 'error');
+      return true;
+    }
+
+    this.pendingRunas = { userName: parsed.invocation.userName, command: parsed.invocation.command };
+    const promptText = `Enter the password for ${parsed.invocation.userName}:`;
+    this.inputMode = { type: 'password', promptText };
+    this.addLine(promptText, 'prompt');
+    return true;
+  }
+
+  private async submitRunasPassword(password: string): Promise<void> {
+    const pending = this.pendingRunas;
+    this.pendingRunas = null;
+    this.inputMode = { type: 'normal' };
+    if (!pending) {
+      this.notify();
+      return;
+    }
+
+    const ok = this.verifyRemoteCredentials(this.device, pending.userName, password);
+    if (!ok) {
+      this.addLine(runasIncorrectPasswordMessage(pending.command), 'error');
+      this.notify();
+      return;
+    }
+
+    const dev = this.device as unknown as { runAsUserVerified?: (u: string, c: string) => Promise<string> };
+    const result = await dev.runAsUserVerified?.(pending.userName, pending.command) ?? '';
+    if (result) this.emitWindowsOutput(result);
+    this.notify();
   }
 
   /**
