@@ -3,10 +3,12 @@ import { getDefaultScheduler, type IScheduler } from '@/events/Scheduler';
 import { TimerSet } from '@/events/TimerSet';
 import {
   type TcpSegment, type TcpFlags, type TcpState, type TcpCloseReason,
+  type UnackedSegment,
   noFlags, flagsString, nextIsn, makeSocketKey, makeListenerKey,
-  computeTcpChecksum, verifyTcpChecksum,
+  computeTcpChecksum, verifyTcpChecksum, seqLt,
   TCP_DEFAULT_MSS, TCP_DEFAULT_WINDOW, TCP_TIME_WAIT_MS,
 } from './types';
+import { RttEstimator, TCP_MAX_RETRANSMITS } from './RttEstimator';
 import {
   MACAddress, IPAddress, IPv6Address,
   type EthernetFrame, type IPv4Packet, type IPv6Packet,
@@ -88,6 +90,12 @@ export class TcpSocket {
    * can slam-close everything when the process dies.
    */
   ownerPid: number | null = null;
+
+  /** Segments (SYN/data/FIN) sent but not yet covered by an ACK (PRD-TCP.md P1). */
+  unackedQueue: UnackedSegment[] = [];
+  /** Retransmission-timeout token for the head of `unackedQueue`, or null when nothing is outstanding. */
+  rtoTimer: symbol | null = null;
+  readonly rtt: RttEstimator = new RttEstimator();
 
   private readonly openHandlers: TcpOpenHandler[] = [];
   private readonly dataHandlers: TcpDataHandler[] = [];
@@ -293,7 +301,7 @@ export class TcpStack {
     const flags = noFlags(); flags.syn = true;
     const synSeq = socket.sendNext;
     socket.sendNext = (socket.sendNext + 1) >>> 0;
-    this.transmit(socket, flags, synSeq, 0, undefined);
+    this.transmitTracked(socket, flags, synSeq, 0, undefined, 1);
     return socket;
   }
 
@@ -425,7 +433,7 @@ export class TcpStack {
       // consume sendNext before the post-send increment would run.
       const synAckSeq = socket.sendNext;
       socket.sendNext = (socket.sendNext + 1) >>> 0;
-      this.transmit(socket, flags, synAckSeq, socket.recvNext, undefined);
+      this.transmitTracked(socket, flags, synAckSeq, socket.recvNext, undefined, 1);
       return true;
     }
     if (seg.flags.rst) {
@@ -452,15 +460,15 @@ export class TcpStack {
         const flags = noFlags(); flags.ack = true; if (isLast) flags.psh = true;
         const seq = socket.sendNext;
         socket.sendNext = (seq + chunk.length) >>> 0;
-        this.transmit(socket, flags, seq, socket.recvNext, chunk);
+        this.transmitTracked(socket, flags, seq, socket.recvNext, chunk, chunk.length);
       }
       return;
     }
     const flags = noFlags(); flags.ack = true; flags.psh = true;
     const seq = socket.sendNext;
-    socket.sendNext =
-      (seq + (typeof data === 'string' ? data.length : 1)) >>> 0;
-    this.transmit(socket, flags, seq, socket.recvNext, data);
+    const length = typeof data === 'string' ? data.length : 1;
+    socket.sendNext = (seq + length) >>> 0;
+    this.transmitTracked(socket, flags, seq, socket.recvNext, data, length);
   }
 
   private flushPendingSends(socket: TcpSocket): void {
@@ -494,13 +502,13 @@ export class TcpStack {
       const flags = noFlags(); flags.fin = true; flags.ack = true;
       const seq = socket.sendNext;
       socket.sendNext = (seq + 1) >>> 0;
-      this.transmit(socket, flags, seq, socket.recvNext, undefined);
+      this.transmitTracked(socket, flags, seq, socket.recvNext, undefined, 1);
     } else if (socket.state === 'close-wait') {
       this._transition(socket, 'last-ack');
       const flags = noFlags(); flags.fin = true; flags.ack = true;
       const seq = socket.sendNext;
       socket.sendNext = (seq + 1) >>> 0;
-      this.transmit(socket, flags, seq, socket.recvNext, undefined);
+      this.transmitTracked(socket, flags, seq, socket.recvNext, undefined, 1);
     } else {
       this._teardown(socket, 'shutdown');
     }
@@ -514,6 +522,11 @@ export class TcpStack {
       this._teardown(socket, 'rst');
       return;
     }
+    // Any ACK (whether or not it also carries data/FIN) can retire queued
+    // retransmittable segments (PRD-TCP.md P1) — checked once here rather
+    // than in each state branch below, since several of them only update
+    // `sendUnacked` in narrower sub-cases than "seg.flags.ack is set".
+    if (seg.flags.ack) this.pruneUnackedQueue(socket, seg.acknowledgement);
     switch (socket.state) {
       case 'syn-sent':
         if (seg.flags.syn && seg.flags.ack) {
@@ -678,6 +691,9 @@ export class TcpStack {
       this.timers.clear(socket.timeWaitTimer);
       socket.timeWaitTimer = null;
     }
+    this.timers.clear(socket.rtoTimer);
+    socket.rtoTimer = null;
+    socket.unackedQueue = [];
     this._transition(socket, 'closed');
     this.sockets.delete(socket.key());
     this.getBus().publish({
@@ -736,6 +752,83 @@ export class TcpStack {
     };
     seg.checksum = computeTcpChecksum(seg, egress.srcIp, socket.remoteIp);
     this.shipSegment(egress, egress.srcIp, socket.remoteIp, seg);
+  }
+
+  /**
+   * Like `transmit()`, but for a segment that consumes sequence space
+   * (SYN, FIN, or data) — PRD-TCP.md P1. Queues it for retransmission and
+   * (re)arms the socket's single RTO timer (RFC 6298: one retransmission
+   * timer per connection, not per segment). Pure ACKs/RSTs go through
+   * plain `transmit()` and are never retransmitted on their own.
+   */
+  private transmitTracked(
+    socket: TcpSocket, flags: TcpFlags, sequence: number, ackNum: number, payload: unknown, length: number,
+  ): void {
+    // Queue BEFORE transmitting: Cable delivery is synchronous, so the
+    // peer's ACK can re-enter this stack and prune the queue before
+    // `transmit()` even returns (same reentrancy this file already works
+    // around for `sendNext` above) — pruning an entry that was never
+    // pushed would leave it stuck in the queue forever, retransmitting a
+    // segment the peer already acknowledged.
+    socket.unackedQueue.push({
+      sequence, length, flags, payload,
+      firstSentAtMs: this.getScheduler().now(),
+      retransmitCount: 0,
+    });
+    this.transmit(socket, flags, sequence, ackNum, payload);
+    this.rearmRtoTimer(socket);
+  }
+
+  /** Drop every fully-acknowledged segment off the head of the queue and reset the RTO on real progress. */
+  private pruneUnackedQueue(socket: TcpSocket, ackNum: number): void {
+    let progressed = false;
+    while (socket.unackedQueue.length > 0) {
+      const head = socket.unackedQueue[0];
+      const coveredUpTo = (head.sequence + head.length) >>> 0;
+      const fullyAcked = coveredUpTo === ackNum || seqLt(coveredUpTo, ackNum);
+      if (!fullyAcked) break;
+      socket.unackedQueue.shift();
+      progressed = true;
+    }
+    if (progressed) socket.rtt.reset();
+    this.rearmRtoTimer(socket);
+  }
+
+  /** (Re)start the RTO timer for the current head of the queue, or clear it when nothing is outstanding. */
+  private rearmRtoTimer(socket: TcpSocket): void {
+    this.timers.clear(socket.rtoTimer);
+    socket.rtoTimer = null;
+    if (socket.unackedQueue.length === 0) return;
+    socket.rtoTimer = this.timers.setTimeout(() => this.onRtoFired(socket), socket.rtt.currentRto());
+  }
+
+  /** RFC 6298 §5: retransmit the earliest unacked segment, back off the RTO, and restart the timer. */
+  private onRtoFired(socket: TcpSocket): void {
+    socket.rtoTimer = null;
+    const head = socket.unackedQueue[0];
+    if (!head) return;
+    head.retransmitCount++;
+    if (head.retransmitCount > TCP_MAX_RETRANSMITS) {
+      this._teardown(socket, 'timeout');
+      return;
+    }
+    const rtoMs = socket.rtt.backoff();
+    this.getBus().publish({
+      topic: 'tcp.retransmit',
+      payload: {
+        deviceId: this.host.id, hostname: this.host.getHostname(),
+        localIp: socket.localIp, localPort: socket.localPort,
+        remoteIp: socket.remoteIp, remotePort: socket.remotePort,
+        sequence: head.sequence, attempt: head.retransmitCount, rtoMs,
+      },
+    });
+    // Resend with the segment's ORIGINAL flags — a bare SYN must stay a
+    // bare SYN (no ack piggybacked) or the peer stops treating it as a
+    // connection request; `transmit()` already zeroes `acknowledgement`
+    // itself whenever `flags.ack` is false, so `socket.recvNext` here is
+    // only actually used for segments that genuinely carry an ACK.
+    this.transmit(socket, head.flags, head.sequence, socket.recvNext, head.payload);
+    socket.rtoTimer = this.timers.setTimeout(() => this.onRtoFired(socket), rtoMs);
   }
 
   private shipSegment(

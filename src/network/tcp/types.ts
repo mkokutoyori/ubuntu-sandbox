@@ -53,6 +53,21 @@ export type TcpOption =
 
 export type TcpCloseReason = 'fin' | 'rst' | 'timeout' | 'shutdown';
 
+/**
+ * A sent segment that consumed sequence space (SYN, FIN, or data) and is
+ * awaiting an ACK that covers it — PRD-TCP.md P1. Pure ACKs/RSTs never
+ * enter this queue: real TCP never retransmits a bare ACK on its own.
+ */
+export interface UnackedSegment {
+  sequence: number;
+  length: number;
+  flags: TcpFlags;
+  payload: unknown;
+  /** When this segment was first sent — Karn's algorithm (P4) only clock-samples RTT off a segment with `retransmitCount === 0`. */
+  firstSentAtMs: number;
+  retransmitCount: number;
+}
+
 export const TCP_DEFAULT_MSS = 1460;
 export const TCP_DEFAULT_WINDOW = 65535;
 

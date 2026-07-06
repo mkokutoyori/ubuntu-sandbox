@@ -66,6 +66,17 @@ export interface TcpSegmentDroppedPayload extends TcpDeviceRef {
   reason: 'no-listener' | 'no-socket' | 'bad-state' | 'no-egress' | 'no-source-ip' | 'disabled' | 'bad-checksum' | 'no-ephemeral';
 }
 
+/** PRD-TCP.md P1 — a segment (SYN/data/FIN) was resent by the RTO timer. */
+export interface TcpRetransmitPayload extends TcpDeviceRef {
+  localIp: string;
+  localPort: number;
+  remoteIp: string;
+  remotePort: number;
+  sequence: number;
+  attempt: number;
+  rtoMs: number;
+}
+
 export type TcpDomainEvent =
   | { topic: 'tcp.segment.sent'; payload: TcpSegmentSentPayload }
   | { topic: 'tcp.segment.received'; payload: TcpSegmentReceivedPayload }
@@ -73,4 +84,5 @@ export type TcpDomainEvent =
   | { topic: 'tcp.connection.opened'; payload: TcpConnectionOpenedPayload }
   | { topic: 'tcp.connection.closed'; payload: TcpConnectionClosedPayload }
   | { topic: 'tcp.listener.changed'; payload: TcpListenerChangedPayload }
-  | { topic: 'tcp.segment.dropped'; payload: TcpSegmentDroppedPayload };
+  | { topic: 'tcp.segment.dropped'; payload: TcpSegmentDroppedPayload }
+  | { topic: 'tcp.retransmit'; payload: TcpRetransmitPayload };

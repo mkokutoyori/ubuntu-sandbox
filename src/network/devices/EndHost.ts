@@ -546,7 +546,7 @@ export abstract class EndHost extends Equipment {
         return src ? src.toString() : null;
       },
     };
-    this.tcpv2 = new TcpStack(hostBase, () => this.getBus());
+    this.tcpv2 = new TcpStack(hostBase, () => this.getBus(), () => this.getScheduler());
     this.tcpv2.start();
     this.hardware = HardwareProfile.defaultFor(
       String(type).includes('server') ? 'server' : 'workstation',
