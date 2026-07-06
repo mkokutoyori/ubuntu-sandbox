@@ -15,6 +15,7 @@
 import type { IEventBus, Unsubscribe } from '@/events/EventBus';
 import type { LinuxLogManager } from '../LinuxLogManager';
 import type { PortBoundPayload, PortReleasedPayload } from '../events';
+import type { MACAddress, IPAddress, SubnetMask } from '../../../core/types';
 
 export class PortActivityLogProjection {
   private readonly subscriptions: Unsubscribe[] = [];
@@ -91,14 +92,12 @@ export class PortActivityLogProjection {
       `${p.comm}[${p.pid}] received signal ${p.signal} from ${p.sender ?? 'unknown'}`);
   }
 
-  private onProcessReaped(p: {
-    deviceId: string; pid: number; comm: string; exitCode: number;
-  }): void {
-    if (p.deviceId !== this.deviceId) return;
-    if (p.exitCode === 0) return;
-    this.logManager.logDaemon('systemd',
-      `${p.comm}[${p.pid}] exited with code ${p.exitCode}`);
-  }
+  // `linux.process.reaped` (ProcessReapedPayload) carries no exit code —
+  // it fires when a zombie is reaped from the process table, after the
+  // exit code was already reported via `linux.process.exited`.
+  private onProcessReaped(_p: {
+    deviceId: string; pid: number; comm: string;
+  }): void {}
 
   private onIcmpEchoFailed(p: { deviceId: string; target?: string; reason?: string }): void {
     if (p.deviceId !== this.deviceId) return;
@@ -145,16 +144,10 @@ export class PortActivityLogProjection {
     this.logManager.logKernel('kernel', `${ours}: cable connected`);
   }
 
-  private onCableDisconnected(p: {
-    portA?: { deviceId?: string; portName?: string };
-    portB?: { deviceId?: string; portName?: string };
-  }): void {
-    const ours = p.portA?.deviceId === this.deviceId ? p.portA?.portName
-               : p.portB?.deviceId === this.deviceId ? p.portB?.portName
-               : null;
-    if (!ours) return;
-    this.logManager.logKernel('kernel', `${ours}: cable disconnected`);
-  }
+  // `cable.disconnected`'s real payload (CableDisconnectedPayload) only
+  // carries `cableId` — Cable.ts nulls out its port refs before publishing,
+  // so unlike `cable.connected` there is no per-device port name to log here.
+  private onCableDisconnected(_p: { cableId: string }): void {}
 
   private onDhcpClientState(p: {
     deviceId: string; iface?: string; oldState?: string; newState?: string;
@@ -241,7 +234,7 @@ export class PortActivityLogProjection {
   }
 
   private onIpChanged(p: {
-    deviceId: string; portName: string; ip?: string | null; mask?: string | null;
+    deviceId: string; portName: string; ip?: IPAddress | string | null; mask?: SubnetMask | string | null;
   }): void {
     if (p.deviceId !== this.deviceId) return;
     if (p.ip) {
@@ -260,7 +253,7 @@ export class PortActivityLogProjection {
   }
 
   private onPortSecurityViolation(p: {
-    deviceId: string; portName: string; mac: string; mode: string; action: string;
+    deviceId: string; portName: string; mac: MACAddress | string; mode: string; action: string;
   }): void {
     if (p.deviceId !== this.deviceId) return;
     this.logManager.logKernel('kernel',
@@ -268,7 +261,7 @@ export class PortActivityLogProjection {
   }
 
   private onPortSecurityErrdisable(p: {
-    deviceId: string; portName: string; mac: string;
+    deviceId: string; portName: string; mac: MACAddress | string;
   }): void {
     if (p.deviceId !== this.deviceId) return;
     this.logManager.logKernel('kernel',
@@ -288,7 +281,7 @@ export class PortActivityLogProjection {
   }
 
   private onProcessExited(p: {
-    deviceId: string; pid: number; comm: string; exitCode: number; signal?: string;
+    deviceId: string; pid: number; comm: string; exitCode?: number; signal?: string;
   }): void {
     if (p.deviceId !== this.deviceId) return;
     if (p.signal) {
@@ -297,13 +290,16 @@ export class PortActivityLogProjection {
     }
   }
 
+  // `arp.violation` is a switch-scoped DAI event (ArpViolationPayload, keyed
+  // by switchId) — never published for a Linux host, so this never matches
+  // `this.deviceId`. Kept for shape/type correctness only.
   private onArpViolation(p: {
-    deviceId: string; iface?: string; senderIp?: string; senderMac?: string;
+    switchId: string; ingressPort?: string; senderIp?: string; senderMac?: string;
     reason?: string;
   }): void {
-    if (p.deviceId !== this.deviceId) return;
+    if (p.switchId !== this.deviceId) return;
     this.logManager.logKernel('kernel',
-      `arp-inspection: ${p.iface ?? '?'}: violation ${p.reason ?? 'invalid'} from ${p.senderMac ?? '?'}/${p.senderIp ?? '?'}`);
+      `arp-inspection: ${p.ingressPort ?? '?'}: violation ${p.reason ?? 'invalid'} from ${p.senderMac ?? '?'}/${p.senderIp ?? '?'}`);
   }
 
   private onArpIpConflict(p: {

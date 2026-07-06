@@ -2415,6 +2415,12 @@ export abstract class BaseParser {
     return false;
   }
 
+  /** Same as `match`, but also requires the current token's value to match. */
+  protected matchOperator(type: TokenType, value: string): boolean {
+    if (this.check(type) && this.current().value === value) { this.advance(); return true; }
+    return false;
+  }
+
   /**
    * Consume every remaining token up to (but not including) the next
    * SEMICOLON / EOF. Handy when a DDL clause is recognised but the

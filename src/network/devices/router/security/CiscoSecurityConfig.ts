@@ -153,7 +153,9 @@ export interface PolicyMapClass {
 }
 
 export interface PolicyMapAction {
-  kind: 'police' | 'inspect' | 'drop' | 'pass' | 'set-dscp' | 'set-precedence';
+  kind: 'police' | 'inspect' | 'drop' | 'pass' | 'set-dscp' | 'set-precedence'
+    | 'priority' | 'bandwidth' | 'fair-queue' | 'random-detect' | 'shape'
+    | 'service-policy' | 'queue-limit' | 'compression';
   args: string[];
 }
 

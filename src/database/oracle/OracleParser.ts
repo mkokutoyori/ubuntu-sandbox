@@ -245,7 +245,7 @@ export class OracleParser extends BaseParser {
     let value: string | undefined;
     if (this.matchKeyword('SET')) {
       param = this.expectIdentifierOrKeyword().toUpperCase();
-      this.match(TokenType.COMPARISON_OP, '=');
+      this.matchOperator(TokenType.COMPARISON_OP, '=');
       if (!this.check(TokenType.SEMICOLON) && !this.check(TokenType.EOF)) {
         const raw = this.advance().value;
         value = raw.replace(/^['"]|['"]$/g, '').toUpperCase();
@@ -456,7 +456,7 @@ export class OracleParser extends BaseParser {
     return undefined;
   }
 
-  private parseOptionalAlias(): string | undefined {
+  protected override parseOptionalAlias(): string | undefined {
     // Check for alias (optional AS keyword)
     if (this.checkKeyword('ON') || this.checkKeyword('USING') || this.checkKeyword('WHEN') ||
         this.check(TokenType.SEMICOLON) || this.check(TokenType.EOF) ||
@@ -552,18 +552,18 @@ export class OracleParser extends BaseParser {
       return raw.startsWith("'") ? raw.slice(1, -1) : raw;
     };
     let outputPath: string | undefined;
-    if (this.match(TokenType.COMPARISON_OP, '=')) outputPath = readQuoted();
+    if (this.matchOperator(TokenType.COMPARISON_OP, '=')) outputPath = readQuoted();
     this.expectKeyword('FROM');
     let source: 'PFILE' | 'SPFILE' | 'MEMORY';
     let sourcePath: string | undefined;
     if (this.matchKeyword('MEMORY')) source = 'MEMORY';
     else if (this.matchKeyword('PFILE')) {
       source = 'PFILE';
-      if (this.match(TokenType.COMPARISON_OP, '=')) sourcePath = readQuoted();
+      if (this.matchOperator(TokenType.COMPARISON_OP, '=')) sourcePath = readQuoted();
     } else {
       this.expectKeyword('SPFILE');
       source = 'SPFILE';
-      if (this.match(TokenType.COMPARISON_OP, '=')) sourcePath = readQuoted();
+      if (this.matchOperator(TokenType.COMPARISON_OP, '=')) sourcePath = readQuoted();
     }
     return {
       type: 'CreatePfileSpfileStatement', position: pos,
@@ -1416,7 +1416,7 @@ export class OracleParser extends BaseParser {
         do { roles.push(this.expectIdentifier().toUpperCase()); } while (this.match(TokenType.COMMA));
       } else if (this.matchKeyword('CONTAINER')) {
         // CONTAINER = CURRENT|ALL — accept and ignore (single-tenant sim).
-        this.match(TokenType.EQUAL);
+        this.match(TokenType.COMPARISON_OP);
         this.advance();
       } else if (this.matchKeyword('WHEN')) {
         // Skip the predicate body — we don't evaluate it.

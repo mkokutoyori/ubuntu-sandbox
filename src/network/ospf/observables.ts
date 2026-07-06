@@ -17,7 +17,7 @@
 
 import type {
   OSPFNeighborState, OSPFInterfaceState,
-  LSA, LSAHeader, LSDB, OSPFInterface, OSPFRouteEntry,
+  LSA, LSAHeader, LSAType, LSDB, OSPFInterface, OSPFRouteEntry,
   OSPFv3Interface,
 } from './types';
 import { WritableSignal, type Signal } from '@/events/Signal';
@@ -219,12 +219,20 @@ export function projectRuntime(input: {
   return { ...input };
 }
 
-/** Extract the immutable header from a full LSA. */
-export function lsaHeaderOf(lsa: LSA): LSAHeader {
+/**
+ * Extract the immutable header from a full LSA. Accepts any LSA-shaped
+ * record (OSPFv2 `LSA` or an OSPFv3 LSA variant like `OSPFv3LinkLSA`,
+ * whose `lsType` literal falls outside OSPFv2's `LSAType` union) since
+ * only these common header fields are ever read.
+ */
+export function lsaHeaderOf(lsa: {
+  lsAge: number; options: number; lsType: number; linkStateId: string;
+  advertisingRouter: string; lsSequenceNumber: number; checksum: number; length: number;
+}): LSAHeader {
   return {
     lsAge: lsa.lsAge,
     options: lsa.options,
-    lsType: lsa.lsType,
+    lsType: lsa.lsType as LSAType,
     linkStateId: lsa.linkStateId,
     advertisingRouter: lsa.advertisingRouter,
     lsSequenceNumber: lsa.lsSequenceNumber,

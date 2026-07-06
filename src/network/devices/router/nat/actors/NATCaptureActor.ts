@@ -41,12 +41,12 @@ export class NATCaptureActor {
   start(): void {
     if (this.subscriptions.length > 0) return;
     this.subscriptions.push(
-      this.bus.subscribe('nat.engine.configured', (e) => this.append('engine-configured', e.payload)),
-      this.bus.subscribe('nat.session.created', (e) => this.append('session-created', e.payload)),
-      this.bus.subscribe('nat.session.removed', (e) => this.append('session-removed', e.payload)),
-      this.bus.subscribe('nat.translation.applied', (e) => this.append('translation-applied', e.payload)),
-      this.bus.subscribe('nat.tcp.state-changed', (e) => this.append('tcp-state-changed', e.payload)),
-      this.bus.subscribe('nat.stale.sweeped', (e) => this.append('stale-sweeped', e.payload)),
+      this.bus.subscribe('nat.engine.configured', (e) => this.append('engine-configured', e.payload as unknown as Record<string, unknown>)),
+      this.bus.subscribe('nat.session.created', (e) => this.append('session-created', e.payload as unknown as Record<string, unknown>)),
+      this.bus.subscribe('nat.session.removed', (e) => this.append('session-removed', e.payload as unknown as Record<string, unknown>)),
+      this.bus.subscribe('nat.translation.applied', (e) => this.append('translation-applied', e.payload as unknown as Record<string, unknown>)),
+      this.bus.subscribe('nat.tcp.state-changed', (e) => this.append('tcp-state-changed', e.payload as unknown as Record<string, unknown>)),
+      this.bus.subscribe('nat.stale.sweeped', (e) => this.append('stale-sweeped', e.payload as unknown as Record<string, unknown>)),
     );
   }
 

@@ -46,7 +46,6 @@ import {
   type OSPFv3Observables,
 } from './observables';
 import { OSPFv3SignalRefreshActor } from './actors';
-import type { OSPFNeighborState, OSPFInterfaceState, OSPFNeighborEvent } from './types';
 
 // ─── OSPFv3 LSA Types ───────────────────────────────────────────────
 

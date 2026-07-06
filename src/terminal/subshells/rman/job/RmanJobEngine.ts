@@ -51,7 +51,7 @@ export class RmanJobEngine implements IRmanJobEngine {
 
     // 1. Allocate channel
     const chanResult = this._pool.allocate();
-    if (!chanResult.ok) {
+    if (chanResult.ok === false) {
       this._emitFailed(job, chanResult.error, start);
       return ok(undefined);
     }
@@ -73,7 +73,7 @@ export class RmanJobEngine implements IRmanJobEngine {
       // 3. Operation-specific work
       const opResult = this._executeOperation(job, channel.id);
       this._pool.release(channel);
-      if (!opResult.ok) {
+      if (opResult.ok === false) {
         this._emitFailed(job, opResult.error, start);
         return ok(undefined);
       }
@@ -295,7 +295,7 @@ export class RmanJobEngine implements IRmanJobEngine {
     }
     const params = job.params ?? {};
     const snap = this._catalog.listAll();
-    if (!snap.ok) return snap;
+    if (snap.ok === false) return snap;
     let sets = [...snap.value.sets];
     if (params.tag) {
       sets = sets.filter(s => s.tag.label.toUpperCase() === params.tag);
@@ -376,7 +376,7 @@ export class RmanJobEngine implements IRmanJobEngine {
   private _doDuplicate(job: RmanJob, channelId: string): Result<void, RmanError> {
     const aux = (job.params?.auxiliary ?? 'AUX').toUpperCase();
     const snap = this._catalog.listAll();
-    if (!snap.ok) return snap;
+    if (snap.ok === false) return snap;
     if (snap.value.sets.length === 0) {
       return err({ code: 'RMAN_06023', message: 'No backup found to duplicate' });
     }
@@ -404,7 +404,7 @@ export class RmanJobEngine implements IRmanJobEngine {
     let toValue = 1_892_500;
     if (params.untilScn !== undefined) {
       const r = Scn.of(params.untilScn);
-      if (!r.ok) return r;
+      if (r.ok === false) return r;
       fromValue = r.value.value;
       toValue   = r.value.value;
     }
@@ -460,7 +460,7 @@ export class RmanJobEngine implements IRmanJobEngine {
   private _doCrosscheck(job?: RmanJob): Result<void, RmanError> {
     const scope = (job?.params?.scope ?? 'BACKUP').toUpperCase();
     const snap = this._catalog.listAll();
-    if (!snap.ok) return snap;
+    if (snap.ok === false) return snap;
     let available = 0, expired = 0;
     for (const p of snap.value.pieces) {
       const set = snap.value.sets.find(s => s.bsKey === p.bsKey);
@@ -475,7 +475,7 @@ export class RmanJobEngine implements IRmanJobEngine {
 
   private _doDeleteExpired(): Result<void, RmanError> {
     const expired = this._catalog.listExpired();
-    if (!expired.ok) return expired;
+    if (expired.ok === false) return expired;
     const seen = new Set<number>();
     for (const p of expired.value) {
       if (seen.has(p.bsKey)) continue;
