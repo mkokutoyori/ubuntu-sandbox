@@ -22,7 +22,8 @@ export function resetSim(): void {
 export interface L2Step {
   readonly section?: string;
   readonly on?: string;
-  readonly cmd: string;
+  /** Omitted for a section-header-only entry (no command to run). */
+  readonly cmd?: string;
 }
 export type L2StepInput = string | L2Step;
 
