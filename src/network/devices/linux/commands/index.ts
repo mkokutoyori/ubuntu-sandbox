@@ -39,6 +39,7 @@ import { curlCommand } from './net/Curl';
 import { ssCommand } from './net/Ss';
 import { ncCommand } from './net/Nc';
 import { radtestCommand } from './net/Radtest';
+import { tcpdumpCommand } from './net/Tcpdump';
 
 export {
   sysctlCommand,
@@ -65,6 +66,7 @@ export {
   ssCommand,
   ncCommand,
   radtestCommand,
+  tcpdumpCommand,
 };
 
 /**
@@ -95,4 +97,5 @@ export const CORE_LINUX_COMMANDS: readonly LinuxCommand[] = [
   ssCommand,
   ncCommand,
   radtestCommand,
+  tcpdumpCommand,
 ];

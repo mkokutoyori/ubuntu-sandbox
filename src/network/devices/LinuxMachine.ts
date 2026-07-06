@@ -117,7 +117,7 @@ import { UtmpSync } from './linux/network/UtmpSync';
 import { TcpSocketStateProjection } from './linux/network/TcpSocketStateProjection';
 import { TcpdumpCaptureProjection } from './linux/network/TcpdumpCaptureProjection';
 import { LogindStateSync } from './linux/network/LogindStateSync';
-import { runTcpdump, type TcpdumpDeps } from './linux/network/tcpdump/TcpdumpRunner';
+import type { TcpdumpDeps } from './linux/network/tcpdump/TcpdumpRunner';
 import { decodeEthernetFrame, makeLoopbackIcmpFrame, makeTcpFrame, type CaptureFrame } from './linux/network/tcpdump/CaptureFrame';
 
 /**
@@ -1399,10 +1399,6 @@ export abstract class LinuxMachine extends EndHost
     const sessionView = this.renderSessionView(trimmed);
     if (sessionView !== null) return sessionView;
 
-    if (this.isTcpdumpCommand(trimmed)) {
-      return this.runTcpdumpCommand(trimmed);
-    }
-
     if (!this.containsNetworkCommand(trimmed)) {
       return this.executor.execute(trimmed);
     }
@@ -1501,34 +1497,6 @@ export abstract class LinuxMachine extends EndHost
     return false;
   }
 
-  private static splitTopLevel(input: string, sep: ';' | '|'): string[] {
-    const parts: string[] = [];
-    let buf = '';
-    let quote: '"' | "'" | null = null;
-    for (let i = 0; i < input.length; i++) {
-      const ch = input[i];
-      if (quote) {
-        if (ch === quote) quote = null;
-        buf += ch;
-        continue;
-      }
-      if (ch === '"' || ch === "'") { quote = ch; buf += ch; continue; }
-      if (ch === sep) {
-        // `||` is the logical OR operator, not a pipe separator.
-        if (sep === '|' && (input[i + 1] === '|' || input[i - 1] === '|')) {
-          buf += ch;
-          continue;
-        }
-        parts.push(buf);
-        buf = '';
-        continue;
-      }
-      buf += ch;
-    }
-    parts.push(buf);
-    return parts;
-  }
-
   private async tryNetworkCommand(input: string): Promise<string | null> {
     const noSudo = input.startsWith('sudo ') ? input.slice(5).trim() : input;
     const firstCmd = noSudo.split(/[\s|;&]/)[0];
@@ -1547,8 +1515,19 @@ export abstract class LinuxMachine extends EndHost
     // 1. Commands registered in the LinuxCommandRegistry
     const cmd = this.commands.get(firstCmd);
     if (cmd && cmd.needsNetworkContext) {
-      const tokens = noSudo.split(/\s+/);
-      const cmdArgs = tokens.slice(1);
+      // tcpdump's BPF filter expressions are routinely a single quoted,
+      // multi-word argument (`"ip and host 10.0.0.2"`) — the naive
+      // whitespace split below would shred that into several bogus tokens
+      // still carrying stray quote characters, so it alone gets the
+      // quote-aware tokenizer already used by the dedicated handlers
+      // (`iptables` etc.). Every other command keeps the plain whitespace
+      // split: some commands' own edge-case error handling (e.g. ping's
+      // empty-argument/mismatched-quote detection) is tuned against this
+      // exact naive shape, and switching all of them over is a separate,
+      // wider change this PRD doesn't need to make.
+      const cmdArgs = firstCmd === 'tcpdump'
+        ? LinuxMachine.tokenizeArgs(noSudo).slice(1)
+        : noSudo.split(/\s+/).slice(1);
       // --help flag: return auto-generated help instead of running.
       if (cmdArgs.includes('--help')) {
         return renderHelp(cmd);
@@ -1657,6 +1636,9 @@ export abstract class LinuxMachine extends EndHost
     return {
       getPorts(): ReadonlyMap<string, Port> {
         return self.ports;
+      },
+      buildTcpdumpDeps(): TcpdumpDeps {
+        return self.buildTcpdumpDeps();
       },
       configureInterface(name: string, ip: IPAddress, mask: SubnetMask): boolean {
         return self.configureInterface(name, ip, mask);
@@ -2378,18 +2360,6 @@ export abstract class LinuxMachine extends EndHost
 
   subscribeCapture(listener: (pkt: import('./linux/network/PacketCaptureLog').CapturedPacket) => void): () => void {
     return this.executor.captureLog.subscribe(listener);
-  }
-
-  private isTcpdumpCommand(command: string): boolean {
-    const noSudo = command.startsWith('sudo ') ? command.slice(5).trim() : command;
-    if (LinuxMachine.splitTopLevel(noSudo, '|').length > 1) return false;
-    return noSudo.split(/\s+/)[0] === 'tcpdump';
-  }
-
-  private async runTcpdumpCommand(command: string): Promise<string> {
-    const noSudo = command.startsWith('sudo ') ? command.slice(5).trim() : command;
-    const tokens = LinuxMachine.tokenizeArgs(noSudo).slice(1);
-    return runTcpdump(tokens, this.buildTcpdumpDeps());
   }
 
   private buildTcpdumpDeps(): TcpdumpDeps {

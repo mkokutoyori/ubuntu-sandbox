@@ -22,6 +22,7 @@ import type { ARPEntry, HostRouteEntry, HostIPv6RouteEntry, PingResult } from '.
 import type { DHCPClient } from '../../dhcp/DHCPClient';
 import type { DnsQueryFn } from '../../dns/compat/DnsWireCompat';
 import type { TcpStack } from '../../tcp/TcpStack';
+import type { TcpdumpDeps } from './network/tcpdump/TcpdumpRunner';
 
 export interface TracerouteProbe {
   /** True if this probe got a response (Time Exceeded, echo-reply, Port Unreachable, …). */
@@ -52,6 +53,14 @@ export interface LinuxNetKernel {
   // ─── Interfaces ──────────────────────────────────────────────────
   /** Ordered map of port name → Port, as seen by `ip`, `ifconfig`, `arp`. */
   getPorts(): ReadonlyMap<string, Port>;
+
+  /**
+   * Build the dependency bundle `tcpdump` needs (interface state, live
+   * per-port frame capture, capture-file read/write) — PRD-tcpdump.md P1:
+   * the single implementation reached by every invocation form (bare,
+   * piped, redirected), not just the plain non-piped case.
+   */
+  buildTcpdumpDeps(): TcpdumpDeps;
 
   /** Configure IPv4 address + mask on an interface. */
   configureInterface(name: string, ip: IPAddress, mask: SubnetMask): boolean;
