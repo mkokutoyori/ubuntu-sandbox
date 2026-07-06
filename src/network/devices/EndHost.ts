@@ -24,6 +24,7 @@ import { Port } from '../hardware/Port';
 import type { IPv4AddressOrigin } from '../hardware/Port';
 import { SocketTable } from '../core/SocketTable';
 import { TcpStack } from '../tcp/TcpStack';
+import type { TcpSegment } from '../tcp/types';
 import { TimerSet } from '@/events/TimerSet';
 import { getDefaultScheduler, type IScheduler } from '@/events/Scheduler';
 import { waitForEvent, WaitForEventTimeoutError } from '@/events/waitForEvent';
@@ -62,6 +63,7 @@ import {
   ICMP_UNREACH_NET,
   ICMP_UNREACH_PORT,
   ICMP_UNREACH_ADMIN_PROHIBITED,
+  ICMP_UNREACH_FRAG_NEEDED,
   ICMP_TTL_EXPIRED_IN_TRANSIT,
   type ICMPErrorType,
 } from '../core/IcmpErrors';
@@ -1622,12 +1624,30 @@ export abstract class EndHost extends Equipment {
 
       const isHardTcpError = icmp.icmpType === 'destination-unreachable'
         && (icmp.code === ICMP_UNREACH_PORT || icmp.code === ICMP_UNREACH_ADMIN_PROHIBITED);
+      // PRD-TCP.md P7 (RFC 1191/1981) — Fragmentation Needed/Packet Too Big
+      // is not a hard error like the codes above: the path works, our
+      // segment was just too big for it, so this shrinks MSS and
+      // retransmits instead of aborting the connection.
+      const isFragNeeded = icmp.icmpType === 'destination-unreachable'
+        && icmp.code === ICMP_UNREACH_FRAG_NEEDED;
       if (isHardTcpError && icmp.originalPacket) {
         const origSeg = icmp.originalPacket.payload as TCPPacket | undefined;
         if (origSeg && origSeg.type === 'tcp') {
           this.tcpv2.onIcmpUnreachable(
             origSeg.sourcePort, origSeg.destinationPort,
             icmp.originalPacket.destinationIP.toString(),
+          );
+        }
+      } else if (isFragNeeded && icmp.originalPacket && icmp.mtu !== undefined) {
+        // Real TCP traffic in this stack is a `TcpSegment` (`sequence`),
+        // not the legacy `TCPPacket` PDU (`sequenceNumber`) used above —
+        // PMTUD needs the real sequence number to identify the bounced
+        // segment in `unackedQueue`.
+        const origSeg = icmp.originalPacket.payload as TcpSegment | undefined;
+        if (origSeg && origSeg.type === 'tcp') {
+          this.tcpv2.onIcmpFragNeeded(
+            origSeg.sourcePort, origSeg.destinationPort,
+            icmp.originalPacket.destinationIP.toString(), origSeg.sequence, icmp.mtu,
           );
         }
       }

@@ -5,8 +5,8 @@ import {
   type TcpSegment, type TcpFlags, type TcpState, type TcpCloseReason,
   type UnackedSegment, type TcpOption,
   noFlags, flagsString, nextIsn, makeSocketKey, makeListenerKey,
-  computeTcpChecksum, verifyTcpChecksum, seqLt,
-  TCP_DEFAULT_MSS, TCP_DEFAULT_WINDOW, TCP_TIME_WAIT_MS,
+  computeTcpChecksum, verifyTcpChecksum, seqLt, payloadBytes,
+  TCP_DEFAULT_MSS, TCP_DEFAULT_WINDOW, TCP_TIME_WAIT_MS, TCP_MIN_MSS,
 } from './types';
 import { RttEstimator, TCP_MAX_RETRANSMITS, TCP_INITIAL_RTO_MS, TCP_MAX_RTO_MS } from './RttEstimator';
 import { TcpCongestionControl } from './TcpCongestionControl';
@@ -375,6 +375,75 @@ export class TcpStack {
       this._teardown(socket, 'rst');
       return;
     }
+  }
+
+  /**
+   * Minimal Path MTU Discovery (PRD-TCP.md P7, RFC 1191/1981): unlike a
+   * generic unreachable, an ICMP "Fragmentation Needed"/"Packet Too Big"
+   * is not a hard error — the path is fine, our segment was just too big
+   * for it. Shrink MSS to fit the reported next-hop MTU and re-send the
+   * data that bounced, instead of tearing the connection down.
+   */
+  onIcmpFragNeeded(
+    origSourcePort: number, origDestPort: number, origDestIp: string,
+    origSequence: number, nextHopMtu: number,
+  ): void {
+    for (const socket of this.sockets.values()) {
+      if (socket.localPort !== origSourcePort) continue;
+      if (socket.remotePort !== origDestPort) continue;
+      if (socket.remoteIp !== origDestIp) continue;
+      if (socket.state === 'closed' || socket.state === 'time-wait') continue;
+      // A plain outgoing data segment carries a timestamp option whenever
+      // negotiated (see `transmit()`) — omitting its bytes here would
+      // under-estimate the real on-wire size, computing a "corrected" MSS
+      // that's still too big and bounces off the very same hop forever
+      // (the guard below then blocks ever retrying the same value again).
+      const dataSegmentOptions: TcpOption[] = socket.timestampsEnabled
+        ? [{ kind: 'timestamp', tsVal: 0, tsEcr: 0 }] : [];
+      const tcpHeaderBytes = optionsDataOffset(dataSegmentOptions) * 4;
+      const ipHeaderBytes = socket.family === 'ipv6' ? 40 : 20;
+      const newMss = Math.max(TCP_MIN_MSS, nextHopMtu - ipHeaderBytes - tcpHeaderBytes);
+      // Never grow MSS off this signal, but still attempt resegmentation
+      // even when it doesn't need to shrink further: an already-queued
+      // segment chunked at an *earlier*, larger MSS (before a previous
+      // bounce corrected it) can still be individually oversized even
+      // though the running `socket.mss` value is already correct.
+      if (newMss < socket.mss) socket.mss = newMss;
+      this.resegmentAndRetransmit(socket, origSequence);
+      return;
+    }
+  }
+
+  /**
+   * The segment that just bounced off a smaller-MTU hop is sitting,
+   * already-sent, at the head of `unackedQueue` — at its old, now too-big
+   * size. Because this fires synchronously from deep inside that very
+   * segment's own `transmit()` call (this simulator delivers frames —
+   * and therefore ICMP bounces — inline), `unackedQueue[0]` is guaranteed
+   * to still be that exact segment; anything already further along would
+   * only be true for a second, independent in-flight segment, which this
+   * minimal implementation deliberately leaves for the normal RTO path
+   * rather than attempting general reordering.
+   *
+   * Re-chunks the bounced payload by the *new*, smaller MSS and hands it
+   * back to the normal backlog path — resending the same oversized bytes
+   * verbatim would just hit the identical MTU wall again next RTO.
+   */
+  private resegmentAndRetransmit(socket: TcpSocket, origSequence: number): void {
+    const head = socket.unackedQueue[0];
+    if (!head || head.sequence !== origSequence) return;
+    if (typeof head.payload !== 'string' || head.length <= socket.mss) return;
+    socket.unackedQueue.shift();
+    socket.sendNext = head.sequence;
+    const resegmented: Array<{ payload: string; psh: boolean }> = [];
+    let offset = 0;
+    while (offset < head.payload.length) {
+      const chunk = head.payload.slice(offset, offset + socket.mss);
+      offset += chunk.length;
+      resegmented.push({ payload: chunk, psh: head.flags.psh && offset >= head.payload.length });
+    }
+    socket.sendBacklog.unshift(...resegmented);
+    this.flushSendBacklog(socket);
   }
 
   /**
@@ -1183,10 +1252,14 @@ export class TcpStack {
   }
 
   private buildIpv4Segment(srcIp: string, dstIp: string, seg: TcpSegment): IPv4Packet {
+    const tcpHeaderBytes = seg.dataOffset * 4;
     const ipPkt: IPv4Packet = {
       type: 'ipv4', version: 4, ihl: 5, tos: 0,
-      totalLength: 20 + 20 + (seg.payload === undefined ? 0 : 32),
-      identification: nextIPv4Id(), flags: 0, fragmentOffset: 0,
+      totalLength: 20 + tcpHeaderBytes + payloadBytes(seg.payload).length,
+      // PRD-TCP.md P7 (RFC 1191 §1) — DF set, matching real TCP stacks:
+      // without it, a smaller-MTU router would just silently fragment
+      // instead of reporting back so PMTUD can shrink our MSS.
+      identification: nextIPv4Id(), flags: 0b010, fragmentOffset: 0,
       ttl: 64, protocol: IP_PROTO_TCP, headerChecksum: 0,
       sourceIP: new IPAddress(srcIp), destinationIP: new IPAddress(dstIp),
       payload: seg,
@@ -1196,7 +1269,8 @@ export class TcpStack {
   }
 
   private buildIpv6Segment(srcIp: string, dstIp: string, seg: TcpSegment): IPv6Packet {
-    const payloadLength = 20 + (seg.payload === undefined ? 0 : 32);
+    const tcpHeaderBytes = seg.dataOffset * 4;
+    const payloadLength = tcpHeaderBytes + payloadBytes(seg.payload).length;
     return createIPv6Packet(
       new IPv6Address(srcIp), new IPv6Address(dstIp), IP_PROTO_TCP, 64, seg, payloadLength,
     );

@@ -85,6 +85,9 @@ export interface UnackedSegment {
 export const TCP_DEFAULT_MSS = 1460;
 export const TCP_DEFAULT_WINDOW = 65535;
 
+/** Floor for Path MTU Discovery's MSS shrinkage (PRD-TCP.md P7) — real stacks never let a reported Next-Hop MTU drive MSS to something absurdly tiny. */
+export const TCP_MIN_MSS = 8;
+
 /** Maximum Segment Lifetime; TIME-WAIT lasts 2×MSL (RFC 9293 §3.4.1). */
 export const TCP_MSL_MS = 30_000;
 export const TCP_TIME_WAIT_MS = 2 * TCP_MSL_MS;
@@ -115,7 +118,7 @@ function pushPseudoHeader(
   words.push(protocol & 0xffff, l4Length & 0xffff);
 }
 
-function payloadBytes(payload: unknown): number[] {
+export function payloadBytes(payload: unknown): number[] {
   if (typeof payload === 'string') {
     const bytes: number[] = [];
     for (let i = 0; i < payload.length; i++) bytes.push(payload.charCodeAt(i) & 0xff);
