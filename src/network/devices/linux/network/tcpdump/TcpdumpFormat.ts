@@ -60,7 +60,7 @@ const ICMP_PHRASE: Record<string, string> = {
   redirect: 'redirect',
 };
 
-function tcpFlagToken(frame: CaptureFrame): string {
+export function tcpFlagToken(frame: CaptureFrame): string {
   const f = frame.tcpFlags;
   if (!f) return '.';
   let s = '';

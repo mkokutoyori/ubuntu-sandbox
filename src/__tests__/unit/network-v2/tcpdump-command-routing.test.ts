@@ -1,20 +1,3 @@
-/**
- * PRD-tcpdump.md P1 — unified command routing.
- *
- * Before this phase, only a bare, unpiped `tcpdump ...` line (or the
- * interactive terminal session) reached the rich implementation
- * (`TcpdumpRunner`/`TcpdumpFilter`/`CaptureFrame`: full BPF grammar,
- * multi-protocol decode, real filtering). Piping (`tcpdump ... | grep`),
- * redirecting, or otherwise composing the command fell through the bash
- * interpreter into `cmdTcpdump` (`LinuxNetCommands.ts`) — a far more
- * primitive, TCP-only, non-live fallback that never saw ARP/ICMP/UDP
- * traffic at all and only understood a bare `port N` filter.
- *
- * `tcpdump` is now a properly registered network command
- * (`commands/net/Tcpdump.ts`), reached uniformly through
- * `LinuxCommandExecutor`'s network-command dispatch for every invocation
- * form.
- */
 import { describe, it, expect, beforeEach } from 'vitest';
 import { LinuxPC } from '@/network/devices/LinuxPC';
 import { CiscoSwitch } from '@/network/devices/CiscoSwitch';

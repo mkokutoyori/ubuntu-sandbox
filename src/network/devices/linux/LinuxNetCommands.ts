@@ -9,6 +9,9 @@ import type { IpInterfaceInfo, IpNetworkContext } from './LinuxIpCommand';
 import type { SocketTable, SocketEntry, SocketState } from '../../core/SocketTable';
 import type { CapturedPacket, PacketCaptureLog } from './network/PacketCaptureLog';
 import { broadcastAddress, tryIpToUint32, prefixLengthToMaskUint32 } from '../../core/ip';
+import { serializeCaptureFile, deserializeCaptureFile } from './network/tcpdump/CaptureFileFormat';
+import { makeTcpFrame } from './network/tcpdump/CaptureFrame';
+import { tcpFlagToken } from './network/tcpdump/TcpdumpFormat';
 
 export type ServiceResolver = (port: number, proto: string) => string | null;
 
@@ -681,24 +684,26 @@ function formatHexDump(bytes: Uint8Array): string {
 }
 
 function serializeCapture(packets: readonly CapturedPacket[]): string {
-  return JSON.stringify(packets.map(p => ({
-    at: p.at.toISOString(),
-    srcIp: p.srcIp, srcPort: p.srcPort, dstIp: p.dstIp, dstPort: p.dstPort,
-    flags: p.flags, seq: p.seq, ack: p.ack, length: p.length,
-    payload: p.payload ? Array.from(p.payload) : undefined,
-  })));
+  return serializeCaptureFile(packets.map((p) => makeTcpFrame(p, 'eth0')));
 }
 
 function deserializeCapture(raw: string): CapturedPacket[] {
-  try {
-    const arr = JSON.parse(raw) as Array<{ at: string; srcIp: string; srcPort: number; dstIp: string; dstPort: number; flags: string; seq: number; ack: number; length: number; payload?: number[] }>;
-    return arr.map(p => ({
-      at: new Date(p.at),
-      srcIp: p.srcIp, srcPort: p.srcPort, dstIp: p.dstIp, dstPort: p.dstPort,
-      flags: p.flags, seq: p.seq, ack: p.ack, length: p.length,
-      payload: p.payload ? new Uint8Array(p.payload) : undefined,
+  const frames = deserializeCaptureFile(raw);
+  if (frames === null) return [];
+  return frames
+    .filter((f) => f.l4 === 'tcp')
+    .map((f) => ({
+      at: f.at,
+      srcIp: f.srcIp ?? '',
+      srcPort: f.srcPort ?? 0,
+      dstIp: f.dstIp ?? '',
+      dstPort: f.dstPort ?? 0,
+      flags: tcpFlagToken(f),
+      seq: f.tcpSeq ?? 0,
+      ack: f.tcpAck ?? 0,
+      length: f.payloadLength ?? 0,
+      payload: f.tcpPayload ? new Uint8Array(f.tcpPayload) : undefined,
     }));
-  } catch { return []; }
 }
 
 /** Render one captured segment in tcpdump's default one-line form. */

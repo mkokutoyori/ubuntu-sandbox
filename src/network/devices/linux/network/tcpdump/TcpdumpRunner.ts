@@ -7,6 +7,7 @@ import {
   type TcpdumpOptions,
 } from './TcpdumpCli';
 import { banner, footer, formatFrame } from './TcpdumpFormat';
+import { serializeCaptureFile, deserializeCaptureFile } from './CaptureFileFormat';
 
 export interface TcpdumpDeps {
   interfaceNames(): string[];
@@ -22,7 +23,6 @@ export interface TcpdumpDeps {
 
 const CAPTURE_WINDOW_MS = 200;
 const CAPTURE_DEADLINE_WITH_TARGET_MS = 3000;
-const PCAP_MAGIC = 'TCPDUMPSIM1';
 const MAX_FILTER_TOKENS = 64;
 
 export async function runTcpdump(tokens: string[], deps: TcpdumpDeps): Promise<string> {
@@ -111,8 +111,7 @@ async function runCapture(opt: TcpdumpOptions, deps: TcpdumpDeps): Promise<strin
 }
 
 function persistCapture(path: string, frames: CaptureFrame[], deps: TcpdumpDeps): void {
-  const payload = JSON.stringify(frames);
-  deps.writeFile(path, `${PCAP_MAGIC}\n${payload}`);
+  deps.writeFile(path, serializeCaptureFile(frames));
 }
 
 function readCaptureFile(opt: TcpdumpOptions, deps: TcpdumpDeps): string {
@@ -120,21 +119,9 @@ function readCaptureFile(opt: TcpdumpOptions, deps: TcpdumpDeps): string {
   if (content === null) {
     return `tcpdump: error: ${opt.readFile}: No such file or directory`;
   }
-  const newline = content.indexOf('\n');
-  const magic = newline >= 0 ? content.slice(0, newline) : content;
-  if (magic.trim() !== PCAP_MAGIC) {
+  const frames = deserializeCaptureFile(content);
+  if (frames === null) {
     return `tcpdump: error: ${opt.readFile}: unknown file format (bad dump file)`;
-  }
-  let frames: CaptureFrame[];
-  try {
-    const parsed = JSON.parse(content.slice(newline + 1)) as Array<CaptureFrame & { payload?: number[] }>;
-    frames = parsed.map((f) => ({
-      ...f,
-      at: new Date(f.at),
-      tcpPayload: f.tcpPayload ?? f.payload,
-    }));
-  } catch {
-    return `tcpdump: error: ${opt.readFile}: bad dump file format`;
   }
   const filter = compileFilter(opt.filterTokens);
   const predicate = filter.ok ? filter.predicate : () => true;

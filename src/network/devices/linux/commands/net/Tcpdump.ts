@@ -1,14 +1,3 @@
-/**
- * `tcpdump` — registered as a normal network command (PRD-tcpdump.md P1)
- * so it reaches the same rich implementation (`TcpdumpRunner`/
- * `TcpdumpFilter`/`CaptureFrame`) regardless of how it's invoked: bare,
- * piped (`tcpdump ... | grep`), redirected, or as part of any composite
- * shell construct. Before this, only a bare non-piped invocation (or the
- * interactive terminal session) reached that implementation — anything
- * composite fell through the bash interpreter into a far more primitive,
- * TCP-only, non-live fallback (`cmdTcpdump` in `LinuxNetCommands.ts`).
- */
-
 import type { LinuxCommand } from '../LinuxCommand';
 import type { LinuxCommandContext } from '../LinuxCommandContext';
 import { runTcpdump } from '../../network/tcpdump/TcpdumpRunner';

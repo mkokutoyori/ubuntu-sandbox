@@ -118,6 +118,7 @@ import { TcpSocketStateProjection } from './linux/network/TcpSocketStateProjecti
 import { TcpdumpCaptureProjection } from './linux/network/TcpdumpCaptureProjection';
 import { LogindStateSync } from './linux/network/LogindStateSync';
 import type { TcpdumpDeps } from './linux/network/tcpdump/TcpdumpRunner';
+import { serializeCaptureFile } from './linux/network/tcpdump/CaptureFileFormat';
 import { decodeEthernetFrame, makeLoopbackIcmpFrame, makeTcpFrame, type CaptureFrame } from './linux/network/tcpdump/CaptureFrame';
 
 /**
@@ -1515,16 +1516,6 @@ export abstract class LinuxMachine extends EndHost
     // 1. Commands registered in the LinuxCommandRegistry
     const cmd = this.commands.get(firstCmd);
     if (cmd && cmd.needsNetworkContext) {
-      // tcpdump's BPF filter expressions are routinely a single quoted,
-      // multi-word argument (`"ip and host 10.0.0.2"`) — the naive
-      // whitespace split below would shred that into several bogus tokens
-      // still carrying stray quote characters, so it alone gets the
-      // quote-aware tokenizer already used by the dedicated handlers
-      // (`iptables` etc.). Every other command keeps the plain whitespace
-      // split: some commands' own edge-case error handling (e.g. ping's
-      // empty-argument/mismatched-quote detection) is tuned against this
-      // exact naive shape, and switching all of them over is a separate,
-      // wider change this PRD doesn't need to make.
       const cmdArgs = firstCmd === 'tcpdump'
         ? LinuxMachine.tokenizeArgs(noSudo).slice(1)
         : noSudo.split(/\s+/).slice(1);
@@ -2389,11 +2380,8 @@ export abstract class LinuxMachine extends EndHost
         if (v != null) return v;
         const cap = self.executor.captureLog.all();
         if (cap.length === 0) return null;
-        const fakeFrames = cap.map(pkt => ({
-          ...makeTcpFrame(pkt, 'eth0'),
-          payload: pkt.payload ? Array.from(pkt.payload) : undefined,
-        }));
-        return `TCPDUMPSIM1\n${JSON.stringify(fakeFrames)}`;
+        const fakeFrames = cap.map(pkt => makeTcpFrame(pkt, 'eth0'));
+        return serializeCaptureFile(fakeFrames);
       },
       writeFile(path: string, content: string): boolean {
         const abs = self.executor.vfs.normalizePath(path, self.executor.getCwd());
