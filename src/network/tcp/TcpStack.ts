@@ -885,6 +885,12 @@ export class TcpStack {
       const coveredUpTo = (head.sequence + head.length) >>> 0;
       const fullyAcked = coveredUpTo === ackNum || seqLt(coveredUpTo, ackNum);
       if (!fullyAcked) break;
+      // Karn's algorithm (PRD-TCP.md P4, RFC 6298 §2.3): only clock a
+      // segment that was never retransmitted — an ACK covering a
+      // retransmission is ambiguous about which attempt it acknowledges.
+      if (head.retransmitCount === 0) {
+        socket.rtt.sample(this.getScheduler().now() - head.firstSentAtMs);
+      }
       socket.unackedQueue.shift();
       progressed = true;
     }
