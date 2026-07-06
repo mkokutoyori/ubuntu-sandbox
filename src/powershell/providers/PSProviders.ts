@@ -364,6 +364,29 @@ export interface IPkiProvider {
   listCertificates(): (IssuedCertInfo & { thumbprint: string })[];
 }
 
+// ── DFS Namespaces + DFSR (PRD-Windows-Server-Advanced.md §5 P16) ──────────
+
+export interface DfsOpResult { ok: boolean; message: string }
+export interface DfsTargetInfo { serverAddress: string; shareName: string }
+export interface DfsFolderInfo { namespacePath: string; folderName: string; targets: readonly DfsTargetInfo[] }
+export interface DfsrSyncResultInfo { ok: boolean; error?: string; applied: number }
+
+export interface IDfsProvider {
+  /** `New-DfsnRoot -Path <namespacePath>`. */
+  newDfsnRoot(namespacePath: string): DfsOpResult;
+  /** `New-DfsnFolder -Path <namespacePath\folderName> -TargetPath <\\server\share>`. */
+  newDfsnFolder(namespacePath: string, folderName: string, target: DfsTargetInfo): DfsOpResult;
+  /** `New-DfsnFolderTarget` — adds another target to an existing folder. */
+  addDfsnFolderTarget(namespacePath: string, folderName: string, target: DfsTargetInfo): DfsOpResult;
+  /** `Get-DfsnFolder` — the folder's current targets (this simulator's referral resolution). */
+  getDfsnFolder(namespacePath: string, folderName: string): DfsFolderInfo | null;
+
+  /** `New-DfsReplicationGroup -GroupName <name> -ContentPath <localPath>` — this server's own membership. */
+  newDfsReplicationGroup(groupName: string, contentPath: string): DfsOpResult;
+  /** `Sync-DfsReplicationGroup -GroupName <name> -PartnerServer <address>` — one manually-triggered DFSR pull cycle. */
+  syncDfsReplicationGroup(groupName: string, partnerAddress: string): DfsrSyncResultInfo;
+}
+
 // ── DNS Server role (PRD-Windows-Server.md §5 P7) ───────────────────────────
 
 export interface DnsOpResult { ok: boolean; message: string }
@@ -787,4 +810,5 @@ export interface PSProviders {
   readonly iis:            IIisProvider            | null;
   readonly adcs:           IAdcsProvider           | null;
   readonly pki:            IPkiProvider            | null;
+  readonly dfs:            IDfsProvider            | null;
 }

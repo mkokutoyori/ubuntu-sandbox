@@ -24,6 +24,8 @@ import { WindowsDhcpServerRole } from './windows/server/dhcp/WindowsDhcpServerRo
 import { WindowsNpsRole } from './windows/server/nps/WindowsNpsRole';
 import { WindowsIisRole } from './windows/server/iis/WindowsIisRole';
 import { WindowsAdcsRole } from './windows/server/adcs/CaRole';
+import { DfsNamespaceRegistry } from './windows/server/dfs/DfsNamespace';
+import { WindowsDfsrRole } from './windows/server/dfs/DfsReplicationGroup';
 import { randomSessionKey } from '@/network/kerberos/crypto';
 import { dialLdap } from './windows/server/ad/ldap/LdapClient';
 import { pullReplication } from './windows/server/ad/replication/ReplicationSession';
@@ -43,6 +45,8 @@ export class WindowsServer extends WindowsPC {
   private npsRoleInstance: WindowsNpsRole | null = null;
   private iisRoleInstance: WindowsIisRole | null = null;
   private adcsRoleInstance: WindowsAdcsRole | null = null;
+  private dfsNamespaceRoleInstance: DfsNamespaceRegistry | null = null;
+  private dfsrRoleInstance: WindowsDfsrRole | null = null;
 
   constructor(name: string = 'WinServer', x: number = 0, y: number = 0) {
     super('windows-server', name, x, y);
@@ -150,6 +154,35 @@ export class WindowsServer extends WindowsPC {
       this.adcsRoleInstance = new WindowsAdcsRole(() => this.simulatedDate().getTime());
     }
     return this.adcsRoleInstance;
+  }
+
+  /**
+   * PRD Phase 16 (§5 P16): DFS Namespaces — `New-DfsnRoot`/`New-DfsnFolder`
+   * build a logical path redirecting to real `smbShares` targets (§5 P3)
+   * — null while the `FS-DFS-Namespace` role isn't installed.
+   */
+  getDfsNamespaceRole(): DfsNamespaceRegistry | null {
+    if (!this.roleManager.isInstalled('FS-DFS-Namespace')) {
+      this.dfsNamespaceRoleInstance = null;
+      return null;
+    }
+    if (!this.dfsNamespaceRoleInstance) this.dfsNamespaceRoleInstance = new DfsNamespaceRegistry();
+    return this.dfsNamespaceRoleInstance;
+  }
+
+  /**
+   * PRD Phase 16 (§5 P16): DFSR — this server's own membership across
+   * every replication group it's part of; `null` while the
+   * `FS-DFS-Replication` role isn't installed (also gates the TCP/5722
+   * listener registered in `WindowsPC.initDefaultSockets`).
+   */
+  getDfsrRole(): WindowsDfsrRole | null {
+    if (!this.roleManager.isInstalled('FS-DFS-Replication')) {
+      this.dfsrRoleInstance = null;
+      return null;
+    }
+    if (!this.dfsrRoleInstance) this.dfsrRoleInstance = new WindowsDfsrRole(this, this.getFileSystem());
+    return this.dfsrRoleInstance;
   }
 
   /**

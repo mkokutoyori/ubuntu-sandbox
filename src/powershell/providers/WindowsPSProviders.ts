@@ -59,6 +59,7 @@ import type {
   IIisProvider, IisOpResult, WebsiteInfo, AppPoolInfo, NewAppPoolOptions, WebModuleInfo,
   IAdcsProvider, AdcsOpResult, CaTemplateInfo, CertificateRequestResultInfo,
   IPkiProvider, IssuedCertInfo,
+  IDfsProvider, DfsOpResult, DfsTargetInfo, DfsFolderInfo, DfsrSyncResultInfo,
   IDnsServerProvider, DnsOpResult, DnsZoneInfo, DnsRecordInfo,
   IDhcpServerProvider, DhcpOpResult, DhcpScopeInfo, DhcpLeaseInfo,
   INpsProvider, NpsOpResult, NasClientInfo, NetworkPolicyInfo,
@@ -1683,6 +1684,48 @@ class WindowsIisAdapter implements IIisProvider {
   listGlobalModules(): WebModuleInfo[] { return this.requireRole('Get-WebGlobalModule').listGlobalModules(); }
 }
 
+// ── DFS Namespaces + DFSR adapter (PRD-Windows-Server-Advanced.md §5 P16) ──
+
+class WindowsDfsAdapter implements IDfsProvider {
+  constructor(private readonly pc: WindowsPC) {}
+
+  private requireNamespaceRole(cmdletName: string) {
+    if (!this.pc.getRoleManager()?.isInstalled('FS-DFS-Namespace')) {
+      throw new Error(`${cmdletName} is not recognized as the name of a cmdlet, function, script file, or operable program`);
+    }
+    const role = this.pc.getDfsNamespaceRole();
+    if (!role) throw new Error(`${cmdletName} : DFS Namespaces is not available on this computer.`);
+    return role;
+  }
+
+  private requireDfsrRole(cmdletName: string) {
+    if (!this.pc.getRoleManager()?.isInstalled('FS-DFS-Replication')) {
+      throw new Error(`${cmdletName} is not recognized as the name of a cmdlet, function, script file, or operable program`);
+    }
+    const role = this.pc.getDfsrRole();
+    if (!role) throw new Error(`${cmdletName} : DFS Replication is not available on this computer.`);
+    return role;
+  }
+
+  newDfsnRoot(namespacePath: string): DfsOpResult { return this.requireNamespaceRole('New-DfsnRoot').newRoot(namespacePath); }
+  newDfsnFolder(namespacePath: string, folderName: string, target: DfsTargetInfo): DfsOpResult {
+    return this.requireNamespaceRole('New-DfsnFolder').newFolder(namespacePath, folderName, [target]);
+  }
+  addDfsnFolderTarget(namespacePath: string, folderName: string, target: DfsTargetInfo): DfsOpResult {
+    return this.requireNamespaceRole('New-DfsnFolderTarget').addFolderTarget(namespacePath, folderName, target);
+  }
+  getDfsnFolder(namespacePath: string, folderName: string): DfsFolderInfo | null {
+    return this.requireNamespaceRole('Get-DfsnFolder').getFolder(namespacePath, folderName);
+  }
+
+  newDfsReplicationGroup(groupName: string, contentPath: string): DfsOpResult {
+    return this.requireDfsrRole('New-DfsReplicationGroup').newGroup(groupName, contentPath);
+  }
+  syncDfsReplicationGroup(groupName: string, partnerAddress: string): DfsrSyncResultInfo {
+    return this.requireDfsrRole('Sync-DfsReplicationGroup').sync(groupName, partnerAddress);
+  }
+}
+
 // ── AD CS adapter (PRD-Windows-Server-Advanced.md §5 P13) ────────────────
 
 class WindowsAdcsAdapter implements IAdcsProvider {
@@ -1867,5 +1910,6 @@ export function createWindowsPSProviders(
     iis:            pc.getRoleManager() ? new WindowsIisAdapter(pc) : null,
     adcs:           pc.getRoleManager() ? new WindowsAdcsAdapter(pc) : null,
     pki:            new WindowsPkiAdapter(pc),
+    dfs:            pc.getRoleManager() ? new WindowsDfsAdapter(pc) : null,
   };
 }

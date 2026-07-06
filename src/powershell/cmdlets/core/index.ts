@@ -154,6 +154,10 @@ import {
   RestartWebAppPoolCmdlet, GetWebGlobalModuleCmdlet,
 } from './WebAdminCmdlets';
 import { NewSelfSignedCertificateCmdlet } from './PkiCmdlets';
+import {
+  NewDfsnRootCmdlet, NewDfsnFolderCmdlet, NewDfsnFolderTargetCmdlet, GetDfsnFolderCmdlet,
+  NewDfsReplicationGroupCmdlet, SyncDfsReplicationGroupCmdlet,
+} from './DfsCmdlets';
 
 /**
  * Register all core (provider-independent) cmdlets into the given registry.
@@ -470,6 +474,14 @@ export function registerCoreCmdlets(registry: CmdletRegistry): void {
 
   // ── Personal certificate store (PRD-Windows-Server-Advanced.md §5 P14) ─────
   registry.register(new NewSelfSignedCertificateCmdlet());
+
+  // ── DFS Namespaces + DFSR (PRD-Windows-Server-Advanced.md §5 P16) ──────────
+  registry.register(new NewDfsnRootCmdlet());
+  registry.register(new NewDfsnFolderCmdlet());
+  registry.register(new NewDfsnFolderTargetCmdlet());
+  registry.register(new GetDfsnFolderCmdlet());
+  registry.register(new NewDfsReplicationGroupCmdlet());
+  registry.register(new SyncDfsReplicationGroupCmdlet());
 
   // ── Native CLI shims (sync subset) ────────────────────────────────────────
   // ping / tracert stay in the legacy executor — they're async and the

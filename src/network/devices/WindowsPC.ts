@@ -102,6 +102,7 @@ import { cmdNltest, cmdDcdiag, cmdKlist } from './windows/WinDomainDiag';
 import { cmdDnscmd } from './windows/WinDnscmd';
 import { cmdCertreq, cmdCertutil } from './windows/WinCertReq';
 import { WindowsCertStore } from './windows/CertStore';
+import { DFSR_PORT, DfsrServerHandler } from './windows/server/dfs/DfsReplicationGroup';
 import { cmdPrint } from './windows/WinPrint';
 import { executeNslookup } from './linux/LinuxDnsService';
 import { SessionWorkQueue } from './host/session/SessionWorkQueue';
@@ -496,6 +497,18 @@ export class WindowsPC extends EndHost implements UserAccountHost {
         const store = this.getDirectoryStore();
         if (!store) { socket.close(); return; }
         new ReplicationServerHandler(store, this.getHostname(), this.getBus()).register(socket);
+      },
+    });
+
+    // TCP DFSR listener on port 5722 (DFSR's real default RPC endpoint —
+    // PRD-Windows-Server-Advanced.md §5 P16). Refuses (drops) the
+    // connection until the FS-DFS-Replication role is installed, mirroring
+    // the LDAP/KDC/replication listeners above.
+    this.getTcpStack().listen(DFSR_PORT, {
+      onAccept: (socket) => {
+        const role = this.getDfsrRole();
+        if (!role) { socket.close(); return; }
+        new DfsrServerHandler(role.getGroups()).register(socket);
       },
     });
   }
@@ -2512,6 +2525,21 @@ export class WindowsPC extends EndHost implements UserAccountHost {
    * `WindowsServer`; always null on a client, overridden by `WindowsServer`.
    */
   getAdcsRole(): import('./windows/server/adcs/CaRole').WindowsAdcsRole | null { return null; }
+
+  /**
+   * DFS Namespaces role (PRD-Windows-Server-Advanced.md §5 P16) — null
+   * until `Install-WindowsFeature FS-DFS-Namespace` on a `WindowsServer`;
+   * always null on a client, overridden by `WindowsServer`.
+   */
+  getDfsNamespaceRole(): import('./windows/server/dfs/DfsNamespace').DfsNamespaceRegistry | null { return null; }
+
+  /**
+   * DFS Replication role (PRD-Windows-Server-Advanced.md §5 P16) — null
+   * until `Install-WindowsFeature FS-DFS-Replication` on a `WindowsServer`
+   * (also gates the TCP/5722 listener below); always null on a client,
+   * overridden by `WindowsServer`.
+   */
+  getDfsrRole(): import('./windows/server/dfs/DfsReplicationGroup').WindowsDfsrRole | null { return null; }
 
   /** Get the process manager (for PowerShellExecutor and other integrations) */
   getProcessManager(): WindowsProcessManager { return this.procMgr; }

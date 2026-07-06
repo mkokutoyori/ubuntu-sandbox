@@ -62,6 +62,14 @@ export const WINDOWS_FEATURE_CATALOG: readonly WindowsFeatureDef[] = [
     services: ['CertSvc'], psModule: 'ADCSDeployment',
   },
   {
+    name: 'FS-DFS-Namespace', displayName: 'DFS Namespaces',
+    services: ['Dfs'], psModule: 'DFSN',
+  },
+  {
+    name: 'FS-DFS-Replication', displayName: 'DFS Replication',
+    services: ['DFSR'], psModule: 'DFSR',
+  },
+  {
     name: 'RSAT-AD-PowerShell', displayName: 'Active Directory module for Windows PowerShell',
     services: [], psModule: 'ActiveDirectory',
   },
