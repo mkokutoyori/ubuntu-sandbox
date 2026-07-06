@@ -12,6 +12,8 @@ export interface X509CertificateFields {
   readonly extensions?: Readonly<{
     basicConstraints?: { readonly cA: boolean; readonly pathLenConstraint?: number };
     keyUsage?: readonly ('digitalSignature' | 'keyCertSign' | 'cRLSign' | 'keyEncipherment')[];
+    /** RFC 5280 §4.2.1.12 Extended Key Usage (e.g. `serverAuth`, `clientAuth`) — stamped from the issuing AD CS certificate template, if any. */
+    extKeyUsage?: readonly string[];
     subjectAltName?: readonly string[];
     crlDistributionPoints?: readonly string[];
   }>;

@@ -10,6 +10,8 @@ export interface IssueOptions {
   readonly signatureAlgorithm?: 'sha256WithRSAEncryption' | 'ecdsa-with-SHA256';
   readonly crlDistributionPoints?: readonly string[];
   readonly serialNumber?: string;
+  /** RFC 5280 §4.2.1.12 Extended Key Usage — e.g. `['serverAuth']` from an AD CS certificate template. */
+  readonly extKeyUsage?: readonly string[];
 }
 
 export interface IssuedCertificate {
@@ -79,6 +81,7 @@ export class CertificateAuthority {
       extensions: Object.freeze({
         basicConstraints: Object.freeze({ cA: false }),
         keyUsage: Object.freeze(['digitalSignature', 'keyEncipherment'] as const),
+        extKeyUsage: opts.extKeyUsage ? Object.freeze([...opts.extKeyUsage]) : undefined,
         subjectAltName: opts.subjectAltNames ? Object.freeze([...opts.subjectAltNames]) : undefined,
         crlDistributionPoints: opts.crlDistributionPoints ? Object.freeze([...opts.crlDistributionPoints]) : undefined,
       }),

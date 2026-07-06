@@ -56,6 +56,7 @@ import type {
   IComputerProvider, DomainMembershipInfo,
   IGpoProvider, GpoInfo,
   IIisProvider, IisOpResult, WebsiteInfo,
+  IAdcsProvider, AdcsOpResult, CaTemplateInfo, CertificateRequestResultInfo,
   IDnsServerProvider, DnsOpResult, DnsZoneInfo, DnsRecordInfo,
   IDhcpServerProvider, DhcpOpResult, DhcpScopeInfo, DhcpLeaseInfo,
   INpsProvider, NpsOpResult, NasClientInfo, NetworkPolicyInfo,
@@ -1666,6 +1667,39 @@ class WindowsIisAdapter implements IIisProvider {
   stopWebsite(name: string): IisOpResult { return this.requireRole('Stop-Website').stopSite(name); }
 }
 
+// ── AD CS adapter (PRD-Windows-Server-Advanced.md §5 P13) ────────────────
+
+class WindowsAdcsAdapter implements IAdcsProvider {
+  constructor(private readonly pc: WindowsPC) {}
+
+  private requireRole(cmdletName: string) {
+    if (!this.pc.getRoleManager()?.isInstalled('AD-Certificate')) {
+      throw new Error(`${cmdletName} is not recognized as the name of a cmdlet, function, script file, or operable program`);
+    }
+    const role = this.pc.getAdcsRole();
+    if (!role) throw new Error(`${cmdletName} : Active Directory Certificate Services is not available on this computer.`);
+    return role;
+  }
+
+  installCA(caCommonName: string): AdcsOpResult {
+    return this.requireRole('Install-AdcsCertificationAuthority').installCA(caCommonName);
+  }
+
+  listTemplates(): CaTemplateInfo[] {
+    return this.requireRole('Get-CATemplate').listTemplates();
+  }
+
+  getCertificate(templateName: string, dnsName: string, requestedEku?: string): CertificateRequestResultInfo {
+    const res = this.requireRole('Get-Certificate').submitRequest(`CN=${dnsName}`, templateName, { requestedEku });
+    if (!res.ok) return { ok: false, message: res.message };
+    const c = res.certificate!;
+    return {
+      ok: true, message: res.message,
+      certificate: { serialNumber: c.serialNumber, subject: c.subject, issuer: c.issuer, notBefore: c.notBefore, notAfter: c.notAfter },
+    };
+  }
+}
+
 // ── Remoting adapter (Invoke-Command -ComputerName / Test-WSMan) ──────────
 //
 // Resolves the target through the same simulated-topology lookup the SSH
@@ -1790,5 +1824,6 @@ export function createWindowsPSProviders(
     nps:            pc.getRoleManager() ? new WindowsNpsAdapter(pc) : null,
     gpo:            new WindowsGpoAdapter(pc),
     iis:            pc.getRoleManager() ? new WindowsIisAdapter(pc) : null,
+    adcs:           pc.getRoleManager() ? new WindowsAdcsAdapter(pc) : null,
   };
 }

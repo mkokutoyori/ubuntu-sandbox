@@ -124,6 +124,9 @@ import {
   NewADDomainCmdlet, GetADForestCmdlet,
   NewADTrustCmdlet, GetADTrustCmdlet,
 } from './ActiveDirectoryCmdlets';
+import {
+  InstallAdcsCertificationAuthorityCmdlet, GetCATemplateCmdlet, GetCertificateCmdlet,
+} from './AdcsCmdlets';
 import { AddComputerCmdlet } from './ComputerCmdlets';
 import {
   AddDnsServerPrimaryZoneCmdlet, GetDnsServerZoneCmdlet,
@@ -401,6 +404,11 @@ export function registerCoreCmdlets(registry: CmdletRegistry): void {
   registry.register(new GetADForestCmdlet());
   registry.register(new NewADTrustCmdlet());
   registry.register(new GetADTrustCmdlet());
+
+  // ── AD CS (PRD-Windows-Server-Advanced.md §5 P13) ───────────────────────────
+  registry.register(new InstallAdcsCertificationAuthorityCmdlet());
+  registry.register(new GetCATemplateCmdlet());
+  registry.register(new GetCertificateCmdlet());
 
   // ── Domain join (PRD-Windows-Server.md §5 P6) ───────────────────────────────
   registry.register(new AddComputerCmdlet());

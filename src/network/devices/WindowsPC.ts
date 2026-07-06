@@ -100,6 +100,7 @@ import { dialHttp as dialHttpClient, parseHttpUrl } from '@/network/http/HttpCli
 import type { GpoSettings } from './windows/server/ad/AdTypes';
 import { cmdNltest, cmdDcdiag, cmdKlist } from './windows/WinDomainDiag';
 import { cmdDnscmd } from './windows/WinDnscmd';
+import { cmdCertreq, cmdCertutil } from './windows/WinCertReq';
 import { cmdPrint } from './windows/WinPrint';
 import { executeNslookup } from './linux/LinuxDnsService';
 import { SessionWorkQueue } from './host/session/SessionWorkQueue';
@@ -1646,6 +1647,8 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       case 'klist':   return cmdKlist({ ticketCache: this.kerberosTicketCache });
       case 'netdom':  return this.cmdNetdom(args);
       case 'dnscmd':  return cmdDnscmd({ dns: this.getDnsServerRole() }, args);
+      case 'certreq': return cmdCertreq({ adcs: this.getAdcsRole() }, args);
+      case 'certutil': return cmdCertutil({ adcs: this.getAdcsRole() }, args);
       case 'gpupdate': {
         const res = this.gpupdateForce();
         return res.ok
@@ -2498,6 +2501,13 @@ export class WindowsPC extends EndHost implements UserAccountHost {
    * on a client, overridden by `WindowsServer`.
    */
   getIisRole(): import('./windows/server/iis/WindowsIisRole').WindowsIisRole | null { return null; }
+
+  /**
+   * AD CS (Certificate Services) role (PRD-Windows-Server-Advanced.md §5
+   * P13) — null until `Install-WindowsFeature AD-Certificate` on a
+   * `WindowsServer`; always null on a client, overridden by `WindowsServer`.
+   */
+  getAdcsRole(): import('./windows/server/adcs/CaRole').WindowsAdcsRole | null { return null; }
 
   /** Get the process manager (for PowerShellExecutor and other integrations) */
   getProcessManager(): WindowsProcessManager { return this.procMgr; }

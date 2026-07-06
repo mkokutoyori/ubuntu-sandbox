@@ -308,6 +308,26 @@ export interface IIisProvider {
   stopWebsite(name: string): IisOpResult;
 }
 
+// ── AD CS (Certificate Services) role (PRD-Windows-Server-Advanced.md §5 P13) ──
+
+export interface AdcsOpResult { ok: boolean; message: string }
+export interface CaTemplateInfo { name: string; displayName: string; eku: readonly string[]; validityDays: number }
+export interface IssuedCertInfo {
+  serialNumber: string; subject: string; issuer: string; notBefore: number; notAfter: number;
+}
+export interface CertificateRequestResultInfo extends AdcsOpResult {
+  certificate?: IssuedCertInfo;
+}
+
+export interface IAdcsProvider {
+  /** `Install-AdcsCertificationAuthority -CACommonName <name>`. */
+  installCA(caCommonName: string): AdcsOpResult;
+  /** `Get-CATemplate` — every certificate template this CA can issue against. */
+  listTemplates(): CaTemplateInfo[];
+  /** `Get-Certificate -Template <name> -DnsName <subject>` — submits and retrieves a new certificate (this simulator's `certreq -submit` never leaves a request "Pending", so enrollment is synchronous). */
+  getCertificate(templateName: string, subject: string, requestedEku?: string): CertificateRequestResultInfo;
+}
+
 // ── DNS Server role (PRD-Windows-Server.md §5 P7) ───────────────────────────
 
 export interface DnsOpResult { ok: boolean; message: string }
@@ -729,4 +749,5 @@ export interface PSProviders {
   readonly nps:            INpsProvider            | null;
   readonly gpo:            IGpoProvider            | null;
   readonly iis:            IIisProvider            | null;
+  readonly adcs:           IAdcsProvider           | null;
 }

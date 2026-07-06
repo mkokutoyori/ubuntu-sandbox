@@ -58,6 +58,10 @@ export const WINDOWS_FEATURE_CATALOG: readonly WindowsFeatureDef[] = [
     services: ['Spooler'], psModule: 'PrintManagement',
   },
   {
+    name: 'AD-Certificate', displayName: 'Active Directory Certificate Services',
+    services: ['CertSvc'], psModule: 'ADCSDeployment',
+  },
+  {
     name: 'RSAT-AD-PowerShell', displayName: 'Active Directory module for Windows PowerShell',
     services: [], psModule: 'ActiveDirectory',
   },

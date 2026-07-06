@@ -23,6 +23,7 @@ import { WindowsDnsServerRole } from './windows/server/dns/WindowsDnsServerRole'
 import { WindowsDhcpServerRole } from './windows/server/dhcp/WindowsDhcpServerRole';
 import { WindowsNpsRole } from './windows/server/nps/WindowsNpsRole';
 import { WindowsIisRole } from './windows/server/iis/WindowsIisRole';
+import { WindowsAdcsRole } from './windows/server/adcs/CaRole';
 import { randomSessionKey } from '@/network/kerberos/crypto';
 import { dialLdap } from './windows/server/ad/ldap/LdapClient';
 import { pullReplication } from './windows/server/ad/replication/ReplicationSession';
@@ -41,6 +42,7 @@ export class WindowsServer extends WindowsPC {
   private dhcpServerRoleInstance: WindowsDhcpServerRole | null = null;
   private npsRoleInstance: WindowsNpsRole | null = null;
   private iisRoleInstance: WindowsIisRole | null = null;
+  private adcsRoleInstance: WindowsAdcsRole | null = null;
 
   constructor(name: string = 'WinServer', x: number = 0, y: number = 0) {
     super('windows-server', name, x, y);
@@ -129,6 +131,25 @@ export class WindowsServer extends WindowsPC {
       this.iisRoleInstance.start();
     }
     return this.iisRoleInstance;
+  }
+
+  /**
+   * PRD Phase 13 (§5 P13): the AD CS (Certificate Services) role, `CertSvc`
+   * — null while the `AD-Certificate` role isn't installed. Purely local
+   * business logic (no network listener, per PRD §2.1.13): `certreq`/
+   * `certutil` submit requests directly against this instance, which
+   * delegates issuance/signing entirely to `CertificateAuthority` (`src/
+   * network/pki/`, already mature) — no new cryptographic primitive.
+   */
+  getAdcsRole(): WindowsAdcsRole | null {
+    if (!this.roleManager.isInstalled('AD-Certificate')) {
+      this.adcsRoleInstance = null;
+      return null;
+    }
+    if (!this.adcsRoleInstance) {
+      this.adcsRoleInstance = new WindowsAdcsRole(() => this.simulatedDate().getTime());
+    }
+    return this.adcsRoleInstance;
   }
 
   /**
