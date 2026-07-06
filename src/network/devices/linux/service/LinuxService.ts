@@ -43,6 +43,8 @@ export class LinuxService extends OSService implements ServiceUnit {
   startLimitHit?: boolean;
   autoRestartPending?: boolean;
   restartEpochs?: number[];
+  readinessDelayMs?: number;
+  portOverride?: { port: number; source: 'cli' | 'env' | 'config-reload'; cliArg?: string };
 
   constructor(init: ServiceUnit) {
     super({

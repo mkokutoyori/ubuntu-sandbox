@@ -783,7 +783,7 @@ export abstract class BaseParser {
         if (this.matchKeyword('CASCADE')) onDelete = 'CASCADE';
         else { this.expectKeyword('SET'); this.expectKeyword('NULL'); onDelete = 'SET_NULL'; }
       }
-      return this.applyDeferrable({ type: 'ColumnConstraint', position: pos, constraintName, constraintType: 'REFERENCES', refTable, refColumn, onDelete });
+      return this.applyDeferrable<ColumnConstraint>({ type: 'ColumnConstraint', position: pos, constraintName, constraintType: 'REFERENCES', refTable, refColumn, onDelete });
     }
 
     // If we consumed CONSTRAINT name but no recognized constraint follows, backtrack
@@ -804,13 +804,13 @@ export abstract class BaseParser {
       this.expect(TokenType.LPAREN);
       const columns = this.parseIdentifierList();
       this.expect(TokenType.RPAREN);
-      return this.applyDeferrable({ type: 'TableConstraint', position: pos, constraintName, constraintType: 'PRIMARY_KEY', columns });
+      return this.applyDeferrable<TableConstraint>({ type: 'TableConstraint', position: pos, constraintName, constraintType: 'PRIMARY_KEY', columns });
     }
     if (this.matchKeyword('UNIQUE')) {
       this.expect(TokenType.LPAREN);
       const columns = this.parseIdentifierList();
       this.expect(TokenType.RPAREN);
-      return this.applyDeferrable({ type: 'TableConstraint', position: pos, constraintName, constraintType: 'UNIQUE', columns });
+      return this.applyDeferrable<TableConstraint>({ type: 'TableConstraint', position: pos, constraintName, constraintType: 'UNIQUE', columns });
     }
     if (this.matchKeyword('FOREIGN')) {
       this.expectKeyword('KEY');
@@ -832,13 +832,13 @@ export abstract class BaseParser {
         if (this.matchKeyword('CASCADE')) onDelete = 'CASCADE';
         else { this.expectKeyword('SET'); this.expectKeyword('NULL'); onDelete = 'SET_NULL'; }
       }
-      return this.applyDeferrable({ type: 'TableConstraint', position: pos, constraintName, constraintType: 'FOREIGN_KEY', columns, refTable, refColumns, onDelete });
+      return this.applyDeferrable<TableConstraint>({ type: 'TableConstraint', position: pos, constraintName, constraintType: 'FOREIGN_KEY', columns, refTable, refColumns, onDelete });
     }
     if (this.matchKeyword('CHECK')) {
       this.expect(TokenType.LPAREN);
       const checkExpr = this.parseExpression();
       this.expect(TokenType.RPAREN);
-      return this.applyDeferrable({ type: 'TableConstraint', position: pos, constraintName, constraintType: 'CHECK', columns: [], checkExpr });
+      return this.applyDeferrable<TableConstraint>({ type: 'TableConstraint', position: pos, constraintName, constraintType: 'CHECK', columns: [], checkExpr });
     }
 
     throw this.error('Expected constraint type (PRIMARY KEY, UNIQUE, FOREIGN KEY, CHECK)');
@@ -1795,13 +1795,6 @@ export abstract class BaseParser {
       privileges.push(priv);
     } while (this.match(TokenType.COMMA));
     return { privileges, privilegeColumns: Object.keys(cols).length > 0 ? cols : undefined };
-  }
-
-  /** Comma-separated identifier list (`a, b, c`). At least one identifier required. */
-  protected parseIdentifierList(): string[] {
-    const out: string[] = [this.expectIdentifier()];
-    while (this.match(TokenType.COMMA)) out.push(this.expectIdentifier());
-    return out;
   }
 
   protected parsePrivilegeList(): string[] {
