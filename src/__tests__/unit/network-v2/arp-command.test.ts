@@ -24,7 +24,7 @@ import { Logger } from '@/network/core/Logger';
 function setupLinuxLAN() {
   const pc1 = new LinuxPC('PC1', 0, 0);
   const pc2 = new LinuxPC('PC2', 100, 0);
-  const sw = new CiscoSwitch('sw-id', 'SW1', 24, 50, 50);
+  const sw = new CiscoSwitch('switch-cisco', 'SW1', 24, 50, 50);
 
   const cable1 = new Cable('c1');
   cable1.connect(pc1.getPort('eth0')!, sw.getPort('FastEthernet0/1')!);
@@ -35,9 +35,9 @@ function setupLinuxLAN() {
 }
 
 function setupWindowsLAN() {
-  const pc1 = new WindowsPC('WPC1', 0, 0);
-  const pc2 = new WindowsPC('WPC2', 100, 0);
-  const sw = new CiscoSwitch('sw-id', 'SW1', 24, 50, 50);
+  const pc1 = new WindowsPC('windows-pc', 'WPC1', 0, 0);
+  const pc2 = new WindowsPC('windows-pc', 'WPC2', 100, 0);
+  const sw = new CiscoSwitch('switch-cisco', 'SW1', 24, 50, 50);
 
   const cable1 = new Cable('c1');
   cable1.connect(pc1.getPort('eth0')!, sw.getPort('FastEthernet0/1')!);
@@ -637,7 +637,7 @@ describe('EndHost ARP table management', () => {
   it('static entries should be distinguishable from dynamic ones', async () => {
     const pc1 = new LinuxPC('PC1', 0, 0);
     const pc2 = new LinuxPC('PC2', 100, 0);
-    const sw = new CiscoSwitch('sw-id', 'SW1', 24, 50, 50);
+    const sw = new CiscoSwitch('switch-cisco', 'SW1', 24, 50, 50);
     const cable1 = new Cable('c1');
     cable1.connect(pc1.getPort('eth0')!, sw.getPort('FastEthernet0/1')!);
     const cable2 = new Cable('c2');
@@ -677,7 +677,7 @@ describe('Cisco IOS arp commands', () => {
   function setupCiscoTopology() {
     const r1 = new CiscoRouter('R1', 0, 0);
     const pc1 = new LinuxPC('PC1', 100, 0);
-    const sw = new CiscoSwitch('sw-id', 'SW1', 24, 50, 50);
+    const sw = new CiscoSwitch('switch-cisco', 'SW1', 24, 50, 50);
 
     const cable1 = new Cable('c1');
     cable1.connect(r1.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/1')!);
@@ -944,7 +944,7 @@ describe('Cisco Switch arp commands', () => {
   });
 
   function setupSwitch() {
-    return new CiscoSwitch('sw-id', 'SW1', 24, 50, 50);
+    return new CiscoSwitch('switch-cisco', 'SW1', 24, 50, 50);
   }
 
   // ─── show arp should work on switch ────────────────────────────

@@ -23,12 +23,12 @@ function makeLan() {
   pc2.powerOn();
   pc2.configureInterface(pc2.getPorts()[0].getName(), new IPAddress('10.0.0.42'), new SubnetMask('255.255.255.0'));
 
-  new Cable(pc1.getPorts()[0], pc2.getPorts()[0]);
+  new Cable('c1').connect(pc1.getPorts()[0], pc2.getPorts()[0]);
   return { bus, pc1, pc2 };
 }
 
 describe('Unified NSS name resolution (R1)', () => {
-  let pc1: LinuxPC;
+  let pc1: any;
 
   beforeEach(() => {
     ({ pc1 } = makeLan());
