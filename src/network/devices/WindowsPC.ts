@@ -108,6 +108,8 @@ import { cmdQuerySession, cmdLogoff } from './windows/WinRdpCommands';
 import { RDP_PORT, RdpServerHandler, dialRdp, type RdpDialResult } from './windows/server/rdp/RdpSession';
 import { WindowsWsusClientConfig } from './windows/WindowsWsusClientConfig';
 import { WSUS_PORT, WsusServerHandler, queryWsusApprovedUpdates, type WsusUpdate } from './windows/server/wsus/WsusRole';
+import { LPD_PORT, LpdServerHandler } from './windows/server/print/LpdTransport';
+import { cmdLpr } from './windows/WinLpr';
 import { generateSelfSignedCertificate } from '@/network/pki/SelfSignedCertificate';
 import { CertificateVerifier } from '@/network/pki/CertificateVerifier';
 import type { X509Certificate } from '@/network/pki/X509Certificate';
@@ -555,6 +557,18 @@ export class WindowsPC extends EndHost implements UserAccountHost {
         const role = this.getWsusRole();
         if (!role) { socket.close(); return; }
         new WsusServerHandler(role).register(socket);
+      },
+    });
+
+    // TCP LPD listener on port 515 (RFC 1179 — PRD-Windows-Server-
+    // Advanced.md §5 P20). Refuses (drops) the connection until the
+    // Print-Services role is installed, mirroring the DFSR/WSUS listeners
+    // above.
+    this.getTcpStack().listen(LPD_PORT, {
+      onAccept: (socket) => {
+        const role = this.getPrintServerRole();
+        if (!role) { socket.close(); return; }
+        new LpdServerHandler(role).register(socket);
       },
     });
   }
@@ -1708,6 +1722,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       case 'setx':    return this.cmdSetx(args);
       case 'schtasks': return this.cmdSchtasks(args);
       case 'print':    return cmdPrint(this.buildNetContext(), args);
+      case 'lpr':      return cmdLpr({ hostname: this.getHostname(), owner: this.userMgr.currentUser, fs: this.getFileSystem(), tcpStack: this.getTcpStack() }, args);
       case 'nbtstat': return this.cmdNbtstat(args);
       case 'wmic':    return this.cmdWmic(args);
       case 'reg':     return this.cmdReg(args);
@@ -2629,6 +2644,13 @@ export class WindowsPC extends EndHost implements UserAccountHost {
    * null on a client, overridden by `WindowsServer`.
    */
   getWsusRole(): import('./windows/server/wsus/WsusRole').WindowsWsusRole | null { return null; }
+
+  /**
+   * Print and Document Services role (PRD-Windows-Server-Advanced.md §5
+   * P20) — null until `Install-WindowsFeature Print-Services` on a
+   * `WindowsServer`; always null on a client, overridden by `WindowsServer`.
+   */
+  getPrintServerRole(): import('./windows/server/print/PrintServerRole').WindowsPrintServerRole | null { return null; }
 
   /** `Get-WindowsUpdate` — this client's WSUS-approved updates for its configured target group (PRD-Windows-Server-Advanced.md §5 P19); empty if `Set-WUSettings -WUServer` was never run or the server can't be reached. */
   getWindowsUpdates(): WsusUpdate[] {

@@ -64,6 +64,7 @@ import type {
   IClusterProvider, ClusterOpResult, ClusterNodeInfo, ClusterPeerInfo, ClusterGroupInfo,
   IWsusProvider, WsusOpResult, WsusUpdateInfo, WsusApprovalActionInfo,
   IWindowsUpdateProvider,
+  IPrintProvider, PrintOpResult, PrintJobInfo,
   IDnsServerProvider, DnsOpResult, DnsZoneInfo, DnsRecordInfo,
   IDhcpServerProvider, DhcpOpResult, DhcpScopeInfo, DhcpLeaseInfo,
   INpsProvider, NpsOpResult, NasClientInfo, NetworkPolicyInfo,
@@ -1886,6 +1887,33 @@ class WindowsUpdateClientAdapter implements IWindowsUpdateProvider {
   getWindowsUpdates(): WsusUpdateInfo[] { return this.pc.getWindowsUpdates(); }
 }
 
+// ── Print and Document Services adapter (Server Manager — WindowsServer only, gated on Print-Services) ──
+
+class WindowsPrintAdapter implements IPrintProvider {
+  constructor(private readonly pc: WindowsPC) {}
+
+  private requireRole(cmdletName: string) {
+    if (!this.pc.getRoleManager()?.isInstalled('Print-Services')) {
+      throw new Error(`${cmdletName} is not recognized as the name of a cmdlet, function, script file, or operable program`);
+    }
+    const role = this.pc.getPrintServerRole();
+    if (!role) throw new Error(`${cmdletName} : Print and Document Services is not available on this computer.`);
+    return role;
+  }
+
+  addPrinter(shareName: string): PrintOpResult { return this.requireRole('Add-Printer').addPrinter(shareName); }
+
+  getPrintJobs(shareName: string): PrintJobInfo[] {
+    return this.requireRole('Get-PrintJob').listJobs(shareName).map((j) => ({
+      id: j.id, document: j.document, owner: j.owner, submittedAt: j.submittedAt.getTime(), size: j.size, status: j.status,
+    }));
+  }
+
+  removePrintJob(shareName: string, jobId: number): PrintOpResult {
+    return this.requireRole('Remove-PrintJob').removeJob(shareName, jobId);
+  }
+}
+
 // ── Remoting adapter (Invoke-Command -ComputerName / Test-WSMan) ──────────
 //
 // Resolves the target through the same simulated-topology lookup the SSH
@@ -2017,5 +2045,6 @@ export function createWindowsPSProviders(
     cluster:        pc.getRoleManager() ? new WindowsClusterAdapter(pc) : null,
     wsus:           pc.getRoleManager() ? new WindowsWsusAdapter(pc) : null,
     windowsUpdate:  new WindowsUpdateClientAdapter(pc),
+    print:          pc.getRoleManager() ? new WindowsPrintAdapter(pc) : null,
   };
 }

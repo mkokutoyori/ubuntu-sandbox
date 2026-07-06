@@ -28,6 +28,7 @@ import { DfsNamespaceRegistry } from './windows/server/dfs/DfsNamespace';
 import { WindowsDfsrRole } from './windows/server/dfs/DfsReplicationGroup';
 import { ClusterService, type ClusterPeerConfig } from './windows/server/cluster/ClusterService';
 import { WindowsWsusRole } from './windows/server/wsus/WsusRole';
+import { WindowsPrintServerRole } from './windows/server/print/PrintServerRole';
 import { randomSessionKey } from '@/network/kerberos/crypto';
 import { dialLdap } from './windows/server/ad/ldap/LdapClient';
 import { pullReplication } from './windows/server/ad/replication/ReplicationSession';
@@ -51,6 +52,7 @@ export class WindowsServer extends WindowsPC {
   private dfsrRoleInstance: WindowsDfsrRole | null = null;
   private clusterServiceInstance: ClusterService | null = null;
   private wsusRoleInstance: WindowsWsusRole | null = null;
+  private printServerRoleInstance: WindowsPrintServerRole | null = null;
 
   constructor(name: string = 'WinServer', x: number = 0, y: number = 0) {
     super('windows-server', name, x, y);
@@ -239,6 +241,23 @@ export class WindowsServer extends WindowsPC {
     }
     if (!this.wsusRoleInstance) this.wsusRoleInstance = new WindowsWsusRole();
     return this.wsusRoleInstance;
+  }
+
+  /**
+   * PRD Phase 20 (§5 P20): the Print and Document Services role's shared
+   * queues — null while `Print-Services` isn't installed (also gates the
+   * TCP/515 LPD listener registered in `WindowsPC.initDefaultSockets`).
+   * `Print-Services` itself was already part of the base PRD's role
+   * catalog (§5 P2) since `LanmanServer`-style built-in services ship on
+   * every SKU; this phase is the first to actually attach a role object.
+   */
+  getPrintServerRole(): WindowsPrintServerRole | null {
+    if (!this.roleManager.isInstalled('Print-Services')) {
+      this.printServerRoleInstance = null;
+      return null;
+    }
+    if (!this.printServerRoleInstance) this.printServerRoleInstance = new WindowsPrintServerRole();
+    return this.printServerRoleInstance;
   }
 
   /**

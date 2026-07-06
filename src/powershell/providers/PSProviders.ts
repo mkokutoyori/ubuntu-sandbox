@@ -453,6 +453,23 @@ export interface IWindowsUpdateProvider {
   getWindowsUpdates(): WsusUpdateInfo[];
 }
 
+// ── Print and Document Services (PRD-Windows-Server-Advanced.md §5 P20) ────
+
+export interface PrintOpResult { ok: boolean; message: string }
+export type PrintJobStatusInfo = 'Spooling' | 'Printing' | 'Completed' | 'Error';
+export interface PrintJobInfo {
+  id: number; document: string; owner: string; submittedAt: number; size: number; status: PrintJobStatusInfo;
+}
+
+export interface IPrintProvider {
+  /** `Add-Printer -ShareName <name>` — exposes a new shared queue, reachable by remote hosts via LPD (RFC 1179, TCP/515). */
+  addPrinter(shareName: string): PrintOpResult;
+  /** `Get-PrintJob -PrinterName <shareName>`. */
+  getPrintJobs(shareName: string): PrintJobInfo[];
+  /** `Remove-PrintJob -PrinterName <shareName> -ID <jobId>`. */
+  removePrintJob(shareName: string, jobId: number): PrintOpResult;
+}
+
 // ── DNS Server role (PRD-Windows-Server.md §5 P7) ───────────────────────────
 
 export interface DnsOpResult { ok: boolean; message: string }
@@ -888,4 +905,5 @@ export interface PSProviders {
   readonly cluster:        IClusterProvider        | null;
   readonly wsus:           IWsusProvider           | null;
   readonly windowsUpdate:  IWindowsUpdateProvider  | null;
+  readonly print:          IPrintProvider          | null;
 }

@@ -168,6 +168,7 @@ import {
 import {
   GetWsusUpdateCmdlet, ApproveWsusUpdateCmdlet, SetWUSettingsCmdlet, GetWindowsUpdateCmdlet,
 } from './WsusCmdlets';
+import { AddPrinterCmdlet, GetPrintJobCmdlet, RemovePrintJobCmdlet } from './PrintCmdlets';
 
 /**
  * Register all core (provider-independent) cmdlets into the given registry.
@@ -512,6 +513,11 @@ export function registerCoreCmdlets(registry: CmdletRegistry): void {
   registry.register(new ApproveWsusUpdateCmdlet());
   registry.register(new SetWUSettingsCmdlet());
   registry.register(new GetWindowsUpdateCmdlet());
+
+  // ── Print and Document Services (PRD-Windows-Server-Advanced.md §5 P20) ────
+  registry.register(new AddPrinterCmdlet());
+  registry.register(new GetPrintJobCmdlet());
+  registry.register(new RemovePrintJobCmdlet());
 
   // ── Native CLI shims (sync subset) ────────────────────────────────────────
   // ping / tracert stay in the legacy executor — they're async and the
