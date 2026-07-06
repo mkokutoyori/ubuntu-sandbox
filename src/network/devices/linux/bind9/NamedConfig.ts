@@ -52,15 +52,25 @@ export interface NamedKey {
   readonly secret: string;
 }
 
+/** One `inet` clause of a `controls{}` block — the `rndc` control channel's listen spec. */
+export interface NamedControls {
+  readonly address: string;
+  readonly port: number;
+  readonly allow: AddressMatchList;
+  readonly keys: readonly string[];
+}
+
 export interface NamedConfig {
   readonly options: NamedOptions;
   readonly zones: readonly NamedZone[];
   readonly acls: ReadonlyMap<string, AddressMatchList>;
   readonly logging: NamedLogging;
   readonly keys: ReadonlyMap<string, NamedKey>;
+  readonly controls: readonly NamedControls[];
 }
 
 const DEFAULT_DIRECTORY = '/var/cache/bind';
+const DEFAULT_RNDC_PORT = 953;
 const DEFAULT_DNS_PORT = 53;
 const DEFAULT_SEVERITY = 'info';
 const ZONE_TYPE_ALIASES: Readonly<Record<string, ZoneType>> = {
@@ -364,6 +374,71 @@ function parseKey(statement: NamedConfStatement): NamedKey {
   return { name, algorithm, secret };
 }
 
+/**
+ * A `controls{}` `inet` clause packs two nested blocks (`allow{}` and
+ * `keys{}`) into one statement, which `NamedConfStatement.block` can't
+ * represent (it only exposes the *first* nested block) — so this walks
+ * `statement.parts` directly, pairing each block with the keyword that
+ * immediately preceded it.
+ */
+function blocksByLabel(
+  statement: NamedConfStatement,
+): Map<string, readonly NamedConfStatement[]> {
+  const result = new Map<string, readonly NamedConfStatement[]>();
+  let pendingLabel: string | null = null;
+  for (const part of statement.parts) {
+    if (part.kind === 'value') {
+      pendingLabel = part.value.text;
+    } else if (part.kind === 'block' && pendingLabel) {
+      result.set(pendingLabel, part.statements);
+      pendingLabel = null;
+    }
+  }
+  return result;
+}
+
+function parseControlsInet(
+  statement: NamedConfStatement,
+  acls: ReadonlyMap<string, AddressMatchList>,
+  keys: ReadonlyMap<string, NamedKey>,
+): NamedControls {
+  const values = argsOf(statement);
+  const address = values[0];
+  if (!address) fail(statement, "expected address after 'inet'");
+
+  let port = DEFAULT_RNDC_PORT;
+  if (values[1] === 'port') {
+    const parsed = Number(values[2]);
+    if (!Number.isInteger(parsed)) fail(statement, `expected port number near '${values[2] ?? ';'}'`);
+    port = parsed;
+  }
+
+  const blocks = blocksByLabel(statement);
+  const allowBlock = blocks.get('allow');
+  const allow = allowBlock ? AddressMatchList.fromStatements(allowBlock, acls) : AddressMatchList.none();
+
+  const keysBlock = blocks.get('keys') ?? [];
+  const keyNames = keysBlock.map((entry) => keywordOf(entry));
+  for (const name of keyNames) {
+    if (!keys.has(name)) fail(statement, `no key definition for '${name}'`);
+  }
+
+  return { address, port, allow, keys: keyNames };
+}
+
+function parseControls(
+  statement: NamedConfStatement,
+  acls: ReadonlyMap<string, AddressMatchList>,
+  keys: ReadonlyMap<string, NamedKey>,
+): NamedControls[] {
+  const result: NamedControls[] = [];
+  for (const entry of requireBlock(statement)) {
+    if (keywordOf(entry) !== 'inet') fail(entry, "expected 'inet' in controls block");
+    result.push(parseControlsInet(entry, acls, keys));
+  }
+  return result;
+}
+
 export function buildNamedConfig(statements: readonly NamedConfStatement[]): NamedConfig {
   const acls = new Map<string, AddressMatchList>();
   const options = defaultOptions();
@@ -371,6 +446,7 @@ export function buildNamedConfig(statements: readonly NamedConfStatement[]): Nam
   const categories = new Map<string, readonly string[]>();
   const keys = new Map<string, NamedKey>();
   const zoneStatements: NamedConfStatement[] = [];
+  const controlsStatements: NamedConfStatement[] = [];
 
   for (const statement of statements) {
     const keyword = keywordOf(statement);
@@ -397,6 +473,7 @@ export function buildNamedConfig(statements: readonly NamedConfStatement[]): Nam
         break;
       }
       case 'controls':
+        controlsStatements.push(statement);
         break;
       default:
         fail(statement, `unknown option '${keyword}'`);
@@ -411,11 +488,17 @@ export function buildNamedConfig(statements: readonly NamedConfStatement[]): Nam
     zones.push(zone);
   }
 
+  const controls: NamedControls[] = [];
+  for (const statement of controlsStatements) {
+    controls.push(...parseControls(statement, acls, keys));
+  }
+
   return {
     options,
     zones,
     acls,
     logging: { channels, categories },
     keys,
+    controls,
   };
 }

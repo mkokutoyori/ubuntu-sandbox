@@ -266,7 +266,7 @@ logging {
       .toThrowError(`${CONF}:2: channel 'nope': not defined`);
   });
 
-  it('parses a key clause and tolerates a controls clause', () => {
+  it('parses a key clause and really interprets the controls clause (PRD-Nslookup-Dig-Rndc-Runas.md P6)', () => {
     const config = build(`
 key "rndc-key" { algorithm hmac-sha256; secret "c2VjcmV0"; };
 controls { inet 127.0.0.1 port 953 allow { 127.0.0.1; } keys { "rndc-key"; }; };
@@ -276,6 +276,62 @@ controls { inet 127.0.0.1 port 953 allow { 127.0.0.1; } keys { "rndc-key"; }; };
       algorithm: 'hmac-sha256',
       secret: 'c2VjcmV0',
     });
+    expect(config.controls).toHaveLength(1);
+    expect(config.controls[0].address).toBe('127.0.0.1');
+    expect(config.controls[0].port).toBe(953);
+    expect(config.controls[0].keys).toEqual(['rndc-key']);
+    expect(config.controls[0].allow.matches('127.0.0.1', LAN_ENV)).toBe(true);
+    expect(config.controls[0].allow.matches('10.0.1.10', LAN_ENV)).toBe(false);
+  });
+
+  it('defaults the controls port to 953 when not given', () => {
+    const config = build(`
+key "rndc-key" { algorithm hmac-sha256; secret "c2VjcmV0"; };
+controls { inet 127.0.0.1 allow { 127.0.0.1; } keys { "rndc-key"; }; };
+`);
+
+    expect(config.controls[0].port).toBe(953);
+  });
+
+  it('accepts the "*" wildcard address and an "any" allow list', () => {
+    const config = build(`
+key "rndc-key" { algorithm hmac-sha256; secret "c2VjcmV0"; };
+controls { inet * port 953 allow { any; } keys { "rndc-key"; }; };
+`);
+
+    expect(config.controls[0].address).toBe('*');
+    expect(config.controls[0].allow.matches('10.0.1.10', LAN_ENV)).toBe(true);
+  });
+
+  it('parses multiple inet clauses in one controls block', () => {
+    const config = build(`
+key "rndc-key" { algorithm hmac-sha256; secret "c2VjcmV0"; };
+controls {
+  inet 127.0.0.1 port 953 allow { 127.0.0.1; } keys { "rndc-key"; };
+  inet 10.0.1.10 port 954 allow { 10.0.1.0/24; } keys { "rndc-key"; };
+};
+`);
+
+    expect(config.controls).toHaveLength(2);
+    expect(config.controls[1].address).toBe('10.0.1.10');
+    expect(config.controls[1].port).toBe(954);
+    expect(config.controls[1].allow.matches('10.0.1.10', LAN_ENV)).toBe(true);
+  });
+
+  it('defaults controls to an empty array when no controls clause is given', () => {
+    const config = build('key "rndc-key" { algorithm hmac-sha256; secret "c2VjcmV0"; };');
+
+    expect(config.controls).toEqual([]);
+  });
+
+  it('rejects a controls clause referencing an undefined key', () => {
+    expect(() => build('controls { inet 127.0.0.1 port 953 allow { 127.0.0.1; } keys { "nope"; }; };'))
+      .toThrowError(`${CONF}:1: no key definition for 'nope'`);
+  });
+
+  it('rejects a controls clause with something other than inet inside', () => {
+    expect(() => build('controls { tcp 127.0.0.1; };'))
+      .toThrowError(`${CONF}:1: expected 'inet' in controls block`);
   });
 
   it('exposes structured fields on NamedConfigError', () => {
