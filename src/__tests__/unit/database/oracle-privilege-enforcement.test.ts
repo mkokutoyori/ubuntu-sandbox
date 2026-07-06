@@ -22,14 +22,14 @@ let db: OracleDatabase;
 let sys: OracleExecutor;
 
 function setup() {
-  db = new OracleDatabase('test-device');
+  db = new OracleDatabase();
   db.instance.startup();
   sys = db.connectAsSysdba().executor;
 }
 
 function execSys(sql: string) {
   const rs = db.executeSql(sys, sql);
-  if (rs.error) throw new Error(rs.error);
+  if (rs.message?.startsWith('ORA-')) throw new Error(rs.message);
   return rs;
 }
 
@@ -39,7 +39,7 @@ function connectAs(user: string, pwd: string): OracleExecutor {
 
 function execAs(executor: OracleExecutor, sql: string) {
   const rs = db.executeSql(executor, sql);
-  if (rs.error) throw new Error(rs.error);
+  if (rs.message?.startsWith('ORA-')) throw new Error(rs.message);
   return rs;
 }
 
@@ -97,7 +97,7 @@ describe('CREATE TABLE enforcement', () => {
     execSys("GRANT UNLIMITED TABLESPACE TO tabuser");
     const user = connectAs('TABUSER', 'pass');
     const rs = execAs(user, "CREATE TABLE t1 (id NUMBER)");
-    expect(rs.error).toBeUndefined();
+    expect(rs.message).not.toMatch(/^ORA-/);
   });
 
   it('SYSDBA can CREATE TABLE without explicit grant', () => {
@@ -111,7 +111,7 @@ describe('CREATE TABLE enforcement', () => {
     execSys("GRANT DBA TO dbau");
     const user = connectAs('DBAU', 'pass');
     const rs = execAs(user, "CREATE TABLE dba_owned (id NUMBER)");
-    expect(rs.error).toBeUndefined();
+    expect(rs.message).not.toMatch(/^ORA-/);
   });
 });
 
@@ -126,7 +126,7 @@ describe('DROP TABLE enforcement', () => {
     const user = connectAs('OWNER1', 'pass');
     execAs(user, "CREATE TABLE mine (id NUMBER)");
     const rs = execAs(user, "DROP TABLE mine");
-    expect(rs.error).toBeUndefined();
+    expect(rs.message).not.toMatch(/^ORA-/);
   });
 
   it('user cannot DROP another schema\'s table without DROP ANY TABLE', () => {
@@ -151,7 +151,7 @@ describe('DROP TABLE enforcement', () => {
 
     const b = connectAs('KILLERB', 'pass');
     const rs = execAs(b, "DROP TABLE killerA.droppable");
-    expect(rs.error).toBeUndefined();
+    expect(rs.message).not.toMatch(/^ORA-/);
   });
 });
 
@@ -172,7 +172,7 @@ describe('User-management DDL enforcement', () => {
     execSys("GRANT CREATE SESSION, CREATE USER TO admin1");
     const user = connectAs('ADMIN1', 'pass');
     const rs = execAs(user, "CREATE USER created_by_admin IDENTIFIED BY p");
-    expect(rs.error).toBeUndefined();
+    expect(rs.message).not.toMatch(/^ORA-/);
   });
 
   it('DROP USER fails without DROP USER priv', () => {
@@ -196,7 +196,7 @@ describe('User-management DDL enforcement', () => {
     execSys("GRANT CREATE SESSION TO selfchange");
     const user = connectAs('SELFCHANGE', 'oldpass');
     const rs = execAs(user, "ALTER USER selfchange IDENTIFIED BY newpass");
-    expect(rs.error).toBeUndefined();
+    expect(rs.message).not.toMatch(/^ORA-/);
   });
 });
 
@@ -219,7 +219,7 @@ describe('GRANT enforcement', () => {
     execSys("CREATE USER target2 IDENTIFIED BY pass");
     const user = connectAs('GRANTOR', 'pass');
     const rs = execAs(user, "GRANT CREATE TABLE TO target2");
-    expect(rs.error).toBeUndefined();
+    expect(rs.message).not.toMatch(/^ORA-/);
   });
 });
 
@@ -300,6 +300,6 @@ describe('DML cross-schema enforcement', () => {
 
     const w = connectAs('WRITER2', 'pass');
     const rs = execAs(w, "INSERT INTO tabowner2.wtbl2 VALUES (1)");
-    expect(rs.error).toBeUndefined();
+    expect(rs.message).not.toMatch(/^ORA-/);
   });
 });

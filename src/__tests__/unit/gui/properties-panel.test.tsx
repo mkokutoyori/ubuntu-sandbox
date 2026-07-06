@@ -2,14 +2,23 @@
 
 import '@testing-library/jest-dom/vitest';
 import { render, screen } from '@testing-library/react';
-import { describe, it, beforeEach, vi } from 'vitest';
+import { describe, it, beforeEach, vi, expect } from 'vitest';
 import { PropertiesPanel } from '@/components/network/PropertiesPanel';
 import type { Connection, NetworkDeviceUI } from '@/store/networkStore';
 import type { Equipment } from '@/network';
 
-let storeState: ReturnType<typeof buildStoreState>;
+interface StoreState {
+  getDevices: () => NetworkDeviceUI[];
+  connections: Connection[];
+  selectedDeviceId: string | null;
+  selectedConnectionId: string | null;
+  updateDevice: ReturnType<typeof vi.fn>;
+  selectDevice: ReturnType<typeof vi.fn>;
+}
 
-function buildStoreState(overrides?: Partial<ReturnType<typeof buildStoreState>>) {
+let storeState: StoreState;
+
+function buildStoreState(overrides?: Partial<StoreState>): StoreState {
   return {
     getDevices: () => [] as NetworkDeviceUI[],
     connections: [] as Connection[],
@@ -48,7 +57,6 @@ function fakeConnection(overrides: Partial<Connection>): Connection {
     id: 'conn-1', type: 'ethernet',
     sourceDeviceId: 'dev-1', sourceInterfaceId: 'eth0',
     targetDeviceId: 'dev-2', targetInterfaceId: 'eth1',
-    isActive: true,
     cable: {} as Connection['cable'],
     ...overrides,
   };
@@ -69,7 +77,7 @@ describe('PropertiesPanel (component)', () => {
   it('renders connection details when a connection is selected', () => {
     const devices: NetworkDeviceUI[] = [
       fakeDevice({ id: 'dev-1', name: 'Workstation' }),
-      fakeDevice({ id: 'dev-2', type: 'cisco-router', name: 'Router', hostname: 'rtr-1' }),
+      fakeDevice({ id: 'dev-2', type: 'router-cisco', name: 'Router', hostname: 'rtr-1' }),
     ];
     const connection = fakeConnection({});
     storeState = buildStoreState({
