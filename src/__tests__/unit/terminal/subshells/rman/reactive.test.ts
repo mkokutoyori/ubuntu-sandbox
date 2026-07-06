@@ -55,7 +55,7 @@ describe('Operators.filter', () => {
   it('keeps values matching the predicate', () => {
     const s = new RmanSubject<number>();
     const seen: number[] = [];
-    s.pipe(Operators.filter(n => n % 2 === 0)).subscribe(v => seen.push(v));
+    s.asObservable().pipe(Operators.filter(n => n % 2 === 0)).subscribe(v => seen.push(v));
     s.next(1); s.next(2); s.next(3); s.next(4);
     expect(seen).toEqual([2, 4]);
   });
@@ -65,7 +65,7 @@ describe('Operators.map', () => {
   it('transforms each value', () => {
     const s = new RmanSubject<number>();
     const seen: string[] = [];
-    s.pipe(Operators.map(n => `n=${n}`)).subscribe(v => seen.push(v));
+    s.asObservable().pipe(Operators.map(n => `n=${n}`)).subscribe(v => seen.push(v));
     s.next(1); s.next(2);
     expect(seen).toEqual(['n=1', 'n=2']);
   });
@@ -76,7 +76,7 @@ describe('Operators.ofType', () => {
   it('narrows by type guard', () => {
     const subj = new RmanSubject<E>();
     const seen: E[] = [];
-    subj.pipe(Operators.ofType((e): e is Extract<E, { type: 'a' }> => e.type === 'a'))
+    subj.asObservable().pipe(Operators.ofType((e): e is Extract<E, { type: 'a' }> => e.type === 'a'))
         .subscribe(v => seen.push(v));
     subj.next({ type: 'a', n: 1 });
     subj.next({ type: 'b', s: 'x' });
@@ -89,7 +89,7 @@ describe('Operators.distinctUntilChanged', () => {
   it('suppresses consecutive duplicates', () => {
     const s = new RmanSubject<number>();
     const seen: number[] = [];
-    s.pipe(Operators.distinctUntilChanged()).subscribe(v => seen.push(v));
+    s.asObservable().pipe(Operators.distinctUntilChanged()).subscribe(v => seen.push(v));
     s.next(1); s.next(1); s.next(2); s.next(2); s.next(1);
     expect(seen).toEqual([1, 2, 1]);
   });

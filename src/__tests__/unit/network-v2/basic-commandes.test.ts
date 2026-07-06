@@ -19,7 +19,7 @@ import { Logger } from '@/network/core/Logger';
 function setupLinuxTopology() {
   const pc1 = new LinuxPC('PC1', 0, 0);
   const pc2 = new LinuxPC('PC2', 100, 0);
-  const sw = new CiscoSwitch('sw-id', 'SW1', 24, 50, 50);
+  const sw = new CiscoSwitch('switch-cisco', 'SW1', 24, 50, 50);
 
   const cable1 = new Cable('c1');
   cable1.connect(pc1.getPort('eth0')!, sw.getPort('FastEthernet0/1')!);
@@ -30,9 +30,9 @@ function setupLinuxTopology() {
 }
 
 function setupWindowsTopology() {
-  const pc1 = new WindowsPC('WPC1', 0, 0);
-  const pc2 = new WindowsPC('WPC2', 100, 0);
-  const sw = new CiscoSwitch('sw-id', 'SW1', 24, 50, 50);
+  const pc1 = new WindowsPC('windows-pc', 'WPC1', 0, 0);
+  const pc2 = new WindowsPC('windows-pc', 'WPC2', 100, 0);
+  const sw = new CiscoSwitch('switch-cisco', 'SW1', 24, 50, 50);
 
   const cable1 = new Cable('c1');
   cable1.connect(pc1.getPort('eth0')!, sw.getPort('FastEthernet0/1')!);
@@ -739,7 +739,7 @@ describe('Cisco IOS Interface Subnet configurations', () => {
   });
 
   it('83. should prevent setting IP address on active layer 2 Switchports', async () => {
-    const sw = new CiscoSwitch('sw-id', 'SW1', 24, 0, 0);
+    const sw = new CiscoSwitch('switch-cisco', 'SW1', 24, 0, 0);
     await sw.executeCommand('enable');
     await sw.executeCommand('configure terminal');
     await sw.executeCommand('interface FastEthernet0/2');
@@ -750,7 +750,7 @@ describe('Cisco IOS Interface Subnet configurations', () => {
   it('84. should reject IP on physical ports of an L2-only switch (no routed ports)', async () => {
     // The simulated switch is a pure Layer-2 device: physical ports cannot be
     // converted to routed L3 ports, so an IP address stays rejected.
-    const sw = new CiscoSwitch('sw-id', 'SW1', 24, 0, 0);
+    const sw = new CiscoSwitch('switch-cisco', 'SW1', 24, 0, 0);
     await sw.executeCommand('enable');
     await sw.executeCommand('configure terminal');
     await sw.executeCommand('interface FastEthernet0/2');
