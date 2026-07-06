@@ -408,7 +408,7 @@ export interface PSTypeLiteral extends ASTBase {
 
 // ─── Unary expressions ────────────────────────────────────────────────────────
 
-export type PSUnaryOperator = '-not' | '!' | '-bnot' | '+' | '-';
+export type PSUnaryOperator = '-not' | '!' | '-bnot' | '+' | '-' | ',';
 
 export interface PSUnaryExpression extends ASTBase {
   type: 'UnaryExpression';

@@ -25,7 +25,7 @@ import { makeTimeSpan } from '@/powershell/cmdlets/core/DateTimeCmdlets';
 import { formatDotNetDate } from '@/powershell/runtime/dotnetDateFormat';
 import { CmdletRegistry } from '@/powershell/runtime/PSCmdletRegistry';
 import { NULL_PROVIDERS } from '@/powershell/providers/NullProviders';
-import { formatDefault } from '@/network/devices/windows/PSPipeline';
+import { formatDefault, type PSObject } from '@/network/devices/windows/PSPipeline';
 import type { PSProviders } from '@/powershell/providers/PSProviders';
 import type { CmdletContext, IRuntimeRef } from '@/powershell/cmdlets/CmdletContext';
 import type {
@@ -258,7 +258,7 @@ STATIC_TYPES['system.environment'] = STATIC_TYPES['environment'];
 
 const makeArrayList = (): PSValue => {
   const arr: PSValue[] = [];
-  (arr as Record<string, PSValue>)['__list__'] = arr as unknown as PSValue;
+  (arr as unknown as Record<string, PSValue>)['__list__'] = arr as unknown as PSValue;
   Object.defineProperty(arr, 'Count', { get: () => arr.length, enumerable: false, configurable: true });
   return arr as unknown as PSValue;
 };
@@ -320,7 +320,7 @@ export class PSRuntime {
       // least one string-keyed field) → table format.
       const arr = result as PSValue[];
       if (arr.length > 0 && arr.every(v => v !== null && typeof v === 'object' && !Array.isArray(v) && !(v instanceof Date))) {
-        const formatted = formatDefault(arr as Array<Record<string, unknown>>);
+        const formatted = formatDefault(arr as unknown as PSObject[]);
         if (formatted) this.outputLines.push(formatted);
         return;
       }
@@ -338,7 +338,7 @@ export class PSRuntime {
         && Object.keys(result as Record<string, unknown>).length > 0
         && !this.hasInternalSentinel(result as Record<string, unknown>)
         && this.allScalarValues(result as Record<string, unknown>)) {
-      const formatted = formatDefault([result as Record<string, unknown>]);
+      const formatted = formatDefault([result as unknown as PSObject]);
       if (formatted) { this.outputLines.push(formatted); return; }
     }
     this.outputLines.push(psValueToString(result));
@@ -1088,7 +1088,10 @@ export class PSRuntime {
   // ═══════════════════════════════════════════════════════════════════════════
 
   evalExpr(node: PSExpression, env: PSEnvironment): PSValue {
-    switch (node.type) {
+    // The parser also fabricates 'AssignmentStatement' / 'StatementExpression'
+    // pseudo-nodes force-cast to PSExpression (see PSParser.ts) for contexts
+    // like `$x = 1` used as an expression — hence the loose cast here.
+    switch (node.type as PSExpression['type'] | 'AssignmentStatement' | 'StatementExpression') {
       case 'LiteralExpression':        return this.evalLiteral(node as PSLiteralExpression, env);
       case 'VariableExpression':       return this.evalVariable(node as PSVariableExpression, env);
       case 'BinaryExpression':         return this.evalBinary(node as PSBinaryExpression, env);
@@ -1552,7 +1555,7 @@ export class PSRuntime {
     const fromFile = flags.includes('file');
 
     if (fromFile) {
-      const content = typeof subject === 'string' ? (this.io?.readFile?.(subject) ?? '') : '';
+      const content = typeof subject === 'string' ? (this.providers.filesystem?.readFile(subject) ?? '') : '';
       subject = content.split(/\r?\n/).filter(Boolean);
     }
     const subjects: PSValue[] = Array.isArray(subject) ? subject : [subject];
@@ -1819,7 +1822,7 @@ export class PSRuntime {
     const nameNode = node.name;
 
     // $x++ / $x-- encoded as AssignmentStatement in command-name position
-    if (nameNode.type === 'AssignmentStatement')
+    if ((nameNode.type as string) === 'AssignmentStatement')
       return this.execAssignment(nameNode as unknown as PSAssignmentStatement, env);
 
     // ++$x / --$x
@@ -2577,7 +2580,7 @@ export class PSRuntime {
     if (typeof obj === 'string')  return this.getStringMember(obj, member);
 
     // ArrayList IS an array with a __list__ sentinel — handle list-style methods first
-    if (Array.isArray(obj) && (obj as Record<string, unknown>)['__list__'] !== undefined) {
+    if (Array.isArray(obj) && (obj as unknown as Record<string, unknown>)['__list__'] !== undefined) {
       const list = obj as PSValue[];
       switch (member) {
         case 'add':      return (v: PSValue) => { list.push(v); return null; };

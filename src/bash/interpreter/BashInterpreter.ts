@@ -224,7 +224,7 @@ export class BashInterpreter {
 
   private driveSync<T>(gen: Effects<T>): T {
     let step = gen.next();
-    while (!step.done) {
+    while (step.done !== true) {
       let feed: ExternalCommandResult;
       try {
         const raw = this.executeCommand(step.value.argv, step.value.env, step.value.background);
@@ -250,7 +250,7 @@ export class BashInterpreter {
 
   private async driveAsync<T>(gen: Effects<T>): Promise<T> {
     let step = gen.next();
-    while (!step.done) {
+    while (step.done !== true) {
       let feed: ExternalCommandResult;
       try {
         feed = normalizeResult(await this.executeCommand(step.value.argv, step.value.env, step.value.background));
@@ -941,7 +941,7 @@ export class BashInterpreter {
     for (const redir of redirections) {
       const target = yield* this.expandWordG(redir.target);
       const path = this.io.resolvePath(target);
-      const append = redir.op === '>>' || redir.op === '&>>';
+      const append = redir.op === '>>';
 
       try {
         if (redir.op === '>&') {
@@ -1017,7 +1017,7 @@ export class BashInterpreter {
     for (const redir of redirections) {
       const target = yield* this.expandWordG(redir.target);
       const path = this.io.resolvePath(target);
-      const append = redir.op === '>>' || redir.op === '&>>';
+      const append = redir.op === '>>';
       try {
         if (redir.op === '>&' && /^\d+$/.test(target)) {
           // fd dup (`>&2`): treat as stderr-handled so the stdout stream
