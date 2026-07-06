@@ -66,6 +66,8 @@ import { ReactiveRmanSubShell } from '@/terminal/subshells/rman/ReactiveRmanSubS
 import { SftpSubShell } from '@/terminal/subshells/SftpSubShell';
 import { FtpSubShell } from '@/terminal/subshells/FtpSubShell';
 import { FtpClientSession } from '@/network/ftp/FtpClientSession';
+import { NslookupSubShell } from '@/terminal/subshells/NslookupSubShell';
+import { readResolverIP } from '@/network/devices/linux/commands/dns/resolverIP';
 import { RemoteShellSubShell } from '@/terminal/subshells/RemoteShellSubShell';
 import { installDefaultShells } from '@/shell/registerDefaults';
 import { ShellFactory } from '@/shell/ShellFactory';
@@ -1506,6 +1508,10 @@ export class LinuxTerminalSession extends TerminalSession {
         this.enterFtp(parts.slice(1));
         return;
       }
+      if (parts[0] === 'nslookup' && parts.length === 1) {
+        this.enterNslookup();
+        return;
+      }
       if (parts[0] === 'ssh') {
         await this.enterSsh(parts.slice(1));
         return;
@@ -2316,6 +2322,29 @@ export class LinuxTerminalSession extends TerminalSession {
       localHome: homeDir,
       localCwd: this.currentPath,
     });
+    this.activeSubShell = shell;
+    this._inputBuf = '';
+    this.notify();
+  }
+
+  /** `nslookup` with no arguments (PRD-Nslookup-Dig-Rndc-Runas.md §2.1.1) — real `nslookup(1)`'s interactive `>` REPL. */
+  private enterNslookup(): void {
+    const dev = this.device as unknown as {
+      net?: import('@/network/devices/linux/LinuxNetKernel').LinuxNetKernel;
+      executor?: import('@/network/devices/linux/LinuxCommandExecutor').LinuxCommandExecutor;
+    };
+    if (!dev.net || !dev.executor) {
+      this.addLine('nslookup: this device does not support DNS lookups', 'error');
+      this.notify();
+      return;
+    }
+    const initialServer = readResolverIP(dev.executor);
+    const net = dev.net;
+    const shell = new NslookupSubShell({
+      query: (s, n, t, ms) => net.queryDns(s, n, t, ms),
+      initialServer,
+    });
+    for (const line of shell.bannerLines()) this.addLine(line);
     this.activeSubShell = shell;
     this._inputBuf = '';
     this.notify();
