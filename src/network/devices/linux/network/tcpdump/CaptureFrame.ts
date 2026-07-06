@@ -3,6 +3,7 @@ import {
   ETHERTYPE_IPV4,
   ETHERTYPE_IPV6,
   IP_PROTO_ICMP,
+  IP_PROTO_ICMPV6,
   IP_PROTO_TCP,
   IP_PROTO_UDP,
   ethernetFrameBytes,
@@ -11,6 +12,7 @@ import {
   type IPv6Packet,
   type ARPPacket,
   type ICMPPacket,
+  type ICMPv6Packet,
   type TCPPacket,
   type UDPPacket,
 } from '@/network/core/types';
@@ -79,8 +81,18 @@ function ipBytes(ip: string): number[] {
   return parts.slice(0, 4);
 }
 
+function ipv6Bytes(hextets: readonly number[]): number[] {
+  const bytes: number[] = [];
+  for (const h of hextets) bytes.push(...u16(h));
+  return bytes;
+}
+
 function u16(value: number): number[] {
   return [(value >> 8) & 0xff, value & 0xff];
+}
+
+function u32(value: number): number[] {
+  return [(value >>> 24) & 0xff, (value >>> 16) & 0xff, (value >>> 8) & 0xff, value & 0xff];
 }
 
 const ICMP_TYPE_BYTE: Record<string, number> = {
@@ -89,6 +101,18 @@ const ICMP_TYPE_BYTE: Record<string, number> = {
   redirect: 5,
   'echo-request': 8,
   'time-exceeded': 11,
+};
+
+const ICMPV6_TYPE_BYTE: Record<string, number> = {
+  'destination-unreachable': 1,
+  'packet-too-big': 2,
+  'time-exceeded': 3,
+  'echo-request': 128,
+  'echo-reply': 129,
+  'router-solicitation': 133,
+  'router-advertisement': 134,
+  'neighbor-solicitation': 135,
+  'neighbor-advertisement': 136,
 };
 
 function synthIcmpBytes(icmp: ICMPPacket): number[] {
@@ -129,6 +153,44 @@ function synthIpv4Bytes(pkt: IPv4Packet): number[] {
     ...ipBytes(pkt.destinationIP.toString()),
   ];
   return [...header, ...synthL4Bytes(pkt)];
+}
+
+function synthIcmpv6Bytes(icmp: ICMPv6Packet): number[] {
+  const type = ICMPV6_TYPE_BYTE[icmp.icmpType] ?? 128;
+  const header = [type, icmp.code & 0xff, ...u16(0)];
+  if (icmp.id !== undefined && icmp.sequence !== undefined) {
+    header.push(...u16(icmp.id & 0xffff), ...u16(icmp.sequence & 0xffff));
+  }
+  const data: number[] = [];
+  for (let i = 0; i < (icmp.dataSize ?? 0); i++) data.push(i & 0xff);
+  return [...header, ...data];
+}
+
+function synthL4BytesV6(pkt: IPv6Packet): number[] {
+  const payload = pkt.payload as { type?: string };
+  if (payload?.type === 'icmpv6') return synthIcmpv6Bytes(pkt.payload as ICMPv6Packet);
+  if (payload?.type === 'tcp') {
+    const tcp = pkt.payload as TCPPacket;
+    return [...u16(tcp.sourcePort), ...u16(tcp.destinationPort)];
+  }
+  if (payload?.type === 'udp') {
+    const udp = pkt.payload as UDPPacket;
+    return [...u16(udp.sourcePort), ...u16(udp.destinationPort), ...u16(udp.length), ...u16(0)];
+  }
+  return [];
+}
+
+function synthIpv6Bytes(pkt: IPv6Packet): number[] {
+  const versionTrafficFlow = (6 << 28) | ((pkt.trafficClass & 0xff) << 20) | (pkt.flowLabel & 0xfffff);
+  const header = [
+    ...u32(versionTrafficFlow >>> 0),
+    ...u16(pkt.payloadLength & 0xffff),
+    pkt.nextHeader & 0xff,
+    pkt.hopLimit & 0xff,
+    ...ipv6Bytes(pkt.sourceIP.getHextets()),
+    ...ipv6Bytes(pkt.destinationIP.getHextets()),
+  ];
+  return [...header, ...synthL4BytesV6(pkt)];
 }
 
 function synthArpBytes(arp: ARPPacket): number[] {
@@ -211,9 +273,12 @@ export function decodeEthernetFrame(
     base.l3 = 'ipv6';
     base.srcIp = ip6.sourceIP.toString();
     base.dstIp = ip6.destinationIP.toString();
-    const inner = ip6.payload as { type?: string } | undefined;
-    base.l4 = inner?.type === 'icmpv6' ? 'icmp6' : inner?.type === 'tcp' ? 'tcp' : inner?.type === 'udp' ? 'udp' : 'other';
-    const built = withEthernet(frame, []);
+    base.ttl = ip6.hopLimit;
+    base.ipProtocol = ip6.nextHeader;
+    base.ipTotalLength = ip6.payloadLength + 40;
+    base.ipHeaderLen = 40;
+    decodeIpv6Payload(base, ip6);
+    const built = withEthernet(frame, synthIpv6Bytes(ip6));
     base.raw = built.raw;
     base.rawLinkOffset = built.offset;
     return base;
@@ -250,6 +315,40 @@ function decodeIpv4Payload(base: CaptureFrame, ip: IPv4Packet): void {
   }
   if (ip.protocol === IP_PROTO_UDP) {
     const udp = ip.payload as UDPPacket;
+    base.l4 = 'udp';
+    base.srcPort = udp.sourcePort;
+    base.dstPort = udp.destinationPort;
+    base.payloadLength = Math.max(0, (udp.length ?? 8) - 8);
+    return;
+  }
+  base.l4 = 'other';
+}
+
+function decodeIpv6Payload(base: CaptureFrame, ip6: IPv6Packet): void {
+  if (ip6.nextHeader === IP_PROTO_ICMPV6) {
+    const icmp = ip6.payload as ICMPv6Packet;
+    base.l4 = 'icmp6';
+    base.icmpType = icmp.icmpType;
+    base.icmpCode = icmp.code;
+    base.icmpId = icmp.id;
+    base.icmpSeq = icmp.sequence;
+    base.payloadLength = ip6.payloadLength;
+    return;
+  }
+  if (ip6.nextHeader === IP_PROTO_TCP) {
+    const tcp = ip6.payload as TCPPacket;
+    base.l4 = 'tcp';
+    base.srcPort = tcp.sourcePort;
+    base.dstPort = tcp.destinationPort;
+    base.tcpFlags = { ...tcp.flags };
+    base.tcpSeq = tcp.sequenceNumber;
+    base.tcpAck = tcp.acknowledgementNumber;
+    base.tcpWindow = tcp.windowSize;
+    base.payloadLength = Math.max(0, ip6.payloadLength - 20);
+    return;
+  }
+  if (ip6.nextHeader === IP_PROTO_UDP) {
+    const udp = ip6.payload as UDPPacket;
     base.l4 = 'udp';
     base.srcPort = udp.sourcePort;
     base.dstPort = udp.destinationPort;

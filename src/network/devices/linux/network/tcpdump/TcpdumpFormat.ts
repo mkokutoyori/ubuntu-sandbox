@@ -128,6 +128,13 @@ function ipLine(frame: CaptureFrame, opt: TcpdumpOptions): string {
   return `IP ${src} > ${dst}: ${detail}`;
 }
 
+function ip6Line(frame: CaptureFrame, opt: TcpdumpOptions): string {
+  const withPort = frame.l4 === 'tcp' || frame.l4 === 'udp';
+  const src = endpoint(frame.srcIp, withPort ? frame.srcPort : undefined);
+  const dst = endpoint(frame.dstIp, withPort ? frame.dstPort : undefined);
+  return `IP6 ${src} > ${dst}: ${l4Detail(frame, opt)}`;
+}
+
 function ethPrefix(frame: CaptureFrame): string {
   const typeName = frame.l3 === 'arp' ? 'ARP' : frame.l3 === 'ipv6' ? 'IPv6' : 'IPv4';
   const typeHex = frame.l3 === 'arp' ? '0x0806' : frame.l3 === 'ipv6' ? '0x86dd' : '0x0800';
@@ -165,8 +172,7 @@ export function formatFrame(frame: CaptureFrame, opt: TcpdumpOptions, prev: Date
   } else if (frame.l3 === 'ipv4') {
     body = opt.linkLevel ? `${ethPrefix(frame)}${ipLine(frame, opt)}` : ipLine(frame, opt);
   } else if (frame.l3 === 'ipv6') {
-    const detail = l4Detail(frame, opt);
-    const line = `IP6 ${frame.srcIp} > ${frame.dstIp}: ${detail}`;
+    const line = ip6Line(frame, opt);
     body = opt.linkLevel ? `${ethPrefix(frame)}${line}` : line;
   } else {
     body = opt.linkLevel ? `${frame.srcMac} > ${frame.dstMac}, ethertype Unknown (0x${frame.etherType.toString(16)}), length ${frame.length}` : `unknown ethertype 0x${frame.etherType.toString(16)}`;
