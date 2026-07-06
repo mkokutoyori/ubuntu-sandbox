@@ -23,6 +23,7 @@ import { WindowsPC } from '@/network/devices/WindowsPC';
 import type { WindowsShellSession } from '@/network/devices/windows/shell/WindowsShellSession';
 import { findHostByAddress } from '@/network/devices/linux/network/HostLookup';
 import { parseCredentialArg } from '@/powershell/cmdlets/core/RemotingCmdlets';
+import { makePSCredential, formatPSCredentialTable } from '@/powershell/credential/PSCredential';
 
 /**
  * Tokens that bypass the interpreter and go straight to the legacy
@@ -144,6 +145,9 @@ export class PowerShellSubShell implements ISubShell {
 
     const readHostHit = await this.tryReadHostIntercept(trimmed);
     if (readHostHit) return readHostHit;
+
+    const getCredentialHit = await this.tryGetCredentialIntercept(trimmed);
+    if (getCredentialHit) return getCredentialHit;
 
     // Track history for Get-History
     if (trimmed) {
@@ -475,6 +479,40 @@ export class PowerShellSubShell implements ISubShell {
       prompt: this.getPrompt(),
     };
   }
+
+  /**
+   * `Get-Credential` (PRD-Nslookup-Dig-Rndc-Runas.md §2.1.7/P13) — same
+   * subshell-level string interception as `Read-Host` above (the tree-walking
+   * interpreter has no async/interactive-broker access, so neither cmdlet
+   * has a normal `ICmdlet` — both are handled here, before the interpreter
+   * ever sees the line). Prompts for a user name (unless `-UserName`/a bare
+   * positional was given) then a masked password, and binds a real
+   * `PSCredentialValue` — not a plain string — to the target variable.
+   */
+  private async tryGetCredentialIntercept(line: string): Promise<SubShellResult | null> {
+    if (!this._broker) return null;
+    if (!this._broker.capabilities().interactive) return null;
+    const parsed = parseGetCredential(line);
+    if (!parsed) return null;
+
+    let userName = parsed.userName;
+    if (!userName) {
+      const namePrompt = parsed.message ? `${parsed.message}\nUser name:` : 'User name:';
+      const entered = await this._broker.ask(namePrompt);
+      if (entered === null) return { output: [], exit: false, prompt: this.getPrompt() };
+      userName = entered;
+    }
+
+    const password = await this._broker.password(`Password for user ${userName}:`);
+    if (password === null) return { output: [], exit: false, prompt: this.getPrompt() };
+
+    const cred = makePSCredential(userName, password);
+    if (parsed.bindTo) {
+      this.interp.setVariable(parsed.bindTo, cred);
+      return { output: [], exit: false, prompt: this.getPrompt() };
+    }
+    return { output: formatPSCredentialTable(cred), exit: false, prompt: this.getPrompt() };
+  }
 }
 
 interface ParsedReadHost {
@@ -498,6 +536,28 @@ function parseReadHost(line: string): ParsedReadHost | null {
     if (i === 0 && !t.startsWith('-')) { prompt = t; continue; }
   }
   return { bindTo: m[1] ?? null, prompt, secure };
+}
+
+interface ParsedGetCredential {
+  bindTo: string | null;
+  userName: string | null;
+  message: string | null;
+}
+
+function parseGetCredential(line: string): ParsedGetCredential | null {
+  const m = line.match(/^\s*(?:\$([A-Za-z_][A-Za-z_0-9]*)\s*=\s*)?Get-Credential\b(.*)$/i);
+  if (!m) return null;
+  const tail = m[2].trim();
+  let userName: string | null = null;
+  let message: string | null = null;
+  const tokens = tokenizePS(tail);
+  for (let i = 0; i < tokens.length; i++) {
+    const t = tokens[i];
+    if (/^-UserName$/i.test(t) && i + 1 < tokens.length) { userName = tokens[++i]; continue; }
+    if (/^-Message$/i.test(t) && i + 1 < tokens.length) { message = tokens[++i]; continue; }
+    if (i === 0 && !t.startsWith('-')) { userName = t; continue; }
+  }
+  return { bindTo: m[1] ?? null, userName, message };
 }
 
 function tokenizePS(line: string): string[] {
