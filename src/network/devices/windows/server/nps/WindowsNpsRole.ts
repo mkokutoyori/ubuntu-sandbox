@@ -27,17 +27,37 @@
  */
 
 import type { EndHost } from '@/network/devices/EndHost';
-import { RadiusServerAgent, type RadiusServerHost } from '@/network/radius/RadiusServerAgent';
+import { RadiusServerAgent, type RadiusServerHost, type RadiusUserResolverContext } from '@/network/radius/RadiusServerAgent';
 import { attr, type RadiusUser, type RadiusAttribute } from '@/network/radius/types';
 import { getDefaultEventBus } from '@/events/EventBus';
 import { IPAddress } from '@/network/core/types';
 import type { WindowsUserManager } from '@/network/devices/windows/WindowsUserManager';
 import type { DirectoryStore } from '@/network/devices/windows/server/ad/DirectoryStore';
 import type { PSEventLogProvider } from '@/network/devices/windows/PSEventLogProvider';
+import { NpsSqlAccountingTable } from './NpsSqlAccounting';
+import type { ResultSet } from '@/database/engine/executor/ResultSet';
 
 export interface NpsOpResult { ok: boolean; message: string }
-export interface NasClientInfo { name: string; ipAddress: string }
+export interface NasClientInfo { name: string; ipAddress: string; nasType?: string }
 export interface NetworkPolicyInfo { name: string; group: string; vlanId?: number; sessionTimeoutSec?: number }
+
+/**
+ * `New-NpsConnectionRequestPolicy` conditions (PRD-Windows-Server-
+ * Advanced.md §5 P22, §2.1.21) — a fuller condition set than the single-
+ * group `NetworkPolicyInfo` above, evaluated *before* it. `days` uses
+ * `Date.getDay()` numbering (0 = Sunday .. 6 = Saturday); `startHour`/
+ * `endHour` are 0-23, inclusive-start/exclusive-end.
+ */
+export interface ConnectionRequestPolicyConditions {
+  group?: string;
+  nasType?: string;
+  clientIpAddress?: string;
+  daysAndTimes?: { days: readonly number[]; startHour: number; endHour: number };
+}
+export interface ConnectionRequestPolicyInfo {
+  name: string;
+  conditions: ConnectionRequestPolicyConditions;
+}
 
 export interface NpsUserStore {
   getUserManager(): WindowsUserManager;
@@ -55,13 +75,18 @@ export class WindowsNpsRole {
   private readonly agent: RadiusServerAgent;
   private readonly nasClients = new Map<string, NasClientInfo>();
   private readonly policies: NetworkPolicyInfo[] = [];
+  private readonly connectionRequestPolicies: ConnectionRequestPolicyInfo[] = [];
   private running = false;
   private unsubscribeAuditLog: (() => void) | null = null;
+  private unsubscribeAccounting: (() => void) | null = null;
+  private sqlAccounting: NpsSqlAccountingTable | null = null;
+  private sqlLoggingEnabled = false;
 
   constructor(
     private readonly host: EndHost,
     private readonly userStore: NpsUserStore,
     private readonly eventLog: PSEventLogProvider,
+    private readonly getNow: () => Date = () => new Date(),
   ) {
     const radiusHost: RadiusServerHost = {
       id: host.getId(), name: host.getName(),
@@ -71,7 +96,7 @@ export class WindowsNpsRole {
       sendFrame: (p: string, f) => { host.sendFrame(p, f); },
     };
     this.agent = new RadiusServerAgent(radiusHost, () => getDefaultEventBus());
-    this.agent.setUserResolver((username) => this.resolveUser(username));
+    this.agent.setUserResolver((username, context) => this.resolveUser(username, context));
   }
 
   isRunning(): boolean { return this.running; }
@@ -96,6 +121,18 @@ export class WindowsNpsRole {
           `Network Policy Server denied access to a user.\n\nUser:\n\tSecurity ID:\t\t${p.username}\n\tAccount Name:\t\t${p.username}`);
       }
     });
+    this.unsubscribeAccounting = getDefaultEventBus().subscribe('radius.accounting.record', (e) => {
+      const p = e.payload as {
+        deviceId: string; sessionId: string; username: string; status: string;
+        sessionTimeSec: number; inputOctets: number; outputOctets: number;
+      };
+      if (p.deviceId !== this.host.getId()) return;
+      if (!this.sqlLoggingEnabled || !this.sqlAccounting) return;
+      this.sqlAccounting.insert({
+        sessionId: p.sessionId, username: p.username, status: p.status,
+        sessionTimeSec: p.sessionTimeSec, inputOctets: p.inputOctets, outputOctets: p.outputOctets,
+      });
+    });
     this.running = true;
   }
 
@@ -106,16 +143,34 @@ export class WindowsNpsRole {
     this.agent.stop();
     this.unsubscribeAuditLog?.();
     this.unsubscribeAuditLog = null;
+    this.unsubscribeAccounting?.();
+    this.unsubscribeAccounting = null;
     this.running = false;
+  }
+
+  // ─── SQL accounting (PRD-Windows-Server-Advanced.md §5 P22) ─────────
+
+  /** `Set-NpsAccountingConfiguration -SqlLogging` — redirects the accounting records this role already produces into a simulated SQL table (`NpsSqlAccountingTable`, built on this project's own `OracleDatabase`) instead of a flat file. */
+  setSqlAccounting(enabled: boolean): NpsOpResult {
+    this.sqlLoggingEnabled = enabled;
+    if (enabled && !this.sqlAccounting) this.sqlAccounting = new NpsSqlAccountingTable();
+    return { ok: true, message: '' };
+  }
+
+  isSqlAccountingEnabled(): boolean { return this.sqlLoggingEnabled; }
+
+  /** Runs a read query against the accounting table (e.g. `SELECT * FROM RADIUS_ACCOUNTING`) — null until SQL logging has been enabled at least once. */
+  queryAccounting(sql: string): ResultSet | null {
+    return this.sqlAccounting ? this.sqlAccounting.query(sql) : null;
   }
 
   // ─── NAS clients (New-NpsRadiusClient / netsh nps add client) ───────
 
-  addNasClient(name: string, ipAddress: string, sharedSecret: string): NpsOpResult {
+  addNasClient(name: string, ipAddress: string, sharedSecret: string, nasType?: string): NpsOpResult {
     if (this.nasClients.has(name)) {
       return { ok: false, message: `New-NpsRadiusClient : A RADIUS client named "${name}" already exists.` };
     }
-    this.nasClients.set(name, { name, ipAddress });
+    this.nasClients.set(name, { name, ipAddress, nasType });
     this.agent.authorizeClient(ipAddress);
     this.agent.setSharedSecret(sharedSecret);
     return { ok: true, message: '' };
@@ -151,12 +206,61 @@ export class WindowsNpsRole {
 
   listNetworkPolicies(): NetworkPolicyInfo[] { return [...this.policies]; }
 
+  // ─── Connection request policies (PRD-Windows-Server-Advanced.md §5 P22) ──
+  // Evaluated in priority order (array/insertion order — same convention
+  // `listNetworkPolicies` above already establishes) *before* the network
+  // policies: when at least one connection request policy is configured,
+  // a request must match one (by every condition it sets) to even reach
+  // network-policy evaluation, mirroring real NPS's two-stage pipeline
+  // (this simulator has no realm proxying, so "match" always means
+  // "authenticate locally").
+
+  addConnectionRequestPolicy(name: string, conditions: ConnectionRequestPolicyConditions): NpsOpResult {
+    if (this.connectionRequestPolicies.some(p => p.name === name)) {
+      return { ok: false, message: `New-NpsConnectionRequestPolicy : A connection request policy named "${name}" already exists.` };
+    }
+    this.connectionRequestPolicies.push({ name, conditions });
+    return { ok: true, message: '' };
+  }
+
+  removeConnectionRequestPolicy(name: string): NpsOpResult {
+    const idx = this.connectionRequestPolicies.findIndex(p => p.name === name);
+    if (idx === -1) return { ok: false, message: `Remove-NpsConnectionRequestPolicy : A connection request policy named "${name}" does not exist.` };
+    this.connectionRequestPolicies.splice(idx, 1);
+    return { ok: true, message: '' };
+  }
+
+  listConnectionRequestPolicies(): ConnectionRequestPolicyInfo[] { return [...this.connectionRequestPolicies]; }
+
+  private matchesConnectionRequestPolicy(conditions: ConnectionRequestPolicyConditions, groups: string[], nasIp: string | undefined): boolean {
+    if (conditions.group !== undefined && !groups.some(g => g.toLowerCase() === conditions.group!.toLowerCase())) return false;
+    if (conditions.clientIpAddress !== undefined && conditions.clientIpAddress !== nasIp) return false;
+    if (conditions.nasType !== undefined) {
+      const nas = nasIp ? [...this.nasClients.values()].find(c => c.ipAddress === nasIp) : undefined;
+      if (nas?.nasType !== conditions.nasType) return false;
+    }
+    if (conditions.daysAndTimes !== undefined) {
+      const now = this.getNow();
+      const { days, startHour, endHour } = conditions.daysAndTimes;
+      if (!days.includes(now.getDay())) return false;
+      const hour = now.getHours();
+      if (hour < startHour || hour >= endHour) return false;
+    }
+    return true;
+  }
+
   // ─── User resolution — RadiusServerAgent.setUserResolver hook ───────
 
-  private resolveUser(username: string): RadiusUser | undefined {
+  private resolveUser(username: string, context?: RadiusUserResolverContext): RadiusUser | undefined {
     const sam = this.lookupSam(username);
     const found = sam ?? this.lookupAd(username);
     if (!found) return undefined;
+    if (this.connectionRequestPolicies.length > 0) {
+      const matched = this.connectionRequestPolicies.some(
+        p => this.matchesConnectionRequestPolicy(p.conditions, found.groups, context?.nasIp),
+      );
+      if (!matched) return undefined;
+    }
     const policy = this.policies.find(p => found.groups.some(g => g.toLowerCase() === p.group.toLowerCase()));
     if (!policy) return undefined;
     const replyAttributes: RadiusAttribute[] = [];

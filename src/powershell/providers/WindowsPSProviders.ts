@@ -69,6 +69,7 @@ import type {
   IDnsServerProvider, DnsOpResult, DnsZoneInfo, DnsRecordInfo,
   IDhcpServerProvider, DhcpOpResult, DhcpScopeInfo, DhcpLeaseInfo,
   INpsProvider, NpsOpResult, NasClientInfo, NetworkPolicyInfo,
+  ConnectionRequestPolicyConditionsInfo, ConnectionRequestPolicyInfo,
   DirEntry, ServiceInfo, ProcessInfo, UserInfo, GroupInfo,
   NetworkAdapterInfo, IPAddressInfo, RouteInfo, EventLogEntryInfo,
   VpnConnectionInfo, ScheduledTaskInfo, DiskInfo, VolumeInfo,
@@ -648,7 +649,9 @@ class WindowsNpsAdapter implements INpsProvider {
     return role;
   }
 
-  addNasClient(name: string, ipAddress: string, sharedSecret: string): NpsOpResult { return this.role().addNasClient(name, ipAddress, sharedSecret); }
+  addNasClient(name: string, ipAddress: string, sharedSecret: string, nasType?: string): NpsOpResult {
+    return this.role().addNasClient(name, ipAddress, sharedSecret, nasType);
+  }
   removeNasClient(name: string): NpsOpResult { return this.role().removeNasClient(name); }
   getNasClient(name: string): NasClientInfo | null { return this.role().getNasClient(name); }
   listNasClients(): NasClientInfo[] { return this.role().listNasClients(); }
@@ -658,6 +661,25 @@ class WindowsNpsAdapter implements INpsProvider {
   }
   removeNetworkPolicy(name: string): NpsOpResult { return this.role().removeNetworkPolicy(name); }
   listNetworkPolicies(): NetworkPolicyInfo[] { return this.role().listNetworkPolicies(); }
+
+  addConnectionRequestPolicy(name: string, conditions: ConnectionRequestPolicyConditionsInfo): NpsOpResult {
+    return this.role().addConnectionRequestPolicy(name, conditions);
+  }
+  removeConnectionRequestPolicy(name: string): NpsOpResult { return this.role().removeConnectionRequestPolicy(name); }
+  listConnectionRequestPolicies(): ConnectionRequestPolicyInfo[] { return this.role().listConnectionRequestPolicies(); }
+
+  setSqlAccounting(enabled: boolean): NpsOpResult { return this.role().setSqlAccounting(enabled); }
+  isSqlAccountingEnabled(): boolean { return this.role().isSqlAccountingEnabled(); }
+
+  queryAccounting(sql: string): Record<string, PSValue>[] | null {
+    const rs = this.role().queryAccounting(sql);
+    if (!rs) return null;
+    return rs.rows.map((row) => {
+      const obj: Record<string, PSValue> = {};
+      rs.columns.forEach((col, i) => { obj[col.name] = row[i] as PSValue; });
+      return obj;
+    });
+  }
 }
 
 function toServiceInfo(

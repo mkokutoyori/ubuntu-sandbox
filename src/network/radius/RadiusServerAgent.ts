@@ -102,6 +102,12 @@ interface PendingProxyContext {
   timer: TimerHandle | null;
 }
 
+/** Extra context a `setUserResolver` callback may need beyond the username itself. */
+export interface RadiusUserResolverContext {
+  /** The requesting NAS's source IP, as seen on this Access-Request. */
+  nasIp: string;
+}
+
 export class RadiusServerAgent {
   private config: RadiusServerAgentConfig = createDefaultServerConfig();
   private running = false;
@@ -187,9 +193,9 @@ export class RadiusServerAgent {
     return Array.from(this.realms.entries()).map(([realm, route]) => ({ realm, ...route }));
   }
 
-  /** External user store lookup (e.g. Windows NPS resolving against the SAM/AD directory), tried when `username` isn't in the static `addUser` table — RFC 2865 doesn't mandate a static user list; this keeps that model without hosts needing to mirror a live directory into it. */
-  private userResolver: ((username: string) => RadiusUser | undefined) | null = null;
-  setUserResolver(fn: ((username: string) => RadiusUser | undefined) | null): void { this.userResolver = fn; }
+  /** External user store lookup (e.g. Windows NPS resolving against the SAM/AD directory), tried when `username` isn't in the static `addUser` table — RFC 2865 doesn't mandate a static user list; this keeps that model without hosts needing to mirror a live directory into it. The optional `context` (currently just the requesting NAS's IP) lets a resolver evaluate conditions that need to know who's asking — e.g. NPS Connection Request Policies (PRD-Windows-Server-Advanced.md §5 P22) keyed on NAS identity. */
+  private userResolver: ((username: string, context?: RadiusUserResolverContext) => RadiusUser | undefined) | null = null;
+  setUserResolver(fn: ((username: string, context?: RadiusUserResolverContext) => RadiusUser | undefined) | null): void { this.userResolver = fn; }
 
   /** RFC 2866: Accounting-Request/Response on the accounting port (default UDP/1813). */
   handleAcctUdp(inPort: string, srcIp: IPAddress, udp: UDPPacket): void {
@@ -312,7 +318,7 @@ export class RadiusServerAgent {
       return;
     }
 
-    const user = this.config.users.get(username) ?? this.userResolver?.(username);
+    const user = this.config.users.get(username) ?? this.userResolver?.(username, { nasIp: senderIp });
 
     if (eapAttr) {
       this.handleEapRequest(inPort, srcIp, udp.sourcePort, payload, username, user, dedupKey);

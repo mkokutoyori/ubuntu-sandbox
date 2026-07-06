@@ -145,6 +145,8 @@ import {
 import {
   NewNpsRadiusClientCmdlet, GetNpsRadiusClientCmdlet, RemoveNpsRadiusClientCmdlet,
   NewNpsNetworkPolicyCmdlet, GetNpsNetworkPolicyCmdlet, RemoveNpsNetworkPolicyCmdlet,
+  NewNpsConnectionRequestPolicyCmdlet, GetNpsConnectionRequestPolicyCmdlet, RemoveNpsConnectionRequestPolicyCmdlet,
+  SetNpsAccountingConfigurationCmdlet,
 } from './NpsCmdlets';
 import { NewGPOCmdlet, GetGPOCmdlet, NewGPLinkCmdlet } from './GroupPolicyCmdlets';
 import {
@@ -462,6 +464,12 @@ export function registerCoreCmdlets(registry: CmdletRegistry): void {
   registry.register(new NewNpsNetworkPolicyCmdlet());
   registry.register(new GetNpsNetworkPolicyCmdlet());
   registry.register(new RemoveNpsNetworkPolicyCmdlet());
+
+  // ── NPS avancé — connection request policies + SQL accounting (PRD-Windows-Server-Advanced.md §5 P22) ──
+  registry.register(new NewNpsConnectionRequestPolicyCmdlet());
+  registry.register(new GetNpsConnectionRequestPolicyCmdlet());
+  registry.register(new RemoveNpsConnectionRequestPolicyCmdlet());
+  registry.register(new SetNpsAccountingConfigurationCmdlet());
 
   // ── Group Policy (PRD-Windows-Server.md §5 P10) ─────────────────────────────
   registry.register(new NewGPOCmdlet());

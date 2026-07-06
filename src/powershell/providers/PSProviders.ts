@@ -530,11 +530,20 @@ export interface IDhcpServerProvider {
 // ── NPS (RADIUS) role (PRD-Windows-Server.md §5 P9) ─────────────────────────
 
 export interface NpsOpResult { ok: boolean; message: string }
-export interface NasClientInfo { name: string; ipAddress: string }
+export interface NasClientInfo { name: string; ipAddress: string; nasType?: string }
 export interface NetworkPolicyInfo { name: string; group: string; vlanId?: number; sessionTimeoutSec?: number }
 
+/** `New-NpsConnectionRequestPolicy` conditions (PRD-Windows-Server-Advanced.md §5 P22). */
+export interface ConnectionRequestPolicyConditionsInfo {
+  group?: string;
+  nasType?: string;
+  clientIpAddress?: string;
+  daysAndTimes?: { days: readonly number[]; startHour: number; endHour: number };
+}
+export interface ConnectionRequestPolicyInfo { name: string; conditions: ConnectionRequestPolicyConditionsInfo }
+
 export interface INpsProvider {
-  addNasClient(name: string, ipAddress: string, sharedSecret: string): NpsOpResult;
+  addNasClient(name: string, ipAddress: string, sharedSecret: string, nasType?: string): NpsOpResult;
   removeNasClient(name: string): NpsOpResult;
   getNasClient(name: string): NasClientInfo | null;
   listNasClients(): NasClientInfo[];
@@ -542,6 +551,17 @@ export interface INpsProvider {
   addNetworkPolicy(name: string, group: string, vlanId?: number, sessionTimeoutSec?: number): NpsOpResult;
   removeNetworkPolicy(name: string): NpsOpResult;
   listNetworkPolicies(): NetworkPolicyInfo[];
+
+  /** `New-NpsConnectionRequestPolicy` — multi-condition policy, evaluated in priority order before network policies. */
+  addConnectionRequestPolicy(name: string, conditions: ConnectionRequestPolicyConditionsInfo): NpsOpResult;
+  removeConnectionRequestPolicy(name: string): NpsOpResult;
+  listConnectionRequestPolicies(): ConnectionRequestPolicyInfo[];
+
+  /** `Set-NpsAccountingConfiguration -SqlLogging` — redirects RADIUS accounting records into the simulated SQL table instead of a flat file. */
+  setSqlAccounting(enabled: boolean): NpsOpResult;
+  isSqlAccountingEnabled(): boolean;
+  /** Runs a read query (e.g. `SELECT * FROM RADIUS_ACCOUNTING`) against the accounting table — each row as a plain object keyed by (uppercased) column name; null until SQL logging has been enabled. */
+  queryAccounting(sql: string): Record<string, import('@/powershell/runtime/PSEnvironment').PSValue>[] | null;
 }
 
 export interface IRemotingProvider {
