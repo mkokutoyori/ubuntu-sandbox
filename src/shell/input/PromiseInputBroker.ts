@@ -148,7 +148,7 @@ export class PromiseInputBroker implements InputBroker {
     }
     if (req.validator) {
       const v = req.validator(usable);
-      if (!v.ok) {
+      if (v.ok === false) {
         if (req.maxAttempts && attempt >= req.maxAttempts) {
           this.pendingCancel = null;
           resolve({ status: 'closed', raw, attempts: attempt });

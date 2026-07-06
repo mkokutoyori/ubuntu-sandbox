@@ -101,13 +101,13 @@ export class CoaListener {
         deviceId: this.host.id, hostname: this.host.getHostname(),
         fromIp: senderIp, code: payload.code,
         username: ids.username, accepted: result.ok,
-        errorCause: result.ok ? null : result.errorCause,
+        errorCause: result.ok === false ? result.errorCause : null,
       },
     });
     Logger.info(this.host.id, 'radius:coa',
-      `${this.host.name}: ${payload.code} for ${ids.username ?? ids.acctSessionId ?? '(unidentified)'} → ${result.ok ? 'ack' : `nak (${result.errorCause})`}`);
+      `${this.host.name}: ${payload.code} for ${ids.username ?? ids.acctSessionId ?? '(unidentified)'} → ${result.ok === false ? `nak (${result.errorCause})` : 'ack'}`);
 
-    this.reply(inPort, srcIp, udp.sourcePort, payload, result.ok, result.ok ? null : result.errorCause, dedupKey);
+    this.reply(inPort, srcIp, udp.sourcePort, payload, result.ok, result.ok === false ? result.errorCause : null, dedupKey);
   }
 
   private pruneDedupCache(): void {

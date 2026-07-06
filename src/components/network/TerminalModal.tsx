@@ -144,10 +144,10 @@ export function TerminalModal({ session, onClose, onMinimize, embedded = false }
           {sessionType === 'cisco' && ' — Cisco IOS'}
           {sessionType === 'huawei' && ' — Huawei VRP'}
           {isDatabaseDevice && ` — ${
-            deviceType === 'db-oracle' ? 'Oracle' :
-            deviceType === 'db-mysql' ? 'MySQL' :
-            deviceType === 'db-postgres' ? 'PostgreSQL' :
-            deviceType === 'db-sqlserver' ? 'SQL Server' : 'Database'
+            (deviceType as string) === 'db-oracle' ? 'Oracle' :
+            (deviceType as string) === 'db-mysql' ? 'MySQL' :
+            (deviceType as string) === 'db-postgres' ? 'PostgreSQL' :
+            (deviceType as string) === 'db-sqlserver' ? 'SQL Server' : 'Database'
           }`}
         </span>
         {!isPoweredOn && (

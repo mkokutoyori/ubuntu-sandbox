@@ -45,11 +45,20 @@ function winStartTypeToOs(s: WinStartType): 'automatic' | 'manual' | 'disabled' 
   }
 }
 
-export class WindowsService extends OSService implements WindowsServiceRecord {
+export class WindowsService extends OSService {
   // ─── Windows-flavoured SCM surface ──────────────────────────────────
   declare displayName: string;
   declare description: string;
-  startType: WinStartType;
+  /**
+   * Windows-specific startType/state (`WinStartType`/`WinServiceState`)
+   * — renamed to avoid clashing with OSService's generic `startType`/
+   * `state` fields (different, incompatible literal unions). The base
+   * fields are still set correctly in the constructor via
+   * winStartTypeToOs()/winStateToOs() for any generic-OSService code path;
+   * all Windows-flavoured queries below read these instead.
+   */
+  startTypeWin: WinStartType;
+  stateWin: WinServiceState;
   serviceType: WinServiceType;
   binaryPath: string;
   account: string;
@@ -59,8 +68,6 @@ export class WindowsService extends OSService implements WindowsServiceRecord {
   processName: string;
   builtIn: boolean;
   critical?: boolean;
-  /** Windows-specific state (Running / Stopped / Paused / pending). */
-  declare state: WinServiceState;
 
   // ─── richer attributes a real Windows OS exposes ────────────────────
   /** Registry path under HKLM\SYSTEM\CurrentControlSet\Services. */
@@ -85,8 +92,8 @@ export class WindowsService extends OSService implements WindowsServiceRecord {
       dependsOn: [...init.dependencies],
       configFiles: [`HKLM\\SYSTEM\\CurrentControlSet\\Services\\${init.name}`],
     });
-    this.state = init.state;
-    this.startType = init.startType;
+    this.stateWin = init.state;
+    this.startTypeWin = init.startType;
     this.serviceType = init.serviceType;
     this.binaryPath = init.binaryPath;
     this.account = init.account;
@@ -102,12 +109,12 @@ export class WindowsService extends OSService implements WindowsServiceRecord {
 
   // ─── queries ────────────────────────────────────────────────────────
 
-  isRunning(): boolean { return this.state === 'Running'; }
-  isStopped(): boolean { return this.state === 'Stopped'; }
-  isPaused(): boolean { return this.state === 'Paused'; }
+  isRunning(): boolean { return this.stateWin === 'Running'; }
+  isStopped(): boolean { return this.stateWin === 'Stopped'; }
+  isPaused(): boolean { return this.stateWin === 'Paused'; }
   isPending(): boolean {
-    return this.state === 'StartPending' || this.state === 'StopPending'
-        || this.state === 'PausePending' || this.state === 'ContinuePending';
+    return this.stateWin === 'StartPending' || this.stateWin === 'StopPending'
+        || this.stateWin === 'PausePending' || this.stateWin === 'ContinuePending';
   }
   isBuiltIn(): boolean { return this.builtIn; }
   isCritical(): boolean { return this.critical === true; }
@@ -119,26 +126,25 @@ export class WindowsService extends OSService implements WindowsServiceRecord {
   // ─── mutations ──────────────────────────────────────────────────────
 
   transitionTo(state: WinServiceState): void {
-    this.state = state;
+    this.stateWin = state;
   }
   changeStartType(t: WinStartType): void {
-    this.startType = t;
+    this.startTypeWin = t;
   }
 
-  // Override the base queries to read the Windows-flavoured state field
-  // (we override the `state` slot itself via the `declare` redeclaration).
+  // Override the base queries to read the Windows-flavoured state field.
   override isActive(): boolean {
-    return this.state === 'Running' || this.state === 'Paused';
+    return this.stateWin === 'Running' || this.stateWin === 'Paused';
   }
-  override isInactive(): boolean { return this.state === 'Stopped'; }
+  override isInactive(): boolean { return this.stateWin === 'Stopped'; }
   override isFailed(): boolean { return false; }
-  override canStart(): boolean { return this.startType !== 'Disabled'; }
+  override canStart(): boolean { return this.startTypeWin !== 'Disabled'; }
 
   /** Flat WindowsServiceRecord-shape snapshot for sc.exe / Get-Service. */
   snapshot(): WindowsServiceRecord {
     return {
       name: this.name, displayName: this.displayName, description: this.description,
-      state: this.state, startType: this.startType, serviceType: this.serviceType,
+      state: this.stateWin, startType: this.startTypeWin, serviceType: this.serviceType,
       binaryPath: this.binaryPath, account: this.account,
       dependencies: [...this.dependencies],
       canPauseAndContinue: this.canPauseAndContinue,

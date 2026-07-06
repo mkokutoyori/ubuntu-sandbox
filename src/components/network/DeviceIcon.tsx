@@ -25,7 +25,7 @@ interface DeviceIconProps {
 export function DeviceIcon({ type, size = 32, className }: DeviceIconProps) {
   const iconProps = { size, className: cn('transition-all', className) };
 
-  switch (type) {
+  switch (type as DeviceType | 'db-mysql' | 'db-postgres' | 'db-oracle' | 'db-sqlserver') {
     case 'linux-pc':
       return (
         <div className="relative">
