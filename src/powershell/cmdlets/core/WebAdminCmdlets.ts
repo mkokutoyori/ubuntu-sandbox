@@ -23,7 +23,10 @@ function requireIis(ctx: CmdletContext, cmdletName: string): IIisProvider {
 }
 
 function siteToPSObject(s: WebsiteInfo): Record<string, PSValue> {
-  return { Name: s.name, PhysicalPath: s.physicalPath, Port: s.port, State: s.state };
+  return {
+    Name: s.name, PhysicalPath: s.physicalPath, Port: s.port, State: s.state,
+    HttpsPort: s.httpsPort ?? null, CertificateThumbprint: s.certificateThumbprint ?? null,
+  };
 }
 function nameOf(ctx: CmdletContext): string {
   return psValueToString(ctx.named['name'] ?? ctx.positional[0] ?? '');
@@ -90,6 +93,31 @@ export class StopWebsiteCmdlet implements ICmdlet {
     const res = iis.stopWebsite(nameOf(ctx));
     if (!res.ok) { ctx.emitError(`Stop-Website : ${res.message}`); return null; }
     return null;
+  }
+}
+
+// ── New-WebBinding (PRD-Windows-Server-Advanced.md §5 P14) ──────────────────
+
+export class NewWebBindingCmdlet implements ICmdlet {
+  readonly name = 'new-webbinding';
+  readonly aliases = [] as const;
+  readonly parameters = ['Name', 'Protocol', 'Port', 'CertificateHash'] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const iis = requireIis(ctx, 'New-WebBinding');
+    const name = nameOf(ctx);
+    if (!name) {
+      ctx.emitError('New-WebBinding : Cannot process command because of one or more missing mandatory parameters: Name.');
+      return null;
+    }
+    const protocolRaw = psValueToString(ctx.named['protocol'] ?? 'http').toLowerCase();
+    const protocol = protocolRaw === 'https' ? 'https' : 'http';
+    const port = ctx.named['port'] !== undefined ? Number(psValueToString(ctx.named['port'])) : (protocol === 'https' ? 443 : 80);
+    const certificateHash = ctx.named['certificatehash'] !== undefined ? psValueToString(ctx.named['certificatehash']) : undefined;
+    const res = iis.newBinding(name, protocol, port, certificateHash);
+    if (!res.ok) { ctx.emitError(`New-WebBinding : ${res.message}`); return null; }
+    const site = iis.getWebsite(name);
+    return site ? siteToPSObject(site) : null;
   }
 }
 

@@ -8,9 +8,12 @@
  */
 
 import type { WindowsAdcsRole } from '../windows/server/adcs/CaRole';
+import type { WindowsCertStore } from './CertStore';
 
 export interface CertReqContext {
   adcs: WindowsAdcsRole | null;
+  /** PRD §5 P14 — a successfully issued cert lands here too, so `New-WebBinding -CertificateHash` can reference it exactly like a self-signed one. */
+  certStore: WindowsCertStore;
 }
 
 function parseSubmitArgs(args: string[]): { subject?: string; template?: string; eku?: string } {
@@ -40,6 +43,7 @@ export function cmdCertreq(ctx: CertReqContext, args: string[]): string {
   }
   const res = ctx.adcs.submitRequest(subject, template, { requestedEku: eku });
   if (!res.ok) return res.message;
+  ctx.certStore.add(res.certificate!, res.privateKey!);
   return `CertReq: Certificate Retrieved\nSerial Number: ${res.certificate!.serialNumber}\nSubject: ${res.certificate!.subject}\nIssuer: ${res.certificate!.issuer}`;
 }
 

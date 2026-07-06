@@ -297,7 +297,10 @@ export interface IGpoProvider {
 // ── Web Server / IIS role (PRD-Windows-Server.md §5 P11) ────────────────────
 
 export interface IisOpResult { ok: boolean; message: string }
-export interface WebsiteInfo { name: string; physicalPath: string; port: number; state: 'Started' | 'Stopped' }
+export interface WebsiteInfo {
+  name: string; physicalPath: string; port: number; state: 'Started' | 'Stopped';
+  httpsPort?: number; certificateThumbprint?: string;
+}
 
 export interface IIisProvider {
   newWebsite(name: string, physicalPath: string, port: number): IisOpResult;
@@ -306,6 +309,8 @@ export interface IIisProvider {
   listWebsites(): WebsiteInfo[];
   startWebsite(name: string): IisOpResult;
   stopWebsite(name: string): IisOpResult;
+  /** `New-WebBinding -Protocol https -Port <port> -CertificateHash <thumbprint>` (PRD-Windows-Server-Advanced.md §5 P14). */
+  newBinding(name: string, protocol: 'http' | 'https', port: number, certificateThumbprint?: string): IisOpResult;
 }
 
 // ── AD CS (Certificate Services) role (PRD-Windows-Server-Advanced.md §5 P13) ──
@@ -326,6 +331,15 @@ export interface IAdcsProvider {
   listTemplates(): CaTemplateInfo[];
   /** `Get-Certificate -Template <name> -DnsName <subject>` — submits and retrieves a new certificate (this simulator's `certreq -submit` never leaves a request "Pending", so enrollment is synchronous). */
   getCertificate(templateName: string, subject: string, requestedEku?: string): CertificateRequestResultInfo;
+}
+
+// ── Personal certificate store (PRD-Windows-Server-Advanced.md §5 P14) ─────
+
+export interface IPkiProvider {
+  /** `New-SelfSignedCertificate -DnsName <name>` — a locally-trusted, self-signed leaf cert good for `serverAuth`, stored in this device's personal store. */
+  newSelfSignedCertificate(dnsName: string): IssuedCertInfo & { thumbprint: string };
+  /** `Get-ChildItem Cert:\LocalMachine\My` — every certificate this device holds a private key for. */
+  listCertificates(): (IssuedCertInfo & { thumbprint: string })[];
 }
 
 // ── DNS Server role (PRD-Windows-Server.md §5 P7) ───────────────────────────
@@ -750,4 +764,5 @@ export interface PSProviders {
   readonly gpo:            IGpoProvider            | null;
   readonly iis:            IIisProvider            | null;
   readonly adcs:           IAdcsProvider           | null;
+  readonly pki:            IPkiProvider            | null;
 }

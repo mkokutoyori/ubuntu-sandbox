@@ -149,7 +149,9 @@ import {
 import { NewGPOCmdlet, GetGPOCmdlet, NewGPLinkCmdlet } from './GroupPolicyCmdlets';
 import {
   NewWebsiteCmdlet, GetWebsiteCmdlet, StartWebsiteCmdlet, StopWebsiteCmdlet, RemoveWebsiteCmdlet,
+  NewWebBindingCmdlet,
 } from './WebAdminCmdlets';
+import { NewSelfSignedCertificateCmdlet } from './PkiCmdlets';
 
 /**
  * Register all core (provider-independent) cmdlets into the given registry.
@@ -455,6 +457,10 @@ export function registerCoreCmdlets(registry: CmdletRegistry): void {
   registry.register(new StartWebsiteCmdlet());
   registry.register(new StopWebsiteCmdlet());
   registry.register(new RemoveWebsiteCmdlet());
+  registry.register(new NewWebBindingCmdlet());
+
+  // ── Personal certificate store (PRD-Windows-Server-Advanced.md §5 P14) ─────
+  registry.register(new NewSelfSignedCertificateCmdlet());
 
   // ── Native CLI shims (sync subset) ────────────────────────────────────────
   // ping / tracert stay in the legacy executor — they're async and the

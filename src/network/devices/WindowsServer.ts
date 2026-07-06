@@ -127,7 +127,7 @@ export class WindowsServer extends WindowsPC {
       return null;
     }
     if (!this.iisRoleInstance) {
-      this.iisRoleInstance = new WindowsIisRole(this, this.getFileSystem());
+      this.iisRoleInstance = new WindowsIisRole(this, this.getFileSystem(), this.getCertStore());
       this.iisRoleInstance.start();
     }
     return this.iisRoleInstance;

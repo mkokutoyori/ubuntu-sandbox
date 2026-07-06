@@ -11,6 +11,7 @@
 
 import { CertificateAuthority, type IssuedCertificate } from '@/network/pki/CertificateAuthority';
 import type { X509Certificate } from '@/network/pki/X509Certificate';
+import type { PkiPrivateKey } from '@/network/pki/PkiKeyPair';
 import { DEFAULT_CERT_TEMPLATES, type CertTemplateDef } from './CertificateTemplate';
 
 export interface AdcsOpResult { ok: boolean; message: string }
@@ -30,6 +31,8 @@ export interface CertificateRequestOptions {
 
 export interface CertificateRequestResult extends AdcsOpResult {
   readonly certificate?: X509Certificate;
+  /** The freshly generated private key — callers (e.g. `WindowsCertStore`) need it to actually use the certificate for TLS. */
+  readonly privateKey?: PkiPrivateKey;
 }
 
 export class WindowsAdcsRole {
@@ -94,7 +97,7 @@ export class WindowsAdcsRole {
       extKeyUsage: template.eku,
     });
     this.issued.set(issued.cert.serialNumber, issued);
-    return { ok: true, message: 'Certificate issued.', certificate: issued.cert };
+    return { ok: true, message: 'Certificate issued.', certificate: issued.cert, privateKey: issued.privateKey };
   }
 
   /** `Get-Certificate` — re-fetches a previously issued certificate by its serial number (this simulator's synchronous `certreq -submit` never leaves a request "Pending", so there's nothing else to poll). */

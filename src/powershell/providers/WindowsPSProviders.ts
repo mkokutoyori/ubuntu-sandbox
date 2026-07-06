@@ -43,6 +43,7 @@ function mapV4Origin(origin: 'manual' | 'dhcp' | 'link-local'): { prefixOrigin: 
   }
 }
 import { JobProvider } from '@/powershell/providers/JobProvider';
+import { generateSelfSignedCertificate } from '@/network/pki/SelfSignedCertificate';
 import type {
   PSProviders,
   IFileSystemProvider, IRegistryProvider, IServiceProvider,
@@ -57,6 +58,7 @@ import type {
   IGpoProvider, GpoInfo,
   IIisProvider, IisOpResult, WebsiteInfo,
   IAdcsProvider, AdcsOpResult, CaTemplateInfo, CertificateRequestResultInfo,
+  IPkiProvider, IssuedCertInfo,
   IDnsServerProvider, DnsOpResult, DnsZoneInfo, DnsRecordInfo,
   IDhcpServerProvider, DhcpOpResult, DhcpScopeInfo, DhcpLeaseInfo,
   INpsProvider, NpsOpResult, NasClientInfo, NetworkPolicyInfo,
@@ -1665,6 +1667,9 @@ class WindowsIisAdapter implements IIisProvider {
   listWebsites(): WebsiteInfo[] { return this.requireRole('Get-Website').listWebsites(); }
   startWebsite(name: string): IisOpResult { return this.requireRole('Start-Website').startSite(name); }
   stopWebsite(name: string): IisOpResult { return this.requireRole('Stop-Website').stopSite(name); }
+  newBinding(name: string, protocol: 'http' | 'https', port: number, certificateThumbprint?: string): IisOpResult {
+    return this.requireRole('New-WebBinding').newBinding(name, protocol, port, certificateThumbprint);
+  }
 }
 
 // ── AD CS adapter (PRD-Windows-Server-Advanced.md §5 P13) ────────────────
@@ -1693,10 +1698,35 @@ class WindowsAdcsAdapter implements IAdcsProvider {
     const res = this.requireRole('Get-Certificate').submitRequest(`CN=${dnsName}`, templateName, { requestedEku });
     if (!res.ok) return { ok: false, message: res.message };
     const c = res.certificate!;
+    // PRD §5 P14 — feed the personal store so `New-WebBinding -CertificateHash`
+    // can reference an AD CS-issued cert exactly like a self-signed one.
+    this.pc.getCertStore().add(c, res.privateKey!);
     return {
       ok: true, message: res.message,
       certificate: { serialNumber: c.serialNumber, subject: c.subject, issuer: c.issuer, notBefore: c.notBefore, notAfter: c.notAfter },
     };
+  }
+}
+
+// ── Personal certificate store adapter (PRD-Windows-Server-Advanced.md §5 P14) ──
+// Unconditional (no RoleManager gate): the PKI client module ships on every
+// Windows SKU, not just servers with a role installed.
+
+class WindowsPkiAdapter implements IPkiProvider {
+  constructor(private readonly pc: WindowsPC) {}
+
+  newSelfSignedCertificate(dnsName: string): IssuedCertInfo & { thumbprint: string } {
+    const now = this.pc.simulatedDate().getTime();
+    const { cert, privateKey } = generateSelfSignedCertificate(`CN=${dnsName}`, { now, extKeyUsage: ['serverAuth'] });
+    const thumbprint = this.pc.getCertStore().add(cert, privateKey);
+    return { thumbprint, serialNumber: cert.serialNumber, subject: cert.subject, issuer: cert.issuer, notBefore: cert.notBefore, notAfter: cert.notAfter };
+  }
+
+  listCertificates(): (IssuedCertInfo & { thumbprint: string })[] {
+    return this.pc.getCertStore().list().map(c => ({
+      thumbprint: c.serialNumber, serialNumber: c.serialNumber, subject: c.subject, issuer: c.issuer,
+      notBefore: c.notBefore, notAfter: c.notAfter,
+    }));
   }
 }
 
@@ -1825,5 +1855,6 @@ export function createWindowsPSProviders(
     gpo:            new WindowsGpoAdapter(pc),
     iis:            pc.getRoleManager() ? new WindowsIisAdapter(pc) : null,
     adcs:           pc.getRoleManager() ? new WindowsAdcsAdapter(pc) : null,
+    pki:            new WindowsPkiAdapter(pc),
   };
 }

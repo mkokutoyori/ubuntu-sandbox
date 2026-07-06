@@ -101,6 +101,7 @@ import type { GpoSettings } from './windows/server/ad/AdTypes';
 import { cmdNltest, cmdDcdiag, cmdKlist } from './windows/WinDomainDiag';
 import { cmdDnscmd } from './windows/WinDnscmd';
 import { cmdCertreq, cmdCertutil } from './windows/WinCertReq';
+import { WindowsCertStore } from './windows/CertStore';
 import { cmdPrint } from './windows/WinPrint';
 import { executeNslookup } from './linux/LinuxDnsService';
 import { SessionWorkQueue } from './host/session/SessionWorkQueue';
@@ -208,6 +209,9 @@ export class WindowsPC extends EndHost implements UserAccountHost {
   private readonly replicationSignals = new ReplicationSignalStore();
   private kerberosSignalActor: KerberosSignalRefreshActor | null = null;
   private replicationSignalActor: ReplicationSignalRefreshActor | null = null;
+  /** `Cert:\LocalMachine\My` stand-in (PRD-Windows-Server-Advanced.md §5 P13/P14) — available on every Windows host, not just servers, matching real Windows' personal certificate store. */
+  private readonly certStore = new WindowsCertStore();
+  getCertStore(): WindowsCertStore { return this.certStore; }
   /** LSA account policy mirrored by `net accounts`. */
   readonly accountsPolicy: WindowsAccountsPolicy = new WindowsAccountsPolicy();
   /** cmd.exe doskey macro table. */
@@ -1647,8 +1651,8 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       case 'klist':   return cmdKlist({ ticketCache: this.kerberosTicketCache });
       case 'netdom':  return this.cmdNetdom(args);
       case 'dnscmd':  return cmdDnscmd({ dns: this.getDnsServerRole() }, args);
-      case 'certreq': return cmdCertreq({ adcs: this.getAdcsRole() }, args);
-      case 'certutil': return cmdCertutil({ adcs: this.getAdcsRole() }, args);
+      case 'certreq': return cmdCertreq({ adcs: this.getAdcsRole(), certStore: this.certStore }, args);
+      case 'certutil': return cmdCertutil({ adcs: this.getAdcsRole(), certStore: this.certStore }, args);
       case 'gpupdate': {
         const res = this.gpupdateForce();
         return res.ok
