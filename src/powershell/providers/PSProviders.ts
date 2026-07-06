@@ -387,6 +387,23 @@ export interface IDfsProvider {
   syncDfsReplicationGroup(groupName: string, partnerAddress: string): DfsrSyncResultInfo;
 }
 
+// ── RDP (PRD-Windows-Server-Advanced.md §5 P17) ─────────────────────────────
+
+export interface RdpOpResult { ok: boolean; message: string }
+export interface RdpSessionInfo {
+  sessionId: number; userName: string; state: 'Active' | 'Disconnected'; clientAddress: string;
+}
+
+export interface IRdpProvider {
+  /** `Enable-RemoteDesktop`/`Disable-RemoteDesktop`. */
+  enable(): RdpOpResult;
+  disable(): RdpOpResult;
+  /** `Get-RDUserSession`. */
+  listSessions(): RdpSessionInfo[];
+  /** `logoff`/`rwinsta` (PowerShell surface). */
+  logoff(sessionId: number): RdpOpResult;
+}
+
 // ── DNS Server role (PRD-Windows-Server.md §5 P7) ───────────────────────────
 
 export interface DnsOpResult { ok: boolean; message: string }
@@ -811,4 +828,5 @@ export interface PSProviders {
   readonly adcs:           IAdcsProvider           | null;
   readonly pki:            IPkiProvider            | null;
   readonly dfs:            IDfsProvider            | null;
+  readonly rdp:            IRdpProvider            | null;
 }

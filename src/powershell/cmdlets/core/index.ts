@@ -158,6 +158,9 @@ import {
   NewDfsnRootCmdlet, NewDfsnFolderCmdlet, NewDfsnFolderTargetCmdlet, GetDfsnFolderCmdlet,
   NewDfsReplicationGroupCmdlet, SyncDfsReplicationGroupCmdlet,
 } from './DfsCmdlets';
+import {
+  EnableRemoteDesktopCmdlet, DisableRemoteDesktopCmdlet, GetRDUserSessionCmdlet, LogoffRdSessionCmdlet,
+} from './RdpCmdlets';
 
 /**
  * Register all core (provider-independent) cmdlets into the given registry.
@@ -482,6 +485,12 @@ export function registerCoreCmdlets(registry: CmdletRegistry): void {
   registry.register(new GetDfsnFolderCmdlet());
   registry.register(new NewDfsReplicationGroupCmdlet());
   registry.register(new SyncDfsReplicationGroupCmdlet());
+
+  // ── RDP (PRD-Windows-Server-Advanced.md §5 P17) ─────────────────────────────
+  registry.register(new EnableRemoteDesktopCmdlet());
+  registry.register(new DisableRemoteDesktopCmdlet());
+  registry.register(new GetRDUserSessionCmdlet());
+  registry.register(new LogoffRdSessionCmdlet());
 
   // ── Native CLI shims (sync subset) ────────────────────────────────────────
   // ping / tracert stay in the legacy executor — they're async and the

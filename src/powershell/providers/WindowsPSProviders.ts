@@ -60,6 +60,7 @@ import type {
   IAdcsProvider, AdcsOpResult, CaTemplateInfo, CertificateRequestResultInfo,
   IPkiProvider, IssuedCertInfo,
   IDfsProvider, DfsOpResult, DfsTargetInfo, DfsFolderInfo, DfsrSyncResultInfo,
+  IRdpProvider, RdpOpResult, RdpSessionInfo,
   IDnsServerProvider, DnsOpResult, DnsZoneInfo, DnsRecordInfo,
   IDhcpServerProvider, DhcpOpResult, DhcpScopeInfo, DhcpLeaseInfo,
   INpsProvider, NpsOpResult, NasClientInfo, NetworkPolicyInfo,
@@ -1784,6 +1785,25 @@ class WindowsPkiAdapter implements IPkiProvider {
   }
 }
 
+// ── RDP adapter (PRD-Windows-Server-Advanced.md §5 P17) ───────────────────
+// Unconditional (no RoleManager gate): Remote Desktop ships on every
+// Windows SKU, matching WinRM's own unconditional wiring.
+
+class WindowsRdpAdapter implements IRdpProvider {
+  constructor(private readonly pc: WindowsPC) {}
+
+  enable(): RdpOpResult { this.pc.rdp.enable(); return { ok: true, message: '' }; }
+  disable(): RdpOpResult { this.pc.rdp.disable(); return { ok: true, message: '' }; }
+
+  listSessions(): RdpSessionInfo[] { return this.pc.rdp.sessions.list(); }
+
+  logoff(sessionId: number): RdpOpResult {
+    const existed = this.pc.rdp.sessions.logoff(sessionId);
+    if (!existed) return { ok: false, message: `logoff : No session exists for ID ${sessionId}.` };
+    return { ok: true, message: '' };
+  }
+}
+
 // ── Remoting adapter (Invoke-Command -ComputerName / Test-WSMan) ──────────
 //
 // Resolves the target through the same simulated-topology lookup the SSH
@@ -1911,5 +1931,6 @@ export function createWindowsPSProviders(
     adcs:           pc.getRoleManager() ? new WindowsAdcsAdapter(pc) : null,
     pki:            new WindowsPkiAdapter(pc),
     dfs:            pc.getRoleManager() ? new WindowsDfsAdapter(pc) : null,
+    rdp:            new WindowsRdpAdapter(pc),
   };
 }

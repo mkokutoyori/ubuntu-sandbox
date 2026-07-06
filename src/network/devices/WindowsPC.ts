@@ -103,6 +103,12 @@ import { cmdDnscmd } from './windows/WinDnscmd';
 import { cmdCertreq, cmdCertutil } from './windows/WinCertReq';
 import { WindowsCertStore } from './windows/CertStore';
 import { DFSR_PORT, DfsrServerHandler } from './windows/server/dfs/DfsReplicationGroup';
+import { WindowsRdpConfig } from './windows/WindowsRdpConfig';
+import { cmdQuerySession, cmdLogoff } from './windows/WinRdpCommands';
+import { RDP_PORT, RdpServerHandler, dialRdp, type RdpDialResult } from './windows/server/rdp/RdpSession';
+import { generateSelfSignedCertificate } from '@/network/pki/SelfSignedCertificate';
+import { CertificateVerifier } from '@/network/pki/CertificateVerifier';
+import type { X509Certificate } from '@/network/pki/X509Certificate';
 import { cmdPrint } from './windows/WinPrint';
 import { executeNslookup } from './linux/LinuxDnsService';
 import { SessionWorkQueue } from './host/session/SessionWorkQueue';
@@ -198,6 +204,10 @@ export class WindowsPC extends EndHost implements UserAccountHost {
   private readonly replicationLog: ReplicationLogEntry[] = [];
   /** This DC's own StartTLS identity (PRD-Windows-Server-Advanced.md §5 P11) — lazily created once and reused across connections, mirroring a real DC's stable machine certificate. */
   private ldapStartTlsIdentity: ReturnType<typeof selfSignedLdapCert> | null = null;
+  /** Remote Desktop (PRD-Windows-Server-Advanced.md §5 P17) — disabled by default; toggled via `Enable-RemoteDesktop`. */
+  readonly rdp: WindowsRdpConfig = new WindowsRdpConfig();
+  /** This host's own RDP TLS identity (§5 P17) — lazily created once, mirroring `ldapStartTlsIdentity`'s own convention. */
+  private rdpTlsIdentity: ReturnType<typeof generateSelfSignedCertificate> | null = null;
   /**
    * Observable read-models (PRD-Windows-Server-Advanced.md §5 P12) — purely
    * additive, no existing behavior depends on these. `KdcSessionHandler`/
@@ -511,6 +521,41 @@ export class WindowsPC extends EndHost implements UserAccountHost {
         new DfsrServerHandler(role.getGroups()).register(socket);
       },
     });
+
+    // TCP RDP listener on port 3389 (MS-RDPBCGR §2.2.1 — PRD-Windows-
+    // Server-Advanced.md §5 P17). Refuses (drops) the connection until
+    // `Enable-RemoteDesktop` has been run, mirroring the WinRM/5985
+    // listener's own enabled-flag gating above.
+    this.getTcpStack().listen(RDP_PORT, {
+      onAccept: (socket) => {
+        if (!this.rdp.enabled) { socket.close(); return; }
+        new RdpServerHandler({
+          tlsConfig: { serverCert: this.getRdpTlsCertificate()!, serverPrivateKey: this.rdpTlsIdentity!.privateKey },
+          sessions: this.rdp.sessions,
+          auth: {
+            checkLocal: (u, p) => Boolean(this.userMgr.getUser(u)?.enabled) && this.userMgr.checkPassword(u, p),
+            checkDomain: (u, p) => Boolean(this.tryDomainAuth(u, p)?.ok),
+          },
+        }).register(socket);
+      },
+    });
+  }
+
+  /** This host's own RDP TLS identity certificate (PRD-Windows-Server-Advanced.md §5 P17) — lazily created once; a real client would present its own trust decision UI for this cert, which a `dialRdp()` caller stands in for via an explicit `CertificateVerifier`. */
+  getRdpTlsCertificate(): X509Certificate {
+    if (!this.rdpTlsIdentity) {
+      this.rdpTlsIdentity = generateSelfSignedCertificate(`CN=${this.getHostname()}`, { now: this.simulatedDate().getTime() });
+    }
+    return this.rdpTlsIdentity.cert;
+  }
+
+  /**
+   * Dial RDP on a remote device (PRD-Windows-Server-Advanced.md §5 P17):
+   * TPKT/X.224 negotiation, a real TLS 1.3 handshake standing in for the
+   * CredSSP/NLA security channel, then one credential PDU.
+   */
+  dialRdp(targetIp: string, username: string, password: string, verifier: CertificateVerifier): RdpDialResult {
+    return dialRdp(this.getTcpStack(), targetIp, username, password, { verifier });
   }
 
   /**
@@ -1666,6 +1711,13 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       case 'dnscmd':  return cmdDnscmd({ dns: this.getDnsServerRole() }, args);
       case 'certreq': return cmdCertreq({ adcs: this.getAdcsRole(), certStore: this.certStore }, args);
       case 'certutil': return cmdCertutil({ adcs: this.getAdcsRole(), certStore: this.certStore }, args);
+      case 'query': {
+        if ((args[0] ?? '').toLowerCase() === 'session') return cmdQuerySession({ sessions: this.rdp.sessions });
+        return `'${args[0] ?? ''}' is not a recognized query type.`;
+      }
+      case 'qwinsta': return cmdQuerySession({ sessions: this.rdp.sessions });
+      case 'logoff': return cmdLogoff({ sessions: this.rdp.sessions }, args);
+      case 'rwinsta': return cmdLogoff({ sessions: this.rdp.sessions }, args);
       case 'gpupdate': {
         const res = this.gpupdateForce();
         return res.ok
