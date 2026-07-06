@@ -4,7 +4,7 @@
 
 import { queryView } from './registry';
 import { col } from './_columns';
-import { queryResult } from '../../engine/executor/ResultSet';
+import { queryResult, type Row } from '../../engine/executor/ResultSet';
 import { registerView } from './registry';
 
 registerView({
@@ -13,7 +13,7 @@ registerView({
   query(ctx) {
     const sample = queryView('V$WAITCLASSMETRIC', ctx);
     if (!sample) return queryResult([], []);
-    const rows: (string | number)[][] = [];
+    const rows: Row[] = [];
     const now = Date.now();
     for (let b = 0; b < 60; b++) {
       const end = now - b * 60_000;

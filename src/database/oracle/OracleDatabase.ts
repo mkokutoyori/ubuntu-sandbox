@@ -344,7 +344,13 @@ export class OracleDatabase implements SqlCommandHost {
     this.instance.attachIndexUsageMonitor(this.storage);
     // Live-session provider — feeds V$SESSION_CONTEXT user-defined
     // contexts and any future view that needs the real OracleSession.
-    this.instance.setLiveSessionProvider(() => [...this.sessions.values()]);
+    this.instance.setLiveSessionProvider(() => [...this.sessions.values()].map((s) => ({
+      sid: s.sid, serial: s.serial, username: s.sessionUser,
+      listContextEntries: () => s.listContextEntries(),
+      module: s.module, action: s.action,
+      clientInfo: s.clientInfo, clientIdentifier: s.clientIdentifier,
+      containerId: s.containerId,
+    })));
     // Resource Manager — active consumer-group switcher reacting to
     // session connect + SQL execution events.
     this.consumerGroupSwitcher = new ConsumerGroupSwitcher(
@@ -925,7 +931,7 @@ export class OracleDatabase implements SqlCommandHost {
       forUpdate?: { wait?: number | 'NOWAIT' | 'SKIP_LOCKED' } };
     if (s.type !== 'SelectStatement' || !s.forUpdate || !s.from) return;
     const ctx = executor.getContext();
-    const sess = ctx.session;
+    const sess = ctx.session as import('./security/OracleSession').OracleSession | undefined;
     const sid = sess?.sid ?? 0;
     const nowait = s.forUpdate.wait === 'NOWAIT';
     for (const f of s.from) {
@@ -1119,7 +1125,7 @@ export class OracleDatabase implements SqlCommandHost {
       throw new Error('ORA-12154: TNS:could not resolve the connect identifier specified');
     }
     const res = this.dbLinkResolver(link.host);
-    if (!res.ok) throw new Error(res.error);
+    if (res.ok === false) throw new Error(res.error);
     return { remote: res.db, username: link.username ?? currentUser, password: link.password ?? '' };
   }
 
@@ -1136,7 +1142,10 @@ export class OracleDatabase implements SqlCommandHost {
       const result = remote.executeSql(executor, `SELECT * FROM ${qualified}`);
       return {
         rows: result.rows.map(r => [...r]),
-        columns: result.columns.map(c => ({ name: c.name, dataType: c.dataType ?? 'VARCHAR2' })),
+        columns: result.columns.map(c => ({
+          name: c.name,
+          dataType: (typeof c.dataType === 'string' ? c.dataType : c.dataType?.name) ?? 'VARCHAR2',
+        })),
       };
     } finally {
       remote.disconnect(sid);
@@ -1731,7 +1740,7 @@ export class OracleDatabase implements SqlCommandHost {
       created: new Date(), status: compilation.ok ? 'VALID' : 'INVALID',
     });
 
-    if (!compilation.ok) {
+    if (compilation.ok === false) {
       this.catalog.setCompilationErrors(schema, name, 'PACKAGE', compilation.errors);
       return emptyResult('Warning: Package created with compilation errors.');
     }
@@ -1785,7 +1794,7 @@ export class OracleDatabase implements SqlCommandHost {
     }
 
     const compilation = compilePackageSection(source);
-    if (!compilation.ok) return fail(compilation.errors);
+    if (compilation.ok === false) return fail(compilation.errors);
 
     this.storedUnits.set(bodyUnitKey, {
       schema, name: pkgName, type: 'PACKAGE BODY', parameters: [],
@@ -2151,9 +2160,9 @@ export class OracleDatabase implements SqlCommandHost {
       this.catalog.createDvRealm(get('REALM_NAME'), get('DESCRIPTION'), Number(get('AUDIT_OPTIONS') || '1'));
     } else if (upper.includes('.DELETE_REALM')) {
       // Best-effort removal — there's no dedicated DV remove in the catalog.
-      const all = this.catalog.getDvRealms() as { name: string }[];
+      const all = this.catalog.getDvRealms() as { name: string; description: string; auditOptions: number; enabled: boolean }[];
       const idx = all.findIndex(r => r.name === get('REALM_NAME').toUpperCase());
-      if (idx >= 0) (all as { name: string }[]).splice(idx, 1);
+      if (idx >= 0) all.splice(idx, 1);
     } else if (upper.includes('.ADD_OBJECT_TO_REALM') || upper.includes('.ADD_AUTH_TO_REALM')) {
       if (upper.includes('AUTH')) {
         this.catalog.addDvRealmAuth(get('REALM_NAME'), get('GRANTEE'), '', get('AUTH_OPTIONS') || 'PARTICIPANT');
@@ -2161,17 +2170,17 @@ export class OracleDatabase implements SqlCommandHost {
     } else if (upper.includes('.CREATE_ROLE')) {
       this.catalog.createDvRole(get('ROLE'), '');
     } else if (upper.includes('.DELETE_ROLE')) {
-      const all = this.catalog.getDvRoles() as { name: string }[];
+      const all = this.catalog.getDvRoles() as { name: string; enabled: boolean; ruleSetName: string }[];
       const idx = all.findIndex(r => r.name === get('ROLE').toUpperCase());
-      if (idx >= 0) (all as { name: string }[]).splice(idx, 1);
+      if (idx >= 0) all.splice(idx, 1);
     } else if (upper.includes('.CREATE_COMMAND_RULE')) {
       this.catalog.createDvCommandRule(get('COMMAND'), get('RULE_SET_NAME'), get('OBJECT_OWNER'), get('OBJECT_NAME'));
     } else if (upper.includes('.DELETE_COMMAND_RULE')) {
-      const all = this.catalog.getDvCommandRules() as { command: string; objectOwner: string; objectName: string }[];
+      const all = this.catalog.getDvCommandRules() as { command: string; ruleSetName: string; objectOwner: string; objectName: string; enabled: boolean }[];
       const idx = all.findIndex(r => r.command === get('COMMAND').toUpperCase()
                                   && r.objectOwner === get('OBJECT_OWNER').toUpperCase()
                                   && r.objectName === get('OBJECT_NAME').toUpperCase());
-      if (idx >= 0) (all as unknown[]).splice(idx, 1);
+      if (idx >= 0) all.splice(idx, 1);
     } else if (upper.includes('.CREATE_FACTOR')) {
       this.catalog.createDvFactor({
         name: get('FACTOR_NAME'),
@@ -2185,9 +2194,9 @@ export class OracleDatabase implements SqlCommandHost {
         failOptions: Number(get('FAIL_OPTIONS') || '1'),
       });
     } else if (upper.includes('.DELETE_FACTOR')) {
-      const all = this.catalog.getDvFactors() as { name: string }[];
+      const all = this.catalog.getDvFactors() as { name: string; description: string; factorType: string; validateExpr: string; identifyBy: string; labeledBy: string; evalOptions: string; auditOptions: number; failOptions: number }[];
       const idx = all.findIndex(r => r.name === get('FACTOR_NAME').toUpperCase());
-      if (idx >= 0) (all as { name: string }[]).splice(idx, 1);
+      if (idx >= 0) all.splice(idx, 1);
     }
   }
 
