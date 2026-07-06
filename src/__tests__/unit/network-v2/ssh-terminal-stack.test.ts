@@ -30,7 +30,7 @@ import { SilentSshInteractionHandler } from '@/network/protocols/ssh/session/ISs
 import { SftpSession } from '@/network/protocols/ssh/sftp/SftpSession';
 import { isOk } from '@/network/protocols/ssh/Result';
 import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
-import type { TcpConnector } from '@/network/core/TcpConnection';
+import type { TcpConnector } from '@/network/tcp/types';
 
 const PC1_IP = '10.0.0.1';
 const PC2_IP = '10.0.0.2';

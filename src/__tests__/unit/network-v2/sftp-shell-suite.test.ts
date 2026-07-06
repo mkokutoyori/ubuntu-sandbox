@@ -24,7 +24,7 @@ import { VirtualFileSystem } from '@/network/devices/linux/VirtualFileSystem';
 import { SftpSession } from '@/network/protocols/ssh/sftp/SftpSession';
 import { SilentSshInteractionHandler } from '@/network/protocols/ssh/session/ISshInteractionHandler';
 import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
-import type { TcpConnector } from '@/network/core/TcpConnection';
+import type { TcpConnector } from '@/network/tcp/types';
 
 // ─── Fixture ────────────────────────────────────────────────────────
 

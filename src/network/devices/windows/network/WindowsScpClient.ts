@@ -1,7 +1,7 @@
 import { SftpSession } from '@/network/protocols/ssh/sftp/SftpSession';
 import { SilentSshInteractionHandler } from '@/network/protocols/ssh/session/ISshInteractionHandler';
 import { parseScpArgs } from '@/network/protocols/ssh/Scp';
-import type { TcpConnector } from '@/network/core/TcpConnection';
+import type { TcpConnector } from '@/network/tcp/types';
 import type { WindowsFileSystem } from '@/network/devices/windows/WindowsFileSystem';
 import { WindowsLocalFs } from './WindowsLocalFs';
 

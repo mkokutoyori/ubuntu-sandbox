@@ -10,7 +10,7 @@ import { SshSession } from '@/network/protocols/ssh/session/SshSession';
 import { SilentSshInteractionHandler } from '@/network/protocols/ssh/session/ISshInteractionHandler';
 import { SshConnectOptionsBuilder } from '@/network/protocols/ssh/SshConnectOptions';
 import { VirtualTimeScheduler, __setDefaultScheduler } from '@/events/Scheduler';
-import type { TcpConnector, TcpStream } from '@/network/core/TcpConnection';
+import type { TcpConnector, TcpStream } from '@/network/tcp/types';
 
 let scheduler: VirtualTimeScheduler;
 

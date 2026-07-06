@@ -8,7 +8,7 @@ import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';
 import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
 import { runWindowsScpClient } from '@/network/devices/windows/network/WindowsScpClient';
-import type { TcpConnector } from '@/network/core/TcpConnection';
+import type { TcpConnector } from '@/network/tcp/types';
 
 function scpWithPassword(win: WindowsPC, args: string, password: string) {
   const tcpConnector: TcpConnector = (h, p) =>

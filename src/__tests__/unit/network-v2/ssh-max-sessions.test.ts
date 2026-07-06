@@ -9,7 +9,7 @@ import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
 import { SshSession } from '@/network/protocols/ssh/session/SshSession';
 import { SilentSshInteractionHandler } from '@/network/protocols/ssh/session/ISshInteractionHandler';
 import { SshConnectOptionsBuilder } from '@/network/protocols/ssh/SshConnectOptions';
-import type { TcpConnector } from '@/network/core/TcpConnection';
+import type { TcpConnector } from '@/network/tcp/types';
 
 beforeEach(() => {
   resetCounters();

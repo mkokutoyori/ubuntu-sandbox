@@ -55,6 +55,26 @@ export type TcpOption =
 export type TcpCloseReason = 'fin' | 'rst' | 'timeout' | 'shutdown';
 
 /**
+ * Minimal bidirectional-stream shape SSH/SFTP/SMB/WinRM code depends on —
+ * migrated here from the now-deleted `core/TcpConnection.ts` ghost class
+ * (PRD-TCP.md P9): that class was never instantiated in production (real
+ * traffic goes through `TcpSocket` in `TcpStack.ts`), only these two type
+ * definitions were actually used outside test doubles.
+ */
+export interface TcpStream {
+  readonly localIp: string;
+  readonly localPort: number;
+  readonly remoteIp: string;
+  readonly remotePort: number;
+  write(data: string): void;
+  close(): void;
+  onData(handler: (data: string) => void): () => void;
+  onClose?(handler: (reason: string) => void): () => void;
+}
+
+export type TcpConnector = (host: string, port: number) => Promise<TcpStream | null>;
+
+/**
  * A sent segment that consumed sequence space (SYN, FIN, or data) and is
  * awaiting an ACK that covers it — PRD-TCP.md P1. Pure ACKs/RSTs never
  * enter this queue: real TCP never retransmits a bare ACK on its own.

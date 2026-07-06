@@ -2119,7 +2119,7 @@ import { SftpSession } from '@/network/protocols/ssh/sftp/SftpSession';
 import { SftpSubShell } from '@/terminal/subshells/SftpSubShell';
 import { SilentSshInteractionHandler } from '@/network/protocols/ssh/session/ISshInteractionHandler';
 import { VirtualFileSystem } from '@/network/devices/linux/VirtualFileSystem';
-import type { TcpConnector } from '@/network/core/TcpConnection';
+import type { TcpConnector } from '@/network/tcp/types';
 import type { SubShellResult } from '@/terminal/subshells/ISubShell';
 
 function tcpConnectorOf(pc: LinuxPC | LinuxServer): TcpConnector {

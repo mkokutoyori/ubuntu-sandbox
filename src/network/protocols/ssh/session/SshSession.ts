@@ -12,7 +12,7 @@ import type { ISshLocalFs } from '../ISshLocalFs';
 import type {
   TcpStream as TcpConnection,
   TcpConnector,
-} from '@/network/core/TcpConnection';
+} from '@/network/tcp/types';
 import { AuthChain, createAuthMethods } from '../auth/AuthChain';
 import type { ISshAuthContext } from '../auth/ISshAuthMethod';
 import type {

@@ -7,7 +7,7 @@
  * Reference: DESIGN-SSH-SFTP.md section 8.
  */
 
-import type { TcpStream as TcpConnection } from '@/network/core/TcpConnection';
+import type { TcpStream as TcpConnection } from '@/network/tcp/types';
 import { TimerSet } from '@/events/TimerSet';
 import { getDefaultScheduler } from '@/events/Scheduler';
 import type { ChannelType } from '../channels/ISshChannel';

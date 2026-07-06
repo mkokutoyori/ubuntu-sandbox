@@ -52,7 +52,7 @@ import { Port } from '../hardware/Port';
 import { CliShellSession } from './shells/vty/CliShellSession';
 import { TimerSet } from '@/events/TimerSet';
 import { TcpStack } from '../tcp/TcpStack';
-import type { TcpStream } from '../core/TcpConnection';
+import type { TcpStream } from '../tcp/types';
 import { SshServerHandler } from '../protocols/ssh/server/SshServerHandler';
 import { RouterSshServerContext } from '../protocols/ssh/server/RouterSshServerContext';
 import { SshHostKey } from '../protocols/ssh/SshHostKey';

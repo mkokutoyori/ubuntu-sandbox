@@ -7,7 +7,7 @@
  * `SmbSessionTable` passed in via the context, not on this handler.
  */
 
-import type { TcpStream as TcpConnection } from '@/network/core/TcpConnection';
+import type { TcpStream as TcpConnection } from '@/network/tcp/types';
 import type { WindowsFileSystem } from '../../WindowsFileSystem';
 import type { WindowsUserManager } from '../../WindowsUserManager';
 import type { SmbShareTable } from './SmbShareTable';

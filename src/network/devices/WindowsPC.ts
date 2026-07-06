@@ -23,7 +23,7 @@ import { Port } from '../hardware/Port';
 import { IPAddress, SubnetMask, DeviceType, type IPv4Packet, type TCPPacket, IP_PROTO_TCP, IP_PROTO_UDP, IP_PROTO_ICMP, createIPv4Packet } from '../core/types';
 import { WindowsSshServerContext } from '../protocols/ssh/server/WindowsSshServerContext';
 import { SshServerHandler } from '../protocols/ssh/server/SshServerHandler';
-import type { TcpStream } from '../core/TcpConnection';
+import type { TcpStream } from '../tcp/types';
 import { CrossVendorSshHost } from '../protocols/ssh/server/CrossVendorSshHost';
 import { WindowsUserManagerAuthority } from './windows/network/WindowsUserManagerAuthority';
 import { runWindowsSshClient } from './windows/network/WindowsSshClient';
@@ -1392,7 +1392,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       sourceUser: user,
       sourceHome: `C:\\Users\\${user}`,
       localFs: this.fs,
-      tcpConnector: (h, p) => this.tcpConnect(h, p) as ReturnType<import('../core/TcpConnection').TcpConnector>,
+      tcpConnector: (h, p) => this.tcpConnect(h, p) as ReturnType<import('../tcp/types').TcpConnector>,
     }).then(r => r.output);
   }
 

@@ -10,7 +10,8 @@
  * and stays green unmodified.
  */
 import { describe, it, expect } from 'vitest';
-import { TcpConnection, type TcpConnector } from '@/network/core/TcpConnection';
+import type { TcpConnector } from '@/network/tcp/types';
+import { MockTcpConnection } from './MockTcpConnection';
 import { VirtualFileSystem } from '@/network/devices/linux/VirtualFileSystem';
 import { LinuxUserManager } from '@/network/devices/linux/LinuxUserManager';
 import { LinuxSshServerContext } from '@/network/protocols/ssh/server/LinuxSshServerContext';
@@ -35,14 +36,14 @@ function buildTopology(files: Record<string, string> = {}) {
   const clientToServer: string[] = [];
   const serverToClient: string[] = [];
 
-  const bridge: { server: TcpConnection | null } = { server: null };
-  const client = new TcpConnection(LOCAL_IP, 49000, REMOTE_IP, 22, 100, (seg) => {
+  const bridge: { server: MockTcpConnection | null } = { server: null };
+  const client = new MockTcpConnection(LOCAL_IP, 49000, REMOTE_IP, 22, 100, (seg) => {
     if (seg.payload != null) {
       clientToServer.push(String(seg.payload));
       bridge.server?.receiveData(String(seg.payload));
     }
   });
-  const server = new TcpConnection(REMOTE_IP, 22, LOCAL_IP, 49000, 200, (seg) => {
+  const server = new MockTcpConnection(REMOTE_IP, 22, LOCAL_IP, 49000, 200, (seg) => {
     if (seg.payload != null) {
       serverToClient.push(String(seg.payload));
       client.receiveData(String(seg.payload));

@@ -8,7 +8,7 @@
  * Reference: DESIGN-SSH-SFTP.md section 9.3 ; BRD-SSH-SFTP.md SFTP-01.
  */
 
-import type { TcpConnector } from '@/network/core/TcpConnection';
+import type { TcpConnector } from '@/network/tcp/types';
 import type { ISshLocalFs } from '../ISshLocalFs';
 import type {
   ISshSftpChannel,

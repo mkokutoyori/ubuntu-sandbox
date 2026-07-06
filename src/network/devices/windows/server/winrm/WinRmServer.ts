@@ -15,7 +15,7 @@
  * connection-establishment step is new here.
  */
 
-import type { TcpStream as TcpConnection } from '@/network/core/TcpConnection';
+import type { TcpStream as TcpConnection } from '@/network/tcp/types';
 import type { WindowsUserManager } from '../../WindowsUserManager';
 
 export interface WinRmServerContext {
