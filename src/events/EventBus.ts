@@ -85,7 +85,12 @@ export class EventBus implements IEventBus {
   ): Unsubscribe {
     const wrapped: Handler<DomainEvent> = (event) => {
       const typed = event as EventOf<T>;
-      if (predicate(typed.payload)) {
+      // EventOf<T>['payload'] is a deferred conditional type — inside this
+      // generic method it doesn't reliably match predicate's own reference
+      // to the same type. Narrow through unknown to predicate's actual
+      // parameter type.
+      const payload = typed.payload as unknown as Parameters<typeof predicate>[0];
+      if (predicate(payload)) {
         (handler as unknown as Handler<DomainEvent>)(event);
       }
     };

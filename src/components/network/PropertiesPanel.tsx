@@ -309,7 +309,7 @@ export function PropertiesPanel() {
                   >
                     <div className="flex items-center justify-between">
                       <span className="font-medium text-foreground/90">{iface.name}</span>
-                      {iface.type === 'wifi' && <Wifi className="w-3 h-3 text-green-400" />}
+                      {(iface.type as string) === 'wifi' && <Wifi className="w-3 h-3 text-green-400" />}
                       {iface.type === 'ethernet' && <Network className="w-3 h-3 text-blue-400" />}
                     </div>
                     <div className="text-muted-foreground mt-1">{iface.macAddress}</div>

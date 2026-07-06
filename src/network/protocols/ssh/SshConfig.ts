@@ -66,7 +66,7 @@ export class SshConfig {
       }
     }
     result.host = targetHost;
-    return result as SshHostEntry;
+    return result as unknown as SshHostEntry;
   }
 
   list(): readonly SshHostEntry[] {

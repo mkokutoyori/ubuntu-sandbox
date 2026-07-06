@@ -33,7 +33,7 @@ export interface LacpPortBundledPayload extends LacpDeviceRef {
 export interface LacpPortUnbundledPayload extends LacpDeviceRef {
   port: string;
   groupId: number;
-  cause: 'link-down' | 'partner-loss' | 'admin-change';
+  cause: 'link-down' | 'partner-loss' | 'admin-change' | 'partner-timeout';
 }
 
 export type LacpDomainEvent =

@@ -11,7 +11,7 @@ export const DNS_PORT = 53;
 
 export type DnsMessageHandler = (
   query: DnsMessage,
-  sourceIP?: IPAddress,
+  sourceIP?: IPAddress | IPv6Address,
   sourcePort?: number,
 ) => DnsMessage | Promise<DnsMessage>;
 

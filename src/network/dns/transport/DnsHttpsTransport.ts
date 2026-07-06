@@ -62,9 +62,14 @@ export function bindDnsHttpsServer(
         return createResponse(400, 'Bad Request');
       }
 
+      const answer = handler(query);
+      // Http1RequestHandler is synchronous-only — same constraint as
+      // DnsQuicTransport/DnsUdpTransport, an async handler result can't be
+      // awaited inside this callback.
+      if (answer instanceof Promise) return createResponse(500, 'Internal Server Error');
       const response = createResponse(200, 'OK');
       response.headers.set('Content-Type', DOH_CONTENT_TYPE);
-      response.body = encodeDnsMessage(handler(query));
+      response.body = encodeDnsMessage(answer);
       return response;
     },
   );

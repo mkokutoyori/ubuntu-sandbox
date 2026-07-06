@@ -321,7 +321,7 @@ export class WindowsServiceManager {
   addService(
     name: string, displayName: string, description: string,
     opts: Partial<Pick<WindowsService, 'startType' | 'dependencies' | 'canPauseAndContinue'
-      | 'acceptsShutdown' | 'processName' | 'account' | 'serviceType' | 'state' | 'critical'>> = {},
+      | 'acceptsShutdown' | 'processName' | 'account' | 'serviceType' | 'state' | 'critical' | 'binaryPath'>> = {},
   ): void {
     if (this.services.has(name.toLowerCase())) return;
     this.services.set(name.toLowerCase(), {
@@ -329,7 +329,7 @@ export class WindowsServiceManager {
       state: opts.state ?? 'Running',
       startType: opts.startType ?? 'Automatic',
       serviceType: opts.serviceType ?? 'WIN32_SHARE_PROCESS',
-      binaryPath: `C:\\Windows\\System32\\svchost.exe -k ${name.toLowerCase()}`,
+      binaryPath: opts.binaryPath ?? `C:\\Windows\\System32\\svchost.exe -k ${name.toLowerCase()}`,
       account: opts.account ?? 'NT AUTHORITY\\LocalService',
       dependencies: opts.dependencies ?? [],
       canPauseAndContinue: opts.canPauseAndContinue ?? false,

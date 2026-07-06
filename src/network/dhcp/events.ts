@@ -160,6 +160,12 @@ export interface DhcpServerOption82ReceivedPayload extends DhcpDeviceRef {
   remoteId: string;
 }
 
+export interface DhcpPoolExhaustedPayload extends DhcpDeviceRef {
+  pool: string;
+  network: string;
+  clientMac: string;
+}
+
 // ── Discriminated union ───────────────────────────────────────────────
 
 export type DhcpDomainEvent =
@@ -184,4 +190,5 @@ export type DhcpDomainEvent =
   | { topic: 'dhcp.relay.forwarded'; payload: DhcpRelayForwardedPayload }
   | { topic: 'dhcp.relay.reply-forwarded'; payload: DhcpRelayReplyForwardedPayload }
   | { topic: 'dhcp.relay.dropped'; payload: DhcpRelayDroppedPayload }
-  | { topic: 'dhcp.server.option82-received'; payload: DhcpServerOption82ReceivedPayload };
+  | { topic: 'dhcp.server.option82-received'; payload: DhcpServerOption82ReceivedPayload }
+  | { topic: 'dhcp.pool.exhausted'; payload: DhcpPoolExhaustedPayload };

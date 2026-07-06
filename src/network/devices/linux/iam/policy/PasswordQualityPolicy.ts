@@ -133,7 +133,7 @@ export class PasswordQualityPolicy {
     const changed: string[] = [];
     const set = <K extends keyof PasswordQualityPolicy>(key: K, value: PasswordQualityPolicy[K] | undefined) => {
       if (value !== undefined && this[key] !== value) {
-        this[key] = value;
+        this[key] = value as this[K];
         changed.push(String(key));
       }
     };

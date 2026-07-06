@@ -99,7 +99,7 @@ export function registerHuaweiNATInterfaceCommands(trie: CommandTrie, ctx: Huawe
     if (!ifName) return 'Error: No interface selected.';
     ctx.r()._getNATEngine().setOutsideInterface(ifName);
     const res = ctx.r()._getNATEngine().addStaticEntry({ localIP, globalIP, protocol: proto as 'tcp' | 'udp', localPort, globalPort });
-    if (!res.ok) return `Error: NAT server conflict (${res.reason}).`;
+    if (res.ok === false) return `Error: NAT server conflict (${res.reason}).`;
     return '';
   });
 

@@ -16,7 +16,7 @@ import type { OracleObservables, OracleInstanceStateVM, OracleProcessVM,
   OracleAlertLogVM, OracleSessionVM, OracleStatsVM } from '@/database/oracle/observables';
 import { getRegisteredOracleDatabase } from '@/terminal/commands/database';
 
-const EMPTY_ARRAY: ReadonlyArray<never> = [];
+const EMPTY_ARRAY: ReadonlyArray<never> = [] as const;
 const EMPTY_INSTANCE: OracleInstanceStateVM = { state: 'SHUTDOWN', sid: '', startedAt: null };
 const EMPTY_ALERT: OracleAlertLogVM = { lines: [] };
 const EMPTY_STATS: OracleStatsVM = {

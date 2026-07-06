@@ -70,7 +70,12 @@ export function bindDnsTlsServer(host: EndHost, handler: DnsMessageHandler, opti
             socket.close();
             return;
           }
-          socket.send(fragmentAsRecords('application_data', encodeDnsMessage(handler(query)), true));
+          const answer = handler(query);
+          // This socket callback is synchronous-only — same constraint as
+          // DnsQuicTransport/DnsUdpTransport, an async handler result can't
+          // be awaited here.
+          if (answer instanceof Promise) { socket.close(); return; }
+          socket.send(fragmentAsRecords('application_data', encodeDnsMessage(answer), true));
           socket.close();
           return;
         }

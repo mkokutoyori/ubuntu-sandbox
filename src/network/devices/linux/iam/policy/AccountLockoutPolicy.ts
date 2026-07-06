@@ -66,7 +66,7 @@ export class AccountLockoutPolicy {
     const changed: string[] = [];
     const set = <K extends keyof AccountLockoutPolicy>(key: K, value: AccountLockoutPolicy[K] | undefined) => {
       if (value !== undefined && this[key] !== value) {
-        this[key] = value;
+        this[key] = value as this[K];
         changed.push(String(key));
       }
     };

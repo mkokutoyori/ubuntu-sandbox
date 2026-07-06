@@ -177,7 +177,7 @@ export class GreAgent {
     }
     if (tunnel.checksumEnabled && gre.checksumPresent) {
       const wireChecksum = gre.checksum;
-      const recomputed = computeGreChecksum({ ...gre, checksum: 0 });
+      const recomputed = computeGreChecksum(gre);
       if (wireChecksum !== recomputed) {
         tunnel.checksumDrops++;
         this.dropped(tunnel.sourceIp, tunnel.destinationIp, 'checksum-mismatch');

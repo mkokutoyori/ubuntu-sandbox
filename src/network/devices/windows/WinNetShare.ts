@@ -16,7 +16,7 @@
 
 import type { WinCommandContext } from './WinCommandExecutor';
 import { requireWindowsService } from './WinFeatureGate';
-import type { SmbShare } from './server/smb/SmbShareTable';
+import type { SmbShare } from './server/smb/SmbTypes';
 
 function listShares(shares: SmbShare[]): string {
   const lines: string[] = [];

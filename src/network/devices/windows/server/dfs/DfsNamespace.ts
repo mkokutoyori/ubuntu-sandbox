@@ -98,7 +98,7 @@ export class DfsNamespaceRegistry {
   }
 
   /** The client-facing resolution step — every real target this logical folder currently redirects to. */
-  resolve(namespacePath: string, folderName: string): DfsTarget[] | null {
+  resolve(namespacePath: string, folderName: string): readonly DfsTarget[] | null {
     return this.getFolder(namespacePath, folderName)?.targets ?? null;
   }
 }

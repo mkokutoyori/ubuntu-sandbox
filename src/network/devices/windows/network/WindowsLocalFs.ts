@@ -43,7 +43,7 @@ export class WindowsLocalFs implements ISshLocalFs {
     if (!this.fs.exists(abs)) return null;
     return this.fs.listDirectory(abs).map((e) => ({
       name: e.name,
-      inode: { type: e.type === 'directory' ? 'directory' : 'file' },
+      inode: { type: e.entry.type === 'directory' ? 'directory' : 'file' },
     }));
   }
 

@@ -48,7 +48,7 @@ export class ListenerControl {
   private _startedAt: Date | null = null;
   private _established = 0;
   private _refused = 0;
-  private _port = ORACLE_CONFIG.PORT;
+  private _port: number = ORACLE_CONFIG.PORT;
   private _scanLog: ListenerScanLogEntry[] = [];
   private _connectionLog: ListenerConnectionLogEntry[] = [];
   private _noBanner = false;

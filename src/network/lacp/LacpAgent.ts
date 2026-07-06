@@ -323,7 +323,7 @@ export class LacpAgent extends ReactiveAgentBase {
 
   private maybeEmitStateChange(
     p: LacpPortInfo, oldState: LacpPortState, oldBundled: boolean,
-    unbundleCause = 'partner-loss',
+    unbundleCause: 'link-down' | 'partner-loss' | 'admin-change' | 'partner-timeout' = 'partner-loss',
   ): void {
     if (oldState !== p.state) {
       this.getBus().publish({

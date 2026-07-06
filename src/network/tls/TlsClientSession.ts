@@ -220,7 +220,7 @@ export class TlsClientSession {
     const leafCert = certificate.certificateList[0];
     if (!leafCert) return this.fail('certificate_unknown');
     const verification = this.config.verifier.verify(leafCert);
-    if (!verification.ok) {
+    if (verification.ok === false) {
       this.lastAlert = certificateAlert(verification.reason);
       this.state = 'done';
       this.result = 'failure';

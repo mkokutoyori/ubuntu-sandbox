@@ -3,7 +3,7 @@
  */
 
 import { queryResult } from '../../engine/executor/ResultSet';
-import { oracleVarchar2 } from '../../engine/catalog/DataType';
+import { oracleVarchar2, oracleNumber } from '../../engine/catalog/DataType';
 import { registerView } from './registry';
 import { paramType } from './_params';
 
@@ -16,7 +16,7 @@ registerView({
       [
         { name: 'SID', dataType: oracleVarchar2(80) },
         { name: 'NAME', dataType: oracleVarchar2(80) },
-        { name: 'TYPE', dataType: { name: 'NUMBER', nullable: true } },
+        { name: 'TYPE', dataType: oracleNumber() },
         { name: 'VALUE', dataType: oracleVarchar2(512) },
         { name: 'DISPLAY_VALUE', dataType: oracleVarchar2(512) },
         { name: 'ISSPECIFIED', dataType: oracleVarchar2(9) },

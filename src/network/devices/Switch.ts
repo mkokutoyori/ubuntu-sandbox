@@ -1090,7 +1090,7 @@ export abstract class Switch extends Equipment {
           const limit = this.dhcpSnooping.rateLimits.get(portName);
           if (limit && limit > 0) {
             const r = this.dhcpSnoopingRateLimiter.consume(portName, limit, 1);
-            if (!r.ok) {
+            if (r.ok === false) {
               this.dhcpSnoopingViolations++;
               this.snoopingLog.push(
                 `DHCP_SNOOPING: rate limit (${r.limit} pps) exceeded on ${portName} VLAN ${ingressVlan}, dropped ${msgType ?? 'message'}`,

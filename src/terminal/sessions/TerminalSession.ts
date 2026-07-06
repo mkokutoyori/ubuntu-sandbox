@@ -327,7 +327,7 @@ export abstract class TerminalSession {
   protected startFollowStream(opts: {
     commandLine: string;
     kind?: 'streaming' | 'subscription';
-    prepare?: (ctx: AsyncJobContext) => boolean | string;
+    prepare?: (ctx: AsyncJobContext) => boolean;
     subscribe: (lineSink: (line: string) => void) => () => void;
   }): boolean {
     if (this.hasForegroundAsyncJob) return false;

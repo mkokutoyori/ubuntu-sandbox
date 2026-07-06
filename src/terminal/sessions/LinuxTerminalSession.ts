@@ -10,6 +10,7 @@
  */
 
 import { Equipment, type HostCapableDevice } from '@/network';
+import { IPAddress } from '@/network/core/types';
 import { parsePingArgs } from '@/network/devices/linux/commands/net/Ping';
 import { parseTracerouteArgs } from '@/network/devices/linux/commands/net/Traceroute';
 import { parseMtrArgs, MtrHopStats, formatMtrFrame, MTR_USAGE, MTR_VERSION, type MtrHopProbe } from '@/network/devices/linux/Mtr';

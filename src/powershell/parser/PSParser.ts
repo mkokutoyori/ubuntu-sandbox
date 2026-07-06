@@ -1051,7 +1051,6 @@ export class PSParser {
     const pos = this.pos_();
 
     // Skip/collect attribute decorators like [ValidateRange(1,100)] before modifiers/type
-    const { PSValidateAttribute: _v, ..._ } = {} as never; void _v; void _;
     type AttrInfo = { name: string; args: Array<string|number> };
     const attributes: AttrInfo[] = [];
     while (this.check(PSTokenType.LBRACKET)) {

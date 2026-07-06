@@ -22,6 +22,21 @@ export const SYSLOG_SEVERITY: Record<SyslogSeverityName, number> = {
   debugging: 7,
 };
 
+const SYSLOG_SEVERITY_BY_NUM: readonly SyslogSeverityName[] = [
+  'emergency', 'alert', 'critical', 'error',
+  'warning', 'notification', 'informational', 'debugging',
+];
+
+/**
+ * Reverse lookup for consumers of `device.syslog.entry` — that event's
+ * `severity` uses the Cisco-style plural vocabulary (emergencies/alerts/…),
+ * a distinct spelling from this module's singular SyslogSeverityName. Both
+ * share the same 0-7 ordering, so severityNum is the safe bridge.
+ */
+export function syslogSeverityFromNum(n: number): SyslogSeverityName {
+  return SYSLOG_SEVERITY_BY_NUM[n] ?? 'informational';
+}
+
 export type SyslogFacilityName =
   | 'kern' | 'user' | 'mail' | 'daemon' | 'auth' | 'syslog'
   | 'lpr' | 'news' | 'uucp' | 'cron' | 'authpriv' | 'ftp'

@@ -11,6 +11,7 @@ import type { Router } from '../../Router';
 import type { CommandTrie } from '../CommandTrie';
 import { HuaweiDebugService } from '../../router/diag/HuaweiDebugService';
 import { IPAddress } from '../../../core/types';
+import type { IPv6AddressEntry } from '../../../hardware/Port';
 import { huaweiCipher, huaweiIrreversibleCipher } from '@/crypto';
 import { resolveHuaweiInterfaceName as resolveHuaweiIfName } from '../cli-utils';
 import { runningConfigACL, runningConfigInterfaceACL } from './HuaweiAclCommands';
@@ -776,7 +777,7 @@ export function displayIpv6Interface(router: Router, ifName: string): string {
     `IPv6 protocol current state : ${ipv6Enabled ? 'UP' : 'DOWN'}`,
   ];
   if (addrs.length === 0) lines.push('IPv6 is enabled, link-local address is not assigned');
-  for (const a of addrs as Array<{ address: string; prefixLength: number }>) {
+  for (const a of addrs as IPv6AddressEntry[]) {
     lines.push(`  Global unicast address(es):`);
     lines.push(`    ${a.address}, subnet is ${a.address}/${a.prefixLength}`);
   }

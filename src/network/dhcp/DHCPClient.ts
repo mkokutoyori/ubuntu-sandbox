@@ -425,7 +425,7 @@ export class DHCPClient implements IProtocolEngine {
       clientIdentifier,
     });
     const ackResult = replyResult && replyResult.type === 'ACK' && replyResult.binding
-      ? { binding: replyResult.binding, serverIdentifier: replyResult.serverIdentifier, xid: replyResult.xid, renewalTime: replyResult.renewalTime, rebindingTime: replyResult.rebindingTime }
+      ? { binding: replyResult.binding, serverIdentifier: replyResult.serverIdentifier, xid: replyResult.xid, renewalTime: replyResult.renewalTime, rebindingTime: replyResult.rebindingTime, serverMac: replyResult.serverMac }
       : null;
 
     if (!ackResult) {

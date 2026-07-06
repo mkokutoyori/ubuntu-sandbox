@@ -197,7 +197,7 @@ export function resolveOracleConnectTarget(
   }
   const sourceIp = remote ? (primaryIpv4(localDevice) ?? '0.0.0.0') : '127.0.0.1';
   const outcome = db.instance.listener.attemptConnect(desc.service, sourceIp);
-  if (!outcome.ok) {
+  if (outcome.ok === false) {
     return { ok: false, error: outcome.error };
   }
   return { ok: true, db, remote, descriptor: desc };

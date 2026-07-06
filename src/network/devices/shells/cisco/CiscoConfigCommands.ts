@@ -450,7 +450,10 @@ export function buildConfigIfCommands(trie: CommandTrie, ctx: CiscoShellContext)
     if (!port) return '';
     const a = (args[0] ?? '').toLowerCase();
     if (a !== 'full' && a !== 'half' && a !== 'auto') return "% Invalid input detected at '^' marker.";
-    port.setDuplex(a as 'full' | 'half' | 'auto');
+    // Port only models the negotiated outcome, not the negotiation mode
+    // itself — `duplex auto` resolves to full, the realistic result on a
+    // modern switched link.
+    port.setDuplex(a === 'half' ? 'half' : 'full');
     return '';
   });
   trie.registerGreedy('speed', 'Set interface speed', (args) => {

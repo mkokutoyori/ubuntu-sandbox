@@ -29,7 +29,7 @@ export interface StoredUnit {
   schema: string; name: string; type: string;
   parameters: Array<{ name: string; mode: string; dataType: string }>;
   returnType?: string; body: string; sourceLines: string[];
-  created: Date; status: string;
+  created: Date; status: 'VALID' | 'INVALID';
 }
 
 export interface StoredUnitErrors {

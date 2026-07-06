@@ -17,6 +17,7 @@
  */
 
 import { IPAddress, SubnetMask, IPv6Address } from '../core/types';
+import type { NetworkPdu } from '../core/NetworkPdu';
 
 // ─── OSPF Constants ──────────────────────────────────────────────────
 

@@ -75,8 +75,19 @@ export class LoggingConfig {
     for (const listener of this.monitorListeners) listener(line);
   }
 
-  /** Append a log message into the buffered/console projection. */
-  append(severity: Severity, tag: string, text: string): void {
+  /**
+   * Append a log message into the buffered/console projection.
+   *
+   * `republish` is false only for the generic `log`-topic bridge below:
+   * that bridge exists to keep `show logging`/`terminal monitor` in sync
+   * with plain Logger.warn/error calls, but SyslogAgent already listens to
+   * the same `log` topic directly for actual UDP forwarding — re-emitting
+   * `device.syslog.entry` here as well would double-deliver every one of
+   * those messages. Protocol-specific call sites (CDP/VRRP/GLBP/etc.,
+   * which have no `log`-topic equivalent) keep the default `true` so
+   * `device.syslog.entry` remains their only forwarding path.
+   */
+  append(severity: Severity, tag: string, text: string, republish: boolean = true): void {
     if (!this.enabled) return;
     const ts = Date.now();
     if (this.SEVERITY_ORDER[severity] <= this.SEVERITY_ORDER[this.monitorSeverity]) {
@@ -87,7 +98,7 @@ export class LoggingConfig {
     const cap = Math.max(16, Math.floor(this.bufferedSize / 80));
     while (this.messages.length > cap) this.messages.shift();
     this.nextSeq++;
-    if (this.attachedBus && this.attachedDeviceId) {
+    if (republish && this.attachedBus && this.attachedDeviceId) {
       this.attachedBus.publish({
         topic: 'device.syslog.entry',
         payload: {
@@ -695,13 +706,13 @@ export class LoggingConfig {
       const p = e.payload as unknown as { source: string; level: string; event: string; message: string };
       if (p.source !== deviceId) return;
       if (p.event.startsWith('router:acl-deny')) {
-        this.append('warnings', 'sec', p.message);
+        this.append('warnings', 'sec', p.message, false);
         return;
       }
       if (p.level === 'error') {
-        this.append('errors', this.tagFromEvent(p.event), p.message);
+        this.append('errors', this.tagFromEvent(p.event), p.message, false);
       } else if (p.level === 'warn') {
-        this.append('warnings', this.tagFromEvent(p.event), p.message);
+        this.append('warnings', this.tagFromEvent(p.event), p.message, false);
       }
     };
     unsubs.push(bus.subscribe('log', logHandler));

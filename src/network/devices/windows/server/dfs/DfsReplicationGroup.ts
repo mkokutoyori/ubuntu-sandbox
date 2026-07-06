@@ -60,7 +60,7 @@ export class DfsReplicatedFolder {
       const hash = fnv1aHash(entry.content ?? '');
       const existing = this.versions.get(name);
       if (!existing || existing.hash !== hash) {
-        this.versions.set(name, { size: entry.size, hash, mtime: entry.mtime, version: this.nextVersion++ });
+        this.versions.set(name, { size: entry.size, hash, mtime: entry.mtime.getTime(), version: this.nextVersion++ });
       }
     }
   }

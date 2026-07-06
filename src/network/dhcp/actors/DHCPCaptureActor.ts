@@ -64,7 +64,7 @@ export class DHCPCaptureActor {
       | 'dhcp.decline.sent' | 'dhcp.address-conflict'
       | 'dhcp.pool.lease-allocated' | 'dhcp.pool.lease-released'
       | 'dhcp.reservation.added',
-    ) => this.bus.subscribe(topic, (e) => this.append(kind, e.payload));
+    ) => this.bus.subscribe(topic, (e) => this.append(kind, e.payload as unknown as Record<string, unknown>));
 
     this.subscriptions.push(
       sub('engine-started', 'dhcp.engine.started'),

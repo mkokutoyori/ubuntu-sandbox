@@ -12,7 +12,7 @@ import type {
   DhcpServerLeaseVM, DhcpServerStatsVM,
 } from '@/network/dhcp/observables';
 
-const EMPTY_ARRAY: ReadonlyArray<never> = [];
+const EMPTY_ARRAY: ReadonlyArray<never> = [] as const;
 const EMPTY_CLIENT_STATS: DhcpClientStatsVM = {
   running: false, ifaceCount: 0, boundCount: 0,
   discoversSent: 0, offersReceived: 0,

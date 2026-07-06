@@ -83,7 +83,7 @@ export class OspfEngineAdapter implements IRoutingProtocolEngine<OSPFConfig> {
       iface: r.iface,
       protocol: 'ospf',
       adminDistance: OSPF_AD,
-      metric: r.metric,
+      metric: r.cost,
     }));
   }
 

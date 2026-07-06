@@ -4,7 +4,7 @@ import {
   type SyslogConfig, type SyslogServer, type SyslogPacket,
   type SyslogSeverityName, type SyslogFacilityName,
   createDefaultSyslogConfig, defaultServer,
-  severityFromLogLevel, shouldForward, bsdTimestamp,
+  severityFromLogLevel, shouldForward, bsdTimestamp, syslogSeverityFromNum,
   SYSLOG_SEVERITY, SYSLOG_FACILITY, UDP_PORT_SYSLOG,
 } from './types';
 import {
@@ -134,7 +134,12 @@ export class SyslogAgent {
       this.unsubscribers.push(bus.subscribeWhere(
         'device.syslog.entry',
         (p) => p.deviceId === this.host.id,
-        (e) => this.onLoggingEntry(e.payload),
+        (e) => this.onLoggingEntry({
+          deviceId: e.payload.deviceId,
+          severity: syslogSeverityFromNum(e.payload.severityNum),
+          tag: e.payload.tag,
+          message: e.payload.message,
+        }),
       ));
     };
     subscribeEntryOn(localBus);

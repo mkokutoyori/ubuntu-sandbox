@@ -3,7 +3,7 @@ import type { NetworkOsAccount, SshAuthMethod } from '../../../devices/router/aa
 export interface AccountSnapshot {
   readonly name: string;
   readonly secret: string;
-  readonly secretAlgorithm: 'plain' | 'md5' | 'sha256' | 'sha512' | 'cipher' | 'irreversible-cipher' | 'type-7';
+  readonly secretAlgorithm: 'plain' | 'md5' | 'sha256' | 'scrypt' | 'sha512' | 'cipher' | 'irreversible-cipher' | 'type-7';
   readonly privilege: number;
   readonly groups: readonly string[];
   readonly serviceTypes: readonly string[];

@@ -69,7 +69,7 @@ function useHostSignal<K extends keyof HostObservables>(
   ) as ReturnType<HostObservables[K]['get']>;
 }
 
-const EMPTY_ARRAY: ReadonlyArray<never> = [];
+const EMPTY_ARRAY: ReadonlyArray<never> = [] as const;
 const EMPTY_STATS: HostStatsVM = {
   arpCacheSize: 0,
   ndpCacheSize: 0,

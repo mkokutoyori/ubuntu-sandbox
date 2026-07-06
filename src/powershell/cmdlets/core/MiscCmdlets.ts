@@ -25,7 +25,7 @@ export class NewObjectCmdlet implements ICmdlet {
     if (tname.includes('arraylist') || tname.includes('list`1') || tname.includes('list<')) {
       // Real JS array with __list__ sentinel for getMember dispatch + Count getter for direct JS access
       const arr: PSValue[] = [];
-      (arr as Record<string, PSValue>)['__list__'] = arr as unknown as PSValue;
+      (arr as unknown as Record<string, PSValue>)['__list__'] = arr as unknown as PSValue;
       Object.defineProperty(arr, 'Count', { get: () => arr.length, enumerable: false, configurable: true });
       return arr as unknown as PSValue;
     }

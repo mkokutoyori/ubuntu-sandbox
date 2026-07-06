@@ -34,4 +34,13 @@ export const NULL_PROVIDERS: PSProviders = {
   nps:            null,
   gpo:            null,
   iis:            null,
+  adcs:           null,
+  pki:            null,
+  dfs:            null,
+  rdp:            null,
+  cluster:        null,
+  wsus:           null,
+  windowsUpdate:  null,
+  print:          null,
+  licensing:      null,
 };
