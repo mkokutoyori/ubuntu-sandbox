@@ -2028,7 +2028,7 @@ export abstract class EndHost extends Equipment {
   }
 
   public async queryDnsServer(
-    serverIP: IPAddress,
+    serverIP: IPAddress | IPv6Address,
     name: string,
     qtype: string,
     timeoutMs: number = 2000,
@@ -2069,7 +2069,7 @@ export abstract class EndHost extends Equipment {
         return;
       }
 
-      const sent = this.sendUdpDatagram(
+      const sent = this.sendUdpDatagramTo(
         serverIP, DNS_PORT, sourcePort, wire.bytes, wire.bytes.length,
       );
       if (!sent) {
@@ -2081,7 +2081,7 @@ export abstract class EndHost extends Equipment {
   }
 
   public queryDnsServerSync(
-    serverIP: IPAddress,
+    serverIP: IPAddress | IPv6Address,
     name: string,
     qtype: string,
   ): DnsMessage | null {
@@ -2102,7 +2102,7 @@ export abstract class EndHost extends Equipment {
     } catch {
       return null;
     }
-    this.sendUdpDatagram(
+    this.sendUdpDatagramTo(
       serverIP, DNS_PORT, sourcePort, wire.bytes, wire.bytes.length,
     );
     this.udpClose(sourcePort);

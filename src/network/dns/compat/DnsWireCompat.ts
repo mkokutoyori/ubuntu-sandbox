@@ -1,6 +1,7 @@
 import { RRType, DnsClass } from '@/network/dns/wire/RRType';
 import { DnsRcode as WireRcode, DnsOpcode } from '@/network/dns/wire/DnsHeaderFlags';
 import type { DnsMessage } from '@/network/dns/wire/DnsMessage';
+import { IPv6Address } from '@/network/core/types';
 import {
   makeARecord,
   makeAaaaRecord,
@@ -72,9 +73,43 @@ export function nextDnsTransactionId(): number {
 
 const IPV4_LITERAL = /^\d{1,3}(\.\d{1,3}){3}$/;
 
+/** Cheap syntactic pre-check before attempting the (throwing) `IPv6Address` parse. */
+const IPV6_CANDIDATE = /^[0-9a-fA-F:]*:[0-9a-fA-F:.]*(%[^%]+)?$/;
+
+export function isIPv4Literal(target: string): boolean {
+  return IPV4_LITERAL.test(target);
+}
+
+export function isIPv6Literal(target: string): boolean {
+  if (!IPV6_CANDIDATE.test(target)) return false;
+  try {
+    new IPv6Address(target);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** True for any IPv4/IPv6 literal — i.e. an `nslookup`/`dig` argument that triggers a reverse (PTR) lookup. */
+export function isIpLiteral(target: string): boolean {
+  return isIPv4Literal(target) || isIPv6Literal(target);
+}
+
+/** Nibble-reverses a full 32-nibble IPv6 address into its `ip6.arpa` PTR query name (RFC 3596 §2.5). */
+function ipv6PtrQName(target: string): string {
+  const hextets = new IPv6Address(target).getHextets();
+  const nibbles: string[] = [];
+  for (const hextet of hextets) {
+    const hex = hextet.toString(16).padStart(4, '0');
+    for (const ch of hex) nibbles.push(ch);
+  }
+  return nibbles.reverse().join('.') + '.ip6.arpa';
+}
+
 export function ptrQName(target: string): string {
-  if (!IPV4_LITERAL.test(target)) return target;
-  return target.split('.').reverse().join('.') + '.in-addr.arpa';
+  if (isIPv4Literal(target)) return target.split('.').reverse().join('.') + '.in-addr.arpa';
+  if (isIPv6Literal(target)) return ipv6PtrQName(target);
+  return target;
 }
 
 const TXT_CHARACTER_STRING_MAX = 255;

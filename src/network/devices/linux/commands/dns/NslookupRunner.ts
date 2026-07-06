@@ -1,9 +1,7 @@
 import { DnsRcode } from '@/network/dns/wire/DnsHeaderFlags';
-import { rcodeFromWire, ptrQName } from '@/network/dns/compat/DnsWireCompat';
+import { rcodeFromWire, ptrQName, isIpLiteral } from '@/network/dns/compat/DnsWireCompat';
 import type { DnsQueryFn } from '@/network/dns/compat/DnsWireCompat';
 import { isDisplayableRecord, formatAnswerLines } from './RecordFormat';
-
-const IPV4_LITERAL = /^\d{1,3}(\.\d{1,3}){3}$/;
 
 export async function executeNslookup(
   args: string[],
@@ -28,7 +26,7 @@ export async function executeNslookup(
 
   if (!domain) return 'Usage: nslookup [-type=TYPE] domain [server]';
 
-  const reverse = IPV4_LITERAL.test(domain);
+  const reverse = isIpLiteral(domain);
   if (!server) return `** server can't find ${domain}: REFUSED`;
 
   const message = await query(server, domain, reverse ? 'PTR' : qtype);

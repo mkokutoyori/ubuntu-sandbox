@@ -1,7 +1,7 @@
 import { DnsRcode } from '@/network/dns/wire/DnsHeaderFlags';
 import { encodeDnsMessage } from '@/network/dns/wire/DnsMessageCodec';
 import { findOpt } from '@/network/dns/wire/EdnsOptRecord';
-import { rrTypeFromName, rrTypeName, rcodeFromWire } from '@/network/dns/compat/DnsWireCompat';
+import { rrTypeFromName, rrTypeName, rcodeFromWire, isIpLiteral } from '@/network/dns/compat/DnsWireCompat';
 import type { DnsQueryFn, DnsQueryOptions } from '@/network/dns/compat/DnsWireCompat';
 import type { DnsMessage } from '@/network/dns/wire/DnsMessage';
 import type { ResourceRecord, ResourceRecordData } from '@/network/dns/wire/ResourceRecord';
@@ -22,7 +22,6 @@ interface DigInvocation {
   timeoutSeconds: number;
 }
 
-const IPV4_LITERAL = /^\d{1,3}(\.\d{1,3}){3}$/;
 const DEFAULT_TIMEOUT_SECONDS = 5;
 
 function parseDigArgs(args: string[], resolverIP: string | undefined): DigInvocation {
@@ -63,7 +62,7 @@ function parseDigArgs(args: string[], resolverIP: string | undefined): DigInvoca
   }
 
   if (invocation.reverse) {
-    const target = args.find((a) => IPV4_LITERAL.test(a));
+    const target = args.find((a) => isIpLiteral(a));
     if (target) invocation.domain = target;
     invocation.qtype = 'PTR';
   }
@@ -172,7 +171,7 @@ export async function executeDig(
     ? `@${invocation.server} ${invocation.domain}`
     : invocation.domain;
 
-  if (!invocation.server || !IPV4_LITERAL.test(invocation.server)) {
+  if (!invocation.server || !isIpLiteral(invocation.server)) {
     return noServersLine(banner);
   }
 

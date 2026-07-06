@@ -69,7 +69,6 @@ export class AddressMatchList {
 
   matches(ip: string, env: AclHostEnvironment): boolean {
     const address = toUint32(ip);
-    if (address === null) return false;
     for (const element of this.elements) {
       if (elementMatches(element, address, env)) return !element.negated;
     }
@@ -116,20 +115,26 @@ function parseElement(
   return { kind: 'reference', list: referenced, negated };
 }
 
-function elementMatches(element: AclElement, address: number, env: AclHostEnvironment): boolean {
+/**
+ * `any`/`none` are family-agnostic wildcards — real `named` applies them to
+ * IPv6 clients exactly like IPv4 ones. Every other element kind below is
+ * IPv4-only (this simulator has no IPv6 CIDR matching yet), so a `null`
+ * (non-IPv4) address never matches them.
+ */
+function elementMatches(element: AclElement, address: number | null, env: AclHostEnvironment): boolean {
   switch (element.kind) {
     case 'any':
       return true;
     case 'none':
       return false;
     case 'localhost':
-      return matchesLocalhost(address, env);
+      return address !== null && matchesLocalhost(address, env);
     case 'localnets':
-      return matchesNetworks(address, env.localNetworks);
+      return address !== null && matchesNetworks(address, env.localNetworks);
     case 'address':
-      return inNetwork(address, element.base, element.prefix);
+      return address !== null && inNetwork(address, element.base, element.prefix);
     case 'reference':
-      return element.list.matches(IPAddress.fromUint32(address).toString(), env);
+      return address !== null && element.list.matches(IPAddress.fromUint32(address).toString(), env);
   }
 }
 

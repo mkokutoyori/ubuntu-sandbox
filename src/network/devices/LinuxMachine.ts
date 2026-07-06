@@ -128,6 +128,13 @@ function globMatch(pattern: string, candidate: string): boolean {
   return new RegExp('^' + escaped + '$').test(candidate);
 }
 
+/** Parses a DNS server literal as IPv4 or IPv6 (RFC 3596) — `nslookup`/`dig` accept either family as `@server`. */
+function parseDnsServerLiteral(literal: string): IPAddress | IPv6Address | null {
+  try { return new IPAddress(literal); } catch { /* not IPv4 */ }
+  try { return new IPv6Address(literal); } catch { /* not IPv6 */ }
+  return null;
+}
+
 // ─── Class ─────────────────────────────────────────────────────────────
 
 export abstract class LinuxMachine extends EndHost
@@ -237,11 +244,9 @@ export abstract class LinuxMachine extends EndHost
           .slice(0, 3);
       },
       query: (serverIp, name, qtype) => {
-        try {
-          return this.queryDnsServerSync(new IPAddress(serverIp), name, qtype);
-        } catch {
-          return null;
-        }
+        const server = parseDnsServerLiteral(serverIp);
+        if (!server) return null;
+        return this.queryDnsServerSync(server, name, qtype);
       },
     });
 
@@ -1793,8 +1798,8 @@ export abstract class LinuxMachine extends EndHost
         serverIP: string, name: string, qtype: string,
         timeoutMs?: number, options?: DnsQueryOptions,
       ) {
-        let server: IPAddress;
-        try { server = new IPAddress(serverIP); } catch { return null; }
+        const server = parseDnsServerLiteral(serverIP);
+        if (!server) return null;
         return self.queryDnsServer(server, name, qtype, timeoutMs, options);
       },
       readFile(path: string): string | null {

@@ -15,10 +15,8 @@ import type { KeyEvent } from '@/terminal/sessions/TerminalSession';
 import type { ISubShell, SubShellResult } from './ISubShell';
 import type { DnsQueryFn } from '@/network/dns/compat/DnsWireCompat';
 import { DnsRcode } from '@/network/dns/wire/DnsHeaderFlags';
-import { rcodeFromWire, ptrQName } from '@/network/dns/compat/DnsWireCompat';
+import { rcodeFromWire, ptrQName, isIpLiteral } from '@/network/dns/compat/DnsWireCompat';
 import { isDisplayableRecord, formatAnswerLines } from '@/network/devices/linux/commands/dns/RecordFormat';
-
-const IPV4_LITERAL = /^\d{1,3}(\.\d{1,3}){3}$/;
 
 export interface NslookupSubShellDeps {
   readonly query: DnsQueryFn;
@@ -93,7 +91,7 @@ export class NslookupSubShell implements ISubShell {
 
   private async lookup(domain: string): Promise<string[]> {
     if (!this.server) return [`*** Can't find server name for address : Timed out`];
-    const reverse = IPV4_LITERAL.test(domain);
+    const reverse = isIpLiteral(domain);
     const message = await this.deps.query(this.server, domain, reverse ? 'PTR' : this.qtype);
     if (!message) return [';; connection timed out; no servers could be reached'];
 
