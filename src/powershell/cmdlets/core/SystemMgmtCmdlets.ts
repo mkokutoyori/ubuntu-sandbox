@@ -13,6 +13,7 @@ import type { PSValue } from '@/powershell/runtime/PSEnvironment';
 import type {
   IScheduledTaskProvider, IDiskProvider, ScheduledTaskInfo,
 } from '@/powershell/providers/PSProviders';
+import { LICENSE_STATUS_CODE } from '@/network/devices/windows/licensing/LicensingState';
 import { psValueToString } from '@/powershell/runtime/PSExpansion';
 
 function requireTasks(ctx: CmdletContext): IScheduledTaskProvider {
@@ -319,6 +320,19 @@ export class GetCimInstanceCmdlet implements ICmdlet {
         WorkingSet:            Math.floor(p.wsK) * 1024,
         PercentProcessorTime:  Math.round(p.cpuPercent),
       } as Record<string, PSValue>)) as PSValue;
+    }
+    // SoftwareLicensingProduct → forward to the licensing provider (PRD-Windows-Server-Advanced.md §5 P21).
+    if (className === 'softwarelicensingproduct') {
+      const licensing = ctx.providers.licensing;
+      if (!licensing) throw new PSRuntimeError('Get-CimInstance SoftwareLicensingProduct is not recognized in this context');
+      const state = licensing.getState();
+      const key = licensing.getProductKey();
+      return [{
+        Name: licensing.getProductName(),
+        Description: `${licensing.getProductName()} edition`,
+        PartialProductKey: key ? key.slice(-5) : '',
+        LicenseStatus: LICENSE_STATUS_CODE[state],
+      } as Record<string, PSValue>] as PSValue;
     }
     // Other classes — defer to the legacy executor (it has a wider catalog).
     throw new PSRuntimeError(`Get-CimInstance ${className} is not recognized in this provider context`);

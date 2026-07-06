@@ -17,7 +17,7 @@ import type { WindowsPC } from '@/network/devices/WindowsPC';
 import type { WindowsServer } from '@/network/devices/WindowsServer';
 import type { DirectoryStore } from '@/network/devices/windows/server/ad/DirectoryStore';
 import { RemoteAccessVpnClient } from '@/network/ipsec/RemoteAccessVpnClient';
-import { PSRegistryProvider } from '@/network/devices/windows/PSRegistryProvider';
+import { PSRegistryProvider, WINDOWS_CLIENT_PRODUCT_IDENTITY, WINDOWS_SERVER_PRODUCT_IDENTITY } from '@/network/devices/windows/PSRegistryProvider';
 import { PSEventLogProvider } from '@/network/devices/windows/PSEventLogProvider';
 import { resolveAdapterName } from '@/network/devices/windows/WinNetsh';
 import { IPAddress, MACAddress, SubnetMask } from '@/network/core/types';
@@ -65,6 +65,7 @@ import type {
   IWsusProvider, WsusOpResult, WsusUpdateInfo, WsusApprovalActionInfo,
   IWindowsUpdateProvider,
   IPrintProvider, PrintOpResult, PrintJobInfo,
+  ILicensingProvider, LicenseStateInfo,
   IDnsServerProvider, DnsOpResult, DnsZoneInfo, DnsRecordInfo,
   IDhcpServerProvider, DhcpOpResult, DhcpScopeInfo, DhcpLeaseInfo,
   INpsProvider, NpsOpResult, NasClientInfo, NetworkPolicyInfo,
@@ -1914,6 +1915,21 @@ class WindowsPrintAdapter implements IPrintProvider {
   }
 }
 
+// ── Licensing adapter (unconditional — every SKU) ─────────────────────────
+
+class WindowsLicensingAdapter implements ILicensingProvider {
+  constructor(private readonly pc: WindowsPC) {}
+
+  getProductName(): string {
+    return this.pc.getDeviceType() === 'windows-server'
+      ? WINDOWS_SERVER_PRODUCT_IDENTITY.productName
+      : WINDOWS_CLIENT_PRODUCT_IDENTITY.productName;
+  }
+
+  getState(): LicenseStateInfo { return this.pc.licensing.getState(); }
+  getProductKey(): string | null { return this.pc.licensing.getProductKey(); }
+}
+
 // ── Remoting adapter (Invoke-Command -ComputerName / Test-WSMan) ──────────
 //
 // Resolves the target through the same simulated-topology lookup the SSH
@@ -2046,5 +2062,6 @@ export function createWindowsPSProviders(
     wsus:           pc.getRoleManager() ? new WindowsWsusAdapter(pc) : null,
     windowsUpdate:  new WindowsUpdateClientAdapter(pc),
     print:          pc.getRoleManager() ? new WindowsPrintAdapter(pc) : null,
+    licensing:      new WindowsLicensingAdapter(pc),
   };
 }

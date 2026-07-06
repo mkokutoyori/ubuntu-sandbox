@@ -110,6 +110,8 @@ import { WindowsWsusClientConfig } from './windows/WindowsWsusClientConfig';
 import { WSUS_PORT, WsusServerHandler, queryWsusApprovedUpdates, type WsusUpdate } from './windows/server/wsus/WsusRole';
 import { LPD_PORT, LpdServerHandler } from './windows/server/print/LpdTransport';
 import { cmdLpr } from './windows/WinLpr';
+import { WindowsLicensingState } from './windows/licensing/LicensingState';
+import { cmdSlmgr } from './windows/WinSlmgr';
 import { generateSelfSignedCertificate } from '@/network/pki/SelfSignedCertificate';
 import { CertificateVerifier } from '@/network/pki/CertificateVerifier';
 import type { X509Certificate } from '@/network/pki/X509Certificate';
@@ -215,6 +217,8 @@ export class WindowsPC extends EndHost implements UserAccountHost {
   readonly rdp: WindowsRdpConfig = new WindowsRdpConfig();
   /** Windows Update client redirection toward a WSUS server (PRD-Windows-Server-Advanced.md §5 P19) — unset by default (points at Windows Update directly, out of this simulator's scope); set via `Set-WUSettings -WUServer`. */
   readonly wsus: WindowsWsusClientConfig = new WindowsWsusClientConfig();
+  /** Activation/licensing state (PRD-Windows-Server-Advanced.md §5 P21) — ships on every SKU; toggled via `slmgr /ipk`/`/ato`. */
+  readonly licensing: WindowsLicensingState = new WindowsLicensingState();
   /** This host's own RDP TLS identity (§5 P17) — lazily created once, mirroring `ldapStartTlsIdentity`'s own convention. */
   private rdpTlsIdentity: ReturnType<typeof generateSelfSignedCertificate> | null = null;
   /**
@@ -1728,6 +1732,12 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       case 'schtasks': return this.cmdSchtasks(args);
       case 'print':    return cmdPrint(this.buildNetContext(), args);
       case 'lpr':      return cmdLpr({ hostname: this.getHostname(), owner: this.userMgr.currentUser, fs: this.getFileSystem(), tcpStack: this.getTcpStack() }, args);
+      case 'slmgr':
+      case 'slmgr.vbs':
+        return cmdSlmgr({
+          productName: this.getDeviceType() === 'windows-server' ? WINDOWS_SERVER_PRODUCT_IDENTITY.productName : WINDOWS_CLIENT_PRODUCT_IDENTITY.productName,
+          licensing: this.licensing,
+        }, args);
       case 'nbtstat': return this.cmdNbtstat(args);
       case 'wmic':    return this.cmdWmic(args);
       case 'reg':     return this.cmdReg(args);

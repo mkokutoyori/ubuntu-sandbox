@@ -470,6 +470,19 @@ export interface IPrintProvider {
   removePrintJob(shareName: string, jobId: number): PrintOpResult;
 }
 
+// ── Activation/licensing (PRD-Windows-Server-Advanced.md §5 P21) ───────────
+// Unconditional (no RoleManager gate): every Windows SKU has a licensing
+// state; mutated via `slmgr /ipk`/`/ato` (cmd.exe, not PowerShell), read
+// back here for `Get-CimInstance SoftwareLicensingProduct`.
+
+export type LicenseStateInfo = 'Unlicensed' | 'Licensed' | 'OutOfBoxGrace' | 'Notification';
+
+export interface ILicensingProvider {
+  getProductName(): string;
+  getState(): LicenseStateInfo;
+  getProductKey(): string | null;
+}
+
 // ── DNS Server role (PRD-Windows-Server.md §5 P7) ───────────────────────────
 
 export interface DnsOpResult { ok: boolean; message: string }
@@ -906,4 +919,5 @@ export interface PSProviders {
   readonly wsus:           IWsusProvider           | null;
   readonly windowsUpdate:  IWindowsUpdateProvider  | null;
   readonly print:          IPrintProvider          | null;
+  readonly licensing:      ILicensingProvider      | null;
 }
