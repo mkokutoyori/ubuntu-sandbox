@@ -101,6 +101,8 @@ export class WindowsUserManager {
   private users: Map<string, WindowsUser> = new Map();
   private groups: Map<string, WindowsGroup> = new Map();
   private passwords: Map<string, string> = new Map();
+  /** `runas /savecred` vault (PRD-Nslookup-Dig-Rndc-Runas.md §2.1.6/P12) — mirrors real Windows Credential Manager's per-user saved-credential behavior at a simplified level. */
+  private savedCredentials: Map<string, string> = new Map();
   private nextRid = 1001;
   currentUser = 'User';
   /** Reactive sink — null until the device attaches its bus. */
@@ -481,6 +483,20 @@ export class WindowsUserManager {
       payload: { deviceId: this.deviceId, account: name, success: ok, logonType: 2 },
     });
     return ok;
+  }
+
+  // ─── `runas /savecred` vault (PRD-Nslookup-Dig-Rndc-Runas.md P12) ──
+
+  saveCredential(name: string, password: string): void {
+    this.savedCredentials.set(name.toLowerCase(), password);
+  }
+
+  getSavedCredential(name: string): string | null {
+    return this.savedCredentials.get(name.toLowerCase()) ?? null;
+  }
+
+  clearSavedCredential(name: string): void {
+    this.savedCredentials.delete(name.toLowerCase());
   }
 
   // ─── Group Operations ───────────────────────────────────────────

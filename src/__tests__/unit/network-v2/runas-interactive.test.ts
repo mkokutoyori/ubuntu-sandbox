@@ -132,3 +132,58 @@ describe('runas interactive password prompt (PRD-Nslookup-Dig-Rndc-Runas.md P11)
     expect(out.toLowerCase()).toContain('administrator');
   });
 });
+
+describe('runas /netonly (PRD-Nslookup-Dig-Rndc-Runas.md P12)', () => {
+  it('never prompts and runs the command as the caller, not the named account', async () => {
+    const { term } = buildSession();
+    await term.init();
+
+    await type(term, 'runas /netonly /user:NonExistent whoami');
+
+    expect(term.currentInputMode.type).toBe('normal');
+    expectContains(term, /\\user$/i);
+  });
+
+  it('does not validate the account against the local SAM at all', async () => {
+    const { pc } = buildSession();
+
+    const out = await pc.executeCommand('runas /netonly /user:SomeDomainAccount whoami');
+
+    expect(out.toLowerCase()).not.toContain('is not recognized');
+    expect(out.toLowerCase()).toMatch(/\\user$/);
+  });
+});
+
+describe('runas /savecred (PRD-Nslookup-Dig-Rndc-Runas.md P12)', () => {
+  it('prompts the first time, then skips the prompt on a later invocation', async () => {
+    const { term } = buildSession();
+    await term.init();
+
+    await type(term, 'runas /savecred /user:Administrator whoami');
+    expect(term.currentInputMode.type).toBe('password');
+    term.setPasswordBuf('admin');
+    term.handleKey(key('Enter'));
+    await flush();
+    expectContains(term, /administrator/i);
+
+    const linesBefore = term.lines.length;
+    await type(term, 'runas /savecred /user:Administrator whoami');
+    // No password prompt this time — straight to execution.
+    expect(term.currentInputMode.type).toBe('normal');
+    expect(term.lines.length).toBeGreaterThan(linesBefore);
+    expectContains(term, /administrator/i);
+  });
+
+  it('does not save the credential on a failed attempt', async () => {
+    const { pc, term } = buildSession();
+    await term.init();
+
+    await type(term, 'runas /savecred /user:Administrator whoami');
+    term.setPasswordBuf('wrong');
+    term.handleKey(key('Enter'));
+    await flush();
+    expectContains(term, '1326: The user name or password is incorrect.');
+
+    expect(pc.getSavedRunasCredential('Administrator')).toBeNull();
+  });
+});

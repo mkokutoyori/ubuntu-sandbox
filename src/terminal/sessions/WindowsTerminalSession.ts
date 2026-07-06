@@ -878,7 +878,7 @@ export class WindowsTerminalSession extends TerminalSession {
     }
 
     if (lower === 'runas' || lower.startsWith('runas ')) {
-      if (this.tryStartRunasInteractive(trimmed)) {
+      if (await this.tryStartRunasInteractive(trimmed)) {
         this.notify();
         return;
       }
@@ -1117,7 +1117,7 @@ export class WindowsTerminalSession extends TerminalSession {
    * account is confirmed to exist and be enabled — real `runas.exe`
    * always prompts before checking the password (PRD-Nslookup-Dig-Rndc-Runas.md P11).
    */
-  private pendingRunas: { userName: string; command: string } | null = null;
+  private pendingRunas: { userName: string; command: string; saveCred: boolean } | null = null;
 
   /**
    * Drive the SSH password challenge. Up to three attempts are allowed
@@ -1226,30 +1226,58 @@ export class WindowsTerminalSession extends TerminalSession {
   }
 
   /**
-   * `runas /user:X program` — real runas.exe always prompts for the
-   * password (never leaks whether the account exists via that prompt),
-   * but this simulator's pre-P11 messages already distinguish
-   * "not recognized"/"disabled" before any prompt, and windows-access-cmd.test.ts
-   * already asserts those exact messages via the non-interactive
-   * `device.executeCommand()` path — so the interactive path here keeps
-   * the same ordering for consistency rather than hiding account existence.
+   * `runas [/netonly] [/savecred] /user:X program` — real runas.exe always
+   * prompts for the password (never leaks whether the account exists via
+   * that prompt), but this simulator's pre-P11 messages already
+   * distinguish "not recognized"/"disabled" before any prompt, and
+   * windows-access-cmd.test.ts already asserts those exact messages via
+   * the non-interactive `device.executeCommand()` path — so the
+   * interactive path here keeps the same ordering for consistency rather
+   * than hiding account existence.
+   *
+   * `/netonly` (PRD P12) never validates or prompts at all — real
+   * semantics simplified to "run as the caller" (PRD §2.2). `/savecred`
+   * skips the prompt on a subsequent invocation once a password has been
+   * saved for that account.
+   *
    * Returns false for malformed input (missing /user:, no command) so the
    * caller falls through to the device-level usage message.
    */
-  private tryStartRunasInteractive(line: string): boolean {
+  private async tryStartRunasInteractive(line: string): Promise<boolean> {
     const args = line.split(/\s+/).slice(1);
     const parsed = parseRunasArgs(args);
     if (parsed.ok === false) return false;
+    const { userName, command, netOnly, saveCred } = parsed.invocation;
+
+    if (netOnly) {
+      const dev = this.device as unknown as { runNetOnlyCommand?: (c: string) => Promise<string> };
+      const result = await dev.runNetOnlyCommand?.(command) ?? '';
+      if (result) this.emitWindowsOutput(result);
+      return true;
+    }
 
     const dev = this.device as unknown as RunasUserSource;
-    const validation = validateRunasUser(dev, parsed.invocation.userName);
+    const validation = validateRunasUser(dev, userName);
     if (validation.ok === false) {
       this.addLine(validation.error, 'error');
       return true;
     }
 
-    this.pendingRunas = { userName: parsed.invocation.userName, command: parsed.invocation.command };
-    const promptText = `Enter the password for ${parsed.invocation.userName}:`;
+    if (saveCred) {
+      const vault = this.device as unknown as {
+        getSavedRunasCredential?: (u: string) => string | null;
+        runAsUserVerified?: (u: string, c: string) => Promise<string>;
+      };
+      const saved = vault.getSavedRunasCredential?.(userName) ?? null;
+      if (saved !== null) {
+        const result = await vault.runAsUserVerified?.(userName, command) ?? '';
+        if (result) this.emitWindowsOutput(result);
+        return true;
+      }
+    }
+
+    this.pendingRunas = { userName, command, saveCred };
+    const promptText = `Enter the password for ${userName}:`;
     this.inputMode = { type: 'password', promptText };
     this.addLine(promptText, 'prompt');
     return true;
@@ -1269,6 +1297,11 @@ export class WindowsTerminalSession extends TerminalSession {
       this.addLine(runasIncorrectPasswordMessage(pending.command), 'error');
       this.notify();
       return;
+    }
+
+    if (pending.saveCred) {
+      const vault = this.device as unknown as { saveRunasCredential?: (u: string, p: string) => void };
+      vault.saveRunasCredential?.(pending.userName, password);
     }
 
     const dev = this.device as unknown as { runAsUserVerified?: (u: string, c: string) => Promise<string> };

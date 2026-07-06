@@ -2631,6 +2631,20 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     return runAsUser(this.runasHost(), userName, command);
   }
 
+  /** `runas /netonly` — real semantics simplified to "run as the caller" (PRD-Nslookup-Dig-Rndc-Runas.md §2.2): the target account is never verified locally or switched into. */
+  async runNetOnlyCommand(command: string): Promise<string> {
+    return runAsUser(this.runasHost(), this.userMgr.currentUser, command);
+  }
+
+  /** `runas /savecred` vault passthrough — used by `WindowsTerminalSession` to skip re-prompting once a credential has been saved. */
+  getSavedRunasCredential(userName: string): string | null {
+    return this.userMgr.getSavedCredential(userName);
+  }
+
+  saveRunasCredential(userName: string, password: string): void {
+    this.userMgr.saveCredential(userName, password);
+  }
+
   /** Real TCP connect+close reachability probe, used by `nltest /dsgetdc:` — not a topology shortcut. */
   private probeTcpReachable(address: string, port: number): boolean {
     const socket = this.getTcpStack().connect(address, port);

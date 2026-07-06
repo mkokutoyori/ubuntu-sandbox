@@ -34,28 +34,37 @@ export interface RunasHost extends RunasUserSource {
 export interface RunasInvocation {
   readonly userName: string;
   readonly command: string;
+  /** `/netonly`: the target account is used only for outbound network auth, never verified locally or switched into — PRD §2.2's accepted simplification collapses this to "run as the caller". */
+  readonly netOnly: boolean;
+  /** `/savecred`: store the password in a small per-user vault after the first successful prompt, and skip the prompt on subsequent invocations. */
+  readonly saveCred: boolean;
 }
 
 export type RunasParseResult =
   | { readonly ok: true; readonly invocation: RunasInvocation }
   | { readonly ok: false; readonly error: string };
 
-const USAGE = 'RUNAS USAGE:\n\nRUNAS /user:<UserName> program';
+const USAGE = 'RUNAS USAGE:\n\nRUNAS [/netonly] [/savecred] /user:<UserName> program';
 
 export function parseRunasArgs(args: string[]): RunasParseResult {
   if (args.length === 0) return { ok: false, error: USAGE };
 
   let userName = '';
+  let netOnly = false;
+  let saveCred = false;
   const cmdParts: string[] = [];
   for (const arg of args) {
-    if (arg.toLowerCase().startsWith('/user:')) userName = arg.slice(6);
+    const lower = arg.toLowerCase();
+    if (lower.startsWith('/user:')) userName = arg.slice(6);
+    else if (lower === '/netonly') netOnly = true;
+    else if (lower === '/savecred') saveCred = true;
     else cmdParts.push(arg);
   }
 
   if (!userName) return { ok: false, error: USAGE };
   if (cmdParts.length === 0) return { ok: false, error: 'RUNAS ERROR: No command specified.' };
 
-  return { ok: true, invocation: { userName, command: cmdParts.join(' ') } };
+  return { ok: true, invocation: { userName, command: cmdParts.join(' '), netOnly, saveCred } };
 }
 
 export type RunasValidation = { readonly ok: true } | { readonly ok: false; readonly error: string };
@@ -86,9 +95,11 @@ export async function runAsUser(host: RunasHost, userName: string, command: stri
 export async function runRunasNonInteractive(host: RunasHost, args: string[]): Promise<string> {
   const parsed = parseRunasArgs(args);
   if (parsed.ok === false) return parsed.error;
-  const validation = validateRunasUser(host, parsed.invocation.userName);
+  const { userName, command, netOnly } = parsed.invocation;
+  if (netOnly) return runAsUser(host, host.getCurrentUser(), command);
+  const validation = validateRunasUser(host, userName);
   if (validation.ok === false) return validation.error;
-  return runAsUser(host, parsed.invocation.userName, parsed.invocation.command);
+  return runAsUser(host, userName, command);
 }
 
 /** Real runas.exe's wrong-password message — a single attempt, no retry (unlike SSH). */
