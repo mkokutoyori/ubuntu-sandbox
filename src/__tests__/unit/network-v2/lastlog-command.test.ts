@@ -34,14 +34,14 @@ describe('lastlog command', () => {
   });
 
   it('2. reports "**Never logged in**" for a user with no recorded login', () => {
-    exec.userMgr.useradd('alice', { uid: 1001 });
+    exec.userMgr.useradd('alice', { u: 1001 });
     const out = exec.execute('lastlog -u alice');
     expect(out).toContain('alice');
     expect(out).toContain('**Never logged in**');
   });
 
   it('3. renders user, From host, Port (tty) and a Latest date after a login', () => {
-    exec.userMgr.useradd('alice', { uid: 1001 });
+    exec.userMgr.useradd('alice', { u: 1001 });
     exec.lastlog.record('alice', '192.168.1.50', 'pts/2');
     const out = exec.execute('lastlog -u alice');
     const row = out.split('\n').find(l => l.startsWith('alice'))!;
@@ -52,8 +52,8 @@ describe('lastlog command', () => {
   });
 
   it('4. -u <user> restricts the output to that single user', () => {
-    exec.userMgr.useradd('alice', { uid: 1001 });
-    exec.userMgr.useradd('bob', { uid: 1002 });
+    exec.userMgr.useradd('alice', { u: 1001 });
+    exec.userMgr.useradd('bob', { u: 1002 });
     exec.lastlog.record('alice', '10.0.0.5', 'pts/0');
     exec.lastlog.record('bob', '10.0.0.6', 'pts/1');
     const out = exec.execute('lastlog -u alice');
@@ -67,8 +67,8 @@ describe('lastlog command', () => {
   });
 
   it('6. -t DAYS shows only logins more recent than the cutoff', () => {
-    exec.userMgr.useradd('recent', { uid: 1001 });
-    exec.userMgr.useradd('stale', { uid: 1002 });
+    exec.userMgr.useradd('recent', { u: 2001 });
+    exec.userMgr.useradd('stale', { u: 2002 });
     exec.lastlog.record('recent', '10.0.0.5', 'pts/0');
     setEntryAge('stale', 30);
     const out = exec.execute('lastlog -t 7');
@@ -77,8 +77,8 @@ describe('lastlog command', () => {
   });
 
   it('7. -b DAYS shows only logins older than the cutoff', () => {
-    exec.userMgr.useradd('recent', { uid: 1001 });
-    exec.userMgr.useradd('stale', { uid: 1002 });
+    exec.userMgr.useradd('recent', { u: 2001 });
+    exec.userMgr.useradd('stale', { u: 2002 });
     exec.lastlog.record('recent', '10.0.0.5', 'pts/0');
     setEntryAge('stale', 30);
     const out = exec.execute('lastlog -b 7');
@@ -87,7 +87,7 @@ describe('lastlog command', () => {
   });
 
   it('8. -C -u <user> as root clears the record (back to Never logged in)', () => {
-    exec.userMgr.useradd('alice', { uid: 1001 });
+    exec.userMgr.useradd('alice', { u: 1001 });
     exec.lastlog.record('alice', '10.0.0.5', 'pts/0');
     exec.userMgr.currentUid = 0;
     exec.execute('lastlog -C -u alice');
@@ -96,7 +96,7 @@ describe('lastlog command', () => {
   });
 
   it('9. -S -u <user> as root stamps the record with the current time', () => {
-    exec.userMgr.useradd('alice', { uid: 1001 });
+    exec.userMgr.useradd('alice', { u: 1001 });
     exec.userMgr.currentUid = 0;
     exec.execute('lastlog -S -u alice');
     const out = exec.execute('lastlog -u alice');
@@ -105,7 +105,7 @@ describe('lastlog command', () => {
   });
 
   it('10. rejects -C/-S without -u and when not root', () => {
-    exec.userMgr.useradd('alice', { uid: 1001 });
+    exec.userMgr.useradd('alice', { u: 1001 });
     exec.userMgr.currentUid = 0;
     expect(exec.execute('lastlog -C')).toMatch(/option requires -u|--user/);
     exec.userMgr.currentUid = 1001;
