@@ -61,6 +61,7 @@ import type {
   IPkiProvider, IssuedCertInfo,
   IDfsProvider, DfsOpResult, DfsTargetInfo, DfsFolderInfo, DfsrSyncResultInfo,
   IRdpProvider, RdpOpResult, RdpSessionInfo,
+  IClusterProvider, ClusterOpResult, ClusterNodeInfo, ClusterPeerInfo, ClusterGroupInfo,
   IDnsServerProvider, DnsOpResult, DnsZoneInfo, DnsRecordInfo,
   IDhcpServerProvider, DhcpOpResult, DhcpScopeInfo, DhcpLeaseInfo,
   INpsProvider, NpsOpResult, NasClientInfo, NetworkPolicyInfo,
@@ -1807,6 +1808,48 @@ class WindowsRdpAdapter implements IRdpProvider {
   }
 }
 
+// ── Failover Clustering / WSFC adapter (Server Manager — WindowsServer only, gated on Failover-Clustering) ──
+
+class WindowsClusterAdapter implements IClusterProvider {
+  constructor(private readonly pc: WindowsPC) {}
+
+  private requireRole(cmdletName: string): void {
+    if (!this.pc.getRoleManager()?.isInstalled('Failover-Clustering')) {
+      throw new Error(`${cmdletName} is not recognized as the name of a cmdlet, function, script file, or operable program`);
+    }
+  }
+
+  /** Most cluster cmdlets additionally need `New-Cluster` to have actually run on this node. */
+  private requireCluster(cmdletName: string) {
+    this.requireRole(cmdletName);
+    const cluster = this.pc.getClusterRole();
+    if (!cluster) throw new Error(`${cmdletName} : No cluster was found on this server. Access to a remote cluster may be blocked by the firewall.`);
+    return cluster;
+  }
+
+  newCluster(clusterName: string, selfNodeName: string, peers: ClusterPeerInfo[]): ClusterOpResult {
+    this.requireRole('New-Cluster');
+    const server = this.pc as WindowsServer;
+    if (typeof server.newCluster !== 'function') {
+      return { ok: false, message: 'New-Cluster : This computer cannot host a failover cluster.' };
+    }
+    return server.newCluster(clusterName, selfNodeName, peers);
+  }
+
+  getClusterNodes(): ClusterNodeInfo[] { return this.requireCluster('Get-ClusterNode').listNodes(); }
+  hasClusterQuorum(): boolean { return this.requireCluster('Get-Cluster').hasQuorum(); }
+
+  addClusterFileServerRole(name: string, preferredOwners: string[]): ClusterOpResult {
+    return this.requireCluster('Add-ClusterFileServerRole').groups.addFileServerRole(name, preferredOwners);
+  }
+
+  getClusterGroups(): ClusterGroupInfo[] { return this.requireCluster('Get-ClusterGroup').groups.listGroups(); }
+
+  moveClusterGroup(name: string, targetNode: string): ClusterOpResult {
+    return this.requireCluster('Move-ClusterGroup').groups.moveGroup(name, targetNode);
+  }
+}
+
 // ── Remoting adapter (Invoke-Command -ComputerName / Test-WSMan) ──────────
 //
 // Resolves the target through the same simulated-topology lookup the SSH
@@ -1935,5 +1978,6 @@ export function createWindowsPSProviders(
     pki:            new WindowsPkiAdapter(pc),
     dfs:            pc.getRoleManager() ? new WindowsDfsAdapter(pc) : null,
     rdp:            new WindowsRdpAdapter(pc),
+    cluster:        pc.getRoleManager() ? new WindowsClusterAdapter(pc) : null,
   };
 }

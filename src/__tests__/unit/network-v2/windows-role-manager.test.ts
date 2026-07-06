@@ -105,11 +105,12 @@ describe('RoleManager — real feature catalog', () => {
     expect(res.changed).toEqual([]);
   });
 
-  it('the real catalog names match every PRD §2.1.2 role plus the RSAT tool feature', () => {
+  it('the real catalog names match every PRD §2.1.2 role plus the RSAT tool feature and every PRD-Windows-Server-Advanced.md additive role', () => {
     const names = WINDOWS_FEATURE_CATALOG.map(f => f.name).sort();
     expect(names).toEqual([
       'AD-Domain-Services', 'DHCP', 'DNS', 'FS-FileServer',
       'NPAS', 'Print-Services', 'RSAT-AD-PowerShell', 'Web-Server',
+      'AD-Certificate', 'FS-DFS-Namespace', 'FS-DFS-Replication', 'Failover-Clustering',
     ].sort());
   });
 });

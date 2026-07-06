@@ -2600,6 +2600,13 @@ export class WindowsPC extends EndHost implements UserAccountHost {
    */
   getDfsrRole(): import('./windows/server/dfs/DfsReplicationGroup').WindowsDfsrRole | null { return null; }
 
+  /**
+   * WSFC cluster membership (PRD-Windows-Server-Advanced.md §5 P18) — null
+   * until `New-Cluster` succeeds on a `WindowsServer`; always null on a
+   * client, overridden by `WindowsServer`.
+   */
+  getClusterRole(): import('./windows/server/cluster/ClusterService').ClusterService | null { return null; }
+
   /** Get the process manager (for PowerShellExecutor and other integrations) */
   getProcessManager(): WindowsProcessManager { return this.procMgr; }
 

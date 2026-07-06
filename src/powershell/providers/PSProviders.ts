@@ -404,6 +404,30 @@ export interface IRdpProvider {
   logoff(sessionId: number): RdpOpResult;
 }
 
+// ── Failover Clustering / WSFC (PRD-Windows-Server-Advanced.md §5 P18) ──────
+
+export interface ClusterOpResult { ok: boolean; message: string }
+export type ClusterNodeStateInfo = 'Up' | 'Down';
+export interface ClusterNodeInfo { name: string; state: ClusterNodeStateInfo; lastHeartbeatAt: number }
+export interface ClusterPeerInfo { name: string; ip: string }
+export type ClusterResourceTypeInfo = 'FileServer';
+export interface ClusterGroupInfo { name: string; ownerNode: string; resourceType: ClusterResourceTypeInfo }
+
+export interface IClusterProvider {
+  /** `New-Cluster -Name <clusterName> -Node <selfNodeName>,<peer1>,...` — run identically on every member server. */
+  newCluster(clusterName: string, selfNodeName: string, peers: ClusterPeerInfo[]): ClusterOpResult;
+  /** `Get-ClusterNode` — this node's own view of every member's liveness (via real UDP heartbeat). */
+  getClusterNodes(): ClusterNodeInfo[];
+  /** `Get-Cluster` quorum check — simple majority of live nodes, no witness disk/share. */
+  hasClusterQuorum(): boolean;
+  /** `Add-ClusterFileServerRole -Name <name> -Node <preferredOwner1,...>`. */
+  addClusterFileServerRole(name: string, preferredOwners: string[]): ClusterOpResult;
+  /** `Get-ClusterGroup`. */
+  getClusterGroups(): ClusterGroupInfo[];
+  /** `Move-ClusterGroup -Name <name> -Node <target>`. */
+  moveClusterGroup(name: string, targetNode: string): ClusterOpResult;
+}
+
 // ── DNS Server role (PRD-Windows-Server.md §5 P7) ───────────────────────────
 
 export interface DnsOpResult { ok: boolean; message: string }
@@ -836,4 +860,5 @@ export interface PSProviders {
   readonly pki:            IPkiProvider            | null;
   readonly dfs:            IDfsProvider            | null;
   readonly rdp:            IRdpProvider            | null;
+  readonly cluster:        IClusterProvider        | null;
 }

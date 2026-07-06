@@ -161,6 +161,10 @@ import {
 import {
   EnableRemoteDesktopCmdlet, DisableRemoteDesktopCmdlet, GetRDUserSessionCmdlet, LogoffRdSessionCmdlet,
 } from './RdpCmdlets';
+import {
+  NewClusterCmdlet, GetClusterNodeCmdlet, GetClusterCmdlet,
+  AddClusterFileServerRoleCmdlet, GetClusterGroupCmdlet, MoveClusterGroupCmdlet,
+} from './ClusterCmdlets';
 
 /**
  * Register all core (provider-independent) cmdlets into the given registry.
@@ -491,6 +495,14 @@ export function registerCoreCmdlets(registry: CmdletRegistry): void {
   registry.register(new DisableRemoteDesktopCmdlet());
   registry.register(new GetRDUserSessionCmdlet());
   registry.register(new LogoffRdSessionCmdlet());
+
+  // ── Failover Clustering / WSFC (PRD-Windows-Server-Advanced.md §5 P18) ─────
+  registry.register(new NewClusterCmdlet());
+  registry.register(new GetClusterNodeCmdlet());
+  registry.register(new GetClusterCmdlet());
+  registry.register(new AddClusterFileServerRoleCmdlet());
+  registry.register(new GetClusterGroupCmdlet());
+  registry.register(new MoveClusterGroupCmdlet());
 
   // ── Native CLI shims (sync subset) ────────────────────────────────────────
   // ping / tracert stay in the legacy executor — they're async and the

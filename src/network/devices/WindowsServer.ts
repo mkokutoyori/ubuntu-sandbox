@@ -26,6 +26,7 @@ import { WindowsIisRole } from './windows/server/iis/WindowsIisRole';
 import { WindowsAdcsRole } from './windows/server/adcs/CaRole';
 import { DfsNamespaceRegistry } from './windows/server/dfs/DfsNamespace';
 import { WindowsDfsrRole } from './windows/server/dfs/DfsReplicationGroup';
+import { ClusterService, type ClusterPeerConfig } from './windows/server/cluster/ClusterService';
 import { randomSessionKey } from '@/network/kerberos/crypto';
 import { dialLdap } from './windows/server/ad/ldap/LdapClient';
 import { pullReplication } from './windows/server/ad/replication/ReplicationSession';
@@ -47,6 +48,7 @@ export class WindowsServer extends WindowsPC {
   private adcsRoleInstance: WindowsAdcsRole | null = null;
   private dfsNamespaceRoleInstance: DfsNamespaceRegistry | null = null;
   private dfsrRoleInstance: WindowsDfsrRole | null = null;
+  private clusterServiceInstance: ClusterService | null = null;
 
   constructor(name: string = 'WinServer', x: number = 0, y: number = 0) {
     super('windows-server', name, x, y);
@@ -183,6 +185,43 @@ export class WindowsServer extends WindowsPC {
     }
     if (!this.dfsrRoleInstance) this.dfsrRoleInstance = new WindowsDfsrRole(this, this.getFileSystem());
     return this.dfsrRoleInstance;
+  }
+
+  /**
+   * PRD Phase 18 (§5 P18): this server's own membership in the WSFC cluster
+   * it was formed into via `newCluster` — `null` until that has succeeded
+   * (also gates/tears down on `Failover-Clustering` role uninstall, mirroring
+   * the DFSR/AD CS role getters above). Unlike those roles, a bare install
+   * of the feature doesn't lazily create a cluster membership: `New-Cluster`
+   * must actually run first, since membership requires cluster-specific
+   * parameters (name, peers) no lazy default could supply.
+   */
+  getClusterRole(): ClusterService | null {
+    if (!this.roleManager.isInstalled('Failover-Clustering')) {
+      if (this.clusterServiceInstance) { this.clusterServiceInstance.stop(); this.clusterServiceInstance = null; }
+      return null;
+    }
+    return this.clusterServiceInstance;
+  }
+
+  /**
+   * `New-Cluster -Name <clusterName> -Node <selfNodeName>,<peer1>,...` — run
+   * identically on every participating node (same convention as
+   * `New-DfsReplicationGroup`, §5 P16): each node builds its own
+   * `ClusterService`, learning peer liveness purely from real periodic UDP
+   * heartbeat traffic (port 3343) — no shared cluster object, no central
+   * mediator.
+   */
+  newCluster(clusterName: string, selfNodeName: string, peers: readonly ClusterPeerConfig[]): AdDsOpResult {
+    if (!this.roleManager.isInstalled('Failover-Clustering')) {
+      return { ok: false, message: 'New-Cluster : The Failover Clustering feature is not installed on this computer.' };
+    }
+    if (this.clusterServiceInstance) {
+      return { ok: false, message: `New-Cluster : This computer is already a member of cluster "${this.clusterServiceInstance.clusterName}".` };
+    }
+    this.clusterServiceInstance = new ClusterService(this, clusterName, selfNodeName, peers, () => this.getScheduler());
+    this.clusterServiceInstance.start();
+    return { ok: true, message: '' };
   }
 
   /**

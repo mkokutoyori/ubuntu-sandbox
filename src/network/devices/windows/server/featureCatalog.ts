@@ -70,6 +70,10 @@ export const WINDOWS_FEATURE_CATALOG: readonly WindowsFeatureDef[] = [
     services: ['DFSR'], psModule: 'DFSR',
   },
   {
+    name: 'Failover-Clustering', displayName: 'Failover Clustering',
+    services: ['ClusSvc'], psModule: 'FailoverClusters',
+  },
+  {
     name: 'RSAT-AD-PowerShell', displayName: 'Active Directory module for Windows PowerShell',
     services: [], psModule: 'ActiveDirectory',
   },
