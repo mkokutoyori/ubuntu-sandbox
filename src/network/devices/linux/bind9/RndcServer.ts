@@ -19,6 +19,7 @@ import type { RndcRequest, RndcResponse, RndcWireEnvelope } from './RndcWireCode
 import { decodeRndcEnvelope, encodeRndcEnvelope, verifyRndcEnvelope, signRndcEnvelope } from './RndcWireCodec';
 
 const WILDCARD_ADDRESS = '0.0.0.0';
+const LOOPBACK_ADDRESS = '127.0.0.1';
 const NOT_AUTHENTICATED = 1;
 
 function concat(a: Uint8Array, b: Uint8Array): Uint8Array {
@@ -91,20 +92,53 @@ export class RndcServer {
   }
 
   private handleRequest(socket: TcpSocket, envelope: RndcWireEnvelope, control: NamedControls): void {
+    const { envelope: reply, authenticated } = this.processEnvelope(envelope, control);
+    socket.send(encodeRndcEnvelope(reply));
+    if (!authenticated) socket.close();
+  }
+
+  /**
+   * Loopback fast-path for the local `rndc` CLI (no `-s`): this simulator's
+   * `TcpStack` doesn't deliver TCP to 127.0.0.1 (a separate, pre-existing
+   * gap — see RndcClient.ts), so the local command can't take the real
+   * socket path P8 built. It still goes through the exact same ACL-then-HMAC
+   * gate as a real 127.0.0.1 connection would: `envelope` must be signed
+   * with a key one of the `controls{}` clauses that allows 127.0.0.1 lists,
+   * or it's rejected exactly like an unauthenticated remote request.
+   */
+  handleLoopbackRequest(envelope: RndcWireEnvelope): RndcWireEnvelope {
+    const control = this.controls.find((c) => c.allow.matches(LOOPBACK_ADDRESS, this.aclEnvironment()));
+    if (!control) {
+      const nonce = (envelope.payload as RndcRequest | RndcResponse).nonce;
+      return { hmac: '', payload: { nonce, result: NOT_AUTHENTICATED, text: 'not authenticated' } };
+    }
+    return this.processEnvelope(envelope, control).envelope;
+  }
+
+  private processEnvelope(
+    envelope: RndcWireEnvelope, control: NamedControls,
+  ): { envelope: RndcWireEnvelope; authenticated: boolean } {
     const payload = envelope.payload;
-    if (!('command' in payload)) return;
+    if (!('command' in payload)) {
+      return {
+        envelope: { hmac: '', payload: { nonce: payload.nonce, result: NOT_AUTHENTICATED, text: 'not authenticated' } },
+        authenticated: false,
+      };
+    }
     const request = payload as RndcRequest;
 
     const matchedKey = this.authenticate(envelope, control);
     if (!matchedKey) {
-      this.reply(socket, { nonce: request.nonce, result: NOT_AUTHENTICATED, text: 'not authenticated' }, null);
-      socket.close();
-      return;
+      return {
+        envelope: { hmac: '', payload: { nonce: request.nonce, result: NOT_AUTHENTICATED, text: 'not authenticated' } },
+        authenticated: false,
+      };
     }
 
     const args = request.command.split(/\s+/).filter((s) => s.length > 0);
     const text = this.channel.dispatch(args);
-    this.reply(socket, { nonce: request.nonce, result: 0, text }, matchedKey);
+    const response: RndcResponse = { nonce: request.nonce, result: 0, text };
+    return { envelope: signRndcEnvelope(response, matchedKey.algorithm, matchedKey.secret), authenticated: true };
   }
 
   /** Tries every key the connecting `inet` clause names; the first that verifies wins. */
@@ -115,11 +149,5 @@ export class RndcServer {
       if (verifyRndcEnvelope(envelope, key.algorithm, key.secret)) return key;
     }
     return null;
-  }
-
-  /** Signs with the key that authenticated the request; an unauthenticated reply carries an empty HMAC (the client already knows to distrust it — `result` says so). */
-  private reply(socket: TcpSocket, response: RndcResponse, key: NamedKey | null): void {
-    const envelope = key ? signRndcEnvelope(response, key.algorithm, key.secret) : { hmac: '', payload: response };
-    socket.send(encodeRndcEnvelope(envelope));
   }
 }

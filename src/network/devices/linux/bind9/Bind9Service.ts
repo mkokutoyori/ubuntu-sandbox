@@ -28,6 +28,7 @@ import { Bind9Logging } from './Bind9Logging';
 import { RndcChannel } from './RndcChannel';
 import { RndcServer } from './RndcServer';
 import type { NamedConfig, NamedZone } from './NamedConfig';
+import type { RndcWireEnvelope } from './RndcWireCodec';
 import type { AclHostEnvironment } from './NamedAcl';
 import type { DnsMessage } from '@/network/dns/wire/DnsMessage';
 import type { EndHost } from '@/network/devices/EndHost';
@@ -79,6 +80,11 @@ export class Bind9Service {
 
   isRunning(): boolean {
     return this.running;
+  }
+
+  /** Loopback fast-path for the local `rndc` CLI — see RndcServer.handleLoopbackRequest. Null if no rndc control channel is configured/running. */
+  dispatchRndcLocally(envelope: RndcWireEnvelope): RndcWireEnvelope | null {
+    return this.rndcServer?.handleLoopbackRequest(envelope) ?? null;
   }
 
   zoneSerial(name: string): number | undefined {
