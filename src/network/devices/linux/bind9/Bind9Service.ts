@@ -25,6 +25,8 @@ import { NamedConfSyntaxError } from './NamedConfLexer';
 import { buildNamedConfig } from './NamedConfig';
 import { NamedConfigError } from './NamedConfigError';
 import { Bind9Logging } from './Bind9Logging';
+import { RndcChannel } from './RndcChannel';
+import { RndcServer } from './RndcServer';
 import type { NamedConfig, NamedZone } from './NamedConfig';
 import type { AclHostEnvironment } from './NamedAcl';
 import type { DnsMessage } from '@/network/dns/wire/DnsMessage';
@@ -62,6 +64,8 @@ export class Bind9Service {
   private queryLogEnabled = false;
   private running = false;
   private activePort = DNS_PORT;
+  private readonly rndcChannel: RndcChannel;
+  private rndcServer: RndcServer | null = null;
 
   constructor(
     private readonly host: EndHost,
@@ -70,6 +74,7 @@ export class Bind9Service {
   ) {
     this.readFile = (path) => this.files.read(path);
     this.logging = new Bind9Logging((path, content) => this.files.append(path, content));
+    this.rndcChannel = new RndcChannel(this);
   }
 
   isRunning(): boolean {
@@ -170,6 +175,7 @@ export class Bind9Service {
     }
     this.activePort = port;
     this.running = true;
+    this.startRndc(loaded.config);
     this.refreshAllSecondaryZones();
     return { ok: true };
   }
@@ -178,6 +184,7 @@ export class Bind9Service {
     if (!this.running) return;
     unbindDnsUdpServer(this.host, this.activePort);
     unbindDnsTcpServer(this.host, this.activePort);
+    this.stopRndc();
     this.running = false;
   }
 
@@ -196,6 +203,8 @@ export class Bind9Service {
       this.stop();
       return this.start();
     }
+    this.stopRndc();
+    this.startRndc(loaded.config);
     for (const [name, serial] of this.loadedZones) {
       if (previousSerials.get(name) !== serial) this.notifySecondaries(name);
     }
@@ -288,6 +297,20 @@ export class Bind9Service {
       });
     }
     return { localAddresses, localNetworks };
+  }
+
+  /** Opens the real `rndc` control channel(s) declared by `controls{}` — a no-op if none are configured. */
+  private startRndc(config: NamedConfig): void {
+    if (config.controls.length === 0) return;
+    this.rndcServer = new RndcServer(
+      this.host, this.rndcChannel, config.controls, config.keys, () => this.aclEnvironment(),
+    );
+    this.rndcServer.start();
+  }
+
+  private stopRndc(): void {
+    this.rndcServer?.stop();
+    this.rndcServer = null;
   }
 
   /**
