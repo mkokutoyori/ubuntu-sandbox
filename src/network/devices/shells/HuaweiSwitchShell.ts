@@ -955,27 +955,45 @@ export class HuaweiSwitchShell implements ISwitchShell {
       return '';
     });
 
-    // port link-type hybrid — the Switch model has no hybrid datapath,
-    // so it is recorded for `display this` and treated as access for
-    // forwarding (closest L2 behaviour) without breaking VLAN tests.
     this.interfaceTrie.register('port link-type hybrid', 'Set port to hybrid mode', () => {
-      if (!this.selectedInterface) return 'Error: Wrong parameter.';
+      if (!this.selectedInterface || !this.swRef) return 'Error: Wrong parameter.';
       const list = this.ifCfg.get(this.selectedInterface) ?? [];
       list.push('port link-type hybrid');
       this.ifCfg.set(this.selectedInterface, list);
+      this.swRef.setHybridMode(this.selectedInterface);
       return '';
     });
 
-    // port hybrid pvid/tagged/untagged …  |  port vlan-mapping …
-    for (const sub of ['port hybrid', 'port vlan-mapping']) {
-      this.interfaceTrie.registerGreedy(sub, `Interface ${sub} configuration`, (args) => {
-        if (!this.selectedInterface) return 'Error: Incomplete command.';
-        const list = this.ifCfg.get(this.selectedInterface) ?? [];
-        list.push(`${sub} ${args.join(' ')}`.trim());
-        this.ifCfg.set(this.selectedInterface, list);
+    this.interfaceTrie.registerGreedy('port hybrid', 'Configure hybrid port VLANs', (args) => {
+      if (!this.selectedInterface || !this.swRef) return 'Error: Incomplete command.';
+      const list = this.ifCfg.get(this.selectedInterface) ?? [];
+      list.push(`port hybrid ${args.join(' ')}`.trim());
+      this.ifCfg.set(this.selectedInterface, list);
+      const sub = args[0]?.toLowerCase();
+      if (sub === 'pvid' && args[1]?.toLowerCase() === 'vlan') {
+        const id = parseInt(args[2] ?? '', 10);
+        if (isNaN(id)) return 'Error: Wrong parameter found.';
+        this.swRef.setHybridPvid(this.selectedInterface, id);
         return '';
-      });
-    }
+      }
+      if (sub === 'tagged' || sub === 'untagged') {
+        if (args[1]?.toLowerCase() !== 'vlan') return 'Error: Wrong parameter found.';
+        const ids = this.parseVrpVlanTokens(args.slice(2));
+        if (!ids.length) return 'Error: Wrong parameter found.';
+        if (sub === 'tagged') this.swRef.addHybridTaggedVlans(this.selectedInterface, ids);
+        else this.swRef.addHybridUntaggedVlans(this.selectedInterface, ids);
+        return '';
+      }
+      return '';
+    });
+
+    this.interfaceTrie.registerGreedy('port vlan-mapping', 'Interface port vlan-mapping configuration', (args) => {
+      if (!this.selectedInterface) return 'Error: Incomplete command.';
+      const list = this.ifCfg.get(this.selectedInterface) ?? [];
+      list.push(`port vlan-mapping ${args.join(' ')}`.trim());
+      this.ifCfg.set(this.selectedInterface, list);
+      return '';
+    });
     this.registerPortSecurity();
     this.registerDot1x();
 
@@ -1457,6 +1475,21 @@ export class HuaweiSwitchShell implements ISwitchShell {
     return [`acl ${kind} ${a.key}`, ...a.rules.map(r => ` ${r}`)].join('\n');
   }
 
+  private parseVrpVlanTokens(args: string[]): number[] {
+    const ids: number[] = [];
+    for (let i = 0; i < args.length; i++) {
+      if (args[i].toLowerCase() === 'to' && ids.length > 0 && i + 1 < args.length) {
+        const start = ids[ids.length - 1];
+        const end = parseInt(args[i + 1], 10);
+        if (!isNaN(end)) { for (let v = start + 1; v <= end; v++) ids.push(v); i++; }
+        continue;
+      }
+      const n = parseInt(args[i], 10);
+      if (!isNaN(n)) ids.push(n);
+    }
+    return ids;
+  }
+
   private parseVrpAclAddr(args: string[], offset: number): { ip: IPAddress; wc: SubnetMask; consumed: number } | null {
     const t = args[offset]?.toLowerCase();
     if (!t) return null;
@@ -1561,6 +1594,13 @@ export class HuaweiSwitchShell implements ISwitchShell {
       for (const p of this.swRef.getPortNames()) {
         const cfg = this.swRef.getSwitchportConfig(p);
         if (!cfg) continue;
+        if (cfg.mode === 'hybrid') {
+          const pvid = cfg.hybridPvid ?? 1;
+          const unt = [...(cfg.hybridUntaggedVlans ?? [])].sort((a, b) => a - b).join(' ');
+          const tag = [...(cfg.hybridTaggedVlans ?? [])].sort((a, b) => a - b).join(' ');
+          rows.push(`${p.padEnd(24)}${'hybrid'.padEnd(13)}${String(pvid).padEnd(6)}U: ${unt || '-'}  T: ${tag || '-'}`);
+          continue;
+        }
         const pvid = cfg.mode === 'trunk' ? cfg.trunkNativeVlan : cfg.accessVlan;
         rows.push(`${p.padEnd(24)}${cfg.mode.padEnd(13)}${String(pvid).padEnd(6)}-`);
       }

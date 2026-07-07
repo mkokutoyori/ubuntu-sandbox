@@ -92,7 +92,7 @@ export interface TaggedEthernetFrame extends EthernetFrame {
 
 // ─── Port Configuration ─────────────────────────────────────────────
 
-export type SwitchportMode = 'access' | 'trunk';
+export type SwitchportMode = 'access' | 'trunk' | 'hybrid';
 
 export interface SwitchportConfig {
   mode: SwitchportMode;
@@ -101,6 +101,9 @@ export interface SwitchportConfig {
   trunkAllowedVlans: Set<number>; // Allowed VLANs on trunk (default: all)
   voiceVlan?: number;             // Voice VLAN (switchport voice vlan N)
   voiceVlanAutoOui?: boolean;
+  hybridPvid?: number;
+  hybridUntaggedVlans?: Set<number>;
+  hybridTaggedVlans?: Set<number>;
 }
 
 // ─── IGMP snooping seam ─────────────────────────────────────────────
@@ -784,6 +787,7 @@ export abstract class Switch extends Equipment {
     if (!cfg) return undefined;
     if (cfg.mode === 'access') return cfg.accessVlan;
     if (cfg.mode === 'trunk') return cfg.trunkNativeVlan;
+    if (cfg.mode === 'hybrid') return cfg.hybridPvid ?? 1;
     return undefined;
   }
 
@@ -1026,6 +1030,51 @@ export abstract class Switch extends Equipment {
   private superVlanReaches(vlan: number, candidateAccessVlan: number): boolean {
     if (!this.superVlanIds.has(vlan)) return false;
     return this.superVlanSubVlans.get(vlan)?.has(candidateAccessVlan) ?? false;
+  }
+
+  // ─── Hybrid port (Huawei) API ──────────────────────────────────────
+
+  setHybridMode(portName: string): boolean {
+    const cfg = this.switchportConfigs.get(portName);
+    if (!cfg) return false;
+    if (cfg.mode === 'access') {
+      const vlan = this.vlans.get(cfg.accessVlan);
+      if (vlan) vlan.ports.delete(portName);
+    }
+    cfg.mode = 'hybrid';
+    cfg.hybridPvid = cfg.hybridPvid ?? 1;
+    cfg.hybridUntaggedVlans = cfg.hybridUntaggedVlans ?? new Set([1]);
+    cfg.hybridTaggedVlans = cfg.hybridTaggedVlans ?? new Set();
+    return true;
+  }
+
+  setHybridPvid(portName: string, vlanId: number): boolean {
+    const cfg = this.switchportConfigs.get(portName);
+    if (!cfg || cfg.mode !== 'hybrid') return false;
+    cfg.hybridPvid = vlanId;
+    return true;
+  }
+
+  addHybridUntaggedVlans(portName: string, vlanIds: number[]): boolean {
+    const cfg = this.switchportConfigs.get(portName);
+    if (!cfg || cfg.mode !== 'hybrid') return false;
+    cfg.hybridUntaggedVlans = cfg.hybridUntaggedVlans ?? new Set();
+    for (const v of vlanIds) {
+      cfg.hybridUntaggedVlans.add(v);
+      cfg.hybridTaggedVlans?.delete(v);
+    }
+    return true;
+  }
+
+  addHybridTaggedVlans(portName: string, vlanIds: number[]): boolean {
+    const cfg = this.switchportConfigs.get(portName);
+    if (!cfg || cfg.mode !== 'hybrid') return false;
+    cfg.hybridTaggedVlans = cfg.hybridTaggedVlans ?? new Set();
+    for (const v of vlanIds) {
+      cfg.hybridTaggedVlans.add(v);
+      cfg.hybridUntaggedVlans?.delete(v);
+    }
+    return true;
   }
 
   // ─── VLAN Access Map (Cisco VACL) API ──────────────────────────────
@@ -1430,6 +1479,18 @@ export abstract class Switch extends Equipment {
       } else {
         ingressVlan = cfg.accessVlan;
       }
+    } else if (cfg.mode === 'hybrid') {
+      if (taggedFrame.dot1q) {
+        ingressVlan = taggedFrame.dot1q.vid;
+        const member = (cfg.hybridTaggedVlans?.has(ingressVlan) ?? false)
+          || (cfg.hybridUntaggedVlans?.has(ingressVlan) ?? false);
+        if (!member) {
+          Logger.debug(this.id, 'switch:hybrid-filtered', `${this.name}: VLAN ${ingressVlan} not allowed on hybrid ${portName}`);
+          return;
+        }
+      } else {
+        ingressVlan = cfg.hybridPvid ?? 1;
+      }
     } else {
       // Trunk mode
       if (taggedFrame.dot1q) {
@@ -1707,6 +1768,12 @@ export abstract class Switch extends Equipment {
         } else if (cfg.voiceVlan === vlan) {
           this.sendFrame(portName, this.addTag(frame, vlan));
         }
+      } else if (cfg.mode === 'hybrid') {
+        if (cfg.hybridUntaggedVlans?.has(vlan)) {
+          this.sendFrame(portName, this.stripTag(frame));
+        } else if (cfg.hybridTaggedVlans?.has(vlan)) {
+          this.sendFrame(portName, this.addTag(frame, vlan));
+        }
       } else {
         // Trunk: send if VLAN is allowed
         if (cfg.trunkAllowedVlans.has(vlan) && !this.getVtpAgentOrNull()?.isVlanPruned(portName, vlan)) {
@@ -1741,6 +1808,12 @@ export abstract class Switch extends Equipment {
         this.sendFrame(portName, this.addTag(frame, vlan));
       } else {
         this.sendFrame(portName, this.stripTag(frame));
+      }
+    } else if (cfg.mode === 'hybrid') {
+      if (cfg.hybridUntaggedVlans?.has(vlan)) {
+        this.sendFrame(portName, this.stripTag(frame));
+      } else if (cfg.hybridTaggedVlans?.has(vlan)) {
+        this.sendFrame(portName, this.addTag(frame, vlan));
       }
     } else {
       // Trunk port: check if VLAN is allowed before sending
