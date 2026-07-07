@@ -87,7 +87,13 @@ export interface IpNetworkContext {
   getRoutingTable(): IpRouteEntry[];
   getIPv6RoutingTable?(): IpV6RouteEntry[];
   addDefaultRoute(gateway: IPAddress): string;
-  addStaticRoute(network: IPAddress, cidr: number, gateway: IPAddress, metric?: number): string;
+  addStaticRoute(
+    network: IPAddress,
+    cidr: number,
+    gateway: IPAddress,
+    metric?: number,
+    routeOpts?: { allowDuplicate?: boolean },
+  ): string;
   addDeviceRoute?(network: IPAddress, cidr: number, iface: string): string;
   deleteDefaultRoute(): string;
   deleteRoute(
@@ -267,6 +273,7 @@ export interface IpOutputOptions {
   stats: boolean;
   json: boolean;
   pretty: boolean;
+  oneline: boolean;
 }
 
 export function executeIpCommand(ctx: IpNetworkContext, args: string[]): string {
@@ -275,6 +282,7 @@ export function executeIpCommand(ctx: IpNetworkContext, args: string[]): string 
   let stats = false;
   let json = false;
   let pretty = false;
+  let oneline = false;
   let family: IpFamily = 'any';
   const filteredArgs: string[] = [];
 
@@ -288,6 +296,8 @@ export function executeIpCommand(ctx: IpNetworkContext, args: string[]): string 
       json = true;
     } else if (arg === '-p' || arg === '-pretty') {
       pretty = true;
+    } else if (arg === '-o' || arg === '-oneline') {
+      oneline = true;
     } else if (arg === '-4') {
       family = 'inet';
     } else if (arg === '-6') {
@@ -308,7 +318,7 @@ export function executeIpCommand(ctx: IpNetworkContext, args: string[]): string 
 
   const object = filteredArgs[0];
   const subArgs = filteredArgs.slice(1);
-  const outputOpts: IpOutputOptions = { family, stats, json, pretty };
+  const outputOpts: IpOutputOptions = { family, stats, json, pretty, oneline };
 
   switch (object) {
     case 'help':
@@ -352,6 +362,8 @@ function ipAddr(ctx: IpNetworkContext, args: string[], opts: IpOutputOptions): s
     return ipAddrShow(ctx, args.slice(args[0] === 'show' || args[0] === 'list' ? 1 : 0), opts);
   }
   if (args[0] === 'add') return ipAddrAdd(ctx, args.slice(1));
+  if (args[0] === 'change') return ipAddrChangeOrReplace(ctx, args.slice(1), 'change');
+  if (args[0] === 'replace') return ipAddrChangeOrReplace(ctx, args.slice(1), 'replace');
   if (args[0] === 'del' || args[0] === 'delete') return ipAddrDel(ctx, args.slice(1));
   if (args[0] === 'flush') return ipAddrFlush(ctx, args.slice(1));
   if (args[0] === 'help') return IP_ADDR_HELP;
@@ -390,7 +402,8 @@ function ipAddrShow(ctx: IpNetworkContext, args: string[], opts: IpOutputOptions
     if (!info) return `Device "${filterDev}" does not exist.`;
     const idx = allNames.indexOf(filterDev) + 1;
     if (opts.json) return toJsonText([buildAddrJsonEntry(info, idx, computeIfaceFlags(info), opts.family, opts.stats)], opts.pretty);
-    return formatAddrInterface(info, idx, opts);
+    const block = formatAddrInterface(info, idx, opts);
+    return opts.oneline ? collapseOneline(block) : block;
   }
 
   if (opts.json) {
@@ -403,14 +416,17 @@ function ipAddrShow(ctx: IpNetworkContext, args: string[], opts: IpOutputOptions
     return toJsonText(entries, opts.pretty);
   }
 
-  const lines: string[] = [];
+  const blocks: string[] = [];
   for (let i = 0; i < allNames.length; i++) {
     const info = ctx.getInterfaceInfo(allNames[i]);
     if (!info) continue;
-    if (lines.length > 0) lines.push('');
-    lines.push(formatAddrInterface(info, i + 1, opts));
+    blocks.push(formatAddrInterface(info, i + 1, opts));
   }
-  return lines.join('\n');
+  return opts.oneline ? blocks.map(collapseOneline).join('\n') : blocks.join('\n\n');
+}
+
+function collapseOneline(block: string): string {
+  return block.split('\n').map(l => l.trim()).join(' ');
 }
 
 export function computeIfaceFlags(info: IpInterfaceInfo): string[] {
@@ -500,8 +516,12 @@ function ipAddrBrief(ctx: IpNetworkContext, args: string[]): string {
   return lines.join('\n');
 }
 
-function ipAddrAdd(ctx: IpNetworkContext, args: string[]): string {
-  // ip addr add <ip>/<cidr> dev <name>
+interface ParsedAddrArgs {
+  addrStr: string;
+  devName: string;
+}
+
+function parseAddrArgs(args: string[]): ParsedAddrArgs | string {
   let addrStr: string | null = null;
   let devName: string | null = null;
   const unknown: string[] = [];
@@ -523,15 +543,33 @@ function ipAddrAdd(ctx: IpNetworkContext, args: string[]): string {
   }
   if (!devName) return 'Not enough information: "dev" argument is required.';
 
+  return { addrStr, devName };
+}
+
+function addrExistsOnDevice(info: IpInterfaceInfo, ipStr: string): boolean {
+  if (info.ip === ipStr) return true;
+  if ((info.secondaryIPs ?? []).some(s => s.ip === ipStr)) return true;
+  if ((info.ipv6 ?? []).some(v6 => v6.address === ipStr)) return true;
+  return false;
+}
+
+function ipAddrAdd(ctx: IpNetworkContext, args: string[]): string {
+  // ip addr add <ip>/<cidr> dev <name>
+  const parsed = parseAddrArgs(args);
+  if (typeof parsed === 'string') return parsed;
+  const { addrStr, devName } = parsed;
+
   const slashIdx = addrStr.indexOf('/');
   if (slashIdx === -1) return 'Error: either "local" or "peer" address is required.';
 
   const ipStr = addrStr.slice(0, slashIdx);
   const prefix = parseInt(addrStr.slice(slashIdx + 1), 10);
+  const info = ctx.getInterfaceInfo(devName);
 
   if (ipStr.includes(':')) {
     if (isNaN(prefix) || prefix < 1 || prefix > 128) return 'Error: invalid prefix length.';
     if (!ctx.addInterfaceIPv6) return `Error: IPv6 address configuration is not supported on this interface.`;
+    if (info && addrExistsOnDevice(info, ipStr)) return 'RTNETLINK answers: File exists';
     return ctx.addInterfaceIPv6(devName, ipStr, prefix);
   }
 
@@ -539,6 +577,40 @@ function ipAddrAdd(ctx: IpNetworkContext, args: string[]): string {
   let ip: IPAddress;
   try { ip = new IPAddress(ipStr); }
   catch { return `Error: ${ipStr} is not a valid IPv4 address.`; }
+
+  if (info && addrExistsOnDevice(info, ipStr)) return 'RTNETLINK answers: File exists';
+
+  return ctx.addInterfaceIP ? ctx.addInterfaceIP(devName, ip, prefix) : ctx.configureInterface(devName, ip, prefix);
+}
+
+function ipAddrChangeOrReplace(ctx: IpNetworkContext, args: string[], mode: 'change' | 'replace'): string {
+  const parsed = parseAddrArgs(args);
+  if (typeof parsed === 'string') return parsed;
+  const { addrStr, devName } = parsed;
+
+  const slashIdx = addrStr.indexOf('/');
+  if (slashIdx === -1) return 'Error: either "local" or "peer" address is required.';
+  const ipStr = addrStr.slice(0, slashIdx);
+  const prefix = parseInt(addrStr.slice(slashIdx + 1), 10);
+  if (ipStr.includes(':') || isNaN(prefix) || prefix < 1 || prefix > 32) {
+    return `Error: "ip addr ${mode}" is only supported for IPv4 addresses.`;
+  }
+  let ip: IPAddress;
+  try { ip = new IPAddress(ipStr); }
+  catch { return `Error: ${ipStr} is not a valid IPv4 address.`; }
+
+  const info = ctx.getInterfaceInfo(devName);
+  if (!info) return `Cannot find device "${devName}"`;
+
+  const isPrimary = info.ip === ipStr;
+  const isSecondary = (info.secondaryIPs ?? []).some(s => s.ip === ipStr);
+
+  if (mode === 'change' && !isPrimary && !isSecondary) {
+    return 'RTNETLINK answers: Cannot assign requested address';
+  }
+
+  if (isPrimary) return ctx.configureInterface(devName, ip, prefix);
+  if (isSecondary && ctx.removeInterfaceAddress) ctx.removeInterfaceAddress(devName, ip);
 
   return ctx.addInterfaceIP ? ctx.addInterfaceIP(devName, ip, prefix) : ctx.configureInterface(devName, ip, prefix);
 }
@@ -601,7 +673,8 @@ function ipLinkShow(ctx: IpNetworkContext, args: string[], opts: IpOutputOptions
     if (!info) return `Device "${filterDev}" does not exist.`;
     const idx = names.indexOf(filterDev) + 1;
     if (opts.json) return toJsonText([buildLinkJsonEntry(info, idx, computeIfaceFlags(info), opts.stats)], opts.pretty);
-    return formatLinkInterface(info, idx, opts.stats);
+    const block = formatLinkInterface(info, idx, opts.stats);
+    return opts.oneline ? collapseOneline(block) : block;
   }
 
   if (opts.json) {
@@ -614,14 +687,13 @@ function ipLinkShow(ctx: IpNetworkContext, args: string[], opts: IpOutputOptions
     return toJsonText(entries, opts.pretty);
   }
 
-  const lines: string[] = [];
+  const blocks: string[] = [];
   for (let i = 0; i < names.length; i++) {
     const info = ctx.getInterfaceInfo(names[i]);
     if (!info) continue;
-    if (lines.length > 0) lines.push('');
-    lines.push(formatLinkInterface(info, i + 1, opts.stats));
+    blocks.push(formatLinkInterface(info, i + 1, opts.stats));
   }
-  return lines.join('\n');
+  return opts.oneline ? blocks.map(collapseOneline).join('\n') : blocks.join('\n\n');
 }
 
 function formatLinkInterface(info: IpInterfaceInfo, idx: number, stats = false): string {
@@ -781,6 +853,9 @@ function ipRoute(ctx: IpNetworkContext, args: string[], opts: IpOutputOptions): 
     return ipRouteShow(ctx, opts);
   }
   if (args[0] === 'add') return ipRouteAdd(ctx, args.slice(1));
+  if (args[0] === 'append') return ipRouteAppend(ctx, args.slice(1));
+  if (args[0] === 'replace') return ipRouteReplace(ctx, args.slice(1));
+  if (args[0] === 'change') return ipRouteChange(ctx, args.slice(1));
   if (args[0] === 'del' || args[0] === 'delete') return ipRouteDel(ctx, args.slice(1));
   if (args[0] === 'get') return ipRouteGet(ctx, args.slice(1));
   if (args[0] === 'help') return IP_ROUTE_HELP;
@@ -850,53 +925,107 @@ function ipRoute6(ctx: IpNetworkContext, args: string[], opts: IpOutputOptions):
   return lines.join('\n');
 }
 
-function ipRouteAdd(ctx: IpNetworkContext, args: string[]): string {
-  // ip route add default via <gw> [dev <iface>] [metric <n>]
-  // ip route add <net>/<cidr> via <gw> [dev <iface>] [metric <n>]
+interface ParsedRouteSpec {
+  isDefault: boolean;
+  network: IPAddress;
+  cidr: number;
+  gateway: IPAddress | null;
+  dev: string | null;
+  metric?: number;
+}
 
+function parseRouteSpec(args: string[]): ParsedRouteSpec | string {
+  // <default | net/cidr> [via <gw>] [dev <iface>] [metric <n>]
   if (args.length === 0) return 'Error: need a valid prefix or "default".';
 
-  if (args[0] === 'default') {
-    const viaIdx = args.indexOf('via');
-    if (viaIdx === -1 || !args[viaIdx + 1]) return 'Error: "via" is required for default route.';
-    let gateway: IPAddress;
-    try { gateway = new IPAddress(args[viaIdx + 1]); }
-    catch { return `Error: ${args[viaIdx + 1]} is not a valid IPv4 address.`; }
-    return ctx.addDefaultRoute(gateway);
-  }
-
-  // Static route: <net>/<cidr> via <gw>
-  const prefix = args[0];
-  const slashIdx = prefix.indexOf('/');
-  if (slashIdx === -1) return 'Error: invalid prefix (expected <network>/<cidr>).';
-
-  const networkStr = prefix.slice(0, slashIdx);
-  const cidr = parseInt(prefix.slice(slashIdx + 1), 10);
-  if (isNaN(cidr) || cidr < 0 || cidr > 32) return 'Error: invalid prefix length.';
+  const isDefault = args[0] === 'default';
   let network: IPAddress;
-  try { network = new IPAddress(networkStr); }
-  catch { return `Error: ${networkStr} is not a valid IPv4 address.`; }
+  let cidr: number;
+
+  if (isDefault) {
+    network = new IPAddress('0.0.0.0');
+    cidr = 0;
+  } else {
+    const prefix = args[0];
+    const slashIdx = prefix.indexOf('/');
+    if (slashIdx === -1) return 'Error: invalid prefix (expected <network>/<cidr>).';
+    const networkStr = prefix.slice(0, slashIdx);
+    cidr = parseInt(prefix.slice(slashIdx + 1), 10);
+    if (isNaN(cidr) || cidr < 0 || cidr > 32) return 'Error: invalid prefix length.';
+    try { network = new IPAddress(networkStr); }
+    catch { return `Error: ${networkStr} is not a valid IPv4 address.`; }
+  }
 
   const devIdx = args.indexOf('dev');
   const viaIdx = args.indexOf('via');
-
-  // On-link route: "ip route add <net>/<cidr> dev <iface>" (no gateway).
-  if (viaIdx === -1 && devIdx !== -1 && args[devIdx + 1]) {
-    if (ctx.addDeviceRoute) return ctx.addDeviceRoute(network, cidr, args[devIdx + 1]);
-  }
-
-  if (viaIdx === -1 || !args[viaIdx + 1]) return 'Error: "via" is required.';
-  let gateway: IPAddress;
-  try { gateway = new IPAddress(args[viaIdx + 1]); }
-  catch { return `Error: ${args[viaIdx + 1]} is not a valid IPv4 address.`; }
-
-  let metric: number | undefined;
   const metricIdx = args.indexOf('metric');
-  if (metricIdx !== -1 && args[metricIdx + 1]) {
-    metric = parseInt(args[metricIdx + 1], 10);
+
+  let gateway: IPAddress | null = null;
+  if (viaIdx !== -1 && args[viaIdx + 1]) {
+    try { gateway = new IPAddress(args[viaIdx + 1]); }
+    catch { return `Error: ${args[viaIdx + 1]} is not a valid IPv4 address.`; }
+  }
+  if (isDefault && !gateway) return 'Error: "via" is required for default route.';
+
+  const dev = devIdx !== -1 && args[devIdx + 1] ? args[devIdx + 1] : null;
+  let metric: number | undefined;
+  if (metricIdx !== -1 && args[metricIdx + 1]) metric = parseInt(args[metricIdx + 1], 10);
+
+  return { isDefault, network, cidr, gateway, dev, metric };
+}
+
+type RouteMode = 'add' | 'append' | 'replace' | 'change';
+
+function applyRouteSpec(ctx: IpNetworkContext, spec: ParsedRouteSpec, mode: RouteMode): string {
+  const { isDefault, network, cidr, gateway, dev, metric } = spec;
+
+  if (isDefault) {
+    if (mode === 'change' && !ctx.getRoutingTable().some(r => r.type === 'default')) {
+      return 'RTNETLINK answers: No such process';
+    }
+    return ctx.addDefaultRoute(gateway!);
   }
 
-  return ctx.addStaticRoute(network, cidr, gateway, metric);
+  if (mode === 'replace' || mode === 'change') {
+    const existing = ctx.getRoutingTable().some(
+      r => r.type !== 'connected' && r.network === network.toString() && r.cidr === cidr,
+    );
+    if (mode === 'change' && !existing) return 'RTNETLINK answers: No such process';
+    if (existing) ctx.deleteRoute(network, cidr);
+  }
+
+  if (!gateway) {
+    if (!dev) return 'Error: "via" is required.';
+    if (!ctx.addDeviceRoute) return `Cannot find device "${dev}"`;
+    return ctx.addDeviceRoute(network, cidr, dev);
+  }
+
+  const allowDuplicate = mode !== 'add';
+  return ctx.addStaticRoute(network, cidr, gateway, metric, { allowDuplicate });
+}
+
+function ipRouteAdd(ctx: IpNetworkContext, args: string[]): string {
+  const spec = parseRouteSpec(args);
+  if (typeof spec === 'string') return spec;
+  return applyRouteSpec(ctx, spec, 'add');
+}
+
+function ipRouteAppend(ctx: IpNetworkContext, args: string[]): string {
+  const spec = parseRouteSpec(args);
+  if (typeof spec === 'string') return spec;
+  return applyRouteSpec(ctx, spec, 'append');
+}
+
+function ipRouteReplace(ctx: IpNetworkContext, args: string[]): string {
+  const spec = parseRouteSpec(args);
+  if (typeof spec === 'string') return spec;
+  return applyRouteSpec(ctx, spec, 'replace');
+}
+
+function ipRouteChange(ctx: IpNetworkContext, args: string[]): string {
+  const spec = parseRouteSpec(args);
+  if (typeof spec === 'string') return spec;
+  return applyRouteSpec(ctx, spec, 'change');
 }
 
 function ipRouteDel(ctx: IpNetworkContext, args: string[]): string {

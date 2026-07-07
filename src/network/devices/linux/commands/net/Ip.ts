@@ -150,19 +150,27 @@ export function buildIpCtx(net: LinuxNetKernel, xfrm?: IpXfrmContext): IpNetwork
       net.setDefaultGateway(gateway);
       return '';
     },
-    addStaticRoute(network: IPAddress, cidr: number, gateway: IPAddress, metric?: number): string {
+    addStaticRoute(
+      network: IPAddress,
+      cidr: number,
+      gateway: IPAddress,
+      metric?: number,
+      routeOpts?: { allowDuplicate?: boolean },
+    ): string {
       try {
         const mask = SubnetMask.fromCIDR(cidr);
         if (!network.networkAddress(mask).equals(network)) {
           return `Error: an inet prefix is expected rather than "${network.toString()}/${cidr}".`;
         }
         const wantedMetric = metric ?? 100;
-        const duplicate = net.getRoutingTable().some(
-          r => r.network.toString() === network.toString()
-            && r.mask.toCIDR() === cidr
-            && r.metric === wantedMetric
-            && (r.nextHop ? r.nextHop.toString() === gateway.toString() : false));
-        if (duplicate) return 'RTNETLINK answers: File exists';
+        if (!routeOpts?.allowDuplicate) {
+          const duplicate = net.getRoutingTable().some(
+            r => r.network.toString() === network.toString()
+              && r.mask.toCIDR() === cidr
+              && r.metric === wantedMetric
+              && (r.nextHop ? r.nextHop.toString() === gateway.toString() : false));
+          if (duplicate) return 'RTNETLINK answers: File exists';
+        }
         if (!net.addStaticRoute(network, mask, gateway, wantedMetric)) {
           return 'RTNETLINK answers: Network is unreachable';
         }
