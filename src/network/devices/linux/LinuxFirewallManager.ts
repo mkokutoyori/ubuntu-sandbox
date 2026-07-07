@@ -45,15 +45,12 @@ const SERVICE_PORTS: Record<string, { port: string; proto: string }> = {
 };
 
 // ─── App profiles ────────────────────────────────────────────────────
-const APP_PROFILES: Record<string, { title: string; description: string; ports: string }> = {
-  'OpenSSH': { title: 'OpenSSH', description: 'Secure Shell server', ports: '22/tcp' },
-  'Apache': { title: 'Apache', description: 'Apache HTTP Server', ports: '80/tcp' },
-  'Apache Full': { title: 'Apache Full', description: 'Apache HTTP + HTTPS', ports: '80,443/tcp' },
-  'Apache Secure': { title: 'Apache Secure', description: 'Apache HTTPS', ports: '443/tcp' },
-  'Nginx HTTP': { title: 'Nginx HTTP', description: 'Nginx HTTP Server', ports: '80/tcp' },
-  'Nginx Full': { title: 'Nginx Full', description: 'Nginx HTTP + HTTPS', ports: '80,443/tcp' },
-  'Nginx HTTPS': { title: 'Nginx HTTPS', description: 'Nginx HTTPS Server', ports: '443/tcp' },
-};
+// PRD-Iptables-UFW.md Phase 6 (objectif B.4): profiles are read from
+// /etc/ufw/applications.d/* in the VFS (see readAppProfilesFromVfs), not
+// from a static object here — real ufw scans that directory literally.
+// Without a VFS (unit tests that construct this class directly), there is
+// simply nowhere to read profiles from, matching reality.
+interface AppProfile { title: string; description: string; ports: string }
 
 // ─── Types ───────────────────────────────────────────────────────────
 
@@ -457,15 +454,18 @@ export class LinuxFirewallManager {
   }
 
   private cmdReload(): string {
-    this.loadFromVfs();
-    if (this.enabled) {
-      this.rebuildIptablesRules();
-    }
+    this.reconcileFromBoot();
     this.syncToVfs();
     return 'Firewall reloaded';
   }
 
-  /** Re-read configuration from /etc/ufw/ufw.conf in the VFS. */
+  /**
+   * Re-read configuration from the VFS: /etc/ufw/ufw.conf (ENABLED=/
+   * LOGLEVEL=) and, per PRD-Iptables-UFW.md Phase 6 (objectif B.3),
+   * /etc/ufw/user.rules and user6.rules — a hand-edited rule file now has
+   * an observable effect on the next reload/boot, instead of being a
+   * write-only artifact.
+   */
   private loadFromVfs(): void {
     if (!this.vfs) return;
 
@@ -489,14 +489,105 @@ export class LinuxFirewallManager {
         }
       }
     }
+
+    const v4Content = this.vfs.readFile('/etc/ufw/user.rules');
+    const v6Content = this.vfs.readFile('/etc/ufw/user6.rules');
+    if (v4Content !== null || v6Content !== null) {
+      const v4Rules = v4Content !== null ? this.parseUfwRulesFile(v4Content, false) : this.rules.filter(r => !r.v6);
+      const v6Rules = v6Content !== null ? this.parseUfwRulesFile(v6Content, true) : this.rules.filter(r => r.v6);
+      this.rules = [...v4Rules, ...v6Rules];
+    }
   }
 
   /**
-   * Reconcile live firewall state with the persisted /etc/ufw/ufw.conf —
-   * called when the `ufw` systemd unit starts (a real `systemctl start ufw`,
-   * or the boot-time activation of enabled units). Mirrors real
-   * `/lib/ufw/ufw-init start`: starting the unit doesn't blindly turn the
-   * firewall on or off, it defers to `ENABLED=yes/no` already on disk.
+   * Parse a `user.rules`/`user6.rules`-format file (the same `-A <chain>
+   * ...` lines `generateIptablesRules` writes) back into `UfwRule`s.
+   * Chain names are matched by suffix (`-user-input/output/forward`)
+   * regardless of the `ufw`/`ufw6` prefix, since the v6 file legitimately
+   * uses `ufw6-*` (matching real ufw) while the live engines don't need
+   * the distinction (they're already two separate engine instances).
+   *
+   * Simplification: a protocol-less rule (e.g. `ufw allow 53`) is written
+   * as two lines (`-p tcp --dport 53` and `-p udp --dport 53`) and is read
+   * back as two separate rules with explicit protocols rather than being
+   * merged into one. Functionally equivalent (the same traffic is
+   * accepted/dropped either way) — only `ufw status`'s display would show
+   * two lines instead of one after a round trip through hand-edited files.
+   */
+  private parseUfwRulesFile(content: string, v6: boolean): UfwRule[] {
+    const rules: UfwRule[] = [];
+
+    for (const raw of content.split('\n')) {
+      const line = raw.trim();
+      if (!line.startsWith('-A ')) continue;
+      const tokens = line.slice(3).split(/\s+/);
+      const chainMatch = tokens[0]?.match(/-user-(input|output|forward)$/);
+      if (!chainMatch) continue;
+      const chainKind = chainMatch[1];
+
+      let proto = '';
+      let dport = '';
+      let source = '';
+      let destination = '';
+      let iface = '';
+      let outIface = '';
+      let target = '';
+      let comment = '';
+
+      for (let i = 1; i < tokens.length; i++) {
+        const tok = tokens[i];
+        if (tok === '-p') proto = tokens[++i] ?? '';
+        else if (tok === '--dport') dport = tokens[++i] ?? '';
+        else if (tok === '-s') source = tokens[++i] ?? '';
+        else if (tok === '-d') destination = tokens[++i] ?? '';
+        else if (tok === '-i') iface = tokens[++i] ?? '';
+        else if (tok === '-o') outIface = tokens[++i] ?? '';
+        else if (tok === '-j') target = tokens[++i] ?? '';
+        else if (tok === '-m' && tokens[i + 1] === 'comment') {
+          i += 2;
+          if (tokens[i] === '--comment') {
+            comment = tokens.slice(i + 1).join(' ').replace(/^'|'$/g, '');
+            break;
+          }
+        }
+      }
+      if (!target) continue;
+
+      const action: Action | null =
+        target === 'ACCEPT' ? 'ALLOW'
+        : target === 'DROP' ? 'DENY'
+        : target === 'REJECT' ? 'REJECT'
+        : target.endsWith('-user-limit-accept') ? 'LIMIT'
+        : null;
+      if (!action) continue;
+
+      const direction: RuleDirection = chainKind === 'output' ? 'out' : 'in';
+      const route = chainKind === 'forward';
+      const port = dport ? (proto ? `${dport}/${proto}` : dport) : 'Anywhere';
+
+      const rule: UfwRule = {
+        action, direction, port,
+        from: source || 'Anywhere',
+        to: destination || 'Anywhere',
+        iface: route ? iface : (direction === 'out' ? outIface : iface),
+        v6, comment, route,
+      };
+      if (route) (rule as unknown as { outIface: string }).outIface = outIface;
+      rules.push(rule);
+    }
+
+    return rules;
+  }
+
+  /**
+   * Reconcile live firewall state with the persisted VFS — called when the
+   * `ufw` systemd unit starts (a real `systemctl start ufw`, or the
+   * boot-time activation of enabled units) and by `ufw reload`. Mirrors
+   * real `/lib/ufw/ufw-init start`: starting the unit doesn't blindly turn
+   * the firewall on or off, it defers to `ENABLED=yes/no` already on disk —
+   * and, per Phase 6, to the rule set in `user.rules`/`user6.rules` too, so
+   * a hand-edited file takes effect even when the enabled/disabled state
+   * itself didn't change.
    *
    * Deliberately not mirrored for the `stop` lifecycle event: a generic
    * reboot cycle stops every active unit before restarting the enabled
@@ -510,9 +601,10 @@ export class LinuxFirewallManager {
   reconcileFromBoot(): void {
     const wasEnabled = this.enabled;
     this.loadFromVfs();
-    if (this.enabled && !wasEnabled) {
-      this.setupIptablesChains();
-    } else if (!this.enabled && wasEnabled) {
+    if (this.enabled) {
+      if (!wasEnabled) this.setupIptablesChains();
+      else this.rebuildIptablesRules();
+    } else if (wasEnabled) {
       this.teardownIptablesChains();
     }
   }
@@ -702,7 +794,7 @@ export class LinuxFirewallManager {
     }
 
     // ufw allow [in|out] [on <iface>] <app_profile_name>
-    const profile = APP_PROFILES[remaining.join(' ')];
+    const profile = this.readAppProfilesFromVfs()[remaining.join(' ')];
     if (profile) {
       return { action, direction, port: profile.ports, from: 'Anywhere', to: 'Anywhere', iface, v6: false, comment: '', route: false };
     }
@@ -1073,22 +1165,55 @@ export class LinuxFirewallManager {
 
   // ─── App profiles ────────────────────────────────────────────────
 
+  /**
+   * Read all application profiles from /etc/ufw/applications.d/*, exactly
+   * like real `ufw` scans that directory — one file may declare several
+   * `[Profile Name]` blocks (INI-style: title=/description=/ports=).
+   * Returns an empty map without a VFS (nowhere to read from).
+   */
+  private readAppProfilesFromVfs(): Record<string, AppProfile> {
+    const profiles: Record<string, AppProfile> = {};
+    if (!this.vfs) return profiles;
+    const entries = this.vfs.listDirectory('/etc/ufw/applications.d');
+    if (!entries) return profiles;
+
+    for (const entry of entries) {
+      const content = this.vfs.readFile(`/etc/ufw/applications.d/${entry.name}`);
+      if (!content) continue;
+      for (const block of content.split(/\n(?=\[)/)) {
+        const nameMatch = block.match(/^\[(.+?)\]/);
+        if (!nameMatch) continue;
+        const titleMatch = block.match(/^title\s*=\s*(.*)$/m);
+        const descMatch = block.match(/^description\s*=\s*(.*)$/m);
+        const portsMatch = block.match(/^ports\s*=\s*(.*)$/m);
+        profiles[nameMatch[1]] = {
+          title: titleMatch ? titleMatch[1].trim() : nameMatch[1],
+          description: descMatch ? descMatch[1].trim() : '',
+          ports: portsMatch ? portsMatch[1].trim() : '',
+        };
+      }
+    }
+    return profiles;
+  }
+
   private cmdApp(args: string[]): string {
     if (args.length === 0) return 'ERROR: wrong number of arguments';
 
+    const profiles = this.readAppProfilesFromVfs();
+
     if (args[0] === 'list') {
-      const names = Object.keys(APP_PROFILES);
+      const names = Object.keys(profiles);
       return 'Available applications:\n' + names.map(n => `  ${n}`).join('\n');
     }
 
     if (args[0] === 'info') {
       const name = args.slice(1).join(' ');
-      const profile = APP_PROFILES[name];
+      const profile = profiles[name];
       if (!profile) {
         return `ERROR: Could not find a profile matching '${name}'`;
       }
       return [
-        `Profile: ${profile.title}`,
+        `Profile: ${name}`,
         `Title: ${profile.title}`,
         `Description: ${profile.description}`,
         '',

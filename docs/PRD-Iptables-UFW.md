@@ -479,12 +479,56 @@ ordre arbitraire.
   régression sur le moteur générique de services), `tsc` propre, `eslint`
   propre (9 erreurs préexistantes confirmées par `git stash`).
 
-### Phase 6 — Rechargement VFS réel + profils d'application (items B.3, B.4)
+### Phase 6 — Rechargement VFS réel + profils d'application (items B.3, B.4) ✅ LIVRÉE
 
-- **Fichiers touchés** : `LinuxFirewallManager.loadFromVfs()` (étendu à
-  `user.rules`/`user6.rules`), `cmdApp` (lecture depuis
-  `/etc/ufw/applications.d/*`).
-- **Tests** : `ufw-vfs-reload.test.ts`, `ufw-app-profiles-vfs.test.ts`.
+- **Fichiers touchés** : `LinuxFirewallManager.ts` :
+  - `loadFromVfs()` étendu pour relire `/etc/ufw/user.rules`/`user6.rules`
+    via un nouveau parseur `parseUfwRulesFile()` (parseur inverse du format
+    iptables-save généré par `generateIptablesRules()` — reconnaît les
+    chaînes par suffixe `-user-(input|output|forward)` indépendamment du
+    préfixe `ufw-`/`ufw6-`, extrait proto/port/source/dest/interface/cible/
+    commentaire, remappe la cible iptables vers l'`Action` ufw).
+  - `cmdReload()` unifié pour déléguer à `reconcileFromBoot()` (qui relit
+    la config disque) puis `syncToVfs()`, au lieu de son ancienne logique
+    ad hoc.
+  - `reconcileFromBoot()` corrigé : l'implémentation de la Phase 5 ne
+    déclenchait `setupIptablesChains()`/`rebuildIptablesRules()` que sur
+    une **transition** d'état activé/désactivé — un rechargement à état
+    inchangé (règles éditées à la main pendant que ufw restait actif)
+    laissait les nouvelles règles visibles dans `ufw status` mais jamais
+    poussées dans les chaînes iptables réelles. Ajout de la branche
+    `else this.rebuildIptablesRules()` pour couvrir ce cas.
+  - Suppression de l'objet statique `APP_PROFILES` ; nouvelle méthode
+    `readAppProfilesFromVfs()` qui liste `/etc/ufw/applications.d/` et
+    parse chaque fichier (blocs INI multi-profils supportés) — `cmdApp`
+    et la résolution de règle par nom de profil (`ufw allow OpenSSH`)
+    passent désormais exclusivement par cette lecture VFS, comme le vrai
+    `ufw` qui scanne littéralement ce répertoire.
+- **Effet de bord positif documenté** : la ligne « Profile: » de `ufw app
+  info` utilisait `profile.title` (bug de libellé préexistant — le vrai
+  ufw affiche le nom entre crochets, pas le titre) ; corrigée en passant
+  car le nouveau code lit le nom de bloc INI directement.
+- **Incohérence de nommage documentée, non corrigée (hors scope)** : les
+  fichiers `user6.rules` utilisent le préfixe `ufw6-user-*` (comme le vrai
+  ufw), mais l'instance `ip6tables` vivante de la Phase 4 réutilise en
+  interne les mêmes noms `ufw-user-*` que `iptables` v4 — sans
+  conséquence car ce sont deux instances de moteur séparées avec des
+  espaces de noms de chaînes séparés. Plutôt que de retoucher le code
+  Phase 4 déjà testé, `parseUfwRulesFile()` matche sur le suffixe de
+  chaîne uniquement, agnostique du préfixe.
+- **Tests** : `ufw-vfs-reload.test.ts` (5 tests — rechargement de règles
+  hand-editées, filtrage réel post-reload et pas seulement l'affichage,
+  parsing `ENABLED=`/`LOGLEVEL=` de `ufw.conf`, reconciliation à état
+  inchangé, rechargement v6 indépendant de v4), `ufw-app-profiles-vfs.test.ts`
+  (5 tests — nouveau profil détecté sans changement de code, `app info`
+  sur profil dynamique, `allow` sur profil dynamique, fichier multi-
+  profils, non-régression des profils intégrés OpenSSH/Apache/Nginx).
+- **Régression** : 322 tests verts sur les 9 suites ufw/iptables/ip6tables
+  concernées (`linux-ufw.test.ts`, `linux-iptables.test.ts`, suites v6,
+  `ufw-systemd-coherence.test.ts`, `cron-firewall.test.ts`,
+  `ssh-host-firewall-vs-network-acl.test.ts`), `tsc` propre, `eslint`
+  propre sur le fichier modifié et les nouveaux tests (7 erreurs
+  `no-explicit-any` préexistantes confirmées identiques par `git stash`).
 
 ### Phase 7 — Persistance symétrique v6 + `netfilter-persistent` (items B.5, B.6)
 
