@@ -1208,6 +1208,15 @@ export class IPSecEngine implements IProtocolEngine {
     }
   }
 
+  rebindIkePeerAddress(peerName: string, address: string): void {
+    if (!address || address === '0.0.0.0') return;
+    for (const cmap of this.cryptoMaps.values()) {
+      for (const entry of cmap.staticEntries.values()) {
+        if (entry.ikePeerName === peerName) entry.peers = [address];
+      }
+    }
+  }
+
   getOrCreateDynamicMapEntry(dynMapName: string, seq: number): DynamicCryptoMapEntry {
     if (!this.dynamicCryptoMaps.has(dynMapName)) {
       this.dynamicCryptoMaps.set(dynMapName, { name: dynMapName, entries: new Map() });

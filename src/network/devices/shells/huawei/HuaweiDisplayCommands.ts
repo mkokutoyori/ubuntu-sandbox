@@ -593,7 +593,8 @@ export function displayCurrentConfig(
       for (const [seq, entry] of cmap.staticEntries as Map<number, any>) {
         lines.push('#');
         lines.push(`ipsec policy ${mapName} ${seq} isakmp`);
-        if (entry.peers?.length > 0) lines.push(` ike-peer ${entry.peers[0]}`);
+        const peerRef = entry.ikePeerName ?? (entry.peers?.length > 0 ? entry.peers[0] : null);
+        if (peerRef) lines.push(` ike-peer ${peerRef}`);
         if (entry.transformSets?.length > 0) lines.push(` proposal ${entry.transformSets.join(' ')}`);
       }
     }

@@ -511,6 +511,7 @@ export function buildHuaweiIKEPeerCommands(
       if (peer.preSharedKey) {
         eng(ctx).addPreSharedKey(peer.address, peer.preSharedKey);
       }
+      eng(ctx).rebindIkePeerAddress(peerName, peer.address);
     }
     return '';
   });
@@ -685,7 +686,9 @@ export function buildHuaweiIPSecPolicyCommands(
     if (!name || seq === null) return 'Error: No IPSec policy selected.';
     const entry = eng(ctx).getOrCreateCryptoMapEntry(name, seq);
     const peerName = args[0] || '';
-    entry.peers = [peerName];
+    entry.ikePeerName = peerName;
+    const peer = eng(ctx).getOrCreateIKEv2Keyring('default').peers.get(peerName);
+    entry.peers = peer && peer.address !== '0.0.0.0' ? [peer.address] : [];
     return '';
   });
 

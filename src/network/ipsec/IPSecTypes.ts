@@ -82,6 +82,8 @@ export interface CryptoMapEntry {
   isakmpProfileName?: string;
   /** `set peer <hostname> dynamic` — DDNS-tracked peer name (RFC 2136-style). */
   peerHostname?: string;
+  /** Huawei `ike-peer NAME` — named peer whose remote-address feeds `peers`. */
+  ikePeerName?: string;
 }
 
 // ─── IKEv1 keyring + ISAKMP profile (crypto keyring / crypto isakmp profile) ──
