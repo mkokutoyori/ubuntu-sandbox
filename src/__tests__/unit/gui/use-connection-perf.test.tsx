@@ -24,6 +24,7 @@ function makeLab() {
   const cable = new Cable('cab-1');
   cable.connect(portA, portB);
   const conn: Connection = {
+    id: 'conn-1',
     sourceDeviceId: a.getId(),
     sourceInterfaceId: 'eth0',
     targetDeviceId: b.getId(),

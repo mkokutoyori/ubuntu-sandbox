@@ -51,7 +51,7 @@ async function cfg(router: CiscoRouter | HuaweiRouter, cmds: string[]): Promise<
 }
 
 function makeUDPPacket(srcIP: string, dstIP: string, srcPort: number, dstPort: number): IPv4Packet {
-  const udp: UDPPacket = { type: 'udp', sourcePort: srcPort, destinationPort: dstPort, payload: null };
+  const udp: UDPPacket = { type: 'udp', sourcePort: srcPort, destinationPort: dstPort, length: 8, checksum: 0, payload: null };
   return createIPv4Packet(new IPAddress(srcIP), new IPAddress(dstIP), IP_PROTO_UDP, 64, udp, 28);
 }
 

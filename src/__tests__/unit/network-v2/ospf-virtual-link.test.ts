@@ -11,7 +11,7 @@
  * All tests are pure unit tests against OSPFEngine with no CiscoRouter CLI.
  */
 
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import {
   OSPF_BACKBONE_AREA,
   OSPF_INITIAL_SEQUENCE_NUMBER,

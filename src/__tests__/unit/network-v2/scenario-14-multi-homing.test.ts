@@ -37,8 +37,8 @@ describe('Scenario 14 — multi-homed source-interface selection + 4-tuple stabi
     EquipmentRegistry.resetInstance();
     client = new LinuxPC('linux-pc', 'client', 0, 0);
     server = new LinuxServer('linux-server', 'srv', 0, 0);
-    const routerA = new CiscoRouter('router-cisco', 'RA', 0, 0);
-    const routerB = new CiscoRouter('router-cisco', 'RB', 0, 0);
+    const routerA = new CiscoRouter('RA', 0, 0);
+    const routerB = new CiscoRouter('RB', 0, 0);
     const swAdmin = new CiscoSwitch('switch-cisco', 'swA', 8, 0, 0);
     const swProd = new CiscoSwitch('switch-cisco', 'swB', 8, 0, 0);
     const swSrv = new CiscoSwitch('switch-cisco', 'swS', 8, 0, 0);

@@ -49,6 +49,7 @@ function makeUdpOutboundPkt(srcIp: string, srcPort: number, dstIp: string, dstPo
     payload: { type: 'raw', data: '0123456789abcdef' } as never,
   };
   const pkt: IPv4Packet = {
+    type: 'ipv4' as const,
     version: 4,
     ihl: 5,
     tos: 0,
@@ -58,12 +59,12 @@ function makeUdpOutboundPkt(srcIp: string, srcPort: number, dstIp: string, dstPo
     fragmentOffset: 0,
     ttl: 64,
     protocol: IP_PROTO_UDP,
-    checksum: 0,
+    headerChecksum: 0,
     sourceIP: new IPAddress(srcIp),
     destinationIP: new IPAddress(dstIp),
     payload: udp,
-  } as IPv4Packet;
-  pkt.checksum = computeIPv4Checksum(pkt);
+  };
+  pkt.headerChecksum = computeIPv4Checksum(pkt);
   return pkt;
 }
 

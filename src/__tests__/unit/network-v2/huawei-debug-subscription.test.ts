@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { HuaweiRouter } from '@/network/devices/HuaweiRouter';
 import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
 import { EventBus, __setDefaultEventBus } from '@/events/EventBus';
+import type { DomainEvent } from '@/events/types';
 import { TerminalManager } from '@/terminal/sessions/TerminalManager';
 import type { HuaweiTerminalSession } from '@/terminal/sessions/HuaweiTerminalSession';
 import type { KeyEvent } from '@/terminal/sessions/TerminalSession';
@@ -56,7 +57,7 @@ describe('Huawei VRP debugging ospf — event subscription streams into the term
         newState: '2WAY',
         event: 'HelloReceived',
       },
-    });
+    } as unknown as DomainEvent);
   }
 
   it('streams a VRP-format Neighbor state change once both debug + terminal debugging are on', async () => {

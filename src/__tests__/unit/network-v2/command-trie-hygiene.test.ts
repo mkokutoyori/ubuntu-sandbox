@@ -42,7 +42,7 @@ const SWITCH_ALLOWED = new Set([
 
 describe('Cisco command tree has no accidental duplicate registrations', () => {
   it('CiscoRouter', () => {
-    const dups = collectOverwrites(() => { new CiscoRouter('r', 'R', 0, 0); });
+    const dups = collectOverwrites(() => { new CiscoRouter('R', 0, 0); });
     const unexpected = [...dups].filter(p => !ROUTER_ALLOWED.has(p));
     expect(unexpected, `Unexpected duplicate trie registrations: ${unexpected.join(', ')}`).toEqual([]);
   });

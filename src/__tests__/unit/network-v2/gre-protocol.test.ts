@@ -24,8 +24,8 @@ beforeEach(() => {
 
 function makeInner(srcIp: string, dstIp: string): IPv4Packet {
   const icmp: ICMPPacket = {
-    type: 'icmp', icmpType: 8, code: 0, checksum: 0,
-    id: 1, sequence: 1, data: 'gre-test',
+    type: 'icmp', icmpType: 'echo-request', code: 0,
+    id: 1, sequence: 1, dataSize: 8,
   };
   const pkt: IPv4Packet = {
     type: 'ipv4', version: 4, ihl: 5, tos: 0,

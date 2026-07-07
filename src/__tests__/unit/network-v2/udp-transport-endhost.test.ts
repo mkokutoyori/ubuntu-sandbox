@@ -69,7 +69,7 @@ describe('UDP datagram delivery (RFC 768)', () => {
 
     // PC2 runs a UDP echo service (RFC 862 style).
     pc2.udpBind(7, ({ sourceIP, udp }) => {
-      pc2.sendUdpDatagram(sourceIP, udp.sourcePort, 7, udp.payload, 4);
+      pc2.sendUdpDatagram(sourceIP as IPAddress, udp.sourcePort, 7, udp.payload, 4);
     });
     pc1.udpBind(51000, (delivery) => answers.push(delivery));
 

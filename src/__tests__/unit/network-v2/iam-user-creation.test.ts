@@ -306,7 +306,7 @@ function payloadOf<T extends DomainEvent['topic']>(
   const event = events.find(
     (e): e is Extract<DomainEvent, { topic: T }> => e.topic === topic,
   );
-  return event?.payload;
+  return event?.payload as any;
 }
 
 describe('LinuxFlowBuilder — useradd is non-interactive (faithful)', () => {

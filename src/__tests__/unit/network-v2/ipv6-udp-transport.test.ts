@@ -101,7 +101,7 @@ describe('UDP over IPv6 — ICMPv6 port unreachable (RFC 4443 §3.1)', () => {
     const { pc1, pc2 } = buildLan();
     void pc2;
     const errors: string[] = [];
-    pc1.getBus().subscribe('host.icmp.echo-failed', (e) => {
+    (pc1 as any).getBus().subscribe('host.icmp.echo-failed', (e: any) => {
       const p = e.payload as { reason?: string };
       if (p.reason) errors.push(p.reason);
     });

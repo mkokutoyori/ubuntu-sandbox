@@ -158,7 +158,7 @@ describe('SSH login as Administrator lands in a directory that exists', () => {
     const ctx = new WindowsSshServerContext(
       pc.getFileSystem(),
       (pc as any).userMgr,
-      pc.hostname,
+      (pc as any).hostname,
     );
     const userCtx = ctx.buildUserContext('Administrator');
     expect(userCtx).not.toBeNull();
@@ -178,7 +178,7 @@ describe('SSH login as Administrator lands in a directory that exists', () => {
     const { WindowsSshServerContext } = await import(
       '@/network/protocols/ssh/server/WindowsSshServerContext');
     const ctx = new WindowsSshServerContext(
-      pc.getFileSystem(), mgr, pc.hostname,
+      pc.getFileSystem(), mgr, (pc as any).hostname,
     );
     const userCtx = ctx.buildUserContext('zoe');
     expect(userCtx!.homeDirectory).toBe('C:\\Users\\zoe');

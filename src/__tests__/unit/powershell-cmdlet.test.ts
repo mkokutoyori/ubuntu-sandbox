@@ -27,7 +27,7 @@ function createPC(name = 'WIN-CMD'): WindowsPC {
 }
 
 function createPS(pc: WindowsPC): PowerShellExecutor {
-  return new PowerShellExecutor(pc);
+  return new PowerShellExecutor(pc as any);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

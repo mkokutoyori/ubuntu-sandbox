@@ -31,7 +31,7 @@ import type { DomainEvent } from '@/events/types';
 /** Collect the payloads of every event published on a given topic. */
 function capture<T extends DomainEvent['topic']>(bus: EventBus, topic: T) {
   const payloads: Array<Extract<DomainEvent, { topic: T }>['payload']> = [];
-  bus.subscribe(topic, (e) => payloads.push(e.payload));
+  bus.subscribe(topic, (e) => payloads.push(e.payload as any));
   return payloads;
 }
 

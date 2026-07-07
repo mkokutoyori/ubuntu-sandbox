@@ -27,7 +27,7 @@ describe('topology round-trip: enriched state survives export → import', () =>
   });
 
   it('interface description persists', async () => {
-    const router = new CiscoRouter('router-cisco', 'R1', 0, 0);
+    const router = new CiscoRouter('R1', 0, 0);
     router.powerOn();
     const port = router.getPort('GigabitEthernet0/0')!;
     port.setDescriptionText('Uplink to ISP');
@@ -40,7 +40,7 @@ describe('topology round-trip: enriched state survives export → import', () =>
   });
 
   it('router interface secondary IPs persist', async () => {
-    const router = new CiscoRouter('router-cisco', 'R1', 0, 0);
+    const router = new CiscoRouter('R1', 0, 0);
     router.powerOn();
     const { IPAddress, SubnetMask } = await import('@/network/core/types');
     router.configureInterface('GigabitEthernet0/0', new IPAddress('10.0.0.1'), new SubnetMask('255.255.255.0'));

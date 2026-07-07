@@ -19,8 +19,8 @@ function makeRootPc(): LinuxPC {
   const pc = new LinuxPC('pc1');
   pc.setEventBus(bus);
   pc.powerOn();
-  pc.executor.userMgr.currentUid = 0;
-  pc.executor.userMgr.currentUser = 'root';
+  (pc as any).executor.userMgr.currentUid = 0;
+  (pc as any).executor.userMgr.currentUser = 'root';
   return pc;
 }
 

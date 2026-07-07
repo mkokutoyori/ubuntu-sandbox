@@ -84,8 +84,8 @@ describe('alert-log views', () => {
   it('X$DBGALERTEXT and V$DIAG_ALERT_EXT both surface the instance alert log', () => {
     const env = s('alerts');
     const db = getOracleDatabase(env.srv.getId());
-    db.instance.logAlert('Test marker line A');
-    db.instance.logAlert('Test marker line B');
+    (db.instance as any).logAlert('Test marker line A');
+    (db.instance as any).logAlert('Test marker line B');
     const a = run(env.subShell, 'SELECT message_text FROM x$dbgalertext ORDER BY originating_timestamp;');
     const b = run(env.subShell, 'SELECT message_text FROM v$diag_alert_ext ORDER BY originating_timestamp;');
     for (const out of [a, b]) {

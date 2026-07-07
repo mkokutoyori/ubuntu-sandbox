@@ -378,7 +378,7 @@ describe('IPv6 Implementation (RFC 8200)', () => {
   describe('T-IPV6-05: NDP Neighbor Discovery', () => {
     let pc1: LinuxPC;
     let pc2: LinuxPC;
-    let sw: Switch;
+    let sw: CiscoSwitch;
 
     beforeEach(() => {
       pc1 = new LinuxPC('PC1', 100, 100);

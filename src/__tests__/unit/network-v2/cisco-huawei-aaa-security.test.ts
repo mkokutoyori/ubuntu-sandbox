@@ -451,14 +451,14 @@ describe('§J — SSH dispatch publishes lifecycle events on the bus', () => {
 
   test('successful SSH login emits router.aaa.account.login.success', async () => {
     const seen: string[] = [];
-    lab.ciscoR1.getBus().subscribe('router.aaa.account.login.success', e => seen.push((e.payload as { account: { name: string } }).account.name));
+    (lab.ciscoR1 as any).getBus().subscribe('router.aaa.account.login.success', (e: any) => seen.push((e.payload as { account: { name: string } }).account.name));
     await lab.linux1.executeCommand('ssh admin@10.0.0.6 "show version"');
     expect(seen).toContain('admin');
   });
 
   test('failed SSH login (unknown user) emits router.aaa.account.login.failure', async () => {
     const seen: string[] = [];
-    lab.ciscoR1.getBus().subscribe('router.aaa.account.login.failure', e => seen.push((e.payload as { account: { name: string } }).account.name));
+    (lab.ciscoR1 as any).getBus().subscribe('router.aaa.account.login.failure', (e: any) => seen.push((e.payload as { account: { name: string } }).account.name));
     await lab.linux1.executeCommand('ssh ghost@10.0.0.6 "show version"');
     expect(seen).toContain('ghost');
   });

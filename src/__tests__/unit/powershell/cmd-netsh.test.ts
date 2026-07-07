@@ -20,7 +20,7 @@ function createPC(name = 'WIN-ADD'): WindowsPC {
 }
 
 function createPS(pc: WindowsPC): PowerShellExecutor {
-  return new PowerShellExecutor(pc);
+  return new PowerShellExecutor(pc as any);
 }
 
 describe('netsh add – comprehensive', () => {

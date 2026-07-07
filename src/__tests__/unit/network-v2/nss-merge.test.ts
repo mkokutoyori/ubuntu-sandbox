@@ -25,8 +25,8 @@ describe('nss hosts [SUCCESS=merge]', () => {
     pc.setEventBus(bus);
     pc.setHostname('pc1');
     pc.powerOn();
-    pc.executor.userMgr.currentUid = 0;
-    pc.executor.userMgr.currentUser = 'root';
+    (pc as any).executor.userMgr.currentUid = 0;
+    (pc as any).executor.userMgr.currentUser = 'root';
 
     const peer = new LinuxPC('peer');
     peer.setEventBus(bus);

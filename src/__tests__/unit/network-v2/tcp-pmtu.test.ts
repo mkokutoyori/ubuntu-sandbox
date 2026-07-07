@@ -31,7 +31,7 @@ async function buildRoutedTopo(serverSideMtu: number) {
   const bus = new EventBus();
   const cli = new LinuxPC('CLI', 0, 0);
   const srv = new LinuxServer('linux-server', 'SRV', 0, 0);
-  const r1 = new CiscoRouter('r1', 'R1', 0, 0);
+  const r1 = new CiscoRouter('R1', 0, 0);
   cli.setEventBus(bus); srv.setEventBus(bus); r1.setEventBus(bus);
   cli.powerOn(); srv.powerOn(); r1.powerOn();
 

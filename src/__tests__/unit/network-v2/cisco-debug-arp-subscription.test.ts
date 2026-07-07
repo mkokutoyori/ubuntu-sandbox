@@ -46,6 +46,8 @@ describe('Cisco debug arp — event subscription streams ARP frames into the ter
 
   function arpFrame(op: 'request' | 'reply', senderIp: string, senderMac: string, targetIp: string, targetMac: string) {
     return {
+      srcMAC: new MACAddress(senderMac),
+      dstMAC: new MACAddress(targetMac),
       etherType: 0x0806,
       payload: {
         type: 'arp',

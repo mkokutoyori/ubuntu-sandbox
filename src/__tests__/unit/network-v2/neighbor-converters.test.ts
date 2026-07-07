@@ -54,8 +54,13 @@ describe('cdpToNeighborDTO', () => {
       remoteType: 'switch-cisco',
       remotePlatform: 'cisco WS-C2960',
       remoteCapability: 'Switch',
+      remoteAddresses: [],
+      remoteSoftwareVersion: '',
+      learnedAtMs: 0,
       lastSeenMs: 0,
       holdtimeSec: 180,
+      expiresAtMs: 180_000,
+      duplex: 'full',
     } as CdpNeighbor;
     expect(cdpToNeighborDTO([row])).toEqual([{
       localPort: 'Gi0/0',

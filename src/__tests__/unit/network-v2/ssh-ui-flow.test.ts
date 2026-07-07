@@ -565,7 +565,7 @@ describe('SSH UI — input routing precedence', () => {
     await waitFor(() => session.currentInputMode.type === 'password');
 
     // No active sub-shell, no flow — only pendingSshIO should be awaiting.
-    expect(session.activeSubShell ?? null).toBeNull();
+    expect((session as any).activeSubShell ?? null).toBeNull();
     expect(session.isFlowActive).toBe(false);
 
     // Pressing arrow keys must NOT navigate history while a prompt is pending.

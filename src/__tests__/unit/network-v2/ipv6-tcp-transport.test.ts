@@ -17,7 +17,7 @@ interface Peer {
     connect(ip: string, port: number, opts?: {
       onOpen?: (s: TcpSocket) => void; onData?: (d: unknown) => void; onClose?: () => void;
     }): TcpSocket | null;
-    listen(port: number, opts: { onAccept: (s: TcpSocket) => void }): void;
+    listen(port: number, opts: { onAccept: (s: TcpSocket) => void }, localIp?: string): void;
     listListeners(): Array<{ localPort: number }>;
   };
 }

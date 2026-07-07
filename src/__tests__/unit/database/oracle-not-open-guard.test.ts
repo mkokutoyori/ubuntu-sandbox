@@ -8,7 +8,8 @@ beforeEach(() => {
 });
 
 function execAt(state: 'NOMOUNT' | 'MOUNT' | 'OPEN', sql: string): string {
-  db.instance.startup(state === 'OPEN' ? 'OPEN' : state);
+  if (state === 'OPEN') db.instance.startup();
+  else db.instance.startup(state);
   const { executor } = db.connectAsSysdba();
   try {
     db.executeSql(executor, sql);

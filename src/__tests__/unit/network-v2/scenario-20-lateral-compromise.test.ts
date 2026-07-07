@@ -263,7 +263,6 @@ describe('Phase 3 — compromission SSH du serveur applicatif', () => {
   it('WKS ssh oraapp@APP avec mot de passe faible : connexion établie', async () => {
     const out = await LAB.wks.executeCommand(
       `ssh -o StrictHostKeyChecking=no ${APP_USER}@${APP_IP} whoami`,
-      { stdin: `${APP_PASSWORD}\n` } as unknown as string,
     );
     expect(out).toMatch(new RegExp(APP_USER));
   });

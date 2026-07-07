@@ -38,6 +38,7 @@ import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
 import { Logger } from '@/network/core/Logger';
 import { getDefaultEventBus } from '@/events/EventBus';
+import type { DomainEventTopic } from '@/events/types';
 import type { Port } from '@/network/hardware/Port';
 
 type EventRow = {
@@ -52,7 +53,7 @@ type EventRow = {
 function collectAll(): { rows: EventRow[]; unsub: () => void } {
   const rows: EventRow[] = [];
   const bus = getDefaultEventBus();
-  const topics = [
+  const topics: DomainEventTopic[] = [
     'log',
     'ipsec.engine.started', 'ipsec.engine.stopped',
     'ipsec.ike.sa-installed', 'ipsec.ike.sa-deleted',

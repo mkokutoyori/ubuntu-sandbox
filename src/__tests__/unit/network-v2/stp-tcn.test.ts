@@ -19,6 +19,7 @@ import { CiscoSwitch } from '@/network/devices/CiscoSwitch';
 import { LinuxPC } from '@/network/devices/LinuxPC';
 import { Cable } from '@/network/hardware/Cable';
 import { EventBus } from '@/events/EventBus';
+import type { DomainEventTopic } from '@/events/types';
 import { IPAddress, MACAddress, resetCounters } from '@/network/core/types';
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';
@@ -50,7 +51,7 @@ async function buildChain() {
   root.setEventBus(bus); sw2.setEventBus(bus); sw3.setEventBus(bus);
   await makeRoot(root);
   const events: Array<{ topic: string; deviceId: string }> = [];
-  for (const topic of ['stp.tcn.sent', 'stp.tcn.received', 'stp.topology-change.detected']) {
+  for (const topic of ['stp.tcn.sent', 'stp.tcn.received', 'stp.topology-change.detected'] as DomainEventTopic[]) {
     bus.subscribe(topic, (e) => events.push({ topic, deviceId: (e.payload as { deviceId: string }).deviceId }));
   }
   new Cable('a').connect(root.getPort('FastEthernet0/1')!, sw2.getPort('FastEthernet0/1')!);
