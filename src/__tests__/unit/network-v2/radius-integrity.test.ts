@@ -50,7 +50,7 @@ describe('RADIUS integrity — end-to-end (RFC 2865 §3 / RFC 2869 §5.14)', () 
 
     // Flip a byte of the Response Authenticator in flight (server → switch hop).
     const unsub = bus.subscribe('cable.frame.dispatched', (e) => {
-      if (e.payload.cableId !== cableServerSw.id) return;
+      if (e.payload.cableId !== cableServerSw.getId()) return;
       const radius = radiusPayloadOf(e.payload.frame as EthernetFrame);
       if (!radius || radius.code !== 'access-accept') return;
       radius.authenticator = (radius.authenticator[0] === '0' ? '1' : '0') + radius.authenticator.slice(1);
@@ -77,7 +77,7 @@ describe('RADIUS integrity — end-to-end (RFC 2865 §3 / RFC 2869 §5.14)', () 
     client.getRadiusClient().addServer('10.0.0.2', 'shared', { timeoutMs: 100, retransmit: 0 });
 
     const unsub = bus.subscribe('cable.frame.dispatched', (e) => {
-      if (e.payload.cableId !== cableClientSw.id) return;
+      if (e.payload.cableId !== cableClientSw.getId()) return;
       const radius = radiusPayloadOf(e.payload.frame as EthernetFrame);
       if (!radius || radius.code !== 'access-request') return;
       const ma = radius.attributes.find((a) => a.type === 'message-authenticator');
@@ -111,7 +111,7 @@ describe('RADIUS integrity — end-to-end (RFC 2865 §3 / RFC 2869 §5.14)', () 
 
     let firstReplySeen = false;
     const unsub = bus.subscribe('cable.frame.dispatched', (e) => {
-      if (e.payload.cableId !== cableServerSw.id) return;
+      if (e.payload.cableId !== cableServerSw.getId()) return;
       const radius = radiusPayloadOf(e.payload.frame as EthernetFrame);
       if (!radius || radius.code !== 'access-accept') return;
       if (!firstReplySeen) {

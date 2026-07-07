@@ -91,7 +91,7 @@ describe('Http1Wire — encode/decode round-trip (no network)', () => {
   it('a malformed request-line is rejected as 400', () => {
     const parsed = parseRequest('NOT A REQUEST\r\nHost: x\r\n\r\n');
     expect(parsed.ok).toBe(false);
-    if (!parsed.ok) expect(parsed.status).toBe(400);
+    if (parsed.ok === false) expect(parsed.status).toBe(400);
   });
 
   it('round-trips an arbitrary binary body byte-for-byte, not just valid UTF-8 text', () => {
@@ -144,14 +144,14 @@ describe('Http1Wire — Content-Length/Transfer-Encoding inconsistency (RFC 9112
     const raw = 'POST /x HTTP/1.1\r\nContent-Length: 5\r\nTransfer-Encoding: chunked\r\n\r\n5\r\nhello\r\n0\r\n\r\n';
     const parsed = parseRequest(raw);
     expect(parsed.ok).toBe(false);
-    if (!parsed.ok) expect(parsed.status).toBe(400);
+    if (parsed.ok === false) expect(parsed.status).toBe(400);
   });
 
   it('rejects a response carrying both headers', () => {
     const raw = 'HTTP/1.1 200 OK\r\nContent-Length: 2\r\nTransfer-Encoding: chunked\r\n\r\nhi';
     const parsed = parseResponse(raw);
     expect(parsed.ok).toBe(false);
-    if (!parsed.ok) expect(parsed.status).toBe(400);
+    if (parsed.ok === false) expect(parsed.status).toBe(400);
   });
 });
 

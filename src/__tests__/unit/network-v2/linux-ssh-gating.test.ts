@@ -21,9 +21,9 @@ import { IPAddress, SubnetMask } from '@/network/core/types';
 import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
 
 function wire(a: LinuxPC | LinuxServer, b: LinuxPC | LinuxServer): void {
-  const hub = new Hub('hub', 'h', 0, 0);
-  new Cable(a.getPorts()[0], hub.getPorts()[0]);
-  new Cable(b.getPorts()[0], hub.getPorts()[1]);
+  const hub = new Hub('h');
+  new Cable('c1').connect(a.getPorts()[0], hub.getPorts()[0]);
+  new Cable('c2').connect(b.getPorts()[0], hub.getPorts()[1]);
 }
 
 function configure(d: LinuxPC | LinuxServer, ip: string): void {
