@@ -409,7 +409,7 @@ export class LinuxCommandExecutor {
     this.cron = new LinuxCronManager();
     this.iptables = new LinuxIptablesManager(this.vfs, (port, proto) => this.resolveServiceName(port, proto));
     this.ip6tables = new LinuxIptablesManager(this.vfs, (port, proto) => this.resolveServiceName(port, proto), { family: 6 });
-    this.firewall = new LinuxFirewallManager(this.vfs, this.iptables);
+    this.firewall = new LinuxFirewallManager(this.vfs, this.iptables, this.ip6tables);
     this.logMgr = new LinuxLogManager(this.vfs);
     this.auditLog = new LinuxAuditLog(this.vfs);
     this.auditRules = new LinuxAuditRules(this.auditLog, this.vfs);

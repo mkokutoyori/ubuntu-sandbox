@@ -421,14 +421,28 @@ ordre arbitraire.
   dual-stack concernées, `tsc`/`eslint` propres (mêmes 5 erreurs
   préexistantes confirmées par `git stash`, non introduites).
 
-### Phase 4 — Injection réelle des règles `ufw` v6 (item E.13, dépend de Phase 1)
+### Phase 4 — Injection réelle des règles `ufw` v6 (item E.13, dépend de Phase 1) — ✅ LIVRÉE
 
-- **Fichiers touchés** : `LinuxFirewallManager.ts` (référence `ip6tables`
-  ajoutée au constructeur, `setupIptablesChains`/`rebuildIptablesRules`
-  injectent désormais les règles `v6`).
-- **Tests** : réécriture du bloc « G8-19 : Filtrage IPv6 » de
-  `linux-ufw.test.ts` pour construire de vrais paquets IPv6 et vérifier un
-  blocage effectif (pas seulement l'affichage du tag `(v6)`).
+- **Fichiers touchés** : `LinuxFirewallManager.ts` (constructeur reçoit
+  désormais `ip6tables` en plus de `iptables` ;
+  `setupIptablesChains`/`teardownIptablesChains`/`applyDefaultPolicies`/
+  `addRejectCatchAll`/`rebuildIptablesRules` refactorés pour opérer sur les
+  deux moteurs — nouveaux helpers `setupChainsOn`/`teardownChainsOn` évitant
+  la duplication ; `injectRuleToIptables` choisit désormais le moteur cible
+  via `ufwRule.v6`), `LinuxCommandExecutor.ts` (passe `this.ip6tables` au
+  constructeur).
+- **Tests** : réécriture complète du bloc « G8-19 : Filtrage IPv6 » de
+  `linux-ufw.test.ts` (4 tests, deux moteurs réels instanciés côte à côte,
+  vrais paquets IPv6 fd00::/64, vérifie explicitement qu'une règle scopée à
+  une adresse IPv4 littérale n'a toujours aucune contrepartie v6) ; nouveau
+  fichier `ufw-ipv6-real-block.test.ts` (4 tests) pilotant tout le chemin via
+  `executeCommand` (`ufw enable`/`ufw deny`/`ufw allow` + `nc -zv` depuis un
+  client IPv6 réel sur un LAN à deux hôtes) plutôt que par accès direct aux
+  moteurs, pour prouver le comportement visible en CLI.
+- **Régression** : 312 tests verts sur les suites ufw/iptables/dual-stack/
+  fail2ban/ACL concernées, `tsc` propre, `eslint` propre (8 erreurs
+  `no-explicit-any` préexistantes confirmées par `git stash`, non
+  introduites).
 
 ### Phase 5 — Couplage service ufw ↔ systemd (items A.1, A.2)
 

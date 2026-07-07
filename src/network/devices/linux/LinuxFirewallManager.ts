@@ -78,6 +78,7 @@ interface UfwRule {
 export class LinuxFirewallManager {
   private vfs: VirtualFileSystem | null = null;
   private iptables: LinuxIptablesManager;
+  private ip6tables: LinuxIptablesManager;
   private enabled = false;
   private rules: UfwRule[] = [];
   private defaultIncoming: DefaultPolicy = 'deny';
@@ -91,9 +92,10 @@ export class LinuxFirewallManager {
   private readonly RATE_LIMIT_MAX = 6;      // Max connections
   private readonly RATE_LIMIT_WINDOW = 30000; // 30 seconds (ms)
 
-  constructor(vfs: VirtualFileSystem | undefined, iptables: LinuxIptablesManager) {
+  constructor(vfs: VirtualFileSystem | undefined, iptables: LinuxIptablesManager, ip6tables: LinuxIptablesManager) {
     if (vfs) this.vfs = vfs;
     this.iptables = iptables;
+    this.ip6tables = ip6tables;
   }
 
   /** Check whether UFW is currently enabled. */
@@ -159,9 +161,24 @@ export class LinuxFirewallManager {
    * And add jumps from INPUT → ufw-user-input, OUTPUT → ufw-user-output.
    */
   private setupIptablesChains(): void {
-    const ipt = this.iptables;
+    this.setupChainsOn(this.iptables);
+    this.setupChainsOn(this.ip6tables);
 
-    // Create UFW chains
+    // Set chain policies based on UFW defaults
+    this.applyDefaultPolicies();
+
+    // Inject all current UFW rules — each rule goes to the engine matching
+    // its own family (v4 rules → iptables, v6 rules → ip6tables).
+    for (const rule of this.rules) {
+      this.injectRuleToIptables(rule);
+    }
+
+    // Add catch-all REJECT rules if default policy is 'reject'
+    this.addRejectCatchAll();
+  }
+
+  /** Create the ufw-user-* chains and jumps on a given engine (v4 or v6). */
+  private setupChainsOn(ipt: LinuxIptablesManager): void {
     ipt.createChain('filter', 'ufw-user-input');
     ipt.createChain('filter', 'ufw-user-output');
     ipt.createChain('filter', 'ufw-user-forward');
@@ -186,28 +203,18 @@ export class LinuxFirewallManager {
     ipt.appendRule('filter', 'FORWARD', LinuxIptablesManager.createRule({
       target: 'ufw-user-forward',
     }));
-
-    // Set chain policies based on UFW defaults
-    this.applyDefaultPolicies();
-
-    // Inject all current UFW rules into iptables
-    for (const rule of this.rules) {
-      if (!rule.v6) {
-        this.injectRuleToIptables(rule);
-      }
-    }
-
-    // Add catch-all REJECT rules if default policy is 'reject'
-    this.addRejectCatchAll();
   }
 
   /**
-   * Remove all UFW chains and rules from iptables.
+   * Remove all UFW chains and rules from iptables (both families).
    * Called when `ufw disable` is run.
    */
   private teardownIptablesChains(): void {
-    const ipt = this.iptables;
+    this.teardownChainsOn(this.iptables);
+    this.teardownChainsOn(this.ip6tables);
+  }
 
+  private teardownChainsOn(ipt: LinuxIptablesManager): void {
     // Reset INPUT/OUTPUT/FORWARD policies to ACCEPT
     ipt.setPolicy('filter', 'INPUT', 'ACCEPT');
     ipt.setPolicy('filter', 'OUTPUT', 'ACCEPT');
@@ -236,18 +243,19 @@ export class LinuxFirewallManager {
    * so that unmatched packets get a proper ICMP reject response.
    */
   private applyDefaultPolicies(): void {
-    const ipt = this.iptables;
     // 'deny' → DROP, 'reject' → DROP (with REJECT catch-all), 'allow' → ACCEPT
     const inPolicy = this.defaultIncoming === 'allow' ? 'ACCEPT' as const : 'DROP' as const;
     const outPolicy = this.defaultOutgoing === 'allow' ? 'ACCEPT' as const : 'DROP' as const;
-    ipt.setPolicy('filter', 'INPUT', inPolicy);
-    ipt.setPolicy('filter', 'OUTPUT', outPolicy);
-    // FORWARD chain policy: 'disabled' means DROP (no forwarding unless explicit rules)
-    if (this.defaultRouted !== 'disabled') {
-      const fwdPolicy = this.defaultRouted === 'allow' ? 'ACCEPT' as const : 'DROP' as const;
-      ipt.setPolicy('filter', 'FORWARD', fwdPolicy);
-    } else {
-      ipt.setPolicy('filter', 'FORWARD', 'DROP');
+    for (const ipt of [this.iptables, this.ip6tables]) {
+      ipt.setPolicy('filter', 'INPUT', inPolicy);
+      ipt.setPolicy('filter', 'OUTPUT', outPolicy);
+      // FORWARD chain policy: 'disabled' means DROP (no forwarding unless explicit rules)
+      if (this.defaultRouted !== 'disabled') {
+        const fwdPolicy = this.defaultRouted === 'allow' ? 'ACCEPT' as const : 'DROP' as const;
+        ipt.setPolicy('filter', 'FORWARD', fwdPolicy);
+      } else {
+        ipt.setPolicy('filter', 'FORWARD', 'DROP');
+      }
     }
 
     // For 'reject' defaults, add catch-all REJECT rules at end of ufw chains
@@ -256,27 +264,29 @@ export class LinuxFirewallManager {
 
   /**
    * Add catch-all REJECT rules when default policy is 'reject'.
-   * Called after all user rules are injected into the chain.
+   * Called after all user rules are injected into the chain, on both
+   * families.
    */
   private addRejectCatchAll(): void {
-    const ipt = this.iptables;
-    if (this.defaultIncoming === 'reject') {
-      ipt.appendRule('filter', 'ufw-user-input', LinuxIptablesManager.createRule({
-        target: 'REJECT',
-        targetOptions: { '--reject-with': 'icmp-port-unreachable' },
-      }));
-    }
-    if (this.defaultOutgoing === 'reject') {
-      ipt.appendRule('filter', 'ufw-user-output', LinuxIptablesManager.createRule({
-        target: 'REJECT',
-        targetOptions: { '--reject-with': 'icmp-port-unreachable' },
-      }));
-    }
-    if (this.defaultRouted === 'reject') {
-      ipt.appendRule('filter', 'ufw-user-forward', LinuxIptablesManager.createRule({
-        target: 'REJECT',
-        targetOptions: { '--reject-with': 'icmp-port-unreachable' },
-      }));
+    for (const ipt of [this.iptables, this.ip6tables]) {
+      if (this.defaultIncoming === 'reject') {
+        ipt.appendRule('filter', 'ufw-user-input', LinuxIptablesManager.createRule({
+          target: 'REJECT',
+          targetOptions: { '--reject-with': 'icmp-port-unreachable' },
+        }));
+      }
+      if (this.defaultOutgoing === 'reject') {
+        ipt.appendRule('filter', 'ufw-user-output', LinuxIptablesManager.createRule({
+          target: 'REJECT',
+          targetOptions: { '--reject-with': 'icmp-port-unreachable' },
+        }));
+      }
+      if (this.defaultRouted === 'reject') {
+        ipt.appendRule('filter', 'ufw-user-forward', LinuxIptablesManager.createRule({
+          target: 'REJECT',
+          targetOptions: { '--reject-with': 'icmp-port-unreachable' },
+        }));
+      }
     }
   }
 
@@ -284,7 +294,7 @@ export class LinuxFirewallManager {
    * Translate a single UFW rule into iptables rule(s) and inject into iptables.
    */
   private injectRuleToIptables(ufwRule: UfwRule): void {
-    const ipt = this.iptables;
+    const ipt = ufwRule.v6 ? this.ip6tables : this.iptables;
     const chain = ufwRule.route ? 'ufw-user-forward'
                 : ufwRule.direction === 'out' ? 'ufw-user-output' : 'ufw-user-input';
 
@@ -354,18 +364,16 @@ export class LinuxFirewallManager {
   private rebuildIptablesRules(): void {
     if (!this.enabled) return;
 
-    const ipt = this.iptables;
+    // Flush user chains on both families (keep the chains themselves and the jumps)
+    for (const ipt of [this.iptables, this.ip6tables]) {
+      ipt.flushChain('filter', 'ufw-user-input');
+      ipt.flushChain('filter', 'ufw-user-output');
+      ipt.flushChain('filter', 'ufw-user-forward');
+    }
 
-    // Flush user chains (keep the chains themselves and the jumps)
-    ipt.flushChain('filter', 'ufw-user-input');
-    ipt.flushChain('filter', 'ufw-user-output');
-    ipt.flushChain('filter', 'ufw-user-forward');
-
-    // Re-inject all rules
+    // Re-inject all rules — each to its own family's engine
     for (const rule of this.rules) {
-      if (!rule.v6) {
-        this.injectRuleToIptables(rule);
-      }
+      this.injectRuleToIptables(rule);
     }
 
     // Update policies
