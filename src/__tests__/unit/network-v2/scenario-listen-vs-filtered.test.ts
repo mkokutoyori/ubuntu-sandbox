@@ -24,7 +24,7 @@ interface RoutedLab {
 }
 
 async function buildFlat(): Promise<FlatLab> {
-  const sw = new GenericSwitch('switch', 'sw', 8, 0, 0);
+  const sw = new GenericSwitch('switch-generic','sw', 8, 0, 0);
   const client = new LinuxPC('linux-pc', 'client', 0, 0);
   const server = new LinuxServer('linux-server', 'srv', 0, 0);
   new Cable('a').connect(client.getPorts()[0], sw.getPorts()[0]);
@@ -37,8 +37,8 @@ async function buildFlat(): Promise<FlatLab> {
 }
 
 async function buildRouted(): Promise<RoutedLab> {
-  const lanSw = new GenericSwitch('switch', 'lan-sw', 8, 0, 0);
-  const wanSw = new GenericSwitch('switch', 'wan-sw', 8, 0, 0);
+  const lanSw = new GenericSwitch('switch-generic','lan-sw', 8, 0, 0);
+  const wanSw = new GenericSwitch('switch-generic','wan-sw', 8, 0, 0);
   const gw = new CiscoRouter('gw', 0, 0);
   const clientRemote = new LinuxPC('linux-pc', 'remote', 0, 0);
   const server = new LinuxServer('linux-server', 'srv', 0, 0);

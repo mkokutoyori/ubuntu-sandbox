@@ -12,7 +12,7 @@ import type { TcpStack } from '@/network/tcp/TcpStack';
 interface Lab { client: LinuxPC; server: LinuxServer }
 
 async function buildLab(): Promise<Lab> {
-  const sw = new GenericSwitch('switch', 'sw', 8, 0, 0);
+  const sw = new GenericSwitch('switch-generic','sw', 8, 0, 0);
   const client = new LinuxPC('linux-pc', 'client', 0, 0);
   const server = new LinuxServer('linux-server', 'srv', 0, 0);
   new Cable('a').connect(client.getPorts()[0], sw.getPorts()[0]);
@@ -65,11 +65,11 @@ describe('Scénario 13 — Épuisement du pool éphémère sous charge', () => {
     await client.executeCommand('sysctl -w net.ipv4.ip_local_port_range="10000 10009"');
     for (let i = 0; i < 10; i++) stack(client).connect('10.0.0.20', 9000, {});
     let dropped: string | null = null;
-    const off = client.getBus().subscribe('tcp.segment.dropped', (e) => {
+    const off = (client as any).getBus().subscribe('tcp.segment.dropped', (e) => {
       if ((e.payload as { reason: string }).reason === 'no-ephemeral') dropped = 'no-ephemeral';
     });
     let syns = 0;
-    const offSent = client.getBus().subscribe('tcp.segment.sent', (e) => {
+    const offSent = (client as any).getBus().subscribe('tcp.segment.sent', (e) => {
       const p = e.payload as { flagsText?: string };
       if (p.flagsText?.includes('S') && !p.flagsText.includes('.')) syns++;
     });

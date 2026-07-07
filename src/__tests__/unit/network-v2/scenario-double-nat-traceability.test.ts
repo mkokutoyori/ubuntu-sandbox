@@ -28,9 +28,9 @@ const NAT2_OUTSIDE = '203.0.113.1';
 const OUTSIDE_IP = '203.0.113.10';
 
 async function buildLab(): Promise<Lab> {
-  const lanSw = new GenericSwitch('switch', 'lan', 8, 0, 0);
-  const dmzSw = new GenericSwitch('switch', 'dmz', 8, 0, 0);
-  const wanSw = new GenericSwitch('switch', 'wan', 8, 0, 0);
+  const lanSw = new GenericSwitch('switch-generic','lan', 8, 0, 0);
+  const dmzSw = new GenericSwitch('switch-generic','dmz', 8, 0, 0);
+  const wanSw = new GenericSwitch('switch-generic','wan', 8, 0, 0);
   const nat1 = new CiscoRouter('nat1', 0, 0);
   const nat2 = new CiscoRouter('nat2', 0, 0);
   const in1 = new LinuxPC('linux-pc', 'in1', 0, 0);
