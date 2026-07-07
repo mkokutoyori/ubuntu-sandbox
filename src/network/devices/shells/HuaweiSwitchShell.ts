@@ -41,7 +41,8 @@ import { vrrpVirtualMac, effectivePriority as vrrpEffectivePriority } from '../.
 
 type VRPSwitchMode =
   | 'user' | 'system' | 'interface' | 'vlan' | 'mst-region' | 'port-group'
-  | 'aaa' | 'user-interface' | 'acl' | 'dhcp-pool';
+  | 'aaa' | 'user-interface' | 'acl' | 'dhcp-pool'
+  | 'traffic-classifier' | 'traffic-behavior' | 'traffic-policy';
 
 export class HuaweiSwitchShell implements ISwitchShell {
   private mode: VRPSwitchMode = 'user';
@@ -58,6 +59,10 @@ export class HuaweiSwitchShell implements ISwitchShell {
   private aaaTrie = new CommandTrie();
   private userIfTrie = new CommandTrie();
   private aclTrie = new CommandTrie();
+  private mqcClassifierTrie = new CommandTrie();
+  private mqcBehaviorTrie = new CommandTrie();
+  private mqcPolicyTrie = new CommandTrie();
+  private selectedMqcName: string | null = null;
   private dhcpPoolTrie = new CommandTrie();
   private selectedPool: string | null = null;
   private uiLabel = '';
@@ -348,6 +353,9 @@ export class HuaweiSwitchShell implements ISwitchShell {
         return `[${host}-acl-${a?.type ?? 'basic'}-${this.selectedAcl ?? ''}]`;
       }
       case 'dhcp-pool': return `[${host}-ip-pool-${this.selectedPool ?? ''}]`;
+      case 'traffic-classifier': return `[${host}-classifier-${this.selectedMqcName ?? ''}]`;
+      case 'traffic-behavior':   return `[${host}-behavior-${this.selectedMqcName ?? ''}]`;
+      case 'traffic-policy':     return `[${host}-trafficpolicy-${this.selectedMqcName ?? ''}]`;
       default:          return `<${host}>`;
     }
   }
@@ -468,6 +476,12 @@ export class HuaweiSwitchShell implements ISwitchShell {
         this.mode = 'system';
         this.selectedPool = null;
         return '';
+      case 'traffic-classifier':
+      case 'traffic-behavior':
+      case 'traffic-policy':
+        this.mode = 'system';
+        this.selectedMqcName = null;
+        return '';
       case 'system':
         this.mode = 'user';
         return '';
@@ -490,6 +504,9 @@ export class HuaweiSwitchShell implements ISwitchShell {
       case 'user-interface': return this.userIfTrie;
       case 'acl':       return this.aclTrie;
       case 'dhcp-pool': return this.dhcpPoolTrie;
+      case 'traffic-classifier': return this.mqcClassifierTrie;
+      case 'traffic-behavior':   return this.mqcBehaviorTrie;
+      case 'traffic-policy':     return this.mqcPolicyTrie;
       default:          return this.userTrie;
     }
   }
@@ -633,6 +650,50 @@ export class HuaweiSwitchShell implements ISwitchShell {
       this.selectedAcl = key;
       this.mode = 'acl';
       return '';
+    });
+
+    this.systemTrie.registerGreedy('traffic classifier', 'Configure a traffic classifier', (args) => {
+      if (!args[0] || !this.swRef) return 'Error: Incomplete command.';
+      this.swRef.mqcEnsureClassifier(args[0]);
+      this.selectedMqcName = args[0];
+      this.mode = 'traffic-classifier';
+      return '';
+    });
+    this.systemTrie.registerGreedy('traffic behavior', 'Configure a traffic behavior', (args) => {
+      if (!args[0] || !this.swRef) return 'Error: Incomplete command.';
+      this.swRef.mqcEnsureBehavior(args[0]);
+      this.selectedMqcName = args[0];
+      this.mode = 'traffic-behavior';
+      return '';
+    });
+    this.systemTrie.registerGreedy('traffic policy', 'Configure a traffic policy', (args) => {
+      if (!args[0] || !this.swRef) return 'Error: Incomplete command.';
+      this.swRef.mqcEnsurePolicy(args[0]);
+      this.selectedMqcName = args[0];
+      this.mode = 'traffic-policy';
+      return '';
+    });
+
+    this.mqcClassifierTrie.registerGreedy('if-match acl', 'Match an ACL', (args) => {
+      if (!args[0] || !this.selectedMqcName || !this.swRef) return 'Error: Incomplete command.';
+      const res = this.swRef.mqcClassifierAddMatchAcl(this.selectedMqcName, args[0]);
+      return res.ok ? '' : `Error: ${res.error}.`;
+    });
+    this.mqcBehaviorTrie.register('permit', 'Permit matched traffic', () => {
+      if (!this.selectedMqcName || !this.swRef) return 'Error: Incomplete command.';
+      const res = this.swRef.mqcBehaviorSetAction(this.selectedMqcName, 'permit');
+      return res.ok ? '' : `Error: ${res.error}.`;
+    });
+    this.mqcBehaviorTrie.register('deny', 'Deny matched traffic', () => {
+      if (!this.selectedMqcName || !this.swRef) return 'Error: Incomplete command.';
+      const res = this.swRef.mqcBehaviorSetAction(this.selectedMqcName, 'deny');
+      return res.ok ? '' : `Error: ${res.error}.`;
+    });
+    this.mqcPolicyTrie.registerGreedy('classifier', 'Bind a classifier to a behavior', (args) => {
+      if (!this.selectedMqcName || !this.swRef) return 'Error: Incomplete command.';
+      if (!args[0] || args[1]?.toLowerCase() !== 'behavior' || !args[2]) return 'Error: Incomplete command.';
+      const res = this.swRef.mqcPolicyBind(this.selectedMqcName, args[0], args[2]);
+      return res.ok ? '' : `Error: ${res.error}.`;
     });
 
     // user-interface {console <n> | vty <first> [last] | maxvty …} → UI view
@@ -1156,6 +1217,18 @@ export class HuaweiSwitchShell implements ISwitchShell {
       return '';
     });
 
+    this.vlanTrie.registerGreedy('traffic-policy', 'Apply a traffic policy to this VLAN', (args) => {
+      if (this.selectedVlan === null || !this.swRef || !args[0]) return 'Error: Incomplete command.';
+      if (args[1]?.toLowerCase() !== 'inbound') return 'Error: Wrong parameter found.';
+      const res = this.swRef.applyVlanTrafficPolicy(this.selectedVlan, args[0]);
+      return res.ok ? '' : `Error: ${res.error}.`;
+    });
+    this.vlanTrie.registerGreedy('undo traffic-policy', 'Remove the VLAN traffic policy', () => {
+      if (this.selectedVlan === null || !this.swRef) return 'Error: Incomplete command.';
+      this.swRef.removeVlanTrafficPolicy(this.selectedVlan);
+      return '';
+    });
+
     this.vlanTrie.register('aggregate-vlan', 'Mark this VLAN as a super-VLAN', () => {
       if (this.selectedVlan === null || !this.swRef) return 'Error: Incomplete command.';
       const res = this.swRef.setSuperVlan(this.selectedVlan);
@@ -1333,7 +1406,9 @@ export class HuaweiSwitchShell implements ISwitchShell {
     const t = this.aclTrie;
     t.registerGreedy('rule', 'Configure an ACL rule', (args) => {
       if (!this.selectedAcl) return 'Error: Incomplete command.';
-      this.acls.get(this.selectedAcl)?.rules.push(`rule ${args.join(' ')}`.trim());
+      const acl = this.acls.get(this.selectedAcl);
+      acl?.rules.push(`rule ${args.join(' ')}`.trim());
+      if (acl) this.parseVrpAclRule(args, acl.key, acl.type);
       return '';
     });
     t.registerGreedy('description', 'ACL description', (args) => {
@@ -1370,6 +1445,68 @@ export class HuaweiSwitchShell implements ISwitchShell {
     if (!a) return `Error: The ACL ${key} does not exist.`;
     const kind = a.type === 'adv' ? 'advanced' : 'basic';
     return [`acl ${kind} ${a.key}`, ...a.rules.map(r => ` ${r}`)].join('\n');
+  }
+
+  private parseVrpAclAddr(args: string[], offset: number): { ip: IPAddress; wc: SubnetMask; consumed: number } | null {
+    const t = args[offset]?.toLowerCase();
+    if (!t) return null;
+    if (t === 'any') {
+      return { ip: new IPAddress('0.0.0.0'), wc: new SubnetMask('255.255.255.255'), consumed: 1 };
+    }
+    if (!IPAddress.isValid(args[offset])) return null;
+    let wcTok = args[offset + 1];
+    if (wcTok === '0') wcTok = '0.0.0.0';
+    if (wcTok && IPAddress.isValid(wcTok)) {
+      return { ip: new IPAddress(args[offset]), wc: new SubnetMask(wcTok), consumed: 2 };
+    }
+    return { ip: new IPAddress(args[offset]), wc: new SubnetMask('0.0.0.0'), consumed: 1 };
+  }
+
+  private parseVrpAclRule(args: string[], aclKey: string, aclType: 'basic' | 'adv'): void {
+    if (!this.swRef) return;
+    let i = 0;
+    if (/^\d+$/.test(args[i] ?? '')) i++;
+    const action = args[i]?.toLowerCase();
+    if (action !== 'permit' && action !== 'deny') return;
+    i++;
+
+    const engine = this.swRef.getVaclEngine();
+    const num = parseInt(aclKey, 10);
+    const anyIp = new IPAddress('0.0.0.0');
+    const anyWc = new SubnetMask('255.255.255.255');
+
+    if (aclType === 'basic') {
+      let srcIP = anyIp, srcWc = anyWc;
+      const si = args.findIndex(a => a.toLowerCase() === 'source');
+      if (si >= 0) {
+        const src = this.parseVrpAclAddr(args, si + 1);
+        if (!src) return;
+        srcIP = src.ip; srcWc = src.wc;
+      }
+      const opts = { srcIP, srcWildcard: srcWc };
+      if (!isNaN(num)) engine.addAccessListEntry(num, action, opts);
+      else engine.addNamedAccessListEntry(aclKey, 'standard', action, opts);
+      return;
+    }
+
+    const protocol = args[i]?.toLowerCase();
+    if (!protocol) return;
+    let srcIP = anyIp, srcWc = anyWc, dstIP = anyIp, dstWc = anyWc;
+    const si = args.findIndex(a => a.toLowerCase() === 'source');
+    if (si >= 0) {
+      const src = this.parseVrpAclAddr(args, si + 1);
+      if (!src) return;
+      srcIP = src.ip; srcWc = src.wc;
+    }
+    const di = args.findIndex(a => a.toLowerCase() === 'destination');
+    if (di >= 0) {
+      const dst = this.parseVrpAclAddr(args, di + 1);
+      if (!dst) return;
+      dstIP = dst.ip; dstWc = dst.wc;
+    }
+    const opts = { protocol, srcIP, srcWildcard: srcWc, dstIP, dstWildcard: dstWc };
+    if (!isNaN(num)) engine.addAccessListEntry(num, action, opts);
+    else engine.addNamedAccessListEntry(aclKey, 'extended', action, opts);
   }
 
   // ─── Shared Display Commands ──────────────────────────────────────

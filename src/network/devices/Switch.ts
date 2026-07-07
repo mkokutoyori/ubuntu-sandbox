@@ -138,6 +138,13 @@ export interface VlanAccessMapRule {
   action: 'forward' | 'drop';
 }
 
+// ─── MQC (Huawei traffic classifier/behavior/policy) ────────────────
+
+export interface MqcPolicyBinding {
+  classifier: string;
+  behavior: string;
+}
+
 // ─── MAC Table Entry ────────────────────────────────────────────────
 
 export interface MACTableEntry {
@@ -207,6 +214,12 @@ export abstract class Switch extends Equipment {
   private vaclEngine: ACLEngine | null = null;
   private vlanAccessMaps: Map<string, VlanAccessMapRule[]> = new Map();
   private vlanFilterBindings: Map<number, string> = new Map();
+
+  // ─── MQC (Huawei) ──────────────────────────────────────────────
+  private mqcClassifiers: Map<string, string[]> = new Map();
+  private mqcBehaviors: Map<string, 'permit' | 'deny'> = new Map();
+  private mqcPolicies: Map<string, MqcPolicyBinding[]> = new Map();
+  private vlanTrafficPolicies: Map<number, string> = new Map();
 
   // ─── STP Port States ────────────────────────────────────────────
   private stpStates: Map<string, STPPortState> = new Map();
@@ -1081,6 +1094,90 @@ export abstract class Switch extends Equipment {
     return false;
   }
 
+  // ─── MQC (Huawei traffic classifier/behavior/policy) API ──────────
+
+  mqcEnsureClassifier(name: string): void {
+    if (!this.mqcClassifiers.has(name)) this.mqcClassifiers.set(name, []);
+  }
+
+  mqcClassifierAddMatchAcl(name: string, aclRef: string): { ok: boolean; error?: string } {
+    const list = this.mqcClassifiers.get(name);
+    if (!list) return { ok: false, error: `Traffic classifier ${name} does not exist` };
+    if (!list.includes(aclRef)) list.push(aclRef);
+    return { ok: true };
+  }
+
+  getMqcClassifier(name: string): string[] | undefined {
+    return this.mqcClassifiers.get(name);
+  }
+
+  mqcEnsureBehavior(name: string): void {
+    if (!this.mqcBehaviors.has(name)) this.mqcBehaviors.set(name, 'permit');
+  }
+
+  mqcBehaviorSetAction(name: string, action: 'permit' | 'deny'): { ok: boolean; error?: string } {
+    if (!this.mqcBehaviors.has(name)) return { ok: false, error: `Traffic behavior ${name} does not exist` };
+    this.mqcBehaviors.set(name, action);
+    return { ok: true };
+  }
+
+  getMqcBehavior(name: string): 'permit' | 'deny' | undefined {
+    return this.mqcBehaviors.get(name);
+  }
+
+  mqcEnsurePolicy(name: string): void {
+    if (!this.mqcPolicies.has(name)) this.mqcPolicies.set(name, []);
+  }
+
+  mqcPolicyBind(policyName: string, classifier: string, behavior: string): { ok: boolean; error?: string } {
+    const pairs = this.mqcPolicies.get(policyName);
+    if (!pairs) return { ok: false, error: `Traffic policy ${policyName} does not exist` };
+    if (!this.mqcClassifiers.has(classifier)) return { ok: false, error: `Traffic classifier ${classifier} does not exist` };
+    if (!this.mqcBehaviors.has(behavior)) return { ok: false, error: `Traffic behavior ${behavior} does not exist` };
+    const existing = pairs.find(p => p.classifier === classifier);
+    if (existing) existing.behavior = behavior;
+    else pairs.push({ classifier, behavior });
+    return { ok: true };
+  }
+
+  getMqcPolicy(name: string): MqcPolicyBinding[] | undefined {
+    return this.mqcPolicies.get(name);
+  }
+
+  applyVlanTrafficPolicy(vlan: number, policyName: string): { ok: boolean; error?: string } {
+    if (!this.mqcPolicies.has(policyName)) {
+      return { ok: false, error: `Traffic policy ${policyName} does not exist` };
+    }
+    this.vlanTrafficPolicies.set(vlan, policyName);
+    return { ok: true };
+  }
+
+  removeVlanTrafficPolicy(vlan: number): void {
+    this.vlanTrafficPolicies.delete(vlan);
+  }
+
+  getVlanTrafficPolicy(vlan: number): string | undefined {
+    return this.vlanTrafficPolicies.get(vlan);
+  }
+
+  private mqcVlanPermits(vlan: number, frame: EthernetFrame): boolean {
+    const policyName = this.vlanTrafficPolicies.get(vlan);
+    if (!policyName) return true;
+    const pairs = this.mqcPolicies.get(policyName);
+    if (!pairs || pairs.length === 0) return true;
+    if (frame.etherType !== ETHERTYPE_IPV4) return true;
+    const ip = frame.payload as IPv4Packet | undefined;
+    if (!ip || ip.type !== 'ipv4') return true;
+    for (const pair of pairs) {
+      for (const aclRef of this.mqcClassifiers.get(pair.classifier) ?? []) {
+        if (this.getVaclEngine().evaluateACLByName(aclRef, ip) === 'permit') {
+          return (this.mqcBehaviors.get(pair.behavior) ?? 'permit') === 'permit';
+        }
+      }
+    }
+    return true;
+  }
+
   setTrunkNativeVlan(portName: string, vlanId: number): boolean {
     const cfg = this.switchportConfigs.get(portName);
     if (!cfg) return false;
@@ -1495,10 +1592,10 @@ export abstract class Switch extends Equipment {
       }
     }
 
-    // ─── Step 2.7: VLAN access-map (VACL) filtering ─────────────
-    if (!this.vaclPermits(ingressVlan, frame)) {
+    // ─── Step 2.7: VLAN-scoped filtering (Cisco VACL / Huawei MQC) ─
+    if (!this.vaclPermits(ingressVlan, frame) || !this.mqcVlanPermits(ingressVlan, frame)) {
       Logger.debug(this.id, 'switch:vacl-drop',
-        `${this.name}: VACL dropped frame on ${portName} VLAN ${ingressVlan}`);
+        `${this.name}: VLAN filter dropped frame on ${portName} VLAN ${ingressVlan}`);
       return;
     }
 
