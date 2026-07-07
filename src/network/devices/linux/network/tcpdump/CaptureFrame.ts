@@ -7,16 +7,18 @@ import {
   IP_PROTO_TCP,
   IP_PROTO_UDP,
   ethernetFrameBytes,
+  verifyIPv4Checksum,
   type EthernetFrame,
   type IPv4Packet,
   type IPv6Packet,
   type ARPPacket,
   type ICMPPacket,
   type ICMPv6Packet,
-  type TCPPacket,
   type UDPPacket,
 } from '@/network/core/types';
 import type { Dot1QTag, TaggedEthernetFrame } from '../../../Switch';
+import type { TcpSegment, TcpOption } from '@/network/tcp/types';
+import { computeTcpChecksum, computeUdpChecksum } from '@/network/tcp/types';
 
 export type CaptureDirection = 'in' | 'out';
 export type CaptureL3 = 'arp' | 'ipv4' | 'ipv6' | 'other';
@@ -60,6 +62,14 @@ export interface CaptureFrame {
   tcpSeq?: number;
   tcpAck?: number;
   tcpWindow?: number;
+  tcpOptions?: readonly TcpOption[];
+  tcpChecksum?: number;
+  tcpChecksumComputed?: number;
+  tcpChecksumOk?: boolean;
+  udpChecksum?: number;
+  udpChecksumOk?: boolean;
+  ipChecksum?: number;
+  ipChecksumOk?: boolean;
   arpOp?: 'request' | 'reply';
   arpSenderIp?: string;
   arpSenderMac?: string;
@@ -69,6 +79,31 @@ export interface CaptureFrame {
   rawLinkOffset: number;
   tcpPayload?: number[];
   vlanId?: number;
+}
+
+function normalizeTcpSegment(payload: unknown): TcpSegment {
+  const p = payload as Record<string, unknown>;
+  const modern = typeof p.sequence === 'number';
+  const f = (p.flags ?? {}) as Record<string, unknown>;
+  return {
+    type: 'tcp',
+    sourcePort: typeof p.sourcePort === 'number' ? p.sourcePort : 0,
+    destinationPort: typeof p.destinationPort === 'number' ? p.destinationPort : 0,
+    sequence: (modern ? (p.sequence as number) : (typeof p.sequenceNumber === 'number' ? p.sequenceNumber : 0)) >>> 0,
+    acknowledgement: (modern
+      ? (p.acknowledgement as number)
+      : (typeof p.acknowledgementNumber === 'number' ? p.acknowledgementNumber : 0)) >>> 0,
+    dataOffset: typeof p.dataOffset === 'number' ? p.dataOffset : 5,
+    flags: {
+      fin: !!f.fin, syn: !!f.syn, rst: !!f.rst, psh: !!f.psh,
+      ack: !!f.ack, urg: !!f.urg, ece: !!f.ece, cwr: !!f.cwr,
+    },
+    window: modern ? (p.window as number) : (typeof p.windowSize === 'number' ? p.windowSize : 0),
+    checksum: typeof p.checksum === 'number' ? p.checksum : 0,
+    urgentPointer: typeof p.urgentPointer === 'number' ? p.urgentPointer : 0,
+    options: Array.isArray(p.options) ? (p.options as TcpOption[]) : [],
+    payload: p.payload,
+  };
 }
 
 function macBytes(mac: string): number[] {
@@ -125,29 +160,32 @@ function synthIcmpBytes(icmp: ICMPPacket): number[] {
   return [...header, ...data];
 }
 
-function tcpFlagsByte(flags: TCPPacket['flags']): number {
+function tcpFlagsByte(flags: CaptureTcpFlags): number {
   return (flags.urg ? 0x20 : 0) | (flags.ack ? 0x10 : 0) | (flags.psh ? 0x08 : 0)
     | (flags.rst ? 0x04 : 0) | (flags.syn ? 0x02 : 0) | (flags.fin ? 0x01 : 0);
 }
 
-function synthTcpBytes(tcp: TCPPacket): number[] {
+function synthTcpBytes(seg: TcpSegment): number[] {
+  const dataOffset = Math.max(5, seg.dataOffset || 5);
+  const optionBytes = new Array((dataOffset - 5) * 4).fill(0);
   return [
-    ...u16(tcp.sourcePort), ...u16(tcp.destinationPort),
-    ...u32(tcp.sequenceNumber >>> 0), ...u32(tcp.acknowledgementNumber >>> 0),
-    5 << 4, tcpFlagsByte(tcp.flags),
-    ...u16(tcp.windowSize & 0xffff),
-    ...u16(tcp.checksum & 0xffff),
-    ...u16(0),
+    ...u16(seg.sourcePort), ...u16(seg.destinationPort),
+    ...u32(seg.sequence >>> 0), ...u32(seg.acknowledgement >>> 0),
+    dataOffset << 4, tcpFlagsByte(seg.flags),
+    ...u16(seg.window & 0xffff),
+    ...u16(seg.checksum & 0xffff),
+    ...u16(seg.urgentPointer & 0xffff),
+    ...optionBytes,
   ];
 }
 
 function synthL4Bytes(pkt: IPv4Packet): number[] {
   const payload = pkt.payload as { type?: string };
   if (payload?.type === 'icmp') return synthIcmpBytes(pkt.payload as ICMPPacket);
-  if (payload?.type === 'tcp') return synthTcpBytes(pkt.payload as TCPPacket);
+  if (payload?.type === 'tcp') return synthTcpBytes(normalizeTcpSegment(pkt.payload));
   if (payload?.type === 'udp') {
     const udp = pkt.payload as UDPPacket;
-    return [...u16(udp.sourcePort), ...u16(udp.destinationPort), ...u16(udp.length), ...u16(0)];
+    return [...u16(udp.sourcePort), ...u16(udp.destinationPort), ...u16(udp.length), ...u16(udp.checksum & 0xffff)];
   }
   return [];
 }
@@ -184,10 +222,10 @@ function synthIcmpv6Bytes(icmp: ICMPv6Packet): number[] {
 function synthL4BytesV6(pkt: IPv6Packet): number[] {
   const payload = pkt.payload as { type?: string };
   if (payload?.type === 'icmpv6') return synthIcmpv6Bytes(pkt.payload as ICMPv6Packet);
-  if (payload?.type === 'tcp') return synthTcpBytes(pkt.payload as TCPPacket);
+  if (payload?.type === 'tcp') return synthTcpBytes(normalizeTcpSegment(pkt.payload));
   if (payload?.type === 'udp') {
     const udp = pkt.payload as UDPPacket;
-    return [...u16(udp.sourcePort), ...u16(udp.destinationPort), ...u16(udp.length), ...u16(0)];
+    return [...u16(udp.sourcePort), ...u16(udp.destinationPort), ...u16(udp.length), ...u16(udp.checksum & 0xffff)];
   }
   return [];
 }
@@ -283,6 +321,8 @@ export function decodeEthernetFrame(
     base.ipProtocol = ip.protocol;
     base.ipTotalLength = ip.totalLength;
     base.ipHeaderLen = (ip.ihl ?? 5) * 4;
+    base.ipChecksum = ip.headerChecksum;
+    base.ipChecksumOk = verifyIPv4Checksum(ip);
     decodeIpv4Payload(base, ip);
     const built = withEthernet(frame, synthIpv4Bytes(ip));
     base.raw = built.raw;
@@ -324,15 +364,19 @@ function decodeIpv4Payload(base: CaptureFrame, ip: IPv4Packet): void {
     return;
   }
   if (ip.protocol === IP_PROTO_TCP) {
-    const tcp = ip.payload as TCPPacket;
+    const seg = normalizeTcpSegment(ip.payload);
     base.l4 = 'tcp';
-    base.srcPort = tcp.sourcePort;
-    base.dstPort = tcp.destinationPort;
-    base.tcpFlags = { ...tcp.flags };
-    base.tcpSeq = tcp.sequenceNumber;
-    base.tcpAck = tcp.acknowledgementNumber;
-    base.tcpWindow = tcp.windowSize;
-    base.payloadLength = Math.max(0, (ip.totalLength ?? 40) - (ip.ihl ?? 5) * 4 - 20);
+    base.srcPort = seg.sourcePort;
+    base.dstPort = seg.destinationPort;
+    base.tcpFlags = { ...seg.flags };
+    base.tcpSeq = seg.sequence;
+    base.tcpAck = seg.acknowledgement;
+    base.tcpWindow = seg.window;
+    base.tcpOptions = seg.options;
+    base.tcpChecksum = seg.checksum;
+    base.tcpChecksumComputed = computeTcpChecksum(seg, base.srcIp!, base.dstIp!);
+    base.tcpChecksumOk = seg.checksum === 0 || base.tcpChecksumComputed === seg.checksum;
+    base.payloadLength = Math.max(0, (ip.totalLength ?? 40) - (ip.ihl ?? 5) * 4 - seg.dataOffset * 4);
     return;
   }
   if (ip.protocol === IP_PROTO_UDP) {
@@ -340,6 +384,9 @@ function decodeIpv4Payload(base: CaptureFrame, ip: IPv4Packet): void {
     base.l4 = 'udp';
     base.srcPort = udp.sourcePort;
     base.dstPort = udp.destinationPort;
+    base.udpChecksum = udp.checksum;
+    base.udpChecksumOk = udp.checksum === 0
+      || computeUdpChecksum(udp, base.srcIp!, base.dstIp!) === udp.checksum;
     base.payloadLength = Math.max(0, (udp.length ?? 8) - 8);
     return;
   }
@@ -358,15 +405,19 @@ function decodeIpv6Payload(base: CaptureFrame, ip6: IPv6Packet): void {
     return;
   }
   if (ip6.nextHeader === IP_PROTO_TCP) {
-    const tcp = ip6.payload as TCPPacket;
+    const seg = normalizeTcpSegment(ip6.payload);
     base.l4 = 'tcp';
-    base.srcPort = tcp.sourcePort;
-    base.dstPort = tcp.destinationPort;
-    base.tcpFlags = { ...tcp.flags };
-    base.tcpSeq = tcp.sequenceNumber;
-    base.tcpAck = tcp.acknowledgementNumber;
-    base.tcpWindow = tcp.windowSize;
-    base.payloadLength = Math.max(0, ip6.payloadLength - 20);
+    base.srcPort = seg.sourcePort;
+    base.dstPort = seg.destinationPort;
+    base.tcpFlags = { ...seg.flags };
+    base.tcpSeq = seg.sequence;
+    base.tcpAck = seg.acknowledgement;
+    base.tcpWindow = seg.window;
+    base.tcpOptions = seg.options;
+    base.tcpChecksum = seg.checksum;
+    base.tcpChecksumComputed = computeTcpChecksum(seg, base.srcIp!, base.dstIp!);
+    base.tcpChecksumOk = seg.checksum === 0 || base.tcpChecksumComputed === seg.checksum;
+    base.payloadLength = Math.max(0, ip6.payloadLength - seg.dataOffset * 4);
     return;
   }
   if (ip6.nextHeader === IP_PROTO_UDP) {
@@ -374,6 +425,9 @@ function decodeIpv6Payload(base: CaptureFrame, ip6: IPv6Packet): void {
     base.l4 = 'udp';
     base.srcPort = udp.sourcePort;
     base.dstPort = udp.destinationPort;
+    base.udpChecksum = udp.checksum;
+    base.udpChecksumOk = udp.checksum === 0
+      || computeUdpChecksum(udp, base.srcIp!, base.dstIp!) === udp.checksum;
     base.payloadLength = Math.max(0, (udp.length ?? 8) - 8);
     return;
   }
@@ -432,8 +486,8 @@ export function makeTcpFrame(
     dstPort: pkt.dstPort,
     payloadLength: pkt.length,
     tcpFlags: flags,
-    tcpSeq: pkt.seq,
-    tcpAck: pkt.ack,
+    tcpSeq: pkt.seq >>> 0,
+    tcpAck: pkt.ack >>> 0,
     tcpWindow: 0,
     raw: [...header, ...tcp, ...(pkt.payload ? Array.from(pkt.payload) : [])],
     rawLinkOffset: 0,

@@ -1,5 +1,6 @@
 import type { CaptureFrame } from './CaptureFrame';
 import type { TcpdumpOptions } from './TcpdumpCli';
+import { decodeOptions } from '@/network/tcp/TcpOptionsCodec';
 
 export function banner(opt: TcpdumpOptions): string[] {
   const lines: string[] = [];
@@ -78,6 +79,36 @@ function endpoint(ip: string | undefined, port: number | undefined): string {
   return port === undefined ? ip : `${ip}.${port}`;
 }
 
+function tcpChecksumToken(frame: CaptureFrame): string {
+  if (frame.tcpChecksum === undefined || frame.tcpChecksumOk === undefined) return '';
+  const hex = frame.tcpChecksum.toString(16).padStart(4, '0');
+  if (frame.tcpChecksumOk) return `, cksum 0x${hex} (correct)`;
+  const expected = (frame.tcpChecksumComputed ?? 0).toString(16).padStart(4, '0');
+  return `, cksum 0x${hex} (incorrect -> 0x${expected})`;
+}
+
+function udpChecksumToken(frame: CaptureFrame): string {
+  if (frame.udpChecksum === undefined) return '';
+  if (frame.udpChecksum === 0) return ', cksum 0x0000 (unverified)';
+  const hex = frame.udpChecksum.toString(16).padStart(4, '0');
+  return frame.udpChecksumOk ? `, cksum 0x${hex} (correct)` : `, cksum 0x${hex} (incorrect)`;
+}
+
+function tcpOptionsToken(frame: CaptureFrame): string {
+  if (!frame.tcpOptions || frame.tcpOptions.length === 0) return '';
+  const decoded = decodeOptions(frame.tcpOptions);
+  const parts: string[] = [];
+  if (decoded.mss !== undefined) parts.push(`mss ${decoded.mss}`);
+  if (decoded.sackPermitted) parts.push('sackOK');
+  if (decoded.timestamp) parts.push(`TS val ${decoded.timestamp.tsVal} ecr ${decoded.timestamp.tsEcr}`);
+  if (decoded.windowScale !== undefined) parts.push(`wscale ${decoded.windowScale}`);
+  if (decoded.sackBlocks && decoded.sackBlocks.length > 0) {
+    const blocks = decoded.sackBlocks.map((b) => `${b.start}:${b.end}`).join(' ');
+    parts.push(`sack ${decoded.sackBlocks.length} {${blocks}}`);
+  }
+  return parts.length > 0 ? `, options [${parts.join(',')}]` : '';
+}
+
 function l4Detail(frame: CaptureFrame, opt: TcpdumpOptions): string {
   if (frame.l4 === 'icmp') {
     const phrase = ICMP_PHRASE[frame.icmpType ?? ''] ?? frame.icmpType ?? 'unknown';
@@ -89,11 +120,14 @@ function l4Detail(frame: CaptureFrame, opt: TcpdumpOptions): string {
   }
   if (frame.l4 === 'tcp') {
     if (opt.quiet) return `tcp ${frame.payloadLength ?? 0}`;
+    const cksum = opt.verbose > 0 ? tcpChecksumToken(frame) : '';
     const ack = frame.tcpFlags?.ack ? `, ack ${frame.tcpAck ?? 0}` : '';
-    return `Flags [${tcpFlagToken(frame)}], seq ${frame.tcpSeq ?? 0}${ack}, win ${frame.tcpWindow ?? 0}, length ${frame.payloadLength ?? 0}`;
+    const options = tcpOptionsToken(frame);
+    return `Flags [${tcpFlagToken(frame)}]${cksum}, seq ${frame.tcpSeq ?? 0}${ack}, win ${frame.tcpWindow ?? 0}${options}, length ${frame.payloadLength ?? 0}`;
   }
   if (frame.l4 === 'udp') {
-    return `UDP, length ${frame.payloadLength ?? 0}`;
+    const cksum = opt.verbose > 0 ? udpChecksumToken(frame) : '';
+    return `UDP${cksum}, length ${frame.payloadLength ?? 0}`;
   }
   if (frame.l4 === 'icmp6') {
     return `ICMP6, length ${frame.payloadLength ?? 0}`;
@@ -115,6 +149,13 @@ function arpLine(frame: CaptureFrame): string {
   return `ARP, Request who-has ${frame.arpTargetIp} tell ${frame.arpSenderIp}, length ${frame.length - 14}`;
 }
 
+function ipChecksumSuffix(frame: CaptureFrame, opt: TcpdumpOptions): string {
+  if (frame.ipChecksumOk === undefined) return '';
+  if (frame.ipChecksumOk) return opt.verbose >= 2 ? ', ip sum ok' : '';
+  const hex = (frame.ipChecksum ?? 0).toString(16).padStart(4, '0');
+  return `, bad ip cksum 0x${hex}!`;
+}
+
 function ipLine(frame: CaptureFrame, opt: TcpdumpOptions): string {
   const withPort = frame.l4 === 'tcp' || frame.l4 === 'udp';
   const src = endpoint(frame.srcIp, withPort ? frame.srcPort : undefined);
@@ -122,7 +163,7 @@ function ipLine(frame: CaptureFrame, opt: TcpdumpOptions): string {
   const detail = l4Detail(frame, opt);
   if (opt.verbose > 0) {
     const header = `IP (tos 0x0, ttl ${frame.ttl ?? 0}, id ${frame.ipId ?? 0}, offset 0, flags [none], `
-      + `proto ${ipProtoName(frame)} (${frame.ipProtocol ?? 0}), length ${frame.ipTotalLength ?? frame.length})`;
+      + `proto ${ipProtoName(frame)} (${frame.ipProtocol ?? 0}), length ${frame.ipTotalLength ?? frame.length}${ipChecksumSuffix(frame, opt)})`;
     return `${header}\n    ${src} > ${dst}: ${detail}`;
   }
   return `IP ${src} > ${dst}: ${detail}`;
