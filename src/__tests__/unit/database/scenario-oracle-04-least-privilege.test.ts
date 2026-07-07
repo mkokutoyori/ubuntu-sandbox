@@ -13,14 +13,14 @@ let db: OracleDatabase;
 let sys: OracleExecutor;
 
 function setup() {
-  db = new OracleDatabase('scenario4-device');
+  db = new OracleDatabase();
   db.instance.startup();
   sys = db.connectAsSysdba().executor;
 }
 
 function execSys(sqlText: string) {
   const rs = db.executeSql(sys, sqlText);
-  if (rs.error) throw new Error(rs.error);
+  if (rs.message?.startsWith('ORA-')) throw new Error(rs.message);
   return rs;
 }
 
@@ -38,7 +38,7 @@ function expectFails(executor: OracleExecutor, sqlText: string, code: string) {
 
 function expectOk(executor: OracleExecutor, sqlText: string) {
   const rs = execAs(executor, sqlText);
-  expect(rs.error).toBeUndefined();
+  expect(rs.message ?? '').not.toMatch(/^ORA-/);
   return rs;
 }
 
