@@ -973,6 +973,21 @@ export class HuaweiSwitchShell implements ISwitchShell {
       return '';
     });
 
+    this.interfaceTrie.registerGreedy('port-isolate', 'Configure port isolation', (args) => {
+      if (!this.selectedInterface || !this.swRef) return 'Error: Incomplete command.';
+      const list = this.ifCfg.get(this.selectedInterface) ?? [];
+      list.push(`port-isolate ${args.join(' ')}`.trim());
+      this.ifCfg.set(this.selectedInterface, list);
+      if (args[0]?.toLowerCase() === 'enable') {
+        const groupIdx = args.findIndex(a => a.toLowerCase() === 'group');
+        const group = groupIdx >= 0 ? parseInt(args[groupIdx + 1] ?? '', 10) : 1;
+        this.swRef.setPortIsolateGroup(this.selectedInterface, isNaN(group) ? 1 : group);
+      } else if (args[0]?.toLowerCase() === 'disable') {
+        this.swRef.clearPortIsolateGroup(this.selectedInterface);
+      }
+      return '';
+    });
+
     // ── Eth-Trunk (LACP) interface-view commands ──
     const trunkId = (): number | null => {
       const m = (this.selectedInterface ?? '').match(/^Eth-Trunk(\d+)$/);
@@ -1141,7 +1156,31 @@ export class HuaweiSwitchShell implements ISwitchShell {
       return '';
     });
 
-    for (const kw of ['mux-vlan', 'aggregate-vlan', 'access-vlan',
+    this.vlanTrie.register('aggregate-vlan', 'Mark this VLAN as a super-VLAN', () => {
+      if (this.selectedVlan === null || !this.swRef) return 'Error: Incomplete command.';
+      const res = this.swRef.setSuperVlan(this.selectedVlan);
+      return res.ok ? '' : `Error: ${res.error}`;
+    });
+
+    this.vlanTrie.registerGreedy('access-vlan', 'Associate sub-VLANs to this super-VLAN', (args) => {
+      if (this.selectedVlan === null || !this.swRef || args.length < 1) return 'Error: Incomplete command.';
+      const ids: number[] = [];
+      for (let i = 0; i < args.length; i++) {
+        if (args[i].toLowerCase() === 'to' && ids.length > 0 && i + 1 < args.length) {
+          const start = ids[ids.length - 1];
+          const end = parseInt(args[i + 1], 10);
+          if (!isNaN(end)) { for (let v = start + 1; v <= end; v++) ids.push(v); i++; }
+          continue;
+        }
+        const n = parseInt(args[i], 10);
+        if (!isNaN(n)) ids.push(n);
+      }
+      if (!ids.length) return 'Error: Wrong parameter found.';
+      const res = this.swRef.setSubVlanList(this.selectedVlan, ids);
+      return res.ok ? '' : `Error: ${res.error}`;
+    });
+
+    for (const kw of ['mux-vlan',
       'vlan-type', 'mac-vlan', 'ip', 'arp']) {
       this.vlanTrie.registerGreedy(kw, `VLAN ${kw} configuration`, (args, raw) => {
         if (this.selectedVlan === null) return '';
@@ -1775,7 +1814,7 @@ export class HuaweiSwitchShell implements ISwitchShell {
     for (const kw of [
       'speed', 'duplex', 'negotiation', 'mtu', 'jumboframe', 'flow-control',
       'loopback-detect', 'port-security', 'storm-control',
-      'broadcast-suppression', 'port-isolate', 'port-mirroring',
+      'broadcast-suppression', 'port-mirroring',
       'trust', 'qos', 'traffic-policy', 'traffic-filter', 'am',
       'mac-limit',
     ]) {

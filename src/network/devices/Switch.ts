@@ -186,6 +186,14 @@ export abstract class Switch extends Equipment {
   private pvlanPorts: Map<string, PrivateVlanPortConfig> = new Map();
   private pvlanSviMappings: Map<number, Set<number>> = new Map();
 
+  // ─── Port isolation (Huawei port-isolate) ──────────────────────
+  private portIsolateGroups: Map<string, number> = new Map();
+
+  // ─── Super-VLAN / Sub-VLAN (Huawei) ────────────────────────────
+  private superVlanIds: Set<number> = new Set();
+  private superVlanSubVlans: Map<number, Set<number>> = new Map();
+  private subVlanToSuperVlan: Map<number, number> = new Map();
+
   // ─── STP Port States ────────────────────────────────────────────
   private stpStates: Map<string, STPPortState> = new Map();
   private stpVlanStates: Map<string, STPPortState> = new Map();
@@ -921,6 +929,78 @@ export abstract class Switch extends Equipment {
     return ing.secondaryVlan === eg.secondaryVlan;
   }
 
+  // ─── Port isolation (Huawei port-isolate) ──────────────────────────
+
+  setPortIsolateGroup(portName: string, group: number): void {
+    this.portIsolateGroups.set(portName, group);
+  }
+
+  clearPortIsolateGroup(portName: string): void {
+    this.portIsolateGroups.delete(portName);
+  }
+
+  getPortIsolateGroup(portName: string): number | undefined {
+    return this.portIsolateGroups.get(portName);
+  }
+
+  private portIsolateBlocks(ingressPort: string, egressPort: string): boolean {
+    if (!ingressPort) return false;
+    const ingGroup = this.portIsolateGroups.get(ingressPort);
+    const egGroup = this.portIsolateGroups.get(egressPort);
+    return ingGroup !== undefined && ingGroup === egGroup;
+  }
+
+  // ─── Super-VLAN / Sub-VLAN (Huawei aggregate-vlan / access-vlan) ───
+
+  setSuperVlan(vlanId: number): { ok: boolean; error?: string } {
+    if (!this.vlans.has(vlanId)) return { ok: false, error: `VLAN ${vlanId} does not exist` };
+    this.superVlanIds.add(vlanId);
+    return { ok: true };
+  }
+
+  isSuperVlan(vlanId: number): boolean {
+    return this.superVlanIds.has(vlanId);
+  }
+
+  setSubVlanList(superVlanId: number, subVlanIds: number[]): { ok: boolean; error?: string } {
+    if (!this.superVlanIds.has(superVlanId)) {
+      return { ok: false, error: `VLAN ${superVlanId} is not a super-VLAN` };
+    }
+    const existing = this.superVlanSubVlans.get(superVlanId) ?? new Set<number>();
+    for (const sub of subVlanIds) {
+      if (!this.vlans.has(sub)) return { ok: false, error: `VLAN ${sub} does not exist` };
+      const currentSuper = this.subVlanToSuperVlan.get(sub);
+      if (currentSuper !== undefined && currentSuper !== superVlanId) {
+        return { ok: false, error: `VLAN ${sub} is already a sub-VLAN of super-VLAN ${currentSuper}` };
+      }
+    }
+    for (const sub of subVlanIds) {
+      existing.add(sub);
+      this.subVlanToSuperVlan.set(sub, superVlanId);
+    }
+    this.superVlanSubVlans.set(superVlanId, existing);
+    return { ok: true };
+  }
+
+  getSubVlans(superVlanId: number): Set<number> {
+    return new Set(this.superVlanSubVlans.get(superVlanId) ?? []);
+  }
+
+  getSuperVlanOf(subVlanId: number): number | undefined {
+    return this.subVlanToSuperVlan.get(subVlanId);
+  }
+
+  private resolveSviTarget(vlan: number): number {
+    const pvlanTarget = this.resolvePvlanSviTarget(vlan);
+    if (pvlanTarget !== vlan) return pvlanTarget;
+    return this.subVlanToSuperVlan.get(vlan) ?? vlan;
+  }
+
+  private superVlanReaches(vlan: number, candidateAccessVlan: number): boolean {
+    if (!this.superVlanIds.has(vlan)) return false;
+    return this.superVlanSubVlans.get(vlan)?.has(candidateAccessVlan) ?? false;
+  }
+
   setTrunkNativeVlan(portName: string, vlanId: number): boolean {
     const cfg = this.switchportConfigs.get(portName);
     if (!cfg) return false;
@@ -1306,7 +1386,7 @@ export abstract class Switch extends Equipment {
     // A frame addressed to one of our SVIs is consumed here (the box is the
     // destination, not a transit bridge). Broadcast ARP for an SVI is answered
     // but still allowed to flood, so `intercept` returns false for it.
-    if (this.svi.intercept(this.resolvePvlanSviTarget(ingressVlan), portName, frame)) {
+    if (this.svi.intercept(this.resolveSviTarget(ingressVlan), portName, frame)) {
       return;
     }
     // ─── Step 2.6: VRRP advertisement snoop (RFC 5798) ─────────
@@ -1435,6 +1515,10 @@ export abstract class Switch extends Equipment {
             this.sendFrame(portName, this.stripTag(frame));
           }
         } else if (cfg.accessVlan === vlan) {
+          if (!this.portIsolateBlocks(exceptPort, portName)) {
+            this.sendFrame(portName, this.stripTag(frame));
+          }
+        } else if (!exceptPort && this.superVlanReaches(vlan, cfg.accessVlan)) {
           this.sendFrame(portName, this.stripTag(frame));
         } else if (cfg.voiceVlan === vlan) {
           this.sendFrame(portName, this.addTag(frame, vlan));
@@ -1468,6 +1552,7 @@ export abstract class Switch extends Equipment {
 
     if (cfg.mode === 'access') {
       if (ingressPort !== undefined && !this.pvlanEgressAllowed(ingressPort, portName, vlan)) return;
+      if (ingressPort !== undefined && this.portIsolateBlocks(ingressPort, portName)) return;
       if (cfg.voiceVlan === vlan) {
         this.sendFrame(portName, this.addTag(frame, vlan));
       } else {
