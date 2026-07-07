@@ -126,6 +126,7 @@ function l4Detail(frame: CaptureFrame, opt: TcpdumpOptions): string {
     return `Flags [${tcpFlagToken(frame)}]${cksum}, seq ${frame.tcpSeq ?? 0}${ack}, win ${frame.tcpWindow ?? 0}${options}, length ${frame.payloadLength ?? 0}`;
   }
   if (frame.l4 === 'udp') {
+    if (frame.dnsSummary !== undefined) return frame.dnsSummary;
     const cksum = opt.verbose > 0 ? udpChecksumToken(frame) : '';
     return `UDP${cksum}, length ${frame.payloadLength ?? 0}`;
   }
@@ -149,6 +150,15 @@ function arpLine(frame: CaptureFrame): string {
   return `ARP, Request who-has ${frame.arpTargetIp} tell ${frame.arpSenderIp}, length ${frame.length - 14}`;
 }
 
+function ipFlagsToken(frame: CaptureFrame): string {
+  const flags = frame.ipFlags ?? 0;
+  const df = (flags & 0x2) !== 0;
+  const mf = (flags & 0x1) !== 0;
+  if (mf) return '+';
+  if (df) return 'DF';
+  return 'none';
+}
+
 function ipChecksumSuffix(frame: CaptureFrame, opt: TcpdumpOptions): string {
   if (frame.ipChecksumOk === undefined) return '';
   if (frame.ipChecksumOk) return opt.verbose >= 2 ? ', ip sum ok' : '';
@@ -162,7 +172,8 @@ function ipLine(frame: CaptureFrame, opt: TcpdumpOptions): string {
   const dst = endpoint(frame.dstIp, withPort ? frame.dstPort : undefined);
   const detail = l4Detail(frame, opt);
   if (opt.verbose > 0) {
-    const header = `IP (tos 0x0, ttl ${frame.ttl ?? 0}, id ${frame.ipId ?? 0}, offset 0, flags [none], `
+    const offset = (frame.ipFragmentOffset ?? 0) * 8;
+    const header = `IP (tos 0x0, ttl ${frame.ttl ?? 0}, id ${frame.ipId ?? 0}, offset ${offset}, flags [${ipFlagsToken(frame)}], `
       + `proto ${ipProtoName(frame)} (${frame.ipProtocol ?? 0}), length ${frame.ipTotalLength ?? frame.length}${ipChecksumSuffix(frame, opt)})`;
     return `${header}\n    ${src} > ${dst}: ${detail}`;
   }
