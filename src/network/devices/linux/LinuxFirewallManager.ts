@@ -1369,9 +1369,14 @@ export class LinuxFirewallManager {
     const v6Rules = this.rules.filter(r => r.v6);
     this.vfs.writeFile('/etc/ufw/user6.rules', this.generateIptablesRules(v6Rules, true), 0, 0, 0o022);
 
-    // Also persist iptables state to /etc/iptables/rules.v4
+    // Also persist iptables state to /etc/iptables/rules.v4/rules.v6 —
+    // symmetric with real iptables-persistent, which dumps both address
+    // families whenever either engine's rule set changes.
     const iptSave = this.iptables.executeSave();
     this.vfs.writeFile('/etc/iptables/rules.v4', iptSave, 0, 0, 0o022);
+
+    const ip6Save = this.ip6tables.executeSave();
+    this.vfs.writeFile('/etc/iptables/rules.v6', ip6Save, 0, 0, 0o022);
   }
 
   private generateIptablesRules(rules: UfwRule[], ipv6: boolean): string {

@@ -530,13 +530,59 @@ ordre arbitraire.
   propre sur le fichier modifié et les nouveaux tests (7 erreurs
   `no-explicit-any` préexistantes confirmées identiques par `git stash`).
 
-### Phase 7 — Persistance symétrique v6 + `netfilter-persistent` (items B.5, B.6)
+### Phase 7 — Persistance symétrique v6 + `netfilter-persistent` (items B.5, B.6) ✅ LIVRÉE
 
-- **Fichiers touchés** : `LinuxFirewallManager.syncToVfs()` (écrit
-  `rules.v6`), nouvelle unité systemd `netfilter-persistent` dans
-  `LinuxServiceManager.ts`, nouvelle commande `netfilter-persistent
-  save|reload|flush`.
-- **Tests** : `netfilter-persistent.test.ts`.
+- **Fichiers touchés** :
+  - `LinuxFirewallManager.syncToVfs()` : écrit désormais `/etc/iptables/
+    rules.v6` via `this.ip6tables.executeSave()`, symétriquement à
+    `rules.v4` (`this.iptables.executeSave()`), à chaque action `ufw` qui
+    déclenche déjà une synchronisation VFS.
+  - `LinuxServiceManager.ts` : nouvelle unité systemd oneshot
+    `netfilter-persistent` (`enabledByDefault`/`startByDefault: true`,
+    après `local-fs.target`, aux côtés de l'unité `ufw` existante).
+  - `LinuxMachine.ts` : nouveau listener `onLifecycle` — sur `start`/
+    `restart` de `netfilter-persistent`, relit `/etc/iptables/rules.v4`/
+    `rules.v6` du VFS et les recharge dans les moteurs `iptables`/
+    `ip6tables` vivants via `executeRestore()`.
+  - `LinuxCommandExecutor.ts` : nouvelle commande `netfilter-persistent
+    save|reload|flush` — `save` écrit l'état vivant des deux moteurs sur
+    disque, `reload` relit le disque vers les moteurs vivants, `flush`
+    vide les 4 tables (`filter`/`nat`/`mangle`/`raw`) des deux moteurs.
+- **Limite de portée découverte et documentée (pas corrigée)** : l'objectif
+  B.6 demande que les règles brutes (hors `ufw`) survivent à un reboot
+  « parce qu'elles sont effectivement relues depuis le VFS », pas
+  « parce que l'objet JS n'a jamais été détruit ». Une vérification directe
+  (test `reboot` sans `netfilter-persistent save` préalable) montre que ce
+  dépôt ne détruit/recrée jamais l'instance `Equipment` au `reboot` — donc
+  une règle jamais sauvegardée reste quand même visible après reboot,
+  simplement parce que rien ne l'a jamais effacée. Reproduire fidèlement le
+  comportement noyau réel (perte totale de l'état netfilter à chaque boot,
+  reconstruit uniquement par les scripts `ufw-init`/`netfilter-persistent`)
+  exigerait de vider entièrement les moteurs `iptables`/`ip6tables` vivants
+  à chaque reboot puis de laisser chaque unité oneshot (`ufw`,
+  `netfilter-persistent`) reconstruire sa portion — mais `rebuildIptablesRules()`
+  (Phase 5/6) suppose que les chaînes `ufw-user-*` existent déjà (il les
+  vide, il ne les recrée pas) : un vidage complet casserait la
+  réconciliation `ufw` déjà testée et livrée, sans mécanisme actuel pour
+  distinguer une règle « appartenant à ufw » d'une règle posée
+  manuellement sur `IptablesRule`. Traité comme la limite déjà documentée
+  en Phase 2 (NAT66/DNAT) : constaté, testé tel quel
+  (`netfilter-persistent.test.ts`, dernier test du bloc « reboot
+  persistence »), et documenté plutôt que forcé par un changement
+  global à risque.
+- **Tests** : `netfilter-persistent.test.ts` (11 tests — symétrie
+  `rules.v4`/`rules.v6`, `save`/`reload`/`flush` mutent réellement les
+  moteurs vivants et pas seulement le VFS, sous-commande invalide,
+  persistance au reboot avec/sans `netfilter-persistent save` préalable
+  (v4 et v6), cohérence systemd `systemctl status`/`restart
+  netfilter-persistent`).
+- **Régression** : 354 tests verts sur les 14 suites ufw/iptables/
+  ip6tables concernées, 151 tests verts sur les 11 suites systemd/service
+  transverses (aucune régression sur le moteur générique d'unités), `tsc`
+  propre, `eslint` propre sur les 4 fichiers touchés et le nouveau test
+  (9 erreurs préexistantes confirmées identiques par `git stash` : 7
+  `no-explicit-any` dans `LinuxFirewallManager.ts`, 2 `no-this-alias`
+  dans `LinuxMachine.ts`).
 
 ### Phase 8 — Complétude moteur (items F.14-F.19)
 

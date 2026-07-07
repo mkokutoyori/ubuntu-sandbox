@@ -170,7 +170,7 @@ const KNOWN_LINUX_COMMANDS: readonly string[] = [
   'ss', 'route', 'arp', 'arping', 'dhclient', 'nslookup', 'dig', 'host', 'curl', 'wget',
   'ssh', 'sshpass', 'scp', 'sftp', 'rsync', 'telnet', 'nc', 'ncat', 'tcpdump',
   'iptables', 'iptables-save', 'iptables-restore',
-  'ip6tables', 'ip6tables-save', 'ip6tables-restore', 'nft', 'ufw', 'firewall-cmd',
+  'ip6tables', 'ip6tables-save', 'ip6tables-restore', 'nft', 'ufw', 'firewall-cmd', 'netfilter-persistent',
   // Editors
   'nano', 'vi', 'vim', 'emacs', 'ed',
   // Archives / packages
@@ -3537,6 +3537,34 @@ export class LinuxCommandExecutor {
         if (!input) return { output: 'ip6tables-restore: unable to read from stdin', exitCode: 1 };
         const result = this.ip6tables.executeRestore(input);
         return { output: result.output, exitCode: result.exitCode };
+      }
+
+      // netfilter-persistent — PRD-Iptables-UFW.md Phase 7 (objectif B.6):
+      // persistence for raw iptables/ip6tables rules configured outside of
+      // ufw's own mechanism, via /etc/iptables/rules.v4/rules.v6, exactly
+      // like the real iptables-persistent Debian/Ubuntu package.
+      case 'netfilter-persistent': {
+        const sub = args[0];
+        if (sub === 'save') {
+          this.vfs.writeFile('/etc/iptables/rules.v4', this.iptables.executeSave(), 0, 0, 0o022);
+          this.vfs.writeFile('/etc/iptables/rules.v6', this.ip6tables.executeSave(), 0, 0, 0o022);
+          return { output: 'Saving netfilter rules...', exitCode: 0 };
+        }
+        if (sub === 'reload') {
+          const v4 = this.vfs.readFile('/etc/iptables/rules.v4');
+          const v6 = this.vfs.readFile('/etc/iptables/rules.v6');
+          if (v4 !== null) this.iptables.executeRestore(v4);
+          if (v6 !== null) this.ip6tables.executeRestore(v6);
+          return { output: 'Reloading netfilter rules...', exitCode: 0 };
+        }
+        if (sub === 'flush') {
+          for (const t of ['filter', 'nat', 'mangle', 'raw']) {
+            this.iptables.execute(['-t', t, '-F']);
+            this.ip6tables.execute(['-t', t, '-F']);
+          }
+          return { output: 'Flushing netfilter rules...', exitCode: 0 };
+        }
+        return { output: 'Usage: netfilter-persistent {save|reload|flush}', exitCode: 1 };
       }
 
       // Logging commands

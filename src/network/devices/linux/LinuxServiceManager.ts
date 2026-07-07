@@ -257,6 +257,15 @@ const BASE_UNITS: DefaultUnit[] = [
     startByDefault: true,
   },
   {
+    name: 'netfilter-persistent',
+    description: 'netfilter persistent configuration',
+    type: 'oneshot',
+    execStart: '/usr/share/netfilter-persistent/netfilter-persistent start',
+    after: ['local-fs.target'],
+    enabledByDefault: true,
+    startByDefault: true,
+  },
+  {
     name: 'apparmor',
     description: 'Load AppArmor profiles',
     type: 'oneshot',

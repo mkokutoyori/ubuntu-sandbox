@@ -342,6 +342,19 @@ export abstract class LinuxMachine extends EndHost
       if (event === 'start' || event === 'restart') this.executor.firewall.reconcileFromBoot();
     });
 
+    // PRD-Iptables-UFW.md Phase 7 (objectif B.6): netfilter-persistent
+    // reloads raw iptables/ip6tables rules (configured outside of ufw)
+    // from /etc/iptables/rules.v4/rules.v6 into the live engines at boot,
+    // exactly like the real iptables-persistent package's init script.
+    this.executor.serviceMgr.onLifecycle((event, name) => {
+      if (name !== 'netfilter-persistent') return;
+      if (event !== 'start' && event !== 'restart') return;
+      const v4 = this.executor.vfs.readFile('/etc/iptables/rules.v4');
+      const v6 = this.executor.vfs.readFile('/etc/iptables/rules.v6');
+      if (v4 !== null) this.executor.iptables.executeRestore(v4);
+      if (v6 !== null) this.executor.ip6tables.executeRestore(v6);
+    });
+
     this.executor.setNetworkCommandRunner((argv, env) => {
       const cmd = this.commands.get(argv[0]);
       if (!cmd || !cmd.needsNetworkContext) return null;
