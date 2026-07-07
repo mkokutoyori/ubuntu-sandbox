@@ -83,7 +83,7 @@ describe('Logging — unified device.syslog.entry across all device types', () =
     const cisco = new CiscoRouter('CSCO');
     const huawei = new HuaweiRouter('HUWI');
     const lnx = new LinuxServer('linux-server', 'LNX');
-    const win = new WindowsPC('WIN', 0, 0);
+    const win = new WindowsPC('windows-pc', 'WIN', 0, 0);
     cisco.setEventBus(bus); huawei.setEventBus(bus);
     lnx.setEventBus(bus); win.setEventBus(bus);
     lnx.powerOn(); win.powerOn();
@@ -140,12 +140,12 @@ describe('Logging — Cisco port security violation goes to show logging', () =>
       topic: 'port.security.violation',
       payload: {
         deviceId: r.id, portName: 'GigabitEthernet0/0',
-        mac: '00:11:22:33:44:55', mode: 'shutdown', action: 'shutdown',
+        mac: new MACAddress('00:11:22:33:44:55'), mode: 'shutdown', action: 'shutdown',
       },
     });
     bus.publish({
       topic: 'port.security.errdisable.set',
-      payload: { deviceId: r.id, portName: 'GigabitEthernet0/0', mac: '00:11:22:33:44:55' },
+      payload: { deviceId: r.id, portName: 'GigabitEthernet0/0', mac: new MACAddress('00:11:22:33:44:55') },
     });
 
     const out = await Promise.resolve(r.executeCommand('show logging'));
@@ -226,7 +226,7 @@ describe('Logging — Cisco show logging buffers TCP/SSH events', () => {
   it('a Windows firewall Block rule emits a 5152 Security event', async () => {
     const bus = new EventBus();
     const cli = new LinuxPC('CLI');
-    const win = new WindowsPC('PC', 0, 0);
+    const win = new WindowsPC('windows-pc', 'PC', 0, 0);
     const sw = new CiscoSwitch('switch-cisco', 'SW', 4);
     cli.setEventBus(bus); win.setEventBus(bus); sw.setEventBus(bus);
     cli.powerOn(); win.powerOn();
