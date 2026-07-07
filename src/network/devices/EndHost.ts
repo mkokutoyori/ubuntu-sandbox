@@ -1516,6 +1516,21 @@ export abstract class EndHost extends Equipment {
   }
 
   /**
+   * Evaluate ip6tables PREROUTING DNAT rules for a packet destined to this
+   * host itself, before local delivery. There is no IPv6 counterpart to
+   * `evaluateNat`/POSTROUTING here: end hosts don't forward IPv6 packets
+   * (see `handleIPv6`), so a SNAT/MASQUERADE hook would have no call site —
+   * NAT66 in this simulator is scoped to locally-destined DNAT only.
+   * Subclasses override to implement ip6tables nat PREROUTING chain.
+   * Returns null (no DNAT) by default.
+   */
+  protected evaluatePreRouting6(
+    _inPort: string, _ipv6Pkt: IPv6Packet,
+  ): { action: string; address?: string } | null {
+    return null;
+  }
+
+  /**
    * Extract port info from an IPv4 packet for firewall evaluation.
    */
   protected extractPorts(ipPkt: IPv4Packet): { srcPort: number; dstPort: number } {
@@ -3140,6 +3155,16 @@ export abstract class EndHost extends Equipment {
 
     const port = this.ports.get(portName);
     if (!port || !port.isIPv6Enabled()) return;
+
+    // ── PREROUTING: evaluate ip6tables DNAT rules before the local-
+    // destination check, symmetrically to handleIPv4's evaluatePreRouting.
+    const preNat6 = this.evaluatePreRouting6(portName, ipv6);
+    if (preNat6 && preNat6.action === 'DNAT' && preNat6.address) {
+      try {
+        const newDst = new IPv6Address(preNat6.address.split(']:')[0].replace(/^\[/, ''));
+        ipv6 = { ...ipv6, destinationIP: newDst };
+      } catch { /* keep original */ }
+    }
 
     // Check if packet is for us
     const isForUs = port.hasIPv6Address(ipv6.destinationIP);

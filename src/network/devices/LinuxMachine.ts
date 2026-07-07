@@ -2160,6 +2160,23 @@ export abstract class LinuxMachine extends EndHost
     return this.executor.iptables.evaluateNat(pkt, 'PREROUTING');
   }
 
+  protected override evaluatePreRouting6(
+    inPort: string,
+    ipv6Pkt: import('../core/types').IPv6Packet,
+  ): { action: string; address?: string } | null {
+    const transport = ipv6Pkt.payload as { sourcePort?: number; destinationPort?: number } | undefined;
+    const pkt: PacketInfo = {
+      direction: 'in',
+      protocol: ipv6Pkt.nextHeader,
+      srcIP: ipv6Pkt.sourceIP.toString(),
+      dstIP: ipv6Pkt.destinationIP.toString(),
+      srcPort: transport?.sourcePort ?? 0,
+      dstPort: transport?.destinationPort ?? 0,
+      iface: inPort,
+    };
+    return this.executor.ip6tables.evaluateNat(pkt, 'PREROUTING');
+  }
+
   // ─── OS Info ─────────────────────────────────────────────────────────
 
   getOSType(): string { return 'linux'; }

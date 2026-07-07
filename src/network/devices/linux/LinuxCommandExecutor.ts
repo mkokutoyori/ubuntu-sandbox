@@ -169,7 +169,8 @@ const KNOWN_LINUX_COMMANDS: readonly string[] = [
   'ifconfig', 'ip', 'ping', 'ping6', 'traceroute', 'tracepath', 'mtr', 'netstat',
   'ss', 'route', 'arp', 'arping', 'dhclient', 'nslookup', 'dig', 'host', 'curl', 'wget',
   'ssh', 'sshpass', 'scp', 'sftp', 'rsync', 'telnet', 'nc', 'ncat', 'tcpdump',
-  'iptables', 'iptables-save', 'iptables-restore', 'nft', 'ufw', 'firewall-cmd',
+  'iptables', 'iptables-save', 'iptables-restore',
+  'ip6tables', 'ip6tables-save', 'ip6tables-restore', 'nft', 'ufw', 'firewall-cmd',
   // Editors
   'nano', 'vi', 'vim', 'emacs', 'ed',
   // Archives / packages
@@ -3509,6 +3510,25 @@ export class LinuxCommandExecutor {
         const input = stdin ?? '';
         if (!input) return { output: 'iptables-restore: unable to read from stdin', exitCode: 1 };
         const result = this.iptables.executeRestore(input);
+        return { output: result.output, exitCode: result.exitCode };
+      }
+
+      // ip6tables — real IPv6 packet filtering firewall (separate engine, same CLI shape)
+      case 'ip6tables': {
+        const result = this.ip6tables.execute(args);
+        return { output: result.output, exitCode: result.exitCode };
+      }
+
+      // ip6tables-save — dump all v6 rules in iptables-save format
+      case 'ip6tables-save': {
+        return { output: this.ip6tables.executeSave(), exitCode: 0 };
+      }
+
+      // ip6tables-restore — load v6 rules from stdin
+      case 'ip6tables-restore': {
+        const input = stdin ?? '';
+        if (!input) return { output: 'ip6tables-restore: unable to read from stdin', exitCode: 1 };
+        const result = this.ip6tables.executeRestore(input);
         return { output: result.output, exitCode: result.exitCode };
       }
 
