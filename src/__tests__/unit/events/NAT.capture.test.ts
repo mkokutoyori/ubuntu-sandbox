@@ -37,7 +37,7 @@ function makeUdp(srcIp: string, srcPort: number, dstIp: string, dstPort: number)
     protocol: IP_PROTO_UDP, checksum: 0,
     sourceIP: new IPAddress(srcIp), destinationIP: new IPAddress(dstIp),
     payload: udp,
-  } as never;
+  } as IPv4Packet;
   pkt.checksum = computeIPv4Checksum(pkt);
   return pkt;
 }

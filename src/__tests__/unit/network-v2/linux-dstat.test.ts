@@ -147,7 +147,6 @@ describe('dstat — UI streaming', () => {
     manager = new TerminalManager(bus);
     const sid = manager.openTerminal(pc)!;
     session = manager.getSession(sid) as LinuxTerminalSession;
-    for (let i = 0; i < 40 && session.isBooting; i++) await new Promise((r) => setTimeout(r, 50));
   });
 
   async function type(cmd: string): Promise<void> {

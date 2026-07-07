@@ -108,7 +108,7 @@ describe('RESTORE CONTROLFILE FROM AUTOBACKUP', () => {
     s.connect();
     const r = s.processLine('RESTORE CONTROLFILE FROM AUTOBACKUP');
     expect(r.ok).toBe(false);
-    if (!r.ok) expect(r.error.code).toBe('RMAN_06403');
+    if (r.ok === false) expect(r.error.code).toBe('RMAN_06403');
   });
 
   it('succeeds when instance is NOMOUNT and emits the canonical recipe', () => {
@@ -149,7 +149,7 @@ describe('RESTORE CONTROLFILE FROM AUTOBACKUP', () => {
     s.connect();
     const r = s.processLine("RESTORE CONTROLFILE FROM '/missing/cf.bkp'");
     expect(r.ok).toBe(false);
-    if (!r.ok) expect(r.error.code).toBe('RMAN_06004');
+    if (r.ok === false) expect(r.error.code).toBe('RMAN_06004');
   });
 
   it('RESTORE SPFILE FROM AUTOBACKUP works in NOMOUNT', () => {

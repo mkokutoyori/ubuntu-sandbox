@@ -75,7 +75,6 @@ function cloneFrame(frame: EthernetFrame): EthernetFrame {
     dstMAC: frame.dstMAC,
     etherType: frame.etherType,
     payload: frame.payload,
-    vlanTag: frame.vlanTag,
   };
 }
 

@@ -100,7 +100,7 @@ describe('RmanSession — multi-line + RUN blocks', () => {
     s.connect();
     const r = s.processLine('}');
     expect(r.ok).toBe(false);
-    if (!r.ok) expect(r.error.code).toBe('RMAN_00558');
+    if (r.ok === false) expect(r.error.code).toBe('RMAN_00558');
   });
 
   it('ignores comment-only and blank lines silently', () => {

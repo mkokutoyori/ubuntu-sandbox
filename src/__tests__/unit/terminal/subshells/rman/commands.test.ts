@@ -68,7 +68,7 @@ describe('RmanCommandDispatcher — matching', () => {
     const d = new RmanCommandDispatcher();
     const r = d.dispatch('WIBBLE WOBBLE', cmdCtx);
     expect(r.ok).toBe(false);
-    if (!r.ok) expect(r.error.code).toBe('RMAN_01009');
+    if (r.ok === false) expect(r.error.code).toBe('RMAN_01009');
   });
 
   it('dispatches BACKUP DATABASE to BackupCommand (async, no synchronous output)', () => {

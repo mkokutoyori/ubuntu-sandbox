@@ -32,7 +32,7 @@ function buildTopology(): Topology {
 }
 
 function captureLog(host: LinuxPC | LinuxServer) {
-  return (host as unknown as { executor: { captureLog: { all: () => readonly { srcIp: string; dstIp: string; srcPort: number; dstPort: number; payload?: Uint8Array }[] } } }).executor.captureLog;
+  return (host as unknown as { executor: { captureLog: { all: () => readonly { srcIp: string; dstIp: string; srcPort: number; dstPort: number; payload?: Uint8Array }[]; clear: () => void } } }).executor.captureLog;
 }
 
 function asAscii(bytes?: Uint8Array): string {

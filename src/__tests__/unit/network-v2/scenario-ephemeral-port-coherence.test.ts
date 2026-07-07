@@ -44,18 +44,18 @@ async function buildLab(): Promise<Lab> {
 }
 
 function socketTable(host: LinuxPC | LinuxServer): {
-  getAll: () => Array<{ localPort: number; remotePort: number; remoteAddress: string; state: string; protocol: string }>;
+  getAll: () => Array<{ id: number; localPort: number; remotePort: number; remoteAddress: string; state: string; protocol: string }>;
 } {
   return (host as unknown as { executor: { socketTable: {
-    getAll: () => Array<{ localPort: number; remotePort: number; remoteAddress: string; state: string; protocol: string }>;
+    getAll: () => Array<{ id: number; localPort: number; remotePort: number; remoteAddress: string; state: string; protocol: string }>;
   } } }).executor.socketTable;
 }
 
 function winSocketTable(host: WindowsPC): {
-  getAll: () => Array<{ localPort: number; remotePort: number; remoteAddress: string; state: string; protocol: string }>;
+  getAll: () => Array<{ id: number; localPort: number; remotePort: number; remoteAddress: string; state: string; protocol: string }>;
 } {
   return (host as unknown as { socketTable: {
-    getAll: () => Array<{ localPort: number; remotePort: number; remoteAddress: string; state: string; protocol: string }>;
+    getAll: () => Array<{ id: number; localPort: number; remotePort: number; remoteAddress: string; state: string; protocol: string }>;
   } }).socketTable;
 }
 

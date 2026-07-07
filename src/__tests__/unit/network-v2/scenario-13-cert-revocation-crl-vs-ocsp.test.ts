@@ -347,14 +347,14 @@ describe('Scenario 13 — cert revocation on active IPsec tunnel: CRL vs OCSP', 
       ca.revoke(cert.cert.serialNumber, NOW);
       const revokedResult = goodVerifier.verify(cert.cert);
       expect(revokedResult.ok).toBe(false);
-      if (!revokedResult.ok) expect(revokedResult.reason).toBe('revoked');
+      if (revokedResult.ok === false) expect(revokedResult.reason).toBe('revoked');
 
       const noResponderVerifier = new CertificateVerifier({
         trustAnchors: [ca.rootCertificate], revocationCheck: 'ocsp', clock: () => NOW,
       });
       const staleResult = noResponderVerifier.verify(cert.cert);
       expect(staleResult.ok).toBe(false);
-      if (!staleResult.ok) expect(staleResult.reason).toBe('crl-stale');
+      if (staleResult.ok === false) expect(staleResult.reason).toBe('crl-stale');
     });
   });
 
