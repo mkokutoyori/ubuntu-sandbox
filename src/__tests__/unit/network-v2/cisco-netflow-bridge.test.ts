@@ -18,7 +18,7 @@ async function run(r: CiscoRouter, cmds: string[]): Promise<void> {
 
 describe('NetflowService → NetFlowAgent bridge (GAP §6.2)', () => {
   it('Flexible NetFlow: exporter + monitor + interface attach pushes the collector and enables the agent', async () => {
-    const r = new CiscoRouter('router-cisco', 'R1', 2);
+    const r = new CiscoRouter('R1', 2);
     await run(r, [
       'enable', 'configure terminal',
       'flow exporter EXP1',
@@ -54,7 +54,7 @@ describe('NetflowService → NetFlowAgent bridge (GAP §6.2)', () => {
   });
 
   it('Legacy NetFlow: ip flow-export destination + interface ip flow ingress activates the agent', async () => {
-    const r = new CiscoRouter('router-cisco', 'R1', 2);
+    const r = new CiscoRouter('R1', 2);
     await run(r, [
       'enable', 'configure terminal',
       'ip flow-export destination 192.168.1.50 2055',
@@ -77,7 +77,7 @@ describe('NetflowService → NetFlowAgent bridge (GAP §6.2)', () => {
   });
 
   it('Configuring an exporter without an interface attachment does NOT activate the agent', async () => {
-    const r = new CiscoRouter('router-cisco', 'R1', 2);
+    const r = new CiscoRouter('R1', 2);
     await run(r, [
       'enable', 'configure terminal',
       'flow exporter EXP1',
@@ -93,7 +93,7 @@ describe('NetflowService → NetFlowAgent bridge (GAP §6.2)', () => {
   });
 
   it('Re-binding an exporter to a different destination updates the agent collectors', async () => {
-    const r = new CiscoRouter('router-cisco', 'R1', 2);
+    const r = new CiscoRouter('R1', 2);
     await run(r, [
       'enable', 'configure terminal',
       'flow exporter EXP1', 'destination 10.0.0.99', 'exit',

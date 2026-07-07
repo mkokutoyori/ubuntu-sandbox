@@ -99,8 +99,8 @@ describe('topology round-trip — end-host L3 configuration', () => {
 
     const exported = JSON.parse(JSON.stringify(exportTopology('legacy', devices, []))) as TopologyExport;
     for (const d of exported.devices) {
-      delete (d as Record<string, unknown>).defaultGateway;
-      delete (d as Record<string, unknown>).staticRoutes;
+      delete (d as unknown as Record<string, unknown>).defaultGateway;
+      delete (d as unknown as Record<string, unknown>).staticRoutes;
     }
 
     expect(() => importTopology(exported)).not.toThrow();
@@ -112,8 +112,8 @@ describe('topology round-trip — end-host L3 configuration', () => {
     const devices = new Map<string, Equipment>([[pc.getId(), pc]]);
 
     const exported = JSON.parse(JSON.stringify(exportTopology('bad', devices, []))) as TopologyExport;
-    (exported.devices[0] as Record<string, unknown>).defaultGateway = 'not-an-ip';
-    (exported.devices[0] as Record<string, unknown>).staticRoutes = [
+    (exported.devices[0] as unknown as Record<string, unknown>).defaultGateway = 'not-an-ip';
+    (exported.devices[0] as unknown as Record<string, unknown>).staticRoutes = [
       { network: '999.999.0.0', mask: '255.255.0.0', nextHop: '192.168.1.254' },
     ];
 
