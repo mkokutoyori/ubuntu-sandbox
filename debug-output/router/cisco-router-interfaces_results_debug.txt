@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-interfaces
-Generated: 2026-07-07T16:26:22.238Z
+Generated: 2026-07-07T21:33:54.172Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=IPv4/IPv6 addressing, subinterfaces, tunnels, relay, show
 Total steps: 343
@@ -2231,7 +2231,7 @@ Total steps: 343
 [271/343] r1 R1# show ntp status
   Clock is unsynchronized, stratum 16, reference is .INIT.
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
-  reference time is EDF7A72E.46A7EF9D (16:26:22.276 UTC Tue Jul 7 2026)
+  reference time is EDF7EF42.34395810 (21:33:54.204 UTC Tue Jul 7 2026)
   clock offset is 0.00 msec
 
 [272/343] r1 R1# show ntp associations
@@ -2240,7 +2240,7 @@ Total steps: 343
   No NTP associations configured.
 
 [273/343] r1 R1# show clock
-  *16:26:22.000 UTC Tue Jul 7 2026
+  *21:33:54.000 UTC Tue Jul 7 2026
 
 [274/343] r1 R1# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
