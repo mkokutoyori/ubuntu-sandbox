@@ -127,9 +127,11 @@ export class WindowsService extends OSService {
 
   transitionTo(state: WinServiceState): void {
     this.stateWin = state;
+    this.state = winStateToOs(state);
   }
   changeStartType(t: WinStartType): void {
     this.startTypeWin = t;
+    this.startType = winStartTypeToOs(t);
   }
 
   // Override the base queries to read the Windows-flavoured state field.

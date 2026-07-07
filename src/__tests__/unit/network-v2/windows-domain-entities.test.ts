@@ -110,10 +110,12 @@ describe('WindowsService entity', () => {
   it('transitionTo / changeStartType keep both layers in sync', () => {
     const s = new WindowsService(base);
     s.transitionTo('Stopped');
-    expect(s.state).toBe('Stopped');
+    expect(s.stateWin).toBe('Stopped');
+    expect(s.state).toBe('inactive');
     expect(s.isActive()).toBe(false);
     s.changeStartType('Disabled');
-    expect(s.startType).toBe('Disabled');
+    expect(s.startTypeWin).toBe('Disabled');
+    expect(s.startType).toBe('disabled');
     expect(s.canStart()).toBe(false);
   });
 
