@@ -2131,6 +2131,42 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       );
     });
 
+    this.configIfTrie.registerGreedy('switchport mode private-vlan trunk', 'Set interface as a private VLAN trunk port', (args) => {
+      const kind = args[0]?.toLowerCase();
+      if (kind !== undefined && kind !== 'promiscuous' && kind !== 'host') {
+        return "% Invalid input detected at '^' marker.";
+      }
+      return this.applyToSelectedInterfaces(portName =>
+        this.d().setSwitchportMode(portName, 'trunk') ? '' : '% Error'
+      );
+    });
+
+    this.configIfTrie.registerGreedy('switchport private-vlan mapping trunk',
+      'Map a promiscuous trunk to primary/secondary private VLANs', (args) => {
+        if (args.length < 2) return '% Incomplete command.';
+        const primary = parseInt(args[0], 10);
+        if (isNaN(primary)) return '% Invalid VLAN ID';
+        const secondarySet = this.parseVlanList(args[1]);
+        if (!secondarySet) return '% Invalid VLAN list';
+        const secondaries = [...secondarySet];
+        return this.applyToSelectedInterfaces(portName => {
+          const res = this.d().configurePvlanPromiscuousTrunk(portName, primary, secondaries);
+          return res.ok ? '' : `% ${res.error}`;
+        });
+      });
+
+    this.configIfTrie.registerGreedy('switchport private-vlan association trunk',
+      'Associate an isolated trunk with its primary/secondary private VLAN', (args) => {
+        if (args.length < 2) return '% Incomplete command.';
+        const primary = parseInt(args[0], 10);
+        const secondary = parseInt(args[1], 10);
+        if (isNaN(primary) || isNaN(secondary)) return '% Invalid VLAN ID';
+        return this.applyToSelectedInterfaces(portName => {
+          const res = this.d().configurePvlanIsolatedTrunk(portName, primary, secondary);
+          return res.ok ? '' : `% ${res.error}`;
+        });
+      });
+
     this.configIfTrie.registerGreedy('switchport private-vlan host-association',
       'Associate a host port with its primary/secondary private VLAN', (args) => {
         if (args.length < 2) return '% Incomplete command.';

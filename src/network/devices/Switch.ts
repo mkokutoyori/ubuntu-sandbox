@@ -957,11 +957,52 @@ export abstract class Switch extends Equipment {
     const eg = this.pvlanPorts.get(egressPort);
     if (!eg || eg.primaryVlan !== primary) return false;
     if (!ingressPort) return true;
-    const ing = this.pvlanPorts.get(ingressPort);
+    const ing = this.pvlanPorts.get(ingressPort)
+      ?? this.derivePvlanSourceConfig(ingressPort, vlan, primary);
     if (!ing || ing.primaryVlan !== primary) return false;
     if (eg.role === 'promiscuous' || ing.role === 'promiscuous') return true;
     if (ing.hostKind === 'isolated' || eg.hostKind === 'isolated') return false;
     return ing.secondaryVlan === eg.secondaryVlan;
+  }
+
+  private derivePvlanSourceConfig(ingressPort: string, vlan: number, primary: number): PrivateVlanPortConfig | undefined {
+    const cfg = this.switchportConfigs.get(ingressPort);
+    if (!cfg || cfg.mode === 'access') return undefined;
+    const role = this.pvlanRoles.get(vlan);
+    if (role === 'primary') return { role: 'promiscuous', primaryVlan: primary };
+    if (role === 'isolated') return { role: 'host', hostKind: 'isolated', primaryVlan: primary, secondaryVlan: vlan };
+    if (role === 'community') return { role: 'host', hostKind: 'community', primaryVlan: primary, secondaryVlan: vlan };
+    return undefined;
+  }
+
+  private pvlanTrunkEgressVlan(pv: PrivateVlanPortConfig, vlan: number): number {
+    if (pv.role === 'promiscuous') {
+      return pv.mappedSecondaryVlans?.has(vlan) ? pv.primaryVlan : vlan;
+    }
+    if (vlan === pv.primaryVlan && pv.secondaryVlan !== undefined) return pv.secondaryVlan;
+    return vlan;
+  }
+
+  configurePvlanPromiscuousTrunk(portName: string, primaryVlanId: number, secondaryVlanIds: number[]): { ok: boolean; error?: string } {
+    if (this.pvlanRoles.get(primaryVlanId) !== 'primary') {
+      return { ok: false, error: `VLAN ${primaryVlanId} is not a primary private VLAN` };
+    }
+    const assoc = this.pvlanAssociations.get(primaryVlanId) ?? new Set<number>();
+    for (const sec of secondaryVlanIds) {
+      if (!assoc.has(sec)) return { ok: false, error: `VLAN ${sec} is not associated with primary VLAN ${primaryVlanId}` };
+    }
+    this.pvlanPorts.set(portName, { role: 'promiscuous', primaryVlan: primaryVlanId, mappedSecondaryVlans: new Set(secondaryVlanIds) });
+    return { ok: true };
+  }
+
+  configurePvlanIsolatedTrunk(portName: string, primaryVlanId: number, secondaryVlanId: number): { ok: boolean; error?: string } {
+    const assoc = this.pvlanAssociations.get(primaryVlanId);
+    if (!assoc || !assoc.has(secondaryVlanId)) {
+      return { ok: false, error: `VLAN ${secondaryVlanId} is not associated with primary VLAN ${primaryVlanId}` };
+    }
+    const hostKind = this.pvlanRoles.get(secondaryVlanId) as 'isolated' | 'community';
+    this.pvlanPorts.set(portName, { role: 'host', hostKind, primaryVlan: primaryVlanId, secondaryVlan: secondaryVlanId });
+    return { ok: true };
   }
 
   // ─── Port isolation (Huawei port-isolate) ──────────────────────────
@@ -1781,6 +1822,14 @@ export abstract class Switch extends Equipment {
       } else {
         // Trunk: send if VLAN is allowed
         if (cfg.trunkAllowedVlans.has(vlan) && !this.getVtpAgentOrNull()?.isVlanPruned(portName, vlan)) {
+          const pv = this.pvlanPorts.get(portName);
+          if (pv && this.resolvePvlanPrimary(vlan) !== undefined) {
+            if (!this.pvlanEgressAllowed(exceptPort, portName, vlan)) continue;
+            const outVlan = this.pvlanTrunkEgressVlan(pv, vlan);
+            this.sendFrame(portName, outVlan === cfg.trunkNativeVlan
+              ? this.stripTag(frame) : this.addTag(frame, outVlan));
+            continue;
+          }
           if (vlan === cfg.trunkNativeVlan) {
             // Native VLAN: send untagged
             this.sendFrame(portName, this.stripTag(frame));
@@ -1823,6 +1872,14 @@ export abstract class Switch extends Equipment {
       // Trunk port: check if VLAN is allowed before sending
       if (!cfg.trunkAllowedVlans.has(vlan)) {
         Logger.debug(this.id, 'switch:trunk-filtered', `${this.name}: VLAN ${vlan} not allowed on trunk ${portName} (egress)`);
+        return;
+      }
+      const pv = this.pvlanPorts.get(portName);
+      if (pv && this.resolvePvlanPrimary(vlan) !== undefined) {
+        if (ingressPort !== undefined && !this.pvlanEgressAllowed(ingressPort, portName, vlan)) return;
+        const outVlan = this.pvlanTrunkEgressVlan(pv, vlan);
+        this.sendFrame(portName, outVlan === cfg.trunkNativeVlan
+          ? this.stripTag(frame) : this.addTag(frame, outVlan));
         return;
       }
       if (vlan === cfg.trunkNativeVlan) {
