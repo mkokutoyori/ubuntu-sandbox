@@ -24,7 +24,7 @@ describe('tcpdump live-capture dedup (PRD-tcpdump.md P5)', () => {
   it('a real TCP handshake produces exactly one captured frame per segment, not two', async () => {
     const pc1 = new LinuxPC('PC1', 0, 0);
     const pc2 = new LinuxPC('PC2', 100, 0);
-    const sw = new CiscoSwitch('sw-id', 'SW1', 24, 50, 50);
+    const sw = new CiscoSwitch('switch-cisco', 'SW1', 24, 50, 50);
     new Cable('c1').connect(pc1.getPort('eth0')!, sw.getPort('FastEthernet0/1')!);
     new Cable('c2').connect(pc2.getPort('eth0')!, sw.getPort('FastEthernet0/2')!);
     await pc1.executeCommand('ifconfig eth0 10.0.0.1 netmask 255.255.255.0');
