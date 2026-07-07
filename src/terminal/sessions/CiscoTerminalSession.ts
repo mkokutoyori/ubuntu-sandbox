@@ -52,6 +52,8 @@ export class CiscoTerminalSession extends CLITerminalSession {
         if (s && device instanceof Router) device.closeVtySession(s);
         this.vty = null;
       });
+    } else {
+      (device as unknown as { resetCliMode?: () => void }).resetCliMode?.();
     }
   }
 

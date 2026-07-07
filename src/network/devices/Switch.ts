@@ -2373,6 +2373,8 @@ export abstract class Switch extends Equipment {
 
   getPrompt(): string { return this.shell.getPrompt(this); }
 
+  resetCliMode(): void { this.shell.resetCliMode?.(); }
+
   /** Get CLI help for the given input (used by terminal UI for inline ? behavior) */
   cliHelp(inputBeforeQuestion: string): string {
     return this.shell.getHelp(inputBeforeQuestion);

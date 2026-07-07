@@ -109,6 +109,17 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
 
   override getMode(): CLIMode { return this.mode as CLIMode; }
 
+  resetCliMode(): void {
+    this.mode = 'user';
+    this.selectedInterface = null;
+    this.selectedInterfaceRange = [];
+    this.selectedVlan = null;
+    this.selectedAcl = null;
+    this.selectedArpAcl = null;
+    this.selectedDhcpPool = null;
+    this.selectedAccessMap = null;
+  }
+
   getSelectedInterface(): string | null { return this.selectedInterface; }
   getSelectedInterfaceRange(): string[] { return [...this.selectedInterfaceRange]; }
 

@@ -337,6 +337,16 @@ export class HuaweiSwitchShell implements ISwitchShell {
 
   getMode(): VRPSwitchMode { return this.mode; }
 
+  resetCliMode(): void {
+    this.mode = 'user';
+    this.selectedInterface = null;
+    this.selectedVlan = null;
+    this.selectedAcl = null;
+    this.selectedPool = null;
+    this.selectedMqcName = null;
+    this.portGroupMembers = null;
+  }
+
   getPrompt(sw: Switch): string {
     const host = sw.getHostname();
     switch (this.mode) {

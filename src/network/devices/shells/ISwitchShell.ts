@@ -16,4 +16,6 @@ export interface ISwitchShell {
   getHelp(inputBeforeQuestion: string): string;
   /** Get tab completion for the given partial input */
   tabComplete(input: string): string | null;
+  /** Reset the CLI to its initial mode (new terminal session opened). */
+  resetCliMode?(): void;
 }
