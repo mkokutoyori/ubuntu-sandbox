@@ -1,6 +1,6 @@
 ============================================================
 Oracle debug transcript — oracle-end-to-end-dba
-Generated: 2026-07-07T07:15:24.102Z
+Generated: 2026-07-07T08:45:31.611Z
 Topology:  LinuxServer ora-e2e — Oracle ORCL OPEN
 Total commands: 387
 ============================================================
@@ -446,7 +446,7 @@ SQL [83/387]> SELECT * FROM dba_hist_snapshot ORDER BY snap_id DESC FETCH FIRST 
   
   SNAP_ID DBID INSTANCE_NUMBER SNAP_LEVEL BEGIN_INTERVAL_TIME      END_INTERVAL_TIME        STATUS    STARTUP_TIME        FLUSH_LEVEL FLUSH_ELAPSED SOURCE
   ------- ---- --------------- ---------- ------------------------ ------------------------ --------- ------------------- ----------- ------------- ------
-        1    1               1          1 2026-07-07T07:15:23.371Z 2026-07-07T07:15:24.491Z COMPLETED 2026-07-07T07:15:23 TYPICAL                 1 MANUAL
+        1    1               1          1 2026-07-07T08:45:30.860Z 2026-07-07T08:45:31.977Z COMPLETED 2026-07-07T08:45:31 TYPICAL                 1 MANUAL
   
   1 row selected.
 
@@ -458,42 +458,42 @@ SQL [85/387]> SELECT * FROM dba_hist_sqlstat ORDER BY snap_id DESC FETCH FIRST 3
   
   SNAP_ID SQL_ID        PLAN_HASH_VALUE EXECUTIONS_DELTA ELAPSED_TIME_DELTA CPU_TIME_DELTA BUFFER_GETS_DELTA DISK_READS_DELTA ROWS_PROCESSED_DELTA
   ------- ------------- --------------- ---------------- ------------------ -------------- ----------------- ---------------- --------------------
-        1 0jfss4xa3xqw0               0                1               1820           1456                 1                0                    0
-        1 1p340y2a3xqw0               0                1                197            158                 1                0                    0
-        1 0438608a3xqw0               0                1                179            143                 1                0                    0
-        1 0jmvs97a3xqw0               0                1                379            303                 1                0                    0
-        1 1xqamkba3xqw0               0                1                172            138                 1                0                    0
-        1 13iiq67a3xqw0               0                1                162            130                 1                0                    0
-        1 09yjycba3xqw0               0                1                 99             79                 1                0                    0
-        1 1bbre0pa3xqw0               0                1               2406           1925                 1                0                    1
-        1 1rj844la3xqw0               0                1                325            260                 1                0                    1
-        1 165abgna3xqw0               0                1                213            170                 1                0                    1
-        1 1lrdndha3xqw0               0                1                219            175                 1                0                    1
-        1 0lx34pna3xqw0               0                1                161            129                 1                0                    1
-        1 075thxta3xqw0               0                1                130            104                 1                0                    1
-        1 1ogfneya3xqw0               0                1                214            171                 1                0                    1
+        1 0jfss4xa3xqw0               0                1               1975           1580                 1                0                    0
+        1 1p340y2a3xqw0               0                1                218            174                 1                0                    0
+        1 0438608a3xqw0               0                1                183            146                 1                0                    0
+        1 0jmvs97a3xqw0               0                1                492            394                 1                0                    0
+        1 1xqamkba3xqw0               0                1                220            176                 1                0                    0
+        1 13iiq67a3xqw0               0                1                167            134                 1                0                    0
+        1 09yjycba3xqw0               0                1                126            100                 1                0                    0
+        1 1bbre0pa3xqw0               0                1               1642           1314                 1                0                    1
+        1 1rj844la3xqw0               0                1                343            274                 1                0                    1
+        1 165abgna3xqw0               0                1                222            177                 1                0                    1
+        1 1lrdndha3xqw0               0                1                205            164                 1                0                    1
+        1 0lx34pna3xqw0               0                1                122             97                 1                0                    1
+        1 075thxta3xqw0               0                1                148            118                 1                0                    1
+        1 1ogfneya3xqw0               0                1                254            203                 1                0                    1
   
   SNAP_ID SQL_ID        PLAN_HASH_VALUE EXECUTIONS_DELTA ELAPSED_TIME_DELTA CPU_TIME_DELTA BUFFER_GETS_DELTA DISK_READS_DELTA ROWS_PROCESSED_DELTA
   ------- ------------- --------------- ---------------- ------------------ -------------- ----------------- ---------------- --------------------
-        1 13i4coqa3xqw0               0                1                111             89                 1                0                    1
-        1 0vbcgv9a3xqw0               0                1                206            164                 1                0                    1
-        1 07jxh36a3xqw0               0                1                 94             75                 1                0                    1
-        1 0wcn17ca3xqw0               0                1                 48             39                 1                0                    1
-        1 1cmu11ea3xqw0               0                1                 44             35                 1                0                    1
-        1 1ppp7cta3xqw0               0                1                 48             39                 1                0                    1
-        1 0e0st2xa3xqw0               0                1                 54             43                 1                0                    1
-        1 132zflia3xqw0               0                1                 93             75                 1                0                    1
-        1 0wptvesa3xqw0               0                1                 84             67                 1                0                    1
-        1 1snp3bba3xqw0               0                1                 51             41                 1                0                    1
-        1 16hnhn1a3xqw0               0                1                 45             36                 1                0                    1
-        1 14tlwhua3xqw0               0                1                150            120                 1                0                    1
-        1 0bh8qrja3xqw0               0                1                 52             41                 1                0                    1
-        1 1fjuquca3xqw0               0                1                 95             76                 1                0                    1
+        1 13i4coqa3xqw0               0                1                137            109                 1                0                    1
+        1 0vbcgv9a3xqw0               0                1                180            144                 1                0                    1
+        1 07jxh36a3xqw0               0                1                 90             72                 1                0                    1
+        1 0wcn17ca3xqw0               0                1                 56             45                 1                0                    1
+        1 1cmu11ea3xqw0               0                1                 62             49                 1                0                    1
+        1 1ppp7cta3xqw0               0                1                 61             49                 1                0                    1
+        1 0e0st2xa3xqw0               0                1                 62             50                 1                0                    1
+        1 132zflia3xqw0               0                1                197            158                 1                0                    1
+        1 0wptvesa3xqw0               0                1                162            129                 1                0                    1
+        1 1snp3bba3xqw0               0                1                108             87                 1                0                    1
+        1 16hnhn1a3xqw0               0                1                117             94                 1                0                    1
+        1 14tlwhua3xqw0               0                1                232            185                 1                0                    1
+        1 0bh8qrja3xqw0               0                1                102             81                 1                0                    1
+        1 1fjuquca3xqw0               0                1                130            104                 1                0                    1
   
   SNAP_ID SQL_ID        PLAN_HASH_VALUE EXECUTIONS_DELTA ELAPSED_TIME_DELTA CPU_TIME_DELTA BUFFER_GETS_DELTA DISK_READS_DELTA ROWS_PROCESSED_DELTA
   ------- ------------- --------------- ---------------- ------------------ -------------- ----------------- ---------------- --------------------
-        1 19li9rga3xqw0               0                1                 52             42                 1                0                    1
-        1 0xbms2xa3xqw0               0                1                 69             55                 1                0                    1
+        1 19li9rga3xqw0               0                1                113             90                 1                0                    1
+        1 0xbms2xa3xqw0               0                1                 99             80                 1                0                    1
   
   30 rows selected.
 
@@ -501,20 +501,20 @@ SQL [86/387]> SELECT * FROM dba_hist_sysmetric_history ORDER BY begin_time DESC 
   
   SNAP_ID METRIC_ID METRIC_NAME                    BEGIN_TIME               END_TIME                 INTSIZE VALUE METRIC_UNIT            
   ------- --------- ------------------------------ ------------------------ ------------------------ ------- ----- -----------------------
-        1      2000 CPU Usage Per Sec              2026-07-07T06:15:24.495Z 2026-07-07T07:15:24.495Z    6000    22 CentiSeconds Per Second
-        1      2003 User Calls Per Sec             2026-07-07T06:15:24.495Z 2026-07-07T07:15:24.495Z    6000    25 Calls Per Second       
-        1      2007 Executions Per Sec             2026-07-07T06:15:24.495Z 2026-07-07T07:15:24.495Z    6000    22 Executes Per Second    
-        1      2017 User Commits Per Sec           2026-07-07T06:15:24.495Z 2026-07-07T07:15:24.495Z    6000     0 Commits Per Second     
-        1      2030 User Rollbacks Per Sec         2026-07-07T06:15:24.495Z 2026-07-07T07:15:24.495Z    6000     0 Rollbacks Per Second   
-        1      2058 Logical Reads Per Sec          2026-07-07T06:15:24.495Z 2026-07-07T07:15:24.495Z    6000    26 Reads Per Second       
-        1      2059 Physical Reads Per Sec         2026-07-07T06:15:24.495Z 2026-07-07T07:15:24.495Z    6000     0 Reads Per Second       
-        1      2062 DB Block Changes Per Sec       2026-07-07T06:15:24.495Z 2026-07-07T07:15:24.495Z    6000    19 Changes Per Second     
-        1      2075 Hard Parse Count Per Sec       2026-07-07T06:15:24.495Z 2026-07-07T07:15:24.495Z    6000    25 Parses Per Second      
-        1      2077 Total Parse Count Per Sec      2026-07-07T06:15:24.495Z 2026-07-07T07:15:24.495Z    6000    25 Parses Per Second      
-        1      2104 Average Active Sessions        2026-07-07T06:15:24.495Z 2026-07-07T07:15:24.495Z    6000     1 Active Sessions        
-        1      2118 Open Cursors Per Sec           2026-07-07T06:15:24.495Z 2026-07-07T07:15:24.495Z    6000   373 Cursors Per Second     
-        1      2148 Active Sessions                2026-07-07T06:15:24.495Z 2026-07-07T07:15:24.495Z    6000     1 Sessions               
-        1      2196 Network Traffic Volume Per Sec 2026-07-07T06:15:24.495Z 2026-07-07T07:15:24.495Z    6000     0 Bytes Per Second       
+        1      2000 CPU Usage Per Sec              2026-07-07T07:45:31.981Z 2026-07-07T08:45:31.981Z    6000    22 CentiSeconds Per Second
+        1      2003 User Calls Per Sec             2026-07-07T07:45:31.981Z 2026-07-07T08:45:31.981Z    6000    25 Calls Per Second       
+        1      2007 Executions Per Sec             2026-07-07T07:45:31.981Z 2026-07-07T08:45:31.981Z    6000    22 Executes Per Second    
+        1      2017 User Commits Per Sec           2026-07-07T07:45:31.981Z 2026-07-07T08:45:31.981Z    6000     0 Commits Per Second     
+        1      2030 User Rollbacks Per Sec         2026-07-07T07:45:31.981Z 2026-07-07T08:45:31.981Z    6000     0 Rollbacks Per Second   
+        1      2058 Logical Reads Per Sec          2026-07-07T07:45:31.981Z 2026-07-07T08:45:31.981Z    6000    26 Reads Per Second       
+        1      2059 Physical Reads Per Sec         2026-07-07T07:45:31.981Z 2026-07-07T08:45:31.981Z    6000     0 Reads Per Second       
+        1      2062 DB Block Changes Per Sec       2026-07-07T07:45:31.981Z 2026-07-07T08:45:31.981Z    6000    19 Changes Per Second     
+        1      2075 Hard Parse Count Per Sec       2026-07-07T07:45:31.981Z 2026-07-07T08:45:31.981Z    6000    25 Parses Per Second      
+        1      2077 Total Parse Count Per Sec      2026-07-07T07:45:31.981Z 2026-07-07T08:45:31.981Z    6000    25 Parses Per Second      
+        1      2104 Average Active Sessions        2026-07-07T07:45:31.981Z 2026-07-07T08:45:31.981Z    6000     1 Active Sessions        
+        1      2118 Open Cursors Per Sec           2026-07-07T07:45:31.981Z 2026-07-07T08:45:31.981Z    6000   373 Cursors Per Second     
+        1      2148 Active Sessions                2026-07-07T07:45:31.981Z 2026-07-07T08:45:31.981Z    6000     1 Sessions               
+        1      2196 Network Traffic Volume Per Sec 2026-07-07T07:45:31.981Z 2026-07-07T08:45:31.981Z    6000     0 Bytes Per Second       
   
   14 rows selected.
 
@@ -574,30 +574,30 @@ SQL [96/387]> SELECT message_text FROM x$dbgalertext ORDER BY originating_timest
   
   MESSAGE_TEXT                                                                    
   --------------------------------------------------------------------------------
-  2026-07-07 07:15:23: Starting ORACLE instance (normal)                          
-  2026-07-07 07:15:23: Database mounted                                           
-  2026-07-07 07:15:23: Completed checkpoint up to RBA, SCN: 1000001               
-  2026-07-07 07:15:23: Database opened                                            
-  2026-07-07 07:15:23: Listener LISTENER started successfully                     
-  2026-07-07 07:15:23: Logon: user=SYS sid=5 as SYSDBA                            
-  2026-07-07 07:15:24: Logoff: user=SYS sid=5 as SYSDBA                           
-  2026-07-07 07:15:24: Logon: user=SYS sid=6 as SYSDBA                            
-  2026-07-07 07:15:24: Logoff: user=SYS sid=6 as SYSDBA                           
-  2026-07-07 07:15:24: Logon: user=SYS sid=7 as SYSDBA                            
-  2026-07-07 07:15:24: Logoff: user=SYS sid=7 as SYSDBA                           
-  2026-07-07 07:15:24: Logon: user=SYS sid=8 as SYSDBA                            
-  2026-07-07 07:15:24: [HIGH] DDL_ON_SYS_OBJECT: DDL (CREATE USER) targeted SYS-ow
+  2026-07-07 08:45:31: Starting ORACLE instance (normal)                          
+  2026-07-07 08:45:31: Database mounted                                           
+  2026-07-07 08:45:31: Completed checkpoint up to RBA, SCN: 1000001               
+  2026-07-07 08:45:31: Database opened                                            
+  2026-07-07 08:45:31: Listener LISTENER started successfully                     
+  2026-07-07 08:45:31: Logon: user=SYS sid=5 as SYSDBA                            
+  2026-07-07 08:45:31: Logoff: user=SYS sid=5 as SYSDBA                           
+  2026-07-07 08:45:31: Logon: user=SYS sid=6 as SYSDBA                            
+  2026-07-07 08:45:31: Logoff: user=SYS sid=6 as SYSDBA                           
+  2026-07-07 08:45:31: Logon: user=SYS sid=7 as SYSDBA                            
+  2026-07-07 08:45:31: Logoff: user=SYS sid=7 as SYSDBA                           
+  2026-07-07 08:45:31: Logon: user=SYS sid=8 as SYSDBA                            
+  2026-07-07 08:45:31: [HIGH] DDL_ON_SYS_OBJECT: DDL (CREATE USER) targeted SYS-ow
   ned object APP_OWNER                                                            
-  2026-07-07 07:15:24: [HIGH] DDL_ON_SYS_OBJECT: DDL (CREATE USER) targeted SYS-ow
+  2026-07-07 08:45:31: [HIGH] DDL_ON_SYS_OBJECT: DDL (CREATE USER) targeted SYS-ow
   ned object APP_USER                                                             
   
   MESSAGE_TEXT                                                                    
   --------------------------------------------------------------------------------
-  2026-07-07 07:15:24: [HIGH] DDL_ON_SYS_OBJECT: DDL (CREATE USER) targeted SYS-ow
+  2026-07-07 08:45:31: [HIGH] DDL_ON_SYS_OBJECT: DDL (CREATE USER) targeted SYS-ow
   ned object APP_READONLY                                                         
-  2026-07-07 07:15:24: [HIGH] DDL_ON_SYS_OBJECT: DDL (CREATE ROLE) targeted SYS-ow
+  2026-07-07 08:45:31: [HIGH] DDL_ON_SYS_OBJECT: DDL (CREATE ROLE) targeted SYS-ow
   ned object APP_ROLE                                                             
-  2026-07-07 07:15:24: [HIGH] DDL_ON_SYS_OBJECT: DDL (CREATE ROLE) targeted SYS-ow
+  2026-07-07 08:45:31: [HIGH] DDL_ON_SYS_OBJECT: DDL (CREATE ROLE) targeted SYS-ow
   ned object APP_READONLY_ROLE                                                    
   
   17 rows selected.
@@ -614,30 +614,30 @@ SQL [99/387]> SELECT * FROM v$diag_alert_ext WHERE rownum < 20;
   
   ORIGINATING_TIMESTAMP NORMALIZED_TIMESTAMP ORGANIZATION_ID COMPONENT_ID HOST_ID   HOST_ADDRESS MESSAGE_TYPE MESSAGE_LEVEL MESSAGE_ID MESSAGE_GROUP CLIENT_ID MODULE_ID PROCESS_ID THREAD_ID USER_ID INSTANCE_ID DETAILED_LOCATION PROBLEM_KEY UPSTREAM_COMP_ID DOWNSTREAM_COMP_ID EXECUTION_CONTEXT_ID EXECUTION_CONTEXT_SEQUENCE MESSAGE_TEXT                                                                     MESSAGE_ARGUMENTS
   --------------------- -------------------- --------------- ------------ --------- ------------ ------------ ------------- ---------- ------------- --------- --------- ---------- --------- ------- ----------- ----------------- ----------- ---------------- ------------------ -------------------- -------------------------- -------------------------------------------------------------------------------- -----------------
-  01-JAN-26             01-JAN-26            oracle.com      rdbms        localhost 127.0.0.1               1            32            Default                           1000       1         SYS     ORCL                                                                                                                        0 2026-07-07 07:15:23: Starting ORACLE instance (normal)                                            
-  01-JAN-26             01-JAN-26            oracle.com      rdbms        localhost 127.0.0.1               1            32            Default                           1000       1         SYS     ORCL                                                                                                                        0 2026-07-07 07:15:23: Database mounted                                                             
-  01-JAN-26             01-JAN-26            oracle.com      rdbms        localhost 127.0.0.1               1            32            Default                           1000       1         SYS     ORCL                                                                                                                        0 2026-07-07 07:15:23: Completed checkpoint up to RBA, SCN: 1000001                                 
-  01-JAN-26             01-JAN-26            oracle.com      rdbms        localhost 127.0.0.1               1            32            Default                           1000       1         SYS     ORCL                                                                                                                        0 2026-07-07 07:15:23: Database opened                                                              
-  01-JAN-26             01-JAN-26            oracle.com      rdbms        localhost 127.0.0.1               1            32            Default                           1000       1         SYS     ORCL                                                                                                                        0 2026-07-07 07:15:23: Listener LISTENER started successfully                                       
-  01-JAN-26             01-JAN-26            oracle.com      rdbms        localhost 127.0.0.1               1            32            Default                           1000       1         SYS     ORCL                                                                                                                        0 2026-07-07 07:15:23: Logon: user=SYS sid=5 as SYSDBA                                              
-  01-JAN-26             01-JAN-26            oracle.com      rdbms        localhost 127.0.0.1               1            32            Default                           1000       1         SYS     ORCL                                                                                                                        0 2026-07-07 07:15:24: Logoff: user=SYS sid=5 as SYSDBA                                             
-  01-JAN-26             01-JAN-26            oracle.com      rdbms        localhost 127.0.0.1               1            32            Default                           1000       1         SYS     ORCL                                                                                                                        0 2026-07-07 07:15:24: Logon: user=SYS sid=6 as SYSDBA                                              
-  01-JAN-26             01-JAN-26            oracle.com      rdbms        localhost 127.0.0.1               1            32            Default                           1000       1         SYS     ORCL                                                                                                                        0 2026-07-07 07:15:24: Logoff: user=SYS sid=6 as SYSDBA                                             
-  01-JAN-26             01-JAN-26            oracle.com      rdbms        localhost 127.0.0.1               1            32            Default                           1000       1         SYS     ORCL                                                                                                                        0 2026-07-07 07:15:24: Logon: user=SYS sid=7 as SYSDBA                                              
-  01-JAN-26             01-JAN-26            oracle.com      rdbms        localhost 127.0.0.1               1            32            Default                           1000       1         SYS     ORCL                                                                                                                        0 2026-07-07 07:15:24: Logoff: user=SYS sid=7 as SYSDBA                                             
-  01-JAN-26             01-JAN-26            oracle.com      rdbms        localhost 127.0.0.1               1            32            Default                           1000       1         SYS     ORCL                                                                                                                        0 2026-07-07 07:15:24: Logon: user=SYS sid=8 as SYSDBA                                              
-  01-JAN-26             01-JAN-26            oracle.com      rdbms        localhost 127.0.0.1               1            32            Default                           1000       1         SYS     ORCL                                                                                                                        0 2026-07-07 07:15:24: [HIGH] DDL_ON_SYS_OBJECT: DDL (CREATE USER) targeted SYS-ow                  
+  01-JAN-26             01-JAN-26            oracle.com      rdbms        localhost 127.0.0.1               1            32            Default                           1000       1         SYS     ORCL                                                                                                                        0 2026-07-07 08:45:31: Starting ORACLE instance (normal)                                            
+  01-JAN-26             01-JAN-26            oracle.com      rdbms        localhost 127.0.0.1               1            32            Default                           1000       1         SYS     ORCL                                                                                                                        0 2026-07-07 08:45:31: Database mounted                                                             
+  01-JAN-26             01-JAN-26            oracle.com      rdbms        localhost 127.0.0.1               1            32            Default                           1000       1         SYS     ORCL                                                                                                                        0 2026-07-07 08:45:31: Completed checkpoint up to RBA, SCN: 1000001                                 
+  01-JAN-26             01-JAN-26            oracle.com      rdbms        localhost 127.0.0.1               1            32            Default                           1000       1         SYS     ORCL                                                                                                                        0 2026-07-07 08:45:31: Database opened                                                              
+  01-JAN-26             01-JAN-26            oracle.com      rdbms        localhost 127.0.0.1               1            32            Default                           1000       1         SYS     ORCL                                                                                                                        0 2026-07-07 08:45:31: Listener LISTENER started successfully                                       
+  01-JAN-26             01-JAN-26            oracle.com      rdbms        localhost 127.0.0.1               1            32            Default                           1000       1         SYS     ORCL                                                                                                                        0 2026-07-07 08:45:31: Logon: user=SYS sid=5 as SYSDBA                                              
+  01-JAN-26             01-JAN-26            oracle.com      rdbms        localhost 127.0.0.1               1            32            Default                           1000       1         SYS     ORCL                                                                                                                        0 2026-07-07 08:45:31: Logoff: user=SYS sid=5 as SYSDBA                                             
+  01-JAN-26             01-JAN-26            oracle.com      rdbms        localhost 127.0.0.1               1            32            Default                           1000       1         SYS     ORCL                                                                                                                        0 2026-07-07 08:45:31: Logon: user=SYS sid=6 as SYSDBA                                              
+  01-JAN-26             01-JAN-26            oracle.com      rdbms        localhost 127.0.0.1               1            32            Default                           1000       1         SYS     ORCL                                                                                                                        0 2026-07-07 08:45:31: Logoff: user=SYS sid=6 as SYSDBA                                             
+  01-JAN-26             01-JAN-26            oracle.com      rdbms        localhost 127.0.0.1               1            32            Default                           1000       1         SYS     ORCL                                                                                                                        0 2026-07-07 08:45:31: Logon: user=SYS sid=7 as SYSDBA                                              
+  01-JAN-26             01-JAN-26            oracle.com      rdbms        localhost 127.0.0.1               1            32            Default                           1000       1         SYS     ORCL                                                                                                                        0 2026-07-07 08:45:31: Logoff: user=SYS sid=7 as SYSDBA                                             
+  01-JAN-26             01-JAN-26            oracle.com      rdbms        localhost 127.0.0.1               1            32            Default                           1000       1         SYS     ORCL                                                                                                                        0 2026-07-07 08:45:31: Logon: user=SYS sid=8 as SYSDBA                                              
+  01-JAN-26             01-JAN-26            oracle.com      rdbms        localhost 127.0.0.1               1            32            Default                           1000       1         SYS     ORCL                                                                                                                        0 2026-07-07 08:45:31: [HIGH] DDL_ON_SYS_OBJECT: DDL (CREATE USER) targeted SYS-ow                  
                                                                                                                                                                                                                                                                                                                                     ned object APP_OWNER                                                                              
-  01-JAN-26             01-JAN-26            oracle.com      rdbms        localhost 127.0.0.1               1            32            Default                           1000       1         SYS     ORCL                                                                                                                        0 2026-07-07 07:15:24: [HIGH] DDL_ON_SYS_OBJECT: DDL (CREATE USER) targeted SYS-ow                  
+  01-JAN-26             01-JAN-26            oracle.com      rdbms        localhost 127.0.0.1               1            32            Default                           1000       1         SYS     ORCL                                                                                                                        0 2026-07-07 08:45:31: [HIGH] DDL_ON_SYS_OBJECT: DDL (CREATE USER) targeted SYS-ow                  
                                                                                                                                                                                                                                                                                                                                     ned object APP_USER                                                                               
   
   ORIGINATING_TIMESTAMP NORMALIZED_TIMESTAMP ORGANIZATION_ID COMPONENT_ID HOST_ID   HOST_ADDRESS MESSAGE_TYPE MESSAGE_LEVEL MESSAGE_ID MESSAGE_GROUP CLIENT_ID MODULE_ID PROCESS_ID THREAD_ID USER_ID INSTANCE_ID DETAILED_LOCATION PROBLEM_KEY UPSTREAM_COMP_ID DOWNSTREAM_COMP_ID EXECUTION_CONTEXT_ID EXECUTION_CONTEXT_SEQUENCE MESSAGE_TEXT                                                                     MESSAGE_ARGUMENTS
   --------------------- -------------------- --------------- ------------ --------- ------------ ------------ ------------- ---------- ------------- --------- --------- ---------- --------- ------- ----------- ----------------- ----------- ---------------- ------------------ -------------------- -------------------------- -------------------------------------------------------------------------------- -----------------
-  01-JAN-26             01-JAN-26            oracle.com      rdbms        localhost 127.0.0.1               1            32            Default                           1000       1         SYS     ORCL                                                                                                                        0 2026-07-07 07:15:24: [HIGH] DDL_ON_SYS_OBJECT: DDL (CREATE USER) targeted SYS-ow                  
+  01-JAN-26             01-JAN-26            oracle.com      rdbms        localhost 127.0.0.1               1            32            Default                           1000       1         SYS     ORCL                                                                                                                        0 2026-07-07 08:45:31: [HIGH] DDL_ON_SYS_OBJECT: DDL (CREATE USER) targeted SYS-ow                  
                                                                                                                                                                                                                                                                                                                                     ned object APP_READONLY                                                                           
-  01-JAN-26             01-JAN-26            oracle.com      rdbms        localhost 127.0.0.1               1            32            Default                           1000       1         SYS     ORCL                                                                                                                        0 2026-07-07 07:15:24: [HIGH] DDL_ON_SYS_OBJECT: DDL (CREATE ROLE) targeted SYS-ow                  
+  01-JAN-26             01-JAN-26            oracle.com      rdbms        localhost 127.0.0.1               1            32            Default                           1000       1         SYS     ORCL                                                                                                                        0 2026-07-07 08:45:31: [HIGH] DDL_ON_SYS_OBJECT: DDL (CREATE ROLE) targeted SYS-ow                  
                                                                                                                                                                                                                                                                                                                                     ned object APP_ROLE                                                                               
-  01-JAN-26             01-JAN-26            oracle.com      rdbms        localhost 127.0.0.1               1            32            Default                           1000       1         SYS     ORCL                                                                                                                        0 2026-07-07 07:15:24: [HIGH] DDL_ON_SYS_OBJECT: DDL (CREATE ROLE) targeted SYS-ow                  
+  01-JAN-26             01-JAN-26            oracle.com      rdbms        localhost 127.0.0.1               1            32            Default                           1000       1         SYS     ORCL                                                                                                                        0 2026-07-07 08:45:31: [HIGH] DDL_ON_SYS_OBJECT: DDL (CREATE ROLE) targeted SYS-ow                  
                                                                                                                                                                                                                                                                                                                                     ned object APP_READONLY_ROLE                                                                      
   
   17 rows selected.
@@ -682,39 +682,39 @@ SQL [108/387]> SELECT * FROM dba_audit_trail ORDER BY timestamp DESC FETCH FIRST
   
   OS_USERNAME USERNAME  USERHOST     TIMESTAMP                ACTION_NAME  OBJ_NAME                  RETURNCODE OBJ_OWNER SESSIONID PRIV_USED SQL_TEXT                                                                         STATEMENT_TYPE
   ----------- --------- ------------ ------------------------ ------------ ------------------------- ---------- --------- --------- --------- -------------------------------------------------------------------------------- --------------
-  root        APP_OWNER linux-server 2026-07-07T07:15:24.437Z GRANT        ORDER_LINES                        0 APP_OWNER         8           GRANT SELECT ON order_lines TO app_readonly_role                                 GRANT         
-  root        APP_OWNER linux-server 2026-07-07T07:15:24.436Z GRANT        PRODUCTS                         942 APP_OWNER         8           GRANT SELECT ON products TO app_readonly_role                                    GRANT         
-  root        APP_OWNER linux-server 2026-07-07T07:15:24.436Z GRANT        ORDERS                           942 APP_OWNER         8           GRANT SELECT ON orders TO app_readonly_role                                      GRANT         
-  root        APP_OWNER linux-server 2026-07-07T07:15:24.435Z GRANT        ORDER_LINES                        0 APP_OWNER         8           GRANT SELECT, INSERT, UPDATE, DELETE ON order_lines TO app_role                  GRANT         
-  root        APP_OWNER linux-server 2026-07-07T07:15:24.435Z GRANT        CUSTOMERS                        942 APP_OWNER         8           GRANT SELECT ON customers TO app_readonly_role                                   GRANT         
-  root        APP_OWNER linux-server 2026-07-07T07:15:24.434Z GRANT        PRODUCTS                         942 APP_OWNER         8           GRANT SELECT, INSERT, UPDATE, DELETE ON products TO app_role                     GRANT         
-  root        APP_OWNER linux-server 2026-07-07T07:15:24.434Z GRANT        ORDERS                           942 APP_OWNER         8           GRANT SELECT, INSERT, UPDATE, DELETE ON orders TO app_role                       GRANT         
-  root        APP_OWNER linux-server 2026-07-07T07:15:24.433Z CREATE INDEX IDX_OL_PROD                        0 APP_OWNER         8           CREATE INDEX idx_ol_prod ON order_lines (product_id)                             CREATE INDEX  
-  root        APP_OWNER linux-server 2026-07-07T07:15:24.433Z GRANT        CUSTOMERS                        942 APP_OWNER         8           GRANT SELECT, INSERT, UPDATE, DELETE ON customers TO app_role                    GRANT         
-  root        APP_OWNER linux-server 2026-07-07T07:15:24.432Z CREATE INDEX IDX_ORDERS_CUST                  942 APP_OWNER         8           CREATE INDEX idx_orders_cust ON orders (customer_id)                             CREATE INDEX  
-  root        APP_OWNER linux-server 2026-07-07T07:15:24.432Z CREATE INDEX IDX_ORDERS_DATE                  942 APP_OWNER         8           CREATE INDEX idx_orders_date ON orders (order_date)                              CREATE INDEX  
-  root        APP_OWNER linux-server 2026-07-07T07:15:24.431Z CREATE TABLE ORDER_LINES                        0 APP_OWNER         8           CREATE TABLE order_lines (order_id NUMBER, line_no NUMBER, product_id NUMBER, qt CREATE TABLE  
+  root        APP_OWNER linux-server 2026-07-07T08:45:31.924Z GRANT        ORDERS                           942 APP_OWNER         8           GRANT SELECT ON orders TO app_readonly_role                                      GRANT         
+  root        APP_OWNER linux-server 2026-07-07T08:45:31.924Z GRANT        ORDER_LINES                        0 APP_OWNER         8           GRANT SELECT ON order_lines TO app_readonly_role                                 GRANT         
+  root        APP_OWNER linux-server 2026-07-07T08:45:31.923Z GRANT        PRODUCTS                         942 APP_OWNER         8           GRANT SELECT ON products TO app_readonly_role                                    GRANT         
+  root        APP_OWNER linux-server 2026-07-07T08:45:31.920Z GRANT        ORDER_LINES                        0 APP_OWNER         8           GRANT SELECT, INSERT, UPDATE, DELETE ON order_lines TO app_role                  GRANT         
+  root        APP_OWNER linux-server 2026-07-07T08:45:31.920Z GRANT        CUSTOMERS                        942 APP_OWNER         8           GRANT SELECT ON customers TO app_readonly_role                                   GRANT         
+  root        APP_OWNER linux-server 2026-07-07T08:45:31.919Z GRANT        ORDERS                           942 APP_OWNER         8           GRANT SELECT, INSERT, UPDATE, DELETE ON orders TO app_role                       GRANT         
+  root        APP_OWNER linux-server 2026-07-07T08:45:31.918Z CREATE INDEX IDX_OL_PROD                        0 APP_OWNER         8           CREATE INDEX idx_ol_prod ON order_lines (product_id)                             CREATE INDEX  
+  root        APP_OWNER linux-server 2026-07-07T08:45:31.918Z GRANT        CUSTOMERS                        942 APP_OWNER         8           GRANT SELECT, INSERT, UPDATE, DELETE ON customers TO app_role                    GRANT         
+  root        APP_OWNER linux-server 2026-07-07T08:45:31.918Z GRANT        PRODUCTS                         942 APP_OWNER         8           GRANT SELECT, INSERT, UPDATE, DELETE ON products TO app_role                     GRANT         
+  root        APP_OWNER linux-server 2026-07-07T08:45:31.917Z CREATE TABLE ORDER_LINES                        0 APP_OWNER         8           CREATE TABLE order_lines (order_id NUMBER, line_no NUMBER, product_id NUMBER, qt CREATE TABLE  
                                                                                                                                               y NUMBER, unit_price NUMBER(10,2), CONSTRAINT pk_ol PRIMARY KEY (order_id, line_               
                                                                                                                                               no), CONSTRAINT fk_ol_ord FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE               
                                                                                                                                                CASCADE, CONSTRAINT fk_ol_prod FOREIGN KEY (product_id) REFERENCES products(id)               
                                                                                                                                               )                                                                                              
-  root        SYS       linux-server 2026-07-07T07:15:24.429Z GRANT                                           0 SYS               8           GRANT app_readonly_role TO app_readonly                                          GRANT         
-  root        SYS       linux-server 2026-07-07T07:15:24.428Z CREATE ROLE  APP_ROLE                           0 SYS               8           CREATE ROLE app_role                                                             CREATE ROLE   
+  root        APP_OWNER linux-server 2026-07-07T08:45:31.917Z CREATE INDEX IDX_ORDERS_CUST                  942 APP_OWNER         8           CREATE INDEX idx_orders_cust ON orders (customer_id)                             CREATE INDEX  
+  root        APP_OWNER linux-server 2026-07-07T08:45:31.917Z CREATE INDEX IDX_ORDERS_DATE                  942 APP_OWNER         8           CREATE INDEX idx_orders_date ON orders (order_date)                              CREATE INDEX  
+  root        SYS       linux-server 2026-07-07T08:45:31.914Z CREATE ROLE  APP_READONLY_ROLE                  0 SYS               8           CREATE ROLE app_readonly_role                                                    CREATE ROLE   
+  root        SYS       linux-server 2026-07-07T08:45:31.914Z GRANT                                           0 SYS               8           GRANT app_role TO app_user                                                       GRANT         
   
   OS_USERNAME USERNAME  USERHOST     TIMESTAMP                ACTION_NAME  OBJ_NAME                  RETURNCODE OBJ_OWNER SESSIONID PRIV_USED SQL_TEXT                                                                         STATEMENT_TYPE
   ----------- --------- ------------ ------------------------ ------------ ------------------------- ---------- --------- --------- --------- -------------------------------------------------------------------------------- --------------
-  root        SYS       linux-server 2026-07-07T07:15:24.428Z CREATE ROLE  APP_READONLY_ROLE                  0 SYS               8           CREATE ROLE app_readonly_role                                                    CREATE ROLE   
-  root        SYS       linux-server 2026-07-07T07:15:24.428Z GRANT                                           0 SYS               8           GRANT app_role TO app_user                                                       GRANT         
-  root        SYS       linux-server 2026-07-07T07:15:24.427Z GRANT                                           0 SYS               8           GRANT CREATE SESSION TO app_readonly                                             GRANT         
-  root        SYS       linux-server 2026-07-07T07:15:24.426Z CREATE USER  APP_READONLY                       0 SYS               8           CREATE USER app_readonly IDENTIFIED BY "Ro1#"                                    CREATE USER   
-  root        SYS       linux-server 2026-07-07T07:15:24.323Z GRANT                                           0 SYS               8           GRANT CREATE SESSION TO app_user                                                 GRANT         
-  root        SYS       linux-server 2026-07-07T07:15:24.321Z CREATE USER  APP_USER                           0 SYS               8           CREATE USER app_user IDENTIFIED BY "AppUser1#"                                   CREATE USER   
-  root        SYS       linux-server 2026-07-07T07:15:24.188Z GRANT                                           0 SYS               8           GRANT CONNECT, RESOURCE, CREATE VIEW, CREATE SEQUENCE, CREATE PROCEDURE, CREATE  GRANT         
+  root        SYS       linux-server 2026-07-07T08:45:31.914Z GRANT                                           0 SYS               8           GRANT app_readonly_role TO app_readonly                                          GRANT         
+  root        SYS       linux-server 2026-07-07T08:45:31.913Z GRANT                                           0 SYS               8           GRANT CREATE SESSION TO app_readonly                                             GRANT         
+  root        SYS       linux-server 2026-07-07T08:45:31.913Z CREATE ROLE  APP_ROLE                           0 SYS               8           CREATE ROLE app_role                                                             CREATE ROLE   
+  root        SYS       linux-server 2026-07-07T08:45:31.912Z CREATE USER  APP_READONLY                       0 SYS               8           CREATE USER app_readonly IDENTIFIED BY "Ro1#"                                    CREATE USER   
+  root        SYS       linux-server 2026-07-07T08:45:31.815Z GRANT                                           0 SYS               8           GRANT CREATE SESSION TO app_user                                                 GRANT         
+  root        SYS       linux-server 2026-07-07T08:45:31.812Z CREATE USER  APP_USER                           0 SYS               8           CREATE USER app_user IDENTIFIED BY "AppUser1#"                                   CREATE USER   
+  root        SYS       linux-server 2026-07-07T08:45:31.713Z GRANT                                           0 SYS               8           GRANT CONNECT, RESOURCE, CREATE VIEW, CREATE SEQUENCE, CREATE PROCEDURE, CREATE  GRANT         
                                                                                                                                               TRIGGER, CREATE TYPE TO app_owner                                                              
-  root        SYS       linux-server 2026-07-07T07:15:24.184Z CREATE USER  APP_OWNER                          0 SYS               8           CREATE USER app_owner IDENTIFIED BY "App1#" QUOTA UNLIMITED ON users             CREATE USER   
-  root        SYS       linux-server 2026-07-07T07:15:24.101Z LOGON                                           0                   8 SYSDBA                                                                                     LOGON         
-  oracle      SYS       localhost    2026-07-07T07:15:24.092Z LOGOFF                                          0                   7                                                                                            LOGOFF        
-  oracle      SYS       localhost    2026-07-07T07:15:24.034Z CREATE TABLE DETB_RTL_TELLER                    0 FCUBSLIVE         7           CREATE TABLE FCUBSLIVE.DETB_RTL_TELLER (
+  root        SYS       linux-server 2026-07-07T08:45:31.707Z CREATE USER  APP_OWNER                          0 SYS               8           CREATE USER app_owner IDENTIFIED BY "App1#" QUOTA UNLIMITED ON users             CREATE USER   
+  root        SYS       linux-server 2026-07-07T08:45:31.610Z LOGON                                           0                   8 SYSDBA                                                                                     LOGON         
+  oracle      SYS       localhost    2026-07-07T08:45:31.605Z LOGOFF                                          0                   7                                                                                            LOGOFF        
+  oracle      SYS       localhost    2026-07-07T08:45:31.547Z CREATE TABLE DETB_RTL_TELLER                    0 FCUBSLIVE         7           CREATE TABLE FCUBSLIVE.DETB_RTL_TELLER (
        TRN_REF_NO VARCHAR2(16) NOT NULL,
    CREATE TABLE  
                                                                                                                                                    BRANCH_CODE VARCHAR2(3),
@@ -807,7 +807,7 @@ SQL [108/387]> SELECT * FROM dba_audit_trail ORDER BY timestamp DESC FETCH FIRST
        CHG_GL_2 VARCHAR2(20),
        CHG_GL_3 VARCHAR2(20),
        CHG_G               
-  oracle      SYS       localhost    2026-07-07T07:15:24.034Z CREATE TABLE FBTB_TILL_TXN_DETAIL_HIST          0 FCUBSLIVE         7           CREATE TABLE FCUBSLIVE.FBTB_TILL_TXN_DETAIL_HIST (
+  oracle      SYS       localhost    2026-07-07T08:45:31.547Z CREATE TABLE FBTB_TILL_TXN_DETAIL_HIST          0 FCUBSLIVE         7           CREATE TABLE FCUBSLIVE.FBTB_TILL_TXN_DETAIL_HIST (
        BRANCHCODE VARCHAR2(3) N CREATE TABLE  
                                                                                                                                               OT NULL,
        TILL_ID VARCHAR2(4) NOT NULL,
@@ -820,7 +820,7 @@ SQL [108/387]> SELECT * FROM dba_audit_trail ORDER BY timestamp DESC FETCH FIRST
                                                                                                                                               W NUMBER(22,3),
        POSTINGDATE DATE
      )                                                     
-  oracle      SYS       localhost    2026-07-07T07:15:24.032Z CREATE TABLE CLTB_ACCOUNT_SCHEDULES             0 FCUBSLIVE         7           CREATE TABLE FCUBSLIVE.CLTB_ACCOUNT_SCHEDULES (
+  oracle      SYS       localhost    2026-07-07T08:45:31.546Z CREATE TABLE CLTB_ACCOUNT_SCHEDULES             0 FCUBSLIVE         7           CREATE TABLE FCUBSLIVE.CLTB_ACCOUNT_SCHEDULES (
        ACCOUNT_NUMBER VARCHAR2(20) CREATE TABLE  
                                                                                                                                                NOT NULL,
        BRANCH_CODE VARCHAR2(3),
@@ -886,7 +886,7 @@ SQL [108/387]> SELECT * FROM dba_audit_trail ORDER BY timestamp DESC FETCH FIRST
                                                                                                                                               FLAG VARCHAR2(1),
        WRITEOFF_AMT NUMBER(22,3)
      )                                          
-  oracle      SYS       localhost    2026-07-07T07:15:24.032Z CREATE TABLE CYTB_RATES_HISTORY                 0 FCUBSLIVE         7           CREATE TABLE FCUBSLIVE.CYTB_RATES_HISTORY (
+  oracle      SYS       localhost    2026-07-07T08:45:31.546Z CREATE TABLE CYTB_RATES_HISTORY                 0 FCUBSLIVE         7           CREATE TABLE FCUBSLIVE.CYTB_RATES_HISTORY (
        BRANCH_CODE VARCHAR2(3) NOT NUL CREATE TABLE  
                                                                                                                                               L,
        CCY1 VARCHAR2(3) NOT NULL,
@@ -905,7 +905,7 @@ SQL [108/387]> SELECT * FROM dba_audit_trail ORDER BY timestamp DESC FETCH FIRST
   
   OS_USERNAME USERNAME  USERHOST     TIMESTAMP                ACTION_NAME  OBJ_NAME                  RETURNCODE OBJ_OWNER SESSIONID PRIV_USED SQL_TEXT                                                                         STATEMENT_TYPE
   ----------- --------- ------------ ------------------------ ------------ ------------------------- ---------- --------- --------- --------- -------------------------------------------------------------------------------- --------------
-  oracle      SYS       localhost    2026-07-07T07:15:24.031Z CREATE TABLE CLTB_ACCOUNT_APPS_MASTER           0 FCUBSLIVE         7           CREATE TABLE FCUBSLIVE.CLTB_ACCOUNT_APPS_MASTER (
+  oracle      SYS       localhost    2026-07-07T08:45:31.545Z CREATE TABLE CLTB_ACCOUNT_APPS_MASTER           0 FCUBSLIVE         7           CREATE TABLE FCUBSLIVE.CLTB_ACCOUNT_APPS_MASTER (
        ACCOUNT_NUMBER VARCHAR2(2 CREATE TABLE  
                                                                                                                                               0) NOT NULL,
        BRANCH_CODE VARCHAR2(3),
@@ -988,71 +988,29 @@ SQL [108/387]> SELECT * FROM dba_audit_trail ORDER BY timestamp DESC FETCH FIRST
                                                                                                                                               _ID VARCHAR2(12),
        CHEQUE_BOOK_FACILITY VARCHAR2(1),
        CLG_BANK_CODE_CR V               
-  oracle      SYS       localhost    2026-07-07T07:15:24.026Z CREATE TABLE ACTB_HISTORY                       0 FCUBSLIVE         7           CREATE TABLE FCUBSLIVE.ACTB_HISTORY (
-       AC_NO VARCHAR2(20) NOT NULL,
-       AC_ CREATE TABLE  
-                                                                                                                                              BRANCH VARCHAR2(3),
-       AC_CCY VARCHAR2(3),
-       TRN_DT DATE,
-       VALUE_DT DAT               
-                                                                                                                                              E,
-       TRN_REF_NO VARCHAR2(16),
-       EVENT VARCHAR2(4),
-       DRCR_IND CHAR(1),
-                 
-                                                                                                                                                   FCY_AMOUNT NUMBER(22,3),
-       LCY_AMOUNT NUMBER(22,3),
-       EXCH_RATE NUMBE               
-                                                                                                                                              R(14,8),
-       TRN_CODE VARCHAR2(3),
-       MODULE VARCHAR2(2),
-       PRODUCT VARCHA               
-                                                                                                                                              R2(4),
-       RELATED_ACCOUNT VARCHAR2(20),
-       RELATED_CUSTOMER VARCHAR2(20),
-                   
-                                                                                                                                                 RELATED_REFERENCE VARCHAR2(16),
-       USER_ID VARCHAR2(12),
-       BATCH_NO VARC               
-                                                                                                                                              HAR2(6),
-       INSTRUMENT_CODE VARCHAR2(20),
-       EXTERNAL_REF_NO VARCHAR2(20),
+  oracle      SYS       localhost    2026-07-07T08:45:31.544Z CREATE TABLE ACTB_ACCBAL_HISTORY                0 FCUBSLIVE         7           CREATE TABLE FCUBSLIVE.ACTB_ACCBAL_HISTORY (
+       ACCOUNT VARCHAR2(20) NOT NULL, CREATE TABLE  
+                                                                                                                                              
+       BRANCH_CODE VARCHAR2(3),
+       ACC_CCY VARCHAR2(3),
+       BKG_DATE DATE NOT                
+                                                                                                                                              NULL,
+       ACY_OPENING_BAL NUMBER(22,3),
+       ACY_CLOSING_BAL NUMBER(22,3),
+                     
+                                                                                                                                               ACY_CLOSING_AVLBAL NUMBER(22,3),
+       ACY_CLOSING_BLOCK NUMBER(22,3),
+       ACY_               
+                                                                                                                                              CLOSING_UNCOLL NUMBER(22,3),
+       ACY_CR_TUR NUMBER(22,3),
+       ACY_DR_TUR NUMBE               
+                                                                                                                                              R(22,3),
+       LCY_OPENING_BAL NUMBER(22,3),
+       LCY_CLOSING_BAL NUMBER(22,3),
                   
-                                                                                                                                                  STMT_DT DATE,
-       AC_ENTRY_SR_NO NUMBER(10),
-       FINANCIAL_CYCLE VARCHAR2(               
-                                                                                                                                              4),
-       PERIOD_CODE VARCHAR2(6),
-       AML_EXCEPTION VARCHAR2(1),
-       AMOUNT_TA               
-                                                                                                                                              G VARCHAR2(20),
-       AUTH_ID VARCHAR2(12),
-       BANK_CODE VARCHAR2(20),
-       CAT               
-                                                                                                                                              EGORY CHAR(1),
-       CURR_NO NUMBER,
-       CUST_GL CHAR(1),
-       DONT_SHOWIN_STMT                
-                                                                                                                                              CHAR(1),
-       ENTRY_SEQ_NO NUMBER,
-       EVENT_SR_NO NUMBER,
-       FLG_POSITION_ST               
-                                                                                                                                              ATUS CHAR(1),
-       GLMIS_UPDATE_FLAG CHAR(1),
-       GLMIS_VAL_UPD_FLAG CHAR(1),
-                  
-                                                                                                                                                  IB CHAR(1),
-       IC_BAL_INCLUSION CHAR(1),
-       MIS_FLAG CHAR(1),
-       MIS_H               
-                                                                                                                                              EAD VARCHAR2(20),
-       ORIG_PNL_GL VARCHAR2(20),
-       PRINT_STAT CHAR(1),
-       P               
-                                                                                                                                              RODUCT_ACCRUAL VARCHAR2(20),
-       TXN_INIT_DATE DATE,
-       TYPE CHAR(1)
-     )                   
+                                                                                                                                                  LCY_CR_TUR NUMBER(22,3),
+       LCY_DR_TUR NUMBER(22,3)
+     )                                 
   
   30 rows selected.
 
@@ -1104,19 +1062,19 @@ SQL [115/387]> SELECT * FROM unified_audit_trail WHERE rownum < 30;
   
   EVENT_TIMESTAMP          AUDIT_TYPE SESSIONID DBUSERNAME USERHOST  TERMINAL OS_USER ACTION_NAME     RETURN_CODE SQL_TEXT                                                                         OBJECT_SCHEMA OBJECT_NAME              STATEMENT_TYPE  SYSTEM_PRIVILEGE_USED ENTRY_ID
   ------------------------ ---------- --------- ---------- --------- -------- ------- --------------- ----------- -------------------------------------------------------------------------------- ------------- ------------------------ --------------- --------------------- --------
-  2026-07-07T07:15:23.972Z Standard           5 SYS        localhost pts/0    oracle  LOGON                     0                                                                                                                         LOGON           SYSDBA                       1
-  2026-07-07T07:15:23.979Z Standard           5 SYS        localhost pts/0    oracle  CREATE TABLE              0 CREATE TABLE HR.REGIONS (
+  2026-07-07T08:45:31.464Z Standard           5 SYS        localhost pts/0    oracle  LOGON                     0                                                                                                                         LOGON           SYSDBA                       1
+  2026-07-07T08:45:31.474Z Standard           5 SYS        localhost pts/0    oracle  CREATE TABLE              0 CREATE TABLE HR.REGIONS (
          REGION_ID NUMBER(2) PRIMARY KEY,
          REGION_ HR            REGIONS                  CREATE TABLE                                 2
                                                                                                                   NAME VARCHAR2(25)
        )                                                                                                                                              
-  2026-07-07T07:15:23.981Z Standard           5 SYS        localhost pts/0    oracle  CREATE TABLE              0 CREATE TABLE HR.COUNTRIES (
+  2026-07-07T08:45:31.478Z Standard           5 SYS        localhost pts/0    oracle  CREATE TABLE              0 CREATE TABLE HR.COUNTRIES (
          COUNTRY_ID CHAR(2) PRIMARY KEY,
          COUNTR HR            COUNTRIES                CREATE TABLE                                 3
                                                                                                                   Y_NAME VARCHAR2(40),
          REGION_ID NUMBER(2)
        )                                                                                                                
-  2026-07-07T07:15:23.982Z Standard           5 SYS        localhost pts/0    oracle  CREATE TABLE              0 CREATE TABLE HR.LOCATIONS (
+  2026-07-07T08:45:31.478Z Standard           5 SYS        localhost pts/0    oracle  CREATE TABLE              0 CREATE TABLE HR.LOCATIONS (
          LOCATION_ID NUMBER(4) PRIMARY KEY,
          STR HR            LOCATIONS                CREATE TABLE                                 4
                                                                                                                   EET_ADDRESS VARCHAR2(40),
@@ -1127,7 +1085,7 @@ SQL [115/387]> SELECT * FROM unified_audit_trail WHERE rownum < 30;
          COUNTRY_ID CHAR(2)
                                                                                             
                                                                                                                    )                                                                                                                                                                    
-  2026-07-07T07:15:23.983Z Standard           5 SYS        localhost pts/0    oracle  CREATE TABLE              0 CREATE TABLE HR.DEPARTMENTS (
+  2026-07-07T08:45:31.479Z Standard           5 SYS        localhost pts/0    oracle  CREATE TABLE              0 CREATE TABLE HR.DEPARTMENTS (
          DEPARTMENT_ID NUMBER(4) PRIMARY KEY,
          HR            DEPARTMENTS              CREATE TABLE                                 5
                                                                                                                    DEPARTMENT_NAME VARCHAR2(30) NOT NULL,
@@ -1135,7 +1093,7 @@ SQL [115/387]> SELECT * FROM unified_audit_trail WHERE rownum < 30;
          LOCA                                                                                      
                                                                                                                   TION_ID NUMBER(4)
        )                                                                                                                                              
-  2026-07-07T07:15:23.984Z Standard           5 SYS        localhost pts/0    oracle  CREATE TABLE              0 CREATE TABLE HR.JOBS (
+  2026-07-07T08:45:31.480Z Standard           5 SYS        localhost pts/0    oracle  CREATE TABLE              0 CREATE TABLE HR.JOBS (
          JOB_ID VARCHAR2(10) PRIMARY KEY,
          JOB_TITLE  HR            JOBS                     CREATE TABLE                                 6
                                                                                                                   VARCHAR2(35) NOT NULL,
@@ -1143,7 +1101,7 @@ SQL [115/387]> SELECT * FROM unified_audit_trail WHERE rownum < 30;
          MAX_SALARY NUMBER(6)
                                                                                         
                                                                                                                        )                                                                                                                                                                
-  2026-07-07T07:15:23.984Z Standard           5 SYS        localhost pts/0    oracle  CREATE TABLE              0 CREATE TABLE HR.EMPLOYEES (
+  2026-07-07T08:45:31.481Z Standard           5 SYS        localhost pts/0    oracle  CREATE TABLE              0 CREATE TABLE HR.EMPLOYEES (
          EMPLOYEE_ID NUMBER(6) PRIMARY KEY,
          FIR HR            EMPLOYEES                CREATE TABLE                                 7
                                                                                                                   ST_NAME VARCHAR2(20),
@@ -1161,7 +1119,7 @@ SQL [115/387]> SELECT * FROM unified_audit_trail WHERE rownum < 30;
          DEPARTMENT_ID NUMBER(                                                                                      
                                                                                                                   4)
        )                                                                                                                                                             
-  2026-07-07T07:15:23.985Z Standard           5 SYS        localhost pts/0    oracle  CREATE TABLE              0 CREATE TABLE HR.JOB_HISTORY (
+  2026-07-07T08:45:31.483Z Standard           5 SYS        localhost pts/0    oracle  CREATE TABLE              0 CREATE TABLE HR.JOB_HISTORY (
          EMPLOYEE_ID NUMBER(6) NOT NULL,
          STAR HR            JOB_HISTORY              CREATE TABLE                                 8
                                                                                                                   T_DATE DATE NOT NULL,
@@ -1170,12 +1128,12 @@ SQL [115/387]> SELECT * FROM unified_audit_trail WHERE rownum < 30;
                                                                                                                   NOT NULL,
          DEPARTMENT_ID NUMBER(4)
        )                                                                                                                       
-  2026-07-07T07:15:24.006Z Standard           5 SYS        localhost pts/0    oracle  CREATE SEQUENCE           0 CREATE SEQUENCE HR.EMPLOYEES_SEQ START WITH 207 INCREMENT BY 1                   HR            EMPLOYEES_SEQ            CREATE SEQUENCE                              9
-  2026-07-07T07:15:24.006Z Standard           5 SYS        localhost pts/0    oracle  CREATE SEQUENCE           0 CREATE SEQUENCE HR.DEPARTMENTS_SEQ START WITH 280 INCREMENT BY 10                HR            DEPARTMENTS_SEQ          CREATE SEQUENCE                             10
-  2026-07-07T07:15:24.007Z Standard           5 SYS        localhost pts/0    oracle  CREATE SEQUENCE           0 CREATE SEQUENCE HR.LOCATIONS_SEQ START WITH 3300 INCREMENT BY 100                HR            LOCATIONS_SEQ            CREATE SEQUENCE                             11
-  2026-07-07T07:15:24.011Z Standard           5 SYS        localhost pts/0    oracle  LOGOFF                    0                                                                                                                         LOGOFF                                      12
-  2026-07-07T07:15:24.012Z Standard           6 SYS        localhost pts/0    oracle  LOGON                     0                                                                                                                         LOGON           SYSDBA                      13
-  2026-07-07T07:15:24.013Z Standard           6 SYS        localhost pts/0    oracle  CREATE TABLE              0 CREATE TABLE SCOTT.DEPT (
+  2026-07-07T08:45:31.514Z Standard           5 SYS        localhost pts/0    oracle  CREATE SEQUENCE           0 CREATE SEQUENCE HR.EMPLOYEES_SEQ START WITH 207 INCREMENT BY 1                   HR            EMPLOYEES_SEQ            CREATE SEQUENCE                              9
+  2026-07-07T08:45:31.514Z Standard           5 SYS        localhost pts/0    oracle  CREATE SEQUENCE           0 CREATE SEQUENCE HR.DEPARTMENTS_SEQ START WITH 280 INCREMENT BY 10                HR            DEPARTMENTS_SEQ          CREATE SEQUENCE                             10
+  2026-07-07T08:45:31.515Z Standard           5 SYS        localhost pts/0    oracle  CREATE SEQUENCE           0 CREATE SEQUENCE HR.LOCATIONS_SEQ START WITH 3300 INCREMENT BY 100                HR            LOCATIONS_SEQ            CREATE SEQUENCE                             11
+  2026-07-07T08:45:31.519Z Standard           5 SYS        localhost pts/0    oracle  LOGOFF                    0                                                                                                                         LOGOFF                                      12
+  2026-07-07T08:45:31.520Z Standard           6 SYS        localhost pts/0    oracle  LOGON                     0                                                                                                                         LOGON           SYSDBA                      13
+  2026-07-07T08:45:31.521Z Standard           6 SYS        localhost pts/0    oracle  CREATE TABLE              0 CREATE TABLE SCOTT.DEPT (
          DEPTNO NUMBER(2) PRIMARY KEY,
          DNAME VARC SCOTT         DEPT                     CREATE TABLE                                14
                                                                                                                   HAR2(14),
@@ -1184,7 +1142,7 @@ SQL [115/387]> SELECT * FROM unified_audit_trail WHERE rownum < 30;
   
   EVENT_TIMESTAMP          AUDIT_TYPE SESSIONID DBUSERNAME USERHOST  TERMINAL OS_USER ACTION_NAME     RETURN_CODE SQL_TEXT                                                                         OBJECT_SCHEMA OBJECT_NAME              STATEMENT_TYPE  SYSTEM_PRIVILEGE_USED ENTRY_ID
   ------------------------ ---------- --------- ---------- --------- -------- ------- --------------- ----------- -------------------------------------------------------------------------------- ------------- ------------------------ --------------- --------------------- --------
-  2026-07-07T07:15:24.013Z Standard           6 SYS        localhost pts/0    oracle  CREATE TABLE              0 CREATE TABLE SCOTT.EMP (
+  2026-07-07T08:45:31.521Z Standard           6 SYS        localhost pts/0    oracle  CREATE TABLE              0 CREATE TABLE SCOTT.EMP (
          EMPNO NUMBER(4) PRIMARY KEY,
          ENAME VARCHA SCOTT         EMP                      CREATE TABLE                                15
                                                                                                                   R2(10),
@@ -1196,22 +1154,22 @@ SQL [115/387]> SELECT * FROM unified_audit_trail WHERE rownum < 30;
          COMM NUMBER(7,2),
          DEPTNO NUMBER(2)
        )                                                                                           
-  2026-07-07T07:15:24.014Z Standard           6 SYS        localhost pts/0    oracle  CREATE TABLE              0 CREATE TABLE SCOTT.BONUS (
+  2026-07-07T08:45:31.521Z Standard           6 SYS        localhost pts/0    oracle  CREATE TABLE              0 CREATE TABLE SCOTT.BONUS (
          ENAME VARCHAR2(10),
          JOB VARCHAR2(9),
      SCOTT         BONUS                    CREATE TABLE                                16
                                                                                                                        SAL NUMBER,
          COMM NUMBER
        )                                                                                                                            
-  2026-07-07T07:15:24.014Z Standard           6 SYS        localhost pts/0    oracle  CREATE TABLE              0 CREATE TABLE SCOTT.SALGRADE (
+  2026-07-07T08:45:31.522Z Standard           6 SYS        localhost pts/0    oracle  CREATE TABLE              0 CREATE TABLE SCOTT.SALGRADE (
          GRADE NUMBER,
          LOSAL NUMBER,
          H SCOTT         SALGRADE                 CREATE TABLE                                17
                                                                                                                   ISAL NUMBER
        )                                                                                                                                                    
-  2026-07-07T07:15:24.016Z Standard           6 SYS        localhost pts/0    oracle  LOGOFF                    0                                                                                                                         LOGOFF                                      18
-  2026-07-07T07:15:24.017Z Standard           7 SYS        localhost pts/0    oracle  LOGON                     0                                                                                                                         LOGON           SYSDBA                      19
-  2026-07-07T07:15:24.020Z Standard           7 SYS        localhost pts/0    oracle  CREATE TABLE              0 CREATE TABLE FCUBSLIVE.STTM_CUSTOMER (
+  2026-07-07T08:45:31.525Z Standard           6 SYS        localhost pts/0    oracle  LOGOFF                    0                                                                                                                         LOGOFF                                      18
+  2026-07-07T08:45:31.525Z Standard           7 SYS        localhost pts/0    oracle  LOGON                     0                                                                                                                         LOGON           SYSDBA                      19
+  2026-07-07T08:45:31.527Z Standard           7 SYS        localhost pts/0    oracle  CREATE TABLE              0 CREATE TABLE FCUBSLIVE.STTM_CUSTOMER (
        CUSTOMER_NO VARCHAR2(20) NOT NULL,
     FCUBSLIVE     STTM_CUSTOMER            CREATE TABLE                                20
                                                                                                                       CUSTOMER_NAME1 VARCHAR2(105),
@@ -1299,7 +1257,7 @@ SQL [115/387]> SELECT * FROM unified_audit_trail WHERE rownum < 30;
        FX_CUST_CLEAN_RISK_LIMIT NUMBER,
        FX_NETTING_CUSTOMER VARCHAR2(20),
                                                                                          
-  2026-07-07T07:15:24.023Z Standard           7 SYS        localhost pts/0    oracle  CREATE TABLE              0 CREATE TABLE FCUBSLIVE.STTM_CUST_ACCOUNT (
+  2026-07-07T08:45:31.537Z Standard           7 SYS        localhost pts/0    oracle  CREATE TABLE              0 CREATE TABLE FCUBSLIVE.STTM_CUST_ACCOUNT (
        CUST_AC_NO VARCHAR2(20) NOT NULL FCUBSLIVE     STTM_CUST_ACCOUNT        CREATE TABLE                                21
                                                                                                                   ,
        BRANCH_CODE VARCHAR2(3) NOT NULL,
@@ -1385,7 +1343,7 @@ SQL [115/387]> SELECT * FROM unified_audit_trail WHERE rownum < 30;
        AC_SET_CLOSE_DATE DATE,
        AC_STMT_CYCLE CHAR(1),
        AC_STMT                                                                                      
-  2026-07-07T07:15:24.023Z Standard           7 SYS        localhost pts/0    oracle  CREATE TABLE              0 CREATE TABLE FCUBSLIVE.STTB_ACCOUNT (
+  2026-07-07T08:45:31.538Z Standard           7 SYS        localhost pts/0    oracle  CREATE TABLE              0 CREATE TABLE FCUBSLIVE.STTB_ACCOUNT (
        AC_GL_NO VARCHAR2(20) NOT NULL,
         FCUBSLIVE     STTB_ACCOUNT             CREATE TABLE                                22
                                                                                                                   BRANCH_CODE VARCHAR2(3) NOT NULL,
@@ -1426,7 +1384,7 @@ SQL [115/387]> SELECT * FROM unified_audit_trail WHERE rownum < 30;
        PKEY VARCHAR2(20),
        RECON_TYPE CHAR(1)
      )                                                                                            
-  2026-07-07T07:15:24.024Z Standard           7 SYS        localhost pts/0    oracle  CREATE TABLE              0 CREATE TABLE FCUBSLIVE.STTM_KYC_MASTER (
+  2026-07-07T08:45:31.538Z Standard           7 SYS        localhost pts/0    oracle  CREATE TABLE              0 CREATE TABLE FCUBSLIVE.STTM_KYC_MASTER (
        KYC_REF_NO VARCHAR2(16) NOT NULL,
    FCUBSLIVE     STTM_KYC_MASTER          CREATE TABLE                                23
                                                                                                                        KYC_CUST_TYPE VARCHAR2(1),
@@ -1444,7 +1402,7 @@ SQL [115/387]> SELECT * FROM unified_audit_trail WHERE rownum < 30;
        MOD_NO NUMBER(4),
        ONCE_AUTH VARCHAR2(1)
      )                                                                                           
-  2026-07-07T07:15:24.024Z Standard           7 SYS        localhost pts/0    oracle  CREATE TABLE              0 CREATE TABLE FCUBSLIVE.STTM_KYC_RETAIL (
+  2026-07-07T08:45:31.539Z Standard           7 SYS        localhost pts/0    oracle  CREATE TABLE              0 CREATE TABLE FCUBSLIVE.STTM_KYC_RETAIL (
        KYC_REF_NO VARCHAR2(16) NOT NULL,
    FCUBSLIVE     STTM_KYC_RETAIL          CREATE TABLE                                24
                                                                                                                        NATIONALITY VARCHAR2(3),
@@ -1518,7 +1476,7 @@ SQL [115/387]> SELECT * FROM unified_audit_trail WHERE rownum < 30;
        VST_US_PREV VARCH                                                                                      
                                                                                                                   AR2(1)
      )                                                                                                                                                           
-  2026-07-07T07:15:24.025Z Standard           7 SYS        localhost pts/0    oracle  CREATE TABLE              0 CREATE TABLE FCUBSLIVE.SMTB_USER (
+  2026-07-07T08:45:31.543Z Standard           7 SYS        localhost pts/0    oracle  CREATE TABLE              0 CREATE TABLE FCUBSLIVE.SMTB_USER (
        USER_ID VARCHAR2(12) NOT NULL,
        USER FCUBSLIVE     SMTB_USER                CREATE TABLE                                25
                                                                                                                   _NAME VARCHAR2(35),
@@ -1609,7 +1567,7 @@ SQL [115/387]> SELECT * FROM unified_audit_trail WHERE rownum < 30;
        USER_FAX VARCHAR2(20),
        USER_ID_BRN VARCHAR2(20),
        USER_MAN                                                                                      
-  2026-07-07T07:15:24.026Z Standard           7 SYS        localhost pts/0    oracle  CREATE TABLE              0 CREATE TABLE FCUBSLIVE.ACTB_HISTORY (
+  2026-07-07T08:45:31.543Z Standard           7 SYS        localhost pts/0    oracle  CREATE TABLE              0 CREATE TABLE FCUBSLIVE.ACTB_HISTORY (
        AC_NO VARCHAR2(20) NOT NULL,
        AC_ FCUBSLIVE     ACTB_HISTORY             CREATE TABLE                                26
                                                                                                                   BRANCH VARCHAR2(3),
@@ -1674,7 +1632,7 @@ SQL [115/387]> SELECT * FROM unified_audit_trail WHERE rownum < 30;
        TXN_INIT_DATE DATE,
        TYPE CHAR(1)
      )                                                                                          
-  2026-07-07T07:15:24.026Z Standard           7 SYS        localhost pts/0    oracle  CREATE TABLE              0 CREATE TABLE FCUBSLIVE.ACTB_ACCBAL_HISTORY (
+  2026-07-07T08:45:31.544Z Standard           7 SYS        localhost pts/0    oracle  CREATE TABLE              0 CREATE TABLE FCUBSLIVE.ACTB_ACCBAL_HISTORY (
        ACCOUNT VARCHAR2(20) NOT NULL, FCUBSLIVE     ACTB_ACCBAL_HISTORY      CREATE TABLE                                27
                                                                                                                   
        BRANCH_CODE VARCHAR2(3),
@@ -1697,7 +1655,7 @@ SQL [115/387]> SELECT * FROM unified_audit_trail WHERE rownum < 30;
                                                                                                                       LCY_CR_TUR NUMBER(22,3),
        LCY_DR_TUR NUMBER(22,3)
      )                                                                                                        
-  2026-07-07T07:15:24.031Z Standard           7 SYS        localhost pts/0    oracle  CREATE TABLE              0 CREATE TABLE FCUBSLIVE.CLTB_ACCOUNT_APPS_MASTER (
+  2026-07-07T08:45:31.545Z Standard           7 SYS        localhost pts/0    oracle  CREATE TABLE              0 CREATE TABLE FCUBSLIVE.CLTB_ACCOUNT_APPS_MASTER (
        ACCOUNT_NUMBER VARCHAR2(2 FCUBSLIVE     CLTB_ACCOUNT_APPS_MASTER CREATE TABLE                                28
                                                                                                                   0) NOT NULL,
        BRANCH_CODE VARCHAR2(3),
@@ -1783,7 +1741,7 @@ SQL [115/387]> SELECT * FROM unified_audit_trail WHERE rownum < 30;
   
   EVENT_TIMESTAMP          AUDIT_TYPE SESSIONID DBUSERNAME USERHOST  TERMINAL OS_USER ACTION_NAME     RETURN_CODE SQL_TEXT                                                                         OBJECT_SCHEMA OBJECT_NAME              STATEMENT_TYPE  SYSTEM_PRIVILEGE_USED ENTRY_ID
   ------------------------ ---------- --------- ---------- --------- -------- ------- --------------- ----------- -------------------------------------------------------------------------------- ------------- ------------------------ --------------- --------------------- --------
-  2026-07-07T07:15:24.032Z Standard           7 SYS        localhost pts/0    oracle  CREATE TABLE              0 CREATE TABLE FCUBSLIVE.CLTB_ACCOUNT_SCHEDULES (
+  2026-07-07T08:45:31.546Z Standard           7 SYS        localhost pts/0    oracle  CREATE TABLE              0 CREATE TABLE FCUBSLIVE.CLTB_ACCOUNT_SCHEDULES (
        ACCOUNT_NUMBER VARCHAR2(20) FCUBSLIVE     CLTB_ACCOUNT_SCHEDULES   CREATE TABLE                                29
                                                                                                                    NOT NULL,
        BRANCH_CODE VARCHAR2(3),
@@ -2298,7 +2256,7 @@ SQL [183/387]> SELECT * FROM v$dataguard_status WHERE rownum < 20;
   
   FACILITY SEVERITY      DEST_ID       CALLOUT ERROR_CODE CONNECTION MESSAGE                                       TIMESTAMP               
   -------- ------------- ------------- ------- ---------- ---------- --------------------------------------------- ------------------------
-         1 Log Transport CONFIGURATION STATIC           0            Configuration DG_CONFIG (MAXIMUM PERFORMANCE) 2026-07-07T07:15:24.542Z
+         1 Log Transport CONFIGURATION STATIC           0            Configuration DG_CONFIG (MAXIMUM PERFORMANCE) 2026-07-07T08:45:32.028Z
   
   1 row selected.
 
@@ -2306,237 +2264,237 @@ SQL [184/387]> SELECT * FROM dba_outstanding_alerts;
   
   SEQUENCE_ID REASON_ID         SEVERITY OBJECT_TYPE CREATION_TIME            MESSAGE                                                               
   ----------- ----------------- -------- ----------- ------------------------ ----------------------------------------------------------------------
-           21 DDL_ON_SYS_OBJECT HIGH     Security    2026-07-07T07:15:23.980Z DDL (CREATE TABLE) targeted SYS-owned object REGIONS                  
-           22 DDL_ON_SYS_OBJECT HIGH     Security    2026-07-07T07:15:23.981Z DDL (CREATE TABLE) targeted SYS-owned object COUNTRIES                
-           23 DDL_ON_SYS_OBJECT HIGH     Security    2026-07-07T07:15:23.982Z DDL (CREATE TABLE) targeted SYS-owned object LOCATIONS                
-           24 DDL_ON_SYS_OBJECT HIGH     Security    2026-07-07T07:15:23.983Z DDL (CREATE TABLE) targeted SYS-owned object DEPARTMENTS              
-           25 DDL_ON_SYS_OBJECT HIGH     Security    2026-07-07T07:15:23.984Z DDL (CREATE TABLE) targeted SYS-owned object JOBS                     
-           26 DDL_ON_SYS_OBJECT HIGH     Security    2026-07-07T07:15:23.984Z DDL (CREATE TABLE) targeted SYS-owned object EMPLOYEES                
-           27 DDL_ON_SYS_OBJECT HIGH     Security    2026-07-07T07:15:23.985Z DDL (CREATE TABLE) targeted SYS-owned object JOB_HISTORY              
-           28 DDL_ON_SYS_OBJECT HIGH     Security    2026-07-07T07:15:24.006Z DDL (CREATE SEQUENCE) targeted SYS-owned object EMPLOYEES_SEQ         
-           29 DDL_ON_SYS_OBJECT HIGH     Security    2026-07-07T07:15:24.007Z DDL (CREATE SEQUENCE) targeted SYS-owned object DEPARTMENTS_SEQ       
-           30 DDL_ON_SYS_OBJECT HIGH     Security    2026-07-07T07:15:24.007Z DDL (CREATE SEQUENCE) targeted SYS-owned object LOCATIONS_SEQ         
-           31 DDL_ON_SYS_OBJECT HIGH     Security    2026-07-07T07:15:24.013Z DDL (CREATE TABLE) targeted SYS-owned object DEPT                     
-           32 DDL_ON_SYS_OBJECT HIGH     Security    2026-07-07T07:15:24.013Z DDL (CREATE TABLE) targeted SYS-owned object EMP                      
-           33 DDL_ON_SYS_OBJECT HIGH     Security    2026-07-07T07:15:24.014Z DDL (CREATE TABLE) targeted SYS-owned object BONUS                    
-           34 DDL_ON_SYS_OBJECT HIGH     Security    2026-07-07T07:15:24.014Z DDL (CREATE TABLE) targeted SYS-owned object SALGRADE                 
+           21 DDL_ON_SYS_OBJECT HIGH     Security    2026-07-07T08:45:31.477Z DDL (CREATE TABLE) targeted SYS-owned object REGIONS                  
+           22 DDL_ON_SYS_OBJECT HIGH     Security    2026-07-07T08:45:31.478Z DDL (CREATE TABLE) targeted SYS-owned object COUNTRIES                
+           23 DDL_ON_SYS_OBJECT HIGH     Security    2026-07-07T08:45:31.479Z DDL (CREATE TABLE) targeted SYS-owned object LOCATIONS                
+           24 DDL_ON_SYS_OBJECT HIGH     Security    2026-07-07T08:45:31.479Z DDL (CREATE TABLE) targeted SYS-owned object DEPARTMENTS              
+           25 DDL_ON_SYS_OBJECT HIGH     Security    2026-07-07T08:45:31.480Z DDL (CREATE TABLE) targeted SYS-owned object JOBS                     
+           26 DDL_ON_SYS_OBJECT HIGH     Security    2026-07-07T08:45:31.481Z DDL (CREATE TABLE) targeted SYS-owned object EMPLOYEES                
+           27 DDL_ON_SYS_OBJECT HIGH     Security    2026-07-07T08:45:31.484Z DDL (CREATE TABLE) targeted SYS-owned object JOB_HISTORY              
+           28 DDL_ON_SYS_OBJECT HIGH     Security    2026-07-07T08:45:31.514Z DDL (CREATE SEQUENCE) targeted SYS-owned object EMPLOYEES_SEQ         
+           29 DDL_ON_SYS_OBJECT HIGH     Security    2026-07-07T08:45:31.514Z DDL (CREATE SEQUENCE) targeted SYS-owned object DEPARTMENTS_SEQ       
+           30 DDL_ON_SYS_OBJECT HIGH     Security    2026-07-07T08:45:31.515Z DDL (CREATE SEQUENCE) targeted SYS-owned object LOCATIONS_SEQ         
+           31 DDL_ON_SYS_OBJECT HIGH     Security    2026-07-07T08:45:31.521Z DDL (CREATE TABLE) targeted SYS-owned object DEPT                     
+           32 DDL_ON_SYS_OBJECT HIGH     Security    2026-07-07T08:45:31.521Z DDL (CREATE TABLE) targeted SYS-owned object EMP                      
+           33 DDL_ON_SYS_OBJECT HIGH     Security    2026-07-07T08:45:31.521Z DDL (CREATE TABLE) targeted SYS-owned object BONUS                    
+           34 DDL_ON_SYS_OBJECT HIGH     Security    2026-07-07T08:45:31.522Z DDL (CREATE TABLE) targeted SYS-owned object SALGRADE                 
   
   SEQUENCE_ID REASON_ID         SEVERITY OBJECT_TYPE CREATION_TIME            MESSAGE                                                               
   ----------- ----------------- -------- ----------- ------------------------ ----------------------------------------------------------------------
-           35 DDL_ON_SYS_OBJECT HIGH     Security    2026-07-07T07:15:24.020Z DDL (CREATE TABLE) targeted SYS-owned object STTM_CUSTOMER            
-           36 DDL_ON_SYS_OBJECT HIGH     Security    2026-07-07T07:15:24.023Z DDL (CREATE TABLE) targeted SYS-owned object STTM_CUST_ACCOUNT        
-           37 DDL_ON_SYS_OBJECT HIGH     Security    2026-07-07T07:15:24.024Z DDL (CREATE TABLE) targeted SYS-owned object STTB_ACCOUNT             
-           38 DDL_ON_SYS_OBJECT HIGH     Security    2026-07-07T07:15:24.024Z DDL (CREATE TABLE) targeted SYS-owned object STTM_KYC_MASTER          
-           39 DDL_ON_SYS_OBJECT HIGH     Security    2026-07-07T07:15:24.024Z DDL (CREATE TABLE) targeted SYS-owned object STTM_KYC_RETAIL          
-           40 DDL_ON_SYS_OBJECT HIGH     Security    2026-07-07T07:15:24.025Z DDL (CREATE TABLE) targeted SYS-owned object SMTB_USER                
-           41 DDL_ON_SYS_OBJECT HIGH     Security    2026-07-07T07:15:24.026Z DDL (CREATE TABLE) targeted SYS-owned object ACTB_HISTORY             
-           42 DDL_ON_SYS_OBJECT HIGH     Security    2026-07-07T07:15:24.026Z DDL (CREATE TABLE) targeted SYS-owned object ACTB_ACCBAL_HISTORY      
-           43 DDL_ON_SYS_OBJECT HIGH     Security    2026-07-07T07:15:24.031Z DDL (CREATE TABLE) targeted SYS-owned object CLTB_ACCOUNT_APPS_MASTER 
-           44 DDL_ON_SYS_OBJECT HIGH     Security    2026-07-07T07:15:24.032Z DDL (CREATE TABLE) targeted SYS-owned object CLTB_ACCOUNT_SCHEDULES   
-           45 DDL_ON_SYS_OBJECT HIGH     Security    2026-07-07T07:15:24.032Z DDL (CREATE TABLE) targeted SYS-owned object CYTB_RATES_HISTORY       
-           46 DDL_ON_SYS_OBJECT HIGH     Security    2026-07-07T07:15:24.034Z DDL (CREATE TABLE) targeted SYS-owned object DETB_RTL_TELLER          
-           47 DDL_ON_SYS_OBJECT HIGH     Security    2026-07-07T07:15:24.034Z DDL (CREATE TABLE) targeted SYS-owned object FBTB_TILL_TXN_DETAIL_HIST
-           48 SOD_BREACH        CRITICAL Security    2026-07-07T07:15:24.185Z SoD policy SOD_DBA_AUDITOR breached                                   
+           35 DDL_ON_SYS_OBJECT HIGH     Security    2026-07-07T08:45:31.527Z DDL (CREATE TABLE) targeted SYS-owned object STTM_CUSTOMER            
+           36 DDL_ON_SYS_OBJECT HIGH     Security    2026-07-07T08:45:31.537Z DDL (CREATE TABLE) targeted SYS-owned object STTM_CUST_ACCOUNT        
+           37 DDL_ON_SYS_OBJECT HIGH     Security    2026-07-07T08:45:31.538Z DDL (CREATE TABLE) targeted SYS-owned object STTB_ACCOUNT             
+           38 DDL_ON_SYS_OBJECT HIGH     Security    2026-07-07T08:45:31.538Z DDL (CREATE TABLE) targeted SYS-owned object STTM_KYC_MASTER          
+           39 DDL_ON_SYS_OBJECT HIGH     Security    2026-07-07T08:45:31.539Z DDL (CREATE TABLE) targeted SYS-owned object STTM_KYC_RETAIL          
+           40 DDL_ON_SYS_OBJECT HIGH     Security    2026-07-07T08:45:31.543Z DDL (CREATE TABLE) targeted SYS-owned object SMTB_USER                
+           41 DDL_ON_SYS_OBJECT HIGH     Security    2026-07-07T08:45:31.543Z DDL (CREATE TABLE) targeted SYS-owned object ACTB_HISTORY             
+           42 DDL_ON_SYS_OBJECT HIGH     Security    2026-07-07T08:45:31.544Z DDL (CREATE TABLE) targeted SYS-owned object ACTB_ACCBAL_HISTORY      
+           43 DDL_ON_SYS_OBJECT HIGH     Security    2026-07-07T08:45:31.545Z DDL (CREATE TABLE) targeted SYS-owned object CLTB_ACCOUNT_APPS_MASTER 
+           44 DDL_ON_SYS_OBJECT HIGH     Security    2026-07-07T08:45:31.546Z DDL (CREATE TABLE) targeted SYS-owned object CLTB_ACCOUNT_SCHEDULES   
+           45 DDL_ON_SYS_OBJECT HIGH     Security    2026-07-07T08:45:31.546Z DDL (CREATE TABLE) targeted SYS-owned object CYTB_RATES_HISTORY       
+           46 DDL_ON_SYS_OBJECT HIGH     Security    2026-07-07T08:45:31.547Z DDL (CREATE TABLE) targeted SYS-owned object DETB_RTL_TELLER          
+           47 DDL_ON_SYS_OBJECT HIGH     Security    2026-07-07T08:45:31.547Z DDL (CREATE TABLE) targeted SYS-owned object FBTB_TILL_TXN_DETAIL_HIST
+           48 SOD_BREACH        CRITICAL Security    2026-07-07T08:45:31.707Z SoD policy SOD_DBA_AUDITOR breached                                   
   
   SEQUENCE_ID REASON_ID         SEVERITY OBJECT_TYPE CREATION_TIME            MESSAGE                                                               
   ----------- ----------------- -------- ----------- ------------------------ ----------------------------------------------------------------------
-           49 SOD_BREACH        HIGH     Security    2026-07-07T07:15:24.185Z SoD policy SOD_USER_MGMT_VS_SECURITY breached                         
-           50 SOD_BREACH        CRITICAL Security    2026-07-07T07:15:24.185Z SoD policy SOD_DATA_EXFILTRATION breached                             
-           51 SOD_BREACH        CRITICAL Security    2026-07-07T07:15:24.185Z SoD policy SOD_GRANT_MONOPOLY breached                                
-           52 SOD_BREACH        MEDIUM   Security    2026-07-07T07:15:24.186Z SoD policy SOD_DML_VS_AUDIT breached                                  
-           53 SOD_BREACH        CRITICAL Security    2026-07-07T07:15:24.186Z SoD policy SOD_DBA_AUDITOR breached                                   
-           54 SOD_BREACH        HIGH     Security    2026-07-07T07:15:24.186Z SoD policy SOD_USER_MGMT_VS_SECURITY breached                         
-           55 SOD_BREACH        CRITICAL Security    2026-07-07T07:15:24.186Z SoD policy SOD_DATA_EXFILTRATION breached                             
-           56 SOD_BREACH        CRITICAL Security    2026-07-07T07:15:24.186Z SoD policy SOD_GRANT_MONOPOLY breached                                
-           57 SOD_BREACH        MEDIUM   Security    2026-07-07T07:15:24.186Z SoD policy SOD_DML_VS_AUDIT breached                                  
-           58 DDL_ON_SYS_OBJECT HIGH     Security    2026-07-07T07:15:24.186Z DDL (CREATE USER) targeted SYS-owned object APP_OWNER                 
-           59 SOD_BREACH        CRITICAL Security    2026-07-07T07:15:24.189Z SoD policy SOD_DBA_AUDITOR breached                                   
-           60 SOD_BREACH        HIGH     Security    2026-07-07T07:15:24.189Z SoD policy SOD_USER_MGMT_VS_SECURITY breached                         
-           61 SOD_BREACH        CRITICAL Security    2026-07-07T07:15:24.189Z SoD policy SOD_DATA_EXFILTRATION breached                             
-           62 SOD_BREACH        CRITICAL Security    2026-07-07T07:15:24.189Z SoD policy SOD_GRANT_MONOPOLY breached                                
+           49 SOD_BREACH        HIGH     Security    2026-07-07T08:45:31.708Z SoD policy SOD_USER_MGMT_VS_SECURITY breached                         
+           50 SOD_BREACH        CRITICAL Security    2026-07-07T08:45:31.708Z SoD policy SOD_DATA_EXFILTRATION breached                             
+           51 SOD_BREACH        CRITICAL Security    2026-07-07T08:45:31.708Z SoD policy SOD_GRANT_MONOPOLY breached                                
+           52 SOD_BREACH        MEDIUM   Security    2026-07-07T08:45:31.708Z SoD policy SOD_DML_VS_AUDIT breached                                  
+           53 SOD_BREACH        CRITICAL Security    2026-07-07T08:45:31.708Z SoD policy SOD_DBA_AUDITOR breached                                   
+           54 SOD_BREACH        HIGH     Security    2026-07-07T08:45:31.708Z SoD policy SOD_USER_MGMT_VS_SECURITY breached                         
+           55 SOD_BREACH        CRITICAL Security    2026-07-07T08:45:31.708Z SoD policy SOD_DATA_EXFILTRATION breached                             
+           56 SOD_BREACH        CRITICAL Security    2026-07-07T08:45:31.708Z SoD policy SOD_GRANT_MONOPOLY breached                                
+           57 SOD_BREACH        MEDIUM   Security    2026-07-07T08:45:31.708Z SoD policy SOD_DML_VS_AUDIT breached                                  
+           58 DDL_ON_SYS_OBJECT HIGH     Security    2026-07-07T08:45:31.711Z DDL (CREATE USER) targeted SYS-owned object APP_OWNER                 
+           59 SOD_BREACH        CRITICAL Security    2026-07-07T08:45:31.713Z SoD policy SOD_DBA_AUDITOR breached                                   
+           60 SOD_BREACH        HIGH     Security    2026-07-07T08:45:31.713Z SoD policy SOD_USER_MGMT_VS_SECURITY breached                         
+           61 SOD_BREACH        CRITICAL Security    2026-07-07T08:45:31.713Z SoD policy SOD_DATA_EXFILTRATION breached                             
+           62 SOD_BREACH        CRITICAL Security    2026-07-07T08:45:31.713Z SoD policy SOD_GRANT_MONOPOLY breached                                
   
   SEQUENCE_ID REASON_ID         SEVERITY OBJECT_TYPE CREATION_TIME            MESSAGE                                                               
   ----------- ----------------- -------- ----------- ------------------------ ----------------------------------------------------------------------
-           63 SOD_BREACH        MEDIUM   Security    2026-07-07T07:15:24.189Z SoD policy SOD_DML_VS_AUDIT breached                                  
-           64 SOD_BREACH        CRITICAL Security    2026-07-07T07:15:24.189Z SoD policy SOD_DBA_AUDITOR breached                                   
-           65 SOD_BREACH        HIGH     Security    2026-07-07T07:15:24.189Z SoD policy SOD_USER_MGMT_VS_SECURITY breached                         
-           66 SOD_BREACH        CRITICAL Security    2026-07-07T07:15:24.189Z SoD policy SOD_DATA_EXFILTRATION breached                             
-           67 SOD_BREACH        CRITICAL Security    2026-07-07T07:15:24.189Z SoD policy SOD_GRANT_MONOPOLY breached                                
-           68 SOD_BREACH        MEDIUM   Security    2026-07-07T07:15:24.189Z SoD policy SOD_DML_VS_AUDIT breached                                  
-           69 SOD_BREACH        CRITICAL Security    2026-07-07T07:15:24.321Z SoD policy SOD_DBA_AUDITOR breached                                   
-           70 SOD_BREACH        HIGH     Security    2026-07-07T07:15:24.321Z SoD policy SOD_USER_MGMT_VS_SECURITY breached                         
-           71 SOD_BREACH        CRITICAL Security    2026-07-07T07:15:24.321Z SoD policy SOD_DATA_EXFILTRATION breached                             
-           72 SOD_BREACH        CRITICAL Security    2026-07-07T07:15:24.321Z SoD policy SOD_GRANT_MONOPOLY breached                                
-           73 SOD_BREACH        MEDIUM   Security    2026-07-07T07:15:24.321Z SoD policy SOD_DML_VS_AUDIT breached                                  
-           74 SOD_BREACH        CRITICAL Security    2026-07-07T07:15:24.321Z SoD policy SOD_DBA_AUDITOR breached                                   
-           75 SOD_BREACH        HIGH     Security    2026-07-07T07:15:24.321Z SoD policy SOD_USER_MGMT_VS_SECURITY breached                         
-           76 SOD_BREACH        CRITICAL Security    2026-07-07T07:15:24.321Z SoD policy SOD_DATA_EXFILTRATION breached                             
+           63 SOD_BREACH        MEDIUM   Security    2026-07-07T08:45:31.713Z SoD policy SOD_DML_VS_AUDIT breached                                  
+           64 SOD_BREACH        CRITICAL Security    2026-07-07T08:45:31.713Z SoD policy SOD_DBA_AUDITOR breached                                   
+           65 SOD_BREACH        HIGH     Security    2026-07-07T08:45:31.713Z SoD policy SOD_USER_MGMT_VS_SECURITY breached                         
+           66 SOD_BREACH        CRITICAL Security    2026-07-07T08:45:31.713Z SoD policy SOD_DATA_EXFILTRATION breached                             
+           67 SOD_BREACH        CRITICAL Security    2026-07-07T08:45:31.713Z SoD policy SOD_GRANT_MONOPOLY breached                                
+           68 SOD_BREACH        MEDIUM   Security    2026-07-07T08:45:31.713Z SoD policy SOD_DML_VS_AUDIT breached                                  
+           69 SOD_BREACH        CRITICAL Security    2026-07-07T08:45:31.812Z SoD policy SOD_DBA_AUDITOR breached                                   
+           70 SOD_BREACH        HIGH     Security    2026-07-07T08:45:31.812Z SoD policy SOD_USER_MGMT_VS_SECURITY breached                         
+           71 SOD_BREACH        CRITICAL Security    2026-07-07T08:45:31.812Z SoD policy SOD_DATA_EXFILTRATION breached                             
+           72 SOD_BREACH        CRITICAL Security    2026-07-07T08:45:31.812Z SoD policy SOD_GRANT_MONOPOLY breached                                
+           73 SOD_BREACH        MEDIUM   Security    2026-07-07T08:45:31.812Z SoD policy SOD_DML_VS_AUDIT breached                                  
+           74 SOD_BREACH        CRITICAL Security    2026-07-07T08:45:31.812Z SoD policy SOD_DBA_AUDITOR breached                                   
+           75 SOD_BREACH        HIGH     Security    2026-07-07T08:45:31.812Z SoD policy SOD_USER_MGMT_VS_SECURITY breached                         
+           76 SOD_BREACH        CRITICAL Security    2026-07-07T08:45:31.812Z SoD policy SOD_DATA_EXFILTRATION breached                             
   
   SEQUENCE_ID REASON_ID         SEVERITY OBJECT_TYPE CREATION_TIME            MESSAGE                                                               
   ----------- ----------------- -------- ----------- ------------------------ ----------------------------------------------------------------------
-           77 SOD_BREACH        CRITICAL Security    2026-07-07T07:15:24.321Z SoD policy SOD_GRANT_MONOPOLY breached                                
-           78 SOD_BREACH        MEDIUM   Security    2026-07-07T07:15:24.321Z SoD policy SOD_DML_VS_AUDIT breached                                  
-           79 DDL_ON_SYS_OBJECT HIGH     Security    2026-07-07T07:15:24.321Z DDL (CREATE USER) targeted SYS-owned object APP_USER                  
-           80 SOD_BREACH        CRITICAL Security    2026-07-07T07:15:24.323Z SoD policy SOD_DBA_AUDITOR breached                                   
-           81 SOD_BREACH        HIGH     Security    2026-07-07T07:15:24.323Z SoD policy SOD_USER_MGMT_VS_SECURITY breached                         
-           82 SOD_BREACH        CRITICAL Security    2026-07-07T07:15:24.323Z SoD policy SOD_DATA_EXFILTRATION breached                             
-           83 SOD_BREACH        CRITICAL Security    2026-07-07T07:15:24.323Z SoD policy SOD_GRANT_MONOPOLY breached                                
-           84 SOD_BREACH        MEDIUM   Security    2026-07-07T07:15:24.323Z SoD policy SOD_DML_VS_AUDIT breached                                  
-           85 SOD_BREACH        CRITICAL Security    2026-07-07T07:15:24.323Z SoD policy SOD_DBA_AUDITOR breached                                   
-           86 SOD_BREACH        HIGH     Security    2026-07-07T07:15:24.323Z SoD policy SOD_USER_MGMT_VS_SECURITY breached                         
-           87 SOD_BREACH        CRITICAL Security    2026-07-07T07:15:24.323Z SoD policy SOD_DATA_EXFILTRATION breached                             
-           88 SOD_BREACH        CRITICAL Security    2026-07-07T07:15:24.323Z SoD policy SOD_GRANT_MONOPOLY breached                                
-           89 SOD_BREACH        MEDIUM   Security    2026-07-07T07:15:24.323Z SoD policy SOD_DML_VS_AUDIT breached                                  
-           90 SOD_BREACH        CRITICAL Security    2026-07-07T07:15:24.426Z SoD policy SOD_DBA_AUDITOR breached                                   
+           77 SOD_BREACH        CRITICAL Security    2026-07-07T08:45:31.812Z SoD policy SOD_GRANT_MONOPOLY breached                                
+           78 SOD_BREACH        MEDIUM   Security    2026-07-07T08:45:31.812Z SoD policy SOD_DML_VS_AUDIT breached                                  
+           79 DDL_ON_SYS_OBJECT HIGH     Security    2026-07-07T08:45:31.813Z DDL (CREATE USER) targeted SYS-owned object APP_USER                  
+           80 SOD_BREACH        CRITICAL Security    2026-07-07T08:45:31.815Z SoD policy SOD_DBA_AUDITOR breached                                   
+           81 SOD_BREACH        HIGH     Security    2026-07-07T08:45:31.815Z SoD policy SOD_USER_MGMT_VS_SECURITY breached                         
+           82 SOD_BREACH        CRITICAL Security    2026-07-07T08:45:31.815Z SoD policy SOD_DATA_EXFILTRATION breached                             
+           83 SOD_BREACH        CRITICAL Security    2026-07-07T08:45:31.815Z SoD policy SOD_GRANT_MONOPOLY breached                                
+           84 SOD_BREACH        MEDIUM   Security    2026-07-07T08:45:31.815Z SoD policy SOD_DML_VS_AUDIT breached                                  
+           85 SOD_BREACH        CRITICAL Security    2026-07-07T08:45:31.815Z SoD policy SOD_DBA_AUDITOR breached                                   
+           86 SOD_BREACH        HIGH     Security    2026-07-07T08:45:31.815Z SoD policy SOD_USER_MGMT_VS_SECURITY breached                         
+           87 SOD_BREACH        CRITICAL Security    2026-07-07T08:45:31.815Z SoD policy SOD_DATA_EXFILTRATION breached                             
+           88 SOD_BREACH        CRITICAL Security    2026-07-07T08:45:31.815Z SoD policy SOD_GRANT_MONOPOLY breached                                
+           89 SOD_BREACH        MEDIUM   Security    2026-07-07T08:45:31.815Z SoD policy SOD_DML_VS_AUDIT breached                                  
+           90 SOD_BREACH        CRITICAL Security    2026-07-07T08:45:31.912Z SoD policy SOD_DBA_AUDITOR breached                                   
   
   SEQUENCE_ID REASON_ID         SEVERITY OBJECT_TYPE CREATION_TIME            MESSAGE                                                               
   ----------- ----------------- -------- ----------- ------------------------ ----------------------------------------------------------------------
-           91 SOD_BREACH        HIGH     Security    2026-07-07T07:15:24.426Z SoD policy SOD_USER_MGMT_VS_SECURITY breached                         
-           92 SOD_BREACH        CRITICAL Security    2026-07-07T07:15:24.426Z SoD policy SOD_DATA_EXFILTRATION breached                             
-           93 SOD_BREACH        CRITICAL Security    2026-07-07T07:15:24.426Z SoD policy SOD_GRANT_MONOPOLY breached                                
-           94 SOD_BREACH        MEDIUM   Security    2026-07-07T07:15:24.426Z SoD policy SOD_DML_VS_AUDIT breached                                  
-           95 SOD_BREACH        CRITICAL Security    2026-07-07T07:15:24.426Z SoD policy SOD_DBA_AUDITOR breached                                   
-           96 SOD_BREACH        HIGH     Security    2026-07-07T07:15:24.426Z SoD policy SOD_USER_MGMT_VS_SECURITY breached                         
-           97 SOD_BREACH        CRITICAL Security    2026-07-07T07:15:24.426Z SoD policy SOD_DATA_EXFILTRATION breached                             
-           98 SOD_BREACH        CRITICAL Security    2026-07-07T07:15:24.426Z SoD policy SOD_GRANT_MONOPOLY breached                                
-           99 SOD_BREACH        MEDIUM   Security    2026-07-07T07:15:24.426Z SoD policy SOD_DML_VS_AUDIT breached                                  
-          100 DDL_ON_SYS_OBJECT HIGH     Security    2026-07-07T07:15:24.426Z DDL (CREATE USER) targeted SYS-owned object APP_READONLY              
-          101 SOD_BREACH        CRITICAL Security    2026-07-07T07:15:24.427Z SoD policy SOD_DBA_AUDITOR breached                                   
-          102 SOD_BREACH        HIGH     Security    2026-07-07T07:15:24.427Z SoD policy SOD_USER_MGMT_VS_SECURITY breached                         
-          103 SOD_BREACH        CRITICAL Security    2026-07-07T07:15:24.427Z SoD policy SOD_DATA_EXFILTRATION breached                             
-          104 SOD_BREACH        CRITICAL Security    2026-07-07T07:15:24.427Z SoD policy SOD_GRANT_MONOPOLY breached                                
+           91 SOD_BREACH        HIGH     Security    2026-07-07T08:45:31.912Z SoD policy SOD_USER_MGMT_VS_SECURITY breached                         
+           92 SOD_BREACH        CRITICAL Security    2026-07-07T08:45:31.912Z SoD policy SOD_DATA_EXFILTRATION breached                             
+           93 SOD_BREACH        CRITICAL Security    2026-07-07T08:45:31.912Z SoD policy SOD_GRANT_MONOPOLY breached                                
+           94 SOD_BREACH        MEDIUM   Security    2026-07-07T08:45:31.912Z SoD policy SOD_DML_VS_AUDIT breached                                  
+           95 SOD_BREACH        CRITICAL Security    2026-07-07T08:45:31.912Z SoD policy SOD_DBA_AUDITOR breached                                   
+           96 SOD_BREACH        HIGH     Security    2026-07-07T08:45:31.912Z SoD policy SOD_USER_MGMT_VS_SECURITY breached                         
+           97 SOD_BREACH        CRITICAL Security    2026-07-07T08:45:31.912Z SoD policy SOD_DATA_EXFILTRATION breached                             
+           98 SOD_BREACH        CRITICAL Security    2026-07-07T08:45:31.912Z SoD policy SOD_GRANT_MONOPOLY breached                                
+           99 SOD_BREACH        MEDIUM   Security    2026-07-07T08:45:31.912Z SoD policy SOD_DML_VS_AUDIT breached                                  
+          100 DDL_ON_SYS_OBJECT HIGH     Security    2026-07-07T08:45:31.912Z DDL (CREATE USER) targeted SYS-owned object APP_READONLY              
+          101 SOD_BREACH        CRITICAL Security    2026-07-07T08:45:31.913Z SoD policy SOD_DBA_AUDITOR breached                                   
+          102 SOD_BREACH        HIGH     Security    2026-07-07T08:45:31.913Z SoD policy SOD_USER_MGMT_VS_SECURITY breached                         
+          103 SOD_BREACH        CRITICAL Security    2026-07-07T08:45:31.913Z SoD policy SOD_DATA_EXFILTRATION breached                             
+          104 SOD_BREACH        CRITICAL Security    2026-07-07T08:45:31.913Z SoD policy SOD_GRANT_MONOPOLY breached                                
   
   SEQUENCE_ID REASON_ID         SEVERITY OBJECT_TYPE CREATION_TIME            MESSAGE                                                               
   ----------- ----------------- -------- ----------- ------------------------ ----------------------------------------------------------------------
-          105 SOD_BREACH        MEDIUM   Security    2026-07-07T07:15:24.427Z SoD policy SOD_DML_VS_AUDIT breached                                  
-          106 SOD_BREACH        CRITICAL Security    2026-07-07T07:15:24.427Z SoD policy SOD_DBA_AUDITOR breached                                   
-          107 SOD_BREACH        HIGH     Security    2026-07-07T07:15:24.427Z SoD policy SOD_USER_MGMT_VS_SECURITY breached                         
-          108 SOD_BREACH        CRITICAL Security    2026-07-07T07:15:24.427Z SoD policy SOD_DATA_EXFILTRATION breached                             
-          109 SOD_BREACH        CRITICAL Security    2026-07-07T07:15:24.427Z SoD policy SOD_GRANT_MONOPOLY breached                                
-          110 SOD_BREACH        MEDIUM   Security    2026-07-07T07:15:24.427Z SoD policy SOD_DML_VS_AUDIT breached                                  
-          111 DDL_ON_SYS_OBJECT HIGH     Security    2026-07-07T07:15:24.428Z DDL (CREATE ROLE) targeted SYS-owned object APP_ROLE                  
-          112 DDL_ON_SYS_OBJECT HIGH     Security    2026-07-07T07:15:24.428Z DDL (CREATE ROLE) targeted SYS-owned object APP_READONLY_ROLE         
-          113 SOD_BREACH        CRITICAL Security    2026-07-07T07:15:24.428Z SoD policy SOD_DBA_AUDITOR breached                                   
-          114 SOD_BREACH        HIGH     Security    2026-07-07T07:15:24.428Z SoD policy SOD_USER_MGMT_VS_SECURITY breached                         
-          115 SOD_BREACH        CRITICAL Security    2026-07-07T07:15:24.428Z SoD policy SOD_DATA_EXFILTRATION breached                             
-          116 SOD_BREACH        CRITICAL Security    2026-07-07T07:15:24.428Z SoD policy SOD_GRANT_MONOPOLY breached                                
-          117 SOD_BREACH        MEDIUM   Security    2026-07-07T07:15:24.428Z SoD policy SOD_DML_VS_AUDIT breached                                  
-          118 SOD_BREACH        CRITICAL Security    2026-07-07T07:15:24.428Z SoD policy SOD_DBA_AUDITOR breached                                   
+          105 SOD_BREACH        MEDIUM   Security    2026-07-07T08:45:31.913Z SoD policy SOD_DML_VS_AUDIT breached                                  
+          106 SOD_BREACH        CRITICAL Security    2026-07-07T08:45:31.913Z SoD policy SOD_DBA_AUDITOR breached                                   
+          107 SOD_BREACH        HIGH     Security    2026-07-07T08:45:31.913Z SoD policy SOD_USER_MGMT_VS_SECURITY breached                         
+          108 SOD_BREACH        CRITICAL Security    2026-07-07T08:45:31.913Z SoD policy SOD_DATA_EXFILTRATION breached                             
+          109 SOD_BREACH        CRITICAL Security    2026-07-07T08:45:31.913Z SoD policy SOD_GRANT_MONOPOLY breached                                
+          110 SOD_BREACH        MEDIUM   Security    2026-07-07T08:45:31.913Z SoD policy SOD_DML_VS_AUDIT breached                                  
+          111 DDL_ON_SYS_OBJECT HIGH     Security    2026-07-07T08:45:31.914Z DDL (CREATE ROLE) targeted SYS-owned object APP_ROLE                  
+          112 DDL_ON_SYS_OBJECT HIGH     Security    2026-07-07T08:45:31.914Z DDL (CREATE ROLE) targeted SYS-owned object APP_READONLY_ROLE         
+          113 SOD_BREACH        CRITICAL Security    2026-07-07T08:45:31.914Z SoD policy SOD_DBA_AUDITOR breached                                   
+          114 SOD_BREACH        HIGH     Security    2026-07-07T08:45:31.914Z SoD policy SOD_USER_MGMT_VS_SECURITY breached                         
+          115 SOD_BREACH        CRITICAL Security    2026-07-07T08:45:31.914Z SoD policy SOD_DATA_EXFILTRATION breached                             
+          116 SOD_BREACH        CRITICAL Security    2026-07-07T08:45:31.914Z SoD policy SOD_GRANT_MONOPOLY breached                                
+          117 SOD_BREACH        MEDIUM   Security    2026-07-07T08:45:31.914Z SoD policy SOD_DML_VS_AUDIT breached                                  
+          118 SOD_BREACH        CRITICAL Security    2026-07-07T08:45:31.914Z SoD policy SOD_DBA_AUDITOR breached                                   
   
   SEQUENCE_ID REASON_ID         SEVERITY OBJECT_TYPE CREATION_TIME            MESSAGE                                                               
   ----------- ----------------- -------- ----------- ------------------------ ----------------------------------------------------------------------
-          119 SOD_BREACH        HIGH     Security    2026-07-07T07:15:24.428Z SoD policy SOD_USER_MGMT_VS_SECURITY breached                         
-          120 SOD_BREACH        CRITICAL Security    2026-07-07T07:15:24.428Z SoD policy SOD_DATA_EXFILTRATION breached                             
-          121 SOD_BREACH        CRITICAL Security    2026-07-07T07:15:24.428Z SoD policy SOD_GRANT_MONOPOLY breached                                
-          122 SOD_BREACH        MEDIUM   Security    2026-07-07T07:15:24.428Z SoD policy SOD_DML_VS_AUDIT breached                                  
-          123 SOD_BREACH        CRITICAL Security    2026-07-07T07:15:24.429Z SoD policy SOD_DBA_AUDITOR breached                                   
-          124 SOD_BREACH        HIGH     Security    2026-07-07T07:15:24.429Z SoD policy SOD_USER_MGMT_VS_SECURITY breached                         
-          125 SOD_BREACH        CRITICAL Security    2026-07-07T07:15:24.429Z SoD policy SOD_DATA_EXFILTRATION breached                             
-          126 SOD_BREACH        CRITICAL Security    2026-07-07T07:15:24.429Z SoD policy SOD_GRANT_MONOPOLY breached                                
-          127 SOD_BREACH        MEDIUM   Security    2026-07-07T07:15:24.429Z SoD policy SOD_DML_VS_AUDIT breached                                  
-          128 SOD_BREACH        CRITICAL Security    2026-07-07T07:15:24.429Z SoD policy SOD_DBA_AUDITOR breached                                   
-          129 SOD_BREACH        HIGH     Security    2026-07-07T07:15:24.429Z SoD policy SOD_USER_MGMT_VS_SECURITY breached                         
-          130 SOD_BREACH        CRITICAL Security    2026-07-07T07:15:24.429Z SoD policy SOD_DATA_EXFILTRATION breached                             
-          131 SOD_BREACH        CRITICAL Security    2026-07-07T07:15:24.429Z SoD policy SOD_GRANT_MONOPOLY breached                                
-          132 SOD_BREACH        MEDIUM   Security    2026-07-07T07:15:24.429Z SoD policy SOD_DML_VS_AUDIT breached                                  
+          119 SOD_BREACH        HIGH     Security    2026-07-07T08:45:31.914Z SoD policy SOD_USER_MGMT_VS_SECURITY breached                         
+          120 SOD_BREACH        CRITICAL Security    2026-07-07T08:45:31.914Z SoD policy SOD_DATA_EXFILTRATION breached                             
+          121 SOD_BREACH        CRITICAL Security    2026-07-07T08:45:31.914Z SoD policy SOD_GRANT_MONOPOLY breached                                
+          122 SOD_BREACH        MEDIUM   Security    2026-07-07T08:45:31.914Z SoD policy SOD_DML_VS_AUDIT breached                                  
+          123 SOD_BREACH        CRITICAL Security    2026-07-07T08:45:31.915Z SoD policy SOD_DBA_AUDITOR breached                                   
+          124 SOD_BREACH        HIGH     Security    2026-07-07T08:45:31.915Z SoD policy SOD_USER_MGMT_VS_SECURITY breached                         
+          125 SOD_BREACH        CRITICAL Security    2026-07-07T08:45:31.915Z SoD policy SOD_DATA_EXFILTRATION breached                             
+          126 SOD_BREACH        CRITICAL Security    2026-07-07T08:45:31.915Z SoD policy SOD_GRANT_MONOPOLY breached                                
+          127 SOD_BREACH        MEDIUM   Security    2026-07-07T08:45:31.915Z SoD policy SOD_DML_VS_AUDIT breached                                  
+          128 SOD_BREACH        CRITICAL Security    2026-07-07T08:45:31.915Z SoD policy SOD_DBA_AUDITOR breached                                   
+          129 SOD_BREACH        HIGH     Security    2026-07-07T08:45:31.915Z SoD policy SOD_USER_MGMT_VS_SECURITY breached                         
+          130 SOD_BREACH        CRITICAL Security    2026-07-07T08:45:31.915Z SoD policy SOD_DATA_EXFILTRATION breached                             
+          131 SOD_BREACH        CRITICAL Security    2026-07-07T08:45:31.915Z SoD policy SOD_GRANT_MONOPOLY breached                                
+          132 SOD_BREACH        MEDIUM   Security    2026-07-07T08:45:31.915Z SoD policy SOD_DML_VS_AUDIT breached                                  
   
   SEQUENCE_ID REASON_ID         SEVERITY OBJECT_TYPE CREATION_TIME            MESSAGE                                                               
   ----------- ----------------- -------- ----------- ------------------------ ----------------------------------------------------------------------
-          133 SOD_BREACH        CRITICAL Security    2026-07-07T07:15:24.433Z SoD policy SOD_DBA_AUDITOR breached                                   
-          134 SOD_BREACH        HIGH     Security    2026-07-07T07:15:24.433Z SoD policy SOD_USER_MGMT_VS_SECURITY breached                         
-          135 SOD_BREACH        CRITICAL Security    2026-07-07T07:15:24.433Z SoD policy SOD_DATA_EXFILTRATION breached                             
-          136 SOD_BREACH        CRITICAL Security    2026-07-07T07:15:24.433Z SoD policy SOD_GRANT_MONOPOLY breached                                
-          137 SOD_BREACH        MEDIUM   Security    2026-07-07T07:15:24.433Z SoD policy SOD_DML_VS_AUDIT breached                                  
-          138 SOD_BREACH        CRITICAL Security    2026-07-07T07:15:24.433Z SoD policy SOD_DBA_AUDITOR breached                                   
-          139 SOD_BREACH        HIGH     Security    2026-07-07T07:15:24.433Z SoD policy SOD_USER_MGMT_VS_SECURITY breached                         
-          140 SOD_BREACH        CRITICAL Security    2026-07-07T07:15:24.433Z SoD policy SOD_DATA_EXFILTRATION breached                             
-          141 SOD_BREACH        CRITICAL Security    2026-07-07T07:15:24.433Z SoD policy SOD_GRANT_MONOPOLY breached                                
-          142 SOD_BREACH        MEDIUM   Security    2026-07-07T07:15:24.433Z SoD policy SOD_DML_VS_AUDIT breached                                  
-          143 SOD_BREACH        CRITICAL Security    2026-07-07T07:15:24.434Z SoD policy SOD_DBA_AUDITOR breached                                   
-          144 SOD_BREACH        HIGH     Security    2026-07-07T07:15:24.434Z SoD policy SOD_USER_MGMT_VS_SECURITY breached                         
-          145 SOD_BREACH        CRITICAL Security    2026-07-07T07:15:24.434Z SoD policy SOD_DATA_EXFILTRATION breached                             
-          146 SOD_BREACH        CRITICAL Security    2026-07-07T07:15:24.434Z SoD policy SOD_GRANT_MONOPOLY breached                                
+          133 SOD_BREACH        CRITICAL Security    2026-07-07T08:45:31.918Z SoD policy SOD_DBA_AUDITOR breached                                   
+          134 SOD_BREACH        HIGH     Security    2026-07-07T08:45:31.918Z SoD policy SOD_USER_MGMT_VS_SECURITY breached                         
+          135 SOD_BREACH        CRITICAL Security    2026-07-07T08:45:31.918Z SoD policy SOD_DATA_EXFILTRATION breached                             
+          136 SOD_BREACH        CRITICAL Security    2026-07-07T08:45:31.918Z SoD policy SOD_GRANT_MONOPOLY breached                                
+          137 SOD_BREACH        MEDIUM   Security    2026-07-07T08:45:31.918Z SoD policy SOD_DML_VS_AUDIT breached                                  
+          138 SOD_BREACH        CRITICAL Security    2026-07-07T08:45:31.918Z SoD policy SOD_DBA_AUDITOR breached                                   
+          139 SOD_BREACH        HIGH     Security    2026-07-07T08:45:31.918Z SoD policy SOD_USER_MGMT_VS_SECURITY breached                         
+          140 SOD_BREACH        CRITICAL Security    2026-07-07T08:45:31.918Z SoD policy SOD_DATA_EXFILTRATION breached                             
+          141 SOD_BREACH        CRITICAL Security    2026-07-07T08:45:31.918Z SoD policy SOD_GRANT_MONOPOLY breached                                
+          142 SOD_BREACH        MEDIUM   Security    2026-07-07T08:45:31.918Z SoD policy SOD_DML_VS_AUDIT breached                                  
+          143 SOD_BREACH        CRITICAL Security    2026-07-07T08:45:31.919Z SoD policy SOD_DBA_AUDITOR breached                                   
+          144 SOD_BREACH        HIGH     Security    2026-07-07T08:45:31.919Z SoD policy SOD_USER_MGMT_VS_SECURITY breached                         
+          145 SOD_BREACH        CRITICAL Security    2026-07-07T08:45:31.919Z SoD policy SOD_DATA_EXFILTRATION breached                             
+          146 SOD_BREACH        CRITICAL Security    2026-07-07T08:45:31.919Z SoD policy SOD_GRANT_MONOPOLY breached                                
   
   SEQUENCE_ID REASON_ID         SEVERITY OBJECT_TYPE CREATION_TIME            MESSAGE                                                               
   ----------- ----------------- -------- ----------- ------------------------ ----------------------------------------------------------------------
-          147 SOD_BREACH        MEDIUM   Security    2026-07-07T07:15:24.434Z SoD policy SOD_DML_VS_AUDIT breached                                  
-          148 SOD_BREACH        CRITICAL Security    2026-07-07T07:15:24.434Z SoD policy SOD_DBA_AUDITOR breached                                   
-          149 SOD_BREACH        HIGH     Security    2026-07-07T07:15:24.434Z SoD policy SOD_USER_MGMT_VS_SECURITY breached                         
-          150 SOD_BREACH        CRITICAL Security    2026-07-07T07:15:24.434Z SoD policy SOD_DATA_EXFILTRATION breached                             
-          151 SOD_BREACH        CRITICAL Security    2026-07-07T07:15:24.434Z SoD policy SOD_GRANT_MONOPOLY breached                                
-          152 SOD_BREACH        MEDIUM   Security    2026-07-07T07:15:24.434Z SoD policy SOD_DML_VS_AUDIT breached                                  
-          153 SOD_BREACH        CRITICAL Security    2026-07-07T07:15:24.434Z SoD policy SOD_DBA_AUDITOR breached                                   
-          154 SOD_BREACH        HIGH     Security    2026-07-07T07:15:24.434Z SoD policy SOD_USER_MGMT_VS_SECURITY breached                         
-          155 SOD_BREACH        CRITICAL Security    2026-07-07T07:15:24.434Z SoD policy SOD_DATA_EXFILTRATION breached                             
-          156 SOD_BREACH        CRITICAL Security    2026-07-07T07:15:24.434Z SoD policy SOD_GRANT_MONOPOLY breached                                
-          157 SOD_BREACH        MEDIUM   Security    2026-07-07T07:15:24.434Z SoD policy SOD_DML_VS_AUDIT breached                                  
-          158 SOD_BREACH        CRITICAL Security    2026-07-07T07:15:24.434Z SoD policy SOD_DBA_AUDITOR breached                                   
-          159 SOD_BREACH        HIGH     Security    2026-07-07T07:15:24.434Z SoD policy SOD_USER_MGMT_VS_SECURITY breached                         
-          160 SOD_BREACH        CRITICAL Security    2026-07-07T07:15:24.434Z SoD policy SOD_DATA_EXFILTRATION breached                             
+          147 SOD_BREACH        MEDIUM   Security    2026-07-07T08:45:31.919Z SoD policy SOD_DML_VS_AUDIT breached                                  
+          148 SOD_BREACH        CRITICAL Security    2026-07-07T08:45:31.919Z SoD policy SOD_DBA_AUDITOR breached                                   
+          149 SOD_BREACH        HIGH     Security    2026-07-07T08:45:31.919Z SoD policy SOD_USER_MGMT_VS_SECURITY breached                         
+          150 SOD_BREACH        CRITICAL Security    2026-07-07T08:45:31.919Z SoD policy SOD_DATA_EXFILTRATION breached                             
+          151 SOD_BREACH        CRITICAL Security    2026-07-07T08:45:31.919Z SoD policy SOD_GRANT_MONOPOLY breached                                
+          152 SOD_BREACH        MEDIUM   Security    2026-07-07T08:45:31.919Z SoD policy SOD_DML_VS_AUDIT breached                                  
+          153 SOD_BREACH        CRITICAL Security    2026-07-07T08:45:31.919Z SoD policy SOD_DBA_AUDITOR breached                                   
+          154 SOD_BREACH        HIGH     Security    2026-07-07T08:45:31.919Z SoD policy SOD_USER_MGMT_VS_SECURITY breached                         
+          155 SOD_BREACH        CRITICAL Security    2026-07-07T08:45:31.919Z SoD policy SOD_DATA_EXFILTRATION breached                             
+          156 SOD_BREACH        CRITICAL Security    2026-07-07T08:45:31.919Z SoD policy SOD_GRANT_MONOPOLY breached                                
+          157 SOD_BREACH        MEDIUM   Security    2026-07-07T08:45:31.919Z SoD policy SOD_DML_VS_AUDIT breached                                  
+          158 SOD_BREACH        CRITICAL Security    2026-07-07T08:45:31.919Z SoD policy SOD_DBA_AUDITOR breached                                   
+          159 SOD_BREACH        HIGH     Security    2026-07-07T08:45:31.919Z SoD policy SOD_USER_MGMT_VS_SECURITY breached                         
+          160 SOD_BREACH        CRITICAL Security    2026-07-07T08:45:31.919Z SoD policy SOD_DATA_EXFILTRATION breached                             
   
   SEQUENCE_ID REASON_ID         SEVERITY OBJECT_TYPE CREATION_TIME            MESSAGE                                                               
   ----------- ----------------- -------- ----------- ------------------------ ----------------------------------------------------------------------
-          161 SOD_BREACH        CRITICAL Security    2026-07-07T07:15:24.434Z SoD policy SOD_GRANT_MONOPOLY breached                                
-          162 SOD_BREACH        MEDIUM   Security    2026-07-07T07:15:24.434Z SoD policy SOD_DML_VS_AUDIT breached                                  
-          163 SOD_BREACH        CRITICAL Security    2026-07-07T07:15:24.435Z SoD policy SOD_DBA_AUDITOR breached                                   
-          164 SOD_BREACH        HIGH     Security    2026-07-07T07:15:24.435Z SoD policy SOD_USER_MGMT_VS_SECURITY breached                         
-          165 SOD_BREACH        CRITICAL Security    2026-07-07T07:15:24.435Z SoD policy SOD_DATA_EXFILTRATION breached                             
-          166 SOD_BREACH        CRITICAL Security    2026-07-07T07:15:24.435Z SoD policy SOD_GRANT_MONOPOLY breached                                
-          167 SOD_BREACH        MEDIUM   Security    2026-07-07T07:15:24.435Z SoD policy SOD_DML_VS_AUDIT breached                                  
-          168 SOD_BREACH        CRITICAL Security    2026-07-07T07:15:24.435Z SoD policy SOD_DBA_AUDITOR breached                                   
-          169 SOD_BREACH        HIGH     Security    2026-07-07T07:15:24.435Z SoD policy SOD_USER_MGMT_VS_SECURITY breached                         
-          170 SOD_BREACH        CRITICAL Security    2026-07-07T07:15:24.435Z SoD policy SOD_DATA_EXFILTRATION breached                             
-          171 SOD_BREACH        CRITICAL Security    2026-07-07T07:15:24.435Z SoD policy SOD_GRANT_MONOPOLY breached                                
-          172 SOD_BREACH        MEDIUM   Security    2026-07-07T07:15:24.435Z SoD policy SOD_DML_VS_AUDIT breached                                  
-          173 SOD_BREACH        CRITICAL Security    2026-07-07T07:15:24.435Z SoD policy SOD_DBA_AUDITOR breached                                   
-          174 SOD_BREACH        HIGH     Security    2026-07-07T07:15:24.435Z SoD policy SOD_USER_MGMT_VS_SECURITY breached                         
+          161 SOD_BREACH        CRITICAL Security    2026-07-07T08:45:31.919Z SoD policy SOD_GRANT_MONOPOLY breached                                
+          162 SOD_BREACH        MEDIUM   Security    2026-07-07T08:45:31.919Z SoD policy SOD_DML_VS_AUDIT breached                                  
+          163 SOD_BREACH        CRITICAL Security    2026-07-07T08:45:31.920Z SoD policy SOD_DBA_AUDITOR breached                                   
+          164 SOD_BREACH        HIGH     Security    2026-07-07T08:45:31.920Z SoD policy SOD_USER_MGMT_VS_SECURITY breached                         
+          165 SOD_BREACH        CRITICAL Security    2026-07-07T08:45:31.920Z SoD policy SOD_DATA_EXFILTRATION breached                             
+          166 SOD_BREACH        CRITICAL Security    2026-07-07T08:45:31.920Z SoD policy SOD_GRANT_MONOPOLY breached                                
+          167 SOD_BREACH        MEDIUM   Security    2026-07-07T08:45:31.920Z SoD policy SOD_DML_VS_AUDIT breached                                  
+          168 SOD_BREACH        CRITICAL Security    2026-07-07T08:45:31.920Z SoD policy SOD_DBA_AUDITOR breached                                   
+          169 SOD_BREACH        HIGH     Security    2026-07-07T08:45:31.920Z SoD policy SOD_USER_MGMT_VS_SECURITY breached                         
+          170 SOD_BREACH        CRITICAL Security    2026-07-07T08:45:31.920Z SoD policy SOD_DATA_EXFILTRATION breached                             
+          171 SOD_BREACH        CRITICAL Security    2026-07-07T08:45:31.920Z SoD policy SOD_GRANT_MONOPOLY breached                                
+          172 SOD_BREACH        MEDIUM   Security    2026-07-07T08:45:31.920Z SoD policy SOD_DML_VS_AUDIT breached                                  
+          173 SOD_BREACH        CRITICAL Security    2026-07-07T08:45:31.920Z SoD policy SOD_DBA_AUDITOR breached                                   
+          174 SOD_BREACH        HIGH     Security    2026-07-07T08:45:31.920Z SoD policy SOD_USER_MGMT_VS_SECURITY breached                         
   
   SEQUENCE_ID REASON_ID         SEVERITY OBJECT_TYPE CREATION_TIME            MESSAGE                                                               
   ----------- ----------------- -------- ----------- ------------------------ ----------------------------------------------------------------------
-          175 SOD_BREACH        CRITICAL Security    2026-07-07T07:15:24.435Z SoD policy SOD_DATA_EXFILTRATION breached                             
-          176 SOD_BREACH        CRITICAL Security    2026-07-07T07:15:24.435Z SoD policy SOD_GRANT_MONOPOLY breached                                
-          177 SOD_BREACH        MEDIUM   Security    2026-07-07T07:15:24.435Z SoD policy SOD_DML_VS_AUDIT breached                                  
-          178 SOD_BREACH        CRITICAL Security    2026-07-07T07:15:24.435Z SoD policy SOD_DBA_AUDITOR breached                                   
-          179 SOD_BREACH        HIGH     Security    2026-07-07T07:15:24.435Z SoD policy SOD_USER_MGMT_VS_SECURITY breached                         
-          180 SOD_BREACH        CRITICAL Security    2026-07-07T07:15:24.435Z SoD policy SOD_DATA_EXFILTRATION breached                             
-          181 SOD_BREACH        CRITICAL Security    2026-07-07T07:15:24.436Z SoD policy SOD_GRANT_MONOPOLY breached                                
-          182 SOD_BREACH        MEDIUM   Security    2026-07-07T07:15:24.436Z SoD policy SOD_DML_VS_AUDIT breached                                  
-          183 SOD_BREACH        CRITICAL Security    2026-07-07T07:15:24.436Z SoD policy SOD_DBA_AUDITOR breached                                   
-          184 SOD_BREACH        HIGH     Security    2026-07-07T07:15:24.436Z SoD policy SOD_USER_MGMT_VS_SECURITY breached                         
-          185 SOD_BREACH        CRITICAL Security    2026-07-07T07:15:24.436Z SoD policy SOD_DATA_EXFILTRATION breached                             
-          186 SOD_BREACH        CRITICAL Security    2026-07-07T07:15:24.436Z SoD policy SOD_GRANT_MONOPOLY breached                                
-          187 SOD_BREACH        MEDIUM   Security    2026-07-07T07:15:24.436Z SoD policy SOD_DML_VS_AUDIT breached                                  
-          188 SOD_BREACH        CRITICAL Security    2026-07-07T07:15:24.436Z SoD policy SOD_DBA_AUDITOR breached                                   
+          175 SOD_BREACH        CRITICAL Security    2026-07-07T08:45:31.920Z SoD policy SOD_DATA_EXFILTRATION breached                             
+          176 SOD_BREACH        CRITICAL Security    2026-07-07T08:45:31.920Z SoD policy SOD_GRANT_MONOPOLY breached                                
+          177 SOD_BREACH        MEDIUM   Security    2026-07-07T08:45:31.920Z SoD policy SOD_DML_VS_AUDIT breached                                  
+          178 SOD_BREACH        CRITICAL Security    2026-07-07T08:45:31.920Z SoD policy SOD_DBA_AUDITOR breached                                   
+          179 SOD_BREACH        HIGH     Security    2026-07-07T08:45:31.920Z SoD policy SOD_USER_MGMT_VS_SECURITY breached                         
+          180 SOD_BREACH        CRITICAL Security    2026-07-07T08:45:31.920Z SoD policy SOD_DATA_EXFILTRATION breached                             
+          181 SOD_BREACH        CRITICAL Security    2026-07-07T08:45:31.920Z SoD policy SOD_GRANT_MONOPOLY breached                                
+          182 SOD_BREACH        MEDIUM   Security    2026-07-07T08:45:31.920Z SoD policy SOD_DML_VS_AUDIT breached                                  
+          183 SOD_BREACH        CRITICAL Security    2026-07-07T08:45:31.923Z SoD policy SOD_DBA_AUDITOR breached                                   
+          184 SOD_BREACH        HIGH     Security    2026-07-07T08:45:31.923Z SoD policy SOD_USER_MGMT_VS_SECURITY breached                         
+          185 SOD_BREACH        CRITICAL Security    2026-07-07T08:45:31.923Z SoD policy SOD_DATA_EXFILTRATION breached                             
+          186 SOD_BREACH        CRITICAL Security    2026-07-07T08:45:31.923Z SoD policy SOD_GRANT_MONOPOLY breached                                
+          187 SOD_BREACH        MEDIUM   Security    2026-07-07T08:45:31.923Z SoD policy SOD_DML_VS_AUDIT breached                                  
+          188 SOD_BREACH        CRITICAL Security    2026-07-07T08:45:31.923Z SoD policy SOD_DBA_AUDITOR breached                                   
   
   SEQUENCE_ID REASON_ID         SEVERITY OBJECT_TYPE CREATION_TIME            MESSAGE                                                               
   ----------- ----------------- -------- ----------- ------------------------ ----------------------------------------------------------------------
-          189 SOD_BREACH        HIGH     Security    2026-07-07T07:15:24.436Z SoD policy SOD_USER_MGMT_VS_SECURITY breached                         
-          190 SOD_BREACH        CRITICAL Security    2026-07-07T07:15:24.436Z SoD policy SOD_DATA_EXFILTRATION breached                             
-          191 SOD_BREACH        CRITICAL Security    2026-07-07T07:15:24.436Z SoD policy SOD_GRANT_MONOPOLY breached                                
-          192 SOD_BREACH        MEDIUM   Security    2026-07-07T07:15:24.436Z SoD policy SOD_DML_VS_AUDIT breached                                  
-          193 SOD_BREACH        CRITICAL Security    2026-07-07T07:15:24.436Z SoD policy SOD_DBA_AUDITOR breached                                   
-          194 SOD_BREACH        HIGH     Security    2026-07-07T07:15:24.436Z SoD policy SOD_USER_MGMT_VS_SECURITY breached                         
-          195 SOD_BREACH        CRITICAL Security    2026-07-07T07:15:24.436Z SoD policy SOD_DATA_EXFILTRATION breached                             
-          196 SOD_BREACH        CRITICAL Security    2026-07-07T07:15:24.436Z SoD policy SOD_GRANT_MONOPOLY breached                                
-          197 SOD_BREACH        MEDIUM   Security    2026-07-07T07:15:24.436Z SoD policy SOD_DML_VS_AUDIT breached                                  
-          198 SOD_BREACH        CRITICAL Security    2026-07-07T07:15:24.436Z SoD policy SOD_DBA_AUDITOR breached                                   
-          199 SOD_BREACH        HIGH     Security    2026-07-07T07:15:24.436Z SoD policy SOD_USER_MGMT_VS_SECURITY breached                         
-          200 SOD_BREACH        CRITICAL Security    2026-07-07T07:15:24.436Z SoD policy SOD_DATA_EXFILTRATION breached                             
-          201 SOD_BREACH        CRITICAL Security    2026-07-07T07:15:24.436Z SoD policy SOD_GRANT_MONOPOLY breached                                
-          202 SOD_BREACH        MEDIUM   Security    2026-07-07T07:15:24.436Z SoD policy SOD_DML_VS_AUDIT breached                                  
+          189 SOD_BREACH        HIGH     Security    2026-07-07T08:45:31.923Z SoD policy SOD_USER_MGMT_VS_SECURITY breached                         
+          190 SOD_BREACH        CRITICAL Security    2026-07-07T08:45:31.923Z SoD policy SOD_DATA_EXFILTRATION breached                             
+          191 SOD_BREACH        CRITICAL Security    2026-07-07T08:45:31.923Z SoD policy SOD_GRANT_MONOPOLY breached                                
+          192 SOD_BREACH        MEDIUM   Security    2026-07-07T08:45:31.923Z SoD policy SOD_DML_VS_AUDIT breached                                  
+          193 SOD_BREACH        CRITICAL Security    2026-07-07T08:45:31.924Z SoD policy SOD_DBA_AUDITOR breached                                   
+          194 SOD_BREACH        HIGH     Security    2026-07-07T08:45:31.924Z SoD policy SOD_USER_MGMT_VS_SECURITY breached                         
+          195 SOD_BREACH        CRITICAL Security    2026-07-07T08:45:31.924Z SoD policy SOD_DATA_EXFILTRATION breached                             
+          196 SOD_BREACH        CRITICAL Security    2026-07-07T08:45:31.924Z SoD policy SOD_GRANT_MONOPOLY breached                                
+          197 SOD_BREACH        MEDIUM   Security    2026-07-07T08:45:31.924Z SoD policy SOD_DML_VS_AUDIT breached                                  
+          198 SOD_BREACH        CRITICAL Security    2026-07-07T08:45:31.924Z SoD policy SOD_DBA_AUDITOR breached                                   
+          199 SOD_BREACH        HIGH     Security    2026-07-07T08:45:31.924Z SoD policy SOD_USER_MGMT_VS_SECURITY breached                         
+          200 SOD_BREACH        CRITICAL Security    2026-07-07T08:45:31.924Z SoD policy SOD_DATA_EXFILTRATION breached                             
+          201 SOD_BREACH        CRITICAL Security    2026-07-07T08:45:31.924Z SoD policy SOD_GRANT_MONOPOLY breached                                
+          202 SOD_BREACH        MEDIUM   Security    2026-07-07T08:45:31.924Z SoD policy SOD_DML_VS_AUDIT breached                                  
   
   SEQUENCE_ID REASON_ID         SEVERITY OBJECT_TYPE CREATION_TIME            MESSAGE                                                               
   ----------- ----------------- -------- ----------- ------------------------ ----------------------------------------------------------------------
-          203 SOD_BREACH        CRITICAL Security    2026-07-07T07:15:24.437Z SoD policy SOD_DBA_AUDITOR breached                                   
-          204 SOD_BREACH        HIGH     Security    2026-07-07T07:15:24.437Z SoD policy SOD_USER_MGMT_VS_SECURITY breached                         
-          205 SOD_BREACH        CRITICAL Security    2026-07-07T07:15:24.437Z SoD policy SOD_DATA_EXFILTRATION breached                             
-          206 SOD_BREACH        CRITICAL Security    2026-07-07T07:15:24.437Z SoD policy SOD_GRANT_MONOPOLY breached                                
-          207 SOD_BREACH        MEDIUM   Security    2026-07-07T07:15:24.437Z SoD policy SOD_DML_VS_AUDIT breached                                  
-          208 SOD_BREACH        CRITICAL Security    2026-07-07T07:15:24.437Z SoD policy SOD_DBA_AUDITOR breached                                   
-          209 SOD_BREACH        HIGH     Security    2026-07-07T07:15:24.437Z SoD policy SOD_USER_MGMT_VS_SECURITY breached                         
-          210 SOD_BREACH        CRITICAL Security    2026-07-07T07:15:24.437Z SoD policy SOD_DATA_EXFILTRATION breached                             
-          211 SOD_BREACH        CRITICAL Security    2026-07-07T07:15:24.437Z SoD policy SOD_GRANT_MONOPOLY breached                                
-          212 SOD_BREACH        MEDIUM   Security    2026-07-07T07:15:24.437Z SoD policy SOD_DML_VS_AUDIT breached                                  
+          203 SOD_BREACH        CRITICAL Security    2026-07-07T08:45:31.924Z SoD policy SOD_DBA_AUDITOR breached                                   
+          204 SOD_BREACH        HIGH     Security    2026-07-07T08:45:31.924Z SoD policy SOD_USER_MGMT_VS_SECURITY breached                         
+          205 SOD_BREACH        CRITICAL Security    2026-07-07T08:45:31.924Z SoD policy SOD_DATA_EXFILTRATION breached                             
+          206 SOD_BREACH        CRITICAL Security    2026-07-07T08:45:31.924Z SoD policy SOD_GRANT_MONOPOLY breached                                
+          207 SOD_BREACH        MEDIUM   Security    2026-07-07T08:45:31.924Z SoD policy SOD_DML_VS_AUDIT breached                                  
+          208 SOD_BREACH        CRITICAL Security    2026-07-07T08:45:31.924Z SoD policy SOD_DBA_AUDITOR breached                                   
+          209 SOD_BREACH        HIGH     Security    2026-07-07T08:45:31.924Z SoD policy SOD_USER_MGMT_VS_SECURITY breached                         
+          210 SOD_BREACH        CRITICAL Security    2026-07-07T08:45:31.924Z SoD policy SOD_DATA_EXFILTRATION breached                             
+          211 SOD_BREACH        CRITICAL Security    2026-07-07T08:45:31.924Z SoD policy SOD_GRANT_MONOPOLY breached                                
+          212 SOD_BREACH        MEDIUM   Security    2026-07-07T08:45:31.924Z SoD policy SOD_DML_VS_AUDIT breached                                  
   
   192 rows selected.
 
@@ -2544,29 +2502,29 @@ SQL [185/387]> SELECT * FROM dba_alert_history ORDER BY creation_time DESC FETCH
   
   SEQUENCE_ID REASON_ID  SEVERITY CREATION_TIME            RESOLUTION_TIME          MESSAGE                                                          
   ----------- ---------- -------- ------------------------ ------------------------ -----------------------------------------------------------------
-           18 Info       NORMAL   2026-07-07T07:15:24.534Z 2026-07-07T07:15:25.534Z 2026-07-07 07:15:24: Completed checkpoint up to RBA, SCN: 1000325
-           19 Info       NORMAL   2026-07-07T07:15:24.534Z 2026-07-07T07:15:25.534Z 2026-07-07 07:15:24: Thread 1 advanced to log sequence 2         
-           20 Info       NORMAL   2026-07-07T07:15:24.534Z 2026-07-07T07:15:25.534Z 2026-07-07 07:15:24: Completed checkpoint up to RBA, SCN: 1000326
-          203 SOD_BREACH CRITICAL 2026-07-07T07:15:24.437Z                          SoD policy SOD_DBA_AUDITOR breached                              
-          204 SOD_BREACH HIGH     2026-07-07T07:15:24.437Z                          SoD policy SOD_USER_MGMT_VS_SECURITY breached                    
-          205 SOD_BREACH CRITICAL 2026-07-07T07:15:24.437Z                          SoD policy SOD_DATA_EXFILTRATION breached                        
-          206 SOD_BREACH CRITICAL 2026-07-07T07:15:24.437Z                          SoD policy SOD_GRANT_MONOPOLY breached                           
-          207 SOD_BREACH MEDIUM   2026-07-07T07:15:24.437Z                          SoD policy SOD_DML_VS_AUDIT breached                             
-          208 SOD_BREACH CRITICAL 2026-07-07T07:15:24.437Z                          SoD policy SOD_DBA_AUDITOR breached                              
-          209 SOD_BREACH HIGH     2026-07-07T07:15:24.437Z                          SoD policy SOD_USER_MGMT_VS_SECURITY breached                    
-          210 SOD_BREACH CRITICAL 2026-07-07T07:15:24.437Z                          SoD policy SOD_DATA_EXFILTRATION breached                        
-          211 SOD_BREACH CRITICAL 2026-07-07T07:15:24.437Z                          SoD policy SOD_GRANT_MONOPOLY breached                           
-          212 SOD_BREACH MEDIUM   2026-07-07T07:15:24.437Z                          SoD policy SOD_DML_VS_AUDIT breached                             
-          181 SOD_BREACH CRITICAL 2026-07-07T07:15:24.436Z                          SoD policy SOD_GRANT_MONOPOLY breached                           
+           20 Info       NORMAL   2026-07-07T08:45:32.020Z 2026-07-07T08:45:33.020Z 2026-07-07 08:45:32: Completed checkpoint up to RBA, SCN: 1000326
+           18 Info       NORMAL   2026-07-07T08:45:32.019Z 2026-07-07T08:45:33.019Z 2026-07-07 08:45:32: Completed checkpoint up to RBA, SCN: 1000325
+           19 Info       NORMAL   2026-07-07T08:45:32.019Z 2026-07-07T08:45:33.019Z 2026-07-07 08:45:32: Thread 1 advanced to log sequence 2         
+          193 SOD_BREACH CRITICAL 2026-07-07T08:45:31.924Z                          SoD policy SOD_DBA_AUDITOR breached                              
+          194 SOD_BREACH HIGH     2026-07-07T08:45:31.924Z                          SoD policy SOD_USER_MGMT_VS_SECURITY breached                    
+          195 SOD_BREACH CRITICAL 2026-07-07T08:45:31.924Z                          SoD policy SOD_DATA_EXFILTRATION breached                        
+          196 SOD_BREACH CRITICAL 2026-07-07T08:45:31.924Z                          SoD policy SOD_GRANT_MONOPOLY breached                           
+          197 SOD_BREACH MEDIUM   2026-07-07T08:45:31.924Z                          SoD policy SOD_DML_VS_AUDIT breached                             
+          198 SOD_BREACH CRITICAL 2026-07-07T08:45:31.924Z                          SoD policy SOD_DBA_AUDITOR breached                              
+          199 SOD_BREACH HIGH     2026-07-07T08:45:31.924Z                          SoD policy SOD_USER_MGMT_VS_SECURITY breached                    
+          200 SOD_BREACH CRITICAL 2026-07-07T08:45:31.924Z                          SoD policy SOD_DATA_EXFILTRATION breached                        
+          201 SOD_BREACH CRITICAL 2026-07-07T08:45:31.924Z                          SoD policy SOD_GRANT_MONOPOLY breached                           
+          202 SOD_BREACH MEDIUM   2026-07-07T08:45:31.924Z                          SoD policy SOD_DML_VS_AUDIT breached                             
+          203 SOD_BREACH CRITICAL 2026-07-07T08:45:31.924Z                          SoD policy SOD_DBA_AUDITOR breached                              
   
   SEQUENCE_ID REASON_ID  SEVERITY CREATION_TIME            RESOLUTION_TIME          MESSAGE                                                          
   ----------- ---------- -------- ------------------------ ------------------------ -----------------------------------------------------------------
-          182 SOD_BREACH MEDIUM   2026-07-07T07:15:24.436Z                          SoD policy SOD_DML_VS_AUDIT breached                             
-          183 SOD_BREACH CRITICAL 2026-07-07T07:15:24.436Z                          SoD policy SOD_DBA_AUDITOR breached                              
-          184 SOD_BREACH HIGH     2026-07-07T07:15:24.436Z                          SoD policy SOD_USER_MGMT_VS_SECURITY breached                    
-          185 SOD_BREACH CRITICAL 2026-07-07T07:15:24.436Z                          SoD policy SOD_DATA_EXFILTRATION breached                        
-          186 SOD_BREACH CRITICAL 2026-07-07T07:15:24.436Z                          SoD policy SOD_GRANT_MONOPOLY breached                           
-          187 SOD_BREACH MEDIUM   2026-07-07T07:15:24.436Z                          SoD policy SOD_DML_VS_AUDIT breached                             
+          204 SOD_BREACH HIGH     2026-07-07T08:45:31.924Z                          SoD policy SOD_USER_MGMT_VS_SECURITY breached                    
+          205 SOD_BREACH CRITICAL 2026-07-07T08:45:31.924Z                          SoD policy SOD_DATA_EXFILTRATION breached                        
+          206 SOD_BREACH CRITICAL 2026-07-07T08:45:31.924Z                          SoD policy SOD_GRANT_MONOPOLY breached                           
+          207 SOD_BREACH MEDIUM   2026-07-07T08:45:31.924Z                          SoD policy SOD_DML_VS_AUDIT breached                             
+          208 SOD_BREACH CRITICAL 2026-07-07T08:45:31.924Z                          SoD policy SOD_DBA_AUDITOR breached                              
+          209 SOD_BREACH HIGH     2026-07-07T08:45:31.924Z                          SoD policy SOD_USER_MGMT_VS_SECURITY breached                    
   
   20 rows selected.
 
@@ -2626,7 +2584,7 @@ SQL [197/387]> SELECT * FROM v$instance WHERE rownum < 5;
   
   INSTANCE_NUMBER INSTANCE_NAME HOST_NAME VERSION    STARTUP_TIME             STATUS PARALLEL THREAD# ARCHIVER LOG_SWITCH_WAIT LOGINS  SHUTDOWN_PENDING DATABASE_STATUS INSTANCE_ROLE    ACTIVE_STATE BLOCKED
   --------------- ------------- --------- ---------- ------------------------ ------ -------- ------- -------- --------------- ------- ---------------- --------------- ---------------- ------------ -------
-                1 ORCL          localhost 19.0.0.0.0 2026-07-07T07:15:23.954Z OPEN   NO             1 STOPPED                  ALLOWED NO               ACTIVE          PRIMARY_INSTANCE NORMAL       NO     
+                1 ORCL          localhost 19.0.0.0.0 2026-07-07T08:45:31.444Z OPEN   NO             1 STOPPED                  ALLOWED NO               ACTIVE          PRIMARY_INSTANCE NORMAL       NO     
   
   1 row selected.
 
@@ -2634,7 +2592,7 @@ SQL [198/387]> SELECT * FROM v$database WHERE rownum < 5;
   
         DBID NAME CREATED                  LOG_MODE     OPEN_MODE  DATABASE_ROLE PLATFORM_NAME    CONTROLFILE_TYPE CONTROLFILE_CREATED CONTROLFILE_SEQUENCE# CONTROLFILE_CHANGE# CONTROLFILE_TIME SUPPLEMENTAL_LOG_DATA_MIN SUPPLEMENTAL_LOG_DATA_PK SUPPLEMENTAL_LOG_DATA_UI SUPPLEMENTAL_LOG_DATA_FK SUPPLEMENTAL_LOG_DATA_ALL FORCE_LOGGING FLASHBACK_ON CURRENT_SCN CHECKPOINT_CHANGE#
   ---------- ---- ------------------------ ------------ ---------- ------------- ---------------- ---------------- ------------------- --------------------- ------------------- ---------------- ------------------------- ------------------------ ------------------------ ------------------------ ------------------------- ------------- ------------ ----------- ------------------
-  1071218372 ORCL 2026-07-07T07:15:24.551Z NOARCHIVELOG READ WRITE PRIMARY       Linux x86 64-bit CURRENT          01-JAN-26                               1             1000326 07-JUL-26        NO                        NO                       NO                       NO                       NO                        NO            NO               1000331            1000326
+  2204054352 ORCL 2026-07-07T08:45:32.041Z NOARCHIVELOG READ WRITE PRIMARY       Linux x86 64-bit CURRENT          01-JAN-26                               1             1000326 07-JUL-26        NO                        NO                       NO                       NO                       NO                        NO            NO               1000331            1000326
   
   1 row selected.
 
@@ -2670,10 +2628,10 @@ SQL [202/387]> SELECT * FROM v$session WHERE rownum < 5;
   
   SADDR            SID SERIAL# AUDSID PADDR            USER# USERNAME COMMAND    OWNERID TADDR LOCKWAIT STATUS SERVER    SCHEMA# SCHEMANAME OSUSER PROCESS MACHINE   PORT TERMINAL PROGRAM                 TYPE       SQL_ADDRESS SQL_HASH_VALUE SQL_ID SQL_CHILD_NUMBER SQL_EXEC_START SQL_EXEC_ID PREV_SQL_ID MODULE ACTION CLIENT_INFO CLIENT_IDENTIFIER FIXED_TABLE_SEQUENCE ROW_WAIT_OBJ# ROW_WAIT_FILE# ROW_WAIT_BLOCK# ROW_WAIT_ROW# LOGON_TIME               LAST_CALL_ET PDML_ENABLED FAILOVER_TYPE FAILOVER_METHOD FAILED_OVER RESOURCE_CONSUMER_GROUP PDML_STATUS PDDL_STATUS PQ_STATUS EVENT# EVENT      WAIT_CLASS# WAIT_CLASS WAIT_TIME SECONDS_IN_WAIT STATE   BLOCKING_SESSION_STATUS BLOCKING_SESSION SQL_TRACE SERVICE_NAME CON_ID
   ---------------- --- ------- ------ ---------------- ----- -------- ------- ---------- ----- -------- ------ --------- ------- ---------- ------ ------- --------- ---- -------- ----------------------- ---------- ----------- -------------- ------ ---------------- -------------- ----------- ----------- ------ ------ ----------- ----------------- -------------------- ------------- -------------- --------------- ------------- ------------------------ ------------ ------------ ------------- --------------- ----------- ----------------------- ----------- ----------- --------- ------ ---------- ----------- ---------- --------- --------------- ------- ----------------------- ---------------- --------- ------------ ------
-  0000000000000001   1       1      0 000000007F00FA00     0 SYS            0 2147483644                ACTIVE DEDICATED       0 SYS        oracle 1       localhost    0 pts/0    oracle@localhost (PMON) BACKGROUND                          0                                                                                                                               0             0              0               0             0 2026-07-07T07:15:24.552Z            0 NO           NONE          NONE            NO          SYS_GROUP               DISABLED    ENABLED     ENABLED        0 pmon timer           6 Idle               0               0 WAITING NO HOLDER                                DISABLED  orcl              1
-  0000000000000002   2       1      0 000000007F00FA40     0 SYS            0 2147483644                ACTIVE DEDICATED       0 SYS        oracle 2       localhost    0 pts/0    oracle@localhost (SMON) BACKGROUND                          0                                                                                                                               0             0              0               0             0 2026-07-07T07:15:24.552Z            0 NO           NONE          NONE            NO          SYS_GROUP               DISABLED    ENABLED     ENABLED        0 pmon timer           6 Idle               0               0 WAITING NO HOLDER                                DISABLED  orcl              1
-  0000000000000003   3       1      0 000000007F00FA80     0 SYS            0 2147483644                ACTIVE DEDICATED       0 SYS        oracle 3       localhost    0 pts/0    oracle@localhost (DBW0) BACKGROUND                          0                                                                                                                               0             0              0               0             0 2026-07-07T07:15:24.552Z            0 NO           NONE          NONE            NO          SYS_GROUP               DISABLED    ENABLED     ENABLED        0 pmon timer           6 Idle               0               0 WAITING NO HOLDER                                DISABLED  orcl              1
-  0000000000000004   4       1      0 000000007F00FAC0     0 SYS            0 2147483644                ACTIVE DEDICATED       0 SYS        oracle 4       localhost    0 pts/0    oracle@localhost (LGWR) BACKGROUND                          0                                                                                                                               0             0              0               0             0 2026-07-07T07:15:24.552Z            0 NO           NONE          NONE            NO          SYS_GROUP               DISABLED    ENABLED     ENABLED        0 pmon timer           6 Idle               0               0 WAITING NO HOLDER                                DISABLED  orcl              1
+  0000000000000001   1       1      0 000000007F00FA00     0 SYS            0 2147483644                ACTIVE DEDICATED       0 SYS        oracle 1       localhost    0 pts/0    oracle@localhost (PMON) BACKGROUND                          0                                                                                                                               0             0              0               0             0 2026-07-07T08:45:32.042Z            0 NO           NONE          NONE            NO          SYS_GROUP               DISABLED    ENABLED     ENABLED        0 pmon timer           6 Idle               0               0 WAITING NO HOLDER                                DISABLED  orcl              1
+  0000000000000002   2       1      0 000000007F00FA40     0 SYS            0 2147483644                ACTIVE DEDICATED       0 SYS        oracle 2       localhost    0 pts/0    oracle@localhost (SMON) BACKGROUND                          0                                                                                                                               0             0              0               0             0 2026-07-07T08:45:32.042Z            0 NO           NONE          NONE            NO          SYS_GROUP               DISABLED    ENABLED     ENABLED        0 pmon timer           6 Idle               0               0 WAITING NO HOLDER                                DISABLED  orcl              1
+  0000000000000003   3       1      0 000000007F00FA80     0 SYS            0 2147483644                ACTIVE DEDICATED       0 SYS        oracle 3       localhost    0 pts/0    oracle@localhost (DBW0) BACKGROUND                          0                                                                                                                               0             0              0               0             0 2026-07-07T08:45:32.042Z            0 NO           NONE          NONE            NO          SYS_GROUP               DISABLED    ENABLED     ENABLED        0 pmon timer           6 Idle               0               0 WAITING NO HOLDER                                DISABLED  orcl              1
+  0000000000000004   4       1      0 000000007F00FAC0     0 SYS            0 2147483644                ACTIVE DEDICATED       0 SYS        oracle 4       localhost    0 pts/0    oracle@localhost (LGWR) BACKGROUND                          0                                                                                                                               0             0              0               0             0 2026-07-07T08:45:32.042Z            0 NO           NONE          NONE            NO          SYS_GROUP               DISABLED    ENABLED     ENABLED        0 pmon timer           6 Idle               0               0 WAITING NO HOLDER                                DISABLED  orcl              1
   
   4 rows selected.
 
@@ -2961,18 +2919,18 @@ SQL [227/387]> SELECT * FROM v$sql WHERE rownum < 5;
   ------------- -------------------------------------------------------------------------------- ---------- ------------ -------- ----------- ---------- -------------- ------------------- -------------------
   0jfss4xa3xqw0 CREATE TABLE HR.REGIONS (
          REGION_ID NUMBER(2) PRIMARY KEY,
-         REGION_          1         1820     1456           1          0              0 SYS                 2026-07-07T07:15:23
+         REGION_          1         1975     1580           1          0              0 SYS                 2026-07-07T08:45:31
                 NAME VARCHAR2(25)
        )                                                                                                                                                                       
   1p340y2a3xqw0 CREATE TABLE HR.COUNTRIES (
          COUNTRY_ID CHAR(2) PRIMARY KEY,
-         COUNTR          1          197      158           1          0              0 SYS                 2026-07-07T07:15:23
+         COUNTR          1          218      174           1          0              0 SYS                 2026-07-07T08:45:31
                 Y_NAME VARCHAR2(40),
          REGION_ID NUMBER(2)
        )                                                                                                                                         
   0438608a3xqw0 CREATE TABLE HR.LOCATIONS (
          LOCATION_ID NUMBER(4) PRIMARY KEY,
-         STR          1          179      143           1          0              0 SYS                 2026-07-07T07:15:23
+         STR          1          183      146           1          0              0 SYS                 2026-07-07T08:45:31
                 EET_ADDRESS VARCHAR2(40),
          POSTAL_CODE VARCHAR2(12),
          CITY VARCHAR2(                                                                                                               
@@ -2983,7 +2941,7 @@ SQL [227/387]> SELECT * FROM v$sql WHERE rownum < 5;
                  )                                                                                                                                                                                             
   0jmvs97a3xqw0 CREATE TABLE HR.DEPARTMENTS (
          DEPARTMENT_ID NUMBER(4) PRIMARY KEY,
-                  1          379      303           1          0              0 SYS                 2026-07-07T07:15:23
+                  1          492      394           1          0              0 SYS                 2026-07-07T08:45:31
                  DEPARTMENT_NAME VARCHAR2(30) NOT NULL,
          MANAGER_ID NUMBER(6),
          LOCA                                                                                                               
@@ -2996,10 +2954,10 @@ SQL [228/387]> SELECT * FROM v$sqlstats WHERE rownum < 5;
   
   SQL_ID        PLAN_HASH_VALUE PARSE_CALLS EXECUTIONS FETCHES ELAPSED_TIME CPU_TIME BUFFER_GETS DISK_READS ROWS_PROCESSED PARSING_SCHEMA_NAME LAST_ACTIVE_TIME        
   ------------- --------------- ----------- ---------- ------- ------------ -------- ----------- ---------- -------------- ------------------- ------------------------
-  0jfss4xa3xqw0               0           1          1       1         1820     1456           1          0              0 SYS                 2026-07-07T07:15:23.978Z
-  1p340y2a3xqw0               0           1          1       1          197      158           1          0              0 SYS                 2026-07-07T07:15:23.981Z
-  0438608a3xqw0               0           1          1       1          179      143           1          0              0 SYS                 2026-07-07T07:15:23.982Z
-  0jmvs97a3xqw0               0           1          1       1          379      303           1          0              0 SYS                 2026-07-07T07:15:23.983Z
+  0jfss4xa3xqw0               0           1          1       1         1975     1580           1          0              0 SYS                 2026-07-07T08:45:31.472Z
+  1p340y2a3xqw0               0           1          1       1          218      174           1          0              0 SYS                 2026-07-07T08:45:31.477Z
+  0438608a3xqw0               0           1          1       1          183      146           1          0              0 SYS                 2026-07-07T08:45:31.478Z
+  0jmvs97a3xqw0               0           1          1       1          492      394           1          0              0 SYS                 2026-07-07T08:45:31.479Z
   
   4 rows selected.
 
@@ -3040,10 +2998,10 @@ SQL [232/387]> SELECT * FROM v$sysmetric WHERE rownum < 5;
   
   BEGIN_TIME               END_TIME                 INTSIZE_CSEC GROUP_ID METRIC_ID METRIC_NAME          VALUE METRIC_UNIT            
   ------------------------ ------------------------ ------------ -------- --------- -------------------- ----- -----------------------
-  2026-07-07T07:15:09.573Z 2026-07-07T07:15:24.573Z         1500 2             2000 CPU Usage Per Sec       30 CentiSeconds Per Second
-  2026-07-07T07:15:09.573Z 2026-07-07T07:15:24.573Z         1500 2             2003 User Calls Per Sec      34 Calls Per Second       
-  2026-07-07T07:15:09.573Z 2026-07-07T07:15:24.573Z         1500 2             2007 Executions Per Sec      30 Executes Per Second    
-  2026-07-07T07:15:09.573Z 2026-07-07T07:15:24.573Z         1500 2             2017 User Commits Per Sec     0 Commits Per Second     
+  2026-07-07T08:45:17.064Z 2026-07-07T08:45:32.064Z         1500 2             2000 CPU Usage Per Sec       30 CentiSeconds Per Second
+  2026-07-07T08:45:17.064Z 2026-07-07T08:45:32.064Z         1500 2             2003 User Calls Per Sec      34 Calls Per Second       
+  2026-07-07T08:45:17.064Z 2026-07-07T08:45:32.064Z         1500 2             2007 Executions Per Sec      30 Executes Per Second    
+  2026-07-07T08:45:17.064Z 2026-07-07T08:45:32.064Z         1500 2             2017 User Commits Per Sec     0 Commits Per Second     
   
   4 rows selected.
 
@@ -3051,10 +3009,10 @@ SQL [233/387]> SELECT * FROM v$sysmetric_history WHERE rownum < 5;
   
   BEGIN_TIME               END_TIME                 INTSIZE_CSEC GROUP_ID METRIC_ID METRIC_NAME          VALUE METRIC_UNIT            
   ------------------------ ------------------------ ------------ -------- --------- -------------------- ----- -----------------------
-  2026-07-07T07:14:24.574Z 2026-07-07T07:15:24.574Z         6000 2             2000 CPU Usage Per Sec       30 CentiSeconds Per Second
-  2026-07-07T07:14:24.574Z 2026-07-07T07:15:24.574Z         6000 2             2003 User Calls Per Sec      34 Calls Per Second       
-  2026-07-07T07:14:24.574Z 2026-07-07T07:15:24.574Z         6000 2             2007 Executions Per Sec      30 Executes Per Second    
-  2026-07-07T07:14:24.574Z 2026-07-07T07:15:24.574Z         6000 2             2017 User Commits Per Sec     0 Commits Per Second     
+  2026-07-07T08:44:32.065Z 2026-07-07T08:45:32.065Z         6000 2             2000 CPU Usage Per Sec       30 CentiSeconds Per Second
+  2026-07-07T08:44:32.065Z 2026-07-07T08:45:32.065Z         6000 2             2003 User Calls Per Sec      34 Calls Per Second       
+  2026-07-07T08:44:32.065Z 2026-07-07T08:45:32.065Z         6000 2             2007 Executions Per Sec      30 Executes Per Second    
+  2026-07-07T08:44:32.065Z 2026-07-07T08:45:32.065Z         6000 2             2017 User Commits Per Sec     0 Commits Per Second     
   
   4 rows selected.
 
@@ -3351,10 +3309,10 @@ SQL [272/387]> SELECT * FROM v$services WHERE rownum < 5;
   
   SERVICE_ID NAME           NETWORK_NAME   CREATION_DATE            CREATION_DATE_HASH
   ---------- -------------- -------------- ------------------------ ------------------
-           1 ORCL           ORCL           2026-07-07T07:15:23.971Z          997096131
-           2 SYS$USERS      SYS$USERS      2026-07-07T07:15:23.969Z          997096129
-           3 SYS$BACKGROUND SYS$BACKGROUND 2026-07-07T07:15:23.969Z          997096129
-           4 ORCLPDB1       ORCLPDB1       2026-07-07T07:15:23.969Z          997096129
+           1 ORCL           ORCL           2026-07-07T08:45:31.463Z         1002503623
+           2 SYS$USERS      SYS$USERS      2026-07-07T08:45:31.460Z         1002503620
+           3 SYS$BACKGROUND SYS$BACKGROUND 2026-07-07T08:45:31.460Z         1002503620
+           4 ORCLPDB1       ORCLPDB1       2026-07-07T08:45:31.460Z         1002503620
   
   4 rows selected.
 
@@ -3362,10 +3320,10 @@ SQL [273/387]> SELECT * FROM v$active_services WHERE rownum < 5;
   
   SERVICE_ID NAME           NETWORK_NAME   SID  CREATION_DATE           
   ---------- -------------- -------------- ---- ------------------------
-           1 ORCL           ORCL           ORCL 2026-07-07T07:15:23.971Z
-           2 SYS$USERS      SYS$USERS      ORCL 2026-07-07T07:15:23.969Z
-           3 SYS$BACKGROUND SYS$BACKGROUND ORCL 2026-07-07T07:15:23.969Z
-           4 ORCLPDB1       ORCLPDB1       ORCL 2026-07-07T07:15:23.969Z
+           1 ORCL           ORCL           ORCL 2026-07-07T08:45:31.463Z
+           2 SYS$USERS      SYS$USERS      ORCL 2026-07-07T08:45:31.460Z
+           3 SYS$BACKGROUND SYS$BACKGROUND ORCL 2026-07-07T08:45:31.460Z
+           4 ORCLPDB1       ORCLPDB1       ORCL 2026-07-07T08:45:31.460Z
   
   4 rows selected.
 
@@ -3412,10 +3370,10 @@ SQL [278/387]> SELECT * FROM v$sess_time_model WHERE rownum < 5;
   
   SID    STAT_ID STAT_NAME                VALUE
   --- ---------- ----------------------- ------
-  100 3649082374 DB time                 417195
-  100 3712030189 DB CPU                  333768
-  100 1561673735 background elapsed time 104298
-  100 4157170894 background cpu time      83442
+  100 3649082374 DB time                 398423
+  100 3712030189 DB CPU                  318741
+  100 1561673735 background elapsed time  99605
+  100 4157170894 background cpu time      79685
   
   4 rows selected.
 
@@ -3442,10 +3400,10 @@ SQL [282/387]> SELECT * FROM dba_users WHERE rownum < 5;
   
   USERNAME USER_ID ACCOUNT_STATUS LOCK_DATE EXPIRY_DATE DEFAULT_TABLESPACE TEMPORARY_TABLESPACE CREATED                  PROFILE AUTHENTICATION_TYPE EXTERNAL_NAME COMMON ORACLE_MAINTAINED INHERITED DEFAULT_COLLATION IMPLICIT ALL_SHARD PASSWORD_VERSIONS EDITIONS_ENABLED LAST_LOGIN               LCOUNT
   -------- ------- -------------- --------- ----------- ------------------ -------------------- ------------------------ ------- ------------------- ------------- ------ ----------------- --------- ----------------- -------- --------- ----------------- ---------------- ------------------------ ------
-  SYS            0 OPEN                                 SYSTEM             TEMP                 2026-07-07T07:15:23.375Z DEFAULT PASSWORD                          NO     Y                 NO        USING_NLS_COMP    NO       NO        11G 12C           N                2026-07-07T07:15:24.101Z      0
-  SYSTEM         1 OPEN                                 SYSTEM             TEMP                 2026-07-07T07:15:23.375Z DEFAULT PASSWORD                          NO     Y                 NO        USING_NLS_COMP    NO       NO        11G 12C           N                                              0
-  DBSNMP         2 OPEN                                 SYSAUX             TEMP                 2026-07-07T07:15:23.375Z DEFAULT PASSWORD                          NO     Y                 NO        USING_NLS_COMP    NO       NO        11G 12C           N                                              0
-  HR             3 OPEN                                 USERS              TEMP                 2026-07-07T07:15:23.375Z DEFAULT PASSWORD                          NO     N                 NO        USING_NLS_COMP    NO       NO        11G 12C           N                                              0
+  SYS            0 OPEN                                 SYSTEM             TEMP                 2026-07-07T08:45:30.864Z DEFAULT PASSWORD                          NO     Y                 NO        USING_NLS_COMP    NO       NO        11G 12C           N                2026-07-07T08:45:31.610Z      0
+  SYSTEM         1 OPEN                                 SYSTEM             TEMP                 2026-07-07T08:45:30.864Z DEFAULT PASSWORD                          NO     Y                 NO        USING_NLS_COMP    NO       NO        11G 12C           N                                              0
+  DBSNMP         2 OPEN                                 SYSAUX             TEMP                 2026-07-07T08:45:30.864Z DEFAULT PASSWORD                          NO     Y                 NO        USING_NLS_COMP    NO       NO        11G 12C           N                                              0
+  HR             3 OPEN                                 USERS              TEMP                 2026-07-07T08:45:30.864Z DEFAULT PASSWORD                          NO     N                 NO        USING_NLS_COMP    NO       NO        11G 12C           N                                              0
   
   4 rows selected.
 
@@ -3508,10 +3466,10 @@ SQL [288/387]> SELECT * FROM dba_objects WHERE rownum < 5;
   
   OWNER OBJECT_NAME SUBOBJECT_NAME OBJECT_ID DATA_OBJECT_ID OBJECT_TYPE CREATED                  LAST_DDL_TIME            TIMESTAMP           STATUS TEMPORARY GENERATED SECONDARY NAMESPACE ORACLE_MAINTAINED
   ----- ----------- -------------- --------- -------------- ----------- ------------------------ ------------------------ ------------------- ------ --------- --------- --------- --------- -----------------
-  SYS   V$VERSION                        100                VIEW        2026-07-07T07:15:23.953Z 2026-07-07T07:15:23.953Z 2026-07-07:07:15:23 VALID  N         N         N                 1 Y                
-  SYS   V$INSTANCE                       101                VIEW        2026-07-07T07:15:23.953Z 2026-07-07T07:15:23.953Z 2026-07-07:07:15:23 VALID  N         N         N                 1 Y                
-  SYS   V$DATABASE                       102                VIEW        2026-07-07T07:15:23.953Z 2026-07-07T07:15:23.953Z 2026-07-07:07:15:23 VALID  N         N         N                 1 Y                
-  SYS   V$SESSION                        103                VIEW        2026-07-07T07:15:23.953Z 2026-07-07T07:15:23.953Z 2026-07-07:07:15:23 VALID  N         N         N                 1 Y                
+  SYS   V$VERSION                        100                VIEW        2026-07-07T08:45:31.443Z 2026-07-07T08:45:31.443Z 2026-07-07:08:45:31 VALID  N         N         N                 1 Y                
+  SYS   V$INSTANCE                       101                VIEW        2026-07-07T08:45:31.443Z 2026-07-07T08:45:31.443Z 2026-07-07:08:45:31 VALID  N         N         N                 1 Y                
+  SYS   V$DATABASE                       102                VIEW        2026-07-07T08:45:31.443Z 2026-07-07T08:45:31.443Z 2026-07-07:08:45:31 VALID  N         N         N                 1 Y                
+  SYS   V$SESSION                        103                VIEW        2026-07-07T08:45:31.443Z 2026-07-07T08:45:31.443Z 2026-07-07:08:45:31 VALID  N         N         N                 1 Y                
   
   4 rows selected.
 
@@ -3740,19 +3698,19 @@ SQL [318/387]> SELECT * FROM dba_audit_trail WHERE rownum < 5;
   
   OS_USERNAME USERNAME USERHOST  TIMESTAMP                ACTION_NAME  OBJ_NAME  RETURNCODE OBJ_OWNER SESSIONID PRIV_USED SQL_TEXT                                                                         STATEMENT_TYPE
   ----------- -------- --------- ------------------------ ------------ --------- ---------- --------- --------- --------- -------------------------------------------------------------------------------- --------------
-  oracle      SYS      localhost 2026-07-07T07:15:23.972Z LOGON                           0                   5 SYSDBA                                                                                     LOGON         
-  oracle      SYS      localhost 2026-07-07T07:15:23.979Z CREATE TABLE REGIONS            0 HR                5           CREATE TABLE HR.REGIONS (
+  oracle      SYS      localhost 2026-07-07T08:45:31.464Z LOGON                           0                   5 SYSDBA                                                                                     LOGON         
+  oracle      SYS      localhost 2026-07-07T08:45:31.474Z CREATE TABLE REGIONS            0 HR                5           CREATE TABLE HR.REGIONS (
          REGION_ID NUMBER(2) PRIMARY KEY,
          REGION_ CREATE TABLE  
                                                                                                                           NAME VARCHAR2(25)
        )                                                                       
-  oracle      SYS      localhost 2026-07-07T07:15:23.981Z CREATE TABLE COUNTRIES          0 HR                5           CREATE TABLE HR.COUNTRIES (
+  oracle      SYS      localhost 2026-07-07T08:45:31.478Z CREATE TABLE COUNTRIES          0 HR                5           CREATE TABLE HR.COUNTRIES (
          COUNTRY_ID CHAR(2) PRIMARY KEY,
          COUNTR CREATE TABLE  
                                                                                                                           Y_NAME VARCHAR2(40),
          REGION_ID NUMBER(2)
        )                                         
-  oracle      SYS      localhost 2026-07-07T07:15:23.982Z CREATE TABLE LOCATIONS          0 HR                5           CREATE TABLE HR.LOCATIONS (
+  oracle      SYS      localhost 2026-07-07T08:45:31.478Z CREATE TABLE LOCATIONS          0 HR                5           CREATE TABLE HR.LOCATIONS (
          LOCATION_ID NUMBER(4) PRIMARY KEY,
          STR CREATE TABLE  
                                                                                                                           EET_ADDRESS VARCHAR2(40),
@@ -3770,10 +3728,10 @@ SQL [319/387]> SELECT * FROM dba_audit_session WHERE rownum < 5;
   
   OS_USERNAME USERNAME USERHOST     TERMINAL TIMESTAMP                ACTION_NAME SESSIONID LOGOFF_TIME              RETURNCODE
   ----------- -------- ------------ -------- ------------------------ ----------- --------- ------------------------ ----------
-  oracle      SYS      localhost    pts/0    2026-07-07T07:15:23.972Z LOGON               5 2026-07-07T07:15:24.011Z          0
-  oracle      SYS      localhost    pts/0    2026-07-07T07:15:24.012Z LOGON               6 2026-07-07T07:15:24.016Z          0
-  oracle      SYS      localhost    pts/0    2026-07-07T07:15:24.017Z LOGON               7 2026-07-07T07:15:24.092Z          0
-  root        SYS      linux-server pts/0    2026-07-07T07:15:24.101Z LOGON               8                                   0
+  oracle      SYS      localhost    pts/0    2026-07-07T08:45:31.464Z LOGON               5 2026-07-07T08:45:31.519Z          0
+  oracle      SYS      localhost    pts/0    2026-07-07T08:45:31.520Z LOGON               6 2026-07-07T08:45:31.525Z          0
+  oracle      SYS      localhost    pts/0    2026-07-07T08:45:31.525Z LOGON               7 2026-07-07T08:45:31.605Z          0
+  root        SYS      linux-server pts/0    2026-07-07T08:45:31.610Z LOGON               8                                   0
   
   4 rows selected.
 
@@ -3781,19 +3739,19 @@ SQL [320/387]> SELECT * FROM unified_audit_trail WHERE rownum < 5;
   
   EVENT_TIMESTAMP          AUDIT_TYPE SESSIONID DBUSERNAME USERHOST  TERMINAL OS_USER ACTION_NAME  RETURN_CODE SQL_TEXT                                                                         OBJECT_SCHEMA OBJECT_NAME STATEMENT_TYPE SYSTEM_PRIVILEGE_USED ENTRY_ID
   ------------------------ ---------- --------- ---------- --------- -------- ------- ------------ ----------- -------------------------------------------------------------------------------- ------------- ----------- -------------- --------------------- --------
-  2026-07-07T07:15:23.972Z Standard           5 SYS        localhost pts/0    oracle  LOGON                  0                                                                                                            LOGON          SYSDBA                       1
-  2026-07-07T07:15:23.979Z Standard           5 SYS        localhost pts/0    oracle  CREATE TABLE           0 CREATE TABLE HR.REGIONS (
+  2026-07-07T08:45:31.464Z Standard           5 SYS        localhost pts/0    oracle  LOGON                  0                                                                                                            LOGON          SYSDBA                       1
+  2026-07-07T08:45:31.474Z Standard           5 SYS        localhost pts/0    oracle  CREATE TABLE           0 CREATE TABLE HR.REGIONS (
          REGION_ID NUMBER(2) PRIMARY KEY,
          REGION_ HR            REGIONS     CREATE TABLE                                2
                                                                                                                NAME VARCHAR2(25)
        )                                                                                                                                
-  2026-07-07T07:15:23.981Z Standard           5 SYS        localhost pts/0    oracle  CREATE TABLE           0 CREATE TABLE HR.COUNTRIES (
+  2026-07-07T08:45:31.478Z Standard           5 SYS        localhost pts/0    oracle  CREATE TABLE           0 CREATE TABLE HR.COUNTRIES (
          COUNTRY_ID CHAR(2) PRIMARY KEY,
          COUNTR HR            COUNTRIES   CREATE TABLE                                3
                                                                                                                Y_NAME VARCHAR2(40),
          REGION_ID NUMBER(2)
        )                                                                                                  
-  2026-07-07T07:15:23.982Z Standard           5 SYS        localhost pts/0    oracle  CREATE TABLE           0 CREATE TABLE HR.LOCATIONS (
+  2026-07-07T08:45:31.478Z Standard           5 SYS        localhost pts/0    oracle  CREATE TABLE           0 CREATE TABLE HR.LOCATIONS (
          LOCATION_ID NUMBER(4) PRIMARY KEY,
          STR HR            LOCATIONS   CREATE TABLE                                4
                                                                                                                EET_ADDRESS VARCHAR2(40),
@@ -3811,10 +3769,10 @@ SQL [321/387]> SELECT * FROM dba_outstanding_alerts WHERE rownum < 5;
   
   SEQUENCE_ID REASON_ID         SEVERITY OBJECT_TYPE CREATION_TIME            MESSAGE                                                 
   ----------- ----------------- -------- ----------- ------------------------ --------------------------------------------------------
-           26 DDL_ON_SYS_OBJECT HIGH     Security    2026-07-07T07:15:23.980Z DDL (CREATE TABLE) targeted SYS-owned object REGIONS    
-           27 DDL_ON_SYS_OBJECT HIGH     Security    2026-07-07T07:15:23.981Z DDL (CREATE TABLE) targeted SYS-owned object COUNTRIES  
-           28 DDL_ON_SYS_OBJECT HIGH     Security    2026-07-07T07:15:23.982Z DDL (CREATE TABLE) targeted SYS-owned object LOCATIONS  
-           29 DDL_ON_SYS_OBJECT HIGH     Security    2026-07-07T07:15:23.983Z DDL (CREATE TABLE) targeted SYS-owned object DEPARTMENTS
+           26 DDL_ON_SYS_OBJECT HIGH     Security    2026-07-07T08:45:31.477Z DDL (CREATE TABLE) targeted SYS-owned object REGIONS    
+           27 DDL_ON_SYS_OBJECT HIGH     Security    2026-07-07T08:45:31.478Z DDL (CREATE TABLE) targeted SYS-owned object COUNTRIES  
+           28 DDL_ON_SYS_OBJECT HIGH     Security    2026-07-07T08:45:31.479Z DDL (CREATE TABLE) targeted SYS-owned object LOCATIONS  
+           29 DDL_ON_SYS_OBJECT HIGH     Security    2026-07-07T08:45:31.479Z DDL (CREATE TABLE) targeted SYS-owned object DEPARTMENTS
   
   4 rows selected.
 
@@ -3822,10 +3780,10 @@ SQL [322/387]> SELECT * FROM dba_alert_history WHERE rownum < 5;
   
   SEQUENCE_ID REASON_ID SEVERITY CREATION_TIME            RESOLUTION_TIME          MESSAGE                                                          
   ----------- --------- -------- ------------------------ ------------------------ -----------------------------------------------------------------
-            1 Info      NORMAL   2026-07-07T07:15:23.954Z 2026-07-07T07:15:24.954Z 2026-07-07 07:15:23: Starting ORACLE instance (normal)           
-            2 Info      NORMAL   2026-07-07T07:15:23.966Z 2026-07-07T07:15:24.966Z 2026-07-07 07:15:23: Database mounted                            
-            3 Info      NORMAL   2026-07-07T07:15:23.969Z 2026-07-07T07:15:24.969Z 2026-07-07 07:15:23: Completed checkpoint up to RBA, SCN: 1000001
-            4 Info      NORMAL   2026-07-07T07:15:23.969Z 2026-07-07T07:15:24.969Z 2026-07-07 07:15:23: Database opened                             
+            1 Info      NORMAL   2026-07-07T08:45:31.444Z 2026-07-07T08:45:32.444Z 2026-07-07 08:45:31: Starting ORACLE instance (normal)           
+            2 Info      NORMAL   2026-07-07T08:45:31.456Z 2026-07-07T08:45:32.456Z 2026-07-07 08:45:31: Database mounted                            
+            3 Info      NORMAL   2026-07-07T08:45:31.459Z 2026-07-07T08:45:32.459Z 2026-07-07 08:45:31: Completed checkpoint up to RBA, SCN: 1000001
+            4 Info      NORMAL   2026-07-07T08:45:31.460Z 2026-07-07T08:45:32.460Z 2026-07-07 08:45:31: Database opened                             
   
   4 rows selected.
 
@@ -3855,7 +3813,7 @@ SQL [325/387]> SELECT * FROM dba_hist_snapshot WHERE rownum < 5;
   
   SNAP_ID DBID INSTANCE_NUMBER SNAP_LEVEL BEGIN_INTERVAL_TIME      END_INTERVAL_TIME        STATUS    STARTUP_TIME        FLUSH_LEVEL FLUSH_ELAPSED SOURCE
   ------- ---- --------------- ---------- ------------------------ ------------------------ --------- ------------------- ----------- ------------- ------
-        1    1               1          1 2026-07-07T07:15:23.371Z 2026-07-07T07:15:24.491Z COMPLETED 2026-07-07T07:15:23 TYPICAL                 1 MANUAL
+        1    1               1          1 2026-07-07T08:45:30.860Z 2026-07-07T08:45:31.977Z COMPLETED 2026-07-07T08:45:31 TYPICAL                 1 MANUAL
   
   1 row selected.
 
@@ -3874,10 +3832,10 @@ SQL [327/387]> SELECT * FROM dba_hist_sqlstat WHERE rownum < 5;
   
   SNAP_ID SQL_ID        PLAN_HASH_VALUE EXECUTIONS_DELTA ELAPSED_TIME_DELTA CPU_TIME_DELTA BUFFER_GETS_DELTA DISK_READS_DELTA ROWS_PROCESSED_DELTA
   ------- ------------- --------------- ---------------- ------------------ -------------- ----------------- ---------------- --------------------
-        1 0vt62jga3xqw0               0                1                 52             42                 1                0                    1
-        1 0q2v84ta3xqw0               0                1                 38             30                 1                0                    1
-        1 1lco0lva3xqw0               0                1                630            504                 1                0                    0
-        1 1lkr1m2a3xqw0               0                1                 46             37                 1                0                    0
+        1 0vt62jga3xqw0               0                1                 39             32                 1                0                    1
+        1 0q2v84ta3xqw0               0                1                 31             25                 1                0                    1
+        1 1lco0lva3xqw0               0                1                567            454                 1                0                    0
+        1 1lkr1m2a3xqw0               0                1                 39             32                 1                0                    0
   
   4 rows selected.
 
@@ -4264,7 +4222,7 @@ SQL [383/387]> SELECT sysdate FROM dual;
   
   SYSDATE            
   -------------------
-  2026-07-07 07:15:24
+  2026-07-07 08:45:32
   
   1 row selected.
 
@@ -4272,7 +4230,7 @@ SQL [384/387]> SELECT systimestamp FROM dual;
   
   SYSTIMESTAMP            
   ------------------------
-  2026-07-07T07:15:24.619Z
+  2026-07-07T08:45:32.108Z
   
   1 row selected.
 

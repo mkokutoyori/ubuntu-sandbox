@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-logging-snmp-ntp
-Generated: 2026-07-07T07:21:21.312Z
+Generated: 2026-07-07T08:51:38.464Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=syslog/SNMPv1-3/NTP/NetFlow/EEM/CDP-LLDP
 Total steps: 322
@@ -487,7 +487,7 @@ Total steps: 322
 [124/322] r1 R1# show ntp status
   Clock is synchronized, stratum 3, reference is LOCL
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
-  reference time is EDF72771.5374BC6A (07:21:21.326 UTC Tue Jul 7 2026)
+  reference time is EDF73C9A.7A5E353F (08:51:38.478 UTC Tue Jul 7 2026)
   clock offset is 0.00 msec
 
 [125/322] r1 R1# show ntp associations
@@ -509,14 +509,14 @@ Total steps: 322
    ~10.0.0.40       .INIT.        16  999   64   000   0.0    0.0 16000.0
 
 [127/322] r1 R1# show clock
-  08:21:21.000 CET Tue Jul 7 2026
+  09:51:38.000 CET Tue Jul 7 2026
 
 [128/322] r1 R1# show clock detail
-  08:21:21.000 CET Tue Jul 7 2026
+  09:51:38.000 CET Tue Jul 7 2026
   Time source is NTP (LOCL)
 
 [129/322] r1 R1# show calendar
-  07:21:21 UTC Tue Jul 7 2026
+  08:51:38 UTC Tue Jul 7 2026
 
 
 --- [130] § NetFlow / Flexible NetFlow ---
@@ -1332,7 +1332,7 @@ Total steps: 322
 [250/322] r1 R1# show ntp status
   Clock is synchronized, stratum 3, reference is LOCL
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
-  reference time is EDF72771.5A1CAC08 (07:21:21.352 UTC Tue Jul 7 2026)
+  reference time is EDF73C9A.7E76C8B4 (08:51:38.494 UTC Tue Jul 7 2026)
   clock offset is 0.00 msec
 
 [251/322] r1 R1# show ntp associations
@@ -1345,7 +1345,7 @@ Total steps: 322
    ~10.0.0.40       .INIT.        16  999   64   000   0.0    0.0 16000.0
 
 [252/322] r1 R1# show clock
-  08:21:21.000 CET Tue Jul 7 2026
+  09:51:38.000 CET Tue Jul 7 2026
 
 [253/322] r1 R1# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge

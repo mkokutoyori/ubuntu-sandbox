@@ -1,6 +1,6 @@
 ============================================================
 Shell debug transcript — linux-server-text-pipes
-Generated: 2026-07-07T07:18:28.335Z
+Generated: 2026-07-07T08:48:51.558Z
 Engine: linux
 host=L-SRV-TXT-DBG (linux-server) — focus: traitement de texte, filtres & pipelines
 Total commands: 303

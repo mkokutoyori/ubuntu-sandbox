@@ -1,6 +1,6 @@
 ============================================================
 Cisco L2 switch debug transcript — cisco-l2-01-cli-basics
-Generated: 2026-07-07T07:13:35.622Z
+Generated: 2026-07-07T08:43:48.999Z
 Topology: CORE(L2) trunked to SW1 & SW2 (L2 access). SW1: L1(Linux 1.11) Fa0/1, W1(Win 1.12) Fa0/2, SRV1(Linux 1.13) Fa0/3, Gi0/1=trunk. SW2: L2(Linux 1.21) Fa0/1, W2(Win 1.22) Fa0/2, SRV2(Linux 1.23) Fa0/3, Gi0/1=trunk. All hosts 192.168.1.0/24.
 focus=CLI parsing, help, prompts, mode navigation, show family, host inspection
 Total steps: 366
@@ -131,7 +131,7 @@ Total steps: 366
   Configuration register is 0xF
 
 [10/366] sw1 SW1> show clock
-  *07:13:35.000 UTC Tue Jul 7 2026
+  *08:43:49.000 UTC Tue Jul 7 2026
 
 [11/366] sw1 SW1> show users
       Line       User       Host(s)              Idle       Location
@@ -1274,7 +1274,7 @@ Total steps: 366
   Timer interval: 300 seconds
 
 [54/366] sw1 SW1# show clock
-  *07:13:35.000 UTC Tue Jul 7 2026
+  *08:43:49.000 UTC Tue Jul 7 2026
 
 [55/366] sw1 SW1# show processes cpu
   CPU utilization for five seconds: 4%/0%; one minute: 5%; five minutes: 4%
@@ -3005,16 +3005,16 @@ Total steps: 366
       inet 192.168.1.13/24 brd 192.168.1.255 scope global eth0
 
 [195/366] srv1 srv1$ ip -br link
-  1: eth0: <BROADCAST,UP,MULTICAST,LOWER_UP> mtu 1500 qdisc fq_codel state UP mode DEFAULT group default qlen 1000
+  2: eth0: <BROADCAST,UP,MULTICAST,LOWER_UP> mtu 1500 qdisc fq_codel state UP mode DEFAULT group default qlen 1000
       link/ether 02:00:00:00:00:57 brd ff:ff:ff:ff:ff:ff
   
-  2: eth1: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN mode DEFAULT group default qlen 1000
+  3: eth1: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN mode DEFAULT group default qlen 1000
       link/ether 02:00:00:00:00:58 brd ff:ff:ff:ff:ff:ff
   
-  3: eth2: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN mode DEFAULT group default qlen 1000
+  4: eth2: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN mode DEFAULT group default qlen 1000
       link/ether 02:00:00:00:00:59 brd ff:ff:ff:ff:ff:ff
   
-  4: eth3: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN mode DEFAULT group default qlen 1000
+  5: eth3: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN mode DEFAULT group default qlen 1000
       link/ether 02:00:00:00:00:5a brd ff:ff:ff:ff:ff:ff
 
 [196/366] srv1 srv1$ ss -tlnp
@@ -3337,7 +3337,7 @@ Total steps: 366
   127.0.0.0       0.0.0.0         255.0.0.0       U         0 0          0 lo
 
 [256/366] l1 l1$ uptime
-   07:13:35 up 0 min,  1 user,  load average: 0.00, 0.01, 0.05
+   08:43:49 up 0 min,  1 user,  load average: 0.00, 0.01, 0.05
 
 [257/366] w1 w1$ hostname
   W1
@@ -3417,7 +3417,7 @@ Total steps: 366
   OS Manufacturer:           Microsoft Corporation
   OS Configuration:          Member Workstation
   OS Build Type:             Multiprocessor Free
-  System Boot Time:          7/7/2026, 7:13:35 AM
+  System Boot Time:          7/7/2026, 8:43:48 AM
   System Manufacturer:       QEMU
   System Model:              Standard PC (i440FX + PIIX, 1996)
   System Type:               x64-based PC
@@ -3472,7 +3472,7 @@ Total steps: 366
   127.0.0.0       0.0.0.0         255.0.0.0       U         0 0          0 lo
 
 [269/366] srv1 srv1$ uptime
-   07:13:35 up 0 min,  1 user,  load average: 0.00, 0.01, 0.05
+   08:43:49 up 0 min,  1 user,  load average: 0.00, 0.01, 0.05
 
 [270/366] l2 l2$ hostname
   linux-pc
@@ -3503,7 +3503,7 @@ Total steps: 366
   127.0.0.0       0.0.0.0         255.0.0.0       U         0 0          0 lo
 
 [276/366] l2 l2$ uptime
-   07:13:35 up 0 min,  1 user,  load average: 0.00, 0.01, 0.05
+   08:43:49 up 0 min,  1 user,  load average: 0.00, 0.01, 0.05
 
 [277/366] w2 w2$ hostname
   W2
@@ -3583,7 +3583,7 @@ Total steps: 366
   OS Manufacturer:           Microsoft Corporation
   OS Configuration:          Member Workstation
   OS Build Type:             Multiprocessor Free
-  System Boot Time:          7/7/2026, 7:13:35 AM
+  System Boot Time:          7/7/2026, 8:43:48 AM
   System Manufacturer:       QEMU
   System Model:              Standard PC (i440FX + PIIX, 1996)
   System Type:               x64-based PC
@@ -3638,27 +3638,27 @@ Total steps: 366
   127.0.0.0       0.0.0.0         255.0.0.0       U         0 0          0 lo
 
 [289/366] srv2 srv2$ uptime
-   07:13:35 up 0 min,  1 user,  load average: 0.00, 0.01, 0.05
+   08:43:49 up 0 min,  1 user,  load average: 0.00, 0.01, 0.05
 
 
 --- [290] § connectivity smoke test ---
 [290/366] l1 l1$ ping -c 2 192.168.1.12
   PING 192.168.1.12 (192.168.1.12) 56(84) bytes of data.
-  64 bytes from 192.168.1.12: icmp_seq=1 ttl=128 time=2.343 ms
-  64 bytes from 192.168.1.12: icmp_seq=2 ttl=128 time=0.855 ms
+  64 bytes from 192.168.1.12: icmp_seq=1 ttl=128 time=2.050 ms
+  64 bytes from 192.168.1.12: icmp_seq=2 ttl=128 time=0.805 ms
   
   --- 192.168.1.12 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.855/1.599/2.343/0.744 ms
+  rtt min/avg/max/mdev = 0.805/1.428/2.050/0.623 ms
 
 [291/366] l1 l1$ ping -c 2 192.168.1.21
   PING 192.168.1.21 (192.168.1.21) 56(84) bytes of data.
-  64 bytes from 192.168.1.21: icmp_seq=1 ttl=64 time=0.648 ms
-  64 bytes from 192.168.1.21: icmp_seq=2 ttl=64 time=1.207 ms
+  64 bytes from 192.168.1.21: icmp_seq=1 ttl=64 time=0.664 ms
+  64 bytes from 192.168.1.21: icmp_seq=2 ttl=64 time=1.099 ms
   
   --- 192.168.1.21 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.648/0.927/1.207/0.279 ms
+  rtt min/avg/max/mdev = 0.664/0.881/1.099/0.217 ms
 
 [292/366] l1 l1$ arp -a
   ? (192.168.1.13) at 02:00:00:00:00:57 [ether] on eth0
