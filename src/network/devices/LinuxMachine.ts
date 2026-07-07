@@ -2375,6 +2375,12 @@ export abstract class LinuxMachine extends EndHost
       delay(ms: number): Promise<void> {
         return new Promise((resolve) => setTimeout(resolve, ms));
       },
+      onCancelRequested(cb: () => void): () => void {
+        const pid = self.executor.currentPid();
+        return self.getBus().subscribeWhere('linux.process.exited',
+          (p) => p.deviceId === self.id && p.pid === pid,
+          () => cb());
+      },
       readFile(path: string): string | null {
         const v = self.executor.vfs.readFile(self.executor.vfs.normalizePath(path, self.executor.getCwd()));
         if (v != null) return v;
@@ -2395,20 +2401,42 @@ export abstract class LinuxMachine extends EndHost
     };
   }
 
+  private static makeTcpSegmentDedupSink(sink: (frame: CaptureFrame) => void): (frame: CaptureFrame, fromPort: boolean) => void {
+    interface PendingEntry { frame: CaptureFrame; fromPort: boolean; }
+    const pending = new Map<string, PendingEntry>();
+    const key = (f: CaptureFrame): string => `${f.srcIp}:${f.srcPort}:${f.dstIp}:${f.dstPort}:${f.tcpSeq}:${f.l4}`;
+    return (frame: CaptureFrame, fromPort: boolean): void => {
+      if (frame.l4 !== 'tcp' || frame.tcpSeq === undefined) { sink(frame); return; }
+      const k = key(frame);
+      const existing = pending.get(k);
+      if (existing) {
+        if (fromPort && !existing.fromPort) { existing.frame = frame; existing.fromPort = true; }
+        return;
+      }
+      const entry: PendingEntry = { frame, fromPort };
+      pending.set(k, entry);
+      queueMicrotask(() => {
+        pending.delete(k);
+        sink(entry.frame);
+      });
+    };
+  }
+
   openTcpdumpCapture(iface: string, sink: (frame: CaptureFrame) => void): () => void {
     const bus = this.getBus();
     const id = this.id;
     const unsubs: Array<() => void> = [];
     const wantPort = iface !== 'lo';
     const wantLoopback = iface === 'lo' || iface === 'any';
+    const dedupedSink = LinuxMachine.makeTcpSegmentDedupSink(sink);
 
     if (wantPort) {
       const match = (p: { deviceId: string; portName: string }) =>
         p.deviceId === id && (iface === 'any' || p.portName === iface);
       unsubs.push(bus.subscribeWhere('port.frame.received', match,
-        (e) => sink(decodeEthernetFrame(e.payload.frame, e.payload.portName, 'in', new Date()))));
+        (e) => dedupedSink(decodeEthernetFrame(e.payload.frame, e.payload.portName, 'in', new Date()), true)));
       unsubs.push(bus.subscribeWhere('port.frame.tx-requested', match,
-        (e) => sink(decodeEthernetFrame(e.payload.frame, e.payload.portName, 'out', new Date()))));
+        (e) => dedupedSink(decodeEthernetFrame(e.payload.frame, e.payload.portName, 'out', new Date()), true)));
     }
 
     if (wantLoopback) {
@@ -2423,7 +2451,7 @@ export abstract class LinuxMachine extends EndHost
 
     const tcpIface = iface === 'any' ? 'eth0' : iface;
     for (const pkt of this.executor.captureLog.all()) sink(makeTcpFrame(pkt, tcpIface));
-    unsubs.push(this.subscribeCapture((pkt) => sink(makeTcpFrame(pkt, tcpIface))));
+    unsubs.push(this.subscribeCapture((pkt) => dedupedSink(makeTcpFrame(pkt, tcpIface), false)));
 
     return () => { for (const u of unsubs) u(); };
   }

@@ -1647,7 +1647,10 @@ export class LinuxCommandExecutor {
     } catch { /* background failures are silent */ }
     if (exitCode === 127 && this.networkRunner) {
       const netArgv = simpleTokenize(cmdLine.replace(/^sudo\s+/, ''));
-      const pending = netArgv.length > 0 ? this.networkRunner(netArgv, undefined) : null;
+      const runner = this.networkRunner;
+      const pending = netArgv.length > 0
+        ? this.withProcessIdentity(proc.pid, () => runner(netArgv, undefined))
+        : null;
       if (pending) {
         captured = '';
         exitCode = 0;
@@ -2265,6 +2268,10 @@ export class LinuxCommandExecutor {
 
   private currentBashPid(): number {
     return this.bashPids[this.bashPids.length - 1] ?? this.shellPid;
+  }
+
+  currentPid(): number {
+    return this.currentBashPid();
   }
 
   withProcessIdentity<T>(pid: number, fn: () => T): T {
