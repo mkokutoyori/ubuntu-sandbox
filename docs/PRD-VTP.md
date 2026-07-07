@@ -162,29 +162,53 @@ base à la planification et à la revue avant le premier commit TDD.
    éligible par défaut 2-1001) n'est simplement pas inclus dans le scope de
    flood pour ce VLAN. VLAN 1 et VLAN de gestion restent toujours non
    pruning-éligibles par défaut, comme sur un vrai switch Cisco.
-4. **Différenciation de version (item 4, priorité basse).** Limiter la
-   portée à VTP v3 uniquement (v2/Token Ring hors périmètre pédagogique) :
-   plage VLAN étendue (jusqu'à 4094 au lieu d'une limite v1/v2 implicite),
-   et concept de *Primary Server* avec commande `vtp primary` déclenchant une
-   élection explicite (le server avec la révision la plus haute et/ou
-   priorité annoncée gagne) plutôt qu'une simple comparaison de révision
-   symétrique.
-5. **Hash MD5 réel (item 5, priorité basse, optionnelle).** Remplacer
-   `hashPassword()` par un vrai MD5 si une fidélité de capture `tcpdump`
-   byte-exacte pour VTP est explicitement demandée un jour — non prioritaire
-   tant qu'aucun test de capture VTP n'existe (contrairement à 802.1Q, cf.
-   `PRD-802.1Q.md`).
+4. **VTP version 3 complet (item 4).** Portée pleine des aspects v3
+   pertinents pour ce simulateur (Token Ring/v2 exclu — technologie obsolète
+   sans pertinence pédagogique, seule exclusion légitime) :
+   - **Plage VLAN étendue** (1006-4094 en plus de la plage classique) —
+     propagée par VTP v3 au même titre que la plage standard.
+   - **Concept de *Primary Server*** avec commande `vtp primary [force]`
+     déclenchant une élection explicite (le serveur avec la révision la plus
+     haute et/ou priorité annoncée gagne, résolution de conflit en cas
+     d'égalité), remplaçant la simple comparaison de révision symétrique
+     utilisée aujourd'hui par tous les modes.
+   - **Propagation des associations Private VLAN** dans la base VTP v3 : une
+     fois `docs/PRD-VLAN.md` §2.1.2 (Phase 2a, Private VLAN Cisco) livrée, le
+     couple (VLAN primaire, VLAN(s) secondaire(s), rôle) doit voyager dans le
+     même mécanisme de synchronisation que la base VLAN standard — c'est une
+     fonctionnalité v3 réelle (VTP v3 a été introduit en partie pour ce
+     besoin), pas une extension inventée pour ce PRD. Dépendance réelle et
+     assumée vers `docs/PRD-VLAN.md`, à séquencer après elle.
+   - **Hors périmètre, par frontière de protocole et non par minimalisme** :
+     la propagation d'une base MST (« MST database », type de base opaque
+     v3 dédié aux instances MSTP) reste exclue, car MSTP lui-même est hors
+     périmètre de ce trio de PRD (`docs/PRD-VLAN.md` §1.3 item 6) — il serait
+     incohérent de synchroniser une base pour un moteur qui n'existe pas
+     encore. Cette exclusion tombe automatiquement si un futur PRD dédié au
+     moteur STP/MSTP est écrit et livré.
+5. **Hash MD5 réel sur le fil (item 5).** Remplacer `hashPassword()` par un
+   vrai MD5 (condensé du mot de passe de domaine, format binaire conforme à
+   ce qu'un vrai VTP transmettrait) — livré comme fonctionnalité complète de
+   ce PRD, pas une amélioration facultative reportée : la fidélité byte-exacte
+   du format sur le fil est le même standard déjà appliqué à 802.1Q
+   (`docs/PRD-802.1Q.md` §1.2, sérialisation TCI testée par capture) et doit
+   être également atteint pour VTP. Cette phase inclut la création d'une
+   suite de capture dédiée (`tcpdump`/décodage de trame VTP), qui n'existe
+   pas encore, plutôt que d'attendre qu'un besoin futur la justifie.
 
 ### 2.2 Hors périmètre (explicitement exclu)
 
 - Support Token Ring (VTP v2) — technologie obsolète, aucune pertinence
   pédagogique pour ce simulateur.
-- VTP v3 « private VLAN support » et « MST database opaque type » au-delà de
-  la plage VLAN étendue et de l'élection de serveur primaire (item 4) — scope
-  volontairement restreint aux deux aspects v3 les plus visibles/testables.
+- Propagation d'une base MST via VTP v3 — frontière de protocole avec le
+  moteur STP/MSTP, lui-même hors périmètre de ce trio (cf. item 4
+  ci-dessus), pas une réduction de la portée VTP elle-même.
 - DTP (négociation dynamique de trunk) — déjà solide selon `GAP.md` §2.5,
   aucune action proposée dans ce PRD, mentionné uniquement comme dépendance
   amont non bloquante (§0.1).
+- Toute extension Huawei de VTP — confirmé sans équivalent réel (item 6 du
+  gap analysis) ; ce PRD ne propose délibérément aucun développement
+  Huawei ici, contrairement aux deux autres PRD de ce trio.
 
 ---
 
@@ -220,18 +244,34 @@ base à la planification et à la revue avant le premier commit TDD.
   pruning actif des deux côtés ; régression complète sur `vtp-protocol.test.ts`
   et `vlan-advanced.test.ts` (le flood normal, non pruné, ne doit pas changer).
 
-### Phase 4 — VTP v3 minimal (item 2.1.4, priorité basse)
+### Phase 4 — VTP v3 complet (item 2.1.4)
 
-- **Fichiers touchés** : `VtpAgent.ts` (élection de serveur primaire),
-  `types.ts` (validation de plage VLAN étendue conditionnelle à la version).
-- **Tests** : nouveau fichier `vtp-v3-primary-server.test.ts`.
+Scindée en trois volets, le troisième dépendant explicitement d'un autre PRD :
 
-### Phase 5 — MD5 réel (item 2.1.5, optionnelle)
+- **Phase 4a — plage VLAN étendue** : `types.ts` (validation 1006-4094
+  conditionnelle à `version === 3`), `VtpAgent`/`_vtpApplyVlans` (accepter le
+  diff sur la plage étendue).
+- **Phase 4b — élection de serveur primaire** : `VtpAgent.ts` (état
+  `primaryServer`, commande `vtp primary [force]`, résolution de conflit par
+  révision puis par priorité annoncée).
+- **Phase 4c — propagation des associations Private VLAN** (dépendance
+  explicite et bloquante vers `docs/PRD-VLAN.md` §2.1.2 Phase 2a) : extension
+  de `VtpFrame`/`VtpVlanEntry` pour porter le couple (VLAN primaire, VLAN
+  secondaire, rôle), consommé par `_vtpApplyVlans` pour recréer la
+  configuration Private VLAN sur les switches clients.
+- **Tests** : nouveau fichier `vtp-v3-primary-server.test.ts` (4a+4b) +
+  `vtp-v3-private-vlan-propagation.test.ts` (4c, ne peut être écrit qu'une
+  fois `docs/PRD-VLAN.md` Phase 2a livrée).
 
-- **Fichiers touchés** : `types.ts` (`hashPassword`).
-- **Tests** : uniquement si une suite de capture `tcpdump` pour VTP est créée
-  en parallèle — sinon cette phase n'a pas de critère d'acceptation observable
-  et devrait être reportée jusqu'à ce qu'un tel besoin soit exprimé.
+### Phase 5 — MD5 réel sur le fil (item 2.1.5)
+
+- **Fichiers touchés** : `types.ts` (`hashPassword` remplacé par un vrai
+  MD5), `VtpFrame` (format du condensé conforme).
+- **Tests** : cette phase inclut la création de la suite de capture qui
+  n'existe pas encore — nouveau fichier
+  `tcpdump-vtp-frame-capture.test.ts` (pendant VTP de
+  `tcpdump-byte-slice-vlan-filters.test.ts` côté 802.1Q), vérifiant que le
+  condensé MD5 apparaît correctement dans la trame capturée.
 
 ---
 
@@ -242,7 +282,10 @@ régresser : `vtp-protocol.test.ts` (306 lignes) et, par ricochet, toute suite
 qui exerce indirectement un switch en mode VTP server/client
 (`debug/cisco-l2/cisco-l2-03-trunk-dtp-vtp.debug.test.ts`). La Phase 1 est un
 préalable naturel à la Phase 2 (le message `request`/`join` s'insère dans
-l'échange summary→subset qu'elle établit), mais les Phases 3, 4 et 5 sont
+l'échange summary→subset qu'elle établit). La Phase 4c dépend explicitement
+de `docs/PRD-VLAN.md` Phase 2a (Private VLAN Cisco) — c'est une dépendance
+inter-PRD réelle à respecter dans l'ordonnancement global des deux PRD, pas
+une simple suggestion d'ordre. Les Phases 3, 4a, 4b et 5 sont par ailleurs
 indépendantes entre elles et de la Phase 2.
 
 ---
@@ -259,5 +302,19 @@ indépendantes entre elles et de la Phase 2.
   fonction déjà partagée avec la Phase 2 de `PRD-VLAN.md` (Private VLAN) et
   la Phase 3 de `PRD-VLAN.md` (VACL) — si ces PRD sont implémentés en
   parallèle, l'ordre d'application des filtres (PVLAN, VACL, pruning VTP)
-  dans `floodFrame()` doit être explicitement fixé et testé pour éviter
-  qu'un filtre masque silencieusement le comportement d'un autre.
+  dans `floodFrame()` doit être explicitement fixé et testé (voir l'ordre
+  proposé dans `docs/PRD-VLAN.md` §5) pour éviter qu'un filtre masque
+  silencieusement le comportement d'un autre.
+- **Risque de séquencement inter-PRD** : la Phase 4c (propagation Private
+  VLAN par VTP v3) ne peut pas être développée avant `docs/PRD-VLAN.md`
+  Phase 2a — si l'équipe qui planifie l'implémentation traite les trois PRD
+  de ce trio comme des chantiers strictement parallèles et indépendants,
+  cette dépendance précise doit être signalée explicitement en amont pour
+  éviter un blocage découvert tardivement.
+- **Risque de charge de travail sous-estimée** : le passage d'un VTP v3
+  « minimal » (plage étendue seule) à un VTP v3 complet (élection de serveur
+  primaire + propagation Private VLAN) et d'un hash simplifié à un vrai MD5
+  avec suite de capture dédiée représente un volume de travail sensiblement
+  plus grand que la version initiale de ce PRD — assumé explicitement ici,
+  cf. le même risque documenté dans `docs/PRD-802.1Q.md` §5 et
+  `docs/PRD-VLAN.md` §5 pour les deux autres PRD de ce trio.
