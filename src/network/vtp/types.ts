@@ -1,4 +1,5 @@
 import type { NetworkPdu } from '@/network/core/NetworkPdu';
+import { md5Hex } from '@/crypto';
 export const ETHERTYPE_VTP = 0x2003;
 export const VTP_MULTICAST_MAC = '01:00:0c:cc:cc:cc';
 
@@ -54,11 +55,5 @@ export function createDefaultVtpConfig(systemMac: string): VtpConfig {
 
 export function hashPassword(domain: string, password: string): string {
   if (!password) return '';
-  let h = 0;
-  const s = `${domain}|${password}`;
-  for (let i = 0; i < s.length; i++) {
-    h = ((h << 5) - h) + s.charCodeAt(i);
-    h |= 0;
-  }
-  return `vtp:${h.toString(16)}`;
+  return md5Hex(`${domain}|${password}`);
 }
