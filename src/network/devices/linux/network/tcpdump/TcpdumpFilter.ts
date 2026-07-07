@@ -17,6 +17,30 @@ const MAC_RE = /^[0-9a-fA-F]{2}(:[0-9a-fA-F]{2}){5}$/;
 
 const ALWAYS: CapturePredicate = () => true;
 
+function isMulticastMac(mac: string | undefined): boolean {
+  if (!mac) return false;
+  const firstByte = parseInt(mac.split(':')[0] ?? '00', 16);
+  return (firstByte & 0x01) === 1;
+}
+
+function isBroadcastMac(mac: string | undefined): boolean {
+  return (mac ?? '').toLowerCase() === 'ff:ff:ff:ff:ff:ff';
+}
+
+function isMulticastIp(ip: string | undefined): boolean {
+  if (!ip) return false;
+  if (ip.includes(':')) return ip.toLowerCase().startsWith('ff');
+  const first = parseInt(ip.split('.')[0] ?? '0', 10);
+  return first >= 224 && first <= 239;
+}
+
+function isBroadcastIp(ip: string | undefined): boolean {
+  return ip === '255.255.255.255';
+}
+
+const IS_MULTICAST: CapturePredicate = (f) => isMulticastMac(f.dstMac) || isMulticastIp(f.dstIp);
+const IS_BROADCAST: CapturePredicate = (f) => isBroadcastMac(f.dstMac) || isBroadcastIp(f.dstIp);
+
 function isInt(token: string): boolean {
   return /^\d+$/.test(token);
 }
@@ -142,8 +166,9 @@ class Parser {
       case 'vlan':
         return this.parseVlan();
       case 'multicast':
+        return { ok: true, predicate: IS_MULTICAST };
       case 'broadcast':
-        return { ok: true, predicate: ALWAYS };
+        return { ok: true, predicate: IS_BROADCAST };
       case 'less':
         return this.parseSize('less');
       case 'greater':
@@ -168,9 +193,13 @@ class Parser {
   }
 
   private maybeQualifiedIp(_kind: 'ipv4'): FilterResult {
-    if (this.peek() === 'multicast' || this.peek() === 'broadcast') {
+    if (this.peek() === 'multicast') {
       this.next();
-      return { ok: true, predicate: (f) => f.l3 === 'ipv4' };
+      return { ok: true, predicate: (f) => f.l3 === 'ipv4' && IS_MULTICAST(f) };
+    }
+    if (this.peek() === 'broadcast') {
+      this.next();
+      return { ok: true, predicate: (f) => f.l3 === 'ipv4' && IS_BROADCAST(f) };
     }
     if (this.peek() && this.peek()!.startsWith('ip[')) {
       return { ok: true, predicate: (f) => f.l3 === 'ipv4' };

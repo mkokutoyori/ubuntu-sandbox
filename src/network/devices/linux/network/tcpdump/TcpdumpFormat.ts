@@ -136,6 +136,16 @@ function l4Detail(frame: CaptureFrame, opt: TcpdumpOptions): string {
   return `length ${frame.payloadLength ?? frame.length}`;
 }
 
+const L4_MIN_HEADER_BYTES: Partial<Record<CaptureFrame['l4'], number>> = { tcp: 20, udp: 8, icmp: 8 };
+
+function truncationMarker(frame: CaptureFrame, opt: TcpdumpOptions): string | null {
+  const needed = L4_MIN_HEADER_BYTES[frame.l4];
+  if (needed === undefined) return null;
+  const l4Start = frame.rawLinkOffset + (frame.ipHeaderLen ?? 0);
+  const captured = opt.snaplen - l4Start;
+  return captured < needed ? `[|${frame.l4}]` : null;
+}
+
 function ipProtoName(frame: CaptureFrame): string {
   if (frame.l4 === 'icmp') return 'ICMP';
   if (frame.l4 === 'tcp') return 'TCP';
@@ -167,10 +177,11 @@ function ipChecksumSuffix(frame: CaptureFrame, opt: TcpdumpOptions): string {
 }
 
 function ipLine(frame: CaptureFrame, opt: TcpdumpOptions): string {
-  const withPort = frame.l4 === 'tcp' || frame.l4 === 'udp';
+  const trunc = truncationMarker(frame, opt);
+  const withPort = !trunc && (frame.l4 === 'tcp' || frame.l4 === 'udp');
   const src = endpoint(frame.srcIp, withPort ? frame.srcPort : undefined);
   const dst = endpoint(frame.dstIp, withPort ? frame.dstPort : undefined);
-  const detail = l4Detail(frame, opt);
+  const detail = trunc ?? l4Detail(frame, opt);
   if (opt.verbose > 0) {
     const offset = (frame.ipFragmentOffset ?? 0) * 8;
     const header = `IP (tos 0x0, ttl ${frame.ttl ?? 0}, id ${frame.ipId ?? 0}, offset ${offset}, flags [${ipFlagsToken(frame)}], `
@@ -181,10 +192,11 @@ function ipLine(frame: CaptureFrame, opt: TcpdumpOptions): string {
 }
 
 function ip6Line(frame: CaptureFrame, opt: TcpdumpOptions): string {
-  const withPort = frame.l4 === 'tcp' || frame.l4 === 'udp';
+  const trunc = truncationMarker(frame, opt);
+  const withPort = !trunc && (frame.l4 === 'tcp' || frame.l4 === 'udp');
   const src = endpoint(frame.srcIp, withPort ? frame.srcPort : undefined);
   const dst = endpoint(frame.dstIp, withPort ? frame.dstPort : undefined);
-  return `IP6 ${src} > ${dst}: ${l4Detail(frame, opt)}`;
+  return `IP6 ${src} > ${dst}: ${trunc ?? l4Detail(frame, opt)}`;
 }
 
 function ethPrefix(frame: CaptureFrame): string {

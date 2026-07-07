@@ -37,7 +37,7 @@ export async function runTcpdump(tokens: string[], deps: TcpdumpDeps): Promise<s
     case 'version':
       return invocation.text;
     case 'list-interfaces':
-      return listInterfacesText(deps.interfaceNames());
+      return listInterfacesText(deps.interfaceNames(), (name) => name === 'lo' || deps.interfaceUp(name));
     case 'list-link-types':
       return listLinkTypesText(invocation.iface);
     case 'capture':
@@ -84,6 +84,7 @@ async function runCapture(opt: TcpdumpOptions, deps: TcpdumpDeps): Promise<strin
         resolve();
       };
       unsubscribeCapture = deps.openCapture(opt.iface, (frame) => {
+        if (opt.direction !== 'inout' && frame.direction !== opt.direction) return;
         if (!filter.predicate(frame)) return;
         collected.push(frame);
         if (target !== null && collected.length >= target) finish();
@@ -133,10 +134,14 @@ function readCaptureFile(opt: TcpdumpOptions, deps: TcpdumpDeps): string {
     `reading from file ${opt.readFile}, link-type ${opt.linkType} (Ethernet), snapshot length ${opt.snaplen}`,
   ];
   let prev: Date | null = null;
+  let printed = 0;
   for (const frame of frames) {
+    if (opt.direction !== 'inout' && frame.direction !== opt.direction) continue;
     if (!predicate(frame)) continue;
     lines.push(formatFrame(frame, opt, prev));
     prev = frame.at;
+    printed++;
+    if (opt.count !== null && printed >= opt.count) break;
   }
   return lines.join('\n');
 }

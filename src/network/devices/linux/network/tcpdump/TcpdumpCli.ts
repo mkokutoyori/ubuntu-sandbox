@@ -18,6 +18,7 @@ export interface TcpdumpOptions {
   linkType: string;
   fileSizeLimit: number | null;
   filterTokens: string[];
+  direction: 'in' | 'out' | 'inout';
 }
 
 export type Invocation =
@@ -66,6 +67,7 @@ function defaults(): TcpdumpOptions {
     linkType: 'EN10MB',
     fileSizeLimit: null,
     filterTokens: [],
+    direction: 'inout',
   };
 }
 
@@ -185,6 +187,13 @@ function applyArgFlag(opt: TcpdumpOptions, ch: string, value: string): Invocatio
       opt.fileSizeLimit = parseInt(value, 10);
       return null;
     }
+    case 'Q': {
+      if (value !== 'in' && value !== 'out' && value !== 'inout') {
+        return { kind: 'error', message: `tcpdump: error: unknown capture direction \`${value}'` };
+      }
+      opt.direction = value;
+      return null;
+    }
     default:
       return null;
   }
@@ -209,8 +218,8 @@ function expandFilterTokens(filter: string[]): string[] {
   return out;
 }
 
-export function listInterfacesText(names: string[]): string {
-  return names.map((name, idx) => `${idx + 1}.${name} [Up, Running]`).join('\n');
+export function listInterfacesText(names: string[], isUp: (name: string) => boolean): string {
+  return names.map((name, idx) => `${idx + 1}.${name} [${isUp(name) ? 'Up, Running' : 'Down'}]`).join('\n');
 }
 
 export function listLinkTypesText(iface: string): string {
