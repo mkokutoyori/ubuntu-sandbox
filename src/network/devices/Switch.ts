@@ -117,6 +117,18 @@ export interface VtpPruningAgentLike {
   isVlanPruned(portName: string, vlan: number): boolean;
 }
 
+// ─── Private VLAN (PVLAN) ────────────────────────────────────────────
+
+export type PrivateVlanRole = 'primary' | 'isolated' | 'community';
+
+export interface PrivateVlanPortConfig {
+  role: 'host' | 'promiscuous';
+  hostKind?: 'isolated' | 'community';
+  primaryVlan: number;
+  secondaryVlan?: number;
+  mappedSecondaryVlans?: Set<number>;
+}
+
 // ─── MAC Table Entry ────────────────────────────────────────────────
 
 export interface MACTableEntry {
@@ -166,6 +178,13 @@ export abstract class Switch extends Equipment {
 
   // ─── Port Configurations ────────────────────────────────────────
   private switchportConfigs: Map<string, SwitchportConfig> = new Map();
+
+  // ─── Private VLAN (PVLAN) ────────────────────────────────────────
+  private pvlanRoles: Map<number, PrivateVlanRole> = new Map();
+  private pvlanAssociations: Map<number, Set<number>> = new Map();
+  private pvlanSecondaryToPrimary: Map<number, number> = new Map();
+  private pvlanPorts: Map<string, PrivateVlanPortConfig> = new Map();
+  private pvlanSviMappings: Map<number, Set<number>> = new Map();
 
   // ─── STP Port States ────────────────────────────────────────────
   private stpStates: Map<string, STPPortState> = new Map();
@@ -796,6 +815,112 @@ export abstract class Switch extends Equipment {
     return true;
   }
 
+  // ─── Private VLAN (PVLAN) configuration API ────────────────────────
+
+  setPrivateVlanRole(vlanId: number, role: PrivateVlanRole): { ok: boolean; error?: string } {
+    if (!this.vlans.has(vlanId)) return { ok: false, error: `VLAN ${vlanId} does not exist` };
+    this.pvlanRoles.set(vlanId, role);
+    return { ok: true };
+  }
+
+  getPrivateVlanRole(vlanId: number): PrivateVlanRole | undefined {
+    return this.pvlanRoles.get(vlanId);
+  }
+
+  associatePrivateVlan(primaryVlanId: number, secondaryVlanIds: number[]): { ok: boolean; error?: string } {
+    if (this.pvlanRoles.get(primaryVlanId) !== 'primary') {
+      return { ok: false, error: `VLAN ${primaryVlanId} is not a primary private VLAN` };
+    }
+    const existing = this.pvlanAssociations.get(primaryVlanId) ?? new Set<number>();
+    for (const sec of secondaryVlanIds) {
+      const role = this.pvlanRoles.get(sec);
+      if (role !== 'isolated' && role !== 'community') {
+        return { ok: false, error: `VLAN ${sec} is not a secondary private VLAN` };
+      }
+      const currentPrimary = this.pvlanSecondaryToPrimary.get(sec);
+      if (currentPrimary !== undefined && currentPrimary !== primaryVlanId) {
+        return { ok: false, error: `VLAN ${sec} is already associated with primary VLAN ${currentPrimary}` };
+      }
+      if (role === 'isolated') {
+        for (const other of existing) {
+          if (other !== sec && this.pvlanRoles.get(other) === 'isolated') {
+            return { ok: false, error: `Primary VLAN ${primaryVlanId} already has an isolated secondary VLAN` };
+          }
+        }
+      }
+    }
+    for (const sec of secondaryVlanIds) {
+      existing.add(sec);
+      this.pvlanSecondaryToPrimary.set(sec, primaryVlanId);
+    }
+    this.pvlanAssociations.set(primaryVlanId, existing);
+    return { ok: true };
+  }
+
+  getPrivateVlanAssociations(primaryVlanId: number): Set<number> {
+    return new Set(this.pvlanAssociations.get(primaryVlanId) ?? []);
+  }
+
+  configurePvlanHostPort(portName: string, primaryVlanId: number, secondaryVlanId: number): { ok: boolean; error?: string } {
+    const assoc = this.pvlanAssociations.get(primaryVlanId);
+    if (!assoc || !assoc.has(secondaryVlanId)) {
+      return { ok: false, error: `VLAN ${secondaryVlanId} is not associated with primary VLAN ${primaryVlanId}` };
+    }
+    if (!this.setSwitchportAccessVlan(portName, secondaryVlanId)) return { ok: false, error: '% Error' };
+    const hostKind = this.pvlanRoles.get(secondaryVlanId) as 'isolated' | 'community';
+    this.pvlanPorts.set(portName, { role: 'host', hostKind, primaryVlan: primaryVlanId, secondaryVlan: secondaryVlanId });
+    return { ok: true };
+  }
+
+  configurePvlanPromiscuousPort(portName: string, primaryVlanId: number, secondaryVlanIds: number[]): { ok: boolean; error?: string } {
+    if (this.pvlanRoles.get(primaryVlanId) !== 'primary') {
+      return { ok: false, error: `VLAN ${primaryVlanId} is not a primary private VLAN` };
+    }
+    const assoc = this.pvlanAssociations.get(primaryVlanId) ?? new Set<number>();
+    for (const sec of secondaryVlanIds) {
+      if (!assoc.has(sec)) return { ok: false, error: `VLAN ${sec} is not associated with primary VLAN ${primaryVlanId}` };
+    }
+    if (!this.setSwitchportAccessVlan(portName, primaryVlanId)) return { ok: false, error: '% Error' };
+    this.pvlanPorts.set(portName, { role: 'promiscuous', primaryVlan: primaryVlanId, mappedSecondaryVlans: new Set(secondaryVlanIds) });
+    return { ok: true };
+  }
+
+  getPrivateVlanPortConfig(portName: string): PrivateVlanPortConfig | undefined {
+    return this.pvlanPorts.get(portName);
+  }
+
+  setPrivateVlanSviMapping(primaryVlanId: number, secondaryVlanIds: number[]): void {
+    this.pvlanSviMappings.set(primaryVlanId, new Set(secondaryVlanIds));
+  }
+
+  getPrivateVlanSviMapping(primaryVlanId: number): Set<number> {
+    return new Set(this.pvlanSviMappings.get(primaryVlanId) ?? []);
+  }
+
+  private resolvePvlanPrimary(vlan: number): number | undefined {
+    if (this.pvlanRoles.get(vlan) === 'primary') return vlan;
+    return this.pvlanSecondaryToPrimary.get(vlan);
+  }
+
+  private resolvePvlanSviTarget(vlan: number): number {
+    const primary = this.resolvePvlanPrimary(vlan);
+    if (primary === undefined || primary === vlan) return vlan;
+    return this.pvlanSviMappings.get(primary)?.has(vlan) ? primary : vlan;
+  }
+
+  private pvlanEgressAllowed(ingressPort: string, egressPort: string, vlan: number): boolean {
+    const primary = this.resolvePvlanPrimary(vlan);
+    if (primary === undefined) return true;
+    const eg = this.pvlanPorts.get(egressPort);
+    if (!eg || eg.primaryVlan !== primary) return false;
+    if (!ingressPort) return true;
+    const ing = this.pvlanPorts.get(ingressPort);
+    if (!ing || ing.primaryVlan !== primary) return false;
+    if (eg.role === 'promiscuous' || ing.role === 'promiscuous') return true;
+    if (ing.hostKind === 'isolated' || eg.hostKind === 'isolated') return false;
+    return ing.secondaryVlan === eg.secondaryVlan;
+  }
+
   setTrunkNativeVlan(portName: string, vlanId: number): boolean {
     const cfg = this.switchportConfigs.get(portName);
     if (!cfg) return false;
@@ -1181,7 +1306,7 @@ export abstract class Switch extends Equipment {
     // A frame addressed to one of our SVIs is consumed here (the box is the
     // destination, not a transit bridge). Broadcast ARP for an SVI is answered
     // but still allowed to flood, so `intercept` returns false for it.
-    if (this.svi.intercept(ingressVlan, portName, frame)) {
+    if (this.svi.intercept(this.resolvePvlanSviTarget(ingressVlan), portName, frame)) {
       return;
     }
     // ─── Step 2.6: VRRP advertisement snoop (RFC 5798) ─────────
@@ -1234,7 +1359,7 @@ export abstract class Switch extends Equipment {
           `${this.name}: snooped multicast ${dstMAC} VLAN ${ingressVlan} → [${snoopedPorts.join(', ')}] (ingress ${portName})`,
           { dstMAC: dstMAC.toString(), srcMAC: srcMAC.toString(), vlan: ingressVlan, ingress: portName, egress: snoopedPorts },
         );
-        for (const egressPort of snoopedPorts) this.forwardToPort(egressPort, frame, ingressVlan);
+        for (const egressPort of snoopedPorts) this.forwardToPort(egressPort, frame, ingressVlan, portName);
         return;
       }
       Logger.debug(
@@ -1251,7 +1376,7 @@ export abstract class Switch extends Equipment {
           `${this.name}: forward ${dstMAC} VLAN ${ingressVlan} ${portName} → ${dstEntry.port}`,
           { dstMAC: dstMAC.toString(), srcMAC: srcMAC.toString(), vlan: ingressVlan, ingress: portName, egress: dstEntry.port },
         );
-        this.forwardToPort(dstEntry.port, frame, ingressVlan);
+        this.forwardToPort(dstEntry.port, frame, ingressVlan, portName);
       }
     }
   }
@@ -1305,8 +1430,11 @@ export abstract class Switch extends Equipment {
       if (stpState === 'blocking' || stpState === 'disabled' || stpState === 'listening' || stpState === 'learning') continue;
 
       if (cfg.mode === 'access') {
-        // Only flood to access ports in the same VLAN
-        if (cfg.accessVlan === vlan) {
+        if (this.resolvePvlanPrimary(vlan) !== undefined) {
+          if (this.pvlanEgressAllowed(exceptPort, portName, vlan)) {
+            this.sendFrame(portName, this.stripTag(frame));
+          }
+        } else if (cfg.accessVlan === vlan) {
           this.sendFrame(portName, this.stripTag(frame));
         } else if (cfg.voiceVlan === vlan) {
           this.sendFrame(portName, this.addTag(frame, vlan));
@@ -1328,7 +1456,7 @@ export abstract class Switch extends Equipment {
 
   // ─── Forward to Specific Port ─────────────────────────────────────
 
-  private forwardToPort(portName: string, frame: EthernetFrame, vlan: number): void {
+  private forwardToPort(portName: string, frame: EthernetFrame, vlan: number, ingressPort?: string): void {
     const cfg = this.switchportConfigs.get(portName);
     if (!cfg) return;
 
@@ -1339,6 +1467,7 @@ export abstract class Switch extends Equipment {
     if (stpState === 'blocking' || stpState === 'disabled' || stpState === 'listening' || stpState === 'learning') return;
 
     if (cfg.mode === 'access') {
+      if (ingressPort !== undefined && !this.pvlanEgressAllowed(ingressPort, portName, vlan)) return;
       if (cfg.voiceVlan === vlan) {
         this.sendFrame(portName, this.addTag(frame, vlan));
       } else {

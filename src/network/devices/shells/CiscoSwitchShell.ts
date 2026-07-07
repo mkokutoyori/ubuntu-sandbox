@@ -164,6 +164,23 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       return ok ? '' : '% VLAN not found';
     });
 
+    this.configVlanTrie.registerGreedy('private-vlan', 'Configure private VLAN role/association', (args) => {
+      if (!this.selectedVlan || args.length < 1) return '% Incomplete command.';
+      const sub = args[0].toLowerCase();
+      if (sub === 'primary' || sub === 'isolated' || sub === 'community') {
+        const res = this.d().setPrivateVlanRole(this.selectedVlan, sub);
+        return res.ok ? '' : `% ${res.error}`;
+      }
+      if (sub === 'association') {
+        if (!args[1]) return '% Incomplete command.';
+        const idSet = this.parseVlanList(args[1]);
+        if (!idSet) return '% Invalid VLAN list';
+        const res = this.d().associatePrivateVlan(this.selectedVlan, [...idSet]);
+        return res.ok ? '' : `% ${res.error}`;
+      }
+      return '% Incomplete command.';
+    });
+
     // ── Spanning Tree (L2, switch-only) ──
     this.registerStpCommands();
 
@@ -2021,6 +2038,55 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
         this.d().setSwitchportMode(portName, 'trunk') ? '' : '% Error'
       );
     });
+
+    this.configIfTrie.register('switchport mode private-vlan host', 'Set interface as a private VLAN host port', () => {
+      return this.applyToSelectedInterfaces(portName =>
+        this.d().setSwitchportMode(portName, 'access') ? '' : '% Error'
+      );
+    });
+
+    this.configIfTrie.register('switchport mode private-vlan promiscuous', 'Set interface as a private VLAN promiscuous port', () => {
+      return this.applyToSelectedInterfaces(portName =>
+        this.d().setSwitchportMode(portName, 'access') ? '' : '% Error'
+      );
+    });
+
+    this.configIfTrie.registerGreedy('switchport private-vlan host-association',
+      'Associate a host port with its primary/secondary private VLAN', (args) => {
+        if (args.length < 2) return '% Incomplete command.';
+        const primary = parseInt(args[0], 10);
+        const secondary = parseInt(args[1], 10);
+        if (isNaN(primary) || isNaN(secondary)) return '% Invalid VLAN ID';
+        return this.applyToSelectedInterfaces(portName => {
+          const res = this.d().configurePvlanHostPort(portName, primary, secondary);
+          return res.ok ? '' : `% ${res.error}`;
+        });
+      });
+
+    this.configIfTrie.registerGreedy('switchport private-vlan mapping',
+      'Map a promiscuous port to primary/secondary private VLANs', (args) => {
+        if (args.length < 2) return '% Incomplete command.';
+        const primary = parseInt(args[0], 10);
+        if (isNaN(primary)) return '% Invalid VLAN ID';
+        const secondarySet = this.parseVlanList(args[1]);
+        if (!secondarySet) return '% Invalid VLAN list';
+        const secondaries = [...secondarySet];
+        return this.applyToSelectedInterfaces(portName => {
+          const res = this.d().configurePvlanPromiscuousPort(portName, primary, secondaries);
+          return res.ok ? '' : `% ${res.error}`;
+        });
+      });
+
+    this.configIfTrie.registerGreedy('private-vlan mapping',
+      'Map secondary VLANs to this primary VLAN SVI', (args) => {
+        const vlan = this.sviVlanId(this.selectedInterface ?? '');
+        if (vlan === null) return '% Command rejected: not applicable on this interface.';
+        if (args.length < 1) return '% Incomplete command.';
+        const secondarySet = this.parseVlanList(args[0]);
+        if (!secondarySet) return '% Invalid VLAN list';
+        this.d().setPrivateVlanSviMapping(vlan, [...secondarySet]);
+        return '';
+      });
 
     this.configIfTrie.register('switchport mode dynamic auto', 'Negotiate trunk via DTP (passive)', () => {
       return this.applyToSelectedInterfaces(portName => {
