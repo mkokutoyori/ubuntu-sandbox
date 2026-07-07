@@ -1,6 +1,6 @@
 ============================================================
 Shell debug transcript — linux-pc-networking
-Generated: 2026-07-07T08:39:03.996Z
+Generated: 2026-07-07T16:24:53.213Z
 Engine: linux
 host=L-PC-NET-DBG (linux-pc) — focus: réseau (ip/ping/route/dns/sockets/firewall)
 Total commands: 302
@@ -975,22 +975,22 @@ $ [170/302]> curl http://hote_inexistant_xyz
   curl: (6) Could not resolve host: hote_inexistant_xyz
 
 $ [171/302]> wget http://192.168.10.1
-  --2026-07-07 08:39:07--  http://192.168.10.1
+  --2026-07-07 16:24:56--  http://192.168.10.1
   Resolving 192.168.10.1... failed: Temporary failure in name resolution.
   wget: unable to resolve host address '192.168.10.1'
 
 $ [172/302]> wget -q http://192.168.10.1
-  --2026-07-07 08:39:07--  http://192.168.10.1
+  --2026-07-07 16:24:56--  http://192.168.10.1
   Resolving 192.168.10.1... failed: Temporary failure in name resolution.
   wget: unable to resolve host address '192.168.10.1'
 
 $ [173/302]> wget -O /tmp/dl.html http://192.168.10.1
-  --2026-07-07 08:39:07--  http://192.168.10.1
+  --2026-07-07 16:24:56--  http://192.168.10.1
   Resolving 192.168.10.1... failed: Temporary failure in name resolution.
   wget: unable to resolve host address '192.168.10.1'
 
 $ [174/302]> wget --timeout=2 http://192.168.10.99
-  --2026-07-07 08:39:07--  http://192.168.10.99
+  --2026-07-07 16:24:56--  http://192.168.10.99
   Resolving 192.168.10.99... failed: Temporary failure in name resolution.
   wget: unable to resolve host address '192.168.10.99'
 
@@ -1211,11 +1211,11 @@ $ [218/302]> ssh-keygen -t rsa -b 2048 -f /tmp/id_rsa -N ""
 <empty>
 
 $ [219/302]> ls -l /tmp/id_rsa /tmp/id_rsa.pub
-  -rw------- 1 user user 77 Jul  7 08:39 /tmp/id_rsa
-  -rw-r--r-- 1 user user 38 Jul  7 08:39 /tmp/id_rsa.pub
+  -rw------- 1 user user 77 Jul  7 16:25 /tmp/id_rsa
+  -rw-r--r-- 1 user user 38 Jul  7 16:25 /tmp/id_rsa.pub
 
 $ [220/302]> cat /tmp/id_rsa.pub
-  ssh-rsa AAAAqd7g26e3rkh user@linux-pc
+  ssh-rsa AAAA4k35dmcmv4p user@linux-pc
 
 $ [221/302]> ssh-keygen -t ed25519 -f /tmp/id_ed25519 -N ""
 <empty>
@@ -1224,7 +1224,7 @@ $ [222/302]> ssh-keygen -lf /tmp/id_rsa.pub
 <empty>
 
 $ [223/302]> ssh-keygen -y -f /tmp/id_rsa
-  ssh-ed25519 AAAAvwp5bwwrpgc user@localhost
+  ssh-ed25519 AAAAbndym9hxxyw user@localhost
 
 $ [224/302]> ssh -V
   usage: ssh [-options] destination [command]

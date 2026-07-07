@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-eigrp-rip-bgp
-Generated: 2026-07-07T08:50:44.170Z
+Generated: 2026-07-07T16:25:50.499Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=RIP/EIGRP(classic+named)/BGP: peers, redist, policy, show
 Total steps: 355
@@ -1461,7 +1461,7 @@ Total steps: 355
 [283/355] r1 R1# show ntp status
   Clock is unsynchronized, stratum 16, reference is .INIT.
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
-  reference time is EDF73C64.3FBE76C8 (08:50:44.249 UTC Tue Jul 7 2026)
+  reference time is EDF7A70E.95810624 (16:25:50.584 UTC Tue Jul 7 2026)
   clock offset is 0.00 msec
 
 [284/355] r1 R1# show ntp associations
@@ -1470,7 +1470,7 @@ Total steps: 355
   No NTP associations configured.
 
 [285/355] r1 R1# show clock
-  *08:50:44.000 UTC Tue Jul 7 2026
+  *16:25:50.000 UTC Tue Jul 7 2026
 
 [286/355] r1 R1# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
