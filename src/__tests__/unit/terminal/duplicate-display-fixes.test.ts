@@ -96,7 +96,7 @@ describe('terminal_gap.md §9 — double-display fixes', () => {
 
   describe('§9.3 — PS → cmd does not duplicate the CMD banner', () => {
     it('PowerShellSubShell.processLine("cmd") returns no output, just _enterCmd', async () => {
-      const pc = new WindowsPC('PC1', 0, 0);
+      const pc = new WindowsPC('windows-pc', 'PC1', 0, 0);
       pc.setEventBus(bus);
       const { subShell } = PowerShellSubShell.create(pc);
 
@@ -107,7 +107,7 @@ describe('terminal_gap.md §9 — double-display fixes', () => {
     });
 
     it('switching PS → cmd via the session adds exactly one banner', async () => {
-      const pc = new WindowsPC('PC2', 0, 0);
+      const pc = new WindowsPC('windows-pc', 'PC2', 0, 0);
       pc.setEventBus(bus);
       const sid = manager.openTerminal(pc)!;
       const session = manager.getSession(sid) as WindowsTerminalSession;

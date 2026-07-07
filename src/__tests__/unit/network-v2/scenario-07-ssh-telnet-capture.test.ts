@@ -17,7 +17,7 @@ interface Topology {
 function buildTopology(): Topology {
   const sw = new CiscoSwitch('switch-cisco', 'SW1', 8, 0, 0);
   const client = new LinuxPC('linux-pc', 'CLIENT');
-  const server = new LinuxServer('SERVER');
+  const server = new LinuxServer('linux-server', 'SERVER');
   const capture = new LinuxPC('linux-pc', 'SNIFFER');
 
   client.getPort('eth0')!.configureIP(new IPAddress('10.0.0.10'), new SubnetMask('255.255.255.0'));

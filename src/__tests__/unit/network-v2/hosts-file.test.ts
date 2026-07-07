@@ -152,7 +152,7 @@ describe('HF-05 — Windows resolveHostname', () => {
 describe('HF-06 — Windows DNS fallback', () => {
   function buildDnsTopology() {
     const win = new WindowsPC('windows-pc', 'WIN');
-    const dns = new LinuxServer('DNS1');
+    const dns = new LinuxServer('linux-server', 'DNS1');
     win.configureInterface('eth0', new IPAddress('10.0.1.2'), new SubnetMask('255.255.255.0'));
     dns.configureInterface('eth0', new IPAddress('10.0.1.10'), new SubnetMask('255.255.255.0'));
     new Cable('c1').connect(win.getPort('eth0')!, dns.getPort('eth0')!);

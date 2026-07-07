@@ -36,7 +36,7 @@ const dhcpState = (h: LinuxPC, iface: string) => h.getDHCPClient().getState(ifac
 async function buildLab() {
   const h1 = new LinuxPC('linux-pc', 'H1');
   const h2 = new LinuxPC('linux-pc', 'H2');
-  const sw = new CiscoSwitch('cs', 'SW1', 26);
+  const sw = new CiscoSwitch('switch-cisco', 'SW1', 26);
   const r1 = new CiscoRouter('R1');
 
   new Cable('a').connect(h1.getPort('eth0')!, sw.getPort('FastEthernet0/1')!);

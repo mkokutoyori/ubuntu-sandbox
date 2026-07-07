@@ -628,7 +628,7 @@ describe('SP-13 — Windows netstat: dynamic output from socket table', () => {
 describe('SP-14 — Linux ss -s: summary from the real socket table', () => {
 
   it('counts match the live socket table, not canned figures', async () => {
-    const pc = new LinuxServer('srv', 'S1');
+    const pc = new LinuxServer('linux-server', 'S1');
     const table = pc.getSocketTable();
     const all = table.getAll();
     const tcp = all.filter(s => s.protocol === 'tcp').length;
@@ -642,7 +642,7 @@ describe('SP-14 — Linux ss -s: summary from the real socket table', () => {
   });
 
   it('reflects a new listener after a daemon binds a port', async () => {
-    const pc = new LinuxServer('srv', 'S1');
+    const pc = new LinuxServer('linux-server', 'S1');
     const before = await pc.executeCommand('ss -s');
     const tcpBefore = Number(/TCP:\s+(\d+)/.exec(before)?.[1]);
 

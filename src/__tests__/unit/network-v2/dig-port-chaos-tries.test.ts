@@ -53,7 +53,7 @@ function writeRoot(server: LinuxServer, path: string, content: string): void {
 
 async function buildLab(extraOptions = '') {
   const pc = new LinuxPC('linux-pc', 'PC1');
-  const srv = new LinuxServer('NS1');
+  const srv = new LinuxServer('linux-server', 'NS1');
 
   pc.configureInterface('eth0', new IPAddress('10.0.1.2'), new SubnetMask('255.255.255.0'));
   srv.configureInterface('eth0', new IPAddress(NS1_IP), new SubnetMask('255.255.255.0'));
@@ -108,7 +108,7 @@ describe('dig CH-class built-in names (RFC 4892 §2.1, PRD P3)', () => {
     const out = await pc.executeCommand(`dig @${NS1_IP} hostname.bind TXT chaos`);
 
     expect(out).toContain('status: NOERROR');
-    expect(out).toContain('"Server"');
+    expect(out).toContain('"NS1"');
   });
 
   it('CH-class queries for ordinary names outside the built-in set never trigger the chaos identification answer', async () => {

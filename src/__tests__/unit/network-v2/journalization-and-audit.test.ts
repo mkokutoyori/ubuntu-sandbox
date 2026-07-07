@@ -340,7 +340,7 @@ describe('Windows Security audit trail (reactive)', () => {
 describe('Windows event-log filesystem materialisation', () => {
   it('materialises the event logs as .evtx files under winevt\\Logs', async () => {
     const { WindowsPC } = await import('@/network/devices/WindowsPC');
-    const pc = new WindowsPC('win-pc', 'WIN1');
+    const pc = new WindowsPC('windows-pc', 'WIN1');
     const system = await pc.executeCommand('type C:\\Windows\\System32\\winevt\\Logs\\System.evtx');
     expect(system).toContain('Windows Event Log: System');
     const security = await pc.executeCommand('type C:\\Windows\\System32\\winevt\\Logs\\Security.evtx');

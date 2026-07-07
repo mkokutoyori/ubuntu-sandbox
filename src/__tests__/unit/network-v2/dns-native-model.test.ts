@@ -16,7 +16,7 @@ const SERVER_IP = '10.0.1.10';
 
 function buildTopology() {
   const pc = new LinuxPC('linux-pc', 'PC1');
-  const srv = new LinuxServer('DNS1');
+  const srv = new LinuxServer('linux-server', 'DNS1');
   pc.configureInterface('eth0', new IPAddress('10.0.1.2'), new SubnetMask('255.255.255.0'));
   srv.configureInterface('eth0', new IPAddress(SERVER_IP), new SubnetMask('255.255.255.0'));
   new Cable('c1').connect(pc.getPort('eth0')!, srv.getPort('eth0')!);

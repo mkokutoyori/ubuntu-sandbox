@@ -14,7 +14,7 @@ const DECLARED_PORT = 8443;
 const ACTUAL_PORT = 9443;
 
 async function buildLab(): Promise<Lab> {
-  const sw = new GenericSwitch('switch', 'sw', 8, 0, 0);
+  const sw = new GenericSwitch('switch-generic', 'sw', 8, 0, 0);
   const client = new LinuxPC('linux-pc', 'client', 0, 0);
   const server = new LinuxServer('linux-server', 'srv', 0, 0);
   new Cable('a').connect(client.getPorts()[0], sw.getPorts()[0]);

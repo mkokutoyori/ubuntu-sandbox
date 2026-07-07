@@ -25,7 +25,7 @@ beforeEach(() => {
 });
 
 async function buildInterVlanLan() {
-  const sw = new CiscoSwitch('cs', 'L3SW', 24, 0, 0);
+  const sw = new CiscoSwitch('switch-cisco', 'L3SW', 24, 0, 0);
   const pc1 = new LinuxPC('pc1', 'PC1', 0, 0);
   const pc2 = new LinuxPC('pc2', 'PC2', 0, 0);
 
@@ -115,7 +115,7 @@ describe('Cisco L3 switch — inter-VLAN routing', () => {
 
 describe('Cisco L3 switch — serveur DHCP intégré', () => {
   async function buildDhcpLan() {
-    const sw = new CiscoSwitch('cs', 'L3SW', 24, 0, 0);
+    const sw = new CiscoSwitch('switch-cisco', 'L3SW', 24, 0, 0);
     const pc1 = new LinuxPC('pc1', 'PC1', 0, 0);
     const pc2 = new LinuxPC('pc2', 'PC2', 0, 0);
     new Cable('c1').connect(pc1.getPorts()[0], sw.getPort('FastEthernet0/1')!);

@@ -41,7 +41,7 @@ async function buildLab() {
   const router = new CiscoRouter('R1');
   const sw = new GenericSwitch('switch-generic', 'SW1');
   const win = new WindowsPC('windows-pc', 'WINPC');
-  const dns = new LinuxServer('DNS1');
+  const dns = new LinuxServer('linux-server', 'DNS1');
   win.setCurrentUser('Administrator');
 
   new Cable('c-r').connect(router.getPort('GigabitEthernet0/0')!, sw.getPort('eth0')!);

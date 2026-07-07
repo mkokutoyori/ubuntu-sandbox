@@ -22,8 +22,8 @@ interface Lab {
 
 async function buildLab(): Promise<Lab> {
   const router = new CiscoRouter('router');
-  const swA = new GenericSwitch('switch', 'sw-A', 8, 0, 0);
-  const swOther = new GenericSwitch('switch', 'sw-Other', 8, 0, 0);
+  const swA = new GenericSwitch('switch-generic', 'sw-A', 8, 0, 0);
+  const swOther = new GenericSwitch('switch-generic', 'sw-Other', 8, 0, 0);
   const clientOk = new LinuxPC('linux-pc', 'client-ok', 0, 0);
   const clientBlockedBySshd = new LinuxPC('linux-pc', 'client-sshd', 0, 0);
   const clientBlockedByFw = new LinuxPC('linux-pc', 'client-fw', 0, 0);

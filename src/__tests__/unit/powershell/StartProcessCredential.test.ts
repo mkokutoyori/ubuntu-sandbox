@@ -36,7 +36,7 @@ function makeHost() {
 
 function setupWithBroker() {
   EquipmentRegistry.resetInstance();
-  const pc = new WindowsPC('win-pc', 'WIN');
+  const pc = new WindowsPC('windows-pc', 'WIN');
   pc.powerOn();
   const { subShell } = PowerShellSubShell.create(pc);
   const h = makeHost();

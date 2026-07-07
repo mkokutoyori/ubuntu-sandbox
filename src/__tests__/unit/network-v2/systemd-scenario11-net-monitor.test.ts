@@ -63,7 +63,7 @@ interface Lab {
 }
 
 async function buildLab(): Promise<Lab> {
-  const sw = new HuaweiSwitch('huawei-switch', 'SW1', 8, 0, 0);
+  const sw = new HuaweiSwitch('switch-huawei', 'SW1', 8, 0, 0);
   const pc = new LinuxPC('linux-pc', 'PC1');
 
   pc.configureInterface('eth0', new IPAddress(PC_IP), new SubnetMask('255.255.255.0'));

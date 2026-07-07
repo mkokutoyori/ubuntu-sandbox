@@ -52,7 +52,7 @@ function injectArp(sw: CiscoSwitch, port: string, frame: ReturnType<typeof makeA
 }
 
 function setupSwitch(bus?: EventBus) {
-  const sw = new CiscoSwitch('sw-id', 'SW1', 8, 0, 0);
+  const sw = new CiscoSwitch('switch-cisco', 'SW1', 8, 0, 0);
   if (bus) sw.setEventBus(bus);
   // Bring all ports up so handleFrame isn't gated by link state.
   for (const name of sw.getPortNames()) sw.getPort(name)!.setUp(true);

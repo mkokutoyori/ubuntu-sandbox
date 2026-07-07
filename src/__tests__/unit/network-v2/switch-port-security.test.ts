@@ -32,7 +32,7 @@ const MAC_B = 'bb:bb:bb:00:00:02';
 const MAC_C = 'cc:cc:cc:00:00:03';
 
 function setupSwitch(bus?: EventBus): CiscoSwitch {
-  const sw = new CiscoSwitch('sw-id', 'SW1', 8, 0, 0);
+  const sw = new CiscoSwitch('switch-cisco', 'SW1', 8, 0, 0);
   if (bus) sw.setEventBus(bus);
   for (const name of sw.getPortNames()) sw.getPort(name)!.setUp(true);
   return sw;

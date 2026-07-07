@@ -23,12 +23,12 @@ import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
 // ─── Topologies ──────────────────────────────────────────────────────
 
 function setupIsolatedSwitch() {
-  const sw = new CiscoSwitch('sw1', 'Switch', 24, 0, 0);
+  const sw = new CiscoSwitch('switch-cisco', 'Switch', 24, 0, 0);
   return { sw };
 }
 
 function setupManagementLAN() {
-  const sw = new CiscoSwitch('sw1', 'Switch', 24, 0, 0);
+  const sw = new CiscoSwitch('switch-cisco', 'Switch', 24, 0, 0);
   const pc = new LinuxPC('PC1', 0, 0);
   const r1 = new CiscoRouter('R1', 0, 0);
 

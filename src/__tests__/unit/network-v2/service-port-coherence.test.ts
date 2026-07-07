@@ -234,7 +234,7 @@ describe('Windows port coherence', () => {
 
   it('ships the full IANA registry as the drivers\\etc\\services file', async () => {
     const { WindowsPC } = await import('@/network/devices/WindowsPC');
-    const pc = new WindowsPC('win-pc', 'WIN1');
+    const pc = new WindowsPC('windows-pc', 'WIN1');
     const services = await pc.executeCommand('type C:\\Windows\\System32\\drivers\\etc\\services');
     expect(services).toContain('ssh');
     expect(services).toContain('3306/tcp');

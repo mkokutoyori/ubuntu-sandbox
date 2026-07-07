@@ -30,7 +30,7 @@ describe('Cisco switch debug spanning-tree — event subscription on the async p
     __setDefaultEventBus(bus);
     EquipmentRegistry.getInstance().setEventBus(bus);
     manager = new TerminalManager(bus);
-    sw = new CiscoSwitch('SW1');
+    sw = new CiscoSwitch('switch-cisco', 'SW1');
     sw.setEventBus(bus);
     const sid = manager.openTerminal(sw)!;
     session = manager.getSession(sid) as CiscoTerminalSession;

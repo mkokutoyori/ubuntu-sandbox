@@ -26,7 +26,7 @@ beforeEach(() => {
 });
 
 async function buildLan() {
-  const sw = new HuaweiSwitch('hw-sw', 'L3SW', 8, 0, 0);
+  const sw = new HuaweiSwitch('switch-huawei', 'L3SW', 8, 0, 0);
   const pc1 = new LinuxPC('pc1', 'PC1', 0, 0);
   const pc2 = new LinuxPC('pc2', 'PC2', 0, 0);
 
@@ -141,7 +141,7 @@ describe('Huawei L3 switch — inter-VLAN routing', () => {
 
 describe('Huawei L3 switch — serveur DHCP intégré (deployment "collapsed core")', () => {
   async function buildDhcpLan() {
-    const sw = new HuaweiSwitch('hw-sw', 'L3SW', 8, 0, 0);
+    const sw = new HuaweiSwitch('switch-huawei', 'L3SW', 8, 0, 0);
     const pc1 = new LinuxPC('pc1', 'PC1', 0, 0);
     const pc2 = new LinuxPC('pc2', 'PC2', 0, 0);
     new Cable('c1').connect(pc1.getPorts()[0], sw.getPort('GigabitEthernet0/0/1')!);

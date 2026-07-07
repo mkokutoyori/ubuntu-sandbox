@@ -39,7 +39,7 @@ interface Lab {
 
 async function buildLab(): Promise<Lab> {
   const pc = new LinuxPC('linux-pc', 'PC1');
-  const srv = new LinuxServer('SRV1');
+  const srv = new LinuxServer('linux-server', 'SRV1');
   pc.configureInterface('eth0', new IPAddress(PC_IP), new SubnetMask('255.255.255.0'));
   srv.configureInterface('eth0', new IPAddress(SRV_IP), new SubnetMask('255.255.255.0'));
   const cable = new Cable('c1');

@@ -58,7 +58,7 @@ function writeRoot(server: LinuxServer, path: string, content: string): void {
 
 async function buildLab() {
   const win = new WindowsPC('windows-pc', 'WIN1');
-  const srv = new LinuxServer('NS1');
+  const srv = new LinuxServer('linux-server', 'NS1');
 
   win.powerOn();
   win.configureInterface('eth0', new IPAddress(WIN_IP), new SubnetMask('255.255.255.0'));

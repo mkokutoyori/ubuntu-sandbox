@@ -64,7 +64,7 @@ function writeRoot(server: LinuxServer, path: string, content: string): void {
 async function buildLab() {
   const pc = new LinuxPC('linux-pc', 'PC1');
   const outsider = new LinuxPC('linux-pc', 'OUTSIDER');
-  const srv = new LinuxServer('NS1');
+  const srv = new LinuxServer('linux-server', 'NS1');
   const sw = new GenericSwitch('switch-generic', 'SW');
 
   pc.configureInterface('eth0', new IPAddress(PC1_IP), new SubnetMask('255.255.255.0'));
@@ -178,7 +178,7 @@ describe('RndcServer — real TCP control channel (PRD-Nslookup-Dig-Rndc-Runas.m
 
   it('does not open a control channel when no controls{} clause is configured', async () => {
     const pc = new LinuxPC('linux-pc', 'PC1');
-    const srv = new LinuxServer('NS1');
+    const srv = new LinuxServer('linux-server', 'NS1');
     pc.configureInterface('eth0', new IPAddress(PC1_IP), new SubnetMask('255.255.255.0'));
     srv.configureInterface('eth0', new IPAddress(NS1_IP), new SubnetMask('255.255.255.0'));
     new Cable('c1').connect(pc.getPort('eth0')!, srv.getPort('eth0')!);

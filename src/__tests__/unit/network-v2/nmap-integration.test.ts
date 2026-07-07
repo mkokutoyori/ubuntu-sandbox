@@ -13,7 +13,7 @@ const ATTACKER_IP = '192.168.50.20';
 const SERVER_IP = '192.168.50.10';
 
 async function buildLab() {
-  const sw = new GenericSwitch('SW');
+  const sw = new GenericSwitch('switch-generic', 'SW');
   const server = new LinuxServer('linux-server', 'SRV');
   const attacker = new LinuxPC('linux-pc', 'ATTACKER');
   new Cable('c-srv').connect(server.getPort('eth0')!, sw.getPort('eth1')!);

@@ -37,7 +37,7 @@ function makeQuery(qname: string, id = 5): DnsMessage {
 
 function buildTopology() {
   const pc = new LinuxPC('linux-pc', 'PC1');
-  const srv = new LinuxServer('DNS1');
+  const srv = new LinuxServer('linux-server', 'DNS1');
   pc.configureInterface('eth0', new IPAddress('10.0.1.2'), new SubnetMask('255.255.255.0'));
   srv.configureInterface('eth0', new IPAddress('10.0.1.10'), new SubnetMask('255.255.255.0'));
   new Cable('c1').connect(pc.getPort('eth0')!, srv.getPort('eth0')!);
@@ -114,7 +114,7 @@ describe('DoT — DNS over TLS on TCP/853 (RFC 7858)', () => {
 
   it('fails when no DoT listener is bound', async () => {
     const pc = new LinuxPC('linux-pc', 'PC1');
-    const srv = new LinuxServer('DNS1');
+    const srv = new LinuxServer('linux-server', 'DNS1');
     pc.configureInterface('eth0', new IPAddress('10.0.1.2'), new SubnetMask('255.255.255.0'));
     srv.configureInterface('eth0', new IPAddress('10.0.1.10'), new SubnetMask('255.255.255.0'));
     new Cable('c1').connect(pc.getPort('eth0')!, srv.getPort('eth0')!);

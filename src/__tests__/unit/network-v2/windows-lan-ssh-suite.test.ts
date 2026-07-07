@@ -41,7 +41,7 @@ function buildWinLan(): WinLan {
   const win2 = new WindowsPC('windows-pc', 'win2', 0, 0);
   const win3 = new WindowsPC('windows-pc', 'win3', 0, 0);
   const win4 = new WindowsPC('windows-pc', 'win4', 0, 0);
-  const sw = new GenericSwitch('switch', 'core-sw', 0, 0);
+  const sw = new GenericSwitch('switch-generic', 'core-sw', 0, 0);
   const all = [win1, win2, win3, win4];
   all.forEach((d, i) => { new Cable(d.getPorts()[0], sw.getPorts()[i]); });
 

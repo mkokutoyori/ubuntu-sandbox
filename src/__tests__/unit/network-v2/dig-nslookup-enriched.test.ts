@@ -49,7 +49,7 @@ function writeRoot(server: LinuxServer, path: string, content: string): void {
 
 async function buildLab(options: { conf?: string; zoneDb?: string | null } = {}) {
   const pc = new LinuxPC('linux-pc', 'PC1');
-  const srv = new LinuxServer('NS1');
+  const srv = new LinuxServer('linux-server', 'NS1');
 
   pc.configureInterface('eth0', new IPAddress('10.0.1.2'), new SubnetMask('255.255.255.0'));
   srv.configureInterface('eth0', new IPAddress(NS1_IP), new SubnetMask('255.255.255.0'));

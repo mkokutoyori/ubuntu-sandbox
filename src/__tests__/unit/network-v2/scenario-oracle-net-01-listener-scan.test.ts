@@ -14,7 +14,7 @@ const SERVER_IP = '192.168.10.10';
 const LISTENER_PORT = 1521;
 
 async function buildLab() {
-  const sw = new GenericSwitch('SW');
+  const sw = new GenericSwitch('switch-generic', 'SW');
   const server = new LinuxServer('linux-server', 'ORCL_HOST');
   const attacker = new LinuxPC('linux-pc', 'ATTACKER');
   new Cable('c-srv').connect(server.getPort('eth0')!, sw.getPort('eth1')!);

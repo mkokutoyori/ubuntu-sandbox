@@ -28,8 +28,8 @@ const GW_OUTSIDE = '203.0.113.1';
 const OUTSIDE_IP = '203.0.113.10';
 
 async function buildLab(): Promise<Lab> {
-  const lanSw = new GenericSwitch('switch', 'lan-sw', 8, 0, 0);
-  const ispSw = new GenericSwitch('switch', 'isp-sw', 8, 0, 0);
+  const lanSw = new GenericSwitch('switch-generic', 'lan-sw', 8, 0, 0);
+  const ispSw = new GenericSwitch('switch-generic', 'isp-sw', 8, 0, 0);
   const gw = new CiscoRouter('gw', 0, 0);
   const in1 = new LinuxPC('linux-pc', 'in1', 0, 0);
   const in2 = new LinuxPC('linux-pc', 'in2', 0, 0);

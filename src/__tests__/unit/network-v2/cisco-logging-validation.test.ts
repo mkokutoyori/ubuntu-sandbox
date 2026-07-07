@@ -16,7 +16,7 @@ const INCOMPLETE = '% Incomplete command.';
 describe('Cisco logging host — shared validation (router + switch)', () => {
   it('router and switch reject incomplete and invalid logging hosts identically', async () => {
     const r = new CiscoRouter('R1');
-    const sw = new CiscoSwitch('SW1');
+    const sw = new CiscoSwitch('switch-cisco', 'SW1');
     new Cable('lan').connect(
       r.getPort('GigabitEthernet0/0')!, sw.getPort('GigabitEthernet0/1')!);
 
@@ -32,7 +32,7 @@ describe('Cisco logging host — shared validation (router + switch)', () => {
 
   it('the applied host is reflected in show logging and running-config on both', async () => {
     const r = new CiscoRouter('R1');
-    const sw = new CiscoSwitch('SW1');
+    const sw = new CiscoSwitch('switch-cisco', 'SW1');
     new Cable('lan').connect(
       r.getPort('GigabitEthernet0/0')!, sw.getPort('GigabitEthernet0/1')!);
 

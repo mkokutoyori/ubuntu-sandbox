@@ -22,7 +22,7 @@ const WIN_MIN = 49152;
 const WIN_MAX = 65535;
 
 async function buildLab(): Promise<Lab> {
-  const sw = new GenericSwitch('switch', 'sw', 8, 0, 0);
+  const sw = new GenericSwitch('switch-generic', 'sw', 8, 0, 0);
   const linux = new LinuxPC('linux-pc', 'lin-client', 0, 0);
   const windows = new WindowsPC('windows-pc', 'win-client', 0, 0);
   const server = new LinuxServer('linux-server', 'srv', 0, 0);

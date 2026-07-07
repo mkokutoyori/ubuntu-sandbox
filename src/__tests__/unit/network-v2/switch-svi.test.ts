@@ -11,7 +11,7 @@ import { LinuxPC } from '@/network/devices/LinuxPC';
 import { Cable } from '@/network/hardware/Cable';
 
 function lan() {
-  const sw = new CiscoSwitch('sw1', 'Switch', 24, 0, 0);
+  const sw = new CiscoSwitch('switch-cisco', 'Switch', 24, 0, 0);
   const pc = new LinuxPC('PC1', 0, 0);
   const cable = new Cable('c1');
   cable.connect(pc.getPort('eth0')!, sw.getPort('FastEthernet0/2')!);

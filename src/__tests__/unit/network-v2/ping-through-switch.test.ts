@@ -249,7 +249,7 @@ describe('Ping through Switch (equipment-driven communication)', () => {
 
   it('should ping between Linux PC and Windows PC', async () => {
     const linux = new LinuxPC('Linux1');
-    const win = new WindowsPC('Win1');
+    const win = new WindowsPC('windows-pc', 'Win1');
     const sw = new CiscoSwitch('switch-cisco', 'Sw1', 8);
 
     const cable1 = new Cable('cable-1');

@@ -23,7 +23,7 @@ import type { ARecordData } from '@/network/dns/wire/ResourceRecord';
 
 function buildDnsTopology(options: { cabled?: boolean } = {}) {
   const pc = new LinuxPC('linux-pc', 'PC1');
-  const srv = new LinuxServer('DNS1');
+  const srv = new LinuxServer('linux-server', 'DNS1');
 
   pc.configureInterface('eth0', new IPAddress('10.0.1.2'), new SubnetMask('255.255.255.0'));
   srv.configureInterface('eth0', new IPAddress('10.0.1.10'), new SubnetMask('255.255.255.0'));

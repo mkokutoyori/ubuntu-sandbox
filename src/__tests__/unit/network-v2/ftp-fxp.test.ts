@@ -29,7 +29,7 @@ const SERVER_B_IP = '10.0.3.20';
 // routable without going through the client.
 function buildTopology() {
   const pc = new LinuxPC('linux-pc', 'PC1');
-  const srvA = new LinuxServer('FTP-A');
+  const srvA = new LinuxServer('linux-server', 'FTP-A');
   const srvB = new WindowsServer('FTP-B');
   const sw = new GenericSwitch('switch-generic', 'sw1', 8, 0, 0);
   const mask = new SubnetMask('255.255.255.0');

@@ -27,7 +27,7 @@ const run = async (sh: ReturnType<typeof ps>, l: string) => (await sh.processLin
 
 function buildLan() {
   const server = new WindowsServer('PRINTSRV');
-  const client = new WindowsPC('windows-client', 'CLIENT1');
+  const client = new WindowsPC('windows-pc', 'CLIENT1');
   const sw = new GenericSwitch('switch-generic', 'SW1');
   new Cable('c1').connect(server.getPorts()[0], sw.getPorts()[0]);
   new Cable('c2').connect(client.getPorts()[0], sw.getPorts()[1]);

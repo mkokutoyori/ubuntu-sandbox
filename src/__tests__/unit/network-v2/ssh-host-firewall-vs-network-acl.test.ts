@@ -49,7 +49,7 @@ async function buildLinuxLan(): Promise<LinuxLan> {
   const adminPc    = new LinuxPC('linux-pc', 'admin-pc', 0, 0);
   const attackerPc = new LinuxPC('linux-pc', 'attacker', 0, 0);
   const server     = new LinuxServer('linux-server', 'srv', 0, 0);
-  const sw         = new GenericSwitch('switch', 'switch');
+  const sw         = new GenericSwitch('switch-generic', 'switch');
   new Cable('c1').connect(adminPc.getPorts()[0],    sw.getPorts()[0]);
   new Cable('c2').connect(attackerPc.getPorts()[0], sw.getPorts()[1]);
   new Cable('c3').connect(server.getPorts()[0],     sw.getPorts()[2]);
@@ -134,7 +134,7 @@ describe('Scénario 4 — pare-feu local vs ACL réseau', () => {
     async function buildWindowsLan() {
       const adminPc  = new LinuxPC('linux-pc', 'admin-pc', 0, 0);
       const winSrv   = new WindowsPC('windows-pc', 'win-srv', 0, 0);
-      const sw       = new GenericSwitch('switch', 'switch');
+      const sw       = new GenericSwitch('switch-generic', 'switch');
       new Cable('w1').connect(adminPc.getPorts()[0], sw.getPorts()[0]);
       new Cable('w2').connect(winSrv.getPorts()[0],  sw.getPorts()[1]);
       adminPc.getPorts()[0].configureIP(new IPAddress('10.0.0.10'), new SubnetMask('255.255.255.0'));

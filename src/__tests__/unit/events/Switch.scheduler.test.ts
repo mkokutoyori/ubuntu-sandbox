@@ -13,7 +13,7 @@ describe('Switch MAC aging via VirtualTimeScheduler (Phase 4b1)', () => {
   it('aging-process startup uses the injected scheduler', () => {
     EquipmentRegistry.resetInstance();
     const scheduler = new VirtualTimeScheduler();
-    const sw = new CiscoSwitch('SW1');
+    const sw = new CiscoSwitch('switch-cisco', 'SW1');
     sw.setScheduler(scheduler);
 
     // Powering on the switch starts the aging interval.

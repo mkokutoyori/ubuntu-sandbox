@@ -33,7 +33,7 @@ function writeRoot(server: LinuxServer, path: string, content: string): void {
 }
 
 async function buildLab(extraOptions = '') {
-  const srv = new LinuxServer('NS1');
+  const srv = new LinuxServer('linux-server', 'NS1');
   srv.configureInterface('eth0', new IPAddress(NS1_IP), new SubnetMask('255.255.255.0'));
 
   writeRoot(srv, '/etc/bind/named.conf', [

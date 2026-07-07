@@ -28,7 +28,7 @@ async function buildRogueOnlyLab() {
   const rogue = new CiscoRouter('ROGUE');
   const sw = new CiscoSwitch('switch-cisco', 'SW1');
   const win = new WindowsPC('windows-pc', 'WINPC');
-  const fakeDns = new LinuxServer('FAKEDNS');
+  const fakeDns = new LinuxServer('linux-server', 'FAKEDNS');
   win.setCurrentUser('Administrator');
 
   new Cable('c-r').connect(rogue.getPort('GigabitEthernet0/0')!, sw.getPort('GigabitEthernet0/1')!);
@@ -60,7 +60,7 @@ async function buildLegitAndRogueLab(trustLegit: boolean) {
   const rogue = new CiscoRouter('ROGUE');
   const sw = new CiscoSwitch('switch-cisco', 'SW1');
   const win = new WindowsPC('windows-pc', 'WINPC');
-  const legitDns = new LinuxServer('LEGITDNS');
+  const legitDns = new LinuxServer('linux-server', 'LEGITDNS');
   win.setCurrentUser('Administrator');
 
   new Cable('c-l').connect(legit.getPort('GigabitEthernet0/0')!, sw.getPort('GigabitEthernet0/1')!);

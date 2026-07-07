@@ -80,8 +80,8 @@ function writeRoot(server: LinuxServer, path: string, content: string): void {
 
 async function buildLab() {
   const pc = new LinuxPC('linux-pc', 'PC1');
-  const root = new LinuxServer('ROOT');
-  const ns1 = new LinuxServer('NS1');
+  const root = new LinuxServer('linux-server', 'ROOT');
+  const ns1 = new LinuxServer('linux-server', 'NS1');
   const sw = new GenericSwitch('switch-generic', 'SW');
 
   pc.configureInterface('eth0', new IPAddress('10.0.1.2'), new SubnetMask('255.255.0.0'));

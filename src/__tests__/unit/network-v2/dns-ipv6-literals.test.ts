@@ -55,7 +55,7 @@ function writeRoot(server: LinuxServer, path: string, content: string): void {
 
 async function buildLab() {
   const pc = new LinuxPC('linux-pc', 'PC1');
-  const srv = new LinuxServer('NS1');
+  const srv = new LinuxServer('linux-server', 'NS1');
 
   pc.configureIPv6Interface('eth0', new IPv6Address(PC_IP6), 64);
   srv.configureIPv6Interface('eth0', new IPv6Address(NS1_IP6), 64);

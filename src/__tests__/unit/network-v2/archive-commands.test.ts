@@ -19,7 +19,7 @@ beforeEach(() => {
 });
 
 function pc(): LinuxServer {
-  return new LinuxServer('srv', 'host1');
+  return new LinuxServer('linux-server', 'host1');
 }
 
 describe('tar — create / list / extract round-trip', () => {

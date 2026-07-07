@@ -63,7 +63,7 @@ async function linuxRoot(srv: LinuxServer, cmds: string[]): Promise<string[]> {
 async function buildLab(): Promise<Lab> {
   const core = new CiscoSwitch('switch-cisco', 'CORE-RTR', 26, 0, 0);
   const dist = new HuaweiSwitch('switch-huawei', 'DIST-SW', 24, 0, 0);
-  const wks  = new WindowsPC('WKS-001', 'WKS-001', 0, 0);
+  const wks  = new WindowsPC('windows-pc', 'WKS-001', 0, 0);
   const app  = new LinuxServer('linux-server', 'APP-01', 0, 0);
   const db   = new LinuxServer('linux-server', 'DB-01', 0, 0);
   const logsrv = new LinuxServer('linux-server', 'LOG-01', 0, 0);

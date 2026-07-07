@@ -70,7 +70,7 @@ function expectContains(session: TerminalSession, needle: string | RegExp): void
 
 function buildTopology() {
   const pc = new LinuxPC('linux-pc', 'PC1');
-  const srv = new LinuxServer('FTP1');
+  const srv = new LinuxServer('linux-server', 'FTP1');
   pc.configureInterface('eth0', new IPAddress('10.0.9.2'), new SubnetMask('255.255.255.0'));
   srv.configureInterface('eth0', new IPAddress('10.0.9.10'), new SubnetMask('255.255.255.0'));
   new Cable('c1').connect(pc.getPort('eth0')!, srv.getPort('eth0')!);

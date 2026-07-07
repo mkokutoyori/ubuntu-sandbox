@@ -40,7 +40,7 @@ function makeHost() {
 
 function setup() {
   EquipmentRegistry.resetInstance();
-  const pc = new WindowsPC('win-pc', 'WIN', 0, 0);
+  const pc = new WindowsPC('windows-pc', 'WIN', 0, 0);
   pc.powerOn();
   const { subShell } = PowerShellSubShell.create(pc);
   const h = makeHost();

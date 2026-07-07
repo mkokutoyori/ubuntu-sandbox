@@ -32,7 +32,7 @@ function buildTopology(
   bus.subscribeAll((e) => events.push(e));
 
   const pc = new LinuxPC('linux-pc', 'PC1');
-  const srv = new LinuxServer('TFTP1');
+  const srv = new LinuxServer('linux-server', 'TFTP1');
   pc.configureInterface('eth0', new IPAddress('10.0.5.2'), new SubnetMask('255.255.255.0'));
   srv.configureInterface('eth0', new IPAddress('10.0.5.10'), new SubnetMask('255.255.255.0'));
   new Cable('c1').connect(pc.getPort('eth0')!, srv.getPort('eth0')!);

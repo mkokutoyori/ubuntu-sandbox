@@ -23,8 +23,8 @@ function setupProxyLab(bus: EventBus) {
   const nas = new CiscoRouter('NAS');
   const proxy = new CiscoRouter('PROXY');
   const home = new CiscoRouter('HOME');
-  const sw1 = new CiscoSwitch('sw1', 'SW1', 4);
-  const sw2 = new CiscoSwitch('sw2', 'SW2', 4);
+  const sw1 = new CiscoSwitch('switch-cisco', 'SW1', 4);
+  const sw2 = new CiscoSwitch('switch-cisco', 'SW2', 4);
   nas.setEventBus(bus); proxy.setEventBus(bus); home.setEventBus(bus);
   sw1.setEventBus(bus); sw2.setEventBus(bus);
   new Cable('a').connect(nas.getPort('GigabitEthernet0/0')!, sw1.getPort('FastEthernet0/1')!);

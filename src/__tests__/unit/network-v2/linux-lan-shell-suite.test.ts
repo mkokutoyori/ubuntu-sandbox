@@ -64,7 +64,7 @@ function buildLan(): Lan {
   const pc4 = new LinuxPC('linux-pc', 'pc4', 0, 0);
   const srv1 = new LinuxServer('linux-server', 'srv1', 0, 0);
   const srv2 = new LinuxServer('linux-server', 'srv2', 0, 0);
-  const sw = new GenericSwitch('switch', 'core-sw', 0, 0);
+  const sw = new GenericSwitch('switch-generic', 'core-sw', 0, 0);
   const all: (LinuxPC | LinuxServer)[] = [pc1, pc2, pc3, pc4, srv1, srv2];
   all.forEach((d) => d.setEventBus(bus));
   all.forEach((d, i) => { new Cable(d.getPorts()[0], sw.getPorts()[i]); });
