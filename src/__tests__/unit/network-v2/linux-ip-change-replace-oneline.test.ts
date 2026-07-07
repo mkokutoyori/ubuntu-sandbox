@@ -118,7 +118,7 @@ describe('ip addr change|replace via a LAN with a real duplicate-secondary scena
   it('ip addr replace on an existing secondary IP updates its prefix without duplicating it', async () => {
     const pc1 = new LinuxPC('PC1', 0, 0);
     const pc2 = new LinuxPC('PC2', 100, 0);
-    const sw = new CiscoSwitch('sw-change-replace', 'SW1', 24, 50, 50);
+    const sw = new CiscoSwitch('switch-cisco', 'SW1', 24, 50, 50);
     new Cable('c1').connect(pc1.getPort('eth0')!, sw.getPort('FastEthernet0/1')!);
     new Cable('c2').connect(pc2.getPort('eth0')!, sw.getPort('FastEthernet0/2')!);
 

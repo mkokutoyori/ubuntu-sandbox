@@ -16,7 +16,7 @@
  */
 
 import type { VirtualFileSystem } from './VirtualFileSystem';
-import { IPAddress } from '../../core/types';
+import { IPAddress, IPv6Address } from '../../core/types';
 
 // ─── Packet filtering types (shared with UFW) ───────────────────────
 
@@ -435,6 +435,7 @@ export class LinuxIptablesManager {
   }
 
   private ipMatchesSpec(ip: string, spec: string): boolean {
+    if (this.family === 6) return this.ip6MatchesSpec(ip, spec);
     if (!spec.includes('/')) return ip === spec;
     const [network, prefixStr] = spec.split('/');
     const prefix = parseInt(prefixStr);
@@ -446,8 +447,32 @@ export class LinuxIptablesManager {
     return (ipNum & mask) === (netNum & mask);
   }
 
+  private ip6MatchesSpec(ip: string, spec: string): boolean {
+    const slashIdx = spec.lastIndexOf('/');
+    const network = slashIdx === -1 ? spec : spec.slice(0, slashIdx);
+    const prefix = slashIdx === -1 ? 128 : parseInt(spec.slice(slashIdx + 1), 10);
+    if (isNaN(prefix) || prefix < 0 || prefix > 128) return false;
+    const ipAddr = this.tryParseV6(ip);
+    const netAddr = this.tryParseV6(network);
+    if (!ipAddr || !netAddr) return false;
+    return ipAddr.isInSameSubnet(netAddr, prefix);
+  }
+
+  private tryParseV6(addr: string): IPv6Address | null {
+    try { return new IPv6Address(addr); } catch { return null; }
+  }
+
   private ipToNumber(ip: string): number | null {
     return IPAddress.tryParse(ip)?.toUint32() ?? null;
+  }
+
+  /** Unsigned lexicographic comparison of two IPv6 addresses (hextet by hextet). */
+  private compareV6(a: IPv6Address, b: IPv6Address): number {
+    const ah = a.getHextets(), bh = b.getHextets();
+    for (let i = 0; i < 8; i++) {
+      if (ah[i] !== bh[i]) return ah[i] - bh[i];
+    }
+    return 0;
   }
 
   private portMatchesSpec(port: number, spec: string): boolean {
@@ -465,6 +490,13 @@ export class LinuxIptablesManager {
   private ipInRange(ip: string, range: string): boolean {
     const parts = range.split('-');
     if (parts.length !== 2) return false;
+    if (this.family === 6) {
+      const ipAddr = this.tryParseV6(ip);
+      const startAddr = this.tryParseV6(parts[0].trim());
+      const endAddr = this.tryParseV6(parts[1].trim());
+      if (!ipAddr || !startAddr || !endAddr) return false;
+      return this.compareV6(ipAddr, startAddr) >= 0 && this.compareV6(ipAddr, endAddr) <= 0;
+    }
     const ipNum = this.ipToNumber(ip);
     const startNum = this.ipToNumber(parts[0].trim());
     const endNum = this.ipToNumber(parts[1].trim());
@@ -1138,6 +1170,7 @@ export class LinuxIptablesManager {
   // ─── Validation helpers ────────────────────────────────────────
 
   private validateIPSpec(spec: string): boolean {
+    if (this.family === 6) return this.validateIPv6Spec(spec);
     if (spec.includes('/')) {
       const [ip, prefix] = spec.split('/');
       const p = parseInt(prefix);
@@ -1145,6 +1178,16 @@ export class LinuxIptablesManager {
       return this.ipToNumber(ip) !== null;
     }
     return this.ipToNumber(spec) !== null;
+  }
+
+  private validateIPv6Spec(spec: string): boolean {
+    const slashIdx = spec.lastIndexOf('/');
+    const addr = slashIdx === -1 ? spec : spec.slice(0, slashIdx);
+    if (slashIdx !== -1) {
+      const p = parseInt(spec.slice(slashIdx + 1), 10);
+      if (isNaN(p) || p < 0 || p > 128) return false;
+    }
+    return this.tryParseV6(addr) !== null;
   }
 
   private validatePortSpec(spec: string): boolean {

@@ -142,7 +142,7 @@ describe('ip -j/-s through a real LinuxPC (integration, PRD-ip.md P1)', () => {
   it('real traffic between two PCs shows up as nonzero RX/TX counters via ip -s link show', async () => {
     const pc1 = new LinuxPC('PC1', 0, 0);
     const pc2 = new LinuxPC('PC2', 100, 0);
-    const sw = new CiscoSwitch('sw-json-stats', 'SW1', 24, 50, 50);
+    const sw = new CiscoSwitch('switch-cisco', 'SW1', 24, 50, 50);
     new Cable('c1').connect(pc1.getPort('eth0')!, sw.getPort('FastEthernet0/1')!);
     new Cable('c2').connect(pc2.getPort('eth0')!, sw.getPort('FastEthernet0/2')!);
     await pc1.executeCommand('ifconfig eth0 10.0.0.1 netmask 255.255.255.0');
