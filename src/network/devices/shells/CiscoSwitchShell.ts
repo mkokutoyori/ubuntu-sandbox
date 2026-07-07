@@ -1880,6 +1880,9 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       if (ids.length === 0 || ids.some(i => i < 1 || i > 4094)) {
         return '% Invalid VLAN ID';
       }
+      if (ids.some(i => i >= 1002 && i <= 1005)) {
+        return '% VLANs 1002-1005 are reserved for legacy FDDI/Token Ring use';
+      }
       if (ids.some(i => i > 1005) && !this.d().getVtpAgent().allowsExtendedRangeVlans()) {
         return '% Extended-range VLANs require VTP version 3 or transparent mode';
       }

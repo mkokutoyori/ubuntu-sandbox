@@ -142,6 +142,10 @@ export class CiscoSwitch extends Switch {
     return ok;
   }
 
+  protected override isReservedVlanId(id: number): boolean {
+    return id >= 1002 && id <= 1005;
+  }
+
   private applyStpForwardState(portName: string, state: StpForwardState, vlan: number): void {
     this.setStpVlanState(portName, vlan, state);
   }

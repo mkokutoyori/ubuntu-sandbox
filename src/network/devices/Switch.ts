@@ -723,8 +723,11 @@ export abstract class Switch extends Equipment {
 
   // ─── VLAN Database API ────────────────────────────────────────────
 
+  protected isReservedVlanId(_id: number): boolean { return false; }
+
   createVLAN(id: number, name?: string): boolean {
     if (id < 1 || id > 4094) return false;
+    if (this.isReservedVlanId(id)) return false;
     if (this.vlans.has(id)) return false;
     const newVlan: VLANEntry = { id, name: name || `VLAN${String(id).padStart(4, '0')}`, ports: new Set() };
     this.vlans.set(id, newVlan);
@@ -741,6 +744,7 @@ export abstract class Switch extends Equipment {
 
   deleteVLAN(id: number): boolean {
     if (id === 1) return false; // Can't delete default VLAN
+    if (this.isReservedVlanId(id)) return false;
     if (!this.vlans.has(id)) return false;
 
     // Collect affected access ports
