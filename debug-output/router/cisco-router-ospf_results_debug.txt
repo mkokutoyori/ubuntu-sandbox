@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-ospf
-Generated: 2026-07-04T10:43:20.616Z
+Generated: 2026-07-07T07:20:22.060Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=OSPF/OSPFv3: areas, auth, redistribution, timers, show
 Total steps: 311
@@ -1353,7 +1353,7 @@ Total steps: 311
 [239/311] r1 R1# show ntp status
   Clock is unsynchronized, stratum 16, reference is .INIT.
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
-  reference time is EDF36248.AF5C28F5 (10:43:20.685 UTC Sat Jul 4 2026)
+  reference time is EDF72736.228F5C28 (07:20:22.135 UTC Tue Jul 7 2026)
   clock offset is 0.00 msec
 
 [240/311] r1 R1# show ntp associations
@@ -1362,7 +1362,7 @@ Total steps: 311
   No NTP associations configured.
 
 [241/311] r1 R1# show clock
-  *10:43:20.000 UTC Sat Jul 4 2026
+  *07:20:22.000 UTC Tue Jul 7 2026
 
 [242/311] r1 R1# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
@@ -2044,9 +2044,11 @@ Total steps: 311
 [307/311] r1 R1(config)# crypto ?
     isakmp       isakmp
     ipsec        ipsec
+    keyring      Define an ISAKMP keyring
     map          Define a crypto map entry
     dynamic-map  Define a dynamic crypto map
     ikev2        ikev2
+    gdoi         gdoi
     key          Key management
     pki          pki
     <cr>         
