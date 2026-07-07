@@ -23,6 +23,7 @@ export interface VtpFrame extends NetworkPdu {
   passwordHash: string;
   vlans: VtpVlanEntry[];
   interestVlans?: number[];
+  primaryClaim?: { updater: string; revision: number; forced: boolean };
 }
 
 export interface VtpConfig {
@@ -34,6 +35,7 @@ export interface VtpConfig {
   revision: number;
   pruning: boolean;
   updaterMac: string;
+  primaryServer: boolean;
 }
 
 export function createDefaultVtpConfig(systemMac: string): VtpConfig {
@@ -46,6 +48,7 @@ export function createDefaultVtpConfig(systemMac: string): VtpConfig {
     revision: 0,
     pruning: false,
     updaterMac: systemMac.toLowerCase(),
+    primaryServer: false,
   };
 }
 

@@ -979,6 +979,11 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       return '';
     });
 
+    this.privilegedTrie.registerGreedy('vtp primary', 'Force this switch to become the VTP Primary Server', (args) => {
+      const force = args.some(a => a.toLowerCase() === 'force');
+      return this.d().getVtpAgent().becomePrimary(force).message;
+    });
+
     for (const t of [this.userTrie, this.privilegedTrie]) {
       t.register('show vtp password', 'Display the VTP password', () => {
         const cfg = this.d().getVtpAgent().getConfig();
@@ -1001,8 +1006,8 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
           ``,
           `Feature VLAN:`,
           `--------------`,
-          `VTP Operating Mode              : ${cfg.mode.charAt(0).toUpperCase() + cfg.mode.slice(1)}`,
-          `Maximum VLANs supported locally : 1005`,
+          `VTP Operating Mode              : ${cfg.mode.charAt(0).toUpperCase() + cfg.mode.slice(1)}${cfg.version === 3 && cfg.primaryServer ? ', Primary Server' : ''}`,
+          `Maximum VLANs supported locally : ${cfg.version === 3 ? 4094 : 1005}`,
           `Number of existing VLANs        : ${numVlans}`,
           `Configuration Revision          : ${cfg.revision}`,
         ].join('\n');
@@ -1780,6 +1785,9 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       }
       if (ids.length === 0 || ids.some(i => i < 1 || i > 4094)) {
         return '% Invalid VLAN ID';
+      }
+      if (ids.some(i => i > 1005) && !this.d().getVtpAgent().allowsExtendedRangeVlans()) {
+        return '% Extended-range VLANs require VTP version 3 or transparent mode';
       }
       let created = false;
       for (const id of ids) if (!this.d().getVLAN(id)) { this.d().createVLAN(id); created = true; }

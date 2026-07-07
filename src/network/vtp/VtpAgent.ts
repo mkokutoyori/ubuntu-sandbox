@@ -24,6 +24,7 @@ export interface VtpHost {
 
 const PRUNING_ELIGIBLE_MIN = 2;
 const PRUNING_ELIGIBLE_MAX = 1001;
+const STANDARD_VLAN_MAX = 1005;
 
 function sameSet(a: Set<number>, b: Set<number>): boolean {
   if (a.size !== b.size) return false;
@@ -37,6 +38,7 @@ export class VtpAgent extends ReactiveAgentBase {
   private lastSummaryRevision: number | null = null;
   private lastSummaryDomain: string | null = null;
   private readonly peerInterest = new Map<string, Set<number>>();
+  private knownPrimary: { updater: string; revision: number } | null = null;
 
   constructor(
     private readonly host: VtpHost,
@@ -89,6 +91,10 @@ export class VtpAgent extends ReactiveAgentBase {
     if (this.config.pruning === on) return;
     this.config.pruning = on;
     if (on) this.broadcastInterest();
+  }
+
+  allowsExtendedRangeVlans(): boolean {
+    return this.config.mode === 'transparent' || this.config.mode === 'off' || this.config.version === 3;
   }
 
   isVlanPruned(portName: string, vlan: number): boolean {
@@ -174,6 +180,9 @@ export class VtpAgent extends ReactiveAgentBase {
     if (payload.messageType === 'summary') {
       this.lastSummaryDomain = payload.domain;
       this.lastSummaryRevision = payload.revision;
+      if (this.config.version === 3 && payload.primaryClaim) {
+        this.considerPrimaryClaim(payload.primaryClaim);
+      }
       return;
     }
 
@@ -192,7 +201,7 @@ export class VtpAgent extends ReactiveAgentBase {
 
     if (payload.revision > this.config.revision) {
       const oldRev = this.config.revision;
-      const result = this.host.vtpApplyVlans(payload.vlans);
+      const result = this.host.vtpApplyVlans(this.filterVlansForVersion(payload.vlans));
       this.config.revision = payload.revision;
       this.config.updaterMac = payload.updater;
       this.getBus().publish({
@@ -215,12 +224,80 @@ export class VtpAgent extends ReactiveAgentBase {
     this.sendSummaryAndSubset(portName, 'request-reply');
   }
 
+  becomePrimary(force: boolean): { ok: boolean; message: string } {
+    if (this.config.version !== 3) {
+      return { ok: false, message: '% VTP Primary Server election requires VTP version 3' };
+    }
+    if (this.config.mode !== 'server') {
+      return { ok: false, message: '% This device is not a VTP Server' };
+    }
+    if (this.knownPrimary && this.knownPrimary.updater !== this.host.id
+        && this.knownPrimary.revision >= this.config.revision && !force) {
+      return {
+        ok: false,
+        message: '% Conflict: a Primary Server with an equal or higher revision already exists. Use "force" to override',
+      };
+    }
+    this.knownPrimary = { updater: this.host.id, revision: this.config.revision };
+    this.config.primaryServer = true;
+    this.broadcastPrimaryClaim(force);
+    return {
+      ok: true,
+      message: `VTP Primary Server election in progress...\n${this.host.name} is now the Primary Server for domain ${this.config.domain}`,
+    };
+  }
+
+  private considerPrimaryClaim(claim: { updater: string; revision: number; forced: boolean }): void {
+    if (this.knownPrimary && this.knownPrimary.updater === claim.updater
+        && this.knownPrimary.revision === claim.revision) return;
+    const accept = !this.knownPrimary
+      || claim.revision > this.knownPrimary.revision
+      || (claim.forced && claim.revision >= this.knownPrimary.revision);
+    if (!accept) return;
+    this.knownPrimary = { updater: claim.updater, revision: claim.revision };
+    this.config.primaryServer = claim.updater === this.host.id;
+  }
+
+  private broadcastPrimaryClaim(forced: boolean): void {
+    for (const port of this.host.getPorts()) {
+      const name = port.getName();
+      if (!this.host.vtpIsTrunkPort(name)) continue;
+      if (!port.getIsUp() || !port.isConnected()) continue;
+      this.sendPrimaryClaim(name, forced);
+    }
+  }
+
+  private sendPrimaryClaim(portName: string, forced: boolean): void {
+    const port = this.host.getPort(portName);
+    if (!port || !this.knownPrimary) return;
+    const payload: VtpFrame = {
+      type: 'vtp', version: this.config.version, messageType: 'summary',
+      domain: this.config.domain, revision: this.config.revision,
+      updater: this.config.updaterMac,
+      passwordHash: hashPassword(this.config.domain, this.config.password),
+      vlans: [],
+      primaryClaim: { ...this.knownPrimary, forced },
+    };
+    const eth: EthernetFrame = {
+      srcMAC: port.getMAC(),
+      dstMAC: new MACAddress(VTP_MULTICAST_MAC),
+      etherType: ETHERTYPE_VTP,
+      payload,
+    };
+    this.host.sendFrame(portName, eth);
+  }
+
   private handleJoin(portName: string, payload: VtpFrame): void {
     const incoming = new Set(payload.interestVlans ?? []);
     const prev = this.peerInterest.get(portName);
     if (prev && sameSet(prev, incoming)) return;
     this.peerInterest.set(portName, incoming);
     if (this.config.pruning) this.broadcastInterest(portName);
+  }
+
+  private filterVlansForVersion(vlans: VtpVlanEntry[]): VtpVlanEntry[] {
+    if (this.config.version === 3) return vlans;
+    return vlans.filter(v => v.id <= STANDARD_VLAN_MAX);
   }
 
   private aggregatedInterest(excludePort?: string): Set<number> {
@@ -288,7 +365,7 @@ export class VtpAgent extends ReactiveAgentBase {
     this.advertising.add(portName);
     try {
       this.sendVtpFrame(portName, 'summary', [], reason);
-      this.sendVtpFrame(portName, 'subset', this.host.vtpListVlans(), reason);
+      this.sendVtpFrame(portName, 'subset', this.filterVlansForVersion(this.host.vtpListVlans()), reason);
     } finally {
       this.advertising.delete(portName);
     }
@@ -310,6 +387,9 @@ export class VtpAgent extends ReactiveAgentBase {
       updater: this.config.updaterMac,
       passwordHash: hashPassword(this.config.domain, this.config.password),
       vlans,
+      ...(messageType === 'summary' && this.knownPrimary
+        ? { primaryClaim: { ...this.knownPrimary, forced: false } }
+        : {}),
     };
     const eth: EthernetFrame = {
       srcMAC: port.getMAC(),
