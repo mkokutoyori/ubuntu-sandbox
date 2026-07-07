@@ -19,6 +19,16 @@ export interface VtpHost {
   vtpListVlans(): VtpVlanEntry[];
   vtpApplyVlans(vlans: VtpVlanEntry[]): { added: number[]; removed: number[] };
   vtpIsTrunkPort(portName: string): boolean;
+  vtpLocalInterest(): number[];
+}
+
+const PRUNING_ELIGIBLE_MIN = 2;
+const PRUNING_ELIGIBLE_MAX = 1001;
+
+function sameSet(a: Set<number>, b: Set<number>): boolean {
+  if (a.size !== b.size) return false;
+  for (const v of a) if (!b.has(v)) return false;
+  return true;
 }
 
 export class VtpAgent extends ReactiveAgentBase {
@@ -26,6 +36,7 @@ export class VtpAgent extends ReactiveAgentBase {
   private readonly advertising = new Set<string>();
   private lastSummaryRevision: number | null = null;
   private lastSummaryDomain: string | null = null;
+  private readonly peerInterest = new Map<string, Set<number>>();
 
   constructor(
     private readonly host: VtpHost,
@@ -75,7 +86,17 @@ export class VtpAgent extends ReactiveAgentBase {
   }
 
   setPruning(on: boolean): void {
+    if (this.config.pruning === on) return;
     this.config.pruning = on;
+    if (on) this.broadcastInterest();
+  }
+
+  isVlanPruned(portName: string, vlan: number): boolean {
+    if (!this.config.pruning) return false;
+    if (vlan < PRUNING_ELIGIBLE_MIN || vlan > PRUNING_ELIGIBLE_MAX) return false;
+    const peer = this.peerInterest.get(portName);
+    if (!peer) return false;
+    return !peer.has(vlan);
   }
 
   bumpRevision(): void {
@@ -103,6 +124,12 @@ export class VtpAgent extends ReactiveAgentBase {
     if (this.config.mode === 'off') return;
     const payload = frame.payload as VtpFrame | undefined;
     if (!payload || payload.type !== 'vtp') return;
+
+    if (payload.messageType === 'join') {
+      if (this.host.vtpIsTrunkPort(portName)) this.handleJoin(portName, payload);
+      return;
+    }
+
     if (this.config.mode === 'transparent') {
       this.forwardOnTrunks(portName, frame);
       return;
@@ -186,6 +213,57 @@ export class VtpAgent extends ReactiveAgentBase {
   private handleRequest(portName: string): void {
     if (this.config.mode !== 'server' || !this.config.domain) return;
     this.sendSummaryAndSubset(portName, 'request-reply');
+  }
+
+  private handleJoin(portName: string, payload: VtpFrame): void {
+    const incoming = new Set(payload.interestVlans ?? []);
+    const prev = this.peerInterest.get(portName);
+    if (prev && sameSet(prev, incoming)) return;
+    this.peerInterest.set(portName, incoming);
+    if (this.config.pruning) this.broadcastInterest(portName);
+  }
+
+  private aggregatedInterest(excludePort?: string): Set<number> {
+    const out = new Set<number>(this.host.vtpLocalInterest());
+    for (const [port, set] of this.peerInterest) {
+      if (port === excludePort) continue;
+      for (const v of set) out.add(v);
+    }
+    return out;
+  }
+
+  private broadcastInterest(excludePort?: string): void {
+    if (!this.config.pruning) return;
+    for (const port of this.host.getPorts()) {
+      const name = port.getName();
+      if (name === excludePort) continue;
+      if (!this.host.vtpIsTrunkPort(name)) continue;
+      if (!port.getIsUp() || !port.isConnected()) continue;
+      this.sendJoin(name);
+    }
+  }
+
+  private sendJoin(portName: string): void {
+    const port = this.host.getPort(portName);
+    if (!port) return;
+    const interest = this.aggregatedInterest(portName);
+    const payload: VtpFrame = {
+      type: 'vtp', version: this.config.version,
+      messageType: 'join',
+      domain: this.config.domain,
+      revision: this.config.revision,
+      updater: this.config.updaterMac,
+      passwordHash: '',
+      vlans: [],
+      interestVlans: [...interest],
+    };
+    const eth: EthernetFrame = {
+      srcMAC: port.getMAC(),
+      dstMAC: new MACAddress(VTP_MULTICAST_MAC),
+      etherType: ETHERTYPE_VTP,
+      payload,
+    };
+    this.host.sendFrame(portName, eth);
   }
 
   advertiseAllTrunks(reason: 'periodic' | 'config-change' | 'local-vlan-change' | 'relay' | 'request-reply'): void {
@@ -276,7 +354,9 @@ export class VtpAgent extends ReactiveAgentBase {
   }
 
   protected override onPortLinkUp(portName: string): void {
-    if (!this.config.domain || !this.host.vtpIsTrunkPort(portName)) return;
+    if (!this.host.vtpIsTrunkPort(portName)) return;
+    if (this.config.pruning) this.sendJoin(portName);
+    if (!this.config.domain) return;
     if (this.config.mode === 'server') {
       this.sendSummaryAndSubset(portName, 'link-up');
     } else if (this.config.mode === 'client') {

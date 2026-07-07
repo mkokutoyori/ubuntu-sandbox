@@ -88,6 +88,7 @@ export class CiscoSwitch extends Switch {
       vtpListVlans: () => this._vtpListVlans(),
       vtpApplyVlans: (vs) => this._vtpApplyVlans(vs),
       vtpIsTrunkPort: (n) => this._vtpIsTrunkPort(n),
+      vtpLocalInterest: () => this._vtpLocalInterest(),
     }, () => this.getBus(), baseMac);
     this.udldAgent = new UdldAgent({
       ...hostBase,
@@ -203,6 +204,10 @@ export class CiscoSwitch extends Switch {
 
   protected override getIgmpSnoopingAgentOrNull(): IgmpSnoopingAgent {
     return this.igmpSnoopingAgent;
+  }
+
+  protected override getVtpAgentOrNull(): VtpAgent {
+    return this.vtpAgent;
   }
 
   getDtpAgent(): DtpAgent { return this.dtpAgent; }

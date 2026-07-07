@@ -112,6 +112,10 @@ export interface IgmpSnoopingAgentLike {
   computeEgressPorts(ingressPort: string, groupAddress: string): string[];
 }
 
+export interface VtpPruningAgentLike {
+  isVlanPruned(portName: string, vlan: number): boolean;
+}
+
 // ─── MAC Table Entry ────────────────────────────────────────────────
 
 export interface MACTableEntry {
@@ -1270,6 +1274,11 @@ export abstract class Switch extends Equipment {
     return null;
   }
 
+  /** Vendor hook: the VTP agent, when the platform has one (Cisco only). */
+  protected getVtpAgentOrNull(): VtpPruningAgentLike | null {
+    return null;
+  }
+
   // ─── Flood within VLAN ────────────────────────────────────────────
 
   private floodFrame(exceptPort: string, frame: EthernetFrame, vlan: number): void {
@@ -1289,7 +1298,7 @@ export abstract class Switch extends Equipment {
         }
       } else {
         // Trunk: send if VLAN is allowed
-        if (cfg.trunkAllowedVlans.has(vlan)) {
+        if (cfg.trunkAllowedVlans.has(vlan) && !this.getVtpAgentOrNull()?.isVlanPruned(portName, vlan)) {
           if (vlan === cfg.trunkNativeVlan) {
             // Native VLAN: send untagged
             this.sendFrame(portName, this.stripTag(frame));
@@ -1868,6 +1877,17 @@ export abstract class Switch extends Equipment {
   _vtpIsTrunkPort(portName: string): boolean {
     const cfg = this.switchportConfigs.get(portName);
     return !!cfg && cfg.mode === 'trunk';
+  }
+
+  _vtpLocalInterest(): number[] {
+    const out = new Set<number>();
+    for (const [portName, cfg] of this.switchportConfigs) {
+      if (cfg.mode !== 'access') continue;
+      const port = this.getPort(portName);
+      if (!port || !port.getIsUp() || !port.isConnected()) continue;
+      out.add(cfg.accessVlan);
+    }
+    return [...out];
   }
 
   // ─── DAI Accessors ────────────────────────────────────────────────

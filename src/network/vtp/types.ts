@@ -4,7 +4,7 @@ export const VTP_MULTICAST_MAC = '01:00:0c:cc:cc:cc';
 
 export type VtpMode = 'server' | 'client' | 'transparent' | 'off';
 export type VtpVersion = 1 | 2 | 3;
-export type VtpMessageType = 'summary' | 'subset' | 'request';
+export type VtpMessageType = 'summary' | 'subset' | 'request' | 'join';
 
 export interface VtpVlanEntry {
   id: number;
@@ -22,6 +22,7 @@ export interface VtpFrame extends NetworkPdu {
   updater: string;
   passwordHash: string;
   vlans: VtpVlanEntry[];
+  interestVlans?: number[];
 }
 
 export interface VtpConfig {
