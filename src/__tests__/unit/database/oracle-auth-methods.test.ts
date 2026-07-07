@@ -17,14 +17,14 @@ let db: OracleDatabase;
 let sys: OracleExecutor;
 
 function setup() {
-  db = new OracleDatabase('test-device');
+  db = new OracleDatabase();
   db.instance.startup();
   sys = db.connectAsSysdba().executor;
 }
 
 function execSys(sql: string) {
   const rs = db.executeSql(sys, sql);
-  if (rs.error) throw new Error(rs.error);
+  if (rs.message?.startsWith('ORA-')) throw new Error(rs.message);
   return rs;
 }
 

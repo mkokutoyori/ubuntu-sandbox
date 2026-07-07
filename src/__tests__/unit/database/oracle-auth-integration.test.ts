@@ -16,7 +16,7 @@ let db: OracleDatabase;
 let sysdba: OracleExecutor;
 
 function setup() {
-  db = new OracleDatabase('test-device');
+  db = new OracleDatabase();
   db.instance.startup();
   const conn = db.connectAsSysdba();
   sysdba = conn.executor;
@@ -24,7 +24,7 @@ function setup() {
 
 function exec(sql: string, executor: OracleExecutor = sysdba) {
   const rs = db.executeSql(executor, sql);
-  if (rs.error) throw new Error(rs.error);
+  if (rs.message?.startsWith('ORA-')) throw new Error(rs.message);
   return rs;
 }
 
