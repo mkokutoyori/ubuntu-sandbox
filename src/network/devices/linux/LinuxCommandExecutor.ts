@@ -3754,6 +3754,12 @@ export class LinuxCommandExecutor {
       case 'reboot':
       case 'shutdown': {
         this.auditRules.rebootReset();
+        // PRD-Iptables-UFW.md Phase 7 (objectif B.6): real netfilter state
+        // does not survive a reboot — wipe the live rule sets first, then
+        // let rebootCycle()'s lifecycle events (ufw, netfilter-persistent)
+        // reconstruct whatever was actually persisted to disk.
+        this.iptables.resetAll();
+        this.ip6tables.resetAll();
         this.serviceMgr.rebootCycle();
         return { output: '', exitCode: 0 };
       }

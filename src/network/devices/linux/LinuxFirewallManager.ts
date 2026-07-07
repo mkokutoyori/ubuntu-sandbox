@@ -599,12 +599,22 @@ export class LinuxFirewallManager {
    * rules.
    */
   reconcileFromBoot(): void {
-    const wasEnabled = this.enabled;
     this.loadFromVfs();
+    // Decide setup-from-scratch vs. rebuild-in-place by whether the
+    // ufw-user-input chain actually still exists in the live engine —
+    // not by whether ufw's own `enabled` flag just flipped. These used to
+    // be the same signal because nothing ever flushed the live engine
+    // independently of ufw; now that `reboot` really does wipe it
+    // (LinuxIptablesManager.resetAll(), PRD-Iptables-UFW.md Phase 7 item
+    // B.6), a reboot with ufw already enabled needs the *setup* path
+    // (recreate chains + jumps) even though `this.enabled` never
+    // transitioned — rebuildIptablesRules() only flushes/re-injects rules
+    // into chains it assumes already exist.
+    const chainsExist = this.iptables.hasChain('filter', 'ufw-user-input');
     if (this.enabled) {
-      if (!wasEnabled) this.setupIptablesChains();
+      if (!chainsExist) this.setupIptablesChains();
       else this.rebuildIptablesRules();
-    } else if (wasEnabled) {
+    } else if (chainsExist) {
       this.teardownIptablesChains();
     }
   }

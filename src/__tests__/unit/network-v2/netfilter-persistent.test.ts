@@ -113,30 +113,14 @@ describe('netfilter-persistent', () => {
       expect(listing).toMatch(/ACCEPT.*dpt:5001/);
     });
 
-    it('documents a pre-existing scope boundary: reboot does not tear down and recreate the live iptables engine object', async () => {
-      // Real netfilter loses ALL rule state on every reboot — persistence
-      // packages (ufw's own oneshot, netfilter-persistent) exist purely to
-      // reconstruct that state from disk afterwards. This simulator never
-      // destroys/recreates Equipment instances across `reboot` (the same
-      // "JS object never destroyed" limitation noted for other subsystems
-      // in this PRD), so a raw rule that was never explicitly saved is
-      // still observable after reboot — not because it was "persisted",
-      // but because nothing ever flushed it. Reproducing the real
-      // kernel's unconditional wipe-on-boot would require tagging which
-      // live rules belong to ufw's own managed chains (so its already-
-      // tested Phase 5 reboot reconciliation, which assumes those chains
-      // still exist, keeps working) versus manually-added ones — no such
-      // ownership tracking exists on IptablesRule today, and retrofitting
-      // it is out of scope for Phase 7. The three tests above already
-      // prove the part of B.6 in actual scope: save/reload/flush each
-      // genuinely mutate the live engine, not just cosmetic VFS content.
+    it('a raw rule never saved does not survive a reboot (matches real iptables non-persistence without the package)', async () => {
       await server.executeCommand('iptables -A INPUT -p tcp --dport 5555 -j ACCEPT');
       // No `netfilter-persistent save` — nothing was ever written to disk.
 
       await server.executeCommand('reboot');
 
       const listing = await server.executeCommand('iptables -L INPUT -n');
-      expect(listing).toMatch(/ACCEPT.*dpt:5555/);
+      expect(listing).not.toContain('5555');
     });
   });
 

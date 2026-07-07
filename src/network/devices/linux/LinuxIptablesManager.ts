@@ -148,6 +148,22 @@ export class LinuxIptablesManager {
     return false;
   }
 
+  /**
+   * Wipe all tables/chains/rules back to the fresh-boot default (built-in
+   * chains only, ACCEPT policy, no rules) — real netfilter state does not
+   * survive a reboot; only persistence units (`ufw`, `netfilter-persistent`)
+   * reconstruct it afterwards from disk. Used by the `reboot`/`shutdown`
+   * command handler, before those units' boot-time lifecycle events fire.
+   */
+  resetAll(): void {
+    this.initializeTables();
+  }
+
+  /** Whether a chain currently exists in the given table. */
+  hasChain(tableName: TableName, chainName: string): boolean {
+    return this.tables.get(tableName)?.chains.has(chainName) ?? false;
+  }
+
   private initializeTables(): void {
     for (const [tableName, chainNames] of Object.entries(TABLE_BUILTIN_CHAINS)) {
       const table: IptablesTable = {

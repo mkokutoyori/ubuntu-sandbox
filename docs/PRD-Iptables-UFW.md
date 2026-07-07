@@ -548,39 +548,57 @@ ordre arbitraire.
     save|reload|flush` — `save` écrit l'état vivant des deux moteurs sur
     disque, `reload` relit le disque vers les moteurs vivants, `flush`
     vide les 4 tables (`filter`/`nat`/`mangle`/`raw`) des deux moteurs.
-- **Limite de portée découverte et documentée (pas corrigée)** : l'objectif
-  B.6 demande que les règles brutes (hors `ufw`) survivent à un reboot
-  « parce qu'elles sont effectivement relues depuis le VFS », pas
-  « parce que l'objet JS n'a jamais été détruit ». Une vérification directe
-  (test `reboot` sans `netfilter-persistent save` préalable) montre que ce
-  dépôt ne détruit/recrée jamais l'instance `Equipment` au `reboot` — donc
-  une règle jamais sauvegardée reste quand même visible après reboot,
-  simplement parce que rien ne l'a jamais effacée. Reproduire fidèlement le
-  comportement noyau réel (perte totale de l'état netfilter à chaque boot,
-  reconstruit uniquement par les scripts `ufw-init`/`netfilter-persistent`)
-  exigerait de vider entièrement les moteurs `iptables`/`ip6tables` vivants
-  à chaque reboot puis de laisser chaque unité oneshot (`ufw`,
-  `netfilter-persistent`) reconstruire sa portion — mais `rebuildIptablesRules()`
-  (Phase 5/6) suppose que les chaînes `ufw-user-*` existent déjà (il les
-  vide, il ne les recrée pas) : un vidage complet casserait la
-  réconciliation `ufw` déjà testée et livrée, sans mécanisme actuel pour
-  distinguer une règle « appartenant à ufw » d'une règle posée
-  manuellement sur `IptablesRule`. Traité comme la limite déjà documentée
-  en Phase 2 (NAT66/DNAT) : constaté, testé tel quel
-  (`netfilter-persistent.test.ts`, dernier test du bloc « reboot
-  persistence »), et documenté plutôt que forcé par un changement
-  global à risque.
+  - `LinuxIptablesManager.ts` : nouvelles méthodes `resetAll()` (réinitialise
+    les 4 tables à l'état par défaut post-boot — chaînes intégrées
+    seulement, politique ACCEPT, aucune règle) et `hasChain(table, chain)`.
+  - `LinuxCommandExecutor.ts`, case `reboot`/`shutdown` : appelle désormais
+    `iptables.resetAll()`/`ip6tables.resetAll()` **avant**
+    `serviceMgr.rebootCycle()`, pour que l'état netfilter vivant soit
+    réellement perdu à chaque (re)boot simulé — exactement comme le noyau
+    réel — avant que les unités oneshot (`ufw`, `netfilter-persistent`)
+    ne le reconstruisent depuis le VFS via leurs événements de cycle de vie.
+  - `LinuxFirewallManager.reconcileFromBoot()` : le choix entre
+    « reconstruire les chaînes `ufw-user-*` depuis zéro »
+    (`setupIptablesChains()`) et « vider et réinjecter dans des chaînes
+    déjà existantes » (`rebuildIptablesRules()`) se fait désormais sur
+    `this.iptables.hasChain('filter', 'ufw-user-input')` (état réel du
+    moteur vivant) plutôt que sur la transition du booléen interne
+    `this.enabled` — ces deux signaux coïncidaient tant que rien ne
+    vidait jamais le moteur indépendamment de `ufw` ; ce n'est plus le
+    cas depuis que `reboot` appelle réellement `resetAll()`.
+- **Itération sur ce même item (retour utilisateur)** : une première
+  version de cette phase avait laissé B.6 partiellement non résolu —
+  `netfilter-persistent save/reload/flush` fonctionnaient, mais les
+  règles brutes non sauvegardées survivaient quand même à un `reboot`
+  simulé, documenté comme limite de portée plutôt que corrigé (le
+  risque perçu : un vidage global casserait `rebuildIptablesRules()`,
+  qui suppose que les chaînes `ufw-user-*` existent déjà). Sur demande
+  explicite de résoudre l'insuffisance plutôt que de la contourner, la
+  vraie cause a été isolée et corrigée : `rebuildIptablesRules()` n'a
+  pas été touché ; c'est la *décision* entre lui et `setupIptablesChains()`
+  qui utilisait le mauvais signal. En la rebasant sur l'existence réelle
+  des chaînes (`hasChain`), un `reboot` peut désormais vider
+  inconditionnellement les deux moteurs sans distinguer les règles
+  « ufw » des règles manuelles, et la réconciliation choisit
+  automatiquement le bon chemin de reconstruction — sans dupliquer les
+  sauts `INPUT`/`OUTPUT`/`FORWARD` → `ufw-user-*` en cas de rechargement
+  sans reboot intermédiaire (`ufw reload` pendant que `ufw` reste actif,
+  Phase 6), et en réactivant intégralement le filtrage `ufw` en cas de
+  reboot avec `ufw` déjà actif.
 - **Tests** : `netfilter-persistent.test.ts` (11 tests — symétrie
   `rules.v4`/`rules.v6`, `save`/`reload`/`flush` mutent réellement les
   moteurs vivants et pas seulement le VFS, sous-commande invalide,
   persistance au reboot avec/sans `netfilter-persistent save` préalable
-  (v4 et v6), cohérence systemd `systemctl status`/`restart
-  netfilter-persistent`).
-- **Régression** : 354 tests verts sur les 14 suites ufw/iptables/
-  ip6tables concernées, 151 tests verts sur les 11 suites systemd/service
-  transverses (aucune régression sur le moteur générique d'unités), `tsc`
-  propre, `eslint` propre sur les 4 fichiers touchés et le nouveau test
-  (9 erreurs préexistantes confirmées identiques par `git stash` : 7
+  (v4 et v6, cette dernière assertion inversée lors de l'itération
+  ci-dessus pour vérifier la non-survie réelle), cohérence systemd
+  `systemctl status`/`restart netfilter-persistent`).
+- **Régression** : 520 tests verts sur les 27 suites ufw/iptables/
+  ip6tables/systemd/service/fail2ban concernées (dont
+  `ssh-fail2ban-brute-force.test.ts` et `ssh-auth-throttler.test.ts`,
+  qui pilotent le même moteur `iptables` vivant en dehors de `ufw` — le
+  point le plus à risque du changement de `reconcileFromBoot()`), `tsc`
+  propre, `eslint` propre sur tous les fichiers touchés (9 erreurs
+  préexistantes confirmées identiques par `git stash` : 7
   `no-explicit-any` dans `LinuxFirewallManager.ts`, 2 `no-this-alias`
   dans `LinuxMachine.ts`).
 
