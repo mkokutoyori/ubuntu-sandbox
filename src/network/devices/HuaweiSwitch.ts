@@ -1,4 +1,4 @@
-import { DeviceType, EthernetFrame, ETHERTYPE_IPV4, type IPv4Packet, IPAddress } from '../core/types';
+import { DeviceType, EthernetFrame, ETHERTYPE_IPV4, type IPv4Packet, IPAddress, type MACAddress } from '../core/types';
 import { AgentRegistry } from './AgentRegistry';
 import { lldpToNeighborDTO } from './inspection/neighborConverters';
 import { Switch, STPPortState } from './Switch';
@@ -26,6 +26,7 @@ export class HuaweiSwitch extends Switch {
   private readonly dot1xAgent: Dot1xAgent;
   private readonly natEngine = new NATEngine();
   _getNATEngine(): NATEngine { return this.natEngine; }
+  private readonly voiceVlanOuiEntries: Array<{ macHex: string; maskHex: string; description?: string }> = [];
 
   constructor(type: DeviceType = 'switch-huawei', name: string = 'Switch', portCount: number = 50, x: number = 0, y: number = 0) {
     super(type, name, portCount, x, y);
@@ -104,6 +105,29 @@ export class HuaweiSwitch extends Switch {
 
   protected override getIgmpSnoopingAgentOrNull(): IgmpSnoopingAgent {
     return this.igmpSnoopingAgent;
+  }
+
+  addVoiceVlanOui(macHex: string, maskHex: string, description?: string): void {
+    this.voiceVlanOuiEntries.push({ macHex, maskHex, description });
+  }
+
+  getVoiceVlanOuiEntries(): ReadonlyArray<{ macHex: string; maskHex: string; description?: string }> {
+    return this.voiceVlanOuiEntries;
+  }
+
+  protected override matchesVoiceVlanOui(mac: MACAddress): boolean {
+    const macHex = mac.toString().replace(/[^0-9a-fA-F]/g, '').toLowerCase();
+    for (const entry of this.voiceVlanOuiEntries) {
+      let match = true;
+      for (let i = 0; i < 12; i += 2) {
+        const macByte = parseInt(macHex.slice(i, i + 2), 16);
+        const entryByte = parseInt(entry.macHex.slice(i, i + 2), 16);
+        const maskByte = parseInt(entry.maskHex.slice(i, i + 2), 16);
+        if ((macByte & maskByte) !== (entryByte & maskByte)) { match = false; break; }
+      }
+      if (match) return true;
+    }
+    return false;
   }
 
   getLldpAgent(): LldpAgent { return this.lldpAgent; }

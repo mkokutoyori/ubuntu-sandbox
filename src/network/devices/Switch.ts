@@ -99,6 +99,7 @@ export interface SwitchportConfig {
   trunkNativeVlan: number;      // Native VLAN for trunk mode (default 1)
   trunkAllowedVlans: Set<number>; // Allowed VLANs on trunk (default: all)
   voiceVlan?: number;             // Voice VLAN (switchport voice vlan N)
+  voiceVlanAutoOui?: boolean;
 }
 
 // ─── IGMP snooping seam ─────────────────────────────────────────────
@@ -1041,6 +1042,9 @@ export abstract class Switch extends Equipment {
     if (cfg.mode === 'access') {
       if (cfg.voiceVlan !== undefined && taggedFrame.dot1q && taggedFrame.dot1q.vid === cfg.voiceVlan) {
         ingressVlan = cfg.voiceVlan;
+      } else if (cfg.voiceVlan !== undefined && cfg.voiceVlanAutoOui && !taggedFrame.dot1q
+        && this.matchesVoiceVlanOui(frame.srcMAC)) {
+        ingressVlan = cfg.voiceVlan;
       } else {
         ingressVlan = cfg.accessVlan;
       }
@@ -1281,6 +1285,11 @@ export abstract class Switch extends Equipment {
   /** Vendor hook: the VTP agent, when the platform has one (Cisco only). */
   protected getVtpAgentOrNull(): VtpPruningAgentLike | null {
     return null;
+  }
+
+  /** Vendor hook: voice VLAN OUI auto-detection (Huawei only). */
+  protected matchesVoiceVlanOui(_mac: MACAddress): boolean {
+    return false;
   }
 
   // ─── Flood within VLAN ────────────────────────────────────────────

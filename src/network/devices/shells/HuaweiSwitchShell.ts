@@ -580,6 +580,19 @@ export class HuaweiSwitchShell implements ISwitchShell {
       return '';
     });
 
+    // voice-vlan mac-address <mac> mask <mask> [description <text>]
+    this.systemTrie.registerGreedy('voice-vlan mac-address', 'Add a recognized voice VLAN OUI entry', (args) => {
+      if (!this.swRef || args.length < 3 || args[1].toLowerCase() !== 'mask') {
+        return 'Error: Incomplete command.';
+      }
+      const macHex = args[0].replace(/[^0-9a-fA-F]/g, '').toLowerCase().padStart(12, '0').slice(0, 12);
+      const maskHex = args[2].replace(/[^0-9a-fA-F]/g, '').toLowerCase().padStart(12, '0').slice(0, 12);
+      const description = args[3]?.toLowerCase() === 'description' ? args.slice(4).join(' ') : undefined;
+      (this.swRef as unknown as { addVoiceVlanOui?: (m: string, k: string, d?: string) => void })
+        .addVoiceVlanOui?.(macHex, maskHex, description);
+      return '';
+    });
+
     // undo <subcommand>
     this.systemTrie.registerGreedy('undo', 'Undo configuration', (args) => {
       if (!this.swRef || args.length < 1) return 'Error: Incomplete command.';
@@ -935,16 +948,30 @@ export class HuaweiSwitchShell implements ISwitchShell {
       this.swRef._getDHCPSnoopingConfig().rateLimits.set(this.selectedInterface, rate);
       return '';
     });
-    // voice-vlan / qinq — recognised L2 features (recorded for display).
-    for (const kw of ['voice-vlan', 'qinq']) {
-      this.interfaceTrie.registerGreedy(kw, `Interface ${kw} configuration`, (args) => {
-        if (!this.selectedInterface) return 'Error: Incomplete command.';
-        const list = this.ifCfg.get(this.selectedInterface) ?? [];
-        list.push(`${kw} ${args.join(' ')}`.trim());
-        this.ifCfg.set(this.selectedInterface, list);
+    this.interfaceTrie.registerGreedy('qinq', 'Interface qinq configuration', (args) => {
+      if (!this.selectedInterface) return 'Error: Incomplete command.';
+      const list = this.ifCfg.get(this.selectedInterface) ?? [];
+      list.push(`qinq ${args.join(' ')}`.trim());
+      this.ifCfg.set(this.selectedInterface, list);
+      return '';
+    });
+    this.interfaceTrie.registerGreedy('voice-vlan', 'Interface voice-vlan configuration', (args) => {
+      if (!this.selectedInterface || !this.swRef) return 'Error: Incomplete command.';
+      const list = this.ifCfg.get(this.selectedInterface) ?? [];
+      list.push(`voice-vlan ${args.join(' ')}`.trim());
+      this.ifCfg.set(this.selectedInterface, list);
+      const cfg = this.swRef.getSwitchportConfig(this.selectedInterface);
+      if (!cfg) return '';
+      if (args[0]?.toLowerCase() === 'mode') {
+        cfg.voiceVlanAutoOui = args[1]?.toLowerCase() === 'auto';
         return '';
-      });
-    }
+      }
+      const id = parseInt(args[0] ?? '', 10);
+      if (!isNaN(id) && args[1]?.toLowerCase() === 'enable') {
+        cfg.voiceVlan = id;
+      }
+      return '';
+    });
 
     // ── Eth-Trunk (LACP) interface-view commands ──
     const trunkId = (): number | null => {
