@@ -54,6 +54,8 @@ export function buildIpCtx(net: LinuxNetKernel, xfrm?: IpXfrmContext): IpNetwork
           framesOut: counters.framesOut,
           bytesIn: counters.bytesIn,
           bytesOut: counters.bytesOut,
+          errorsIn: counters.errorsIn,
+          errorsOut: counters.errorsOut,
         },
         ipv6: port.getIPv6Addresses().map(entry => ({
           address: entry.address.toString(),

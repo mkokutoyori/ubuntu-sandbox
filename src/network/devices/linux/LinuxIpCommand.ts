@@ -10,6 +10,13 @@
 import { findHostByAddress } from './network/HostLookup';
 import { IPAddress, MACAddress, SubnetMask } from '../../core/types';
 import { broadcastAddress } from '../../core/ip';
+import {
+  buildAddrJsonEntry,
+  buildLinkJsonEntry,
+  buildRouteJsonEntry,
+  buildNeighJsonEntry,
+  toJsonText,
+} from './commands/net/IpJsonFormat';
 
 // ─── Network Context Interface ──────────────────────────────────────
 
@@ -23,7 +30,14 @@ export interface IpInterfaceInfo {
   isUp: boolean;
   isConnected: boolean;
   isDHCP: boolean;
-  counters: { framesIn: number; framesOut: number; bytesIn: number; bytesOut: number };
+  counters: {
+    framesIn: number;
+    framesOut: number;
+    bytesIn: number;
+    bytesOut: number;
+    errorsIn?: number;
+    errorsOut?: number;
+  };
   ipv6?: IpInterfaceV6Address[];
   secondaryIPs?: Array<{ ip: string; cidr: number }>;
 }
@@ -246,12 +260,21 @@ TYPE := { bareudp | bond | bond_slave | bridge | bridge_slave |
 
 // ─── Main Entry Point ───────────────────────────────────────────────
 
-type IpFamily = 'any' | 'inet' | 'inet6';
+export type IpFamily = 'any' | 'inet' | 'inet6';
+
+export interface IpOutputOptions {
+  family: IpFamily;
+  stats: boolean;
+  json: boolean;
+  pretty: boolean;
+}
 
 export function executeIpCommand(ctx: IpNetworkContext, args: string[]): string {
   // Parse global options
   let brief = false;
   let stats = false;
+  let json = false;
+  let pretty = false;
   let family: IpFamily = 'any';
   const filteredArgs: string[] = [];
 
@@ -261,6 +284,10 @@ export function executeIpCommand(ctx: IpNetworkContext, args: string[]): string 
       brief = true;
     } else if (arg === '-s' || arg === '-statistics') {
       stats = true;
+    } else if (arg === '-j' || arg === '-json') {
+      json = true;
+    } else if (arg === '-p' || arg === '-pretty') {
+      pretty = true;
     } else if (arg === '-4') {
       family = 'inet';
     } else if (arg === '-6') {
@@ -281,6 +308,7 @@ export function executeIpCommand(ctx: IpNetworkContext, args: string[]): string 
 
   const object = filteredArgs[0];
   const subArgs = filteredArgs.slice(1);
+  const outputOpts: IpOutputOptions = { family, stats, json, pretty };
 
   switch (object) {
     case 'help':
@@ -289,21 +317,21 @@ export function executeIpCommand(ctx: IpNetworkContext, args: string[]): string 
     case 'addr':
     case 'address':
     case 'a':
-      return brief ? ipAddrBrief(ctx, subArgs) : ipAddr(ctx, subArgs, family);
+      return brief ? ipAddrBrief(ctx, subArgs) : ipAddr(ctx, subArgs, outputOpts);
 
     case 'link':
     case 'l':
-      return ipLink(ctx, subArgs);
+      return ipLink(ctx, subArgs, outputOpts);
 
     case 'route':
     case 'r':
-      return family === 'inet6' ? ipRoute6(ctx, subArgs) : ipRoute(ctx, subArgs);
+      return family === 'inet6' ? ipRoute6(ctx, subArgs, outputOpts) : ipRoute(ctx, subArgs, outputOpts);
 
     case 'neigh':
     case 'neighbor':
     case 'neighbour':
     case 'n':
-      return ipNeigh(ctx, subArgs);
+      return ipNeigh(ctx, subArgs, outputOpts);
 
     case 'xfrm':
     case 'x':
@@ -319,9 +347,9 @@ export function executeIpCommand(ctx: IpNetworkContext, args: string[]): string 
 
 // ─── ip addr ────────────────────────────────────────────────────────
 
-function ipAddr(ctx: IpNetworkContext, args: string[], family: IpFamily = 'any'): string {
+function ipAddr(ctx: IpNetworkContext, args: string[], opts: IpOutputOptions): string {
   if (args.length === 0 || args[0] === 'show' || args[0] === 'list') {
-    return ipAddrShow(ctx, args.slice(args[0] === 'show' || args[0] === 'list' ? 1 : 0), family);
+    return ipAddrShow(ctx, args.slice(args[0] === 'show' || args[0] === 'list' ? 1 : 0), opts);
   }
   if (args[0] === 'add') return ipAddrAdd(ctx, args.slice(1));
   if (args[0] === 'del' || args[0] === 'delete') return ipAddrDel(ctx, args.slice(1));
@@ -343,7 +371,7 @@ function ipAddrFlush(ctx: IpNetworkContext, args: string[]): string {
   return ctx.removeInterfaceIP(devName);
 }
 
-function ipAddrShow(ctx: IpNetworkContext, args: string[], family: IpFamily = 'any'): string {
+function ipAddrShow(ctx: IpNetworkContext, args: string[], opts: IpOutputOptions): string {
   // Filter by "dev <name>" or a bare interface name (iproute2 accepts both).
   const SCOPE_KW = new Set(['scope', 'to', 'label', 'up', 'down', 'permanent', 'dynamic', 'primary', 'secondary']);
   let filterDev: string | null = null;
@@ -361,7 +389,18 @@ function ipAddrShow(ctx: IpNetworkContext, args: string[], family: IpFamily = 'a
     const info = ctx.getInterfaceInfo(filterDev);
     if (!info) return `Device "${filterDev}" does not exist.`;
     const idx = allNames.indexOf(filterDev) + 1;
-    return formatAddrInterface(info, idx, family);
+    if (opts.json) return toJsonText([buildAddrJsonEntry(info, idx, computeIfaceFlags(info), opts.family, opts.stats)], opts.pretty);
+    return formatAddrInterface(info, idx, opts);
+  }
+
+  if (opts.json) {
+    const entries = [];
+    for (let i = 0; i < allNames.length; i++) {
+      const info = ctx.getInterfaceInfo(allNames[i]);
+      if (!info) continue;
+      entries.push(buildAddrJsonEntry(info, i + 1, computeIfaceFlags(info), opts.family, opts.stats));
+    }
+    return toJsonText(entries, opts.pretty);
   }
 
   const lines: string[] = [];
@@ -369,12 +408,12 @@ function ipAddrShow(ctx: IpNetworkContext, args: string[], family: IpFamily = 'a
     const info = ctx.getInterfaceInfo(allNames[i]);
     if (!info) continue;
     if (lines.length > 0) lines.push('');
-    lines.push(formatAddrInterface(info, i + 1, family));
+    lines.push(formatAddrInterface(info, i + 1, opts));
   }
   return lines.join('\n');
 }
 
-function formatAddrInterface(info: IpInterfaceInfo, idx: number, family: IpFamily = 'any'): string {
+export function computeIfaceFlags(info: IpInterfaceInfo): string[] {
   const isLoopback = info.name === 'lo';
   const flags: string[] = [];
 
@@ -391,8 +430,25 @@ function formatAddrInterface(info: IpInterfaceInfo, idx: number, family: IpFamil
   }
   if (info.isUp && info.isConnected) flags.push('LOWER_UP');
 
-  // Deduplicate UP
-  const uniqueFlags = [...new Set(flags)];
+  return [...new Set(flags)];
+}
+
+function statsLines(info: IpInterfaceInfo): string[] {
+  const c = info.counters;
+  const errorsIn = c.errorsIn ?? 0;
+  const errorsOut = c.errorsOut ?? 0;
+  return [
+    '    RX:  bytes packets errors dropped  missed   mcast',
+    `    ${String(c.bytesIn).padStart(5)}${String(c.framesIn).padStart(8)}${String(errorsIn).padStart(7)}${'0'.padStart(8)}${'0'.padStart(8)}${'0'.padStart(8)}`,
+    '    TX:  bytes packets errors dropped carrier collsns',
+    `    ${String(c.bytesOut).padStart(5)}${String(c.framesOut).padStart(8)}${String(errorsOut).padStart(7)}${'0'.padStart(8)}${'0'.padStart(8)}${'0'.padStart(8)}`,
+  ];
+}
+
+function formatAddrInterface(info: IpInterfaceInfo, idx: number, opts: IpOutputOptions): string {
+  const isLoopback = info.name === 'lo';
+  const uniqueFlags = computeIfaceFlags(info);
+  const family = opts.family;
 
   const state = info.isUp && info.isConnected ? 'UP' : 'DOWN';
   const qdisc = isLoopback ? 'noqueue' : 'fq_codel';
@@ -402,6 +458,7 @@ function formatAddrInterface(info: IpInterfaceInfo, idx: number, family: IpFamil
   const lines: string[] = [];
   lines.push(`${idx}: ${info.name}: <${uniqueFlags.join(',')}> mtu ${info.mtu} qdisc ${qdisc} state ${state} group ${group}${qlen}`);
   lines.push(`    link/${isLoopback ? 'loopback' : 'ether'} ${info.mac} brd ${isLoopback ? '00:00:00:00:00:00' : 'ff:ff:ff:ff:ff:ff'}`);
+  if (opts.stats) lines.push(...statsLines(info));
 
   if (family !== 'inet6' && info.ip && info.cidr !== null) {
     const dynFlag = info.isDHCP ? ' dynamic' : '';
@@ -519,16 +576,16 @@ function ipAddrDel(ctx: IpNetworkContext, args: string[]): string {
 
 // ─── ip link ────────────────────────────────────────────────────────
 
-function ipLink(ctx: IpNetworkContext, args: string[]): string {
+function ipLink(ctx: IpNetworkContext, args: string[], opts: IpOutputOptions): string {
   if (args.length === 0 || args[0] === 'show' || args[0] === 'list') {
-    return ipLinkShow(ctx, args.slice(args[0] === 'show' || args[0] === 'list' ? 1 : 0));
+    return ipLinkShow(ctx, args.slice(args[0] === 'show' || args[0] === 'list' ? 1 : 0), opts);
   }
   if (args[0] === 'set') return ipLinkSet(ctx, args.slice(1));
   if (args[0] === 'help') return IP_LINK_HELP;
   return `Command "${args[0]}" is unknown, try "ip link help".`;
 }
 
-function ipLinkShow(ctx: IpNetworkContext, args: string[]): string {
+function ipLinkShow(ctx: IpNetworkContext, args: string[], opts: IpOutputOptions): string {
   let filterDev: string | null = null;
   for (let i = 0; i < args.length; i++) {
     if (args[i] === 'dev' && args[i + 1]) {
@@ -537,43 +594,39 @@ function ipLinkShow(ctx: IpNetworkContext, args: string[]): string {
     }
   }
 
+  const names = ctx.getInterfaceNames();
+
   if (filterDev) {
     const info = ctx.getInterfaceInfo(filterDev);
     if (!info) return `Device "${filterDev}" does not exist.`;
-    const names = ctx.getInterfaceNames();
     const idx = names.indexOf(filterDev) + 1;
-    return formatLinkInterface(info, idx);
+    if (opts.json) return toJsonText([buildLinkJsonEntry(info, idx, computeIfaceFlags(info), opts.stats)], opts.pretty);
+    return formatLinkInterface(info, idx, opts.stats);
   }
 
-  const names = ctx.getInterfaceNames();
+  if (opts.json) {
+    const entries = [];
+    for (let i = 0; i < names.length; i++) {
+      const info = ctx.getInterfaceInfo(names[i]);
+      if (!info) continue;
+      entries.push(buildLinkJsonEntry(info, i + 1, computeIfaceFlags(info), opts.stats));
+    }
+    return toJsonText(entries, opts.pretty);
+  }
+
   const lines: string[] = [];
   for (let i = 0; i < names.length; i++) {
     const info = ctx.getInterfaceInfo(names[i]);
     if (!info) continue;
     if (lines.length > 0) lines.push('');
-    lines.push(formatLinkInterface(info, i + 1));
+    lines.push(formatLinkInterface(info, i + 1, opts.stats));
   }
   return lines.join('\n');
 }
 
-function formatLinkInterface(info: IpInterfaceInfo, idx: number): string {
+function formatLinkInterface(info: IpInterfaceInfo, idx: number, stats = false): string {
   const isLoopback = info.name === 'lo';
-  const flags: string[] = [];
-
-  if (isLoopback) {
-    flags.push('LOOPBACK');
-  } else {
-    flags.push('BROADCAST');
-  }
-  if (info.isUp) flags.push('UP');
-  if (isLoopback) {
-    flags.push('UP');
-  } else {
-    flags.push('MULTICAST');
-  }
-  if (info.isUp && info.isConnected) flags.push('LOWER_UP');
-
-  const uniqueFlags = [...new Set(flags)];
+  const uniqueFlags = computeIfaceFlags(info);
 
   const state = info.isUp && info.isConnected ? 'UP' : 'DOWN';
   const mode = 'DEFAULT';
@@ -584,6 +637,7 @@ function formatLinkInterface(info: IpInterfaceInfo, idx: number): string {
   const lines: string[] = [];
   lines.push(`${idx}: ${info.name}: <${uniqueFlags.join(',')}> mtu ${info.mtu} qdisc ${qdisc} state ${state} mode ${mode} group ${group}${qlen}`);
   lines.push(`    link/${isLoopback ? 'loopback' : 'ether'} ${info.mac} brd ${isLoopback ? '00:00:00:00:00:00' : 'ff:ff:ff:ff:ff:ff'}`);
+  if (stats) lines.push(...statsLines(info));
 
   return lines.join('\n');
 }
@@ -722,9 +776,9 @@ function ipLinkSet(ctx: IpNetworkContext, args: string[]): string {
 
 // ─── ip route ───────────────────────────────────────────────────────
 
-function ipRoute(ctx: IpNetworkContext, args: string[]): string {
+function ipRoute(ctx: IpNetworkContext, args: string[], opts: IpOutputOptions): string {
   if (args.length === 0 || args[0] === 'show' || args[0] === 'list') {
-    return ipRouteShow(ctx);
+    return ipRouteShow(ctx, opts);
   }
   if (args[0] === 'add') return ipRouteAdd(ctx, args.slice(1));
   if (args[0] === 'del' || args[0] === 'delete') return ipRouteDel(ctx, args.slice(1));
@@ -733,15 +787,17 @@ function ipRoute(ctx: IpNetworkContext, args: string[]): string {
   return `Command "${args[0]}" is unknown, try "ip route help".`;
 }
 
-function ipRouteShow(ctx: IpNetworkContext): string {
+function ipRouteShow(ctx: IpNetworkContext, opts: IpOutputOptions): string {
   const table = ctx.getRoutingTable();
-  if (table.length === 0) return '';
+  if (table.length === 0) return opts.json ? toJsonText([], opts.pretty) : '';
 
   // Sort: connected first, then static, then default
   const sorted = [...table].sort((a, b) => {
     const order: Record<string, number> = { connected: 0, static: 1, default: 2 };
     return (order[a.type] ?? 9) - (order[b.type] ?? 9);
   });
+
+  if (opts.json) return toJsonText(sorted.map(buildRouteJsonEntry), opts.pretty);
 
   const lines: string[] = [];
   for (const route of sorted) {
@@ -764,12 +820,25 @@ function ipRouteShow(ctx: IpNetworkContext): string {
   return lines.join('\n');
 }
 
-function ipRoute6(ctx: IpNetworkContext, args: string[]): string {
+function ipRoute6(ctx: IpNetworkContext, args: string[], opts: IpOutputOptions): string {
   if (args.length > 0 && args[0] !== 'show' && args[0] !== 'list') {
     if (args[0] === 'help') return IP_ROUTE_HELP;
     return `Command "${args[0]}" is unknown, try "ip route help".`;
   }
   const table = ctx.getIPv6RoutingTable?.() ?? [];
+
+  if (opts.json) {
+    const entries = table.map(route => ({
+      dst: route.type === 'default' ? 'default' : `${route.prefix}/${route.prefixLength}`,
+      gateway: route.nextHop ?? undefined,
+      dev: route.iface,
+      protocol: route.type === 'connected' ? 'kernel' : (route.type === 'ra' ? 'ra' : 'static'),
+      metric: route.metric,
+      flags: [] as string[],
+    }));
+    return toJsonText(entries, opts.pretty);
+  }
+
   const lines: string[] = [];
   for (const route of table) {
     const proto = route.type === 'connected' ? 'kernel'
@@ -919,11 +988,11 @@ function isInSubnet(ip: string, network: string, cidr: number): boolean {
 
 // ─── ip neigh ───────────────────────────────────────────────────────
 
-function ipNeigh(ctx: IpNetworkContext, args: string[]): string {
+function ipNeigh(ctx: IpNetworkContext, args: string[], opts: IpOutputOptions): string {
   const sub = args[0] ?? 'show';
 
   if (sub === 'show' || sub === 'list') {
-    return ipNeighShow(ctx, args.slice(1));
+    return ipNeighShow(ctx, args.slice(1), opts);
   }
   if (sub === 'add' || sub === 'replace') {
     return ipNeighAdd(ctx, args.slice(1));
@@ -938,10 +1007,10 @@ function ipNeigh(ctx: IpNetworkContext, args: string[]): string {
     return 'Usage: ip neigh { add | del | flush | show } [ dev DEV ] [ lladdr LLADDR ] [ nud STATE ] ADDRESS';
   }
   // bare call — treat as show
-  return ipNeighShow(ctx, args);
+  return ipNeighShow(ctx, args, opts);
 }
 
-function ipNeighShow(ctx: IpNetworkContext, args: string[]): string {
+function ipNeighShow(ctx: IpNetworkContext, args: string[], opts: IpOutputOptions): string {
   // Optional filters: a target address and/or `dev <iface>`.
   let addr: string | null = null;
   let devFilter: string | null = null;
@@ -954,6 +1023,7 @@ function ipNeighShow(ctx: IpNetworkContext, args: string[]): string {
   if (devFilter) neighbors = neighbors.filter(n => n.iface === devFilter);
   if (addr) neighbors = neighbors.filter(n => n.ip === addr);
   if (neighbors.length > 0) {
+    if (opts.json) return toJsonText(neighbors.map(buildNeighJsonEntry), opts.pretty);
     return neighbors
       .map(n => n.state === 'FAILED'
         ? `${n.ip} dev ${n.iface}  FAILED`
@@ -971,11 +1041,12 @@ function ipNeighShow(ctx: IpNetworkContext, args: string[]): string {
     if (route) {
       const found = findHostByAddress(addr);
       if (!found || found.poweredOff || found.interfaceDown) {
+        if (opts.json) return toJsonText([{ dst: addr, dev: route.iface, state: ['FAILED'] }], opts.pretty);
         return `${addr} dev ${route.iface}  FAILED`;
       }
     }
   }
-  return '';
+  return opts.json ? toJsonText([], opts.pretty) : '';
 }
 
 // ip neigh add <IP> lladdr <MAC> dev <DEV> [nud permanent|static]
