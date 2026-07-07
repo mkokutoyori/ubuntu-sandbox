@@ -108,7 +108,7 @@ export interface IpNetworkContext {
   removeInterfaceIPv6?(ifName: string, addr: string): string;
   removeInterfaceAddress?(ifName: string, ip: IPAddress): string;
   removeInterfaceIP(ifName: string): string;
-  getRoutingTable(): IpRouteEntry[];
+  getRoutingTable(tableId?: number): IpRouteEntry[];
   getIPv6RoutingTable?(): IpV6RouteEntry[];
   addDefaultRoute(gateway: IPAddress): string;
   addStaticRoute(
@@ -116,14 +116,14 @@ export interface IpNetworkContext {
     cidr: number,
     gateway: IPAddress,
     metric?: number,
-    routeOpts?: { allowDuplicate?: boolean },
+    routeOpts?: { allowDuplicate?: boolean; table?: number },
   ): string;
-  addDeviceRoute?(network: IPAddress, cidr: number, iface: string): string;
+  addDeviceRoute?(network: IPAddress, cidr: number, iface: string, table?: number): string;
   deleteDefaultRoute(): string;
   deleteRoute(
     network: IPAddress,
     cidr: number,
-    filter?: { nextHop?: IPAddress | null; metric?: number },
+    filter?: { nextHop?: IPAddress | null; metric?: number; table?: number },
   ): string;
   getNeighborTable(): IpNeighborEntry[];
   addNeighbor(ip: IPAddress, mac: MACAddress, ifName: string): string;
@@ -137,6 +137,25 @@ export interface IpNetworkContext {
   tunnel?: IpTunnelContext;
   /** Optional virtual interface CRUD for ip link add/delete */
   linkOps?: IpLinkOpsContext;
+  /** Optional policy-routing rule context for ip rule */
+  rule?: IpRuleContext;
+  /** Optional rule-aware route resolution, for `ip route get from SRC DST` */
+  resolveRouteWithRules?(
+    dest: IPAddress, from: IPAddress | null,
+  ): { iface: string; nextHopIP: string; table: number } | null;
+}
+
+export interface IpRuleInfo {
+  priority: number;
+  from?: string;
+  to?: string;
+  table: number;
+}
+
+export interface IpRuleContext {
+  addRule(rule: { priority: number; from?: string; to?: string; table: number }): string;
+  removeRule(priority: number): string;
+  listRules(): IpRuleInfo[];
 }
 
 // ─── XFRM types (Linux kernel IPsec transform framework) ────────────
@@ -378,6 +397,9 @@ export function executeIpCommand(ctx: IpNetworkContext, args: string[]): string 
     case 'tunnel':
     case 'tunl':
       return ipTunnel(ctx, subArgs);
+
+    case 'rule':
+      return ipRule(ctx, subArgs);
 
     case 'monitor':
       return '';
@@ -930,9 +952,16 @@ function ipLinkSet(ctx: IpNetworkContext, args: string[]): string {
 
 // ─── ip route ───────────────────────────────────────────────────────
 
+function parseTableArg(args: string[]): number | undefined {
+  const idx = args.indexOf('table');
+  if (idx === -1 || !args[idx + 1]) return undefined;
+  const id = parseInt(args[idx + 1], 10);
+  return isNaN(id) ? undefined : id;
+}
+
 function ipRoute(ctx: IpNetworkContext, args: string[], opts: IpOutputOptions): string {
   if (args.length === 0 || args[0] === 'show' || args[0] === 'list') {
-    return ipRouteShow(ctx, opts);
+    return ipRouteShow(ctx, args.slice(args[0] === 'show' || args[0] === 'list' ? 1 : 0), opts);
   }
   if (args[0] === 'add') return ipRouteAdd(ctx, args.slice(1));
   if (args[0] === 'append') return ipRouteAppend(ctx, args.slice(1));
@@ -944,8 +973,9 @@ function ipRoute(ctx: IpNetworkContext, args: string[], opts: IpOutputOptions): 
   return `Command "${args[0]}" is unknown, try "ip route help".`;
 }
 
-function ipRouteShow(ctx: IpNetworkContext, opts: IpOutputOptions): string {
-  const table = ctx.getRoutingTable();
+function ipRouteShow(ctx: IpNetworkContext, args: string[], opts: IpOutputOptions): string {
+  const tableId = parseTableArg(args);
+  const table = ctx.getRoutingTable(tableId);
   if (table.length === 0) return opts.json ? toJsonText([], opts.pretty) : '';
 
   // Sort: connected first, then static, then default
@@ -1014,6 +1044,7 @@ interface ParsedRouteSpec {
   gateway: IPAddress | null;
   dev: string | null;
   metric?: number;
+  table?: number;
 }
 
 function parseRouteSpec(args: string[]): ParsedRouteSpec | string {
@@ -1052,38 +1083,46 @@ function parseRouteSpec(args: string[]): ParsedRouteSpec | string {
   const dev = devIdx !== -1 && args[devIdx + 1] ? args[devIdx + 1] : null;
   let metric: number | undefined;
   if (metricIdx !== -1 && args[metricIdx + 1]) metric = parseInt(args[metricIdx + 1], 10);
+  const table = parseTableArg(args);
 
-  return { isDefault, network, cidr, gateway, dev, metric };
+  return { isDefault, network, cidr, gateway, dev, metric, table };
 }
 
 type RouteMode = 'add' | 'append' | 'replace' | 'change';
 
 function applyRouteSpec(ctx: IpNetworkContext, spec: ParsedRouteSpec, mode: RouteMode): string {
-  const { isDefault, network, cidr, gateway, dev, metric } = spec;
+  const { isDefault, network, cidr, gateway, dev, metric, table } = spec;
+  const tableId = table ?? 254;
 
   if (isDefault) {
-    if (mode === 'change' && !ctx.getRoutingTable().some(r => r.type === 'default')) {
+    if (tableId === 254) {
+      if (mode === 'change' && !ctx.getRoutingTable().some(r => r.type === 'default')) {
+        return 'RTNETLINK answers: No such process';
+      }
+      return ctx.addDefaultRoute(gateway!);
+    }
+    if (mode === 'change' && !ctx.getRoutingTable(tableId).some(r => r.type === 'default')) {
       return 'RTNETLINK answers: No such process';
     }
-    return ctx.addDefaultRoute(gateway!);
+    return ctx.addStaticRoute(network, cidr, gateway!, metric, { allowDuplicate: mode !== 'add', table: tableId });
   }
 
   if (mode === 'replace' || mode === 'change') {
-    const existing = ctx.getRoutingTable().some(
+    const existing = ctx.getRoutingTable(tableId).some(
       r => r.type !== 'connected' && r.network === network.toString() && r.cidr === cidr,
     );
     if (mode === 'change' && !existing) return 'RTNETLINK answers: No such process';
-    if (existing) ctx.deleteRoute(network, cidr);
+    if (existing) ctx.deleteRoute(network, cidr, { table: tableId });
   }
 
   if (!gateway) {
     if (!dev) return 'Error: "via" is required.';
     if (!ctx.addDeviceRoute) return `Cannot find device "${dev}"`;
-    return ctx.addDeviceRoute(network, cidr, dev);
+    return ctx.addDeviceRoute(network, cidr, dev, tableId);
   }
 
   const allowDuplicate = mode !== 'add';
-  return ctx.addStaticRoute(network, cidr, gateway, metric, { allowDuplicate });
+  return ctx.addStaticRoute(network, cidr, gateway, metric, { allowDuplicate, table: tableId });
 }
 
 function ipRouteAdd(ctx: IpNetworkContext, args: string[]): string {
@@ -1129,7 +1168,7 @@ function ipRouteDel(ctx: IpNetworkContext, args: string[]): string {
   try { network = new IPAddress(networkStr); }
   catch { return `Error: ${networkStr} is not a valid IPv4 address.`; }
 
-  const filter: { nextHop?: IPAddress | null; metric?: number } = {};
+  const filter: { nextHop?: IPAddress | null; metric?: number; table?: number } = {};
   const viaIdx = args.indexOf('via');
   if (viaIdx !== -1 && args[viaIdx + 1]) {
     try { filter.nextHop = new IPAddress(args[viaIdx + 1]); }
@@ -1140,6 +1179,8 @@ function ipRouteDel(ctx: IpNetworkContext, args: string[]): string {
     const m = parseInt(args[metricIdx + 1], 10);
     if (!isNaN(m)) filter.metric = m;
   }
+  const tableId = parseTableArg(args);
+  if (tableId !== undefined) filter.table = tableId;
 
   return ctx.deleteRoute(network, cidr, filter);
 }
@@ -1150,6 +1191,22 @@ function ipRouteGet(ctx: IpNetworkContext, args: string[]): string {
   const dest = args[0];
   const destAddr = IPAddress.tryParse(dest);
   if (!destAddr) return `Error: ${dest} is not a valid IPv4 address.`;
+
+  const fromIdx = args.indexOf('from');
+  if (fromIdx !== -1 && args[fromIdx + 1] && ctx.resolveRouteWithRules) {
+    const fromAddr = IPAddress.tryParse(args[fromIdx + 1]);
+    if (!fromAddr) return `Error: ${args[fromIdx + 1]} is not a valid IPv4 address.`;
+    const resolved = ctx.resolveRouteWithRules(destAddr, fromAddr);
+    if (!resolved) return `RTNETLINK answers: Network is unreachable`;
+    const iface = ctx.getInterfaceInfo(resolved.iface);
+    const src = iface?.ip ?? undefined;
+    const suffix = src ? ` src ${src}` : '';
+    const tableSuffix = resolved.table !== 254 ? ` table ${resolved.table}` : '';
+    if (resolved.nextHopIP === dest) {
+      return `${dest} from ${fromAddr} dev ${resolved.iface}${suffix}${tableSuffix}`;
+    }
+    return `${dest} from ${fromAddr} via ${resolved.nextHopIP} dev ${resolved.iface}${suffix}${tableSuffix}`;
+  }
 
   const table = ctx.getRoutingTable();
   const best = pickBestRoute(destAddr, table);
@@ -1377,6 +1434,67 @@ function ipTunnelShow(ctx: IpNetworkContext, args: string[]): string {
     const keyStr = t.key !== undefined ? ` key ${t.key}` : '';
     const ttlStr = t.ttl !== undefined && t.ttl !== 255 ? ` ttl ${t.ttl}` : ' ttl inherit';
     return `${t.name}: gre/ip  remote ${t.remote}  local ${t.local}${keyStr}${ttlStr}`;
+  }).join('\n');
+}
+
+// ─── ip rule ────────────────────────────────────────────────────────
+
+const IP_RULE_HELP = `Usage: ip rule { add | del } SELECTOR ACTION
+       ip rule { show | list }
+SELECTOR := [ from PREFIX ] [ to PREFIX ] [ priority PRIORITY ]
+ACTION := table TABLE_ID`;
+
+const TABLE_NAMES: Record<number, string> = { 255: 'local', 254: 'main', 253: 'default' };
+
+function ipRule(ctx: IpNetworkContext, args: string[]): string {
+  if (args.length === 0 || args[0] === 'show' || args[0] === 'list') return ipRuleShow(ctx);
+  if (args[0] === 'add') return ipRuleAdd(ctx, args.slice(1));
+  if (args[0] === 'del' || args[0] === 'delete') return ipRuleDel(ctx, args.slice(1));
+  if (args[0] === 'help') return IP_RULE_HELP;
+  return `Command "${args[0]}" is unknown, try "ip rule help".`;
+}
+
+function ipRuleAdd(ctx: IpNetworkContext, args: string[]): string {
+  const rule = ctx.rule;
+  if (!rule) return 'RTNETLINK answers: Operation not supported';
+
+  let from: string | undefined;
+  let to: string | undefined;
+  let priority: number | undefined;
+  let table: number | undefined;
+
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] === 'from' && args[i + 1]) from = args[++i];
+    else if (args[i] === 'to' && args[i + 1]) to = args[++i];
+    else if ((args[i] === 'priority' || args[i] === 'pref') && args[i + 1]) priority = parseInt(args[++i], 10);
+    else if (args[i] === 'table' && args[i + 1]) table = parseInt(args[++i], 10);
+  }
+
+  if (table === undefined || isNaN(table)) return 'Error: "table" is required, try "ip rule help".';
+  const finalPriority = priority !== undefined && !isNaN(priority) ? priority : 32764;
+
+  return rule.addRule({ priority: finalPriority, from, to, table });
+}
+
+function ipRuleDel(ctx: IpNetworkContext, args: string[]): string {
+  const rule = ctx.rule;
+  if (!rule) return 'RTNETLINK answers: Operation not supported';
+
+  const priorityIdx = args.indexOf('priority') !== -1 ? args.indexOf('priority') : args.indexOf('pref');
+  const priority = priorityIdx !== -1 && args[priorityIdx + 1] ? parseInt(args[priorityIdx + 1], 10) : NaN;
+  if (isNaN(priority)) return 'Usage: ip rule del priority PRIORITY';
+
+  return rule.removeRule(priority);
+}
+
+function ipRuleShow(ctx: IpNetworkContext): string {
+  const rule = ctx.rule;
+  if (!rule) return '';
+  return rule.listRules().map(r => {
+    const from = r.from ? `from ${r.from}` : 'from all';
+    const to = r.to ? ` to ${r.to}` : '';
+    const tableName = TABLE_NAMES[r.table] ?? String(r.table);
+    return `${r.priority}:\t${from}${to} lookup ${tableName}`;
   }).join('\n');
 }
 

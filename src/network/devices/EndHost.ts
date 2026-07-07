@@ -197,6 +197,37 @@ export interface HostRouteEntry {
   type: 'connected' | 'static' | 'default';
   /** Metric (lower = preferred when prefix lengths are equal) */
   metric: number;
+  /** Routing table this route belongs to; omitted/254 = main. */
+  table?: number;
+}
+
+/** A policy-routing rule (`ip rule`): selects which table a lookup uses. */
+export interface HostPolicyRule {
+  priority: number;
+  fromNetwork?: IPAddress;
+  fromMask?: SubnetMask;
+  toNetwork?: IPAddress;
+  toMask?: SubnetMask;
+  fwmark?: number;
+  table: number;
+}
+
+function pickBestRouteInTable(destInt: number, table: HostRouteEntry[]): HostRouteEntry | null {
+  let bestRoute: HostRouteEntry | null = null;
+  let bestPrefix = -1;
+  for (const route of table) {
+    const netInt = route.network.toUint32();
+    const maskInt = route.mask.toUint32();
+    const prefix = route.mask.toCIDR();
+    if ((destInt & maskInt) === (netInt & maskInt)) {
+      if (prefix > bestPrefix
+        || (prefix === bestPrefix && bestRoute && route.metric < bestRoute.metric)) {
+        bestPrefix = prefix;
+        bestRoute = route;
+      }
+    }
+  }
+  return bestRoute;
 }
 
 // ─── EndHost ───────────────────────────────────────────────────────
@@ -246,6 +277,14 @@ export abstract class EndHost extends Equipment {
   protected defaultGateway: IPAddress | null = null;
   /** Full routing table (connected + static + default) with LPM support */
   protected routingTable: HostRouteEntry[] = [];
+  /** Non-main routing tables (`ip route add ... table <ID>`), keyed by table ID. */
+  protected policyRoutingTables: Map<number, HostRouteEntry[]> = new Map();
+  /** Policy-routing rules (`ip rule`), sorted ascending by priority. */
+  protected policyRules: HostPolicyRule[] = [
+    { priority: 0, table: 255 },
+    { priority: 32766, table: 254 },
+    { priority: 32767, table: 253 },
+  ];
 
   // ─── IPv6 State (RFC 4861, RFC 8200) ─────────────────────────────
   protected readonly neighborCache = new NeighborCache(() => this.getScheduler(), {
@@ -1106,6 +1145,107 @@ export abstract class EndHost extends Equipment {
       });
     }
     return removed !== undefined;
+  }
+
+  // ─── Policy routing (`ip rule` + `ip route ... table <ID>`) ──────
+
+  /** All routes visible in a given table; 254 (or main's real ID) is the existing main table. */
+  getRoutingTableFor(tableId: number): HostRouteEntry[] {
+    if (tableId === 254) return this.getRoutingTable();
+    return [...(this.policyRoutingTables.get(tableId) ?? [])];
+  }
+
+  private tableArray(tableId: number): HostRouteEntry[] {
+    let arr = this.policyRoutingTables.get(tableId);
+    if (!arr) { arr = []; this.policyRoutingTables.set(tableId, arr); }
+    return arr;
+  }
+
+  addStaticRouteToTable(
+    tableId: number, network: IPAddress, mask: SubnetMask, nextHop: IPAddress, metric: number = 100,
+  ): boolean {
+    if (tableId === 254) return this.addStaticRoute(network, mask, nextHop, metric);
+    let gwIface = '';
+    for (const [, port] of this.ports) {
+      const ip = port.getIPAddress();
+      const pmask = port.getSubnetMask();
+      if (ip && pmask && ip.isInSameSubnet(nextHop, pmask)) { gwIface = port.getName(); break; }
+    }
+    if (!gwIface) return false;
+    this.tableArray(tableId).push({
+      network, mask, nextHop, iface: gwIface, type: 'static', metric, table: tableId,
+    });
+    return true;
+  }
+
+  addDeviceRouteToTable(
+    tableId: number, network: IPAddress, mask: SubnetMask, iface: string, metric: number = 0,
+  ): boolean {
+    if (tableId === 254) return this.addDeviceRoute(network, mask, iface, metric);
+    if (!this.ports.has(iface)) return false;
+    this.tableArray(tableId).push({
+      network, mask, nextHop: null, iface, type: 'static', metric, table: tableId,
+    });
+    return true;
+  }
+
+  removeRouteFromTable(
+    tableId: number, network: IPAddress, mask: SubnetMask,
+    filter: { nextHop?: IPAddress | null; metric?: number } = {},
+  ): boolean {
+    if (tableId === 254) return this.removeRoute(network, mask, filter);
+    const arr = this.policyRoutingTables.get(tableId);
+    if (!arr) return false;
+    const matches = (r: HostRouteEntry): boolean => {
+      if (!(r.network.equals(network) && r.mask.toCIDR() === mask.toCIDR())) return false;
+      if (filter.nextHop !== undefined) {
+        if (filter.nextHop === null) { if (r.nextHop !== null) return false; }
+        else if (!r.nextHop || !r.nextHop.equals(filter.nextHop)) return false;
+      }
+      if (filter.metric !== undefined && r.metric !== filter.metric) return false;
+      return true;
+    };
+    const removed = arr.some(matches);
+    this.policyRoutingTables.set(tableId, arr.filter(r => !matches(r)));
+    return removed;
+  }
+
+  addPolicyRule(rule: HostPolicyRule): void {
+    this.policyRules.push(rule);
+    this.policyRules.sort((a, b) => a.priority - b.priority);
+  }
+
+  removePolicyRule(priority: number): boolean {
+    const before = this.policyRules.length;
+    this.policyRules = this.policyRules.filter(r => r.priority !== priority);
+    return this.policyRules.length !== before;
+  }
+
+  getPolicyRules(): HostPolicyRule[] {
+    return [...this.policyRules];
+  }
+
+  /** Resolve a route consulting `ip rule` policy: first matching rule's table wins. */
+  resolveRouteFromTable(
+    targetIP: IPAddress, fromIP: IPAddress | null,
+  ): { port: Port; nextHopIP: IPAddress; table: number } | null {
+    const destInt = targetIP.toUint32();
+    for (const rule of this.policyRules) {
+      if (rule.fromNetwork && rule.fromMask) {
+        if (!fromIP || !fromIP.networkAddress(rule.fromMask).equals(rule.fromNetwork.networkAddress(rule.fromMask))) {
+          continue;
+        }
+      }
+      if (rule.toNetwork && rule.toMask) {
+        if (!targetIP.networkAddress(rule.toMask).equals(rule.toNetwork.networkAddress(rule.toMask))) continue;
+      }
+      const best = pickBestRouteInTable(destInt, this.getRoutingTableFor(rule.table));
+      if (!best) continue;
+      const port = this.ports.get(best.iface);
+      if (!port) continue;
+      return { port, nextHopIP: best.nextHop || targetIP, table: rule.table };
+    }
+    return null;
   }
 
   installTunnelRoute(

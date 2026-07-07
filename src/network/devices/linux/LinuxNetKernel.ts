@@ -18,7 +18,7 @@
 
 import type { Port } from '../../hardware/Port';
 import type { IPAddress, IPv6Address, SubnetMask, MACAddress, IPv4Packet } from '../../core/types';
-import type { ARPEntry, HostRouteEntry, HostIPv6RouteEntry, PingResult } from '../EndHost';
+import type { ARPEntry, HostRouteEntry, HostIPv6RouteEntry, HostPolicyRule, PingResult } from '../EndHost';
 import type { DHCPClient } from '../../dhcp/DHCPClient';
 import type { DnsQueryFn } from '../../dns/compat/DnsWireCompat';
 import type { TcpStack } from '../../tcp/TcpStack';
@@ -90,6 +90,24 @@ export interface LinuxNetKernel {
   setDefaultGateway(gw: IPAddress): void;
   getDefaultGateway(): IPAddress | null;
   clearDefaultGateway(): void;
+
+  // ─── Policy routing (`ip rule` + `ip route ... table <ID>`) ──────
+  getRoutingTableFor(tableId: number): HostRouteEntry[];
+  addStaticRouteToTable(tableId: number, network: IPAddress, mask: SubnetMask, gw: IPAddress, metric?: number): boolean;
+  addDeviceRouteToTable(tableId: number, network: IPAddress, mask: SubnetMask, iface: string, metric?: number): boolean;
+  removeRouteFromTable(
+    tableId: number,
+    network: IPAddress,
+    mask: SubnetMask,
+    filter?: { nextHop?: IPAddress | null; metric?: number },
+  ): boolean;
+  addPolicyRule(rule: HostPolicyRule): void;
+  removePolicyRule(priority: number): boolean;
+  getPolicyRules(): HostPolicyRule[];
+  resolveRouteFromTable(
+    targetIP: IPAddress,
+    fromIP: IPAddress | null,
+  ): { iface: string; nextHopIP: IPAddress; table: number } | null;
 
   // ─── ARP ─────────────────────────────────────────────────────────
   getArpTable(): ReadonlyMap<string, ARPEntry>;

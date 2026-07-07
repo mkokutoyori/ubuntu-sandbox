@@ -22,7 +22,7 @@
  * ──────────────────────────────────────────────────────────────────────
  */
 
-import { EndHost, type PingResult, type ARPEntry, type HostRouteEntry, getNUDState } from './EndHost';
+import { EndHost, type PingResult, type ARPEntry, type HostRouteEntry, type HostPolicyRule, getNUDState } from './EndHost';
 import type { UserAccountHost, ShellIdentityHost, FileEditorHost } from '../equipment/HostCapabilities';
 import type { PathActor } from './linux/VfsPath';
 import type { NssHostEntry } from './linux/nss/types';
@@ -1813,6 +1813,38 @@ export abstract class LinuxMachine extends EndHost
       },
       clearDefaultGateway(): void {
         self.clearDefaultGateway();
+      },
+      getRoutingTableFor(tableId: number): HostRouteEntry[] {
+        return self.getRoutingTableFor(tableId);
+      },
+      addStaticRouteToTable(tableId: number, network: IPAddress, mask: SubnetMask, gw: IPAddress, metric?: number): boolean {
+        return self.addStaticRouteToTable(tableId, network, mask, gw, metric ?? 100);
+      },
+      addDeviceRouteToTable(tableId: number, network: IPAddress, mask: SubnetMask, iface: string, metric?: number): boolean {
+        return self.addDeviceRouteToTable(tableId, network, mask, iface, metric ?? 0);
+      },
+      removeRouteFromTable(
+        tableId: number,
+        network: IPAddress,
+        mask: SubnetMask,
+        filter?: { nextHop?: IPAddress | null; metric?: number },
+      ): boolean {
+        return self.removeRouteFromTable(tableId, network, mask, filter);
+      },
+      addPolicyRule(rule: HostPolicyRule): void {
+        self.addPolicyRule(rule);
+      },
+      removePolicyRule(priority: number): boolean {
+        return self.removePolicyRule(priority);
+      },
+      getPolicyRules(): HostPolicyRule[] {
+        return self.getPolicyRules();
+      },
+      resolveRouteFromTable(
+        targetIP: IPAddress, fromIP: IPAddress | null,
+      ): { iface: string; nextHopIP: IPAddress; table: number } | null {
+        const r = self.resolveRouteFromTable(targetIP, fromIP);
+        return r ? { iface: r.port.getName(), nextHopIP: r.nextHopIP, table: r.table } : null;
       },
       getArpTable(): ReadonlyMap<string, ARPEntry> {
         return self.arpTable;

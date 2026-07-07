@@ -18,9 +18,11 @@ import {
   type IpTunnelContext,
   type IpTunnelInfo,
   type IpLinkOpsContext,
+  type IpRuleContext,
+  type IpRuleInfo,
 } from '../../LinuxIpCommand';
 import { IPAddress, SubnetMask, MACAddress, IPv6Address } from '../../../../core/types';
-import { getNUDState } from '../../../EndHost';
+import { getNUDState, type HostPolicyRule } from '../../../EndHost';
 import type { GreAgent } from '../../../../gre/GreAgent';
 
 function buildTunnelCtx(greAgent: GreAgent): IpTunnelContext {
@@ -42,6 +44,52 @@ function buildTunnelCtx(greAgent: GreAgent): IpTunnelContext {
       return greAgent.listTunnels().map(t => ({
         name: t.tunnelId, mode: 'gre', local: t.sourceIp, remote: t.destinationIp,
         key: t.key ?? undefined, ttl: t.ttl,
+      }));
+    },
+  };
+}
+
+function cidrToNetworkMask(cidr: string): { network: IPAddress; mask: SubnetMask } | null {
+  const slashIdx = cidr.indexOf('/');
+  if (slashIdx === -1) return null;
+  try {
+    const network = new IPAddress(cidr.slice(0, slashIdx));
+    const mask = SubnetMask.fromCIDR(parseInt(cidr.slice(slashIdx + 1), 10));
+    return { network, mask };
+  } catch {
+    return null;
+  }
+}
+
+function buildRuleCtx(net: LinuxNetKernel): IpRuleContext {
+  return {
+    addRule(rule: { priority: number; from?: string; to?: string; table: number }): string {
+      const hostRule: HostPolicyRule = { priority: rule.priority, table: rule.table };
+      if (rule.from) {
+        const parsed = cidrToNetworkMask(rule.from);
+        if (!parsed) return `Error: ${rule.from} is not a valid prefix.`;
+        hostRule.fromNetwork = parsed.network;
+        hostRule.fromMask = parsed.mask;
+      }
+      if (rule.to) {
+        const parsed = cidrToNetworkMask(rule.to);
+        if (!parsed) return `Error: ${rule.to} is not a valid prefix.`;
+        hostRule.toNetwork = parsed.network;
+        hostRule.toMask = parsed.mask;
+      }
+      net.addPolicyRule(hostRule);
+      return '';
+    },
+    removeRule(priority: number): string {
+      if (!net.removePolicyRule(priority)) return 'RTNETLINK answers: No such file or directory';
+      return '';
+    },
+    listRules(): IpRuleInfo[] {
+      return net.getPolicyRules().map(r => ({
+        priority: r.priority,
+        from: r.fromNetwork && r.fromMask ? `${r.fromNetwork}/${r.fromMask.toCIDR()}` : undefined,
+        to: r.toNetwork && r.toMask ? `${r.toNetwork}/${r.toMask.toCIDR()}` : undefined,
+        table: r.table,
       }));
     },
   };
@@ -167,8 +215,8 @@ export function buildIpCtx(
       net.clearInterfaceIP(ifName);
       return '';
     },
-    getRoutingTable(): IpRouteEntry[] {
-      const table = net.getRoutingTable();
+    getRoutingTable(tableId?: number): IpRouteEntry[] {
+      const table = net.getRoutingTableFor(tableId ?? 254);
       return table.map(r => ({
         network: r.network.toString(),
         cidr: r.mask.toCIDR(),
@@ -191,7 +239,7 @@ export function buildIpCtx(
       cidr: number,
       gateway: IPAddress,
       metric?: number,
-      routeOpts?: { allowDuplicate?: boolean },
+      routeOpts?: { allowDuplicate?: boolean; table?: number },
     ): string {
       try {
         const mask = SubnetMask.fromCIDR(cidr);
@@ -199,15 +247,16 @@ export function buildIpCtx(
           return `Error: an inet prefix is expected rather than "${network.toString()}/${cidr}".`;
         }
         const wantedMetric = metric ?? 100;
+        const tableId = routeOpts?.table ?? 254;
         if (!routeOpts?.allowDuplicate) {
-          const duplicate = net.getRoutingTable().some(
+          const duplicate = net.getRoutingTableFor(tableId).some(
             r => r.network.toString() === network.toString()
               && r.mask.toCIDR() === cidr
               && r.metric === wantedMetric
               && (r.nextHop ? r.nextHop.toString() === gateway.toString() : false));
           if (duplicate) return 'RTNETLINK answers: File exists';
         }
-        if (!net.addStaticRoute(network, mask, gateway, wantedMetric)) {
+        if (!net.addStaticRouteToTable(tableId, network, mask, gateway, wantedMetric)) {
           return 'RTNETLINK answers: Network is unreachable';
         }
         return '';
@@ -215,13 +264,13 @@ export function buildIpCtx(
         return `Error: ${e instanceof Error ? e.message : String(e)}`;
       }
     },
-    addDeviceRoute(network: IPAddress, cidr: number, iface: string): string {
+    addDeviceRoute(network: IPAddress, cidr: number, iface: string, table?: number): string {
       try {
         const mask = SubnetMask.fromCIDR(cidr);
         if (!network.networkAddress(mask).equals(network)) {
           return `Error: an inet prefix is expected rather than "${network.toString()}/${cidr}".`;
         }
-        if (!net.addDeviceRoute(network, mask, iface, 0)) {
+        if (!net.addDeviceRouteToTable(table ?? 254, network, mask, iface, 0)) {
           return `Cannot find device "${iface}"`;
         }
         return '';
@@ -237,17 +286,21 @@ export function buildIpCtx(
     deleteRoute(
       network: IPAddress,
       cidr: number,
-      filter?: { nextHop?: IPAddress | null; metric?: number },
+      filter?: { nextHop?: IPAddress | null; metric?: number; table?: number },
     ): string {
       try {
         const mask = SubnetMask.fromCIDR(cidr);
-        if (!net.removeRoute(network, mask, filter)) {
+        if (!net.removeRouteFromTable(filter?.table ?? 254, network, mask, filter)) {
           return 'RTNETLINK answers: No such process';
         }
         return '';
       } catch (e) {
         return `Error: ${e instanceof Error ? e.message : String(e)}`;
       }
+    },
+    resolveRouteWithRules(dest: IPAddress, from: IPAddress | null) {
+      const r = net.resolveRouteFromTable(dest, from);
+      return r ? { iface: r.iface, nextHopIP: r.nextHopIP.toString(), table: r.table } : null;
     },
     getNeighborTable(): IpNeighborEntry[] {
       const entries: IpNeighborEntry[] = [];
@@ -297,6 +350,7 @@ export function buildIpCtx(
     xfrm,
     tunnel: greAgent ? buildTunnelCtx(greAgent) : undefined,
     linkOps,
+    rule: buildRuleCtx(net),
   };
 }
 
