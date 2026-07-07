@@ -1039,7 +1039,11 @@ export abstract class Switch extends Equipment {
     let ingressVlan: number;
 
     if (cfg.mode === 'access') {
-      ingressVlan = cfg.accessVlan;
+      if (cfg.voiceVlan !== undefined && taggedFrame.dot1q && taggedFrame.dot1q.vid === cfg.voiceVlan) {
+        ingressVlan = cfg.voiceVlan;
+      } else {
+        ingressVlan = cfg.accessVlan;
+      }
     } else {
       // Trunk mode
       if (taggedFrame.dot1q) {
@@ -1295,6 +1299,8 @@ export abstract class Switch extends Equipment {
         // Only flood to access ports in the same VLAN
         if (cfg.accessVlan === vlan) {
           this.sendFrame(portName, this.stripTag(frame));
+        } else if (cfg.voiceVlan === vlan) {
+          this.sendFrame(portName, this.addTag(frame, vlan));
         }
       } else {
         // Trunk: send if VLAN is allowed
@@ -1324,8 +1330,11 @@ export abstract class Switch extends Equipment {
     if (stpState === 'blocking' || stpState === 'disabled' || stpState === 'listening' || stpState === 'learning') return;
 
     if (cfg.mode === 'access') {
-      // Access port: strip tag
-      this.sendFrame(portName, this.stripTag(frame));
+      if (cfg.voiceVlan === vlan) {
+        this.sendFrame(portName, this.addTag(frame, vlan));
+      } else {
+        this.sendFrame(portName, this.stripTag(frame));
+      }
     } else {
       // Trunk port: check if VLAN is allowed before sending
       if (!cfg.trunkAllowedVlans.has(vlan)) {
