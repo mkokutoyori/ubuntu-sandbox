@@ -39,7 +39,8 @@ import { TrackObjectRegistry } from '../switch/TrackObjectRegistry';
 /** CLI Mode (FSM State) */
 export type CLIMode =
   | 'user' | 'privileged' | 'config' | 'config-if' | 'config-vlan'
-  | 'config-mst' | 'config-line' | 'config-acl' | 'config-dhcp';
+  | 'config-mst' | 'config-line' | 'config-acl' | 'config-dhcp'
+  | 'config-access-map';
 
 export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISwitchShell {
   // ─── Switch-specific state ───────────────────────────────────────
@@ -64,8 +65,11 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
   private ifExtra = new Map<string, string[]>();
   private configAclTrie = new CommandTrie();
   private selectedAcl: string | null = null;
+  private selectedAclType: 'standard' | 'extended' = 'extended';
   private selectedArpAcl: string | null = null;
   private acls = new Map<string, string[]>();
+  private configAccessMapTrie = new CommandTrie();
+  private selectedAccessMap: { name: string; seq: number } | null = null;
 
   constructor() {
     super();
@@ -127,6 +131,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       case 'config-line': return this.configLineTrie;
       case 'config-acl':  return this.configAclTrie;
       case 'config-dhcp': return this.configDhcpTrie;
+      case 'config-access-map': return this.configAccessMapTrie;
       default:            return this.userTrie;
     }
   }
@@ -138,6 +143,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       if (f === 'selectedVlan') this.selectedVlan = null;
       if (f === 'selectedAcl') { this.selectedAcl = null; this.selectedArpAcl = null; }
       if (f === 'selectedDhcpPool') this.selectedDhcpPool = null;
+      if (f === 'selectedAccessMap') this.selectedAccessMap = null;
     }
   }
 
@@ -190,6 +196,58 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       const l = this.acls.get(n) ?? [];
       l.push(`access-list ${args.join(' ')}`);
       this.acls.set(n, l);
+      const id = parseInt(n, 10);
+      const action = args[1]?.toLowerCase();
+      if (!isNaN(id) && (action === 'permit' || action === 'deny')) {
+        const type = (id < 100 || (id >= 1300 && id <= 1999)) ? 'standard' : 'extended';
+        const opts = this.parseSwitchAclLine(args.slice(2), type);
+        if (opts) this.d().getVaclEngine().addAccessListEntry(id, action, opts);
+      }
+      return '';
+    });
+
+    this.configTrie.registerGreedy('vlan access-map', 'Configure a VLAN access map', (args) => {
+      if (!args[0]) return '% Incomplete command.';
+      const seq = args[1] !== undefined ? parseInt(args[1], 10) : 10;
+      if (isNaN(seq)) return '% Invalid sequence number';
+      this.selectedAccessMap = { name: args[0], seq };
+      this.d().setVlanAccessMapRule(args[0], seq);
+      this.mode = 'config-access-map';
+      return '';
+    });
+    this.configTrie.registerGreedy('no vlan access-map', 'Remove a VLAN access map', (args) => {
+      if (!args[0]) return '% Incomplete command.';
+      this.d().removeVlanAccessMap(args[0]);
+      return '';
+    });
+    this.configTrie.registerGreedy('vlan filter', 'Apply a VLAN access map to VLANs', (args) => {
+      const li = args.findIndex(a => a.toLowerCase() === 'vlan-list');
+      if (li < 0 || !args[0] || !args[li + 1]) return '% Incomplete command.';
+      const vlans = this.parseVlanList(args.slice(li + 1).join(','));
+      if (!vlans) return '% Invalid VLAN list';
+      const res = this.d().applyVlanFilter(args[0], [...vlans]);
+      return res.ok ? '' : `% ${res.error}`;
+    });
+    this.configTrie.registerGreedy('no vlan filter', 'Remove a VLAN access map binding', (args) => {
+      if (!args[0]) return '% Incomplete command.';
+      const li = args.findIndex(a => a.toLowerCase() === 'vlan-list');
+      const vlans = li >= 0 && args[li + 1] ? this.parseVlanList(args.slice(li + 1).join(',')) : null;
+      this.d().removeVlanFilter(args[0], vlans ? [...vlans] : undefined);
+      return '';
+    });
+
+    this.configAccessMapTrie.registerGreedy('match ip address', 'Match an IP ACL', (args) => {
+      if (!this.selectedAccessMap || !args[0]) return '% Incomplete command.';
+      const rule = this.d().setVlanAccessMapRule(this.selectedAccessMap.name, this.selectedAccessMap.seq);
+      rule.matchIpAcl = args[0];
+      return '';
+    });
+    this.configAccessMapTrie.registerGreedy('action', 'Set the access-map action', (args) => {
+      if (!this.selectedAccessMap) return '% Incomplete command.';
+      const a = args[0]?.toLowerCase();
+      if (a !== 'forward' && a !== 'drop') return '% Invalid action';
+      const rule = this.d().setVlanAccessMapRule(this.selectedAccessMap.name, this.selectedAccessMap.seq);
+      rule.action = a;
       return '';
     });
     this.configTrie.registerGreedy('track', 'Tracked object registry', (args) => {
@@ -210,6 +268,8 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     });
     this.configTrie.registerGreedy('ip access-list', 'Named ACL', (args) => {
       // ip access-list {standard|extended} <name>
+      const kind = args[0]?.toLowerCase();
+      this.selectedAclType = kind === 'standard' ? 'standard' : 'extended';
       const name = args[1] ?? args[0] ?? 'ACL';
       this.selectedAcl = name;
       if (!this.acls.has(name)) this.acls.set(name, []);
@@ -229,6 +289,12 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
         }
         if (this.selectedAcl) {
           this.acls.get(this.selectedAcl)!.push(`${kw} ${args.join(' ')}`.trim());
+          if (kw === 'permit' || kw === 'deny') {
+            const opts = this.parseSwitchAclLine(args, this.selectedAclType);
+            if (opts) {
+              this.d().getVaclEngine().addNamedAccessListEntry(this.selectedAcl, this.selectedAclType, kw, opts);
+            }
+          }
         }
         return '';
       });
@@ -3706,6 +3772,38 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       }
     }
     return vlans;
+  }
+
+  private parseAclAddressSpec(args: string[], offset: number): { ip: IPAddress; wc: SubnetMask; consumed: number } | null {
+    const t = args[offset]?.toLowerCase();
+    if (!t) return null;
+    if (t === 'any') {
+      return { ip: new IPAddress('0.0.0.0'), wc: new SubnetMask('255.255.255.255'), consumed: 1 };
+    }
+    if (t === 'host') {
+      if (!args[offset + 1] || !IPAddress.isValid(args[offset + 1])) return null;
+      return { ip: new IPAddress(args[offset + 1]), wc: new SubnetMask('0.0.0.0'), consumed: 2 };
+    }
+    if (!IPAddress.isValid(args[offset])) return null;
+    if (args[offset + 1] && IPAddress.isValid(args[offset + 1])) {
+      return { ip: new IPAddress(args[offset]), wc: new SubnetMask(args[offset + 1]), consumed: 2 };
+    }
+    return { ip: new IPAddress(args[offset]), wc: new SubnetMask('0.0.0.0'), consumed: 1 };
+  }
+
+  private parseSwitchAclLine(args: string[], type: 'standard' | 'extended'): import('../router/ACLEngine').ACLEntryOptions | null {
+    if (type === 'standard') {
+      const src = this.parseAclAddressSpec(args, 0);
+      if (!src) return null;
+      return { srcIP: src.ip, srcWildcard: src.wc };
+    }
+    const protocol = args[0]?.toLowerCase();
+    if (!protocol) return null;
+    const src = this.parseAclAddressSpec(args, 1);
+    if (!src) return null;
+    const dst = this.parseAclAddressSpec(args, 1 + src.consumed);
+    if (!dst) return null;
+    return { protocol, srcIP: src.ip, srcWildcard: src.wc, dstIP: dst.ip, dstWildcard: dst.wc };
   }
 
   private abbreviateInterface(name: string): string {

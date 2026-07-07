@@ -64,6 +64,7 @@ import { ArpRateLimiter } from '../arp/ArpRateLimiter';
 import type { ISwitchShell } from './shells/ISwitchShell';
 import { SwitchSecurityService } from './switch/SwitchSecurityService';
 import { PortMirror, type MirrorDirection, type MirrorSession } from './switch/PortMirror';
+import { ACLEngine } from './router/ACLEngine';
 import { NetworkOsCredentialStore } from './router/aaa/NetworkOsCredentialStore';
 import { NetworkOsAccount } from './router/aaa/NetworkOsAccount';
 import type { PasswordHashAlgorithm } from './router/aaa/NetworkOsAccount';
@@ -127,6 +128,14 @@ export interface PrivateVlanPortConfig {
   primaryVlan: number;
   secondaryVlan?: number;
   mappedSecondaryVlans?: Set<number>;
+}
+
+// ─── VLAN Access Map (Cisco VACL) ───────────────────────────────────
+
+export interface VlanAccessMapRule {
+  sequence: number;
+  matchIpAcl?: string;
+  action: 'forward' | 'drop';
 }
 
 // ─── MAC Table Entry ────────────────────────────────────────────────
@@ -193,6 +202,11 @@ export abstract class Switch extends Equipment {
   private superVlanIds: Set<number> = new Set();
   private superVlanSubVlans: Map<number, Set<number>> = new Map();
   private subVlanToSuperVlan: Map<number, number> = new Map();
+
+  // ─── VLAN Access Map (Cisco VACL) ──────────────────────────────
+  private vaclEngine: ACLEngine | null = null;
+  private vlanAccessMaps: Map<string, VlanAccessMapRule[]> = new Map();
+  private vlanFilterBindings: Map<number, string> = new Map();
 
   // ─── STP Port States ────────────────────────────────────────────
   private stpStates: Map<string, STPPortState> = new Map();
@@ -1001,6 +1015,72 @@ export abstract class Switch extends Equipment {
     return this.superVlanSubVlans.get(vlan)?.has(candidateAccessVlan) ?? false;
   }
 
+  // ─── VLAN Access Map (Cisco VACL) API ──────────────────────────────
+
+  getVaclEngine(): ACLEngine {
+    if (!this.vaclEngine) this.vaclEngine = new ACLEngine();
+    return this.vaclEngine;
+  }
+
+  setVlanAccessMapRule(mapName: string, sequence: number): VlanAccessMapRule {
+    const rules = this.vlanAccessMaps.get(mapName) ?? [];
+    let rule = rules.find(r => r.sequence === sequence);
+    if (!rule) {
+      rule = { sequence, action: 'forward' };
+      rules.push(rule);
+      rules.sort((a, b) => a.sequence - b.sequence);
+    }
+    this.vlanAccessMaps.set(mapName, rules);
+    return rule;
+  }
+
+  getVlanAccessMap(mapName: string): VlanAccessMapRule[] | undefined {
+    return this.vlanAccessMaps.get(mapName);
+  }
+
+  removeVlanAccessMap(mapName: string): boolean {
+    for (const [vlan, name] of this.vlanFilterBindings) {
+      if (name === mapName) this.vlanFilterBindings.delete(vlan);
+    }
+    return this.vlanAccessMaps.delete(mapName);
+  }
+
+  applyVlanFilter(mapName: string, vlans: number[]): { ok: boolean; error?: string } {
+    if (!this.vlanAccessMaps.has(mapName)) {
+      return { ok: false, error: `VLAN access-map ${mapName} does not exist` };
+    }
+    for (const v of vlans) this.vlanFilterBindings.set(v, mapName);
+    return { ok: true };
+  }
+
+  removeVlanFilter(mapName: string, vlans?: number[]): void {
+    for (const [vlan, name] of this.vlanFilterBindings) {
+      if (name !== mapName) continue;
+      if (!vlans || vlans.includes(vlan)) this.vlanFilterBindings.delete(vlan);
+    }
+  }
+
+  getVlanFilter(vlan: number): string | undefined {
+    return this.vlanFilterBindings.get(vlan);
+  }
+
+  private vaclPermits(vlan: number, frame: EthernetFrame): boolean {
+    const mapName = this.vlanFilterBindings.get(vlan);
+    if (!mapName) return true;
+    const rules = this.vlanAccessMaps.get(mapName);
+    if (!rules || rules.length === 0) return true;
+    if (frame.etherType !== ETHERTYPE_IPV4) return true;
+    const ip = frame.payload as IPv4Packet | undefined;
+    if (!ip || ip.type !== 'ipv4') return true;
+    for (const rule of rules) {
+      if (!rule.matchIpAcl) return rule.action === 'forward';
+      if (this.getVaclEngine().evaluateACLByName(rule.matchIpAcl, ip) === 'permit') {
+        return rule.action === 'forward';
+      }
+    }
+    return false;
+  }
+
   setTrunkNativeVlan(portName: string, vlanId: number): boolean {
     const cfg = this.switchportConfigs.get(portName);
     if (!cfg) return false;
@@ -1413,6 +1493,13 @@ export abstract class Switch extends Equipment {
           }
         }
       }
+    }
+
+    // ─── Step 2.7: VLAN access-map (VACL) filtering ─────────────
+    if (!this.vaclPermits(ingressVlan, frame)) {
+      Logger.debug(this.id, 'switch:vacl-drop',
+        `${this.name}: VACL dropped frame on ${portName} VLAN ${ingressVlan}`);
+      return;
     }
 
     // ─── Step 3: Forwarding Decision ────────────────────────────
