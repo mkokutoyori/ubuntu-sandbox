@@ -24,6 +24,9 @@ export function buildIpCtx(net: LinuxNetKernel, xfrm?: IpXfrmContext): IpNetwork
     getInterfaceNames(): string[] {
       return [...net.getPorts().keys()];
     },
+    getIfIndex(name: string): number {
+      return net.getIfIndex(name);
+    },
     getInterfaceInfo(name: string): IpInterfaceInfo | null {
       if (name === 'lo') {
         return {

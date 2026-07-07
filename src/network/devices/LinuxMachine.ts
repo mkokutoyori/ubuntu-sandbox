@@ -163,6 +163,10 @@ export abstract class LinuxMachine extends EndHost
   /** XFRM (IPsec) SAD/SPD — consumed by `ip xfrm state/policy`. */
   protected xfrmCtx: IpXfrmContext = { states: [], policies: [] };
 
+  /** Stable ifindex assignment; seeded lazily, never recomputed from list position. */
+  private ifIndexMap: Map<string, number> | null = null;
+  private nextIfIndex = 2;
+
   /** DNS daemon (dnsmasq) — active when the machine runs as a DNS server. */
   public readonly dnsService: DnsService = new DnsService();
 
@@ -1622,11 +1626,30 @@ export abstract class LinuxMachine extends EndHost
 
   // ─── LinuxNetKernel façade (closes over EndHost protected members) ──
 
+  private getIfIndex(name: string): number {
+    if (name === 'lo') return 1;
+    if (!this.ifIndexMap) {
+      this.ifIndexMap = new Map();
+      for (const portName of this.ports.keys()) {
+        this.ifIndexMap.set(portName, this.nextIfIndex++);
+      }
+    }
+    let idx = this.ifIndexMap.get(name);
+    if (idx === undefined) {
+      idx = this.nextIfIndex++;
+      this.ifIndexMap.set(name, idx);
+    }
+    return idx;
+  }
+
   private buildNetKernel(): LinuxNetKernel {
     const self = this;
     return {
       getPorts(): ReadonlyMap<string, Port> {
         return self.ports;
+      },
+      getIfIndex(name: string): number {
+        return self.getIfIndex(name);
       },
       buildTcpdumpDeps(): TcpdumpDeps {
         return self.buildTcpdumpDeps();

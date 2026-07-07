@@ -54,6 +54,12 @@ export interface LinuxNetKernel {
   /** Ordered map of port name → Port, as seen by `ip`, `ifconfig`, `arp`. */
   getPorts(): ReadonlyMap<string, Port>;
 
+  /**
+   * Stable ifindex for an interface, assigned once when the name is first
+   * seen and never recomputed from list position. `lo` is always 1.
+   */
+  getIfIndex(name: string): number;
+
   buildTcpdumpDeps(): TcpdumpDeps;
 
   /** Configure IPv4 address + mask on an interface. */

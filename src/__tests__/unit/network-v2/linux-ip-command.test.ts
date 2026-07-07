@@ -64,6 +64,7 @@ function createMockContext(overrides: Partial<IpNetworkContext> = {}): IpNetwork
 
   return {
     getInterfaceNames: () => [...interfaces.keys()],
+    getIfIndex: (name: string) => [...interfaces.keys()].indexOf(name) + 1,
     getInterfaceInfo: (name: string) => interfaces.get(name) || null,
     configureInterface: (ifName: string, ip: IPAddress, cidr: number) => {
       const iface = interfaces.get(ifName);

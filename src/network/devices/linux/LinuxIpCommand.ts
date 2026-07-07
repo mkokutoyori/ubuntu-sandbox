@@ -78,6 +78,8 @@ export interface IpV6RouteEntry {
 export interface IpNetworkContext {
   getInterfaceNames(): string[];
   getInterfaceInfo(name: string): IpInterfaceInfo | null;
+  /** Stable ifindex for an interface, assigned once, never recomputed from list position. */
+  getIfIndex(name: string): number;
   configureInterface(ifName: string, ip: IPAddress, cidr: number): string;
   addInterfaceIP?(ifName: string, ip: IPAddress, cidr: number): string;
   addInterfaceIPv6?(ifName: string, addr: string, prefixLength: number): string;
@@ -400,7 +402,7 @@ function ipAddrShow(ctx: IpNetworkContext, args: string[], opts: IpOutputOptions
   if (filterDev) {
     const info = ctx.getInterfaceInfo(filterDev);
     if (!info) return `Device "${filterDev}" does not exist.`;
-    const idx = allNames.indexOf(filterDev) + 1;
+    const idx = ctx.getIfIndex(filterDev);
     if (opts.json) return toJsonText([buildAddrJsonEntry(info, idx, computeIfaceFlags(info), opts.family, opts.stats)], opts.pretty);
     const block = formatAddrInterface(info, idx, opts);
     return opts.oneline ? collapseOneline(block) : block;
@@ -411,7 +413,7 @@ function ipAddrShow(ctx: IpNetworkContext, args: string[], opts: IpOutputOptions
     for (let i = 0; i < allNames.length; i++) {
       const info = ctx.getInterfaceInfo(allNames[i]);
       if (!info) continue;
-      entries.push(buildAddrJsonEntry(info, i + 1, computeIfaceFlags(info), opts.family, opts.stats));
+      entries.push(buildAddrJsonEntry(info, ctx.getIfIndex(allNames[i]), computeIfaceFlags(info), opts.family, opts.stats));
     }
     return toJsonText(entries, opts.pretty);
   }
@@ -420,7 +422,7 @@ function ipAddrShow(ctx: IpNetworkContext, args: string[], opts: IpOutputOptions
   for (let i = 0; i < allNames.length; i++) {
     const info = ctx.getInterfaceInfo(allNames[i]);
     if (!info) continue;
-    blocks.push(formatAddrInterface(info, i + 1, opts));
+    blocks.push(formatAddrInterface(info, ctx.getIfIndex(allNames[i]), opts));
   }
   return opts.oneline ? blocks.map(collapseOneline).join('\n') : blocks.join('\n\n');
 }
@@ -671,7 +673,7 @@ function ipLinkShow(ctx: IpNetworkContext, args: string[], opts: IpOutputOptions
   if (filterDev) {
     const info = ctx.getInterfaceInfo(filterDev);
     if (!info) return `Device "${filterDev}" does not exist.`;
-    const idx = names.indexOf(filterDev) + 1;
+    const idx = ctx.getIfIndex(filterDev);
     if (opts.json) return toJsonText([buildLinkJsonEntry(info, idx, computeIfaceFlags(info), opts.stats)], opts.pretty);
     const block = formatLinkInterface(info, idx, opts.stats);
     return opts.oneline ? collapseOneline(block) : block;
@@ -682,7 +684,7 @@ function ipLinkShow(ctx: IpNetworkContext, args: string[], opts: IpOutputOptions
     for (let i = 0; i < names.length; i++) {
       const info = ctx.getInterfaceInfo(names[i]);
       if (!info) continue;
-      entries.push(buildLinkJsonEntry(info, i + 1, computeIfaceFlags(info), opts.stats));
+      entries.push(buildLinkJsonEntry(info, ctx.getIfIndex(names[i]), computeIfaceFlags(info), opts.stats));
     }
     return toJsonText(entries, opts.pretty);
   }
@@ -691,7 +693,7 @@ function ipLinkShow(ctx: IpNetworkContext, args: string[], opts: IpOutputOptions
   for (let i = 0; i < names.length; i++) {
     const info = ctx.getInterfaceInfo(names[i]);
     if (!info) continue;
-    blocks.push(formatLinkInterface(info, i + 1, opts.stats));
+    blocks.push(formatLinkInterface(info, ctx.getIfIndex(names[i]), opts.stats));
   }
   return opts.oneline ? blocks.map(collapseOneline).join('\n') : blocks.join('\n\n');
 }
@@ -785,14 +787,14 @@ export function formatIpMonitorLink(
 ): string | null {
   const info = ctx.getInterfaceInfo(change.iface);
   if (!info) return null;
-  const idx = ctx.getInterfaceNames().indexOf(change.iface) + 1;
+  const idx = ctx.getIfIndex(change.iface);
   return monitorLabel('link', labelled) + formatLinkInterface(info, idx);
 }
 
 export function formatIpMonitorAddr(
   ctx: IpNetworkContext, change: IpMonitorAddrChange, labelled: boolean,
 ): string {
-  const idx = ctx.getInterfaceNames().indexOf(change.iface) + 1;
+  const idx = ctx.getIfIndex(change.iface);
   const brd = broadcastAddress(change.ip, change.cidr);
   const brdStr = brd ? ` brd ${brd}` : '';
   const head = `${idx}: ${change.iface}    inet ${change.ip}/${change.cidr}${brdStr} scope global ${change.iface}`;
