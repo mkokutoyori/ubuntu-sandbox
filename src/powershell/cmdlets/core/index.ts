@@ -176,7 +176,7 @@ import { AddPrinterCmdlet, GetPrintJobCmdlet, RemovePrintJobCmdlet } from './Pri
  * Register all core (provider-independent) cmdlets into the given registry.
  * Safe to call multiple times on the same registry (idempotent due to overwrite).
  */
-export function registerCoreCmdlets(registry: CmdletRegistry): void {
+export function registerCoreCmdlets(registry: CmdletRegistry, opts: { includeServerCmdlets?: boolean } = {}): void {
   // ── Output ────────────────────────────────────────────────────────────────
   registry.register(new WriteOutputCmdlet());
   registry.register(new WriteHostCmdlet());
@@ -389,16 +389,59 @@ export function registerCoreCmdlets(registry: CmdletRegistry): void {
   registry.register(new TestWSManCmdlet());
   registry.register(new GetWSManCredSSPCmdlet());
 
-  // ── Server Manager roles/features (provider-backed, Server-only) ─────────
-  registry.register(new GetWindowsFeatureCmdlet());
-  registry.register(new InstallWindowsFeatureCmdlet());
-  registry.register(new UninstallWindowsFeatureCmdlet());
-
-  // ── SMB file server (provider-backed, Server-only + FS-FileServer) ───────
+  // ── SMB file sharing (available on client and server editions) ───────────
   registry.register(new GetSmbShareCmdlet());
   registry.register(new NewSmbShareCmdlet());
   registry.register(new RemoveSmbShareCmdlet());
   registry.register(new GetSmbSessionCmdlet());
+
+  // ── Client-side PKI (Get-Certificate enrollment, self-signed certs) ──────
+  registry.register(new GetCertificateCmdlet());
+  registry.register(new NewSelfSignedCertificateCmdlet());
+
+  // ── Domain join (a workstation joins a domain with Add-Computer) ─────────
+  registry.register(new AddComputerCmdlet());
+
+  // ── Remote Desktop toggle + Windows Update client settings ───────────────
+  registry.register(new EnableRemoteDesktopCmdlet());
+  registry.register(new DisableRemoteDesktopCmdlet());
+  registry.register(new SetWUSettingsCmdlet());
+  registry.register(new GetWindowsUpdateCmdlet());
+
+  // ── Printing (client-available) ──────────────────────────────────────────
+  registry.register(new AddPrinterCmdlet());
+  registry.register(new GetPrintJobCmdlet());
+  registry.register(new RemovePrintJobCmdlet());
+
+  // ── Native CLI shims (sync subset) ────────────────────────────────────────
+  // ping / tracert stay in the legacy executor — they're async and the
+  // PSRuntime tree-walker is sync.
+  registry.register(IpconfigCmdlet);
+  registry.register(NetshCmdlet);
+  registry.register(ArpCmdlet);
+  registry.register(RouteCmdlet);
+  registry.register(GetmacCmdlet);
+  registry.register(SysteminfoCmdlet);
+  registry.register(VerCmdlet);
+  registry.register(NslookupCmdlet);
+  registry.register(NetCmdlet);
+  registry.register(VolCmdlet);
+  registry.register(ChcpCmdlet);
+  registry.register(ScCmdlet);
+  registry.register(ScExeCmdlet);
+
+  if (opts.includeServerCmdlets ?? true) registerServerCmdlets(registry);
+}
+
+/**
+ * Windows Server-only roles and RSAT tooling. Registered on top of the core
+ * set for Server editions; a workstation's Get-Command must not list these.
+ */
+export function registerServerCmdlets(registry: CmdletRegistry): void {
+  // ── Server Manager roles/features ─────────────────────────────────────────
+  registry.register(new GetWindowsFeatureCmdlet());
+  registry.register(new InstallWindowsFeatureCmdlet());
+  registry.register(new UninstallWindowsFeatureCmdlet());
 
   // ── AD DS (PRD-Windows-Server.md §5 P5) ─────────────────────────────────────
   registry.register(new InstallADDSForestCmdlet());
@@ -429,10 +472,6 @@ export function registerCoreCmdlets(registry: CmdletRegistry): void {
   // ── AD CS (PRD-Windows-Server-Advanced.md §5 P13) ───────────────────────────
   registry.register(new InstallAdcsCertificationAuthorityCmdlet());
   registry.register(new GetCATemplateCmdlet());
-  registry.register(new GetCertificateCmdlet());
-
-  // ── Domain join (PRD-Windows-Server.md §5 P6) ───────────────────────────────
-  registry.register(new AddComputerCmdlet());
 
   // ── DNS Server role (PRD-Windows-Server.md §5 P7) ───────────────────────────
   registry.register(new AddDnsServerPrimaryZoneCmdlet());
@@ -457,15 +496,13 @@ export function registerCoreCmdlets(registry: CmdletRegistry): void {
   registry.register(new GetDhcpServerv4LeaseCmdlet());
   registry.register(new AddDhcpServerInDCCmdlet());
 
-  // ── NPS (RADIUS) role (PRD-Windows-Server.md §5 P9) ─────────────────────────
+  // ── NPS (RADIUS) role (PRD-Windows-Server.md §5 P9 + Advanced P22) ──────────
   registry.register(new NewNpsRadiusClientCmdlet());
   registry.register(new GetNpsRadiusClientCmdlet());
   registry.register(new RemoveNpsRadiusClientCmdlet());
   registry.register(new NewNpsNetworkPolicyCmdlet());
   registry.register(new GetNpsNetworkPolicyCmdlet());
   registry.register(new RemoveNpsNetworkPolicyCmdlet());
-
-  // ── NPS avancé — connection request policies + SQL accounting (PRD-Windows-Server-Advanced.md §5 P22) ──
   registry.register(new NewNpsConnectionRequestPolicyCmdlet());
   registry.register(new GetNpsConnectionRequestPolicyCmdlet());
   registry.register(new RemoveNpsConnectionRequestPolicyCmdlet());
@@ -491,9 +528,6 @@ export function registerCoreCmdlets(registry: CmdletRegistry): void {
   registry.register(new RestartWebAppPoolCmdlet());
   registry.register(new GetWebGlobalModuleCmdlet());
 
-  // ── Personal certificate store (PRD-Windows-Server-Advanced.md §5 P14) ─────
-  registry.register(new NewSelfSignedCertificateCmdlet());
-
   // ── DFS Namespaces + DFSR (PRD-Windows-Server-Advanced.md §5 P16) ──────────
   registry.register(new NewDfsnRootCmdlet());
   registry.register(new NewDfsnFolderCmdlet());
@@ -502,9 +536,7 @@ export function registerCoreCmdlets(registry: CmdletRegistry): void {
   registry.register(new NewDfsReplicationGroupCmdlet());
   registry.register(new SyncDfsReplicationGroupCmdlet());
 
-  // ── RDP (PRD-Windows-Server-Advanced.md §5 P17) ─────────────────────────────
-  registry.register(new EnableRemoteDesktopCmdlet());
-  registry.register(new DisableRemoteDesktopCmdlet());
+  // ── RDS session management (PRD-Windows-Server-Advanced.md §5 P17) ─────────
   registry.register(new GetRDUserSessionCmdlet());
   registry.register(new LogoffRdSessionCmdlet());
 
@@ -519,28 +551,4 @@ export function registerCoreCmdlets(registry: CmdletRegistry): void {
   // ── WSUS (PRD-Windows-Server-Advanced.md §5 P19) ────────────────────────────
   registry.register(new GetWsusUpdateCmdlet());
   registry.register(new ApproveWsusUpdateCmdlet());
-  registry.register(new SetWUSettingsCmdlet());
-  registry.register(new GetWindowsUpdateCmdlet());
-
-  // ── Print and Document Services (PRD-Windows-Server-Advanced.md §5 P20) ────
-  registry.register(new AddPrinterCmdlet());
-  registry.register(new GetPrintJobCmdlet());
-  registry.register(new RemovePrintJobCmdlet());
-
-  // ── Native CLI shims (sync subset) ────────────────────────────────────────
-  // ping / tracert stay in the legacy executor — they're async and the
-  // PSRuntime tree-walker is sync.
-  registry.register(IpconfigCmdlet);
-  registry.register(NetshCmdlet);
-  registry.register(ArpCmdlet);
-  registry.register(RouteCmdlet);
-  registry.register(GetmacCmdlet);
-  registry.register(SysteminfoCmdlet);
-  registry.register(VerCmdlet);
-  registry.register(NslookupCmdlet);
-  registry.register(NetCmdlet);
-  registry.register(VolCmdlet);
-  registry.register(ChcpCmdlet);
-  registry.register(ScCmdlet);
-  registry.register(ScExeCmdlet);
 }

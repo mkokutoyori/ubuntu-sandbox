@@ -33,7 +33,7 @@ import { splitCmdArgs } from './windows/cmdline';
 import { WindowsAccountsPolicy } from './windows/security/WindowsAccountsPolicy';
 import { DoskeyTable } from './windows/cli/DoskeyTable';
 import { runPowerShellShim, createShimState, type PsShimState } from './windows/PowerShellCmdShim';
-import { PSInterpreter } from '@/powershell/interpreter/PSInterpreter';
+import { PSInterpreter, PSRuntimeError } from '@/powershell/interpreter/PSInterpreter';
 import { createWindowsPSProviders } from '@/powershell/providers/WindowsPSProviders';
 import type { VpnConnectionInfo } from '@/powershell/providers/PSProviders';
 import type { WinCommandContext, RouteEntry, TracerouteHop } from './windows/WinCommandExecutor';
@@ -263,6 +263,8 @@ export class WindowsPC extends EndHost implements UserAccountHost {
   /** Lazy full PowerShell interpreter reused across `powershell -Command`. */
   private psInterpreter: PSInterpreter | null = null;
 
+  getWindowsEdition(): 'client' | 'server' { return 'client'; }
+
   getPowerShellInterpreter(): PSInterpreter {
     if (!this.psInterpreter) {
       this.psInterpreter = new PSInterpreter(createWindowsPSProviders(this, {
@@ -276,7 +278,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
           networkProfiles: this.networkProfiles,
         },
         vpn: { vpnConnections: this.vpnConnections },
-      }));
+      }), { edition: this.getWindowsEdition() });
     }
     return this.psInterpreter;
   }
@@ -1756,7 +1758,14 @@ export class WindowsPC extends EndHost implements UserAccountHost {
         return runPowerShellShim({
           executeCmdCommand: (l) => this.executeCmdCommand(l),
           shimState: this.psShimState,
-          runFullPs: (code) => this.getPowerShellInterpreter().execute(code),
+          runFullPs: (code) => {
+            try {
+              return this.getPowerShellInterpreter().execute(code);
+            } catch (e) {
+              if (e instanceof PSRuntimeError) return e.message;
+              throw e;
+            }
+          },
         }, args);
       case 'ver':     return WindowsPC.VER_STRING;
       case 'hostname': return this.hostname;

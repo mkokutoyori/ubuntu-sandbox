@@ -58,6 +58,8 @@ export class WindowsServer extends WindowsPC {
     super('windows-server', name, x, y);
   }
 
+  override getWindowsEdition(): 'client' | 'server' { return 'server'; }
+
   /** PRD Phase 2 (§5 P2): Server Manager's role/feature model. */
   getRoleManager(): RoleManager { return this.roleManager; }
 

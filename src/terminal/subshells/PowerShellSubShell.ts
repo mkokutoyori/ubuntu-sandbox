@@ -82,7 +82,7 @@ export class PowerShellSubShell implements ISubShell {
             networkProfiles:      device.networkProfiles,
           },
           vpn: { vpnConnections: device.vpnConnections },
-        }))
+        }), { edition: device.getWindowsEdition() })
       : new PSInterpreter();
   }
 
