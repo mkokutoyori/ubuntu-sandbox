@@ -127,7 +127,8 @@ describe('connection-line-logic', () => {
       const connection: Connection = {
         id: 'conn-1', type: 'ethernet',
         sourceDeviceId: 'dev-1', sourceInterfaceId: 'eth0',
-        targetDeviceId: 'dev-2', targetInterfaceId: 'eth0'
+        targetDeviceId: 'dev-2', targetInterfaceId: 'eth0',
+        cable: {} as Connection['cable']
               };
 
       const info = getConnectionMidpointInfo(connection);
@@ -139,7 +140,8 @@ describe('connection-line-logic', () => {
       const connection: Connection = {
         id: 'conn-1', type: 'serial',
         sourceDeviceId: 'dev-1', sourceInterfaceId: 'serial0/0',
-        targetDeviceId: 'dev-2', targetInterfaceId: 'serial0/0'
+        targetDeviceId: 'dev-2', targetInterfaceId: 'serial0/0',
+        cable: {} as Connection['cable']
               };
 
       const info = getConnectionMidpointInfo(connection);
@@ -151,7 +153,8 @@ describe('connection-line-logic', () => {
       const connection: Connection = {
         id: 'conn-1', type: 'console',
         sourceDeviceId: 'dev-1', sourceInterfaceId: 'console0',
-        targetDeviceId: 'dev-2', targetInterfaceId: 'console0'
+        targetDeviceId: 'dev-2', targetInterfaceId: 'console0',
+        cable: {} as Connection['cable']
               };
 
       const info = getConnectionMidpointInfo(connection);
