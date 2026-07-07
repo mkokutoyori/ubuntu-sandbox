@@ -36,7 +36,7 @@ describe('Sub-shell isolation across concurrent terminals', () => {
 
   describe('SQL*Plus — per-session executor.context', () => {
     it('two SQL*Plus shells on the same DB have independent sessions', () => {
-      const dba = new LinuxServer('dba1', 0, 0);
+      const dba = new LinuxServer('linux-server', 'dba1', 0, 0);
       dba.setEventBus(bus);
       // Pre-install Oracle so SqlPlusSubShell.create finds it.
       const { subShell: shellA } = SqlPlusSubShell.create(
@@ -59,7 +59,7 @@ describe('Sub-shell isolation across concurrent terminals', () => {
     });
 
     it('ALTER SESSION SET CURRENT_SCHEMA in shell A does not affect shell B', () => {
-      const dba = new LinuxServer('dba2', 0, 0);
+      const dba = new LinuxServer('linux-server', 'dba2', 0, 0);
       dba.setEventBus(bus);
       const { subShell: shellA } = SqlPlusSubShell.create(
         dba, ['sys/oracle', 'as', 'sysdba'],
@@ -89,7 +89,7 @@ describe('Sub-shell isolation across concurrent terminals', () => {
 
     beforeEach(() => {
       manager = new TerminalManager(bus);
-      pc = new WindowsPC('PC1', 0, 0);
+      pc = new WindowsPC('windows-pc', 'PC1', 0, 0);
       pc.setEventBus(bus);
     });
 

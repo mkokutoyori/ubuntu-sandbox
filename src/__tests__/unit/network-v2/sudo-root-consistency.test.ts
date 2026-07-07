@@ -21,7 +21,7 @@ import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
 import { EventBus, __setDefaultEventBus } from '@/events/EventBus';
 
 describe('sudo <cmd> consistency when already root', () => {
-  let pc: LinuxPC;
+  let pc: any;
 
   beforeEach(() => {
     EquipmentRegistry.resetInstance();

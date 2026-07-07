@@ -90,19 +90,19 @@ describe('Action-driven flow (bug #1: alias should not bypass sudo password)', (
 
 describe('PowerShell shim (bug #2: bare-arg powershell)', () => {
   it('evaluates `powershell <expression>` without requiring -Command', async () => {
-    const pc = new WindowsPC('win-pc', 'WIN1');
+    const pc = new WindowsPC('windows-pc', 'WIN1');
     const out = await pc.executeCmdCommand('powershell $x = 42; $x');
     expect(out.trim()).toBe('42');
   });
 
   it('keeps explicit -Command form working', async () => {
-    const pc = new WindowsPC('win-pc', 'WIN1');
+    const pc = new WindowsPC('windows-pc', 'WIN1');
     const out = await pc.executeCmdCommand('powershell -Command "$x = 7; $x"');
     expect(out.trim()).toBe('7');
   });
 
   it('does not return the Usage banner for `powershell gcm`', async () => {
-    const pc = new WindowsPC('win-pc', 'WIN1');
+    const pc = new WindowsPC('windows-pc', 'WIN1');
     const out = await pc.executeCmdCommand('powershell gcm');
     expect(out).not.toMatch(/Usage:/);
   });
