@@ -18,7 +18,7 @@ import type { LinuxCommandExecutor } from '../LinuxCommandExecutor';
 import type { LinuxNetKernel } from '../LinuxNetKernel';
 import type { DnsService } from '../LinuxDnsService';
 import type { Bind9Service } from '../bind9/Bind9Service';
-import type { IpXfrmContext } from '../LinuxIpCommand';
+import type { IpXfrmContext, IpLinkOpsContext } from '../LinuxIpCommand';
 import type { LinuxProfile } from '../LinuxProfile';
 import type { LinuxFormatHelpers } from '../LinuxFormatHelpers';
 import type { RadiusClientAgent } from '@/network/radius/RadiusClientAgent';
@@ -42,6 +42,9 @@ export interface LinuxCommandContext {
 
   /** Real GRE tunnel engine backing `ip tunnel` — absent on devices without GRE support. */
   readonly greAgent?: GreAgent;
+
+  /** Virtual interface CRUD for `ip link add/delete` (veth, vlan, dummy). */
+  readonly linkOps?: IpLinkOpsContext;
 
   /** Active machine profile (isServer, hostname, ...). */
   readonly profile: LinuxProfile;

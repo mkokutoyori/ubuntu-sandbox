@@ -31,6 +31,8 @@ import type { TcpStream } from '../tcp/types';
 import { SshConnectionThrottler } from './linux/security/SshConnectionThrottler';
 import { HostsFile } from './HostsFile';
 import { Port } from '../hardware/Port';
+import { Cable } from '../hardware/Cable';
+import type { TaggedEthernetFrame } from './Switch';
 import {
   IPAddress,
   IPv6Address,
@@ -171,6 +173,12 @@ export abstract class LinuxMachine extends EndHost
 
   /** GRE tunnel engine backing `ip tunnel`; inbound decap wired via EndHost.greAgent. */
   private readonly greAgentInstance: GreAgent;
+
+  /** Interfaces created via `ip link add` — deletable, unlike profile-provisioned NICs. */
+  private readonly virtualInterfaces: Set<string> = new Set();
+
+  /** 802.1Q sub-interfaces created via `ip link add ... type vlan`: name → {parent, vid}. */
+  private readonly vlanSubInterfaces: Map<string, { parent: string; vid: number }> = new Map();
 
   /** DNS daemon (dnsmasq) — active when the machine runs as a DNS server. */
   public readonly dnsService: DnsService = new DnsService();
@@ -1177,11 +1185,93 @@ export abstract class LinuxMachine extends EndHost
       profile: this.profile,
       fmt: this.fmt,
       greAgent: this.greAgentInstance,
+      linkOps: {
+        addDummy: (name: string) => this.addDummyInterface(name),
+        addVeth: (name: string, peerName: string) => this.addVethPair(name, peerName),
+        addVlan: (name: string, parent: string, vid: number) => this.addVlanSubInterface(name, parent, vid),
+        deleteLink: (name: string) => this.deleteVirtualInterface(name),
+      },
     };
   }
 
   /** Real GRE engine backing `ip tunnel`; exposed for direct tunnel-traffic testing. */
   getGreAgent(): GreAgent { return this.greAgentInstance; }
+
+  // ─── ip link add/delete (veth, vlan, dummy) ──────────────────────
+
+  private addDummyInterface(name: string): string {
+    if (this.ports.has(name)) return 'RTNETLINK answers: File exists';
+    const port = new Port(name, 'ethernet');
+    port.setUp(true);
+    this.addPort(port);
+    this.virtualInterfaces.add(name);
+    return '';
+  }
+
+  private addVethPair(name: string, peerName: string): string {
+    if (this.ports.has(name) || this.ports.has(peerName)) return 'RTNETLINK answers: File exists';
+    const portA = new Port(name, 'ethernet');
+    const portB = new Port(peerName, 'ethernet');
+    portA.setUp(true);
+    portB.setUp(true);
+    this.addPort(portA);
+    this.addPort(portB);
+    new Cable(`veth-${this.id}-${name}-${peerName}`).connect(portA, portB);
+    this.virtualInterfaces.add(name);
+    this.virtualInterfaces.add(peerName);
+    return '';
+  }
+
+  private addVlanSubInterface(name: string, parent: string, vid: number): string {
+    if (this.ports.has(name)) return 'RTNETLINK answers: File exists';
+    const parentPort = this.ports.get(parent);
+    if (!parentPort) return `Cannot find device "${parent}"`;
+    const port = new Port(name, 'ethernet', parentPort.getMAC());
+    port.setUp(true);
+    this.addPort(port);
+    this.virtualInterfaces.add(name);
+    this.vlanSubInterfaces.set(name, { parent, vid });
+    return '';
+  }
+
+  private deleteVirtualInterface(name: string): string {
+    if (!this.virtualInterfaces.has(name)) {
+      return this.ports.has(name)
+        ? `RTNETLINK answers: Operation not permitted`
+        : `Cannot find device "${name}"`;
+    }
+    this.ports.delete(name);
+    this.virtualInterfaces.delete(name);
+    this.vlanSubInterfaces.delete(name);
+    return '';
+  }
+
+  override sendFrame(portName: string, frame: EthernetFrame): boolean {
+    const vlanSub = this.vlanSubInterfaces.get(portName);
+    if (vlanSub) {
+      const tagged: TaggedEthernetFrame = {
+        ...frame,
+        dot1q: { tpid: 0x8100, pcp: 0, dei: 0, vid: vlanSub.vid },
+      };
+      return super.sendFrame(vlanSub.parent, tagged);
+    }
+    return super.sendFrame(portName, frame);
+  }
+
+  protected override handleFrame(portName: string, frame: EthernetFrame): void {
+    const tagged = frame as TaggedEthernetFrame;
+    if (tagged.dot1q) {
+      for (const [subName, sub] of this.vlanSubInterfaces) {
+        if (sub.parent === portName && sub.vid === tagged.dot1q.vid) {
+          const { dot1q, ...untagged } = tagged;
+          super.handleFrame(subName, untagged);
+          return;
+        }
+      }
+      return;
+    }
+    super.handleFrame(portName, frame);
+  }
 
   /** Cached SSH server context — replaced on `systemctl restart sshd`. */
   private _sshContext: LinuxSshServerContext | null = null;

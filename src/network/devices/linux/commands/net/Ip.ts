@@ -17,6 +17,7 @@ import {
   type IpXfrmContext,
   type IpTunnelContext,
   type IpTunnelInfo,
+  type IpLinkOpsContext,
 } from '../../LinuxIpCommand';
 import { IPAddress, SubnetMask, MACAddress, IPv6Address } from '../../../../core/types';
 import { getNUDState } from '../../../EndHost';
@@ -46,7 +47,12 @@ function buildTunnelCtx(greAgent: GreAgent): IpTunnelContext {
   };
 }
 
-export function buildIpCtx(net: LinuxNetKernel, xfrm?: IpXfrmContext, greAgent?: GreAgent): IpNetworkContext {
+export function buildIpCtx(
+  net: LinuxNetKernel,
+  xfrm?: IpXfrmContext,
+  greAgent?: GreAgent,
+  linkOps?: IpLinkOpsContext,
+): IpNetworkContext {
   return {
     getInterfaceNames(): string[] {
       return [...net.getPorts().keys()];
@@ -290,6 +296,7 @@ export function buildIpCtx(net: LinuxNetKernel, xfrm?: IpXfrmContext, greAgent?:
     },
     xfrm,
     tunnel: greAgent ? buildTunnelCtx(greAgent) : undefined,
+    linkOps,
   };
 }
 
@@ -298,7 +305,7 @@ export const ipCommand: LinuxCommand = {
   needsNetworkContext: true,
   usage: 'ip [ OPTIONS ] OBJECT { COMMAND | help }',
   run(ctx: LinuxCommandContext, args: string[]): string {
-    const ipCtx = buildIpCtx(ctx.net, ctx.xfrm, ctx.greAgent);
+    const ipCtx = buildIpCtx(ctx.net, ctx.xfrm, ctx.greAgent, ctx.linkOps);
     const out = executeIpCommand(ipCtx, args);
     return out;
   },

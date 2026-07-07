@@ -90,6 +90,13 @@ export interface IpTunnelContext {
   listTunnels(): IpTunnelInfo[];
 }
 
+export interface IpLinkOpsContext {
+  addDummy(name: string): string;
+  addVeth(name: string, peerName: string): string;
+  addVlan(name: string, parent: string, vid: number): string;
+  deleteLink(name: string): string;
+}
+
 export interface IpNetworkContext {
   getInterfaceNames(): string[];
   getInterfaceInfo(name: string): IpInterfaceInfo | null;
@@ -128,6 +135,8 @@ export interface IpNetworkContext {
   xfrm?: IpXfrmContext;
   /** Optional GRE tunnel context for ip tunnel commands */
   tunnel?: IpTunnelContext;
+  /** Optional virtual interface CRUD for ip link add/delete */
+  linkOps?: IpLinkOpsContext;
 }
 
 // ─── XFRM types (Linux kernel IPsec transform framework) ────────────
@@ -676,16 +685,66 @@ function ipLink(ctx: IpNetworkContext, args: string[], opts: IpOutputOptions): s
     return ipLinkShow(ctx, args.slice(args[0] === 'show' || args[0] === 'list' ? 1 : 0), opts);
   }
   if (args[0] === 'set') return ipLinkSet(ctx, args.slice(1));
+  if (args[0] === 'add') return ipLinkAdd(ctx, args.slice(1));
+  if (args[0] === 'del' || args[0] === 'delete') return ipLinkDel(ctx, args.slice(1));
   if (args[0] === 'help') return IP_LINK_HELP;
   return `Command "${args[0]}" is unknown, try "ip link help".`;
 }
 
+function ipLinkAdd(ctx: IpNetworkContext, args: string[]): string {
+  const linkOps = ctx.linkOps;
+  if (!linkOps) return 'RTNETLINK answers: Operation not supported';
+
+  let name: string | null = null;
+  let linkDev: string | null = null;
+  let type: string | null = null;
+  let peerName: string | null = null;
+  let vlanId: number | undefined;
+
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] === 'name' && args[i + 1]) { name = args[++i]; }
+    else if (args[i] === 'link' && args[i + 1]) { linkDev = args[++i]; }
+    else if (args[i] === 'type' && args[i + 1]) { type = args[++i]; }
+    else if (args[i] === 'peer' && args[i + 1] === 'name' && args[i + 2]) { peerName = args[i + 2]; i += 2; }
+    else if (args[i] === 'id' && args[i + 1]) { vlanId = parseInt(args[++i], 10); }
+    else if (!name && !args[i].startsWith('-')) { name = args[i]; }
+  }
+
+  if (!name) return 'Error: not enough information to identify the device.';
+  if (!type) return 'Error: "type" is a required argument, try "ip link help".';
+
+  if (type === 'dummy') return linkOps.addDummy(name);
+
+  if (type === 'veth') {
+    if (!peerName) return 'Error: veth requires "peer name NAME2".';
+    return linkOps.addVeth(name, peerName);
+  }
+
+  if (type === 'vlan') {
+    if (!linkDev) return 'Error: vlan requires "link DEV".';
+    if (vlanId === undefined || isNaN(vlanId)) return 'Error: vlan requires "id VLANID".';
+    return linkOps.addVlan(name, linkDev, vlanId);
+  }
+
+  return `Error: unknown link type "${type}", try "ip link help".`;
+}
+
+function ipLinkDel(ctx: IpNetworkContext, args: string[]): string {
+  const linkOps = ctx.linkOps;
+  if (!linkOps) return 'RTNETLINK answers: Operation not supported';
+  const name = args[0];
+  if (!name) return 'Usage: ip link delete DEVICE';
+  return linkOps.deleteLink(name);
+}
+
 function ipLinkShow(ctx: IpNetworkContext, args: string[], opts: IpOutputOptions): string {
+  const SHOW_KW = new Set(['up', 'master', 'vrf', 'type', 'group']);
   let filterDev: string | null = null;
   for (let i = 0; i < args.length; i++) {
-    if (args[i] === 'dev' && args[i + 1]) {
-      filterDev = args[i + 1];
-      break;
+    if (args[i] === 'dev' && args[i + 1]) { filterDev = args[i + 1]; break; }
+    if (!filterDev && !args[i].startsWith('-') && !SHOW_KW.has(args[i])
+      && !/^(master|vrf|type|group)$/.test(args[i - 1] ?? '')) {
+      filterDev = args[i];
     }
   }
 
