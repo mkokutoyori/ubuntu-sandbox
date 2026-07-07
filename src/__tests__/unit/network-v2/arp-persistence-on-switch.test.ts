@@ -4,6 +4,7 @@ import { WindowsPC } from '@/network/devices/WindowsPC';
 import { HuaweiSwitch } from '@/network/devices/HuaweiSwitch';
 import { CiscoSwitch } from '@/network/devices/CiscoSwitch';
 import { Cable } from '@/network/hardware/Cable';
+import type { Port } from '@/network/hardware/Port';
 import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
 
 async function setupTopo(sw: any) {
@@ -11,7 +12,7 @@ async function setupTopo(sw: any) {
   const pc5 = new LinuxPC('linux-pc', 'PC5', 0, 0);
   const winPc = new WindowsPC('windows-pc', 'PC3', 0, 0);
   [pc4, pc5, winPc, sw].forEach((d) => d.powerOn());
-  const swPortArr = Array.from(sw.getPorts().values());
+  const swPortArr = Array.from<Port>(sw.getPorts().values());
   new Cable('c1').connect(pc4.getPort('eth0')!, swPortArr[0]);
   new Cable('c2').connect(pc5.getPort('eth0')!, swPortArr[1]);
   new Cable('c3').connect(winPc.getPort('eth0')!, swPortArr[2]);

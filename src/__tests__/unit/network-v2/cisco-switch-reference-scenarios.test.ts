@@ -18,9 +18,9 @@ interface Lab {
 }
 
 async function buildLab(): Promise<Lab> {
-  const sw = new CiscoSwitch('cisco-sw', 'Switch1', 24, 0, 0);
-  const srv = new LinuxServer('Linux-SRV');
-  const win = new WindowsPC('Win-Client');
+  const sw = new CiscoSwitch('switch-cisco', 'Switch1', 24, 0, 0);
+  const srv = new LinuxServer('linux-server', 'Linux-SRV');
+  const win = new WindowsPC('windows-pc', 'Win-Client');
   new Cable('c1').connect(srv.getPort('eth0')!, sw.getPort('FastEthernet0/2')!);
   new Cable('c2').connect(win.getPort('eth0')!, sw.getPort('FastEthernet0/3')!);
   await srv.executeCommand('ifconfig eth0 192.168.1.10 netmask 255.255.255.0');

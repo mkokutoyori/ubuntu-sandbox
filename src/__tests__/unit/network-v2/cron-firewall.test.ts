@@ -120,9 +120,9 @@ describe('CF-04 — ufw records blocked SSH in /var/log/ufw.log', () => {
   function buildPair() {
     const pc1 = new LinuxPC('linux-pc', 'pc1');
     const pc2 = new LinuxPC('linux-pc', 'pc2');
-    const sw = new GenericSwitch('switch', 'sw');
-    new Cable(pc1.getPorts()[0], sw.getPorts()[0]);
-    new Cable(pc2.getPorts()[0], sw.getPorts()[1]);
+    const sw = new GenericSwitch('switch-generic', 'sw');
+    new Cable('c1').connect(pc1.getPorts()[0], sw.getPorts()[0]);
+    new Cable('c2').connect(pc2.getPorts()[0], sw.getPorts()[1]);
     const mask = new SubnetMask('255.255.255.0');
     pc1.getPorts()[0].configureIP(new IPAddress('10.0.0.1'), mask);
     pc2.getPorts()[0].configureIP(new IPAddress('10.0.0.2'), mask);
