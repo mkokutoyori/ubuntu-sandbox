@@ -19,7 +19,7 @@ import { Logger } from '@/network/core/Logger';
 // ─── Helpers ────────────────────────────────────────────────────────
 
 function setupDebugLAN() {
-  const sw = new CiscoSwitch('sw1', 'SW1', 24, 0, 0);
+  const sw = new CiscoSwitch('switch-cisco', 'SW1', 24, 0, 0);
   const pc1 = new LinuxPC('PC1', 0, 0);
   const pc2 = new LinuxPC('PC2', 100, 0);
 
@@ -33,8 +33,8 @@ function setupDebugLAN() {
 }
 
 function setupDebugWAN() {
-  const r1 = new CiscoRouter('r1', 'R1', 0, 0);
-  const r2 = new CiscoRouter('r2', 'R2', 100, 0);
+  const r1 = new CiscoRouter('R1', 0, 0);
+  const r2 = new CiscoRouter('R2', 100, 0);
   const cable = new Cable('c_wan');
   cable.connect(r1.getPort('GigabitEthernet0/0')!, r2.getPort('GigabitEthernet0/0')!);
   return { r1, r2, cable };

@@ -112,7 +112,7 @@ describe('getent group', () => {
 
 describe('getent shadow', () => {
   let bus: EventBus;
-  let pc: LinuxPC;
+  let pc: any;
 
   beforeEach(() => {
     EquipmentRegistry.resetInstance();
@@ -206,7 +206,7 @@ describe('getent protocols', () => {
 
 describe('getent hosts', () => {
   let bus: EventBus;
-  let pc: LinuxPC;
+  let pc: any;
 
   beforeEach(() => {
     EquipmentRegistry.resetInstance();

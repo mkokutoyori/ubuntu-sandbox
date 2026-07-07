@@ -31,7 +31,7 @@ const SERVER_IP = '10.0.1.10';
 
 function buildTopology() {
   const pc = new LinuxPC('linux-pc', 'PC1');
-  const srv = new LinuxServer('DNS1');
+  const srv = new LinuxServer('linux-server', 'DNS1');
   pc.configureInterface('eth0', new IPAddress('10.0.1.2'), new SubnetMask('255.255.255.0'));
   srv.configureInterface('eth0', new IPAddress(SERVER_IP), new SubnetMask('255.255.255.0'));
   new Cable('c1').connect(pc.getPort('eth0')!, srv.getPort('eth0')!);
@@ -81,7 +81,7 @@ describe('DNS on the wire is RFC 1035 binary', () => {
         additionals: [],
       };
       const bytes = encodeDnsMessage(response);
-      srv.sendUdpDatagram(sourceIP, udp.sourcePort, 53, bytes, bytes.length);
+      srv.sendUdpDatagram(sourceIP as IPAddress, udp.sourcePort, 53, bytes, bytes.length);
     }, 'raw-server');
 
     const reply = await pc.queryDnsServer(new IPAddress(SERVER_IP), 'webserver', 'A', 50);
@@ -112,7 +112,7 @@ describe('DNS on the wire is RFC 1035 binary', () => {
         additionals: [],
       };
       const bytes = encodeDnsMessage(spoofed);
-      srv.sendUdpDatagram(sourceIP, udp.sourcePort, 53, bytes, bytes.length);
+      srv.sendUdpDatagram(sourceIP as IPAddress, udp.sourcePort, 53, bytes, bytes.length);
     }, 'spoofer');
 
     const reply = await pc.queryDnsServer(new IPAddress(SERVER_IP), 'webserver', 'A', 50);
