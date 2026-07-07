@@ -322,22 +322,52 @@ L'ordonnancement ci-dessous respecte les dépendances réelles identifiées en
 §2.1 (notamment E→D.10, et B.5→D pour la persistance v6) — ce n'est pas un
 ordre arbitraire.
 
-### Phase 1 — Correspondance d'adresse IPv6 réelle (item D.10)
+### Phase 1 — Correspondance d'adresse IPv6 réelle (item D.10) — ✅ LIVRÉE
 
 - **Fichiers touchés** : `LinuxIptablesManager.ts` (`ipMatchesSpec`,
-  `validateIPSpec`, branchement sur `this.family`).
+  `validateIPSpec`, `ipInRange`, branchement sur `this.family`, nouvel
+  helper `ip6MatchesSpec`/`compareV6` réutilisant `IPv6Address.isInSameSubnet`).
 - **Préalable de toutes les phases IPv6 suivantes** (D.11, D.12, E.13).
-- **Tests** : nouveau fichier `ip6tables-address-matching.test.ts` —
-  correspondance CIDR IPv6 complète, rejet des adresses malformées avec le
-  bon message d'erreur (parité avec le comportement IPv4 déjà testé).
+- **Tests** : `ip6tables-address-matching.test.ts` — correspondance exacte,
+  correspondance CIDR, rejet des adresses/préfixes malformés, `-m iprange`
+  en IPv6.
+- **Régression** : `linux-iptables.test.ts`, `linux-ufw.test.ts`,
+  `scenario-9-dual-stack.test.ts`, `ipv6-tcp-probe-no-shortcircuit.test.ts` —
+  288 tests verts, `tsc`/`eslint` propres.
 
-### Phase 2 — NAT66 et `ip6tables-restore` (items D.11, D.12)
+### Phase 2 — NAT66 et `ip6tables-restore` (items D.11, D.12) — ✅ LIVRÉE (périmètre affiné)
 
-- **Fichiers touchés** : `LinuxMachine.ts` (`evaluateNat6`/
-  `evaluatePreRouting6`), `LinuxCommandExecutor.ts` (case manquant),
-  `LinuxMachine.tryNetworkCommand` (délégation corrigée).
-- **Tests** : `ip6tables-nat66.test.ts`, extension de
-  `linux-iptables.test.ts` pour `ip6tables-restore`.
+- **Fichiers touchés** : `LinuxCommandExecutor.ts` (cases `ip6tables`/
+  `ip6tables-save`/`ip6tables-restore` manquants dans le switch composite —
+  c'était la cause exacte du point d'entrée mort ; entrées
+  `KNOWN_LINUX_COMMANDS` ajoutées), `EndHost.ts` (nouveau hook
+  `evaluatePreRouting6`, branché dans `handleIPv6` avant le test
+  `isForUs`), `LinuxMachine.ts` (override `evaluatePreRouting6` →
+  `this.executor.ip6tables.evaluateNat(pkt, 'PREROUTING')`).
+- **Périmètre réellement livré, affiné pendant l'implémentation** :
+  uniquement PREROUTING/DNAT. Aucun `evaluateNat6`/POSTROUTING n'a été
+  ajouté — `EndHost` ne forwarde jamais l'IPv6 (pas de `forwardIPv6`), donc
+  un hook SNAT/MASQUERADE n'aurait aucun point d'appel réel ; l'ajouter
+  aurait été du code mort. C'est documenté explicitement dans le code
+  (commentaire sur `evaluatePreRouting6`) plutôt que silencieusement omis.
+- **Limite découverte pendant les tests, partagée avec IPv4** : un DNAT vers
+  une seconde adresse possédée par le même hôte ne produit pas une
+  connexion TCP cohérente de bout en bout, faute de un-NAT/conntrack sur le
+  chemin de retour (la réponse SYN-ACK/RST est source-ée depuis l'adresse
+  réécrite, que le client ne reconnaît pas) — vérifié : aucun test IPv4
+  existant n'exerçait ce cas de bout en bout non plus (seul le cas
+  NAT-gateway/forward avec `ip_forward=1` a une couverture fonctionnelle
+  réelle). Non corrigé ici (hors périmètre de ce PRD, nécessiterait un
+  moteur de conntrack de retour pour les deux familles). Documenté dans le
+  commit et dans le fichier de test correspondant plutôt que masqué.
+- **Tests** : `ip6tables-nat66-prerouting.test.ts` (correspondance CIDR de
+  la table nat testée directement au niveau moteur, rendu CLI, ordre des
+  hooks PREROUTING-avant-INPUT vérifié via le journal noyau côté serveur)
+  et `ip6tables-restore.test.ts` (dispatch CLI dans les deux chemins,
+  `which`/`command -v`, erreur réelle sans stdin).
+- **Régression** : 424 tests verts sur l'ensemble iptables/ufw/NAT/dual-stack
+  concernés, `tsc`/`eslint` propres (5 erreurs `no-explicit-any`/
+  `no-this-alias` confirmées préexistantes via `git stash`, non introduites).
 
 ### Phase 3 — ICMPv6 filtré + `--reject-with`/REJECT UDP (items C.7, C.8, C.9)
 
