@@ -1,6 +1,6 @@
 ============================================================
 Shell debug transcript — linux-pc-networking
-Generated: 2026-07-04T10:36:14.504Z
+Generated: 2026-07-07T07:08:39.807Z
 Engine: linux
 host=L-PC-NET-DBG (linux-pc) — focus: réseau (ip/ping/route/dns/sockets/firewall)
 Total commands: 302
@@ -792,21 +792,36 @@ $ [124/302]> dig +short example.com
 $ [125/302]> dig A example.com
   ; <<>> DiG <<>> A
   ;; connection timed out; no servers could be reached
+  
+  ; <<>> DiG <<>> example.com
+  ;; connection timed out; no servers could be reached
 
 $ [126/302]> dig AAAA example.com
   ; <<>> DiG <<>> AAAA
+  ;; connection timed out; no servers could be reached
+  
+  ; <<>> DiG <<>> example.com
   ;; connection timed out; no servers could be reached
 
 $ [127/302]> dig MX example.com
   ; <<>> DiG <<>> MX
   ;; connection timed out; no servers could be reached
+  
+  ; <<>> DiG <<>> example.com
+  ;; connection timed out; no servers could be reached
 
 $ [128/302]> dig NS example.com
   ; <<>> DiG <<>> NS
   ;; connection timed out; no servers could be reached
+  
+  ; <<>> DiG <<>> example.com
+  ;; connection timed out; no servers could be reached
 
 $ [129/302]> dig TXT example.com
   ; <<>> DiG <<>> TXT
+  ;; connection timed out; no servers could be reached
+  
+  ; <<>> DiG <<>> example.com
   ;; connection timed out; no servers could be reached
 
 $ [130/302]> dig @8.8.8.8 example.com
@@ -984,49 +999,46 @@ $ [162/302]> ss -tln sport = :22
 
 --- [163] § HTTP — curl / wget ---
 $ [163/302]> curl http://192.168.10.1
-  curl: (6) Could not resolve host: 192.168.10.1
+  curl: (7) Failed to connect to 192.168.10.1 port 80: Connection refused
 
 $ [164/302]> curl -I http://192.168.10.1
-  curl: (6) Could not resolve host: 192.168.10.1
+  curl: (7) Failed to connect to 192.168.10.1 port 80: Connection refused
 
 $ [165/302]> curl -s http://192.168.10.1
-  curl: (6) Could not resolve host: 192.168.10.1
+  curl: (7) Failed to connect to 192.168.10.1 port 80: Connection refused
 
 $ [166/302]> curl -v http://192.168.10.1
-  *   Trying http://192.168.10.1...
-  * connect to host failed
-  * Failed to connect to http://192.168.10.1 port 80: Connection refused
-  curl: (7) Failed to connect to http://192.168.10.1 port 80 after 0 ms: Connection refused
+  curl: (7) Failed to connect to 192.168.10.1 port 80: Connection refused
 
 $ [167/302]> curl -o /tmp/page.html http://192.168.10.1
-  curl: (6) Could not resolve host: 192.168.10.1
+  curl: (7) Failed to connect to 192.168.10.1 port 80: Connection refused
 
 $ [168/302]> curl -L http://192.168.10.1
-  curl: (6) Could not resolve host: 192.168.10.1
+  curl: (7) Failed to connect to 192.168.10.1 port 80: Connection refused
 
 $ [169/302]> curl --max-time 2 http://192.168.10.99
-  curl: (6) Could not resolve host: 192.168.10.99
+  curl: (7) Failed to connect to 192.168.10.99 port 80: Connection refused
 
 $ [170/302]> curl http://hote_inexistant_xyz
   curl: (6) Could not resolve host: hote_inexistant_xyz
 
 $ [171/302]> wget http://192.168.10.1
-  --2026-07-04 10:36:17--  http://192.168.10.1
+  --2026-07-07 07:08:42--  http://192.168.10.1
   Resolving 192.168.10.1... failed: Temporary failure in name resolution.
   wget: unable to resolve host address '192.168.10.1'
 
 $ [172/302]> wget -q http://192.168.10.1
-  --2026-07-04 10:36:17--  http://192.168.10.1
+  --2026-07-07 07:08:42--  http://192.168.10.1
   Resolving 192.168.10.1... failed: Temporary failure in name resolution.
   wget: unable to resolve host address '192.168.10.1'
 
 $ [173/302]> wget -O /tmp/dl.html http://192.168.10.1
-  --2026-07-04 10:36:17--  http://192.168.10.1
+  --2026-07-07 07:08:42--  http://192.168.10.1
   Resolving 192.168.10.1... failed: Temporary failure in name resolution.
   wget: unable to resolve host address '192.168.10.1'
 
 $ [174/302]> wget --timeout=2 http://192.168.10.99
-  --2026-07-04 10:36:17--  http://192.168.10.99
+  --2026-07-07 07:08:42--  http://192.168.10.99
   Resolving 192.168.10.99... failed: Temporary failure in name resolution.
   wget: unable to resolve host address '192.168.10.99'
 
@@ -1247,11 +1259,11 @@ $ [218/302]> ssh-keygen -t rsa -b 2048 -f /tmp/id_rsa -N ""
 <empty>
 
 $ [219/302]> ls -l /tmp/id_rsa /tmp/id_rsa.pub
-  -rw------- 1 user user 77 Jul  4 10:36 /tmp/id_rsa
-  -rw-r--r-- 1 user user 38 Jul  4 10:36 /tmp/id_rsa.pub
+  -rw------- 1 user user 77 Jul  7 07:08 /tmp/id_rsa
+  -rw-r--r-- 1 user user 38 Jul  7 07:08 /tmp/id_rsa.pub
 
 $ [220/302]> cat /tmp/id_rsa.pub
-  ssh-rsa AAAA6oer5iraa8l user@linux-pc
+  ssh-rsa AAAA2x7y2buxyjy user@linux-pc
 
 $ [221/302]> ssh-keygen -t ed25519 -f /tmp/id_ed25519 -N ""
 <empty>
@@ -1260,7 +1272,7 @@ $ [222/302]> ssh-keygen -lf /tmp/id_rsa.pub
 <empty>
 
 $ [223/302]> ssh-keygen -y -f /tmp/id_rsa
-  ssh-ed25519 AAAA5g3fcf8dyyk user@localhost
+  ssh-ed25519 AAAAh0fjfef1ja4 user@localhost
 
 $ [224/302]> ssh -V
   usage: ssh [-options] destination [command]

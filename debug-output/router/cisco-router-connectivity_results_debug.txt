@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-connectivity
-Generated: 2026-07-04T10:34:03.061Z
+Generated: 2026-07-07T07:06:36.260Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=routed data path: static/default/OSPF/RIP/DHCP/NAT + faults
 Total steps: 313
@@ -230,49 +230,49 @@ Total steps: 313
 
 [42/313] linux1 linux1$ ping -c 3 192.168.1.1
   PING 192.168.1.1 (192.168.1.1) 56(84) bytes of data.
-  64 bytes from 192.168.1.1: icmp_seq=1 ttl=254 time=1.212 ms
-  64 bytes from 192.168.1.1: icmp_seq=2 ttl=255 time=0.390 ms
-  64 bytes from 192.168.1.1: icmp_seq=3 ttl=255 time=0.393 ms
+  64 bytes from 192.168.1.1: icmp_seq=1 ttl=254 time=1.233 ms
+  64 bytes from 192.168.1.1: icmp_seq=2 ttl=255 time=0.477 ms
+  64 bytes from 192.168.1.1: icmp_seq=3 ttl=255 time=0.414 ms
   
   --- 192.168.1.1 ping statistics ---
   3 packets transmitted, 3 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.390/0.665/1.212/0.387 ms
+  rtt min/avg/max/mdev = 0.414/0.708/1.233/0.372 ms
 
 [43/313] linux1 linux1$ ping -c 3 10.0.0.2
   PING 10.0.0.2 (10.0.0.2) 56(84) bytes of data.
-  64 bytes from 10.0.0.2: icmp_seq=1 ttl=253 time=0.804 ms
-  64 bytes from 10.0.0.2: icmp_seq=2 ttl=253 time=1.007 ms
-  64 bytes from 10.0.0.2: icmp_seq=3 ttl=253 time=1.295 ms
+  64 bytes from 10.0.0.2: icmp_seq=1 ttl=253 time=0.876 ms
+  64 bytes from 10.0.0.2: icmp_seq=2 ttl=253 time=1.112 ms
+  64 bytes from 10.0.0.2: icmp_seq=3 ttl=253 time=1.168 ms
   
   --- 10.0.0.2 ping statistics ---
   3 packets transmitted, 3 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.804/1.035/1.295/0.201 ms
+  rtt min/avg/max/mdev = 0.876/1.052/1.168/0.126 ms
 
 [44/313] linux1 linux1$ ping -c 3 192.168.2.1
   PING 192.168.2.1 (192.168.2.1) 56(84) bytes of data.
-  64 bytes from 192.168.2.1: icmp_seq=1 ttl=253 time=0.367 ms
-  64 bytes from 192.168.2.1: icmp_seq=2 ttl=253 time=0.657 ms
-  64 bytes from 192.168.2.1: icmp_seq=3 ttl=253 time=0.816 ms
+  64 bytes from 192.168.2.1: icmp_seq=1 ttl=253 time=0.355 ms
+  64 bytes from 192.168.2.1: icmp_seq=2 ttl=253 time=0.566 ms
+  64 bytes from 192.168.2.1: icmp_seq=3 ttl=253 time=0.783 ms
   
   --- 192.168.2.1 ping statistics ---
   3 packets transmitted, 3 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.367/0.613/0.816/0.186 ms
+  rtt min/avg/max/mdev = 0.355/0.568/0.783/0.175 ms
 
 [45/313] linux1 linux1$ ping -c 3 192.168.2.10
   PING 192.168.2.10 (192.168.2.10) 56(84) bytes of data.
-  64 bytes from 192.168.2.10: icmp_seq=1 ttl=126 time=1.007 ms
-  64 bytes from 192.168.2.10: icmp_seq=2 ttl=126 time=0.766 ms
-  64 bytes from 192.168.2.10: icmp_seq=3 ttl=126 time=0.587 ms
+  64 bytes from 192.168.2.10: icmp_seq=1 ttl=126 time=1.038 ms
+  64 bytes from 192.168.2.10: icmp_seq=2 ttl=126 time=0.689 ms
+  64 bytes from 192.168.2.10: icmp_seq=3 ttl=126 time=0.642 ms
   
   --- 192.168.2.10 ping statistics ---
   3 packets transmitted, 3 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.587/0.787/1.007/0.172 ms
+  rtt min/avg/max/mdev = 0.642/0.789/1.038/0.177 ms
 
 [46/313] linux1 linux1$ traceroute 192.168.2.10
   traceroute to 192.168.2.10 (192.168.2.10), 30 hops max, 60 byte packets
-   1  192.168.1.1 (192.168.1.1)  0.825 ms  0.413 ms  0.236 ms
-   2  10.0.0.2 (10.0.0.2)  0.327 ms  0.319 ms  0.223 ms
-   3  192.168.2.10 (192.168.2.10)  0.387 ms  0.344 ms  0.252 ms
+   1  192.168.1.1 (192.168.1.1)  0.821 ms  0.419 ms  0.232 ms
+   2  10.0.0.2 (10.0.0.2)  0.273 ms  0.337 ms  0.246 ms
+   3  192.168.2.10 (192.168.2.10)  0.405 ms  0.350 ms  0.362 ms
 
 [47/313] win1 win1$ ping 192.168.1.10
   
@@ -382,49 +382,49 @@ Total steps: 313
 
 [65/313] linux1 linux1$ ping -c 3 192.168.1.1
   PING 192.168.1.1 (192.168.1.1) 56(84) bytes of data.
-  64 bytes from 192.168.1.1: icmp_seq=1 ttl=255 time=0.123 ms
-  64 bytes from 192.168.1.1: icmp_seq=2 ttl=255 time=0.290 ms
-  64 bytes from 192.168.1.1: icmp_seq=3 ttl=255 time=0.307 ms
+  64 bytes from 192.168.1.1: icmp_seq=1 ttl=255 time=0.159 ms
+  64 bytes from 192.168.1.1: icmp_seq=2 ttl=255 time=0.312 ms
+  64 bytes from 192.168.1.1: icmp_seq=3 ttl=255 time=0.304 ms
   
   --- 192.168.1.1 ping statistics ---
   3 packets transmitted, 3 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.123/0.240/0.307/0.083 ms
+  rtt min/avg/max/mdev = 0.159/0.258/0.312/0.070 ms
 
 [66/313] linux1 linux1$ ping -c 3 10.0.0.2
   PING 10.0.0.2 (10.0.0.2) 56(84) bytes of data.
-  64 bytes from 10.0.0.2: icmp_seq=1 ttl=253 time=0.690 ms
-  64 bytes from 10.0.0.2: icmp_seq=2 ttl=253 time=0.506 ms
+  64 bytes from 10.0.0.2: icmp_seq=1 ttl=253 time=0.666 ms
+  64 bytes from 10.0.0.2: icmp_seq=2 ttl=253 time=0.553 ms
   64 bytes from 10.0.0.2: icmp_seq=3 ttl=253 time=0.668 ms
   
   --- 10.0.0.2 ping statistics ---
   3 packets transmitted, 3 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.506/0.621/0.690/0.082 ms
+  rtt min/avg/max/mdev = 0.553/0.629/0.668/0.054 ms
 
 [67/313] linux1 linux1$ ping -c 3 192.168.2.1
   PING 192.168.2.1 (192.168.2.1) 56(84) bytes of data.
-  64 bytes from 192.168.2.1: icmp_seq=1 ttl=253 time=0.358 ms
-  64 bytes from 192.168.2.1: icmp_seq=2 ttl=253 time=0.509 ms
-  64 bytes from 192.168.2.1: icmp_seq=3 ttl=253 time=0.474 ms
+  64 bytes from 192.168.2.1: icmp_seq=1 ttl=253 time=0.347 ms
+  64 bytes from 192.168.2.1: icmp_seq=2 ttl=253 time=0.536 ms
+  64 bytes from 192.168.2.1: icmp_seq=3 ttl=253 time=0.726 ms
   
   --- 192.168.2.1 ping statistics ---
   3 packets transmitted, 3 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.358/0.447/0.509/0.065 ms
+  rtt min/avg/max/mdev = 0.347/0.536/0.726/0.155 ms
 
 [68/313] linux1 linux1$ ping -c 3 192.168.2.10
   PING 192.168.2.10 (192.168.2.10) 56(84) bytes of data.
-  64 bytes from 192.168.2.10: icmp_seq=1 ttl=126 time=0.374 ms
-  64 bytes from 192.168.2.10: icmp_seq=2 ttl=126 time=0.605 ms
-  64 bytes from 192.168.2.10: icmp_seq=3 ttl=126 time=0.543 ms
+  64 bytes from 192.168.2.10: icmp_seq=1 ttl=126 time=0.380 ms
+  64 bytes from 192.168.2.10: icmp_seq=2 ttl=126 time=0.519 ms
+  64 bytes from 192.168.2.10: icmp_seq=3 ttl=126 time=0.526 ms
   
   --- 192.168.2.10 ping statistics ---
   3 packets transmitted, 3 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.374/0.507/0.605/0.098 ms
+  rtt min/avg/max/mdev = 0.380/0.475/0.526/0.067 ms
 
 [69/313] linux1 linux1$ traceroute 192.168.2.10
   traceroute to 192.168.2.10 (192.168.2.10), 30 hops max, 60 byte packets
-   1  192.168.1.1 (192.168.1.1)  0.290 ms  0.220 ms  0.099 ms
-   2  10.0.0.2 (10.0.0.2)  0.176 ms  0.188 ms  0.161 ms
-   3  192.168.2.10 (192.168.2.10)  0.225 ms  0.206 ms  0.178 ms
+   1  192.168.1.1 (192.168.1.1)  0.286 ms  0.213 ms  0.097 ms
+   2  10.0.0.2 (10.0.0.2)  0.176 ms  0.148 ms  0.183 ms
+   3  192.168.2.10 (192.168.2.10)  0.243 ms  0.189 ms  0.293 ms
 
 [70/313] win1 win1$ ping 192.168.1.10
   
@@ -580,49 +580,49 @@ Total steps: 313
 
 [98/313] linux1 linux1$ ping -c 3 192.168.1.1
   PING 192.168.1.1 (192.168.1.1) 56(84) bytes of data.
-  64 bytes from 192.168.1.1: icmp_seq=1 ttl=255 time=0.154 ms
-  64 bytes from 192.168.1.1: icmp_seq=2 ttl=255 time=0.477 ms
-  64 bytes from 192.168.1.1: icmp_seq=3 ttl=255 time=0.296 ms
+  64 bytes from 192.168.1.1: icmp_seq=1 ttl=255 time=0.145 ms
+  64 bytes from 192.168.1.1: icmp_seq=2 ttl=255 time=0.314 ms
+  64 bytes from 192.168.1.1: icmp_seq=3 ttl=255 time=0.320 ms
   
   --- 192.168.1.1 ping statistics ---
   3 packets transmitted, 3 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.154/0.309/0.477/0.132 ms
+  rtt min/avg/max/mdev = 0.145/0.260/0.320/0.081 ms
 
 [99/313] linux1 linux1$ ping -c 3 10.0.0.2
   PING 10.0.0.2 (10.0.0.2) 56(84) bytes of data.
-  64 bytes from 10.0.0.2: icmp_seq=1 ttl=253 time=0.412 ms
-  64 bytes from 10.0.0.2: icmp_seq=2 ttl=253 time=0.533 ms
-  64 bytes from 10.0.0.2: icmp_seq=3 ttl=253 time=0.661 ms
+  64 bytes from 10.0.0.2: icmp_seq=1 ttl=253 time=0.545 ms
+  64 bytes from 10.0.0.2: icmp_seq=2 ttl=253 time=0.495 ms
+  64 bytes from 10.0.0.2: icmp_seq=3 ttl=253 time=0.692 ms
   
   --- 10.0.0.2 ping statistics ---
   3 packets transmitted, 3 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.412/0.536/0.661/0.102 ms
+  rtt min/avg/max/mdev = 0.495/0.577/0.692/0.084 ms
 
 [100/313] linux1 linux1$ ping -c 3 192.168.2.1
   PING 192.168.2.1 (192.168.2.1) 56(84) bytes of data.
-  64 bytes from 192.168.2.1: icmp_seq=1 ttl=253 time=0.250 ms
-  64 bytes from 192.168.2.1: icmp_seq=2 ttl=253 time=0.571 ms
-  64 bytes from 192.168.2.1: icmp_seq=3 ttl=253 time=0.443 ms
+  64 bytes from 192.168.2.1: icmp_seq=1 ttl=253 time=0.345 ms
+  64 bytes from 192.168.2.1: icmp_seq=2 ttl=253 time=0.541 ms
+  64 bytes from 192.168.2.1: icmp_seq=3 ttl=253 time=0.409 ms
   
   --- 192.168.2.1 ping statistics ---
   3 packets transmitted, 3 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.250/0.421/0.571/0.132 ms
+  rtt min/avg/max/mdev = 0.345/0.432/0.541/0.082 ms
 
 [101/313] linux1 linux1$ ping -c 3 192.168.2.10
   PING 192.168.2.10 (192.168.2.10) 56(84) bytes of data.
-  64 bytes from 192.168.2.10: icmp_seq=1 ttl=126 time=0.337 ms
-  64 bytes from 192.168.2.10: icmp_seq=2 ttl=126 time=0.718 ms
-  64 bytes from 192.168.2.10: icmp_seq=3 ttl=126 time=0.579 ms
+  64 bytes from 192.168.2.10: icmp_seq=1 ttl=126 time=0.320 ms
+  64 bytes from 192.168.2.10: icmp_seq=2 ttl=126 time=0.716 ms
+  64 bytes from 192.168.2.10: icmp_seq=3 ttl=126 time=0.885 ms
   
   --- 192.168.2.10 ping statistics ---
   3 packets transmitted, 3 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.337/0.545/0.718/0.157 ms
+  rtt min/avg/max/mdev = 0.320/0.640/0.885/0.237 ms
 
 [102/313] linux1 linux1$ traceroute 192.168.2.10
   traceroute to 192.168.2.10 (192.168.2.10), 30 hops max, 60 byte packets
-   1  192.168.1.1 (192.168.1.1)  0.306 ms  0.215 ms  0.192 ms
-   2  10.0.0.2 (10.0.0.2)  0.217 ms  0.194 ms  0.190 ms
-   3  192.168.2.10 (192.168.2.10)  0.490 ms  1.936 ms  0.254 ms
+   1  192.168.1.1 (192.168.1.1)  0.437 ms  0.279 ms  0.218 ms
+   2  10.0.0.2 (10.0.0.2)  0.447 ms  0.414 ms  0.375 ms
+   3  192.168.2.10 (192.168.2.10)  2.392 ms  0.623 ms  0.514 ms
 
 [103/313] win1 win1$ ping 192.168.1.10
   
@@ -635,7 +635,7 @@ Total steps: 313
   Ping statistics for 192.168.1.10:
       Packets: Sent = 4, Received = 4, Lost = 0 (0% loss),
   Approximate round trip times in milli-seconds:
-      Minimum = 0ms, Maximum = 0ms, Average = 0ms
+      Minimum = 0ms, Maximum = 1ms, Average = 0ms
 
 [104/313] win1 win1$ tracert 192.168.1.10
   
@@ -643,7 +643,7 @@ Total steps: 313
   
      1    <1 ms    <1 ms    <1 ms    192.168.2.1
      2    <1 ms    <1 ms    <1 ms    10.0.0.1
-     3    <1 ms    <1 ms    1 ms     192.168.1.10
+     3    <1 ms    2 ms     <1 ms    192.168.1.10
   
   Trace complete.
 
@@ -770,13 +770,13 @@ Total steps: 313
 
 [131/313] linux1 linux1$ ping -c 3 192.168.1.1
   PING 192.168.1.1 (192.168.1.1) 56(84) bytes of data.
-  64 bytes from 192.168.1.1: icmp_seq=1 ttl=255 time=0.134 ms
-  64 bytes from 192.168.1.1: icmp_seq=2 ttl=255 time=0.445 ms
-  64 bytes from 192.168.1.1: icmp_seq=3 ttl=255 time=0.389 ms
+  64 bytes from 192.168.1.1: icmp_seq=1 ttl=255 time=0.219 ms
+  64 bytes from 192.168.1.1: icmp_seq=2 ttl=255 time=0.443 ms
+  64 bytes from 192.168.1.1: icmp_seq=3 ttl=255 time=0.288 ms
   
   --- 192.168.1.1 ping statistics ---
   3 packets transmitted, 3 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.134/0.322/0.445/0.135 ms
+  rtt min/avg/max/mdev = 0.219/0.317/0.443/0.093 ms
 
 [132/313] linux1 linux1$ ping -c 3 10.0.0.2
   PING 10.0.0.2 (10.0.0.2) 56(84) bytes of data.
@@ -807,8 +807,8 @@ Total steps: 313
 
 [135/313] linux1 linux1$ traceroute 192.168.2.10
   traceroute to 192.168.2.10 (192.168.2.10), 30 hops max, 60 byte packets
-   1  192.168.1.1 (192.168.1.1)  0.226 ms  0.097 ms  0.168 ms
-   2  192.168.1.1 (192.168.1.1)  0.122 ms !N (Net unreachable)  0.178 ms !N (Net unreachable)  0.090 ms !N (Net unreachable)
+   1  192.168.1.1 (192.168.1.1)  0.191 ms  0.103 ms  0.091 ms
+   2  192.168.1.1 (192.168.1.1)  0.091 ms !N (Net unreachable)  0.103 ms !N (Net unreachable)  0.099 ms !N (Net unreachable)
 
 [136/313] win1 win1$ ping 192.168.1.10
   
@@ -881,13 +881,13 @@ Total steps: 313
 
 [151/313] linux1 linux1$ ping -c 3 192.168.1.1
   PING 192.168.1.1 (192.168.1.1) 56(84) bytes of data.
-  64 bytes from 192.168.1.1: icmp_seq=1 ttl=255 time=0.188 ms
-  64 bytes from 192.168.1.1: icmp_seq=2 ttl=255 time=0.314 ms
-  64 bytes from 192.168.1.1: icmp_seq=3 ttl=255 time=0.320 ms
+  64 bytes from 192.168.1.1: icmp_seq=1 ttl=255 time=0.895 ms
+  64 bytes from 192.168.1.1: icmp_seq=2 ttl=255 time=0.414 ms
+  64 bytes from 192.168.1.1: icmp_seq=3 ttl=255 time=0.358 ms
   
   --- 192.168.1.1 ping statistics ---
   3 packets transmitted, 3 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.188/0.274/0.320/0.061 ms
+  rtt min/avg/max/mdev = 0.358/0.556/0.895/0.241 ms
 
 [152/313] linux1 linux1$ ping -c 3 192.168.2.1
   PING 192.168.2.1 (192.168.2.1) 56(84) bytes of data.
@@ -902,7 +902,7 @@ Total steps: 313
 [153/313] r1 R1# show ip dhcp binding
   IP address       Client-id/              Lease expiration        Type
                    Hardware address
-  192.168.1.10     02:00:00:00:00:09       7/5/2026, 10:34:36 AM   automatic
+  192.168.1.10     02:00:00:00:00:09       7/8/2026, 7:07:09 AM    automatic
 
 [154/313] r1 R1# show ip dhcp pool
   Pool LAN1 :
@@ -1500,7 +1500,7 @@ Total steps: 313
 [226/313] r1 R1# show ip dhcp binding
   IP address       Client-id/              Lease expiration        Type
                    Hardware address
-  192.168.1.10     02:00:00:00:00:09       7/5/2026, 10:34:36 AM   automatic
+  192.168.1.10     02:00:00:00:00:09       7/8/2026, 7:07:09 AM    automatic
 
 [227/313] r1 R1# show ip dhcp pool
   Pool LAN1 :
@@ -1567,7 +1567,7 @@ Total steps: 313
 [241/313] r1 R1# show ntp status
   Clock is unsynchronized, stratum 16, reference is .INIT.
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
-  reference time is EDF3604A.C6E978D4 (10:34:50.777 UTC Sat Jul 4 2026)
+  reference time is EDF7242B.FA9FBE76 (07:07:23.979 UTC Tue Jul 7 2026)
   clock offset is 0.00 msec
 
 [242/313] r1 R1# show ntp associations
@@ -1576,7 +1576,7 @@ Total steps: 313
   No NTP associations configured.
 
 [243/313] r1 R1# show clock
-  *10:34:50.000 UTC Sat Jul 4 2026
+  *07:07:23.000 UTC Tue Jul 7 2026
 
 [244/313] r1 R1# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
@@ -2207,9 +2207,11 @@ Total steps: 313
 [309/313] r1 R1(config)# crypto ?
     isakmp       isakmp
     ipsec        ipsec
+    keyring      Define an ISAKMP keyring
     map          Define a crypto map entry
     dynamic-map  Define a dynamic crypto map
     ikev2        ikev2
+    gdoi         gdoi
     key          Key management
     pki          pki
     <cr>         

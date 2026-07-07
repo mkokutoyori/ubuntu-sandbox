@@ -1,6 +1,6 @@
 ============================================================
 Shell debug transcript — linux-server-networking
-Generated: 2026-07-04T10:36:29.623Z
+Generated: 2026-07-07T07:08:54.940Z
 Engine: linux
 host=L-SRV-NET-DBG (linux-server) — focus: réseau (ip/ping/route/dns/sockets/firewall)
 Total commands: 302
@@ -792,21 +792,36 @@ $ [124/302]> dig +short example.com
 $ [125/302]> dig A example.com
   ; <<>> DiG <<>> A
   ;; connection timed out; no servers could be reached
+  
+  ; <<>> DiG <<>> example.com
+  ;; connection timed out; no servers could be reached
 
 $ [126/302]> dig AAAA example.com
   ; <<>> DiG <<>> AAAA
+  ;; connection timed out; no servers could be reached
+  
+  ; <<>> DiG <<>> example.com
   ;; connection timed out; no servers could be reached
 
 $ [127/302]> dig MX example.com
   ; <<>> DiG <<>> MX
   ;; connection timed out; no servers could be reached
+  
+  ; <<>> DiG <<>> example.com
+  ;; connection timed out; no servers could be reached
 
 $ [128/302]> dig NS example.com
   ; <<>> DiG <<>> NS
   ;; connection timed out; no servers could be reached
+  
+  ; <<>> DiG <<>> example.com
+  ;; connection timed out; no servers could be reached
 
 $ [129/302]> dig TXT example.com
   ; <<>> DiG <<>> TXT
+  ;; connection timed out; no servers could be reached
+  
+  ; <<>> DiG <<>> example.com
   ;; connection timed out; no servers could be reached
 
 $ [130/302]> dig @8.8.8.8 example.com
@@ -876,6 +891,9 @@ $ [146/302]> ss -l
   LISTEN     0       0        0.0.0.0:1521           0.0.0.0:*         
   LISTEN     0       0        [::]:1521              [::]:*            
   LISTEN     0       0        127.0.0.53:domain      0.0.0.0:*         
+  UNCONN     0       0        0.0.0.0:1812           0.0.0.0:*         
+  UNCONN     0       0        0.0.0.0:1813           0.0.0.0:*         
+  UNCONN     0       0        0.0.0.0:49999          0.0.0.0:*         
 
 $ [147/302]> ss -tln
   State      Recv-Q  Send-Q   Local Address:Port     Peer Address:Port  Process
@@ -888,6 +906,9 @@ $ [147/302]> ss -tln
 $ [148/302]> ss -uln
   State      Recv-Q  Send-Q   Local Address:Port     Peer Address:Port  Process
   UNCONN     0       0        127.0.0.53:53          0.0.0.0:*         
+  UNCONN     0       0        0.0.0.0:1812           0.0.0.0:*         
+  UNCONN     0       0        0.0.0.0:1813           0.0.0.0:*         
+  UNCONN     0       0        0.0.0.0:49999          0.0.0.0:*         
 
 $ [149/302]> ss -tlnp
   State      Recv-Q  Send-Q   Local Address:Port     Peer Address:Port  Process
@@ -905,16 +926,19 @@ $ [150/302]> ss -a
   LISTEN     0       0        0.0.0.0:1521           0.0.0.0:*         
   LISTEN     0       0        [::]:1521              [::]:*            
   LISTEN     0       0        127.0.0.53:domain      0.0.0.0:*         
+  UNCONN     0       0        0.0.0.0:1812           0.0.0.0:*         
+  UNCONN     0       0        0.0.0.0:1813           0.0.0.0:*         
+  UNCONN     0       0        0.0.0.0:49999          0.0.0.0:*         
 
 $ [151/302]> ss -s
-  Total: 6
+  Total: 9
   TCP:   5 (estab 0, closed 0, orphaned 0, timewait 0)
   
   Transport Total     IP        IPv6
   RAW       0         0         0
-  UDP       1         1         0
+  UDP       4         4         0
   TCP       5         5         0
-  INET      6         6         0
+  INET      9         9         0
   FRAG      0         0         0
 
 $ [152/302]> ss -tn state established
@@ -937,6 +961,9 @@ $ [155/302]> netstat -uln
   Active Internet connections (only servers)
   Proto Recv-Q Send-Q Local Address           Foreign Address         State       PID/Program name
   udp             0      0 127.0.0.53:53           0.0.0.0:*
+  udp             0      0 0.0.0.0:1812            0.0.0.0:*
+  udp             0      0 0.0.0.0:1813            0.0.0.0:*
+  udp             0      0 0.0.0.0:49999           0.0.0.0:*
 
 $ [156/302]> netstat -tlnp
   Active Internet connections (only servers)
@@ -956,6 +983,8 @@ $ [157/302]> netstat -an | head
   tcp             0      0 0.0.0.0:1521            0.0.0.0:*               LISTEN
   tcp6            0      0 :::1521                 :::*                    LISTEN
   tcp             0      0 127.0.0.53:53           0.0.0.0:*               LISTEN
+  udp             0      0 0.0.0.0:1812            0.0.0.0:*
+  udp             0      0 0.0.0.0:1813            0.0.0.0:*
 
 $ [158/302]> netstat -s | head
   Ip:
@@ -998,49 +1027,46 @@ $ [162/302]> ss -tln sport = :22
 
 --- [163] § HTTP — curl / wget ---
 $ [163/302]> curl http://192.168.10.1
-  curl: (6) Could not resolve host: 192.168.10.1
+  curl: (7) Failed to connect to 192.168.10.1 port 80: Connection refused
 
 $ [164/302]> curl -I http://192.168.10.1
-  curl: (6) Could not resolve host: 192.168.10.1
+  curl: (7) Failed to connect to 192.168.10.1 port 80: Connection refused
 
 $ [165/302]> curl -s http://192.168.10.1
-  curl: (6) Could not resolve host: 192.168.10.1
+  curl: (7) Failed to connect to 192.168.10.1 port 80: Connection refused
 
 $ [166/302]> curl -v http://192.168.10.1
-  *   Trying http://192.168.10.1...
-  * connect to host failed
-  * Failed to connect to http://192.168.10.1 port 80: Connection refused
-  curl: (7) Failed to connect to http://192.168.10.1 port 80 after 0 ms: Connection refused
+  curl: (7) Failed to connect to 192.168.10.1 port 80: Connection refused
 
 $ [167/302]> curl -o /tmp/page.html http://192.168.10.1
-  curl: (6) Could not resolve host: 192.168.10.1
+  curl: (7) Failed to connect to 192.168.10.1 port 80: Connection refused
 
 $ [168/302]> curl -L http://192.168.10.1
-  curl: (6) Could not resolve host: 192.168.10.1
+  curl: (7) Failed to connect to 192.168.10.1 port 80: Connection refused
 
 $ [169/302]> curl --max-time 2 http://192.168.10.99
-  curl: (6) Could not resolve host: 192.168.10.99
+  curl: (7) Failed to connect to 192.168.10.99 port 80: Connection refused
 
 $ [170/302]> curl http://hote_inexistant_xyz
   curl: (6) Could not resolve host: hote_inexistant_xyz
 
 $ [171/302]> wget http://192.168.10.1
-  --2026-07-04 10:36:32--  http://192.168.10.1
+  --2026-07-07 07:08:57--  http://192.168.10.1
   Resolving 192.168.10.1... failed: Temporary failure in name resolution.
   wget: unable to resolve host address '192.168.10.1'
 
 $ [172/302]> wget -q http://192.168.10.1
-  --2026-07-04 10:36:32--  http://192.168.10.1
+  --2026-07-07 07:08:57--  http://192.168.10.1
   Resolving 192.168.10.1... failed: Temporary failure in name resolution.
   wget: unable to resolve host address '192.168.10.1'
 
 $ [173/302]> wget -O /tmp/dl.html http://192.168.10.1
-  --2026-07-04 10:36:32--  http://192.168.10.1
+  --2026-07-07 07:08:57--  http://192.168.10.1
   Resolving 192.168.10.1... failed: Temporary failure in name resolution.
   wget: unable to resolve host address '192.168.10.1'
 
 $ [174/302]> wget --timeout=2 http://192.168.10.99
-  --2026-07-04 10:36:32--  http://192.168.10.99
+  --2026-07-07 07:08:57--  http://192.168.10.99
   Resolving 192.168.10.99... failed: Temporary failure in name resolution.
   wget: unable to resolve host address '192.168.10.99'
 
@@ -1263,11 +1289,11 @@ $ [218/302]> ssh-keygen -t rsa -b 2048 -f /tmp/id_rsa -N ""
 <empty>
 
 $ [219/302]> ls -l /tmp/id_rsa /tmp/id_rsa.pub
-  -rw------- 1 root root 77 Jul  4 10:36 /tmp/id_rsa
-  -rw-r--r-- 1 root root 42 Jul  4 10:36 /tmp/id_rsa.pub
+  -rw------- 1 root root 77 Jul  7 07:09 /tmp/id_rsa
+  -rw-r--r-- 1 root root 42 Jul  7 07:09 /tmp/id_rsa.pub
 
 $ [220/302]> cat /tmp/id_rsa.pub
-  ssh-rsa AAAAsoc95tr7dhc root@linux-server
+  ssh-rsa AAAAdy83yq230yt root@linux-server
 
 $ [221/302]> ssh-keygen -t ed25519 -f /tmp/id_ed25519 -N ""
 <empty>
@@ -1276,7 +1302,7 @@ $ [222/302]> ssh-keygen -lf /tmp/id_rsa.pub
 <empty>
 
 $ [223/302]> ssh-keygen -y -f /tmp/id_rsa
-  ssh-ed25519 AAAA1xptzpenvwo root@localhost
+  ssh-ed25519 AAAAz06wrst1xyb root@localhost
 
 $ [224/302]> ssh -V
   usage: ssh [-options] destination [command]
@@ -1525,14 +1551,14 @@ $ [271/302]> netstat -i
   lo        65536      128      0      0 0           128      0      0      0 LRU
 
 $ [272/302]> ss -s
-  Total: 6
+  Total: 9
   TCP:   5 (estab 0, closed 0, orphaned 0, timewait 0)
   
   Transport Total     IP        IPv6
   RAW       0         0         0
-  UDP       1         1         0
+  UDP       4         4         0
   TCP       5         5         0
-  INET      6         6         0
+  INET      9         9         0
   FRAG      0         0         0
 
 $ [273/302]> cat /proc/net/snmp | head
