@@ -304,3 +304,139 @@ describe('VTP — transparent mode', () => {
     expect(client.getVLAN(11)).toBeDefined();
   });
 });
+
+describe('VTP — Summary and Subset advertisements are distinct frames', () => {
+  it('a Summary Advertisement alone never touches the local VLAN database', async () => {
+    const client = new CiscoSwitch('switch-cisco', 'S2', 8);
+    await setupAsClient(client, 'LAB');
+    await makeTrunk(client, 'FastEthernet0/1');
+    client.getVtpAgent().handleFrame('FastEthernet0/1', {
+      srcMAC: new MACAddress('00:11:22:33:44:55'),
+      dstMAC: new MACAddress(VTP_MULTICAST_MAC),
+      etherType: ETHERTYPE_VTP,
+      payload: {
+        type: 'vtp', version: 1, messageType: 'summary',
+        domain: 'LAB', revision: 5, updater: '00:11:22:33:44:55',
+        passwordHash: hashPassword('LAB', ''),
+        vlans: [{ id: 99, name: 'ghost', mtu: 1500, type: 'ethernet' }],
+      },
+    });
+    expect(client.getVLAN(99)).toBeUndefined();
+    expect(client.getVtpAgent().getConfig().revision).toBe(0);
+  });
+
+  it('an orphan Subset Advertisement with no matching Summary is ignored', async () => {
+    const client = new CiscoSwitch('switch-cisco', 'S2', 8);
+    await setupAsClient(client, 'LAB');
+    await makeTrunk(client, 'FastEthernet0/1');
+    client.getVtpAgent().handleFrame('FastEthernet0/1', {
+      srcMAC: new MACAddress('00:11:22:33:44:55'),
+      dstMAC: new MACAddress(VTP_MULTICAST_MAC),
+      etherType: ETHERTYPE_VTP,
+      payload: {
+        type: 'vtp', version: 1, messageType: 'subset',
+        domain: 'LAB', revision: 5, updater: '00:11:22:33:44:55',
+        passwordHash: hashPassword('LAB', ''),
+        vlans: [{ id: 99, name: 'ghost', mtu: 1500, type: 'ethernet' }],
+      },
+    });
+    expect(client.getVLAN(99)).toBeUndefined();
+    expect(client.getVtpAgent().getConfig().revision).toBe(0);
+  });
+
+  it('a Subset that follows its matching Summary applies the VLAN diff', async () => {
+    const client = new CiscoSwitch('switch-cisco', 'S2', 8);
+    await setupAsClient(client, 'LAB');
+    await makeTrunk(client, 'FastEthernet0/1');
+    const agent = client.getVtpAgent();
+    agent.handleFrame('FastEthernet0/1', {
+      srcMAC: new MACAddress('00:11:22:33:44:55'),
+      dstMAC: new MACAddress(VTP_MULTICAST_MAC),
+      etherType: ETHERTYPE_VTP,
+      payload: {
+        type: 'vtp', version: 1, messageType: 'summary',
+        domain: 'LAB', revision: 5, updater: '00:11:22:33:44:55',
+        passwordHash: hashPassword('LAB', ''),
+        vlans: [],
+      },
+    });
+    agent.handleFrame('FastEthernet0/1', {
+      srcMAC: new MACAddress('00:11:22:33:44:55'),
+      dstMAC: new MACAddress(VTP_MULTICAST_MAC),
+      etherType: ETHERTYPE_VTP,
+      payload: {
+        type: 'vtp', version: 1, messageType: 'subset',
+        domain: 'LAB', revision: 5, updater: '00:11:22:33:44:55',
+        passwordHash: hashPassword('LAB', ''),
+        vlans: [{ id: 88, name: 'sales', mtu: 1500, type: 'ethernet' }],
+      },
+    });
+    expect(client.getVLAN(88)?.name).toBe('sales');
+    expect(agent.getConfig().revision).toBe(5);
+  });
+});
+
+describe('VTP — Advertisement Request on trunk link-up', () => {
+  it('a client sends a Request Advertisement the moment its trunk link comes up', async () => {
+    const client = new CiscoSwitch('switch-cisco', 'S2', 8);
+    await setupAsClient(client, 'LAB');
+    await makeTrunk(client, 'FastEthernet0/1');
+    const bus = new EventBus();
+    client.setEventBus(bus);
+    const sent: string[] = [];
+    bus.subscribe('vtp.frame.sent', (e) => sent.push(e.payload.messageType));
+
+    const peer = new CiscoSwitch('switch-cisco', 'PEER', 8);
+    await makeTrunk(peer, 'FastEthernet0/1');
+    new Cable('w').connect(client.getPort('FastEthernet0/1')!,
+                            peer.getPort('FastEthernet0/1')!);
+
+    expect(sent.some(t => t.startsWith('request:link-up'))).toBe(true);
+  });
+
+  it('a server never sends a Request Advertisement of its own on trunk link-up', async () => {
+    const server = new CiscoSwitch('switch-cisco', 'S1', 8);
+    await setupAsServer(server, 'LAB');
+    await makeTrunk(server, 'FastEthernet0/1');
+    const bus = new EventBus();
+    server.setEventBus(bus);
+    const sent: string[] = [];
+    bus.subscribe('vtp.frame.sent', (e) => sent.push(e.payload.messageType));
+
+    const peer = new CiscoSwitch('switch-cisco', 'PEER', 8);
+    await makeTrunk(peer, 'FastEthernet0/1');
+    new Cable('w').connect(server.getPort('FastEthernet0/1')!,
+                            peer.getPort('FastEthernet0/1')!);
+
+    expect(sent.some(t => t.startsWith('request:'))).toBe(false);
+    expect(sent.some(t => t.startsWith('summary:link-up'))).toBe(true);
+  });
+
+  it('a server replies to a Request Advertisement with an immediate full summary+subset resync', async () => {
+    const server = new CiscoSwitch('switch-cisco', 'S1', 8);
+    await setupAsServer(server, 'LAB');
+    await server.executeCommand('configure terminal');
+    await server.executeCommand('vlan 70');
+    await server.executeCommand('end');
+    await makeTrunk(server, 'FastEthernet0/1');
+    const bus = new EventBus();
+    server.setEventBus(bus);
+    const sent: string[] = [];
+    bus.subscribe('vtp.frame.sent', (e) => sent.push(e.payload.messageType));
+
+    server.getVtpAgent().handleFrame('FastEthernet0/1', {
+      srcMAC: new MACAddress('00:aa:bb:cc:dd:ee'),
+      dstMAC: new MACAddress(VTP_MULTICAST_MAC),
+      etherType: ETHERTYPE_VTP,
+      payload: {
+        type: 'vtp', version: 1, messageType: 'request',
+        domain: 'LAB', revision: 0, updater: '00:aa:bb:cc:dd:ee',
+        passwordHash: hashPassword('LAB', ''),
+        vlans: [],
+      },
+    });
+
+    expect(sent.some(t => t.startsWith('summary:request-reply'))).toBe(true);
+    expect(sent.some(t => t.startsWith('subset:request-reply'))).toBe(true);
+  });
+});

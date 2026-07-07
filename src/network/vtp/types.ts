@@ -4,7 +4,7 @@ export const VTP_MULTICAST_MAC = '01:00:0c:cc:cc:cc';
 
 export type VtpMode = 'server' | 'client' | 'transparent' | 'off';
 export type VtpVersion = 1 | 2 | 3;
-export type VtpMessageType = 'summary' | 'subset' | 'request' | 'join';
+export type VtpMessageType = 'summary' | 'subset' | 'request';
 
 export interface VtpVlanEntry {
   id: number;

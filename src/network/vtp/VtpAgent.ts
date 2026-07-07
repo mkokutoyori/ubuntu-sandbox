@@ -24,6 +24,8 @@ export interface VtpHost {
 export class VtpAgent extends ReactiveAgentBase {
   private config: VtpConfig;
   private readonly advertising = new Set<string>();
+  private lastSummaryRevision: number | null = null;
+  private lastSummaryDomain: string | null = null;
 
   constructor(
     private readonly host: VtpHost,
@@ -140,29 +142,53 @@ export class VtpAgent extends ReactiveAgentBase {
       });
     }
 
-    if (this.config.mode === 'server' || this.config.mode === 'client') {
-      if (payload.revision > this.config.revision) {
-        const oldRev = this.config.revision;
-        const result = this.host.vtpApplyVlans(payload.vlans);
-        this.config.revision = payload.revision;
-        this.config.updaterMac = payload.updater;
-        this.getBus().publish({
-          topic: 'vtp.db.synced',
-          payload: {
-            deviceId: this.host.id, hostname: this.host.getHostname(),
-            port: portName,
-            oldRevision: oldRev, newRevision: payload.revision,
-            vlansAdded: result.added, vlansRemoved: result.removed,
-          },
-        });
-        Logger.info(this.host.id, 'vtp:sync',
-          `${this.host.name}: VTP db ← ${payload.domain} rev ${payload.revision} on ${portName}`);
-        if (this.config.mode === 'server') this.advertiseSummary('relay');
-      }
+    if (this.config.mode !== 'server' && this.config.mode !== 'client') return;
+
+    if (payload.messageType === 'summary') {
+      this.lastSummaryDomain = payload.domain;
+      this.lastSummaryRevision = payload.revision;
+      return;
+    }
+
+    if (payload.messageType === 'request') {
+      this.handleRequest(portName);
+      return;
+    }
+
+    if (payload.messageType !== 'subset') return;
+
+    if (this.lastSummaryDomain !== payload.domain || this.lastSummaryRevision !== payload.revision) {
+      Logger.warn(this.host.id, 'vtp:orphan-subset',
+        `${this.host.name}: ignoring orphan Subset Advertisement (rev ${payload.revision}, no matching Summary) on ${portName}`);
+      return;
+    }
+
+    if (payload.revision > this.config.revision) {
+      const oldRev = this.config.revision;
+      const result = this.host.vtpApplyVlans(payload.vlans);
+      this.config.revision = payload.revision;
+      this.config.updaterMac = payload.updater;
+      this.getBus().publish({
+        topic: 'vtp.db.synced',
+        payload: {
+          deviceId: this.host.id, hostname: this.host.getHostname(),
+          port: portName,
+          oldRevision: oldRev, newRevision: payload.revision,
+          vlansAdded: result.added, vlansRemoved: result.removed,
+        },
+      });
+      Logger.info(this.host.id, 'vtp:sync',
+        `${this.host.name}: VTP db ← ${payload.domain} rev ${payload.revision} on ${portName}`);
+      if (this.config.mode === 'server') this.advertiseSummary('relay');
     }
   }
 
-  advertiseAllTrunks(reason: 'periodic' | 'config-change' | 'local-vlan-change' | 'relay'): void {
+  private handleRequest(portName: string): void {
+    if (this.config.mode !== 'server' || !this.config.domain) return;
+    this.sendSummaryAndSubset(portName, 'request-reply');
+  }
+
+  advertiseAllTrunks(reason: 'periodic' | 'config-change' | 'local-vlan-change' | 'relay' | 'request-reply'): void {
     if (!this.config.enabled) return;
     if (this.config.mode !== 'server' || !this.config.domain) return;
     for (const port of this.host.getPorts()) {
@@ -181,10 +207,26 @@ export class VtpAgent extends ReactiveAgentBase {
     if (this.advertising.has(portName)) return;
     const port = this.host.getPort(portName);
     if (!port) return;
-    const vlans = this.host.vtpListVlans();
+    this.advertising.add(portName);
+    try {
+      this.sendVtpFrame(portName, 'summary', [], reason);
+      this.sendVtpFrame(portName, 'subset', this.host.vtpListVlans(), reason);
+    } finally {
+      this.advertising.delete(portName);
+    }
+  }
+
+  private sendVtpFrame(
+    portName: string,
+    messageType: 'summary' | 'subset' | 'request',
+    vlans: VtpVlanEntry[],
+    reason: string,
+  ): void {
+    const port = this.host.getPort(portName);
+    if (!port) return;
     const payload: VtpFrame = {
       type: 'vtp', version: this.config.version,
-      messageType: 'summary',
+      messageType,
       domain: this.config.domain,
       revision: this.config.revision,
       updater: this.config.updaterMac,
@@ -197,15 +239,13 @@ export class VtpAgent extends ReactiveAgentBase {
       etherType: ETHERTYPE_VTP,
       payload,
     };
-    this.advertising.add(portName);
-    try { this.host.sendFrame(portName, eth); }
-    finally { this.advertising.delete(portName); }
+    this.host.sendFrame(portName, eth);
     this.getBus().publish({
       topic: 'vtp.frame.sent',
       payload: {
         deviceId: this.host.id, hostname: this.host.getHostname(),
         port: portName,
-        messageType: `summary:${reason}`,
+        messageType: `${messageType}:${reason}`,
         domain: this.config.domain,
         revision: this.config.revision,
       },
@@ -236,9 +276,11 @@ export class VtpAgent extends ReactiveAgentBase {
   }
 
   protected override onPortLinkUp(portName: string): void {
-    if (this.config.mode === 'server' && this.config.domain
-        && this.host.vtpIsTrunkPort(portName)) {
+    if (!this.config.domain || !this.host.vtpIsTrunkPort(portName)) return;
+    if (this.config.mode === 'server') {
       this.sendSummaryAndSubset(portName, 'link-up');
+    } else if (this.config.mode === 'client') {
+      this.sendVtpFrame(portName, 'request', [], 'link-up');
     }
   }
 }
