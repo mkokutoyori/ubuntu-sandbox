@@ -491,6 +491,32 @@ export class LinuxFirewallManager {
     }
   }
 
+  /**
+   * Reconcile live firewall state with the persisted /etc/ufw/ufw.conf —
+   * called when the `ufw` systemd unit starts (a real `systemctl start ufw`,
+   * or the boot-time activation of enabled units). Mirrors real
+   * `/lib/ufw/ufw-init start`: starting the unit doesn't blindly turn the
+   * firewall on or off, it defers to `ENABLED=yes/no` already on disk.
+   *
+   * Deliberately not mirrored for the `stop` lifecycle event: a generic
+   * reboot cycle stops every active unit before restarting the enabled
+   * ones, so treating `stop` as "the administrator ran `ufw disable`"
+   * would persist `ENABLED=no` for the split second before the unit
+   * restarts — corrupting the very state this method exists to restore.
+   * Real `ufw.service` has no meaningful `ExecStop` for the same reason:
+   * stopping the oneshot activation script doesn't flush currently-loaded
+   * rules.
+   */
+  reconcileFromBoot(): void {
+    const wasEnabled = this.enabled;
+    this.loadFromVfs();
+    if (this.enabled && !wasEnabled) {
+      this.setupIptablesChains();
+    } else if (!this.enabled && wasEnabled) {
+      this.teardownIptablesChains();
+    }
+  }
+
   private cmdStatus(args: string[]): string {
     if (!this.enabled) {
       return 'Status: inactive';

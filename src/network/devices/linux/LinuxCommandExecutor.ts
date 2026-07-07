@@ -3491,6 +3491,13 @@ export class LinuxCommandExecutor {
           };
         }
         const out = this.firewall.execute(args);
+        // PRD-Iptables-UFW.md Phase 5 (objectif A.1): `ufw enable`/`disable`
+        // drive `systemctl status ufw` too, so it reflects real firewall
+        // state in both directions.
+        if (!out.startsWith('ERROR')) {
+          if (args[0] === 'enable') this.serviceMgr.start('ufw');
+          else if (args[0] === 'disable') this.serviceMgr.stop('ufw');
+        }
         return { output: out, exitCode: out.startsWith('ERROR') ? 1 : 0 };
       }
 

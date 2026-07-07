@@ -444,16 +444,40 @@ ordre arbitraire.
   `no-explicit-any` préexistantes confirmées par `git stash`, non
   introduites).
 
-### Phase 5 — Couplage service ufw ↔ systemd (items A.1, A.2)
+### Phase 5 — Couplage service ufw ↔ systemd (items A.1, A.2) — ✅ LIVRÉE (item A.1 affiné : `stop` volontairement sans effet)
 
-- **Fichiers touchés** : `LinuxMachine.ts` (nouveau listener `onLifecycle`
-  filtré `ufw`), `LinuxFirewallManager.ts` (`cmdEnable`/`cmdDisable`
-  appellent `serviceMgr`), `LinuxServiceManager.rebootCycle()` (lecture de
-  `ufw.conf` avant démarrage inconditionnel de l'unité).
-- **Tests** : nouveau fichier `ufw-systemd-coherence.test.ts` — `systemctl
-  stop ufw` désactive réellement le filtrage ; `ufw disable` reflète
-  `systemctl status ufw` ; un reboot avec `ENABLED=no` persisté ne
-  réactive pas le pare-feu.
+- **Fichiers touchés** : `LinuxFirewallManager.ts` (nouvelle méthode
+  publique `reconcileFromBoot()` — relit `/etc/ufw/ufw.conf` et
+  active/désactive le pare-feu seulement si l'état chargé diffère de l'état
+  vivant), `LinuxMachine.ts` (nouveau listener `onLifecycle` filtré
+  `name === 'ufw'`, appelle `reconcileFromBoot()` sur `start`/`restart`),
+  `LinuxCommandExecutor.ts` (le case `'ufw'` appelle `serviceMgr.start('ufw')`/
+  `stop('ufw')` après un `enable`/`disable` CLI réussi).
+- **Écart assumé par rapport au libellé initial de l'item A.1** : le
+  couplage `systemctl stop ufw → cmdDisable()` envisagé dans le PRD original
+  n'a **pas** été câblé, pour une raison découverte pendant l'implémentation
+  et non anticipée à l'écriture du PRD : `LinuxServiceManager.rebootCycle()`
+  arrête **toutes** les unités actives avant de relancer celles qui sont
+  activées au démarrage — câbler `stop` sur `cmdDisable()` aurait persisté
+  `ENABLED=no` le temps du redémarrage interne, corrompant l'état que la
+  Phase 5 doit justement préserver. Le vrai `ufw.service` n'a d'ailleurs pas
+  d'`ExecStop` significatif pour la même raison (script d'activation
+  oneshot, pas un processus dont l'arrêt annule les règles déjà chargées).
+  Seul `start`/`restart` déclenche `reconcileFromBoot()`, qui lit
+  `ufw.conf` plutôt que d'activer inconditionnellement — couvre à la fois
+  `systemctl start ufw` et le redémarrage des unités activées au boot.
+- **Tests** : nouveau fichier `ufw-systemd-coherence.test.ts` (7 tests) —
+  `ufw enable`/`disable` reflètent `systemctl status ufw` dans les deux
+  sens ; `systemctl stop ufw` n'affecte délibérément pas le filtrage actif ;
+  `systemctl start ufw` ne réactive pas le pare-feu si `ufw.conf` dit
+  `ENABLED=no` (jamais activé) ; un reboot avec `ENABLED=no` persisté
+  laisse le pare-feu inactif tandis que l'unité systemd redevient active
+  (oneshot) ; un reboot avec `ENABLED=yes` conserve le pare-feu actif et
+  ses règles.
+- **Régression** : 287 tests verts sur les suites ufw/iptables concernées,
+  465 tests verts sur les suites systemd/audit/journal transverses (aucune
+  régression sur le moteur générique de services), `tsc` propre, `eslint`
+  propre (9 erreurs préexistantes confirmées par `git stash`).
 
 ### Phase 6 — Rechargement VFS réel + profils d'application (items B.3, B.4)
 

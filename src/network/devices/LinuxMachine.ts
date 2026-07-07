@@ -334,6 +334,14 @@ export abstract class LinuxMachine extends EndHost
       else if (event === 'stop') this.stopScriptRunner(name);
     });
 
+    // PRD-Iptables-UFW.md Phase 5 (objectifs A.1/A.2): systemctl start ufw
+    // (and the boot-time activation of enabled units) reconciles the live
+    // firewall with /etc/ufw/ufw.conf instead of always turning it on.
+    this.executor.serviceMgr.onLifecycle((event, name) => {
+      if (name !== 'ufw') return;
+      if (event === 'start' || event === 'restart') this.executor.firewall.reconcileFromBoot();
+    });
+
     this.executor.setNetworkCommandRunner((argv, env) => {
       const cmd = this.commands.get(argv[0]);
       if (!cmd || !cmd.needsNetworkContext) return null;
