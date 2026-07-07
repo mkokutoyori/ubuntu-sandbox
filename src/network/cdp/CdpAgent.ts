@@ -45,6 +45,7 @@ export interface CdpHost {
   sendFrame(portName: string, frame: EthernetFrame): void;
   /** Optional native VLAN for a port (switches only). */
   getNativeVlan?(portName: string): number | undefined;
+  getVoiceVlan?(portName: string): number | undefined;
 }
 
 /** Read-only view of a learned CDP neighbour (used by `show cdp`). */
@@ -184,6 +185,7 @@ export class CdpAgent extends ReactiveAgentBase {
       holdtimeSec: payload.holdtimeSec,
       expiresAtMs,
       nativeVlan: payload.nativeVlan,
+      remoteVoiceVlan: payload.voiceVlan,
       duplex: payload.duplex,
     };
     this.neighbors.set(key, entry);
@@ -271,6 +273,7 @@ export class CdpAgent extends ReactiveAgentBase {
       platform: this.devicePlatform(),
       addresses: this.collectAddresses(),
       nativeVlan: this.host.getNativeVlan?.(portName),
+      voiceVlan: this.host.getVoiceVlan?.(portName),
       duplex: this.portDuplex(port),
     };
     const frame: EthernetFrame = {
