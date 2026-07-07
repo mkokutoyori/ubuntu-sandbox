@@ -36,6 +36,7 @@
  */
 
 import { Equipment } from '../equipment/Equipment';
+import type { TaggedEthernetFrame } from './Switch';
 import type { CredentialAuthenticator } from '../equipment/HostCapabilities';
 import type { IEventBus } from '@/events/EventBus';
 import { VtyLineConfigStore } from './router/vty/VtyLineConfigStore';
@@ -589,7 +590,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       const subif = this.ports.get(portName);
       const vlan = (subif as unknown as { encapsulation?: { vlan?: number } } | undefined)?.encapsulation?.vlan;
       if (vlan !== undefined && this.ports.has(parent)) {
-        const tagged = { ...frame, dot1q: { tpid: 0x8100, pcp: 0, dei: 0, vid: vlan } };
+        const tagged: TaggedEthernetFrame = { ...frame, dot1q: { tpid: 0x8100, pcp: 0, dei: 0, vid: vlan } };
         return super.sendFrame(parent, tagged);
       }
     }
@@ -1014,7 +1015,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
   // ─── Data Plane: Phase A — Frame Handling (L2 → dispatch) ─────
 
   protected handleFrame(portName: string, frame: EthernetFrame): void {
-    const tag = (frame as { dot1q?: { vid: number } }).dot1q;
+    const tag = (frame as TaggedEthernetFrame).dot1q;
     if (tag) {
       const subif = this.findSubinterfaceForVlan(portName, tag.vid);
       if (subif) {
