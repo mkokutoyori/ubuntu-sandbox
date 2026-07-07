@@ -22,6 +22,7 @@ import type { IpXfrmContext } from '../LinuxIpCommand';
 import type { LinuxProfile } from '../LinuxProfile';
 import type { LinuxFormatHelpers } from '../LinuxFormatHelpers';
 import type { RadiusClientAgent } from '@/network/radius/RadiusClientAgent';
+import type { GreAgent } from '@/network/gre/GreAgent';
 
 export interface LinuxCommandContext {
   /** Kernel-level services: VFS, users, iptables, services, processes. */
@@ -38,6 +39,9 @@ export interface LinuxCommandContext {
 
   /** XFRM SAD/SPD context for `ip xfrm` commands. */
   readonly xfrm: IpXfrmContext;
+
+  /** Real GRE tunnel engine backing `ip tunnel` — absent on devices without GRE support. */
+  readonly greAgent?: GreAgent;
 
   /** Active machine profile (isServer, hostname, ...). */
   readonly profile: LinuxProfile;

@@ -75,6 +75,21 @@ export interface IpV6RouteEntry {
   metric: number;
 }
 
+export interface IpTunnelInfo {
+  name: string;
+  mode: 'gre';
+  local: string;
+  remote: string;
+  key?: number;
+  ttl?: number;
+}
+
+export interface IpTunnelContext {
+  addTunnel(name: string, local: string, remote: string, opts?: { key?: number; ttl?: number }): string;
+  removeTunnel(name: string): string;
+  listTunnels(): IpTunnelInfo[];
+}
+
 export interface IpNetworkContext {
   getInterfaceNames(): string[];
   getInterfaceInfo(name: string): IpInterfaceInfo | null;
@@ -111,6 +126,8 @@ export interface IpNetworkContext {
   setInterfaceDown(ifName: string): string;
   /** Optional XFRM (IPsec) context for ip xfrm commands */
   xfrm?: IpXfrmContext;
+  /** Optional GRE tunnel context for ip tunnel commands */
+  tunnel?: IpTunnelContext;
 }
 
 // ─── XFRM types (Linux kernel IPsec transform framework) ────────────
@@ -348,6 +365,10 @@ export function executeIpCommand(ctx: IpNetworkContext, args: string[]): string 
     case 'xfrm':
     case 'x':
       return ipXfrm(ctx, subArgs);
+
+    case 'tunnel':
+    case 'tunl':
+      return ipTunnel(ctx, subArgs);
 
     case 'monitor':
       return '';
@@ -1230,6 +1251,74 @@ function ipNeighFlush(ctx: IpNetworkContext, args: string[]): string {
     if (args[i] === 'dev' && args[i + 1]) { dev = args[++i]; }
   }
   return ctx.flushNeighbors(dev);
+}
+
+// ─── ip tunnel ──────────────────────────────────────────────────────
+
+const IP_TUNNEL_HELP = `Usage: ip tunnel { add | change | del | show } [ NAME ]
+          [ mode gre ]
+          [ remote ADDR ] local ADDR
+          [ key KEY ] [ ttl TTL ]`;
+
+function ipTunnel(ctx: IpNetworkContext, args: string[]): string {
+  if (args.length === 0 || args[0] === 'show' || args[0] === 'list') {
+    return ipTunnelShow(ctx, args.slice(args[0] === 'show' || args[0] === 'list' ? 1 : 0));
+  }
+  if (args[0] === 'add' || args[0] === 'change') return ipTunnelAdd(ctx, args.slice(1));
+  if (args[0] === 'del' || args[0] === 'delete') return ipTunnelDel(ctx, args.slice(1));
+  if (args[0] === 'help') return IP_TUNNEL_HELP;
+  return `Command "${args[0]}" is unknown, try "ip tunnel help".`;
+}
+
+function ipTunnelAdd(ctx: IpNetworkContext, args: string[]): string {
+  const tunnel = ctx.tunnel;
+  if (!tunnel) return 'RTNETLINK answers: Operation not supported';
+
+  let name: string | null = null;
+  let mode: string | null = null;
+  let local: string | null = null;
+  let remote: string | null = null;
+  let key: number | undefined;
+  let ttl: number | undefined;
+
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] === 'mode') mode = args[++i];
+    else if (args[i] === 'local') local = args[++i];
+    else if (args[i] === 'remote') remote = args[++i];
+    else if (args[i] === 'key') key = parseInt(args[++i], 10);
+    else if (args[i] === 'ttl') ttl = parseInt(args[++i], 10);
+    else if (!name && !args[i].startsWith('-')) name = args[i];
+  }
+
+  if (!name) return 'Usage: ip tunnel add NAME mode gre remote ADDR local ADDR';
+  if (mode !== 'gre') return 'Error: cannot determine tunnel mode (only "gre" is supported)';
+  if (!remote) return 'Error: "remote" address is required.';
+  if (!local) return 'Error: "local" address is required.';
+
+  try { new IPAddress(local); } catch { return `Error: ${local} is not a valid IPv4 address.`; }
+  try { new IPAddress(remote); } catch { return `Error: ${remote} is not a valid IPv4 address.`; }
+
+  return tunnel.addTunnel(name, local, remote, { key, ttl });
+}
+
+function ipTunnelDel(ctx: IpNetworkContext, args: string[]): string {
+  const tunnel = ctx.tunnel;
+  if (!tunnel) return 'RTNETLINK answers: Operation not supported';
+  const name = args[0];
+  if (!name) return 'Usage: ip tunnel del NAME';
+  return tunnel.removeTunnel(name);
+}
+
+function ipTunnelShow(ctx: IpNetworkContext, args: string[]): string {
+  const tunnel = ctx.tunnel;
+  if (!tunnel) return '';
+  const filterName = args[0];
+  const tunnels = tunnel.listTunnels().filter(t => !filterName || t.name === filterName);
+  return tunnels.map(t => {
+    const keyStr = t.key !== undefined ? ` key ${t.key}` : '';
+    const ttlStr = t.ttl !== undefined && t.ttl !== 255 ? ` ttl ${t.ttl}` : ' ttl inherit';
+    return `${t.name}: gre/ip  remote ${t.remote}  local ${t.local}${keyStr}${ttlStr}`;
+  }).join('\n');
 }
 
 // ─── ip xfrm ────────────────────────────────────────────────────────

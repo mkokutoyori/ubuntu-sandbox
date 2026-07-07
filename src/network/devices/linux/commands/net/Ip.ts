@@ -15,11 +15,38 @@ import {
   type IpRouteEntry,
   type IpNeighborEntry,
   type IpXfrmContext,
+  type IpTunnelContext,
+  type IpTunnelInfo,
 } from '../../LinuxIpCommand';
 import { IPAddress, SubnetMask, MACAddress, IPv6Address } from '../../../../core/types';
 import { getNUDState } from '../../../EndHost';
+import type { GreAgent } from '../../../../gre/GreAgent';
 
-export function buildIpCtx(net: LinuxNetKernel, xfrm?: IpXfrmContext): IpNetworkContext {
+function buildTunnelCtx(greAgent: GreAgent): IpTunnelContext {
+  return {
+    addTunnel(name: string, local: string, remote: string, opts?: { key?: number; ttl?: number }): string {
+      try {
+        greAgent.addTunnel(name, local, remote, { key: opts?.key, ttl: opts?.ttl });
+        return '';
+      } catch (e) {
+        return `Error: ${e instanceof Error ? e.message : String(e)}`;
+      }
+    },
+    removeTunnel(name: string): string {
+      if (!greAgent.getTunnel(name)) return `RTNETLINK answers: No such device`;
+      greAgent.removeTunnel(name);
+      return '';
+    },
+    listTunnels(): IpTunnelInfo[] {
+      return greAgent.listTunnels().map(t => ({
+        name: t.tunnelId, mode: 'gre', local: t.sourceIp, remote: t.destinationIp,
+        key: t.key ?? undefined, ttl: t.ttl,
+      }));
+    },
+  };
+}
+
+export function buildIpCtx(net: LinuxNetKernel, xfrm?: IpXfrmContext, greAgent?: GreAgent): IpNetworkContext {
   return {
     getInterfaceNames(): string[] {
       return [...net.getPorts().keys()];
@@ -262,6 +289,7 @@ export function buildIpCtx(net: LinuxNetKernel, xfrm?: IpXfrmContext): IpNetwork
       return '';
     },
     xfrm,
+    tunnel: greAgent ? buildTunnelCtx(greAgent) : undefined,
   };
 }
 
@@ -270,7 +298,7 @@ export const ipCommand: LinuxCommand = {
   needsNetworkContext: true,
   usage: 'ip [ OPTIONS ] OBJECT { COMMAND | help }',
   run(ctx: LinuxCommandContext, args: string[]): string {
-    const ipCtx = buildIpCtx(ctx.net, ctx.xfrm);
+    const ipCtx = buildIpCtx(ctx.net, ctx.xfrm, ctx.greAgent);
     const out = executeIpCommand(ipCtx, args);
     return out;
   },

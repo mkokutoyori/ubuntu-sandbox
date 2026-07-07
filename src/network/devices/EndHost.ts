@@ -85,6 +85,11 @@ import { WireDhcpChannel } from '../dhcp/DhcpServerChannel';
 import type { DHCPClientIfaceState } from '../dhcp/types';
 import type { DHCPServer } from '../dhcp/DHCPServer';
 import { DHCPv6Packet } from '../dhcpv6/DHCPv6Packet';
+import { IP_PROTO_GRE } from '../gre/types';
+
+export interface GreDecapsulator {
+  handleIp(inPort: string, srcIp: IPAddress, ipPkt: IPv4Packet): IPv4Packet | null;
+}
 
 // ─── Internal Types ────────────────────────────────────────────────
 
@@ -266,6 +271,9 @@ export abstract class EndHost extends Equipment {
   // ─── IP Forwarding / NAT (for NAT-T topologies) ──────────────────
   /** Whether IPv4 forwarding is enabled (sysctl net.ipv4.ip_forward=1) */
   protected ipForwardEnabled: boolean = false;
+
+  /** Set by subclasses that own a real GreAgent, to decapsulate inbound GRE. */
+  protected greAgent: GreDecapsulator | null = null;
 
   /**
    * IPv4 host model (RFC 1122 §3.3.4.2).
@@ -1469,6 +1477,9 @@ export abstract class EndHost extends Equipment {
         this.tcpv2.handleIp(portName, ipPkt.sourceIP, ipPkt);
       } else if (ipPkt.protocol === IP_PROTO_UDP) {
         this.deliverUDP(portName, ipPkt, !!isBroadcast, srcMac);
+      } else if (ipPkt.protocol === IP_PROTO_GRE && this.greAgent) {
+        const inner = this.greAgent.handleIp(portName, ipPkt.sourceIP, ipPkt);
+        if (inner) this.handleIPv4(portName, inner, srcMac);
       }
       return;
     }

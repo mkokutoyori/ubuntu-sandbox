@@ -38,6 +38,7 @@ import {
   type DeviceType,
   type IPv4Packet,
   type MACAddress,
+  type EthernetFrame,
 } from '../core/types';
 
 // Linux kernel / userspace
@@ -103,6 +104,7 @@ import {
 } from './linux/LinuxFormatHelpers';
 import { renderHelp, renderManPage } from './linux/commands/LinuxCommandHelp';
 import { buildIpCtx } from './linux/commands/net/Ip';
+import { GreAgent, type GreHost } from '../gre/GreAgent';
 import type { DHCPClient } from '../dhcp/DHCPClient';
 import { LinuxSshServerContext } from '../protocols/ssh/server/LinuxSshServerContext';
 import { SshServerHandler } from '../protocols/ssh/server/SshServerHandler';
@@ -166,6 +168,9 @@ export abstract class LinuxMachine extends EndHost
   /** Stable ifindex assignment; seeded lazily, never recomputed from list position. */
   private ifIndexMap: Map<string, number> | null = null;
   private nextIfIndex = 2;
+
+  /** GRE tunnel engine backing `ip tunnel`; inbound decap wired via EndHost.greAgent. */
+  private readonly greAgentInstance: GreAgent;
 
   /** DNS daemon (dnsmasq) — active when the machine runs as a DNS server. */
   public readonly dnsService: DnsService = new DnsService();
@@ -237,7 +242,17 @@ export abstract class LinuxMachine extends EndHost
 
     // 3. Network façade (closes over protected EndHost members)
     this.net = this.buildNetKernel();
-    this.executor.setIpNetworkContext(buildIpCtx(this.net, this.xfrmCtx));
+    const greHost: GreHost = {
+      id: this.id, name: this.name,
+      getHostname: () => this.getHostname(),
+      getPort: (n: string) => this.getPort(n),
+      getPorts: () => this.getPorts(),
+      sendFrame: (p: string, f: EthernetFrame) => { this.sendFrame(p, f); },
+    };
+    this.greAgentInstance = new GreAgent(greHost, () => this.getBus());
+    this.greAgentInstance.start();
+    this.greAgent = this.greAgentInstance;
+    this.executor.setIpNetworkContext(buildIpCtx(this.net, this.xfrmCtx, this.greAgentInstance));
     // NSS `dns` source resolves through real UDP/53 once resolv.conf
     // names a non-loopback server (loopback = systemd-resolved stub,
     // modelled by the legacy fallback).
@@ -1161,8 +1176,12 @@ export abstract class LinuxMachine extends EndHost
       xfrm: this.xfrmCtx,
       profile: this.profile,
       fmt: this.fmt,
+      greAgent: this.greAgentInstance,
     };
   }
+
+  /** Real GRE engine backing `ip tunnel`; exposed for direct tunnel-traffic testing. */
+  getGreAgent(): GreAgent { return this.greAgentInstance; }
 
   /** Cached SSH server context — replaced on `systemctl restart sshd`. */
   private _sshContext: LinuxSshServerContext | null = null;
