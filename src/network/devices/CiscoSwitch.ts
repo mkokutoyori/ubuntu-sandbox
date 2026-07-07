@@ -14,7 +14,7 @@
 import { DeviceType, EthernetFrame, ETHERTYPE_IPV4, IPv4Packet, IPAddress } from '../core/types';
 import { AgentRegistry } from './AgentRegistry';
 import { cdpToNeighborDTO, lldpToNeighborDTO } from './inspection/neighborConverters';
-import { Switch, STPPortState } from './Switch';
+import { Switch, STPPortState, type SwitchportMode } from './Switch';
 import type { ISwitchShell } from './shells/ISwitchShell';
 import { CiscoSwitchShell } from './shells/CiscoSwitchShell';
 import { CdpAgent } from '../cdp/CdpAgent';
@@ -134,6 +134,12 @@ export class CiscoSwitch extends Switch {
     if (!cfg) return;
     if (cfg.mode === mode) return;
     this.syncSwitchportMode(portName, mode);
+  }
+
+  protected override syncSwitchportMode(portName: string, mode: SwitchportMode): boolean {
+    const ok = super.syncSwitchportMode(portName, mode);
+    if (ok && mode === 'trunk') this.vtpAgent?.onTrunkModeChanged(portName);
+    return ok;
   }
 
   private applyStpForwardState(portName: string, state: StpForwardState, vlan: number): void {

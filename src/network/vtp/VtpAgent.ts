@@ -62,6 +62,9 @@ export class VtpAgent extends ReactiveAgentBase {
     });
     if (mode === 'transparent') this.config.revision = 0;
     if (mode === 'server' && this.config.domain) this.advertiseSummary('config-change');
+    if ((mode === 'server' || mode === 'client') && this.config.domain) {
+      this.requestSyncOnTrunks('config-change');
+    }
   }
 
   setDomain(name: string): void {
@@ -77,6 +80,9 @@ export class VtpAgent extends ReactiveAgentBase {
       },
     });
     if (this.config.mode === 'server') this.advertiseSummary('config-change');
+    if (this.config.mode === 'server' || this.config.mode === 'client') {
+      this.requestSyncOnTrunks('config-change');
+    }
   }
 
   setPassword(pw: string): void {
@@ -356,6 +362,31 @@ export class VtpAgent extends ReactiveAgentBase {
 
   private advertiseSummary(reason: 'config-change' | 'local-vlan-change' | 'relay'): void {
     this.advertiseAllTrunks(reason);
+  }
+
+  private requestSyncOnTrunks(reason: string): void {
+    if (!this.config.enabled || !this.config.domain) return;
+    for (const port of this.host.getPorts()) {
+      const name = port.getName();
+      if (!this.host.vtpIsTrunkPort(name)) continue;
+      if (!port.getIsUp() || !port.isConnected()) continue;
+      this.sendVtpFrame(name, 'request', [], reason);
+    }
+  }
+
+  onTrunkModeChanged(portName: string): void {
+    if (!this.config.enabled) return;
+    if (!this.host.vtpIsTrunkPort(portName)) return;
+    const port = this.host.getPort(portName);
+    if (!port || !port.getIsUp() || !port.isConnected()) return;
+    if (this.config.pruning) this.sendJoin(portName);
+    if (!this.config.domain) return;
+    if (this.config.mode === 'server') {
+      this.sendSummaryAndSubset(portName, 'trunk-up');
+      this.sendVtpFrame(portName, 'request', [], 'trunk-up');
+    } else if (this.config.mode === 'client') {
+      this.sendVtpFrame(portName, 'request', [], 'trunk-up');
+    }
   }
 
   private sendSummaryAndSubset(portName: string, reason: string): void {
