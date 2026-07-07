@@ -46,6 +46,18 @@ export interface LinuxCommandContext {
   /** Virtual interface CRUD for `ip link add/delete` (veth, vlan, dummy). */
   readonly linkOps?: IpLinkOpsContext;
 
+  /**
+   * Network namespace CRUD + exec for `ip netns`. `exec` runs a nested
+   * command with the namespace's own routing/ARP state swapped in, so it
+   * is async even though every other `ip` subcommand is synchronous.
+   */
+  readonly netns?: {
+    add(name: string): string;
+    remove(name: string): string;
+    list(): string[];
+    exec(name: string, cmdLine: string): Promise<string>;
+  };
+
   /** Active machine profile (isServer, hostname, ...). */
   readonly profile: LinuxProfile;
 

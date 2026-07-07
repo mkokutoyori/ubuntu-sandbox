@@ -143,6 +143,14 @@ export interface IpNetworkContext {
   resolveRouteWithRules?(
     dest: IPAddress, from: IPAddress | null,
   ): { iface: string; nextHopIP: string; table: number } | null;
+  /** Optional network namespace CRUD for ip netns (list/add/del only — exec is handled upstream) */
+  netns?: IpNetnsContext;
+}
+
+export interface IpNetnsContext {
+  add(name: string): string;
+  remove(name: string): string;
+  list(): string[];
 }
 
 export interface IpRuleInfo {
@@ -400,6 +408,9 @@ export function executeIpCommand(ctx: IpNetworkContext, args: string[]): string 
 
     case 'rule':
       return ipRule(ctx, subArgs);
+
+    case 'netns':
+      return ipNetns(ctx, subArgs);
 
     case 'monitor':
       return '';
@@ -1496,6 +1507,37 @@ function ipRuleShow(ctx: IpNetworkContext): string {
     const tableName = TABLE_NAMES[r.table] ?? String(r.table);
     return `${r.priority}:\t${from}${to} lookup ${tableName}`;
   }).join('\n');
+}
+
+// ─── ip netns ───────────────────────────────────────────────────────
+
+const IP_NETNS_HELP = `Usage: ip netns list
+       ip netns add NAME
+       ip netns delete NAME
+       ip netns exec NAME cmd ...`;
+
+function ipNetns(ctx: IpNetworkContext, args: string[]): string {
+  const netns = ctx.netns;
+  if (!netns) return 'RTNETLINK answers: Operation not supported';
+
+  if (args.length === 0 || args[0] === 'list' || args[0] === 'show') {
+    return netns.list().join('\n');
+  }
+  if (args[0] === 'add') {
+    const name = args[1];
+    if (!name) return 'Usage: ip netns add NAME';
+    return netns.add(name);
+  }
+  if (args[0] === 'del' || args[0] === 'delete') {
+    const name = args[1];
+    if (!name) return 'Usage: ip netns delete NAME';
+    return netns.remove(name);
+  }
+  if (args[0] === 'exec') {
+    return 'Error: "ip netns exec" requires the async ip command wrapper.';
+  }
+  if (args[0] === 'help') return IP_NETNS_HELP;
+  return `Command "${args[0]}" is unknown, try "ip netns help".`;
 }
 
 // ─── ip xfrm ────────────────────────────────────────────────────────

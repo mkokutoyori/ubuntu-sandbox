@@ -180,6 +180,13 @@ export abstract class LinuxMachine extends EndHost
   /** 802.1Q sub-interfaces created via `ip link add ... type vlan`: name → {parent, vid}. */
   private readonly vlanSubInterfaces: Map<string, { parent: string; vid: number }> = new Map();
 
+  /** Network namespaces created via `ip netns add` — each holds its own routing/ARP state. */
+  private readonly netNamespaces: Map<string, {
+    routingTable: HostRouteEntry[];
+    arpTable: Map<string, ARPEntry>;
+    defaultGateway: IPAddress | null;
+  }> = new Map();
+
   /** DNS daemon (dnsmasq) — active when the machine runs as a DNS server. */
   public readonly dnsService: DnsService = new DnsService();
 
@@ -1191,6 +1198,12 @@ export abstract class LinuxMachine extends EndHost
         addVlan: (name: string, parent: string, vid: number) => this.addVlanSubInterface(name, parent, vid),
         deleteLink: (name: string) => this.deleteVirtualInterface(name),
       },
+      netns: {
+        add: (name: string) => this.addNetNamespace(name),
+        remove: (name: string) => this.deleteNetNamespace(name),
+        list: () => this.listNetNamespaces(),
+        exec: (name: string, cmdLine: string) => this.execInNamespace(name, cmdLine),
+      },
     };
   }
 
@@ -1244,6 +1257,57 @@ export abstract class LinuxMachine extends EndHost
     this.virtualInterfaces.delete(name);
     this.vlanSubInterfaces.delete(name);
     return '';
+  }
+
+  // ─── ip netns ─────────────────────────────────────────────────────
+
+  private addNetNamespace(name: string): string {
+    if (this.netNamespaces.has(name)) {
+      return `Cannot create namespace file "/var/run/netns/${name}": File exists`;
+    }
+    this.netNamespaces.set(name, { routingTable: [], arpTable: new Map(), defaultGateway: null });
+    return '';
+  }
+
+  private deleteNetNamespace(name: string): string {
+    if (!this.netNamespaces.has(name)) {
+      return `Cannot remove namespace file "/var/run/netns/${name}": No such file or directory`;
+    }
+    this.netNamespaces.delete(name);
+    return '';
+  }
+
+  private listNetNamespaces(): string[] {
+    return [...this.netNamespaces.keys()];
+  }
+
+  /**
+   * Run a command with this namespace's routing/ARP/default-gateway state
+   * swapped in for the duration of the call — genuine isolation between
+   * namespaces reusing the existing route-resolution/ARP logic unchanged.
+   */
+  private async execInNamespace(name: string, cmdLine: string): Promise<string> {
+    const ns = this.netNamespaces.get(name);
+    if (!ns) return `Cannot open network namespace "${name}": No such file or directory`;
+
+    const savedRouting = this.routingTable;
+    const savedArp = this.arpTable;
+    const savedGateway = this.defaultGateway;
+
+    this.routingTable = ns.routingTable;
+    this.arpTable = ns.arpTable;
+    this.defaultGateway = ns.defaultGateway;
+
+    try {
+      return await this.executeCommand(cmdLine);
+    } finally {
+      ns.routingTable = this.routingTable;
+      ns.arpTable = this.arpTable;
+      ns.defaultGateway = this.defaultGateway;
+      this.routingTable = savedRouting;
+      this.arpTable = savedArp;
+      this.defaultGateway = savedGateway;
+    }
   }
 
   override sendFrame(portName: string, frame: EthernetFrame): boolean {
