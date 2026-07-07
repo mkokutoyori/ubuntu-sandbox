@@ -99,7 +99,7 @@ export interface NatResult {
 }
 
 const VALID_TABLES = new Set<string>(['filter', 'nat', 'mangle', 'raw']);
-const VALID_PROTOCOLS = new Set<string>(['tcp', 'udp', 'icmp', 'all']);
+const VALID_PROTOCOLS = new Set<string>(['tcp', 'udp', 'icmp', 'icmpv6', 'ipv6-icmp', 'all']);
 const VALID_BUILTIN_POLICIES = new Set<string>(['ACCEPT', 'DROP']);
 const VALID_TARGETS = new Set<string>(['ACCEPT', 'DROP', 'REJECT', 'LOG', 'MASQUERADE', 'DNAT', 'SNAT', 'REDIRECT', 'RETURN']);
 
@@ -117,6 +117,10 @@ export class LinuxIptablesManager {
   // Used for state/conntrack match extensions
   private conntrack: Map<string, number> = new Map();
   private readonly CONNTRACK_TIMEOUT = 300_000; // 5 minutes
+  // `--reject-with` of the rule that produced the most recent 'reject'
+  // verdict from filterPacket(), if any — read by the caller immediately
+  // after filterPacket() to pick the right ICMP error / TCP RST.
+  private lastRejectWith: string | null = null;
 
   readonly family: 4 | 6;
 
@@ -175,6 +179,7 @@ export class LinuxIptablesManager {
    * Supports INPUT, OUTPUT, and FORWARD chains based on pkt.direction.
    */
   filterPacket(pkt: PacketInfo): FirewallVerdict {
+    this.lastRejectWith = null;
     const filterTable = this.tables.get('filter')!;
     const chainName = pkt.direction === 'in' ? 'INPUT'
                     : pkt.direction === 'out' ? 'OUTPUT'
@@ -188,6 +193,16 @@ export class LinuxIptablesManager {
     }
 
     return verdict;
+  }
+
+  /**
+   * `--reject-with` of the rule that produced the 'reject' verdict from the
+   * most recent `filterPacket()` call, if any. Callers read this
+   * immediately after `filterPacket()` returns 'reject' to pick the right
+   * ICMP error (or TCP RST for `tcp-reset`).
+   */
+  getLastRejectWith(): string | null {
+    return this.lastRejectWith;
   }
 
   /**
@@ -306,7 +321,9 @@ export class LinuxIptablesManager {
         switch (rule.target) {
           case 'ACCEPT': return 'accept';
           case 'DROP': return 'drop';
-          case 'REJECT': return 'reject';
+          case 'REJECT':
+            this.lastRejectWith = rule.targetOptions['--reject-with'] ?? null;
+            return 'reject';
           case 'RETURN': return null; // return to calling chain
           case 'LOG': continue; // LOG doesn't terminate; continue to next rule
           default: continue;
@@ -321,7 +338,10 @@ export class LinuxIptablesManager {
   private ruleMatchesPacket(rule: IptablesRule, pkt: PacketInfo): boolean {
     // Protocol check
     if (rule.protocol && rule.protocol !== 'all') {
-      const protoNum = rule.protocol === 'tcp' ? 6 : rule.protocol === 'udp' ? 17 : rule.protocol === 'icmp' ? 1 : -1;
+      const protoNum = rule.protocol === 'tcp' ? 6 : rule.protocol === 'udp' ? 17
+        : rule.protocol === 'icmp' ? 1
+        : (rule.protocol === 'icmpv6' || rule.protocol === 'ipv6-icmp') ? 58
+        : -1;
       const matches = pkt.protocol === protoNum;
       if (rule.negProtocol ? matches : !matches) return false;
     }

@@ -2054,6 +2054,7 @@ export abstract class LinuxMachine extends EndHost
     manager: LinuxIptablesManager, pkt: PacketInfo,
   ): 'accept' | 'drop' | 'reject' {
     const verdict = manager.filterPacket(pkt);
+    if (verdict === 'reject') this.lastRejectWith = manager.getLastRejectWith();
     if (verdict !== 'accept') {
       this.logIptablesDrop(pkt, verdict, pkt.iface, pkt.outIface);
       this.getBus().publish({

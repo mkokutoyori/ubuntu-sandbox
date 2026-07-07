@@ -369,14 +369,57 @@ ordre arbitraire.
   concernés, `tsc`/`eslint` propres (5 erreurs `no-explicit-any`/
   `no-this-alias` confirmées préexistantes via `git stash`, non introduites).
 
-### Phase 3 — ICMPv6 filtré + `--reject-with`/REJECT UDP (items C.7, C.8, C.9)
+### Phase 3 — ICMPv6 filtré + `--reject-with`/REJECT UDP (items C.7, C.8, C.9) — ✅ LIVRÉE (item C.9 re-qualifié)
 
-- **Fichiers touchés** : `EndHost.ts` (`handleICMPv6` branché sur
-  `firewallFilter6`, avec garde explicite pour Neighbor Discovery),
-  `EndHost.sendICMPReject()` (lecture de `--reject-with`), chemin UDP sortant
-  (synthèse ICMP unreachable locale sur REJECT).
-- **Tests** : `icmpv6-firewall-filtering.test.ts`, extension de
-  `linux-iptables.test.ts` pour `--reject-with`, `udp-reject-vs-drop.test.ts`.
+- **Item C.7 (ICMPv6 filtré)** : `EndHost.handleIPv6` branché sur
+  `firewallFilter6` pour tout ICMPv6 entrant, avec garde explicite excluant
+  Neighbor/Router Solicitation/Advertisement (RFC 4861) du filtrage —
+  bloquer ND casserait la résolution d'adresse elle-même. Préalable
+  découvert en cours de route : `-p icmpv6`/`ipv6-icmp` n'étaient pas des
+  mots-clés de protocole reconnus par `LinuxIptablesManager` (protocole 58
+  jamais mappé) — `ip6tables -p icmpv6 ...` échouait systématiquement à la
+  validation ; ajouté à `VALID_PROTOCOLS` et à `ruleMatchesPacket`. REJECT
+  sur ICMPv6 utilise un nouveau `sendICMPv6Unreachable` généralisé (ancien
+  `sendICMPv6PortUnreachable`, renommé et paramétré par code) avec
+  `ICMPV6_UNREACH_ADMIN_PROHIBITED` (code 1).
+- **Item C.8 (`--reject-with` IPv4)** : `LinuxIptablesManager` retient le
+  `--reject-with` de la règle qui a produit un verdict REJECT
+  (`getLastRejectWith()`), lu par `LinuxMachine.runFilterTable` et stocké
+  sur `EndHost.lastRejectWith`, consommé par `sendICMPReject`
+  (`resolveRejectCode`) — tous les codes ICMP standards
+  (`icmp-net/host/port/proto-unreachable`, `icmp-net/host-prohibited`,
+  `icmp-admin-prohibited`) plus `tcp-reset` (RST réel via
+  `tcpv2.sendResetForSegment`, symétrique au chemin IPv6 déjà existant). Le
+  défaut sans `--reject-with` reste admin-prohibited (code 13), inchangé,
+  pour ne pas régresser les tests déjà verts qui en dépendent.
+- **Item C.9 (REJECT vs DROP en sortie UDP) — re-qualifié, pas de code
+  changé.** L'analyse initiale du gap (fondée sur la seule lecture de
+  `sendUdpDatagram`, qui renvoie `false` dans les deux cas) était incomplète
+  : `firewallFilter`/`runFilterTable` différencient déjà, pour **toute**
+  direction y compris `OUTPUT` UDP, la ligne de journal noyau
+  (`[netfilter DROP]` vs `[netfilter REJECT]`) et l'événement de bus
+  `linux.firewall.drop` (`verdict: 'drop'|'reject'`). La seule chose qui
+  manque réellement — un ICMP synthétique remonté dans le propre chemin
+  d'erreur du processus émetteur, comme le ferait un vrai noyau — n'a
+  aujourd'hui **aucun consommateur** dans ce simulateur (`nc -u` n'est même
+  pas supporté, aucun appelant de `sendUdpDatagram` ne réagit à un ICMP
+  reçu pour de l'UDP) ; l'ajouter serait du code sans effet observable.
+  Non implémenté, documenté explicitement plutôt que forcé.
+- **Bug pré-existant corrigé en cours de route (nécessaire pour observer
+  C.7/C.8 via la commande `ping6` elle-même)** : `EndHost.
+  executePing6Sequence`'s catch block avalait silencieusement l'erreur de
+  `sendPing6` (contrairement à l'équivalent IPv4, qui la propage dans
+  `PingResult.error`) — `ping6` ne pouvait donc jamais afficher
+  « Destination Host Unreachable », seulement un timeout générique, même
+  quand un vrai ICMPv6 d'erreur était bien reçu. Corrigé pour threader
+  `err.message` exactement comme `executePingSequence` (IPv4) le fait déjà.
+- **Tests** : `icmpv6-firewall-filtering.test.ts` (6 tests),
+  `iptables-reject-with.test.ts` (5 tests),
+  `udp-reject-vs-drop-observability.test.ts` (3 tests, pin de
+  non-régression pour C.9).
+- **Régression** : 391 tests verts sur les suites ping6/ICMPv6/iptables/ufw/
+  dual-stack concernées, `tsc`/`eslint` propres (mêmes 5 erreurs
+  préexistantes confirmées par `git stash`, non introduites).
 
 ### Phase 4 — Injection réelle des règles `ufw` v6 (item E.13, dépend de Phase 1)
 
