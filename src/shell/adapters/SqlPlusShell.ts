@@ -39,6 +39,10 @@ export class SqlPlusShell extends AbstractShell {
     return this.subShell?.getPrompt() ?? 'SQL> ';
   }
 
+  override getCompletions(line: string): readonly string[] {
+    return this.subShell?.getCompletions(line) ?? [];
+  }
+
   override getActivationBanner(): readonly string[] {
     return this.banner;
   }
