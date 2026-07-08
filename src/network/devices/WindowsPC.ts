@@ -2032,6 +2032,26 @@ export class WindowsPC extends EndHost implements UserAccountHost {
 
   // ─── Tab Completion ──────────────────────────────────────────────
 
+  private static readonly CMD_FLAGS: Readonly<Record<string, readonly string[]>> = {
+    ping: ['-4', '-6', '-a', '-l', '-n', '-t', '-w'],
+    ipconfig: ['/all', '/displaydns', '/flushdns', '/registerdns', '/release', '/renew'],
+    netstat: ['-a', '-b', '-e', '-n', '-o', '-p', '-r', '-s'],
+    tracert: ['-4', '-6', '-d', '-h', '-w'],
+    arp: ['-a', '-d', '-g', '-s'],
+    route: ['-4', '-6', '-p'],
+    getmac: ['/fo', '/nh', '/s', '/v'],
+    dir: ['/a', '/b', '/o', '/p', '/q', '/s', '/w'],
+    del: ['/a', '/f', '/p', '/q', '/s'],
+    erase: ['/a', '/f', '/p', '/q', '/s'],
+    copy: ['/v', '/y', '/z'],
+    rmdir: ['/q', '/s'],
+    rd: ['/q', '/s'],
+    tasklist: ['/fi', '/fo', '/m', '/svc', '/v'],
+    systeminfo: ['/fo', '/s', '/u'],
+    tree: ['/a', '/f'],
+    wevtutil: [],
+  };
+
   getCompletions(partial: string): string[] {
     const parts = partial.trimStart().split(/\s+/);
 
@@ -2050,6 +2070,14 @@ export class WindowsPC extends EndHost implements UserAccountHost {
 
     // File/directory completion for the last argument
     const lastArg = parts[parts.length - 1];
+
+    // Flag completion: `/`- or `-`-prefixed argument of a known command
+    if (lastArg.startsWith('/') || lastArg.startsWith('-')) {
+      const flags = WindowsPC.CMD_FLAGS[(parts[0] || '').toLowerCase()];
+      if (flags) {
+        return flags.filter(f => f.toLowerCase().startsWith(lastArg.toLowerCase()));
+      }
+    }
     // Split on last backslash to get directory and partial name
     const lastSep = lastArg.lastIndexOf('\\');
     let dir: string;

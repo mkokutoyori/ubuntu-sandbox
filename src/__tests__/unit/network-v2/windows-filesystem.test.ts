@@ -554,6 +554,29 @@ describe('Group 5: Tab Completion & Piping', () => {
       expect(completions).toContain('DirA');
       expect(completions).toContain('DirB');
     });
+
+    it('completes cmd.exe flags after a slash for a known command', () => {
+      const pc = new WindowsPC('windows-pc', 'WIN-PC1');
+      expect(pc.getCompletions('ipconfig /f')).toEqual(['/flushdns']);
+      const all = pc.getCompletions('ipconfig /');
+      expect(all).toContain('/all');
+      expect(all).toContain('/release');
+      expect(all).toContain('/renew');
+    });
+
+    it('completes dash-flags for ping and netstat', () => {
+      const pc = new WindowsPC('windows-pc', 'WIN-PC1');
+      expect(pc.getCompletions('ping -t')).toEqual(['-t']);
+      const ns = pc.getCompletions('netstat -');
+      expect(ns).toContain('-a');
+      expect(ns).toContain('-n');
+      expect(ns).toContain('-o');
+    });
+
+    it('unknown command flags fall back to path completion (no crash)', async () => {
+      const pc = new WindowsPC('windows-pc', 'WIN-PC1');
+      expect(Array.isArray(pc.getCompletions('nslookup -x'))).toBe(true);
+    });
   });
 
   describe('W-FS-24: pipe with findstr', () => {
