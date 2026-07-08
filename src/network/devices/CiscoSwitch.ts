@@ -230,9 +230,9 @@ export class CiscoSwitch extends Switch {
   getSyslogAgent(): SyslogAgent { return this.syslogAgent; }
   getDot1xAgent(): Dot1xAgent { return this.dot1xAgent; }
 
-  override setSwitchportMode(portName: string, mode: 'access' | 'trunk'): boolean {
+  override setSwitchportMode(portName: string, mode: SwitchportMode): boolean {
     const r = super.setSwitchportMode(portName, mode);
-    if (r) this.dtpAgent.setAdminMode(portName, mode);
+    if (r) this.dtpAgent.setAdminMode(portName, mode === 'trunk' ? 'trunk' : 'access');
     return r;
   }
 

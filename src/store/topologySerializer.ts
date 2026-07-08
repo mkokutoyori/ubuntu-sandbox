@@ -20,6 +20,7 @@ import {
   Logger,
   EndHost, Router,
   Switch,
+  type SwitchportMode,
 } from '@/network';
 import { LinuxMachine } from '@/network/devices/LinuxMachine';
 import { buildConnection, type Connection } from './networkStore';
@@ -65,7 +66,7 @@ interface TopologyVlanExport {
 
 interface TopologySwitchportExport {
   name: string;
-  mode?: 'access' | 'trunk';
+  mode?: SwitchportMode;
   accessVlan?: number;
   trunkNativeVlan?: number;
 }
