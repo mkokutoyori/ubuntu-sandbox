@@ -1873,7 +1873,8 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       const cfg = this.d().getSwitchportConfig(name);
       const out = [`interface ${name}`];
       if (cfg) {
-        out.push(cfg.mode === 'trunk' ? ' switchport mode trunk' : ' switchport mode access');
+        out.push(cfg.mode === 'trunk' ? ' switchport mode trunk'
+          : cfg.mode === 'dot1q-tunnel' ? ' switchport mode dot1q-tunnel' : ' switchport mode access');
         if (cfg.mode !== 'trunk' && cfg.accessVlan !== 1) {
           out.push(` switchport access vlan ${cfg.accessVlan}`);
         }
@@ -2182,6 +2183,12 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     this.configIfTrie.register('switchport mode trunk', 'Set interface to trunk mode', () => {
       return this.applyToSelectedInterfaces(portName =>
         this.d().setSwitchportMode(portName, 'trunk') ? '' : '% Error'
+      );
+    });
+
+    this.configIfTrie.register('switchport mode dot1q-tunnel', '802.1ad QinQ tunnel port (S-VLAN access port)', () => {
+      return this.applyToSelectedInterfaces(portName =>
+        this.d().setSwitchportMode(portName, 'dot1q-tunnel') ? '' : '% Error'
       );
     });
 
@@ -2655,7 +2662,9 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       const desc = descs.get(portName);
       if (desc) lines.push(` description ${desc}`);
       const dtpAdmin = sw.getDtpAgent().getAdminMode(portName);
-      if (dtpAdmin === 'dynamic-auto') {
+      if (cfg.mode === 'dot1q-tunnel') {
+        lines.push(' switchport mode dot1q-tunnel');
+      } else if (dtpAdmin === 'dynamic-auto') {
         lines.push(' switchport mode dynamic auto');
       } else if (dtpAdmin === 'dynamic-desirable') {
         lines.push(' switchport mode dynamic desirable');

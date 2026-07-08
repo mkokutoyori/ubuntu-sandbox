@@ -89,11 +89,13 @@ export interface Dot1QTag {
 
 export interface TaggedEthernetFrame extends EthernetFrame {
   dot1q?: Dot1QTag;
+  /** Outer S-VLAN tag (802.1ad QinQ, EtherType 0x88a8) pushed by a dot1q-tunnel port; `dot1q`, if present, is the untouched customer C-VLAN tag underneath it. */
+  outerDot1q?: Dot1QTag;
 }
 
 // ─── Port Configuration ─────────────────────────────────────────────
 
-export type SwitchportMode = 'access' | 'trunk' | 'hybrid';
+export type SwitchportMode = 'access' | 'trunk' | 'hybrid' | 'dot1q-tunnel';
 
 export interface SwitchportConfig {
   mode: SwitchportMode;
@@ -819,12 +821,15 @@ export abstract class Switch extends Equipment {
     const oldMode = cfg.mode;
     cfg.mode = mode;
 
-    if (oldMode === 'access' && mode === 'trunk') {
-      // Remove from VLAN port list when going to trunk
+    const oldIsVlanMember = oldMode === 'access' || oldMode === 'dot1q-tunnel';
+    const newIsVlanMember = mode === 'access' || mode === 'dot1q-tunnel';
+
+    if (oldIsVlanMember && !newIsVlanMember) {
+      // Remove from VLAN port list when leaving access/dot1q-tunnel
       const vlan = this.vlans.get(cfg.accessVlan);
       if (vlan) vlan.ports.delete(portName);
-    } else if (oldMode === 'trunk' && mode === 'access') {
-      // Add to access VLAN port list
+    } else if (!oldIsVlanMember && newIsVlanMember) {
+      // Add to access VLAN (or S-VLAN) port list
       const vlan = this.vlans.get(cfg.accessVlan);
       if (vlan) vlan.ports.add(portName);
     }
@@ -857,7 +862,7 @@ export abstract class Switch extends Equipment {
     // Add to new VLAN
     cfg.accessVlan = vlanId;
     const newVlan = this.vlans.get(vlanId);
-    if (newVlan && cfg.mode === 'access') newVlan.ports.add(portName);
+    if (newVlan && (cfg.mode === 'access' || cfg.mode === 'dot1q-tunnel')) newVlan.ports.add(portName);
 
     this.flushDynamicMacsOnPort(portName, 'access-vlan-change');
 
@@ -1531,6 +1536,10 @@ export abstract class Switch extends Equipment {
       } else {
         ingressVlan = cfg.accessVlan;
       }
+    } else if (cfg.mode === 'dot1q-tunnel') {
+      // Customer-facing QinQ port: any client tag is opaque payload, never
+      // switch VLAN membership — the S-VLAN is the port's own access VLAN.
+      ingressVlan = cfg.accessVlan;
     } else if (cfg.mode === 'hybrid') {
       if (taggedFrame.dot1q) {
         ingressVlan = taggedFrame.dot1q.vid;
@@ -1544,8 +1553,15 @@ export abstract class Switch extends Equipment {
         ingressVlan = cfg.hybridPvid ?? 1;
       }
     } else {
-      // Trunk mode
-      if (taggedFrame.dot1q) {
+      // Trunk mode — a QinQ outer S-VLAN tag, if present, is what the
+      // switch classifies on; any inner customer tag is opaque payload.
+      if (taggedFrame.outerDot1q) {
+        ingressVlan = taggedFrame.outerDot1q.vid;
+        if (!cfg.trunkAllowedVlans.has(ingressVlan)) {
+          Logger.debug(this.id, 'switch:trunk-filtered', `${this.name}: VLAN ${ingressVlan} not allowed on trunk ${portName}`);
+          return;
+        }
+      } else if (taggedFrame.dot1q) {
         ingressVlan = taggedFrame.dot1q.vid;
         if (!cfg.trunkAllowedVlans.has(ingressVlan)) {
           Logger.debug(this.id, 'switch:trunk-filtered', `${this.name}: VLAN ${ingressVlan} not allowed on trunk ${portName}`);
@@ -1563,6 +1579,7 @@ export abstract class Switch extends Equipment {
     }
 
     const ingressCos = this.classifyIngressCos(cfg, frame, ingressVlan);
+    const isQinQ = cfg.mode === 'dot1q-tunnel' || !!taggedFrame.outerDot1q;
 
     // ─── Step 1.5: Dynamic ARP Inspection (untrusted / DAI-enabled VLANs)
     if (frame.etherType === ETHERTYPE_ARP && this.arpInspectionPipeline) {
@@ -1738,7 +1755,7 @@ export abstract class Switch extends Equipment {
           `${this.name}: snooped multicast ${dstMAC} VLAN ${ingressVlan} → [${snoopedPorts.join(', ')}] (ingress ${portName})`,
           { dstMAC: dstMAC.toString(), srcMAC: srcMAC.toString(), vlan: ingressVlan, ingress: portName, egress: snoopedPorts },
         );
-        for (const egressPort of snoopedPorts) this.forwardToPort(egressPort, frame, ingressVlan, portName, ingressCos);
+        for (const egressPort of snoopedPorts) this.forwardToPort(egressPort, frame, ingressVlan, portName, ingressCos, isQinQ);
         return;
       }
       Logger.debug(
@@ -1746,7 +1763,7 @@ export abstract class Switch extends Equipment {
         `${this.name}: flood ${dstMAC} VLAN ${ingressVlan} (ingress ${portName})`,
         { dstMAC: dstMAC.toString(), srcMAC: srcMAC.toString(), vlan: ingressVlan, ingress: portName, reason: isMulticast ? 'multicast' : 'unknown-unicast' },
       );
-      this.floodFrame(portName, frame, ingressVlan, ingressCos);
+      this.floodFrame(portName, frame, ingressVlan, ingressCos, isQinQ);
     } else {
       const dstEntry = this.macTable.get(`${ingressVlan}:${dstMAC}`)!;
       if (dstEntry.port !== portName) {
@@ -1755,7 +1772,7 @@ export abstract class Switch extends Equipment {
           `${this.name}: forward ${dstMAC} VLAN ${ingressVlan} ${portName} → ${dstEntry.port}`,
           { dstMAC: dstMAC.toString(), srcMAC: srcMAC.toString(), vlan: ingressVlan, ingress: portName, egress: dstEntry.port },
         );
-        this.forwardToPort(dstEntry.port, frame, ingressVlan, portName, ingressCos);
+        this.forwardToPort(dstEntry.port, frame, ingressVlan, portName, ingressCos, isQinQ);
       }
     }
   }
@@ -1826,7 +1843,7 @@ export abstract class Switch extends Equipment {
 
   // ─── Flood within VLAN ────────────────────────────────────────────
 
-  private floodFrame(exceptPort: string, frame: EthernetFrame, vlan: number, cos: number = 0): void {
+  private floodFrame(exceptPort: string, frame: EthernetFrame, vlan: number, cos: number = 0, isQinQ: boolean = false): void {
     for (const [portName, cfg] of this.switchportConfigs) {
       if (portName === exceptPort) continue;
 
@@ -1850,6 +1867,10 @@ export abstract class Switch extends Equipment {
         } else if (cfg.voiceVlan === vlan) {
           this.sendFrame(portName, this.addTag(frame, vlan, cos));
         }
+      } else if (cfg.mode === 'dot1q-tunnel') {
+        if (cfg.accessVlan === vlan) {
+          this.sendFrame(portName, this.stripOuterTag(frame));
+        }
       } else if (cfg.mode === 'hybrid') {
         if (cfg.hybridUntaggedVlans?.has(vlan)) {
           this.sendFrame(portName, this.stripTag(frame));
@@ -1869,10 +1890,10 @@ export abstract class Switch extends Equipment {
           }
           if (vlan === cfg.trunkNativeVlan) {
             // Native VLAN: send untagged
-            this.sendFrame(portName, this.stripTag(frame));
+            this.sendFrame(portName, isQinQ ? this.stripOuterTag(frame) : this.stripTag(frame));
           } else {
             // Non-native: send tagged
-            this.sendFrame(portName, this.addTag(frame, vlan, cos));
+            this.sendFrame(portName, isQinQ ? this.addOuterTag(frame, vlan, cos) : this.addTag(frame, vlan, cos));
           }
         }
       }
@@ -1881,7 +1902,7 @@ export abstract class Switch extends Equipment {
 
   // ─── Forward to Specific Port ─────────────────────────────────────
 
-  private forwardToPort(portName: string, frame: EthernetFrame, vlan: number, ingressPort?: string, cos: number = 0): void {
+  private forwardToPort(portName: string, frame: EthernetFrame, vlan: number, ingressPort?: string, cos: number = 0, isQinQ: boolean = false): void {
     const cfg = this.switchportConfigs.get(portName);
     if (!cfg) return;
 
@@ -1898,6 +1919,10 @@ export abstract class Switch extends Equipment {
         this.sendFrame(portName, this.addTag(frame, vlan, cos));
       } else {
         this.sendFrame(portName, this.stripTag(frame));
+      }
+    } else if (cfg.mode === 'dot1q-tunnel') {
+      if (cfg.accessVlan === vlan) {
+        this.sendFrame(portName, this.stripOuterTag(frame));
       }
     } else if (cfg.mode === 'hybrid') {
       if (cfg.hybridUntaggedVlans?.has(vlan)) {
@@ -1920,9 +1945,9 @@ export abstract class Switch extends Equipment {
         return;
       }
       if (vlan === cfg.trunkNativeVlan) {
-        this.sendFrame(portName, this.stripTag(frame));
+        this.sendFrame(portName, isQinQ ? this.stripOuterTag(frame) : this.stripTag(frame));
       } else {
-        this.sendFrame(portName, this.addTag(frame, vlan, cos));
+        this.sendFrame(portName, isQinQ ? this.addOuterTag(frame, vlan, cos) : this.addTag(frame, vlan, cos));
       }
     }
   }
@@ -2091,6 +2116,24 @@ export abstract class Switch extends Equipment {
     if (tagged.dot1q) {
       const { dot1q, ...untagged } = tagged;
       return untagged;
+    }
+    return frame;
+  }
+
+  /** Push the QinQ S-VLAN outer tag (EtherType 0x88a8); any existing `dot1q` (customer C-VLAN tag) is left untouched underneath it. */
+  private addOuterTag(frame: EthernetFrame, vlan: number, cos: number = 0): TaggedEthernetFrame {
+    return {
+      ...frame,
+      outerDot1q: { tpid: 0x88a8, pcp: cos & 7, dei: 0, vid: vlan },
+    } as TaggedEthernetFrame;
+  }
+
+  /** Symmetric strip of only the QinQ outer S-VLAN tag, restoring the customer frame (with its own `dot1q`, if any, intact). */
+  private stripOuterTag(frame: EthernetFrame): EthernetFrame {
+    const tagged = frame as TaggedEthernetFrame;
+    if (tagged.outerDot1q) {
+      const { outerDot1q, ...rest } = tagged;
+      return rest;
     }
     return frame;
   }

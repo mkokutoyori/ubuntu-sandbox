@@ -1096,6 +1096,14 @@ export class HuaweiSwitchShell implements ISwitchShell {
       this.ifCfg.set(this.selectedInterface, list);
       return '';
     });
+    this.interfaceTrie.register('qinq enable', '802.1ad QinQ tunnel port (S-VLAN access port)', () => {
+      if (!this.selectedInterface || !this.swRef) return 'Error: Incomplete command.';
+      const list = this.ifCfg.get(this.selectedInterface) ?? [];
+      list.push('qinq enable');
+      this.ifCfg.set(this.selectedInterface, list);
+      this.swRef.setSwitchportMode(this.selectedInterface, 'dot1q-tunnel');
+      return '';
+    });
     this.interfaceTrie.registerGreedy('voice-vlan', 'Interface voice-vlan configuration', (args) => {
       if (!this.selectedInterface || !this.swRef) return 'Error: Incomplete command.';
       const list = this.ifCfg.get(this.selectedInterface) ?? [];

@@ -626,6 +626,7 @@ export interface EthernetFrame {
 export function ethernetFrameBytes(frame: EthernetFrame): number {
   let overhead = 18;
   if ((frame as { dot1q?: unknown }).dot1q) overhead += 4;
+  if ((frame as { outerDot1q?: unknown }).outerDot1q) overhead += 4;
   const p = frame.payload as { totalLength?: number; payloadLength?: number } | undefined;
   let payloadBytes: number;
   if (frame.etherType === ETHERTYPE_ARP) payloadBytes = 28;
