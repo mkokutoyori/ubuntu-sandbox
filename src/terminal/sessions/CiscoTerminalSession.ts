@@ -104,12 +104,12 @@ export class CiscoTerminalSession extends CLITerminalSession {
     return super.resolveCliHelp(currentInput);
   }
 
-  protected override resolveCliTabComplete(input: string): string | null {
+  protected override resolveCliTabCandidates(input: string): string[] {
     const dev = this.device;
     if (this.vty && (dev instanceof Router || dev instanceof Switch)) {
-      return dev.cliTabCompleteForVty(input, this.vty);
+      return dev.cliTabCandidatesForVty(input, this.vty);
     }
-    return super.resolveCliTabComplete(input);
+    return super.resolveCliTabCandidates(input);
   }
 
   /**

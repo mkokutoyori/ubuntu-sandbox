@@ -14,6 +14,7 @@ import type { InteractiveStep } from '@/terminal/core/types';
 import { Router } from '@/network/devices/Router';
 import { Switch } from '@/network/devices/Switch';
 import type { CliShellSession } from '@/network/devices/shells/vty/CliShellSession';
+import { CyclingPolicy, type CompletionPolicy } from '@/terminal/completion';
 import type { AsyncJobHandle } from '@/terminal/async';
 import type { TerminalDebugSource } from '@/network/devices/diag/DebugBroadcast';
 import type { LoggingMonitorSource } from '@/network/devices/inspection/config/LoggingConfig';
@@ -50,6 +51,19 @@ export class HuaweiTerminalSession extends CLITerminalSession {
 
   getSessionType(): SessionType { return 'huawei'; }
   getTheme(): TerminalTheme { return HUAWEI_THEME; }
+
+  /** Real VRP cycles ambiguous candidates on repeated Tab (unlike IOS). */
+  protected override completionPolicy(): CompletionPolicy {
+    return new CyclingPolicy();
+  }
+
+  protected override resolveCliTabCandidates(input: string): string[] {
+    const dev = this.device;
+    if (this.vty && (dev instanceof Router || dev instanceof Switch)) {
+      return dev.cliTabCandidatesForVty(input, this.vty);
+    }
+    return super.resolveCliTabCandidates(input);
+  }
 
   protected override sshInteractiveVerbs(): string[] { return ['ssh', 'stelnet']; }
 

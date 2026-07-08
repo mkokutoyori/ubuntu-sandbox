@@ -49,6 +49,24 @@ export interface CommandNode {
 
 export type CommandAction = (args: string[], rawLine: string) => string;
 
+/**
+ * Supplies live device values (real interfaces, created VLANs, configured
+ * IPs, …) for Tab completion and ? help of parameter positions. Purely
+ * additive: static keyword completion never consults it. `path` carries
+ * the canonical keywords matched so far (most registrations are greedy
+ * and carry no ParamSpec, so the path is the primary dispatch key);
+ * `paramType` is set when the node declares a typed ParamSpec.
+ */
+export interface DynamicCompletionContext {
+  readonly path: readonly string[];
+  readonly paramType: ParamType | null;
+  readonly partial: string;
+}
+
+export interface DynamicParamResolver {
+  candidatesFor(context: DynamicCompletionContext): readonly string[];
+}
+
 // ─── Match Result ───────────────────────────────────────────────────
 
 export interface MatchResult {
@@ -70,6 +88,11 @@ export interface MatchResult {
 export class CommandTrie {
   private root: CommandNode;
   private canonicalDescriptions = new Map<string, string>();
+  private dynamicResolver: DynamicParamResolver | null = null;
+
+  setDynamicResolver(resolver: DynamicParamResolver | null): void {
+    this.dynamicResolver = resolver;
+  }
 
   /**
    * Optional diagnostic observer, fired whenever a registration overwrites a
@@ -388,10 +411,11 @@ export class CommandTrie {
 
     // Empty input or just spaces → show all root commands
     if (tokens.length === 0) {
-      return this.nodeCompletions(this.root);
+      return this.nodeCompletions(this.root, []);
     }
 
     let node = this.root;
+    const path: string[] = [];
 
     // Navigate through all complete (non-last) tokens
     for (let i = 0; i < tokens.length; i++) {
@@ -404,18 +428,35 @@ export class CommandTrie {
         // "show?" → which keywords start with "show"? → "show"
         // Never drill down into the match — just show the matches themselves.
         const matches = this.prefixMatch(node, token);
-        return matches.map(m => ({ keyword: m.keyword, description: this.resolveDescription(m) }));
+        const listed = matches.map(m => ({ keyword: m.keyword, description: this.resolveDescription(m) }));
+        if (this.dynamicResolver) {
+          const seen = new Set(listed.map(e => e.keyword.toLowerCase()));
+          const context: DynamicCompletionContext = {
+            path,
+            paramType: node.params[0]?.type ?? null,
+            partial: tokens[i],
+          };
+          for (const value of this.dynamicResolver.candidatesFor(context)) {
+            if (value.toLowerCase().startsWith(token) && !seen.has(value.toLowerCase())) {
+              seen.add(value.toLowerCase());
+              listed.push({ keyword: value, description: '' });
+            }
+          }
+        }
+        return listed;
       }
 
       const exactRawHelp = node.children.get(token);
       if (exactRawHelp) {
         node = exactRawHelp;
+        path.push(node.keyword);
         continue;
       }
 
       const matches = this.prefixMatch(node, token);
       if (matches.length === 1) {
         node = matches[0];
+        path.push(node.keyword);
         continue;
       }
 
@@ -427,6 +468,7 @@ export class CommandTrie {
         });
         if (viable.length === 1) {
           node = viable[0];
+          path.push(node.keyword);
           continue;
         }
       }
@@ -435,7 +477,7 @@ export class CommandTrie {
     }
 
     // Trailing space → show subcommands/children of the last matched node
-    return this.nodeCompletions(node);
+    return this.nodeCompletions(node, path);
   }
 
   /**
@@ -448,39 +490,34 @@ export class CommandTrie {
    *   "show<Tab>" → "show " (exact match → add space)
    */
   tabComplete(input: string): string | null {
+    const candidates = this.tabCandidates(input);
+    return candidates.length === 1 ? candidates[0] + ' ' : null;
+  }
+
+  /**
+   * All full-line completions for the current partial input: static
+   * keywords, registered hint suggestions, and — when a dynamic resolver
+   * is installed — live device values for the parameter position.
+   * Non-final tokens are expanded to their canonical keywords
+   * ("conf te" → "configure terminal").
+   */
+  tabCandidates(input: string): string[] {
     const tokens = input.trim().split(/\s+/).filter(t => t.length > 0);
-    if (tokens.length === 0) return null;
+    if (tokens.length === 0 || input.endsWith(' ')) return [];
 
     let node = this.root;
     const completed: string[] = [];
+    let paramIdx = 0;
 
-    for (let i = 0; i < tokens.length; i++) {
+    for (let i = 0; i < tokens.length - 1; i++) {
       const token = tokens[i].toLowerCase();
-      const isLast = i === tokens.length - 1;
 
-      if (isLast && !input.endsWith(' ')) {
-        const matches = this.prefixMatch(node, token);
-        if (matches.length === 1) {
-          completed.push(matches[0].keyword);
-          return completed.join(' ') + ' ';
-        }
-        if (matches.length === 0 && node.hintSuggestions) {
-          const hintMatches = node.hintSuggestions.filter(h =>
-            h.keyword.toLowerCase().startsWith(token));
-          if (hintMatches.length === 1) {
-            completed.push(hintMatches[0].keyword);
-            return completed.join(' ') + ' ';
-          }
-        }
-        return null;
-      }
-
-      // Full token → navigate
       const exactRaw = node.children.get(token);
       const exact = exactRaw && !exactRaw._hintOnly ? exactRaw : undefined;
       if (exact) {
         completed.push(exact.keyword);
         node = exact;
+        paramIdx = 0;
         continue;
       }
 
@@ -488,11 +525,11 @@ export class CommandTrie {
       if (matches.length === 1) {
         completed.push(matches[0].keyword);
         node = matches[0];
+        paramIdx = 0;
         continue;
       }
 
-      // Disambiguate with lookahead
-      if (matches.length > 1 && i < tokens.length - 1) {
+      if (matches.length > 1) {
         const nextToken = tokens[i + 1].toLowerCase();
         const viable = matches.filter(m => {
           if (m.children.get(nextToken)) return true;
@@ -501,14 +538,47 @@ export class CommandTrie {
         if (viable.length === 1) {
           completed.push(viable[0].keyword);
           node = viable[0];
+          paramIdx = 0;
           continue;
         }
       }
 
-      completed.push(token);
+      completed.push(tokens[i]);
+      paramIdx++;
     }
 
-    return null;
+    const partial = tokens[tokens.length - 1];
+    const partialLower = partial.toLowerCase();
+    const prefix = completed.length > 0 ? completed.join(' ') + ' ' : '';
+    const results: string[] = [];
+    const seen = new Set<string>();
+    const push = (word: string): void => {
+      const key = word.toLowerCase();
+      if (seen.has(key)) return;
+      seen.add(key);
+      results.push(prefix + word);
+    };
+
+    for (const m of this.prefixMatch(node, partialLower)) push(m.keyword);
+
+    if (node.hintSuggestions) {
+      for (const h of node.hintSuggestions) {
+        if (h.keyword.toLowerCase().startsWith(partialLower)) push(h.keyword);
+      }
+    }
+
+    if (this.dynamicResolver) {
+      const context: DynamicCompletionContext = {
+        path: completed,
+        paramType: node.params[paramIdx]?.type ?? null,
+        partial,
+      };
+      for (const value of this.dynamicResolver.candidatesFor(context)) {
+        if (value.toLowerCase().startsWith(partialLower)) push(value);
+      }
+    }
+
+    return results;
   }
 
   // ─── Internal Helpers ───────────────────────────────────────────
@@ -528,7 +598,7 @@ export class CommandTrie {
    * Build the completions list for a node's children/params.
    * Includes <cr> when the node itself is executable (real Cisco behavior).
    */
-  private nodeCompletions(node: CommandNode): Array<{ keyword: string; description: string }> {
+  private nodeCompletions(node: CommandNode, path: readonly string[]): Array<{ keyword: string; description: string }> {
     const results: Array<{ keyword: string; description: string }> = [];
 
     for (const [, child] of node.children) {
@@ -546,6 +616,21 @@ export class CommandTrie {
         if (!seen.has(hint.keyword.toLowerCase())) {
           results.push(hint);
           seen.add(hint.keyword.toLowerCase());
+        }
+      }
+    }
+
+    if (this.dynamicResolver && path.length > 0) {
+      const seen = new Set(results.map(r => r.keyword.toLowerCase()));
+      const context: DynamicCompletionContext = {
+        path,
+        paramType: node.params[0]?.type ?? null,
+        partial: '',
+      };
+      for (const value of this.dynamicResolver.candidatesFor(context)) {
+        if (!seen.has(value.toLowerCase())) {
+          seen.add(value.toLowerCase());
+          results.push({ keyword: value, description: '' });
         }
       }
     }

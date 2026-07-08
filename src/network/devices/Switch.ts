@@ -2656,12 +2656,17 @@ export abstract class Switch extends Equipment {
 
   /** Get CLI help for the given input (used by terminal UI for inline ? behavior) */
   cliHelp(inputBeforeQuestion: string): string {
-    return this.shell.getHelp(inputBeforeQuestion);
+    return this.shell.getHelp(inputBeforeQuestion, this);
   }
 
   /** Get CLI tab completion for the given input (used by terminal UI) */
   cliTabComplete(input: string): string | null {
     return this.shell.tabComplete(input);
+  }
+
+  /** All full-line Tab candidates (static keywords + live device values). */
+  cliTabCandidates(input: string): string[] {
+    return this.shell.tabCandidates(input, this);
   }
 
   // getBootSequence() and getOSType() are abstract — implemented by CiscoSwitch / HuaweiSwitch
@@ -2765,6 +2770,10 @@ export abstract class Switch extends Equipment {
 
   cliTabCompleteForVty(input: string, session: CliShellSession): string | null {
     return this.withSwappedVtyState(session, () => this.cliTabComplete(input));
+  }
+
+  cliTabCandidatesForVty(input: string, session: CliShellSession): string[] {
+    return this.withSwappedVtyState(session, () => this.cliTabCandidates(input)) ?? [];
   }
 
   getPromptForVty(session: CliShellSession): string {

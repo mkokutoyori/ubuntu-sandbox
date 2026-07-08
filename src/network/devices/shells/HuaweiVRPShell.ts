@@ -22,6 +22,7 @@ import type { Router } from '../Router';
 import type { IRouterShell } from './IRouterShell';
 import { LoggingConfig } from '../inspection/config/LoggingConfig';
 import { CommandTrie } from './CommandTrie';
+import { EquipmentParamResolver } from './EquipmentParamResolver';
 import { runSshClient } from '../linux/network/LinuxSshClient';
 import { HUAWEI_ERRORS, parsePipeFilter, applyPipeFilter, resolveHuaweiNav } from './cli-utils';
 import { registerHuaweiCommonMgmt } from './huawei/HuaweiCommonConfig';
@@ -727,19 +728,34 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
 
   // ─── Help / Completion ─────────────────────────────────────────────
 
-  getHelp(input: string): string {
+  getHelp(input: string, router?: Router): string {
     const trie = this.getActiveTrie();
-    const completions = trie.getCompletions(input);
-    if (completions.length === 0) return 'Error: Unrecognized command';
-    const maxKw = Math.max(...completions.map(c => c.keyword.length));
-    return completions
-      .map(c => `  ${c.keyword.padEnd(maxKw + 2)}${c.description}`)
-      .join('\n');
+    trie.setDynamicResolver(router ? new EquipmentParamResolver(router) : null);
+    try {
+      const completions = trie.getCompletions(input);
+      if (completions.length === 0) return 'Error: Unrecognized command';
+      const maxKw = Math.max(...completions.map(c => c.keyword.length));
+      return completions
+        .map(c => `  ${c.keyword.padEnd(maxKw + 2)}${c.description}`)
+        .join('\n');
+    } finally {
+      trie.setDynamicResolver(null);
+    }
   }
 
   tabComplete(input: string): string | null {
     const trie = this.getActiveTrie();
     return trie.tabComplete(input);
+  }
+
+  tabCandidates(input: string, router: Router): string[] {
+    const trie = this.getActiveTrie();
+    trie.setDynamicResolver(new EquipmentParamResolver(router));
+    try {
+      return trie.tabCandidates(input);
+    } finally {
+      trie.setDynamicResolver(null);
+    }
   }
 
   // ─── Active Trie Selection ─────────────────────────────────────────

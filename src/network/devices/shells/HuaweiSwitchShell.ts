@@ -14,6 +14,7 @@
  */
 
 import { CommandTrie } from './CommandTrie';
+import { EquipmentParamResolver } from './EquipmentParamResolver';
 import type { ISwitchShell } from './ISwitchShell';
 import type { Switch } from '../Switch';
 import { MACAddress, IPAddress, SubnetMask, type PortViolationMode } from '../../core/types';
@@ -492,19 +493,34 @@ export class HuaweiSwitchShell implements ISwitchShell {
 
   // ─── Help / Completion ────────────────────────────────────────────
 
-  getHelp(input: string): string {
+  getHelp(input: string, sw?: Switch): string {
     const trie = this.getActiveTrie();
-    const completions = trie.getCompletions(input);
-    if (completions.length === 0) return 'Error: Unrecognized command';
-    const maxKw = Math.max(...completions.map(c => c.keyword.length));
-    return completions
-      .map(c => `  ${c.keyword.padEnd(maxKw + 2)}${c.description}`)
-      .join('\n');
+    trie.setDynamicResolver(sw ? new EquipmentParamResolver(sw) : null);
+    try {
+      const completions = trie.getCompletions(input);
+      if (completions.length === 0) return 'Error: Unrecognized command';
+      const maxKw = Math.max(...completions.map(c => c.keyword.length));
+      return completions
+        .map(c => `  ${c.keyword.padEnd(maxKw + 2)}${c.description}`)
+        .join('\n');
+    } finally {
+      trie.setDynamicResolver(null);
+    }
   }
 
   tabComplete(input: string): string | null {
     const trie = this.getActiveTrie();
     return trie.tabComplete(input);
+  }
+
+  tabCandidates(input: string, sw: Switch): string[] {
+    const trie = this.getActiveTrie();
+    trie.setDynamicResolver(new EquipmentParamResolver(sw));
+    try {
+      return trie.tabCandidates(input);
+    } finally {
+      trie.setDynamicResolver(null);
+    }
   }
 
   // ─── FSM Transitions ─────────────────────────────────────────────

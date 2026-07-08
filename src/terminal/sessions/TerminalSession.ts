@@ -1046,7 +1046,7 @@ export abstract class TerminalSession {
 
     // Tab → completion
     if (e.key === 'Tab') {
-      this.onTab();
+      this.onTab(e.shiftKey ?? false);
       return true;
     }
 
@@ -1358,8 +1358,8 @@ export abstract class TerminalSession {
     this.notify();
   }
 
-  /** Called on Tab in normal mode. */
-  protected abstract onTab(): void;
+  /** Called on Tab in normal mode. Shift+Tab passes reverse=true. */
+  protected abstract onTab(reverse?: boolean): void;
 
   /** Return the current prompt string for the input line. */
   abstract getPrompt(): string;

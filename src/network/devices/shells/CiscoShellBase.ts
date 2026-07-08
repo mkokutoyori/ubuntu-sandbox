@@ -13,6 +13,7 @@
  */
 
 import { CommandTrie } from './CommandTrie';
+import { EquipmentParamResolver } from './EquipmentParamResolver';
 import { getDefaultScheduler, type IScheduler, type TimerHandle } from '@/events/Scheduler';
 import { runSshClient } from '../linux/network/LinuxSshClient';
 import { findHostByAddress } from '../linux/network/HostLookup';
@@ -699,23 +700,38 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
 
   // ─── Help / Tab-Complete ────────────────────────────────────────
 
-  getHelp(input: string): string {
+  getHelp(input: string, device?: TDevice): string {
     const trie = this.getActiveTrie();
-    const completions = trie.getCompletions(input);
-    if (completions.length === 0) {
-      const trimmed = input.trim();
-      const isPrefixQuery = trimmed.length > 0 && !input.endsWith(' ');
-      return isPrefixQuery ? '' : CISCO_ERRORS.UNRECOGNIZED_HELP;
+    trie.setDynamicResolver(device ? new EquipmentParamResolver(device) : null);
+    try {
+      const completions = trie.getCompletions(input);
+      if (completions.length === 0) {
+        const trimmed = input.trim();
+        const isPrefixQuery = trimmed.length > 0 && !input.endsWith(' ');
+        return isPrefixQuery ? '' : CISCO_ERRORS.UNRECOGNIZED_HELP;
+      }
+      const maxKw = Math.max(...completions.map(c => c.keyword.length));
+      return completions
+        .map(c => `  ${c.keyword.padEnd(maxKw + 2)}${c.description}`)
+        .join('\n');
+    } finally {
+      trie.setDynamicResolver(null);
     }
-    const maxKw = Math.max(...completions.map(c => c.keyword.length));
-    return completions
-      .map(c => `  ${c.keyword.padEnd(maxKw + 2)}${c.description}`)
-      .join('\n');
   }
 
   tabComplete(input: string): string | null {
     const trie = this.getActiveTrie();
     return trie.tabComplete(input);
+  }
+
+  tabCandidates(input: string, device: TDevice): string[] {
+    const trie = this.getActiveTrie();
+    trie.setDynamicResolver(new EquipmentParamResolver(device));
+    try {
+      return trie.tabCandidates(input);
+    } finally {
+      trie.setDynamicResolver(null);
+    }
   }
 
   // ─── Prompt ─────────────────────────────────────────────────────

@@ -23,6 +23,9 @@ export interface ICLIDevice extends Equipment {
   /** Tab completion for CLI input. Returns completed string or null. */
   cliTabComplete(input: string): string | null;
 
+  /** All full-line Tab candidates (static keywords + live device values). */
+  cliTabCandidates(input: string): string[];
+
   /** Context-sensitive help output for the `?` key. */
   cliHelp(inputBeforeQuestion: string): string;
 

@@ -15,9 +15,11 @@ export interface IRouterShell {
   /** Get the current CLI prompt string (e.g. "Router#", "<Router>") */
   getPrompt(router: Router): string;
   /** Get context-sensitive help for the given input (? behavior) */
-  getHelp(inputBeforeQuestion: string): string;
+  getHelp(inputBeforeQuestion: string, router?: Router): string;
   /** Get tab completion for the given partial input */
   tabComplete(input: string): string | null;
+  /** All full-line Tab candidates (static keywords + live device values) */
+  tabCandidates(input: string, router: Router): string[];
   /** Attach the shell's logging config to a bus for event-driven syslog buffering. */
   attachLoggingToBus?(bus: import('@/events/EventBus').IEventBus, deviceId: string): void;
   /** The shell's logging config — source of the `terminal monitor` syslog stream. */

@@ -524,12 +524,9 @@ export abstract class CLITerminalSession extends TerminalSession {
 
   // ── Tab completion ──────────────────────────────────────────────
 
-  protected onTab(): void {
-    const source = new FullLineSource((line) => {
-      const completed = this.resolveCliTabComplete(line);
-      return completed === null ? [] : [completed.trimEnd()];
-    });
-    const out = this.cliCompletion.handleTab(this.input, source, false);
+  protected onTab(reverse: boolean = false): void {
+    const source = new FullLineSource((line) => this.resolveCliTabCandidates(line));
+    const out = this.cliCompletion.handleTab(this.input, source, reverse);
     if (!out.changed) return;
     this.input = out.input;
     this.notify();
@@ -550,8 +547,8 @@ export abstract class CLITerminalSession extends TerminalSession {
     return this.cliDevice.cliHelp(currentInput);
   }
 
-  protected resolveCliTabComplete(input: string): string | null {
-    return this.cliDevice.cliTabComplete(input);
+  protected resolveCliTabCandidates(input: string): string[] {
+    return this.cliDevice.cliTabCandidates(input);
   }
 
   // ── Pager ───────────────────────────────────────────────────────
