@@ -1596,7 +1596,7 @@ export abstract class Switch extends Equipment {
       const mapped = cvlan !== undefined ? cfg.vlanMapping?.get(cvlan) : undefined;
       ingressVlan = mapped ?? cfg.accessVlan;
     } else if (cfg.mode === 'hybrid') {
-      if (taggedFrame.dot1q) {
+      if (taggedFrame.dot1q && taggedFrame.dot1q.vid !== 0) {
         ingressVlan = taggedFrame.dot1q.vid;
         const member = (cfg.hybridTaggedVlans?.has(ingressVlan) ?? false)
           || (cfg.hybridUntaggedVlans?.has(ingressVlan) ?? false);
@@ -1610,13 +1610,13 @@ export abstract class Switch extends Equipment {
     } else {
       // Trunk mode — a QinQ outer S-VLAN tag, if present, is what the
       // switch classifies on; any inner customer tag is opaque payload.
-      if (taggedFrame.outerDot1q) {
+      if (taggedFrame.outerDot1q && taggedFrame.outerDot1q.vid !== 0) {
         ingressVlan = taggedFrame.outerDot1q.vid;
         if (!cfg.trunkAllowedVlans.has(ingressVlan)) {
           Logger.debug(this.id, 'switch:trunk-filtered', `${this.name}: VLAN ${ingressVlan} not allowed on trunk ${portName}`);
           return;
         }
-      } else if (taggedFrame.dot1q) {
+      } else if (taggedFrame.dot1q && taggedFrame.dot1q.vid !== 0) {
         ingressVlan = taggedFrame.dot1q.vid;
         if (!cfg.trunkAllowedVlans.has(ingressVlan)) {
           Logger.debug(this.id, 'switch:trunk-filtered', `${this.name}: VLAN ${ingressVlan} not allowed on trunk ${portName}`);
