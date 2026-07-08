@@ -1113,6 +1113,29 @@ export class HuaweiSwitchShell implements ISwitchShell {
       }
       return '';
     });
+    // ── 802.1p (PCP) trust boundary — qos trust ────────────────────
+    this.interfaceTrie.registerGreedy('qos trust', 'Trust boundary for 802.1p/DSCP classification', (args) => {
+      if (!this.selectedInterface || !this.swRef) return 'Error: Incomplete command.';
+      const kw = (args[0] ?? '').toLowerCase();
+      const cfg = this.swRef.getSwitchportConfig(this.selectedInterface);
+      if (kw === 'dot1p') { if (cfg) cfg.trustMode = 'cos'; return ''; }
+      if (kw === 'dscp') { if (cfg) cfg.trustMode = 'dscp'; return ''; }
+      return "Error: Unrecognized parameter found at '^' position.";
+    });
+    this.interfaceTrie.registerGreedy('port priority', 'Default 802.1p priority applied to untrusted ingress traffic', (args) => {
+      if (!this.selectedInterface || !this.swRef) return 'Error: Incomplete command.';
+      const n = parseInt(args[0] ?? '', 10);
+      if (isNaN(n) || n < 0 || n > 7) return "Error: Wrong parameter found at '^' position.";
+      const cfg = this.swRef.getSwitchportConfig(this.selectedInterface);
+      if (cfg) cfg.defaultCos = n;
+      return '';
+    });
+    this.interfaceTrie.registerGreedy('trust upstream', 'Trust the CoS already marked by a downstream cascaded device (e.g. an IP phone)', () => {
+      if (!this.selectedInterface || !this.swRef) return 'Error: Incomplete command.';
+      const cfg = this.swRef.getSwitchportConfig(this.selectedInterface);
+      if (cfg) cfg.priorityExtend = { mode: 'trust' };
+      return '';
+    });
 
     this.interfaceTrie.registerGreedy('port-isolate', 'Configure port isolation', (args) => {
       if (!this.selectedInterface || !this.swRef) return 'Error: Incomplete command.';
@@ -1670,6 +1693,11 @@ export class HuaweiSwitchShell implements ISwitchShell {
       return this.displayInterface(this.swRef, args.join(' '));
     });
 
+    trie.registerGreedy('display qos', 'Display QoS trust state and default priority per interface', (args) => {
+      if (!this.swRef) return '';
+      return this.displayQos(this.swRef, args.length > 0 ? args.join(' ') : undefined);
+    });
+
     trie.register('display ip routing-table', 'Display IP routing table', () => {
       if (!this.swRef) return '';
       const rows = this.swRef.getL3RoutingTable();
@@ -2054,7 +2082,7 @@ export class HuaweiSwitchShell implements ISwitchShell {
       'speed', 'duplex', 'negotiation', 'mtu', 'jumboframe', 'flow-control',
       'loopback-detect', 'port-security', 'storm-control',
       'broadcast-suppression', 'port-mirroring',
-      'trust', 'qos', 'traffic-policy', 'traffic-filter', 'am',
+      'qos', 'traffic-policy', 'traffic-filter', 'am',
       'mac-limit',
     ]) {
       trie.registerGreedy(kw, `Interface ${kw} configuration`, (args) =>
@@ -2556,6 +2584,29 @@ export class HuaweiSwitchShell implements ISwitchShell {
       `Output: 0 packets, 0 bytes`,
     );
     for (const natLine of runningConfigNATHuawei(sw as unknown as Router, portName)) lines.push(natLine);
+    return lines.join('\n');
+  }
+
+  private displayQos(sw: Switch, ifName?: string): string {
+    const ports = sw._getPortsInternal();
+    const names = ifName ? [this.resolveInterfaceName(ifName) || ifName] : [...ports.keys()];
+
+    const lines: string[] = [];
+    for (const portName of names) {
+      const cfg = sw.getSwitchportConfig(portName);
+      if (!cfg) {
+        if (ifName) return `Error: Wrong parameter found at '^' position.`;
+        continue;
+      }
+      const trust = cfg.trustMode ?? 'untrusted';
+      const trustLabel = trust === 'cos' ? 'trust dot1p' : trust === 'dscp' ? 'trust dscp' : 'trust none';
+      lines.push(`${portName} port priority information:`);
+      lines.push(`  ${trustLabel}`);
+      lines.push(`  Port priority : ${cfg.defaultCos ?? 0}`);
+      if (cfg.priorityExtend?.mode === 'trust') {
+        lines.push(`  Trust upstream : enabled`);
+      }
+    }
     return lines.join('\n');
   }
 
