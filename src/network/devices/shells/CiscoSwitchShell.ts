@@ -17,7 +17,7 @@
 import { CiscoShellBase } from './CiscoShellBase';
 import { CommandTrie } from './CommandTrie';
 import type { ISwitchShell } from './ISwitchShell';
-import type { Switch } from '../Switch';
+import type { Switch, SwitchportConfig } from '../Switch';
 import type { CiscoSwitch } from '../CiscoSwitch';
 import type { PromptMap } from './PromptBuilder';
 import { CISCO_SWITCH_PROMPTS } from './PromptBuilder';
@@ -1828,6 +1828,15 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       return `% Invalid input detected at '^' marker.\nshow interfaces ${args.join(' ')}\n                ^`;
     });
 
+    this.privilegedTrie.registerGreedy('show queuing interface', 'Display the 802.1p trust state of an interface', (args) => {
+      const target = args.join(' ');
+      const name = this.resolveInterfaceName(target) ?? target;
+      if (!name || !this.d().getPort(name)) {
+        return `% Invalid input detected at '^' marker.\nshow queuing interface ${args.join(' ')}\n                       ^`;
+      }
+      return this.showQueuingInterface(name);
+    });
+
     this.privilegedTrie.register('show vlan summary', 'Display VLAN count summary', () => {
       const ids = [...this.d().getVLANs().keys()];
       const extended = ids.filter((id) => id >= 1006).length;
@@ -1869,6 +1878,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
           out.push(` switchport access vlan ${cfg.accessVlan}`);
         }
         if (cfg.voiceVlan !== undefined) out.push(` switchport voice vlan ${cfg.voiceVlan}`);
+        for (const l of this.qosRunningConfigLines(cfg)) out.push(l);
       }
       for (const l of this.ifExtra.get(name) ?? []) out.push(` ${l}`);
       for (const l of this.ifStp.get(name) ?? []) out.push(` ${l}`);
@@ -2377,8 +2387,8 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       return recordIf(`switchport trunk encapsulation ${args.join(' ')}`.trim());
     });
     for (const sub of [
-      'switchport voice', 'switchport priority',
-      'channel-protocol', 'storm-control', 'mls qos',
+      'switchport voice',
+      'channel-protocol', 'storm-control',
       'speed', 'duplex', 'mdix', 'power', 'srr-queue', 'load-interval',
     ]) {
       this.configIfTrie.registerGreedy(sub, `Interface ${sub}`, (args) => {
@@ -2422,6 +2432,50 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       }
       return removeIf('switchport voice');
     });
+
+    // ── 802.1p (PCP) trust boundary — mls qos ──────────────────────
+    this.configIfTrie.register('mls qos trust cos', 'Trust the CoS carried in the incoming 802.1Q tag', () =>
+      this.applyToSelectedInterfaces(p => {
+        const cfg = this.d().getSwitchportConfig(p);
+        if (cfg) cfg.trustMode = 'cos';
+        return '';
+      }));
+    this.configIfTrie.register('mls qos trust dscp', 'Trust the DSCP field, derive CoS from it', () =>
+      this.applyToSelectedInterfaces(p => {
+        const cfg = this.d().getSwitchportConfig(p);
+        if (cfg) cfg.trustMode = 'dscp';
+        return '';
+      }));
+    this.configIfTrie.register('no mls qos trust', 'Reset the port to untrusted', () =>
+      this.applyToSelectedInterfaces(p => {
+        const cfg = this.d().getSwitchportConfig(p);
+        if (cfg) cfg.trustMode = 'untrusted';
+        return '';
+      }));
+    this.configIfTrie.registerGreedy('mls qos cos', 'Default CoS applied to untrusted ingress traffic', (args) => {
+      const n = parseInt(args[0] ?? '', 10);
+      if (isNaN(n) || n < 0 || n > 7) return "% Invalid input detected at '^' marker.";
+      return this.applyToSelectedInterfaces(p => {
+        const cfg = this.d().getSwitchportConfig(p);
+        if (cfg) cfg.defaultCos = n;
+        return '';
+      });
+    });
+    this.configIfTrie.registerGreedy('switchport priority extend cos', 'Remark the phone\'s downstream PC traffic to a fixed CoS', (args) => {
+      const n = parseInt(args[0] ?? '', 10);
+      if (isNaN(n) || n < 0 || n > 7) return "% Invalid input detected at '^' marker.";
+      return this.applyToSelectedInterfaces(p => {
+        const cfg = this.d().getSwitchportConfig(p);
+        if (cfg) cfg.priorityExtend = { mode: 'cos', value: n };
+        return '';
+      });
+    });
+    this.configIfTrie.register('switchport priority extend trust', 'Trust the CoS already set by the downstream PC', () =>
+      this.applyToSelectedInterfaces(p => {
+        const cfg = this.d().getSwitchportConfig(p);
+        if (cfg) cfg.priorityExtend = { mode: 'trust' };
+        return '';
+      }));
 
     this.configIfTrie.registerGreedy('switchport trunk pruning vlan', 'Set pruning-eligible VLANs', (args) => {
       if (args.length < 1) return '% Incomplete command.';
@@ -2628,6 +2682,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
         lines.push(` switchport access vlan ${cfg.accessVlan}`);
       }
       if (cfg.voiceVlan !== undefined) lines.push(` switchport voice vlan ${cfg.voiceVlan}`);
+      for (const l of this.qosRunningConfigLines(cfg)) lines.push(l);
       for (const l of this.ifExtra.get(portName) ?? []) lines.push(` ${l}`);
       for (const l of this.ifStp.get(portName) ?? []) lines.push(` ${l}`);
       if (dai.trustedPorts.has(portName)) {
@@ -2857,6 +2912,23 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       lines.push(`Trunking VLANs Enabled: ${allowed}`);
     }
     if (c?.voiceVlan) lines.push(`Voice VLAN: ${c.voiceVlan}`);
+    return lines.join('\n');
+  }
+
+  private showQueuingInterface(name: string): string {
+    const c = this.d().getSwitchportConfig(name);
+    const trust = c?.trustMode ?? 'untrusted';
+    const trustLabel = trust === 'cos' ? 'trust cos' : trust === 'dscp' ? 'trust dscp' : 'not trusted';
+    const lines = [
+      `Interface ${this.abbreviateInterface(name)} queueing strategy:  Class-based`,
+      `  Trust state: ${trustLabel}`,
+      `  Default COS is ${c?.defaultCos ?? 0}`,
+    ];
+    if (c?.priorityExtend?.mode === 'cos') {
+      lines.push(`  Priority-extend: remark to COS ${c.priorityExtend.value}`);
+    } else if (c?.priorityExtend?.mode === 'trust') {
+      lines.push('  Priority-extend: trust');
+    }
     return lines.join('\n');
   }
 
@@ -3861,6 +3933,16 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     }
     ranges.push(start === end ? String(start) : `${start}-${end}`);
     return ranges.join(',');
+  }
+
+  private qosRunningConfigLines(cfg: SwitchportConfig): string[] {
+    const lines: string[] = [];
+    if (cfg.trustMode === 'cos') lines.push(' mls qos trust cos');
+    else if (cfg.trustMode === 'dscp') lines.push(' mls qos trust dscp');
+    if (cfg.defaultCos !== undefined) lines.push(` mls qos cos ${cfg.defaultCos}`);
+    if (cfg.priorityExtend?.mode === 'cos') lines.push(` switchport priority extend cos ${cfg.priorityExtend.value}`);
+    else if (cfg.priorityExtend?.mode === 'trust') lines.push(' switchport priority extend trust');
+    return lines;
   }
 
   private parseVlanList(input: string): Set<number> | null {

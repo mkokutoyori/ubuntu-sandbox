@@ -105,6 +105,12 @@ export interface SwitchportConfig {
   hybridPvid?: number;
   hybridUntaggedVlans?: Set<number>;
   hybridTaggedVlans?: Set<number>;
+  /** 802.1p trust boundary for this port (Cisco `mls qos trust`, Huawei `qos trust`). */
+  trustMode?: 'cos' | 'dscp' | 'untrusted';
+  /** Default CoS applied to untrusted/untagged ingress traffic (Cisco `mls qos cos`, Huawei `port priority`). */
+  defaultCos?: number;
+  /** Voice-VLAN port priority-extend behaviour (Cisco `switchport priority extend`, Huawei `trust upstream`). */
+  priorityExtend?: { mode: 'cos'; value: number } | { mode: 'trust' };
 }
 
 // ─── IGMP snooping seam ─────────────────────────────────────────────
@@ -1556,6 +1562,8 @@ export abstract class Switch extends Equipment {
       return;
     }
 
+    const ingressCos = this.classifyIngressCos(cfg, frame, ingressVlan);
+
     // ─── Step 1.5: Dynamic ARP Inspection (untrusted / DAI-enabled VLANs)
     if (frame.etherType === ETHERTYPE_ARP && this.arpInspectionPipeline) {
       const arp = frame.payload as ARPPacket;
@@ -1730,7 +1738,7 @@ export abstract class Switch extends Equipment {
           `${this.name}: snooped multicast ${dstMAC} VLAN ${ingressVlan} → [${snoopedPorts.join(', ')}] (ingress ${portName})`,
           { dstMAC: dstMAC.toString(), srcMAC: srcMAC.toString(), vlan: ingressVlan, ingress: portName, egress: snoopedPorts },
         );
-        for (const egressPort of snoopedPorts) this.forwardToPort(egressPort, frame, ingressVlan, portName);
+        for (const egressPort of snoopedPorts) this.forwardToPort(egressPort, frame, ingressVlan, portName, ingressCos);
         return;
       }
       Logger.debug(
@@ -1738,7 +1746,7 @@ export abstract class Switch extends Equipment {
         `${this.name}: flood ${dstMAC} VLAN ${ingressVlan} (ingress ${portName})`,
         { dstMAC: dstMAC.toString(), srcMAC: srcMAC.toString(), vlan: ingressVlan, ingress: portName, reason: isMulticast ? 'multicast' : 'unknown-unicast' },
       );
-      this.floodFrame(portName, frame, ingressVlan);
+      this.floodFrame(portName, frame, ingressVlan, ingressCos);
     } else {
       const dstEntry = this.macTable.get(`${ingressVlan}:${dstMAC}`)!;
       if (dstEntry.port !== portName) {
@@ -1747,7 +1755,7 @@ export abstract class Switch extends Equipment {
           `${this.name}: forward ${dstMAC} VLAN ${ingressVlan} ${portName} → ${dstEntry.port}`,
           { dstMAC: dstMAC.toString(), srcMAC: srcMAC.toString(), vlan: ingressVlan, ingress: portName, egress: dstEntry.port },
         );
-        this.forwardToPort(dstEntry.port, frame, ingressVlan, portName);
+        this.forwardToPort(dstEntry.port, frame, ingressVlan, portName, ingressCos);
       }
     }
   }
@@ -1788,9 +1796,37 @@ export abstract class Switch extends Equipment {
     return false;
   }
 
+  /** IP TOS byte's DSCP field mapped down to a 3-bit CoS (top 3 DSCP bits). */
+  private frameDscpCos(frame: EthernetFrame): number | null {
+    if (frame.etherType !== ETHERTYPE_IPV4) return null;
+    const ip = frame.payload as IPv4Packet | undefined;
+    if (!ip || ip.type !== 'ipv4' || typeof ip.tos !== 'number') return null;
+    return ((ip.tos >> 2) & 0x3f) >> 3;
+  }
+
+  /**
+   * 802.1p classification at ingress: applies the port's trust boundary
+   * (`mls qos trust`/`qos trust`) and default CoS, with the voice-VLAN
+   * `priority extend` override for downstream PC traffic passed through an
+   * IP phone (Cisco `switchport priority extend cos <n>`, Huawei
+   * `trust upstream`'s fixed-remark counterpart).
+   */
+  private classifyIngressCos(cfg: SwitchportConfig, frame: EthernetFrame, ingressVlan: number): number {
+    const fallback = cfg.defaultCos ?? 0;
+    const isPhoneDataPort = cfg.voiceVlan !== undefined && ingressVlan !== cfg.voiceVlan
+      && (cfg.mode === 'access' || cfg.mode === 'hybrid');
+    if (isPhoneDataPort && cfg.priorityExtend?.mode === 'cos') return cfg.priorityExtend.value & 7;
+
+    const trust = cfg.trustMode ?? 'untrusted';
+    const tagged = frame as TaggedEthernetFrame;
+    if (trust === 'cos' && tagged.dot1q) return tagged.dot1q.pcp & 7;
+    if (trust === 'dscp') return this.frameDscpCos(frame) ?? fallback;
+    return fallback;
+  }
+
   // ─── Flood within VLAN ────────────────────────────────────────────
 
-  private floodFrame(exceptPort: string, frame: EthernetFrame, vlan: number): void {
+  private floodFrame(exceptPort: string, frame: EthernetFrame, vlan: number, cos: number = 0): void {
     for (const [portName, cfg] of this.switchportConfigs) {
       if (portName === exceptPort) continue;
 
@@ -1812,13 +1848,13 @@ export abstract class Switch extends Equipment {
         } else if (!exceptPort && this.superVlanReaches(vlan, cfg.accessVlan)) {
           this.sendFrame(portName, this.stripTag(frame));
         } else if (cfg.voiceVlan === vlan) {
-          this.sendFrame(portName, this.addTag(frame, vlan));
+          this.sendFrame(portName, this.addTag(frame, vlan, cos));
         }
       } else if (cfg.mode === 'hybrid') {
         if (cfg.hybridUntaggedVlans?.has(vlan)) {
           this.sendFrame(portName, this.stripTag(frame));
         } else if (cfg.hybridTaggedVlans?.has(vlan)) {
-          this.sendFrame(portName, this.addTag(frame, vlan));
+          this.sendFrame(portName, this.addTag(frame, vlan, cos));
         }
       } else {
         // Trunk: send if VLAN is allowed
@@ -1828,7 +1864,7 @@ export abstract class Switch extends Equipment {
             if (!this.pvlanEgressAllowed(exceptPort, portName, vlan)) continue;
             const outVlan = this.pvlanTrunkEgressVlan(pv, vlan);
             this.sendFrame(portName, outVlan === cfg.trunkNativeVlan
-              ? this.stripTag(frame) : this.addTag(frame, outVlan));
+              ? this.stripTag(frame) : this.addTag(frame, outVlan, cos));
             continue;
           }
           if (vlan === cfg.trunkNativeVlan) {
@@ -1836,7 +1872,7 @@ export abstract class Switch extends Equipment {
             this.sendFrame(portName, this.stripTag(frame));
           } else {
             // Non-native: send tagged
-            this.sendFrame(portName, this.addTag(frame, vlan));
+            this.sendFrame(portName, this.addTag(frame, vlan, cos));
           }
         }
       }
@@ -1845,7 +1881,7 @@ export abstract class Switch extends Equipment {
 
   // ─── Forward to Specific Port ─────────────────────────────────────
 
-  private forwardToPort(portName: string, frame: EthernetFrame, vlan: number, ingressPort?: string): void {
+  private forwardToPort(portName: string, frame: EthernetFrame, vlan: number, ingressPort?: string, cos: number = 0): void {
     const cfg = this.switchportConfigs.get(portName);
     if (!cfg) return;
 
@@ -1859,7 +1895,7 @@ export abstract class Switch extends Equipment {
       if (ingressPort !== undefined && !this.pvlanEgressAllowed(ingressPort, portName, vlan)) return;
       if (ingressPort !== undefined && this.portIsolateBlocks(ingressPort, portName)) return;
       if (cfg.voiceVlan === vlan) {
-        this.sendFrame(portName, this.addTag(frame, vlan));
+        this.sendFrame(portName, this.addTag(frame, vlan, cos));
       } else {
         this.sendFrame(portName, this.stripTag(frame));
       }
@@ -1867,7 +1903,7 @@ export abstract class Switch extends Equipment {
       if (cfg.hybridUntaggedVlans?.has(vlan)) {
         this.sendFrame(portName, this.stripTag(frame));
       } else if (cfg.hybridTaggedVlans?.has(vlan)) {
-        this.sendFrame(portName, this.addTag(frame, vlan));
+        this.sendFrame(portName, this.addTag(frame, vlan, cos));
       }
     } else {
       // Trunk port: check if VLAN is allowed before sending
@@ -1880,13 +1916,13 @@ export abstract class Switch extends Equipment {
         if (ingressPort !== undefined && !this.pvlanEgressAllowed(ingressPort, portName, vlan)) return;
         const outVlan = this.pvlanTrunkEgressVlan(pv, vlan);
         this.sendFrame(portName, outVlan === cfg.trunkNativeVlan
-          ? this.stripTag(frame) : this.addTag(frame, outVlan));
+          ? this.stripTag(frame) : this.addTag(frame, outVlan, cos));
         return;
       }
       if (vlan === cfg.trunkNativeVlan) {
         this.sendFrame(portName, this.stripTag(frame));
       } else {
-        this.sendFrame(portName, this.addTag(frame, vlan));
+        this.sendFrame(portName, this.addTag(frame, vlan, cos));
       }
     }
   }
@@ -2043,10 +2079,10 @@ export abstract class Switch extends Equipment {
 
   // ─── 802.1Q Tagging Helpers ───────────────────────────────────────
 
-  private addTag(frame: EthernetFrame, vlan: number): TaggedEthernetFrame {
+  private addTag(frame: EthernetFrame, vlan: number, cos: number = 0): TaggedEthernetFrame {
     return {
       ...frame,
-      dot1q: { tpid: 0x8100, pcp: 0, dei: 0, vid: vlan },
+      dot1q: { tpid: 0x8100, pcp: cos & 7, dei: 0, vid: vlan },
     };
   }
 
