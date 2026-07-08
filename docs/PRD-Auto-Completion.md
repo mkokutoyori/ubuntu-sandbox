@@ -151,31 +151,36 @@ explicitement ce que ce PRD **ne traite pas**.
    référencée après `SELECT`/une virgule, en s'appuyant sur le catalogue
    Oracle déjà existant (`OracleCatalog`/`OracleDatabase`). Dépend de
    l'item 1 pour être réellement atteignable au clavier.
-5. **Hors périmètre — déjà réel et solide, non retouché.** Complétion
+5. **Étendre la complétion d'argument dédiée aux commandes réseau Linux
+   restantes (item 5).** Les 47 commandes sur 53 sans `complete()` dédié
+   (§1.3 item 6) retombent aujourd'hui sur la complétion de chemin
+   générique, souvent inadaptée pour une commande qui attend un flag.
+   Auditer ces 47 commandes, prioriser par fréquence d'usage réelle dans
+   les suites de tests/tutoriels du dépôt, et leur ajouter un `complete()`
+   dédié (flags, arguments contextuels — interfaces, PID, adresses connues,
+   selon la commande) jusqu'à couverture complète.
+6. **Complétion de paramètre/flag pour `cmd.exe` (item 6).** Par symétrie
+   avec la richesse déjà réelle du sous-shell PowerShell (§1.2), doter
+   `cmd.exe` (`WindowsPC.ts`) d'une complétion de flag/paramètre pour ses
+   commandes internes, au-delà de la liste statique de noms de commande et
+   de la complétion de chemin déjà réelles.
+7. **Complétion dynamique pour des `ParamType` additionnels, Cisco et
+   Huawei (item 7).** Étendre le résolveur dynamique introduit en Phase 2
+   (item 2) au-delà d'`INTERFACE`/VLAN : adresses IP déjà configurées sur
+   l'équipement, numéros d'ACL existants, hostnames appris (ARP/DNS) —
+   mêmes garde-fous qu'en Phase 2 (additif, ne dégrade pas la complétion
+   statique existante).
+8. **Hors périmètre — déjà réel et solide, non retouché.** Complétion
    PowerShell (variables, paramètres, commandes, cycling, chemins),
    complétion bash top-niveau (commande, chemin, variable, `man`, `sudo`),
    les 6 commandes Linux déjà instrumentées (`arp`, `ifconfig`, `dhclient`,
    `ping`, `route`, `sysctl`), aide contextuelle `?`/complétion statique
    Cisco/Huawei déjà réelle, transmission de `Tab` au device distant via
    SSH cross-vendor.
-6. **Hors périmètre — ampleur jugée disproportionnée pour ce PRD.**
-   Instrumenter une complétion d'argument dédiée pour les 47 commandes
-   Linux restantes (§1.3 item 6) : signalé pour mémoire, non traité dans
-   les phases ci-dessous — un futur PRD dédié pourrait cibler un sous-
-   ensemble prioritaire.
-7. **Hors périmètre — écart mineur déjà cohérent avec le comportement réel.**
-   Complétion de flag pour `cmd.exe` (§1.3 item 5) : `cmd.exe` réel
-   n'offrant lui-même pas de vraie complétion de paramètre, l'écart actuel
-   n'est pas un défaut de fidélité justifiant un chiffrage dédié.
-8. **Hors périmètre — non demandé.** L'idée de « ghost text » inline
+9. **Hors périmètre — non demandé.** L'idée de « ghost text » inline
    (suggestion affichée en superposition avant validation par `Tab`,
    évoquée informellement dans `plan.md:91`) est une fonctionnalité UI
    distincte et plus large, non scopée ici.
-9. **Hors périmètre — non demandé.** Complétion dynamique de valeur pour
-   d'autres `ParamType` que `INTERFACE`/VLAN (adresses IP déjà configurées,
-   numéros d'ACL existants, hostnames appris) — extension naturelle de
-   l'item 2 mais volontairement exclue de ce premier chiffrage pour rester
-   livrable.
 
 ---
 
@@ -247,6 +252,47 @@ explicitement ce que ce PRD **ne traite pas**.
   `SqlPlusSubShell` existant (comportement `Enter`/exécution de requête
   inchangé).
 
+### Phase 5 — Complétion d'argument pour les commandes Linux restantes (item 5)
+
+- **Fichiers touchés** : audit des 47 fichiers sous
+  `src/network/devices/linux/commands/` sans `complete()`, ajout de la
+  méthode aux commandes retenues (flags pour les commandes qui n'attendent
+  pas de chemin, arguments contextuels — interfaces, PID, adresses connues
+  — pour les autres), `LinuxMachine.ts`/`LinuxCommandExecutor.ts` inchangés
+  (le point d'entrée `getCompletions` délègue déjà à `complete()` quand
+  elle existe).
+- **Détail** : prioriser par fréquence d'usage réelle observée dans
+  `src/__tests__/` et les tutoriels (`docs/tutoriel-*.md`, `Lan_tuto.md`)
+  plutôt que traiter les 47 dans un ordre arbitraire ; livrer par lots
+  testés indépendamment plutôt qu'en un seul commit.
+- **Tests** : extension de `linux-command-completion.test.ts` par lot de
+  commandes instrumentées, régression complète du fichier existant
+  (comportement des 6 commandes déjà réelles inchangé).
+
+### Phase 6 — Complétion de paramètre/flag pour `cmd.exe` (item 6)
+
+- **Fichiers touchés** : `src/network/devices/WindowsPC.ts`
+  (l. ~2035-2067, la fonction de complétion `cmd.exe`).
+- **Détail** : ajouter une table flags/paramètres par commande interne
+  `cmd.exe` connue, consultée après un `-`/`/` en position d'argument, sans
+  toucher à la complétion de commande/chemin déjà réelle.
+- **Tests** : extension de `windows-filesystem.test.ts` (ou nouveau fichier
+  dédié `cmd-flag-completion.test.ts`), régression des assertions
+  `cmd.exe` existantes (l. 536-552).
+
+### Phase 7 — Complétion dynamique pour `ParamType` additionnels, Cisco et Huawei (item 7)
+
+- **Fichiers touchés** : `src/network/devices/shells/CommandTrie.ts` (mêmes
+  points d'extension que la Phase 2), `CiscoShellBase.ts`,
+  `HuaweiVRPShell.ts`, `HuaweiSwitchShell.ts` (résolveurs additionnels pour
+  `IP_ADDR`, numéro d'ACL, hostname).
+- **Détail** : réutilise l'architecture de résolveur additive posée en
+  Phase 2 — dépendance directe sur cette phase, pas seulement un risque de
+  conflit de merge. Router et switch, Cisco et Huawei.
+- **Tests** : extension de `cisco-huawei-dynamic-tab-completion.test.ts`
+  (Phase 2) avec des cas `IP_ADDR`/ACL/hostname, régression des cas
+  interfaces/VLANs déjà couverts.
+
 ---
 
 ## 4. Exigences de non-régression
@@ -265,7 +311,11 @@ les flèches, `Ctrl+L`/`Ctrl+C`/`Ctrl+D` restent inchangés. La Phase 3 est
 strictement limitée à Huawei — le test Cisco d'ambiguïté (`null`) ne doit
 jamais être modifié pour Cisco. La Phase 4 dépend fonctionnellement de la
 Phase 1 (sans elle, `Tab` n'atteint jamais `SqlPlusSubShell.getCompletions`)
-mais peut être développée en parallèle (fichiers disjoints).
+mais peut être développée en parallèle (fichiers disjoints). La Phase 7
+dépend **fonctionnellement** de la Phase 2 (même résolveur, étendu à
+d'autres `ParamType`) et doit lui succéder, pas seulement partager un
+fichier. Les Phases 5 et 6 sont indépendantes du reste et peuvent être
+menées en parallèle de n'importe quelle autre phase.
 
 ---
 
@@ -288,3 +338,10 @@ mais peut être développée en parallèle (fichiers disjoints).
   entrée/session, sous peine de fuite d'état entre tests ou entre sessions
   utilisateur successives — même classe de bug déjà rencontrée et résolue
   une fois pour le cycling PowerShell, à réutiliser comme référence.
+- **Risque mineur** : la Phase 5 (47 commandes Linux) est la plus étendue
+  en volume de fichiers touchés — sans le découpage en lots priorisés déjà
+  prévu (§3 Phase 5), le risque est une livraison partielle non détectée
+  comme telle. Mitigation : suivre chaque lot comme une tâche distincte
+  plutôt qu'un unique commit fourre-tout. La Phase 7 hérite du même risque
+  que la Phase 2 (résolveur additif) et doit repasser la même régression
+  (`command-trie-help-suggestions.spec.ts`) en plus de ses propres tests.
