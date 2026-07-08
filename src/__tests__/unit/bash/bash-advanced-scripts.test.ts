@@ -81,6 +81,18 @@ EOF
     expect(body).not.toContain('\\\\033');
   });
 
+  it('A2c an unquoted-delimiter heredoc still escapes \\$VAR to a literal dollar (not an empty expansion)', () => {
+    const out = runScript(`
+      cat > /tmp/ttl.txt << EOF
+\\$TTL    604800
+EOF
+      cat /tmp/ttl.txt
+    `);
+    expect(out).toContain('$TTL    604800');
+    const body = read('/tmp/ttl.txt') ?? '';
+    expect(body).toContain('$TTL    604800');
+  });
+
   it('A3 rotates a log file (mv current → .1, recreate empty)', () => {
     run('echo "old entry" > /var/log/app.log');
     runScript(`

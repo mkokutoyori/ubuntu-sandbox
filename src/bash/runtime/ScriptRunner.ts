@@ -301,8 +301,13 @@ function preprocessHeredocs(source: string): string {
       const escaped = body.replace(/'/g, "'\\''");
       result.push(prefix + "<<< '" + escaped + "'");
     } else {
-      // Double-quoted herestring: expansion will happen
-      const escaped = body.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+      // Double-quoted herestring: expansion will happen. An unquoted
+      // heredoc's own escaping rules (\$, \`, \\ are special; any other
+      // backslash is literal) already match double-quote expansion rules
+      // exactly, so backslashes pass through untouched — only the quote
+      // character itself needs escaping so it doesn't end the herestring
+      // early when re-lexed.
+      const escaped = body.replace(/"/g, '\\"');
       result.push(prefix + '<<< "' + escaped + '"');
     }
   }

@@ -291,6 +291,19 @@ export abstract class LinuxMachine extends EndHost
     this.registerCoreCommands();
     this.registerDeviceCommands();
 
+    // Bridge registry commands (named-checkconf, named-checkzone, ...) into
+    // bash-script execution — the executor's own switch-based dispatch has
+    // no visibility into this registry, so without this a script running
+    // `named-checkconf` sees "command not found" even though the same
+    // command works fine typed directly at the prompt.
+    this.executor._registryCommandHook = (cmd, args) => {
+      const registered = this.commands.get(cmd);
+      if (!registered || !registered.needsNetworkContext) return null;
+      const result = registered.run(this.buildCommandContext(), args);
+      if (result instanceof Promise) return null;
+      return { output: result, exitCode: this.inferRegistryExitCode(cmd, result) };
+    };
+
     // 5. Initialise SSH server config files on first boot:
     //    /etc/ssh/sshd_config + /etc/ssh/ssh_host_ed25519_key(.pub).
     //    Also seed /etc/motd and /etc/issue.net so SSH greeters and the
@@ -1200,6 +1213,21 @@ export abstract class LinuxMachine extends EndHost
    */
   protected registerDeviceCommands(): void {
     /* no-op by default */
+  }
+
+  /**
+   * Exit code for a registry command run from inside a bash script (used
+   * by `$?`/`||` chaining, which the top-level per-command dispatch never
+   * needed). Matches the real tools' own conventions: `named-checkconf`
+   * prints nothing on success; `named-checkzone` ends its success output
+   * with a literal "OK" line. Anything else defaults to success — these
+   * commands were unreachable from scripts before this bridge existed, so
+   * there's no established failure convention yet to regress against.
+   */
+  private inferRegistryExitCode(cmd: string, output: string): number {
+    if (cmd === 'named-checkconf') return output === '' ? 0 : 1;
+    if (cmd === 'named-checkzone') return output === '' || output.endsWith('OK') ? 0 : 1;
+    return 0;
   }
 
   /** Build the context object passed to every `LinuxCommand.run()` call. */

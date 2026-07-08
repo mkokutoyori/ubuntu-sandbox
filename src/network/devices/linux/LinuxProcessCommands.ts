@@ -456,12 +456,24 @@ function validateUnitProperty(key: string, val: string): string | null {
   return null;
 }
 
+/**
+ * Package-name → daemon-unit-name aliases for units whose systemd file is
+ * shipped under a different name than the apt package (matching real
+ * Debian/Ubuntu: `apt install bind9` ships `named.service`, and
+ * `bind9.service` is a compatibility alias for it).
+ */
+const UNIT_ALIASES: Record<string, string> = { bind9: 'named' };
+
+function resolveUnitAlias(name: string): string {
+  return UNIT_ALIASES[name] ?? name;
+}
+
 export function cmdSystemctl(args: string[], sm: LinuxServiceManager): SysCtlResult {
   let sub = (args[0] || '').toLowerCase();
   // Bare option invocations (`systemctl --failed`, `--type=service`,
   // `-t service`) are listing requests in real systemd.
   if (sub.startsWith('-') && sub !== '--version') sub = 'list-units';
-  const unit = (args[1] || '').replace(/\.service$/, '');
+  const unit = resolveUnitAlias((args[1] || '').replace(/\.service$/, ''));
 
   if (!sub) {
     return {
@@ -752,7 +764,7 @@ export function cmdService(args: string[], sm: LinuxServiceManager): SysCtlResul
     return { output: lines.join('\n'), exitCode: 0 };
   }
 
-  const name = args[0];
+  const name = resolveUnitAlias(args[0] || '');
   const action = (args[1] || '').toLowerCase();
   if (!name) {
     return { output: 'Usage: service <service> {start|stop|restart|status}', exitCode: 1 };

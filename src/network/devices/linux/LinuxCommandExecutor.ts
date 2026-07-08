@@ -388,6 +388,14 @@ export class LinuxCommandExecutor {
   _oracleUtil: ((cmd: string, args: string[]) => string | null) | null = null;
   /** Optional Oracle RMAN hook — backs `rman` (batch via stdin / @script). */
   _oracleRman: ((args: string[], stdin?: string) => string | null) | null = null;
+  /**
+   * Optional bridge into `LinuxMachine`'s `LinuxCommandRegistry` — set by
+   * `LinuxMachine` so `LinuxCommand` objects that need full network context
+   * (e.g. `named-checkconf`, `named-checkzone`) are reachable from inside a
+   * bash script, not just from the top-level per-command dispatch. Returns
+   * null when the command isn't a registered (synchronous) registry entry.
+   */
+  _registryCommandHook: ((cmd: string, args: string[]) => { output: string; exitCode: number } | null) | null = null;
 
   constructor(
     isServer = false,
@@ -3815,7 +3823,11 @@ export class LinuxCommandExecutor {
       case 'apt-get': {
         const sub = args[0] || '';
         if (sub === 'update') return { output: 'Hit:1 http://archive.ubuntu.com/ubuntu jammy InRelease\nReading package lists... Done', exitCode: 0 };
-        if (sub === 'install') return { output: `Reading package lists... Done\nBuilding dependency tree... Done\n${args.slice(1).join(', ')} is already the newest version.\n0 upgraded, 0 newly installed, 0 to remove and 0 not upgraded.`, exitCode: 0 };
+        if (sub === 'install') {
+          const pkgs = args.slice(1).filter(a => !a.startsWith('-'));
+          if (pkgs.includes('bind9')) this.provisionBind9Defaults();
+          return { output: `Reading package lists... Done\nBuilding dependency tree... Done\n${args.slice(1).join(', ')} is already the newest version.\n0 upgraded, 0 newly installed, 0 to remove and 0 not upgraded.`, exitCode: 0 };
+        }
         if (sub === 'upgrade') return { output: 'Reading package lists... Done\nBuilding dependency tree... Done\nCalculating upgrade... Done\n0 upgraded, 0 newly installed, 0 to remove and 0 not upgraded.', exitCode: 0 };
         if (sub === 'remove' || sub === 'purge') return { output: 'Reading package lists... Done\nBuilding dependency tree... Done\n0 upgraded, 0 newly installed, 0 to remove and 0 not upgraded.', exitCode: 0 };
         if (sub === 'list' && args.includes('--installed')) return { output: 'Listing... Done\nbash/jammy,now 5.1-6ubuntu1 amd64 [installed]\ncoreutils/jammy,now 8.32-4.1ubuntu1 amd64 [installed]\nopenssl/jammy,now 3.0.2-0ubuntu1 amd64 [installed]', exitCode: 0 };
@@ -4181,6 +4193,9 @@ export class LinuxCommandExecutor {
               runScript(c, cmd, args, bridge, this.aliases, this.functions, 'direct', identity));
           }
         }
+
+        const registryResult = this._registryCommandHook?.(cmd, args);
+        if (registryResult) return registryResult;
 
         return { output: `${cmd}: command not found`, exitCode: 127 };
       }
@@ -6001,6 +6016,24 @@ export class LinuxCommandExecutor {
       uid: this.userMgr.currentUid, gid: this.userMgr.currentGid,
       umask: this.umask,
     };
+  }
+
+  /**
+   * `apt install bind9` on real Debian/Ubuntu ships a default
+   * /etc/bind/named.conf that just includes the options/local/default-zones
+   * files — the admin is expected to edit those, not the top-level file.
+   * Lay down that same skeleton (only if nothing is there yet) so a script
+   * that writes named.conf.options/named.conf.local can validate/start
+   * bind9 without also having to author the top-level include file itself.
+   */
+  private provisionBind9Defaults(): void {
+    if (!this.vfs.exists('/etc/bind')) this.vfs.mkdirp('/etc/bind', 0o755, 0, 0);
+    if (this.vfs.readFile('/etc/bind/named.conf') == null) {
+      this.vfs.writeFile('/etc/bind/named.conf',
+        'include "/etc/bind/named.conf.options";\n' +
+        'include "/etc/bind/named.conf.local";\n',
+        0, 0, 0o022);
+    }
   }
 
   /** `file` — classify from the REAL inode/content, never canned. */
