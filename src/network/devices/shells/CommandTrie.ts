@@ -213,8 +213,19 @@ export class CommandTrie {
   /**
    * Register a command with greedy argument consumption.
    * After matching keywords, all remaining tokens are passed as args.
+   *
+   * `continuations` declares the fixed sub-keywords the greedy handler
+   * accepts (e.g. `show interfaces` → status/switchport/counters). They
+   * are surfaced by Tab completion and `?` help even though the handler
+   * parses them internally — keeping the completion vocabulary next to
+   * the code that consumes it.
    */
-  registerGreedy(path: string, description: string, action: CommandAction): void {
+  registerGreedy(
+    path: string,
+    description: string,
+    action: CommandAction,
+    continuations?: ReadonlyArray<string | { keyword: string; description: string }>,
+  ): void {
     const keywords = path.split(/\s+/);
     let node = this.root;
 
@@ -237,6 +248,44 @@ export class CommandTrie {
     }
     node.action = action;
     node.greedy = true;
+    if (continuations && continuations.length > 0) {
+      this.addContinuations(node, continuations);
+    }
+  }
+
+  /**
+   * Declare fixed sub-keyword continuations for an already-registered
+   * command path (greedy or not). Additive to any existing hints; makes
+   * handler-parsed keywords completable without changing execution.
+   */
+  addCompletionKeywords(
+    path: string,
+    continuations: ReadonlyArray<string | { keyword: string; description: string }>,
+  ): void {
+    const keywords = path.split(/\s+/).map(k => k.toLowerCase());
+    let node: CommandNode = this.root;
+    for (const kw of keywords) {
+      const exact = node.children.get(kw);
+      const child = exact ?? this.prefixMatch(node, kw)[0];
+      if (!child) return;
+      node = child;
+    }
+    this.addContinuations(node, continuations);
+  }
+
+  private addContinuations(
+    node: CommandNode,
+    continuations: ReadonlyArray<string | { keyword: string; description: string }>,
+  ): void {
+    const existing = node.hintSuggestions ? [...node.hintSuggestions] : [];
+    const seen = new Set(existing.map(h => h.keyword.toLowerCase()));
+    for (const c of continuations) {
+      const entry = typeof c === 'string' ? { keyword: c, description: '' } : c;
+      if (seen.has(entry.keyword.toLowerCase())) continue;
+      seen.add(entry.keyword.toLowerCase());
+      existing.push(entry);
+    }
+    node.hintSuggestions = existing;
   }
 
   // ─── Command Matching ───────────────────────────────────────────

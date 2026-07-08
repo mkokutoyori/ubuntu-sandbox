@@ -2018,6 +2018,18 @@ export class HuaweiSwitchShell implements ISwitchShell {
     });
     trie.registerGreedy('reset counters', 'Clear interface counters', () =>
       ''); // acknowledged, no output (matches VRP)
+
+    // Sub-keywords parsed inside greedy display handlers, surfaced to
+    // Tab/`?` completion. Additive — execution is unchanged.
+    trie.addCompletionKeywords('display interface', [
+      { keyword: 'brief', description: 'Brief interface summary' },
+    ]);
+    trie.addCompletionKeywords('display vlan', [
+      { keyword: 'summary', description: 'VLAN summary' },
+    ]);
+    trie.addCompletionKeywords('display mac-address', [
+      { keyword: 'vlan', description: 'Entries for a given VLAN' },
+    ]);
   }
 
   /**

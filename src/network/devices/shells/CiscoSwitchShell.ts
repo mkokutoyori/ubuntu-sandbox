@@ -397,6 +397,8 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
         return this.showPortSecurityOverview(this.d());
       });
     }
+
+    this.registerShowCompletionKeywords();
   }
 
   private registerDaiCommands(): void {
@@ -1921,6 +1923,50 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     this.privilegedTrie.register('show logging', 'Display syslog messages', () => {
       return this.showLogging(this.d());
     });
+  }
+
+  /**
+   * Declare the sub-keywords that greedy `show` handlers parse internally
+   * so Tab/`?` can complete them (e.g. `show interfaces status`). Purely
+   * additive — execution is unchanged. Called at the end of the
+   * constructor, after every command family is registered.
+   */
+  private registerShowCompletionKeywords(): void {
+    for (const t of [this.privilegedTrie, this.userTrie]) {
+      t.addCompletionKeywords('show access-lists', [
+        { keyword: 'interface', description: 'ACLs applied to an interface' },
+        { keyword: 'address', description: 'Filter by address' },
+      ]);
+      t.addCompletionKeywords('show port-security', [
+        { keyword: 'interface', description: 'Port security for an interface' },
+        { keyword: 'address', description: 'Secure MAC addresses' },
+      ]);
+    }
+    const t = this.privilegedTrie;
+    t.addCompletionKeywords('show interfaces', [
+      { keyword: 'status', description: 'Interface line status' },
+      { keyword: 'switchport', description: 'Switchport (L2) configuration' },
+      { keyword: 'counters', description: 'Interface traffic counters' },
+      { keyword: 'description', description: 'Interface descriptions' },
+      { keyword: 'trunk', description: 'Trunk ports' },
+    ]);
+    t.addCompletionKeywords('show mac address-table', [
+      { keyword: 'dynamic', description: 'Dynamic MAC entries' },
+      { keyword: 'static', description: 'Static MAC entries' },
+      { keyword: 'multicast', description: 'Multicast MAC entries' },
+      { keyword: 'vlan', description: 'Entries for a given VLAN' },
+      { keyword: 'interface', description: 'Entries for a given interface' },
+      { keyword: 'address', description: 'A specific MAC address' },
+      { keyword: 'count', description: 'MAC address count' },
+    ]);
+    t.addCompletionKeywords('show etherchannel', [
+      { keyword: 'summary', description: 'One-line summary per channel-group' },
+      { keyword: 'detail', description: 'Detailed EtherChannel state' },
+      { keyword: 'port-channel', description: 'Port-channel information' },
+    ]);
+    t.addCompletionKeywords('show monitor session', [
+      { keyword: 'all', description: 'All SPAN sessions' },
+    ]);
   }
 
   // ─── Config Commands ──────────────────────────────────────────────
