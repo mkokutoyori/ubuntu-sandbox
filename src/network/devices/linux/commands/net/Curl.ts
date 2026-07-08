@@ -22,6 +22,7 @@ import { fetchHttp } from './HttpFetch';
 import { HttpsClientSession } from '@/network/http/https/HttpsClientSession';
 import { CertificateVerifier } from '@/network/pki/CertificateVerifier';
 import { createRequest } from '@/network/http/semantics/types';
+import { makeArgCompleter } from '../completionHelpers';
 
 function bytesToBinaryString(bytes: Uint8Array): string {
   let out = '';
@@ -32,6 +33,9 @@ function bytesToBinaryString(bytes: Uint8Array): string {
 export const curlCommand: LinuxCommand = {
   name: 'curl',
   needsNetworkContext: true,
+  complete: makeArgCompleter({
+    flags: ['-I', '-k', '-s', '-v', '--head', '--insecure', '--silent'],
+  }),
   usage: 'curl [-k] [-s] [-v] [-I] URL',
   help: 'Transfer data from or to a server.',
 

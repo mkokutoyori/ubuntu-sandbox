@@ -25,6 +25,7 @@ import {
 import { IPAddress, SubnetMask, MACAddress, IPv6Address } from '../../../../core/types';
 import { getNUDState, type HostPolicyRule } from '../../../EndHost';
 import type { GreAgent } from '../../../../gre/GreAgent';
+import { makeArgCompleter } from '../completionHelpers';
 
 function buildTunnelCtx(greAgent: GreAgent): IpTunnelContext {
   return {
@@ -361,6 +362,21 @@ export const ipCommand: LinuxCommand = {
   name: 'ip',
   needsNetworkContext: true,
   usage: 'ip [ OPTIONS ] OBJECT { COMMAND | help }',
+  complete: makeArgCompleter({
+    firstWords: ['address', 'addr', 'link', 'route', 'neigh', 'neighbor',
+      'rule', 'tunnel', 'netns', 'xfrm'],
+    wordsAfter: {
+      addr: ['show', 'add', 'del', 'flush'],
+      address: ['show', 'add', 'del', 'flush'],
+      link: ['show', 'set'],
+      route: ['show', 'add', 'del', 'get', 'flush'],
+      neigh: ['show', 'add', 'del', 'flush'],
+      neighbor: ['show', 'add', 'del', 'flush'],
+      rule: ['show', 'add', 'del'],
+      tunnel: ['show', 'add', 'del'],
+    },
+    interfacesAfter: ['dev'],
+  }),
   run(ctx: LinuxCommandContext, args: string[]): Promise<string> | string {
     const filtered = args.filter(a => !a.startsWith('-'));
     if (filtered[0] === 'netns' && filtered[1] === 'exec' && ctx.netns) {

@@ -14,6 +14,7 @@ import { serviceFromProcess } from './nmap/ProcessServiceMap';
 import { parseNmapArgs } from './nmap/NmapOptions';
 import { scan, type HostProbes, type HostState } from './nmap/ScanEngine';
 import { renderNormal, renderGreppable } from './nmap/NmapFormatter';
+import { makeArgCompleter } from '../completionHelpers';
 
 export { detectServiceFromBanner };
 
@@ -87,6 +88,12 @@ function buildProbes(ctx: LinuxCommandContext, noDns: boolean): HostProbes {
 export const nmapCommand: LinuxCommand = {
   name: 'nmap',
   needsNetworkContext: true,
+  complete: makeArgCompleter({
+    flags: ['-6', '-A', '-F', '-O', '-P0', '-Pn', '-R', '-T', '-d', '-n',
+      '-oA', '-oG', '-oN', '-p', '-p-', '-sP', '-sS', '-sT', '-sU', '-sV',
+      '-sn', '-v', '-vv', '--open', '--reason', '--top-ports'],
+    hostsAtBarePosition: true,
+  }),
   usage: 'nmap [-sT|-sS|-sU] [-sV] [-O] [-A] [-p SPEC] [-F] [--top-ports N] [-sn] [-Pn] [--open] [--reason] [-n] [-oN file] [-oG file] <target...>',
   help: 'Discover hosts and services on a network.',
 

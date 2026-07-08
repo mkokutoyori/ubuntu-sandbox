@@ -1,10 +1,16 @@
 import type { LinuxCommand } from '../LinuxCommand';
 import type { LinuxCommandContext } from '../LinuxCommandContext';
 import { runTcpdump } from '../../network/tcpdump/TcpdumpRunner';
+import { makeArgCompleter } from '../completionHelpers';
 
 export const tcpdumpCommand: LinuxCommand = {
   name: 'tcpdump',
   needsNetworkContext: true,
+  complete: makeArgCompleter({
+    flags: ['-A', '-D', '-X', '-c', '-e', '-i', '-n', '-q', '-r', '-s', '-t',
+      '-v', '-w', '-x', '-y'],
+    interfacesAfter: ['-i'],
+  }),
   manSection: 8,
   usage: 'tcpdump [-AbdDefhHIJKlLnNOpqStuUvxX#] [-c count] [-i interface] [-r file] [-s snaplen] [-w file] [-y datalinktype] [expression]',
   help: 'Dump traffic on a network interface, or read it back from a capture file.',

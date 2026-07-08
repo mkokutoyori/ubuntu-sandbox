@@ -5,6 +5,7 @@ import type { TracerouteHop } from '../../LinuxNetKernel';
 import { isValidIPv4 } from '@/network/core/ip';
 import { unquote } from '@/lib/format';
 import { icmpCodeAnnotation } from '../../LinuxFormatHelpers';
+import { makeArgCompleter } from '../completionHelpers';
 
 const TRACEROUTE_VERSION = 'Modern traceroute for Linux, version 2.1.0 (iputils-s20221126)';
 
@@ -255,6 +256,13 @@ async function formatNumericOutput(target: IPAddress, hops: TracerouteHop[]): Pr
 export const tracerouteCommand: LinuxCommand = {
   name: 'traceroute',
   needsNetworkContext: true,
+  complete: makeArgCompleter({
+    flags: ['-4', '-6', '-A', '-F', '-I', '-N', '-T', '-U', '-V', '-d', '-e',
+      '-f', '-g', '-i', '-m', '-n', '-p', '-q', '-r', '-s', '-t', '-w', '-z',
+      '--help', '--version'],
+    interfacesAfter: ['-i'],
+    hostsAtBarePosition: true,
+  }),
   manSection: 8,
   usage: 'traceroute [-46dFInrUV] [-f first_ttl] [-g gate] [-i iface] [-m maxhops] [-p port] [-q nqueries] [-w waittime] host [packetlen]',
   help:

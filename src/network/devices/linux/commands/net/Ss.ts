@@ -11,10 +11,14 @@
 import type { LinuxCommand } from '../LinuxCommand';
 import type { LinuxCommandContext } from '../LinuxCommandContext';
 import { cmdSs } from '../../LinuxNetCommands';
+import { makeArgCompleter } from '../completionHelpers';
 
 export const ssCommand: LinuxCommand = {
   name: 'ss',
   needsNetworkContext: true,
+  complete: makeArgCompleter({
+    flags: ['-4', '-6', '-a', '-l', '-n', '-p', '-s', '-t', '-u'],
+  }),
   manSection: 8,
   usage: 'ss [-t] [-u] [-l] [-a] [-n] [-p] [-4] [-6] [-s] [state STATE] [FILTER]',
   help: 'Investigate sockets (modern replacement for netstat).',

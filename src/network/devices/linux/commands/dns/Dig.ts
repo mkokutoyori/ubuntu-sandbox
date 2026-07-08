@@ -11,10 +11,21 @@ import type { LinuxCommand } from '../LinuxCommand';
 import type { LinuxCommandContext } from '../LinuxCommandContext';
 import { executeDig } from './DigRunner';
 import { readResolverIP } from './resolverIP';
+import { makeArgCompleter } from '../completionHelpers';
+
+const DNS_RECORD_TYPES = ['A', 'AAAA', 'ANY', 'CNAME', 'MX', 'NS', 'PTR', 'SOA', 'SRV', 'TXT'];
 
 export const digCommand: LinuxCommand = {
   name: 'dig',
   needsNetworkContext: true,
+  complete(ctx, args) {
+    const partial = args[args.length - 1] ?? '';
+    if (args.length >= 2 && partial === partial.toUpperCase() && partial.length > 0) {
+      const types = DNS_RECORD_TYPES.filter(t => t.startsWith(partial.toUpperCase()));
+      if (types.length > 0) return types;
+    }
+    return makeArgCompleter({ hostsAtBarePosition: true })(ctx, args);
+  },
   manSection: 1,
   usage: 'dig [@server] [name] [type]',
   help:

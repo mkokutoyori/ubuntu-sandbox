@@ -12,6 +12,7 @@ import type { LinuxCommandContext } from '../LinuxCommandContext';
 import { IPAddress } from '../../../../core/types';
 import { findHostByAddress, transitTcpAclVerdict } from '../../network/HostLookup';
 import { grabBanner as grabRemoteBanner } from './ServiceBannerGrab';
+import { makeArgCompleter } from '../completionHelpers';
 
 function isIPv6Literal(host: string): boolean {
   return host.includes(':') && /^[0-9a-fA-F:]+(%[a-zA-Z0-9_-]+)?$/.test(host);
@@ -71,6 +72,10 @@ export const ncCommand: LinuxCommand = {
   name: 'nc',
   aliases: ['ncat'],
   needsNetworkContext: true,
+  complete: makeArgCompleter({
+    flags: ['-l', '-p', '-u', '-v', '-vv', '-w', '-z'],
+    hostsAtBarePosition: true,
+  }),
   manSection: 1,
   usage: 'nc [-z] [-v] [-w secs] host port',
   help: 'Arbitrary TCP/UDP connections and probes (connect mode only).',
