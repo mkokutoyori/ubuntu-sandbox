@@ -3,7 +3,7 @@
 **Version** : 1.0
 **Date** : 2026-07-08
 **PRD parent** : `docs/PRD-Auto-Completion.md`
-**Statut** : plan d'implémentation et de migration — validé par l'implémentation TDD phase par phase
+**Statut** : IMPLÉMENTÉ — les étapes M1 à M9 (§5) sont livrées, testées et poussées sur `mandeng`.
 
 ---
 
@@ -344,6 +344,20 @@ Chaque étape est TDD (RED→GREEN), régressée localement, commitée séparém
   lots priorisés des commandes Linux restantes (PRD item 5).
 - **M8 — E2E Playwright** : `e2e/completion.spec.ts` — voir §6.
 - **M9 — Régression finale complète** (vitest + tsc + lint + e2e).
+
+### État de livraison (commits sur `mandeng`)
+
+| Étape | Livré | Commit |
+|---|---|---|
+| M1 socle | ✅ | `src/terminal/completion/` + `tsconfig.completion.json` + 32 tests |
+| M2 migration iso-comportement | ✅ | 4 chemins Tab unifiés, `TabCompletionHelper` supprimé |
+| M3 bug sous-shells Linux | ✅ | `handleSubShellKey` branche Tab, `linux-subshell-tab-completion.test.ts` |
+| M4 `tabCandidates` bout-en-bout | ✅ | `CommandTrie.tabCandidates`, shells, devices, sessions |
+| M5 résolveur dynamique (interfaces/VLAN) + M5b (IP/ACL/hostname) | ✅ | `EquipmentParamResolver` |
+| M6 SQL*Plus | ✅ | `SqlPlusSubShell.getCompletions` + `SqlPlusShell` delegate |
+| M7a cmd.exe flags / M7b 9 commandes Linux | ✅ | `WindowsPC.CMD_FLAGS`, `completionHelpers.ts` |
+| M8 e2e | ✅ | `e2e/completion.spec.ts` (6 tests) |
+| M9 régression finale | ✅ | tsc + strict-core + vitest + e2e |
 
 ---
 
