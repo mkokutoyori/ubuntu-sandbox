@@ -55,7 +55,7 @@ import { createSessionForDevice } from './sessionFactory';
 import { LinuxMachine } from '@/network/devices/LinuxMachine';
 import type { LinuxShellSession } from '@/network/devices/linux/shell/LinuxShellSession';
 import { AnsiOutputFormatter, type IOutputFormatter } from '@/terminal/core/OutputFormatter';
-import { CompletionController, ReadlinePolicy, LastWordSource } from '@/terminal/completion';
+import { CompletionController, ReadlinePolicy, CyclingPolicy, LastWordSource } from '@/terminal/completion';
 import { LinuxFlowBuilder } from '@/terminal/flows/LinuxFlowBuilder';
 import {
   parseReadInvocation as parseReadInvocationLib,
@@ -134,6 +134,7 @@ export class LinuxTerminalSession extends TerminalSession {
   tabSuggestions: string[] | null = null;
   private readonly rootCompletion =
     new CompletionController(new ReadlinePolicy({ caseInsensitive: false }));
+  private readonly subShellCompletion = new CompletionController(new CyclingPolicy());
   /** Active sub-shell (SQL*Plus, or any future REPL). Null when in normal bash mode. */
   private activeSubShell: ISubShell | null = null;
 
@@ -3338,8 +3339,39 @@ export class LinuxTerminalSession extends TerminalSession {
       return true;
     }
 
+    // Tab is ALWAYS consumed while a sub-shell is active — even when the
+    // sub-shell offers no completions — so it never leaks to the browser's
+    // native focus navigation.
+    if (e.key === 'Tab') {
+      this.onSubShellTab(e.shiftKey ?? false);
+      return true;
+    }
+
+    // Any other key ends a completion cycle and clears the suggestions.
+    this.subShellCompletion.reset();
+    if (this.tabSuggestions) {
+      this.tabSuggestions = null;
+      this.notify();
+    }
+
     // Let the view handle other keys (typing into the interactive-text input)
     return false;
+  }
+
+  private onSubShellTab(reverse: boolean): void {
+    const sub = this.activeSubShell;
+    if (!sub || typeof sub.getCompletions !== 'function') return;
+
+    const source = new LastWordSource(
+      (line) => sub.getCompletions?.(line) ?? [],
+      { uniqueSpace: 'never' },
+    );
+    const out = this.subShellCompletion.handleTab(this._inputBuf, source, reverse);
+    if (!out.changed && out.suggestions === null) return;
+    this._inputBuf = out.input;
+    this.tabSuggestions =
+      out.suggestions && out.suggestions.length > 1 ? [...out.suggestions] : null;
+    this.notify();
   }
 
   private exitSubShell(): void {
