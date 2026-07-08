@@ -161,3 +161,47 @@ describe('Dynamic Tab candidates — Huawei (PRD items 2 et 3)', () => {
     expect(sw.cliTabComplete('s')).toBeNull();
   });
 });
+
+describe('Dynamic Tab candidates — IP/hostname/ACL positions (PRD item 7)', () => {
+  it('ping completes hostnames from the real ip host table', async () => {
+    const r = new CiscoRouter('R1', 0, 0);
+    await r.executeCommand('enable');
+    await r.executeCommand('configure terminal');
+    await r.executeCommand('ip host server1 10.0.0.5');
+    await r.executeCommand('end');
+    const candidates = r.cliTabCandidates('ping ser');
+    expect(candidates).toContain('ping server1');
+  });
+
+  it('ping completes IPs really configured on the device interfaces', async () => {
+    const r = new CiscoRouter('R1', 0, 0);
+    await r.executeCommand('enable');
+    await r.executeCommand('configure terminal');
+    const port = r.getPorts()[0].getName();
+    await r.executeCommand(`interface ${port}`);
+    await r.executeCommand('ip address 192.168.1.1 255.255.255.0');
+    await r.executeCommand('end');
+    const candidates = r.cliTabCandidates('ping 192.168.');
+    expect(candidates).toContain('ping 192.168.1.1');
+  });
+
+  it('ip access-group completes with the ACL numbers that really exist', async () => {
+    const r = new CiscoRouter('R1', 0, 0);
+    await r.executeCommand('enable');
+    await r.executeCommand('configure terminal');
+    await r.executeCommand('access-list 101 permit ip any any');
+    await r.executeCommand('access-list 102 deny ip any any');
+    const port = r.getPorts()[0].getName();
+    await r.executeCommand(`interface ${port}`);
+    const candidates = r.cliTabCandidates('ip access-group 10');
+    expect(candidates).toContain('ip access-group 101');
+    expect(candidates).toContain('ip access-group 102');
+    expect(candidates).not.toContain('ip access-group 103');
+  });
+
+  it('an unconfigured device offers no dynamic host/ACL candidates', () => {
+    const r = new CiscoRouter('R1', 0, 0);
+    expect(r.getAclIdentifiers()).toEqual([]);
+    expect(r.getKnownHostnames()).toEqual([]);
+  });
+});

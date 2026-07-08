@@ -1861,6 +1861,25 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     return this.shell.tabCandidates(input, this);
   }
 
+  getAclIdentifiers(): string[] {
+    return this.aclEngine.getAccessLists()
+      .map((a) => a.name ?? (a.id !== undefined ? String(a.id) : ''))
+      .filter((v) => v.length > 0);
+  }
+
+  getConfiguredIPv4Addresses(): string[] {
+    const out: string[] = [];
+    for (const port of this.getPorts()) {
+      const ip = port.getIPAddress()?.toString();
+      if (ip) out.push(ip);
+    }
+    return out;
+  }
+
+  getKnownHostnames(): string[] {
+    return this.hostsTable.entries().map((e) => e.name);
+  }
+
   // ─── vty sessions (per-terminal CLI isolation, §5.1 of terminal_gap.md) ──
 
   /** Live vty sessions, keyed by their internal id. */
