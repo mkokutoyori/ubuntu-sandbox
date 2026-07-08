@@ -69,7 +69,7 @@ describe('Dynamic Tab candidates — Cisco (PRD item 2)', () => {
   });
 
   it('works for routers too (real router port names)', async () => {
-    const r = new CiscoRouter('router-cisco', 'R1');
+    const r = new CiscoRouter('R1', 0, 0);
     await r.executeCommand('enable');
     await r.executeCommand('configure terminal');
     const names = r.getPorts().map(p => p.getName());
