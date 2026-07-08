@@ -43,7 +43,7 @@ import type { AsyncJobContext } from '@/terminal/async';
 import type { WindowsShellSession } from '@/network/devices/windows/shell/WindowsShellSession';
 import { PlainOutputFormatter, type IOutputFormatter } from '@/terminal/core/OutputFormatter';
 import { classifyWindowsLines } from '@/terminal/core/windowsOutputStyle';
-import { CompletionController, ReadlinePolicy, CyclingPolicy, LastWordSource } from '@/terminal/completion';
+import { CompletionController, ReadlinePolicy, CyclingPolicy, LastWordSource, ghostRemainder } from '@/terminal/completion';
 import type { ISubShell, SubShellResult } from '@/terminal/subshells/ISubShell';
 import { NslookupSubShell } from '@/terminal/subshells/NslookupSubShell';
 import { findHostByAddress } from '@/network/devices/linux/network/HostLookup';
@@ -1712,22 +1712,30 @@ export class WindowsTerminalSession extends TerminalSession {
     this.notify();
   }
 
-  protected onTab(): void {
+  private rootCompletionSource(): LastWordSource {
     // Root cmd tab completion runs in the per-session context so path
     // completion uses *this* terminal's cwd, not the device-wide shared one
     // (terminal_gap.md §6).
     const dev = this.device;
-    const source = new LastWordSource(
+    return new LastWordSource(
       (line) => (this.shell && dev instanceof WindowsPC)
         ? dev.getCompletionsForSession(line, this.shell)
         : this.device.getCompletions(line),
       { uniqueSpace: 'first-word' },
     );
-    const out = this.rootCompletion.handleTab(this.input, source, false);
+  }
+
+  protected onTab(): void {
+    const out = this.rootCompletion.handleTab(this.input, this.rootCompletionSource(), false);
     if (!out.changed && out.suggestions === null) return;
     this.input = out.input;
     this.tabSuggestions = out.suggestions ? [...out.suggestions] : null;
     this.notify();
+  }
+
+  override getGhostSuggestion(): string | null {
+    if (this.activeSubShell || this.inputMode.type !== 'normal') return null;
+    return ghostRemainder(this.input, this.rootCompletionSource());
   }
 
   // ── Helpers ─────────────────────────────────────────────────────

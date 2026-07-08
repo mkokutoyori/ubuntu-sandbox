@@ -116,6 +116,17 @@ export const TerminalView: React.FC<TerminalViewProps> = ({ session }) => {
       return;
     }
 
+    // ArrowRight at end-of-input accepts the ghost suggestion inline.
+    if (e.key === 'ArrowRight' && !e.ctrlKey && !e.altKey && !e.metaKey) {
+      const el = e.currentTarget;
+      const atEnd = el.selectionStart === el.value.length
+        && el.selectionEnd === el.value.length;
+      if (atEnd && session.getGhostSuggestion() && session.acceptGhost()) {
+        e.preventDefault();
+        return;
+      }
+    }
+
     const consumed = session.handleKey({
       key: e.key,
       ctrlKey: e.ctrlKey,
@@ -347,20 +358,34 @@ export const TerminalView: React.FC<TerminalViewProps> = ({ session }) => {
           && (session.listAttachedStreams?.().length ?? 0) === 0 && (
           <div className="flex items-center" style={{ minHeight: sessionType === 'windows' ? '1.25em' : '1.35em' }}>
             <PromptRenderer session={session} sessionType={sessionType} theme={theme} />
-            <input
-              ref={inputRef}
-              type="text"
-              value={session.input}
-              onChange={(e) => {
-                session.setInput(e.target.value);
-              }}
-              onKeyDown={handleKeyDown}
-              onPaste={handlePaste}
-              className="flex-1 bg-transparent outline-none border-none p-0 m-0"
-              style={{ color: theme.textColor, caretColor: theme.textColor, fontFamily: 'inherit', fontSize: 'inherit' }}
-              spellCheck={false}
-              autoComplete="off"
-            />
+            <div className="relative flex-1">
+              {session.getGhostSuggestion() && (
+                <div
+                  aria-hidden
+                  className="absolute inset-0 pointer-events-none whitespace-pre overflow-hidden"
+                  style={{ fontFamily: 'inherit', fontSize: 'inherit' }}
+                >
+                  <span style={{ visibility: 'hidden' }}>{session.input}</span>
+                  <span data-testid="ghost-suggestion" style={{ color: '#6b7280' }}>
+                    {session.getGhostSuggestion()}
+                  </span>
+                </div>
+              )}
+              <input
+                ref={inputRef}
+                type="text"
+                value={session.input}
+                onChange={(e) => {
+                  session.setInput(e.target.value);
+                }}
+                onKeyDown={handleKeyDown}
+                onPaste={handlePaste}
+                className="w-full bg-transparent outline-none border-none p-0 m-0"
+                style={{ color: theme.textColor, caretColor: theme.textColor, fontFamily: 'inherit', fontSize: 'inherit' }}
+                spellCheck={false}
+                autoComplete="off"
+              />
+            </div>
           </div>
         )}
 

@@ -55,7 +55,7 @@ import { createSessionForDevice } from './sessionFactory';
 import { LinuxMachine } from '@/network/devices/LinuxMachine';
 import type { LinuxShellSession } from '@/network/devices/linux/shell/LinuxShellSession';
 import { AnsiOutputFormatter, type IOutputFormatter } from '@/terminal/core/OutputFormatter';
-import { CompletionController, ReadlinePolicy, CyclingPolicy, LastWordSource } from '@/terminal/completion';
+import { CompletionController, ReadlinePolicy, CyclingPolicy, LastWordSource, ghostRemainder } from '@/terminal/completion';
 import { LinuxFlowBuilder } from '@/terminal/flows/LinuxFlowBuilder';
 import {
   parseReadInvocation as parseReadInvocationLib,
@@ -1651,21 +1651,29 @@ export class LinuxTerminalSession extends TerminalSession {
 
   // ── Tab completion ──────────────────────────────────────────────
 
-  protected onTab(): void {
-    // Tab completion must run in *this* terminal's session context so that
-    // path completion sees the per-session cwd, not the device-wide shared one.
+  private rootCompletionSource(): LastWordSource {
     const dev = this.device;
-    const source = new LastWordSource(
+    return new LastWordSource(
       (line) => (this.shell && dev instanceof LinuxMachine)
         ? dev.getCompletionsForSession(line, this.shell)
         : this.device.getCompletions(line),
       { uniqueSpace: 'first-word' },
     );
-    const out = this.rootCompletion.handleTab(this.input, source, false);
+  }
+
+  protected onTab(): void {
+    // Tab completion must run in *this* terminal's session context so that
+    // path completion sees the per-session cwd, not the device-wide shared one.
+    const out = this.rootCompletion.handleTab(this.input, this.rootCompletionSource(), false);
     if (!out.changed && out.suggestions === null) return;
     this.input = out.input;
     this.tabSuggestions = out.suggestions ? [...out.suggestions] : null;
     this.notify();
+  }
+
+  override getGhostSuggestion(): string | null {
+    if (this.activeSubShell || this.inputMode.type !== 'normal') return null;
+    return ghostRemainder(this.input, this.rootCompletionSource());
   }
 
   // ── Editor integration ──────────────────────────────────────────

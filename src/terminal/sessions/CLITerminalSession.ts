@@ -20,7 +20,7 @@ import {
 } from './TerminalSession';
 import { PlainOutputFormatter, type IOutputFormatter } from '@/terminal/core/OutputFormatter';
 import {
-  CompletionController, SilentUniquePolicy, FullLineSource,
+  CompletionController, SilentUniquePolicy, FullLineSource, ghostRemainder,
   type CompletionPolicy,
 } from '@/terminal/completion';
 import type { InteractiveStep } from '@/terminal/core/types';
@@ -549,6 +549,12 @@ export abstract class CLITerminalSession extends TerminalSession {
 
   protected resolveCliTabCandidates(input: string): string[] {
     return this.cliDevice.cliTabCandidates(input);
+  }
+
+  override getGhostSuggestion(): string | null {
+    if (this.isBooting || this.pagerLines !== null) return null;
+    const source = new FullLineSource((line) => this.resolveCliTabCandidates(line));
+    return ghostRemainder(this.input, source);
   }
 
   // ── Pager ───────────────────────────────────────────────────────

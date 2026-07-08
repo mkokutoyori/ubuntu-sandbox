@@ -108,6 +108,33 @@ test.describe('Tab completion — Linux bash', () => {
   });
 });
 
+test.describe('Ghost text — inline preview of a unique completion', () => {
+  test('Cisco: typing "sh" renders the grey "ow" ghost; ArrowRight accepts it', async ({ page }) => {
+    const id = await addDevice(page, 'router-cisco');
+    await openTerminal(page, id);
+    const box = input(page);
+    await box.click();
+    await box.fill('sh');
+    await page.waitForTimeout(150);
+    const ghost = page.locator('[data-testid="ghost-suggestion"]');
+    await expect(ghost).toBeVisible();
+    await expect(ghost).toHaveText('ow');
+    await box.press('ArrowRight');
+    await page.waitForTimeout(150);
+    expect(await box.inputValue()).toBe('show');
+  });
+
+  test('Cisco: ambiguous "s" shows no ghost', async ({ page }) => {
+    const id = await addDevice(page, 'router-cisco');
+    await openTerminal(page, id);
+    const box = input(page);
+    await box.click();
+    await box.fill('s');
+    await page.waitForTimeout(150);
+    await expect(page.locator('[data-testid="ghost-suggestion"]')).toHaveCount(0);
+  });
+});
+
 test.describe('Tab completion — SQL*Plus subshell (PRD headline: no focus leak)', () => {
   test('Tab inside sqlplus completes a keyword AND keeps focus on the terminal input', async ({ page }) => {
     const id = await addDevice(page, 'linux-server');

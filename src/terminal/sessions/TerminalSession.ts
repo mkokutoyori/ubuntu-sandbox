@@ -1361,6 +1361,25 @@ export abstract class TerminalSession {
   /** Called on Tab in normal mode. Shift+Tab passes reverse=true. */
   protected abstract onTab(reverse?: boolean): void;
 
+  /**
+   * Ghost text: the inline grey continuation shown after the caret when
+   * exactly one completion exists for the current input. Computed on
+   * demand — no state to invalidate. Sessions with a completion source
+   * override this; the base has none.
+   */
+  getGhostSuggestion(): string | null {
+    return null;
+  }
+
+  /** Accept the current ghost suggestion into the input buffer. */
+  acceptGhost(): boolean {
+    const ghost = this.getGhostSuggestion();
+    if (ghost === null || ghost.length === 0) return false;
+    this.input += ghost;
+    this.notify();
+    return true;
+  }
+
   /** Return the current prompt string for the input line. */
   abstract getPrompt(): string;
 
