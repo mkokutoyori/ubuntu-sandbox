@@ -68,7 +68,7 @@ export interface ISubShell extends IShellBase {
    * session decides how to apply them (single match → complete inline,
    * many → list). Optional: sub-shells without completion can omit it.
    * Implementations return the full candidate token(s), not just the
-   * suffix, so the session's existing completeInput helper can diff.
+   * suffix, so the session's completion controller can diff.
    */
   getCompletions?(line: string): string[];
 

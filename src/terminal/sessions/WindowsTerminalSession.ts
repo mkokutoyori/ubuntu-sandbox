@@ -43,7 +43,7 @@ import type { AsyncJobContext } from '@/terminal/async';
 import type { WindowsShellSession } from '@/network/devices/windows/shell/WindowsShellSession';
 import { PlainOutputFormatter, type IOutputFormatter } from '@/terminal/core/OutputFormatter';
 import { classifyWindowsLines } from '@/terminal/core/windowsOutputStyle';
-import { completeInputCaseInsensitive } from '@/terminal/core/TabCompletionHelper';
+import { CompletionController, ReadlinePolicy, CyclingPolicy, LastWordSource } from '@/terminal/completion';
 import type { ISubShell, SubShellResult } from '@/terminal/subshells/ISubShell';
 import { NslookupSubShell } from '@/terminal/subshells/NslookupSubShell';
 import { findHostByAddress } from '@/network/devices/linux/network/HostLookup';
@@ -74,20 +74,9 @@ export class WindowsTerminalSession extends TerminalSession {
   bannerCleared: boolean = false;
   tabSuggestions: string[] | null = null;
 
-  /**
-   * Active Tab-completion cycle (PowerShell classic console behaviour:
-   * repeated Tab walks the candidate list, replacing the token inline;
-   * Shift+Tab walks backwards). Reset whenever a non-Tab key is pressed
-   * or the input no longer matches what we last inserted.
-   */
-  private completion: {
-    candidates: string[];
-    index: number;
-    /** Input text before the token being replaced. */
-    prefix: string;
-    /** The full _inputBuf we last wrote (to detect "Tab again"). */
-    applied: string;
-  } | null = null;
+  private readonly rootCompletion =
+    new CompletionController(new ReadlinePolicy({ caseInsensitive: true }));
+  private readonly subShellCompletion = new CompletionController(new CyclingPolicy());
 
   private readonly _flowFormatter = new PlainOutputFormatter();
   private _onRequestClose?: () => void;
@@ -1679,9 +1668,9 @@ export class WindowsTerminalSession extends TerminalSession {
     }
 
     // Any non-Tab key ends a completion cycle and clears the suggestions.
-    if (this.tabSuggestions || this.completion) {
+    this.subShellCompletion.reset();
+    if (this.tabSuggestions) {
       this.tabSuggestions = null;
-      this.completion = null;
       this.notify();
     }
 
@@ -1698,50 +1687,28 @@ export class WindowsTerminalSession extends TerminalSession {
     // real PS console experience: Tab inserts the first match, repeated
     // Tab cycles forward, Shift+Tab cycles backward.
     if (sub && typeof sub.getCompletions === 'function') {
-      // Continuing an existing cycle? (Tab pressed again with no edits.)
-      if (this.completion && this.completion.applied === this._inputBuf
-          && this.completion.candidates.length > 1) {
-        const n = this.completion.candidates.length;
-        this.completion.index =
-          (this.completion.index + (reverse ? -1 : 1) + n) % n;
-        const next = this.completion.candidates[this.completion.index];
-        this._inputBuf = this.completion.prefix + next;
-        this.completion.applied = this._inputBuf;
-        this.tabSuggestions = this.completion.candidates.length > 1
-          ? this.completion.candidates : null;
-        this.notify();
-        return;
-      }
-
-      // Fresh completion.
-      const candidates = sub.getCompletions(this._inputBuf);
-      if (candidates.length === 0) { this.completion = null; return; }
-
-      // The token we replace is the trailing run of non-whitespace
-      // (matches how PowerShellSubShell.getCompletions tokenizes).
-      const m = /(\S*)$/.exec(this._inputBuf);
-      const prefix = this._inputBuf.slice(0, this._inputBuf.length - (m ? m[1].length : 0));
-
-      const first = reverse ? candidates[candidates.length - 1] : candidates[0];
-      this._inputBuf = prefix + first;
-      this.completion = {
-        candidates,
-        index: reverse ? candidates.length - 1 : 0,
-        prefix,
-        applied: this._inputBuf,
-      };
-      this.tabSuggestions = candidates.length > 1 ? candidates : null;
+      const source = new LastWordSource(
+        (line) => sub.getCompletions?.(line) ?? [],
+        { uniqueSpace: 'never' },
+      );
+      const out = this.subShellCompletion.handleTab(this._inputBuf, source, reverse);
+      if (!out.changed && out.suggestions === null) return;
+      this._inputBuf = out.input;
+      this.tabSuggestions =
+        out.suggestions && out.suggestions.length > 1 ? [...out.suggestions] : null;
       this.notify();
       return;
     }
 
     // Fall back to device completions for sub-shells without their own.
-    const completions = this.device.getCompletions(this._inputBuf);
-    if (completions.length === 0) return;
-
-    const result = completeInputCaseInsensitive(this._inputBuf, completions);
-    this._inputBuf = result.input;
-    this.tabSuggestions = result.suggestions;
+    const source = new LastWordSource(
+      (line) => this.device.getCompletions(line),
+      { uniqueSpace: 'first-word' },
+    );
+    const out = this.rootCompletion.handleTab(this._inputBuf, source, false);
+    if (!out.changed && out.suggestions === null) return;
+    this._inputBuf = out.input;
+    this.tabSuggestions = out.suggestions ? [...out.suggestions] : null;
     this.notify();
   }
 
@@ -1750,14 +1717,16 @@ export class WindowsTerminalSession extends TerminalSession {
     // completion uses *this* terminal's cwd, not the device-wide shared one
     // (terminal_gap.md §6).
     const dev = this.device;
-    const completions = (this.shell && dev instanceof WindowsPC)
-      ? dev.getCompletionsForSession(this.input, this.shell)
-      : this.device.getCompletions(this.input);
-    if (completions.length === 0) return;
-
-    const result = completeInputCaseInsensitive(this.input, completions);
-    this.input = result.input;
-    this.tabSuggestions = result.suggestions;
+    const source = new LastWordSource(
+      (line) => (this.shell && dev instanceof WindowsPC)
+        ? dev.getCompletionsForSession(line, this.shell)
+        : this.device.getCompletions(line),
+      { uniqueSpace: 'first-word' },
+    );
+    const out = this.rootCompletion.handleTab(this.input, source, false);
+    if (!out.changed && out.suggestions === null) return;
+    this.input = out.input;
+    this.tabSuggestions = out.suggestions ? [...out.suggestions] : null;
     this.notify();
   }
 

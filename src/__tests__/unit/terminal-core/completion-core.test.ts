@@ -9,7 +9,6 @@ import {
   splitLastWord,
 } from '@/terminal/completion';
 import type { ICompletionSource } from '@/terminal/completion';
-import { completeInput, completeInputCaseInsensitive } from '@/terminal/core/TabCompletionHelper';
 
 function staticSource(candidates: string[], base = ''): ICompletionSource {
   return { query: () => (candidates.length ? { base, candidates, appendSpaceOnUnique: false } : null) };
@@ -167,36 +166,32 @@ describe('SilentUniquePolicy via CompletionController (Cisco semantics)', () => 
   });
 });
 
-describe('parity corpus — ReadlinePolicy matches legacy TabCompletionHelper on normalized inputs', () => {
-  const corpus: Array<{ input: string; candidates: string[] }> = [
-    { input: 'ls /ho', candidates: ['home/'] },
-    { input: 'ifco', candidates: ['ifconfig'] },
-    { input: 'cat /etc/pas', candidates: ['passwd', 'passwd-'] },
-    { input: 'x ab', candidates: ['abc', 'abd'] },
-    { input: 'ping -', candidates: ['-c', '-i', '-t'] },
-    { input: 'foo', candidates: [] },
-    { input: 'cd D', candidates: ['Documents/', 'Downloads/'] },
+describe('parity corpus — ReadlinePolicy matches the retired TabCompletionHelper (pinned values)', () => {
+  const corpus: Array<{ input: string; candidates: string[]; expected: string; suggestions: string[] | null }> = [
+    { input: 'ls /ho', candidates: ['home/'], expected: 'ls home/', suggestions: null },
+    { input: 'ifco', candidates: ['ifconfig'], expected: 'ifconfig ', suggestions: null },
+    { input: 'cat /etc/pas', candidates: ['passwd', 'passwd-'], expected: 'cat /etc/pas', suggestions: ['passwd', 'passwd-'] },
+    { input: 'x ab', candidates: ['abc', 'abd'], expected: 'x ab', suggestions: ['abc', 'abd'] },
+    { input: 'ping -', candidates: ['-c', '-i', '-t'], expected: 'ping -', suggestions: ['-c', '-i', '-t'] },
+    { input: 'foo', candidates: [], expected: 'foo', suggestions: null },
+    { input: 'cd D', candidates: ['Documents/', 'Downloads/'], expected: 'cd Do', suggestions: null },
   ];
 
-  it.each(corpus)('case-sensitive: "$input"', ({ input, candidates }) => {
-    const legacy = completeInput(input, candidates);
+  it.each(corpus)('case-sensitive: "$input" → "$expected"', ({ input, candidates, expected, suggestions }) => {
     const c = new CompletionController(new ReadlinePolicy({ caseInsensitive: false }));
     const out = c.handleTab(input, new LastWordSource(() => candidates, { uniqueSpace: 'first-word' }), false);
-    expect(out.input).toBe(legacy.input);
-    expect(out.suggestions).toEqual(legacy.suggestions);
+    expect(out.input).toBe(expected);
+    expect(out.suggestions).toEqual(suggestions);
   });
 
-  it.each(corpus)('case-insensitive: "$input"', ({ input, candidates }) => {
-    const legacy = completeInputCaseInsensitive(input, candidates);
+  it.each(corpus)('case-insensitive: "$input" → "$expected"', ({ input, candidates, expected, suggestions }) => {
     const c = new CompletionController(new ReadlinePolicy({ caseInsensitive: true }));
     const out = c.handleTab(input, new LastWordSource(() => candidates, { uniqueSpace: 'first-word' }), false);
-    expect(out.input).toBe(legacy.input);
-    expect(out.suggestions).toEqual(legacy.suggestions);
+    expect(out.input).toBe(expected);
+    expect(out.suggestions).toEqual(suggestions);
   });
 
-  it('intentional divergence: internal whitespace is preserved, not collapsed', () => {
-    const legacy = completeInput('echo a  /ho', ['home/']);
-    expect(legacy.input).toBe('echo a home/');
+  it('intentional divergence from the retired helper: internal whitespace is preserved, not collapsed', () => {
     const c = new CompletionController(new ReadlinePolicy({ caseInsensitive: false }));
     const out = c.handleTab('echo a  /ho', new LastWordSource(() => ['home/'], { uniqueSpace: 'first-word' }), false);
     expect(out.input).toBe('echo a  home/');

@@ -55,7 +55,7 @@ import { createSessionForDevice } from './sessionFactory';
 import { LinuxMachine } from '@/network/devices/LinuxMachine';
 import type { LinuxShellSession } from '@/network/devices/linux/shell/LinuxShellSession';
 import { AnsiOutputFormatter, type IOutputFormatter } from '@/terminal/core/OutputFormatter';
-import { completeInput } from '@/terminal/core/TabCompletionHelper';
+import { CompletionController, ReadlinePolicy, LastWordSource } from '@/terminal/completion';
 import { LinuxFlowBuilder } from '@/terminal/flows/LinuxFlowBuilder';
 import {
   parseReadInvocation as parseReadInvocationLib,
@@ -132,6 +132,8 @@ export class LinuxTerminalSession extends TerminalSession {
   private readonly _flowFormatter = new AnsiOutputFormatter();
   /** Tab suggestions currently shown (null = hidden) */
   tabSuggestions: string[] | null = null;
+  private readonly rootCompletion =
+    new CompletionController(new ReadlinePolicy({ caseInsensitive: false }));
   /** Active sub-shell (SQL*Plus, or any future REPL). Null when in normal bash mode. */
   private activeSubShell: ISubShell | null = null;
 
@@ -1652,14 +1654,16 @@ export class LinuxTerminalSession extends TerminalSession {
     // Tab completion must run in *this* terminal's session context so that
     // path completion sees the per-session cwd, not the device-wide shared one.
     const dev = this.device;
-    const completions = (this.shell && dev instanceof LinuxMachine)
-      ? dev.getCompletionsForSession(this.input, this.shell)
-      : this.device.getCompletions(this.input);
-    if (completions.length === 0) return;
-
-    const result = completeInput(this.input, completions);
-    this.input = result.input;
-    this.tabSuggestions = result.suggestions;
+    const source = new LastWordSource(
+      (line) => (this.shell && dev instanceof LinuxMachine)
+        ? dev.getCompletionsForSession(line, this.shell)
+        : this.device.getCompletions(line),
+      { uniqueSpace: 'first-word' },
+    );
+    const out = this.rootCompletion.handleTab(this.input, source, false);
+    if (!out.changed && out.suggestions === null) return;
+    this.input = out.input;
+    this.tabSuggestions = out.suggestions ? [...out.suggestions] : null;
     this.notify();
   }
 

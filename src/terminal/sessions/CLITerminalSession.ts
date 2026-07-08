@@ -19,6 +19,10 @@ import {
   KeyEvent, InputMode,
 } from './TerminalSession';
 import { PlainOutputFormatter, type IOutputFormatter } from '@/terminal/core/OutputFormatter';
+import {
+  CompletionController, SilentUniquePolicy, FullLineSource,
+  type CompletionPolicy,
+} from '@/terminal/completion';
 import type { InteractiveStep } from '@/terminal/core/types';
 import { findHostByAddress } from '@/network/devices/linux/network/HostLookup';
 import { createSessionForDevice } from './sessionFactory';
@@ -43,9 +47,23 @@ export abstract class CLITerminalSession extends TerminalSession {
   /** Strongly-typed reference to the CLI device (avoids `as any` casts). */
   protected readonly cliDevice: ICLIDevice;
 
+  private _cliCompletion: CompletionController | null = null;
+
   constructor(id: string, device: ICLIDevice) {
     super(id, device);
     this.cliDevice = device;
+  }
+
+  /** Vendor Tab policy — Cisco stays silent on ambiguity; Huawei overrides. */
+  protected completionPolicy(): CompletionPolicy {
+    return new SilentUniquePolicy();
+  }
+
+  protected get cliCompletion(): CompletionController {
+    if (this._cliCompletion === null) {
+      this._cliCompletion = new CompletionController(this.completionPolicy());
+    }
+    return this._cliCompletion;
   }
 
   protected getFlowFormatter(): IOutputFormatter { return this._flowFormatter; }
@@ -507,11 +525,14 @@ export abstract class CLITerminalSession extends TerminalSession {
   // ── Tab completion ──────────────────────────────────────────────
 
   protected onTab(): void {
-    const completed = this.resolveCliTabComplete(this.input);
-    if (completed) {
-      this.input = completed;
-      this.notify();
-    }
+    const source = new FullLineSource((line) => {
+      const completed = this.resolveCliTabComplete(line);
+      return completed === null ? [] : [completed.trimEnd()];
+    });
+    const out = this.cliCompletion.handleTab(this.input, source, false);
+    if (!out.changed) return;
+    this.input = out.input;
+    this.notify();
   }
 
   // ── Inline help ─────────────────────────────────────────────────
