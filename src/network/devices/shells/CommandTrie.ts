@@ -16,6 +16,8 @@
  *   next tokens. Leaf/executable nodes have an action callback.
  */
 
+import { extractHandlerKeywords } from './HandlerKeywordExtractor';
+
 // ─── Parameter Types ────────────────────────────────────────────────
 
 export type ParamType = 'INT' | 'STRING' | 'IP_ADDR' | 'SUBNET_MASK' | 'MAC_ADDR' | 'INTERFACE' | 'VLAN_LIST' | 'WORD';
@@ -45,6 +47,11 @@ export interface CommandNode {
   greedy?: boolean;
   hintSuggestions?: Array<{ keyword: string; description: string }>;
   _hintOnly?: boolean;
+  /**
+   * Keywords auto-extracted from the greedy handler's source (lazy,
+   * computed once). Undefined = not yet computed.
+   */
+  _autoKeywords?: ReadonlyArray<{ keyword: string; description: string }>;
 }
 
 export type CommandAction = (args: string[], rawLine: string) => string;
@@ -478,6 +485,19 @@ export class CommandTrie {
         // Never drill down into the match — just show the matches themselves.
         const matches = this.prefixMatch(node, token);
         const listed = matches.map(m => ({ keyword: m.keyword, description: this.resolveDescription(m) }));
+        {
+          const seen = new Set(listed.map(e => e.keyword.toLowerCase()));
+          const hinted = [
+            ...(node.hintSuggestions ?? []),
+            ...this.autoContinuations(node),
+          ];
+          for (const h of hinted) {
+            if (h.keyword.toLowerCase().startsWith(token) && !seen.has(h.keyword.toLowerCase())) {
+              seen.add(h.keyword.toLowerCase());
+              listed.push({ keyword: h.keyword, description: h.description });
+            }
+          }
+        }
         if (this.dynamicResolver) {
           const seen = new Set(listed.map(e => e.keyword.toLowerCase()));
           const context: DynamicCompletionContext = {
@@ -616,6 +636,10 @@ export class CommandTrie {
       }
     }
 
+    for (const auto of this.autoContinuations(node)) {
+      if (auto.keyword.startsWith(partialLower)) push(auto.keyword);
+    }
+
     if (this.dynamicResolver) {
       const context: DynamicCompletionContext = {
         path: completed,
@@ -631,6 +655,27 @@ export class CommandTrie {
   }
 
   // ─── Internal Helpers ───────────────────────────────────────────
+
+  /**
+   * Keywords the node's greedy handler dispatches on, auto-extracted from
+   * the handler's own source so every greedy command is completable
+   * without per-command annotation. Explicit hintSuggestions (curated
+   * descriptions) take precedence at merge time; extraction fills the
+   * rest. Computed lazily, once per node.
+   */
+  private autoContinuations(node: CommandNode): ReadonlyArray<{ keyword: string; description: string }> {
+    if (node._autoKeywords !== undefined) return node._autoKeywords;
+    if (!node.greedy || !node.action) {
+      node._autoKeywords = [];
+      return node._autoKeywords;
+    }
+    const curated = new Set((node.hintSuggestions ?? []).map(h => h.keyword.toLowerCase()));
+    const children = new Set(node.children.keys());
+    node._autoKeywords = extractHandlerKeywords(node.action.toString())
+      .filter(kw => !curated.has(kw) && !children.has(kw))
+      .map(kw => ({ keyword: kw, description: '' }));
+    return node._autoKeywords;
+  }
 
   private prefixMatch(node: CommandNode, prefix: string): CommandNode[] {
     const results: CommandNode[] = [];
@@ -665,6 +710,16 @@ export class CommandTrie {
         if (!seen.has(hint.keyword.toLowerCase())) {
           results.push(hint);
           seen.add(hint.keyword.toLowerCase());
+        }
+      }
+    }
+
+    {
+      const seen = new Set(results.map(r => r.keyword.toLowerCase()));
+      for (const auto of this.autoContinuations(node)) {
+        if (!seen.has(auto.keyword)) {
+          seen.add(auto.keyword);
+          results.push({ keyword: auto.keyword, description: auto.description });
         }
       }
     }
