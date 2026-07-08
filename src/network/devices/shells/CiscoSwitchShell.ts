@@ -2314,6 +2314,20 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       );
     });
 
+    this.configIfTrie.registerGreedy('switchport vlan mapping', 'Selective QinQ: map a client VLAN to a service (S-VLAN)', (args) => {
+      if (args.length < 2) return '% Incomplete command.';
+      const cvlan = parseInt(args[0], 10);
+      const svlan = parseInt(args[1], 10);
+      if (isNaN(cvlan) || isNaN(svlan)) return '% Invalid VLAN ID';
+      return this.applyToSelectedInterfaces(portName => {
+        const cfg = this.d().getSwitchportConfig(portName);
+        if (!cfg) return '% Error';
+        if (!cfg.vlanMapping) cfg.vlanMapping = new Map();
+        cfg.vlanMapping.set(cvlan, svlan);
+        return '';
+      });
+    });
+
     this.configIfTrie.registerGreedy('switchport trunk native vlan', 'Set trunk native VLAN', (args) => {
       if (args.length < 1) return '% Incomplete command.';
       const vlanId = parseInt(args[0], 10);

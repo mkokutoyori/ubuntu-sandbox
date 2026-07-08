@@ -113,6 +113,14 @@ export interface SwitchportConfig {
   defaultCos?: number;
   /** Voice-VLAN port priority-extend behaviour (Cisco `switchport priority extend`, Huawei `trust upstream`). */
   priorityExtend?: { mode: 'cos'; value: number } | { mode: 'trust' };
+  /**
+   * Selective QinQ / VLAN mapping on a dot1q-tunnel port (Cisco `switchport
+   * vlan mapping <cvlan> <svlan>`, Huawei `port vlan-mapping vlan <cvlan>
+   * map-vlan <svlan>`): client VLAN -> service (S-VLAN) translation, chosen
+   * per ingress C-VLAN instead of the port's single `accessVlan`. Several
+   * C-VLANs may map to the same S-VLAN (N:1 aggregation).
+   */
+  vlanMapping?: Map<number, number>;
 }
 
 // ─── IGMP snooping seam ─────────────────────────────────────────────
@@ -1538,8 +1546,12 @@ export abstract class Switch extends Equipment {
       }
     } else if (cfg.mode === 'dot1q-tunnel') {
       // Customer-facing QinQ port: any client tag is opaque payload, never
-      // switch VLAN membership — the S-VLAN is the port's own access VLAN.
-      ingressVlan = cfg.accessVlan;
+      // switch VLAN membership — only consulted to pick the S-VLAN when a
+      // selective vlan-mapping rule exists for it, else the port's own
+      // access VLAN (uniform encapsulation, Phase 3 behaviour).
+      const cvlan = taggedFrame.dot1q?.vid;
+      const mapped = cvlan !== undefined ? cfg.vlanMapping?.get(cvlan) : undefined;
+      ingressVlan = mapped ?? cfg.accessVlan;
     } else if (cfg.mode === 'hybrid') {
       if (taggedFrame.dot1q) {
         ingressVlan = taggedFrame.dot1q.vid;
@@ -1841,6 +1853,16 @@ export abstract class Switch extends Equipment {
     return fallback;
   }
 
+  /** Every S-VLAN this dot1q-tunnel port can egress on: its default `accessVlan` plus any selective vlan-mapping targets. */
+  private dot1qTunnelServesVlan(cfg: SwitchportConfig, vlan: number): boolean {
+    if (cfg.accessVlan === vlan) return true;
+    if (!cfg.vlanMapping) return false;
+    for (const svlan of cfg.vlanMapping.values()) {
+      if (svlan === vlan) return true;
+    }
+    return false;
+  }
+
   // ─── Flood within VLAN ────────────────────────────────────────────
 
   private floodFrame(exceptPort: string, frame: EthernetFrame, vlan: number, cos: number = 0, isQinQ: boolean = false): void {
@@ -1868,7 +1890,7 @@ export abstract class Switch extends Equipment {
           this.sendFrame(portName, this.addTag(frame, vlan, cos));
         }
       } else if (cfg.mode === 'dot1q-tunnel') {
-        if (cfg.accessVlan === vlan) {
+        if (this.dot1qTunnelServesVlan(cfg, vlan)) {
           this.sendFrame(portName, this.stripOuterTag(frame));
         }
       } else if (cfg.mode === 'hybrid') {
@@ -1921,7 +1943,7 @@ export abstract class Switch extends Equipment {
         this.sendFrame(portName, this.stripTag(frame));
       }
     } else if (cfg.mode === 'dot1q-tunnel') {
-      if (cfg.accessVlan === vlan) {
+      if (this.dot1qTunnelServesVlan(cfg, vlan)) {
         this.sendFrame(portName, this.stripOuterTag(frame));
       }
     } else if (cfg.mode === 'hybrid') {

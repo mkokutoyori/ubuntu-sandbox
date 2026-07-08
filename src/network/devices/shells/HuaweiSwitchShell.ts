@@ -1046,6 +1046,26 @@ export class HuaweiSwitchShell implements ISwitchShell {
       this.ifCfg.set(this.selectedInterface, list);
       return '';
     });
+    // Selective QinQ: `port vlan-mapping vlan <cvlan> map-vlan <svlan>` shadows
+    // the decorative catch-all above (CommandTrie prefers the more specific
+    // registration) so it can additionally reach the real translation table.
+    this.interfaceTrie.registerGreedy('port vlan-mapping vlan', 'Map a client VLAN to a service (S-VLAN)', (args) => {
+      if (!this.selectedInterface || !this.swRef) return 'Error: Incomplete command.';
+      const list = this.ifCfg.get(this.selectedInterface) ?? [];
+      list.push(`port vlan-mapping vlan ${args.join(' ')}`.trim());
+      this.ifCfg.set(this.selectedInterface, list);
+      const cvlan = parseInt(args[0] ?? '', 10);
+      const svlan = parseInt(args[2] ?? '', 10);
+      if (isNaN(cvlan) || args[1]?.toLowerCase() !== 'map-vlan' || isNaN(svlan)) {
+        return 'Error: Wrong parameter found at \'^\' position.';
+      }
+      const cfg = this.swRef.getSwitchportConfig(this.selectedInterface);
+      if (cfg) {
+        if (!cfg.vlanMapping) cfg.vlanMapping = new Map();
+        cfg.vlanMapping.set(cvlan, svlan);
+      }
+      return '';
+    });
     this.registerPortSecurity();
     this.registerDot1x();
 
