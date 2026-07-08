@@ -75,6 +75,34 @@ describe('VTP — syncing must not wait for the next server-side VLAN change', (
     expect(client.getVLAN(10)).toBeDefined();
   });
 
+  it('VLANs created before the domain is assigned still reach a same-revision client (revision resets to 0 on domain change)', async () => {
+    const server = new CiscoSwitch('switch-cisco', 'S1', 8);
+    const client = new CiscoSwitch('switch-cisco', 'S2', 8);
+    new Cable('w').connect(server.getPort('FastEthernet0/1')!, client.getPort('FastEthernet0/1')!);
+
+    await server.executeCommand('enable');
+    await server.executeCommand('configure terminal');
+    await server.executeCommand('vlan 10');
+    await server.executeCommand('exit');
+    await server.executeCommand('vlan 20');
+    await server.executeCommand('exit');
+    await server.executeCommand('vtp mode server');
+    await server.executeCommand('vtp domain LAB');
+    await server.executeCommand('end');
+
+    await client.executeCommand('enable');
+    await client.executeCommand('configure terminal');
+    await client.executeCommand('vtp mode client');
+    await client.executeCommand('vtp domain LAB');
+    await client.executeCommand('end');
+
+    await trunkPort(server, 'FastEthernet0/1');
+    await trunkPort(client, 'FastEthernet0/1');
+
+    expect(client.getVLAN(10)).toBeDefined();
+    expect(client.getVLAN(20)).toBeDefined();
+  });
+
   it('a late server joining an established domain pulls the higher-revision database on trunking', async () => {
     const server = new CiscoSwitch('switch-cisco', 'S1', 8);
     const late = new CiscoSwitch('switch-cisco', 'S3', 8);

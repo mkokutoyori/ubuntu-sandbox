@@ -39,6 +39,7 @@ export class VtpAgent extends ReactiveAgentBase {
   private lastSummaryDomain: string | null = null;
   private readonly peerInterest = new Map<string, Set<number>>();
   private knownPrimary: { updater: string; revision: number } | null = null;
+  private hasSyncedDatabase = false;
 
   constructor(
     private readonly host: VtpHost,
@@ -72,6 +73,7 @@ export class VtpAgent extends ReactiveAgentBase {
     const old = this.config.domain;
     this.config.domain = name;
     this.config.revision = 0;
+    this.hasSyncedDatabase = false;
     this.getBus().publish({
       topic: 'vtp.domain.changed',
       payload: {
@@ -205,11 +207,13 @@ export class VtpAgent extends ReactiveAgentBase {
       return;
     }
 
-    if (payload.revision > this.config.revision) {
+    const isFreshJoin = this.config.mode === 'client' && !this.hasSyncedDatabase;
+    if (payload.revision > this.config.revision || (isFreshJoin && payload.revision === this.config.revision)) {
       const oldRev = this.config.revision;
       const result = this.host.vtpApplyVlans(this.filterVlansForVersion(payload.vlans));
       this.config.revision = payload.revision;
       this.config.updaterMac = payload.updater;
+      this.hasSyncedDatabase = true;
       this.getBus().publish({
         topic: 'vtp.db.synced',
         payload: {
