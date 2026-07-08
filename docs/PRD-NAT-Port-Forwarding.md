@@ -103,12 +103,12 @@ base à la planification et à la revue avant le premier commit TDD.
 
 ## 2. Objectifs
 
-### 2.1 Objectifs de ce PRD (remédiation proposée, non encore engagée)
-
 Chaque fonctionnalité ci-dessous est livrée **complète** et, dès lors qu'un
 équipement réel des deux vendors couverts par ce simulateur (Cisco IOS et
 Huawei VRP) la supporte, elle est corrigée/testée **pour les deux**, avec la
-syntaxe et la sémantique propres à chaque vendor.
+syntaxe et la sémantique propres à chaque vendor. Les items 6 à 9
+délimitent explicitement ce que ce PRD **ne traite pas**, pour éviter toute
+ambiguïté entre un gap non chiffré et un oubli.
 
 1. **Corriger l'ordre d'évaluation NAT/ACL — vendor-neutre (le code de
    `Router.processIPv4()` est partagé).** Sens entrant : évaluer l'ACL
@@ -140,27 +140,28 @@ syntaxe et la sémantique propres à chaque vendor.
    Appliquer effectivement la traduction d'adresse source pour un hôte
    outside s'adressant à un hôte inside via son adresse locale, en
    complément de `translateInbound()`/`translateOutbound()` existants.
-
-### 2.2 Hors périmètre (explicitement exclu)
-
-- NAT statique 1:1 sans port, NAT réseau, PAT/overload dynamique, hairpin,
-  réécriture ICMP embarquée, pinhole ALG FTP — déjà réels et solides
-  (§1.2), non retouchés par ce PRD.
-- ALG SIP, NAT64 — déjà identifiés et documentés dans `GAP.md` §4.10 comme
-  hors périmètre actuel ; ce PRD n'y revient pas.
-- `ip nat inside source route-map` (item 2.1 §1.3-6) et `nat dns-map`/`nat
-  static enable` (item 2.1 §1.3-7) : décoratives et mineures, signalées pour
-  mémoire mais **non traitées** dans les phases ci-dessous (chiffrage jugé
-  disproportionné par rapport à leur usage réel en topologie pédagogique) —
-  à ne pas confondre avec un oubli : c'est un choix de portée explicite.
-- Journalisation/traces d'audit spécifiques à la redirection de port
-  (`ip nat log translations` ou équivalent) — non demandé, non traité.
+6. **Hors périmètre — fonctionnalités déjà réelles, non retouchées.** NAT
+   statique 1:1 sans port, NAT réseau, PAT/overload dynamique, hairpin,
+   réécriture ICMP embarquée, pinhole ALG FTP — déjà réels et solides
+   (§1.2), ce PRD ne les modifie pas.
+7. **Hors périmètre — déjà couvert ailleurs.** ALG SIP, NAT64 — déjà
+   identifiés et documentés dans `GAP.md` §4.10 comme hors périmètre actuel ;
+   ce PRD n'y revient pas.
+8. **Hors périmètre — décoratif, chiffrage jugé disproportionné.**
+   `ip nat inside source route-map` (§1.3 item 6) et `nat dns-map`/`nat
+   static enable` (§1.3 item 7) : signalées pour mémoire mais **non
+   traitées** dans les phases ci-dessous, vu leur usage réel limité en
+   topologie pédagogique — à ne pas confondre avec un oubli, c'est un choix
+   de portée explicite.
+9. **Hors périmètre — non demandé.** Journalisation/traces d'audit
+   spécifiques à la redirection de port (`ip nat log translations` ou
+   équivalent).
 
 ---
 
 ## 3. Plan de remédiation détaillé
 
-### Phase 1 — Correction de l'ordre d'évaluation NAT/ACL (item 2.1-1)
+### Phase 1 — Correction de l'ordre d'évaluation NAT/ACL (item 2-1)
 
 - **Fichiers touchés** : `src/network/devices/Router.ts` uniquement
   (`processIPv4()`, chemins entrant l. ~1160-1230 et sortant l. ~1560-1590).
@@ -179,7 +180,7 @@ syntaxe et la sémantique propres à chaque vendor.
   sur les tests existants, qui n'exercent pas cette interaction) et des
   suites ACL pures (`ssh-cisco-acl-*.test.ts`, `scenario-multilayer-acl-coherence.test.ts`).
 
-### Phase 2a — Couverture bout-en-bout Cisco : livraison applicative réelle (item 2.1-2)
+### Phase 2a — Couverture bout-en-bout Cisco : livraison applicative réelle (item 2-2)
 
 - **Fichiers touchés** : nouveau fichier de test uniquement, aucun changement
   moteur attendu (le moteur traduit déjà correctement — cette phase prouve
@@ -193,7 +194,7 @@ syntaxe et la sémantique propres à chaque vendor.
   effectivement reçue par le client (pas uniquement un compteur). Variante
   UDP équivalente.
 
-### Phase 2b — Couverture bout-en-bout Huawei : topologie manquante (item 2.1-3)
+### Phase 2b — Couverture bout-en-bout Huawei : topologie manquante (item 2-3)
 
 - **Fichiers touchés** : nouveau fichier de test uniquement, même logique
   que 2a mais topologie/CLI Huawei (`nat server protocol tcp|udp`).
@@ -202,7 +203,7 @@ syntaxe et la sémantique propres à chaque vendor.
   vendors plutôt que deux fichiers séparés) — topologie Huawei miroir de la
   Phase 2a, TCP et UDP.
 
-### Phase 3 — Commandes de maintenance sélectives (item 2.1-4)
+### Phase 3 — Commandes de maintenance sélectives (item 2-4)
 
 - **Fichiers touchés** : `NATEngine.ts` (méthodes de purge, ajout de
   filtrage par critère), `CiscoNATCommands.ts` (l. ~489-556),
@@ -216,7 +217,7 @@ syntaxe et la sémantique propres à chaque vendor.
   sessions actives simultanées, purge sélective par filtre, vérification
   que les sessions non concernées survivent — deux vendors.
 
-### Phase 4 — `ip nat outside source static` réellement appliquée (item 2.1-5, Cisco uniquement)
+### Phase 4 — `ip nat outside source static` réellement appliquée (item 2-5, Cisco uniquement)
 
 - **Fichiers touchés** : `NATEngine.ts` (`translateInbound()`/
   `translateOutbound()` consultent désormais aussi `NatOutsideStatic`),
@@ -240,7 +241,7 @@ touchant NAT (`nat-pat.test.ts`, `nat-pat-other.test.ts`,
 Phase 1 en particulier touche un chemin de code partagé par tout trafic
 routé, pas seulement le trafic NATé, et exige la régression complète des
 suites `router-*`/`inter-vlan-routing.test.ts` avant tout commit. Les
-Phases 2a/2b sont chacune requises pour clore l'objectif §2.1-2/3 — livrer
+Phases 2a/2b sont chacune requises pour clore les objectifs §2 items 2 et 3 — livrer
 uniquement le volet Cisco constitue une livraison incomplète. La Phase 3
 dépend de la Phase 1 uniquement dans la mesure où les deux touchent le même
 fichier `Router.ts`/`NATEngine.ts` (risque de conflit de merge, pas de
