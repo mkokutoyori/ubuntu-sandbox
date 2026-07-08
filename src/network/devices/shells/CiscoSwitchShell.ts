@@ -2314,6 +2314,18 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       );
     });
 
+    this.configIfTrie.registerGreedy('l2protocol-tunnel', 'Tunnel a client L2 control protocol across the S-VLAN instead of terminating it locally', (args) => {
+      const proto = (args[0] ?? '').toLowerCase();
+      if (proto !== 'cdp' && proto !== 'stp' && proto !== 'vtp' && proto !== 'lldp') {
+        return "% Invalid input detected at '^' marker.";
+      }
+      return this.applyToSelectedInterfaces(portName => {
+        if (!this.d().getSwitchportConfig(portName)) return '% Error';
+        this.d().enableL2ProtocolTunnel(portName, proto);
+        return '';
+      });
+    });
+
     this.configIfTrie.registerGreedy('switchport vlan mapping', 'Selective QinQ: map a client VLAN to a service (S-VLAN)', (args) => {
       if (args.length < 2) return '% Incomplete command.';
       const cvlan = parseInt(args[0], 10);

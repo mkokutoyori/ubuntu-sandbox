@@ -1066,6 +1066,18 @@ export class HuaweiSwitchShell implements ISwitchShell {
       }
       return '';
     });
+    this.interfaceTrie.registerGreedy('bpdu-tunnel', 'Tunnel a client L2 control protocol across the S-VLAN instead of terminating it locally', (args) => {
+      if (!this.selectedInterface || !this.swRef) return 'Error: Incomplete command.';
+      const list = this.ifCfg.get(this.selectedInterface) ?? [];
+      list.push(`bpdu-tunnel ${args.join(' ')}`.trim());
+      this.ifCfg.set(this.selectedInterface, list);
+      const proto = (args[0] ?? '').toLowerCase();
+      if ((proto !== 'stp' && proto !== 'lldp') || args[1]?.toLowerCase() !== 'enable') {
+        return 'Error: Wrong parameter found at \'^\' position.';
+      }
+      this.swRef.enableL2ProtocolTunnel(this.selectedInterface, proto);
+      return '';
+    });
     this.registerPortSecurity();
     this.registerDot1x();
 

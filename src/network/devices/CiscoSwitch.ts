@@ -175,10 +175,12 @@ export class CiscoSwitch extends Switch {
 
   protected override handleFrame(portName: string, frame: EthernetFrame): void {
     if (frame.etherType === ETHERTYPE_CDP) {
+      if (this.isL2ProtocolTunneled(portName, 'cdp')) { super.handleFrame(portName, frame); return; }
       this.cdpAgent.handleFrame(portName, frame);
       return;
     }
     if (frame.etherType === ETHERTYPE_LLDP) {
+      if (this.isL2ProtocolTunneled(portName, 'lldp')) { super.handleFrame(portName, frame); return; }
       this.lldpAgent.handleFrame(portName, frame);
       return;
     }
@@ -187,6 +189,7 @@ export class CiscoSwitch extends Switch {
       return;
     }
     if (frame.etherType === ETHERTYPE_STP) {
+      if (this.isL2ProtocolTunneled(portName, 'stp')) { super.handleFrame(portName, frame); return; }
       this.stpAgent.handleFrame(portName, frame);
       return;
     }
@@ -195,6 +198,7 @@ export class CiscoSwitch extends Switch {
       return;
     }
     if (frame.etherType === ETHERTYPE_VTP) {
+      if (this.isL2ProtocolTunneled(portName, 'vtp')) { super.handleFrame(portName, frame); return; }
       this.vtpAgent.handleFrame(portName, frame);
       return;
     }

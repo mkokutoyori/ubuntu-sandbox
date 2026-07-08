@@ -90,7 +90,9 @@ export class StpAgent extends ReactiveAgentBase implements StpInstanceAgent {
 
   private portVlans(portName: string): number[] {
     const v = this.host.getStpPortVlans?.(portName);
-    return v && v.length ? v : [1];
+    // A genuinely empty array (e.g. an L2PT-tunneled port) means "no local
+    // STP participation at all" — only a missing hook falls back to VLAN 1.
+    return v ?? [1];
   }
 
   private ensurePortInstances(): void {

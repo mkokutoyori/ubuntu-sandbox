@@ -45,6 +45,7 @@ export class HuaweiSwitch extends Switch {
       ...hostBase,
       onForwardStateChanged: (p, s, v) => this.applyStpForwardState(p, s, v),
       onTopologyChangeAging: (sec) => this._setStpFastAging(sec),
+      getStpPortVlans: (p) => this.getStpPortVlans(p),
     }, () => this.getBus(), baseMac);
     this.lacpAgent = new LacpAgent(hostBase, () => this.getBus(), baseMac);
     this.igmpSnoopingAgent = new IgmpSnoopingAgent({
@@ -81,10 +82,12 @@ export class HuaweiSwitch extends Switch {
 
   protected override handleFrame(portName: string, frame: EthernetFrame): void {
     if (frame.etherType === ETHERTYPE_LLDP) {
+      if (this.isL2ProtocolTunneled(portName, 'lldp')) { super.handleFrame(portName, frame); return; }
       this.lldpAgent.handleFrame(portName, frame);
       return;
     }
     if (frame.etherType === ETHERTYPE_STP) {
+      if (this.isL2ProtocolTunneled(portName, 'stp')) { super.handleFrame(portName, frame); return; }
       this.stpAgent.handleFrame(portName, frame);
       return;
     }

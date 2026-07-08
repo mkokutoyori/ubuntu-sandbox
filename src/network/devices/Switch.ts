@@ -121,6 +121,15 @@ export interface SwitchportConfig {
    * C-VLANs may map to the same S-VLAN (N:1 aggregation).
    */
   vlanMapping?: Map<number, number>;
+  /**
+   * L2 protocol tunneling on a dot1q-tunnel port (Cisco `l2protocol-tunnel
+   * {cdp|stp|vtp|lldp}`, Huawei `bpdu-tunnel {stp|lldp} enable`): control
+   * frames for the listed protocols are never handed to this switch's own
+   * agent — they're relayed as opaque data across the S-VLAN so two client
+   * switches see each other's protocol traffic through a transparent
+   * provider, instead of the provider terminating/originating it locally.
+   */
+  l2ptProtocols?: Set<'cdp' | 'stp' | 'vtp' | 'lldp'>;
 }
 
 // ─── IGMP snooping seam ─────────────────────────────────────────────
@@ -817,6 +826,34 @@ export abstract class Switch extends Equipment {
   }
 
   /**
+   * Whether `proto`'s control frames arriving on `portName` must be relayed
+   * as opaque data (L2PT) instead of handed to this switch's own agent —
+   * true only on a dot1q-tunnel port with that protocol listed.
+   */
+  protected isL2ProtocolTunneled(portName: string, proto: 'cdp' | 'stp' | 'vtp' | 'lldp'): boolean {
+    const cfg = this.switchportConfigs.get(portName);
+    return cfg?.mode === 'dot1q-tunnel' && (cfg.l2ptProtocols?.has(proto) ?? false);
+  }
+
+  /**
+   * `l2protocol-tunnel <proto>` / `bpdu-tunnel <proto> enable`: mark a
+   * dot1q-tunnel port's control-protocol frames as opaque relayed data
+   * instead of local agent input (see `isL2ProtocolTunneled`).
+   */
+  enableL2ProtocolTunnel(portName: string, proto: 'cdp' | 'stp' | 'vtp' | 'lldp'): void {
+    const cfg = this.switchportConfigs.get(portName);
+    if (!cfg) return;
+    if (!cfg.l2ptProtocols) cfg.l2ptProtocols = new Set();
+    cfg.l2ptProtocols.add(proto);
+    if (proto === 'stp') {
+      // No spanning-tree instance governs this port any more (its BPDUs are
+      // opaque relayed data, per getStpPortVlans) — it must not sit stuck in
+      // listening/learning waiting on a local election that will never run.
+      this.setSTPState(portName, 'forwarding');
+    }
+  }
+
+  /**
    * VLAN-membership bookkeeping for a switchport mode change — no DTP
    * admin-mode side effect. Used both by the CLI-facing `setSwitchportMode`
    * below and by DTP's own operational-mode sync (which must update this
@@ -1371,6 +1408,12 @@ export abstract class Switch extends Equipment {
     const cfg = this.switchportConfigs.get(portName);
     if (!cfg) return [1];
     if (cfg.mode === 'access') {
+      return this.vlans.has(cfg.accessVlan) ? [cfg.accessVlan] : [1];
+    }
+    if (cfg.mode === 'dot1q-tunnel') {
+      // A tunneled STP port has no local spanning-tree participation of its
+      // own — client BPDUs are opaque relayed data, not real protocol input.
+      if (cfg.l2ptProtocols?.has('stp')) return [];
       return this.vlans.has(cfg.accessVlan) ? [cfg.accessVlan] : [1];
     }
     const out = [...cfg.trunkAllowedVlans]
