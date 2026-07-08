@@ -233,6 +233,15 @@ describe('Group 2: su command execution', () => {
     expect(exitResult.inSu).toBe(true);
     expect(await server.executeCommand('whoami')).toBe('alice');
   });
+
+  it('$EUID reflects root after sudo su, letting `[[ $EUID -ne 0 ]]` root-checks pass', async () => {
+    const pc = new LinuxPC('linux-pc', 'PC1');
+    expect((await pc.executeCommand('echo $EUID')).trim()).toBe('1000');
+
+    await pc.executeCommand('sudo su');
+    expect((await pc.executeCommand('echo $EUID')).trim()).toBe('0');
+    expect(await pc.executeCommand('bash -c \'if [[ $EUID -ne 0 ]]; then echo FAIL; else echo OK; fi\'')).toBe('OK');
+  });
 });
 
 // ═══════════════════════════════════════════════════════════════════

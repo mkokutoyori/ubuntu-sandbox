@@ -294,8 +294,11 @@ function preprocessHeredocs(source: string): string {
     // Replace << ... with <<< 'body' or <<< "body"
     const prefix = line.substring(0, heredocMatch.index!);
     if (isQuoted) {
-      // Single-quoted herestring: no expansion
-      const escaped = body.replace(/\\/g, '\\\\').replace(/'/g, "'\\''");
+      // Single-quoted herestring: no expansion, and no escape processing
+      // either — a literal backslash in the body must stay a single
+      // backslash, so only the quote character itself needs the
+      // close-quote/escape/reopen-quote trick.
+      const escaped = body.replace(/'/g, "'\\''");
       result.push(prefix + "<<< '" + escaped + "'");
     } else {
       // Double-quoted herestring: expansion will happen
@@ -358,6 +361,7 @@ function buildEnvVars(ctx: ShellContext): Record<string, string> {
     USER: ctx.userMgr.currentUser,
     LOGNAME: ctx.userMgr.currentUser,
     UID: String(ctx.uid),
+    EUID: String(ctx.uid),
     SHELL: '/bin/bash',
     PATH: '/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin',
   };

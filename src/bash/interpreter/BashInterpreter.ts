@@ -1061,7 +1061,16 @@ export class BashInterpreter {
 
     if (node.elseBody) {
       yield* this.visitCommandList(node.elseBody);
+      return;
     }
+
+    // POSIX: "the exit status of if shall be ... zero if no condition
+    // tested true." Without this, a false condition's own nonzero status
+    // would linger as $? and — since the condition itself is exempt from
+    // errexit but this leftover status is checked by the *enclosing*
+    // command list right after visitIf returns — incorrectly abort a
+    // `set -e` script even though nothing actually failed.
+    this.env.lastExitCode = 0;
   }
 
   // ─── For ──────────────────────────────────────────────────────

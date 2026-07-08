@@ -2754,6 +2754,7 @@ export class LinuxCommandExecutor {
       USER: user,
       LOGNAME: user,
       UID: String(this.userMgr.currentUid),
+      EUID: String(this.userMgr.currentUid),
       SHELL: '/bin/bash',
       PATH: '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin',
       // Standard interactive-session variables a real login shell exports.
