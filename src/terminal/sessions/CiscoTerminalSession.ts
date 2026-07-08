@@ -12,6 +12,7 @@ import { TerminalTheme, SessionType, withTimeout, DeviceOfflineError } from './T
 import { CiscoFlowBuilder } from '@/terminal/flows/CiscoFlowBuilder';
 import type { InteractiveStep } from '@/terminal/core/types';
 import { Router } from '@/network/devices/Router';
+import { Switch } from '@/network/devices/Switch';
 import { IPAddress } from '@/network/core/types';
 import { parsePingArgs, formatCiscoPingSummary, type CiscoPingRow } from '@/network/devices/shells/cisco/ciscoPing';
 import type { CliShellSession } from '@/network/devices/shells/vty/CliShellSession';
@@ -45,15 +46,13 @@ export class CiscoTerminalSession extends CLITerminalSession {
 
   constructor(id: string, device: ICLIDevice) {
     super(id, device);
-    if (device instanceof Router) {
+    if (device instanceof Router || device instanceof Switch) {
       this.vty = device.openVtySession();
       this.registerTearDown(() => {
         const s = this.vty;
-        if (s && device instanceof Router) device.closeVtySession(s);
+        if (s && (device instanceof Router || device instanceof Switch)) device.closeVtySession(s);
         this.vty = null;
       });
-    } else {
-      (device as unknown as { resetCliMode?: () => void }).resetCliMode?.();
     }
   }
 
@@ -81,7 +80,7 @@ export class CiscoTerminalSession extends CLITerminalSession {
   ): Promise<string> {
     const dev = this.device;
     if (!dev.getIsPoweredOn()) throw new DeviceOfflineError(dev.getName());
-    if (this.vty && dev instanceof Router) {
+    if (this.vty && (dev instanceof Router || dev instanceof Switch)) {
       const p = dev.executeCommandInVty(command, this.vty);
       return timeoutMs != null ? withTimeout(p, timeoutMs) : p;
     }
@@ -99,7 +98,7 @@ export class CiscoTerminalSession extends CLITerminalSession {
 
   protected override resolveCliHelp(currentInput: string): string {
     const dev = this.device;
-    if (this.vty && dev instanceof Router) {
+    if (this.vty && (dev instanceof Router || dev instanceof Switch)) {
       return dev.cliHelpForVty(currentInput, this.vty);
     }
     return super.resolveCliHelp(currentInput);
@@ -107,7 +106,7 @@ export class CiscoTerminalSession extends CLITerminalSession {
 
   protected override resolveCliTabComplete(input: string): string | null {
     const dev = this.device;
-    if (this.vty && dev instanceof Router) {
+    if (this.vty && (dev instanceof Router || dev instanceof Switch)) {
       return dev.cliTabCompleteForVty(input, this.vty);
     }
     return super.resolveCliTabComplete(input);
@@ -119,7 +118,7 @@ export class CiscoTerminalSession extends CLITerminalSession {
    */
   override updatePrompt(): void {
     const dev = this.device;
-    if (this.vty && dev instanceof Router) {
+    if (this.vty && (dev instanceof Router || dev instanceof Switch)) {
       this.prompt = dev.getPromptForVty(this.vty);
     } else {
       this.prompt = this.cliDevice.getPrompt();

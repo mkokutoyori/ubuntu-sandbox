@@ -12,6 +12,7 @@ import { TerminalTheme, SessionType, withTimeout, DeviceOfflineError } from './T
 import { HuaweiFlowBuilder } from '@/terminal/flows/HuaweiFlowBuilder';
 import type { InteractiveStep } from '@/terminal/core/types';
 import { Router } from '@/network/devices/Router';
+import { Switch } from '@/network/devices/Switch';
 import type { CliShellSession } from '@/network/devices/shells/vty/CliShellSession';
 import type { AsyncJobHandle } from '@/terminal/async';
 import type { TerminalDebugSource } from '@/network/devices/diag/DebugBroadcast';
@@ -37,15 +38,13 @@ export class HuaweiTerminalSession extends CLITerminalSession {
 
   constructor(id: string, device: ICLIDevice) {
     super(id, device);
-    if (device instanceof Router) {
+    if (device instanceof Router || device instanceof Switch) {
       this.vty = device.openVtySession();
       this.registerTearDown(() => {
         const s = this.vty;
-        if (s && device instanceof Router) device.closeVtySession(s);
+        if (s && (device instanceof Router || device instanceof Switch)) device.closeVtySession(s);
         this.vty = null;
       });
-    } else {
-      (device as unknown as { resetCliMode?: () => void }).resetCliMode?.();
     }
   }
 
@@ -68,7 +67,7 @@ export class HuaweiTerminalSession extends CLITerminalSession {
   ): Promise<string> {
     const dev = this.device;
     if (!dev.getIsPoweredOn()) throw new DeviceOfflineError(dev.getName());
-    if (this.vty && dev instanceof Router) {
+    if (this.vty && (dev instanceof Router || dev instanceof Switch)) {
       const p = dev.executeCommandInVty(command, this.vty);
       return timeoutMs != null ? withTimeout(p, timeoutMs) : p;
     }
@@ -77,7 +76,7 @@ export class HuaweiTerminalSession extends CLITerminalSession {
 
   override updatePrompt(): void {
     const dev = this.device;
-    if (this.vty && dev instanceof Router) {
+    if (this.vty && (dev instanceof Router || dev instanceof Switch)) {
       this.prompt = dev.getPromptForVty(this.vty);
     } else {
       this.prompt = this.cliDevice.getPrompt();

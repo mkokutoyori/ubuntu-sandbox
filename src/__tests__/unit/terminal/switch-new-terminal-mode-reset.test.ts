@@ -4,9 +4,10 @@ import { HuaweiSwitch } from '@/network/devices/HuaweiSwitch';
 import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
 import { EventBus, __setDefaultEventBus } from '@/events/EventBus';
 import { TerminalManager } from '@/terminal/sessions/TerminalManager';
-import type { TerminalSession } from '@/terminal/sessions/TerminalSession';
+import type { CiscoTerminalSession } from '@/terminal/sessions/CiscoTerminalSession';
+import type { HuaweiTerminalSession } from '@/terminal/sessions/HuaweiTerminalSession';
 
-async function waitBoot(session: TerminalSession): Promise<void> {
+async function waitBoot(session: { isBooting: boolean }): Promise<void> {
   for (let i = 0; i < 30; i++) {
     if (!session.isBooting) return;
     await new Promise(r => setTimeout(r, 50));
@@ -30,17 +31,18 @@ describe('a new switch terminal starts in user mode, not the last terminal\'s mo
     sw.setEventBus(bus);
 
     const sid1 = manager.openTerminal(sw)!;
-    await waitBoot(manager.getSession(sid1)!);
-    await sw.executeCommand('enable');
-    await sw.executeCommand('configure terminal');
-    await sw.executeCommand('interface FastEthernet0/1');
-    expect(sw.getPrompt()).toBe('SW1(config-if)#');
+    const t1 = manager.getSession(sid1) as CiscoTerminalSession;
+    await waitBoot(t1);
+    await sw.executeCommandInVty('enable', t1.vty!);
+    await sw.executeCommandInVty('configure terminal', t1.vty!);
+    await sw.executeCommandInVty('interface FastEthernet0/1', t1.vty!);
+    expect(sw.getPromptForVty(t1.vty!)).toBe('SW1(config-if)#');
     manager.closeTerminal(sid1);
 
     const sid2 = manager.openTerminal(sw)!;
-    const t2 = manager.getSession(sid2)!;
+    const t2 = manager.getSession(sid2) as CiscoTerminalSession;
     await waitBoot(t2);
-    expect(sw.getPrompt()).toBe('SW1>');
+    expect(sw.getPromptForVty(t2.vty!)).toBe('SW1>');
   });
 
   it('Huawei switch: closing a terminal left in interface view does not leak into the next terminal', async () => {
@@ -48,15 +50,16 @@ describe('a new switch terminal starts in user mode, not the last terminal\'s mo
     sw.setEventBus(bus);
 
     const sid1 = manager.openTerminal(sw)!;
-    await waitBoot(manager.getSession(sid1)!);
-    await sw.executeCommand('system-view');
-    await sw.executeCommand('interface GigabitEthernet0/0/1');
-    expect(sw.getPrompt()).toBe('[SW1-GigabitEthernet0/0/1]');
+    const t1 = manager.getSession(sid1) as HuaweiTerminalSession;
+    await waitBoot(t1);
+    await sw.executeCommandInVty('system-view', t1.vty!);
+    await sw.executeCommandInVty('interface GigabitEthernet0/0/1', t1.vty!);
+    expect(sw.getPromptForVty(t1.vty!)).toBe('[SW1-GigabitEthernet0/0/1]');
     manager.closeTerminal(sid1);
 
     const sid2 = manager.openTerminal(sw)!;
-    const t2 = manager.getSession(sid2)!;
+    const t2 = manager.getSession(sid2) as HuaweiTerminalSession;
     await waitBoot(t2);
-    expect(sw.getPrompt()).toBe('<SW1>');
+    expect(sw.getPromptForVty(t2.vty!)).toBe('<SW1>');
   });
 });

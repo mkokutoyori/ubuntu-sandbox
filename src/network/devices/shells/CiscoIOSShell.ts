@@ -370,6 +370,12 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     return {
       mode: this.mode,
       selectedInterface: this.selectedInterface,
+      selectedInterfaceRange: [],
+      selectedVlan: null,
+      selectedArpAcl: null,
+      selectedAccessMap: null,
+      selectedMqcName: null,
+      selectedPortGroup: null,
       selectedRoutingProto: this.selectedRoutingProto,
       selectedTrack: this.selectedTrack,
       selectedIpSla: this.selectedIpSla,

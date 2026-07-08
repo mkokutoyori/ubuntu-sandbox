@@ -29,6 +29,7 @@
 
 import { Equipment } from '../equipment/Equipment';
 import { Port } from '../hardware/Port';
+import { CliShellSession } from './shells/vty/CliShellSession';
 import { EthernetFrame, DeviceType, MACAddress, ETHERTYPE_ARP, ARPPacket, IPAddress, SubnetMask, ETHERTYPE_IPV4, IPv4Packet } from '../core/types';
 import { DHCPPacket } from '../dhcp/DHCPPacket';
 import { SwitchSvi, type SviInterface } from './SwitchSvi';
@@ -2539,5 +2540,98 @@ export abstract class Switch extends Equipment {
   async executeCommand(command: string): Promise<string> {
     if (!this.isPoweredOn) return '% Device is powered off';
     return this.shell.execute(this, command);
+  }
+
+  // ─── vty sessions (per-terminal CLI isolation) ────────────────────
+  // Cisco/Huawei switch shells are a single instance shared by every
+  // open terminal (no per-vty allocation like Router). Mirrors
+  // Router.ts's swap-and-restore pattern so two concurrently open
+  // terminals on the same switch don't observe each other's mode /
+  // sub-mode pointers.
+
+  private readonly vtySessions = new Map<string, CliShellSession>();
+  private vtyExecQueue: Promise<unknown> = Promise.resolve();
+
+  openVtySession(): CliShellSession {
+    const s = new CliShellSession({ initialMode: 'user' });
+    this.vtySessions.set(s.id, s);
+    return s;
+  }
+
+  closeVtySession(sessionOrId: CliShellSession | string): void {
+    const id = typeof sessionOrId === 'string' ? sessionOrId : sessionOrId.id;
+    const s = this.vtySessions.get(id);
+    if (!s) return;
+    s.dispose();
+    this.vtySessions.delete(id);
+  }
+
+  getVtySession(id: string): CliShellSession | undefined {
+    return this.vtySessions.get(id);
+  }
+
+  private vtyShellHooks(): {
+    snapshotVtyState?: () => import('./shells/vty/CliShellSession').VtySnapshot;
+    applyVtyState?: (s: import('./shells/vty/CliShellSession').VtySnapshot) => void;
+  } {
+    return this.shell as unknown as {
+      snapshotVtyState?: () => import('./shells/vty/CliShellSession').VtySnapshot;
+      applyVtyState?: (s: import('./shells/vty/CliShellSession').VtySnapshot) => void;
+    };
+  }
+
+  async executeCommandInVty(command: string, session: CliShellSession): Promise<string> {
+    const shell = this.vtyShellHooks();
+    if (!shell.snapshotVtyState || !shell.applyVtyState) {
+      return this.executeCommand(command);
+    }
+    const run = async (): Promise<string> => {
+      if (!this.isPoweredOn) return '% Device is powered off';
+      if (session.disposed) return '';
+      const baseline = shell.snapshotVtyState!();
+      shell.applyVtyState!(session.state);
+      try {
+        const out = await this.executeCommand(command);
+        session.state = shell.snapshotVtyState!();
+        return out;
+      } finally {
+        shell.applyVtyState!(baseline);
+      }
+    };
+    const promise = this.vtyExecQueue.then(run, run) as Promise<string>;
+    this.vtyExecQueue = promise.catch(() => undefined);
+    return promise;
+  }
+
+  private withSwappedVtyState<T>(session: CliShellSession, fn: () => T): T | null {
+    const shell = this.vtyShellHooks();
+    if (!shell.snapshotVtyState || !shell.applyVtyState) return null;
+    const baseline = shell.snapshotVtyState();
+    shell.applyVtyState(session.state);
+    try {
+      return fn();
+    } finally {
+      shell.applyVtyState(baseline);
+    }
+  }
+
+  cliHelpForVty(input: string, session: CliShellSession): string {
+    return this.withSwappedVtyState(session, () => this.cliHelp(input)) ?? this.cliHelp(input);
+  }
+
+  cliTabCompleteForVty(input: string, session: CliShellSession): string | null {
+    return this.withSwappedVtyState(session, () => this.cliTabComplete(input));
+  }
+
+  getPromptForVty(session: CliShellSession): string {
+    const shell = this.vtyShellHooks();
+    if (!shell.snapshotVtyState || !shell.applyVtyState) return this.getPrompt();
+    const baseline = shell.snapshotVtyState();
+    shell.applyVtyState(session.state);
+    try {
+      return this.getPrompt();
+    } finally {
+      shell.applyVtyState(baseline);
+    }
   }
 }

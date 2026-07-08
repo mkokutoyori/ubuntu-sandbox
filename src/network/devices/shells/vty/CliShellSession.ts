@@ -34,6 +34,18 @@ export interface VtySnapshot {
   mode: unknown;
   // ── Selection context (sub-mode pointers) ─────────────────────────
   selectedInterface: string | null;
+  /** Switch-only: `interface range ...` — Router shells leave this []. */
+  selectedInterfaceRange: string[];
+  /** Switch-only: `vlan N` config context — Router shells leave this null. */
+  selectedVlan: number | null;
+  /** Switch-only: ARP ACL context (Cisco `arp access-list`) — Router shells leave this null. */
+  selectedArpAcl: string | null;
+  /** Switch-only: `vlan access-map NAME SEQ` context — Router shells leave this null. */
+  selectedAccessMap: unknown;
+  /** Huawei switch-only: traffic-classifier/behavior/policy (MQC) name context. */
+  selectedMqcName: string | null;
+  /** Huawei switch-only: active `port-group` bulk-config member range. */
+  selectedPortGroup: string | null;
   selectedRoutingProto: unknown;
   selectedTrack: number | null;
   selectedIpSla: number | null;
@@ -105,6 +117,12 @@ export class CliShellSession {
     this.state = {
       mode: init.initialMode,
       selectedInterface: null,
+      selectedInterfaceRange: [],
+      selectedVlan: null,
+      selectedArpAcl: null,
+      selectedAccessMap: null,
+      selectedMqcName: null,
+      selectedPortGroup: null,
       selectedRoutingProto: null,
       selectedTrack: null,
       selectedIpSla: null,

@@ -123,6 +123,62 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
   getSelectedInterface(): string | null { return this.selectedInterface; }
   getSelectedInterfaceRange(): string[] { return [...this.selectedInterfaceRange]; }
 
+  // ─── Per-vty state snapshot / swap (mirrors CiscoIOSShell — the switch
+  // shell is likewise a single instance shared by every open terminal) ──
+
+  snapshotVtyState(): import('./vty/CliShellSession').VtySnapshot {
+    return {
+      mode: this.mode,
+      selectedInterface: this.selectedInterface,
+      selectedInterfaceRange: [...this.selectedInterfaceRange],
+      selectedVlan: this.selectedVlan,
+      selectedArpAcl: this.selectedArpAcl,
+      selectedAccessMap: this.selectedAccessMap,
+      selectedMqcName: null,
+      selectedPortGroup: null,
+      selectedRoutingProto: null,
+      selectedTrack: null,
+      selectedIpSla: null,
+      selectedRouteMap: null,
+      selectedDHCPPool: this.selectedDhcpPool,
+      selectedACL: this.selectedAcl,
+      selectedACLType: this.selectedAclType,
+      selectedISAKMPPriority: null,
+      selectedTransformSet: null,
+      selectedCryptoMap: null,
+      selectedCryptoMapSeq: null,
+      selectedCryptoMapIsDynamic: false,
+      selectedIPSecProfile: null,
+      selectedIKEv2Proposal: null,
+      selectedIKEv2Policy: null,
+      selectedIKEv2Keyring: null,
+      selectedIKEv2KeyringPeer: null,
+      selectedIKEv2Profile: null,
+      terminalLength: this.terminalLength,
+      terminalWidth: this.terminalWidth,
+      terminalMonitor: this.terminalMonitor,
+      terminalDebugging: this.terminalMonitor,
+      privilegeLevel: this.mode === 'user' ? 1 : 15,
+      historySize: this.terminalHistorySize,
+      cmdHistory: [...this.cmdHistory],
+    };
+  }
+
+  applyVtyState(s: import('./vty/CliShellSession').VtySnapshot): void {
+    this.mode = s.mode as CLIMode;
+    this.selectedInterface = s.selectedInterface;
+    this.selectedInterfaceRange = [...s.selectedInterfaceRange];
+    this.selectedVlan = s.selectedVlan;
+    this.selectedArpAcl = s.selectedArpAcl;
+    this.selectedAccessMap = s.selectedAccessMap as typeof this.selectedAccessMap;
+    this.selectedDhcpPool = s.selectedDHCPPool;
+    this.selectedAcl = s.selectedACL;
+    this.selectedAclType = s.selectedACLType ?? 'extended';
+    this.terminalLength = s.terminalLength;
+    this.terminalWidth = s.terminalWidth;
+    this.terminalMonitor = s.terminalMonitor;
+  }
+
   // ─── Abstract Method Implementations ─────────────────────────────
 
   protected getPromptMap(): PromptMap { return CISCO_SWITCH_PROMPTS; }

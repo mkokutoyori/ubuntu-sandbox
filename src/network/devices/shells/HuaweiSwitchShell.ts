@@ -347,6 +347,58 @@ export class HuaweiSwitchShell implements ISwitchShell {
     this.portGroupMembers = null;
   }
 
+  // ─── Per-vty state snapshot / swap (mirrors HuaweiVRPShell — the switch
+  // shell is likewise a single instance shared by every open terminal) ──
+
+  snapshotVtyState(): import('./vty/CliShellSession').VtySnapshot {
+    return {
+      mode: this.mode,
+      selectedInterface: this.selectedInterface,
+      selectedInterfaceRange: [],
+      selectedVlan: this.selectedVlan,
+      selectedArpAcl: null,
+      selectedAccessMap: null,
+      selectedMqcName: this.selectedMqcName,
+      selectedPortGroup: this.portGroupMembers,
+      selectedRoutingProto: null,
+      selectedTrack: null,
+      selectedIpSla: null,
+      selectedRouteMap: null,
+      selectedDHCPPool: this.selectedPool,
+      selectedACL: this.selectedAcl,
+      selectedACLType: null,
+      selectedISAKMPPriority: null,
+      selectedTransformSet: null,
+      selectedCryptoMap: null,
+      selectedCryptoMapSeq: null,
+      selectedCryptoMapIsDynamic: false,
+      selectedIPSecProfile: null,
+      selectedIKEv2Proposal: null,
+      selectedIKEv2Policy: null,
+      selectedIKEv2Keyring: null,
+      selectedIKEv2KeyringPeer: null,
+      selectedIKEv2Profile: null,
+      terminalLength: 24,
+      terminalWidth: 80,
+      terminalMonitor: false,
+      terminalDebugging: false,
+      privilegeLevel: this.mode === 'user' ? 1 : 15,
+      historySize: 10,
+      cmdHistory: [...this.history],
+    };
+  }
+
+  applyVtyState(s: import('./vty/CliShellSession').VtySnapshot): void {
+    this.mode = s.mode as VRPSwitchMode;
+    this.selectedInterface = s.selectedInterface;
+    this.selectedVlan = s.selectedVlan;
+    this.selectedMqcName = s.selectedMqcName;
+    this.portGroupMembers = s.selectedPortGroup;
+    this.selectedPool = s.selectedDHCPPool;
+    this.selectedAcl = s.selectedACL;
+    this.history = [...s.cmdHistory];
+  }
+
   getPrompt(sw: Switch): string {
     const host = sw.getHostname();
     switch (this.mode) {

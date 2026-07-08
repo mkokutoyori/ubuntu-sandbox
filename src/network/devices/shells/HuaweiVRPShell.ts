@@ -324,6 +324,12 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     return {
       mode: this.mode,
       selectedInterface: this.selectedInterface,
+      selectedInterfaceRange: [],
+      selectedVlan: null,
+      selectedArpAcl: null,
+      selectedAccessMap: null,
+      selectedMqcName: null,
+      selectedPortGroup: null,
       selectedRoutingProto: null,                  // VRP: not modelled here
       selectedTrack: null,
       selectedIpSla: null,
