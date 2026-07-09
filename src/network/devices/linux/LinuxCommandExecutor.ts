@@ -13,6 +13,7 @@ import { SystemCron } from './cron/SystemCron';
 import { LinuxIptablesManager } from './LinuxIptablesManager';
 import { LinuxFirewallManager } from './LinuxFirewallManager';
 import { LinuxLogManager } from './LinuxLogManager';
+import { LinuxNetworkConfigManager } from './LinuxNetworkConfigManager';
 import { type ShellContext, cmdTouch, cmdLs, cmdCat, cmdEcho, cmdCp, cmdMv, cmdRm, cmdMkdir, cmdRmdir, cmdLn, cmdPwd, cmdTee, expandGlob } from './LinuxFileCommands';
 import { cmdGrep, cmdHead, cmdWc, cmdSort, cmdCut, cmdUniq, cmdTr, cmdAwk, cmdSed } from './LinuxTextCommands';
 import { cmdFind, cmdLocate, cmdCommand, cmdUpdatedb } from './LinuxSearchCommands';
@@ -295,6 +296,7 @@ export class LinuxCommandExecutor {
   readonly ip6tables: LinuxIptablesManager;
   readonly firewall: LinuxFirewallManager;
   readonly logMgr: LinuxLogManager;
+  readonly netConfig: LinuxNetworkConfigManager;
   /** Kernel audit subsystem — the security audit trail (`/var/log/audit`). */
   readonly auditLog: LinuxAuditLog;
   readonly auditRules: LinuxAuditRules;
@@ -419,6 +421,7 @@ export class LinuxCommandExecutor {
     this.ip6tables = new LinuxIptablesManager(this.vfs, (port, proto) => this.resolveServiceName(port, proto), { family: 6 });
     this.firewall = new LinuxFirewallManager(this.vfs, this.iptables, this.ip6tables);
     this.logMgr = new LinuxLogManager(this.vfs);
+    this.netConfig = new LinuxNetworkConfigManager(this.vfs, this.logMgr);
     this.auditLog = new LinuxAuditLog(this.vfs);
     this.auditRules = new LinuxAuditRules(this.auditLog, this.vfs);
     this.processMgr = new LinuxProcessManager();

@@ -23,6 +23,7 @@ import type { LinuxProfile } from '../LinuxProfile';
 import type { LinuxFormatHelpers } from '../LinuxFormatHelpers';
 import type { RadiusClientAgent } from '@/network/radius/RadiusClientAgent';
 import type { GreAgent } from '@/network/gre/GreAgent';
+import type { LinuxNetworkConfigManager } from '../LinuxNetworkConfigManager';
 
 export interface LinuxCommandContext {
   /** Kernel-level services: VFS, users, iptables, services, processes. */
@@ -30,6 +31,9 @@ export interface LinuxCommandContext {
 
   /** Narrow façade over the L2/L3 networking stack (EndHost). */
   readonly net: LinuxNetKernel;
+
+  /** Declared-vs-runtime network config: netplan/interfaces/NetworkManager. */
+  readonly netConfig: LinuxNetworkConfigManager;
 
   /** DNS daemon co-located with this machine (dnsmasq). */
   readonly dnsService: DnsService;

@@ -309,6 +309,8 @@ export abstract class LinuxMachine extends EndHost
     //    Also seed /etc/motd and /etc/issue.net so SSH greeters and the
     //    pre-auth Banner have realistic content.
     this.initSshFiles();
+    this.executor.netConfig.seedDefaults(this.getPortNames().filter(n => n !== 'lo'));
+    this.wireNetworkConfigLifecycle();
 
     this.attachSshTcpListeners();
     this.attachProcessSocketReaper();
@@ -594,6 +596,20 @@ export abstract class LinuxMachine extends EndHost
     if (!vfs.exists('/etc/issue.net')) {
       vfs.writeFile('/etc/issue.net', 'Ubuntu 22.04.3 LTS\n', 0, 0, 0o022);
     }
+  }
+
+  /**
+   * `systemd-networkd` renders netplan config onto real interfaces on
+   * every (re)start — the same effect `netplan apply` has, and the way a
+   * pending file edit that was never applied gets picked up without the
+   * admin having to remember the exact netplan verb.
+   */
+  private wireNetworkConfigLifecycle(): void {
+    this.executor.serviceMgr.onLifecycle((event, name) => {
+      if (name !== 'systemd-networkd') return;
+      if (event !== 'start' && event !== 'restart' && event !== 'reload') return;
+      this.executor.netConfig.applyNetplan(this.net);
+    });
   }
 
   private readonly _sshdActivePorts = new Set<number>();
@@ -1239,6 +1255,7 @@ export abstract class LinuxMachine extends EndHost
     return {
       executor: this.executor,
       net: this.net,
+      netConfig: this.executor.netConfig,
       dnsService: this.dnsService,
       bind9: this.bind9,
       xfrm: this.xfrmCtx,
