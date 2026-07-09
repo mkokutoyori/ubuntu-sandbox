@@ -80,6 +80,17 @@ Total steps: 401
   VLAN Name                             Status    Ports
   ---- -------------------------------- --------- -------------------------------
   1    default                          active    Fa0/1, Fa0/2, Fa0/3, Fa0/4, Fa0/5, Fa0/6, Fa0/7, Fa0/8, Fa0/9, Fa0/10, Fa0/11, Fa0/12, Fa0/13, Fa0/14, Fa0/15, Fa0/16, Fa0/17, Fa0/18, Fa0/19, Fa0/20, Fa0/21, Fa0/22, Fa0/23, Fa0/24, Gi0/1, Gi0/2
+  
+  VLAN Type  SAID       MTU   Parent RingNo BridgeNo Stp  BrdgMode Trans1 Trans2
+  ---- ----- ---------- ----- ------ ------ -------- ---- -------- ------ ------
+  1    enet  100001     1500  -      -      -        -    -        0      0
+  
+  Remote SPAN VLANs
+  ------------------------------------------------------------------------------
+  
+  
+  Primary Secondary Type              Ports
+  ------- --------- ----------------- ------------------------------------------
 
 [24/401] swhq SW-HQ# enable
 <empty>
@@ -346,6 +357,17 @@ Total steps: 401
   VLAN Name                             Status    Ports
   ---- -------------------------------- --------- -------------------------------
   1    default                          active    eth0, eth1, eth2, eth3, eth4, eth5, eth6, eth7
+  
+  VLAN Type  SAID       MTU   Parent RingNo BridgeNo Stp  BrdgMode Trans1 Trans2
+  ---- ----- ---------- ----- ------ ------ -------- ---- -------- ------ ------
+  1    enet  100001     1500  -      -      -        -    -        0      0
+  
+  Remote SPAN VLANs
+  ------------------------------------------------------------------------------
+  
+  
+  Primary Secondary Type              Ports
+  ------- --------- ----------------- ------------------------------------------
 
 [100/401] swdc SW-DC> vlan 10
   % Invalid input detected at '^' marker.
@@ -384,9 +406,9 @@ Total steps: 401
   VTP Domain Name                 : <empty>
   VTP Pruning Mode                : Disabled
   VTP Traps Generation            : Disabled
-  Device ID                       : 02:00:00:00:00:0d
-  Configuration last modified by  : 02:00:00:00:00:0d
-  Local updater ID is 02:00:00:00:00:0d
+  Device ID                       : 0200.0000.000d
+  Configuration last modified by 0.0.0.0 at 0-0-00 00:00:00
+  Local updater ID is 0.0.0.0 on interface Vl1 (lowest numbered VLAN interface found)
   
   Feature VLAN:
   --------------
@@ -830,11 +852,11 @@ Total steps: 401
 [190/401] lbr lbr$ ping -c 2 10.2.2.10
   PING 10.2.2.10 (10.2.2.10) 56(84) bytes of data.
   64 bytes from 10.2.2.10: icmp_seq=1 ttl=128 time=0.308 ms
-  64 bytes from 10.2.2.10: icmp_seq=2 ttl=128 time=0.679 ms
+  64 bytes from 10.2.2.10: icmp_seq=2 ttl=128 time=0.874 ms
   
   --- 10.2.2.10 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.308/0.494/0.679/0.186 ms
+  rtt min/avg/max/mdev = 0.308/0.591/0.874/0.283 ms
 
 
 --- [191] § inter-VLAN routé — router-on-a-stick HQ (Cisco, fonctionnel) ---
@@ -994,31 +1016,31 @@ Total steps: 401
 
 [230/401] lhq lhq$ ping -c 2 10.1.1.1
   PING 10.1.1.1 (10.1.1.1) 56(84) bytes of data.
-  64 bytes from 10.1.1.1: icmp_seq=1 ttl=255 time=0.970 ms
-  64 bytes from 10.1.1.1: icmp_seq=2 ttl=255 time=0.653 ms
+  64 bytes from 10.1.1.1: icmp_seq=1 ttl=255 time=1.264 ms
+  64 bytes from 10.1.1.1: icmp_seq=2 ttl=255 time=0.706 ms
   
   --- 10.1.1.1 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.653/0.811/0.970/0.158 ms
+  rtt min/avg/max/mdev = 0.706/0.985/1.264/0.279 ms
 
 [231/401] lhq lhq$ ping -c 2 10.1.20.1
   PING 10.1.20.1 (10.1.20.1) 56(84) bytes of data.
-  64 bytes from 10.1.20.1: icmp_seq=1 ttl=255 time=0.420 ms
-  64 bytes from 10.1.20.1: icmp_seq=2 ttl=255 time=0.635 ms
+  64 bytes from 10.1.20.1: icmp_seq=1 ttl=255 time=0.416 ms
+  64 bytes from 10.1.20.1: icmp_seq=2 ttl=255 time=0.624 ms
   
   --- 10.1.20.1 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.420/0.528/0.635/0.108 ms
+  rtt min/avg/max/mdev = 0.416/0.520/0.624/0.104 ms
 
 [232/401] lhq lhq$ ping -c 3 10.1.20.11
   PING 10.1.20.11 (10.1.20.11) 56(84) bytes of data.
-  64 bytes from 10.1.20.11: icmp_seq=1 ttl=127 time=1.312 ms
-  64 bytes from 10.1.20.11: icmp_seq=2 ttl=127 time=0.870 ms
-  64 bytes from 10.1.20.11: icmp_seq=3 ttl=127 time=0.878 ms
+  64 bytes from 10.1.20.11: icmp_seq=1 ttl=127 time=1.207 ms
+  64 bytes from 10.1.20.11: icmp_seq=2 ttl=127 time=0.996 ms
+  64 bytes from 10.1.20.11: icmp_seq=3 ttl=127 time=1.037 ms
   
   --- 10.1.20.11 ping statistics ---
   3 packets transmitted, 3 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.870/1.020/1.312/0.207 ms
+  rtt min/avg/max/mdev = 0.996/1.080/1.207/0.091 ms
 
 [233/401] whq whq$ ping -n 3 10.1.1.10
   
@@ -1030,7 +1052,7 @@ Total steps: 401
   Ping statistics for 10.1.1.10:
       Packets: Sent = 3, Received = 3, Lost = 0 (0% loss),
   Approximate round trip times in milli-seconds:
-      Minimum = 0ms, Maximum = 0ms, Average = 0ms
+      Minimum = 0ms, Maximum = 1ms, Average = 0ms
 
 [234/401] whq whq$ ping -n 2 10.1.20.1
   
@@ -1041,16 +1063,16 @@ Total steps: 401
   Ping statistics for 10.1.20.1:
       Packets: Sent = 2, Received = 2, Lost = 0 (0% loss),
   Approximate round trip times in milli-seconds:
-      Minimum = 0ms, Maximum = 0ms, Average = 0ms
+      Minimum = 0ms, Maximum = 1ms, Average = 1ms
 
 [235/401] lhq lhq$ ping -c 2 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
-  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=0.641 ms
-  64 bytes from 10.3.3.10: icmp_seq=2 ttl=62 time=0.829 ms
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=0.921 ms
+  64 bytes from 10.3.3.10: icmp_seq=2 ttl=62 time=1.424 ms
   
   --- 10.3.3.10 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.641/0.735/0.829/0.094 ms
+  rtt min/avg/max/mdev = 0.921/1.173/1.424/0.251 ms
 
 [236/401] rhq R-HQ# show ip route connected
   Codes: C - connected, S - static, R - RIP, O - OSPF, O IA - OSPF inter area
@@ -1117,9 +1139,9 @@ Total steps: 401
   VTP Domain Name                 : <empty>
   VTP Pruning Mode                : Disabled
   VTP Traps Generation            : Disabled
-  Device ID                       : 02:00:00:00:00:0d
-  Configuration last modified by  : 02:00:00:00:00:0d
-  Local updater ID is 02:00:00:00:00:0d
+  Device ID                       : 0200.0000.000d
+  Configuration last modified by 0.0.0.0 at 0-0-00 00:00:00
+  Local updater ID is 0.0.0.0 on interface Vl1 (lowest numbered VLAN interface found)
   
   Feature VLAN:
   --------------
@@ -1152,9 +1174,9 @@ Total steps: 401
   VTP Domain Name                 : ACME
   VTP Pruning Mode                : Disabled
   VTP Traps Generation            : Disabled
-  Device ID                       : 02:00:00:00:00:0d
-  Configuration last modified by  : 02:00:00:00:00:0d
-  Local updater ID is 02:00:00:00:00:0d
+  Device ID                       : 0200.0000.000d
+  Configuration last modified by 0.0.0.0 at 0-0-00 00:00:00
+  Local updater ID is 0.0.0.0 on interface Vl1 (lowest numbered VLAN interface found)
   
   Feature VLAN:
   --------------
@@ -1181,9 +1203,9 @@ Total steps: 401
   VTP Domain Name                 : ACME
   VTP Pruning Mode                : Disabled
   VTP Traps Generation            : Disabled
-  Device ID                       : 02:00:00:00:00:5f
-  Configuration last modified by  : 02:00:00:00:00:5f
-  Local updater ID is 02:00:00:00:00:5f
+  Device ID                       : 0200.0000.0079
+  Configuration last modified by 0.0.0.0 at 0-0-00 00:00:00
+  Local updater ID is 0.0.0.0 on interface Vl1 (lowest numbered VLAN interface found)
   
   Feature VLAN:
   --------------
@@ -1207,9 +1229,9 @@ Total steps: 401
   VTP Domain Name                 : ACME
   VTP Pruning Mode                : Disabled
   VTP Traps Generation            : Disabled
-  Device ID                       : 02:00:00:00:00:79
-  Configuration last modified by  : 02:00:00:00:00:79
-  Local updater ID is 02:00:00:00:00:79
+  Device ID                       : 0200.0000.0079
+  Configuration last modified by 0.0.0.0 at 0-0-00 00:00:00
+  Local updater ID is 0.0.0.0 on interface Vl1 (lowest numbered VLAN interface found)
   
   Feature VLAN:
   --------------
@@ -1351,13 +1373,25 @@ Total steps: 401
 
 [289/401] swhq SW-HQ# show mac address-table vlan 10
   Mac Address Table
+  -------------------------------------------
+  
+  Vlan    Mac Address       Type        Ports
+  ----    -----------       --------    -----
   10      02:00:00:00:00:47 DYNAMIC     FastEthernet0/2
   10      02:00:00:00:00:ab DYNAMIC     FastEthernet0/1
+  
+  Total Mac Addresses for this criterion: 2
 
 [290/401] swhq SW-HQ# show mac address-table vlan 20
   Mac Address Table
+  -------------------------------------------
+  
+  Vlan    Mac Address       Type        Ports
+  ----    -----------       --------    -----
   20      02:00:00:00:00:4b DYNAMIC     FastEthernet0/3
   20      02:00:00:00:00:ac DYNAMIC     FastEthernet0/1
+  
+  Total Mac Addresses for this criterion: 2
 
 [291/401] swhq SW-HQ# show mac address-table dynamic
   Mac Address Table
@@ -1541,27 +1575,27 @@ Total steps: 401
   Fa0/3                          connected    20         a-full  a-100  10/100BaseTX
   Fa0/4                          connected    trunk      a-full  a-100  10/100BaseTX
   Fa0/5                          connected    trunk      a-full  a-100  10/100BaseTX
-  Fa0/6                          notconnect   1          a-full  a-100  10/100BaseTX
-  Fa0/7                          notconnect   1          a-full  a-100  10/100BaseTX
-  Fa0/8                          notconnect   1          a-full  a-100  10/100BaseTX
-  Fa0/9                          notconnect   1          a-full  a-100  10/100BaseTX
-  Fa0/10                         notconnect   1          a-full  a-100  10/100BaseTX
-  Fa0/11                         notconnect   1          a-full  a-100  10/100BaseTX
-  Fa0/12                         notconnect   1          a-full  a-100  10/100BaseTX
-  Fa0/13                         notconnect   1          a-full  a-100  10/100BaseTX
-  Fa0/14                         notconnect   1          a-full  a-100  10/100BaseTX
-  Fa0/15                         notconnect   1          a-full  a-100  10/100BaseTX
-  Fa0/16                         notconnect   1          a-full  a-100  10/100BaseTX
-  Fa0/17                         notconnect   1          a-full  a-100  10/100BaseTX
-  Fa0/18                         notconnect   1          a-full  a-100  10/100BaseTX
-  Fa0/19                         notconnect   1          a-full  a-100  10/100BaseTX
-  Fa0/20                         notconnect   1          a-full  a-100  10/100BaseTX
-  Fa0/21                         notconnect   1          a-full  a-100  10/100BaseTX
-  Fa0/22                         notconnect   1          a-full  a-100  10/100BaseTX
-  Fa0/23                         notconnect   1          a-full  a-100  10/100BaseTX
-  Fa0/24                         notconnect   1          a-full  a-100  10/100BaseTX
-  Gi0/1                          notconnect   1          a-full  a-1000 1000BASE-T
-  Gi0/2                          notconnect   1          a-full  a-1000 1000BASE-T
+  Fa0/6                          notconnect   1          auto    auto   10/100BaseTX
+  Fa0/7                          notconnect   1          auto    auto   10/100BaseTX
+  Fa0/8                          notconnect   1          auto    auto   10/100BaseTX
+  Fa0/9                          notconnect   1          auto    auto   10/100BaseTX
+  Fa0/10                         notconnect   1          auto    auto   10/100BaseTX
+  Fa0/11                         notconnect   1          auto    auto   10/100BaseTX
+  Fa0/12                         notconnect   1          auto    auto   10/100BaseTX
+  Fa0/13                         notconnect   1          auto    auto   10/100BaseTX
+  Fa0/14                         notconnect   1          auto    auto   10/100BaseTX
+  Fa0/15                         notconnect   1          auto    auto   10/100BaseTX
+  Fa0/16                         notconnect   1          auto    auto   10/100BaseTX
+  Fa0/17                         notconnect   1          auto    auto   10/100BaseTX
+  Fa0/18                         notconnect   1          auto    auto   10/100BaseTX
+  Fa0/19                         notconnect   1          auto    auto   10/100BaseTX
+  Fa0/20                         notconnect   1          auto    auto   10/100BaseTX
+  Fa0/21                         notconnect   1          auto    auto   10/100BaseTX
+  Fa0/22                         notconnect   1          auto    auto   10/100BaseTX
+  Fa0/23                         notconnect   1          auto    auto   10/100BaseTX
+  Fa0/24                         notconnect   1          auto    auto   10/100BaseTX
+  Gi0/1                          notconnect   1          auto    auto   1000BASE-T
+  Gi0/2                          notconnect   1          auto    auto   1000BASE-T
 
 [304/401] dsw1 DSW-HQ-1# show interfaces trunk
   Port        Mode             Encapsulation  Status        Native vlan
@@ -1725,27 +1759,27 @@ Total steps: 401
   Fa0/3                          connected    20         a-full  a-100  10/100BaseTX
   Fa0/4                          connected    trunk      a-full  a-100  10/100BaseTX
   Fa0/5                          connected    trunk      a-full  a-100  10/100BaseTX
-  Fa0/6                          notconnect   1          a-full  a-100  10/100BaseTX
-  Fa0/7                          notconnect   1          a-full  a-100  10/100BaseTX
-  Fa0/8                          notconnect   1          a-full  a-100  10/100BaseTX
-  Fa0/9                          notconnect   1          a-full  a-100  10/100BaseTX
-  Fa0/10                         notconnect   1          a-full  a-100  10/100BaseTX
-  Fa0/11                         notconnect   1          a-full  a-100  10/100BaseTX
-  Fa0/12                         notconnect   1          a-full  a-100  10/100BaseTX
-  Fa0/13                         notconnect   1          a-full  a-100  10/100BaseTX
-  Fa0/14                         notconnect   1          a-full  a-100  10/100BaseTX
-  Fa0/15                         notconnect   1          a-full  a-100  10/100BaseTX
-  Fa0/16                         notconnect   1          a-full  a-100  10/100BaseTX
-  Fa0/17                         notconnect   1          a-full  a-100  10/100BaseTX
-  Fa0/18                         notconnect   1          a-full  a-100  10/100BaseTX
-  Fa0/19                         notconnect   1          a-full  a-100  10/100BaseTX
-  Fa0/20                         notconnect   1          a-full  a-100  10/100BaseTX
-  Fa0/21                         notconnect   1          a-full  a-100  10/100BaseTX
-  Fa0/22                         notconnect   1          a-full  a-100  10/100BaseTX
-  Fa0/23                         notconnect   1          a-full  a-100  10/100BaseTX
-  Fa0/24                         notconnect   1          a-full  a-100  10/100BaseTX
-  Gi0/1                          notconnect   1          a-full  a-1000 1000BASE-T
-  Gi0/2                          notconnect   1          a-full  a-1000 1000BASE-T
+  Fa0/6                          notconnect   1          auto    auto   10/100BaseTX
+  Fa0/7                          notconnect   1          auto    auto   10/100BaseTX
+  Fa0/8                          notconnect   1          auto    auto   10/100BaseTX
+  Fa0/9                          notconnect   1          auto    auto   10/100BaseTX
+  Fa0/10                         notconnect   1          auto    auto   10/100BaseTX
+  Fa0/11                         notconnect   1          auto    auto   10/100BaseTX
+  Fa0/12                         notconnect   1          auto    auto   10/100BaseTX
+  Fa0/13                         notconnect   1          auto    auto   10/100BaseTX
+  Fa0/14                         notconnect   1          auto    auto   10/100BaseTX
+  Fa0/15                         notconnect   1          auto    auto   10/100BaseTX
+  Fa0/16                         notconnect   1          auto    auto   10/100BaseTX
+  Fa0/17                         notconnect   1          auto    auto   10/100BaseTX
+  Fa0/18                         notconnect   1          auto    auto   10/100BaseTX
+  Fa0/19                         notconnect   1          auto    auto   10/100BaseTX
+  Fa0/20                         notconnect   1          auto    auto   10/100BaseTX
+  Fa0/21                         notconnect   1          auto    auto   10/100BaseTX
+  Fa0/22                         notconnect   1          auto    auto   10/100BaseTX
+  Fa0/23                         notconnect   1          auto    auto   10/100BaseTX
+  Fa0/24                         notconnect   1          auto    auto   10/100BaseTX
+  Gi0/1                          notconnect   1          auto    auto   1000BASE-T
+  Gi0/2                          notconnect   1          auto    auto   1000BASE-T
 
 [315/401] swhq SW-HQ# show mac address-table
   Mac Address Table
@@ -1802,30 +1836,30 @@ Total steps: 401
   ----------  -----------------  -----------  ---------  ------  ----- ----
   Fa0/1                          connected    trunk      a-full  a-100  10/100BaseTX
   Fa0/2                          connected    trunk      a-full  a-100  10/100BaseTX
-  Fa0/3                          notconnect   1          a-full  a-100  10/100BaseTX
-  Fa0/4                          notconnect   1          a-full  a-100  10/100BaseTX
-  Fa0/5                          notconnect   1          a-full  a-100  10/100BaseTX
-  Fa0/6                          notconnect   1          a-full  a-100  10/100BaseTX
-  Fa0/7                          notconnect   1          a-full  a-100  10/100BaseTX
-  Fa0/8                          notconnect   1          a-full  a-100  10/100BaseTX
-  Fa0/9                          notconnect   1          a-full  a-100  10/100BaseTX
-  Fa0/10                         notconnect   1          a-full  a-100  10/100BaseTX
-  Fa0/11                         notconnect   1          a-full  a-100  10/100BaseTX
-  Fa0/12                         notconnect   1          a-full  a-100  10/100BaseTX
-  Fa0/13                         notconnect   1          a-full  a-100  10/100BaseTX
-  Fa0/14                         notconnect   1          a-full  a-100  10/100BaseTX
-  Fa0/15                         notconnect   1          a-full  a-100  10/100BaseTX
-  Fa0/16                         notconnect   1          a-full  a-100  10/100BaseTX
-  Fa0/17                         notconnect   1          a-full  a-100  10/100BaseTX
-  Fa0/18                         notconnect   1          a-full  a-100  10/100BaseTX
-  Fa0/19                         notconnect   1          a-full  a-100  10/100BaseTX
-  Fa0/20                         notconnect   1          a-full  a-100  10/100BaseTX
-  Fa0/21                         notconnect   1          a-full  a-100  10/100BaseTX
-  Fa0/22                         notconnect   1          a-full  a-100  10/100BaseTX
-  Fa0/23                         notconnect   1          a-full  a-100  10/100BaseTX
-  Fa0/24                         notconnect   1          a-full  a-100  10/100BaseTX
-  Gi0/1                          notconnect   1          a-full  a-1000 1000BASE-T
-  Gi0/2                          notconnect   1          a-full  a-1000 1000BASE-T
+  Fa0/3                          notconnect   1          auto    auto   10/100BaseTX
+  Fa0/4                          notconnect   1          auto    auto   10/100BaseTX
+  Fa0/5                          notconnect   1          auto    auto   10/100BaseTX
+  Fa0/6                          notconnect   1          auto    auto   10/100BaseTX
+  Fa0/7                          notconnect   1          auto    auto   10/100BaseTX
+  Fa0/8                          notconnect   1          auto    auto   10/100BaseTX
+  Fa0/9                          notconnect   1          auto    auto   10/100BaseTX
+  Fa0/10                         notconnect   1          auto    auto   10/100BaseTX
+  Fa0/11                         notconnect   1          auto    auto   10/100BaseTX
+  Fa0/12                         notconnect   1          auto    auto   10/100BaseTX
+  Fa0/13                         notconnect   1          auto    auto   10/100BaseTX
+  Fa0/14                         notconnect   1          auto    auto   10/100BaseTX
+  Fa0/15                         notconnect   1          auto    auto   10/100BaseTX
+  Fa0/16                         notconnect   1          auto    auto   10/100BaseTX
+  Fa0/17                         notconnect   1          auto    auto   10/100BaseTX
+  Fa0/18                         notconnect   1          auto    auto   10/100BaseTX
+  Fa0/19                         notconnect   1          auto    auto   10/100BaseTX
+  Fa0/20                         notconnect   1          auto    auto   10/100BaseTX
+  Fa0/21                         notconnect   1          auto    auto   10/100BaseTX
+  Fa0/22                         notconnect   1          auto    auto   10/100BaseTX
+  Fa0/23                         notconnect   1          auto    auto   10/100BaseTX
+  Fa0/24                         notconnect   1          auto    auto   10/100BaseTX
+  Gi0/1                          notconnect   1          auto    auto   1000BASE-T
+  Gi0/2                          notconnect   1          auto    auto   1000BASE-T
 
 [321/401] dsw1 DSW-HQ-1# show mac address-table
   Mac Address Table
@@ -1884,30 +1918,30 @@ Total steps: 401
   ----------  -----------------  -----------  ---------  ------  ----- ----
   Fa0/1                          connected    trunk      a-full  a-100  10/100BaseTX
   Fa0/2                          connected    trunk      a-full  a-100  10/100BaseTX
-  Fa0/3                          notconnect   1          a-full  a-100  10/100BaseTX
-  Fa0/4                          notconnect   1          a-full  a-100  10/100BaseTX
-  Fa0/5                          notconnect   1          a-full  a-100  10/100BaseTX
-  Fa0/6                          notconnect   1          a-full  a-100  10/100BaseTX
-  Fa0/7                          notconnect   1          a-full  a-100  10/100BaseTX
-  Fa0/8                          notconnect   1          a-full  a-100  10/100BaseTX
-  Fa0/9                          notconnect   1          a-full  a-100  10/100BaseTX
-  Fa0/10                         notconnect   1          a-full  a-100  10/100BaseTX
-  Fa0/11                         notconnect   1          a-full  a-100  10/100BaseTX
-  Fa0/12                         notconnect   1          a-full  a-100  10/100BaseTX
-  Fa0/13                         notconnect   1          a-full  a-100  10/100BaseTX
-  Fa0/14                         notconnect   1          a-full  a-100  10/100BaseTX
-  Fa0/15                         notconnect   1          a-full  a-100  10/100BaseTX
-  Fa0/16                         notconnect   1          a-full  a-100  10/100BaseTX
-  Fa0/17                         notconnect   1          a-full  a-100  10/100BaseTX
-  Fa0/18                         notconnect   1          a-full  a-100  10/100BaseTX
-  Fa0/19                         notconnect   1          a-full  a-100  10/100BaseTX
-  Fa0/20                         notconnect   1          a-full  a-100  10/100BaseTX
-  Fa0/21                         notconnect   1          a-full  a-100  10/100BaseTX
-  Fa0/22                         notconnect   1          a-full  a-100  10/100BaseTX
-  Fa0/23                         notconnect   1          a-full  a-100  10/100BaseTX
-  Fa0/24                         notconnect   1          a-full  a-100  10/100BaseTX
-  Gi0/1                          notconnect   1          a-full  a-1000 1000BASE-T
-  Gi0/2                          notconnect   1          a-full  a-1000 1000BASE-T
+  Fa0/3                          notconnect   1          auto    auto   10/100BaseTX
+  Fa0/4                          notconnect   1          auto    auto   10/100BaseTX
+  Fa0/5                          notconnect   1          auto    auto   10/100BaseTX
+  Fa0/6                          notconnect   1          auto    auto   10/100BaseTX
+  Fa0/7                          notconnect   1          auto    auto   10/100BaseTX
+  Fa0/8                          notconnect   1          auto    auto   10/100BaseTX
+  Fa0/9                          notconnect   1          auto    auto   10/100BaseTX
+  Fa0/10                         notconnect   1          auto    auto   10/100BaseTX
+  Fa0/11                         notconnect   1          auto    auto   10/100BaseTX
+  Fa0/12                         notconnect   1          auto    auto   10/100BaseTX
+  Fa0/13                         notconnect   1          auto    auto   10/100BaseTX
+  Fa0/14                         notconnect   1          auto    auto   10/100BaseTX
+  Fa0/15                         notconnect   1          auto    auto   10/100BaseTX
+  Fa0/16                         notconnect   1          auto    auto   10/100BaseTX
+  Fa0/17                         notconnect   1          auto    auto   10/100BaseTX
+  Fa0/18                         notconnect   1          auto    auto   10/100BaseTX
+  Fa0/19                         notconnect   1          auto    auto   10/100BaseTX
+  Fa0/20                         notconnect   1          auto    auto   10/100BaseTX
+  Fa0/21                         notconnect   1          auto    auto   10/100BaseTX
+  Fa0/22                         notconnect   1          auto    auto   10/100BaseTX
+  Fa0/23                         notconnect   1          auto    auto   10/100BaseTX
+  Fa0/24                         notconnect   1          auto    auto   10/100BaseTX
+  Gi0/1                          notconnect   1          auto    auto   1000BASE-T
+  Gi0/2                          notconnect   1          auto    auto   1000BASE-T
 
 [327/401] dsw2 DSW-HQ-2# show mac address-table
   Mac Address Table
@@ -2061,19 +2095,19 @@ Total steps: 401
 
 [340/401] lbr lbr$ ping -c 1 10.2.2.10
   PING 10.2.2.10 (10.2.2.10) 56(84) bytes of data.
-  64 bytes from 10.2.2.10: icmp_seq=1 ttl=128 time=0.253 ms
+  64 bytes from 10.2.2.10: icmp_seq=1 ttl=128 time=0.165 ms
   
   --- 10.2.2.10 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.253/0.253/0.253/0.000 ms
+  rtt min/avg/max/mdev = 0.165/0.165/0.165/0.000 ms
 
 [341/401] lhq lhq$ ping -c 1 10.1.20.11
   PING 10.1.20.11 (10.1.20.11) 56(84) bytes of data.
-  64 bytes from 10.1.20.11: icmp_seq=1 ttl=127 time=0.394 ms
+  64 bytes from 10.1.20.11: icmp_seq=1 ttl=127 time=0.445 ms
   
   --- 10.1.20.11 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.394/0.394/0.394/0.000 ms
+  rtt min/avg/max/mdev = 0.445/0.445/0.445/0.000 ms
 
 [342/401] whq whq$ ping -n 1 10.1.1.10
   
@@ -2483,19 +2517,19 @@ Total steps: 401
 
 [384/401] lhq lhq$ ping -c 1 10.1.20.11
   PING 10.1.20.11 (10.1.20.11) 56(84) bytes of data.
-  64 bytes from 10.1.20.11: icmp_seq=1 ttl=127 time=0.529 ms
+  64 bytes from 10.1.20.11: icmp_seq=1 ttl=127 time=0.537 ms
   
   --- 10.1.20.11 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.529/0.529/0.529/0.000 ms
+  rtt min/avg/max/mdev = 0.537/0.537/0.537/0.000 ms
 
 [385/401] lhq lhq$ ping -c 1 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
-  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=0.482 ms
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=0.499 ms
   
   --- 10.3.3.10 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.482/0.482/0.482/0.000 ms
+  rtt min/avg/max/mdev = 0.499/0.499/0.499/0.000 ms
 
 [386/401] wbr wbr$ ping -n 1 10.2.2.11
   
@@ -2510,14 +2544,13 @@ Total steps: 401
 [387/401] swhq SW-HQ# show mac address-table count
   Mac Address Table
   -------------------------------------------
-  
-  Vlan    Mac Address       Type        Ports
-  ----    -----------       --------    -----
-  1       02:00:00:00:00:01 DYNAMIC     FastEthernet0/1
-  10      02:00:00:00:00:47 DYNAMIC     FastEthernet0/2
-  10      02:00:00:00:00:ab DYNAMIC     FastEthernet0/1
-  20      02:00:00:00:00:4b DYNAMIC     FastEthernet0/3
-  20      02:00:00:00:00:ac DYNAMIC     FastEthernet0/1
+  Vlan    Mac Address Count
+  ------  -----------------
+  1             1
+  10            2
+  20            2
+  30            0
+  99            0
   
   Total Mac Addresses for this criterion: 5
 
@@ -2538,9 +2571,9 @@ Total steps: 401
   VTP Domain Name                 : ACME
   VTP Pruning Mode                : Disabled
   VTP Traps Generation            : Disabled
-  Device ID                       : 02:00:00:00:00:0d
-  Configuration last modified by  : 02:00:00:00:00:0d
-  Local updater ID is 02:00:00:00:00:0d
+  Device ID                       : 0200.0000.000d
+  Configuration last modified by 0.0.0.0 at 0-0-00 00:00:00
+  Local updater ID is 0.0.0.0 on interface Vl1 (lowest numbered VLAN interface found)
   
   Feature VLAN:
   --------------
@@ -2625,11 +2658,11 @@ Total steps: 401
 
 [397/401] lhq lhq$ ping -c 1 10.1.20.1
   PING 10.1.20.1 (10.1.20.1) 56(84) bytes of data.
-  64 bytes from 10.1.20.1: icmp_seq=1 ttl=255 time=0.490 ms
+  64 bytes from 10.1.20.1: icmp_seq=1 ttl=255 time=0.448 ms
   
   --- 10.1.20.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.490/0.490/0.490/0.000 ms
+  rtt min/avg/max/mdev = 0.448/0.448/0.448/0.000 ms
 
 [398/401] whq whq$ ping -n 1 10.1.1.1
   
