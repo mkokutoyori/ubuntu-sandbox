@@ -1462,9 +1462,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
 
     this.configTrie.register('no hostname', 'Reset hostname', () => {
       const dev = this.d();
-      const ctor = dev.constructor.name;
-      const defaultName = ctor === 'CiscoSwitch' || ctor === 'GenericSwitch' ? 'Switch' : 'Router';
-      dev._setHostnameInternal(defaultName);
+      dev._setHostnameInternal(dev.defaultHostname());
       return '';
     });
 

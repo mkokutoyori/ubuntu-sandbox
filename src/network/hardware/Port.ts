@@ -72,6 +72,7 @@ export class Port {
   private ipv6Addresses: IPv6AddressEntry[] = [];
   private ipv6Enabled: boolean = false;
   private isUp: boolean = true;
+  private adminDown: boolean = false;
   private equipmentId: string = '';
   private frameHandler: FrameHandler | null = null;
 
@@ -597,6 +598,15 @@ export class Port {
 
   getIsUp(): boolean { return this.isUp; }
 
+  isAdminDown(): boolean { return this.adminDown; }
+
+  setAdminDown(down: boolean): void {
+    if (this.adminDown === down) return;
+    this.adminDown = down;
+    Logger.info(this.equipmentId, 'port:admin', `${this.name}: admin ${down ? 'disabled' : 'enabled'}`);
+    this.notifyLinkChange(down || !this.isUp ? 'down' : 'up');
+  }
+
   setUp(up: boolean): void {
     if (this.isUp === up) return; // No change — don't notify
     this.isUp = up;
@@ -663,7 +673,7 @@ export class Port {
   // ─── Frame Transmission ────────────────────────────────────────
 
   sendFrame(frame: EthernetFrame): boolean {
-    if (!this.isUp) {
+    if (!this.isUp || this.adminDown) {
       this.counters.dropsOut++;
       Logger.warn(this.equipmentId, 'port:send-blocked', `${this.name}: port is down, frame dropped`);
       this.getBus().publish({
@@ -697,7 +707,7 @@ export class Port {
   }
 
   receiveFrame(frame: EthernetFrame): void {
-    if (!this.isUp) {
+    if (!this.isUp || this.adminDown) {
       this.counters.dropsIn++;
       Logger.warn(this.equipmentId, 'port:recv-blocked', `${this.name}: port is down, frame dropped`);
       this.getBus().publish({

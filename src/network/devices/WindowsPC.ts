@@ -2234,11 +2234,11 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       // Interface admin state
       setInterfaceAdmin: (ifName: string, enabled: boolean) => {
         const port = this.ports.get(ifName);
-        if (port) port.setUp(enabled);
+        if (port) port.setAdminDown(!enabled);
       },
       getInterfaceAdmin: (ifName: string) => {
         const port = this.ports.get(ifName);
-        return port ? port.getIsUp() : false;
+        return port ? !port.isAdminDown() : false;
       },
 
       // IP address removal

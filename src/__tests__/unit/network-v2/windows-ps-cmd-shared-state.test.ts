@@ -86,3 +86,64 @@ describe('netsh winhttp — real, shared proxy state (not a no-op stub)', () => 
     expect(psShow).not.toContain('10.0.0.9:8080');
   });
 });
+
+describe('New-NetIPAddress — configures the real interface, visible to ipconfig (cmd)', () => {
+  it('an address added via New-NetIPAddress (PS) shows up in ipconfig (cmd)', async () => {
+    const pc = new WindowsPC('windows-pc', 'PC1', 0, 0);
+    const shell = ps(pc);
+    await run(shell, 'New-NetIPAddress -InterfaceAlias eth0 -IPAddress 10.0.6.7 -PrefixLength 24');
+    const out = await pc.executeCommand('ipconfig');
+    expect(out).toContain('10.0.6.7');
+  });
+});
+
+describe('NetRoute — New/Get-NetRoute share the real routing table with route (cmd)', () => {
+  it('a route added via "route add" (cmd) is visible to Get-NetRoute (PS)', async () => {
+    const pc = new WindowsPC('windows-pc', 'PC1', 0, 0);
+    pc.configureInterface('eth0', new IPAddress('10.0.7.5'), new SubnetMask('255.255.255.0'));
+    await pc.executeCommand('route add 172.16.9.0 mask 255.255.255.0 10.0.7.1');
+    const shell = ps(pc);
+    const out = await run(shell, 'Get-NetRoute');
+    expect(out).toContain('172.16.9.0/24');
+  });
+
+  it('a route added via New-NetRoute (PS) is visible to "route print" (cmd)', async () => {
+    const pc = new WindowsPC('windows-pc', 'PC1', 0, 0);
+    pc.configureInterface('eth0', new IPAddress('10.0.8.5'), new SubnetMask('255.255.255.0'));
+    const shell = ps(pc);
+    await run(shell, 'New-NetRoute -DestinationPrefix "172.16.10.0/24" -InterfaceAlias eth0 -NextHop "10.0.8.1"');
+    const out = await pc.executeCommand('route print');
+    expect(out).toContain('172.16.10.0');
+  });
+});
+
+describe('Disable/Enable-NetAdapter — real admin state shared with ipconfig and netsh', () => {
+  it('disabling in PS is reflected by ipconfig and netsh in cmd', async () => {
+    const pc = new WindowsPC('windows-pc', 'PC1', 0, 0);
+    pc.configureInterface('eth0', new IPAddress('10.0.4.5'), new SubnetMask('255.255.255.0'));
+    const shell = ps(pc);
+
+    await run(shell, 'Disable-NetAdapter -Name eth0');
+
+    const ipcfg = await pc.executeCommand('ipconfig');
+    const eth0Block = ipcfg.split(/Ethernet adapter/).find(b => /Ethernet 0/.test(b)) ?? '';
+    expect(eth0Block).toContain('Media disconnected');
+
+    const netsh = await pc.executeCommand('netsh interface show interface');
+    const eth0Line = netsh.split('\n').find(l => /Ethernet 0/.test(l)) ?? '';
+    expect(eth0Line).toContain('Disabled');
+  });
+
+  it('disabling in cmd is reflected by Get-NetAdapter in PS', async () => {
+    const pc = new WindowsPC('windows-pc', 'PC1', 0, 0);
+    const shell = ps(pc);
+
+    await pc.executeCommand('netsh interface set interface "Ethernet 0" admin=disabled');
+    const out = await run(shell, 'Get-NetAdapter -Name eth0');
+    expect(out).toMatch(/disabled/i);
+
+    await pc.executeCommand('netsh interface set interface "Ethernet 0" admin=enabled');
+    const out2 = await run(shell, 'Get-NetAdapter -Name eth0');
+    expect(out2).not.toMatch(/disabled/i);
+  });
+});

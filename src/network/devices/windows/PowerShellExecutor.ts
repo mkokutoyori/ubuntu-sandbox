@@ -33,6 +33,9 @@ import {
 import { PSRegistryProvider, isRegistryPath } from './PSRegistryProvider';
 import { PSEventLogProvider, type EntryType } from './PSEventLogProvider';
 import type { VpnConnectionInfo } from '@/powershell/providers/PSProviders';
+import { parsePSArgs } from './psArgs';
+import { psAddVpnConnection, psGetVpnConnection, psSetVpnConnection, psRemoveVpnConnection } from './PSVpnCmdlets';
+import { psNewNetFirewallRule, psSetNetFirewallRule, psToggleNetFirewallRule, psRemoveNetFirewallRule, psGetNetFirewallRule } from './PSFirewallCmdlets';
 import type { IEventBus } from '@/events/EventBus';
 
 // ─── Constants ────────────────────────────────────────────────────
@@ -136,7 +139,7 @@ export class PowerShellExecutor {
   private device: PSDeviceContext;
   private commandHistory: string[];
   /** Registry hive — relocated to the device (Phase 4). */
-  get registry(): PSRegistryProvider { return (this.device as unknown as { registry: PSRegistryProvider }).registry; }
+  get registry(): PSRegistryProvider { return this.device.registry; }
   /**
    * `$PSVersionTable.OS` build string ("10.0.22631") — read from the same
    * registry values `systeminfo`/`wmic os get caption` already source, so a
@@ -149,7 +152,7 @@ export class PowerShellExecutor {
     return `${currentVersion}.${buildNumber}`;
   }
   /** Event log — relocated to the device. */
-  get eventLog(): PSEventLogProvider { return (this.device as unknown as { eventLog: PSEventLogProvider }).eventLog; }
+  get eventLog(): PSEventLogProvider { return this.device.eventLog; }
   /** Session variables: $name → string value */
   private sessionVars: Map<string, string> = new Map();
   /** Session environment overrides (Set-Item Env:X) */
@@ -163,9 +166,9 @@ export class PowerShellExecutor {
   /** Additional IP addresses — now lives on the device (Phase 4 relocation).
    *  Kept as a public getter for the rest of this file (which references
    *  this.extraIPs in dozens of places) and for WindowsPSProviders. */
-  get extraIPs() { return (this.device as unknown as { extraIPs: Map<string, { ifAlias: string; prefixLength: number; prefixOrigin: string; suffixOrigin: string; skipAsSource: boolean; gateway?: string; addressFamily: string }> }).extraIPs; }
+  get extraIPs() { return this.device.extraIPs; }
   /** Extra routes — relocated to the device. */
-  get extraRoutes() { return (this.device as unknown as { extraRoutes: Map<string, { ifAlias: string; nextHop: string; metric: number }> }).extraRoutes; }
+  get extraRoutes() { return this.device.extraRoutes; }
   /** Location stack for Push-Location/Pop-Location */
   private locationStack: Map<string, string[]> = new Map();
   /** Array variables: $name → string[] */
@@ -177,9 +180,9 @@ export class PowerShellExecutor {
   /** Set to true when a `continue` statement is executed inside a loop */
   private continueSignal = false;
   /** Adapter overrides — relocated to the device. */
-  get adapterOverrides() { return (this.device as unknown as { adapterOverrides: Map<string, { status?: string; displayName?: string }> }).adapterOverrides; }
+  get adapterOverrides() { return this.device.adapterOverrides; }
   /** Dynamic firewall rules — relocated to the device. */
-  get dynamicFirewallRules() { return (this.device as unknown as { dynamicFirewallRules: Map<string, { name: string; displayName: string; enabled: boolean; action: string; direction: string; protocol: string; localPort: string; remotePort: string; description: string }> }).dynamicFirewallRules; }
+  get dynamicFirewallRules() { return this.device.dynamicFirewallRules; }
   /** WinHTTP proxy setting (empty = direct access) */
   private winhttpProxy: string = '';
   /** WLAN: currently connected SSID (empty = disconnected) */
@@ -187,9 +190,9 @@ export class PowerShellExecutor {
   /** WLAN: known profiles (SSIDs) */
   private wlanProfiles: Set<string> = new Set();
   /** Network connection profiles — relocated to the device. */
-  get networkProfiles() { return (this.device as unknown as { networkProfiles: Map<number, string> }).networkProfiles; }
+  get networkProfiles() { return this.device.networkProfiles; }
   /** VPN connections — relocated to the device. */
-  get vpnConnections() { return (this.device as unknown as { vpnConnections: Map<string, VpnConnectionInfo> }).vpnConnections; }
+  get vpnConnections() { return this.device.vpnConnections; }
 
   constructor(device: PSDeviceContext, initialCwd = 'C:\\Users\\User') {
     this.cwd = initialCwd;
@@ -2453,32 +2456,32 @@ export class PowerShellExecutor {
 
     // Get-NetFirewallRule
     if (cmdLower === 'get-netfirewallrule') {
-      return this.formatGetNetFirewallRule(args);
+      return psGetNetFirewallRule({ dynamicFirewallRules: this.dynamicFirewallRules }, args);
     }
 
     // New-NetFirewallRule
     if (cmdLower === 'new-netfirewallrule') {
-      return this.handleNewNetFirewallRule(args);
+      return psNewNetFirewallRule({ dynamicFirewallRules: this.dynamicFirewallRules }, args);
     }
 
     // Set-NetFirewallRule
     if (cmdLower === 'set-netfirewallrule') {
-      return this.handleSetNetFirewallRule(args);
+      return psSetNetFirewallRule({ dynamicFirewallRules: this.dynamicFirewallRules }, args);
     }
 
     // Enable-NetFirewallRule
     if (cmdLower === 'enable-netfirewallrule') {
-      return this.handleToggleNetFirewallRule(args, true);
+      return psToggleNetFirewallRule({ dynamicFirewallRules: this.dynamicFirewallRules }, args, true);
     }
 
     // Disable-NetFirewallRule
     if (cmdLower === 'disable-netfirewallrule') {
-      return this.handleToggleNetFirewallRule(args, false);
+      return psToggleNetFirewallRule({ dynamicFirewallRules: this.dynamicFirewallRules }, args, false);
     }
 
     // Remove-NetFirewallRule
     if (cmdLower === 'remove-netfirewallrule') {
-      return this.handleRemoveNetFirewallRule(args);
+      return psRemoveNetFirewallRule({ dynamicFirewallRules: this.dynamicFirewallRules }, args);
     }
 
     // Disable-NetAdapter
@@ -2530,22 +2533,22 @@ export class PowerShellExecutor {
 
     // Add-VpnConnection
     if (cmdLower === 'add-vpnconnection') {
-      return this.handleAddVpnConnection(args);
+      return psAddVpnConnection({ vpnConnections: this.vpnConnections }, args);
     }
 
     // Get-VpnConnection
     if (cmdLower === 'get-vpnconnection') {
-      return this.handleGetVpnConnection(args);
+      return psGetVpnConnection({ vpnConnections: this.vpnConnections }, args);
     }
 
     // Set-VpnConnection
     if (cmdLower === 'set-vpnconnection') {
-      return this.handleSetVpnConnection(args);
+      return psSetVpnConnection({ vpnConnections: this.vpnConnections }, args);
     }
 
     // Remove-VpnConnection
     if (cmdLower === 'remove-vpnconnection') {
-      return this.handleRemoveVpnConnection(args);
+      return psRemoveVpnConnection({ vpnConnections: this.vpnConnections }, args);
     }
 
     // Clear-DnsClientCache
@@ -4887,9 +4890,7 @@ export class PowerShellExecutor {
       if (override?.displayName) displayName = override.displayName;
 
       const mac = port.getMAC()?.toString()?.replace(/:/g, '-').toUpperCase() ?? '00-00-00-00-00-00';
-      let status = port.getIsUp() ? 'Up' : 'Disconnected';
-      // Apply disable/enable override
-      if (override?.status) status = override.status;
+      const status = port.isAdminDown() ? 'Disabled' : (port.getIsUp() ? 'Up' : 'Disconnected');
 
       adapterEntries.push({ displayName, desc: 'Intel(R) Ethernet Connection', ifIndex: idx + 2, status, mac, speed: formatLinkSpeedMbps(port.getNegotiatedSpeed()) });
       idx++;
@@ -4937,15 +4938,30 @@ export class PowerShellExecutor {
 
   // ─── Adapter State Management ─────────────────────────────────────
 
+  private resolveAdapterPort(name: string): Port | undefined {
+    const target = name.toLowerCase();
+    const ports = this.device.getPortsMap();
+    for (const [pname, port] of ports) {
+      if (pname.toLowerCase() === target) return port;
+      if (this.portToDisplayName(pname).toLowerCase() === target) return port;
+    }
+    const resolved = toPortName(name);
+    return resolved ? ports.get(resolved) : undefined;
+  }
+
   private handleDisableEnableNetAdapter(args: string[], newStatus: string): string {
     const params = this.parsePSArgs(args);
     const name = (params.get('name') ?? params.get('_positional') ?? '').replace(/^["']|["']$/g, '');
     if (!name) return '';
-    const key = name.toLowerCase();
-    // WhatIf support
     if (params.has('whatif')) {
       return `What if: Performing the operation "${newStatus === 'Disabled' ? 'Disable' : 'Enable'}-NetAdapter" on target "${name}".`;
     }
+    const port = this.resolveAdapterPort(name);
+    if (port) {
+      port.setAdminDown(newStatus === 'Disabled');
+      return '';
+    }
+    const key = name.toLowerCase();
     const override = this.adapterOverrides.get(key) ?? {};
     override.status = newStatus;
     this.adapterOverrides.set(key, override);
@@ -4991,76 +5007,6 @@ export class PowerShellExecutor {
   // ─── Set-NetIPAddress (upsert) ─────────────────────────────────────
 
   // ─── Firewall Rules ────────────────────────────────────────────────
-
-  private handleNewNetFirewallRule(args: string[]): string {
-    const params = this.parsePSArgs(args);
-    const displayName = params.get('displayname')?.replace(/^["']|["']$/g, '') ?? '';
-    const name = params.get('name')?.replace(/^["']|["']$/g, '') ?? displayName.replace(/\s+/g, '-');
-    const direction = params.get('direction')?.replace(/^["']|["']$/g, '') ?? 'Inbound';
-    const protocol = params.get('protocol')?.replace(/^["']|["']$/g, '') ?? 'Any';
-    const localPort = params.get('localport')?.replace(/^["']|["']$/g, '') ?? '';
-    const remotePort = params.get('remoteport')?.replace(/^["']|["']$/g, '') ?? '';
-    const action = params.get('action')?.replace(/^["']|["']$/g, '') ?? 'Allow';
-    const description = params.get('description')?.replace(/^["']|["']$/g, '') ?? '';
-
-    if (!displayName && !name) return `New-NetFirewallRule : -DisplayName or -Name is required.`;
-
-    const key = displayName.toLowerCase() || name.toLowerCase();
-    this.dynamicFirewallRules.set(key, {
-      name, displayName, enabled: true, action, direction, protocol, localPort, remotePort, description
-    });
-
-    return [
-      `Name                  : ${name}`,
-      `DisplayName           : ${displayName}`,
-      `Description           : ${description}`,
-      `Direction             : ${direction}`,
-      `Action                : ${action}`,
-      `Enabled               : True`,
-      `Protocol              : ${protocol}`,
-      `LocalPort             : ${localPort}`,
-      `RemotePort            : ${remotePort}`,
-    ].join('\n');
-  }
-
-  private handleSetNetFirewallRule(args: string[]): string {
-    const params = this.parsePSArgs(args);
-    const displayName = params.get('displayname')?.replace(/^["']|["']$/g, '') ?? '';
-    const name = params.get('name')?.replace(/^["']|["']$/g, '') ?? '';
-    const key = (displayName || name).toLowerCase();
-
-    const rule = this.dynamicFirewallRules.get(key);
-    if (!rule) return `Set-NetFirewallRule : No MSFT_NetFirewallRule objects found with property 'DisplayName' equal to '${displayName || name}'.`;
-
-    if (params.has('action')) rule.action = params.get('action')!.replace(/^["']|["']$/g, '');
-    if (params.has('direction')) rule.direction = params.get('direction')!.replace(/^["']|["']$/g, '');
-    if (params.has('enabled')) rule.enabled = (params.get('enabled') ?? '').toLowerCase() !== 'false';
-    return '';
-  }
-
-  private handleToggleNetFirewallRule(args: string[], enable: boolean): string {
-    const params = this.parsePSArgs(args);
-    const displayName = params.get('displayname')?.replace(/^["']|["']$/g, '') ?? '';
-    const name = params.get('name')?.replace(/^["']|["']$/g, '') ?? '';
-    const key = (displayName || name).toLowerCase();
-
-    const rule = this.dynamicFirewallRules.get(key);
-    if (!rule) {
-      // Check if it's a built-in static rule — simulate graceful no-op
-      return '';
-    }
-    rule.enabled = enable;
-    return '';
-  }
-
-  private handleRemoveNetFirewallRule(args: string[]): string {
-    const params = this.parsePSArgs(args);
-    const displayName = params.get('displayname')?.replace(/^["']|["']$/g, '') ?? '';
-    const name = params.get('name')?.replace(/^["']|["']$/g, '') ?? '';
-    const key = (displayName || name).toLowerCase();
-    this.dynamicFirewallRules.delete(key);
-    return '';
-  }
 
   private handleTestNetConnection(args: string[]): string {
     const params = this.parsePSArgs(args);
@@ -5131,71 +5077,6 @@ export class PowerShellExecutor {
   }
 
   // ─── VPN Connection Management ──────────────────────────────────────
-
-  private handleAddVpnConnection(args: string[]): string {
-    const params = this.parsePSArgs(args);
-    const name = params.get('name')?.replace(/^["']|["']$/g, '') ?? '';
-    const serverAddress = params.get('serveraddress')?.replace(/^["']|["']$/g, '') ?? '';
-    const tunnelType = params.get('tunneltype')?.replace(/^["']|["']$/g, '') ?? 'Automatic';
-    const encryptionLevel = params.get('encryptionlevel')?.replace(/^["']|["']$/g, '') ?? 'Optional';
-    const authMethod = params.get('authenticationmethod')?.replace(/^["']|["']$/g, '') ?? 'MSChapv2';
-
-    if (!name) return `Add-VpnConnection : -Name is required.`;
-
-    this.vpnConnections.set(name.toLowerCase(), {
-      name, serverAddress, tunnelType, encryptionLevel, authMethod,
-      splitTunneling: false, destinationPrefixes: [], connectionStatus: 'Disconnected',
-    });
-    return '';
-  }
-
-  private handleGetVpnConnection(args: string[]): string {
-    const params = this.parsePSArgs(args);
-    const nameFilter = params.get('name')?.replace(/^["']|["']$/g, '').toLowerCase();
-
-    const results = nameFilter
-      ? Array.from(this.vpnConnections.values()).filter(v => v.name.toLowerCase() === nameFilter)
-      : Array.from(this.vpnConnections.values());
-
-    if (results.length === 0) {
-      if (nameFilter) return '';  // -ErrorAction SilentlyContinue
-      return '';
-    }
-
-    return results.map(v => [
-      `Name                  : ${v.name}`,
-      `ServerAddress         : ${v.serverAddress}`,
-      `TunnelType            : ${v.tunnelType}`,
-      `EncryptionLevel       : ${v.encryptionLevel}`,
-      `AuthenticationMethod  : ${v.authMethod}`,
-      `ConnectionStatus      : ${v.connectionStatus}`,
-    ].join('\n')).join('\n\n');
-  }
-
-  private handleSetVpnConnection(args: string[]): string {
-    const params = this.parsePSArgs(args);
-    const name = params.get('name')?.replace(/^["']|["']$/g, '') ?? '';
-    if (!name) return '';
-
-    const key = name.toLowerCase();
-    const existing = this.vpnConnections.get(key) ?? {
-      name, serverAddress: '', tunnelType: 'Automatic', encryptionLevel: 'Optional', authMethod: 'MSChapv2',
-      splitTunneling: false, destinationPrefixes: [], connectionStatus: 'Disconnected' as const,
-    };
-
-    if (params.has('serveraddress')) existing.serverAddress = params.get('serveraddress')!.replace(/^["']|["']$/g, '');
-    if (params.has('tunneltype')) existing.tunnelType = params.get('tunneltype')!.replace(/^["']|["']$/g, '');
-    if (params.has('encryptionlevel')) existing.encryptionLevel = params.get('encryptionlevel')!.replace(/^["']|["']$/g, '');
-    this.vpnConnections.set(key, existing);
-    return '';
-  }
-
-  private handleRemoveVpnConnection(args: string[]): string {
-    const params = this.parsePSArgs(args);
-    const name = params.get('name')?.replace(/^["']|["']$/g, '') ?? '';
-    this.vpnConnections.delete(name.toLowerCase());
-    return '';
-  }
 
   // ─── netsh winhttp ────────────────────────────────────────────────
   private handleNetshWinhttp(args: string[]): string {
@@ -5347,50 +5228,6 @@ export class PowerShellExecutor {
 
     if (lines.length <= 3) return '';
     return lines.join('\n');
-  }
-
-  private formatGetNetFirewallRule(args: string[]): string {
-    type FwRule = { name: string; displayName: string; enabled: boolean; action: string; direction: string };
-    const staticRules: FwRule[] = [
-      { name: 'CoreNet-DHCP-In',       displayName: 'DHCP (UDP-In)',               enabled: true,  action: 'Allow', direction: 'Inbound'  },
-      { name: 'CoreNet-DHCP-Out',      displayName: 'DHCP (UDP-Out)',              enabled: true,  action: 'Allow', direction: 'Outbound' },
-      { name: 'CoreNet-DNS-Out',       displayName: 'DNS (UDP-Out)',               enabled: true,  action: 'Allow', direction: 'Outbound' },
-      { name: 'FPS-ICMP4-ERQ-In',      displayName: 'File and Printer Sharing...', enabled: true,  action: 'Allow', direction: 'Inbound'  },
-      { name: 'RemoteDesktop-In-TCP',  displayName: 'Remote Desktop - User Mode',  enabled: false, action: 'Allow', direction: 'Inbound'  },
-      { name: 'WinRM-HTTP-In-TCP',     displayName: 'Windows Remote Management',   enabled: false, action: 'Allow', direction: 'Inbound'  },
-      { name: 'BlockTelemetry',        displayName: 'Block Windows Telemetry',     enabled: true,  action: 'Block', direction: 'Outbound' },
-    ];
-
-    // Merge in dynamic rules (override static if same key)
-    const allRules: FwRule[] = [...staticRules];
-    for (const [, r] of this.dynamicFirewallRules) {
-      allRules.push({ name: r.name, displayName: r.displayName, enabled: r.enabled, action: r.action, direction: r.direction });
-    }
-
-    const params = this.parsePSArgs(args);
-    const nameFilter    = (params.get('name')        ?? '').replace(/^["']|["']$/g, '').toLowerCase();
-    const dnFilter      = (params.get('displayname') ?? '').replace(/^["']|["']$/g, '').toLowerCase();
-    const errorAction   = (params.get('erroraction') ?? '').toLowerCase();
-
-    let filtered = allRules;
-    if (nameFilter) filtered = filtered.filter(r => r.name.toLowerCase() === nameFilter || r.name.toLowerCase().includes(nameFilter));
-    if (dnFilter)   filtered = filtered.filter(r => r.displayName.toLowerCase() === dnFilter || r.displayName.toLowerCase().includes(dnFilter));
-
-    if (filtered.length === 0) {
-      // Return empty string — callers use -ErrorAction SilentlyContinue for "not found" checks
-      // (ErrorAction is stripped by stripCommonParams before reaching this handler)
-      return '';
-    }
-
-    const header = [
-      '',
-      'Name                  DisplayName                  Enabled Action Direction',
-      '----                  -----------                  ------- ------ ---------',
-    ];
-    const rows = filtered.map(r =>
-      `${r.name.padEnd(22)}${r.displayName.substring(0, 29).padEnd(29)}${(r.enabled ? 'True' : 'False').padEnd(8)}${r.action.padEnd(7)}${r.direction}`
-    );
-    return [...header, ...rows].join('\n');
   }
 
   private portToDisplayName(portName: string): string {
@@ -5638,41 +5475,7 @@ export class PowerShellExecutor {
    * e.g. ['-Description', '"Updated', 'desc"'] → {description: 'Updated desc'}
    */
   private parsePSArgs(args: string[]): Map<string, string> {
-    // First: reassemble quoted tokens
-    const merged: string[] = [];
-    let buf = '';
-    let inQuote = false;
-    for (const tok of args) {
-      if (inQuote) {
-        buf += ' ' + tok;
-        if (tok.endsWith('"') || tok.endsWith("'")) {
-          inQuote = false;
-          merged.push(buf);
-          buf = '';
-        }
-      } else if ((tok.startsWith('"') && !tok.endsWith('"')) || (tok.startsWith("'") && !tok.endsWith("'"))) {
-        inQuote = true;
-        buf = tok;
-      } else {
-        merged.push(tok);
-      }
-    }
-    if (buf) merged.push(buf);
-
-    const result = new Map<string, string>();
-    const positional: string[] = [];
-    for (let i = 0; i < merged.length; i++) {
-      if (merged[i].startsWith('-') && i + 1 < merged.length && !merged[i + 1].startsWith('-')) {
-        result.set(merged[i].substring(1).toLowerCase(), merged[i + 1].replace(/^["']|["']$/g, ''));
-        i++;
-      } else if (merged[i].startsWith('-')) {
-        result.set(merged[i].substring(1).toLowerCase(), 'true');
-      } else {
-        positional.push(merged[i].replace(/^["']|["']$/g, ''));
-      }
-    }
-    if (positional.length > 0) result.set('_positional', positional[0]);
-    return result;
+    return parsePSArgs(args);
   }
 
   private handleGetLocalUser(args: string[]): string {

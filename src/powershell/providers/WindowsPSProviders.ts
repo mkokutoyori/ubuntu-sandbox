@@ -951,7 +951,7 @@ class WindowsNetworkAdapter implements INetworkProvider {
     return (this.pc as unknown as { name: string }).name;
   }
   getAdapters(): NetworkAdapterInfo[] {
-    const ports = (this.pc as unknown as { getPorts: () => Array<{ name: string; getMAC: () => { toString: () => string }; getIsUp: () => boolean; isConnected: () => boolean; getNegotiatedSpeed: () => number }> }).getPorts();
+    const ports = (this.pc as unknown as { getPorts: () => Array<{ name: string; getMAC: () => { toString: () => string }; getIsUp: () => boolean; isAdminDown: () => boolean; isConnected: () => boolean; getNegotiatedSpeed: () => number }> }).getPorts();
     return ports.map((p, idx) => {
       const ov = this.state.adapterOverrides.get(p.name.toLowerCase()) ?? {};
       const connected = p.getIsUp() && p.isConnected();
@@ -959,7 +959,7 @@ class WindowsNetworkAdapter implements INetworkProvider {
         name: ov.displayName ?? toDisplayName(p.name),
         displayName: ov.displayName ?? toDisplayName(p.name),
         ifIndex: idx + 1,
-        status: ov.status ?? (!p.getIsUp() ? 'Disabled' : connected ? 'Up' : 'Disconnected'),
+        status: p.isAdminDown() ? 'Disabled' : (connected ? 'Up' : 'Disconnected'),
         macAddress: p.getMAC().toString(),
         linkSpeed: connected ? formatLinkSpeedMbps(p.getNegotiatedSpeed()) : '0 bps',
       };
@@ -1434,10 +1434,10 @@ class WindowsNetworkAdapter implements INetworkProvider {
   // ─ Adapter actions ──────────────────────────────────────────────────────
 
   setAdapterStatus(name: string, status: 'Up' | 'Down'): void {
-    const ports = (this.pc as unknown as { ports: Map<string, { setUp: (up: boolean) => void }> }).ports;
+    const ports = (this.pc as unknown as { ports: Map<string, { setAdminDown: (down: boolean) => void }> }).ports;
     const portName = resolveAdapterName(name, ports as unknown as Map<string, unknown>);
     const port = ports.get(portName);
-    if (port) port.setUp(status === 'Up');
+    if (port) port.setAdminDown(status !== 'Up');
   }
   renameAdapter(name: string, newName: string): void {
     const key = name.toLowerCase();

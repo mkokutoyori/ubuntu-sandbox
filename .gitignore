@@ -37,3 +37,9 @@ debug-output/*
 !debug-output/oracle/
 !debug-output/linux/
 !debug-output/protocols/
+
+# Graphify knowledge graph output (large, regenerable)
+graphify-out/
+
+# Vitest coverage reports (large, regenerable)
+coverage/

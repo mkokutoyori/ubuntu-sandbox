@@ -21,12 +21,13 @@ export { detectServiceFromBanner };
 const UDP_PROBE_SOURCE_PORT = 51820;
 
 function osFromDevice(device: Equipment): string | undefined {
-  const name = device.constructor.name;
-  if (/Windows/.test(name)) return 'Microsoft Windows';
-  if (/Cisco/.test(name)) return 'Cisco IOS';
-  if (/Huawei/.test(name)) return 'Huawei VRP';
-  if (/Linux|EndHost|Server|PC/.test(name)) return 'Linux 3.2 - 5.4';
-  return undefined;
+  switch (device.getOSType?.()) {
+    case 'windows': return 'Microsoft Windows';
+    case 'cisco-ios': return 'Cisco IOS';
+    case 'huawei-vrp': return 'Huawei VRP';
+    case 'linux': return 'Linux 3.2 - 5.4';
+    default: return undefined;
+  }
 }
 
 function isNumericAddress(target: string): boolean {

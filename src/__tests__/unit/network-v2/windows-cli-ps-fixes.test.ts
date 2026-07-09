@@ -170,13 +170,13 @@ describe('Disable-NetAdapter (PS) — brings down the real port, not just a PS-s
 
     const shell = ps(pc);
     await run(shell, 'Disable-NetAdapter -Name "Ethernet 0"');
-    expect(pc.getPort('eth0')!.getIsUp()).toBe(false);
+    expect(pc.getPort('eth0')!.isAdminDown()).toBe(true);
 
     const cmdOut = await pc.executeCommand('ipconfig');
     expect(cmdOut).toMatch(/Media disconnected/i);
 
     await run(shell, 'Enable-NetAdapter -Name "Ethernet 0"');
-    expect(pc.getPort('eth0')!.getIsUp()).toBe(true);
+    expect(pc.getPort('eth0')!.isAdminDown()).toBe(false);
   });
 });
 

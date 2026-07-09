@@ -137,7 +137,7 @@ function ipconfigBasic(ctx: WinCommandContext): string {
     const global6 = port.getGlobalIPv6();
     const linkLocal6 = port.getLinkLocalIPv6();
     const hasAddress = !!ip || !!global6 || !!linkLocal6;
-    const adapterUp = port.getIsUp() && (port.isConnected() || hasAddress);
+    const adapterUp = port.getIsUp() && !port.isAdminDown() && (port.isConnected() || hasAddress);
 
     lines.push(`Ethernet adapter ${displayName}:`, '');
     lines.push(`   Connection-specific DNS Suffix  . : ${suffix}`);
@@ -183,7 +183,7 @@ function ipconfigAll(ctx: WinCommandContext): string {
     const global6 = port.getGlobalIPv6();
     const linkLocal6 = port.getLinkLocalIPv6();
     const hasAddress = !!ip || !!global6 || !!linkLocal6;
-    const adapterUp = port.getIsUp() && (port.isConnected() || hasAddress);
+    const adapterUp = port.getIsUp() && !port.isAdminDown() && (port.isConnected() || hasAddress);
 
     lines.push(`Ethernet adapter ${displayName}:`, '');
 
@@ -290,7 +290,7 @@ function ipconfigRelease(ctx: WinCommandContext, args: string[]): string {
     lines.push(`Ethernet adapter ${displayName}:`);
     lines.push(`   Connection-specific DNS Suffix  . :`);
     const ip = port.getIPAddress();
-    const adapterUp = port.getIsUp() && port.isConnected();
+    const adapterUp = port.getIsUp() && !port.isAdminDown() && port.isConnected();
     if (ip) {
       lines.push(`   IPv4 Address. . . . . . . . . . . : ${ip}`);
       lines.push(`   Subnet Mask . . . . . . . . . . . : ${port.getSubnetMask() || '255.255.255.0'}`);
