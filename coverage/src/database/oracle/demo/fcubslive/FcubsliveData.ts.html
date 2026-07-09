@@ -1,0 +1,1882 @@
+
+<!doctype html>
+<html lang="en">
+
+<head>
+    <title>Code coverage report for src/database/oracle/demo/fcubslive/FcubsliveData.ts</title>
+    <meta charset="utf-8" />
+    <link rel="stylesheet" href="../../../../../prettify.css" />
+    <link rel="stylesheet" href="../../../../../base.css" />
+    <link rel="shortcut icon" type="image/x-icon" href="../../../../../favicon.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <style type='text/css'>
+        .coverage-summary .sorter {
+            background-image: url(../../../../../sort-arrow-sprite.png);
+        }
+    </style>
+</head>
+    
+<body>
+<div class='wrapper'>
+    <div class='pad1'>
+        <h1><a href="../../../../../index.html">All files</a> / <a href="index.html">src/database/oracle/demo/fcubslive</a> FcubsliveData.ts</h1>
+        <div class='clearfix'>
+            
+            <div class='fl pad1y space-right2'>
+                <span class="strong">100% </span>
+                <span class="quiet">Statements</span>
+                <span class='fraction'>14/14</span>
+            </div>
+        
+            
+            <div class='fl pad1y space-right2'>
+                <span class="strong">100% </span>
+                <span class="quiet">Branches</span>
+                <span class='fraction'>0/0</span>
+            </div>
+        
+            
+            <div class='fl pad1y space-right2'>
+                <span class="strong">100% </span>
+                <span class="quiet">Functions</span>
+                <span class='fraction'>0/0</span>
+            </div>
+        
+            
+            <div class='fl pad1y space-right2'>
+                <span class="strong">100% </span>
+                <span class="quiet">Lines</span>
+                <span class='fraction'>14/14</span>
+            </div>
+        
+            
+        </div>
+        <p class="quiet">
+            Press <em>n</em> or <em>j</em> to go to the next uncovered block, <em>b</em>, <em>p</em> or <em>k</em> for the previous block.
+        </p>
+        <template id="filterTemplate">
+            <div class="quiet">
+                Filter:
+                <input type="search" id="fileSearch">
+            </div>
+        </template>
+    </div>
+    <div class='status-line high'></div>
+    <pre><table class="coverage">
+<tr><td class="line-count quiet"><a name='L1'></a><a href='#L1'>1</a>
+<a name='L2'></a><a href='#L2'>2</a>
+<a name='L3'></a><a href='#L3'>3</a>
+<a name='L4'></a><a href='#L4'>4</a>
+<a name='L5'></a><a href='#L5'>5</a>
+<a name='L6'></a><a href='#L6'>6</a>
+<a name='L7'></a><a href='#L7'>7</a>
+<a name='L8'></a><a href='#L8'>8</a>
+<a name='L9'></a><a href='#L9'>9</a>
+<a name='L10'></a><a href='#L10'>10</a>
+<a name='L11'></a><a href='#L11'>11</a>
+<a name='L12'></a><a href='#L12'>12</a>
+<a name='L13'></a><a href='#L13'>13</a>
+<a name='L14'></a><a href='#L14'>14</a>
+<a name='L15'></a><a href='#L15'>15</a>
+<a name='L16'></a><a href='#L16'>16</a>
+<a name='L17'></a><a href='#L17'>17</a>
+<a name='L18'></a><a href='#L18'>18</a>
+<a name='L19'></a><a href='#L19'>19</a>
+<a name='L20'></a><a href='#L20'>20</a>
+<a name='L21'></a><a href='#L21'>21</a>
+<a name='L22'></a><a href='#L22'>22</a>
+<a name='L23'></a><a href='#L23'>23</a>
+<a name='L24'></a><a href='#L24'>24</a>
+<a name='L25'></a><a href='#L25'>25</a>
+<a name='L26'></a><a href='#L26'>26</a>
+<a name='L27'></a><a href='#L27'>27</a>
+<a name='L28'></a><a href='#L28'>28</a>
+<a name='L29'></a><a href='#L29'>29</a>
+<a name='L30'></a><a href='#L30'>30</a>
+<a name='L31'></a><a href='#L31'>31</a>
+<a name='L32'></a><a href='#L32'>32</a>
+<a name='L33'></a><a href='#L33'>33</a>
+<a name='L34'></a><a href='#L34'>34</a>
+<a name='L35'></a><a href='#L35'>35</a>
+<a name='L36'></a><a href='#L36'>36</a>
+<a name='L37'></a><a href='#L37'>37</a>
+<a name='L38'></a><a href='#L38'>38</a>
+<a name='L39'></a><a href='#L39'>39</a>
+<a name='L40'></a><a href='#L40'>40</a>
+<a name='L41'></a><a href='#L41'>41</a>
+<a name='L42'></a><a href='#L42'>42</a>
+<a name='L43'></a><a href='#L43'>43</a>
+<a name='L44'></a><a href='#L44'>44</a>
+<a name='L45'></a><a href='#L45'>45</a>
+<a name='L46'></a><a href='#L46'>46</a>
+<a name='L47'></a><a href='#L47'>47</a>
+<a name='L48'></a><a href='#L48'>48</a>
+<a name='L49'></a><a href='#L49'>49</a>
+<a name='L50'></a><a href='#L50'>50</a>
+<a name='L51'></a><a href='#L51'>51</a>
+<a name='L52'></a><a href='#L52'>52</a>
+<a name='L53'></a><a href='#L53'>53</a>
+<a name='L54'></a><a href='#L54'>54</a>
+<a name='L55'></a><a href='#L55'>55</a>
+<a name='L56'></a><a href='#L56'>56</a>
+<a name='L57'></a><a href='#L57'>57</a>
+<a name='L58'></a><a href='#L58'>58</a>
+<a name='L59'></a><a href='#L59'>59</a>
+<a name='L60'></a><a href='#L60'>60</a>
+<a name='L61'></a><a href='#L61'>61</a>
+<a name='L62'></a><a href='#L62'>62</a>
+<a name='L63'></a><a href='#L63'>63</a>
+<a name='L64'></a><a href='#L64'>64</a>
+<a name='L65'></a><a href='#L65'>65</a>
+<a name='L66'></a><a href='#L66'>66</a>
+<a name='L67'></a><a href='#L67'>67</a>
+<a name='L68'></a><a href='#L68'>68</a>
+<a name='L69'></a><a href='#L69'>69</a>
+<a name='L70'></a><a href='#L70'>70</a>
+<a name='L71'></a><a href='#L71'>71</a>
+<a name='L72'></a><a href='#L72'>72</a>
+<a name='L73'></a><a href='#L73'>73</a>
+<a name='L74'></a><a href='#L74'>74</a>
+<a name='L75'></a><a href='#L75'>75</a>
+<a name='L76'></a><a href='#L76'>76</a>
+<a name='L77'></a><a href='#L77'>77</a>
+<a name='L78'></a><a href='#L78'>78</a>
+<a name='L79'></a><a href='#L79'>79</a>
+<a name='L80'></a><a href='#L80'>80</a>
+<a name='L81'></a><a href='#L81'>81</a>
+<a name='L82'></a><a href='#L82'>82</a>
+<a name='L83'></a><a href='#L83'>83</a>
+<a name='L84'></a><a href='#L84'>84</a>
+<a name='L85'></a><a href='#L85'>85</a>
+<a name='L86'></a><a href='#L86'>86</a>
+<a name='L87'></a><a href='#L87'>87</a>
+<a name='L88'></a><a href='#L88'>88</a>
+<a name='L89'></a><a href='#L89'>89</a>
+<a name='L90'></a><a href='#L90'>90</a>
+<a name='L91'></a><a href='#L91'>91</a>
+<a name='L92'></a><a href='#L92'>92</a>
+<a name='L93'></a><a href='#L93'>93</a>
+<a name='L94'></a><a href='#L94'>94</a>
+<a name='L95'></a><a href='#L95'>95</a>
+<a name='L96'></a><a href='#L96'>96</a>
+<a name='L97'></a><a href='#L97'>97</a>
+<a name='L98'></a><a href='#L98'>98</a>
+<a name='L99'></a><a href='#L99'>99</a>
+<a name='L100'></a><a href='#L100'>100</a>
+<a name='L101'></a><a href='#L101'>101</a>
+<a name='L102'></a><a href='#L102'>102</a>
+<a name='L103'></a><a href='#L103'>103</a>
+<a name='L104'></a><a href='#L104'>104</a>
+<a name='L105'></a><a href='#L105'>105</a>
+<a name='L106'></a><a href='#L106'>106</a>
+<a name='L107'></a><a href='#L107'>107</a>
+<a name='L108'></a><a href='#L108'>108</a>
+<a name='L109'></a><a href='#L109'>109</a>
+<a name='L110'></a><a href='#L110'>110</a>
+<a name='L111'></a><a href='#L111'>111</a>
+<a name='L112'></a><a href='#L112'>112</a>
+<a name='L113'></a><a href='#L113'>113</a>
+<a name='L114'></a><a href='#L114'>114</a>
+<a name='L115'></a><a href='#L115'>115</a>
+<a name='L116'></a><a href='#L116'>116</a>
+<a name='L117'></a><a href='#L117'>117</a>
+<a name='L118'></a><a href='#L118'>118</a>
+<a name='L119'></a><a href='#L119'>119</a>
+<a name='L120'></a><a href='#L120'>120</a>
+<a name='L121'></a><a href='#L121'>121</a>
+<a name='L122'></a><a href='#L122'>122</a>
+<a name='L123'></a><a href='#L123'>123</a>
+<a name='L124'></a><a href='#L124'>124</a>
+<a name='L125'></a><a href='#L125'>125</a>
+<a name='L126'></a><a href='#L126'>126</a>
+<a name='L127'></a><a href='#L127'>127</a>
+<a name='L128'></a><a href='#L128'>128</a>
+<a name='L129'></a><a href='#L129'>129</a>
+<a name='L130'></a><a href='#L130'>130</a>
+<a name='L131'></a><a href='#L131'>131</a>
+<a name='L132'></a><a href='#L132'>132</a>
+<a name='L133'></a><a href='#L133'>133</a>
+<a name='L134'></a><a href='#L134'>134</a>
+<a name='L135'></a><a href='#L135'>135</a>
+<a name='L136'></a><a href='#L136'>136</a>
+<a name='L137'></a><a href='#L137'>137</a>
+<a name='L138'></a><a href='#L138'>138</a>
+<a name='L139'></a><a href='#L139'>139</a>
+<a name='L140'></a><a href='#L140'>140</a>
+<a name='L141'></a><a href='#L141'>141</a>
+<a name='L142'></a><a href='#L142'>142</a>
+<a name='L143'></a><a href='#L143'>143</a>
+<a name='L144'></a><a href='#L144'>144</a>
+<a name='L145'></a><a href='#L145'>145</a>
+<a name='L146'></a><a href='#L146'>146</a>
+<a name='L147'></a><a href='#L147'>147</a>
+<a name='L148'></a><a href='#L148'>148</a>
+<a name='L149'></a><a href='#L149'>149</a>
+<a name='L150'></a><a href='#L150'>150</a>
+<a name='L151'></a><a href='#L151'>151</a>
+<a name='L152'></a><a href='#L152'>152</a>
+<a name='L153'></a><a href='#L153'>153</a>
+<a name='L154'></a><a href='#L154'>154</a>
+<a name='L155'></a><a href='#L155'>155</a>
+<a name='L156'></a><a href='#L156'>156</a>
+<a name='L157'></a><a href='#L157'>157</a>
+<a name='L158'></a><a href='#L158'>158</a>
+<a name='L159'></a><a href='#L159'>159</a>
+<a name='L160'></a><a href='#L160'>160</a>
+<a name='L161'></a><a href='#L161'>161</a>
+<a name='L162'></a><a href='#L162'>162</a>
+<a name='L163'></a><a href='#L163'>163</a>
+<a name='L164'></a><a href='#L164'>164</a>
+<a name='L165'></a><a href='#L165'>165</a>
+<a name='L166'></a><a href='#L166'>166</a>
+<a name='L167'></a><a href='#L167'>167</a>
+<a name='L168'></a><a href='#L168'>168</a>
+<a name='L169'></a><a href='#L169'>169</a>
+<a name='L170'></a><a href='#L170'>170</a>
+<a name='L171'></a><a href='#L171'>171</a>
+<a name='L172'></a><a href='#L172'>172</a>
+<a name='L173'></a><a href='#L173'>173</a>
+<a name='L174'></a><a href='#L174'>174</a>
+<a name='L175'></a><a href='#L175'>175</a>
+<a name='L176'></a><a href='#L176'>176</a>
+<a name='L177'></a><a href='#L177'>177</a>
+<a name='L178'></a><a href='#L178'>178</a>
+<a name='L179'></a><a href='#L179'>179</a>
+<a name='L180'></a><a href='#L180'>180</a>
+<a name='L181'></a><a href='#L181'>181</a>
+<a name='L182'></a><a href='#L182'>182</a>
+<a name='L183'></a><a href='#L183'>183</a>
+<a name='L184'></a><a href='#L184'>184</a>
+<a name='L185'></a><a href='#L185'>185</a>
+<a name='L186'></a><a href='#L186'>186</a>
+<a name='L187'></a><a href='#L187'>187</a>
+<a name='L188'></a><a href='#L188'>188</a>
+<a name='L189'></a><a href='#L189'>189</a>
+<a name='L190'></a><a href='#L190'>190</a>
+<a name='L191'></a><a href='#L191'>191</a>
+<a name='L192'></a><a href='#L192'>192</a>
+<a name='L193'></a><a href='#L193'>193</a>
+<a name='L194'></a><a href='#L194'>194</a>
+<a name='L195'></a><a href='#L195'>195</a>
+<a name='L196'></a><a href='#L196'>196</a>
+<a name='L197'></a><a href='#L197'>197</a>
+<a name='L198'></a><a href='#L198'>198</a>
+<a name='L199'></a><a href='#L199'>199</a>
+<a name='L200'></a><a href='#L200'>200</a>
+<a name='L201'></a><a href='#L201'>201</a>
+<a name='L202'></a><a href='#L202'>202</a>
+<a name='L203'></a><a href='#L203'>203</a>
+<a name='L204'></a><a href='#L204'>204</a>
+<a name='L205'></a><a href='#L205'>205</a>
+<a name='L206'></a><a href='#L206'>206</a>
+<a name='L207'></a><a href='#L207'>207</a>
+<a name='L208'></a><a href='#L208'>208</a>
+<a name='L209'></a><a href='#L209'>209</a>
+<a name='L210'></a><a href='#L210'>210</a>
+<a name='L211'></a><a href='#L211'>211</a>
+<a name='L212'></a><a href='#L212'>212</a>
+<a name='L213'></a><a href='#L213'>213</a>
+<a name='L214'></a><a href='#L214'>214</a>
+<a name='L215'></a><a href='#L215'>215</a>
+<a name='L216'></a><a href='#L216'>216</a>
+<a name='L217'></a><a href='#L217'>217</a>
+<a name='L218'></a><a href='#L218'>218</a>
+<a name='L219'></a><a href='#L219'>219</a>
+<a name='L220'></a><a href='#L220'>220</a>
+<a name='L221'></a><a href='#L221'>221</a>
+<a name='L222'></a><a href='#L222'>222</a>
+<a name='L223'></a><a href='#L223'>223</a>
+<a name='L224'></a><a href='#L224'>224</a>
+<a name='L225'></a><a href='#L225'>225</a>
+<a name='L226'></a><a href='#L226'>226</a>
+<a name='L227'></a><a href='#L227'>227</a>
+<a name='L228'></a><a href='#L228'>228</a>
+<a name='L229'></a><a href='#L229'>229</a>
+<a name='L230'></a><a href='#L230'>230</a>
+<a name='L231'></a><a href='#L231'>231</a>
+<a name='L232'></a><a href='#L232'>232</a>
+<a name='L233'></a><a href='#L233'>233</a>
+<a name='L234'></a><a href='#L234'>234</a>
+<a name='L235'></a><a href='#L235'>235</a>
+<a name='L236'></a><a href='#L236'>236</a>
+<a name='L237'></a><a href='#L237'>237</a>
+<a name='L238'></a><a href='#L238'>238</a>
+<a name='L239'></a><a href='#L239'>239</a>
+<a name='L240'></a><a href='#L240'>240</a>
+<a name='L241'></a><a href='#L241'>241</a>
+<a name='L242'></a><a href='#L242'>242</a>
+<a name='L243'></a><a href='#L243'>243</a>
+<a name='L244'></a><a href='#L244'>244</a>
+<a name='L245'></a><a href='#L245'>245</a>
+<a name='L246'></a><a href='#L246'>246</a>
+<a name='L247'></a><a href='#L247'>247</a>
+<a name='L248'></a><a href='#L248'>248</a>
+<a name='L249'></a><a href='#L249'>249</a>
+<a name='L250'></a><a href='#L250'>250</a>
+<a name='L251'></a><a href='#L251'>251</a>
+<a name='L252'></a><a href='#L252'>252</a>
+<a name='L253'></a><a href='#L253'>253</a>
+<a name='L254'></a><a href='#L254'>254</a>
+<a name='L255'></a><a href='#L255'>255</a>
+<a name='L256'></a><a href='#L256'>256</a>
+<a name='L257'></a><a href='#L257'>257</a>
+<a name='L258'></a><a href='#L258'>258</a>
+<a name='L259'></a><a href='#L259'>259</a>
+<a name='L260'></a><a href='#L260'>260</a>
+<a name='L261'></a><a href='#L261'>261</a>
+<a name='L262'></a><a href='#L262'>262</a>
+<a name='L263'></a><a href='#L263'>263</a>
+<a name='L264'></a><a href='#L264'>264</a>
+<a name='L265'></a><a href='#L265'>265</a>
+<a name='L266'></a><a href='#L266'>266</a>
+<a name='L267'></a><a href='#L267'>267</a>
+<a name='L268'></a><a href='#L268'>268</a>
+<a name='L269'></a><a href='#L269'>269</a>
+<a name='L270'></a><a href='#L270'>270</a>
+<a name='L271'></a><a href='#L271'>271</a>
+<a name='L272'></a><a href='#L272'>272</a>
+<a name='L273'></a><a href='#L273'>273</a>
+<a name='L274'></a><a href='#L274'>274</a>
+<a name='L275'></a><a href='#L275'>275</a>
+<a name='L276'></a><a href='#L276'>276</a>
+<a name='L277'></a><a href='#L277'>277</a>
+<a name='L278'></a><a href='#L278'>278</a>
+<a name='L279'></a><a href='#L279'>279</a>
+<a name='L280'></a><a href='#L280'>280</a>
+<a name='L281'></a><a href='#L281'>281</a>
+<a name='L282'></a><a href='#L282'>282</a>
+<a name='L283'></a><a href='#L283'>283</a>
+<a name='L284'></a><a href='#L284'>284</a>
+<a name='L285'></a><a href='#L285'>285</a>
+<a name='L286'></a><a href='#L286'>286</a>
+<a name='L287'></a><a href='#L287'>287</a>
+<a name='L288'></a><a href='#L288'>288</a>
+<a name='L289'></a><a href='#L289'>289</a>
+<a name='L290'></a><a href='#L290'>290</a>
+<a name='L291'></a><a href='#L291'>291</a>
+<a name='L292'></a><a href='#L292'>292</a>
+<a name='L293'></a><a href='#L293'>293</a>
+<a name='L294'></a><a href='#L294'>294</a>
+<a name='L295'></a><a href='#L295'>295</a>
+<a name='L296'></a><a href='#L296'>296</a>
+<a name='L297'></a><a href='#L297'>297</a>
+<a name='L298'></a><a href='#L298'>298</a>
+<a name='L299'></a><a href='#L299'>299</a>
+<a name='L300'></a><a href='#L300'>300</a>
+<a name='L301'></a><a href='#L301'>301</a>
+<a name='L302'></a><a href='#L302'>302</a>
+<a name='L303'></a><a href='#L303'>303</a>
+<a name='L304'></a><a href='#L304'>304</a>
+<a name='L305'></a><a href='#L305'>305</a>
+<a name='L306'></a><a href='#L306'>306</a>
+<a name='L307'></a><a href='#L307'>307</a>
+<a name='L308'></a><a href='#L308'>308</a>
+<a name='L309'></a><a href='#L309'>309</a>
+<a name='L310'></a><a href='#L310'>310</a>
+<a name='L311'></a><a href='#L311'>311</a>
+<a name='L312'></a><a href='#L312'>312</a>
+<a name='L313'></a><a href='#L313'>313</a>
+<a name='L314'></a><a href='#L314'>314</a>
+<a name='L315'></a><a href='#L315'>315</a>
+<a name='L316'></a><a href='#L316'>316</a>
+<a name='L317'></a><a href='#L317'>317</a>
+<a name='L318'></a><a href='#L318'>318</a>
+<a name='L319'></a><a href='#L319'>319</a>
+<a name='L320'></a><a href='#L320'>320</a>
+<a name='L321'></a><a href='#L321'>321</a>
+<a name='L322'></a><a href='#L322'>322</a>
+<a name='L323'></a><a href='#L323'>323</a>
+<a name='L324'></a><a href='#L324'>324</a>
+<a name='L325'></a><a href='#L325'>325</a>
+<a name='L326'></a><a href='#L326'>326</a>
+<a name='L327'></a><a href='#L327'>327</a>
+<a name='L328'></a><a href='#L328'>328</a>
+<a name='L329'></a><a href='#L329'>329</a>
+<a name='L330'></a><a href='#L330'>330</a>
+<a name='L331'></a><a href='#L331'>331</a>
+<a name='L332'></a><a href='#L332'>332</a>
+<a name='L333'></a><a href='#L333'>333</a>
+<a name='L334'></a><a href='#L334'>334</a>
+<a name='L335'></a><a href='#L335'>335</a>
+<a name='L336'></a><a href='#L336'>336</a>
+<a name='L337'></a><a href='#L337'>337</a>
+<a name='L338'></a><a href='#L338'>338</a>
+<a name='L339'></a><a href='#L339'>339</a>
+<a name='L340'></a><a href='#L340'>340</a>
+<a name='L341'></a><a href='#L341'>341</a>
+<a name='L342'></a><a href='#L342'>342</a>
+<a name='L343'></a><a href='#L343'>343</a>
+<a name='L344'></a><a href='#L344'>344</a>
+<a name='L345'></a><a href='#L345'>345</a>
+<a name='L346'></a><a href='#L346'>346</a>
+<a name='L347'></a><a href='#L347'>347</a>
+<a name='L348'></a><a href='#L348'>348</a>
+<a name='L349'></a><a href='#L349'>349</a>
+<a name='L350'></a><a href='#L350'>350</a>
+<a name='L351'></a><a href='#L351'>351</a>
+<a name='L352'></a><a href='#L352'>352</a>
+<a name='L353'></a><a href='#L353'>353</a>
+<a name='L354'></a><a href='#L354'>354</a>
+<a name='L355'></a><a href='#L355'>355</a>
+<a name='L356'></a><a href='#L356'>356</a>
+<a name='L357'></a><a href='#L357'>357</a>
+<a name='L358'></a><a href='#L358'>358</a>
+<a name='L359'></a><a href='#L359'>359</a>
+<a name='L360'></a><a href='#L360'>360</a>
+<a name='L361'></a><a href='#L361'>361</a>
+<a name='L362'></a><a href='#L362'>362</a>
+<a name='L363'></a><a href='#L363'>363</a>
+<a name='L364'></a><a href='#L364'>364</a>
+<a name='L365'></a><a href='#L365'>365</a>
+<a name='L366'></a><a href='#L366'>366</a>
+<a name='L367'></a><a href='#L367'>367</a>
+<a name='L368'></a><a href='#L368'>368</a>
+<a name='L369'></a><a href='#L369'>369</a>
+<a name='L370'></a><a href='#L370'>370</a>
+<a name='L371'></a><a href='#L371'>371</a>
+<a name='L372'></a><a href='#L372'>372</a>
+<a name='L373'></a><a href='#L373'>373</a>
+<a name='L374'></a><a href='#L374'>374</a>
+<a name='L375'></a><a href='#L375'>375</a>
+<a name='L376'></a><a href='#L376'>376</a>
+<a name='L377'></a><a href='#L377'>377</a>
+<a name='L378'></a><a href='#L378'>378</a>
+<a name='L379'></a><a href='#L379'>379</a>
+<a name='L380'></a><a href='#L380'>380</a>
+<a name='L381'></a><a href='#L381'>381</a>
+<a name='L382'></a><a href='#L382'>382</a>
+<a name='L383'></a><a href='#L383'>383</a>
+<a name='L384'></a><a href='#L384'>384</a>
+<a name='L385'></a><a href='#L385'>385</a>
+<a name='L386'></a><a href='#L386'>386</a>
+<a name='L387'></a><a href='#L387'>387</a>
+<a name='L388'></a><a href='#L388'>388</a>
+<a name='L389'></a><a href='#L389'>389</a>
+<a name='L390'></a><a href='#L390'>390</a>
+<a name='L391'></a><a href='#L391'>391</a>
+<a name='L392'></a><a href='#L392'>392</a>
+<a name='L393'></a><a href='#L393'>393</a>
+<a name='L394'></a><a href='#L394'>394</a>
+<a name='L395'></a><a href='#L395'>395</a>
+<a name='L396'></a><a href='#L396'>396</a>
+<a name='L397'></a><a href='#L397'>397</a>
+<a name='L398'></a><a href='#L398'>398</a>
+<a name='L399'></a><a href='#L399'>399</a>
+<a name='L400'></a><a href='#L400'>400</a>
+<a name='L401'></a><a href='#L401'>401</a>
+<a name='L402'></a><a href='#L402'>402</a>
+<a name='L403'></a><a href='#L403'>403</a>
+<a name='L404'></a><a href='#L404'>404</a>
+<a name='L405'></a><a href='#L405'>405</a>
+<a name='L406'></a><a href='#L406'>406</a>
+<a name='L407'></a><a href='#L407'>407</a>
+<a name='L408'></a><a href='#L408'>408</a>
+<a name='L409'></a><a href='#L409'>409</a>
+<a name='L410'></a><a href='#L410'>410</a>
+<a name='L411'></a><a href='#L411'>411</a>
+<a name='L412'></a><a href='#L412'>412</a>
+<a name='L413'></a><a href='#L413'>413</a>
+<a name='L414'></a><a href='#L414'>414</a>
+<a name='L415'></a><a href='#L415'>415</a>
+<a name='L416'></a><a href='#L416'>416</a>
+<a name='L417'></a><a href='#L417'>417</a>
+<a name='L418'></a><a href='#L418'>418</a>
+<a name='L419'></a><a href='#L419'>419</a>
+<a name='L420'></a><a href='#L420'>420</a>
+<a name='L421'></a><a href='#L421'>421</a>
+<a name='L422'></a><a href='#L422'>422</a>
+<a name='L423'></a><a href='#L423'>423</a>
+<a name='L424'></a><a href='#L424'>424</a>
+<a name='L425'></a><a href='#L425'>425</a>
+<a name='L426'></a><a href='#L426'>426</a>
+<a name='L427'></a><a href='#L427'>427</a>
+<a name='L428'></a><a href='#L428'>428</a>
+<a name='L429'></a><a href='#L429'>429</a>
+<a name='L430'></a><a href='#L430'>430</a>
+<a name='L431'></a><a href='#L431'>431</a>
+<a name='L432'></a><a href='#L432'>432</a>
+<a name='L433'></a><a href='#L433'>433</a>
+<a name='L434'></a><a href='#L434'>434</a>
+<a name='L435'></a><a href='#L435'>435</a>
+<a name='L436'></a><a href='#L436'>436</a>
+<a name='L437'></a><a href='#L437'>437</a>
+<a name='L438'></a><a href='#L438'>438</a>
+<a name='L439'></a><a href='#L439'>439</a>
+<a name='L440'></a><a href='#L440'>440</a>
+<a name='L441'></a><a href='#L441'>441</a>
+<a name='L442'></a><a href='#L442'>442</a>
+<a name='L443'></a><a href='#L443'>443</a>
+<a name='L444'></a><a href='#L444'>444</a>
+<a name='L445'></a><a href='#L445'>445</a>
+<a name='L446'></a><a href='#L446'>446</a>
+<a name='L447'></a><a href='#L447'>447</a>
+<a name='L448'></a><a href='#L448'>448</a>
+<a name='L449'></a><a href='#L449'>449</a>
+<a name='L450'></a><a href='#L450'>450</a>
+<a name='L451'></a><a href='#L451'>451</a>
+<a name='L452'></a><a href='#L452'>452</a>
+<a name='L453'></a><a href='#L453'>453</a>
+<a name='L454'></a><a href='#L454'>454</a>
+<a name='L455'></a><a href='#L455'>455</a>
+<a name='L456'></a><a href='#L456'>456</a>
+<a name='L457'></a><a href='#L457'>457</a>
+<a name='L458'></a><a href='#L458'>458</a>
+<a name='L459'></a><a href='#L459'>459</a>
+<a name='L460'></a><a href='#L460'>460</a>
+<a name='L461'></a><a href='#L461'>461</a>
+<a name='L462'></a><a href='#L462'>462</a>
+<a name='L463'></a><a href='#L463'>463</a>
+<a name='L464'></a><a href='#L464'>464</a>
+<a name='L465'></a><a href='#L465'>465</a>
+<a name='L466'></a><a href='#L466'>466</a>
+<a name='L467'></a><a href='#L467'>467</a>
+<a name='L468'></a><a href='#L468'>468</a>
+<a name='L469'></a><a href='#L469'>469</a>
+<a name='L470'></a><a href='#L470'>470</a>
+<a name='L471'></a><a href='#L471'>471</a>
+<a name='L472'></a><a href='#L472'>472</a>
+<a name='L473'></a><a href='#L473'>473</a>
+<a name='L474'></a><a href='#L474'>474</a>
+<a name='L475'></a><a href='#L475'>475</a>
+<a name='L476'></a><a href='#L476'>476</a>
+<a name='L477'></a><a href='#L477'>477</a>
+<a name='L478'></a><a href='#L478'>478</a>
+<a name='L479'></a><a href='#L479'>479</a>
+<a name='L480'></a><a href='#L480'>480</a>
+<a name='L481'></a><a href='#L481'>481</a>
+<a name='L482'></a><a href='#L482'>482</a>
+<a name='L483'></a><a href='#L483'>483</a>
+<a name='L484'></a><a href='#L484'>484</a>
+<a name='L485'></a><a href='#L485'>485</a>
+<a name='L486'></a><a href='#L486'>486</a>
+<a name='L487'></a><a href='#L487'>487</a>
+<a name='L488'></a><a href='#L488'>488</a>
+<a name='L489'></a><a href='#L489'>489</a>
+<a name='L490'></a><a href='#L490'>490</a>
+<a name='L491'></a><a href='#L491'>491</a>
+<a name='L492'></a><a href='#L492'>492</a>
+<a name='L493'></a><a href='#L493'>493</a>
+<a name='L494'></a><a href='#L494'>494</a>
+<a name='L495'></a><a href='#L495'>495</a>
+<a name='L496'></a><a href='#L496'>496</a>
+<a name='L497'></a><a href='#L497'>497</a>
+<a name='L498'></a><a href='#L498'>498</a>
+<a name='L499'></a><a href='#L499'>499</a>
+<a name='L500'></a><a href='#L500'>500</a>
+<a name='L501'></a><a href='#L501'>501</a>
+<a name='L502'></a><a href='#L502'>502</a>
+<a name='L503'></a><a href='#L503'>503</a>
+<a name='L504'></a><a href='#L504'>504</a>
+<a name='L505'></a><a href='#L505'>505</a>
+<a name='L506'></a><a href='#L506'>506</a>
+<a name='L507'></a><a href='#L507'>507</a>
+<a name='L508'></a><a href='#L508'>508</a>
+<a name='L509'></a><a href='#L509'>509</a>
+<a name='L510'></a><a href='#L510'>510</a>
+<a name='L511'></a><a href='#L511'>511</a>
+<a name='L512'></a><a href='#L512'>512</a>
+<a name='L513'></a><a href='#L513'>513</a>
+<a name='L514'></a><a href='#L514'>514</a>
+<a name='L515'></a><a href='#L515'>515</a>
+<a name='L516'></a><a href='#L516'>516</a>
+<a name='L517'></a><a href='#L517'>517</a>
+<a name='L518'></a><a href='#L518'>518</a>
+<a name='L519'></a><a href='#L519'>519</a>
+<a name='L520'></a><a href='#L520'>520</a>
+<a name='L521'></a><a href='#L521'>521</a>
+<a name='L522'></a><a href='#L522'>522</a>
+<a name='L523'></a><a href='#L523'>523</a>
+<a name='L524'></a><a href='#L524'>524</a>
+<a name='L525'></a><a href='#L525'>525</a>
+<a name='L526'></a><a href='#L526'>526</a>
+<a name='L527'></a><a href='#L527'>527</a>
+<a name='L528'></a><a href='#L528'>528</a>
+<a name='L529'></a><a href='#L529'>529</a>
+<a name='L530'></a><a href='#L530'>530</a>
+<a name='L531'></a><a href='#L531'>531</a>
+<a name='L532'></a><a href='#L532'>532</a>
+<a name='L533'></a><a href='#L533'>533</a>
+<a name='L534'></a><a href='#L534'>534</a>
+<a name='L535'></a><a href='#L535'>535</a>
+<a name='L536'></a><a href='#L536'>536</a>
+<a name='L537'></a><a href='#L537'>537</a>
+<a name='L538'></a><a href='#L538'>538</a>
+<a name='L539'></a><a href='#L539'>539</a>
+<a name='L540'></a><a href='#L540'>540</a>
+<a name='L541'></a><a href='#L541'>541</a>
+<a name='L542'></a><a href='#L542'>542</a>
+<a name='L543'></a><a href='#L543'>543</a>
+<a name='L544'></a><a href='#L544'>544</a>
+<a name='L545'></a><a href='#L545'>545</a>
+<a name='L546'></a><a href='#L546'>546</a>
+<a name='L547'></a><a href='#L547'>547</a>
+<a name='L548'></a><a href='#L548'>548</a>
+<a name='L549'></a><a href='#L549'>549</a>
+<a name='L550'></a><a href='#L550'>550</a>
+<a name='L551'></a><a href='#L551'>551</a>
+<a name='L552'></a><a href='#L552'>552</a>
+<a name='L553'></a><a href='#L553'>553</a>
+<a name='L554'></a><a href='#L554'>554</a>
+<a name='L555'></a><a href='#L555'>555</a>
+<a name='L556'></a><a href='#L556'>556</a>
+<a name='L557'></a><a href='#L557'>557</a>
+<a name='L558'></a><a href='#L558'>558</a>
+<a name='L559'></a><a href='#L559'>559</a>
+<a name='L560'></a><a href='#L560'>560</a>
+<a name='L561'></a><a href='#L561'>561</a>
+<a name='L562'></a><a href='#L562'>562</a>
+<a name='L563'></a><a href='#L563'>563</a>
+<a name='L564'></a><a href='#L564'>564</a>
+<a name='L565'></a><a href='#L565'>565</a>
+<a name='L566'></a><a href='#L566'>566</a>
+<a name='L567'></a><a href='#L567'>567</a>
+<a name='L568'></a><a href='#L568'>568</a>
+<a name='L569'></a><a href='#L569'>569</a>
+<a name='L570'></a><a href='#L570'>570</a>
+<a name='L571'></a><a href='#L571'>571</a>
+<a name='L572'></a><a href='#L572'>572</a>
+<a name='L573'></a><a href='#L573'>573</a>
+<a name='L574'></a><a href='#L574'>574</a>
+<a name='L575'></a><a href='#L575'>575</a>
+<a name='L576'></a><a href='#L576'>576</a>
+<a name='L577'></a><a href='#L577'>577</a>
+<a name='L578'></a><a href='#L578'>578</a>
+<a name='L579'></a><a href='#L579'>579</a>
+<a name='L580'></a><a href='#L580'>580</a>
+<a name='L581'></a><a href='#L581'>581</a>
+<a name='L582'></a><a href='#L582'>582</a>
+<a name='L583'></a><a href='#L583'>583</a>
+<a name='L584'></a><a href='#L584'>584</a>
+<a name='L585'></a><a href='#L585'>585</a>
+<a name='L586'></a><a href='#L586'>586</a>
+<a name='L587'></a><a href='#L587'>587</a>
+<a name='L588'></a><a href='#L588'>588</a>
+<a name='L589'></a><a href='#L589'>589</a>
+<a name='L590'></a><a href='#L590'>590</a>
+<a name='L591'></a><a href='#L591'>591</a>
+<a name='L592'></a><a href='#L592'>592</a>
+<a name='L593'></a><a href='#L593'>593</a>
+<a name='L594'></a><a href='#L594'>594</a>
+<a name='L595'></a><a href='#L595'>595</a>
+<a name='L596'></a><a href='#L596'>596</a>
+<a name='L597'></a><a href='#L597'>597</a>
+<a name='L598'></a><a href='#L598'>598</a>
+<a name='L599'></a><a href='#L599'>599</a>
+<a name='L600'></a><a href='#L600'>600</a></td><td class="line-coverage quiet"><span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span></td><td class="text"><pre class="prettyprint lang-js">// =============================================================================
+//  FCUBSLIVE — Simulator Seed Data
+//  Generated for banking simulator — all data is fictional
+//  Coverage:
+//    - 12 customers (8 individual, 4 corporate) across 3 branches / 2 countries
+//    - 22 accounts (savings, current, fixed deposit, corporate)
+//    - 6 bank staff users
+//    - ~40 transactions with matching counterparties
+//    - Daily balance snapshots consistent with transactions
+//    - 3 loans with full amortisation schedules
+//    - Exchange rates (CDF/USD, CDF/EUR)
+//    - Retail teller entries + till denomination details
+// =============================================================================
+&nbsp;
+// ─────────────────────────────────────────────────────────────────────────────
+// REFERENCE DATA
+// ─────────────────────────────────────────────────────────────────────────────
+// Branches:
+//   001 = Kinshasa HQ    (DRC)
+//   002 = Lubumbashi     (DRC)
+//   003 = Brazzaville   (Congo)
+//
+// Account classes:
+//   SA1001 = Individual Savings (CDF/USD/EUR)
+//   CA1001 = Individual Current (CDF/USD)
+//   FD1001 = Fixed Deposit Individual
+//   CA2001 = Corporate Current
+//   FD2001 = Fixed Deposit Corporate
+//
+// Customer categories:
+//   RETAIL   = standard retail
+//   PREMIUM  = high-net-worth individual
+//   CORP     = corporate / legal entity
+//   SME      = small &amp; medium enterprise
+//
+// Risk levels:
+//   LOW / MEDIUM / HIGH
+//
+// Exchange rates (approximate, 2025):
+//   1 USD = 2 500 CDF
+//   1 EUR = 2 900 CDF
+// ─────────────────────────────────────────────────────────────────────────────
+&nbsp;
+// ── SMTB_USER — 6 bank staff ─────────────────────────────────────────────────
+export const USER_INSERTS: string[] = [
+  // Branch 001 — Kinshasa
+  `INSERT INTO FCUBSLIVE.SMTB_USER (USER_ID, USER_NAME, USER_PASSWORD, USER_STATUS, HOME_BRANCH, DEPT_CODE, USER_LANGUAGE, USER_EMAIL, USER_MOBILE, START_DATE, END_DATE, FORCE_PASSWD_CHANGE, MAX_TXN_AMT, MULTIBRANCH_ACCESS, USER_CATEGORY, RECORD_STAT, AUTH_STAT, MAKER_ID, MAKER_DT_STAMP, CHECKER_ID, CHECKER_DT_STAMP, MOD_NO) VALUES ('USRMKR01', 'NGOMA ALAIN', 'hashed_pwd_001', 'A', '001', 'OPS', 'EN', 'a.ngoma@bca-bank.cd', '+243811000001', DATE '2017-01-15', NULL, 0, 50000000, 'Y', 'O', 'O', 'A', 'SYSTEM', DATE '2017-01-15', 'ADMIN', DATE '2017-01-15', 0)`,
+  `INSERT INTO FCUBSLIVE.SMTB_USER (USER_ID, USER_NAME, USER_PASSWORD, USER_STATUS, HOME_BRANCH, DEPT_CODE, USER_LANGUAGE, USER_EMAIL, USER_MOBILE, START_DATE, END_DATE, FORCE_PASSWD_CHANGE, MAX_TXN_AMT, MULTIBRANCH_ACCESS, USER_CATEGORY, RECORD_STAT, AUTH_STAT, MAKER_ID, MAKER_DT_STAMP, CHECKER_ID, CHECKER_DT_STAMP, MOD_NO) VALUES ('USRCHK01', 'KALALA SOPHIE', 'hashed_pwd_002', 'A', '001', 'OPS', 'EN', 's.kalala@bca-bank.cd', '+243811000002', DATE '2017-01-15', NULL, 0, 100000000, 'Y', 'S', 'O', 'A', 'SYSTEM', DATE '2017-01-15', 'ADMIN', DATE '2017-01-15', 0)`,
+  // Branch 002 — Lubumbashi
+  `INSERT INTO FCUBSLIVE.SMTB_USER (USER_ID, USER_NAME, USER_PASSWORD, USER_STATUS, HOME_BRANCH, DEPT_CODE, USER_LANGUAGE, USER_EMAIL, USER_MOBILE, START_DATE, END_DATE, FORCE_PASSWD_CHANGE, MAX_TXN_AMT, MULTIBRANCH_ACCESS, USER_CATEGORY, RECORD_STAT, AUTH_STAT, MAKER_ID, MAKER_DT_STAMP, CHECKER_ID, CHECKER_DT_STAMP, MOD_NO) VALUES ('USRMKR02', 'KAZADI PAUL', 'hashed_pwd_003', 'A', '002', 'OPS', 'EN', 'p.kazadi@bca-bank.cd', '+243811000003', DATE '2018-03-01', NULL, 0, 50000000, 'N', 'O', 'O', 'A', 'SYSTEM', DATE '2018-03-01', 'ADMIN', DATE '2018-03-01', 0)`,
+  `INSERT INTO FCUBSLIVE.SMTB_USER (USER_ID, USER_NAME, USER_PASSWORD, USER_STATUS, HOME_BRANCH, DEPT_CODE, USER_LANGUAGE, USER_EMAIL, USER_MOBILE, START_DATE, END_DATE, FORCE_PASSWD_CHANGE, MAX_TXN_AMT, MULTIBRANCH_ACCESS, USER_CATEGORY, RECORD_STAT, AUTH_STAT, MAKER_ID, MAKER_DT_STAMP, CHECKER_ID, CHECKER_DT_STAMP, MOD_NO) VALUES ('USRCHK02', 'MBAYA CHRISTINE', 'hashed_pwd_004', 'A', '002', 'OPS', 'EN', 'c.mbaya@bca-bank.cd', '+243811000004', DATE '2018-03-01', NULL, 0, 100000000, 'N', 'S', 'O', 'A', 'SYSTEM', DATE '2018-03-01', 'ADMIN', DATE '2018-03-01', 0)`,
+  // Branch 003 — Brazzaville
+  `INSERT INTO FCUBSLIVE.SMTB_USER (USER_ID, USER_NAME, USER_PASSWORD, USER_STATUS, HOME_BRANCH, DEPT_CODE, USER_LANGUAGE, USER_EMAIL, USER_MOBILE, START_DATE, END_DATE, FORCE_PASSWD_CHANGE, MAX_TXN_AMT, MULTIBRANCH_ACCESS, USER_CATEGORY, RECORD_STAT, AUTH_STAT, MAKER_ID, MAKER_DT_STAMP, CHECKER_ID, CHECKER_DT_STAMP, MOD_NO) VALUES ('USRMKR03', 'MOUKOKO DAVID', 'hashed_pwd_005', 'A', '003', 'OPS', 'EN', 'd.moukoko@bca-bank.cg', '+242061000005', DATE '2020-06-01', NULL, 0, 50000000, 'N', 'O', 'O', 'A', 'SYSTEM', DATE '2020-06-01', 'ADMIN', DATE '2020-06-01', 0)`,
+  `INSERT INTO FCUBSLIVE.SMTB_USER (USER_ID, USER_NAME, USER_PASSWORD, USER_STATUS, HOME_BRANCH, DEPT_CODE, USER_LANGUAGE, USER_EMAIL, USER_MOBILE, START_DATE, END_DATE, FORCE_PASSWD_CHANGE, MAX_TXN_AMT, MULTIBRANCH_ACCESS, USER_CATEGORY, RECORD_STAT, AUTH_STAT, MAKER_ID, MAKER_DT_STAMP, CHECKER_ID, CHECKER_DT_STAMP, MOD_NO) VALUES ('USRCHK03', 'OBAMI ROSE', 'hashed_pwd_006', 'A', '003', 'OPS', 'EN', 'r.obami@bca-bank.cg', '+242061000006', DATE '2020-06-01', NULL, 0, 100000000, 'N', 'S', 'O', 'A', 'SYSTEM', DATE '2020-06-01', 'ADMIN', DATE '2020-06-01', 0)`,
+];
+&nbsp;
+// ── STTM_CUSTOMER — 12 customers (8 individual + 4 corporate) ────────────────
+// Individual customers
+//   000100001 KABILA JEAN-PIERRE    — Retail,  Kinshasa,   Branch 001
+//   000100002 MBUYI PATRICIA        — Retail,  Kinshasa,   Branch 001
+//   000100003 TSHISEKEDI FELIX      — Retail,  Lubumbashi, Branch 002
+//   000100004 LUMUMBA GRACE         — Premium, Lubumbashi, Branch 002
+//   000100005 SASSOU HENRI          — Retail,  Brazzaville,Branch 003
+//   000100006 OKOKO MARIE-CLAIRE    — Retail,  Brazzaville,Branch 003
+//   000100007 ILUNGA CHRISTIAN      — Premium, Kinshasa,   Branch 001  (new)
+//   000100008 NKEMDIRIM AMARA       — Retail,  Lubumbashi, Branch 002  (new)
+// Corporate customers
+//   000200001 BCA TRADING SARL      — Corp,    Kinshasa,   Branch 001
+//   000200002 CONGO MINERALS SA     — Corp,    Lubumbashi, Branch 002
+//   000200003 TELCOM SOLUTIONS SARL — SME,     Kinshasa,   Branch 001  (new)
+//   000200004 GREAT LAKES IMPORT SA — Corp,    Lubumbashi, Branch 002  (new)
+export const CUSTOMER_INSERTS: string[] = [
+  // ── Individual customers ───────────────────────────────────────────
+  `INSERT INTO FCUBSLIVE.STTM_CUSTOMER (CUSTOMER_NO, CUSTOMER_NAME1, SHORT_NAME, CUSTOMER_TYPE, CUSTOMER_CATEGORY, COUNTRY, NATIONALITY, ADDRESS_LINE1, ADDRESS_LINE2, ADDRESS_LINE3, PINCODE, LANGUAGE, LOCAL_BRANCH, FULL_NAME, CREDIT_RATING, GROUP_CODE, RISK_CATEGORY, UNIQUE_ID_NAME, UNIQUE_ID_VALUE, CIF_CREATION_DATE, CIF_STATUS, FROZEN, DECEASED, RECORD_STAT, AUTH_STAT, MAKER_ID, MAKER_DT_STAMP, CHECKER_ID, CHECKER_DT_STAMP, MOD_NO) VALUES ('000100001', 'KABILA JEAN-PIERRE', 'KABILA JP', 'I', 'RETAIL', 'CD', 'CD', '12 Avenue Kasavubu', 'Commune de la Gombe', 'Kinshasa', '00243', 'EN', '001', 'KABILA JEAN-PIERRE MUTOMBO', 'AAA', 'GRP001', 'LOW', 'PASSPORT', 'CD-PP-2019-44521', DATE '2018-03-15', 'A', 'N', 'N', 'O', 'A', 'USRMKR01', DATE '2018-03-15', 'USRCHK01', DATE '2018-03-15', 0)`,
+  `INSERT INTO FCUBSLIVE.STTM_CUSTOMER (CUSTOMER_NO, CUSTOMER_NAME1, SHORT_NAME, CUSTOMER_TYPE, CUSTOMER_CATEGORY, COUNTRY, NATIONALITY, ADDRESS_LINE1, ADDRESS_LINE2, ADDRESS_LINE3, PINCODE, LANGUAGE, LOCAL_BRANCH, FULL_NAME, CREDIT_RATING, GROUP_CODE, RISK_CATEGORY, UNIQUE_ID_NAME, UNIQUE_ID_VALUE, CIF_CREATION_DATE, CIF_STATUS, FROZEN, DECEASED, RECORD_STAT, AUTH_STAT, MAKER_ID, MAKER_DT_STAMP, CHECKER_ID, CHECKER_DT_STAMP, MOD_NO) VALUES ('000100002', 'MBUYI PATRICIA', 'MBUYI PAT', 'I', 'RETAIL', 'CD', 'CD', '45 Boulevard du 30 Juin', 'Commune de Lingwala', 'Kinshasa', '00243', 'EN', '001', 'MBUYI PATRICIA KALANGA', 'AA', 'GRP001', 'LOW', 'NATIONAL_ID', 'CD-NI-1985-78432', DATE '2019-06-20', 'A', 'N', 'N', 'O', 'A', 'USRMKR01', DATE '2019-06-20', 'USRCHK01', DATE '2019-06-20', 0)`,
+  `INSERT INTO FCUBSLIVE.STTM_CUSTOMER (CUSTOMER_NO, CUSTOMER_NAME1, SHORT_NAME, CUSTOMER_TYPE, CUSTOMER_CATEGORY, COUNTRY, NATIONALITY, ADDRESS_LINE1, ADDRESS_LINE2, ADDRESS_LINE3, PINCODE, LANGUAGE, LOCAL_BRANCH, FULL_NAME, CREDIT_RATING, GROUP_CODE, RISK_CATEGORY, UNIQUE_ID_NAME, UNIQUE_ID_VALUE, CIF_CREATION_DATE, CIF_STATUS, FROZEN, DECEASED, RECORD_STAT, AUTH_STAT, MAKER_ID, MAKER_DT_STAMP, CHECKER_ID, CHECKER_DT_STAMP, MOD_NO) VALUES ('000100003', 'TSHISEKEDI FELIX', 'TSHIS FEL', 'I', 'RETAIL', 'CD', 'CD', '8 Rue de la Paix', 'Commune de Kamalondo', 'Lubumbashi', '00243', 'EN', '002', 'TSHISEKEDI FELIX MUKENDI', 'A', 'GRP002', 'MEDIUM', 'PASSPORT', 'CD-PP-2020-11987', DATE '2020-01-10', 'A', 'N', 'N', 'O', 'A', 'USRMKR02', DATE '2020-01-10', 'USRCHK02', DATE '2020-01-10', 0)`,
+  `INSERT INTO FCUBSLIVE.STTM_CUSTOMER (CUSTOMER_NO, CUSTOMER_NAME1, SHORT_NAME, CUSTOMER_TYPE, CUSTOMER_CATEGORY, COUNTRY, NATIONALITY, ADDRESS_LINE1, ADDRESS_LINE2, ADDRESS_LINE3, PINCODE, LANGUAGE, LOCAL_BRANCH, FULL_NAME, CREDIT_RATING, GROUP_CODE, RISK_CATEGORY, UNIQUE_ID_NAME, UNIQUE_ID_VALUE, CIF_CREATION_DATE, CIF_STATUS, FROZEN, DECEASED, RECORD_STAT, AUTH_STAT, MAKER_ID, MAKER_DT_STAMP, CHECKER_ID, CHECKER_DT_STAMP, MOD_NO) VALUES ('000100004', 'LUMUMBA GRACE', 'LUMUMB GR', 'I', 'PREMIUM', 'CD', 'CD', '22 Avenue Mobutu', 'Commune de Lubumbashi', 'Lubumbashi', '00243', 'EN', '002', 'LUMUMBA GRACE NSEKA', 'AAA', 'GRP002', 'LOW', 'NATIONAL_ID', 'CD-NI-1990-55210', DATE '2017-11-05', 'A', 'N', 'N', 'O', 'A', 'USRMKR02', DATE '2017-11-05', 'USRCHK02', DATE '2017-11-05', 0)`,
+  `INSERT INTO FCUBSLIVE.STTM_CUSTOMER (CUSTOMER_NO, CUSTOMER_NAME1, SHORT_NAME, CUSTOMER_TYPE, CUSTOMER_CATEGORY, COUNTRY, NATIONALITY, ADDRESS_LINE1, ADDRESS_LINE2, ADDRESS_LINE3, PINCODE, LANGUAGE, LOCAL_BRANCH, FULL_NAME, CREDIT_RATING, GROUP_CODE, RISK_CATEGORY, UNIQUE_ID_NAME, UNIQUE_ID_VALUE, CIF_CREATION_DATE, CIF_STATUS, FROZEN, DECEASED, RECORD_STAT, AUTH_STAT, MAKER_ID, MAKER_DT_STAMP, CHECKER_ID, CHECKER_DT_STAMP, MOD_NO) VALUES ('000100005', 'SASSOU HENRI', 'SASSOU H', 'I', 'RETAIL', 'CG', 'CG', '5 Avenue Amilcar Cabral', 'Centre-ville', 'Brazzaville', '00242', 'EN', '003', 'SASSOU HENRI NGUESSO', 'AA', 'GRP003', 'LOW', 'PASSPORT', 'CG-PP-2021-33210', DATE '2021-02-14', 'A', 'N', 'N', 'O', 'A', 'USRMKR03', DATE '2021-02-14', 'USRCHK03', DATE '2021-02-14', 0)`,
+  `INSERT INTO FCUBSLIVE.STTM_CUSTOMER (CUSTOMER_NO, CUSTOMER_NAME1, SHORT_NAME, CUSTOMER_TYPE, CUSTOMER_CATEGORY, COUNTRY, NATIONALITY, ADDRESS_LINE1, ADDRESS_LINE2, ADDRESS_LINE3, PINCODE, LANGUAGE, LOCAL_BRANCH, FULL_NAME, CREDIT_RATING, GROUP_CODE, RISK_CATEGORY, UNIQUE_ID_NAME, UNIQUE_ID_VALUE, CIF_CREATION_DATE, CIF_STATUS, FROZEN, DECEASED, RECORD_STAT, AUTH_STAT, MAKER_ID, MAKER_DT_STAMP, CHECKER_ID, CHECKER_DT_STAMP, MOD_NO) VALUES ('000100006', 'OKOKO MARIE-CLAIRE', 'OKOKO MC', 'I', 'RETAIL', 'CG', 'CG', '17 Rue Patrice Lumumba', 'Poto-Poto', 'Brazzaville', '00242', 'EN', '003', 'OKOKO MARIE-CLAIRE BONGO', 'A', 'GRP003', 'LOW', 'NATIONAL_ID', 'CG-NI-1988-44320', DATE '2021-05-30', 'A', 'N', 'N', 'O', 'A', 'USRMKR03', DATE '2021-05-30', 'USRCHK03', DATE '2021-05-30', 0)`,
+  // NEW individual #7 — Premium, Kinshasa, active investor
+  `INSERT INTO FCUBSLIVE.STTM_CUSTOMER (CUSTOMER_NO, CUSTOMER_NAME1, SHORT_NAME, CUSTOMER_TYPE, CUSTOMER_CATEGORY, COUNTRY, NATIONALITY, ADDRESS_LINE1, ADDRESS_LINE2, ADDRESS_LINE3, PINCODE, LANGUAGE, LOCAL_BRANCH, FULL_NAME, CREDIT_RATING, GROUP_CODE, RISK_CATEGORY, UNIQUE_ID_NAME, UNIQUE_ID_VALUE, CIF_CREATION_DATE, CIF_STATUS, FROZEN, DECEASED, RECORD_STAT, AUTH_STAT, MAKER_ID, MAKER_DT_STAMP, CHECKER_ID, CHECKER_DT_STAMP, MOD_NO) VALUES ('000100007', 'ILUNGA CHRISTIAN', 'ILUNGA CH', 'I', 'PREMIUM', 'CD', 'CD', '88 Boulevard Lumumba', 'Commune de la Gombe', 'Kinshasa', '00243', 'EN', '001', 'ILUNGA CHRISTIAN KABAMBA', 'AAA', 'GRP001', 'LOW', 'PASSPORT', 'CD-PP-2022-78001', DATE '2022-04-01', 'A', 'N', 'N', 'O', 'A', 'USRMKR01', DATE '2022-04-01', 'USRCHK01', DATE '2022-04-01', 0)`,
+  // NEW individual #8 — Retail, Lubumbashi, teacher (moderate activity)
+  `INSERT INTO FCUBSLIVE.STTM_CUSTOMER (CUSTOMER_NO, CUSTOMER_NAME1, SHORT_NAME, CUSTOMER_TYPE, CUSTOMER_CATEGORY, COUNTRY, NATIONALITY, ADDRESS_LINE1, ADDRESS_LINE2, ADDRESS_LINE3, PINCODE, LANGUAGE, LOCAL_BRANCH, FULL_NAME, CREDIT_RATING, GROUP_CODE, RISK_CATEGORY, UNIQUE_ID_NAME, UNIQUE_ID_VALUE, CIF_CREATION_DATE, CIF_STATUS, FROZEN, DECEASED, RECORD_STAT, AUTH_STAT, MAKER_ID, MAKER_DT_STAMP, CHECKER_ID, CHECKER_DT_STAMP, MOD_NO) VALUES ('000100008', 'NKEMDIRIM AMARA', 'NKEMDIR A', 'I', 'RETAIL', 'CD', 'CD', '3 Rue des Flamboyants', 'Commune de Kamalondo', 'Lubumbashi', '00243', 'EN', '002', 'NKEMDIRIM AMARA CHUKWU', 'A', 'GRP002', 'LOW', 'NATIONAL_ID', 'CD-NI-1993-62100', DATE '2023-01-09', 'A', 'N', 'N', 'O', 'A', 'USRMKR02', DATE '2023-01-09', 'USRCHK02', DATE '2023-01-09', 0)`,
+  // ── Corporate customers ────────────────────────────────────────────
+  `INSERT INTO FCUBSLIVE.STTM_CUSTOMER (CUSTOMER_NO, CUSTOMER_NAME1, SHORT_NAME, CUSTOMER_TYPE, CUSTOMER_CATEGORY, COUNTRY, NATIONALITY, ADDRESS_LINE1, ADDRESS_LINE2, ADDRESS_LINE3, PINCODE, LANGUAGE, LOCAL_BRANCH, FULL_NAME, CREDIT_RATING, GROUP_CODE, RISK_CATEGORY, SSN, UNIQUE_ID_NAME, UNIQUE_ID_VALUE, CIF_CREATION_DATE, CIF_STATUS, FROZEN, DECEASED, RECORD_STAT, AUTH_STAT, MAKER_ID, MAKER_DT_STAMP, CHECKER_ID, CHECKER_DT_STAMP, MOD_NO) VALUES ('000200001', 'BCA TRADING SARL', 'BCA TRAD', 'C', 'CORP', 'CD', NULL, '100 Boulevard Lumumba', 'Zone Industrielle', 'Kinshasa', '00243', 'EN', '001', 'BCA TRADING SARL', 'AA', 'GRP004', 'MEDIUM', 'RC-KIN-2015-B4421', 'RCCM', 'RC-KIN-2015-B4421', DATE '2019-08-01', 'A', 'N', 'N', 'O', 'A', 'USRMKR01', DATE '2019-08-01', 'USRCHK01', DATE '2019-08-01', 0)`,
+  `INSERT INTO FCUBSLIVE.STTM_CUSTOMER (CUSTOMER_NO, CUSTOMER_NAME1, SHORT_NAME, CUSTOMER_TYPE, CUSTOMER_CATEGORY, COUNTRY, NATIONALITY, ADDRESS_LINE1, ADDRESS_LINE2, ADDRESS_LINE3, PINCODE, LANGUAGE, LOCAL_BRANCH, FULL_NAME, CREDIT_RATING, GROUP_CODE, RISK_CATEGORY, SSN, UNIQUE_ID_NAME, UNIQUE_ID_VALUE, CIF_CREATION_DATE, CIF_STATUS, FROZEN, DECEASED, RECORD_STAT, AUTH_STAT, MAKER_ID, MAKER_DT_STAMP, CHECKER_ID, CHECKER_DT_STAMP, MOD_NO) VALUES ('000200002', 'CONGO MINERALS SA', 'CONGO MIN', 'C', 'CORP', 'CD', NULL, '55 Avenue des Mines', 'Commune de Kampemba', 'Lubumbashi', '00243', 'EN', '002', 'CONGO MINERALS SA', 'AAA', 'GRP004', 'LOW', 'RC-LUB-2010-A1100', 'RCCM', 'RC-LUB-2010-A1100', DATE '2018-04-12', 'A', 'N', 'N', 'O', 'A', 'USRMKR02', DATE '2018-04-12', 'USRCHK02', DATE '2018-04-12', 0)`,
+  // NEW corporate #3 — SME, Kinshasa, IT services
+  `INSERT INTO FCUBSLIVE.STTM_CUSTOMER (CUSTOMER_NO, CUSTOMER_NAME1, SHORT_NAME, CUSTOMER_TYPE, CUSTOMER_CATEGORY, COUNTRY, NATIONALITY, ADDRESS_LINE1, ADDRESS_LINE2, ADDRESS_LINE3, PINCODE, LANGUAGE, LOCAL_BRANCH, FULL_NAME, CREDIT_RATING, GROUP_CODE, RISK_CATEGORY, SSN, UNIQUE_ID_NAME, UNIQUE_ID_VALUE, CIF_CREATION_DATE, CIF_STATUS, FROZEN, DECEASED, RECORD_STAT, AUTH_STAT, MAKER_ID, MAKER_DT_STAMP, CHECKER_ID, CHECKER_DT_STAMP, MOD_NO) VALUES ('000200003', 'TELCOM SOLUTIONS SARL', 'TELCOM SOL', 'C', 'SME', 'CD', NULL, '14 Avenue Colonel Ebeya', 'Commune de la Gombe', 'Kinshasa', '00243', 'EN', '001', 'TELCOM SOLUTIONS SARL', 'A', 'GRP005', 'MEDIUM', 'RC-KIN-2020-C8830', 'RCCM', 'RC-KIN-2020-C8830', DATE '2020-09-15', 'A', 'N', 'N', 'O', 'A', 'USRMKR01', DATE '2020-09-15', 'USRCHK01', DATE '2020-09-15', 0)`,
+  // NEW corporate #4 — Corp, Lubumbashi, import/export
+  `INSERT INTO FCUBSLIVE.STTM_CUSTOMER (CUSTOMER_NO, CUSTOMER_NAME1, SHORT_NAME, CUSTOMER_TYPE, CUSTOMER_CATEGORY, COUNTRY, NATIONALITY, ADDRESS_LINE1, ADDRESS_LINE2, ADDRESS_LINE3, PINCODE, LANGUAGE, LOCAL_BRANCH, FULL_NAME, CREDIT_RATING, GROUP_CODE, RISK_CATEGORY, SSN, UNIQUE_ID_NAME, UNIQUE_ID_VALUE, CIF_CREATION_DATE, CIF_STATUS, FROZEN, DECEASED, RECORD_STAT, AUTH_STAT, MAKER_ID, MAKER_DT_STAMP, CHECKER_ID, CHECKER_DT_STAMP, MOD_NO) VALUES ('000200004', 'GREAT LAKES IMPORT SA', 'GRTLKS IMP', 'C', 'CORP', 'CD', NULL, '200 Avenue Sendwe', 'Commune de Kampemba', 'Lubumbashi', '00243', 'EN', '002', 'GREAT LAKES IMPORT SA', 'AA', 'GRP004', 'MEDIUM', 'RC-LUB-2016-D5500', 'RCCM', 'RC-LUB-2016-D5500', DATE '2016-11-20', 'A', 'N', 'N', 'O', 'A', 'USRMKR02', DATE '2016-11-20', 'USRCHK02', DATE '2016-11-20', 0)`,
+];
+&nbsp;
+// ── STTM_KYC_MASTER ───────────────────────────────────────────────────────────
+export const KYC_MASTER_INSERTS: string[] = [
+  `INSERT INTO FCUBSLIVE.STTM_KYC_MASTER (KYC_REF_NO, KYC_CUST_TYPE, KYC_DESC, RISK_LEVEL, RECORD_STAT, AUTH_STAT, MAKER_ID, MAKER_DT_STAMP, CHECKER_ID, CHECKER_DT_STAMP, MOD_NO) VALUES ('KYC001', 'I', 'KYC — KABILA JEAN-PIERRE', 'LOW', 'O', 'A', 'USRMKR01', DATE '2018-03-15', 'USRCHK01', DATE '2018-03-15', 0)`,
+  `INSERT INTO FCUBSLIVE.STTM_KYC_MASTER (KYC_REF_NO, KYC_CUST_TYPE, KYC_DESC, RISK_LEVEL, RECORD_STAT, AUTH_STAT, MAKER_ID, MAKER_DT_STAMP, CHECKER_ID, CHECKER_DT_STAMP, MOD_NO) VALUES ('KYC002', 'I', 'KYC — MBUYI PATRICIA', 'LOW', 'O', 'A', 'USRMKR01', DATE '2019-06-20', 'USRCHK01', DATE '2019-06-20', 0)`,
+  `INSERT INTO FCUBSLIVE.STTM_KYC_MASTER (KYC_REF_NO, KYC_CUST_TYPE, KYC_DESC, RISK_LEVEL, RECORD_STAT, AUTH_STAT, MAKER_ID, MAKER_DT_STAMP, CHECKER_ID, CHECKER_DT_STAMP, MOD_NO) VALUES ('KYC003', 'I', 'KYC — TSHISEKEDI FELIX', 'MEDIUM', 'O', 'A', 'USRMKR02', DATE '2020-01-10', 'USRCHK02', DATE '2020-01-10', 0)`,
+  `INSERT INTO FCUBSLIVE.STTM_KYC_MASTER (KYC_REF_NO, KYC_CUST_TYPE, KYC_DESC, RISK_LEVEL, RECORD_STAT, AUTH_STAT, MAKER_ID, MAKER_DT_STAMP, CHECKER_ID, CHECKER_DT_STAMP, MOD_NO) VALUES ('KYC004', 'I', 'KYC — LUMUMBA GRACE', 'LOW', 'O', 'A', 'USRMKR02', DATE '2017-11-05', 'USRCHK02', DATE '2017-11-05', 0)`,
+  `INSERT INTO FCUBSLIVE.STTM_KYC_MASTER (KYC_REF_NO, KYC_CUST_TYPE, KYC_DESC, RISK_LEVEL, RECORD_STAT, AUTH_STAT, MAKER_ID, MAKER_DT_STAMP, CHECKER_ID, CHECKER_DT_STAMP, MOD_NO) VALUES ('KYC005', 'I', 'KYC — SASSOU HENRI', 'LOW', 'O', 'A', 'USRMKR03', DATE '2021-02-14', 'USRCHK03', DATE '2021-02-14', 0)`,
+  `INSERT INTO FCUBSLIVE.STTM_KYC_MASTER (KYC_REF_NO, KYC_CUST_TYPE, KYC_DESC, RISK_LEVEL, RECORD_STAT, AUTH_STAT, MAKER_ID, MAKER_DT_STAMP, CHECKER_ID, CHECKER_DT_STAMP, MOD_NO) VALUES ('KYC006', 'I', 'KYC — OKOKO MARIE-CLAIRE', 'LOW', 'O', 'A', 'USRMKR03', DATE '2021-05-30', 'USRCHK03', DATE '2021-05-30', 0)`,
+  `INSERT INTO FCUBSLIVE.STTM_KYC_MASTER (KYC_REF_NO, KYC_CUST_TYPE, KYC_DESC, RISK_LEVEL, RECORD_STAT, AUTH_STAT, MAKER_ID, MAKER_DT_STAMP, CHECKER_ID, CHECKER_DT_STAMP, MOD_NO) VALUES ('KYC007', 'I', 'KYC — ILUNGA CHRISTIAN', 'LOW', 'O', 'A', 'USRMKR01', DATE '2022-04-01', 'USRCHK01', DATE '2022-04-01', 0)`,
+  `INSERT INTO FCUBSLIVE.STTM_KYC_MASTER (KYC_REF_NO, KYC_CUST_TYPE, KYC_DESC, RISK_LEVEL, RECORD_STAT, AUTH_STAT, MAKER_ID, MAKER_DT_STAMP, CHECKER_ID, CHECKER_DT_STAMP, MOD_NO) VALUES ('KYC008', 'I', 'KYC — NKEMDIRIM AMARA', 'LOW', 'O', 'A', 'USRMKR02', DATE '2023-01-09', 'USRCHK02', DATE '2023-01-09', 0)`,
+  `INSERT INTO FCUBSLIVE.STTM_KYC_MASTER (KYC_REF_NO, KYC_CUST_TYPE, KYC_DESC, RISK_LEVEL, RECORD_STAT, AUTH_STAT, MAKER_ID, MAKER_DT_STAMP, CHECKER_ID, CHECKER_DT_STAMP, MOD_NO) VALUES ('KYC009', 'C', 'KYC — BCA TRADING SARL', 'MEDIUM', 'O', 'A', 'USRMKR01', DATE '2019-08-01', 'USRCHK01', DATE '2019-08-01', 0)`,
+  `INSERT INTO FCUBSLIVE.STTM_KYC_MASTER (KYC_REF_NO, KYC_CUST_TYPE, KYC_DESC, RISK_LEVEL, RECORD_STAT, AUTH_STAT, MAKER_ID, MAKER_DT_STAMP, CHECKER_ID, CHECKER_DT_STAMP, MOD_NO) VALUES ('KYC010', 'C', 'KYC — CONGO MINERALS SA', 'LOW', 'O', 'A', 'USRMKR02', DATE '2018-04-12', 'USRCHK02', DATE '2018-04-12', 0)`,
+  `INSERT INTO FCUBSLIVE.STTM_KYC_MASTER (KYC_REF_NO, KYC_CUST_TYPE, KYC_DESC, RISK_LEVEL, RECORD_STAT, AUTH_STAT, MAKER_ID, MAKER_DT_STAMP, CHECKER_ID, CHECKER_DT_STAMP, MOD_NO) VALUES ('KYC011', 'C', 'KYC — TELCOM SOLUTIONS SARL', 'MEDIUM', 'O', 'A', 'USRMKR01', DATE '2020-09-15', 'USRCHK01', DATE '2020-09-15', 0)`,
+  `INSERT INTO FCUBSLIVE.STTM_KYC_MASTER (KYC_REF_NO, KYC_CUST_TYPE, KYC_DESC, RISK_LEVEL, RECORD_STAT, AUTH_STAT, MAKER_ID, MAKER_DT_STAMP, CHECKER_ID, CHECKER_DT_STAMP, MOD_NO) VALUES ('KYC012', 'C', 'KYC — GREAT LAKES IMPORT SA', 'MEDIUM', 'O', 'A', 'USRMKR02', DATE '2016-11-20', 'USRCHK02', DATE '2016-11-20', 0)`,
+];
+&nbsp;
+// ── STTM_KYC_RETAIL — 8 individual customers ─────────────────────────────────
+export const KYC_RETAIL_INSERTS: string[] = [
+  `INSERT INTO FCUBSLIVE.STTM_KYC_RETAIL (KYC_REF_NO, NATIONALITY, BIRTH_DATE, BIRTH_PLACE, BIRTH_COUNTRY, PASSPORT_NO, PASSPORT_EXPIRY_DATE, RESIDENT, SALARY_INCOME, BUSINESS_INCOME, TOTAL_INCOME, TOTAL_NET_WORTH, PEP, ACC_PURPOSE, LOCAL_ADDR, LOCAL_ADDR_COUNTRY, MOBILE_TEL_NO, OFFICE_TEL_NO) VALUES ('KYC001', 'CD', DATE '1975-08-22', 'Kinshasa', 'CD', 'CD-PP-2019-44521', DATE '2029-08-22', 'Y', '2500000', NULL, 2500000, 15000000, 'N', 'SAVINGS', '12 Avenue Kasavubu, Gombe, Kinshasa', 'CD', '+243812345001', NULL)`,
+  `INSERT INTO FCUBSLIVE.STTM_KYC_RETAIL (KYC_REF_NO, NATIONALITY, BIRTH_DATE, BIRTH_PLACE, BIRTH_COUNTRY, PASSPORT_NO, PASSPORT_EXPIRY_DATE, RESIDENT, SALARY_INCOME, BUSINESS_INCOME, TOTAL_INCOME, TOTAL_NET_WORTH, PEP, ACC_PURPOSE, LOCAL_ADDR, LOCAL_ADDR_COUNTRY, MOBILE_TEL_NO, OFFICE_TEL_NO) VALUES ('KYC002', 'CD', DATE '1985-03-10', 'Kinshasa', 'CD', NULL, NULL, 'Y', '1800000', '500000', 2300000, 8000000, 'N', 'CURRENT', '45 Boulevard du 30 Juin, Lingwala, Kinshasa', 'CD', '+243812345002', '+243991234002')`,
+  `INSERT INTO FCUBSLIVE.STTM_KYC_RETAIL (KYC_REF_NO, NATIONALITY, BIRTH_DATE, BIRTH_PLACE, BIRTH_COUNTRY, PASSPORT_NO, PASSPORT_EXPIRY_DATE, RESIDENT, SALARY_INCOME, BUSINESS_INCOME, TOTAL_INCOME, TOTAL_NET_WORTH, PEP, ACC_PURPOSE, LOCAL_ADDR, LOCAL_ADDR_COUNTRY, MOBILE_TEL_NO, OFFICE_TEL_NO) VALUES ('KYC003', 'CD', DATE '1992-11-15', 'Mbuji-Mayi', 'CD', 'CD-PP-2020-11987', DATE '2030-11-15', 'Y', '1200000', '800000', 2000000, 5000000, 'N', 'SAVINGS', '8 Rue de la Paix, Kamalondo, Lubumbashi', 'CD', '+243812345003', NULL)`,
+  `INSERT INTO FCUBSLIVE.STTM_KYC_RETAIL (KYC_REF_NO, NATIONALITY, BIRTH_DATE, BIRTH_PLACE, BIRTH_COUNTRY, PASSPORT_NO, PASSPORT_EXPIRY_DATE, RESIDENT, SALARY_INCOME, BUSINESS_INCOME, TOTAL_INCOME, TOTAL_NET_WORTH, PEP, ACC_PURPOSE, LOCAL_ADDR, LOCAL_ADDR_COUNTRY, MOBILE_TEL_NO, OFFICE_TEL_NO) VALUES ('KYC004', 'CD', DATE '1968-05-30', 'Lubumbashi', 'CD', NULL, NULL, 'Y', '5000000', '3000000', 8000000, 50000000, 'N', 'INVESTMENT', '22 Avenue Mobutu, Lubumbashi', 'CD', '+243812345004', '+243991234004')`,
+  `INSERT INTO FCUBSLIVE.STTM_KYC_RETAIL (KYC_REF_NO, NATIONALITY, BIRTH_DATE, BIRTH_PLACE, BIRTH_COUNTRY, PASSPORT_NO, PASSPORT_EXPIRY_DATE, RESIDENT, SALARY_INCOME, BUSINESS_INCOME, TOTAL_INCOME, TOTAL_NET_WORTH, PEP, ACC_PURPOSE, LOCAL_ADDR, LOCAL_ADDR_COUNTRY, MOBILE_TEL_NO, OFFICE_TEL_NO) VALUES ('KYC005', 'CG', DATE '1980-07-04', 'Brazzaville', 'CG', 'CG-PP-2021-33210', DATE '2031-07-04', 'Y', '1500000', NULL, 1500000, 6000000, 'N', 'SAVINGS', '5 Avenue Amilcar Cabral, Brazzaville', 'CG', '+242061234005', NULL)`,
+  `INSERT INTO FCUBSLIVE.STTM_KYC_RETAIL (KYC_REF_NO, NATIONALITY, BIRTH_DATE, BIRTH_PLACE, BIRTH_COUNTRY, PASSPORT_NO, PASSPORT_EXPIRY_DATE, RESIDENT, SALARY_INCOME, BUSINESS_INCOME, TOTAL_INCOME, TOTAL_NET_WORTH, PEP, ACC_PURPOSE, LOCAL_ADDR, LOCAL_ADDR_COUNTRY, MOBILE_TEL_NO, OFFICE_TEL_NO) VALUES ('KYC006', 'CG', DATE '1988-12-25', 'Pointe-Noire', 'CG', NULL, NULL, 'Y', '900000', '400000', 1300000, 4000000, 'N', 'CURRENT', '17 Rue Patrice Lumumba, Poto-Poto, Brazzaville', 'CG', '+242061234006', '+242051234006')`,
+  `INSERT INTO FCUBSLIVE.STTM_KYC_RETAIL (KYC_REF_NO, NATIONALITY, BIRTH_DATE, BIRTH_PLACE, BIRTH_COUNTRY, PASSPORT_NO, PASSPORT_EXPIRY_DATE, RESIDENT, SALARY_INCOME, BUSINESS_INCOME, TOTAL_INCOME, TOTAL_NET_WORTH, PEP, ACC_PURPOSE, LOCAL_ADDR, LOCAL_ADDR_COUNTRY, MOBILE_TEL_NO, OFFICE_TEL_NO) VALUES ('KYC007', 'CD', DATE '1978-03-17', 'Kinshasa', 'CD', 'CD-PP-2022-78001', DATE '2032-03-17', 'Y', '6000000', '4000000', 10000000, 80000000, 'N', 'INVESTMENT', '88 Boulevard Lumumba, Gombe, Kinshasa', 'CD', '+243812345007', '+243991234007')`,
+  `INSERT INTO FCUBSLIVE.STTM_KYC_RETAIL (KYC_REF_NO, NATIONALITY, BIRTH_DATE, BIRTH_PLACE, BIRTH_COUNTRY, PASSPORT_NO, PASSPORT_EXPIRY_DATE, RESIDENT, SALARY_INCOME, BUSINESS_INCOME, TOTAL_INCOME, TOTAL_NET_WORTH, PEP, ACC_PURPOSE, LOCAL_ADDR, LOCAL_ADDR_COUNTRY, MOBILE_TEL_NO, OFFICE_TEL_NO) VALUES ('KYC008', 'CD', DATE '1993-06-11', 'Lubumbashi', 'CD', NULL, NULL, 'Y', '850000', NULL, 850000, 2500000, 'N', 'SAVINGS', '3 Rue des Flamboyants, Kamalondo, Lubumbashi', 'CD', '+243812345008', NULL)`,
+];
+&nbsp;
+// ── CYTB_RATES_HISTORY — Exchange rates (week of 2025-03-24 to 2025-03-31) ────
+// CDF is the local currency.  Rates are realistic for Q1-2025.
+export const RATES_HISTORY_INSERTS: string[] = [
+  // USD → CDF
+  `INSERT INTO FCUBSLIVE.CYTB_RATES_HISTORY (BRANCH_CODE, CCY1, CCY2, RATE_DATE, RATE_SERIAL, RATE_TYPE, MID_RATE, BUY_RATE, SALE_RATE, RATE_DT_STAMP) VALUES ('001', 'USD', 'CDF', DATE '2025-03-24', 1, 'SPOT', 2498.00000000, 2493.00000000, 2508.00000000, DATE '2025-03-24')`,
+  `INSERT INTO FCUBSLIVE.CYTB_RATES_HISTORY (BRANCH_CODE, CCY1, CCY2, RATE_DATE, RATE_SERIAL, RATE_TYPE, MID_RATE, BUY_RATE, SALE_RATE, RATE_DT_STAMP) VALUES ('001', 'USD', 'CDF', DATE '2025-03-25', 1, 'SPOT', 2500.00000000, 2495.00000000, 2510.00000000, DATE '2025-03-25')`,
+  `INSERT INTO FCUBSLIVE.CYTB_RATES_HISTORY (BRANCH_CODE, CCY1, CCY2, RATE_DATE, RATE_SERIAL, RATE_TYPE, MID_RATE, BUY_RATE, SALE_RATE, RATE_DT_STAMP) VALUES ('001', 'USD', 'CDF', DATE '2025-03-26', 1, 'SPOT', 2502.50000000, 2497.00000000, 2512.00000000, DATE '2025-03-26')`,
+  `INSERT INTO FCUBSLIVE.CYTB_RATES_HISTORY (BRANCH_CODE, CCY1, CCY2, RATE_DATE, RATE_SERIAL, RATE_TYPE, MID_RATE, BUY_RATE, SALE_RATE, RATE_DT_STAMP) VALUES ('001', 'USD', 'CDF', DATE '2025-03-27', 1, 'SPOT', 2498.00000000, 2493.00000000, 2508.00000000, DATE '2025-03-27')`,
+  `INSERT INTO FCUBSLIVE.CYTB_RATES_HISTORY (BRANCH_CODE, CCY1, CCY2, RATE_DATE, RATE_SERIAL, RATE_TYPE, MID_RATE, BUY_RATE, SALE_RATE, RATE_DT_STAMP) VALUES ('001', 'USD', 'CDF', DATE '2025-03-28', 1, 'SPOT', 2505.00000000, 2500.00000000, 2515.00000000, DATE '2025-03-28')`,
+  `INSERT INTO FCUBSLIVE.CYTB_RATES_HISTORY (BRANCH_CODE, CCY1, CCY2, RATE_DATE, RATE_SERIAL, RATE_TYPE, MID_RATE, BUY_RATE, SALE_RATE, RATE_DT_STAMP) VALUES ('001', 'USD', 'CDF', DATE '2025-03-31', 1, 'SPOT', 2500.00000000, 2495.00000000, 2510.00000000, DATE '2025-03-31')`,
+  // EUR → CDF
+  `INSERT INTO FCUBSLIVE.CYTB_RATES_HISTORY (BRANCH_CODE, CCY1, CCY2, RATE_DATE, RATE_SERIAL, RATE_TYPE, MID_RATE, BUY_RATE, SALE_RATE, RATE_DT_STAMP) VALUES ('001', 'EUR', 'CDF', DATE '2025-03-24', 1, 'SPOT', 2895.00000000, 2887.00000000, 2910.00000000, DATE '2025-03-24')`,
+  `INSERT INTO FCUBSLIVE.CYTB_RATES_HISTORY (BRANCH_CODE, CCY1, CCY2, RATE_DATE, RATE_SERIAL, RATE_TYPE, MID_RATE, BUY_RATE, SALE_RATE, RATE_DT_STAMP) VALUES ('001', 'EUR', 'CDF', DATE '2025-03-25', 1, 'SPOT', 2900.00000000, 2892.00000000, 2915.00000000, DATE '2025-03-25')`,
+  `INSERT INTO FCUBSLIVE.CYTB_RATES_HISTORY (BRANCH_CODE, CCY1, CCY2, RATE_DATE, RATE_SERIAL, RATE_TYPE, MID_RATE, BUY_RATE, SALE_RATE, RATE_DT_STAMP) VALUES ('001', 'EUR', 'CDF', DATE '2025-03-26', 1, 'SPOT', 2905.00000000, 2897.00000000, 2920.00000000, DATE '2025-03-26')`,
+  `INSERT INTO FCUBSLIVE.CYTB_RATES_HISTORY (BRANCH_CODE, CCY1, CCY2, RATE_DATE, RATE_SERIAL, RATE_TYPE, MID_RATE, BUY_RATE, SALE_RATE, RATE_DT_STAMP) VALUES ('001', 'EUR', 'CDF', DATE '2025-03-27', 1, 'SPOT', 2895.00000000, 2887.00000000, 2910.00000000, DATE '2025-03-27')`,
+  `INSERT INTO FCUBSLIVE.CYTB_RATES_HISTORY (BRANCH_CODE, CCY1, CCY2, RATE_DATE, RATE_SERIAL, RATE_TYPE, MID_RATE, BUY_RATE, SALE_RATE, RATE_DT_STAMP) VALUES ('001', 'EUR', 'CDF', DATE '2025-03-28', 1, 'SPOT', 2910.00000000, 2902.00000000, 2925.00000000, DATE '2025-03-28')`,
+  `INSERT INTO FCUBSLIVE.CYTB_RATES_HISTORY (BRANCH_CODE, CCY1, CCY2, RATE_DATE, RATE_SERIAL, RATE_TYPE, MID_RATE, BUY_RATE, SALE_RATE, RATE_DT_STAMP) VALUES ('001', 'EUR', 'CDF', DATE '2025-03-31', 1, 'SPOT', 2900.00000000, 2892.00000000, 2915.00000000, DATE '2025-03-31')`,
+  // Branch 002 also maintains local rate table
+  `INSERT INTO FCUBSLIVE.CYTB_RATES_HISTORY (BRANCH_CODE, CCY1, CCY2, RATE_DATE, RATE_SERIAL, RATE_TYPE, MID_RATE, BUY_RATE, SALE_RATE, RATE_DT_STAMP) VALUES ('002', 'USD', 'CDF', DATE '2025-03-28', 1, 'SPOT', 2505.00000000, 2500.00000000, 2515.00000000, DATE '2025-03-28')`,
+  `INSERT INTO FCUBSLIVE.CYTB_RATES_HISTORY (BRANCH_CODE, CCY1, CCY2, RATE_DATE, RATE_SERIAL, RATE_TYPE, MID_RATE, BUY_RATE, SALE_RATE, RATE_DT_STAMP) VALUES ('002', 'USD', 'CDF', DATE '2025-03-31', 1, 'SPOT', 2500.00000000, 2495.00000000, 2510.00000000, DATE '2025-03-31')`,
+];
+&nbsp;
+// ── STTM_CUST_ACCOUNT — 22 accounts ──────────────────────────────────────────
+//
+// Account number convention: BBB + CCCCCCCC + S
+//   BBB       = 3-digit branch code
+//   CCCCCCCC  = 9-digit customer no (zero-padded)
+//   S         = sequence within customer
+//
+// Balance rule checked:
+//   ACY_CURR_BALANCE = ACY_OPENING_BAL + sum(CR transactions) - sum(DR transactions) since opening
+//   ACY_AVL_BAL      = ACY_CURR_BALANCE - ACY_BLOCKED_AMOUNT
+//   ACY_TOVER_CR     = cumulative credit turnover since opening
+//   ACY_MTD_TOVER_CR = credit turnover current month
+//   ACY_MTD_TOVER_DR = debit turnover current month
+//
+// Key balances encoded below:
+//  0010000100011  KABILA JP   SA CDF  opening 500K  +2.5M salary +200K deposit = 3.2M   -200K withdrawal  = 3.0M  (+ older credits to 4.32M)
+//  0010000100012  KABILA JP   CA USD  opening 1000  +500 inbound wire            = 1500 + prior = 2350.50
+//  0010000200021  MBUYI PAT   CA CDF  opening 300K  +1.8M salary -350K utility  = 1.75M  → 1.87M with prior
+//  0020000300031  TSHIS FEL   SA CDF  opening 200K  +1.0M deposit               = 1.2M  + prior → 3.15M
+//  0020000400041  LUMUMBA GR  SA CDF  opening 1M    +5M cash    -2.9M FX-out    = 3.1M  + prior → 25.6M
+//  0020000400042  LUMUMBA GR  SA EUR  opening 2K    +1K FX-in                   = 3K    + prior → 5.2K
+//  0030000500051  SASSOU H    SA CDF  opening 150K  +900K credit -700K debit    = 350K  + prior → 2.78M
+//  0030000600061  OKOKO MC    CA CDF  opening 100K  +450K credit -380K debit    = 170K  + prior → 980K
+//  0010000700071  ILUNGA CH   SA CDF  opening 2M    +6M credit  -1.5M debit     = 6.5M  + prior → 32M
+//  0010000700072  ILUNGA CH   CA USD  opening 5K    +3K inbound  -1K debit      = 7K    + prior → 12.5K
+//  0020000800081  NKEMDIR A   SA CDF  opening 100K  +850K salary -600K debit    = 350K  + prior → 1.22M
+//  001200000100011  BCA TRAD  CA CDF  corp, large volumes
+//  001200000100012  BCA TRAD  CA USD
+//  002200000200021  CONGO MIN CA CDF
+//  002200000200022  CONGO MIN CA USD  (new)
+//  001200000300031  TELCOM    CA CDF  (new)
+//  001200000300032  TELCOM    CA USD  (new)
+//  002200000400041  GRTLKS    CA CDF  (new)
+//  002200000400042  GRTLKS    CA USD  (new)
+//  001200000100013  BCA TRAD  FD CDF  (new fixed deposit)
+//  002200000200023  CONGO MIN FD USD  (new fixed deposit)
+&nbsp;
+export const CUST_ACCOUNT_INSERTS: string[] = [
+  // ── KABILA JEAN-PIERRE (000100001) — Branch 001 ───────────────────
+  // Savings CDF: current balance 4 320 000, opened 2018, cumulative CR 12.5M
+  `INSERT INTO FCUBSLIVE.STTM_CUST_ACCOUNT (CUST_AC_NO, BRANCH_CODE, CUST_NO, CCY, ACCOUNT_CLASS, AC_DESC, AC_OPEN_DATE, ACCOUNT_TYPE, ACC_STATUS, ACY_CURR_BALANCE, ACY_AVL_BAL, ACY_BLOCKED_AMOUNT, ACY_OPENING_BAL, LCY_CURR_BALANCE, ACY_TOVER_CR, ACY_MTD_TOVER_CR, ACY_MTD_TOVER_DR, ACY_TODAY_TOVER_CR, ACY_TODAY_TOVER_DR, AC_STAT_DORMANT, AC_STAT_FROZEN, AC_STAT_NO_CR, AC_STAT_NO_DR, AC_STAT_BLOCK, AC_STAT_STOP_PAY, CHEQUE_BOOK_FACILITY, ATM_FACILITY, PASSBOOK_FACILITY, JOINT_AC_INDICATOR, MODE_OF_OPERATION, RECORD_STAT, AUTH_STAT, MAKER_ID, MAKER_DT_STAMP, CHECKER_ID, CHECKER_DT_STAMP, MOD_NO) VALUES ('0010000100011', '001', '000100001', 'CDF', 'SA1001', 'KABILA JP SAVINGS CDF', DATE '2018-03-15', 'S', 'A', 4320000.000, 4320000.000, 0, 500000.000, 4320000.000, 12500000.000, 2700000.000, 200000.000, 0, 0, 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'Y', 'Y', 'N', 'S', 'O', 'A', 'USRMKR01', DATE '2018-03-15', 'USRCHK01', DATE '2018-03-15', 1)`,
+  // Current USD: balance 2 350.50, opened 2018
+  `INSERT INTO FCUBSLIVE.STTM_CUST_ACCOUNT (CUST_AC_NO, BRANCH_CODE, CUST_NO, CCY, ACCOUNT_CLASS, AC_DESC, AC_OPEN_DATE, ACCOUNT_TYPE, ACC_STATUS, ACY_CURR_BALANCE, ACY_AVL_BAL, ACY_BLOCKED_AMOUNT, ACY_OPENING_BAL, LCY_CURR_BALANCE, ACY_TOVER_CR, ACY_MTD_TOVER_CR, ACY_MTD_TOVER_DR, ACY_TODAY_TOVER_CR, ACY_TODAY_TOVER_DR, AC_STAT_DORMANT, AC_STAT_FROZEN, AC_STAT_NO_CR, AC_STAT_NO_DR, AC_STAT_BLOCK, AC_STAT_STOP_PAY, CHEQUE_BOOK_FACILITY, ATM_FACILITY, PASSBOOK_FACILITY, JOINT_AC_INDICATOR, MODE_OF_OPERATION, RECORD_STAT, AUTH_STAT, MAKER_ID, MAKER_DT_STAMP, CHECKER_ID, CHECKER_DT_STAMP, MOD_NO) VALUES ('0010000100012', '001', '000100001', 'USD', 'CA1001', 'KABILA JP CURRENT USD', DATE '2018-05-10', 'C', 'A', 2350.500, 2350.500, 0, 1000.000, 5876250.000, 8500.000, 500.000, 0, 0, 0, 'N', 'N', 'N', 'N', 'N', 'N', 'Y', 'Y', 'N', 'N', 'S', 'O', 'A', 'USRMKR01', DATE '2018-05-10', 'USRCHK01', DATE '2018-05-10', 1)`,
+&nbsp;
+  // ── MBUYI PATRICIA (000100002) — Branch 001 ──────────────────────
+  // Current CDF: balance 1 870 000
+  `INSERT INTO FCUBSLIVE.STTM_CUST_ACCOUNT (CUST_AC_NO, BRANCH_CODE, CUST_NO, CCY, ACCOUNT_CLASS, AC_DESC, AC_OPEN_DATE, ACCOUNT_TYPE, ACC_STATUS, ACY_CURR_BALANCE, ACY_AVL_BAL, ACY_BLOCKED_AMOUNT, ACY_OPENING_BAL, LCY_CURR_BALANCE, ACY_TOVER_CR, ACY_MTD_TOVER_CR, ACY_MTD_TOVER_DR, ACY_TODAY_TOVER_CR, ACY_TODAY_TOVER_DR, AC_STAT_DORMANT, AC_STAT_FROZEN, AC_STAT_NO_CR, AC_STAT_NO_DR, AC_STAT_BLOCK, AC_STAT_STOP_PAY, CHEQUE_BOOK_FACILITY, ATM_FACILITY, PASSBOOK_FACILITY, JOINT_AC_INDICATOR, MODE_OF_OPERATION, RECORD_STAT, AUTH_STAT, MAKER_ID, MAKER_DT_STAMP, CHECKER_ID, CHECKER_DT_STAMP, MOD_NO) VALUES ('0010000200021', '001', '000100002', 'CDF', 'CA1001', 'MBUYI PAT CURRENT CDF', DATE '2019-06-20', 'C', 'A', 1870000.000, 1870000.000, 0, 300000.000, 1870000.000, 9200000.000, 1800000.000, 350000.000, 0, 0, 'N', 'N', 'N', 'N', 'N', 'N', 'Y', 'Y', 'N', 'N', 'S', 'O', 'A', 'USRMKR01', DATE '2019-06-20', 'USRCHK01', DATE '2019-06-20', 0)`,
+&nbsp;
+  // ── TSHISEKEDI FELIX (000100003) — Branch 002 ─────────────────────
+  // Savings CDF: balance 3 150 000
+  `INSERT INTO FCUBSLIVE.STTM_CUST_ACCOUNT (CUST_AC_NO, BRANCH_CODE, CUST_NO, CCY, ACCOUNT_CLASS, AC_DESC, AC_OPEN_DATE, ACCOUNT_TYPE, ACC_STATUS, ACY_CURR_BALANCE, ACY_AVL_BAL, ACY_BLOCKED_AMOUNT, ACY_OPENING_BAL, LCY_CURR_BALANCE, ACY_TOVER_CR, ACY_MTD_TOVER_CR, ACY_MTD_TOVER_DR, ACY_TODAY_TOVER_CR, ACY_TODAY_TOVER_DR, AC_STAT_DORMANT, AC_STAT_FROZEN, AC_STAT_NO_CR, AC_STAT_NO_DR, AC_STAT_BLOCK, AC_STAT_STOP_PAY, CHEQUE_BOOK_FACILITY, ATM_FACILITY, PASSBOOK_FACILITY, JOINT_AC_INDICATOR, MODE_OF_OPERATION, RECORD_STAT, AUTH_STAT, MAKER_ID, MAKER_DT_STAMP, CHECKER_ID, CHECKER_DT_STAMP, MOD_NO) VALUES ('0020000300031', '002', '000100003', 'CDF', 'SA1001', 'TSHISEKEDI F SAVINGS CDF', DATE '2020-01-10', 'S', 'A', 3150000.000, 3150000.000, 0, 200000.000, 3150000.000, 7800000.000, 1100000.000, 950000.000, 0, 0, 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'Y', 'Y', 'N', 'S', 'O', 'A', 'USRMKR02', DATE '2020-01-10', 'USRCHK02', DATE '2020-01-10', 0)`,
+&nbsp;
+  // ── LUMUMBA GRACE (000100004) — Branch 002, Premium ───────────────
+  // Savings CDF: balance 25 600 000 (high-net-worth, 500K blocked for FD collateral)
+  `INSERT INTO FCUBSLIVE.STTM_CUST_ACCOUNT (CUST_AC_NO, BRANCH_CODE, CUST_NO, CCY, ACCOUNT_CLASS, AC_DESC, AC_OPEN_DATE, ACCOUNT_TYPE, ACC_STATUS, ACY_CURR_BALANCE, ACY_AVL_BAL, ACY_BLOCKED_AMOUNT, ACY_OPENING_BAL, LCY_CURR_BALANCE, ACY_TOVER_CR, ACY_MTD_TOVER_CR, ACY_MTD_TOVER_DR, ACY_TODAY_TOVER_CR, ACY_TODAY_TOVER_DR, AC_STAT_DORMANT, AC_STAT_FROZEN, AC_STAT_NO_CR, AC_STAT_NO_DR, AC_STAT_BLOCK, AC_STAT_STOP_PAY, CHEQUE_BOOK_FACILITY, ATM_FACILITY, PASSBOOK_FACILITY, JOINT_AC_INDICATOR, MODE_OF_OPERATION, RECORD_STAT, AUTH_STAT, MAKER_ID, MAKER_DT_STAMP, CHECKER_ID, CHECKER_DT_STAMP, MOD_NO) VALUES ('0020000400041', '002', '000100004', 'CDF', 'SA1001', 'LUMUMBA G SAVINGS CDF', DATE '2017-11-05', 'S', 'A', 25600000.000, 25100000.000, 500000.000, 1000000.000, 25600000.000, 45000000.000, 5000000.000, 2900000.000, 0, 0, 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'Y', 'Y', 'N', 'S', 'O', 'A', 'USRMKR02', DATE '2017-11-05', 'USRCHK02', DATE '2017-11-05', 1)`,
+  // Savings EUR: balance 5 200
+  `INSERT INTO FCUBSLIVE.STTM_CUST_ACCOUNT (CUST_AC_NO, BRANCH_CODE, CUST_NO, CCY, ACCOUNT_CLASS, AC_DESC, AC_OPEN_DATE, ACCOUNT_TYPE, ACC_STATUS, ACY_CURR_BALANCE, ACY_AVL_BAL, ACY_BLOCKED_AMOUNT, ACY_OPENING_BAL, LCY_CURR_BALANCE, ACY_TOVER_CR, ACY_MTD_TOVER_CR, ACY_MTD_TOVER_DR, ACY_TODAY_TOVER_CR, ACY_TODAY_TOVER_DR, AC_STAT_DORMANT, AC_STAT_FROZEN, AC_STAT_NO_CR, AC_STAT_NO_DR, AC_STAT_BLOCK, AC_STAT_STOP_PAY, CHEQUE_BOOK_FACILITY, ATM_FACILITY, PASSBOOK_FACILITY, JOINT_AC_INDICATOR, MODE_OF_OPERATION, RECORD_STAT, AUTH_STAT, MAKER_ID, MAKER_DT_STAMP, CHECKER_ID, CHECKER_DT_STAMP, MOD_NO) VALUES ('0020000400042', '002', '000100004', 'EUR', 'SA1001', 'LUMUMBA G SAVINGS EUR', DATE '2018-02-20', 'S', 'A', 5200.000, 5200.000, 0, 2000.000, 15080000.000, 12000.000, 800.000, 600.000, 0, 0, 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'Y', 'N', 'N', 'S', 'O', 'A', 'USRMKR02', DATE '2018-02-20', 'USRCHK02', DATE '2018-02-20', 0)`,
+&nbsp;
+  // ── SASSOU HENRI (000100005) — Branch 003 ─────────────────────────
+  // Savings CDF: balance 2 780 000
+  `INSERT INTO FCUBSLIVE.STTM_CUST_ACCOUNT (CUST_AC_NO, BRANCH_CODE, CUST_NO, CCY, ACCOUNT_CLASS, AC_DESC, AC_OPEN_DATE, ACCOUNT_TYPE, ACC_STATUS, ACY_CURR_BALANCE, ACY_AVL_BAL, ACY_BLOCKED_AMOUNT, ACY_OPENING_BAL, LCY_CURR_BALANCE, ACY_TOVER_CR, ACY_MTD_TOVER_CR, ACY_MTD_TOVER_DR, ACY_TODAY_TOVER_CR, ACY_TODAY_TOVER_DR, AC_STAT_DORMANT, AC_STAT_FROZEN, AC_STAT_NO_CR, AC_STAT_NO_DR, AC_STAT_BLOCK, AC_STAT_STOP_PAY, CHEQUE_BOOK_FACILITY, ATM_FACILITY, PASSBOOK_FACILITY, JOINT_AC_INDICATOR, MODE_OF_OPERATION, RECORD_STAT, AUTH_STAT, MAKER_ID, MAKER_DT_STAMP, CHECKER_ID, CHECKER_DT_STAMP, MOD_NO) VALUES ('0030000500051', '003', '000100005', 'CDF', 'SA1001', 'SASSOU H SAVINGS CDF', DATE '2021-02-14', 'S', 'A', 2780000.000, 2780000.000, 0, 150000.000, 2780000.000, 5400000.000, 900000.000, 700000.000, 0, 0, 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'Y', 'Y', 'N', 'S', 'O', 'A', 'USRMKR03', DATE '2021-02-14', 'USRCHK03', DATE '2021-02-14', 0)`,
+&nbsp;
+  // ── OKOKO MARIE-CLAIRE (000100006) — Branch 003 ───────────────────
+  // Current CDF: balance 980 000
+  `INSERT INTO FCUBSLIVE.STTM_CUST_ACCOUNT (CUST_AC_NO, BRANCH_CODE, CUST_NO, CCY, ACCOUNT_CLASS, AC_DESC, AC_OPEN_DATE, ACCOUNT_TYPE, ACC_STATUS, ACY_CURR_BALANCE, ACY_AVL_BAL, ACY_BLOCKED_AMOUNT, ACY_OPENING_BAL, LCY_CURR_BALANCE, ACY_TOVER_CR, ACY_MTD_TOVER_CR, ACY_MTD_TOVER_DR, ACY_TODAY_TOVER_CR, ACY_TODAY_TOVER_DR, AC_STAT_DORMANT, AC_STAT_FROZEN, AC_STAT_NO_CR, AC_STAT_NO_DR, AC_STAT_BLOCK, AC_STAT_STOP_PAY, CHEQUE_BOOK_FACILITY, ATM_FACILITY, PASSBOOK_FACILITY, JOINT_AC_INDICATOR, MODE_OF_OPERATION, RECORD_STAT, AUTH_STAT, MAKER_ID, MAKER_DT_STAMP, CHECKER_ID, CHECKER_DT_STAMP, MOD_NO) VALUES ('0030000600061', '003', '000100006', 'CDF', 'CA1001', 'OKOKO MC CURRENT CDF', DATE '2021-05-30', 'C', 'A', 980000.000, 980000.000, 0, 100000.000, 980000.000, 3200000.000, 450000.000, 380000.000, 0, 0, 'N', 'N', 'N', 'N', 'N', 'N', 'Y', 'Y', 'N', 'N', 'S', 'O', 'A', 'USRMKR03', DATE '2021-05-30', 'USRCHK03', DATE '2021-05-30', 0)`,
+&nbsp;
+  // ── ILUNGA CHRISTIAN (000100007) — Branch 001, Premium ────────────
+  // Savings CDF: balance 32 000 000
+  `INSERT INTO FCUBSLIVE.STTM_CUST_ACCOUNT (CUST_AC_NO, BRANCH_CODE, CUST_NO, CCY, ACCOUNT_CLASS, AC_DESC, AC_OPEN_DATE, ACCOUNT_TYPE, ACC_STATUS, ACY_CURR_BALANCE, ACY_AVL_BAL, ACY_BLOCKED_AMOUNT, ACY_OPENING_BAL, LCY_CURR_BALANCE, ACY_TOVER_CR, ACY_MTD_TOVER_CR, ACY_MTD_TOVER_DR, ACY_TODAY_TOVER_CR, ACY_TODAY_TOVER_DR, AC_STAT_DORMANT, AC_STAT_FROZEN, AC_STAT_NO_CR, AC_STAT_NO_DR, AC_STAT_BLOCK, AC_STAT_STOP_PAY, CHEQUE_BOOK_FACILITY, ATM_FACILITY, PASSBOOK_FACILITY, JOINT_AC_INDICATOR, MODE_OF_OPERATION, RECORD_STAT, AUTH_STAT, MAKER_ID, MAKER_DT_STAMP, CHECKER_ID, CHECKER_DT_STAMP, MOD_NO) VALUES ('0010000700071', '001', '000100007', 'CDF', 'SA1001', 'ILUNGA CH SAVINGS CDF', DATE '2022-04-01', 'S', 'A', 32000000.000, 32000000.000, 0, 2000000.000, 32000000.000, 68000000.000, 6000000.000, 1500000.000, 0, 0, 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'Y', 'Y', 'N', 'S', 'O', 'A', 'USRMKR01', DATE '2022-04-01', 'USRCHK01', DATE '2022-04-01', 1)`,
+  // Current USD: balance 12 500
+  `INSERT INTO FCUBSLIVE.STTM_CUST_ACCOUNT (CUST_AC_NO, BRANCH_CODE, CUST_NO, CCY, ACCOUNT_CLASS, AC_DESC, AC_OPEN_DATE, ACCOUNT_TYPE, ACC_STATUS, ACY_CURR_BALANCE, ACY_AVL_BAL, ACY_BLOCKED_AMOUNT, ACY_OPENING_BAL, LCY_CURR_BALANCE, ACY_TOVER_CR, ACY_MTD_TOVER_CR, ACY_MTD_TOVER_DR, ACY_TODAY_TOVER_CR, ACY_TODAY_TOVER_DR, AC_STAT_DORMANT, AC_STAT_FROZEN, AC_STAT_NO_CR, AC_STAT_NO_DR, AC_STAT_BLOCK, AC_STAT_STOP_PAY, CHEQUE_BOOK_FACILITY, ATM_FACILITY, PASSBOOK_FACILITY, JOINT_AC_INDICATOR, MODE_OF_OPERATION, RECORD_STAT, AUTH_STAT, MAKER_ID, MAKER_DT_STAMP, CHECKER_ID, CHECKER_DT_STAMP, MOD_NO) VALUES ('0010000700072', '001', '000100007', 'USD', 'CA1001', 'ILUNGA CH CURRENT USD', DATE '2022-04-01', 'C', 'A', 12500.000, 12500.000, 0, 5000.000, 31250000.000, 25000.000, 3000.000, 1000.000, 0, 0, 'N', 'N', 'N', 'N', 'N', 'N', 'Y', 'Y', 'N', 'N', 'S', 'O', 'A', 'USRMKR01', DATE '2022-04-01', 'USRCHK01', DATE '2022-04-01', 0)`,
+&nbsp;
+  // ── NKEMDIRIM AMARA (000100008) — Branch 002, Retail ──────────────
+  // Savings CDF: balance 1 220 000
+  `INSERT INTO FCUBSLIVE.STTM_CUST_ACCOUNT (CUST_AC_NO, BRANCH_CODE, CUST_NO, CCY, ACCOUNT_CLASS, AC_DESC, AC_OPEN_DATE, ACCOUNT_TYPE, ACC_STATUS, ACY_CURR_BALANCE, ACY_AVL_BAL, ACY_BLOCKED_AMOUNT, ACY_OPENING_BAL, LCY_CURR_BALANCE, ACY_TOVER_CR, ACY_MTD_TOVER_CR, ACY_MTD_TOVER_DR, ACY_TODAY_TOVER_CR, ACY_TODAY_TOVER_DR, AC_STAT_DORMANT, AC_STAT_FROZEN, AC_STAT_NO_CR, AC_STAT_NO_DR, AC_STAT_BLOCK, AC_STAT_STOP_PAY, CHEQUE_BOOK_FACILITY, ATM_FACILITY, PASSBOOK_FACILITY, JOINT_AC_INDICATOR, MODE_OF_OPERATION, RECORD_STAT, AUTH_STAT, MAKER_ID, MAKER_DT_STAMP, CHECKER_ID, CHECKER_DT_STAMP, MOD_NO) VALUES ('0020000800081', '002', '000100008', 'CDF', 'SA1001', 'NKEMDIRIM A SAVINGS CDF', DATE '2023-01-09', 'S', 'A', 1220000.000, 1220000.000, 0, 100000.000, 1220000.000, 2950000.000, 850000.000, 600000.000, 0, 0, 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'Y', 'Y', 'N', 'S', 'O', 'A', 'USRMKR02', DATE '2023-01-09', 'USRCHK02', DATE '2023-01-09', 0)`,
+&nbsp;
+  // ── BCA TRADING SARL (000200001) — Branch 001, Corporate ──────────
+  // Corporate Current CDF: balance 78 500 000
+  `INSERT INTO FCUBSLIVE.STTM_CUST_ACCOUNT (CUST_AC_NO, BRANCH_CODE, CUST_NO, CCY, ACCOUNT_CLASS, AC_DESC, AC_OPEN_DATE, ACCOUNT_TYPE, ACC_STATUS, ACY_CURR_BALANCE, ACY_AVL_BAL, ACY_BLOCKED_AMOUNT, ACY_OPENING_BAL, LCY_CURR_BALANCE, ACY_TOVER_CR, ACY_MTD_TOVER_CR, ACY_MTD_TOVER_DR, ACY_TODAY_TOVER_CR, ACY_TODAY_TOVER_DR, AC_STAT_DORMANT, AC_STAT_FROZEN, AC_STAT_NO_CR, AC_STAT_NO_DR, AC_STAT_BLOCK, AC_STAT_STOP_PAY, CHEQUE_BOOK_FACILITY, ATM_FACILITY, PASSBOOK_FACILITY, JOINT_AC_INDICATOR, MODE_OF_OPERATION, RECORD_STAT, AUTH_STAT, MAKER_ID, MAKER_DT_STAMP, CHECKER_ID, CHECKER_DT_STAMP, MOD_NO) VALUES ('0011000100011', '001', '000200001', 'CDF', 'CA2001', 'BCA TRADING CURRENT CDF', DATE '2019-08-01', 'C', 'A', 78500000.000, 78500000.000, 0, 5000000.000, 78500000.000, 250000000.000, 35000000.000, 32000000.000, 0, 0, 'N', 'N', 'N', 'N', 'N', 'N', 'Y', 'N', 'N', 'N', 'J', 'O', 'A', 'USRMKR01', DATE '2019-08-01', 'USRCHK01', DATE '2019-08-01', 1)`,
+  // Corporate Current USD: balance 15 200
+  `INSERT INTO FCUBSLIVE.STTM_CUST_ACCOUNT (CUST_AC_NO, BRANCH_CODE, CUST_NO, CCY, ACCOUNT_CLASS, AC_DESC, AC_OPEN_DATE, ACCOUNT_TYPE, ACC_STATUS, ACY_CURR_BALANCE, ACY_AVL_BAL, ACY_BLOCKED_AMOUNT, ACY_OPENING_BAL, LCY_CURR_BALANCE, ACY_TOVER_CR, ACY_MTD_TOVER_CR, ACY_MTD_TOVER_DR, ACY_TODAY_TOVER_CR, ACY_TODAY_TOVER_DR, AC_STAT_DORMANT, AC_STAT_FROZEN, AC_STAT_NO_CR, AC_STAT_NO_DR, AC_STAT_BLOCK, AC_STAT_STOP_PAY, CHEQUE_BOOK_FACILITY, ATM_FACILITY, PASSBOOK_FACILITY, JOINT_AC_INDICATOR, MODE_OF_OPERATION, RECORD_STAT, AUTH_STAT, MAKER_ID, MAKER_DT_STAMP, CHECKER_ID, CHECKER_DT_STAMP, MOD_NO) VALUES ('0011000100012', '001', '000200001', 'USD', 'CA2001', 'BCA TRADING CURRENT USD', DATE '2019-08-01', 'C', 'A', 15200.000, 15200.000, 0, 5000.000, 38000000.000, 85000.000, 12000.000, 10500.000, 0, 0, 'N', 'N', 'N', 'N', 'N', 'N', 'Y', 'N', 'N', 'N', 'J', 'O', 'A', 'USRMKR01', DATE '2019-08-01', 'USRCHK01', DATE '2019-08-01', 0)`,
+  // Fixed Deposit CDF: 50M, 12-month term (maturity 2025-09-01)
+  `INSERT INTO FCUBSLIVE.STTM_CUST_ACCOUNT (CUST_AC_NO, BRANCH_CODE, CUST_NO, CCY, ACCOUNT_CLASS, AC_DESC, AC_OPEN_DATE, ACCOUNT_TYPE, ACC_STATUS, ACY_CURR_BALANCE, ACY_AVL_BAL, ACY_BLOCKED_AMOUNT, ACY_OPENING_BAL, LCY_CURR_BALANCE, ACY_TOVER_CR, ACY_MTD_TOVER_CR, ACY_MTD_TOVER_DR, ACY_TODAY_TOVER_CR, ACY_TODAY_TOVER_DR, AC_STAT_DORMANT, AC_STAT_FROZEN, AC_STAT_NO_CR, AC_STAT_NO_DR, AC_STAT_BLOCK, AC_STAT_STOP_PAY, CHEQUE_BOOK_FACILITY, ATM_FACILITY, PASSBOOK_FACILITY, JOINT_AC_INDICATOR, MODE_OF_OPERATION, RECORD_STAT, AUTH_STAT, MAKER_ID, MAKER_DT_STAMP, CHECKER_ID, CHECKER_DT_STAMP, MOD_NO) VALUES ('0011000100013', '001', '000200001', 'CDF', 'FD2001', 'BCA TRADING FIXED DEP CDF', DATE '2024-09-01', 'D', 'A', 50000000.000, 0, 50000000.000, 50000000.000, 50000000.000, 50000000.000, 0, 0, 0, 0, 'N', 'N', 'Y', 'Y', 'N', 'N', 'N', 'N', 'N', 'N', 'S', 'O', 'A', 'USRMKR01', DATE '2024-09-01', 'USRCHK01', DATE '2024-09-01', 0)`,
+&nbsp;
+  // ── CONGO MINERALS SA (000200002) — Branch 002, Corporate ─────────
+  // Corporate Current CDF: balance 145 000 000 (1M blocked for pending payment)
+  `INSERT INTO FCUBSLIVE.STTM_CUST_ACCOUNT (CUST_AC_NO, BRANCH_CODE, CUST_NO, CCY, ACCOUNT_CLASS, AC_DESC, AC_OPEN_DATE, ACCOUNT_TYPE, ACC_STATUS, ACY_CURR_BALANCE, ACY_AVL_BAL, ACY_BLOCKED_AMOUNT, ACY_OPENING_BAL, LCY_CURR_BALANCE, ACY_TOVER_CR, ACY_MTD_TOVER_CR, ACY_MTD_TOVER_DR, ACY_TODAY_TOVER_CR, ACY_TODAY_TOVER_DR, AC_STAT_DORMANT, AC_STAT_FROZEN, AC_STAT_NO_CR, AC_STAT_NO_DR, AC_STAT_BLOCK, AC_STAT_STOP_PAY, CHEQUE_BOOK_FACILITY, ATM_FACILITY, PASSBOOK_FACILITY, JOINT_AC_INDICATOR, MODE_OF_OPERATION, RECORD_STAT, AUTH_STAT, MAKER_ID, MAKER_DT_STAMP, CHECKER_ID, CHECKER_DT_STAMP, MOD_NO) VALUES ('0021000200021', '002', '000200002', 'CDF', 'CA2001', 'CONGO MINERALS CURRENT CDF', DATE '2018-04-12', 'C', 'A', 145000000.000, 144000000.000, 1000000.000, 10000000.000, 145000000.000, 520000000.000, 68000000.000, 55000000.000, 0, 0, 'N', 'N', 'N', 'N', 'N', 'N', 'Y', 'N', 'N', 'N', 'J', 'O', 'A', 'USRMKR02', DATE '2018-04-12', 'USRCHK02', DATE '2018-04-12', 2)`,
+  // Corporate Current USD: balance 48 000 (FX exports)
+  `INSERT INTO FCUBSLIVE.STTM_CUST_ACCOUNT (CUST_AC_NO, BRANCH_CODE, CUST_NO, CCY, ACCOUNT_CLASS, AC_DESC, AC_OPEN_DATE, ACCOUNT_TYPE, ACC_STATUS, ACY_CURR_BALANCE, ACY_AVL_BAL, ACY_BLOCKED_AMOUNT, ACY_OPENING_BAL, LCY_CURR_BALANCE, ACY_TOVER_CR, ACY_MTD_TOVER_CR, ACY_MTD_TOVER_DR, ACY_TODAY_TOVER_CR, ACY_TODAY_TOVER_DR, AC_STAT_DORMANT, AC_STAT_FROZEN, AC_STAT_NO_CR, AC_STAT_NO_DR, AC_STAT_BLOCK, AC_STAT_STOP_PAY, CHEQUE_BOOK_FACILITY, ATM_FACILITY, PASSBOOK_FACILITY, JOINT_AC_INDICATOR, MODE_OF_OPERATION, RECORD_STAT, AUTH_STAT, MAKER_ID, MAKER_DT_STAMP, CHECKER_ID, CHECKER_DT_STAMP, MOD_NO) VALUES ('0021000200022', '002', '000200002', 'USD', 'CA2001', 'CONGO MINERALS CURRENT USD', DATE '2019-01-15', 'C', 'A', 48000.000, 48000.000, 0, 10000.000, 120000000.000, 210000.000, 30000.000, 22000.000, 0, 0, 'N', 'N', 'N', 'N', 'N', 'N', 'Y', 'N', 'N', 'N', 'J', 'O', 'A', 'USRMKR02', DATE '2019-01-15', 'USRCHK02', DATE '2019-01-15', 0)`,
+&nbsp;
+  // ── TELCOM SOLUTIONS SARL (000200003) — Branch 001, SME ───────────
+  // Current CDF: balance 18 500 000
+  `INSERT INTO FCUBSLIVE.STTM_CUST_ACCOUNT (CUST_AC_NO, BRANCH_CODE, CUST_NO, CCY, ACCOUNT_CLASS, AC_DESC, AC_OPEN_DATE, ACCOUNT_TYPE, ACC_STATUS, ACY_CURR_BALANCE, ACY_AVL_BAL, ACY_BLOCKED_AMOUNT, ACY_OPENING_BAL, LCY_CURR_BALANCE, ACY_TOVER_CR, ACY_MTD_TOVER_CR, ACY_MTD_TOVER_DR, ACY_TODAY_TOVER_CR, ACY_TODAY_TOVER_DR, AC_STAT_DORMANT, AC_STAT_FROZEN, AC_STAT_NO_CR, AC_STAT_NO_DR, AC_STAT_BLOCK, AC_STAT_STOP_PAY, CHEQUE_BOOK_FACILITY, ATM_FACILITY, PASSBOOK_FACILITY, JOINT_AC_INDICATOR, MODE_OF_OPERATION, RECORD_STAT, AUTH_STAT, MAKER_ID, MAKER_DT_STAMP, CHECKER_ID, CHECKER_DT_STAMP, MOD_NO) VALUES ('0011000300031', '001', '000200003', 'CDF', 'CA2001', 'TELCOM SOL CURRENT CDF', DATE '2020-09-15', 'C', 'A', 18500000.000, 18500000.000, 0, 1000000.000, 18500000.000, 72000000.000, 9500000.000, 8200000.000, 0, 0, 'N', 'N', 'N', 'N', 'N', 'N', 'Y', 'N', 'N', 'N', 'J', 'O', 'A', 'USRMKR01', DATE '2020-09-15', 'USRCHK01', DATE '2020-09-15', 0)`,
+  // Current USD: balance 6 800
+  `INSERT INTO FCUBSLIVE.STTM_CUST_ACCOUNT (CUST_AC_NO, BRANCH_CODE, CUST_NO, CCY, ACCOUNT_CLASS, AC_DESC, AC_OPEN_DATE, ACCOUNT_TYPE, ACC_STATUS, ACY_CURR_BALANCE, ACY_AVL_BAL, ACY_BLOCKED_AMOUNT, ACY_OPENING_BAL, LCY_CURR_BALANCE, ACY_TOVER_CR, ACY_MTD_TOVER_CR, ACY_MTD_TOVER_DR, ACY_TODAY_TOVER_CR, ACY_TODAY_TOVER_DR, AC_STAT_DORMANT, AC_STAT_FROZEN, AC_STAT_NO_CR, AC_STAT_NO_DR, AC_STAT_BLOCK, AC_STAT_STOP_PAY, CHEQUE_BOOK_FACILITY, ATM_FACILITY, PASSBOOK_FACILITY, JOINT_AC_INDICATOR, MODE_OF_OPERATION, RECORD_STAT, AUTH_STAT, MAKER_ID, MAKER_DT_STAMP, CHECKER_ID, CHECKER_DT_STAMP, MOD_NO) VALUES ('0011000300032', '001', '000200003', 'USD', 'CA2001', 'TELCOM SOL CURRENT USD', DATE '2021-03-10', 'C', 'A', 6800.000, 6800.000, 0, 2000.000, 17000000.000, 28000.000, 4500.000, 3800.000, 0, 0, 'N', 'N', 'N', 'N', 'N', 'N', 'Y', 'N', 'N', 'N', 'J', 'O', 'A', 'USRMKR01', DATE '2021-03-10', 'USRCHK01', DATE '2021-03-10', 0)`,
+&nbsp;
+  // ── GREAT LAKES IMPORT SA (000200004) — Branch 002, Corporate ─────
+  // Current CDF: balance 92 000 000
+  `INSERT INTO FCUBSLIVE.STTM_CUST_ACCOUNT (CUST_AC_NO, BRANCH_CODE, CUST_NO, CCY, ACCOUNT_CLASS, AC_DESC, AC_OPEN_DATE, ACCOUNT_TYPE, ACC_STATUS, ACY_CURR_BALANCE, ACY_AVL_BAL, ACY_BLOCKED_AMOUNT, ACY_OPENING_BAL, LCY_CURR_BALANCE, ACY_TOVER_CR, ACY_MTD_TOVER_CR, ACY_MTD_TOVER_DR, ACY_TODAY_TOVER_CR, ACY_TODAY_TOVER_DR, AC_STAT_DORMANT, AC_STAT_FROZEN, AC_STAT_NO_CR, AC_STAT_NO_DR, AC_STAT_BLOCK, AC_STAT_STOP_PAY, CHEQUE_BOOK_FACILITY, ATM_FACILITY, PASSBOOK_FACILITY, JOINT_AC_INDICATOR, MODE_OF_OPERATION, RECORD_STAT, AUTH_STAT, MAKER_ID, MAKER_DT_STAMP, CHECKER_ID, CHECKER_DT_STAMP, MOD_NO) VALUES ('0021000400041', '002', '000200004', 'CDF', 'CA2001', 'GRTLKS IMPORT CURRENT CDF', DATE '2016-11-20', 'C', 'A', 92000000.000, 92000000.000, 0, 8000000.000, 92000000.000, 380000000.000, 42000000.000, 38000000.000, 0, 0, 'N', 'N', 'N', 'N', 'N', 'N', 'Y', 'N', 'N', 'N', 'J', 'O', 'A', 'USRMKR02', DATE '2016-11-20', 'USRCHK02', DATE '2016-11-20', 2)`,
+  // Current USD: balance 36 000
+  `INSERT INTO FCUBSLIVE.STTM_CUST_ACCOUNT (CUST_AC_NO, BRANCH_CODE, CUST_NO, CCY, ACCOUNT_CLASS, AC_DESC, AC_OPEN_DATE, ACCOUNT_TYPE, ACC_STATUS, ACY_CURR_BALANCE, ACY_AVL_BAL, ACY_BLOCKED_AMOUNT, ACY_OPENING_BAL, LCY_CURR_BALANCE, ACY_TOVER_CR, ACY_MTD_TOVER_CR, ACY_MTD_TOVER_DR, ACY_TODAY_TOVER_CR, ACY_TODAY_TOVER_DR, AC_STAT_DORMANT, AC_STAT_FROZEN, AC_STAT_NO_CR, AC_STAT_NO_DR, AC_STAT_BLOCK, AC_STAT_STOP_PAY, CHEQUE_BOOK_FACILITY, ATM_FACILITY, PASSBOOK_FACILITY, JOINT_AC_INDICATOR, MODE_OF_OPERATION, RECORD_STAT, AUTH_STAT, MAKER_ID, MAKER_DT_STAMP, CHECKER_ID, CHECKER_DT_STAMP, MOD_NO) VALUES ('0021000400042', '002', '000200004', 'USD', 'CA2001', 'GRTLKS IMPORT CURRENT USD', DATE '2017-05-08', 'C', 'A', 36000.000, 36000.000, 0, 5000.000, 90000000.000, 160000.000, 18000.000, 15000.000, 0, 0, 'N', 'N', 'N', 'N', 'N', 'N', 'Y', 'N', 'N', 'N', 'J', 'O', 'A', 'USRMKR02', DATE '2017-05-08', 'USRCHK02', DATE '2017-05-08', 0)`,
+];
+&nbsp;
+// ── STTB_ACCOUNT — GL mirror ──────────────────────────────────────────────────
+export const ACCOUNT_INSERTS: string[] = [
+  `INSERT INTO FCUBSLIVE.STTB_ACCOUNT (AC_GL_NO, BRANCH_CODE, AC_GL_CCY, AC_GL_DESC, CUST_NO, CUST_NAME1, AC_CLASS, AC_OR_GL, GL_CATEGORY, AC_OPEN_DATE, AC_STAT_DORMANT, AC_STAT_FROZEN, AC_STAT_NO_CR, AC_STAT_NO_DR, AC_GL_REC_STATUS, AUTH_STAT) VALUES ('0010000100011', '001', 'CDF', 'KABILA JP SAVINGS CDF', '000100001', 'KABILA JEAN-PIERRE', 'SA1001', 'A', NULL, DATE '2018-03-15', 'N', 'N', 'N', 'N', 'O', 'A')`,
+  `INSERT INTO FCUBSLIVE.STTB_ACCOUNT (AC_GL_NO, BRANCH_CODE, AC_GL_CCY, AC_GL_DESC, CUST_NO, CUST_NAME1, AC_CLASS, AC_OR_GL, GL_CATEGORY, AC_OPEN_DATE, AC_STAT_DORMANT, AC_STAT_FROZEN, AC_STAT_NO_CR, AC_STAT_NO_DR, AC_GL_REC_STATUS, AUTH_STAT) VALUES ('0010000100012', '001', 'USD', 'KABILA JP CURRENT USD', '000100001', 'KABILA JEAN-PIERRE', 'CA1001', 'A', NULL, DATE '2018-05-10', 'N', 'N', 'N', 'N', 'O', 'A')`,
+  `INSERT INTO FCUBSLIVE.STTB_ACCOUNT (AC_GL_NO, BRANCH_CODE, AC_GL_CCY, AC_GL_DESC, CUST_NO, CUST_NAME1, AC_CLASS, AC_OR_GL, GL_CATEGORY, AC_OPEN_DATE, AC_STAT_DORMANT, AC_STAT_FROZEN, AC_STAT_NO_CR, AC_STAT_NO_DR, AC_GL_REC_STATUS, AUTH_STAT) VALUES ('0010000200021', '001', 'CDF', 'MBUYI PAT CURRENT CDF', '000100002', 'MBUYI PATRICIA', 'CA1001', 'A', NULL, DATE '2019-06-20', 'N', 'N', 'N', 'N', 'O', 'A')`,
+  `INSERT INTO FCUBSLIVE.STTB_ACCOUNT (AC_GL_NO, BRANCH_CODE, AC_GL_CCY, AC_GL_DESC, CUST_NO, CUST_NAME1, AC_CLASS, AC_OR_GL, GL_CATEGORY, AC_OPEN_DATE, AC_STAT_DORMANT, AC_STAT_FROZEN, AC_STAT_NO_CR, AC_STAT_NO_DR, AC_GL_REC_STATUS, AUTH_STAT) VALUES ('0020000300031', '002', 'CDF', 'TSHISEKEDI F SAVINGS CDF', '000100003', 'TSHISEKEDI FELIX', 'SA1001', 'A', NULL, DATE '2020-01-10', 'N', 'N', 'N', 'N', 'O', 'A')`,
+  `INSERT INTO FCUBSLIVE.STTB_ACCOUNT (AC_GL_NO, BRANCH_CODE, AC_GL_CCY, AC_GL_DESC, CUST_NO, CUST_NAME1, AC_CLASS, AC_OR_GL, GL_CATEGORY, AC_OPEN_DATE, AC_STAT_DORMANT, AC_STAT_FROZEN, AC_STAT_NO_CR, AC_STAT_NO_DR, AC_GL_REC_STATUS, AUTH_STAT) VALUES ('0020000400041', '002', 'CDF', 'LUMUMBA G SAVINGS CDF', '000100004', 'LUMUMBA GRACE', 'SA1001', 'A', NULL, DATE '2017-11-05', 'N', 'N', 'N', 'N', 'O', 'A')`,
+  `INSERT INTO FCUBSLIVE.STTB_ACCOUNT (AC_GL_NO, BRANCH_CODE, AC_GL_CCY, AC_GL_DESC, CUST_NO, CUST_NAME1, AC_CLASS, AC_OR_GL, GL_CATEGORY, AC_OPEN_DATE, AC_STAT_DORMANT, AC_STAT_FROZEN, AC_STAT_NO_CR, AC_STAT_NO_DR, AC_GL_REC_STATUS, AUTH_STAT) VALUES ('0020000400042', '002', 'EUR', 'LUMUMBA G SAVINGS EUR', '000100004', 'LUMUMBA GRACE', 'SA1001', 'A', NULL, DATE '2018-02-20', 'N', 'N', 'N', 'N', 'O', 'A')`,
+  `INSERT INTO FCUBSLIVE.STTB_ACCOUNT (AC_GL_NO, BRANCH_CODE, AC_GL_CCY, AC_GL_DESC, CUST_NO, CUST_NAME1, AC_CLASS, AC_OR_GL, GL_CATEGORY, AC_OPEN_DATE, AC_STAT_DORMANT, AC_STAT_FROZEN, AC_STAT_NO_CR, AC_STAT_NO_DR, AC_GL_REC_STATUS, AUTH_STAT) VALUES ('0030000500051', '003', 'CDF', 'SASSOU H SAVINGS CDF', '000100005', 'SASSOU HENRI', 'SA1001', 'A', NULL, DATE '2021-02-14', 'N', 'N', 'N', 'N', 'O', 'A')`,
+  `INSERT INTO FCUBSLIVE.STTB_ACCOUNT (AC_GL_NO, BRANCH_CODE, AC_GL_CCY, AC_GL_DESC, CUST_NO, CUST_NAME1, AC_CLASS, AC_OR_GL, GL_CATEGORY, AC_OPEN_DATE, AC_STAT_DORMANT, AC_STAT_FROZEN, AC_STAT_NO_CR, AC_STAT_NO_DR, AC_GL_REC_STATUS, AUTH_STAT) VALUES ('0030000600061', '003', 'CDF', 'OKOKO MC CURRENT CDF', '000100006', 'OKOKO MARIE-CLAIRE', 'CA1001', 'A', NULL, DATE '2021-05-30', 'N', 'N', 'N', 'N', 'O', 'A')`,
+  `INSERT INTO FCUBSLIVE.STTB_ACCOUNT (AC_GL_NO, BRANCH_CODE, AC_GL_CCY, AC_GL_DESC, CUST_NO, CUST_NAME1, AC_CLASS, AC_OR_GL, GL_CATEGORY, AC_OPEN_DATE, AC_STAT_DORMANT, AC_STAT_FROZEN, AC_STAT_NO_CR, AC_STAT_NO_DR, AC_GL_REC_STATUS, AUTH_STAT) VALUES ('0010000700071', '001', 'CDF', 'ILUNGA CH SAVINGS CDF', '000100007', 'ILUNGA CHRISTIAN', 'SA1001', 'A', NULL, DATE '2022-04-01', 'N', 'N', 'N', 'N', 'O', 'A')`,
+  `INSERT INTO FCUBSLIVE.STTB_ACCOUNT (AC_GL_NO, BRANCH_CODE, AC_GL_CCY, AC_GL_DESC, CUST_NO, CUST_NAME1, AC_CLASS, AC_OR_GL, GL_CATEGORY, AC_OPEN_DATE, AC_STAT_DORMANT, AC_STAT_FROZEN, AC_STAT_NO_CR, AC_STAT_NO_DR, AC_GL_REC_STATUS, AUTH_STAT) VALUES ('0010000700072', '001', 'USD', 'ILUNGA CH CURRENT USD', '000100007', 'ILUNGA CHRISTIAN', 'CA1001', 'A', NULL, DATE '2022-04-01', 'N', 'N', 'N', 'N', 'O', 'A')`,
+  `INSERT INTO FCUBSLIVE.STTB_ACCOUNT (AC_GL_NO, BRANCH_CODE, AC_GL_CCY, AC_GL_DESC, CUST_NO, CUST_NAME1, AC_CLASS, AC_OR_GL, GL_CATEGORY, AC_OPEN_DATE, AC_STAT_DORMANT, AC_STAT_FROZEN, AC_STAT_NO_CR, AC_STAT_NO_DR, AC_GL_REC_STATUS, AUTH_STAT) VALUES ('0020000800081', '002', 'CDF', 'NKEMDIRIM A SAVINGS CDF', '000100008', 'NKEMDIRIM AMARA', 'SA1001', 'A', NULL, DATE '2023-01-09', 'N', 'N', 'N', 'N', 'O', 'A')`,
+  `INSERT INTO FCUBSLIVE.STTB_ACCOUNT (AC_GL_NO, BRANCH_CODE, AC_GL_CCY, AC_GL_DESC, CUST_NO, CUST_NAME1, AC_CLASS, AC_OR_GL, GL_CATEGORY, AC_OPEN_DATE, AC_STAT_DORMANT, AC_STAT_FROZEN, AC_STAT_NO_CR, AC_STAT_NO_DR, AC_GL_REC_STATUS, AUTH_STAT) VALUES ('0011000100011', '001', 'CDF', 'BCA TRADING CURRENT CDF', '000200001', 'BCA TRADING SARL', 'CA2001', 'A', NULL, DATE '2019-08-01', 'N', 'N', 'N', 'N', 'O', 'A')`,
+  `INSERT INTO FCUBSLIVE.STTB_ACCOUNT (AC_GL_NO, BRANCH_CODE, AC_GL_CCY, AC_GL_DESC, CUST_NO, CUST_NAME1, AC_CLASS, AC_OR_GL, GL_CATEGORY, AC_OPEN_DATE, AC_STAT_DORMANT, AC_STAT_FROZEN, AC_STAT_NO_CR, AC_STAT_NO_DR, AC_GL_REC_STATUS, AUTH_STAT) VALUES ('0011000100012', '001', 'USD', 'BCA TRADING CURRENT USD', '000200001', 'BCA TRADING SARL', 'CA2001', 'A', NULL, DATE '2019-08-01', 'N', 'N', 'N', 'N', 'O', 'A')`,
+  `INSERT INTO FCUBSLIVE.STTB_ACCOUNT (AC_GL_NO, BRANCH_CODE, AC_GL_CCY, AC_GL_DESC, CUST_NO, CUST_NAME1, AC_CLASS, AC_OR_GL, GL_CATEGORY, AC_OPEN_DATE, AC_STAT_DORMANT, AC_STAT_FROZEN, AC_STAT_NO_CR, AC_STAT_NO_DR, AC_GL_REC_STATUS, AUTH_STAT) VALUES ('0011000100013', '001', 'CDF', 'BCA TRADING FIXED DEP CDF', '000200001', 'BCA TRADING SARL', 'FD2001', 'A', NULL, DATE '2024-09-01', 'N', 'N', 'N', 'N', 'O', 'A')`,
+  `INSERT INTO FCUBSLIVE.STTB_ACCOUNT (AC_GL_NO, BRANCH_CODE, AC_GL_CCY, AC_GL_DESC, CUST_NO, CUST_NAME1, AC_CLASS, AC_OR_GL, GL_CATEGORY, AC_OPEN_DATE, AC_STAT_DORMANT, AC_STAT_FROZEN, AC_STAT_NO_CR, AC_STAT_NO_DR, AC_GL_REC_STATUS, AUTH_STAT) VALUES ('0021000200021', '002', 'CDF', 'CONGO MINERALS CURRENT CDF', '000200002', 'CONGO MINERALS SA', 'CA2001', 'A', NULL, DATE '2018-04-12', 'N', 'N', 'N', 'N', 'O', 'A')`,
+  `INSERT INTO FCUBSLIVE.STTB_ACCOUNT (AC_GL_NO, BRANCH_CODE, AC_GL_CCY, AC_GL_DESC, CUST_NO, CUST_NAME1, AC_CLASS, AC_OR_GL, GL_CATEGORY, AC_OPEN_DATE, AC_STAT_DORMANT, AC_STAT_FROZEN, AC_STAT_NO_CR, AC_STAT_NO_DR, AC_GL_REC_STATUS, AUTH_STAT) VALUES ('0021000200022', '002', 'USD', 'CONGO MINERALS CURRENT USD', '000200002', 'CONGO MINERALS SA', 'CA2001', 'A', NULL, DATE '2019-01-15', 'N', 'N', 'N', 'N', 'O', 'A')`,
+  `INSERT INTO FCUBSLIVE.STTB_ACCOUNT (AC_GL_NO, BRANCH_CODE, AC_GL_CCY, AC_GL_DESC, CUST_NO, CUST_NAME1, AC_CLASS, AC_OR_GL, GL_CATEGORY, AC_OPEN_DATE, AC_STAT_DORMANT, AC_STAT_FROZEN, AC_STAT_NO_CR, AC_STAT_NO_DR, AC_GL_REC_STATUS, AUTH_STAT) VALUES ('0011000300031', '001', 'CDF', 'TELCOM SOL CURRENT CDF', '000200003', 'TELCOM SOLUTIONS SARL', 'CA2001', 'A', NULL, DATE '2020-09-15', 'N', 'N', 'N', 'N', 'O', 'A')`,
+  `INSERT INTO FCUBSLIVE.STTB_ACCOUNT (AC_GL_NO, BRANCH_CODE, AC_GL_CCY, AC_GL_DESC, CUST_NO, CUST_NAME1, AC_CLASS, AC_OR_GL, GL_CATEGORY, AC_OPEN_DATE, AC_STAT_DORMANT, AC_STAT_FROZEN, AC_STAT_NO_CR, AC_STAT_NO_DR, AC_GL_REC_STATUS, AUTH_STAT) VALUES ('0011000300032', '001', 'USD', 'TELCOM SOL CURRENT USD', '000200003', 'TELCOM SOLUTIONS SARL', 'CA2001', 'A', NULL, DATE '2021-03-10', 'N', 'N', 'N', 'N', 'O', 'A')`,
+  `INSERT INTO FCUBSLIVE.STTB_ACCOUNT (AC_GL_NO, BRANCH_CODE, AC_GL_CCY, AC_GL_DESC, CUST_NO, CUST_NAME1, AC_CLASS, AC_OR_GL, GL_CATEGORY, AC_OPEN_DATE, AC_STAT_DORMANT, AC_STAT_FROZEN, AC_STAT_NO_CR, AC_STAT_NO_DR, AC_GL_REC_STATUS, AUTH_STAT) VALUES ('0021000400041', '002', 'CDF', 'GRTLKS IMPORT CURRENT CDF', '000200004', 'GREAT LAKES IMPORT SA', 'CA2001', 'A', NULL, DATE '2016-11-20', 'N', 'N', 'N', 'N', 'O', 'A')`,
+  `INSERT INTO FCUBSLIVE.STTB_ACCOUNT (AC_GL_NO, BRANCH_CODE, AC_GL_CCY, AC_GL_DESC, CUST_NO, CUST_NAME1, AC_CLASS, AC_OR_GL, GL_CATEGORY, AC_OPEN_DATE, AC_STAT_DORMANT, AC_STAT_FROZEN, AC_STAT_NO_CR, AC_STAT_NO_DR, AC_GL_REC_STATUS, AUTH_STAT) VALUES ('0021000400042', '002', 'USD', 'GRTLKS IMPORT CURRENT USD', '000200004', 'GREAT LAKES IMPORT SA', 'CA2001', 'A', NULL, DATE '2017-05-08', 'N', 'N', 'N', 'N', 'O', 'A')`,
+];
+&nbsp;
+// ─────────────────────────────────────────────────────────────────────────────
+//  ACTB_HISTORY — Account transaction history
+//
+//  Transaction scenarios for the week 2025-03-24 to 2025-03-28:
+//
+//  TXN-A  FT25032400001  Congo Minerals sells USD 22 000 → Great Lakes (B-to-B FT)
+//           DR  0021000200022  Congo Minerals USD    -22 000
+//           CR  0021000400042  Great Lakes   USD    +22 000
+//
+//  TXN-B  DE25032500001  Kabila JP cash salary deposit CDF 2 500 000
+//           CR  0010000100011  Kabila JP SA CDF    +2 500 000
+//           (cash — no DR account, teller funded)
+//
+//  TXN-C  DE25032500002  Mbuyi Patricia cash salary deposit CDF 1 800 000
+//           CR  0010000200021  Mbuyi PAT CA CDF    +1 800 000
+//
+//  TXN-D  DE25032500003  Lumumba Grace cash investment deposit CDF 5 000 000
+//           CR  0020000400041  Lumumba SA CDF      +5 000 000
+//
+//  TXN-E  FT25032500001  BCA Trading receives client payment CDF 25 000 000
+//    from external (Telcom Solutions pays an invoice)
+//           DR  0011000300031  Telcom SOL CA CDF  -25 000 000
+//           CR  0011000100011  BCA Trading CA CDF +25 000 000
+//
+//  TXN-F  DE25032600001  Kabila JP ATM withdrawal CDF 200 000
+//           DR  0010000100011  Kabila JP SA CDF    -200 000
+//
+//  TXN-G  DE25032600002  Tshisekedi Felix cash deposit CDF 1 000 000
+//           CR  0020000300031  Tshisekedi SA CDF  +1 000 000
+//
+//  TXN-H  FT25032600001  Ilunga Christian wires USD 3 000 to SWIFT external
+//           DR  0010000700072  Ilunga USD          -3 000  (SWIFT out, no internal CR)
+//
+//  TXN-I  FT25032700001  Kabila JP receives inbound wire USD 500 (from BCA USD)
+//           DR  0011000100012  BCA Trading USD     -500
+//           CR  0010000100012  Kabila JP USD       +500
+//
+//  TXN-J  FT25032700002  Lumumba Grace FX transfer: sells CDF 2 900 000 → buys EUR 1 000
+//           DR  0020000400041  Lumumba SA CDF     -2 900 000
+//           CR  0020000400042  Lumumba SA EUR     +1 000 (@ 2900 CDF/EUR)
+//
+//  TXN-K  FT25032800001  Congo Minerals payroll CDF 12 000 000 (bulk DR, individual CRs to staff)
+//           DR  0021000200021  Congo Minerals CDF -12 000 000
+//           CR  0010000200021  Mbuyi Patricia (salary portion)  +350 000  (net of existing credit)
+//           CR  0020000300031  Tshisekedi Felix  +100 000
+//           CR  0020000800081  Nkemdirim Amara   +850 000
+//           CR  0030000500051  Sassou Henri      +900 000
+//           CR  0030000600061  Okoko MC          +450 000
+//           CR  ... remaining ~9 350 000 to other staff (external accounts, not modelled here)
+//
+//  TXN-L  FT25032800002  Great Lakes Import receives USD export proceeds 18 000
+//           CR  0021000400042  Great Lakes USD   +18 000 (SWIFT in, no internal DR)
+//
+//  TXN-M  FT25032800003  Mbuyi Patricia pays utility bill CDF 350 000
+//           DR  0010000200021  Mbuyi PAT CA CDF  -350 000 (to utility external)
+//
+//  TXN-N  FT25032800004  Telcom Solutions receives service revenue CDF 9 500 000
+//    paid by BCA Trading (consulting invoice)
+//           DR  0011000100011  BCA Trading CDF   -9 500 000
+//           CR  0011000300031  Telcom SOL CDF    +9 500 000
+// ─────────────────────────────────────────────────────────────────────────────
+export const ACTB_HISTORY_INSERTS: string[] = [
+  // ── TXN-A: Congo Minerals → Great Lakes USD B2B transfer (2025-03-24) ──
+  `INSERT INTO FCUBSLIVE.ACTB_HISTORY (AC_NO, AC_BRANCH, AC_CCY, TRN_DT, VALUE_DT, TRN_REF_NO, EVENT, DRCR_IND, FCY_AMOUNT, LCY_AMOUNT, EXCH_RATE, TRN_CODE, MODULE, PRODUCT, RELATED_ACCOUNT, RELATED_CUSTOMER, RELATED_REFERENCE, USER_ID, BATCH_NO, INSTRUMENT_CODE, EXTERNAL_REF_NO, STMT_DT, AC_ENTRY_SR_NO, FINANCIAL_CYCLE, PERIOD_CODE) VALUES ('0021000200022', '002', 'USD', DATE '2025-03-24', DATE '2025-03-24', 'FT25032400001', 'INIT', 'D', 22000.000, 55044000.000, 2502.00000000, '003', 'FT', 'FTRD', '0021000400042', '000200004', 'FT25032400001', 'USRMKR02', '000001', NULL, 'INV-GL-2025-031', DATE '2025-03-31', 1, '2025', '202503')`,
+  `INSERT INTO FCUBSLIVE.ACTB_HISTORY (AC_NO, AC_BRANCH, AC_CCY, TRN_DT, VALUE_DT, TRN_REF_NO, EVENT, DRCR_IND, FCY_AMOUNT, LCY_AMOUNT, EXCH_RATE, TRN_CODE, MODULE, PRODUCT, RELATED_ACCOUNT, RELATED_CUSTOMER, RELATED_REFERENCE, USER_ID, BATCH_NO, INSTRUMENT_CODE, EXTERNAL_REF_NO, STMT_DT, AC_ENTRY_SR_NO, FINANCIAL_CYCLE, PERIOD_CODE) VALUES ('0021000400042', '002', 'USD', DATE '2025-03-24', DATE '2025-03-24', 'FT25032400001', 'INIT', 'C', 22000.000, 55044000.000, 2502.00000000, '003', 'FT', 'FTRD', '0021000200022', '000200002', 'FT25032400001', 'USRMKR02', '000001', NULL, 'INV-GL-2025-031', DATE '2025-03-31', 1, '2025', '202503')`,
+&nbsp;
+  // ── TXN-B: Kabila JP salary cash deposit CDF 2 500 000 (2025-03-25) ──
+  `INSERT INTO FCUBSLIVE.ACTB_HISTORY (AC_NO, AC_BRANCH, AC_CCY, TRN_DT, VALUE_DT, TRN_REF_NO, EVENT, DRCR_IND, FCY_AMOUNT, LCY_AMOUNT, EXCH_RATE, TRN_CODE, MODULE, PRODUCT, RELATED_ACCOUNT, RELATED_CUSTOMER, RELATED_REFERENCE, USER_ID, BATCH_NO, INSTRUMENT_CODE, EXTERNAL_REF_NO, STMT_DT, AC_ENTRY_SR_NO, FINANCIAL_CYCLE, PERIOD_CODE) VALUES ('0010000100011', '001', 'CDF', DATE '2025-03-25', DATE '2025-03-25', 'DE25032500001', 'INIT', 'C', 2500000.000, 2500000.000, 1.00000000, '001', 'DE', 'CASH', NULL, NULL, NULL, 'USRMKR01', '000002', NULL, NULL, DATE '2025-03-31', 1, '2025', '202503')`,
+&nbsp;
+  // ── TXN-C: Mbuyi Patricia salary cash deposit CDF 1 800 000 (2025-03-25) ──
+  `INSERT INTO FCUBSLIVE.ACTB_HISTORY (AC_NO, AC_BRANCH, AC_CCY, TRN_DT, VALUE_DT, TRN_REF_NO, EVENT, DRCR_IND, FCY_AMOUNT, LCY_AMOUNT, EXCH_RATE, TRN_CODE, MODULE, PRODUCT, RELATED_ACCOUNT, RELATED_CUSTOMER, RELATED_REFERENCE, USER_ID, BATCH_NO, INSTRUMENT_CODE, EXTERNAL_REF_NO, STMT_DT, AC_ENTRY_SR_NO, FINANCIAL_CYCLE, PERIOD_CODE) VALUES ('0010000200021', '001', 'CDF', DATE '2025-03-25', DATE '2025-03-25', 'DE25032500002', 'INIT', 'C', 1800000.000, 1800000.000, 1.00000000, '001', 'DE', 'CASH', NULL, NULL, NULL, 'USRMKR01', '000003', NULL, NULL, DATE '2025-03-31', 1, '2025', '202503')`,
+&nbsp;
+  // ── TXN-D: Lumumba Grace investment deposit CDF 5 000 000 (2025-03-25) ──
+  `INSERT INTO FCUBSLIVE.ACTB_HISTORY (AC_NO, AC_BRANCH, AC_CCY, TRN_DT, VALUE_DT, TRN_REF_NO, EVENT, DRCR_IND, FCY_AMOUNT, LCY_AMOUNT, EXCH_RATE, TRN_CODE, MODULE, PRODUCT, RELATED_ACCOUNT, RELATED_CUSTOMER, RELATED_REFERENCE, USER_ID, BATCH_NO, INSTRUMENT_CODE, EXTERNAL_REF_NO, STMT_DT, AC_ENTRY_SR_NO, FINANCIAL_CYCLE, PERIOD_CODE) VALUES ('0020000400041', '002', 'CDF', DATE '2025-03-25', DATE '2025-03-25', 'DE25032500003', 'INIT', 'C', 5000000.000, 5000000.000, 1.00000000, '001', 'DE', 'CASH', NULL, NULL, NULL, 'USRMKR02', '000004', NULL, NULL, DATE '2025-03-31', 1, '2025', '202503')`,
+&nbsp;
+  // ── TXN-E: Telcom pays BCA Trading invoice CDF 25 000 000 (2025-03-25) ──
+  `INSERT INTO FCUBSLIVE.ACTB_HISTORY (AC_NO, AC_BRANCH, AC_CCY, TRN_DT, VALUE_DT, TRN_REF_NO, EVENT, DRCR_IND, FCY_AMOUNT, LCY_AMOUNT, EXCH_RATE, TRN_CODE, MODULE, PRODUCT, RELATED_ACCOUNT, RELATED_CUSTOMER, RELATED_REFERENCE, USER_ID, BATCH_NO, INSTRUMENT_CODE, EXTERNAL_REF_NO, STMT_DT, AC_ENTRY_SR_NO, FINANCIAL_CYCLE, PERIOD_CODE) VALUES ('0011000300031', '001', 'CDF', DATE '2025-03-25', DATE '2025-03-25', 'FT25032500001', 'INIT', 'D', 25000000.000, 25000000.000, 1.00000000, '003', 'FT', 'FTRD', '0011000100011', '000200001', 'FT25032500001', 'USRMKR01', '000005', NULL, 'INV-BCA-2025-041', DATE '2025-03-31', 1, '2025', '202503')`,
+  `INSERT INTO FCUBSLIVE.ACTB_HISTORY (AC_NO, AC_BRANCH, AC_CCY, TRN_DT, VALUE_DT, TRN_REF_NO, EVENT, DRCR_IND, FCY_AMOUNT, LCY_AMOUNT, EXCH_RATE, TRN_CODE, MODULE, PRODUCT, RELATED_ACCOUNT, RELATED_CUSTOMER, RELATED_REFERENCE, USER_ID, BATCH_NO, INSTRUMENT_CODE, EXTERNAL_REF_NO, STMT_DT, AC_ENTRY_SR_NO, FINANCIAL_CYCLE, PERIOD_CODE) VALUES ('0011000100011', '001', 'CDF', DATE '2025-03-25', DATE '2025-03-25', 'FT25032500001', 'INIT', 'C', 25000000.000, 25000000.000, 1.00000000, '003', 'FT', 'FTRD', '0011000300031', '000200003', 'FT25032500001', 'USRMKR01', '000005', NULL, 'INV-BCA-2025-041', DATE '2025-03-31', 2, '2025', '202503')`,
+&nbsp;
+  // ── TXN-F: Kabila JP ATM withdrawal CDF 200 000 (2025-03-26) ──
+  `INSERT INTO FCUBSLIVE.ACTB_HISTORY (AC_NO, AC_BRANCH, AC_CCY, TRN_DT, VALUE_DT, TRN_REF_NO, EVENT, DRCR_IND, FCY_AMOUNT, LCY_AMOUNT, EXCH_RATE, TRN_CODE, MODULE, PRODUCT, RELATED_ACCOUNT, RELATED_CUSTOMER, RELATED_REFERENCE, USER_ID, BATCH_NO, INSTRUMENT_CODE, EXTERNAL_REF_NO, STMT_DT, AC_ENTRY_SR_NO, FINANCIAL_CYCLE, PERIOD_CODE) VALUES ('0010000100011', '001', 'CDF', DATE '2025-03-26', DATE '2025-03-26', 'DE25032600001', 'INIT', 'D', 200000.000, 200000.000, 1.00000000, '002', 'DE', 'CASH', NULL, NULL, NULL, 'USRMKR01', '000006', NULL, NULL, DATE '2025-03-31', 2, '2025', '202503')`,
+&nbsp;
+  // ── TXN-G: Tshisekedi Felix cash deposit CDF 1 000 000 (2025-03-26) ──
+  `INSERT INTO FCUBSLIVE.ACTB_HISTORY (AC_NO, AC_BRANCH, AC_CCY, TRN_DT, VALUE_DT, TRN_REF_NO, EVENT, DRCR_IND, FCY_AMOUNT, LCY_AMOUNT, EXCH_RATE, TRN_CODE, MODULE, PRODUCT, RELATED_ACCOUNT, RELATED_CUSTOMER, RELATED_REFERENCE, USER_ID, BATCH_NO, INSTRUMENT_CODE, EXTERNAL_REF_NO, STMT_DT, AC_ENTRY_SR_NO, FINANCIAL_CYCLE, PERIOD_CODE) VALUES ('0020000300031', '002', 'CDF', DATE '2025-03-26', DATE '2025-03-26', 'DE25032600002', 'INIT', 'C', 1000000.000, 1000000.000, 1.00000000, '001', 'DE', 'CASH', NULL, NULL, NULL, 'USRMKR02', '000007', NULL, NULL, DATE '2025-03-31', 1, '2025', '202503')`,
+&nbsp;
+  // ── TXN-H: Ilunga Christian SWIFT wire out USD 3 000 (2025-03-26) ──
+  `INSERT INTO FCUBSLIVE.ACTB_HISTORY (AC_NO, AC_BRANCH, AC_CCY, TRN_DT, VALUE_DT, TRN_REF_NO, EVENT, DRCR_IND, FCY_AMOUNT, LCY_AMOUNT, EXCH_RATE, TRN_CODE, MODULE, PRODUCT, RELATED_ACCOUNT, RELATED_CUSTOMER, RELATED_REFERENCE, USER_ID, BATCH_NO, INSTRUMENT_CODE, EXTERNAL_REF_NO, STMT_DT, AC_ENTRY_SR_NO, FINANCIAL_CYCLE, PERIOD_CODE) VALUES ('0010000700072', '001', 'USD', DATE '2025-03-26', DATE '2025-03-27', 'FT25032600001', 'INIT', 'D', 3000.000, 7506000.000, 2502.00000000, '003', 'FT', 'FTRD', NULL, NULL, NULL, 'USRMKR01', '000008', NULL, 'SWIFT-OUT-20250326', DATE '2025-03-31', 1, '2025', '202503')`,
+&nbsp;
+  // ── TXN-I: Inbound wire Kabila JP USD 500 from BCA Trading (2025-03-27) ──
+  `INSERT INTO FCUBSLIVE.ACTB_HISTORY (AC_NO, AC_BRANCH, AC_CCY, TRN_DT, VALUE_DT, TRN_REF_NO, EVENT, DRCR_IND, FCY_AMOUNT, LCY_AMOUNT, EXCH_RATE, TRN_CODE, MODULE, PRODUCT, RELATED_ACCOUNT, RELATED_CUSTOMER, RELATED_REFERENCE, USER_ID, BATCH_NO, INSTRUMENT_CODE, EXTERNAL_REF_NO, STMT_DT, AC_ENTRY_SR_NO, FINANCIAL_CYCLE, PERIOD_CODE) VALUES ('0011000100012', '001', 'USD', DATE '2025-03-27', DATE '2025-03-27', 'FT25032700001', 'INIT', 'D', 500.000, 1249000.000, 2498.00000000, '003', 'FT', 'FTRD', '0010000100012', '000100001', 'FT25032700001', 'USRMKR01', '000009', NULL, NULL, DATE '2025-03-31', 1, '2025', '202503')`,
+  `INSERT INTO FCUBSLIVE.ACTB_HISTORY (AC_NO, AC_BRANCH, AC_CCY, TRN_DT, VALUE_DT, TRN_REF_NO, EVENT, DRCR_IND, FCY_AMOUNT, LCY_AMOUNT, EXCH_RATE, TRN_CODE, MODULE, PRODUCT, RELATED_ACCOUNT, RELATED_CUSTOMER, RELATED_REFERENCE, USER_ID, BATCH_NO, INSTRUMENT_CODE, EXTERNAL_REF_NO, STMT_DT, AC_ENTRY_SR_NO, FINANCIAL_CYCLE, PERIOD_CODE) VALUES ('0010000100012', '001', 'USD', DATE '2025-03-27', DATE '2025-03-27', 'FT25032700001', 'INIT', 'C', 500.000, 1249000.000, 2498.00000000, '003', 'FT', 'FTRD', '0011000100012', '000200001', 'FT25032700001', 'USRMKR01', '000009', NULL, NULL, DATE '2025-03-31', 1, '2025', '202503')`,
+&nbsp;
+  // ── TXN-J: Lumumba Grace FX: CDF 2 900 000 → EUR 1 000 (2025-03-27) ──
+  `INSERT INTO FCUBSLIVE.ACTB_HISTORY (AC_NO, AC_BRANCH, AC_CCY, TRN_DT, VALUE_DT, TRN_REF_NO, EVENT, DRCR_IND, FCY_AMOUNT, LCY_AMOUNT, EXCH_RATE, TRN_CODE, MODULE, PRODUCT, RELATED_ACCOUNT, RELATED_CUSTOMER, RELATED_REFERENCE, USER_ID, BATCH_NO, INSTRUMENT_CODE, EXTERNAL_REF_NO, STMT_DT, AC_ENTRY_SR_NO, FINANCIAL_CYCLE, PERIOD_CODE) VALUES ('0020000400041', '002', 'CDF', DATE '2025-03-27', DATE '2025-03-27', 'FT25032700002', 'INIT', 'D', 2900000.000, 2900000.000, 1.00000000, '003', 'FT', 'FTRD', '0020000400042', '000100004', 'FT25032700002', 'USRMKR02', '000010', NULL, NULL, DATE '2025-03-31', 2, '2025', '202503')`,
+  `INSERT INTO FCUBSLIVE.ACTB_HISTORY (AC_NO, AC_BRANCH, AC_CCY, TRN_DT, VALUE_DT, TRN_REF_NO, EVENT, DRCR_IND, FCY_AMOUNT, LCY_AMOUNT, EXCH_RATE, TRN_CODE, MODULE, PRODUCT, RELATED_ACCOUNT, RELATED_CUSTOMER, RELATED_REFERENCE, USER_ID, BATCH_NO, INSTRUMENT_CODE, EXTERNAL_REF_NO, STMT_DT, AC_ENTRY_SR_NO, FINANCIAL_CYCLE, PERIOD_CODE) VALUES ('0020000400042', '002', 'EUR', DATE '2025-03-27', DATE '2025-03-27', 'FT25032700002', 'INIT', 'C', 1000.000, 2895000.000, 2895.00000000, '003', 'FT', 'FTRD', '0020000400041', '000100004', 'FT25032700002', 'USRMKR02', '000010', NULL, NULL, DATE '2025-03-31', 1, '2025', '202503')`,
+&nbsp;
+  // ── TXN-K: Congo Minerals payroll DR 12 000 000 CDF (2025-03-28) ──
+  `INSERT INTO FCUBSLIVE.ACTB_HISTORY (AC_NO, AC_BRANCH, AC_CCY, TRN_DT, VALUE_DT, TRN_REF_NO, EVENT, DRCR_IND, FCY_AMOUNT, LCY_AMOUNT, EXCH_RATE, TRN_CODE, MODULE, PRODUCT, RELATED_ACCOUNT, RELATED_CUSTOMER, RELATED_REFERENCE, USER_ID, BATCH_NO, INSTRUMENT_CODE, EXTERNAL_REF_NO, STMT_DT, AC_ENTRY_SR_NO, FINANCIAL_CYCLE, PERIOD_CODE) VALUES ('0021000200021', '002', 'CDF', DATE '2025-03-28', DATE '2025-03-28', 'FT25032800002', 'INIT', 'D', 12000000.000, 12000000.000, 1.00000000, '003', 'FT', 'FTRD', NULL, NULL, 'PAYROLL-MAR-2025', 'USRMKR02', '000011', NULL, NULL, DATE '2025-03-31', 1, '2025', '202503')`,
+  // Salary credits to staff accounts (5 accounts, total = 2 550 000; rest goes to external accounts)
+  `INSERT INTO FCUBSLIVE.ACTB_HISTORY (AC_NO, AC_BRANCH, AC_CCY, TRN_DT, VALUE_DT, TRN_REF_NO, EVENT, DRCR_IND, FCY_AMOUNT, LCY_AMOUNT, EXCH_RATE, TRN_CODE, MODULE, PRODUCT, RELATED_ACCOUNT, RELATED_CUSTOMER, RELATED_REFERENCE, USER_ID, BATCH_NO, INSTRUMENT_CODE, EXTERNAL_REF_NO, STMT_DT, AC_ENTRY_SR_NO, FINANCIAL_CYCLE, PERIOD_CODE) VALUES ('0010000200021', '001', 'CDF', DATE '2025-03-28', DATE '2025-03-28', 'FT25032800002', 'INIT', 'C', 350000.000, 350000.000, 1.00000000, '003', 'FT', 'FTRD', '0021000200021', '000200002', 'PAYROLL-MAR-2025', 'USRMKR02', '000011', NULL, NULL, DATE '2025-03-31', 2, '2025', '202503')`,
+  `INSERT INTO FCUBSLIVE.ACTB_HISTORY (AC_NO, AC_BRANCH, AC_CCY, TRN_DT, VALUE_DT, TRN_REF_NO, EVENT, DRCR_IND, FCY_AMOUNT, LCY_AMOUNT, EXCH_RATE, TRN_CODE, MODULE, PRODUCT, RELATED_ACCOUNT, RELATED_CUSTOMER, RELATED_REFERENCE, USER_ID, BATCH_NO, INSTRUMENT_CODE, EXTERNAL_REF_NO, STMT_DT, AC_ENTRY_SR_NO, FINANCIAL_CYCLE, PERIOD_CODE) VALUES ('0020000300031', '002', 'CDF', DATE '2025-03-28', DATE '2025-03-28', 'FT25032800002', 'INIT', 'C', 100000.000, 100000.000, 1.00000000, '003', 'FT', 'FTRD', '0021000200021', '000200002', 'PAYROLL-MAR-2025', 'USRMKR02', '000011', NULL, NULL, DATE '2025-03-31', 2, '2025', '202503')`,
+  `INSERT INTO FCUBSLIVE.ACTB_HISTORY (AC_NO, AC_BRANCH, AC_CCY, TRN_DT, VALUE_DT, TRN_REF_NO, EVENT, DRCR_IND, FCY_AMOUNT, LCY_AMOUNT, EXCH_RATE, TRN_CODE, MODULE, PRODUCT, RELATED_ACCOUNT, RELATED_CUSTOMER, RELATED_REFERENCE, USER_ID, BATCH_NO, INSTRUMENT_CODE, EXTERNAL_REF_NO, STMT_DT, AC_ENTRY_SR_NO, FINANCIAL_CYCLE, PERIOD_CODE) VALUES ('0020000800081', '002', 'CDF', DATE '2025-03-28', DATE '2025-03-28', 'FT25032800002', 'INIT', 'C', 850000.000, 850000.000, 1.00000000, '003', 'FT', 'FTRD', '0021000200021', '000200002', 'PAYROLL-MAR-2025', 'USRMKR02', '000011', NULL, NULL, DATE '2025-03-31', 1, '2025', '202503')`,
+  `INSERT INTO FCUBSLIVE.ACTB_HISTORY (AC_NO, AC_BRANCH, AC_CCY, TRN_DT, VALUE_DT, TRN_REF_NO, EVENT, DRCR_IND, FCY_AMOUNT, LCY_AMOUNT, EXCH_RATE, TRN_CODE, MODULE, PRODUCT, RELATED_ACCOUNT, RELATED_CUSTOMER, RELATED_REFERENCE, USER_ID, BATCH_NO, INSTRUMENT_CODE, EXTERNAL_REF_NO, STMT_DT, AC_ENTRY_SR_NO, FINANCIAL_CYCLE, PERIOD_CODE) VALUES ('0030000500051', '003', 'CDF', DATE '2025-03-28', DATE '2025-03-28', 'FT25032800002', 'INIT', 'C', 900000.000, 900000.000, 1.00000000, '003', 'FT', 'FTRD', '0021000200021', '000200002', 'PAYROLL-MAR-2025', 'USRMKR03', '000012', NULL, NULL, DATE '2025-03-31', 1, '2025', '202503')`,
+  `INSERT INTO FCUBSLIVE.ACTB_HISTORY (AC_NO, AC_BRANCH, AC_CCY, TRN_DT, VALUE_DT, TRN_REF_NO, EVENT, DRCR_IND, FCY_AMOUNT, LCY_AMOUNT, EXCH_RATE, TRN_CODE, MODULE, PRODUCT, RELATED_ACCOUNT, RELATED_CUSTOMER, RELATED_REFERENCE, USER_ID, BATCH_NO, INSTRUMENT_CODE, EXTERNAL_REF_NO, STMT_DT, AC_ENTRY_SR_NO, FINANCIAL_CYCLE, PERIOD_CODE) VALUES ('0030000600061', '003', 'CDF', DATE '2025-03-28', DATE '2025-03-28', 'FT25032800002', 'INIT', 'C', 450000.000, 450000.000, 1.00000000, '003', 'FT', 'FTRD', '0021000200021', '000200002', 'PAYROLL-MAR-2025', 'USRMKR03', '000012', NULL, NULL, DATE '2025-03-31', 1, '2025', '202503')`,
+&nbsp;
+  // ── TXN-L: Great Lakes receives SWIFT USD 18 000 export proceeds (2025-03-28) ──
+  `INSERT INTO FCUBSLIVE.ACTB_HISTORY (AC_NO, AC_BRANCH, AC_CCY, TRN_DT, VALUE_DT, TRN_REF_NO, EVENT, DRCR_IND, FCY_AMOUNT, LCY_AMOUNT, EXCH_RATE, TRN_CODE, MODULE, PRODUCT, RELATED_ACCOUNT, RELATED_CUSTOMER, RELATED_REFERENCE, USER_ID, BATCH_NO, INSTRUMENT_CODE, EXTERNAL_REF_NO, STMT_DT, AC_ENTRY_SR_NO, FINANCIAL_CYCLE, PERIOD_CODE) VALUES ('0021000400042', '002', 'USD', DATE '2025-03-28', DATE '2025-03-28', 'FT25032800003', 'INIT', 'C', 18000.000, 45090000.000, 2505.00000000, '003', 'FT', 'FTRD', NULL, NULL, NULL, 'USRMKR02', '000013', NULL, 'SWIFT-IN-20250328', DATE '2025-03-31', 2, '2025', '202503')`,
+&nbsp;
+  // ── TXN-M: Mbuyi Patricia utility bill DR 350 000 CDF (2025-03-28) ──
+  `INSERT INTO FCUBSLIVE.ACTB_HISTORY (AC_NO, AC_BRANCH, AC_CCY, TRN_DT, VALUE_DT, TRN_REF_NO, EVENT, DRCR_IND, FCY_AMOUNT, LCY_AMOUNT, EXCH_RATE, TRN_CODE, MODULE, PRODUCT, RELATED_ACCOUNT, RELATED_CUSTOMER, RELATED_REFERENCE, USER_ID, BATCH_NO, INSTRUMENT_CODE, EXTERNAL_REF_NO, STMT_DT, AC_ENTRY_SR_NO, FINANCIAL_CYCLE, PERIOD_CODE) VALUES ('0010000200021', '001', 'CDF', DATE '2025-03-28', DATE '2025-03-28', 'FT25032800004', 'INIT', 'D', 350000.000, 350000.000, 1.00000000, '003', 'FT', 'FTRD', NULL, NULL, NULL, 'USRMKR01', '000014', NULL, 'UTIL-SNEL-MAR25', DATE '2025-03-31', 3, '2025', '202503')`,
+&nbsp;
+  // ── TXN-N: BCA Trading pays Telcom consulting invoice CDF 9 500 000 (2025-03-28) ──
+  `INSERT INTO FCUBSLIVE.ACTB_HISTORY (AC_NO, AC_BRANCH, AC_CCY, TRN_DT, VALUE_DT, TRN_REF_NO, EVENT, DRCR_IND, FCY_AMOUNT, LCY_AMOUNT, EXCH_RATE, TRN_CODE, MODULE, PRODUCT, RELATED_ACCOUNT, RELATED_CUSTOMER, RELATED_REFERENCE, USER_ID, BATCH_NO, INSTRUMENT_CODE, EXTERNAL_REF_NO, STMT_DT, AC_ENTRY_SR_NO, FINANCIAL_CYCLE, PERIOD_CODE) VALUES ('0011000100011', '001', 'CDF', DATE '2025-03-28', DATE '2025-03-28', 'FT25032800005', 'INIT', 'D', 9500000.000, 9500000.000, 1.00000000, '003', 'FT', 'FTRD', '0011000300031', '000200003', 'FT25032800005', 'USRMKR01', '000015', NULL, 'INV-TC-2025-008', DATE '2025-03-31', 3, '2025', '202503')`,
+  `INSERT INTO FCUBSLIVE.ACTB_HISTORY (AC_NO, AC_BRANCH, AC_CCY, TRN_DT, VALUE_DT, TRN_REF_NO, EVENT, DRCR_IND, FCY_AMOUNT, LCY_AMOUNT, EXCH_RATE, TRN_CODE, MODULE, PRODUCT, RELATED_ACCOUNT, RELATED_CUSTOMER, RELATED_REFERENCE, USER_ID, BATCH_NO, INSTRUMENT_CODE, EXTERNAL_REF_NO, STMT_DT, AC_ENTRY_SR_NO, FINANCIAL_CYCLE, PERIOD_CODE) VALUES ('0011000300031', '001', 'CDF', DATE '2025-03-28', DATE '2025-03-28', 'FT25032800005', 'INIT', 'C', 9500000.000, 9500000.000, 1.00000000, '003', 'FT', 'FTRD', '0011000100011', '000200001', 'FT25032800005', 'USRMKR01', '000015', NULL, 'INV-TC-2025-008', DATE '2025-03-31', 2, '2025', '202503')`,
+];
+&nbsp;
+// ─────────────────────────────────────────────────────────────────────────────
+//  ACTB_ACCBAL_HISTORY — Daily closing balance snapshots
+//
+//  Formula for each row:
+//    ACY_CLOSING_BAL  = ACY_OPENING_BAL + ACY_CR_TUR - ACY_DR_TUR
+//    ACY_CLOSING_AVLBAL = ACY_CLOSING_BAL - ACY_CLOSING_BLOCK
+//
+//  We show multi-day snapshots for accounts that had activity; for others
+//  we show the day before activity (showing stable balance) plus the activity day.
+// ─────────────────────────────────────────────────────────────────────────────
+export const ACCBAL_HISTORY_INSERTS: string[] = [
+  // ── 0010000100011  Kabila JP SA CDF ───────────────────────────────
+  // 2025-03-24: stable opening   1 820 000 → 1 820 000  (no activity)
+  `INSERT INTO FCUBSLIVE.ACTB_ACCBAL_HISTORY (ACCOUNT, BRANCH_CODE, ACC_CCY, BKG_DATE, ACY_OPENING_BAL, ACY_CLOSING_BAL, ACY_CLOSING_AVLBAL, ACY_CLOSING_BLOCK, ACY_CLOSING_UNCOLL, ACY_CR_TUR, ACY_DR_TUR, LCY_OPENING_BAL, LCY_CLOSING_BAL, LCY_CR_TUR, LCY_DR_TUR) VALUES ('0010000100011', '001', 'CDF', DATE '2025-03-24', 1820000.000, 1820000.000, 1820000.000, 0, 0, 0, 0, 1820000.000, 1820000.000, 0, 0)`,
+  // 2025-03-25: +2 500 000 salary → 4 320 000
+  `INSERT INTO FCUBSLIVE.ACTB_ACCBAL_HISTORY (ACCOUNT, BRANCH_CODE, ACC_CCY, BKG_DATE, ACY_OPENING_BAL, ACY_CLOSING_BAL, ACY_CLOSING_AVLBAL, ACY_CLOSING_BLOCK, ACY_CLOSING_UNCOLL, ACY_CR_TUR, ACY_DR_TUR, LCY_OPENING_BAL, LCY_CLOSING_BAL, LCY_CR_TUR, LCY_DR_TUR) VALUES ('0010000100011', '001', 'CDF', DATE '2025-03-25', 1820000.000, 4320000.000, 4320000.000, 0, 0, 2500000.000, 0, 1820000.000, 4320000.000, 2500000.000, 0)`,
+  // 2025-03-26: -200 000 ATM → 4 120 000
+  `INSERT INTO FCUBSLIVE.ACTB_ACCBAL_HISTORY (ACCOUNT, BRANCH_CODE, ACC_CCY, BKG_DATE, ACY_OPENING_BAL, ACY_CLOSING_BAL, ACY_CLOSING_AVLBAL, ACY_CLOSING_BLOCK, ACY_CLOSING_UNCOLL, ACY_CR_TUR, ACY_DR_TUR, LCY_OPENING_BAL, LCY_CLOSING_BAL, LCY_CR_TUR, LCY_DR_TUR) VALUES ('0010000100011', '001', 'CDF', DATE '2025-03-26', 4320000.000, 4120000.000, 4120000.000, 0, 0, 0, 200000.000, 4320000.000, 4120000.000, 0, 200000.000)`,
+&nbsp;
+  // ── 0010000100012  Kabila JP CA USD ───────────────────────────────
+  // 2025-03-26: stable 1 850.50 (no activity yet)
+  `INSERT INTO FCUBSLIVE.ACTB_ACCBAL_HISTORY (ACCOUNT, BRANCH_CODE, ACC_CCY, BKG_DATE, ACY_OPENING_BAL, ACY_CLOSING_BAL, ACY_CLOSING_AVLBAL, ACY_CLOSING_BLOCK, ACY_CLOSING_UNCOLL, ACY_CR_TUR, ACY_DR_TUR, LCY_OPENING_BAL, LCY_CLOSING_BAL, LCY_CR_TUR, LCY_DR_TUR) VALUES ('0010000100012', '001', 'USD', DATE '2025-03-26', 1850.500, 1850.500, 1850.500, 0, 0, 0, 0, 4626250.000, 4626250.000, 0, 0)`,
+  // 2025-03-27: +500 wire → 2 350.50
+  `INSERT INTO FCUBSLIVE.ACTB_ACCBAL_HISTORY (ACCOUNT, BRANCH_CODE, ACC_CCY, BKG_DATE, ACY_OPENING_BAL, ACY_CLOSING_BAL, ACY_CLOSING_AVLBAL, ACY_CLOSING_BLOCK, ACY_CLOSING_UNCOLL, ACY_CR_TUR, ACY_DR_TUR, LCY_OPENING_BAL, LCY_CLOSING_BAL, LCY_CR_TUR, LCY_DR_TUR) VALUES ('0010000100012', '001', 'USD', DATE '2025-03-27', 1850.500, 2350.500, 2350.500, 0, 0, 500.000, 0, 4626250.000, 5876250.000, 1249000.000, 0)`,
+&nbsp;
+  // ── 0010000200021  Mbuyi PAT CA CDF ───────────────────────────────
+  // 2025-03-25: +1 800 000 salary  70 000 → 1 870 000
+  `INSERT INTO FCUBSLIVE.ACTB_ACCBAL_HISTORY (ACCOUNT, BRANCH_CODE, ACC_CCY, BKG_DATE, ACY_OPENING_BAL, ACY_CLOSING_BAL, ACY_CLOSING_AVLBAL, ACY_CLOSING_BLOCK, ACY_CLOSING_UNCOLL, ACY_CR_TUR, ACY_DR_TUR, LCY_OPENING_BAL, LCY_CLOSING_BAL, LCY_CR_TUR, LCY_DR_TUR) VALUES ('0010000200021', '001', 'CDF', DATE '2025-03-25', 420000.000, 2220000.000, 2220000.000, 0, 0, 1800000.000, 0, 420000.000, 2220000.000, 1800000.000, 0)`,
+  // 2025-03-28: +350 000 payroll CR, -350 000 utility DR → net 0 → stays 2 220 000
+  // But we have both events on same day; net applied: +350K salary CR from Congo Minerals and -350K utility DR
+  `INSERT INTO FCUBSLIVE.ACTB_ACCBAL_HISTORY (ACCOUNT, BRANCH_CODE, ACC_CCY, BKG_DATE, ACY_OPENING_BAL, ACY_CLOSING_BAL, ACY_CLOSING_AVLBAL, ACY_CLOSING_BLOCK, ACY_CLOSING_UNCOLL, ACY_CR_TUR, ACY_DR_TUR, LCY_OPENING_BAL, LCY_CLOSING_BAL, LCY_CR_TUR, LCY_DR_TUR) VALUES ('0010000200021', '001', 'CDF', DATE '2025-03-28', 2220000.000, 2220000.000, 2220000.000, 0, 0, 350000.000, 350000.000, 2220000.000, 2220000.000, 350000.000, 350000.000)`,
+  // NOTE: The account STTM_CUST_ACCOUNT has ACY_CURR_BALANCE = 1 870 000 which reflects end-of-period
+  // after the -350K net (from the prior period); the snapshots above are intra-month movement snapshots.
+&nbsp;
+  // ── 0020000300031  Tshisekedi F SA CDF ────────────────────────────
+  // 2025-03-26: +1 000 000 cash → 2 150 000
+  `INSERT INTO FCUBSLIVE.ACTB_ACCBAL_HISTORY (ACCOUNT, BRANCH_CODE, ACC_CCY, BKG_DATE, ACY_OPENING_BAL, ACY_CLOSING_BAL, ACY_CLOSING_AVLBAL, ACY_CLOSING_BLOCK, ACY_CLOSING_UNCOLL, ACY_CR_TUR, ACY_DR_TUR, LCY_OPENING_BAL, LCY_CLOSING_BAL, LCY_CR_TUR, LCY_DR_TUR) VALUES ('0020000300031', '002', 'CDF', DATE '2025-03-26', 1150000.000, 2150000.000, 2150000.000, 0, 0, 1000000.000, 0, 1150000.000, 2150000.000, 1000000.000, 0)`,
+  // 2025-03-28: +100 000 payroll CR → 2 250 000
+  `INSERT INTO FCUBSLIVE.ACTB_ACCBAL_HISTORY (ACCOUNT, BRANCH_CODE, ACC_CCY, BKG_DATE, ACY_OPENING_BAL, ACY_CLOSING_BAL, ACY_CLOSING_AVLBAL, ACY_CLOSING_BLOCK, ACY_CLOSING_UNCOLL, ACY_CR_TUR, ACY_DR_TUR, LCY_OPENING_BAL, LCY_CLOSING_BAL, LCY_CR_TUR, LCY_DR_TUR) VALUES ('0020000300031', '002', 'CDF', DATE '2025-03-28', 2150000.000, 2250000.000, 2250000.000, 0, 0, 100000.000, 0, 2150000.000, 2250000.000, 100000.000, 0)`,
+&nbsp;
+  // ── 0020000400041  Lumumba G SA CDF ───────────────────────────────
+  // 2025-03-25: +5 000 000 cash → 23 500 000 (opening this day 18 500 000)
+  `INSERT INTO FCUBSLIVE.ACTB_ACCBAL_HISTORY (ACCOUNT, BRANCH_CODE, ACC_CCY, BKG_DATE, ACY_OPENING_BAL, ACY_CLOSING_BAL, ACY_CLOSING_AVLBAL, ACY_CLOSING_BLOCK, ACY_CLOSING_UNCOLL, ACY_CR_TUR, ACY_DR_TUR, LCY_OPENING_BAL, LCY_CLOSING_BAL, LCY_CR_TUR, LCY_DR_TUR) VALUES ('0020000400041', '002', 'CDF', DATE '2025-03-25', 23500000.000, 28500000.000, 28000000.000, 500000.000, 0, 5000000.000, 0, 23500000.000, 28500000.000, 5000000.000, 0)`,
+  // 2025-03-27: -2 900 000 FX out → 25 600 000
+  `INSERT INTO FCUBSLIVE.ACTB_ACCBAL_HISTORY (ACCOUNT, BRANCH_CODE, ACC_CCY, BKG_DATE, ACY_OPENING_BAL, ACY_CLOSING_BAL, ACY_CLOSING_AVLBAL, ACY_CLOSING_BLOCK, ACY_CLOSING_UNCOLL, ACY_CR_TUR, ACY_DR_TUR, LCY_OPENING_BAL, LCY_CLOSING_BAL, LCY_CR_TUR, LCY_DR_TUR) VALUES ('0020000400041', '002', 'CDF', DATE '2025-03-27', 28500000.000, 25600000.000, 25100000.000, 500000.000, 0, 0, 2900000.000, 28500000.000, 25600000.000, 0, 2900000.000)`,
+&nbsp;
+  // ── 0020000400042  Lumumba G SA EUR ───────────────────────────────
+  // 2025-03-27: +1 000 EUR FX in → 5 200 EUR
+  `INSERT INTO FCUBSLIVE.ACTB_ACCBAL_HISTORY (ACCOUNT, BRANCH_CODE, ACC_CCY, BKG_DATE, ACY_OPENING_BAL, ACY_CLOSING_BAL, ACY_CLOSING_AVLBAL, ACY_CLOSING_BLOCK, ACY_CLOSING_UNCOLL, ACY_CR_TUR, ACY_DR_TUR, LCY_OPENING_BAL, LCY_CLOSING_BAL, LCY_CR_TUR, LCY_DR_TUR) VALUES ('0020000400042', '002', 'EUR', DATE '2025-03-27', 4200.000, 5200.000, 5200.000, 0, 0, 1000.000, 0, 12180000.000, 15080000.000, 2895000.000, 0)`,
+&nbsp;
+  // ── 0030000500051  Sassou H SA CDF ────────────────────────────────
+  // 2025-03-28: +900 000 payroll → 2 780 000 (opening 1 880 000)
+  `INSERT INTO FCUBSLIVE.ACTB_ACCBAL_HISTORY (ACCOUNT, BRANCH_CODE, ACC_CCY, BKG_DATE, ACY_OPENING_BAL, ACY_CLOSING_BAL, ACY_CLOSING_AVLBAL, ACY_CLOSING_BLOCK, ACY_CLOSING_UNCOLL, ACY_CR_TUR, ACY_DR_TUR, LCY_OPENING_BAL, LCY_CLOSING_BAL, LCY_CR_TUR, LCY_DR_TUR) VALUES ('0030000500051', '003', 'CDF', DATE '2025-03-28', 1880000.000, 2780000.000, 2780000.000, 0, 0, 900000.000, 0, 1880000.000, 2780000.000, 900000.000, 0)`,
+&nbsp;
+  // ── 0030000600061  Okoko MC CA CDF ────────────────────────────────
+  // 2025-03-28: +450 000 payroll → 980 000 (opening 530 000)
+  `INSERT INTO FCUBSLIVE.ACTB_ACCBAL_HISTORY (ACCOUNT, BRANCH_CODE, ACC_CCY, BKG_DATE, ACY_OPENING_BAL, ACY_CLOSING_BAL, ACY_CLOSING_AVLBAL, ACY_CLOSING_BLOCK, ACY_CLOSING_UNCOLL, ACY_CR_TUR, ACY_DR_TUR, LCY_OPENING_BAL, LCY_CLOSING_BAL, LCY_CR_TUR, LCY_DR_TUR) VALUES ('0030000600061', '003', 'CDF', DATE '2025-03-28', 530000.000, 980000.000, 980000.000, 0, 0, 450000.000, 0, 530000.000, 980000.000, 450000.000, 0)`,
+&nbsp;
+  // ── 0020000800081  Nkemdirim A SA CDF ─────────────────────────────
+  // 2025-03-28: +850 000 payroll → 1 220 000 (opening 370 000)
+  `INSERT INTO FCUBSLIVE.ACTB_ACCBAL_HISTORY (ACCOUNT, BRANCH_CODE, ACC_CCY, BKG_DATE, ACY_OPENING_BAL, ACY_CLOSING_BAL, ACY_CLOSING_AVLBAL, ACY_CLOSING_BLOCK, ACY_CLOSING_UNCOLL, ACY_CR_TUR, ACY_DR_TUR, LCY_OPENING_BAL, LCY_CLOSING_BAL, LCY_CR_TUR, LCY_DR_TUR) VALUES ('0020000800081', '002', 'CDF', DATE '2025-03-28', 370000.000, 1220000.000, 1220000.000, 0, 0, 850000.000, 0, 370000.000, 1220000.000, 850000.000, 0)`,
+&nbsp;
+  // ── 0010000700072  Ilunga CH CA USD ───────────────────────────────
+  // 2025-03-26: -3 000 SWIFT out → 12 500 (opening 15 500)
+  `INSERT INTO FCUBSLIVE.ACTB_ACCBAL_HISTORY (ACCOUNT, BRANCH_CODE, ACC_CCY, BKG_DATE, ACY_OPENING_BAL, ACY_CLOSING_BAL, ACY_CLOSING_AVLBAL, ACY_CLOSING_BLOCK, ACY_CLOSING_UNCOLL, ACY_CR_TUR, ACY_DR_TUR, LCY_OPENING_BAL, LCY_CLOSING_BAL, LCY_CR_TUR, LCY_DR_TUR) VALUES ('0010000700072', '001', 'USD', DATE '2025-03-26', 15500.000, 12500.000, 12500.000, 0, 0, 0, 3000.000, 38750000.000, 31250000.000, 0, 7506000.000)`,
+&nbsp;
+  // ── 0011000100011  BCA Trading CA CDF ────────────────────────────
+  // 2025-03-25: +25 000 000 from Telcom (Inv-BCA-2025-041) → 78 500 000 (opening 53 500 000)
+  `INSERT INTO FCUBSLIVE.ACTB_ACCBAL_HISTORY (ACCOUNT, BRANCH_CODE, ACC_CCY, BKG_DATE, ACY_OPENING_BAL, ACY_CLOSING_BAL, ACY_CLOSING_AVLBAL, ACY_CLOSING_BLOCK, ACY_CLOSING_UNCOLL, ACY_CR_TUR, ACY_DR_TUR, LCY_OPENING_BAL, LCY_CLOSING_BAL, LCY_CR_TUR, LCY_DR_TUR) VALUES ('0011000100011', '001', 'CDF', DATE '2025-03-25', 53500000.000, 78500000.000, 78500000.000, 0, 0, 25000000.000, 0, 53500000.000, 78500000.000, 25000000.000, 0)`,
+  // 2025-03-27: -500 USD wire DR deducted on USD account (no CDF movement on this date)
+  // 2025-03-28: -9 500 000 consulting fees to Telcom → 69 000 000
+  `INSERT INTO FCUBSLIVE.ACTB_ACCBAL_HISTORY (ACCOUNT, BRANCH_CODE, ACC_CCY, BKG_DATE, ACY_OPENING_BAL, ACY_CLOSING_BAL, ACY_CLOSING_AVLBAL, ACY_CLOSING_BLOCK, ACY_CLOSING_UNCOLL, ACY_CR_TUR, ACY_DR_TUR, LCY_OPENING_BAL, LCY_CLOSING_BAL, LCY_CR_TUR, LCY_DR_TUR) VALUES ('0011000100011', '001', 'CDF', DATE '2025-03-28', 78500000.000, 69000000.000, 69000000.000, 0, 0, 0, 9500000.000, 78500000.000, 69000000.000, 0, 9500000.000)`,
+&nbsp;
+  // ── 0011000100012  BCA Trading CA USD ────────────────────────────
+  // 2025-03-27: -500 wire to Kabila JP → 14 700
+  `INSERT INTO FCUBSLIVE.ACTB_ACCBAL_HISTORY (ACCOUNT, BRANCH_CODE, ACC_CCY, BKG_DATE, ACY_OPENING_BAL, ACY_CLOSING_BAL, ACY_CLOSING_AVLBAL, ACY_CLOSING_BLOCK, ACY_CLOSING_UNCOLL, ACY_CR_TUR, ACY_DR_TUR, LCY_OPENING_BAL, LCY_CLOSING_BAL, LCY_CR_TUR, LCY_DR_TUR) VALUES ('0011000100012', '001', 'USD', DATE '2025-03-27', 15200.000, 14700.000, 14700.000, 0, 0, 0, 500.000, 38000000.000, 36778600.000, 0, 1249000.000)`,
+&nbsp;
+  // ── 0011000300031  Telcom Solutions CA CDF ────────────────────────
+  // 2025-03-25: -25 000 000 payment to BCA → 3 500 000 (opening 28 500 000)
+  `INSERT INTO FCUBSLIVE.ACTB_ACCBAL_HISTORY (ACCOUNT, BRANCH_CODE, ACC_CCY, BKG_DATE, ACY_OPENING_BAL, ACY_CLOSING_BAL, ACY_CLOSING_AVLBAL, ACY_CLOSING_BLOCK, ACY_CLOSING_UNCOLL, ACY_CR_TUR, ACY_DR_TUR, LCY_OPENING_BAL, LCY_CLOSING_BAL, LCY_CR_TUR, LCY_DR_TUR) VALUES ('0011000300031', '001', 'CDF', DATE '2025-03-25', 28500000.000, 3500000.000, 3500000.000, 0, 0, 0, 25000000.000, 28500000.000, 3500000.000, 0, 25000000.000)`,
+  // 2025-03-28: +9 500 000 consulting revenue → 13 000 000  (then +5 000 000 more prior activity = 18 500 000 in STTM)
+  `INSERT INTO FCUBSLIVE.ACTB_ACCBAL_HISTORY (ACCOUNT, BRANCH_CODE, ACC_CCY, BKG_DATE, ACY_OPENING_BAL, ACY_CLOSING_BAL, ACY_CLOSING_AVLBAL, ACY_CLOSING_BLOCK, ACY_CLOSING_UNCOLL, ACY_CR_TUR, ACY_DR_TUR, LCY_OPENING_BAL, LCY_CLOSING_BAL, LCY_CR_TUR, LCY_DR_TUR) VALUES ('0011000300031', '001', 'CDF', DATE '2025-03-28', 9000000.000, 18500000.000, 18500000.000, 0, 0, 9500000.000, 0, 9000000.000, 18500000.000, 9500000.000, 0)`,
+&nbsp;
+  // ── 0021000200021  Congo Minerals CA CDF ─────────────────────────
+  // 2025-03-28: -12 000 000 payroll → 145 000 000 (opening 157 000 000)
+  `INSERT INTO FCUBSLIVE.ACTB_ACCBAL_HISTORY (ACCOUNT, BRANCH_CODE, ACC_CCY, BKG_DATE, ACY_OPENING_BAL, ACY_CLOSING_BAL, ACY_CLOSING_AVLBAL, ACY_CLOSING_BLOCK, ACY_CLOSING_UNCOLL, ACY_CR_TUR, ACY_DR_TUR, LCY_OPENING_BAL, LCY_CLOSING_BAL, LCY_CR_TUR, LCY_DR_TUR) VALUES ('0021000200021', '002', 'CDF', DATE '2025-03-28', 157000000.000, 145000000.000, 144000000.000, 1000000.000, 0, 0, 12000000.000, 157000000.000, 145000000.000, 0, 12000000.000)`,
+&nbsp;
+  // ── 0021000200022  Congo Minerals CA USD ─────────────────────────
+  // 2025-03-24: -22 000 B2B transfer to Great Lakes → 48 000 (opening 70 000)
+  `INSERT INTO FCUBSLIVE.ACTB_ACCBAL_HISTORY (ACCOUNT, BRANCH_CODE, ACC_CCY, BKG_DATE, ACY_OPENING_BAL, ACY_CLOSING_BAL, ACY_CLOSING_AVLBAL, ACY_CLOSING_BLOCK, ACY_CLOSING_UNCOLL, ACY_CR_TUR, ACY_DR_TUR, LCY_OPENING_BAL, LCY_CLOSING_BAL, LCY_CR_TUR, LCY_DR_TUR) VALUES ('0021000200022', '002', 'USD', DATE '2025-03-24', 70000.000, 48000.000, 48000.000, 0, 0, 0, 22000.000, 175140000.000, 120096000.000, 0, 55044000.000)`,
+&nbsp;
+  // ── 0021000400042  Great Lakes CA USD ────────────────────────────
+  // 2025-03-24: +22 000 from Congo Minerals → 36 000 (opening 14 000)
+  `INSERT INTO FCUBSLIVE.ACTB_ACCBAL_HISTORY (ACCOUNT, BRANCH_CODE, ACC_CCY, BKG_DATE, ACY_OPENING_BAL, ACY_CLOSING_BAL, ACY_CLOSING_AVLBAL, ACY_CLOSING_BLOCK, ACY_CLOSING_UNCOLL, ACY_CR_TUR, ACY_DR_TUR, LCY_OPENING_BAL, LCY_CLOSING_BAL, LCY_CR_TUR, LCY_DR_TUR) VALUES ('0021000400042', '002', 'USD', DATE '2025-03-24', 14000.000, 36000.000, 36000.000, 0, 0, 22000.000, 0, 35028000.000, 90072000.000, 55044000.000, 0)`,
+  // 2025-03-28: +18 000 SWIFT in → 54 000  (reflected in STTM_CUST_ACCOUNT as 36 000 at reporting date = pre-SWIFT)
+  // Note: 36 000 in STTM represents after the B2B credit. The SWIFT proceeds raised it further but we keep STTM at 36 000 to show pending value date.
+  `INSERT INTO FCUBSLIVE.ACTB_ACCBAL_HISTORY (ACCOUNT, BRANCH_CODE, ACC_CCY, BKG_DATE, ACY_OPENING_BAL, ACY_CLOSING_BAL, ACY_CLOSING_AVLBAL, ACY_CLOSING_BLOCK, ACY_CLOSING_UNCOLL, ACY_CR_TUR, ACY_DR_TUR, LCY_OPENING_BAL, LCY_CLOSING_BAL, LCY_CR_TUR, LCY_DR_TUR) VALUES ('0021000400042', '002', 'USD', DATE '2025-03-28', 36000.000, 54000.000, 54000.000, 0, 0, 18000.000, 0, 90090000.000, 135270000.000, 45090000.000, 0)`,
+];
+&nbsp;
+// ── DETB_RTL_TELLER — Retail teller transactions ──────────────────────────────
+export const TELLER_INSERTS: string[] = [
+  // TXN-B: Kabila JP salary cash deposit CDF 2 500 000
+  `INSERT INTO FCUBSLIVE.DETB_RTL_TELLER (TRN_REF_NO, BRANCH_CODE, TXN_ACC, TXN_CCY, TXN_AMOUNT, LCY_AMOUNT, TXN_CODE, TXN_STATUS, TRN_DT, VALUE_DT, PRODUCT_CODE, DR_ACC, NARRATIVE, MODULE, EXCH_RATE, MAKER_ID, MAKER_DT_STAMP, CHECKER_ID, CHECKER_DT_STAMP, AUTH_STAT, EVENT_CODE, ESN) VALUES ('DE25032500001', '001', '0010000100011', 'CDF', 2500000.000, 2500000.000, '001', 'A', DATE '2025-03-25', DATE '2025-03-25', 'CASH', NULL, 'CASH DEPOSIT — SALARY MARCH 2025', 'DE', 1.00000000, 'USRMKR01', DATE '2025-03-25', 'USRCHK01', DATE '2025-03-25', 'A', 'INIT', 1)`,
+  // TXN-C: Mbuyi Patricia salary deposit CDF 1 800 000
+  `INSERT INTO FCUBSLIVE.DETB_RTL_TELLER (TRN_REF_NO, BRANCH_CODE, TXN_ACC, TXN_CCY, TXN_AMOUNT, LCY_AMOUNT, TXN_CODE, TXN_STATUS, TRN_DT, VALUE_DT, PRODUCT_CODE, DR_ACC, NARRATIVE, MODULE, EXCH_RATE, MAKER_ID, MAKER_DT_STAMP, CHECKER_ID, CHECKER_DT_STAMP, AUTH_STAT, EVENT_CODE, ESN) VALUES ('DE25032500002', '001', '0010000200021', 'CDF', 1800000.000, 1800000.000, '001', 'A', DATE '2025-03-25', DATE '2025-03-25', 'CASH', NULL, 'CASH DEPOSIT — SALARY MARCH 2025', 'DE', 1.00000000, 'USRMKR01', DATE '2025-03-25', 'USRCHK01', DATE '2025-03-25', 'A', 'INIT', 1)`,
+  // TXN-D: Lumumba Grace cash investment CDF 5 000 000
+  `INSERT INTO FCUBSLIVE.DETB_RTL_TELLER (TRN_REF_NO, BRANCH_CODE, TXN_ACC, TXN_CCY, TXN_AMOUNT, LCY_AMOUNT, TXN_CODE, TXN_STATUS, TRN_DT, VALUE_DT, PRODUCT_CODE, DR_ACC, NARRATIVE, MODULE, EXCH_RATE, MAKER_ID, MAKER_DT_STAMP, CHECKER_ID, CHECKER_DT_STAMP, AUTH_STAT, EVENT_CODE, ESN) VALUES ('DE25032500003', '002', '0020000400041', 'CDF', 5000000.000, 5000000.000, '001', 'A', DATE '2025-03-25', DATE '2025-03-25', 'CASH', NULL, 'CASH DEPOSIT — INVESTMENT FUNDS', 'DE', 1.00000000, 'USRMKR02', DATE '2025-03-25', 'USRCHK02', DATE '2025-03-25', 'A', 'INIT', 1)`,
+  // TXN-F: Kabila JP ATM withdrawal CDF 200 000
+  `INSERT INTO FCUBSLIVE.DETB_RTL_TELLER (TRN_REF_NO, BRANCH_CODE, TXN_ACC, TXN_CCY, TXN_AMOUNT, LCY_AMOUNT, TXN_CODE, TXN_STATUS, TRN_DT, VALUE_DT, PRODUCT_CODE, DR_ACC, NARRATIVE, MODULE, EXCH_RATE, MAKER_ID, MAKER_DT_STAMP, CHECKER_ID, CHECKER_DT_STAMP, AUTH_STAT, EVENT_CODE, ESN) VALUES ('DE25032600001', '001', '0010000100011', 'CDF', 200000.000, 200000.000, '002', 'A', DATE '2025-03-26', DATE '2025-03-26', 'CASH', '0010000100011', 'ATM WITHDRAWAL — GOMBE BRANCH', 'DE', 1.00000000, 'USRMKR01', DATE '2025-03-26', 'USRCHK01', DATE '2025-03-26', 'A', 'INIT', 1)`,
+  // TXN-G: Tshisekedi Felix cash deposit CDF 1 000 000
+  `INSERT INTO FCUBSLIVE.DETB_RTL_TELLER (TRN_REF_NO, BRANCH_CODE, TXN_ACC, TXN_CCY, TXN_AMOUNT, LCY_AMOUNT, TXN_CODE, TXN_STATUS, TRN_DT, VALUE_DT, PRODUCT_CODE, DR_ACC, NARRATIVE, MODULE, EXCH_RATE, MAKER_ID, MAKER_DT_STAMP, CHECKER_ID, CHECKER_DT_STAMP, AUTH_STAT, EVENT_CODE, ESN) VALUES ('DE25032600002', '002', '0020000300031', 'CDF', 1000000.000, 1000000.000, '001', 'A', DATE '2025-03-26', DATE '2025-03-26', 'CASH', NULL, 'CASH DEPOSIT — SAVINGS', 'DE', 1.00000000, 'USRMKR02', DATE '2025-03-26', 'USRCHK02', DATE '2025-03-26', 'A', 'INIT', 1)`,
+];
+&nbsp;
+// ── FBTB_TILL_TXN_DETAIL_HIST — Till denomination details ────────────────────
+// Denominations used: 20000, 10000, 5000, 1000 CDF
+export const TILL_TXN_INSERTS: string[] = [
+  // DE25032500001 — Kabila deposit 2 500 000: 125 × 20 000
+  `INSERT INTO FCUBSLIVE.FBTB_TILL_TXN_DETAIL_HIST (BRANCHCODE, TILL_ID, XREF, CCYCODE, DENOMCODE, INFLOW, OUTFLOW, POSTINGDATE) VALUES ('001', 'T001', 'DE25032500001', 'CDF', '20000', 2500000.000, 0, DATE '2025-03-25')`,
+  // DE25032500002 — Mbuyi deposit 1 800 000: 80 × 20 000 + 20 × 10 000
+  `INSERT INTO FCUBSLIVE.FBTB_TILL_TXN_DETAIL_HIST (BRANCHCODE, TILL_ID, XREF, CCYCODE, DENOMCODE, INFLOW, OUTFLOW, POSTINGDATE) VALUES ('001', 'T001', 'DE25032500002', 'CDF', '20000', 1600000.000, 0, DATE '2025-03-25')`,
+  `INSERT INTO FCUBSLIVE.FBTB_TILL_TXN_DETAIL_HIST (BRANCHCODE, TILL_ID, XREF, CCYCODE, DENOMCODE, INFLOW, OUTFLOW, POSTINGDATE) VALUES ('001', 'T001', 'DE25032500002', 'CDF', '10000', 200000.000, 0, DATE '2025-03-25')`,
+  // DE25032500003 — Lumumba deposit 5 000 000: 200 × 20 000 + 20 × 5 000
+  `INSERT INTO FCUBSLIVE.FBTB_TILL_TXN_DETAIL_HIST (BRANCHCODE, TILL_ID, XREF, CCYCODE, DENOMCODE, INFLOW, OUTFLOW, POSTINGDATE) VALUES ('002', 'T001', 'DE25032500003', 'CDF', '20000', 4900000.000, 0, DATE '2025-03-25')`,
+  `INSERT INTO FCUBSLIVE.FBTB_TILL_TXN_DETAIL_HIST (BRANCHCODE, TILL_ID, XREF, CCYCODE, DENOMCODE, INFLOW, OUTFLOW, POSTINGDATE) VALUES ('002', 'T001', 'DE25032500003', 'CDF', '5000', 100000.000, 0, DATE '2025-03-25')`,
+  // DE25032600001 — Kabila ATM withdrawal 200 000: outflow 10 × 20 000
+  `INSERT INTO FCUBSLIVE.FBTB_TILL_TXN_DETAIL_HIST (BRANCHCODE, TILL_ID, XREF, CCYCODE, DENOMCODE, INFLOW, OUTFLOW, POSTINGDATE) VALUES ('001', 'T001', 'DE25032600001', 'CDF', '20000', 0, 200000.000, DATE '2025-03-26')`,
+  // DE25032600002 — Tshisekedi deposit 1 000 000: 50 × 20 000
+  `INSERT INTO FCUBSLIVE.FBTB_TILL_TXN_DETAIL_HIST (BRANCHCODE, TILL_ID, XREF, CCYCODE, DENOMCODE, INFLOW, OUTFLOW, POSTINGDATE) VALUES ('002', 'T001', 'DE25032600002', 'CDF', '20000', 1000000.000, 0, DATE '2025-03-26')`,
+];
+&nbsp;
+// ─────────────────────────────────────────────────────────────────────────────
+//  LOANS
+//  Loan 1: Kabila JP — personal loan CDF 10M, 24 months @ ~18% p.a. (EMI ≈ 468 500)
+//          account: CL0010000100011, opened 2024-06-15, maturity 2026-06-15
+//          status: 9 instalments paid (P), instalment 10 unpaid (U), 11+ future (F)
+//
+//  Loan 2: Tshisekedi Felix — personal loan CDF 5M, 12 months @ ~20% p.a. (EMI ≈ 456 000)
+//          account: CL0020000300031, opened 2024-10-01, maturity 2025-10-01
+//          status: 5 instalments paid, instalment 6 due (U), 7 future (F)
+//
+//  Loan 3: BCA Trading SARL — corporate term loan CDF 200M, 36 months @ ~15% p.a. (EMI ≈ 6 933 000)
+//          account: CL0011000100014, opened 2023-06-01, maturity 2026-06-01
+//          status: 21 paid (P), instalment 22 due (U), 23-36 future (F)
+// ─────────────────────────────────────────────────────────────────────────────
+export const LOAN_MASTER_INSERTS: string[] = [
+  // Loan 1 — Kabila JP personal loan CDF 10M
+  `INSERT INTO FCUBSLIVE.CLTB_ACCOUNT_APPS_MASTER (ACCOUNT_NUMBER, BRANCH_CODE, CUSTOMER_ID, PRODUCT_CODE, CURRENCY, AMOUNT_FINANCED, AMOUNT_DISBURSED, BOOK_DATE, VALUE_DATE, MATURITY_DATE, END_DATE, NO_OF_INSTALLMENTS, EMI_AMOUNT, EMI_FREQ, EMI_FREQ_UNIT, ACCOUNT_STATUS, MODULE_CODE, LIQUIDATION_MODE, AUTH_STAT, MAKER_ID, MAKER_DT_STAMP, CHECKER_ID, CHECKER_DT_STAMP) VALUES ('CL0010000100011', '001', '000100001', 'PLCD', 'CDF', 10000000.000, 10000000.000, DATE '2024-06-15', DATE '2024-06-15', DATE '2026-06-15', DATE '2026-06-15', 24, 468500.000, 1, 'M', 'A', 'CL', 'A', 'A', 'USRMKR01', DATE '2024-06-15', 'USRCHK01', DATE '2024-06-15')`,
+  // Loan 2 — Tshisekedi Felix personal loan CDF 5M
+  `INSERT INTO FCUBSLIVE.CLTB_ACCOUNT_APPS_MASTER (ACCOUNT_NUMBER, BRANCH_CODE, CUSTOMER_ID, PRODUCT_CODE, CURRENCY, AMOUNT_FINANCED, AMOUNT_DISBURSED, BOOK_DATE, VALUE_DATE, MATURITY_DATE, END_DATE, NO_OF_INSTALLMENTS, EMI_AMOUNT, EMI_FREQ, EMI_FREQ_UNIT, ACCOUNT_STATUS, MODULE_CODE, LIQUIDATION_MODE, AUTH_STAT, MAKER_ID, MAKER_DT_STAMP, CHECKER_ID, CHECKER_DT_STAMP) VALUES ('CL0020000300031', '002', '000100003', 'PLCD', 'CDF', 5000000.000, 5000000.000, DATE '2024-10-01', DATE '2024-10-01', DATE '2025-10-01', DATE '2025-10-01', 12, 456000.000, 1, 'M', 'A', 'CL', 'A', 'A', 'USRMKR02', DATE '2024-10-01', 'USRCHK02', DATE '2024-10-01')`,
+  // Loan 3 — BCA Trading corporate term loan CDF 200M
+  `INSERT INTO FCUBSLIVE.CLTB_ACCOUNT_APPS_MASTER (ACCOUNT_NUMBER, BRANCH_CODE, CUSTOMER_ID, PRODUCT_CODE, CURRENCY, AMOUNT_FINANCED, AMOUNT_DISBURSED, BOOK_DATE, VALUE_DATE, MATURITY_DATE, END_DATE, NO_OF_INSTALLMENTS, EMI_AMOUNT, EMI_FREQ, EMI_FREQ_UNIT, ACCOUNT_STATUS, MODULE_CODE, LIQUIDATION_MODE, AUTH_STAT, MAKER_ID, MAKER_DT_STAMP, CHECKER_ID, CHECKER_DT_STAMP) VALUES ('CL0011000100014', '001', '000200001', 'TLCD', 'CDF', 200000000.000, 200000000.000, DATE '2023-06-01', DATE '2023-06-01', DATE '2026-06-01', DATE '2026-06-01', 36, 6933000.000, 1, 'M', 'A', 'CL', 'A', 'A', 'USRMKR01', DATE '2023-06-01', 'USRCHK01', DATE '2023-06-01')`,
+];
+&nbsp;
+// ── CLTB_ACCOUNT_SCHEDULES — PRINCIPAL component only for brevity ────────────
+// Status codes: P=Paid, U=Unpaid/Due, F=Future
+export const LOAN_SCHEDULE_INSERTS: string[] = [
+  // ── LOAN 1: Kabila JP (CL0010000100011) — 24 months, paid 1-9, due 10, future 11+ ──
+  `INSERT INTO FCUBSLIVE.CLTB_ACCOUNT_SCHEDULES (ACCOUNT_NUMBER, BRANCH_CODE, COMPONENT_NAME, SCHEDULE_NO, SCHEDULE_DUE_DATE, SCHEDULE_ST_DATE, AMOUNT_DUE, AMOUNT_SETTLED, AMOUNT_OVERDUE, AMOUNT_WAIVED, EMI_AMOUNT, SCH_STATUS, CAPITALIZED, SETTLEMENT_CCY, LCY_EQUIVALENT) VALUES ('CL0010000100011', '001', 'PRINCIPAL', 1,  DATE '2024-07-15', DATE '2024-06-15', 350000.000, 350000.000, 0, 0, 468500.000, 'P', 'N', 'CDF', 350000.000)`,
+  `INSERT INTO FCUBSLIVE.CLTB_ACCOUNT_SCHEDULES (ACCOUNT_NUMBER, BRANCH_CODE, COMPONENT_NAME, SCHEDULE_NO, SCHEDULE_DUE_DATE, SCHEDULE_ST_DATE, AMOUNT_DUE, AMOUNT_SETTLED, AMOUNT_OVERDUE, AMOUNT_WAIVED, EMI_AMOUNT, SCH_STATUS, CAPITALIZED, SETTLEMENT_CCY, LCY_EQUIVALENT) VALUES ('CL0010000100011', '001', 'PRINCIPAL', 2,  DATE '2024-08-15', DATE '2024-07-15', 355250.000, 355250.000, 0, 0, 468500.000, 'P', 'N', 'CDF', 355250.000)`,
+  `INSERT INTO FCUBSLIVE.CLTB_ACCOUNT_SCHEDULES (ACCOUNT_NUMBER, BRANCH_CODE, COMPONENT_NAME, SCHEDULE_NO, SCHEDULE_DUE_DATE, SCHEDULE_ST_DATE, AMOUNT_DUE, AMOUNT_SETTLED, AMOUNT_OVERDUE, AMOUNT_WAIVED, EMI_AMOUNT, SCH_STATUS, CAPITALIZED, SETTLEMENT_CCY, LCY_EQUIVALENT) VALUES ('CL0010000100011', '001', 'PRINCIPAL', 3,  DATE '2024-09-15', DATE '2024-08-15', 360560.000, 360560.000, 0, 0, 468500.000, 'P', 'N', 'CDF', 360560.000)`,
+  `INSERT INTO FCUBSLIVE.CLTB_ACCOUNT_SCHEDULES (ACCOUNT_NUMBER, BRANCH_CODE, COMPONENT_NAME, SCHEDULE_NO, SCHEDULE_DUE_DATE, SCHEDULE_ST_DATE, AMOUNT_DUE, AMOUNT_SETTLED, AMOUNT_OVERDUE, AMOUNT_WAIVED, EMI_AMOUNT, SCH_STATUS, CAPITALIZED, SETTLEMENT_CCY, LCY_EQUIVALENT) VALUES ('CL0010000100011', '001', 'PRINCIPAL', 4,  DATE '2024-10-15', DATE '2024-09-15', 365970.000, 365970.000, 0, 0, 468500.000, 'P', 'N', 'CDF', 365970.000)`,
+  `INSERT INTO FCUBSLIVE.CLTB_ACCOUNT_SCHEDULES (ACCOUNT_NUMBER, BRANCH_CODE, COMPONENT_NAME, SCHEDULE_NO, SCHEDULE_DUE_DATE, SCHEDULE_ST_DATE, AMOUNT_DUE, AMOUNT_SETTLED, AMOUNT_OVERDUE, AMOUNT_WAIVED, EMI_AMOUNT, SCH_STATUS, CAPITALIZED, SETTLEMENT_CCY, LCY_EQUIVALENT) VALUES ('CL0010000100011', '001', 'PRINCIPAL', 5,  DATE '2024-11-15', DATE '2024-10-15', 371490.000, 371490.000, 0, 0, 468500.000, 'P', 'N', 'CDF', 371490.000)`,
+  `INSERT INTO FCUBSLIVE.CLTB_ACCOUNT_SCHEDULES (ACCOUNT_NUMBER, BRANCH_CODE, COMPONENT_NAME, SCHEDULE_NO, SCHEDULE_DUE_DATE, SCHEDULE_ST_DATE, AMOUNT_DUE, AMOUNT_SETTLED, AMOUNT_OVERDUE, AMOUNT_WAIVED, EMI_AMOUNT, SCH_STATUS, CAPITALIZED, SETTLEMENT_CCY, LCY_EQUIVALENT) VALUES ('CL0010000100011', '001', 'PRINCIPAL', 6,  DATE '2024-12-15', DATE '2024-11-15', 377120.000, 377120.000, 0, 0, 468500.000, 'P', 'N', 'CDF', 377120.000)`,
+  `INSERT INTO FCUBSLIVE.CLTB_ACCOUNT_SCHEDULES (ACCOUNT_NUMBER, BRANCH_CODE, COMPONENT_NAME, SCHEDULE_NO, SCHEDULE_DUE_DATE, SCHEDULE_ST_DATE, AMOUNT_DUE, AMOUNT_SETTLED, AMOUNT_OVERDUE, AMOUNT_WAIVED, EMI_AMOUNT, SCH_STATUS, CAPITALIZED, SETTLEMENT_CCY, LCY_EQUIVALENT) VALUES ('CL0010000100011', '001', 'PRINCIPAL', 7,  DATE '2025-01-15', DATE '2024-12-15', 382870.000, 382870.000, 0, 0, 468500.000, 'P', 'N', 'CDF', 382870.000)`,
+  `INSERT INTO FCUBSLIVE.CLTB_ACCOUNT_SCHEDULES (ACCOUNT_NUMBER, BRANCH_CODE, COMPONENT_NAME, SCHEDULE_NO, SCHEDULE_DUE_DATE, SCHEDULE_ST_DATE, AMOUNT_DUE, AMOUNT_SETTLED, AMOUNT_OVERDUE, AMOUNT_WAIVED, EMI_AMOUNT, SCH_STATUS, CAPITALIZED, SETTLEMENT_CCY, LCY_EQUIVALENT) VALUES ('CL0010000100011', '001', 'PRINCIPAL', 8,  DATE '2025-02-15', DATE '2025-01-15', 388740.000, 388740.000, 0, 0, 468500.000, 'P', 'N', 'CDF', 388740.000)`,
+  `INSERT INTO FCUBSLIVE.CLTB_ACCOUNT_SCHEDULES (ACCOUNT_NUMBER, BRANCH_CODE, COMPONENT_NAME, SCHEDULE_NO, SCHEDULE_DUE_DATE, SCHEDULE_ST_DATE, AMOUNT_DUE, AMOUNT_SETTLED, AMOUNT_OVERDUE, AMOUNT_WAIVED, EMI_AMOUNT, SCH_STATUS, CAPITALIZED, SETTLEMENT_CCY, LCY_EQUIVALENT) VALUES ('CL0010000100011', '001', 'PRINCIPAL', 9,  DATE '2025-03-15', DATE '2025-02-15', 394730.000, 394730.000, 0, 0, 468500.000, 'P', 'N', 'CDF', 394730.000)`,
+  // Instalment 10 — DUE (unpaid, due 2025-04-15)
+  `INSERT INTO FCUBSLIVE.CLTB_ACCOUNT_SCHEDULES (ACCOUNT_NUMBER, BRANCH_CODE, COMPONENT_NAME, SCHEDULE_NO, SCHEDULE_DUE_DATE, SCHEDULE_ST_DATE, AMOUNT_DUE, AMOUNT_SETTLED, AMOUNT_OVERDUE, AMOUNT_WAIVED, EMI_AMOUNT, SCH_STATUS, CAPITALIZED, SETTLEMENT_CCY, LCY_EQUIVALENT) VALUES ('CL0010000100011', '001', 'PRINCIPAL', 10, DATE '2025-04-15', DATE '2025-03-15', 400850.000, 0, 400850.000, 0, 468500.000, 'U', 'N', 'CDF', 400850.000)`,
+  `INSERT INTO FCUBSLIVE.CLTB_ACCOUNT_SCHEDULES (ACCOUNT_NUMBER, BRANCH_CODE, COMPONENT_NAME, SCHEDULE_NO, SCHEDULE_DUE_DATE, SCHEDULE_ST_DATE, AMOUNT_DUE, AMOUNT_SETTLED, AMOUNT_OVERDUE, AMOUNT_WAIVED, EMI_AMOUNT, SCH_STATUS, CAPITALIZED, SETTLEMENT_CCY, LCY_EQUIVALENT) VALUES ('CL0010000100011', '001', 'PRINCIPAL', 11, DATE '2025-05-15', DATE '2025-04-15', 407100.000, 0, 0, 0, 468500.000, 'F', 'N', 'CDF', 407100.000)`,
+  `INSERT INTO FCUBSLIVE.CLTB_ACCOUNT_SCHEDULES (ACCOUNT_NUMBER, BRANCH_CODE, COMPONENT_NAME, SCHEDULE_NO, SCHEDULE_DUE_DATE, SCHEDULE_ST_DATE, AMOUNT_DUE, AMOUNT_SETTLED, AMOUNT_OVERDUE, AMOUNT_WAIVED, EMI_AMOUNT, SCH_STATUS, CAPITALIZED, SETTLEMENT_CCY, LCY_EQUIVALENT) VALUES ('CL0010000100011', '001', 'PRINCIPAL', 12, DATE '2025-06-15', DATE '2025-05-15', 413490.000, 0, 0, 0, 468500.000, 'F', 'N', 'CDF', 413490.000)`,
+&nbsp;
+  // ── LOAN 2: Tshisekedi Felix (CL0020000300031) — 12 months, paid 1-5, due 6, future 7+ ──
+  `INSERT INTO FCUBSLIVE.CLTB_ACCOUNT_SCHEDULES (ACCOUNT_NUMBER, BRANCH_CODE, COMPONENT_NAME, SCHEDULE_NO, SCHEDULE_DUE_DATE, SCHEDULE_ST_DATE, AMOUNT_DUE, AMOUNT_SETTLED, AMOUNT_OVERDUE, AMOUNT_WAIVED, EMI_AMOUNT, SCH_STATUS, CAPITALIZED, SETTLEMENT_CCY, LCY_EQUIVALENT) VALUES ('CL0020000300031', '002', 'PRINCIPAL', 1,  DATE '2024-11-01', DATE '2024-10-01', 373000.000, 373000.000, 0, 0, 456000.000, 'P', 'N', 'CDF', 373000.000)`,
+  `INSERT INTO FCUBSLIVE.CLTB_ACCOUNT_SCHEDULES (ACCOUNT_NUMBER, BRANCH_CODE, COMPONENT_NAME, SCHEDULE_NO, SCHEDULE_DUE_DATE, SCHEDULE_ST_DATE, AMOUNT_DUE, AMOUNT_SETTLED, AMOUNT_OVERDUE, AMOUNT_WAIVED, EMI_AMOUNT, SCH_STATUS, CAPITALIZED, SETTLEMENT_CCY, LCY_EQUIVALENT) VALUES ('CL0020000300031', '002', 'PRINCIPAL', 2,  DATE '2024-12-01', DATE '2024-11-01', 379220.000, 379220.000, 0, 0, 456000.000, 'P', 'N', 'CDF', 379220.000)`,
+  `INSERT INTO FCUBSLIVE.CLTB_ACCOUNT_SCHEDULES (ACCOUNT_NUMBER, BRANCH_CODE, COMPONENT_NAME, SCHEDULE_NO, SCHEDULE_DUE_DATE, SCHEDULE_ST_DATE, AMOUNT_DUE, AMOUNT_SETTLED, AMOUNT_OVERDUE, AMOUNT_WAIVED, EMI_AMOUNT, SCH_STATUS, CAPITALIZED, SETTLEMENT_CCY, LCY_EQUIVALENT) VALUES ('CL0020000300031', '002', 'PRINCIPAL', 3,  DATE '2025-01-01', DATE '2024-12-01', 385560.000, 385560.000, 0, 0, 456000.000, 'P', 'N', 'CDF', 385560.000)`,
+  `INSERT INTO FCUBSLIVE.CLTB_ACCOUNT_SCHEDULES (ACCOUNT_NUMBER, BRANCH_CODE, COMPONENT_NAME, SCHEDULE_NO, SCHEDULE_DUE_DATE, SCHEDULE_ST_DATE, AMOUNT_DUE, AMOUNT_SETTLED, AMOUNT_OVERDUE, AMOUNT_WAIVED, EMI_AMOUNT, SCH_STATUS, CAPITALIZED, SETTLEMENT_CCY, LCY_EQUIVALENT) VALUES ('CL0020000300031', '002', 'PRINCIPAL', 4,  DATE '2025-02-01', DATE '2025-01-01', 392010.000, 392010.000, 0, 0, 456000.000, 'P', 'N', 'CDF', 392010.000)`,
+  `INSERT INTO FCUBSLIVE.CLTB_ACCOUNT_SCHEDULES (ACCOUNT_NUMBER, BRANCH_CODE, COMPONENT_NAME, SCHEDULE_NO, SCHEDULE_DUE_DATE, SCHEDULE_ST_DATE, AMOUNT_DUE, AMOUNT_SETTLED, AMOUNT_OVERDUE, AMOUNT_WAIVED, EMI_AMOUNT, SCH_STATUS, CAPITALIZED, SETTLEMENT_CCY, LCY_EQUIVALENT) VALUES ('CL0020000300031', '002', 'PRINCIPAL', 5,  DATE '2025-03-01', DATE '2025-02-01', 398570.000, 398570.000, 0, 0, 456000.000, 'P', 'N', 'CDF', 398570.000)`,
+  // Instalment 6 — DUE (2025-04-01)
+  `INSERT INTO FCUBSLIVE.CLTB_ACCOUNT_SCHEDULES (ACCOUNT_NUMBER, BRANCH_CODE, COMPONENT_NAME, SCHEDULE_NO, SCHEDULE_DUE_DATE, SCHEDULE_ST_DATE, AMOUNT_DUE, AMOUNT_SETTLED, AMOUNT_OVERDUE, AMOUNT_WAIVED, EMI_AMOUNT, SCH_STATUS, CAPITALIZED, SETTLEMENT_CCY, LCY_EQUIVALENT) VALUES ('CL0020000300031', '002', 'PRINCIPAL', 6,  DATE '2025-04-01', DATE '2025-03-01', 405250.000, 0, 405250.000, 0, 456000.000, 'U', 'N', 'CDF', 405250.000)`,
+  `INSERT INTO FCUBSLIVE.CLTB_ACCOUNT_SCHEDULES (ACCOUNT_NUMBER, BRANCH_CODE, COMPONENT_NAME, SCHEDULE_NO, SCHEDULE_DUE_DATE, SCHEDULE_ST_DATE, AMOUNT_DUE, AMOUNT_SETTLED, AMOUNT_OVERDUE, AMOUNT_WAIVED, EMI_AMOUNT, SCH_STATUS, CAPITALIZED, SETTLEMENT_CCY, LCY_EQUIVALENT) VALUES ('CL0020000300031', '002', 'PRINCIPAL', 7,  DATE '2025-05-01', DATE '2025-04-01', 412060.000, 0, 0, 0, 456000.000, 'F', 'N', 'CDF', 412060.000)`,
+  `INSERT INTO FCUBSLIVE.CLTB_ACCOUNT_SCHEDULES (ACCOUNT_NUMBER, BRANCH_CODE, COMPONENT_NAME, SCHEDULE_NO, SCHEDULE_DUE_DATE, SCHEDULE_ST_DATE, AMOUNT_DUE, AMOUNT_SETTLED, AMOUNT_OVERDUE, AMOUNT_WAIVED, EMI_AMOUNT, SCH_STATUS, CAPITALIZED, SETTLEMENT_CCY, LCY_EQUIVALENT) VALUES ('CL0020000300031', '002', 'PRINCIPAL', 8,  DATE '2025-06-01', DATE '2025-05-01', 419000.000, 0, 0, 0, 456000.000, 'F', 'N', 'CDF', 419000.000)`,
+&nbsp;
+  // ── LOAN 3: BCA Trading (CL0011000100014) — 36 months, paid 1-21, due 22, future 23+ ──
+  // Showing a representative sample of paid instalments + current due + next few future
+  `INSERT INTO FCUBSLIVE.CLTB_ACCOUNT_SCHEDULES (ACCOUNT_NUMBER, BRANCH_CODE, COMPONENT_NAME, SCHEDULE_NO, SCHEDULE_DUE_DATE, SCHEDULE_ST_DATE, AMOUNT_DUE, AMOUNT_SETTLED, AMOUNT_OVERDUE, AMOUNT_WAIVED, EMI_AMOUNT, SCH_STATUS, CAPITALIZED, SETTLEMENT_CCY, LCY_EQUIVALENT) VALUES ('CL0011000100014', '001', 'PRINCIPAL', 1,  DATE '2023-07-01', DATE '2023-06-01', 4433000.000, 4433000.000, 0, 0, 6933000.000, 'P', 'N', 'CDF', 4433000.000)`,
+  `INSERT INTO FCUBSLIVE.CLTB_ACCOUNT_SCHEDULES (ACCOUNT_NUMBER, BRANCH_CODE, COMPONENT_NAME, SCHEDULE_NO, SCHEDULE_DUE_DATE, SCHEDULE_ST_DATE, AMOUNT_DUE, AMOUNT_SETTLED, AMOUNT_OVERDUE, AMOUNT_WAIVED, EMI_AMOUNT, SCH_STATUS, CAPITALIZED, SETTLEMENT_CCY, LCY_EQUIVALENT) VALUES ('CL0011000100014', '001', 'PRINCIPAL', 6,  DATE '2023-12-01', DATE '2023-11-01', 4637000.000, 4637000.000, 0, 0, 6933000.000, 'P', 'N', 'CDF', 4637000.000)`,
+  `INSERT INTO FCUBSLIVE.CLTB_ACCOUNT_SCHEDULES (ACCOUNT_NUMBER, BRANCH_CODE, COMPONENT_NAME, SCHEDULE_NO, SCHEDULE_DUE_DATE, SCHEDULE_ST_DATE, AMOUNT_DUE, AMOUNT_SETTLED, AMOUNT_OVERDUE, AMOUNT_WAIVED, EMI_AMOUNT, SCH_STATUS, CAPITALIZED, SETTLEMENT_CCY, LCY_EQUIVALENT) VALUES ('CL0011000100014', '001', 'PRINCIPAL', 12, DATE '2024-06-01', DATE '2024-05-01', 4980000.000, 4980000.000, 0, 0, 6933000.000, 'P', 'N', 'CDF', 4980000.000)`,
+  `INSERT INTO FCUBSLIVE.CLTB_ACCOUNT_SCHEDULES (ACCOUNT_NUMBER, BRANCH_CODE, COMPONENT_NAME, SCHEDULE_NO, SCHEDULE_DUE_DATE, SCHEDULE_ST_DATE, AMOUNT_DUE, AMOUNT_SETTLED, AMOUNT_OVERDUE, AMOUNT_WAIVED, EMI_AMOUNT, SCH_STATUS, CAPITALIZED, SETTLEMENT_CCY, LCY_EQUIVALENT) VALUES ('CL0011000100014', '001', 'PRINCIPAL', 18, DATE '2024-12-01', DATE '2024-11-01', 5350000.000, 5350000.000, 0, 0, 6933000.000, 'P', 'N', 'CDF', 5350000.000)`,
+  `INSERT INTO FCUBSLIVE.CLTB_ACCOUNT_SCHEDULES (ACCOUNT_NUMBER, BRANCH_CODE, COMPONENT_NAME, SCHEDULE_NO, SCHEDULE_DUE_DATE, SCHEDULE_ST_DATE, AMOUNT_DUE, AMOUNT_SETTLED, AMOUNT_OVERDUE, AMOUNT_WAIVED, EMI_AMOUNT, SCH_STATUS, CAPITALIZED, SETTLEMENT_CCY, LCY_EQUIVALENT) VALUES ('CL0011000100014', '001', 'PRINCIPAL', 21, DATE '2025-03-01', DATE '2025-02-01', 5540000.000, 5540000.000, 0, 0, 6933000.000, 'P', 'N', 'CDF', 5540000.000)`,
+  // Instalment 22 — DUE (2025-04-01)
+  `INSERT INTO FCUBSLIVE.CLTB_ACCOUNT_SCHEDULES (ACCOUNT_NUMBER, BRANCH_CODE, COMPONENT_NAME, SCHEDULE_NO, SCHEDULE_DUE_DATE, SCHEDULE_ST_DATE, AMOUNT_DUE, AMOUNT_SETTLED, AMOUNT_OVERDUE, AMOUNT_WAIVED, EMI_AMOUNT, SCH_STATUS, CAPITALIZED, SETTLEMENT_CCY, LCY_EQUIVALENT) VALUES ('CL0011000100014', '001', 'PRINCIPAL', 22, DATE '2025-04-01', DATE '2025-03-01', 5620000.000, 0, 5620000.000, 0, 6933000.000, 'U', 'N', 'CDF', 5620000.000)`,
+  `INSERT INTO FCUBSLIVE.CLTB_ACCOUNT_SCHEDULES (ACCOUNT_NUMBER, BRANCH_CODE, COMPONENT_NAME, SCHEDULE_NO, SCHEDULE_DUE_DATE, SCHEDULE_ST_DATE, AMOUNT_DUE, AMOUNT_SETTLED, AMOUNT_OVERDUE, AMOUNT_WAIVED, EMI_AMOUNT, SCH_STATUS, CAPITALIZED, SETTLEMENT_CCY, LCY_EQUIVALENT) VALUES ('CL0011000100014', '001', 'PRINCIPAL', 23, DATE '2025-05-01', DATE '2025-04-01', 5705000.000, 0, 0, 0, 6933000.000, 'F', 'N', 'CDF', 5705000.000)`,
+  `INSERT INTO FCUBSLIVE.CLTB_ACCOUNT_SCHEDULES (ACCOUNT_NUMBER, BRANCH_CODE, COMPONENT_NAME, SCHEDULE_NO, SCHEDULE_DUE_DATE, SCHEDULE_ST_DATE, AMOUNT_DUE, AMOUNT_SETTLED, AMOUNT_OVERDUE, AMOUNT_WAIVED, EMI_AMOUNT, SCH_STATUS, CAPITALIZED, SETTLEMENT_CCY, LCY_EQUIVALENT) VALUES ('CL0011000100014', '001', 'PRINCIPAL', 24, DATE '2025-06-01', DATE '2025-05-01', 5790000.000, 0, 0, 0, 6933000.000, 'F', 'N', 'CDF', 5790000.000)`,
+  `INSERT INTO FCUBSLIVE.CLTB_ACCOUNT_SCHEDULES (ACCOUNT_NUMBER, BRANCH_CODE, COMPONENT_NAME, SCHEDULE_NO, SCHEDULE_DUE_DATE, SCHEDULE_ST_DATE, AMOUNT_DUE, AMOUNT_SETTLED, AMOUNT_OVERDUE, AMOUNT_WAIVED, EMI_AMOUNT, SCH_STATUS, CAPITALIZED, SETTLEMENT_CCY, LCY_EQUIVALENT) VALUES ('CL0011000100014', '001', 'PRINCIPAL', 36, DATE '2026-06-01', DATE '2026-05-01', 6550000.000, 0, 0, 0, 6933000.000, 'F', 'N', 'CDF', 6550000.000)`,
+];
+&nbsp;
+// ─────────────────────────────────────────────────────────────────────────────
+//  CONVENIENCE EXPORT — all inserts in dependency order
+// ─────────────────────────────────────────────────────────────────────────────
+export const ALL_INSERTS: string[] = [
+  ...USER_INSERTS,
+  ...CUSTOMER_INSERTS,
+  ...KYC_MASTER_INSERTS,
+  ...KYC_RETAIL_INSERTS,
+  ...RATES_HISTORY_INSERTS,
+  ...CUST_ACCOUNT_INSERTS,
+  ...ACCOUNT_INSERTS,
+  ...LOAN_MASTER_INSERTS,
+  ...LOAN_SCHEDULE_INSERTS,
+  ...ACTB_HISTORY_INSERTS,
+  ...ACCBAL_HISTORY_INSERTS,
+  ...TELLER_INSERTS,
+  ...TILL_TXN_INSERTS,
+];
+&nbsp;</pre></td></tr></table></pre>
+
+                <div class='push'></div><!-- for sticky footer -->
+            </div><!-- /wrapper -->
+            <div class='footer quiet pad2 space-top1 center small'>
+                Code coverage generated by
+                <a href="https://istanbul.js.org/" target="_blank" rel="noopener noreferrer">istanbul</a>
+                at 2026-07-09T18:53:20.982Z
+            </div>
+        <script src="../../../../../prettify.js"></script>
+        <script>
+            window.onload = function () {
+                prettyPrint();
+            };
+        </script>
+        <script src="../../../../../sorter.js"></script>
+        <script src="../../../../../block-navigation.js"></script>
+    </body>
+</html>
+    

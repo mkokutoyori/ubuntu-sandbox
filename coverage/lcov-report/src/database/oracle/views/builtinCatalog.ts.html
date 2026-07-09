@@ -1,0 +1,532 @@
+
+<!doctype html>
+<html lang="en">
+
+<head>
+    <title>Code coverage report for src/database/oracle/views/builtinCatalog.ts</title>
+    <meta charset="utf-8" />
+    <link rel="stylesheet" href="../../../../prettify.css" />
+    <link rel="stylesheet" href="../../../../base.css" />
+    <link rel="shortcut icon" type="image/x-icon" href="../../../../favicon.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <style type='text/css'>
+        .coverage-summary .sorter {
+            background-image: url(../../../../sort-arrow-sprite.png);
+        }
+    </style>
+</head>
+    
+<body>
+<div class='wrapper'>
+    <div class='pad1'>
+        <h1><a href="../../../../index.html">All files</a> / <a href="index.html">src/database/oracle/views</a> builtinCatalog.ts</h1>
+        <div class='clearfix'>
+            
+            <div class='fl pad1y space-right2'>
+                <span class="strong">100% </span>
+                <span class="quiet">Statements</span>
+                <span class='fraction'>6/6</span>
+            </div>
+        
+            
+            <div class='fl pad1y space-right2'>
+                <span class="strong">100% </span>
+                <span class="quiet">Branches</span>
+                <span class='fraction'>0/0</span>
+            </div>
+        
+            
+            <div class='fl pad1y space-right2'>
+                <span class="strong">100% </span>
+                <span class="quiet">Functions</span>
+                <span class='fraction'>3/3</span>
+            </div>
+        
+            
+            <div class='fl pad1y space-right2'>
+                <span class="strong">100% </span>
+                <span class="quiet">Lines</span>
+                <span class='fraction'>4/4</span>
+            </div>
+        
+            
+        </div>
+        <p class="quiet">
+            Press <em>n</em> or <em>j</em> to go to the next uncovered block, <em>b</em>, <em>p</em> or <em>k</em> for the previous block.
+        </p>
+        <template id="filterTemplate">
+            <div class="quiet">
+                Filter:
+                <input type="search" id="fileSearch">
+            </div>
+        </template>
+    </div>
+    <div class='status-line high'></div>
+    <pre><table class="coverage">
+<tr><td class="line-count quiet"><a name='L1'></a><a href='#L1'>1</a>
+<a name='L2'></a><a href='#L2'>2</a>
+<a name='L3'></a><a href='#L3'>3</a>
+<a name='L4'></a><a href='#L4'>4</a>
+<a name='L5'></a><a href='#L5'>5</a>
+<a name='L6'></a><a href='#L6'>6</a>
+<a name='L7'></a><a href='#L7'>7</a>
+<a name='L8'></a><a href='#L8'>8</a>
+<a name='L9'></a><a href='#L9'>9</a>
+<a name='L10'></a><a href='#L10'>10</a>
+<a name='L11'></a><a href='#L11'>11</a>
+<a name='L12'></a><a href='#L12'>12</a>
+<a name='L13'></a><a href='#L13'>13</a>
+<a name='L14'></a><a href='#L14'>14</a>
+<a name='L15'></a><a href='#L15'>15</a>
+<a name='L16'></a><a href='#L16'>16</a>
+<a name='L17'></a><a href='#L17'>17</a>
+<a name='L18'></a><a href='#L18'>18</a>
+<a name='L19'></a><a href='#L19'>19</a>
+<a name='L20'></a><a href='#L20'>20</a>
+<a name='L21'></a><a href='#L21'>21</a>
+<a name='L22'></a><a href='#L22'>22</a>
+<a name='L23'></a><a href='#L23'>23</a>
+<a name='L24'></a><a href='#L24'>24</a>
+<a name='L25'></a><a href='#L25'>25</a>
+<a name='L26'></a><a href='#L26'>26</a>
+<a name='L27'></a><a href='#L27'>27</a>
+<a name='L28'></a><a href='#L28'>28</a>
+<a name='L29'></a><a href='#L29'>29</a>
+<a name='L30'></a><a href='#L30'>30</a>
+<a name='L31'></a><a href='#L31'>31</a>
+<a name='L32'></a><a href='#L32'>32</a>
+<a name='L33'></a><a href='#L33'>33</a>
+<a name='L34'></a><a href='#L34'>34</a>
+<a name='L35'></a><a href='#L35'>35</a>
+<a name='L36'></a><a href='#L36'>36</a>
+<a name='L37'></a><a href='#L37'>37</a>
+<a name='L38'></a><a href='#L38'>38</a>
+<a name='L39'></a><a href='#L39'>39</a>
+<a name='L40'></a><a href='#L40'>40</a>
+<a name='L41'></a><a href='#L41'>41</a>
+<a name='L42'></a><a href='#L42'>42</a>
+<a name='L43'></a><a href='#L43'>43</a>
+<a name='L44'></a><a href='#L44'>44</a>
+<a name='L45'></a><a href='#L45'>45</a>
+<a name='L46'></a><a href='#L46'>46</a>
+<a name='L47'></a><a href='#L47'>47</a>
+<a name='L48'></a><a href='#L48'>48</a>
+<a name='L49'></a><a href='#L49'>49</a>
+<a name='L50'></a><a href='#L50'>50</a>
+<a name='L51'></a><a href='#L51'>51</a>
+<a name='L52'></a><a href='#L52'>52</a>
+<a name='L53'></a><a href='#L53'>53</a>
+<a name='L54'></a><a href='#L54'>54</a>
+<a name='L55'></a><a href='#L55'>55</a>
+<a name='L56'></a><a href='#L56'>56</a>
+<a name='L57'></a><a href='#L57'>57</a>
+<a name='L58'></a><a href='#L58'>58</a>
+<a name='L59'></a><a href='#L59'>59</a>
+<a name='L60'></a><a href='#L60'>60</a>
+<a name='L61'></a><a href='#L61'>61</a>
+<a name='L62'></a><a href='#L62'>62</a>
+<a name='L63'></a><a href='#L63'>63</a>
+<a name='L64'></a><a href='#L64'>64</a>
+<a name='L65'></a><a href='#L65'>65</a>
+<a name='L66'></a><a href='#L66'>66</a>
+<a name='L67'></a><a href='#L67'>67</a>
+<a name='L68'></a><a href='#L68'>68</a>
+<a name='L69'></a><a href='#L69'>69</a>
+<a name='L70'></a><a href='#L70'>70</a>
+<a name='L71'></a><a href='#L71'>71</a>
+<a name='L72'></a><a href='#L72'>72</a>
+<a name='L73'></a><a href='#L73'>73</a>
+<a name='L74'></a><a href='#L74'>74</a>
+<a name='L75'></a><a href='#L75'>75</a>
+<a name='L76'></a><a href='#L76'>76</a>
+<a name='L77'></a><a href='#L77'>77</a>
+<a name='L78'></a><a href='#L78'>78</a>
+<a name='L79'></a><a href='#L79'>79</a>
+<a name='L80'></a><a href='#L80'>80</a>
+<a name='L81'></a><a href='#L81'>81</a>
+<a name='L82'></a><a href='#L82'>82</a>
+<a name='L83'></a><a href='#L83'>83</a>
+<a name='L84'></a><a href='#L84'>84</a>
+<a name='L85'></a><a href='#L85'>85</a>
+<a name='L86'></a><a href='#L86'>86</a>
+<a name='L87'></a><a href='#L87'>87</a>
+<a name='L88'></a><a href='#L88'>88</a>
+<a name='L89'></a><a href='#L89'>89</a>
+<a name='L90'></a><a href='#L90'>90</a>
+<a name='L91'></a><a href='#L91'>91</a>
+<a name='L92'></a><a href='#L92'>92</a>
+<a name='L93'></a><a href='#L93'>93</a>
+<a name='L94'></a><a href='#L94'>94</a>
+<a name='L95'></a><a href='#L95'>95</a>
+<a name='L96'></a><a href='#L96'>96</a>
+<a name='L97'></a><a href='#L97'>97</a>
+<a name='L98'></a><a href='#L98'>98</a>
+<a name='L99'></a><a href='#L99'>99</a>
+<a name='L100'></a><a href='#L100'>100</a>
+<a name='L101'></a><a href='#L101'>101</a>
+<a name='L102'></a><a href='#L102'>102</a>
+<a name='L103'></a><a href='#L103'>103</a>
+<a name='L104'></a><a href='#L104'>104</a>
+<a name='L105'></a><a href='#L105'>105</a>
+<a name='L106'></a><a href='#L106'>106</a>
+<a name='L107'></a><a href='#L107'>107</a>
+<a name='L108'></a><a href='#L108'>108</a>
+<a name='L109'></a><a href='#L109'>109</a>
+<a name='L110'></a><a href='#L110'>110</a>
+<a name='L111'></a><a href='#L111'>111</a>
+<a name='L112'></a><a href='#L112'>112</a>
+<a name='L113'></a><a href='#L113'>113</a>
+<a name='L114'></a><a href='#L114'>114</a>
+<a name='L115'></a><a href='#L115'>115</a>
+<a name='L116'></a><a href='#L116'>116</a>
+<a name='L117'></a><a href='#L117'>117</a>
+<a name='L118'></a><a href='#L118'>118</a>
+<a name='L119'></a><a href='#L119'>119</a>
+<a name='L120'></a><a href='#L120'>120</a>
+<a name='L121'></a><a href='#L121'>121</a>
+<a name='L122'></a><a href='#L122'>122</a>
+<a name='L123'></a><a href='#L123'>123</a>
+<a name='L124'></a><a href='#L124'>124</a>
+<a name='L125'></a><a href='#L125'>125</a>
+<a name='L126'></a><a href='#L126'>126</a>
+<a name='L127'></a><a href='#L127'>127</a>
+<a name='L128'></a><a href='#L128'>128</a>
+<a name='L129'></a><a href='#L129'>129</a>
+<a name='L130'></a><a href='#L130'>130</a>
+<a name='L131'></a><a href='#L131'>131</a>
+<a name='L132'></a><a href='#L132'>132</a>
+<a name='L133'></a><a href='#L133'>133</a>
+<a name='L134'></a><a href='#L134'>134</a>
+<a name='L135'></a><a href='#L135'>135</a>
+<a name='L136'></a><a href='#L136'>136</a>
+<a name='L137'></a><a href='#L137'>137</a>
+<a name='L138'></a><a href='#L138'>138</a>
+<a name='L139'></a><a href='#L139'>139</a>
+<a name='L140'></a><a href='#L140'>140</a>
+<a name='L141'></a><a href='#L141'>141</a>
+<a name='L142'></a><a href='#L142'>142</a>
+<a name='L143'></a><a href='#L143'>143</a>
+<a name='L144'></a><a href='#L144'>144</a>
+<a name='L145'></a><a href='#L145'>145</a>
+<a name='L146'></a><a href='#L146'>146</a>
+<a name='L147'></a><a href='#L147'>147</a>
+<a name='L148'></a><a href='#L148'>148</a>
+<a name='L149'></a><a href='#L149'>149</a>
+<a name='L150'></a><a href='#L150'>150</a></td><td class="line-coverage quiet"><span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">101x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">101x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">101x</span>
+<span class="cline-any cline-neutral">&nbsp;</span></td><td class="text"><pre class="prettyprint lang-js">/**
+ * Built-in dictionary view catalog — the static list of every view
+ * that Oracle exposes out of the box and that our simulator implements.
+ *
+ * `DBA_VIEWS`, `ALL_VIEWS`, and `USER_VIEWS` use this list to report
+ * every catalog view as a SYS-owned view (matching real Oracle 19c
+ * behaviour, where `DBA_TABLES`, `V$SESSION`, etc. all show up there).
+ *
+ * `DESC` also consults this list so that `DESC ALL_VIEWS` succeeds even
+ * when no user-defined views exist.
+ *
+ * The list is the *single source of truth*: when adding a new dictionary
+ * view, register it here too so it surfaces in the data dictionary.
+ */
+&nbsp;
+export interface BuiltinViewEntry {
+  /** Canonical Oracle name, e.g. `V$SESSION`, `DBA_USERS`. */
+  readonly name: string;
+  /** Synthetic SELECT used as the TEXT column of *_VIEWS rows. */
+  readonly text: string;
+  /** Optional short comment for DICTIONARY / DICT views. */
+  readonly comment?: string;
+}
+&nbsp;
+/**
+ * Generate a synthetic CREATE VIEW text for a fixed view. Real Oracle
+ * stores actual SQL behind these — we surface a faithful placeholder.
+ */
+function fixed(name: string, underlying: string): string {
+  return `select * from ${underlying} /* fixed view */`;
+}
+&nbsp;
+export const BUILTIN_VIEWS: readonly BuiltinViewEntry[] = Object.freeze([
+  // ── V$ dynamic performance views ────────────────────────────────
+  { name: 'V$VERSION',              text: fixed('V$VERSION', 'X$VERSION'),         comment: 'Oracle version information' },
+  { name: 'V$INSTANCE',             text: fixed('V$INSTANCE', 'X$KSUSGIF'),        comment: 'Instance information' },
+  { name: 'V$DATABASE',             text: fixed('V$DATABASE', 'X$KCCDI'),          comment: 'Database information' },
+  { name: 'V$SESSION',              text: fixed('V$SESSION', 'X$KSUSE'),           comment: 'Active sessions' },
+  { name: 'V$PARAMETER',            text: fixed('V$PARAMETER', 'X$KSPPI'),         comment: 'System parameters' },
+  { name: 'V$SPPARAMETER',          text: fixed('V$SPPARAMETER', 'X$KSPSPFILE'),   comment: 'SPFILE parameters' },
+  { name: 'V$SYSTEM_PARAMETER',     text: fixed('V$SYSTEM_PARAMETER', 'X$KSPPI'),  comment: 'System-scope parameters' },
+  { name: 'V$SGA',                  text: fixed('V$SGA', 'X$KSMSGA'),              comment: 'SGA memory areas' },
+  { name: 'V$SGASTAT',              text: fixed('V$SGASTAT', 'X$KSMSS'),           comment: 'SGA detailed statistics' },
+  { name: 'V$TABLESPACE',           text: fixed('V$TABLESPACE', 'X$KCCTS'),        comment: 'Tablespace information' },
+  { name: 'V$DATAFILE',             text: fixed('V$DATAFILE', 'X$KCCFE'),          comment: 'Data file information' },
+  { name: 'V$TEMPFILE',             text: fixed('V$TEMPFILE', 'X$KCCTF'),          comment: 'Temporary files' },
+  { name: 'V$LOG',                  text: fixed('V$LOG', 'X$KCCLE'),               comment: 'Online redo log groups' },
+  { name: 'V$LOGFILE',              text: fixed('V$LOGFILE', 'X$KCCLF'),           comment: 'Redo log members' },
+  { name: 'V$LOG_HISTORY',          text: fixed('V$LOG_HISTORY', 'X$KCCLH'),       comment: 'Historical redo log sequences' },
+  { name: 'V$ARCHIVED_LOG',         text: fixed('V$ARCHIVED_LOG', 'X$KCCAL'),      comment: 'Archived log information' },
+  { name: 'V$PROCESS',              text: fixed('V$PROCESS', 'X$KSUPR'),           comment: 'Background and server processes' },
+  { name: 'V$CONTROLFILE',          text: fixed('V$CONTROLFILE', 'X$KCCCF'),       comment: 'Control files' },
+  { name: 'V$DIAG_INFO',            text: fixed('V$DIAG_INFO', 'X$DBGALERTEXT'),   comment: 'Diagnostic repository info' },
+  { name: 'V$LOCK',                 text: fixed('V$LOCK', 'X$KSQRS'),              comment: 'Active locks' },
+  { name: 'V$LOCKED_OBJECT',        text: fixed('V$LOCKED_OBJECT', 'X$KGLLK'),     comment: 'Locked objects' },
+  { name: 'V$TRANSACTION',          text: fixed('V$TRANSACTION', 'X$KTCXB'),       comment: 'Active transactions' },
+  { name: 'V$SQL',                  text: fixed('V$SQL', 'X$KGLCURSOR_CHILD'),     comment: 'SQL statements in cache' },
+  { name: 'V$SQLAREA',              text: fixed('V$SQLAREA', 'X$KGLCURSOR'),       comment: 'Shared SQL area' },
+  { name: 'V$SQL_PLAN',             text: fixed('V$SQL_PLAN', 'X$KQLFXPL'),        comment: 'SQL execution plans' },
+  { name: 'V$SYSSTAT',              text: fixed('V$SYSSTAT', 'X$KSUSGSTA'),        comment: 'System statistics' },
+  { name: 'V$SESSTAT',              text: fixed('V$SESSTAT', 'X$KSUSESTA'),        comment: 'Session statistics' },
+  { name: 'V$OPEN_CURSOR',          text: fixed('V$OPEN_CURSOR', 'X$KGLOB'),       comment: 'Open cursors' },
+  { name: 'V$OPTION',               text: fixed('V$OPTION', 'X$OPTION'),           comment: 'Database options' },
+  { name: 'V$NLS_PARAMETERS',       text: fixed('V$NLS_PARAMETERS', 'X$NLS_PARAMETERS'), comment: 'NLS parameters' },
+  { name: 'V$TIMEZONE_NAMES',       text: fixed('V$TIMEZONE_NAMES', 'X$TIMEZONE_NAMES'), comment: 'Time zone names' },
+  { name: 'V$PGA_TARGET_ADVICE',    text: fixed('V$PGA_TARGET_ADVICE', 'X$QESMMAPGA'), comment: 'PGA target advice' },
+  { name: 'V$RESOURCE_LIMIT',       text: fixed('V$RESOURCE_LIMIT', 'X$KSURLMT'),  comment: 'Resource limits' },
+  { name: 'V$RECOVER_FILE',         text: fixed('V$RECOVER_FILE', 'X$KCRMF'),      comment: 'Files needing recovery' },
+  { name: 'V$BACKUP',               text: fixed('V$BACKUP', 'X$KCCBF'),            comment: 'Online backup status' },
+  { name: 'V$ASM_DISKGROUP',        text: fixed('V$ASM_DISKGROUP', 'X$KFGRP'),     comment: 'ASM disk groups' },
+  { name: 'V$SESSION_CONNECT_INFO', text: fixed('V$SESSION_CONNECT_INFO', 'X$KSUSE'), comment: 'Session connect info' },
+  { name: 'V$SESSION_WAIT',         text: fixed('V$SESSION_WAIT', 'X$KSUSECST'),   comment: 'Sessions currently waiting' },
+  { name: 'V$SESSION_EVENT',        text: fixed('V$SESSION_EVENT', 'X$KSLES'),     comment: 'Per-session wait events' },
+  { name: 'V$SYSTEM_EVENT',         text: fixed('V$SYSTEM_EVENT', 'X$KSLED'),      comment: 'System-wide wait events' },
+  { name: 'V$LATCH',                text: fixed('V$LATCH', 'X$KSLLT'),             comment: 'Latch statistics' },
+  { name: 'V$LATCHHOLDER',          text: fixed('V$LATCHHOLDER', 'X$KSUPRLAT'),    comment: 'Current latch holders' },
+  { name: 'V$LICENSE',              text: fixed('V$LICENSE', 'X$KSULL'),           comment: 'License limits' },
+  { name: 'V$MYSTAT',               text: fixed('V$MYSTAT', 'X$KSUMYSTA'),         comment: "Caller's session statistics" },
+  { name: 'V$LISTENER_NETWORK',     text: fixed('V$LISTENER_NETWORK', 'X$KMMLNI'), comment: 'Listener network endpoints' },
+  { name: 'V$LIBRARYCACHE',         text: fixed('V$LIBRARYCACHE', 'X$KGLST'),      comment: 'Library cache stats' },
+&nbsp;
+  // ── DBA_ dictionary views ───────────────────────────────────────
+  { name: 'DBA_USERS',              text: fixed('DBA_USERS', 'SYS.USER$'),         comment: 'Database users' },
+  { name: 'DBA_ROLES',              text: fixed('DBA_ROLES', 'SYS.ROLE_PRIVS'),    comment: 'Database roles' },
+  { name: 'DBA_ROLE_PRIVS',         text: fixed('DBA_ROLE_PRIVS', 'SYS.DBA_ROLE_PRIVS'), comment: 'Role privileges' },
+  { name: 'DBA_SYS_PRIVS',          text: fixed('DBA_SYS_PRIVS', 'SYS.SYSAUTH$'),  comment: 'System privileges' },
+  { name: 'DBA_TAB_PRIVS',          text: fixed('DBA_TAB_PRIVS', 'SYS.OBJAUTH$'),  comment: 'Object privileges' },
+  { name: 'DBA_TABLES',             text: fixed('DBA_TABLES', 'SYS.TAB$'),         comment: 'Database tables' },
+  { name: 'DBA_TAB_COLUMNS',        text: fixed('DBA_TAB_COLUMNS', 'SYS.COL$'),    comment: 'Table columns' },
+  { name: 'DBA_OBJECTS',            text: fixed('DBA_OBJECTS', 'SYS.OBJ$'),        comment: 'Database objects' },
+  { name: 'DBA_TABLESPACES',        text: fixed('DBA_TABLESPACES', 'SYS.TS$'),     comment: 'Tablespaces' },
+  { name: 'DBA_DATA_FILES',         text: fixed('DBA_DATA_FILES', 'SYS.FILE$'),    comment: 'Data files' },
+  { name: 'DBA_TEMP_FILES',         text: fixed('DBA_TEMP_FILES', 'SYS.FILE$'),    comment: 'Temporary data files' },
+  { name: 'DBA_FREE_SPACE',         text: fixed('DBA_FREE_SPACE', 'SYS.FET$'),     comment: 'Free extents' },
+  { name: 'DBA_INDEXES',            text: fixed('DBA_INDEXES', 'SYS.IND$'),        comment: 'Indexes' },
+  { name: 'DBA_IND_COLUMNS',        text: fixed('DBA_IND_COLUMNS', 'SYS.ICOL$'),   comment: 'Index columns' },
+  { name: 'DBA_CONSTRAINTS',        text: fixed('DBA_CONSTRAINTS', 'SYS.CDEF$'),   comment: 'Constraints' },
+  { name: 'DBA_CONS_COLUMNS',       text: fixed('DBA_CONS_COLUMNS', 'SYS.CCOL$'),  comment: 'Constraint columns' },
+  { name: 'DBA_SEQUENCES',          text: fixed('DBA_SEQUENCES', 'SYS.SEQ$'),      comment: 'Sequences' },
+  { name: 'DBA_VIEWS',              text: fixed('DBA_VIEWS', 'SYS.VIEW$'),         comment: 'Views' },
+  { name: 'DBA_SOURCE',             text: fixed('DBA_SOURCE', 'SYS.SOURCE$'),      comment: 'PL/SQL source code' },
+  { name: 'DBA_PROCEDURES',         text: fixed('DBA_PROCEDURES', 'SYS.PROCEDUREJAVA$'), comment: 'Stored procedures and functions' },
+  { name: 'DBA_TRIGGERS',           text: fixed('DBA_TRIGGERS', 'SYS.TRIGGER$'),   comment: 'Database triggers' },
+  { name: 'DBA_SEGMENTS',           text: fixed('DBA_SEGMENTS', 'SYS.SEG$'),       comment: 'Storage segments' },
+  { name: 'DBA_EXTENTS',            text: fixed('DBA_EXTENTS', 'SYS.EXT$'),        comment: 'Data extents' },
+  { name: 'DBA_AUDIT_TRAIL',        text: fixed('DBA_AUDIT_TRAIL', 'SYS.AUD$'),    comment: 'Audit trail entries' },
+  { name: 'DBA_AUDIT_SESSION',      text: fixed('DBA_AUDIT_SESSION', 'SYS.AUD$'),  comment: 'Session-level audit trail' },
+  { name: 'DBA_AUDIT_OBJECT',       text: fixed('DBA_AUDIT_OBJECT', 'SYS.AUD$'),   comment: 'Object-level audit trail' },
+  { name: 'DBA_AUDIT_STATEMENT',    text: fixed('DBA_AUDIT_STATEMENT', 'SYS.AUD$'),comment: 'Statement-level audit trail' },
+  { name: 'DBA_STMT_AUDIT_OPTS',    text: fixed('DBA_STMT_AUDIT_OPTS', 'SYS.STMT_AUDIT_OPTION_MAP'), comment: 'Statement audit options' },
+  { name: 'DBA_PRIV_AUDIT_OPTS',    text: fixed('DBA_PRIV_AUDIT_OPTS', 'SYS.SYSTEM_PRIVILEGE_MAP'), comment: 'Privilege audit options' },
+  { name: 'DBA_OBJ_AUDIT_OPTS',     text: fixed('DBA_OBJ_AUDIT_OPTS', 'SYS.OBJ$'), comment: 'Object audit options' },
+  { name: 'DBA_AUDIT_POLICIES',     text: fixed('DBA_AUDIT_POLICIES', 'SYS.FGA_LOG$'), comment: 'Fine-grained audit policies' },
+  { name: 'DBA_FGA_AUDIT_TRAIL',    text: fixed('DBA_FGA_AUDIT_TRAIL', 'SYS.FGA_LOG$'), comment: 'Fine-grained audit trail' },
+  { name: 'UNIFIED_AUDIT_TRAIL',    text: fixed('UNIFIED_AUDIT_TRAIL', 'SYS.UNIFIED_AUDIT_TRAIL'), comment: 'Unified audit trail (12c+)' },
+  { name: 'DBA_PROFILES',           text: fixed('DBA_PROFILES', 'SYS.PROFILE$'),   comment: 'Resource limit profiles' },
+  { name: 'DBA_TS_QUOTAS',          text: fixed('DBA_TS_QUOTAS', 'SYS.TSQ$'),      comment: 'Tablespace quotas' },
+  { name: 'DBA_TAB_STATISTICS',     text: fixed('DBA_TAB_STATISTICS', 'SYS.TAB_STATS$'), comment: 'Table statistics' },
+  { name: 'DBA_DIRECTORIES',        text: fixed('DBA_DIRECTORIES', 'SYS.DIR$'),    comment: 'Directory objects' },
+  { name: 'DBA_DB_LINKS',           text: fixed('DBA_DB_LINKS', 'SYS.LINK$'),      comment: 'Database links' },
+  { name: 'DBA_JOBS',               text: fixed('DBA_JOBS', 'SYS.JOB$'),           comment: 'DBMS_JOB scheduled jobs' },
+  { name: 'DBA_SCHEDULER_JOBS',     text: fixed('DBA_SCHEDULER_JOBS', 'SYS.SCHEDULER$_JOB'), comment: 'DBMS_SCHEDULER jobs' },
+  { name: 'DBA_SYNONYMS',           text: fixed('DBA_SYNONYMS', 'SYS.SYN$'),       comment: 'Synonyms' },
+&nbsp;
+  // ── NLS / catalog metadata ──────────────────────────────────────
+  { name: 'NLS_DATABASE_PARAMETERS', text: fixed('NLS_DATABASE_PARAMETERS', 'SYS.PROPS$'),  comment: 'Database NLS parameters' },
+  { name: 'NLS_INSTANCE_PARAMETERS', text: fixed('NLS_INSTANCE_PARAMETERS', 'SYS.PROPS$'),  comment: 'Instance NLS parameters' },
+  { name: 'NLS_SESSION_PARAMETERS',  text: fixed('NLS_SESSION_PARAMETERS', 'SYS.PROPS$'),   comment: 'Session NLS parameters' },
+  { name: 'PRODUCT_COMPONENT_VERSION', text: fixed('PRODUCT_COMPONENT_VERSION', 'SYS.REGISTRY$'), comment: 'Installed components and versions' },
+  { name: 'DICT_COLUMNS',           text: fixed('DICT_COLUMNS', 'SYS.OBJ$'),       comment: 'Dictionary column metadata' },
+&nbsp;
+  // ── Other catalog views the registry exposes ────────────────────
+  { name: 'DBA_TAB_COMMENTS',       text: fixed('DBA_TAB_COMMENTS', 'SYS.COM$'),   comment: 'Table comments' },
+  { name: 'DBA_COL_COMMENTS',       text: fixed('DBA_COL_COMMENTS', 'SYS.COM$'),   comment: 'Column comments' },
+  { name: 'DBA_COL_PRIVS',          text: fixed('DBA_COL_PRIVS', 'SYS.COLAUTH$'),  comment: 'Column privileges' },
+  { name: 'DBA_DEPENDENCIES',       text: fixed('DBA_DEPENDENCIES', 'SYS.DEPENDENCY$'), comment: 'Object dependencies' },
+  { name: 'DBA_ERRORS',             text: fixed('DBA_ERRORS', 'SYS.ERROR$'),       comment: 'Compilation errors' },
+  { name: 'DBA_ARGUMENTS',          text: fixed('DBA_ARGUMENTS', 'SYS.ARGUMENT$'), comment: 'Stored unit arguments' },
+  { name: 'DBA_RECYCLEBIN',         text: fixed('DBA_RECYCLEBIN', 'SYS.RECYCLEBIN$'), comment: 'Recycle bin contents' },
+  { name: 'DBA_MVIEWS',             text: fixed('DBA_MVIEWS', 'SYS.SUMMARY$'),     comment: 'Materialized views' },
+  { name: 'DBA_MVIEW_LOGS',         text: fixed('DBA_MVIEW_LOGS', 'SYS.MLOG$'),    comment: 'Materialized view logs' },
+]);
+&nbsp;
+/** Quick lookup map by uppercase name. */
+export const BUILTIN_VIEW_BY_NAME: ReadonlyMap&lt;string, BuiltinViewEntry&gt; =
+  new Map(BUILTIN_VIEWS.map(v =&gt; [v.name.toUpperCase(), v]));
+&nbsp;
+/** Names of every built-in view, uppercased. */
+export const BUILTIN_VIEW_NAMES: readonly string[] = BUILTIN_VIEWS.map(v =&gt; v.name);
+&nbsp;</pre></td></tr></table></pre>
+
+                <div class='push'></div><!-- for sticky footer -->
+            </div><!-- /wrapper -->
+            <div class='footer quiet pad2 space-top1 center small'>
+                Code coverage generated by
+                <a href="https://istanbul.js.org/" target="_blank" rel="noopener noreferrer">istanbul</a>
+                at 2026-07-09T18:53:22.168Z
+            </div>
+        <script src="../../../../prettify.js"></script>
+        <script>
+            window.onload = function () {
+                prettyPrint();
+            };
+        </script>
+        <script src="../../../../sorter.js"></script>
+        <script src="../../../../block-navigation.js"></script>
+    </body>
+</html>
+    

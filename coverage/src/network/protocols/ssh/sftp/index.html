@@ -1,0 +1,431 @@
+
+<!doctype html>
+<html lang="en">
+
+<head>
+    <title>Code coverage report for src/network/protocols/ssh/sftp</title>
+    <meta charset="utf-8" />
+    <link rel="stylesheet" href="../../../../../prettify.css" />
+    <link rel="stylesheet" href="../../../../../base.css" />
+    <link rel="shortcut icon" type="image/x-icon" href="../../../../../favicon.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <style type='text/css'>
+        .coverage-summary .sorter {
+            background-image: url(../../../../../sort-arrow-sprite.png);
+        }
+    </style>
+</head>
+    
+<body>
+<div class='wrapper'>
+    <div class='pad1'>
+        <h1><a href="../../../../../index.html">All files</a> src/network/protocols/ssh/sftp</h1>
+        <div class='clearfix'>
+            
+            <div class='fl pad1y space-right2'>
+                <span class="strong">1.62% </span>
+                <span class="quiet">Statements</span>
+                <span class='fraction'>24/1473</span>
+            </div>
+        
+            
+            <div class='fl pad1y space-right2'>
+                <span class="strong">0% </span>
+                <span class="quiet">Branches</span>
+                <span class='fraction'>0/974</span>
+            </div>
+        
+            
+            <div class='fl pad1y space-right2'>
+                <span class="strong">1.33% </span>
+                <span class="quiet">Functions</span>
+                <span class='fraction'>4/300</span>
+            </div>
+        
+            
+            <div class='fl pad1y space-right2'>
+                <span class="strong">1.91% </span>
+                <span class="quiet">Lines</span>
+                <span class='fraction'>23/1201</span>
+            </div>
+        
+            
+        </div>
+        <p class="quiet">
+            Press <em>n</em> or <em>j</em> to go to the next uncovered block, <em>b</em>, <em>p</em> or <em>k</em> for the previous block.
+        </p>
+        <template id="filterTemplate">
+            <div class="quiet">
+                Filter:
+                <input type="search" id="fileSearch">
+            </div>
+        </template>
+    </div>
+    <div class='status-line low'></div>
+    <div class="pad1">
+<table class="coverage-summary">
+<thead>
+<tr>
+   <th data-col="file" data-fmt="html" data-html="true" class="file">File</th>
+   <th data-col="pic" data-type="number" data-fmt="html" data-html="true" class="pic"></th>
+   <th data-col="statements" data-type="number" data-fmt="pct" class="pct">Statements</th>
+   <th data-col="statements_raw" data-type="number" data-fmt="html" class="abs"></th>
+   <th data-col="branches" data-type="number" data-fmt="pct" class="pct">Branches</th>
+   <th data-col="branches_raw" data-type="number" data-fmt="html" class="abs"></th>
+   <th data-col="functions" data-type="number" data-fmt="pct" class="pct">Functions</th>
+   <th data-col="functions_raw" data-type="number" data-fmt="html" class="abs"></th>
+   <th data-col="lines" data-type="number" data-fmt="pct" class="pct">Lines</th>
+   <th data-col="lines_raw" data-type="number" data-fmt="html" class="abs"></th>
+</tr>
+</thead>
+<tbody><tr>
+	<td class="file low" data-value="ChrootedSftpFileSystem.ts"><a href="ChrootedSftpFileSystem.ts.html">ChrootedSftpFileSystem.ts</a></td>
+	<td data-value="2.56" class="pic low">
+	<div class="chart"><div class="cover-fill" style="width: 2%"></div><div class="cover-empty" style="width: 98%"></div></div>
+	</td>
+	<td data-value="2.56" class="pct low">2.56%</td>
+	<td data-value="39" class="abs low">1/39</td>
+	<td data-value="0" class="pct low">0%</td>
+	<td data-value="22" class="abs low">0/22</td>
+	<td data-value="0" class="pct low">0%</td>
+	<td data-value="17" class="abs low">0/17</td>
+	<td data-value="3.03" class="pct low">3.03%</td>
+	<td data-value="33" class="abs low">1/33</td>
+	</tr>
+
+<tr>
+	<td class="file empty" data-value="ISftpCommand.ts"><a href="ISftpCommand.ts.html">ISftpCommand.ts</a></td>
+	<td data-value="0" class="pic empty">
+	<div class="chart"><div class="cover-fill" style="width: 0%"></div><div class="cover-empty" style="width: 100%"></div></div>
+	</td>
+	<td data-value="0" class="pct empty">0%</td>
+	<td data-value="0" class="abs empty">0/0</td>
+	<td data-value="0" class="pct empty">0%</td>
+	<td data-value="0" class="abs empty">0/0</td>
+	<td data-value="0" class="pct empty">0%</td>
+	<td data-value="0" class="abs empty">0/0</td>
+	<td data-value="0" class="pct empty">0%</td>
+	<td data-value="0" class="abs empty">0/0</td>
+	</tr>
+
+<tr>
+	<td class="file empty" data-value="ISftpFileSystem.ts"><a href="ISftpFileSystem.ts.html">ISftpFileSystem.ts</a></td>
+	<td data-value="0" class="pic empty">
+	<div class="chart"><div class="cover-fill" style="width: 0%"></div><div class="cover-empty" style="width: 100%"></div></div>
+	</td>
+	<td data-value="0" class="pct empty">0%</td>
+	<td data-value="0" class="abs empty">0/0</td>
+	<td data-value="0" class="pct empty">0%</td>
+	<td data-value="0" class="abs empty">0/0</td>
+	<td data-value="0" class="pct empty">0%</td>
+	<td data-value="0" class="abs empty">0/0</td>
+	<td data-value="0" class="pct empty">0%</td>
+	<td data-value="0" class="abs empty">0/0</td>
+	</tr>
+
+<tr>
+	<td class="file low" data-value="LinuxSftpFSAdapter.ts"><a href="LinuxSftpFSAdapter.ts.html">LinuxSftpFSAdapter.ts</a></td>
+	<td data-value="5.45" class="pic low">
+	<div class="chart"><div class="cover-fill" style="width: 5%"></div><div class="cover-empty" style="width: 95%"></div></div>
+	</td>
+	<td data-value="5.45" class="pct low">5.45%</td>
+	<td data-value="55" class="abs low">3/55</td>
+	<td data-value="0" class="pct low">0%</td>
+	<td data-value="41" class="abs low">0/41</td>
+	<td data-value="0" class="pct low">0%</td>
+	<td data-value="22" class="abs low">0/22</td>
+	<td data-value="6" class="pct low">6%</td>
+	<td data-value="50" class="abs low">3/50</td>
+	</tr>
+
+<tr>
+	<td class="file low" data-value="ParsedArgs.ts"><a href="ParsedArgs.ts.html">ParsedArgs.ts</a></td>
+	<td data-value="0" class="pic low">
+	<div class="chart"><div class="cover-fill" style="width: 0%"></div><div class="cover-empty" style="width: 100%"></div></div>
+	</td>
+	<td data-value="0" class="pct low">0%</td>
+	<td data-value="15" class="abs low">0/15</td>
+	<td data-value="0" class="pct low">0%</td>
+	<td data-value="10" class="abs low">0/10</td>
+	<td data-value="0" class="pct low">0%</td>
+	<td data-value="4" class="abs low">0/4</td>
+	<td data-value="0" class="pct low">0%</td>
+	<td data-value="13" class="abs low">0/13</td>
+	</tr>
+
+<tr>
+	<td class="file low" data-value="PermissionCheckingFSDecorator.ts"><a href="PermissionCheckingFSDecorator.ts.html">PermissionCheckingFSDecorator.ts</a></td>
+	<td data-value="0" class="pic low">
+	<div class="chart"><div class="cover-fill" style="width: 0%"></div><div class="cover-empty" style="width: 100%"></div></div>
+	</td>
+	<td data-value="0" class="pct low">0%</td>
+	<td data-value="105" class="abs low">0/105</td>
+	<td data-value="0" class="pct low">0%</td>
+	<td data-value="75" class="abs low">0/75</td>
+	<td data-value="0" class="pct low">0%</td>
+	<td data-value="19" class="abs low">0/19</td>
+	<td data-value="0" class="pct low">0%</td>
+	<td data-value="81" class="abs low">0/81</td>
+	</tr>
+
+<tr>
+	<td class="file low" data-value="RouterSftpFileSystem.ts"><a href="RouterSftpFileSystem.ts.html">RouterSftpFileSystem.ts</a></td>
+	<td data-value="0" class="pic low">
+	<div class="chart"><div class="cover-fill" style="width: 0%"></div><div class="cover-empty" style="width: 100%"></div></div>
+	</td>
+	<td data-value="0" class="pct low">0%</td>
+	<td data-value="23" class="abs low">0/23</td>
+	<td data-value="0" class="pct low">0%</td>
+	<td data-value="12" class="abs low">0/12</td>
+	<td data-value="0" class="pct low">0%</td>
+	<td data-value="17" class="abs low">0/17</td>
+	<td data-value="0" class="pct low">0%</td>
+	<td data-value="20" class="abs low">0/20</td>
+	</tr>
+
+<tr>
+	<td class="file low" data-value="SftpCommand.ts"><a href="SftpCommand.ts.html">SftpCommand.ts</a></td>
+	<td data-value="1.56" class="pic low">
+	<div class="chart"><div class="cover-fill" style="width: 1%"></div><div class="cover-empty" style="width: 99%"></div></div>
+	</td>
+	<td data-value="1.56" class="pct low">1.56%</td>
+	<td data-value="64" class="abs low">1/64</td>
+	<td data-value="0" class="pct low">0%</td>
+	<td data-value="67" class="abs low">0/67</td>
+	<td data-value="0" class="pct low">0%</td>
+	<td data-value="2" class="abs low">0/2</td>
+	<td data-value="2.22" class="pct low">2.22%</td>
+	<td data-value="45" class="abs low">1/45</td>
+	</tr>
+
+<tr>
+	<td class="file low" data-value="SftpCommandDispatcher.ts"><a href="SftpCommandDispatcher.ts.html">SftpCommandDispatcher.ts</a></td>
+	<td data-value="0" class="pic low">
+	<div class="chart"><div class="cover-fill" style="width: 0%"></div><div class="cover-empty" style="width: 100%"></div></div>
+	</td>
+	<td data-value="0" class="pct low">0%</td>
+	<td data-value="11" class="abs low">0/11</td>
+	<td data-value="0" class="pct low">0%</td>
+	<td data-value="2" class="abs low">0/2</td>
+	<td data-value="33.33" class="pct low">33.33%</td>
+	<td data-value="6" class="abs low">2/6</td>
+	<td data-value="0" class="pct low">0%</td>
+	<td data-value="9" class="abs low">0/9</td>
+	</tr>
+
+<tr>
+	<td class="file low" data-value="SftpCommandScript.ts"><a href="SftpCommandScript.ts.html">SftpCommandScript.ts</a></td>
+	<td data-value="0" class="pic low">
+	<div class="chart"><div class="cover-fill" style="width: 0%"></div><div class="cover-empty" style="width: 100%"></div></div>
+	</td>
+	<td data-value="0" class="pct low">0%</td>
+	<td data-value="23" class="abs low">0/23</td>
+	<td data-value="0" class="pct low">0%</td>
+	<td data-value="8" class="abs low">0/8</td>
+	<td data-value="14.28" class="pct low">14.28%</td>
+	<td data-value="7" class="abs low">1/7</td>
+	<td data-value="0" class="pct low">0%</td>
+	<td data-value="19" class="abs low">0/19</td>
+	</tr>
+
+<tr>
+	<td class="file low" data-value="SftpCommands.ts"><a href="SftpCommands.ts.html">SftpCommands.ts</a></td>
+	<td data-value="0.74" class="pic low">
+	<div class="chart"><div class="cover-fill" style="width: 0%"></div><div class="cover-empty" style="width: 100%"></div></div>
+	</td>
+	<td data-value="0.74" class="pct low">0.74%</td>
+	<td data-value="134" class="abs low">1/134</td>
+	<td data-value="0" class="pct low">0%</td>
+	<td data-value="82" class="abs low">0/82</td>
+	<td data-value="0" class="pct low">0%</td>
+	<td data-value="19" class="abs low">0/19</td>
+	<td data-value="0.84" class="pct low">0.84%</td>
+	<td data-value="119" class="abs low">1/119</td>
+	</tr>
+
+<tr>
+	<td class="file low" data-value="SftpHandleTable.ts"><a href="SftpHandleTable.ts.html">SftpHandleTable.ts</a></td>
+	<td data-value="0" class="pic low">
+	<div class="chart"><div class="cover-fill" style="width: 0%"></div><div class="cover-empty" style="width: 100%"></div></div>
+	</td>
+	<td data-value="0" class="pct low">0%</td>
+	<td data-value="9" class="abs low">0/9</td>
+	<td data-value="100" class="pct high">100%</td>
+	<td data-value="0" class="abs high">0/0</td>
+	<td data-value="0" class="pct low">0%</td>
+	<td data-value="5" class="abs low">0/5</td>
+	<td data-value="0" class="pct low">0%</td>
+	<td data-value="9" class="abs low">0/9</td>
+	</tr>
+
+<tr>
+	<td class="file low" data-value="SftpInteractiveSession.ts"><a href="SftpInteractiveSession.ts.html">SftpInteractiveSession.ts</a></td>
+	<td data-value="0" class="pic low">
+	<div class="chart"><div class="cover-fill" style="width: 0%"></div><div class="cover-empty" style="width: 100%"></div></div>
+	</td>
+	<td data-value="0" class="pct low">0%</td>
+	<td data-value="118" class="abs low">0/118</td>
+	<td data-value="0" class="pct low">0%</td>
+	<td data-value="68" class="abs low">0/68</td>
+	<td data-value="0" class="pct low">0%</td>
+	<td data-value="19" class="abs low">0/19</td>
+	<td data-value="0" class="pct low">0%</td>
+	<td data-value="95" class="abs low">0/95</td>
+	</tr>
+
+<tr>
+	<td class="file low" data-value="SftpSession.ts"><a href="SftpSession.ts.html">SftpSession.ts</a></td>
+	<td data-value="0" class="pic low">
+	<div class="chart"><div class="cover-fill" style="width: 0%"></div><div class="cover-empty" style="width: 100%"></div></div>
+	</td>
+	<td data-value="0" class="pct low">0%</td>
+	<td data-value="247" class="abs low">0/247</td>
+	<td data-value="0" class="pct low">0%</td>
+	<td data-value="192" class="abs low">0/192</td>
+	<td data-value="0" class="pct low">0%</td>
+	<td data-value="45" class="abs low">0/45</td>
+	<td data-value="0" class="pct low">0%</td>
+	<td data-value="203" class="abs low">0/203</td>
+	</tr>
+
+<tr>
+	<td class="file low" data-value="SftpStatusCodes.ts"><a href="SftpStatusCodes.ts.html">SftpStatusCodes.ts</a></td>
+	<td data-value="12.5" class="pic low">
+	<div class="chart"><div class="cover-fill" style="width: 12%"></div><div class="cover-empty" style="width: 88%"></div></div>
+	</td>
+	<td data-value="12.5" class="pct low">12.5%</td>
+	<td data-value="8" class="abs low">1/8</td>
+	<td data-value="0" class="pct low">0%</td>
+	<td data-value="7" class="abs low">0/7</td>
+	<td data-value="0" class="pct low">0%</td>
+	<td data-value="2" class="abs low">0/2</td>
+	<td data-value="12.5" class="pct low">12.5%</td>
+	<td data-value="8" class="abs low">1/8</td>
+	</tr>
+
+<tr>
+	<td class="file low" data-value="SftpWireCodec.ts"><a href="SftpWireCodec.ts.html">SftpWireCodec.ts</a></td>
+	<td data-value="4.52" class="pic low">
+	<div class="chart"><div class="cover-fill" style="width: 4%"></div><div class="cover-empty" style="width: 96%"></div></div>
+	</td>
+	<td data-value="4.52" class="pct low">4.52%</td>
+	<td data-value="243" class="abs low">11/243</td>
+	<td data-value="0" class="pct low">0%</td>
+	<td data-value="119" class="abs low">0/119</td>
+	<td data-value="4.76" class="pct low">4.76%</td>
+	<td data-value="21" class="abs low">1/21</td>
+	<td data-value="5.07" class="pct low">5.07%</td>
+	<td data-value="197" class="abs low">10/197</td>
+	</tr>
+
+<tr>
+	<td class="file low" data-value="SftpWireSession.ts"><a href="SftpWireSession.ts.html">SftpWireSession.ts</a></td>
+	<td data-value="1.82" class="pic low">
+	<div class="chart"><div class="cover-fill" style="width: 1%"></div><div class="cover-empty" style="width: 99%"></div></div>
+	</td>
+	<td data-value="1.82" class="pct low">1.82%</td>
+	<td data-value="164" class="abs low">3/164</td>
+	<td data-value="0" class="pct low">0%</td>
+	<td data-value="99" class="abs low">0/99</td>
+	<td data-value="0" class="pct low">0%</td>
+	<td data-value="18" class="abs low">0/18</td>
+	<td data-value="2.43" class="pct low">2.43%</td>
+	<td data-value="123" class="abs low">3/123</td>
+	</tr>
+
+<tr>
+	<td class="file low" data-value="VfsSftpFileSystem.ts"><a href="VfsSftpFileSystem.ts.html">VfsSftpFileSystem.ts</a></td>
+	<td data-value="0" class="pic low">
+	<div class="chart"><div class="cover-fill" style="width: 0%"></div><div class="cover-empty" style="width: 100%"></div></div>
+	</td>
+	<td data-value="0" class="pct low">0%</td>
+	<td data-value="94" class="abs low">0/94</td>
+	<td data-value="0" class="pct low">0%</td>
+	<td data-value="92" class="abs low">0/92</td>
+	<td data-value="0" class="pct low">0%</td>
+	<td data-value="20" class="abs low">0/20</td>
+	<td data-value="0" class="pct low">0%</td>
+	<td data-value="66" class="abs low">0/66</td>
+	</tr>
+
+<tr>
+	<td class="file low" data-value="WindowsSftpFSAdapter.ts"><a href="WindowsSftpFSAdapter.ts.html">WindowsSftpFSAdapter.ts</a></td>
+	<td data-value="2.85" class="pic low">
+	<div class="chart"><div class="cover-fill" style="width: 2%"></div><div class="cover-empty" style="width: 98%"></div></div>
+	</td>
+	<td data-value="2.85" class="pct low">2.85%</td>
+	<td data-value="70" class="abs low">2/70</td>
+	<td data-value="0" class="pct low">0%</td>
+	<td data-value="58" class="abs low">0/58</td>
+	<td data-value="0" class="pct low">0%</td>
+	<td data-value="22" class="abs low">0/22</td>
+	<td data-value="3.03" class="pct low">3.03%</td>
+	<td data-value="66" class="abs low">2/66</td>
+	</tr>
+
+<tr>
+	<td class="file low" data-value="WindowsSftpFileSystem.ts"><a href="WindowsSftpFileSystem.ts.html">WindowsSftpFileSystem.ts</a></td>
+	<td data-value="0" class="pic low">
+	<div class="chart"><div class="cover-fill" style="width: 0%"></div><div class="cover-empty" style="width: 100%"></div></div>
+	</td>
+	<td data-value="0" class="pct low">0%</td>
+	<td data-value="25" class="abs low">0/25</td>
+	<td data-value="0" class="pct low">0%</td>
+	<td data-value="20" class="abs low">0/20</td>
+	<td data-value="0" class="pct low">0%</td>
+	<td data-value="16" class="abs low">0/16</td>
+	<td data-value="0" class="pct low">0%</td>
+	<td data-value="23" class="abs low">0/23</td>
+	</tr>
+
+<tr>
+	<td class="file low" data-value="events.ts"><a href="events.ts.html">events.ts</a></td>
+	<td data-value="33.33" class="pic low">
+	<div class="chart"><div class="cover-fill" style="width: 33%"></div><div class="cover-empty" style="width: 67%"></div></div>
+	</td>
+	<td data-value="33.33" class="pct low">33.33%</td>
+	<td data-value="3" class="abs low">1/3</td>
+	<td data-value="100" class="pct high">100%</td>
+	<td data-value="0" class="abs high">0/0</td>
+	<td data-value="0" class="pct low">0%</td>
+	<td data-value="1" class="abs low">0/1</td>
+	<td data-value="33.33" class="pct low">33.33%</td>
+	<td data-value="3" class="abs low">1/3</td>
+	</tr>
+
+<tr>
+	<td class="file low" data-value="observables.ts"><a href="observables.ts.html">observables.ts</a></td>
+	<td data-value="0" class="pic low">
+	<div class="chart"><div class="cover-fill" style="width: 0%"></div><div class="cover-empty" style="width: 100%"></div></div>
+	</td>
+	<td data-value="0" class="pct low">0%</td>
+	<td data-value="23" class="abs low">0/23</td>
+	<td data-value="100" class="pct high">100%</td>
+	<td data-value="0" class="abs high">0/0</td>
+	<td data-value="0" class="pct low">0%</td>
+	<td data-value="18" class="abs low">0/18</td>
+	<td data-value="0" class="pct low">0%</td>
+	<td data-value="19" class="abs low">0/19</td>
+	</tr>
+
+</tbody>
+</table>
+</div>
+                <div class='push'></div><!-- for sticky footer -->
+            </div><!-- /wrapper -->
+            <div class='footer quiet pad2 space-top1 center small'>
+                Code coverage generated by
+                <a href="https://istanbul.js.org/" target="_blank" rel="noopener noreferrer">istanbul</a>
+                at 2026-07-09T18:53:20.982Z
+            </div>
+        <script src="../../../../../prettify.js"></script>
+        <script>
+            window.onload = function () {
+                prettyPrint();
+            };
+        </script>
+        <script src="../../../../../sorter.js"></script>
+        <script src="../../../../../block-navigation.js"></script>
+    </body>
+</html>
+    

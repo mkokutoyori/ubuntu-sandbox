@@ -33,6 +33,8 @@ import {
 import { PSRegistryProvider, isRegistryPath } from './PSRegistryProvider';
 import { PSEventLogProvider, type EntryType } from './PSEventLogProvider';
 import type { VpnConnectionInfo } from '@/powershell/providers/PSProviders';
+import { parsePSArgs } from './psArgs';
+import { psAddVpnConnection, psGetVpnConnection, psSetVpnConnection, psRemoveVpnConnection } from './PSVpnCmdlets';
 import type { IEventBus } from '@/events/EventBus';
 
 // ─── Constants ────────────────────────────────────────────────────
@@ -2530,22 +2532,22 @@ export class PowerShellExecutor {
 
     // Add-VpnConnection
     if (cmdLower === 'add-vpnconnection') {
-      return this.handleAddVpnConnection(args);
+      return psAddVpnConnection({ vpnConnections: this.vpnConnections }, args);
     }
 
     // Get-VpnConnection
     if (cmdLower === 'get-vpnconnection') {
-      return this.handleGetVpnConnection(args);
+      return psGetVpnConnection({ vpnConnections: this.vpnConnections }, args);
     }
 
     // Set-VpnConnection
     if (cmdLower === 'set-vpnconnection') {
-      return this.handleSetVpnConnection(args);
+      return psSetVpnConnection({ vpnConnections: this.vpnConnections }, args);
     }
 
     // Remove-VpnConnection
     if (cmdLower === 'remove-vpnconnection') {
-      return this.handleRemoveVpnConnection(args);
+      return psRemoveVpnConnection({ vpnConnections: this.vpnConnections }, args);
     }
 
     // Clear-DnsClientCache
@@ -5145,71 +5147,6 @@ export class PowerShellExecutor {
 
   // ─── VPN Connection Management ──────────────────────────────────────
 
-  private handleAddVpnConnection(args: string[]): string {
-    const params = this.parsePSArgs(args);
-    const name = params.get('name')?.replace(/^["']|["']$/g, '') ?? '';
-    const serverAddress = params.get('serveraddress')?.replace(/^["']|["']$/g, '') ?? '';
-    const tunnelType = params.get('tunneltype')?.replace(/^["']|["']$/g, '') ?? 'Automatic';
-    const encryptionLevel = params.get('encryptionlevel')?.replace(/^["']|["']$/g, '') ?? 'Optional';
-    const authMethod = params.get('authenticationmethod')?.replace(/^["']|["']$/g, '') ?? 'MSChapv2';
-
-    if (!name) return `Add-VpnConnection : -Name is required.`;
-
-    this.vpnConnections.set(name.toLowerCase(), {
-      name, serverAddress, tunnelType, encryptionLevel, authMethod,
-      splitTunneling: false, destinationPrefixes: [], connectionStatus: 'Disconnected',
-    });
-    return '';
-  }
-
-  private handleGetVpnConnection(args: string[]): string {
-    const params = this.parsePSArgs(args);
-    const nameFilter = params.get('name')?.replace(/^["']|["']$/g, '').toLowerCase();
-
-    const results = nameFilter
-      ? Array.from(this.vpnConnections.values()).filter(v => v.name.toLowerCase() === nameFilter)
-      : Array.from(this.vpnConnections.values());
-
-    if (results.length === 0) {
-      if (nameFilter) return '';  // -ErrorAction SilentlyContinue
-      return '';
-    }
-
-    return results.map(v => [
-      `Name                  : ${v.name}`,
-      `ServerAddress         : ${v.serverAddress}`,
-      `TunnelType            : ${v.tunnelType}`,
-      `EncryptionLevel       : ${v.encryptionLevel}`,
-      `AuthenticationMethod  : ${v.authMethod}`,
-      `ConnectionStatus      : ${v.connectionStatus}`,
-    ].join('\n')).join('\n\n');
-  }
-
-  private handleSetVpnConnection(args: string[]): string {
-    const params = this.parsePSArgs(args);
-    const name = params.get('name')?.replace(/^["']|["']$/g, '') ?? '';
-    if (!name) return '';
-
-    const key = name.toLowerCase();
-    const existing = this.vpnConnections.get(key) ?? {
-      name, serverAddress: '', tunnelType: 'Automatic', encryptionLevel: 'Optional', authMethod: 'MSChapv2',
-      splitTunneling: false, destinationPrefixes: [], connectionStatus: 'Disconnected' as const,
-    };
-
-    if (params.has('serveraddress')) existing.serverAddress = params.get('serveraddress')!.replace(/^["']|["']$/g, '');
-    if (params.has('tunneltype')) existing.tunnelType = params.get('tunneltype')!.replace(/^["']|["']$/g, '');
-    if (params.has('encryptionlevel')) existing.encryptionLevel = params.get('encryptionlevel')!.replace(/^["']|["']$/g, '');
-    this.vpnConnections.set(key, existing);
-    return '';
-  }
-
-  private handleRemoveVpnConnection(args: string[]): string {
-    const params = this.parsePSArgs(args);
-    const name = params.get('name')?.replace(/^["']|["']$/g, '') ?? '';
-    this.vpnConnections.delete(name.toLowerCase());
-    return '';
-  }
-
   // ─── netsh winhttp ────────────────────────────────────────────────
   private handleNetshWinhttp(args: string[]): string {
     const sub = args[0]?.toLowerCase() ?? '';
@@ -5651,41 +5588,7 @@ export class PowerShellExecutor {
    * e.g. ['-Description', '"Updated', 'desc"'] → {description: 'Updated desc'}
    */
   private parsePSArgs(args: string[]): Map<string, string> {
-    // First: reassemble quoted tokens
-    const merged: string[] = [];
-    let buf = '';
-    let inQuote = false;
-    for (const tok of args) {
-      if (inQuote) {
-        buf += ' ' + tok;
-        if (tok.endsWith('"') || tok.endsWith("'")) {
-          inQuote = false;
-          merged.push(buf);
-          buf = '';
-        }
-      } else if ((tok.startsWith('"') && !tok.endsWith('"')) || (tok.startsWith("'") && !tok.endsWith("'"))) {
-        inQuote = true;
-        buf = tok;
-      } else {
-        merged.push(tok);
-      }
-    }
-    if (buf) merged.push(buf);
-
-    const result = new Map<string, string>();
-    const positional: string[] = [];
-    for (let i = 0; i < merged.length; i++) {
-      if (merged[i].startsWith('-') && i + 1 < merged.length && !merged[i + 1].startsWith('-')) {
-        result.set(merged[i].substring(1).toLowerCase(), merged[i + 1].replace(/^["']|["']$/g, ''));
-        i++;
-      } else if (merged[i].startsWith('-')) {
-        result.set(merged[i].substring(1).toLowerCase(), 'true');
-      } else {
-        positional.push(merged[i].replace(/^["']|["']$/g, ''));
-      }
-    }
-    if (positional.length > 0) result.set('_positional', positional[0]);
-    return result;
+    return parsePSArgs(args);
   }
 
   private handleGetLocalUser(args: string[]): string {

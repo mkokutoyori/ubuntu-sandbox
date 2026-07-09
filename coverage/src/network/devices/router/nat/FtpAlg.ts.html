@@ -1,0 +1,301 @@
+
+<!doctype html>
+<html lang="en">
+
+<head>
+    <title>Code coverage report for src/network/devices/router/nat/FtpAlg.ts</title>
+    <meta charset="utf-8" />
+    <link rel="stylesheet" href="../../../../../prettify.css" />
+    <link rel="stylesheet" href="../../../../../base.css" />
+    <link rel="shortcut icon" type="image/x-icon" href="../../../../../favicon.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <style type='text/css'>
+        .coverage-summary .sorter {
+            background-image: url(../../../../../sort-arrow-sprite.png);
+        }
+    </style>
+</head>
+    
+<body>
+<div class='wrapper'>
+    <div class='pad1'>
+        <h1><a href="../../../../../index.html">All files</a> / <a href="index.html">src/network/devices/router/nat</a> FtpAlg.ts</h1>
+        <div class='clearfix'>
+            
+            <div class='fl pad1y space-right2'>
+                <span class="strong">17.64% </span>
+                <span class="quiet">Statements</span>
+                <span class='fraction'>6/34</span>
+            </div>
+        
+            
+            <div class='fl pad1y space-right2'>
+                <span class="strong">0% </span>
+                <span class="quiet">Branches</span>
+                <span class='fraction'>0/24</span>
+            </div>
+        
+            
+            <div class='fl pad1y space-right2'>
+                <span class="strong">0% </span>
+                <span class="quiet">Functions</span>
+                <span class='fraction'>0/2</span>
+            </div>
+        
+            
+            <div class='fl pad1y space-right2'>
+                <span class="strong">22.22% </span>
+                <span class="quiet">Lines</span>
+                <span class='fraction'>6/27</span>
+            </div>
+        
+            
+        </div>
+        <p class="quiet">
+            Press <em>n</em> or <em>j</em> to go to the next uncovered block, <em>b</em>, <em>p</em> or <em>k</em> for the previous block.
+        </p>
+        <template id="filterTemplate">
+            <div class="quiet">
+                Filter:
+                <input type="search" id="fileSearch">
+            </div>
+        </template>
+    </div>
+    <div class='status-line low'></div>
+    <pre><table class="coverage">
+<tr><td class="line-count quiet"><a name='L1'></a><a href='#L1'>1</a>
+<a name='L2'></a><a href='#L2'>2</a>
+<a name='L3'></a><a href='#L3'>3</a>
+<a name='L4'></a><a href='#L4'>4</a>
+<a name='L5'></a><a href='#L5'>5</a>
+<a name='L6'></a><a href='#L6'>6</a>
+<a name='L7'></a><a href='#L7'>7</a>
+<a name='L8'></a><a href='#L8'>8</a>
+<a name='L9'></a><a href='#L9'>9</a>
+<a name='L10'></a><a href='#L10'>10</a>
+<a name='L11'></a><a href='#L11'>11</a>
+<a name='L12'></a><a href='#L12'>12</a>
+<a name='L13'></a><a href='#L13'>13</a>
+<a name='L14'></a><a href='#L14'>14</a>
+<a name='L15'></a><a href='#L15'>15</a>
+<a name='L16'></a><a href='#L16'>16</a>
+<a name='L17'></a><a href='#L17'>17</a>
+<a name='L18'></a><a href='#L18'>18</a>
+<a name='L19'></a><a href='#L19'>19</a>
+<a name='L20'></a><a href='#L20'>20</a>
+<a name='L21'></a><a href='#L21'>21</a>
+<a name='L22'></a><a href='#L22'>22</a>
+<a name='L23'></a><a href='#L23'>23</a>
+<a name='L24'></a><a href='#L24'>24</a>
+<a name='L25'></a><a href='#L25'>25</a>
+<a name='L26'></a><a href='#L26'>26</a>
+<a name='L27'></a><a href='#L27'>27</a>
+<a name='L28'></a><a href='#L28'>28</a>
+<a name='L29'></a><a href='#L29'>29</a>
+<a name='L30'></a><a href='#L30'>30</a>
+<a name='L31'></a><a href='#L31'>31</a>
+<a name='L32'></a><a href='#L32'>32</a>
+<a name='L33'></a><a href='#L33'>33</a>
+<a name='L34'></a><a href='#L34'>34</a>
+<a name='L35'></a><a href='#L35'>35</a>
+<a name='L36'></a><a href='#L36'>36</a>
+<a name='L37'></a><a href='#L37'>37</a>
+<a name='L38'></a><a href='#L38'>38</a>
+<a name='L39'></a><a href='#L39'>39</a>
+<a name='L40'></a><a href='#L40'>40</a>
+<a name='L41'></a><a href='#L41'>41</a>
+<a name='L42'></a><a href='#L42'>42</a>
+<a name='L43'></a><a href='#L43'>43</a>
+<a name='L44'></a><a href='#L44'>44</a>
+<a name='L45'></a><a href='#L45'>45</a>
+<a name='L46'></a><a href='#L46'>46</a>
+<a name='L47'></a><a href='#L47'>47</a>
+<a name='L48'></a><a href='#L48'>48</a>
+<a name='L49'></a><a href='#L49'>49</a>
+<a name='L50'></a><a href='#L50'>50</a>
+<a name='L51'></a><a href='#L51'>51</a>
+<a name='L52'></a><a href='#L52'>52</a>
+<a name='L53'></a><a href='#L53'>53</a>
+<a name='L54'></a><a href='#L54'>54</a>
+<a name='L55'></a><a href='#L55'>55</a>
+<a name='L56'></a><a href='#L56'>56</a>
+<a name='L57'></a><a href='#L57'>57</a>
+<a name='L58'></a><a href='#L58'>58</a>
+<a name='L59'></a><a href='#L59'>59</a>
+<a name='L60'></a><a href='#L60'>60</a>
+<a name='L61'></a><a href='#L61'>61</a>
+<a name='L62'></a><a href='#L62'>62</a>
+<a name='L63'></a><a href='#L63'>63</a>
+<a name='L64'></a><a href='#L64'>64</a>
+<a name='L65'></a><a href='#L65'>65</a>
+<a name='L66'></a><a href='#L66'>66</a>
+<a name='L67'></a><a href='#L67'>67</a>
+<a name='L68'></a><a href='#L68'>68</a>
+<a name='L69'></a><a href='#L69'>69</a>
+<a name='L70'></a><a href='#L70'>70</a>
+<a name='L71'></a><a href='#L71'>71</a>
+<a name='L72'></a><a href='#L72'>72</a>
+<a name='L73'></a><a href='#L73'>73</a></td><td class="line-coverage quiet"><span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span></td><td class="text"><pre class="prettyprint lang-js">/**
+ * FTP ALG (Application Layer Gateway) through NAT — PRD-FTP-SFTP.md
+ * §2.1.10. RFC 959's `PORT`/`PASV` embed an IPv4 address/port in the
+ * plaintext application payload, which NATEngine's IP/TCP header
+ * rewriting alone can't fix: a client behind NAT announcing its own
+ * inside address via `PORT` (or a server behind NAT announcing its own
+ * inside address in a `PASV`/`EPSV` `227`/`229` reply) would tell the
+ * peer to dial an address it can't actually reach. This module rewrites
+ * that embedded address/port to the NAT'd outside address whenever an
+ * outbound FTP control-channel packet carries one, and opens a matching
+ * dynamic pinhole (`NATEngine.openAlgPinhole()`) for the announced port
+ * so the data-channel connection that follows gets forwarded back to the
+ * real inside endpoint — exactly what `nat alg ftp enable` (Huawei) /
+ * `ip nat service ftp` (Cisco) do on a real router.
+ */
+import type { IPv4Packet, TCPPacket } from '@/network/core/types';
+import { IP_PROTO_TCP } from '@/network/core/types';
+import { decodePortArgument, encodePortArgument } from '@/network/ftp/DataChannel';
+import type { NATEngine } from '../NATEngine';
+&nbsp;
+const FTP_CONTROL_PORT = 21;
+const ALG_PORT_MIN = 40000;
+const ALG_PORT_MAX = 40999;
+let nextAlgPort = ALG_PORT_MIN;
+&nbsp;
+function <span class="fstat-no" title="function not covered" >allocateAlgPort(): number {</span>
+  const port = <span class="cstat-no" title="statement not covered" >nextAlgPort;</span>
+<span class="cstat-no" title="statement not covered" >  nextAlgPort = nextAlgPort &gt;= ALG_PORT_MAX ? ALG_PORT_MIN : nextAlgPort + 1;</span>
+<span class="cstat-no" title="statement not covered" >  return port;</span>
+}
+&nbsp;
+/** Matches a `PORT h1,h2,h3,h4,p1,p2` command line (CRLF-terminated, per replies.ts's codec). */
+const PORT_COMMAND_RE = /^PORT ([\d,]+)\r\n/i;
+/** Matches a `227 ...(h1,h2,h3,h4,p1,p2)...` PASV reply's first line (the only line for a single-line reply). */
+const PASV_REPLY_RE = /^227 [^(]*\(([\d,]+)\)/i;
+&nbsp;
+/**
+ * Inspects one outbound TCP packet already NAT-translated by
+ * `NATEngine.translateOutbound()`; if it's an FTP control-channel packet
+ * carrying `PORT`/`227`, rewrites the embedded address/port to
+ * `outsideIP`/a freshly allocated port and opens the matching pinhole.
+ * Returns `pkt` unchanged if there's nothing to rewrite.
+ */
+export function <span class="fstat-no" title="function not covered" >inspectAndRewriteFtpAlg(p</span>kt: IPv4Packet, natEngine: NATEngine, outsideIP: string): IPv4Packet {
+<span class="cstat-no" title="statement not covered" >  if (!natEngine.isAlgEnabled('ftp')) <span class="cstat-no" title="statement not covered" >return pkt;</span></span>
+<span class="cstat-no" title="statement not covered" >  if (pkt.protocol !== IP_PROTO_TCP) <span class="cstat-no" title="statement not covered" >return pkt;</span></span>
+  const tcp = <span class="cstat-no" title="statement not covered" >pkt.payload </span>as TCPPacket;
+<span class="cstat-no" title="statement not covered" >  if (!tcp || tcp.type !== 'tcp') <span class="cstat-no" title="statement not covered" >return pkt;</span></span>
+<span class="cstat-no" title="statement not covered" >  if (tcp.sourcePort !== FTP_CONTROL_PORT &amp;&amp; tcp.destinationPort !== FTP_CONTROL_PORT) <span class="cstat-no" title="statement not covered" >return pkt;</span></span>
+<span class="cstat-no" title="statement not covered" >  if (typeof tcp.payload !== 'string') <span class="cstat-no" title="statement not covered" >return pkt;</span></span>
+&nbsp;
+  const text = <span class="cstat-no" title="statement not covered" >tcp.payload;</span>
+  const portMatch = <span class="cstat-no" title="statement not covered" >PORT_COMMAND_RE.exec(text);</span>
+  const pasvMatch = <span class="cstat-no" title="statement not covered" >!portMatch ? PASV_REPLY_RE.exec(text) : null;</span>
+  const rawArg = <span class="cstat-no" title="statement not covered" >portMatch?.[1] ?? pasvMatch?.[1];</span>
+<span class="cstat-no" title="statement not covered" >  if (!rawArg) <span class="cstat-no" title="statement not covered" >return pkt;</span></span>
+&nbsp;
+  const <span class="cstat-no" title="statement not covered" >parsed = decodePortArgument(rawArg);</span>
+<span class="cstat-no" title="statement not covered" >  if (!parsed) <span class="cstat-no" title="statement not covered" >return pkt;</span></span>
+&nbsp;
+  const globalPort = <span class="cstat-no" title="statement not covered" >allocateAlgPort();</span>
+<span class="cstat-no" title="statement not covered" >  natEngine.openAlgPinhole({</span>
+    protocol: IP_PROTO_TCP,
+    insideIP: parsed.address, insidePort: parsed.port,
+    globalIP: outsideIP, globalPort,
+    outsideIP: pkt.destinationIP.toString(), outsidePort: tcp.destinationPort,
+  });
+&nbsp;
+  const <span class="cstat-no" title="statement not covered" >rewrittenArg = encodePortArgument(outsideIP, globalPort);</span>
+  const rewrittenText = <span class="cstat-no" title="statement not covered" >text.replace(rawArg, rewrittenArg);</span>
+<span class="cstat-no" title="statement not covered" >  return { ...pkt, payload: { ...tcp, payload: rewrittenText } };</span>
+}
+&nbsp;</pre></td></tr></table></pre>
+
+                <div class='push'></div><!-- for sticky footer -->
+            </div><!-- /wrapper -->
+            <div class='footer quiet pad2 space-top1 center small'>
+                Code coverage generated by
+                <a href="https://istanbul.js.org/" target="_blank" rel="noopener noreferrer">istanbul</a>
+                at 2026-07-09T18:53:20.982Z
+            </div>
+        <script src="../../../../../prettify.js"></script>
+        <script>
+            window.onload = function () {
+                prettyPrint();
+            };
+        </script>
+        <script src="../../../../../sorter.js"></script>
+        <script src="../../../../../block-navigation.js"></script>
+    </body>
+</html>
+    

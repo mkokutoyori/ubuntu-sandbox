@@ -1,0 +1,592 @@
+
+<!doctype html>
+<html lang="en">
+
+<head>
+    <title>Code coverage report for src/network/devices/router/aaa/AaaAuthenticator.ts</title>
+    <meta charset="utf-8" />
+    <link rel="stylesheet" href="../../../../../prettify.css" />
+    <link rel="stylesheet" href="../../../../../base.css" />
+    <link rel="shortcut icon" type="image/x-icon" href="../../../../../favicon.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <style type='text/css'>
+        .coverage-summary .sorter {
+            background-image: url(../../../../../sort-arrow-sprite.png);
+        }
+    </style>
+</head>
+    
+<body>
+<div class='wrapper'>
+    <div class='pad1'>
+        <h1><a href="../../../../../index.html">All files</a> / <a href="index.html">src/network/devices/router/aaa</a> AaaAuthenticator.ts</h1>
+        <div class='clearfix'>
+            
+            <div class='fl pad1y space-right2'>
+                <span class="strong">0% </span>
+                <span class="quiet">Statements</span>
+                <span class='fraction'>0/94</span>
+            </div>
+        
+            
+            <div class='fl pad1y space-right2'>
+                <span class="strong">0% </span>
+                <span class="quiet">Branches</span>
+                <span class='fraction'>0/72</span>
+            </div>
+        
+            
+            <div class='fl pad1y space-right2'>
+                <span class="strong">0% </span>
+                <span class="quiet">Functions</span>
+                <span class='fraction'>0/18</span>
+            </div>
+        
+            
+            <div class='fl pad1y space-right2'>
+                <span class="strong">0% </span>
+                <span class="quiet">Lines</span>
+                <span class='fraction'>0/76</span>
+            </div>
+        
+            
+        </div>
+        <p class="quiet">
+            Press <em>n</em> or <em>j</em> to go to the next uncovered block, <em>b</em>, <em>p</em> or <em>k</em> for the previous block.
+        </p>
+        <template id="filterTemplate">
+            <div class="quiet">
+                Filter:
+                <input type="search" id="fileSearch">
+            </div>
+        </template>
+    </div>
+    <div class='status-line low'></div>
+    <pre><table class="coverage">
+<tr><td class="line-count quiet"><a name='L1'></a><a href='#L1'>1</a>
+<a name='L2'></a><a href='#L2'>2</a>
+<a name='L3'></a><a href='#L3'>3</a>
+<a name='L4'></a><a href='#L4'>4</a>
+<a name='L5'></a><a href='#L5'>5</a>
+<a name='L6'></a><a href='#L6'>6</a>
+<a name='L7'></a><a href='#L7'>7</a>
+<a name='L8'></a><a href='#L8'>8</a>
+<a name='L9'></a><a href='#L9'>9</a>
+<a name='L10'></a><a href='#L10'>10</a>
+<a name='L11'></a><a href='#L11'>11</a>
+<a name='L12'></a><a href='#L12'>12</a>
+<a name='L13'></a><a href='#L13'>13</a>
+<a name='L14'></a><a href='#L14'>14</a>
+<a name='L15'></a><a href='#L15'>15</a>
+<a name='L16'></a><a href='#L16'>16</a>
+<a name='L17'></a><a href='#L17'>17</a>
+<a name='L18'></a><a href='#L18'>18</a>
+<a name='L19'></a><a href='#L19'>19</a>
+<a name='L20'></a><a href='#L20'>20</a>
+<a name='L21'></a><a href='#L21'>21</a>
+<a name='L22'></a><a href='#L22'>22</a>
+<a name='L23'></a><a href='#L23'>23</a>
+<a name='L24'></a><a href='#L24'>24</a>
+<a name='L25'></a><a href='#L25'>25</a>
+<a name='L26'></a><a href='#L26'>26</a>
+<a name='L27'></a><a href='#L27'>27</a>
+<a name='L28'></a><a href='#L28'>28</a>
+<a name='L29'></a><a href='#L29'>29</a>
+<a name='L30'></a><a href='#L30'>30</a>
+<a name='L31'></a><a href='#L31'>31</a>
+<a name='L32'></a><a href='#L32'>32</a>
+<a name='L33'></a><a href='#L33'>33</a>
+<a name='L34'></a><a href='#L34'>34</a>
+<a name='L35'></a><a href='#L35'>35</a>
+<a name='L36'></a><a href='#L36'>36</a>
+<a name='L37'></a><a href='#L37'>37</a>
+<a name='L38'></a><a href='#L38'>38</a>
+<a name='L39'></a><a href='#L39'>39</a>
+<a name='L40'></a><a href='#L40'>40</a>
+<a name='L41'></a><a href='#L41'>41</a>
+<a name='L42'></a><a href='#L42'>42</a>
+<a name='L43'></a><a href='#L43'>43</a>
+<a name='L44'></a><a href='#L44'>44</a>
+<a name='L45'></a><a href='#L45'>45</a>
+<a name='L46'></a><a href='#L46'>46</a>
+<a name='L47'></a><a href='#L47'>47</a>
+<a name='L48'></a><a href='#L48'>48</a>
+<a name='L49'></a><a href='#L49'>49</a>
+<a name='L50'></a><a href='#L50'>50</a>
+<a name='L51'></a><a href='#L51'>51</a>
+<a name='L52'></a><a href='#L52'>52</a>
+<a name='L53'></a><a href='#L53'>53</a>
+<a name='L54'></a><a href='#L54'>54</a>
+<a name='L55'></a><a href='#L55'>55</a>
+<a name='L56'></a><a href='#L56'>56</a>
+<a name='L57'></a><a href='#L57'>57</a>
+<a name='L58'></a><a href='#L58'>58</a>
+<a name='L59'></a><a href='#L59'>59</a>
+<a name='L60'></a><a href='#L60'>60</a>
+<a name='L61'></a><a href='#L61'>61</a>
+<a name='L62'></a><a href='#L62'>62</a>
+<a name='L63'></a><a href='#L63'>63</a>
+<a name='L64'></a><a href='#L64'>64</a>
+<a name='L65'></a><a href='#L65'>65</a>
+<a name='L66'></a><a href='#L66'>66</a>
+<a name='L67'></a><a href='#L67'>67</a>
+<a name='L68'></a><a href='#L68'>68</a>
+<a name='L69'></a><a href='#L69'>69</a>
+<a name='L70'></a><a href='#L70'>70</a>
+<a name='L71'></a><a href='#L71'>71</a>
+<a name='L72'></a><a href='#L72'>72</a>
+<a name='L73'></a><a href='#L73'>73</a>
+<a name='L74'></a><a href='#L74'>74</a>
+<a name='L75'></a><a href='#L75'>75</a>
+<a name='L76'></a><a href='#L76'>76</a>
+<a name='L77'></a><a href='#L77'>77</a>
+<a name='L78'></a><a href='#L78'>78</a>
+<a name='L79'></a><a href='#L79'>79</a>
+<a name='L80'></a><a href='#L80'>80</a>
+<a name='L81'></a><a href='#L81'>81</a>
+<a name='L82'></a><a href='#L82'>82</a>
+<a name='L83'></a><a href='#L83'>83</a>
+<a name='L84'></a><a href='#L84'>84</a>
+<a name='L85'></a><a href='#L85'>85</a>
+<a name='L86'></a><a href='#L86'>86</a>
+<a name='L87'></a><a href='#L87'>87</a>
+<a name='L88'></a><a href='#L88'>88</a>
+<a name='L89'></a><a href='#L89'>89</a>
+<a name='L90'></a><a href='#L90'>90</a>
+<a name='L91'></a><a href='#L91'>91</a>
+<a name='L92'></a><a href='#L92'>92</a>
+<a name='L93'></a><a href='#L93'>93</a>
+<a name='L94'></a><a href='#L94'>94</a>
+<a name='L95'></a><a href='#L95'>95</a>
+<a name='L96'></a><a href='#L96'>96</a>
+<a name='L97'></a><a href='#L97'>97</a>
+<a name='L98'></a><a href='#L98'>98</a>
+<a name='L99'></a><a href='#L99'>99</a>
+<a name='L100'></a><a href='#L100'>100</a>
+<a name='L101'></a><a href='#L101'>101</a>
+<a name='L102'></a><a href='#L102'>102</a>
+<a name='L103'></a><a href='#L103'>103</a>
+<a name='L104'></a><a href='#L104'>104</a>
+<a name='L105'></a><a href='#L105'>105</a>
+<a name='L106'></a><a href='#L106'>106</a>
+<a name='L107'></a><a href='#L107'>107</a>
+<a name='L108'></a><a href='#L108'>108</a>
+<a name='L109'></a><a href='#L109'>109</a>
+<a name='L110'></a><a href='#L110'>110</a>
+<a name='L111'></a><a href='#L111'>111</a>
+<a name='L112'></a><a href='#L112'>112</a>
+<a name='L113'></a><a href='#L113'>113</a>
+<a name='L114'></a><a href='#L114'>114</a>
+<a name='L115'></a><a href='#L115'>115</a>
+<a name='L116'></a><a href='#L116'>116</a>
+<a name='L117'></a><a href='#L117'>117</a>
+<a name='L118'></a><a href='#L118'>118</a>
+<a name='L119'></a><a href='#L119'>119</a>
+<a name='L120'></a><a href='#L120'>120</a>
+<a name='L121'></a><a href='#L121'>121</a>
+<a name='L122'></a><a href='#L122'>122</a>
+<a name='L123'></a><a href='#L123'>123</a>
+<a name='L124'></a><a href='#L124'>124</a>
+<a name='L125'></a><a href='#L125'>125</a>
+<a name='L126'></a><a href='#L126'>126</a>
+<a name='L127'></a><a href='#L127'>127</a>
+<a name='L128'></a><a href='#L128'>128</a>
+<a name='L129'></a><a href='#L129'>129</a>
+<a name='L130'></a><a href='#L130'>130</a>
+<a name='L131'></a><a href='#L131'>131</a>
+<a name='L132'></a><a href='#L132'>132</a>
+<a name='L133'></a><a href='#L133'>133</a>
+<a name='L134'></a><a href='#L134'>134</a>
+<a name='L135'></a><a href='#L135'>135</a>
+<a name='L136'></a><a href='#L136'>136</a>
+<a name='L137'></a><a href='#L137'>137</a>
+<a name='L138'></a><a href='#L138'>138</a>
+<a name='L139'></a><a href='#L139'>139</a>
+<a name='L140'></a><a href='#L140'>140</a>
+<a name='L141'></a><a href='#L141'>141</a>
+<a name='L142'></a><a href='#L142'>142</a>
+<a name='L143'></a><a href='#L143'>143</a>
+<a name='L144'></a><a href='#L144'>144</a>
+<a name='L145'></a><a href='#L145'>145</a>
+<a name='L146'></a><a href='#L146'>146</a>
+<a name='L147'></a><a href='#L147'>147</a>
+<a name='L148'></a><a href='#L148'>148</a>
+<a name='L149'></a><a href='#L149'>149</a>
+<a name='L150'></a><a href='#L150'>150</a>
+<a name='L151'></a><a href='#L151'>151</a>
+<a name='L152'></a><a href='#L152'>152</a>
+<a name='L153'></a><a href='#L153'>153</a>
+<a name='L154'></a><a href='#L154'>154</a>
+<a name='L155'></a><a href='#L155'>155</a>
+<a name='L156'></a><a href='#L156'>156</a>
+<a name='L157'></a><a href='#L157'>157</a>
+<a name='L158'></a><a href='#L158'>158</a>
+<a name='L159'></a><a href='#L159'>159</a>
+<a name='L160'></a><a href='#L160'>160</a>
+<a name='L161'></a><a href='#L161'>161</a>
+<a name='L162'></a><a href='#L162'>162</a>
+<a name='L163'></a><a href='#L163'>163</a>
+<a name='L164'></a><a href='#L164'>164</a>
+<a name='L165'></a><a href='#L165'>165</a>
+<a name='L166'></a><a href='#L166'>166</a>
+<a name='L167'></a><a href='#L167'>167</a>
+<a name='L168'></a><a href='#L168'>168</a>
+<a name='L169'></a><a href='#L169'>169</a>
+<a name='L170'></a><a href='#L170'>170</a></td><td class="line-coverage quiet"><span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span></td><td class="text"><pre class="prettyprint lang-js">import type { Router } from '../../Router';
+import { getSecurityConfig } from '../../shells/cisco/CiscoSecurityCommands';
+import type { AaaMethodEntry, AaaServerGroup, CiscoSecurityConfig, RadiusServer, TacacsServer } from '../security/CiscoSecurityConfig';
+import type { RadiusClientAgent } from '../../../radius/RadiusClientAgent';
+import type { TacacsClientAgent } from '../../../tacacs/TacacsClientAgent';
+&nbsp;
+export interface AaaAuthenticationOutcome {
+  accepted: boolean;
+  method: string;
+  listName: string;
+}
+&nbsp;
+type MethodVerdict = 'accept' | 'reject' | 'continue';
+&nbsp;
+interface AaaCapableRouter {
+  getRadiusClient?(): RadiusClientAgent;
+  getTacacsClient?(): TacacsClientAgent;
+}
+&nbsp;
+interface VtyLineSnapshot {
+  loginMode: string;
+  aaaAuthenticationList: string | null;
+  password: string | null;
+}
+&nbsp;
+interface VtyLineConfigStoreLike {
+  all(): readonly VtyLineSnapshot[];
+}
+&nbsp;
+function <span class="fstat-no" title="function not covered" >radiusClientOf(r</span>outer: Router): RadiusClientAgent | undefined {
+<span class="cstat-no" title="statement not covered" >  return (router as unknown as AaaCapableRouter).getRadiusClient?.();</span>
+}
+&nbsp;
+function <span class="fstat-no" title="function not covered" >tacacsClientOf(r</span>outer: Router): TacacsClientAgent | undefined {
+<span class="cstat-no" title="statement not covered" >  return (router as unknown as AaaCapableRouter).getTacacsClient?.();</span>
+}
+&nbsp;
+function <span class="fstat-no" title="function not covered" >vtyStoreOf(r</span>outer: Router): VtyLineConfigStoreLike | undefined {
+<span class="cstat-no" title="statement not covered" >  return (router as unknown as { _getVtyLineConfig?: () =&gt; VtyLineConfigStoreLike })._getVtyLineConfig?.();</span>
+}
+&nbsp;
+export class AaaAuthenticator {
+<span class="fstat-no" title="function not covered" >  constructor(p</span>rivate readonly <span class="cstat-no" title="statement not covered" >router: Router)</span> {}
+&nbsp;
+  async <span class="fstat-no" title="function not covered" >authenticate(u</span>sername: string, password: string, methodListName?: string): Promise&lt;AaaAuthenticationOutcome&gt; {
+    const <span class="cstat-no" title="statement not covered" >sec = getSecurityConfig(this.router);</span>
+<span class="cstat-no" title="statement not covered" >    if (!sec.aaaNewModel) {</span>
+<span class="cstat-no" title="statement not covered" >      return { accepted: this.localAuthenticate(username, password), method: 'local', listName: 'default' };</span>
+    }
+    const wanted = <span class="cstat-no" title="statement not covered" >methodListName ?? this.activeAuthenticationListName();</span>
+    const entry = <span class="cstat-no" title="statement not covered" >this.resolveMethodList(sec, wanted);</span>
+<span class="cstat-no" title="statement not covered" >    if (!entry) {</span>
+<span class="cstat-no" title="statement not covered" >      return { accepted: this.localAuthenticate(username, password), method: 'local', listName: wanted };</span>
+    }
+    const result = <span class="cstat-no" title="statement not covered" >await this.runMethodChain(sec, entry.methods, username, password);</span>
+<span class="cstat-no" title="statement not covered" >    return { accepted: result.accepted, method: result.method, listName: entry.listName };</span>
+  }
+&nbsp;
+  private <span class="fstat-no" title="function not covered" >resolveMethodList(s</span>ec: CiscoSecurityConfig, wanted: string): AaaMethodEntry | undefined {
+    const lists = <span class="cstat-no" title="statement not covered" >sec.aaaMethods.filter(<span class="fstat-no" title="function not covered" >(m</span>) =&gt; <span class="cstat-no" title="statement not covered" >m.phase === 'authentication' &amp;&amp; m.service === 'login');</span></span>
+<span class="cstat-no" title="statement not covered" >    return lists.find(<span class="fstat-no" title="function not covered" >(m</span>) =&gt; <span class="cstat-no" title="statement not covered" >m.listName === wanted) ?? l</span>ists.find(<span class="fstat-no" title="function not covered" >(m</span>) =&gt; <span class="cstat-no" title="statement not covered" >m.listName === 'default');</span></span>
+  }
+&nbsp;
+  private <span class="fstat-no" title="function not covered" >activeAuthenticationListName(): string {</span>
+    const store = <span class="cstat-no" title="statement not covered" >vtyStoreOf(this.router);</span>
+<span class="cstat-no" title="statement not covered" >    if (store) {</span>
+<span class="cstat-no" title="statement not covered" >      for (const line of store.all()) {</span>
+<span class="cstat-no" title="statement not covered" >        if (line.loginMode === 'aaa' &amp;&amp; line.aaaAuthenticationList) <span class="cstat-no" title="statement not covered" >return line.aaaAuthenticationList;</span></span>
+      }
+    }
+<span class="cstat-no" title="statement not covered" >    return 'default';</span>
+  }
+&nbsp;
+  private <span class="fstat-no" title="function not covered" >activeLinePassword(): string | null {</span>
+    const store = <span class="cstat-no" title="statement not covered" >vtyStoreOf(this.router);</span>
+<span class="cstat-no" title="statement not covered" >    if (!store) <span class="cstat-no" title="statement not covered" >return null;</span></span>
+<span class="cstat-no" title="statement not covered" >    for (const line of store.all()) {</span>
+<span class="cstat-no" title="statement not covered" >      if (line.password !== null) <span class="cstat-no" title="statement not covered" >return line.password;</span></span>
+    }
+<span class="cstat-no" title="statement not covered" >    return null;</span>
+  }
+&nbsp;
+  private async <span class="fstat-no" title="function not covered" >runMethodChain(s</span>ec: CiscoSecurityConfig, methods: string[], username: string, password: string): Promise&lt;{ accepted: boolean; method: string }&gt; {
+    let i = <span class="cstat-no" title="statement not covered" >0;</span>
+<span class="cstat-no" title="statement not covered" >    while (i &lt; methods.length) {</span>
+      const token = <span class="cstat-no" title="statement not covered" >methods[i];</span>
+<span class="cstat-no" title="statement not covered" >      if (token === 'group') {</span>
+        const groupName = <span class="cstat-no" title="statement not covered" >methods[i + 1];</span>
+<span class="cstat-no" title="statement not covered" >        i += 2;</span>
+        const verdict = <span class="cstat-no" title="statement not covered" >await this.tryGroup(sec, groupName, username, password);</span>
+<span class="cstat-no" title="statement not covered" >        if (verdict === 'accept') <span class="cstat-no" title="statement not covered" >return { accepted: true, method: `group ${groupName}` };</span></span>
+<span class="cstat-no" title="statement not covered" >        if (verdict === 'reject') <span class="cstat-no" title="statement not covered" >return { accepted: false, method: `group ${groupName}` };</span></span>
+<span class="cstat-no" title="statement not covered" >        continue;</span>
+      }
+<span class="cstat-no" title="statement not covered" >      i += 1;</span>
+<span class="cstat-no" title="statement not covered" >      if (token === 'local' || token === 'local-case') {</span>
+<span class="cstat-no" title="statement not covered" >        return { accepted: this.localAuthenticate(username, password), method: token };</span>
+      }
+<span class="cstat-no" title="statement not covered" >      if (token === 'enable') {</span>
+        const secret = <span class="cstat-no" title="statement not covered" >this.router.getEnableSecret();</span>
+<span class="cstat-no" title="statement not covered" >        return { accepted: secret !== null &amp;&amp; password.length &gt; 0 &amp;&amp; secret.value === password, method: 'enable' };</span>
+      }
+<span class="cstat-no" title="statement not covered" >      if (token === 'line') {</span>
+        const linePassword = <span class="cstat-no" title="statement not covered" >this.activeLinePassword();</span>
+<span class="cstat-no" title="statement not covered" >        return { accepted: linePassword !== null &amp;&amp; password.length &gt; 0 &amp;&amp; linePassword === password, method: 'line' };</span>
+      }
+<span class="cstat-no" title="statement not covered" >      if (token === 'none') {</span>
+<span class="cstat-no" title="statement not covered" >        return { accepted: true, method: 'none' };</span>
+      }
+    }
+<span class="cstat-no" title="statement not covered" >    return { accepted: false, method: 'exhausted' };</span>
+  }
+&nbsp;
+  private async <span class="fstat-no" title="function not covered" >tryGroup(s</span>ec: CiscoSecurityConfig, groupName: string | undefined, username: string, password: string): Promise&lt;MethodVerdict&gt; {
+<span class="cstat-no" title="statement not covered" >    if (!groupName) <span class="cstat-no" title="statement not covered" >return 'continue';</span></span>
+    const group = <span class="cstat-no" title="statement not covered" >sec.aaaGroups.get(groupName);</span>
+<span class="cstat-no" title="statement not covered" >    if (!group) <span class="cstat-no" title="statement not covered" >return 'continue';</span></span>
+<span class="cstat-no" title="statement not covered" >    if (group.kind === 'radius') <span class="cstat-no" title="statement not covered" >return this.tryRadiusGroup(sec, group, username, password);</span></span>
+<span class="cstat-no" title="statement not covered" >    return this.tryTacacsGroup(sec, group, username, password);</span>
+  }
+&nbsp;
+  private async <span class="fstat-no" title="function not covered" >tryRadiusGroup(s</span>ec: CiscoSecurityConfig, group: AaaServerGroup, username: string, password: string): Promise&lt;MethodVerdict&gt; {
+    const client = <span class="cstat-no" title="statement not covered" >radiusClientOf(this.router);</span>
+<span class="cstat-no" title="statement not covered" >    if (!client) <span class="cstat-no" title="statement not covered" >return 'continue';</span></span>
+    let reachable = <span class="cstat-no" title="statement not covered" >false;</span>
+<span class="cstat-no" title="statement not covered" >    for (const memberName of group.members) {</span>
+      const server = <span class="cstat-no" title="statement not covered" >sec.radiusServers.get(memberName);</span>
+<span class="cstat-no" title="statement not covered" >      if (!server || !server.address) <span class="cstat-no" title="statement not covered" >continue;</span></span>
+<span class="cstat-no" title="statement not covered" >      reachable = true;</span>
+<span class="cstat-no" title="statement not covered" >      this.syncRadiusServer(client, server);</span>
+      const accepted = <span class="cstat-no" title="statement not covered" >await client.authenticate(username, password, server.address);</span>
+<span class="cstat-no" title="statement not covered" >      if (accepted) <span class="cstat-no" title="statement not covered" >return 'accept';</span></span>
+    }
+<span class="cstat-no" title="statement not covered" >    return reachable ? 'reject' : 'continue';</span>
+  }
+&nbsp;
+  private async <span class="fstat-no" title="function not covered" >tryTacacsGroup(s</span>ec: CiscoSecurityConfig, group: AaaServerGroup, username: string, password: string): Promise&lt;MethodVerdict&gt; {
+    const client = <span class="cstat-no" title="statement not covered" >tacacsClientOf(this.router);</span>
+<span class="cstat-no" title="statement not covered" >    if (!client) <span class="cstat-no" title="statement not covered" >return 'continue';</span></span>
+<span class="cstat-no" title="statement not covered" >    for (const memberName of group.members) {</span>
+      const server = <span class="cstat-no" title="statement not covered" >sec.tacacsServers.get(memberName);</span>
+<span class="cstat-no" title="statement not covered" >      if (!server || !server.address) <span class="cstat-no" title="statement not covered" >continue;</span></span>
+<span class="cstat-no" title="statement not covered" >      this.syncTacacsServer(client, server);</span>
+      const result = <span class="cstat-no" title="statement not covered" >await client.authenticate(username, password, server.address);</span>
+<span class="cstat-no" title="statement not covered" >      if (result.status === 'pass') <span class="cstat-no" title="statement not covered" >return 'accept';</span></span>
+<span class="cstat-no" title="statement not covered" >      if (result.status === 'fail') <span class="cstat-no" title="statement not covered" >return 'reject';</span></span>
+    }
+<span class="cstat-no" title="statement not covered" >    return 'continue';</span>
+  }
+&nbsp;
+  private <span class="fstat-no" title="function not covered" >syncRadiusServer(c</span>lient: RadiusClientAgent, server: RadiusServer): void {
+<span class="cstat-no" title="statement not covered" >    client.addServer(server.address as string, server.key ?? '', {</span>
+      port: server.authPort,
+      timeoutMs: server.timeoutSec * 1000,
+      retransmit: server.retransmit,
+    });
+  }
+&nbsp;
+  private <span class="fstat-no" title="function not covered" >syncTacacsServer(c</span>lient: TacacsClientAgent, server: TacacsServer): void {
+<span class="cstat-no" title="statement not covered" >    client.addServer(server.address as string, server.key ?? '', {</span>
+      port: server.port,
+      timeoutMs: server.timeoutSec * 1000,
+    });
+  }
+&nbsp;
+  private <span class="fstat-no" title="function not covered" >localAuthenticate(u</span>sername: string, password: string): boolean {
+<span class="cstat-no" title="statement not covered" >    return this.router.getCredentialStore().authenticate(username, password);</span>
+  }
+}
+&nbsp;</pre></td></tr></table></pre>
+
+                <div class='push'></div><!-- for sticky footer -->
+            </div><!-- /wrapper -->
+            <div class='footer quiet pad2 space-top1 center small'>
+                Code coverage generated by
+                <a href="https://istanbul.js.org/" target="_blank" rel="noopener noreferrer">istanbul</a>
+                at 2026-07-09T18:53:22.168Z
+            </div>
+        <script src="../../../../../prettify.js"></script>
+        <script>
+            window.onload = function () {
+                prettyPrint();
+            };
+        </script>
+        <script src="../../../../../sorter.js"></script>
+        <script src="../../../../../block-navigation.js"></script>
+    </body>
+</html>
+    

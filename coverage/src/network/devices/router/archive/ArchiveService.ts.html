@@ -1,0 +1,355 @@
+
+<!doctype html>
+<html lang="en">
+
+<head>
+    <title>Code coverage report for src/network/devices/router/archive/ArchiveService.ts</title>
+    <meta charset="utf-8" />
+    <link rel="stylesheet" href="../../../../../prettify.css" />
+    <link rel="stylesheet" href="../../../../../base.css" />
+    <link rel="shortcut icon" type="image/x-icon" href="../../../../../favicon.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <style type='text/css'>
+        .coverage-summary .sorter {
+            background-image: url(../../../../../sort-arrow-sprite.png);
+        }
+    </style>
+</head>
+    
+<body>
+<div class='wrapper'>
+    <div class='pad1'>
+        <h1><a href="../../../../../index.html">All files</a> / <a href="index.html">src/network/devices/router/archive</a> ArchiveService.ts</h1>
+        <div class='clearfix'>
+            
+            <div class='fl pad1y space-right2'>
+                <span class="strong">0% </span>
+                <span class="quiet">Statements</span>
+                <span class='fraction'>0/54</span>
+            </div>
+        
+            
+            <div class='fl pad1y space-right2'>
+                <span class="strong">0% </span>
+                <span class="quiet">Branches</span>
+                <span class='fraction'>0/30</span>
+            </div>
+        
+            
+            <div class='fl pad1y space-right2'>
+                <span class="strong">0% </span>
+                <span class="quiet">Functions</span>
+                <span class='fraction'>0/16</span>
+            </div>
+        
+            
+            <div class='fl pad1y space-right2'>
+                <span class="strong">0% </span>
+                <span class="quiet">Lines</span>
+                <span class='fraction'>0/42</span>
+            </div>
+        
+            
+        </div>
+        <p class="quiet">
+            Press <em>n</em> or <em>j</em> to go to the next uncovered block, <em>b</em>, <em>p</em> or <em>k</em> for the previous block.
+        </p>
+        <template id="filterTemplate">
+            <div class="quiet">
+                Filter:
+                <input type="search" id="fileSearch">
+            </div>
+        </template>
+    </div>
+    <div class='status-line low'></div>
+    <pre><table class="coverage">
+<tr><td class="line-count quiet"><a name='L1'></a><a href='#L1'>1</a>
+<a name='L2'></a><a href='#L2'>2</a>
+<a name='L3'></a><a href='#L3'>3</a>
+<a name='L4'></a><a href='#L4'>4</a>
+<a name='L5'></a><a href='#L5'>5</a>
+<a name='L6'></a><a href='#L6'>6</a>
+<a name='L7'></a><a href='#L7'>7</a>
+<a name='L8'></a><a href='#L8'>8</a>
+<a name='L9'></a><a href='#L9'>9</a>
+<a name='L10'></a><a href='#L10'>10</a>
+<a name='L11'></a><a href='#L11'>11</a>
+<a name='L12'></a><a href='#L12'>12</a>
+<a name='L13'></a><a href='#L13'>13</a>
+<a name='L14'></a><a href='#L14'>14</a>
+<a name='L15'></a><a href='#L15'>15</a>
+<a name='L16'></a><a href='#L16'>16</a>
+<a name='L17'></a><a href='#L17'>17</a>
+<a name='L18'></a><a href='#L18'>18</a>
+<a name='L19'></a><a href='#L19'>19</a>
+<a name='L20'></a><a href='#L20'>20</a>
+<a name='L21'></a><a href='#L21'>21</a>
+<a name='L22'></a><a href='#L22'>22</a>
+<a name='L23'></a><a href='#L23'>23</a>
+<a name='L24'></a><a href='#L24'>24</a>
+<a name='L25'></a><a href='#L25'>25</a>
+<a name='L26'></a><a href='#L26'>26</a>
+<a name='L27'></a><a href='#L27'>27</a>
+<a name='L28'></a><a href='#L28'>28</a>
+<a name='L29'></a><a href='#L29'>29</a>
+<a name='L30'></a><a href='#L30'>30</a>
+<a name='L31'></a><a href='#L31'>31</a>
+<a name='L32'></a><a href='#L32'>32</a>
+<a name='L33'></a><a href='#L33'>33</a>
+<a name='L34'></a><a href='#L34'>34</a>
+<a name='L35'></a><a href='#L35'>35</a>
+<a name='L36'></a><a href='#L36'>36</a>
+<a name='L37'></a><a href='#L37'>37</a>
+<a name='L38'></a><a href='#L38'>38</a>
+<a name='L39'></a><a href='#L39'>39</a>
+<a name='L40'></a><a href='#L40'>40</a>
+<a name='L41'></a><a href='#L41'>41</a>
+<a name='L42'></a><a href='#L42'>42</a>
+<a name='L43'></a><a href='#L43'>43</a>
+<a name='L44'></a><a href='#L44'>44</a>
+<a name='L45'></a><a href='#L45'>45</a>
+<a name='L46'></a><a href='#L46'>46</a>
+<a name='L47'></a><a href='#L47'>47</a>
+<a name='L48'></a><a href='#L48'>48</a>
+<a name='L49'></a><a href='#L49'>49</a>
+<a name='L50'></a><a href='#L50'>50</a>
+<a name='L51'></a><a href='#L51'>51</a>
+<a name='L52'></a><a href='#L52'>52</a>
+<a name='L53'></a><a href='#L53'>53</a>
+<a name='L54'></a><a href='#L54'>54</a>
+<a name='L55'></a><a href='#L55'>55</a>
+<a name='L56'></a><a href='#L56'>56</a>
+<a name='L57'></a><a href='#L57'>57</a>
+<a name='L58'></a><a href='#L58'>58</a>
+<a name='L59'></a><a href='#L59'>59</a>
+<a name='L60'></a><a href='#L60'>60</a>
+<a name='L61'></a><a href='#L61'>61</a>
+<a name='L62'></a><a href='#L62'>62</a>
+<a name='L63'></a><a href='#L63'>63</a>
+<a name='L64'></a><a href='#L64'>64</a>
+<a name='L65'></a><a href='#L65'>65</a>
+<a name='L66'></a><a href='#L66'>66</a>
+<a name='L67'></a><a href='#L67'>67</a>
+<a name='L68'></a><a href='#L68'>68</a>
+<a name='L69'></a><a href='#L69'>69</a>
+<a name='L70'></a><a href='#L70'>70</a>
+<a name='L71'></a><a href='#L71'>71</a>
+<a name='L72'></a><a href='#L72'>72</a>
+<a name='L73'></a><a href='#L73'>73</a>
+<a name='L74'></a><a href='#L74'>74</a>
+<a name='L75'></a><a href='#L75'>75</a>
+<a name='L76'></a><a href='#L76'>76</a>
+<a name='L77'></a><a href='#L77'>77</a>
+<a name='L78'></a><a href='#L78'>78</a>
+<a name='L79'></a><a href='#L79'>79</a>
+<a name='L80'></a><a href='#L80'>80</a>
+<a name='L81'></a><a href='#L81'>81</a>
+<a name='L82'></a><a href='#L82'>82</a>
+<a name='L83'></a><a href='#L83'>83</a>
+<a name='L84'></a><a href='#L84'>84</a>
+<a name='L85'></a><a href='#L85'>85</a>
+<a name='L86'></a><a href='#L86'>86</a>
+<a name='L87'></a><a href='#L87'>87</a>
+<a name='L88'></a><a href='#L88'>88</a>
+<a name='L89'></a><a href='#L89'>89</a>
+<a name='L90'></a><a href='#L90'>90</a>
+<a name='L91'></a><a href='#L91'>91</a></td><td class="line-coverage quiet"><span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span></td><td class="text"><pre class="prettyprint lang-js">export interface ArchivePath {
+  path: string;
+  timePeriodMin?: number;
+  maximumVersions?: number;
+  writeMemory?: boolean;
+}
+&nbsp;
+export interface ArchiveConfigLogger {
+  enabled: boolean;
+  logging: boolean;
+  hidekeys: boolean;
+  notifySyslogContent?: 'plaintext' | 'xml';
+}
+&nbsp;
+export interface ArchivedRevision {
+  index: number;
+  capturedAtMs: number;
+  source: 'manual' | 'auto-time' | 'auto-write-memory';
+  bytes: number;
+  path: string;
+}
+&nbsp;
+export class ArchiveService {
+<span class="cstat-no" title="statement not covered" >  private archivePath: ArchivePath = { path: '' };</span>
+<span class="cstat-no" title="statement not covered" >  private configLogger: ArchiveConfigLogger = { enabled: false, logging: false, hidekeys: false };</span>
+<span class="cstat-no" title="statement not covered" >  private readonly revisions: ArchivedRevision[] = [];</span>
+<span class="cstat-no" title="statement not covered" >  private revisionCounter = 0;</span>
+&nbsp;
+<span class="fstat-no" title="function not covered" >  setPath(p</span>ath: string): void { <span class="cstat-no" title="statement not covered" >this.archivePath.path = path; }</span>
+<span class="fstat-no" title="function not covered" >  setTimePeriod(m</span>in: number): void { <span class="cstat-no" title="statement not covered" >this.archivePath.timePeriodMin = min; }</span>
+<span class="fstat-no" title="function not covered" >  setMaximum(n</span>: number): void { <span class="cstat-no" title="statement not covered" >this.archivePath.maximumVersions = n; }</span>
+<span class="fstat-no" title="function not covered" >  setWriteMemory(o</span>n: boolean): void { <span class="cstat-no" title="statement not covered" >this.archivePath.writeMemory = on; }</span>
+<span class="fstat-no" title="function not covered" >  getPath(): Readonly&lt;ArchivePath&gt; {</span> <span class="cstat-no" title="statement not covered" >return this.archivePath; }</span>
+&nbsp;
+<span class="fstat-no" title="function not covered" >  enableLogging(): void {</span> <span class="cstat-no" title="statement not covered" >this.configLogger.enabled = true; <span class="cstat-no" title="statement not covered" >t</span>his.configLogger.logging = true; }</span>
+<span class="fstat-no" title="function not covered" >  disableLogging(): void {</span> <span class="cstat-no" title="statement not covered" >this.configLogger.logging = false; }</span>
+<span class="fstat-no" title="function not covered" >  setHidekeys(o</span>n: boolean): void { <span class="cstat-no" title="statement not covered" >this.configLogger.hidekeys = on; }</span>
+<span class="fstat-no" title="function not covered" >  setNotifySyslog(c</span>ontent: 'plaintext' | 'xml'): void {
+<span class="cstat-no" title="statement not covered" >    this.configLogger.notifySyslogContent = content;</span>
+  }
+<span class="fstat-no" title="function not covered" >  setLogBufferSize(n</span>: number): void { (<span class="cstat-no" title="statement not covered" >this.configLogger as unknown as { bufferSize?: number }).bufferSize = n; }</span>
+<span class="fstat-no" title="function not covered" >  getConfigLogger(): Readonly&lt;ArchiveConfigLogger&gt; {</span> <span class="cstat-no" title="statement not covered" >return this.configLogger; }</span>
+&nbsp;
+<span class="fstat-no" title="function not covered" >  capture(s</span>ource: ArchivedRevision['source'], bytes: number, path: string): ArchivedRevision {
+    const rev: ArchivedRevision = <span class="cstat-no" title="statement not covered" >{</span>
+      index: ++this.revisionCounter,
+      capturedAtMs: Date.now(),
+      source, bytes, path,
+    };
+<span class="cstat-no" title="statement not covered" >    this.revisions.push(rev);</span>
+<span class="cstat-no" title="statement not covered" >    while (this.archivePath.maximumVersions !== undefined</span>
+      &amp;&amp; this.revisions.length &gt; this.archivePath.maximumVersions) {
+<span class="cstat-no" title="statement not covered" >      this.revisions.shift();</span>
+    }
+<span class="cstat-no" title="statement not covered" >    return rev;</span>
+  }
+<span class="fstat-no" title="function not covered" >  listRevisions(): readonly ArchivedRevision[] {</span> <span class="cstat-no" title="statement not covered" >return [...this.revisions]; }</span>
+&nbsp;
+<span class="fstat-no" title="function not covered" >  asRunningConfigLines(): string[] {</span>
+<span class="cstat-no" title="statement not covered" >    if (!this.archivePath.path &amp;&amp; !this.configLogger.enabled) <span class="cstat-no" title="statement not covered" >return [];</span></span>
+    const lines = <span class="cstat-no" title="statement not covered" >['archive'];</span>
+<span class="cstat-no" title="statement not covered" >    if (this.archivePath.path) <span class="cstat-no" title="statement not covered" >lines.push(` path ${this.archivePath.path}`);</span></span>
+<span class="cstat-no" title="statement not covered" >    if (this.archivePath.timePeriodMin !== undefined) <span class="cstat-no" title="statement not covered" >lines.push(` time-period ${this.archivePath.timePeriodMin}`);</span></span>
+<span class="cstat-no" title="statement not covered" >    if (this.archivePath.maximumVersions !== undefined) <span class="cstat-no" title="statement not covered" >lines.push(` maximum ${this.archivePath.maximumVersions}`);</span></span>
+<span class="cstat-no" title="statement not covered" >    if (this.archivePath.writeMemory) <span class="cstat-no" title="statement not covered" >lines.push(' write-memory');</span></span>
+<span class="cstat-no" title="statement not covered" >    if (this.configLogger.enabled) {</span>
+<span class="cstat-no" title="statement not covered" >      lines.push(' log config');</span>
+<span class="cstat-no" title="statement not covered" >      if (this.configLogger.logging) <span class="cstat-no" title="statement not covered" >lines.push('  logging enable');</span></span>
+<span class="cstat-no" title="statement not covered" >      if (this.configLogger.hidekeys) <span class="cstat-no" title="statement not covered" >lines.push('  hidekeys');</span></span>
+<span class="cstat-no" title="statement not covered" >      if (this.configLogger.notifySyslogContent) <span class="cstat-no" title="statement not covered" >lines.push(`  notify syslog contenttype ${this.configLogger.notifySyslogContent}`);</span></span>
+    }
+<span class="cstat-no" title="statement not covered" >    return lines;</span>
+  }
+&nbsp;
+<span class="fstat-no" title="function not covered" >  formatShowArchive(): string {</span>
+<span class="cstat-no" title="statement not covered" >    if (this.revisions.length === 0) <span class="cstat-no" title="statement not covered" >return 'No archives configured / no revisions captured.';</span></span>
+    const lines = <span class="cstat-no" title="statement not covered" >[`The maximum archive configurations allowed is ${this.archivePath.maximumVersions ?? 14}.`];</span>
+<span class="cstat-no" title="statement not covered" >    lines.push('No backups exist on archive path');</span>
+<span class="cstat-no" title="statement not covered" >    if (this.archivePath.path) <span class="cstat-no" title="statement not covered" >lines.push(`Archive path: ${this.archivePath.path}`);</span></span>
+<span class="cstat-no" title="statement not covered" >    for (const r of this.revisions) {</span>
+<span class="cstat-no" title="statement not covered" >      lines.push(`  ${r.index}: ${r.path} (${new Date(r.capturedAtMs).toISOString()}, ${r.bytes}B, src=${r.source})`);</span>
+    }
+<span class="cstat-no" title="statement not covered" >    return lines.join('\n');</span>
+  }
+&nbsp;
+<span class="fstat-no" title="function not covered" >  formatShowArchiveDiff(): string {</span>
+<span class="cstat-no" title="statement not covered" >    if (this.revisions.length &lt; 2) <span class="cstat-no" title="statement not covered" >return 'No archive differences available.';</span></span>
+<span class="cstat-no" title="statement not covered" >    return `Differences between latest two archives (${this.revisions[this.revisions.length - 2].index} → ${this.revisions[this.revisions.length - 1].index})`;</span>
+  }
+}
+&nbsp;</pre></td></tr></table></pre>
+
+                <div class='push'></div><!-- for sticky footer -->
+            </div><!-- /wrapper -->
+            <div class='footer quiet pad2 space-top1 center small'>
+                Code coverage generated by
+                <a href="https://istanbul.js.org/" target="_blank" rel="noopener noreferrer">istanbul</a>
+                at 2026-07-09T18:53:20.982Z
+            </div>
+        <script src="../../../../../prettify.js"></script>
+        <script>
+            window.onload = function () {
+                prettyPrint();
+            };
+        </script>
+        <script src="../../../../../sorter.js"></script>
+        <script src="../../../../../block-navigation.js"></script>
+    </body>
+</html>
+    

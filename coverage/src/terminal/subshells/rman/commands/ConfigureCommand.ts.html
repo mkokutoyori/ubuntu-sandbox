@@ -1,0 +1,469 @@
+
+<!doctype html>
+<html lang="en">
+
+<head>
+    <title>Code coverage report for src/terminal/subshells/rman/commands/ConfigureCommand.ts</title>
+    <meta charset="utf-8" />
+    <link rel="stylesheet" href="../../../../../prettify.css" />
+    <link rel="stylesheet" href="../../../../../base.css" />
+    <link rel="shortcut icon" type="image/x-icon" href="../../../../../favicon.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <style type='text/css'>
+        .coverage-summary .sorter {
+            background-image: url(../../../../../sort-arrow-sprite.png);
+        }
+    </style>
+</head>
+    
+<body>
+<div class='wrapper'>
+    <div class='pad1'>
+        <h1><a href="../../../../../index.html">All files</a> / <a href="index.html">src/terminal/subshells/rman/commands</a> ConfigureCommand.ts</h1>
+        <div class='clearfix'>
+            
+            <div class='fl pad1y space-right2'>
+                <span class="strong">0% </span>
+                <span class="quiet">Statements</span>
+                <span class='fraction'>0/85</span>
+            </div>
+        
+            
+            <div class='fl pad1y space-right2'>
+                <span class="strong">0% </span>
+                <span class="quiet">Branches</span>
+                <span class='fraction'>0/66</span>
+            </div>
+        
+            
+            <div class='fl pad1y space-right2'>
+                <span class="strong">0% </span>
+                <span class="quiet">Functions</span>
+                <span class='fraction'>0/2</span>
+            </div>
+        
+            
+            <div class='fl pad1y space-right2'>
+                <span class="strong">0% </span>
+                <span class="quiet">Lines</span>
+                <span class='fraction'>0/63</span>
+            </div>
+        
+            
+        </div>
+        <p class="quiet">
+            Press <em>n</em> or <em>j</em> to go to the next uncovered block, <em>b</em>, <em>p</em> or <em>k</em> for the previous block.
+        </p>
+        <template id="filterTemplate">
+            <div class="quiet">
+                Filter:
+                <input type="search" id="fileSearch">
+            </div>
+        </template>
+    </div>
+    <div class='status-line low'></div>
+    <pre><table class="coverage">
+<tr><td class="line-count quiet"><a name='L1'></a><a href='#L1'>1</a>
+<a name='L2'></a><a href='#L2'>2</a>
+<a name='L3'></a><a href='#L3'>3</a>
+<a name='L4'></a><a href='#L4'>4</a>
+<a name='L5'></a><a href='#L5'>5</a>
+<a name='L6'></a><a href='#L6'>6</a>
+<a name='L7'></a><a href='#L7'>7</a>
+<a name='L8'></a><a href='#L8'>8</a>
+<a name='L9'></a><a href='#L9'>9</a>
+<a name='L10'></a><a href='#L10'>10</a>
+<a name='L11'></a><a href='#L11'>11</a>
+<a name='L12'></a><a href='#L12'>12</a>
+<a name='L13'></a><a href='#L13'>13</a>
+<a name='L14'></a><a href='#L14'>14</a>
+<a name='L15'></a><a href='#L15'>15</a>
+<a name='L16'></a><a href='#L16'>16</a>
+<a name='L17'></a><a href='#L17'>17</a>
+<a name='L18'></a><a href='#L18'>18</a>
+<a name='L19'></a><a href='#L19'>19</a>
+<a name='L20'></a><a href='#L20'>20</a>
+<a name='L21'></a><a href='#L21'>21</a>
+<a name='L22'></a><a href='#L22'>22</a>
+<a name='L23'></a><a href='#L23'>23</a>
+<a name='L24'></a><a href='#L24'>24</a>
+<a name='L25'></a><a href='#L25'>25</a>
+<a name='L26'></a><a href='#L26'>26</a>
+<a name='L27'></a><a href='#L27'>27</a>
+<a name='L28'></a><a href='#L28'>28</a>
+<a name='L29'></a><a href='#L29'>29</a>
+<a name='L30'></a><a href='#L30'>30</a>
+<a name='L31'></a><a href='#L31'>31</a>
+<a name='L32'></a><a href='#L32'>32</a>
+<a name='L33'></a><a href='#L33'>33</a>
+<a name='L34'></a><a href='#L34'>34</a>
+<a name='L35'></a><a href='#L35'>35</a>
+<a name='L36'></a><a href='#L36'>36</a>
+<a name='L37'></a><a href='#L37'>37</a>
+<a name='L38'></a><a href='#L38'>38</a>
+<a name='L39'></a><a href='#L39'>39</a>
+<a name='L40'></a><a href='#L40'>40</a>
+<a name='L41'></a><a href='#L41'>41</a>
+<a name='L42'></a><a href='#L42'>42</a>
+<a name='L43'></a><a href='#L43'>43</a>
+<a name='L44'></a><a href='#L44'>44</a>
+<a name='L45'></a><a href='#L45'>45</a>
+<a name='L46'></a><a href='#L46'>46</a>
+<a name='L47'></a><a href='#L47'>47</a>
+<a name='L48'></a><a href='#L48'>48</a>
+<a name='L49'></a><a href='#L49'>49</a>
+<a name='L50'></a><a href='#L50'>50</a>
+<a name='L51'></a><a href='#L51'>51</a>
+<a name='L52'></a><a href='#L52'>52</a>
+<a name='L53'></a><a href='#L53'>53</a>
+<a name='L54'></a><a href='#L54'>54</a>
+<a name='L55'></a><a href='#L55'>55</a>
+<a name='L56'></a><a href='#L56'>56</a>
+<a name='L57'></a><a href='#L57'>57</a>
+<a name='L58'></a><a href='#L58'>58</a>
+<a name='L59'></a><a href='#L59'>59</a>
+<a name='L60'></a><a href='#L60'>60</a>
+<a name='L61'></a><a href='#L61'>61</a>
+<a name='L62'></a><a href='#L62'>62</a>
+<a name='L63'></a><a href='#L63'>63</a>
+<a name='L64'></a><a href='#L64'>64</a>
+<a name='L65'></a><a href='#L65'>65</a>
+<a name='L66'></a><a href='#L66'>66</a>
+<a name='L67'></a><a href='#L67'>67</a>
+<a name='L68'></a><a href='#L68'>68</a>
+<a name='L69'></a><a href='#L69'>69</a>
+<a name='L70'></a><a href='#L70'>70</a>
+<a name='L71'></a><a href='#L71'>71</a>
+<a name='L72'></a><a href='#L72'>72</a>
+<a name='L73'></a><a href='#L73'>73</a>
+<a name='L74'></a><a href='#L74'>74</a>
+<a name='L75'></a><a href='#L75'>75</a>
+<a name='L76'></a><a href='#L76'>76</a>
+<a name='L77'></a><a href='#L77'>77</a>
+<a name='L78'></a><a href='#L78'>78</a>
+<a name='L79'></a><a href='#L79'>79</a>
+<a name='L80'></a><a href='#L80'>80</a>
+<a name='L81'></a><a href='#L81'>81</a>
+<a name='L82'></a><a href='#L82'>82</a>
+<a name='L83'></a><a href='#L83'>83</a>
+<a name='L84'></a><a href='#L84'>84</a>
+<a name='L85'></a><a href='#L85'>85</a>
+<a name='L86'></a><a href='#L86'>86</a>
+<a name='L87'></a><a href='#L87'>87</a>
+<a name='L88'></a><a href='#L88'>88</a>
+<a name='L89'></a><a href='#L89'>89</a>
+<a name='L90'></a><a href='#L90'>90</a>
+<a name='L91'></a><a href='#L91'>91</a>
+<a name='L92'></a><a href='#L92'>92</a>
+<a name='L93'></a><a href='#L93'>93</a>
+<a name='L94'></a><a href='#L94'>94</a>
+<a name='L95'></a><a href='#L95'>95</a>
+<a name='L96'></a><a href='#L96'>96</a>
+<a name='L97'></a><a href='#L97'>97</a>
+<a name='L98'></a><a href='#L98'>98</a>
+<a name='L99'></a><a href='#L99'>99</a>
+<a name='L100'></a><a href='#L100'>100</a>
+<a name='L101'></a><a href='#L101'>101</a>
+<a name='L102'></a><a href='#L102'>102</a>
+<a name='L103'></a><a href='#L103'>103</a>
+<a name='L104'></a><a href='#L104'>104</a>
+<a name='L105'></a><a href='#L105'>105</a>
+<a name='L106'></a><a href='#L106'>106</a>
+<a name='L107'></a><a href='#L107'>107</a>
+<a name='L108'></a><a href='#L108'>108</a>
+<a name='L109'></a><a href='#L109'>109</a>
+<a name='L110'></a><a href='#L110'>110</a>
+<a name='L111'></a><a href='#L111'>111</a>
+<a name='L112'></a><a href='#L112'>112</a>
+<a name='L113'></a><a href='#L113'>113</a>
+<a name='L114'></a><a href='#L114'>114</a>
+<a name='L115'></a><a href='#L115'>115</a>
+<a name='L116'></a><a href='#L116'>116</a>
+<a name='L117'></a><a href='#L117'>117</a>
+<a name='L118'></a><a href='#L118'>118</a>
+<a name='L119'></a><a href='#L119'>119</a>
+<a name='L120'></a><a href='#L120'>120</a>
+<a name='L121'></a><a href='#L121'>121</a>
+<a name='L122'></a><a href='#L122'>122</a>
+<a name='L123'></a><a href='#L123'>123</a>
+<a name='L124'></a><a href='#L124'>124</a>
+<a name='L125'></a><a href='#L125'>125</a>
+<a name='L126'></a><a href='#L126'>126</a>
+<a name='L127'></a><a href='#L127'>127</a>
+<a name='L128'></a><a href='#L128'>128</a>
+<a name='L129'></a><a href='#L129'>129</a></td><td class="line-coverage quiet"><span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span></td><td class="text"><pre class="prettyprint lang-js">/**
+ * ConfigureCommand — parses CONFIGURE clauses and mutates the live
+ * RmanConfig owned by the session.
+ *
+ * Supported forms (case-insensitive):
+ *   CONFIGURE RETENTION POLICY TO REDUNDANCY &lt;n&gt;
+ *   CONFIGURE RETENTION POLICY TO RECOVERY WINDOW OF &lt;n&gt; DAYS
+ *   CONFIGURE RETENTION POLICY TO NONE
+ *   CONFIGURE CONTROLFILE AUTOBACKUP ON|OFF
+ *   CONFIGURE DEVICE TYPE DISK PARALLELISM &lt;n&gt;
+ *   CONFIGURE DEFAULT DEVICE TYPE TO DISK|SBT
+ *   CONFIGURE BACKUP OPTIMIZATION ON|OFF
+ *   CONFIGURE MAXSETSIZE TO UNLIMITED|&lt;n&gt;[KMGT]
+ *   CONFIGURE COMPRESSION ALGORITHM '&lt;BASIC|LOW|MEDIUM|HIGH&gt;'
+ *   CONFIGURE ENCRYPTION FOR DATABASE ON|OFF
+ *
+ * Returns ok(string[]) with a single Oracle-style "new RMAN
+ * configuration parameters are successfully stored" message; the
+ * actual SHOW ALL line update happens via the live snapshot.
+<span class="fstat-no" title="function not covered" > */</span>
+&nbsp;
+import { ok, err, type Result } from '../core/Result';
+import type { RmanError } from '../core/RmanError';
+import type { IRmanCommand, RmanCommandContext } from './types';
+import { RedundancyPolicy } from '../policy/RedundancyPolicy';
+import { RecoveryWindowPolicy } from '../policy/RecoveryWindowPolicy';
+import { NonePolicy } from '../policy/NonePolicy';
+import type { ConfigDelta } from '../session/RmanConfig';
+&nbsp;
+export class ConfigureCommand implements IRmanCommand&lt;string[]&gt; {
+<span class="cstat-no" title="statement not covered" >  readonly name = 'CONFIGURE';</span>
+&nbsp;
+<span class="fstat-no" title="function not covered" >  execute(a</span>rgs: string[], cmdCtx: RmanCommandContext): Result&lt;string[], RmanError&gt; {
+    const text = <span class="cstat-no" title="statement not covered" >(args[0] ?? '').trim();</span>
+    const upper = <span class="cstat-no" title="statement not covered" >text.toUpperCase();</span>
+    const cfg = <span class="cstat-no" title="statement not covered" >cmdCtx.config;</span>
+<span class="cstat-no" title="statement not covered" >    if (!cfg) {</span>
+<span class="cstat-no" title="statement not covered" >      return err({ code: 'RMAN_00558', message: 'CONFIGURE requires a session-scoped config' });</span>
+    }
+&nbsp;
+    let delta: ConfigDelta | null = <span class="cstat-no" title="statement not covered" >null;</span>
+&nbsp;
+    // RETENTION POLICY ──────────────────────────────────────────────
+    const mRed = <span class="cstat-no" title="statement not covered" >upper.match(/^RETENTION POLICY TO REDUNDANCY (\d+)$/);</span>
+<span class="cstat-no" title="statement not covered" >    if (mRed) {</span>
+      const n = <span class="cstat-no" title="statement not covered" >parseInt(mRed[1], 10);</span>
+<span class="cstat-no" title="statement not covered" >      if (n &lt; 1) <span class="cstat-no" title="statement not covered" >return err({ code: 'RMAN_00558', message: `invalid REDUNDANCY ${n}` });</span></span>
+<span class="cstat-no" title="statement not covered" >      delta = cfg.setRetentionPolicy(new RedundancyPolicy(n));</span>
+    }
+    const mWin = <span class="cstat-no" title="statement not covered" >upper.match(/^RETENTION POLICY TO RECOVERY WINDOW OF (\d+) DAYS?$/);</span>
+<span class="cstat-no" title="statement not covered" >    if (mWin) {</span>
+      const d = <span class="cstat-no" title="statement not covered" >parseInt(mWin[1], 10);</span>
+<span class="cstat-no" title="statement not covered" >      if (d &lt; 1) <span class="cstat-no" title="statement not covered" >return err({ code: 'RMAN_00558', message: `invalid RECOVERY WINDOW ${d}` });</span></span>
+<span class="cstat-no" title="statement not covered" >      delta = cfg.setRetentionPolicy(new RecoveryWindowPolicy(d));</span>
+    }
+<span class="cstat-no" title="statement not covered" >    if (upper === 'RETENTION POLICY TO NONE') {</span>
+<span class="cstat-no" title="statement not covered" >      delta = cfg.setRetentionPolicy(new NonePolicy());</span>
+    }
+    // CONTROLFILE AUTOBACKUP ────────────────────────────────────────
+<span class="cstat-no" title="statement not covered" >    if (upper === 'CONTROLFILE AUTOBACKUP ON')  <span class="cstat-no" title="statement not covered" >delta = cfg.setControlfileAutobackup(true);</span></span>
+<span class="cstat-no" title="statement not covered" >    if (upper === 'CONTROLFILE AUTOBACKUP OFF') <span class="cstat-no" title="statement not covered" >delta = cfg.setControlfileAutobackup(false);</span></span>
+    const mCfFmt = <span class="cstat-no" title="statement not covered" >text.match(/^CONTROLFILE AUTOBACKUP FORMAT FOR DEVICE TYPE (DISK|SBT) TO '([^']+)'$/i);</span>
+<span class="cstat-no" title="statement not covered" >    if (mCfFmt) <span class="cstat-no" title="statement not covered" >delta = cfg.setControlfileAutobackupFormat(mCfFmt[2]);</span></span>
+    // DEVICE TYPE PARALLELISM ───────────────────────────────────────
+    const mPar = <span class="cstat-no" title="statement not covered" >upper.match(/^DEVICE TYPE (DISK|SBT) PARALLELISM (\d+)(?: BACKUP TYPE TO (BACKUPSET|COMPRESSED BACKUPSET|COPY))?$/);</span>
+<span class="cstat-no" title="statement not covered" >    if (mPar) {</span>
+      const n = <span class="cstat-no" title="statement not covered" >parseInt(mPar[2], 10);</span>
+<span class="cstat-no" title="statement not covered" >      if (n &lt; 1) <span class="cstat-no" title="statement not covered" >return err({ code: 'RMAN_00558', message: `invalid PARALLELISM ${n}` });</span></span>
+<span class="cstat-no" title="statement not covered" >      delta = cfg.setDeviceParallelism(n);</span>
+<span class="cstat-no" title="statement not covered" >      if (mPar[3]) <span class="cstat-no" title="statement not covered" >cfg.setDefaultBackupType(mPar[3] as 'BACKUPSET' | 'COMPRESSED BACKUPSET' | 'COPY');</span></span>
+    }
+    // CHANNEL DEVICE TYPE … FORMAT '…' ──────────────────────────────
+    const mChFmt = <span class="cstat-no" title="statement not covered" >text.match(/^CHANNEL(?:\s+\d+)?\s+DEVICE TYPE (DISK|SBT).*\bFORMAT\s+'([^']+)'/i);</span>
+<span class="cstat-no" title="statement not covered" >    if (mChFmt) <span class="cstat-no" title="statement not covered" >delta = cfg.setChannelFormat(mChFmt[2]);</span></span>
+    // CONFIGURE CHANNEL &lt;n&gt; DEVICE TYPE … (no FORMAT) — accepted no-op
+    // so MAXOPENFILES / RATE / MAXPIECESIZE-only forms don't 01009.
+<span class="cstat-no" title="statement not covered" >    if (!delta &amp;&amp; /^CHANNEL(?:\s+\d+)?\s+DEVICE TYPE (DISK|SBT)\b/i.test(text)) {</span>
+<span class="cstat-no" title="statement not covered" >      delta = { key: 'channelOpts', oldValue: '&lt;unset&gt;', newValue: text };</span>
+    }
+    // BACKUP COPIES ────────────────────────────────────────────────
+    const mDfC = <span class="cstat-no" title="statement not covered" >upper.match(/^DATAFILE BACKUP COPIES FOR DEVICE TYPE (DISK|SBT) TO (\d+)$/);</span>
+<span class="cstat-no" title="statement not covered" >    if (mDfC) <span class="cstat-no" title="statement not covered" >delta = cfg.setDatafileBackupCopies(parseInt(mDfC[2], 10));</span></span>
+    const mArC = <span class="cstat-no" title="statement not covered" >upper.match(/^ARCHIVELOG BACKUP COPIES FOR DEVICE TYPE (DISK|SBT) TO (\d+)$/);</span>
+<span class="cstat-no" title="statement not covered" >    if (mArC) <span class="cstat-no" title="statement not covered" >delta = cfg.setArchivelogBackupCopies(parseInt(mArC[2], 10));</span></span>
+    // ARCHIVELOG DELETION POLICY ────────────────────────────────────
+<span class="cstat-no" title="statement not covered" >    if (upper === 'ARCHIVELOG DELETION POLICY TO NONE')</span>
+<span class="cstat-no" title="statement not covered" >      delta = cfg.setArchivelogDeletionPolicy('NONE');</span>
+<span class="cstat-no" title="statement not covered" >    if (upper === 'ARCHIVELOG DELETION POLICY TO APPLIED ON ALL STANDBY')</span>
+<span class="cstat-no" title="statement not covered" >      delta = cfg.setArchivelogDeletionPolicy('APPLIED_ON_ALL_STANDBY');</span>
+    const mArDP = <span class="cstat-no" title="statement not covered" >upper.match(/^ARCHIVELOG DELETION POLICY TO BACKED UP (\d+) TIMES TO DEVICE TYPE (DISK|SBT)$/);</span>
+<span class="cstat-no" title="statement not covered" >    if (mArDP) <span class="cstat-no" title="statement not covered" >delta = cfg.setArchivelogDeletionPolicy('BACKED_UP');</span></span>
+    // ENCRYPTION ALGORITHM ──────────────────────────────────────────
+    const mEncAlg = <span class="cstat-no" title="statement not covered" >upper.match(/^ENCRYPTION ALGORITHM '(AES128|AES192|AES256)'$/);</span>
+<span class="cstat-no" title="statement not covered" >    if (mEncAlg) <span class="cstat-no" title="statement not covered" >delta = cfg.setEncryptionAlgorithm(mEncAlg[1] as 'AES128' | 'AES192' | 'AES256');</span></span>
+    // EXCLUDE FOR TABLESPACE ────────────────────────────────────────
+    //   CONFIGURE EXCLUDE FOR TABLESPACE &lt;name&gt;
+    //   CONFIGURE EXCLUDE FOR TABLESPACE &lt;name&gt; CLEAR
+    const mExcAdd = <span class="cstat-no" title="statement not covered" >upper.match(/^EXCLUDE FOR TABLESPACE (\S+)$/);</span>
+<span class="cstat-no" title="statement not covered" >    if (mExcAdd) <span class="cstat-no" title="statement not covered" >delta = cfg.addExcludedTablespace(mExcAdd[1]);</span></span>
+    const mExcRem = <span class="cstat-no" title="statement not covered" >upper.match(/^EXCLUDE FOR TABLESPACE (\S+) CLEAR$/);</span>
+<span class="cstat-no" title="statement not covered" >    if (mExcRem) <span class="cstat-no" title="statement not covered" >delta = cfg.removeExcludedTablespace(mExcRem[1]);</span></span>
+    // DEFAULT DEVICE TYPE ───────────────────────────────────────────
+<span class="cstat-no" title="statement not covered" >    if (upper === 'DEFAULT DEVICE TYPE TO DISK') <span class="cstat-no" title="statement not covered" >delta = cfg.setDefaultDeviceType('DISK');</span></span>
+<span class="cstat-no" title="statement not covered" >    if (upper === 'DEFAULT DEVICE TYPE TO SBT')  <span class="cstat-no" title="statement not covered" >delta = cfg.setDefaultDeviceType('SBT');</span></span>
+    // BACKUP OPTIMIZATION ───────────────────────────────────────────
+<span class="cstat-no" title="statement not covered" >    if (upper === 'BACKUP OPTIMIZATION ON')  <span class="cstat-no" title="statement not covered" >delta = cfg.setBackupOptimization(true);</span></span>
+<span class="cstat-no" title="statement not covered" >    if (upper === 'BACKUP OPTIMIZATION OFF') <span class="cstat-no" title="statement not covered" >delta = cfg.setBackupOptimization(false);</span></span>
+    // MAXSETSIZE ────────────────────────────────────────────────────
+    const mMax = <span class="cstat-no" title="statement not covered" >upper.match(/^MAXSETSIZE TO (UNLIMITED|\d+[KMGT]?)$/);</span>
+<span class="cstat-no" title="statement not covered" >    if (mMax) <span class="cstat-no" title="statement not covered" >delta = cfg.setMaxSetSize(mMax[1]);</span></span>
+    // COMPRESSION ALGORITHM ─────────────────────────────────────────
+    const mComp = <span class="cstat-no" title="statement not covered" >upper.match(/^COMPRESSION ALGORITHM '(BASIC|LOW|MEDIUM|HIGH)'$/);</span>
+<span class="cstat-no" title="statement not covered" >    if (mComp) <span class="cstat-no" title="statement not covered" >delta = cfg.setCompressionAlgorithm(mComp[1] as 'BASIC' | 'LOW' | 'MEDIUM' | 'HIGH');</span></span>
+    // ENCRYPTION FOR DATABASE ───────────────────────────────────────
+<span class="cstat-no" title="statement not covered" >    if (upper === 'ENCRYPTION FOR DATABASE ON')  <span class="cstat-no" title="statement not covered" >delta = cfg.setEncryptionForDatabase(true);</span></span>
+<span class="cstat-no" title="statement not covered" >    if (upper === 'ENCRYPTION FOR DATABASE OFF') <span class="cstat-no" title="statement not covered" >delta = cfg.setEncryptionForDatabase(false);</span></span>
+&nbsp;
+<span class="cstat-no" title="statement not covered" >    if (!delta) {</span>
+<span class="cstat-no" title="statement not covered" >      return err({ code: 'RMAN_01009', message: `syntax error: unrecognized CONFIGURE clause: ${text}` });</span>
+    }
+&nbsp;
+<span class="cstat-no" title="statement not covered" >    cmdCtx.bus.emit({</span>
+      type: 'CONFIG_CHANGED', key: delta.key,
+      oldValue: delta.oldValue, newValue: delta.newValue,
+    });
+<span class="cstat-no" title="statement not covered" >    return ok(['new RMAN configuration parameters are successfully stored']);</span>
+  }
+}
+&nbsp;</pre></td></tr></table></pre>
+
+                <div class='push'></div><!-- for sticky footer -->
+            </div><!-- /wrapper -->
+            <div class='footer quiet pad2 space-top1 center small'>
+                Code coverage generated by
+                <a href="https://istanbul.js.org/" target="_blank" rel="noopener noreferrer">istanbul</a>
+                at 2026-07-09T18:53:20.982Z
+            </div>
+        <script src="../../../../../prettify.js"></script>
+        <script>
+            window.onload = function () {
+                prettyPrint();
+            };
+        </script>
+        <script src="../../../../../sorter.js"></script>
+        <script src="../../../../../block-navigation.js"></script>
+    </body>
+</html>
+    

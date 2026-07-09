@@ -1,0 +1,1174 @@
+
+<!doctype html>
+<html lang="en">
+
+<head>
+    <title>Code coverage report for src/network/tls/TlsServerSession.ts</title>
+    <meta charset="utf-8" />
+    <link rel="stylesheet" href="../../../prettify.css" />
+    <link rel="stylesheet" href="../../../base.css" />
+    <link rel="shortcut icon" type="image/x-icon" href="../../../favicon.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <style type='text/css'>
+        .coverage-summary .sorter {
+            background-image: url(../../../sort-arrow-sprite.png);
+        }
+    </style>
+</head>
+    
+<body>
+<div class='wrapper'>
+    <div class='pad1'>
+        <h1><a href="../../../index.html">All files</a> / <a href="index.html">src/network/tls</a> TlsServerSession.ts</h1>
+        <div class='clearfix'>
+            
+            <div class='fl pad1y space-right2'>
+                <span class="strong">0% </span>
+                <span class="quiet">Statements</span>
+                <span class='fraction'>0/189</span>
+            </div>
+        
+            
+            <div class='fl pad1y space-right2'>
+                <span class="strong">0% </span>
+                <span class="quiet">Branches</span>
+                <span class='fraction'>0/75</span>
+            </div>
+        
+            
+            <div class='fl pad1y space-right2'>
+                <span class="strong">0% </span>
+                <span class="quiet">Functions</span>
+                <span class='fraction'>0/18</span>
+            </div>
+        
+            
+            <div class='fl pad1y space-right2'>
+                <span class="strong">0% </span>
+                <span class="quiet">Lines</span>
+                <span class='fraction'>0/152</span>
+            </div>
+        
+            
+        </div>
+        <p class="quiet">
+            Press <em>n</em> or <em>j</em> to go to the next uncovered block, <em>b</em>, <em>p</em> or <em>k</em> for the previous block.
+        </p>
+        <template id="filterTemplate">
+            <div class="quiet">
+                Filter:
+                <input type="search" id="fileSearch">
+            </div>
+        </template>
+    </div>
+    <div class='status-line low'></div>
+    <pre><table class="coverage">
+<tr><td class="line-count quiet"><a name='L1'></a><a href='#L1'>1</a>
+<a name='L2'></a><a href='#L2'>2</a>
+<a name='L3'></a><a href='#L3'>3</a>
+<a name='L4'></a><a href='#L4'>4</a>
+<a name='L5'></a><a href='#L5'>5</a>
+<a name='L6'></a><a href='#L6'>6</a>
+<a name='L7'></a><a href='#L7'>7</a>
+<a name='L8'></a><a href='#L8'>8</a>
+<a name='L9'></a><a href='#L9'>9</a>
+<a name='L10'></a><a href='#L10'>10</a>
+<a name='L11'></a><a href='#L11'>11</a>
+<a name='L12'></a><a href='#L12'>12</a>
+<a name='L13'></a><a href='#L13'>13</a>
+<a name='L14'></a><a href='#L14'>14</a>
+<a name='L15'></a><a href='#L15'>15</a>
+<a name='L16'></a><a href='#L16'>16</a>
+<a name='L17'></a><a href='#L17'>17</a>
+<a name='L18'></a><a href='#L18'>18</a>
+<a name='L19'></a><a href='#L19'>19</a>
+<a name='L20'></a><a href='#L20'>20</a>
+<a name='L21'></a><a href='#L21'>21</a>
+<a name='L22'></a><a href='#L22'>22</a>
+<a name='L23'></a><a href='#L23'>23</a>
+<a name='L24'></a><a href='#L24'>24</a>
+<a name='L25'></a><a href='#L25'>25</a>
+<a name='L26'></a><a href='#L26'>26</a>
+<a name='L27'></a><a href='#L27'>27</a>
+<a name='L28'></a><a href='#L28'>28</a>
+<a name='L29'></a><a href='#L29'>29</a>
+<a name='L30'></a><a href='#L30'>30</a>
+<a name='L31'></a><a href='#L31'>31</a>
+<a name='L32'></a><a href='#L32'>32</a>
+<a name='L33'></a><a href='#L33'>33</a>
+<a name='L34'></a><a href='#L34'>34</a>
+<a name='L35'></a><a href='#L35'>35</a>
+<a name='L36'></a><a href='#L36'>36</a>
+<a name='L37'></a><a href='#L37'>37</a>
+<a name='L38'></a><a href='#L38'>38</a>
+<a name='L39'></a><a href='#L39'>39</a>
+<a name='L40'></a><a href='#L40'>40</a>
+<a name='L41'></a><a href='#L41'>41</a>
+<a name='L42'></a><a href='#L42'>42</a>
+<a name='L43'></a><a href='#L43'>43</a>
+<a name='L44'></a><a href='#L44'>44</a>
+<a name='L45'></a><a href='#L45'>45</a>
+<a name='L46'></a><a href='#L46'>46</a>
+<a name='L47'></a><a href='#L47'>47</a>
+<a name='L48'></a><a href='#L48'>48</a>
+<a name='L49'></a><a href='#L49'>49</a>
+<a name='L50'></a><a href='#L50'>50</a>
+<a name='L51'></a><a href='#L51'>51</a>
+<a name='L52'></a><a href='#L52'>52</a>
+<a name='L53'></a><a href='#L53'>53</a>
+<a name='L54'></a><a href='#L54'>54</a>
+<a name='L55'></a><a href='#L55'>55</a>
+<a name='L56'></a><a href='#L56'>56</a>
+<a name='L57'></a><a href='#L57'>57</a>
+<a name='L58'></a><a href='#L58'>58</a>
+<a name='L59'></a><a href='#L59'>59</a>
+<a name='L60'></a><a href='#L60'>60</a>
+<a name='L61'></a><a href='#L61'>61</a>
+<a name='L62'></a><a href='#L62'>62</a>
+<a name='L63'></a><a href='#L63'>63</a>
+<a name='L64'></a><a href='#L64'>64</a>
+<a name='L65'></a><a href='#L65'>65</a>
+<a name='L66'></a><a href='#L66'>66</a>
+<a name='L67'></a><a href='#L67'>67</a>
+<a name='L68'></a><a href='#L68'>68</a>
+<a name='L69'></a><a href='#L69'>69</a>
+<a name='L70'></a><a href='#L70'>70</a>
+<a name='L71'></a><a href='#L71'>71</a>
+<a name='L72'></a><a href='#L72'>72</a>
+<a name='L73'></a><a href='#L73'>73</a>
+<a name='L74'></a><a href='#L74'>74</a>
+<a name='L75'></a><a href='#L75'>75</a>
+<a name='L76'></a><a href='#L76'>76</a>
+<a name='L77'></a><a href='#L77'>77</a>
+<a name='L78'></a><a href='#L78'>78</a>
+<a name='L79'></a><a href='#L79'>79</a>
+<a name='L80'></a><a href='#L80'>80</a>
+<a name='L81'></a><a href='#L81'>81</a>
+<a name='L82'></a><a href='#L82'>82</a>
+<a name='L83'></a><a href='#L83'>83</a>
+<a name='L84'></a><a href='#L84'>84</a>
+<a name='L85'></a><a href='#L85'>85</a>
+<a name='L86'></a><a href='#L86'>86</a>
+<a name='L87'></a><a href='#L87'>87</a>
+<a name='L88'></a><a href='#L88'>88</a>
+<a name='L89'></a><a href='#L89'>89</a>
+<a name='L90'></a><a href='#L90'>90</a>
+<a name='L91'></a><a href='#L91'>91</a>
+<a name='L92'></a><a href='#L92'>92</a>
+<a name='L93'></a><a href='#L93'>93</a>
+<a name='L94'></a><a href='#L94'>94</a>
+<a name='L95'></a><a href='#L95'>95</a>
+<a name='L96'></a><a href='#L96'>96</a>
+<a name='L97'></a><a href='#L97'>97</a>
+<a name='L98'></a><a href='#L98'>98</a>
+<a name='L99'></a><a href='#L99'>99</a>
+<a name='L100'></a><a href='#L100'>100</a>
+<a name='L101'></a><a href='#L101'>101</a>
+<a name='L102'></a><a href='#L102'>102</a>
+<a name='L103'></a><a href='#L103'>103</a>
+<a name='L104'></a><a href='#L104'>104</a>
+<a name='L105'></a><a href='#L105'>105</a>
+<a name='L106'></a><a href='#L106'>106</a>
+<a name='L107'></a><a href='#L107'>107</a>
+<a name='L108'></a><a href='#L108'>108</a>
+<a name='L109'></a><a href='#L109'>109</a>
+<a name='L110'></a><a href='#L110'>110</a>
+<a name='L111'></a><a href='#L111'>111</a>
+<a name='L112'></a><a href='#L112'>112</a>
+<a name='L113'></a><a href='#L113'>113</a>
+<a name='L114'></a><a href='#L114'>114</a>
+<a name='L115'></a><a href='#L115'>115</a>
+<a name='L116'></a><a href='#L116'>116</a>
+<a name='L117'></a><a href='#L117'>117</a>
+<a name='L118'></a><a href='#L118'>118</a>
+<a name='L119'></a><a href='#L119'>119</a>
+<a name='L120'></a><a href='#L120'>120</a>
+<a name='L121'></a><a href='#L121'>121</a>
+<a name='L122'></a><a href='#L122'>122</a>
+<a name='L123'></a><a href='#L123'>123</a>
+<a name='L124'></a><a href='#L124'>124</a>
+<a name='L125'></a><a href='#L125'>125</a>
+<a name='L126'></a><a href='#L126'>126</a>
+<a name='L127'></a><a href='#L127'>127</a>
+<a name='L128'></a><a href='#L128'>128</a>
+<a name='L129'></a><a href='#L129'>129</a>
+<a name='L130'></a><a href='#L130'>130</a>
+<a name='L131'></a><a href='#L131'>131</a>
+<a name='L132'></a><a href='#L132'>132</a>
+<a name='L133'></a><a href='#L133'>133</a>
+<a name='L134'></a><a href='#L134'>134</a>
+<a name='L135'></a><a href='#L135'>135</a>
+<a name='L136'></a><a href='#L136'>136</a>
+<a name='L137'></a><a href='#L137'>137</a>
+<a name='L138'></a><a href='#L138'>138</a>
+<a name='L139'></a><a href='#L139'>139</a>
+<a name='L140'></a><a href='#L140'>140</a>
+<a name='L141'></a><a href='#L141'>141</a>
+<a name='L142'></a><a href='#L142'>142</a>
+<a name='L143'></a><a href='#L143'>143</a>
+<a name='L144'></a><a href='#L144'>144</a>
+<a name='L145'></a><a href='#L145'>145</a>
+<a name='L146'></a><a href='#L146'>146</a>
+<a name='L147'></a><a href='#L147'>147</a>
+<a name='L148'></a><a href='#L148'>148</a>
+<a name='L149'></a><a href='#L149'>149</a>
+<a name='L150'></a><a href='#L150'>150</a>
+<a name='L151'></a><a href='#L151'>151</a>
+<a name='L152'></a><a href='#L152'>152</a>
+<a name='L153'></a><a href='#L153'>153</a>
+<a name='L154'></a><a href='#L154'>154</a>
+<a name='L155'></a><a href='#L155'>155</a>
+<a name='L156'></a><a href='#L156'>156</a>
+<a name='L157'></a><a href='#L157'>157</a>
+<a name='L158'></a><a href='#L158'>158</a>
+<a name='L159'></a><a href='#L159'>159</a>
+<a name='L160'></a><a href='#L160'>160</a>
+<a name='L161'></a><a href='#L161'>161</a>
+<a name='L162'></a><a href='#L162'>162</a>
+<a name='L163'></a><a href='#L163'>163</a>
+<a name='L164'></a><a href='#L164'>164</a>
+<a name='L165'></a><a href='#L165'>165</a>
+<a name='L166'></a><a href='#L166'>166</a>
+<a name='L167'></a><a href='#L167'>167</a>
+<a name='L168'></a><a href='#L168'>168</a>
+<a name='L169'></a><a href='#L169'>169</a>
+<a name='L170'></a><a href='#L170'>170</a>
+<a name='L171'></a><a href='#L171'>171</a>
+<a name='L172'></a><a href='#L172'>172</a>
+<a name='L173'></a><a href='#L173'>173</a>
+<a name='L174'></a><a href='#L174'>174</a>
+<a name='L175'></a><a href='#L175'>175</a>
+<a name='L176'></a><a href='#L176'>176</a>
+<a name='L177'></a><a href='#L177'>177</a>
+<a name='L178'></a><a href='#L178'>178</a>
+<a name='L179'></a><a href='#L179'>179</a>
+<a name='L180'></a><a href='#L180'>180</a>
+<a name='L181'></a><a href='#L181'>181</a>
+<a name='L182'></a><a href='#L182'>182</a>
+<a name='L183'></a><a href='#L183'>183</a>
+<a name='L184'></a><a href='#L184'>184</a>
+<a name='L185'></a><a href='#L185'>185</a>
+<a name='L186'></a><a href='#L186'>186</a>
+<a name='L187'></a><a href='#L187'>187</a>
+<a name='L188'></a><a href='#L188'>188</a>
+<a name='L189'></a><a href='#L189'>189</a>
+<a name='L190'></a><a href='#L190'>190</a>
+<a name='L191'></a><a href='#L191'>191</a>
+<a name='L192'></a><a href='#L192'>192</a>
+<a name='L193'></a><a href='#L193'>193</a>
+<a name='L194'></a><a href='#L194'>194</a>
+<a name='L195'></a><a href='#L195'>195</a>
+<a name='L196'></a><a href='#L196'>196</a>
+<a name='L197'></a><a href='#L197'>197</a>
+<a name='L198'></a><a href='#L198'>198</a>
+<a name='L199'></a><a href='#L199'>199</a>
+<a name='L200'></a><a href='#L200'>200</a>
+<a name='L201'></a><a href='#L201'>201</a>
+<a name='L202'></a><a href='#L202'>202</a>
+<a name='L203'></a><a href='#L203'>203</a>
+<a name='L204'></a><a href='#L204'>204</a>
+<a name='L205'></a><a href='#L205'>205</a>
+<a name='L206'></a><a href='#L206'>206</a>
+<a name='L207'></a><a href='#L207'>207</a>
+<a name='L208'></a><a href='#L208'>208</a>
+<a name='L209'></a><a href='#L209'>209</a>
+<a name='L210'></a><a href='#L210'>210</a>
+<a name='L211'></a><a href='#L211'>211</a>
+<a name='L212'></a><a href='#L212'>212</a>
+<a name='L213'></a><a href='#L213'>213</a>
+<a name='L214'></a><a href='#L214'>214</a>
+<a name='L215'></a><a href='#L215'>215</a>
+<a name='L216'></a><a href='#L216'>216</a>
+<a name='L217'></a><a href='#L217'>217</a>
+<a name='L218'></a><a href='#L218'>218</a>
+<a name='L219'></a><a href='#L219'>219</a>
+<a name='L220'></a><a href='#L220'>220</a>
+<a name='L221'></a><a href='#L221'>221</a>
+<a name='L222'></a><a href='#L222'>222</a>
+<a name='L223'></a><a href='#L223'>223</a>
+<a name='L224'></a><a href='#L224'>224</a>
+<a name='L225'></a><a href='#L225'>225</a>
+<a name='L226'></a><a href='#L226'>226</a>
+<a name='L227'></a><a href='#L227'>227</a>
+<a name='L228'></a><a href='#L228'>228</a>
+<a name='L229'></a><a href='#L229'>229</a>
+<a name='L230'></a><a href='#L230'>230</a>
+<a name='L231'></a><a href='#L231'>231</a>
+<a name='L232'></a><a href='#L232'>232</a>
+<a name='L233'></a><a href='#L233'>233</a>
+<a name='L234'></a><a href='#L234'>234</a>
+<a name='L235'></a><a href='#L235'>235</a>
+<a name='L236'></a><a href='#L236'>236</a>
+<a name='L237'></a><a href='#L237'>237</a>
+<a name='L238'></a><a href='#L238'>238</a>
+<a name='L239'></a><a href='#L239'>239</a>
+<a name='L240'></a><a href='#L240'>240</a>
+<a name='L241'></a><a href='#L241'>241</a>
+<a name='L242'></a><a href='#L242'>242</a>
+<a name='L243'></a><a href='#L243'>243</a>
+<a name='L244'></a><a href='#L244'>244</a>
+<a name='L245'></a><a href='#L245'>245</a>
+<a name='L246'></a><a href='#L246'>246</a>
+<a name='L247'></a><a href='#L247'>247</a>
+<a name='L248'></a><a href='#L248'>248</a>
+<a name='L249'></a><a href='#L249'>249</a>
+<a name='L250'></a><a href='#L250'>250</a>
+<a name='L251'></a><a href='#L251'>251</a>
+<a name='L252'></a><a href='#L252'>252</a>
+<a name='L253'></a><a href='#L253'>253</a>
+<a name='L254'></a><a href='#L254'>254</a>
+<a name='L255'></a><a href='#L255'>255</a>
+<a name='L256'></a><a href='#L256'>256</a>
+<a name='L257'></a><a href='#L257'>257</a>
+<a name='L258'></a><a href='#L258'>258</a>
+<a name='L259'></a><a href='#L259'>259</a>
+<a name='L260'></a><a href='#L260'>260</a>
+<a name='L261'></a><a href='#L261'>261</a>
+<a name='L262'></a><a href='#L262'>262</a>
+<a name='L263'></a><a href='#L263'>263</a>
+<a name='L264'></a><a href='#L264'>264</a>
+<a name='L265'></a><a href='#L265'>265</a>
+<a name='L266'></a><a href='#L266'>266</a>
+<a name='L267'></a><a href='#L267'>267</a>
+<a name='L268'></a><a href='#L268'>268</a>
+<a name='L269'></a><a href='#L269'>269</a>
+<a name='L270'></a><a href='#L270'>270</a>
+<a name='L271'></a><a href='#L271'>271</a>
+<a name='L272'></a><a href='#L272'>272</a>
+<a name='L273'></a><a href='#L273'>273</a>
+<a name='L274'></a><a href='#L274'>274</a>
+<a name='L275'></a><a href='#L275'>275</a>
+<a name='L276'></a><a href='#L276'>276</a>
+<a name='L277'></a><a href='#L277'>277</a>
+<a name='L278'></a><a href='#L278'>278</a>
+<a name='L279'></a><a href='#L279'>279</a>
+<a name='L280'></a><a href='#L280'>280</a>
+<a name='L281'></a><a href='#L281'>281</a>
+<a name='L282'></a><a href='#L282'>282</a>
+<a name='L283'></a><a href='#L283'>283</a>
+<a name='L284'></a><a href='#L284'>284</a>
+<a name='L285'></a><a href='#L285'>285</a>
+<a name='L286'></a><a href='#L286'>286</a>
+<a name='L287'></a><a href='#L287'>287</a>
+<a name='L288'></a><a href='#L288'>288</a>
+<a name='L289'></a><a href='#L289'>289</a>
+<a name='L290'></a><a href='#L290'>290</a>
+<a name='L291'></a><a href='#L291'>291</a>
+<a name='L292'></a><a href='#L292'>292</a>
+<a name='L293'></a><a href='#L293'>293</a>
+<a name='L294'></a><a href='#L294'>294</a>
+<a name='L295'></a><a href='#L295'>295</a>
+<a name='L296'></a><a href='#L296'>296</a>
+<a name='L297'></a><a href='#L297'>297</a>
+<a name='L298'></a><a href='#L298'>298</a>
+<a name='L299'></a><a href='#L299'>299</a>
+<a name='L300'></a><a href='#L300'>300</a>
+<a name='L301'></a><a href='#L301'>301</a>
+<a name='L302'></a><a href='#L302'>302</a>
+<a name='L303'></a><a href='#L303'>303</a>
+<a name='L304'></a><a href='#L304'>304</a>
+<a name='L305'></a><a href='#L305'>305</a>
+<a name='L306'></a><a href='#L306'>306</a>
+<a name='L307'></a><a href='#L307'>307</a>
+<a name='L308'></a><a href='#L308'>308</a>
+<a name='L309'></a><a href='#L309'>309</a>
+<a name='L310'></a><a href='#L310'>310</a>
+<a name='L311'></a><a href='#L311'>311</a>
+<a name='L312'></a><a href='#L312'>312</a>
+<a name='L313'></a><a href='#L313'>313</a>
+<a name='L314'></a><a href='#L314'>314</a>
+<a name='L315'></a><a href='#L315'>315</a>
+<a name='L316'></a><a href='#L316'>316</a>
+<a name='L317'></a><a href='#L317'>317</a>
+<a name='L318'></a><a href='#L318'>318</a>
+<a name='L319'></a><a href='#L319'>319</a>
+<a name='L320'></a><a href='#L320'>320</a>
+<a name='L321'></a><a href='#L321'>321</a>
+<a name='L322'></a><a href='#L322'>322</a>
+<a name='L323'></a><a href='#L323'>323</a>
+<a name='L324'></a><a href='#L324'>324</a>
+<a name='L325'></a><a href='#L325'>325</a>
+<a name='L326'></a><a href='#L326'>326</a>
+<a name='L327'></a><a href='#L327'>327</a>
+<a name='L328'></a><a href='#L328'>328</a>
+<a name='L329'></a><a href='#L329'>329</a>
+<a name='L330'></a><a href='#L330'>330</a>
+<a name='L331'></a><a href='#L331'>331</a>
+<a name='L332'></a><a href='#L332'>332</a>
+<a name='L333'></a><a href='#L333'>333</a>
+<a name='L334'></a><a href='#L334'>334</a>
+<a name='L335'></a><a href='#L335'>335</a>
+<a name='L336'></a><a href='#L336'>336</a>
+<a name='L337'></a><a href='#L337'>337</a>
+<a name='L338'></a><a href='#L338'>338</a>
+<a name='L339'></a><a href='#L339'>339</a>
+<a name='L340'></a><a href='#L340'>340</a>
+<a name='L341'></a><a href='#L341'>341</a>
+<a name='L342'></a><a href='#L342'>342</a>
+<a name='L343'></a><a href='#L343'>343</a>
+<a name='L344'></a><a href='#L344'>344</a>
+<a name='L345'></a><a href='#L345'>345</a>
+<a name='L346'></a><a href='#L346'>346</a>
+<a name='L347'></a><a href='#L347'>347</a>
+<a name='L348'></a><a href='#L348'>348</a>
+<a name='L349'></a><a href='#L349'>349</a>
+<a name='L350'></a><a href='#L350'>350</a>
+<a name='L351'></a><a href='#L351'>351</a>
+<a name='L352'></a><a href='#L352'>352</a>
+<a name='L353'></a><a href='#L353'>353</a>
+<a name='L354'></a><a href='#L354'>354</a>
+<a name='L355'></a><a href='#L355'>355</a>
+<a name='L356'></a><a href='#L356'>356</a>
+<a name='L357'></a><a href='#L357'>357</a>
+<a name='L358'></a><a href='#L358'>358</a>
+<a name='L359'></a><a href='#L359'>359</a>
+<a name='L360'></a><a href='#L360'>360</a>
+<a name='L361'></a><a href='#L361'>361</a>
+<a name='L362'></a><a href='#L362'>362</a>
+<a name='L363'></a><a href='#L363'>363</a>
+<a name='L364'></a><a href='#L364'>364</a></td><td class="line-coverage quiet"><span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span></td><td class="text"><pre class="prettyprint lang-js">/**
+ * TLS 1.3 (RFC 8446 §4) server-side handshake — nominal 1-RTT path, plus
+ * optional mutual authentication (§4.3.2 `CertificateRequest`) and
+ * `HelloRetryRequest` (§4.1.4): `ClientHello` -&gt; `ServerHello`
+ * (unprotected) + `EncryptedExtensions`/[`CertificateRequest`]/
+ * `Certificate`/`CertificateVerify`/`Finished` (protected, one flight) -&gt;
+ * client `Finished` (plus, if requested, the client's own `Certificate`/
+ * `CertificateVerify`) -&gt; established. If the client's offered group
+ * isn't supported but a mutual one exists in its `supported_groups` list,
+ * the server instead replies with a `HelloRetryRequest` and waits for a
+ * second `ClientHello`. Both `CertificateVerify` messages carry a real
+ * (simulated) `PkiKeyPair` signature over the transcript, and `Finished`
+ * is bound to the correct handshake traffic secret — a step up in
+ * fidelity from `EapTlsHandshake.ts`'s 2-RTT model, which this module
+ * does not reuse (see `PRD-TLS.md` §2.1.1/§2.1.5/§2.1.6).
+<span class="fstat-no" title="function not covered" > */</span>
+import type { IEventBus } from '@/events/EventBus';
+import { simulatedDigest } from '@/network/dns/dnssec/Digest';
+import { PkiKeyPair, type PkiPrivateKey } from '@/network/pki/PkiKeyPair';
+import type { CertificateVerifier } from '@/network/pki/CertificateVerifier';
+import type { X509Certificate } from '@/network/pki/X509Certificate';
+import { HELLO_RETRY_REQUEST_RANDOM, type CipherSuite } from './types';
+import type { TlsDomainEvent } from './events';
+import {
+  type ClientHello, type ServerHello, type HelloRetryRequest, type EncryptedExtensionsMessage,
+  type CertificateRequest, type CertificateMessage, type CertificateVerify, type Finished,
+  type NewSessionTicket, type KeyUpdate, type TlsHandshakeMessage,
+  encodeHandshakeMessage, decodeHandshakeMessage, encodeMessages, decodeMessages, randomNonce,
+} from './messages';
+import { fragmentAsRecords, reassembleRecords, splitLeadingContentType, type TlsRecord } from './recordLayer';
+import { deriveKeySchedule, computeFinished, transcriptHash, nextTrafficSecret, ZERO_IKM } from './keySchedule';
+import { certificateAlert, fatalAlert, type AlertDescription, type TlsAlert } from './alerts';
+import { MANDATORY_CIPHER_SUITES, selectCipherSuite } from './cipherSuites';
+import { selectAlpnProtocol } from './alpn';
+import { type SessionTicket, SessionTicketStore, deriveResumptionPsk } from './sessionTickets';
+&nbsp;
+export interface TlsServerConfig {
+  readonly serverCert: X509Certificate;
+  readonly serverPrivateKey: PkiPrivateKey;
+  /** Top preference; tried first against what the client actually offered (RFC 8446 §4.1.1). */
+  readonly cipherSuite?: CipherSuite;
+  /** RFC 8446 §4.3.2 — request the peer's certificate (mTLS). Requires `verifier`. */
+  readonly requestClientCert?: boolean;
+  /** Verifies the client's certificate chain; required when `requestClientCert` is set. */
+  readonly verifier?: CertificateVerifier;
+  /** Groups this server accepts a key_share for; defaults to `['x25519']`. */
+  readonly supportedGroups?: readonly string[];
+  /** RFC 7301 — protocols this server supports, in preference order. */
+  readonly alpnProtocols?: readonly string[];
+  /** Shared session-ticket registry (§4.6.1) — set to issue tickets and accept PSK/0-RTT resumption. */
+  readonly sessionTicketStore?: SessionTicketStore;
+  /** RFC 8446 §2.1.12 observability — publishes `tls.*` events (`events.ts`) if set. */
+  readonly eventBus?: IEventBus;
+}
+&nbsp;
+function <span class="fstat-no" title="function not covered" >groupOf(k</span>eyShare: string): string {
+<span class="cstat-no" title="statement not covered" >  return keyShare.split(':')[0];</span>
+}
+&nbsp;
+type ServerState = 'idle' | 'awaiting-second-client-hello' | 'awaiting-client-final' | 'done';
+&nbsp;
+export class TlsServerSession {
+<span class="cstat-no" title="statement not covered" ><span class="cstat-no" title="statement not covered" >  result: 'accept' | 'reject' | null = n</span>ull;</span>
+  /** RFC 8446 §6 alert explaining the last failure, if any. */
+<span class="cstat-no" title="statement not covered" ><span class="cstat-no" title="statement not covered" >  lastAlert: TlsAlert | null = n</span>ull;</span>
+  /** The cipher suite actually negotiated, once a ClientHello has been processed. */
+<span class="cstat-no" title="statement not covered" ><span class="cstat-no" title="statement not covered" >  negotiatedCipherSuite: CipherSuite | null = n</span>ull;</span>
+  /** RFC 7301 — the protocol actually negotiated, if any. */
+<span class="cstat-no" title="statement not covered" ><span class="cstat-no" title="statement not covered" >  negotiatedAlpnProtocol: string | null = n</span>ull;</span>
+  /** RFC 8446 §2.3/§4.2.10 — 0-RTT data received alongside a validly-resumed ClientHello, if any. */
+<span class="cstat-no" title="statement not covered" ><span class="cstat-no" title="statement not covered" >  receivedEarlyData: Uint8Array | null = n</span>ull;</span>
+  /**
+   * RFC 8446 §7.2 — this side's current application traffic secrets, set
+   * once the handshake completes and ratcheted independently per direction
+   * by `sendKeyUpdate`/`receiveKeyUpdate` (§4.6.3).
+   */
+<span class="cstat-no" title="statement not covered" ><span class="cstat-no" title="statement not covered" >  clientApplicationTrafficSecret: string | null = n</span>ull;</span>
+<span class="cstat-no" title="statement not covered" ><span class="cstat-no" title="statement not covered" >  serverApplicationTrafficSecret: string | null = n</span>ull;</span>
+  /**
+   * RFC 9001 §5.3 — the Handshake-space secrets (`client_handshake_traffic_secret`/
+   * `server_handshake_traffic_secret`), set once the server flight is built.
+   * Exposed for consumers deriving Handshake-space keys on top of this
+   * engine (e.g. QUIC's `PacketProtection.ts`), not just this module's own
+   * Finished computation.
+   */
+<span class="cstat-no" title="statement not covered" ><span class="cstat-no" title="statement not covered" >  clientHandshakeTrafficSecret: string | null = n</span>ull;</span>
+<span class="cstat-no" title="statement not covered" ><span class="cstat-no" title="statement not covered" >  serverHandshakeTrafficSecret: string | null = n</span>ull;</span>
+  /** Stable per-connection correlator for `events.ts` payloads (§2.1.12). */
+<span class="cstat-no" title="statement not covered" >  readonly <span class="cstat-no" title="statement not covered" >s</span>essionId = randomNonce('tls-session');</span>
+&nbsp;
+<span class="cstat-no" title="statement not covered" >  private <span class="cstat-no" title="statement not covered" >s</span>tate: ServerState = 'idle';</span>
+<span class="cstat-no" title="statement not covered" >  private readonly c</span>ipherSuitePreference: readonly CipherSuite[];
+<span class="cstat-no" title="statement not covered" >  private readonly s</span>upportedGroups: readonly string[];
+<span class="cstat-no" title="statement not covered" >  private readonly a</span>lpnProtocols: readonly string[];
+<span class="cstat-no" title="statement not covered" >  private <span class="cstat-no" title="statement not covered" >r</span>esumptionMasterSecret: string | null = null;</span>
+<span class="cstat-no" title="statement not covered" >  private <span class="cstat-no" title="statement not covered" >e</span>arlyDataAccepted = false;</span>
+<span class="cstat-no" title="statement not covered" >  private <span class="cstat-no" title="statement not covered" >s</span>essionResumed = false;</span>
+<span class="cstat-no" title="statement not covered" >  private readonly <span class="cstat-no" title="statement not covered" >t</span>ranscript: Uint8Array[] = [];</span>
+&nbsp;
+<span class="fstat-no" title="function not covered" >  constructor(p</span>rivate readonly <span class="cstat-no" title="statement not covered" >config: TlsServerConfig)</span> {
+    const preferred = <span class="cstat-no" title="statement not covered" >config.cipherSuite;</span>
+<span class="cstat-no" title="statement not covered" >    this.cipherSuitePreference = preferred</span>
+      ? [preferred, ...MANDATORY_CIPHER_SUITES.filter(<span class="fstat-no" title="function not covered" >(s</span>) =&gt; <span class="cstat-no" title="statement not covered" >s !== preferred)]</span>
+      : MANDATORY_CIPHER_SUITES;
+<span class="cstat-no" title="statement not covered" >    this.supportedGroups = config.supportedGroups ?? ['x25519'];</span>
+<span class="cstat-no" title="statement not covered" >    this.alpnProtocols = config.alpnProtocols ?? [];</span>
+  }
+&nbsp;
+  /** Feeds the peer's flight in; returns this side's next flight, or null once nothing more is to be sent. */
+<span class="fstat-no" title="function not covered" >  handle(i</span>ncoming: readonly TlsRecord[]): readonly TlsRecord[] | null {
+<span class="cstat-no" title="statement not covered" >    try {</span>
+<span class="cstat-no" title="statement not covered" >      if (this.state === 'idle') <span class="cstat-no" title="statement not covered" >return this.handleFirstClientHello(incoming);</span></span>
+<span class="cstat-no" title="statement not covered" >      if (this.state === 'awaiting-second-client-hello') <span class="cstat-no" title="statement not covered" >return this.handleSecondClientHello(incoming);</span></span>
+<span class="cstat-no" title="statement not covered" >      if (this.state === 'awaiting-client-final') <span class="cstat-no" title="statement not covered" >return this.handleClientFinal(incoming);</span></span>
+<span class="cstat-no" title="statement not covered" >      return null;</span>
+    } catch {
+<span class="cstat-no" title="statement not covered" >      return this.reject('decode_error');</span>
+    }
+  }
+&nbsp;
+  private <span class="fstat-no" title="function not covered" >emit(e</span>vent: TlsDomainEvent): void {
+<span class="cstat-no" title="statement not covered" >    this.config.eventBus?.publish(event);</span>
+  }
+&nbsp;
+  private <span class="fstat-no" title="function not covered" >reject(d</span>escription: AlertDescription = <span class="branch-0 cbranch-no" title="branch not covered" >'handshake_failure')</span>: null {
+<span class="cstat-no" title="statement not covered" >    this.lastAlert = fatalAlert(description);</span>
+<span class="cstat-no" title="statement not covered" >    this.state = 'done';</span>
+<span class="cstat-no" title="statement not covered" >    this.result = 'reject';</span>
+<span class="cstat-no" title="statement not covered" >    this.emit({ topic: 'tls.handshake.failed', payload: { sessionId: this.sessionId, role: 'server', alert: this.lastAlert } });</span>
+<span class="cstat-no" title="statement not covered" >    this.emit({ topic: 'tls.alert.sent', payload: { sessionId: this.sessionId, role: 'server', alert: this.lastAlert } });</span>
+<span class="cstat-no" title="statement not covered" >    return null;</span>
+  }
+&nbsp;
+  private <span class="fstat-no" title="function not covered" >handleFirstClientHello(i</span>ncoming: readonly TlsRecord[]): readonly TlsRecord[] | null {
+<span class="cstat-no" title="statement not covered" >    this.emit({ topic: 'tls.handshake.started', payload: { sessionId: this.sessionId, role: 'server' } });</span>
+    const { leading, rest }<span class="cstat-no" title="statement not covered" > = splitLeadingContentType(incoming, 'handshake');</span>
+    const { contentType, plaintext: clientHelloBytes }<span class="cstat-no" title="statement not covered" > = reassembleRecords(leading, false);</span>
+<span class="cstat-no" title="statement not covered" >    if (contentType !== 'handshake') <span class="cstat-no" title="statement not covered" >return this.reject('decode_error');</span></span>
+    const <span class="cstat-no" title="statement not covered" >clientHello = decodeHandshakeMessage(clientHelloBytes) as ClientHello;</span>
+<span class="cstat-no" title="statement not covered" >    this.transcript.push(clientHelloBytes);</span>
+&nbsp;
+<span class="cstat-no" title="statement not covered" >    if (this.supportedGroups.includes(groupOf(clientHello.extensions.keyShare))) {</span>
+      const pskInput = <span class="cstat-no" title="statement not covered" >this.resolvePsk(clientHello);</span>
+<span class="cstat-no" title="statement not covered" >      if (pskInput &amp;&amp; rest.length &gt; 0) {</span>
+<span class="cstat-no" title="statement not covered" >        this.earlyDataAccepted = true;</span>
+<span class="cstat-no" title="statement not covered" >        this.receivedEarlyData = reassembleRecords(rest, true).plaintext;</span>
+      }
+<span class="cstat-no" title="statement not covered" >      return this.proceedWithServerFlight(clientHello, pskInput ?? ZERO_IKM, pskInput !== null);</span>
+    }
+&nbsp;
+    const mutualGroup = <span class="cstat-no" title="statement not covered" >this.supportedGroups.find(<span class="fstat-no" title="function not covered" >(g</span>) =&gt; <span class="cstat-no" title="statement not covered" >clientHello.extensions.supportedGroups.includes(g));</span></span>
+<span class="cstat-no" title="statement not covered" >    if (!mutualGroup) <span class="cstat-no" title="statement not covered" >return this.reject('handshake_failure');</span></span>
+&nbsp;
+    const helloRetryRequest: HelloRetryRequest = <span class="cstat-no" title="statement not covered" >{</span>
+      kind: 'hello_retry_request', random: HELLO_RETRY_REQUEST_RANDOM, selectedGroup: mutualGroup,
+    };
+    const <span class="cstat-no" title="statement not covered" >hrrBytes = encodeHandshakeMessage(helloRetryRequest);</span>
+<span class="cstat-no" title="statement not covered" >    this.transcript.push(hrrBytes);</span>
+<span class="cstat-no" title="statement not covered" >    this.state = 'awaiting-second-client-hello';</span>
+<span class="cstat-no" title="statement not covered" >    return fragmentAsRecords('handshake', hrrBytes, false);</span>
+  }
+&nbsp;
+  /** Redeems the client's PSK ticket, if offered and valid; null if not offered, unknown, or expired. */
+<span class="fstat-no" title="function not covered" >  private r</span>esolvePsk(clientHello: ClientHello): string | null {
+<span class="cstat-no" title="statement not covered" >    if (!clientHello.extensions.preSharedKey || !this.config.sessionTicketStore) <span class="cstat-no" title="statement not covered" >return null;</span></span>
+    const ticket = <span class="cstat-no" title="statement not covered" >this.config.sessionTicketStore.redeem(clientHello.extensions.preSharedKey, Date.now());</span>
+<span class="cstat-no" title="statement not covered" >    if (!ticket) <span class="cstat-no" title="statement not covered" >return null;</span></span>
+<span class="cstat-no" title="statement not covered" >    return deriveResumptionPsk(ticket);</span>
+  }
+&nbsp;
+  private <span class="fstat-no" title="function not covered" >handleSecondClientHello(i</span>ncoming: readonly TlsRecord[]): readonly TlsRecord[] | null {
+    const { contentType, plaintext: clientHelloBytes }<span class="cstat-no" title="statement not covered" > = reassembleRecords(incoming, false);</span>
+<span class="cstat-no" title="statement not covered" >    if (contentType !== 'handshake') <span class="cstat-no" title="statement not covered" >return this.reject('decode_error');</span></span>
+    const <span class="cstat-no" title="statement not covered" >clientHello = decodeHandshakeMessage(clientHelloBytes) as ClientHello;</span>
+<span class="cstat-no" title="statement not covered" >    if (!this.supportedGroups.includes(groupOf(clientHello.extensions.keyShare))) <span class="cstat-no" title="statement not covered" >return this.reject('handshake_failure');</span></span>
+<span class="cstat-no" title="statement not covered" >    this.transcript.push(clientHelloBytes);</span>
+<span class="cstat-no" title="statement not covered" >    return this.proceedWithServerFlight(clientHello, ZERO_IKM, false);</span>
+  }
+&nbsp;
+  private <span class="fstat-no" title="function not covered" >proceedWithServerFlight(</span>
+    clientHello: ClientHello, pskInput: string, pskAccepted: boolean,
+  ): readonly TlsRecord[] | null {
+    const <span class="cstat-no" title="statement not covered" >negotiatedSuite = selectCipherSuite(clientHello.cipherSuites, this.cipherSuitePreference);</span>
+<span class="cstat-no" title="statement not covered" >    if (!negotiatedSuite) <span class="cstat-no" title="statement not covered" >return this.reject('handshake_failure');</span></span>
+<span class="cstat-no" title="statement not covered" >    this.negotiatedCipherSuite = negotiatedSuite;</span>
+<span class="cstat-no" title="statement not covered" >    this.negotiatedAlpnProtocol = selectAlpnProtocol(clientHello.extensions.alpn, this.alpnProtocols);</span>
+&nbsp;
+    const <span class="cstat-no" title="statement not covered" >serverRandom = randomNonce('srv');</span>
+    const <span class="cstat-no" title="statement not covered" >serverKeyShare = randomNonce('ks-srv');</span>
+    const serverHello: ServerHello = <span class="cstat-no" title="statement not covered" >{</span>
+      kind: 'server_hello', random: serverRandom, cipherSuite: negotiatedSuite,
+      extensions: {
+        supportedVersions: '1.3', keyShare: serverKeyShare,
+        preSharedKey: pskAccepted ? 'accepted' : undefined,
+      },
+    };
+    const <span class="cstat-no" title="statement not covered" >serverHelloBytes = encodeHandshakeMessage(serverHello);</span>
+<span class="cstat-no" title="statement not covered" >    this.transcript.push(serverHelloBytes);</span>
+&nbsp;
+    const <span class="cstat-no" title="statement not covered" >dheSharedSecret = simulatedDigest(</span>
+      [clientHello.random, serverRandom, clientHello.extensions.keyShare, serverKeyShare].join('|'),
+    );
+    // Simplification: application/resumption secrets are derived from the
+    // CH+SH transcript checkpoint rather than the true through-Finished
+    // one — per-session uniqueness already comes from dheSharedSecret/
+    // pskInput (both random-nonce-derived), and neither is ever used to
+    // decrypt anything for real at this fidelity level (§2.1's convention).
+    const <span class="cstat-no" title="statement not covered" >shTranscript = transcriptHash(this.transcript);</span>
+    const <span class="cstat-no" title="statement not covered" >handshakePhase = deriveKeySchedule(</span>
+      { clientHello: transcriptHash([this.transcript[0]]), serverHello: shTranscript, serverFinished: shTranscript, clientFinished: shTranscript },
+      pskInput, dheSharedSecret,
+    );
+<span class="cstat-no" title="statement not covered" >    this.clientHandshakeTrafficSecret = handshakePhase.clientHandshakeTrafficSecret;</span>
+<span class="cstat-no" title="statement not covered" >    this.serverHandshakeTrafficSecret = handshakePhase.serverHandshakeTrafficSecret;</span>
+<span class="cstat-no" title="statement not covered" >    this.resumptionMasterSecret = handshakePhase.resumptionMasterSecret;</span>
+<span class="cstat-no" title="statement not covered" >    this.clientApplicationTrafficSecret = handshakePhase.clientApplicationTrafficSecret;</span>
+<span class="cstat-no" title="statement not covered" >    this.serverApplicationTrafficSecret = handshakePhase.serverApplicationTrafficSecret;</span>
+<span class="cstat-no" title="statement not covered" >    if (pskAccepted) {</span>
+<span class="cstat-no" title="statement not covered" >      this.sessionResumed = true;</span>
+<span class="cstat-no" title="statement not covered" >      this.emit({</span>
+        topic: 'tls.session.resumed',
+        payload: { sessionId: this.sessionId, role: 'server', ticket: clientHello.extensions.preSharedKey! },
+      });
+    }
+&nbsp;
+    const bundle: TlsHandshakeMessage[] = <span class="cstat-no" title="statement not covered" >[];</span>
+    const encryptedExtensions: EncryptedExtensionsMessage = <span class="cstat-no" title="statement not covered" >{</span>
+      kind: 'encrypted_extensions',
+      extensions: { alpn: this.negotiatedAlpnProtocol ?? undefined, earlyData: this.earlyDataAccepted || undefined },
+    };
+<span class="cstat-no" title="statement not covered" >    bundle.push(encryptedExtensions);</span>
+<span class="cstat-no" title="statement not covered" >    this.transcript.push(encodeHandshakeMessage(encryptedExtensions));</span>
+&nbsp;
+<span class="cstat-no" title="statement not covered" >    if (this.config.requestClientCert) {</span>
+      const certificateRequest: CertificateRequest = <span class="cstat-no" title="statement not covered" >{</span>
+        kind: 'certificate_request', certificateRequestContext: '', signatureAlgorithms: ['ecdsa_secp256r1_sha256'],
+      };
+<span class="cstat-no" title="statement not covered" >      bundle.push(certificateRequest);</span>
+<span class="cstat-no" title="statement not covered" >      this.transcript.push(encodeHandshakeMessage(certificateRequest));</span>
+    }
+&nbsp;
+    const certificate: CertificateMessage = <span class="cstat-no" title="statement not covered" >{ kind: 'certificate', certificateList: [this.config.serverCert] };</span>
+<span class="cstat-no" title="statement not covered" >    bundle.push(certificate);</span>
+<span class="cstat-no" title="statement not covered" >    this.transcript.push(encodeHandshakeMessage(certificate));</span>
+&nbsp;
+    const certificateVerify: CertificateVerify = <span class="cstat-no" title="statement not covered" >{</span>
+      kind: 'certificate_verify',
+      signature: PkiKeyPair.sign(this.config.serverPrivateKey, transcriptHash(this.transcript)),
+    };
+<span class="cstat-no" title="statement not covered" >    bundle.push(certificateVerify);</span>
+<span class="cstat-no" title="statement not covered" >    this.transcript.push(encodeHandshakeMessage(certificateVerify));</span>
+&nbsp;
+    const finished: Finished = <span class="cstat-no" title="statement not covered" >{</span>
+      kind: 'finished',
+      verifyData: computeFinished(handshakePhase.serverHandshakeTrafficSecret, transcriptHash(this.transcript)),
+    };
+<span class="cstat-no" title="statement not covered" >    bundle.push(finished);</span>
+<span class="cstat-no" title="statement not covered" >    this.transcript.push(encodeHandshakeMessage(finished));</span>
+&nbsp;
+<span class="cstat-no" title="statement not covered" >    this.state = 'awaiting-client-final';</span>
+<span class="cstat-no" title="statement not covered" >    return [</span>
+      ...fragmentAsRecords('handshake', serverHelloBytes, false),
+      ...fragmentAsRecords('handshake', encodeMessages(bundle), true),
+    ];
+  }
+&nbsp;
+  private <span class="fstat-no" title="function not covered" >handleClientFinal(i</span>ncoming: readonly TlsRecord[]): readonly TlsRecord[] | null {
+    const { contentType, plaintext }<span class="cstat-no" title="statement not covered" > = reassembleRecords(incoming, true);</span>
+<span class="cstat-no" title="statement not covered" >    if (contentType !== 'handshake') <span class="cstat-no" title="statement not covered" >return this.reject('decode_error');</span></span>
+    const <span class="cstat-no" title="statement not covered" >messages = decodeMessages(plaintext);</span>
+&nbsp;
+<span class="cstat-no" title="statement not covered" >    if (this.config.requestClientCert) {</span>
+      const certificate = <span class="cstat-no" title="statement not covered" >messages.find(<span class="fstat-no" title="function not covered" >(m</span>): m is CertificateMessage =&gt; <span class="cstat-no" title="statement not covered" >m.kind === 'certificate');</span></span>
+      const certificateVerify = <span class="cstat-no" title="statement not covered" >messages.find(<span class="fstat-no" title="function not covered" >(m</span>): m is CertificateVerify =&gt; <span class="cstat-no" title="statement not covered" >m.kind === 'certificate_verify');</span></span>
+<span class="cstat-no" title="statement not covered" >      if (!certificate || certificate.certificateList.length === 0 || !certificateVerify) {</span>
+<span class="cstat-no" title="statement not covered" >        return this.reject('certificate_unknown');</span>
+      }
+      const leafCert = <span class="cstat-no" title="statement not covered" >certificate.certificateList[0];</span>
+<span class="cstat-no" title="statement not covered" >      if (!this.config.verifier) <span class="cstat-no" title="statement not covered" >return this.reject('certificate_unknown');</span></span>
+      const verification = <span class="cstat-no" title="statement not covered" >this.config.verifier.verify(leafCert);</span>
+<span class="cstat-no" title="statement not covered" >      if (verification.ok === false) {</span>
+<span class="cstat-no" title="statement not covered" >        this.lastAlert = certificateAlert(verification.reason);</span>
+<span class="cstat-no" title="statement not covered" >        this.state = 'done';</span>
+<span class="cstat-no" title="statement not covered" >        this.result = 'reject';</span>
+<span class="cstat-no" title="statement not covered" >        this.emit({ topic: 'tls.handshake.failed', payload: { sessionId: this.sessionId, role: 'server', alert: this.lastAlert } });</span>
+<span class="cstat-no" title="statement not covered" >        this.emit({ topic: 'tls.alert.sent', payload: { sessionId: this.sessionId, role: 'server', alert: this.lastAlert } });</span>
+<span class="cstat-no" title="statement not covered" >        return null;</span>
+      }
+&nbsp;
+<span class="cstat-no" title="statement not covered" >      this.transcript.push(encodeHandshakeMessage(certificate));</span>
+      const <span class="cstat-no" title="statement not covered" >preVerify = transcriptHash(this.transcript);</span>
+<span class="cstat-no" title="statement not covered" >      if (!PkiKeyPair.verify(leafCert.publicKey, preVerify, certificateVerify.signature)) <span class="cstat-no" title="statement not covered" >return this.reject('decrypt_error');</span></span>
+<span class="cstat-no" title="statement not covered" >      this.transcript.push(encodeHandshakeMessage(certificateVerify));</span>
+    }
+&nbsp;
+    const finished = <span class="cstat-no" title="statement not covered" >messages.find(<span class="fstat-no" title="function not covered" >(m</span>): m is Finished =&gt; <span class="cstat-no" title="statement not covered" >m.kind === 'finished');</span></span>
+<span class="cstat-no" title="statement not covered" >    if (!finished) <span class="cstat-no" title="statement not covered" >return this.reject('unexpected_message');</span></span>
+    const <span class="cstat-no" title="statement not covered" >expected = computeFinished(this.clientHandshakeTrafficSecret!, transcriptHash(this.transcript));</span>
+<span class="cstat-no" title="statement not covered" >    if (finished.verifyData !== expected) <span class="cstat-no" title="statement not covered" >return this.reject('decrypt_error');</span></span>
+<span class="cstat-no" title="statement not covered" >    this.state = 'done';</span>
+<span class="cstat-no" title="statement not covered" >    this.result = 'accept';</span>
+<span class="cstat-no" title="statement not covered" >    this.emit({</span>
+      topic: 'tls.handshake.completed',
+      payload: {
+        sessionId: this.sessionId, role: 'server', cipherSuite: this.negotiatedCipherSuite!,
+        alpnProtocol: this.negotiatedAlpnProtocol, resumed: this.sessionResumed,
+      },
+    });
+&nbsp;
+<span class="cstat-no" title="statement not covered" >    if (!this.config.sessionTicketStore) <span class="cstat-no" title="statement not covered" >return null;</span></span>
+    const ticket: SessionTicket = <span class="cstat-no" title="statement not covered" >{</span>
+      ticket: randomNonce('ticket'),
+      resumptionMasterSecret: this.resumptionMasterSecret!,
+      ticketNonce: randomNonce('ticket-nonce'),
+      cipherSuite: this.negotiatedCipherSuite!,
+      ticketLifetime: 7200,
+      issuedAt: Date.now(),
+      consumed: false,
+    };
+<span class="cstat-no" title="statement not covered" >    this.config.sessionTicketStore.issue(ticket);</span>
+    const newSessionTicket: NewSessionTicket = <span class="cstat-no" title="statement not covered" >{</span>
+      kind: 'new_session_ticket', ticketLifetime: ticket.ticketLifetime, ticketAgeAdd: randomNonce('age-add'),
+      ticketNonce: ticket.ticketNonce, ticket: ticket.ticket, extensions: { earlyData: true },
+    };
+<span class="cstat-no" title="statement not covered" >    return fragmentAsRecords('handshake', encodeHandshakeMessage(newSessionTicket), true);</span>
+  }
+&nbsp;
+  /**
+   * RFC 8446 §4.6.3 — ratchets this side's own sending secret
+   * (`serverApplicationTrafficSecret`) and returns the wire flight; the peer
+   * must feed it into `receiveKeyUpdate` to stay in sync. `requestUpdate`
+   * asks the peer to reciprocate with its own KeyUpdate.
+   */
+<span class="fstat-no" title="function not covered" >  sendKeyUpdate(r</span>equestUpdate = <span class="branch-0 cbranch-no" title="branch not covered" >false)</span>: readonly TlsRecord[] {
+    const keyUpdate: KeyUpdate = <span class="cstat-no" title="statement not covered" >{ kind: 'key_update', requestUpdate };</span>
+    const <span class="cstat-no" title="statement not covered" >records = fragmentAsRecords('handshake', encodeHandshakeMessage(keyUpdate), true);</span>
+<span class="cstat-no" title="statement not covered" >    this.serverApplicationTrafficSecret = nextTrafficSecret(this.serverApplicationTrafficSecret!);</span>
+<span class="cstat-no" title="statement not covered" >    this.emit({</span>
+      topic: 'tls.key_update',
+      payload: { sessionId: this.sessionId, role: 'server', direction: 'server-to-client', requestUpdate },
+    });
+<span class="cstat-no" title="statement not covered" >    return records;</span>
+  }
+&nbsp;
+  /**
+   * RFC 8446 §4.6.3 — processes a peer KeyUpdate: ratchets the matching
+   * receiving secret (`clientApplicationTrafficSecret`) and, if the peer
+   * requested a reciprocal update, returns this side's own KeyUpdate (never
+   * itself setting `requestUpdate`, to avoid an update ping-pong).
+   */
+<span class="fstat-no" title="function not covered" >  receiveKeyUpdate(r</span>ecords: readonly TlsRecord[]): readonly TlsRecord[] | null {
+    const { contentType, plaintext }<span class="cstat-no" title="statement not covered" > = reassembleRecords(records, true);</span>
+<span class="cstat-no" title="statement not covered" >    if (contentType !== 'handshake') <span class="cstat-no" title="statement not covered" >return null;</span></span>
+    const <span class="cstat-no" title="statement not covered" >message = decodeHandshakeMessage(plaintext);</span>
+<span class="cstat-no" title="statement not covered" >    if (message.kind !== 'key_update') <span class="cstat-no" title="statement not covered" >return null;</span></span>
+<span class="cstat-no" title="statement not covered" >    this.clientApplicationTrafficSecret = nextTrafficSecret(this.clientApplicationTrafficSecret!);</span>
+<span class="cstat-no" title="statement not covered" >    this.emit({</span>
+      topic: 'tls.key_update',
+      payload: { sessionId: this.sessionId, role: 'server', direction: 'client-to-server', requestUpdate: message.requestUpdate },
+    });
+<span class="cstat-no" title="statement not covered" >    return message.requestUpdate ? this.sendKeyUpdate(false) : null;</span>
+  }
+}
+&nbsp;</pre></td></tr></table></pre>
+
+                <div class='push'></div><!-- for sticky footer -->
+            </div><!-- /wrapper -->
+            <div class='footer quiet pad2 space-top1 center small'>
+                Code coverage generated by
+                <a href="https://istanbul.js.org/" target="_blank" rel="noopener noreferrer">istanbul</a>
+                at 2026-07-09T18:53:20.982Z
+            </div>
+        <script src="../../../prettify.js"></script>
+        <script>
+            window.onload = function () {
+                prettyPrint();
+            };
+        </script>
+        <script src="../../../sorter.js"></script>
+        <script src="../../../block-navigation.js"></script>
+    </body>
+</html>
+    

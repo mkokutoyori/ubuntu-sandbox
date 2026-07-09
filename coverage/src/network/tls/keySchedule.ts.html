@@ -1,0 +1,475 @@
+
+<!doctype html>
+<html lang="en">
+
+<head>
+    <title>Code coverage report for src/network/tls/keySchedule.ts</title>
+    <meta charset="utf-8" />
+    <link rel="stylesheet" href="../../../prettify.css" />
+    <link rel="stylesheet" href="../../../base.css" />
+    <link rel="shortcut icon" type="image/x-icon" href="../../../favicon.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <style type='text/css'>
+        .coverage-summary .sorter {
+            background-image: url(../../../sort-arrow-sprite.png);
+        }
+    </style>
+</head>
+    
+<body>
+<div class='wrapper'>
+    <div class='pad1'>
+        <h1><a href="../../../index.html">All files</a> / <a href="index.html">src/network/tls</a> keySchedule.ts</h1>
+        <div class='clearfix'>
+            
+            <div class='fl pad1y space-right2'>
+                <span class="strong">8.69% </span>
+                <span class="quiet">Statements</span>
+                <span class='fraction'>2/23</span>
+            </div>
+        
+            
+            <div class='fl pad1y space-right2'>
+                <span class="strong">0% </span>
+                <span class="quiet">Branches</span>
+                <span class='fraction'>0/2</span>
+            </div>
+        
+            
+            <div class='fl pad1y space-right2'>
+                <span class="strong">0% </span>
+                <span class="quiet">Functions</span>
+                <span class='fraction'>0/7</span>
+            </div>
+        
+            
+            <div class='fl pad1y space-right2'>
+                <span class="strong">9.09% </span>
+                <span class="quiet">Lines</span>
+                <span class='fraction'>2/22</span>
+            </div>
+        
+            
+        </div>
+        <p class="quiet">
+            Press <em>n</em> or <em>j</em> to go to the next uncovered block, <em>b</em>, <em>p</em> or <em>k</em> for the previous block.
+        </p>
+        <template id="filterTemplate">
+            <div class="quiet">
+                Filter:
+                <input type="search" id="fileSearch">
+            </div>
+        </template>
+    </div>
+    <div class='status-line low'></div>
+    <pre><table class="coverage">
+<tr><td class="line-count quiet"><a name='L1'></a><a href='#L1'>1</a>
+<a name='L2'></a><a href='#L2'>2</a>
+<a name='L3'></a><a href='#L3'>3</a>
+<a name='L4'></a><a href='#L4'>4</a>
+<a name='L5'></a><a href='#L5'>5</a>
+<a name='L6'></a><a href='#L6'>6</a>
+<a name='L7'></a><a href='#L7'>7</a>
+<a name='L8'></a><a href='#L8'>8</a>
+<a name='L9'></a><a href='#L9'>9</a>
+<a name='L10'></a><a href='#L10'>10</a>
+<a name='L11'></a><a href='#L11'>11</a>
+<a name='L12'></a><a href='#L12'>12</a>
+<a name='L13'></a><a href='#L13'>13</a>
+<a name='L14'></a><a href='#L14'>14</a>
+<a name='L15'></a><a href='#L15'>15</a>
+<a name='L16'></a><a href='#L16'>16</a>
+<a name='L17'></a><a href='#L17'>17</a>
+<a name='L18'></a><a href='#L18'>18</a>
+<a name='L19'></a><a href='#L19'>19</a>
+<a name='L20'></a><a href='#L20'>20</a>
+<a name='L21'></a><a href='#L21'>21</a>
+<a name='L22'></a><a href='#L22'>22</a>
+<a name='L23'></a><a href='#L23'>23</a>
+<a name='L24'></a><a href='#L24'>24</a>
+<a name='L25'></a><a href='#L25'>25</a>
+<a name='L26'></a><a href='#L26'>26</a>
+<a name='L27'></a><a href='#L27'>27</a>
+<a name='L28'></a><a href='#L28'>28</a>
+<a name='L29'></a><a href='#L29'>29</a>
+<a name='L30'></a><a href='#L30'>30</a>
+<a name='L31'></a><a href='#L31'>31</a>
+<a name='L32'></a><a href='#L32'>32</a>
+<a name='L33'></a><a href='#L33'>33</a>
+<a name='L34'></a><a href='#L34'>34</a>
+<a name='L35'></a><a href='#L35'>35</a>
+<a name='L36'></a><a href='#L36'>36</a>
+<a name='L37'></a><a href='#L37'>37</a>
+<a name='L38'></a><a href='#L38'>38</a>
+<a name='L39'></a><a href='#L39'>39</a>
+<a name='L40'></a><a href='#L40'>40</a>
+<a name='L41'></a><a href='#L41'>41</a>
+<a name='L42'></a><a href='#L42'>42</a>
+<a name='L43'></a><a href='#L43'>43</a>
+<a name='L44'></a><a href='#L44'>44</a>
+<a name='L45'></a><a href='#L45'>45</a>
+<a name='L46'></a><a href='#L46'>46</a>
+<a name='L47'></a><a href='#L47'>47</a>
+<a name='L48'></a><a href='#L48'>48</a>
+<a name='L49'></a><a href='#L49'>49</a>
+<a name='L50'></a><a href='#L50'>50</a>
+<a name='L51'></a><a href='#L51'>51</a>
+<a name='L52'></a><a href='#L52'>52</a>
+<a name='L53'></a><a href='#L53'>53</a>
+<a name='L54'></a><a href='#L54'>54</a>
+<a name='L55'></a><a href='#L55'>55</a>
+<a name='L56'></a><a href='#L56'>56</a>
+<a name='L57'></a><a href='#L57'>57</a>
+<a name='L58'></a><a href='#L58'>58</a>
+<a name='L59'></a><a href='#L59'>59</a>
+<a name='L60'></a><a href='#L60'>60</a>
+<a name='L61'></a><a href='#L61'>61</a>
+<a name='L62'></a><a href='#L62'>62</a>
+<a name='L63'></a><a href='#L63'>63</a>
+<a name='L64'></a><a href='#L64'>64</a>
+<a name='L65'></a><a href='#L65'>65</a>
+<a name='L66'></a><a href='#L66'>66</a>
+<a name='L67'></a><a href='#L67'>67</a>
+<a name='L68'></a><a href='#L68'>68</a>
+<a name='L69'></a><a href='#L69'>69</a>
+<a name='L70'></a><a href='#L70'>70</a>
+<a name='L71'></a><a href='#L71'>71</a>
+<a name='L72'></a><a href='#L72'>72</a>
+<a name='L73'></a><a href='#L73'>73</a>
+<a name='L74'></a><a href='#L74'>74</a>
+<a name='L75'></a><a href='#L75'>75</a>
+<a name='L76'></a><a href='#L76'>76</a>
+<a name='L77'></a><a href='#L77'>77</a>
+<a name='L78'></a><a href='#L78'>78</a>
+<a name='L79'></a><a href='#L79'>79</a>
+<a name='L80'></a><a href='#L80'>80</a>
+<a name='L81'></a><a href='#L81'>81</a>
+<a name='L82'></a><a href='#L82'>82</a>
+<a name='L83'></a><a href='#L83'>83</a>
+<a name='L84'></a><a href='#L84'>84</a>
+<a name='L85'></a><a href='#L85'>85</a>
+<a name='L86'></a><a href='#L86'>86</a>
+<a name='L87'></a><a href='#L87'>87</a>
+<a name='L88'></a><a href='#L88'>88</a>
+<a name='L89'></a><a href='#L89'>89</a>
+<a name='L90'></a><a href='#L90'>90</a>
+<a name='L91'></a><a href='#L91'>91</a>
+<a name='L92'></a><a href='#L92'>92</a>
+<a name='L93'></a><a href='#L93'>93</a>
+<a name='L94'></a><a href='#L94'>94</a>
+<a name='L95'></a><a href='#L95'>95</a>
+<a name='L96'></a><a href='#L96'>96</a>
+<a name='L97'></a><a href='#L97'>97</a>
+<a name='L98'></a><a href='#L98'>98</a>
+<a name='L99'></a><a href='#L99'>99</a>
+<a name='L100'></a><a href='#L100'>100</a>
+<a name='L101'></a><a href='#L101'>101</a>
+<a name='L102'></a><a href='#L102'>102</a>
+<a name='L103'></a><a href='#L103'>103</a>
+<a name='L104'></a><a href='#L104'>104</a>
+<a name='L105'></a><a href='#L105'>105</a>
+<a name='L106'></a><a href='#L106'>106</a>
+<a name='L107'></a><a href='#L107'>107</a>
+<a name='L108'></a><a href='#L108'>108</a>
+<a name='L109'></a><a href='#L109'>109</a>
+<a name='L110'></a><a href='#L110'>110</a>
+<a name='L111'></a><a href='#L111'>111</a>
+<a name='L112'></a><a href='#L112'>112</a>
+<a name='L113'></a><a href='#L113'>113</a>
+<a name='L114'></a><a href='#L114'>114</a>
+<a name='L115'></a><a href='#L115'>115</a>
+<a name='L116'></a><a href='#L116'>116</a>
+<a name='L117'></a><a href='#L117'>117</a>
+<a name='L118'></a><a href='#L118'>118</a>
+<a name='L119'></a><a href='#L119'>119</a>
+<a name='L120'></a><a href='#L120'>120</a>
+<a name='L121'></a><a href='#L121'>121</a>
+<a name='L122'></a><a href='#L122'>122</a>
+<a name='L123'></a><a href='#L123'>123</a>
+<a name='L124'></a><a href='#L124'>124</a>
+<a name='L125'></a><a href='#L125'>125</a>
+<a name='L126'></a><a href='#L126'>126</a>
+<a name='L127'></a><a href='#L127'>127</a>
+<a name='L128'></a><a href='#L128'>128</a>
+<a name='L129'></a><a href='#L129'>129</a>
+<a name='L130'></a><a href='#L130'>130</a>
+<a name='L131'></a><a href='#L131'>131</a></td><td class="line-coverage quiet"><span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span></td><td class="text"><pre class="prettyprint lang-js">/**
+ * TLS 1.3 (RFC 8446 §7.1) key schedule — the derivation tree from
+ * PSK/(EC)DHE input keying material down to the traffic secrets each side
+ * actually uses. Real derivation uses HKDF-Extract and
+ * HKDF-Expand-Label("tls13 " + label, transcript-hash, length); this
+ * module keeps the exact same tree shape and label names but derives
+ * every secret via `simulatedDigest` (already the project's stand-in for
+ * a keyed hash, used by `SimulatedTls.ts`/`EapTlsHandshake.ts`) rather
+ * than a real HMAC-based HKDF. Two sessions with different transcripts or
+ * different PSK/DHE input always diverge; the tree's internal separations
+ * (early vs. handshake vs. master, handshake vs. application, client vs.
+ * server) are exact structural properties, testable without any real
+ * cryptography.
+ */
+import { simulatedDigest } from '@/network/dns/dnssec/Digest';
+&nbsp;
+const TLS13_LABEL_PREFIX = 'tls13 ';
+&nbsp;
+/** Placeholder input keying material RFC 8446 §7.1 calls "0" — used when no PSK/(EC)DHE applies. */
+export const ZERO_IKM = '0'.repeat(32);
+&nbsp;
+/** Simulated stand-in for `HKDF-Extract(salt, ikm)`. */
+export function <span class="fstat-no" title="function not covered" >extractSecret(s</span>alt: string, ikm: string): string {
+<span class="cstat-no" title="statement not covered" >  return simulatedDigest(`hkdf-extract|${salt}|${ikm}`);</span>
+}
+&nbsp;
+/**
+ * Simulated stand-in for `Derive-Secret(secret, label, messages) =
+ * HKDF-Expand-Label(secret, label, Transcript-Hash(messages), Hash.length)`.
+ * `context` is whatever transcript-hash (or empty string, per the RFC) the
+ * caller has already computed.
+ */
+export function <span class="fstat-no" title="function not covered" >expandLabel(s</span>ecret: string, label: string, context: string): string {
+<span class="cstat-no" title="statement not covered" >  return simulatedDigest(`hkdf-expand-label|${secret}|${TLS13_LABEL_PREFIX}${label}|${context}`);</span>
+}
+&nbsp;
+/** Simulated stand-in for `Transcript-Hash(messages)` — order-sensitive, content-sensitive. */
+export function <span class="fstat-no" title="function not covered" >transcriptHash(m</span>essageBytesList: readonly Uint8Array[]): string {
+<span class="cstat-no" title="statement not covered" >  return simulatedDigest(messageBytesList.map(<span class="fstat-no" title="function not covered" >(b</span>ytes) =&gt; <span class="cstat-no" title="statement not covered" >Array.from(bytes).join(',')).j</span>oin('|'));</span>
+}
+&nbsp;
+/**
+ * The transcript-hash checkpoints §7.1's tree derives secrets from, named
+ * after the last message each one includes (matching the RFC's own
+ * figure): up through ClientHello (`+ HelloRetryRequest + second
+ * ClientHello`, if any), through ServerHello, through the server's
+ * Finished, and through the client's Finished.
+ */
+export interface KeyScheduleTranscripts {
+  readonly clientHello: string;
+  readonly serverHello: string;
+  readonly serverFinished: string;
+  readonly clientFinished: string;
+}
+&nbsp;
+export interface KeySchedule {
+  readonly earlySecret: string;
+  readonly binderKey: string;
+  readonly clientEarlyTrafficSecret: string;
+  readonly earlyExporterMasterSecret: string;
+  readonly handshakeSecret: string;
+  readonly clientHandshakeTrafficSecret: string;
+  readonly serverHandshakeTrafficSecret: string;
+  readonly masterSecret: string;
+  readonly clientApplicationTrafficSecret: string;
+  readonly serverApplicationTrafficSecret: string;
+  readonly exporterMasterSecret: string;
+  readonly resumptionMasterSecret: string;
+}
+&nbsp;
+/**
+ * Runs the full §7.1 tree: Early Secret → (derived) → Handshake Secret →
+ * (derived) → Master Secret, deriving every named traffic/exporter/
+ * resumption secret along the way. `psk`/`dheSharedSecret` default to the
+ * RFC's "0" placeholder (no PSK offered, DHE result unknown yet) — later
+ * phases (P8 resumption, mTLS) pass real simulated PSK/DHE material
+ * without changing this function's shape.
+ */
+export function <span class="fstat-no" title="function not covered" >deriveKeySchedule(</span>
+  transcripts: KeyScheduleTranscripts,
+  psk: string = <span class="branch-0 cbranch-no" title="branch not covered" >ZERO_IKM,</span>
+  dheSharedSecret: string = <span class="branch-0 cbranch-no" title="branch not covered" >ZERO_IKM,</span>
+): KeySchedule {
+  const earlySecret = <span class="cstat-no" title="statement not covered" >extractSecret('', psk);</span>
+  const binderKey = <span class="cstat-no" title="statement not covered" >expandLabel(earlySecret, 'ext binder', '');</span>
+  const clientEarlyTrafficSecret = <span class="cstat-no" title="statement not covered" >expandLabel(earlySecret, 'c e traffic', transcripts.clientHello);</span>
+  const earlyExporterMasterSecret = <span class="cstat-no" title="statement not covered" >expandLabel(earlySecret, 'e exp master', transcripts.clientHello);</span>
+&nbsp;
+  const derivedFromEarly = <span class="cstat-no" title="statement not covered" >expandLabel(earlySecret, 'derived', '');</span>
+  const handshakeSecret = <span class="cstat-no" title="statement not covered" >extractSecret(derivedFromEarly, dheSharedSecret);</span>
+  const clientHandshakeTrafficSecret = <span class="cstat-no" title="statement not covered" >expandLabel(handshakeSecret, 'c hs traffic', transcripts.serverHello);</span>
+  const serverHandshakeTrafficSecret = <span class="cstat-no" title="statement not covered" >expandLabel(handshakeSecret, 's hs traffic', transcripts.serverHello);</span>
+&nbsp;
+  const derivedFromHandshake = <span class="cstat-no" title="statement not covered" >expandLabel(handshakeSecret, 'derived', '');</span>
+  const masterSecret = <span class="cstat-no" title="statement not covered" >extractSecret(derivedFromHandshake, ZERO_IKM);</span>
+  const clientApplicationTrafficSecret = <span class="cstat-no" title="statement not covered" >expandLabel(masterSecret, 'c ap traffic', transcripts.serverFinished);</span>
+  const serverApplicationTrafficSecret = <span class="cstat-no" title="statement not covered" >expandLabel(masterSecret, 's ap traffic', transcripts.serverFinished);</span>
+  const exporterMasterSecret = <span class="cstat-no" title="statement not covered" >expandLabel(masterSecret, 'exp master', transcripts.serverFinished);</span>
+  const resumptionMasterSecret = <span class="cstat-no" title="statement not covered" >expandLabel(masterSecret, 'res master', transcripts.clientFinished);</span>
+&nbsp;
+<span class="cstat-no" title="statement not covered" >  return {</span>
+    earlySecret, binderKey, clientEarlyTrafficSecret, earlyExporterMasterSecret,
+    handshakeSecret, clientHandshakeTrafficSecret, serverHandshakeTrafficSecret,
+    masterSecret, clientApplicationTrafficSecret, serverApplicationTrafficSecret,
+    exporterMasterSecret, resumptionMasterSecret,
+  };
+}
+&nbsp;
+/**
+ * Simulated stand-in for computing a Finished message's `verify_data`
+ * (real RFC 8446 §4.4.4: `HMAC(finished_key, Transcript-Hash(...))`, where
+ * `finished_key = HKDF-Expand-Label(BaseKey, "finished", "", Hash.length)`).
+ * Binding the traffic secret directly into the digest still catches both a
+ * wrong role/secret (impersonation) and a tampered transcript (integrity),
+ * without needing to model the intermediate `finished_key` derivation step.
+ */
+export function <span class="fstat-no" title="function not covered" >computeFinished(t</span>rafficSecret: string, transcript: string): string {
+<span class="cstat-no" title="statement not covered" >  return simulatedDigest(`finished|${trafficSecret}|${transcript}`);</span>
+}
+&nbsp;
+/**
+ * RFC 8446 §7.2 `KeyUpdate` — `application_traffic_secret_N+1 =
+ * HKDF-Expand-Label(application_traffic_secret_N, "traffic upd", "",
+ * Hash.length)`. Each direction (client-to-server, server-to-client) is
+ * ratcheted independently by calling this on that direction's current
+ * secret alone (§4.6.3).
+ */
+export function <span class="fstat-no" title="function not covered" >nextTrafficSecret(s</span>ecret: string): string {
+<span class="cstat-no" title="statement not covered" >  return expandLabel(secret, 'traffic upd', '');</span>
+}
+&nbsp;</pre></td></tr></table></pre>
+
+                <div class='push'></div><!-- for sticky footer -->
+            </div><!-- /wrapper -->
+            <div class='footer quiet pad2 space-top1 center small'>
+                Code coverage generated by
+                <a href="https://istanbul.js.org/" target="_blank" rel="noopener noreferrer">istanbul</a>
+                at 2026-07-09T18:53:20.982Z
+            </div>
+        <script src="../../../prettify.js"></script>
+        <script>
+            window.onload = function () {
+                prettyPrint();
+            };
+        </script>
+        <script src="../../../sorter.js"></script>
+        <script src="../../../block-navigation.js"></script>
+    </body>
+</html>
+    
