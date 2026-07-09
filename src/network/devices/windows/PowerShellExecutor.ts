@@ -40,6 +40,7 @@ import { LOCAL_ACCOUNT_CMDLETS } from './PSLocalAccountCmdlets';
 import { EVENT_LOG_CMDLETS } from './PSEventLogCmdlets';
 import { STORAGE_CMDLETS } from './PSStorageCmdlets';
 import { psGetDnsClientServerAddress, psSetDnsClientServerAddress, psGetNetConnectionProfile, psSetNetConnectionProfile, type PSNetConfigContext } from './PSNetConfigCmdlets';
+import { psTestPath, psResolvePath, psSplitPath, psJoinPath, type PSPathContext } from './PSPathCmdlets';
 import type { IEventBus } from '@/events/EventBus';
 
 // ─── Constants ────────────────────────────────────────────────────
@@ -2683,7 +2684,7 @@ export class PowerShellExecutor {
 
     // Test-Path
     if (cmdLower === 'test-path') {
-      return this.handleTestPath(args);
+      return psTestPath(this.buildPSPathCtx(), args);
     }
 
     // Out-File
@@ -2708,17 +2709,17 @@ export class PowerShellExecutor {
 
     // Resolve-Path / rvpa
     if (cmdLower === 'resolve-path' || cmdLower === 'rvpa') {
-      return this.handleResolvePath(args);
+      return psResolvePath(this.buildPSPathCtx(), args);
     }
 
     // Split-Path
     if (cmdLower === 'split-path') {
-      return this.handleSplitPath(args);
+      return psSplitPath(args);
     }
 
     // Join-Path
     if (cmdLower === 'join-path') {
-      return this.handleJoinPath(args);
+      return psJoinPath(args);
     }
 
     // ─── User/Group/ACL Management Cmdlets ──────────────────────
@@ -4895,13 +4896,8 @@ export class PowerShellExecutor {
 
   // ─── File management cmdlets ────────────────────────────────────
 
-  private handleTestPath(args: string[]): string {
-    const target = args.filter(a => !a.startsWith('-')).join(' ');
-    if (!target) return 'False';
-    if (isRegistryPath(target)) return this.registry.testPath(target) ? 'True' : 'False';
-    const fs = this.device.getFileSystem();
-    const absPath = fs.normalizePath(target, this.cwd);
-    return fs.exists(absPath) ? 'True' : 'False';
+  private buildPSPathCtx(): PSPathContext {
+    return { fs: this.device.getFileSystem(), cwd: this.cwd, registry: this.registry };
   }
 
   private async handleOutFile(args: string[]): Promise<string> {
@@ -4986,51 +4982,6 @@ export class PowerShellExecutor {
     lines.push(`PSIsContainer : ${isDir ? 'True' : 'False'}`);
     lines.push('');
     return lines.join('\n');
-  }
-
-  private handleResolvePath(args: string[]): string {
-    const fs = this.device.getFileSystem();
-    const target = args.filter(a => !a.startsWith('-')).join(' ');
-    if (!target) return "Resolve-Path : Cannot bind argument to parameter 'Path' because it is an empty string.";
-    const absPath = fs.normalizePath(target, this.cwd);
-    if (!fs.exists(absPath)) return `Resolve-Path : Cannot find path '${target}' because it does not exist.`;
-    return `\nPath\n----\n${absPath}\n`;
-  }
-
-  private handleSplitPath(args: string[]): string {
-    let target = '';
-    let leaf = false;
-    let parent = false;
-    for (let i = 0; i < args.length; i++) {
-      if (args[i] === '-Leaf') { leaf = true; continue; }
-      if (args[i] === '-Parent') { parent = true; continue; }
-      if (args[i] === '-Path' && args[i + 1]) { target = args[++i]; continue; }
-      if (!args[i].startsWith('-') && !target) { target = args[i]; }
-    }
-    if (!target) return '';
-    if (leaf) {
-      const lastSep = target.lastIndexOf('\\');
-      return lastSep >= 0 ? target.substring(lastSep + 1) : target;
-    }
-    // Default: parent
-    const lastSep = target.lastIndexOf('\\');
-    return lastSep >= 0 ? target.substring(0, lastSep) : '';
-  }
-
-  private handleJoinPath(args: string[]): string {
-    let parentPath = '', childPath = '';
-    for (let i = 0; i < args.length; i++) {
-      if (args[i] === '-Path' && args[i + 1]) { parentPath = args[++i]; continue; }
-      if (args[i] === '-ChildPath' && args[i + 1]) { childPath = args[++i]; continue; }
-      if (!args[i].startsWith('-')) {
-        if (!parentPath) { parentPath = args[i]; }
-        else if (!childPath) { childPath = args[i]; }
-      }
-    }
-    if (!parentPath) return '';
-    if (!childPath) return parentPath;
-    const sep = parentPath.endsWith('\\') ? '' : '\\';
-    return `${parentPath}${sep}${childPath}`;
   }
 
   // ─── User/Group/ACL Management Cmdlet Handlers ─────────────────
