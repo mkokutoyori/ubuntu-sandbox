@@ -1,6 +1,6 @@
 ============================================================
 Shell debug transcript — linux-pc-filesystem-files
-Generated: 2026-07-07T21:31:47.735Z
+Generated: 2026-07-09T11:35:16.690Z
 Engine: linux
 host=L-PC-FS-DBG (linux-pc) — focus: système de fichiers & opérations fichiers
 Total commands: 327
@@ -82,96 +82,96 @@ $ [23/327]> ls -l
 
 $ [24/327]> ls -la
   total 16
-  drwxrwxrwt  2 root root 0 Jul  7 21:31 .
-  drwxr-xr-x 17 root root 0 Jul  7 21:31 ..
+  drwxrwxrwt  2 root root 0 Jul  9 11:35 .
+  drwxr-xr-x 17 root root 0 Jul  9 11:35 ..
 
 $ [25/327]> ls -al /etc
   total 392
-  drwxr-xr-x 18 root root    0 Jul  7 21:31 .
-  drwxr-xr-x 17 root root    0 Jul  7 21:31 ..
-  -rw-r--r--  1 root root  377 Jul  7 21:31 adduser.conf
-  drwxr-xr-x  3 root root    0 Jul  7 21:31 audit
-  drwxr-xr-x  2 root root    0 Jul  7 21:31 cron.d
-  drwxr-xr-x  2 root root    0 Jul  7 21:31 cron.daily
-  drwxr-xr-x  2 root root    0 Jul  7 21:31 cron.hourly
-  drwxr-xr-x  2 root root    0 Jul  7 21:31 cron.monthly
-  drwxr-xr-x  2 root root    0 Jul  7 21:31 cron.weekly
-  -rw-r--r--  1 root root  420 Jul  7 21:31 crontab
-  drwxr-xr-x  2 root root    0 Jul  7 21:31 default
-  -rw-r--r--  1 root root  191 Jul  7 21:31 group
-  -rw-r--r--  1 root root  186 Jul  7 21:31 group-
-  -rw-r-----  1 root root  154 Jul  7 21:31 gshadow
-  -rw-------  1 root root  149 Jul  7 21:31 gshadow-
-  -rw-r--r--  1 root root    9 Jul  7 21:31 hostname
-  -rw-rw-rw-  1 root root  140 Jul  7 21:31 hosts
-  drwxr-xr-x  2 root root    0 Jul  7 21:31 iptables
-  -rw-r--r--  1 root root   19 Jul  7 21:31 issue.net
-  -rw-r--r--  1 root root  421 Jul  7 21:31 login.defs
-  -rw-r--r--  1 root root  163 Jul  7 21:31 logrotate.conf
-  drwxr-xr-x  2 root root    0 Jul  7 21:31 logrotate.d
-  -rw-r--r--  1 root root  104 Jul  7 21:31 lsb-release
-  -rw-r--r--  1 root root   33 Jul  7 21:31 machine-id
-  -rw-r--r--  1 root root   67 Jul  7 21:31 motd
-  -r--r--r--  1 root root    0 Jul  7 21:31 mtab
-  -rw-r--r--  1 root root   96 Jul  7 21:31 networks
-  -rw-r--r--  1 root root  510 Jul  7 21:31 nsswitch.conf
-  -rw-r--r--  1 root root  302 Jul  7 21:31 os-release
-  drwxr-xr-x  2 root root    0 Jul  7 21:31 pam.d
-  -rw-r--r--  1 root root  334 Jul  7 21:31 passwd
-  -rw-r--r--  1 root root  334 Jul  7 21:31 passwd-
-  -rw-r--r--  1 root root 3042 Jul  7 21:31 protocols
-  -rw-r--r--  1 root root    0 Jul  7 21:31 resolv.conf
-  -rw-r--r--  1 root root  583 Jul  7 21:31 rpc
-  drwxr-xr-x  2 root root    0 Jul  7 21:31 security
-  -rw-r--r--  1 root root 3290 Jul  7 21:31 services
-  -rw-r-----  1 root root  295 Jul  7 21:31 shadow
-  -rw-------  1 root root  295 Jul  7 21:31 shadow-
-  -rw-r--r--  1 root root   18 Jul  7 21:31 shells
-  drwxr-xr-x  2 root root    0 Jul  7 21:31 skel
-  drwxr-xr-x  2 root root    0 Jul  7 21:31 ssh
-  -rw-r--r--  1 root root   90 Jul  7 21:31 subgid
-  -rw-r--r--  1 root root   90 Jul  7 21:31 subuid
-  -r--r-----  1 root root   47 Jul  7 21:31 sudoers
-  drwxr-xr-x  2 root root    0 Jul  7 21:31 sudoers.d
-  drwxr-xr-x  3 root root    0 Jul  7 21:31 systemd
-  -rw-r--r--  1 root root    8 Jul  7 21:31 timezone
-  drwxr-xr-x  3 root root    0 Jul  7 21:31 ufw
+  drwxr-xr-x 18 root root    0 Jul  9 11:35 .
+  drwxr-xr-x 17 root root    0 Jul  9 11:35 ..
+  -rw-r--r--  1 root root  377 Jul  9 11:35 adduser.conf
+  drwxr-xr-x  3 root root    0 Jul  9 11:35 audit
+  drwxr-xr-x  2 root root    0 Jul  9 11:35 cron.d
+  drwxr-xr-x  2 root root    0 Jul  9 11:35 cron.daily
+  drwxr-xr-x  2 root root    0 Jul  9 11:35 cron.hourly
+  drwxr-xr-x  2 root root    0 Jul  9 11:35 cron.monthly
+  drwxr-xr-x  2 root root    0 Jul  9 11:35 cron.weekly
+  -rw-r--r--  1 root root  420 Jul  9 11:35 crontab
+  drwxr-xr-x  2 root root    0 Jul  9 11:35 default
+  -rw-r--r--  1 root root  191 Jul  9 11:35 group
+  -rw-r--r--  1 root root  186 Jul  9 11:35 group-
+  -rw-r-----  1 root root  154 Jul  9 11:35 gshadow
+  -rw-------  1 root root  149 Jul  9 11:35 gshadow-
+  -rw-r--r--  1 root root    9 Jul  9 11:35 hostname
+  -rw-rw-rw-  1 root root  140 Jul  9 11:35 hosts
+  drwxr-xr-x  2 root root    0 Jul  9 11:35 iptables
+  -rw-r--r--  1 root root   19 Jul  9 11:35 issue.net
+  -rw-r--r--  1 root root  421 Jul  9 11:35 login.defs
+  -rw-r--r--  1 root root  163 Jul  9 11:35 logrotate.conf
+  drwxr-xr-x  2 root root    0 Jul  9 11:35 logrotate.d
+  -rw-r--r--  1 root root  104 Jul  9 11:35 lsb-release
+  -rw-r--r--  1 root root   33 Jul  9 11:35 machine-id
+  -rw-r--r--  1 root root   67 Jul  9 11:35 motd
+  -r--r--r--  1 root root    0 Jul  9 11:35 mtab
+  -rw-r--r--  1 root root   96 Jul  9 11:35 networks
+  -rw-r--r--  1 root root  510 Jul  9 11:35 nsswitch.conf
+  -rw-r--r--  1 root root  302 Jul  9 11:35 os-release
+  drwxr-xr-x  2 root root    0 Jul  9 11:35 pam.d
+  -rw-r--r--  1 root root  334 Jul  9 11:35 passwd
+  -rw-r--r--  1 root root  334 Jul  9 11:35 passwd-
+  -rw-r--r--  1 root root 3042 Jul  9 11:35 protocols
+  -rw-r--r--  1 root root    0 Jul  9 11:35 resolv.conf
+  -rw-r--r--  1 root root  583 Jul  9 11:35 rpc
+  drwxr-xr-x  2 root root    0 Jul  9 11:35 security
+  -rw-r--r--  1 root root 3290 Jul  9 11:35 services
+  -rw-r-----  1 root root  295 Jul  9 11:35 shadow
+  -rw-------  1 root root  295 Jul  9 11:35 shadow-
+  -rw-r--r--  1 root root   18 Jul  9 11:35 shells
+  drwxr-xr-x  2 root root    0 Jul  9 11:35 skel
+  drwxr-xr-x  2 root root    0 Jul  9 11:35 ssh
+  -rw-r--r--  1 root root   90 Jul  9 11:35 subgid
+  -rw-r--r--  1 root root   90 Jul  9 11:35 subuid
+  -r--r-----  1 root root   47 Jul  9 11:35 sudoers
+  drwxr-xr-x  2 root root    0 Jul  9 11:35 sudoers.d
+  drwxr-xr-x  3 root root    0 Jul  9 11:35 systemd
+  -rw-r--r--  1 root root    8 Jul  9 11:35 timezone
+  drwxr-xr-x  3 root root    0 Jul  9 11:35 ufw
 
 $ [26/327]> ls -lh /var/log
   total 72
-  drwxr-x--- 2 root root    0 Jul  7 21:31 audit
-  -rw-r----- 1 root adm   156 Jul  7 21:31 auth.log
-  -rw-r----- 1 root adm  1976 Jul  7 21:31 boot.log
-  -rw-r--r-- 1 root root    2 Jul  7 21:31 btmp
-  -rw-r----- 1 root adm  1386 Jul  7 21:31 kern.log
-  -rw-r--r-- 1 root root    2 Jul  7 21:31 lastlog
-  -rw-r--r-- 1 root root  165 Jul  7 21:31 messages
-  -rw-r----- 1 root adm  2274 Jul  7 21:31 syslog
-  -rw-r--r-- 1 root root   75 Jul  7 21:31 wtmp
+  drwxr-x--- 2 root root    0 Jul  9 11:35 audit
+  -rw-r----- 1 root adm   156 Jul  9 11:35 auth.log
+  -rw-r----- 1 root adm  1976 Jul  9 11:35 boot.log
+  -rw-r--r-- 1 root root    2 Jul  9 11:35 btmp
+  -rw-r----- 1 root adm  1386 Jul  9 11:35 kern.log
+  -rw-r--r-- 1 root root    2 Jul  9 11:35 lastlog
+  -rw-r--r-- 1 root root  165 Jul  9 11:35 messages
+  -rw-r----- 1 root adm  2274 Jul  9 11:35 syslog
+  -rw-r--r-- 1 root root   75 Jul  9 11:35 wtmp
 
 $ [27/327]> ls -lha /
   total 168
-  drwxr-xr-x 17 root root 0 Jul  7 21:31 .
-  drwxr-xr-x 17 root root 0 Jul  7 21:31 ..
-  lrwxrwxrwx  1 root root 7 Jul  7 21:31 bin -> usr/bin
-  drwxr-xr-x  2 root root 0 Jul  7 21:31 boot
-  drwxr-xr-x  2 root root 0 Jul  7 21:31 dev
-  drwxr-xr-x 18 root root 0 Jul  7 21:31 etc
-  drwxr-xr-x  8 root root 0 Jul  7 21:31 home
-  lrwxrwxrwx  1 root root 7 Jul  7 21:31 lib -> usr/lib
-  lrwxrwxrwx  1 root root 9 Jul  7 21:31 lib64 -> usr/lib64
-  drwxr-xr-x  2 root root 0 Jul  7 21:31 media
-  drwxr-xr-x  2 root root 0 Jul  7 21:31 mnt
-  drwxr-xr-x  2 root root 0 Jul  7 21:31 opt
-  drwxr-xr-x 19 root root 0 Jul  7 21:31 proc
-  drwx------  2 root root 0 Jul  7 21:31 root
-  drwxr-xr-x  4 root root 0 Jul  7 21:31 run
-  lrwxrwxrwx  1 root root 8 Jul  7 21:31 sbin -> usr/sbin
-  drwxr-xr-x  2 root root 0 Jul  7 21:31 srv
-  drwxr-xr-x  6 root root 0 Jul  7 21:31 sys
-  drwxrwxrwt  2 root root 0 Jul  7 21:31 tmp
-  drwxr-xr-x  7 root root 0 Jul  7 21:31 usr
-  drwxr-xr-x 12 root root 0 Jul  7 21:31 var
+  drwxr-xr-x 17 root root 0 Jul  9 11:35 .
+  drwxr-xr-x 17 root root 0 Jul  9 11:35 ..
+  lrwxrwxrwx  1 root root 7 Jul  9 11:35 bin -> usr/bin
+  drwxr-xr-x  2 root root 0 Jul  9 11:35 boot
+  drwxr-xr-x  2 root root 0 Jul  9 11:35 dev
+  drwxr-xr-x 18 root root 0 Jul  9 11:35 etc
+  drwxr-xr-x  8 root root 0 Jul  9 11:35 home
+  lrwxrwxrwx  1 root root 7 Jul  9 11:35 lib -> usr/lib
+  lrwxrwxrwx  1 root root 9 Jul  9 11:35 lib64 -> usr/lib64
+  drwxr-xr-x  2 root root 0 Jul  9 11:35 media
+  drwxr-xr-x  2 root root 0 Jul  9 11:35 mnt
+  drwxr-xr-x  2 root root 0 Jul  9 11:35 opt
+  drwxr-xr-x 19 root root 0 Jul  9 11:35 proc
+  drwx------  2 root root 0 Jul  9 11:35 root
+  drwxr-xr-x  4 root root 0 Jul  9 11:35 run
+  lrwxrwxrwx  1 root root 8 Jul  9 11:35 sbin -> usr/sbin
+  drwxr-xr-x  2 root root 0 Jul  9 11:35 srv
+  drwxr-xr-x  6 root root 0 Jul  9 11:35 sys
+  drwxrwxrwt  2 root root 0 Jul  9 11:35 tmp
+  drwxr-xr-x  7 root root 0 Jul  9 11:35 usr
+  drwxr-xr-x 12 root root 0 Jul  9 11:35 var
 
 $ [28/327]> ls -a
   .   ..
@@ -183,7 +183,7 @@ $ [30/327]> ls -d */
   ls: cannot access '*/': No such file or directory
 
 $ [31/327]> ls -ld /etc
-  drwxr-xr-x 18 root root 0 Jul  7 21:31 /etc
+  drwxr-xr-x 18 root root 0 Jul  9 11:35 /etc
 
 $ [32/327]> ls -R /etc
   /etc:
@@ -258,39 +258,39 @@ $ [32/327]> ls -R /etc
 
 $ [33/327]> ls -lt /var/log
   total 72
-  -rw-r----- 1 root adm  2274 Jul  7 21:31 syslog
-  -rw-r--r-- 1 root root   75 Jul  7 21:31 wtmp
-  -rw-r--r-- 1 root root    2 Jul  7 21:31 btmp
-  -rw-r--r-- 1 root root  165 Jul  7 21:31 messages
-  -rw-r----- 1 root adm   156 Jul  7 21:31 auth.log
-  -rw-r----- 1 root adm  1386 Jul  7 21:31 kern.log
-  -rw-r----- 1 root adm  1976 Jul  7 21:31 boot.log
-  drwxr-x--- 2 root root    0 Jul  7 21:31 audit
-  -rw-r--r-- 1 root root    2 Jul  7 21:31 lastlog
+  -rw-r----- 1 root adm  2274 Jul  9 11:35 syslog
+  -rw-r--r-- 1 root root   75 Jul  9 11:35 wtmp
+  -rw-r--r-- 1 root root    2 Jul  9 11:35 btmp
+  -rw-r--r-- 1 root root  165 Jul  9 11:35 messages
+  -rw-r----- 1 root adm   156 Jul  9 11:35 auth.log
+  -rw-r----- 1 root adm  1386 Jul  9 11:35 kern.log
+  -rw-r----- 1 root adm  1976 Jul  9 11:35 boot.log
+  drwxr-x--- 2 root root    0 Jul  9 11:35 audit
+  -rw-r--r-- 1 root root    2 Jul  9 11:35 lastlog
 
 $ [34/327]> ls -ltr /var/log
   total 72
-  -rw-r----- 1 root adm  2274 Jul  7 21:31 syslog
-  -rw-r--r-- 1 root root   75 Jul  7 21:31 wtmp
-  -rw-r--r-- 1 root root    2 Jul  7 21:31 btmp
-  -rw-r--r-- 1 root root  165 Jul  7 21:31 messages
-  -rw-r----- 1 root adm   156 Jul  7 21:31 auth.log
-  -rw-r----- 1 root adm  1386 Jul  7 21:31 kern.log
-  -rw-r----- 1 root adm  1976 Jul  7 21:31 boot.log
-  drwxr-x--- 2 root root    0 Jul  7 21:31 audit
-  -rw-r--r-- 1 root root    2 Jul  7 21:31 lastlog
+  -rw-r----- 1 root adm  2274 Jul  9 11:35 syslog
+  -rw-r--r-- 1 root root   75 Jul  9 11:35 wtmp
+  -rw-r--r-- 1 root root    2 Jul  9 11:35 btmp
+  -rw-r--r-- 1 root root  165 Jul  9 11:35 messages
+  -rw-r----- 1 root adm   156 Jul  9 11:35 auth.log
+  -rw-r----- 1 root adm  1386 Jul  9 11:35 kern.log
+  -rw-r----- 1 root adm  1976 Jul  9 11:35 boot.log
+  drwxr-x--- 2 root root    0 Jul  9 11:35 audit
+  -rw-r--r-- 1 root root    2 Jul  9 11:35 lastlog
 
 $ [35/327]> ls -lS /var/log
   total 72
-  -rw-r----- 1 root adm  2274 Jul  7 21:31 syslog
-  -rw-r----- 1 root adm  1976 Jul  7 21:31 boot.log
-  -rw-r----- 1 root adm  1386 Jul  7 21:31 kern.log
-  -rw-r--r-- 1 root root  165 Jul  7 21:31 messages
-  -rw-r----- 1 root adm   156 Jul  7 21:31 auth.log
-  -rw-r--r-- 1 root root   75 Jul  7 21:31 wtmp
-  -rw-r--r-- 1 root root    2 Jul  7 21:31 lastlog
-  -rw-r--r-- 1 root root    2 Jul  7 21:31 btmp
-  drwxr-x--- 2 root root    0 Jul  7 21:31 audit
+  -rw-r----- 1 root adm  2274 Jul  9 11:35 syslog
+  -rw-r----- 1 root adm  1976 Jul  9 11:35 boot.log
+  -rw-r----- 1 root adm  1386 Jul  9 11:35 kern.log
+  -rw-r--r-- 1 root root  165 Jul  9 11:35 messages
+  -rw-r----- 1 root adm   156 Jul  9 11:35 auth.log
+  -rw-r--r-- 1 root root   75 Jul  9 11:35 wtmp
+  -rw-r--r-- 1 root root    2 Jul  9 11:35 lastlog
+  -rw-r--r-- 1 root root    2 Jul  9 11:35 btmp
+  drwxr-x--- 2 root root    0 Jul  9 11:35 audit
 
 $ [36/327]> ls -lr
   total 0
@@ -640,16 +640,16 @@ $ [70/327]> touch fichier1.txt
 <empty>
 
 $ [71/327]> ls -l fichier1.txt
-  -rw-r--r-- 1 user user 0 Jul  7 21:31 fichier1.txt
+  -rw-r--r-- 1 user user 0 Jul  9 11:35 fichier1.txt
 
 $ [72/327]> touch fichier2.txt fichier3.txt fichier4.txt
 <empty>
 
 $ [73/327]> ls -l fichier*.txt
-  -rw-r--r-- 1 user user 0 Jul  7 21:31 fichier1.txt
-  -rw-r--r-- 1 user user 0 Jul  7 21:31 fichier2.txt
-  -rw-r--r-- 1 user user 0 Jul  7 21:31 fichier3.txt
-  -rw-r--r-- 1 user user 0 Jul  7 21:31 fichier4.txt
+  -rw-r--r-- 1 user user 0 Jul  9 11:35 fichier1.txt
+  -rw-r--r-- 1 user user 0 Jul  9 11:35 fichier2.txt
+  -rw-r--r-- 1 user user 0 Jul  9 11:35 fichier3.txt
+  -rw-r--r-- 1 user user 0 Jul  9 11:35 fichier4.txt
 
 $ [74/327]> echo "ligne unique" > simple.txt
 <empty>
@@ -690,7 +690,7 @@ $ [84/327]> touch -t 202001010000 daté.txt
 <empty>
 
 $ [85/327]> ls -l daté.txt
-  -rw-r--r-- 1 user user 0 Jul  7 21:31 daté.txt
+  -rw-r--r-- 1 user user 0 Jul  9 11:35 daté.txt
 
 $ [86/327]> touch fichier1.txt
 <empty>
@@ -700,9 +700,9 @@ $ [87/327]> stat fichier1.txt
     Size: 0	Blocks: 0	IO Block: 4096	regular file
   Device: 0h/0d	Inode: 498	Links: 1
   Access: (644/-rw-r--r--)  Uid: ( 1000/ user)   Gid: ( 1000/ user)
-  Access: 2026-07-07T21:31:47.789Z
-  Modify: 2026-07-07T21:31:47.789Z
-  Change: 2026-07-07T21:31:47.781Z
+  Access: 2026-07-09T11:35:16.742Z
+  Modify: 2026-07-09T11:35:16.742Z
+  Change: 2026-07-09T11:35:16.731Z
 
 $ [88/327]> touch /repertoire/inexistant_xyz/fichier.txt
 <empty>
@@ -713,7 +713,7 @@ $ [89/327]> mkdir projet
 <empty>
 
 $ [90/327]> ls -ld projet
-  drwxr-xr-x 2 user user 0 Jul  7 21:31 projet
+  drwxr-xr-x 2 user user 0 Jul  9 11:35 projet
 
 $ [91/327]> mkdir -p projet/src/lib/utils
 <empty>
@@ -753,7 +753,7 @@ $ [95/327]> mkdir -m 700 securisé
 <empty>
 
 $ [96/327]> ls -ld securisé
-  drwxr-xr-x 2 user user 0 Jul  7 21:31 securisé
+  drwxr-xr-x 2 user user 0 Jul  9 11:35 securisé
 
 $ [97/327]> mkdir projet
   mkdir: cannot create directory 'projet'
@@ -828,8 +828,8 @@ $ [116/327]> cp -p simple.txt preserve.txt
 <empty>
 
 $ [117/327]> ls -l preserve.txt simple.txt
-  -rw-r--r-- 1 user user 27 Jul  7 21:31 preserve.txt
-  -rw-r--r-- 1 user user 27 Jul  7 21:31 simple.txt
+  -rw-r--r-- 1 user user 27 Jul  9 11:35 preserve.txt
+  -rw-r--r-- 1 user user 27 Jul  9 11:35 simple.txt
 
 $ [118/327]> cp -v lettres.txt verbose.txt
 <empty>
@@ -855,7 +855,7 @@ $ [124/327]> mv copie.txt renomme.txt
 <empty>
 
 $ [125/327]> ls -l renomme.txt copie.txt
-  -rw-r--r-- 1 user user 27 Jul  7 21:31 renomme.txt
+  -rw-r--r-- 1 user user 27 Jul  9 11:35 renomme.txt
   ls: cannot access 'copie.txt': No such file or directory
 
 $ [126/327]> mkdir destination
@@ -954,8 +954,8 @@ $ [155/327]> ln cible_lien.txt lien_dur.txt
 <empty>
 
 $ [156/327]> ls -li cible_lien.txt lien_dur.txt
-  524 -rw-r--r-- 2 user user 14 Jul  7 21:31 cible_lien.txt
-  524 -rw-r--r-- 2 user user 14 Jul  7 21:31 lien_dur.txt
+  524 -rw-r--r-- 2 user user 14 Jul  9 11:35 cible_lien.txt
+  524 -rw-r--r-- 2 user user 14 Jul  9 11:35 lien_dur.txt
 
 $ [157/327]> cat lien_dur.txt
   cible du lien
@@ -964,7 +964,7 @@ $ [158/327]> ln -s cible_lien.txt lien_symbolique.txt
 <empty>
 
 $ [159/327]> ls -l lien_symbolique.txt
-  lrwxrwxrwx 1 user user 14 Jul  7 21:31 lien_symbolique.txt -> cible_lien.txt
+  lrwxrwxrwx 1 user user 14 Jul  9 11:35 lien_symbolique.txt -> cible_lien.txt
 
 $ [160/327]> cat lien_symbolique.txt
   cible du lien
@@ -973,7 +973,7 @@ $ [161/327]> ln -s /etc/passwd lien_passwd
 <empty>
 
 $ [162/327]> ls -l lien_passwd
-  lrwxrwxrwx 1 user user 11 Jul  7 21:31 lien_passwd -> /etc/passwd
+  lrwxrwxrwx 1 user user 11 Jul  9 11:35 lien_passwd -> /etc/passwd
 
 $ [163/327]> readlink lien_symbolique.txt
   cible_lien.txt
@@ -988,7 +988,7 @@ $ [166/327]> ln -s cible_inexistante_xyz lien_casse
 <empty>
 
 $ [167/327]> ls -l lien_casse
-  lrwxrwxrwx 1 user user 21 Jul  7 21:31 lien_casse -> cible_inexistante_xyz
+  lrwxrwxrwx 1 user user 21 Jul  9 11:35 lien_casse -> cible_inexistante_xyz
 
 $ [168/327]> readlink lien_casse
   cible_inexistante_xyz
@@ -997,7 +997,7 @@ $ [169/327]> ln -sf /etc/hostname lien_passwd
   ln: failed to create hard link 'lien_passwd'
 
 $ [170/327]> ls -l lien_passwd
-  lrwxrwxrwx 1 user user 11 Jul  7 21:31 lien_passwd -> /etc/passwd
+  lrwxrwxrwx 1 user user 11 Jul  9 11:35 lien_passwd -> /etc/passwd
 
 $ [171/327]> ln
   ln: missing operand
@@ -1143,18 +1143,18 @@ $ [190/327]> stat /etc/passwd
     Size: 334	Blocks: 8	IO Block: 4096	regular file
   Device: 0h/0d	Inode: 167	Links: 1
   Access: (644/-rw-r--r--)  Uid: ( 0/ root)   Gid: ( 0/ root)
-  Access: 2026-07-07T21:31:47.823Z
-  Modify: 2026-07-07T21:31:47.725Z
-  Change: 2026-07-07T21:31:47.714Z
+  Access: 2026-07-09T11:35:16.769Z
+  Modify: 2026-07-09T11:35:16.681Z
+  Change: 2026-07-09T11:35:16.671Z
 
 $ [191/327]> stat /etc
     File: /etc
     Size: 0	Blocks: 0	IO Block: 4096	directory
   Device: 0h/0d	Inode: 9	Links: 18
   Access: (755/drwxr-xr-x)  Uid: ( 0/ root)   Gid: ( 0/ root)
-  Access: 2026-07-07T21:31:47.702Z
-  Modify: 2026-07-07T21:31:47.732Z
-  Change: 2026-07-07T21:31:47.702Z
+  Access: 2026-07-09T11:35:16.661Z
+  Modify: 2026-07-09T11:35:16.688Z
+  Change: 2026-07-09T11:35:16.661Z
 
 $ [192/327]> stat -c "%n %s %a %U:%G" /etc/passwd
   /etc/passwd 334 644 root:root
@@ -1170,18 +1170,18 @@ $ [195/327]> stat --format="%a %n" /etc/hostname
     Size: 9	Blocks: 8	IO Block: 4096	regular file
   Device: 0h/0d	Inode: 53	Links: 1
   Access: (644/-rw-r--r--)  Uid: ( 0/ root)   Gid: ( 0/ root)
-  Access: 2026-07-07T21:31:47.825Z
-  Modify: 2026-07-07T21:31:47.730Z
-  Change: 2026-07-07T21:31:47.703Z
+  Access: 2026-07-09T11:35:16.771Z
+  Modify: 2026-07-09T11:35:16.685Z
+  Change: 2026-07-09T11:35:16.662Z
 
 $ [196/327]> stat -t /etc/passwd
     File: /etc/passwd
     Size: 334	Blocks: 8	IO Block: 4096	regular file
   Device: 0h/0d	Inode: 167	Links: 1
   Access: (644/-rw-r--r--)  Uid: ( 0/ root)   Gid: ( 0/ root)
-  Access: 2026-07-07T21:31:47.823Z
-  Modify: 2026-07-07T21:31:47.725Z
-  Change: 2026-07-07T21:31:47.714Z
+  Access: 2026-07-09T11:35:16.769Z
+  Modify: 2026-07-09T11:35:16.681Z
+  Change: 2026-07-09T11:35:16.671Z
 
 $ [197/327]> file /etc/passwd
   /etc/passwd: ASCII text
@@ -1714,43 +1714,43 @@ $ [242/327]> touch perm.txt
 <empty>
 
 $ [243/327]> ls -l perm.txt
-  -rw-r--r-- 1 user user 0 Jul  7 21:31 perm.txt
+  -rw-r--r-- 1 user user 0 Jul  9 11:35 perm.txt
 
 $ [244/327]> chmod 644 perm.txt
 <empty>
 
 $ [245/327]> ls -l perm.txt
-  -rw-r--r-- 1 user user 0 Jul  7 21:31 perm.txt
+  -rw-r--r-- 1 user user 0 Jul  9 11:35 perm.txt
 
 $ [246/327]> chmod 755 perm.txt
 <empty>
 
 $ [247/327]> ls -l perm.txt
-  -rwxr-xr-x 1 user user 0 Jul  7 21:31 perm.txt
+  -rwxr-xr-x 1 user user 0 Jul  9 11:35 perm.txt
 
 $ [248/327]> chmod u+x perm.txt
 <empty>
 
 $ [249/327]> ls -l perm.txt
-  -rwxr-xr-x 1 user user 0 Jul  7 21:31 perm.txt
+  -rwxr-xr-x 1 user user 0 Jul  9 11:35 perm.txt
 
 $ [250/327]> chmod g-w perm.txt
 <empty>
 
 $ [251/327]> ls -l perm.txt
-  -rwxr-xr-x 1 user user 0 Jul  7 21:31 perm.txt
+  -rwxr-xr-x 1 user user 0 Jul  9 11:35 perm.txt
 
 $ [252/327]> chmod o=r perm.txt
 <empty>
 
 $ [253/327]> ls -l perm.txt
-  -rwxr-xr-- 1 user user 0 Jul  7 21:31 perm.txt
+  -rwxr-xr-- 1 user user 0 Jul  9 11:35 perm.txt
 
 $ [254/327]> chmod a+x perm.txt
 <empty>
 
 $ [255/327]> ls -l perm.txt
-  -rwxr-xr-x 1 user user 0 Jul  7 21:31 perm.txt
+  -rwxr-xr-x 1 user user 0 Jul  9 11:35 perm.txt
 
 $ [256/327]> chmod 600 perm.txt
 <empty>
@@ -1765,7 +1765,7 @@ $ [259/327]> chmod -R 700 permdir
 <empty>
 
 $ [260/327]> ls -ld permdir
-  drwx------ 2 user user 0 Jul  7 21:31 permdir
+  drwx------ 2 user user 0 Jul  9 11:35 permdir
 
 $ [261/327]> umask
   0022
@@ -1786,7 +1786,7 @@ $ [266/327]> touch apres_umask.txt
 <empty>
 
 $ [267/327]> ls -l apres_umask.txt
-  -rw------- 1 user user 0 Jul  7 21:31 apres_umask.txt
+  -rw------- 1 user user 0 Jul  9 11:35 apres_umask.txt
 
 $ [268/327]> chmod 999 perm.txt
 <empty>
@@ -1803,25 +1803,25 @@ $ [271/327]> chown root perm.txt
   chown: changing ownership of 'perm.txt': Operation not permitted
 
 $ [272/327]> ls -l perm.txt
-  ---------- 1 user user 0 Jul  7 21:31 perm.txt
+  ---------- 1 user user 0 Jul  9 11:35 perm.txt
 
 $ [273/327]> chown root:root perm.txt
   chown: changing ownership of 'perm.txt': Operation not permitted
 
 $ [274/327]> ls -l perm.txt
-  ---------- 1 user user 0 Jul  7 21:31 perm.txt
+  ---------- 1 user user 0 Jul  9 11:35 perm.txt
 
 $ [275/327]> chgrp root perm.txt
   chgrp: changing group of 'perm.txt': Operation not permitted
 
 $ [276/327]> ls -l perm.txt
-  ---------- 1 user user 0 Jul  7 21:31 perm.txt
+  ---------- 1 user user 0 Jul  9 11:35 perm.txt
 
 $ [277/327]> chown -R root:root permdir
   chown: changing ownership of 'permdir': Operation not permitted
 
 $ [278/327]> ls -ld permdir
-  drwx------ 2 user user 0 Jul  7 21:31 permdir
+  drwx------ 2 user user 0 Jul  9 11:35 permdir
 
 $ [279/327]> chown utilisateur_inexistant_xyz perm.txt
   chown: changing ownership of 'perm.txt': Operation not permitted
@@ -1865,13 +1865,13 @@ $ [291/327]> readlink -f /etc/passwd
   /etc/passwd
 
 $ [292/327]> mktemp
-  /tmp/tmp.6bt9pk9un0
+  /tmp/tmp.x30id0pj7f
 
 $ [293/327]> mktemp -d
-  /tmp/tmp.sd0fwc26iu
+  /tmp/tmp.lm9tmrgaaz
 
 $ [294/327]> mktemp /tmp/debug.XXXXXX
-  /tmp/tmp.f63y6c9cj0
+  /tmp/tmp.7g9tlhcx5g
 
 $ [295/327]> basename
 <empty>

@@ -447,53 +447,53 @@ Total steps: 300
      Port path cost 19, Port priority 128
    Port FastEthernet0/2 of VLAN0001 is designated forwarding
      Port path cost 19, Port priority 128
-   Port FastEthernet0/3 of VLAN0001 is disabled disabled
+   Port FastEthernet0/3 of VLAN0001 is disabled
      Port path cost 19, Port priority 128
-   Port FastEthernet0/4 of VLAN0001 is disabled disabled
+   Port FastEthernet0/4 of VLAN0001 is disabled
      Port path cost 19, Port priority 128
-   Port FastEthernet0/5 of VLAN0001 is disabled disabled
+   Port FastEthernet0/5 of VLAN0001 is disabled
      Port path cost 19, Port priority 128
-   Port FastEthernet0/6 of VLAN0001 is disabled disabled
+   Port FastEthernet0/6 of VLAN0001 is disabled
      Port path cost 19, Port priority 128
-   Port FastEthernet0/7 of VLAN0001 is disabled disabled
+   Port FastEthernet0/7 of VLAN0001 is disabled
      Port path cost 19, Port priority 128
-   Port FastEthernet0/8 of VLAN0001 is disabled disabled
+   Port FastEthernet0/8 of VLAN0001 is disabled
      Port path cost 19, Port priority 128
-   Port FastEthernet0/9 of VLAN0001 is disabled disabled
+   Port FastEthernet0/9 of VLAN0001 is disabled
      Port path cost 19, Port priority 128
-   Port FastEthernet0/10 of VLAN0001 is disabled disabled
+   Port FastEthernet0/10 of VLAN0001 is disabled
      Port path cost 19, Port priority 128
-   Port FastEthernet0/11 of VLAN0001 is disabled disabled
+   Port FastEthernet0/11 of VLAN0001 is disabled
      Port path cost 19, Port priority 128
-   Port FastEthernet0/12 of VLAN0001 is disabled disabled
+   Port FastEthernet0/12 of VLAN0001 is disabled
      Port path cost 19, Port priority 128
-   Port FastEthernet0/13 of VLAN0001 is disabled disabled
+   Port FastEthernet0/13 of VLAN0001 is disabled
      Port path cost 19, Port priority 128
-   Port FastEthernet0/14 of VLAN0001 is disabled disabled
+   Port FastEthernet0/14 of VLAN0001 is disabled
      Port path cost 19, Port priority 128
-   Port FastEthernet0/15 of VLAN0001 is disabled disabled
+   Port FastEthernet0/15 of VLAN0001 is disabled
      Port path cost 19, Port priority 128
-   Port FastEthernet0/16 of VLAN0001 is disabled disabled
+   Port FastEthernet0/16 of VLAN0001 is disabled
      Port path cost 19, Port priority 128
-   Port FastEthernet0/17 of VLAN0001 is disabled disabled
+   Port FastEthernet0/17 of VLAN0001 is disabled
      Port path cost 19, Port priority 128
-   Port FastEthernet0/18 of VLAN0001 is disabled disabled
+   Port FastEthernet0/18 of VLAN0001 is disabled
      Port path cost 19, Port priority 128
-   Port FastEthernet0/19 of VLAN0001 is disabled disabled
+   Port FastEthernet0/19 of VLAN0001 is disabled
      Port path cost 19, Port priority 128
-   Port FastEthernet0/20 of VLAN0001 is disabled disabled
+   Port FastEthernet0/20 of VLAN0001 is disabled
      Port path cost 19, Port priority 128
-   Port FastEthernet0/21 of VLAN0001 is disabled disabled
+   Port FastEthernet0/21 of VLAN0001 is disabled
      Port path cost 19, Port priority 128
-   Port FastEthernet0/22 of VLAN0001 is disabled disabled
+   Port FastEthernet0/22 of VLAN0001 is disabled
      Port path cost 19, Port priority 128
-   Port FastEthernet0/23 of VLAN0001 is disabled disabled
+   Port FastEthernet0/23 of VLAN0001 is disabled
      Port path cost 19, Port priority 128
-   Port FastEthernet0/24 of VLAN0001 is disabled disabled
+   Port FastEthernet0/24 of VLAN0001 is disabled
      Port path cost 19, Port priority 128
-   Port GigabitEthernet0/1 of VLAN0001 is disabled disabled
+   Port GigabitEthernet0/1 of VLAN0001 is disabled
      Port path cost 19, Port priority 128
-   Port GigabitEthernet0/2 of VLAN0001 is disabled disabled
+   Port GigabitEthernet0/2 of VLAN0001 is disabled
      Port path cost 19, Port priority 128
 
 
@@ -1192,11 +1192,11 @@ Total steps: 300
 --- [193] § STP — convergence sur panne de lien (HQ) ---
 [193/300] lhq lhq$ ping -c 1 10.1.1.11
   PING 10.1.1.11 (10.1.1.11) 56(84) bytes of data.
-  64 bytes from 10.1.1.11: icmp_seq=1 ttl=128 time=6.100 ms
+  64 bytes from 10.1.1.11: icmp_seq=1 ttl=128 time=0.442 ms
   
   --- 10.1.1.11 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 6.100/6.100/6.100/0.000 ms
+  rtt min/avg/max/mdev = 0.442/0.442/0.442/0.000 ms
 
 [194/300] swhq SW-HQ# show spanning-tree blockedports
   Name                 Blocked Interfaces List
@@ -1247,21 +1247,21 @@ Total steps: 300
 
 [202/300] lhq lhq$ ping -c 2 10.1.1.11
   PING 10.1.1.11 (10.1.1.11) 56(84) bytes of data.
-  64 bytes from 10.1.1.11: icmp_seq=1 ttl=128 time=0.464 ms
-  64 bytes from 10.1.1.11: icmp_seq=2 ttl=128 time=0.634 ms
+  64 bytes from 10.1.1.11: icmp_seq=1 ttl=128 time=0.460 ms
+  64 bytes from 10.1.1.11: icmp_seq=2 ttl=128 time=0.689 ms
   
   --- 10.1.1.11 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.464/0.549/0.634/0.085 ms
+  rtt min/avg/max/mdev = 0.460/0.575/0.689/0.114 ms
 
 [203/300] lhq lhq$ ping -c 2 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
-  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=0.961 ms
-  64 bytes from 10.3.3.10: icmp_seq=2 ttl=62 time=1.018 ms
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=0.929 ms
+  64 bytes from 10.3.3.10: icmp_seq=2 ttl=62 time=0.985 ms
   
   --- 10.3.3.10 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.961/0.989/1.018/0.029 ms
+  rtt min/avg/max/mdev = 0.929/0.957/0.985/0.028 ms
 
 [204/300] swhq SW-HQ# configure terminal
   Enter configuration commands, one per line.  End with CNTL/Z.
@@ -1293,12 +1293,12 @@ Total steps: 300
 
 [209/300] lhq lhq$ ping -c 2 10.1.1.11
   PING 10.1.1.11 (10.1.1.11) 56(84) bytes of data.
-  64 bytes from 10.1.1.11: icmp_seq=1 ttl=128 time=0.375 ms
-  64 bytes from 10.1.1.11: icmp_seq=2 ttl=128 time=0.566 ms
+  64 bytes from 10.1.1.11: icmp_seq=1 ttl=128 time=0.306 ms
+  64 bytes from 10.1.1.11: icmp_seq=2 ttl=128 time=0.617 ms
   
   --- 10.1.1.11 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.375/0.470/0.566/0.096 ms
+  rtt min/avg/max/mdev = 0.306/0.461/0.617/0.156 ms
 
 
 --- [210] § STP — convergence sur panne de lien (BR Huawei) ---
@@ -1407,7 +1407,7 @@ Total steps: 300
   Ping statistics for 10.2.2.11:
       Packets: Sent = 2, Received = 2, Lost = 0 (0% loss),
   Approximate round trip times in milli-seconds:
-      Minimum = 0ms, Maximum = 0ms, Average = 0ms
+      Minimum = 0ms, Maximum = 1ms, Average = 1ms
 
 [219/300] swbr <SW-BR> system-view
   Enter system view, return user view with return command.
@@ -1540,47 +1540,47 @@ Total steps: 300
      Port path cost 19, Port priority 128
    Port FastEthernet0/5 of VLAN0001 is root forwarding
      Port path cost 19, Port priority 128
-   Port FastEthernet0/6 of VLAN0001 is disabled disabled
+   Port FastEthernet0/6 of VLAN0001 is disabled
      Port path cost 19, Port priority 128
-   Port FastEthernet0/7 of VLAN0001 is disabled disabled
+   Port FastEthernet0/7 of VLAN0001 is disabled
      Port path cost 19, Port priority 128
-   Port FastEthernet0/8 of VLAN0001 is disabled disabled
+   Port FastEthernet0/8 of VLAN0001 is disabled
      Port path cost 19, Port priority 128
-   Port FastEthernet0/9 of VLAN0001 is disabled disabled
+   Port FastEthernet0/9 of VLAN0001 is disabled
      Port path cost 19, Port priority 128
-   Port FastEthernet0/10 of VLAN0001 is disabled disabled
+   Port FastEthernet0/10 of VLAN0001 is disabled
      Port path cost 19, Port priority 128
-   Port FastEthernet0/11 of VLAN0001 is disabled disabled
+   Port FastEthernet0/11 of VLAN0001 is disabled
      Port path cost 19, Port priority 128
-   Port FastEthernet0/12 of VLAN0001 is disabled disabled
+   Port FastEthernet0/12 of VLAN0001 is disabled
      Port path cost 19, Port priority 128
-   Port FastEthernet0/13 of VLAN0001 is disabled disabled
+   Port FastEthernet0/13 of VLAN0001 is disabled
      Port path cost 19, Port priority 128
-   Port FastEthernet0/14 of VLAN0001 is disabled disabled
+   Port FastEthernet0/14 of VLAN0001 is disabled
      Port path cost 19, Port priority 128
-   Port FastEthernet0/15 of VLAN0001 is disabled disabled
+   Port FastEthernet0/15 of VLAN0001 is disabled
      Port path cost 19, Port priority 128
-   Port FastEthernet0/16 of VLAN0001 is disabled disabled
+   Port FastEthernet0/16 of VLAN0001 is disabled
      Port path cost 19, Port priority 128
-   Port FastEthernet0/17 of VLAN0001 is disabled disabled
+   Port FastEthernet0/17 of VLAN0001 is disabled
      Port path cost 19, Port priority 128
-   Port FastEthernet0/18 of VLAN0001 is disabled disabled
+   Port FastEthernet0/18 of VLAN0001 is disabled
      Port path cost 19, Port priority 128
-   Port FastEthernet0/19 of VLAN0001 is disabled disabled
+   Port FastEthernet0/19 of VLAN0001 is disabled
      Port path cost 19, Port priority 128
-   Port FastEthernet0/20 of VLAN0001 is disabled disabled
+   Port FastEthernet0/20 of VLAN0001 is disabled
      Port path cost 19, Port priority 128
-   Port FastEthernet0/21 of VLAN0001 is disabled disabled
+   Port FastEthernet0/21 of VLAN0001 is disabled
      Port path cost 19, Port priority 128
-   Port FastEthernet0/22 of VLAN0001 is disabled disabled
+   Port FastEthernet0/22 of VLAN0001 is disabled
      Port path cost 19, Port priority 128
-   Port FastEthernet0/23 of VLAN0001 is disabled disabled
+   Port FastEthernet0/23 of VLAN0001 is disabled
      Port path cost 19, Port priority 128
-   Port FastEthernet0/24 of VLAN0001 is disabled disabled
+   Port FastEthernet0/24 of VLAN0001 is disabled
      Port path cost 19, Port priority 128
-   Port GigabitEthernet0/1 of VLAN0001 is disabled disabled
+   Port GigabitEthernet0/1 of VLAN0001 is disabled
      Port path cost 19, Port priority 128
-   Port GigabitEthernet0/2 of VLAN0001 is disabled disabled
+   Port GigabitEthernet0/2 of VLAN0001 is disabled
      Port path cost 19, Port priority 128
 
 [244/300] dsw1 DSW-HQ-1# show spanning-tree summary totals
@@ -1628,27 +1628,27 @@ Total steps: 300
 
 [251/300] lhq lhq$ ping -c 1 10.1.1.11
   PING 10.1.1.11 (10.1.1.11) 56(84) bytes of data.
-  64 bytes from 10.1.1.11: icmp_seq=1 ttl=128 time=0.354 ms
+  64 bytes from 10.1.1.11: icmp_seq=1 ttl=128 time=0.337 ms
   
   --- 10.1.1.11 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.354/0.354/0.354/0.000 ms
+  rtt min/avg/max/mdev = 0.337/0.337/0.337/0.000 ms
 
 [252/300] lbr lbr$ ping -c 1 10.2.2.10
   PING 10.2.2.10 (10.2.2.10) 56(84) bytes of data.
-  64 bytes from 10.2.2.10: icmp_seq=1 ttl=128 time=0.180 ms
+  64 bytes from 10.2.2.10: icmp_seq=1 ttl=128 time=0.155 ms
   
   --- 10.2.2.10 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.180/0.180/0.180/0.000 ms
+  rtt min/avg/max/mdev = 0.155/0.155/0.155/0.000 ms
 
 [253/300] ldc ldc$ ping -c 1 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
-  64 bytes from 10.3.3.10: icmp_seq=1 ttl=64 time=0.186 ms
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=64 time=0.259 ms
   
   --- 10.3.3.10 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.186/0.186/0.186/0.000 ms
+  rtt min/avg/max/mdev = 0.259/0.259/0.259/0.000 ms
 
 [254/300] whq whq$ getmac
   Physical Address  Transport Name          
@@ -1855,15 +1855,7 @@ Total steps: 300
 <empty>
 
 [279/300] swhq SW-HQ# show spanning-tree vlan 4094
-  VLAN4094
-    Spanning tree enabled protocol ieee
-    Root ID    Priority    8190
-               Address     0200.0000.000d
-               Cost        0
-               This bridge is the root
-  
-  Interface        Role  Sts  Cost      Prio.Nbr  Type
-  ---------------- ----  ---  --------  --------  ----
+  Spanning tree instance(s) for vlan 4094 do not exist.
 
 [280/300] swbr <SW-BR> system-view
   Enter system view, return user view with return command.
@@ -2072,8 +2064,8 @@ Total steps: 300
 
 [300/300] lhq lhq$ ping -c 1 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
-  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=0.656 ms
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=0.531 ms
   
   --- 10.3.3.10 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.656/0.656/0.656/0.000 ms
+  rtt min/avg/max/mdev = 0.531/0.531/0.531/0.000 ms
