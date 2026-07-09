@@ -86,3 +86,34 @@ describe('netsh winhttp — real, shared proxy state (not a no-op stub)', () => 
     expect(psShow).not.toContain('10.0.0.9:8080');
   });
 });
+
+describe('Disable/Enable-NetAdapter — real admin state shared with ipconfig and netsh', () => {
+  it('disabling in PS is reflected by ipconfig and netsh in cmd', async () => {
+    const pc = new WindowsPC('windows-pc', 'PC1', 0, 0);
+    pc.configureInterface('eth0', new IPAddress('10.0.4.5'), new SubnetMask('255.255.255.0'));
+    const shell = ps(pc);
+
+    await run(shell, 'Disable-NetAdapter -Name eth0');
+
+    const ipcfg = await pc.executeCommand('ipconfig');
+    const eth0Block = ipcfg.split(/Ethernet adapter/).find(b => /Ethernet 0/.test(b)) ?? '';
+    expect(eth0Block).toContain('Media disconnected');
+
+    const netsh = await pc.executeCommand('netsh interface show interface');
+    const eth0Line = netsh.split('\n').find(l => /Ethernet 0/.test(l)) ?? '';
+    expect(eth0Line).toContain('Disabled');
+  });
+
+  it('disabling in cmd is reflected by Get-NetAdapter in PS', async () => {
+    const pc = new WindowsPC('windows-pc', 'PC1', 0, 0);
+    const shell = ps(pc);
+
+    await pc.executeCommand('netsh interface set interface "Ethernet 0" admin=disabled');
+    const out = await run(shell, 'Get-NetAdapter -Name eth0');
+    expect(out).toMatch(/disabled/i);
+
+    await pc.executeCommand('netsh interface set interface "Ethernet 0" admin=enabled');
+    const out2 = await run(shell, 'Get-NetAdapter -Name eth0');
+    expect(out2).not.toMatch(/disabled/i);
+  });
+});

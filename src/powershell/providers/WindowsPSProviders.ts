@@ -951,14 +951,14 @@ class WindowsNetworkAdapter implements INetworkProvider {
     return (this.pc as unknown as { name: string }).name;
   }
   getAdapters(): NetworkAdapterInfo[] {
-    const ports = (this.pc as unknown as { getPorts: () => Array<{ name: string; getMAC: () => { toString: () => string }; getIsUp: () => boolean; getNegotiatedSpeed: () => number }> }).getPorts();
+    const ports = (this.pc as unknown as { getPorts: () => Array<{ name: string; getMAC: () => { toString: () => string }; getIsUp: () => boolean; isAdminDown: () => boolean; getNegotiatedSpeed: () => number }> }).getPorts();
     return ports.map((p, idx) => {
       const ov = this.state.adapterOverrides.get(p.name.toLowerCase()) ?? {};
       return {
         name: ov.displayName ?? toDisplayName(p.name),
         displayName: ov.displayName ?? toDisplayName(p.name),
         ifIndex: idx + 1,
-        status: ov.status ?? (p.getIsUp() ? 'Up' : 'Disabled'),
+        status: p.isAdminDown() ? 'Disabled' : (p.getIsUp() ? 'Up' : 'Disconnected'),
         macAddress: p.getMAC().toString(),
         linkSpeed: formatLinkSpeedMbps(p.getNegotiatedSpeed()),
       };
@@ -1433,10 +1433,10 @@ class WindowsNetworkAdapter implements INetworkProvider {
   // ─ Adapter actions ──────────────────────────────────────────────────────
 
   setAdapterStatus(name: string, status: 'Up' | 'Down'): void {
-    const ports = (this.pc as unknown as { ports: Map<string, { setUp: (up: boolean) => void }> }).ports;
+    const ports = (this.pc as unknown as { ports: Map<string, { setAdminDown: (down: boolean) => void }> }).ports;
     const portName = resolveAdapterName(name, ports as unknown as Map<string, unknown>);
     const port = ports.get(portName);
-    if (port) port.setUp(status === 'Up');
+    if (port) port.setAdminDown(status !== 'Up');
   }
   renameAdapter(name: string, newName: string): void {
     const key = name.toLowerCase();

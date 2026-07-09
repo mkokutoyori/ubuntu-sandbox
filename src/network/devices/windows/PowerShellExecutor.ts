@@ -4887,9 +4887,7 @@ export class PowerShellExecutor {
       if (override?.displayName) displayName = override.displayName;
 
       const mac = port.getMAC()?.toString()?.replace(/:/g, '-').toUpperCase() ?? '00-00-00-00-00-00';
-      let status = port.getIsUp() ? 'Up' : 'Disconnected';
-      // Apply disable/enable override
-      if (override?.status) status = override.status;
+      const status = port.isAdminDown() ? 'Disabled' : (port.getIsUp() ? 'Up' : 'Disconnected');
 
       adapterEntries.push({ displayName, desc: 'Intel(R) Ethernet Connection', ifIndex: idx + 2, status, mac, speed: formatLinkSpeedMbps(port.getNegotiatedSpeed()) });
       idx++;
@@ -4937,15 +4935,30 @@ export class PowerShellExecutor {
 
   // ─── Adapter State Management ─────────────────────────────────────
 
+  private resolveAdapterPort(name: string): Port | undefined {
+    const target = name.toLowerCase();
+    const ports = this.device.getPortsMap();
+    for (const [pname, port] of ports) {
+      if (pname.toLowerCase() === target) return port;
+      if (this.portToDisplayName(pname).toLowerCase() === target) return port;
+    }
+    const resolved = toPortName(name);
+    return resolved ? ports.get(resolved) : undefined;
+  }
+
   private handleDisableEnableNetAdapter(args: string[], newStatus: string): string {
     const params = this.parsePSArgs(args);
     const name = (params.get('name') ?? params.get('_positional') ?? '').replace(/^["']|["']$/g, '');
     if (!name) return '';
-    const key = name.toLowerCase();
-    // WhatIf support
     if (params.has('whatif')) {
       return `What if: Performing the operation "${newStatus === 'Disabled' ? 'Disable' : 'Enable'}-NetAdapter" on target "${name}".`;
     }
+    const port = this.resolveAdapterPort(name);
+    if (port) {
+      port.setAdminDown(newStatus === 'Disabled');
+      return '';
+    }
+    const key = name.toLowerCase();
     const override = this.adapterOverrides.get(key) ?? {};
     override.status = newStatus;
     this.adapterOverrides.set(key, override);
