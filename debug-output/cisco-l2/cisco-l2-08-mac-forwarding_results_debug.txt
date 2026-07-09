@@ -1,6 +1,6 @@
 ============================================================
 Cisco L2 switch debug transcript — cisco-l2-08-mac-forwarding
-Generated: 2026-07-09T18:44:21.031Z
+Generated: 2026-07-09T18:59:38.618Z
 Topology: CORE(L2) trunked to SW1 & SW2 (L2 access). SW1: L1(Linux 1.11) Fa0/1, W1(Win 1.12) Fa0/2, SRV1(Linux 1.13) Fa0/3, Gi0/1=trunk. SW2: L2(Linux 1.21) Fa0/1, W2(Win 1.22) Fa0/2, SRV2(Linux 1.23) Fa0/3, Gi0/1=trunk. All hosts 192.168.1.0/24.
 focus=CAM table, static MACs, aging, clear variants, unicast flooding, MAC move, connectivity matrix
 Total steps: 346
@@ -81,48 +81,48 @@ Total steps: 346
 --- [8] § full connectivity matrix (VLAN 1, all pairs) ---
 [9/346] l1 l1$ ping -c 2 192.168.1.12
   PING 192.168.1.12 (192.168.1.12) 56(84) bytes of data.
-  64 bytes from 192.168.1.12: icmp_seq=1 ttl=128 time=2.109 ms
-  64 bytes from 192.168.1.12: icmp_seq=2 ttl=128 time=0.782 ms
+  64 bytes from 192.168.1.12: icmp_seq=1 ttl=128 time=2.160 ms
+  64 bytes from 192.168.1.12: icmp_seq=2 ttl=128 time=0.832 ms
   
   --- 192.168.1.12 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.782/1.445/2.109/0.664 ms
+  rtt min/avg/max/mdev = 0.832/1.496/2.160/0.664 ms
 
 [10/346] l1 l1$ ping -c 2 192.168.1.13
   PING 192.168.1.13 (192.168.1.13) 56(84) bytes of data.
-  64 bytes from 192.168.1.13: icmp_seq=1 ttl=64 time=0.561 ms
-  64 bytes from 192.168.1.13: icmp_seq=2 ttl=64 time=0.936 ms
+  64 bytes from 192.168.1.13: icmp_seq=1 ttl=64 time=0.465 ms
+  64 bytes from 192.168.1.13: icmp_seq=2 ttl=64 time=0.903 ms
   
   --- 192.168.1.13 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.561/0.748/0.936/0.188 ms
+  rtt min/avg/max/mdev = 0.465/0.684/0.903/0.219 ms
 
 [11/346] l1 l1$ ping -c 2 192.168.1.21
   PING 192.168.1.21 (192.168.1.21) 56(84) bytes of data.
-  64 bytes from 192.168.1.21: icmp_seq=1 ttl=64 time=0.857 ms
-  64 bytes from 192.168.1.21: icmp_seq=2 ttl=64 time=1.109 ms
+  64 bytes from 192.168.1.21: icmp_seq=1 ttl=64 time=0.692 ms
+  64 bytes from 192.168.1.21: icmp_seq=2 ttl=64 time=1.060 ms
   
   --- 192.168.1.21 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.857/0.983/1.109/0.126 ms
+  rtt min/avg/max/mdev = 0.692/0.876/1.060/0.184 ms
 
 [12/346] l1 l1$ ping -c 2 192.168.1.22
   PING 192.168.1.22 (192.168.1.22) 56(84) bytes of data.
-  64 bytes from 192.168.1.22: icmp_seq=1 ttl=128 time=0.534 ms
-  64 bytes from 192.168.1.22: icmp_seq=2 ttl=128 time=0.814 ms
+  64 bytes from 192.168.1.22: icmp_seq=1 ttl=128 time=0.636 ms
+  64 bytes from 192.168.1.22: icmp_seq=2 ttl=128 time=0.802 ms
   
   --- 192.168.1.22 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.534/0.674/0.814/0.140 ms
+  rtt min/avg/max/mdev = 0.636/0.719/0.802/0.083 ms
 
 [13/346] l1 l1$ ping -c 2 192.168.1.23
   PING 192.168.1.23 (192.168.1.23) 56(84) bytes of data.
-  64 bytes from 192.168.1.23: icmp_seq=1 ttl=64 time=0.936 ms
-  64 bytes from 192.168.1.23: icmp_seq=2 ttl=64 time=0.795 ms
+  64 bytes from 192.168.1.23: icmp_seq=1 ttl=64 time=0.746 ms
+  64 bytes from 192.168.1.23: icmp_seq=2 ttl=64 time=1.057 ms
   
   --- 192.168.1.23 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.795/0.865/0.936/0.070 ms
+  rtt min/avg/max/mdev = 0.746/0.902/1.057/0.155 ms
 
 [14/346] w1 w1$ ping -n 2 192.168.1.11
   
@@ -133,7 +133,7 @@ Total steps: 346
   Ping statistics for 192.168.1.11:
       Packets: Sent = 2, Received = 2, Lost = 0 (0% loss),
   Approximate round trip times in milli-seconds:
-      Minimum = 0ms, Maximum = 1ms, Average = 1ms
+      Minimum = 0ms, Maximum = 0ms, Average = 0ms
 
 [15/346] w1 w1$ ping -n 2 192.168.1.13
   
@@ -181,93 +181,93 @@ Total steps: 346
 
 [19/346] srv1 srv1$ ping -c 2 192.168.1.11
   PING 192.168.1.11 (192.168.1.11) 56(84) bytes of data.
-  64 bytes from 192.168.1.11: icmp_seq=1 ttl=64 time=0.267 ms
-  64 bytes from 192.168.1.11: icmp_seq=2 ttl=64 time=0.447 ms
+  64 bytes from 192.168.1.11: icmp_seq=1 ttl=64 time=0.225 ms
+  64 bytes from 192.168.1.11: icmp_seq=2 ttl=64 time=0.469 ms
   
   --- 192.168.1.11 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.267/0.357/0.447/0.090 ms
+  rtt min/avg/max/mdev = 0.225/0.347/0.469/0.122 ms
 
 [20/346] srv1 srv1$ ping -c 2 192.168.1.12
   PING 192.168.1.12 (192.168.1.12) 56(84) bytes of data.
-  64 bytes from 192.168.1.12: icmp_seq=1 ttl=128 time=0.275 ms
-  64 bytes from 192.168.1.12: icmp_seq=2 ttl=128 time=0.604 ms
+  64 bytes from 192.168.1.12: icmp_seq=1 ttl=128 time=0.330 ms
+  64 bytes from 192.168.1.12: icmp_seq=2 ttl=128 time=0.495 ms
   
   --- 192.168.1.12 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.275/0.440/0.604/0.164 ms
+  rtt min/avg/max/mdev = 0.330/0.412/0.495/0.083 ms
 
 [21/346] srv1 srv1$ ping -c 2 192.168.1.21
   PING 192.168.1.21 (192.168.1.21) 56(84) bytes of data.
-  64 bytes from 192.168.1.21: icmp_seq=1 ttl=64 time=0.556 ms
-  64 bytes from 192.168.1.21: icmp_seq=2 ttl=64 time=0.585 ms
+  64 bytes from 192.168.1.21: icmp_seq=1 ttl=64 time=0.464 ms
+  64 bytes from 192.168.1.21: icmp_seq=2 ttl=64 time=0.719 ms
   
   --- 192.168.1.21 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.556/0.571/0.585/0.014 ms
+  rtt min/avg/max/mdev = 0.464/0.592/0.719/0.128 ms
 
 [22/346] srv1 srv1$ ping -c 2 192.168.1.22
   PING 192.168.1.22 (192.168.1.22) 56(84) bytes of data.
-  64 bytes from 192.168.1.22: icmp_seq=1 ttl=128 time=0.462 ms
-  64 bytes from 192.168.1.22: icmp_seq=2 ttl=128 time=0.680 ms
+  64 bytes from 192.168.1.22: icmp_seq=1 ttl=128 time=0.467 ms
+  64 bytes from 192.168.1.22: icmp_seq=2 ttl=128 time=0.631 ms
   
   --- 192.168.1.22 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.462/0.571/0.680/0.109 ms
+  rtt min/avg/max/mdev = 0.467/0.549/0.631/0.082 ms
 
 [23/346] srv1 srv1$ ping -c 2 192.168.1.23
   PING 192.168.1.23 (192.168.1.23) 56(84) bytes of data.
-  64 bytes from 192.168.1.23: icmp_seq=1 ttl=64 time=0.672 ms
-  64 bytes from 192.168.1.23: icmp_seq=2 ttl=64 time=0.653 ms
+  64 bytes from 192.168.1.23: icmp_seq=1 ttl=64 time=0.608 ms
+  64 bytes from 192.168.1.23: icmp_seq=2 ttl=64 time=0.662 ms
   
   --- 192.168.1.23 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.653/0.663/0.672/0.009 ms
+  rtt min/avg/max/mdev = 0.608/0.635/0.662/0.027 ms
 
 [24/346] l2 l2$ ping -c 2 192.168.1.11
   PING 192.168.1.11 (192.168.1.11) 56(84) bytes of data.
-  64 bytes from 192.168.1.11: icmp_seq=1 ttl=64 time=0.443 ms
-  64 bytes from 192.168.1.11: icmp_seq=2 ttl=64 time=0.621 ms
+  64 bytes from 192.168.1.11: icmp_seq=1 ttl=64 time=0.430 ms
+  64 bytes from 192.168.1.11: icmp_seq=2 ttl=64 time=0.608 ms
   
   --- 192.168.1.11 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.443/0.532/0.621/0.089 ms
+  rtt min/avg/max/mdev = 0.430/0.519/0.608/0.089 ms
 
 [25/346] l2 l2$ ping -c 2 192.168.1.12
   PING 192.168.1.12 (192.168.1.12) 56(84) bytes of data.
-  64 bytes from 192.168.1.12: icmp_seq=1 ttl=128 time=0.368 ms
-  64 bytes from 192.168.1.12: icmp_seq=2 ttl=128 time=0.667 ms
+  64 bytes from 192.168.1.12: icmp_seq=1 ttl=128 time=0.378 ms
+  64 bytes from 192.168.1.12: icmp_seq=2 ttl=128 time=0.655 ms
   
   --- 192.168.1.12 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.368/0.517/0.667/0.149 ms
+  rtt min/avg/max/mdev = 0.378/0.516/0.655/0.138 ms
 
 [26/346] l2 l2$ ping -c 2 192.168.1.13
   PING 192.168.1.13 (192.168.1.13) 56(84) bytes of data.
-  64 bytes from 192.168.1.13: icmp_seq=1 ttl=64 time=0.344 ms
-  64 bytes from 192.168.1.13: icmp_seq=2 ttl=64 time=0.934 ms
+  64 bytes from 192.168.1.13: icmp_seq=1 ttl=64 time=0.331 ms
+  64 bytes from 192.168.1.13: icmp_seq=2 ttl=64 time=0.686 ms
   
   --- 192.168.1.13 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.344/0.639/0.934/0.295 ms
+  rtt min/avg/max/mdev = 0.331/0.508/0.686/0.178 ms
 
 [27/346] l2 l2$ ping -c 2 192.168.1.22
   PING 192.168.1.22 (192.168.1.22) 56(84) bytes of data.
-  64 bytes from 192.168.1.22: icmp_seq=1 ttl=128 time=0.603 ms
-  64 bytes from 192.168.1.22: icmp_seq=2 ttl=128 time=0.467 ms
+  64 bytes from 192.168.1.22: icmp_seq=1 ttl=128 time=0.331 ms
+  64 bytes from 192.168.1.22: icmp_seq=2 ttl=128 time=0.469 ms
   
   --- 192.168.1.22 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.467/0.535/0.603/0.068 ms
+  rtt min/avg/max/mdev = 0.331/0.400/0.469/0.069 ms
 
 [28/346] l2 l2$ ping -c 2 192.168.1.23
   PING 192.168.1.23 (192.168.1.23) 56(84) bytes of data.
-  64 bytes from 192.168.1.23: icmp_seq=1 ttl=64 time=0.366 ms
-  64 bytes from 192.168.1.23: icmp_seq=2 ttl=64 time=0.706 ms
+  64 bytes from 192.168.1.23: icmp_seq=1 ttl=64 time=0.273 ms
+  64 bytes from 192.168.1.23: icmp_seq=2 ttl=64 time=0.581 ms
   
   --- 192.168.1.23 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.366/0.536/0.706/0.170 ms
+  rtt min/avg/max/mdev = 0.273/0.427/0.581/0.154 ms
 
 [29/346] w2 w2$ ping -n 2 192.168.1.11
   
@@ -278,29 +278,29 @@ Total steps: 346
   Ping statistics for 192.168.1.11:
       Packets: Sent = 2, Received = 2, Lost = 0 (0% loss),
   Approximate round trip times in milli-seconds:
-      Minimum = 1ms, Maximum = 1ms, Average = 1ms
+      Minimum = 0ms, Maximum = 1ms, Average = 1ms
 
 [30/346] w2 w2$ ping -n 2 192.168.1.12
   
   Pinging 192.168.1.12 with 32 bytes of data:
   Reply from 192.168.1.12: bytes=32 time=<1ms TTL=128
-  Reply from 192.168.1.12: bytes=32 time=2ms TTL=128
+  Reply from 192.168.1.12: bytes=32 time=<1ms TTL=128
   
   Ping statistics for 192.168.1.12:
       Packets: Sent = 2, Received = 2, Lost = 0 (0% loss),
   Approximate round trip times in milli-seconds:
-      Minimum = 0ms, Maximum = 2ms, Average = 1ms
+      Minimum = 0ms, Maximum = 0ms, Average = 0ms
 
 [31/346] w2 w2$ ping -n 2 192.168.1.13
   
   Pinging 192.168.1.13 with 32 bytes of data:
-  Reply from 192.168.1.13: bytes=32 time=<1ms TTL=64
+  Reply from 192.168.1.13: bytes=32 time=2ms TTL=64
   Reply from 192.168.1.13: bytes=32 time=<1ms TTL=64
   
   Ping statistics for 192.168.1.13:
       Packets: Sent = 2, Received = 2, Lost = 0 (0% loss),
   Approximate round trip times in milli-seconds:
-      Minimum = 0ms, Maximum = 1ms, Average = 1ms
+      Minimum = 0ms, Maximum = 2ms, Average = 1ms
 
 [32/346] w2 w2$ ping -n 2 192.168.1.21
   
@@ -326,48 +326,48 @@ Total steps: 346
 
 [34/346] srv2 srv2$ ping -c 2 192.168.1.11
   PING 192.168.1.11 (192.168.1.11) 56(84) bytes of data.
-  64 bytes from 192.168.1.11: icmp_seq=1 ttl=64 time=0.755 ms
-  64 bytes from 192.168.1.11: icmp_seq=2 ttl=64 time=0.669 ms
+  64 bytes from 192.168.1.11: icmp_seq=1 ttl=64 time=0.455 ms
+  64 bytes from 192.168.1.11: icmp_seq=2 ttl=64 time=0.607 ms
   
   --- 192.168.1.11 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.669/0.712/0.755/0.043 ms
+  rtt min/avg/max/mdev = 0.455/0.531/0.607/0.076 ms
 
 [35/346] srv2 srv2$ ping -c 2 192.168.1.12
   PING 192.168.1.12 (192.168.1.12) 56(84) bytes of data.
-  64 bytes from 192.168.1.12: icmp_seq=1 ttl=128 time=2.041 ms
-  64 bytes from 192.168.1.12: icmp_seq=2 ttl=128 time=0.720 ms
+  64 bytes from 192.168.1.12: icmp_seq=1 ttl=128 time=0.446 ms
+  64 bytes from 192.168.1.12: icmp_seq=2 ttl=128 time=0.680 ms
   
   --- 192.168.1.12 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.720/1.380/2.041/0.661 ms
+  rtt min/avg/max/mdev = 0.446/0.563/0.680/0.117 ms
 
 [36/346] srv2 srv2$ ping -c 2 192.168.1.13
   PING 192.168.1.13 (192.168.1.13) 56(84) bytes of data.
-  64 bytes from 192.168.1.13: icmp_seq=1 ttl=64 time=0.411 ms
-  64 bytes from 192.168.1.13: icmp_seq=2 ttl=64 time=0.900 ms
+  64 bytes from 192.168.1.13: icmp_seq=1 ttl=64 time=0.350 ms
+  64 bytes from 192.168.1.13: icmp_seq=2 ttl=64 time=0.797 ms
   
   --- 192.168.1.13 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.411/0.655/0.900/0.245 ms
+  rtt min/avg/max/mdev = 0.350/0.574/0.797/0.224 ms
 
 [37/346] srv2 srv2$ ping -c 2 192.168.1.21
   PING 192.168.1.21 (192.168.1.21) 56(84) bytes of data.
-  64 bytes from 192.168.1.21: icmp_seq=1 ttl=64 time=0.396 ms
-  64 bytes from 192.168.1.21: icmp_seq=2 ttl=64 time=0.522 ms
+  64 bytes from 192.168.1.21: icmp_seq=1 ttl=64 time=0.306 ms
+  64 bytes from 192.168.1.21: icmp_seq=2 ttl=64 time=0.507 ms
   
   --- 192.168.1.21 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.396/0.459/0.522/0.063 ms
+  rtt min/avg/max/mdev = 0.306/0.406/0.507/0.100 ms
 
 [38/346] srv2 srv2$ ping -c 2 192.168.1.22
   PING 192.168.1.22 (192.168.1.22) 56(84) bytes of data.
-  64 bytes from 192.168.1.22: icmp_seq=1 ttl=128 time=0.337 ms
-  64 bytes from 192.168.1.22: icmp_seq=2 ttl=128 time=0.507 ms
+  64 bytes from 192.168.1.22: icmp_seq=1 ttl=128 time=0.329 ms
+  64 bytes from 192.168.1.22: icmp_seq=2 ttl=128 time=0.626 ms
   
   --- 192.168.1.22 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.337/0.422/0.507/0.085 ms
+  rtt min/avg/max/mdev = 0.329/0.478/0.626/0.149 ms
 
 
 --- [39] § MAC table populated by matrix ---
@@ -577,12 +577,12 @@ Total steps: 346
 
 [70/346] l1 l1$ ping -c 2 192.168.1.13
   PING 192.168.1.13 (192.168.1.13) 56(84) bytes of data.
-  64 bytes from 192.168.1.13: icmp_seq=1 ttl=64 time=1.970 ms
-  64 bytes from 192.168.1.13: icmp_seq=2 ttl=64 time=0.593 ms
+  64 bytes from 192.168.1.13: icmp_seq=1 ttl=64 time=1.966 ms
+  64 bytes from 192.168.1.13: icmp_seq=2 ttl=64 time=0.490 ms
   
   --- 192.168.1.13 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.593/1.282/1.970/0.689 ms
+  rtt min/avg/max/mdev = 0.490/1.228/1.966/0.738 ms
 
 [71/346] sw1 SW1# show mac address-table dynamic
   Mac Address Table
@@ -637,12 +637,12 @@ Total steps: 346
 
 [82/346] srv1 srv1$ ping -c 2 192.168.1.11
   PING 192.168.1.11 (192.168.1.11) 56(84) bytes of data.
-  64 bytes from 192.168.1.11: icmp_seq=1 ttl=64 time=0.458 ms
-  64 bytes from 192.168.1.11: icmp_seq=2 ttl=64 time=0.547 ms
+  64 bytes from 192.168.1.11: icmp_seq=1 ttl=64 time=0.433 ms
+  64 bytes from 192.168.1.11: icmp_seq=2 ttl=64 time=0.527 ms
   
   --- 192.168.1.11 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.458/0.502/0.547/0.044 ms
+  rtt min/avg/max/mdev = 0.433/0.480/0.527/0.047 ms
 
 [83/346] sw1 SW1# show mac address-table
   Mac Address Table
@@ -659,48 +659,48 @@ Total steps: 346
 --- [84] § second connectivity matrix (re-learn) ---
 [85/346] l1 l1$ ping -c 2 192.168.1.12
   PING 192.168.1.12 (192.168.1.12) 56(84) bytes of data.
-  64 bytes from 192.168.1.12: icmp_seq=1 ttl=128 time=0.615 ms
-  64 bytes from 192.168.1.12: icmp_seq=2 ttl=128 time=0.575 ms
+  64 bytes from 192.168.1.12: icmp_seq=1 ttl=128 time=0.376 ms
+  64 bytes from 192.168.1.12: icmp_seq=2 ttl=128 time=0.587 ms
   
   --- 192.168.1.12 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.575/0.595/0.615/0.020 ms
+  rtt min/avg/max/mdev = 0.376/0.482/0.587/0.105 ms
 
 [86/346] l1 l1$ ping -c 2 192.168.1.13
   PING 192.168.1.13 (192.168.1.13) 56(84) bytes of data.
-  64 bytes from 192.168.1.13: icmp_seq=1 ttl=64 time=0.253 ms
-  64 bytes from 192.168.1.13: icmp_seq=2 ttl=64 time=0.476 ms
+  64 bytes from 192.168.1.13: icmp_seq=1 ttl=64 time=0.236 ms
+  64 bytes from 192.168.1.13: icmp_seq=2 ttl=64 time=0.485 ms
   
   --- 192.168.1.13 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.253/0.364/0.476/0.112 ms
+  rtt min/avg/max/mdev = 0.236/0.361/0.485/0.125 ms
 
 [87/346] l1 l1$ ping -c 2 192.168.1.21
   PING 192.168.1.21 (192.168.1.21) 56(84) bytes of data.
-  64 bytes from 192.168.1.21: icmp_seq=1 ttl=64 time=0.619 ms
-  64 bytes from 192.168.1.21: icmp_seq=2 ttl=64 time=0.710 ms
+  64 bytes from 192.168.1.21: icmp_seq=1 ttl=64 time=0.489 ms
+  64 bytes from 192.168.1.21: icmp_seq=2 ttl=64 time=0.870 ms
   
   --- 192.168.1.21 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.619/0.665/0.710/0.046 ms
+  rtt min/avg/max/mdev = 0.489/0.679/0.870/0.191 ms
 
 [88/346] l1 l1$ ping -c 2 192.168.1.22
   PING 192.168.1.22 (192.168.1.22) 56(84) bytes of data.
-  64 bytes from 192.168.1.22: icmp_seq=1 ttl=128 time=0.644 ms
-  64 bytes from 192.168.1.22: icmp_seq=2 ttl=128 time=0.710 ms
+  64 bytes from 192.168.1.22: icmp_seq=1 ttl=128 time=0.596 ms
+  64 bytes from 192.168.1.22: icmp_seq=2 ttl=128 time=0.944 ms
   
   --- 192.168.1.22 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.644/0.677/0.710/0.033 ms
+  rtt min/avg/max/mdev = 0.596/0.770/0.944/0.174 ms
 
 [89/346] l1 l1$ ping -c 2 192.168.1.23
   PING 192.168.1.23 (192.168.1.23) 56(84) bytes of data.
-  64 bytes from 192.168.1.23: icmp_seq=1 ttl=64 time=0.787 ms
-  64 bytes from 192.168.1.23: icmp_seq=2 ttl=64 time=0.990 ms
+  64 bytes from 192.168.1.23: icmp_seq=1 ttl=64 time=0.650 ms
+  64 bytes from 192.168.1.23: icmp_seq=2 ttl=64 time=0.770 ms
   
   --- 192.168.1.23 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.787/0.889/0.990/0.101 ms
+  rtt min/avg/max/mdev = 0.650/0.710/0.770/0.060 ms
 
 [90/346] w1 w1$ ping -n 2 192.168.1.11
   
@@ -733,7 +733,7 @@ Total steps: 346
   Ping statistics for 192.168.1.21:
       Packets: Sent = 2, Received = 2, Lost = 0 (0% loss),
   Approximate round trip times in milli-seconds:
-      Minimum = 0ms, Maximum = 1ms, Average = 1ms
+      Minimum = 0ms, Maximum = 0ms, Average = 0ms
 
 [93/346] w1 w1$ ping -n 2 192.168.1.22
   
@@ -744,7 +744,7 @@ Total steps: 346
   Ping statistics for 192.168.1.22:
       Packets: Sent = 2, Received = 2, Lost = 0 (0% loss),
   Approximate round trip times in milli-seconds:
-      Minimum = 1ms, Maximum = 2ms, Average = 2ms
+      Minimum = 0ms, Maximum = 2ms, Average = 1ms
 
 [94/346] w1 w1$ ping -n 2 192.168.1.23
   
@@ -755,97 +755,97 @@ Total steps: 346
   Ping statistics for 192.168.1.23:
       Packets: Sent = 2, Received = 2, Lost = 0 (0% loss),
   Approximate round trip times in milli-seconds:
-      Minimum = 0ms, Maximum = 1ms, Average = 1ms
+      Minimum = 0ms, Maximum = 0ms, Average = 0ms
 
 [95/346] srv1 srv1$ ping -c 2 192.168.1.11
   PING 192.168.1.11 (192.168.1.11) 56(84) bytes of data.
-  64 bytes from 192.168.1.11: icmp_seq=1 ttl=64 time=0.310 ms
-  64 bytes from 192.168.1.11: icmp_seq=2 ttl=64 time=0.539 ms
+  64 bytes from 192.168.1.11: icmp_seq=1 ttl=64 time=0.275 ms
+  64 bytes from 192.168.1.11: icmp_seq=2 ttl=64 time=0.486 ms
   
   --- 192.168.1.11 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.310/0.424/0.539/0.114 ms
+  rtt min/avg/max/mdev = 0.275/0.380/0.486/0.105 ms
 
 [96/346] srv1 srv1$ ping -c 2 192.168.1.12
   PING 192.168.1.12 (192.168.1.12) 56(84) bytes of data.
-  64 bytes from 192.168.1.12: icmp_seq=1 ttl=128 time=0.251 ms
-  64 bytes from 192.168.1.12: icmp_seq=2 ttl=128 time=0.503 ms
+  64 bytes from 192.168.1.12: icmp_seq=1 ttl=128 time=0.294 ms
+  64 bytes from 192.168.1.12: icmp_seq=2 ttl=128 time=0.496 ms
   
   --- 192.168.1.12 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.251/0.377/0.503/0.126 ms
+  rtt min/avg/max/mdev = 0.294/0.395/0.496/0.101 ms
 
 [97/346] srv1 srv1$ ping -c 2 192.168.1.21
   PING 192.168.1.21 (192.168.1.21) 56(84) bytes of data.
-  64 bytes from 192.168.1.21: icmp_seq=1 ttl=64 time=1.896 ms
-  64 bytes from 192.168.1.21: icmp_seq=2 ttl=64 time=0.785 ms
+  64 bytes from 192.168.1.21: icmp_seq=1 ttl=64 time=1.753 ms
+  64 bytes from 192.168.1.21: icmp_seq=2 ttl=64 time=1.231 ms
   
   --- 192.168.1.21 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.785/1.341/1.896/0.555 ms
+  rtt min/avg/max/mdev = 1.231/1.492/1.753/0.261 ms
 
 [98/346] srv1 srv1$ ping -c 2 192.168.1.22
   PING 192.168.1.22 (192.168.1.22) 56(84) bytes of data.
-  64 bytes from 192.168.1.22: icmp_seq=1 ttl=128 time=1.761 ms
-  64 bytes from 192.168.1.22: icmp_seq=2 ttl=128 time=0.792 ms
+  64 bytes from 192.168.1.22: icmp_seq=1 ttl=128 time=0.514 ms
+  64 bytes from 192.168.1.22: icmp_seq=2 ttl=128 time=0.757 ms
   
   --- 192.168.1.22 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.792/1.276/1.761/0.484 ms
+  rtt min/avg/max/mdev = 0.514/0.636/0.757/0.122 ms
 
 [99/346] srv1 srv1$ ping -c 2 192.168.1.23
   PING 192.168.1.23 (192.168.1.23) 56(84) bytes of data.
-  64 bytes from 192.168.1.23: icmp_seq=1 ttl=64 time=0.390 ms
-  64 bytes from 192.168.1.23: icmp_seq=2 ttl=64 time=0.669 ms
+  64 bytes from 192.168.1.23: icmp_seq=1 ttl=64 time=0.484 ms
+  64 bytes from 192.168.1.23: icmp_seq=2 ttl=64 time=0.854 ms
   
   --- 192.168.1.23 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.390/0.530/0.669/0.139 ms
+  rtt min/avg/max/mdev = 0.484/0.669/0.854/0.185 ms
 
 [100/346] l2 l2$ ping -c 2 192.168.1.11
   PING 192.168.1.11 (192.168.1.11) 56(84) bytes of data.
-  64 bytes from 192.168.1.11: icmp_seq=1 ttl=64 time=0.497 ms
-  64 bytes from 192.168.1.11: icmp_seq=2 ttl=64 time=0.726 ms
+  64 bytes from 192.168.1.11: icmp_seq=1 ttl=64 time=0.374 ms
+  64 bytes from 192.168.1.11: icmp_seq=2 ttl=64 time=0.795 ms
   
   --- 192.168.1.11 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.497/0.612/0.726/0.115 ms
+  rtt min/avg/max/mdev = 0.374/0.585/0.795/0.211 ms
 
 [101/346] l2 l2$ ping -c 2 192.168.1.12
   PING 192.168.1.12 (192.168.1.12) 56(84) bytes of data.
-  64 bytes from 192.168.1.12: icmp_seq=1 ttl=128 time=1.709 ms
-  64 bytes from 192.168.1.12: icmp_seq=2 ttl=128 time=0.711 ms
+  64 bytes from 192.168.1.12: icmp_seq=1 ttl=128 time=1.731 ms
+  64 bytes from 192.168.1.12: icmp_seq=2 ttl=128 time=0.797 ms
   
   --- 192.168.1.12 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.711/1.210/1.709/0.499 ms
+  rtt min/avg/max/mdev = 0.797/1.264/1.731/0.467 ms
 
 [102/346] l2 l2$ ping -c 2 192.168.1.13
   PING 192.168.1.13 (192.168.1.13) 56(84) bytes of data.
-  64 bytes from 192.168.1.13: icmp_seq=1 ttl=64 time=0.383 ms
-  64 bytes from 192.168.1.13: icmp_seq=2 ttl=64 time=0.762 ms
+  64 bytes from 192.168.1.13: icmp_seq=1 ttl=64 time=0.645 ms
+  64 bytes from 192.168.1.13: icmp_seq=2 ttl=64 time=0.678 ms
   
   --- 192.168.1.13 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.383/0.572/0.762/0.189 ms
+  rtt min/avg/max/mdev = 0.645/0.661/0.678/0.016 ms
 
 [103/346] l2 l2$ ping -c 2 192.168.1.22
   PING 192.168.1.22 (192.168.1.22) 56(84) bytes of data.
-  64 bytes from 192.168.1.22: icmp_seq=1 ttl=128 time=0.301 ms
-  64 bytes from 192.168.1.22: icmp_seq=2 ttl=128 time=0.612 ms
+  64 bytes from 192.168.1.22: icmp_seq=1 ttl=128 time=0.296 ms
+  64 bytes from 192.168.1.22: icmp_seq=2 ttl=128 time=0.460 ms
   
   --- 192.168.1.22 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.301/0.457/0.612/0.155 ms
+  rtt min/avg/max/mdev = 0.296/0.378/0.460/0.082 ms
 
 [104/346] l2 l2$ ping -c 2 192.168.1.23
   PING 192.168.1.23 (192.168.1.23) 56(84) bytes of data.
-  64 bytes from 192.168.1.23: icmp_seq=1 ttl=64 time=0.347 ms
-  64 bytes from 192.168.1.23: icmp_seq=2 ttl=64 time=0.458 ms
+  64 bytes from 192.168.1.23: icmp_seq=1 ttl=64 time=0.252 ms
+  64 bytes from 192.168.1.23: icmp_seq=2 ttl=64 time=0.487 ms
   
   --- 192.168.1.23 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.347/0.402/0.458/0.056 ms
+  rtt min/avg/max/mdev = 0.252/0.369/0.487/0.118 ms
 
 [105/346] w2 w2$ ping -n 2 192.168.1.11
   
@@ -904,48 +904,48 @@ Total steps: 346
 
 [110/346] srv2 srv2$ ping -c 2 192.168.1.11
   PING 192.168.1.11 (192.168.1.11) 56(84) bytes of data.
-  64 bytes from 192.168.1.11: icmp_seq=1 ttl=64 time=0.345 ms
-  64 bytes from 192.168.1.11: icmp_seq=2 ttl=64 time=0.904 ms
+  64 bytes from 192.168.1.11: icmp_seq=1 ttl=64 time=0.318 ms
+  64 bytes from 192.168.1.11: icmp_seq=2 ttl=64 time=0.698 ms
   
   --- 192.168.1.11 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.345/0.625/0.904/0.280 ms
+  rtt min/avg/max/mdev = 0.318/0.508/0.698/0.190 ms
 
 [111/346] srv2 srv2$ ping -c 2 192.168.1.12
   PING 192.168.1.12 (192.168.1.12) 56(84) bytes of data.
-  64 bytes from 192.168.1.12: icmp_seq=1 ttl=128 time=0.588 ms
-  64 bytes from 192.168.1.12: icmp_seq=2 ttl=128 time=0.674 ms
+  64 bytes from 192.168.1.12: icmp_seq=1 ttl=128 time=0.622 ms
+  64 bytes from 192.168.1.12: icmp_seq=2 ttl=128 time=0.631 ms
   
   --- 192.168.1.12 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.588/0.631/0.674/0.043 ms
+  rtt min/avg/max/mdev = 0.622/0.626/0.631/0.004 ms
 
 [112/346] srv2 srv2$ ping -c 2 192.168.1.13
   PING 192.168.1.13 (192.168.1.13) 56(84) bytes of data.
-  64 bytes from 192.168.1.13: icmp_seq=1 ttl=64 time=0.446 ms
-  64 bytes from 192.168.1.13: icmp_seq=2 ttl=64 time=0.731 ms
+  64 bytes from 192.168.1.13: icmp_seq=1 ttl=64 time=0.344 ms
+  64 bytes from 192.168.1.13: icmp_seq=2 ttl=64 time=1.235 ms
   
   --- 192.168.1.13 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.446/0.588/0.731/0.142 ms
+  rtt min/avg/max/mdev = 0.344/0.789/1.235/0.445 ms
 
 [113/346] srv2 srv2$ ping -c 2 192.168.1.21
   PING 192.168.1.21 (192.168.1.21) 56(84) bytes of data.
-  64 bytes from 192.168.1.21: icmp_seq=1 ttl=64 time=0.334 ms
-  64 bytes from 192.168.1.21: icmp_seq=2 ttl=64 time=0.462 ms
+  64 bytes from 192.168.1.21: icmp_seq=1 ttl=64 time=0.465 ms
+  64 bytes from 192.168.1.21: icmp_seq=2 ttl=64 time=0.481 ms
   
   --- 192.168.1.21 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.334/0.398/0.462/0.064 ms
+  rtt min/avg/max/mdev = 0.465/0.473/0.481/0.008 ms
 
 [114/346] srv2 srv2$ ping -c 2 192.168.1.22
   PING 192.168.1.22 (192.168.1.22) 56(84) bytes of data.
-  64 bytes from 192.168.1.22: icmp_seq=1 ttl=128 time=0.217 ms
-  64 bytes from 192.168.1.22: icmp_seq=2 ttl=128 time=0.534 ms
+  64 bytes from 192.168.1.22: icmp_seq=1 ttl=128 time=0.269 ms
+  64 bytes from 192.168.1.22: icmp_seq=2 ttl=128 time=0.496 ms
   
   --- 192.168.1.22 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.217/0.376/0.534/0.158 ms
+  rtt min/avg/max/mdev = 0.269/0.382/0.496/0.114 ms
 
 
 --- [115] § per-VLAN MAC inspection loop ---
