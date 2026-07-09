@@ -327,6 +327,8 @@ export abstract class LinuxMachine extends EndHost
     this.initSshFiles();
     this.executor.netConfig.seedDefaults(this.getPortNames().filter(n => n !== 'lo'));
     this.wireNetworkConfigLifecycle();
+    this.executor.iptables.setLogCallback((prefix, pkt) => this.logIptablesLog(prefix, pkt));
+    this.executor.ip6tables.setLogCallback((prefix, pkt) => this.logIptablesLog(prefix, pkt));
 
     this.attachSshTcpListeners();
     this.attachProcessSocketReaper();
@@ -2231,6 +2233,20 @@ export abstract class LinuxMachine extends EndHost
     this.executor.logMgr.logKernel(
       'netfilter',
       `${tag} IN=${inIface} OUT=${outIface ?? ''} SRC=${pkt.srcIP} DST=${pkt.dstIP} PROTO=${proto}${portFields}`,
+    );
+  }
+
+  private logIptablesLog(prefix: string, pkt: PacketInfo): void {
+    const proto = pkt.protocol === 6 ? 'TCP'
+                : pkt.protocol === 17 ? 'UDP'
+                : pkt.protocol === 1 ? 'ICMP'
+                : String(pkt.protocol);
+    const portFields = (pkt.srcPort || pkt.dstPort)
+      ? ` SPT=${pkt.srcPort ?? 0} DPT=${pkt.dstPort ?? 0}`
+      : '';
+    this.executor.logMgr.logKernel(
+      'netfilter',
+      `${prefix}IN=${pkt.iface} OUT=${pkt.outIface ?? ''} SRC=${pkt.srcIP} DST=${pkt.dstIP} PROTO=${proto}${portFields}`,
     );
   }
 

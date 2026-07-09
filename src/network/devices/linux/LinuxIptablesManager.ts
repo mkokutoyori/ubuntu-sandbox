@@ -121,6 +121,7 @@ export class LinuxIptablesManager {
   // verdict from filterPacket(), if any — read by the caller immediately
   // after filterPacket() to pick the right ICMP error / TCP RST.
   private lastRejectWith: string | null = null;
+  private logCallback: ((prefix: string, pkt: PacketInfo) => void) | null = null;
 
   readonly family: 4 | 6;
 
@@ -133,6 +134,10 @@ export class LinuxIptablesManager {
     if (resolveService) this.resolveService = resolveService;
     this.family = opts?.family ?? 4;
     this.initializeTables();
+  }
+
+  setLogCallback(cb: (prefix: string, pkt: PacketInfo) => void): void {
+    this.logCallback = cb;
   }
 
   hasDropOnInputPort(port: number, protocol: 'tcp' | 'udp' = 'tcp'): boolean {
@@ -341,7 +346,9 @@ export class LinuxIptablesManager {
             this.lastRejectWith = rule.targetOptions['--reject-with'] ?? null;
             return 'reject';
           case 'RETURN': return null; // return to calling chain
-          case 'LOG': continue; // LOG doesn't terminate; continue to next rule
+          case 'LOG':
+            this.logCallback?.(rule.targetOptions['--log-prefix'] ?? '', pkt);
+            continue; // LOG doesn't terminate; continue to next rule
           default: continue;
         }
       }
@@ -1090,6 +1097,116 @@ export class LinuxIptablesManager {
       }
     }
     return { output: '', exitCode: 0 };
+  }
+
+  // ═══════════════════════════════════════════════════════════════════
+  // nft list ruleset — the nftables view onto the same live tables
+  // (Ubuntu's iptables-nft backend and nft share one netfilter state).
+  // ═══════════════════════════════════════════════════════════════════
+
+  listRuleset(): string {
+    const fam = this.family === 6 ? 'ip6' : 'ip';
+    const lines: string[] = [];
+    for (const [tn, table] of this.tables) {
+      const hasContent = [...table.chains.values()].some(
+        (c) => c.rules.length > 0 || (c.policy !== null && c.policy !== 'ACCEPT'),
+      );
+      if (!hasContent) continue;
+
+      lines.push(`table ${fam} ${tn} {`);
+      for (const [, ch] of table.chains) {
+        if (ch.rules.length === 0 && (ch.policy === null || ch.policy === 'ACCEPT')) continue;
+        lines.push(`\tchain ${ch.name} {`);
+        const hookLine = this.nftHookLine(tn, ch.name, ch.policy);
+        if (hookLine) lines.push(`\t\t${hookLine}`);
+        for (const r of ch.rules) lines.push(`\t\t${this.fmtNftRule(r)}`);
+        lines.push('\t}');
+      }
+      lines.push('}');
+    }
+    return lines.join('\n');
+  }
+
+  private static readonly NFT_HOOKS: Record<string, { hook: string; prio: number }> = {
+    'filter:INPUT': { hook: 'input', prio: 0 },
+    'filter:FORWARD': { hook: 'forward', prio: 0 },
+    'filter:OUTPUT': { hook: 'output', prio: 0 },
+    'nat:PREROUTING': { hook: 'prerouting', prio: -100 },
+    'nat:INPUT': { hook: 'input', prio: 100 },
+    'nat:OUTPUT': { hook: 'output', prio: -100 },
+    'nat:POSTROUTING': { hook: 'postrouting', prio: 100 },
+    'mangle:PREROUTING': { hook: 'prerouting', prio: -150 },
+    'mangle:INPUT': { hook: 'input', prio: -150 },
+    'mangle:FORWARD': { hook: 'forward', prio: -150 },
+    'mangle:OUTPUT': { hook: 'output', prio: -150 },
+    'mangle:POSTROUTING': { hook: 'postrouting', prio: -150 },
+    'raw:PREROUTING': { hook: 'prerouting', prio: -300 },
+    'raw:OUTPUT': { hook: 'output', prio: -300 },
+  };
+
+  private nftHookLine(tableName: TableName, chainName: string, policy: BuiltinPolicy | null): string {
+    if (policy === null) return '';
+    const spec = LinuxIptablesManager.NFT_HOOKS[`${tableName}:${chainName}`];
+    if (!spec) return '';
+    const type = tableName === 'nat' ? 'nat' : 'filter';
+    return `type ${type} hook ${spec.hook} priority ${spec.prio}; policy ${policy.toLowerCase()};`;
+  }
+
+  private fmtNftRule(r: IptablesRule): string {
+    const fam = this.family === 6 ? 'ip6' : 'ip';
+    const parts: string[] = [];
+    if (r.source) parts.push(`${fam} saddr ${r.negSource ? '!= ' : ''}${r.source}`);
+    if (r.destination) parts.push(`${fam} daddr ${r.negDestination ? '!= ' : ''}${r.destination}`);
+    if (r.inInterface) parts.push(`iifname ${r.negInInterface ? '!= ' : ''}"${r.inInterface}"`);
+    if (r.outInterface) parts.push(`oifname ${r.negOutInterface ? '!= ' : ''}"${r.outInterface}"`);
+    if (r.protocol && r.protocol !== 'all') {
+      if (r.sport) parts.push(`${r.protocol} sport ${r.sport}`);
+      if (r.dport) parts.push(`${r.protocol} dport ${r.dport}`);
+      if (!r.sport && !r.dport) parts.push(`meta l4proto ${r.protocol}`);
+    }
+    for (const m of r.matches) {
+      const s = this.fmtNftMatch(m);
+      if (s) parts.push(s);
+    }
+    parts.push(`counter packets ${r.pkts} bytes ${r.bytes}`);
+    const action = this.fmtNftAction(r);
+    if (action) parts.push(action);
+    return parts.join(' ');
+  }
+
+  private fmtNftMatch(m: MatchExtension): string {
+    const o = m.options;
+    switch (m.module) {
+      case 'state': return o.get('--state') ? `ct state ${(o.get('--state') ?? '').toLowerCase()}` : '';
+      case 'conntrack': return o.get('--ctstate') ? `ct state ${(o.get('--ctstate') ?? '').toLowerCase()}` : '';
+      case 'comment': return o.get('--comment') ? `comment "${o.get('--comment')}"` : '';
+      case 'limit': return o.get('--limit') ? `limit rate ${o.get('--limit')}` : '';
+      case 'mac': return o.get('--mac-source') ? `ether saddr ${o.get('--mac-source')}` : '';
+      default: return '';
+    }
+  }
+
+  private fmtNftAction(r: IptablesRule): string {
+    switch (r.target) {
+      case 'ACCEPT': return 'accept';
+      case 'DROP': return 'drop';
+      case 'REJECT': {
+        const w = r.targetOptions['--reject-with'];
+        if (w === 'tcp-reset') return 'reject with tcp reset';
+        if (w) return `reject with icmp type ${w.replace(/^icmp-/, '')}`;
+        return 'reject';
+      }
+      case 'RETURN': return 'return';
+      case 'LOG': {
+        const prefix = r.targetOptions['--log-prefix'];
+        return prefix ? `log prefix "${prefix}"` : 'log';
+      }
+      case 'MASQUERADE': return 'masquerade';
+      case 'DNAT': return `dnat to ${r.targetOptions['--to-destination'] ?? ''}`;
+      case 'SNAT': return `snat to ${r.targetOptions['--to-source'] ?? ''}`;
+      case 'REDIRECT': return `redirect to :${r.targetOptions['--to-port'] ?? r.targetOptions['--to-ports'] ?? ''}`;
+      default: return `jump ${r.target}`;
+    }
   }
 
   // ═══════════════════════════════════════════════════════════════════
