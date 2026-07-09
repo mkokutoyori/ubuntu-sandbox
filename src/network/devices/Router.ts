@@ -1880,6 +1880,18 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     return this.hostsTable.entries().map((e) => e.name);
   }
 
+  getKnownMacAddresses(): string[] {
+    const seen = new Set<string>();
+    const out: string[] = [];
+    for (const entry of this.arpTable.values()) {
+      const mac = entry.mac.toString();
+      if (seen.has(mac)) continue;
+      seen.add(mac);
+      out.push(mac);
+    }
+    return out;
+  }
+
   // ─── vty sessions (per-terminal CLI isolation, §5.1 of terminal_gap.md) ──
 
   /** Live vty sessions, keyed by their internal id. */

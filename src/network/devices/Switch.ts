@@ -2669,6 +2669,18 @@ export abstract class Switch extends Equipment {
     return this.shell.tabCandidates(input, this);
   }
 
+  /** Learned/static MAC addresses, for dynamic MAC_ADDR completion. */
+  getKnownMacAddresses(): string[] {
+    const seen = new Set<string>();
+    const out: string[] = [];
+    for (const entry of this.macTable.values()) {
+      if (seen.has(entry.mac)) continue;
+      seen.add(entry.mac);
+      out.push(entry.mac);
+    }
+    return out;
+  }
+
   // getBootSequence() and getOSType() are abstract — implemented by CiscoSwitch / HuaweiSwitch
 
   getBanner(type: string): string {

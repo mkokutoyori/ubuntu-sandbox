@@ -11,6 +11,7 @@ export interface CompletableDevice {
   getAclIdentifiers?(): string[];
   getConfiguredIPv4Addresses?(): string[];
   getKnownHostnames?(): string[];
+  getKnownMacAddresses?(): string[];
 }
 
 const INTERFACE_PATH_TAILS: ReadonlyArray<readonly string[]> = [
@@ -27,6 +28,20 @@ const HOST_PATH_TAILS: ReadonlyArray<readonly string[]> = [
 
 const ACL_PATH_TAILS: ReadonlyArray<readonly string[]> = [
   ['access-group'], ['access-class'], ['access-lists'], ['acl'],
+];
+
+const MAC_PATH_TAILS: ReadonlyArray<readonly string[]> = [
+  ['mac-address'], ['static'], ['mac'],
+];
+
+/** Standard contiguous IPv4 masks (/8../30), the ones a `mask` prompt expects. */
+const COMMON_SUBNET_MASKS: readonly string[] = [
+  '255.0.0.0', '255.128.0.0', '255.192.0.0', '255.224.0.0', '255.240.0.0',
+  '255.248.0.0', '255.252.0.0', '255.254.0.0', '255.255.0.0', '255.255.128.0',
+  '255.255.192.0', '255.255.224.0', '255.255.240.0', '255.255.248.0',
+  '255.255.252.0', '255.255.254.0', '255.255.255.0', '255.255.255.128',
+  '255.255.255.192', '255.255.255.224', '255.255.255.240', '255.255.255.248',
+  '255.255.255.252',
 ];
 
 function pathEndsWith(path: readonly string[], tail: readonly string[]): boolean {
@@ -63,6 +78,12 @@ export class EquipmentParamResolver implements DynamicParamResolver {
     if (this.isAclPosition(context)) {
       return this.device.getAclIdentifiers?.() ?? [];
     }
+    if (this.isMacPosition(context)) {
+      return this.device.getKnownMacAddresses?.() ?? [];
+    }
+    if (context.paramType === 'SUBNET_MASK') {
+      return COMMON_SUBNET_MASKS;
+    }
     return [];
   }
 
@@ -93,5 +114,10 @@ export class EquipmentParamResolver implements DynamicParamResolver {
 
   private isAclPosition(context: DynamicCompletionContext): boolean {
     return ACL_PATH_TAILS.some((tail) => pathEndsWith(context.path, tail));
+  }
+
+  private isMacPosition(context: DynamicCompletionContext): boolean {
+    if (context.paramType === 'MAC_ADDR') return true;
+    return MAC_PATH_TAILS.some((tail) => pathEndsWith(context.path, tail));
   }
 }

@@ -6,6 +6,8 @@ import { CiscoTerminalSession, HuaweiTerminalSession } from '@/terminal/sessions
 import { MACAddress, resetCounters } from '@/network/core/types';
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';
+import { CommandTrie } from '@/network/devices/shells/CommandTrie';
+import { EquipmentParamResolver, type CompletableDevice } from '@/network/devices/shells/EquipmentParamResolver';
 
 beforeEach(() => {
   resetCounters();
@@ -203,5 +205,52 @@ describe('Dynamic Tab candidates — IP/hostname/ACL positions (PRD item 7)', ()
     const r = new CiscoRouter('R1', 0, 0);
     expect(r.getAclIdentifiers()).toEqual([]);
     expect(r.getKnownHostnames()).toEqual([]);
+  });
+});
+
+describe('Dynamic Tab candidates — MAC_ADDR and SUBNET_MASK ParamTypes (PRD item 7)', () => {
+  it('Cisco router: a static ARP entry surfaces its real MAC via getKnownMacAddresses', async () => {
+    const r = new CiscoRouter('R1', 0, 0);
+    expect(r.getKnownMacAddresses()).toEqual([]);
+    await r.executeCommand('enable');
+    await r.executeCommand('configure terminal');
+    const port = r.getPorts()[0].getName();
+    await r.executeCommand(`interface ${port}`);
+    await r.executeCommand('ip address 10.0.0.1 255.255.255.0');
+    await r.executeCommand('exit');
+    await r.executeCommand('arp 10.0.0.42 00aa.00bb.00cc arpa');
+    await r.executeCommand('end');
+    const macs = r.getKnownMacAddresses();
+    expect(macs).toContain('00:aa:00:bb:00:cc');
+  });
+
+  it('the resolver serves real MACs for a MAC_ADDR position and standard masks for SUBNET_MASK', () => {
+    const device: CompletableDevice = {
+      getKnownMacAddresses: () => ['00:aa:bb:cc:dd:ee', '00:11:22:33:44:55'],
+    };
+    const resolver = new EquipmentParamResolver(device);
+    expect(resolver.candidatesFor({ path: [], paramType: 'MAC_ADDR', partial: '00' }))
+      .toEqual(['00:aa:bb:cc:dd:ee', '00:11:22:33:44:55']);
+    const masks = resolver.candidatesFor({ path: [], paramType: 'SUBNET_MASK', partial: '255.255.255.' });
+    expect(masks).toContain('255.255.255.0');
+    expect(masks).toContain('255.255.255.252');
+    expect(masks).not.toContain('255.255.255.7');
+  });
+
+  it('a command declaring a SUBNET_MASK / MAC_ADDR param completes real values end-to-end', () => {
+    const device: CompletableDevice = {
+      getKnownMacAddresses: () => ['00:aa:bb:cc:dd:ee'],
+    };
+    const trie = new CommandTrie();
+    trie.register('ip route', 'Static route', () => '', [
+      { name: 'prefix', type: 'IP_ADDR', description: 'Destination prefix' },
+      { name: 'mask', type: 'SUBNET_MASK', description: 'Prefix mask' },
+    ]);
+    trie.register('test-mac', 'MAC probe', () => '', [
+      { name: 'mac', type: 'MAC_ADDR', description: 'A MAC address' },
+    ]);
+    trie.setDynamicResolver(new EquipmentParamResolver(device));
+    expect(trie.tabCandidates('ip route 10.0.0.0 255.255.255.')).toContain('ip route 10.0.0.0 255.255.255.0');
+    expect(trie.tabCandidates('test-mac 00')).toEqual(['test-mac 00:aa:bb:cc:dd:ee']);
   });
 });
