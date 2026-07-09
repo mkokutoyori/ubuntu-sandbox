@@ -33,7 +33,14 @@ describe('ip addr show — auto link-local IPv6 on an active interface', () => {
     const pc = new LinuxPC('linux-pc', 'PC1', 0, 0);
     cableToSwitch(pc);
     const out = await pc.executeCommand('ip addr show eth0');
-    expect(out).toMatch(/inet6 fe80::[0-9a-f:]+(%eth0)?\/64 scope link/);
+    expect(out).toMatch(/inet6 fe80::[0-9a-f:]+\/64 scope link/);
+  });
+
+  it('does not include the %eth0 zone-id suffix in the displayed address', async () => {
+    const pc = new LinuxPC('linux-pc', 'PC1', 0, 0);
+    cableToSwitch(pc);
+    const out = await pc.executeCommand('ip addr show eth0');
+    expect(out).not.toContain('%eth0');
   });
 });
 
@@ -89,5 +96,12 @@ describe('arp -n / arp -e on an empty table — the header still prints', () => 
     const pc = new LinuxPC('linux-pc', 'PC1', 0, 0);
     const out = await pc.executeCommand('arp -a');
     expect(out.trim()).toBe('');
+  });
+
+  it('arp -v shows the tabular header plus an entry-count summary line', async () => {
+    const pc = new LinuxPC('linux-pc', 'PC1', 0, 0);
+    const out = await pc.executeCommand('arp -v');
+    expect(out).toMatch(/Address\s+HWtype\s+HWaddress\s+Flags Mask\s+Iface/);
+    expect(out).toContain('arp: in 0 entries');
   });
 });

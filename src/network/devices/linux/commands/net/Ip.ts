@@ -145,7 +145,7 @@ export function buildIpCtx(
           errorsOut: counters.errorsOut,
         },
         ipv6: port.getIPv6Addresses().map(entry => ({
-          address: entry.address.toString(),
+          address: entry.address.toString().split('%')[0],
           prefixLength: entry.prefixLength,
           scope: entry.origin === 'link-local' ? 'link' as const : 'global' as const,
         })),

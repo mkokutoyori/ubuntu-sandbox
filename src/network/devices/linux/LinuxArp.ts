@@ -35,6 +35,7 @@ interface ArpFlags {
   show: boolean;         // -a or default
   numeric: boolean;      // -n
   tabular: boolean;      // -e
+  verbose: boolean;      // -v
   delete: boolean;       // -d
   addStatic: boolean;    // -s
   help: boolean;         // --help
@@ -49,6 +50,7 @@ function parseFlags(args: string[]): ArpFlags {
     show: false,
     numeric: false,
     tabular: false,
+    verbose: false,
     delete: false,
     addStatic: false,
     help: false,
@@ -98,6 +100,7 @@ function parseFlags(args: string[]): ArpFlags {
           case 'a': flags.show = true; break;
           case 'n': flags.numeric = true; break;
           case 'e': flags.tabular = true; break;
+          case 'v': flags.verbose = true; break;
           case 'i':
             // -i needs the next argument
             if (i + 1 < args.length) {
@@ -237,13 +240,16 @@ export function linuxArp(ctx: LinuxArpContext, args: string[]): string {
     entries = entries.filter(([, e]) => e.iface === flags.filterIface);
   }
 
-  // -n or -e forces tabular format
-  if (flags.numeric || flags.tabular) {
-    return formatTabular(entries);
+  const verboseSuffix = flags.verbose ? `\narp: in ${entries.length} entries` : '';
+
+  // -n or -e forces tabular format; -v alone also defaults to it since
+  // there is no BSD "verbose" variant.
+  if (flags.numeric || flags.tabular || (flags.verbose && !flags.show)) {
+    return formatTabular(entries) + verboseSuffix;
   }
 
-  if (entries.length === 0) return '';
+  if (entries.length === 0) return flags.verbose ? verboseSuffix.trimStart() : '';
 
   // Default: BSD format
-  return formatBSD(entries);
+  return formatBSD(entries) + verboseSuffix;
 }
