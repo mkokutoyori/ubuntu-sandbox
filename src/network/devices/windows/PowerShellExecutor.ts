@@ -3916,52 +3916,7 @@ export class PowerShellExecutor {
 
 
 
-  private formatGetProcess(): string {
-    const lines: string[] = [];
-    lines.push('');
-    lines.push('Handles  NPM(K)    PM(K)      WS(K)     CPU(s)     Id  SI ProcessName');
-    lines.push('-------  ------    -----      -----     ------     --  -- -----------');
 
-    const processes: Array<[string, number, number, number, number, number, number, number]> = [
-      // [name, handles, npm, pm, ws, cpu, pid, si]
-      ['cmd',              52,   5,   2036,    3556,   0.02,  5120, 1],
-      ['conhost',         186,  12,   7032,   13568,   0.08,  5132, 1],
-      ['csrss',           596,  18,   3256,    6144,   3.45,   472, 0],
-      ['dwm',            1258,  35,  78320,   98816,  24.56,  1024, 1],
-      ['explorer',       2456,  89, 112640,  165888,  45.23,  2848, 1],
-      ['lsass',           856,  23,  12288,   15360,   1.23,   636, 0],
-      ['services',        416,  14,   6144,    9216,   0.98,   620, 0],
-      ['smss',             53,   3,    512,    1280,   0.05,   340, 0],
-      ['svchost',         648,  22,  18432,   24576,   2.34,   784, 0],
-      ['svchost',         423,  15,  10240,   14336,   1.56,   836, 0],
-      ['System',          188,   0,    144,    1024,   0.00,     4, 0],
-      ['wininit',         108,   5,   2560,    4608,   0.12,   548, 0],
-    ];
-
-    for (const [name, handles, npm, pm, ws, cpu, pid, si] of processes) {
-      lines.push(
-        `${String(handles).padStart(7)}  ${String(npm).padStart(6)}    ${String(pm).padStart(5)}      ${String(ws).padStart(5)}     ${cpu.toFixed(2).padStart(6)}  ${String(pid).padStart(4)}   ${si} ${name}`
-      );
-    }
-    return lines.join('\n');
-  }
-
-  private formatGetService(): string {
-    return [
-      'Status   Name               DisplayName',
-      '------   ----               -----------',
-      'Running  Dhcp               DHCP Client',
-      'Running  Dnscache           DNS Client',
-      'Running  EventLog           Windows Event Log',
-      'Running  LanmanServer       Server',
-      'Running  LanmanWorkstation  Workstation',
-      'Running  mpssvc             Windows Defender Firewall',
-      'Running  RpcSs              Remote Procedure Call (RPC)',
-      'Running  Spooler            Print Spooler',
-      'Running  W32Time            Windows Time',
-      'Running  WinRM              Windows Remote Management (WS-Manag...',
-    ].join('\n');
-  }
 
   private formatGetCimInstance(args: string[]): string {
     const className = args.find(a => !a.startsWith('-')) || '';
