@@ -136,7 +136,7 @@ export class PowerShellExecutor {
   private device: PSDeviceContext;
   private commandHistory: string[];
   /** Registry hive — relocated to the device (Phase 4). */
-  get registry(): PSRegistryProvider { return (this.device as unknown as { registry: PSRegistryProvider }).registry; }
+  get registry(): PSRegistryProvider { return this.device.registry; }
   /**
    * `$PSVersionTable.OS` build string ("10.0.22631") — read from the same
    * registry values `systeminfo`/`wmic os get caption` already source, so a
@@ -149,7 +149,7 @@ export class PowerShellExecutor {
     return `${currentVersion}.${buildNumber}`;
   }
   /** Event log — relocated to the device. */
-  get eventLog(): PSEventLogProvider { return (this.device as unknown as { eventLog: PSEventLogProvider }).eventLog; }
+  get eventLog(): PSEventLogProvider { return this.device.eventLog; }
   /** Session variables: $name → string value */
   private sessionVars: Map<string, string> = new Map();
   /** Session environment overrides (Set-Item Env:X) */
@@ -163,9 +163,9 @@ export class PowerShellExecutor {
   /** Additional IP addresses — now lives on the device (Phase 4 relocation).
    *  Kept as a public getter for the rest of this file (which references
    *  this.extraIPs in dozens of places) and for WindowsPSProviders. */
-  get extraIPs() { return (this.device as unknown as { extraIPs: Map<string, { ifAlias: string; prefixLength: number; prefixOrigin: string; suffixOrigin: string; skipAsSource: boolean; gateway?: string; addressFamily: string }> }).extraIPs; }
+  get extraIPs() { return this.device.extraIPs; }
   /** Extra routes — relocated to the device. */
-  get extraRoutes() { return (this.device as unknown as { extraRoutes: Map<string, { ifAlias: string; nextHop: string; metric: number }> }).extraRoutes; }
+  get extraRoutes() { return this.device.extraRoutes; }
   /** Location stack for Push-Location/Pop-Location */
   private locationStack: Map<string, string[]> = new Map();
   /** Array variables: $name → string[] */
@@ -177,9 +177,9 @@ export class PowerShellExecutor {
   /** Set to true when a `continue` statement is executed inside a loop */
   private continueSignal = false;
   /** Adapter overrides — relocated to the device. */
-  get adapterOverrides() { return (this.device as unknown as { adapterOverrides: Map<string, { status?: string; displayName?: string }> }).adapterOverrides; }
+  get adapterOverrides() { return this.device.adapterOverrides; }
   /** Dynamic firewall rules — relocated to the device. */
-  get dynamicFirewallRules() { return (this.device as unknown as { dynamicFirewallRules: Map<string, { name: string; displayName: string; enabled: boolean; action: string; direction: string; protocol: string; localPort: string; remotePort: string; description: string }> }).dynamicFirewallRules; }
+  get dynamicFirewallRules() { return this.device.dynamicFirewallRules; }
   /** WinHTTP proxy setting (empty = direct access) */
   private winhttpProxy: string = '';
   /** WLAN: currently connected SSID (empty = disconnected) */
@@ -187,9 +187,9 @@ export class PowerShellExecutor {
   /** WLAN: known profiles (SSIDs) */
   private wlanProfiles: Set<string> = new Set();
   /** Network connection profiles — relocated to the device. */
-  get networkProfiles() { return (this.device as unknown as { networkProfiles: Map<number, string> }).networkProfiles; }
+  get networkProfiles() { return this.device.networkProfiles; }
   /** VPN connections — relocated to the device. */
-  get vpnConnections() { return (this.device as unknown as { vpnConnections: Map<string, VpnConnectionInfo> }).vpnConnections; }
+  get vpnConnections() { return this.device.vpnConnections; }
 
   constructor(device: PSDeviceContext, initialCwd = 'C:\\Users\\User') {
     this.cwd = initialCwd;
