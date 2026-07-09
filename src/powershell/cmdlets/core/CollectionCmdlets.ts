@@ -15,6 +15,8 @@ import type { PSScriptBlock } from '@/powershell/parser/PSASTNode';
 import { psValueToString } from '@/powershell/runtime/PSExpansion';
 import { formatTable as renderTable, formatList as renderList, type PSObject } from '@/network/devices/windows/PSPipeline';
 
+const GROUP_KEY_DELIMITER = '\u0000';
+
 // ─── Helpers ───────────────────────────────────────────────────────────────
 
 function toArray(val: PSValue): PSValue[] {
@@ -469,7 +471,7 @@ export class SortObjectCmdlet implements ICmdlet {
     if (uniq) {
       const seen = new Set<string>();
       result = sorted.filter(item => {
-        const key = keyArgs.map(k => psValueToString(keyVal(item, k))).join('');
+        const key = keyArgs.map(k => psValueToString(keyVal(item, k))).join(GROUP_KEY_DELIMITER);
         if (seen.has(key)) return false;
         seen.add(key);
         return true;
@@ -612,7 +614,7 @@ function propertyKey(v: PSValue, props: string[]): string {
       const key = Object.keys(src).find(k => k.toLowerCase() === p.toLowerCase()) ?? p;
       return psValueToString(src[key] ?? null);
     })
-    .join(' ');
+    .join(GROUP_KEY_DELIMITER);
 }
 
 function projectProperties(v: PSValue, props: string[]): Record<string, PSValue> {
