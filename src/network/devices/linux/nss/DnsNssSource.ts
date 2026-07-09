@@ -4,11 +4,16 @@ import { RRType } from '@/network/dns/wire/RRType';
 import type { DnsMessage } from '@/network/dns/wire/DnsMessage';
 import type { INssSource } from './INssSource';
 import { nssNotFound as NOTFOUND } from './nssResult';
+import { searchCandidates } from './ResolvConf';
 import type { NssEnumResult, NssHostEntry, NssResult } from './types';
 
 export interface DnsWireStubResolver {
   nameservers(): string[];
   query(serverIp: string, name: string, qtype: 'A' | 'AAAA' | 'PTR'): DnsMessage | null;
+  /** `search`/`domain` directive from `/etc/resolv.conf` — empty when absent. */
+  searchDomains?(): string[];
+  /** `options ndots:N` from `/etc/resolv.conf` — glibc default is 1. */
+  ndots?(): number;
 }
 
 export class DnsNssSource implements INssSource {
@@ -23,7 +28,15 @@ export class DnsNssSource implements INssSource {
   gethostbyname(name: string, family?: 2 | 10): NssResult<NssHostEntry[]> {
     const servers = this.wire?.nameservers() ?? [];
     if (this.wire && servers.length > 0) {
-      return this.wireLookup(servers, name, family);
+      const search = this.wire.searchDomains?.() ?? [];
+      const ndots = this.wire.ndots?.() ?? 1;
+      const candidates = searchCandidates(name, search, ndots);
+      let last: NssResult<NssHostEntry[]> = NOTFOUND();
+      for (const candidate of candidates) {
+        last = this.wireLookup(servers, candidate, family);
+        if (last.status === 'SUCCESS') return last;
+      }
+      return last;
     }
     return this.legacyScanByName(name, family);
   }

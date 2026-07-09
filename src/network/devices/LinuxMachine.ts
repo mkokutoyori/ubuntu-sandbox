@@ -89,6 +89,7 @@ import { bindDnsTcpServer, unbindDnsTcpServer } from '../dns/transport/DnsTcpTra
 import { CrossVendorSshHost } from '../protocols/ssh/server/CrossVendorSshHost';
 import { SshdServerConfig } from '../protocols/ssh/server/SshdServerConfig';
 import { LinuxUserManagerAuthority } from './linux/network/LinuxUserManagerAuthority';
+import { parseResolvConf } from './linux/nss/ResolvConf';
 import type { PacketInfo, LinuxIptablesManager } from './linux/LinuxIptablesManager';
 
 // Façade + command registry
@@ -278,6 +279,14 @@ export abstract class LinuxMachine extends EndHost
           .map(m => m[1])
           .filter(ip => !ip.startsWith('127.'))
           .slice(0, 3);
+      },
+      searchDomains: () => {
+        const content = this.executor.readFile('/etc/resolv.conf') ?? '';
+        return parseResolvConf(content).search;
+      },
+      ndots: () => {
+        const content = this.executor.readFile('/etc/resolv.conf') ?? '';
+        return parseResolvConf(content).ndots;
       },
       query: (serverIp, name, qtype) => {
         const server = parseDnsServerLiteral(serverIp);
