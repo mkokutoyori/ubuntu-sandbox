@@ -1460,6 +1460,7 @@ export abstract class LinuxMachine extends EndHost
     const isSsh = (p: { name: string }): boolean => p.name === 'ssh' || p.name === 'sshd';
     const reload = (): void => {
       this._sshContext = this._sshContext?.reloadConfig() ?? null;
+      this.executor.logMgr.logSystemd('ssh', 'Received SIGHUP; restarting.');
     };
     const offRestart = bus.subscribeWhere('linux.service.restarted', isSsh, reload);
     const offReload = bus.subscribeWhere('linux.service.reloaded', isSsh, reload);
@@ -1512,7 +1513,7 @@ export abstract class LinuxMachine extends EndHost
     return words.some(w =>
       w === 'iptables' || w === 'iptables-save' || w === 'iptables-restore' ||
       w === 'ip6tables' || w === 'ip6tables-save' || w === 'ip6tables-restore' ||
-      w === 'ps' || w === 'man',
+      w === 'ps' || w === 'man' || w === 'sshd',
     );
   }
 
@@ -1786,6 +1787,33 @@ export abstract class LinuxMachine extends EndHost
 
     // 2. Commands that need special handling outside the registry
     switch (firstCmd) {
+      case 'sshd': {
+        const sshdArgs = noSudo.split(/\s+/).slice(1);
+        if (sshdArgs.includes('-t')) {
+          const raw = this.executor.vfs.readFile('/etc/ssh/sshd_config') ?? '';
+          const verdict = validateSshdConfig(raw);
+          return verdict.ok ? '' : verdict.errors.join('\n');
+        }
+        if (sshdArgs.includes('-T')) {
+          const cfg = this.getSshServerContext().effectiveSshdServerConfig();
+          const lines = [
+            `port ${cfg.ports[0] ?? 22}`,
+            `permitrootlogin ${cfg.permitRootLogin}`,
+            `passwordauthentication ${cfg.passwordAuthentication ? 'yes' : 'no'}`,
+            `pubkeyauthentication ${cfg.pubkeyAuthentication ? 'yes' : 'no'}`,
+            `kbdinteractiveauthentication ${cfg.kbdInteractiveAuthentication ? 'yes' : 'no'}`,
+            `maxauthtries ${cfg.maxAuthTries}`,
+            `maxsessions ${cfg.maxSessions}`,
+            `x11forwarding ${cfg.x11Forwarding ? 'yes' : 'no'}`,
+            `permitemptypasswords ${cfg.permitEmptyPasswords ? 'yes' : 'no'}`,
+            `allowtcpforwarding ${cfg.allowTcpForwarding}`,
+            `clientaliveinterval ${cfg.clientAliveIntervalSeconds}`,
+            `clientalivecountmax ${cfg.clientAliveCountMax}`,
+          ];
+          return lines.join('\n');
+        }
+        return 'usage: sshd [-t | -T]';
+      }
       case 'iptables': {
         const iptArgs = LinuxMachine.tokenizeArgs(noSudo).slice(1);
         applyIptablesNatHook(this.net, iptArgs);
