@@ -42,6 +42,7 @@ import { STORAGE_CMDLETS } from './PSStorageCmdlets';
 import { psGetDnsClientServerAddress, psSetDnsClientServerAddress, psGetNetConnectionProfile, psSetNetConnectionProfile, type PSNetConfigContext } from './PSNetConfigCmdlets';
 import { psTestPath, psResolvePath, psSplitPath, psJoinPath, type PSPathContext } from './PSPathCmdlets';
 import { formatGetHelp } from './PSHelpText';
+import { psGetItemProperty, psSetItemProperty, psRemoveItemProperty } from './PSRegistryCmdlets';
 import type { IEventBus } from '@/events/EventBus';
 
 // ─── Constants ────────────────────────────────────────────────────
@@ -2208,17 +2209,17 @@ export class PowerShellExecutor {
 
     // Get-ItemProperty / gp
     if (cmdLower === 'get-itemproperty' || cmdLower === 'gp') {
-      return this.handleGetItemProperty(args);
+      return psGetItemProperty({ registry: this.registry }, args);
     }
 
     // Set-ItemProperty / sp
     if (cmdLower === 'set-itemproperty' || cmdLower === 'sp') {
-      return this.handleSetItemProperty(args);
+      return psSetItemProperty({ registry: this.registry }, args);
     }
 
     // Remove-ItemProperty / rp
     if (cmdLower === 'remove-itemproperty' || cmdLower === 'rp') {
-      return this.handleRemoveItemProperty(args);
+      return psRemoveItemProperty({ registry: this.registry }, args);
     }
 
     // Get-PSDrive / gdr — feed the registry helper the live FS drive
@@ -3027,48 +3028,6 @@ export class PowerShellExecutor {
     const result = fs.createFile(absPath, value);
     if (!result.ok) return `New-Item : ${result.error}`;
     return '';
-  }
-
-  private handleGetItemProperty(args: string[]): string {
-    let path = '', name = '';
-    for (let i = 0; i < args.length; i++) {
-      const al = args[i].toLowerCase();
-      if ((al === '-path' || al === '-literalpath') && args[i + 1]) { path = args[++i].replace(/^["']|["']$/g, ''); }
-      else if (al === '-name' && args[i + 1]) { name = args[++i].replace(/^["']|["']$/g, ''); }
-      else if (!args[i].startsWith('-') && !path) { path = args[i].replace(/^["']|["']$/g, ''); }
-      else if (!args[i].startsWith('-') && path && !name) { name = args[i].replace(/^["']|["']$/g, ''); }
-    }
-    if (!path) return "Get-ItemProperty : Cannot bind argument to parameter 'Path' because it is an empty string.";
-    if (!isRegistryPath(path)) return `Get-ItemProperty : Cannot find path '${path}' because it does not exist.`;
-    return this.registry.getItemProperty(path, name || undefined);
-  }
-
-  private handleSetItemProperty(args: string[]): string {
-    let path = '', name = '', value: string | number = '';
-    for (let i = 0; i < args.length; i++) {
-      const al = args[i].toLowerCase();
-      if ((al === '-path' || al === '-literalpath') && args[i + 1]) { path = args[++i].replace(/^["']|["']$/g, ''); }
-      else if (al === '-name' && args[i + 1]) { name = args[++i].replace(/^["']|["']$/g, ''); }
-      else if (al === '-value' && args[i + 1]) {
-        const raw = args[++i].replace(/^["']|["']$/g, '');
-        value = /^-?\d+$/.test(raw) ? Number(raw) : raw;
-      }
-    }
-    if (!path) return "Set-ItemProperty : Cannot bind argument to parameter 'Path' because it is an empty string.";
-    if (!isRegistryPath(path)) return `Set-ItemProperty : Cannot find path '${path}' because it does not exist.`;
-    return this.registry.setItemProperty(path, name, value);
-  }
-
-  private handleRemoveItemProperty(args: string[]): string {
-    let path = '', name = '';
-    for (let i = 0; i < args.length; i++) {
-      const a = args[i].toLowerCase();
-      if (a === '-path' && args[i + 1]) { path = args[++i].replace(/^["']|["']$/g, ''); }
-      else if (a === '-name' && args[i + 1]) { name = args[++i].replace(/^["']|["']$/g, ''); }
-    }
-    if (!path) return "Remove-ItemProperty : Cannot bind argument to parameter 'Path' because it is an empty string.";
-    if (!isRegistryPath(path)) return `Remove-ItemProperty : Cannot find path '${path}' because it does not exist.`;
-    return this.registry.removeItemProperty(path, name);
   }
 
   // ─── Get-ChildItem with Filter/Recurse/Env: ──────────────────────
