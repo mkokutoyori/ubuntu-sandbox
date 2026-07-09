@@ -1212,7 +1212,7 @@ export class LinuxCommandExecutor {
     if (!found) return { output: `# ${host} unknown host`, exitCode: 1 };
     const hostKey = this.sshHostKeyProbe?.(found.ip, port) ?? null;
     if (!hostKey) return { output: `# ${host} no host key`, exitCode: 1 };
-    return { output: `${found.ip} ${hostKey.algorithm} ${hostKey.publicKey}`, exitCode: 0 };
+    return { output: `${host} ${hostKey.algorithm} ${hostKey.publicKey}`, exitCode: 0 };
   }
 
   /**
@@ -3743,6 +3743,16 @@ export class LinuxCommandExecutor {
       }
       case 'runlevel': return { output: cmdRunlevel(this.isServer), exitCode: 0 };
       case 'hostnamectl': {
+        if (args[0] === 'set-hostname') {
+          const newName = args[1];
+          if (!newName) return { output: 'hostnamectl: missing hostname', exitCode: 1 };
+          const oldName = (this.vfs.readFile('/etc/hostname') ?? 'localhost').trim();
+          this.vfs.writeFile('/etc/hostname', newName + '\n', 0, 0, 0o022);
+          if (newName !== oldName) {
+            this.logMgr.logSystemd('systemd-hostnamed', `Changed static host name to '${newName}' (was '${oldName}')`);
+          }
+          return { output: '', exitCode: 0 };
+        }
         const hn = (this.vfs.readFile('/etc/hostname') ?? 'localhost').trim();
         return { output: this.identity.toHostnamectl(hn), exitCode: 0 };
       }
