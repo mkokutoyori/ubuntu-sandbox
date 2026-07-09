@@ -1401,10 +1401,10 @@ class WindowsNetworkAdapter implements INetworkProvider {
   // ─ Adapter actions ──────────────────────────────────────────────────────
 
   setAdapterStatus(name: string, status: 'Up' | 'Down'): void {
-    const key = name.toLowerCase();
-    const ov  = this.state.adapterOverrides.get(key) ?? {};
-    ov.status = status === 'Down' ? 'Disabled' : 'Up';
-    this.state.adapterOverrides.set(key, ov);
+    const ports = (this.pc as unknown as { ports: Map<string, { setUp: (up: boolean) => void }> }).ports;
+    const portName = resolveAdapterName(name, ports as unknown as Map<string, unknown>);
+    const port = ports.get(portName);
+    if (port) port.setUp(status === 'Up');
   }
   renameAdapter(name: string, newName: string): void {
     const key = name.toLowerCase();

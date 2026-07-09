@@ -116,6 +116,25 @@ describe('arp -s via PowerShell — a hyphenated MAC literal is not parsed as ar
   });
 });
 
+describe('Disable-NetAdapter (PS) — brings down the real port, not just a PS-side label', () => {
+  it('ipconfig (cmd) reports the interface down after Disable-NetAdapter (PS)', async () => {
+    const pc = new WindowsPC('windows-pc', 'PC1', 0, 0);
+    const router = new CiscoRouter('R1');
+    new Cable('w').connect(pc.getPort('eth0')!, router.getPort('GigabitEthernet0/0')!);
+    pc.configureInterface('eth0', new IPAddress('10.0.0.5'), new SubnetMask('255.255.255.0'));
+
+    const shell = ps(pc);
+    await run(shell, 'Disable-NetAdapter -Name "Ethernet 0"');
+    expect(pc.getPort('eth0')!.getIsUp()).toBe(false);
+
+    const cmdOut = await pc.executeCommand('ipconfig');
+    expect(cmdOut).toMatch(/Media disconnected/i);
+
+    await run(shell, 'Enable-NetAdapter -Name "Ethernet 0"');
+    expect(pc.getPort('eth0')!.getIsUp()).toBe(true);
+  });
+});
+
 describe('netstat -r — real route table, matching route print', () => {
   it('renders the same routing table as "route print"', async () => {
     const pc = new WindowsPC('windows-pc', 'PC1', 0, 0);
