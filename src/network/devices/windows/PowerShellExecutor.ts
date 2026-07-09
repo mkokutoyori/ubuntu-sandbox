@@ -43,6 +43,8 @@ import { psGetDnsClientServerAddress, psSetDnsClientServerAddress, psGetNetConne
 import { psTestPath, psResolvePath, psSplitPath, psJoinPath, type PSPathContext } from './PSPathCmdlets';
 import { formatGetHelp } from './PSHelpText';
 import { psGetItemProperty, psSetItemProperty, psRemoveItemProperty } from './PSRegistryCmdlets';
+import * as net from './PSNetCmdlets';
+import type { PSNetContext } from './PSNetCmdlets';
 import type { IEventBus } from '@/events/EventBus';
 
 // ─── Constants ────────────────────────────────────────────────────
@@ -2371,42 +2373,42 @@ export class PowerShellExecutor {
 
     // Get-NetIPConfiguration
     if (cmdLower === 'get-netipconfiguration') {
-      return this.handleGetNetIPConfiguration(args);
+      return net.handleGetNetIPConfiguration(this.buildPSNetCtx(), args);
     }
 
     // Get-NetIPAddress
     if (cmdLower === 'get-netipaddress') {
-      return this.handleGetNetIPAddress(args);
+      return net.handleGetNetIPAddress(this.buildPSNetCtx(), args);
     }
 
     // New-NetIPAddress
     if (cmdLower === 'new-netipaddress') {
-      return this.handleNewNetIPAddress(args);
+      return net.handleNewNetIPAddress(this.buildPSNetCtx(), args);
     }
 
     // Remove-NetIPAddress
     if (cmdLower === 'remove-netipaddress') {
-      return this.handleRemoveNetIPAddress(args);
+      return net.handleRemoveNetIPAddress(this.buildPSNetCtx(), args);
     }
 
     // Set-NetIPAddress
     if (cmdLower === 'set-netipaddress') {
-      return this.handleSetNetIPAddress(args);
+      return net.handleSetNetIPAddress(this.buildPSNetCtx(), args);
     }
 
     // Get-NetRoute
     if (cmdLower === 'get-netroute') {
-      return this.handleGetNetRoute(args);
+      return net.handleGetNetRoute(this.buildPSNetCtx(), args);
     }
 
     // New-NetRoute
     if (cmdLower === 'new-netroute') {
-      return this.handleNewNetRoute(args);
+      return net.handleNewNetRoute(this.buildPSNetCtx(), args);
     }
 
     // Remove-NetRoute
     if (cmdLower === 'remove-netroute') {
-      return this.handleRemoveNetRoute(args);
+      return net.handleRemoveNetRoute(this.buildPSNetCtx(), args);
     }
 
     // Get-DnsClientServerAddress
@@ -2421,7 +2423,7 @@ export class PowerShellExecutor {
 
     // Get-NetAdapter
     if (cmdLower === 'get-netadapter') {
-      return this.handleGetNetAdapter(args);
+      return net.handleGetNetAdapter(this.buildPSNetCtx(), args);
     }
 
     // Test-Connection (PowerShell ping)
@@ -2431,7 +2433,7 @@ export class PowerShellExecutor {
 
     // Get-NetTCPConnection (simulated netstat-like)
     if (cmdLower === 'get-nettcpconnection') {
-      return this.formatGetNetTCPConnection(args);
+      return net.formatGetNetTCPConnection(this.buildPSNetCtx(), args);
     }
 
     // Get-NetFirewallRule
@@ -2466,17 +2468,17 @@ export class PowerShellExecutor {
 
     // Disable-NetAdapter
     if (cmdLower === 'disable-netadapter') {
-      return this.handleDisableEnableNetAdapter(args, 'Disabled');
+      return net.handleDisableEnableNetAdapter(this.buildPSNetCtx(), args, 'Disabled');
     }
 
     // Enable-NetAdapter
     if (cmdLower === 'enable-netadapter') {
-      return this.handleDisableEnableNetAdapter(args, 'Up');
+      return net.handleDisableEnableNetAdapter(this.buildPSNetCtx(), args, 'Up');
     }
 
     // Rename-NetAdapter
     if (cmdLower === 'rename-netadapter') {
-      return this.handleRenameNetAdapter(args);
+      return net.handleRenameNetAdapter(this.buildPSNetCtx(), args);
     }
 
     // Restart-NetAdapter
@@ -2493,12 +2495,12 @@ export class PowerShellExecutor {
 
     // Set-NetRoute
     if (cmdLower === 'set-netroute') {
-      return this.handleSetNetRoute(args);
+      return net.handleSetNetRoute(this.buildPSNetCtx(), args);
     }
 
     // Test-NetConnection
     if (cmdLower === 'test-netconnection') {
-      return this.handleTestNetConnection(args);
+      return net.handleTestNetConnection(this.buildPSNetCtx(), args);
     }
 
     // Get-NetConnectionProfile
@@ -2542,7 +2544,7 @@ export class PowerShellExecutor {
         /^["']|["']$/g,
         '',
       );
-      return this.renderResolveDnsName(target);
+      return net.renderResolveDnsName(target);
     }
 
     if (STORAGE_CMDLETS[cmdLower]) {
@@ -3753,376 +3755,22 @@ export class PowerShellExecutor {
     return `${m}/${d}/${y}  ${String(h).padStart(2)}:${min} ${ampm}`;
   }
 
-  private handleGetNetIPConfiguration(args: string[]): string {
-    const params = this.parsePSArgs(args);
-    const ifFilter = (params.get('interfacealias') ?? params.get('_positional') ?? '').replace(/^["']|["']$/g, '').toLowerCase();
-    const detailed = params.has('detailed');
-    const all = params.has('all');
 
-    return this.formatGetNetIPConfiguration(ifFilter, detailed, all);
-  }
 
-  private formatGetNetIPConfiguration(ifFilter = '', detailed = false, all = false): string {
-    const ports = this.device.getPortsMap();
-    const lines: string[] = [];
-    let idx = 0;
-    let found = false;
 
-    const addEntry = (displayName: string, ip: string, mask: string, gw: string, dns: string[]) => {
-      if (idx > 0) lines.push('');
-      lines.push(`InterfaceAlias       : ${displayName}`);
-      lines.push(`InterfaceIndex       : ${idx + 1}`);
-      lines.push(`IPv4Address          : ${ip || 'Not configured'}`);
-      if (mask) lines.push(`IPv4SubnetMask       : ${mask}`);
-      lines.push(`IPv4DefaultGateway   : ${gw}`);
-      lines.push(`DNSServer            : ${dns.length > 0 ? dns.join(', ') : ''}`);
-      if (detailed) {
-        lines.push(`ComputerName         : ${this.device.getHostname?.() ?? 'DESKTOP'}`);
-      }
-      idx++;
-      found = true;
-    };
 
-    for (const [name, port] of ports) {
-      const displayName = this.portToDisplayName(name);
-      if (ifFilter && !displayName.toLowerCase().includes(ifFilter) && displayName.toLowerCase() !== ifFilter) continue;
-      const ip = port.getIPAddress()?.toString() ?? '';
-      const mask = port.getSubnetMask()?.toString() ?? '';
-      const gw = this.device.getDefaultGatewayString() ?? '';
-      const dns = this.device.getDnsServers(name);
-      addEntry(displayName, ip, mask, gw, dns);
-    }
 
-    // Loopback (shown with -All or when specifically requested)
-    if (all && (!ifFilter || 'loopback'.includes(ifFilter))) {
-      addEntry('Loopback Pseudo-Interface 1', '127.0.0.1', '255.0.0.0', '', []);
-    }
 
-    if (!found && ifFilter) {
-      return `Get-NetIPConfiguration : Interface '${ifFilter}' not found. No MSFT_NetIPConfiguration objects found.`;
-    }
 
-    return lines.join('\n');
-  }
 
-  private buildAllIPEntries(): Array<{ ip: string; ifAlias: string; ifIndex: number; addressFamily: string; prefixLength: number; prefixOrigin: string; suffixOrigin: string; addressState: string; skipAsSource: boolean }> {
-    const entries: Array<{ ip: string; ifAlias: string; ifIndex: number; addressFamily: string; prefixLength: number; prefixOrigin: string; suffixOrigin: string; addressState: string; skipAsSource: boolean }> = [];
-    const ports = this.device.getPortsMap();
-    let idx = 2;
-    let ethIdx = 0;
-    for (const [name, port] of ports) {
-      const displayName = this.portToDisplayName(name);
-      const ip = port.getIPAddress()?.toString() ?? '';
-      const mask = port.getSubnetMask()?.toString() ?? '';
-      const prefixLength = mask ? this.maskToPrefixLength(mask) : 0;
-      const isDhcp = this.device.isDHCPConfigured(name);
-      if (ip) {
-        entries.push({ ip, ifAlias: displayName, ifIndex: idx, addressFamily: 'IPv4', prefixLength, prefixOrigin: isDhcp ? 'Dhcp' : 'Manual', suffixOrigin: isDhcp ? 'Dhcp' : 'Manual', addressState: 'Preferred', skipAsSource: false });
-      } else if (!this.extraIPs.has(displayName.toLowerCase())) {
-        // Simulated default private IP for unconfigured adapters (192.168.1.100+offset/24)
-        const simIp = `192.168.1.${100 + ethIdx}`;
-        entries.push({ ip: simIp, ifAlias: displayName, ifIndex: idx, addressFamily: 'IPv4', prefixLength: 24, prefixOrigin: 'WellKnown', suffixOrigin: 'WellKnown', addressState: 'Preferred', skipAsSource: false });
-      }
-      // Link-local IPv6
-      const macStr = port.getMAC()?.toString() ?? '00:00:00:00:00:00';
-      const macParts = macStr.split(':');
-      if (macParts.length === 6) {
-        const fe80 = `fe80::${macParts[0]}${macParts[1]}:${macParts[2]}ff:fe${macParts[3]}:${macParts[4]}${macParts[5]}`;
-        entries.push({ ip: fe80, ifAlias: displayName, ifIndex: idx, addressFamily: 'IPv6', prefixLength: 64, prefixOrigin: 'WellKnown', suffixOrigin: 'Link', addressState: 'Preferred', skipAsSource: false });
-      }
-      idx++;
-      ethIdx++;
-    }
-    // Extra IPs (added via New-NetIPAddress)
-    for (const [ip, info] of this.extraIPs) {
-      entries.push({ ip, ifAlias: info.ifAlias, ifIndex: idx++, addressFamily: info.addressFamily, prefixLength: info.prefixLength, prefixOrigin: info.prefixOrigin, suffixOrigin: info.suffixOrigin, addressState: 'Preferred', skipAsSource: info.skipAsSource });
-    }
-    // Loopback
-    entries.push({ ip: '127.0.0.1', ifAlias: 'Loopback Pseudo-Interface 1', ifIndex: 1, addressFamily: 'IPv4', prefixLength: 8, prefixOrigin: 'WellKnown', suffixOrigin: 'WellKnown', addressState: 'Preferred', skipAsSource: false });
-    entries.push({ ip: '::1', ifAlias: 'Loopback Pseudo-Interface 1', ifIndex: 1, addressFamily: 'IPv6', prefixLength: 128, prefixOrigin: 'WellKnown', suffixOrigin: 'WellKnown', addressState: 'Preferred', skipAsSource: false });
-    return entries;
-  }
 
-  private formatIPEntry(e: ReturnType<typeof this.buildAllIPEntries>[0]): string {
-    return [
-      `IPAddress         : ${e.ip}`,
-      `InterfaceIndex    : ${e.ifIndex}`,
-      `InterfaceAlias    : ${e.ifAlias}`,
-      `AddressFamily     : ${e.addressFamily}`,
-      `Type              : Unicast`,
-      `PrefixLength      : ${e.prefixLength}`,
-      `PrefixOrigin      : ${e.prefixOrigin}`,
-      `SuffixOrigin      : ${e.suffixOrigin}`,
-      `AddressState      : ${e.addressState}`,
-      `SkipAsSource      : ${e.skipAsSource ? 'True' : 'False'}`,
-    ].join('\n');
-  }
 
-  private handleGetNetIPAddress(args: string[]): string {
-    const params = this.parsePSArgs(args);
-    const ipFilter = params.get('ipaddress') || params.get('_positional');
-    const ifFilter = (params.get('interfacealias') ?? '').toLowerCase().replace(/^["']|["']$/g, '');
-    const afFilter = (params.get('addressfamily') ?? '').toLowerCase();
-    const plFilter = params.has('prefixlength') ? parseInt(params.get('prefixlength')!, 10) : undefined;
-    const stateFilter = (params.get('addressstate') ?? '').toLowerCase();
-    const poFilter = (params.get('prefixorigin') ?? '').toLowerCase();
-    const soFilter = (params.get('suffixorigin') ?? '').toLowerCase();
-    // -IncludeAllCompartments: just ignore in sim
-    const errorAction = (params.get('erroraction') ?? '').toLowerCase();
 
-    // Validate explicit IP address filter
-    if (ipFilter && !this.isValidIP(ipFilter)) {
-      return `Get-NetIPAddress : Invalid IP address: '${ipFilter}'.\nAt line:1 char:1\n    + CategoryInfo          : InvalidArgument`;
-    }
 
-    let entries = this.buildAllIPEntries();
 
-    if (ipFilter) entries = entries.filter(e => e.ip.toLowerCase() === ipFilter.toLowerCase());
-    if (ifFilter) entries = entries.filter(e => e.ifAlias.toLowerCase().includes(ifFilter) || e.ifAlias.toLowerCase() === ifFilter);
-    if (afFilter === 'ipv4') entries = entries.filter(e => e.addressFamily === 'IPv4');
-    if (afFilter === 'ipv6') entries = entries.filter(e => e.addressFamily === 'IPv6');
-    if (plFilter !== undefined) entries = entries.filter(e => e.prefixLength === plFilter);
-    if (stateFilter) entries = entries.filter(e => e.addressState.toLowerCase() === stateFilter);
-    if (poFilter) entries = entries.filter(e => e.prefixOrigin.toLowerCase() === poFilter);
-    if (soFilter) entries = entries.filter(e => e.suffixOrigin.toLowerCase() === soFilter);
 
-    if (entries.length === 0) {
-      if (ifFilter) {
-        return `Get-NetIPAddress : No MSFT_NetIPAddress objects found with property 'InterfaceAlias' equal to '${ifFilter}'. Verify the value of the property and retry.`;
-      }
-      if (ipFilter) {
-        return `Get-NetIPAddress : No MSFT_NetIPAddress objects found with property 'IPAddress' equal to '${ipFilter}'. Verify the value of the property and retry.`;
-      }
-      return '';
-    }
-
-    return entries.map(e => this.formatIPEntry(e)).join('\n\n');
-  }
-
-  private isValidIP(ip: string): boolean {
-    return isValidIPv4(ip) || isValidIPv6(ip);
-  }
-
-  private handleNewNetIPAddress(args: string[]): string {
-    const params = this.parsePSArgs(args);
-    const ip = params.get('ipaddress') || params.get('_positional');
-    const ifAlias = (params.get('interfacealias') ?? '').replace(/^["']|["']$/g, '');
-    const prefixStr = params.get('prefixlength');
-    const gateway = params.get('defaultgateway');
-    const afParam = (params.get('addressfamily') ?? '').toLowerCase();
-    const skipAsSource = (params.get('skipassource') ?? '').toLowerCase() === '$true' || params.get('skipassource') === 'true';
-
-    if (!ip) return `New-NetIPAddress : The -IPAddress parameter is required.\nAt line:1 char:1\n    + CategoryInfo          : InvalidArgument`;
-    if (!ifAlias) return `New-NetIPAddress : The -InterfaceAlias parameter is required.\nAt line:1 char:1\n    + CategoryInfo          : InvalidArgument`;
-    if (!prefixStr) return `New-NetIPAddress : The -PrefixLength parameter is required.\nAt line:1 char:1\n    + CategoryInfo          : InvalidArgument`;
-    if (!this.isValidIP(ip)) return `New-NetIPAddress : Invalid IP address: '${ip}'.\nAt line:1 char:1\n    + CategoryInfo          : InvalidArgument`;
-
-    const prefixLength = parseInt(prefixStr, 10);
-    const isIPv6 = ip.includes(':');
-    const maxPrefix = isIPv6 ? 128 : 32;
-    if (isNaN(prefixLength) || prefixLength < 0 || prefixLength > maxPrefix) {
-      return `New-NetIPAddress : PrefixLength '${prefixStr}' is not in the valid range 0-${maxPrefix}.\nAt line:1 char:1\n    + CategoryInfo          : InvalidArgument`;
-    }
-
-    // Check for duplicate
-    const existing = this.buildAllIPEntries();
-    if (existing.some(e => e.ip.toLowerCase() === ip.toLowerCase())) {
-      return `New-NetIPAddress : The IP address '${ip}' already exists on this system.\nAt line:1 char:1\n    + CategoryInfo          : InvalidArgument`;
-    }
-
-    const addressFamily = afParam === 'ipv6' || isIPv6 ? 'IPv6' : 'IPv4';
-    this.extraIPs.set(ip.toLowerCase(), { ifAlias, prefixLength, prefixOrigin: 'Manual', suffixOrigin: 'Manual', skipAsSource, gateway, addressFamily });
-
-    if (gateway) {
-      this.extraRoutes.set('0.0.0.0/0', { ifAlias, nextHop: gateway, metric: 0 });
-    }
-
-    return this.formatIPEntry({ ip, ifAlias, ifIndex: 99, addressFamily, prefixLength, prefixOrigin: 'Manual', suffixOrigin: 'Manual', addressState: 'Preferred', skipAsSource });
-  }
-
-  private handleRemoveNetIPAddress(args: string[]): string {
-    const params = this.parsePSArgs(args);
-    const ip = params.get('ipaddress') || params.get('_positional');
-    const whatif = params.has('whatif') || args.some(a => a.toLowerCase() === '-whatif');
-
-    if (!ip) return `Remove-NetIPAddress : The -IPAddress parameter is required.\nAt line:1 char:1\n    + CategoryInfo          : InvalidArgument`;
-
-    if (ip === '127.0.0.1' || ip === '::1') {
-      return `Remove-NetIPAddress : Cannot remove the loopback address '${ip}'. This address is required for network functionality.`;
-    }
-
-    const entries = this.buildAllIPEntries();
-    const found = entries.find(e => e.ip.toLowerCase() === ip.toLowerCase());
-    if (!found) {
-      return `Remove-NetIPAddress : No MSFT_NetIPAddress objects found with property 'IPAddress' equal to '${ip}'. Verify the value of the property and retry.`;
-    }
-
-    if (whatif) {
-      return `What if: Performing the operation "Remove-NetIPAddress" on target "IPAddress: ${ip}, InterfaceAlias: ${found.ifAlias}".`;
-    }
-
-    this.extraIPs.delete(ip.toLowerCase());
-    return '';
-  }
-
-  private handleSetNetIPAddress(args: string[]): string {
-    const params = this.parsePSArgs(args);
-    const ip = (params.get('ipaddress') || params.get('_positional'))?.replace(/^["']|["']$/g, '');
-    const ifAlias = params.get('interfacealias')?.replace(/^["']|["']$/g, '');
-    const prefixStr = params.get('prefixlength');
-    const prefixLength = prefixStr ? parseInt(prefixStr, 10) : undefined;
-
-    // When -InterfaceAlias is given, replace the existing IPv4 for that adapter with the new IP
-    if (ifAlias && ip) {
-      if (!this.isValidIP(ip)) return `Set-NetIPAddress : Invalid IP address '${ip}'.`;
-      const all = this.buildAllIPEntries();
-      const existing = all.find(e => e.ifAlias.toLowerCase() === ifAlias.toLowerCase() && e.addressFamily === 'IPv4');
-      if (existing) this.extraIPs.delete(existing.ip.toLowerCase());
-      this.extraIPs.set(ip.toLowerCase(), {
-        ifAlias, prefixLength: prefixLength ?? existing?.prefixLength ?? 24,
-        prefixOrigin: 'Manual', suffixOrigin: 'Manual', skipAsSource: false, addressFamily: 'IPv4',
-      });
-      return '';
-    }
-
-    if (!ip) return `Set-NetIPAddress : The -IPAddress parameter is required.\nAt line:1 char:1\n    + CategoryInfo          : InvalidArgument`;
-
-    const entry = this.extraIPs.get(ip.toLowerCase());
-    if (!entry) {
-      const all = this.buildAllIPEntries();
-      const found = all.find(e => e.ip.toLowerCase() === ip.toLowerCase());
-      if (!found) {
-        return `Set-NetIPAddress : No MSFT_NetIPAddress objects found with property 'IPAddress' equal to '${ip}'. Verify the value of the property and retry.`;
-      }
-      this.extraIPs.set(ip.toLowerCase(), { ifAlias: found.ifAlias, prefixLength: found.prefixLength, prefixOrigin: found.prefixOrigin, suffixOrigin: found.suffixOrigin, skipAsSource: found.skipAsSource, addressFamily: found.addressFamily });
-    }
-
-    const e = this.extraIPs.get(ip.toLowerCase())!;
-    if (prefixLength !== undefined) e.prefixLength = prefixLength;
-    if (params.has('prefixorigin')) e.prefixOrigin = params.get('prefixorigin')!;
-    if (params.has('suffixorigin')) e.suffixOrigin = params.get('suffixorigin')!;
-    if (params.has('skipassource')) e.skipAsSource = (params.get('skipassource') ?? '').toLowerCase() !== 'false' && (params.get('skipassource') ?? '') !== '$false';
-    return '';
-  }
-
-  private buildDefaultRoutes(): Array<{ dest: string; ifAlias: string; nextHop: string; metric: number }> {
-    const routes: Array<{ dest: string; ifAlias: string; nextHop: string; metric: number }> = [];
-    const gw = this.device.getDefaultGatewayString();
-    const ports = this.device.getPortsMap();
-    let firstIF = '';
-    for (const [name] of ports) { firstIF = this.portToDisplayName(name); break; }
-    // Default route — skip built-in if extraRoutes already has a 0.0.0.0/0 (set by New-NetIPAddress -DefaultGateway)
-    if (!this.extraRoutes.has('0.0.0.0/0')) {
-      routes.push({ dest: '0.0.0.0/0', ifAlias: firstIF || 'Ethernet', nextHop: gw || '0.0.0.0', metric: 0 });
-    }
-    // Loopback
-    routes.push({ dest: '127.0.0.0/8', ifAlias: 'Loopback Pseudo-Interface 1', nextHop: '0.0.0.0', metric: 306 });
-    // Connected network routes
-    let idx = 2;
-    for (const [name, port] of ports) {
-      const displayName = this.portToDisplayName(name);
-      const ip = port.getIPAddress()?.toString() ?? '';
-      const mask = port.getSubnetMask()?.toString() ?? '';
-      if (ip && mask) {
-        const prefix = this.maskToPrefixLength(mask);
-        const network = ip.split('.').map((o, i) => (parseInt(o) & parseInt(mask.split('.')[i])).toString()).join('.');
-        routes.push({ dest: `${network}/${prefix}`, ifAlias: displayName, nextHop: '0.0.0.0', metric: 256 });
-      }
-      idx++;
-    }
-    // Extra routes
-    for (const [dest, info] of this.extraRoutes) {
-      routes.push({ dest, ifAlias: info.ifAlias, nextHop: info.nextHop, metric: info.metric });
-    }
-    return routes;
-  }
-
-  private formatRouteEntry(r: { dest: string; ifAlias: string; nextHop: string; metric: number }): string {
-    return [
-      `ifIndex DestinationPrefix                                                         NextHop                                  RouteMetric ifMetric PolicyStore`,
-      `------- -----------------                                                         -------                                  ----------- -------- -----------`,
-      `      2 ${r.dest.padEnd(73)}${r.nextHop.padEnd(41)}${String(r.metric).padEnd(12)}256 ActiveStore`,
-    ].join('\n') + `\n\nDestinationPrefix : ${r.dest}\nNextHop           : ${r.nextHop}\nRouteMetric       : ${r.metric}\nInterfaceAlias    : ${r.ifAlias}\nInterfaceIndex    : 2\nAddressFamily     : IPv4\nPublish           : No\nPreferredLifetime : 10675199.02:48:05.4775807`;
-  }
-
-  private handleGetNetRoute(args: string[]): string {
-    const params = this.parsePSArgs(args);
-    const destFilter = (params.get('destinationprefix') ?? '').replace(/^["']|["']$/g, '');
-    const ifFilter = (params.get('interfacealias') ?? '').replace(/^["']|["']$/g, '').toLowerCase();
-    const nhFilter = (params.get('nexthop') ?? '').replace(/^["']|["']$/g, '');
-    const metricFilter = params.has('routemetric') ? parseInt(params.get('routemetric')!, 10) : undefined;
-
-    // Validate destination prefix format — must be CIDR notation (ip/prefix or ipv6/prefix)
-    if (destFilter && !destFilter.match(/^(\d{1,3}\.){3}\d{1,3}\/\d{1,2}$/) && !destFilter.match(/^[0-9a-f:]+\/\d+$/i)) {
-      return `Get-NetRoute : Invalid DestinationPrefix: '${destFilter}'.\nAt line:1 char:1\n    + CategoryInfo          : InvalidArgument`;
-    }
-
-    let routes = this.buildDefaultRoutes();
-    if (destFilter) routes = routes.filter(r => r.dest === destFilter);
-    if (ifFilter) routes = routes.filter(r => r.ifAlias.toLowerCase().includes(ifFilter));
-    if (nhFilter) routes = routes.filter(r => r.nextHop === nhFilter);
-    if (metricFilter !== undefined) routes = routes.filter(r => r.metric === metricFilter);
-
-    if (routes.length === 0) return '';
-
-    // Format as key-value blocks for pipeline compatibility (Select -ExpandProperty works on these)
-    return routes.map((r, i) => [
-      `DestinationPrefix : ${r.dest}`,
-      `NextHop           : ${r.nextHop}`,
-      `RouteMetric       : ${r.metric}`,
-      `InterfaceAlias    : ${r.ifAlias}`,
-      `InterfaceIndex    : ${i + 2}`,
-      `AddressFamily     : IPv4`,
-    ].join('\n')).join('\n\n');
-  }
-
-  private handleNewNetRoute(args: string[]): string {
-    const params = this.parsePSArgs(args);
-    const dest = (params.get('destinationprefix') ?? params.get('_positional') ?? '').replace(/^["']|["']$/g, '');
-    const ifAlias = (params.get('interfacealias') ?? '').replace(/^["']|["']$/g, '');
-    const nextHop = (params.get('nexthop') ?? '').replace(/^["']|["']$/g, '');
-    const metricStr = params.get('routemetric') ?? '0';
-    const metric = parseInt(metricStr, 10);
-
-    if (!dest) return `New-NetRoute : The -DestinationPrefix parameter is required.\nAt line:1 char:1\n    + CategoryInfo          : InvalidArgument`;
-    if (!ifAlias) return `New-NetRoute : The -InterfaceAlias parameter is required.\nAt line:1 char:1\n    + CategoryInfo          : InvalidArgument`;
-    if (!nextHop) return `New-NetRoute : The -NextHop parameter is required.\nAt line:1 char:1\n    + CategoryInfo          : InvalidArgument`;
-
-    // Check for duplicates
-    if (this.extraRoutes.has(dest)) {
-      return `New-NetRoute : Route '${dest}' already exists.\nAt line:1 char:1\n    + CategoryInfo          : InvalidArgument`;
-    }
-
-    this.extraRoutes.set(dest, { ifAlias, nextHop, metric });
-    return [
-      `DestinationPrefix : ${dest}`,
-      `NextHop           : ${nextHop}`,
-      `RouteMetric       : ${metric}`,
-      `InterfaceAlias    : ${ifAlias}`,
-      `InterfaceIndex    : 2`,
-      `AddressFamily     : IPv4`,
-    ].join('\n');
-  }
-
-  private handleRemoveNetRoute(args: string[]): string {
-    const params = this.parsePSArgs(args);
-    const dest = (params.get('destinationprefix') ?? params.get('_positional') ?? '').replace(/^["']|["']$/g, '');
-    const whatif = args.some(a => a.toLowerCase() === '-whatif');
-
-    if (!dest) return `Remove-NetRoute : The -DestinationPrefix parameter is required.\nAt line:1 char:1\n    + CategoryInfo          : InvalidArgument`;
-
-    const routes = this.buildDefaultRoutes();
-    const found = routes.find(r => r.dest === dest);
-    if (!found && !this.extraRoutes.has(dest)) {
-      return `Remove-NetRoute : No MSFT_NetRoute objects found with property 'DestinationPrefix' equal to '${dest}'.`;
-    }
-
-    if (whatif) {
-      return `What if: Performing the operation "Remove-NetRoute" on target "DestinationPrefix: ${dest}".`;
-    }
-
-    this.extraRoutes.delete(dest);
-    return '';
+  private buildPSNetCtx(): PSNetContext {
+    return { device: this.device };
   }
 
   private buildPSNetConfigCtx(): PSNetConfigContext {
@@ -4141,179 +3789,20 @@ export class PowerShellExecutor {
    * so a runtime-mounted drive shows up in Get-Disk too, with its
    * capacity sourced from the FS rather than a frozen "50 GB" string.
    */
-  private handleGetNetAdapter(args: string[]): string {
-    const params = this.parsePSArgs(args);
-    const nameFilter = (params.get('name') ?? params.get('_positional') ?? '').replace(/^["']|["']$/g, '').toLowerCase();
-    const includeHidden = params.has('includehidden');
-    const physical = params.has('physical');
-    const cimSession = params.get('cimsession');
 
-    if (cimSession) {
-      return `Get-NetAdapter : Remote CIM sessions are not supported in this simulator.\n    + CategoryInfo          : NotImplemented: (:) [Get-NetAdapter], NotSupportedException`;
-    }
-
-    const ports = this.device.getPortsMap();
-    const lines: string[] = ['Name                      InterfaceDescription                    ifIndex Status       MacAddress         LinkSpeed',
-                              '----                      --------------------                    ------- ------       ----------         ---------'];
-
-    // Collect all adapter entries (Ethernet ports + virtual Wi-Fi)
-    type AdapterEntry = { displayName: string; desc: string; ifIndex: number; status: string; mac: string; speed: string };
-    const adapterEntries: AdapterEntry[] = [];
-
-    let idx = 0;
-    for (const [name, port] of ports) {
-      let displayName = this.portToDisplayName(name);
-      // Apply rename override
-      const overrideKey = displayName.toLowerCase();
-      const override = this.adapterOverrides.get(overrideKey);
-      if (override?.displayName) displayName = override.displayName;
-
-      const mac = port.getMAC()?.toString()?.replace(/:/g, '-').toUpperCase() ?? '00-00-00-00-00-00';
-      const status = port.isAdminDown() ? 'Disabled' : (port.getIsUp() ? 'Up' : 'Disconnected');
-
-      adapterEntries.push({ displayName, desc: 'Intel(R) Ethernet Connection', ifIndex: idx + 2, status, mac, speed: formatLinkSpeedMbps(port.getNegotiatedSpeed()) });
-      idx++;
-    }
-
-    // Add virtual Wi-Fi adapter (always present on a Windows PC)
-    const wifiOverride = this.adapterOverrides.get('wi-fi');
-    const wifiDisplayName = wifiOverride?.displayName ?? 'Wi-Fi';
-    const wifiStatus = wifiOverride?.status ?? 'Up';
-    adapterEntries.push({ displayName: wifiDisplayName, desc: 'Intel(R) Wireless-AC 9560 160MHz', ifIndex: idx + 2, status: wifiStatus, mac: '02-00-00-FF-FF-01', speed: '54 Mbps' });
-
-    // Filter by name — exact match unless wildcard '*' or '?' is present
-    const filteredEntries = nameFilter
-      ? adapterEntries.filter(e => {
-          const dn = e.displayName.toLowerCase();
-          if (nameFilter.includes('*') || nameFilter.includes('?')) {
-            const regex = new RegExp('^' + nameFilter.replace(/\*/g, '.*').replace(/\?/g, '.') + '$');
-            return regex.test(dn);
-          }
-          if (dn === nameFilter) return true;
-          const resolvedPort = toPortName(nameFilter);
-          return resolvedPort !== null && dn === toDisplayName(resolvedPort).toLowerCase();
-        })
-      : adapterEntries;
-
-    // Apply -IncludeHidden (show Loopback)
-    if (includeHidden && (!nameFilter || 'loopback'.includes(nameFilter))) {
-      lines.push(`${'Loopback Pseudo-Interface 1'.padEnd(26)}${'Software Loopback Interface 1'.padEnd(40)}${String(1).padStart(7)} ${'Up'.padEnd(13)}${'00-00-00-00-00-00'.padEnd(19)}10 Gbps`);
-    }
-
-    if (filteredEntries.length === 0 && !includeHidden) {
-      return `Get-NetAdapter : No MSFT_NetAdapter objects found with property 'Name' equal to '${nameFilter}'.`;
-    }
-
-    for (const e of filteredEntries) {
-      lines.push(`${e.displayName.padEnd(26)}${e.desc.padEnd(40)}${String(e.ifIndex).padStart(7)} ${e.status.padEnd(13)}${e.mac.padEnd(19)}${e.speed}`);
-    }
-
-    return lines.join('\n');
-  }
-
-  private formatGetNetIPAddress(): string {
-    return this.handleGetNetIPAddress([]);
-  }
 
   // ─── Adapter State Management ─────────────────────────────────────
 
-  private resolveAdapterPort(name: string): Port | undefined {
-    const target = name.toLowerCase();
-    const ports = this.device.getPortsMap();
-    for (const [pname, port] of ports) {
-      if (pname.toLowerCase() === target) return port;
-      if (this.portToDisplayName(pname).toLowerCase() === target) return port;
-    }
-    const resolved = toPortName(name);
-    return resolved ? ports.get(resolved) : undefined;
-  }
 
-  private handleDisableEnableNetAdapter(args: string[], newStatus: string): string {
-    const params = this.parsePSArgs(args);
-    const name = (params.get('name') ?? params.get('_positional') ?? '').replace(/^["']|["']$/g, '');
-    if (!name) return '';
-    if (params.has('whatif')) {
-      return `What if: Performing the operation "${newStatus === 'Disabled' ? 'Disable' : 'Enable'}-NetAdapter" on target "${name}".`;
-    }
-    const port = this.resolveAdapterPort(name);
-    if (port) {
-      port.setAdminDown(newStatus === 'Disabled');
-      return '';
-    }
-    const key = name.toLowerCase();
-    const override = this.adapterOverrides.get(key) ?? {};
-    override.status = newStatus;
-    this.adapterOverrides.set(key, override);
-    return '';
-  }
 
-  private handleRenameNetAdapter(args: string[]): string {
-    const params = this.parsePSArgs(args);
-    const oldName = (params.get('name') ?? params.get('_positional') ?? '').replace(/^["']|["']$/g, '');
-    const newName = (params.get('newname') ?? '').replace(/^["']|["']$/g, '');
-    if (!oldName || !newName) return '';
-    const oldKey = oldName.toLowerCase();
-    const existing = this.adapterOverrides.get(oldKey) ?? {};
-    // Move entry to new name key
-    existing.displayName = newName;
-    this.adapterOverrides.set(oldKey, existing);
-    // Also register under new name key pointing to same override
-    this.adapterOverrides.set(newName.toLowerCase(), existing);
-    return '';
-  }
 
   // ─── Set-NetRoute ──────────────────────────────────────────────────
 
-  private handleSetNetRoute(args: string[]): string {
-    const params = this.parsePSArgs(args);
-    const dest = (params.get('destinationprefix') ?? params.get('_positional') ?? '').replace(/^["']|["']$/g, '');
-    const nextHop = params.get('nexthop')?.replace(/^["']|["']$/g, '');
-    const ifAlias = params.get('interfacealias')?.replace(/^["']|["']$/g, '');
-
-    if (!dest) return `Set-NetRoute : The -DestinationPrefix parameter is required.`;
-
-    const existing = this.extraRoutes.get(dest);
-    if (existing) {
-      if (nextHop) existing.nextHop = nextHop;
-      if (ifAlias) existing.ifAlias = ifAlias;
-    } else {
-      // Create if not exists
-      this.extraRoutes.set(dest, { ifAlias: ifAlias ?? '', nextHop: nextHop ?? '0.0.0.0', metric: 256 });
-    }
-    return '';
-  }
 
   // ─── Set-NetIPAddress (upsert) ─────────────────────────────────────
 
   // ─── Firewall Rules ────────────────────────────────────────────────
 
-  private handleTestNetConnection(args: string[]): string {
-    const params = this.parsePSArgs(args);
-    const target = (params.get('computername') ?? params.get('_positional') ?? '').replace(/^["']|["']$/g, '');
-    const port = params.has('port') ? parseInt(params.get('port')!, 10) : undefined;
-    if (!target) return 'Test-NetConnection requires -ComputerName';
-
-    const resolved = this.device.resolveHostnameSync(target);
-    const remoteAddress = resolved?.toString() ?? target;
-    const ping = resolved ? this.device.sendPingProbeSync(resolved) : { success: false, rttMs: 0, ttl: 0 };
-    const egress = resolved ? this.device.getEgressFor(resolved) : null;
-
-    let tcpSucceeded = false;
-    if (port !== undefined && resolved && ping.success) {
-      tcpSucceeded = this.device.tcpProbeSync(resolved, port);
-    }
-
-    return [
-      `\nComputerName           : ${target}`,
-      `RemoteAddress          : ${remoteAddress}`,
-      port !== undefined ? `RemotePort             : ${port}` : '',
-      `InterfaceAlias         : ${egress?.interfaceName ?? 'Ethernet'}`,
-      `SourceAddress          : ${egress?.sourceIp.toString() ?? '0.0.0.0'}`,
-      `PingSucceeded          : ${ping.success ? 'True' : 'False'}`,
-      `PingReplyDetails (RTT) : ${Math.round(ping.success ? ping.rttMs : 0)} ms`,
-      port !== undefined ? `TcpTestSucceeded       : ${tcpSucceeded ? 'True' : 'False'}` : '',
-    ].filter(l => l !== '').join('\n');
-  }
 
   // ─── Network Connection Profile ────────────────────────────────────
 
@@ -4424,63 +3913,8 @@ export class PowerShellExecutor {
     return `The following commands are available:\n\nCommands in this context:\n?              - Displays a list of commands.\ndump           - Displays a configuration script.\nhelp           - Displays a list of commands.\n\nTo view help for a command, type the command, followed by a space, and then\n type ?.`;
   }
 
-  private formatGetNetTCPConnection(args: string[]): string {
-    const ports = this.device.getPortsMap();
-    // Simulate standard TCP connections for a Windows PC
-    const lines: string[] = [
-      '',
-      'LocalAddress           LocalPort RemoteAddress          RemotePort State       AppliedSetting',
-      '------------           --------- -------------          ---------- -----       --------------',
-    ];
 
-    // Listening ports based on running services
-    const serviceMgr = this.device.getServiceManager();
-    const runningServices = serviceMgr.getAllServices().filter(s => s.state === 'Running');
-    const listeningPorts: Array<{ port: number; name: string }> = [
-      { port: 135, name: 'RpcSs' },
-      { port: 445, name: 'LanmanServer' },
-      { port: 49152, name: 'Services' },
-    ];
-    for (const svc of runningServices) {
-      if (svc.name === 'WinRM') listeningPorts.push({ port: 5985, name: 'WinRM' });
-    }
 
-    let localIp = '0.0.0.0';
-    for (const port of ports.values()) {
-      const ip = port.getIPAddress();
-      if (ip) { localIp = ip.toString(); break; }
-    }
-
-    const params = this.parsePSArgs(args);
-    const stateFilter = params.get('state')?.toLowerCase();
-
-    for (const lp of listeningPorts) {
-      if (!stateFilter || stateFilter === 'listen') {
-        lines.push(`${('0.0.0.0').padEnd(23)}${String(lp.port).padEnd(10)}${'0.0.0.0'.padEnd(23)}${'0'.padEnd(11)}Listen`);
-      }
-    }
-
-    // Simulate established connection to DNS server
-    if (!stateFilter || stateFilter === 'established') {
-      lines.push(`${localIp.padEnd(23)}${String(49153 + Math.floor(Math.random() * 100)).padEnd(10)}${'8.8.8.8'.padEnd(23)}${'53'.padEnd(11)}Established`);
-    }
-
-    if (lines.length <= 3) return '';
-    return lines.join('\n');
-  }
-
-  private portToDisplayName(portName: string): string {
-    return toDisplayName(portName);
-  }
-
-  private maskToPrefixLength(mask: string): number {
-    const parts = mask.split('.').map(Number);
-    let bits = 0;
-    for (const p of parts) {
-      bits += (p >>> 0).toString(2).split('').filter(b => b === '1').length;
-    }
-    return bits;
-  }
 
   private formatGetProcess(): string {
     const lines: string[] = [];
@@ -4765,33 +4199,6 @@ export class PowerShellExecutor {
    * answered with a forward (`A`) record pointing at a stable fake
    * address (mirrors what previous releases of the simulator did).
    */
-  private renderResolveDnsName(target: string): string {
-    const isIPv4 = /^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(target);
-    const header =
-      'Name                                           Type   TTL   Section    IPAddress\n' +
-      '----                                           ----   ---   -------    ---------';
-    let row: string;
-    if (isIPv4) {
-      const reversed = target.split('.').reverse().join('.');
-      const ptrName = `${reversed}.in-addr.arpa`;
-      const hostName = target === '127.0.0.1' ? 'localhost' : `host-${target.replace(/\./g, '-')}`;
-      row =
-        ptrName.padEnd(47) +
-        'PTR    ' +
-        '3600  ' +
-        'Answer     ' +
-        hostName;
-    } else {
-      const ip = target.toLowerCase() === 'localhost' ? '127.0.0.1' : '192.168.1.1';
-      row =
-        target.padEnd(47) +
-        'A      ' +
-        (target.toLowerCase() === 'localhost' ? '86400' : '3600 ') +
-        ' Answer     ' +
-        ip;
-    }
-    return `\n${header}\n${row}\n`;
-  }
 
   /**
    * Execute a `.ps1` file from the simulated filesystem.
