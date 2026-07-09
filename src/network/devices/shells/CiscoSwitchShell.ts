@@ -554,6 +554,8 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
         this.showArpInspectionIfs(this.d()));
       t.register('show arp access-list', 'Display ARP ACLs', () => this.showArpAcls(this.d()));
       t.register('show errdisable recovery', 'Display errdisable recovery state', () => this.showErrdisableRecovery());
+      t.registerGreedy('show ip device tracking', 'Display IP device tracking table', (args) =>
+        this.showIpDeviceTracking(this.d(), args));
     }
 
     // ── clear / recovery ──
@@ -1761,7 +1763,11 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       if (a[i] === 'dynamic' || a[i] === 'static') { filter.type = a[i] as 'static' | 'dynamic'; i++; }
       else if (a[i] === 'multicast') i++;
       if (a[i] === 'vlan' && a[i + 1] && /^\d+$/.test(a[i + 1])) filter.vlan = parseInt(a[i + 1], 10);
-      else if (a[i] === 'interface' && args[i + 1]) filter.port = args[i + 1];
+      else if (a[i] === 'interface' && args[i + 1]) {
+        const pn = this.resolveInterfaceName(args.slice(i + 1).join(' '));
+        if (!pn) return `% Invalid interface`;
+        filter.port = pn;
+      }
       else if (a[i] === 'address' && args[i + 1]) filter.address = args[i + 1];
       return this.showMACAddressTable(this.d(), Object.keys(filter).length ? filter : undefined);
     });
@@ -2721,6 +2727,8 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     const vtyLines = sw._getVtyLineConfig().renderAllCisco();
     if (vtyLines.length > 0) { lines.push(...vtyLines); lines.push('!'); }
 
+    if (sw.isIpRoutingEnabled()) { lines.push('ip routing'); lines.push('!'); }
+
     for (const [id, vlan] of sw.getVLANs()) {
       if (id === 1) continue;
       lines.push(`vlan ${id}`);
@@ -3410,6 +3418,38 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     return lines.join('\n');
   }
 
+  private showIpDeviceTracking(sw: CiscoSwitch, args: string[]): string {
+    const sub = (args[0] ?? 'all').toLowerCase();
+    const dottedMac = (m: string) => {
+      const hex = m.replace(/[^0-9a-fA-F]/g, '').toLowerCase();
+      return hex.length === 12 ? `${hex.slice(0, 4)}.${hex.slice(4, 8)}.${hex.slice(8, 12)}` : m;
+    };
+    let rows = sw._getSnoopingBindings();
+    if (sub === 'interface' && args[1]) {
+      const pn = this.resolveInterfaceName(args.slice(1).join(' '));
+      if (!pn) return '% Invalid interface';
+      rows = rows.filter((b) => b.port === pn);
+    } else if (sub === 'ip' && args[1]) {
+      rows = rows.filter((b) => b.ipAddress === args[1]);
+    }
+    const lines = [
+      'Global IP Device Tracking for clients = Enabled',
+      'Global IP Device Tracking Probe Count = 3',
+      'Global IP Device Tracking Probe Interval = 30',
+      'Global IP Device Tracking Probe Delay Interval = 0',
+      '',
+      '  IP Address       MAC Address       Vlan  Interface                STATE',
+      `  ${'-'.repeat(70)}`,
+    ];
+    for (const b of rows) {
+      lines.push(`  ${b.ipAddress.padEnd(17)}${dottedMac(b.macAddress).padEnd(18)}${String(b.vlan).padEnd(6)}${b.port.padEnd(25)}ACTIVE`);
+    }
+    lines.push(`  ${'-'.repeat(70)}`);
+    lines.push(`  Total number interfaces enabled: ${new Set(rows.map((b) => b.port)).size}`);
+    lines.push(`  Total number of entries: ${rows.length}`);
+    return lines.join('\n');
+  }
+
   private showLogging(sw: CiscoSwitch): string {
     const base = this.logging.render();
     const snoop = sw._getSnoopingLog();
@@ -3607,11 +3647,8 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
   private registerL3Commands(): void {
     const cfg = this.configTrie;
 
-    // `ip routing` / `no ip routing` — global L3 enable (IOS requires
-    // it on some 2960 SKUs; we accept it as a no-op since the switch
-    // base already routes through its SVI plane).
-    cfg.register('ip routing', 'Enable Layer-3 routing', () => '');
-    cfg.register('no ip routing', 'Disable Layer-3 routing', () => '');
+    cfg.register('ip routing', 'Enable Layer-3 routing', () => { this.d().setIpRoutingEnabled(true); return ''; });
+    cfg.register('no ip routing', 'Disable Layer-3 routing', () => { this.d().setIpRoutingEnabled(false); return ''; });
 
     // ip route <net> <mask> <next-hop>
     cfg.registerGreedy('ip route', 'Add a static route', (args) => {
@@ -3679,8 +3716,11 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
 
     // ── Show commands ──────────────────────────────────────────────
     for (const t of [this.userTrie, this.privilegedTrie]) {
-      t.registerGreedy('show ip route', 'Display IP routing table', (args) =>
-        args[0]?.toLowerCase() === 'summary' ? this.showIpRouteSummary() : this.showIpRoute());
+      t.registerGreedy('show ip route', 'Display IP routing table', (args) => {
+        if (args[0]?.toLowerCase() === 'summary') return this.showIpRouteSummary();
+        if (!this.d().isIpRoutingEnabled()) return '% IP routing table is not enabled';
+        return this.showIpRoute();
+      });
       t.register('show ip traffic', 'IP traffic statistics', () =>
         showIpTraffic(this.d()._getPortsInternal().values(), this.d()._getArpStats()));
       t.register('show adjacency', 'Display CEF adjacency table', () =>
@@ -4158,7 +4198,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
   }
 
   private resolveInterfaceName(input: string): string | null {
-    const lower = input.toLowerCase();
+    const lower = input.trim().replace(/\s+/g, '').toLowerCase();
 
     for (const name of this.d().getPortNames()) {
       if (name.toLowerCase() === lower) return name;

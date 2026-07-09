@@ -18,6 +18,42 @@ import type { CommandTrie } from '../CommandTrie';
 // Re-export for backward compatibility
 export type { CiscoARPEntry, ARPProvider } from '../CiscoDevice';
 
+const ARP_IFACE_PREFIXES: Record<string, string> = {
+  fa: 'FastEthernet', fas: 'FastEthernet', fast: 'FastEthernet', fastethernet: 'FastEthernet',
+  gi: 'GigabitEthernet', gig: 'GigabitEthernet', giga: 'GigabitEthernet', gigabitethernet: 'GigabitEthernet',
+  te: 'TenGigabitEthernet', tengigabitethernet: 'TenGigabitEthernet',
+  eth: 'Ethernet', ethernet: 'Ethernet',
+};
+
+function arpSummary(entries: Array<[string, CiscoARPEntry]>): string {
+  const total = entries.length;
+  const dyn = entries.filter(([, e]) => e.type === 'dynamic').length;
+  const stat = entries.filter(([, e]) => e.type === 'static').length;
+  return [
+    `Total number of entries in the arp table: ${total}.`,
+    `Total number of Dynamic entries: ${dyn}.`,
+    `Total number of Static entries: ${stat}.`,
+    `Total number of Interface entries: ${total - dyn - stat}.`,
+  ].join('\n');
+}
+
+function matchArpInterface(provider: ARPProvider, raw: string): string | null {
+  const collapsed = raw.replace(/\s+/g, '').toLowerCase();
+  const ports = provider._getPortsInternal();
+  for (const name of ports.keys()) {
+    if (name.toLowerCase() === collapsed) return name;
+  }
+  const m = collapsed.match(/^([a-z]+)([\d/.]+)$/);
+  if (!m) return null;
+  const full = ARP_IFACE_PREFIXES[m[1]];
+  if (!full) return null;
+  const resolved = `${full}${m[2]}`.toLowerCase();
+  for (const name of ports.keys()) {
+    if (name.toLowerCase() === resolved) return name;
+  }
+  return null;
+}
+
 // ─── Show ARP ───────────────────────────────────────────────────────
 
 /**
@@ -30,14 +66,23 @@ export function showArp(provider: ARPProvider, filterArgs?: string[]): string {
 
   if (filterArgs && filterArgs.length > 0) {
     const filter = filterArgs.join(' ');
-    if (/^(summary|count|detail)$/i.test(filter)) {
+    if (/^summary$/i.test(filter)) return arpSummary(entries);
+    if (/^(count|detail|statistics)$/i.test(filter)) {
       return "% Invalid input detected at '^' marker.";
     }
     const isIP = /^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(filter);
+    const vlanMatch = /^vlan\s*(\d+)$/i.exec(filter);
     if (isIP) {
       entries = entries.filter(([ip]) => ip === filter);
+    } else if (vlanMatch) {
+      const vlanId = parseInt(vlanMatch[1], 10);
+      const sviIds = provider._getSviVlanIds?.();
+      if (!sviIds || !sviIds.includes(vlanId)) return '% Invalid interface';
+      entries = entries.filter(([, entry]) => entry.iface === `Vlan${vlanId}`);
     } else {
-      entries = entries.filter(([, entry]) => entry.iface === filter);
+      const canonical = matchArpInterface(provider, filter);
+      if (!canonical) return "% Invalid input detected at '^' marker.";
+      entries = entries.filter(([, entry]) => entry.iface === canonical);
     }
   }
 

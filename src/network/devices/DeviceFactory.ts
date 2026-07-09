@@ -43,7 +43,7 @@ export function createDevice(type: DeviceType, x: number = 0, y: number = 0): Eq
 
     // Switches
     case 'switch-cisco':
-      return new CiscoSwitch('switch-cisco', name, 24, x, y);
+      return new CiscoSwitch('switch-cisco', name, 26, x, y);
     case 'switch-huawei':
       return new HuaweiSwitch('switch-huawei', name, 24, x, y);
     case 'switch-generic':

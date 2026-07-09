@@ -70,12 +70,23 @@ describe('Cisco switch — show ip route summary', () => {
   });
 });
 
-describe('Cisco switch — show ip arp summary/count/detail are invalid on C2960', () => {
-  it.each(['summary', 'count', 'detail'])('show ip arp %s is rejected', async (kw) => {
+describe('Cisco switch — show ip arp count/detail are invalid on C2960', () => {
+  it.each(['count', 'detail'])('show ip arp %s is rejected', async (kw) => {
     const sw = new CiscoSwitch('switch-cisco', 'Switch1', 8);
     await sw.executeCommand('enable');
     const out = await sw.executeCommand(`show ip arp ${kw}`);
     expect(out).toMatch(/% Invalid input detected/);
+  });
+});
+
+describe('Cisco switch — show ip arp summary reports real entry counts', () => {
+  it('returns the entry-count summary derived from the real ARP table', async () => {
+    const sw = new CiscoSwitch('switch-cisco', 'Switch1', 8);
+    await sw.executeCommand('enable');
+    const out = await sw.executeCommand('show ip arp summary');
+    expect(out).not.toMatch(/% Invalid input detected/);
+    expect(out).toMatch(/Total number of entries in the arp table: 0\./);
+    expect(out).toMatch(/Total number of Dynamic entries: 0\./);
   });
 });
 

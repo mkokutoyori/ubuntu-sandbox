@@ -298,6 +298,7 @@ export abstract class Switch extends Equipment {
   // ─── Management ARP Table ──────────────────────────────────────
   private arpTable: Map<string, { mac: MACAddress; iface: string; timestamp: number; type: 'dynamic' | 'static' }> = new Map();
   private readonly arpStats = new ArpStats();
+  private ipRoutingEnabled = false;
 
   // ─── Dynamic ARP Inspection ────────────────────────────────────
   private arpInspection: ArpInspectionConfig = createDefaultArpInspectionConfig();
@@ -2142,6 +2143,8 @@ export abstract class Switch extends Equipment {
     });
   }
   hasSvi(vlan: number): boolean { return this.svi.hasSvi(vlan); }
+  setIpRoutingEnabled(v: boolean): void { this.ipRoutingEnabled = v; }
+  isIpRoutingEnabled(): boolean { return this.ipRoutingEnabled; }
   getSvis(): SviInterface[] { return this.svi.list(); }
   getSvi(vlan: number): SviInterface | undefined { return this.svi.getSvi(vlan); }
   isSviLineUp(svi: SviInterface): boolean { return this.svi.isLineUp(svi); }
@@ -2558,6 +2561,8 @@ export abstract class Switch extends Equipment {
   _getArpTableInternal() { return this.arpTable; }
 
   _getArpStats(): ArpStats { return this.arpStats; }
+
+  _getSviVlanIds(): number[] { return this.getSvis().map((s) => s.vlan); }
 
   _addStaticARP(ip: IPAddress, mac: MACAddress, iface: string): void {
     this.arpTable.set(ip.toString(), { mac, iface, timestamp: Date.now(), type: 'static' });

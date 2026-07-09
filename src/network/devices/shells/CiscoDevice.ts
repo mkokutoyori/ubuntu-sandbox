@@ -32,6 +32,7 @@ export interface ARPProvider {
   _deleteARP(ip: IPAddress): boolean;
   _clearARPCache(): void;
   _getPortsInternal(): Map<string, Port>;
+  _getSviVlanIds?(): number[];
 }
 
 // ─── CiscoDevice (full shell contract) ──────────────────────────────
