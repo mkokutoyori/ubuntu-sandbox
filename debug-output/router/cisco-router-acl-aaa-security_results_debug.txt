@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-acl-aaa-security
-Generated: 2026-07-09T11:36:53.868Z
+Generated: 2026-07-09T16:45:38.056Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=ACL(all kinds)/AAA/SSH-hardening/CoPP/uRPF/ZBF
 Total steps: 388
@@ -600,7 +600,7 @@ Total steps: 388
 
 [136/388] r1 R1# show ip interface GigabitEthernet0/1
   GigabitEthernet0/1 is up, line protocol is up
-    Hardware is iGbE, address is 02:00:00:00:00:02 (bia 02:00:00:00:00:02)
+    Hardware is iGbE, address is 0200.0000.0002 (bia 0200.0000.0002)
     Internet address is 10.0.0.1/30
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
        reliability 255/255, txload 1/255, rxload 1/255
@@ -885,43 +885,43 @@ Total steps: 388
   No SSHv2 server connections running.
 
 [216/388] r1 R1# show crypto key mypubkey rsa
-  % Key pair was generated at: 2026-07-09 11:36:53
+  % Key pair was generated at: 2026-07-09 16:45:38
   Key name: default
    Storage Device: not specified
    Usage: Signature Key
    Key is not exportable.
    Key Data:
-   649E6502C06C8F2A2240D50092CB8FC8F126B213C32AAE777ADF00E79903CBBF
-    08286E42E94743A268AE6104A4FB9C347E107E13D467D07FB6CEF3ABB6812FD3
-    8A0C05021E5A084225684288E35F3D6848AAE793E0092E6FEACD4BEF9D21636F
-    2A5D4942E6533DEA0978998CB00C1F7462160E93372EF4E73640F39392462653
-    C2EECEE24700BC4A3C7C83F072CDA9B81C327AF39AF85FD7549F28B74C954A4F
-    730DAA02EA4ECCC2E4220BD48F748224B3FE4CD35B8B4E7F6EBC0B5B071ABD83
-    9883FAA2A4B92D02424951381D82BD78848FA433B57AAE6FD403BB7FDC93CBBF
-    1833E0C2515EE72A586A741CC95F76043914A113BEBBB60753698F4374052443
+   9D2ECF2FE982EBDB15F4831DB4A105BD6F79D5BE63011FB66037AF9AF9BE737A
+    B5AB93EF6F8B52FB49996519D8951371A14C17BEDF27504EE8EB6AD61626485E
+    E8314B2F2F0FB733D18C71957CA1EE9D30C03C3E60A4E7EE5C1B4092AD36146A
+    948BD4EF31679B8366A38891AB48A6412096233E41296A86715110CE755053EE
+    EBEF112F9C6BF57B798BC02D1522DD8DA8CF38DE425087168883BDAAF767800A
+    4DCE780F1353A21B9DE3DA4994D306C1CAF268FED262012E62993D06D877550E
+    DD7FE96F9B15D6F3F8EBB6E5152A050D9909939EAC23986E43456EE23BF9AF3A
+    8F41454FD3758143C84B3601B5646B512D0698BEA47CC3868DA4333E3B96793E
   
-  % Key pair was generated at: 2026-07-09 11:36:53
+  % Key pair was generated at: 2026-07-09 16:45:38
   Key name: SSH-KEY
    Storage Device: not specified
    Usage: General Purpose Key
    Key is not exportable.
    Key Data:
-   8BC15764045CD734BDE6A386673C830E8753EBF5FCBDEBC1AA520AA1282E6359
-    0AFCDF6495A626CC9879C4C2D6F572F2D6852935B93A3F49C4AA582DC0680AC5
-    A52BF4E4097843FC7D4AD68EB3A682CE2CB62EF506A6D659CBA92B292D8E2029
-    4216D7E47F2B2AB44D1EE2CA774D9EA239DCE735F3C805E1E9EF4D9509EBE435
-    F973FC449319FEB495F01D76CE60203ECF9C0FD55EEA4D61CED01D713172C3C9
-    644496243343494CDF277A929F0647C25BC792F560C917A9A0599ADDC9CA9CF5
-    7036A58413DFEE9C8302303E615FFF9ECB37C695CC0F261913D605B942B92699
-    4DE06A646D7ABA9416B3485A2712B5B28BF094B57BCEF8E15994280510416A45
-    CE24C4E4C2883DF462F7A2E6DDE9942E0779A7351D35C0C10DBA8BC1992BDCF9
-    70157CA4F46B464CA2A287E2A83DA11205DEFC35DEE9C6898491050D3A3C9FA5
-    866E91E4EB440BBCAC9F2D6EB593F8EEE646E9B5E7392459594FD3C9198A76C9
-    B95444A4C37ABC74DD4E9D6A80FF06C28B8359B5438EAF21DCB3C1F5EEF581D5
-    27FA9C84D291737417725FD6C514775E359A8A55F8A921A1B41886117EA4B869
-    2617C2E421E64FCC08A0F532F29978E2C52BC5758E8F8CA9ED0FCF3D1B759555
-    52A305C4321A091C3E1E329E2A0894BEF044011593EA8F19D1602E59E50A8439
-    E8E957242DCD4E14161682FA77B027D297B287351902D4219498F4E538D94465
+   B3DB3C55C26111F9A2CAD7278BA3F167DEAAC3E4257A60F4FFC64DE0F7077CB0
+    A5201855D179D009CA850C634ABC49CB4A54D524830EFEFC71DD2F6C18404CC4
+    CA0781D5F3163C81C47C322F4CA0EE378B4DAEE4DFAC8D2CCC399668A47111A0
+    1199B8D5C45CC4E1B4B5526BE335C22B10CB3B24FD5E54B47BAB82F499857134
+    07A6BD55021DEE3996006D17ADBAF657CDAE43C416E02954853A32D0973EEE40
+    1D8F373554E298299399AA33638CEABB7465A6E48EEAD35CEE59903C87F3FA54
+    EF01269569DC600155BE3FDF2CAD4807DFC9BA84744D7E8CFA53DB183438A0D0
+    DA92CB751031E0813FA137FBD58EC49BEBDE68A479D9D0942088A744CE6FC584
+    624D79D544CAD4B93C4812C75D3ECE8785BED3A41210D3341B67BB806DA28750
+    20DCBA156494E5C98793D8438DCCE72BD3FBE124AA52313C6019454CB51B1764
+    A1F8B7D51FE4710175B7BE4FC7E70557DC83E724A9A4216C621D8488D19EC640
+    1F8DB31547362CA1B65CCECB33F7584B1EF0CFA4B9D0E3F42768795454318CD4
+    0B4FABD562A4D8F9FAF709B7CDAB9B77CBA8F844A20BE2542D50B57078A9DBE0
+    024DF1B52D5CFBA92C2FE693264DCB9BF65DFB645D0DB85C8B8D469CE7B0C3F4
+    4684D5150A660F8159B39C7FB2F4462774A72F04A9D3748C61F11DB876FB3F70
+    1C3C45F54C8939014B46345B158C8FBB33C97D24E5AE4794B30FF6248AA96924
 
 [217/388] r1 R1# show login
   A login delay of 2 seconds is applied.
@@ -1372,7 +1372,7 @@ Total steps: 388
 
 [284/388] r1 R1# show interfaces
   GigabitEthernet0/0 is up, line protocol is up
-    Hardware is iGbE, address is 02:00:00:00:00:01 (bia 02:00:00:00:00:01)
+    Hardware is iGbE, address is 0200.0000.0001 (bia 0200.0000.0001)
     Internet address is 192.168.1.1/24
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
        reliability 255/255, txload 1/255, rxload 1/255
@@ -1392,7 +1392,7 @@ Total steps: 388
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
   GigabitEthernet0/1 is up, line protocol is up
-    Hardware is iGbE, address is 02:00:00:00:00:02 (bia 02:00:00:00:00:02)
+    Hardware is iGbE, address is 0200.0000.0002 (bia 0200.0000.0002)
     Internet address is 10.0.0.1/30
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
        reliability 255/255, txload 1/255, rxload 1/255
@@ -1412,7 +1412,7 @@ Total steps: 388
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
   GigabitEthernet0/2 is down, line protocol is down
-    Hardware is iGbE, address is 02:00:00:00:00:03 (bia 02:00:00:00:00:03)
+    Hardware is iGbE, address is 0200.0000.0003 (bia 0200.0000.0003)
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
@@ -1431,7 +1431,7 @@ Total steps: 388
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
   GigabitEthernet0/3 is down, line protocol is down
-    Hardware is iGbE, address is 02:00:00:00:00:04 (bia 02:00:00:00:00:04)
+    Hardware is iGbE, address is 0200.0000.0004 (bia 0200.0000.0004)
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
@@ -1768,7 +1768,7 @@ Total steps: 388
 [316/388] r1 R1# show ntp status
   Clock is unsynchronized, stratum 16, reference is .INIT.
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
-  reference time is EDFA0655.E8F5C28F (11:36:53.910 UTC Thu Jul 9 2026)
+  reference time is EDFA4EB2.220C49BA (16:45:38.133 UTC Thu Jul 9 2026)
   clock offset is 0.00 msec
 
 [317/388] r1 R1# show ntp associations
@@ -1777,17 +1777,16 @@ Total steps: 388
   No NTP associations configured.
 
 [318/388] r1 R1# show clock
-  *11:36:53.000 UTC Thu Jul 9 2026
+  *16:45:38.000 UTC Thu Jul 9 2026
 
 [319/388] r1 R1# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
                     S - Switch, H - Host, I - IGMP, r - Repeater
   
   Device ID        Local Intrfce     Holdtme    Capability  Platform  Port ID
-  L1               Gig 0/0           180        H           Linux Host eth 0
   R2               Gig 0/1           180        R           Cisco 2911 Gig 0/1
   
-  Total cdp entries displayed : 2
+  Total cdp entries displayed : 1
 
 [320/388] r1 R1# show lldp neighbors
   Capability codes:
@@ -1853,7 +1852,7 @@ Total steps: 388
 
 [327/388] r1 R1# show interfaces GigabitEthernet0/0
   GigabitEthernet0/0 is up, line protocol is up
-    Hardware is iGbE, address is 02:00:00:00:00:01 (bia 02:00:00:00:00:01)
+    Hardware is iGbE, address is 0200.0000.0001 (bia 0200.0000.0001)
     Internet address is 192.168.1.1/24
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
        reliability 255/255, txload 1/255, rxload 1/255
@@ -1875,7 +1874,7 @@ Total steps: 388
 
 [328/388] r1 R1# show interfaces GigabitEthernet0/1
   GigabitEthernet0/1 is up, line protocol is up
-    Hardware is iGbE, address is 02:00:00:00:00:02 (bia 02:00:00:00:00:02)
+    Hardware is iGbE, address is 0200.0000.0002 (bia 0200.0000.0002)
     Internet address is 10.0.0.1/30
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
        reliability 255/255, txload 1/255, rxload 1/255
@@ -1897,7 +1896,7 @@ Total steps: 388
 
 [329/388] r1 R1# show ip interface GigabitEthernet0/1
   GigabitEthernet0/1 is up, line protocol is up
-    Hardware is iGbE, address is 02:00:00:00:00:02 (bia 02:00:00:00:00:02)
+    Hardware is iGbE, address is 0200.0000.0002 (bia 0200.0000.0002)
     Internet address is 10.0.0.1/30
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
        reliability 255/255, txload 1/255, rxload 1/255
@@ -2164,7 +2163,7 @@ Total steps: 388
   
   ------------------ show interfaces ------------------
   GigabitEthernet0/0 is up, line protocol is up
-    Hardware is iGbE, address is 02:00:00:00:00:01 (bia 02:00:00:00:00:01)
+    Hardware is iGbE, address is 0200.0000.0001 (bia 0200.0000.0001)
     Internet address is 192.168.1.1/24
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
        reliability 255/255, txload 1/255, rxload 1/255
@@ -2184,7 +2183,7 @@ Total steps: 388
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
   GigabitEthernet0/1 is up, line protocol is up
-    Hardware is iGbE, address is 02:00:00:00:00:02 (bia 02:00:00:00:00:02)
+    Hardware is iGbE, address is 0200.0000.0002 (bia 0200.0000.0002)
     Internet address is 10.0.0.1/30
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
        reliability 255/255, txload 1/255, rxload 1/255
@@ -2204,7 +2203,7 @@ Total steps: 388
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
   GigabitEthernet0/2 is down, line protocol is down
-    Hardware is iGbE, address is 02:00:00:00:00:03 (bia 02:00:00:00:00:03)
+    Hardware is iGbE, address is 0200.0000.0003 (bia 0200.0000.0003)
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
@@ -2223,7 +2222,7 @@ Total steps: 388
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
   GigabitEthernet0/3 is down, line protocol is down
-    Hardware is iGbE, address is 02:00:00:00:00:04 (bia 02:00:00:00:00:04)
+    Hardware is iGbE, address is 0200.0000.0004 (bia 0200.0000.0004)
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set

@@ -1,6 +1,6 @@
 ============================================================
 Cisco L2 switch debug transcript — cisco-l2-09-system-operations
-Generated: 2026-07-09T11:40:08.882Z
+Generated: 2026-07-09T16:34:41.947Z
 Topology: CORE(L2) trunked to SW1 & SW2 (L2 access). SW1: L1(Linux 1.11) Fa0/1, W1(Win 1.12) Fa0/2, SRV1(Linux 1.13) Fa0/3, Gi0/1=trunk. SW2: L2(Linux 1.21) Fa0/1, W2(Win 1.22) Fa0/2, SRV2(Linux 1.23) Fa0/3, Gi0/1=trunk. All hosts 192.168.1.0/24.
 focus=file system, config persistence/backup, archive, clock, boot, reload/erase lifecycle + host reactions
 Total steps: 301
@@ -30,7 +30,7 @@ Total steps: 301
   The password-recovery mechanism is enabled.
   
   64K bytes of flash-simulated non-volatile configuration memory.
-  Base ethernet MAC Address       : 02:00:00:00:00:01
+  Base ethernet MAC Address       : 0200.0000.0001
   Motherboard assembly number     : 73-12600-06
   Model number                    : WS-C2960-24TT-L
   System serial number            : FOC1234X56Y
@@ -278,83 +278,62 @@ Total steps: 301
    name PERSIST
   !
   interface FastEthernet0/1
-   switchport mode access
   !
   interface FastEthernet0/2
-   switchport mode access
   !
   interface FastEthernet0/3
-   switchport mode access
   !
   interface FastEthernet0/4
-   switchport mode access
   !
   interface FastEthernet0/5
-   switchport mode access
   !
   interface FastEthernet0/6
-   switchport mode access
   !
   interface FastEthernet0/7
-   switchport mode access
   !
   interface FastEthernet0/8
-   switchport mode access
   !
   interface FastEthernet0/9
-   switchport mode access
   !
   interface FastEthernet0/10
-   switchport mode access
   !
   interface FastEthernet0/11
-   switchport mode access
   !
   interface FastEthernet0/12
-   switchport mode access
   !
   interface FastEthernet0/13
-   switchport mode access
   !
   interface FastEthernet0/14
-   switchport mode access
   !
   interface FastEthernet0/15
-   switchport mode access
   !
   interface FastEthernet0/16
-   switchport mode access
   !
   interface FastEthernet0/17
-   switchport mode access
   !
   interface FastEthernet0/18
-   switchport mode access
   !
   interface FastEthernet0/19
-   switchport mode access
   !
   interface FastEthernet0/20
-   switchport mode access
   !
   interface FastEthernet0/21
-   switchport mode access
   !
   interface FastEthernet0/22
-   switchport mode access
   !
   interface FastEthernet0/23
-   switchport mode access
   !
   interface FastEthernet0/24
-   switchport mode access
   !
   interface GigabitEthernet0/1
    switchport mode trunk
    switchport trunk encapsulation dot1q
   !
   interface GigabitEthernet0/2
-   switchport mode access
+  !
+  interface Vlan1
+   no ip address
+   shutdown
   !
   end
 
@@ -376,83 +355,62 @@ Total steps: 301
    name PERSIST
   !
   interface FastEthernet0/1
-   switchport mode access
   !
   interface FastEthernet0/2
-   switchport mode access
   !
   interface FastEthernet0/3
-   switchport mode access
   !
   interface FastEthernet0/4
-   switchport mode access
   !
   interface FastEthernet0/5
-   switchport mode access
   !
   interface FastEthernet0/6
-   switchport mode access
   !
   interface FastEthernet0/7
-   switchport mode access
   !
   interface FastEthernet0/8
-   switchport mode access
   !
   interface FastEthernet0/9
-   switchport mode access
   !
   interface FastEthernet0/10
-   switchport mode access
   !
   interface FastEthernet0/11
-   switchport mode access
   !
   interface FastEthernet0/12
-   switchport mode access
   !
   interface FastEthernet0/13
-   switchport mode access
   !
   interface FastEthernet0/14
-   switchport mode access
   !
   interface FastEthernet0/15
-   switchport mode access
   !
   interface FastEthernet0/16
-   switchport mode access
   !
   interface FastEthernet0/17
-   switchport mode access
   !
   interface FastEthernet0/18
-   switchport mode access
   !
   interface FastEthernet0/19
-   switchport mode access
   !
   interface FastEthernet0/20
-   switchport mode access
   !
   interface FastEthernet0/21
-   switchport mode access
   !
   interface FastEthernet0/22
-   switchport mode access
   !
   interface FastEthernet0/23
-   switchport mode access
   !
   interface FastEthernet0/24
-   switchport mode access
   !
   interface GigabitEthernet0/1
    switchport mode trunk
    switchport trunk encapsulation dot1q
   !
   interface GigabitEthernet0/2
-   switchport mode access
+  !
+  interface Vlan1
+   no ip address
+   shutdown
   !
   end
 
@@ -524,14 +482,14 @@ Total steps: 301
   ^
 
 [49/301] sw1 SYS-SW1# show clock
-  *11:40:08.000 UTC Thu Jul 9 2026
+  *16:34:41.000 UTC Thu Jul 9 2026
 
 [50/301] sw1 SYS-SW1# show clock detail
-  *11:40:08.000 UTC Thu Jul 9 2026
+  *16:34:41.000 UTC Thu Jul 9 2026
   Time source is No time source
 
 [51/301] sw1 SYS-SW1# show calendar
-  11:40:08 UTC Thu Jul 9 2026
+  16:34:41 UTC Thu Jul 9 2026
 
 [52/301] sw1 SYS-SW1# configure terminal
   Enter configuration commands, one per line.  End with CNTL/Z.
@@ -546,7 +504,7 @@ Total steps: 301
 <empty>
 
 [56/301] sw1 SYS-SW1# show clock
-  *11:40:08.000 UTC Thu Jul 9 2026
+  *16:34:41.000 UTC Thu Jul 9 2026
 
 
 --- [57] § boot system config ---
@@ -1578,30 +1536,30 @@ Total steps: 301
 --- [187] § pre-reload connectivity ---
 [187/301] l1 l1$ ping -c 2 192.168.1.13
   PING 192.168.1.13 (192.168.1.13) 56(84) bytes of data.
-  64 bytes from 192.168.1.13: icmp_seq=1 ttl=64 time=2.083 ms
-  64 bytes from 192.168.1.13: icmp_seq=2 ttl=64 time=0.718 ms
+  64 bytes from 192.168.1.13: icmp_seq=1 ttl=64 time=4.706 ms
+  64 bytes from 192.168.1.13: icmp_seq=2 ttl=64 time=0.930 ms
   
   --- 192.168.1.13 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.718/1.401/2.083/0.683 ms
+  rtt min/avg/max/mdev = 0.930/2.818/4.706/1.888 ms
 
 [188/301] l1 l1$ ping -c 2 192.168.1.21
   PING 192.168.1.21 (192.168.1.21) 56(84) bytes of data.
-  64 bytes from 192.168.1.21: icmp_seq=1 ttl=64 time=0.768 ms
-  64 bytes from 192.168.1.21: icmp_seq=2 ttl=64 time=0.769 ms
+  64 bytes from 192.168.1.21: icmp_seq=1 ttl=64 time=0.851 ms
+  64 bytes from 192.168.1.21: icmp_seq=2 ttl=64 time=1.063 ms
   
   --- 192.168.1.21 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.768/0.769/0.769/0.000 ms
+  rtt min/avg/max/mdev = 0.851/0.957/1.063/0.106 ms
 
 [189/301] srv1 srv1$ ping -c 2 192.168.1.23
   PING 192.168.1.23 (192.168.1.23) 56(84) bytes of data.
-  64 bytes from 192.168.1.23: icmp_seq=1 ttl=64 time=0.763 ms
-  64 bytes from 192.168.1.23: icmp_seq=2 ttl=64 time=2.247 ms
+  64 bytes from 192.168.1.23: icmp_seq=1 ttl=64 time=0.849 ms
+  64 bytes from 192.168.1.23: icmp_seq=2 ttl=64 time=0.930 ms
   
   --- 192.168.1.23 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.763/1.505/2.247/0.742 ms
+  rtt min/avg/max/mdev = 0.849/0.890/0.930/0.040 ms
 
 [190/301] sw1 SYS-SW1# show mac address-table
   Mac Address Table
@@ -1637,6 +1595,9 @@ Total steps: 301
   System restarting...
 
 [196/301] l1 l1$ ip -br link
+  1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536 qdisc noqueue state UP mode DEFAULT group default
+      link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00
+  
   2: eth0: <BROADCAST,UP,MULTICAST,LOWER_UP> mtu 1500 qdisc fq_codel state UP mode DEFAULT group default qlen 1000
       link/ether 02:00:00:00:00:4f brd ff:ff:ff:ff:ff:ff
   
@@ -1650,6 +1611,9 @@ Total steps: 301
       link/ether 02:00:00:00:00:52 brd ff:ff:ff:ff:ff:ff
 
 [197/301] srv1 srv1$ ip -br link
+  1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536 qdisc noqueue state UP mode DEFAULT group default
+      link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00
+  
   2: eth0: <BROADCAST,UP,MULTICAST,LOWER_UP> mtu 1500 qdisc fq_codel state UP mode DEFAULT group default qlen 1000
       link/ether 02:00:00:00:00:57 brd ff:ff:ff:ff:ff:ff
   
@@ -1712,7 +1676,7 @@ Total steps: 301
   The password-recovery mechanism is enabled.
   
   64K bytes of flash-simulated non-volatile configuration memory.
-  Base ethernet MAC Address       : 02:00:00:00:00:01
+  Base ethernet MAC Address       : 0200.0000.0001
   Motherboard assembly number     : 73-12600-06
   Model number                    : WS-C2960-24TT-L
   System serial number            : FOC1234X56Y
@@ -1730,82 +1694,61 @@ Total steps: 301
    name PERSIST
   !
   interface FastEthernet0/1
-   switchport mode access
   !
   interface FastEthernet0/2
-   switchport mode access
   !
   interface FastEthernet0/3
-   switchport mode access
   !
   interface FastEthernet0/4
-   switchport mode access
   !
   interface FastEthernet0/5
-   switchport mode access
   !
   interface FastEthernet0/6
-   switchport mode access
   !
   interface FastEthernet0/7
-   switchport mode access
   !
   interface FastEthernet0/8
-   switchport mode access
   !
   interface FastEthernet0/9
-   switchport mode access
   !
   interface FastEthernet0/10
-   switchport mode access
   !
   interface FastEthernet0/11
-   switchport mode access
   !
   interface FastEthernet0/12
-   switchport mode access
   !
   interface FastEthernet0/13
-   switchport mode access
   !
   interface FastEthernet0/14
-   switchport mode access
   !
   interface FastEthernet0/15
-   switchport mode access
   !
   interface FastEthernet0/16
-   switchport mode access
   !
   interface FastEthernet0/17
-   switchport mode access
   !
   interface FastEthernet0/18
-   switchport mode access
   !
   interface FastEthernet0/19
-   switchport mode access
   !
   interface FastEthernet0/20
-   switchport mode access
   !
   interface FastEthernet0/21
-   switchport mode access
   !
   interface FastEthernet0/22
-   switchport mode access
   !
   interface FastEthernet0/23
-   switchport mode access
   !
   interface FastEthernet0/24
-   switchport mode access
   !
   interface GigabitEthernet0/1
    switchport mode trunk
   !
   interface GigabitEthernet0/2
-   switchport mode access
+  !
+  interface Vlan1
+   no ip address
+   shutdown
   !
   end
 
@@ -1852,12 +1795,12 @@ Total steps: 301
 
 [205/301] l1 l1$ ping -c 2 192.168.1.13
   PING 192.168.1.13 (192.168.1.13) 56(84) bytes of data.
-  64 bytes from 192.168.1.13: icmp_seq=1 ttl=64 time=0.443 ms
-  64 bytes from 192.168.1.13: icmp_seq=2 ttl=64 time=0.534 ms
+  64 bytes from 192.168.1.13: icmp_seq=1 ttl=64 time=0.696 ms
+  64 bytes from 192.168.1.13: icmp_seq=2 ttl=64 time=0.544 ms
   
   --- 192.168.1.13 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.443/0.489/0.534/0.045 ms
+  rtt min/avg/max/mdev = 0.544/0.620/0.696/0.076 ms
 
 
 --- [206] § erase + reload to factory ---
@@ -1890,82 +1833,61 @@ Total steps: 301
   hostname SW1
   !
   interface FastEthernet0/1
-   switchport mode access
   !
   interface FastEthernet0/2
-   switchport mode access
   !
   interface FastEthernet0/3
-   switchport mode access
   !
   interface FastEthernet0/4
-   switchport mode access
   !
   interface FastEthernet0/5
-   switchport mode access
   !
   interface FastEthernet0/6
-   switchport mode access
   !
   interface FastEthernet0/7
-   switchport mode access
   !
   interface FastEthernet0/8
-   switchport mode access
   !
   interface FastEthernet0/9
-   switchport mode access
   !
   interface FastEthernet0/10
-   switchport mode access
   !
   interface FastEthernet0/11
-   switchport mode access
   !
   interface FastEthernet0/12
-   switchport mode access
   !
   interface FastEthernet0/13
-   switchport mode access
   !
   interface FastEthernet0/14
-   switchport mode access
   !
   interface FastEthernet0/15
-   switchport mode access
   !
   interface FastEthernet0/16
-   switchport mode access
   !
   interface FastEthernet0/17
-   switchport mode access
   !
   interface FastEthernet0/18
-   switchport mode access
   !
   interface FastEthernet0/19
-   switchport mode access
   !
   interface FastEthernet0/20
-   switchport mode access
   !
   interface FastEthernet0/21
-   switchport mode access
   !
   interface FastEthernet0/22
-   switchport mode access
   !
   interface FastEthernet0/23
-   switchport mode access
   !
   interface FastEthernet0/24
-   switchport mode access
   !
   interface GigabitEthernet0/1
    switchport mode trunk
   !
   interface GigabitEthernet0/2
-   switchport mode access
+  !
+  interface Vlan1
+   no ip address
+   shutdown
   !
   end
 
@@ -1995,7 +1917,7 @@ Total steps: 301
   The password-recovery mechanism is enabled.
   
   64K bytes of flash-simulated non-volatile configuration memory.
-  Base ethernet MAC Address       : 02:00:00:00:00:01
+  Base ethernet MAC Address       : 0200.0000.0001
   Motherboard assembly number     : 73-12600-06
   Model number                    : WS-C2960-24TT-L
   System serial number            : FOC1234X56Y
@@ -2069,7 +1991,7 @@ Total steps: 301
      2          12       210     57  0.00%  0.00%  0.00%   0 Load Meter
 
 [220/301] sw1 SW1# show clock
-  *11:40:12.000 UTC Thu Jul 9 2026
+  *16:34:46.000 UTC Thu Jul 9 2026
 
 [221/301] sw1 SW1# show logging
   Syslog logging: enabled (0 messages dropped, 0 flushes, 0 overruns)
@@ -2101,7 +2023,7 @@ Total steps: 301
   The password-recovery mechanism is enabled.
   
   64K bytes of flash-simulated non-volatile configuration memory.
-  Base ethernet MAC Address       : 02:00:00:00:00:1b
+  Base ethernet MAC Address       : 0200.0000.001b
   Motherboard assembly number     : 73-12600-06
   Model number                    : WS-C2960-24TT-L
   System serial number            : FOC1234X56Y
@@ -2171,7 +2093,7 @@ Total steps: 301
      2          12       210     57  0.00%  0.00%  0.00%   0 Load Meter
 
 [228/301] sw2 SW2> show clock
-  *11:40:12.000 UTC Thu Jul 9 2026
+  *16:34:46.000 UTC Thu Jul 9 2026
 
 [229/301] sw2 SW2> show logging
   Syslog logging: enabled (0 messages dropped, 0 flushes, 0 overruns)
@@ -2203,7 +2125,7 @@ Total steps: 301
   The password-recovery mechanism is enabled.
   
   64K bytes of flash-simulated non-volatile configuration memory.
-  Base ethernet MAC Address       : 02:00:00:00:00:35
+  Base ethernet MAC Address       : 0200.0000.0035
   Motherboard assembly number     : 73-12600-06
   Model number                    : WS-C2960-24TT-L
   System serial number            : FOC1234X56Y
@@ -2273,7 +2195,7 @@ Total steps: 301
      2          12       210     57  0.00%  0.00%  0.00%   0 Load Meter
 
 [236/301] core CORE> show clock
-  *11:40:12.000 UTC Thu Jul 9 2026
+  *16:34:46.000 UTC Thu Jul 9 2026
 
 [237/301] core CORE> show logging
   Syslog logging: enabled (0 messages dropped, 0 flushes, 0 overruns)
@@ -2292,7 +2214,7 @@ Total steps: 301
   Linux linux-pc 5.15.0-130-generic #140-Ubuntu SMP Wed Apr 16 12:00:00 UTC 2025 x86_64 x86_64 x86_64 GNU/Linux
 
 [240/301] l1 l1$ uptime
-   11:40:12 up 0 min,  1 user,  load average: 0.00, 0.01, 0.05
+   16:34:46 up 0 min,  1 user,  load average: 0.00, 0.01, 0.05
 
 [241/301] l1 l1$ free -m
                  total        used        free      shared  buff/cache   available
@@ -2308,22 +2230,22 @@ Total steps: 301
 
 [243/301] l1 l1$ ps aux
   USER     PID   %CPU %MEM VSZ     RSS    TTY      STAT START    TIME     COMMAND
-  root         1  0.0  0.3  169000  13000 ?        S    11:40       00:00 /sbin/init
-  root         2  0.0  0.1   44083   4054 ?        S    11:40       00:00 /usr/sbin/sshd -D
-  root         3  0.0  0.1    9414   2302 ?        S    11:40       00:00 /usr/sbin/cron -f
-  root         4  0.0  0.1  205896   4448 ?        S    11:40       00:00 /usr/sbin/rsyslogd -n -iNONE
-  root         5  0.0  0.1   84501   4290 ?        S    11:40       00:00 /sbin/auditd
-  root         6  0.0  0.0    8129   1590 ?        S    11:40       00:00 /usr/sbin/atd -f
-  systemd+     7  0.0  0.2   93688   6591 ?        S    11:40       00:00 /lib/systemd/systemd-resolved
-  root         8  0.0  0.1   52080   5199 ?        S    11:40       00:00 /lib/systemd/systemd-journald
-  root         9  0.0  0.1   80778   3859 ?        S    11:40       00:00 /lib/systemd/systemd-logind
-  message+    10  0.0  0.1    9519   3505 ?        S    11:40       00:00 /usr/bin/dbus-daemon --system --address=systemd: --nofork --nopidfile --systemd-activation --syslog-only
-  root        11  0.0  0.1   46522   4207 ?        S    11:40       00:00 /sbin/ifup -a --read-environment
-  root        12  0.0  0.1   51446   4516 ?        S    11:40       00:00 /lib/ufw/ufw-init start quiet
-  root        13  0.0  0.1   47803   4288 ?        S    11:40       00:00 /usr/share/netfilter-persistent/netfilter-persistent start
-  root        14  0.0  0.0    3166    256 ?        S    11:40       00:00 /lib/apparmor/apparmor.systemd reload
-  user        15  0.0  0.1   10240   4096 pts/0    S    11:40       00:00 -bash
-  user        16  0.0  0.1   12288   3072 pts/0    R    11:40       00:00 ps
+  root         1  0.0  0.3  169000  13000 ?        S    16:34       00:00 /sbin/init
+  root         2  0.0  0.1   44083   4054 ?        S    16:34       00:00 /usr/sbin/sshd -D
+  root         3  0.0  0.1    9414   2302 ?        S    16:34       00:00 /usr/sbin/cron -f
+  root         4  0.0  0.1  205896   4448 ?        S    16:34       00:00 /usr/sbin/rsyslogd -n -iNONE
+  root         5  0.0  0.1   84501   4290 ?        S    16:34       00:00 /sbin/auditd
+  root         6  0.0  0.0    8129   1590 ?        S    16:34       00:00 /usr/sbin/atd -f
+  systemd+     7  0.0  0.2   93688   6591 ?        S    16:34       00:00 /lib/systemd/systemd-resolved
+  root         8  0.0  0.1   52080   5199 ?        S    16:34       00:00 /lib/systemd/systemd-journald
+  root         9  0.0  0.1   80778   3859 ?        S    16:34       00:00 /lib/systemd/systemd-logind
+  message+    10  0.0  0.1    9519   3505 ?        S    16:34       00:00 /usr/bin/dbus-daemon --system --address=systemd: --nofork --nopidfile --systemd-activation --syslog-only
+  root        11  0.0  0.1   46522   4207 ?        S    16:34       00:00 /sbin/ifup -a --read-environment
+  root        12  0.0  0.1   51446   4516 ?        S    16:34       00:00 /lib/ufw/ufw-init start quiet
+  root        13  0.0  0.1   47803   4288 ?        S    16:34       00:00 /usr/share/netfilter-persistent/netfilter-persistent start
+  root        14  0.0  0.0    3166    256 ?        S    16:34       00:00 /lib/apparmor/apparmor.systemd reload
+  user        15  0.0  0.1   10240   4096 pts/0    S    16:34       00:00 -bash
+  user        16  0.0  0.1   12288   3072 pts/0    R    16:34       00:00 ps
 
 [244/301] l1 l1$ systemctl list-units --type=service
     UNIT                          LOAD   ACTIVE SUB     DESCRIPTION
@@ -2353,7 +2275,7 @@ Total steps: 301
   Linux linux-server 5.15.0-130-generic #140-Ubuntu SMP Wed Apr 16 12:00:00 UTC 2025 x86_64 x86_64 x86_64 GNU/Linux
 
 [246/301] srv1 srv1$ uptime
-   11:40:13 up 0 min,  1 user,  load average: 0.00, 0.01, 0.05
+   16:34:46 up 0 min,  1 user,  load average: 0.00, 0.01, 0.05
 
 [247/301] srv1 srv1$ free -m
                  total        used        free      shared  buff/cache   available
@@ -2362,31 +2284,31 @@ Total steps: 301
 
 [248/301] srv1 srv1$ df -h
   Filesystem      Size  Used Avail Use% Mounted on
-  /dev/sda1        50G   43K   50G   1% /
+  /dev/sda1        50G   44K   50G   1% /
   tmpfs           5.0M    4K  5.0M   1% /run/lock
   /dev/sda2       976M  145M  764M  16% /boot
   /dev/sdb1       100G   28G   68G  29% /u01
 
 [249/301] srv1 srv1$ ps aux
   USER     PID   %CPU %MEM VSZ     RSS    TTY      STAT START    TIME     COMMAND
-  root         1  0.0  0.3  169000  13000 ?        S    11:40       00:00 /sbin/init
-  root         2  0.0  0.1   44083   4054 ?        S    11:40       00:00 /usr/sbin/sshd -D
-  root         3  0.0  0.1    9414   2302 ?        S    11:40       00:00 /usr/sbin/cron -f
-  root         4  0.0  0.1  205896   4448 ?        S    11:40       00:00 /usr/sbin/rsyslogd -n -iNONE
-  root         5  0.0  0.1   84501   4290 ?        S    11:40       00:00 /sbin/auditd
-  root         6  0.0  0.0    8129   1590 ?        S    11:40       00:00 /usr/sbin/atd -f
-  systemd+     7  0.0  0.2   93688   6591 ?        S    11:40       00:00 /lib/systemd/systemd-resolved
-  root         8  0.0  0.1   52080   5199 ?        S    11:40       00:00 /lib/systemd/systemd-journald
-  root         9  0.0  0.1   80778   3859 ?        S    11:40       00:00 /lib/systemd/systemd-logind
-  message+    10  0.0  0.1    9519   3505 ?        S    11:40       00:00 /usr/bin/dbus-daemon --system --address=systemd: --nofork --nopidfile --systemd-activation --syslog-only
-  root        11  0.0  0.1   46522   4207 ?        S    11:40       00:00 /sbin/ifup -a --read-environment
-  root        12  0.0  0.1   51446   4516 ?        S    11:40       00:00 /lib/ufw/ufw-init start quiet
-  root        13  0.0  0.1   47803   4288 ?        S    11:40       00:00 /usr/share/netfilter-persistent/netfilter-persistent start
-  root        14  0.0  0.0    3166    256 ?        S    11:40       00:00 /lib/apparmor/apparmor.systemd reload
-  oracle      15  0.0  0.1   45552   4146 ?        S    11:40       00:00 /etc/init.d/init.ohasd run
-  freerad     16  0.0  0.1   43958   4047 ?        S    11:40       00:00 /usr/sbin/freeradius
-  root        17  0.0  0.1   10240   4096 pts/0    S    11:40       00:00 -bash
-  root        18  0.0  0.1   12288   3072 pts/0    R    11:40       00:00 ps
+  root         1  0.0  0.3  169000  13000 ?        S    16:34       00:00 /sbin/init
+  root         2  0.0  0.1   44083   4054 ?        S    16:34       00:00 /usr/sbin/sshd -D
+  root         3  0.0  0.1    9414   2302 ?        S    16:34       00:00 /usr/sbin/cron -f
+  root         4  0.0  0.1  205896   4448 ?        S    16:34       00:00 /usr/sbin/rsyslogd -n -iNONE
+  root         5  0.0  0.1   84501   4290 ?        S    16:34       00:00 /sbin/auditd
+  root         6  0.0  0.0    8129   1590 ?        S    16:34       00:00 /usr/sbin/atd -f
+  systemd+     7  0.0  0.2   93688   6591 ?        S    16:34       00:00 /lib/systemd/systemd-resolved
+  root         8  0.0  0.1   52080   5199 ?        S    16:34       00:00 /lib/systemd/systemd-journald
+  root         9  0.0  0.1   80778   3859 ?        S    16:34       00:00 /lib/systemd/systemd-logind
+  message+    10  0.0  0.1    9519   3505 ?        S    16:34       00:00 /usr/bin/dbus-daemon --system --address=systemd: --nofork --nopidfile --systemd-activation --syslog-only
+  root        11  0.0  0.1   46522   4207 ?        S    16:34       00:00 /sbin/ifup -a --read-environment
+  root        12  0.0  0.1   51446   4516 ?        S    16:34       00:00 /lib/ufw/ufw-init start quiet
+  root        13  0.0  0.1   47803   4288 ?        S    16:34       00:00 /usr/share/netfilter-persistent/netfilter-persistent start
+  root        14  0.0  0.0    3166    256 ?        S    16:34       00:00 /lib/apparmor/apparmor.systemd reload
+  oracle      15  0.0  0.1   45552   4146 ?        S    16:34       00:00 /etc/init.d/init.ohasd run
+  freerad     16  0.0  0.1   43958   4047 ?        S    16:34       00:00 /usr/sbin/freeradius
+  root        17  0.0  0.1   10240   4096 pts/0    S    16:34       00:00 -bash
+  root        18  0.0  0.1   12288   3072 pts/0    R    16:34       00:00 ps
 
 [250/301] srv1 srv1$ systemctl list-units --type=service
     UNIT                          LOAD   ACTIVE SUB     DESCRIPTION
@@ -2425,7 +2347,7 @@ Total steps: 301
   OS Manufacturer:           Microsoft Corporation
   OS Configuration:          Member Workstation
   OS Build Type:             Multiprocessor Free
-  System Boot Time:          7/9/2026, 11:40:08 AM
+  System Boot Time:          7/9/2026, 4:34:41 PM
   System Manufacturer:       QEMU
   System Model:              Standard PC (i440FX + PIIX, 1996)
   System Type:               x64-based PC
@@ -2702,7 +2624,7 @@ Total steps: 301
   Linux linux-pc 5.15.0-130-generic #140-Ubuntu SMP Wed Apr 16 12:00:00 UTC 2025 x86_64 x86_64 x86_64 GNU/Linux
 
 [256/301] l2 l2$ uptime
-   11:40:13 up 0 min,  1 user,  load average: 0.00, 0.01, 0.05
+   16:34:46 up 0 min,  1 user,  load average: 0.00, 0.01, 0.05
 
 [257/301] l2 l2$ free -m
                  total        used        free      shared  buff/cache   available
@@ -2718,22 +2640,22 @@ Total steps: 301
 
 [259/301] l2 l2$ ps aux
   USER     PID   %CPU %MEM VSZ     RSS    TTY      STAT START    TIME     COMMAND
-  root         1  0.0  0.3  169000  13000 ?        S    11:40       00:00 /sbin/init
-  root         2  0.0  0.1   44083   4054 ?        S    11:40       00:00 /usr/sbin/sshd -D
-  root         3  0.0  0.1    9414   2302 ?        S    11:40       00:00 /usr/sbin/cron -f
-  root         4  0.0  0.1  205896   4448 ?        S    11:40       00:00 /usr/sbin/rsyslogd -n -iNONE
-  root         5  0.0  0.1   84501   4290 ?        S    11:40       00:00 /sbin/auditd
-  root         6  0.0  0.0    8129   1590 ?        S    11:40       00:00 /usr/sbin/atd -f
-  systemd+     7  0.0  0.2   93688   6591 ?        S    11:40       00:00 /lib/systemd/systemd-resolved
-  root         8  0.0  0.1   52080   5199 ?        S    11:40       00:00 /lib/systemd/systemd-journald
-  root         9  0.0  0.1   80778   3859 ?        S    11:40       00:00 /lib/systemd/systemd-logind
-  message+    10  0.0  0.1    9519   3505 ?        S    11:40       00:00 /usr/bin/dbus-daemon --system --address=systemd: --nofork --nopidfile --systemd-activation --syslog-only
-  root        11  0.0  0.1   46522   4207 ?        S    11:40       00:00 /sbin/ifup -a --read-environment
-  root        12  0.0  0.1   51446   4516 ?        S    11:40       00:00 /lib/ufw/ufw-init start quiet
-  root        13  0.0  0.1   47803   4288 ?        S    11:40       00:00 /usr/share/netfilter-persistent/netfilter-persistent start
-  root        14  0.0  0.0    3166    256 ?        S    11:40       00:00 /lib/apparmor/apparmor.systemd reload
-  user        15  0.0  0.1   10240   4096 pts/0    S    11:40       00:00 -bash
-  user        16  0.0  0.1   12288   3072 pts/0    R    11:40       00:00 ps
+  root         1  0.0  0.3  169000  13000 ?        S    16:34       00:00 /sbin/init
+  root         2  0.0  0.1   44083   4054 ?        S    16:34       00:00 /usr/sbin/sshd -D
+  root         3  0.0  0.1    9414   2302 ?        S    16:34       00:00 /usr/sbin/cron -f
+  root         4  0.0  0.1  205896   4448 ?        S    16:34       00:00 /usr/sbin/rsyslogd -n -iNONE
+  root         5  0.0  0.1   84501   4290 ?        S    16:34       00:00 /sbin/auditd
+  root         6  0.0  0.0    8129   1590 ?        S    16:34       00:00 /usr/sbin/atd -f
+  systemd+     7  0.0  0.2   93688   6591 ?        S    16:34       00:00 /lib/systemd/systemd-resolved
+  root         8  0.0  0.1   52080   5199 ?        S    16:34       00:00 /lib/systemd/systemd-journald
+  root         9  0.0  0.1   80778   3859 ?        S    16:34       00:00 /lib/systemd/systemd-logind
+  message+    10  0.0  0.1    9519   3505 ?        S    16:34       00:00 /usr/bin/dbus-daemon --system --address=systemd: --nofork --nopidfile --systemd-activation --syslog-only
+  root        11  0.0  0.1   46522   4207 ?        S    16:34       00:00 /sbin/ifup -a --read-environment
+  root        12  0.0  0.1   51446   4516 ?        S    16:34       00:00 /lib/ufw/ufw-init start quiet
+  root        13  0.0  0.1   47803   4288 ?        S    16:34       00:00 /usr/share/netfilter-persistent/netfilter-persistent start
+  root        14  0.0  0.0    3166    256 ?        S    16:34       00:00 /lib/apparmor/apparmor.systemd reload
+  user        15  0.0  0.1   10240   4096 pts/0    S    16:34       00:00 -bash
+  user        16  0.0  0.1   12288   3072 pts/0    R    16:34       00:00 ps
 
 [260/301] l2 l2$ systemctl list-units --type=service
     UNIT                          LOAD   ACTIVE SUB     DESCRIPTION
@@ -2766,7 +2688,7 @@ Total steps: 301
   OS Manufacturer:           Microsoft Corporation
   OS Configuration:          Member Workstation
   OS Build Type:             Multiprocessor Free
-  System Boot Time:          7/9/2026, 11:40:08 AM
+  System Boot Time:          7/9/2026, 4:34:41 PM
   System Manufacturer:       QEMU
   System Model:              Standard PC (i440FX + PIIX, 1996)
   System Type:               x64-based PC
@@ -3043,7 +2965,7 @@ Total steps: 301
   Linux linux-server 5.15.0-130-generic #140-Ubuntu SMP Wed Apr 16 12:00:00 UTC 2025 x86_64 x86_64 x86_64 GNU/Linux
 
 [266/301] srv2 srv2$ uptime
-   11:40:13 up 0 min,  1 user,  load average: 0.00, 0.01, 0.05
+   16:34:46 up 0 min,  1 user,  load average: 0.00, 0.01, 0.05
 
 [267/301] srv2 srv2$ free -m
                  total        used        free      shared  buff/cache   available
@@ -3052,31 +2974,31 @@ Total steps: 301
 
 [268/301] srv2 srv2$ df -h
   Filesystem      Size  Used Avail Use% Mounted on
-  /dev/sda1        50G   43K   50G   1% /
+  /dev/sda1        50G   44K   50G   1% /
   tmpfs           5.0M    4K  5.0M   1% /run/lock
   /dev/sda2       976M  145M  764M  16% /boot
   /dev/sdb1       100G   28G   68G  29% /u01
 
 [269/301] srv2 srv2$ ps aux
   USER     PID   %CPU %MEM VSZ     RSS    TTY      STAT START    TIME     COMMAND
-  root         1  0.0  0.3  169000  13000 ?        S    11:40       00:00 /sbin/init
-  root         2  0.0  0.1   44083   4054 ?        S    11:40       00:00 /usr/sbin/sshd -D
-  root         3  0.0  0.1    9414   2302 ?        S    11:40       00:00 /usr/sbin/cron -f
-  root         4  0.0  0.1  205896   4448 ?        S    11:40       00:00 /usr/sbin/rsyslogd -n -iNONE
-  root         5  0.0  0.1   84501   4290 ?        S    11:40       00:00 /sbin/auditd
-  root         6  0.0  0.0    8129   1590 ?        S    11:40       00:00 /usr/sbin/atd -f
-  systemd+     7  0.0  0.2   93688   6591 ?        S    11:40       00:00 /lib/systemd/systemd-resolved
-  root         8  0.0  0.1   52080   5199 ?        S    11:40       00:00 /lib/systemd/systemd-journald
-  root         9  0.0  0.1   80778   3859 ?        S    11:40       00:00 /lib/systemd/systemd-logind
-  message+    10  0.0  0.1    9519   3505 ?        S    11:40       00:00 /usr/bin/dbus-daemon --system --address=systemd: --nofork --nopidfile --systemd-activation --syslog-only
-  root        11  0.0  0.1   46522   4207 ?        S    11:40       00:00 /sbin/ifup -a --read-environment
-  root        12  0.0  0.1   51446   4516 ?        S    11:40       00:00 /lib/ufw/ufw-init start quiet
-  root        13  0.0  0.1   47803   4288 ?        S    11:40       00:00 /usr/share/netfilter-persistent/netfilter-persistent start
-  root        14  0.0  0.0    3166    256 ?        S    11:40       00:00 /lib/apparmor/apparmor.systemd reload
-  oracle      15  0.0  0.1   45552   4146 ?        S    11:40       00:00 /etc/init.d/init.ohasd run
-  freerad     16  0.0  0.1   43958   4047 ?        S    11:40       00:00 /usr/sbin/freeradius
-  root        17  0.0  0.1   10240   4096 pts/0    S    11:40       00:00 -bash
-  root        18  0.0  0.1   12288   3072 pts/0    R    11:40       00:00 ps
+  root         1  0.0  0.3  169000  13000 ?        S    16:34       00:00 /sbin/init
+  root         2  0.0  0.1   44083   4054 ?        S    16:34       00:00 /usr/sbin/sshd -D
+  root         3  0.0  0.1    9414   2302 ?        S    16:34       00:00 /usr/sbin/cron -f
+  root         4  0.0  0.1  205896   4448 ?        S    16:34       00:00 /usr/sbin/rsyslogd -n -iNONE
+  root         5  0.0  0.1   84501   4290 ?        S    16:34       00:00 /sbin/auditd
+  root         6  0.0  0.0    8129   1590 ?        S    16:34       00:00 /usr/sbin/atd -f
+  systemd+     7  0.0  0.2   93688   6591 ?        S    16:34       00:00 /lib/systemd/systemd-resolved
+  root         8  0.0  0.1   52080   5199 ?        S    16:34       00:00 /lib/systemd/systemd-journald
+  root         9  0.0  0.1   80778   3859 ?        S    16:34       00:00 /lib/systemd/systemd-logind
+  message+    10  0.0  0.1    9519   3505 ?        S    16:34       00:00 /usr/bin/dbus-daemon --system --address=systemd: --nofork --nopidfile --systemd-activation --syslog-only
+  root        11  0.0  0.1   46522   4207 ?        S    16:34       00:00 /sbin/ifup -a --read-environment
+  root        12  0.0  0.1   51446   4516 ?        S    16:34       00:00 /lib/ufw/ufw-init start quiet
+  root        13  0.0  0.1   47803   4288 ?        S    16:34       00:00 /usr/share/netfilter-persistent/netfilter-persistent start
+  root        14  0.0  0.0    3166    256 ?        S    16:34       00:00 /lib/apparmor/apparmor.systemd reload
+  oracle      15  0.0  0.1   45552   4146 ?        S    16:34       00:00 /etc/init.d/init.ohasd run
+  freerad     16  0.0  0.1   43958   4047 ?        S    16:34       00:00 /usr/sbin/freeradius
+  root        17  0.0  0.1   10240   4096 pts/0    S    16:34       00:00 -bash
+  root        18  0.0  0.1   12288   3072 pts/0    R    16:34       00:00 ps
 
 [270/301] srv2 srv2$ systemctl list-units --type=service
     UNIT                          LOAD   ACTIVE SUB     DESCRIPTION
@@ -3154,7 +3076,7 @@ Total steps: 301
   The password-recovery mechanism is enabled.
   
   64K bytes of flash-simulated non-volatile configuration memory.
-  Base ethernet MAC Address       : 02:00:00:00:00:1b
+  Base ethernet MAC Address       : 0200.0000.001b
   Motherboard assembly number     : 73-12600-06
   Model number                    : WS-C2960-24TT-L
   System serial number            : FOC1234X56Y
@@ -3225,7 +3147,7 @@ Total steps: 301
   The password-recovery mechanism is enabled.
   
   64K bytes of flash-simulated non-volatile configuration memory.
-  Base ethernet MAC Address       : 02:00:00:00:00:35
+  Base ethernet MAC Address       : 0200.0000.0035
   Motherboard assembly number     : 73-12600-06
   Model number                    : WS-C2960-24TT-L
   System serial number            : FOC1234X56Y
@@ -3283,6 +3205,9 @@ Total steps: 301
   1    default                          active    Fa0/1, Fa0/2, Fa0/3, Fa0/4, Fa0/5, Fa0/6, Fa0/7, Fa0/8, Fa0/9, Fa0/10, Fa0/11, Fa0/12, Fa0/13, Fa0/14, Fa0/15, Fa0/16, Fa0/17, Fa0/18, Fa0/19, Fa0/20, Fa0/21, Fa0/22, Fa0/23, Fa0/24, Gi0/2
 
 [298/301] l2 l2$ ip -br link
+  1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536 qdisc noqueue state UP mode DEFAULT group default
+      link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00
+  
   2: eth0: <BROADCAST,UP,MULTICAST,LOWER_UP> mtu 1500 qdisc fq_codel state UP mode DEFAULT group default qlen 1000
       link/ether 02:00:00:00:00:5b brd ff:ff:ff:ff:ff:ff
   
@@ -3299,21 +3224,21 @@ Total steps: 301
 --- [299] § final connectivity check ---
 [299/301] l1 l1$ ping -c 2 192.168.1.21
   PING 192.168.1.21 (192.168.1.21) 56(84) bytes of data.
-  64 bytes from 192.168.1.21: icmp_seq=1 ttl=64 time=0.779 ms
-  64 bytes from 192.168.1.21: icmp_seq=2 ttl=64 time=0.780 ms
+  64 bytes from 192.168.1.21: icmp_seq=1 ttl=64 time=0.782 ms
+  64 bytes from 192.168.1.21: icmp_seq=2 ttl=64 time=1.319 ms
   
   --- 192.168.1.21 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.779/0.779/0.780/0.001 ms
+  rtt min/avg/max/mdev = 0.782/1.050/1.319/0.268 ms
 
 [300/301] srv2 srv2$ ping -c 2 192.168.1.13
   PING 192.168.1.13 (192.168.1.13) 56(84) bytes of data.
-  64 bytes from 192.168.1.13: icmp_seq=1 ttl=64 time=0.668 ms
-  64 bytes from 192.168.1.13: icmp_seq=2 ttl=64 time=0.656 ms
+  64 bytes from 192.168.1.13: icmp_seq=1 ttl=64 time=0.871 ms
+  64 bytes from 192.168.1.13: icmp_seq=2 ttl=64 time=1.117 ms
   
   --- 192.168.1.13 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.656/0.662/0.668/0.006 ms
+  rtt min/avg/max/mdev = 0.871/0.994/1.117/0.123 ms
 
 [301/301] sw1 SW1# show mac address-table
   Mac Address Table

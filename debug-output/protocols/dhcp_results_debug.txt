@@ -232,6 +232,8 @@ Total steps: 300
   2: eth0: <BROADCAST,UP,MULTICAST,LOWER_UP> mtu 1500 qdisc fq_codel state UP group default qlen 1000
       link/ether 02:00:00:00:00:47 brd ff:ff:ff:ff:ff:ff
       inet 10.1.1.10/24 brd 10.1.1.255 dynamic scope global eth0
+      inet6 fe80::ff:fe00:47%eth0/64 scope link
+         valid_lft forever preferred_lft forever
 
 [56/300] lhq lhq$ ip route show
   10.1.1.0/24 dev eth0 proto kernel scope link src 10.1.1.10 metric 0
@@ -239,11 +241,11 @@ Total steps: 300
 
 [57/300] lhq lhq$ ping -c 1 10.1.1.1
   PING 10.1.1.1 (10.1.1.1) 56(84) bytes of data.
-  64 bytes from 10.1.1.1: icmp_seq=1 ttl=255 time=0.372 ms
+  64 bytes from 10.1.1.1: icmp_seq=1 ttl=255 time=0.369 ms
   
   --- 10.1.1.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.372/0.372/0.372/0.000 ms
+  rtt min/avg/max/mdev = 0.369/0.369/0.369/0.000 ms
 
 [58/300] whq whq$ ipconfig /release
   Windows IP Configuration
@@ -273,7 +275,7 @@ Total steps: 300
   Windows IP Configuration
   
   Ethernet adapter Ethernet 0:
-     DHCP Discover - Broadcast on eth0
+  
      DHCP Offer received from 10.1.1.1
      DHCP Request - Broadcast
      DHCP ACK received
@@ -367,6 +369,8 @@ Total steps: 300
   2: eth0: <BROADCAST,UP,MULTICAST,LOWER_UP> mtu 1500 qdisc fq_codel state UP group default qlen 1000
       link/ether 02:00:00:00:00:53 brd ff:ff:ff:ff:ff:ff
       inet 10.2.2.10/24 brd 10.2.2.255 dynamic scope global eth0
+      inet6 fe80::ff:fe00:53%eth0/64 scope link
+         valid_lft forever preferred_lft forever
 
 [65/300] lbr lbr$ ip route show
   10.2.2.0/24 dev eth0 proto kernel scope link src 10.2.2.10 metric 0
@@ -374,11 +378,11 @@ Total steps: 300
 
 [66/300] lbr lbr$ ping -c 1 10.2.2.1
   PING 10.2.2.1 (10.2.2.1) 56(84) bytes of data.
-  64 bytes from 10.2.2.1: icmp_seq=1 ttl=255 time=0.401 ms
+  64 bytes from 10.2.2.1: icmp_seq=1 ttl=255 time=0.402 ms
   
   --- 10.2.2.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.401/0.401/0.401/0.000 ms
+  rtt min/avg/max/mdev = 0.402/0.402/0.402/0.000 ms
 
 [67/300] wbr wbr$ ipconfig /release
   Windows IP Configuration
@@ -408,7 +412,7 @@ Total steps: 300
   Windows IP Configuration
   
   Ethernet adapter Ethernet 0:
-     DHCP Discover - Broadcast on eth0
+  
      DHCP Offer received from 10.2.2.1
      DHCP Request - Broadcast
      DHCP ACK received
@@ -502,6 +506,8 @@ Total steps: 300
   2: eth0: <BROADCAST,UP,MULTICAST,LOWER_UP> mtu 1500 qdisc fq_codel state UP group default qlen 1000
       link/ether 02:00:00:00:00:5b brd ff:ff:ff:ff:ff:ff
       inet 10.3.3.11/24 brd 10.3.3.255 dynamic scope global eth0
+      inet6 fe80::ff:fe00:5b%eth0/64 scope link
+         valid_lft forever preferred_lft forever
 
 [74/300] ldc ldc$ ip route show
   10.3.3.0/24 dev eth0 proto kernel scope link src 10.3.3.11 metric 0
@@ -509,29 +515,29 @@ Total steps: 300
 
 [75/300] ldc ldc$ ping -c 1 10.3.3.1
   PING 10.3.3.1 (10.3.3.1) 56(84) bytes of data.
-  64 bytes from 10.3.3.1: icmp_seq=1 ttl=255 time=0.396 ms
+  64 bytes from 10.3.3.1: icmp_seq=1 ttl=255 time=0.335 ms
   
   --- 10.3.3.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.396/0.396/0.396/0.000 ms
+  rtt min/avg/max/mdev = 0.335/0.335/0.335/0.000 ms
 
 
 --- [76] § DHCP — joignabilité avec adresses obtenues ---
 [76/300] lhq lhq$ ping -c 1 10.1.1.1
   PING 10.1.1.1 (10.1.1.1) 56(84) bytes of data.
-  64 bytes from 10.1.1.1: icmp_seq=1 ttl=255 time=0.282 ms
+  64 bytes from 10.1.1.1: icmp_seq=1 ttl=255 time=0.314 ms
   
   --- 10.1.1.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.282/0.282/0.282/0.000 ms
+  rtt min/avg/max/mdev = 0.314/0.314/0.314/0.000 ms
 
 [77/300] lhq lhq$ ping -c 1 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
-  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=1.024 ms
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=0.823 ms
   
   --- 10.3.3.10 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 1.024/1.024/1.024/0.000 ms
+  rtt min/avg/max/mdev = 0.823/0.823/0.823/0.000 ms
 
 [78/300] wbr wbr$ ping -n 1 10.1.1.1
   
@@ -541,23 +547,23 @@ Total steps: 300
   Ping statistics for 10.1.1.1:
       Packets: Sent = 1, Received = 1, Lost = 0 (0% loss),
   Approximate round trip times in milli-seconds:
-      Minimum = 1ms, Maximum = 1ms, Average = 1ms
+      Minimum = 0ms, Maximum = 0ms, Average = 0ms
 
 [79/300] ldc ldc$ ping -c 1 10.2.2.1
   PING 10.2.2.1 (10.2.2.1) 56(84) bytes of data.
-  64 bytes from 10.2.2.1: icmp_seq=1 ttl=253 time=0.468 ms
+  64 bytes from 10.2.2.1: icmp_seq=1 ttl=253 time=0.481 ms
   
   --- 10.2.2.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.468/0.468/0.468/0.000 ms
+  rtt min/avg/max/mdev = 0.481/0.481/0.481/0.000 ms
 
 [80/300] lbr lbr$ ping -c 1 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
-  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=0.437 ms
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=0.430 ms
   
   --- 10.3.3.10 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.437/0.437/0.437/0.000 ms
+  rtt min/avg/max/mdev = 0.430/0.430/0.430/0.000 ms
 
 [81/300] whq whq$ ping -n 1 10.2.2.1
   
@@ -823,7 +829,7 @@ Total steps: 300
   Windows IP Configuration
   
   Ethernet adapter Ethernet 0:
-     DHCP Discover - Broadcast on eth0
+  
      DHCP Offer received from 10.1.1.1
      DHCP Request - Broadcast
      DHCP ACK received
@@ -858,7 +864,7 @@ Total steps: 300
   Windows IP Configuration
   
   Ethernet adapter Ethernet 0:
-     DHCP Discover - Broadcast on eth0
+  
      DHCP Offer received from 10.2.2.1
      DHCP Request - Broadcast
      DHCP ACK received
@@ -930,7 +936,7 @@ Total steps: 300
   Ethernet adapter Ethernet 0:
   
      Connection-specific DNS Suffix  . : 
-     Media State . . . . . . . . . . . : Media disconnected
+     Default Gateway . . . . . . . . . : 
   
   Ethernet adapter Ethernet 1:
   
@@ -983,7 +989,7 @@ Total steps: 300
   Ethernet adapter Ethernet 0:
   
      Connection-specific DNS Suffix  . : 
-     Media State . . . . . . . . . . . : Media disconnected
+     Default Gateway . . . . . . . . . : 
   
   Ethernet adapter Ethernet 1:
   
@@ -1056,7 +1062,7 @@ Total steps: 300
   Windows IP Configuration
   
   Ethernet adapter Ethernet 0:
-     DHCP Discover - Broadcast on eth0
+  
      DHCP Offer received from 10.1.1.1
      DHCP Request - Broadcast
      DHCP ACK received
@@ -1108,7 +1114,7 @@ Total steps: 300
   Windows IP Configuration
   
   Ethernet adapter Ethernet 0:
-     DHCP Discover - Broadcast on eth0
+  
      DHCP Offer received from 10.2.2.1
      DHCP Request - Broadcast
      DHCP ACK received
@@ -1366,6 +1372,8 @@ Total steps: 300
   2: eth0: <BROADCAST,UP,MULTICAST,LOWER_UP> mtu 1500 qdisc fq_codel state UP group default qlen 1000
       link/ether 02:00:00:00:00:5b brd ff:ff:ff:ff:ff:ff
       inet 10.3.3.1/24 brd 10.3.3.255 dynamic scope global eth0
+      inet6 fe80::ff:fe00:5b%eth0/64 scope link
+         valid_lft forever preferred_lft forever
 
 [199/300] rdc R-DC# show ip dhcp relay statistics
   Memory usage         36028
@@ -1551,35 +1559,35 @@ Total steps: 300
 --- [209] § DHCP — matrice de connectivité post-bail ---
 [209/300] lhq lhq$ ping -c 1 10.1.1.11
   PING 10.1.1.11 (10.1.1.11) 56(84) bytes of data.
-  64 bytes from 10.1.1.11: icmp_seq=1 ttl=128 time=0.329 ms
+  64 bytes from 10.1.1.11: icmp_seq=1 ttl=128 time=0.298 ms
   
   --- 10.1.1.11 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.329/0.329/0.329/0.000 ms
+  rtt min/avg/max/mdev = 0.298/0.298/0.298/0.000 ms
 
 [210/300] lhq lhq$ ping -c 1 10.1.1.1
   PING 10.1.1.1 (10.1.1.1) 56(84) bytes of data.
-  64 bytes from 10.1.1.1: icmp_seq=1 ttl=255 time=0.153 ms
+  64 bytes from 10.1.1.1: icmp_seq=1 ttl=255 time=0.208 ms
   
   --- 10.1.1.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.153/0.153/0.153/0.000 ms
+  rtt min/avg/max/mdev = 0.208/0.208/0.208/0.000 ms
 
 [211/300] lhq lhq$ ping -c 1 10.2.2.1
   PING 10.2.2.1 (10.2.2.1) 56(84) bytes of data.
-  64 bytes from 10.2.2.1: icmp_seq=1 ttl=253 time=0.377 ms
+  64 bytes from 10.2.2.1: icmp_seq=1 ttl=253 time=0.387 ms
   
   --- 10.2.2.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.377/0.377/0.377/0.000 ms
+  rtt min/avg/max/mdev = 0.387/0.387/0.387/0.000 ms
 
 [212/300] lhq lhq$ ping -c 1 10.3.3.1
   PING 10.3.3.1 (10.3.3.1) 56(84) bytes of data.
-  64 bytes from 10.3.3.1: icmp_seq=1 ttl=253 time=0.215 ms
+  64 bytes from 10.3.3.1: icmp_seq=1 ttl=253 time=0.317 ms
   
   --- 10.3.3.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.215/0.215/0.215/0.000 ms
+  rtt min/avg/max/mdev = 0.317/0.317/0.317/0.000 ms
 
 [213/300] lhq lhq$ ping -c 1 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
@@ -1601,12 +1609,12 @@ Total steps: 300
 [215/300] whq whq$ ping -n 1 10.2.2.1
   
   Pinging 10.2.2.1 with 32 bytes of data:
-  Reply from 10.2.2.1: bytes=32 time=<1ms TTL=253
+  Reply from 10.2.2.1: bytes=32 time=3ms TTL=253
   
   Ping statistics for 10.2.2.1:
       Packets: Sent = 1, Received = 1, Lost = 0 (0% loss),
   Approximate round trip times in milli-seconds:
-      Minimum = 0ms, Maximum = 0ms, Average = 0ms
+      Minimum = 3ms, Maximum = 3ms, Average = 3ms
 
 [216/300] whq whq$ ping -n 1 10.3.3.1
   
@@ -1629,27 +1637,27 @@ Total steps: 300
 
 [218/300] lbr lbr$ ping -c 1 10.1.1.1
   PING 10.1.1.1 (10.1.1.1) 56(84) bytes of data.
-  64 bytes from 10.1.1.1: icmp_seq=1 ttl=253 time=0.791 ms
+  64 bytes from 10.1.1.1: icmp_seq=1 ttl=253 time=0.696 ms
   
   --- 10.1.1.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.791/0.791/0.791/0.000 ms
+  rtt min/avg/max/mdev = 0.696/0.696/0.696/0.000 ms
 
 [219/300] lbr lbr$ ping -c 1 10.2.2.1
   PING 10.2.2.1 (10.2.2.1) 56(84) bytes of data.
-  64 bytes from 10.2.2.1: icmp_seq=1 ttl=255 time=0.173 ms
+  64 bytes from 10.2.2.1: icmp_seq=1 ttl=255 time=0.255 ms
   
   --- 10.2.2.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.173/0.173/0.173/0.000 ms
+  rtt min/avg/max/mdev = 0.255/0.255/0.255/0.000 ms
 
 [220/300] lbr lbr$ ping -c 1 10.3.3.1
   PING 10.3.3.1 (10.3.3.1) 56(84) bytes of data.
-  64 bytes from 10.3.3.1: icmp_seq=1 ttl=253 time=0.211 ms
+  64 bytes from 10.3.3.1: icmp_seq=1 ttl=253 time=0.301 ms
   
   --- 10.3.3.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.211/0.211/0.211/0.000 ms
+  rtt min/avg/max/mdev = 0.301/0.301/0.301/0.000 ms
 
 [221/300] lbr lbr$ ping -c 1 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
@@ -1686,7 +1694,7 @@ Total steps: 300
   Ping statistics for 10.3.3.1:
       Packets: Sent = 1, Received = 1, Lost = 0 (0% loss),
   Approximate round trip times in milli-seconds:
-      Minimum = 0ms, Maximum = 0ms, Average = 0ms
+      Minimum = 1ms, Maximum = 1ms, Average = 1ms
 
 [225/300] wbr wbr$ ping -n 1 10.3.3.10
   
@@ -1721,11 +1729,11 @@ Total steps: 300
 
 [229/300] ldc ldc$ ping -c 1 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
-  64 bytes from 10.3.3.10: icmp_seq=1 ttl=64 time=0.441 ms
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=64 time=0.457 ms
   
   --- 10.3.3.10 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.441/0.441/0.441/0.000 ms
+  rtt min/avg/max/mdev = 0.457/0.457/0.457/0.000 ms
 
 
 --- [230] § DHCP — inspection détaillée des pools/baux ---
@@ -1869,7 +1877,7 @@ Total steps: 300
   Windows IP Configuration
   
   Ethernet adapter Ethernet 0:
-     DHCP Discover - Broadcast on eth0
+  
      DHCP Offer received from 10.1.1.1
      DHCP Request - Broadcast
      DHCP ACK received

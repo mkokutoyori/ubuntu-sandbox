@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-interfaces
-Generated: 2026-07-09T11:41:40.907Z
+Generated: 2026-07-09T16:46:57.616Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=IPv4/IPv6 addressing, subinterfaces, tunnels, relay, show
 Total steps: 343
@@ -484,7 +484,7 @@ Total steps: 343
 
 [145/343] r1 R1# show interfaces GigabitEthernet0/0.10
   GigabitEthernet0/0.10 is down, line protocol is down
-    Hardware is iGbE, address is 02:00:00:00:00:1a (bia 02:00:00:00:00:1a)
+    Hardware is iGbE, address is 0200.0000.001a (bia 0200.0000.001a)
     Internet address is 192.168.1.1/24
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
        reliability 255/255, txload 1/255, rxload 1/255
@@ -742,7 +742,7 @@ Total steps: 343
 --- [194] § per-interface show family ---
 [194/343] r1 R1# show interfaces
   GigabitEthernet0/0 is up, line protocol is up
-    Hardware is iGbE, address is 02:00:00:00:00:01 (bia 02:00:00:00:00:01)
+    Hardware is iGbE, address is 0200.0000.0001 (bia 0200.0000.0001)
     Internet address is 192.168.1.1/24
     MTU 1400 bytes, BW 100000 Kbit/sec, DLY 1000 usec,
        reliability 255/255, txload 1/255, rxload 1/255
@@ -762,7 +762,7 @@ Total steps: 343
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
   GigabitEthernet0/1 is up, line protocol is up
-    Hardware is iGbE, address is 02:00:00:00:00:02 (bia 02:00:00:00:00:02)
+    Hardware is iGbE, address is 0200.0000.0002 (bia 0200.0000.0002)
     Internet address is 10.0.0.1/30
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
        reliability 255/255, txload 1/255, rxload 1/255
@@ -782,7 +782,7 @@ Total steps: 343
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
   GigabitEthernet0/2 is down, line protocol is down
-    Hardware is iGbE, address is 02:00:00:00:00:03 (bia 02:00:00:00:00:03)
+    Hardware is iGbE, address is 0200.0000.0003 (bia 0200.0000.0003)
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
@@ -801,7 +801,7 @@ Total steps: 343
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
   GigabitEthernet0/3 is down, line protocol is down
-    Hardware is iGbE, address is 02:00:00:00:00:04 (bia 02:00:00:00:00:04)
+    Hardware is iGbE, address is 0200.0000.0004 (bia 0200.0000.0004)
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
@@ -847,7 +847,7 @@ Total steps: 343
     Hardware is Loopback
     Internet address is 172.31.0.1/32
   GigabitEthernet0/0.10 is down, line protocol is down
-    Hardware is iGbE, address is 02:00:00:00:00:1a (bia 02:00:00:00:00:1a)
+    Hardware is iGbE, address is 0200.0000.001a (bia 0200.0000.001a)
     Internet address is 192.168.1.1/24
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
        reliability 255/255, txload 1/255, rxload 1/255
@@ -867,7 +867,7 @@ Total steps: 343
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
   GigabitEthernet0/0.20 is down, line protocol is down
-    Hardware is iGbE, address is 02:00:00:00:00:1b (bia 02:00:00:00:00:1b)
+    Hardware is iGbE, address is 0200.0000.001b (bia 0200.0000.001b)
     Internet address is 192.168.2.1/24
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
        reliability 255/255, txload 1/255, rxload 1/255
@@ -887,7 +887,7 @@ Total steps: 343
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
   GigabitEthernet0/0.30 is down, line protocol is down
-    Hardware is iGbE, address is 02:00:00:00:00:1c (bia 02:00:00:00:00:1c)
+    Hardware is iGbE, address is 0200.0000.001c (bia 0200.0000.001c)
     Internet address is 192.168.3.1/24
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
        reliability 255/255, txload 1/255, rxload 1/255
@@ -907,7 +907,7 @@ Total steps: 343
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
   GigabitEthernet0/0.40 is down, line protocol is down
-    Hardware is iGbE, address is 02:00:00:00:00:1d (bia 02:00:00:00:00:1d)
+    Hardware is iGbE, address is 0200.0000.001d (bia 0200.0000.001d)
     Internet address is 192.168.4.1/24
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
        reliability 255/255, txload 1/255, rxload 1/255
@@ -927,7 +927,7 @@ Total steps: 343
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
   GigabitEthernet0/0.50 is down, line protocol is down
-    Hardware is iGbE, address is 02:00:00:00:00:1e (bia 02:00:00:00:00:1e)
+    Hardware is iGbE, address is 0200.0000.001e (bia 0200.0000.001e)
     Internet address is 192.168.5.1/24
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
        reliability 255/255, txload 1/255, rxload 1/255
@@ -947,7 +947,7 @@ Total steps: 343
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
   GigabitEthernet0/0.60 is down, line protocol is down
-    Hardware is iGbE, address is 02:00:00:00:00:1f (bia 02:00:00:00:00:1f)
+    Hardware is iGbE, address is 0200.0000.001f (bia 0200.0000.001f)
     Internet address is 192.168.6.1/24
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
        reliability 255/255, txload 1/255, rxload 1/255
@@ -967,7 +967,7 @@ Total steps: 343
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
   GigabitEthernet0/0.70 is down, line protocol is down
-    Hardware is iGbE, address is 02:00:00:00:00:20 (bia 02:00:00:00:00:20)
+    Hardware is iGbE, address is 0200.0000.0020 (bia 0200.0000.0020)
     Internet address is 192.168.7.1/24
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
        reliability 255/255, txload 1/255, rxload 1/255
@@ -987,7 +987,7 @@ Total steps: 343
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
   GigabitEthernet0/0.80 is down, line protocol is down
-    Hardware is iGbE, address is 02:00:00:00:00:21 (bia 02:00:00:00:00:21)
+    Hardware is iGbE, address is 0200.0000.0021 (bia 0200.0000.0021)
     Internet address is 192.168.8.1/24
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
        reliability 255/255, txload 1/255, rxload 1/255
@@ -1007,7 +1007,7 @@ Total steps: 343
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
   GigabitEthernet0/0.90 is down, line protocol is down
-    Hardware is iGbE, address is 02:00:00:00:00:22 (bia 02:00:00:00:00:22)
+    Hardware is iGbE, address is 0200.0000.0022 (bia 0200.0000.0022)
     Internet address is 192.168.9.1/24
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
        reliability 255/255, txload 1/255, rxload 1/255
@@ -1027,7 +1027,7 @@ Total steps: 343
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
   GigabitEthernet0/0.100 is down, line protocol is down
-    Hardware is iGbE, address is 02:00:00:00:00:23 (bia 02:00:00:00:00:23)
+    Hardware is iGbE, address is 0200.0000.0023 (bia 0200.0000.0023)
     Internet address is 192.168.10.1/24
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
        reliability 255/255, txload 1/255, rxload 1/255
@@ -1047,7 +1047,7 @@ Total steps: 343
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
   GigabitEthernet0/0.999 is down, line protocol is down
-    Hardware is iGbE, address is 02:00:00:00:00:24 (bia 02:00:00:00:00:24)
+    Hardware is iGbE, address is 0200.0000.0024 (bia 0200.0000.0024)
     Internet address is 192.168.99.1/24
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
        reliability 255/255, txload 1/255, rxload 1/255
@@ -1081,7 +1081,7 @@ Total steps: 343
 
 [195/343] r1 R1# show interfaces GigabitEthernet0/0
   GigabitEthernet0/0 is up, line protocol is up
-    Hardware is iGbE, address is 02:00:00:00:00:01 (bia 02:00:00:00:00:01)
+    Hardware is iGbE, address is 0200.0000.0001 (bia 0200.0000.0001)
     Internet address is 192.168.1.1/24
     MTU 1400 bytes, BW 100000 Kbit/sec, DLY 1000 usec,
        reliability 255/255, txload 1/255, rxload 1/255
@@ -1103,7 +1103,7 @@ Total steps: 343
 
 [196/343] r1 R1# show ip interface GigabitEthernet0/0
   GigabitEthernet0/0 is up, line protocol is up
-    Hardware is iGbE, address is 02:00:00:00:00:01 (bia 02:00:00:00:00:01)
+    Hardware is iGbE, address is 0200.0000.0001 (bia 0200.0000.0001)
     Internet address is 192.168.1.1/24
     MTU 1400 bytes, BW 100000 Kbit/sec, DLY 1000 usec,
        reliability 255/255, txload 1/255, rxload 1/255
@@ -1211,7 +1211,7 @@ Total steps: 343
 
 [203/343] r1 R1# show interfaces GigabitEthernet0/1
   GigabitEthernet0/1 is up, line protocol is up
-    Hardware is iGbE, address is 02:00:00:00:00:02 (bia 02:00:00:00:00:02)
+    Hardware is iGbE, address is 0200.0000.0002 (bia 0200.0000.0002)
     Internet address is 10.0.0.1/30
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
        reliability 255/255, txload 1/255, rxload 1/255
@@ -1233,7 +1233,7 @@ Total steps: 343
 
 [204/343] r1 R1# show ip interface GigabitEthernet0/1
   GigabitEthernet0/1 is up, line protocol is up
-    Hardware is iGbE, address is 02:00:00:00:00:02 (bia 02:00:00:00:00:02)
+    Hardware is iGbE, address is 0200.0000.0002 (bia 0200.0000.0002)
     Internet address is 10.0.0.1/30
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
        reliability 255/255, txload 1/255, rxload 1/255
@@ -1732,7 +1732,7 @@ Total steps: 343
 
 [239/343] r1 R1# show interfaces
   GigabitEthernet0/0 is up, line protocol is up
-    Hardware is iGbE, address is 02:00:00:00:00:01 (bia 02:00:00:00:00:01)
+    Hardware is iGbE, address is 0200.0000.0001 (bia 0200.0000.0001)
     Internet address is 192.168.1.1/24
     MTU 1400 bytes, BW 100000 Kbit/sec, DLY 1000 usec,
        reliability 255/255, txload 1/255, rxload 1/255
@@ -1752,7 +1752,7 @@ Total steps: 343
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
   GigabitEthernet0/1 is up, line protocol is up
-    Hardware is iGbE, address is 02:00:00:00:00:02 (bia 02:00:00:00:00:02)
+    Hardware is iGbE, address is 0200.0000.0002 (bia 0200.0000.0002)
     Internet address is 10.0.0.1/30
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
        reliability 255/255, txload 1/255, rxload 1/255
@@ -1772,7 +1772,7 @@ Total steps: 343
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
   GigabitEthernet0/2 is down, line protocol is down
-    Hardware is iGbE, address is 02:00:00:00:00:03 (bia 02:00:00:00:00:03)
+    Hardware is iGbE, address is 0200.0000.0003 (bia 0200.0000.0003)
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
@@ -1791,7 +1791,7 @@ Total steps: 343
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
   GigabitEthernet0/3 is down, line protocol is down
-    Hardware is iGbE, address is 02:00:00:00:00:04 (bia 02:00:00:00:00:04)
+    Hardware is iGbE, address is 0200.0000.0004 (bia 0200.0000.0004)
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
@@ -1837,7 +1837,7 @@ Total steps: 343
     Hardware is Loopback
     Internet address is 172.31.0.1/32
   GigabitEthernet0/0.10 is down, line protocol is down
-    Hardware is iGbE, address is 02:00:00:00:00:1a (bia 02:00:00:00:00:1a)
+    Hardware is iGbE, address is 0200.0000.001a (bia 0200.0000.001a)
     Internet address is 192.168.1.1/24
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
        reliability 255/255, txload 1/255, rxload 1/255
@@ -1857,7 +1857,7 @@ Total steps: 343
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
   GigabitEthernet0/0.20 is down, line protocol is down
-    Hardware is iGbE, address is 02:00:00:00:00:1b (bia 02:00:00:00:00:1b)
+    Hardware is iGbE, address is 0200.0000.001b (bia 0200.0000.001b)
     Internet address is 192.168.2.1/24
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
        reliability 255/255, txload 1/255, rxload 1/255
@@ -1877,7 +1877,7 @@ Total steps: 343
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
   GigabitEthernet0/0.30 is down, line protocol is down
-    Hardware is iGbE, address is 02:00:00:00:00:1c (bia 02:00:00:00:00:1c)
+    Hardware is iGbE, address is 0200.0000.001c (bia 0200.0000.001c)
     Internet address is 192.168.3.1/24
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
        reliability 255/255, txload 1/255, rxload 1/255
@@ -1897,7 +1897,7 @@ Total steps: 343
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
   GigabitEthernet0/0.40 is down, line protocol is down
-    Hardware is iGbE, address is 02:00:00:00:00:1d (bia 02:00:00:00:00:1d)
+    Hardware is iGbE, address is 0200.0000.001d (bia 0200.0000.001d)
     Internet address is 192.168.4.1/24
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
        reliability 255/255, txload 1/255, rxload 1/255
@@ -1917,7 +1917,7 @@ Total steps: 343
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
   GigabitEthernet0/0.50 is down, line protocol is down
-    Hardware is iGbE, address is 02:00:00:00:00:1e (bia 02:00:00:00:00:1e)
+    Hardware is iGbE, address is 0200.0000.001e (bia 0200.0000.001e)
     Internet address is 192.168.5.1/24
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
        reliability 255/255, txload 1/255, rxload 1/255
@@ -1937,7 +1937,7 @@ Total steps: 343
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
   GigabitEthernet0/0.60 is down, line protocol is down
-    Hardware is iGbE, address is 02:00:00:00:00:1f (bia 02:00:00:00:00:1f)
+    Hardware is iGbE, address is 0200.0000.001f (bia 0200.0000.001f)
     Internet address is 192.168.6.1/24
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
        reliability 255/255, txload 1/255, rxload 1/255
@@ -1957,7 +1957,7 @@ Total steps: 343
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
   GigabitEthernet0/0.70 is down, line protocol is down
-    Hardware is iGbE, address is 02:00:00:00:00:20 (bia 02:00:00:00:00:20)
+    Hardware is iGbE, address is 0200.0000.0020 (bia 0200.0000.0020)
     Internet address is 192.168.7.1/24
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
        reliability 255/255, txload 1/255, rxload 1/255
@@ -1977,7 +1977,7 @@ Total steps: 343
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
   GigabitEthernet0/0.80 is down, line protocol is down
-    Hardware is iGbE, address is 02:00:00:00:00:21 (bia 02:00:00:00:00:21)
+    Hardware is iGbE, address is 0200.0000.0021 (bia 0200.0000.0021)
     Internet address is 192.168.8.1/24
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
        reliability 255/255, txload 1/255, rxload 1/255
@@ -1997,7 +1997,7 @@ Total steps: 343
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
   GigabitEthernet0/0.90 is down, line protocol is down
-    Hardware is iGbE, address is 02:00:00:00:00:22 (bia 02:00:00:00:00:22)
+    Hardware is iGbE, address is 0200.0000.0022 (bia 0200.0000.0022)
     Internet address is 192.168.9.1/24
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
        reliability 255/255, txload 1/255, rxload 1/255
@@ -2017,7 +2017,7 @@ Total steps: 343
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
   GigabitEthernet0/0.100 is down, line protocol is down
-    Hardware is iGbE, address is 02:00:00:00:00:23 (bia 02:00:00:00:00:23)
+    Hardware is iGbE, address is 0200.0000.0023 (bia 0200.0000.0023)
     Internet address is 192.168.10.1/24
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
        reliability 255/255, txload 1/255, rxload 1/255
@@ -2037,7 +2037,7 @@ Total steps: 343
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
   GigabitEthernet0/0.999 is down, line protocol is down
-    Hardware is iGbE, address is 02:00:00:00:00:24 (bia 02:00:00:00:00:24)
+    Hardware is iGbE, address is 0200.0000.0024 (bia 0200.0000.0024)
     Internet address is 192.168.99.1/24
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
        reliability 255/255, txload 1/255, rxload 1/255
@@ -2231,7 +2231,7 @@ Total steps: 343
 [271/343] r1 R1# show ntp status
   Clock is unsynchronized, stratum 16, reference is .INIT.
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
-  reference time is EDFA0774.EED91687 (11:41:40.933 UTC Thu Jul 9 2026)
+  reference time is EDFA4F01.A76C8B43 (16:46:57.654 UTC Thu Jul 9 2026)
   clock offset is 0.00 msec
 
 [272/343] r1 R1# show ntp associations
@@ -2240,17 +2240,16 @@ Total steps: 343
   No NTP associations configured.
 
 [273/343] r1 R1# show clock
-  *11:41:40.000 UTC Thu Jul 9 2026
+  *16:46:57.000 UTC Thu Jul 9 2026
 
 [274/343] r1 R1# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
                     S - Switch, H - Host, I - IGMP, r - Repeater
   
   Device ID        Local Intrfce     Holdtme    Capability  Platform  Port ID
-  L1               Gig 0/0           180        H           Linux Host eth 0
   R2               Gig 0/1           180        R           Cisco 2911 Gig 0/1
   
-  Total cdp entries displayed : 2
+  Total cdp entries displayed : 1
 
 [275/343] r1 R1# show lldp neighbors
   Capability codes:
@@ -2339,7 +2338,7 @@ Total steps: 343
 
 [282/343] r1 R1# show interfaces GigabitEthernet0/0
   GigabitEthernet0/0 is up, line protocol is up
-    Hardware is iGbE, address is 02:00:00:00:00:01 (bia 02:00:00:00:00:01)
+    Hardware is iGbE, address is 0200.0000.0001 (bia 0200.0000.0001)
     Internet address is 192.168.1.1/24
     MTU 1400 bytes, BW 100000 Kbit/sec, DLY 1000 usec,
        reliability 255/255, txload 1/255, rxload 1/255
@@ -2361,7 +2360,7 @@ Total steps: 343
 
 [283/343] r1 R1# show interfaces GigabitEthernet0/1
   GigabitEthernet0/1 is up, line protocol is up
-    Hardware is iGbE, address is 02:00:00:00:00:02 (bia 02:00:00:00:00:02)
+    Hardware is iGbE, address is 0200.0000.0002 (bia 0200.0000.0002)
     Internet address is 10.0.0.1/30
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
        reliability 255/255, txload 1/255, rxload 1/255
@@ -2383,7 +2382,7 @@ Total steps: 343
 
 [284/343] r1 R1# show ip interface GigabitEthernet0/1
   GigabitEthernet0/1 is up, line protocol is up
-    Hardware is iGbE, address is 02:00:00:00:00:02 (bia 02:00:00:00:00:02)
+    Hardware is iGbE, address is 0200.0000.0002 (bia 0200.0000.0002)
     Internet address is 10.0.0.1/30
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
        reliability 255/255, txload 1/255, rxload 1/255
@@ -2727,7 +2726,7 @@ Total steps: 343
   
   ------------------ show interfaces ------------------
   GigabitEthernet0/0 is up, line protocol is up
-    Hardware is iGbE, address is 02:00:00:00:00:01 (bia 02:00:00:00:00:01)
+    Hardware is iGbE, address is 0200.0000.0001 (bia 0200.0000.0001)
     Internet address is 192.168.1.1/24
     MTU 1400 bytes, BW 100000 Kbit/sec, DLY 1000 usec,
        reliability 255/255, txload 1/255, rxload 1/255
@@ -2747,7 +2746,7 @@ Total steps: 343
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
   GigabitEthernet0/1 is up, line protocol is up
-    Hardware is iGbE, address is 02:00:00:00:00:02 (bia 02:00:00:00:00:02)
+    Hardware is iGbE, address is 0200.0000.0002 (bia 0200.0000.0002)
     Internet address is 10.0.0.1/30
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
        reliability 255/255, txload 1/255, rxload 1/255
@@ -2767,7 +2766,7 @@ Total steps: 343
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
   GigabitEthernet0/2 is down, line protocol is down
-    Hardware is iGbE, address is 02:00:00:00:00:03 (bia 02:00:00:00:00:03)
+    Hardware is iGbE, address is 0200.0000.0003 (bia 0200.0000.0003)
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
@@ -2786,7 +2785,7 @@ Total steps: 343
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
   GigabitEthernet0/3 is down, line protocol is down
-    Hardware is iGbE, address is 02:00:00:00:00:04 (bia 02:00:00:00:00:04)
+    Hardware is iGbE, address is 0200.0000.0004 (bia 0200.0000.0004)
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
@@ -2832,7 +2831,7 @@ Total steps: 343
     Hardware is Loopback
     Internet address is 172.31.0.1/32
   GigabitEthernet0/0.10 is down, line protocol is down
-    Hardware is iGbE, address is 02:00:00:00:00:1a (bia 02:00:00:00:00:1a)
+    Hardware is iGbE, address is 0200.0000.001a (bia 0200.0000.001a)
     Internet address is 192.168.1.1/24
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
        reliability 255/255, txload 1/255, rxload 1/255
@@ -2852,7 +2851,7 @@ Total steps: 343
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
   GigabitEthernet0/0.20 is down, line protocol is down
-    Hardware is iGbE, address is 02:00:00:00:00:1b (bia 02:00:00:00:00:1b)
+    Hardware is iGbE, address is 0200.0000.001b (bia 0200.0000.001b)
     Internet address is 192.168.2.1/24
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
        reliability 255/255, txload 1/255, rxload 1/255
@@ -2872,7 +2871,7 @@ Total steps: 343
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
   GigabitEthernet0/0.30 is down, line protocol is down
-    Hardware is iGbE, address is 02:00:00:00:00:1c (bia 02:00:00:00:00:1c)
+    Hardware is iGbE, address is 0200.0000.001c (bia 0200.0000.001c)
     Internet address is 192.168.3.1/24
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
        reliability 255/255, txload 1/255, rxload 1/255
@@ -2892,7 +2891,7 @@ Total steps: 343
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
   GigabitEthernet0/0.40 is down, line protocol is down
-    Hardware is iGbE, address is 02:00:00:00:00:1d (bia 02:00:00:00:00:1d)
+    Hardware is iGbE, address is 0200.0000.001d (bia 0200.0000.001d)
     Internet address is 192.168.4.1/24
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
        reliability 255/255, txload 1/255, rxload 1/255
@@ -2912,7 +2911,7 @@ Total steps: 343
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
   GigabitEthernet0/0.50 is down, line protocol is down
-    Hardware is iGbE, address is 02:00:00:00:00:1e (bia 02:00:00:00:00:1e)
+    Hardware is iGbE, address is 0200.0000.001e (bia 0200.0000.001e)
     Internet address is 192.168.5.1/24
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
        reliability 255/255, txload 1/255, rxload 1/255
@@ -2932,7 +2931,7 @@ Total steps: 343
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
   GigabitEthernet0/0.60 is down, line protocol is down
-    Hardware is iGbE, address is 02:00:00:00:00:1f (bia 02:00:00:00:00:1f)
+    Hardware is iGbE, address is 0200.0000.001f (bia 0200.0000.001f)
     Internet address is 192.168.6.1/24
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
        reliability 255/255, txload 1/255, rxload 1/255
@@ -2952,7 +2951,7 @@ Total steps: 343
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
   GigabitEthernet0/0.70 is down, line protocol is down
-    Hardware is iGbE, address is 02:00:00:00:00:20 (bia 02:00:00:00:00:20)
+    Hardware is iGbE, address is 0200.0000.0020 (bia 0200.0000.0020)
     Internet address is 192.168.7.1/24
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
        reliability 255/255, txload 1/255, rxload 1/255
@@ -2972,7 +2971,7 @@ Total steps: 343
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
   GigabitEthernet0/0.80 is down, line protocol is down
-    Hardware is iGbE, address is 02:00:00:00:00:21 (bia 02:00:00:00:00:21)
+    Hardware is iGbE, address is 0200.0000.0021 (bia 0200.0000.0021)
     Internet address is 192.168.8.1/24
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
        reliability 255/255, txload 1/255, rxload 1/255
@@ -2992,7 +2991,7 @@ Total steps: 343
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
   GigabitEthernet0/0.90 is down, line protocol is down
-    Hardware is iGbE, address is 02:00:00:00:00:22 (bia 02:00:00:00:00:22)
+    Hardware is iGbE, address is 0200.0000.0022 (bia 0200.0000.0022)
     Internet address is 192.168.9.1/24
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
        reliability 255/255, txload 1/255, rxload 1/255
@@ -3012,7 +3011,7 @@ Total steps: 343
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
   GigabitEthernet0/0.100 is down, line protocol is down
-    Hardware is iGbE, address is 02:00:00:00:00:23 (bia 02:00:00:00:00:23)
+    Hardware is iGbE, address is 0200.0000.0023 (bia 0200.0000.0023)
     Internet address is 192.168.10.1/24
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
        reliability 255/255, txload 1/255, rxload 1/255
@@ -3032,7 +3031,7 @@ Total steps: 343
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
   GigabitEthernet0/0.999 is down, line protocol is down
-    Hardware is iGbE, address is 02:00:00:00:00:24 (bia 02:00:00:00:00:24)
+    Hardware is iGbE, address is 0200.0000.0024 (bia 0200.0000.0024)
     Internet address is 192.168.99.1/24
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
        reliability 255/255, txload 1/255, rxload 1/255
