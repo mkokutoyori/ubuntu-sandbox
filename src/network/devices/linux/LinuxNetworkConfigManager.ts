@@ -1,15 +1,3 @@
-/**
- * Bridges the two declared network-config files
- * (`/etc/network/interfaces`, `/etc/netplan/*.yaml`) to the real interface
- * state reachable through `LinuxNetKernel` — the "apply" side of
- * ifup/ifdown, `netplan apply`/`netplan try`, `systemctl restart
- * systemd-networkd`, and the `networkctl`/`nmcli` introspection commands.
- *
- * Nothing here mutates interface state on its own: every method takes the
- * `LinuxNetKernel` for the call, so this manager stays pure config-file
- * state + a narrow VFS/log dependency, exactly like `LinuxIptablesManager`.
- */
-
 import type { VirtualFileSystem } from './VirtualFileSystem';
 import type { LinuxLogManager } from './LinuxLogManager';
 import type { LinuxNetKernel } from './LinuxNetKernel';
@@ -40,7 +28,6 @@ export class LinuxNetworkConfigManager {
     private readonly logMgr: LinuxLogManager,
   ) {}
 
-  /** Seed default declared-config files at first boot, one entry per real port. */
   seedDefaults(ifaceNames: readonly string[]): void {
     if (!this.vfs.exists(INTERFACES_PATH)) {
       const configs = new Map<string, DeclaredInterfaceConfig>();
@@ -96,7 +83,6 @@ export class LinuxNetworkConfigManager {
     return applied;
   }
 
-  /** `netplan apply` — real effect: pushes the parsed file onto live ports. */
   applyNetplan(net: LinuxNetKernel): { applied: string[]; warnings: string[] } {
     const cfg = this.readNetplan();
     const applied: string[] = [];
@@ -111,7 +97,6 @@ export class LinuxNetworkConfigManager {
     return { applied, warnings };
   }
 
-  /** `netplan try` — dry-run: computes and prints the diff, applies nothing. */
   tryNetplan(net: LinuxNetKernel): string {
     const cfg = this.readNetplan();
     if (!cfg) return 'Cannot find any netplan configuration.';
@@ -129,7 +114,6 @@ export class LinuxNetworkConfigManager {
     return lines.join('\n');
   }
 
-  /** `ifup <iface>` / `ifup -a` — applies `/etc/network/interfaces` stanzas. */
   ifup(net: LinuxNetKernel, ifaceName?: string): string {
     const configs = this.readInterfacesFile();
     if (!configs) return 'ifup: could not read /etc/network/interfaces';
@@ -146,7 +130,6 @@ export class LinuxNetworkConfigManager {
     return lines.length ? lines.join('\n') : '';
   }
 
-  /** `ifdown <iface>` — brings the interface down and clears its IPv4 config. */
   ifdown(net: LinuxNetKernel, ifaceName: string): string {
     const port = net.getPorts().get(ifaceName);
     if (!port) return `ifdown: unknown interface ${ifaceName}`;
@@ -156,7 +139,6 @@ export class LinuxNetworkConfigManager {
     return '';
   }
 
-  /** Declared-vs-runtime drift for a specific declared interface map. */
   computeDrift(net: LinuxNetKernel, declared: ReadonlyMap<string, DeclaredInterfaceConfig>): DriftEntry[] {
     const drift: DriftEntry[] = [];
     for (const [name, cfg] of declared) {
@@ -178,7 +160,6 @@ export class LinuxNetworkConfigManager {
     return drift;
   }
 
-  /** Whether NetworkManager currently manages a given interface. */
   isManagedByNetworkManager(_iface: string): boolean {
     const cfg = this.readNetplan();
     if (cfg?.renderer === 'NetworkManager') return true;
@@ -187,7 +168,6 @@ export class LinuxNetworkConfigManager {
     return !explicitlyUnmanaged;
   }
 
-  /** NetworkManager actively managing an interface the netplan file also declares statically = conflict. */
   private detectManagementConflicts(cfg: NetplanConfig | null): string[] {
     if (!cfg || cfg.renderer !== 'networkd') return [];
     const warnings: string[] = [];

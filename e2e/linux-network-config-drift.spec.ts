@@ -1,9 +1,3 @@
-/**
- * Scénario 1 — Cohérence /etc/netplan vs état réel des interfaces, driven
- * through the real terminal UI (not the store API): open a Linux PC's
- * terminal, edit the netplan file, run `netplan apply`/`netplan try`, and
- * verify `ip addr show` reflects (or doesn't reflect) the declared config.
- */
 import { test, expect, type Page } from '@playwright/test';
 
 async function waitForStore(page: Page): Promise<void> {
@@ -92,7 +86,6 @@ test.describe('Scénario 1 — netplan vs état réel des interfaces (UI réelle
 
     await typeCmd(page, writeNetplanCmd('10.0.0.77'));
     await typeCmd(page, 'ip addr show eth0');
-    // Still the old address — the file changed but nothing was applied.
     await waitForText(page, '10.0.0.50/24');
 
     await typeCmd(page, 'netplan try');

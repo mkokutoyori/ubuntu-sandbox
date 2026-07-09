@@ -10,9 +10,7 @@ import type { NssEnumResult, NssHostEntry, NssResult } from './types';
 export interface DnsWireStubResolver {
   nameservers(): string[];
   query(serverIp: string, name: string, qtype: 'A' | 'AAAA' | 'PTR'): DnsMessage | null;
-  /** `search`/`domain` directive from `/etc/resolv.conf` — empty when absent. */
   searchDomains?(): string[];
-  /** `options ndots:N` from `/etc/resolv.conf` — glibc default is 1. */
   ndots?(): number;
 }
 

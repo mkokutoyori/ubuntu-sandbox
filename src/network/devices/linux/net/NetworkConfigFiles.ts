@@ -1,18 +1,3 @@
-/**
- * Parsers/serializers for the two Linux "declared interface config" file
- * formats this simulator supports:
- *
- *   - `/etc/network/interfaces` (Debian/Ubuntu classic ifupdown stanzas)
- *   - `/etc/netplan/*.yaml` (Ubuntu 18.04+ netplan, rendered by networkd
- *     or NetworkManager)
- *
- * Both formats are reduced to the same `DeclaredInterfaceConfig` shape so
- * `LinuxNetworkConfigManager` can apply either one against the same
- * `LinuxNetKernel` primitives. Neither parser attempts to be a general
- * ifupdown/YAML implementation — only the bounded subset of each grammar
- * these files are ever generated with here.
- */
-
 import { SubnetMask } from '../../../core/types';
 
 export type InterfaceMethod = 'static' | 'dhcp';
@@ -31,8 +16,6 @@ export interface NetplanConfig {
   renderer: NetplanRenderer;
   interfaces: Map<string, DeclaredInterfaceConfig>;
 }
-
-// ─── /etc/network/interfaces ────────────────────────────────────────────
 
 export function parseInterfacesFile(text: string): Map<string, DeclaredInterfaceConfig> {
   const result = new Map<string, DeclaredInterfaceConfig>();
@@ -87,8 +70,6 @@ export function serializeInterfacesFile(configs: ReadonlyMap<string, DeclaredInt
   }
   return lines.join('\n');
 }
-
-// ─── /etc/netplan/*.yaml ────────────────────────────────────────────────
 
 function indentOf(line: string): number {
   return line.length - line.trimStart().length;

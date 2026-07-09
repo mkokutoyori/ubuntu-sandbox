@@ -1,8 +1,3 @@
-/**
- * Scénario 2 — Ordre de résolution (nsswitch.conf) et /etc/resolv.conf,
- * driven through the real terminal UI on two devices: a Linux PC and a
- * Linux server running dnsmasq as the authoritative DNS for the LAN.
- */
 import { test, expect, type Page } from '@playwright/test';
 
 async function waitForStore(page: Page): Promise<void> {
