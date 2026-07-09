@@ -102,6 +102,20 @@ describe('Test-NetConnection -TraceRoute — TraceRoute property is present', ()
   });
 });
 
+describe('arp -s via PowerShell — a hyphenated MAC literal is not parsed as arithmetic', () => {
+  it('adds the static entry instead of printing the arp usage text', async () => {
+    const pc = new WindowsPC('windows-pc', 'PC1', 0, 0);
+    pc.configureInterface('eth0', new IPAddress('10.0.0.5'), new SubnetMask('255.255.255.0'));
+    const shell = ps(pc);
+    const psOut = await run(shell, 'arp -s 10.0.0.50 00-11-22-33-44-55');
+    expect(psOut).not.toMatch(/ARP -s inet_addr/);
+
+    const cmdOut = await pc.executeCommand('arp -a');
+    expect(cmdOut).toContain('10.0.0.50');
+    expect(cmdOut).toContain('00-11-22-33-44-55');
+  });
+});
+
 describe('netstat -r — real route table, matching route print', () => {
   it('renders the same routing table as "route print"', async () => {
     const pc = new WindowsPC('windows-pc', 'PC1', 0, 0);

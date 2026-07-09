@@ -654,6 +654,19 @@ export class PSLexer {
       return psToken(PSTokenType.WORD, ip, start);
     }
 
+    // MAC-address-style literals (e.g. 00-11-22-33-44-55) — when the digits
+    // are followed by five more "-XX" hex groups, emit a single WORD rather
+    // than splitting into a chain of NUMBER/MINUS tokens, so arguments like
+    // `arp -s <ip> <mac>` stay intact instead of being parsed as arithmetic.
+    if (!this.eof() && this.ch() === '-' && this.looksLikeMacFromHere(value)) {
+      let mac = value;
+      while (!this.eof() && this.ch() === '-') {
+        mac += this.ch(); this.advance();
+        while (!this.eof() && this.isHexDigit(this.ch())) { mac += this.ch(); this.advance(); }
+      }
+      return psToken(PSTokenType.WORD, mac, start);
+    }
+
     // Decimal part
     if (!this.eof() && this.ch() === '.' && this.peek1() !== '.') {
       value += '.'; this.advance();
@@ -700,6 +713,26 @@ export class PSLexer {
       } else break;
     }
     return dots >= 3;
+  }
+
+  /**
+   * From the current scanner position (just after the first hex group,
+   * sitting on a '-'), check whether five more "-XX" hex groups follow —
+   * the shape of a Windows-style MAC address (00-11-22-33-44-55).
+   */
+  private looksLikeMacFromHere(prefix: string): boolean {
+    if (!/^[0-9A-Fa-f]{1,2}$/.test(prefix)) return false;
+    let i = this.pos;
+    let groups = 1;
+    while (i < this.input.length && this.input[i] === '-') {
+      let j = i + 1;
+      let len = 0;
+      while (j < this.input.length && this.isHexDigit(this.input[j]) && len < 2) { j++; len++; }
+      if (len === 0) return false;
+      groups++;
+      i = j;
+    }
+    return groups === 6;
   }
 
   // ─── Word / Keyword / Path ────────────────────────────────────────────────

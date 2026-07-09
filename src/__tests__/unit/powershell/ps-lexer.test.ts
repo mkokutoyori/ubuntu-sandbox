@@ -78,6 +78,14 @@ describe('Group 1: Basic Words & Numbers', () => {
     expect(first('0').value).toBe('0');
   });
 
+  it('MAC-address-style literal stays a single WORD, not a subtraction chain', () => {
+    expect(types('00-11-22-33-44-55')).toEqual([PSTokenType.WORD]);
+    expect(values('00-11-22-33-44-55')).toEqual(['00-11-22-33-44-55']);
+    expect(values('arp -s 192.168.1.50 00-11-22-33-44-55')).toEqual(
+      ['arp', 's', '192.168.1.50', '00-11-22-33-44-55'],
+    );
+  });
+
   it('hex integer literals 0x...', () => {
     expect(first('0xFF').type).toBe(PSTokenType.NUMBER);
     expect(first('0xFF').value).toBe('0xFF');
