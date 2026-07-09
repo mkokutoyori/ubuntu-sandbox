@@ -4,7 +4,7 @@ import { resetCounters, MACAddress } from '@/network/core/types';
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';
 import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
-import { C2960_SOFTWARE } from '@/network/devices/shells/cisco/CiscoPlatform';
+import { C3560_SOFTWARE } from '@/network/devices/shells/cisco/CiscoPlatform';
 
 beforeEach(() => {
   resetCounters();
@@ -73,15 +73,15 @@ describe('C2960 diagnostics report — version single source of truth (Cat 2.1)'
     const sw = freshSwitch();
     const boot = sw.getBootSequence();
     const version = await (await priv(sw)).executeCommand('show version');
-    expect(boot).toContain(C2960_SOFTWARE.iosVersion);
-    expect(version).toContain(C2960_SOFTWARE.iosVersion);
+    expect(boot).toContain(C3560_SOFTWARE.iosVersion);
+    expect(version).toContain(C3560_SOFTWARE.iosVersion);
     expect(boot).not.toContain('15.2(7)E2');
     expect(version).not.toContain('15.2(7)E2');
   });
 
   it('the flash image matches the reported version train', async () => {
     const version = await (await priv(freshSwitch())).executeCommand('show version');
-    expect(version).toContain(C2960_SOFTWARE.image);
+    expect(version).toContain(C3560_SOFTWARE.image);
   });
 });
 

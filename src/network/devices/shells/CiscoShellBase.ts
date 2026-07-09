@@ -230,7 +230,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
   protected abstract registerDeviceCommands(): void;
 
   protected getChassisProfile(): import('./cisco/CiscoCommonShow').CiscoChassisProfile {
-    return 'switch-c2960';
+    return 'switch-c3560';
   }
 
   // ─── Device accessor ────────────────────────────────────────────

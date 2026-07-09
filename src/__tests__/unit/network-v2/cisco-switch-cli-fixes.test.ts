@@ -70,12 +70,21 @@ describe('Cisco switch — show ip route summary', () => {
   });
 });
 
-describe('Cisco switch — show ip arp count/detail are invalid on C2960', () => {
-  it.each(['count', 'detail'])('show ip arp %s is rejected', async (kw) => {
+describe('Cisco switch — show ip arp count/detail are real, consistent with summary', () => {
+  it('show ip arp count reports the same total as summary', async () => {
     const sw = new CiscoSwitch('switch-cisco', 'Switch1', 8);
     await sw.executeCommand('enable');
-    const out = await sw.executeCommand(`show ip arp ${kw}`);
-    expect(out).toMatch(/% Invalid input detected/);
+    const out = await sw.executeCommand('show ip arp count');
+    expect(out).not.toMatch(/% Invalid input detected/);
+    expect(out).toMatch(/Total number of entries in the arp table: 0\./);
+  });
+
+  it('show ip arp detail reports the real table with per-entry detail, not rejected', async () => {
+    const sw = new CiscoSwitch('switch-cisco', 'Switch1', 8);
+    await sw.executeCommand('enable');
+    const out = await sw.executeCommand('show ip arp detail');
+    expect(out).not.toMatch(/% Invalid input detected/);
+    expect(out).toMatch(/No ARP entries/);
   });
 });
 
@@ -112,12 +121,12 @@ describe('Cisco switch — show ip traffic', () => {
 });
 
 describe('Cisco switch — show adjacency', () => {
-  it('rejects with a platform-appropriate message instead of "Invalid input"', async () => {
+  it('is a real CEF adjacency command on this L3-capable switch, not rejected', async () => {
     const sw = new CiscoSwitch('switch-cisco', 'Switch1', 8);
     await sw.executeCommand('enable');
     const out = await sw.executeCommand('show adjacency');
     expect(out).not.toMatch(/Invalid input detected/);
-    expect(out).toMatch(/not supported/i);
+    expect(out).not.toMatch(/not supported/i);
   });
 });
 

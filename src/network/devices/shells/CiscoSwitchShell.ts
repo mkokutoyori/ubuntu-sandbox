@@ -3354,9 +3354,26 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       const role = agent?.getPortRoleForVlan(vlanId, portName) ?? 'designated';
       const state = agent?.getForwardStateForVlan(vlanId, portName) ?? sw.getStpVlanState(portName, vlanId);
       const roleState = state === 'disabled' || role === 'disabled' ? 'disabled' : `${role} ${state}`;
+      const portNum = agent?.portNumberFor(portName) ?? 0;
+      const info = agent?.getPortInfoForVlan(vlanId, portName) ?? null;
+      const desigRoot = info ? this.formatMacCisco(new MACAddress(info.designatedRoot.mac)) : ownMac;
+      const desigBridge = info ? this.formatMacCisco(new MACAddress(info.designatedBridge.mac)) : ownMac;
+      const desigRootPriority = info?.designatedRoot.priority ?? 32768;
+      const desigBridgePriority = info?.designatedBridge.priority ?? 32768;
+      const desigCost = info?.designatedCost ?? 0;
+      const desigPortNum = info ? (info.designatedPort & 0xff) : portNum;
+      const port = sw._getPortsInternal().get(portName);
+      const linkType = port?.getNegotiatedDuplex() === 'full' ? 'point-to-point' : 'shared';
       out.push(
-        ` Port ${portName} of VLAN${String(vlanId).padStart(4, '0')} is ${roleState}`,
-        `   Port path cost 19, Port priority 128`,
+        ` Port ${portNum} (${portName}) of VLAN${String(vlanId).padStart(4, '0')} is ${roleState}`,
+        `   Port path cost 19, Port priority 128, Port Identifier 128.${portNum}.`,
+        `   Designated root has priority ${desigRootPriority}, address ${desigRoot}`,
+        `   Designated bridge has priority ${desigBridgePriority}, address ${desigBridge}`,
+        `   Designated port id is 128.${desigPortNum}, designated path cost ${desigCost}`,
+        `   Timers: message age 0, forward delay 0, hold 0`,
+        `   Number of transitions to forwarding state: ${agent?.getForwardingTransitionCount(portName) ?? 0}`,
+        `   Link type is ${linkType} by default`,
+        `   BPDU: sent ${agent?.getBpduSentCount(portName) ?? 0}, received ${agent?.getBpduReceivedCount(portName) ?? 0}`,
       );
     }
     return out.join('\n');
@@ -3718,13 +3735,12 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     for (const t of [this.userTrie, this.privilegedTrie]) {
       t.registerGreedy('show ip route', 'Display IP routing table', (args) => {
         if (args[0]?.toLowerCase() === 'summary') return this.showIpRouteSummary();
-        if (!this.d().isIpRoutingEnabled()) return '% IP routing table is not enabled';
         return this.showIpRoute();
       });
       t.register('show ip traffic', 'IP traffic statistics', () =>
         showIpTraffic(this.d()._getPortsInternal().values(), this.d()._getArpStats()));
-      t.register('show adjacency', 'Display CEF adjacency table', () =>
-        '% This command is not supported on this platform');
+      t.registerGreedy('show adjacency', 'Display CEF adjacency table', (args) =>
+        this.showAdjacency(args));
       t.registerGreedy('show ip dhcp binding', 'Display DHCP bindings', () =>
         this.showIpDhcpBinding());
       t.registerGreedy('show ip dhcp pool', 'Display DHCP pools', (args) =>
@@ -3966,7 +3982,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       lines.push('  Internet protocol processing disabled');
     }
     lines.push('  MTU is 1500 bytes');
-    lines.push(`  Hardware is EtherSVI, address is ${this.d().getBridgeMac()}`);
+    lines.push(`  Hardware is EtherSVI, address is ${this.d().getBridgeMac().toCiscoString()}`);
     if (svi.helperAddresses.length > 0) {
       for (const h of svi.helperAddresses) {
         lines.push(`  Helper address is ${h}`);
@@ -3999,7 +4015,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     if (!svi) return '% Invalid interface';
     const adminUp = svi.adminUp;
     const lineUp = adminUp && this.d().isSviLineUp(svi);
-    const mac = this.d().getBridgeMac();
+    const mac = this.d().getBridgeMac().toCiscoString();
     const lines = [
       `Vlan${vlan} is ${adminUp ? (lineUp ? 'up' : 'down') : 'administratively down'}, ` +
         `line protocol is ${lineUp ? 'up' : 'down'}`,
@@ -4012,6 +4028,42 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     lines.push('     reliability 255/255, txload 1/255, rxload 1/255');
     lines.push('  Encapsulation ARPA, loopback not set');
     lines.push('  ARP type: ARPA, ARP Timeout 04:00:00');
+    return lines.join('\n');
+  }
+
+  private showAdjacency(args: string[]): string {
+    const sub = args[0]?.toLowerCase();
+    const entries = Array.from(this.d()._getArpTableInternal().entries())
+      .filter(([, e]) => e.type !== 'failed');
+
+    if (sub === 'summary') {
+      const byIface = new Map<string, number>();
+      for (const [, e] of entries) byIface.set(e.iface, (byIface.get(e.iface) ?? 0) + 1);
+      const lines = ['IP Adj Summary:', `  Total number of adjacencies: ${entries.length}`];
+      for (const [iface, count] of byIface) lines.push(`  ${iface}: ${count}`);
+      return lines.join('\n');
+    }
+
+    if (sub === 'detail') {
+      if (entries.length === 0) return '';
+      const lines: string[] = [];
+      for (const [ip, e] of entries) {
+        lines.push(`IP  ${e.iface}  ${ip}(${Math.floor((Date.now() - e.timestamp) / 60000)})`);
+        lines.push(`  ${e.mac.toCiscoString()}`);
+        lines.push('  ARPA');
+        lines.push('  Epoch: 0');
+      }
+      return lines.join('\n');
+    }
+
+    if (entries.length === 0) return '';
+    const lines = ['Protocol  Interface        Address              Age(min)  Hardware Addr    Encap  Out'];
+    for (const [ip, e] of entries) {
+      const age = String(Math.floor((Date.now() - e.timestamp) / 60000));
+      lines.push(
+        `IP        ${e.iface.padEnd(17)}${ip.padEnd(21)}${age.padEnd(10)}${e.mac.toCiscoString().padEnd(17)}ARPA   ${e.iface}`,
+      );
+    }
     return lines.join('\n');
   }
 
@@ -4042,7 +4094,6 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
         lines.push(`${code}    ${dest} [1/0] via ${nh}`);
       }
     }
-    if (lines.length === 0) lines.push('% No routes installed');
     return [...header, ...lines].join('\n');
   }
 

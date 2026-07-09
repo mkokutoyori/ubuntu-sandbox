@@ -149,10 +149,11 @@ describe('ARP/L3 report — SVI validation consistency (Cat 2.3)', () => {
 });
 
 describe('ARP/L3 report — show ip route reflects the ip routing state (Cat 3.3)', () => {
-  it('reports the routing process as disabled by default on an L2 switch', async () => {
+  it('shows an empty real routing table by default on this L3-capable switch, not a rejection', async () => {
     const sw = await priv(new CiscoSwitch('switch-cisco', 'Switch1', 24, 0, 0));
     const out = await sw.executeCommand('show ip route');
-    expect(out).toContain('IP routing table is not enabled');
+    expect(out).not.toContain('IP routing table is not enabled');
+    expect(out).toContain('Codes:');
   });
 
   it('shows the routing table once ip routing is enabled', async () => {

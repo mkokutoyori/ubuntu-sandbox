@@ -1,5 +1,5 @@
 /**
- * CiscoSwitch - Cisco Catalyst Layer 2 Switch
+ * CiscoSwitch - Cisco Catalyst 3560 Multilayer Switch
  *
  * Cisco-specific behaviors:
  *   - Port naming: FastEthernet0/X (first 24), GigabitEthernet0/X (25+)
@@ -8,7 +8,7 @@
  *     They don't forward traffic until the VLAN is recreated.
  *   - VLAN recreation: suspended ports are reactivated automatically
  *   - CLI: CiscoSwitchShell (IOS-style user/privileged/config modes)
- *   - Boot: Cisco IOS C2960 format
+ *   - Boot: Cisco IOS C3560 format
  */
 
 import { DeviceType, EthernetFrame, ETHERTYPE_IPV4, IPv4Packet, IPAddress } from '../core/types';
@@ -16,7 +16,7 @@ import { AgentRegistry } from './AgentRegistry';
 import { cdpToNeighborDTO, lldpToNeighborDTO } from './inspection/neighborConverters';
 import { Switch, STPPortState, type SwitchportMode } from './Switch';
 import type { ISwitchShell } from './shells/ISwitchShell';
-import { C2960_SOFTWARE, ciscoSoftwareDescriptor } from './shells/cisco/CiscoPlatform';
+import { C3560_SOFTWARE, ciscoSoftwareDescriptor } from './shells/cisco/CiscoPlatform';
 import { CiscoSwitchShell } from './shells/CiscoSwitchShell';
 import { CdpAgent } from '../cdp/CdpAgent';
 import { ETHERTYPE_CDP } from '../cdp/types';
@@ -299,14 +299,14 @@ export class CiscoSwitch extends Switch {
   getBootSequence(): string {
     return [
       '',
-      ciscoSoftwareDescriptor(C2960_SOFTWARE),
+      ciscoSoftwareDescriptor(C3560_SOFTWARE),
       `Copyright (c) 1986-2025 by Cisco Systems, Inc.`,
       '',
       `${this.hostname} processor with 65536K bytes of memory.`,
       `${this.getPortNames().filter(n => n.startsWith('Fast')).length} FastEthernet interfaces`,
       `${this.getPortNames().filter(n => n.startsWith('Gig')).length} Gigabit Ethernet interfaces`,
       '',
-      `Base ethernet MAC address: ${this.getPort(this.getPortNames()[0])?.getMAC() || '00:00:00:00:00:00'}`,
+      `Base ethernet MAC address: ${this.getPort(this.getPortNames()[0])?.getMAC().toCiscoString() ?? '0000.0000.0000'}`,
       '',
       'Press RETURN to get started.',
     ].join('\n');

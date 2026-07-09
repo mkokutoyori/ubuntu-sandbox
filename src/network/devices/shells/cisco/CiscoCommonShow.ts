@@ -11,7 +11,7 @@ import type { DeviceType } from '@/network/core/types';
 import { EquipmentStateView } from '@/network/devices/inspection/EquipmentStateView';
 import type { NeighborDTO } from '@/network/devices/inspection/DeviceStateView';
 import { pad2 } from '@/lib/format';
-import { C2960_SOFTWARE, ciscoSoftwareDescriptor } from './CiscoPlatform';
+import { C3560_SOFTWARE, ciscoSoftwareDescriptor } from './CiscoPlatform';
 
 /**
  * Minimal device surface these show helpers read real state from.
@@ -91,7 +91,7 @@ export function showUsers(): string {
   ].join('\n');
 }
 
-export type CiscoChassisProfile = 'router-isr2911' | 'switch-c2960';
+export type CiscoChassisProfile = 'router-isr2911' | 'switch-c2960' | 'switch-c3560';
 
 export interface CiscoHardwareProfile {
   pid: string;
@@ -132,6 +132,19 @@ export const CISCO_HARDWARE_PROFILES: Record<CiscoChassisProfile, CiscoHardwareP
     flashImageSize: 17825792,
     flashTotalBytes: 64016384,
     flashFreeBytes: 46188544,
+    extraFlashFiles: [{ index: 2, name: 'vlan.dat', size: 3096 }],
+  },
+  'switch-c3560': {
+    pid: 'WS-C3560-24TS-S',
+    description: 'Cisco Catalyst 3560 Multilayer Switch',
+    serialNumber: 'FOC1235X78Z',
+    dramKB: 131072,
+    ioMemoryKB: 32768,
+    nvramKB: 128,
+    flashImage: 'c3560-ipservicesk9-mz.122-55.SE12.bin',
+    flashImageSize: 24903680,
+    flashTotalBytes: 65536000,
+    flashFreeBytes: 40185856,
     extraFlashFiles: [{ index: 2, name: 'vlan.dat', size: 3096 }],
   },
 };
@@ -676,7 +689,7 @@ export function showSwitchVersion(dev: {
   getPortNames(): string[];
   getPort(name: string): { getMAC(): { toCiscoString(): string } } | undefined;
 }): string {
-  const hw = CISCO_HARDWARE_PROFILES['switch-c2960'];
+  const hw = CISCO_HARDWARE_PROFILES['switch-c3560'];
   const names = dev.getPortNames();
   const fa = names.filter((n) => n.startsWith('Fast')).length;
   const gi = names.filter((n) => n.startsWith('Gig')).length;
@@ -685,11 +698,11 @@ export function showSwitchVersion(dev: {
   const up = upMin < 1 ? '0 minutes'
     : `${Math.floor(upMin / 1440)} days, ${Math.floor((upMin % 1440) / 60)} hours, ${upMin % 60} minutes`;
   return [
-    `${ciscoSoftwareDescriptor(C2960_SOFTWARE, 'RELEASE SOFTWARE (fc3)')}`,
+    `${ciscoSoftwareDescriptor(C3560_SOFTWARE, 'RELEASE SOFTWARE (fc3)')}`,
     'Copyright (c) 1986-2025 by Cisco Systems, Inc.',
     '',
-    'ROM: Bootstrap program is C2960 boot loader',
-    'BOOTLDR: C2960 Boot Loader (C2960-HBOOT-M) Version 12.2(53r)SEY3, RELEASE SOFTWARE (fc1)',
+    'ROM: Bootstrap program is C3560 boot loader',
+    'BOOTLDR: C3560 Boot Loader (C3560-HBOOT-M) Version 12.2(44r)SE, RELEASE SOFTWARE (fc1)',
     '',
     `${dev.getHostname()} uptime is ${up}`,
     'System returned to ROM by power-on',

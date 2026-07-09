@@ -37,6 +37,24 @@ function arpSummary(entries: Array<[string, CiscoARPEntry]>): string {
   ].join('\n');
 }
 
+function arpCount(entries: Array<[string, CiscoARPEntry]>): string {
+  return `Total number of entries in the arp table: ${entries.length}.`;
+}
+
+function arpDetail(entries: Array<[string, CiscoARPEntry]>): string {
+  if (entries.length === 0) return 'No ARP entries.';
+  const lines = ['Protocol  Address          Age (min)   Hardware Addr   Type   Interface   VRF'];
+  for (const [ip, entry] of entries) {
+    const isStatic = entry.type === 'static';
+    const age = isStatic ? '-' : String(Math.floor((Date.now() - entry.timestamp) / 60000));
+    lines.push(
+      `Internet  ${ip.padEnd(17)}${age.padEnd(12)}${entry.mac.toCiscoString().padEnd(18)}` +
+      `${(isStatic ? 'static' : 'ARPA').padEnd(7)}${entry.iface.padEnd(12)}Default`,
+    );
+  }
+  return lines.join('\n');
+}
+
 function matchArpInterface(provider: ARPProvider, raw: string): string | null {
   const collapsed = raw.replace(/\s+/g, '').toLowerCase();
   const ports = provider._getPortsInternal();
@@ -67,7 +85,9 @@ export function showArp(provider: ARPProvider, filterArgs?: string[]): string {
   if (filterArgs && filterArgs.length > 0) {
     const filter = filterArgs.join(' ');
     if (/^summary$/i.test(filter)) return arpSummary(entries);
-    if (/^(count|detail|statistics)$/i.test(filter)) {
+    if (/^count$/i.test(filter)) return arpCount(entries);
+    if (/^detail$/i.test(filter)) return arpDetail(entries);
+    if (/^statistics$/i.test(filter)) {
       return "% Invalid input detected at '^' marker.";
     }
     const isIP = /^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(filter);

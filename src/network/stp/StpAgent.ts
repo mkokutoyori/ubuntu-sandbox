@@ -49,6 +49,9 @@ export class StpAgent extends ReactiveAgentBase implements StpInstanceAgent {
   private readonly pendingAgreement = new Set<string>();
   private tcWhileTimer: TimerHandle | null = null;
   private fastAgingActive = false;
+  private readonly bpduSentCounts = new Map<string, number>();
+  private readonly bpduReceivedCounts = new Map<string, number>();
+  private readonly forwardingTransitionCounts = new Map<string, number>();
 
   constructor(
     private readonly host: StpHost,
@@ -73,6 +76,9 @@ export class StpAgent extends ReactiveAgentBase implements StpInstanceAgent {
   maxAgeSec(vlan: number): number { return this.getVlanMaxAgeSec(vlan); }
   isRootInconsistent(portName: string): boolean { return this.rootInconsistent.has(portName); }
   onInstanceForwardState(vlan: number, portName: string, state: StpForwardState): void {
+    if (state === 'forwarding') {
+      this.forwardingTransitionCounts.set(portName, (this.forwardingTransitionCounts.get(portName) ?? 0) + 1);
+    }
     this.host.onForwardStateChanged(portName, state, vlan);
   }
   onInstanceTopologyChange(_vlan: number): void { this.notifyTopologyChange(); }
@@ -113,6 +119,9 @@ export class StpAgent extends ReactiveAgentBase implements StpInstanceAgent {
   }
   getRootPathCostForVlan(vlan: number): number {
     return (this.instances.get(vlan) ?? this.cst()).getRootPathCost();
+  }
+  getPortInfoForVlan(vlan: number, portName: string): StpPortInfo | null {
+    return (this.instances.get(vlan) ?? this.cst()).portInfo.get(portName) ?? null;
   }
   isRootForVlan(vlan: number): boolean {
     const inst = this.instances.get(vlan);
@@ -381,6 +390,7 @@ export class StpAgent extends ReactiveAgentBase implements StpInstanceAgent {
     if (!payload || payload.type !== 'stp') return;
     const port = this.host.getPort(portName);
     if (!port || !port.getIsUp() || !port.isConnected()) return;
+    this.bpduReceivedCounts.set(portName, (this.bpduReceivedCounts.get(portName) ?? 0) + 1);
 
     const g = this.getPortGuards(portName);
     const bpduGuard = g.bpduGuard || (g.portFast && this.config.bpduGuardGlobal);
@@ -656,6 +666,7 @@ export class StpAgent extends ReactiveAgentBase implements StpInstanceAgent {
       payload: bpdu,
     };
     this.advertising.add(adKey);
+    this.bpduSentCounts.set(portName, (this.bpduSentCounts.get(portName) ?? 0) + 1);
     try { this.host.sendFrame(portName, frame); }
     finally { this.advertising.delete(adKey); }
     this.getBus().publish({
@@ -673,6 +684,14 @@ export class StpAgent extends ReactiveAgentBase implements StpInstanceAgent {
     const idx = this.host.getPorts().findIndex(p => p.getName() === portName);
     return (0x80 << 8) | (idx & 0xff);
   }
+
+  portNumberFor(portName: string): number {
+    return this.host.getPorts().findIndex(p => p.getName() === portName) + 1;
+  }
+
+  getBpduSentCount(portName: string): number { return this.bpduSentCounts.get(portName) ?? 0; }
+  getBpduReceivedCount(portName: string): number { return this.bpduReceivedCounts.get(portName) ?? 0; }
+  getForwardingTransitionCount(portName: string): number { return this.forwardingTransitionCounts.get(portName) ?? 0; }
 
   protected isEnabled(): boolean { return this.config.enabled; }
 
