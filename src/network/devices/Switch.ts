@@ -284,6 +284,10 @@ export abstract class Switch extends Equipment {
   private snoopingBindings: DHCPSnoopingBinding[] = [];
   private snoopingLog: string[] = [];
   private dhcpSnoopingViolations = 0;
+  private dhcpSnoopingForwarded = 0;
+  private dhcpSnoopingDroppedUntrusted = 0;
+  private dhcpSnoopingDroppedRateLimit = 0;
+  private dhcpSnoopingDroppedVerifyMac = 0;
   private readonly dhcpSnoopingRateLimiter = new ArpRateLimiter();
 
   // ─── Interface Descriptions ──────────────────────────────────────
@@ -1673,6 +1677,7 @@ export abstract class Switch extends Equipment {
             const r = this.dhcpSnoopingRateLimiter.consume(portName, limit, 1);
             if (r.ok === false) {
               this.dhcpSnoopingViolations++;
+              this.dhcpSnoopingDroppedRateLimit++;
               this.snoopingLog.push(
                 `DHCP_SNOOPING: rate limit (${r.limit} pps) exceeded on ${portName} VLAN ${ingressVlan}, dropped ${msgType ?? 'message'}`,
               );
@@ -1686,6 +1691,7 @@ export abstract class Switch extends Equipment {
               && dhcp instanceof DHCPPacket
               && dhcp.chaddr.toLowerCase() !== frame.srcMAC.toString().toLowerCase()) {
             this.dhcpSnoopingViolations++;
+            this.dhcpSnoopingDroppedVerifyMac++;
             this.snoopingLog.push(
               `DHCP_SNOOPING: verify mac-address failed — chaddr ${dhcp.chaddr} != source MAC ${frame.srcMAC} ` +
               `on untrusted port ${portName} VLAN ${ingressVlan}`,
@@ -1698,6 +1704,7 @@ export abstract class Switch extends Equipment {
 
           if (udp.sourcePort === 67) {
             this.dhcpSnoopingViolations++;
+            this.dhcpSnoopingDroppedUntrusted++;
             this.snoopingLog.push(
               `DHCP_SNOOPING: dropped ${msgType ?? 'server message'} from ${frame.srcMAC} ` +
               `on untrusted port ${portName} VLAN ${ingressVlan}`,
@@ -1707,6 +1714,7 @@ export abstract class Switch extends Equipment {
               `${frame.srcMAC} on untrusted ${portName} (VLAN ${ingressVlan})`);
             return;
           }
+          this.dhcpSnoopingForwarded++;
         }
       }
     }
@@ -2379,6 +2387,24 @@ export abstract class Switch extends Equipment {
   _getSTPStates(): Map<string, STPPortState> { return this.stpStates; }
   _getDHCPSnoopingConfig(): DHCPSnoopingConfig { return this.dhcpSnooping; }
   _getDHCPSnoopingViolations(): number { return this.dhcpSnoopingViolations; }
+
+  getDhcpSnoopingStats(): {
+    forwarded: number;
+    dropped: number;
+    droppedUntrusted: number;
+    droppedRateLimit: number;
+    droppedVerifyMac: number;
+  } {
+    return {
+      forwarded: this.dhcpSnoopingForwarded,
+      dropped: this.dhcpSnoopingDroppedUntrusted
+        + this.dhcpSnoopingDroppedRateLimit
+        + this.dhcpSnoopingDroppedVerifyMac,
+      droppedUntrusted: this.dhcpSnoopingDroppedUntrusted,
+      droppedRateLimit: this.dhcpSnoopingDroppedRateLimit,
+      droppedVerifyMac: this.dhcpSnoopingDroppedVerifyMac,
+    };
+  }
   _getDHCPSnoopingLog(): readonly string[] { return this.snoopingLog; }
   _getSnoopingBindings(): DHCPSnoopingBinding[] { return this.snoopingBindings; }
   _getSnoopingLog(): string[] { return this.snoopingLog; }

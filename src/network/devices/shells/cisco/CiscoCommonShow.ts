@@ -11,6 +11,7 @@ import type { DeviceType } from '@/network/core/types';
 import { EquipmentStateView } from '@/network/devices/inspection/EquipmentStateView';
 import type { NeighborDTO } from '@/network/devices/inspection/DeviceStateView';
 import { pad2 } from '@/lib/format';
+import { C2960_SOFTWARE, ciscoSoftwareDescriptor } from './CiscoPlatform';
 
 /**
  * Minimal device surface these show helpers read real state from.
@@ -679,7 +680,7 @@ export function showSwitchVersion(dev: {
   const up = upMin < 1 ? '0 minutes'
     : `${Math.floor(upMin / 1440)} days, ${Math.floor((upMin % 1440) / 60)} hours, ${upMin % 60} minutes`;
   return [
-    'Cisco IOS Software, C2960 Software (C2960-LANBASEK9-M), Version 15.0(2)SE11, RELEASE SOFTWARE (fc3)',
+    `${ciscoSoftwareDescriptor(C2960_SOFTWARE, 'RELEASE SOFTWARE (fc3)')}`,
     'Copyright (c) 1986-2025 by Cisco Systems, Inc.',
     '',
     'ROM: Bootstrap program is C2960 boot loader',

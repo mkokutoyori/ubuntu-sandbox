@@ -16,6 +16,7 @@ import { AgentRegistry } from './AgentRegistry';
 import { cdpToNeighborDTO, lldpToNeighborDTO } from './inspection/neighborConverters';
 import { Switch, STPPortState, type SwitchportMode } from './Switch';
 import type { ISwitchShell } from './shells/ISwitchShell';
+import { C2960_SOFTWARE, ciscoSoftwareDescriptor } from './shells/cisco/CiscoPlatform';
 import { CiscoSwitchShell } from './shells/CiscoSwitchShell';
 import { CdpAgent } from '../cdp/CdpAgent';
 import { ETHERTYPE_CDP } from '../cdp/types';
@@ -298,7 +299,7 @@ export class CiscoSwitch extends Switch {
   getBootSequence(): string {
     return [
       '',
-      `Cisco IOS Software, C2960 Software (C2960-LANBASEK9-M), Version 15.2(7)E2`,
+      ciscoSoftwareDescriptor(C2960_SOFTWARE),
       `Copyright (c) 1986-2025 by Cisco Systems, Inc.`,
       '',
       `${this.hostname} processor with 65536K bytes of memory.`,

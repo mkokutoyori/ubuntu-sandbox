@@ -34,6 +34,7 @@ import {
   MACAddress, type EthernetFrame, type DeviceType,
 } from '../core/types';
 import { Logger } from '../core/Logger';
+import { C2960_SOFTWARE, ciscoSoftwareDescriptor } from '../devices/shells/cisco/CiscoPlatform';
 
 export interface CdpHost {
   readonly id: string;
@@ -404,7 +405,7 @@ export class CdpAgent extends ReactiveAgentBase {
   private softwareVersion(): string {
     const t = this.host.getType();
     if (t.startsWith('switch')) {
-      return 'Cisco IOS Software, C2960 Software (C2960-LANBASEK9-M), Version 15.2(7)E2';
+      return ciscoSoftwareDescriptor(C2960_SOFTWARE);
     }
     if (t.startsWith('router')) {
       return 'Cisco IOS Software, c2900 Software (C2900-UNIVERSALK9-M), Version 15.4(3)M';
