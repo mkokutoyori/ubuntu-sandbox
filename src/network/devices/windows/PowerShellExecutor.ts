@@ -39,6 +39,7 @@ import { psNewNetFirewallRule, psSetNetFirewallRule, psToggleNetFirewallRule, ps
 import { LOCAL_ACCOUNT_CMDLETS } from './PSLocalAccountCmdlets';
 import { EVENT_LOG_CMDLETS } from './PSEventLogCmdlets';
 import { STORAGE_CMDLETS } from './PSStorageCmdlets';
+import { psGetDnsClientServerAddress, psSetDnsClientServerAddress, psGetNetConnectionProfile, psSetNetConnectionProfile, type PSNetConfigContext } from './PSNetConfigCmdlets';
 import type { IEventBus } from '@/events/EventBus';
 
 // ─── Constants ────────────────────────────────────────────────────
@@ -2407,12 +2408,12 @@ export class PowerShellExecutor {
 
     // Get-DnsClientServerAddress
     if (cmdLower === 'get-dnsclientserveraddress') {
-      return this.handleGetDnsClientServerAddress(args);
+      return psGetDnsClientServerAddress(this.buildPSNetConfigCtx(), args);
     }
 
     // Set-DnsClientServerAddress
     if (cmdLower === 'set-dnsclientserveraddress') {
-      return this.handleSetDnsClientServerAddress(args);
+      return psSetDnsClientServerAddress(this.buildPSNetConfigCtx(), args);
     }
 
     // Get-NetAdapter
@@ -2499,12 +2500,12 @@ export class PowerShellExecutor {
 
     // Get-NetConnectionProfile
     if (cmdLower === 'get-netconnectionprofile') {
-      return this.handleGetNetConnectionProfile(args);
+      return psGetNetConnectionProfile(this.buildPSNetConfigCtx(), args);
     }
 
     // Set-NetConnectionProfile
     if (cmdLower === 'set-netconnectionprofile') {
-      return this.handleSetNetConnectionProfile(args);
+      return psSetNetConnectionProfile(this.buildPSNetConfigCtx(), args);
     }
 
     // Add-VpnConnection
@@ -4477,68 +4478,13 @@ export class PowerShellExecutor {
     return '';
   }
 
-  private handleGetDnsClientServerAddress(args: string[]): string {
-    const params = this.parsePSArgs(args);
-    const ifFilter = (params.get('interfacealias') ?? params.get('_positional') ?? '').replace(/^["']|["']$/g, '').toLowerCase();
-    const afFilter = (params.get('addressfamily') ?? '').toLowerCase();
-
-    const ports = this.device.getPortsMap();
-    const lines: string[] = ['', 'InterfaceAlias               ServerAddresses', '--------------               ---------------'];
-    let found = false;
-
-    for (const [name] of ports) {
-      const displayName = this.portToDisplayName(name);
-      if (ifFilter && !displayName.toLowerCase().includes(ifFilter) && displayName.toLowerCase() !== ifFilter) continue;
-      if (afFilter === 'ipv6') continue; // Only show IPv4 DNS in sim
-      const servers = this.device.getDnsServers(name);
-      lines.push(`${displayName.padEnd(29)}${servers.join(', ')}`);
-      found = true;
-    }
-
-    if (!found && ifFilter) {
-      return `Get-DnsClientServerAddress : Interface '${ifFilter}' not found. No MSFT_DnsClientServerAddress objects found matching the specified interface.`;
-    }
-
-    return lines.join('\n');
-  }
-
-  private handleSetDnsClientServerAddress(args: string[]): string {
-    const params = this.parsePSArgs(args);
-    const ifAlias = (params.get('interfacealias') ?? params.get('_positional') ?? '').replace(/^["']|["']$/g, '');
-    const serversRaw = (params.get('serveraddresses') ?? '').replace(/^["']|["']$/g, '');
-    const reset = params.has('resetserveraddresses');
-
-    if (!ifAlias) {
-      return `Set-DnsClientServerAddress : The -InterfaceAlias parameter is mandatory.\nAt line:1 char:1\n    + CategoryInfo          : InvalidArgument`;
-    }
-
-    // Find matching port name
-    const ports = this.device.getPortsMap();
-    let matchedName = '';
-    for (const [name] of ports) {
-      const displayName = this.portToDisplayName(name);
-      const dn = displayName.toLowerCase();
-      const af = ifAlias.toLowerCase();
-      if (dn === af || name.toLowerCase() === af || dn.includes(af) || dn.startsWith(af)) {
-        matchedName = name;
-        break;
-      }
-    }
-
-    if (!matchedName) {
-      return `Set-DnsClientServerAddress : Interface '${ifAlias}' not found.`;
-    }
-
-    if (reset) {
-      this.device.setDnsServers?.(matchedName, []);
-      return '';
-    }
-
-    // Strip outer parens if present: ("8.8.8.8","1.1.1.1") → "8.8.8.8","1.1.1.1"
-    const cleanRaw = serversRaw.replace(/^\(|\)$/g, '');
-    const servers = cleanRaw.split(',').map(s => s.trim().replace(/^["']|["']$/g, '')).filter(Boolean);
-    this.device.setDnsServers?.(matchedName, servers);
-    return '';
+  private buildPSNetConfigCtx(): PSNetConfigContext {
+    return {
+      ports: this.device.getPortsMap(),
+      getDnsServers: (n: string) => this.device.getDnsServers(n),
+      setDnsServers: (n: string, s: string[]) => this.device.setDnsServers?.(n, s),
+      networkProfiles: this.networkProfiles,
+    };
   }
 
   /**
@@ -4723,46 +4669,6 @@ export class PowerShellExecutor {
   }
 
   // ─── Network Connection Profile ────────────────────────────────────
-
-  private handleGetNetConnectionProfile(args: string[]): string {
-    const params = this.parsePSArgs(args);
-    const ifIndexParam = params.get('interfaceindex');
-    const ifAlias = params.get('interfacealias')?.replace(/^["']|["']$/g, '');
-
-    // Default profile for first adapter
-    const ifIndex = ifIndexParam ? parseInt(ifIndexParam, 10) : 2;
-    const category = this.networkProfiles.get(ifIndex) ?? 'DomainAuthenticated';
-
-    const ports = this.device.getPortsMap();
-    let adapterName = 'Ethernet';
-    let portIdx = 2;
-    for (const [name] of ports) {
-      if (portIdx === ifIndex) { adapterName = this.portToDisplayName(name); break; }
-      portIdx++;
-    }
-    if (ifAlias) adapterName = ifAlias;
-
-    return [
-      `Name             : ${adapterName}`,
-      `InterfaceAlias   : ${adapterName}`,
-      `InterfaceIndex   : ${ifIndex}`,
-      `NetworkCategory  : ${category}`,
-      `IPv4Connectivity : Internet`,
-      `IPv6Connectivity : LocalNetwork`,
-    ].join('\n');
-  }
-
-  private handleSetNetConnectionProfile(args: string[]): string {
-    const params = this.parsePSArgs(args);
-    const ifIndexParam = params.get('interfaceindex');
-    const category = params.get('networkcategory')?.replace(/^["']|["']$/g, '');
-    if (!category) return '';
-    const ifIndex = ifIndexParam ? parseInt(ifIndexParam, 10) : 2;
-    this.networkProfiles.set(ifIndex, category);
-    return '';
-  }
-
-  // ─── VPN Connection Management ──────────────────────────────────────
 
   // ─── netsh winhttp ────────────────────────────────────────────────
   private handleNetshWinhttp(args: string[]): string {
