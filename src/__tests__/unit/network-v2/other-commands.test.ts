@@ -1365,10 +1365,11 @@ describe('Cisco L2 Switch Command Suite', () => {
       expect(output.toLowerCase()).toContain('%');
     });
 
-    it('158. should reject dynamic routing table show commands (show ip route)', async () => {
+    it('158. show ip route is a real command on this multilayer switch platform', async () => {
       const { sw } = setupIsolatedSwitch();
       const output = await sw.executeCommand('show ip route');
-      expect(output.toLowerCase()).toContain('%'); // Not available on L2 Switch
+      expect(output.toLowerCase()).not.toContain('%');
+      expect(output).toContain('Codes:');
     });
 
     it('159. should reject OSPF show commands (show ip ospf)', async () => {
