@@ -47,6 +47,8 @@ import * as net from './PSNetCmdlets';
 import type { PSNetContext } from './PSNetCmdlets';
 import * as item from './PSItemCmdlets';
 import type { PSItemContext } from './PSItemCmdlets';
+import * as contentCmd from './PSContentCmdlets';
+import type { PSContentContext } from './PSContentCmdlets';
 import type { IEventBus } from '@/events/EventBus';
 
 // ─── Constants ────────────────────────────────────────────────────
@@ -1476,7 +1478,7 @@ export class PowerShellExecutor {
       if (filterCmdLower === 'set-content') {
         const sinkArgs = this.tokenize(filter).slice(1);
         const content = this.pipelineToContent(currentOutput);
-        return this.handleSetContentWithPiped(sinkArgs, content);
+        return contentCmd.handleSetContentWithPiped(this.buildPSContentCtx(), sinkArgs, content);
       }
 
       // Service action cmdlets accepting pipeline input
@@ -1704,19 +1706,6 @@ export class PowerShellExecutor {
     }).join('\n');
   }
 
-  private handleSetContentWithPiped(args: string[], content: string): string {
-    const fs = this.device.getFileSystem();
-    let path = '';
-    for (let i = 0; i < args.length; i++) {
-      const a = args[i].toLowerCase();
-      if (a === '-path' && args[i + 1]) { path = args[++i].replace(/^["']|["']$/g, ''); }
-      else if (!args[i].startsWith('-') && !path) { path = args[i].replace(/^["']|["']$/g, ''); }
-    }
-    if (!path) return '';
-    const absPath = fs.normalizePath(path, this.cwd);
-    fs.createFile(absPath, content);
-    return '';
-  }
 
   /**
    * Split a pipeline string by | while respecting quotes and braces.
@@ -2193,12 +2182,12 @@ export class PowerShellExecutor {
 
     // Get-Content / cat / type / gc
     if (cmdLower === 'get-content' || cmdLower === 'gc' || cmdLower === 'cat' || cmdLower === 'type') {
-      return this.handleGetContent(args);
+      return contentCmd.handleGetContent(this.buildPSContentCtx(), args);
     }
 
     // Set-Content / sc
     if (cmdLower === 'set-content' || cmdLower === 'sc') {
-      return this.handleSetContent(args);
+      return contentCmd.handleSetContent(this.buildPSContentCtx(), args);
     }
 
     // New-Item / ni
@@ -2695,17 +2684,17 @@ export class PowerShellExecutor {
 
     // Out-File
     if (cmdLower === 'out-file') {
-      return this.handleOutFile(args);
+      return contentCmd.handleOutFile(this.buildPSContentCtx(), args);
     }
 
     // Add-Content / ac
     if (cmdLower === 'add-content' || cmdLower === 'ac') {
-      return this.handleAddContent(args);
+      return contentCmd.handleAddContent(this.buildPSContentCtx(), args);
     }
 
     // Clear-Content / clc
     if (cmdLower === 'clear-content' || cmdLower === 'clc') {
-      return this.handleClearContent(args);
+      return contentCmd.handleClearContent(this.buildPSContentCtx(), args);
     }
 
     // Get-Item / gi
@@ -2830,82 +2819,6 @@ export class PowerShellExecutor {
     return envMap[varName.toUpperCase()] ?? null;
   }
 
-  private handleGetContent(args: string[]): string {
-    const fs = this.device.getFileSystem();
-    let path = '';
-    let tail: number | undefined, totalCount: number | undefined, readCount: number | undefined;
-    let raw = false, asByteStream = false, stream = '', wait = false;
-    for (let i = 0; i < args.length; i++) {
-      const a = args[i].toLowerCase();
-      if ((a === '-path' || a === '-literalpath') && args[i + 1]) { path = args[++i].replace(/^["']|["']$/g, ''); }
-      else if ((a === '-tail' || a === '-last') && args[i + 1]) { tail = parseInt(args[++i], 10); }
-      else if ((a === '-totalcount' || a === '-head' || a === '-first') && args[i + 1]) { totalCount = parseInt(args[++i], 10); }
-      else if (a === '-readcount' && args[i + 1]) { readCount = parseInt(args[++i], 10); }
-      else if (a === '-raw') { raw = true; }
-      else if (a === '-asbytestream') { asByteStream = true; }
-      else if (a === '-stream' && args[i + 1]) { stream = args[++i].replace(/^["']|["']$/g, ''); i++; } // skip stream name
-      else if (a === '-wait') { wait = true; }
-      else if (!args[i].startsWith('-') && !path) { path = args[i].replace(/^["']|["']$/g, ''); }
-    }
-    if (!path) return '';
-    const absPath = fs.normalizePath(path, this.cwd);
-
-    // -Stream: alternate data streams not natively supported
-    if (stream) {
-      return `Get-Content : The -Stream parameter is not supported in this simulator.\nAt line:1 char:1\n    + CategoryInfo          : NotImplemented\n    + FullyQualifiedErrorId : NotImplemented,Microsoft.PowerShell.Commands.GetContentCommand`;
-    }
-
-    // -Wait: tail-follow not supported in simulator
-    if (wait) {
-      return `Get-Content : The -Wait parameter is not supported in this simulator.\nAt line:1 char:1\n    + CategoryInfo          : NotImplemented`;
-    }
-
-    // ACL enforcement: protected files require explicit Allow ACE covering the current user
-    if (fs.isAclProtected(absPath)) {
-      const mgr = this.device.getUserManager();
-      if (!mgr.isCurrentUserAdmin()) {
-        const acl = fs.getACL(absPath);
-        const user = mgr.currentUser.toLowerCase();
-        const isAdmin = mgr.isCurrentUserAdmin();
-        const hasAllow = acl.some(ace => {
-          if (ace.type !== 'allow') return false;
-          const p = ace.principal.toLowerCase();
-          if (p === 'everyone') return true;
-          if (p === user || p.endsWith('\\' + user)) return true;
-          if ((p === 'administrators' || p === 'builtin\\administrators') && isAdmin) return true;
-          if ((p === 'users' || p === 'builtin\\users') && !isAdmin) return true;
-          return false;
-        });
-        if (!hasAllow) {
-          const errMsg = `Get-Content : Access to the path '${absPath}' is denied.`;
-          this.errorList.unshift(errMsg);
-          return errMsg;
-        }
-      }
-    }
-
-    const r = fs.readFile(absPath);
-    if (!r.ok) return `Get-Content : Cannot find path '${path}' because it does not exist.`;
-    const content = r.content ?? '';
-
-    if (asByteStream) {
-      // Return byte values as space-separated numbers
-      const bytes = Array.from(content).map(c => c.charCodeAt(0));
-      return bytes.join('\n');
-    }
-
-    if (raw) {
-      // Return whole file as single string (no line splitting)
-      return content;
-    }
-
-    if (!content) return '';
-    const lines = content.split(/\r?\n/);
-    if (tail !== undefined) return lines.slice(-tail).join('\n');
-    if (totalCount !== undefined) return lines.slice(0, totalCount).join('\n');
-    if (readCount === 0) return content; // -ReadCount 0: return as one string
-    return content;
-  }
 
   private handleGetLocation(args: string[]): string {
     const stackFlag = args.some(a => a.toLowerCase() === '-stack');
@@ -2961,41 +2874,6 @@ export class PowerShellExecutor {
     return `\nPath\n----\n${this.cwd}\n`;
   }
 
-  private handleSetContent(args: string[]): string {
-    const fs = this.device.getFileSystem();
-    let path = '', value = '';
-    let noNewline = false;
-    const positionals: string[] = [];
-    for (let i = 0; i < args.length; i++) {
-      const a = args[i].toLowerCase();
-      if (a === '-path' && args[i + 1]) { path = args[++i].replace(/^["']|["']$/g, ''); }
-      else if (a === '-nonewline') { noNewline = true; }
-      else if (a === '-value' && args[i + 1]) {
-        const raw = args[++i];
-        const items = this.tryParseArrayLiteral(raw);
-        if (items) {
-          // Items in the array literal still need backtick expansion.
-          const expanded = items.map((it) => this.unquoteAndExpand(it));
-          value = expanded.join(noNewline ? '' : '\n');
-        } else {
-          value = this.unquoteAndExpand(raw);
-        }
-      }
-      else if (!args[i].startsWith('-')) {
-        const raw = args[i];
-        const items = this.tryParseArrayLiteral(raw);
-        if (items) { positionals.push(...items.map((it) => this.unquoteAndExpand(it))); }
-        else { positionals.push(this.unquoteAndExpand(raw)); }
-      }
-    }
-    // Positional: first is path, rest are values joined by newlines or empty string
-    if (!path && positionals.length > 0) path = positionals[0];
-    if (!value && positionals.length > 1) value = positionals.slice(1).join(noNewline ? '' : '\n');
-    if (!path) return '';
-    const absPath = fs.normalizePath(path, this.cwd);
-    fs.createFile(absPath, value);
-    return '';
-  }
 
   private async handleNewItem(args: string[]): Promise<string> {
     const fs = this.device.getFileSystem();
@@ -3354,6 +3232,16 @@ export class PowerShellExecutor {
     };
   }
 
+  private buildPSContentCtx(): PSContentContext {
+    return {
+      device: this.device,
+      cwd: this.cwd,
+      errorList: this.errorList,
+      tryParseArrayLiteral: (expr: string) => this.tryParseArrayLiteral(expr),
+      unquoteAndExpand: (raw: string) => this.unquoteAndExpand(raw),
+    };
+  }
+
   private buildPSNetConfigCtx(): PSNetConfigContext {
     return {
       ports: this.device.getPortsMap(),
@@ -3516,44 +3404,8 @@ export class PowerShellExecutor {
     return { fs: this.device.getFileSystem(), cwd: this.cwd, registry: this.registry };
   }
 
-  private async handleOutFile(args: string[]): Promise<string> {
-    let filePath = '';
-    for (let i = 0; i < args.length; i++) {
-      if (args[i] === '-FilePath' && args[i + 1]) { filePath = args[++i]; }
-      else if (!args[i].startsWith('-') && !filePath) { filePath = args[i]; }
-    }
-    if (!filePath) return "Out-File : Cannot bind argument to parameter 'FilePath' because it is an empty string.";
-    // Out-File with no pipeline input creates empty file
-    return await this.device.executeCmdCommand(`echo. > ${filePath}`);
-  }
 
-  private async handleAddContent(args: string[]): Promise<string> {
-    let filePath = '', value = '';
-    for (let i = 0; i < args.length; i++) {
-      if (args[i] === '-Path' && args[i + 1]) { filePath = args[++i]; }
-      else if (args[i] === '-Value' && args[i + 1]) { value = args[++i].replace(/^["']|["']$/g, ''); }
-      else if (!args[i].startsWith('-') && !filePath) { filePath = args[i]; }
-    }
-    if (!filePath) return "Add-Content : Cannot bind argument to parameter 'Path' because it is an empty string.";
-    if (value) {
-      return await this.device.executeCmdCommand(`echo ${value} >> ${filePath}`);
-    }
-    return '';
-  }
 
-  private async handleClearContent(args: string[]): Promise<string> {
-    let filePath = '';
-    for (let i = 0; i < args.length; i++) {
-      if (args[i] === '-Path' && args[i + 1]) { filePath = args[++i]; }
-      else if (!args[i].startsWith('-') && !filePath) { filePath = args[i]; }
-    }
-    if (!filePath) return "Clear-Content : Cannot bind argument to parameter 'Path' because it is an empty string.";
-    const fs = this.device.getFileSystem();
-    const absPath = fs.normalizePath(filePath, this.cwd);
-    if (!fs.exists(absPath)) return `Clear-Content : Cannot find path '${filePath}' because it does not exist.`;
-    fs.createFile(absPath, '');
-    return '';
-  }
 
 
   // ─── User/Group/ACL Management Cmdlet Handlers ─────────────────
