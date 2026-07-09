@@ -1362,12 +1362,43 @@ export abstract class TerminalSession {
   protected abstract onTab(reverse?: boolean): void;
 
   /**
+   * Ghost text opt-in. Off by default — a terminal shows the inline grey
+   * completion preview only when the user explicitly enables it for that
+   * session. Per-terminal, not global.
+   */
+  private _ghostTextEnabled = false;
+
+  isGhostTextEnabled(): boolean {
+    return this._ghostTextEnabled;
+  }
+
+  setGhostTextEnabled(enabled: boolean): void {
+    if (this._ghostTextEnabled === enabled) return;
+    this._ghostTextEnabled = enabled;
+    this.notify();
+  }
+
+  toggleGhostText(): boolean {
+    this.setGhostTextEnabled(!this._ghostTextEnabled);
+    return this._ghostTextEnabled;
+  }
+
+  /**
    * Ghost text: the inline grey continuation shown after the caret when
-   * exactly one completion exists for the current input. Computed on
-   * demand — no state to invalidate. Sessions with a completion source
-   * override this; the base has none.
+   * exactly one completion exists for the current input. Gated by the
+   * per-session opt-in; sessions with a completion source override
+   * `computeGhostSuggestion()`, never this.
    */
   getGhostSuggestion(): string | null {
+    if (!this._ghostTextEnabled) return null;
+    return this.computeGhostSuggestion();
+  }
+
+  /**
+   * Compute the ghost remainder for the current input, ignoring the
+   * enabled flag (the caller gates). Base has no completion source.
+   */
+  protected computeGhostSuggestion(): string | null {
     return null;
   }
 

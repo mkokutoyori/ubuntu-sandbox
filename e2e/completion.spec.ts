@@ -108,25 +108,44 @@ test.describe('Tab completion — Linux bash', () => {
   });
 });
 
-test.describe('Ghost text — inline preview of a unique completion', () => {
-  test('Cisco: typing "sh" renders the grey "ow" ghost; ArrowRight accepts it', async ({ page }) => {
+test.describe('Ghost text — per-terminal opt-in (default OFF)', () => {
+  test('ghost is OFF by default; enabling via the toolbar renders it, disabling hides it', async ({ page }) => {
     const id = await addDevice(page, 'router-cisco');
     await openTerminal(page, id);
     const box = input(page);
     await box.click();
     await box.fill('sh');
     await page.waitForTimeout(150);
+
     const ghost = page.locator('[data-testid="ghost-suggestion"]');
+    // Default: no ghost even though "sh" has a unique completion.
+    await expect(ghost).toHaveCount(0);
+
+    // Enable via the toolbar toggle.
+    await page.locator('[data-testid="ghost-text-toggle"]').click();
+    await box.click();
+    await box.fill('sh');
+    await page.waitForTimeout(150);
     await expect(ghost).toBeVisible();
     await expect(ghost).toHaveText('ow');
+
+    // ArrowRight accepts it.
     await box.press('ArrowRight');
     await page.waitForTimeout(150);
     expect(await box.inputValue()).toBe('show');
+
+    // Disable again → ghost gone.
+    await page.locator('[data-testid="ghost-text-toggle"]').click();
+    await box.click();
+    await box.fill('sh');
+    await page.waitForTimeout(150);
+    await expect(ghost).toHaveCount(0);
   });
 
-  test('Cisco: ambiguous "s" shows no ghost', async ({ page }) => {
+  test('with ghost enabled, ambiguous "s" shows no ghost', async ({ page }) => {
     const id = await addDevice(page, 'router-cisco');
     await openTerminal(page, id);
+    await page.locator('[data-testid="ghost-text-toggle"]').click();
     const box = input(page);
     await box.click();
     await box.fill('s');

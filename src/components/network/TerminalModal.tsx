@@ -10,7 +10,7 @@
  */
 
 import { useState, useRef, useCallback, useEffect } from 'react';
-import { X, Minus, Maximize2, Copy, Circle, Download, Settings2 } from 'lucide-react';
+import { X, Minus, Maximize2, Copy, Circle, Download, Settings2, Lightbulb } from 'lucide-react';
 import { Equipment, isFullyImplemented } from '@/network';
 import { TerminalView, useTerminalSession } from '@/components/terminal/TerminalView';
 import type { TerminalSession } from '@/terminal/sessions/TerminalSession';
@@ -166,6 +166,22 @@ export function TerminalModal({ session, onClose, onMinimize, embedded = false }
           title="Scrollback settings"
         >
           <Settings2 className="w-3 h-3 text-white/40 hover:text-white/70" />
+        </button>
+        <button
+          data-testid="ghost-text-toggle"
+          onClick={() => session.toggleGhostText()}
+          className={cn(
+            "w-8 h-full flex items-center justify-center hover:bg-white/10 transition-colors",
+            session.isGhostTextEnabled() && "bg-amber-400/10"
+          )}
+          title={session.isGhostTextEnabled()
+            ? 'Ghost text ON — inline completion preview (click to disable)'
+            : 'Ghost text OFF — click to enable inline completion preview'}
+        >
+          <Lightbulb className={cn(
+            "w-3 h-3",
+            session.isGhostTextEnabled() ? "text-amber-400" : "text-white/40 hover:text-white/70"
+          )} />
         </button>
         <button
           onClick={toggleRecording}

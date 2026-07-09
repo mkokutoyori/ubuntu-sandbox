@@ -21,6 +21,9 @@ type GhostHandle = {
   isBooting?: boolean;
   getGhostSuggestion(): string | null;
   acceptGhost(): boolean;
+  setGhostTextEnabled(v: boolean): void;
+  isGhostTextEnabled(): boolean;
+  toggleGhostText(): boolean;
 };
 
 describe('ghostRemainder (core)', () => {
@@ -52,6 +55,7 @@ describe('ghost suggestion — equipment sessions', () => {
     const sw = new CiscoSwitch('switch-cisco', 'SW1', 8);
     const s = new CiscoTerminalSession('t1', sw) as unknown as GhostHandle;
     s.isBooting = false;
+    s.setGhostTextEnabled(true);
     s.input = 'sh';
     expect(s.getGhostSuggestion()).toBe('ow');
     expect(s.acceptGhost()).toBe(true);
@@ -62,6 +66,7 @@ describe('ghost suggestion — equipment sessions', () => {
     const sw = new CiscoSwitch('switch-cisco', 'SW1', 8);
     const s = new CiscoTerminalSession('t1', sw) as unknown as GhostHandle;
     s.isBooting = false;
+    s.setGhostTextEnabled(true);
     s.input = 's';
     expect(s.getGhostSuggestion()).toBeNull();
     expect(s.acceptGhost()).toBe(false);
@@ -71,6 +76,7 @@ describe('ghost suggestion — equipment sessions', () => {
     const sw = new CiscoSwitch('switch-cisco', 'SW1', 8);
     const s = new CiscoTerminalSession('t1', sw) as unknown as GhostHandle;
     s.isBooting = true;
+    s.setGhostTextEnabled(true);
     s.input = 'sh';
     expect(s.getGhostSuggestion()).toBeNull();
   });
@@ -79,6 +85,7 @@ describe('ghost suggestion — equipment sessions', () => {
     const sw = new HuaweiSwitch('switch-huawei', 'SW1', 8);
     const s = new HuaweiTerminalSession('t1', sw) as unknown as GhostHandle;
     s.isBooting = false;
+    s.setGhostTextEnabled(true);
     s.input = 'sys';
     expect(s.getGhostSuggestion()).toBe('tem-view');
   });
@@ -91,6 +98,7 @@ describe('ghost suggestion — equipment sessions', () => {
       vty: { state: { mode: string } } | null;
     };
     s.isBooting = false;
+    s.setGhostTextEnabled(true);
     if (s.vty) s.vty.state.mode = 'config';
     s.input = 'interface FastEthernet0/3';
     expect(s.getGhostSuggestion()).toBeNull();
@@ -101,6 +109,7 @@ describe('ghost suggestion — equipment sessions', () => {
   it('Linux: unique command ghost at the prompt', () => {
     const pc = new LinuxPC('linux-pc', 'PC1');
     const s = new LinuxTerminalSession('t1', pc) as unknown as GhostHandle;
+    s.setGhostTextEnabled(true);
     s.input = 'ifco';
     expect(s.getGhostSuggestion()).toBe('nfig');
   });
@@ -110,8 +119,55 @@ describe('ghost suggestion — equipment sessions', () => {
     const s = new LinuxTerminalSession('t2', pc) as unknown as GhostHandle & {
       executeCommand(line: string): Promise<void>;
     };
+    s.setGhostTextEnabled(true);
     await s.executeCommand('nslookup');
     s.input = 'ifco';
     expect(s.getGhostSuggestion()).toBeNull();
+  });
+});
+
+describe('ghost text — per-terminal opt-in (default OFF)', () => {
+  it('is disabled by default: no ghost even with a unique completion', () => {
+    const sw = new CiscoSwitch('switch-cisco', 'SW1', 8);
+    const s = new CiscoTerminalSession('t1', sw) as unknown as GhostHandle;
+    s.isBooting = false;
+    s.input = 'sh';
+    expect(s.isGhostTextEnabled()).toBe(false);
+    expect(s.getGhostSuggestion()).toBeNull();
+    expect(s.acceptGhost()).toBe(false);
+  });
+
+  it('enabling then disabling flips the ghost on and off', () => {
+    const sw = new CiscoSwitch('switch-cisco', 'SW1', 8);
+    const s = new CiscoTerminalSession('t1', sw) as unknown as GhostHandle;
+    s.isBooting = false;
+    s.input = 'sh';
+    s.setGhostTextEnabled(true);
+    expect(s.getGhostSuggestion()).toBe('ow');
+    s.setGhostTextEnabled(false);
+    expect(s.getGhostSuggestion()).toBeNull();
+  });
+
+  it('toggleGhostText flips and returns the new state', () => {
+    const pc = new LinuxPC('linux-pc', 'PC1');
+    const s = new LinuxTerminalSession('t1', pc) as unknown as GhostHandle;
+    s.input = 'ifco';
+    expect(s.getGhostSuggestion()).toBeNull();
+    expect(s.toggleGhostText()).toBe(true);
+    expect(s.getGhostSuggestion()).toBe('nfig');
+    expect(s.toggleGhostText()).toBe(false);
+    expect(s.getGhostSuggestion()).toBeNull();
+  });
+
+  it('the opt-in is per-terminal: enabling one session does not affect another', () => {
+    const sw = new CiscoSwitch('switch-cisco', 'SW1', 8);
+    const a = new CiscoTerminalSession('a', sw) as unknown as GhostHandle;
+    const b = new CiscoTerminalSession('b', sw) as unknown as GhostHandle;
+    a.isBooting = false; b.isBooting = false;
+    a.input = 'sh'; b.input = 'sh';
+    a.setGhostTextEnabled(true);
+    expect(a.getGhostSuggestion()).toBe('ow');
+    expect(b.isGhostTextEnabled()).toBe(false);
+    expect(b.getGhostSuggestion()).toBeNull();
   });
 });

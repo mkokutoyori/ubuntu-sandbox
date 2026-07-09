@@ -551,7 +551,7 @@ export abstract class CLITerminalSession extends TerminalSession {
     return this.cliDevice.cliTabCandidates(input);
   }
 
-  override getGhostSuggestion(): string | null {
+  protected override computeGhostSuggestion(): string | null {
     if (this.isBooting || this.pagerLines !== null) return null;
     const source = new FullLineSource((line) => this.resolveCliTabCandidates(line));
     return ghostRemainder(this.input, source);

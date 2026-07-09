@@ -1733,7 +1733,7 @@ export class WindowsTerminalSession extends TerminalSession {
     this.notify();
   }
 
-  override getGhostSuggestion(): string | null {
+  protected override computeGhostSuggestion(): string | null {
     if (this.activeSubShell || this.inputMode.type !== 'normal') return null;
     return ghostRemainder(this.input, this.rootCompletionSource());
   }
