@@ -30,6 +30,9 @@ export function showArp(provider: ARPProvider, filterArgs?: string[]): string {
 
   if (filterArgs && filterArgs.length > 0) {
     const filter = filterArgs.join(' ');
+    if (/^(summary|count|detail)$/i.test(filter)) {
+      return "% Invalid input detected at '^' marker.";
+    }
     const isIP = /^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(filter);
     if (isIP) {
       entries = entries.filter(([ip]) => ip === filter);
@@ -47,7 +50,7 @@ export function showArp(provider: ARPProvider, filterArgs?: string[]): string {
     const suffix = isStatic
       ? `ARPA   ${entry.iface}\n                                                       static`
       : `ARPA   ${entry.iface}`;
-    lines.push(`Internet  ${ip.padEnd(17)}${age.padEnd(12)}${entry.mac.toString().padEnd(18)}${suffix}`);
+    lines.push(`Internet  ${ip.padEnd(17)}${age.padEnd(12)}${entry.mac.toCiscoString().padEnd(18)}${suffix}`);
   }
   return lines.join('\n');
 }

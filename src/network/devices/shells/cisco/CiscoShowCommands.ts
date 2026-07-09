@@ -132,7 +132,7 @@ export function showInterface(router: { _getPortsInternal: () => Map<string, imp
   const ip = port.getIPAddress()?.toString() || 'unassigned';
   const maskObj = port.getSubnetMask();
   const cidr = maskObj ? maskObj.toCIDR() : '';
-  const mac = port.getMAC().toString();
+  const mac = port.getMAC().toCiscoString();
 
   let status: string;
   let lineProto: string;

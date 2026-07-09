@@ -99,6 +99,7 @@ export type SwitchportMode = 'access' | 'trunk' | 'hybrid' | 'dot1q-tunnel';
 
 export interface SwitchportConfig {
   mode: SwitchportMode;
+  explicitMode: boolean;
   accessVlan: number;           // VLAN for access mode (default 1)
   trunkNativeVlan: number;      // Native VLAN for trunk mode (default 1)
   trunkAllowedVlans: Set<number>; // Allowed VLANs on trunk (default: all)
@@ -649,6 +650,7 @@ export abstract class Switch extends Equipment {
       // Default switchport config: access mode, VLAN 1
       this.switchportConfigs.set(portName, {
         mode: 'access',
+        explicitMode: false,
         accessVlan: 1,
         trunkNativeVlan: 1,
         trunkAllowedVlans: new Set(Array.from({ length: 4094 }, (_, i) => i + 1)),
@@ -680,6 +682,7 @@ export abstract class Switch extends Equipment {
     // VLAN 1 is the default VLAN — always exists
     const allPorts = new Set(this.getPortNames());
     this.vlans.set(1, { id: 1, name: 'default', ports: allPorts });
+    this.svi.ensure(1);
   }
 
   override setEventBus(bus: import('@/events/EventBus').IEventBus | null): void {
@@ -889,6 +892,8 @@ export abstract class Switch extends Equipment {
 
   setSwitchportMode(portName: string, mode: SwitchportMode): boolean {
     if (!this.syncSwitchportMode(portName, mode)) return false;
+    const cfg = this.switchportConfigs.get(portName);
+    if (cfg) cfg.explicitMode = true;
 
     const dtp = (this as unknown as { getDtpAgent?: () => { setAdminMode(p: string, m: string): void } }).getDtpAgent?.();
     dtp?.setAdminMode(portName, mode === 'trunk' ? 'trunk' : 'access');
@@ -2621,6 +2626,9 @@ export abstract class Switch extends Equipment {
   }
   _getArpInspectionPortStats(port: string) {
     return this.arpInspectionPipeline?.getPortStats(port);
+  }
+  _getArpInspectionLog() {
+    return this.arpInspectionPipeline?.getLog() ?? [];
   }
   _clearArpInspectionErrDisable(port: string): boolean {
     if (!this.arpErrDisabledPorts.delete(port)) return false;

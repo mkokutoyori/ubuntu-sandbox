@@ -674,13 +674,13 @@ export function showSwitchVersion(dev: {
   getHostname(): string;
   getUptimeMs(): number;
   getPortNames(): string[];
-  getPort(name: string): { getMAC(): { toString(): string } } | undefined;
+  getPort(name: string): { getMAC(): { toCiscoString(): string } } | undefined;
 }): string {
   const hw = CISCO_HARDWARE_PROFILES['switch-c2960'];
   const names = dev.getPortNames();
   const fa = names.filter((n) => n.startsWith('Fast')).length;
   const gi = names.filter((n) => n.startsWith('Gig')).length;
-  const baseMac = names.length ? (dev.getPort(names[0])?.getMAC().toString() ?? '0000.0000.0000') : '0000.0000.0000';
+  const baseMac = names.length ? (dev.getPort(names[0])?.getMAC().toCiscoString() ?? '0000.0000.0000') : '0000.0000.0000';
   const upMin = Math.floor(dev.getUptimeMs() / 60000);
   const up = upMin < 1 ? '0 minutes'
     : `${Math.floor(upMin / 1440)} days, ${Math.floor((upMin % 1440) / 60)} hours, ${upMin % 60} minutes`;
@@ -792,6 +792,31 @@ export function showAaa(sec: import('@/network/devices/router/security/CiscoSecu
  */
 export function showEnvironment(): string {
   return 'Environmental monitoring is not instrumented on this platform.';
+}
+
+/** `show ip traffic` — aggregate per-protocol counters from real port stats. */
+export function showIpTraffic(ports: Iterable<Port>): string {
+  let rxFrames = 0, txFrames = 0, errsIn = 0, errsOut = 0, dropsIn = 0, dropsOut = 0;
+  for (const p of ports) {
+    const c = p.getCounters();
+    rxFrames += c.framesIn;
+    txFrames += c.framesOut;
+    errsIn += c.errorsIn;
+    errsOut += c.errorsOut;
+    dropsIn += c.dropsIn;
+    dropsOut += c.dropsOut;
+  }
+  return [
+    'IP statistics:',
+    `  Rcvd:  ${rxFrames} total, ${rxFrames} local destination`,
+    `         ${errsIn} format errors, 0 checksum errors, 0 bad hop count`,
+    '         0 unknown protocol, 0 not a gateway, 0 security failures',
+    `         0 bad options, 0 with options, ${dropsIn} dropped`,
+    '  Frags: 0 reassembled, 0 timeouts, 0 couldn\'t reassemble',
+    '  Bcast: 0 received, 0 sent',
+    '  Mcast: 0 received, 0 sent',
+    `  Sent:  ${txFrames} generated, ${txFrames} forwarded, ${errsOut} errors, ${dropsOut} dropped`,
+  ].join('\n');
 }
 
 /** `show controllers <intf>` — real per-port link/cable status. */

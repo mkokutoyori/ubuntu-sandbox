@@ -26,7 +26,7 @@ import { MACAddress, IPAddress, SubnetMask } from '../../core/types';
 import { renderSecretField, renderPasswordField } from './cisco/ciscoPasswordRender';
 import { parsePingArgs, formatCiscoPing } from './cisco/ciscoPing';
 import { showInterface } from './cisco/CiscoShowCommands';
-import { showSwitchVersion } from './cisco/CiscoCommonShow';
+import { showSwitchVersion, showIpTraffic } from './cisco/CiscoCommonShow';
 import { buildConfigDhcpCommands } from './cisco/CiscoDhcpCommands';
 import type { CiscoShellContext } from './cisco/CiscoConfigCommands';
 import type { Router } from '../Router';
@@ -548,6 +548,8 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
         this.showArpInspectionVlan(this.d(), args.join(',')));
       t.register('show ip arp inspection statistics', 'Display DAI counters', () =>
         this.showArpInspectionStats(this.d()));
+      t.register('show ip arp inspection log', 'Display DAI log buffer', () =>
+        this.showArpInspectionLog(this.d()));
       t.register('show ip arp inspection interfaces', 'Display DAI per interface', () =>
         this.showArpInspectionIfs(this.d()));
       t.register('show arp access-list', 'Display ARP ACLs', () => this.showArpAcls(this.d()));
@@ -1019,8 +1021,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
   }
 
   private formatMacCisco(mac: MACAddress): string {
-    const hex = mac.toString().replace(/[:-]/g, '');
-    return `${hex.slice(0, 4)}.${hex.slice(4, 8)}.${hex.slice(8, 12)}`;
+    return mac.toCiscoString();
   }
 
   private showPortSecurityOverview(sw: CiscoSwitch): string {
@@ -1754,6 +1755,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       const a = args.map(x => x.toLowerCase());
       if (a[0] === 'count') return this.showMACAddressTableCount(this.d());
       if (a[0] === 'aging-time') return this.showMACAddressTableAgingTime(this.d());
+      if (a[0] === 'notification') return this.showMacAddressTableNotification();
       const filter: { vlan?: number; port?: string; address?: string; type?: 'static' | 'dynamic' } = {};
       let i = 0;
       if (a[i] === 'dynamic' || a[i] === 'static') { filter.type = a[i] as 'static' | 'dynamic'; i++; }
@@ -1918,8 +1920,9 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       const cfg = this.d().getSwitchportConfig(name);
       const out = [`interface ${name}`];
       if (cfg) {
-        out.push(cfg.mode === 'trunk' ? ' switchport mode trunk'
-          : cfg.mode === 'dot1q-tunnel' ? ' switchport mode dot1q-tunnel' : ' switchport mode access');
+        if (cfg.mode === 'trunk') out.push(' switchport mode trunk');
+        else if (cfg.mode === 'dot1q-tunnel') out.push(' switchport mode dot1q-tunnel');
+        else if (cfg.explicitMode) out.push(' switchport mode access');
         if (cfg.mode !== 'trunk' && cfg.accessVlan !== 1) {
           out.push(` switchport access vlan ${cfg.accessVlan}`);
         }
@@ -2787,7 +2790,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
         lines.push(' switchport nonegotiate');
       } else if (dtpAdmin === 'trunk') {
         lines.push(' switchport mode trunk');
-      } else {
+      } else if (cfg.explicitMode) {
         lines.push(' switchport mode access');
       }
       if (cfg.mode === 'trunk') {
@@ -2999,6 +3002,16 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       lines.push(`${String(v).padEnd(8)}${aging}`);
     }
     return lines.join('\n');
+  }
+
+  private showMacAddressTableNotification(): string {
+    return [
+      'MAC address table notification is disabled',
+      'Interval between Notification Traps : 1 secs',
+      'Number of MAC Addresses Added       : 0',
+      'Number of MAC Addresses Removed     : 0',
+      'Number of Notifications sent to NMS : 0',
+    ].join('\n');
   }
 
   private showVlanBrief(sw: CiscoSwitch, filter?: { id?: number; name?: string }): string {
@@ -3475,6 +3488,37 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     return lines.join('\n');
   }
 
+  private static readonly DAI_LOG_REASON_LABEL: Record<string, string> = {
+    'binding-mismatch': 'DHCP Deny',
+    'acl-deny': 'ACL Deny',
+    'src-mac-mismatch': 'DHCP Deny',
+    'dst-mac-mismatch': 'DHCP Deny',
+    'invalid-ip': 'DHCP Deny',
+    'rate-limit': 'Rate Limit',
+    'port-err-disabled': 'Err-disabled',
+  };
+
+  private showArpInspectionLog(sw: CiscoSwitch): string {
+    const entries = sw._getArpInspectionLog();
+    const lines = [
+      'Total Log Buffer Size : 32',
+      'Syslog rate : 5 entries per 200 seconds.',
+      '',
+      'Interface        Vlan    Sender MAC          Sender IP        Num Pkts   Reason         Time',
+      '------------------------------------------------------------------------------------------------',
+    ];
+    for (const e of entries) {
+      const reason = CiscoSwitchShell.DAI_LOG_REASON_LABEL[e.reason] ?? e.reason;
+      const time = new Date(e.lastSeenMs).toISOString().slice(11, 19);
+      lines.push(
+        `${this.abbreviateInterface(e.port).padEnd(17)}${String(e.vlan).padEnd(8)}` +
+        `${e.senderMac.padEnd(20)}${e.senderIp.padEnd(17)}${String(e.numPkts).padEnd(11)}` +
+        `${reason.padEnd(15)}${time} UTC`,
+      );
+    }
+    return lines.join('\n');
+  }
+
   private showArpInspectionIfs(sw: CiscoSwitch): string {
     const cfg = sw._getArpInspectionConfig();
     const errd = sw._getArpErrDisabledPorts();
@@ -3635,8 +3679,12 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
 
     // ── Show commands ──────────────────────────────────────────────
     for (const t of [this.userTrie, this.privilegedTrie]) {
-      t.registerGreedy('show ip route', 'Display IP routing table', () =>
-        this.showIpRoute());
+      t.registerGreedy('show ip route', 'Display IP routing table', (args) =>
+        args[0]?.toLowerCase() === 'summary' ? this.showIpRouteSummary() : this.showIpRoute());
+      t.register('show ip traffic', 'IP traffic statistics', () =>
+        showIpTraffic(this.d()._getPortsInternal().values()));
+      t.register('show adjacency', 'Display CEF adjacency table', () =>
+        '% This command is not supported on this platform');
       t.registerGreedy('show ip dhcp binding', 'Display DHCP bindings', () =>
         this.showIpDhcpBinding());
       t.registerGreedy('show ip dhcp pool', 'Display DHCP pools', (args) =>
@@ -3958,6 +4006,33 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     return [...header, ...lines].join('\n');
   }
 
+  private showIpRouteSummary(): string {
+    const rows = this.d().getL3RoutingTable();
+    const order: Array<'connected' | 'static'> = ['connected', 'static'];
+    const counts: Record<string, { networks: number; subnets: number; replicates: number; overhead: number; memory: number }> = {};
+    for (const k of order) counts[k] = { networks: 0, subnets: 0, replicates: 0, overhead: 0, memory: 0 };
+    for (const r of rows) {
+      const t = r.proto === 'static' ? 'static' : 'connected';
+      counts[t].networks++;
+      counts[t].subnets++;
+      counts[t].overhead += 152;
+      counts[t].memory += 360;
+    }
+    const lines = [
+      'IP routing table name is Default-IP-Routing-Table(0)',
+      'IP routing table maximum-paths is 16',
+      'Route Source    Networks    Subnets     Replicates  Overhead    Memory (bytes)',
+    ];
+    let totN = 0, totS = 0, totR = 0, totO = 0, totM = 0;
+    for (const k of order) {
+      const c = counts[k];
+      lines.push(`${k.padEnd(16)}${String(c.networks).padEnd(12)}${String(c.subnets).padEnd(12)}${String(c.replicates).padEnd(12)}${String(c.overhead).padEnd(12)}${c.memory}`);
+      totN += c.networks; totS += c.subnets; totR += c.replicates; totO += c.overhead; totM += c.memory;
+    }
+    lines.push(`${'Total'.padEnd(16)}${String(totN).padEnd(12)}${String(totS).padEnd(12)}${String(totR).padEnd(12)}${String(totO).padEnd(12)}${totM}`);
+    return lines.join('\n');
+  }
+
   /** IOS `show ip dhcp binding` table — leases currently held by the server. */
   private showIpDhcpBinding(): string {
     const dhcp = this.d()._getDHCPServerInternal();
@@ -4060,9 +4135,6 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       const proto = svi.adminUp && this.d().isSviLineUp(svi) ? 'up' : 'down';
       return `${name.padEnd(23)}${ip.padEnd(16)}YES ${method.padEnd(6)} ${status.padEnd(22)}${proto}`;
     });
-    if (rows.length === 0) {
-      rows.push(`Vlan1                  unassigned      YES unset  administratively down down`);
-    }
     return [header, ...rows].join('\n');
   }
 

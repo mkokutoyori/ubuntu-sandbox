@@ -637,7 +637,6 @@ describe('T-L2-06: Show Commands', () => {
     const result = await sw.executeCommand('show running-config');
     expect(result).toContain('hostname SW1');
     expect(result).toContain('interface FastEthernet0/1');
-    expect(result).toContain('switchport mode access');
     expect(result).toContain('end');
   });
 

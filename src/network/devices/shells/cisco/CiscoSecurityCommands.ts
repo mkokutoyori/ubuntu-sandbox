@@ -1,6 +1,7 @@
 import type { Router } from '../../Router';
 import type { CiscoRouter } from '../../CiscoRouter';
 import { CommandTrie } from '../CommandTrie';
+import { showIpTraffic } from './CiscoCommonShow';
 import {
   CiscoSecurityConfig,
   newRadiusServerStats,
@@ -1007,30 +1008,8 @@ export function buildSecurityShowCommands(trie: CommandTrie, getRouter: () => Ro
     return [...s.zonePairs.values()].map(zp => `policy exists on zp ${zp.name}`).join('\n');
   });
 
-  trie.register('show ip traffic', 'IP traffic statistics', () => {
-    const ports = getRouter()._getPortsInternal();
-    let rxFrames = 0, txFrames = 0, errsIn = 0, errsOut = 0, dropsIn = 0, dropsOut = 0;
-    for (const p of ports.values()) {
-      const c = p.getCounters();
-      rxFrames += c.framesIn;
-      txFrames += c.framesOut;
-      errsIn += c.errorsIn;
-      errsOut += c.errorsOut;
-      dropsIn += c.dropsIn;
-      dropsOut += c.dropsOut;
-    }
-    return [
-      'IP statistics:',
-      `  Rcvd:  ${rxFrames} total, ${rxFrames} local destination`,
-      `         ${errsIn} format errors, 0 checksum errors, 0 bad hop count`,
-      '         0 unknown protocol, 0 not a gateway, 0 security failures',
-      `         0 bad options, 0 with options, ${dropsIn} dropped`,
-      '  Frags: 0 reassembled, 0 timeouts, 0 couldn\'t reassemble',
-      '  Bcast: 0 received, 0 sent',
-      '  Mcast: 0 received, 0 sent',
-      `  Sent:  ${txFrames} generated, ${txFrames} forwarded, ${errsOut} errors, ${dropsOut} dropped`,
-    ].join('\n');
-  });
+  trie.register('show ip traffic', 'IP traffic statistics', () =>
+    showIpTraffic(getRouter()._getPortsInternal().values()));
 
   trie.registerGreedy('show ip cef', 'Display CEF FIB', () => {
     if (!sec().ipCef) return 'IP CEF is not enabled';

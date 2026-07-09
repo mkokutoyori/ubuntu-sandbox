@@ -79,6 +79,11 @@ export class MACAddress {
     return this.octets.map(o => o.toString(16).padStart(2, '0')).join(':');
   }
 
+  toCiscoString(): string {
+    const hex = this.octets.map(o => o.toString(16).padStart(2, '0')).join('');
+    return `${hex.slice(0, 4)}.${hex.slice(4, 8)}.${hex.slice(8, 12)}`;
+  }
+
   toJSON(): string {
     return this.toString();
   }
