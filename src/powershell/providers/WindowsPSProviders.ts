@@ -1129,28 +1129,29 @@ class WindowsNetworkAdapter implements INetworkProvider {
 
   getRoutes(): RouteInfo[] {
     const out: RouteInfo[] = [];
-    // Built-in defaults (loopback + per-port connected networks + default
-    // route) so the cmdlet output matches what real `Get-NetRoute` shows
-    // on a fresh box. Built from device state — no fallback to executor.
-    const gw = this.getDefaultGateway() ?? '0.0.0.0';
-    const ports = (this.pc as unknown as { getPorts: () => Array<{ name: string; getIPAddress: () => unknown; getSubnetMask?: () => unknown }> }).getPorts();
-    const firstIf = ports[0] ? toDisplayName(ports[0].name) : 'Ethernet';
-    if (!this.state.extraRoutes.has('0.0.0.0/0')) {
-      out.push({ destinationPrefix: '0.0.0.0/0', ifAlias: firstIf, nextHop: gw, routeMetric: 0 });
+    const real = (this.pc as unknown as {
+      getRoutingTable: () => Array<{
+        network: { toString(): string }; mask: { toCIDR(): number };
+        nextHop: { toString(): string } | null; iface: string; metric: number;
+      }>;
+    }).getRoutingTable();
+    const seen = new Set<string>();
+    for (const r of real) {
+      const dest = `${r.network.toString()}/${r.mask.toCIDR()}`;
+      seen.add(dest);
+      out.push({
+        destinationPrefix: dest,
+        ifAlias: toDisplayName(r.iface),
+        nextHop: r.nextHop ? r.nextHop.toString() : '0.0.0.0',
+        routeMetric: r.metric,
+      });
     }
     out.push({ destinationPrefix: '127.0.0.0/8', ifAlias: 'Loopback Pseudo-Interface 1', nextHop: '0.0.0.0', routeMetric: 306 });
-    for (const p of ports) {
-      const ip = p.getIPAddress()?.toString() ?? '';
-      const maskRaw = p.getSubnetMask?.()?.toString() ?? '';
-      if (ip && maskRaw) {
-        const prefix = maskToPrefixLength(maskRaw);
-        const network = ip.split('.').map((o, i) =>
-          (parseInt(o, 10) & parseInt((maskRaw.split('.')[i] ?? '0'), 10)).toString()
-        ).join('.');
-        out.push({ destinationPrefix: `${network}/${prefix}`, ifAlias: toDisplayName(p.name), nextHop: '0.0.0.0', routeMetric: 256 });
-      }
-    }
+    // Routes New-NetRoute couldn't apply to the real table (e.g. gateway not
+    // on-link) still get PS-local bookkeeping so the cmdlet stays consistent
+    // with itself even though cmd never sees them.
     for (const [dest, meta] of this.state.extraRoutes) {
+      if (seen.has(dest)) continue;
       out.push({
         destinationPrefix: dest,
         ifAlias: meta.ifAlias,
@@ -1161,10 +1162,37 @@ class WindowsNetworkAdapter implements INetworkProvider {
     return out;
   }
   addRoute(dest: string, ifAlias: string, nextHop: string, metric: number): void {
+    if (this.tryApplyRealRoute(dest, nextHop, metric)) return;
     this.state.extraRoutes.set(dest, { ifAlias, nextHop, metric });
   }
   removeRoute(dest: string): void {
-    this.state.extraRoutes.delete(dest);
+    const applied = this.tryRemoveRealRoute(dest);
+    if (!applied) this.state.extraRoutes.delete(dest);
+  }
+  private tryApplyRealRoute(dest: string, nextHop: string, metric: number): boolean {
+    const [netStr, prefixStr] = dest.split('/');
+    try {
+      const network = new IPAddress(netStr);
+      const mask = new SubnetMask(prefixToMaskOctets(Number(prefixStr ?? '32')));
+      const gw = new IPAddress(nextHop);
+      return (this.pc as unknown as {
+        addStaticRoute: (n: IPAddress, m: SubnetMask, g: IPAddress, metric: number) => boolean;
+      }).addStaticRoute(network, mask, gw, metric);
+    } catch {
+      return false;
+    }
+  }
+  private tryRemoveRealRoute(dest: string): boolean {
+    const [netStr, prefixStr] = dest.split('/');
+    try {
+      const network = new IPAddress(netStr);
+      const mask = new SubnetMask(prefixToMaskOctets(Number(prefixStr ?? '32')));
+      return (this.pc as unknown as {
+        removeRoute: (n: IPAddress, m: SubnetMask) => boolean;
+      }).removeRoute(network, mask);
+    } catch {
+      return false;
+    }
   }
   setRoute(dest: string, opts: { nextHop?: string; routeMetric?: number; ifAlias?: string }): string {
     const cur = this.state.extraRoutes.get(dest);

@@ -135,6 +135,35 @@ describe('Disable-NetAdapter (PS) — brings down the real port, not just a PS-s
   });
 });
 
+describe('Get-NetRoute / New-NetRoute — share the real routing table with route/netstat', () => {
+  it('a route added via "route add" (cmd) is visible to Get-NetRoute (PS)', async () => {
+    const pc = new WindowsPC('windows-pc', 'PC1', 0, 0);
+    const router = new CiscoRouter('R1');
+    new Cable('w').connect(pc.getPort('eth0')!, router.getPort('GigabitEthernet0/0')!);
+    pc.configureInterface('eth0', new IPAddress('10.0.0.5'), new SubnetMask('255.255.255.0'));
+
+    await pc.executeCommand('route add 172.16.0.0 mask 255.255.0.0 10.0.0.1');
+
+    const shell = ps(pc);
+    const out = await run(shell, 'Get-NetRoute -DestinationPrefix 172.16.0.0/16');
+    expect(out).toContain('172.16.0.0/16');
+    expect(out).toContain('10.0.0.1');
+  });
+
+  it('a route added via New-NetRoute (PS) is visible to "route print" (cmd)', async () => {
+    const pc = new WindowsPC('windows-pc', 'PC1', 0, 0);
+    const router = new CiscoRouter('R1');
+    new Cable('w').connect(pc.getPort('eth0')!, router.getPort('GigabitEthernet0/0')!);
+    pc.configureInterface('eth0', new IPAddress('10.0.0.5'), new SubnetMask('255.255.255.0'));
+
+    const shell = ps(pc);
+    await run(shell, 'New-NetRoute -DestinationPrefix 172.16.1.0/24 -InterfaceAlias "Ethernet 0" -NextHop 10.0.0.1');
+
+    const out = await pc.executeCommand('route print');
+    expect(out).toContain('172.16.1.0');
+  });
+});
+
 describe('netstat -r — real route table, matching route print', () => {
   it('renders the same routing table as "route print"', async () => {
     const pc = new WindowsPC('windows-pc', 'PC1', 0, 0);
