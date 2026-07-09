@@ -116,6 +116,26 @@ describe('Test-NetConnection -TraceRoute — TraceRoute property is present', ()
   });
 });
 
+describe('Get-NetAdapter — an uncabled but enabled port is Disconnected, not Up', () => {
+  it('reports Disconnected status and no link speed for an unplugged adapter', async () => {
+    const pc = new WindowsPC('windows-pc', 'PC1', 0, 0);
+    const shell = ps(pc);
+    const out = await run(shell, 'Get-NetAdapter -Name "Ethernet 1"');
+    expect(out).toMatch(/Ethernet 1\s+Ethernet 1\s+Disconnected/);
+    expect(out).not.toMatch(/Ethernet 1\s+Ethernet 1\s+Up/);
+    expect(out).toContain('0 bps');
+  });
+
+  it('a cabled adapter still reports Up with a real link speed', async () => {
+    const pc = new WindowsPC('windows-pc', 'PC1', 0, 0);
+    const router = new CiscoRouter('R1');
+    new Cable('w').connect(pc.getPort('eth0')!, router.getPort('GigabitEthernet0/0')!);
+    const shell = ps(pc);
+    const out = await run(shell, 'Get-NetAdapter -Name "Ethernet 0"');
+    expect(out).toMatch(/Ethernet 0\s+Ethernet 0\s+Up/);
+  });
+});
+
 describe('ipconfig /release — a connected adapter with no IP stays connected', () => {
   it('does not report "Media disconnected" for a cabled interface with no lease', async () => {
     const pc = new WindowsPC('windows-pc', 'PC1', 0, 0);

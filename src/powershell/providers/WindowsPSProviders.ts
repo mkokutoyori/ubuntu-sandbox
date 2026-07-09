@@ -951,16 +951,17 @@ class WindowsNetworkAdapter implements INetworkProvider {
     return (this.pc as unknown as { name: string }).name;
   }
   getAdapters(): NetworkAdapterInfo[] {
-    const ports = (this.pc as unknown as { getPorts: () => Array<{ name: string; getMAC: () => { toString: () => string }; getIsUp: () => boolean; getNegotiatedSpeed: () => number }> }).getPorts();
+    const ports = (this.pc as unknown as { getPorts: () => Array<{ name: string; getMAC: () => { toString: () => string }; getIsUp: () => boolean; isConnected: () => boolean; getNegotiatedSpeed: () => number }> }).getPorts();
     return ports.map((p, idx) => {
       const ov = this.state.adapterOverrides.get(p.name.toLowerCase()) ?? {};
+      const connected = p.getIsUp() && p.isConnected();
       return {
         name: ov.displayName ?? toDisplayName(p.name),
         displayName: ov.displayName ?? toDisplayName(p.name),
         ifIndex: idx + 1,
-        status: ov.status ?? (p.getIsUp() ? 'Up' : 'Disabled'),
+        status: ov.status ?? (!p.getIsUp() ? 'Disabled' : connected ? 'Up' : 'Disconnected'),
         macAddress: p.getMAC().toString(),
-        linkSpeed: formatLinkSpeedMbps(p.getNegotiatedSpeed()),
+        linkSpeed: connected ? formatLinkSpeedMbps(p.getNegotiatedSpeed()) : '0 bps',
       };
     });
   }
