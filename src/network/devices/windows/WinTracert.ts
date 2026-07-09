@@ -1,7 +1,11 @@
 import type { WinCommandContext } from './WinCommandExecutor';
-import { IPAddress } from '../../core/types';
+import { IPAddress, IPv6Address } from '../../core/types';
 import { isValidIPv4 } from '@/network/core/ip';
 import { unquote } from '@/lib/format';
+
+function isIPv6Literal(target: string): boolean {
+  try { new IPv6Address(target); return true; } catch { return false; }
+}
 
 const TRACERT_HELP = `
 Usage: tracert [-d] [-h maximum_hops] [-j host-list] [-w timeout]
@@ -211,6 +215,10 @@ export async function cmdTracert(ctx: WinCommandContext, args: string[]): Promis
   if (parsed.targetStr.length > 253 ||
       parsed.targetStr.split('.').some(lbl => lbl.length > 63)) {
     return `Unable to resolve target system name ${parsed.targetStr}. Failed to resolve.`;
+  }
+
+  if (isIPv6Literal(parsed.targetStr)) {
+    return `Unable to contact IP driver. General failure.`;
   }
 
   const targetIP = await ctx.resolveHostname(parsed.targetStr);

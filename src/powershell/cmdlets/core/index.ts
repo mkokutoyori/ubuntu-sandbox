@@ -83,6 +83,7 @@ import {
   GetNetConnectionProfileCmdlet, SetNetConnectionProfileCmdlet,
   SetNetIPAddressCmdlet, SetNetRouteCmdlet,
   RestartNetAdapterCmdlet, TestNetConnectionCmdlet,
+  ClearNetNeighborCacheCmdlet, GetNetAdapterStatisticsCmdlet,
 } from './NetworkCmdlets';
 import {
   AddVpnConnectionCmdlet, GetVpnConnectionCmdlet,
@@ -326,6 +327,8 @@ export function registerCoreCmdlets(registry: CmdletRegistry, opts: { includeSer
   registry.register(new GetNetNeighborCmdlet());
   registry.register(new NewNetNeighborCmdlet());
   registry.register(new RemoveNetNeighborCmdlet());
+  registry.register(new ClearNetNeighborCacheCmdlet());
+  registry.register(new GetNetAdapterStatisticsCmdlet());
   registry.register(new SetNetNeighborCmdlet());
   registry.register(new HostnameCmdlet());
   registry.register(new WhoamiCmdlet());

@@ -712,10 +712,23 @@ export interface NeighborInfo {
   policyStore: 'ActiveStore' | 'PersistentStore';
 }
 
+export interface AdapterStatisticsInfo {
+  name: string;
+  receivedBytes: number;
+  receivedUnicastPackets: number;
+  receivedDiscardedPackets: number;
+  receivedPacketErrors: number;
+  sentBytes: number;
+  sentUnicastPackets: number;
+  outboundDiscardedPackets: number;
+  outboundPacketErrors: number;
+}
+
 export interface INetworkProvider {
   getHostname(): string;
   getAdapters(): NetworkAdapterInfo[];
   getAdapter(name: string): NetworkAdapterInfo | null;
+  getAdapterStatistics(name: string): AdapterStatisticsInfo | null;
   getIPAddresses(ifAlias?: string): IPAddressInfo[];
   addIPAddress(ip: string, prefixLength: number, ifAlias: string, opts?: { gateway?: string }): void;
   removeIPAddress(ip: string, ifAlias?: string): void;
@@ -723,6 +736,7 @@ export interface INetworkProvider {
   getNeighbors(filter?: { ipAddress?: import('@/network/core/types').IPAddress; state?: string; ifIndex?: number }): NeighborInfo[];
   addNeighbor(ipAddress: import('@/network/core/types').IPAddress, linkLayerAddress: import('@/network/core/types').MACAddress, ifAlias: string): string;
   removeNeighbor(ipAddress: import('@/network/core/types').IPAddress, ifAlias?: string): string;
+  clearNeighbors(ifAlias?: string): void;
   setNeighbor(ipAddress: import('@/network/core/types').IPAddress, linkLayerAddress: import('@/network/core/types').MACAddress, ifAlias?: string): string;
   addRoute(dest: string, ifAlias: string, nextHop: string, metric: number): void;
   removeRoute(dest: string, ifAlias?: string): void;
@@ -751,6 +765,8 @@ export interface INetworkProvider {
   testTcpProbe(target: string, port: number): boolean;
   /** Egress {sourceIp, interfaceAlias, nextHop} for a target IP, or null. */
   egressInfoFor(target: string): { sourceIp: string; interfaceAlias: string; nextHop: string } | null;
+  /** Traceroute hop IP addresses ('0.0.0.0' for a timed-out/unreachable hop). */
+  traceRoute(target: string): string[];
   /** Resolve-DnsName */
   resolveDns(name: string): string[];
   /** Resolve-DnsName -Server: query a specific resolver over the wire. */

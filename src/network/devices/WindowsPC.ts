@@ -1741,7 +1741,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       case 'auditpol':
       case 'auditpol.exe': return cmdAuditpol(this.auditPolicy, args);
       case 'winrm':   return cmdWinrm(this.winrm, args);
-      case 'netstat': return cmdNetstat(fileCtx, args, this.socketTable);
+      case 'netstat': return cmdNetstat(fileCtx, args, this.socketTable, this.buildNetContext());
       case 'attrib':  return cmdAttrib(fileCtx, args);
       case 'find':    return cmdFind(fileCtx, args);
       case 'findstr': return cmdFindstr(fileCtx, args);

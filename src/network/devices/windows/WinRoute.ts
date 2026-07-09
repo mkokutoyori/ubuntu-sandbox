@@ -196,7 +196,7 @@ function routeDelete(ctx: WinCommandContext, args: string[]): string {
   }
 }
 
-function showRoutePrint(ctx: WinCommandContext): string {
+export function showRoutePrint(ctx: WinCommandContext): string {
   const table = ctx.getRoutingTable();
   const lines = [
     '===========================================================================',

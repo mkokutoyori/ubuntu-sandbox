@@ -11,6 +11,8 @@
 
 import { WindowsFileSystem } from './WindowsFileSystem';
 import type { SocketTable } from '../../core/SocketTable';
+import type { WinCommandContext } from './WinCommandExecutor';
+import { showRoutePrint } from './WinRoute';
 
 /** Context provided to all Windows file command modules */
 export interface WinFileCommandContext {
@@ -260,10 +262,15 @@ export function cmdNetstat(
   ctx: WinFileCommandContext,
   args: string[] = [],
   socketTable?: SocketTable | null,
+  netCtx?: WinCommandContext,
 ): string {
   // Expand combined flags: '-an' → chars a, n
   const hasFlag = (ch: string): boolean =>
     args.some(a => a.startsWith('-') && !a.startsWith('--') && a.includes(ch));
+
+  if (hasFlag('r')) {
+    return netCtx ? showRoutePrint(netCtx) : '';
+  }
 
   const showAll = hasFlag('a') || args.includes('-an');
 

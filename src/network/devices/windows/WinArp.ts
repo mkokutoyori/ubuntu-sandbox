@@ -52,6 +52,7 @@ interface WinArpFlags {
   filterIP: string | null;
   filterIfaceIP: string | null;  // -N value
   staticMAC: string | null;
+  staticIfAddr: string | null;   // -s inet_addr eth_addr [if_addr]
   verbose: boolean;
 }
 
@@ -61,6 +62,7 @@ function parseArgs(args: string[]): WinArpFlags {
     filterIP: null,
     filterIfaceIP: null,
     staticMAC: null,
+    staticIfAddr: null,
     verbose: false,
   };
 
@@ -104,7 +106,8 @@ function parseArgs(args: string[]): WinArpFlags {
       flags.mode = 'add';
       if (i + 1 < args.length) flags.filterIP = args[i + 1];
       if (i + 2 < args.length) flags.staticMAC = args[i + 2];
-      i += 3;
+      if (i + 3 < args.length && !args[i + 3].startsWith('-')) flags.staticIfAddr = args[i + 3];
+      i += 4;
     } else {
       i++;
     }
@@ -214,16 +217,26 @@ function handleAdd(ctx: WinCommandContext, flags: WinArpFlags): string {
     return ARP_HELP;
   }
 
-  // Determine the interface: use the first port with an IP
+  // Determine the interface: an explicit if_addr wins, else the first port with an IP.
   let iface = '';
-  for (const [name, port] of ctx.ports) {
-    if (port.getIPAddress()) {
-      iface = name;
-      break;
+  if (flags.staticIfAddr) {
+    for (const [name, port] of ctx.ports) {
+      if (port.getIPAddress()?.toString() === flags.staticIfAddr) {
+        iface = name;
+        break;
+      }
     }
-  }
-  if (!iface && ctx.ports.size > 0) {
-    iface = ctx.ports.keys().next().value!;
+    if (!iface) return `The parameter is incorrect.`;
+  } else {
+    for (const [name, port] of ctx.ports) {
+      if (port.getIPAddress()) {
+        iface = name;
+        break;
+      }
+    }
+    if (!iface && ctx.ports.size > 0) {
+      iface = ctx.ports.keys().next().value!;
+    }
   }
 
   let ip: IPAddress;

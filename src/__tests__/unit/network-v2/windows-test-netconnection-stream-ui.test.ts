@@ -56,7 +56,7 @@ describe('Windows PowerShell — Test-NetConnection (real ping + TCP, end to end
     const lines = texts(session);
     expect(lines.some((t) => /ComputerName\s+:\s+192\.168\.1\.20/.test(t))).toBe(true);
     expect(lines.some((t) => /RemoteAddress\s+:\s+192\.168\.1\.20/.test(t))).toBe(true);
-    expect(lines.some((t) => /InterfaceAlias\s+:\s+eth0/.test(t))).toBe(true);
+    expect(lines.some((t) => /InterfaceAlias\s+:\s+Ethernet 0/.test(t))).toBe(true);
     expect(lines.some((t) => /SourceAddress\s+:\s+192\.168\.1\.10/.test(t))).toBe(true);
     expect(lines.some((t) => /PingSucceeded\s+:\s+True/.test(t))).toBe(true);
   });

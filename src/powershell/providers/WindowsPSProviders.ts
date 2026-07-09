@@ -73,7 +73,7 @@ import type {
   INpsProvider, NpsOpResult, NasClientInfo, NetworkPolicyInfo,
   ConnectionRequestPolicyConditionsInfo, ConnectionRequestPolicyInfo,
   DirEntry, ServiceInfo, ProcessInfo, UserInfo, GroupInfo,
-  NetworkAdapterInfo, IPAddressInfo, RouteInfo, EventLogEntryInfo,
+  NetworkAdapterInfo, AdapterStatisticsInfo, IPAddressInfo, RouteInfo, EventLogEntryInfo,
   VpnConnectionInfo, ScheduledTaskInfo, DiskInfo, VolumeInfo,
 } from '@/powershell/providers/PSProviders';
 import type { PSValue } from '@/powershell/runtime/PSEnvironment';
@@ -971,6 +971,32 @@ class WindowsNetworkAdapter implements INetworkProvider {
     if (resolvedPort) candidates.add(toDisplayName(resolvedPort).toLowerCase());
     return adapters.find(a => candidates.has(a.name.toLowerCase())) ?? null;
   }
+  getAdapterStatistics(name: string): AdapterStatisticsInfo | null {
+    const adapter = this.getAdapter(name);
+    if (!adapter) return null;
+    const portName = toPortName(name) ?? name;
+    const ports = (this.pc as unknown as {
+      getPorts: () => Array<{
+        name: string;
+        getCounters: () => { framesIn: number; framesOut: number; bytesIn: number; bytesOut: number; errorsIn: number; errorsOut: number; dropsIn: number; dropsOut: number };
+      }>;
+    }).getPorts();
+    const port = ports.find(p => p.name.toLowerCase() === portName.toLowerCase())
+      ?? ports.find(p => toDisplayName(p.name).toLowerCase() === adapter.name.toLowerCase());
+    if (!port) return null;
+    const c = port.getCounters();
+    return {
+      name: adapter.name,
+      receivedBytes: c.bytesIn,
+      receivedUnicastPackets: c.framesIn,
+      receivedDiscardedPackets: c.dropsIn,
+      receivedPacketErrors: c.errorsIn,
+      sentBytes: c.bytesOut,
+      sentUnicastPackets: c.framesOut,
+      outboundDiscardedPackets: c.dropsOut,
+      outboundPacketErrors: c.errorsOut,
+    };
+  }
   getIPAddresses(ifAlias?: string): IPAddressInfo[] {
     const out: IPAddressInfo[] = [];
     // Loopback is always present in real Windows.
@@ -1204,6 +1230,19 @@ class WindowsNetworkAdapter implements INetworkProvider {
     const r = this.pc.sendPingProbeSync(ip);
     return { success: r.success, rttMs: r.rttMs, resolvedIp: ip.toString() };
   }
+  traceRoute(target: string): string[] {
+    const ip = this.resolveTargetSync(target);
+    if (!ip) return ['0.0.0.0'];
+    const eg = this.pc.getEgressFor(ip);
+    if (!eg) return ['0.0.0.0'];
+    const probe = this.pc.sendPingProbeSync(ip);
+    const nextHopStr = eg.nextHopIP.toString();
+    const isDirect = nextHopStr === ip.toString() || nextHopStr === '0.0.0.0';
+    const hops: string[] = [];
+    if (!isDirect) hops.push(nextHopStr);
+    hops.push(probe.success ? ip.toString() : '0.0.0.0');
+    return hops;
+  }
   testTcpProbe(target: string, port: number): boolean {
     const ip = this.resolveTargetSync(target);
     if (!ip) return false;
@@ -1273,6 +1312,23 @@ class WindowsNetworkAdapter implements INetworkProvider {
     const existing = arp.get(ipAddress.toString());
     const iface = ifAlias ? (toPortName(ifAlias) ?? ifAlias) : (existing?.iface ?? 'eth0');
     return this.addNeighbor(ipAddress, linkLayerAddress, toDisplayName(iface));
+  }
+
+  clearNeighbors(ifAlias?: string): void {
+    const pc = this.pc as unknown as {
+      arpTable: Map<string, { iface: string }>;
+      deleteARP: (ip: IPAddress) => boolean;
+    };
+    if (!ifAlias) {
+      pc.arpTable.clear();
+      return;
+    }
+    const portName = toPortName(ifAlias) ?? ifAlias;
+    for (const [ip, entry] of [...pc.arpTable]) {
+      if (entry.iface.toLowerCase() === portName.toLowerCase()) {
+        pc.deleteARP(new IPAddress(ip));
+      }
+    }
   }
 
   getTcpConnections() {

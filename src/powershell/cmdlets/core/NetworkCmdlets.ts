@@ -93,7 +93,11 @@ export class GetNetIPAddressCmdlet implements ICmdlet {
     const ifAlias = ctx.named['interfacealias']
       ? psValueToString(ctx.named['interfacealias'])
       : undefined;
-    const ips = net.getIPAddresses(ifAlias);
+    let ips = net.getIPAddresses(ifAlias);
+    if (ctx.named['addressfamily']) {
+      const af = psValueToString(ctx.named['addressfamily']).toLowerCase();
+      ips = ips.filter(ip => ip.addressFamily.toLowerCase() === af);
+    }
     return ips.map(ipToPSObject) as PSValue;
   }
 }
@@ -303,6 +307,53 @@ export class GetNetNeighborCmdlet implements ICmdlet {
       AddressFamily:    n.addressFamily,
       PolicyStore:      n.policyStore,
     } as Record<string, PSValue>)) as PSValue;
+  }
+}
+
+export class ClearNetNeighborCacheCmdlet implements ICmdlet {
+  readonly name = 'clear-netneighborcache';
+  readonly displayName = 'Clear-NetNeighborCache';
+  readonly aliases = [] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const ifAlias = ctx.named['interfacealias']
+      ? psValueToString(ctx.named['interfacealias'])
+      : undefined;
+    requireNetwork(ctx).clearNeighbors(ifAlias);
+    return null;
+  }
+}
+
+export class GetNetAdapterStatisticsCmdlet implements ICmdlet {
+  readonly name = 'get-netadapterstatistics';
+  readonly displayName = 'Get-NetAdapterStatistics';
+  readonly aliases = [] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const net = requireNetwork(ctx);
+    const name = ctx.named['name'] ?? ctx.positional[0];
+    const adapters = name === undefined || name === null
+      ? net.getAdapters()
+      : (Array.isArray(name) ? name.map(psValueToString) : [psValueToString(name)])
+          .map((n) => net.getAdapter(n))
+          .filter((a): a is NonNullable<typeof a> => a !== null);
+    const out: Record<string, PSValue>[] = [];
+    for (const a of adapters) {
+      const s = net.getAdapterStatistics(a.name);
+      if (!s) continue;
+      out.push({
+        Name:                     s.name,
+        ReceivedBytes:            s.receivedBytes,
+        ReceivedUnicastPackets:   s.receivedUnicastPackets,
+        ReceivedDiscardedPackets: s.receivedDiscardedPackets,
+        ReceivedPacketErrors:     s.receivedPacketErrors,
+        SentBytes:                s.sentBytes,
+        SentUnicastPackets:       s.sentUnicastPackets,
+        OutboundDiscardedPackets: s.outboundDiscardedPackets,
+        OutboundPacketErrors:     s.outboundPacketErrors,
+      });
+    }
+    return out as PSValue;
   }
 }
 
@@ -542,7 +593,7 @@ export class TestNetConnectionCmdlet implements ICmdlet {
   readonly name = 'test-netconnection';
   readonly displayName = 'Test-NetConnection';
   readonly aliases = [] as const;
-  readonly parameters = ['ComputerName', 'Port', 'CommonTCPPort', 'InformationLevel'] as const;
+  readonly parameters = ['ComputerName', 'Port', 'CommonTCPPort', 'InformationLevel', 'TraceRoute'] as const;
 
   execute(ctx: CmdletContext): PSValue {
     const net = requireNetwork(ctx);
@@ -596,6 +647,9 @@ export class TestNetConnectionCmdlet implements ICmdlet {
     if (detailed) {
       result.NameResolutionResults = probe ? [remoteAddress] : [];
       result.NetRouteNextHop = nextHop;
+    }
+    if (ctx.named['traceroute'] !== undefined) {
+      result.TraceRoute = net.traceRoute(target);
     }
     return result;
   }
