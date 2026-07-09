@@ -73,7 +73,7 @@ export class GetNetAdapterCmdlet implements ICmdlet {
     const names = Array.isArray(name) ? name.map(psValueToString) : [psValueToString(name)];
     const out: NetworkAdapterInfo[] = [];
     for (const n of names) {
-      const found = adapters.find(a => a.name.toLowerCase() === n.toLowerCase());
+      const found = net.getAdapter(n);
       if (found) out.push(found);
       else ctx.emitError(`No MSFT_NetAdapter objects found with property 'Name' equal to '${n}'.`);
     }
@@ -663,7 +663,7 @@ export class GetDnsClientServerAddressCmdlet implements ICmdlet {
       : undefined;
     const adapters = net.getAdapters();
     const filtered = ifAlias
-      ? adapters.filter(a => a.name.toLowerCase() === ifAlias.toLowerCase())
+      ? (() => { const match = net.getAdapter(ifAlias); return match ? [match] : []; })()
       : adapters;
     return filtered.map(a => ({
       InterfaceAlias: a.name,

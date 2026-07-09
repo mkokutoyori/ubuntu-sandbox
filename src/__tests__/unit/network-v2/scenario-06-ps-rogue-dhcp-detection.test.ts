@@ -120,7 +120,7 @@ function Invoke-RogueDhcpAudit {
     [string[]]$ServeursAutorises = @('${SERVEURS_AUTORISES[0]}','${SERVEURS_AUTORISES[1]}'),
     [string]$PasserelleAttendue = '${PASSERELLE_ATTENDUE}',
     [string]$DNSAttendu = '${DNS_ATTENDU}',
-    [string]$InterfaceAlias = 'eth0',
+    [string]$InterfaceAlias = 'Ethernet 0',
     [string]$NomInterne = 'intranet'
   )
   $cfg = Get-NetIPConfiguration | Where-Object { $_.InterfaceAlias -eq $InterfaceAlias }
@@ -164,7 +164,7 @@ function Invoke-RogueDhcpRemediation {
     [string[]]$ServeursAutorises = @('${SERVEURS_AUTORISES[0]}','${SERVEURS_AUTORISES[1]}'),
     [string]$PasserelleAttendue = '${PASSERELLE_ATTENDUE}',
     [string]$DNSAttendu = '${DNS_ATTENDU}',
-    [string]$InterfaceAlias = 'eth0',
+    [string]$InterfaceAlias = 'Ethernet 0',
     [string]$AdresseSecours = '192.168.10.222'
   )
   $src = 'RogueDhcpAuditScript'
@@ -202,7 +202,7 @@ describe('Scénario 6 — identification du serveur DHCP ayant répondu', () => 
     await win.executeCommand('ipconfig /renew');
     const ps = psShell(win);
 
-    const out = await ps("(Get-NetIPConfiguration | Where-Object { $_.InterfaceAlias -eq 'eth0' }).DhcpServer");
+    const out = await ps("(Get-NetIPConfiguration | Where-Object { $_.InterfaceAlias -eq 'Ethernet 0' }).DhcpServer");
 
     expect(out.trim()).toBe('192.168.10.66');
   }, 20000);

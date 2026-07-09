@@ -25,6 +25,7 @@
 import type { WinCommandContext } from './WinCommandExecutor';
 import { requireWindowsService } from './WinFeatureGate';
 import { renderDisplayDns } from './WinDnsCache';
+import { toDisplayName } from './WindowsInterfaceNaming';
 
 const IPCONFIG_HELP = `
 USAGE:
@@ -135,7 +136,8 @@ function ipconfigBasic(ctx: WinCommandContext): string {
     const displayName = portDisplayName(port.getName());
     const global6 = port.getGlobalIPv6();
     const linkLocal6 = port.getLinkLocalIPv6();
-    const adapterUp = port.getIsUp() && (!!ip || !!global6 || !!linkLocal6);
+    const hasAddress = !!ip || !!global6 || !!linkLocal6;
+    const adapterUp = port.getIsUp() && (port.isConnected() || hasAddress);
 
     lines.push(`Ethernet adapter ${displayName}:`, '');
     lines.push(`   Connection-specific DNS Suffix  . : ${suffix}`);
@@ -180,7 +182,8 @@ function ipconfigAll(ctx: WinCommandContext): string {
     const isDHCP = ctx.isDHCPConfigured(name);
     const global6 = port.getGlobalIPv6();
     const linkLocal6 = port.getLinkLocalIPv6();
-    const adapterUp = port.getIsUp() && (!!ip || !!global6 || !!linkLocal6);
+    const hasAddress = !!ip || !!global6 || !!linkLocal6;
+    const adapterUp = port.getIsUp() && (port.isConnected() || hasAddress);
 
     lines.push(`Ethernet adapter ${displayName}:`, '');
 
@@ -242,8 +245,6 @@ function ipconfigAll(ctx: WinCommandContext): string {
       } else if (global6 || linkLocal6) {
         pushDefaultGatewayLines(lines, ctx);
         lines.push(`   NetBIOS over Tcpip. . . . . . . . : Enabled`);
-      } else {
-        lines.push(`   Media State . . . . . . . . . . . : Media disconnected`);
       }
     }
     lines.push('');
@@ -328,30 +329,33 @@ function ipconfigRenew(ctx: WinCommandContext, args: string[]): string {
   ctx.autoDiscoverDHCPServers();
 
   const lines: string[] = ['Windows IP Configuration', ''];
+  const failed = new Set<string>();
 
   for (const name of targets) {
     const displayName = portDisplayName(name);
-    lines.push(`Ethernet adapter ${displayName}:`);
-    lines.push(`   DHCP Discover - Broadcast on ${name}`);
-
     ctx.requestLease(name, { verbose: false });
     const state = ctx.getDHCPState(name);
 
     if (state?.lease && state.lease.serverIdentifier === '0.0.0.0') {
-      // RFC 3927 APIPA fallback — no DHCP server ever answered.
-      lines.push(`   No DHCP server was found, using autoconfiguration IP address ${state.lease.ipAddress}`);
+      lines.push(`Ethernet adapter ${displayName}:`, '');
+      lines.push(`   No DHCP server was found, using autoconfiguration IP address ${state.lease.ipAddress}`, '');
     } else if (state?.lease) {
       ctx.addDHCPEvent('RENEW', `Renewed IP ${state.lease.ipAddress} on ${name}`);
+      lines.push(`Ethernet adapter ${displayName}:`, '');
       lines.push(`   DHCP Offer received from ${state.lease.serverIdentifier}`);
       lines.push(`   DHCP Request - Broadcast`);
-      lines.push(`   DHCP ACK received`);
+      lines.push(`   DHCP ACK received`, '');
+    } else {
+      failed.add(name);
+      lines.push(`An error occurred while renewing interface ${displayName} : unable to contact your DHCP server. Request has timed out.`, '');
     }
-    lines.push('');
   }
 
-  // Re-show ipconfig for every matched adapter (real ipconfig re-displays
-  // the whole adapter it just touched, IPv6 included).
+  // Re-show ipconfig for every matched adapter that still has addressing
+  // (real ipconfig re-displays the whole adapter it just touched, IPv6
+  // included); a hard-failure adapter already got its error line above.
   for (const name of targets) {
+    if (failed.has(name)) continue;
     const port = ctx.ports.get(name)!;
     const ip = port.getIPAddress();
     const mask = port.getSubnetMask();
@@ -366,8 +370,6 @@ function ipconfigRenew(ctx: WinCommandContext, args: string[]): string {
       lines.push(`   IPv4 Address. . . . . . . . . . . : ${ip}`);
       lines.push(`   Subnet Mask . . . . . . . . . . . : ${mask || '255.255.255.0'}`);
       pushDefaultGatewayLines(lines, ctx);
-    } else if (!global6 && !linkLocal6) {
-      lines.push(`   Media State . . . . . . . . . . . : Media disconnected`);
     }
     lines.push('');
   }
@@ -411,12 +413,12 @@ function ipconfigRenew6(ctx: WinCommandContext, args: string[]): string {
   const lines: string[] = ['Windows IP Configuration', ''];
   for (const name of targets) {
     const displayName = portDisplayName(name);
-    lines.push(`Ethernet adapter ${displayName}:`);
-    lines.push(`   Router Solicitation sent on ${name}`);
     ctx.sendRouterSolicitation(name);
     const port = ctx.ports.get(name)!;
     const global6 = port.getGlobalIPv6();
-    if (global6) lines.push(`   Router Advertisement received, SLAAC address ${global6} configured`);
+    lines.push(`Ethernet adapter ${displayName}:`);
+    lines.push(`   Connection-specific DNS Suffix  . : ${ctx.getConnectionDnsSuffix(name)}`.trimEnd());
+    if (global6) lines.push(`   IPv6 Address. . . . . . . . . . . : ${global6}`);
     lines.push('');
   }
   return lines.join('\n');
@@ -481,7 +483,7 @@ function pushDefaultGatewayLines(lines: string[], ctx: WinCommandContext): void 
 }
 
 function portDisplayName(portName: string): string {
-  return portName.replace(/^eth/, 'Ethernet ');
+  return toDisplayName(portName);
 }
 
 function parseAdapterArg(args: string[], switchName: string): string | null {

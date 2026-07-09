@@ -57,8 +57,8 @@ describe('Group 1: DHCP Client/Server Unit Tests', () => {
       expect(output).toContain('successfully released');
       
       const output2 = await pc.executeCommand('ipconfig /renew');
-      expect(output2).toContain('DHCP Discover');
-      expect(output2).toContain('Broadcast');
+      expect(output2).toMatch(/IPv4 Address/);
+      expect(output2).not.toContain('DHCP Discover');
     });
   });
 

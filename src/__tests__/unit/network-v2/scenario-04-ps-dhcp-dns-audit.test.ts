@@ -205,7 +205,7 @@ describe('Scénario 4 — collecte de configuration réseau', () => {
     await win.executeCommand('ipconfig /renew');
     const ps = psShell(win);
 
-    const out = await ps("(Get-DnsClientServerAddress -InterfaceAlias 'eth0').ServerAddresses");
+    const out = await ps("(Get-DnsClientServerAddress -InterfaceAlias 'Ethernet 0').ServerAddresses");
 
     expect(out).toContain('192.168.1.10');
   }, 20000);
@@ -256,7 +256,7 @@ describe('Scénario 4 — audit complet dans les trois états du poste', () => {
     await win.executeCommand('ipconfig /renew');
 
     const report = await runAudit(win, '-LeaseWarningSeconds 14400 -Probe appserver');
-    const eth0 = report.find(r => r.InterfaceAlias === 'eth0');
+    const eth0 = report.find(r => r.InterfaceAlias === 'Ethernet 0');
 
     expect(eth0).toBeDefined();
     expect(eth0.Origin).toBe('Dhcp');
@@ -271,7 +271,7 @@ describe('Scénario 4 — audit complet dans les trois états du poste', () => {
     await win.executeCommand('ipconfig /renew');
 
     const report = await runAudit(win, '-LeaseWarningSeconds 14400 -Probe appserver'); // seuil 4 h
-    const eth0 = report.find(r => r.InterfaceAlias === 'eth0');
+    const eth0 = report.find(r => r.InterfaceAlias === 'Ethernet 0');
 
     expect(eth0.Origin).toBe('Dhcp');
     expect(eth0.LeaseRemainingSeconds).toBeGreaterThan(0);
@@ -285,7 +285,7 @@ describe('Scénario 4 — audit complet dans les trois états du poste', () => {
     await win.executeCommand('ipconfig /renew');
 
     const report = await runAudit(win, '-LeaseWarningSeconds 14400 -Probe appserver');
-    const eth0 = report.find(r => r.InterfaceAlias === 'eth0');
+    const eth0 = report.find(r => r.InterfaceAlias === 'Ethernet 0');
 
     expect(eth0.DnsReachable).toBe(false);
     expect(eth0.DnsFailureKind).toBe('ServerUnreachable');
@@ -297,7 +297,7 @@ describe('Scénario 4 — audit complet dans les trois états du poste', () => {
     await win.executeCommand('ipconfig /renew');
 
     const report = await runAudit(win, '-LeaseWarningSeconds 14400 -Probe absent.lab.local');
-    const eth0 = report.find(r => r.InterfaceAlias === 'eth0');
+    const eth0 = report.find(r => r.InterfaceAlias === 'Ethernet 0');
 
     expect(eth0.DnsReachable).toBe(true);
     expect(eth0.DnsResolves).toBe(false);
@@ -309,7 +309,7 @@ describe('Scénario 4 — audit complet dans les trois états du poste', () => {
     await win.executeCommand('ipconfig /renew');
 
     const report = await runAudit(win, '-LeaseWarningSeconds 14400 -Probe appserver');
-    const eth0 = report.find(r => r.InterfaceAlias === 'eth0');
+    const eth0 = report.find(r => r.InterfaceAlias === 'Ethernet 0');
 
     for (const key of ['InterfaceAlias', 'IPAddress', 'Origin', 'LeaseRemainingSeconds', 'DnsReachable', 'DnsFailureKind', 'Status']) {
       expect(eth0).toHaveProperty(key);
@@ -326,6 +326,6 @@ describe('Scénario 4 — audit complet dans les trois états du poste', () => {
 
     expect(csv).toContain('InterfaceAlias');
     expect(csv).toContain('Status');
-    expect(csv).toContain('eth0');
+    expect(csv).toContain('Ethernet 0');
   }, 30000);
 });

@@ -81,7 +81,7 @@ function psShell(win: WindowsPC) {
 // étape encadrée par Try/Catch et tracée dans l'Observateur d'événements.
 const REMEDIATION_SCRIPT = String.raw`
 function Invoke-NetRemediation {
-  param([string]$Interface = 'eth0', [string]$Reference = 'appserver')
+  param([string]$Interface = 'Ethernet 0', [string]$Reference = 'appserver')
   $src = 'NetRemediationScript'
   if (-not (Get-EventLog -List | Where-Object { $_.Log -eq 'Application' })) { }
   New-EventLog -LogName Application -Source $src -ErrorAction SilentlyContinue
@@ -118,12 +118,12 @@ describe('Scénario 5 — phase de remédiation réseau', () => {
     await win.executeCommand('ipconfig /renew');
     const ps = psShell(win);
 
-    const before = await ps("(Get-NetIPAddress -AddressFamily IPv4 | Where-Object { $_.InterfaceAlias -eq 'eth0' }).IPAddress");
+    const before = await ps("(Get-NetIPAddress -AddressFamily IPv4 | Where-Object { $_.InterfaceAlias -eq 'Ethernet 0' }).IPAddress");
     expect(before).toContain('192.168.1.');
 
     await ps(`${REMEDIATION_SCRIPT}\nInvoke-NetRemediation | Out-Null`);
 
-    const after = await ps("Get-NetIPAddress -AddressFamily IPv4 | Where-Object { $_.InterfaceAlias -eq 'eth0' } | Format-List IPAddress,PrefixOrigin");
+    const after = await ps("Get-NetIPAddress -AddressFamily IPv4 | Where-Object { $_.InterfaceAlias -eq 'Ethernet 0' } | Format-List IPAddress,PrefixOrigin");
     expect(after).toContain('192.168.1.');
     expect(after).toMatch(/PrefixOrigin\s*:\s*Dhcp/);
   }, 30000);
@@ -240,7 +240,7 @@ describe('Scénario 5 — vérification post-remédiation et robustesse', () => 
     expect(first.trim().split('\n').pop()).toBe('0');
     expect(second.trim().split('\n').pop()).toBe('0');
 
-    const addr = await ps("(Get-NetIPAddress -AddressFamily IPv4 | Where-Object { $_.InterfaceAlias -eq 'eth0' -and $_.PrefixOrigin -eq 'Dhcp' }).IPAddress");
+    const addr = await ps("(Get-NetIPAddress -AddressFamily IPv4 | Where-Object { $_.InterfaceAlias -eq 'Ethernet 0' -and $_.PrefixOrigin -eq 'Dhcp' }).IPAddress");
     expect(addr).toContain('192.168.1.');
   }, 40000);
 });

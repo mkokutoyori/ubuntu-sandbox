@@ -17,6 +17,7 @@ import type { WindowsServiceManager } from './WindowsServiceManager';
 import type { WindowsProcessManager } from './WindowsProcessManager';
 import { isValidIPv4, isValidIPv6 } from '../../core/ip';
 import type { IPAddress } from '../../core/types';
+import { toDisplayName, toPortName, formatLinkSpeedMbps } from './WindowsInterfaceNaming';
 import {
   runPipeline, formatDefault, formatTable,
   buildProcessObjects, buildServiceObjects, buildCommandObjects,
@@ -4890,7 +4891,7 @@ export class PowerShellExecutor {
       // Apply disable/enable override
       if (override?.status) status = override.status;
 
-      adapterEntries.push({ displayName, desc: 'Intel(R) Ethernet Connection', ifIndex: idx + 2, status, mac, speed: '1 Gbps' });
+      adapterEntries.push({ displayName, desc: 'Intel(R) Ethernet Connection', ifIndex: idx + 2, status, mac, speed: formatLinkSpeedMbps(port.getNegotiatedSpeed()) });
       idx++;
     }
 
@@ -4908,7 +4909,9 @@ export class PowerShellExecutor {
             const regex = new RegExp('^' + nameFilter.replace(/\*/g, '.*').replace(/\?/g, '.') + '$');
             return regex.test(dn);
           }
-          return dn === nameFilter;
+          if (dn === nameFilter) return true;
+          const resolvedPort = toPortName(nameFilter);
+          return resolvedPort !== null && dn === toDisplayName(resolvedPort).toLowerCase();
         })
       : adapterEntries;
 
@@ -5390,12 +5393,8 @@ export class PowerShellExecutor {
     return [...header, ...rows].join('\n');
   }
 
-  /** Converts port name (eth0, eth1…) to Windows display name (Ethernet, Ethernet 2…) */
   private portToDisplayName(portName: string): string {
-    const m = portName.match(/^eth(\d+)$/i);
-    if (!m) return portName;
-    const idx = parseInt(m[1], 10);
-    return idx === 0 ? 'Ethernet' : `Ethernet ${idx + 1}`;
+    return toDisplayName(portName);
   }
 
   private maskToPrefixLength(mask: string): number {

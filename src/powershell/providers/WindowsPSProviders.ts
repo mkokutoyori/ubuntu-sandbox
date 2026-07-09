@@ -21,6 +21,7 @@ import { RemoteAccessVpnClient } from '@/network/ipsec/RemoteAccessVpnClient';
 import { PSRegistryProvider, WINDOWS_CLIENT_PRODUCT_IDENTITY, WINDOWS_SERVER_PRODUCT_IDENTITY } from '@/network/devices/windows/PSRegistryProvider';
 import { PSEventLogProvider } from '@/network/devices/windows/PSEventLogProvider';
 import { resolveAdapterName } from '@/network/devices/windows/WinNetsh';
+import { toDisplayName, toPortName, formatLinkSpeedMbps } from '@/network/devices/windows/WindowsInterfaceNaming';
 import { IPAddress, MACAddress, SubnetMask } from '@/network/core/types';
 import { findHostByAddress } from '@/network/devices/linux/network/HostLookup';
 import type { PSScriptBlock } from '@/powershell/parser/PSASTNode';
@@ -950,22 +951,25 @@ class WindowsNetworkAdapter implements INetworkProvider {
     return (this.pc as unknown as { name: string }).name;
   }
   getAdapters(): NetworkAdapterInfo[] {
-    const ports = (this.pc as unknown as { getPorts: () => Array<{ name: string; getMAC: () => { toString: () => string }; getIsUp: () => boolean }> }).getPorts();
+    const ports = (this.pc as unknown as { getPorts: () => Array<{ name: string; getMAC: () => { toString: () => string }; getIsUp: () => boolean; getNegotiatedSpeed: () => number }> }).getPorts();
     return ports.map((p, idx) => {
       const ov = this.state.adapterOverrides.get(p.name.toLowerCase()) ?? {};
       return {
-        name: ov.displayName ?? p.name,
-        displayName: ov.displayName ?? p.name,
+        name: ov.displayName ?? toDisplayName(p.name),
+        displayName: ov.displayName ?? toDisplayName(p.name),
         ifIndex: idx + 1,
         status: ov.status ?? (p.getIsUp() ? 'Up' : 'Disabled'),
         macAddress: p.getMAC().toString(),
-        linkSpeed: '1 Gbps',
+        linkSpeed: formatLinkSpeedMbps(p.getNegotiatedSpeed()),
       };
     });
   }
   getAdapter(name: string): NetworkAdapterInfo | null {
-    const lc = name.toLowerCase();
-    return this.getAdapters().find(a => a.name.toLowerCase() === lc) ?? null;
+    const adapters = this.getAdapters();
+    const candidates = new Set([name.toLowerCase(), toDisplayName(name).toLowerCase()]);
+    const resolvedPort = toPortName(name);
+    if (resolvedPort) candidates.add(toDisplayName(resolvedPort).toLowerCase());
+    return adapters.find(a => candidates.has(a.name.toLowerCase())) ?? null;
   }
   getIPAddresses(ifAlias?: string): IPAddressInfo[] {
     const out: IPAddressInfo[] = [];
@@ -1000,8 +1004,9 @@ class WindowsNetworkAdapter implements INetworkProvider {
       getInterfaceLeaseLifetimes?: (ifName: string) => { validSeconds: number; preferredSeconds: number } | null;
     };
     const ports = pc.getPorts();
-    const filtered = ifAlias
-      ? ports.filter(p => p.name.toLowerCase() === ifAlias.toLowerCase())
+    const resolvedFilter = ifAlias ? (toPortName(ifAlias) ?? ifAlias) : undefined;
+    const filtered = resolvedFilter
+      ? ports.filter(p => p.name.toLowerCase() === resolvedFilter.toLowerCase())
       : ports;
     filtered.forEach((p, idx) => {
       const raw = p.getIPAddress();
@@ -1014,7 +1019,7 @@ class WindowsNetworkAdapter implements INetworkProvider {
         out.push({
           ipAddress: ip,
           prefixLength: typeof cidr === 'number' ? cidr : 24,
-          ifAlias: p.name,
+          ifAlias: toDisplayName(p.name),
           ifIndex: idx + 1,
           prefixOrigin,
           suffixOrigin,
@@ -1026,12 +1031,13 @@ class WindowsNetworkAdapter implements INetworkProvider {
     });
     // Layer extra IPs (added via New-NetIPAddress)
     for (const [ip, meta] of this.state.extraIPs) {
-      if (ifAlias && meta.ifAlias.toLowerCase() !== ifAlias.toLowerCase()) continue;
-      const ifIndex = ports.findIndex(p => p.name.toLowerCase() === meta.ifAlias.toLowerCase()) + 1;
+      const metaPortName = toPortName(meta.ifAlias) ?? meta.ifAlias;
+      if (resolvedFilter && metaPortName.toLowerCase() !== resolvedFilter.toLowerCase()) continue;
+      const ifIndex = ports.findIndex(p => p.name.toLowerCase() === metaPortName.toLowerCase()) + 1;
       out.push({
         ipAddress: ip,
         prefixLength: meta.prefixLength,
-        ifAlias: meta.ifAlias,
+        ifAlias: toDisplayName(metaPortName),
         ifIndex,
         prefixOrigin: meta.prefixOrigin,
         suffixOrigin: meta.suffixOrigin,
@@ -1102,7 +1108,7 @@ class WindowsNetworkAdapter implements INetworkProvider {
     // on a fresh box. Built from device state — no fallback to executor.
     const gw = this.getDefaultGateway() ?? '0.0.0.0';
     const ports = (this.pc as unknown as { getPorts: () => Array<{ name: string; getIPAddress: () => unknown; getSubnetMask?: () => unknown }> }).getPorts();
-    const firstIf = ports[0] ? portToDisplayName(ports[0].name) : 'Ethernet';
+    const firstIf = ports[0] ? toDisplayName(ports[0].name) : 'Ethernet';
     if (!this.state.extraRoutes.has('0.0.0.0/0')) {
       out.push({ destinationPrefix: '0.0.0.0/0', ifAlias: firstIf, nextHop: gw, routeMetric: 0 });
     }
@@ -1115,7 +1121,7 @@ class WindowsNetworkAdapter implements INetworkProvider {
         const network = ip.split('.').map((o, i) =>
           (parseInt(o, 10) & parseInt((maskRaw.split('.')[i] ?? '0'), 10)).toString()
         ).join('.');
-        out.push({ destinationPrefix: `${network}/${prefix}`, ifAlias: portToDisplayName(p.name), nextHop: '0.0.0.0', routeMetric: 256 });
+        out.push({ destinationPrefix: `${network}/${prefix}`, ifAlias: toDisplayName(p.name), nextHop: '0.0.0.0', routeMetric: 256 });
       }
     }
     for (const [dest, meta] of this.state.extraRoutes) {
@@ -1161,11 +1167,11 @@ class WindowsNetworkAdapter implements INetworkProvider {
 
   getDnsServers(ifAlias: string): string[] {
     const m = this.pc as unknown as { getDnsServers?: (n: string) => string[] };
-    return m.getDnsServers ? m.getDnsServers(ifAlias) : [];
+    return m.getDnsServers ? m.getDnsServers(toPortName(ifAlias) ?? ifAlias) : [];
   }
   setDnsServers(ifAlias: string, servers: string[]): void {
     const m = this.pc as unknown as { setDnsServers?: (n: string, s: string[]) => void };
-    if (m.setDnsServers) m.setDnsServers(ifAlias, servers);
+    if (m.setDnsServers) m.setDnsServers(toPortName(ifAlias) ?? ifAlias, servers);
   }
   getDefaultGateway(): string | null {
     const m = this.pc as unknown as { getDefaultGatewayString?: () => string | null };
@@ -1173,7 +1179,7 @@ class WindowsNetworkAdapter implements INetworkProvider {
   }
   getDhcpServer(ifAlias: string): string | null {
     const m = this.pc as unknown as { getDhcpServer?: (n: string) => string | null };
-    return m.getDhcpServer ? m.getDhcpServer(ifAlias) : null;
+    return m.getDhcpServer ? m.getDhcpServer(toPortName(ifAlias) ?? ifAlias) : null;
   }
   isDHCPConfigured(): boolean { return false; }
   testConnection(target: string): boolean {
@@ -1210,7 +1216,7 @@ class WindowsNetworkAdapter implements INetworkProvider {
     if (!eg) return null;
     return {
       sourceIp: eg.sourceIp.toString(),
-      interfaceAlias: eg.interfaceName,
+      interfaceAlias: toDisplayName(eg.interfaceName),
       nextHop: eg.nextHopIP.toString(),
     };
   }
@@ -1239,7 +1245,7 @@ class WindowsNetworkAdapter implements INetworkProvider {
       if (filter?.ifIndex !== undefined && ifIndex !== filter.ifIndex) continue;
       rows.push({
         ifIndex,
-        ifAlias: portToDisplayName(entry.iface),
+        ifAlias: toDisplayName(entry.iface),
         ipAddress: ip,
         linkLayerAddress: entry.mac.toString().toUpperCase().replace(/:/g, '-'),
         state,
@@ -1251,7 +1257,7 @@ class WindowsNetworkAdapter implements INetworkProvider {
   }
 
   addNeighbor(ipAddress: IPAddress, linkLayerAddress: MACAddress, ifAlias: string): string {
-    const iface = displayNameToPort(ifAlias);
+    const iface = toPortName(ifAlias) ?? ifAlias;
     (this.pc as unknown as { addStaticARP: (ip: IPAddress, mac: MACAddress, iface: string) => void })
       .addStaticARP(ipAddress, linkLayerAddress, iface);
     return '';
@@ -1265,8 +1271,8 @@ class WindowsNetworkAdapter implements INetworkProvider {
   setNeighbor(ipAddress: IPAddress, linkLayerAddress: MACAddress, ifAlias?: string): string {
     const arp = (this.pc as unknown as { arpTable: Map<string, { iface: string }> }).arpTable;
     const existing = arp.get(ipAddress.toString());
-    const iface = ifAlias ? displayNameToPort(ifAlias) : (existing?.iface ?? 'eth0');
-    return this.addNeighbor(ipAddress, linkLayerAddress, portToDisplayName(iface));
+    const iface = ifAlias ? (toPortName(ifAlias) ?? ifAlias) : (existing?.iface ?? 'eth0');
+    return this.addNeighbor(ipAddress, linkLayerAddress, toDisplayName(iface));
   }
 
   getTcpConnections() {
@@ -1385,22 +1391,6 @@ function notImpl(name: string): Error {
   // The cmdlet layer recognises "not implemented" and falls through to the
   // legacy PowerShellExecutor; keep the message in sync with isFallbackError.
   return new Error(`${name} is not recognized as a network provider operation`);
-}
-
-// Port name → PS-style adapter display name (`eth0` → `Ethernet`).
-function portToDisplayName(portName: string): string {
-  const m = portName.match(/^eth(\d+)$/i);
-  if (!m) return portName;
-  const idx = parseInt(m[1], 10);
-  return idx === 0 ? 'Ethernet' : `Ethernet ${idx + 1}`;
-}
-
-// Inverse: PS display name → port name (`Ethernet` → `eth0`, `Ethernet 2` → `eth1`).
-function displayNameToPort(alias: string): string {
-  if (alias.toLowerCase() === 'ethernet') return 'eth0';
-  const m = alias.match(/^Ethernet\s+(\d+)$/i);
-  if (m) return `eth${parseInt(m[1], 10) - 1}`;
-  return alias;
 }
 
 // 255.255.255.0 → 24.
