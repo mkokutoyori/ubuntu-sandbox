@@ -1,6 +1,6 @@
 ============================================================
 Cisco L2 switch debug transcript — cisco-l2-01-cli-basics
-Generated: 2026-07-07T21:33:01.940Z
+Generated: 2026-07-09T11:38:52.642Z
 Topology: CORE(L2) trunked to SW1 & SW2 (L2 access). SW1: L1(Linux 1.11) Fa0/1, W1(Win 1.12) Fa0/2, SRV1(Linux 1.13) Fa0/3, Gi0/1=trunk. SW2: L2(Linux 1.21) Fa0/1, W2(Win 1.22) Fa0/2, SRV2(Linux 1.23) Fa0/3, Gi0/1=trunk. All hosts 192.168.1.0/24.
 focus=CLI parsing, help, prompts, mode navigation, show family, host inspection
 Total steps: 366
@@ -77,6 +77,7 @@ Total steps: 366
     sntp            Show SNTP
     interfaces      Display interface information
     etherchannel    Display EtherChannel
+    queuing         queuing
     vlan            Display VLAN information
     current         Show current MST config
     pending         Show pending MST config
@@ -131,7 +132,7 @@ Total steps: 366
   Configuration register is 0xF
 
 [10/366] sw1 SW1> show clock
-  *21:33:01.000 UTC Tue Jul 7 2026
+  *11:38:52.000 UTC Thu Jul 9 2026
 
 [11/366] sw1 SW1> show users
       Line       User       Host(s)              Idle       Location
@@ -171,29 +172,29 @@ Total steps: 366
   Fa0/1                          connected    1          a-full  a-100  10/100BaseTX
   Fa0/2                          connected    1          a-full  a-100  10/100BaseTX
   Fa0/3                          connected    1          a-full  a-100  10/100BaseTX
-  Fa0/4                          notconnect   1          a-full  a-100  10/100BaseTX
-  Fa0/5                          notconnect   1          a-full  a-100  10/100BaseTX
-  Fa0/6                          notconnect   1          a-full  a-100  10/100BaseTX
-  Fa0/7                          notconnect   1          a-full  a-100  10/100BaseTX
-  Fa0/8                          notconnect   1          a-full  a-100  10/100BaseTX
-  Fa0/9                          notconnect   1          a-full  a-100  10/100BaseTX
-  Fa0/10                         notconnect   1          a-full  a-100  10/100BaseTX
-  Fa0/11                         notconnect   1          a-full  a-100  10/100BaseTX
-  Fa0/12                         notconnect   1          a-full  a-100  10/100BaseTX
-  Fa0/13                         notconnect   1          a-full  a-100  10/100BaseTX
-  Fa0/14                         notconnect   1          a-full  a-100  10/100BaseTX
-  Fa0/15                         notconnect   1          a-full  a-100  10/100BaseTX
-  Fa0/16                         notconnect   1          a-full  a-100  10/100BaseTX
-  Fa0/17                         notconnect   1          a-full  a-100  10/100BaseTX
-  Fa0/18                         notconnect   1          a-full  a-100  10/100BaseTX
-  Fa0/19                         notconnect   1          a-full  a-100  10/100BaseTX
-  Fa0/20                         notconnect   1          a-full  a-100  10/100BaseTX
-  Fa0/21                         notconnect   1          a-full  a-100  10/100BaseTX
-  Fa0/22                         notconnect   1          a-full  a-100  10/100BaseTX
-  Fa0/23                         notconnect   1          a-full  a-100  10/100BaseTX
-  Fa0/24                         notconnect   1          a-full  a-100  10/100BaseTX
+  Fa0/4                          notconnect   1          auto    auto   10/100BaseTX
+  Fa0/5                          notconnect   1          auto    auto   10/100BaseTX
+  Fa0/6                          notconnect   1          auto    auto   10/100BaseTX
+  Fa0/7                          notconnect   1          auto    auto   10/100BaseTX
+  Fa0/8                          notconnect   1          auto    auto   10/100BaseTX
+  Fa0/9                          notconnect   1          auto    auto   10/100BaseTX
+  Fa0/10                         notconnect   1          auto    auto   10/100BaseTX
+  Fa0/11                         notconnect   1          auto    auto   10/100BaseTX
+  Fa0/12                         notconnect   1          auto    auto   10/100BaseTX
+  Fa0/13                         notconnect   1          auto    auto   10/100BaseTX
+  Fa0/14                         notconnect   1          auto    auto   10/100BaseTX
+  Fa0/15                         notconnect   1          auto    auto   10/100BaseTX
+  Fa0/16                         notconnect   1          auto    auto   10/100BaseTX
+  Fa0/17                         notconnect   1          auto    auto   10/100BaseTX
+  Fa0/18                         notconnect   1          auto    auto   10/100BaseTX
+  Fa0/19                         notconnect   1          auto    auto   10/100BaseTX
+  Fa0/20                         notconnect   1          auto    auto   10/100BaseTX
+  Fa0/21                         notconnect   1          auto    auto   10/100BaseTX
+  Fa0/22                         notconnect   1          auto    auto   10/100BaseTX
+  Fa0/23                         notconnect   1          auto    auto   10/100BaseTX
+  Fa0/24                         notconnect   1          auto    auto   10/100BaseTX
   Gi0/1                          connected    trunk      a-full  a-1000 1000BASE-T
-  Gi0/2                          notconnect   1          a-full  a-1000 1000BASE-T
+  Gi0/2                          notconnect   1          auto    auto   1000BASE-T
 
 
 --- [17] § enter privileged EXEC ---
@@ -266,6 +267,7 @@ Total steps: 366
     arp             Display ARP table
     interfaces      Display interface information
     etherchannel    Display EtherChannel
+    queuing         queuing
     vlan            Display VLAN information
     startup-config  Display startup configuration
     version         Display system information
@@ -333,8 +335,10 @@ Total steps: 366
     <cr>            
 
 [25/366] sw1 SW1# reload ?
-    WORD  Reload the device
-    <cr>  
+    at      
+    cancel  
+    in      
+    <cr>    
 
 
 --- [26] § privileged show family ---
@@ -471,6 +475,17 @@ Total steps: 366
   VLAN Name                             Status    Ports
   ---- -------------------------------- --------- -------------------------------
   1    default                          active    Fa0/1, Fa0/2, Fa0/3, Fa0/4, Fa0/5, Fa0/6, Fa0/7, Fa0/8, Fa0/9, Fa0/10, Fa0/11, Fa0/12, Fa0/13, Fa0/14, Fa0/15, Fa0/16, Fa0/17, Fa0/18, Fa0/19, Fa0/20, Fa0/21, Fa0/22, Fa0/23, Fa0/24, Gi0/2
+  
+  VLAN Type  SAID       MTU   Parent RingNo BridgeNo Stp  BrdgMode Trans1 Trans2
+  ---- ----- ---------- ----- ------ ------ -------- ---- -------- ------ ------
+  1    enet  100001     1500  -      -      -        -    -        0      0
+  
+  Remote SPAN VLANs
+  ------------------------------------------------------------------------------
+  
+  
+  Primary Secondary Type              Ports
+  ------- --------- ----------------- ------------------------------------------
 
 [32/366] sw1 SW1# show vlan brief
   VLAN Name                             Status    Ports
@@ -500,15 +515,9 @@ Total steps: 366
 [35/366] sw1 SW1# show mac address-table count
   Mac Address Table
   -------------------------------------------
-  
-  Vlan    Mac Address       Type        Ports
-  ----    -----------       --------    -----
-  1       02:00:00:00:00:4f DYNAMIC     FastEthernet0/1
-  1       02:00:00:00:00:53 DYNAMIC     FastEthernet0/2
-  1       02:00:00:00:00:57 DYNAMIC     FastEthernet0/3
-  1       02:00:00:00:00:5b DYNAMIC     GigabitEthernet0/1
-  1       02:00:00:00:00:5f DYNAMIC     GigabitEthernet0/1
-  1       02:00:00:00:00:63 DYNAMIC     GigabitEthernet0/1
+  Vlan    Mac Address Count
+  ------  -----------------
+  1             6
   
   Total Mac Addresses for this criterion: 6
 
@@ -530,17 +539,7 @@ Total steps: 366
 [37/366] sw1 SW1# show mac address-table static
   Mac Address Table
   -------------------------------------------
-  
-  Vlan    Mac Address       Type        Ports
-  ----    -----------       --------    -----
-  1       02:00:00:00:00:4f DYNAMIC     FastEthernet0/1
-  1       02:00:00:00:00:53 DYNAMIC     FastEthernet0/2
-  1       02:00:00:00:00:57 DYNAMIC     FastEthernet0/3
-  1       02:00:00:00:00:5b DYNAMIC     GigabitEthernet0/1
-  1       02:00:00:00:00:5f DYNAMIC     GigabitEthernet0/1
-  1       02:00:00:00:00:63 DYNAMIC     GigabitEthernet0/1
-  
-  Total Mac Addresses for this criterion: 6
+  No entries.
 
 [38/366] sw1 SW1# show spanning-tree
   VLAN0001
@@ -1081,29 +1080,29 @@ Total steps: 366
   Fa0/1                          connected    1          a-full  a-100  10/100BaseTX
   Fa0/2                          connected    1          a-full  a-100  10/100BaseTX
   Fa0/3                          connected    1          a-full  a-100  10/100BaseTX
-  Fa0/4                          notconnect   1          a-full  a-100  10/100BaseTX
-  Fa0/5                          notconnect   1          a-full  a-100  10/100BaseTX
-  Fa0/6                          notconnect   1          a-full  a-100  10/100BaseTX
-  Fa0/7                          notconnect   1          a-full  a-100  10/100BaseTX
-  Fa0/8                          notconnect   1          a-full  a-100  10/100BaseTX
-  Fa0/9                          notconnect   1          a-full  a-100  10/100BaseTX
-  Fa0/10                         notconnect   1          a-full  a-100  10/100BaseTX
-  Fa0/11                         notconnect   1          a-full  a-100  10/100BaseTX
-  Fa0/12                         notconnect   1          a-full  a-100  10/100BaseTX
-  Fa0/13                         notconnect   1          a-full  a-100  10/100BaseTX
-  Fa0/14                         notconnect   1          a-full  a-100  10/100BaseTX
-  Fa0/15                         notconnect   1          a-full  a-100  10/100BaseTX
-  Fa0/16                         notconnect   1          a-full  a-100  10/100BaseTX
-  Fa0/17                         notconnect   1          a-full  a-100  10/100BaseTX
-  Fa0/18                         notconnect   1          a-full  a-100  10/100BaseTX
-  Fa0/19                         notconnect   1          a-full  a-100  10/100BaseTX
-  Fa0/20                         notconnect   1          a-full  a-100  10/100BaseTX
-  Fa0/21                         notconnect   1          a-full  a-100  10/100BaseTX
-  Fa0/22                         notconnect   1          a-full  a-100  10/100BaseTX
-  Fa0/23                         notconnect   1          a-full  a-100  10/100BaseTX
-  Fa0/24                         notconnect   1          a-full  a-100  10/100BaseTX
+  Fa0/4                          notconnect   1          auto    auto   10/100BaseTX
+  Fa0/5                          notconnect   1          auto    auto   10/100BaseTX
+  Fa0/6                          notconnect   1          auto    auto   10/100BaseTX
+  Fa0/7                          notconnect   1          auto    auto   10/100BaseTX
+  Fa0/8                          notconnect   1          auto    auto   10/100BaseTX
+  Fa0/9                          notconnect   1          auto    auto   10/100BaseTX
+  Fa0/10                         notconnect   1          auto    auto   10/100BaseTX
+  Fa0/11                         notconnect   1          auto    auto   10/100BaseTX
+  Fa0/12                         notconnect   1          auto    auto   10/100BaseTX
+  Fa0/13                         notconnect   1          auto    auto   10/100BaseTX
+  Fa0/14                         notconnect   1          auto    auto   10/100BaseTX
+  Fa0/15                         notconnect   1          auto    auto   10/100BaseTX
+  Fa0/16                         notconnect   1          auto    auto   10/100BaseTX
+  Fa0/17                         notconnect   1          auto    auto   10/100BaseTX
+  Fa0/18                         notconnect   1          auto    auto   10/100BaseTX
+  Fa0/19                         notconnect   1          auto    auto   10/100BaseTX
+  Fa0/20                         notconnect   1          auto    auto   10/100BaseTX
+  Fa0/21                         notconnect   1          auto    auto   10/100BaseTX
+  Fa0/22                         notconnect   1          auto    auto   10/100BaseTX
+  Fa0/23                         notconnect   1          auto    auto   10/100BaseTX
+  Fa0/24                         notconnect   1          auto    auto   10/100BaseTX
   Gi0/1                          connected    trunk      a-full  a-1000 1000BASE-T
-  Gi0/2                          notconnect   1          a-full  a-1000 1000BASE-T
+  Gi0/2                          notconnect   1          auto    auto   1000BASE-T
 
 [43/366] sw1 SW1# show interfaces trunk
   Port        Mode             Encapsulation  Status        Native vlan
@@ -1247,9 +1246,9 @@ Total steps: 366
   VTP Domain Name                 : <empty>
   VTP Pruning Mode                : Disabled
   VTP Traps Generation            : Disabled
-  Device ID                       : 02:00:00:00:00:01
-  Configuration last modified by  : 02:00:00:00:00:01
-  Local updater ID is 02:00:00:00:00:01
+  Device ID                       : 0200.0000.0001
+  Configuration last modified by 0.0.0.0 at 0-0-00 00:00:00
+  Local updater ID is 0.0.0.0 on interface Vl1 (lowest numbered VLAN interface found)
   
   Feature VLAN:
   --------------
@@ -1275,7 +1274,7 @@ Total steps: 366
   Timer interval: 300 seconds
 
 [54/366] sw1 SW1# show clock
-  *21:33:01.000 UTC Tue Jul 7 2026
+  *11:38:52.000 UTC Thu Jul 9 2026
 
 [55/366] sw1 SW1# show processes cpu
   CPU utilization for five seconds: 4%/0%; one minute: 5%; five minutes: 4%
@@ -1397,8 +1396,15 @@ Total steps: 366
     0 carrier transitions
 
 [59/366] sw1 SW1# show logging
-  Syslog logging: enabled
-  
+  Syslog logging: enabled (0 messages dropped, 0 flushes, 0 overruns)
+      Console logging: level debugging
+      Monitor logging: level debugging
+      Buffer logging: disabled
+      Trap logging: level informational
+      Facility: local7
+      Timestamp logging: disabled
+      Sequence numbers: disabled
+      No active syslog hosts
 
 [60/366] sw1 SW1# show boot
   BOOT variable does not exist
@@ -1619,31 +1625,32 @@ Total steps: 366
 <empty>
 
 [84/366] sw1 SW1(config-if)# ?
-    cdp               cdp
-    no                no
-    lldp              lldp
-    interface         Select an interface to configure
-    switchport        switchport
-    private-vlan      private-vlan
-    channel-protocol  Interface channel-protocol
-    storm-control     Interface storm-control
-    mls               mls
-    speed             Interface speed
-    duplex            Interface duplex
-    mdix              Interface mdix
-    power             Interface power
-    srr-queue         Interface srr-queue
-    load-interval     Interface load-interval
-    channel-group     EtherChannel membership
-    shutdown          Disable interface
-    description       Interface description
-    ip                ip
-    spanning-tree     Interface STP configuration
-    mtu               Set MTU
-    vrrp              VRRP group config
-    standby           HSRP group config
-    glbp              GLBP group config
-    udld              udld
+    cdp                cdp
+    no                 no
+    lldp               lldp
+    interface          Select an interface to configure
+    switchport         switchport
+    private-vlan       private-vlan
+    l2protocol-tunnel  Tunnel a client L2 control protocol across the S-VLAN instead of terminating it locally
+    channel-protocol   Interface channel-protocol
+    storm-control      Interface storm-control
+    speed              Interface speed
+    duplex             Interface duplex
+    mdix               Interface mdix
+    power              Interface power
+    srr-queue          Interface srr-queue
+    load-interval      Interface load-interval
+    mls                mls
+    channel-group      EtherChannel membership
+    shutdown           Disable interface
+    description        Interface description
+    ip                 ip
+    spanning-tree      Interface STP configuration
+    mtu                Set MTU
+    vrrp               VRRP group config
+    standby            HSRP group config
+    glbp               GLBP group config
+    udld               udld
 
 [85/366] sw1 SW1(config-if)# description LINK-TO-L1
 <empty>
@@ -1871,29 +1878,29 @@ Total steps: 366
   Fa0/1       LINK-TO-L1         connected    1          a-full  a-100  10/100BaseTX
   Fa0/2                          connected    1          a-full  a-100  10/100BaseTX
   Fa0/3                          connected    1          a-full  a-100  10/100BaseTX
-  Fa0/4       UNUSED-RANGE       disabled     1          a-full  a-100  10/100BaseTX
-  Fa0/5       UNUSED-RANGE       disabled     1          a-full  a-100  10/100BaseTX
-  Fa0/6       UNUSED-RANGE       disabled     1          a-full  a-100  10/100BaseTX
-  Fa0/7       UNUSED-RANGE       disabled     1          a-full  a-100  10/100BaseTX
-  Fa0/8       UNUSED-RANGE       disabled     1          a-full  a-100  10/100BaseTX
-  Fa0/9                          notconnect   1          a-full  a-100  10/100BaseTX
-  Fa0/10                         notconnect   1          a-full  a-100  10/100BaseTX
-  Fa0/11                         notconnect   1          a-full  a-100  10/100BaseTX
-  Fa0/12                         notconnect   1          a-full  a-100  10/100BaseTX
-  Fa0/13                         notconnect   1          a-full  a-100  10/100BaseTX
-  Fa0/14                         notconnect   1          a-full  a-100  10/100BaseTX
-  Fa0/15                         notconnect   1          a-full  a-100  10/100BaseTX
-  Fa0/16                         notconnect   1          a-full  a-100  10/100BaseTX
-  Fa0/17                         notconnect   1          a-full  a-100  10/100BaseTX
-  Fa0/18                         notconnect   1          a-full  a-100  10/100BaseTX
-  Fa0/19                         notconnect   1          a-full  a-100  10/100BaseTX
-  Fa0/20                         notconnect   1          a-full  a-100  10/100BaseTX
-  Fa0/21                         notconnect   1          a-full  a-100  10/100BaseTX
-  Fa0/22                         notconnect   1          a-full  a-100  10/100BaseTX
-  Fa0/23                         notconnect   1          a-full  a-100  10/100BaseTX
-  Fa0/24                         notconnect   1          a-full  a-100  10/100BaseTX
+  Fa0/4       UNUSED-RANGE       disabled     1          auto    auto   10/100BaseTX
+  Fa0/5       UNUSED-RANGE       disabled     1          auto    auto   10/100BaseTX
+  Fa0/6       UNUSED-RANGE       disabled     1          auto    auto   10/100BaseTX
+  Fa0/7       UNUSED-RANGE       disabled     1          auto    auto   10/100BaseTX
+  Fa0/8       UNUSED-RANGE       disabled     1          auto    auto   10/100BaseTX
+  Fa0/9                          notconnect   1          auto    auto   10/100BaseTX
+  Fa0/10                         notconnect   1          auto    auto   10/100BaseTX
+  Fa0/11                         notconnect   1          auto    auto   10/100BaseTX
+  Fa0/12                         notconnect   1          auto    auto   10/100BaseTX
+  Fa0/13                         notconnect   1          auto    auto   10/100BaseTX
+  Fa0/14                         notconnect   1          auto    auto   10/100BaseTX
+  Fa0/15                         notconnect   1          auto    auto   10/100BaseTX
+  Fa0/16                         notconnect   1          auto    auto   10/100BaseTX
+  Fa0/17                         notconnect   1          auto    auto   10/100BaseTX
+  Fa0/18                         notconnect   1          auto    auto   10/100BaseTX
+  Fa0/19                         notconnect   1          auto    auto   10/100BaseTX
+  Fa0/20                         notconnect   1          auto    auto   10/100BaseTX
+  Fa0/21                         notconnect   1          auto    auto   10/100BaseTX
+  Fa0/22                         notconnect   1          auto    auto   10/100BaseTX
+  Fa0/23                         notconnect   1          auto    auto   10/100BaseTX
+  Fa0/24                         notconnect   1          auto    auto   10/100BaseTX
   Gi0/1                          connected    trunk      a-full  a-1000 1000BASE-T
-  Gi0/2                          notconnect   1          a-full  a-1000 1000BASE-T
+  Gi0/2                          notconnect   1          auto    auto   1000BASE-T
 
 [109/366] sw1 SW1# sh mac add
   Mac Address Table
@@ -2820,29 +2827,29 @@ Total steps: 366
   Fa0/1                          connected    1          a-full  a-100  10/100BaseTX
   Fa0/2                          connected    1          a-full  a-100  10/100BaseTX
   Fa0/3                          connected    1          a-full  a-100  10/100BaseTX
-  Fa0/4                          notconnect   1          a-full  a-100  10/100BaseTX
-  Fa0/5                          notconnect   1          a-full  a-100  10/100BaseTX
-  Fa0/6                          notconnect   1          a-full  a-100  10/100BaseTX
-  Fa0/7                          notconnect   1          a-full  a-100  10/100BaseTX
-  Fa0/8                          notconnect   1          a-full  a-100  10/100BaseTX
-  Fa0/9                          notconnect   1          a-full  a-100  10/100BaseTX
-  Fa0/10                         notconnect   1          a-full  a-100  10/100BaseTX
-  Fa0/11                         notconnect   1          a-full  a-100  10/100BaseTX
-  Fa0/12                         notconnect   1          a-full  a-100  10/100BaseTX
-  Fa0/13                         notconnect   1          a-full  a-100  10/100BaseTX
-  Fa0/14                         notconnect   1          a-full  a-100  10/100BaseTX
-  Fa0/15                         notconnect   1          a-full  a-100  10/100BaseTX
-  Fa0/16                         notconnect   1          a-full  a-100  10/100BaseTX
-  Fa0/17                         notconnect   1          a-full  a-100  10/100BaseTX
-  Fa0/18                         notconnect   1          a-full  a-100  10/100BaseTX
-  Fa0/19                         notconnect   1          a-full  a-100  10/100BaseTX
-  Fa0/20                         notconnect   1          a-full  a-100  10/100BaseTX
-  Fa0/21                         notconnect   1          a-full  a-100  10/100BaseTX
-  Fa0/22                         notconnect   1          a-full  a-100  10/100BaseTX
-  Fa0/23                         notconnect   1          a-full  a-100  10/100BaseTX
-  Fa0/24                         notconnect   1          a-full  a-100  10/100BaseTX
+  Fa0/4                          notconnect   1          auto    auto   10/100BaseTX
+  Fa0/5                          notconnect   1          auto    auto   10/100BaseTX
+  Fa0/6                          notconnect   1          auto    auto   10/100BaseTX
+  Fa0/7                          notconnect   1          auto    auto   10/100BaseTX
+  Fa0/8                          notconnect   1          auto    auto   10/100BaseTX
+  Fa0/9                          notconnect   1          auto    auto   10/100BaseTX
+  Fa0/10                         notconnect   1          auto    auto   10/100BaseTX
+  Fa0/11                         notconnect   1          auto    auto   10/100BaseTX
+  Fa0/12                         notconnect   1          auto    auto   10/100BaseTX
+  Fa0/13                         notconnect   1          auto    auto   10/100BaseTX
+  Fa0/14                         notconnect   1          auto    auto   10/100BaseTX
+  Fa0/15                         notconnect   1          auto    auto   10/100BaseTX
+  Fa0/16                         notconnect   1          auto    auto   10/100BaseTX
+  Fa0/17                         notconnect   1          auto    auto   10/100BaseTX
+  Fa0/18                         notconnect   1          auto    auto   10/100BaseTX
+  Fa0/19                         notconnect   1          auto    auto   10/100BaseTX
+  Fa0/20                         notconnect   1          auto    auto   10/100BaseTX
+  Fa0/21                         notconnect   1          auto    auto   10/100BaseTX
+  Fa0/22                         notconnect   1          auto    auto   10/100BaseTX
+  Fa0/23                         notconnect   1          auto    auto   10/100BaseTX
+  Fa0/24                         notconnect   1          auto    auto   10/100BaseTX
   Gi0/1                          connected    trunk      a-full  a-1000 1000BASE-T
-  Gi0/2                          notconnect   1          a-full  a-1000 1000BASE-T
+  Gi0/2                          notconnect   1          auto    auto   1000BASE-T
 
 
 --- [180] § host inspection — L1 (Linux) ---
@@ -3339,7 +3346,7 @@ Total steps: 366
   127.0.0.0       0.0.0.0         255.0.0.0       U         0 0          0 lo
 
 [256/366] l1 l1$ uptime
-   21:33:02 up 0 min,  1 user,  load average: 0.00, 0.01, 0.05
+   11:38:52 up 0 min,  1 user,  load average: 0.00, 0.01, 0.05
 
 [257/366] w1 w1$ hostname
   W1
@@ -3419,7 +3426,7 @@ Total steps: 366
   OS Manufacturer:           Microsoft Corporation
   OS Configuration:          Member Workstation
   OS Build Type:             Multiprocessor Free
-  System Boot Time:          7/7/2026, 9:33:01 PM
+  System Boot Time:          7/9/2026, 11:38:52 AM
   System Manufacturer:       QEMU
   System Model:              Standard PC (i440FX + PIIX, 1996)
   System Type:               x64-based PC
@@ -3474,7 +3481,7 @@ Total steps: 366
   127.0.0.0       0.0.0.0         255.0.0.0       U         0 0          0 lo
 
 [269/366] srv1 srv1$ uptime
-   21:33:02 up 0 min,  1 user,  load average: 0.00, 0.01, 0.05
+   11:38:52 up 0 min,  1 user,  load average: 0.00, 0.01, 0.05
 
 [270/366] l2 l2$ hostname
   linux-pc
@@ -3505,7 +3512,7 @@ Total steps: 366
   127.0.0.0       0.0.0.0         255.0.0.0       U         0 0          0 lo
 
 [276/366] l2 l2$ uptime
-   21:33:02 up 0 min,  1 user,  load average: 0.00, 0.01, 0.05
+   11:38:52 up 0 min,  1 user,  load average: 0.00, 0.01, 0.05
 
 [277/366] w2 w2$ hostname
   W2
@@ -3585,7 +3592,7 @@ Total steps: 366
   OS Manufacturer:           Microsoft Corporation
   OS Configuration:          Member Workstation
   OS Build Type:             Multiprocessor Free
-  System Boot Time:          7/7/2026, 9:33:01 PM
+  System Boot Time:          7/9/2026, 11:38:52 AM
   System Manufacturer:       QEMU
   System Model:              Standard PC (i440FX + PIIX, 1996)
   System Type:               x64-based PC
@@ -3640,27 +3647,27 @@ Total steps: 366
   127.0.0.0       0.0.0.0         255.0.0.0       U         0 0          0 lo
 
 [289/366] srv2 srv2$ uptime
-   21:33:02 up 0 min,  1 user,  load average: 0.00, 0.01, 0.05
+   11:38:52 up 0 min,  1 user,  load average: 0.00, 0.01, 0.05
 
 
 --- [290] § connectivity smoke test ---
 [290/366] l1 l1$ ping -c 2 192.168.1.12
   PING 192.168.1.12 (192.168.1.12) 56(84) bytes of data.
-  64 bytes from 192.168.1.12: icmp_seq=1 ttl=128 time=2.146 ms
-  64 bytes from 192.168.1.12: icmp_seq=2 ttl=128 time=0.863 ms
+  64 bytes from 192.168.1.12: icmp_seq=1 ttl=128 time=2.028 ms
+  64 bytes from 192.168.1.12: icmp_seq=2 ttl=128 time=0.832 ms
   
   --- 192.168.1.12 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.863/1.504/2.146/0.642 ms
+  rtt min/avg/max/mdev = 0.832/1.430/2.028/0.598 ms
 
 [291/366] l1 l1$ ping -c 2 192.168.1.21
   PING 192.168.1.21 (192.168.1.21) 56(84) bytes of data.
-  64 bytes from 192.168.1.21: icmp_seq=1 ttl=64 time=0.747 ms
-  64 bytes from 192.168.1.21: icmp_seq=2 ttl=64 time=1.010 ms
+  64 bytes from 192.168.1.21: icmp_seq=1 ttl=64 time=0.674 ms
+  64 bytes from 192.168.1.21: icmp_seq=2 ttl=64 time=1.305 ms
   
   --- 192.168.1.21 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.747/0.879/1.010/0.132 ms
+  rtt min/avg/max/mdev = 0.674/0.990/1.305/0.316 ms
 
 [292/366] l1 l1$ arp -a
   ? (192.168.1.13) at 02:00:00:00:00:57 [ether] on eth0

@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — huawei-router-isis-rip-bgp
-Generated: 2026-07-07T21:37:35.561Z
+Generated: 2026-07-09T11:42:10.455Z
 Topology: R1(Huawei) GE0/0/1=L1 LAN 192.168.1.0/24, GE0/0/0=WAN 10.0.0.0/30; R2(Huawei) GE0/0/1=W1 LAN 192.168.2.0/24, GE0/0/0=WAN
 focus=VRP RIP/IS-IS/BGP: peers, import-route, policy, display
 Total steps: 260
@@ -1005,8 +1005,8 @@ Total steps: 260
   No NTP associations
 
 [191/260] r1 <R1> display clock
-  2026-07-07 21:37:35
-  Tuesday
+  2026-07-09 11:42:10
+  Thursday
   Time Zone(UTC) : UTC
 
 [192/260] r1 <R1> display lldp neighbor
@@ -1018,13 +1018,13 @@ Total steps: 260
 [194/260] r1 <R1> display cpu-usage
   CPU Usage Stat. Cycle: 60 (Second)
   CPU Usage            : 11% Max: 38%
-  CPU Usage Stat. Time : 2026-07-07 21:37:35
+  CPU Usage Stat. Time : 2026-07-09 11:42:10
   CPU utilization for five seconds: 11%: one minute: 12%: five minutes: 10%
   
   Max CPU Usage Stat. Time : 0000-00-00 00:00:00.
 
 [195/260] r1 <R1> display memory-usage
-  Memory utilization statistics at 2026-07-07 21:37:35
+  Memory utilization statistics at 2026-07-09 11:42:10
   System Total Memory Is: 536870912 bytes
   Total Memory Used Is: 193273528 bytes
   Memory Using Percentage Is: 36%
@@ -1423,8 +1423,11 @@ Total steps: 260
     <cr>           
 
 [258/260] r1 [Huawei] acl ?
-    WORD  Configure Access Control List
-    <cr>  
+    advanced  
+    basic     
+    ipv6      
+    name      
+    <cr>      
 
 [259/260] r1 [Huawei] return
 <empty>

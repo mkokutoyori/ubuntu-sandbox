@@ -1,6 +1,6 @@
 ============================================================
 Cisco L2 switch debug transcript — cisco-l2-04-spanning-tree
-Generated: 2026-07-07T21:33:37.552Z
+Generated: 2026-07-09T11:40:35.856Z
 Topology: CORE(L2) trunked to SW1 & SW2 (L2 access). SW1: L1(Linux 1.11) Fa0/1, W1(Win 1.12) Fa0/2, SRV1(Linux 1.13) Fa0/3, Gi0/1=trunk. SW2: L2(Linux 1.21) Fa0/1, W2(Win 1.22) Fa0/2, SRV2(Linux 1.23) Fa0/3, Gi0/1=trunk. All hosts 192.168.1.0/24.
 focus=PVST/RPVST/MST modes, root/priority, portfast/guards, MST region, topology change
 Total steps: 363
@@ -67,51 +67,51 @@ Total steps: 363
      Port path cost 19, Port priority 128
    Port FastEthernet0/3 of VLAN0001 is designated forwarding
      Port path cost 19, Port priority 128
-   Port FastEthernet0/4 of VLAN0001 is disabled disabled
+   Port FastEthernet0/4 of VLAN0001 is disabled
      Port path cost 19, Port priority 128
-   Port FastEthernet0/5 of VLAN0001 is disabled disabled
+   Port FastEthernet0/5 of VLAN0001 is disabled
      Port path cost 19, Port priority 128
-   Port FastEthernet0/6 of VLAN0001 is disabled disabled
+   Port FastEthernet0/6 of VLAN0001 is disabled
      Port path cost 19, Port priority 128
-   Port FastEthernet0/7 of VLAN0001 is disabled disabled
+   Port FastEthernet0/7 of VLAN0001 is disabled
      Port path cost 19, Port priority 128
-   Port FastEthernet0/8 of VLAN0001 is disabled disabled
+   Port FastEthernet0/8 of VLAN0001 is disabled
      Port path cost 19, Port priority 128
-   Port FastEthernet0/9 of VLAN0001 is disabled disabled
+   Port FastEthernet0/9 of VLAN0001 is disabled
      Port path cost 19, Port priority 128
-   Port FastEthernet0/10 of VLAN0001 is disabled disabled
+   Port FastEthernet0/10 of VLAN0001 is disabled
      Port path cost 19, Port priority 128
-   Port FastEthernet0/11 of VLAN0001 is disabled disabled
+   Port FastEthernet0/11 of VLAN0001 is disabled
      Port path cost 19, Port priority 128
-   Port FastEthernet0/12 of VLAN0001 is disabled disabled
+   Port FastEthernet0/12 of VLAN0001 is disabled
      Port path cost 19, Port priority 128
-   Port FastEthernet0/13 of VLAN0001 is disabled disabled
+   Port FastEthernet0/13 of VLAN0001 is disabled
      Port path cost 19, Port priority 128
-   Port FastEthernet0/14 of VLAN0001 is disabled disabled
+   Port FastEthernet0/14 of VLAN0001 is disabled
      Port path cost 19, Port priority 128
-   Port FastEthernet0/15 of VLAN0001 is disabled disabled
+   Port FastEthernet0/15 of VLAN0001 is disabled
      Port path cost 19, Port priority 128
-   Port FastEthernet0/16 of VLAN0001 is disabled disabled
+   Port FastEthernet0/16 of VLAN0001 is disabled
      Port path cost 19, Port priority 128
-   Port FastEthernet0/17 of VLAN0001 is disabled disabled
+   Port FastEthernet0/17 of VLAN0001 is disabled
      Port path cost 19, Port priority 128
-   Port FastEthernet0/18 of VLAN0001 is disabled disabled
+   Port FastEthernet0/18 of VLAN0001 is disabled
      Port path cost 19, Port priority 128
-   Port FastEthernet0/19 of VLAN0001 is disabled disabled
+   Port FastEthernet0/19 of VLAN0001 is disabled
      Port path cost 19, Port priority 128
-   Port FastEthernet0/20 of VLAN0001 is disabled disabled
+   Port FastEthernet0/20 of VLAN0001 is disabled
      Port path cost 19, Port priority 128
-   Port FastEthernet0/21 of VLAN0001 is disabled disabled
+   Port FastEthernet0/21 of VLAN0001 is disabled
      Port path cost 19, Port priority 128
-   Port FastEthernet0/22 of VLAN0001 is disabled disabled
+   Port FastEthernet0/22 of VLAN0001 is disabled
      Port path cost 19, Port priority 128
-   Port FastEthernet0/23 of VLAN0001 is disabled disabled
+   Port FastEthernet0/23 of VLAN0001 is disabled
      Port path cost 19, Port priority 128
-   Port FastEthernet0/24 of VLAN0001 is disabled disabled
+   Port FastEthernet0/24 of VLAN0001 is disabled
      Port path cost 19, Port priority 128
    Port GigabitEthernet0/1 of VLAN0001 is designated forwarding
      Port path cost 19, Port priority 128
-   Port GigabitEthernet0/2 of VLAN0001 is disabled disabled
+   Port GigabitEthernet0/2 of VLAN0001 is disabled
      Port path cost 19, Port priority 128
 
 [7/363] sw1 SW1# show spanning-tree blockedports
@@ -383,7 +383,7 @@ Total steps: 363
 
 [70/363] sw1 SW1(config)# do show spanning-tree summary
   Switch is in rapid-pvst mode
-  Root bridge for: VLAN0001
+  Root bridge for: VLAN0001, VLAN0030, VLAN0040, VLAN0050, VLAN0060, VLAN0070, VLAN0080, VLAN0090, VLAN0100
   Extended system ID           is enabled
   Portfast Default             is enabled
   PortFast BPDU Guard Default  is enabled
@@ -932,7 +932,7 @@ Total steps: 363
 
 [224/363] sw1 SW1# show spanning-tree summary
   Switch is in mst mode
-  Root bridge for: VLAN0001
+  Root bridge for: VLAN0001, VLAN0030, VLAN0040, VLAN0050, VLAN0060, VLAN0070, VLAN0080, VLAN0090, VLAN0100
   Extended system ID           is enabled
   Portfast Default             is enabled
   PortFast BPDU Guard Default  is enabled
@@ -1334,10 +1334,10 @@ Total steps: 363
 <empty>
 
 [272/363] sw1 SW1(config-if)# shutdown
-  *21:33:37: STP: VLAN0001 Fa0/3 -> disabled
+  *11:40:35: STP: VLAN0001 Fa0/3 -> disabled
 
 [273/363] sw1 SW1(config-if)# no shutdown
-  *21:33:37: STP: VLAN0001 Fa0/3 -> forwarding
+  *11:40:35: STP: VLAN0001 Fa0/3 -> forwarding
 
 [274/363] sw1 SW1(config-if)# end
 <empty>
@@ -1357,7 +1357,7 @@ Total steps: 363
 
 [276/363] sw1 SW1# show spanning-tree summary
   Switch is in mst mode
-  Root bridge for: VLAN0001
+  Root bridge for: VLAN0001, VLAN0030, VLAN0040, VLAN0050, VLAN0060, VLAN0070, VLAN0080, VLAN0090, VLAN0100
   Extended system ID           is enabled
   Portfast Default             is enabled
   PortFast BPDU Guard Default  is enabled
@@ -1454,12 +1454,12 @@ Total steps: 363
 
 [289/363] l1 l1$ ping -c 2 192.168.1.13
   PING 192.168.1.13 (192.168.1.13) 56(84) bytes of data.
-  64 bytes from 192.168.1.13: icmp_seq=1 ttl=64 time=2.015 ms
-  64 bytes from 192.168.1.13: icmp_seq=2 ttl=64 time=0.708 ms
+  64 bytes from 192.168.1.13: icmp_seq=1 ttl=64 time=2.300 ms
+  64 bytes from 192.168.1.13: icmp_seq=2 ttl=64 time=0.860 ms
   
   --- 192.168.1.13 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.708/1.362/2.015/0.653 ms
+  rtt min/avg/max/mdev = 0.860/1.580/2.300/0.720 ms
 
 [290/363] sw1 SW1# show running-config
   Building configuration...

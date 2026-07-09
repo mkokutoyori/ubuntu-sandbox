@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — huawei-router-ipsec-vpn
-Generated: 2026-07-07T21:37:36.236Z
+Generated: 2026-07-09T11:42:15.261Z
 Topology: R1(Huawei) GE0/0/1=L1 LAN 192.168.1.0/24, GE0/0/0=WAN 10.0.0.0/30; R2(Huawei) GE0/0/1=W1 LAN 192.168.2.0/24, GE0/0/0=WAN
 focus=VRP IKE/IKEv2/IPsec proposal-policy/profile/GRE-IPsec
 Total steps: 279
@@ -389,7 +389,7 @@ Total steps: 279
 
 [110/279] r1 <R1> display ipsec policy
   Crypto Map "MAP1" 10 ipsec-isakmp
-  	Peer = PEER1
+  	Peer = 10.0.0.2
   	Extended IP access list 3100
   	Security association lifetime: 4608000 kilobytes/3600 seconds
   	PFS (Y/N): Y
@@ -408,7 +408,7 @@ Total steps: 279
   	}
   	Interfaces using crypto map MAP1:
   Crypto Map "TPL1" 1 ipsec-isakmp
-  	Peer = PEER1
+  	Peer = 10.0.0.2
   	Extended IP access list 
   	Security association lifetime: 4608000 kilobytes/3600 seconds
   	PFS (Y/N): N
@@ -427,7 +427,7 @@ Total steps: 279
 
 [111/279] r1 <R1> display ipsec policy brief
   Crypto Map "MAP1" 10 ipsec-isakmp
-  	Peer = PEER1
+  	Peer = 10.0.0.2
   	Extended IP access list 3100
   	Security association lifetime: 4608000 kilobytes/3600 seconds
   	PFS (Y/N): Y
@@ -446,7 +446,7 @@ Total steps: 279
   	}
   	Interfaces using crypto map MAP1:
   Crypto Map "TPL1" 1 ipsec-isakmp
-  	Peer = PEER1
+  	Peer = 10.0.0.2
   	Extended IP access list 
   	Security association lifetime: 4608000 kilobytes/3600 seconds
   	PFS (Y/N): N
@@ -550,7 +550,7 @@ Total steps: 279
 
 [138/279] r1 <R1> display ipsec policy interface GigabitEthernet0/0/1
   Interface GigabitEthernet0/0/1: Crypto Map "MAP1" 10 ipsec-isakmp
-  	Peer = PEER1
+  	Peer = 10.0.0.2
   	Extended IP access list 3100
   	Security association lifetime: 4608000 kilobytes/3600 seconds
   	PFS (Y/N): Y
@@ -571,7 +571,7 @@ Total steps: 279
   	Interfaces using crypto map MAP1:
   		GE0/0/1
   Crypto Map "TPL1" 1 ipsec-isakmp
-  	Peer = PEER1
+  	Peer = 10.0.0.2
   	Extended IP access list 
   	Security association lifetime: 4608000 kilobytes/3600 seconds
   	PFS (Y/N): N
@@ -588,7 +588,7 @@ Total steps: 279
   	}
   	Interfaces using crypto map DYN1:
   Crypto Map "PROF1" 0 ipsec-isakmp
-  	Peer = PEER1
+  	Peer = 10.0.0.2
   	Extended IP access list 
   	Security association lifetime: 4608000 kilobytes/3600 seconds
   	PFS (Y/N): Y
@@ -1125,7 +1125,7 @@ Total steps: 279
 
 [203/279] r1 <R1> display ipsec policy
   Crypto Map "MAP1" 10 ipsec-isakmp
-  	Peer = PEER1
+  	Peer = 10.0.0.2
   	Extended IP access list 3100
   	Security association lifetime: 4608000 kilobytes/3600 seconds
   	PFS (Y/N): Y
@@ -1146,7 +1146,7 @@ Total steps: 279
   	Interfaces using crypto map MAP1:
   		GE0/0/1
   Crypto Map "TPL1" 1 ipsec-isakmp
-  	Peer = PEER1
+  	Peer = 10.0.0.2
   	Extended IP access list 
   	Security association lifetime: 4608000 kilobytes/3600 seconds
   	PFS (Y/N): N
@@ -1163,7 +1163,7 @@ Total steps: 279
   	}
   	Interfaces using crypto map DYN1:
   Crypto Map "PROF1" 0 ipsec-isakmp
-  	Peer = PEER1
+  	Peer = 10.0.0.2
   	Extended IP access list 
   	Security association lifetime: 4608000 kilobytes/3600 seconds
   	PFS (Y/N): Y
@@ -1238,8 +1238,8 @@ Total steps: 279
   No NTP associations
 
 [210/279] r1 <R1> display clock
-  2026-07-07 21:37:36
-  Tuesday
+  2026-07-09 11:42:15
+  Thursday
   Time Zone(UTC) : UTC
 
 [211/279] r1 <R1> display lldp neighbor
@@ -1251,13 +1251,13 @@ Total steps: 279
 [213/279] r1 <R1> display cpu-usage
   CPU Usage Stat. Cycle: 60 (Second)
   CPU Usage            : 11% Max: 38%
-  CPU Usage Stat. Time : 2026-07-07 21:37:36
+  CPU Usage Stat. Time : 2026-07-09 11:42:15
   CPU utilization for five seconds: 11%: one minute: 12%: five minutes: 10%
   
   Max CPU Usage Stat. Time : 0000-00-00 00:00:00.
 
 [214/279] r1 <R1> display memory-usage
-  Memory utilization statistics at 2026-07-07 21:37:36
+  Memory utilization statistics at 2026-07-09 11:42:15
   System Total Memory Is: 536870912 bytes
   Total Memory Used Is: 193273528 bytes
   Memory Using Percentage Is: 36%
@@ -1869,8 +1869,11 @@ Total steps: 279
     <cr>           
 
 [277/279] r1 [Huawei] acl ?
-    WORD  Configure Access Control List
-    <cr>  
+    advanced  
+    basic     
+    ipv6      
+    name      
+    <cr>      
 
 [278/279] r1 [Huawei] return
 <empty>
