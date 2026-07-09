@@ -177,10 +177,20 @@ explicitement ce que ce PRD **ne traite pas**.
    `ping`, `route`, `sysctl`), aide contextuelle `?`/complétion statique
    Cisco/Huawei déjà réelle, transmission de `Tab` au device distant via
    SSH cross-vendor.
-9. **Hors périmètre — non demandé.** L'idée de « ghost text » inline
-   (suggestion affichée en superposition avant validation par `Tab`,
-   évoquée informellement dans `plan.md:91`) est une fonctionnalité UI
-   distincte et plus large, non scopée ici.
+9. **Ghost text — prévisualisation inline de la complétion (demandé en
+   cours de PRD).** Quand exactement une complétion existe pour la saisie
+   courante, le terminal affiche le reste en gris derrière le curseur ;
+   `→` (flèche droite) en fin de ligne l'accepte. Couvre Cisco/Huawei,
+   bash et cmd, en réutilisant la source de complétion réelle de chaque
+   terminal (donc y compris les valeurs dynamiques de l'équipement).
+10. **Complétabilité universelle des commandes greedy (demandé en cours de
+   PRD).** Les ~1469 commandes enregistrées en `registerGreedy` analysent
+   leurs sous-mots-clés dans le handler (`show interfaces status`,
+   `display interface brief`, …), invisibles du trie. Exigence : chaque
+   commande implémentée est complétable, sans annotation manuelle par
+   commande — les mots-clés sont extraits automatiquement du source du
+   handler (comparaisons littérales contre le paramètre `args` et ses
+   alias), avec les entrées curées en priorité pour les descriptions.
 
 ---
 
