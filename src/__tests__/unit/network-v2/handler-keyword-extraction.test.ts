@@ -95,6 +95,25 @@ describe('CommandTrie — greedy handlers are completable with zero annotation',
     expect(help).toContain('counters');
   });
 
+  it('extracted abbreviations (prefix of a real keyword) never become candidates', () => {
+    const trie = new CommandTrie();
+    // Handler accepts both the abbreviation `con` and the full `console`.
+    trie.registerSuggestions('line', [
+      { keyword: 'console', description: 'Console line' },
+      { keyword: 'vty', description: 'Virtual terminal' },
+    ]);
+    trie.registerGreedy('line', 'Configure a line', (args) => {
+      const sub = (args[0] ?? '').toLowerCase();
+      if (sub === 'con' || sub === 'console') return 'console';
+      if (sub === 'vty') return 'vty';
+      return '';
+    });
+    // `con` is a prefix of `console` → must not appear, so `line co`
+    // stays unambiguous and completes.
+    expect(trie.tabCandidates('line co')).toEqual(['line console']);
+    expect(trie.tabComplete('line co')).toBe('line console ');
+  });
+
   it('explicit continuations take precedence and are not duplicated', () => {
     const trie = new CommandTrie();
     trie.registerGreedy('show gadget', 'Gadget info', (args) => {

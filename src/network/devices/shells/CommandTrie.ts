@@ -671,8 +671,16 @@ export class CommandTrie {
     }
     const curated = new Set((node.hintSuggestions ?? []).map(h => h.keyword.toLowerCase()));
     const children = new Set(node.children.keys());
-    node._autoKeywords = extractHandlerKeywords(node.action.toString())
-      .filter(kw => !curated.has(kw) && !children.has(kw))
+    const extracted = extractHandlerKeywords(node.action.toString())
+      .filter(kw => !curated.has(kw) && !children.has(kw));
+    // A greedy handler often also accepts abbreviations (`con` for
+    // `console`, `sum` for `summary`). An extracted keyword that is a
+    // proper prefix of a real keyword — a child, a curated hint, or
+    // another extracted keyword — is such an abbreviation, not a distinct
+    // command, and must never be offered as its own completion candidate.
+    const fullKeywords = [...curated, ...children, ...extracted];
+    node._autoKeywords = extracted
+      .filter(kw => !fullKeywords.some(other => other !== kw && other.startsWith(kw)))
       .map(kw => ({ keyword: kw, description: '' }));
     return node._autoKeywords;
   }
