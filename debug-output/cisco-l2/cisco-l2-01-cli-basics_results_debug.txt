@@ -1,6 +1,6 @@
 ============================================================
 Cisco L2 switch debug transcript — cisco-l2-01-cli-basics
-Generated: 2026-07-09T17:13:46.205Z
+Generated: 2026-07-09T18:28:11.122Z
 Topology: CORE(L2) trunked to SW1 & SW2 (L2 access). SW1: L1(Linux 1.11) Fa0/1, W1(Win 1.12) Fa0/2, SRV1(Linux 1.13) Fa0/3, Gi0/1=trunk. SW2: L2(Linux 1.21) Fa0/1, W2(Win 1.22) Fa0/2, SRV2(Linux 1.23) Fa0/3, Gi0/1=trunk. All hosts 192.168.1.0/24.
 focus=CLI parsing, help, prompts, mode navigation, show family, host inspection
 Total steps: 366
@@ -107,33 +107,33 @@ Total steps: 366
     <cr>  
 
 [9/366] sw1 SW1> show version
-  Cisco IOS Software, C2960 Software (C2960-LANBASEK9-M), Version 15.0(2)SE11, RELEASE SOFTWARE (fc3)
+  Cisco IOS Software, C3560 Software (C3560-IPSERVICESK9-M), Version 12.2(55)SE12, RELEASE SOFTWARE (fc3)
   Copyright (c) 1986-2025 by Cisco Systems, Inc.
   
-  ROM: Bootstrap program is C2960 boot loader
-  BOOTLDR: C2960 Boot Loader (C2960-HBOOT-M) Version 12.2(53r)SEY3, RELEASE SOFTWARE (fc1)
+  ROM: Bootstrap program is C3560 boot loader
+  BOOTLDR: C3560 Boot Loader (C3560-HBOOT-M) Version 12.2(44r)SE, RELEASE SOFTWARE (fc1)
   
   SW1 uptime is 0 minutes
   System returned to ROM by power-on
-  System image file is "flash:c2960-lanbasek9-mz.150-2.SE.bin"
+  System image file is "flash:c3560-ipservicesk9-mz.122-55.SE12.bin"
   
-  cisco WS-C2960-24TT-L (PowerPC405) processor (revision C0) with 65536K/32768K bytes of memory.
-  Processor board ID FOC1234X56Y
+  cisco WS-C3560-24TS-S (PowerPC405) processor (revision C0) with 65536K/32768K bytes of memory.
+  Processor board ID FOC1235X78Z
   Last reset from power-on
   24 FastEthernet interfaces
   2 Gigabit Ethernet interfaces
   The password-recovery mechanism is enabled.
   
-  64K bytes of flash-simulated non-volatile configuration memory.
+  128K bytes of flash-simulated non-volatile configuration memory.
   Base ethernet MAC Address       : 0200.0000.0001
   Motherboard assembly number     : 73-12600-06
-  Model number                    : WS-C2960-24TT-L
-  System serial number            : FOC1234X56Y
+  Model number                    : WS-C3560-24TS-S
+  System serial number            : FOC1235X78Z
   
   Configuration register is 0xF
 
 [10/366] sw1 SW1> show clock
-  *17:13:46.000 UTC Thu Jul 9 2026
+  *18:28:11.000 UTC Thu Jul 9 2026
 
 [11/366] sw1 SW1> show users
       Line       User       Host(s)              Idle       Location
@@ -415,42 +415,42 @@ Total steps: 366
   % startup-config is not present
 
 [28/366] sw1 SW1# show version
-  Cisco IOS Software, C2960 Software (C2960-LANBASEK9-M), Version 15.0(2)SE11, RELEASE SOFTWARE (fc3)
+  Cisco IOS Software, C3560 Software (C3560-IPSERVICESK9-M), Version 12.2(55)SE12, RELEASE SOFTWARE (fc3)
   Copyright (c) 1986-2025 by Cisco Systems, Inc.
   
-  ROM: Bootstrap program is C2960 boot loader
-  BOOTLDR: C2960 Boot Loader (C2960-HBOOT-M) Version 12.2(53r)SEY3, RELEASE SOFTWARE (fc1)
+  ROM: Bootstrap program is C3560 boot loader
+  BOOTLDR: C3560 Boot Loader (C3560-HBOOT-M) Version 12.2(44r)SE, RELEASE SOFTWARE (fc1)
   
   SW1 uptime is 0 minutes
   System returned to ROM by power-on
-  System image file is "flash:c2960-lanbasek9-mz.150-2.SE.bin"
+  System image file is "flash:c3560-ipservicesk9-mz.122-55.SE12.bin"
   
-  cisco WS-C2960-24TT-L (PowerPC405) processor (revision C0) with 65536K/32768K bytes of memory.
-  Processor board ID FOC1234X56Y
+  cisco WS-C3560-24TS-S (PowerPC405) processor (revision C0) with 65536K/32768K bytes of memory.
+  Processor board ID FOC1235X78Z
   Last reset from power-on
   24 FastEthernet interfaces
   2 Gigabit Ethernet interfaces
   The password-recovery mechanism is enabled.
   
-  64K bytes of flash-simulated non-volatile configuration memory.
+  128K bytes of flash-simulated non-volatile configuration memory.
   Base ethernet MAC Address       : 0200.0000.0001
   Motherboard assembly number     : 73-12600-06
-  Model number                    : WS-C2960-24TT-L
-  System serial number            : FOC1234X56Y
+  Model number                    : WS-C3560-24TS-S
+  System serial number            : FOC1235X78Z
   
   Configuration register is 0xF
 
 [29/366] sw1 SW1# show inventory
-  NAME: "SW1", DESCR: "Cisco Catalyst Switch"
-  PID: WS-C2960-24TT-L     , VID: V01  , SN: FOC1234X56Y
+  NAME: "SW1", DESCR: "Cisco Catalyst 3560 Multilayer Switch"
+  PID: WS-C3560-24TS-S     , VID: V01  , SN: FOC1235X78Z
 
 [30/366] sw1 SW1# show flash:
   Directory of flash:/
   
-      1  -rwx     17825792   Mar 01 2024 00:00:00  c2960-lanbasek9-mz.150-2.SE.bin
+      1  -rwx     24903680   Mar 01 2024 00:00:00  c3560-ipservicesk9-mz.122-55.SE12.bin
       2  -rwx         3096   Mar 01 2024 00:00:00  vlan.dat
   
-  64016384 bytes total (46188544 bytes free)
+  65536000 bytes total (40185856 bytes free)
 
 [31/366] sw1 SW1# show vlan
   VLAN Name                             Status    Ports
@@ -1264,7 +1264,7 @@ Total steps: 366
   Timer interval: 300 seconds
 
 [54/366] sw1 SW1# show clock
-  *17:13:46.000 UTC Thu Jul 9 2026
+  *18:28:11.000 UTC Thu Jul 9 2026
 
 [55/366] sw1 SW1# show processes cpu
   CPU utilization for five seconds: 4%/0%; one minute: 5%; five minutes: 4%
@@ -1706,28 +1706,28 @@ Total steps: 366
 
 --- [105] § abbreviations & partials ---
 [105/366] sw1 SW1# sh ver
-  Cisco IOS Software, C2960 Software (C2960-LANBASEK9-M), Version 15.0(2)SE11, RELEASE SOFTWARE (fc3)
+  Cisco IOS Software, C3560 Software (C3560-IPSERVICESK9-M), Version 12.2(55)SE12, RELEASE SOFTWARE (fc3)
   Copyright (c) 1986-2025 by Cisco Systems, Inc.
   
-  ROM: Bootstrap program is C2960 boot loader
-  BOOTLDR: C2960 Boot Loader (C2960-HBOOT-M) Version 12.2(53r)SEY3, RELEASE SOFTWARE (fc1)
+  ROM: Bootstrap program is C3560 boot loader
+  BOOTLDR: C3560 Boot Loader (C3560-HBOOT-M) Version 12.2(44r)SE, RELEASE SOFTWARE (fc1)
   
   SW1 uptime is 0 minutes
   System returned to ROM by power-on
-  System image file is "flash:c2960-lanbasek9-mz.150-2.SE.bin"
+  System image file is "flash:c3560-ipservicesk9-mz.122-55.SE12.bin"
   
-  cisco WS-C2960-24TT-L (PowerPC405) processor (revision C0) with 65536K/32768K bytes of memory.
-  Processor board ID FOC1234X56Y
+  cisco WS-C3560-24TS-S (PowerPC405) processor (revision C0) with 65536K/32768K bytes of memory.
+  Processor board ID FOC1235X78Z
   Last reset from power-on
   24 FastEthernet interfaces
   2 Gigabit Ethernet interfaces
   The password-recovery mechanism is enabled.
   
-  64K bytes of flash-simulated non-volatile configuration memory.
+  128K bytes of flash-simulated non-volatile configuration memory.
   Base ethernet MAC Address       : 0200.0000.0001
   Motherboard assembly number     : 73-12600-06
-  Model number                    : WS-C2960-24TT-L
-  System serial number            : FOC1234X56Y
+  Model number                    : WS-C3560-24TS-S
+  System serial number            : FOC1235X78Z
   
   Configuration register is 0xF
 
@@ -2676,28 +2676,28 @@ Total steps: 366
 <empty>
 
 [173/366] core CORE# show version
-  Cisco IOS Software, C2960 Software (C2960-LANBASEK9-M), Version 15.0(2)SE11, RELEASE SOFTWARE (fc3)
+  Cisco IOS Software, C3560 Software (C3560-IPSERVICESK9-M), Version 12.2(55)SE12, RELEASE SOFTWARE (fc3)
   Copyright (c) 1986-2025 by Cisco Systems, Inc.
   
-  ROM: Bootstrap program is C2960 boot loader
-  BOOTLDR: C2960 Boot Loader (C2960-HBOOT-M) Version 12.2(53r)SEY3, RELEASE SOFTWARE (fc1)
+  ROM: Bootstrap program is C3560 boot loader
+  BOOTLDR: C3560 Boot Loader (C3560-HBOOT-M) Version 12.2(44r)SE, RELEASE SOFTWARE (fc1)
   
   CORE uptime is 0 minutes
   System returned to ROM by power-on
-  System image file is "flash:c2960-lanbasek9-mz.150-2.SE.bin"
+  System image file is "flash:c3560-ipservicesk9-mz.122-55.SE12.bin"
   
-  cisco WS-C2960-24TT-L (PowerPC405) processor (revision C0) with 65536K/32768K bytes of memory.
-  Processor board ID FOC1234X56Y
+  cisco WS-C3560-24TS-S (PowerPC405) processor (revision C0) with 65536K/32768K bytes of memory.
+  Processor board ID FOC1235X78Z
   Last reset from power-on
   24 FastEthernet interfaces
   2 Gigabit Ethernet interfaces
   The password-recovery mechanism is enabled.
   
-  64K bytes of flash-simulated non-volatile configuration memory.
+  128K bytes of flash-simulated non-volatile configuration memory.
   Base ethernet MAC Address       : 0200.0000.0035
   Motherboard assembly number     : 73-12600-06
-  Model number                    : WS-C2960-24TT-L
-  System serial number            : FOC1234X56Y
+  Model number                    : WS-C3560-24TS-S
+  System serial number            : FOC1235X78Z
   
   Configuration register is 0xF
 
@@ -2727,28 +2727,28 @@ Total steps: 366
 <empty>
 
 [177/366] sw2 SW2# show version
-  Cisco IOS Software, C2960 Software (C2960-LANBASEK9-M), Version 15.0(2)SE11, RELEASE SOFTWARE (fc3)
+  Cisco IOS Software, C3560 Software (C3560-IPSERVICESK9-M), Version 12.2(55)SE12, RELEASE SOFTWARE (fc3)
   Copyright (c) 1986-2025 by Cisco Systems, Inc.
   
-  ROM: Bootstrap program is C2960 boot loader
-  BOOTLDR: C2960 Boot Loader (C2960-HBOOT-M) Version 12.2(53r)SEY3, RELEASE SOFTWARE (fc1)
+  ROM: Bootstrap program is C3560 boot loader
+  BOOTLDR: C3560 Boot Loader (C3560-HBOOT-M) Version 12.2(44r)SE, RELEASE SOFTWARE (fc1)
   
   SW2 uptime is 0 minutes
   System returned to ROM by power-on
-  System image file is "flash:c2960-lanbasek9-mz.150-2.SE.bin"
+  System image file is "flash:c3560-ipservicesk9-mz.122-55.SE12.bin"
   
-  cisco WS-C2960-24TT-L (PowerPC405) processor (revision C0) with 65536K/32768K bytes of memory.
-  Processor board ID FOC1234X56Y
+  cisco WS-C3560-24TS-S (PowerPC405) processor (revision C0) with 65536K/32768K bytes of memory.
+  Processor board ID FOC1235X78Z
   Last reset from power-on
   24 FastEthernet interfaces
   2 Gigabit Ethernet interfaces
   The password-recovery mechanism is enabled.
   
-  64K bytes of flash-simulated non-volatile configuration memory.
+  128K bytes of flash-simulated non-volatile configuration memory.
   Base ethernet MAC Address       : 0200.0000.001b
   Motherboard assembly number     : 73-12600-06
-  Model number                    : WS-C2960-24TT-L
-  System serial number            : FOC1234X56Y
+  Model number                    : WS-C3560-24TS-S
+  System serial number            : FOC1235X78Z
   
   Configuration register is 0xF
 
@@ -3305,7 +3305,7 @@ Total steps: 366
   127.0.0.0       0.0.0.0         255.0.0.0       U         0 0          0 lo
 
 [256/366] l1 l1$ uptime
-   17:13:46 up 0 min,  1 user,  load average: 0.00, 0.01, 0.05
+   18:28:11 up 0 min,  1 user,  load average: 0.00, 0.01, 0.05
 
 [257/366] w1 w1$ hostname
   W1
@@ -3398,7 +3398,7 @@ Total steps: 366
   OS Manufacturer:           Microsoft Corporation
   OS Configuration:          Member Workstation
   OS Build Type:             Multiprocessor Free
-  System Boot Time:          7/9/2026, 5:13:46 PM
+  System Boot Time:          7/9/2026, 6:28:10 PM
   System Manufacturer:       QEMU
   System Model:              Standard PC (i440FX + PIIX, 1996)
   System Type:               x64-based PC
@@ -3454,7 +3454,7 @@ Total steps: 366
   127.0.0.0       0.0.0.0         255.0.0.0       U         0 0          0 lo
 
 [269/366] srv1 srv1$ uptime
-   17:13:46 up 0 min,  1 user,  load average: 0.00, 0.01, 0.05
+   18:28:11 up 0 min,  1 user,  load average: 0.00, 0.01, 0.05
 
 [270/366] l2 l2$ hostname
   linux-pc
@@ -3486,7 +3486,7 @@ Total steps: 366
   127.0.0.0       0.0.0.0         255.0.0.0       U         0 0          0 lo
 
 [276/366] l2 l2$ uptime
-   17:13:46 up 0 min,  1 user,  load average: 0.00, 0.01, 0.05
+   18:28:11 up 0 min,  1 user,  load average: 0.00, 0.01, 0.05
 
 [277/366] w2 w2$ hostname
   W2
@@ -3579,7 +3579,7 @@ Total steps: 366
   OS Manufacturer:           Microsoft Corporation
   OS Configuration:          Member Workstation
   OS Build Type:             Multiprocessor Free
-  System Boot Time:          7/9/2026, 5:13:46 PM
+  System Boot Time:          7/9/2026, 6:28:11 PM
   System Manufacturer:       QEMU
   System Model:              Standard PC (i440FX + PIIX, 1996)
   System Type:               x64-based PC
@@ -3635,27 +3635,27 @@ Total steps: 366
   127.0.0.0       0.0.0.0         255.0.0.0       U         0 0          0 lo
 
 [289/366] srv2 srv2$ uptime
-   17:13:46 up 0 min,  1 user,  load average: 0.00, 0.01, 0.05
+   18:28:11 up 0 min,  1 user,  load average: 0.00, 0.01, 0.05
 
 
 --- [290] § connectivity smoke test ---
 [290/366] l1 l1$ ping -c 2 192.168.1.12
   PING 192.168.1.12 (192.168.1.12) 56(84) bytes of data.
-  64 bytes from 192.168.1.12: icmp_seq=1 ttl=128 time=3.074 ms
-  64 bytes from 192.168.1.12: icmp_seq=2 ttl=128 time=0.857 ms
+  64 bytes from 192.168.1.12: icmp_seq=1 ttl=128 time=6.781 ms
+  64 bytes from 192.168.1.12: icmp_seq=2 ttl=128 time=0.961 ms
   
   --- 192.168.1.12 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.857/1.966/3.074/1.108 ms
+  rtt min/avg/max/mdev = 0.961/3.871/6.781/2.910 ms
 
 [291/366] l1 l1$ ping -c 2 192.168.1.21
   PING 192.168.1.21 (192.168.1.21) 56(84) bytes of data.
-  64 bytes from 192.168.1.21: icmp_seq=1 ttl=64 time=0.860 ms
-  64 bytes from 192.168.1.21: icmp_seq=2 ttl=64 time=2.131 ms
+  64 bytes from 192.168.1.21: icmp_seq=1 ttl=64 time=0.676 ms
+  64 bytes from 192.168.1.21: icmp_seq=2 ttl=64 time=1.108 ms
   
   --- 192.168.1.21 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.860/1.496/2.131/0.635 ms
+  rtt min/avg/max/mdev = 0.676/0.892/1.108/0.216 ms
 
 [292/366] l1 l1$ arp -a
   ? (192.168.1.13) at 02:00:00:00:00:57 [ether] on eth0
