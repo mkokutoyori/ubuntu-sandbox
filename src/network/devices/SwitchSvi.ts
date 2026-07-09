@@ -49,6 +49,7 @@ export interface SviHost {
   fhrpVipArpOwner?(vlanIf: string, targetIp: string, requesterIp: string): string | null;
   /** RFC 3046 Option 82 insertion on relay, shared with the box's DHCP server config. */
   isDhcpRelayInfoEnabled?(): boolean;
+  recordArp?(dir: 'rx' | 'tx', op: 'request' | 'reply'): void;
 }
 
 export interface SwitchStaticRoute {
@@ -214,6 +215,7 @@ export class SwitchSvi {
     if (frame.etherType === ETHERTYPE_ARP) {
       const arp = frame.payload as ARPPacket;
       if (!arp || arp.type !== 'arp') return false;
+      this.host.recordArp?.('rx', arp.operation);
       // Learn the sender either way, into the switch's shared mgmt cache.
       this.host.learnArp(arp.senderIP.toString(), arp.senderMAC, ingressPort);
 
@@ -442,6 +444,7 @@ export class SwitchSvi {
       senderMAC: this.host.getBridgeMac(), senderIP: selfIp,
       targetMAC: MACAddress.broadcast(), targetIP: target,
     };
+    this.host.recordArp?.('tx', 'request');
     this.host.egressOnVlan(vlan, {
       srcMAC: this.host.getBridgeMac(), dstMAC: MACAddress.broadcast(),
       etherType: ETHERTYPE_ARP, payload: req,
@@ -458,6 +461,7 @@ export class SwitchSvi {
       senderMAC: this.host.getBridgeMac(), senderIP: selfIp,
       targetMAC: MACAddress.broadcast(), targetIP: target,
     };
+    this.host.recordArp?.('tx', 'request');
     this.host.egressOnVlan(vlan, {
       srcMAC: this.host.getBridgeMac(), dstMAC: MACAddress.broadcast(),
       etherType: ETHERTYPE_ARP, payload: req,
@@ -498,6 +502,7 @@ export class SwitchSvi {
       senderMAC: this.host.getBridgeMac(), senderIP: selfIp,
       targetMAC: req.senderMAC, targetIP: req.senderIP,
     };
+    this.host.recordArp?.('tx', 'reply');
     this.host.egressOnVlan(vlan, {
       srcMAC: this.host.getBridgeMac(), dstMAC: req.senderMAC,
       etherType: ETHERTYPE_ARP, payload: reply,
@@ -519,6 +524,7 @@ export class SwitchSvi {
       senderMAC: virtualMac, senderIP: vip,
       targetMAC: req.senderMAC, targetIP: req.senderIP,
     };
+    this.host.recordArp?.('tx', 'reply');
     this.host.egressOnVlan(vlan, {
       srcMAC: virtualMac, dstMAC: req.senderMAC,
       etherType: ETHERTYPE_ARP, payload: reply,

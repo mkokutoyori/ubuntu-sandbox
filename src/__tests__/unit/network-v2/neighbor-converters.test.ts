@@ -60,6 +60,7 @@ describe('cdpToNeighborDTO', () => {
       lastSeenMs: 0,
       holdtimeSec: 180,
       expiresAtMs: 180_000,
+      advertisementVersion: 2,
       duplex: 'full',
     } as CdpNeighbor;
     expect(cdpToNeighborDTO([row])).toEqual([{

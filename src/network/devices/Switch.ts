@@ -62,6 +62,7 @@ import {
 } from '../arp/types';
 import { ArpInspectionPipeline } from '../arp/ArpInspectionPipeline';
 import { ArpRateLimiter } from '../arp/ArpRateLimiter';
+import { ArpStats } from '../arp/ArpStats';
 import type { ISwitchShell } from './shells/ISwitchShell';
 import { SwitchSecurityService } from './switch/SwitchSecurityService';
 import { PortMirror, type MirrorDirection, type MirrorSession } from './switch/PortMirror';
@@ -296,6 +297,7 @@ export abstract class Switch extends Equipment {
 
   // ─── Management ARP Table ──────────────────────────────────────
   private arpTable: Map<string, { mac: MACAddress; iface: string; timestamp: number; type: 'dynamic' | 'static' }> = new Map();
+  private readonly arpStats = new ArpStats();
 
   // ─── Dynamic ARP Inspection ────────────────────────────────────
   private arpInspection: ArpInspectionConfig = createDefaultArpInspectionConfig();
@@ -341,6 +343,7 @@ export abstract class Switch extends Equipment {
       ?? this._glbpAgent?.vipArpOwner(vlanIf, targetIp, requesterIp)
       ?? null,
     isDhcpRelayInfoEnabled: () => this.dhcpServer.isRelayInformationOptionEnabled(),
+    recordArp: (dir, op) => this.arpStats.record(dir, op),
   });
 
   // ─── CLI Shell ──────────────────────────────────────────────────
@@ -2553,6 +2556,8 @@ export abstract class Switch extends Equipment {
   // ─── ARP Accessors (ARPProvider interface) ──────────────────────
 
   _getArpTableInternal() { return this.arpTable; }
+
+  _getArpStats(): ArpStats { return this.arpStats; }
 
   _addStaticARP(ip: IPAddress, mac: MACAddress, iface: string): void {
     this.arpTable.set(ip.toString(), { mac, iface, timestamp: Date.now(), type: 'static' });

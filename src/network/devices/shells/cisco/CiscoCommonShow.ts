@@ -795,7 +795,14 @@ export function showEnvironment(): string {
 }
 
 /** `show ip traffic` — aggregate per-protocol counters from real port stats. */
-export function showIpTraffic(ports: Iterable<Port>): string {
+export interface ArpTrafficCounters {
+  rxRequests: number;
+  rxReplies: number;
+  txRequests: number;
+  txReplies: number;
+}
+
+export function showIpTraffic(ports: Iterable<Port>, arp?: ArpTrafficCounters): string {
   let rxFrames = 0, txFrames = 0, errsIn = 0, errsOut = 0, dropsIn = 0, dropsOut = 0;
   for (const p of ports) {
     const c = p.getCounters();
@@ -806,7 +813,7 @@ export function showIpTraffic(ports: Iterable<Port>): string {
     dropsIn += c.dropsIn;
     dropsOut += c.dropsOut;
   }
-  return [
+  const lines = [
     'IP statistics:',
     `  Rcvd:  ${rxFrames} total, ${rxFrames} local destination`,
     `         ${errsIn} format errors, 0 checksum errors, 0 bad hop count`,
@@ -816,7 +823,17 @@ export function showIpTraffic(ports: Iterable<Port>): string {
     '  Bcast: 0 received, 0 sent',
     '  Mcast: 0 received, 0 sent',
     `  Sent:  ${txFrames} generated, ${txFrames} forwarded, ${errsOut} errors, ${dropsOut} dropped`,
-  ].join('\n');
+  ];
+  if (arp) {
+    const rxTotal = arp.rxRequests + arp.rxReplies;
+    const txTotal = arp.txRequests + arp.txReplies;
+    lines.push(
+      'ARP statistics:',
+      `  Rcvd: ${rxTotal} requests, ${arp.rxReplies} replies, 0 reverse, 0 other`,
+      `  Sent: ${txTotal} requests, ${arp.txReplies} replies (0 proxy), 0 reverse`,
+    );
+  }
+  return lines.join('\n');
 }
 
 /** `show controllers <intf>` — real per-port link/cable status. */

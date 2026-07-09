@@ -3682,7 +3682,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       t.registerGreedy('show ip route', 'Display IP routing table', (args) =>
         args[0]?.toLowerCase() === 'summary' ? this.showIpRouteSummary() : this.showIpRoute());
       t.register('show ip traffic', 'IP traffic statistics', () =>
-        showIpTraffic(this.d()._getPortsInternal().values()));
+        showIpTraffic(this.d()._getPortsInternal().values(), this.d()._getArpStats()));
       t.register('show adjacency', 'Display CEF adjacency table', () =>
         '% This command is not supported on this platform');
       t.registerGreedy('show ip dhcp binding', 'Display DHCP bindings', () =>
@@ -4126,15 +4126,25 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
   /** `show ip interface brief` — the switch carries IPs only on SVIs. */
   private showIpInterfaceBrief(): string {
     const header = 'Interface              IP-Address      OK? Method Status                Protocol';
-    const svis = this.d().getSvis();
-    const rows = svis.map(svi => {
-      const name = `Vlan${svi.vlan}`;
+    const row = (name: string, ip: string, method: string, status: string, proto: string) =>
+      `${name.padEnd(23)}${ip.padEnd(16)}YES ${method.padEnd(6)} ${status.padEnd(22)}${proto}`;
+    const rows: string[] = [];
+
+    for (const [portName, port] of this.d()._getPortsInternal()) {
+      const status = !port.getIsUp()
+        ? 'administratively down'
+        : (port.isConnected() ? 'up' : 'down');
+      const proto = port.getIsUp() && port.isConnected() ? 'up' : 'down';
+      rows.push(row(portName, 'unassigned', 'unset', status, proto));
+    }
+
+    for (const svi of this.d().getSvis()) {
       const ip = svi.ip ? svi.ip.toString() : 'unassigned';
       const method = svi.ip ? 'manual' : 'unset';
       const status = svi.adminUp ? 'up' : 'administratively down';
       const proto = svi.adminUp && this.d().isSviLineUp(svi) ? 'up' : 'down';
-      return `${name.padEnd(23)}${ip.padEnd(16)}YES ${method.padEnd(6)} ${status.padEnd(22)}${proto}`;
-    });
+      rows.push(row(`Vlan${svi.vlan}`, ip, method, status, proto));
+    }
     return [header, ...rows].join('\n');
   }
 
