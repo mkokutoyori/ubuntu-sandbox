@@ -149,7 +149,7 @@ export const CISCO_HARDWARE_PROFILES: Record<CiscoChassisProfile, CiscoHardwareP
   },
 };
 
-export function showInventory(hostname: string, profile: CiscoChassisProfile = 'switch-c2960'): string {
+export function showInventory(hostname: string, profile: CiscoChassisProfile = 'switch-c3560'): string {
   const c = CISCO_HARDWARE_PROFILES[profile];
   return [
     `NAME: "${hostname}", DESCR: "${c.description}"`,
@@ -168,7 +168,7 @@ export function showProcessesCpu(): string {
 }
 
 /** `show memory statistics` — head/total/used/free. */
-export function showMemoryStatistics(profile: CiscoChassisProfile = 'switch-c2960'): string {
+export function showMemoryStatistics(profile: CiscoChassisProfile = 'switch-c3560'): string {
   const hw = CISCO_HARDWARE_PROFILES[profile];
   const dramBytes = hw.dramKB * 1024;
   const ioBytes = hw.ioMemoryKB * 1024;
@@ -183,7 +183,7 @@ export function showMemoryStatistics(profile: CiscoChassisProfile = 'switch-c296
   ].join('\n');
 }
 
-export function showFlash(profile: CiscoChassisProfile = 'switch-c2960'): string {
+export function showFlash(profile: CiscoChassisProfile = 'switch-c3560'): string {
   const hw = CISCO_HARDWARE_PROFILES[profile];
   const lines = ['Directory of flash:/', ''];
   lines.push(`    1  -rwx     ${String(hw.flashImageSize).padStart(8, ' ')}   Mar 01 2024 00:00:00  ${hw.flashImage}`);
