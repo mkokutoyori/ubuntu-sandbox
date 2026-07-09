@@ -35,6 +35,7 @@ import { PSEventLogProvider, type EntryType } from './PSEventLogProvider';
 import type { VpnConnectionInfo } from '@/powershell/providers/PSProviders';
 import { parsePSArgs } from './psArgs';
 import { psAddVpnConnection, psGetVpnConnection, psSetVpnConnection, psRemoveVpnConnection } from './PSVpnCmdlets';
+import { psNewNetFirewallRule, psSetNetFirewallRule, psToggleNetFirewallRule, psRemoveNetFirewallRule, psGetNetFirewallRule } from './PSFirewallCmdlets';
 import type { IEventBus } from '@/events/EventBus';
 
 // ─── Constants ────────────────────────────────────────────────────
@@ -2455,32 +2456,32 @@ export class PowerShellExecutor {
 
     // Get-NetFirewallRule
     if (cmdLower === 'get-netfirewallrule') {
-      return this.formatGetNetFirewallRule(args);
+      return psGetNetFirewallRule({ dynamicFirewallRules: this.dynamicFirewallRules }, args);
     }
 
     // New-NetFirewallRule
     if (cmdLower === 'new-netfirewallrule') {
-      return this.handleNewNetFirewallRule(args);
+      return psNewNetFirewallRule({ dynamicFirewallRules: this.dynamicFirewallRules }, args);
     }
 
     // Set-NetFirewallRule
     if (cmdLower === 'set-netfirewallrule') {
-      return this.handleSetNetFirewallRule(args);
+      return psSetNetFirewallRule({ dynamicFirewallRules: this.dynamicFirewallRules }, args);
     }
 
     // Enable-NetFirewallRule
     if (cmdLower === 'enable-netfirewallrule') {
-      return this.handleToggleNetFirewallRule(args, true);
+      return psToggleNetFirewallRule({ dynamicFirewallRules: this.dynamicFirewallRules }, args, true);
     }
 
     // Disable-NetFirewallRule
     if (cmdLower === 'disable-netfirewallrule') {
-      return this.handleToggleNetFirewallRule(args, false);
+      return psToggleNetFirewallRule({ dynamicFirewallRules: this.dynamicFirewallRules }, args, false);
     }
 
     // Remove-NetFirewallRule
     if (cmdLower === 'remove-netfirewallrule') {
-      return this.handleRemoveNetFirewallRule(args);
+      return psRemoveNetFirewallRule({ dynamicFirewallRules: this.dynamicFirewallRules }, args);
     }
 
     // Disable-NetAdapter
@@ -5007,76 +5008,6 @@ export class PowerShellExecutor {
 
   // ─── Firewall Rules ────────────────────────────────────────────────
 
-  private handleNewNetFirewallRule(args: string[]): string {
-    const params = this.parsePSArgs(args);
-    const displayName = params.get('displayname')?.replace(/^["']|["']$/g, '') ?? '';
-    const name = params.get('name')?.replace(/^["']|["']$/g, '') ?? displayName.replace(/\s+/g, '-');
-    const direction = params.get('direction')?.replace(/^["']|["']$/g, '') ?? 'Inbound';
-    const protocol = params.get('protocol')?.replace(/^["']|["']$/g, '') ?? 'Any';
-    const localPort = params.get('localport')?.replace(/^["']|["']$/g, '') ?? '';
-    const remotePort = params.get('remoteport')?.replace(/^["']|["']$/g, '') ?? '';
-    const action = params.get('action')?.replace(/^["']|["']$/g, '') ?? 'Allow';
-    const description = params.get('description')?.replace(/^["']|["']$/g, '') ?? '';
-
-    if (!displayName && !name) return `New-NetFirewallRule : -DisplayName or -Name is required.`;
-
-    const key = displayName.toLowerCase() || name.toLowerCase();
-    this.dynamicFirewallRules.set(key, {
-      name, displayName, enabled: true, action, direction, protocol, localPort, remotePort, description
-    });
-
-    return [
-      `Name                  : ${name}`,
-      `DisplayName           : ${displayName}`,
-      `Description           : ${description}`,
-      `Direction             : ${direction}`,
-      `Action                : ${action}`,
-      `Enabled               : True`,
-      `Protocol              : ${protocol}`,
-      `LocalPort             : ${localPort}`,
-      `RemotePort            : ${remotePort}`,
-    ].join('\n');
-  }
-
-  private handleSetNetFirewallRule(args: string[]): string {
-    const params = this.parsePSArgs(args);
-    const displayName = params.get('displayname')?.replace(/^["']|["']$/g, '') ?? '';
-    const name = params.get('name')?.replace(/^["']|["']$/g, '') ?? '';
-    const key = (displayName || name).toLowerCase();
-
-    const rule = this.dynamicFirewallRules.get(key);
-    if (!rule) return `Set-NetFirewallRule : No MSFT_NetFirewallRule objects found with property 'DisplayName' equal to '${displayName || name}'.`;
-
-    if (params.has('action')) rule.action = params.get('action')!.replace(/^["']|["']$/g, '');
-    if (params.has('direction')) rule.direction = params.get('direction')!.replace(/^["']|["']$/g, '');
-    if (params.has('enabled')) rule.enabled = (params.get('enabled') ?? '').toLowerCase() !== 'false';
-    return '';
-  }
-
-  private handleToggleNetFirewallRule(args: string[], enable: boolean): string {
-    const params = this.parsePSArgs(args);
-    const displayName = params.get('displayname')?.replace(/^["']|["']$/g, '') ?? '';
-    const name = params.get('name')?.replace(/^["']|["']$/g, '') ?? '';
-    const key = (displayName || name).toLowerCase();
-
-    const rule = this.dynamicFirewallRules.get(key);
-    if (!rule) {
-      // Check if it's a built-in static rule — simulate graceful no-op
-      return '';
-    }
-    rule.enabled = enable;
-    return '';
-  }
-
-  private handleRemoveNetFirewallRule(args: string[]): string {
-    const params = this.parsePSArgs(args);
-    const displayName = params.get('displayname')?.replace(/^["']|["']$/g, '') ?? '';
-    const name = params.get('name')?.replace(/^["']|["']$/g, '') ?? '';
-    const key = (displayName || name).toLowerCase();
-    this.dynamicFirewallRules.delete(key);
-    return '';
-  }
-
   private handleTestNetConnection(args: string[]): string {
     const params = this.parsePSArgs(args);
     const target = (params.get('computername') ?? params.get('_positional') ?? '').replace(/^["']|["']$/g, '');
@@ -5297,50 +5228,6 @@ export class PowerShellExecutor {
 
     if (lines.length <= 3) return '';
     return lines.join('\n');
-  }
-
-  private formatGetNetFirewallRule(args: string[]): string {
-    type FwRule = { name: string; displayName: string; enabled: boolean; action: string; direction: string };
-    const staticRules: FwRule[] = [
-      { name: 'CoreNet-DHCP-In',       displayName: 'DHCP (UDP-In)',               enabled: true,  action: 'Allow', direction: 'Inbound'  },
-      { name: 'CoreNet-DHCP-Out',      displayName: 'DHCP (UDP-Out)',              enabled: true,  action: 'Allow', direction: 'Outbound' },
-      { name: 'CoreNet-DNS-Out',       displayName: 'DNS (UDP-Out)',               enabled: true,  action: 'Allow', direction: 'Outbound' },
-      { name: 'FPS-ICMP4-ERQ-In',      displayName: 'File and Printer Sharing...', enabled: true,  action: 'Allow', direction: 'Inbound'  },
-      { name: 'RemoteDesktop-In-TCP',  displayName: 'Remote Desktop - User Mode',  enabled: false, action: 'Allow', direction: 'Inbound'  },
-      { name: 'WinRM-HTTP-In-TCP',     displayName: 'Windows Remote Management',   enabled: false, action: 'Allow', direction: 'Inbound'  },
-      { name: 'BlockTelemetry',        displayName: 'Block Windows Telemetry',     enabled: true,  action: 'Block', direction: 'Outbound' },
-    ];
-
-    // Merge in dynamic rules (override static if same key)
-    const allRules: FwRule[] = [...staticRules];
-    for (const [, r] of this.dynamicFirewallRules) {
-      allRules.push({ name: r.name, displayName: r.displayName, enabled: r.enabled, action: r.action, direction: r.direction });
-    }
-
-    const params = this.parsePSArgs(args);
-    const nameFilter    = (params.get('name')        ?? '').replace(/^["']|["']$/g, '').toLowerCase();
-    const dnFilter      = (params.get('displayname') ?? '').replace(/^["']|["']$/g, '').toLowerCase();
-    const errorAction   = (params.get('erroraction') ?? '').toLowerCase();
-
-    let filtered = allRules;
-    if (nameFilter) filtered = filtered.filter(r => r.name.toLowerCase() === nameFilter || r.name.toLowerCase().includes(nameFilter));
-    if (dnFilter)   filtered = filtered.filter(r => r.displayName.toLowerCase() === dnFilter || r.displayName.toLowerCase().includes(dnFilter));
-
-    if (filtered.length === 0) {
-      // Return empty string — callers use -ErrorAction SilentlyContinue for "not found" checks
-      // (ErrorAction is stripped by stripCommonParams before reaching this handler)
-      return '';
-    }
-
-    const header = [
-      '',
-      'Name                  DisplayName                  Enabled Action Direction',
-      '----                  -----------                  ------- ------ ---------',
-    ];
-    const rows = filtered.map(r =>
-      `${r.name.padEnd(22)}${r.displayName.substring(0, 29).padEnd(29)}${(r.enabled ? 'True' : 'False').padEnd(8)}${r.action.padEnd(7)}${r.direction}`
-    );
-    return [...header, ...rows].join('\n');
   }
 
   private portToDisplayName(portName: string): string {
