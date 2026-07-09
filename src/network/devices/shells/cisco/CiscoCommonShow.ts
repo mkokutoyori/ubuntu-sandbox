@@ -40,33 +40,13 @@ function shortIf(name: string): string {
   return `${abbr} ${rest}`.trim();
 }
 
-/** Cable-graph neighbours (LLDP, generic introspection). */
-function neighbours(dev: ShowStateDevice): NeighborDTO[] {
-  return new EquipmentStateView(dev).neighbors();
-}
-
 /**
- * Real CDP neighbours.
- *
- * When the device hosts a CdpAgent the protocol-learnt table is the
- * truthful source — it reflects which peers actually advertised. We
- * keep a cable-graph fallback for the same reason real Cisco does
- * with limited info from the link-layer when no CDP TLV is available:
- * test-time topologies and non-CDP peers (Linux/Windows) still surface.
+ * Real CDP neighbours — protocol-learnt only. CDP is a Cisco-proprietary
+ * protocol: a peer only appears here if it actually sent a CDP frame.
+ * Non-CDP peers (Linux/Windows hosts) never appear, matching real IOS.
  */
 function cdpNeighbours(dev: ShowStateDevice): NeighborDTO[] {
-  const protocolLearnt = dev.getCdpNeighbors?.();
-  if (!protocolLearnt) return new EquipmentStateView(dev).neighbors();
-  const linkPeers = new EquipmentStateView(dev).neighbors();
-  // Merge: protocol entries take precedence; cable-only peers (non-CDP
-  // talkers like Linux hosts) are still listed so the operator can see
-  // every wire that came up — matching the pre-protocol UX while still
-  // showing real protocol attributes (holdtime, capability) for Cisco
-  // peers that actually advertised.
-  const byKey = new Map<string, NeighborDTO>();
-  for (const p of linkPeers) byKey.set(p.localPort, p);
-  for (const p of protocolLearnt) byKey.set(p.localPort, p);
-  return Array.from(byKey.values());
+  return dev.getCdpNeighbors?.() ?? [];
 }
 
 export function showClock(arg: Date | ShowStateDevice = new Date()): string {
@@ -229,6 +209,27 @@ function interfaceNameMatches(fullName: string, spec: string): boolean {
   return fn === pn && pt.length > 0 && ft.startsWith(pt);
 }
 
+function cdpDetailBlock(n: import('@/network/cdp/CdpAgent').CdpNeighbor): string {
+  const addressLines = n.remoteAddresses.map((addr) => `  IP address: ${addr}`);
+  const holdSec = Math.max(0, Math.round((n.expiresAtMs - Date.now()) / 1000));
+  return [
+    '-------------------------',
+    `Device ID: ${n.remoteHost}`,
+    'Entry address(es):',
+    ...addressLines,
+    `Platform: ${n.remotePlatform},  Capabilities: ${n.remoteCapability}`,
+    `Interface: ${n.localPort},  Port ID (outgoing port): ${n.remotePort}`,
+    `Holdtime : ${holdSec} sec`,
+    '',
+    'Version :',
+    n.remoteSoftwareVersion,
+    '',
+    `advertisement version: ${n.advertisementVersion}`,
+    ...(n.nativeVlan !== undefined ? [`Native VLAN: ${n.nativeVlan}`] : []),
+    `Duplex: ${n.duplex}`,
+  ].join('\n');
+}
+
 export function showCdp(dev: ShowStateDevice, arg = '', enabled = true): string {
   const a = arg.toLowerCase();
   if (!enabled) {
@@ -264,20 +265,24 @@ export function showCdp(dev: ShowStateDevice, arg = '', enabled = true): string 
     }
     return lines.length ? lines.join('\n') : 'CDP is not enabled on any interface';
   }
+  if (a.startsWith('entry')) {
+    const spec = arg.slice(arg.toLowerCase().indexOf('entry') + 'entry'.length).trim();
+    const all = dev.getCdpAgent?.()?.getNeighbors() ?? [];
+    const matches = spec === '' || spec === '*'
+      ? all
+      : all.filter((n) => n.remoteHost.toLowerCase() === spec.toLowerCase());
+    if (!matches.length) return `Total cdp entries displayed : 0`;
+    const blocks = matches.map(cdpDetailBlock);
+    return `${blocks.join('\n\n')}\n\nTotal cdp entries displayed : ${matches.length}`;
+  }
   if (a.includes('neighbor')) {
     const ns = cdpNeighbours(dev);
     const detail = a.includes('detail');
     if (detail) {
-      if (!ns.length) return 'Total cdp entries displayed : 0';
-      const blocks = ns.map((n) => [
-        '-------------------------',
-        `Device ID: ${n.remoteHost}`,
-        `Entry address(es):`,
-        `Platform: ${n.remotePlatform},  Capabilities: ${n.remoteCapability}`,
-        `Interface: ${n.localPort},  Port ID (outgoing port): ${n.remotePort}`,
-        'Holdtime : 180 sec',
-      ].join('\n'));
-      return `${blocks.join('\n\n')}\n\nTotal cdp entries displayed : ${ns.length}`;
+      const learned = dev.getCdpAgent?.()?.getNeighbors() ?? [];
+      if (!learned.length) return 'Total cdp entries displayed : 0';
+      const blocks = learned.map(cdpDetailBlock);
+      return `${blocks.join('\n\n')}\n\nTotal cdp entries displayed : ${learned.length}`;
     }
     const hdr = [
       'Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge',

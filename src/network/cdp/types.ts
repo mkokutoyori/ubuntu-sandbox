@@ -74,6 +74,7 @@ export interface CdpNeighborEntry {
   remoteCapability: CdpCapability;
   remoteAddresses: string[];
   remoteSoftwareVersion: string;
+  advertisementVersion: number;
   /** When this entry was learned (or last refreshed) — used for `show cdp`. */
   learnedAtMs: number;
   /** Total hold-time the advertisement asked us to honour (sec). */

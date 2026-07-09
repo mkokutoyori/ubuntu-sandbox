@@ -182,6 +182,7 @@ export class CdpAgent extends ReactiveAgentBase {
       remoteCapability: payload.capabilities[0] ?? 'Host',
       remoteAddresses: [...payload.addresses],
       remoteSoftwareVersion: payload.softwareVersion,
+      advertisementVersion: payload.version,
       learnedAtMs: now,
       holdtimeSec: payload.holdtimeSec,
       expiresAtMs,

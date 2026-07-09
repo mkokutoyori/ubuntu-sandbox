@@ -77,11 +77,12 @@ describe('Cisco common show family (router & switch, DRY)', () => {
     await r1.executeCommand('enable');
 
     const cdp = await r1.executeCommand('show cdp neighbors');
-    // The real peers (R2 on Gi0/1, L1 on Gi0/0) must appear; an
-    // unconnected port (Gi0/2) must NOT manufacture an entry.
+    // CDP is Cisco-proprietary: R2 (a real CDP speaker on Gi0/1) must
+    // appear, while L1 (a LinuxPC on Gi0/0, which never sends a CDP
+    // frame) must NOT — matching real IOS behaviour.
     expect(cdp).toContain('R2');
-    expect(cdp).toContain('L1');
-    expect(cdp).toMatch(/Total cdp entries displayed : 2/);
+    expect(cdp).not.toContain('L1');
+    expect(cdp).toMatch(/Total cdp entries displayed : 1/);
     const cdpDetail = await r1.executeCommand('show cdp neighbors detail');
     expect(cdpDetail).toContain('R2');
     expect(cdpDetail).toMatch(/Port ID \(outgoing port\): GigabitEthernet0\/1/);
