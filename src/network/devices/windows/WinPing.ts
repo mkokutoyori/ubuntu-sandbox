@@ -309,7 +309,7 @@ export async function cmdPing(ctx: WinCommandContext, args: string[]): Promise<s
 
   {
     const primary = ctx.ports.get('eth0');
-    const anyAdminUp = primary ? primary.getIsUp() : true;
+    const anyAdminUp = primary ? primary.getIsUp() && !primary.isAdminDown() : true;
     if (!anyAdminUp) {
       const cnt = parsed.count;
       const transmitLines: string[] = [];
