@@ -75,6 +75,7 @@ export class DHCPServer implements IProtocolEngine {
 
   /** IP conflict database */
   private conflicts: DHCPConflict[] = [];
+  private databaseAgents: string[] = [];
 
   /** Conflict TTL in seconds (0 = never expire) */
   private conflictTTL: number = DEFAULT_CONFLICT_TTL;
@@ -1156,6 +1157,35 @@ export class DHCPServer implements IProtocolEngine {
     if (this.debug.serverEvents) lines.push('DHCP server event debugging is on');
     if (lines.length === 0) lines.push('No DHCP debugging is enabled');
     return lines.join('\n');
+  }
+
+  // ─── Database agents (`ip dhcp database <url>`) ───────────────────
+
+  addDatabaseAgent(url: string): void {
+    if (!this.databaseAgents.includes(url)) this.databaseAgents.push(url);
+  }
+
+  removeDatabaseAgent(url: string): void {
+    const i = this.databaseAgents.indexOf(url);
+    if (i >= 0) this.databaseAgents.splice(i, 1);
+  }
+
+  getDatabaseAgents(): string[] {
+    return [...this.databaseAgents];
+  }
+
+  formatDatabaseShow(): string {
+    if (this.databaseAgents.length === 0) return 'Database agents: 0';
+    const lines: string[] = [`Database agents: ${this.databaseAgents.length}`, ''];
+    for (const url of this.databaseAgents) {
+      lines.push(
+        `URL              : ${url}`,
+        'Read succeeded   : never',
+        'Write succeeded  : never',
+        '',
+      );
+    }
+    return lines.join('\n').trimEnd();
   }
 
   // ─── Internal Helpers ─────────────────────────────────────────────

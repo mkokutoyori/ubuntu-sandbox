@@ -55,6 +55,17 @@ describe('C2960 diagnostics report — missing DHCP commands (Cat 1)', () => {
     expect(out).toContain('DHCPDISCOVER');
     expect(out).toContain('DHCPOFFER');
   });
+
+  it('show ip dhcp database reflects real configured agents (not a stub)', async () => {
+    const sw = await priv(freshSwitch());
+    expect(await sw.executeCommand('show ip dhcp database')).toBe('Database agents: 0');
+    for (const c of ['configure terminal', 'ip dhcp database ftp://10.0.0.9/dhcp', 'end']) {
+      await sw.executeCommand(c);
+    }
+    const out = await sw.executeCommand('show ip dhcp database');
+    expect(out).toContain('Database agents: 1');
+    expect(out).toContain('ftp://10.0.0.9/dhcp');
+  });
 });
 
 describe('C2960 diagnostics report — version single source of truth (Cat 2.1)', () => {
