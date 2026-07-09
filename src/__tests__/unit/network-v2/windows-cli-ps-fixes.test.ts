@@ -56,6 +56,20 @@ describe('arp -s — respects the optional if_addr on a multi-homed host', () =>
   });
 });
 
+describe('New-NetIPAddress — mirrors onto the real port without duplicating the listing', () => {
+  it('Get-NetIPAddress shows the new address exactly once', async () => {
+    const pc = new WindowsPC('windows-pc', 'PC1', 0, 0);
+    const shell = ps(pc);
+    await run(shell, 'New-NetIPAddress -IPAddress 10.0.0.9 -InterfaceAlias "Ethernet 0" -PrefixLength 24');
+    const out = await run(shell, 'Get-NetIPAddress -InterfaceAlias "Ethernet 0"');
+    const count = (out.match(/10\.0\.0\.9/g) ?? []).length;
+    expect(count).toBe(1);
+
+    const cmdOut = await pc.executeCommand('ipconfig');
+    expect(cmdOut).toContain('10.0.0.9');
+  });
+});
+
 describe('Get-NetIPAddress -AddressFamily IPv4 — never leaks an IPv6 address', () => {
   it('excludes ::1 (IPv6 loopback) when filtered to IPv4', async () => {
     const pc = new WindowsPC('windows-pc', 'PC1', 0, 0);

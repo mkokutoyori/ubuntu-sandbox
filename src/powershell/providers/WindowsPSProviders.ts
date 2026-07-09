@@ -1055,8 +1055,12 @@ class WindowsNetworkAdapter implements INetworkProvider {
         });
       }
     });
-    // Layer extra IPs (added via New-NetIPAddress)
+    // Layer extra IPs (added via New-NetIPAddress) that aren't already
+    // mirrored onto a real port — IPv4 additions are applied to the port
+    // directly above, so only IPv6/unreachable entries land here.
+    const seenIps = new Set(out.map(e => e.ipAddress.toLowerCase()));
     for (const [ip, meta] of this.state.extraIPs) {
+      if (seenIps.has(ip.toLowerCase())) continue;
       const metaPortName = toPortName(meta.ifAlias) ?? meta.ifAlias;
       if (resolvedFilter && metaPortName.toLowerCase() !== resolvedFilter.toLowerCase()) continue;
       const ifIndex = ports.findIndex(p => p.name.toLowerCase() === metaPortName.toLowerCase()) + 1;
