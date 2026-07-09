@@ -87,6 +87,36 @@ describe('netsh winhttp — real, shared proxy state (not a no-op stub)', () => 
   });
 });
 
+describe('New-NetIPAddress — configures the real interface, visible to ipconfig (cmd)', () => {
+  it('an address added via New-NetIPAddress (PS) shows up in ipconfig (cmd)', async () => {
+    const pc = new WindowsPC('windows-pc', 'PC1', 0, 0);
+    const shell = ps(pc);
+    await run(shell, 'New-NetIPAddress -InterfaceAlias eth0 -IPAddress 10.0.6.7 -PrefixLength 24');
+    const out = await pc.executeCommand('ipconfig');
+    expect(out).toContain('10.0.6.7');
+  });
+});
+
+describe('NetRoute — New/Get-NetRoute share the real routing table with route (cmd)', () => {
+  it('a route added via "route add" (cmd) is visible to Get-NetRoute (PS)', async () => {
+    const pc = new WindowsPC('windows-pc', 'PC1', 0, 0);
+    pc.configureInterface('eth0', new IPAddress('10.0.7.5'), new SubnetMask('255.255.255.0'));
+    await pc.executeCommand('route add 172.16.9.0 mask 255.255.255.0 10.0.7.1');
+    const shell = ps(pc);
+    const out = await run(shell, 'Get-NetRoute');
+    expect(out).toContain('172.16.9.0/24');
+  });
+
+  it('a route added via New-NetRoute (PS) is visible to "route print" (cmd)', async () => {
+    const pc = new WindowsPC('windows-pc', 'PC1', 0, 0);
+    pc.configureInterface('eth0', new IPAddress('10.0.8.5'), new SubnetMask('255.255.255.0'));
+    const shell = ps(pc);
+    await run(shell, 'New-NetRoute -DestinationPrefix "172.16.10.0/24" -InterfaceAlias eth0 -NextHop "10.0.8.1"');
+    const out = await pc.executeCommand('route print');
+    expect(out).toContain('172.16.10.0');
+  });
+});
+
 describe('Disable/Enable-NetAdapter — real admin state shared with ipconfig and netsh', () => {
   it('disabling in PS is reflected by ipconfig and netsh in cmd', async () => {
     const pc = new WindowsPC('windows-pc', 'PC1', 0, 0);
