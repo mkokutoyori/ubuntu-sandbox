@@ -2394,6 +2394,8 @@ export abstract class Switch extends Equipment {
     this.hostname = name;
     this.name = name;
   }
+
+  defaultHostname(): string { return 'Switch'; }
   _getSwitchportConfigs(): Map<string, SwitchportConfig> { return this.switchportConfigs; }
   _getSTPStates(): Map<string, STPPortState> { return this.stpStates; }
   _getDHCPSnoopingConfig(): DHCPSnoopingConfig { return this.dhcpSnooping; }

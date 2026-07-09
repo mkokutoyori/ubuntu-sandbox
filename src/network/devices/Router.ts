@@ -2335,6 +2335,8 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
   /** @internal Used by CLI shells */
   _setHostnameInternal(name: string): void { this.hostname = name; this.name = name; }
 
+  defaultHostname(): string { return 'Router'; }
+
   private _globalToggles = new Map<string, boolean>();
   _setGlobalToggle(key: string, enabled: boolean): void { this._globalToggles.set(key, enabled); }
   _getGlobalToggle(key: string): boolean | undefined { return this._globalToggles.get(key); }
