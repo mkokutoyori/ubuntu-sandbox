@@ -288,9 +288,22 @@ export function cmdNetsh(ctx: WinCommandContext, args: string[]): string {
     }
     const winhttpSub = args[1].toLowerCase();
     if (winhttpSub === 'help') return `The following commands are available:\n\nshow   - Displays WinHTTP settings.\nset    - Sets proxy settings.\nreset  - Resets proxy settings.\n`;
-    if (winhttpSub === 'show')  return 'Current WinHTTP proxy settings:\n  Direct access (no proxy server).';
-    if (winhttpSub === 'reset') return 'WinHTTP settings reset.';
-    if (winhttpSub === 'set')   return 'Ok.';
+    if (winhttpSub === 'show') {
+      const proxy = getWinhttpProxy(ctx);
+      return proxy
+        ? `Current WinHTTP proxy settings:\n  Proxy Server(s) :  ${proxy}\n  Bypass List     :  (none)`
+        : 'Current WinHTTP proxy settings:\n  Direct access (no proxy server).';
+    }
+    if (winhttpSub === 'reset') {
+      setWinhttpProxy(ctx, '');
+      return 'Direct access (no proxy server).\nCurrent WinHTTP proxy settings were reset.';
+    }
+    if (winhttpSub === 'set' && args[2]?.toLowerCase() === 'proxy') {
+      const proxyArg = args[3]?.replace(/^["']|["']$/g, '') ?? '';
+      if (!proxyArg) return 'Usage: netsh winhttp set proxy <proxy-server> [<bypass-list>]';
+      setWinhttpProxy(ctx, proxyArg);
+      return 'Ok.';
+    }
     return 'Ok.';
   }
 
@@ -3039,6 +3052,16 @@ const wlanProfileStore = new WeakMap<Map<string, any>, WlanProfile[]>();
 function getWlanProfiles(ctx: WinCommandContext): WlanProfile[] {
   if (!wlanProfileStore.has(ctx.ports)) wlanProfileStore.set(ctx.ports, []);
   return wlanProfileStore.get(ctx.ports)!;
+}
+
+// ─── netsh winhttp ──────────────────────────────────────────────────
+
+const winhttpProxyStore = new WeakMap<Map<string, any>, string>();
+function getWinhttpProxy(ctx: WinCommandContext): string {
+  return winhttpProxyStore.get(ctx.ports) ?? '';
+}
+function setWinhttpProxy(ctx: WinCommandContext, proxy: string): void {
+  winhttpProxyStore.set(ctx.ports, proxy);
 }
 
 const NETSH_WLAN_HELP = `The following commands are available:

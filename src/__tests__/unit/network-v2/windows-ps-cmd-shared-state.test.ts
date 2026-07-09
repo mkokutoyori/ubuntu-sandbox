@@ -71,14 +71,18 @@ describe('Get-NetNeighbor / Remove-NetNeighbor — share arpTable with arp', () 
   });
 });
 
-describe('netsh winhttp — identical (stub) behavior from both shells, no divergence', () => {
-  it('cmd and PS report the same proxy state through the same code path', async () => {
+describe('netsh winhttp — real, shared proxy state (not a no-op stub)', () => {
+  it('a proxy set via PS is reported by "show proxy" in cmd, and vice versa', async () => {
     const pc = new WindowsPC('windows-pc', 'PC1', 0, 0);
-    const router = new CiscoRouter('R1');
-    new Cable('w').connect(pc.getPort('eth0')!, router.getPort('GigabitEthernet0/0')!);
     const shell = ps(pc);
-    const psOut = await run(shell, 'netsh winhttp show proxy');
-    const cmdOut = await pc.executeCommand('netsh winhttp show proxy');
-    expect(psOut).toBe(cmdOut);
+
+    await run(shell, 'netsh winhttp set proxy 10.0.0.9:8080');
+    const cmdShow = await pc.executeCommand('netsh winhttp show proxy');
+    expect(cmdShow).toContain('10.0.0.9:8080');
+
+    await pc.executeCommand('netsh winhttp reset proxy');
+    const psShow = await run(shell, 'netsh winhttp show proxy');
+    expect(psShow).toContain('Direct access');
+    expect(psShow).not.toContain('10.0.0.9:8080');
   });
 });
