@@ -11,6 +11,7 @@ import type { TcpStack, TcpSocket } from '@/network/tcp/TcpStack';
 import type { HttpMessage } from '../semantics/types';
 import { encodeRequest, parseResponse, type Http1EncodeOptions } from '../http1/Http1Wire';
 import { TlsClientSession, type TlsClientConfig } from '@/network/tls/TlsClientSession';
+import type { X509Certificate } from '@/network/pki/X509Certificate';
 import type { TlsRecord } from '@/network/tls/recordLayer';
 import { encodeRecords, decodeRecords } from './TlsRecordWire';
 import { encryptApplicationData, decryptApplicationData } from './ApplicationDataCipher';
@@ -152,5 +153,9 @@ export class HttpsClientSession {
     this.socket?.close();
     this.socket = null;
     this.tls = null;
+  }
+
+  get peerCertificate(): X509Certificate | null {
+    return this.tls?.peerCertificate ?? null;
   }
 }

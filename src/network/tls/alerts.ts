@@ -65,6 +65,7 @@ export function alertForVerificationReason(reason: VerificationReason): AlertDes
     case 'revoked': return 'certificate_revoked';
     case 'crl-stale': return 'certificate_unknown';
     case 'crl-untrusted': return 'certificate_unknown';
+    case 'hostname-mismatch': return 'bad_certificate';
   }
 }
 

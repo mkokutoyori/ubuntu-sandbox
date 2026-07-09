@@ -223,9 +223,13 @@ export class FilesNssSource implements INssSource {
 
   gethostbyname(name: string, family?: 2 | 10): NssResult<NssHostEntry[]> {
     const matches: NssHostEntry[] = [];
+    const seenFamilies = new Set<2 | 10>();
     for (const h of this.iterateHosts()) {
       if (family && h.addressFamily !== family) continue;
-      if (h.canonicalName === name || h.aliases.includes(name)) matches.push(h);
+      if (h.canonicalName !== name && !h.aliases.includes(name)) continue;
+      if (seenFamilies.has(h.addressFamily)) continue;
+      seenFamilies.add(h.addressFamily);
+      matches.push(h);
     }
     return matches.length ? SUCCESS(matches) : NOTFOUND();
   }

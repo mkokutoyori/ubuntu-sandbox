@@ -24,6 +24,7 @@ import type { LinuxFormatHelpers } from '../LinuxFormatHelpers';
 import type { RadiusClientAgent } from '@/network/radius/RadiusClientAgent';
 import type { GreAgent } from '@/network/gre/GreAgent';
 import type { LinuxNetworkConfigManager } from '../LinuxNetworkConfigManager';
+import type { X509Certificate } from '@/network/pki/X509Certificate';
 
 export interface LinuxCommandContext {
   /** Kernel-level services: VFS, users, iptables, services, processes. */
@@ -32,7 +33,6 @@ export interface LinuxCommandContext {
   /** Narrow façade over the L2/L3 networking stack (EndHost). */
   readonly net: LinuxNetKernel;
 
-  /** Declared-vs-runtime network config: netplan/interfaces/NetworkManager. */
   readonly netConfig: LinuxNetworkConfigManager;
 
   /** DNS daemon co-located with this machine (dnsmasq). */
@@ -74,4 +74,6 @@ export interface LinuxCommandContext {
    * A one-shot probe client, not persistent NAS configuration.
    */
   readonly radtestClient?: RadiusClientAgent;
+
+  readonly tlsTrustAnchors: readonly X509Certificate[];
 }

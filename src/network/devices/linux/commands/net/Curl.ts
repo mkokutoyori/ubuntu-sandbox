@@ -1,26 +1,9 @@
-/**
- * `curl` — deep-inspection wrapper around the network-agnostic `cmdCurl`.
- *
- * PRD-HTTP.md §5 P12: the HTTPS path attempts a real TLS 1.3 handshake
- * (`HttpsClientSession`, `PRD-TLS.md`) instead of the previous banner-
- * sniffing heuristic. Since this simulator gives `curl` no configured CA
- * trust store, every real handshake either fails at the record-decode
- * level (peer isn't TLS at all — SSH, SMTP, Oracle TNS, …, an unrecognized
- * ContentType byte throws) or completes but fails certificate verification
- * (no trust anchors to match against) — both are reported with the
- * matching real-curl OpenSSL-style error. This is what makes Scenario 7's
- * "port 443 = HTTPS" assumption falsifiable from the command line, now via
- * a genuine protocol-level failure rather than a banner heuristic.
- *
- * Non-HTTPS cases fall through to the pre-existing `cmdCurl` renderer.
- */
-
 import type { LinuxCommand } from '../LinuxCommand';
 import type { LinuxCommandContext } from '../LinuxCommandContext';
 import { cmdCurl } from '../../LinuxNetCommands';
 import { fetchHttp } from './HttpFetch';
 import { HttpsClientSession } from '@/network/http/https/HttpsClientSession';
-import { CertificateVerifier } from '@/network/pki/CertificateVerifier';
+import { CertificateVerifier, certificateMatchesHostname } from '@/network/pki/CertificateVerifier';
 import { createRequest } from '@/network/http/semantics/types';
 import { makeArgCompleter } from '../completionHelpers';
 
@@ -62,21 +45,21 @@ export const curlCommand: LinuxCommand = {
       if (!ip) return `curl: (6) Could not resolve host: ${host}`;
 
       try {
-        // No CA trust store is threaded through LinuxCommandContext in
-        // this phase (out of scope — cf. PRD-HTTP.md §5 P12 note), so
-        // every real handshake fails certificate verification; `-k` can't
-        // change that outcome since TlsClientSession (owned by
-        // PRD-TLS.md) fails the session itself once verification fails.
-        const verifier = new CertificateVerifier({ trustAnchors: [] });
+        const verifier = new CertificateVerifier({ trustAnchors: ctx.tlsTrustAnchors });
         const session = new HttpsClientSession(ctx.net.getTcpStack(), ip.toString(), port, { verifier });
         const request = createRequest('GET', path);
         request.headers.set('Host', host);
         const result = session.send(request);
-        session.close();
 
         if (!result.ok || !result.response) {
+          session.close();
           return `curl: (60) SSL certificate problem: unable to get local issuer certificate`;
         }
+        if (session.peerCertificate && !certificateMatchesHostname(session.peerCertificate, host)) {
+          session.close();
+          return `curl: (60) SSL: no alternative certificate subject name matches target host name '${host}'`;
+        }
+        session.close();
         const { response } = result;
         if (head) {
           return [

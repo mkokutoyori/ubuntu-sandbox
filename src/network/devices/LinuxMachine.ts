@@ -90,6 +90,7 @@ import { CrossVendorSshHost } from '../protocols/ssh/server/CrossVendorSshHost';
 import { SshdServerConfig } from '../protocols/ssh/server/SshdServerConfig';
 import { LinuxUserManagerAuthority } from './linux/network/LinuxUserManagerAuthority';
 import { parseResolvConf } from './linux/nss/ResolvConf';
+import type { X509Certificate } from '../pki/X509Certificate';
 import type { PacketInfo, LinuxIptablesManager } from './linux/LinuxIptablesManager';
 
 // Façade + command registry
@@ -161,6 +162,12 @@ export abstract class LinuxMachine extends EndHost
 
   /** Format helpers (ping/traceroute/ifconfig). */
   protected readonly fmt: LinuxFormatHelpers = defaultLinuxFormatHelpers;
+
+  private readonly trustedCAs: X509Certificate[] = [];
+
+  addTrustedCertificateAuthority(cert: X509Certificate): void {
+    this.trustedCAs.push(cert);
+  }
 
   /** Registry of network-aware commands handled before the bash interpreter. */
   protected readonly commands: LinuxCommandRegistry;
@@ -607,12 +614,6 @@ export abstract class LinuxMachine extends EndHost
     }
   }
 
-  /**
-   * `systemd-networkd` renders netplan config onto real interfaces on
-   * every (re)start — the same effect `netplan apply` has, and the way a
-   * pending file edit that was never applied gets picked up without the
-   * admin having to remember the exact netplan verb.
-   */
   private wireNetworkConfigLifecycle(): void {
     this.executor.serviceMgr.onLifecycle((event, name) => {
       if (name !== 'systemd-networkd') return;
@@ -1265,6 +1266,7 @@ export abstract class LinuxMachine extends EndHost
       executor: this.executor,
       net: this.net,
       netConfig: this.executor.netConfig,
+      tlsTrustAnchors: this.trustedCAs,
       dnsService: this.dnsService,
       bind9: this.bind9,
       xfrm: this.xfrmCtx,

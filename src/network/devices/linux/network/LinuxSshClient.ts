@@ -979,11 +979,11 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
   if (clientOption(flags, 'StrictHostKeyChecking') === 'yes' && opts.localVfs) {
     const home = opts.sourceHome ?? '/root';
     const existing = opts.localVfs.readFile(`${home}/.ssh/known_hosts`) ?? '';
-    if (!SshKnownHostsFile.parse(existing).find(found.ip)) {
+    if (!SshKnownHostsFile.parse(existing).find(host)) {
       return {
         output:
           `No matching host key fingerprint found in DNS.\n` +
-          `No ED25519 host key is known for ${found.ip} and you have requested strict checking.\n` +
+          `No ED25519 host key is known for ${host} and you have requested strict checking.\n` +
           `Host key verification failed.`,
         exitCode: 255,
       };
@@ -993,7 +993,8 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
   // Update the local ~/.ssh/known_hosts with the remote's host key (or
   // emit the OpenSSH-style identification-changed warning when the key
   // already present differs from the remote's).
-  const keyChanged = updateKnownHosts(opts, machine, found.ip);
+  const strictOption = clientOption(flags, 'StrictHostKeyChecking');
+  const keyChanged = updateKnownHosts(opts, machine, host, strictOption === 'no');
   if (keyChanged) {
     return {
       output:
@@ -1262,7 +1263,7 @@ function forwardSshAgent(opts: SshClientOpts, machine: LinuxMachine): (() => voi
  * the local ~/.ssh/known_hosts. Returns true when an existing entry's
  * key differs from the remote's current key (host-key changed).
  */
-function updateKnownHosts(opts: SshClientOpts, machine: LinuxMachine, ip: string): boolean {
+function updateKnownHosts(opts: SshClientOpts, machine: LinuxMachine, ip: string, force = false): boolean {
   if (!opts.localVfs) return false;
   const remoteVfs = (machine as LinuxMachine & { executor: { vfs: { readFile: (p: string) => string | null } } }).executor.vfs;
   // Read the remote's ed25519 public key (the algorithm we seed everywhere).
@@ -1277,9 +1278,11 @@ function updateKnownHosts(opts: SshClientOpts, machine: LinuxMachine, ip: string
   const existing = opts.localVfs.readFile(knownHostsPath) ?? '';
   const file = SshKnownHostsFile.parse(existing);
 
-  if (file.hostKeyChanged(ip, keyType, publicKey)) return true;
-  if (!file.find(ip, keyType)) {
-    const updated = file.add({ hostnames: [ip], keyType, publicKey });
+  const changed = file.hostKeyChanged(ip, keyType, publicKey);
+  if (changed && !force) return true;
+
+  if (changed || !file.find(ip, keyType)) {
+    const updated = (changed ? file.remove(ip) : file).add({ hostnames: [ip], keyType, publicKey });
     const sshDir = knownHostsPath.replace(/\/[^/]+$/, '');
     if (opts.localVfs.mkdirp && opts.localVfs.resolveInode && !opts.localVfs.resolveInode(sshDir)) {
       opts.localVfs.mkdirp(sshDir, 0o700, 0, 0);

@@ -65,6 +65,7 @@ export class TlsClientSession {
   earlyDataAccepted: boolean | null = null;
   /** A ticket received via `receiveSessionTicket()`, ready to resume a future session. */
   receivedTicket: SessionTicket | null = null;
+  peerCertificate: X509Certificate | null = null;
   /**
    * RFC 8446 §7.2 — this side's current application traffic secrets, set
    * once the handshake succeeds and ratcheted independently per direction
@@ -228,6 +229,7 @@ export class TlsClientSession {
       this.emit({ topic: 'tls.alert.sent', payload: { sessionId: this.sessionId, role: 'client', alert: this.lastAlert } });
       return null;
     }
+    this.peerCertificate = leafCert;
 
     this.transcript.push(encodeHandshakeMessage(encryptedExtensions));
     if (certificateRequest) this.transcript.push(encodeHandshakeMessage(certificateRequest));

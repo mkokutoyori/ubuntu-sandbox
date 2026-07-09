@@ -4,7 +4,7 @@ import { tbsPayload } from './X509Certificate';
 import type { CertificateRevocationList } from './CertificateRevocationList';
 import type { IOcspResponder } from './OcspResponder';
 
-export type VerificationReason = 'unknown' | 'expired' | 'revoked' | 'not-yet-valid' | 'bad-signature' | 'crl-stale' | 'crl-untrusted';
+export type VerificationReason = 'unknown' | 'expired' | 'revoked' | 'not-yet-valid' | 'bad-signature' | 'crl-stale' | 'crl-untrusted' | 'hostname-mismatch';
 
 export interface VerificationOk { readonly ok: true }
 export interface VerificationFailure { readonly ok: false; readonly reason: VerificationReason }
@@ -35,7 +35,7 @@ export class CertificateVerifier {
     this.ocspResponder = opts.ocspResponder;
   }
 
-  verify(cert: X509Certificate): VerificationResult {
+  verify(cert: X509Certificate, expectedHostname?: string): VerificationResult {
     const now = this.clock();
     const issuer = this.trustAnchors.find(a => a.subject === cert.issuer);
     if (!issuer) return { ok: false, reason: 'unknown' };
@@ -44,6 +44,9 @@ export class CertificateVerifier {
     }
     if (now < cert.notBefore) return { ok: false, reason: 'not-yet-valid' };
     if (now > cert.notAfter) return { ok: false, reason: 'expired' };
+    if (expectedHostname && !certificateMatchesHostname(cert, expectedHostname)) {
+      return { ok: false, reason: 'hostname-mismatch' };
+    }
     if (this.revocationCheck === 'ocsp') {
       if (!this.ocspResponder) return { ok: false, reason: 'crl-stale' };
       const resp = this.ocspResponder.check(cert, now);
@@ -65,6 +68,24 @@ export class CertificateVerifier {
     }
     return { ok: true };
   }
+}
+
+export function certificateMatchesHostname(cert: X509Certificate, hostname: string): boolean {
+  const target = hostname.toLowerCase();
+  const names: string[] = [...(cert.extensions?.subjectAltName ?? [])];
+  if (names.length === 0) {
+    const cn = /CN=([^,]+)/.exec(cert.subject);
+    if (cn) names.push(cn[1]);
+  }
+  return names.some(raw => {
+    const name = raw.toLowerCase();
+    if (name === target) return true;
+    if (name.startsWith('*.')) {
+      const suffix = name.slice(1);
+      return target.endsWith(suffix) && !target.slice(0, -suffix.length).includes('.');
+    }
+    return false;
+  });
 }
 
 function dropSignature(cert: X509Certificate): X509Certificate {

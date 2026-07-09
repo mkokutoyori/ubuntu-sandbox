@@ -204,7 +204,7 @@ export class LinuxLogManager {
         message,
         pid,
         displayPid: includePid,
-        hostname: this.hostname,
+        hostname: this.currentHostname(),
       });
       if (toStderr) {
         const last = this.journal[this.journal.length - 1];
@@ -231,7 +231,7 @@ export class LinuxLogManager {
       tag,
       message,
       pid,
-      hostname: this.hostname,
+      hostname: this.currentHostname(),
     });
     return true;
   }
@@ -256,7 +256,7 @@ export class LinuxLogManager {
       // caller passes its own so `journalctl -u ssh` shows that single
       // pid instead of one per emitted line.
       pid: pid ?? this.nextPid++,
-      hostname: this.hostname,
+      hostname: this.currentHostname(),
     });
   }
 
@@ -273,7 +273,7 @@ export class LinuxLogManager {
       tag,
       message,
       pid: pid ?? this.nextPid++,
-      hostname: this.hostname,
+      hostname: this.currentHostname(),
     });
   }
 
@@ -290,7 +290,7 @@ export class LinuxLogManager {
       tag,
       message,
       pid: 0,
-      hostname: this.hostname,
+      hostname: this.currentHostname(),
     });
   }
 
@@ -302,7 +302,7 @@ export class LinuxLogManager {
       tag: 'systemd',
       message,
       pid: 1,
-      hostname: this.hostname,
+      hostname: this.currentHostname(),
     });
   }
 
@@ -576,7 +576,7 @@ export class LinuxLogManager {
       tag,
       message,
       pid,
-      hostname: this.hostname,
+      hostname: this.currentHostname(),
     });
   }
 
@@ -867,7 +867,7 @@ export class LinuxLogManager {
         tag: 'kernel',
         message: km.msg,
         pid: 0,
-        hostname: this.hostname,
+        hostname: this.currentHostname(),
       });
     }
 
@@ -893,7 +893,7 @@ export class LinuxLogManager {
         tag: sm.tag,
         message: sm.msg,
         pid: sm.pid,
-        hostname: this.hostname,
+        hostname: this.currentHostname(),
       });
     }
 
@@ -915,7 +915,7 @@ export class LinuxLogManager {
         tag: 'sshd',
         message: msg,
         pid: sshPid,
-        hostname: this.hostname,
+        hostname: this.currentHostname(),
       });
     }
 
@@ -937,7 +937,7 @@ export class LinuxLogManager {
         tag: 'systemd-logind',
         message: msg,
         pid: logindPid,
-        hostname: this.hostname,
+        hostname: this.currentHostname(),
       });
     }
 
