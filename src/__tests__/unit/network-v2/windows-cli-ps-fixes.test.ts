@@ -116,6 +116,17 @@ describe('Test-NetConnection -TraceRoute — TraceRoute property is present', ()
   });
 });
 
+describe('ipconfig /release — a connected adapter with no IP stays connected', () => {
+  it('does not report "Media disconnected" for a cabled interface with no lease', async () => {
+    const pc = new WindowsPC('windows-pc', 'PC1', 0, 0);
+    const router = new CiscoRouter('R1');
+    new Cable('w').connect(pc.getPort('eth0')!, router.getPort('GigabitEthernet0/0')!);
+
+    const out = await pc.executeCommand('ipconfig /release');
+    expect(out).not.toMatch(/Ethernet adapter Ethernet 0:\n\s*Connection-specific DNS Suffix\s*\.\s*:\n\s*Media State/);
+  });
+});
+
 describe('arp -s via PowerShell — a hyphenated MAC literal is not parsed as arithmetic', () => {
   it('adds the static entry instead of printing the arp usage text', async () => {
     const pc = new WindowsPC('windows-pc', 'PC1', 0, 0);

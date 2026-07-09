@@ -290,11 +290,12 @@ function ipconfigRelease(ctx: WinCommandContext, args: string[]): string {
     lines.push(`Ethernet adapter ${displayName}:`);
     lines.push(`   Connection-specific DNS Suffix  . :`);
     const ip = port.getIPAddress();
+    const adapterUp = port.getIsUp() && port.isConnected();
     if (ip) {
       lines.push(`   IPv4 Address. . . . . . . . . . . : ${ip}`);
       lines.push(`   Subnet Mask . . . . . . . . . . . : ${port.getSubnetMask() || '255.255.255.0'}`);
       lines.push(`   Default Gateway . . . . . . . . . : ${ctx.defaultGateway || ''}`);
-    } else {
+    } else if (!adapterUp) {
       lines.push(`   Media State . . . . . . . . . . . : Media disconnected`);
     }
     lines.push('');
