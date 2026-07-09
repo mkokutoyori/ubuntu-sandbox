@@ -43,14 +43,20 @@ export default defineConfig(({ mode }) => ({
       provider: 'v8',
       reporter: ['text', 'html', 'lcov'],
       reportsDirectory: './coverage',
-      include: ['src/network/protocols/ssh/**/*.ts'],
-      exclude: ['**/*.d.ts', '**/__tests__/**'],
+      include: ['src/**/*.{ts,tsx}'],
+      exclude: [
+        '**/*.d.ts',
+        '**/__tests__/**',
+        'src/bash/grammar/**',
+        'src/**/index.ts',
+      ],
       thresholds: {
-        // Analysis doc P7: keep the SSH core honest as new features land.
-        lines: 85,
-        functions: 85,
-        statements: 85,
-        branches: 75,
+        'src/network/protocols/ssh/**': {
+          lines: 85,
+          functions: 85,
+          statements: 85,
+          branches: 75,
+        },
       },
     },
   },
