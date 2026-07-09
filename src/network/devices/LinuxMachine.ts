@@ -1195,7 +1195,11 @@ export abstract class LinuxMachine extends EndHost
   private createPortsFromProfile(): void {
     const { portCount, portPrefix } = this.profile;
     for (let i = 0; i < portCount; i++) {
-      this.addPort(new Port(`${portPrefix}${i}`, 'ethernet'));
+      const port = new Port(`${portPrefix}${i}`, 'ethernet');
+      port.onLinkChange((state) => {
+        if (state === 'up' && !port.isIPv6Enabled()) port.enableIPv6();
+      });
+      this.addPort(port);
     }
   }
 

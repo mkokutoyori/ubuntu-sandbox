@@ -118,7 +118,7 @@ export function buildIpCtx(
           ip: '127.0.0.1', mask: '255.0.0.0', cidr: 8,
           mtu: 65536, isUp: true, isConnected: true, isDHCP: false,
           counters: { framesIn: 0, framesOut: 0, bytesIn: 0, bytesOut: 0 },
-          ipv6: [{ address: '::1', prefixLength: 128, scope: 'global' as const }],
+          ipv6: [{ address: '::1', prefixLength: 128, scope: 'host' as const }],
         };
       }
       const port = net.getPorts().get(name);

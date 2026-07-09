@@ -564,7 +564,7 @@ function formatAddrInterface(info: IpInterfaceInfo, idx: number, opts: IpOutputO
 }
 
 function ipAddrBrief(ctx: IpNetworkContext, args: string[]): string {
-  const names = ctx.getInterfaceNames();
+  const names = ['lo', ...ctx.getInterfaceNames().filter(n => n !== 'lo')];
   const lines: string[] = [];
 
   for (const name of names) {
@@ -781,7 +781,7 @@ function ipLinkShow(ctx: IpNetworkContext, args: string[], opts: IpOutputOptions
     }
   }
 
-  const names = ctx.getInterfaceNames();
+  const names = ['lo', ...ctx.getInterfaceNames().filter(n => n !== 'lo')];
 
   if (filterDev) {
     const info = ctx.getInterfaceInfo(filterDev);

@@ -169,8 +169,6 @@ function formatBSD(entries: [string, ARPEntry][]): string {
 }
 
 function formatTabular(entries: [string, ARPEntry][]): string {
-  if (entries.length === 0) return '';
-
   const header = 'Address                  HWtype  HWaddress           Flags Mask            Iface';
   const lines = [header];
   for (const [ip, entry] of entries) {
@@ -239,12 +237,12 @@ export function linuxArp(ctx: LinuxArpContext, args: string[]): string {
     entries = entries.filter(([, e]) => e.iface === flags.filterIface);
   }
 
-  if (entries.length === 0) return '';
-
   // -n or -e forces tabular format
   if (flags.numeric || flags.tabular) {
     return formatTabular(entries);
   }
+
+  if (entries.length === 0) return '';
 
   // Default: BSD format
   return formatBSD(entries);

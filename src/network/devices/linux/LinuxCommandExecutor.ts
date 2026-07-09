@@ -577,15 +577,28 @@ export class LinuxCommandExecutor {
       this.vfs.registerGeneratedFile(`${base}/arp_notify`, () => '0\n');
       this.vfs.registerGeneratedFile(`${base}/proxy_arp`, () => '0\n');
     }
+    const neighDefaults: Array<[string, string]> = [
+      ['base_reachable_time_ms', '30000\n'],
+      ['gc_thresh1', '128\n'],
+      ['gc_thresh2', '512\n'],
+      ['gc_thresh3', '1024\n'],
+      ['gc_stale_time', '60\n'],
+      ['retrans_time_ms', '1000\n'],
+      ['mcast_solicit', '3\n'],
+      ['ucast_solicit', '3\n'],
+    ];
     const neigh = '/proc/sys/net/ipv4/neigh/default';
-    this.vfs.registerGeneratedFile(`${neigh}/base_reachable_time_ms`, () => '30000\n');
-    this.vfs.registerGeneratedFile(`${neigh}/gc_thresh1`, () => '128\n');
-    this.vfs.registerGeneratedFile(`${neigh}/gc_thresh2`, () => '512\n');
-    this.vfs.registerGeneratedFile(`${neigh}/gc_thresh3`, () => '1024\n');
-    this.vfs.registerGeneratedFile(`${neigh}/gc_stale_time`, () => '60\n');
-    this.vfs.registerGeneratedFile(`${neigh}/retrans_time_ms`, () => '1000\n');
-    this.vfs.registerGeneratedFile(`${neigh}/mcast_solicit`, () => '3\n');
-    this.vfs.registerGeneratedFile(`${neigh}/ucast_solicit`, () => '3\n');
+    for (const [file, value] of neighDefaults) {
+      this.vfs.registerGeneratedFile(`${neigh}/${file}`, () => value);
+    }
+    for (const a of this.hardware.adapters) {
+      const base = `/proc/sys/net/ipv4/neigh/${a.name}`;
+      this.vfs.mkdirp(base, 0o755, 0, 0);
+      for (const [file, value] of neighDefaults) {
+        this.vfs.registerGeneratedFile(`${base}/${file}`, () => value);
+      }
+    }
+    this.vfs.registerGeneratedFile('/proc/sys/net/ipv4/arp_cache_size', () => '1024\n');
   }
 
   private registerNetProcFiles(): void {
