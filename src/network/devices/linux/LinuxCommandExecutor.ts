@@ -3592,18 +3592,6 @@ export class LinuxCommandExecutor {
         return { output: 'Usage: netfilter-persistent {save|reload|flush}', exitCode: 1 };
       }
 
-      // nft — the nftables CLI view onto the same live netfilter tables
-      // iptables/ip6tables already manage (Ubuntu's iptables-nft backend
-      // keeps both CLIs in sync with one kernel ruleset).
-      case 'nft': {
-        if (args[0] === 'list' && args[1] === 'ruleset') {
-          const v4 = this.iptables.listRuleset();
-          const v6 = this.ip6tables.listRuleset();
-          return { output: [v4, v6].filter(Boolean).join('\n'), exitCode: 0 };
-        }
-        return { output: 'Usage: nft list ruleset', exitCode: 1 };
-      }
-
       // Logging commands
       case 'logger': {
         const out = this.logMgr.executeLogger(args, this.userMgr.currentUser);

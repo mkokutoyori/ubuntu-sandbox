@@ -44,6 +44,7 @@ import { netplanCommand } from './net/Netplan';
 import { networkctlCommand } from './net/Networkctl';
 import { nmcliCommand } from './net/Nmcli';
 import { ifupCommand, ifdownCommand } from './net/Ifupdown';
+import { nftCommand } from './net/Nft';
 
 export {
   sysctlCommand,
@@ -76,6 +77,7 @@ export {
   nmcliCommand,
   ifupCommand,
   ifdownCommand,
+  nftCommand,
 };
 
 /**
@@ -112,4 +114,5 @@ export const CORE_LINUX_COMMANDS: readonly LinuxCommand[] = [
   nmcliCommand,
   ifupCommand,
   ifdownCommand,
+  nftCommand,
 ];
