@@ -45,6 +45,7 @@ import { networkctlCommand } from './net/Networkctl';
 import { nmcliCommand } from './net/Nmcli';
 import { ifupCommand, ifdownCommand } from './net/Ifupdown';
 import { nftCommand } from './net/Nft';
+import { firewallCmdCommand } from './net/FirewallCmd';
 import { fail2banClientCommand } from './net/Fail2banClient';
 import { chageCommand } from './iam/Chage';
 import { lspciCommand } from './hw/Lspci';
@@ -99,6 +100,7 @@ export {
   ifupCommand,
   ifdownCommand,
   nftCommand,
+  firewallCmdCommand,
   fail2banClientCommand,
   chageCommand,
   lspciCommand,
@@ -157,6 +159,7 @@ export const CORE_LINUX_COMMANDS: readonly LinuxCommand[] = [
   ifupCommand,
   ifdownCommand,
   nftCommand,
+  firewallCmdCommand,
   fail2banClientCommand,
   chageCommand,
   lspciCommand,

@@ -2144,6 +2144,12 @@ export class LinuxCommandExecutor {
     this.isNetworkCommandName = pred;
   }
 
+  private iptablesNatHook: ((args: string[]) => void) | null = null;
+
+  setIptablesNatHook(hook: (args: string[]) => void): void {
+    this.iptablesNatHook = hook;
+  }
+
   /**
    * Async twin of {@link execute}: same pipeline, driven through the
    * interpreter's async driver so network commands compose with full
@@ -3503,6 +3509,7 @@ export class LinuxCommandExecutor {
 
       // iptables — real packet filtering firewall
       case 'iptables': {
+        this.iptablesNatHook?.(args);
         const result = this.iptables.execute(args);
         return { output: result.output, exitCode: result.exitCode };
       }

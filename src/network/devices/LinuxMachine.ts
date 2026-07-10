@@ -389,6 +389,8 @@ export abstract class LinuxMachine extends EndHost
       if (v6 !== null) this.executor.ip6tables.executeRestore(v6);
     });
 
+    this.executor.setIptablesNatHook((args) => applyIptablesNatHook(this.net, args));
+
     this.executor.setNetworkCommandRunner((argv, env) => {
       const cmd = this.commands.get(argv[0]);
       if (!cmd || !cmd.needsNetworkContext) return null;
@@ -1510,11 +1512,7 @@ export abstract class LinuxMachine extends EndHost
     if (this.commands.hasNetworkCommandIn(input)) return true;
     if (input.includes('/var/lib/dhcp/')) return true;
     const words = input.split(/[\s;|&"'`()]+/);
-    return words.some(w =>
-      w === 'iptables' || w === 'iptables-save' || w === 'iptables-restore' ||
-      w === 'ip6tables' || w === 'ip6tables-save' || w === 'ip6tables-restore' ||
-      w === 'ps' || w === 'man' || w === 'sshd',
-    );
+    return words.some(w => w === 'ps' || w === 'man' || w === 'sshd');
   }
 
   private async runShellScript(script: string): Promise<string> {
@@ -1867,31 +1865,6 @@ export abstract class LinuxMachine extends EndHost
           return lines.join('\n');
         }
         return 'usage: sshd [-t | -T]';
-      }
-      case 'iptables': {
-        const iptArgs = LinuxMachine.tokenizeArgs(noSudo).slice(1);
-        return this.withSudoAndPrivilegeGate('iptables', iptArgs, isSudo, undefined, () => {
-          applyIptablesNatHook(this.net, iptArgs);
-          return this.executor.iptables.execute(iptArgs).output;
-        });
-      }
-      case 'iptables-save': {
-        if (noSudo.includes('>')) return null;
-        return this.withSudoAndPrivilegeGate('iptables-save', [], isSudo, undefined, () => this.executor.iptables.executeSave());
-      }
-      case 'iptables-restore': {
-        return null;
-      }
-      case 'ip6tables': {
-        const iptArgs = LinuxMachine.tokenizeArgs(noSudo).slice(1);
-        return this.withSudoAndPrivilegeGate('ip6tables', iptArgs, isSudo, undefined, () => this.executor.ip6tables.execute(iptArgs).output);
-      }
-      case 'ip6tables-save': {
-        if (noSudo.includes('>')) return null;
-        return this.withSudoAndPrivilegeGate('ip6tables-save', [], isSudo, undefined, () => this.executor.ip6tables.executeSave());
-      }
-      case 'ip6tables-restore': {
-        return null;
       }
       case 'cat': {
         const parts = noSudo.split(/\s+/);

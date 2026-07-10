@@ -602,14 +602,51 @@ ordre arbitraire.
   `no-explicit-any` dans `LinuxFirewallManager.ts`, 2 `no-this-alias`
   dans `LinuxMachine.ts`).
 
-### Phase 8 — Complétude moteur (items F.14-F.19)
+### Phase 8 — Complétude moteur (items F.14-F.19) ✅ LIVRÉE
 
-- **Fichiers touchés** : `LinuxIptablesManager.ts` (`-j LOG` réel, `-j
-  MARK`/`NOTRACK`), unification des chemins de dispatch CLI,
-  `LinuxFirewallManager.ts` (`logging` réel, chaînes `ufw-before-*`/
-  `ufw-after-*` programmables), message d'absence `nft`/`firewall-cmd`.
-- **Tests** : `iptables-log-target.test.ts`, `iptables-mark-notrack.test.ts`,
-  `ufw-before-after-chains.test.ts`, `ufw-logging-levels.test.ts`.
+- **F.14 (`-j LOG` réel)** : déjà livré entre-temps par une autre session
+  concurrente sur `mandeng` (135 commits d'écart constatés au pull —
+  callback `setLogCallback`/`logIptablesLog`, indépendant du verdict
+  final). Vérifié fonctionnel, non retouché.
+- **F.15 (`-j MARK`/`-j NOTRACK`)** : ajoutés à `VALID_TARGETS`, non
+  terminaux, `--set-mark`/`--set-xmark` lu via `getLastMark()`. Consommation
+  par le routage par stratégie hors périmètre (§2.2).
+- **F.16 (dispatch unifié)** : `iptables`/`ip6tables` retirés de
+  `tryNetworkCommand` (chemin A) et de `containsNetworkCommand` ; passent
+  systématiquement par `LinuxCommandExecutor.dispatch()` (chemin B), seul
+  point d'appel du hook MASQUERADE (`setIptablesNatHook`). Cette même
+  session concurrente avait entre-temps ajouté un garde-fou de privilèges
+  dupliqué sur le chemin A (`withSudoAndPrivilegeGate`) précisément pour
+  compenser cette divergence — confirmation supplémentaire du bien-fondé
+  de l'unification : chemin B applique déjà `commandPrivileges.check()`
+  génériquement, donc l'unification n'affaiblit pas le contrôle d'accès.
+- **F.17 (`ufw logging`)** : `logBlockedPacket()` gated par `this.logging`
+  (off = aucune écriture). `logging` par défaut passé à `true` (le vrai
+  `ufw.conf` livre `LOGLEVEL=low` dès l'installation). La distinction
+  fine « low = uniquement les blocages par politique par défaut » n'est
+  **pas** implémentée : elle casserait `cron-firewall.test.ts` (CF-04),
+  qui attend qu'un `ufw deny 22` explicite soit journalisé sans appel
+  préalable à `ufw logging`.
+- **F.18 (chaînes `ufw-before-*`/`ufw-after-*`)** : créées et câblées
+  (`INPUT/OUTPUT/FORWARD` → before → user → after), peuplées depuis
+  `/etc/ufw/before(6).rules`/`after(6).rules` au boot/enable (pas au
+  `ufw reload` à état inchangé — portée volontairement limitée par rapport
+  à B.3). Les lignes `-p icmp`/`-p icmpv6` du avant-fichier ne sont **pas**
+  injectées : le vrai ufw autorise certains types ICMP par défaut, mais
+  ça romprait `linux-ufw.test.ts` (suite G8-16, 8 tests) qui traite l'ICMP
+  comme tout autre trafic soumis aux règles `ufw`.
+- **F.19 (`nft`/`firewall-cmd`)** : `nft list ruleset` déjà livré par la
+  session concurrente (moteur réel, pas un message d'absence). Nouveau
+  fichier `FirewallCmd.ts` : message d'absence explicite pour
+  `firewall-cmd`, enregistré comme `LinuxCommand`.
+- **Tests** : `iptables-mark-notrack.test.ts` (5), `ufw-before-after-chains.test.ts`
+  (5), `ufw-logging-levels.test.ts` (4), `iptables-dispatch-unification.test.ts`
+  (5) — 388 tests verts sur 20 suites ufw/iptables/ip6tables/fail2ban,
+  536+254 verts sur les suites transverses lan-ssh/lan-sftp (3 échecs
+  préexistants confirmés sur `origin/mandeng` avant toute modification de
+  cette phase — refactor de garde-fou de privilèges d'une autre session,
+  hors périmètre), `tsc` propre (7 erreurs préexistantes confirmées dans
+  des fichiers non touchés par ce PRD).
 
 ---
 

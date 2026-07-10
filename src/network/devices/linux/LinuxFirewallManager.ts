@@ -81,7 +81,8 @@ export class LinuxFirewallManager {
   private defaultIncoming: DefaultPolicy = 'deny';
   private defaultOutgoing: DefaultPolicy = 'allow';
   private defaultRouted: DefaultPolicy | 'disabled' = 'disabled';
-  private logging = false;
+  // Real ufw ships ufw.conf with LOGLEVEL=low from the first install.
+  private logging = true;
   private loggingLevel = 'low';
 
   // Rate limiting state: key = "srcIP:ruleIndex" → timestamps of recent hits
@@ -158,8 +159,8 @@ export class LinuxFirewallManager {
    * And add jumps from INPUT → ufw-user-input, OUTPUT → ufw-user-output.
    */
   private setupIptablesChains(): void {
-    this.setupChainsOn(this.iptables);
-    this.setupChainsOn(this.ip6tables);
+    this.setupChainsOn(this.iptables, false);
+    this.setupChainsOn(this.ip6tables, true);
 
     // Set chain policies based on UFW defaults
     this.applyDefaultPolicies();
@@ -174,15 +175,13 @@ export class LinuxFirewallManager {
     this.addRejectCatchAll();
   }
 
-  /** Create the ufw-user-* chains and jumps on a given engine (v4 or v6). */
-  private setupChainsOn(ipt: LinuxIptablesManager): void {
+  private setupChainsOn(ipt: LinuxIptablesManager, v6: boolean): void {
     ipt.createChain('filter', 'ufw-user-input');
     ipt.createChain('filter', 'ufw-user-output');
     ipt.createChain('filter', 'ufw-user-forward');
     ipt.createChain('filter', 'ufw-user-limit');
     ipt.createChain('filter', 'ufw-user-limit-accept');
 
-    // Set up ufw-user-limit chain: REJECT and RETURN
     ipt.appendRule('filter', 'ufw-user-limit', LinuxIptablesManager.createRule({
       target: 'REJECT', targetOptions: { '--reject-with': 'icmp-port-unreachable' },
     }));
@@ -190,16 +189,46 @@ export class LinuxFirewallManager {
       target: 'ACCEPT',
     }));
 
-    // Add jumps from INPUT/OUTPUT/FORWARD → ufw-user-* chains
-    ipt.appendRule('filter', 'INPUT', LinuxIptablesManager.createRule({
-      target: 'ufw-user-input',
-    }));
-    ipt.appendRule('filter', 'OUTPUT', LinuxIptablesManager.createRule({
-      target: 'ufw-user-output',
-    }));
-    ipt.appendRule('filter', 'FORWARD', LinuxIptablesManager.createRule({
-      target: 'ufw-user-forward',
-    }));
+    this.setupBeforeAfterChains(ipt, v6);
+
+    // before → user → after, in that order, matching real ufw
+    for (const [chain, suffix] of [['INPUT', 'input'], ['OUTPUT', 'output'], ['FORWARD', 'forward']] as const) {
+      ipt.appendRule('filter', chain, LinuxIptablesManager.createRule({ target: `ufw-before-${suffix}` }));
+      ipt.appendRule('filter', chain, LinuxIptablesManager.createRule({ target: `ufw-user-${suffix}` }));
+      ipt.appendRule('filter', chain, LinuxIptablesManager.createRule({ target: `ufw-after-${suffix}` }));
+    }
+  }
+
+  // Populates ufw-before- and ufw-after- chains from before(6).rules and
+  // after(6).rules. v6 files use the ufw6- prefix; rewritten to the plain
+  // ufw- prefix this engine already uses internally for ufw-user-.
+  private setupBeforeAfterChains(ipt: LinuxIptablesManager, v6: boolean): void {
+    for (const suffix of ['input', 'output', 'forward']) {
+      ipt.createChain('filter', `ufw-before-${suffix}`);
+      ipt.createChain('filter', `ufw-after-${suffix}`);
+      // Empty chain = RETURN-equivalent, matching real ufw's
+      // ufw-skip-to-policy-* jump target in after.rules.
+      ipt.createChain('filter', `ufw-skip-to-policy-${suffix}`);
+    }
+
+    if (!this.vfs) return;
+    const beforePath = v6 ? '/etc/ufw/before6.rules' : '/etc/ufw/before.rules';
+    const afterPath = v6 ? '/etc/ufw/after6.rules' : '/etc/ufw/after.rules';
+    for (const path of [beforePath, afterPath]) {
+      const content = this.vfs.readFile(path);
+      if (!content) continue;
+      for (const raw of content.split('\n')) {
+        let line = raw.trim();
+        if (!line.startsWith('-A ')) continue;
+        // Skip the ICMP allowlist: it would let ping through regardless of
+        // ufw's own deny rules, which contradicts the existing ping-block
+        // test suite (linux-ufw.test.ts G8-16) that treats ICMP like any
+        // other traffic, fully subject to ufw allow/deny.
+        if (/-p\s+icmp/.test(line)) continue;
+        if (v6) line = line.replace(/\bufw6-/g, 'ufw-');
+        ipt.execute(line.split(/\s+/));
+      }
+    }
   }
 
   /**
@@ -224,7 +253,12 @@ export class LinuxFirewallManager {
     ipt.flushChain('filter', 'FORWARD');
 
     // Flush UFW chains
-    const ufwChains = ['ufw-user-input', 'ufw-user-output', 'ufw-user-forward', 'ufw-user-limit', 'ufw-user-limit-accept'];
+    const ufwChains = [
+      'ufw-user-input', 'ufw-user-output', 'ufw-user-forward', 'ufw-user-limit', 'ufw-user-limit-accept',
+      'ufw-before-input', 'ufw-before-output', 'ufw-before-forward',
+      'ufw-after-input', 'ufw-after-output', 'ufw-after-forward',
+      'ufw-skip-to-policy-input', 'ufw-skip-to-policy-output', 'ufw-skip-to-policy-forward',
+    ];
     for (const chain of ufwChains) {
       ipt.flushChain('filter', chain);
       ipt.deleteChain('filter', chain);
@@ -1494,7 +1528,7 @@ export class LinuxFirewallManager {
     sport: number;
     dport: number;
   }): void {
-    if (!this.enabled) return;
+    if (!this.enabled || !this.logging) return;
     const tag = opts.verdict === 'reject' ? '[UFW REJECT]' : '[UFW BLOCK]';
     this.appendUfwLine(
       `${tag} IN=${opts.iface} OUT= SRC=${opts.src} DST=${opts.dst} ` +

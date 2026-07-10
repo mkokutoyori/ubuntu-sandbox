@@ -101,7 +101,7 @@ export interface NatResult {
 const VALID_TABLES = new Set<string>(['filter', 'nat', 'mangle', 'raw']);
 const VALID_PROTOCOLS = new Set<string>(['tcp', 'udp', 'icmp', 'icmpv6', 'ipv6-icmp', 'all']);
 const VALID_BUILTIN_POLICIES = new Set<string>(['ACCEPT', 'DROP']);
-const VALID_TARGETS = new Set<string>(['ACCEPT', 'DROP', 'REJECT', 'LOG', 'MASQUERADE', 'DNAT', 'SNAT', 'REDIRECT', 'RETURN']);
+const VALID_TARGETS = new Set<string>(['ACCEPT', 'DROP', 'REJECT', 'LOG', 'MASQUERADE', 'DNAT', 'SNAT', 'REDIRECT', 'RETURN', 'MARK', 'NOTRACK']);
 
 // ─── Manager ─────────────────────────────────────────────────────────
 
@@ -122,6 +122,11 @@ export class LinuxIptablesManager {
   // after filterPacket() to pick the right ICMP error / TCP RST.
   private lastRejectWith: string | null = null;
   private logCallback: ((prefix: string, pkt: PacketInfo) => void) | null = null;
+  // `--set-mark`/`--set-xmark` of the most recent `-j MARK` match, if any
+  // — MARK is non-terminal. Consumption by policy routing (`ip rule`) is
+  // out of scope (PRD-Iptables-UFW.md §2.2); this only makes the mark
+  // itself observable.
+  private lastMark: string | null = null;
 
   readonly family: 4 | 6;
 
@@ -201,6 +206,7 @@ export class LinuxIptablesManager {
    */
   filterPacket(pkt: PacketInfo): FirewallVerdict {
     this.lastRejectWith = null;
+    this.lastMark = null;
     const filterTable = this.tables.get('filter')!;
     const chainName = pkt.direction === 'in' ? 'INPUT'
                     : pkt.direction === 'out' ? 'OUTPUT'
@@ -224,6 +230,16 @@ export class LinuxIptablesManager {
    */
   getLastRejectWith(): string | null {
     return this.lastRejectWith;
+  }
+
+  /**
+   * `--set-mark`/`--set-xmark` value of the most recent `-j MARK` match
+   * from the last `filterPacket()` call, if any. PRD-Iptables-UFW.md
+   * Phase 8 (objectif F.15) — consumption by policy routing is out of
+   * scope; this only exposes the mark itself.
+   */
+  getLastMark(): string | null {
+    return this.lastMark;
   }
 
   /**
@@ -349,6 +365,10 @@ export class LinuxIptablesManager {
           case 'LOG':
             this.logCallback?.(rule.targetOptions['--log-prefix'] ?? '', pkt);
             continue; // LOG doesn't terminate; continue to next rule
+          case 'MARK': // MARK doesn't terminate
+            this.lastMark = rule.targetOptions['--set-mark'] ?? rule.targetOptions['--set-xmark'] ?? this.lastMark;
+            continue;
+          case 'NOTRACK': continue; // NOTRACK doesn't terminate
           default: continue;
         }
       }
@@ -807,6 +827,7 @@ export class LinuxIptablesManager {
         case '--reject-with':    parts.push(`reject-with ${v}`); break;
         case '--log-prefix':     parts.push(`LOG flags 0 level 4 prefix "${v}"`); break;
         case '--log-level':      break;
+        case '--set-mark': case '--set-xmark': parts.push(`MARK set ${v}`); break;
         default:                 parts.push(v ? `${k.replace(/^--/, '')} ${v}` : k.replace(/^--/, '')); break;
       }
     }
