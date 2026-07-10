@@ -139,6 +139,14 @@ export class BashLexer {
           value += '\\' + this.peek();
           this.advance();
         }
+      } else if (this.peek() === '$' && this.peekAt(1) === '(') {
+        // `$(...)` embedded in a double-quoted string opens its own
+        // quoting context — a `"` inside it must not be mistaken for
+        // the outer string's terminator (e.g. `"$(cmd "$x")"`).
+        value += this.consumeBalancedParenSpan();
+      } else if (this.peek() === '`') {
+        // Same for a backtick command substitution embedded inside.
+        value += this.consumeBalancedBacktickSpan();
       } else {
         value += this.peek();
         this.advance();
@@ -147,6 +155,63 @@ export class BashLexer {
     if (this.isAtEnd()) throw new LexerError("Unterminated double-quoted string", start);
     this.advance(); // skip closing "
     return { type: TokenType.DOUBLE_QUOTED, value, position: start };
+  }
+
+  /** Consume `$(...)`, honouring nested parens and quotes so an embedded
+   *  `"`/`'` is never mistaken for the enclosing double-quote's terminator. */
+  private consumeBalancedParenSpan(): string {
+    let out = '$(';
+    this.advance();
+    this.advance();
+    let depth = 1;
+    while (!this.isAtEnd() && depth > 0) {
+      const ch = this.peek();
+      if (ch === '\\') {
+        out += ch;
+        this.advance();
+        if (!this.isAtEnd()) { out += this.peek(); this.advance(); }
+        continue;
+      }
+      if (ch === '"' || ch === "'") {
+        out += this.consumeQuotedSpan(ch);
+        continue;
+      }
+      if (ch === '(') { depth++; out += ch; this.advance(); continue; }
+      if (ch === ')') { depth--; out += ch; this.advance(); continue; }
+      out += ch;
+      this.advance();
+    }
+    return out;
+  }
+
+  /** Consume a `'...'` or `"..."` span verbatim (including delimiters). */
+  private consumeQuotedSpan(quote: string): string {
+    let out = quote;
+    this.advance();
+    while (!this.isAtEnd() && this.peek() !== quote) {
+      if (quote === '"' && this.peek() === '\\') {
+        out += this.peek();
+        this.advance();
+        if (!this.isAtEnd()) { out += this.peek(); this.advance(); }
+        continue;
+      }
+      out += this.peek();
+      this.advance();
+    }
+    if (!this.isAtEnd()) { out += this.peek(); this.advance(); }
+    return out;
+  }
+
+  /** Consume a `` `...` `` span verbatim (including backticks). */
+  private consumeBalancedBacktickSpan(): string {
+    let out = '`';
+    this.advance();
+    while (!this.isAtEnd() && this.peek() !== '`') {
+      out += this.peek();
+      this.advance();
+    }
+    if (!this.isAtEnd()) { out += this.peek(); this.advance(); }
+    return out;
   }
 
   private scanBacktickSub(): Token {

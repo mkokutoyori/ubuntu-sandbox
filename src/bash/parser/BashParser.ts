@@ -786,11 +786,6 @@ export class BashParser {
     while (!this.isAtEnd() && this.peek().adjacent && this.isWordToken() && !this.isCompoundEnd()) {
       parts.push(this.parseWordAtom());
     }
-    // Empty form `X=` followed by whitespace: also support `X=$VAR` where
-    // the value starts at the next (separated) word.
-    if (parts.length === 0 && this.isWordToken() && !this.isCompoundEnd()) {
-      parts.push(this.parseWord());
-    }
     let value: Word | null = null;
     if (parts.length === 1) value = parts[0];
     else if (parts.length > 1) value = { type: 'CompoundWord', parts, position: pos };

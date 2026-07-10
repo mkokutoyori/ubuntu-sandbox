@@ -14,9 +14,35 @@ interface GrepFlags {
   caseInsensitive: boolean; countOnly: boolean; recursive: boolean; invert: boolean;
   lineNumbers: boolean; filesOnly: boolean; filesWithout: boolean; wholeWord: boolean;
   wholeLine: boolean; onlyMatching: boolean; quiet: boolean; suppressErrors: boolean;
-  forceFilename: boolean | null; extended: boolean; fixed: boolean;
+  forceFilename: boolean | null; extended: boolean; fixed: boolean; perl: boolean;
   maxCount: number; after: number; before: number;
   includeGlobs: string[]; excludeGlobs: string[];
+}
+
+/**
+ * `-P` (Perl-compatible regex): JS's native RegExp already covers the
+ * common PCRE subset (character classes, quantifiers, groups,
+ * alternation, lookaheads/lookbehinds). The one construct it lacks that
+ * real-world one-liners actually reach for is `\K` ("keep": discard the
+ * match so far, keep matching from here) — translated into the
+ * equivalent lookbehind, which JS supports natively (including
+ * variable-length lookbehinds).
+ */
+function compilePcre(
+  pattern: string,
+  opts: { ignoreCase: boolean; wholeWord: boolean; wholeLine: boolean; global: boolean },
+): RegExp {
+  let p = pattern;
+  const kIndex = p.indexOf('\\K');
+  if (kIndex !== -1) {
+    p = `(?<=${p.slice(0, kIndex)})${p.slice(kIndex + 2)}`;
+  }
+  if (opts.wholeWord) p = `\\b(?:${p})\\b`;
+  if (opts.wholeLine) p = `^(?:${p})$`;
+  let flags = '';
+  if (opts.global) flags += 'g';
+  if (opts.ignoreCase) flags += 'i';
+  return new RegExp(p, flags);
 }
 
 export function cmdGrep(
@@ -26,7 +52,7 @@ export function cmdGrep(
     caseInsensitive: false, countOnly: false, recursive: false, invert: false,
     lineNumbers: false, filesOnly: false, filesWithout: false, wholeWord: false,
     wholeLine: false, onlyMatching: false, quiet: false, suppressErrors: false,
-    forceFilename: null, extended: variant === 'egrep', fixed: variant === 'fgrep',
+    forceFilename: null, extended: variant === 'egrep', fixed: variant === 'fgrep', perl: false,
     maxCount: Infinity, after: 0, before: 0, includeGlobs: [], excludeGlobs: [],
   };
   const patterns: string[] = [];
@@ -77,10 +103,12 @@ export function cmdGrep(
 
   if (!patternGiven) return { output: 'Usage: grep [OPTION]... PATTERN [FILE]...', exitCode: 2 };
 
-  const matchers = patterns.map(p => compilePosix(p, {
-    extended: fl.extended, fixed: fl.fixed, ignoreCase: fl.caseInsensitive,
-    wholeWord: fl.wholeWord, wholeLine: fl.wholeLine, global: true,
-  }));
+  const matchers = patterns.map(p => fl.perl
+    ? compilePcre(p, { ignoreCase: fl.caseInsensitive, wholeWord: fl.wholeWord, wholeLine: fl.wholeLine, global: true })
+    : compilePosix(p, {
+        extended: fl.extended, fixed: fl.fixed, ignoreCase: fl.caseInsensitive,
+        wholeWord: fl.wholeWord, wholeLine: fl.wholeLine, global: true,
+      }));
   const lineMatches = (line: string): boolean => {
     const hit = matchers.some(re => { re.lastIndex = 0; return re.test(line); });
     return hit !== fl.invert;
@@ -145,7 +173,7 @@ function applyShortFlags(flagChars: string, fl: GrepFlags): boolean {
       case 'r': case 'R': fl.recursive = true; break;
       case 'E': fl.extended = true; break;
       case 'G': fl.extended = false; break;
-      case 'P': fl.extended = true; break;
+      case 'P': fl.perl = true; break;
       case 'F': fl.fixed = true; break;
       case 'v': fl.invert = true; break;
       case 'n': fl.lineNumbers = true; break;

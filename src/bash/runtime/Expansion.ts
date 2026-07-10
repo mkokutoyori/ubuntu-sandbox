@@ -765,15 +765,30 @@ function expandInlineVars(
         continue;
       }
 
-      // $(cmd) — command substitution
+      // $(cmd) — command substitution. Quoted spans inside `cmd` are
+      // skipped verbatim so a `)` or `"` they contain can't be mistaken
+      // for the substitution's own terminator.
       if (next === '(') {
         i += 2;
         let depth = 1;
         let cmd = '';
         while (i < text.length && depth > 0) {
-          if (text[i] === '(') depth++;
-          else if (text[i] === ')') { depth--; if (depth === 0) break; }
-          cmd += text[i]; i++;
+          const ch = text[i];
+          if (ch === '"' || ch === "'") {
+            const quote = ch;
+            cmd += ch; i++;
+            while (i < text.length && text[i] !== quote) {
+              if (quote === '"' && text[i] === '\\' && i + 1 < text.length) {
+                cmd += text[i] + text[i + 1]; i += 2; continue;
+              }
+              cmd += text[i]; i++;
+            }
+            if (i < text.length) { cmd += text[i]; i++; }
+            continue;
+          }
+          if (ch === '(') depth++;
+          else if (ch === ')') { depth--; if (depth === 0) break; }
+          cmd += ch; i++;
         }
         if (i < text.length) i++; // skip closing )
         result += execCmd ? execCmd(cmd).trimEnd() : '';

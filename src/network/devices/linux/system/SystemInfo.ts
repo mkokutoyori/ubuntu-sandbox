@@ -250,6 +250,18 @@ function parseDateSpec(spec: string): Date | null {
     const seconds = parseInt(s.slice(1), 10);
     return isNaN(seconds) ? null : new Date(seconds * 1000);
   }
+  // GNU date relative specs: "5 minutes ago", "-5 minutes", "1 day ago",
+  // "-1 day" — the two forms are equivalent, both accepted by real `date -d`.
+  const relative = /^(-)?\s*(\d+)\s*(second|minute|hour|day|week)s?(\s+ago)?$/i.exec(s);
+  if (relative) {
+    const isPast = relative[1] === '-' || !!relative[4];
+    const amount = parseInt(relative[2], 10);
+    const unitMs: Record<string, number> = {
+      second: 1000, minute: 60_000, hour: 3_600_000, day: 86_400_000, week: 604_800_000,
+    };
+    const ms = amount * unitMs[relative[3].toLowerCase()];
+    return new Date(Date.now() + (isPast ? -ms : ms));
+  }
   const t = Date.parse(s);
   return isNaN(t) ? null : new Date(t);
 }
