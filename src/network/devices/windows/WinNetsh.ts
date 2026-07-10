@@ -811,9 +811,11 @@ function handleShowRoute(ctx: WinCommandContext): string {
 function handleInterfaceIpSet(ctx: WinCommandContext, joined: string): string {
   const lower = joined.toLowerCase();
 
-  // Determine sub-target: dns or address
+  // Determine sub-target: dns or address. Accept every spelling netsh
+  // allows for the DNS sub-command — `set dns`, `set dnsserver`, and
+  // `set dnsservers` are equivalent.
   if (lower.startsWith('dns')) {
-    if (lower.match(/dns\s+.*\s+dhcp/)) {
+    if (/dns(?:servers?)?\b.*\bdhcp/.test(lower)) {
       return handleSetDnsDhcp(ctx, joined);
     }
     return handleSetDnsStatic(ctx, joined);
@@ -885,8 +887,11 @@ function handleSetAddressDhcp(ctx: WinCommandContext, joined: string): string {
 }
 
 function handleSetDnsStatic(ctx: WinCommandContext, joined: string): string {
-  const match = joined.match(/dns\s+"([^"]+)"\s+static\s+(\d+\.\d+\.\d+\.\d+)/i)
-    || joined.match(/dns\s+(?:name=)?(.+?)\s+static\s+(\d+\.\d+\.\d+\.\d+)/i);
+  // Accept `dns`/`dnsserver`/`dnsservers`, an interface that is quoted or
+  // given as name=<x>, an optional source=/address= prefix, and any trailing
+  // register token (primary|both|none|index=…) which we don't model.
+  const match = joined.match(/dns(?:servers?)?\s+"([^"]+)"\s+(?:source=)?static\s+(?:address=)?(\d+\.\d+\.\d+\.\d+)/i)
+    || joined.match(/dns(?:servers?)?\s+(?:name=)?(.+?)\s+(?:source=)?static\s+(?:address=)?(\d+\.\d+\.\d+\.\d+)/i);
 
   if (!match) {
     return 'Usage: netsh interface ip set dns "name" static <ip>';
@@ -901,8 +906,8 @@ function handleSetDnsStatic(ctx: WinCommandContext, joined: string): string {
 }
 
 function handleSetDnsDhcp(ctx: WinCommandContext, joined: string): string {
-  const match = joined.match(/dns\s+"([^"]+)"\s+dhcp/i)
-    || joined.match(/dns\s+(?:name=)?(.+?)\s+dhcp/i);
+  const match = joined.match(/dns(?:servers?)?\s+"([^"]+)"\s+(?:source=)?dhcp/i)
+    || joined.match(/dns(?:servers?)?\s+(?:name=)?(.+?)\s+(?:source=)?dhcp/i);
 
   if (!match) {
     return 'Usage: netsh interface ip set dns "name" dhcp';
