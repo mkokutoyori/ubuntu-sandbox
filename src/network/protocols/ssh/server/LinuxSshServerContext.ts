@@ -193,8 +193,14 @@ export class LinuxSshServerContext implements ISshServerContext {
               this.vfs.writeFile('/var/log/fail2ban.log', prev + line + '\n', 0, 0, 0o022);
             },
           },
+          {
+            journal: {
+              log: (action) => this.executor!.logMgr.logDaemon('fail2ban-server', action, undefined, 'fail2ban'),
+            },
+          },
         )
       : null;
+
 
     // utmp / btmp are owned by recordLogin / recordAuthFailure on
     // this same context — the projection exists for tests that drive

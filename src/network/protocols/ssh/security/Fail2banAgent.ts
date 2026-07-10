@@ -38,6 +38,11 @@ export interface Fail2banIptablesSink {
   execute(args: string[]): { exitCode: number };
 }
 
+export interface Fail2banJournalSink {
+  /** Record one ban/unban action against the `fail2ban` systemd unit. */
+  log(action: string): void;
+}
+
 export interface Fail2banAgentOptions {
   /** Jail name shown in fail2ban.log (default 'sshd'). */
   readonly jailName?: string;
@@ -45,6 +50,13 @@ export interface Fail2banAgentOptions {
   readonly pid?: number;
   /** Clock for log timestamps. Default Date.now. */
   readonly clock?: () => number;
+  /**
+   * Optional bridge to the device's systemd journal, so `journalctl -u
+   * fail2ban` shows the same Ban/Unban actions as /var/log/fail2ban.log —
+   * matching how a real fail2ban.service's actions are visible through
+   * journald as well as its own log file.
+   */
+  readonly journal?: Fail2banJournalSink;
 }
 
 export interface Fail2banBan {
@@ -59,6 +71,7 @@ export class Fail2banAgent {
   private readonly clock: () => number;
   private readonly active = new Map<string, Fail2banBan>();
   private readonly unsubscribe: () => void;
+  private readonly journal: Fail2banJournalSink | null;
 
   constructor(
     bus: ISshServerEventBus,
@@ -69,6 +82,7 @@ export class Fail2banAgent {
     this.jailName = opts.jailName ?? 'sshd';
     this.pid = opts.pid ?? 1717;
     this.clock = opts.clock ?? Date.now;
+    this.journal = opts.journal ?? null;
     this.unsubscribe = bus.on('auth_throttled', (e) => this.handle(e));
   }
 
@@ -97,6 +111,7 @@ export class Fail2banAgent {
       this.iptables.execute(['-D', 'INPUT', '-s', ip, '-j', 'REJECT']);
       this.active.delete(ip);
       this.log.appendLog(this.formatLogLine(now, `Unban ${ip}`));
+      this.journal?.log(`[${this.jailName}] Unban ${ip}`);
       lifted.push(ip);
     }
     return lifted;
@@ -112,6 +127,7 @@ export class Fail2banAgent {
     this.active.set(event.ip, ban);
     this.iptables.execute(['-I', 'INPUT', '-s', event.ip, '-j', 'REJECT']);
     this.log.appendLog(this.formatLogLine(now, `Ban ${event.ip}`));
+    this.journal?.log(`[${this.jailName}] Ban ${event.ip}`);
   }
 
   private formatLogLine(at: number, action: string): string {

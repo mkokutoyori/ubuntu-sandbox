@@ -157,6 +157,15 @@ const BASE_UNITS: DefaultUnit[] = [
     startByDefault: true,
   },
   {
+    name: 'fail2ban',
+    description: 'Fail2Ban Service',
+    type: 'forking',
+    execStart: '/usr/bin/fail2ban-server -xf start',
+    after: ['network.target', 'iptables.service'],
+    enabledByDefault: true,
+    startByDefault: true,
+  },
+  {
     name: 'cron',
     description: 'Regular background program processing daemon',
     type: 'forking',
