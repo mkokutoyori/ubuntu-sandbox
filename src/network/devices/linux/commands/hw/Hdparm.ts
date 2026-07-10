@@ -2,6 +2,7 @@ import type { HardwareProfile } from '@/network/devices/host/hardware/HardwarePr
 import type { StorageDevice } from '@/network/devices/host/hardware/StorageDevice';
 import type { LinuxCommand } from '../LinuxCommand';
 import type { LinuxCommandContext } from '../LinuxCommandContext';
+import { Satisfy, Deny } from '../../iam/policy/CommandPrivilegePolicy';
 
 interface Options {
   identify: boolean;
@@ -181,6 +182,10 @@ export const hdparmCommand: LinuxCommand = {
   name: 'hdparm',
   needsNetworkContext: true,
   usage: 'hdparm [options] [device ...]',
+  privilege: {
+    satisfiedBy: Satisfy.root,
+    deny: Deny.withMessage('hdparm: cannot open /dev/sda: Permission denied'),
+  },
   run(ctx: LinuxCommandContext, args: string[]): string {
     return cmdHdparm(ctx.executor.hardware, args, isPrivileged(ctx)).output;
   },

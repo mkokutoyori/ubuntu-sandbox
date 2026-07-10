@@ -107,6 +107,7 @@ import {
   type LinuxFormatHelpers,
 } from './linux/LinuxFormatHelpers';
 import { renderHelp, renderManPage } from './linux/commands/LinuxCommandHelp';
+import { evaluatePrivilegeSpec } from './linux/iam/policy/CommandPrivilegePolicy';
 import { buildIpCtx } from './linux/commands/net/Ip';
 import { GreAgent, type GreHost } from '../gre/GreAgent';
 import type { DHCPClient } from '../dhcp/DHCPClient';
@@ -1804,7 +1805,9 @@ export abstract class LinuxMachine extends EndHost
           user: userMgr.currentUser,
           groups: userMgr.getUserGroups(userMgr.currentUser).map((g) => g.name),
         };
-        const denial = this.executor.commandPrivileges.check(firstCmd, cmdArgs, actor);
+        const denial = cmd.privilege
+          ? evaluatePrivilegeSpec(cmd.privilege, firstCmd, cmdArgs, actor)
+          : this.executor.commandPrivileges.check(firstCmd, cmdArgs, actor);
         if (denial) return denial.output;
         return await cmd.run(this.buildCommandContext(), cmdArgs);
       } finally {

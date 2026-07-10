@@ -2,6 +2,7 @@ import type { HardwareProfile } from '@/network/devices/host/hardware/HardwarePr
 import type { StorageDevice, DiskPartition } from '@/network/devices/host/hardware/StorageDevice';
 import type { LinuxCommand } from '../LinuxCommand';
 import type { LinuxCommandContext } from '../LinuxCommandContext';
+import { Satisfy, Deny } from '../../iam/policy/CommandPrivilegePolicy';
 
 interface Options {
   list: boolean;
@@ -137,6 +138,10 @@ export const fdiskCommand: LinuxCommand = {
   name: 'fdisk',
   needsNetworkContext: true,
   usage: 'fdisk [options] <disk>',
+  privilege: {
+    satisfiedBy: Satisfy.root,
+    deny: Deny.withMessage('fdisk: cannot open /dev/sda: Permission denied'),
+  },
   run(ctx: LinuxCommandContext, args: string[]): string {
     return cmdFdisk(ctx.executor.hardware, args, isPrivileged(ctx)).output;
   },

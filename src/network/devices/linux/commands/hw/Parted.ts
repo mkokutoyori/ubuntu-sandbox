@@ -2,6 +2,7 @@ import type { HardwareProfile } from '@/network/devices/host/hardware/HardwarePr
 import type { StorageDevice } from '@/network/devices/host/hardware/StorageDevice';
 import type { LinuxCommand } from '../LinuxCommand';
 import type { LinuxCommandContext } from '../LinuxCommandContext';
+import { Satisfy, Deny } from '../../iam/policy/CommandPrivilegePolicy';
 
 export function cmdParted(profile: HardwareProfile, args: string[], isPrivileged: boolean): { output: string; exitCode: number } {
   if (!isPrivileged) return { output: 'Error: Could not stat device /dev/sda - Permission denied', exitCode: 1 };
@@ -61,6 +62,10 @@ export const partedCommand: LinuxCommand = {
   name: 'parted',
   needsNetworkContext: true,
   usage: 'parted [OPTION]... [DEVICE [COMMAND [PARAMETERS]...]...]',
+  privilege: {
+    satisfiedBy: Satisfy.root,
+    deny: Deny.withMessage('Error: Could not stat device /dev/sda - Permission denied'),
+  },
   run(ctx: LinuxCommandContext, args: string[]): string {
     return cmdParted(ctx.executor.hardware, args, isPrivileged(ctx)).output;
   },

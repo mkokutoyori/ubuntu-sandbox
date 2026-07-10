@@ -40,6 +40,22 @@ export const Deny = {
   },
 } as const;
 
+/**
+ * Evaluate a single privilege spec against one invocation. Shared by
+ * `CommandPrivilegePolicy.check` (by-name rules) and by callers checking a
+ * `LinuxCommand`'s own declarative `privilege` field directly.
+ */
+export function evaluatePrivilegeSpec(
+  spec: PrivilegedCommandSpec,
+  command: string,
+  args: readonly string[],
+  actor: PrivilegeActor,
+): PrivilegeDenial | null {
+  if (spec.appliesWhen && !spec.appliesWhen(args, actor)) return null;
+  if ((spec.satisfiedBy ?? Satisfy.root)(actor)) return null;
+  return (spec.deny ?? Deny.permissionDenied)(command, args);
+}
+
 export class CommandPrivilegePolicy {
   private readonly rules = new Map<string, PrivilegedCommandSpec[]>();
 
@@ -55,9 +71,8 @@ export class CommandPrivilegePolicy {
 
   check(command: string, args: readonly string[], actor: PrivilegeActor): PrivilegeDenial | null {
     for (const spec of this.rules.get(command) ?? []) {
-      if (spec.appliesWhen && !spec.appliesWhen(args, actor)) continue;
-      if ((spec.satisfiedBy ?? Satisfy.root)(actor)) continue;
-      return (spec.deny ?? Deny.permissionDenied)(command, args);
+      const denial = evaluatePrivilegeSpec(spec, command, args, actor);
+      if (denial) return denial;
     }
     return null;
   }

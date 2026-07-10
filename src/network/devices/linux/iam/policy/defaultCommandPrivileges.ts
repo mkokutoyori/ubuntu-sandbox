@@ -1,8 +1,10 @@
 import { CommandPrivilegePolicy, Deny, Satisfy } from './CommandPrivilegePolicy';
 
+// `chage` declares its own privilege requirement on `chageCommand.privilege`
+// now that it's a migrated `LinuxCommand` — see `commands/iam/Chage.ts`.
 const ACCOUNT_MANAGEMENT = [
   'useradd', 'adduser', 'addgroup', 'usermod', 'userdel', 'deluser',
-  'groupadd', 'groupmod', 'groupdel', 'chpasswd', 'chage', 'faillock',
+  'groupadd', 'groupmod', 'groupdel', 'chpasswd', 'faillock',
 ] as const;
 
 const AUDIT_TOOLS = ['ausearch', 'aureport', 'auditctl', 'logrotate'] as const;

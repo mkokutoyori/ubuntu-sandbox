@@ -2,6 +2,7 @@ import type { LinuxCommand, LinuxCommandOption } from '../LinuxCommand';
 import type { LinuxCommandContext } from '../LinuxCommandContext';
 import { mapArgsToAttributes } from '../LinuxCommandArgs';
 import { parseChageDate } from '../../LinuxUserCommands';
+import { Satisfy } from '../../iam/policy/CommandPrivilegePolicy';
 
 const CHAGE_OPTIONS: readonly LinuxCommandOption[] = [
   { flag: '-M', aliases: ['--maxdays'], dest: 'M', takesArg: true, argName: 'days', description: 'Set maximum number of days before password change' },
@@ -18,6 +19,7 @@ export const chageCommand: LinuxCommand = {
   needsNetworkContext: true,
   usage: 'chage [options] LOGIN',
   options: CHAGE_OPTIONS,
+  privilege: { satisfiedBy: Satisfy.root },
   run(ctx: LinuxCommandContext, args: string[]): string {
     const { attrs, positionals } = mapArgsToAttributes(CHAGE_OPTIONS, args);
     const username = positionals[0];

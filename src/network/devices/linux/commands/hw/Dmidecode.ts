@@ -1,6 +1,7 @@
 import type { HardwareProfile } from '@/network/devices/host/hardware/HardwareProfile';
 import type { LinuxCommand } from '../LinuxCommand';
 import type { LinuxCommandContext } from '../LinuxCommandContext';
+import { Satisfy, Deny } from '../../iam/policy/CommandPrivilegePolicy';
 
 const TYPES = new Map<string, number>([
   ['bios', 0], ['system', 1], ['baseboard', 2], ['chassis', 3],
@@ -235,6 +236,10 @@ export const dmidecodeCommand: LinuxCommand = {
   name: 'dmidecode',
   needsNetworkContext: true,
   usage: 'dmidecode [OPTIONS]',
+  privilege: {
+    satisfiedBy: Satisfy.root,
+    deny: Deny.withMessage('/dev/mem: Permission denied'),
+  },
   run(ctx: LinuxCommandContext, args: string[]): string {
     return cmdDmidecode(ctx.executor.hardware, args, isPrivileged(ctx)).output;
   },

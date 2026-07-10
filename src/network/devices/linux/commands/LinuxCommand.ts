@@ -9,6 +9,7 @@
  */
 
 import type { LinuxCommandContext } from './LinuxCommandContext';
+import type { PrivilegedCommandSpec } from '../iam/policy/CommandPrivilegePolicy';
 
 /**
  * Declarative specification of a single command-line option / flag.
@@ -57,6 +58,20 @@ export interface LinuxCommand {
    * handles execution as usual.
    */
   readonly needsNetworkContext: boolean;
+
+  /**
+   * Declarative privilege requirement for this command (e.g. "must be
+   * root"). When set, the registry dispatch path (`LinuxMachine`) checks it
+   * before calling `run()`/`runWithStatus()`, and it doubles as the single
+   * place to ask "does this command need sudo?" without invoking it —
+   * e.g. for tab-completion hints or a command-listing audit.
+   *
+   * Commands not routed through the registry (still living in
+   * `LinuxCommandExecutor`'s switch) keep declaring their privilege
+   * requirement in `iam/policy/defaultCommandPrivileges.ts` instead, since
+   * they have no `LinuxCommand` object to hang it off of.
+   */
+  readonly privilege?: PrivilegedCommandSpec;
 
   // ─── Documentation ──────────────────────────────────────────────
 

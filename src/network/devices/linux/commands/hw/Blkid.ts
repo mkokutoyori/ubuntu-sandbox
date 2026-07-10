@@ -2,6 +2,7 @@ import type { HardwareProfile } from '@/network/devices/host/hardware/HardwarePr
 import type { DiskPartition } from '@/network/devices/host/hardware/StorageDevice';
 import type { LinuxCommand } from '../LinuxCommand';
 import type { LinuxCommandContext } from '../LinuxCommandContext';
+import { Satisfy, Deny } from '../../iam/policy/CommandPrivilegePolicy';
 
 export function cmdBlkid(profile: HardwareProfile, args: string[], isPrivileged: boolean): { output: string; exitCode: number } {
   if (!isPrivileged) return { output: 'blkid: error: Permission denied', exitCode: 1 };
@@ -57,6 +58,10 @@ export const blkidCommand: LinuxCommand = {
   name: 'blkid',
   needsNetworkContext: true,
   usage: 'blkid [options] [<dev> ...]',
+  privilege: {
+    satisfiedBy: Satisfy.root,
+    deny: Deny.withMessage('blkid: error: Permission denied'),
+  },
   run(ctx: LinuxCommandContext, args: string[]): string {
     return cmdBlkid(ctx.executor.hardware, args, isPrivileged(ctx)).output;
   },
