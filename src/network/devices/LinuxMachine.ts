@@ -1757,7 +1757,8 @@ export abstract class LinuxMachine extends EndHost
   }
 
   private async tryNetworkCommand(input: string): Promise<string | null> {
-    const noSudo = input.startsWith('sudo ') ? input.slice(5).trim() : input;
+    const isSudo = input.startsWith('sudo ');
+    const noSudo = isSudo ? input.slice(5).trim() : input;
     const firstCmd = noSudo.split(/[\s|;&]/)[0];
     if (firstCmd) this.executor.setCommandHead(firstCmd);
 
@@ -1781,7 +1782,38 @@ export abstract class LinuxMachine extends EndHost
       if (cmdArgs.includes('--help')) {
         return renderHelp(cmd);
       }
-      return await cmd.run(this.buildCommandContext(), cmdArgs);
+
+      // A registry command bypasses LinuxCommandExecutor's dispatch(), so
+      // the declarative privilege gate (and `sudo` elevation) that gate
+      // applies there must be re-applied here explicitly.
+      const userMgr = this.executor.userMgr;
+      if (isSudo && !this.executor.canSudo()) {
+        return `${userMgr.currentUser} is not in the sudoers file. This incident will be reported.`;
+      }
+      const savedUser = isSudo
+        ? { user: userMgr.currentUser, uid: userMgr.currentUid, gid: userMgr.currentGid }
+        : null;
+      if (savedUser) {
+        userMgr.currentUser = 'root';
+        userMgr.currentUid = 0;
+        userMgr.currentGid = 0;
+      }
+      try {
+        const actor = {
+          uid: userMgr.currentUid,
+          user: userMgr.currentUser,
+          groups: userMgr.getUserGroups(userMgr.currentUser).map((g) => g.name),
+        };
+        const denial = this.executor.commandPrivileges.check(firstCmd, cmdArgs, actor);
+        if (denial) return denial.output;
+        return await cmd.run(this.buildCommandContext(), cmdArgs);
+      } finally {
+        if (savedUser) {
+          userMgr.currentUser = savedUser.user;
+          userMgr.currentUid = savedUser.uid;
+          userMgr.currentGid = savedUser.gid;
+        }
+      }
     }
 
     // 2. Commands that need special handling outside the registry

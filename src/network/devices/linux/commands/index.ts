@@ -58,6 +58,14 @@ import { hwinfoCommand } from './hw/Hwinfo';
 import { blkidCommand } from './hw/Blkid';
 import { partedCommand } from './hw/Parted';
 import { lsblkCommand } from './hw/Lsblk';
+import { hostnameCommand } from './system/Hostname';
+import { archCommand } from './system/Arch';
+import { dateCommand } from './system/Date';
+import { uptimeCommand } from './system/Uptime';
+import { unameCommand } from './system/Uname';
+import { hostnamectlCommand } from './system/Hostnamectl';
+import { timedatectlCommand } from './system/Timedatectl';
+import { nprocCommand } from './system/Nproc';
 
 export {
   sysctlCommand,
@@ -104,6 +112,14 @@ export {
   blkidCommand,
   partedCommand,
   lsblkCommand,
+  hostnameCommand,
+  archCommand,
+  dateCommand,
+  uptimeCommand,
+  unameCommand,
+  hostnamectlCommand,
+  timedatectlCommand,
+  nprocCommand,
 };
 
 /**
@@ -154,4 +170,12 @@ export const CORE_LINUX_COMMANDS: readonly LinuxCommand[] = [
   blkidCommand,
   partedCommand,
   lsblkCommand,
+  hostnameCommand,
+  archCommand,
+  dateCommand,
+  uptimeCommand,
+  unameCommand,
+  hostnamectlCommand,
+  timedatectlCommand,
+  nprocCommand,
 ];

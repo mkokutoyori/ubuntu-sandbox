@@ -97,7 +97,7 @@ import { renderWho } from './network/whoFormatter';
 import { renderW } from './network/wFormatter';
 import { renderLast, renderLastb } from './network/lastFormatter';
 import { renderLoginctl } from './network/loginctlFormatter';
-import { cmdDate, cmdUptime, cmdUname, cmdTty, cmdRunlevel } from './system/SystemInfo';
+import { cmdTty, cmdRunlevel } from './system/SystemInfo';
 import type { IEventBus } from '@/events/EventBus';
 import { LinuxServiceSupervisor } from './supervisor/LinuxServiceSupervisor';
 import { cmdNice, cmdRenice, cmdChrt, cmdIonice, cmdTaskset } from './process/PriorityCommands';
@@ -3597,28 +3597,6 @@ export class LinuxCommandExecutor {
       case 'logrotate': return this.cmdLogrotate(args);
 
       // Hostname
-      case 'hostname': {
-        const hn = (this.vfs.readFile('/etc/hostname') ?? 'localhost').trim();
-        const valid = new Set(['-s', '--short', '-f', '--fqdn', '-i', '--ip-address', '-d', '--domain', '-A', '--all-fqdns', '-I', '--all-ip-addresses']);
-        for (const a of args) {
-          if (a.startsWith('-') && !valid.has(a)) return { output: `hostname: unrecognized option: ${a}`, exitCode: 1 };
-        }
-        if (args.includes('-s') || args.includes('--short')) return { output: hn.split('.')[0], exitCode: 0 };
-        if (args.includes('-d') || args.includes('--domain')) return { output: hn.includes('.') ? hn.split('.').slice(1).join('.') : '', exitCode: 0 };
-        if (args.includes('-f') || args.includes('--fqdn')) return { output: hn, exitCode: 0 };
-        if (args.includes('-i') || args.includes('--ip-address')) return { output: '127.0.1.1', exitCode: 0 };
-        if (args.includes('-I') || args.includes('--all-ip-addresses')) return { output: '127.0.1.1', exitCode: 0 };
-        if (args.includes('-A') || args.includes('--all-fqdns')) return { output: hn, exitCode: 0 };
-        if (args.length > 0 && !args[0].startsWith('-')) {
-          this.vfs.writeFile('/etc/hostname', args[0] + '\n', 0, 0, 0o022);
-          return { output: '', exitCode: 0 };
-        }
-        return { output: hn, exitCode: 0 };
-      }
-      case 'arch': {
-        if (args.length > 0) return { output: `arch: extra operand '${args[0]}'`, exitCode: 1 };
-        return { output: this.hardware.cpu.architecture, exitCode: 0 };
-      }
 
       // history — command history management
       case 'history': return this.handleHistory(args);
@@ -3718,9 +3696,6 @@ export class LinuxCommandExecutor {
       case 'ps': return { output: cmdPs(args, this.processCmdContext()), exitCode: 0 };
 
       // date, uptime, uname, tty, runlevel, hostnamectl — system info
-      case 'date': return { output: cmdDate(args), exitCode: 0 };
-      case 'uptime': return { output: cmdUptime(args, this.lifecycle), exitCode: 0 };
-      case 'uname': return { output: cmdUname(args, (this.vfs.readFile('/etc/hostname') ?? 'localhost').trim(), this.identity.kernel), exitCode: 0 };
       case 'tty': {
         // `not a tty` (exit 1) when running without a controlling terminal —
         // e.g. ssh exec-mode without -t. The SSH client overlays SSH_NO_TTY=1.
@@ -3730,21 +3705,6 @@ export class LinuxCommandExecutor {
         return { output: cmdTty('pts/0'), exitCode: 0 };
       }
       case 'runlevel': return { output: cmdRunlevel(this.isServer), exitCode: 0 };
-      case 'hostnamectl': {
-        if (args[0] === 'set-hostname') {
-          const newName = args[1];
-          if (!newName) return { output: 'hostnamectl: missing hostname', exitCode: 1 };
-          const oldName = (this.vfs.readFile('/etc/hostname') ?? 'localhost').trim();
-          this.vfs.writeFile('/etc/hostname', newName + '\n', 0, 0, 0o022);
-          if (newName !== oldName) {
-            this.logMgr.logSystemd('systemd-hostnamed', `Changed static host name to '${newName}' (was '${oldName}')`);
-          }
-          return { output: '', exitCode: 0 };
-        }
-        const hn = (this.vfs.readFile('/etc/hostname') ?? 'localhost').trim();
-        return { output: this.identity.toHostnamectl(hn), exitCode: 0 };
-      }
-      case 'timedatectl': return { output: this.identity.toTimedatectl(), exitCode: 0 };
 
       // true/false
       case 'true': return { output: '', exitCode: 0 };
@@ -3858,7 +3818,6 @@ export class LinuxCommandExecutor {
       case 'lvdisplay': case 'vgdisplay': case 'pvdisplay':
         if (this.userMgr.currentUid !== 0) return { output: `${cmd}: Permission denied`, exitCode: 1 };
         return { output: `  No volume groups found`, exitCode: 0 };
-      case 'nproc': return { output: String(this.hardware.cpu.logicalCpus), exitCode: 0 };
       case 'lsof': return { output: this.cmdLsof(args), exitCode: 0 };
       case 'file': {
         const targets = args.filter(a => !a.startsWith('-'));
