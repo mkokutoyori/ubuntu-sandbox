@@ -1,7 +1,19 @@
 import { CommandPrivilegePolicy, Deny, Satisfy } from './CommandPrivilegePolicy';
 
-// `chage` declares its own privilege requirement on `chageCommand.privilege`
-// now that it's a migrated `LinuxCommand` — see `commands/iam/Chage.ts`.
+/**
+ * By-name privilege fallback, consulted by `LinuxCommandExecutor.dispatch()`
+ * when no wrapping `LinuxMachine` has registered a `LinuxCommand` with its
+ * own `.privilege` for this command (e.g. a bare `LinuxCommandExecutor`
+ * constructed directly in a unit test, with no registry at all).
+ *
+ * `LinuxCommandExecutor` must never import from `commands/` — commands
+ * depend on the executor (via `ctx.executor`), so the executor importing
+ * commands back would be circular. That means these specs are declared
+ * here independently of the matching `LinuxCommand.privilege` in
+ * `commands/iam/`, `commands/audit/`, `commands/fs/`, `commands/system/`:
+ * both describe the same real-world rule, kept in sync by hand rather than
+ * by a shared reference.
+ */
 const ACCOUNT_MANAGEMENT = [
   'useradd', 'adduser', 'addgroup', 'usermod', 'userdel', 'deluser',
   'groupadd', 'groupmod', 'groupdel', 'chpasswd', 'faillock',
@@ -9,13 +21,14 @@ const ACCOUNT_MANAGEMENT = [
 
 const AUDIT_TOOLS = ['ausearch', 'aureport', 'auditctl', 'logrotate'] as const;
 
-// `iptables`/`ip6tables` declare their own privilege requirement on
-// `iptablesCommand.privilege`/`ip6tablesCommand.privilege` now that they're
-// migrated `LinuxCommand`s — see `commands/net/Iptables.ts`/`Ip6tables.ts`.
-// The `-save`/`-restore` variants stay here: they need stdin (restore) or
-// to see a `>` redirect before running (save), neither of which the
-// registry dispatch path threads through today.
-const FIREWALL_TOOLS = [
+// `chage`/`iptables`/`ip6tables` are dispatched purely through the
+// LinuxCommand registry (see `commands/iam/Chage.ts`, `commands/net/`);
+// a bare executor without a wrapping LinuxMachine cannot run them at all,
+// so there is nothing to declare here for them. The `-save`/`-restore`
+// variants below stay by-name because they need stdin (restore) or to see
+// a `>` redirect (save), neither of which the registry dispatch threads
+// through today.
+const FIREWALL_SAVE_RESTORE_TOOLS = [
   'iptables-save', 'iptables-restore',
   'ip6tables-save', 'ip6tables-restore',
 ] as const;
@@ -31,7 +44,7 @@ const ADMIN_GROUPS = ['sudo', 'wheel'] as const;
 export function createDefaultCommandPrivileges(): CommandPrivilegePolicy {
   return new CommandPrivilegePolicy()
     .declare([
-      ...ACCOUNT_MANAGEMENT, ...AUDIT_TOOLS, ...FIREWALL_TOOLS, ...POWER_CONTROL,
+      ...ACCOUNT_MANAGEMENT, ...AUDIT_TOOLS, ...FIREWALL_SAVE_RESTORE_TOOLS, ...POWER_CONTROL,
       ...FS_MKFS_TOOLS, ...LVM_TOOLS,
     ])
     .declare(['chown', 'chgrp'], {

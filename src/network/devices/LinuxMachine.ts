@@ -402,6 +402,12 @@ export abstract class LinuxMachine extends EndHost
       const cmd = this.commands.get(argv[0]);
       if (!cmd || !cmd.needsNetworkContext) return null;
       const args = argv.slice(1);
+      // A `cd` earlier in the same composite line (`cd /mnt && umount /mnt`)
+      // only updates the interpreter's own PWD; `LinuxCommandExecutor.cwd`
+      // is otherwise not synced until the whole line finishes. Commands
+      // whose behavior depends on the *current* directory (`umount`'s
+      // busy-mountpoint check) need it synced before they run.
+      if (env?.PWD) this.executor.syncCwdFromScript(env.PWD);
       // This runner is what the bash interpreter actually calls for every
       // simple command it evaluates (composite lines, pipelines, scripts,
       // functions) — the declarative privilege gate must apply here too,

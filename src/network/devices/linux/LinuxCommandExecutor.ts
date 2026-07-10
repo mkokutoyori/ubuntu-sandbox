@@ -1923,7 +1923,21 @@ export class LinuxCommandExecutor {
     return r.output;
   }
 
-  private ctx(): ShellContext {
+  /**
+   * Sync `this.cwd` to a script's live PWD before dispatching a
+   * network-registry command mid-script (e.g. `cd /mnt && umount /mnt`) —
+   * `this.cwd` otherwise only gets synced from the interpreter once the
+   * whole composite line finishes (see `applyInterpreterResult`), which is
+   * too late for a command whose behavior depends on the *current*
+   * directory, like `umount`'s busy-mountpoint check.
+   */
+  syncCwdFromScript(pwd: string): void {
+    if (pwd === this.cwd) return;
+    const inode = this.vfs.resolveInode(pwd);
+    if (inode && inode.type === 'directory') this.cwd = pwd;
+  }
+
+  ctx(): ShellContext {
     return {
       vfs: this.vfs,
       userMgr: this.userMgr,
@@ -2531,7 +2545,7 @@ export class LinuxCommandExecutor {
     return result;
   }
 
-  private handleMount(args: string[]): { output: string; exitCode: number } {
+  handleMount(args: string[]): { output: string; exitCode: number } {
     if (args.length === 0 || (args.length === 1 && args[0] === '-l')) {
       return { output: this.mountTable.toMountOutput(), exitCode: 0 };
     }
@@ -2640,7 +2654,7 @@ export class LinuxCommandExecutor {
     return { output: '', exitCode: 0 };
   }
 
-  private handleUmount(args: string[]): { output: string; exitCode: number } {
+  handleUmount(args: string[]): { output: string; exitCode: number } {
     const positionals = args.filter((a) => !a.startsWith('-'));
     if (positionals.length === 0) {
       return { output: 'umount: bad usage', exitCode: 1 };
@@ -2857,7 +2871,7 @@ export class LinuxCommandExecutor {
     this.bus.publish({ topic: 'linux.fs.accessed', payload });
   }
 
-  private resolveAusearchUserArgs(args: string[]): string[] {
+  resolveAusearchUserArgs(args: string[]): string[] {
     const out = [...args];
     for (let i = 0; i < out.length - 1; i++) {
       if ((out[i] === '-u' || out[i] === '-ua' || out[i] === '-ui') && !/^\d+$/.test(out[i + 1])) {
@@ -2866,6 +2880,26 @@ export class LinuxCommandExecutor {
       }
     }
     return out;
+  }
+
+  handleAuditctl(args: string[]): { output: string; exitCode: number } {
+    if (!this.serviceMgr.status('auditd') || this.serviceMgr.status('auditd')?.state !== 'active') {
+      if (args[0] === '-s' || args[0] === '--status') {
+        return { output: 'auditctl: error: cannot connect to audit daemon (auditd stopped)', exitCode: 1 };
+      }
+    }
+    if (this.auditDaemon?.suspended && (args[0] === '-w' || args[0] === '-a' || args[0] === '-A')) {
+      return { output: `auditctl: audit logging is suspended (${this.auditDaemon.spaceLeftAction}): low disk space`, exitCode: 1 };
+    }
+    if (args[0] === '-R') {
+      const file = args[1];
+      if (!file) return { output: "auditctl: invalid: missing file argument", exitCode: 1 };
+      const content = this.vfs.readFile(this.vfs.normalizePath(file, this.ctx().cwd));
+      if (content === null) return { output: `auditctl: Unable to read ${file}: No such file or directory`, exitCode: 1 };
+      this.auditRules.loadRulesText(content);
+      return { output: '', exitCode: 0 };
+    }
+    return cmdAuditctl(this.auditRules, args);
   }
 
   setCommandHead(name: string): void { this.currentCommandHead = name; }
@@ -3233,26 +3267,7 @@ export class LinuxCommandExecutor {
       case 'atrm': return { output: cmdAtrm(this.atQueue, args), exitCode: 0 };
       case 'ausearch': return { output: cmdAusearch(this.auditLog, this.resolveAusearchUserArgs(args)), exitCode: 0 };
       case 'aureport': return { output: cmdAureport(this.auditLog, args), exitCode: 0 };
-      case 'auditctl': {
-        if (!this.serviceMgr.status('auditd') || this.serviceMgr.status('auditd')?.state !== 'active') {
-          if (args[0] === '-s' || args[0] === '--status') {
-            return { output: 'auditctl: error: cannot connect to audit daemon (auditd stopped)', exitCode: 1 };
-          }
-        }
-        if (this.auditDaemon?.suspended && (args[0] === '-w' || args[0] === '-a' || args[0] === '-A')) {
-          return { output: `auditctl: audit logging is suspended (${this.auditDaemon.spaceLeftAction}): low disk space`, exitCode: 1 };
-        }
-        if (args[0] === '-R') {
-          const file = args[1];
-          if (!file) return { output: "auditctl: invalid: missing file argument", exitCode: 1 };
-          const content = this.vfs.readFile(this.vfs.normalizePath(file, this.cwd));
-          if (content === null) return { output: `auditctl: Unable to read ${file}: No such file or directory`, exitCode: 1 };
-          this.auditRules.loadRulesText(content);
-          return { output: '', exitCode: 0 };
-        }
-        const r = cmdAuditctl(this.auditRules, args);
-        return { output: r.output, exitCode: r.exitCode };
-      }
+      case 'auditctl': return this.handleAuditctl(args);
       case 'groupadd': return { output: cmdGroupadd(c, args), exitCode: 0 };
       case 'groupmod': return { output: cmdGroupmod(c, args), exitCode: 0 };
       case 'groupdel': return { output: cmdGroupdel(c, args), exitCode: 0 };
@@ -3505,9 +3520,7 @@ export class LinuxCommandExecutor {
         return { output: '', exitCode: 0 };
       }
 
-      // UFW (Uncomplicated Firewall) — root-only on real Ubuntu; the
-      // privilege gate (`defaultCommandPrivileges.ts`) enforces that
-      // before this case is ever reached.
+      // iptables-save — dump all rules in iptables-save format
       case 'ufw': {
         const out = this.firewall.execute(args);
         // PRD-Iptables-UFW.md Phase 5 (objectif A.1): `ufw enable`/`disable`
@@ -3520,7 +3533,6 @@ export class LinuxCommandExecutor {
         return { output: out, exitCode: out.startsWith('ERROR') ? 1 : 0 };
       }
 
-      // iptables-save — dump all rules in iptables-save format
       case 'iptables-save': {
         return { output: this.iptables.executeSave(), exitCode: 0 };
       }
@@ -4210,7 +4222,7 @@ export class LinuxCommandExecutor {
     return { output: lines.join('\n'), exitCode: 0 };
   }
 
-  private handleCrontab(args: string[], stdin?: string): { output: string; exitCode: number } {
+  handleCrontab(args: string[], stdin?: string): { output: string; exitCode: number } {
     let targetUser = this.userMgr.currentUser;
     let explicitUser = false;
     let op: 'list' | 'remove' | 'install' | 'edit' | null = null;
@@ -4836,7 +4848,7 @@ export class LinuxCommandExecutor {
 
   // ─── Improved command handlers ────────────────────────────────────
 
-  private handlePasswd(args: string[]): { output: string; exitCode: number } {
+  handlePasswd(args: string[]): { output: string; exitCode: number } {
     // A bare `passwd` / `passwd <user>` is driven by the interactive flow —
     // the Terminal applies the new secret after prompting.
     const hasFlag = args.some((a) => a.startsWith('-'));
@@ -4854,7 +4866,7 @@ export class LinuxCommandExecutor {
     return { output, exitCode };
   }
 
-  private handleUserdel(args: string[]): { output: string; exitCode: number } {
+  handleUserdel(args: string[]): { output: string; exitCode: number } {
     let removeHome = false;
     let username = '';
     for (const a of args) {
@@ -4881,7 +4893,7 @@ export class LinuxCommandExecutor {
    * prints. The interactive password / GECOS capture is layered on top by
    * `LinuxFlowBuilder` when the terminal session runs the command.
    */
-  private handleAdduser(args: string[], addGroupAlias = false): { output: string; exitCode: number } {
+  handleAdduser(args: string[], addGroupAlias = false): { output: string; exitCode: number } {
     const req = parseAdduserArgs(args, addGroupAlias);
 
     if (req.mode === 'create-group') {
@@ -5090,7 +5102,7 @@ export class LinuxCommandExecutor {
     return { output: lines.join('\n'), exitCode: 0 };
   }
 
-  private renderLastlog(args: string[]): string {
+  renderLastlog(args: string[]): string {
     let filterUser: string | null = null;
     let beforeDays: number | null = null;
     let timeDays: number | null = null;
@@ -5417,7 +5429,7 @@ export class LinuxCommandExecutor {
     return { output: r.output, exitCode: r.exitCode };
   }
 
-  private handleDeluser(args: string[]): { output: string; exitCode: number } {
+  handleDeluser(args: string[]): { output: string; exitCode: number } {
     let removeHome = false;
     let username = '';
     let fromGroup = '';
@@ -5561,7 +5573,7 @@ export class LinuxCommandExecutor {
    * same coherent path real `useradd -m` / `adduser` take. The skeleton
    * directory itself is seeded by the IAM filesystem layer at boot.
    */
-  private createSkeletonFiles(home: string, uid: number, gid: number): void {
+  createSkeletonFiles(home: string, uid: number, gid: number): void {
     const entries = this.vfs.listDirectory('/etc/skel');
     if (!entries) return;
     for (const entry of entries) {
@@ -5633,7 +5645,7 @@ export class LinuxCommandExecutor {
   }
 
   /** `lsof` — list open files, honoring -p PID, -u USER, -i :PORT, -i :proto. */
-  private cmdLogrotate(args: string[]): { output: string; exitCode: number } {
+  cmdLogrotate(args: string[]): { output: string; exitCode: number } {
     let force = false;
     let dryRun = false;
     let stateFile: string | null = null;

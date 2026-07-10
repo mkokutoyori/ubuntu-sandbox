@@ -50,6 +50,28 @@ import { fail2banClientCommand } from './net/Fail2banClient';
 import { iptablesCommand } from './net/Iptables';
 import { ip6tablesCommand } from './net/Ip6tables';
 import { chageCommand } from './iam/Chage';
+import { useraddCommand } from './iam/Useradd';
+import { adduserCommand, addgroupCommand } from './iam/Adduser';
+import { usermodCommand } from './iam/Usermod';
+import { userdelCommand } from './iam/Userdel';
+import { deluserCommand } from './iam/Deluser';
+import { groupaddCommand, groupmodCommand, groupdelCommand } from './iam/Group';
+import { faillockCommand } from './iam/Faillock';
+import { passwdCommand } from './iam/Passwd';
+import { lastlogCommand } from './iam/Lastlog';
+import { ausearchCommand } from './audit/Ausearch';
+import { aureportCommand } from './audit/Aureport';
+import { auditctlCommand } from './audit/Auditctl';
+import { logrotateCommand } from './system/Logrotate';
+import { rebootCommand } from './system/Reboot';
+import { dmesgCommand } from './system/Dmesg';
+import { ufwCommand } from './system/Ufw';
+import { chownCommand } from './fs/Chown';
+import { chgrpCommand } from './fs/Chgrp';
+import { mountCommand } from './fs/Mount';
+import { umountCommand } from './fs/Umount';
+import { mkfsCommand, mkfsExt4Command, mkfsXfsCommand, mkfsBtrfsCommand } from './fs/Mkfs';
+import { lvdisplayCommand } from './fs/Lvm';
 import { lspciCommand } from './hw/Lspci';
 import { lsusbCommand } from './hw/Lsusb';
 import { lscpuCommand } from './hw/Lscpu';
@@ -107,6 +129,34 @@ export {
   iptablesCommand,
   ip6tablesCommand,
   chageCommand,
+  useraddCommand,
+  adduserCommand,
+  addgroupCommand,
+  usermodCommand,
+  userdelCommand,
+  deluserCommand,
+  groupaddCommand,
+  groupmodCommand,
+  groupdelCommand,
+  faillockCommand,
+  passwdCommand,
+  lastlogCommand,
+  ausearchCommand,
+  aureportCommand,
+  auditctlCommand,
+  logrotateCommand,
+  rebootCommand,
+  dmesgCommand,
+  ufwCommand,
+  chownCommand,
+  chgrpCommand,
+  mountCommand,
+  umountCommand,
+  mkfsCommand,
+  mkfsExt4Command,
+  mkfsXfsCommand,
+  mkfsBtrfsCommand,
+  lvdisplayCommand,
   lspciCommand,
   lsusbCommand,
   lscpuCommand,
@@ -168,6 +218,34 @@ export const CORE_LINUX_COMMANDS: readonly LinuxCommand[] = [
   iptablesCommand,
   ip6tablesCommand,
   chageCommand,
+  useraddCommand,
+  adduserCommand,
+  addgroupCommand,
+  usermodCommand,
+  userdelCommand,
+  deluserCommand,
+  groupaddCommand,
+  groupmodCommand,
+  groupdelCommand,
+  faillockCommand,
+  passwdCommand,
+  lastlogCommand,
+  ausearchCommand,
+  aureportCommand,
+  auditctlCommand,
+  logrotateCommand,
+  rebootCommand,
+  dmesgCommand,
+  ufwCommand,
+  chownCommand,
+  chgrpCommand,
+  mountCommand,
+  umountCommand,
+  mkfsCommand,
+  mkfsExt4Command,
+  mkfsXfsCommand,
+  mkfsBtrfsCommand,
+  lvdisplayCommand,
   lspciCommand,
   lsusbCommand,
   lscpuCommand,
