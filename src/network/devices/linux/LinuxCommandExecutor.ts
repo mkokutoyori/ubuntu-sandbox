@@ -2560,10 +2560,6 @@ export class LinuxCommandExecutor {
     if (readOnly) options.push('ro');
     const isLoop = options.includes('loop');
 
-    if (this.userMgr.currentUid !== 0) {
-      return { output: 'mount: only root can do that: Permission denied', exitCode: 1 };
-    }
-
     if (mountAll) {
       const fstab = this.vfs.readFile('/etc/fstab') ?? '';
       const errors: string[] = [];
@@ -2633,9 +2629,6 @@ export class LinuxCommandExecutor {
   }
 
   private handleUmount(args: string[]): { output: string; exitCode: number } {
-    if (this.userMgr.currentUid !== 0) {
-      return { output: 'umount: only root can do that: Permission denied', exitCode: 1 };
-    }
     const positionals = args.filter((a) => !a.startsWith('-'));
     if (positionals.length === 0) {
       return { output: 'umount: bad usage', exitCode: 1 };
@@ -3493,16 +3486,10 @@ export class LinuxCommandExecutor {
         return { output: '', exitCode: 0 };
       }
 
-      // UFW (Uncomplicated Firewall) — root-only on real Ubuntu. A
-      // non-root invocation prints the canonical refusal and exits 1,
-      // matching what real `ufw` does (the script's first guard).
+      // UFW (Uncomplicated Firewall) — root-only on real Ubuntu; the
+      // privilege gate (`defaultCommandPrivileges.ts`) enforces that
+      // before this case is ever reached.
       case 'ufw': {
-        if (this.userMgr.currentUid !== 0) {
-          return {
-            output: 'ERROR: You need to be root to run this script',
-            exitCode: 1,
-          };
-        }
         const out = this.firewall.execute(args);
         // PRD-Iptables-UFW.md Phase 5 (objectif A.1): `ufw enable`/`disable`
         // drive `systemctl status ufw` too, so it reflects real firewall
@@ -3591,8 +3578,8 @@ export class LinuxCommandExecutor {
         return { output: out, exitCode: out.startsWith('Invalid') ? 1 : 0 };
       }
       case 'dmesg': {
-        const out = this.logMgr.executeDmesg(args, this.userMgr.currentUid);
-        return { output: out, exitCode: out.includes('Permission denied') ? 1 : 0 };
+        const out = this.logMgr.executeDmesg(args);
+        return { output: out, exitCode: 0 };
       }
       case 'logrotate': return this.cmdLogrotate(args);
 
@@ -3813,10 +3800,8 @@ export class LinuxCommandExecutor {
       case 'mkfs.xfs':
       case 'mkfs.btrfs':
       case 'mkfs':
-        if (this.userMgr.currentUid !== 0) return { output: `${cmd}: Permission denied`, exitCode: 1 };
         return { output: `${cmd} ${args.join(' ')}\nWriting superblocks and filesystem accounting information: done`, exitCode: 0 };
       case 'lvdisplay': case 'vgdisplay': case 'pvdisplay':
-        if (this.userMgr.currentUid !== 0) return { output: `${cmd}: Permission denied`, exitCode: 1 };
         return { output: `  No volume groups found`, exitCode: 0 };
       case 'lsof': return { output: this.cmdLsof(args), exitCode: 0 };
       case 'file': {
@@ -5119,7 +5104,6 @@ export class LinuxCommandExecutor {
 
     if (clear || setNow) {
       if (!filterUser) return 'lastlog: option requires -u/--user';
-      if (this.userMgr.currentUid !== 0) return 'lastlog: must be root';
       if (clear) this.lastlog.clearUser(filterUser);
       if (setNow) this.lastlog.record(filterUser, '0.0.0.0', 'pts/0');
       return '';

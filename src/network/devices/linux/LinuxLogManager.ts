@@ -457,7 +457,7 @@ export class LinuxLogManager {
   }
 
   // ── dmesg command ──────────────────────────────────────────────
-  executeDmesg(args: string[], uid: number): string {
+  executeDmesg(args: string[]): string {
     let humanTime = false;
     let clearBuf = false;      // -c: print then clear
     let clearOnly = false;     // -C: clear, no print
@@ -494,11 +494,6 @@ export class LinuxLogManager {
           if (a.startsWith('--level=')) levelFilter = a.slice(8).split(',').map(l => l.trim()).filter(Boolean);
           i++; break;
       }
-    }
-
-    // Privileged operations: clearing the buffer and setting console level.
-    if ((clearBuf || clearOnly || setConsoleLevel !== null) && uid !== 0) {
-      return 'dmesg: read kernel buffer failed: Permission denied';
     }
 
     if (setConsoleLevel !== null) return '';

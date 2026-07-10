@@ -107,7 +107,7 @@ import {
   type LinuxFormatHelpers,
 } from './linux/LinuxFormatHelpers';
 import { renderHelp, renderManPage } from './linux/commands/LinuxCommandHelp';
-import { evaluatePrivilegeSpec } from './linux/iam/policy/CommandPrivilegePolicy';
+import { evaluatePrivilegeSpec, type PrivilegedCommandSpec } from './linux/iam/policy/CommandPrivilegePolicy';
 import { buildIpCtx } from './linux/commands/net/Ip';
 import { GreAgent, type GreHost } from '../gre/GreAgent';
 import type { DHCPClient } from '../dhcp/DHCPClient';
@@ -1757,6 +1757,52 @@ export abstract class LinuxMachine extends EndHost
     return false;
   }
 
+  /**
+   * Shared `sudo` elevation + declarative privilege gate used by every
+   * dispatch path in `tryNetworkCommand` that bypasses
+   * `LinuxCommandExecutor.dispatch()` (whose own privilege check at
+   * `commandPrivileges.check()` only runs for commands that fall through
+   * to the bash interpreter).
+   */
+  private async withSudoAndPrivilegeGate(
+    firstCmd: string,
+    args: string[],
+    isSudo: boolean,
+    privilege: PrivilegedCommandSpec | undefined,
+    run: () => Promise<string> | string,
+  ): Promise<string> {
+    const userMgr = this.executor.userMgr;
+    if (isSudo && !this.executor.canSudo()) {
+      return `${userMgr.currentUser} is not in the sudoers file. This incident will be reported.`;
+    }
+    const savedUser = isSudo
+      ? { user: userMgr.currentUser, uid: userMgr.currentUid, gid: userMgr.currentGid }
+      : null;
+    if (savedUser) {
+      userMgr.currentUser = 'root';
+      userMgr.currentUid = 0;
+      userMgr.currentGid = 0;
+    }
+    try {
+      const actor = {
+        uid: userMgr.currentUid,
+        user: userMgr.currentUser,
+        groups: userMgr.getUserGroups(userMgr.currentUser).map((g) => g.name),
+      };
+      const denial = privilege
+        ? evaluatePrivilegeSpec(privilege, firstCmd, args, actor)
+        : this.executor.commandPrivileges.check(firstCmd, args, actor);
+      if (denial) return denial.output;
+      return await run();
+    } finally {
+      if (savedUser) {
+        userMgr.currentUser = savedUser.user;
+        userMgr.currentUid = savedUser.uid;
+        userMgr.currentGid = savedUser.gid;
+      }
+    }
+  }
+
   private async tryNetworkCommand(input: string): Promise<string | null> {
     const isSudo = input.startsWith('sudo ');
     const noSudo = isSudo ? input.slice(5).trim() : input;
@@ -1787,36 +1833,10 @@ export abstract class LinuxMachine extends EndHost
       // A registry command bypasses LinuxCommandExecutor's dispatch(), so
       // the declarative privilege gate (and `sudo` elevation) that gate
       // applies there must be re-applied here explicitly.
-      const userMgr = this.executor.userMgr;
-      if (isSudo && !this.executor.canSudo()) {
-        return `${userMgr.currentUser} is not in the sudoers file. This incident will be reported.`;
-      }
-      const savedUser = isSudo
-        ? { user: userMgr.currentUser, uid: userMgr.currentUid, gid: userMgr.currentGid }
-        : null;
-      if (savedUser) {
-        userMgr.currentUser = 'root';
-        userMgr.currentUid = 0;
-        userMgr.currentGid = 0;
-      }
-      try {
-        const actor = {
-          uid: userMgr.currentUid,
-          user: userMgr.currentUser,
-          groups: userMgr.getUserGroups(userMgr.currentUser).map((g) => g.name),
-        };
-        const denial = cmd.privilege
-          ? evaluatePrivilegeSpec(cmd.privilege, firstCmd, cmdArgs, actor)
-          : this.executor.commandPrivileges.check(firstCmd, cmdArgs, actor);
-        if (denial) return denial.output;
-        return await cmd.run(this.buildCommandContext(), cmdArgs);
-      } finally {
-        if (savedUser) {
-          userMgr.currentUser = savedUser.user;
-          userMgr.currentUid = savedUser.uid;
-          userMgr.currentGid = savedUser.gid;
-        }
-      }
+      return this.withSudoAndPrivilegeGate(
+        firstCmd, cmdArgs, isSudo, cmd.privilege,
+        () => cmd.run(this.buildCommandContext(), cmdArgs),
+      );
     }
 
     // 2. Commands that need special handling outside the registry
@@ -1850,23 +1870,25 @@ export abstract class LinuxMachine extends EndHost
       }
       case 'iptables': {
         const iptArgs = LinuxMachine.tokenizeArgs(noSudo).slice(1);
-        applyIptablesNatHook(this.net, iptArgs);
-        return this.executor.iptables.execute(iptArgs).output;
+        return this.withSudoAndPrivilegeGate('iptables', iptArgs, isSudo, undefined, () => {
+          applyIptablesNatHook(this.net, iptArgs);
+          return this.executor.iptables.execute(iptArgs).output;
+        });
       }
       case 'iptables-save': {
         if (noSudo.includes('>')) return null;
-        return this.executor.iptables.executeSave();
+        return this.withSudoAndPrivilegeGate('iptables-save', [], isSudo, undefined, () => this.executor.iptables.executeSave());
       }
       case 'iptables-restore': {
         return null;
       }
       case 'ip6tables': {
         const iptArgs = LinuxMachine.tokenizeArgs(noSudo).slice(1);
-        return this.executor.ip6tables.execute(iptArgs).output;
+        return this.withSudoAndPrivilegeGate('ip6tables', iptArgs, isSudo, undefined, () => this.executor.ip6tables.execute(iptArgs).output);
       }
       case 'ip6tables-save': {
         if (noSudo.includes('>')) return null;
-        return this.executor.ip6tables.executeSave();
+        return this.withSudoAndPrivilegeGate('ip6tables-save', [], isSudo, undefined, () => this.executor.ip6tables.executeSave());
       }
       case 'ip6tables-restore': {
         return null;
