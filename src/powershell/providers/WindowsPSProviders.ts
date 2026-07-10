@@ -1123,10 +1123,15 @@ class WindowsNetworkAdapter implements INetworkProvider {
     // `ipconfig` no longer reports it. We only clear if the port currently
     // carries that exact IP (matches netsh's `delete address` semantics).
     if (entry && !ip.includes(':')) {
-      const ports = (this.pc as unknown as { ports: Map<string, { getIPAddress: () => unknown; clearIP: () => void }> }).ports;
+      const ports = (this.pc as unknown as { ports: Map<string, { getIPAddress: () => unknown }> }).ports;
       const portName = resolveAdapterName(entry.ifAlias, ports as Map<string, unknown>);
       const port = ports.get(portName);
-      if (port && String(port.getIPAddress()) === ip) port.clearIP();
+      // Clear the address AND its connected route via the same device method
+      // cmd's `netsh delete address` uses, so `route print` / `Get-NetRoute`
+      // agree the network is gone (not just the address).
+      if (port && String(port.getIPAddress()) === ip) {
+        (this.pc as unknown as { unconfigureInterface: (n: string) => void }).unconfigureInterface(portName);
+      }
     }
   }
 

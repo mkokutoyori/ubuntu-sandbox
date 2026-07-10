@@ -2243,14 +2243,17 @@ export class WindowsPC extends EndHost implements UserAccountHost {
 
       // IP address removal
       clearInterfaceIP: (ifName: string) => {
-        const port = this.ports.get(ifName);
-        if (port) port.clearIP();
+        // Clears the address AND its connected route, so `route print`
+        // stops advertising the network after the IP is gone.
+        this.unconfigureInterface(ifName);
       },
 
       // Switch interface to DHCP address mode
       setAddressDhcp: (ifName: string) => {
-        const port = this.ports.get(ifName);
-        if (port) port.clearIP();
+        // Drop the static address AND its connected route before handing
+        // the interface to DHCP, so a stale static network route doesn't
+        // linger until the lease reconfigures it.
+        this.unconfigureInterface(ifName);
         this.dhcpInterfaces.add(ifName);
       },
 

@@ -875,6 +875,44 @@ export abstract class EndHost extends Equipment {
     return true;
   }
 
+  /**
+   * Remove the IPv4 configuration from an interface: clears the address
+   * AND drops the connected route {@link configureInterface} added, so the
+   * routing table stops advertising a network the interface no longer owns.
+   *
+   * Mirror of {@link configureInterface}. Every "remove address" path —
+   * `netsh interface ip delete address` (cmd) and `Remove-NetIPAddress`
+   * (PowerShell) — must funnel through here so both shells observe the same
+   * routing table (single source of truth). Previously these paths only
+   * called `port.clearIP()`, leaving a stale `connected` route behind that
+   * `route print` and `Get-NetRoute` both kept showing after the IP was gone.
+   */
+  unconfigureInterface(ifName: string): boolean {
+    const port = this.ports.get(ifName);
+    if (!port) return false;
+
+    const oldIP = port.getIPAddress();
+    const oldMask = port.getSubnetMask();
+    port.clearIP();
+
+    // Drop the connected route this interface contributed.
+    this.routingTable = this.routingTable.filter(
+      r => !(r.type === 'connected' && r.iface === ifName)
+    );
+
+    if (oldIP) {
+      Logger.info(this.id, 'host:interface-config',
+        `${this.name}: ${ifName} address cleared`);
+      this.getBus().publish({
+        topic: 'host.address.changed',
+        payload: { ...this.hostRef(), iface: ifName, ip: oldIP.toString(),
+                   cidr: oldMask?.toCIDR() ?? 0, added: false },
+      });
+    }
+
+    return true;
+  }
+
   // ─── Default Gateway ──────────────────────────────────────────
 
   getDefaultGateway(): IPAddress | null { return this.defaultGateway; }
