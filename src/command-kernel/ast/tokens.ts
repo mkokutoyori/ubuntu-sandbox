@@ -28,6 +28,8 @@ export interface Token {
   readonly value: string;
   readonly line: number;
   readonly column: number;
+  /** true si le mot provient (même partiellement) de guillemets simples — jamais expansé. */
+  readonly noExpand?: boolean;
 }
 
 export const KEYWORDS: ReadonlyMap<string, TokenType> = new Map([

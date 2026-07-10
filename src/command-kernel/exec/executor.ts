@@ -5,7 +5,7 @@ import { CommandNotFoundError, ShellError } from "../errors";
 import { FileOutputStream } from "../io/file-output-stream";
 import { PipeBuffer } from "../io/pipe-buffer";
 import { CommandIO, InputStream } from "../io/types";
-import { MachineApi } from "../machine/types";
+import { MachineApi, toFileSystemActor } from "../machine/types";
 import { CommandRegistry } from "../registry/command-registry";
 import { Session } from "../session/types";
 import { Expander } from "../ast/expander";
@@ -105,8 +105,7 @@ export class Executor {
     const command = this.registry.resolve(node.name);
     if (!command) throw new CommandNotFoundError(node.name);
 
-    // 1. Expansion des variables/globs sur l'argv brut
-    const argv = node.argv.flatMap((w) => this.expander.expand(w, session));
+    const argv = node.argv.flatMap((w) => (w.noExpand ? [w.text] : this.expander.expand(w.text, session)));
 
     // 2. Conversion entrée utilisateur -> arguments typés
     const args = this.argParser.parse(argv, command.descriptor);
@@ -181,6 +180,7 @@ export class Executor {
   ): Promise<{ io: CommandIO; ownedStdout?: FileOutputStream }> {
     if (redirections.length === 0) return { io };
 
+    const actor = toFileSystemActor(session.user);
     let stdin = io.stdin;
     let stdout = io.stdout;
     let ownedStdout: FileOutputStream | undefined;
@@ -197,7 +197,7 @@ export class Executor {
     }
 
     if (inPath !== undefined) {
-      const content = await this.machine.fs.readFile(inPath);
+      const content = await this.machine.fs.readFile(inPath, actor);
       const buffer = new PipeBuffer();
       await buffer.write(content);
       await buffer.close();
@@ -205,7 +205,7 @@ export class Executor {
     }
 
     if (outTarget !== undefined) {
-      ownedStdout = new FileOutputStream(this.machine.fs, outTarget.path, outTarget.append);
+      ownedStdout = new FileOutputStream(this.machine.fs, outTarget.path, actor, outTarget.append);
       stdout = ownedStdout;
     }
 

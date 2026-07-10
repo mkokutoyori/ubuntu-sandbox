@@ -3,6 +3,7 @@ import { CommandContext, CommandDescriptor, EXIT_OK, ExitCode } from "../command
 import { Capability } from "../session/types";
 import { DefaultPrivilegePolicy } from "../session/privilege-policy";
 import { PrivilegeLevel } from "../session/types";
+import { toFileSystemActor } from "../machine/types";
 
 /** Commande accessible à tous, exigeant seulement la capacité fs.read. */
 export class CatCommand extends BaseCommand {
@@ -34,9 +35,10 @@ export class CatCommand extends BaseCommand {
   async execute(ctx: CommandContext): Promise<ExitCode> {
     const files = ctx.args.get<string[]>("files");
     const numbered = ctx.args.flag("number");
+    const actor = toFileSystemActor(ctx.session.user);
     for (const file of files) {
       const path = ctx.machine.fs.resolve(ctx.session.cwd, file);
-      const content = await ctx.machine.fs.readFile(path); // méthode interne
+      const content = await ctx.machine.fs.readFile(path, actor); // méthode interne
       const output = numbered
         ? content
             .split("\n")

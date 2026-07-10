@@ -100,7 +100,9 @@ export * from "./shell/shell";
 
 // 13. Commandes d'exemple développées "à part"
 export * from "./commands/cat-command";
+export * from "./commands/echo-command";
 export * from "./commands/shutdown-command";
+export * from "./register-core-commands";
 
 // 14. Amorçage
 export * from "./bootstrap";

@@ -27,3 +27,16 @@ export class CommandNotFoundError extends ShellError {
     super(`commande introuvable : ${name}`, 127);
   }
 }
+
+export type FileSystemErrorCode = "ENOENT" | "EACCES" | "ENOTDIR" | "EISDIR" | "EEXIST" | "ENOTEMPTY";
+
+export class FileSystemError extends ShellError {
+  constructor(
+    public readonly path: string,
+    public readonly code: FileSystemErrorCode,
+    message: string,
+    exitCode = 1,
+  ) {
+    super(message, exitCode);
+  }
+}

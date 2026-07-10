@@ -1,4 +1,4 @@
-import { FileSystemApi } from "../machine/types";
+import { FileSystemActor, FileSystemApi } from "../machine/types";
 import { OutputStream } from "./types";
 
 /**
@@ -14,6 +14,7 @@ export class FileOutputStream implements OutputStream {
   constructor(
     private readonly fs: FileSystemApi,
     private readonly path: string,
+    private readonly actor: FileSystemActor,
     private readonly append: boolean,
   ) {}
 
@@ -24,7 +25,7 @@ export class FileOutputStream implements OutputStream {
   async close(): Promise<void> {
     if (this.flushed) return;
     this.flushed = true;
-    await this.fs.writeFile(this.path, this.buffer, this.append);
+    await this.fs.writeFile(this.path, this.buffer, this.actor, this.append);
     this.buffer = "";
   }
 }

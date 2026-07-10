@@ -115,6 +115,7 @@ export class Lexer {
     const startLine = this.line;
     const startColumn = this.column;
     let value = "";
+    let sawSingleQuote = false;
 
     while (!this.atEnd() && !this.isWordBoundary(this.peek())) {
       const ch = this.peek();
@@ -132,6 +133,7 @@ export class Lexer {
         continue;
       }
       if (ch === "'") {
+        sawSingleQuote = true;
         value += this.readSingleQuoted();
         continue;
       }
@@ -140,7 +142,7 @@ export class Lexer {
     }
 
     const type = KEYWORDS.get(value) ?? TokenType.WORD;
-    return { type, value, line: startLine, column: startColumn };
+    return { type, value, line: startLine, column: startColumn, noExpand: sawSingleQuote };
   }
 
   private readDoubleQuoted(): string {

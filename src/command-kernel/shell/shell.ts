@@ -1,7 +1,7 @@
 import { ExitCode } from "../command/types";
 import { ShellError } from "../errors";
 import { Interpreter } from "../interpreter";
-import { MachineApi } from "../machine/types";
+import { MachineApi, toFileSystemActor } from "../machine/types";
 import { Session } from "../session/types";
 import { Terminal } from "../terminal/terminal";
 import { TerminalEventListener } from "../terminal/types";
@@ -81,7 +81,7 @@ export class Shell implements TerminalEventListener {
   /** Charge et exécute un fichier script en passant par la machine elle-même. */
   async runScriptFile(path: string): Promise<ExitCode> {
     const resolved = this.machine.fs.resolve(this.session.cwd, path);
-    const source = await this.machine.fs.readFile(resolved);
+    const source = await this.machine.fs.readFile(resolved, toFileSystemActor(this.session.user));
     return this.interpreter.runScript(source, this.session, this.terminal.asCommandIO());
   }
 

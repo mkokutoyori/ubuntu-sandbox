@@ -3,11 +3,6 @@ import { CommandDescriptor } from "../command/types";
 import { ArgType, OptionSpec } from "./types";
 import { ParsedArgs } from "./parsed-args";
 
-/**
- * Convertit un argv brut ["-n", "5", "/etc/hosts"] en ParsedArgs typés,
- * en s'appuyant sur les specs déclarées par le CommandDescriptor.
- * Lève UsageError si l'entrée ne respecte pas le contrat.
- */
 export class ArgumentParser {
   parse(argv: readonly string[], descriptor: CommandDescriptor): ParsedArgs {
     const options = new Map<string, unknown>();
@@ -15,7 +10,10 @@ export class ArgumentParser {
 
     for (let i = 0; i < argv.length; i++) {
       const token = argv[i];
-      if (token.startsWith("-") && token !== "-" && token !== "--") {
+      const cluster = this.expandShortCluster(token, descriptor.options);
+      if (cluster) {
+        for (const spec of cluster) options.set(spec.long, true);
+      } else if (token.startsWith("-") && token !== "-" && token !== "--") {
         const spec = this.findOption(token, descriptor.options);
         if (!spec) throw new UsageError(`option inconnue : ${token}`);
         if (spec.takesValue) {
@@ -35,14 +33,12 @@ export class ArgumentParser {
       }
     }
 
-    // Valeurs par défaut des options absentes
     for (const spec of descriptor.options) {
       if (!options.has(spec.long) && spec.defaultValue !== undefined) {
         options.set(spec.long, spec.defaultValue);
       }
     }
 
-    // Mapping des positionnels sur leurs specs
     const positionals = new Map<string, unknown>();
     let cursor = 0;
     for (const spec of descriptor.args) {
@@ -53,7 +49,9 @@ export class ArgumentParser {
             `argument requis manquant : <${spec.name}...>\nusage : ${descriptor.usage}`,
           );
         }
-        positionals.set(spec.name, values.map((v) => this.coerce(v, spec.type)));
+        if (values.length > 0) {
+          positionals.set(spec.name, values.map((v) => this.coerce(v, spec.type)));
+        }
         cursor = positionalValues.length;
         break;
       }
@@ -70,6 +68,21 @@ export class ArgumentParser {
     }
 
     return new ParsedArgs(positionals, options, positionalValues.slice(cursor));
+  }
+
+  private expandShortCluster(
+    token: string,
+    specs: readonly OptionSpec[],
+  ): OptionSpec[] | undefined {
+    if (!/^-[a-zA-Z]{2,}$/.test(token)) return undefined;
+    const letters = token.slice(1).split("");
+    const resolved: OptionSpec[] = [];
+    for (const letter of letters) {
+      const spec = specs.find((s) => s.short === letter && !s.takesValue);
+      if (!spec) return undefined;
+      resolved.push(spec);
+    }
+    return resolved;
   }
 
   private findOption(
@@ -95,7 +108,7 @@ export class ArgumentParser {
       case "boolean":
         return raw === "true" || raw === "1" || raw === "yes";
       default:
-        return raw; // string & path (la résolution du path se fait via fs.resolve)
+        return raw;
     }
   }
 }

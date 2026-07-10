@@ -3,15 +3,14 @@ import { ShutdownCommand } from "./commands/shutdown-command";
 import { Interpreter } from "./interpreter";
 import { MachineApi } from "./machine/types";
 import { CommandRegistry } from "./registry/command-registry";
-import { ExitCommand } from "./shell/exit";
+import { registerCoreCommands } from "./register-core-commands";
 
 export function createShell(machine: MachineApi): Interpreter {
   const registry = new CommandRegistry();
 
-  // Commandes intégrées
+  registerCoreCommands(registry);
   registry.register(() => new CatCommand());
   registry.register(() => new ShutdownCommand());
-  registry.register(() => new ExitCommand());
 
   // Une commande développée à part s'enregistre exactement pareil :
   //   import { MyCustomCommand } from "./commands/my-custom-command";

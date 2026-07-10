@@ -32,6 +32,8 @@ export interface User {
   readonly name: string;
   readonly groups: ReadonlySet<string>;
   readonly capabilities: ReadonlySet<Capability>;
+  /** Groupes supplémentaires, par gid numérique (pour les contrôles d'accès fichier). */
+  readonly supplementaryGids?: readonly number[];
   isRoot(): boolean; // par convention : uid === 0
 }
 
@@ -58,6 +60,7 @@ export class SimpleUser implements User {
     readonly name: string,
     readonly groups: ReadonlySet<string> = new Set(),
     readonly capabilities: ReadonlySet<Capability> = new Set(),
+    readonly supplementaryGids: readonly number[] = [],
   ) {}
 
   isRoot(): boolean {

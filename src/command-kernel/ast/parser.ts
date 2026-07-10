@@ -10,6 +10,7 @@ import {
   SimpleCommandNode,
   SubshellNode,
   WhileNode,
+  Word,
 } from "./nodes";
 
 const ASSIGNMENT_PATTERN = /^([A-Za-z_][A-Za-z0-9_]*)=(.*)$/s;
@@ -186,7 +187,7 @@ export class Parser {
       return { kind: "assign", name: match[1], value: match[2] };
     }
 
-    const argv: string[] = [];
+    const argv: Word[] = [];
     const redirections: RedirectionNode[] = [];
     const name = tok.value;
 
@@ -212,7 +213,8 @@ export class Parser {
         continue;
       }
       if (current.type === TokenType.WORD) {
-        argv.push(this.advance().value);
+        const word = this.advance();
+        argv.push({ text: word.value, noExpand: word.noExpand ?? false });
         continue;
       }
       throw new UsageError(

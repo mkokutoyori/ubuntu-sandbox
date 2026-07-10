@@ -63,7 +63,10 @@ describe("Parser", () => {
     expect(ast).toEqual({
       kind: "command",
       name: "cat",
-      argv: ["-n", "/etc/hosts"],
+      argv: [
+        { text: "-n", noExpand: false },
+        { text: "/etc/hosts", noExpand: false },
+      ],
       redirections: [],
     });
   });
@@ -73,7 +76,7 @@ describe("Parser", () => {
     expect(ast.kind).toBe("pipeline");
     if (ast.kind === "pipeline") {
       expect(ast.stages).toHaveLength(3);
-      expect(ast.stages[1]).toMatchObject({ name: "grep", argv: ["foo"] });
+      expect(ast.stages[1]).toMatchObject({ name: "grep", argv: [{ text: "foo", noExpand: false }] });
     }
   });
 
@@ -108,8 +111,8 @@ describe("Parser", () => {
     expect(ast.kind).toBe("if");
     if (ast.kind === "if") {
       expect(ast.condition).toMatchObject({ name: "grep" });
-      expect(ast.thenBranch).toMatchObject({ name: "echo", argv: ["yes"] });
-      expect(ast.elseBranch).toMatchObject({ name: "echo", argv: ["no"] });
+      expect(ast.thenBranch).toMatchObject({ name: "echo", argv: [{ text: "yes", noExpand: false }] });
+      expect(ast.elseBranch).toMatchObject({ name: "echo", argv: [{ text: "no", noExpand: false }] });
     }
   });
 

@@ -97,7 +97,7 @@ describe("Shell (REPL) + VirtualTerminal", () => {
   });
 
   it("runs a script file via runScriptFile()", async () => {
-    await machine.fs.writeFile("/scripts/hello.sh", "echo from-script");
+    await machine.fs.writeFile("/scripts/hello.sh", "echo from-script", { uid: 0, gid: 0 });
     const { shell } = makeShell();
     const code = await shell.runScriptFile("/scripts/hello.sh");
     expect(code).toBe(0);

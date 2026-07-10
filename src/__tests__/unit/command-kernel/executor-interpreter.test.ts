@@ -7,6 +7,7 @@ import { PipeBuffer } from "@/command-kernel/io/pipe-buffer";
 import { CommandIO } from "@/command-kernel/io/types";
 import { CommandRegistry } from "@/command-kernel/registry/command-registry";
 import { Capability, createSession, SimpleUser } from "@/command-kernel/session/types";
+import { FileSystemActor } from "@/command-kernel/machine/types";
 import { InMemoryMachine } from "@/command-kernel/testing/in-memory-machine";
 import {
   CounterCommand,
@@ -16,6 +17,8 @@ import {
   TrueCommand,
   UpperCommand,
 } from "./_test-commands";
+
+const ROOT_ACTOR: FileSystemActor = { uid: 0, gid: 0 };
 
 function makeIO(): CommandIO & { out: PipeBuffer; err: PipeBuffer } {
   const out = new PipeBuffer();
@@ -133,20 +136,22 @@ describe("Interpreter + Executor", () => {
   });
 
   it("redirects stdout to a file with > (truncate) and >> (append)", async () => {
+    await machine.fs.mkdir("/tmp", ROOT_ACTOR);
+    await machine.fs.chmod("/tmp", 0o777, ROOT_ACTOR);
     const session = createSession({ id: "s1", user, cwd: "/home/alice" });
     const io = makeIO();
     await interpreter.interpretLine("echo first > /tmp/out.txt", session, io);
-    expect(await machine.fs.readFile("/tmp/out.txt")).toBe("first\n");
+    expect(await machine.fs.readFile("/tmp/out.txt", ROOT_ACTOR)).toBe("first\n");
 
     await interpreter.interpretLine("echo second >> /tmp/out.txt", session, makeIO());
-    expect(await machine.fs.readFile("/tmp/out.txt")).toBe("first\nsecond\n");
+    expect(await machine.fs.readFile("/tmp/out.txt", ROOT_ACTOR)).toBe("first\nsecond\n");
 
     await interpreter.interpretLine("echo third > /tmp/out.txt", session, makeIO());
-    expect(await machine.fs.readFile("/tmp/out.txt")).toBe("third\n");
+    expect(await machine.fs.readFile("/tmp/out.txt", ROOT_ACTOR)).toBe("third\n");
   });
 
   it("redirects stdin from a file with <", async () => {
-    await machine.fs.writeFile("/tmp/in.txt", "piped content");
+    await machine.fs.writeFile("/tmp/in.txt", "piped content", ROOT_ACTOR);
     const session = createSession({ id: "s1", user });
     const io = makeIO();
     await interpreter.interpretLine("upper < /tmp/in.txt", session, io);
@@ -154,10 +159,11 @@ describe("Interpreter + Executor", () => {
   });
 
   it("resolves relative redirection targets against the session cwd", async () => {
-    await machine.fs.mkdir("/home/alice");
+    await machine.fs.mkdir("/home/alice", ROOT_ACTOR, true);
+    await machine.fs.chown("/home/alice", user.uid, user.gid, ROOT_ACTOR);
     const session = createSession({ id: "s1", user, cwd: "/home/alice" });
     await interpreter.interpretLine("echo hi > note.txt", session, makeIO());
-    expect(await machine.fs.readFile("/home/alice/note.txt")).toBe("hi\n");
+    expect(await machine.fs.readFile("/home/alice/note.txt", ROOT_ACTOR)).toBe("hi\n");
   });
 
   it("propagates CommandNotFoundError (exit code 127) for unknown commands", async () => {
@@ -198,8 +204,8 @@ describe("Interpreter + Executor", () => {
   });
 
   it("reads and concatenates multiple files via cat", async () => {
-    await machine.fs.writeFile("/a.txt", "A");
-    await machine.fs.writeFile("/b.txt", "B");
+    await machine.fs.writeFile("/a.txt", "A", ROOT_ACTOR);
+    await machine.fs.writeFile("/b.txt", "B", ROOT_ACTOR);
     const session = createSession({ id: "s1", user });
     const io = makeIO();
     await interpreter.interpretLine("cat /a.txt /b.txt", session, io);

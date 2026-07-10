@@ -1,9 +1,19 @@
 /** ---- Nœuds de l'AST (union discriminée) ---- */
 
+/**
+ * Un mot d'argv, avec l'information de citation nécessaire à l'Expander :
+ * un mot issu (même partiellement) de guillemets simples ne doit jamais
+ * subir l'expansion de variables ($VAR), exactement comme en bash.
+ */
+export interface Word {
+  readonly text: string;
+  readonly noExpand: boolean;
+}
+
 export interface SimpleCommandNode {
   readonly kind: "command";
   readonly name: string;
-  readonly argv: readonly string[]; // encore bruts : expansion plus tard
+  readonly argv: readonly Word[]; // encore bruts : expansion plus tard
   readonly redirections: readonly RedirectionNode[];
 }
 

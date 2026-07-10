@@ -126,6 +126,15 @@ import { LogindStateSync } from './linux/network/LogindStateSync';
 import type { TcpdumpDeps } from './linux/network/tcpdump/TcpdumpRunner';
 import { serializeCaptureFile } from './linux/network/tcpdump/CaptureFileFormat';
 import { decodeEthernetFrame, makeLoopbackIcmpFrame, makeTcpFrame, type CaptureFrame } from './linux/network/tcpdump/CaptureFrame';
+import { CommandNotFoundError, ShellError } from '@/command-kernel/errors';
+import { Interpreter } from '@/command-kernel/interpreter';
+import { Lexer } from '@/command-kernel/ast/lexer';
+import { Parser } from '@/command-kernel/ast/parser';
+import { PipeBuffer } from '@/command-kernel/io/pipe-buffer';
+import { CommandRegistry } from '@/command-kernel/registry/command-registry';
+import { createSession } from '@/command-kernel/session/types';
+import { createLinuxHostShell } from './linux/command-kernel/createLinuxHostShell';
+import { resolveLinuxUser } from './linux/command-kernel/LinuxUser';
 
 /**
  * Minimal sshd-style glob matcher: `*` matches any sequence including
@@ -171,6 +180,8 @@ export abstract class LinuxMachine extends EndHost
 
   /** Registry of network-aware commands handled before the bash interpreter. */
   protected readonly commands: LinuxCommandRegistry;
+
+  private commandKernelShell?: { interpreter: Interpreter; registry: CommandRegistry };
 
   /** XFRM (IPsec) SAD/SPD — consumed by `ip xfrm state/policy`. */
   protected xfrmCtx: IpXfrmContext = { states: [], policies: [] };
@@ -1684,6 +1695,11 @@ export abstract class LinuxMachine extends EndHost
     const sessionView = this.renderSessionView(trimmed);
     if (sessionView !== null) return sessionView;
 
+    if (stdin === undefined) {
+      const migrated = await this.tryCommandKernel(trimmed);
+      if (migrated !== null) return migrated;
+    }
+
     if (!this.containsNetworkCommand(trimmed)) {
       return this.executor.execute(trimmed);
     }
@@ -1699,6 +1715,53 @@ export abstract class LinuxMachine extends EndHost
     // Otherwise, fall through to the bash interpreter (async: the line
     // may still reference a network command in argument position).
     return this.executor.executeAsync(trimmed);
+  }
+
+  private getCommandKernelShell(): { interpreter: Interpreter; registry: CommandRegistry } {
+    if (!this.commandKernelShell) {
+      const interpreter = createLinuxHostShell({
+        vfs: this.executor.vfs,
+        userManager: this.executor.userMgr,
+        processManager: this.executor.processMgr,
+        hostname: this.name,
+        ports: this.getPorts(),
+        getUmask: () => this.executor.getUmask(),
+        powerOn: () => this.powerOn(),
+        powerOff: () => this.powerOff(),
+      });
+      this.commandKernelShell = { interpreter, registry: interpreter.commands };
+    }
+    return this.commandKernelShell;
+  }
+
+  private async tryCommandKernel(trimmed: string): Promise<string | null> {
+    const { interpreter, registry } = this.getCommandKernelShell();
+
+    let ast;
+    try {
+      ast = new Parser().parse(new Lexer().tokenize(trimmed));
+    } catch {
+      return null;
+    }
+    if (ast.kind !== 'command' && ast.kind !== 'pipeline') return null;
+    const names = ast.kind === 'command' ? [ast.name] : ast.stages.map((stage) => stage.name);
+    if (!names.every((name) => registry.has(name))) return null;
+
+    const user = resolveLinuxUser(this.executor.userMgr, this.executor.userMgr.currentUser);
+    const session = createSession({ id: 'legacy-bridge', user, cwd: this.executor.getCwd() });
+    const chunks: string[] = [];
+    const collector = { write: async (text: string) => { chunks.push(text); }, close: async () => {} };
+    const io = { stdin: new PipeBuffer(), stdout: collector, stderr: collector };
+
+    try {
+      await interpreter.interpretLine(trimmed, session, io);
+    } catch (err) {
+      if (err instanceof CommandNotFoundError) return null;
+      if (err instanceof ShellError) return `${err.message}\n`;
+      throw err;
+    }
+    this.executor.setCwd(session.cwd);
+    return chunks.join('').replace(/\n$/, '');
   }
 
   /**
