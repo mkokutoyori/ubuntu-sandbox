@@ -7,10 +7,12 @@ principes directeurs).
 
 ## Linux — Phase 1 : filesystem & session (coreutils)
 
-**État : branche de travail, pas encore mergée sur `mandeng`.** Cette
-phase est câblée sur le vrai point d'entrée (`LinuxMachine.executeCommand`)
-mais porte des régressions connues et non corrigées listées plus bas —
-voir « Bugs connus, non corrigés ».
+**État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
+Cette phase est câblée sur le vrai point d'entrée
+(`LinuxMachine.executeCommand`) et validée contre plus de 20 fichiers de
+tests déjà existants dans le projet (filesystem/IAM, ACL POSIX,
+substitution de commande, variables d'environnement, hardware, cron,
+logging...), en plus des tests dédiés du socle.
 
 **Câblage réel** (`LinuxMachine.tryCommandKernel`, appelé depuis
 `executeCommand`) :
@@ -71,25 +73,24 @@ parallèle créée) :
 - Commandes universelles (`registerCoreCommands`) : `EchoCommand` sait
   interpréter `-e`/`-n`/`-E` (échappements bash `\n`, `\t`...).
 
-**Bugs connus, non corrigés (trouvés en testant contre la suite
-existante, à traiter avant toute fusion sur `mandeng`)** :
+**Bugs trouvés puis corrigés en testant contre la suite existante** :
 
-- **ACL POSIX contournées.** `FileSystemActor` ne porte que des
-  identifiants numériques (uid/gid/gids) ; `VfsPath.allows()` n'consulte
+- **ACL POSIX contournées.** `FileSystemActor` ne portait que des
+  identifiants numériques (uid/gid/gids) ; `VfsPath.allows()` ne consulte
   les ACL (`setfacl`) que si `PathActor.user`/`groupNames` (des noms) sont
-  renseignés. Résultat : une commande migrée (`cat`, `mkdir`...) ignore
-  les ACL POSIX et retombe sur les seuls bits rwx classiques. Fix
-  identifié mais pas encore appliqué : porter `user`/`groupNames` dans
-  `FileSystemActor`.
-- **Substitution de commande et variables d'environnement non gérées.**
-  L'Expander de command-kernel ne connaît que `$VAR`/`${VAR}`/`$?`/`~` —
-  ni `$(...)`/`` `...` `` (substitution), ni les variables
-  d'environnement réelles (`$HOSTNAME`, `$USER`..., la session
-  `command-kernel` construite par le pont a un `env` vide). Une commande
-  migrée utilisant l'un ou l'autre dans ses arguments produit un résultat
-  silencieusement faux au lieu d'un repli ou d'une erreur. Aucun garde-fou
-  n'est encore en place dans `tryCommandKernel` pour détecter ces cas et
-  refuser le routage.
+  renseignés. Fix : `FileSystemActor` et `toFileSystemActor()` portent
+  désormais `name`/`groupNames`, propagés jusqu'à `VfsPath` par
+  `LinuxMachineApi`.
+- **Substitution de commande non supportée.** L'Expander de
+  command-kernel ne gère pas `$(...)`/`` `...` ``. `tryCommandKernel`
+  refuse maintenant le routage dès que la ligne brute contient l'un des
+  deux (repli intégral sur l'ancien chemin, qui les supporte).
+- **Variables d'environnement non alimentées.** La session construite par
+  le pont avait un `env` toujours vide. `LinuxCommandExecutor.getEnvSnapshot()`
+  expose maintenant le même environnement complet (statique + calculé :
+  `HOSTNAME`, `HOME`, `USER`...) que celui que `LinuxCommandExecutor`
+  construit pour son propre interpréteur bash (`buildEnvVars()`), utilisé
+  pour peupler la session à chaque appel.
 
 **Hors périmètre de cette phase (volontairement, à traiter en phases
 suivantes)** :

@@ -18,6 +18,8 @@ export interface FileSystemActor {
   readonly uid: number;
   readonly gid: number;
   readonly gids?: readonly number[];
+  readonly name?: string;
+  readonly groupNames?: readonly string[];
 }
 
 export interface FileStat {
@@ -104,5 +106,11 @@ export interface MachineApi {
 
 /** Dérive l'acteur `FileSystemApi` d'un `User` de session — point unique, partagé par l'Executor et par les commandes. */
 export function toFileSystemActor(user: import("../session/types").User): FileSystemActor {
-  return { uid: user.uid, gid: user.gid, gids: user.supplementaryGids ?? [] };
+  return {
+    uid: user.uid,
+    gid: user.gid,
+    gids: user.supplementaryGids ?? [],
+    name: user.name,
+    groupNames: [...user.groups],
+  };
 }

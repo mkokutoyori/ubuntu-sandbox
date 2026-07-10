@@ -42,7 +42,13 @@ export interface LinuxMachineApiDeps {
 }
 
 function toPathActor(actor: FileSystemActor): PathActor {
-  return { uid: actor.uid, gid: actor.gid, gids: [...(actor.gids ?? [])] };
+  return {
+    uid: actor.uid,
+    gid: actor.gid,
+    gids: [...(actor.gids ?? [])],
+    user: actor.name,
+    groupNames: [...(actor.groupNames ?? [])],
+  };
 }
 
 class LinuxFileSystemApi implements FileSystemApi {

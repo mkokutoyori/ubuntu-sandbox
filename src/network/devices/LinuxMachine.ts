@@ -1735,6 +1735,8 @@ export abstract class LinuxMachine extends EndHost
   }
 
   private async tryCommandKernel(trimmed: string): Promise<string | null> {
+    if (trimmed.includes('$(') || trimmed.includes('`')) return null;
+
     const { interpreter, registry } = this.getCommandKernelShell();
 
     let ast;
@@ -1748,7 +1750,12 @@ export abstract class LinuxMachine extends EndHost
     if (!names.every((name) => registry.has(name))) return null;
 
     const user = resolveLinuxUser(this.executor.userMgr, this.executor.userMgr.currentUser);
-    const session = createSession({ id: 'legacy-bridge', user, cwd: this.executor.getCwd() });
+    const session = createSession({
+      id: 'legacy-bridge',
+      user,
+      cwd: this.executor.getCwd(),
+      env: this.executor.getEnvSnapshot(),
+    });
     const chunks: string[] = [];
     const collector = { write: async (text: string) => { chunks.push(text); }, close: async () => {} };
     const io = { stdin: new PipeBuffer(), stdout: collector, stderr: collector };

@@ -5604,6 +5604,8 @@ export class LinuxCommandExecutor {
 
   getUmask(): number { return this.umask; }
 
+  getEnvSnapshot(): Map<string, string> { return new Map(Object.entries(this.buildEnvVars())); }
+
   /** Read a file from the virtual filesystem (returns null if not found) */
   readFile(path: string): string | null {
     const absPath = this.vfs.normalizePath(path, this.cwd);
