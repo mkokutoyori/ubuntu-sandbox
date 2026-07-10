@@ -33,7 +33,7 @@ export const curlCommand: LinuxCommand = {
     }
     if (!url) return cmdCurl(args);
 
-    const m = /^(https?):\/\/([^\/:]+)(?::(\d+))?(\/.*)?$/i.exec(url);
+    const m = /^(https?):\/\/([^/:]+)(?::(\d+))?(\/.*)?$/i.exec(url);
     if (!m) return cmdCurl(args);
     const scheme = m[1].toLowerCase();
     const host = m[2];

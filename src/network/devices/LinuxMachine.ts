@@ -1924,175 +1924,174 @@ export abstract class LinuxMachine extends EndHost
   }
 
   private buildNetKernel(): LinuxNetKernel {
-    const self = this;
     return {
-      getPorts(): ReadonlyMap<string, Port> {
-        return self.ports;
+      getPorts: (): ReadonlyMap<string, Port> => {
+        return this.ports;
       },
-      getIfIndex(name: string): number {
-        return self.getIfIndex(name);
+      getIfIndex: (name: string): number => {
+        return this.getIfIndex(name);
       },
-      buildTcpdumpDeps(): TcpdumpDeps {
-        return self.buildTcpdumpDeps();
+      buildTcpdumpDeps: (): TcpdumpDeps => {
+        return this.buildTcpdumpDeps();
       },
-      configureInterface(name: string, ip: IPAddress, mask: SubnetMask): boolean {
-        return self.configureInterface(name, ip, mask);
+      configureInterface: (name: string, ip: IPAddress, mask: SubnetMask): boolean => {
+        return this.configureInterface(name, ip, mask);
       },
-      configureIPv6Interface(name: string, address: IPv6Address, prefixLength: number): boolean {
-        return self.configureIPv6Interface(name, address, prefixLength);
+      configureIPv6Interface: (name: string, address: IPv6Address, prefixLength: number): boolean => {
+        return this.configureIPv6Interface(name, address, prefixLength);
       },
-      clearInterfaceIP(name: string): void {
-        const port = self.ports.get(name);
+      clearInterfaceIP: (name: string): void => {
+        const port = this.ports.get(name);
         if (!port) return;
         const ip = port.getIPAddress();
         const cidr = port.getSubnetMask()?.toCIDR() ?? 0;
         port.clearIP();
-        if (ip) self.getBus().publish({ topic: 'host.address.changed', payload: { ...self.hostRef(), iface: name, ip: ip.toString(), cidr, added: false } });
+        if (ip) this.getBus().publish({ topic: 'host.address.changed', payload: { ...this.hostRef(), iface: name, ip: ip.toString(), cidr, added: false } });
       },
-      setInterfaceAdmin(name: string, enabled: boolean): void {
-        const port = self.ports.get(name);
+      setInterfaceAdmin: (name: string, enabled: boolean): void => {
+        const port = this.ports.get(name);
         if (!port) return;
         port.setUp(enabled);
-        self.getBus().publish({ topic: 'host.link.state-changed', payload: { ...self.hostRef(), iface: name, up: enabled } });
+        this.getBus().publish({ topic: 'host.link.state-changed', payload: { ...this.hostRef(), iface: name, up: enabled } });
       },
-      isDHCPConfigured(name: string): boolean {
-        return self.isDHCPConfigured(name);
+      isDHCPConfigured: (name: string): boolean => {
+        return this.isDHCPConfigured(name);
       },
-      getRoutingTable(): HostRouteEntry[] {
-        return self.getRoutingTable();
+      getRoutingTable: (): HostRouteEntry[] => {
+        return this.getRoutingTable();
       },
-      getIPv6RoutingTable() {
-        return self.getIPv6RoutingTable();
+      getIPv6RoutingTable: () => {
+        return this.getIPv6RoutingTable();
       },
-      addStaticRoute(network: IPAddress, mask: SubnetMask, gw: IPAddress, metric?: number): boolean {
-        return self.addStaticRoute(network, mask, gw, metric ?? 100);
+      addStaticRoute: (network: IPAddress, mask: SubnetMask, gw: IPAddress, metric?: number): boolean => {
+        return this.addStaticRoute(network, mask, gw, metric ?? 100);
       },
-      addDeviceRoute(network: IPAddress, mask: SubnetMask, iface: string, metric?: number): boolean {
-        return self.addDeviceRoute(network, mask, iface, metric ?? 0);
+      addDeviceRoute: (network: IPAddress, mask: SubnetMask, iface: string, metric?: number): boolean => {
+        return this.addDeviceRoute(network, mask, iface, metric ?? 0);
       },
-      removeRoute(
+      removeRoute: (
         network: IPAddress,
         mask: SubnetMask,
         filter?: { nextHop?: IPAddress | null; metric?: number },
-      ): boolean {
-        return self.removeRoute(network, mask, filter);
+      ): boolean => {
+        return this.removeRoute(network, mask, filter);
       },
-      setDefaultGateway(gw: IPAddress): void {
-        self.setDefaultGateway(gw);
+      setDefaultGateway: (gw: IPAddress): void => {
+        this.setDefaultGateway(gw);
       },
-      getDefaultGateway(): IPAddress | null {
-        return self.getDefaultGateway();
+      getDefaultGateway: (): IPAddress | null => {
+        return this.getDefaultGateway();
       },
-      clearDefaultGateway(): void {
-        self.clearDefaultGateway();
+      clearDefaultGateway: (): void => {
+        this.clearDefaultGateway();
       },
-      getRoutingTableFor(tableId: number): HostRouteEntry[] {
-        return self.getRoutingTableFor(tableId);
+      getRoutingTableFor: (tableId: number): HostRouteEntry[] => {
+        return this.getRoutingTableFor(tableId);
       },
-      addStaticRouteToTable(tableId: number, network: IPAddress, mask: SubnetMask, gw: IPAddress, metric?: number): boolean {
-        return self.addStaticRouteToTable(tableId, network, mask, gw, metric ?? 100);
+      addStaticRouteToTable: (tableId: number, network: IPAddress, mask: SubnetMask, gw: IPAddress, metric?: number): boolean => {
+        return this.addStaticRouteToTable(tableId, network, mask, gw, metric ?? 100);
       },
-      addDeviceRouteToTable(tableId: number, network: IPAddress, mask: SubnetMask, iface: string, metric?: number): boolean {
-        return self.addDeviceRouteToTable(tableId, network, mask, iface, metric ?? 0);
+      addDeviceRouteToTable: (tableId: number, network: IPAddress, mask: SubnetMask, iface: string, metric?: number): boolean => {
+        return this.addDeviceRouteToTable(tableId, network, mask, iface, metric ?? 0);
       },
-      removeRouteFromTable(
+      removeRouteFromTable: (
         tableId: number,
         network: IPAddress,
         mask: SubnetMask,
         filter?: { nextHop?: IPAddress | null; metric?: number },
-      ): boolean {
-        return self.removeRouteFromTable(tableId, network, mask, filter);
+      ): boolean => {
+        return this.removeRouteFromTable(tableId, network, mask, filter);
       },
-      addPolicyRule(rule: HostPolicyRule): void {
-        self.addPolicyRule(rule);
+      addPolicyRule: (rule: HostPolicyRule): void => {
+        this.addPolicyRule(rule);
       },
-      removePolicyRule(priority: number): boolean {
-        return self.removePolicyRule(priority);
+      removePolicyRule: (priority: number): boolean => {
+        return this.removePolicyRule(priority);
       },
-      getPolicyRules(): HostPolicyRule[] {
-        return self.getPolicyRules();
+      getPolicyRules: (): HostPolicyRule[] => {
+        return this.getPolicyRules();
       },
-      resolveRouteFromTable(
+      resolveRouteFromTable: (
         targetIP: IPAddress, fromIP: IPAddress | null,
-      ): { iface: string; nextHopIP: IPAddress; table: number } | null {
-        const r = self.resolveRouteFromTable(targetIP, fromIP);
+      ): { iface: string; nextHopIP: IPAddress; table: number } | null => {
+        const r = this.resolveRouteFromTable(targetIP, fromIP);
         return r ? { iface: r.port.getName(), nextHopIP: r.nextHopIP, table: r.table } : null;
       },
-      getArpTable(): ReadonlyMap<string, ARPEntry> {
-        return self.arpTable;
+      getArpTable: (): ReadonlyMap<string, ARPEntry> => {
+        return this.arpTable;
       },
-      addStaticARP(ip: IPAddress, mac: MACAddress, iface: string): void {
-        self.addStaticARP(ip, mac, iface);
+      addStaticARP: (ip: IPAddress, mac: MACAddress, iface: string): void => {
+        this.addStaticARP(ip, mac, iface);
       },
-      deleteARP(ip: IPAddress): boolean {
-        return self.deleteARP(ip);
+      deleteARP: (ip: IPAddress): boolean => {
+        return this.deleteARP(ip);
       },
-      clearARPTable(): void {
-        self.clearARPTable();
+      clearARPTable: (): void => {
+        this.clearARPTable();
       },
-      hasRoute(target: IPAddress): boolean {
-        return self.hasRouteOrLocal(target);
+      hasRoute: (target: IPAddress): boolean => {
+        return this.hasRouteOrLocal(target);
       },
-      pingSequence(
+      pingSequence: (
         target: IPAddress,
         count: number,
         timeoutMs = 2000,
         ttl?: number,
-      ): Promise<PingResult[]> {
-        return self.executePingSequence(target, count, timeoutMs, ttl);
+      ): Promise<PingResult[]> => {
+        return this.executePingSequence(target, count, timeoutMs, ttl);
       },
-      tcpProbe(target: string, port: number): boolean {
-        if (target.includes(':')) return self.tcpProbeSyncIPv6(target, port);
-        return self.tcpProbeSync(new IPAddress(target), port);
+      tcpProbe: (target: string, port: number): boolean => {
+        if (target.includes(':')) return this.tcpProbeSyncIPv6(target, port);
+        return this.tcpProbeSync(new IPAddress(target), port);
       },
-      tcpConnectOutcome(target: string, port: number): 'open' | 'refused' | 'timeout' {
-        if (target.includes(':')) return self.tcpConnectOutcome6(new IPv6Address(target), port);
-        return self.tcpConnectOutcome(new IPAddress(target), port);
+      tcpConnectOutcome: (target: string, port: number): 'open' | 'refused' | 'timeout' => {
+        if (target.includes(':')) return this.tcpConnectOutcome6(new IPv6Address(target), port);
+        return this.tcpConnectOutcome(new IPAddress(target), port);
       },
-      ping6Sequence(
+      ping6Sequence: (
         target: IPv6Address,
         count: number,
         timeoutMs = 2000,
-      ): Promise<PingResult[]> {
-        return self.executePing6Sequence(target, count, timeoutMs);
+      ): Promise<PingResult[]> => {
+        return this.executePing6Sequence(target, count, timeoutMs);
       },
-      async traceroute(target: IPAddress, maxHops?: number, probesPerHop?: number, firstTtl?: number, timeoutMs?: number): Promise<TracerouteHop[]> {
-        const hops = await self.executeTraceroute(target, maxHops, timeoutMs ?? 2000, probesPerHop, firstTtl);
+      traceroute: async (target: IPAddress, maxHops?: number, probesPerHop?: number, firstTtl?: number, timeoutMs?: number): Promise<TracerouteHop[]> => {
+        const hops = await this.executeTraceroute(target, maxHops, timeoutMs ?? 2000, probesPerHop, firstTtl);
         return hops as TracerouteHop[];
       },
-      sendUdpProbe(target: IPAddress, destinationPort: number, sourcePort: number): boolean {
-        return self.sendUdpDatagram(target, destinationPort, sourcePort, null, 0);
+      sendUdpProbe: (target: IPAddress, destinationPort: number, sourcePort: number): boolean => {
+        return this.sendUdpDatagram(target, destinationPort, sourcePort, null, 0);
       },
-      getDhcpClient(): DHCPClient {
-        return self.dhcpClient;
+      getDhcpClient: (): DHCPClient => {
+        return this.dhcpClient;
       },
-      autoDiscoverDHCPServers(): void {
-        self.autoDiscoverDHCPServers();
+      autoDiscoverDHCPServers: (): void => {
+        this.autoDiscoverDHCPServers();
       },
-      requestDhcpv6Lease(iface: string, verbose?: boolean): string {
-        return self.requestDhcpv6Lease(iface, verbose);
+      requestDhcpv6Lease: (iface: string, verbose?: boolean): string => {
+        return this.requestDhcpv6Lease(iface, verbose);
       },
-      setIpForward(enabled: boolean): void {
-        self.ipForwardEnabled = enabled;
+      setIpForward: (enabled: boolean): void => {
+        this.ipForwardEnabled = enabled;
       },
-      isIpForwardEnabled(): boolean {
-        return self.ipForwardEnabled;
+      isIpForwardEnabled: (): boolean => {
+        return this.ipForwardEnabled;
       },
-      addMasqueradeInterface(iface: string): void {
-        self.masqueradeOnInterfaces.add(iface);
+      addMasqueradeInterface: (iface: string): void => {
+        this.masqueradeOnInterfaces.add(iface);
       },
-      removeMasqueradeInterface(iface: string): void {
-        self.masqueradeOnInterfaces.delete(iface);
+      removeMasqueradeInterface: (iface: string): void => {
+        this.masqueradeOnInterfaces.delete(iface);
       },
-      extractPorts(pkt: IPv4Packet): { srcPort?: number; dstPort?: number } {
-        return self.extractPorts(pkt);
+      extractPorts: (pkt: IPv4Packet): { srcPort?: number; dstPort?: number } => {
+        return this.extractPorts(pkt);
       },
-      resolveHostname(name: string): Promise<IPAddress | null> {
-        return self.resolveHostnameOverWire(name);
+      resolveHostname: (name: string): Promise<IPAddress | null> => {
+        return this.resolveHostnameOverWire(name);
       },
-      resolveHostnameSync(name: string): IPAddress | null {
+      resolveHostnameSync: (name: string): IPAddress | null => {
         try { return new IPAddress(name); } catch { /* not a literal address */ }
-        const r = self.executor.nss.lookup<NssHostEntry[]>('hosts', s => s.gethostbyname?.(name, 2));
+        const r = this.executor.nss.lookup<NssHostEntry[]>('hosts', s => s.gethostbyname?.(name, 2));
         if (r.status === 'SUCCESS' && r.entry) {
           for (const h of r.entry) {
             if (h.addressFamily !== 2) continue;
@@ -2101,19 +2100,19 @@ export abstract class LinuxMachine extends EndHost
         }
         return null;
       },
-      getTcpStack(): TcpStack {
-        return self.getTcpStack();
+      getTcpStack: (): TcpStack => {
+        return this.getTcpStack();
       },
-      async queryDns(
+      queryDns: async (
         serverIP: string, name: string, qtype: string,
         timeoutMs?: number, options?: DnsQueryOptions,
-      ) {
+      ) => {
         const server = parseDnsServerLiteral(serverIP);
         if (!server) return null;
-        return self.queryDnsServer(server, name, qtype, timeoutMs, options);
+        return this.queryDnsServer(server, name, qtype, timeoutMs, options);
       },
-      readFile(path: string): string | null {
-        return self.executor.readFile(path);
+      readFile: (path: string): string | null => {
+        return this.executor.readFile(path);
       },
     };
   }
@@ -2722,49 +2721,48 @@ export abstract class LinuxMachine extends EndHost
   }
 
   private buildTcpdumpDeps(): TcpdumpDeps {
-    const self = this;
     return {
-      interfaceNames(): string[] {
-        return ['lo', ...self.ports.keys()];
+      interfaceNames: (): string[] => {
+        return ['lo', ...this.ports.keys()];
       },
-      interfaceExists(name: string): boolean {
-        return name === 'lo' || self.ports.has(name);
+      interfaceExists: (name: string): boolean => {
+        return name === 'lo' || this.ports.has(name);
       },
-      interfaceUp(name: string): boolean {
+      interfaceUp: (name: string): boolean => {
         if (name === 'lo') return true;
-        return self.ports.get(name)?.getIsUp() ?? false;
+        return this.ports.get(name)?.getIsUp() ?? false;
       },
-      openCapture(iface: string, sink: (frame: CaptureFrame) => void): () => void {
-        return self.openTcpdumpCapture(iface, sink);
+      openCapture: (iface: string, sink: (frame: CaptureFrame) => void): () => void => {
+        return this.openTcpdumpCapture(iface, sink);
       },
-      now(): Date {
+      now: (): Date => {
         return new Date();
       },
-      delay(ms: number): Promise<void> {
+      delay: (ms: number): Promise<void> => {
         return new Promise((resolve) => setTimeout(resolve, ms));
       },
-      onCancelRequested(cb: () => void): () => void {
-        const pid = self.executor.currentPid();
-        return self.getBus().subscribeWhere('linux.process.exited',
-          (p) => p.deviceId === self.id && p.pid === pid,
+      onCancelRequested: (cb: () => void): () => void => {
+        const pid = this.executor.currentPid();
+        return this.getBus().subscribeWhere('linux.process.exited',
+          (p) => p.deviceId === this.id && p.pid === pid,
           () => cb());
       },
-      readFile(path: string): string | null {
-        const v = self.executor.vfs.readFile(self.executor.vfs.normalizePath(path, self.executor.getCwd()));
+      readFile: (path: string): string | null => {
+        const v = this.executor.vfs.readFile(this.executor.vfs.normalizePath(path, this.executor.getCwd()));
         if (v != null) return v;
-        const cap = self.executor.captureLog.all();
+        const cap = this.executor.captureLog.all();
         if (cap.length === 0) return null;
         const fakeFrames = cap.map(pkt => makeTcpFrame(pkt, 'eth0'));
         return serializeCaptureFile(fakeFrames);
       },
-      writeFile(path: string, content: string): boolean {
-        const abs = self.executor.vfs.normalizePath(path, self.executor.getCwd());
-        return self.executor.vfs.writeFile(abs, content, 0, 0, 0o022);
+      writeFile: (path: string, content: string): boolean => {
+        const abs = this.executor.vfs.normalizePath(path, this.executor.getCwd());
+        return this.executor.vfs.writeFile(abs, content, 0, 0, 0o022);
       },
-      dirWritable(path: string): boolean {
-        const abs = self.executor.vfs.normalizePath(path, self.executor.getCwd());
+      dirWritable: (path: string): boolean => {
+        const abs = this.executor.vfs.normalizePath(path, this.executor.getCwd());
         const dir = abs.slice(0, abs.lastIndexOf('/')) || '/';
-        return self.executor.vfs.exists(dir) && !dir.startsWith('/sys') && !dir.startsWith('/proc');
+        return this.executor.vfs.exists(dir) && !dir.startsWith('/sys') && !dir.startsWith('/proc');
       },
     };
   }
