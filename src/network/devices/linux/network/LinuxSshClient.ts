@@ -985,6 +985,16 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
   // Successful authentication clears the failure history for this IP.
   if (throttler) (throttler as unknown as { reset: (ip: string) => void }).reset(opts.sourceIp);
 
+  // PAM login banner: inside chage -W's warning window, a successful
+  // login still shows "Warning: your password will expire in N day(s)."
+  // without blocking the session.
+  const warningDays = (remoteExec?.userMgr as unknown as {
+    passwordExpiryWarningDays?: (u: string) => number | null;
+  } | undefined)?.passwordExpiryWarningDays?.(remoteUser) ?? null;
+  const warningBanner = warningDays !== null
+    ? `Warning: your password will expire in ${warningDays} day${warningDays === 1 ? '' : 's'}.\n`
+    : '';
+
   machine.recordSshLogin?.(
     remoteUser,
     opts.sourceIp,
@@ -1183,7 +1193,7 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
     // Terminate the remote command's output with a newline (as a real TTY
     // does) so a following local command starts on its own line.
     const normalised = execOut && !execOut.endsWith('\n') ? `${execOut}\n` : execOut;
-    return { output: verboseHeader + forwardingError + normalised, exitCode: execRc, connection };
+    return { output: warningBanner + verboseHeader + forwardingError + normalised, exitCode: execRc, connection };
   }
 
   // ForceCommand also overrides the interactive shell: the user lands
@@ -1199,7 +1209,7 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
       let out = '';
       try { out = execMod?.execute?.(forcedInteractive) ?? ''; } finally { restore?.(); }
       return {
-        output: verboseHeader + forwardingError + (out.endsWith('\n') ? out : out + '\n'),
+        output: warningBanner + verboseHeader + forwardingError + (out.endsWith('\n') ? out : out + '\n'),
         exitCode: execMod?.lastExitCode ?? 0,
         connection,
       };
@@ -1226,7 +1236,7 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
   // OpenSSH: stay silent on success.
   const quiet = flags.some(a => a === '-q' || a === '-Q');
   if (quiet) {
-    return { output: verboseHeader + forwardingError, exitCode: 0, connection };
+    return { output: warningBanner + verboseHeader + forwardingError, exitCode: 0, connection };
   }
 
   const printMotd     = remoteExec ? readRemoteSshdDirective(remoteExec, 'PrintMotd')    !== 'no' : true;
@@ -1239,7 +1249,7 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
   }
   if (printMotd && motd.trim()) lines.push(motd.replace(/\n*$/, ''));
   lines.push(`Connection to ${host} closed.`);
-  return { output: verboseHeader + forwardingError + lines.join('\n'), exitCode: 0, connection };
+  return { output: warningBanner + verboseHeader + forwardingError + lines.join('\n'), exitCode: 0, connection };
 }
 
 /**

@@ -727,6 +727,28 @@ export class LinuxUserManager {
     return { ok: true };
   }
 
+  /**
+   * Days remaining until password expiry, when inside the `chage -W`
+   * warning window — the real `pam_unix` login banner ("Warning: your
+   * password will expire in N day(s)") shown on an otherwise-successful
+   * login. Returns null outside the warning window (too early, already
+   * expired — accountLifecycleGate handles that case — or never expires).
+   */
+  passwordExpiryWarningDays(
+    username: string,
+    now: number = this.daysSinceEpoch(),
+  ): number | null {
+    const user = this.users.get(username);
+    if (!user) return null;
+    const passwordNeverExpires = user.maxDays >= PASSWORD_NEVER_EXPIRES || user.maxDays < 0;
+    if (passwordNeverExpires || user.lastChange <= 0 || user.warnDays <= 0) return null;
+
+    const passwordExpiresAt = user.lastChange + user.maxDays;
+    const daysLeft = passwordExpiresAt - now;
+    if (daysLeft < 0 || daysLeft > user.warnDays) return null;
+    return daysLeft;
+  }
+
   /** Render the faithful `chage -l` aging report for an account. */
   private formatAgingReport(user: LinuxUserAccount): string {
     const fmtDate = (days: number) => {

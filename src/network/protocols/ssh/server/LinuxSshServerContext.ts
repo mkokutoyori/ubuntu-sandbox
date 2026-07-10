@@ -48,6 +48,9 @@ const WTMP_PATH = '/var/log/wtmp.json';
 const BTMP_PATH = '/var/log/btmp.json';
 
 const SSHD_CONFIG_PATH = '/etc/ssh/sshd_config';
+const FAIL2BAN_JAIL_LOCAL_PATH = '/etc/fail2ban/jail.local';
+const DEFAULT_FAIL2BAN_JAIL_LOCAL =
+  '[sshd]\nenabled = true\nmaxretry = 5\nbantime = 300\nfindtime = 60\n';
 const HOST_KEY_PATH = '/etc/ssh/ssh_host_ed25519_key';
 const HOST_KEY_PUB_PATH = '/etc/ssh/ssh_host_ed25519_key.pub';
 const ETC_SSH_DIR = '/etc/ssh';
@@ -200,11 +203,12 @@ export class LinuxSshServerContext implements ISshServerContext {
         )
       : null;
 
+    const jail = this.loadFail2banJailConfig();
     this.throttler = (opts.enableThrottler ?? true)
       ? new SshAuthThrottler(this.events, {
-          threshold: opts.throttlerThreshold,
-          windowMs: opts.throttlerWindowMs,
-          blockMs: opts.throttlerBlockMs,
+          threshold: opts.throttlerThreshold ?? jail.maxretry,
+          windowMs: opts.throttlerWindowMs ?? jail.findtimeSeconds * 1000,
+          blockMs: opts.throttlerBlockMs ?? jail.bantimeSeconds * 1000,
         })
       : null;
 
@@ -264,7 +268,9 @@ export class LinuxSshServerContext implements ISshServerContext {
 
   /** Re-read /etc/ssh/sshd_config and return a fresh context (SSH-07-R6). */
   reloadConfig(): LinuxSshServerContext {
-    return new LinuxSshServerContext(this.vfs, this.userManager, this.hostname);
+    return new LinuxSshServerContext(
+      this.vfs, this.userManager, this.hostname, {}, this.executor, this.fullExecutor,
+    );
   }
 
   /**
@@ -447,6 +453,41 @@ export class LinuxSshServerContext implements ISshServerContext {
     if (!this.vfs.exists(ETC_SSH_DIR)) {
       this.vfs.mkdirp(ETC_SSH_DIR, 0o755, 0, 0);
     }
+  }
+
+  /**
+   * Read the sshd jail's `maxretry`/`bantime`/`findtime` from
+   * `/etc/fail2ban/jail.local`, seeding it with fail2ban's real stock
+   * defaults on first access. Consulted once at construction, matching
+   * real fail2ban which only re-reads its jail config on service
+   * restart, not on every connection.
+   */
+  private loadFail2banJailConfig(): { maxretry: number; bantimeSeconds: number; findtimeSeconds: number } {
+    const defaults = { maxretry: 5, bantimeSeconds: 300, findtimeSeconds: 60 };
+    let raw = this.vfs.readFile(FAIL2BAN_JAIL_LOCAL_PATH);
+    if (raw === null) {
+      if (!this.vfs.exists('/etc/fail2ban')) this.vfs.mkdirp('/etc/fail2ban', 0o755, 0, 0);
+      this.vfs.writeFile(FAIL2BAN_JAIL_LOCAL_PATH, DEFAULT_FAIL2BAN_JAIL_LOCAL, 0, 0, 0o022);
+      raw = DEFAULT_FAIL2BAN_JAIL_LOCAL;
+    }
+
+    let inSshdSection = false;
+    const values: Partial<typeof defaults> = {};
+    for (const line of raw.split('\n')) {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith('#') || trimmed.startsWith(';')) continue;
+      const section = /^\[(\w+)\]$/.exec(trimmed);
+      if (section) { inSshdSection = section[1] === 'sshd'; continue; }
+      if (!inSshdSection) continue;
+      const kv = /^(\w+)\s*=\s*(\S+)$/.exec(trimmed);
+      if (!kv) continue;
+      const value = parseInt(kv[2], 10);
+      if (!Number.isFinite(value)) continue;
+      if (kv[1] === 'maxretry') values.maxretry = value;
+      else if (kv[1] === 'bantime') values.bantimeSeconds = value;
+      else if (kv[1] === 'findtime') values.findtimeSeconds = value;
+    }
+    return { ...defaults, ...values };
   }
 
   private loadOrGenerateHostKey(): SshHostKey {
