@@ -748,20 +748,11 @@ export abstract class LinuxMachine extends EndHost
     if (shadowLine && /^!/.test(shadowLine.split(':')[1] ?? '')) {
       return { ok: false, reason: 'account locked' };
     }
-    // Expired account: userMgr.expireDate in days-since-epoch, or
-    // /etc/shadow column 8 in the past.
-    const now = Date.now();
-    if (userEntry.expireDate !== undefined && userEntry.expireDate > 0) {
-      if (userEntry.expireDate * 86_400_000 < now) {
-        return { ok: false, reason: 'account expired' };
-      }
-    }
-    if (shadowLine) {
-      const expireDays = Number.parseInt(shadowLine.split(':')[7] ?? '', 10);
-      if (Number.isFinite(expireDays) && expireDays > 0) {
-        if (expireDays * 86_400_000 < now) return { ok: false, reason: 'account expired' };
-      }
-    }
+    // Account/password expiry (chage -E / -M) is a PAM *account*-phase
+    // concern, checked after credentials verify — see
+    // accountLifecycleGate() and its call site further down this file —
+    // not here, which only gates policy that must refuse before any
+    // auth method is even attempted (locked, DenyUsers, ...).
     return { ok: true };
   }
 
