@@ -137,37 +137,6 @@ export function cmdChpasswd(ctx: ShellContext, stdin: string): string {
 }
 
 /**
- * `chage` — change or display a user's password-aging information.
- *
- * Supports the full real option surface: `-d`/`-E` accept either a calendar
- * date (`YYYY-MM-DD`) or a plain day count; `-E -1` and `-I -1` disable
- * account expiry / inactivity respectively. Long options are accepted too.
- */
-export function cmdChage(ctx: ShellContext, args: string[]): string {
-  const opts: { M?: number; m?: number; W?: number; d?: number; E?: number; I?: number; l?: boolean } = {};
-  let username = '';
-
-  for (let i = 0; i < args.length; i++) {
-    const arg = CHAGE_LONG_OPTIONS[args[i]] ?? args[i];
-    switch (arg) {
-      case '-M': opts.M = parseInt(args[++i], 10); break;
-      case '-m': opts.m = parseInt(args[++i], 10); break;
-      case '-W': opts.W = parseInt(args[++i], 10); break;
-      case '-I': opts.I = parseInt(args[++i], 10); break;
-      case '-d': opts.d = parseChageDate(args[++i]); break;
-      case '-E': opts.E = parseChageDate(args[++i]); break;
-      case '-l': opts.l = true; break;
-      default:
-        if (!args[i].startsWith('-')) username = args[i];
-        break;
-    }
-  }
-
-  if (!username) return 'Usage: chage [options] LOGIN';
-  return ctx.userMgr.chage(username, opts);
-}
-
-/**
  * `faillock` — display or reset the `pam_faillock` consecutive-failure tally.
  *
  *   faillock                       show every account that has failures
@@ -207,23 +176,12 @@ export function cmdFaillock(ctx: ShellContext, args: string[]): string {
   return blocks.join('\n\n');
 }
 
-/** Long-form `chage` flags mapped to their short equivalents. */
-const CHAGE_LONG_OPTIONS: Record<string, string> = {
-  '--maxdays': '-M',
-  '--mindays': '-m',
-  '--warndays': '-W',
-  '--inactive': '-I',
-  '--lastday': '-d',
-  '--expiredate': '-E',
-  '--list': '-l',
-};
-
 /**
  * Parse a `chage` date argument. Accepts a `YYYY-MM-DD` calendar date, a plain
  * day count (days since the epoch), or `-1` / `''` meaning "disabled" — all
  * resolved to the shadow-file day unit.
  */
-function parseChageDate(value: string | undefined): number | undefined {
+export function parseChageDate(value: string | undefined): number | undefined {
   if (value === undefined) return undefined;
   const trimmed = value.trim();
   if (trimmed === '' || trimmed === '-1') return -1;

@@ -46,6 +46,7 @@ import { nmcliCommand } from './net/Nmcli';
 import { ifupCommand, ifdownCommand } from './net/Ifupdown';
 import { nftCommand } from './net/Nft';
 import { fail2banClientCommand } from './net/Fail2banClient';
+import { chageCommand } from './iam/Chage';
 
 export {
   sysctlCommand,
@@ -80,6 +81,7 @@ export {
   ifdownCommand,
   nftCommand,
   fail2banClientCommand,
+  chageCommand,
 };
 
 /**
@@ -118,4 +120,5 @@ export const CORE_LINUX_COMMANDS: readonly LinuxCommand[] = [
   ifdownCommand,
   nftCommand,
   fail2banClientCommand,
+  chageCommand,
 ];

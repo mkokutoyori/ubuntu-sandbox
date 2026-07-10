@@ -30,7 +30,7 @@ import {
   type ArchiveCtx,
 } from './coreutils';
 import { cmdDiff } from './coreutils/DiffCommand';
-import { cmdUseradd, cmdUsermod, cmdUserdel, cmdPasswd, cmdChpasswd, cmdChage, cmdFaillock, cmdGroupadd, cmdGroupmod, cmdGroupdel, cmdGpasswd, cmdId, cmdWhoami, cmdGroups, cmdWho, cmdW, cmdLast, cmdLastb, cmdSudoCheck } from './LinuxUserCommands';
+import { cmdUseradd, cmdUsermod, cmdUserdel, cmdPasswd, cmdChpasswd, cmdFaillock, cmdGroupadd, cmdGroupmod, cmdGroupdel, cmdGpasswd, cmdId, cmdWhoami, cmdGroups, cmdWho, cmdW, cmdLast, cmdLastb, cmdSudoCheck } from './LinuxUserCommands';
 import { parseUseraddArgs } from './iam/useraddOptions';
 import { CommandPrivilegePolicy, type PrivilegeActor } from './iam/policy/CommandPrivilegePolicy';
 import { createDefaultCommandPrivileges } from './iam/policy/defaultCommandPrivileges';
@@ -3222,7 +3222,6 @@ export class LinuxCommandExecutor {
       case 'deluser': return this.handleDeluser(args);
       case 'passwd': return this.handlePasswd(args);
       case 'chpasswd': return { output: cmdChpasswd(c, stdin ?? ''), exitCode: 0 };
-      case 'chage': return { output: cmdChage(c, args), exitCode: 0 };
       case 'faillock': return { output: cmdFaillock(c, args), exitCode: 0 };
       case 'at': {
         const atdActive = this.serviceMgr.status('atd')?.state === 'active';

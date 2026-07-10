@@ -27,6 +27,16 @@ export interface LinuxCommandOption {
 
   /** Placeholder name for the argument (e.g. `count`, `ttl`). Required when `takesArg` is true. */
   readonly argName?: string;
+
+  /** Other flag spellings that map to this same option (e.g. `--maxdays` for `-M`). */
+  readonly aliases?: readonly string[];
+
+  /**
+   * Attribute name this option's value is stored under when parsed via
+   * `mapArgsToAttributes` (see `LinuxCommandArgs.ts`). Defaults to `flag`
+   * with its leading dashes stripped.
+   */
+  readonly dest?: string;
 }
 
 export interface LinuxCommand {
