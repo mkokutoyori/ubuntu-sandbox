@@ -356,8 +356,11 @@ export class LinuxCommandExecutor {
   private iamPolicyFiles: IamPolicyFilesProjection | null = null;
   /** Unsubscribe handle for the identity-file re-seed subscription. */
   private identityFilesUnsub: (() => void) | null = null;
-  /** Unsubscribe handle for the remote-device power-off subscription. */
-  private powerOffUnsub: (() => void) | null = null;
+  /** TCP liveness probe over the wire — injected by the owning machine. */
+  private wireProbe: ((ip: string, port: number) => 'open' | 'refused' | 'timeout') | null = null;
+  setWireProbe(probe: ((ip: string, port: number) => 'open' | 'refused' | 'timeout') | null): void {
+    this.wireProbe = probe;
+  }
   /** PID of the interactive -bash; backs `$$` and `ps -p $$`. */
   private shellPid = 0;
   /** Parent PID of the interactive shell; backs `$PPID`. */
@@ -837,13 +840,6 @@ export class LinuxCommandExecutor {
     this.identityFilesUnsub = bus.subscribe(
       'host.identity.changed',
       () => this.seedIdentityFiles(),
-    );
-    // A background `ssh host …` job dies when its remote host powers off:
-    // react to the power-off event and reap the matching jobs.
-    this.powerOffUnsub?.();
-    this.powerOffUnsub = bus.subscribe(
-      'device.power-off',
-      (e: { payload: { id: string } }) => this.reapSshJobsForDevice(e.payload.id),
     );
     // Rebuild NSS with bus-aware invalidation. Re-use the same files
     // source so the privileged-uid check still points at this executor.
@@ -1836,6 +1832,7 @@ export class LinuxCommandExecutor {
     const cmd = argv[0];
     const args = argv.slice(1);
     const ctx = this.jobsCmdContext();
+    if (cmd === 'jobs' || cmd === 'fg' || cmd === 'wait') this.reapDeadSshJobs();
     switch (cmd) {
       case 'jobs':   return cmdJobs(args, ctx).output;
       case 'fg': {
@@ -1891,18 +1888,17 @@ export class LinuxCommandExecutor {
   }
 
   /**
-   * Reap background `ssh host …` jobs whose remote host is the device
-   * that just powered off — a real ssh client loses its transport and
-   * exits, so the job moves to `Killed`. Driven reactively by the
-   * `device.power-off` event.
+   * Reap background `ssh host …` jobs whose remote transport is dead. The
+   * check is a real TCP probe on the wire (a powered-off or killed remote
+   * refuses / times out), never a registry or bus lookup.
    */
-  private reapSshJobsForDevice(deadDeviceId: string): void {
+  private reapDeadSshJobs(): void {
+    if (!this.wireProbe) return;
     for (const job of this.jobTable.list()) {
       if (!job.isRunning()) continue;
       const host = LinuxCommandExecutor.sshTargetHost(job.command);
-      if (!host) continue;
-      const found = findHostByAddress(host);
-      if (found && found.device.getId() === deadDeviceId) {
+      if (!host || !/^\d{1,3}(\.\d{1,3}){3}$/.test(host)) continue;
+      if (this.wireProbe(host, 22) !== 'open') {
         job.complete({ signal: 'SIGHUP' });
       }
     }

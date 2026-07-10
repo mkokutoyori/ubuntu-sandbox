@@ -34,13 +34,12 @@ describe('Unified NSS name resolution (R1)', () => {
     ({ pc1 } = makeLan());
   });
 
-  it('ping resolves a topology-only host through the same NSS path as getent', async () => {
+  it('ping and getent agree: a cabled LAN peer is NOT resolvable without DNS or /etc/hosts (frame-only)', async () => {
     const g = await pc1.executeCommand('getent hosts pc2');
-    expect(g).toMatch(/10\.0\.0\.42/);
+    expect(g).not.toMatch(/10\.0\.0\.42/);
 
     const p = await pc1.executeCommand('ping -c 1 -W 1 pc2');
-    expect(p).not.toMatch(/Name or service not known/);
-    expect(p).toMatch(/10\.0\.0\.42/);
+    expect(p).toMatch(/Name or service not known/);
   });
 
   it('ping honours an /etc/hosts entry exactly like getent', async () => {
@@ -56,10 +55,9 @@ describe('Unified NSS name resolution (R1)', () => {
     expect(p).not.toMatch(/Name or service not known/);
   });
 
-  it('traceroute resolves a topology-only host through NSS', async () => {
+  it('traceroute agrees with getent: no resolution of a LAN peer without DNS or /etc/hosts (frame-only)', async () => {
     const t = await pc1.executeCommand('traceroute pc2');
-    expect(t).not.toMatch(/unknown host|Name or service not known/);
-    expect(t).toMatch(/10\.0\.0\.42/);
+    expect(t).toMatch(/unknown host|Name or service not known/);
   });
 
   it('nsswitch.conf "hosts: files" disables the dns topology scan for ping', async () => {

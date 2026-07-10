@@ -113,7 +113,7 @@ describe('PRD cross-OS acceptance criterion — curl / Invoke-WebRequest reach t
     await run(ps(srv1), 'Install-WindowsFeature DNS');
     await run(ps(srv1), 'Add-DnsServerPrimaryZone -Name lab.local');
     await run(ps(srv1), 'Add-DnsServerResourceRecordA -ZoneName lab.local -Name srv1 -IPv4Address 192.168.85.10');
-    await linuxClient.executeCommand('echo "nameserver 192.168.85.10" > /etc/resolv.conf');
+    await linuxClient.executeCommand('sudo sh -c \'echo "nameserver 192.168.85.10" > /etc/resolv.conf\'');
 
     const out = await linuxClient.executeCommand('curl http://srv1.lab.local/');
     expect(out).toContain('IIS Windows Server');

@@ -550,17 +550,9 @@ export abstract class Switch extends Equipment {
   }
 
   private initDhcpSnooping(): void {
-    this.dhcpSnoopingUnsubscribers.push(this.getBus().subscribeWhere(
-      'dhcp.pool.lease-allocated',
-      () => true,
-      (e) => this.tryRecordSnoopingBinding(e.payload.clientMac, e.payload.ip, e.payload.leaseTimeSec, 5),
-    ));
-
-    this.dhcpSnoopingUnsubscribers.push(this.getBus().subscribeWhere(
-      'dhcp.pool.lease-released',
-      () => true,
-      (e) => { this.removeSnoopingBindingByIp(e.payload.ip); },
-    ));
+    // Bindings are learned from the DHCP frames this switch forwards
+    // (ACK installs, RELEASE removes) — see the DHCP inspection step in
+    // handleFrame. No cross-machine bus subscription.
   }
 
   private arpErrDisablePort(port: string): void {
@@ -1666,6 +1658,28 @@ export abstract class Switch extends Equipment {
         });
         if (!passed) return;
         this.snoopLearnArp(arp, portName, ingressVlan);
+      }
+    }
+
+    // ─── Step 1.5b: DHCP snooping binding learning, driven by the DHCP
+    // frames this switch forwards (ACK installs, RELEASE removes).
+    if (this.dhcpSnooping.enabled
+        && (this.dhcpSnooping.vlans.size === 0 || this.dhcpSnooping.vlans.has(ingressVlan))
+        && frame.etherType === ETHERTYPE_IPV4) {
+      const ipPkt = frame.payload as IPv4Packet | undefined;
+      if (ipPkt && ipPkt.type === 'ipv4' && ipPkt.protocol === IP_PROTO_UDP) {
+        const udpPkt = ipPkt.payload as UDPPacket | undefined;
+        if (udpPkt && udpPkt.type === 'udp' && udpPkt.payload instanceof DHCPPacket) {
+          const dhcpPkt = udpPkt.payload;
+          const t = dhcpPkt.getMessageType();
+          if (udpPkt.sourcePort === 67 && t === 'DHCPACK' && dhcpPkt.yiaddr !== '0.0.0.0') {
+            const lease = Number(dhcpPkt.getOption(51) ?? 86400);
+            this.tryRecordSnoopingBinding(dhcpPkt.chaddr, dhcpPkt.yiaddr, Number.isFinite(lease) ? lease : 86400, 5);
+          }
+          if (udpPkt.sourcePort === 68 && t === 'DHCPRELEASE' && dhcpPkt.ciaddr !== '0.0.0.0') {
+            this.removeSnoopingBindingByIp(dhcpPkt.ciaddr);
+          }
+        }
       }
     }
 

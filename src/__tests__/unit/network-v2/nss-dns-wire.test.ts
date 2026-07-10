@@ -75,12 +75,21 @@ describe('NSS dns source over UDP/53', () => {
     expect(out).toContain('webserver');
   });
 
-  it('without a configured nameserver the legacy topology fallback still works', async () => {
-    const { pc, srv } = buildLab();
+  it('the legacy topology fallback only serves never-cabled fixtures', async () => {
+    const { pc, srv } = buildLab({ cabled: false });
     srv.setHostname('zonebox');
 
     const out = await pc.executeCommand('getent hosts zonebox');
 
     expect(out).toContain('10.0.1.10');
+  });
+
+  it('a cabled host without a nameserver resolves nothing (frame-only)', async () => {
+    const { pc, srv } = buildLab();
+    srv.setHostname('zonebox');
+
+    const out = await pc.executeCommand('getent hosts zonebox');
+
+    expect(out).not.toContain('10.0.1.10');
   });
 });

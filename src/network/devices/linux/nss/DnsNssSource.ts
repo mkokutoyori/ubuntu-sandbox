@@ -19,8 +19,20 @@ export class DnsNssSource implements INssSource {
 
   private wire: DnsWireStubResolver | null = null;
 
+  private isCabled: (() => boolean) | null = null;
+
   setWireResolver(resolver: DnsWireStubResolver | null): void {
     this.wire = resolver;
+  }
+
+  setCabledProbe(probe: (() => boolean) | null): void {
+    this.isCabled = probe;
+  }
+
+  /** Cabled hosts resolve over the wire only; the registry scan stays
+   *  available for never-cabled test fixtures (refactor-frame-only.md V1). */
+  private legacyScanAllowed(): boolean {
+    return !(this.isCabled?.() ?? false);
   }
 
   gethostbyname(name: string, family?: 2 | 10): NssResult<NssHostEntry[]> {
@@ -36,6 +48,7 @@ export class DnsNssSource implements INssSource {
       }
       return last;
     }
+    if (!this.legacyScanAllowed()) return NOTFOUND();
     return this.legacyScanByName(name, family);
   }
 
@@ -44,6 +57,7 @@ export class DnsNssSource implements INssSource {
     if (this.wire && servers.length > 0) {
       return this.wirePtrLookup(servers, addr);
     }
+    if (!this.legacyScanAllowed()) return NOTFOUND();
     return this.legacyScanByAddr(addr);
   }
 

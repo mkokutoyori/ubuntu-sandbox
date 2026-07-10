@@ -301,6 +301,15 @@ export abstract class LinuxMachine extends EndHost
         return this.queryDnsServerSync(server, name, qtype);
       },
     });
+    // Cabled hosts resolve names over the wire (no registry scan); and
+    // background-job liveness rides a real TCP probe, not bus events.
+    this.executor.dnsNss.setCabledProbe(
+      () => this.getPorts().some((p) => p.getCable() !== null),
+    );
+    this.executor.setWireProbe((ip, port) => {
+      try { return this.tcpConnectOutcome(new IPAddress(ip), port); }
+      catch { return 'timeout'; }
+    });
 
     // 4. Command registry
     this.commands = new LinuxCommandRegistry();
