@@ -171,19 +171,18 @@ export class ResolveDnsNameCmdlet implements ICmdlet {
       } as Record<string, PSValue>] as PSValue;
     }
 
-    // Built-in forward lookups for common simulator names.
-    const builtinIPs = new Map<string, string>([
-      ['localhost', '127.0.0.1'],
-      ['example.com', '93.184.216.34'],
-    ]);
-    const builtin = builtinIPs.get(name.toLowerCase());
+    // Forward lookup — resolved exclusively through the device's own DNS
+    // chain (hosts file → resolver cache → configured servers over the
+    // wire), the SAME chain `nslookup` uses. No hard-coded answers: if the
+    // machine can't resolve a name, Resolve-DnsName must fail like nslookup
+    // does, so both shells report a single source of truth (the device).
     // -Server directs the query at a specific resolver (over the wire),
     // bypassing the interface-configured servers — needed to compare a
     // forced lookup against the system default one.
     const server = ctx.named['server'] !== undefined ? psValueToString(ctx.named['server']) : null;
 
     if (server && net.resolveDnsViaServerWithTtl) {
-      const records = builtin ? [{ ip: builtin, ttl: 300 }] : net.resolveDnsViaServerWithTtl(name, server);
+      const records = net.resolveDnsViaServerWithTtl(name, server);
       if (records.length === 0) { ctx.emitError(`${name} : DNS name does not exist`); return null; }
       return records.map(r => ({
         Name: name,
@@ -194,9 +193,9 @@ export class ResolveDnsNameCmdlet implements ICmdlet {
       } as Record<string, PSValue>)) as PSValue;
     }
 
-    const ips = builtin
-      ? [builtin]
-      : (server && net.resolveDnsViaServer ? net.resolveDnsViaServer(name, server) : net.resolveDns(name));
+    const ips = server && net.resolveDnsViaServer
+      ? net.resolveDnsViaServer(name, server)
+      : net.resolveDns(name);
     if (ips.length === 0) { ctx.emitError(`${name} : DNS name does not exist`); return null; }
     const cacheEntries = net.getDnsClientCache?.() ?? [];
     const ttlFor = (ip: string): number =>

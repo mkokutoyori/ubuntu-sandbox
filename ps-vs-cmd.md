@@ -10,6 +10,60 @@ cache DNS, service/process managers).
 
 ---
 
+## 0. Mise à jour (vérification sur le code live) — 2026-07-10
+
+> Ce rapport a d'abord été rédigé en analysant le **moteur PowerShell legacy**
+> `PowerShellExecutor.ts` (`src/network/devices/windows/`). Après vérification
+> par exécution (dump `coherence-network.debug.test.ts`), il existe **deux
+> moteurs PowerShell** :
+>
+> 1. **Moteur live (primaire)** — `PSInterpreter` (`src/powershell/`) via
+>    `createWindowsPSProviders(device)`. Les cmdlets réseau
+>    (`src/powershell/cmdlets/core/NetworkCmdlets.ts`) passent par une
+>    abstraction **`INetworkProvider`** dont l'implémentation
+>    (`WindowsPSProviders.ts`) est **adossée au device réel** :
+>    `resolveDns → pc.resolveDnsSync`, `clearDnsClientCache → pc.dnsCache.flush()`,
+>    `getNeighbors`/`getTcpConnections` → vraies tables. C'est le chemin qu'un
+>    utilisateur atteint réellement.
+> 2. **Moteur legacy (fallback)** — `PowerShellExecutor.ts`, utilisé seulement
+>    en repli pour les cmdlets non couverts par le provider.
+>
+> **Conséquence :** la plupart des divergences 🔴/🟠 décrites plus bas (états
+> parallèles `extraIPs`/`extraRoutes`, `Get-NetTCPConnection` fabriqué,
+> `Get-NetNeighbor` absent, `Clear-DnsClientCache` no-op) concernent le **chemin
+> legacy** et **sont déjà résolues dans le chemin live**. Le dump de cohérence le
+> confirme :
+>
+> - `New-NetIPAddress` (PS) → `ipconfig`/`netsh` (CMD) voient l'IP ✅
+> - `netsh add address` (CMD) → `Get-NetIPAddress` (PS) voit l'IP ✅
+> - `route print` (CMD) ≡ `Get-NetRoute` (PS) ✅
+> - `netstat -a` (CMD) ≡ `Get-NetTCPConnection` (PS) — mêmes ports 22/3389/445/139 ✅
+> - `Get-NetNeighbor` existe et lit la vraie table ARP ✅
+> - `Clear-DnsClientCache` appelle bien `dnsCache.flush()` ✅
+>
+> ### Divergence réelle restante — corrigée
+>
+> **`Resolve-DnsName` fabriquait une réponse.** Le cmdlet
+> (`NetworkCmdlets.ts › ResolveDnsNameCmdlet`) contenait une table codée en dur
+> `['example.com','93.184.216.34']` qui **court-circuitait** `net.resolveDns()`.
+> Résultat observé : `nslookup example.com` (CMD) → `REFUSED`, mais
+> `Resolve-DnsName example.com` (PS) → `93.184.216.34` (inventé).
+>
+> **Correctif appliqué :** suppression du short-circuit `builtinIPs`.
+> `Resolve-DnsName` résout désormais **exclusivement** via `net.resolveDns()`
+> (= `pc.resolveDnsSync` : hosts file → cache → serveurs DNS), la même chaîne que
+> `nslookup`. Vérifié après correctif : `Resolve-DnsName example.com` renvoie
+> maintenant « does not exist » comme `nslookup`, et `localhost` résout toujours
+> `127.0.0.1` (via le hosts file). Test `resolve-dnsname-format.test.ts` mis à
+> jour pour semer `example.com` dans le hosts file (source réelle) au lieu de
+> dépendre du hardcode ; suite PowerShell complète : **1908 tests OK**.
+>
+> Les sections 3→8 ci-dessous restent valables comme **audit du chemin legacy**
+> et comme grille de non-régression (cf. §8, le dump `coherence-network` est le
+> témoin vivant).
+
+---
+
 ## 1. Résumé exécutif
 
 Le shell **CMD est l'implémentation de référence** : chaque commande réseau lit
