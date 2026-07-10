@@ -100,14 +100,13 @@ import {
   LinuxCommandRegistry,
   CORE_LINUX_COMMANDS,
   readDhcpLeaseFile,
-  applyIptablesNatHook,
 } from './linux/commands';
 import {
   defaultLinuxFormatHelpers,
   type LinuxFormatHelpers,
 } from './linux/LinuxFormatHelpers';
 import { renderHelp, renderManPage } from './linux/commands/LinuxCommandHelp';
-import { evaluatePrivilegeSpec, type PrivilegedCommandSpec } from './linux/iam/policy/CommandPrivilegePolicy';
+import { evaluatePrivilegeRequirement, type PrivilegeRequirement } from './linux/iam/policy/CommandPrivilegePolicy';
 import { buildIpCtx } from './linux/commands/net/Ip';
 import { GreAgent, type GreHost } from '../gre/GreAgent';
 import type { DHCPClient } from '../dhcp/DHCPClient';
@@ -320,6 +319,7 @@ export abstract class LinuxMachine extends EndHost
       if (result instanceof Promise) return null;
       return { output: result, exitCode: this.inferRegistryExitCode(cmd, result) };
     };
+    this.executor._registryPrivilegeHook = (cmd) => this.commands.get(cmd)?.privilege;
 
     // 5. Initialise SSH server config files on first boot:
     //    /etc/ssh/sshd_config + /etc/ssh/ssh_host_ed25519_key(.pub).
@@ -389,13 +389,25 @@ export abstract class LinuxMachine extends EndHost
       if (v6 !== null) this.executor.ip6tables.executeRestore(v6);
     });
 
-    this.executor.setIptablesNatHook((args) => applyIptablesNatHook(this.net, args));
-
     this.executor.setNetworkCommandRunner((argv, env) => {
       const cmd = this.commands.get(argv[0]);
       if (!cmd || !cmd.needsNetworkContext) return null;
-      const ctx = this.buildCommandContext();
       const args = argv.slice(1);
+      // This runner is what the bash interpreter actually calls for every
+      // simple command it evaluates (composite lines, pipelines, scripts,
+      // functions) — the declarative privilege gate must apply here too,
+      // not just on the single-command fast path in `tryNetworkCommand`.
+      if (cmd.privilege) {
+        const userMgr = this.executor.userMgr;
+        const actor = {
+          uid: userMgr.currentUid,
+          user: userMgr.currentUser,
+          groups: userMgr.getUserGroups(userMgr.currentUser).map((g) => g.name),
+        };
+        const denial = evaluatePrivilegeRequirement(cmd.privilege, argv[0], args, actor);
+        if (denial) return Promise.resolve(denial);
+      }
+      const ctx = this.buildCommandContext();
       if (cmd.runWithStatus) return cmd.runWithStatus(ctx, args);
       return Promise.resolve(cmd.run(ctx, args)).then((output) => ({ output, exitCode: 0 }));
     });
@@ -1766,7 +1778,7 @@ export abstract class LinuxMachine extends EndHost
     firstCmd: string,
     args: string[],
     isSudo: boolean,
-    privilege: PrivilegedCommandSpec | undefined,
+    privilege: PrivilegeRequirement | undefined,
     run: () => Promise<string> | string,
   ): Promise<string> {
     const userMgr = this.executor.userMgr;
@@ -1788,7 +1800,7 @@ export abstract class LinuxMachine extends EndHost
         groups: userMgr.getUserGroups(userMgr.currentUser).map((g) => g.name),
       };
       const denial = privilege
-        ? evaluatePrivilegeSpec(privilege, firstCmd, args, actor)
+        ? evaluatePrivilegeRequirement(privilege, firstCmd, args, actor)
         : this.executor.commandPrivileges.check(firstCmd, args, actor);
       if (denial) return denial.output;
       return await run();
@@ -1820,9 +1832,11 @@ export abstract class LinuxMachine extends EndHost
     // 1. Commands registered in the LinuxCommandRegistry
     const cmd = this.commands.get(firstCmd);
     if (cmd && cmd.needsNetworkContext) {
-      const cmdArgs = firstCmd === 'tcpdump'
-        ? LinuxMachine.tokenizeArgs(noSudo).slice(1)
-        : noSudo.split(/\s+/).slice(1);
+      const tokenized = LinuxMachine.tokenizeArgsDetailed(noSudo);
+      if (tokenized.unterminatedQuote) {
+        return 'bash: syntax error: unexpected end of file (unterminated quote)';
+      }
+      const cmdArgs = tokenized.tokens.slice(1);
       // --help flag: return auto-generated help instead of running.
       if (cmdArgs.includes('--help')) {
         return renderHelp(cmd);
@@ -1902,20 +1916,27 @@ export abstract class LinuxMachine extends EndHost
   }
 
   /**
-   * Quote-aware argument tokenizer. Handles double and single quotes
-   * so that e.g. `--comment "Allow SSH"` stays as a single token.
+   * Quote-aware argument tokenizer. Handles double and single quotes so
+   * that e.g. `--comment "Allow SSH"` stays as a single token, and an
+   * explicit empty quote (`""`) still yields an empty-string argument
+   * rather than being dropped.
    */
   private static tokenizeArgs(input: string): string[] {
+    return LinuxMachine.tokenizeArgsDetailed(input).tokens;
+  }
+
+  /** Same as {@link tokenizeArgs}, plus whether a quote was left unclosed. */
+  private static tokenizeArgsDetailed(input: string): { tokens: string[]; unterminatedQuote: boolean } {
     const tokens: string[] = [];
-    let cur = '', inQ = false, qc = '';
+    let cur = '', inQ = false, qc = '', hasToken = false;
     for (const ch of input) {
       if (inQ) { if (ch === qc) inQ = false; else cur += ch; }
-      else if (ch === '"' || ch === "'") { inQ = true; qc = ch; }
-      else if (ch === ' ' || ch === '\t') { if (cur) { tokens.push(cur); cur = ''; } }
-      else cur += ch;
+      else if (ch === '"' || ch === "'") { inQ = true; qc = ch; hasToken = true; }
+      else if (ch === ' ' || ch === '\t') { if (hasToken) { tokens.push(cur); cur = ''; hasToken = false; } }
+      else { cur += ch; hasToken = true; }
     }
-    if (cur) tokens.push(cur);
-    return tokens;
+    if (hasToken) tokens.push(cur);
+    return { tokens, unterminatedQuote: inQ };
   }
 
   // ─── Hostname resolution (shared between buildNetKernel & commands) ─
@@ -2358,7 +2379,7 @@ export abstract class LinuxMachine extends EndHost
     const head = trimmed.split(/\s+/)[0];
     const cmd = this.commands.get(head);
     if (cmd && cmd.needsNetworkContext) {
-      const args = trimmed.split(/\s+/).slice(1);
+      const args = LinuxMachine.tokenizeArgs(trimmed).slice(1);
       const result = cmd.run(this.buildCommandContext(), args);
       if (typeof result === 'string') return result;
     }

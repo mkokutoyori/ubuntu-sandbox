@@ -46,6 +46,8 @@ export interface ParsedPingArgs {
   timeoutMs: number;
   intervalMs: number;
   targetStr: string;
+  /** True once a destination positional argument has been seen — distinguishes "omitted" from "given as an empty string". */
+  targetGiven: boolean;
   v6: boolean;
   iface?: string;
   pattern?: string;
@@ -78,6 +80,7 @@ export function parsePingArgs(args: string[], cmdName: 'ping' | 'ping6' = 'ping'
     timeoutMs: DEFAULT_TIMEOUT_MS,
     intervalMs: DEFAULT_INTERVAL_MS,
     targetStr: '',
+    targetGiven: false,
     v6: cmdName === 'ping6',
     quiet: false,
     verbose: false,
@@ -192,8 +195,9 @@ export function parsePingArgs(args: string[], cmdName: 'ping' | 'ping6' = 'ping'
       continue;
     }
 
-    if (result.targetStr === '') {
+    if (!result.targetGiven) {
       result.targetStr = a;
+      result.targetGiven = true;
     } else {
       result.extraTargets.push(a);
     }
@@ -271,11 +275,11 @@ async function runPing(
     return `ping: invalid argument: '${parsed.extraTargets[0]}'`;
   }
 
+  if (!parsed.targetGiven) return `Usage: ping [-c count] [-t ttl] [-s size] <destination>\n\n${PING_USAGE}`;
   const rawTarget = parsed.targetStr.replace(/^['"]|['"]$/g, '').trim();
-  if (parsed.targetStr !== '' && rawTarget === '') {
+  if (rawTarget === '') {
     return `ping: invalid argument: empty hostname`;
   }
-  if (!rawTarget) return `Usage: ping [-c count] [-t ttl] [-s size] <destination>\n\n${PING_USAGE}`;
 
   if (/^\d+\.\d+\.\d+\.\d+$/.test(rawTarget) && !isValidIPv4(rawTarget)) {
     return `ping: invalid address: ${rawTarget}`;
@@ -351,7 +355,7 @@ async function runPing(
     return ctx.fmt.formatPing6Output(targetIP6, parsed.count, results, parsed.size);
   }
 
-  let targetIP = await ctx.net.resolveHostname(rawTarget);
+  const targetIP = await ctx.net.resolveHostname(rawTarget);
   if (!targetIP) {
     return `${cmdName}: ${rawTarget}: Name or service not known`;
   }

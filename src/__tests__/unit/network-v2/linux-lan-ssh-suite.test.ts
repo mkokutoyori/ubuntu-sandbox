@@ -1324,7 +1324,7 @@ describe('§20 — firewall rules blocking port 22', () => {
   const rows: Row[] = [
     {
       name: 'iptables -A INPUT -p tcp --dport 22 -j DROP refuses ssh',
-      setup: (l) => { void l.pc2.executeCommand('iptables -A INPUT -p tcp --dport 22 -j DROP'); },
+      setup: (l) => { void l.pc2.executeCommand('sudo iptables -A INPUT -p tcp --dport 22 -j DROP'); },
       on: l => l.pc1,
       cmd: 'ssh alice@10.0.0.2',
       contains: [/Connection timed out|No route to host|refused/],
@@ -1332,7 +1332,7 @@ describe('§20 — firewall rules blocking port 22', () => {
     },
     {
       name: 'iptables -A INPUT -s 10.0.0.1 -j DROP blocks only pc1',
-      setup: (l) => { void l.pc2.executeCommand('iptables -A INPUT -s 10.0.0.1 -j DROP'); },
+      setup: (l) => { void l.pc2.executeCommand('sudo iptables -A INPUT -s 10.0.0.1 -j DROP'); },
       on: l => l.pc3,  // pc3 should still reach pc2
       cmd: 'ssh alice@10.0.0.2',
       contains: ['Welcome to Ubuntu'],
@@ -1350,8 +1350,8 @@ describe('§20 — firewall rules blocking port 22', () => {
     {
       name: 'iptables -F restores connectivity',
       setup: async (l) => {
-        await l.pc2.executeCommand('iptables -A INPUT -p tcp --dport 22 -j DROP');
-        await l.pc2.executeCommand('iptables -F');
+        await l.pc2.executeCommand('sudo iptables -A INPUT -p tcp --dport 22 -j DROP');
+        await l.pc2.executeCommand('sudo iptables -F');
       },
       on: l => l.pc1,
       cmd: 'ssh alice@10.0.0.2',
@@ -1359,9 +1359,9 @@ describe('§20 — firewall rules blocking port 22', () => {
     },
     {
       name: 'iptables -L INPUT lists the DROP rule we added',
-      setup: (l) => { void l.pc2.executeCommand('iptables -A INPUT -p tcp --dport 22 -j DROP'); },
+      setup: (l) => { void l.pc2.executeCommand('sudo iptables -A INPUT -p tcp --dport 22 -j DROP'); },
       on: l => l.pc2,
-      cmd: 'iptables -L INPUT -n',
+      cmd: 'sudo iptables -L INPUT -n',
       contains: [/DROP\s+tcp.*dpt:22/],
     },
     {

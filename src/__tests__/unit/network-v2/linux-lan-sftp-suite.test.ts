@@ -1634,7 +1634,7 @@ describe('§29 — firewall rules blocking port 22 also block sftp', () => {
   const rows: Row[] = [
     {
       name: 'iptables DROP on dport 22 → sftp fails',
-      setup: async (l) => { await l.pc2.executeCommand('iptables -A INPUT -p tcp --dport 22 -j DROP'); },
+      setup: async (l) => { await l.pc2.executeCommand('sudo iptables -A INPUT -p tcp --dport 22 -j DROP'); },
       on: l => l.pc1,
       cmd: sftp('alice@10.0.0.2', ['pwd']),
       contains: [/refused|timed out|no route|unreachable/i],
@@ -1643,8 +1643,8 @@ describe('§29 — firewall rules blocking port 22 also block sftp', () => {
     {
       name: 'iptables -F restores sftp',
       setup: async (l) => {
-        await l.pc2.executeCommand('iptables -A INPUT -p tcp --dport 22 -j DROP');
-        await l.pc2.executeCommand('iptables -F');
+        await l.pc2.executeCommand('sudo iptables -A INPUT -p tcp --dport 22 -j DROP');
+        await l.pc2.executeCommand('sudo iptables -F');
       },
       on: l => l.pc1,
       cmd: sftp('alice@10.0.0.2', ['pwd']),
@@ -1663,7 +1663,7 @@ describe('§29 — firewall rules blocking port 22 also block sftp', () => {
     },
     {
       name: 'source-based DROP blocks only one client',
-      setup: async (l) => { await l.pc2.executeCommand('iptables -A INPUT -s 10.0.0.1 -j DROP'); },
+      setup: async (l) => { await l.pc2.executeCommand('sudo iptables -A INPUT -s 10.0.0.1 -j DROP'); },
       on: l => l.pc3,
       cmd: sftp('alice@10.0.0.2', ['pwd']),
       contains: [/Connected to 10\.0\.0\.2/],

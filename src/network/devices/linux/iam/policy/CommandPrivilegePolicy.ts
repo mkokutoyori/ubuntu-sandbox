@@ -19,6 +19,17 @@ export interface PrivilegedCommandSpec {
   readonly deny?: PrivilegeDenialRenderer;
 }
 
+/**
+ * A command's privilege requirement: either one blanket rule, or an
+ * ordered list of rules for commands whose privilege requirement differs
+ * by option/flag (e.g. `mount` needs nothing to list mounts but root to
+ * mount something; `dmesg` needs root only for `-c`/`-C`/`-n`). Rules are
+ * tried in order; the first one whose `appliesWhen` matches (or that has
+ * none, i.e. always applies) decides the outcome — scope narrower rules
+ * before the general case.
+ */
+export type PrivilegeRequirement = PrivilegedCommandSpec | readonly PrivilegedCommandSpec[];
+
 export const Satisfy = {
   root: ((actor) => actor.uid === 0) as PrivilegeSatisfier,
   rootOrGroup(...groups: readonly string[]): PrivilegeSatisfier {
@@ -41,9 +52,7 @@ export const Deny = {
 } as const;
 
 /**
- * Evaluate a single privilege spec against one invocation. Shared by
- * `CommandPrivilegePolicy.check` (by-name rules) and by callers checking a
- * `LinuxCommand`'s own declarative `privilege` field directly.
+ * Evaluate a single privilege spec against one invocation.
  */
 export function evaluatePrivilegeSpec(
   spec: PrivilegedCommandSpec,
@@ -54,6 +63,31 @@ export function evaluatePrivilegeSpec(
   if (spec.appliesWhen && !spec.appliesWhen(args, actor)) return null;
   if ((spec.satisfiedBy ?? Satisfy.root)(actor)) return null;
   return (spec.deny ?? Deny.permissionDenied)(command, args);
+}
+
+/**
+ * Evaluate a command's full `PrivilegeRequirement` (one rule, or an
+ * ordered list for option-dependent requirements) against one invocation.
+ * Every rule is checked in order; a rule whose `appliesWhen` doesn't match
+ * this invocation is a no-op, so unrelated rules don't block each other —
+ * the first rule that actually applies AND is unsatisfied wins.
+ *
+ * This is the single place `LinuxCommand.privilege` (via `LinuxMachine`)
+ * and `CommandPrivilegePolicy.check` (the by-name fallback for commands
+ * not yet migrated) both resolve a requirement through.
+ */
+export function evaluatePrivilegeRequirement(
+  requirement: PrivilegeRequirement,
+  command: string,
+  args: readonly string[],
+  actor: PrivilegeActor,
+): PrivilegeDenial | null {
+  const specs = Array.isArray(requirement) ? requirement : [requirement as PrivilegedCommandSpec];
+  for (const spec of specs) {
+    const denial = evaluatePrivilegeSpec(spec, command, args, actor);
+    if (denial) return denial;
+  }
+  return null;
 }
 
 export class CommandPrivilegePolicy {
@@ -70,10 +104,6 @@ export class CommandPrivilegePolicy {
   }
 
   check(command: string, args: readonly string[], actor: PrivilegeActor): PrivilegeDenial | null {
-    for (const spec of this.rules.get(command) ?? []) {
-      const denial = evaluatePrivilegeSpec(spec, command, args, actor);
-      if (denial) return denial;
-    }
-    return null;
+    return evaluatePrivilegeRequirement(this.rules.get(command) ?? [], command, args, actor);
   }
 }

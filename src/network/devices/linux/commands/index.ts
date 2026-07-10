@@ -47,6 +47,8 @@ import { ifupCommand, ifdownCommand } from './net/Ifupdown';
 import { nftCommand } from './net/Nft';
 import { firewallCmdCommand } from './net/FirewallCmd';
 import { fail2banClientCommand } from './net/Fail2banClient';
+import { iptablesCommand } from './net/Iptables';
+import { ip6tablesCommand } from './net/Ip6tables';
 import { chageCommand } from './iam/Chage';
 import { lspciCommand } from './hw/Lspci';
 import { lsusbCommand } from './hw/Lsusb';
@@ -102,6 +104,8 @@ export {
   nftCommand,
   firewallCmdCommand,
   fail2banClientCommand,
+  iptablesCommand,
+  ip6tablesCommand,
   chageCommand,
   lspciCommand,
   lsusbCommand,
@@ -161,6 +165,8 @@ export const CORE_LINUX_COMMANDS: readonly LinuxCommand[] = [
   nftCommand,
   firewallCmdCommand,
   fail2banClientCommand,
+  iptablesCommand,
+  ip6tablesCommand,
   chageCommand,
   lspciCommand,
   lsusbCommand,

@@ -32,7 +32,12 @@ import {
 import { cmdDiff } from './coreutils/DiffCommand';
 import { cmdUseradd, cmdUsermod, cmdUserdel, cmdPasswd, cmdChpasswd, cmdFaillock, cmdGroupadd, cmdGroupmod, cmdGroupdel, cmdGpasswd, cmdId, cmdWhoami, cmdGroups, cmdWho, cmdW, cmdLast, cmdLastb, cmdSudoCheck } from './LinuxUserCommands';
 import { parseUseraddArgs } from './iam/useraddOptions';
-import { CommandPrivilegePolicy, type PrivilegeActor } from './iam/policy/CommandPrivilegePolicy';
+import {
+  CommandPrivilegePolicy,
+  evaluatePrivilegeRequirement,
+  type PrivilegeActor,
+  type PrivilegeRequirement,
+} from './iam/policy/CommandPrivilegePolicy';
 import { createDefaultCommandPrivileges } from './iam/policy/defaultCommandPrivileges';
 import { parseAdduserArgs, type AdduserRequest } from './iam/adduserOptions';
 import { IamAuthLogProjection } from './iam/fs/IamAuthLogProjection';
@@ -387,6 +392,17 @@ export class LinuxCommandExecutor {
    * null when the command isn't a registered (synchronous) registry entry.
    */
   _registryCommandHook: ((cmd: string, args: string[]) => { output: string; exitCode: number } | null) | null = null;
+  /**
+   * Optional bridge to a registered `LinuxCommand`'s own declarative
+   * `privilege` field, set by `LinuxMachine` alongside `_registryCommandHook`.
+   * `dispatch()` prefers this over the by-name `commandPrivileges` table so
+   * a command that declares its privilege requirement on itself is gated
+   * consistently whether it's reached directly, via a composite/script
+   * line, or (once it has no switch `case` left) via `_registryCommandHook`
+   * — one authoritative source instead of two. Returns undefined for
+   * commands not registered (or registered with no privilege requirement).
+   */
+  _registryPrivilegeHook: ((cmd: string) => PrivilegeRequirement | undefined) | null = null;
 
   constructor(
     isServer = false,
@@ -2144,12 +2160,6 @@ export class LinuxCommandExecutor {
     this.isNetworkCommandName = pred;
   }
 
-  private iptablesNatHook: ((args: string[]) => void) | null = null;
-
-  setIptablesNatHook(hook: (args: string[]) => void): void {
-    this.iptablesNatHook = hook;
-  }
-
   /**
    * Async twin of {@link execute}: same pipeline, driven through the
    * interpreter's async driver so network commands compose with full
@@ -2935,7 +2945,14 @@ export class LinuxCommandExecutor {
     const c = this.ctx();
     if (!cmd.startsWith('/') && !cmd.startsWith('.')) this.currentCommandHead = cmd;
 
-    const privilegeDenial = this.commandPrivileges.check(cmd, args, this.privilegeActor());
+    // A registered LinuxCommand's own `privilege` field is authoritative
+    // when present, so a command fully delegated to it (e.g. `iptables`)
+    // is gated the same way here as via the direct single-command registry
+    // dispatch, instead of needing a second by-name declaration.
+    const registryPrivilege = this._registryPrivilegeHook?.(cmd);
+    const privilegeDenial = registryPrivilege !== undefined
+      ? evaluatePrivilegeRequirement(registryPrivilege, cmd, args, this.privilegeActor())
+      : this.commandPrivileges.check(cmd, args, this.privilegeActor());
     if (privilegeDenial) return privilegeDenial;
 
     if (cmd.startsWith('/') || cmd.startsWith('./') || cmd.startsWith('../')) {
@@ -3507,13 +3524,6 @@ export class LinuxCommandExecutor {
         return { output: out, exitCode: out.startsWith('ERROR') ? 1 : 0 };
       }
 
-      // iptables — real packet filtering firewall
-      case 'iptables': {
-        this.iptablesNatHook?.(args);
-        const result = this.iptables.execute(args);
-        return { output: result.output, exitCode: result.exitCode };
-      }
-
       // iptables-save — dump all rules in iptables-save format
       case 'iptables-save': {
         return { output: this.iptables.executeSave(), exitCode: 0 };
@@ -3524,12 +3534,6 @@ export class LinuxCommandExecutor {
         const input = stdin ?? '';
         if (!input) return { output: 'iptables-restore: unable to read from stdin', exitCode: 1 };
         const result = this.iptables.executeRestore(input);
-        return { output: result.output, exitCode: result.exitCode };
-      }
-
-      // ip6tables — real IPv6 packet filtering firewall (separate engine, same CLI shape)
-      case 'ip6tables': {
-        const result = this.ip6tables.execute(args);
         return { output: result.output, exitCode: result.exitCode };
       }
 

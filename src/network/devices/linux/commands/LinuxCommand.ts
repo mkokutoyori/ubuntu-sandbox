@@ -9,7 +9,7 @@
  */
 
 import type { LinuxCommandContext } from './LinuxCommandContext';
-import type { PrivilegedCommandSpec } from '../iam/policy/CommandPrivilegePolicy';
+import type { PrivilegeRequirement } from '../iam/policy/CommandPrivilegePolicy';
 
 /**
  * Declarative specification of a single command-line option / flag.
@@ -66,12 +66,19 @@ export interface LinuxCommand {
    * place to ask "does this command need sudo?" without invoking it —
    * e.g. for tab-completion hints or a command-listing audit.
    *
+   * A single spec covers a blanket requirement ("always needs root"). For
+   * a command whose privilege requirement differs by option/flag (e.g.
+   * `mount` needs nothing to list mounts but root to mount something,
+   * `dmesg` needs root only for `-c`/`-C`/`-n`), pass an array instead: each
+   * entry's own `appliesWhen` scopes it to the invocations it governs, so
+   * unrelated rules don't block each other. See `evaluatePrivilegeRequirement`.
+   *
    * Commands not routed through the registry (still living in
    * `LinuxCommandExecutor`'s switch) keep declaring their privilege
    * requirement in `iam/policy/defaultCommandPrivileges.ts` instead, since
    * they have no `LinuxCommand` object to hang it off of.
    */
-  readonly privilege?: PrivilegedCommandSpec;
+  readonly privilege?: PrivilegeRequirement;
 
   // ─── Documentation ──────────────────────────────────────────────
 

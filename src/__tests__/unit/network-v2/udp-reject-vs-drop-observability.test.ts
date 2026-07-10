@@ -45,7 +45,7 @@ describe('outbound UDP — DROP vs REJECT already differentiated (log + bus even
   });
 
   it('DROP on OUTPUT logs [netfilter DROP] and returns false, like REJECT', async () => {
-    await client.executeCommand('iptables -A OUTPUT -p udp --dport 9999 -j DROP');
+    await client.executeCommand('sudo iptables -A OUTPUT -p udp --dport 9999 -j DROP');
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const sent = (client as any).sendUdpDatagram(new IPAddress('10.0.0.1'), 9999, 5000, 'x', 1);
     expect(sent).toBe(false);
@@ -55,7 +55,7 @@ describe('outbound UDP — DROP vs REJECT already differentiated (log + bus even
   });
 
   it('REJECT on OUTPUT logs [netfilter REJECT] distinctly from DROP', async () => {
-    await client.executeCommand('iptables -A OUTPUT -p udp --dport 9999 -j REJECT');
+    await client.executeCommand('sudo iptables -A OUTPUT -p udp --dport 9999 -j REJECT');
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const sent = (client as any).sendUdpDatagram(new IPAddress('10.0.0.1'), 9999, 5000, 'x', 1);
     expect(sent).toBe(false);
@@ -65,7 +65,7 @@ describe('outbound UDP — DROP vs REJECT already differentiated (log + bus even
   });
 
   it('the linux.firewall.drop bus event carries the right verdict for outbound UDP', async () => {
-    await client.executeCommand('iptables -A OUTPUT -p udp --dport 9999 -j REJECT');
+    await client.executeCommand('sudo iptables -A OUTPUT -p udp --dport 9999 -j REJECT');
     const verdicts: string[] = [];
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (client as any).getBus().subscribe('linux.firewall.drop', (e: any) => {

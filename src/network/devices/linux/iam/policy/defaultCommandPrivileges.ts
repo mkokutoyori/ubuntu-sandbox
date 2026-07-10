@@ -9,9 +9,15 @@ const ACCOUNT_MANAGEMENT = [
 
 const AUDIT_TOOLS = ['ausearch', 'aureport', 'auditctl', 'logrotate'] as const;
 
+// `iptables`/`ip6tables` declare their own privilege requirement on
+// `iptablesCommand.privilege`/`ip6tablesCommand.privilege` now that they're
+// migrated `LinuxCommand`s — see `commands/net/Iptables.ts`/`Ip6tables.ts`.
+// The `-save`/`-restore` variants stay here: they need stdin (restore) or
+// to see a `>` redirect before running (save), neither of which the
+// registry dispatch path threads through today.
 const FIREWALL_TOOLS = [
-  'iptables', 'iptables-save', 'iptables-restore',
-  'ip6tables', 'ip6tables-save', 'ip6tables-restore',
+  'iptables-save', 'iptables-restore',
+  'ip6tables-save', 'ip6tables-restore',
 ] as const;
 
 const POWER_CONTROL = ['reboot', 'shutdown'] as const;
