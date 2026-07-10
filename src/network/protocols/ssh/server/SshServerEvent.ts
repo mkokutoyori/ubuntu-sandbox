@@ -42,6 +42,8 @@ export type AuthFailureReason =
   | 'empty_password_disabled'
   | 'invalid_user'
   | 'throttled'
+  | 'account_expired'
+  | 'password_expired'
   | 'unknown';
 
 export type SshServerEvent =
@@ -102,6 +104,17 @@ export type SshServerEvent =
       failuresInWindow: number;
       windowSeconds: number;
       blockUntil: number;
+      timestamp?: number;
+    }
+  | {
+      // Supplementary PAM account-phase line emitted alongside an
+      // `auth_failure` (reason: 'password_expired') — real `pam_unix`
+      // writes a distinct `expired password for user <u>` line in
+      // addition to the generic authentication-failure line.
+      kind: 'auth_account_phase';
+      user: string;
+      ip: string;
+      port?: number;
       timestamp?: number;
     }
   | { kind: 'channel_opened'; user: string; channelType: ChannelType }

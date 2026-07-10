@@ -3798,7 +3798,6 @@ export class LinuxCommandExecutor {
         this.serviceMgr.rebootCycle();
         return { output: '', exitCode: 0 };
       }
-      case 'fail2ban-client': return { output: this.cmdFail2banClient(args), exitCode: 0 };
       case 'df': return { output: cmdDf(c, args), exitCode: 0 };
       case 'du': return { output: cmdDu(c, args), exitCode: 0 };
       case 'free': return { output: cmdFree(args, this.hardware.memory), exitCode: 0 };
@@ -5085,34 +5084,13 @@ export class LinuxCommandExecutor {
    * the simulator stores the same triple `{when, sourceHost, tty}` in
    * LinuxLastlogRegistry — the rendering is identical.
    */
-  private cmdFail2banClient(args: string[]): string {
-    const ctx = this.sshContextForFail2ban?.();
-    if (!ctx) return 'ERROR  NOK: ("sshd",)';
-    if (args[0] === 'status' && args[1] === 'sshd') {
-      const banned = ctx.bannedIps();
-      const totalFailed = ctx.totalAuthFailures();
-      return [
-        'Status for the jail: sshd',
-        '|- Filter',
-        `|  |- Currently failed: ${banned.length === 0 ? totalFailed : 0}`,
-        `|  |- Total failed:     ${totalFailed}`,
-        '|  `- File list:        /var/log/auth.log',
-        '`- Actions',
-        `   |- Currently banned: ${banned.length}`,
-        `   |- Total banned:     ${banned.length}`,
-        `   \`- Banned IP list:   ${banned.join(' ')}`,
-      ].join('\n');
-    }
-    if (args[0] === 'status') {
-      return 'Status\n|- Number of jail:	1\n`- Jail list:	sshd';
-    }
-    if (args[0] === 'version') return '1.0.2';
-    if (args[0] === 'ping') return 'Server replied: pong';
-    return 'Usage: fail2ban-client [OPTIONS] <COMMAND>';
-  }
-
   /** Optional accessor to the SSH server context, wired by LinuxMachine. */
-  sshContextForFail2ban: (() => { bannedIps(): string[]; totalAuthFailures(): number }) | null = null;
+  sshContextForFail2ban: (() => {
+    bannedIps(): string[];
+    totalAuthFailures(): number;
+    unbanIp(ip: string): boolean;
+    bantimeSeconds(): number;
+  }) | null = null;
 
   private cmdSetfacl(args: string[]): { output: string; exitCode: number } {
     if (args.length === 0) return { output: 'Usage: setfacl [-m|-x] acl path', exitCode: 2 };

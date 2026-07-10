@@ -94,6 +94,15 @@ export class SshAuthThrottler {
     return n;
   }
 
+  /**
+   * `fail2ban-client set <jail> unbanip` — clear the block and failure
+   * tally for one IP immediately, regardless of remaining ban time.
+   */
+  unblock(ip: string): void {
+    this.blockUntilByIp.delete(ip);
+    this.failuresByIp.delete(ip);
+  }
+
   // ─── private ─────────────────────────────────────────────────────
 
   private handle(event: SshServerEvent): void {

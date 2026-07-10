@@ -693,6 +693,40 @@ export class LinuxUserManager {
     return '';
   }
 
+  /**
+   * PAM-equivalent account/password expiry gate consulted on every SSH
+   * login attempt (after credentials are verified), mirroring the real
+   * `pam_unix` account phase: an absolute account expiry (`chage -E`) or
+   * an inactivity grace period exceeded past password expiry (`chage
+   * -I`) both resolve to `account-expired` (real `pam_unix` logs both
+   * identically as `PAM_ACCT_EXPIRED`); a password past its maximum age
+   * with no inactivity expiry yet resolves to `password-expired`.
+   */
+  accountLifecycleGate(
+    username: string,
+    now: number = this.daysSinceEpoch(),
+  ): { ok: true } | { ok: false; kind: 'account-expired' | 'password-expired' } {
+    const user = this.users.get(username);
+    if (!user) return { ok: true };
+
+    if (user.expireDate >= 0 && user.expireDate < now) {
+      return { ok: false, kind: 'account-expired' };
+    }
+
+    const passwordNeverExpires = user.maxDays >= PASSWORD_NEVER_EXPIRES || user.maxDays < 0;
+    if (!passwordNeverExpires && user.lastChange > 0) {
+      const passwordExpiresAt = user.lastChange + user.maxDays;
+      if (passwordExpiresAt < now) {
+        if (user.inactiveDays >= 0 && passwordExpiresAt + user.inactiveDays < now) {
+          return { ok: false, kind: 'account-expired' };
+        }
+        return { ok: false, kind: 'password-expired' };
+      }
+    }
+
+    return { ok: true };
+  }
+
   /** Render the faithful `chage -l` aging report for an account. */
   private formatAgingReport(user: LinuxUserAccount): string {
     const fmtDate = (days: number) => {

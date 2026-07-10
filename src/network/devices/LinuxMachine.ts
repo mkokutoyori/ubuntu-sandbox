@@ -775,12 +775,13 @@ export abstract class LinuxMachine extends EndHost
     fromHost: string,
     accepted: boolean,
     authMethod: 'password' | 'publickey' = 'password',
+    failureReason = 'authentication failure',
   ): void {
     const events = this.getSshServerContext().events;
     if (accepted) {
       events.emit({ kind: 'auth_success', user, method: authMethod, ip: fromIp, fromHost, port: 50000 });
     } else {
-      events.emit({ kind: 'auth_failure', user, method: authMethod, ip: fromIp, fromHost, port: 50000, reason: 'authentication failure' });
+      events.emit({ kind: 'auth_failure', user, method: authMethod, ip: fromIp, fromHost, port: 50000, reason: failureReason });
       this.sessionTable.recordFailedLogin(user, fromIp);
     }
     if (accepted) {
@@ -1487,7 +1488,12 @@ export abstract class LinuxMachine extends EndHost
     const offReloadPorts = bus.subscribeWhere('linux.service.reloaded', isSsh, rebindPorts);
     const offRestartPorts = bus.subscribeWhere('linux.service.restarted', isSsh, rebindPorts);
     this._sshLifecycleOff = () => { offRestart(); offReload(); offStopped(); offStarted(); offReloadPorts(); offRestartPorts(); };
-    (this.executor as unknown as { sshContextForFail2ban?: (() => { bannedIps(): string[]; totalAuthFailures(): number }) | null })
+    (this.executor as unknown as { sshContextForFail2ban?: (() => {
+      bannedIps(): string[];
+      totalAuthFailures(): number;
+      unbanIp(ip: string): boolean;
+      bantimeSeconds(): number;
+    }) | null })
       .sshContextForFail2ban = () => this.getSshServerContext();
     return this._sshContext;
   }

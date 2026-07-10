@@ -173,20 +173,19 @@ export class LinuxSshServerContext implements ISshServerContext {
         })
       : null;
 
-    this.throttler = (opts.enableThrottler ?? true)
-      ? new SshAuthThrottler(this.events, {
-          threshold: opts.throttlerThreshold,
-          windowMs: opts.throttlerWindowMs,
-          blockMs: opts.throttlerBlockMs,
-        })
-      : null;
-
-    // Fail2ban jail (sshd) — adds/removes the iptables REJECT rule and
-    // writes /var/log/fail2ban.log in response to `auth_throttled` events.
+    // Fail2ban jail (sshd) — constructed before the throttler so its
+    // `auth_failure` subscription (the "Found <ip>" line) observes each
+    // attempt before the throttler's own handler synchronously re-emits
+    // `auth_throttled` on the attempt that crosses the threshold — real
+    // fail2ban.log always shows every `Found` line before the `Ban`
+    // line it triggers, never after.
     this.fail2ban = this.executor
       ? new Fail2banAgent(
           this.events,
-          { execute: (args) => ({ exitCode: this.executor!.iptables.execute(args).exitCode }) },
+          {
+            execute: (args) => ({ exitCode: this.executor!.iptables.execute(args).exitCode }),
+            hasChain: (name) => this.executor!.iptables.hasChain('filter', name),
+          },
           {
             appendLog: (line) => {
               const prev = this.vfs.readFile('/var/log/fail2ban.log') ?? '';
@@ -199,6 +198,14 @@ export class LinuxSshServerContext implements ISshServerContext {
             },
           },
         )
+      : null;
+
+    this.throttler = (opts.enableThrottler ?? true)
+      ? new SshAuthThrottler(this.events, {
+          threshold: opts.throttlerThreshold,
+          windowMs: opts.throttlerWindowMs,
+          blockMs: opts.throttlerBlockMs,
+        })
       : null;
 
 
@@ -220,6 +227,23 @@ export class LinuxSshServerContext implements ISshServerContext {
   /** Currently-banned IPs (fail2ban-client status backend). */
   bannedIps(): string[] {
     return this.throttler?.bannedIps() ?? [];
+  }
+
+  /**
+   * `fail2ban-client set <jail> unbanip <ip>` — lift the ban immediately,
+   * both at the iptables layer (Fail2banAgent) and the SSH-protocol
+   * layer (the throttler's own block), regardless of remaining time.
+   * Returns false when the IP was not actually banned.
+   */
+  unbanIp(ip: string): boolean {
+    const wasBanned = this.fail2ban?.forceUnban(ip) ?? false;
+    this.throttler?.unblock(ip);
+    return wasBanned;
+  }
+
+  /** `fail2ban-client get <jail> bantime` — configured ban duration, in seconds. */
+  bantimeSeconds(): number {
+    return this.fail2ban?.bantimeSeconds() ?? 0;
   }
 
   /** Total recorded auth failures across the throttler's lifetime. */
@@ -495,6 +519,7 @@ export class LinuxSshServerContext implements ISshServerContext {
         if (this.config.passwordAuthentication) methods.push('password');
         return methods;
       },
+      checkAccountLifecycle: (user) => this.userManager.accountLifecycleGate(user),
     };
   }
 

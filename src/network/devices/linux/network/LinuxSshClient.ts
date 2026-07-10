@@ -823,6 +823,7 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
       fromHost: string,
       accepted: boolean,
       authMethod?: 'password' | 'publickey',
+      failureReason?: string,
     ) => void;
     executor?: { execute: (cmd: string) => string; userMgr?: unknown; vfs?: unknown };
   };
@@ -928,7 +929,7 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
   // before the negotiation silently falls back to password.
   const remoteExec = machine.executor as unknown as RemoteExecLike | undefined;
   const remoteEvents = (machine as unknown as {
-    getSshServerContext?: () => { events?: { emit: (e: { kind: string; user: string; ip: string; path?: string; port?: number }) => void } };
+    getSshServerContext?: () => { events?: { emit: (e: { kind: string; user: string; ip: string; path?: string; port?: number; reason?: string; method?: string }) => void } };
   }).getSshServerContext?.()?.events;
   const auth = resolveSshAuthMethod(opts, flags, remoteExec, remoteUser, (offendingPath) => {
     remoteEvents?.emit({
@@ -962,6 +963,25 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
       exitCode: 255,
     };
   }
+  // PAM account phase: credentials are correct, but chage-tracked account
+  // or password expiry can still refuse the session — independently of
+  // whether the password/key offered was right.
+  const lifecycleGate = (remoteExec?.userMgr as unknown as {
+    accountLifecycleGate?: (u: string) => { ok: true } | { ok: false; kind: 'account-expired' | 'password-expired' };
+  } | undefined)?.accountLifecycleGate?.(remoteUser);
+  if (lifecycleGate && !lifecycleGate.ok) {
+    const reason = lifecycleGate.kind === 'account-expired' ? 'account_expired' : 'password_expired';
+    machine.recordSshLogin?.(remoteUser, opts.sourceIp, opts.sourceHostname, false, auth.method, reason);
+    throttler?.recordFailure(opts.sourceIp, Date.now());
+    if (lifecycleGate.kind === 'password-expired') {
+      remoteEvents?.emit({ kind: 'auth_account_phase', user: remoteUser, ip: opts.sourceIp });
+    }
+    return {
+      output: `Your account has expired; please contact your system administrator\n${remoteUser}@${host}: Permission denied (publickey,password).`,
+      exitCode: 255,
+    };
+  }
+
   // Successful authentication clears the failure history for this IP.
   if (throttler) (throttler as unknown as { reset: (ip: string) => void }).reset(opts.sourceIp);
 

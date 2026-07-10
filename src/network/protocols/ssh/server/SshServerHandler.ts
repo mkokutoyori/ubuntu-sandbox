@@ -576,6 +576,23 @@ export class SshServerHandler {
       this.ctx.recordAuthFailure?.(user, clientIp, method ?? 'unknown');
       return { ok: false };
     }
+
+    const lifecycle = this.ctx.auth.checkAccountLifecycle?.(user) ?? { ok: true };
+    if (!lifecycle.ok) {
+      this.eventBus.emit({
+        kind: 'auth_failure',
+        user,
+        reason: lifecycle.kind === 'account-expired' ? 'account_expired' : 'password_expired',
+        ip: clientIp,
+        method,
+      });
+      if (lifecycle.kind === 'password-expired') {
+        this.eventBus.emit({ kind: 'auth_account_phase', user, ip: clientIp });
+      }
+      this.ctx.recordAuthFailure?.(user, clientIp, lifecycle.kind);
+      return { ok: false };
+    }
+
     this.eventBus.emit({
       kind: 'auth_success',
       user,

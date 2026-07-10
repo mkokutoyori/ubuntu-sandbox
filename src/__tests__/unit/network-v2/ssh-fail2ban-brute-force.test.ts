@@ -97,7 +97,10 @@ describe('Scénario 6 — détection brute-force et bascule fail2ban', () => {
     expect(f2bLog).toMatch(/\[sshd\] Ban 10\.0\.0\.20/);
 
     const ipt = await srv.executeCommand('iptables -L INPUT -n');
-    expect(ipt).toMatch(/REJECT\s+all\s+--\s+10\.0\.0\.20/);
+    expect(ipt).toMatch(/f2b-sshd\s+tcp\s+--\s+0\.0\.0\.0\/0\s+0\.0\.0\.0\/0\s+tcp dpt:22/);
+
+    const jail = await srv.executeCommand('iptables -L f2b-sshd -n');
+    expect(jail).toMatch(/REJECT\s+all\s+--\s+10\.0\.0\.20/);
   });
 
   it('pendant le ban, même le BON mot de passe est refusé (Connection refused)', async () => {

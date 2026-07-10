@@ -45,6 +45,7 @@ import { networkctlCommand } from './net/Networkctl';
 import { nmcliCommand } from './net/Nmcli';
 import { ifupCommand, ifdownCommand } from './net/Ifupdown';
 import { nftCommand } from './net/Nft';
+import { fail2banClientCommand } from './net/Fail2banClient';
 
 export {
   sysctlCommand,
@@ -78,6 +79,7 @@ export {
   ifupCommand,
   ifdownCommand,
   nftCommand,
+  fail2banClientCommand,
 };
 
 /**
@@ -115,4 +117,5 @@ export const CORE_LINUX_COMMANDS: readonly LinuxCommand[] = [
   ifupCommand,
   ifdownCommand,
   nftCommand,
+  fail2banClientCommand,
 ];
