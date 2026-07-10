@@ -19,7 +19,7 @@ import { EthernetFrame, DeviceType, generateId } from '../core/types';
 import { Logger } from '../core/Logger';
 import { EquipmentRegistry } from './EquipmentRegistry';
 import { DEVICE_CATALOG } from '../core/deviceCatalog';
-import { getDefaultEventBus, type IEventBus } from '@/events/EventBus';
+import { getDefaultEventBus, ForwardingEventBus, type IEventBus } from '@/events/EventBus';
 
 export abstract class Equipment {
   /**
@@ -62,6 +62,9 @@ export abstract class Equipment {
   /** Optional bus override (Phase 2 of the reactive refactor). */
   private busOverride: IEventBus | null = null;
 
+  /** This machine's internal bus (lazy) — see refactor-frame-only.md. */
+  private machineBus: ForwardingEventBus | null = null;
+
   constructor(deviceType: DeviceType, name: string, x: number = 0, y: number = 0) {
     this.id = generateId();
     this.deviceType = deviceType;
@@ -75,14 +78,13 @@ export abstract class Equipment {
   /** Inject a custom bus (test-only / multi-topology scenarios). */
   setEventBus(bus: IEventBus | null): void {
     this.busOverride = bus;
-    // Cascade to hardware children so the Port-level events
-    // (port.frame.*, port.security.*) reach the same observer the
-    // equipment's events reach.
-    for (const port of this.ports.values()) port.setEventBus(bus);
+    for (const port of this.ports.values()) port.setEventBus(this.getBus());
   }
 
   protected getBus(): IEventBus {
-    return this.busOverride ?? getDefaultEventBus();
+    if (this.busOverride) return this.busOverride;
+    if (!this.machineBus) this.machineBus = new ForwardingEventBus(getDefaultEventBus());
+    return this.machineBus;
   }
 
   // ─── Identity ───────────────────────────────────────────────────
@@ -213,7 +215,7 @@ export abstract class Equipment {
    */
   protected addPort(port: Port): void {
     port.setEquipmentId(this.id);
-    if (this.busOverride) port.setEventBus(this.busOverride);
+    port.setEventBus(this.getBus());
     port.onFrame((portName, frame) => {
       if (!this.isPoweredOn) {
         Logger.warn(this.id, 'equipment:frame-dropped', `${this.name}: powered off, dropping frame on ${portName}`);

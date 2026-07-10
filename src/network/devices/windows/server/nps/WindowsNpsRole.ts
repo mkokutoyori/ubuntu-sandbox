@@ -29,7 +29,7 @@
 import type { EndHost } from '@/network/devices/EndHost';
 import { RadiusServerAgent, type RadiusServerHost, type RadiusUserResolverContext } from '@/network/radius/RadiusServerAgent';
 import { attr, type RadiusUser, type RadiusAttribute } from '@/network/radius/types';
-import { getDefaultEventBus } from '@/events/EventBus';
+import { getDefaultEventBus, type IEventBus } from '@/events/EventBus';
 import { IPAddress } from '@/network/core/types';
 import type { WindowsUserManager } from '@/network/devices/windows/WindowsUserManager';
 import type { DirectoryStore } from '@/network/devices/windows/server/ad/DirectoryStore';
@@ -87,6 +87,7 @@ export class WindowsNpsRole {
     private readonly userStore: NpsUserStore,
     private readonly eventLog: PSEventLogProvider,
     private readonly getNow: () => Date = () => new Date(),
+    private readonly getHostBus: () => IEventBus = () => getDefaultEventBus(),
   ) {
     const radiusHost: RadiusServerHost = {
       id: host.getId(), name: host.getName(),
@@ -95,7 +96,7 @@ export class WindowsNpsRole {
       getPorts: () => host.getPorts(),
       sendFrame: (p: string, f) => { host.sendFrame(p, f); },
     };
-    this.agent = new RadiusServerAgent(radiusHost, () => getDefaultEventBus());
+    this.agent = new RadiusServerAgent(radiusHost, () => this.getHostBus());
     this.agent.setUserResolver((username, context) => this.resolveUser(username, context));
   }
 
@@ -110,7 +111,7 @@ export class WindowsNpsRole {
     this.host.udpBind(RADIUS_ACCT_PORT, (dgram) => {
       if (dgram.sourceIP instanceof IPAddress) this.agent.handleAcctUdp(dgram.inPort, dgram.sourceIP, dgram.udp);
     }, 'IAS');
-    this.unsubscribeAuditLog = getDefaultEventBus().subscribe('radius.packet.sent', (e) => {
+    this.unsubscribeAuditLog = this.getHostBus().subscribe('radius.packet.sent', (e) => {
       const p = e.payload as { deviceId: string; code: string; username: string | null };
       if (p.deviceId !== this.host.getId()) return;
       if (p.code === 'access-accept') {
@@ -121,7 +122,7 @@ export class WindowsNpsRole {
           `Network Policy Server denied access to a user.\n\nUser:\n\tSecurity ID:\t\t${p.username}\n\tAccount Name:\t\t${p.username}`);
       }
     });
-    this.unsubscribeAccounting = getDefaultEventBus().subscribe('radius.accounting.record', (e) => {
+    this.unsubscribeAccounting = this.getHostBus().subscribe('radius.accounting.record', (e) => {
       const p = e.payload as {
         deviceId: string; sessionId: string; username: string; status: string;
         sessionTimeSec: number; inputOctets: number; outputOctets: number;

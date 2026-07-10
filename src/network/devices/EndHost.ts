@@ -26,6 +26,7 @@ import { SocketTable } from '../core/SocketTable';
 import { TcpStack } from '../tcp/TcpStack';
 import type { TcpSegment } from '../tcp/types';
 import { TimerSet } from '@/events/TimerSet';
+import type { IEventBus } from '@/events/EventBus';
 import { getDefaultScheduler, type IScheduler } from '@/events/Scheduler';
 import { waitForEvent, WaitForEventTimeoutError } from '@/events/waitForEvent';
 import {
@@ -364,6 +365,11 @@ export abstract class EndHost extends Equipment {
   /** Common host identity stamped on every `host.*` event. */
   protected hostRef() {
     return { deviceId: this.id, hostname: this.hostname };
+  }
+
+  override setEventBus(bus: IEventBus | null): void {
+    super.setEventBus(bus);
+    if (this.hostSignalRefreshActor) this.attachHostActors();
   }
 
   /** Attach (or rebind) the host signal-refresh actor to the current bus. */

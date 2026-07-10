@@ -414,6 +414,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     if (bus) this.shell.attachLoggingToBus?.(bus, this.id);
     if (bus) this.getSnmpService().attachToBus(bus, this.id);
     this._debugService?.attachToBus(this.getBus(), this.id);
+    this.ipsecEngine?.setEventBus(this.getBus());
     if (this._eemEngine) { this._eemEngine.stop(); this._eemEngine.start(); }
   }
 
@@ -3185,6 +3186,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
   _getOrCreateIPSecEngine(): IPSecEngine {
     if (!this.ipsecEngine) {
       this.ipsecEngine = new IPSecEngine(this);
+      this.ipsecEngine.setEventBus(this.getBus());
     }
     return this.ipsecEngine;
   }

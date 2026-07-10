@@ -122,7 +122,7 @@ export class WindowsServer extends WindowsPC {
       return null;
     }
     if (!this.npsRoleInstance) {
-      this.npsRoleInstance = new WindowsNpsRole(this, this, this.eventLog, () => this.simulatedDate());
+      this.npsRoleInstance = new WindowsNpsRole(this, this, this.eventLog, () => this.simulatedDate(), () => this.getBus());
       this.npsRoleInstance.start();
     }
     return this.npsRoleInstance;
