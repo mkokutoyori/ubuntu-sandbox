@@ -1,5 +1,7 @@
 import type { HardwareProfile } from '@/network/devices/host/hardware/HardwareProfile';
 import type { StorageDevice } from '@/network/devices/host/hardware/StorageDevice';
+import type { LinuxCommand } from '../LinuxCommand';
+import type { LinuxCommandContext } from '../LinuxCommandContext';
 
 interface Options {
   identify: boolean;
@@ -170,3 +172,19 @@ function helpText(): string {
     ' -v   Defaults; same as -mcAdgkmur',
   ].join('\n');
 }
+
+function isPrivileged(ctx: LinuxCommandContext): boolean {
+  return ctx.executor.userMgr.currentUser === 'root';
+}
+
+export const hdparmCommand: LinuxCommand = {
+  name: 'hdparm',
+  needsNetworkContext: true,
+  usage: 'hdparm [options] [device ...]',
+  run(ctx: LinuxCommandContext, args: string[]): string {
+    return cmdHdparm(ctx.executor.hardware, args, isPrivileged(ctx)).output;
+  },
+  runWithStatus(ctx: LinuxCommandContext, args: string[]): Promise<{ output: string; exitCode: number }> {
+    return Promise.resolve(cmdHdparm(ctx.executor.hardware, args, isPrivileged(ctx)));
+  },
+};

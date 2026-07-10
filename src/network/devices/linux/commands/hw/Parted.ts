@@ -1,5 +1,7 @@
 import type { HardwareProfile } from '@/network/devices/host/hardware/HardwareProfile';
 import type { StorageDevice } from '@/network/devices/host/hardware/StorageDevice';
+import type { LinuxCommand } from '../LinuxCommand';
+import type { LinuxCommandContext } from '../LinuxCommandContext';
 
 export function cmdParted(profile: HardwareProfile, args: string[], isPrivileged: boolean): { output: string; exitCode: number } {
   if (!isPrivileged) return { output: 'Error: Could not stat device /dev/sda - Permission denied', exitCode: 1 };
@@ -50,3 +52,19 @@ function renderDisk(disk: StorageDevice): string {
 function helpText(): string {
   return 'Usage: parted [OPTION]... [DEVICE [COMMAND [PARAMETERS]...]...]';
 }
+
+function isPrivileged(ctx: LinuxCommandContext): boolean {
+  return ctx.executor.userMgr.currentUser === 'root';
+}
+
+export const partedCommand: LinuxCommand = {
+  name: 'parted',
+  needsNetworkContext: true,
+  usage: 'parted [OPTION]... [DEVICE [COMMAND [PARAMETERS]...]...]',
+  run(ctx: LinuxCommandContext, args: string[]): string {
+    return cmdParted(ctx.executor.hardware, args, isPrivileged(ctx)).output;
+  },
+  runWithStatus(ctx: LinuxCommandContext, args: string[]): Promise<{ output: string; exitCode: number }> {
+    return Promise.resolve(cmdParted(ctx.executor.hardware, args, isPrivileged(ctx)));
+  },
+};

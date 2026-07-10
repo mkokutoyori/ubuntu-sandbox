@@ -47,6 +47,17 @@ import { ifupCommand, ifdownCommand } from './net/Ifupdown';
 import { nftCommand } from './net/Nft';
 import { fail2banClientCommand } from './net/Fail2banClient';
 import { chageCommand } from './iam/Chage';
+import { lspciCommand } from './hw/Lspci';
+import { lsusbCommand } from './hw/Lsusb';
+import { lscpuCommand } from './hw/Lscpu';
+import { fdiskCommand } from './hw/Fdisk';
+import { hdparmCommand } from './hw/Hdparm';
+import { dmidecodeCommand } from './hw/Dmidecode';
+import { lshwCommand } from './hw/Lshw';
+import { hwinfoCommand } from './hw/Hwinfo';
+import { blkidCommand } from './hw/Blkid';
+import { partedCommand } from './hw/Parted';
+import { lsblkCommand } from './hw/Lsblk';
 
 export {
   sysctlCommand,
@@ -82,6 +93,17 @@ export {
   nftCommand,
   fail2banClientCommand,
   chageCommand,
+  lspciCommand,
+  lsusbCommand,
+  lscpuCommand,
+  fdiskCommand,
+  hdparmCommand,
+  dmidecodeCommand,
+  lshwCommand,
+  hwinfoCommand,
+  blkidCommand,
+  partedCommand,
+  lsblkCommand,
 };
 
 /**
@@ -121,4 +143,15 @@ export const CORE_LINUX_COMMANDS: readonly LinuxCommand[] = [
   nftCommand,
   fail2banClientCommand,
   chageCommand,
+  lspciCommand,
+  lsusbCommand,
+  lscpuCommand,
+  fdiskCommand,
+  hdparmCommand,
+  dmidecodeCommand,
+  lshwCommand,
+  hwinfoCommand,
+  blkidCommand,
+  partedCommand,
+  lsblkCommand,
 ];

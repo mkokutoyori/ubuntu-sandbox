@@ -206,3 +206,18 @@ function helpText(): string {
     '-d [<vendor>]:[<device>]\tShow only devices with specified ID',
   ].join('\n');
 }
+
+import type { LinuxCommand } from '../LinuxCommand';
+import type { LinuxCommandContext } from '../LinuxCommandContext';
+
+export const lspciCommand: LinuxCommand = {
+  name: 'lspci',
+  needsNetworkContext: true,
+  usage: 'lspci [options]',
+  run(ctx: LinuxCommandContext, args: string[]): string {
+    return cmdLspci(ctx.executor.hardware.pciBus, args).output;
+  },
+  runWithStatus(ctx: LinuxCommandContext, args: string[]): Promise<{ output: string; exitCode: number }> {
+    return Promise.resolve(cmdLspci(ctx.executor.hardware.pciBus, args));
+  },
+};

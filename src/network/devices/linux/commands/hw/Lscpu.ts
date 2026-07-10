@@ -126,3 +126,18 @@ function helpText(): string {
     '  -V, --version           display version',
   ].join('\n');
 }
+
+import type { LinuxCommand } from '../LinuxCommand';
+import type { LinuxCommandContext } from '../LinuxCommandContext';
+
+export const lscpuCommand: LinuxCommand = {
+  name: 'lscpu',
+  needsNetworkContext: true,
+  usage: 'lscpu [options]',
+  run(ctx: LinuxCommandContext, args: string[]): string {
+    return cmdLscpu(ctx.executor.hardware.cpu, args).output;
+  },
+  runWithStatus(ctx: LinuxCommandContext, args: string[]): Promise<{ output: string; exitCode: number }> {
+    return Promise.resolve(cmdLscpu(ctx.executor.hardware.cpu, args));
+  },
+};

@@ -215,3 +215,18 @@ function helpText(): string {
     '      Show version of program',
   ].join('\n');
 }
+
+import type { LinuxCommand } from '../LinuxCommand';
+import type { LinuxCommandContext } from '../LinuxCommandContext';
+
+export const lsusbCommand: LinuxCommand = {
+  name: 'lsusb',
+  needsNetworkContext: true,
+  usage: 'lsusb [options]',
+  run(ctx: LinuxCommandContext, args: string[]): string {
+    return cmdLsusb(ctx.executor.hardware.usbBus, args).output;
+  },
+  runWithStatus(ctx: LinuxCommandContext, args: string[]): Promise<{ output: string; exitCode: number }> {
+    return Promise.resolve(cmdLsusb(ctx.executor.hardware.usbBus, args));
+  },
+};

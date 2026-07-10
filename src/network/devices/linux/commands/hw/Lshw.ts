@@ -1,4 +1,6 @@
 import type { HardwareProfile } from '@/network/devices/host/hardware/HardwareProfile';
+import type { LinuxCommand } from '../LinuxCommand';
+import type { LinuxCommandContext } from '../LinuxCommandContext';
 
 const KNOWN_CLASSES = new Set([
   'system', 'bus', 'memory', 'processor', 'cpu', 'address', 'storage', 'disk',
@@ -130,3 +132,19 @@ function helpText(): string {
     '  -version        display version and exit',
   ].join('\n');
 }
+
+function isPrivileged(ctx: LinuxCommandContext): boolean {
+  return ctx.executor.userMgr.currentUser === 'root';
+}
+
+export const lshwCommand: LinuxCommand = {
+  name: 'lshw',
+  needsNetworkContext: true,
+  usage: 'lshw [-format] [-options ...]',
+  run(ctx: LinuxCommandContext, args: string[]): string {
+    return cmdLshw(ctx.executor.hardware, args, isPrivileged(ctx)).output;
+  },
+  runWithStatus(ctx: LinuxCommandContext, args: string[]): Promise<{ output: string; exitCode: number }> {
+    return Promise.resolve(cmdLshw(ctx.executor.hardware, args, isPrivileged(ctx)));
+  },
+};

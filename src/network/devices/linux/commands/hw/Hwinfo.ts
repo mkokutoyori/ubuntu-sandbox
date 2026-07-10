@@ -1,4 +1,6 @@
 import type { HardwareProfile } from '@/network/devices/host/hardware/HardwareProfile';
+import type { LinuxCommand } from '../LinuxCommand';
+import type { LinuxCommandContext } from '../LinuxCommandContext';
 
 const FILTERS = new Set(['cpu', 'disk', 'pci', 'usb', 'network', 'memory', 'keyboard', 'mouse', 'bios', 'monitor', 'sound']);
 
@@ -122,3 +124,15 @@ function helpText(): string {
     '  --version            show hwinfo version',
   ].join('\n');
 }
+
+export const hwinfoCommand: LinuxCommand = {
+  name: 'hwinfo',
+  needsNetworkContext: true,
+  usage: 'hwinfo [OPTIONS]',
+  run(ctx: LinuxCommandContext, args: string[]): string {
+    return cmdHwinfo(ctx.executor.hardware, args).output;
+  },
+  runWithStatus(ctx: LinuxCommandContext, args: string[]): Promise<{ output: string; exitCode: number }> {
+    return Promise.resolve(cmdHwinfo(ctx.executor.hardware, args));
+  },
+};

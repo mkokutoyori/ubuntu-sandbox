@@ -1,5 +1,7 @@
 import type { HardwareProfile } from '@/network/devices/host/hardware/HardwareProfile';
 import type { StorageDevice, DiskPartition } from '@/network/devices/host/hardware/StorageDevice';
+import type { LinuxCommand } from '../LinuxCommand';
+import type { LinuxCommandContext } from '../LinuxCommandContext';
 
 const COLUMNS = new Map<string, (row: Row) => string>([
   ['NAME',        r => r.name],
@@ -234,3 +236,15 @@ function helpText(): string {
     ' -V, --version        output version information and exit',
   ].join('\n');
 }
+
+export const lsblkCommand: LinuxCommand = {
+  name: 'lsblk',
+  needsNetworkContext: true,
+  usage: 'lsblk [options] [<device> ...]',
+  run(ctx: LinuxCommandContext, args: string[]): string {
+    return cmdLsblk(ctx.executor.hardware, args).output;
+  },
+  runWithStatus(ctx: LinuxCommandContext, args: string[]): Promise<{ output: string; exitCode: number }> {
+    return Promise.resolve(cmdLsblk(ctx.executor.hardware, args));
+  },
+};

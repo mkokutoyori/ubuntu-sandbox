@@ -45,18 +45,7 @@ import { runScript, runScriptContent, runScriptContentAsync, type ScriptResult }
 import { ExitSignal } from '@/bash/errors/BashError';
 import { AliasTable } from '@/bash/runtime/AliasTable';
 import { type IpNetworkContext } from './LinuxIpCommand';
-import { cmdDf, cmdDu, cmdFree, cmdLsblk } from './LinuxSystemCommands';
-import { cmdLspci } from './commands/hw/Lspci';
-import { cmdLsusb } from './commands/hw/Lsusb';
-import { cmdLscpu } from './commands/hw/Lscpu';
-import { cmdFdisk } from './commands/hw/Fdisk';
-import { cmdHdparm } from './commands/hw/Hdparm';
-import { cmdDmidecode } from './commands/hw/Dmidecode';
-import { cmdLshw } from './commands/hw/Lshw';
-import { cmdHwinfo } from './commands/hw/Hwinfo';
-import { cmdBlkid } from './commands/hw/Blkid';
-import { cmdParted } from './commands/hw/Parted';
-import { cmdLsblk as cmdLsblkNew } from './commands/hw/Lsblk';
+import { cmdDf, cmdDu, cmdFree } from './LinuxSystemCommands';
 import { cmdVmstat } from './system/Vmstat';
 import { cmdMpstat } from './system/Mpstat';
 import { cmdIostat } from './system/Iostat';
@@ -3824,7 +3813,6 @@ export class LinuxCommandExecutor {
       case 'mount': return this.handleMount(args);
       case 'umount': return this.handleUmount(args);
       case 'findmnt': return this.handleFindmnt(args);
-      case 'lsblk': return cmdLsblkNew(this.hardware, args);
       case 'top': return { output: cmdTop(args, this.processCmdContext()), exitCode: 0 };
       case 'htop': return { output: cmdTop(args, this.processCmdContext()), exitCode: 0 };
 
@@ -3861,7 +3849,6 @@ export class LinuxCommandExecutor {
         if (args[0] === '-l' || args[0] === '--list') return { output: 'Desired=Unknown/Install/Remove/Purge/Hold\n| Status=Not/Inst/Conf-files/Unpacked/halF-conf/Half-inst/trig-aWait/Trig-pend\n||/ Name                Version          Architecture Description\n+++-===================-================-============-================================\nii  bash                5.1-6ubuntu1     amd64        GNU Bourne Again SHell\nii  coreutils           8.32-4.1ubuntu1  amd64        GNU core utilities\nii  openssl             3.0.2-0ubuntu1   amd64        Secure Sockets Layer toolkit', exitCode: 0 };
         return { output: 'dpkg: need an action option\nUse dpkg --help for help.', exitCode: 1 };
       }
-      case 'lscpu': return cmdLscpu(this.hardware.cpu, args);
       case 'mkfs.ext4':
       case 'mkfs.xfs':
       case 'mkfs.btrfs':
@@ -3871,15 +3858,6 @@ export class LinuxCommandExecutor {
       case 'lvdisplay': case 'vgdisplay': case 'pvdisplay':
         if (this.userMgr.currentUid !== 0) return { output: `${cmd}: Permission denied`, exitCode: 1 };
         return { output: `  No volume groups found`, exitCode: 0 };
-      case 'lspci': return cmdLspci(this.hardware.pciBus, args);
-      case 'lsusb': return cmdLsusb(this.hardware.usbBus, args);
-      case 'fdisk': return cmdFdisk(this.hardware, args, this.userMgr.currentUser === 'root');
-      case 'hdparm': return cmdHdparm(this.hardware, args, this.userMgr.currentUser === 'root');
-      case 'dmidecode': return cmdDmidecode(this.hardware, args, this.userMgr.currentUser === 'root');
-      case 'lshw': return cmdLshw(this.hardware, args, this.userMgr.currentUser === 'root');
-      case 'hwinfo': return cmdHwinfo(this.hardware, args);
-      case 'blkid': return cmdBlkid(this.hardware, args, this.userMgr.currentUser === 'root');
-      case 'parted': return cmdParted(this.hardware, args, this.userMgr.currentUser === 'root');
       case 'nproc': return { output: String(this.hardware.cpu.logicalCpus), exitCode: 0 };
       case 'lsof': return { output: this.cmdLsof(args), exitCode: 0 };
       case 'file': {

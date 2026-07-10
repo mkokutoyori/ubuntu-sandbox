@@ -1,4 +1,6 @@
 import type { HardwareProfile } from '@/network/devices/host/hardware/HardwareProfile';
+import type { LinuxCommand } from '../LinuxCommand';
+import type { LinuxCommandContext } from '../LinuxCommandContext';
 
 const TYPES = new Map<string, number>([
   ['bios', 0], ['system', 1], ['baseboard', 2], ['chassis', 3],
@@ -224,3 +226,19 @@ function helpText(): string {
     ' -V, --version            Display the version and exit',
   ].join('\n');
 }
+
+function isPrivileged(ctx: LinuxCommandContext): boolean {
+  return ctx.executor.userMgr.currentUser === 'root';
+}
+
+export const dmidecodeCommand: LinuxCommand = {
+  name: 'dmidecode',
+  needsNetworkContext: true,
+  usage: 'dmidecode [OPTIONS]',
+  run(ctx: LinuxCommandContext, args: string[]): string {
+    return cmdDmidecode(ctx.executor.hardware, args, isPrivileged(ctx)).output;
+  },
+  runWithStatus(ctx: LinuxCommandContext, args: string[]): Promise<{ output: string; exitCode: number }> {
+    return Promise.resolve(cmdDmidecode(ctx.executor.hardware, args, isPrivileged(ctx)));
+  },
+};

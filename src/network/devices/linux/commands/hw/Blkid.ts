@@ -1,5 +1,7 @@
 import type { HardwareProfile } from '@/network/devices/host/hardware/HardwareProfile';
 import type { DiskPartition } from '@/network/devices/host/hardware/StorageDevice';
+import type { LinuxCommand } from '../LinuxCommand';
+import type { LinuxCommandContext } from '../LinuxCommandContext';
 
 export function cmdBlkid(profile: HardwareProfile, args: string[], isPrivileged: boolean): { output: string; exitCode: number } {
   if (!isPrivileged) return { output: 'blkid: error: Permission denied', exitCode: 1 };
@@ -46,3 +48,19 @@ function helpText(): string {
     '       [<dev> ...]',
   ].join('\n');
 }
+
+function isPrivileged(ctx: LinuxCommandContext): boolean {
+  return ctx.executor.userMgr.currentUser === 'root';
+}
+
+export const blkidCommand: LinuxCommand = {
+  name: 'blkid',
+  needsNetworkContext: true,
+  usage: 'blkid [options] [<dev> ...]',
+  run(ctx: LinuxCommandContext, args: string[]): string {
+    return cmdBlkid(ctx.executor.hardware, args, isPrivileged(ctx)).output;
+  },
+  runWithStatus(ctx: LinuxCommandContext, args: string[]): Promise<{ output: string; exitCode: number }> {
+    return Promise.resolve(cmdBlkid(ctx.executor.hardware, args, isPrivileged(ctx)));
+  },
+};

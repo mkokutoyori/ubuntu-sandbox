@@ -1,5 +1,7 @@
 import type { HardwareProfile } from '@/network/devices/host/hardware/HardwareProfile';
 import type { StorageDevice, DiskPartition } from '@/network/devices/host/hardware/StorageDevice';
+import type { LinuxCommand } from '../LinuxCommand';
+import type { LinuxCommandContext } from '../LinuxCommandContext';
 
 interface Options {
   list: boolean;
@@ -126,3 +128,19 @@ function helpText(): string {
     ' -V, --version                 display version',
   ].join('\n');
 }
+
+function isPrivileged(ctx: LinuxCommandContext): boolean {
+  return ctx.executor.userMgr.currentUser === 'root';
+}
+
+export const fdiskCommand: LinuxCommand = {
+  name: 'fdisk',
+  needsNetworkContext: true,
+  usage: 'fdisk [options] <disk>',
+  run(ctx: LinuxCommandContext, args: string[]): string {
+    return cmdFdisk(ctx.executor.hardware, args, isPrivileged(ctx)).output;
+  },
+  runWithStatus(ctx: LinuxCommandContext, args: string[]): Promise<{ output: string; exitCode: number }> {
+    return Promise.resolve(cmdFdisk(ctx.executor.hardware, args, isPrivileged(ctx)));
+  },
+};
