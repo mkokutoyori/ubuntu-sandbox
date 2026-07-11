@@ -27,7 +27,7 @@ import {
   SHELL_CATALOG, CommandResolver, WhereisResolver, ALL_CATEGORIES,
   type ShellIntrospection, type FileLocation, type WhereisSelector,
 } from './resolve';
-import { cmdUmask, cmdMkfifo } from './LinuxPermCommands';
+import { cmdMkfifo } from './LinuxPermCommands';
 import {
   runTest, runExpr, runSeq, runSleep, runWatch, formatTimes, chooseTimeFormat,
   runTail,
@@ -2451,6 +2451,7 @@ export class LinuxCommandExecutor {
         hostname: (this.vfs.readFile('/etc/hostname') ?? 'localhost').trim(),
         ports: [],
         getUmask: () => this.umask,
+        setUmask: (value) => { this.umask = value; },
         powerOn: () => { /* no-op: no device lifecycle without a LinuxMachine */ },
         powerOff: () => { /* no-op: no device lifecycle without a LinuxMachine */ },
         publishFsAccess: (path, perm, syscall) => this.publishFsAccess(path, perm, syscall),
@@ -3346,11 +3347,6 @@ export class LinuxCommandExecutor {
       case 'updatedb': return { output: cmdUpdatedb(c), exitCode: 0 };
 
       // Permission commands
-      case 'umask': {
-        const result = cmdUmask(c, args);
-        if (result.newUmask !== undefined) this.umask = result.newUmask;
-        return { output: result.output, exitCode: 0 };
-      }
       case 'ulimit': {
         const flag = args[0] ?? '-f';
         const table: Record<string, [string, string]> = {
@@ -5751,6 +5747,8 @@ export class LinuxCommandExecutor {
   setCwd(path: string): void { this.cwd = path; }
 
   getUmask(): number { return this.umask; }
+
+  setUmask(value: number): void { this.umask = value; }
 
   getEnvSnapshot(): Map<string, string> { return new Map(Object.entries(this.buildEnvVars())); }
 

@@ -1738,6 +1738,7 @@ export abstract class LinuxMachine extends EndHost
         hostname: this.name,
         ports: this.getPorts(),
         getUmask: () => this.executor.getUmask(),
+        setUmask: (value) => this.executor.setUmask(value),
         powerOn: () => this.powerOn(),
         powerOff: () => this.powerOff(),
         publishFsAccess: (path, perm, syscall) => this.executor.publishAuditFsAccess(path, perm, syscall),

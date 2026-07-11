@@ -53,9 +53,51 @@ réussites avant → 243 échecs/589 réussites après, soit 26 tests corrigés,
 zéro régression. Les échecs restants dans ce lot concernent exclusivement
 `ping`/`ipconfig`/`netsh`, pas encore migrés (prochaines phases).
 
-## Windows — Phase 10 : correction — élimination du passthrough opaque `execute(argv)` (sc/net/schtasks/print/auditpol/winrm)
+## Convergence de branche : Linux Phase 2 (`umask`) + Windows Phase 10 (élimination du passthrough opaque `execute(argv)`)
 
 **État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
+
+Deux lots de travail parallèles sur la même branche, fusionnés dans ce
+commit — l'un sur le pont Linux, l'autre sur le pont Windows, sans
+recouvrement de fichiers en dehors de `CHANGELOG.md`.
+
+### Linux — `umask`
+
+**Gap explicitement signalé au §12 du framework** : `umask` était lu
+dynamiquement par toutes les commandes de création de fichier déjà
+migrées (`touch`, `mkdir`, `cp`...), mais aucune commande `umask` n'existait
+côté `command-kernel` pour le modifier — seul le `case 'umask':` legacy
+(`LinuxCommandExecutor.dispatch()`) pouvait le faire.
+
+**Extension de `MachineApi`** : nouvelle capacité optionnelle
+`permissions?: PermissionsApi` (`getUmask()`/`setUmask(mask)`) —
+optionnelle car `umask` est un concept POSIX sans équivalent universel
+(Windows/ACL, Cisco/Huawei n'ont rien à y mettre), suivant exactement le
+patron déjà établi pour `audit?`/`services?`/`registry?`. `UmaskCommand`
+n'appelle que `ctx.machine.permissions.getUmask()/setUmask()` — sa propre
+logique (formatage octal 4 chiffres, validation, message d'erreur exact)
+vit entièrement dans la commande, jamais déléguée à une fonction externe.
+
+**Câblage Linux** : `LinuxMachineApiDeps.setUmask(mask)` (nouveau,
+symétrique du `getUmask()` déjà existant), branché sur
+`LinuxCommandExecutor.setUmask()` (nouveau setter public, miroir de
+`getUmask()` déjà existant) depuis les deux constructeurs de shell
+command-kernel (`LinuxMachine.getCommandKernelShell()` et le repli
+autonome `LinuxCommandExecutor.getDefaultCommandKernelShell()`).
+
+**Legacy supprimé** : `case 'umask':` et `cmdUmask` (`LinuxPermCommands.ts`)
+supprimés entièrement — aucun autre appelant (contrairement à `chgrp`,
+`umask` n'existe pas dans l'autre framework `LinuxCommand`, §8 vérifié).
+
+**Validation** : lot localisé — `linux-filesystem-and-IAM.test.ts`,
+`ssh-lan-security-editors.test.ts` (SE30, parité local/SSH),
+`ssh-strict-modes.test.ts`, `linux-command-kernel.test.ts` (harnais du
+socle lui-même, `deps` de test mis à jour avec un vrai `setUmask`
+mutable) plus le lot audit/privilège du §7.2 — 622 tests, 1 échec
+pré-existant et sans rapport (`journalization.test.ts` #161, déjà
+documenté en Phase 1). Typecheck ciblé propre.
+
+### Windows — correction du passthrough opaque `execute(argv)` (sc/net/schtasks/print/auditpol/winrm)
 
 **Ce que les Phases 6/7/9 ont fait de travers, sur retour explicite de
 l'utilisateur** : `MachineApi.services`/`netExe`/`scheduling`/`printing`/

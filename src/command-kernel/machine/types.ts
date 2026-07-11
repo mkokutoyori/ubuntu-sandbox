@@ -520,6 +520,17 @@ export interface AuditApi {
 }
 
 /**
+ * Masque de permissions par défaut appliqué à la création de fichiers/
+ * répertoires (`umask` POSIX) — optionnel, pas un concept universel : un
+ * équipement sans notion de masque de création à la Unix (Windows/ACL,
+ * Cisco/Huawei…) ne l'implémente pas.
+ */
+export interface PermissionsApi {
+  getUmask(): Promise<number>;
+  setUmask(mask: number): Promise<void>;
+}
+
+/**
  * Identité OS réelle de l'équipement (nom de distribution/édition, version
  * de noyau) — optionnelle : sert aux commandes qui affichent la version du
  * système (`ver`, `systeminfo`...) et doivent refléter le VRAI profil de
@@ -585,6 +596,8 @@ export interface MachineApi {
   readonly winRm?: WinRmApi;
   /** Adaptateurs/ARP/table de routage bas niveau (`arp`, `route`, `getmac`) — optionnel, pas un concept universel. */
   readonly netConfig?: WindowsNetConfigApi;
+  /** Masque de permissions par défaut (`umask`) — optionnel, pas un concept universel. */
+  readonly permissions?: PermissionsApi;
   now(): Date;
 }
 

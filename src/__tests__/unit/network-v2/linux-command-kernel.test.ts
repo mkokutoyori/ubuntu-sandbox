@@ -31,13 +31,15 @@ describe('Linux coreutils on command-kernel (real VFS/IAM/process manager)', () 
     userManager = new LinuxUserManager(vfs);
     processManager = new LinuxProcessManager();
     userManager.useradd('alice', { m: true, s: '/bin/bash' });
+    let umask = 0o022;
     deps = {
       vfs,
       userManager,
       processManager,
       hostname: 'testhost',
       ports: [],
-      getUmask: () => 0o022,
+      getUmask: () => umask,
+      setUmask: (value) => { umask = value; },
       powerOn: () => {},
       powerOff: () => {},
       publishFsAccess: () => {},

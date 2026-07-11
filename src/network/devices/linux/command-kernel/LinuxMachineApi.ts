@@ -8,6 +8,7 @@ import {
   GroupManagementApi,
   MachineApi,
   NetworkApi,
+  PermissionsApi,
   PowerApi,
   ProcessApi,
   ProcessInfo as CkProcessInfo,
@@ -38,6 +39,7 @@ export interface LinuxMachineApiDeps {
   readonly hostname: string;
   readonly ports: readonly Port[];
   getUmask(): number;
+  setUmask(mask: number): void;
   powerOn(): void;
   powerOff(): void;
   publishFsAccess(path: string, perm: 'r' | 'w' | 'x' | 'a', syscall?: string): void;
@@ -457,6 +459,18 @@ class LinuxAuditApi implements AuditApi {
   }
 }
 
+class LinuxPermissionsApi implements PermissionsApi {
+  constructor(private readonly deps: Pick<LinuxMachineApiDeps, 'getUmask' | 'setUmask'>) {}
+
+  async getUmask(): Promise<number> {
+    return this.deps.getUmask();
+  }
+
+  async setUmask(mask: number): Promise<void> {
+    this.deps.setUmask(mask);
+  }
+}
+
 class LinuxPowerApi implements PowerApi {
   constructor(private readonly deps: Pick<LinuxMachineApiDeps, 'powerOn' | 'powerOff'>) {}
 
@@ -479,6 +493,7 @@ export class LinuxMachineApi implements MachineApi {
   readonly power: PowerApi;
   readonly hostname: string;
   readonly audit: AuditApi;
+  readonly permissions: PermissionsApi;
 
   constructor(deps: LinuxMachineApiDeps) {
     this.fs = new LinuxFileSystemApi(deps.vfs, () => deps.getUmask(), deps.publishFsAccess);
@@ -489,6 +504,7 @@ export class LinuxMachineApi implements MachineApi {
     this.power = new LinuxPowerApi(deps);
     this.hostname = deps.hostname;
     this.audit = new LinuxAuditApi(deps);
+    this.permissions = new LinuxPermissionsApi(deps);
   }
 
   now(): Date {
