@@ -5,9 +5,15 @@ progressive par équipement. Un push = une entrée = une fonctionnalité
 complète et testée (voir `CLAUDE.md` / le framework de migration pour les
 principes directeurs).
 
-## Linux — Phase 3 : `readlink`
+## Convergence de branche : Linux Phase 3 (`readlink`) + Windows Phase 12 (`ping`)
 
 **État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
+
+Deux lots de travail parallèles sur la même branche, fusionnés dans ce
+commit — l'un sur le pont Linux, l'autre sur le pont Windows, sans
+recouvrement de fichiers en dehors de `CHANGELOG.md`.
+
+### Linux — `readlink`
 
 **Commande migrée** : `readlink [-f|-e|-m] <cible...>` — mode direct
 (cible immédiate d'un lien symbolique, un seul niveau) via
@@ -40,6 +46,52 @@ cible manquante) via un test jetable non versionné, supprimé après
 utilisation — aucune commande CLI existante n'exerçait `readlink -f` en
 assertions (seul un test debug non assertionnel l'utilisait). Typecheck
 et lint ciblés propres.
+
+### Windows — migration `ping`
+
+Suite du lot réseau bas niveau (Phase 11) : `ping` était le blocage
+principal derrière une bonne partie des échecs restants (`arp-command.test.ts`
+peuplait sa table via un `ping` préalable, `routing-table.test.ts` teste le
+« General failure » sans route, etc.). `cmdPing`/`WinPing.ts` n'étaient
+JAMAIS invoqués en production : `WindowsTerminalSession.tryStartWinPingStream`
+intercepte `ping` tapé en direct AVANT `executeCmdCommand` (pour le
+streaming ligne-par-ligne en temps réel, `-t` continu, Ctrl+C) et
+n'utilise que les fonctions pures de formatage/parsing de `WinPing.ts`
+(`parseWinPingArgs`, `formatWinPingHeader`, ...), jamais `cmdPing` lui-même.
+`cmdPing` n'était donc atteignable que par les tests appelant
+`pc.executeCommand('ping ...')` directement (hors session terminal) — et
+`ping` n'ayant jamais été enregistrée dans le `CommandRegistry`, ce chemin
+produisait `'ping' is not recognized...`.
+
+**Nouvelles primitives sur `MachineApi.netConfig`** :
+`resolveHostname(name)` (résolution DNS/hosts réelle, déjà câblée pour
+`net use`, maintenant réutilisée) et `pingSequence(targetIp, count,
+timeoutMs?, ttl?)` (séquence d'échos ICMP réels, délègue à
+`EndHost.executePingSequence` — tableau vide = pas de route/pas de
+réponse ARP, exactement la sémantique déjà utilisée par le pont legacy).
+
+`PingCommand` (nouvelle) porte l'intégralité du parsing d'arguments
+(`parseWinPingArgs`, ~20 options `-t/-a/-n/-l/-f/-i/-v/-r/-s/-j/-k/-w/-S/
+-c/-p/-4/-6`, copié depuis `WinPing.ts` plutôt qu'importé — `WinPing.ts`
+reste intact pour l'usage exclusif de `WindowsTerminalSession` côté
+streaming) et du formatage de sortie (en-tête, ligne de réponse,
+statistiques, `-r`/`-s`). `lenientOptions: true` (même raison que
+`arp`/`route`).
+
+**Correction mineure au passage** : le message d'échec DNS
+(`Dnscache` arrêté) appelait le gabarit `WinFeatureGate.ERRORS.dnsUnavailable(host)`
+sans lui passer `host` (bug latent jamais visible en production puisque
+`cmdPing` n'était jamais exécuté) — le nouveau message interpole
+correctement la cible (`*** Can't find <target>: No DNS servers available`).
+
+Validation : typecheck propre. Suite localisée élargie (14 fichiers,
+841 tests, incluant `tracert-ping.test.ts` et `windows-feature-gates.test.ts`)
+comparée au commit pré-Phase-12 via `git stash` : 251 échecs/590 réussites
+avant → 211/630 après, 40 tests corrigés, zéro régression (vérifié cas par
+cas sur les échecs `tracert-ping.test.ts` restants : mêmes scénarios déjà
+en échec avant, avec un message différent — `not recognized` devenu
+`General failure`/timeout — pas de nouvelle casse). Échecs restants dus à
+`netsh`/`ipconfig`/`tracert`/`nslookup`, pas encore migrés.
 
 ## Windows — Phase 11 : migration `arp`/`route`/`getmac` (pile réseau bas niveau)
 

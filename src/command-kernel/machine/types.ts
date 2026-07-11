@@ -406,6 +406,20 @@ export interface WindowsNetConfigApi {
   removeRoute(network: string, mask: string): boolean;
   setDefaultGateway(gw: string): void;
   clearDefaultGateway(): void;
+
+  /** Résolution DNS/hosts réelle (passe par le réseau simulé) — `null` si introuvable (`ping`/`tracert`). */
+  resolveHostname(name: string): Promise<string | null>;
+  /** Séquence d'échos ICMP réels vers `targetIp` — tableau vide = pas de route ou pas de réponse ARP (`ping`/`tracert`). */
+  pingSequence(targetIp: string, count: number, timeoutMs?: number, ttl?: number): Promise<readonly WindowsPingReply[]>;
+}
+
+/** Un écho ICMP individuel (`ping`) — optionnel, modèle Windows. */
+export interface WindowsPingReply {
+  readonly success: boolean;
+  readonly fromIP?: string;
+  readonly ttl: number;
+  readonly rttMs: number;
+  readonly error?: string;
 }
 
 export interface NetworkApi {

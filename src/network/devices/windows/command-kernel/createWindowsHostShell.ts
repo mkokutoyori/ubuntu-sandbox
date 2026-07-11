@@ -23,6 +23,7 @@ import { MoreCommand } from './commands/More';
 import { MoveCommand } from './commands/Move';
 import { NbtstatCommand } from './commands/Nbtstat';
 import { NetCommand } from './commands/Net';
+import { PingCommand } from './commands/Ping';
 import { PrintCommand } from './commands/Print';
 import { RegCommand } from './commands/Reg';
 import { RenCommand } from './commands/Ren';
@@ -62,6 +63,7 @@ export function createWindowsHostShell(deps: WindowsMachineApiDeps): { registry:
   registry.register(() => new ArpCommand());
   registry.register(() => new GetmacCommand());
   registry.register(() => new RouteCommand());
+  registry.register(() => new PingCommand());
   registry.register(() => new CdCommand());
   registry.register(() => new MkdirCommand());
   registry.register(() => new RmdirCommand());

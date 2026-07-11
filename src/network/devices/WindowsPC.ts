@@ -1725,6 +1725,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
         addStaticARP: (ip, mac, iface) => this.addStaticARP(ip, mac, iface),
         deleteARP: (ip) => this.deleteARP(ip),
         clearARPTable: () => this.clearARPTable(),
+        executePingSequence: (target, count, timeoutMs, ttl) => this.executePingSequence(target, count, timeoutMs, ttl),
         isDHCPConfigured: (ifName) => this.isDHCPConfigured(ifName),
         bootedAt: () => this.getLifecycle().bootedAt() ?? null,
         now: () => this.simulatedDate(),
