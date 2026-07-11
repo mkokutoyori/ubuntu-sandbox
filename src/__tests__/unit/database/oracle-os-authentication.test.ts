@@ -85,10 +85,10 @@ describe('terminal — bequeath authentication follows the real shell user', () 
     return new LinuxServer('linux-server', name, 0, 0);
   }
 
-  it('provisions the oracle software owner (oracle:oinstall, member of dba)', () => {
+  it('provisions the oracle software owner (oracle:oinstall, member of dba)', async () => {
     const srv = makeServer('dbsrv1');
     const { subShell } = SqlPlusSubShell.create(srv, ['/', 'as', 'sysdba']);
-    const id = srv.executeShellCommandSync('id oracle');
+    const id = await srv.executeShellCommandSync('id oracle');
     expect(id).toMatch(/uid=54321\(oracle\)/);
     expect(id).toMatch(/oinstall/);
     expect(id).toMatch(/dba/);

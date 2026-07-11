@@ -29,20 +29,20 @@ function sqlplus(srv: LinuxServer) {
   return SqlPlusSubShell.create(srv, ['/', 'as', 'sysdba']).subShell;
 }
 
-function backupPieceFiles(srv: LinuxServer): string[] {
-  const out = sh(srv, `find ${BACKUP_BASE} -type f`);
+async function backupPieceFiles(srv: LinuxServer): Promise<string[]> {
+  const out = await sh(srv, `find ${BACKUP_BASE} -type f`);
   return out.split(/\s+/).map(s => s.trim()).filter(p => p.startsWith(BACKUP_BASE));
 }
 
 describe('a healthy backup still restores (no false positives)', () => {
-  it('backup → rm datafile → restore succeeds while the pieces exist', () => {
+  it('backup → rm datafile → restore succeeds while the pieces exist', async () => {
     const srv = bootOracleServer('rbp1');
     const db = getRegisteredOracleDatabase(srv.getId())!;
     const rman = ReactiveRmanSubShell.create(srv, ['target', '/']);
     rman.subShell.processLine('backup database;');
     rman.subShell.dispose();
 
-    sh(srv, `rm ${USERS_DBF}`);
+    await sh(srv, `rm ${USERS_DBF}`);
     const sql = sqlplus(srv);
     sql.processLine('SHUTDOWN IMMEDIATE');
     sql.processLine('STARTUP');
@@ -51,25 +51,25 @@ describe('a healthy backup still restores (no false positives)', () => {
     const out = rman2.subShell.processLine('restore datafile 4;').output.join('\n');
     rman2.subShell.dispose();
     expect(out).not.toMatch(/RMAN-0602[36]/);
-    expect(sh(srv, `ls ${USERS_DBF}`)).toContain('users01.dbf');
+    expect(await sh(srv, `ls ${USERS_DBF}`)).toContain('users01.dbf');
     expect(sql.processLine('ALTER DATABASE OPEN;').output.join('\n')).not.toMatch(/ORA-/);
     sql.dispose();
   });
 });
 
 describe('rm of the backup pieces makes RESTORE fail like real RMAN', () => {
-  it('aborts with RMAN-06026/06023 and leaves the datafile missing', () => {
+  it('aborts with RMAN-06026/06023 and leaves the datafile missing', async () => {
     const srv = bootOracleServer('rbp2');
     const db = getRegisteredOracleDatabase(srv.getId())!;
     const rman = ReactiveRmanSubShell.create(srv, ['target', '/']);
     rman.subShell.processLine('backup database;');
     rman.subShell.dispose();
 
-    const pieces = backupPieceFiles(srv);
+    const pieces = await backupPieceFiles(srv);
     expect(pieces.length).toBeGreaterThan(0);
 
-    sh(srv, `rm ${USERS_DBF}`);
-    for (const p of pieces) sh(srv, `rm ${p}`);
+    await sh(srv, `rm ${USERS_DBF}`);
+    for (const p of pieces) await sh(srv, `rm ${p}`);
 
     const sql = sqlplus(srv);
     sql.processLine('SHUTDOWN IMMEDIATE');
@@ -80,7 +80,7 @@ describe('rm of the backup pieces makes RESTORE fail like real RMAN', () => {
     const out = rman2.subShell.processLine('restore datafile 4;').output.join('\n');
     rman2.subShell.dispose();
     expect(out).toMatch(/RMAN-0602[36]/);
-    expect(sh(srv, `ls ${USERS_DBF}`)).toMatch(/No such file/);
+    expect(await sh(srv, `ls ${USERS_DBF}`)).toMatch(/No such file/);
     expect(db.instance.state).toBe('MOUNT');
     sql.dispose();
   });

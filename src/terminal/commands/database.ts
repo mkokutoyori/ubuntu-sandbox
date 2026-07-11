@@ -89,8 +89,8 @@ export function getOracleDatabase(deviceId: string): OracleDatabase {
     });
     db.instance.setOsCommandRunner((cmd) => {
       const dev = EquipmentRegistry.getInstance().getById(deviceId);
-      const run = (dev as unknown as { runSshCommandSync?: (u: string, c: string) => { output: string; exitCode: number } | null } | null)?.runSshCommandSync;
-      return typeof run === 'function' ? run.call(dev, 'oracle', cmd) : null;
+      const run = (dev as unknown as { runOracleHostCommandSync?: (c: string) => { output: string; exitCode: number } | null } | null)?.runOracleHostCommandSync;
+      return typeof run === 'function' ? run.call(dev, cmd) : null;
     });
     // Existence probe for the MOUNT-time control file check and the
     // OPEN-time datafile check. Returns null (= skip the checks) when no
@@ -628,8 +628,8 @@ export const ORACLE_OS_GID = 54321;
 
 function provisionOracleOsIdentity(device: import('@/network').HostCapableDevice): void {
   const run = (device as unknown as {
-    executeShellCommandSync?(command: string): string;
-  }).executeShellCommandSync?.bind(device);
+    runOracleHostCommandSync?(command: string): { output: string; exitCode: number } | null;
+  }).runOracleHostCommandSync?.bind(device);
   if (!run) return;
 
   // Idempotent: groupadd/useradd answer "already exists" on re-init.

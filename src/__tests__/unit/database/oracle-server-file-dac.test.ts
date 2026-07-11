@@ -45,7 +45,7 @@ function sql(srv: LinuxServer, lines: string[]): string {
 }
 
 describe('Oracle server-side file I/O under host DAC', () => {
-  it('a file written by UTL_FILE is owned by the oracle OS user and visible to cat', () => {
+  it('a file written by UTL_FILE is owned by the oracle OS user and visible to cat', async () => {
     const srv = boot('dac-1');
     sql(srv, [
       "CREATE DIRECTORY home_dir AS '/home/oracle';",
@@ -56,18 +56,18 @@ describe('Oracle server-side file I/O under host DAC', () => {
        END;`,
     ]);
     // The OS shell sees exactly what PL/SQL wrote …
-    expect(sh(srv, 'cat /home/oracle/report.txt')).toContain('written-by-oracle');
+    expect(await sh(srv, 'cat /home/oracle/report.txt')).toContain('written-by-oracle');
     // … owned by the oracle user, not by whoever ran the SQL.
-    expect(sh(srv, 'ls -l /home/oracle/report.txt')).toMatch(/\boracle\b/);
+    expect(await sh(srv, 'ls -l /home/oracle/report.txt')).toMatch(/\boracle\b/);
   });
 
-  it('Oracle can read a world-readable file but is denied a root-owned 0600 file', () => {
+  it('Oracle can read a world-readable file but is denied a root-owned 0600 file', async () => {
     const srv = boot('dac-2');
     // root drops two files into a directory oracle can traverse.
-    sh(srv, 'mkdir -p /home/oracle/files');
-    sh(srv, 'echo public-data > /home/oracle/files/pub.txt');
-    sh(srv, 'echo top-secret > /home/oracle/files/secret.txt');
-    sh(srv, 'chmod 600 /home/oracle/files/secret.txt');
+    await sh(srv, 'mkdir -p /home/oracle/files');
+    await sh(srv, 'echo public-data > /home/oracle/files/pub.txt');
+    await sh(srv, 'echo top-secret > /home/oracle/files/secret.txt');
+    await sh(srv, 'chmod 600 /home/oracle/files/secret.txt');
 
     const out = sql(srv, [
       'SET SERVEROUTPUT ON',
@@ -92,7 +92,7 @@ describe('Oracle server-side file I/O under host DAC', () => {
     expect(out).not.toMatch(/LEAKED/);
   });
 
-  it('UTL_FILE write into a directory not writable by oracle fails', () => {
+  it('UTL_FILE write into a directory not writable by oracle fails', async () => {
     const srv = boot('dac-3');
     // /root is mode 0700 owned by root — oracle cannot create files there.
     const out = sql(srv, [
@@ -109,6 +109,6 @@ describe('Oracle server-side file I/O under host DAC', () => {
        END;`,
     ]);
     expect(out).toContain('WRITE_DENIED');
-    expect(sh(srv, 'cat /root/x.txt')).not.toContain('should-not-land');
+    expect(await sh(srv, 'cat /root/x.txt')).not.toContain('should-not-land');
   });
 });

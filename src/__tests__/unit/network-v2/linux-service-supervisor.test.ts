@@ -11,15 +11,15 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { EventBus } from '@/events/EventBus';
 import { LinuxCommandExecutor } from '@/network/devices/linux/LinuxCommandExecutor';
 
-function writeUnit(exec: LinuxCommandExecutor, name: string, restart: string): void {
+async function writeUnit(exec: LinuxCommandExecutor, name: string, restart: string): Promise<void> {
   const unit = [
     '[Unit]', `Description=${name} test daemon`, '',
     '[Service]', 'Type=simple', `ExecStart=/usr/bin/${name} -D`,
     `Restart=${restart}`, '',
     '[Install]', 'WantedBy=multi-user.target', '',
   ].join('\\n');
-  exec.execute(`printf "${unit}" > /etc/systemd/system/${name}.service`);
-  exec.execute('systemctl daemon-reload');
+  await exec.execute(`printf "${unit}" > /etc/systemd/system/${name}.service`);
+  await exec.execute('systemctl daemon-reload');
 }
 
 describe('LinuxServiceSupervisor', () => {
@@ -33,8 +33,8 @@ describe('LinuxServiceSupervisor', () => {
   });
 
   it('auto-restarts a Restart=always daemon when its main process is killed', async () => {
-    writeUnit(exec, 'alpha', 'always');
-    exec.execute('systemctl start alpha');
+    await writeUnit(exec, 'alpha', 'always');
+    await exec.execute('systemctl start alpha');
     const u1 = exec.serviceMgr.status('alpha');
     expect(u1?.state).toBe('active');
     const oldPid = u1!.mainPid!;
@@ -50,11 +50,11 @@ describe('LinuxServiceSupervisor', () => {
     expect(u2!.mainPid).not.toBe(oldPid);
   });
 
-  it('marks a Restart=no daemon as failed when it dies', () => {
+  it('marks a Restart=no daemon as failed when it dies', async () => {
     const failed: string[] = [];
     bus.subscribe('linux.service.failed', e => failed.push(e.payload.name));
-    writeUnit(exec, 'beta', 'no');
-    exec.execute('systemctl start beta');
+    await writeUnit(exec, 'beta', 'no');
+    await exec.execute('systemctl start beta');
     const pid = exec.serviceMgr.status('beta')!.mainPid!;
 
     exec.processMgr.kill(pid, 'SIGKILL');
@@ -63,12 +63,12 @@ describe('LinuxServiceSupervisor', () => {
     expect(failed).toContain('beta');
   });
 
-  it('does NOT restart on an intentional systemctl stop', () => {
-    writeUnit(exec, 'gamma', 'always');
-    exec.execute('systemctl start gamma');
+  it('does NOT restart on an intentional systemctl stop', async () => {
+    await writeUnit(exec, 'gamma', 'always');
+    await exec.execute('systemctl start gamma');
     expect(exec.serviceMgr.status('gamma')?.state).toBe('active');
 
-    exec.execute('systemctl stop gamma');
+    await exec.execute('systemctl stop gamma');
 
     const u = exec.serviceMgr.status('gamma');
     expect(u?.state).toBe('inactive');
@@ -83,8 +83,8 @@ describe('LinuxServiceSupervisor', () => {
   });
 
   it('a restarted daemon stays supervised across successive crashes', async () => {
-    writeUnit(exec, 'delta', 'on-failure');
-    exec.execute('systemctl start delta');
+    await writeUnit(exec, 'delta', 'on-failure');
+    await exec.execute('systemctl start delta');
 
     for (let i = 0; i < 3; i++) {
       const pid = exec.serviceMgr.status('delta')!.mainPid!;

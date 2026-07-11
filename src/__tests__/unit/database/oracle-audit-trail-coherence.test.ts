@@ -41,10 +41,11 @@ function boot(name: string): LinuxServer {
 const sh = (srv: LinuxServer, cmd: string) => srv.executeShellCommandSync(cmd);
 
 /** Concatenated content of every .aud file under adump/. */
-function audDump(srv: LinuxServer): string {
-  const ls = sh(srv, `ls ${ORACLE_CONFIG.AUDIT_DIR}`);
+async function audDump(srv: LinuxServer): Promise<string> {
+  const ls = await sh(srv, `ls ${ORACLE_CONFIG.AUDIT_DIR}`);
   const names = ls.split(/\s+/).filter(n => n.endsWith('.aud'));
-  return names.map(n => sh(srv, `cat ${ORACLE_CONFIG.AUDIT_DIR}/${n}`)).join('\n----\n');
+  const contents = await Promise.all(names.map(n => sh(srv, `cat ${ORACLE_CONFIG.AUDIT_DIR}/${n}`)));
+  return contents.join('\n----\n');
 }
 
 function makeNormalUser(srv: LinuxServer, user: string, pw: string): void {
@@ -56,30 +57,30 @@ function makeNormalUser(srv: LinuxServer, user: string, pw: string): void {
 }
 
 describe('audit_trail=DB keeps ordinary activity out of adump/', () => {
-  it('a successful NORMAL logon writes no .aud naming that user', () => {
+  it('a successful NORMAL logon writes no .aud naming that user', async () => {
     const srv = boot('at-db-1');
     makeNormalUser(srv, 'APPUSER', 'pw');
     const u = SqlPlusSubShell.create(srv, ['APPUSER/pw']).subShell;
     u.dispose();
     // SYSDBA boot/installer logons DO leave mandatory .aud files, so the
     // directory is not empty — but none of them is APPUSER's logon.
-    expect(audDump(srv)).not.toMatch(/DATABASE USER:\s*APPUSER/);
+    expect(await audDump(srv)).not.toMatch(/DATABASE USER:\s*APPUSER/);
   });
 
-  it('SYS operations still write .aud (audit_sys_operations is on)', () => {
+  it('SYS operations still write .aud (audit_sys_operations is on)', async () => {
     const srv = boot('at-db-2');
     const sys = SqlPlusSubShell.create(srv, ['/', 'as', 'sysdba']).subShell;
     sys.processLine("CREATE TABLESPACE sys_marks DATAFILE '/u01/oradata/ORCL/sm.dbf' SIZE 10M;");
     sys.dispose();
-    expect(audDump(srv)).toMatch(/CREATE TABLESPACE/i);
+    expect(await audDump(srv)).toMatch(/CREATE TABLESPACE/i);
   });
 
-  it('a FAILED logon is mandatorily audited to the OS trail', () => {
+  it('a FAILED logon is mandatorily audited to the OS trail', async () => {
     const srv = boot('at-db-3');
     makeNormalUser(srv, 'WHO', 'right');
     const bad = SqlPlusSubShell.create(srv, ['WHO/wrong']).subShell;
     bad.dispose();
-    const dump = audDump(srv);
+    const dump = await audDump(srv);
     // The failed attempt for WHO is recorded (STATUS 1017), even under DB.
     expect(dump).toMatch(/DATABASE USER:\s*WHO/);
     expect(dump).toMatch(/STATUS:\s*1017/);
@@ -87,13 +88,13 @@ describe('audit_trail=DB keeps ordinary activity out of adump/', () => {
 });
 
 describe('audit_trail=OS sends ordinary activity to adump/', () => {
-  it('a NORMAL logon writes a .aud once audit_trail flips to OS', () => {
+  it('a NORMAL logon writes a .aud once audit_trail flips to OS', async () => {
     const srv = boot('at-os-1');
     const db = getRegisteredOracleDatabase(srv.getId())!;
     db.instance.setParameter('audit_trail', 'OS');
     makeNormalUser(srv, 'OSUSER', 'pw');
     const u = SqlPlusSubShell.create(srv, ['OSUSER/pw']).subShell;
     u.dispose();
-    expect(audDump(srv)).toMatch(/DATABASE USER:\s*OSUSER/);
+    expect(await audDump(srv)).toMatch(/DATABASE USER:\s*OSUSER/);
   });
 });

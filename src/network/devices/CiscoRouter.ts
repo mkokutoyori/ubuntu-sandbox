@@ -399,10 +399,10 @@ export class CiscoRouter extends Router {
     };
   }
 
-  override runSshCommandSync(
+  override async runSshCommandSync(
     _user: string,
     command: string,
-  ): { output: string; exitCode: number } | null {
+  ): Promise<{ output: string; exitCode: number } | null> {
     let trimmed = command.trim();
     if (!trimmed) return { output: '', exitCode: 0 };
     if ((trimmed.startsWith('"') && trimmed.endsWith('"')) || (trimmed.startsWith("'") && trimmed.endsWith("'"))) {

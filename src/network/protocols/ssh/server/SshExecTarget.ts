@@ -1,24 +1,21 @@
 /**
- * SshExecTarget — synchronous, polymorphic SSH exec contract for
- * heterogeneous targets.
+ * SshExecTarget — polymorphic SSH exec contract for heterogeneous
+ * targets.
  *
- * Background. The Linux SSH client (`LinuxSshClient.runSshClient`) is
- * intentionally synchronous so it fits inside the sync
- * `LinuxCommandExecutor.execute()` pipeline. Linux→Linux SSH works
- * because the client takes a shortcut: it locates the peer's
+ * Background. The Linux SSH client (`LinuxSshClient.runSshClient`)
+ * takes a shortcut for Linux→Linux SSH: it locates the peer's
  * `LinuxMachine` instance via the EquipmentRegistry and calls
  * `machine.executor.execute(cmd)` directly — bypassing the SSH
  * protocol stack.
  *
- * For Linux→Windows, Linux→Cisco or Linux→Huawei to work through the
- * same sync pipeline the target device must offer a sync equivalent.
- * Async per-device CLIs (Windows PowerShell, Cisco IOS, Huawei VRP)
- * can't be awaited from a sync caller, so the contract defined here
- * is intentionally narrow: handle a *curated* set of common SSH-exec
- * commands by reading the device's reactive state — hostname, banner,
- * platform identification, current user, simple `echo`, etc. — and
- * return `null` when the command is beyond the sync surface. Callers
- * fall back to whatever async pathway is appropriate.
+ * For Linux→Windows, Linux→Cisco or Linux→Huawei, the target device
+ * offers a curated equivalent instead of the full per-device CLI
+ * (Windows PowerShell, Cisco IOS, Huawei VRP): handle a *curated* set
+ * of common SSH-exec commands by reading the device's reactive state
+ * — hostname, banner, platform identification, current user, simple
+ * `echo`, etc. — and return `null` when the command is beyond that
+ * curated surface. Callers fall back to whatever async pathway is
+ * appropriate.
  *
  * Domain notion. In a real network an SSH server is just an inbound
  * service on tcp/22 backed by the host's identity and accounts. The
@@ -84,10 +81,9 @@ export interface SshHostKeyInfo {
  * implementations live close to their device class — LinuxMachine,
  * WindowsPC, CiscoRouter, HuaweiRouter.
  *
- * Methods marked `Sync` MUST never await — they are called from
- * synchronous SSH-client paths and return synchronously or return
- * `null` to mean "I cannot answer synchronously, defer to the async
- * path".
+ * `runSshCommandSync` returns `null` to mean "outside the curated
+ * surface, defer to the async path" — everything else about it is
+ * async, matching the rest of the executor pipeline.
  */
 export interface SshExecTarget {
   /** Device hostname as it would appear in a remote shell prompt. */
@@ -112,11 +108,14 @@ export interface SshExecTarget {
   ): void;
 
   /**
-   * Run a curated, *synchronous* command on this target in exec mode.
-   * Return `null` when the command is outside the sync surface so the
-   * caller knows to fall back to the async pathway.
+   * Run a curated command on this target in exec mode. Return `null`
+   * when the command is outside the curated surface so the caller
+   * knows to fall back to the async pathway. Kept `Sync` in the name
+   * for historical/API-compat reasons; every implementation is async
+   * since command-kernel (and the rest of the executor pipeline) is
+   * itself Promise-based end to end.
    */
-  runSshCommandSync(user: string, command: string): SshExecResult | null;
+  runSshCommandSync(user: string, command: string): Promise<SshExecResult | null>;
 
   /** Pre-auth banner shown by sshd. */
   getSshBanner(): string;

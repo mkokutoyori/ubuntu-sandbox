@@ -130,7 +130,7 @@ describe('§C — local users appear in running-config / current-configuration',
     await lab.ciscoR1.executeCommand('configure terminal');
     await lab.ciscoR1.executeCommand('username admin privilege 15 secret Admin@123');
     await lab.ciscoR1.executeCommand('end');
-    const out = lab.ciscoR1.runSshCommandSync('', 'show running-config');
+    const out = await lab.ciscoR1.runSshCommandSync('', 'show running-config');
     expect(out?.output).toMatch(/username admin privilege 15 secret/);
   });
 
@@ -141,7 +141,7 @@ describe('§C — local users appear in running-config / current-configuration',
     await lab.hwR1.executeCommand('local-user admin privilege level 15');
     await lab.hwR1.executeCommand('quit');
     await lab.hwR1.executeCommand('quit');
-    const out = lab.hwR1.runSshCommandSync('', 'display current-configuration');
+    const out = await lab.hwR1.runSshCommandSync('', 'display current-configuration');
     expect(out?.output).toMatch(/local-user admin password/);
     expect(out?.output).toMatch(/local-user admin privilege level 15/);
   });
@@ -305,14 +305,14 @@ describe('§G — Router wires CredentialStore + SecurityAuditLog into native CL
     await lab.ciscoR1.executeCommand('configure terminal');
     await lab.ciscoR1.executeCommand('username admin privilege 15 secret Admin@123');
     await lab.ciscoR1.executeCommand('end');
-    const out = lab.ciscoR1.runSshCommandSync('', 'show logging');
+    const out = await lab.ciscoR1.runSshCommandSync('', 'show logging');
     expect(out?.output).toMatch(/%SEC_LOGIN-6-CONFIG_CHANGE.*admin/);
   });
 
-  test('Cisco show logging records an SSH login success', () => {
+  test('Cisco show logging records an SSH login success', async () => {
     lab.ciscoR1.getCredentialStore().upsert(NetworkOsAccount.create({ name: 'admin', privilege: 15 }));
     lab.ciscoR1.getCredentialStore().recordLoginSuccess('admin', '10.0.0.1', 'password');
-    const out = lab.ciscoR1.runSshCommandSync('', 'show logging');
+    const out = await lab.ciscoR1.runSshCommandSync('', 'show logging');
     expect(out?.output).toMatch(/%SEC_LOGIN-5-LOGIN_SUCCESS/);
     expect(out?.output).toMatch(/10\.0\.0\.1/);
   });
@@ -323,12 +323,12 @@ describe('§G — Router wires CredentialStore + SecurityAuditLog into native CL
     await lab.hwR1.executeCommand('local-user admin password cipher Admin@123');
     await lab.hwR1.executeCommand('quit');
     await lab.hwR1.executeCommand('quit');
-    const out = lab.hwR1.runSshCommandSync('', 'display logbuffer');
+    const out = await lab.hwR1.runSshCommandSync('', 'display logbuffer');
     expect(out?.output).toMatch(/SEC_LOGIN|CONFIG_CHANGE|admin/);
   });
 
-  test('Cisco show logging is empty when nothing happened', () => {
-    const out = lab.ciscoR1.runSshCommandSync('', 'show logging');
+  test('Cisco show logging is empty when nothing happened', async () => {
+    const out = await lab.ciscoR1.runSshCommandSync('', 'show logging');
     expect(out?.output).toMatch(/Syslog logging:/);
   });
 });
@@ -414,7 +414,7 @@ describe('§I — login block-for / authentication-retries wired into Router', (
     await lab.ciscoR1.executeCommand('configure terminal');
     await lab.ciscoR1.executeCommand('login block-for 60 attempts 2 within 30');
     await lab.ciscoR1.executeCommand('end');
-    const out = lab.ciscoR1.runSshCommandSync('', 'show running-config');
+    const out = await lab.ciscoR1.runSshCommandSync('', 'show running-config');
     expect(out?.output).toMatch(/login block-for 60 attempts 2 within 30/);
   });
 
@@ -429,7 +429,7 @@ describe('§I — login block-for / authentication-retries wired into Router', (
     await lab.hwR1.executeCommand('system-view');
     await lab.hwR1.executeCommand('ssh server authentication-retries 3');
     await lab.hwR1.executeCommand('quit');
-    const out = lab.hwR1.runSshCommandSync('', 'display current-configuration');
+    const out = await lab.hwR1.runSshCommandSync('', 'display current-configuration');
     expect(out?.output).toMatch(/ssh server authentication-retries 3/);
   });
 });
@@ -465,7 +465,7 @@ describe('§J — SSH dispatch publishes lifecycle events on the bus', () => {
 
   test('show logging after a wrong login contains LOGIN_FAILED', async () => {
     await lab.linux1.executeCommand('ssh ghost@10.0.0.6 "show version"');
-    const out = lab.ciscoR1.runSshCommandSync('', 'show logging');
+    const out = await lab.ciscoR1.runSshCommandSync('', 'show logging');
     expect(out?.output).toMatch(/%SEC_LOGIN-4-LOGIN_FAILED/);
     expect(out?.output).toMatch(/10\.0\.0\.1/);
   });
@@ -559,18 +559,18 @@ describe('§L — Router wires SshSessionRegistry into show users / display user
     await provisionCiscoSsh(lab.ciscoR1);
   });
 
-  test('Cisco show users lists vty 0 admin host 10.0.0.1 after SSH login', () => {
+  test('Cisco show users lists vty 0 admin host 10.0.0.1 after SSH login', async () => {
     lab.ciscoR1.getCredentialStore().upsert(NetworkOsAccount.create({ name: 'admin', privilege: 15 }));
     lab.ciscoR1.getCredentialStore().recordLoginSuccess('admin', '10.0.0.1', 'password');
-    const out = lab.ciscoR1.runSshCommandSync('', 'show users');
+    const out = await lab.ciscoR1.runSshCommandSync('', 'show users');
     expect(out?.output).toMatch(/vty 0\s+admin/);
     expect(out?.output).toMatch(/10\.0\.0\.1/);
   });
 
-  test('Huawei display users lists the SSH session reactively', () => {
+  test('Huawei display users lists the SSH session reactively', async () => {
     lab.hwR1.getCredentialStore().upsert(NetworkOsAccount.create({ name: 'admin', privilege: 15 }));
     lab.hwR1.getCredentialStore().recordLoginSuccess('admin', '10.0.0.1', 'password');
-    const out = lab.hwR1.runSshCommandSync('', 'display users');
+    const out = await lab.hwR1.runSshCommandSync('', 'display users');
     expect(out?.output).toMatch(/SSH/);
     expect(out?.output).toMatch(/admin/);
     expect(out?.output).toMatch(/10\.0\.0\.1/);

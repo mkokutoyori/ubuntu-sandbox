@@ -22,25 +22,25 @@ function boot(name: string): LinuxServer {
 }
 
 describe('shell lsnrctl/tnsping use the same real handler as the terminal', () => {
-  it('lsnrctl status via the shell lists open PDB services (real statusBody)', () => {
+  it('lsnrctl status via the shell lists open PDB services (real statusBody)', async () => {
     const srv = boot('shell-lsnr-1');
-    const out = sh(srv, 'lsnrctl status');
+    const out = await sh(srv, 'lsnrctl status');
     expect(out).toMatch(/Service "ORCL" has 1 instance/);
     expect(out).toMatch(/Service "ORCLPDB1" has 1 instance/);
   });
 
-  it('lsnrctl status reflects the live listener state (stopped → TNS-12541)', () => {
+  it('lsnrctl status reflects the live listener state (stopped → TNS-12541)', async () => {
     const srv = boot('shell-lsnr-2');
     const sql = SqlPlusSubShell.create(srv, ['/', 'as', 'sysdba']).subShell;
     sql.processLine('SHUTDOWN IMMEDIATE');
     sql.dispose();
-    const out = sh(srv, 'lsnrctl status');
+    const out = await sh(srv, 'lsnrctl status');
     expect(out).toMatch(/no listener|TNS-12541|supports no services/i);
   });
 
-  it('tnsping resolves the local service instead of always failing TNS-03505', () => {
+  it('tnsping resolves the local service instead of always failing TNS-03505', async () => {
     const srv = boot('shell-tns-1');
-    const out = sh(srv, 'tnsping ORCL');
+    const out = await sh(srv, 'tnsping ORCL');
     expect(out).toMatch(/TNS Ping Utility/);
     expect(out).not.toMatch(/TNS-03505/);
     expect(out).toMatch(/OK/);

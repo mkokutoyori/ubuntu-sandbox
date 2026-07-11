@@ -1407,6 +1407,9 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       if (ip && p.getIsUp()) { sourceIp = ip.toString(); break; }
     }
     if (!sourceIp) return '% No usable interface IP for outbound SSH';
+    const dev = this.d() as unknown as {
+      _getSshKnownHosts?: () => { add: (e: { host: string; keyType: string; publicKey: string }) => void };
+    };
     const clientArgs: string[] = [];
     if (port) clientArgs.push('-p', port);
     clientArgs.push('-o', 'StrictHostKeyChecking=accept-new');
@@ -1415,7 +1418,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     clientArgs.push('-t');
     clientArgs.push(`${user}@${host}`);
     if (cmd) clientArgs.push(cmd);
-    const result = runSshClient({
+    this._pendingAsync = runSshClient({
       args: clientArgs,
       sourceHostname: router._getHostnameInternal(),
       sourceIp,
@@ -1424,22 +1427,21 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
         readFile: () => null,
         writeFile: () => undefined,
       },
+    }).then(result => {
+      // TOFU: record the remote host key in this router's local
+      // known-hosts table so `show ip ssh known-hosts` reflects it.
+      if (result.exitCode === 0) {
+        const remoteHk = this.lookupRemoteSshHostKey(host);
+        if (remoteHk) {
+          dev._getSshKnownHosts?.().add({ host, ...remoteHk });
+        }
+        if (!cmd) {
+          this.outgoingSessions.open({ host: rest[0], address: host, protocol: 'ssh', user });
+        }
+      }
+      return result.output;
     });
-    // TOFU: record the remote host key in this router's local
-    // known-hosts table so `show ip ssh known-hosts` reflects it.
-    if (result.exitCode === 0) {
-      const dev = this.d() as unknown as {
-        _getSshKnownHosts?: () => { add: (e: { host: string; keyType: string; publicKey: string }) => void };
-      };
-      const remoteHk = this.lookupRemoteSshHostKey(host);
-      if (remoteHk) {
-        dev._getSshKnownHosts?.().add({ host, ...remoteHk });
-      }
-      if (!cmd) {
-        this.outgoingSessions.open({ host: rest[0], address: host, protocol: 'ssh', user });
-      }
-    }
-    return result.output;
+    return '';
   }
 
   /** Read the remote machine's host key via the topology registry. */

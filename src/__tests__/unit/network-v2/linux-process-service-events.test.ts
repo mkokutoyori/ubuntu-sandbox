@@ -86,37 +86,37 @@ describe('LinuxServiceManager — domain events via executor', () => {
     exec.attachEventBus(bus, 'srv-1');
   });
 
-  it('systemctl stop publishes service stopped + state-changed + process exit', () => {
+  it('systemctl stop publishes service stopped + state-changed + process exit', async () => {
     const stopped = collect(bus, 'linux.service.stopped');
     const stateCh = collect(bus, 'linux.service.state-changed');
     const procExit = collect(bus, 'linux.process.exited');
-    exec.execute('systemctl stop ssh');
+    await exec.execute('systemctl stop ssh');
     expect(stopped[0].payload).toMatchObject({ deviceId: 'srv-1', name: 'ssh' });
     expect(stateCh.some(e => (e.payload as { to: string }).to === 'inactive')).toBe(true);
     expect(procExit.length).toBeGreaterThan(0);
   });
 
-  it('systemctl start publishes service started + process spawned', () => {
-    exec.execute('systemctl stop ssh');
+  it('systemctl start publishes service started + process spawned', async () => {
+    await exec.execute('systemctl stop ssh');
     const started = collect(bus, 'linux.service.started');
     const spawned = collect(bus, 'linux.process.spawned');
-    exec.execute('systemctl start ssh');
+    await exec.execute('systemctl start ssh');
     expect(started[0].payload).toMatchObject({ name: 'ssh', state: 'active' });
     expect(spawned.some(e => (e.payload as { comm: string }).comm === 'sshd')).toBe(true);
   });
 
-  it('systemctl restart publishes a restarted event', () => {
+  it('systemctl restart publishes a restarted event', async () => {
     const restarted = collect(bus, 'linux.service.restarted');
-    exec.execute('systemctl restart cron');
+    await exec.execute('systemctl restart cron');
     expect(restarted[0].payload).toMatchObject({ name: 'cron' });
   });
 
-  it('enable / disable publish enablement events', () => {
-    exec.execute('systemctl enable cron');
+  it('enable / disable publish enablement events', async () => {
+    await exec.execute('systemctl enable cron');
     const disabled = collect(bus, 'linux.service.disabled');
     const enabled = collect(bus, 'linux.service.enabled');
-    exec.execute('systemctl disable cron');
-    exec.execute('systemctl enable cron');
+    await exec.execute('systemctl disable cron');
+    await exec.execute('systemctl enable cron');
     expect(disabled[0].payload).toMatchObject({ name: 'cron', enabled: 'disabled' });
     expect(enabled[0].payload).toMatchObject({ name: 'cron', enabled: 'enabled' });
   });

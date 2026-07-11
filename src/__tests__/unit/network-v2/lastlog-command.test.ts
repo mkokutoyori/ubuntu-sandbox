@@ -28,22 +28,22 @@ describe('lastlog command', () => {
     entries.set(user, { current: { when: Date.now() - daysAgo * 86400_000, sourceHost: host, tty } });
   }
 
-  it('1. prints the canonical Username/Port/From/Latest header', () => {
-    const out = exec.execute('lastlog');
+  it('1. prints the canonical Username/Port/From/Latest header', async () => {
+    const out = await exec.execute('lastlog');
     expect(out.split('\n')[0]).toMatch(/^Username\s+Port\s+From\s+Latest$/);
   });
 
-  it('2. reports "**Never logged in**" for a user with no recorded login', () => {
+  it('2. reports "**Never logged in**" for a user with no recorded login', async () => {
     exec.userMgr.useradd('alice', { u: 1001 });
-    const out = exec.execute('lastlog -u alice');
+    const out = await exec.execute('lastlog -u alice');
     expect(out).toContain('alice');
     expect(out).toContain('**Never logged in**');
   });
 
-  it('3. renders user, From host, Port (tty) and a Latest date after a login', () => {
+  it('3. renders user, From host, Port (tty) and a Latest date after a login', async () => {
     exec.userMgr.useradd('alice', { u: 1001 });
     exec.lastlog.record('alice', '192.168.1.50', 'pts/2');
-    const out = exec.execute('lastlog -u alice');
+    const out = await exec.execute('lastlog -u alice');
     const row = out.split('\n').find(l => l.startsWith('alice'))!;
     expect(row).toContain('192.168.1.50');
     expect(row).toContain('pts/2');
@@ -51,64 +51,64 @@ describe('lastlog command', () => {
     expect(row).toMatch(/\b\d{4}\b/);
   });
 
-  it('4. -u <user> restricts the output to that single user', () => {
+  it('4. -u <user> restricts the output to that single user', async () => {
     exec.userMgr.useradd('alice', { u: 1001 });
     exec.userMgr.useradd('bob', { u: 1002 });
     exec.lastlog.record('alice', '10.0.0.5', 'pts/0');
     exec.lastlog.record('bob', '10.0.0.6', 'pts/1');
-    const out = exec.execute('lastlog -u alice');
+    const out = await exec.execute('lastlog -u alice');
     expect(out).toMatch(/^alice\b/m);
     expect(out).not.toMatch(/^bob\b/m);
   });
 
-  it('5. -u <unknown> reports an unknown-user error', () => {
-    const out = exec.execute('lastlog -u ghost');
+  it('5. -u <unknown> reports an unknown-user error', async () => {
+    const out = await exec.execute('lastlog -u ghost');
     expect(out).toMatch(/Unknown user or range: ghost/);
   });
 
-  it('6. -t DAYS shows only logins more recent than the cutoff', () => {
+  it('6. -t DAYS shows only logins more recent than the cutoff', async () => {
     exec.userMgr.useradd('recent', { u: 2001 });
     exec.userMgr.useradd('stale', { u: 2002 });
     exec.lastlog.record('recent', '10.0.0.5', 'pts/0');
     setEntryAge('stale', 30);
-    const out = exec.execute('lastlog -t 7');
+    const out = await exec.execute('lastlog -t 7');
     expect(out).toMatch(/^recent\b/m);
     expect(out).not.toMatch(/^stale\b/m);
   });
 
-  it('7. -b DAYS shows only logins older than the cutoff', () => {
+  it('7. -b DAYS shows only logins older than the cutoff', async () => {
     exec.userMgr.useradd('recent', { u: 2001 });
     exec.userMgr.useradd('stale', { u: 2002 });
     exec.lastlog.record('recent', '10.0.0.5', 'pts/0');
     setEntryAge('stale', 30);
-    const out = exec.execute('lastlog -b 7');
+    const out = await exec.execute('lastlog -b 7');
     expect(out).toMatch(/^stale\b/m);
     expect(out).not.toMatch(/^recent\b/m);
   });
 
-  it('8. -C -u <user> as root clears the record (back to Never logged in)', () => {
+  it('8. -C -u <user> as root clears the record (back to Never logged in)', async () => {
     exec.userMgr.useradd('alice', { u: 1001 });
     exec.lastlog.record('alice', '10.0.0.5', 'pts/0');
     exec.userMgr.currentUid = 0;
-    exec.execute('lastlog -C -u alice');
-    const out = exec.execute('lastlog -u alice');
+    await exec.execute('lastlog -C -u alice');
+    const out = await exec.execute('lastlog -u alice');
     expect(out).toContain('**Never logged in**');
   });
 
-  it('9. -S -u <user> as root stamps the record with the current time', () => {
+  it('9. -S -u <user> as root stamps the record with the current time', async () => {
     exec.userMgr.useradd('alice', { u: 1001 });
     exec.userMgr.currentUid = 0;
-    exec.execute('lastlog -S -u alice');
-    const out = exec.execute('lastlog -u alice');
+    await exec.execute('lastlog -S -u alice');
+    const out = await exec.execute('lastlog -u alice');
     expect(out).not.toContain('**Never logged in**');
     expect(out).toMatch(/^alice\b.*\b\d{4}\b/m);
   });
 
-  it('10. rejects -C/-S without -u and when not root', () => {
+  it('10. rejects -C/-S without -u and when not root', async () => {
     exec.userMgr.useradd('alice', { u: 1001 });
     exec.userMgr.currentUid = 0;
-    expect(exec.execute('lastlog -C')).toMatch(/option requires -u|--user/);
+    expect(await exec.execute('lastlog -C')).toMatch(/option requires -u|--user/);
     exec.userMgr.currentUid = 1001;
-    expect(exec.execute('lastlog -C -u alice')).toMatch(/must be root/);
+    expect(await exec.execute('lastlog -C -u alice')).toMatch(/must be root/);
   });
 });

@@ -27,7 +27,7 @@ function bootArchivelog(name: string): { srv: LinuxServer; sql: SqlPlusSubShell 
 const sh = (srv: LinuxServer, cmd: string) => srv.executeShellCommandSync(cmd);
 
 describe('RMAN sees the same archived logs the instance created', () => {
-  it('getArchivelogPaths matches V$ARCHIVED_LOG and the VFS files', () => {
+  it('getArchivelogPaths matches V$ARCHIVED_LOG and the VFS files', async () => {
     const { srv, sql } = bootArchivelog('arc-rman-1');
     sql.processLine('ALTER SYSTEM SWITCH LOGFILE;');
     sql.processLine('ALTER SYSTEM SWITCH LOGFILE;');
@@ -39,7 +39,7 @@ describe('RMAN sees the same archived logs the instance created', () => {
     const viewNames = sql.processLine('SELECT name FROM v$archived_log;').output.join('\n');
     for (const p of rmanPaths) {
       expect(viewNames).toContain(p);
-      expect(sh(srv, `ls ${p}`)).not.toMatch(/No such file/);
+      expect(await sh(srv, `ls ${p}`)).not.toMatch(/No such file/);
     }
     sql.dispose();
   });

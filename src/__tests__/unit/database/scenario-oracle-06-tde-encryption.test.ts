@@ -113,7 +113,7 @@ describe('V$ENCRYPTED_TABLESPACES and DBA_TABLESPACES.ENCRYPTED reflect real sta
 });
 
 describe('encrypted datafiles are unreadable plaintext at the OS/VFS level; unencrypted ones are not', () => {
-  it('an unencrypted datafile shows a readable tablespace marker; an encrypted one shows only hex noise', () => {
+  it('an unencrypted datafile shows a readable tablespace marker; an encrypted one shows only hex noise', async () => {
     const { srv, subShell: s } = boot('tde7');
     sql(s, "ADMINISTER KEY MANAGEMENT CREATE KEYSTORE '/opt/oracle/wallet' IDENTIFIED BY \"WalletP@ss1\";");
     sql(s, "ADMINISTER KEY MANAGEMENT SET KEYSTORE OPEN IDENTIFIED BY \"WalletP@ss1\";");
@@ -121,29 +121,29 @@ describe('encrypted datafiles are unreadable plaintext at the OS/VFS level; unen
     sql(s, "CREATE TABLESPACE secure_ts DATAFILE '/u01/app/oracle/oradata/ORCL/secure01.dbf' SIZE 1M ENCRYPTION USING 'AES256' ENCRYPT;");
     sql(s, "CREATE TABLESPACE plain_ts DATAFILE '/u01/app/oracle/oradata/ORCL/plain01.dbf' SIZE 1M;");
 
-    const plainContent = srv.executeShellCommandSync('cat /u01/app/oracle/oradata/ORCL/plain01.dbf');
+    const plainContent = await srv.executeShellCommandSync('cat /u01/app/oracle/oradata/ORCL/plain01.dbf');
     expect(plainContent).toContain('PLAIN_TS');
     expect(plainContent).toMatch(/ORACLE DATAFILE/);
 
-    const secureContent = srv.executeShellCommandSync('cat /u01/app/oracle/oradata/ORCL/secure01.dbf');
+    const secureContent = await srv.executeShellCommandSync('cat /u01/app/oracle/oradata/ORCL/secure01.dbf');
     expect(secureContent).not.toContain('SECURE_TS');
     expect(secureContent).not.toMatch(/ORACLE DATAFILE/);
     expect(secureContent).toMatch(/^[0-9a-f]+$/);
     s.dispose();
   });
 
-  it('an online-encrypted datafile turns unreadable at the moment it is re-encrypted', () => {
+  it('an online-encrypted datafile turns unreadable at the moment it is re-encrypted', async () => {
     const { srv, subShell: s } = boot('tde8');
     sql(s, "ADMINISTER KEY MANAGEMENT CREATE KEYSTORE '/opt/oracle/wallet' IDENTIFIED BY \"WalletP@ss1\";");
     sql(s, "ADMINISTER KEY MANAGEMENT SET KEYSTORE OPEN IDENTIFIED BY \"WalletP@ss1\";");
     sql(s, "ADMINISTER KEY MANAGEMENT SET KEY USING TAG 'master-2026' IDENTIFIED BY \"WalletP@ss1\" WITH BACKUP;");
     sql(s, "CREATE TABLESPACE later_ts DATAFILE '/u01/app/oracle/oradata/ORCL/later01.dbf' SIZE 1M;");
 
-    const before = srv.executeShellCommandSync('cat /u01/app/oracle/oradata/ORCL/later01.dbf');
+    const before = await srv.executeShellCommandSync('cat /u01/app/oracle/oradata/ORCL/later01.dbf');
     expect(before).toContain('LATER_TS');
 
     sql(s, 'ALTER TABLESPACE later_ts ENCRYPTION ONLINE ENCRYPT;');
-    const after = srv.executeShellCommandSync('cat /u01/app/oracle/oradata/ORCL/later01.dbf');
+    const after = await srv.executeShellCommandSync('cat /u01/app/oracle/oradata/ORCL/later01.dbf');
     expect(after).not.toContain('LATER_TS');
     expect(after).toMatch(/^[0-9a-f]+$/);
     s.dispose();

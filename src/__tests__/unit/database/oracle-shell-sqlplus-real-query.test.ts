@@ -28,40 +28,40 @@ function boot(name: string): LinuxServer {
 }
 
 describe('shell `sqlplus -s` runs the real query, not a hardcoded result', () => {
-  it('SUM aggregate returns the real value', () => {
+  it('SUM aggregate returns the real value', async () => {
     const srv = boot('shell-sql-1');
-    const out = sh(srv, 'sqlplus -s system/oracle@ORCL "SELECT SUM(n) FROM system.nums"');
+    const out = await sh(srv, 'sqlplus -s system/oracle@ORCL "SELECT SUM(n) FROM system.nums"');
     expect(out).toMatch(/\b60\b/);
     expect(out).not.toMatch(/^\s*1\s*$/m);
   });
 
-  it('COUNT reflects the real row count', () => {
+  it('COUNT reflects the real row count', async () => {
     const srv = boot('shell-sql-2');
-    const out = sh(srv, 'sqlplus -s system/oracle@ORCL "SELECT COUNT(*) FROM system.nums"');
+    const out = await sh(srv, 'sqlplus -s system/oracle@ORCL "SELECT COUNT(*) FROM system.nums"');
     expect(out).toMatch(/\b3\b/);
   });
 
-  it('a query piped on stdin is executed', () => {
+  it('a query piped on stdin is executed', async () => {
     const srv = boot('shell-sql-3');
-    const out = sh(srv, 'echo "SELECT MAX(n) FROM system.nums;" | sqlplus -s system/oracle@ORCL');
+    const out = await sh(srv, 'echo "SELECT MAX(n) FROM system.nums;" | sqlplus -s system/oracle@ORCL');
     expect(out).toMatch(/\b30\b/);
   });
 
-  it('bad credentials report the real error, not a fake row', () => {
+  it('bad credentials report the real error, not a fake row', async () => {
     const srv = boot('shell-sql-4');
-    const out = sh(srv, 'sqlplus -s system/wrongpw@ORCL "SELECT 1 FROM DUAL"');
+    const out = await sh(srv, 'sqlplus -s system/wrongpw@ORCL "SELECT 1 FROM DUAL"');
     expect(out).toMatch(/ORA-01017|invalid username\/password/i);
   });
 
-  it('piped SQL to `/ as sysdba` is executed (not dropped)', () => {
+  it('piped SQL to `/ as sysdba` is executed (not dropped)', async () => {
     const srv = boot('shell-sql-5');
-    const out = sh(srv, 'echo "SELECT SUM(n) FROM system.nums;" | sqlplus / as sysdba');
+    const out = await sh(srv, 'echo "SELECT SUM(n) FROM system.nums;" | sqlplus / as sysdba');
     expect(out).toMatch(/\b60\b/);
   });
 
-  it('bare `/ as sysdba` with no SQL still shows the banner', () => {
+  it('bare `/ as sysdba` with no SQL still shows the banner', async () => {
     const srv = boot('shell-sql-6');
-    const out = sh(srv, 'sqlplus / as sysdba');
+    const out = await sh(srv, 'sqlplus / as sysdba');
     expect(out).toMatch(/SQL\*Plus: Release/);
   });
 });

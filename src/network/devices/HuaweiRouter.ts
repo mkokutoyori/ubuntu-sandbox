@@ -305,10 +305,10 @@ export class HuaweiRouter extends Router {
     return `Huawei Versatile Routing Platform Software\n<${this.hostname}>`;
   }
 
-  override runSshCommandSync(
+  override async runSshCommandSync(
     _user: string,
     command: string,
-  ): { output: string; exitCode: number } | null {
+  ): Promise<{ output: string; exitCode: number } | null> {
     let cmd = command.trim();
     if (!cmd) return { output: '', exitCode: 0 };
     if ((cmd.startsWith('"') && cmd.endsWith('"')) || (cmd.startsWith("'") && cmd.endsWith("'"))) {
@@ -321,7 +321,7 @@ export class HuaweiRouter extends Router {
     // Expand VRP `command-alias alias <head>` shortcuts before pattern
     // matching so `ssh ... "dis-int Gi0/0/0"` invokes display interface.
     const expanded = this._getCommandAliases().expand(cmd);
-    if (expanded !== cmd) return this.runSshCommandSync(_user, expanded);
+    if (expanded !== cmd) return await this.runSshCommandSync(_user, expanded);
     if (/^display\s+version\s*$/i.test(cmd)) {
       return { output: `${displayVersion(this)}\n`, exitCode: 0 };
     }

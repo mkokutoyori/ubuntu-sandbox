@@ -153,21 +153,21 @@ describe('sed — options, branching, integration (§D)', () => {
   it('D7 BRE leaves bare + ? ( ) literal', () => {
     expect(sed(['s/a+/X/'], 'a+\n').output).toBe('X\n');
   });
-  it('D8 -i edits a file in place through the executor', () => {
+  it('D8 -i edits a file in place through the executor', async () => {
     const exec = new LinuxCommandExecutor(false);
     exec.vfs.writeFile('/tmp/f.txt', 'Port 22\n', 1000, 1000, 0o022);
-    exec.execute("sed -i s/22/2222/ /tmp/f.txt");
+    await exec.execute("sed -i s/22/2222/ /tmp/f.txt");
     expect(exec.vfs.readFile('/tmp/f.txt')).toBe('Port 2222\n');
   });
-  it('D9 reads a file argument and writes to stdout (no -i)', () => {
+  it('D9 reads a file argument and writes to stdout (no -i)', async () => {
     const exec = new LinuxCommandExecutor(false);
     exec.vfs.writeFile('/tmp/g.txt', 'hello\n', 0, 0, 0o022);
-    const out = exec.execute('sed s/hello/world/ /tmp/g.txt');
+    const out = await exec.execute('sed s/hello/world/ /tmp/g.txt');
     expect(out).toBe('world');
   });
-  it('D10 processes piped stdin through the executor', () => {
+  it('D10 processes piped stdin through the executor', async () => {
     const exec = new LinuxCommandExecutor(false);
-    const out = exec.execute("printf 'a\\nb\\n' | sed s/a/X/");
+    const out = await exec.execute("printf 'a\\nb\\n' | sed s/a/X/");
     expect(out).toBe('X\nb');
   });
 });

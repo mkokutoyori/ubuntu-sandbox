@@ -18,17 +18,17 @@ beforeEach(() => {
   exec.userMgr.currentUid = 0;
   exec.userMgr.currentGid = 0;
 });
-function run(cmd: string): string { return exec.execute(cmd); }
-function runScript(body: string): string {
+async function run(cmd: string): Promise<string> { return await exec.execute(cmd); }
+async function runScript(body: string): Promise<string> {
   exec.vfs.writeFile('/tmp/__t.sh', body, 0, 0, 0o022);
   const i = exec.vfs.resolveInode('/tmp/__t.sh');
   if (i) i.permissions = 0o755;
-  return run('bash /tmp/__t.sh');
+  return await run('bash /tmp/__t.sh');
 }
 
 describe('if/set -e interaction', () => {
-  it('a false `if` condition with no else does not abort the script under set -e', () => {
-    const out = runScript(`
+  it('a false `if` condition with no else does not abort the script under set -e', async () => {
+    const out = await runScript(`
       set -e
       if false; then
         echo unreachable
@@ -39,8 +39,8 @@ describe('if/set -e interaction', () => {
     expect(out).not.toContain('unreachable');
   });
 
-  it("exit status after a not-taken if is reset to 0, not the condition's status", () => {
-    const out = runScript(`
+  it("exit status after a not-taken if is reset to 0, not the condition's status", async () => {
+    const out = await runScript(`
       if false; then
         echo unreachable
       fi
@@ -49,8 +49,8 @@ describe('if/set -e interaction', () => {
     expect(out).toContain('rc=0');
   });
 
-  it('a false [ ] test used as an if condition does not abort under set -e', () => {
-    const out = runScript(`
+  it('a false [ ] test used as an if condition does not abort under set -e', async () => {
+    const out = await runScript(`
       set -e
       if [ 1 -ne 1 ]; then
         echo unreachable
@@ -60,8 +60,8 @@ describe('if/set -e interaction', () => {
     expect(out).toContain('survived');
   });
 
-  it('a false [[ ]] test used as an if condition does not abort under set -e (the EUID root-check idiom)', () => {
-    const out = runScript(`
+  it('a false [[ ]] test used as an if condition does not abort under set -e (the EUID root-check idiom)', async () => {
+    const out = await runScript(`
       set -e
       if [[ $EUID -ne 0 ]]; then
         echo FAIL
@@ -73,8 +73,8 @@ describe('if/set -e interaction', () => {
     expect(out).not.toContain('FAIL');
   });
 
-  it('all elif branches false with no else also resets to 0 under set -e', () => {
-    const out = runScript(`
+  it('all elif branches false with no else also resets to 0 under set -e', async () => {
+    const out = await runScript(`
       set -e
       if false; then
         echo a
@@ -86,8 +86,8 @@ describe('if/set -e interaction', () => {
     expect(out).toContain('survived');
   });
 
-  it('a command that genuinely fails INSIDE a taken then-branch still aborts under set -e', () => {
-    const out = runScript(`
+  it('a command that genuinely fails INSIDE a taken then-branch still aborts under set -e', async () => {
+    const out = await runScript(`
       set -e
       if true; then
         false
@@ -99,8 +99,8 @@ describe('if/set -e interaction', () => {
     expect(out).not.toContain('also_unreachable');
   });
 
-  it('a bare failing [[ ]] test NOT used as an if condition still aborts under set -e', () => {
-    const out = runScript(`
+  it('a bare failing [[ ]] test NOT used as an if condition still aborts under set -e', async () => {
+    const out = await runScript(`
       set -e
       [[ 1 -ne 1 ]]
       echo unreachable

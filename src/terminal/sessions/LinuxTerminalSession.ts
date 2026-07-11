@@ -1006,7 +1006,7 @@ export class LinuxTerminalSession extends TerminalSession {
       prepare: () => { baseLen = this.lines.length; return true; },
       run: async (ctx) => {
         while (!ctx.cancelled()) {
-          const frame = dev.runCommandFrameInSession(commandLine, shell);
+          const frame = await dev.runCommandFrameInSession(commandLine, shell);
           this.lines = this.lines.slice(0, baseLen);
           for (const line of frame.split('\n')) this.addLine(line);
           this.notify();
@@ -1097,7 +1097,7 @@ export class LinuxTerminalSession extends TerminalSession {
     return job !== null;
   }
 
-  private tryStartJournalFollow(commandLine: string): boolean {
+  private async tryStartJournalFollow(commandLine: string): Promise<boolean> {
     if (this.hasForegroundAsyncJob) return false;
     const dev = this.device;
     if (!(dev instanceof LinuxMachine) || !this.shell) return false;
@@ -1113,11 +1113,11 @@ export class LinuxTerminalSession extends TerminalSession {
     const initialArgs = toks.slice(1).filter((t) => t !== '-f' && t !== '--follow');
     if (nIdx < 0) { initialArgs.unshift('10'); initialArgs.unshift('-n'); }
     const initialCommand = ['journalctl', ...initialArgs].join(' ');
+    const initial = await dev.runCommandFrameInSession(initialCommand, shell);
 
     return this.startFollowStream({
       commandLine,
       prepare: (ctx) => {
-        const initial = dev.runCommandFrameInSession(initialCommand, shell);
         if (initial.startsWith('No journal files')) { ctx.sink.line(initial); return false; }
         for (const line of initial.split('\n')) ctx.sink.line(line);
         return true;
@@ -1150,7 +1150,7 @@ export class LinuxTerminalSession extends TerminalSession {
     });
   }
 
-  private tryStartDmesgFollow(commandLine: string): boolean {
+  private async tryStartDmesgFollow(commandLine: string): Promise<boolean> {
     if (this.hasForegroundAsyncJob) return false;
     const dev = this.device;
     if (!(dev instanceof LinuxMachine) || !this.shell) return false;
@@ -1176,11 +1176,11 @@ export class LinuxTerminalSession extends TerminalSession {
 
     const initialArgs = toks.slice(1).filter((t) => t !== '-w' && t !== '--follow');
     const initialCommand = ['dmesg', ...initialArgs].join(' ');
+    const initial = await dev.runCommandFrameInSession(initialCommand, shell);
 
     return this.startFollowStream({
       commandLine,
       prepare: (ctx) => {
-        const initial = dev.runCommandFrameInSession(initialCommand, shell);
         if (initial.startsWith('dmesg:') && !initial.includes('\n')) {
           ctx.sink.line(initial);
           return false;
@@ -1456,9 +1456,9 @@ export class LinuxTerminalSession extends TerminalSession {
     if (this.tryStartMtrStream(trimmed)) return;
     if (this.tryStartWatchStream(trimmed)) return;
     if (this.tryStartTopStream(trimmed)) return;
-    if (this.tryStartJournalFollow(trimmed)) return;
+    if (await this.tryStartJournalFollow(trimmed)) return;
     if (this.tryStartIpMonitor(trimmed)) return;
-    if (this.tryStartDmesgFollow(trimmed)) return;
+    if (await this.tryStartDmesgFollow(trimmed)) return;
     if (this.tryStartNetstatStream(trimmed)) return;
     if (this.tryStartVmstatStream(trimmed)) return;
     if (this.tryStartFreeStream(trimmed)) return;

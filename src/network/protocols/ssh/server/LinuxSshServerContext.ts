@@ -316,7 +316,7 @@ export class LinuxSshServerContext implements ISshServerContext {
     if (executor) {
       return {
         execute: async (line: string) => {
-          const stdout = executor.execute(line);
+          const stdout = await executor.execute(line);
           const exitCode = /command not found|Permission denied/.test(stdout)
             ? 1
             : 0;

@@ -691,7 +691,7 @@ function rebindToLoopback(fwd: SshPortForward): SshPortForward {
   return SshPortForward.parse(fwd.kind, spec) ?? fwd;
 }
 
-export function runSshClient(opts: SshClientOpts): SshClientResult {
+export async function runSshClient(opts: SshClientOpts): Promise<SshClientResult> {
   const { positional, flags } = splitSshArgs(opts.args);
   const target = positional[0];
   let port = clientPort(flags);
@@ -1108,8 +1108,8 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
     let execRc = 0;
     try {
       const execMod = machine.executor as undefined | {
-        execute: (c: string) => string;
-        executeWithEnv?: (c: string, env: Record<string, string>) => string;
+        execute: (c: string) => Promise<string>;
+        executeWithEnv?: (c: string, env: Record<string, string>) => Promise<string>;
         lastExitCode?: number;
       };
       // SendEnv/AcceptEnv forwarding: variables the client offers and the
@@ -1177,8 +1177,8 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
       try {
         execOut =
           Object.keys(forwarded).length > 0 && execMod?.executeWithEnv
-            ? execMod.executeWithEnv(effectiveCmd, forwarded)
-            : execMod?.execute?.(effectiveCmd) ?? '';
+            ? await execMod.executeWithEnv(effectiveCmd, forwarded)
+            : (await execMod?.execute?.(effectiveCmd)) ?? '';
       } finally {
         if (envSnapshot && savedEntries) {
           envSnapshot.clear();
@@ -1205,9 +1205,9 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
       ?? null;
     if (forcedInteractive && forcedInteractive !== 'internal-sftp') {
       const restore = swapRemoteUser(machine, remoteUser);
-      const execMod = machine.executor as undefined | { execute: (c: string) => string; lastExitCode?: number };
+      const execMod = machine.executor as undefined | { execute: (c: string) => Promise<string>; lastExitCode?: number };
       let out = '';
-      try { out = execMod?.execute?.(forcedInteractive) ?? ''; } finally { restore?.(); }
+      try { out = (await execMod?.execute?.(forcedInteractive)) ?? ''; } finally { restore?.(); }
       return {
         output: warningBanner + verboseHeader + forwardingError + (out.endsWith('\n') ? out : out + '\n'),
         exitCode: execMod?.lastExitCode ?? 0,
@@ -1359,14 +1359,14 @@ function swapRemoteUser(machine: LinuxMachine, user: string): (() => void) | nul
  * path so callers (LinuxCommandExecutor) don't need to know which
  * platform answered.
  */
-function runCrossPlatformExec(
+async function runCrossPlatformExec(
   target: SshExecTarget,
   remoteUser: string,
   positional: string[],
   port: number,
   host: string,
   opts: SshClientOpts,
-): SshClientResult {
+): Promise<SshClientResult> {
   const router = target as unknown as {
     getLoginBlocker?: () => { isBlocked: (ip: string) => boolean } | null;
     getSshHost?: () => CrossVendorSshHost;
@@ -1458,7 +1458,7 @@ function runCrossPlatformExec(
   };
 
   if (remoteCmd) {
-    const result = target.runSshCommandSync(remoteUser, remoteCmd);
+    const result = await target.runSshCommandSync(remoteUser, remoteCmd);
     closeSession();
     if (result) return { output: result.output, exitCode: result.exitCode };
     return {

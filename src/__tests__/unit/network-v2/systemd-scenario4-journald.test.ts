@@ -21,31 +21,31 @@ function jsonEntries(output: string): Record<string, unknown>[] {
 describe('Scénario 4 — journald : collecte structurée et filtrage', () => {
   let exec: LinuxCommandExecutor;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     exec = new LinuxCommandExecutor(true);
     exec.attachEventBus(new EventBus(), 'sc4');
     writeUnit(exec, 'appa');
     writeUnit(exec, 'appb');
-    exec.execute('systemctl daemon-reload');
-    exec.execute('systemctl start appa');
-    exec.execute('systemctl start appb');
+    await exec.execute('systemctl daemon-reload');
+    await exec.execute('systemctl start appa');
+    await exec.execute('systemctl start appb');
   });
 
-  it('journalctl -u ne restitue que les entrées de l\'unité demandée', () => {
-    const onlyA = exec.execute('journalctl -u appa');
+  it('journalctl -u ne restitue que les entrées de l\'unité demandée', async () => {
+    const onlyA = await exec.execute('journalctl -u appa');
 
     expect(onlyA).toContain('appa');
     expect(onlyA).not.toContain('appb');
   });
 
-  it('journalctl -p err ne retourne que ERROR et plus grave', () => {
-    exec.execute('logger -p user.debug "niveau DEBUG visible"');
-    exec.execute('logger -p user.info "niveau INFO visible"');
-    exec.execute('logger -p user.warning "niveau WARNING visible"');
-    exec.execute('logger -p user.err "niveau ERROR visible"');
-    exec.execute('logger -p user.crit "niveau CRITICAL visible"');
+  it('journalctl -p err ne retourne que ERROR et plus grave', async () => {
+    await exec.execute('logger -p user.debug "niveau DEBUG visible"');
+    await exec.execute('logger -p user.info "niveau INFO visible"');
+    await exec.execute('logger -p user.warning "niveau WARNING visible"');
+    await exec.execute('logger -p user.err "niveau ERROR visible"');
+    await exec.execute('logger -p user.crit "niveau CRITICAL visible"');
 
-    const out = exec.execute('journalctl -p err');
+    const out = await exec.execute('journalctl -p err');
 
     expect(out).toContain('niveau ERROR visible');
     expect(out).toContain('niveau CRITICAL visible');
@@ -54,39 +54,39 @@ describe('Scénario 4 — journald : collecte structurée et filtrage', () => {
     expect(out).not.toContain('niveau DEBUG visible');
   });
 
-  it('filtre --since / --until sur une fenêtre horaire précise', () => {
-    exec.execute('logger "message dans la fenêtre"');
+  it('filtre --since / --until sur une fenêtre horaire précise', async () => {
+    await exec.execute('logger "message dans la fenêtre"');
 
-    const all = exec.execute('journalctl --since "2020-01-01 00:00:00"');
+    const all = await exec.execute('journalctl --since "2020-01-01 00:00:00"');
     expect(all).toContain('message dans la fenêtre');
 
-    const none = exec.execute('journalctl --until "2020-01-01 00:00:00" -q');
+    const none = await exec.execute('journalctl --until "2020-01-01 00:00:00" -q');
     expect(none).not.toContain('message dans la fenêtre');
 
-    const windowed = exec.execute(
+    const windowed = await exec.execute(
       'journalctl --since "2020-01-01 00:00:00" --until "2099-01-01 00:00:00"',
     );
     expect(windowed).toContain('message dans la fenêtre');
   });
 
-  it('journalctl _PID= corrèle les messages d\'un processus précis', () => {
-    exec.execute('logger "message du shell"');
-    const entries = jsonEntries(exec.execute('journalctl -o json'));
+  it('journalctl _PID= corrèle les messages d\'un processus précis', async () => {
+    await exec.execute('logger "message du shell"');
+    const entries = jsonEntries(await exec.execute('journalctl -o json'));
     const target = entries.find((e) => String(e.MESSAGE).includes('message du shell'))!;
     const pid = target._PID;
     expect(pid).toBeDefined();
 
-    const filtered = exec.execute(`journalctl _PID=${pid}`);
+    const filtered = await exec.execute(`journalctl _PID=${pid}`);
 
     expect(filtered).toContain('message du shell');
     const other = entries.find((e) => e._PID !== undefined && e._PID !== pid);
     if (other) expect(filtered).not.toContain(String(other.MESSAGE));
   });
 
-  it('journalctl -o json expose les champs structurés cohérents', () => {
-    exec.execute('logger -p user.err "erreur structurée"');
+  it('journalctl -o json expose les champs structurés cohérents', async () => {
+    await exec.execute('logger -p user.err "erreur structurée"');
 
-    const entries = jsonEntries(exec.execute('journalctl -o json'));
+    const entries = jsonEntries(await exec.execute('journalctl -o json'));
     const entry = entries.find((e) => String(e.MESSAGE).includes('erreur structurée'))!;
 
     expect(entry).toBeDefined();
@@ -98,12 +98,12 @@ describe('Scénario 4 — journald : collecte structurée et filtrage', () => {
     expect(unitEntry).toBeDefined();
   });
 
-  it('corrèle un ID de transaction à travers plusieurs services', () => {
-    exec.execute('logger -t appa "TXN-4242 étape de préparation"');
-    exec.execute('logger -t appb "TXN-4242 étape de validation"');
-    exec.execute('logger -t appb "TXN-9999 autre transaction"');
+  it('corrèle un ID de transaction à travers plusieurs services', async () => {
+    await exec.execute('logger -t appa "TXN-4242 étape de préparation"');
+    await exec.execute('logger -t appb "TXN-4242 étape de validation"');
+    await exec.execute('logger -t appb "TXN-9999 autre transaction"');
 
-    const journal = exec.execute('journalctl');
+    const journal = await exec.execute('journalctl');
     const txnLines = journal.split('\n').filter((line) => line.includes('TXN-4242'));
 
     expect(txnLines).toHaveLength(2);
@@ -111,12 +111,12 @@ describe('Scénario 4 — journald : collecte structurée et filtrage', () => {
     expect(txnLines.some((l) => l.includes('appb'))).toBe(true);
   });
 
-  it('conserve les entrées après reboot quand Storage=persistent', () => {
+  it('conserve les entrées après reboot quand Storage=persistent', async () => {
     exec.vfs.writeFile('/etc/systemd/journald.conf', '[Journal]\nStorage=persistent\n', 0, 0, 0o022);
-    exec.execute('logger "entrée avant redémarrage"');
+    await exec.execute('logger "entrée avant redémarrage"');
 
-    exec.execute('reboot');
+    await exec.execute('reboot');
 
-    expect(exec.execute('journalctl')).toContain('entrée avant redémarrage');
+    expect(await exec.execute('journalctl')).toContain('entrée avant redémarrage');
   });
 });

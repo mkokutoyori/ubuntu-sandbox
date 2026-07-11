@@ -45,64 +45,64 @@ const netstat = (srv: LinuxServer) => srv.executeShellCommandSync('netstat -tlnp
 const ps = (srv: LinuxServer) => srv.executeShellCommandSync('ps aux');
 
 describe('listener lifecycle drives the socket and process tables', () => {
-  it('while running: port 1521 bound, tnslsnr in ps, unit active', () => {
+  it('while running: port 1521 bound, tnslsnr in ps, unit active', async () => {
     const srv = bootOracleServer('ora1');
-    expect(netstat(srv)).toMatch(/:1521\b.*tnslsnr/);
-    expect(ps(srv)).toMatch(/tnslsnr/);
-    expect(srv.executeShellCommandSync('systemctl is-active oracle-listener-ORCL').trim())
+    expect(await netstat(srv)).toMatch(/:1521\b.*tnslsnr/);
+    expect(await ps(srv)).toMatch(/tnslsnr/);
+    expect((await srv.executeShellCommandSync('systemctl is-active oracle-listener-ORCL')).trim())
       .toBe('active');
   });
 
-  it('lsnrctl stop releases TCP 1521 and kills tnslsnr', () => {
+  it('lsnrctl stop releases TCP 1521 and kills tnslsnr', async () => {
     const srv = bootOracleServer('ora2');
     lsnrctl(srv, 'stop');
-    expect(netstat(srv)).not.toMatch(/:1521\b/);
-    expect(ps(srv)).not.toMatch(/tnslsnr/);
-    expect(srv.executeShellCommandSync('systemctl is-active oracle-listener-ORCL').trim())
+    expect(await netstat(srv)).not.toMatch(/:1521\b/);
+    expect(await ps(srv)).not.toMatch(/tnslsnr/);
+    expect((await srv.executeShellCommandSync('systemctl is-active oracle-listener-ORCL')).trim())
       .not.toBe('active');
     // And the listener really refuses TNS connects.
     expect(lsnrctl(srv, 'status')).toMatch(/TNS-12541/);
   });
 
-  it('lsnrctl start re-binds 1521 with the new tnslsnr pid', () => {
+  it('lsnrctl start re-binds 1521 with the new tnslsnr pid', async () => {
     const srv = bootOracleServer('ora3');
     lsnrctl(srv, 'stop');
-    expect(netstat(srv)).not.toMatch(/:1521\b/);
+    expect(await netstat(srv)).not.toMatch(/:1521\b/);
 
     lsnrctl(srv, 'start');
-    const net = netstat(srv);
+    const net = await netstat(srv);
     expect(net).toMatch(/:1521\b.*tnslsnr/);
-    expect(ps(srv)).toMatch(/tnslsnr LISTENER -inherit/);
-    expect(srv.executeShellCommandSync('systemctl is-active oracle-listener-ORCL').trim())
+    expect(await ps(srv)).toMatch(/tnslsnr LISTENER -inherit/);
+    expect((await srv.executeShellCommandSync('systemctl is-active oracle-listener-ORCL')).trim())
       .toBe('active');
 
     // The pid shown by netstat is the live daemon, not the boot-time
     // placeholder (2001) that used to be frozen into the socket table.
     const pid = net.match(/(\d+)\/tnslsnr/)?.[1];
     expect(pid).toBeDefined();
-    expect(ps(srv)).toMatch(new RegExp(`\\b${pid}\\b`));
+    expect(await ps(srv)).toMatch(new RegExp(`\\b${pid}\\b`));
   });
 
-  it('ss agrees with netstat about the listener socket', () => {
+  it('ss agrees with netstat about the listener socket', async () => {
     const srv = bootOracleServer('ora4');
-    expect(srv.executeShellCommandSync('ss -tlnp')).toMatch(/1521/);
+    expect(await srv.executeShellCommandSync('ss -tlnp')).toMatch(/1521/);
     lsnrctl(srv, 'stop');
-    expect(srv.executeShellCommandSync('ss -tlnp')).not.toMatch(/1521/);
+    expect(await srv.executeShellCommandSync('ss -tlnp')).not.toMatch(/1521/);
   });
 });
 
 describe('listener.ora drives the listening port', () => {
-  it('a port edited in listener.ora is honoured at lsnrctl start', () => {
+  it('a port edited in listener.ora is honoured at lsnrctl start', async () => {
     const srv = bootOracleServer('oraport');
     const path = '/u01/app/oracle/product/19c/dbhome_1/network/admin/listener.ora';
     const conf = srv.readFileForEditor(path)!;
     srv.writeFileFromEditor(path, conf.replace('(PORT = 1521)', '(PORT = 1530)'));
 
     lsnrctl(srv, 'stop');
-    expect(netstat(srv)).not.toMatch(/:1521\b/);
+    expect(await netstat(srv)).not.toMatch(/:1521\b/);
     lsnrctl(srv, 'start');
 
-    const net = netstat(srv);
+    const net = await netstat(srv);
     expect(net).toMatch(/:1530\b.*tnslsnr/);
     expect(net).not.toMatch(/:1521\b/);
     expect(lsnrctl(srv, 'status')).toContain('PORT=1530');

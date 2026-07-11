@@ -56,13 +56,13 @@ describe('DBMS_SCHEDULER EXECUTABLE jobs run on the host', () => {
     expect(out).toMatch(/27369/);
   });
 
-  it('the job really executes on the host (file it writes is visible to cat)', () => {
+  it('the job really executes on the host (file it writes is visible to cat)', async () => {
     const srv = boot('sched-3');
     sql(srv, [
       "EXEC DBMS_SCHEDULER.CREATE_JOB('WRITE_JOB', 'EXECUTABLE', 'echo from-the-job > /tmp/sched.out');",
       "EXEC DBMS_SCHEDULER.RUN_JOB('WRITE_JOB');",
     ]);
-    expect(sh(srv, 'cat /tmp/sched.out')).toContain('from-the-job');
+    expect(await sh(srv, 'cat /tmp/sched.out')).toContain('from-the-job');
   });
 
   it('a PLSQL_BLOCK job still runs as SQL, not on the host', () => {

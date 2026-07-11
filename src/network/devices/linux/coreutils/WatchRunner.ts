@@ -77,7 +77,7 @@ export interface WatchRuntime {
   hostname: string;
   /** HH:MM:SS local time for the header. */
   now(): string;
-  run(command: string[]): { output: string; exitCode: number };
+  run(command: string[]): { output: string; exitCode: number } | Promise<{ output: string; exitCode: number }>;
 }
 
 /**
@@ -86,7 +86,7 @@ export interface WatchRuntime {
  * right-aligned to 80 columns when feasible (we left-pad with a tab
  * separator so the test surface is stable without depending on width).
  */
-export function runWatch(argv: readonly string[], rt: WatchRuntime): WatchResult {
+export async function runWatch(argv: readonly string[], rt: WatchRuntime): Promise<WatchResult> {
   let opts: WatchOptions;
   try { opts = parseWatchArgs(argv); }
   catch (e) {
@@ -96,7 +96,7 @@ export function runWatch(argv: readonly string[], rt: WatchRuntime): WatchResult
   if (opts.command.length === 0) {
     return { output: 'watch: no command given', exitCode: 1, options: opts };
   }
-  const inner = rt.run(opts.command);
+  const inner = await rt.run(opts.command);
   const lines: string[] = [];
   if (opts.showHeader) {
     const cmd = opts.command.join(' ');
