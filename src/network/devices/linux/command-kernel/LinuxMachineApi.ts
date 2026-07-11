@@ -275,8 +275,16 @@ class LinuxFileSystemApi implements FileSystemApi {
     } catch (err) {
       this.translate(err, path);
     }
+    const node = p.inode()!;
     if (actor.uid !== 0) {
-      throw new FileSystemError(path, 'EACCES', `${path}: Operation not permitted`);
+      const changingOwner = uid !== node.uid;
+      const changingGroup = gid !== node.gid;
+      if (changingOwner) {
+        throw new FileSystemError(path, 'EACCES', `${path}: Operation not permitted`);
+      }
+      if (changingGroup && (node.uid !== actor.uid || !(actor.gids ?? []).includes(gid))) {
+        throw new FileSystemError(path, 'EACCES', `${path}: Operation not permitted`);
+      }
     }
     this.vfs.chown(p.value, uid, gid);
   }
