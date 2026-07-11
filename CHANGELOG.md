@@ -5,6 +5,42 @@ progressive par équipement. Un push = une entrée = une fonctionnalité
 complète et testée (voir `CLAUDE.md` / le framework de migration pour les
 principes directeurs).
 
+## Linux — Phase 3 : `readlink`
+
+**État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
+
+**Commande migrée** : `readlink [-f|-e|-m] <cible...>` — mode direct
+(cible immédiate d'un lien symbolique, un seul niveau) via
+`ctx.machine.fs.readlink()` déjà existant ; mode canonicalisation
+(`-f`/`-e`/`-m`, résout toute la chaîne de liens) via une nouvelle
+primitive `FileSystemApi.realpath?(path, actor, requireFinal)`.
+
+**Extension de `MachineApi`** : `realpath?` optionnelle (vendeurs avec
+liens symboliques uniquement), implémentée dans `LinuxFileSystemApi` en
+enveloppant `VfsPath.realpath()` — le même algorithme déjà utilisé par le
+`readlink -f`/`realpath` legacy, pas une resimulation. `ReadlinkCommand`
+porte elle-même la distinction des trois flags (`-f`/`-e`/`-m` traités de
+façon identique, `requireFinal` uniquement pour `-e` — simplification
+héritée telle quelle du legacy, pas introduite ici) et la sémantique de
+code de sortie exacte (échec seulement si TOUTES les cibles échouent,
+un mélange succès/échec reste code 0 — quirk legacy reproduit à
+l'identique, pas "corrigé").
+
+**Legacy supprimé** : `case 'readlink':` retiré de
+`LinuxCommandExecutor.dispatch()` — aucun autre appelant, pas présent
+dans l'autre framework `LinuxCommand` (§8 vérifié).
+
+**Validation** : lot audit/privilège du §7.2 (`auditctl.test.ts`,
+`auditctl-other.test.ts`, `journalization.test.ts`,
+`journalization-and-audit.test.ts`, `command-privilege-policy.test.ts`)
++ `linux-command-kernel.test.ts` — 509 tests, 1 échec pré-existant et
+sans rapport déjà documenté (`journalization.test.ts` #161). Vérification
+manuelle des trois modes (direct, `-f` résolvant la chaîne complète,
+cible manquante) via un test jetable non versionné, supprimé après
+utilisation — aucune commande CLI existante n'exerçait `readlink -f` en
+assertions (seul un test debug non assertionnel l'utilisait). Typecheck
+et lint ciblés propres.
+
 ## Windows — Phase 11 : migration `arp`/`route`/`getmac` (pile réseau bas niveau)
 
 **État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
