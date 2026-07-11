@@ -3,6 +3,7 @@ import { registerCoreCommands } from '@/command-kernel/register-core-commands';
 import { CommandRegistry } from '@/command-kernel/registry/command-registry';
 import { CatCommand } from './commands/Cat';
 import { CdCommand } from './commands/Cd';
+import { ChgrpCommand } from './commands/Chgrp';
 import { ChmodCommand } from './commands/Chmod';
 import { ChownCommand } from './commands/Chown';
 import { CpCommand } from './commands/Cp';
@@ -45,6 +46,7 @@ export function createLinuxHostShell(deps: LinuxMachineApiDeps): Interpreter {
   registry.register(() => new StatCommand());
   registry.register(() => new ChmodCommand());
   registry.register(() => new ChownCommand());
+  registry.register(() => new ChgrpCommand());
   registry.register(() => new GrepCommand());
   registry.register(() => new HeadCommand());
   registry.register(() => new TailCommand());

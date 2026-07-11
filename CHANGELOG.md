@@ -31,6 +31,54 @@ verts. `windows-server-domain-join.test.ts` toujours à 10 échecs
 `nltest`/`dcdiag`/`klist` (pré-existants, hors périmètre, inchangés).
 Typecheck ciblé propre.
 
+## Linux — Phase 1 : `chgrp`
+
+**État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
+
+**Commande migrée** : `chgrp [-R] <groupe> <fichier...>` — dernière
+commande du groupe permissions restée en legacy après la Phase 0
+(`chown`/`chmod` étaient déjà migrés). Suit exactement le gabarit de
+`ChownCommand` : résolution du groupe via `ctx.machine.groups.findByName`,
+`-R` par descente récursive via `ctx.machine.fs.list`, audit
+(`fsAccess('a','chgrp')`/`syscall('chgrp', path)`) après l'opération
+réussie, jamais avant (§7.4 du framework).
+
+**Simplification documentée, héritée de `chown`, pas introduite ici** :
+le `chgrp` legacy (`cmdChgrp`/`LinuxPermCommands.ts`) autorise un
+utilisateur non-root à changer le groupe d'un fichier qu'il possède vers
+un groupe dont il est membre — une règle métier fine que
+`FileSystemApi.chown()` (le seul point d'entrée disponible pour muter le
+groupe, `LinuxMachineApi.ts`) ne reproduit pas : il exige `root`
+inconditionnellement. Cette limite existe déjà dans `ChownCommand`
+(migré avant cette session) pour le changement de groupe seul ; `chgrp`
+migré hérite donc de la même restriction plutôt que d'ajouter une
+nouvelle méthode `FileSystemApi` pour la lever. Choix délibéré : la
+session Windows en cours modifie en parallèle `command-kernel/machine/
+types.ts`/`WindowsMachineApi.ts` sur la même branche — étendre
+l'interface vendor-agnostic partagée maintenant aurait cassé son build
+tant qu'elle n'implémente pas la nouvelle méthode. Aucun test existant
+n'exerce le cas positif (non-root, groupe dont il est membre) — seul le
+cas de refus (`perm-ownership-dac.test.ts`, non-root vers un groupe dont
+il n'est pas membre) est couvert, et reste correct sous cette
+restriction plus stricte. À lever dans un lot dédié, hors de toute
+collision avec le travail Windows en cours.
+
+**Legacy supprimé** : `case 'chgrp':` et son import (`cmdChgrp`) retirés
+de `LinuxCommandExecutor.dispatch()`. `cmdChgrp` lui-même reste dans
+`LinuxPermCommands.ts` — toujours appelé par `commands/fs/Chgrp.ts`
+(l'autre framework `LinuxCommand`, déjà noté comme chevauchement
+pré-existant avec `chown`, §8 du framework — non déplacé ici, hors
+périmètre de cette migration).
+
+**Validation** : lot localisé — `perm-ownership-dac.test.ts`,
+`linux-filesystem-and-IAM.test.ts` (81 tests, tous passants) plus le lot
+audit/privilège du §7.2 (`auditctl.test.ts`, `auditctl-other.test.ts`,
+`journalization.test.ts`, `journalization-and-audit.test.ts`,
+`command-privilege-policy.test.ts` — 1155 tests, 1 échec pré-existant et
+sans rapport confirmé par `git stash` : `journalization.test.ts` #161,
+`logrotate`/`prerotate` échoue déjà identiquement hors de cette
+migration). Typecheck et lint ciblés propres.
+
 ## Windows — Phase 8 : `reg`, `setx`, `start`, `nbtstat`
 
 **État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**

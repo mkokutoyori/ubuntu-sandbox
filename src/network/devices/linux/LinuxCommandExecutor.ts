@@ -27,7 +27,7 @@ import {
   SHELL_CATALOG, CommandResolver, WhereisResolver, ALL_CATEGORIES,
   type ShellIntrospection, type FileLocation, type WhereisSelector,
 } from './resolve';
-import { cmdChgrp, cmdUmask, cmdMkfifo } from './LinuxPermCommands';
+import { cmdUmask, cmdMkfifo } from './LinuxPermCommands';
 import {
   runTest, runExpr, runSeq, runSleep, runWatch, formatTimes, chooseTimeFormat,
   runTail,
@@ -3346,10 +3346,6 @@ export class LinuxCommandExecutor {
       case 'updatedb': return { output: cmdUpdatedb(c), exitCode: 0 };
 
       // Permission commands
-      case 'chgrp': {
-        const out = cmdChgrp(c, args);
-        return { output: out, exitCode: out.startsWith('chgrp:') ? 1 : 0 };
-      }
       case 'umask': {
         const result = cmdUmask(c, args);
         if (result.newUmask !== undefined) this.umask = result.newUmask;
