@@ -40,6 +40,8 @@ describe('Linux coreutils on command-kernel (real VFS/IAM/process manager)', () 
       getUmask: () => 0o022,
       powerOn: () => {},
       powerOff: () => {},
+      publishFsAccess: () => {},
+      publishSyscall: () => {},
     };
     interpreter = createLinuxHostShell(deps);
   });

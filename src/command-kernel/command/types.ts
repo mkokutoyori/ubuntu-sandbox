@@ -24,6 +24,9 @@ export interface CommandDescriptor {
   readonly privileges: PrivilegePolicy;
   readonly category?: string;
   readonly version?: string;
+  /** Un jeton non reconnu ressemblant à une option devient un positional
+   *  au lieu de lever une erreur (ex: `echo -w foo`, comme le vrai `echo`). */
+  readonly lenientOptions?: boolean;
 }
 
 /** Tout ce dont une commande dispose au moment de l'exécution. */

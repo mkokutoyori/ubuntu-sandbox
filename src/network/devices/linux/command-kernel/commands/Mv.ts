@@ -22,6 +22,10 @@ export class MvCommand extends BaseCommand {
     const source = ctx.machine.fs.resolve(ctx.session.cwd, ctx.args.get<string>('source'));
     const destination = ctx.machine.fs.resolve(ctx.session.cwd, ctx.args.get<string>('destination'));
     await ctx.machine.fs.rename(source, destination, toFileSystemActor(ctx.session.user));
+    for (const path of [source, destination]) {
+      ctx.machine.audit?.fsAccess(path, 'w', 'rename');
+      ctx.machine.audit?.syscall('rename', path);
+    }
     return EXIT_OK;
   }
 }

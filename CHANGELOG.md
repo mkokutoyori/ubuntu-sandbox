@@ -5,6 +5,75 @@ progressive par équipement. Un push = une entrée = une fonctionnalité
 complète et testée (voir `CLAUDE.md` / le framework de migration pour les
 principes directeurs).
 
+## Linux — Fix critique : parité d'audit/trace pour les commandes déjà migrées
+
+**État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
+Découvert en élargissant les tests localisés à `auditctl.test.ts`,
+`auditctl-other.test.ts`, `journalization.test.ts` et
+`journalization-and-audit.test.ts` (480 tests, jamais exécutés contre le
+bridge command-kernel avant ce tour) : **25 régressions réelles**,
+confirmées par comparaison directe avec le commit précédant l'existence de
+command-kernel (480/480 passaient avant migration).
+
+**Cause racine.** `LinuxCommandExecutor.dispatch()` — le point d'entrée
+legacy — exécute un prélude AVANT le `switch` de chaque commande : bascule
+`currentCommandHead`, puis `publishFsAccess`/`publishSyscall('execve', …)`
+pour la commande elle-même, et pour les commandes filesystem, un second
+jeu d'appels par argument (`open`/`mkdir`/`unlink`/`rename`/`chmod`/
+`chown`…) qui alimente `auditd`/`ausearch`/`aureport` simulés. Le pont
+`tryCommandKernel` contourne entièrement `dispatch()` — il n'exécutait
+donc ni le prélude, ni les appels par commande, rendant tout audit
+silencieusement absent pour les commandes déjà migrées (Phases 1 et 2).
+
+**Fix (pas de repli sur l'ancien chemin — le comportement est reproduit,
+pas contourné)** :
+
+- `MachineApi` gagne une capacité optionnelle `audit?: AuditApi`
+  (`fsAccess(path, perm, syscall?)`, `syscall(name, path?)`) — absente
+  pour les profils qui n'en ont pas besoin, les commandes l'appellent via
+  `ctx.machine.audit?.`.
+- `LinuxMachineApiDeps` gagne `publishFsAccess`/`publishSyscall`, câblés
+  dans `LinuxMachine.getCommandKernelShell()` sur les wrappers publics
+  déjà existants `LinuxCommandExecutor.publishAuditFsAccess`/
+  `publishAuditSyscall`.
+- Nouveau `LinuxCommandExecutor.publishCommandExecve(cmd)` — réplique
+  exactement le prélude de `dispatch()` (bookkeeping + accès `/usr/bin/
+  <cmd>`+`/bin/<cmd>` + `execve`) ; appelé par `tryCommandKernel` pour
+  chaque étage d'un pipeline avant exécution.
+- `LinuxFileSystemApi.writeFile()` publie désormais `('w','open')` avant
+  d'écrire — couvre à la fois `touch` (avant sa réécriture, voir
+  ci-dessous) et toute redirection `>`/`>>` (`FileOutputStream` passe par
+  `writeFile`, donc `echo … >> fichier` publie correctement).
+- Chaque commande fichier migrée (`ls`, `cat`, `cp`, `mv`, `rm`, `mkdir`,
+  `chmod`, `chown`) publie l'événement correspondant, à l'identique de son
+  `case` legacy — **après** l'opération réussie (pas avant), pour ne
+  jamais logger un accès qui a en fait échoué.
+- Nouvelle méthode `FileSystemApi.touch(path, actor)` (implémentée via
+  `VirtualFileSystem.touch()`, pas `writeFile()`) : `touch` sur un fichier
+  déjà existant ne fait que rafraîchir sa date de modification, sans
+  passer par le chemin d'écriture générique — corrige une régression
+  fonctionnelle distincte où `touch` déclenchait à tort les observateurs
+  `vfs.onWrite()` d'une règle `-w` (donc ignorait les règles
+  d'exclusion `-a never,exit -F dir=…`, que `vfs.touch()` ne traverse
+  jamais).
+
+**Deux bugs fonctionnels distincts trouvés au passage (mêmes tests)** :
+
+- **`chown user:group_name`** : `ChownCommand` n'acceptait qu'un gid
+  numérique après `:` (limitation documentée en Phase 1), alors que
+  legacy résout aussi un nom de groupe. Fix : `resolveGid()` (miroir de
+  `resolveUid()`) via `ctx.machine.groups.findByName`.
+- **`echo "-w ...token qui ressemble à une option inconnue"`** :
+  `ArgumentParser` levait `UsageError` sur tout token `-x` non reconnu,
+  alors que le vrai `echo` n'échoue jamais sur une option inconnue (il
+  l'affiche littéralement). Nouveau `CommandDescriptor.lenientOptions`
+  (opt-in, seul `EchoCommand` l'utilise) : un token dash non reconnu
+  devient un positional au lieu de lever une erreur.
+
+**Validation** : les 4 fichiers d'audit (480 tests) + l'ensemble déjà
+établi (IAM, ACL, text-processing, bash) repassés intégralement —
+36 fichiers, 1359 tests, 0 échec.
+
 ## Linux — Phase 2 : traitement de texte (coreutils)
 
 **État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**

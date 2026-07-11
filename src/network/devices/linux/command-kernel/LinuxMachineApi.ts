@@ -1,4 +1,5 @@
 import {
+  AuditApi,
   FileNodeType,
   FileStat,
   FileSystemActor,
@@ -39,6 +40,8 @@ export interface LinuxMachineApiDeps {
   getUmask(): number;
   powerOn(): void;
   powerOff(): void;
+  publishFsAccess(path: string, perm: 'r' | 'w' | 'x' | 'a', syscall?: string): void;
+  publishSyscall(syscall: string, path?: string): void;
 }
 
 function toPathActor(actor: FileSystemActor): PathActor {
@@ -55,6 +58,7 @@ class LinuxFileSystemApi implements FileSystemApi {
   constructor(
     private readonly vfs: VirtualFileSystem,
     private readonly getUmask: () => number,
+    private readonly publishFsAccess: LinuxMachineApiDeps['publishFsAccess'],
   ) {}
 
   private translate(err: unknown, path: string): never {
@@ -94,6 +98,9 @@ class LinuxFileSystemApi implements FileSystemApi {
 
   async writeFile(path: string, content: string, actor: FileSystemActor, append = false): Promise<void> {
     const p = this.vfs.path(path, '/', toPathActor(actor));
+    if (this.vfs.isReadOnly(p.value)) {
+      throw new FileSystemError(path, 'EACCES', `${path}: Read-only file system`);
+    }
     if (p.exists() && p.isDirectory()) {
       throw new FileSystemError(path, 'EISDIR', `${path}: Is a directory`);
     }
@@ -106,8 +113,28 @@ class LinuxFileSystemApi implements FileSystemApi {
     } else if (!p.parent().canWrite()) {
       throw new FileSystemError(path, 'EACCES', `${path}: Permission denied`);
     }
+    this.publishFsAccess(path, 'w', 'open');
     const ok = this.vfs.writeFile(p.value, content, actor.uid, actor.gid, this.getUmask(), append);
     if (!ok) throw new FileSystemError(path, 'EACCES', `${path}: Permission denied`);
+  }
+
+  async touch(path: string, actor: FileSystemActor): Promise<void> {
+    const p = this.vfs.path(path, '/', toPathActor(actor));
+    if (!p.exists() && this.vfs.isReadOnly(p.value)) {
+      throw new FileSystemError(path, 'EACCES', `${path}: Read-only file system`);
+    }
+    if (p.exists()) {
+      try {
+        p.assertWritable();
+      } catch (err) {
+        this.translate(err, path);
+      }
+    } else if (!p.parent().canWrite()) {
+      throw new FileSystemError(path, 'EACCES', `${path}: Permission denied`);
+    }
+    if (!this.vfs.touch(p.value, actor.uid, actor.gid, this.getUmask())) {
+      throw new FileSystemError(path, 'EACCES', `${path}: Permission denied`);
+    }
   }
 
   async list(path: string, actor: FileSystemActor): Promise<FileStat[]> {
@@ -369,6 +396,18 @@ class LinuxGroupManagementApi implements GroupManagementApi {
   }
 }
 
+class LinuxAuditApi implements AuditApi {
+  constructor(private readonly deps: Pick<LinuxMachineApiDeps, 'publishFsAccess' | 'publishSyscall'>) {}
+
+  fsAccess(path: string, perm: 'r' | 'w' | 'x' | 'a', syscall?: string): void {
+    this.deps.publishFsAccess(path, perm, syscall);
+  }
+
+  syscall(name: string, path?: string): void {
+    this.deps.publishSyscall(name, path);
+  }
+}
+
 class LinuxPowerApi implements PowerApi {
   constructor(private readonly deps: Pick<LinuxMachineApiDeps, 'powerOn' | 'powerOff'>) {}
 
@@ -390,15 +429,17 @@ export class LinuxMachineApi implements MachineApi {
   readonly groups: GroupManagementApi;
   readonly power: PowerApi;
   readonly hostname: string;
+  readonly audit: AuditApi;
 
   constructor(deps: LinuxMachineApiDeps) {
-    this.fs = new LinuxFileSystemApi(deps.vfs, () => deps.getUmask());
+    this.fs = new LinuxFileSystemApi(deps.vfs, () => deps.getUmask(), deps.publishFsAccess);
     this.proc = new LinuxProcessApi(deps.processManager);
     this.net = new LinuxNetworkApi(() => deps.ports);
     this.users = new LinuxUserManagementApi(deps.userManager);
     this.groups = new LinuxGroupManagementApi(deps.userManager);
     this.power = new LinuxPowerApi(deps);
     this.hostname = deps.hostname;
+    this.audit = new LinuxAuditApi(deps);
   }
 
   now(): Date {

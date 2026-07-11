@@ -79,6 +79,8 @@ export class ChmodCommand extends BaseCommand {
         ? parseInt(modeSpec, 8)
         : applySymbolicMode((await ctx.machine.fs.stat(path, actor)).mode, modeSpec);
       await ctx.machine.fs.chmod(path, mode, actor);
+      ctx.machine.audit?.fsAccess(path, 'a', 'chmod');
+      ctx.machine.audit?.syscall('chmod', path);
     }
     return EXIT_OK;
   }

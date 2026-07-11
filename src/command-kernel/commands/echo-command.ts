@@ -72,6 +72,7 @@ export class EchoCommand extends BaseCommand {
     ],
     privileges: new DefaultPrivilegePolicy(PrivilegeLevel.ANY),
     category: "session",
+    lenientOptions: true,
   };
 
   async execute(ctx: CommandContext): Promise<ExitCode> {

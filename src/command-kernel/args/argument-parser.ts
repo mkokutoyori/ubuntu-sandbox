@@ -21,7 +21,13 @@ export class ArgumentParser {
         options.set(glued.spec.long, this.coerce(glued.value, glued.spec.type ?? "string"));
       } else if (token.startsWith("-") && token !== "-" && token !== "--") {
         const spec = this.findOption(token, descriptor.options);
-        if (!spec) throw new UsageError(`option inconnue : ${token}`);
+        if (!spec) {
+          if (descriptor.lenientOptions) {
+            positionalValues.push(token);
+            continue;
+          }
+          throw new UsageError(`option inconnue : ${token}`);
+        }
         if (spec.takesValue) {
           const inline = token.includes("=") ? token.split("=").slice(1).join("=") : argv[++i];
           if (inline === undefined) {

@@ -2907,6 +2907,15 @@ export class LinuxCommandExecutor {
   publishAuditSyscall(syscall: string, path?: string): void { this.publishSyscall(syscall, path); }
   publishAuditFsAccess(path: string, perm: FileAccessPerm, syscall?: string): void { this.publishFsAccess(path, perm, syscall); }
 
+  /** Réplique le prélude de `dispatch()` (accès exécutable + `execve`) pour
+   *  une commande dispatchée en dehors de `dispatch()` (ex: command-kernel). */
+  publishCommandExecve(cmd: string): void {
+    this.currentCommandHead = cmd;
+    this.publishFsAccess(`/usr/bin/${cmd}`, 'x');
+    this.publishFsAccess(`/bin/${cmd}`, 'x');
+    this.publishSyscall('execve', resolveExePath(cmd));
+  }
+
   private publishSyscall(syscall: string, path?: string): void {
     if (!this.bus || !this.attachedDeviceId) {
       this.auditRules.onSyscall(syscall, path);

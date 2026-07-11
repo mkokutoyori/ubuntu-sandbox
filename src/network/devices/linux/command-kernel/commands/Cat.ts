@@ -38,6 +38,8 @@ export class CatCommand extends BaseCommand {
     for (const file of files) {
       const path = ctx.machine.fs.resolve(ctx.session.cwd, file);
       const content = await ctx.machine.fs.readFile(path, actor);
+      ctx.machine.audit?.fsAccess(path, 'r', 'openat');
+      ctx.machine.audit?.syscall('openat', path);
       await writeContent(content);
     }
     return EXIT_OK;

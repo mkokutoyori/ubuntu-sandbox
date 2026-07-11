@@ -26,11 +26,16 @@ export class RmCommand extends BaseCommand {
     const actor = toFileSystemActor(ctx.session.user);
     for (const target of targets) {
       const path = ctx.machine.fs.resolve(ctx.session.cwd, target);
+      const existed = await ctx.machine.fs.exists(path, actor);
       try {
         await ctx.machine.fs.remove(path, actor, recursive);
       } catch (err) {
         if (force && err instanceof FileSystemError && err.code === 'ENOENT') continue;
         throw err;
+      }
+      if (existed) {
+        ctx.machine.audit?.fsAccess(path, 'w', 'unlink');
+        ctx.machine.audit?.syscall('unlink', path);
       }
     }
     return EXIT_OK;

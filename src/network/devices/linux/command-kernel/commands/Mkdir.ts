@@ -22,6 +22,8 @@ export class MkdirCommand extends BaseCommand {
     for (const target of targets) {
       const path = ctx.machine.fs.resolve(ctx.session.cwd, target);
       await ctx.machine.fs.mkdir(path, actor, parents);
+      ctx.machine.audit?.fsAccess(path, 'w', 'mkdir');
+      ctx.machine.audit?.syscall('mkdir', path);
     }
     return EXIT_OK;
   }

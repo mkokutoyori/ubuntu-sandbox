@@ -20,8 +20,9 @@ export class TouchCommand extends BaseCommand {
     const actor = toFileSystemActor(ctx.session.user);
     for (const target of targets) {
       const path = ctx.machine.fs.resolve(ctx.session.cwd, target);
-      const alreadyExists = await ctx.machine.fs.exists(path, actor);
-      await ctx.machine.fs.writeFile(path, '', actor, alreadyExists);
+      await ctx.machine.fs.touch(path, actor);
+      ctx.machine.audit?.fsAccess(path, 'w', 'open');
+      ctx.machine.audit?.syscall('open', path);
     }
     return EXIT_OK;
   }

@@ -38,6 +38,9 @@ export interface FileStat {
 export interface FileSystemApi {
   readFile(path: string, actor: FileSystemActor): Promise<string>;
   writeFile(path: string, content: string, actor: FileSystemActor, append?: boolean): Promise<void>;
+  /** Crée un fichier vide s'il n'existe pas, ou ne fait que rafraîchir sa
+   *  date de modification s'il existe déjà (sans réécrire son contenu). */
+  touch(path: string, actor: FileSystemActor): Promise<void>;
   list(path: string, actor: FileSystemActor): Promise<FileStat[]>;
   stat(path: string, actor: FileSystemActor): Promise<FileStat>;
   lstat(path: string, actor: FileSystemActor): Promise<FileStat>;
@@ -92,6 +95,17 @@ export interface GroupManagementApi {
   findByName(name: string): Promise<GroupInfo | undefined>;
 }
 
+/**
+ * Capacité optionnelle : trace d'audit (syscalls simulés) pour les
+ * équipements qui en tiennent une (auditd Linux...). Absente pour les
+ * profils qui n'en ont pas besoin — les commandes doivent l'appeler avec
+ * `ctx.machine.audit?.` .
+ */
+export interface AuditApi {
+  fsAccess(path: string, perm: "r" | "w" | "x" | "a", syscall?: string): void;
+  syscall(name: string, path?: string): void;
+}
+
 /** Point d'entrée UNIQUE vers l'intérieur de la machine. */
 export interface MachineApi {
   readonly fs: FileSystemApi;
@@ -101,6 +115,7 @@ export interface MachineApi {
   readonly groups: GroupManagementApi;
   readonly power: PowerApi;
   readonly hostname: string;
+  readonly audit?: AuditApi;
   now(): Date;
 }
 

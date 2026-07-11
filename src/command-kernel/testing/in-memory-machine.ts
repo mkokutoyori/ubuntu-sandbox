@@ -135,6 +135,18 @@ class InMemoryFileSystem implements FileSystemApi {
     });
   }
 
+  async touch(path: string, actor: FileSystemActor): Promise<void> {
+    const existing = this.nodes.get(path);
+    if (existing) {
+      if (!this.checkAccess(existing, "w", actor)) {
+        throw new FileSystemError(path, "EACCES", `${path}: Permission denied`);
+      }
+      existing.modifiedAt = new Date();
+      return;
+    }
+    await this.writeFile(path, "", actor, false);
+  }
+
   async list(path: string, actor: FileSystemActor): Promise<FileStat[]> {
     const node = this.requireNode(path);
     if (node.type !== "directory") {

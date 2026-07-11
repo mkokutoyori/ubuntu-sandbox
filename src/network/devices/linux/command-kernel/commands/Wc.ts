@@ -47,8 +47,8 @@ export class WcCommand extends BaseCommand {
     let showLines = ctx.args.flag('lines');
     let showWords = ctx.args.flag('words');
     let showBytes = ctx.args.flag('bytes');
-    let showChars = ctx.args.flag('chars');
-    let showMaxLine = ctx.args.flag('max-line-length');
+    const showChars = ctx.args.flag('chars');
+    const showMaxLine = ctx.args.flag('max-line-length');
     if (!showLines && !showWords && !showBytes && !showChars && !showMaxLine) {
       showLines = showWords = showBytes = true;
     }

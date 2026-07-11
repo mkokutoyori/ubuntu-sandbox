@@ -1728,6 +1728,8 @@ export abstract class LinuxMachine extends EndHost
         getUmask: () => this.executor.getUmask(),
         powerOn: () => this.powerOn(),
         powerOff: () => this.powerOff(),
+        publishFsAccess: (path, perm, syscall) => this.executor.publishAuditFsAccess(path, perm, syscall),
+        publishSyscall: (syscall, path) => this.executor.publishAuditSyscall(syscall, path),
       });
       this.commandKernelShell = { interpreter, registry: interpreter.commands };
     }
@@ -1748,6 +1750,8 @@ export abstract class LinuxMachine extends EndHost
     if (ast.kind !== 'command' && ast.kind !== 'pipeline') return null;
     const names = ast.kind === 'command' ? [ast.name] : ast.stages.map((stage) => stage.name);
     if (!names.every((name) => registry.has(name))) return null;
+
+    for (const name of names) this.executor.publishCommandExecve(name);
 
     const user = resolveLinuxUser(this.executor.userMgr, this.executor.userMgr.currentUser);
     const session = createSession({

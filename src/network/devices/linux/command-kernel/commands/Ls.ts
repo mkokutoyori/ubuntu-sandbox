@@ -82,6 +82,7 @@ export class LsCommand extends BaseCommand {
 
     for (const requested of requestedTargets) {
       const target = ctx.machine.fs.resolve(ctx.session.cwd, requested);
+      ctx.machine.audit?.fsAccess(target, 'r');
       const resolved = await ctx.machine.fs.stat(target, actor).catch(() => null);
       const isDirectory = resolved?.type === 'directory' && !asDirectory;
 

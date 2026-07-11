@@ -22,6 +22,8 @@ export class CpCommand extends BaseCommand {
     const source = ctx.machine.fs.resolve(ctx.session.cwd, ctx.args.get<string>('source'));
     const destination = ctx.machine.fs.resolve(ctx.session.cwd, ctx.args.get<string>('destination'));
     await ctx.machine.fs.copy(source, destination, toFileSystemActor(ctx.session.user));
+    ctx.machine.audit?.fsAccess(source, 'w', 'open');
+    ctx.machine.audit?.fsAccess(destination, 'w', 'open');
     return EXIT_OK;
   }
 }
