@@ -123,18 +123,73 @@ export interface ProcessApi {
   descendants?(pid: number): Promise<readonly ProcessInfo[]>;
 }
 
+export interface ServiceOpResult {
+  readonly ok: boolean;
+  readonly error?: string;
+}
+
+export interface ServiceControlResult {
+  readonly ok: boolean;
+  readonly error?: string;
+  /** Bloc de statut déjà formaté (état PENDING transitoire inclus) — présent seulement si `ok`. */
+  readonly formattedStatus?: string;
+}
+
+export interface ServiceFailureConfig {
+  readonly resetPeriodSec: number;
+  readonly actions: readonly { type: 'restart' | 'run' | 'reboot' | 'none'; delayMs: number }[];
+  readonly command?: string;
+}
+
 /**
- * Passerelle vers le gestionnaire de services façon SCM Windows (`sc.exe`)
+ * Gestionnaire de services façon SCM Windows (`sc.exe`, `net start`/`stop`)
  * — optionnel, concept sans équivalent Linux direct (voir systemd côté
- * `LinuxCommand`). `sc.exe` a ~14 sous-commandes au format de sortie figé et
- * intimement lié au modèle SCM réel (SDDL, actions de reprise sur panne...) ;
- * décomposer chacune en primitives génériques dupliquerait ce formatage
- * sans bénéfice — la commande se contente de transmettre l'argv déjà
- * tokenisé, l'implémentation vendeur reste seule responsable de
- * l'interprétation et du texte produit.
+ * `LinuxCommand`). Chaque méthode correspond à UNE opération SCM réelle ;
+ * le dispatch de sous-commandes, l'analyse des arguments et le texte
+ * d'erreur `[SC] ... FAILED nnnn` restent la responsabilité de la
+ * commande — seul le texte déjà formaté d'un bloc de statut individuel
+ * (`formatQuery`/`formatQc`/...) vient du vendeur, parce que ce format
+ * (codes STATE/TYPE hexadécimaux, alignement figé) est une réalité SCM
+ * qu'aucun autre vendeur ne partage, pas une décision de présentation.
  */
 export interface ServiceManagementApi {
-  execute(argv: readonly string[], caller: { isAdmin: boolean; userName: string }): Promise<string>;
+  exists(name: string): boolean;
+  displayNameFor(name: string): string | undefined;
+  /** Résout un nom de service réel OU son nom d'affichage (`net start "DHCP Client"`) vers le nom réel. */
+  resolveName(nameOrDisplayName: string): string | undefined;
+  isRunning(name: string): boolean;
+  runningServiceNames(): readonly string[];
+  allServiceNames(): readonly string[];
+  pidFor(name: string): number;
+
+  formatQuery(name: string): string | undefined;
+  formatQueryAllRunning(): readonly string[];
+  formatQueryAll(): readonly string[];
+  formatQueryEx(name: string): string | undefined;
+  formatQueryExAllRunning(): readonly string[];
+  formatQueryExAll(): readonly string[];
+  formatQc(name: string): string | undefined;
+  formatDescription(name: string): string | undefined;
+  formatQfailure(name: string): string | undefined;
+
+  start(name: string, isAdmin: boolean): ServiceControlResult;
+  stop(name: string, isAdmin: boolean): ServiceControlResult;
+  pause(name: string, isAdmin: boolean): ServiceControlResult;
+  resume(name: string, isAdmin: boolean): ServiceControlResult;
+
+  setStartType(name: string, startType: 'Automatic' | 'Manual' | 'Disabled', isAdmin: boolean): ServiceOpResult;
+  setDependencies(name: string, dependencies: readonly string[], isAdmin: boolean): ServiceOpResult;
+  setAccount(name: string, account: string, isAdmin: boolean, changedBy: string): ServiceOpResult;
+  setDescription(name: string, description: string, isAdmin: boolean): ServiceOpResult;
+  setFailureConfig(name: string, config: ServiceFailureConfig, isAdmin: boolean): ServiceOpResult;
+
+  create(
+    name: string,
+    opts: { binaryPath: string; displayName?: string; startType?: 'Automatic' | 'Manual' | 'Disabled'; dependencies?: readonly string[] },
+    isAdmin: boolean,
+    installedBy: string,
+  ): ServiceOpResult;
+  delete(name: string, isAdmin: boolean): ServiceOpResult;
 }
 
 /**
@@ -143,51 +198,126 @@ export interface ServiceManagementApi {
  * `ServiceManagementApi` : ~8 sous-commandes (`user`, `localgroup`,
  * `start`, `stop`, `share`, `session`, `use`, `accounts`) au format figé,
  * chacune couplée à un sous-système vendeur distinct (SAM, SCM, table de
- * partages SMB, table `net use`, politique de compte LSA). Décomposer en
- * primitives génériques réimplémenterait le dispatcher de `net.exe` sans
- * bénéfice pour un autre vendeur.
+ * partages SMB, table `net use`, politique de compte LSA). `user`/
+ * `localgroup` passent par `UserManagementApi`/`GroupManagementApi`,
+ * `start`/`stop` par `ServiceManagementApi` — les capacités ci-dessous
+ * couvrent le reste (`share`, `session`, `use`, `accounts`).
  */
-export interface NetExeApi {
-  execute(argv: readonly string[], caller: { isAdmin: boolean; userName: string }): Promise<string>;
+
+export interface SmbShareInfo {
+  readonly name: string;
+  readonly path: string;
+  readonly description: string;
+}
+
+/** Table de partages SMB serveur (`net share`) — optionnel, pas un concept universel. */
+export interface SmbShareApi {
+  isServerRunning(): boolean;
+  list(): readonly SmbShareInfo[];
+  add(name: string, resource: string, description: string): AccountMutationResult;
+  remove(name: string): AccountMutationResult;
+}
+
+export interface SmbSessionInfo {
+  readonly clientComputerName: string;
+  readonly clientIp: string;
+  readonly user: string;
+  readonly numOpens: number;
+}
+
+/** Sessions SMB entrantes (`net session`) — optionnel, pas un concept universel. */
+export interface SmbSessionApi {
+  list(): readonly SmbSessionInfo[];
+  /** Ferme les sessions correspondant à `target` (`\\\\ordinateur`), ou toutes si omis. */
+  closeMatching(target?: string): void;
+}
+
+export interface NetUseMappingInfo {
+  readonly local: string;
+  readonly remote: string;
+  readonly status: string;
+}
+
+/** Mappages de lecteurs réseau SMB côté client (`net use`) — optionnel, pas un concept universel. */
+export interface NetUseApi {
+  isWorkstationRunning(): boolean;
+  list(): readonly NetUseMappingInfo[];
+  connect(drive: string, uncPath: string, username: string, password: string): Promise<AccountMutationResult>;
+  disconnect(drive: string): boolean;
+  disconnectAll(): number;
+}
+
+/** Politique de compte LSA (`net accounts`) — optionnel, pas un concept universel. */
+export interface AccountsPolicyApi {
+  /** Rendu canonique de la politique courante — même raisonnement que `ServiceManagementApi.formatQuery` (format `net accounts` figé, sans équivalent générique). */
+  render(): string;
+  /** Applique un seul indicateur (`/minpwlen`, `/lockoutthreshold`...) ; retourne un message d'erreur, ou `undefined` en cas de succès. */
+  apply(flag: string, value: string): string | undefined;
+}
+
+export interface ScheduledTaskInfo {
+  readonly name: string;
+  readonly runAt: Date | null;
+  readonly state: string;
 }
 
 /**
- * Passerelle vers le planificateur de tâches (`schtasks`) — optionnel,
- * même raisonnement que `NetExeApi` : sous-commandes (`/query`, `/create`,
- * `/delete`, `/run`, `/change`, `/end`) au format figé, couplées à une
- * table de tâches vendeur sans équivalent générique.
+ * Planificateur de tâches (`schtasks`) — optionnel, concept sans
+ * équivalent Linux direct (voir `cron`/`CronEngine` côté `LinuxCommand`).
+ * Primitives d'état brutes ; le dispatch de sous-commandes (`/query`,
+ * `/create`, `/delete`, `/run`, `/change`, `/end`) et le format
+ * d'affichage restent la responsabilité de la commande.
  */
 export interface SchedulingApi {
-  execute(argv: readonly string[]): Promise<string>;
+  isServiceRunning(): boolean;
+  list(nameFilter?: string): readonly ScheduledTaskInfo[];
+  create(name: string, opts: { schedule?: string; startTime?: string; intervalCount?: number; command?: string }): void;
+  delete(name: string): boolean;
+  run(name: string): boolean;
 }
 
 /**
- * Passerelle vers la file d'impression (`print`) — optionnel, même
- * raisonnement que `SchedulingApi` : concept vendeur (spouleur
- * d'impression) sans équivalent générique.
+ * File d'impression (`print`) — optionnel, concept vendeur (spouleur)
+ * sans équivalent générique. Primitives d'état brutes ; le dispatch
+ * d'options (`/D:device`) et le format d'affichage restent la
+ * responsabilité de la commande.
  */
 export interface PrintApi {
-  execute(argv: readonly string[], caller: { userName: string }): Promise<string>;
+  isSpoolerRunning(): boolean;
+  submit(document: string, printer: string, owner: string): void;
+}
+
+export interface AuditSubcategorySetting {
+  readonly success: boolean;
+  readonly failure: boolean;
 }
 
 /**
- * Passerelle vers la politique d'audit (`auditpol`) — optionnel, même
- * raisonnement que `SchedulingApi` : sous-commandes (`/get`, `/set`) au
- * format figé, couplées à une table de sous-catégories vendeur sans
- * équivalent générique.
+ * Politique d'audit de sécurité (`auditpol`) — optionnel, concept sans
+ * équivalent Linux direct (voir `auditctl` côté `LinuxCommand`, un système
+ * distinct). Primitives d'état brutes ; le dispatch de sous-commandes et
+ * le format d'affichage restent la responsabilité de la commande.
  */
 export interface AuditPolicyApi {
-  execute(argv: readonly string[]): Promise<string>;
+  get(subcategory: string): AuditSubcategorySetting | undefined;
+  set(subcategory: string, changes: { success?: boolean; failure?: boolean }): void;
+}
+
+export interface WinRmListenerInfo {
+  readonly transport: 'HTTP' | 'HTTPS';
+  readonly port: number;
 }
 
 /**
- * Passerelle vers la configuration WinRM (`winrm`) — optionnel, même
- * raisonnement que `SchedulingApi` : sous-commandes (`quickconfig`,
- * `enumerate`, `get`/`set`) au format figé, couplées à une configuration
- * vendeur (écouteurs HTTP/HTTPS, CredSSP) sans équivalent générique.
+ * Configuration WinRM (`winrm`) — optionnel, pas un concept universel.
+ * Primitives d'état brutes (écouteurs HTTP/HTTPS actifs, service activé) ;
+ * le dispatch de sous-commandes et le format d'affichage restent la
+ * responsabilité de la commande.
  */
 export interface WinRmApi {
-  execute(argv: readonly string[]): Promise<string>;
+  isEnabled(): boolean;
+  listeners(): readonly WinRmListenerInfo[];
+  enable(): void;
 }
 
 /**
@@ -249,6 +379,24 @@ export interface SecurityIdentity {
   readonly privileges: readonly SecurityPrivilege[];
 }
 
+/** Détail complet d'un compte local (`net user <name>`) — optionnel, modèle Windows/SAM sans équivalent POSIX direct. */
+export interface AccountDetail {
+  readonly name: string;
+  readonly fullName: string;
+  readonly description: string;
+  readonly enabled: boolean;
+  readonly passwordLastSet: Date;
+  readonly passwordRequired: boolean;
+  readonly userMayChangePassword: boolean;
+  readonly lastLogon: Date | null;
+  readonly localGroups: readonly string[];
+}
+
+export interface AccountMutationResult {
+  readonly ok: boolean;
+  readonly error?: string;
+}
+
 export interface UserManagementApi {
   findByName(name: string): Promise<import("../session/types").User | undefined>;
   findByUid(uid: number): Promise<import("../session/types").User | undefined>;
@@ -256,6 +404,22 @@ export interface UserManagementApi {
   delete(uid: number): Promise<void>;
   /** Identité de sécurité complète du compte, déjà résolue (SID, domaine actif inclus) — optionnel (`whoami`). */
   securityIdentity?(name: string): Promise<SecurityIdentity | undefined>;
+  /** Comptes locaux connus, par nom — optionnel (`net user`). */
+  listAccountNames?(): readonly string[];
+  /** Détail complet d'un compte local, déjà résolu — optionnel (`net user <name>`). */
+  getAccountDetail?(name: string): AccountDetail | undefined;
+  /** Crée un compte local avec mot de passe — optionnel (`net user <name> <mdp> /add`). */
+  createAccount?(name: string, password: string): AccountMutationResult;
+  /** Supprime un compte local — optionnel (`net user <name> /delete`). */
+  deleteAccount?(name: string): AccountMutationResult;
+  /** Modifie une propriété d'un compte local (`active`/`fullname`/`comment`/`password`) — optionnel. */
+  setAccountProperty?(name: string, property: 'active' | 'fullname' | 'comment' | 'password', value: string): AccountMutationResult;
+  /** L'appelant courant a-t-il des droits d'administration locale — optionnel, gate de mutation pour `net user`/`net localgroup`. */
+  callerIsAdmin?(): boolean;
+  /** Noms des comptes de domaine (`net user /domain`) — optionnel, `undefined` si l'équipement n'est pas un contrôleur de domaine promu. */
+  domainAccountNames?(): readonly string[] | undefined;
+  /** Détail d'un compte de domaine, déjà résolu — optionnel (`net user <name> /domain`). Champ réduit par rapport à `AccountDetail` : AD ne suit pas les mêmes attributs de mot de passe qu'un compte SAM local. */
+  getDomainAccountDetail?(sam: string): { readonly sam: string; readonly fullName: string; readonly enabled: boolean; readonly globalGroups: readonly string[] } | undefined;
 }
 
 export interface PowerApi {
@@ -268,9 +432,28 @@ export interface GroupInfo {
   readonly name: string;
 }
 
+/** Détail complet d'un groupe local (`net localgroup <name>`) — optionnel. */
+export interface GroupDetail {
+  readonly name: string;
+  readonly description: string;
+  readonly members: readonly string[];
+}
+
 export interface GroupManagementApi {
   findByGid(gid: number): Promise<GroupInfo | undefined>;
   findByName(name: string): Promise<GroupInfo | undefined>;
+  /** Groupes locaux connus, par nom — optionnel (`net localgroup`). */
+  listGroupNames?(): readonly string[];
+  /** Détail complet d'un groupe local (description, membres), déjà résolu — optionnel. */
+  getGroupDetail?(name: string): GroupDetail | undefined;
+  /** Crée un groupe local — optionnel (`net localgroup <name> /add`). */
+  createGroup?(name: string, description: string): AccountMutationResult;
+  /** Supprime un groupe local — optionnel (`net localgroup <name> /delete`). */
+  deleteGroup?(name: string): AccountMutationResult;
+  /** Ajoute un membre à un groupe local — optionnel. */
+  addGroupMember?(groupName: string, memberName: string): AccountMutationResult;
+  /** Retire un membre d'un groupe local — optionnel. */
+  removeGroupMember?(groupName: string, memberName: string): AccountMutationResult;
 }
 
 /**
@@ -341,8 +524,14 @@ export interface MachineApi {
   readonly services?: ServiceManagementApi;
   /** Macros de ligne de commande (`doskey`, cmd.exe) — optionnel, pas un concept universel. */
   readonly macros?: MacroApi;
-  /** `net.exe` (comptes, groupes, services, partages SMB, lecteurs réseau) — optionnel, pas un concept universel. */
-  readonly netExe?: NetExeApi;
+  /** Partages SMB serveur (`net share`) — optionnel, pas un concept universel. */
+  readonly smbShares?: SmbShareApi;
+  /** Sessions SMB entrantes (`net session`) — optionnel, pas un concept universel. */
+  readonly smbSessions?: SmbSessionApi;
+  /** Mappages de lecteurs réseau SMB (`net use`) — optionnel, pas un concept universel. */
+  readonly netUse?: NetUseApi;
+  /** Politique de compte LSA (`net accounts`) — optionnel, pas un concept universel. */
+  readonly accountsPolicy?: AccountsPolicyApi;
   /** Planificateur de tâches (`schtasks`) — optionnel, pas un concept universel. */
   readonly scheduling?: SchedulingApi;
   /** File d'impression (`print`) — optionnel, pas un concept universel. */
