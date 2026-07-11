@@ -111,6 +111,11 @@ class WindowsFileSystemApi implements FileSystemApi {
     if (!result.ok) throw new FileSystemError(path, 'EACCES', result.error ?? `${path}: access denied`);
   }
 
+  async rmdir(path: string, _actor: FileSystemActor): Promise<void> {
+    const result = this.winfs.rmdir(path);
+    if (!result.ok) throw new FileSystemError(path, 'EACCES', result.error ?? `${path}: access denied`);
+  }
+
   async mkdir(path: string, _actor: FileSystemActor, parents = false): Promise<void> {
     if (parents) {
       this.winfs.mkdirp(path);
@@ -142,6 +147,10 @@ class WindowsFileSystemApi implements FileSystemApi {
 
   async symlink(): Promise<void> {
     throw new FileSystemError('', 'EACCES', 'symbolic links are not supported on this filesystem');
+  }
+
+  async link(): Promise<void> {
+    throw new FileSystemError('', 'EACCES', 'hard links are not supported on this filesystem');
   }
 
   async readlink(path: string): Promise<string> {
