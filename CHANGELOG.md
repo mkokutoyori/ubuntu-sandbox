@@ -47,6 +47,119 @@ non inclus dans le lot localisé) + smoke manuel non versionné pour
 comparé au commit précédent — 101 échecs / 808 réussites → 100 échecs / 813
 réussites, zéro régression. Typecheck ciblé propre.
 
+## Linux — Phase 0 : câblage universel du `CommandRegistry` + conversion async
+
+**État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
+
+**Le problème que cette phase résout** : `tryCommandKernel()` ne routait
+vers `command-kernel` que les lignes top-level qui se réduisent
+entièrement à une commande simple/pipeline. Une commande déjà migrée
+(`ls`, `grep`, `chown`…) invoquée à l'intérieur d'une boucle, d'une
+fonction, d'une condition ou après une substitution de commande
+retombait sur le `switch` legacy de `LinuxCommandExecutor.dispatch()` —
+qui restait donc nécessaire, contredisant la règle « supprime toujours
+le legacy dès qu'une commande est migrée ». Supprimer ces `case` sans
+combler ce trou aurait cassé toute commande migrée utilisée hors du cas
+top-level.
+
+**Câblage universel** : `LinuxCommandExecutor._commandKernelHook` (miroir
+de `_registryCommandHook`/`_registryPrivilegeHook`) est maintenant
+consulté dans `dispatchMaybeNetwork()` — le point d'injection unique déjà
+partagé par `tryCommandKernel()`, l'interpréteur bash (`ExternalCommandFn`)
+et l'exécution de scripts — **avant** le repli réseau et avant
+`dispatch()`. `LinuxMachine` le câble vers son propre `Interpreter`
+(`runCommandKernelResolved`) ; pour les ~40 tests qui instancient
+`LinuxCommandExecutor` seul (sans `LinuxMachine` autour), un
+`getDefaultCommandKernelShell()`/`runDefaultCommandKernelResolved()`
+autonome (construit sur le `vfs`/`userMgr`/`processMgr` propres de
+l'exécuteur) sert de repli — les commandes migrées n'ont plus d'autre
+implémentation vers laquelle se replier, ce filet doit donc toujours
+pouvoir les atteindre.
+
+**Conséquence directe** : les `case` legacy des 21 commandes déjà
+migrées (`touch, ls, cat, cp, mv, rm, mkdir, rmdir, ln, grep, head, tail,
+wc, sort, cut, uniq, tr, chmod, chown, stat, id, whoami, groups`) sont
+supprimés de `dispatch()`, ainsi que les fonctions `cmdXxx` mortes dans
+`LinuxFileCommands.ts`/`LinuxTextCommands.ts`/`LinuxUserCommands.ts`/
+`LinuxPermCommands.ts`. `chgrp`, `egrep`/`fgrep`/`rgrep`, `awk`, `sed`,
+`pwd`, `echo`, `cd` restent en legacy (non migrés/builtins bash) — leur
+présence continue de marquer, par construction, ce qui reste à faire.
+
+**Conversion async en cascade** : le hook `command-kernel` étant
+lui-même `Promise`-based de bout en bout, `LinuxCommandExecutor.execute`/
+`dispatch`/`dispatchFromInterpreter`/`dispatchMaybeNetwork` (et toute
+leur descendance — jobs d'arrière-plan, `CronEngine`, `run-parts`, `sh -c`,
+`su`, `time`/`watch`) sont passés async ; `LinuxMachine.executeShellCommandSync`/
+`runSshCommandSync`/`runCommandFrameInSession`/`cronTick` suivent (noms
+`Sync` conservés pour compat historique — le sens réel est désormais
+« async de bout en bout », documenté en commentaire). Le pont SSH
+exec-mode (`SshExecTarget.runSshCommandSync`, 5 classes de device :
+`LinuxMachine`, `WindowsPC`, `Router`, `CiscoRouter`, `HuaweiRouter`) et
+le client SSH (`LinuxSshClient`) suivent la même conversion.
+
+**Deux frontières synchrones préservées, documentées et volontairement
+non cascadées** : le moteur PL/SQL d'Oracle (`IPackageRoutine.invoke():
+string | null`, `OracleExecutor` — 4282 lignes) et `SqlPlusSubShell.create`
+(invoqué depuis le **constructeur** de `SqlPlusShell` — un constructeur
+JS ne peut pas être `async`, point final) ; et l'architecture
+`CommandAction`/`CommandTrie` de Cisco/Huawei. Plutôt que de cascader la
+conversion async dans ces deux sous-systèmes entiers (hors périmètre de
+cette migration), deux ponts étroits et explicitement documentés :
+`LinuxCommandExecutor.runOracleHostCommandSync()` (whoami/hostname/pwd/
+id/ls/cat/find/mkdir/rm/echo/groupadd/useradd/usermod, purement
+synchrone contre le `vfs`) pour Oracle, et le pattern `_pendingAsync`
+déjà existant (`CiscoShellBase`/`HuaweiVRPShell`, déjà utilisé par
+`ping`/`traceroute`) réutilisé pour `runOutboundSshClient` côté
+Cisco/Huawei.
+
+**Trois gaps réels mis au jour par ce câblage** (masqués jusqu'ici parce
+que ces commandes n'étaient, avant cette phase, jamais réellement
+atteintes par les tests à exécuteur autonome — elles retombaient sur le
+`switch` legacy encore présent) :
+- `command-kernel/commands/Tail.ts` : `-c`/octets, `-v`/`-q`, en-têtes
+  multi-fichiers `==> fichier <==` manquants — réécrit en réutilisant
+  `sliceTail`/`tailHeader` du legacy `coreutils/TailCommand.ts` (toujours
+  utilisé par le suivi `-f` de l'UI, non supprimé).
+- `command-kernel/commands/Grep.ts` : migration très partielle (`-i -v
+  -n -c -E` seulement) — réécrit à parité avec le legacy `cmdGrep`
+  (`-w -x -F -o -q -s -r -l -L -h -H -m -e -f --include --exclude`
+  + contexte `-A/-B/-C` + `-P`), avec parsing manuel de `rawArgv` (les
+  motifs `-e` répétés et le mélange motif/fichiers positionnels ne
+  passent pas par le parseur déclaratif d'options).
+- `command-kernel/commands/Chown.ts` : `-R`/`--recursive` absent —
+  ajouté (descente récursive via `machine.fs.list`).
+
+**Régression corrigée** : `sudo <commande migrée>` ne retrouvait plus la
+commande une fois son `case` legacy supprimé — `dispatchFromInterpreter`
+dépile `sudo` et élève l'utilisateur courant, puis appelait `dispatch()`
+directement sans revérifier le hook `command-kernel` pour la commande
+démasquée. Le hook est maintenant reconsulté après élévation, sous le
+contexte utilisateur déjà élevé.
+
+**Bug additionnel corrigé (indépendant de cette phase)** : `command-kernel`'s
+`runOracleHostFind`'s récursion de répertoire suivait les entrées `.`/`..`
+renvoyées par `listDirectory`, provoquant un débordement de pile —
+corrigé en les ignorant.
+
+**Process substitution `>(...)`/`<(...)` dans `src/bash/`** : les deux
+matérialisaient leur commande via `BashInterpreter.executeSubcommand()`,
+qui force un driver **synchrone** (`driveSync`) — celui-ci refuse
+désormais tout retour `Promise` (« cannot run an asynchronous command in
+a synchronous shell »), puisque toute commande externe est maintenant
+async. `materializeProcSubs`/`materializeWord`/`flushOutSubs` sont
+devenues des méthodes génératrices (`materializeProcSubsG`/
+`materializeWordG`/`flushOutSubsG`) qui `yield*` dans la même chaîne
+d'effets que le reste de l'interpréteur, participant correctement au
+driver (sync ou async) réellement actif au lieu d'en forcer un.
+
+**Validation** : lot localisé élargi (84 fichiers, ~1525 tests dont les
+suites Oracle complètes — 135 fichiers, 3088 tests) — 4 échecs
+résiduels, tous confirmés pré-existants et sans rapport via comparaison
+`git stash` (méthode §7.2) : les 3 gaps déjà documentés de
+`run-parts.test.ts` (fonctions/`if-else`/`sh` alternatif, hors périmètre
+command-kernel) et un gap déjà présent avant cette phase dans
+`cross-equipment-ssh-suite.test.ts` §9 (alias de fonction shell).
+
 ## Windows — Phase 7 : `schtasks`, `print`, correction de `MachineApi.now()`
 
 **État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**

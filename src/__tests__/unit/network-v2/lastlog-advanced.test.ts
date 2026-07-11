@@ -37,69 +37,69 @@ describe('lastlog — advanced multi-layer', () => {
 
   // ─────────────────────────── §A command ───────────────────────────
   describe('§A command semantics', () => {
-    it('A1 prints the canonical four-column header', () => {
-      expect(exec.execute('lastlog').split('\n')[0]).toMatch(/^Username\s+Port\s+From\s+Latest$/);
+    it('A1 prints the canonical four-column header', async () => {
+      expect((await exec.execute('lastlog')).split('\n')[0]).toMatch(/^Username\s+Port\s+From\s+Latest$/);
     });
 
-    it('A2 lists "**Never logged in**" for a fresh account', () => {
+    it('A2 lists "**Never logged in**" for a fresh account', async () => {
       exec.userMgr.useradd('alice', { u: 1001 });
-      expect(exec.execute('lastlog -u alice')).toContain('**Never logged in**');
+      expect(await exec.execute('lastlog -u alice')).toContain('**Never logged in**');
     });
 
-    it('A3 renders host, tty and a year once a login is recorded', () => {
+    it('A3 renders host, tty and a year once a login is recorded', async () => {
       exec.userMgr.useradd('alice', { u: 1001 });
       exec.lastlog.record('alice', '192.168.1.50', 'pts/2');
-      const row = rowFor(exec.execute('lastlog -u alice'), 'alice')!;
+      const row = rowFor(await exec.execute('lastlog -u alice'), 'alice')!;
       expect(row).toContain('192.168.1.50');
       expect(row).toContain('pts/2');
       expect(row).toMatch(/\b\d{4}\b/);
     });
 
-    it('A4 -u filters to a single account', () => {
+    it('A4 -u filters to a single account', async () => {
       exec.userMgr.useradd('alice', { u: 1001 });
       exec.userMgr.useradd('bob', { u: 1002 });
       exec.lastlog.record('alice', '10.0.0.5', 'pts/0');
       exec.lastlog.record('bob', '10.0.0.6', 'pts/1');
-      const out = exec.execute('lastlog -u alice');
+      const out = await exec.execute('lastlog -u alice');
       expect(out).toMatch(/^alice\b/m);
       expect(out).not.toMatch(/^bob\b/m);
     });
 
-    it('A5 -u on an unknown name is an error', () => {
-      expect(exec.execute('lastlog -u ghost')).toMatch(/Unknown user or range: ghost/);
+    it('A5 -u on an unknown name is an error', async () => {
+      expect(await exec.execute('lastlog -u ghost')).toMatch(/Unknown user or range: ghost/);
     });
 
-    it('A6 -t DAYS keeps only recent logins', () => {
+    it('A6 -t DAYS keeps only recent logins', async () => {
       exec.userMgr.useradd('recent', { u: 2001 });
       exec.userMgr.useradd('stale', { u: 2002 });
       exec.lastlog.record('recent', '10.0.0.5', 'pts/0');
       exec.lastlog.record('stale', '10.0.0.6', 'pts/1', Date.now() - 30 * 86400_000);
-      const out = exec.execute('lastlog -t 7');
+      const out = await exec.execute('lastlog -t 7');
       expect(out).toMatch(/^recent\b/m);
       expect(out).not.toMatch(/^stale\b/m);
     });
 
-    it('A7 -b DAYS keeps only old logins', () => {
+    it('A7 -b DAYS keeps only old logins', async () => {
       exec.userMgr.useradd('recent', { u: 2001 });
       exec.userMgr.useradd('stale', { u: 2002 });
       exec.lastlog.record('recent', '10.0.0.5', 'pts/0');
       exec.lastlog.record('stale', '10.0.0.6', 'pts/1', Date.now() - 30 * 86400_000);
-      const out = exec.execute('lastlog -b 7');
+      const out = await exec.execute('lastlog -b 7');
       expect(out).toMatch(/^stale\b/m);
       expect(out).not.toMatch(/^recent\b/m);
     });
 
-    it('A8 -h prints usage', () => {
-      expect(exec.execute('lastlog -h')).toMatch(/Usage:[\s\S]*--user/);
+    it('A8 -h prints usage', async () => {
+      expect(await exec.execute('lastlog -h')).toMatch(/Usage:[\s\S]*--user/);
     });
 
-    it('A9 -V prints the util-linux version', () => {
-      expect(exec.execute('lastlog -V')).toMatch(/util-linux/);
+    it('A9 -V prints the util-linux version', async () => {
+      expect(await exec.execute('lastlog -V')).toMatch(/util-linux/);
     });
 
-    it('A10 plain lastlog lists every account exactly once', () => {
+    it('A10 plain lastlog lists every account exactly once', async () => {
       exec.userMgr.useradd('alice', { u: 1001 });
-      const out = exec.execute('lastlog');
+      const out = await exec.execute('lastlog');
       const aliceRows = out.split('\n').filter(l => /^alice\b/.test(l));
       expect(aliceRows).toHaveLength(1);
       expect(out).toMatch(/^root\b/m);
@@ -129,27 +129,27 @@ describe('lastlog — advanced multi-layer', () => {
       expect(alice!.tty).toBe('pts/0');
     });
 
-    it('B4 reading the file back via cat yields valid JSON of the entries', () => {
+    it('B4 reading the file back via cat yields valid JSON of the entries', async () => {
       exec.userMgr.useradd('alice', { u: 1001 });
       exec.lastlog.record('alice', '10.0.0.5', 'pts/0');
-      const out = exec.execute('cat /var/log/lastlog');
+      const out = await exec.execute('cat /var/log/lastlog');
       expect(() => JSON.parse(out)).not.toThrow();
       expect(out).toContain('alice');
     });
 
-    it('B5 -C removes the user from the on-disk projection', () => {
+    it('B5 -C removes the user from the on-disk projection', async () => {
       exec.userMgr.useradd('alice', { u: 1001 });
       exec.lastlog.record('alice', '10.0.0.5', 'pts/0');
       exec.userMgr.currentUid = 0;
-      exec.execute('lastlog -C -u alice');
+      await exec.execute('lastlog -C -u alice');
       expect(readLastlogFile(exec).some(r => r.user === 'alice')).toBe(false);
     });
 
-    it('B6 -S writes a fresh stamp to the file', () => {
+    it('B6 -S writes a fresh stamp to the file', async () => {
       exec.userMgr.useradd('alice', { u: 1001 });
       exec.userMgr.currentUid = 0;
       const before = Date.now() - 1000;
-      exec.execute('lastlog -S -u alice');
+      await exec.execute('lastlog -S -u alice');
       const alice = readLastlogFile(exec).find(r => r.user === 'alice');
       expect(alice).toBeDefined();
       expect(alice!.when).toBeGreaterThanOrEqual(before);
@@ -163,60 +163,60 @@ describe('lastlog — advanced multi-layer', () => {
       expect(reborn.getCurrent('alice')?.sourceHost).toBe('10.0.0.42');
     });
 
-    it('B8 the command output and the file projection agree', () => {
+    it('B8 the command output and the file projection agree', async () => {
       exec.userMgr.useradd('alice', { u: 1001 });
       exec.lastlog.record('alice', '172.16.0.9', 'pts/4');
       const fileHost = readLastlogFile(exec).find(r => r.user === 'alice')!.sourceHost;
-      expect(rowFor(exec.execute('lastlog -u alice'), 'alice')).toContain(fileHost);
+      expect(rowFor(await exec.execute('lastlog -u alice'), 'alice')).toContain(fileHost);
     });
   });
 
   // ─────────────────────────── §C access ────────────────────────────
   describe('§C access & identity', () => {
-    it('C1 -u accepts a numeric UID', () => {
+    it('C1 -u accepts a numeric UID', async () => {
       exec.userMgr.useradd('zoe', { u: 1777 });
       exec.lastlog.record('zoe', '10.0.0.5', 'pts/0');
-      const out = exec.execute('lastlog -u 1777');
+      const out = await exec.execute('lastlog -u 1777');
       expect(out).toMatch(/^zoe\b/m);
     });
 
-    it('C2 -u LO-HI selects an inclusive UID range', () => {
+    it('C2 -u LO-HI selects an inclusive UID range', async () => {
       exec.userMgr.useradd('zoe', { u: 1200 });
       exec.userMgr.useradd('yan', { u: 2200 });
-      const out = exec.execute('lastlog -u 1000-1500');
+      const out = await exec.execute('lastlog -u 1000-1500');
       expect(out).toMatch(/^zoe\b/m);
       expect(out).not.toMatch(/^yan\b/m);
     });
 
-    it('C3 -u 0-999 targets the system-account range', () => {
-      const out = exec.execute('lastlog -u 0-999');
+    it('C3 -u 0-999 targets the system-account range', async () => {
+      const out = await exec.execute('lastlog -u 0-999');
       expect(out).toMatch(/^root\b/m);
     });
 
-    it('C4 an unknown numeric UID is an error', () => {
-      expect(exec.execute('lastlog -u 4242')).toMatch(/Unknown user or range: 4242/);
+    it('C4 an unknown numeric UID is an error', async () => {
+      expect(await exec.execute('lastlog -u 4242')).toMatch(/Unknown user or range: 4242/);
     });
 
-    it('C5 a non-root user may still read lastlog', () => {
+    it('C5 a non-root user may still read lastlog', async () => {
       exec.userMgr.useradd('alice', { u: 1001 });
       exec.lastlog.record('alice', '10.0.0.5', 'pts/0');
       exec.userMgr.currentUid = 1001;
-      const out = exec.execute('lastlog -u alice');
+      const out = await exec.execute('lastlog -u alice');
       expect(out).toMatch(/^alice\b/m);
       expect(out).not.toMatch(/must be root/);
     });
 
-    it('C6 -C and -S are refused to non-root', () => {
+    it('C6 -C and -S are refused to non-root', async () => {
       exec.userMgr.useradd('alice', { u: 1001 });
       exec.userMgr.currentUid = 1001;
-      expect(exec.execute('lastlog -C -u alice')).toMatch(/must be root/);
-      expect(exec.execute('lastlog -S -u alice')).toMatch(/must be root/);
+      expect(await exec.execute('lastlog -C -u alice')).toMatch(/must be root/);
+      expect(await exec.execute('lastlog -S -u alice')).toMatch(/must be root/);
     });
 
-    it('C7 -C/-S without -u is rejected', () => {
+    it('C7 -C/-S without -u is rejected', async () => {
       exec.userMgr.currentUid = 0;
-      expect(exec.execute('lastlog -C')).toMatch(/requires -u|--user/);
-      expect(exec.execute('lastlog -S')).toMatch(/requires -u|--user/);
+      expect(await exec.execute('lastlog -C')).toMatch(/requires -u|--user/);
+      expect(await exec.execute('lastlog -S')).toMatch(/requires -u|--user/);
     });
   });
 
@@ -244,9 +244,9 @@ describe('lastlog — advanced multi-layer', () => {
       expect(exec2.lastlog.getCurrent('alice')?.sourceHost).toBe('10.0.0.77');
     });
 
-    it('D2 the SSH login is reflected by the lastlog command', () => {
+    it('D2 the SSH login is reflected by the lastlog command', async () => {
       sshContext().recordLogin('alice', '10.0.0.77');
-      expect(rowFor(exec2.execute('lastlog -u alice'), 'alice')).toContain('10.0.0.77');
+      expect(rowFor(await exec2.execute('lastlog -u alice'), 'alice')).toContain('10.0.0.77');
     });
 
     it('D3 a second login surfaces the previous one as the "Last login:" banner', () => {
@@ -269,12 +269,12 @@ describe('lastlog — advanced multi-layer', () => {
       expect(rows.find(r => r.user === 'alice')?.sourceHost).toBe('203.0.113.8');
     });
 
-    it('D6 distinct source hosts across logins keep the most recent', () => {
+    it('D6 distinct source hosts across logins keep the most recent', async () => {
       const reg = exec2.lastlog;
       reg.record('alice', '10.0.0.1', 'pts/0', Date.now() - 10_000);
       reg.record('alice', '10.0.0.2', 'pts/1');
       expect(reg.getCurrent('alice')?.sourceHost).toBe('10.0.0.2');
-      expect(rowFor(exec2.execute('lastlog -u alice'), 'alice')).toContain('10.0.0.2');
+      expect(rowFor(await exec2.execute('lastlog -u alice'), 'alice')).toContain('10.0.0.2');
     });
   });
 });

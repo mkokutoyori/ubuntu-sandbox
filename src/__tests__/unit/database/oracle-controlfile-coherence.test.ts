@@ -45,27 +45,27 @@ function sqlplus(srv: LinuxServer) {
 }
 
 describe('rm of a control file follows the real Oracle failure ladder', () => {
-  it('both multiplexed copies exist on the VFS after provisioning', () => {
+  it('both multiplexed copies exist on the VFS after provisioning', async () => {
     const srv = bootOracleServer('cf1');
-    expect(sh(srv, `ls ${CTL1}`)).toContain('control01.ctl');
-    expect(sh(srv, `ls ${CTL2}`)).toContain('control02.ctl');
+    expect(await sh(srv, `ls ${CTL1}`)).toContain('control01.ctl');
+    expect(await sh(srv, `ls ${CTL2}`)).toContain('control02.ctl');
   });
 
-  it('a deleted control file is NOT resurrected by later instance activity', () => {
+  it('a deleted control file is NOT resurrected by later instance activity', async () => {
     const srv = bootOracleServer('cf2');
-    sh(srv, `rm ${CTL1}`);
+    await sh(srv, `rm ${CTL1}`);
     const sql = sqlplus(srv);
     sql.processLine('ALTER SYSTEM SWITCH LOGFILE;'); // triggers a sync
     sql.processLine('SHUTDOWN IMMEDIATE');
     sql.processLine('STARTUP');
     sql.dispose();
-    expect(sh(srv, `ls ${CTL1}`)).toMatch(/No such file/);
+    expect(await sh(srv, `ls ${CTL1}`)).toMatch(/No such file/);
   });
 
-  it('STARTUP stays NOMOUNT with ORA-00205 when one copy is missing', () => {
+  it('STARTUP stays NOMOUNT with ORA-00205 when one copy is missing', async () => {
     const srv = bootOracleServer('cf3');
     const db = getRegisteredOracleDatabase(srv.getId())!;
-    sh(srv, `rm ${CTL1}`);
+    await sh(srv, `rm ${CTL1}`);
 
     const sql = sqlplus(srv);
     sql.processLine('SHUTDOWN IMMEDIATE');
@@ -80,9 +80,9 @@ describe('rm of a control file follows the real Oracle failure ladder', () => {
     expect(alert).toContain(`ORA-00202: control file: '${CTL1}'`);
   });
 
-  it('ALTER DATABASE MOUNT raises ORA-00205 too', () => {
+  it('ALTER DATABASE MOUNT raises ORA-00205 too', async () => {
     const srv = bootOracleServer('cf4');
-    sh(srv, `rm ${CTL2}`);
+    await sh(srv, `rm ${CTL2}`);
     const sql = sqlplus(srv);
     sql.processLine('SHUTDOWN IMMEDIATE');
     sql.processLine('STARTUP NOMOUNT');
@@ -91,24 +91,24 @@ describe('rm of a control file follows the real Oracle failure ladder', () => {
     expect(out).toContain('ORA-00205');
   });
 
-  it('a running instance is not affected by the rm (open inode semantics)', () => {
+  it('a running instance is not affected by the rm (open inode semantics)', async () => {
     const srv = bootOracleServer('cf5');
-    sh(srv, `rm ${CTL1}`);
+    await sh(srv, `rm ${CTL1}`);
     const sql = sqlplus(srv);
     const out = sql.processLine('SELECT COUNT(*) FROM hr.employees;').output.join('\n');
     sql.dispose();
     expect(out).not.toMatch(/ORA-/);
   });
 
-  it('restoring the file (copy from the surviving copy) lets MOUNT succeed', () => {
+  it('restoring the file (copy from the surviving copy) lets MOUNT succeed', async () => {
     const srv = bootOracleServer('cf6');
     const db = getRegisteredOracleDatabase(srv.getId())!;
-    sh(srv, `rm ${CTL1}`);
+    await sh(srv, `rm ${CTL1}`);
     const sql = sqlplus(srv);
     sql.processLine('SHUTDOWN IMMEDIATE');
     expect(sql.processLine('STARTUP').output.join('\n')).toContain('ORA-00205');
     // The canonical DBA fix: copy a surviving multiplexed copy in place.
-    sh(srv, `cp ${CTL2} ${CTL1}`);
+    await sh(srv, `cp ${CTL2} ${CTL1}`);
     const out = sql.processLine('ALTER DATABASE MOUNT;').output.join('\n');
     const open = sql.processLine('ALTER DATABASE OPEN;').output.join('\n');
     sql.dispose();

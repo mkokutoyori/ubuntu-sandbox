@@ -8,39 +8,39 @@ beforeEach(() => {
   exec.userMgr.currentUid = 0;
   exec.userMgr.currentGid = 0;
 });
-function run(cmd: string): string { return exec.execute(cmd); }
-function runScript(body: string): string {
+async function run(cmd: string): Promise<string> { return await exec.execute(cmd); }
+async function runScript(body: string): Promise<string> {
   exec.vfs.writeFile('/tmp/__t.sh', body, 0, 0, 0o022);
   const i = exec.vfs.resolveInode('/tmp/__t.sh');
   if (i) i.permissions = 0o755;
-  return run('bash /tmp/__t.sh');
+  return await run('bash /tmp/__t.sh');
 }
 
 describe('! pipeline negation', () => {
-  it('inverts a failing command into success', () => {
-    expect(run('! false && echo negated')).toContain('negated');
+  it('inverts a failing command into success', async () => {
+    expect(await run('! false && echo negated')).toContain('negated');
   });
 
-  it('inverts a succeeding command into failure', () => {
-    expect(run('! true; echo rc=$?')).toContain('rc=1');
+  it('inverts a succeeding command into failure', async () => {
+    expect(await run('! true; echo rc=$?')).toContain('rc=1');
   });
 
-  it('reports zero for a negated failure', () => {
-    expect(run('! false; echo rc=$?')).toContain('rc=0');
+  it('reports zero for a negated failure', async () => {
+    expect(await run('! false; echo rc=$?')).toContain('rc=0');
   });
 
-  it('applies to the whole pipeline, not the first stage', () => {
-    expect(run('! false | true; echo rc=$?')).toContain('rc=1');
-    expect(run('! true | false; echo rc=$?')).toContain('rc=0');
+  it('applies to the whole pipeline, not the first stage', async () => {
+    expect(await run('! false | true; echo rc=$?')).toContain('rc=1');
+    expect(await run('! true | false; echo rc=$?')).toContain('rc=0');
   });
 
-  it('double negation restores the original status', () => {
-    expect(run('! ! true; echo rc=$?')).toContain('rc=0');
-    expect(run('! ! false; echo rc=$?')).toContain('rc=1');
+  it('double negation restores the original status', async () => {
+    expect(await run('! ! true; echo rc=$?')).toContain('rc=0');
+    expect(await run('! ! false; echo rc=$?')).toContain('rc=1');
   });
 
-  it('a negated failure does not trip set -e', () => {
-    const out = runScript(`
+  it('a negated failure does not trip set -e', async () => {
+    const out = await runScript(`
       set -e
       ! false
       echo survived
@@ -48,8 +48,8 @@ describe('! pipeline negation', () => {
     expect(out).toContain('survived');
   });
 
-  it('a negated success does not trip set -e either (bash semantics)', () => {
-    const out = runScript(`
+  it('a negated success does not trip set -e either (bash semantics)', async () => {
+    const out = await runScript(`
       set -e
       ! true
       echo survived
@@ -57,8 +57,8 @@ describe('! pipeline negation', () => {
     expect(out).toContain('survived');
   });
 
-  it('does not fire the ERR trap for a negated pipeline', () => {
-    const out = runScript(`
+  it('does not fire the ERR trap for a negated pipeline', async () => {
+    const out = await runScript(`
       trap 'echo "ERR fired"' ERR
       ! true
       echo done
@@ -67,12 +67,12 @@ describe('! pipeline negation', () => {
     expect(out).toContain('done');
   });
 
-  it('works inside an if condition', () => {
-    expect(run('if ! false; then echo yes; fi')).toContain('yes');
+  it('works inside an if condition', async () => {
+    expect(await run('if ! false; then echo yes; fi')).toContain('yes');
   });
 
-  it('works inside a while guard', () => {
-    const out = runScript(`
+  it('works inside a while guard', async () => {
+    const out = await runScript(`
       n=0
       while ! [ $n -ge 2 ]; do
         echo n=$n
@@ -83,7 +83,7 @@ describe('! pipeline negation', () => {
     expect(out).toContain('n=1');
   });
 
-  it('a literal ! amid arguments stays an ordinary word', () => {
-    expect(run('echo a ! b')).toContain('a ! b');
+  it('a literal ! amid arguments stays an ordinary word', async () => {
+    expect(await run('echo a ! b')).toContain('a ! b');
   });
 });

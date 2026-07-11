@@ -8,33 +8,33 @@ beforeEach(() => {
   exec.userMgr.currentUid = 0;
   exec.userMgr.currentGid = 0;
 });
-function run(cmd: string): string { return exec.execute(cmd); }
-function runScript(body: string): string {
+async function run(cmd: string): Promise<string> { return await exec.execute(cmd); }
+async function runScript(body: string): Promise<string> {
   exec.vfs.writeFile('/tmp/__t.sh', body, 0, 0, 0o022);
   const i = exec.vfs.resolveInode('/tmp/__t.sh');
   if (i) i.permissions = 0o755;
-  return run('bash /tmp/__t.sh');
+  return await run('bash /tmp/__t.sh');
 }
 
 describe('declare -n namerefs', () => {
-  it('reading through the reference yields the target value', () => {
-    expect(run('declare -n ref=target; target=hi; echo $ref')).toContain('hi');
+  it('reading through the reference yields the target value', async () => {
+    expect(await run('declare -n ref=target; target=hi; echo $ref')).toContain('hi');
   });
 
-  it('writing through the reference updates the target', () => {
-    expect(run('declare -n ref=target; ref=world; echo $target')).toContain('world');
+  it('writing through the reference updates the target', async () => {
+    expect(await run('declare -n ref=target; ref=world; echo $target')).toContain('world');
   });
 
-  it('follows a chain of references', () => {
-    expect(run('declare -n a=b; declare -n b=c; c=deep; echo $a')).toContain('deep');
+  it('follows a chain of references', async () => {
+    expect(await run('declare -n a=b; declare -n b=c; c=deep; echo $a')).toContain('deep');
   });
 
-  it('reads empty when the target is unset', () => {
-    expect(run('declare -n ref=nothing; echo "[$ref]"')).toContain('[]');
+  it('reads empty when the target is unset', async () => {
+    expect(await run('declare -n ref=nothing; echo "[$ref]"')).toContain('[]');
   });
 
-  it('local -n implements out-parameters in functions', () => {
-    const out = runScript(`
+  it('local -n implements out-parameters in functions', async () => {
+    const out = await runScript(`
       assign() {
         local -n out=$1
         out=42
@@ -45,8 +45,8 @@ describe('declare -n namerefs', () => {
     expect(out).toContain('result=42');
   });
 
-  it('two calls can target different variables', () => {
-    const out = runScript(`
+  it('two calls can target different variables', async () => {
+    const out = await runScript(`
       setv() {
         local -n slot=$1
         slot=$2

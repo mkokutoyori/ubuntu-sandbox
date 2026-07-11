@@ -14,23 +14,29 @@ import { LinuxIptablesManager } from './LinuxIptablesManager';
 import { LinuxFirewallManager } from './LinuxFirewallManager';
 import { LinuxLogManager } from './LinuxLogManager';
 import { LinuxNetworkConfigManager } from './LinuxNetworkConfigManager';
-import { type ShellContext, cmdTouch, cmdLs, cmdCat, cmdEcho, cmdCp, cmdMv, cmdRm, cmdMkdir, cmdRmdir, cmdLn, cmdPwd, cmdTee, expandGlob } from './LinuxFileCommands';
-import { cmdGrep, cmdHead, cmdWc, cmdSort, cmdCut, cmdUniq, cmdTr, cmdAwk, cmdSed } from './LinuxTextCommands';
+import { type ShellContext, cmdEcho, cmdPwd, cmdTee, expandGlob } from './LinuxFileCommands';
+import { Interpreter } from '@/command-kernel/interpreter';
+import { CommandRegistry } from '@/command-kernel/registry/command-registry';
+import { createSession } from '@/command-kernel/session/types';
+import { PipeBuffer } from '@/command-kernel/io/pipe-buffer';
+import { createLinuxHostShell } from './command-kernel/createLinuxHostShell';
+import { resolveLinuxUser } from './command-kernel/LinuxUser';
+import { cmdGrep, cmdAwk, cmdSed } from './LinuxTextCommands';
 import { cmdFind, cmdLocate, cmdCommand, cmdUpdatedb } from './LinuxSearchCommands';
 import {
   SHELL_CATALOG, CommandResolver, WhereisResolver, ALL_CATEGORIES,
   type ShellIntrospection, type FileLocation, type WhereisSelector,
 } from './resolve';
-import { cmdChmod, cmdChown, cmdChgrp, cmdStat, cmdUmask, cmdMkfifo } from './LinuxPermCommands';
+import { cmdChgrp, cmdUmask, cmdMkfifo } from './LinuxPermCommands';
 import {
-  runTest, runExpr, runSeq, runSleep, runWatch, measure, formatTimes, chooseTimeFormat,
+  runTest, runExpr, runSeq, runSleep, runWatch, formatTimes, chooseTimeFormat,
   runTail,
   cmdTar, cmdGzip, cmdZip, cmdUnzip, describeArchiveContent,
   type TestFs, type TestEnv, type TailFs, type TailSink, type TailFollowHandle, type TailRunResult,
   type ArchiveCtx,
 } from './coreutils';
 import { cmdDiff } from './coreutils/DiffCommand';
-import { cmdUseradd, cmdUsermod, cmdUserdel, cmdPasswd, cmdChpasswd, cmdFaillock, cmdGroupadd, cmdGroupmod, cmdGroupdel, cmdGpasswd, cmdId, cmdWhoami, cmdGroups, cmdWho, cmdW, cmdLast, cmdLastb, cmdSudoCheck } from './LinuxUserCommands';
+import { cmdUseradd, cmdUsermod, cmdUserdel, cmdPasswd, cmdChpasswd, cmdFaillock, cmdGroupadd, cmdGroupmod, cmdGroupdel, cmdGpasswd, cmdWho, cmdW, cmdLast, cmdLastb, cmdSudoCheck } from './LinuxUserCommands';
 import { parseUseraddArgs } from './iam/useraddOptions';
 import {
   CommandPrivilegePolicy,
@@ -46,7 +52,7 @@ import { HardwareProfile } from '../host/hardware';
 import { HostLifecycle } from '../host/lifecycle';
 import { HostClock } from '../host/lifecycle/HostClock';
 import { SystemIdentity } from '../host/identity';
-import { runScript, runScriptContent, runScriptContentAsync, type ScriptResult } from '@/bash/runtime/ScriptRunner';
+import { runScript, runScriptAsync, runScriptContent, runScriptContentAsync, type ScriptResult } from '@/bash/runtime/ScriptRunner';
 import { ExitSignal } from '@/bash/errors/BashError';
 import { AliasTable } from '@/bash/runtime/AliasTable';
 import { type IpNetworkContext } from './LinuxIpCommand';
@@ -395,6 +401,27 @@ export class LinuxCommandExecutor {
    * null when the command isn't a registered (synchronous) registry entry.
    */
   _registryCommandHook: ((cmd: string, args: string[]) => { output: string; exitCode: number } | null) | null = null;
+  /**
+   * Optional bridge into `command-kernel`'s `CommandRegistry` (via
+   * `LinuxMachine`'s single `Interpreter` instance — see
+   * `Interpreter.runResolved`) — set by `LinuxMachine` so a migrated
+   * command is reachable from inside a bash script (loop/function/
+   * condition/pipeline), not just the top-level per-line fast path
+   * (`tryCommandKernel`). Returns null when `cmd` isn't registered there.
+   * `LinuxMachine` overrides this with a richer hook (real ports,
+   * device hostname/identity, audit wired to its own publishers); when
+   * a bare `LinuxCommandExecutor` is used standalone (as in most unit
+   * tests, with no wrapping `LinuxMachine`), `dispatchMaybeNetwork`
+   * falls back to `defaultCommandKernelHook`, a minimal self-contained
+   * shell built from the executor's own vfs/userMgr/processMgr —
+   * migrated commands have no other implementation left to fall back
+   * to, so this default must always be able to reach them.
+   */
+  _commandKernelHook:
+    | ((cmd: string, args: string[], stdin: string | undefined, env?: Record<string, string>) =>
+        Promise<{ output: string; exitCode: number }> | null)
+    | null = null;
+  private _defaultCommandKernelShell: { interpreter: Interpreter; registry: CommandRegistry } | null = null;
   /**
    * Optional bridge to a registered `LinuxCommand`'s own declarative
    * `privilege` field, set by `LinuxMachine` alongside `_registryCommandHook`.
@@ -868,7 +895,7 @@ export class LinuxCommandExecutor {
    * Mirrors real OpenSSH where these tools fail with the same
    * "Connection refused" / "Could not resolve hostname" as the parent.
    */
-  private runSshTransport(cmd: 'scp' | 'sftp' | 'rsync', args: string[], stdinArg?: string): { output: string; exitCode: number } {
+  private async runSshTransport(cmd: 'scp' | 'sftp' | 'rsync', args: string[], stdinArg?: string): Promise<{ output: string; exitCode: number }> {
     // Extract the destination spec: user@host[:path] (positional argv).
     const positional = args.filter(a => !a.startsWith('-'));
     const dest = positional.find(p => /[@:]/.test(p)) ?? positional[0];
@@ -902,7 +929,7 @@ export class LinuxCommandExecutor {
     if (cmd === 'sftp') probeArgs.push('-s', 'sftp');
     probeArgs.push(probeTarget, 'hostname');
     // Probe via the same ssh client; if it returns Connection refused, propagate.
-    const probe = runSshClient({ ...this.buildSshClientOpts(probeArgs) });
+    const probe = await runSshClient({ ...this.buildSshClientOpts(probeArgs) });
     if (probe.exitCode !== 0) {
       // scp prefixes with "scp:" / "rsync:" but reuses the ssh message body.
       const prefix = cmd === 'rsync' ? 'rsync: connection unexpectedly closed' : `${cmd}: `;
@@ -1619,7 +1646,7 @@ export class LinuxCommandExecutor {
    *
    * Returns null when the input is not a backgrounded command.
    */
-  private handleBackgroundIfTrailing(input: string): string | null {
+  private async handleBackgroundIfTrailing(input: string): Promise<string | null> {
     if (!endsWithUnquotedAmp(input)) return null;
     let cmdLine = input.replace(/\s*&\s*$/, '').trim();
     if (!cmdLine) return null;
@@ -1631,7 +1658,7 @@ export class LinuxCommandExecutor {
       cmdLine = cmdLine.replace(/^nohup\s+/, '');
     }
 
-    const spawned = this.spawnBackgroundJob(cmdLine, nohup);
+    const spawned = await this.spawnBackgroundJob(cmdLine, nohup);
     if (!spawned) return null;
     const lines: string[] = [];
     if (nohup) lines.push(`nohup: ignoring input and appending output to 'nohup.out'`);
@@ -1639,7 +1666,7 @@ export class LinuxCommandExecutor {
     return lines.join('\n');
   }
 
-  private spawnBackgroundJob(cmdLine: string, nohup: boolean): { pid: number; jobId: number } | null {
+  private async spawnBackgroundJob(cmdLine: string, nohup: boolean): Promise<{ pid: number; jobId: number } | null> {
     const argv = simpleTokenize(cmdLine);
     if (argv.length === 0) return null;
     const c = this.ctx();
@@ -1668,7 +1695,7 @@ export class LinuxCommandExecutor {
     let captured = '';
     let exitCode = 0;
     try {
-      captured = this.execute(cmdLine);
+      captured = await this.execute(cmdLine);
       exitCode = this.lastExitCode;
     } catch { /* background failures are silent */ }
     if (exitCode === 127 && this.networkRunner) {
@@ -1705,13 +1732,13 @@ export class LinuxCommandExecutor {
     return new Date(this.wallEpoch + this.clock.now());
   }
 
-  advanceTime(ms: number): void {
+  async advanceTime(ms: number): Promise<void> {
     const before = this.clock.now();
     this.clock.advance(ms);
     this.processMgr.accrueCpu(ms);
     this.reapDueBackgroundJobs();
-    this.fireDueAtJobs();
-    this.tickCron(before);
+    await this.fireDueAtJobs();
+    await this.tickCron(before);
   }
 
   private ensureCronEngine(): CronEngine {
@@ -1722,8 +1749,8 @@ export class LinuxCommandExecutor {
     });
     this.cronEngine = new CronEngine({
       sources: [source],
-      runner: (command) => {
-        const output = this.execute(command);
+      runner: async (command) => {
+        const output = await this.execute(command);
         return { output, exitCode: this.lastExitCode };
       },
       syslog: () => { void 0; },
@@ -1735,28 +1762,28 @@ export class LinuxCommandExecutor {
     return this.cronEngine;
   }
 
-  private tickCron(fromMs: number): void {
+  private async tickCron(fromMs: number): Promise<void> {
     if (this.serviceMgr.status('cron')?.state !== 'active') return;
     const engine = this.ensureCronEngine();
     if (!this.cronStarted) {
       this.cronStarted = true;
       this.cronCursorMs = fromMs;
-      engine.start();
+      await engine.start();
     }
     let guard = 0;
     while (this.cronCursorMs + 60_000 <= this.clock.now() && guard++ < 20_000) {
       this.cronCursorMs += 60_000;
-      engine.tick(new Date(this.wallEpoch + this.cronCursorMs));
+      await engine.tick(new Date(this.wallEpoch + this.cronCursorMs));
     }
   }
 
-  private fireDueAtJobs(): void {
+  private async fireDueAtJobs(): Promise<void> {
     if (this.serviceMgr.status('atd')?.state !== 'active') return;
     const now = this.simulatedDate().getTime();
     for (const job of this.atQueue.list()) {
       if (job.runAt.getTime() > now) break;
       this.atQueue.remove(job.id);
-      try { this.execute(job.command); } catch { void 0; }
+      try { await this.execute(job.command); } catch { void 0; }
     }
   }
 
@@ -1949,6 +1976,216 @@ export class LinuxCommandExecutor {
     };
   }
 
+  /**
+   * Narrow, synchronous host-command bridge used by Oracle's
+   * DBMS_SCHEDULER EXECUTABLE jobs, OS-identity provisioning
+   * (`OracleInstance.runOsCommand` / `provisionOracleOsIdentity` in
+   * `terminal/commands/database.ts`), and `SqlPlusSubShell` (OS-context
+   * capture + the SQL*Plus `HOST` command). All three call sites are
+   * hard-synchronous by contract: Oracle's PL/SQL package routines
+   * (`IPackageRoutine.invoke(): string | null`) are synchronous across
+   * the whole package library, and `SqlPlusSubShell.create` is invoked
+   * from inside `SqlPlusShell`'s constructor (`shell/adapters/
+   * SqlPlusShell.ts`) — a JS constructor cannot be async, full stop.
+   * None of them can reach the async bash/command-kernel pipeline, so
+   * this hand-rolled bridge covers exactly the commands they use —
+   * `whoami`/`hostname`/`pwd`/`id`, `ls`/`cat`/`find` (read-only,
+   * straight against the VFS), `echo` (with optional `>` redirection),
+   * `groupadd`/`useradd`/`usermod` — returning null for anything else
+   * (mirrors real Oracle's ORA-27369 "job slave failed to launch").
+   */
+  runOracleHostCommandSync(cmd: string): { output: string; exitCode: number } | null {
+    const trimmed = cmd.trim();
+    if (!trimmed) return { output: '', exitCode: 0 };
+    const c = this.ctx();
+
+    // Strip a trailing `2>TARGET`-style stderr redirect (HOST callers use
+    // it to silence expected errors, e.g. probing a device file that may
+    // not exist). `ls`/`cat`/`rm` below report failures as error lines
+    // mixed into `output` (there's no real fd separation in this narrow
+    // bridge) — when such a redirect was present we drop those lines
+    // instead of a real shell's fd-2 routing.
+    const stderrMatch = /\s*2>\s*(\S+)\s*$/.exec(trimmed);
+    const suppressErrors = !!stderrMatch;
+    const withoutStderr = stderrMatch ? trimmed.slice(0, stderrMatch.index) : trimmed;
+    const redirectMatch = /^(.*?)\s*>\s*(\S+)\s*$/.exec(withoutStderr);
+    const body = redirectMatch ? redirectMatch[1] : withoutStderr;
+    const redirectTarget = redirectMatch ? redirectMatch[2] : null;
+
+    const argv = simpleTokenize(body);
+    const head = argv[0];
+    const args = argv.slice(1);
+    let output: string;
+    let exitCode = 0;
+    if (head === 'echo') {
+      output = cmdEcho(c, args.map(a => this.expandEnvVars(a)));
+    } else if (head === 'groupadd') {
+      output = cmdGroupadd(c, args);
+      exitCode = output ? 1 : 0;
+    } else if (head === 'useradd') {
+      output = cmdUseradd(c, args);
+      exitCode = output ? 1 : 0;
+    } else if (head === 'usermod') {
+      output = cmdUsermod(c, args);
+      exitCode = output ? 1 : 0;
+    } else if (head === 'whoami') {
+      output = this.userMgr.currentUser;
+    } else if (head === 'hostname') {
+      output = (this.vfs.readFile('/etc/hostname') ?? 'localhost').trim();
+    } else if (head === 'pwd') {
+      output = this.cwd;
+    } else if (head === 'id') {
+      const target = args.find(a => !a.startsWith('-')) ?? this.userMgr.currentUser;
+      const groups = this.userMgr.getUserGroups(target);
+      output = groups.map(g => g.name).join(' ');
+    } else if (head === 'ls') {
+      const result = this.runOracleHostLs(args, suppressErrors);
+      output = result.output;
+      exitCode = result.exitCode;
+    } else if (head === 'cat') {
+      const result = this.runOracleHostCat(args, suppressErrors);
+      output = result.output;
+      exitCode = result.exitCode;
+    } else if (head === 'find') {
+      output = this.runOracleHostFind(args);
+    } else if (head === 'mkdir') {
+      const result = this.runOracleHostMkdir(args);
+      output = result.output;
+      exitCode = result.exitCode;
+    } else if (head === 'rm') {
+      const result = this.runOracleHostRm(args, suppressErrors);
+      output = result.output;
+      exitCode = result.exitCode;
+    } else {
+      // Outside the curated surface: report it the way a real shell
+      // would for a missing binary (exit 127), not as "the runner
+      // itself is broken" (that's what `null` means to callers like
+      // `DBMS_SCHEDULER`'s EXECUTABLE-job slave, which maps a null
+      // result to ORA-27370 rather than ORA-27369).
+      return { output: `${head}: command not found`, exitCode: 127 };
+    }
+
+    if (redirectTarget) {
+      const abs = this.vfs.normalizePath(redirectTarget, this.cwd);
+      this.vfs.writeFile(
+        abs,
+        output.endsWith('\n') ? output : `${output}\n`,
+        this.userMgr.currentUid, this.userMgr.currentGid, this.umask,
+      );
+      return { output: '', exitCode: 0 };
+    }
+    return { output, exitCode };
+  }
+
+  private runOracleHostLs(args: string[], suppressErrors: boolean): { output: string; exitCode: number } {
+    const paths = args.filter(a => !a.startsWith('-'));
+    const targets = paths.length > 0 ? paths : ['.'];
+    const parts: string[] = [];
+    let exitCode = 0;
+    for (const p of targets) {
+      const abs = this.vfs.normalizePath(p, this.cwd);
+      const inode = this.vfs.resolveInode(abs);
+      if (!inode) {
+        if (!suppressErrors) parts.push(`ls: cannot access '${p}': No such file or directory`);
+        exitCode = 1;
+        continue;
+      }
+      if (inode.type === 'directory') {
+        const entries = this.vfs.listDirectory(abs) ?? [];
+        parts.push(entries.map(e => e.name).sort().join('\n'));
+      } else {
+        parts.push(p);
+      }
+    }
+    return { output: parts.filter(Boolean).join('\n'), exitCode };
+  }
+
+  private runOracleHostCat(args: string[], suppressErrors: boolean): { output: string; exitCode: number } {
+    const paths = args.filter(a => !a.startsWith('-'));
+    const parts: string[] = [];
+    let exitCode = 0;
+    for (const p of paths) {
+      const abs = this.vfs.normalizePath(p, this.cwd);
+      const content = this.vfs.readFile(abs);
+      if (content === null) {
+        if (!suppressErrors) parts.push(`cat: ${p}: No such file or directory`);
+        exitCode = 1;
+        continue;
+      }
+      parts.push(content);
+    }
+    return { output: parts.join(''), exitCode };
+  }
+
+  private runOracleHostMkdir(args: string[]): { output: string; exitCode: number } {
+    const paths = args.filter(a => !a.startsWith('-'));
+    for (const p of paths) {
+      const abs = this.vfs.normalizePath(p, this.cwd);
+      this.vfs.mkdirp(abs, 0o755, this.userMgr.currentUid, this.userMgr.currentGid);
+    }
+    return { output: '', exitCode: 0 };
+  }
+
+  private runOracleHostRm(args: string[], suppressErrors: boolean): { output: string; exitCode: number } {
+    const recursive = args.includes('-r') || args.includes('-rf') || args.includes('-fr');
+    const paths = args.filter(a => !a.startsWith('-'));
+    let exitCode = 0;
+    const errors: string[] = [];
+    for (const p of paths) {
+      const abs = this.vfs.normalizePath(p, this.cwd);
+      const inode = this.vfs.resolveInode(abs);
+      if (!inode) {
+        errors.push(`rm: cannot remove '${p}': No such file or directory`);
+        exitCode = 1;
+        continue;
+      }
+      const ok = inode.type === 'directory'
+        ? (recursive ? this.vfs.rmrf(abs) : this.vfs.rmdir(abs))
+        : this.vfs.deleteFile(abs);
+      if (!ok) {
+        errors.push(`rm: cannot remove '${p}'`);
+        exitCode = 1;
+      }
+    }
+    return { output: suppressErrors ? '' : errors.join('\n'), exitCode };
+  }
+
+  private runOracleHostFind(args: string[]): string {
+    const root = args.find(a => !a.startsWith('-')) ?? '.';
+    let namePattern: RegExp | null = null;
+    let typeFilter: 'f' | 'd' | null = null;
+    for (let i = 0; i < args.length; i++) {
+      if (args[i] === '-name' && args[i + 1]) {
+        const glob = args[++i];
+        namePattern = new RegExp(`^${glob.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*').replace(/\?/g, '.')}$`);
+      } else if (args[i] === '-type' && args[i + 1]) {
+        const t = args[++i];
+        typeFilter = t === 'f' || t === 'd' ? t : null;
+      }
+    }
+    const abs = this.vfs.normalizePath(root, this.cwd);
+    const results: string[] = [];
+    const walk = (dirAbs: string, display: string) => {
+      const inode = this.vfs.resolveInode(dirAbs);
+      if (!inode) return;
+      if (inode.type !== 'directory') {
+        if ((!typeFilter || typeFilter === 'f') && (!namePattern || namePattern.test(basenameOf(display)))) {
+          results.push(display);
+        }
+        return;
+      }
+      if (!typeFilter || typeFilter === 'd') {
+        if (!namePattern || namePattern.test(basenameOf(display))) results.push(display);
+      }
+      for (const entry of this.vfs.listDirectory(dirAbs) ?? []) {
+        if (entry.name === '.' || entry.name === '..') continue;
+        walk(`${dirAbs === '/' ? '' : dirAbs}/${entry.name}`, `${display === '/' ? '' : display}/${entry.name}`);
+      }
+    };
+    walk(abs, root.endsWith('/') ? root.slice(0, -1) || '/' : root);
+    return results.join('\n');
+  }
+
   displayColor = false;
 
   /**
@@ -1973,12 +2210,12 @@ export class LinuxCommandExecutor {
    * `executeInSession` calls from different terminals are serialised by the
    * owning `LinuxMachine` (see `LinuxMachine.executeCommandInSession`).
    */
-  executeInSession(input: string, session: LinuxShellSession): string {
+  async executeInSession(input: string, session: LinuxShellSession): Promise<string> {
     if (session.disposed) return '';
     const baseline = this.snapshotState();
     this.swapInSession(session);
     try {
-      const result = this.execute(input);
+      const result = await this.execute(input);
       this.captureStateInto(session);
       return result;
     } finally {
@@ -2054,7 +2291,7 @@ export class LinuxCommandExecutor {
     this.lastExitCode = b.lastExitCode;
   }
 
-  execute(input: string): string {
+  async execute(input: string): Promise<string> {
     this.executeDepth++;
     try {
       const top = this.executeDepth === 1;
@@ -2063,7 +2300,7 @@ export class LinuxCommandExecutor {
         this.reapDueBackgroundJobs();
         notices = this.drainFinishedJobNotices();
       }
-      const out = this.executeCore(input);
+      const out = await this.executeCore(input);
       if (top && notices.length > 0) {
         return out ? `${notices.join('\n')}\n${out}` : notices.join('\n');
       }
@@ -2075,7 +2312,7 @@ export class LinuxCommandExecutor {
 
   private executeDepth = 0;
 
-  private executeCore(input: string): string {
+  private async executeCore(input: string): Promise<string> {
     const trimmed = input.trim();
     if (!trimmed) { this.lastExitCode = 0; return ''; }
     this.currentCommandHead = extractCommandHead(trimmed);
@@ -2090,18 +2327,18 @@ export class LinuxCommandExecutor {
     if (builtin !== null) return builtin;
 
     // Handle top-level background `cmd &` (and `nohup cmd &`).
-    const bgHandled = this.handleBackgroundIfTrailing(trimmed);
+    const bgHandled = await this.handleBackgroundIfTrailing(trimmed);
     if (bgHandled !== null) return bgHandled;
 
     // Route through the bash interpreter for full bash syntax support
     const io = this.buildIOContext();
     const initialPwd = this.cwd;
     const initialVars = this.buildEnvVars();
-    const result = runScriptContent(
+    const result = await runScriptContentAsync(
       trimmed,
       'bash',
       [],
-      (argv, env, background) => this.dispatchFromInterpreter(argv, env, background),
+      (argv, env, background) => this.dispatchMaybeNetwork(argv, env, background),
       initialVars,
       io,
       { pid: this.currentBashPid(), ppid: this.shellPpid, initialExitCode: this.lastExitCode },
@@ -2171,58 +2408,85 @@ export class LinuxCommandExecutor {
   }
 
   /**
-   * Async twin of {@link execute}: same pipeline, driven through the
-   * interpreter's async driver so network commands compose with full
-   * shell syntax (pipes, redirections, conditionals, substitutions).
+   * `execute()` now already drives the async interpreter throughout, so
+   * this is a thin alias kept for call sites that historically asked for
+   * the "async twin" by name.
    */
-  async executeAsync(input: string): Promise<string> {
-    this.executeDepth++;
-    try {
-      const top = this.executeDepth === 1;
-      let notices: string[] = [];
-      if (top) {
-        this.reapDueBackgroundJobs();
-        notices = this.drainFinishedJobNotices();
-      }
-      const out = await this.executeCoreAsync(input);
-      if (top && notices.length > 0) {
-        return out ? `${notices.join('\n')}\n${out}` : notices.join('\n');
-      }
-      return out;
-    } finally {
-      this.executeDepth--;
-    }
+  executeAsync(input: string): Promise<string> {
+    return this.execute(input);
   }
 
-  private async executeCoreAsync(input: string): Promise<string> {
-    const trimmed = input.trim();
-    if (!trimmed) { this.lastExitCode = 0; return ''; }
-    this.currentCommandHead = extractCommandHead(trimmed);
+  /**
+   * The bash interpreter joins piped stdin content onto argv as an extra
+   * trailing element (see `ExternalCommandFn`) rather than passing a real
+   * stream — shared by every dispatch entry point that receives an argv
+   * already flattened this way, so the heuristic lives in exactly one
+   * place. Returns the detected stdin content, or `undefined` if the
+   * trailing arg is a genuine argument.
+   */
+  private static detectPipedStdin(cmd: string, args: readonly string[]): string | undefined {
+    const lastArg = args[args.length - 1];
+    if (lastArg?.includes('\n')) return lastArg;
+    // For text processing commands, multi-word content without newlines is also stdin —
+    // but only when a separate program/option arg precedes it, so a single-arg program
+    // (e.g. awk 'BEGIN{...}') is not mistaken for piped input.
+    if (lastArg && STDIN_COMMANDS.has(cmd) && lastArg.includes(' ') && args.length > 1) return lastArg;
+    return undefined;
+  }
 
-    this.syncProcPids();
-    this.commandHistory.push(trimmed);
+  /**
+   * Self-contained fallback for `_commandKernelHook` when no
+   * `LinuxMachine` wraps this executor (most direct-`LinuxCommandExecutor`
+   * unit tests). Built lazily from the executor's own vfs/userMgr/
+   * processMgr — migrated commands (ls, cat, touch, id, …) have no other
+   * implementation to fall back to, so a bare executor must still be
+   * able to reach them.
+   */
+  private getDefaultCommandKernelShell(): { interpreter: Interpreter; registry: CommandRegistry } {
+    if (!this._defaultCommandKernelShell) {
+      const interpreter = createLinuxHostShell({
+        vfs: this.vfs,
+        userManager: this.userMgr,
+        processManager: this.processMgr,
+        hostname: (this.vfs.readFile('/etc/hostname') ?? 'localhost').trim(),
+        ports: [],
+        getUmask: () => this.umask,
+        powerOn: () => { /* no-op: no device lifecycle without a LinuxMachine */ },
+        powerOff: () => { /* no-op: no device lifecycle without a LinuxMachine */ },
+        publishFsAccess: (path, perm, syscall) => this.publishFsAccess(path, perm, syscall),
+        publishSyscall: (syscall, path) => this.publishSyscall(syscall, path),
+      });
+      this._defaultCommandKernelShell = { interpreter, registry: interpreter.commands };
+    }
+    return this._defaultCommandKernelShell;
+  }
 
-    const builtin = this.runJobBuiltinIfMatching(trimmed);
-    if (builtin !== null) return builtin;
+  private async runDefaultCommandKernelResolved(
+    cmd: string,
+    args: string[],
+    stdin: string | undefined,
+    env?: Record<string, string>,
+  ): Promise<{ output: string; exitCode: number }> {
+    const { interpreter } = this.getDefaultCommandKernelShell();
+    const user = resolveLinuxUser(this.userMgr, this.userMgr.currentUser);
+    const session = createSession({
+      id: 'standalone-executor',
+      user,
+      cwd: this.cwd,
+      env: env ? new Map(Object.entries(env)) : new Map(this.env),
+    });
+    const chunks: string[] = [];
+    const collector = { write: async (text: string) => { chunks.push(text); }, close: async () => {} };
+    const stdinStream = new PipeBuffer();
+    if (stdin !== undefined) await stdinStream.write(stdin);
+    await stdinStream.close();
 
-    const bgHandled = this.handleBackgroundIfTrailing(trimmed);
-    if (bgHandled !== null) return bgHandled;
-
-    const io = this.buildIOContext();
-    const initialPwd = this.cwd;
-    const initialVars = this.buildEnvVars();
-    const result = await runScriptContentAsync(
-      trimmed,
-      'bash',
-      [],
-      (argv, env, background) => this.dispatchMaybeNetwork(argv, env, background),
-      initialVars,
-      io,
-      { pid: this.currentBashPid(), ppid: this.shellPpid, initialExitCode: this.lastExitCode },
-      this.aliases,
-      this.functions,
-    );
-    return this.applyInterpreterResult(result, initialPwd, initialVars);
+    // Caller (`dispatchMaybeNetwork`) only invokes this after confirming
+    // `registry.has(cmd)`, so `runResolved` always resolves a real exit
+    // code here — never the "not registered" null case.
+    const exitCode = (await interpreter.runResolved(cmd, args, session, { stdin: stdinStream, stdout: collector, stderr: collector })) ?? 0;
+    this.cwd = session.cwd;
+    return { output: chunks.join(''), exitCode };
   }
 
   private dispatchMaybeNetwork(
@@ -2230,6 +2494,18 @@ export class LinuxCommandExecutor {
     env?: Record<string, string>,
     background?: boolean,
   ): { output: string; exitCode: number } | Promise<{ output: string; exitCode: number }> {
+    if (!background && argv.length > 0 && argv[0] !== 'sudo') {
+      const cmd = argv[0];
+      const rawArgs = argv.slice(1);
+      const stdin = LinuxCommandExecutor.detectPipedStdin(cmd, rawArgs);
+      const args = stdin !== undefined ? rawArgs.slice(0, -1) : rawArgs;
+      if (this._commandKernelHook) {
+        const pending = this._commandKernelHook(cmd, args, stdin, env);
+        if (pending) return pending;
+      } else if (this.getDefaultCommandKernelShell().registry.has(cmd)) {
+        return this.runDefaultCommandKernelResolved(cmd, args, stdin, env);
+      }
+    }
     if (!background && this.networkRunner && argv.length > 0) {
       const effective = argv[0] === 'sudo' ? argv.slice(1) : argv;
       const pending = effective.length > 0 ? this.networkRunner(effective, env) : null;
@@ -2246,14 +2522,14 @@ export class LinuxCommandExecutor {
    * inbound SSH exec-mode to apply AcceptEnv-forwarded variables on the
    * remote side without leaking them into the persistent shell env.
    */
-  executeWithEnv(input: string, extraEnv: Record<string, string>): string {
+  async executeWithEnv(input: string, extraEnv: Record<string, string>): Promise<string> {
     const saved = new Map<string, string | undefined>();
     for (const [k, v] of Object.entries(extraEnv)) {
       saved.set(k, this.env.has(k) ? this.env.get(k) : undefined);
       this.env.set(k, v);
     }
     try {
-      return this.execute(input);
+      return await this.execute(input);
     } finally {
       for (const [k, v] of saved) {
         if (v === undefined) this.env.delete(k);
@@ -2323,13 +2599,13 @@ export class LinuxCommandExecutor {
     }
   }
 
-  private runScriptProcess(
+  private async runScriptProcess(
     command: string,
     run: (
       identity: { pid: number; ppid: number },
-      bridge: (argv: string[], env?: Record<string, string>) => { output: string; exitCode: number },
-    ) => ScriptResult,
-  ): { output: string; exitCode: number } {
+      bridge: (argv: string[], env?: Record<string, string>, background?: boolean) => Promise<{ output: string; exitCode: number }>,
+    ) => Promise<ScriptResult>,
+  ): Promise<{ output: string; exitCode: number }> {
     const ppid = this.currentBashPid();
     const proc = this.processMgr.spawn({
       command,
@@ -2343,15 +2619,15 @@ export class LinuxCommandExecutor {
     });
     const killedCode = () =>
       128 + (SIGNAL_NUMBERS[this.processMgr.lastKillSignal(proc.pid) ?? 'SIGTERM'] ?? 15);
-    const bridge = (argv: string[], env?: Record<string, string>, background?: boolean) => {
+    const bridge = async (argv: string[], env?: Record<string, string>, background?: boolean) => {
       if (!this.processMgr.get(proc.pid)) throw new ExitSignal(killedCode());
-      const result = this.dispatchFromInterpreter(argv, env, background);
+      const result = await this.dispatchMaybeNetwork(argv, env, background);
       if (!this.processMgr.get(proc.pid)) throw new ExitSignal(killedCode());
       return result;
     };
     this.bashPids.push(proc.pid);
     try {
-      const result = run({ pid: proc.pid, ppid }, bridge);
+      const result = await run({ pid: proc.pid, ppid }, bridge);
       if (this.processMgr.get(proc.pid)) this.processMgr.exit(proc.pid, result.exitCode);
       return { output: result.output, exitCode: result.exitCode };
     } finally {
@@ -2359,18 +2635,18 @@ export class LinuxCommandExecutor {
     }
   }
 
-  private dispatchFromInterpreter(
+  private async dispatchFromInterpreter(
     argv: string[],
     env?: Record<string, string>,
     background?: boolean,
-  ): { output: string; exitCode: number; backgroundPid?: number } {
+  ): Promise<{ output: string; exitCode: number; backgroundPid?: number }> {
     this._cmdEnv = env;
     if (env && env['PWD'] && env['PWD'] !== this.cwd && this.vfs.resolveInode(env['PWD'])) {
       this.cwd = env['PWD'];
     }
     if (argv.length === 0) return { output: '', exitCode: 0 };
     if (background) {
-      const spawned = this.spawnBackgroundJob(argv.join(' '), false);
+      const spawned = await this.spawnBackgroundJob(argv.join(' '), false);
       if (!spawned) return { output: '', exitCode: 0 };
       return { output: '', exitCode: 0, backgroundPid: spawned.pid };
     }
@@ -2403,7 +2679,7 @@ export class LinuxCommandExecutor {
       // read password from stdin, -E preserve env, -k reset timestamp).
       while (cmdArgs.length > 0 && /^-[nSEkbiHvP]+$/.test(cmdArgs[0])) cmdArgs.shift();
       if (cmdArgs.length === 0) return { output: 'usage: sudo [-u user] command\n       sudo -l', exitCode: 1 };
-      if (cmdArgs[0] === '-l') return this.dispatch('sudo', cmdArgs, undefined, true);
+      if (cmdArgs[0] === '-l') return await this.dispatch('sudo', cmdArgs, undefined, true);
       if (!this.canSudo()) {
         // Real sudo audits the refusal too — `sudo: <u> : user NOT in
         // sudoers ; …` lands in /var/log/auth.log next to the existing
@@ -2506,23 +2782,28 @@ export class LinuxCommandExecutor {
     // Detect pipe input: the interpreter appends stdin content as last arg
     let stdin: string | undefined;
     if (actualArgs.length > 0) {
-      const lastArg = actualArgs[actualArgs.length - 1];
-      // Heuristic: if last arg contains newlines, it's likely pipe input
-      if (lastArg?.includes('\n')) {
-        stdin = lastArg;
-        actualArgs.pop();
-      } else if (lastArg && STDIN_COMMANDS.has(actualCmd) && lastArg.includes(' ') && actualArgs.length > 1) {
-        // For text processing commands, multi-word content without newlines is also stdin —
-        // but only when a separate program/option arg precedes it, so a single-arg program
-        // (e.g. awk 'BEGIN{...}') is not mistaken for piped input.
-        stdin = lastArg;
-        actualArgs.pop();
-      }
+      stdin = LinuxCommandExecutor.detectPipedStdin(actualCmd, actualArgs);
+      if (stdin !== undefined) actualArgs.pop();
     }
 
     let result: { output: string; exitCode: number };
     try {
-      result = this.dispatch(actualCmd, actualArgs, stdin, isSudo);
+      // `dispatchMaybeNetwork` already tried the command-kernel hook for
+      // the ORIGINAL argv before reaching here, but it explicitly skips
+      // that check when argv[0] === 'sudo' (this sudo-stripping logic
+      // hadn't run yet). Re-check it now for the unwrapped command, under
+      // the already-elevated user context set above — otherwise a
+      // migrated command (with no legacy `case` left) is unreachable
+      // through `sudo` even though it works unprefixed.
+      let handled: { output: string; exitCode: number } | null = null;
+      if (isSudo) {
+        if (this._commandKernelHook) {
+          handled = await (this._commandKernelHook(actualCmd, actualArgs, stdin, env) ?? Promise.resolve(null));
+        } else if (this.getDefaultCommandKernelShell().registry.has(actualCmd)) {
+          handled = await this.runDefaultCommandKernelResolved(actualCmd, actualArgs, stdin, env);
+        }
+      }
+      result = handled ?? await this.dispatch(actualCmd, actualArgs, stdin, isSudo);
     } catch {
       result = { output: `${actualCmd}: error`, exitCode: 1 };
     }
@@ -2980,7 +3261,7 @@ export class LinuxCommandExecutor {
     return capacityMb;
   }
 
-  private dispatch(cmd: string, args: string[], stdin?: string, isSudo = false): { output: string; exitCode: number } {
+  private async dispatch(cmd: string, args: string[], stdin?: string, isSudo = false): Promise<{ output: string; exitCode: number }> {
     const c = this.ctx();
     if (!cmd.startsWith('/') && !cmd.startsWith('.')) this.currentCommandHead = cmd;
 
@@ -3010,108 +3291,10 @@ export class LinuxCommandExecutor {
 
     switch (cmd) {
       // File commands
-      case 'touch': {
-        const roErrors: string[] = [];
-        for (const p of args.filter(a => !a.startsWith('-'))) {
-          const abs = this.vfs.normalizePath(p, this.cwd);
-          if (!this.vfs.exists(abs) && this.mountTable.isReadOnly(abs)) {
-            roErrors.push(`touch: cannot touch '${p}': Read-only file system`);
-            continue;
-          }
-          this.publishFsAccess(abs, 'w', 'open');
-          this.publishSyscall('open', abs);
-        }
-        if (roErrors.length > 0) return { output: roErrors.join('\n'), exitCode: 1 };
-        return { output: cmdTouch(c, args), exitCode: 0 };
-      }
-      case 'ls': {
-        for (const p of args.filter(a => !a.startsWith('-'))) {
-          this.publishFsAccess(this.vfs.normalizePath(p, this.cwd), 'r');
-        }
-        const out = cmdLs(c, args);
-        const isErr = out.includes('cannot access');
-        return { output: out, exitCode: isErr ? 2 : 0 };
-      }
-      case 'cat': {
-        // If no file args and stdin is provided, output stdin (cat from stdin)
-        const fileArgs = args.filter(a => !a.startsWith('-'));
-        if (fileArgs.length === 0 && stdin) {
-          const content = stdin.endsWith('\n') ? stdin.slice(0, -1) : stdin;
-          return { output: content, exitCode: 0 };
-        }
-        for (const arg of fileArgs) {
-          const p = this.path(arg);
-          if (p.exists() && !p.canRead()) {
-            return { output: `cat: ${arg}: Permission denied`, exitCode: 1 };
-          }
-        }
-        for (const arg of fileArgs) {
-          this.publishFsAccess(this.vfs.normalizePath(arg, this.cwd), 'r', 'openat');
-          this.publishSyscall('openat', this.vfs.normalizePath(arg, this.cwd));
-        }
-        const out = cmdCat(c, args);
-        const isError = out.includes('No such file');
-        return { output: out, exitCode: isError ? 1 : 0 };
-      }
       case 'echo': {
         // Expand env vars in args before echo
         const expanded = args.map(a => this.expandEnvVars(a));
         return { output: cmdEcho(c, expanded), exitCode: 0 };
-      }
-      case 'cp': {
-        const paths = args.filter(a => !a.startsWith('-'));
-        for (const p of paths) this.publishFsAccess(this.vfs.normalizePath(p, this.cwd), 'w', 'open');
-        const outCp = cmdCp(c, args);
-        return { output: outCp, exitCode: outCp.startsWith('cp:') ? 1 : 0 };
-      }
-      case 'mv': {
-        for (const p of args.filter(a => !a.startsWith('-'))) {
-          const abs = this.vfs.normalizePath(p, this.cwd);
-          this.publishFsAccess(abs, 'w', 'rename');
-          this.publishSyscall('rename', abs);
-        }
-        const outMv = cmdMv(c, args);
-        return { output: outMv, exitCode: outMv.startsWith('mv:') ? 1 : 0 };
-      }
-      case 'rm': {
-        for (const p of args.filter(a => !a.startsWith('-'))) {
-          const abs = this.vfs.normalizePath(p, this.cwd);
-          const exists = this.vfs.exists(abs);
-          if (exists) this.publishFsAccess(abs, 'w', 'unlink');
-          this.publishSyscallOutcome('unlink', abs, exists, exists ? 0 : -2);
-        }
-        const out = cmdRm(c, args);
-        return { output: out, exitCode: out.startsWith('rm:') ? 1 : 0 };
-      }
-      case 'mkdir': {
-        for (const p of args.filter(a => !a.startsWith('-'))) {
-          const abs = this.vfs.normalizePath(p, this.cwd);
-          this.publishFsAccess(abs, 'w', 'mkdir');
-          this.publishSyscall('mkdir', abs);
-        }
-        const outMk = cmdMkdir(c, args);
-        return { output: outMk, exitCode: outMk.startsWith('mkdir:') ? 1 : 0 };
-      }
-      case 'rmdir': {
-        for (const p of args.filter(a => !a.startsWith('-'))) {
-          const abs = this.vfs.normalizePath(p, this.cwd);
-          this.publishFsAccess(abs, 'w', 'rmdir');
-          this.publishSyscall('rmdir', abs);
-        }
-        const outRd = cmdRmdir(c, args);
-        return { output: outRd, exitCode: outRd.startsWith('rmdir:') ? 1 : 0 };
-      }
-      case 'ln': {
-        const isSymlink = args.includes('-s');
-        const paths = args.filter(a => !a.startsWith('-'));
-        const sc = isSymlink ? 'symlink' : 'link';
-        for (const p of paths) {
-          const abs = this.vfs.normalizePath(p, this.cwd);
-          this.publishFsAccess(abs, 'w', sc);
-          this.publishSyscall(sc, abs);
-        }
-        const outLn = cmdLn(c, args);
-        return { output: outLn, exitCode: outLn.startsWith('ln:') ? 1 : 0 };
       }
       case 'pwd': return { output: cmdPwd(c), exitCode: 0 };
       case 'tee': return { output: cmdTee(c, args, stdin ?? ''), exitCode: 0 };
@@ -3147,24 +3330,9 @@ export class LinuxCommandExecutor {
       }
 
       // Text commands
-      case 'grep': return cmdGrep(c, args, stdin);
       case 'egrep': return cmdGrep(c, args, stdin, 'egrep');
       case 'fgrep': return cmdGrep(c, args, stdin, 'fgrep');
       case 'rgrep': return cmdGrep(c, ['-r', ...args], stdin);
-      case 'head': return { output: cmdHead(c, args, stdin), exitCode: 0 };
-      case 'tail': {
-        const r = runTail(this.tailFs(), this.cwd, args, stdin);
-        if (r.kind === 'snapshot') return { output: r.output, exitCode: r.exitCode };
-        // Follow mode reached the dispatcher (no interactive sink available):
-        // emit the snapshot and exit 0 so non-streaming callers degrade
-        // gracefully. Interactive callers should use `startTailFollow()`.
-        return { output: r.preflight().output, exitCode: 0 };
-      }
-      case 'wc': return { output: cmdWc(c, args, stdin), exitCode: 0 };
-      case 'sort': return { output: cmdSort(c, args, stdin), exitCode: 0 };
-      case 'cut': return { output: cmdCut(c, args, stdin), exitCode: 0 };
-      case 'uniq': return { output: cmdUniq(c, args, stdin), exitCode: 0 };
-      case 'tr': return { output: cmdTr(c, args, stdin), exitCode: 0 };
       case 'awk': return { output: cmdAwk(c, args, stdin), exitCode: 0 };
       case 'sed': return { output: cmdSed(c, args, stdin), exitCode: 0 };
 
@@ -3178,29 +3346,10 @@ export class LinuxCommandExecutor {
       case 'updatedb': return { output: cmdUpdatedb(c), exitCode: 0 };
 
       // Permission commands
-      case 'chmod': {
-        for (const p of args.filter(a => !a.startsWith('-') && !/^[0-7]+$|^[ugoa]?[+=-]/.test(a))) {
-          const abs = this.vfs.normalizePath(p, this.cwd);
-          this.publishFsAccess(abs, 'a', 'chmod');
-          this.publishSyscall('chmod', abs);
-        }
-        const out = cmdChmod(c, args);
-        return { output: out, exitCode: out.startsWith('chmod:') ? 1 : 0 };
-      }
-      case 'chown': {
-        for (const p of args.filter(a => !a.startsWith('-') && !a.includes(':') && a.startsWith('/'))) {
-          const abs = this.vfs.normalizePath(p, this.cwd);
-          this.publishFsAccess(abs, 'a', 'chown');
-          this.publishSyscall('chown', abs);
-        }
-        const out = cmdChown(c, args);
-        return { output: out, exitCode: out.startsWith('chown:') ? 1 : 0 };
-      }
       case 'chgrp': {
         const out = cmdChgrp(c, args);
         return { output: out, exitCode: out.startsWith('chgrp:') ? 1 : 0 };
       }
-      case 'stat': return { output: cmdStat(c, args), exitCode: 0 };
       case 'umask': {
         const result = cmdUmask(c, args);
         if (result.newUmask !== undefined) this.umask = result.newUmask;
@@ -3283,12 +3432,6 @@ export class LinuxCommandExecutor {
       case 'gpasswd': return this.handleGpasswd(args);
       case 'chfn': return this.handleChfn(args);
       case 'finger': return this.handleFinger(args);
-      case 'id': {
-        const out = cmdId(c, args);
-        return { output: out, exitCode: out.includes('no such user') ? 1 : 0 };
-      }
-      case 'whoami': return { output: cmdWhoami(c), exitCode: 0 };
-      case 'groups': return { output: cmdGroups(c, args), exitCode: 0 };
       case 'who': {
         if (this.sessionTable) {
           this.sessionTable.ensureConsoleSession(this.userMgr.currentUser, this.userMgr.currentUid);
@@ -3373,7 +3516,7 @@ export class LinuxCommandExecutor {
       case 'sudo': return this.handleSudoCmd(args);
 
       // su - switch user
-      case 'su': return this.handleSu(args, stdin);
+      case 'su': return await this.handleSu(args, stdin);
 
       // source / . — execute file in current shell context
       case 'source':
@@ -3455,8 +3598,8 @@ export class LinuxCommandExecutor {
       }
 
       // time — run a command and report its elapsed wall/user/sys time
-      case 'time': return this.handleTime(args);
-      case 'watch': return this.handleWatch(args);
+      case 'time': return await this.handleTime(args);
+      case 'watch': return await this.handleWatch(args);
 
       // locale — report the active locale, sourced from the live shell
       // environment so SSH-forwarded LANG / LC_* are reflected.
@@ -3491,13 +3634,11 @@ export class LinuxCommandExecutor {
 
       // Crontab
       case 'crontab': return this.handleCrontab(args, stdin);
-      case 'run-parts': return this.handleRunParts(args);
+      case 'run-parts': return await this.handleRunParts(args);
 
       // Script execution
       case 'bash':
       case 'sh': {
-        const execCmd = (argv: string[], env?: Record<string, string>) =>
-          this.dispatchFromInterpreter(argv, env);
         // Parse the leading option group(s). bash accepts combined flags
         // such as `-lc` (login + command); `-l` makes $0 a login `-bash`.
         let i = 0;
@@ -3515,16 +3656,16 @@ export class LinuxCommandExecutor {
         }
         const arg0 = login ? '-bash' : cmd;
         if (cmdString !== null) {
-          return this.runScriptProcess(`${cmd} -c ${cmdString}`, (identity, bridge) =>
-            runScriptContent(
+          return await this.runScriptProcess(`${cmd} -c ${cmdString}`, (identity, bridge) =>
+            runScriptContentAsync(
               cmdString!, arg0, args.slice(i), bridge,
               this.buildEnvVars(), this.buildIOContext(), identity, this.aliases, this.functions,
             ));
         }
         if (i < args.length) {
           const scriptArgv = args.slice(i);
-          return this.runScriptProcess(`${cmd} ${scriptArgv.join(' ')}`, (identity, bridge) =>
-            runScript(c, scriptArgv[0], scriptArgv.slice(1), bridge, this.aliases, this.functions, 'interpreter', identity));
+          return await this.runScriptProcess(`${cmd} ${scriptArgv.join(' ')}`, (identity, bridge) =>
+            runScriptAsync(c, scriptArgv[0], scriptArgv.slice(1), bridge, this.aliases, this.functions, 'interpreter', identity));
         }
         return { output: '', exitCode: 0 };
       }
@@ -3647,7 +3788,7 @@ export class LinuxCommandExecutor {
         if (/^ssh\b.*\btrap\b.*\bINT\b.*\bsleep\b/i.test(inner)) {
           return { output: 'caught', exitCode: 130 };
         }
-        const out = this.execute(inner);
+        const out = await this.execute(inner);
         return { output: out, exitCode: this.lastExitCode };
       }
 
@@ -3884,7 +4025,7 @@ export class LinuxCommandExecutor {
       case 'scp':
       case 'sftp':
       case 'rsync': {
-        return this.runSshTransport(cmd, args, stdin);
+        return await this.runSshTransport(cmd, args, stdin);
       }
       case 'sshpass': {
         // sshpass [-p PASSWORD | -f FILE | -e] ssh ...
@@ -3905,7 +4046,7 @@ export class LinuxCommandExecutor {
           return { output: 'sshpass: only `sshpass -p <pw> ssh …` is supported in the simulator', exitCode: 1 };
         }
         const sshArgs = args.slice(i + 1);
-        const sshpassResult = runSshClient(this.buildSshClientOpts(sshArgs, this._cmdEnv, password));
+        const sshpassResult = await runSshClient(this.buildSshClientOpts(sshArgs, this._cmdEnv, password));
         if (sshpassResult.connection) {
           const srcPort = this.socketTable?.allocateEphemeralPort()
             ?? 49152 + Math.floor(Math.random() * 16000);
@@ -3926,7 +4067,7 @@ export class LinuxCommandExecutor {
       }
       case 'ssh': {
         const stdinPwd = ((this as unknown as { _scenarioStdin?: string })._scenarioStdin ?? '').split('\n')[0] || undefined;
-        const result = runSshClient(this.buildSshClientOpts(args, this._cmdEnv, stdinPwd));
+        const result = await runSshClient(this.buildSshClientOpts(args, this._cmdEnv, stdinPwd));
         if (result.connection) {
           const entry = this.socketTable?.connect(
             'tcp', result.connection.localIp, 0,
@@ -4163,8 +4304,8 @@ export class LinuxCommandExecutor {
           const absPath = this.vfs.normalizePath(cmd, this.cwd);
           if (this.vfs.exists(absPath)) {
             const commandLine = ['/bin/bash', absPath, ...args].join(' ');
-            return this.runScriptProcess(commandLine, (identity, bridge) =>
-              runScript(c, cmd, args, bridge, this.aliases, this.functions, 'direct', identity));
+            return await this.runScriptProcess(commandLine, (identity, bridge) =>
+              runScriptAsync(c, cmd, args, bridge, this.aliases, this.functions, 'direct', identity));
           }
         }
 
@@ -4326,7 +4467,7 @@ export class LinuxCommandExecutor {
    * part. The filename ruleset is the LSB one (`[a-zA-Z0-9_-]+`, no dots
    * so `*.dpkg-old`/`*.swp` are skipped) unless overridden by `--regex`.
    */
-  private handleRunParts(args: string[]): { output: string; exitCode: number } {
+  private async handleRunParts(args: string[]): Promise<{ output: string; exitCode: number }> {
     const USAGE = LinuxCommandExecutor.RUN_PARTS_USAGE;
     const invalid = (msg: string) => ({ output: `run-parts: ${msg}`, exitCode: 1 });
 
@@ -4494,7 +4635,7 @@ export class LinuxCommandExecutor {
       }
 
       if (verbose) stderrChunks.push(`run-parts: running ${absPath}`);
-      const r = this.runPartsRunScript(absPath, scriptArgs, umaskOverride, childEnv);
+      const r = await this.runPartsRunScript(absPath, scriptArgs, umaskOverride, childEnv);
       if (r.stdout) stdoutChunks.push(r.stdout);
       if (r.stderr) stderrChunks.push(r.stderr);
       if (exitOnError && r.exitCode !== 0) { exitCode = r.exitCode; break; }
@@ -4514,12 +4655,12 @@ export class LinuxCommandExecutor {
    * the requested umask, and a copy of the exported environment. The
    * child's cwd / env mutations never leak back to the parent shell.
    */
-  private runPartsRunScript(
+  private async runPartsRunScript(
     absPath: string,
     scriptArgs: string[],
     umaskOverride: number | null,
     childEnv: Record<string, string>,
-  ): { stdout: string; stderr: string; exitCode: number } {
+  ): Promise<{ stdout: string; stderr: string; exitCode: number }> {
     const content = this.vfs.readFile(absPath);
     if (content === null) return { stdout: '', stderr: '', exitCode: 127 };
     if (content.includes('\u0000')) return { stdout: '', stderr: '', exitCode: 126 }; // binary, not a script
@@ -4528,8 +4669,8 @@ export class LinuxCommandExecutor {
     if (umaskOverride !== null) this.umask = umaskOverride;
     try {
       let scriptResult: ScriptResult = { output: '', exitCode: 0 };
-      this.runScriptProcess(`/bin/bash ${absPath}`, (identity, bridge) => {
-        scriptResult = runScriptContent(
+      await this.runScriptProcess(`/bin/bash ${absPath}`, async (identity, bridge) => {
+        scriptResult = await runScriptContentAsync(
           content,
           absPath,
           scriptArgs,
@@ -4737,7 +4878,7 @@ export class LinuxCommandExecutor {
     };
   }
 
-  private handleSu(args: string[], stdin?: string): { output: string; exitCode: number } {
+  private async handleSu(args: string[], stdin?: string): Promise<{ output: string; exitCode: number }> {
     const { loginShell, targetUser, command } = LinuxCommandExecutor.parseSuArgs(args);
     const session = this.beginSuSession(targetUser, loginShell, stdin);
     if (session.ok === false) return session.result;
@@ -4747,7 +4888,7 @@ export class LinuxCommandExecutor {
     if (command !== null) {
       let output: string;
       try {
-        output = this.execute(command);
+        output = await this.execute(command);
       } finally {
         session.restore();
       }
@@ -5414,19 +5555,21 @@ export class LinuxCommandExecutor {
     return { output: r.output, exitCode: r.exitCode };
   }
 
-  private handleTime(args: string[]): { output: string; exitCode: number } {
+  private async handleTime(args: string[]): Promise<{ output: string; exitCode: number }> {
     const fmt = chooseTimeFormat(this._cmdEnv ?? Object.fromEntries(this.env));
     if (args.length === 0) {
       return { output: formatTimes({ realMs: 0, userMs: 0, sysMs: 0 }, fmt), exitCode: 0 };
     }
-    const { result, timing } = measure(() => this.dispatchFromInterpreter(args, this._cmdEnv));
+    const t0 = Date.now();
+    const result = await this.dispatchFromInterpreter(args, this._cmdEnv);
+    const timing = { realMs: Date.now() - t0, userMs: 1, sysMs: 1 };
     const body = result.output ? result.output.replace(/\n$/, '') + '\n' : '';
     return { output: body + formatTimes(timing, fmt), exitCode: result.exitCode };
   }
 
-  private handleWatch(args: string[]): { output: string; exitCode: number } {
+  private async handleWatch(args: string[]): Promise<{ output: string; exitCode: number }> {
     const hostname = (this.vfs.readFile('/etc/hostname') ?? 'localhost').trim();
-    const r = runWatch(args, {
+    const r = await runWatch(args, {
       hostname,
       now: () => {
         const d = new Date();

@@ -19,40 +19,40 @@ function bootOracleServer(name: string): LinuxServer {
   return srv;
 }
 
-const ls = (srv: LinuxServer, path: string) =>
+const ls = async (srv: LinuxServer, path: string) =>
   srv.executeShellCommandSync(`ls -l ${path}`);
 
 describe('Oracle tree ownership on the host filesystem', () => {
-  it('ORACLE_HOME binaries belong to oracle:oinstall', () => {
+  it('ORACLE_HOME binaries belong to oracle:oinstall', async () => {
     const srv = bootOracleServer('own1');
-    expect(ls(srv, '/u01/app/oracle/product/19c/dbhome_1/bin/sqlplus'))
+    expect(await ls(srv, '/u01/app/oracle/product/19c/dbhome_1/bin/sqlplus'))
       .toMatch(/oracle\s+oinstall/);
   });
 
-  it('datafiles and control files belong to oracle:oinstall', () => {
+  it('datafiles and control files belong to oracle:oinstall', async () => {
     const srv = bootOracleServer('own2');
-    const out = srv.executeShellCommandSync('ls -l /u01/app/oracle/oradata/ORCL/');
+    const out = await srv.executeShellCommandSync('ls -l /u01/app/oracle/oradata/ORCL/');
     expect(out).toMatch(/oracle\s+oinstall.*system01\.dbf/);
     expect(out).toMatch(/oracle\s+oinstall.*control01\.ctl/);
   });
 
-  it('the alert log written by the engine belongs to oracle:oinstall', () => {
+  it('the alert log written by the engine belongs to oracle:oinstall', async () => {
     const srv = bootOracleServer('own3');
-    expect(ls(srv, '/u01/app/oracle/diag/rdbms/orcl/ORCL/trace/alert_ORCL.log'))
+    expect(await ls(srv, '/u01/app/oracle/diag/rdbms/orcl/ORCL/trace/alert_ORCL.log'))
       .toMatch(/oracle\s+oinstall/);
   });
 
-  it('files generated after boot keep the oracle identity', () => {
+  it('files generated after boot keep the oracle identity', async () => {
     const srv = bootOracleServer('own4');
     const sh = SqlPlusSubShell.create(srv, ['/', 'as', 'sysdba']).subShell;
     sh.processLine("ALTER SYSTEM SET open_cursors = 500 SCOPE=SPFILE;");
     sh.dispose();
-    expect(ls(srv, '/u01/app/oracle/product/19c/dbhome_1/dbs/spfileORCL.ora'))
+    expect(await ls(srv, '/u01/app/oracle/product/19c/dbhome_1/dbs/spfileORCL.ora'))
       .toMatch(/oracle\s+oinstall/);
   });
 
-  it('/etc/oratab stays root-owned, like a real install', () => {
+  it('/etc/oratab stays root-owned, like a real install', async () => {
     const srv = bootOracleServer('own5');
-    expect(ls(srv, '/etc/oratab')).toMatch(/root\s+root/);
+    expect(await ls(srv, '/etc/oratab')).toMatch(/root\s+root/);
   });
 });

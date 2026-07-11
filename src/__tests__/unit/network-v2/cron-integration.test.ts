@@ -68,13 +68,13 @@ describe('cron integration — permissions', () => {
 describe('cron integration — daemon execution', () => {
   it('CI-09 a due job runs and is logged as CMD', async () => {
     await pc.executeCommand('echo "* * * * * /bin/true" | crontab -');
-    pc.cronTick(future);
+    await pc.cronTick(future);
     expect(await pc.executeCommand('grep CMD /var/log/syslog')).toContain('/bin/true');
   });
 
   it('CI-10 a due job mails its output to the owner', async () => {
     await pc.executeCommand('echo "* * * * * echo cron-output-line" | crontab -');
-    pc.cronTick(future);
+    await pc.cronTick(future);
     const mail = vfsOf(pc).readFile('/var/mail/user');
     expect(mail).toContain('cron-output-line');
     expect(mail).toMatch(/Cron <user@/);
@@ -84,7 +84,7 @@ describe('cron integration — daemon execution', () => {
     vfsOf(pc).writeFile('/tmp/cf', 'MAILTO=""\n* * * * * echo noise\n', 1000, 1000, 0o022);
     await pc.executeCommand('crontab /tmp/cf');
     const before = vfsOf(pc).readFile('/var/mail/user') ?? '';
-    pc.cronTick(future);
+    await pc.cronTick(future);
     const after = vfsOf(pc).readFile('/var/mail/user') ?? '';
     expect(after).toBe(before);
     expect(after).not.toContain('noise');
@@ -92,23 +92,23 @@ describe('cron integration — daemon execution', () => {
 
   it('CI-12 the job sees cron environment (LOGNAME)', async () => {
     await pc.executeCommand('echo "* * * * * echo \\$LOGNAME > /tmp/who" | crontab -');
-    pc.cronTick(future);
+    await pc.cronTick(future);
     expect(await pc.executeCommand('cat /tmp/who')).toContain('user');
   });
 
   it('CI-13 a stopped cron service does not run jobs', async () => {
     await pc.executeCommand('echo "* * * * * touch /tmp/should-not-exist" | crontab -');
     await pc.executeCommand('systemctl stop cron');
-    pc.cronTick(future);
+    await pc.cronTick(future);
     expect(vfsOf(pc).exists('/tmp/should-not-exist')).toBe(false);
   });
 
   it('CI-14 @reboot jobs run when cron (re)starts', async () => {
     await pc.executeCommand('echo "@reboot touch /tmp/booted" | crontab -');
     await pc.executeCommand('systemctl stop cron');
-    pc.cronTick(future);
+    await pc.cronTick(future);
     await pc.executeCommand('systemctl start cron');
-    pc.cronTick(new Date(2030, 0, 1, 12, 1));
+    await pc.cronTick(new Date(2030, 0, 1, 12, 1));
     expect(vfsOf(pc).exists('/tmp/booted')).toBe(true);
   });
 });
@@ -136,13 +136,13 @@ describe('cron integration — run-parts and periodic directories', () => {
     // cron.daily scripts are executable; run-parts skips non-exec files.
     vfsOf(pc).writeFile('/etc/cron.daily/report', 'touch /tmp/daily-ran\n', 0, 0, 0o022);
     await pc.executeCommand('sudo chmod +x /etc/cron.daily/report');
-    pc.cronTick(new Date(2030, 0, 1, 6, 25));
+    await pc.cronTick(new Date(2030, 0, 1, 6, 25));
     expect(vfsOf(pc).exists('/tmp/daily-ran')).toBe(true);
   });
 
   it('CI-18 an /etc/cron.d entry runs with its declared user', async () => {
     vfsOf(pc).writeFile('/etc/cron.d/job', '* * * * * root echo crond-line > /tmp/crond-out\n', 0, 0, 0o022);
-    pc.cronTick(future);
+    await pc.cronTick(future);
     expect(await pc.executeCommand('cat /tmp/crond-out')).toContain('crond-line');
   });
 });

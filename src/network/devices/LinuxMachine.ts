@@ -132,7 +132,8 @@ import { Lexer } from '@/command-kernel/ast/lexer';
 import { Parser } from '@/command-kernel/ast/parser';
 import { PipeBuffer } from '@/command-kernel/io/pipe-buffer';
 import { CommandRegistry } from '@/command-kernel/registry/command-registry';
-import { createSession } from '@/command-kernel/session/types';
+import { createSession, Session } from '@/command-kernel/session/types';
+import { CommandIO } from '@/command-kernel/io/types';
 import { createLinuxHostShell } from './linux/command-kernel/createLinuxHostShell';
 import { resolveLinuxUser } from './linux/command-kernel/LinuxUser';
 
@@ -340,6 +341,17 @@ export abstract class LinuxMachine extends EndHost
       return { output: result, exitCode: this.inferRegistryExitCode(cmd, result) };
     };
     this.executor._registryPrivilegeHook = (cmd) => this.commands.get(cmd)?.privilege;
+
+    // Bridge command-kernel's CommandRegistry into bash-script execution the
+    // same way, so a migrated command reached from inside a loop/function/
+    // condition/pipeline (not just a bare top-level line via
+    // `tryCommandKernel`) resolves through the single `Interpreter` entry
+    // door — never bypassing it to touch Executor/CommandRegistry directly.
+    this.executor._commandKernelHook = (cmd, args, stdin, env) => {
+      const { registry } = this.getCommandKernelShell();
+      if (!registry.has(cmd)) return null;
+      return this.runCommandKernelResolved(cmd, args, stdin, env);
+    };
 
     // 5. Initialise SSH server config files on first boot:
     //    /etc/ssh/sshd_config + /etc/ssh/ssh_host_ed25519_key(.pub).
@@ -580,20 +592,20 @@ export abstract class LinuxMachine extends EndHost
 
   private startCronTicker(): void {
     if (this.cronTimer !== null) return;
-    this.cronTimer = this.hostTimers.setInterval(() => this.cronTick(), 60_000);
-    this.cronTick();
+    this.cronTimer = this.hostTimers.setInterval(() => { void this.cronTick(); }, 60_000);
+    void this.cronTick();
   }
 
-  cronTick(at: Date = new Date()): void {
+  async cronTick(at: Date = new Date()): Promise<void> {
     const engine = this.getCronEngine();
     const active = this.isServiceActive('cron');
-    if (active && !engine.isRunning) engine.start();
+    if (active && !engine.isRunning) await engine.start();
     else if (!active && engine.isRunning) engine.stop();
-    engine.tick(at);
+    await engine.tick(at);
     this.executor.serviceMgr.timerTick(at);
   }
 
-  private runCronJob(command: string, ctx: { user: string; env: Record<string, string> }): { output: string; exitCode: number } {
+  private async runCronJob(command: string, ctx: { user: string; env: Record<string, string> }): Promise<{ output: string; exitCode: number }> {
     const um = this.executor.userMgr;
     const prev = { user: um.currentUser, uid: um.currentUid, gid: um.currentGid, cwd: this.executor.getCwd() };
     const entry = um.getUser(ctx.user);
@@ -604,7 +616,7 @@ export abstract class LinuxMachine extends EndHost
       this.executor.setCwd(entry.home ?? `/home/${ctx.user}`);
     }
     try {
-      const output = this.executor.executeWithEnv(command, ctx.env);
+      const output = await this.executor.executeWithEnv(command, ctx.env);
       return { output: output ?? '', exitCode: 0 };
     } catch {
       return { output: '', exitCode: 1 };
@@ -966,10 +978,10 @@ export abstract class LinuxMachine extends EndHost
     });
   }
 
-  runSshCommandSync(
+  async runSshCommandSync(
     user: string,
     command: string,
-  ): { output: string; exitCode: number } | null {
+  ): Promise<{ output: string; exitCode: number } | null> {
     const um = this.executor.userMgr;
     const previousUser = um.currentUser;
     const previousUid = um.currentUid;
@@ -983,7 +995,7 @@ export abstract class LinuxMachine extends EndHost
       this.executor.setCwd(userEntry.home ?? `/home/${user}`);
     }
     try {
-      const output = this.executor.execute(command);
+      const output = await this.executor.execute(command);
       const normalised = output && !output.endsWith('\n') ? `${output}\n` : output;
       return { output: normalised, exitCode: this.executor.lastExitCode ?? 0 };
     } finally {
@@ -1753,16 +1765,8 @@ export abstract class LinuxMachine extends EndHost
 
     for (const name of names) this.executor.publishCommandExecve(name);
 
-    const user = resolveLinuxUser(this.executor.userMgr, this.executor.userMgr.currentUser);
-    const session = createSession({
-      id: 'legacy-bridge',
-      user,
-      cwd: this.executor.getCwd(),
-      env: this.executor.getEnvSnapshot(),
-    });
-    const chunks: string[] = [];
-    const collector = { write: async (text: string) => { chunks.push(text); }, close: async () => {} };
-    const io = { stdin: new PipeBuffer(), stdout: collector, stderr: collector };
+    const session = this.buildCommandKernelSession();
+    const { io, chunks } = await this.buildCommandKernelIO();
 
     try {
       await interpreter.interpretLine(trimmed, session, io);
@@ -1773,6 +1777,53 @@ export abstract class LinuxMachine extends EndHost
     }
     this.executor.setCwd(session.cwd);
     return chunks.join('').replace(/\n$/, '');
+  }
+
+  /**
+   * Point d'entrée universel pour `command-kernel` depuis l'intérieur d'un
+   * script bash (boucle/fonction/condition/pipeline) — câblé sur
+   * `LinuxCommandExecutor._commandKernelHook`. `argv`/`stdin` sont déjà
+   * tokenisés et expansés par l'interpréteur bash ; contrairement à
+   * `tryCommandKernel`, il n'y a ni re-lexing ni redirections à gérer ici
+   * (bash s'en charge lui-même). Passe TOUJOURS par le même `Interpreter`
+   * que `tryCommandKernel` (`getCommandKernelShell().interpreter`) — jamais
+   * un second point d'entrée vers l'exécution.
+   */
+  private async runCommandKernelResolved(
+    cmd: string,
+    args: string[],
+    stdin: string | undefined,
+    env?: Record<string, string>,
+  ): Promise<{ output: string; exitCode: number } | null> {
+    const { interpreter } = this.getCommandKernelShell();
+    this.executor.publishCommandExecve(cmd);
+
+    const session = this.buildCommandKernelSession(env);
+    const { io, chunks } = await this.buildCommandKernelIO(stdin);
+
+    const exitCode = await interpreter.runResolved(cmd, args, session, io);
+    if (exitCode === null) return null;
+    this.executor.setCwd(session.cwd);
+    return { output: chunks.join(''), exitCode };
+  }
+
+  private buildCommandKernelSession(env?: Record<string, string>): Session {
+    const user = resolveLinuxUser(this.executor.userMgr, this.executor.userMgr.currentUser);
+    return createSession({
+      id: 'legacy-bridge',
+      user,
+      cwd: this.executor.getCwd(),
+      env: env ? new Map(Object.entries(env)) : this.executor.getEnvSnapshot(),
+    });
+  }
+
+  private async buildCommandKernelIO(stdinContent?: string): Promise<{ io: CommandIO; chunks: string[] }> {
+    const chunks: string[] = [];
+    const collector = { write: async (text: string) => { chunks.push(text); }, close: async () => {} };
+    const stdin = new PipeBuffer();
+    if (stdinContent !== undefined) await stdin.write(stdinContent);
+    await stdin.close();
+    return { io: { stdin, stdout: collector, stderr: collector }, chunks };
   }
 
   /**
@@ -2451,11 +2502,13 @@ export abstract class LinuxMachine extends EndHost
   }
 
   /**
-   * Synchronous bash-only execution path. Bypasses the network-command
-   * dispatcher (so it's safe to call from synchronous contexts like
-   * SQL*Plus `HOST`). Returns the command's stdout as a single string.
+   * Bash execution path used by SQL*Plus `HOST` and by test harnesses that
+   * want a single command's stdout without going through the network
+   * dispatcher. Kept `Sync` in the name for historical/API-compat reasons;
+   * it's async like every other execution path since command-kernel is
+   * itself Promise-based end to end.
    */
-  executeShellCommandSync(command: string): string {
+  async executeShellCommandSync(command: string): Promise<string> {
     if (!this.isPoweredOn) return 'Device is powered off';
     const trimmed = command.trim();
     if (!trimmed) return '';
@@ -2474,6 +2527,17 @@ export abstract class LinuxMachine extends EndHost
     }
 
     return this.executor.execute(trimmed);
+  }
+
+  /**
+   * Narrow, synchronous host-command bridge for Oracle's DBMS_SCHEDULER
+   * EXECUTABLE jobs and OS-identity provisioning — see
+   * `LinuxCommandExecutor.runOracleHostCommandSync` for why this stays
+   * synchronous while `executeShellCommandSync` is async.
+   */
+  runOracleHostCommandSync(command: string): { output: string; exitCode: number } | null {
+    if (!this.isPoweredOn) return null;
+    return this.executor.runOracleHostCommandSync(command);
   }
 
   writeFileFromEditor(path: string, content: string): boolean {
@@ -2851,7 +2915,7 @@ export abstract class LinuxMachine extends EndHost
     );
   }
 
-  runCommandFrameInSession(commandLine: string, session: LinuxShellSession): string {
+  async runCommandFrameInSession(commandLine: string, session: LinuxShellSession): Promise<string> {
     if (!this.isPoweredOn || session.disposed) return '';
     return this.executor.executeInSession(commandLine, session);
   }

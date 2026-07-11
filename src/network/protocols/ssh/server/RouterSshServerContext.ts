@@ -105,7 +105,7 @@ export class RouterSshServerContext implements ISshServerContext {
     const target = this.deps.execTarget();
     return {
       execute: async (line: string) => {
-        const result = target.runSshCommandSync(userCtx.username, line);
+        const result = await target.runSshCommandSync(userCtx.username, line);
         if (!result) {
           return {
             stdout: '',

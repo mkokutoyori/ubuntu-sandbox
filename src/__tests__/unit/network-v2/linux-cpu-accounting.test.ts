@@ -13,29 +13,29 @@ describe('honest CPU accounting', () => {
     expect(pm.get(idle.pid)!.cpuTime).toBe(0);
   });
 
-  it('top reports real per-process CPU time, not a hardcoded constant', () => {
+  it('top reports real per-process CPU time, not a hardcoded constant', async () => {
     const e = new LinuxCommandExecutor(true);
-    expect(e.execute('top')).not.toContain('0:00.10');
+    expect(await e.execute('top')).not.toContain('0:00.10');
   });
 
-  it('top load average reflects the runnable count (idle box → 0.00)', () => {
+  it('top load average reflects the runnable count (idle box → 0.00)', async () => {
     const e = new LinuxCommandExecutor(true);
-    const header = e.execute('top').split('\n')[0];
+    const header = (await e.execute('top')).split('\n')[0];
     expect(header).toMatch(/load average: 0\.00, 0\.00, 0\.00/);
   });
 
-  it('top %Cpu(s) summary reflects an idle box, not a hardcoded busy line', () => {
+  it('top %Cpu(s) summary reflects an idle box, not a hardcoded busy line', async () => {
     const e = new LinuxCommandExecutor(true);
-    const cpuLine = e.execute('top').split('\n').find((l) => l.startsWith('%Cpu'));
+    const cpuLine = (await e.execute('top')).split('\n').find((l) => l.startsWith('%Cpu'));
     expect(cpuLine).toMatch(/100\.0 id/);
     expect(cpuLine).not.toContain('98.2 id');
   });
 
-  it('a long sleeping background job accrues no CPU as the clock advances', () => {
+  it('a long sleeping background job accrues no CPU as the clock advances', async () => {
     const e = new LinuxCommandExecutor(true);
-    e.execute('sleep 100 &');
-    e.advanceTime(50_000);
-    const row = e.execute('ps -e -o stat,time,comm').split('\n').find((l) => l.includes('sleep'));
+    await e.execute('sleep 100 &');
+    await e.advanceTime(50_000);
+    const row = (await e.execute('ps -e -o stat,time,comm')).split('\n').find((l) => l.includes('sleep'));
     expect(row).toMatch(/00:00/);
   });
 });

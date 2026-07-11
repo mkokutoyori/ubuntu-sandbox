@@ -14,12 +14,16 @@ import type { OsSecurityContext } from '@/database/oracle/security/types';
 import { createSQLPlusSession, initOracleFilesystem } from '@/terminal/commands/database';
 
 interface SyncShellHost {
-  executeShellCommandSync(command: string): string;
+  runOracleHostCommandSync(command: string): { output: string; exitCode: number } | null;
 }
 
 function asSyncShellHost(device: Equipment): SyncShellHost | null {
   const d = device as unknown as Partial<SyncShellHost>;
-  return typeof d.executeShellCommandSync === 'function' ? (d as SyncShellHost) : null;
+  return typeof d.runOracleHostCommandSync === 'function' ? (d as SyncShellHost) : null;
+}
+
+function runSync(host: SyncShellHost | null, command: string): string {
+  return host?.runOracleHostCommandSync(command)?.output ?? '';
 }
 
 /**
@@ -32,13 +36,11 @@ function asSyncShellHost(device: Equipment): SyncShellHost | null {
  */
 function captureOsContext(device: Equipment, host: SyncShellHost | null): OsSecurityContext | undefined {
   const capable = device as HostCapableDevice;
-  const osUser = capable.getCurrentUser?.()
-    ?? host?.executeShellCommandSync('whoami').trim();
+  const osUser = capable.getCurrentUser?.() ?? runSync(host, 'whoami').trim();
   if (!osUser) return undefined;
 
-  const groups = (host?.executeShellCommandSync(`id -Gn ${osUser}`) ?? '')
-    .trim().split(/\s+/).filter(Boolean);
-  const hostname = (host?.executeShellCommandSync('hostname') ?? '').trim() || 'localhost';
+  const groups = runSync(host, `id -Gn ${osUser}`).trim().split(/\s+/).filter(Boolean);
+  const hostname = runSync(host, 'hostname').trim() || 'localhost';
   return {
     osUser,
     osGroup: groups[0] ?? osUser,
@@ -96,7 +98,7 @@ export class SqlPlusSubShell implements ISubShell {
     if (host) {
       const runner: HostCommandRunner = {
         execute(cmd: string): string[] {
-          const out = host.executeShellCommandSync(cmd);
+          const out = runSync(host, cmd);
           return out === '' ? [] : out.split('\n');
         },
       };
@@ -113,8 +115,8 @@ export class SqlPlusSubShell implements ISubShell {
     session.setFileIO({
       resolve: (path: string): string => {
         if (path.startsWith('/')) return path;
-        const pwd = host?.executeShellCommandSync('pwd').trim();
-        const baseDir = pwd && pwd.startsWith('/') ? pwd : '/root';
+        const pwd = runSync(host, 'pwd').trim();
+        const baseDir = pwd.startsWith('/') ? pwd : '/root';
         return `${baseDir}/${path}`.replace(/\/{2,}/g, '/');
       },
       read: (path: string): string | null =>

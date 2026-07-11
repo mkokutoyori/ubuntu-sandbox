@@ -24,63 +24,63 @@ function write(path: string, content: string): void {
 function append(path: string, more: string): void {
   exec.vfs.writeFile(path, more, 0, 0, 0o022, true);
 }
-function run(cmd: string): string { return exec.execute(cmd); }
+async function run(cmd: string): Promise<string> { return await exec.execute(cmd); }
 
 // ─── Snapshot mode ──────────────────────────────────────────────────────
 describe('tail snapshot', () => {
-  it('A1 last 10 lines by default', () => {
+  it('A1 last 10 lines by default', async () => {
     write('/tmp/log', Array.from({ length: 25 }, (_, i) => `L${i + 1}`).join('\n') + '\n');
-    expect(run('tail /tmp/log').split('\n')).toEqual(
+    expect((await run('tail /tmp/log')).split('\n')).toEqual(
       Array.from({ length: 10 }, (_, i) => `L${i + 16}`),
     );
   });
-  it('A2 -n N takes N tail lines', () => {
+  it('A2 -n N takes N tail lines', async () => {
     write('/tmp/log', 'a\nb\nc\nd\ne\n');
-    expect(run('tail -n 2 /tmp/log').split('\n')).toEqual(['d', 'e']);
+    expect((await run('tail -n 2 /tmp/log')).split('\n')).toEqual(['d', 'e']);
   });
-  it('A3 -n +N starts at line N (1-indexed)', () => {
+  it('A3 -n +N starts at line N (1-indexed)', async () => {
     write('/tmp/log', 'a\nb\nc\nd\ne\n');
-    expect(run('tail -n +3 /tmp/log').split('\n')).toEqual(['c', 'd', 'e']);
+    expect((await run('tail -n +3 /tmp/log')).split('\n')).toEqual(['c', 'd', 'e']);
   });
-  it('A4 historical `-3` syntax keeps working', () => {
+  it('A4 historical `-3` syntax keeps working', async () => {
     write('/tmp/log', '1\n2\n3\n4\n5\n');
-    expect(run('tail -3 /tmp/log').split('\n')).toEqual(['3', '4', '5']);
+    expect((await run('tail -3 /tmp/log')).split('\n')).toEqual(['3', '4', '5']);
   });
-  it('A5 -c N returns the last N bytes', () => {
+  it('A5 -c N returns the last N bytes', async () => {
     write('/tmp/log', 'abcdef');
-    expect(run('tail -c 3 /tmp/log')).toBe('def');
+    expect(await run('tail -c 3 /tmp/log')).toBe('def');
   });
-  it('A6 --lines=N long-form', () => {
+  it('A6 --lines=N long-form', async () => {
     write('/tmp/log', 'a\nb\nc\n');
-    expect(run('tail --lines=1 /tmp/log')).toBe('c');
+    expect(await run('tail --lines=1 /tmp/log')).toBe('c');
   });
-  it('A7 stdin pipeline when no file is given', () => {
-    expect(run('echo "x\ny\nz" | tail -n 2').split('\n')).toEqual(['y', 'z']);
+  it('A7 stdin pipeline when no file is given', async () => {
+    expect((await run('echo "x\ny\nz" | tail -n 2')).split('\n')).toEqual(['y', 'z']);
   });
-  it('A8 missing file → exit 1 with error message', () => {
-    expect(run('tail /tmp/nope || echo MISS')).toContain('MISS');
+  it('A8 missing file → exit 1 with error message', async () => {
+    expect(await run('tail /tmp/nope || echo MISS')).toContain('MISS');
   });
-  it('A9 multi-file mode emits `==> path <==` headers', () => {
+  it('A9 multi-file mode emits `==> path <==` headers', async () => {
     write('/tmp/a', 'one\n');
     write('/tmp/b', 'two\n');
-    const out = run('tail /tmp/a /tmp/b');
+    const out = await run('tail /tmp/a /tmp/b');
     expect(out).toContain('==> /tmp/a <==');
     expect(out).toContain('==> /tmp/b <==');
     expect(out).toContain('one');
     expect(out).toContain('two');
   });
-  it('A10 -q suppresses headers in multi-file mode', () => {
+  it('A10 -q suppresses headers in multi-file mode', async () => {
     write('/tmp/a', 'one\n'); write('/tmp/b', 'two\n');
-    const out = run('tail -q /tmp/a /tmp/b');
+    const out = await run('tail -q /tmp/a /tmp/b');
     expect(out).not.toContain('==>');
   });
-  it('A11 -v forces headers even on a single file', () => {
+  it('A11 -v forces headers even on a single file', async () => {
     write('/tmp/a', 'only\n');
-    expect(run('tail -v /tmp/a')).toContain('==> /tmp/a <==');
+    expect(await run('tail -v /tmp/a')).toContain('==> /tmp/a <==');
   });
-  it('A12 -n 0 emits nothing', () => {
+  it('A12 -n 0 emits nothing', async () => {
     write('/tmp/a', 'a\nb\nc\n');
-    expect(run('tail -n 0 /tmp/a')).toBe('');
+    expect(await run('tail -n 0 /tmp/a')).toBe('');
   });
   it('A13 clustered short flags `-fn5` parse', () => {
     const opts = parseTailArgs(['-fn5', '/tmp/x']);

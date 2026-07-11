@@ -582,13 +582,13 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     clientArgs.push('-o', 'StrictHostKeyChecking=accept-new');
     clientArgs.push(`${user}@${host}`);
     if (cmd) clientArgs.push(cmd);
-    const result = runSshClient({
+    this._pendingAsync = runSshClient({
       args: clientArgs,
       sourceHostname: router._getHostnameInternal(),
       sourceIp, sourceUser: user,
       localVfs: { readFile: () => null, writeFile: () => undefined },
-    });
-    return result.output;
+    }).then(result => result.output);
+    return '';
   }
 
   private cmdQuit(): string {

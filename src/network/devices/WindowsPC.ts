@@ -1242,7 +1242,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
    * trivial transforms. Everything else (PowerShell pipelines,
    * `dir`, `reg add`, …) goes through async cmd.exe.
    */
-  runSshCommandSync(user: string, command: string): { output: string; exitCode: number } | null {
+  async runSshCommandSync(user: string, command: string): Promise<{ output: string; exitCode: number } | null> {
     let cmd = command.trim();
     if (!cmd) return { output: '', exitCode: 0 };
     // Outbound clients (Cisco / Huawei) preserve the surrounding quotes

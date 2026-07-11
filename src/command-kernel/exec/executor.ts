@@ -1,6 +1,6 @@
 import { ArgumentParser } from "../args/argument-parser";
 import { BaseCommand } from "../command/base-command";
-import { CommandContext, ExitCode, EXIT_OK } from "../command/types";
+import { CommandContext, ExitCode, EXIT_OK, ICommand } from "../command/types";
 import { CommandNotFoundError, ShellError } from "../errors";
 import { FileOutputStream } from "../io/file-output-stream";
 import { PipeBuffer } from "../io/pipe-buffer";
@@ -136,27 +136,58 @@ export class Executor {
       }
     }
 
-    // 2. Conversion entrée utilisateur -> arguments typés
-    const args = this.argParser.parse(argv, command.descriptor);
-
-    // 3. Contrôle des privilèges déclarés PAR la commande
-    this.guard.check(command, session.user, args);
-
-    // 4. Redirections éventuelles (> >> <) : on adapte l'IO. `ownedStdout` n'est
-    //    défini que si une redirection a créé un flux dédié (fichier) — le
-    //    flux d'origine (terminal, pipe de script) reste géré par son
-    //    propriétaire et ne doit jamais être fermé ici.
+    // Redirections éventuelles (> >> <) : on adapte l'IO. `ownedStdout` n'est
+    // défini que si une redirection a créé un flux dédié (fichier) — le
+    // flux d'origine (terminal, pipe de script) reste géré par son
+    // propriétaire et ne doit jamais être fermé ici.
     const { io: effectiveIO, ownedStdout } = await this.applyRedirections(
       node.redirections,
       session,
       io,
       actor,
     );
+    try {
+      return await this.runWithArgs(command, node.name, argv, session, effectiveIO);
+    } finally {
+      if (ownedStdout) await ownedStdout.close();
+    }
+  }
 
-    // 5. Exécution avec accès aux méthodes internes de la machine
+  /**
+   * Exécute une commande déjà résolue avec un argv déjà expansé — pas de
+   * redirections ni d'expansion supplémentaires (le seul appelant actuel,
+   * `Interpreter.runResolved`, sert un pont legacy — l'interpréteur bash
+   * historique — qui tokenise/expanse/redirige déjà lui-même tant qu'il
+   * reste propriétaire des boucles/fonctions). Retourne `null` si `name`
+   * n'est pas enregistré, pour laisser l'appelant décider du repli.
+   */
+  async runResolved(
+    name: string,
+    argv: readonly string[],
+    session: Session,
+    io: CommandIO,
+  ): Promise<ExitCode | null> {
+    const command = this.registry.resolve(name);
+    if (!command) return null;
+    return this.runWithArgs(command, name, argv, session, io);
+  }
+
+  private async runWithArgs(
+    command: ICommand,
+    name: string,
+    argv: readonly string[],
+    session: Session,
+    io: CommandIO,
+  ): Promise<ExitCode> {
+    // Conversion entrée utilisateur -> arguments typés
+    const args = this.argParser.parse(argv, command.descriptor);
+
+    // Contrôle des privilèges déclarés PAR la commande
+    this.guard.check(command, session.user, args);
+
     const ctx: CommandContext = {
       session,
-      io: effectiveIO,
+      io,
       machine: this.machine,
       args,
       rawArgv: argv,
@@ -170,13 +201,11 @@ export class Executor {
       return code;
     } catch (err) {
       if (err instanceof ShellError) {
-        await io.stderr.write(`${node.name}: ${err.message}\n`);
+        await io.stderr.write(`${name}: ${err.message}\n`);
         session.lastExitCode = err.exitCode;
         return err.exitCode;
       }
       throw err;
-    } finally {
-      if (ownedStdout) await ownedStdout.close();
     }
   }
 

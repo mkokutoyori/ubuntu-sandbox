@@ -21,26 +21,26 @@ function memCols(line: string): { total: number; free: number; used: number } {
 }
 
 describe('top reports the live host memory (consistent with free)', () => {
-  it('top and free agree on used/free/total', () => {
+  it('top and free agree on used/free/total', async () => {
     const srv = new LinuxServer('linux-server', 'topmem-1', 100, 100);
     SqlPlusSubShell.create(srv, ['/', 'as', 'sysdba']).subShell.dispose();
 
-    const topMem = memCols(sh(srv, 'top').split('\n').find(l => l.includes('MiB Mem')) ?? '');
-    const freeLine = (sh(srv, 'free -m').split('\n').find(l => l.startsWith('Mem:')) ?? '')
+    const topMem = memCols((await sh(srv, 'top')).split('\n').find(l => l.includes('MiB Mem')) ?? '');
+    const freeLine = ((await sh(srv, 'free -m')).split('\n').find(l => l.startsWith('Mem:')) ?? '')
       .trim().split(/\s+/);
     expect(topMem.total).toBe(Number(freeLine[1]));
     expect(topMem.used).toBe(Number(freeLine[2]));
     expect(topMem.free).toBe(Number(freeLine[3]));
   });
 
-  it('the SGA reservation moves top used up while the instance runs', () => {
+  it('the SGA reservation moves top used up while the instance runs', async () => {
     const srv = new LinuxServer('linux-server', 'topmem-2', 100, 100);
-    const baseline = memCols(sh(srv, 'top').split('\n').find(l => l.includes('MiB Mem')) ?? '');
+    const baseline = memCols((await sh(srv, 'top')).split('\n').find(l => l.includes('MiB Mem')) ?? '');
     const sql = SqlPlusSubShell.create(srv, ['/', 'as', 'sysdba']).subShell;
-    const open = memCols(sh(srv, 'top').split('\n').find(l => l.includes('MiB Mem')) ?? '');
+    const open = memCols((await sh(srv, 'top')).split('\n').find(l => l.includes('MiB Mem')) ?? '');
     expect(open.used - baseline.used).toBeGreaterThanOrEqual(500);
     sql.processLine('SHUTDOWN IMMEDIATE');
-    const closed = memCols(sh(srv, 'top').split('\n').find(l => l.includes('MiB Mem')) ?? '');
+    const closed = memCols((await sh(srv, 'top')).split('\n').find(l => l.includes('MiB Mem')) ?? '');
     expect(closed.used).toBe(baseline.used);
     sql.dispose();
   });

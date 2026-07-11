@@ -22,24 +22,24 @@ function boot(name: string): LinuxServer {
 }
 
 describe('shell rman drives the real reactive engine (not a banner stub)', () => {
-  it('piped BACKUP DATABASE runs and reports the backup', () => {
+  it('piped BACKUP DATABASE runs and reports the backup', async () => {
     const srv = boot('shell-rman-1');
-    const out = sh(srv, 'echo "BACKUP DATABASE;" | rman target /');
+    const out = await sh(srv, 'echo "BACKUP DATABASE;" | rman target /');
     expect(out).toMatch(/Recovery Manager/);
     expect(out).toMatch(/Starting backup|backup piece|Finished backup|backup set/i);
     expect(out).not.toMatch(/command not found/);
   });
 
-  it('LIST BACKUP after a backup shows the catalog', () => {
+  it('LIST BACKUP after a backup shows the catalog', async () => {
     const srv = boot('shell-rman-2');
-    sh(srv, 'echo "BACKUP DATABASE;" | rman target /');
-    const out = sh(srv, 'echo "LIST BACKUP SUMMARY;" | rman target /');
+    await sh(srv, 'echo "BACKUP DATABASE;" | rman target /');
+    const out = await sh(srv, 'echo "LIST BACKUP SUMMARY;" | rman target /');
     expect(out).toMatch(/List of Backups|BS Key|Full|TYPE/i);
   });
 
-  it('rman with no piped script still prints the connected banner', () => {
+  it('rman with no piped script still prints the connected banner', async () => {
     const srv = boot('shell-rman-3');
-    const out = sh(srv, 'rman target /');
+    const out = await sh(srv, 'rman target /');
     expect(out).toMatch(/connected to target database/i);
   });
 });

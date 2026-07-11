@@ -32,6 +32,22 @@ export class Interpreter {
     return this.interpretLine(source, session, io); // même pipeline lexer→parser→executor
   }
 
+  /**
+   * Exécute une commande déjà nommée et tokenisée par un pont legacy (un
+   * interpréteur de script tiers qui gère lui-même expansion/redirections/
+   * boucles) — sans repasser par le Lexer/Parser du socle. `null` si `name`
+   * n'est pas enregistrée : c'est TOUJOURS cet `Interpreter`, jamais son
+   * `Executor`/`CommandRegistry` interne, que l'appelant doit consulter.
+   */
+  async runResolved(
+    name: string,
+    argv: readonly string[],
+    session: Session,
+    io: CommandIO,
+  ): Promise<ExitCode | null> {
+    return this.executor.runResolved(name, argv, session, io);
+  }
+
   get commands(): CommandRegistry {
     return this.registry;
   }

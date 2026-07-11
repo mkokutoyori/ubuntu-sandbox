@@ -47,31 +47,31 @@ function sqlplus(srv: LinuxServer) {
 }
 
 describe('rm of a datafile follows the real Oracle failure ladder', () => {
-  it('a running instance is not affected (open inode semantics)', () => {
+  it('a running instance is not affected (open inode semantics)', async () => {
     const srv = bootOracleServer('df1');
-    sh(srv, `rm ${USERS_DBF}`);
+    await sh(srv, `rm ${USERS_DBF}`);
     const sql = sqlplus(srv);
     const out = sql.processLine('SELECT COUNT(*) FROM hr.employees;').output.join('\n');
     expect(out).not.toMatch(/ORA-/);
     sql.dispose();
   });
 
-  it('the deleted file is NOT resurrected by later instance activity', () => {
+  it('the deleted file is NOT resurrected by later instance activity', async () => {
     const srv = bootOracleServer('df2');
-    expect(sh(srv, `ls ${USERS_DBF}`)).toContain('users01.dbf');
-    sh(srv, `rm ${USERS_DBF}`);
+    expect(await sh(srv, `ls ${USERS_DBF}`)).toContain('users01.dbf');
+    await sh(srv, `rm ${USERS_DBF}`);
 
     const sql = sqlplus(srv);
     sql.processLine('SHUTDOWN IMMEDIATE');
     sql.processLine('STARTUP'); // re-mounts → datafile sync runs again
     sql.dispose();
-    expect(sh(srv, `ls ${USERS_DBF}`)).toMatch(/No such file/);
+    expect(await sh(srv, `ls ${USERS_DBF}`)).toMatch(/No such file/);
   });
 
-  it('STARTUP stops at MOUNT with ORA-01157/ORA-01110', () => {
+  it('STARTUP stops at MOUNT with ORA-01157/ORA-01110', async () => {
     const srv = bootOracleServer('df3');
     const db = getRegisteredOracleDatabase(srv.getId())!;
-    sh(srv, `rm ${USERS_DBF}`);
+    await sh(srv, `rm ${USERS_DBF}`);
 
     const sql = sqlplus(srv);
     sql.processLine('SHUTDOWN IMMEDIATE');
@@ -84,7 +84,7 @@ describe('rm of a datafile follows the real Oracle failure ladder', () => {
     sql.dispose();
   });
 
-  it('RMAN RESTORE rewrites the file; ALTER DATABASE OPEN then succeeds', () => {
+  it('RMAN RESTORE rewrites the file; ALTER DATABASE OPEN then succeeds', async () => {
     const srv = bootOracleServer('df4');
     const db = getRegisteredOracleDatabase(srv.getId())!;
 
@@ -94,7 +94,7 @@ describe('rm of a datafile follows the real Oracle failure ladder', () => {
     rman1.subShell.dispose();
 
     // Lose the datafile, restart: stuck at MOUNT.
-    sh(srv, `rm ${USERS_DBF}`);
+    await sh(srv, `rm ${USERS_DBF}`);
     const sql = sqlplus(srv);
     sql.processLine('SHUTDOWN IMMEDIATE');
     sql.processLine('STARTUP');
@@ -105,7 +105,7 @@ describe('rm of a datafile follows the real Oracle failure ladder', () => {
     const restoreOut = rman2.subShell.processLine('restore datafile 4;').output.join('\n');
     expect(restoreOut).not.toMatch(/RMAN-06023/);
     rman2.subShell.dispose();
-    expect(sh(srv, `ls ${USERS_DBF}`)).toContain('users01.dbf');
+    expect(await sh(srv, `ls ${USERS_DBF}`)).toContain('users01.dbf');
 
     const openOut = sql.processLine('ALTER DATABASE OPEN;').output.join('\n');
     expect(openOut).not.toMatch(/ORA-01157/);

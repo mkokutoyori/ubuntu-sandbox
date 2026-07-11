@@ -29,91 +29,91 @@ function runSql(srv: LinuxServer, line: string): string {
 }
 
 describe('Data Pump resolves DIRECTORY= against the real directory object', () => {
-  it('expdp writes the dump at the custom directory object path', () => {
+  it('expdp writes the dump at the custom directory object path', async () => {
     const srv = boot('dp-dir-1');
-    sh(srv, 'mkdir -p /home/oracle/dp');
+    await sh(srv, 'mkdir -p /home/oracle/dp');
     runSql(srv, "CREATE DIRECTORY my_dp AS '/home/oracle/dp';");
-    const out = sh(srv, 'expdp sys/oracle SCHEMAS=HR DIRECTORY=MY_DP DUMPFILE=hr.dmp');
+    const out = await sh(srv, 'expdp sys/oracle SCHEMAS=HR DIRECTORY=MY_DP DUMPFILE=hr.dmp');
     expect(out).toContain('/home/oracle/dp/hr.dmp');
     expect(out).toContain('successfully completed');
-    expect(sh(srv, 'cat /home/oracle/dp/hr.dmp')).toContain('ORACLE-SIM-DATAPUMP');
+    expect(await sh(srv, 'cat /home/oracle/dp/hr.dmp')).toContain('ORACLE-SIM-DATAPUMP');
   });
 
-  it('expdp → drop → impdp round-trips through a custom DIRECTORY', () => {
+  it('expdp → drop → impdp round-trips through a custom DIRECTORY', async () => {
     const srv = boot('dp-dir-2');
-    sh(srv, 'mkdir -p /home/oracle/dp');
+    await sh(srv, 'mkdir -p /home/oracle/dp');
     runSql(srv, "CREATE DIRECTORY my_dp AS '/home/oracle/dp';");
-    sh(srv, 'expdp sys/oracle TABLES=HR.EMPLOYEES DIRECTORY=MY_DP DUMPFILE=emp.dmp');
+    await sh(srv, 'expdp sys/oracle TABLES=HR.EMPLOYEES DIRECTORY=MY_DP DUMPFILE=emp.dmp');
     runSql(srv, 'DROP TABLE hr.employees CASCADE CONSTRAINTS;');
-    const imp = sh(srv, 'impdp sys/oracle TABLES=HR.EMPLOYEES DIRECTORY=MY_DP DUMPFILE=emp.dmp');
+    const imp = await sh(srv, 'impdp sys/oracle TABLES=HR.EMPLOYEES DIRECTORY=MY_DP DUMPFILE=emp.dmp');
     expect(imp).toMatch(/imported|successfully completed/i);
     const rows = runSql(srv, 'SELECT COUNT(*) FROM hr.employees;');
     expect(rows).not.toMatch(/ORA-00942/);
   });
 
-  it('expdp with an unknown DIRECTORY fails with ORA-39087', () => {
+  it('expdp with an unknown DIRECTORY fails with ORA-39087', async () => {
     const srv = boot('dp-dir-3');
-    const out = sh(srv, 'expdp sys/oracle SCHEMAS=HR DIRECTORY=NO_SUCH_DIR DUMPFILE=x.dmp');
+    const out = await sh(srv, 'expdp sys/oracle SCHEMAS=HR DIRECTORY=NO_SUCH_DIR DUMPFILE=x.dmp');
     expect(out).toMatch(/ORA-39087/);
     expect(out).not.toContain('successfully completed');
   });
 
-  it('impdp with an unknown DIRECTORY fails with ORA-39087', () => {
+  it('impdp with an unknown DIRECTORY fails with ORA-39087', async () => {
     const srv = boot('dp-dir-4');
-    const out = sh(srv, 'impdp sys/oracle SCHEMAS=HR DIRECTORY=NO_SUCH_DIR DUMPFILE=x.dmp');
+    const out = await sh(srv, 'impdp sys/oracle SCHEMAS=HR DIRECTORY=NO_SUCH_DIR DUMPFILE=x.dmp');
     expect(out).toMatch(/ORA-39087/);
   });
 
-  it('expdp without DIRECTORY still uses the seeded DATA_PUMP_DIR', () => {
+  it('expdp without DIRECTORY still uses the seeded DATA_PUMP_DIR', async () => {
     const srv = boot('dp-dir-5');
-    const out = sh(srv, 'expdp sys/oracle SCHEMAS=HR DUMPFILE=hr.dmp');
+    const out = await sh(srv, 'expdp sys/oracle SCHEMAS=HR DUMPFILE=hr.dmp');
     expect(out).toContain('/u01/app/oracle/admin/ORCL/dpdump/hr.dmp');
-    expect(sh(srv, 'cat /u01/app/oracle/admin/ORCL/dpdump/hr.dmp')).toContain('ORACLE-SIM-DATAPUMP');
+    expect(await sh(srv, 'cat /u01/app/oracle/admin/ORCL/dpdump/hr.dmp')).toContain('ORACLE-SIM-DATAPUMP');
   });
 });
 
 describe('Data Pump enforces directory privileges', () => {
-  it('expdp as a user without WRITE on the directory is denied', () => {
+  it('expdp as a user without WRITE on the directory is denied', async () => {
     const srv = boot('dp-priv-1');
-    sh(srv, 'mkdir -p /home/oracle/dp');
+    await sh(srv, 'mkdir -p /home/oracle/dp');
     runSql(srv, "CREATE DIRECTORY my_dp AS '/home/oracle/dp';");
     runSql(srv, 'CREATE USER dpu IDENTIFIED BY pw;');
     runSql(srv, 'GRANT CREATE SESSION TO dpu;');
-    const out = sh(srv, 'expdp dpu/pw SCHEMAS=HR DIRECTORY=MY_DP DUMPFILE=hr.dmp');
+    const out = await sh(srv, 'expdp dpu/pw SCHEMAS=HR DIRECTORY=MY_DP DUMPFILE=hr.dmp');
     expect(out).toMatch(/29289|access denied/i);
     expect(out).not.toContain('successfully completed');
   });
 
-  it('granting WRITE lets the user run expdp', () => {
+  it('granting WRITE lets the user run expdp', async () => {
     const srv = boot('dp-priv-2');
-    sh(srv, 'mkdir -p /home/oracle/dp');
+    await sh(srv, 'mkdir -p /home/oracle/dp');
     runSql(srv, "CREATE DIRECTORY my_dp AS '/home/oracle/dp';");
     runSql(srv, 'CREATE USER dpu IDENTIFIED BY pw;');
     runSql(srv, 'GRANT CREATE SESSION TO dpu;');
     runSql(srv, 'GRANT WRITE ON DIRECTORY my_dp TO dpu;');
-    const out = sh(srv, 'expdp dpu/pw SCHEMAS=HR DIRECTORY=MY_DP DUMPFILE=hr.dmp');
+    const out = await sh(srv, 'expdp dpu/pw SCHEMAS=HR DIRECTORY=MY_DP DUMPFILE=hr.dmp');
     expect(out).toContain('successfully completed');
   });
 
-  it('impdp requires READ on the directory', () => {
+  it('impdp requires READ on the directory', async () => {
     const srv = boot('dp-priv-3');
-    sh(srv, 'mkdir -p /home/oracle/dp');
+    await sh(srv, 'mkdir -p /home/oracle/dp');
     runSql(srv, "CREATE DIRECTORY my_dp AS '/home/oracle/dp';");
     runSql(srv, 'CREATE USER dpu IDENTIFIED BY pw;');
     runSql(srv, 'GRANT CREATE SESSION TO dpu;');
-    sh(srv, 'expdp sys/oracle SCHEMAS=HR DIRECTORY=MY_DP DUMPFILE=hr.dmp');
-    const denied = sh(srv, 'impdp dpu/pw SCHEMAS=HR DIRECTORY=MY_DP DUMPFILE=hr.dmp TABLE_EXISTS_ACTION=SKIP');
+    await sh(srv, 'expdp sys/oracle SCHEMAS=HR DIRECTORY=MY_DP DUMPFILE=hr.dmp');
+    const denied = await sh(srv, 'impdp dpu/pw SCHEMAS=HR DIRECTORY=MY_DP DUMPFILE=hr.dmp TABLE_EXISTS_ACTION=SKIP');
     expect(denied).toMatch(/29289|access denied/i);
     runSql(srv, 'GRANT READ ON DIRECTORY my_dp TO dpu;');
-    const ok = sh(srv, 'impdp dpu/pw SCHEMAS=HR DIRECTORY=MY_DP DUMPFILE=hr.dmp TABLE_EXISTS_ACTION=SKIP');
+    const ok = await sh(srv, 'impdp dpu/pw SCHEMAS=HR DIRECTORY=MY_DP DUMPFILE=hr.dmp TABLE_EXISTS_ACTION=SKIP');
     expect(ok).not.toMatch(/29289/);
   });
 
-  it('SYS runs Data Pump without an explicit directory grant', () => {
+  it('SYS runs Data Pump without an explicit directory grant', async () => {
     const srv = boot('dp-priv-4');
-    sh(srv, 'mkdir -p /home/oracle/dp');
+    await sh(srv, 'mkdir -p /home/oracle/dp');
     runSql(srv, "CREATE DIRECTORY my_dp AS '/home/oracle/dp';");
-    const out = sh(srv, 'expdp sys/oracle SCHEMAS=HR DIRECTORY=MY_DP DUMPFILE=hr.dmp');
+    const out = await sh(srv, 'expdp sys/oracle SCHEMAS=HR DIRECTORY=MY_DP DUMPFILE=hr.dmp');
     expect(out).toContain('successfully completed');
   });
 });

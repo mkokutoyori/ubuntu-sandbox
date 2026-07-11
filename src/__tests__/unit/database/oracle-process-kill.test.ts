@@ -32,23 +32,23 @@ function openUserSession(srv: LinuxServer) {
 }
 
 describe('Killing an Oracle server process from the OS terminates the session', () => {
-  it('pkill of the server process ends the Oracle session and clears ps', () => {
+  it('pkill of the server process ends the Oracle session and clears ps', async () => {
     const srv = boot('proc-2');
     const { db, sid } = openUserSession(srv);
     expect(db.getSession(sid)).toBeDefined();
-    expect(sh(srv, 'ps -ef')).toMatch(/oraclePROC|oracleORCL/i);
+    expect(await sh(srv, 'ps -ef')).toMatch(/oraclePROC|oracleORCL/i);
 
-    sh(srv, 'pkill -9 oracleORCL');
+    await sh(srv, 'pkill -9 oracleORCL');
 
     expect(db.getSession(sid)).toBeUndefined();
-    expect(sh(srv, 'ps -ef')).not.toMatch(/oracleORCL/);
+    expect(await sh(srv, 'ps -ef')).not.toMatch(/oracleORCL/);
   });
 
-  it('a non-terminating signal (SIGCONT) leaves the session alive', () => {
+  it('a non-terminating signal (SIGCONT) leaves the session alive', async () => {
     const srv = boot('proc-3');
     const { db, sid } = openUserSession(srv);
     expect(db.getSession(sid)).toBeDefined();
-    sh(srv, 'pkill -CONT oracleORCL');
+    await sh(srv, 'pkill -CONT oracleORCL');
     expect(db.getSession(sid)).toBeDefined();
   });
 });

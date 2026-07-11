@@ -12,7 +12,7 @@ export interface CronSource {
 
 export interface CronEngineDeps {
   sources: CronSource[];
-  runner(command: string, ctx: { user: string; env: Record<string, string> }): CronRunResult;
+  runner(command: string, ctx: { user: string; env: Record<string, string> }): CronRunResult | Promise<CronRunResult>;
   syslog(tag: string, message: string): void;
   deliverMail(recipient: string, body: string): void;
   homeFor(user: string): string;
@@ -28,37 +28,37 @@ export class CronEngine {
 
   get isRunning(): boolean { return this.running; }
 
-  start(): void {
+  async start(): Promise<void> {
     if (this.running) return;
     this.running = true;
     this.lastMinute = '';
-    this.fireReboot();
+    await this.fireReboot();
   }
 
   stop(): void {
     this.running = false;
   }
 
-  tick(now: Date = this.deps.now()): void {
+  async tick(now: Date = this.deps.now()): Promise<void> {
     if (!this.running) return;
     const key = `${now.getFullYear()}-${now.getMonth()}-${now.getDate()}-${now.getHours()}-${now.getMinutes()}`;
     if (key === this.lastMinute) return;
     this.lastMinute = key;
     for (const source of this.deps.sources) {
-      for (const job of source.dueJobs(now)) this.runJob(job);
+      for (const job of source.dueJobs(now)) await this.runJob(job);
     }
   }
 
-  private fireReboot(): void {
+  private async fireReboot(): Promise<void> {
     for (const source of this.deps.sources) {
-      for (const job of source.rebootJobs()) this.runJob(job);
+      for (const job of source.rebootJobs()) await this.runJob(job);
     }
   }
 
-  private runJob(job: CronJob): void {
+  private async runJob(job: CronJob): Promise<void> {
     const env = this.buildEnv(job);
     this.deps.syslog('CRON', `(${job.user}) CMD (${job.command})`);
-    const result = this.deps.runner(job.command, { user: job.user, env });
+    const result = await this.deps.runner(job.command, { user: job.user, env });
     this.maybeMail(job, result);
   }
 

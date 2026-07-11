@@ -40,26 +40,26 @@ function bootOracleServer(name: string): LinuxServer {
 const sh = (srv: LinuxServer, cmd: string) => srv.executeShellCommandSync(cmd);
 
 describe('bequeath connections appear in ps as oracleSID (LOCAL=YES)', () => {
-  it('a live sqlplus / as sysdba session has its dedicated server in ps', () => {
+  it('a live sqlplus / as sysdba session has its dedicated server in ps', async () => {
     const srv = bootOracleServer('sp1');
     const { subShell } = SqlPlusSubShell.create(srv, ['/', 'as', 'sysdba']);
-    const ps = sh(srv, 'ps aux');
+    const ps = await sh(srv, 'ps aux');
     expect(ps).toMatch(/oracleORCL \(DESCRIPTION=\(LOCAL=YES\)\(ADDRESS=\(PROTOCOL=beq\)\)\)/);
     subShell.dispose();
   });
 
-  it('the process disappears when the session disconnects', () => {
+  it('the process disappears when the session disconnects', async () => {
     const srv = bootOracleServer('sp2');
     const { subShell } = SqlPlusSubShell.create(srv, ['/', 'as', 'sysdba']);
     subShell.dispose();
-    expect(sh(srv, 'ps aux')).not.toMatch(/LOCAL=YES/);
+    expect(await sh(srv, 'ps aux')).not.toMatch(/LOCAL=YES/);
   });
 
-  it('SHUTDOWN kills every dedicated server (PMON cleanup)', () => {
+  it('SHUTDOWN kills every dedicated server (PMON cleanup)', async () => {
     const srv = bootOracleServer('sp3');
     const { subShell } = SqlPlusSubShell.create(srv, ['/', 'as', 'sysdba']);
     subShell.processLine('SHUTDOWN IMMEDIATE');
-    expect(sh(srv, 'ps aux')).not.toMatch(/oracleORCL \(/);
+    expect(await sh(srv, 'ps aux')).not.toMatch(/oracleORCL \(/);
     subShell.dispose();
   });
 });
@@ -75,7 +75,7 @@ describe('V$PROCESS and V$SESSION tell the same story as ps', () => {
     subShell.dispose();
   });
 
-  it('the canonical s.paddr = p.addr join resolves the SPID seen in ps', () => {
+  it('the canonical s.paddr = p.addr join resolves the SPID seen in ps', async () => {
     const srv = bootOracleServer('sp5');
     const db = getRegisteredOracleDatabase(srv.getId())!;
     const { subShell } = SqlPlusSubShell.create(srv, ['/', 'as', 'sysdba']);
@@ -91,7 +91,7 @@ describe('V$PROCESS and V$SESSION tell the same story as ps', () => {
     // account. (The host process table allocates its own pid namespace,
     // so the ps pid differs from SPID — same pre-existing approximation
     // as the ora_pmon/ora_smon background processes.)
-    expect(sh(srv, 'ps aux')).toMatch(/oracle\s+\d+.*oracleORCL \(/);
+    expect(await sh(srv, 'ps aux')).toMatch(/oracle\s+\d+.*oracleORCL \(/);
     subShell.dispose();
   });
 });
@@ -112,10 +112,10 @@ describe('Oracle Net connections fork LOCAL=NO servers', () => {
     expect(db.instance.getServerProcess(sid)).toBeUndefined();
   });
 
-  it('sqlplus user/pass@alias lands as LOCAL=NO in ps (loopback through the listener)', () => {
+  it('sqlplus user/pass@alias lands as LOCAL=NO in ps (loopback through the listener)', async () => {
     const srv = bootOracleServer('sp6');
     const { subShell } = SqlPlusSubShell.create(srv, ['system/oracle@ORCL']);
-    const ps = sh(srv, 'ps aux');
+    const ps = await sh(srv, 'ps aux');
     expect(ps).toMatch(/oracleORCL \(LOCAL=NO\)/);
     subShell.dispose();
   });

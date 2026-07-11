@@ -16,18 +16,18 @@ beforeEach(() => {
   exec.userMgr.currentUid = 0;
   exec.userMgr.currentGid = 0;
 });
-function run(cmd: string): string { return exec.execute(cmd); }
-function runScript(body: string): string {
+async function run(cmd: string): Promise<string> { return await exec.execute(cmd); }
+async function runScript(body: string): Promise<string> {
   exec.vfs.writeFile('/tmp/__t.sh', body, 0, 0, 0o022);
   const i = exec.vfs.resolveInode('/tmp/__t.sh');
   if (i) i.permissions = 0o755;
-  return run('bash /tmp/__t.sh');
+  return await run('bash /tmp/__t.sh');
 }
 
 // ─── §P — Associative arrays (declare -A) ──────────────────────────────
 describe('P. associative arrays', () => {
-  it('P1 declare -A then assign and read by string key', () => {
-    const out = runScript(`
+  it('P1 declare -A then assign and read by string key', async () => {
+    const out = await runScript(`
       declare -A colours
       colours[apple]=red
       colours[grass]=green
@@ -40,15 +40,15 @@ describe('P. associative arrays', () => {
     expect(out).toContain('green');
     expect(out).toContain('blue');
   });
-  it('P2 list literal: declare -A m=([k1]=v1 [k2]=v2)', () => {
-    const out = runScript(`
+  it('P2 list literal: declare -A m=([k1]=v1 [k2]=v2)', async () => {
+    const out = await runScript(`
       declare -A m=([alpha]=1 [bravo]=2 [charlie]=3)
       echo "\${m[bravo]}"
     `);
     expect(out.trim()).toBe('2');
   });
-  it('P3 ${#map[@]} counts keys; ${!map[@]} lists them', () => {
-    const out = runScript(`
+  it('P3 ${#map[@]} counts keys; ${!map[@]} lists them', async () => {
+    const out = await runScript(`
       declare -A m
       m[a]=1; m[b]=2; m[c]=3
       echo "size=\${#m[@]}"
@@ -58,8 +58,8 @@ describe('P. associative arrays', () => {
     expect(out).toContain('size=3');
     expect(out).toMatch(/keys=a b c\s*/);
   });
-  it('P4 iterate values with for x in "${m[@]}"', () => {
-    const out = runScript(`
+  it('P4 iterate values with for x in "${m[@]}"', async () => {
+    const out = await runScript(`
       declare -A m=([x]=10 [y]=20)
       total=0
       for v in "\${m[@]}"; do
@@ -69,8 +69,8 @@ describe('P. associative arrays', () => {
     `);
     expect(out).toContain('total=30');
   });
-  it('P5 unset removes a single key', () => {
-    const out = runScript(`
+  it('P5 unset removes a single key', async () => {
+    const out = await runScript(`
       declare -A m=([a]=1 [b]=2)
       unset m[a]
       echo "size=\${#m[@]}"
@@ -81,9 +81,9 @@ describe('P. associative arrays', () => {
     expect(out).toContain('a=absent');
     expect(out).toContain('b=2');
   });
-  it('P6 missing key expands to empty (and bypasses set -u via :-)', () => {
-    expect(run('declare -A m; m[a]=1; echo "[${m[nope]}]"')).toBe('[]');
-    expect(run('declare -A m; echo "${m[x]:-default}"')).toBe('default');
+  it('P6 missing key expands to empty (and bypasses set -u via :-)', async () => {
+    expect(await run('declare -A m; m[a]=1; echo "[${m[nope]}]"')).toBe('[]');
+    expect(await run('declare -A m; echo "${m[x]:-default}"')).toBe('default');
   });
 });
 
@@ -93,8 +93,8 @@ describe('Q. mapfile / readarray', () => {
     exec.vfs.writeFile('/data/lines.txt', 'alpha\nbravo\ncharlie\n', 0, 0, 0o022);
   });
 
-  it('Q1 reads every line into an array', () => {
-    const out = runScript(`
+  it('Q1 reads every line into an array', async () => {
+    const out = await runScript(`
       mapfile -t arr < /data/lines.txt
       echo "count=\${#arr[@]}"
       echo "first=\${arr[0]}"
@@ -104,8 +104,8 @@ describe('Q. mapfile / readarray', () => {
     expect(out).toContain('first=alpha');
     expect(out).toContain('last=charlie');
   });
-  it('Q2 `readarray` is an alias of mapfile', () => {
-    const out = runScript(`
+  it('Q2 `readarray` is an alias of mapfile', async () => {
+    const out = await runScript(`
       readarray -t lines < /data/lines.txt
       for l in "\${lines[@]}"; do echo "[$l]"; done
     `);
@@ -113,16 +113,16 @@ describe('Q. mapfile / readarray', () => {
     expect(out).toContain('[bravo]');
     expect(out).toContain('[charlie]');
   });
-  it('Q3 default (no -t) keeps the trailing newlines on each element', () => {
-    const out = runScript(`
+  it('Q3 default (no -t) keeps the trailing newlines on each element', async () => {
+    const out = await runScript(`
       mapfile arr < /data/lines.txt
       echo "len=\${#arr[0]}"
     `);
     // "alpha\n" → 6 chars
     expect(out).toContain('len=6');
   });
-  it('Q4 -n LIMIT caps the number of lines read', () => {
-    const out = runScript(`
+  it('Q4 -n LIMIT caps the number of lines read', async () => {
+    const out = await runScript(`
       mapfile -t -n 2 arr < /data/lines.txt
       echo "count=\${#arr[@]}"
       echo "\${arr[1]}"
@@ -134,8 +134,8 @@ describe('Q. mapfile / readarray', () => {
 
 // ─── §R — read -a / -d ─────────────────────────────────────────────────
 describe('R. read array & delimiter', () => {
-  it('R1 read -a splits a line into an array on IFS', () => {
-    const out = runScript(`
+  it('R1 read -a splits a line into an array on IFS', async () => {
+    const out = await runScript(`
       read -ra arr <<< "alpha bravo charlie"
       echo "count=\${#arr[@]}"
       echo "\${arr[1]}"
@@ -143,8 +143,8 @@ describe('R. read array & delimiter', () => {
     expect(out).toContain('count=3');
     expect(out).toContain('bravo');
   });
-  it('R2 read -d "" reads until NUL or EOF', () => {
-    const out = runScript(`
+  it('R2 read -d "" reads until NUL or EOF', async () => {
+    const out = await runScript(`
       read -d "" multi <<< "first
 second
 third"
@@ -157,16 +157,16 @@ third"
 
 // ─── §S — trap EXIT cleanup ────────────────────────────────────────────
 describe('S. trap EXIT', () => {
-  it('S1 EXIT handler runs once at end-of-script', () => {
-    const out = runScript(`
+  it('S1 EXIT handler await runs once at end-of-script', async () => {
+    const out = await runScript(`
       trap 'echo "cleaning up"' EXIT
       echo "working"
     `);
     expect(out).toContain('working');
     expect(out).toContain('cleaning up');
   });
-  it('S2 trap handler still runs after an explicit `exit`', () => {
-    const out = runScript(`
+  it('S2 trap handler still await runs after an explicit `exit`', async () => {
+    const out = await runScript(`
       trap 'echo BYE' EXIT
       echo HI
       exit 0
@@ -176,8 +176,8 @@ describe('S. trap EXIT', () => {
     expect(out).toContain('BYE');
     expect(out).not.toContain('unreachable');
   });
-  it('S3 trap can read variables defined before it', () => {
-    const out = runScript(`
+  it('S3 trap can read variables defined before it', async () => {
+    const out = await runScript(`
       TMP=/tmp/work-$$
       trap 'echo "would remove $TMP"' EXIT
       echo "tmp=$TMP"
@@ -185,8 +185,8 @@ describe('S. trap EXIT', () => {
     expect(out).toMatch(/tmp=\/tmp\/work-\d+/);
     expect(out).toMatch(/would remove \/tmp\/work-\d+/);
   });
-  it('S4 trap - EXIT clears the handler', () => {
-    const out = runScript(`
+  it('S4 trap - EXIT clears the handler', async () => {
+    const out = await runScript(`
       trap 'echo OLD' EXIT
       trap - EXIT
       echo END
@@ -198,25 +198,25 @@ describe('S. trap EXIT', () => {
 
 // ─── §T — Tilde expansion ──────────────────────────────────────────────
 describe('T. tilde expansion', () => {
-  it('T1 bare `~` expands to $HOME', () => {
-    expect(run('echo ~').trim()).toBe('/root');
+  it('T1 bare `~` expands to $HOME', async () => {
+    expect((await run('echo ~')).trim()).toBe('/root');
   });
-  it('T2 `~/path` joins with $HOME', () => {
-    expect(run('echo ~/docs').trim()).toBe('/root/docs');
+  it('T2 `~/path` joins with $HOME', async () => {
+    expect((await run('echo ~/docs')).trim()).toBe('/root/docs');
   });
-  it('T3 `~user` expands to that user\'s home', () => {
-    exec.execute('useradd -m alice');
-    expect(run('echo ~alice').trim()).toBe('/home/alice');
+  it('T3 `~user` expands to that user\'s home', async () => {
+    await exec.execute('useradd -m alice');
+    expect((await run('echo ~alice')).trim()).toBe('/home/alice');
   });
-  it('T4 tilde is NOT expanded when quoted', () => {
-    expect(run('echo "~"')).toBe('~');
-    expect(run("echo '~'")).toBe('~');
+  it('T4 tilde is NOT expanded when quoted', async () => {
+    expect(await run('echo "~"')).toBe('~');
+    expect(await run("echo '~'")).toBe('~');
   });
-  it('T5 tilde is expanded in variable assignment values', () => {
-    expect(run('p=~/bin; echo "$p"')).toBe('/root/bin');
+  it('T5 tilde is expanded in variable assignment values', async () => {
+    expect(await run('p=~/bin; echo "$p"')).toBe('/root/bin');
   });
-  it('T6 tilde works in script paths — `cd ~` and `pwd`', () => {
-    const out = runScript(`
+  it('T6 tilde works in script paths — `cd ~` and `pwd`', async () => {
+    const out = await runScript(`
       cd ~
       pwd
     `);

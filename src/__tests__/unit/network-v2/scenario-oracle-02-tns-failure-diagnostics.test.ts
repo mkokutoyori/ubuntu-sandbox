@@ -72,7 +72,7 @@ describe('Case 1 — unknown alias: ORA-12154, purely client-side, no network tr
 });
 
 describe('Case 2 — listener stopped: ORA-12541, a real network-level failure', () => {
-  it('the port itself becomes unreachable, and nothing is logged (no listener process to log)', () => {
+  it('the port itself becomes unreachable, and nothing is logged (no listener process to log)', async () => {
     const { client, dbhost } = lan();
     handleLsnrctl(dbhost, ['stop'], () => {});
 
@@ -84,12 +84,12 @@ describe('Case 2 — listener stopped: ORA-12541, a real network-level failure',
 
     const db = getOracleDatabase(dbhost.getId());
     expect(db.instance.getListenerLog().length).toBe(0);
-    expect(dbhost.executeShellCommandSync('netstat -tlnp')).not.toMatch(/:1521\b/);
+    expect(await dbhost.executeShellCommandSync('netstat -tlnp')).not.toMatch(/:1521\b/);
   });
 });
 
 describe('Case 3 — service not registered: ORA-12514, an application-level refusal', () => {
-  it('TCP is reachable, the listener accepts the SYN, but refuses the service and logs it', () => {
+  it('TCP is reachable, the listener accepts the SYN, but refuses the service and logs it', async () => {
     const { client, dbhost } = lan();
 
     expect(probe(client, '10.0.0.2', 1521)).toBe(true);
@@ -105,7 +105,7 @@ describe('Case 3 — service not registered: ORA-12514, an application-level ref
     expect(entry.result).toBe('refused');
     expect(entry.returnCode).toBe(12514);
 
-    expect(dbhost.executeShellCommandSync('netstat -tlnp')).toMatch(/:1521\b.*tnslsnr/);
+    expect(await dbhost.executeShellCommandSync('netstat -tlnp')).toMatch(/:1521\b.*tnslsnr/);
   });
 });
 

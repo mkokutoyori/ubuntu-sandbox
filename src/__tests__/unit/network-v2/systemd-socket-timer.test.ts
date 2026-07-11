@@ -312,7 +312,7 @@ describe('socket activation over a real cable', () => {
     const armedAt = new Date();
     await server.executeCommand('systemctl start sweep.timer');
 
-    server.cronTick(new Date(armedAt.getTime() + 60_000));
+    await server.cronTick(new Date(armedAt.getTime() + 60_000));
 
     expect((await server.executeCommand('systemctl is-active relay')).trim()).toBe('active');
   });

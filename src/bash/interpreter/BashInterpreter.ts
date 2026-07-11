@@ -545,7 +545,7 @@ export class BashInterpreter {
   private procSubCounter = 63;
   private pendingOutSubs: Array<{ command: string; path: string }> = [];
 
-  private materializeProcSubs(node: SimpleCommand): SimpleCommand {
+  private *materializeProcSubsG(node: SimpleCommand): Effects<SimpleCommand> {
     const hasProcSub = (w: Word): boolean =>
       w.type === 'ProcessSubstitution'
       || (w.type === 'CompoundWord' && w.parts.some(hasProcSub));
@@ -553,18 +553,18 @@ export class BashInterpreter {
         && !node.redirections.some(r => hasProcSub(r.target))) {
       return node;
     }
-    return {
-      ...node,
-      words: node.words.map(w => this.materializeWord(w)),
-      redirections: node.redirections.map(r => ({ ...r, target: this.materializeWord(r.target) })),
-    };
+    const words: Word[] = [];
+    for (const w of node.words) words.push(yield* this.materializeWordG(w));
+    const redirections = [];
+    for (const r of node.redirections) redirections.push({ ...r, target: yield* this.materializeWordG(r.target) });
+    return { ...node, words, redirections };
   }
 
-  private materializeWord(word: Word): Word {
+  private *materializeWordG(word: Word): Effects<Word> {
     if (word.type === 'ProcessSubstitution') {
       const path = this.allocateProcSubPath();
       if (word.direction === 'in') {
-        const output = this.executeSubcommand(word.command);
+        const output = yield* this.subcommandG(word.command);
         this.io?.writeFile(path, output, false);
       } else {
         this.io?.writeFile(path, '', false);
@@ -573,7 +573,9 @@ export class BashInterpreter {
       return { type: 'LiteralWord', value: path, position: word.position };
     }
     if (word.type === 'CompoundWord') {
-      return { ...word, parts: word.parts.map(p => this.materializeWord(p)) };
+      const parts: Word[] = [];
+      for (const p of word.parts) parts.push(yield* this.materializeWordG(p));
+      return { ...word, parts };
     }
     return word;
   }
@@ -589,17 +591,17 @@ export class BashInterpreter {
     return `/tmp/.psub-${fd}`;
   }
 
-  private flushOutSubs(): void {
+  private *flushOutSubsG(): Effects<void> {
     if (this.pendingOutSubs.length === 0) return;
     const pending = this.pendingOutSubs.splice(0);
     for (const sub of pending) {
-      this.executeSubcommand(`${sub.command} < ${sub.path}`);
+      yield* this.subcommandG(`${sub.command} < ${sub.path}`);
     }
   }
 
   private *visitSimpleCommandWithInput(rawNode: SimpleCommand, pipeInput: string): Effects<void> {
     yield* this.fireSignalTrap('DEBUG');
-    const node = this.materializeProcSubs(rawNode);
+    const node = yield* this.materializeProcSubsG(rawNode);
 
     // Check for input redirection (< file), herestring (<<<), or heredoc (<<)
     if (!pipeInput) {
@@ -754,7 +756,7 @@ export class BashInterpreter {
       );
     }
 
-    this.flushOutSubs();
+    yield* this.flushOutSubsG();
 
     // ERR honours the same guarded-context gate as `set -e`.
     if (this.errexitSuppress === 0 && this.env.lastExitCode !== 0) {
@@ -1106,7 +1108,7 @@ export class BashInterpreter {
     if (!this.io) return null;
     let content: string | null = null;
     for (const redir of redirections) {
-      const target = this.materializeWord(redir.target);
+      const target = yield* this.materializeWordG(redir.target);
       if (redir.op === '<') {
         const path = this.io.resolvePath(yield* this.expandWordG(target));
         content = this.io.readFile(path);

@@ -78,10 +78,10 @@ describe('the listener on the DB host really listens and advertises the service'
     expect(status).toMatch(/status READY/);
   });
 
-  it('netstat/ss on the DB host show a real tnslsnr socket bound to 1521', () => {
+  it('netstat/ss on the DB host show a real tnslsnr socket bound to 1521', async () => {
     const { dbhost } = lan();
-    expect(dbhost.executeShellCommandSync('netstat -tlnp')).toMatch(/:1521\b.*tnslsnr/);
-    expect(dbhost.executeShellCommandSync('ss -tlnp')).toMatch(/1521/);
+    expect(await dbhost.executeShellCommandSync('netstat -tlnp')).toMatch(/:1521\b.*tnslsnr/);
+    expect(await dbhost.executeShellCommandSync('ss -tlnp')).toMatch(/1521/);
   });
 });
 

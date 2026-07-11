@@ -8,17 +8,17 @@ beforeEach(() => {
   exec.userMgr.currentUid = 0;
   exec.userMgr.currentGid = 0;
 });
-function run(cmd: string): string { return exec.execute(cmd); }
-function runScript(body: string): string {
+async function run(cmd: string): Promise<string> { return await exec.execute(cmd); }
+async function runScript(body: string): Promise<string> {
   exec.vfs.writeFile('/tmp/__t.sh', body, 0, 0, 0o022);
   const i = exec.vfs.resolveInode('/tmp/__t.sh');
   if (i) i.permissions = 0o755;
-  return run('bash /tmp/__t.sh');
+  return await run('bash /tmp/__t.sh');
 }
 
 describe('trap ERR — fires after every command that returns non-zero', () => {
-  it('fires when a top-level command fails', () => {
-    const out = runScript(`
+  it('fires when a top-level command fails', async () => {
+    const out = await runScript(`
       trap 'echo "trap-err"' ERR
       false
       echo "after"
@@ -27,8 +27,8 @@ describe('trap ERR — fires after every command that returns non-zero', () => {
     expect(out).toContain('after');
   });
 
-  it('fires once per failing command, not once per script', () => {
-    const out = runScript(`
+  it('fires once per failing command, not once per script', async () => {
+    const out = await runScript(`
       trap 'echo "ERR fired"' ERR
       false
       false
@@ -39,8 +39,8 @@ describe('trap ERR — fires after every command that returns non-zero', () => {
     expect(count).toBe(3);
   });
 
-  it('does not fire inside the guard part of an && chain', () => {
-    const out = runScript(`
+  it('does not fire inside the guard part of an && chain', async () => {
+    const out = await runScript(`
       trap 'echo "ERR fired"' ERR
       false && echo ok
       echo done
@@ -51,8 +51,8 @@ describe('trap ERR — fires after every command that returns non-zero', () => {
     expect(out).toContain('done');
   });
 
-  it('does not fire inside an `if` condition', () => {
-    const out = runScript(`
+  it('does not fire inside an `if` condition', async () => {
+    const out = await runScript(`
       trap 'echo "ERR fired"' ERR
       if false; then
         echo "then"
@@ -63,8 +63,8 @@ describe('trap ERR — fires after every command that returns non-zero', () => {
     expect(out).toContain('done');
   });
 
-  it('does not fire inside a `while` condition', () => {
-    const out = runScript(`
+  it('does not fire inside a `while` condition', async () => {
+    const out = await runScript(`
       trap 'echo "ERR fired"' ERR
       i=0
       while [ "$i" -lt 0 ]; do echo loop; done
@@ -74,8 +74,8 @@ describe('trap ERR — fires after every command that returns non-zero', () => {
     expect(out).toContain('done');
   });
 
-  it('does not re-fire while the handler itself runs', () => {
-    const out = runScript(`
+  it('does not re-fire while the handler itself await runs', async () => {
+    const out = await runScript(`
       trap 'false; echo "ERR-inside"' ERR
       false
       echo done
@@ -86,8 +86,8 @@ describe('trap ERR — fires after every command that returns non-zero', () => {
     expect(out).toContain('done');
   });
 
-  it('preserves $? for the script after the handler runs', () => {
-    const out = runScript(`
+  it('preserves $? for the script after the handler await runs', async () => {
+    const out = await runScript(`
       trap 'true' ERR
       false
       echo "exit=$?"
@@ -97,8 +97,8 @@ describe('trap ERR — fires after every command that returns non-zero', () => {
     expect(out).toContain('exit=1');
   });
 
-  it('trap - ERR removes the handler', () => {
-    const out = runScript(`
+  it('trap - ERR removes the handler', async () => {
+    const out = await runScript(`
       trap 'echo "ERR fired"' ERR
       false
       trap - ERR
@@ -109,8 +109,8 @@ describe('trap ERR — fires after every command that returns non-zero', () => {
     expect(out).toContain('done');
   });
 
-  it('works together with set -e — ERR fires before the script aborts', () => {
-    const out = runScript(`
+  it('works together with set -e — ERR fires before the script aborts', async () => {
+    const out = await runScript(`
       set -e
       trap 'echo "cleanup"' ERR
       false
@@ -122,8 +122,8 @@ describe('trap ERR — fires after every command that returns non-zero', () => {
 });
 
 describe('trap DEBUG — fires before every simple command', () => {
-  it('fires before each user command in the script', () => {
-    const out = runScript(`
+  it('fires before each user command in the script', async () => {
+    const out = await runScript(`
       trap 'echo "DBG"' DEBUG
       echo one
       echo two
@@ -135,8 +135,8 @@ describe('trap DEBUG — fires before every simple command', () => {
     expect(out).toContain('two');
   });
 
-  it('does not recurse into itself from within the handler', () => {
-    const out = runScript(`
+  it('does not recurse into itself from within the handler', async () => {
+    const out = await runScript(`
       trap 'echo "DBG"' DEBUG
       echo go
     `);
@@ -146,8 +146,8 @@ describe('trap DEBUG — fires before every simple command', () => {
     expect(out).toContain('go');
   });
 
-  it('preserves $? across the handler invocation', () => {
-    const out = runScript(`
+  it('preserves $? across the handler invocation', async () => {
+    const out = await runScript(`
       trap 'true' DEBUG
       false
       echo "exit=$?"
@@ -155,8 +155,8 @@ describe('trap DEBUG — fires before every simple command', () => {
     expect(out).toContain('exit=1');
   });
 
-  it('trap - DEBUG clears the handler', () => {
-    const out = runScript(`
+  it('trap - DEBUG clears the handler', async () => {
+    const out = await runScript(`
       trap 'echo "DBG"' DEBUG
       trap - DEBUG
       echo end
@@ -167,8 +167,8 @@ describe('trap DEBUG — fires before every simple command', () => {
 });
 
 describe('trap RETURN — fires when a function returns', () => {
-  it('fires when a function ends by falling off the body', () => {
-    const out = runScript(`
+  it('fires when a function ends by falling off the body', async () => {
+    const out = await runScript(`
       trap 'echo "RET"' RETURN
       f() { echo "inside"; }
       f
@@ -179,8 +179,8 @@ describe('trap RETURN — fires when a function returns', () => {
     expect(out).toContain('after');
   });
 
-  it('fires when a function uses the `return` builtin', () => {
-    const out = runScript(`
+  it('fires when a function uses the `return` builtin', async () => {
+    const out = await runScript(`
       trap 'echo "RET"' RETURN
       f() { return 7; }
       f
@@ -190,8 +190,8 @@ describe('trap RETURN — fires when a function returns', () => {
     expect(out).toContain('code=7');
   });
 
-  it('does not fire for top-level commands', () => {
-    const out = runScript(`
+  it('does not fire for top-level commands', async () => {
+    const out = await runScript(`
       trap 'echo "RET"' RETURN
       echo plain
     `);
@@ -199,8 +199,8 @@ describe('trap RETURN — fires when a function returns', () => {
     expect(out).toContain('plain');
   });
 
-  it('fires once per function call (not once per command inside)', () => {
-    const out = runScript(`
+  it('fires once per function call (not once per command inside)', async () => {
+    const out = await runScript(`
       trap 'echo "RET"' RETURN
       f() { echo a; echo b; echo c; }
       f
@@ -208,8 +208,8 @@ describe('trap RETURN — fires when a function returns', () => {
     expect((out.match(/RET/g) ?? []).length).toBe(1);
   });
 
-  it('trap - RETURN clears the handler', () => {
-    const out = runScript(`
+  it('trap - RETURN clears the handler', async () => {
+    const out = await runScript(`
       trap 'echo "RET"' RETURN
       trap - RETURN
       f() { echo inside; }
@@ -222,8 +222,8 @@ describe('trap RETURN — fires when a function returns', () => {
 });
 
 describe('trap — combined handlers do not interfere', () => {
-  it('ERR + RETURN + DEBUG can coexist', () => {
-    const out = runScript(`
+  it('ERR + RETURN + DEBUG can coexist', async () => {
+    const out = await runScript(`
       trap 'echo "DBG"' DEBUG
       trap 'echo "ERR"' ERR
       trap 'echo "RET"' RETURN

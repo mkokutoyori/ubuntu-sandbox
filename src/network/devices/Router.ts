@@ -2828,12 +2828,12 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
    * caller falls back; CiscoRouter and HuaweiRouter override with
    * their own pure show/display dispatch.
    */
-  runSshCommandSync(_user: string, _command: string): { output: string; exitCode: number } | null {
+  async runSshCommandSync(_user: string, _command: string): Promise<{ output: string; exitCode: number } | null> {
     return null;
   }
 
   async runSshCommand(user: string, command: string): Promise<{ output: string; exitCode: number }> {
-    const sync = this.runSshCommandSync(user, command);
+    const sync = await this.runSshCommandSync(user, command);
     if (sync) return sync;
     const output = await this.executeCommand(command);
     return { output, exitCode: 0 };
