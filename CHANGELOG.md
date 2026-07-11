@@ -5,6 +5,77 @@ progressive par équipement. Un push = une entrée = une fonctionnalité
 complète et testée (voir `CLAUDE.md` / le framework de migration pour les
 principes directeurs).
 
+## Windows — Phase 3 : `dir` + commandes système (13 commandes), zéro donnée figée
+
+**État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
+Suite de la Phase 2, sur demande explicite de continuer la migration
+jusqu'à couverture complète. Périmètre : `dir`, `ver`, `hostname`, `vol`,
+`chcp`, `date`, `time`, `systeminfo`, `tasklist`, `taskkill`, `netstat`,
+`sc`/`sc.exe`, `wmic`.
+
+**Principe appliqué partout dans cette phase, sur retour explicite de
+l'utilisateur : aucune valeur figée, uniquement des données réelles de
+CET équipement** :
+
+- `ver` — la Phase 1 avait copié `'10.0.22631.6649'` en dur dans le
+  nouveau fichier, une DEUXIÈME copie du `WindowsPC.VER_STRING` déjà
+  utilisé par `runSyncNativeCommand` (le shim PowerShell). Corrigé :
+  extraction en constante partagée unique
+  (`windows/WindowsVersion.ts::WIN_VER_STRING`), important pour la
+  cohérence cmd/PowerShell (`cmd-ps-coherence.test.ts`) — les DEUX chemins
+  lisent maintenant la même source, pas deux copies qui peuvent diverger.
+- `dir`, `vol`, `wmic logicaldisk` — numéro de série et espace libre réels
+  via `WindowsFileSystem.getVolumeSerialNumber()`/`getFreeDiskSpace()`
+  (nouvelle capacité optionnelle `FileSystemApi.volumeInfo()`), jamais une
+  valeur constante.
+- `ver`(profil futur)/`systeminfo`/`wmic os get caption`/`wmic cpu get
+  name` — nouvelle capacité optionnelle `MachineApi.os`/`hardware` sourcée
+  de `EndHost.getIdentity()`/`this.hardware` (`HardwareProfile.
+  defaultFor()`), déjà différenciés par type d'équipement (station de
+  travail vs serveur) — jamais une chaîne unique pour tous les WindowsPC.
+- `tasklist`/`taskkill`/`sc`/`netstat` — plutôt que de réimplémenter ces
+  rendus complexes (filtres, formats CSV/LIST/TABLE, ACL de service...),
+  les commandes migrées appellent DIRECTEMENT les fonctions pures legacy
+  déjà existantes (`WinTasklist.cmdTasklist`, `WinTaskkill.cmdTaskkill`,
+  `WinSc.cmdSc`, `WinFileCommands.cmdNetstat`) via une nouvelle
+  échappatoire vendeur `ProcessApi.native`/`NetworkApi.native`/
+  `MachineApi.servicesNative` (type `unknown`, cast par la commande) qui
+  expose l'objet réel (`WindowsProcessManager`, `SocketTable`,
+  `WindowsServiceManager`) — mêmes données, même fonction de rendu, donc
+  zéro divergence possible avec `runSyncNativeCommand` (le shim
+  PowerShell natif, qui appelle ces mêmes fonctions).
+
+**Bug trouvé en migrant `dir`/`del *.tmp`** : `Executor.runSimple`
+appliquait automatiquement le glob POSIX partagé (`expandGlob`, séparateur
+`/`, sémantique bash) à chaque mot avant même que la commande migrée ne
+le voie — `del *.tmp` recevait donc déjà des noms de fichiers résolus
+(mal, avec des chemins complets à cause du mélange `/`/`\`) au lieu du
+motif littéral que chaque commande cmd doit gérer elle-même (`del` ne
+matche que dans `cwd`, non récursif ; `dir /s` récursif ; sémantiques
+différentes par commande). Fix : `Executor`/`Interpreter` acceptent
+maintenant un `GlobExpander` injectable (même principe que `Lexer`/
+`Expander`), `createWindowsHostShell` passe un no-op (`async (w) => [w]`)
+— chaque commande Windows fait son propre matching via
+`ctx.machine.fs.list()`, comme legacy.
+
+**`dir` — portée** : formats basique/large (`/w`)/récursif (`/s`)/bare
+(`/b`)/wildcard/fichier unique, en-tête volume + espace libre réels.
+Les flags `/a`/`/o` sont acceptés en no-op (comme legacy — le simulateur
+ne modélise pas les dates par attribut).
+
+**Hors périmètre, conservé pour une phase dédiée "réseau"** : `netsh`
+(3180 lignes, dizaines de sous-domaines — interface ip, firewall,
+advfirewall, portproxy, wlan, dhcpclient — nécessite une extension
+substantielle de `MachineApi.net` avant migration, pas une commande
+isolée), `ipconfig`, `ping`, `route`, `arp`, `getmac`, `tracert`,
+`nslookup`, `ssh`/`sftp`/`scp`/`telnet`, `net` (sous-commandes). `netstat
+-r` (table de routage) dégrade gracieusement (chaîne vide) faute du
+contexte réseau complet — sera couvert par la même phase réseau.
+
+**Validation** : lot localisé (8 fichiers) — 143/144, seul restant :
+`netsh` (hors périmètre ci-dessus, échoue explicitement). Typecheck ciblé
+propre.
+
 ## Windows — Phase 2 : vrai `Lexer`/`Parser` cmd.exe, pont réécrit sur `Interpreter`
 
 **État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**

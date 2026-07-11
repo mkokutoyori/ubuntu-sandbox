@@ -117,6 +117,7 @@ import { SessionWorkQueue } from './host/session/SessionWorkQueue';
 import { SessionSwapWindow } from './host/session/SessionSwapWindow';
 import * as WinSys from './windows/WinSystemCommands';
 import { cmdReg as winCmdReg } from './windows/WinRegCommand';
+import { WIN_VER_STRING } from './windows/WindowsVersion';
 import { createWindowsHostShell } from './windows/command-kernel/createWindowsHostShell';
 import { CmdLexer } from './windows/command-kernel/ast/CmdLexer';
 import { resolveWindowsUser } from './windows/command-kernel/WindowsUser';
@@ -1435,11 +1436,6 @@ export class WindowsPC extends EndHost implements UserAccountHost {
 
   private static readonly HOSTS_FILE = 'C:\\Windows\\System32\\drivers\\etc\\hosts';
 
-  /** Single source of truth for the simulated OS build, so `ver` reports
-   *  the same string from cmd and from the PowerShell native shim, and it
-   *  agrees with `systeminfo` (build 22631). */
-  private static readonly VER_STRING = '\nMicrosoft Windows [Version 10.0.22631.6649]';
-
   // ─── Hosts file ──────────────────────────────────────────────
 
   /** Read the Windows hosts file into a parsed {@link HostsFile}. */
@@ -1944,6 +1940,12 @@ export class WindowsPC extends EndHost implements UserAccountHost {
         processManager: this.procMgr,
         hostname: this.hostname,
         ports: this.getPorts(),
+        identity: this.getIdentity(),
+        hardware: this.hardware,
+        socketTable: this.getSocketTable(),
+        serviceManager: this.svcMgr,
+        isDHCPConfigured: (ifName) => this.isDHCPConfigured(ifName),
+        bootedAt: () => this.getLifecycle().bootedAt() ?? null,
         powerOn: () => this.powerOn(),
         powerOff: () => this.powerOff(),
       });
@@ -2248,7 +2250,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
   runSyncNativeCommand(cmd: string, args: string[]): string | null {
     const lower = cmd.toLowerCase();
     if (lower === 'systeminfo') return this.cmdSysteminfo();
-    if (lower === 'ver') return WindowsPC.VER_STRING;
+    if (lower === 'ver') return WIN_VER_STRING;
     if (lower === 'hostname') return this.hostname;
     if (lower === 'vol')  return this.cmdVol(args);
     if (lower === 'chcp') return this.cmdChcp(args);

@@ -57,6 +57,15 @@ export interface FileSystemApi {
   readlink(path: string, actor: FileSystemActor): Promise<string>;
   /** Lien physique : `path` désigne désormais le même inode que `targetPath` (partage de contenu, `linkCount` incrémenté). */
   link(targetPath: string, path: string, actor: FileSystemActor): Promise<void>;
+  /**
+   * Info du volume/disque contenant `path` (numéro de série, octets
+   * libres/totaux) — optionnel : tous les vendeurs ne modélisent pas de
+   * volumes distincts (ex: `dir`/`vol` sous Windows). `undefined` si le
+   * vendeur ne l'implémente pas OU si `path` ne désigne aucun volume connu.
+   */
+  volumeInfo?(path: string): Promise<{ serial: string; freeBytes: number; totalBytes: number } | undefined>;
+  /** Optionnel : lettres de lecteur montées (`wmic logicaldisk`, `Get-PSDrive`) — vendeurs sans notion de volumes distincts n'ont rien à implémenter. */
+  listDrives?(): Promise<string[]>;
   resolve(cwd: string, path: string): string; // résolution relative/absolue
 }
 
@@ -70,11 +79,25 @@ export interface ProcessApi {
   list(): Promise<ProcessInfo[]>;
   kill(pid: number, signal?: string): Promise<void>;
   spawn(command: string, argv: string[]): Promise<ProcessInfo>;
+  /**
+   * Échappatoire vendeur : l'objet process-manager réel derrière cette
+   * API (ex: le `WindowsProcessManager` complet), pour les commandes dont
+   * la richesse (session, mémoire détaillée, services hébergés, titre de
+   * fenêtre...) est trop spécifique à un vendeur pour justifier une
+   * extension générique de `ProcessInfo` (`tasklist /SVC`, `/V`...).
+   * Typé `unknown` ici — chaque commande fait le cast vers le type
+   * concret qu'elle attend, jamais l'inverse (le générique ne doit rien
+   * savoir du type réel).
+   */
+  native?: unknown;
 }
 
 export interface NetworkApi {
-  interfaces(): Promise<{ name: string; ip: string; up: boolean }[]>;
+  /** `dhcp` optionnel : seuls certains vendeurs (Windows) le suivent par interface. */
+  interfaces(): Promise<{ name: string; ip: string; up: boolean; dhcp?: boolean }[]>;
   setInterfaceState(name: string, up: boolean): Promise<void>;
+  /** Échappatoire vendeur — voir `ProcessApi.native` pour le principe (ex: la `SocketTable` réelle pour `netstat`). */
+  native?: unknown;
 }
 
 export interface UserManagementApi {
@@ -110,6 +133,34 @@ export interface AuditApi {
   syscall(name: string, path?: string): void;
 }
 
+/**
+ * Identité OS réelle de l'équipement (nom de distribution/édition, version
+ * de noyau) — optionnelle : sert aux commandes qui affichent la version du
+ * système (`ver`, `systeminfo`...) et doivent refléter le VRAI profil de
+ * l'équipement (ex: Windows 10 vs Windows Server), jamais une chaîne figée.
+ */
+export interface OsIdentity {
+  readonly name: string;
+  readonly prettyName: string;
+  readonly version: string;
+  readonly kernelRelease: string;
+}
+
+/**
+ * Profil matériel réel de l'équipement (`systeminfo`, `wmic cpu/memorychip`,
+ * `Get-CimInstance Win32_*`) — optionnel, un switch/routeur n'a pas ce
+ * niveau de détail PC. Vient de `HardwareProfile.defaultFor()`, DÉJÀ
+ * différencié par type d'équipement (station de travail vs serveur), pas
+ * une valeur figée par ce pont.
+ */
+export interface HardwareProfile {
+  readonly manufacturer: string;
+  readonly productName: string;
+  readonly cpu: { sockets: number; cpuFamily: number; model: number; stepping: number; vendor: string; clockMhz: number };
+  readonly memory: { totalKib: number; availableKib: number; swapTotalKib: number };
+  readonly firmware: { vendor: string; version: string; releaseDate: string };
+}
+
 /** Point d'entrée UNIQUE vers l'intérieur de la machine. */
 export interface MachineApi {
   readonly fs: FileSystemApi;
@@ -120,6 +171,12 @@ export interface MachineApi {
   readonly power: PowerApi;
   readonly hostname: string;
   readonly audit?: AuditApi;
+  readonly os?: OsIdentity;
+  readonly hardware?: HardwareProfile;
+  /** Horodatage de démarrage, si l'équipement suit un cycle de vie power-on/off (`systeminfo`'s System Boot Time). */
+  bootedAt?(): Date | null;
+  /** Échappatoire vendeur pour un sous-système sans équivalent générique (ex: le gestionnaire de services Windows pour `sc`/`net start`/`net stop`). Voir `ProcessApi.native`. */
+  servicesNative?: unknown;
   now(): Date;
 }
 

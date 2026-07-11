@@ -19,6 +19,17 @@ import { ESCAPED_DOLLAR } from "../ast/tokens";
 import { expandGlob } from "./glob-expand";
 import { PermissionGuard } from "./permission-guard";
 
+/** Signature de `expandGlob` — injectable pour un vendeur dont les
+ *  commandes gèrent elles-mêmes leurs motifs (`*`/`?`), avec une
+ *  sémantique différente du glob POSIX (ex: cmd.exe : séparateur `\`,
+ *  portée non récursive par commande plutôt que générique). */
+export type GlobExpander = (
+  word: string,
+  cwd: string,
+  machine: MachineApi,
+  actor: FileSystemActor,
+) => Promise<string[]>;
+
 /**
  * Évalue l'AST : dispatch selon le kind du nœud, gère pipes,
  * opérateurs logiques, boucles, conditions et redirections.
@@ -26,14 +37,17 @@ import { PermissionGuard } from "./permission-guard";
 export class Executor {
   private readonly argParser = new ArgumentParser();
   private readonly expander: IExpander;
+  private readonly globExpand: GlobExpander;
 
   constructor(
     private readonly registry: CommandRegistry,
     private readonly machine: MachineApi,
     private readonly guard: PermissionGuard = new PermissionGuard(),
     expander: IExpander = new Expander(),
+    globExpand: GlobExpander = expandGlob,
   ) {
     this.expander = expander;
+    this.globExpand = globExpand;
   }
 
   async run(node: ScriptNode, session: Session, io: CommandIO): Promise<ExitCode> {
@@ -118,7 +132,7 @@ export class Executor {
         continue;
       }
       for (const expanded of this.expander.expand(word.text, session)) {
-        argv.push(...(await expandGlob(expanded, session.cwd, this.machine, actor)));
+        argv.push(...(await this.globExpand(expanded, session.cwd, this.machine, actor)));
       }
     }
 

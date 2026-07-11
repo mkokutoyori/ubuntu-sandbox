@@ -5,8 +5,10 @@ import {
   FileSystemApi,
   GroupInfo,
   GroupManagementApi,
+  HardwareProfile as CkHardwareProfile,
   MachineApi,
   NetworkApi,
+  OsIdentity,
   PowerApi,
   ProcessApi,
   ProcessInfo as CkProcessInfo,
@@ -15,6 +17,8 @@ import {
 import { FileSystemError } from '@/command-kernel/errors';
 import { User } from '@/command-kernel/session/types';
 import type { Port } from '@/network/hardware/Port';
+import type { SystemIdentity } from '@/network/devices/host/identity/SystemIdentity';
+import type { HardwareProfile } from '@/network/devices/host/hardware/HardwareProfile';
 import { WindowsFileSystem } from '../WindowsFileSystem';
 import type { WindowsProcessManager } from '../WindowsProcessManager';
 import type { WindowsUserManager } from '../WindowsUserManager';
@@ -26,6 +30,12 @@ export interface WindowsMachineApiDeps {
   readonly processManager: WindowsProcessManager;
   readonly hostname: string;
   readonly ports: readonly Port[];
+  readonly identity: SystemIdentity;
+  readonly hardware: HardwareProfile;
+  readonly socketTable: import('@/network/core/SocketTable').SocketTable;
+  readonly serviceManager: import('../WindowsServiceManager').WindowsServiceManager;
+  isDHCPConfigured(ifName: string): boolean;
+  bootedAt(): Date | null;
   powerOn(): void;
   powerOff(): void;
 }
@@ -160,10 +170,28 @@ class WindowsFileSystemApi implements FileSystemApi {
   resolve(cwd: string, path: string): string {
     return this.winfs.normalizePath(path, cwd);
   }
+
+  async volumeInfo(path: string): Promise<{ serial: string; freeBytes: number; totalBytes: number } | undefined> {
+    const drive = /^[A-Za-z]:/.test(path) ? path[0].toUpperCase() : undefined;
+    if (!drive) return undefined;
+    return {
+      serial: this.winfs.getVolumeSerialNumber(drive),
+      freeBytes: this.winfs.getFreeDiskSpace(drive),
+      totalBytes: this.winfs.getDriveCapacity(drive),
+    };
+  }
+
+  async listDrives(): Promise<string[]> {
+    return this.winfs.listDrives();
+  }
 }
 
 class WindowsProcessApi implements ProcessApi {
-  constructor(private readonly processManager: WindowsProcessManager) {}
+  readonly native: WindowsProcessManager;
+
+  constructor(private readonly processManager: WindowsProcessManager) {
+    this.native = processManager;
+  }
 
   async list(): Promise<CkProcessInfo[]> {
     return this.processManager.getAllProcesses().map((p) => ({
@@ -184,13 +212,22 @@ class WindowsProcessApi implements ProcessApi {
 }
 
 class WindowsNetworkApi implements NetworkApi {
-  constructor(private readonly ports: () => readonly Port[]) {}
+  readonly native: unknown;
 
-  async interfaces(): Promise<{ name: string; ip: string; up: boolean }[]> {
+  constructor(
+    private readonly ports: () => readonly Port[],
+    private readonly isDHCPConfigured: (ifName: string) => boolean,
+    socketTable: unknown,
+  ) {
+    this.native = socketTable;
+  }
+
+  async interfaces(): Promise<{ name: string; ip: string; up: boolean; dhcp?: boolean }[]> {
     return this.ports().map((port) => ({
       name: port.getName(),
       ip: port.getIPAddress()?.toString() ?? '',
       up: !port.isAdminDown(),
+      dhcp: this.isDHCPConfigured(port.getName()),
     }));
   }
 
@@ -263,15 +300,53 @@ export class WindowsMachineApi implements MachineApi {
   readonly groups: GroupManagementApi;
   readonly power: PowerApi;
   readonly hostname: string;
+  readonly os: OsIdentity;
+  readonly hardware: CkHardwareProfile;
+  readonly servicesNative: unknown;
+  private readonly bootedAtFn: () => Date | null;
 
   constructor(deps: WindowsMachineApiDeps) {
     this.fs = new WindowsFileSystemApi(deps.fs);
     this.proc = new WindowsProcessApi(deps.processManager);
-    this.net = new WindowsNetworkApi(() => deps.ports);
+    this.net = new WindowsNetworkApi(() => deps.ports, deps.isDHCPConfigured, deps.socketTable);
     this.users = new WindowsUserManagementApi(deps.userManager);
     this.groups = new WindowsGroupManagementApi(deps.userManager);
     this.power = new WindowsPowerApi(deps);
     this.hostname = deps.hostname;
+    this.os = {
+      name: deps.identity.os.name,
+      prettyName: deps.identity.os.prettyName,
+      version: deps.identity.os.version,
+      kernelRelease: deps.identity.kernel.release,
+    };
+    this.hardware = {
+      manufacturer: deps.hardware.manufacturer,
+      productName: deps.hardware.productName,
+      cpu: {
+        sockets: deps.hardware.cpu.sockets,
+        cpuFamily: deps.hardware.cpu.cpuFamily,
+        model: deps.hardware.cpu.model,
+        stepping: deps.hardware.cpu.stepping,
+        vendor: deps.hardware.cpu.vendor,
+        clockMhz: deps.hardware.cpu.clockMhz,
+      },
+      memory: {
+        totalKib: deps.hardware.memory.totalKib,
+        availableKib: deps.hardware.memory.availableKib,
+        swapTotalKib: deps.hardware.memory.swapTotalKib,
+      },
+      firmware: {
+        vendor: deps.hardware.firmware.vendor,
+        version: deps.hardware.firmware.version,
+        releaseDate: deps.hardware.firmware.releaseDate,
+      },
+    };
+    this.bootedAtFn = deps.bootedAt;
+    this.servicesNative = deps.serviceManager;
+  }
+
+  bootedAt(): Date | null {
+    return this.bootedAtFn();
   }
 
   now(): Date {

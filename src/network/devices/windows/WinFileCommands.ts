@@ -237,7 +237,6 @@ export function cmdTasklist(ctx: WinFileCommandContext): string {
 // ─── netstat ───────────────────────────────────────────────────────
 
 export function cmdNetstat(
-  ctx: WinFileCommandContext,
   args: string[] = [],
   socketTable?: SocketTable | null,
   netCtx?: WinCommandContext,

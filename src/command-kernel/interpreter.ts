@@ -2,7 +2,7 @@ import { ITokenizer, Lexer } from "./ast/lexer";
 import { Parser } from "./ast/parser";
 import { IExpander } from "./ast/expander";
 import { ExitCode } from "./command/types";
-import { Executor } from "./exec/executor";
+import { Executor, GlobExpander } from "./exec/executor";
 import { PermissionGuard } from "./exec/permission-guard";
 import { CommandIO } from "./io/types";
 import { MachineApi } from "./machine/types";
@@ -16,6 +16,8 @@ export interface InterpreterOptions {
   readonly parser?: Parser;
   readonly expander?: IExpander;
   readonly guard?: PermissionGuard;
+  /** Expansion de motifs (`*`/`?`) alternative — voir `GlobExpander`. */
+  readonly globExpand?: GlobExpander;
 }
 
 /** Façade publique : source texte -> AST -> exécution. */
@@ -31,7 +33,7 @@ export class Interpreter {
   ) {
     this.lexer = options.lexer ?? new Lexer();
     this.parser = options.parser ?? new Parser();
-    this.executor = new Executor(registry, machine, options.guard, options.expander);
+    this.executor = new Executor(registry, machine, options.guard, options.expander, options.globExpand);
   }
 
   /** Une ligne interactive : "ls -l /tmp | grep log && echo ok" */
