@@ -1,8 +1,5 @@
-import { Interpreter } from '@/command-kernel/interpreter';
-import { Parser } from '@/command-kernel/ast/parser';
 import { CommandRegistry } from '@/command-kernel/registry/command-registry';
-import { CmdExpander } from './ast/CmdExpander';
-import { CmdLexer } from './ast/CmdLexer';
+import { CmdInterpreter } from './CmdInterpreter';
 import { CdCommand } from './commands/Cd';
 import { ChcpCommand } from './commands/Chcp';
 import { ClsCommand } from './commands/Cls';
@@ -11,6 +8,7 @@ import { DateCommand } from './commands/Date';
 import { DelCommand } from './commands/Del';
 import { DirCommand } from './commands/Dir';
 import { WinEchoCommand } from './commands/Echo';
+import { FindstrCommand } from './commands/Findstr';
 import { HostnameCommand } from './commands/Hostname';
 import { MkdirCommand } from './commands/Mkdir';
 import { MoveCommand } from './commands/Move';
@@ -31,17 +29,11 @@ import { VolCommand } from './commands/Vol';
 import { WindowsMachineApi, WindowsMachineApiDeps } from './WindowsMachineApi';
 
 /**
- * cmd.exe syntax (`%VAR%` expansion, bare `&` chaining, no single-quote
- * strings) diverges too far from command-kernel's bash-flavoured `Lexer`
- * to reuse it — `CmdLexer` tokenizes cmd's own grammar instead. The
- * shared `Parser` (ast/parser.ts) is reused as-is: it is already generic
- * over `Token`/`TokenType` and never assumes bash-specific syntax beyond
- * the token stream it's given — `&&`/`||`/`|`/`>`/`>>`/`<` map directly,
- * and bare `&` (unconditional chaining) is emitted as `TokenType.SEMI`,
- * the same token bash's `;` uses for "always run the next statement".
- * Only the tokenizer and the `%VAR%` expansion are vendor-specific.
+ * Assemble le registre de commandes cmd.exe migrées et le `CmdInterpreter`
+ * qui les exécute — l'unique point d'entrée que `WindowsPC` doit connaître
+ * (migration_framework.md §6).
  */
-export function createWindowsHostShell(deps: WindowsMachineApiDeps): { registry: CommandRegistry; interpreter: Interpreter } {
+export function createWindowsHostShell(deps: WindowsMachineApiDeps): { registry: CommandRegistry; interpreter: CmdInterpreter } {
   const registry = new CommandRegistry();
   const machine = new WindowsMachineApi(deps);
 
@@ -70,18 +62,9 @@ export function createWindowsHostShell(deps: WindowsMachineApiDeps): { registry:
   registry.register(() => new NetstatCommand());
   registry.register(() => new ScCommand());
   registry.register(() => new WmicCommand());
+  registry.register(() => new FindstrCommand());
 
-  const interpreter = new Interpreter(registry, machine, {
-    lexer: new CmdLexer(),
-    parser: new Parser(),
-    expander: new CmdExpander(),
-    // cmd wildcards (`*.tmp`) use `\` paths and per-command scope (e.g.
-    // `del` only matches files directly in cwd, `dir /s` recurses) —
-    // nothing like the generic POSIX `expandGlob`. Each migrated command
-    // does its own matching against `ctx.machine.fs.list()`, so argv
-    // words are passed through unexpanded here.
-    globExpand: async (word) => [word],
-  });
+  const interpreter = new CmdInterpreter(registry, machine);
 
   return { registry, interpreter };
 }

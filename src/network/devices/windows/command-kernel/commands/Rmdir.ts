@@ -29,7 +29,7 @@ export class RmdirCommand extends BaseCommand {
     }
     if (pathParts.length === 0) {
       await ctx.io.stdout.write('The syntax of the command is incorrect.\n');
-      return EXIT_OK;
+      return 1;
     }
 
     const abs = ctx.machine.fs.resolve(ctx.session.cwd, pathParts.join(' '));

@@ -29,7 +29,6 @@ import { WindowsUserManagerAuthority } from './windows/network/WindowsUserManage
 import { runWindowsSshClient } from './windows/network/WindowsSshClient';
 import { runWindowsSftpClient } from './windows/network/WindowsSftpClient';
 import { runWindowsScpClient } from './windows/network/WindowsScpClient';
-import { splitCmdArgs } from './windows/cmdline';
 import { WindowsAccountsPolicy } from './windows/security/WindowsAccountsPolicy';
 import { DoskeyTable } from './windows/cli/DoskeyTable';
 import { createShimState, type PsShimState } from './windows/PowerShellCmdShim';
@@ -119,52 +118,14 @@ import * as WinSys from './windows/WinSystemCommands';
 import { cmdReg as winCmdReg } from './windows/WinRegCommand';
 import { WIN_VER_STRING } from './windows/WindowsVersion';
 import { createWindowsHostShell } from './windows/command-kernel/createWindowsHostShell';
-import { CmdLexer } from './windows/command-kernel/ast/CmdLexer';
+import type { CmdInterpreter } from './windows/command-kernel/CmdInterpreter';
+import { lowercaseCommandNames } from './windows/command-kernel/ast/lowercaseCommandNames';
 import { resolveWindowsUser } from './windows/command-kernel/WindowsUser';
 import type { CommandRegistry } from '@/command-kernel/registry/command-registry';
-import type { Interpreter } from '@/command-kernel/interpreter';
-import { Parser } from '@/command-kernel/ast/parser';
 import { createSession } from '@/command-kernel/session/types';
 import { PipeBuffer } from '@/command-kernel/io/pipe-buffer';
 import { ShellError, CommandNotFoundError } from '@/command-kernel/errors';
-
-/**
- * Parse a `findstr` filter from a piped command (`net user | findstr /i Full`).
- * Returns the active flags and the literal patterns. Multi-token patterns
- * separated by spaces are split into individual `OR` patterns to mirror real
- * `findstr` behaviour (use `/C:"..."` to force a single literal substring).
- */
-function parseFindstrFilter(filter: string): { patterns: string[]; ignoreCase: boolean; invert: boolean; count: boolean } {
-  const tokens = filter.split(/\s+/).slice(1);
-  let ignoreCase = false;
-  let invert = false;
-  let count = false;
-  let cLiteral: string | null = null;
-  const positional: string[] = [];
-
-  for (let i = 0; i < tokens.length; i++) {
-    const t = tokens[i];
-    if (t.toLowerCase() === '/i') { ignoreCase = true; continue; }
-    if (t.toLowerCase() === '/v') { invert = true; continue; }
-    if (t.toLowerCase() === '/c')  { count = true; continue; }
-    if (/^\/c:/i.test(t)) {
-      cLiteral = t.slice(3).replace(/^"|"$/g, '');
-      continue;
-    }
-    if (t.startsWith('"')) {
-      let str = t.slice(1);
-      while (i < tokens.length - 1 && !str.endsWith('"')) { i++; str += ' ' + tokens[i]; }
-      if (str.endsWith('"')) str = str.slice(0, -1);
-      positional.push(str);
-      continue;
-    }
-    positional.push(t);
-  }
-
-  if (cLiteral !== null) return { patterns: [cLiteral], ignoreCase, invert, count };
-  // Bareword multi-token form: each token is a separate literal (OR semantics).
-  return { patterns: positional, ignoreCase, invert, count };
-}
+import type { ScriptNode } from '@/command-kernel/ast/nodes';
 
 export class WindowsPC extends EndHost implements UserAccountHost {
   protected readonly defaultTTL = 128;
@@ -176,8 +137,8 @@ export class WindowsPC extends EndHost implements UserAccountHost {
   private fs: WindowsFileSystem;
   /** Current working directory */
   private cwd: string = 'C:\\Users\\User';
-  /** Lazily-built command-kernel shell (registry + executor) for migrated cmd builtins. */
-  private commandKernelShell: { registry: CommandRegistry; interpreter: Interpreter } | null = null;
+  /** Lazily-built command-kernel shell (registry + interpreter) for migrated cmd builtins. */
+  private commandKernelShell: { registry: CommandRegistry; interpreter: CmdInterpreter } | null = null;
   /** Environment variables */
   private env: Map<string, string> = new Map();
   /** Exposes the env map so subshells (PS / cmd) share the same source.
@@ -1618,6 +1579,14 @@ export class WindowsPC extends EndHost implements UserAccountHost {
    * Execute a command in CMD mode.
    * Also used by PowerShellExecutor (via PSDeviceContext) to delegate
    * native commands (ipconfig, ping, cd, etc.) directly to cmd.
+   *
+   * Single point of entry (migration_framework.md): after the two
+   * pre-lexing steps below (neither of which the AST can express — a
+   * stream redirect the simulation doesn't model, and a raw-text macro
+   * substitution that happens before any tokenizing on real cmd.exe too),
+   * everything else — chaining (`&&`/`||`/`&`), piping (`|`), redirects
+   * (`>`/`>>`) — is handled by `CmdInterpreter` (`CmdLexer → Parser →
+   * Executor`) in `runCommandKernel`, a single call, one path.
    */
   async executeCmdCommand(trimmed: string): Promise<string> {
     if (!this.isPoweredOn) return 'Device is powered off';
@@ -1625,226 +1594,17 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     trimmed = trimmed.trim();
     if (!trimmed) return '';
 
-    // Strip stderr redirects like "2>&1", "2> nul", "2>nul" – in simulation all output is stdout
+    // Strip stderr redirects like "2>&1", "2> nul" — the simulation has a
+    // single unified output stream, nothing to redirect stderr away from.
     trimmed = trimmed.replace(/\s+2>&1\s*$/i, '').replace(/\s+2>\s*(?:nul|&1)\s*$/i, '').trim();
 
-    // Command chaining: `a && b` (b iff a ok), `a || b` (b iff a failed),
-    // `a & b` (b always). Real cmd.exe semantics; needed so coherence
-    // probes like `cd <dir> && cd` behave like the actual shell.
-    const chain = this.splitCmdChain(trimmed);
-    if (chain.length > 1) {
-      const outputs: string[] = [];
-      let prevFailed = false;
-      for (const link of chain) {
-        const run =
-          link.op === '&'  ? true :
-          link.op === '&&' ? !prevFailed :
-          link.op === '||' ? prevFailed :
-          true; // first segment (op === '')
-        if (!run) continue;
-        const out = await this.executeCmdCommand(link.cmd);
-        if (out !== '') outputs.push(out);
-        prevFailed = this.cmdOutputIsError(out);
-      }
-      return outputs.join('\n');
-    }
+    // doskey macro expansion (`ll` -> `dir /a`) — a raw-text substitution
+    // pass over the whole line, same as real cmd.exe's console layer,
+    // before any tokenizing.
+    const doskeyExpanded = this.doskey.expand(trimmed);
+    if (doskeyExpanded !== trimmed) return this.executeCmdCommand(doskeyExpanded);
 
-    // Handle piped commands (but not inside redirects)
-    if (trimmed.includes('|') && !trimmed.match(/[>]/)) {
-      return this.executePipedCommand(trimmed);
-    }
-
-    // Handle echo with redirect: echo text > file / echo text >> file
-    const redirectMatch = trimmed.match(/^(.+?)\s*(>>|>)\s*(.+)$/);
-    if (redirectMatch) {
-      return this.handleRedirect(redirectMatch[1].trim(), redirectMatch[2], redirectMatch[3].trim());
-    }
-
-    // Expand environment variables, then expand doskey macros so
-    // `ll` → `dir /a` before the dispatcher sees an unknown command.
-    const expandedEnv = this.expandEnvVars(trimmed);
-    const doskeyExpanded = this.doskey.expand(expandedEnv);
-    const expanded = doskeyExpanded !== expandedEnv
-      ? doskeyExpanded
-      : expandedEnv;
-    if (doskeyExpanded !== expandedEnv) {
-      // Recurse so the expanded form goes through the full pipeline
-      // (pipes, redirects, chains).
-      return this.executeCmdCommand(doskeyExpanded);
-    }
-    const parts = this.parseCommandLine(expanded);
-    if (parts.length === 0) return '';
-
-    const cmd = parts[0].toLowerCase();
-    const args = parts.slice(1);
-
-    // Bare drive letter (e.g. "D:" or "D:\\path") — change current drive
-    // and restore the per-drive last cwd. Real cmd.exe: typing `D:` at the
-    // prompt does not run an external command, it switches to drive D and
-    // its remembered cwd (terminal_gap.md §6.3).
-    const driveOnly = /^([a-zA-Z]):$/.exec(parts[0]);
-    const drivePath = /^([a-zA-Z]):[\\/](.*)$/.exec(parts[0]);
-    if ((driveOnly || drivePath) && args.length === 0) {
-      const letter = (driveOnly ? driveOnly[1] : drivePath![1]).toUpperCase();
-      return this.switchActiveDrive(letter, drivePath ? parts[0] : null);
-    }
-
-    // UNC (`\\srv\share\...`) / net-use-mapped-drive access for dir/copy/type
-    // (PRD-Windows-Server.md §5 P3) — real SMB traffic, not the local VFS.
-    if (cmd === 'dir' || cmd === 'copy' || cmd === 'type') {
-      const uncResult = await this.tryUncFileCommand(cmd, args);
-      if (uncResult !== null) return uncResult;
-    }
-
-    // Migrated cmd builtins (migration_framework.md §6): parsed and run
-    // through command-kernel's Interpreter (CmdLexer → Parser → Executor).
-    // New migrations only need to register the command in
-    // `createWindowsHostShell` — nothing to change in this dispatcher.
-    const bridged = await this.tryCommandKernelCmd(expanded);
-    if (bridged !== null) return bridged;
-
-    // Not yet migrated to command-kernel (migration_framework.md §6: no
-    // legacy fallback — a builtin either lives in the registry above, or
-    // it isn't implemented yet, and says so exactly like real cmd.exe).
-    // The still-unmigrated legacy implementations (WinDir.ts, WinSystemCommands.ts,
-    // WinFileCommands.ts's process/service/net commands, etc.) are kept as
-    // reference material for their future migration passes and are not
-    // called from here anymore.
-    return `'${cmd}' is not recognized as an internal or external command,\noperable program or batch file.`;
-  }
-
-  // ─── Command Chaining ─────────────────────────────────────────────
-
-  /**
-   * Split a command line into `&&` / `||` / `&`-separated links,
-   * respecting double quotes. A single `|` is a PIPE (left intact for
-   * the segment's own pipe handling); only `||` is a chain operator.
-   */
-  private splitCmdChain(line: string): Array<{ op: '' | '&&' | '||' | '&'; cmd: string }> {
-    const links: Array<{ op: '' | '&&' | '||' | '&'; cmd: string }> = [];
-    let buf = '';
-    let inQuote = false;
-    let pendingOp: '' | '&&' | '||' | '&' = '';
-    for (let i = 0; i < line.length; i++) {
-      const c = line[i];
-      if (c === '"') { inQuote = !inQuote; buf += c; continue; }
-      if (!inQuote) {
-        if (c === '&' && line[i + 1] === '&') {
-          links.push({ op: pendingOp, cmd: buf.trim() }); pendingOp = '&&'; buf = ''; i++; continue;
-        }
-        if (c === '|' && line[i + 1] === '|') {
-          links.push({ op: pendingOp, cmd: buf.trim() }); pendingOp = '||'; buf = ''; i++; continue;
-        }
-        if (c === '&') {
-          links.push({ op: pendingOp, cmd: buf.trim() }); pendingOp = '&'; buf = ''; continue;
-        }
-      }
-      buf += c;
-    }
-    links.push({ op: pendingOp, cmd: buf.trim() });
-    // Drop empty links (e.g. trailing `&`); keep at least one.
-    const cleaned = links.filter(l => l.cmd.length > 0);
-    return cleaned.length ? cleaned : [{ op: '', cmd: line.trim() }];
-  }
-
-  /** Heuristic: did a cmd produce an error (drives `&&` / `||`)? */
-  private cmdOutputIsError(out: string): boolean {
-    const s = out.trim().toLowerCase();
-    if (!s) return false;
-    return /^error:/.test(s)
-      || s.includes('the system cannot find the path specified')
-      || s.includes('the system cannot find the file specified')
-      || s.includes('is not recognized as an internal or external command')
-      || s.includes('access is denied')
-      || s.includes('the syntax of the command is incorrect')
-      || s.includes('the network path was not found')
-      || s.includes('a duplicate name exists')
-      || s.includes('the parameter is incorrect')
-      || s.includes('the filename, directory name, or volume label syntax is incorrect')
-      || s.includes('could not find')
-      || s.includes('cannot find');
-  }
-
-  // ─── Command Parsing ──────────────────────────────────────────────
-
-  private parseCommandLine(line: string): string[] {
-    return splitCmdArgs(line);
-  }
-
-  private expandEnvVars(text: string): string {
-    return text.replace(/%([^%]+)%/g, (match, varName) => {
-      const upper = varName.toUpperCase();
-      if (upper === 'CD') return this.cwd;
-      return this.env.get(upper) ?? match;
-    });
-  }
-
-  // ─── Redirect Handling ────────────────────────────────────────────
-
-  private handleRedirect(cmdPart: string, op: string, filePath: string): string {
-    // Execute the command part to get its output
-    const expanded = this.expandEnvVars(cmdPart);
-    const parts = this.parseCommandLine(expanded);
-    if (parts.length === 0) return '';
-
-    const cmd = parts[0].toLowerCase();
-    let content: string;
-    if (cmd === 'echo') {
-      content = parts.slice(1).join(' ');
-    } else {
-      // For other commands, we'd need async, but echo is the main use case
-      content = parts.slice(1).join(' ');
-    }
-
-    const absPath = this.fs.normalizePath(filePath, this.cwd);
-    if (op === '>>') {
-      this.fs.appendFile(absPath, content + '\n');
-    } else {
-      this.fs.createFile(absPath, content + '\n');
-    }
-    return '';
-  }
-
-  // ─── Piped Commands ─────────────────────────────────────────────
-
-  private async executePipedCommand(command: string): Promise<string> {
-    const segments = command.split('|').map(s => s.trim());
-    let output = await this.executeCommand(segments[0]);
-
-    for (let i = 1; i < segments.length; i++) {
-      const filter = segments[i].trim();
-      const filterParts = filter.split(/\s+/);
-      const filterCmd = filterParts[0].toLowerCase();
-
-      if (filterCmd === 'findstr') {
-        const { patterns, ignoreCase, invert, count } = parseFindstrFilter(filter);
-        const lines = output.split('\n');
-        const matches = (line: string): boolean => {
-          const haystack = ignoreCase ? line.toLowerCase() : line;
-          return patterns.some(p => haystack.includes(ignoreCase ? p.toLowerCase() : p));
-        };
-        const filtered = lines.filter(l => invert ? !matches(l) : matches(l));
-        output = count ? String(filtered.length) : filtered.join('\n');
-      } else if (filterCmd === 'grep') {
-        const pattern = filterParts[filterParts.length - 1];
-        const lines = output.split('\n');
-        output = lines.filter(l => l.includes(pattern)).join('\n');
-      } else if (filterCmd === 'find') {
-        const ci = /\s\/i(\s|$)/i.test(' ' + filter);
-        const cnt = /\s\/c(\s|$)/i.test(' ' + filter);
-        const quoteMatch = filter.match(/find\s+(?:\/[a-z]\s+)*"([^"]+)"/i);
-        if (quoteMatch) {
-          const pattern = quoteMatch[1];
-          const lines = output.split('\n');
-          const matched = lines.filter(l => ci ? l.toLowerCase().includes(pattern.toLowerCase()) : l.includes(pattern));
-          output = cnt ? String(matched.length) : matched.join('\n');
-        }
-      } else if (filterCmd === 'more') {
-        // Passthrough in simulation
-      }
-    }
-
-    return output;
+    return this.runCommandKernel(trimmed);
   }
 
   // ─── Tab Completion ──────────────────────────────────────────────
@@ -1932,7 +1692,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     this.cwd = path;
   }
 
-  private getCommandKernelShell(): { registry: CommandRegistry; interpreter: Interpreter } {
+  private getCommandKernelShell(): { registry: CommandRegistry; interpreter: CmdInterpreter } {
     if (!this.commandKernelShell) {
       this.commandKernelShell = createWindowsHostShell({
         fs: this.fs,
@@ -1954,34 +1714,47 @@ export class WindowsPC extends EndHost implements UserAccountHost {
   }
 
   /**
-   * Bridge to command-kernel, modelled directly on
-   * `LinuxMachine.tryCommandKernel()` (migration_framework.md §6) — same
-   * bail-out-before-executing discipline, adapted to cmd.exe's own
-   * `CmdLexer`/`Expander` instead of bash's. `trimmed` here is the single
-   * already env/doskey-expanded, already chain/pipe-split segment
-   * `executeCmdCommand` is about to dispatch — chaining/piping across
-   * *migrated and legacy* commands still happens one level up, in
-   * `executeCmdCommand`'s own `splitCmdChain`/`executePipedCommand`.
-   *
-   * Returns `null` — a legitimate refusal to route, not a failed attempt —
-   * when parsing fails, the line isn't a simple command or pipeline, or
-   * any named command isn't registered. Once routed, no fallback: a
-   * `ShellError` from inside a migrated command is a real error, not a
-   * signal to retry on the legacy path.
+   * The single point of entry into the machine for cmd (migration_framework.md
+   * §0/§6): `CmdLexer → Parser → Executor`, via `CmdInterpreter`. Parses
+   * once, handles the two line-level special cases that aren't commands in
+   * the grammar sense (bare drive-letter switch, UNC/mapped-drive access),
+   * then runs the (possibly compound — chain/pipeline/redirect) AST as a
+   * single `Executor.run()` call. No fallback: once routed, a
+   * `CommandNotFoundError`/`ShellError` from inside is the real answer,
+   * formatted exactly like cmd.exe, not a signal to retry elsewhere.
    */
-  private async tryCommandKernelCmd(trimmed: string): Promise<string | null> {
-    const { registry, interpreter } = this.getCommandKernelShell();
+  private async runCommandKernel(trimmed: string): Promise<string> {
+    const { interpreter } = this.getCommandKernelShell();
 
-    let ast;
+    let ast: ScriptNode;
     try {
-      ast = new Parser().parse(new CmdLexer().tokenize(trimmed));
-    } catch {
-      return null;
+      ast = interpreter.parse(trimmed);
+    } catch (err) {
+      if (err instanceof ShellError) return `${err.message}\n`;
+      throw err;
     }
-    if (ast.kind !== 'command' && ast.kind !== 'pipeline') return null;
 
-    const names = ast.kind === 'command' ? [ast.name] : ast.stages.map((s) => s.name);
-    if (!names.every((name) => registry.has(name))) return null;
+    // Bare drive letter (`D:` / `D:\path`) — change current drive and
+    // restore the per-drive last cwd. Real cmd.exe: typing `D:` at the
+    // prompt does not run a command, it switches drives (terminal_gap.md §6.3).
+    if (ast.kind === 'command' && ast.argv.length === 0) {
+      const driveOnly = /^([a-zA-Z]):$/.exec(ast.name);
+      const drivePath = /^([a-zA-Z]):[\\/](.*)$/.exec(ast.name);
+      if (driveOnly || drivePath) {
+        const letter = (driveOnly ? driveOnly[1] : drivePath![1]).toUpperCase();
+        return this.switchActiveDrive(letter, drivePath ? ast.name : null);
+      }
+    }
+
+    const resolved = lowercaseCommandNames(ast);
+
+    // UNC (`\\srv\share\...`) / net-use-mapped-drive access for dir/copy/type
+    // (PRD-Windows-Server.md §5 P3) — real SMB traffic, a distinct backend
+    // concern from command dispatch, not expressible as a registered command.
+    if (resolved.kind === 'command' && (resolved.name === 'dir' || resolved.name === 'copy' || resolved.name === 'type')) {
+      const uncResult = await this.tryUncFileCommand(resolved.name, resolved.argv.map((w) => w.text));
+      if (uncResult !== null) return uncResult;
+    }
 
     const user = resolveWindowsUser(this.userMgr, this.userMgr.currentUser);
     const session = createSession({ id: 'legacy-bridge', user, cwd: this.cwd, env: new Map(this.env) });
@@ -1990,11 +1763,13 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     const io = { stdin: new PipeBuffer(), stdout: collector, stderr: collector };
 
     try {
-      await interpreter.interpretLine(trimmed, session, io);
+      await interpreter.runAst(resolved, session, io);
     } catch (err) {
       this.setCwdTracked(session.cwd);
       this.env = session.env;
-      if (err instanceof CommandNotFoundError) return null;
+      if (err instanceof CommandNotFoundError) {
+        return `'${err.commandName}' is not recognized as an internal or external command,\noperable program or batch file.`;
+      }
       if (err instanceof ShellError) return `${err.message}\n`;
       throw err;
     }

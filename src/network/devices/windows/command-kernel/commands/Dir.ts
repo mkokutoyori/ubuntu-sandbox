@@ -88,15 +88,17 @@ export class DirCommand extends BaseCommand {
     if (!root || root.type !== 'directory') {
       if (!root) {
         await ctx.io.stdout.write('File Not Found\n');
-        return EXIT_OK;
+        return 1;
       }
-      await ctx.io.stdout.write((await this.dirSingleFile(ctx, abs, actor)) + '\n');
-      return EXIT_OK;
+      const single = await this.dirSingleFile(ctx, abs, actor);
+      await ctx.io.stdout.write(single + '\n');
+      return single === 'File Not Found' ? 1 : EXIT_OK;
     }
 
     if (wildcard) {
-      await ctx.io.stdout.write((await this.dirWildcard(ctx, abs, wildcard, actor)) + '\n');
-      return EXIT_OK;
+      const out = await this.dirWildcard(ctx, abs, wildcard, actor);
+      await ctx.io.stdout.write(out + '\n');
+      return out === 'File Not Found' ? 1 : EXIT_OK;
     }
     if (flags.has('bare')) {
       await ctx.io.stdout.write((await this.dirBare(ctx, abs, flags.has('recursive'), actor)) + '\n');

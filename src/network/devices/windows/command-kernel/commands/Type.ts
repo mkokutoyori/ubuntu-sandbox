@@ -20,7 +20,7 @@ export class TypeCommand extends BaseCommand {
     const targets = ctx.args.has('targets') ? ctx.args.get<string[]>('targets') : [];
     if (targets.length === 0) {
       await ctx.io.stdout.write('The syntax of the command is incorrect.\n');
-      return EXIT_OK;
+      return 1;
     }
 
     const abs = ctx.machine.fs.resolve(ctx.session.cwd, targets.join(' '));

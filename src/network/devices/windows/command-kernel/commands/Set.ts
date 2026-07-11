@@ -32,7 +32,11 @@ export class SetCommand extends BaseCommand {
     const eqIndex = full.indexOf('=');
     if (eqIndex === -1) {
       const lines = sortedEnvLines(ctx.session.env, full.toUpperCase());
-      await ctx.io.stdout.write(lines.length === 0 ? `Environment variable ${full} not defined\n` : lines.join('\n') + '\n');
+      if (lines.length === 0) {
+        await ctx.io.stdout.write(`Environment variable ${full} not defined\n`);
+        return 1;
+      }
+      await ctx.io.stdout.write(lines.join('\n') + '\n');
       return EXIT_OK;
     }
 

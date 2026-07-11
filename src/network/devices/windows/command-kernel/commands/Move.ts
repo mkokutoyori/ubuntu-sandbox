@@ -22,7 +22,7 @@ export class MoveCommand extends BaseCommand {
   async execute(ctx: CommandContext): Promise<ExitCode> {
     if (!ctx.args.has('source') || !ctx.args.has('destination')) {
       await ctx.io.stdout.write('The syntax of the command is incorrect.\n');
-      return EXIT_OK;
+      return 1;
     }
     const src = ctx.machine.fs.resolve(ctx.session.cwd, ctx.args.get<string>('source'));
     const dest = ctx.machine.fs.resolve(ctx.session.cwd, ctx.args.get<string>('destination'));

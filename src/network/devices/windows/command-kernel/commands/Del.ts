@@ -25,7 +25,7 @@ export class DelCommand extends BaseCommand {
     });
     if (pathParts.length === 0) {
       await ctx.io.stdout.write('The syntax of the command is incorrect.\n');
-      return EXIT_OK;
+      return 1;
     }
 
     const pattern = pathParts.join(' ');
@@ -43,7 +43,10 @@ export class DelCommand extends BaseCommand {
       const entries = await ctx.machine.fs.list(ctx.session.cwd, actor);
       const matches = entries.filter((e) => e.type === 'file' && regex.test(e.path.slice(e.path.lastIndexOf('\\') + 1)));
       for (const match of matches) await ctx.machine.fs.remove(match.path, actor, false);
-      if (matches.length === 0) await ctx.io.stdout.write(`Could Not Find ${pattern}\n`);
+      if (matches.length === 0) {
+        await ctx.io.stdout.write(`Could Not Find ${pattern}\n`);
+        return 1;
+      }
       return EXIT_OK;
     }
 

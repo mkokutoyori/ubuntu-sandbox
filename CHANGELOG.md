@@ -5,6 +5,85 @@ progressive par équipement. Un push = une entrée = une fonctionnalité
 complète et testée (voir `CLAUDE.md` / le framework de migration pour les
 principes directeurs).
 
+## Windows — Phase 4 : porte d'entrée unique, `CmdInterpreter` dédié, suppression du parsing legacy
+
+**État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
+Sur retour explicite de l'utilisateur : trop de « maçonnerie » autour du
+pont — `executeCmdCommand` gardait son propre découpage de chaînage
+(`splitCmdChain`), de pipes (`executePipedCommand`), de redirections
+(`handleRedirect`) et d'expansion `%VAR%`/tokenisation
+(`expandEnvVars`/`parseCommandLine`) EN PARALLÈLE du nouveau
+`Lexer`→`Parser`→`Executor`, qui sait pourtant déjà tout faire ça. Cette
+phase supprime cette duplication : `executeCmdCommand` ne fait plus que
+deux étapes qui ne sont PAS exprimables par la grammaire (dépouillement
+`2>&1`, expansion des macros doskey — un remplacement de texte brut,
+avant tout tokenizing, comme le vrai cmd.exe), puis un unique appel à
+`runCommandKernel()`, qui parse une fois et exécute tout l'AST — chaîne,
+pipeline ou redirection compris — en un seul passage par `Executor`.
+
+**`CmdInterpreter` (nouveau, dédié Windows)** — remplace la
+paramétrisation générique de l'`Interpreter` bash de la Phase 2 (retour
+en arrière sur ce point précis, sur demande explicite : « crée un lexer,
+tokenizer, parser, interpreter spécialement pour Windows, c'est plus
+simple »). `src/command-kernel/interpreter.ts` redevient la classe simple
+d'origine, sans option d'injection — le moteur partagé ne change plus du
+tout pour un nouvel équipement, conformément au §0/§4 du framework.
+`Executor` garde son `expander`/`globExpand` injectables (nécessaires :
+Windows construit son propre `Executor` directement, sans passer par
+`Interpreter`), c'est la seule extension qui reste sur le socle partagé.
+`CmdInterpreter` vit entièrement dans `windows/command-kernel/` et
+assemble `CmdLexer` + `Parser` (partagé, inchangé) + `CmdExpander` + un
+`globExpand` no-op.
+
+**Bug trouvé en unifiant — code de sortie fictif** : les commandes
+migrées de la Phase 1/3 renvoyaient toujours `EXIT_OK` même sur un échec
+« doux » (chemin introuvable, fichier déjà existant...), parce que
+l'ancien `splitCmdChain` décidait `&&`/`||` en scannant le TEXTE de
+sortie (`cmdOutputIsError`), pas un vrai code de sortie. En unifiant sur
+le AND/OR natif d'`Executor` (qui regarde le VRAI code de sortie), ce
+raccourci serait devenu un bug silencieux (`cd C:\Inexistant && echo
+ne-devrait-pas-s'afficher` aurait affiché le echo). Fix : chaque retour
+d'erreur « douce » dans les 10 commandes concernées (`cd`, `mkdir`,
+`rmdir`, `type`, `copy`, `move`, `ren`, `del`, `set`, `dir`, plus le
+helper partagé `reportLegacyFsError`) renvoie maintenant `1`, comme le
+vrai `%ERRORLEVEL%` de cmd.exe.
+
+**Bug trouvé en unifiant — noms de commande sensibles à la casse** :
+`CommandRegistry`/`Parser` sont délibérément insensibles à rien (corrects
+pour bash, où `LS` ≠ `ls`) — mais cmd.exe EST insensible à la casse pour
+les noms de commande (`DIR`, `Dir`, `dir` identiques), pas pour les
+arguments (`echo Hello` doit garder sa casse). Nouveau
+`lowercaseCommandNames()` (`windows/command-kernel/ast/
+lowercaseCommandNames.ts`) parcourt l'AST une fois après le parsing et ne
+touche qu'aux positions de nom de commande, jamais aux `argv`.
+
+**`findstr` migré** — nécessaire pour supprimer `executePipedCommand`
+sans régression : `dir | findstr Alpha` passait par un filtre ad hoc
+séparé (jamais par une vraie commande enregistrée). Nouvelle
+`FindstrCommand`, lit les fichiers passés en argument OU l'entrée
+standard si aucun n'est donné (contrairement à l'ancien `cmdFindstr`
+legacy qui exigeait toujours un fichier — un vrai gap face au findstr.exe
+réel, corrigé au passage), flags `/i` `/v` `/n` `/c` `/c:"…"`, motifs
+multi-mots en OR. Les filtres `find`/`grep`/`more` de l'ancien pipe ad hoc
+sont abandonnés sans remplacement : aucun test ne les exerçait côté cmd
+(`grep` n'existe même pas sur un vrai cmd.exe).
+
+**Supprimé** : `splitCmdChain`, `cmdOutputIsError`, `executePipedCommand`,
+`handleRedirect`, `parseCommandLine`, `expandEnvVars`,
+`parseFindstrFilter` — ~230 lignes nettes en moins sur `WindowsPC.ts`
+malgré les ajouts (`CmdInterpreter`, `lowercaseCommandNames`,
+`FindstrCommand`). `tryUncFileCommand` (SMB réel, pas une commande) et le
+changement de lecteur nu (`D:`) restent des cas spéciaux avant le
+dispatch — ce ne sont pas des commandes au sens de la grammaire, rien
+dans l'AST ne les représenterait proprement.
+
+**Validation** : lot localisé (8 fichiers) — 143/144, identique à la
+Phase 3 (même échec restant : `netsh`, hors périmètre). `cmd-bat-execution.
+test.ts` (exécution `.bat`, chemin non touché par cette phase) — 12/12.
+`cmd-missing-builtins.test.ts` — mêmes 9 échecs préexistants (`net`,
+`start`, `setx`, `schtasks`, `nbtstat`, `reg` — hors périmètre documenté),
+aucune régression. Typecheck ciblé propre.
+
 ## Windows — Phase 3 : `dir` + commandes système (13 commandes), zéro donnée figée
 
 **État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**

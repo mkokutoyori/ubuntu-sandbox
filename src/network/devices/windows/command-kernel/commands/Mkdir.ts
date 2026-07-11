@@ -20,7 +20,7 @@ export class MkdirCommand extends BaseCommand {
     const targets = ctx.args.has('targets') ? ctx.args.get<string[]>('targets') : [];
     if (targets.length === 0) {
       await ctx.io.stdout.write('The syntax of the command is incorrect.\n');
-      return EXIT_OK;
+      return 1;
     }
 
     const path = targets.join(' ');
@@ -28,7 +28,7 @@ export class MkdirCommand extends BaseCommand {
     const actor = toFileSystemActor(ctx.session.user);
     if (await ctx.machine.fs.exists(abs, actor)) {
       await ctx.io.stdout.write(`A subdirectory or file ${path} already exists.\n`);
-      return EXIT_OK;
+      return 1;
     }
     // Legacy `cmdMkdir` always creates intermediate directories.
     await ctx.machine.fs.mkdir(abs, actor, true);

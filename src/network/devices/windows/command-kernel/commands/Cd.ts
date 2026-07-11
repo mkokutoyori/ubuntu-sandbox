@@ -37,11 +37,11 @@ export class CdCommand extends BaseCommand {
       const stat = await ctx.machine.fs.stat(target, actor);
       if (stat.type !== 'directory') {
         await ctx.io.stdout.write('The system cannot find the path specified.\n');
-        return EXIT_OK;
+        return 1;
       }
     } catch {
       await ctx.io.stdout.write('The system cannot find the path specified.\n');
-      return EXIT_OK;
+      return 1;
     }
 
     ctx.session.cwd = target;

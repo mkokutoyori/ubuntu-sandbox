@@ -23,7 +23,7 @@ export class RenCommand extends BaseCommand {
   async execute(ctx: CommandContext): Promise<ExitCode> {
     if (!ctx.args.has('source') || !ctx.args.has('newName')) {
       await ctx.io.stdout.write('The syntax of the command is incorrect.\n');
-      return EXIT_OK;
+      return 1;
     }
     const src = ctx.machine.fs.resolve(ctx.session.cwd, ctx.args.get<string>('source'));
     const newName = ctx.args.get<string>('newName');
@@ -37,7 +37,7 @@ export class RenCommand extends BaseCommand {
     // case change (`ren a.txt A.txt`) is not a collision with itself.
     if (dest.toLowerCase() !== src.toLowerCase() && await ctx.machine.fs.exists(dest, actor)) {
       await ctx.io.stdout.write('A duplicate file name exists, or the file cannot be found.\n');
-      return EXIT_OK;
+      return 1;
     }
     try {
       await ctx.machine.fs.rename(src, dest, actor);
