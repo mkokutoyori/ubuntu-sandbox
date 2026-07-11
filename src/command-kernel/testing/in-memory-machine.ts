@@ -215,6 +215,25 @@ class InMemoryFileSystem implements FileSystemApi {
     this.nodes.set(path, { id: this.nextInode++, type: "directory", content: "", mode: 0o755, uid: actor.uid, gid: actor.gid, modifiedAt: new Date() });
   }
 
+  async rmdir(path: string, actor: FileSystemActor): Promise<void> {
+    const node = this.requireNode(path);
+    if (node.type !== "directory") {
+      throw new FileSystemError(path, "ENOTDIR", `${path}: Not a directory`);
+    }
+    const prefix = path === "/" ? "/" : `${path}/`;
+    const hasChildren = [...this.nodes.keys()].some(
+      (candidate) => candidate !== path && candidate.startsWith(prefix),
+    );
+    if (hasChildren) {
+      throw new FileSystemError(path, "ENOTEMPTY", `${path}: Directory not empty`);
+    }
+    const { parent, parentPath } = this.parentOf(path);
+    if (!this.checkAccess(parent, "w", actor)) {
+      throw new FileSystemError(parentPath, "EACCES", `${parentPath}: Permission denied`);
+    }
+    this.nodes.delete(path);
+  }
+
   async chmod(path: string, mode: number, actor: FileSystemActor): Promise<void> {
     const node = this.requireNode(path);
     if (actor.uid !== 0 && actor.uid !== node.uid) {

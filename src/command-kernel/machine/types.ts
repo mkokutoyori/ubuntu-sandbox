@@ -47,6 +47,8 @@ export interface FileSystemApi {
   exists(path: string, actor: FileSystemActor): Promise<boolean>;
   remove(path: string, actor: FileSystemActor, recursive?: boolean): Promise<void>;
   mkdir(path: string, actor: FileSystemActor, parents?: boolean): Promise<void>;
+  /** Supprime un répertoire — échoue (ENOTEMPTY) s'il n'est pas vide, contrairement à `remove(path, actor, true)`. */
+  rmdir(path: string, actor: FileSystemActor): Promise<void>;
   chmod(path: string, mode: number, actor: FileSystemActor): Promise<void>;
   chown(path: string, uid: number, gid: number, actor: FileSystemActor): Promise<void>;
   copy(source: string, destination: string, actor: FileSystemActor): Promise<void>;

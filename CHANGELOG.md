@@ -5,6 +5,29 @@ progressive par équipement. Un push = une entrée = une fonctionnalité
 complète et testée (voir `CLAUDE.md` / le framework de migration pour les
 principes directeurs).
 
+## Linux — Phase 5 : `rmdir`
+
+**État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
+
+**Extension du socle** : `FileSystemApi.rmdir(path, actor)` — distinct de
+`remove(path, actor, recursive)` : échoue avec `ENOTEMPTY` si le
+répertoire n'est pas vide, ne supprime jamais récursivement, même avec
+un futur flag. Implémenté via `VirtualFileSystem.rmdir()` (déjà utilisé
+par le legacy `cmdRmdir`). Le contrôle du bit sticky et de la permission
+du parent, identique à celui de `rm`, a été factorisé dans
+`LinuxFileSystemApi.assertStickyRemovable()` (partagé par `remove()` et
+`rmdir()`) plutôt que dupliqué — les deux commandes legacy (`cmdRm`/
+`cmdRmdir`) ont exactement la même logique de vérification.
+
+**Commande migrée** : `rmdir <répertoire...>` — message d'erreur au
+format `rmdir: failed to remove '<cible>': <raison>`, audit
+(`syscall=rmdir`) après succès uniquement.
+
+**Validation** : même lot localisé qu'à la phase précédente, `run-parts.
+test.ts` inclus — 39 fichiers, 1604 tests, mêmes 3 échecs pré-existants
+et sans rapport déjà documentés (bash script `if/then`/fonctions, hors
+périmètre command-kernel).
+
 ## Linux — Phase 4 : `ln` (liens physiques et symboliques)
 
 **État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
