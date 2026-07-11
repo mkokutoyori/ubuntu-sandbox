@@ -5,6 +5,32 @@ progressive par équipement. Un push = une entrée = une fonctionnalité
 complète et testée (voir `CLAUDE.md` / le framework de migration pour les
 principes directeurs).
 
+## Windows — Phase 9 : `auditpol`, `winrm`
+
+**État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
+
+Contrairement aux phases précédentes, ces deux commandes étaient déjà
+accessibles côté PowerShell (`runSyncNativeCommand`) mais jamais côté
+`cmd.exe` — `winrm` a une couverture de test cmd conséquente
+(`windows-server-winrm.test.ts`, `windows-server-domain-join.test.ts`,
+`windows-domain-kerberos-migration.test.ts`, toutes déjà via
+`executeCmdCommand('winrm quickconfig'/'enumerate'...)`), confirmant que
+c'est bien la Phase 4 qui avait cassé le chemin cmd sans que personne ne
+le remarque.
+
+**`MachineApi.auditPolicy?: AuditPolicyApi`** et **`MachineApi.winRm?:
+WinRmApi`** — même schéma `execute(argv)` que `SchedulingApi`/`PrintApi` :
+`cmdAuditpol`/`cmdWinrm` ne prenaient déjà qu'un seul objet d'état
+(`WindowsAuditPolicy`/`WindowsWinRmConfig`, déjà instanciés séparément sur
+`WindowsPC`), donc aucun narrowing de contexte nécessaire cette fois — le
+plus simple des ponts de cette série.
+
+**Validation** : `windows-server-winrm.test.ts` (11/11), `windows-domain-
+kerberos-migration.test.ts`, `journalization-and-audit.test.ts` — tous
+verts. `windows-server-domain-join.test.ts` toujours à 10 échecs
+`nltest`/`dcdiag`/`klist` (pré-existants, hors périmètre, inchangés).
+Typecheck ciblé propre.
+
 ## Linux — Phase 1 : `chgrp`
 
 **État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**

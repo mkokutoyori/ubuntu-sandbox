@@ -1714,6 +1714,8 @@ export class WindowsPC extends EndHost implements UserAccountHost {
         dialSmbShare: (targetIp, shareName, username, password) => this.dialSmbShare(targetIp, shareName, username, password),
         scheduledTasks: this.scheduledTasks,
         registry: this.registry,
+        auditPolicy: this.auditPolicy,
+        winrm: this.winrm,
         isDHCPConfigured: (ifName) => this.isDHCPConfigured(ifName),
         bootedAt: () => this.getLifecycle().bootedAt() ?? null,
         now: () => this.simulatedDate(),
