@@ -5,6 +5,74 @@ progressive par équipement. Un push = une entrée = une fonctionnalité
 complète et testée (voir `CLAUDE.md` / le framework de migration pour les
 principes directeurs).
 
+## Linux — Phase 2 : traitement de texte (coreutils)
+
+**État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
+Câblée sur le même point d'entrée que la Phase 1, validée contre les
+suites de tests dédiées (`linux-cut-flags`, `linux-sort-flags`,
+`linux-wc-flags`, `linux-tr-uniq-flags`) et l'ensemble de la Phase 1 +
+`linux-bash-details` (pipes, substitutions, échappements) sans
+régression.
+
+**Périmètre migré** (`src/network/devices/linux/command-kernel/commands/`) :
+
+- `grep` — `-i`, `-v`, `-n`, `-c`, `-E`, multi-fichiers (préfixe `label:`).
+- `head` / `tail` — `-n N` (raccourci numérique `-N`), `head -c N` (octets).
+- `wc` — `-l`/`-w`/`-c`/`-m`/`-b`/`-L`, ligne `total` multi-fichiers,
+  erreur `wc: <fichier>: No such file or directory` par fichier manquant
+  sans interrompre le traitement des fichiers valides.
+- `sort` — `-n`, `-r`, `-u`, `-h` (suffixes K/M/G), `-V` (version-sort),
+  `-M` (mois), `-f` (insensible à la casse), `-t DELIM` + `-k KEY[,KEY][n]`
+  (tri par colonne avec override de type par clé).
+- `cut` — `-d`/`-f` (listes et plages `1-3`/`2-`/`-2`), `-c`/`-b`
+  (caractères/octets), `-s`/`--only-delimited`, `--output-delimiter`,
+  `--complement`.
+- `uniq` — `-c`, `-d`, `-u`, `-i`, `-f N`.
+- `tr` — `-d`, `-s`, `-c`, classes POSIX (`[:upper:]`...), échappements,
+  plages `a-z`.
+- `textInput.ts` — helper partagé (`splitLines`/`joinLines`,
+  `readTextInput`/`readPerFileInputs`) pour une gestion fidèle du saut de
+  ligne final, réutilisé par toutes les commandes ci-dessus.
+
+**Extensions du socle** :
+
+- `ArgumentParser` : valeur courte collée (`-d,` / `-n5`) via
+  `matchGluedShortValue`.
+- `Executor` : expansion générique de globs (`*`, `?`, `[...]`) au niveau
+  du moteur (`exec/glob-expand.ts`), respecte `Word.noExpand`.
+- Marqueur interne `ESCAPED_DOLLAR` (`ast/tokens.ts`) : un `\$` (guillemets
+  doubles ou nu) survit au lexing sans être expansé comme variable, puis
+  restitué en `$` littéral par l'`Expander` — et symétriquement par
+  l'`Executor` pour les mots `noExpand` (guillemets simples).
+
+**Bugs trouvés puis corrigés en testant contre la suite existante** :
+
+- **`grep` avalait une ligne vide fantôme.** `content.split('\n')`
+  produisait une dernière entrée vide pour tout contenu se terminant par
+  `\n` ; avec `-v`, cette ligne vide (ne contenant jamais le motif) était
+  incluse à tort, ajoutant un saut de ligne fantôme en sortie — détecté
+  via un pipeline `echo | grep -v ... | wc -l` qui comptait une ligne de
+  trop. Fix : `grep` utilise désormais `splitLines` (même utilitaire que
+  `cat`/`head`/`tail`) au lieu d'un `split('\n')` brut.
+- **`\$` échappé était expansé comme variable.** Le lexer réduisait
+  `\$dollar` à `$dollar` avant l'expansion, donc l'Expander tentait de
+  substituer une variable `dollar` inexistante et l'effaçait. Fix :
+  marqueur `ESCAPED_DOLLAR` posé au lexing, restitué en `$` littéral
+  après expansion (ou directement pour les mots `noExpand`).
+- **`cat` refusait de lire l'entrée standard.** L'argument `files` était
+  `required: true`, donc `cat` en fin de pipe (`... | cat`) échouait avec
+  « argument requis manquant » au lieu de lire `stdin`. Fix : `files`
+  devient optionnel, avec repli sur `ctx.io.stdin.readAll()` — même motif
+  que `sort`/`cut`/`head`/`tail`.
+- **`sort -k F,Fn` dupliquait le champ.** La reconstruction de clé
+  ajoutait un `endTail` même quand `startField === endField`, produisant
+  une clé du type `"11 1"` au lieu de `"11"`. Fix : la troncature ne
+  s'applique que si un caractère de fin est explicitement spécifié sur le
+  même champ ; la valeur du champ seul est utilisée sinon.
+
+**Hors périmètre de cette phase** : réseau, IAM avancé, matériel, audit,
+systemd (inchangé depuis la Phase 1).
+
 ## Linux — Phase 1 : filesystem & session (coreutils)
 
 **État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**

@@ -1,3 +1,4 @@
+import { ESCAPED_DOLLAR } from "./tokens";
 import { Session } from "../session/types";
 
 /**
@@ -18,6 +19,7 @@ export class Expander {
     if (result.startsWith("~")) {
       result = (session.env.get("HOME") ?? "/") + result.slice(1);
     }
+    result = result.split(ESCAPED_DOLLAR).join("$");
     return [result]; // le globbing (*.txt) retournerait plusieurs éléments
   }
 }

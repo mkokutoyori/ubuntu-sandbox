@@ -17,6 +17,6 @@ export interface OptionSpec {
   readonly type?: ArgType;
   readonly defaultValue?: unknown;
   readonly description: string;
-  /** Une option peut exiger une capacité supplémentaire (ex: --system). */
   readonly requiredCapability?: Capability;
+  readonly numericShorthand?: boolean;
 }

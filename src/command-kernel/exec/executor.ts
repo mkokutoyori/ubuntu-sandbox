@@ -5,7 +5,7 @@ import { CommandNotFoundError, ShellError } from "../errors";
 import { FileOutputStream } from "../io/file-output-stream";
 import { PipeBuffer } from "../io/pipe-buffer";
 import { CommandIO, InputStream } from "../io/types";
-import { MachineApi, toFileSystemActor } from "../machine/types";
+import { FileSystemActor, MachineApi, toFileSystemActor } from "../machine/types";
 import { CommandRegistry } from "../registry/command-registry";
 import { Session } from "../session/types";
 import { Expander } from "../ast/expander";
@@ -15,6 +15,8 @@ import {
   ScriptNode,
   SimpleCommandNode,
 } from "../ast/nodes";
+import { ESCAPED_DOLLAR } from "../ast/tokens";
+import { expandGlob } from "./glob-expand";
 import { PermissionGuard } from "./permission-guard";
 
 /**
@@ -105,7 +107,17 @@ export class Executor {
     const command = this.registry.resolve(node.name);
     if (!command) throw new CommandNotFoundError(node.name);
 
-    const argv = node.argv.flatMap((w) => (w.noExpand ? [w.text] : this.expander.expand(w.text, session)));
+    const actor = toFileSystemActor(session.user);
+    const argv: string[] = [];
+    for (const word of node.argv) {
+      if (word.noExpand) {
+        argv.push(word.text.split(ESCAPED_DOLLAR).join("$"));
+        continue;
+      }
+      for (const expanded of this.expander.expand(word.text, session)) {
+        argv.push(...(await expandGlob(expanded, session.cwd, this.machine, actor)));
+      }
+    }
 
     // 2. Conversion entrée utilisateur -> arguments typés
     const args = this.argParser.parse(argv, command.descriptor);
@@ -121,6 +133,7 @@ export class Executor {
       node.redirections,
       session,
       io,
+      actor,
     );
 
     // 5. Exécution avec accès aux méthodes internes de la machine
@@ -177,10 +190,10 @@ export class Executor {
     redirections: readonly RedirectionNode[],
     session: Session,
     io: CommandIO,
+    actor: FileSystemActor,
   ): Promise<{ io: CommandIO; ownedStdout?: FileOutputStream }> {
     if (redirections.length === 0) return { io };
 
-    const actor = toFileSystemActor(session.user);
     let stdin = io.stdin;
     let stdout = io.stdout;
     let ownedStdout: FileOutputStream | undefined;

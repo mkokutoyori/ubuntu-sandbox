@@ -10,9 +10,15 @@ export class ArgumentParser {
 
     for (let i = 0; i < argv.length; i++) {
       const token = argv[i];
+      const shorthand = /^-\d+$/.test(token) ? descriptor.options.find((s) => s.numericShorthand) : undefined;
       const cluster = this.expandShortCluster(token, descriptor.options);
-      if (cluster) {
+      const glued = this.matchGluedShortValue(token, descriptor.options);
+      if (shorthand) {
+        options.set(shorthand.long, this.coerce(token.slice(1), shorthand.type ?? "int"));
+      } else if (cluster) {
         for (const spec of cluster) options.set(spec.long, true);
+      } else if (glued) {
+        options.set(glued.spec.long, this.coerce(glued.value, glued.spec.type ?? "string"));
       } else if (token.startsWith("-") && token !== "-" && token !== "--") {
         const spec = this.findOption(token, descriptor.options);
         if (!spec) throw new UsageError(`option inconnue : ${token}`);
@@ -83,6 +89,17 @@ export class ArgumentParser {
       resolved.push(spec);
     }
     return resolved;
+  }
+
+  private matchGluedShortValue(
+    token: string,
+    specs: readonly OptionSpec[],
+  ): { spec: OptionSpec; value: string } | undefined {
+    if (!token.startsWith("-") || token.startsWith("--")) return undefined;
+    if (token.includes("=") || token.length < 3) return undefined;
+    const spec = specs.find((s) => s.short === token[1] && s.takesValue);
+    if (!spec) return undefined;
+    return { spec, value: token.slice(2) };
   }
 
   private findOption(

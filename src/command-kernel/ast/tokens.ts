@@ -1,3 +1,8 @@
+/** Marqueur interne pour un '$' echappe (\$) : survit au lexing sans
+ *  declencher d'expansion de variable, puis restitue en '$' litteral
+ *  par l'Expander une fois les substitutions terminees. */
+export const ESCAPED_DOLLAR = "";
+
 export enum TokenType {
   WORD,
   ASSIGN, // réservé : forme préfixée "X=1 commande" (non émis par le lexer actuel)

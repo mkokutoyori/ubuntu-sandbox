@@ -1,5 +1,5 @@
 import { UsageError } from "../errors";
-import { KEYWORDS, Token, TokenType } from "./tokens";
+import { ESCAPED_DOLLAR, KEYWORDS, Token, TokenType } from "./tokens";
 
 /**
  * Découpe la source en tokens : gère les guillemets simples/doubles,
@@ -124,7 +124,8 @@ export class Lexer {
         if (this.atEnd()) {
           throw new UsageError("échappement '\\' incomplet en fin d'entrée");
         }
-        value += this.peek();
+        const escaped = this.peek();
+        value += escaped === "$" ? ESCAPED_DOLLAR : escaped;
         this.advance();
         continue;
       }
@@ -152,7 +153,8 @@ export class Lexer {
       const ch = this.peek();
       if (ch === "\\" && (this.peek(1) === '"' || this.peek(1) === "\\" || this.peek(1) === "$")) {
         this.advance();
-        value += this.peek();
+        const escaped = this.peek();
+        value += escaped === "$" ? ESCAPED_DOLLAR : escaped;
         this.advance();
         continue;
       }
