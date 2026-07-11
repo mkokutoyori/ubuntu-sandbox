@@ -20,8 +20,29 @@ export class PrintCommand extends BaseCommand {
       await ctx.io.stdout.write('PRINT: not supported on this device\n');
       return 1;
     }
-    const output = await ctx.machine.printing.execute(args, { userName: ctx.session.user.name });
-    await ctx.io.stdout.write(output + '\n');
-    return output.includes('service is not running') || output.startsWith('Usage:') ? 1 : EXIT_OK;
+    if (!ctx.machine.printing.isSpoolerRunning()) {
+      await ctx.io.stdout.write("Print Spooler service is not running. Use 'net start spooler' to start it.\n");
+      return 1;
+    }
+
+    if (args.length === 0) {
+      await ctx.io.stdout.write('Usage: PRINT [/D:device] [[drive:][path]filename[...]]\n');
+      return 1;
+    }
+    const deviceArg = args.find((a) => /^\/D:/i.test(a));
+    const printer = deviceArg ? deviceArg.slice(3) : 'Microsoft Print to PDF';
+    const files = args.filter((a) => !a.startsWith('/'));
+    if (files.length === 0) {
+      await ctx.io.stdout.write('Usage: PRINT [/D:device] [[drive:][path]filename[...]]\n');
+      return 1;
+    }
+
+    const lines: string[] = [];
+    for (const f of files) {
+      ctx.machine.printing.submit(f, printer, ctx.session.user.name);
+      lines.push(`${f} is currently being printed on ${printer}.`);
+    }
+    await ctx.io.stdout.write(lines.join('\n') + '\n');
+    return EXIT_OK;
   }
 }

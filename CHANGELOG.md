@@ -5,6 +5,94 @@ progressive par équipement. Un push = une entrée = une fonctionnalité
 complète et testée (voir `CLAUDE.md` / le framework de migration pour les
 principes directeurs).
 
+## Windows — Phase 10 : correction — élimination du passthrough opaque `execute(argv)` (sc/net/schtasks/print/auditpol/winrm)
+
+**État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
+
+**Ce que les Phases 6/7/9 ont fait de travers, sur retour explicite de
+l'utilisateur** : `MachineApi.services`/`netExe`/`scheduling`/`printing`/
+`auditPolicy`/`winRm` exposaient chacun une méthode UNIQUE et opaque
+`execute(argv)` qui, côté pont (`WindowsMachineApi.ts`), se contentait de
+transmettre l'argv déjà tokenisé à la fonction `cmdX` legacy correspondante
+(`cmdSc`, `cmdNetUser`/`cmdNetLocalgroup`/`cmdNetStart`/`cmdNetStop`/
+`cmdNetShare`/`cmdNetUse`, `cmdSchtasks`, `cmdPrint`, `cmdAuditpol`,
+`cmdWinrm`). La commande appelait bien `ctx.machine.X.execute(...)` — donc
+« passait par MachineApi » au sens littéral — mais tout le VRAI travail
+(analyse des arguments, dispatch de sous-commande, mise en forme du texte
+de sortie) restait entièrement dans la fonction legacy, invoquée depuis le
+pont plutôt que depuis la commande. C'est exactement le problème de la
+Phase 5 (l'échappatoire `.native`) sous une forme différente : au lieu de
+contourner `MachineApi` en récupérant l'objet legacy brut, on le
+contournait en laissant `MachineApi` elle-même déléguer aveuglément à une
+fonction externe. Un push = une fonctionnalité migrée, pas juste
+redirigée.
+
+**Correction, sous-système par sous-système** — chaque `execute(argv)`
+remplacé par des primitives typées, une par opération SCM/SAM/etc réelle ;
+tout l'analyse d'arguments, le dispatch de sous-commande et le texte
+d'erreur/succès déplacés dans la commande elle-même :
+
+- **`ServiceManagementApi`** (`sc`, ex-`cmdSc`, 14 sous-commandes) :
+  `exists`/`displayNameFor`/`resolveName`/`isRunning`/`runningServiceNames`/
+  `allServiceNames`/`pidFor` + `formatQuery`/`formatQueryEx`/`formatQc`/
+  `formatDescription`/`formatQfailure` (texte déjà canonique, produit par
+  les méthodes `formatScXxx` de `WindowsServiceManager` lui-même — l'objet
+  vendeur réel, pas une fonction externe) + `start`/`stop`/`pause`/`resume`/
+  `setStartType`/`setDependencies`/`setAccount`/`setDescription`/
+  `setFailureConfig`/`create`/`delete`. `ScCommand.ts` porte maintenant
+  l'intégralité du dispatch de `WinSc.ts` (`scQuery`/`scStart`/... et le
+  gabarit d'erreur `[SC] ... FAILED nnnn`).
+- **`UserManagementApi`/`GroupManagementApi`** étendues pour `net user`/
+  `net localgroup` : `listAccountNames`/`getAccountDetail`/`createAccount`/
+  `deleteAccount`/`setAccountProperty`/`callerIsAdmin`/`domainAccountNames`/
+  `getDomainAccountDetail` et `listGroupNames`/`getGroupDetail`/
+  `createGroup`/`deleteGroup`/`addGroupMember`/`removeGroupMember`.
+- **`SmbShareApi`/`SmbSessionApi`/`NetUseApi`/`AccountsPolicyApi`**
+  (nouvelles, remplacent le bloc `share`/`session`/`use`/`accounts` de
+  l'ex-`NetExeApi`) : primitives d'état brutes sur les tables SMB/`net use`/
+  politique de compte déjà instanciées sur `WindowsPC`.
+- **`SchedulingApi`** (`schtasks`) : `isServiceRunning`/`list`/`create`/
+  `delete`/`run` — `SchtasksCommand.ts` porte le dispatch `/query`/
+  `/create`/`/delete`/`/run`/`/change`/`/end` et le format du tableau,
+  auparavant dans `cmdSchtasks`.
+- **`PrintApi`** (`print`) : `isSpoolerRunning`/`submit` — la file
+  d'impression legacy (singleton module-level `QUEUES` par hostname dans
+  `WinPrint.ts`, un design déjà fragile) devient un champ d'instance sur
+  `WindowsPrintApi`, propre par équipement.
+- **`AuditPolicyApi`** (`auditpol`) : `get`/`set` — `AuditpolCommand.ts`
+  porte le parsing `/flag:"value"` et le dispatch `/get`/`/set`.
+- **`WinRmApi`** (`winrm`) : `isEnabled`/`listeners`/`enable` —
+  `WinrmCommand.ts` porte le dispatch `quickconfig`/`enumerate` et le
+  texte figé.
+- **`NetCommand`/`ScCommand`** n'importent plus AUCUNE fonction de
+  `WinSc.ts`/`WinNetUser.ts`/`WinNetStart.ts`/`WinNetShare.ts`/
+  `WinNetUse.ts`. Ces fichiers restent intacts et inchangés dans leur
+  logique — ils servent maintenant EXCLUSIVEMENT le shim PowerShell
+  synchrone (`WindowsPC.runSyncNativeCommand`), un consommateur séparé et
+  légitime déjà établi (§ Phase 3), jamais retouché.
+
+**Piège rencontré : `strictNullChecks: false` casse le narrowing sur union
+discriminée.** `AccountMutationResult` a d'abord été modélisé en union
+discriminée (`{ok:true} | {ok:false, error:string}`), comme on l'aurait
+fait en TypeScript strict. Avec `strictNullChecks: false` (réglage du
+projet, non modifié), `if (!result.ok) return result.error` échoue à la
+compilation (« Property 'error' does not exist » — reproductible en
+isolation, cf. `LinuxSshClient.ts`/`SshServerHandler.ts`, qui ont le même
+bug préexistant sur `AccountLifecycleVerdict`, hors périmètre). Fix :
+`AccountMutationResult` en interface plate `{ok: boolean; error?: string}`,
+même forme que `ServiceOpResult`/`ServiceControlResult` qui n'avaient pas
+le problème.
+
+**Validation** : lot localisé de 30 fichiers (tout ce qui touche sc/net/
+schtasks/print/auditpol/winrm/domain-join/winrm/kerberos/audit) comparé
+au commit précédent (Phase 9, passthrough opaque) — **résultat rigoureusement
+identique** (99 échecs / 906 réussites des deux côtés) : ce lot est une
+correction architecturale pure, aucun changement de comportement observable.
+Typecheck ciblé et ESLint propres. Smoke manuel non versionné confirmant
+`sc query/qc`, `net user/localgroup/accounts/share`, `schtasks /create`+
+`/query`, `auditpol /get`, `winrm quickconfig` avec des données réelles de
+bout en bout.
+
 ## Windows — Phase 9 : `auditpol`, `winrm`
 
 **État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**

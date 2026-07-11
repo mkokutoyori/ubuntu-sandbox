@@ -1,17 +1,22 @@
 import {
+  AccountDetail,
+  AccountMutationResult,
   AclEntry,
+  AccountsPolicyApi,
   AuditPolicyApi,
   FileAttributes,
   FileNodeType,
   FileStat,
   FileSystemActor,
   FileSystemApi,
+  GroupDetail,
   GroupInfo,
   GroupManagementApi,
   HardwareProfile as CkHardwareProfile,
   MachineApi,
   MacroApi,
-  NetExeApi,
+  NetUseApi,
+  NetUseMappingInfo,
   NetworkApi,
   OsIdentity,
   PowerApi,
@@ -19,12 +24,21 @@ import {
   ProcessApi,
   ProcessInfo as CkProcessInfo,
   RegistryApi,
+  ScheduledTaskInfo,
   SchedulingApi,
   SecurityIdentity,
+  ServiceControlResult,
+  ServiceFailureConfig,
   ServiceManagementApi,
+  ServiceOpResult,
+  SmbSessionApi,
+  SmbSessionInfo,
+  SmbShareApi,
+  SmbShareInfo,
   SocketInfo,
   UserManagementApi,
   WinRmApi,
+  WinRmListenerInfo,
 } from '@/command-kernel/machine/types';
 import { FileSystemError } from '@/command-kernel/errors';
 import { User } from '@/command-kernel/session/types';
@@ -45,18 +59,10 @@ import type { SmbDialResult } from '../server/smb/SmbClient';
 import type { NetUseEntry } from '../WinNetUse';
 import type { WindowsAccountsPolicy } from '../security/WindowsAccountsPolicy';
 import type { WinScheduledTask } from '../WinSystemCommands';
+import { runScheduledProgram } from '../WinSystemCommands';
 import type { WinRegistryProvider } from '../WinRegCommand';
 import type { WindowsAuditPolicy } from '../WindowsAuditPolicy';
 import type { WindowsWinRmConfig } from '../WindowsWinRmConfig';
-import { cmdSc } from '../WinSc';
-import { cmdNetUser, cmdNetLocalgroup } from '../WinNetUser';
-import { cmdNetStart, cmdNetStop } from '../WinNetStart';
-import { cmdNetShare } from '../WinNetShare';
-import { cmdNetUse } from '../WinNetUse';
-import { cmdSchtasks } from '../WinSystemCommands';
-import { cmdPrint } from '../WinPrint';
-import { cmdAuditpol } from '../WindowsAuditPolicy';
-import { cmdWinrm } from '../WindowsWinRmConfig';
 import { numericIdFromSid, resolveWindowsUser } from './WindowsUser';
 
 export interface WindowsMachineApiDeps {
@@ -375,6 +381,7 @@ class WindowsUserManagementApi implements UserManagementApi {
     private readonly userManager: WindowsUserManager,
     private readonly hostname: string,
     private readonly domainSession: () => DomainSession | null,
+    private readonly getDirectoryStore: () => DirectoryStore | null,
   ) {}
 
   async findByName(name: string): Promise<User | undefined> {
@@ -433,6 +440,62 @@ class WindowsUserManagementApi implements UserManagementApi {
       privileges,
     };
   }
+
+  listAccountNames(): readonly string[] {
+    return this.userManager.getAllUsers().map((u) => u.name);
+  }
+
+  getAccountDetail(name: string): AccountDetail | undefined {
+    const user = this.userManager.getUser(name);
+    if (!user) return undefined;
+    return {
+      name: user.name,
+      fullName: user.fullName,
+      description: user.description,
+      enabled: user.enabled,
+      passwordLastSet: user.passwordLastSet,
+      passwordRequired: user.passwordRequired,
+      userMayChangePassword: user.userMayChangePassword,
+      lastLogon: user.lastLogon,
+      localGroups: this.userManager.getGroupsForUser(user.name).map((g) => g.name),
+    };
+  }
+
+  createAccount(name: string, password: string): AccountMutationResult {
+    const err = this.userManager.createUser(name, password);
+    return err ? { ok: false, error: err } : { ok: true };
+  }
+
+  deleteAccount(name: string): AccountMutationResult {
+    const err = this.userManager.deleteUser(name);
+    return err ? { ok: false, error: err } : { ok: true };
+  }
+
+  setAccountProperty(name: string, property: 'active' | 'fullname' | 'comment' | 'password', value: string): AccountMutationResult {
+    const err = this.userManager.setUserProperty(name, property, value);
+    return err ? { ok: false, error: err } : { ok: true };
+  }
+
+  callerIsAdmin(): boolean {
+    return this.userManager.isCurrentUserAdmin();
+  }
+
+  domainAccountNames(): readonly string[] | undefined {
+    const store = this.getDirectoryStore();
+    return store ? store.listUsers().map((u) => u.sam) : undefined;
+  }
+
+  getDomainAccountDetail(sam: string) {
+    const store = this.getDirectoryStore();
+    const user = store?.getUser(sam);
+    if (!store || !user) return undefined;
+    return {
+      sam: user.sam,
+      fullName: user.fullName,
+      enabled: user.enabled,
+      globalGroups: store.groupsForUser(user.sam).map((g) => g.sam),
+    };
+  }
 }
 
 class WindowsGroupManagementApi implements GroupManagementApi {
@@ -447,6 +510,36 @@ class WindowsGroupManagementApi implements GroupManagementApi {
     const group = this.userManager.getGroup(name);
     return group ? { gid: numericIdFromSid(group.sid), name: group.name } : undefined;
   }
+
+  listGroupNames(): readonly string[] {
+    return this.userManager.getAllGroups().map((g) => g.name);
+  }
+
+  getGroupDetail(name: string): GroupDetail | undefined {
+    const group = this.userManager.getGroup(name);
+    if (!group) return undefined;
+    return { name: group.name, description: group.description, members: this.userManager.getGroupMembers(name).members };
+  }
+
+  createGroup(name: string, description: string): AccountMutationResult {
+    const err = this.userManager.createGroup(name, description);
+    return err ? { ok: false, error: err } : { ok: true };
+  }
+
+  deleteGroup(name: string): AccountMutationResult {
+    const err = this.userManager.deleteGroup(name);
+    return err ? { ok: false, error: err } : { ok: true };
+  }
+
+  addGroupMember(groupName: string, memberName: string): AccountMutationResult {
+    const err = this.userManager.addGroupMember(groupName, memberName);
+    return err ? { ok: false, error: err } : { ok: true };
+  }
+
+  removeGroupMember(groupName: string, memberName: string): AccountMutationResult {
+    const err = this.userManager.removeGroupMember(groupName, memberName);
+    return err ? { ok: false, error: err } : { ok: true };
+  }
 }
 
 class WindowsServiceManagementApi implements ServiceManagementApi {
@@ -455,86 +548,276 @@ class WindowsServiceManagementApi implements ServiceManagementApi {
     private readonly processManager: WindowsProcessManager,
   ) {}
 
-  async execute(argv: readonly string[], caller: { isAdmin: boolean; userName: string }): Promise<string> {
-    return cmdSc(
-      { serviceManager: this.serviceManager, processManager: this.processManager, isAdmin: caller.isAdmin, currentUser: caller.userName },
-      [...argv],
-    );
+  exists(name: string): boolean {
+    return this.serviceManager.getService(name) !== undefined;
+  }
+
+  displayNameFor(name: string): string | undefined {
+    return this.serviceManager.getService(name)?.displayName;
+  }
+
+  resolveName(nameOrDisplayName: string): string | undefined {
+    const exact = this.serviceManager.getService(nameOrDisplayName);
+    if (exact) return exact.name;
+    const byDisplay = this.serviceManager.getAllServices().find((s) => s.displayName.toLowerCase() === nameOrDisplayName.toLowerCase());
+    return byDisplay?.name;
+  }
+
+  isRunning(name: string): boolean {
+    return this.serviceManager.getService(name)?.state === 'Running';
+  }
+
+  runningServiceNames(): readonly string[] {
+    return this.serviceManager.getRunningServices().map((s) => s.name);
+  }
+
+  allServiceNames(): readonly string[] {
+    return this.serviceManager.getAllServices().map((s) => s.name);
+  }
+
+  pidFor(name: string): number {
+    return this.processManager.getPidForService(name);
+  }
+
+  formatQuery(name: string): string | undefined {
+    const svc = this.serviceManager.getService(name);
+    return svc && this.serviceManager.formatScQuery(svc);
+  }
+
+  formatQueryAllRunning(): readonly string[] {
+    return this.serviceManager.getRunningServices().map((s) => this.serviceManager.formatScQuery(s));
+  }
+
+  formatQueryAll(): readonly string[] {
+    return this.serviceManager.getAllServices().map((s) => this.serviceManager.formatScQuery(s));
+  }
+
+  formatQueryEx(name: string): string | undefined {
+    const svc = this.serviceManager.getService(name);
+    return svc && this.serviceManager.formatScQueryEx(svc, this.pidFor(svc.name));
+  }
+
+  formatQueryExAllRunning(): readonly string[] {
+    return this.serviceManager.getRunningServices().map((s) => this.serviceManager.formatScQueryEx(s, this.pidFor(s.name)));
+  }
+
+  formatQueryExAll(): readonly string[] {
+    return this.serviceManager.getAllServices().map((s) => this.serviceManager.formatScQueryEx(s, this.pidFor(s.name)));
+  }
+
+  formatQc(name: string): string | undefined {
+    const svc = this.serviceManager.getService(name);
+    return svc && this.serviceManager.formatScQc(svc);
+  }
+
+  formatDescription(name: string): string | undefined {
+    const svc = this.serviceManager.getService(name);
+    return svc && this.serviceManager.formatScDescription(svc);
+  }
+
+  formatQfailure(name: string): string | undefined {
+    const svc = this.serviceManager.getService(name);
+    return svc && this.serviceManager.formatScQfailure(svc);
+  }
+
+  start(name: string, isAdmin: boolean): ServiceControlResult {
+    const err = this.serviceManager.startService(name, isAdmin);
+    if (err) return { ok: false, error: err };
+    const svc = this.serviceManager.getService(name);
+    if (!svc) return { ok: true, formattedStatus: '' };
+    this.processManager.onServiceStarted(svc.name, svc.processName);
+    const saved = svc.state;
+    svc.state = 'StartPending';
+    const formattedStatus = this.serviceManager.formatServiceStatus(svc, { waitHint: 0x7d0 });
+    svc.state = saved;
+    return { ok: true, formattedStatus };
+  }
+
+  stop(name: string, isAdmin: boolean): ServiceControlResult {
+    const svc = this.serviceManager.getService(name);
+    const err = this.serviceManager.stopService(name, isAdmin);
+    if (err) return { ok: false, error: err };
+    if (!svc) return { ok: true, formattedStatus: '' };
+    this.processManager.onServiceStopped(svc.name);
+    const saved = svc.state;
+    svc.state = 'StopPending';
+    const formattedStatus = this.serviceManager.formatServiceStatus(svc);
+    svc.state = saved;
+    return { ok: true, formattedStatus };
+  }
+
+  pause(name: string, isAdmin: boolean): ServiceControlResult {
+    const err = this.serviceManager.pauseService(name, isAdmin);
+    if (err) return { ok: false, error: err };
+    const svc = this.serviceManager.getService(name)!;
+    const saved = svc.state;
+    svc.state = 'PausePending';
+    const formattedStatus = this.serviceManager.formatServiceStatus(svc);
+    svc.state = saved;
+    return { ok: true, formattedStatus };
+  }
+
+  resume(name: string, isAdmin: boolean): ServiceControlResult {
+    const err = this.serviceManager.resumeService(name, isAdmin);
+    if (err) return { ok: false, error: err };
+    const svc = this.serviceManager.getService(name)!;
+    const saved = svc.state;
+    svc.state = 'ContinuePending';
+    const formattedStatus = this.serviceManager.formatServiceStatus(svc);
+    svc.state = saved;
+    return { ok: true, formattedStatus };
+  }
+
+  setStartType(name: string, startType: 'Automatic' | 'Manual' | 'Disabled', isAdmin: boolean): ServiceOpResult {
+    const err = this.serviceManager.setStartType(name, startType, isAdmin);
+    return err ? { ok: false, error: err } : { ok: true };
+  }
+
+  setDependencies(name: string, dependencies: readonly string[], isAdmin: boolean): ServiceOpResult {
+    const err = this.serviceManager.setDependencies(name, [...dependencies], isAdmin);
+    return err ? { ok: false, error: err } : { ok: true };
+  }
+
+  setAccount(name: string, account: string, isAdmin: boolean, changedBy: string): ServiceOpResult {
+    const err = this.serviceManager.setAccount(name, account, isAdmin, changedBy);
+    return err ? { ok: false, error: err } : { ok: true };
+  }
+
+  setDescription(name: string, description: string, isAdmin: boolean): ServiceOpResult {
+    const err = this.serviceManager.setDescription(name, description, isAdmin);
+    return err ? { ok: false, error: err } : { ok: true };
+  }
+
+  setFailureConfig(name: string, config: ServiceFailureConfig, isAdmin: boolean): ServiceOpResult {
+    const err = this.serviceManager.setFailureConfig(name, { resetPeriodSec: config.resetPeriodSec, actions: config.actions.map((a) => ({ ...a })), command: config.command }, isAdmin);
+    return err ? { ok: false, error: err } : { ok: true };
+  }
+
+  create(
+    name: string,
+    opts: { binaryPath: string; displayName?: string; startType?: 'Automatic' | 'Manual' | 'Disabled'; dependencies?: readonly string[] },
+    isAdmin: boolean,
+    installedBy: string,
+  ): ServiceOpResult {
+    const err = this.serviceManager.createService(name, {
+      binaryPath: opts.binaryPath,
+      displayName: opts.displayName,
+      startType: opts.startType,
+      dependencies: opts.dependencies ? [...opts.dependencies] : undefined,
+    }, isAdmin, installedBy);
+    return err ? { ok: false, error: err } : { ok: true };
+  }
+
+  delete(name: string, isAdmin: boolean): ServiceOpResult {
+    const err = this.serviceManager.deleteService(name, isAdmin);
+    return err ? { ok: false, error: err } : { ok: true };
   }
 }
 
-function formatNetSessions(sessions: readonly { clientComputerName: string; user: string; numOpens: number }[]): string {
-  const header =
-    'Computer             User name            Client Type       Opens Idle time\n' +
-    '-------------------------------------------------------------------------\n';
-  if (sessions.length === 0) return header + 'There are no entries in the list.';
-  const rows = sessions.map((s) =>
-    `\\\\${s.clientComputerName}`.padEnd(22) + s.user.padEnd(21) + ''.padEnd(18) + String(s.numOpens).padStart(5) + '  00:00:00');
-  return header + rows.join('\n') + '\nThe command completed successfully.';
+class WindowsSmbShareApi implements SmbShareApi {
+  constructor(private readonly deps: Pick<WindowsMachineApiDeps, 'serviceManager' | 'smbShares'>) {}
+
+  isServerRunning(): boolean {
+    return this.deps.serviceManager.getService('LanmanServer')?.state === 'Running';
+  }
+
+  list(): readonly SmbShareInfo[] {
+    return this.deps.smbShares.list().map((s) => ({ name: s.name, path: s.path, description: s.description }));
+  }
+
+  add(name: string, resource: string, description: string): AccountMutationResult {
+    // Classic net.exe defaults an ad-hoc share to Everyone:Full (unlike the
+    // modern New-SmbShare cmdlet, which defaults to Everyone:Read).
+    const result = this.deps.smbShares.add(name, resource, { description, permissions: new Map([['Everyone', 'Full']]) });
+    return result.ok ? { ok: true } : { ok: false, error: result.message };
+  }
+
+  remove(name: string): AccountMutationResult {
+    const result = this.deps.smbShares.remove(name);
+    return result.ok ? { ok: true } : { ok: false, error: result.message };
+  }
 }
 
-class WindowsNetExeApi implements NetExeApi {
+class WindowsSmbSessionApi implements SmbSessionApi {
+  constructor(private readonly smbSessions: SmbSessionTable) {}
+
+  list(): readonly SmbSessionInfo[] {
+    return this.smbSessions.list().map((s) => ({ clientComputerName: s.clientComputerName, clientIp: s.clientIp, user: s.user, numOpens: s.numOpens }));
+  }
+
+  closeMatching(target?: string): void {
+    for (const s of this.smbSessions.list()) {
+      if (!target || s.clientIp === target || s.clientComputerName === target) {
+        this.smbSessions.close(s.id);
+      }
+    }
+  }
+}
+
+class WindowsNetUseApi implements NetUseApi {
   constructor(
-    private readonly deps: Pick<WindowsMachineApiDeps,
-      'hostname' | 'userManager' | 'processManager' | 'serviceManager' | 'getDirectoryStore' |
-      'smbShares' | 'smbSessions' | 'netUseTable' | 'accountsPolicy' | 'resolveHostname' | 'dialSmbShare'>,
+    private readonly deps: Pick<WindowsMachineApiDeps, 'serviceManager' | 'netUseTable' | 'resolveHostname' | 'dialSmbShare'>,
   ) {}
 
-  private isServiceRunning(name: string): boolean {
-    return this.deps.serviceManager.getService(name)?.state === 'Running';
+  isWorkstationRunning(): boolean {
+    return this.deps.serviceManager.getService('LanmanWorkstation')?.state === 'Running';
   }
 
-  private netSession(args: readonly string[]): string {
-    if (args.some((a) => a.toLowerCase() === '/delete')) {
-      const target = args.find((a) => a.startsWith('\\\\'));
-      for (const s of this.deps.smbSessions.list()) {
-        if (!target || s.clientIp === target.slice(2) || s.clientComputerName === target.slice(2)) {
-          this.deps.smbSessions.close(s.id);
-        }
-      }
-      return 'The command completed successfully.';
-    }
-    return formatNetSessions(this.deps.smbSessions.list());
+  list(): readonly NetUseMappingInfo[] {
+    return Array.from(this.deps.netUseTable.values()).map((e) => ({ local: e.local, remote: e.remote, status: e.status }));
   }
 
-  private netAccounts(args: readonly string[]): string {
-    if (args.length === 0) return this.deps.accountsPolicy.render();
-    for (const arg of args) {
-      const m = /^\/(\w+):(.+)$/.exec(arg);
-      if (!m) continue;
-      const err = this.deps.accountsPolicy.apply(m[1], m[2]);
-      if (err) return `System error.\n\n${err}`;
-    }
-    return 'The command completed successfully.';
+  async connect(drive: string, uncPath: string, username: string, password: string): Promise<AccountMutationResult> {
+    const m = /^\\\\([^\\]+)\\([^\\]+)/.exec(uncPath);
+    if (!m) return { ok: false, error: 'The network path was not found.' };
+    const [, server, share] = m;
+    const targetIp = await this.deps.resolveHostname(server);
+    if (!targetIp) return { ok: false, error: 'System error 53 has occurred.\n\nThe network path was not found.' };
+    const dial = this.deps.dialSmbShare(targetIp.toString(), share, username, password);
+    if (!dial.ok) return { ok: false, error: dial.error ?? 'System error 53 has occurred.\n\nThe network path was not found.' };
+    this.deps.netUseTable.set(drive.toUpperCase(), {
+      local: drive.toUpperCase(), remote: uncPath, status: 'OK', user: username, persistent: false, connection: dial.connection,
+    });
+    return { ok: true };
   }
 
-  async execute(argv: readonly string[], caller: { isAdmin: boolean; userName: string }): Promise<string> {
-    if (argv.length === 0) {
-      return 'More help is available by typing NET HELP command.';
-    }
-    const subCmd = argv[0].toLowerCase();
-    const subArgs = argv.slice(1);
-    const netUserCtx = { hostname: this.deps.hostname, userManager: this.deps.userManager, directoryStore: this.deps.getDirectoryStore() };
-    const netStartCtx = { serviceManager: this.deps.serviceManager, processManager: this.deps.processManager, isAdmin: caller.isAdmin };
-    const gateCtx = { isServiceRunning: (name: string) => this.isServiceRunning(name) };
-
-    switch (subCmd) {
-      case 'user': return cmdNetUser(netUserCtx, subArgs);
-      case 'localgroup': return cmdNetLocalgroup(netUserCtx, subArgs);
-      case 'start': return cmdNetStart(netStartCtx, subArgs);
-      case 'stop': return cmdNetStop(netStartCtx, subArgs);
-      case 'share': return cmdNetShare({ ...gateCtx, smbShares: this.deps.smbShares }, subArgs);
-      case 'session': return this.netSession(subArgs);
-      case 'accounts': return this.netAccounts(subArgs);
-      case 'use': return cmdNetUse({
-        ...gateCtx,
-        netUseTable: this.deps.netUseTable,
-        resolveHostname: this.deps.resolveHostname,
-        dialSmbShare: this.deps.dialSmbShare,
-      }, subArgs);
-      default: return 'The command syntax is incorrect.';
-    }
+  disconnect(drive: string): boolean {
+    const key = drive.toUpperCase();
+    const existing = this.deps.netUseTable.get(key);
+    if (!existing) return false;
+    existing.connection?.disconnect();
+    this.deps.netUseTable.delete(key);
+    return true;
   }
+
+  disconnectAll(): number {
+    const n = this.deps.netUseTable.size;
+    for (const e of this.deps.netUseTable.values()) e.connection?.disconnect();
+    this.deps.netUseTable.clear();
+    return n;
+  }
+}
+
+class WindowsAccountsPolicyApi implements AccountsPolicyApi {
+  constructor(private readonly policy: WindowsAccountsPolicy) {}
+
+  render(): string {
+    return this.policy.render();
+  }
+
+  apply(flag: string, value: string): string | undefined {
+    const err = this.policy.apply(flag, value);
+    return err || undefined;
+  }
+}
+
+function parseSchtasksTime(st: string, base: Date): Date {
+  const m = /^(\d{1,2}):(\d{2})(?::(\d{2}))?$/.exec(st);
+  if (!m) return new Date(base);
+  const d = new Date(base);
+  d.setHours(Number(m[1]), Number(m[2]), m[3] ? Number(m[3]) : 0, 0);
+  if (d.getTime() <= base.getTime()) d.setDate(d.getDate() + 1);
+  return d;
 }
 
 class WindowsSchedulingApi implements SchedulingApi {
@@ -542,40 +825,81 @@ class WindowsSchedulingApi implements SchedulingApi {
     private readonly deps: Pick<WindowsMachineApiDeps, 'serviceManager' | 'processManager' | 'scheduledTasks' | 'now'>,
   ) {}
 
-  async execute(argv: readonly string[]): Promise<string> {
-    return cmdSchtasks({
-      isServiceRunning: (name) => this.deps.serviceManager.getService(name)?.state === 'Running',
-      processManager: this.deps.processManager,
-      scheduledTasks: this.deps.scheduledTasks,
-      now: this.deps.now,
-    }, [...argv]);
+  isServiceRunning(): boolean {
+    return this.deps.serviceManager.getService('Schedule')?.state === 'Running';
+  }
+
+  list(nameFilter?: string): readonly ScheduledTaskInfo[] {
+    const tasks = Array.from(this.deps.scheduledTasks.values());
+    const filtered = nameFilter ? tasks.filter((t) => t.taskName.toLowerCase() === nameFilter.toLowerCase()) : tasks;
+    return filtered.map((t) => ({ name: t.taskName, runAt: t.runAt ?? null, state: t.state }));
+  }
+
+  create(name: string, opts: { schedule?: string; startTime?: string; intervalCount?: number; command?: string }): void {
+    const base = this.deps.now();
+    const task: WinScheduledTask = { taskName: name, taskPath: '\\', state: 'Ready', command: opts.command };
+    const sc = opts.schedule?.toUpperCase();
+    const recurUnit = sc === 'MINUTE' ? 60_000 : sc === 'HOURLY' ? 3_600_000 : sc === 'DAILY' ? 86_400_000 : 0;
+    if (recurUnit > 0) {
+      task.intervalMs = (opts.intervalCount ?? 1) * recurUnit;
+      task.runAt = opts.startTime ? parseSchtasksTime(opts.startTime, base) : new Date(base.getTime() + task.intervalMs);
+    } else if (opts.startTime && (!sc || sc === 'ONCE')) {
+      task.runAt = parseSchtasksTime(opts.startTime, base);
+    }
+    this.deps.scheduledTasks.set(name.toLowerCase(), task);
+  }
+
+  delete(name: string): boolean {
+    return this.deps.scheduledTasks.delete(name.toLowerCase());
+  }
+
+  run(name: string): boolean {
+    const task = this.deps.scheduledTasks.get(name.toLowerCase());
+    if (!task) return false;
+    runScheduledProgram(task, this.deps.processManager, this.deps.now());
+    return true;
   }
 }
 
 class WindowsPrintApi implements PrintApi {
-  constructor(private readonly deps: Pick<WindowsMachineApiDeps, 'hostname' | 'serviceManager'>) {}
+  private readonly queue: { document: string; owner: string; printer: string }[] = [];
 
-  async execute(argv: readonly string[]): Promise<string> {
-    return cmdPrint({
-      hostname: this.deps.hostname,
-      isServiceRunning: (name) => this.deps.serviceManager.getService(name)?.state === 'Running',
-    }, [...argv]);
+  constructor(private readonly deps: Pick<WindowsMachineApiDeps, 'serviceManager'>) {}
+
+  isSpoolerRunning(): boolean {
+    return this.deps.serviceManager.getService('Spooler')?.state === 'Running';
+  }
+
+  submit(document: string, printer: string, owner: string): void {
+    this.queue.push({ document, printer, owner });
   }
 }
 
 class WindowsAuditPolicyApi implements AuditPolicyApi {
   constructor(private readonly policy: WindowsAuditPolicy) {}
 
-  async execute(argv: readonly string[]): Promise<string> {
-    return cmdAuditpol(this.policy, [...argv]);
+  get(subcategory: string) {
+    return this.policy.get(subcategory);
+  }
+
+  set(subcategory: string, changes: { success?: boolean; failure?: boolean }): void {
+    this.policy.set(subcategory, changes);
   }
 }
 
 class WindowsWinRmApi implements WinRmApi {
   constructor(private readonly config: WindowsWinRmConfig) {}
 
-  async execute(argv: readonly string[]): Promise<string> {
-    return cmdWinrm(this.config, [...argv]);
+  isEnabled(): boolean {
+    return this.config.enabled;
+  }
+
+  listeners(): readonly WinRmListenerInfo[] {
+    return this.config.listeners.map((l) => ({ transport: l.transport, port: l.port }));
+  }
+
+  enable(): void {
+    this.config.enable();
   }
 }
 
@@ -613,7 +937,10 @@ export class WindowsMachineApi implements MachineApi {
   readonly power: PowerApi;
   readonly services: ServiceManagementApi;
   readonly macros: MacroApi;
-  readonly netExe: NetExeApi;
+  readonly smbShares: SmbShareApi;
+  readonly smbSessions: SmbSessionApi;
+  readonly netUse: NetUseApi;
+  readonly accountsPolicy: AccountsPolicyApi;
   readonly scheduling: SchedulingApi;
   readonly printing: PrintApi;
   readonly registry: RegistryApi;
@@ -629,12 +956,15 @@ export class WindowsMachineApi implements MachineApi {
     this.fs = new WindowsFileSystemApi(deps.fs);
     this.proc = new WindowsProcessApi(deps.processManager, deps.hostname, () => deps.userManager.currentUser);
     this.net = new WindowsNetworkApi(() => deps.ports, deps.isDHCPConfigured, deps.socketTable);
-    this.users = new WindowsUserManagementApi(deps.userManager, deps.hostname, deps.getDomainSession);
+    this.users = new WindowsUserManagementApi(deps.userManager, deps.hostname, deps.getDomainSession, deps.getDirectoryStore);
     this.groups = new WindowsGroupManagementApi(deps.userManager);
     this.power = new WindowsPowerApi(deps);
     this.services = new WindowsServiceManagementApi(deps.serviceManager, deps.processManager);
     this.macros = new WindowsMacroApi(deps.doskey);
-    this.netExe = new WindowsNetExeApi(deps);
+    this.smbShares = new WindowsSmbShareApi(deps);
+    this.smbSessions = new WindowsSmbSessionApi(deps.smbSessions);
+    this.netUse = new WindowsNetUseApi(deps);
+    this.accountsPolicy = new WindowsAccountsPolicyApi(deps.accountsPolicy);
     this.scheduling = new WindowsSchedulingApi(deps);
     this.printing = new WindowsPrintApi(deps);
     this.registry = deps.registry;
