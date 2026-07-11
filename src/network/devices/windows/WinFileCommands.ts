@@ -5,8 +5,10 @@
  * but specifically for filesystem operations).
  *
  * Commands: type, copy, move, ren/rename, del/erase, echo (with redirect),
- *           mkdir/md, rmdir/rd, cd/chdir, cls, tree, set,
+ *           mkdir/md, rmdir/rd, cls, tree, set,
  *           attrib, find, findstr, where, more, fc, xcopy, sort
+ *
+ * cd/chdir is migrated to command-kernel (windows/command-kernel/commands/Cd.ts).
  */
 
 import { WindowsFileSystem } from './WindowsFileSystem';
@@ -20,30 +22,6 @@ export interface WinFileCommandContext {
   cwd: string;
   hostname: string;
   env: Map<string, string>;
-  setCwd(path: string): void;
-}
-
-// ─── cd / chdir ────────────────────────────────────────────────────
-
-export function cmdCd(ctx: WinFileCommandContext, args: string[]): string {
-  if (args.length === 0) {
-    return ctx.cwd;
-  }
-
-  // Handle /d flag (change drive)
-  let path: string;
-  if (args[0].toLowerCase() === '/d' && args.length > 1) {
-    path = args.slice(1).join(' ');
-  } else {
-    path = args.join(' ');
-  }
-
-  const absPath = ctx.fs.normalizePath(path, ctx.cwd);
-  if (!ctx.fs.isDirectory(absPath)) {
-    return 'The system cannot find the path specified.';
-  }
-  ctx.setCwd(absPath);
-  return '';
 }
 
 // ─── mkdir / md ────────────────────────────────────────────────────

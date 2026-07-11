@@ -5,6 +5,121 @@ progressive par équipement. Un push = une entrée = une fonctionnalité
 complète et testée (voir `CLAUDE.md` / le framework de migration pour les
 principes directeurs).
 
+## Windows — Phase 1 : pont `command-kernel` + commandes fichiers/session de `cmd`, cutover complet du dispatcher legacy
+
+**État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
+Premier équipement non-Linux sur `command-kernel` (§4 du framework). Aucun
+pont Windows n'existait auparavant — tout est nouveau : `WindowsMachineApi`
+(`src/network/devices/windows/command-kernel/WindowsMachineApi.ts`),
+`WindowsUser`/`resolveWindowsUser`, `createWindowsHostShell`.
+
+**Décision d'architecture — pas de `Lexer`/`Parser` partagé pour cmd.exe** :
+la syntaxe cmd (`%VAR%`, `&` inconditionnel, lettres de lecteur, macros
+doskey, `.bat`) diverge trop du grammaire bash de `command-kernel` pour
+réutiliser son `Lexer`. `WindowsPC.executeCmdCommand` fait déjà tout ce
+travail de découpage (chaînage `&&`/`||`/`&`, pipes, redirections,
+changement de lecteur, expansion `%VAR%`, macros doskey) — le pont
+(`runCommandKernelCmd`) construit directement un `SimpleCommandNode` à
+partir du `(cmd, args)` déjà résolu et appelle `Executor.run()` sans
+passer par `Interpreter`/`Lexer`/`Parser`, qui restent donc inchangés et
+partagés uniquement au niveau moteur (`Executor`/`CommandRegistry`/
+`PermissionGuard`/`ArgumentParser`), pas au niveau syntaxe.
+
+**`MachineApi.fs` pour un filesystem sans owner/mode POSIX** : NTFS n'a ni
+bits de permission Unix ni uid/gid — `FileStat.mode/ownerUid/ownerGid`
+portent une valeur fixe (`0o666`/`0`/`0`), jamais lue par aucune commande
+migrée (l'ACL réelle passe par `icacls`, non migré). `User.uid/gid` sont
+dérivés d'un hash stable du SID Windows (pas d'identifiant numérique natif
+dans ce modèle) — voir `numericIdFromSid` dans `WindowsUser.ts`.
+
+**Périmètre migré (fichiers/session)** : `cd`/`chdir`, `mkdir`/`md`,
+`rmdir`/`rd`, `type`, `copy`, `move`, `ren`/`rename`, `del`/`erase`,
+`tree`, `set`, `cls`, `echo` (variante Windows dédiée — `echo -n foo`
+affiche `-n foo` littéralement, contrairement à l'`EchoCommand` bash de
+`registerCoreCommands` qui interprète `-n`/`-e`).
+
+**Cutover complet du dispatcher, sur demande explicite de l'utilisateur**
+(pas de fallback, même temporaire, vers le legacy) : tout
+`executeCmdCommand` routait auparavant vers un switch de ~50 commandes
+fichiers/système, un routeur `net <sous-commande>`, et un second switch
+réseau (~14 commandes : `ipconfig`, `ping`, `netsh`, `ssh`, `route`,
+`arp`, `nslookup`...). Les trois sont supprimés d'un bloc : le
+dispatcher ne route plus que ce qui est enregistré dans
+`createWindowsHostShell` ; toute commande non enregistrée renvoie
+désormais le message exact `'<cmd>' is not recognized as an internal or
+external command, operable program or batch file.` — un échec est donc,
+par construction, le signal qu'une commande n'est pas encore migrée, plus
+jamais un aiguillage silencieux vers une implémentation parallèle.
+Les implémentations legacy encore utiles (`WinDir.ts`, `WinSystemCommands.ts`,
+les commandes process/service/réseau de `WinFileCommands.ts`, etc.) sont
+laissées en place, inutilisées, comme matériel de référence pour leurs
+migrations futures (§3.1 étape 1 du framework — les supprimer maintenant
+détruirait la seule référence de fidélité exacte disponible) ; elles sont
+supprimées au fur et à mesure de leur migration réelle, jamais avant.
+`runSyncNativeCommand` (pont synchrone séparé utilisé par les cmdlets
+PowerShell natifs) n'est pas concerné par ce cutover — c'est un
+consommateur distinct, hors périmètre de cette phase.
+
+**Bugs trouvés en migrant (cause racine, pas juste le symptôme)** :
+
+- `rmdir` utilisait initialement `WindowsFileSystem.deleteDirectory()`
+  (suppression inconditionnelle) au lieu de `rmdir()`/`rmdirRecursive()`
+  — perdait donc la vérification « répertoire non vide » que legacy
+  `cmdRmdir` faisait réellement. Fix : `WindowsFileSystemApi.remove()`
+  appelle `rmdir()`/`rmdirRecursive()`, jamais `deleteDirectory()`,
+  exactement comme legacy (piège identique au §7.5 du framework, version
+  Windows : deux méthodes VFS d'apparence équivalente, comportement
+  différent).
+- `ren`/`rename` : `renameEntry()` (legacy) rejette une collision de nom
+  AVANT toute mutation (« A duplicate file name exists... ») et préserve
+  l'entrée d'origine (mtime, attributs, ACL) ; le slot générique
+  `FileSystemApi.rename()` (nécessairement `moveFile()`-backed pour
+  rester utilisable par `move`, qui doit pouvoir traverser les
+  répertoires) écraserait silencieusement une cible existante et recrée
+  une entrée neuve. `RenCommand` reproduit donc la vérification de
+  collision explicitement (avec exception pour un changement de casse
+  pur, `ren a.txt A.txt`) avant d'appeler `rename()` — limitation connue
+  et documentée : la préservation exacte de mtime/attributs/ACL au
+  travers d'un `ren` n'est pas garantie (non couverte par la suite de
+  tests localisée, donc non bloquante pour cette phase).
+
+**Hors périmètre, échoue désormais explicitement avec « not recognized »
+jusqu'à sa propre migration** : `dir`, `ver`, `hostname`, `systeminfo`,
+`tasklist`, `netstat`, `vol`, `wmic`, `sc`, `netsh`, `ipconfig`, `ping`,
+`ssh`/`sftp`/`scp`/`telnet`, `route`, `arp`, `nslookup`, `net`
+(user/localgroup/start/stop/use/share/session/accounts/help), `auditpol`,
+`winrm`, `whoami`, `icacls`, `runas`, `chcp`, `date`, `time`, `start`,
+`setx`, `schtasks`, `print`, `lpr`, `slmgr`, `nbtstat`, `reg`, `nltest`,
+`dcdiag`, `klist`, `netdom`, `dnscmd`, `certreq`, `certutil`, `query`,
+`qwinsta`, `logoff`, `rwinsta`, `gpupdate`, `gpresult`, `iisreset`,
+`doskey`, `powershell`/`pwsh` (sous-shell depuis cmd), `find`, `findstr`,
+`where`, `more`, `fc`, `xcopy`, `sort`, `attrib`, `taskkill`.
+
+**Validation** : lot localisé (8 fichiers ciblés fichiers/session/cwd —
+`windows-filesystem`, `windows-drive-switching`, `windows-per-drive-cwd`,
+`cmd-ps-coherence`, `subshell-isolation`, `windows-session-isolation`,
+`windows-session-migration`, `prompt-cwd`) : 118/144 passent. Les 26
+échecs restants pointent tous, sans exception, vers une commande
+explicitement hors périmètre ci-dessus (`dir`, `ver`, `hostname`,
+`systeminfo`, `tasklist`, `netstat`, `vol`, `wmic`, `sc`, `netsh`) —
+aucune régression sur le périmètre migré. Typecheck ciblé propre
+(`tsc --noEmit`, zéro erreur dans `command-kernel`/`WindowsPC`/
+`WinFileCommands` ; les erreurs préexistantes ailleurs dans le dépôt —
+`LinuxSshClient.ts`, `CiscoSwitchShell.ts`, `SshServerHandler.ts`,
+`vlan-filter-ordering.test.ts` — ne touchent aucun fichier de cette
+session). Lint ciblé non exécutable dans cet environnement (dépendance
+`@eslint/js` absente du sandbox, pré-existant, sans rapport avec ce
+changement).
+
+**Suite (prochaines phases)** : `dir` en priorité (nécessite son propre
+travail — numéro de série de volume, espace libre, correspondance
+wildcard, formats large/récursif — pas réductible au `FileSystemApi`
+générique sans l'étendre), puis `ver`/`hostname`/`systeminfo`/`tasklist`/
+`netstat`/`vol` (commandes système simples), puis le périmètre réseau
+(`ipconfig`, `ping`, `netsh`...) qui délèguera à `MachineApi.net` en
+s'appuyant sur `EndHost`/`Port`/`Cable` existants (§2 du framework),
+jamais une resimulation parallèle.
+
 ## Linux — Phase 3 : lecteurs d'identité (`id`, `whoami`, `groups`) + durcissement `rm`
 
 **État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**

@@ -32,12 +32,11 @@ import { runWindowsScpClient } from './windows/network/WindowsScpClient';
 import { splitCmdArgs } from './windows/cmdline';
 import { WindowsAccountsPolicy } from './windows/security/WindowsAccountsPolicy';
 import { DoskeyTable } from './windows/cli/DoskeyTable';
-import { runPowerShellShim, createShimState, type PsShimState } from './windows/PowerShellCmdShim';
+import { createShimState, type PsShimState } from './windows/PowerShellCmdShim';
 import { PSInterpreter, PSRuntimeError } from '@/powershell/interpreter/PSInterpreter';
 import { createWindowsPSProviders } from '@/powershell/providers/WindowsPSProviders';
 import type { VpnConnectionInfo } from '@/powershell/providers/PSProviders';
 import type { WinCommandContext, RouteEntry, TracerouteHop } from './windows/WinCommandExecutor';
-import type { WinFileCommandContext } from './windows/WinFileCommands';
 import { WindowsFileSystem } from './windows/WindowsFileSystem';
 import { HostsFile } from './HostsFile';
 import { WindowsShellSession } from './windows/shell/WindowsShellSession';
@@ -55,23 +54,15 @@ import { WindowsProcessManager } from './windows/WindowsProcessManager';
 import { HostClock } from './host/lifecycle/HostClock';
 import { PSRegistryProvider, WINDOWS_CLIENT_PRODUCT_IDENTITY, WINDOWS_SERVER_PRODUCT_IDENTITY } from './windows/PSRegistryProvider';
 import { PSEventLogProvider } from './windows/PSEventLogProvider';
-import { cmdHelp } from './windows/WinHelp';
 import { cmdIpconfig } from './windows/WinIpconfig';
 import { cmdNetsh } from './windows/WinNetsh';
-import { cmdPing } from './windows/WinPing';
 import { cmdArp } from './windows/WinArp';
 import { cmdGetmac } from './windows/WinGetmac';
-import { cmdTracert } from './windows/WinTracert';
 import { cmdRoute } from './windows/WinRoute';
-import { cmdWevtutil } from './windows/WinWevtutil';
-import { cmdWhoami } from './windows/WinWhoami';
 import { cmdNetUser, cmdNetLocalgroup } from './windows/WinNetUser';
-import { cmdIcacls } from './windows/WinIcacls';
-import { cmdTasklist as cmdTasklistDynamic } from './windows/WinTasklist';
-import { cmdTaskkill } from './windows/WinTaskkill';
 import { cmdSc } from './windows/WinSc';
 import { cmdNetStart, cmdNetStop } from './windows/WinNetStart';
-import { cmdNetUse, type NetUseEntry } from './windows/WinNetUse';
+import { type NetUseEntry } from './windows/WinNetUse';
 import { cmdNetShare } from './windows/WinNetShare';
 import { SmbShareTable } from './windows/server/smb/SmbShareTable';
 import { SmbSessionTable } from './windows/server/smb/SmbSessionTable';
@@ -107,24 +98,17 @@ import { logonDomainUser } from './windows/domain/DomainLogonClient';
 import { pullGroupPolicy } from './windows/domain/GpoPullClient';
 import { dialHttp as dialHttpClient, parseHttpUrl } from '@/network/http/HttpClient';
 import type { GpoSettings } from './windows/server/ad/AdTypes';
-import { cmdNltest, cmdDcdiag, cmdKlist } from './windows/WinDomainDiag';
-import { cmdDnscmd } from './windows/WinDnscmd';
-import { cmdCertreq, cmdCertutil } from './windows/WinCertReq';
 import { WindowsCertStore } from './windows/CertStore';
 import { DFSR_PORT, DfsrServerHandler } from './windows/server/dfs/DfsReplicationGroup';
 import { WindowsRdpConfig } from './windows/WindowsRdpConfig';
-import { cmdQuerySession, cmdLogoff } from './windows/WinRdpCommands';
 import { RDP_PORT, RdpServerHandler, dialRdp, type RdpDialResult } from './windows/server/rdp/RdpSession';
 import { WindowsWsusClientConfig } from './windows/WindowsWsusClientConfig';
 import { WSUS_PORT, WsusServerHandler, queryWsusApprovedUpdates, type WsusUpdate } from './windows/server/wsus/WsusRole';
 import { LPD_PORT, LpdServerHandler } from './windows/server/print/LpdTransport';
-import { cmdLpr } from './windows/WinLpr';
 import { WindowsLicensingState } from './windows/licensing/LicensingState';
-import { cmdSlmgr } from './windows/WinSlmgr';
 import { generateSelfSignedCertificate } from '@/network/pki/SelfSignedCertificate';
 import { CertificateVerifier } from '@/network/pki/CertificateVerifier';
 import type { X509Certificate } from '@/network/pki/X509Certificate';
-import { cmdPrint } from './windows/WinPrint';
 import { runRunasNonInteractive, runAsUser } from './windows/WinRunas';
 import type { RunasHost } from './windows/WinRunas';
 import { executeNslookup } from './linux/LinuxDnsService';
@@ -133,13 +117,14 @@ import { SessionWorkQueue } from './host/session/SessionWorkQueue';
 import { SessionSwapWindow } from './host/session/SessionSwapWindow';
 import * as WinSys from './windows/WinSystemCommands';
 import { cmdReg as winCmdReg } from './windows/WinRegCommand';
-import { cmdDir } from './windows/WinDir';
-import {
-  cmdCd, cmdMkdir, cmdRmdir, cmdType, cmdCopy, cmdMove,
-  cmdRen, cmdDel, cmdTree, cmdSet, cmdTasklist, cmdNetstat,
-  cmdAttrib, cmdFind, cmdFindstr, cmdWhere, cmdMore, cmdFc,
-  cmdXcopy, cmdSort,
-} from './windows/WinFileCommands';
+import { createWindowsHostShell } from './windows/command-kernel/createWindowsHostShell';
+import { resolveWindowsUser } from './windows/command-kernel/WindowsUser';
+import type { CommandRegistry } from '@/command-kernel/registry/command-registry';
+import type { Executor } from '@/command-kernel/exec/executor';
+import type { SimpleCommandNode, Word } from '@/command-kernel/ast/nodes';
+import { createSession } from '@/command-kernel/session/types';
+import { PipeBuffer } from '@/command-kernel/io/pipe-buffer';
+import { ShellError } from '@/command-kernel/errors';
 
 /**
  * Parse a `findstr` filter from a piped command (`net user | findstr /i Full`).
@@ -189,6 +174,8 @@ export class WindowsPC extends EndHost implements UserAccountHost {
   private fs: WindowsFileSystem;
   /** Current working directory */
   private cwd: string = 'C:\\Users\\User';
+  /** Lazily-built command-kernel shell (registry + executor) for migrated cmd builtins. */
+  private commandKernelShell: { registry: CommandRegistry; executor: Executor } | null = null;
   /** Environment variables */
   private env: Map<string, string> = new Map();
   /** Exposes the env map so subshells (PS / cmd) share the same source.
@@ -1712,188 +1699,22 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       if (uncResult !== null) return uncResult;
     }
 
-    // File commands (use file context)
-    const fileCtx = this.buildFileContext();
-    switch (cmd) {
-      case 'cd':
-      case 'chdir':   return cmdCd(fileCtx, args);
-      case 'dir':     return cmdDir(fileCtx, args);
-      case 'mkdir':
-      case 'md':      return cmdMkdir(fileCtx, args);
-      case 'rmdir':
-      case 'rd':      return cmdRmdir(fileCtx, args);
-      case 'type':    return cmdType(fileCtx, args);
-      case 'copy':    return cmdCopy(fileCtx, args);
-      case 'move':    return cmdMove(fileCtx, args);
-      case 'ren':
-      case 'rename':  return cmdRen(fileCtx, args);
-      case 'del':
-      case 'erase':   return cmdDel(fileCtx, args);
-      case 'tree':    return cmdTree(fileCtx, args);
-      case 'set':     return cmdSet(fileCtx, args);
-      case 'tasklist': return cmdTasklistDynamic(
-        { processManager: this.procMgr, currentUser: this.userMgr.currentUser, hostname: this.hostname }, args);
-      case 'taskkill': return cmdTaskkill(
-        { processManager: this.procMgr, isAdmin: this.userMgr.isCurrentUserAdmin() }, args);
-      case 'sc':
-      case 'sc.exe': return cmdSc(
-        { serviceManager: this.svcMgr, processManager: this.procMgr, isAdmin: this.userMgr.isCurrentUserAdmin(), currentUser: this.userMgr.currentUser }, args);
-      case 'auditpol':
-      case 'auditpol.exe': return cmdAuditpol(this.auditPolicy, args);
-      case 'winrm':   return cmdWinrm(this.winrm, args);
-      case 'netstat': return cmdNetstat(fileCtx, args, this.socketTable, this.buildNetContext());
-      case 'attrib':  return cmdAttrib(fileCtx, args);
-      case 'find':    return cmdFind(fileCtx, args);
-      case 'findstr': return cmdFindstr(fileCtx, args);
-      case 'where':   return cmdWhere(fileCtx, args);
-      case 'more':    return cmdMore(fileCtx, args);
-      case 'fc':      return cmdFc(fileCtx, args);
-      case 'xcopy':   return cmdXcopy(fileCtx, args);
-      case 'sort':    return cmdSort(fileCtx, args);
-      case 'echo':    return args.join(' ');
-      case 'cls':     return '';
-      case 'doskey':  return this.cmdDoskey(args);
-      case 'powershell':
-      case 'pwsh':
-        return runPowerShellShim({
-          executeCmdCommand: (l) => this.executeCmdCommand(l),
-          shimState: this.psShimState,
-          runFullPs: (code) => {
-            try {
-              return this.getPowerShellInterpreter().execute(code);
-            } catch (e) {
-              if (e instanceof PSRuntimeError) return e.message;
-              throw e;
-            }
-          },
-        }, args);
-      case 'ver':     return WindowsPC.VER_STRING;
-      case 'hostname': return this.hostname;
-      case 'systeminfo': return this.cmdSysteminfo();
-      case 'whoami':  return cmdWhoami({ hostname: this.hostname, userManager: this.userMgr, domainSession: this.domainSession }, args);
-      case 'icacls':  return cmdIcacls({ fs: this.fs, cwd: this.cwd, userManager: this.userMgr }, args);
-      case 'runas':   return this.cmdRunas(args);
-      case 'vol':     return this.cmdVol(args);
-      case 'chcp':    return this.cmdChcp(args);
-      case 'date':    return this.cmdDate(args);
-      case 'time':    return this.cmdTime(args);
-      case 'start':   return this.cmdStart(args);
-      case 'setx':    return this.cmdSetx(args);
-      case 'schtasks': return this.cmdSchtasks(args);
-      case 'print':    return cmdPrint(this.buildNetContext(), args);
-      case 'lpr':      return cmdLpr({ hostname: this.getHostname(), owner: this.userMgr.currentUser, fs: this.getFileSystem(), tcpStack: this.getTcpStack() }, args);
-      case 'slmgr':
-      case 'slmgr.vbs':
-        return cmdSlmgr({
-          productName: this.getDeviceType() === 'windows-server' ? WINDOWS_SERVER_PRODUCT_IDENTITY.productName : WINDOWS_CLIENT_PRODUCT_IDENTITY.productName,
-          licensing: this.licensing,
-        }, args);
-      case 'nbtstat': return this.cmdNbtstat(args);
-      case 'wmic':    return this.cmdWmic(args);
-      case 'reg':     return this.cmdReg(args);
-      case 'nltest':  return cmdNltest({
-        domainMembership: this.domainMembership,
-        probeDc: (address) => this.probeTcpReachable(address, 389),
-      }, args);
-      case 'dcdiag': {
-        const store = this.getDirectoryStore();
-        return cmdDcdiag({
-          hostname: this.hostname,
-          dnsName: store?.dnsName ?? '',
-          isDc: store !== null,
-          servicesRunning: {
-            ntds: this.svcMgr.getService('NTDS')?.state === 'Running',
-            netlogon: this.svcMgr.getService('Netlogon')?.state === 'Running',
-            kdc: this.svcMgr.getService('Kdc')?.state === 'Running',
-          },
-          sysvolShareExists: this.smbShares.get('SYSVOL') !== undefined,
-        });
-      }
-      case 'klist':   return cmdKlist({ ticketCache: this.kerberosTicketCache });
-      case 'netdom':  return this.cmdNetdom(args);
-      case 'dnscmd':  return cmdDnscmd({ dns: this.getDnsServerRole() }, args);
-      case 'certreq': return cmdCertreq({ adcs: this.getAdcsRole(), certStore: this.certStore }, args);
-      case 'certutil': return cmdCertutil({ adcs: this.getAdcsRole(), certStore: this.certStore }, args);
-      case 'query': {
-        if ((args[0] ?? '').toLowerCase() === 'session') return cmdQuerySession({ sessions: this.rdp.sessions });
-        return `'${args[0] ?? ''}' is not a recognized query type.`;
-      }
-      case 'qwinsta': return cmdQuerySession({ sessions: this.rdp.sessions });
-      case 'logoff': return cmdLogoff({ sessions: this.rdp.sessions }, args);
-      case 'rwinsta': return cmdLogoff({ sessions: this.rdp.sessions }, args);
-      case 'gpupdate': {
-        const res = this.gpupdateForce();
-        return res.ok
-          ? 'Updating policy...\n\nComputer Policy update has completed successfully.'
-          : res.message;
-      }
-      case 'gpresult': return this.cmdGpresult();
-      case 'iisreset': {
-        const iis = this.getIisRole();
-        if (!iis) return "'iisreset' is not recognized as an internal or external command,\noperable program or batch file.";
-        iis.iisreset();
-        return `Attempting stop...\nInternet services successfully stopped\nAttempting start...\nInternet services successfully restarted`;
-      }
+    // Migrated cmd builtins (migration_framework.md §6): every command
+    // registered in `createWindowsHostShell` is routed here instead of the
+    // legacy switch below. New migrations only need to register the command
+    // there — nothing to change in this dispatcher.
+    if (this.getCommandKernelShell().registry.has(cmd)) {
+      return this.runCommandKernelCmd(cmd, args);
     }
 
-    // net user / net localgroup / net start / net stop / net help
-    if (cmd === 'net') {
-      if (args.length === 0) {
-        return 'The syntax of this command is:\n\nNET\n    [ ACCOUNTS | COMPUTER | CONFIG | CONTINUE | FILE | GROUP | HELP |\n      HELPMSG | LOCALGROUP | PAUSE | SESSION | SHARE | START |\n      STATISTICS | STOP | TIME | USE | USER | VIEW ]';
-      }
-      const subCmd = args[0].toLowerCase();
-      const subArgs = args.slice(1);
-      const netCtx2 = { hostname: this.hostname, userManager: this.userMgr, directoryStore: this.getDirectoryStore() };
-      if (subCmd === 'user') return cmdNetUser(netCtx2, subArgs);
-      if (subCmd === 'localgroup') return cmdNetLocalgroup(netCtx2, subArgs);
-      const netSvcCtx = { serviceManager: this.svcMgr, processManager: this.procMgr, isAdmin: this.userMgr.isCurrentUserAdmin() };
-      if (subCmd === 'start') return cmdNetStart(netSvcCtx, subArgs);
-      if (subCmd === 'stop') return cmdNetStop(netSvcCtx, subArgs);
-      if (subCmd === 'use') return cmdNetUse(this.buildNetContext(), subArgs);
-      if (subCmd === 'share') return cmdNetShare(this.buildNetContext(), subArgs);
-      if (subCmd === 'session') return this.cmdNetSession(subArgs);
-      if (subCmd === 'accounts') {
-        if (subArgs.length === 0) return this.accountsPolicy.render();
-        for (const a of subArgs) {
-          const m = /^\/([a-z]+):(.+)$/i.exec(a);
-          if (m) {
-            const err = this.accountsPolicy.apply(m[1], m[2]);
-            if (err) return err;
-          }
-        }
-        return 'The command completed successfully.';
-      }
-      if (subCmd === 'help' || subCmd === '/?' || subCmd === '-?') {
-        const topic = (subArgs[0] ?? '').toLowerCase();
-        if (!topic) {
-          return 'The following commands are available:\n\nNET ACCOUNTS         NET HELPMSG       NET STATISTICS\nNET COMPUTER         NET LOCALGROUP    NET STOP\nNET CONFIG           NET PAUSE         NET TIME\nNET CONTINUE         NET SESSION       NET USE\nNET FILE             NET SHARE         NET USER\nNET GROUP            NET START         NET VIEW\nNET HELP             NET HELPMSG       NET HELP SERVICES';
-        }
-        return `The syntax of this command is:\n\nNET ${topic.toUpperCase()} [...]`;
-      }
-      return `The syntax of this command is:\n\nNET ${subCmd.toUpperCase()} [...]`;
-    }
-
-    // Network commands (use network context)
-    const netCtx = this.buildNetContext();
-    switch (cmd) {
-      case 'help':     return cmdHelp(args);
-      case 'ipconfig': return cmdIpconfig(netCtx, args);
-      case 'netsh':    return cmdNetsh(netCtx, args);
-      case 'ping':     return cmdPing(netCtx, args);
-      case 'arp':      return cmdArp(netCtx, args);
-      case 'getmac':   return cmdGetmac(netCtx, args);
-      case 'tracert':
-      case 'traceroute': return cmdTracert(netCtx, args);
-      case 'route':    return cmdRoute(netCtx, args);
-      case 'wevtutil': return cmdWevtutil(netCtx, args);
-      case 'nslookup': return this.cmdNslookup(args);
-      case 'ssh':      return this.cmdSsh(args);
-      case 'sftp':     return this.cmdSftp(args);
-      case 'scp':      return this.cmdScp(args);
-      case 'telnet':   return this.cmdTelnet(args);
-      default:
-        return `'${cmd}' is not recognized as an internal or external command,\noperable program or batch file.`;
-    }
+    // Not yet migrated to command-kernel (migration_framework.md §6: no
+    // legacy fallback — a builtin either lives in the registry above, or
+    // it isn't implemented yet, and says so exactly like real cmd.exe).
+    // The still-unmigrated legacy implementations (WinDir.ts, WinSystemCommands.ts,
+    // WinFileCommands.ts's process/service/net commands, etc.) are kept as
+    // reference material for their future migration passes and are not
+    // called from here anymore.
+    return `'${cmd}' is not recognized as an internal or external command,\noperable program or batch file.`;
   }
 
   // ─── Command Chaining ─────────────────────────────────────────────
@@ -2096,27 +1917,77 @@ export class WindowsPC extends EndHost implements UserAccountHost {
 
   // ─── Build Contexts ──────────────────────────────────────────────
 
-  private buildFileContext(): WinFileCommandContext {
-    return {
-      fs: this.fs,
-      cwd: this.cwd,
-      hostname: this.hostname,
-      env: this.env,
-      setCwd: (path: string) => {
-        // When the new cwd belongs to a different drive than the old one,
-        // remember the previous drive's cwd in the active session's
-        // per-drive map so a later bare `C:` returns to the right
-        // location (terminal_gap.md §6.3).
-        const oldDrive = this.cwd.match(/^([A-Za-z]):/)?.[1]?.toUpperCase();
-        const newDrive = path.match(/^([A-Za-z]):/)?.[1]?.toUpperCase();
-        const s = this._activeShellSession;
-        if (s && oldDrive && newDrive && oldDrive !== newDrive) {
-          s.driveCwd.set(oldDrive, this.cwd);
-        }
-        if (s && newDrive) s.driveCwd.set(newDrive, path);
-        this.cwd = path;
-      },
-    };
+  /**
+   * Change `this.cwd`, keeping the active shell session's per-drive cwd map
+   * in sync — when the new cwd belongs to a different drive than the old
+   * one, remember the previous drive's cwd so a later bare `C:` returns to
+   * the right location (terminal_gap.md §6.3). Shared by every path that
+   * mutates cwd (cmd's `cd`, drive switching) so the bookkeeping lives in
+   * exactly one place.
+   */
+  private setCwdTracked(path: string): void {
+    const oldDrive = this.cwd.match(/^([A-Za-z]):/)?.[1]?.toUpperCase();
+    const newDrive = path.match(/^([A-Za-z]):/)?.[1]?.toUpperCase();
+    const s = this._activeShellSession;
+    if (s && oldDrive && newDrive && oldDrive !== newDrive) {
+      s.driveCwd.set(oldDrive, this.cwd);
+    }
+    if (s && newDrive) s.driveCwd.set(newDrive, path);
+    this.cwd = path;
+  }
+
+  private getCommandKernelShell(): { registry: CommandRegistry; executor: Executor } {
+    if (!this.commandKernelShell) {
+      this.commandKernelShell = createWindowsHostShell({
+        fs: this.fs,
+        userManager: this.userMgr,
+        processManager: this.procMgr,
+        hostname: this.hostname,
+        ports: this.getPorts(),
+        powerOn: () => this.powerOn(),
+        powerOff: () => this.powerOff(),
+      });
+    }
+    return this.commandKernelShell;
+  }
+
+  /**
+   * Bridge to a migrated cmd builtin. Only called for `cmd` names already
+   * confirmed present in the command-kernel registry (§6 of
+   * migration_framework.md) — every other builtin stays on the legacy
+   * switch below. Builds a fresh session from the live legacy state
+   * (cwd/user), runs the command through `Executor` directly — bypassing
+   * command-kernel's own bash-flavoured Lexer/Parser, since `args` is
+   * already fully split by this method's caller — then syncs `cwd`/`env`
+   * back (`cwd` through `setCwdTracked` so per-drive cwd bookkeeping is
+   * preserved) so mutations made by the migrated command (e.g. `set`)
+   * are visible to the rest of the device, exactly like the legacy
+   * `WinFileCommandContext` closures did.
+   */
+  private async runCommandKernelCmd(cmd: string, args: string[]): Promise<string> {
+    const { executor } = this.getCommandKernelShell();
+    const user = resolveWindowsUser(this.userMgr, this.userMgr.currentUser);
+    const session = createSession({ id: 'legacy-bridge', user, cwd: this.cwd, env: new Map(this.env) });
+    const chunks: string[] = [];
+    const collector = { write: async (t: string) => { chunks.push(t); }, close: async () => {} };
+    const io = { stdin: new PipeBuffer(), stdout: collector, stderr: collector };
+
+    const argv: Word[] = args.map((text) => ({ text, noExpand: true }));
+    const node: SimpleCommandNode = { kind: 'command', name: cmd, argv, redirections: [] };
+
+    try {
+      await executor.run(node, session, io);
+    } catch (err) {
+      if (err instanceof ShellError) {
+        this.setCwdTracked(session.cwd);
+        this.env = session.env;
+        return `${err.message}\n`;
+      }
+      throw err;
+    }
+    this.setCwdTracked(session.cwd);
+    this.env = session.env;
+    return chunks.join('').replace(/\n$/, '');
   }
 
   /**
