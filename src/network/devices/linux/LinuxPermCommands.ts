@@ -227,16 +227,6 @@ function fullStat(name: string, inode: INode, ctx: ShellContext): string {
   ].join('\n');
 }
 
-export function cmdUmask(ctx: ShellContext, args: string[]): { output: string; newUmask?: number } {
-  if (args.length === 0) {
-    return { output: ctx.umask.toString(8).padStart(4, '0') };
-  }
-  const newUmask = parseInt(args[0], 8);
-  if (isNaN(newUmask)) return { output: `umask: ${args[0]}: invalid octal number` };
-  return { output: '', newUmask };
-}
-
-
 export function cmdMkfifo(ctx: ShellContext, args: string[]): string {
   for (const a of args) {
     if (a.startsWith('-')) continue;

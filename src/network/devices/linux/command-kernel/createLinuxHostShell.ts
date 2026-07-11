@@ -24,6 +24,7 @@ import { StatCommand } from './commands/Stat';
 import { TailCommand } from './commands/Tail';
 import { TouchCommand } from './commands/Touch';
 import { TrCommand } from './commands/Tr';
+import { UmaskCommand } from './commands/Umask';
 import { UniqCommand } from './commands/Uniq';
 import { WcCommand } from './commands/Wc';
 import { WhoamiCommand } from './commands/Whoami';
@@ -60,6 +61,7 @@ export function createLinuxHostShell(deps: LinuxMachineApiDeps): Interpreter {
   registry.register(() => new IdCommand());
   registry.register(() => new LnCommand());
   registry.register(() => new RmdirCommand());
+  registry.register(() => new UmaskCommand());
 
   return new Interpreter(registry, machine);
 }

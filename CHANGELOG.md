@@ -5,6 +5,44 @@ progressive par équipement. Un push = une entrée = une fonctionnalité
 complète et testée (voir `CLAUDE.md` / le framework de migration pour les
 principes directeurs).
 
+## Linux — Phase 2 : `umask`
+
+**État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
+
+**Gap explicitement signalé au §12 du framework** : `umask` était lu
+dynamiquement par toutes les commandes de création de fichier déjà
+migrées (`touch`, `mkdir`, `cp`...), mais aucune commande `umask` n'existait
+côté `command-kernel` pour le modifier — seul le `case 'umask':` legacy
+(`LinuxCommandExecutor.dispatch()`) pouvait le faire.
+
+**Extension de `MachineApi`** : nouvelle capacité optionnelle
+`permissions?: PermissionsApi` (`getUmask()`/`setUmask(mask)`) —
+optionnelle car `umask` est un concept POSIX sans équivalent universel
+(Windows/ACL, Cisco/Huawei n'ont rien à y mettre), suivant exactement le
+patron déjà établi pour `audit?`/`services?`/`registry?`. `UmaskCommand`
+n'appelle que `ctx.machine.permissions.getUmask()/setUmask()` — sa propre
+logique (formatage octal 4 chiffres, validation, message d'erreur exact)
+vit entièrement dans la commande, jamais déléguée à une fonction externe.
+
+**Câblage Linux** : `LinuxMachineApiDeps.setUmask(mask)` (nouveau,
+symétrique du `getUmask()` déjà existant), branché sur
+`LinuxCommandExecutor.setUmask()` (nouveau setter public, miroir de
+`getUmask()` déjà existant) depuis les deux constructeurs de shell
+command-kernel (`LinuxMachine.getCommandKernelShell()` et le repli
+autonome `LinuxCommandExecutor.getDefaultCommandKernelShell()`).
+
+**Legacy supprimé** : `case 'umask':` et `cmdUmask` (`LinuxPermCommands.ts`)
+supprimés entièrement — aucun autre appelant (contrairement à `chgrp`,
+`umask` n'existe pas dans l'autre framework `LinuxCommand`, §8 vérifié).
+
+**Validation** : lot localisé — `linux-filesystem-and-IAM.test.ts`,
+`ssh-lan-security-editors.test.ts` (SE30, parité local/SSH),
+`ssh-strict-modes.test.ts`, `linux-command-kernel.test.ts` (harnais du
+socle lui-même, `deps` de test mis à jour avec un vrai `setUmask`
+mutable) plus le lot audit/privilège du §7.2 — 622 tests, 1 échec
+pré-existant et sans rapport (`journalization.test.ts` #161, déjà
+documenté en Phase 1). Typecheck ciblé propre.
+
 ## Windows — Phase 9 : `auditpol`, `winrm`
 
 **État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
