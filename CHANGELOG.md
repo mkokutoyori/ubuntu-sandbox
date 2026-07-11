@@ -5,6 +5,64 @@ progressive par équipement. Un push = une entrée = une fonctionnalité
 complète et testée (voir `CLAUDE.md` / le framework de migration pour les
 principes directeurs).
 
+## Windows — Phase 6 : `net` (user/localgroup/start/stop/share/session/use/accounts)
+
+**État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
+
+`net` n'était migré nulle part côté `cmd.exe` — le pont `runSyncNativeCommand`
+(shim synchrone dédié à PowerShell, jamais touché) gère bien `net user`/
+`net localgroup`/`net start`/`net stop`/`net share`/`net session`, mais
+`executeCmdCommand('net ...')` tombait systématiquement sur « not
+recognized » depuis la Phase 4 (cutover complet, régression jamais détectée
+faute d'être dans le lot de tests localisé de l'époque). `net use` et
+`net accounts` étaient morts des DEUX côtés : `cmdNetUse` n'était appelé
+nulle part (import de type seulement), et `net accounts` n'avait jamais eu
+de fonction `cmdNetAccounts` — seul l'état (`WindowsAccountsPolicy`) existait.
+
+**`MachineApi.netExe?: NetExeApi`** (méthode unique `execute(argv, caller)`)
+— même raisonnement documenté que `ServiceManagementApi`/`sc` (§3.4 règle 2) :
+`net.exe` a ~8 sous-commandes au format figé, chacune couplée à un
+sous-système vendeur distinct (SAM, SCM, table de partages SMB, table
+`net use`, politique de compte LSA) ; décomposer en primitives génériques
+réimplémenterait son dispatcher sans bénéfice pour un autre vendeur.
+`NetCommand.execute()` ne fait que transmettre l'argv déjà tokenisé ;
+`WindowsNetExeApi` (dans `WindowsMachineApi.ts`) reste seule responsable de
+l'interprétation — elle réutilise `cmdNetUser`/`cmdNetLocalgroup`/
+`cmdNetStart`/`cmdNetStop`/`cmdNetShare`/`cmdNetUse` en interne (légitime :
+exécuté depuis le pont, jamais depuis une commande), et implémente `net
+session`/`net accounts` directement (respectivement portés depuis l'ancienne
+méthode privée `WindowsPC.cmdNetSession`, et écrits pour la première fois
+contre `WindowsAccountsPolicy.render()`/`.apply()`, déjà correcte et déjà
+consultée par `WindowsUserManager` pour la politique de mot de passe réelle).
+
+**`cmdNetShare`/`cmdNetUse` découplés du `WinCommandContext` géant** —
+signatures réduites à `Pick<WinCommandContext, ...>` (`NetShareContext`,
+`NetUseContext`) portant seulement les 2 et 4 champs réellement utilisés
+(`isServiceRunning`+`smbShares`, `isServiceRunning`+`netUseTable`+
+`resolveHostname`+`dialSmbShare`) — évite de tirer toute la pile réseau
+(netsh/ipconfig/dhcp/dns, explicitement hors périmètre) dans `MachineApi`
+juste pour ces deux sous-commandes. `requireWindowsService`/
+`requireWindowsServices` (`WinFeatureGate.ts`) narrowés de la même façon
+(`ServiceGateContext = Pick<WinCommandContext, 'isServiceRunning'>`), pour
+rester réutilisables par ces deux contextes réduits sans dupliquer à la
+main le texte exact des refus de service (piège trouvé en écrivant cette
+phase : une première tentative de recopier `The Workstation service has
+not been started...` à la main s'est trompée de message — `LanmanWorkstation`
+a un texte dédié dans `WinFeatureGate.ts` que je n'avais pas vérifié).
+
+**Validation** : lot localisé de 22 fichiers (les 16 de la Phase 5 +
+`windows-phase-g`, `windows-password-policy`, `windows-server-smb`,
+`windows-smb-cmdlets`, `cross-equipment-ssh-suite`,
+`password-policy-ssh-scp-sftp-coherence`) comparé au commit précédent —
+baseline 189 échecs / 720 réussites → après ce lot, 111 échecs / 798
+réussites — **78 tests corrigés, zéro régression** (échecs restants tous
+préexistants et hors périmètre : `nltest`/`dcdiag`/`klist`, `schtasks`,
+`print`). Typecheck ciblé propre.
+
+**Hors périmètre, repéré en passant** : `schtasks`, `print` — mêmes gaps
+Phase-4 que `net`, mais familles de commandes distinctes ; laissées pour un
+prochain lot plutôt que d'élargir celui-ci au-delà de `net`.
+
 ## Windows — Phase 5 : whoami/icacls/attrib/find/sort/more/fc/xcopy/where/doskey, suppression de l'échappatoire `.native`
 
 **État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**

@@ -18,6 +18,8 @@ import type { WinCommandContext } from './WinCommandExecutor';
 import { requireWindowsService } from './WinFeatureGate';
 import type { SmbShare } from './server/smb/SmbTypes';
 
+export type NetShareContext = Pick<WinCommandContext, 'isServiceRunning' | 'smbShares'>;
+
 function listShares(shares: SmbShare[]): string {
   const lines: string[] = [];
   lines.push('');
@@ -31,7 +33,7 @@ function listShares(shares: SmbShare[]): string {
   return lines.join('\n');
 }
 
-export function cmdNetShare(ctx: WinCommandContext, args: string[]): string {
+export function cmdNetShare(ctx: NetShareContext, args: string[]): string {
   const gate = requireWindowsService(ctx, 'LanmanServer');
   if (!gate.ok) return gate.error;
   const table = ctx.smbShares;

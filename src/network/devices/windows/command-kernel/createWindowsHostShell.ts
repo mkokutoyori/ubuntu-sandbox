@@ -18,6 +18,7 @@ import { IcaclsCommand } from './commands/Icacls';
 import { MkdirCommand } from './commands/Mkdir';
 import { MoreCommand } from './commands/More';
 import { MoveCommand } from './commands/Move';
+import { NetCommand } from './commands/Net';
 import { RenCommand } from './commands/Ren';
 import { RmdirCommand } from './commands/Rmdir';
 import { NetstatCommand } from './commands/Netstat';
@@ -83,6 +84,7 @@ export function createWindowsHostShell(deps: WindowsMachineApiDeps): { registry:
   registry.register(() => new XcopyCommand());
   registry.register(() => new WhereCommand());
   registry.register(() => new DoskeyCommand());
+  registry.register(() => new NetCommand());
 
   const interpreter = new CmdInterpreter(registry, machine);
 

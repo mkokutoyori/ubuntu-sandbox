@@ -25,6 +25,8 @@ import type { WinCommandContext } from './WinCommandExecutor';
 import { requireWindowsService } from './WinFeatureGate';
 import type { SmbConnection } from './server/smb/SmbClient';
 
+export type NetUseContext = Pick<WinCommandContext, 'isServiceRunning' | 'netUseTable' | 'resolveHostname' | 'dialSmbShare'>;
+
 export interface NetUseEntry {
   local: string;
   remote: string;
@@ -56,7 +58,7 @@ function parseUnc(unc: string): { server: string; share: string } | null {
   return { server: m[1], share: m[2] };
 }
 
-export async function cmdNetUse(ctx: WinCommandContext, args: string[]): Promise<string> {
+export async function cmdNetUse(ctx: NetUseContext, args: string[]): Promise<string> {
   const gate = requireWindowsService(ctx, 'LanmanWorkstation');
   if (!gate.ok) return gate.error;
   const store = ctx.netUseTable;

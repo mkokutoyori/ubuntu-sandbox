@@ -137,6 +137,20 @@ export interface ServiceManagementApi {
   execute(argv: readonly string[], caller: { isAdmin: boolean; userName: string }): Promise<string>;
 }
 
+/**
+ * Passerelle vers `net.exe` (comptes locaux/domaine, groupes, services,
+ * partages SMB, mappages de lecteurs) — optionnel, même raisonnement que
+ * `ServiceManagementApi` : ~8 sous-commandes (`user`, `localgroup`,
+ * `start`, `stop`, `share`, `session`, `use`, `accounts`) au format figé,
+ * chacune couplée à un sous-système vendeur distinct (SAM, SCM, table de
+ * partages SMB, table `net use`, politique de compte LSA). Décomposer en
+ * primitives génériques réimplémenterait le dispatcher de `net.exe` sans
+ * bénéfice pour un autre vendeur.
+ */
+export interface NetExeApi {
+  execute(argv: readonly string[], caller: { isAdmin: boolean; userName: string }): Promise<string>;
+}
+
 export interface SocketInfo {
   readonly protocol: string;
   readonly localAddress: string;
@@ -259,6 +273,8 @@ export interface MachineApi {
   readonly services?: ServiceManagementApi;
   /** Macros de ligne de commande (`doskey`, cmd.exe) — optionnel, pas un concept universel. */
   readonly macros?: MacroApi;
+  /** `net.exe` (comptes, groupes, services, partages SMB, lecteurs réseau) — optionnel, pas un concept universel. */
+  readonly netExe?: NetExeApi;
   now(): Date;
 }
 

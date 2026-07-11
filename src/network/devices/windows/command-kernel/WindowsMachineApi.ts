@@ -10,6 +10,7 @@ import {
   HardwareProfile as CkHardwareProfile,
   MachineApi,
   MacroApi,
+  NetExeApi,
   NetworkApi,
   OsIdentity,
   PowerApi,
@@ -23,6 +24,7 @@ import {
 import { FileSystemError } from '@/command-kernel/errors';
 import { User } from '@/command-kernel/session/types';
 import type { Port } from '@/network/hardware/Port';
+import type { IPAddress } from '@/network/core/types';
 import type { SystemIdentity } from '@/network/devices/host/identity/SystemIdentity';
 import type { HardwareProfile } from '@/network/devices/host/hardware/HardwareProfile';
 import { WindowsFileSystem } from '../WindowsFileSystem';
@@ -31,7 +33,17 @@ import type { WindowsUserManager } from '../WindowsUserManager';
 import type { WindowsServiceManager } from '../WindowsServiceManager';
 import type { DoskeyTable } from '../cli/DoskeyTable';
 import type { DomainSession } from '../domain/DomainTypes';
+import type { DirectoryStore } from '../server/ad/DirectoryStore';
+import type { SmbShareTable } from '../server/smb/SmbShareTable';
+import type { SmbSessionTable } from '../server/smb/SmbSessionTable';
+import type { SmbDialResult } from '../server/smb/SmbClient';
+import type { NetUseEntry } from '../WinNetUse';
+import type { WindowsAccountsPolicy } from '../security/WindowsAccountsPolicy';
 import { cmdSc } from '../WinSc';
+import { cmdNetUser, cmdNetLocalgroup } from '../WinNetUser';
+import { cmdNetStart, cmdNetStop } from '../WinNetStart';
+import { cmdNetShare } from '../WinNetShare';
+import { cmdNetUse } from '../WinNetUse';
 import { numericIdFromSid, resolveWindowsUser } from './WindowsUser';
 
 export interface WindowsMachineApiDeps {
@@ -46,6 +58,13 @@ export interface WindowsMachineApiDeps {
   readonly serviceManager: WindowsServiceManager;
   getDomainSession(): DomainSession | null;
   readonly doskey: DoskeyTable;
+  getDirectoryStore(): DirectoryStore | null;
+  readonly smbShares: SmbShareTable;
+  readonly smbSessions: SmbSessionTable;
+  readonly netUseTable: Map<string, NetUseEntry>;
+  readonly accountsPolicy: WindowsAccountsPolicy;
+  resolveHostname(name: string): Promise<IPAddress | null>;
+  dialSmbShare(targetIp: string, shareName: string, username: string, password: string): SmbDialResult;
   isDHCPConfigured(ifName: string): boolean;
   bootedAt(): Date | null;
   powerOn(): void;
@@ -426,6 +445,80 @@ class WindowsServiceManagementApi implements ServiceManagementApi {
   }
 }
 
+function formatNetSessions(sessions: readonly { clientComputerName: string; user: string; numOpens: number }[]): string {
+  const header =
+    'Computer             User name            Client Type       Opens Idle time\n' +
+    '-------------------------------------------------------------------------\n';
+  if (sessions.length === 0) return header + 'There are no entries in the list.';
+  const rows = sessions.map((s) =>
+    `\\\\${s.clientComputerName}`.padEnd(22) + s.user.padEnd(21) + ''.padEnd(18) + String(s.numOpens).padStart(5) + '  00:00:00');
+  return header + rows.join('\n') + '\nThe command completed successfully.';
+}
+
+class WindowsNetExeApi implements NetExeApi {
+  constructor(
+    private readonly deps: Pick<WindowsMachineApiDeps,
+      'hostname' | 'userManager' | 'processManager' | 'serviceManager' | 'getDirectoryStore' |
+      'smbShares' | 'smbSessions' | 'netUseTable' | 'accountsPolicy' | 'resolveHostname' | 'dialSmbShare'>,
+  ) {}
+
+  private isServiceRunning(name: string): boolean {
+    return this.deps.serviceManager.getService(name)?.state === 'Running';
+  }
+
+  private netSession(args: readonly string[]): string {
+    if (args.some((a) => a.toLowerCase() === '/delete')) {
+      const target = args.find((a) => a.startsWith('\\\\'));
+      for (const s of this.deps.smbSessions.list()) {
+        if (!target || s.clientIp === target.slice(2) || s.clientComputerName === target.slice(2)) {
+          this.deps.smbSessions.close(s.id);
+        }
+      }
+      return 'The command completed successfully.';
+    }
+    return formatNetSessions(this.deps.smbSessions.list());
+  }
+
+  private netAccounts(args: readonly string[]): string {
+    if (args.length === 0) return this.deps.accountsPolicy.render();
+    for (const arg of args) {
+      const m = /^\/(\w+):(.+)$/.exec(arg);
+      if (!m) continue;
+      const err = this.deps.accountsPolicy.apply(m[1], m[2]);
+      if (err) return `System error.\n\n${err}`;
+    }
+    return 'The command completed successfully.';
+  }
+
+  async execute(argv: readonly string[], caller: { isAdmin: boolean; userName: string }): Promise<string> {
+    if (argv.length === 0) {
+      return 'More help is available by typing NET HELP command.';
+    }
+    const subCmd = argv[0].toLowerCase();
+    const subArgs = argv.slice(1);
+    const netUserCtx = { hostname: this.deps.hostname, userManager: this.deps.userManager, directoryStore: this.deps.getDirectoryStore() };
+    const netStartCtx = { serviceManager: this.deps.serviceManager, processManager: this.deps.processManager, isAdmin: caller.isAdmin };
+    const gateCtx = { isServiceRunning: (name: string) => this.isServiceRunning(name) };
+
+    switch (subCmd) {
+      case 'user': return cmdNetUser(netUserCtx, subArgs);
+      case 'localgroup': return cmdNetLocalgroup(netUserCtx, subArgs);
+      case 'start': return cmdNetStart(netStartCtx, subArgs);
+      case 'stop': return cmdNetStop(netStartCtx, subArgs);
+      case 'share': return cmdNetShare({ ...gateCtx, smbShares: this.deps.smbShares }, subArgs);
+      case 'session': return this.netSession(subArgs);
+      case 'accounts': return this.netAccounts(subArgs);
+      case 'use': return cmdNetUse({
+        ...gateCtx,
+        netUseTable: this.deps.netUseTable,
+        resolveHostname: this.deps.resolveHostname,
+        dialSmbShare: this.deps.dialSmbShare,
+      }, subArgs);
+      default: return 'The command syntax is incorrect.';
+    }
+  }
+}
+
 class WindowsPowerApi implements PowerApi {
   constructor(private readonly deps: Pick<WindowsMachineApiDeps, 'powerOn' | 'powerOff'>) {}
 
@@ -460,6 +553,7 @@ export class WindowsMachineApi implements MachineApi {
   readonly power: PowerApi;
   readonly services: ServiceManagementApi;
   readonly macros: MacroApi;
+  readonly netExe: NetExeApi;
   readonly hostname: string;
   readonly os: OsIdentity;
   readonly hardware: CkHardwareProfile;
@@ -474,6 +568,7 @@ export class WindowsMachineApi implements MachineApi {
     this.power = new WindowsPowerApi(deps);
     this.services = new WindowsServiceManagementApi(deps.serviceManager, deps.processManager);
     this.macros = new WindowsMacroApi(deps.doskey);
+    this.netExe = new WindowsNetExeApi(deps);
     this.hostname = deps.hostname;
     this.os = {
       name: deps.identity.os.name,
