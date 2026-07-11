@@ -181,11 +181,22 @@ class LinuxFileSystemApi implements FileSystemApi {
     } catch (err) {
       this.translate(err, path);
     }
-    if (!p.parent().canWrite()) {
-      throw new FileSystemError(path, 'EACCES', `${path}: Permission denied`);
+    if (p.isDirectory() && !recursive) {
+      throw new FileSystemError(path, 'EISDIR', `${path}: Is a directory`);
+    }
+    if (actor.uid !== 0) {
+      const parent = p.parent();
+      const parentNode = parent.inode();
+      if (parentNode && (!parent.canWrite() || !parent.canExecute())) {
+        throw new FileSystemError(path, 'EACCES', `${path}: Permission denied`);
+      }
+      const node = p.lstatNode();
+      const sticky = parentNode !== null && (parentNode.permissions & 0o1000) !== 0;
+      if (parentNode && sticky && node && node.uid !== actor.uid && parentNode.uid !== actor.uid) {
+        throw new FileSystemError(path, 'EACCES', `${path}: Operation not permitted`);
+      }
     }
     if (p.isDirectory()) {
-      if (!recursive) throw new FileSystemError(path, 'EISDIR', `${path}: Is a directory`);
       if (!this.vfs.rmrf(p.value)) {
         throw new FileSystemError(path, 'EACCES', `${path}: Permission denied`);
       }

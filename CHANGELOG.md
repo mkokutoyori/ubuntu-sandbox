@@ -5,6 +5,58 @@ progressive par équipement. Un push = une entrée = une fonctionnalité
 complète et testée (voir `CLAUDE.md` / le framework de migration pour les
 principes directeurs).
 
+## Linux — Phase 3 : lecteurs d'identité (`id`, `whoami`, `groups`) + durcissement `rm`
+
+**État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
+Suit `migration_framework.md` : vérifié au préalable que `id`/`whoami`/
+`groups` n'existent nulle part dans l'autre framework de migration
+(`src/network/devices/linux/commands/iam/`) et qu'aucune entrée de
+`defaultCommandPrivileges.ts` ne les restreint — `PrivilegeLevel.ANY`
+est donc bien équivalent au comportement legacy.
+
+**Périmètre migré** :
+
+- `id` — format par défaut (`uid=…(…) gid=…(…) groups=…`), `-u`/`-g`/`-G`
+  (avec `-n` pour les noms), rejet des combinaisons invalides
+  (`-n` seul, plusieurs sélecteurs) avec les mêmes messages et le même
+  code de sortie que legacy (`0`, sauf utilisateur inexistant → `1`).
+- `whoami`, `groups [utilisateur]` (format `nom : groupes` uniquement si
+  l'utilisateur est passé explicitement, comme legacy).
+- Aucun de ces trois n'a d'effet de bord filesystem — seul le prélude
+  générique `publishCommandExecve` (déjà en place, voir la phase
+  précédente) s'applique, pas de nouvel appel d'audit par commande.
+
+**Bug trouvé en élargissant les tests localisés (`rm-preserve-root.test.ts`,
+jamais inclus dans un lot précédent)** — pas une régression de cette
+session, un trou déjà présent depuis la Phase 1 sur `rm`, découvert en
+suivant la règle du framework « élargir le filet dès qu'on touche à
+IAM/privilège » :
+
+- `rm` n'implémentait ni `--preserve-root`/`--no-preserve-root` (refus de
+  `rm -rf /`), ni le bit sticky de `/tmp` (`rm` d'un fichier d'autrui dans
+  un répertoire sticky doit échouer avec « Operation not permitted »), ni
+  le format de message exact `rm: cannot remove '<cible>': <raison>`
+  (le pont renvoyait `rm: <chemin résolu>: <raison>`, sans le préfixe
+  `cannot remove`). Fix : `LinuxFileSystemApi.remove()` réplique l'ordre
+  exact des vérifications legacy (répertoire non récursif → bit sticky →
+  suppression), `RmCommand` porte la logique `--preserve-root` (propre à
+  `rm`, pas une notion de filesystem générique) et reformate les erreurs
+  au format exact.
+
+**Nettoyage** : déplacement de la validation `cut` (« une option -f, -c ou
+-b est requise ») dans `validate()`, sur le modèle déjà établi par
+`ChmodCommand` — c'est une incohérence purement syntaxique entre
+arguments déjà parsés, indépendante de `ctx.machine`, donc elle n'a pas
+sa place dans `execute()`. Les autres validations argument-dépendantes
+(`chown` résout un utilisateur/groupe réel, `cut` calcule des plages qui
+dépendent de la longueur de chaque ligne) restent dans `execute()` car
+elles ont besoin de `ctx.machine` ou d'un état runtime que `validate()`
+n'a pas.
+
+**Validation** : lot localisé élargi (38 fichiers, 1457 tests, 0 échec) —
+IAM/filesystem, ACL, privilège, audit/journalisation, su/sudo, et
+l'ensemble déjà établi des phases précédentes.
+
 ## Linux — Fix critique : parité d'audit/trace pour les commandes déjà migrées
 
 **État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**

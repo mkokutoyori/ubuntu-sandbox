@@ -1,3 +1,4 @@
+import { ParsedArgs } from '@/command-kernel/args/parsed-args';
 import { BaseCommand } from '@/command-kernel/command/base-command';
 import { CommandContext, CommandDescriptor, EXIT_OK, ExitCode } from '@/command-kernel/command/types';
 import { UsageError } from '@/command-kernel/errors';
@@ -41,6 +42,12 @@ export class CutCommand extends BaseCommand {
     category: 'texte',
   };
 
+  protected override validate(args: ParsedArgs): void {
+    if (!args.has('fields') && !args.has('characters') && !args.has('bytes')) {
+      throw new UsageError('une option -f, -c ou -b est requise');
+    }
+  }
+
   async execute(ctx: CommandContext): Promise<ExitCode> {
     const files = ctx.args.has('files') ? ctx.args.get<string[]>('files') : [];
     const delimiter = ctx.args.get<string>('delimiter') || '\t';
@@ -49,9 +56,6 @@ export class CutCommand extends BaseCommand {
     const outputDelimiter = ctx.args.has('output-delimiter') ? ctx.args.get<string>('output-delimiter') : delimiter;
 
     const mode: 'field' | 'char' = ctx.args.has('fields') ? 'field' : 'char';
-    if (!ctx.args.has('fields') && !ctx.args.has('characters') && !ctx.args.has('bytes')) {
-      throw new UsageError('une option -f, -c ou -b est requise');
-    }
     const rangeSpec = ctx.args.has('fields')
       ? ctx.args.get<string>('fields')
       : ctx.args.has('characters')
