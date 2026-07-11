@@ -17,6 +17,7 @@ import {
   PrintApi,
   ProcessApi,
   ProcessInfo as CkProcessInfo,
+  RegistryApi,
   SchedulingApi,
   SecurityIdentity,
   ServiceManagementApi,
@@ -42,6 +43,7 @@ import type { SmbDialResult } from '../server/smb/SmbClient';
 import type { NetUseEntry } from '../WinNetUse';
 import type { WindowsAccountsPolicy } from '../security/WindowsAccountsPolicy';
 import type { WinScheduledTask } from '../WinSystemCommands';
+import type { WinRegistryProvider } from '../WinRegCommand';
 import { cmdSc } from '../WinSc';
 import { cmdNetUser, cmdNetLocalgroup } from '../WinNetUser';
 import { cmdNetStart, cmdNetStop } from '../WinNetStart';
@@ -71,6 +73,7 @@ export interface WindowsMachineApiDeps {
   resolveHostname(name: string): Promise<IPAddress | null>;
   dialSmbShare(targetIp: string, shareName: string, username: string, password: string): SmbDialResult;
   readonly scheduledTasks: Map<string, WinScheduledTask>;
+  readonly registry: WinRegistryProvider;
   isDHCPConfigured(ifName: string): boolean;
   bootedAt(): Date | null;
   now(): Date;
@@ -589,6 +592,7 @@ export class WindowsMachineApi implements MachineApi {
   readonly netExe: NetExeApi;
   readonly scheduling: SchedulingApi;
   readonly printing: PrintApi;
+  readonly registry: RegistryApi;
   readonly hostname: string;
   readonly os: OsIdentity;
   readonly hardware: CkHardwareProfile;
@@ -607,6 +611,7 @@ export class WindowsMachineApi implements MachineApi {
     this.netExe = new WindowsNetExeApi(deps);
     this.scheduling = new WindowsSchedulingApi(deps);
     this.printing = new WindowsPrintApi(deps);
+    this.registry = deps.registry;
     this.hostname = deps.hostname;
     this.os = {
       name: deps.identity.os.name,

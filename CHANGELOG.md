@@ -5,6 +5,48 @@ progressive par équipement. Un push = une entrée = une fonctionnalité
 complète et testée (voir `CLAUDE.md` / le framework de migration pour les
 principes directeurs).
 
+## Windows — Phase 8 : `reg`, `setx`, `start`, `nbtstat`
+
+**État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
+
+Quatre commandes de plus, toutes mortes des deux côtés (wrapper privé
+`WindowsPC.cmdX` jamais appelé) depuis la Phase 4.
+
+**`MachineApi.registry?: RegistryApi`** — contrairement à `NetExeApi`/
+`ServiceManagementApi`/`SchedulingApi`/`PrintApi`, PAS une passerelle
+opaque : `WinRegistryProvider` (déjà utilisé par le provider PowerShell
+`Registry::`, donc déjà partagé entre `reg.exe` et `Get-ItemProperty`)
+était déjà une interface étroite et déjà généraliste (7 primitives :
+`testPath`/`newItem`/`setItemProperty`/`removeItemProperty`/`removeItem`/
+`getItemPropertyValues`/`listSubkeyNames`) — copiée telle quelle dans
+`machine/types.ts` sous le nom `RegistryApi`. `RegCommand.execute()` reste
+un simple appel à `cmdReg(ctx.machine.registry, args)` : `cmdReg` ne
+touche plus aucun objet legacy brut, seulement cette interface déjà
+abstraite — legitimate, contrairement au `.native` de la Phase 5.
+
+`setx`/`nbtstat` réimplémentées entièrement inline (`ctx.session.env`,
+`ctx.machine.hostname`) — aucune extension nécessaire, même pattern que
+`Findstr`/`Copy`/`Dir`.
+
+`start` réimplémentée sur `ctx.machine.proc.spawn()` (primitive déjà
+générique) — **simplification assumée** : le legacy `cmdStart` attachait
+le processus à la session Console (parent `explorer.exe`, `sessionId: 1`,
+propriétaire l'utilisateur courant) ; `ProcessApi.spawn()` ne porte pas ces
+paramètres (généraliste, partagé avec Linux) et aucun test ne couvre `start`
+côté cmd (`grep` vérifié) — étendre l'interface partagée pour un besoin
+non testé n'aurait fait qu'ajouter de la surface non validée. Documenté ici
+plutôt que laissé silencieux.
+
+**Nettoyage** : `cmdStart`/`cmdSetx`/`cmdNbtstat`/`cmdWmic` (un second
+doublon mort, différent du `WmicCommand` migré en Phase 3) supprimés de
+`WinSystemCommands.ts` — confirmés sans autre appelant.
+
+**Validation** : `windows-server-identity.test.ts` (`reg query`, jusque-là
+non inclus dans le lot localisé) + smoke manuel non versionné pour
+`setx`/`start`/`nbtstat` (aucun test existant ne les couvre). Lot complet
+comparé au commit précédent — 101 échecs / 808 réussites → 100 échecs / 813
+réussites, zéro régression. Typecheck ciblé propre.
+
 ## Windows — Phase 7 : `schtasks`, `print`, correction de `MachineApi.now()`
 
 **État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**

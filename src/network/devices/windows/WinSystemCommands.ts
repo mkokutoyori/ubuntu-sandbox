@@ -183,44 +183,6 @@ export function cmdTime(_args: string[]): string {
 
 // ─── start / setx ────────────────────────────────────────────────────
 
-/**
- * `start <command>` — launch a program in a new session. Spawns into the
- * shared process manager so both `tasklist` and `Get-Process` see it.
- * Returns an empty string on success (matches cmd.exe semantics).
- */
-export function cmdStart(ctx: WinSystemContext, args: string[]): string {
-  // Strip cmd-style flags (/B, /WAIT, /MIN, ...) and the optional "title"
-  // argument that precedes the executable.
-  const filtered = args.filter(a => !a.startsWith('/'));
-  if (filtered.length === 0) return '';
-  let target = filtered[0].replace(/^["']|["']$/g, '');
-  // `start "title" prog ...` form: drop the title token.
-  if (filtered.length >= 2 && /^"[^"]*"$/.test(args.find(a => /^"[^"]*"$/.test(a)) ?? '')) {
-    target = filtered[1].replace(/^["']|["']$/g, '');
-  }
-  if (!target) return '';
-  const leaf = target.split(/[\\/]/).pop() ?? target;
-  const imageName = /\.exe$/i.test(leaf) ? leaf : `${leaf}.exe`;
-  const parent = ctx.processManager.getAllProcesses()
-    .find(p => p.name.toLowerCase() === 'explorer.exe');
-  const ppid = parent?.pid ?? 1;
-  ctx.processManager.spawnProcess(imageName, ppid, ctx.currentUser, {
-    session: 'Console', sessionId: 1,
-  });
-  return '';
-}
-
-/** `setx VAR VALUE [/M]` — persists an environment variable. */
-export function cmdSetx(ctx: WinSystemContext, args: string[]): string {
-  const filtered = args.filter(a => a.toUpperCase() !== '/M');
-  if (filtered.length < 2) {
-    return 'ERROR: Invalid syntax. Type "SETX /?" for usage.';
-  }
-  const name = filtered[0];
-  const value = filtered.slice(1).join(' ').replace(/^"(.*)"$/, '$1');
-  ctx.env.set(name, value);
-  return `SUCCESS: Specified value was saved.`;
-}
 
 // ─── schtasks ────────────────────────────────────────────────────────
 
@@ -326,40 +288,3 @@ function fmtSchtasksDate(d: Date): string {
   return `${p(d.getMonth() + 1)}/${p(d.getDate())}/${d.getFullYear()} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
 }
 
-// ─── nbtstat / wmic ──────────────────────────────────────────────────
-
-/** `nbtstat -n / -a / -A` — returns a minimal local NetBIOS name table. */
-export function cmdNbtstat(ctx: WinSystemContext, args: string[]): string {
-  const flag = args[0]?.toLowerCase();
-  if (flag === '-n') {
-    return [
-      '',
-      '    Node IpAddress: [0.0.0.0] Scope Id: []',
-      '',
-      '                       NetBIOS Local Name Table',
-      '',
-      '       Name               Type         Status',
-      '    ---------------------------------------------',
-      `    ${ctx.hostname.toUpperCase().padEnd(16)} <00>  UNIQUE      Registered`,
-      `    WORKGROUP        <00>  GROUP       Registered`,
-      '',
-    ].join('\n');
-  }
-  return 'NBTSTAT [ [-a RemoteName] [-A IP address] [-c] [-n] [-r] [-R] [-RR] [-s] [-S] [interval] ]';
-}
-
-/** `wmic logicaldisk get name` / minimal WMI stub. */
-export function cmdWmic(ctx: WinSystemContext, args: string[]): string {
-  if (args.length === 0) return 'wmic:root\\cli>';
-  const joined = args.join(' ').toLowerCase();
-  if (joined.includes('logicaldisk') && joined.includes('get name')) {
-    return 'Name  \nC:    ';
-  }
-  if (joined.includes('os get caption')) {
-    return `Caption                              \n${ctx.os.prettyName.padEnd(38)}`;
-  }
-  if (joined.includes('cpu get name')) {
-    return 'Name                                              \nIntel(R) Core(TM) i7 CPU @ 2.50GHz                ';
-  }
-  return '';
-}
