@@ -5,6 +5,93 @@ progressive par équipement. Un push = une entrée = une fonctionnalité
 complète et testée (voir `CLAUDE.md` / le framework de migration pour les
 principes directeurs).
 
+## Windows — Phase 2 : vrai `Lexer`/`Parser` cmd.exe, pont réécrit sur `Interpreter`
+
+**État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
+Suite directe de la Phase 1, sur retour explicite de l'utilisateur : la
+Phase 1 construisait un `SimpleCommandNode` à la main à partir d'un
+`(cmd, args)` déjà découpé par `WindowsPC` — ça marchait, mais ce n'était
+pas aligné avec le framework (pas de vraie porte d'entrée `Interpreter`)
+et ne posait aucune fondation pour exécuter un jour de vrais scripts
+`.bat`. Cette phase corrige les deux.
+
+**Extension du socle partagé (`src/command-kernel/`), rétrocompatible** :
+`Executor` et `Interpreter` acceptaient un `Lexer`/`Parser`/`Expander`
+bash codés en dur ; ils prennent maintenant des paramètres optionnels
+(`IExpander`, `ITokenizer`) avec les classes bash comme valeur par
+défaut — zéro changement de comportement pour Linux (vérifié : aucune
+régression sur le lot déjà validé). C'est la seule modification apportée
+au moteur partagé ; `CommandRegistry`/`PermissionGuard`/`ArgumentParser`
+restent strictement inchangés.
+
+**`CmdLexer` (nouveau, Windows)** : tokenizer dédié à la grammaire
+cmd.exe — guillemets doubles qui basculent et se suppriment sans
+échappement (règles reprises telles quelles de `splitCmdArgs`/
+`WindowsPC.parseCommandLine`, seule référence déjà validée par la suite
+de tests, jamais réinventées), pas de guillemets simples spéciaux
+(`echo 'x'` doit garder les apostrophes littérales), `&` seul émis comme
+`TokenType.SEMI` (séquence inconditionnelle — même sémantique que le `;`
+bash), `#` jamais traité comme un commentaire. Le `Parser` partagé
+(`ast/parser.ts`) est réutilisé **sans aucune modification** : il ne
+dépend que du flux de tokens, jamais de la syntaxe bash en dur — seule
+divergence connue et acceptée : son détecteur d'assignation `VAR=valeur`
+(bash) s'appliquerait aussi à une ligne cmd qui ressemblerait par hasard
+à `X=1` en position de commande (cas non testé, cmd.exe n'a pas cette
+notion — la traiterait comme une commande introuvable).
+
+**`CmdExpander` (nouveau, Windows)** : reproduit exactement
+`WindowsPC.expandEnvVars` (`%VAR%`, recherche insensible à la casse en
+majuscules, `%CD%` résolu vers le cwd vivant, variable non définie
+laissée intacte plutôt qu'effacée). Pas de `$`, pas de `~`, pas de glob
+générique — cmd n'a aucun des trois.
+
+**Pont réécrit** : `WindowsPC.tryCommandKernelCmd()` remplace
+`runCommandKernelCmd()` et suit maintenant EXACTEMENT la structure de
+`LinuxMachine.tryCommandKernel()` (§6 du framework) — parse en pré-vol
+avec `CmdLexer`+`Parser`, refus de router (retour `null`, pas un échec)
+si erreur de parsing / AST pas réductible à `command`/`pipeline` / une
+commande du pipeline non enregistrée ; une fois routé, aucun repli, une
+`ShellError` remonte telle quelle. `createWindowsHostShell` expose
+maintenant un vrai `Interpreter` (au lieu du couple `{registry, executor}`
+brut de la Phase 1).
+
+**Portée actuelle de ce pont, honnêtement documentée** : `WindowsPC.
+executeCmdCommand` continue de découper lui-même le chaînage (`&&`/`||`/
+`&`) et les pipes (`|`) AVANT d'atteindre le pont — chaque segment simple
+est donc ce qui arrive au `Interpreter`, jamais une ligne composite. Le
+`Parser`/`Executor` savent déjà traiter `pipeline`/`and`/`or`/`sequence`
+en un seul appel (utile dès qu'on voudra exécuter une ligne composite ou
+un script multi-lignes sans repasser par le découpage `WindowsPC`), mais
+ce chemin n'est pas encore exercé par l'intégration actuelle — fondation
+posée, pas encore branchée. `CmdSubShell.executeBat()` (exécution des
+`.bat`) n'est PAS touché dans cette phase : les scripts batch réels
+utilisent `if`/`goto`/`for`/labels, une grammaire entièrement différente
+de la ligne interactive cmd que `CmdLexer` couvre aujourd'hui — brancher
+`executeBat` sur `Interpreter` prématurément aurait fait échouer tout
+script utilisant un mot-clé batch non supporté, une vraie régression sur
+`cmd-bat-execution.test.ts`. Chantier séparé, à faire une fois ces
+mots-clés supportés par un parser batch dédié.
+
+**Réponse à « toutes les commandes supprimées doivent être migrées » :
+audit** — aucune implémentation legacy n'a été supprimée du dépôt en
+Phase 1 ; seul le ROUTAGE (le `switch` dans `executeCmdCommand`) a été
+retiré. Vérifié fichier par fichier (`WinDir.ts`, `WinPing.ts`,
+`WinIpconfig.ts`, `WinNetsh.ts`, `WinTasklist.ts`, `WinSc.ts`, etc.) :
+chaque fonction `cmdXxx` existe toujours, intacte, prête à être migrée
+commande par commande — c'est du matériel de référence en attente, pas
+du code perdu. `WindowsPC.executeCommand()` (méthode publique la plus
+utilisée par la suite de tests) délègue directement à
+`executeCmdCommand()` — c'est donc déjà, et reste, le point d'entrée
+observable pour mesurer la progression de la migration à chaque
+exécution de la suite de tests, sans changement nécessaire de ce côté.
+
+**Validation** : même lot localisé qu'en Phase 1 (8 fichiers) — 118/144,
+identique à la Phase 1 (aucune régression introduite par la réécriture).
+Lot élargi (`windows-consistency`, `basic-commandes`, `env-vars`) :
+86/149, cohérent avec l'écart déjà documenté (commandes réseau/système
+hors périmètre). Typecheck ciblé propre sur `command-kernel` (socle +
+Windows) et `WindowsPC.ts`.
+
 ## Windows — Phase 1 : pont `command-kernel` + commandes fichiers/session de `cmd`, cutover complet du dispatcher legacy
 
 **État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**

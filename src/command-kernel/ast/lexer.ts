@@ -2,6 +2,16 @@ import { UsageError } from "../errors";
 import { ESCAPED_DOLLAR, KEYWORDS, Token, TokenType } from "./tokens";
 
 /**
+ * Contrat minimal attendu par l'Executor/Interpreter — permet à un
+ * vendeur dont la grammaire diverge trop du bash (ex: cmd.exe : `%VAR%`,
+ * `&` inconditionnel, pas de guillemets simples) de fournir son propre
+ * tokenizer sans toucher au moteur partagé.
+ */
+export interface ITokenizer {
+  tokenize(source: string): Token[];
+}
+
+/**
  * Découpe la source en tokens : gère les guillemets simples/doubles,
  * les échappements ('\'), les opérateurs (| || && ; > >> < ( )),
  * les mots-clés (if/then/else/fi/for/in/while/do/done) et les
@@ -10,7 +20,7 @@ import { ESCAPED_DOLLAR, KEYWORDS, Token, TokenType } from "./tokens";
  * Les segments quotés adjacents sont fusionnés dans le même mot :
  * `foo"bar baz"qux` produit un seul WORD `foobar bazqux`.
  */
-export class Lexer {
+export class Lexer implements ITokenizer {
   private source = "";
   private pos = 0;
   private line = 1;

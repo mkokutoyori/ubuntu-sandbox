@@ -118,13 +118,14 @@ import { SessionSwapWindow } from './host/session/SessionSwapWindow';
 import * as WinSys from './windows/WinSystemCommands';
 import { cmdReg as winCmdReg } from './windows/WinRegCommand';
 import { createWindowsHostShell } from './windows/command-kernel/createWindowsHostShell';
+import { CmdLexer } from './windows/command-kernel/ast/CmdLexer';
 import { resolveWindowsUser } from './windows/command-kernel/WindowsUser';
 import type { CommandRegistry } from '@/command-kernel/registry/command-registry';
-import type { Executor } from '@/command-kernel/exec/executor';
-import type { SimpleCommandNode, Word } from '@/command-kernel/ast/nodes';
+import type { Interpreter } from '@/command-kernel/interpreter';
+import { Parser } from '@/command-kernel/ast/parser';
 import { createSession } from '@/command-kernel/session/types';
 import { PipeBuffer } from '@/command-kernel/io/pipe-buffer';
-import { ShellError } from '@/command-kernel/errors';
+import { ShellError, CommandNotFoundError } from '@/command-kernel/errors';
 
 /**
  * Parse a `findstr` filter from a piped command (`net user | findstr /i Full`).
@@ -175,7 +176,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
   /** Current working directory */
   private cwd: string = 'C:\\Users\\User';
   /** Lazily-built command-kernel shell (registry + executor) for migrated cmd builtins. */
-  private commandKernelShell: { registry: CommandRegistry; executor: Executor } | null = null;
+  private commandKernelShell: { registry: CommandRegistry; interpreter: Interpreter } | null = null;
   /** Environment variables */
   private env: Map<string, string> = new Map();
   /** Exposes the env map so subshells (PS / cmd) share the same source.
@@ -1699,13 +1700,12 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       if (uncResult !== null) return uncResult;
     }
 
-    // Migrated cmd builtins (migration_framework.md §6): every command
-    // registered in `createWindowsHostShell` is routed here instead of the
-    // legacy switch below. New migrations only need to register the command
-    // there — nothing to change in this dispatcher.
-    if (this.getCommandKernelShell().registry.has(cmd)) {
-      return this.runCommandKernelCmd(cmd, args);
-    }
+    // Migrated cmd builtins (migration_framework.md §6): parsed and run
+    // through command-kernel's Interpreter (CmdLexer → Parser → Executor).
+    // New migrations only need to register the command in
+    // `createWindowsHostShell` — nothing to change in this dispatcher.
+    const bridged = await this.tryCommandKernelCmd(expanded);
+    if (bridged !== null) return bridged;
 
     // Not yet migrated to command-kernel (migration_framework.md §6: no
     // legacy fallback — a builtin either lives in the registry above, or
@@ -1936,7 +1936,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     this.cwd = path;
   }
 
-  private getCommandKernelShell(): { registry: CommandRegistry; executor: Executor } {
+  private getCommandKernelShell(): { registry: CommandRegistry; interpreter: Interpreter } {
     if (!this.commandKernelShell) {
       this.commandKernelShell = createWindowsHostShell({
         fs: this.fs,
@@ -1952,37 +1952,48 @@ export class WindowsPC extends EndHost implements UserAccountHost {
   }
 
   /**
-   * Bridge to a migrated cmd builtin. Only called for `cmd` names already
-   * confirmed present in the command-kernel registry (§6 of
-   * migration_framework.md) — every other builtin stays on the legacy
-   * switch below. Builds a fresh session from the live legacy state
-   * (cwd/user), runs the command through `Executor` directly — bypassing
-   * command-kernel's own bash-flavoured Lexer/Parser, since `args` is
-   * already fully split by this method's caller — then syncs `cwd`/`env`
-   * back (`cwd` through `setCwdTracked` so per-drive cwd bookkeeping is
-   * preserved) so mutations made by the migrated command (e.g. `set`)
-   * are visible to the rest of the device, exactly like the legacy
-   * `WinFileCommandContext` closures did.
+   * Bridge to command-kernel, modelled directly on
+   * `LinuxMachine.tryCommandKernel()` (migration_framework.md §6) — same
+   * bail-out-before-executing discipline, adapted to cmd.exe's own
+   * `CmdLexer`/`Expander` instead of bash's. `trimmed` here is the single
+   * already env/doskey-expanded, already chain/pipe-split segment
+   * `executeCmdCommand` is about to dispatch — chaining/piping across
+   * *migrated and legacy* commands still happens one level up, in
+   * `executeCmdCommand`'s own `splitCmdChain`/`executePipedCommand`.
+   *
+   * Returns `null` — a legitimate refusal to route, not a failed attempt —
+   * when parsing fails, the line isn't a simple command or pipeline, or
+   * any named command isn't registered. Once routed, no fallback: a
+   * `ShellError` from inside a migrated command is a real error, not a
+   * signal to retry on the legacy path.
    */
-  private async runCommandKernelCmd(cmd: string, args: string[]): Promise<string> {
-    const { executor } = this.getCommandKernelShell();
+  private async tryCommandKernelCmd(trimmed: string): Promise<string | null> {
+    const { registry, interpreter } = this.getCommandKernelShell();
+
+    let ast;
+    try {
+      ast = new Parser().parse(new CmdLexer().tokenize(trimmed));
+    } catch {
+      return null;
+    }
+    if (ast.kind !== 'command' && ast.kind !== 'pipeline') return null;
+
+    const names = ast.kind === 'command' ? [ast.name] : ast.stages.map((s) => s.name);
+    if (!names.every((name) => registry.has(name))) return null;
+
     const user = resolveWindowsUser(this.userMgr, this.userMgr.currentUser);
     const session = createSession({ id: 'legacy-bridge', user, cwd: this.cwd, env: new Map(this.env) });
     const chunks: string[] = [];
     const collector = { write: async (t: string) => { chunks.push(t); }, close: async () => {} };
     const io = { stdin: new PipeBuffer(), stdout: collector, stderr: collector };
 
-    const argv: Word[] = args.map((text) => ({ text, noExpand: true }));
-    const node: SimpleCommandNode = { kind: 'command', name: cmd, argv, redirections: [] };
-
     try {
-      await executor.run(node, session, io);
+      await interpreter.interpretLine(trimmed, session, io);
     } catch (err) {
-      if (err instanceof ShellError) {
-        this.setCwdTracked(session.cwd);
-        this.env = session.env;
-        return `${err.message}\n`;
-      }
+      this.setCwdTracked(session.cwd);
+      this.env = session.env;
+      if (err instanceof CommandNotFoundError) return null;
+      if (err instanceof ShellError) return `${err.message}\n`;
       throw err;
     }
     this.setCwdTracked(session.cwd);

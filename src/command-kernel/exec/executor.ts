@@ -8,7 +8,7 @@ import { CommandIO, InputStream } from "../io/types";
 import { FileSystemActor, MachineApi, toFileSystemActor } from "../machine/types";
 import { CommandRegistry } from "../registry/command-registry";
 import { Session } from "../session/types";
-import { Expander } from "../ast/expander";
+import { Expander, IExpander } from "../ast/expander";
 import {
   PipelineNode,
   RedirectionNode,
@@ -25,13 +25,16 @@ import { PermissionGuard } from "./permission-guard";
  */
 export class Executor {
   private readonly argParser = new ArgumentParser();
-  private readonly expander = new Expander();
+  private readonly expander: IExpander;
 
   constructor(
     private readonly registry: CommandRegistry,
     private readonly machine: MachineApi,
     private readonly guard: PermissionGuard = new PermissionGuard(),
-  ) {}
+    expander: IExpander = new Expander(),
+  ) {
+    this.expander = expander;
+  }
 
   async run(node: ScriptNode, session: Session, io: CommandIO): Promise<ExitCode> {
     switch (node.kind) {
