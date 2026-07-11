@@ -53,6 +53,8 @@ export interface FileSystemApi {
   rename(source: string, destination: string, actor: FileSystemActor): Promise<void>;
   symlink(target: string, path: string, actor: FileSystemActor): Promise<void>;
   readlink(path: string, actor: FileSystemActor): Promise<string>;
+  /** Lien physique : `path` désigne désormais le même inode que `targetPath` (partage de contenu, `linkCount` incrémenté). */
+  link(targetPath: string, path: string, actor: FileSystemActor): Promise<void>;
   resolve(cwd: string, path: string): string; // résolution relative/absolue
 }
 

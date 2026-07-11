@@ -5,6 +5,33 @@ progressive par équipement. Un push = une entrée = une fonctionnalité
 complète et testée (voir `CLAUDE.md` / le framework de migration pour les
 principes directeurs).
 
+## Linux — Phase 4 : `ln` (liens physiques et symboliques)
+
+**État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
+
+**Extension du socle** : `FileSystemApi` gagne `link(targetPath, path,
+actor)` — lien physique, distinct de `symlink()` déjà existant.
+Implémenté dans `LinuxFileSystemApi` via `VirtualFileSystem.createHardLink`
+(déjà utilisé par le legacy `cmdLn`, partage réellement le même inode et
+incrémente `linkCount` — vérifié par `ls -i` sur les deux noms). Ajouté
+aussi dans `testing/in-memory-machine.ts` (le `MachineApi` factice du
+socle) en partageant la même référence d'objet entre les deux chemins.
+
+**Commande migrée** : `ln [-s] <cible> <lien>` — lien physique par
+défaut, symbolique avec `-s`, message d'erreur au format legacy exact
+(`ln: failed to create <kind> '<lien>': <raison>`), audit
+(`syscall=symlink`/`syscall=link`) après succès uniquement (§7.4 du
+framework).
+
+**Validation** : lot localisé étendu à `run-parts.test.ts` (contient des
+créations de liens symboliques cassés/valides) en plus du lot déjà établi
+— 39 fichiers, 1604 tests, 3 échecs **confirmés pré-existants et sans
+rapport** (méthode §7.2 : mêmes 3 échecs avec `git stash` des changements
+de cette phase). Ces 3 échecs concernent l'interpréteur bash de scripts
+(`src/bash/`, hors périmètre de `command-kernel`) sur des scripts
+utilisant `if/then/else` et des déclarations de fonction — un vrai trou,
+mais dans un sous-système entièrement différent, à traiter séparément.
+
 ## Linux — Phase 3 : lecteurs d'identité (`id`, `whoami`, `groups`) + durcissement `rm`
 
 **État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**

@@ -11,6 +11,7 @@ import { GrepCommand } from './commands/Grep';
 import { GroupsCommand } from './commands/Groups';
 import { HeadCommand } from './commands/Head';
 import { IdCommand } from './commands/Id';
+import { LnCommand } from './commands/Ln';
 import { LsCommand } from './commands/Ls';
 import { MkdirCommand } from './commands/Mkdir';
 import { MvCommand } from './commands/Mv';
@@ -54,6 +55,7 @@ export function createLinuxHostShell(deps: LinuxMachineApiDeps): Interpreter {
   registry.register(() => new WhoamiCommand());
   registry.register(() => new GroupsCommand());
   registry.register(() => new IdCommand());
+  registry.register(() => new LnCommand());
 
   return new Interpreter(registry, machine);
 }

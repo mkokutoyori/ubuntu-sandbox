@@ -310,6 +310,17 @@ class LinuxFileSystemApi implements FileSystemApi {
     }
   }
 
+  async link(targetPath: string, path: string, actor: FileSystemActor): Promise<void> {
+    const p = this.vfs.path(path, '/', toPathActor(actor));
+    if (p.exists()) throw new FileSystemError(path, 'EEXIST', `${path}: File exists`);
+    if (!p.parent().canWrite()) {
+      throw new FileSystemError(path, 'EACCES', `${path}: Permission denied`);
+    }
+    if (!this.vfs.createHardLink(p.value, targetPath)) {
+      throw new FileSystemError(path, 'EACCES', `${path}: Permission denied`);
+    }
+  }
+
   async readlink(path: string, actor: FileSystemActor): Promise<string> {
     const p = this.vfs.path(path, '/', toPathActor(actor));
     const node = p.lstatNode();

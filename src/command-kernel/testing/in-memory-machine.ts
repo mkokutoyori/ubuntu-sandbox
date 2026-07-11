@@ -271,6 +271,17 @@ class InMemoryFileSystem implements FileSystemApi {
     return node.symlinkTarget;
   }
 
+  async link(targetPath: string, path: string, _actor: FileSystemActor): Promise<void> {
+    const targetNode = this.requireNode(targetPath);
+    if (targetNode.type === "directory") {
+      throw new FileSystemError(targetPath, "EISDIR", `${targetPath}: Is a directory`);
+    }
+    if (this.nodes.has(path)) {
+      throw new FileSystemError(path, "EEXIST", `${path}: File exists`);
+    }
+    this.nodes.set(path, targetNode); // même référence -> même inode, contenu partagé
+  }
+
   resolve(cwd: string, path: string): string {
     if (path.startsWith("/")) return normalize(path);
     return normalize(`${cwd}/${path}`);
