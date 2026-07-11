@@ -1,5 +1,6 @@
 import { CommandRegistry } from '@/command-kernel/registry/command-registry';
 import { CmdInterpreter } from './CmdInterpreter';
+import { ArpCommand } from './commands/Arp';
 import { CdCommand } from './commands/Cd';
 import { ChcpCommand } from './commands/Chcp';
 import { ClsCommand } from './commands/Cls';
@@ -14,6 +15,7 @@ import { AuditpolCommand } from './commands/Auditpol';
 import { FcCommand } from './commands/Fc';
 import { FindCommand } from './commands/Find';
 import { FindstrCommand } from './commands/Findstr';
+import { GetmacCommand } from './commands/Getmac';
 import { HostnameCommand } from './commands/Hostname';
 import { IcaclsCommand } from './commands/Icacls';
 import { MkdirCommand } from './commands/Mkdir';
@@ -25,6 +27,7 @@ import { PrintCommand } from './commands/Print';
 import { RegCommand } from './commands/Reg';
 import { RenCommand } from './commands/Ren';
 import { RmdirCommand } from './commands/Rmdir';
+import { RouteCommand } from './commands/Route';
 import { SchtasksCommand } from './commands/Schtasks';
 import { NetstatCommand } from './commands/Netstat';
 import { ScCommand } from './commands/Sc';
@@ -56,6 +59,9 @@ export function createWindowsHostShell(deps: WindowsMachineApiDeps): { registry:
   const registry = new CommandRegistry();
   const machine = new WindowsMachineApi(deps);
 
+  registry.register(() => new ArpCommand());
+  registry.register(() => new GetmacCommand());
+  registry.register(() => new RouteCommand());
   registry.register(() => new CdCommand());
   registry.register(() => new MkdirCommand());
   registry.register(() => new RmdirCommand());
