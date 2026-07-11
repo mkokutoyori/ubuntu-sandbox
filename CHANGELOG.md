@@ -131,25 +131,20 @@ commande du groupe permissions restée en legacy après la Phase 0
 (`fsAccess('a','chgrp')`/`syscall('chgrp', path)`) après l'opération
 réussie, jamais avant (§7.4 du framework).
 
-**Simplification documentée, héritée de `chown`, pas introduite ici** :
-le `chgrp` legacy (`cmdChgrp`/`LinuxPermCommands.ts`) autorise un
-utilisateur non-root à changer le groupe d'un fichier qu'il possède vers
-un groupe dont il est membre — une règle métier fine que
-`FileSystemApi.chown()` (le seul point d'entrée disponible pour muter le
-groupe, `LinuxMachineApi.ts`) ne reproduit pas : il exige `root`
-inconditionnellement. Cette limite existe déjà dans `ChownCommand`
-(migré avant cette session) pour le changement de groupe seul ; `chgrp`
-migré hérite donc de la même restriction plutôt que d'ajouter une
-nouvelle méthode `FileSystemApi` pour la lever. Choix délibéré : la
-session Windows en cours modifie en parallèle `command-kernel/machine/
-types.ts`/`WindowsMachineApi.ts` sur la même branche — étendre
-l'interface vendor-agnostic partagée maintenant aurait cassé son build
-tant qu'elle n'implémente pas la nouvelle méthode. Aucun test existant
-n'exerce le cas positif (non-root, groupe dont il est membre) — seul le
-cas de refus (`perm-ownership-dac.test.ts`, non-root vers un groupe dont
-il n'est pas membre) est couvert, et reste correct sous cette
-restriction plus stricte. À lever dans un lot dédié, hors de toute
-collision avec le travail Windows en cours.
+**Bug trouvé et corrigé dans `FileSystemApi.chown()` (`LinuxMachineApi.ts`),
+en migrant `chgrp`** : l'implémentation exigeait `root` inconditionnellement
+dès que l'acteur n'était pas root, alors que le `chown`/`chgrp` legacy
+(`LinuxPermCommands.ts`) autorise un utilisateur non-root à changer le
+groupe d'un fichier qu'il possède vers un groupe dont il est membre (sans
+jamais pouvoir changer le propriétaire). `chown()` compare maintenant
+uid/gid demandés à l'inode courant : changement de propriétaire toujours
+réservé à `root` ; changement de groupe seul autorisé si l'acteur possède
+le fichier et appartient au groupe cible — reproduit exactement la règle
+de `cmdChown`/`cmdChgrp`. Bénéficie à `ChownCommand` (déjà migré) autant
+qu'au nouveau `ChgrpCommand`, sans ajouter de méthode : `FileSystemApi`
+n'a pas changé de forme, donc aucun impact sur les autres implémentations
+de `MachineApi` (Windows notamment, en cours de migration en parallèle
+sur la même branche).
 
 **Legacy supprimé** : `case 'chgrp':` et son import (`cmdChgrp`) retirés
 de `LinuxCommandExecutor.dispatch()`. `cmdChgrp` lui-même reste dans
