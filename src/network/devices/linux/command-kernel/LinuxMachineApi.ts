@@ -16,7 +16,7 @@ import {
 import { FileSystemError, FileSystemErrorCode } from '@/command-kernel/errors';
 import { User } from '@/command-kernel/session/types';
 import type { Port } from '@/network/hardware/Port';
-import { PathError, type PathActor } from '../VfsPath';
+import { PathError, type PathActor, type VfsPath } from '../VfsPath';
 import type { INode } from '../VirtualFileSystem';
 import { VirtualFileSystem } from '../VirtualFileSystem';
 import type { LinuxUserManager } from '../LinuxUserManager';
@@ -174,6 +174,20 @@ class LinuxFileSystemApi implements FileSystemApi {
     return this.vfs.path(path, '/', toPathActor(actor)).exists();
   }
 
+  private assertStickyRemovable(path: string, p: VfsPath, actor: FileSystemActor): void {
+    if (actor.uid === 0) return;
+    const parent = p.parent();
+    const parentNode = parent.inode();
+    if (parentNode && (!parent.canWrite() || !parent.canExecute())) {
+      throw new FileSystemError(path, 'EACCES', `${path}: Permission denied`);
+    }
+    const node = p.lstatNode();
+    const sticky = parentNode !== null && (parentNode.permissions & 0o1000) !== 0;
+    if (parentNode && sticky && node && node.uid !== actor.uid && parentNode.uid !== actor.uid) {
+      throw new FileSystemError(path, 'EACCES', `${path}: Operation not permitted`);
+    }
+  }
+
   async remove(path: string, actor: FileSystemActor, recursive = false): Promise<void> {
     const p = this.vfs.path(path, '/', toPathActor(actor));
     try {
@@ -184,18 +198,7 @@ class LinuxFileSystemApi implements FileSystemApi {
     if (p.isDirectory() && !recursive) {
       throw new FileSystemError(path, 'EISDIR', `${path}: Is a directory`);
     }
-    if (actor.uid !== 0) {
-      const parent = p.parent();
-      const parentNode = parent.inode();
-      if (parentNode && (!parent.canWrite() || !parent.canExecute())) {
-        throw new FileSystemError(path, 'EACCES', `${path}: Permission denied`);
-      }
-      const node = p.lstatNode();
-      const sticky = parentNode !== null && (parentNode.permissions & 0o1000) !== 0;
-      if (parentNode && sticky && node && node.uid !== actor.uid && parentNode.uid !== actor.uid) {
-        throw new FileSystemError(path, 'EACCES', `${path}: Operation not permitted`);
-      }
-    }
+    this.assertStickyRemovable(path, p, actor);
     if (p.isDirectory()) {
       if (!this.vfs.rmrf(p.value)) {
         throw new FileSystemError(path, 'EACCES', `${path}: Permission denied`);
@@ -233,6 +236,22 @@ class LinuxFileSystemApi implements FileSystemApi {
     }
     if (!this.vfs.mkdir(p.value, mode, actor.uid, actor.gid)) {
       throw new FileSystemError(path, 'ENOENT', `${path}: No such file or directory`);
+    }
+  }
+
+  async rmdir(path: string, actor: FileSystemActor): Promise<void> {
+    const p = this.vfs.path(path, '/', toPathActor(actor));
+    try {
+      p.assertExists();
+    } catch (err) {
+      this.translate(err, path);
+    }
+    if (!p.isDirectory()) {
+      throw new FileSystemError(path, 'ENOTDIR', `${path}: Not a directory`);
+    }
+    this.assertStickyRemovable(path, p, actor);
+    if (!this.vfs.rmdir(p.value)) {
+      throw new FileSystemError(path, 'ENOTEMPTY', `${path}: Directory not empty`);
     }
   }
 
@@ -306,6 +325,17 @@ class LinuxFileSystemApi implements FileSystemApi {
       throw new FileSystemError(path, 'EACCES', `${path}: Permission denied`);
     }
     if (!this.vfs.createSymlink(p.value, target, actor.uid, actor.gid)) {
+      throw new FileSystemError(path, 'EACCES', `${path}: Permission denied`);
+    }
+  }
+
+  async link(targetPath: string, path: string, actor: FileSystemActor): Promise<void> {
+    const p = this.vfs.path(path, '/', toPathActor(actor));
+    if (p.exists()) throw new FileSystemError(path, 'EEXIST', `${path}: File exists`);
+    if (!p.parent().canWrite()) {
+      throw new FileSystemError(path, 'EACCES', `${path}: Permission denied`);
+    }
+    if (!this.vfs.createHardLink(p.value, targetPath)) {
       throw new FileSystemError(path, 'EACCES', `${path}: Permission denied`);
     }
   }

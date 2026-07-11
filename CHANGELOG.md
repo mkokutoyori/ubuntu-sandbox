@@ -120,6 +120,56 @@ générique sans l'étendre), puis `ver`/`hostname`/`systeminfo`/`tasklist`/
 s'appuyant sur `EndHost`/`Port`/`Cable` existants (§2 du framework),
 jamais une resimulation parallèle.
 
+## Linux — Phase 5 : `rmdir`
+
+**État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
+
+**Extension du socle** : `FileSystemApi.rmdir(path, actor)` — distinct de
+`remove(path, actor, recursive)` : échoue avec `ENOTEMPTY` si le
+répertoire n'est pas vide, ne supprime jamais récursivement, même avec
+un futur flag. Implémenté via `VirtualFileSystem.rmdir()` (déjà utilisé
+par le legacy `cmdRmdir`). Le contrôle du bit sticky et de la permission
+du parent, identique à celui de `rm`, a été factorisé dans
+`LinuxFileSystemApi.assertStickyRemovable()` (partagé par `remove()` et
+`rmdir()`) plutôt que dupliqué — les deux commandes legacy (`cmdRm`/
+`cmdRmdir`) ont exactement la même logique de vérification.
+
+**Commande migrée** : `rmdir <répertoire...>` — message d'erreur au
+format `rmdir: failed to remove '<cible>': <raison>`, audit
+(`syscall=rmdir`) après succès uniquement.
+
+**Validation** : même lot localisé qu'à la phase précédente, `run-parts.
+test.ts` inclus — 39 fichiers, 1604 tests, mêmes 3 échecs pré-existants
+et sans rapport déjà documentés (bash script `if/then`/fonctions, hors
+périmètre command-kernel).
+
+## Linux — Phase 4 : `ln` (liens physiques et symboliques)
+
+**État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
+
+**Extension du socle** : `FileSystemApi` gagne `link(targetPath, path,
+actor)` — lien physique, distinct de `symlink()` déjà existant.
+Implémenté dans `LinuxFileSystemApi` via `VirtualFileSystem.createHardLink`
+(déjà utilisé par le legacy `cmdLn`, partage réellement le même inode et
+incrémente `linkCount` — vérifié par `ls -i` sur les deux noms). Ajouté
+aussi dans `testing/in-memory-machine.ts` (le `MachineApi` factice du
+socle) en partageant la même référence d'objet entre les deux chemins.
+
+**Commande migrée** : `ln [-s] <cible> <lien>` — lien physique par
+défaut, symbolique avec `-s`, message d'erreur au format legacy exact
+(`ln: failed to create <kind> '<lien>': <raison>`), audit
+(`syscall=symlink`/`syscall=link`) après succès uniquement (§7.4 du
+framework).
+
+**Validation** : lot localisé étendu à `run-parts.test.ts` (contient des
+créations de liens symboliques cassés/valides) en plus du lot déjà établi
+— 39 fichiers, 1604 tests, 3 échecs **confirmés pré-existants et sans
+rapport** (méthode §7.2 : mêmes 3 échecs avec `git stash` des changements
+de cette phase). Ces 3 échecs concernent l'interpréteur bash de scripts
+(`src/bash/`, hors périmètre de `command-kernel`) sur des scripts
+utilisant `if/then/else` et des déclarations de fonction — un vrai trou,
+mais dans un sous-système entièrement différent, à traiter séparément.
+
 ## Linux — Phase 3 : lecteurs d'identité (`id`, `whoami`, `groups`) + durcissement `rm`
 
 **État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**

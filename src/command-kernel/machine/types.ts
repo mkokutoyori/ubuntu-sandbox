@@ -47,12 +47,16 @@ export interface FileSystemApi {
   exists(path: string, actor: FileSystemActor): Promise<boolean>;
   remove(path: string, actor: FileSystemActor, recursive?: boolean): Promise<void>;
   mkdir(path: string, actor: FileSystemActor, parents?: boolean): Promise<void>;
+  /** Supprime un répertoire — échoue (ENOTEMPTY) s'il n'est pas vide, contrairement à `remove(path, actor, true)`. */
+  rmdir(path: string, actor: FileSystemActor): Promise<void>;
   chmod(path: string, mode: number, actor: FileSystemActor): Promise<void>;
   chown(path: string, uid: number, gid: number, actor: FileSystemActor): Promise<void>;
   copy(source: string, destination: string, actor: FileSystemActor): Promise<void>;
   rename(source: string, destination: string, actor: FileSystemActor): Promise<void>;
   symlink(target: string, path: string, actor: FileSystemActor): Promise<void>;
   readlink(path: string, actor: FileSystemActor): Promise<string>;
+  /** Lien physique : `path` désigne désormais le même inode que `targetPath` (partage de contenu, `linkCount` incrémenté). */
+  link(targetPath: string, path: string, actor: FileSystemActor): Promise<void>;
   resolve(cwd: string, path: string): string; // résolution relative/absolue
 }
 
