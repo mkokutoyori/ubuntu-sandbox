@@ -2,9 +2,6 @@ import { BaseCommand } from '@/command-kernel/command/base-command';
 import { CommandContext, CommandDescriptor, EXIT_OK, ExitCode } from '@/command-kernel/command/types';
 import { DefaultPrivilegePolicy } from '@/command-kernel/session/privilege-policy';
 import { PrivilegeLevel } from '@/command-kernel/session/types';
-import { cmdSc } from '../../WinSc';
-import type { WindowsServiceManager } from '../../WindowsServiceManager';
-import type { WindowsProcessManager } from '../../WindowsProcessManager';
 
 export class ScCommand extends BaseCommand {
   readonly descriptor: CommandDescriptor = {
@@ -20,12 +17,11 @@ export class ScCommand extends BaseCommand {
 
   async execute(ctx: CommandContext): Promise<ExitCode> {
     const args = ctx.args.has('targets') ? ctx.args.get<string[]>('targets') : [];
-    const serviceManager = ctx.machine.servicesNative as WindowsServiceManager;
-    const processManager = ctx.machine.proc.native as WindowsProcessManager;
-    const output = cmdSc(
-      { serviceManager, processManager, isAdmin: ctx.session.user.isRoot(), currentUser: ctx.session.user.name },
-      args,
-    );
+    if (!ctx.machine.services) {
+      await ctx.io.stdout.write('SC: not supported on this device\n');
+      return 1;
+    }
+    const output = await ctx.machine.services.execute(args, { isAdmin: ctx.session.user.isRoot(), userName: ctx.session.user.name });
     await ctx.io.stdout.write(output + '\n');
     return EXIT_OK;
   }

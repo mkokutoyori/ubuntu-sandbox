@@ -7,25 +7,35 @@ import { CopyCommand } from './commands/Copy';
 import { DateCommand } from './commands/Date';
 import { DelCommand } from './commands/Del';
 import { DirCommand } from './commands/Dir';
+import { DoskeyCommand } from './commands/Doskey';
 import { WinEchoCommand } from './commands/Echo';
+import { AttribCommand } from './commands/Attrib';
+import { FcCommand } from './commands/Fc';
+import { FindCommand } from './commands/Find';
 import { FindstrCommand } from './commands/Findstr';
 import { HostnameCommand } from './commands/Hostname';
+import { IcaclsCommand } from './commands/Icacls';
 import { MkdirCommand } from './commands/Mkdir';
+import { MoreCommand } from './commands/More';
 import { MoveCommand } from './commands/Move';
 import { RenCommand } from './commands/Ren';
 import { RmdirCommand } from './commands/Rmdir';
 import { NetstatCommand } from './commands/Netstat';
 import { ScCommand } from './commands/Sc';
 import { SetCommand } from './commands/Set';
+import { SortCommand } from './commands/Sort';
 import { SysteminfoCommand } from './commands/Systeminfo';
 import { TaskkillCommand } from './commands/Taskkill';
 import { TasklistCommand } from './commands/Tasklist';
 import { TimeCommand } from './commands/Time';
+import { WhereCommand } from './commands/Where';
+import { WhoamiCommand } from './commands/Whoami';
 import { WmicCommand } from './commands/Wmic';
 import { TreeCommand } from './commands/Tree';
 import { TypeCommand } from './commands/Type';
 import { VerCommand } from './commands/Ver';
 import { VolCommand } from './commands/Vol';
+import { XcopyCommand } from './commands/Xcopy';
 import { WindowsMachineApi, WindowsMachineApiDeps } from './WindowsMachineApi';
 
 /**
@@ -63,6 +73,16 @@ export function createWindowsHostShell(deps: WindowsMachineApiDeps): { registry:
   registry.register(() => new ScCommand());
   registry.register(() => new WmicCommand());
   registry.register(() => new FindstrCommand());
+  registry.register(() => new WhoamiCommand());
+  registry.register(() => new IcaclsCommand());
+  registry.register(() => new AttribCommand());
+  registry.register(() => new FindCommand());
+  registry.register(() => new SortCommand());
+  registry.register(() => new MoreCommand());
+  registry.register(() => new FcCommand());
+  registry.register(() => new XcopyCommand());
+  registry.register(() => new WhereCommand());
+  registry.register(() => new DoskeyCommand());
 
   const interpreter = new CmdInterpreter(registry, machine);
 

@@ -7,7 +7,7 @@
  * Architecture follows linux/LinuxPC.ts pattern:
  *   - WindowsFileSystem (VFS) in windows/WindowsFileSystem.ts
  *   - Network commands in Win*.ts modules (WinIpconfig, WinNetsh, etc.)
- *   - File commands in WinFileCommands.ts + WinDir.ts
+ *   - cmd.exe commands migrated to command-kernel (windows/command-kernel/commands/)
  *   - WindowsPC orchestrates both via context objects
  *
  * PowerShell is implemented as a sub-shell (ISubShell) at the terminal
@@ -1704,6 +1704,8 @@ export class WindowsPC extends EndHost implements UserAccountHost {
         hardware: this.hardware,
         socketTable: this.getSocketTable(),
         serviceManager: this.svcMgr,
+        getDomainSession: () => this.domainSession,
+        doskey: this.doskey,
         isDHCPConfigured: (ifName) => this.isDHCPConfigured(ifName),
         bootedAt: () => this.getLifecycle().bootedAt() ?? null,
         powerOn: () => this.powerOn(),
@@ -2211,10 +2213,6 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     else this.dhcpClassIds6.delete(ifName);
   }
 
-  private cmdDoskey(args: string[]): string {
-    return WinSys.cmdDoskey(this.buildSystemContext(), args);
-  }
-
   private cmdVol(args: string[]): string {
     return WinSys.cmdVol(this.buildSystemContext(), args);
   }
@@ -2245,24 +2243,6 @@ export class WindowsPC extends EndHost implements UserAccountHost {
 
   private cmdNbtstat(args: string[]): string {
     return WinSys.cmdNbtstat(this.buildSystemContext(), args);
-  }
-
-  private cmdWmic(args: string[]): string {
-    if (args.length === 0) return 'wmic:root\\cli>';
-    const joined = args.join(' ').toLowerCase();
-    if (joined.includes('logicaldisk') && joined.includes('get name')) {
-      // Mirror real wmic — list every mounted drive, not just C:.
-      const drives = this.fs.listDrives();
-      return ['Name  ', ...drives.map(d => d.padEnd(6))].join('\n');
-    }
-    if (joined.includes('os get caption')) {
-      const caption = this.getIdentity().os.prettyName;
-      return `Caption                              \n${caption.padEnd(38)}`;
-    }
-    if (joined.includes('cpu get name')) {
-      return 'Name                                              \nIntel(R) Core(TM) i7 CPU @ 2.50GHz                ';
-    }
-    return '';
   }
 
   private cmdReg(args: string[]): string {

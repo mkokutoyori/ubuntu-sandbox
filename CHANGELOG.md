@@ -5,6 +5,103 @@ progressive par équipement. Un push = une entrée = une fonctionnalité
 complète et testée (voir `CLAUDE.md` / le framework de migration pour les
 principes directeurs).
 
+## Windows — Phase 5 : whoami/icacls/attrib/find/sort/more/fc/xcopy/where/doskey, suppression de l'échappatoire `.native`
+
+**État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
+
+**Correction architecturale majeure, sur retour explicite de l'utilisateur** :
+les commandes migrées de cette phase (et plusieurs déjà livrées en Phase 3 —
+`tasklist`, `taskkill`, `sc`, `netstat`) appelaient depuis `execute()` des
+fonctions autonomes du projet (`cmdWhoami`, `cmdFind`, `cmdSort`, `cmdTasklist`,
+etc., dans `WinWhoami.ts`/`WinFileCommands.ts`/`WinTasklist.ts`/...) en leur
+passant l'objet legacy réel récupéré via un champ `native: unknown` posé sur
+`MachineApi` (`fs.native`, `proc.native`, `users.native`, `servicesNative`,
+`domainSessionNative`, `doskeyNative`). C'est une violation du principe
+directeur §0.1 du framework (« une commande ne touche jamais l'implémentation
+réelle d'un équipement, elle ne connaît que `ctx.machine: MachineApi` ») :
+le `.native` déguisait un contournement complet de la façade sous une
+signature typée. Fix : suppression de TOUS les champs `.native`/`*Native` du
+contrat `MachineApi`, remplacés par des capacités décomposées et documentées
+(§3.4) :
+
+- `FileSystemApi.getAcl?`/`grantAcl?`/`removeAcl?` (ACL NTFS, `icacls`) et
+  `getAttributes?`/`setAttributes?` (attributs NTFS, `attrib`) — nouveaux
+  types `AclEntry`/`FileAttributes`.
+- `ProcessInfo` enrichi (`ownerName`, `sessionName`/`sessionNumber`,
+  `memoryKib`, `cpuSeconds`, `status`, `windowTitle`, `hostedServices`,
+  `critical`, `systemOwned`) + `ProcessApi.descendants?()` — `tasklist`/
+  `taskkill` reconstruisent tout leur formatage (TABLE/CSV/LIST, filtres
+  `/FI`, arbre `/T`, vérification `critical`/`systemOwned`) en local, à
+  partir de cette seule donnée typée.
+- `NetworkApi.connections?()` (nouveau type `SocketInfo`) pour `netstat`.
+- `UserManagementApi.securityIdentity?()` (nouveaux types `SecurityIdentity`/
+  `SecurityGroupMembership`/`SecurityPrivilege`) pour `whoami` — résout SID,
+  groupes et privilèges, session de domaine active incluse, entièrement côté
+  pont `WindowsMachineApi`.
+- `MachineApi.services?: ServiceManagementApi` (méthode unique
+  `execute(argv, {isAdmin, userName})`) pour `sc` — exception documentée
+  (§3.4 règle 2) : `sc.exe` a ~14 sous-commandes au format figé et
+  intimement lié au modèle SCM réel (SDDL, actions de reprise sur panne) ;
+  décomposer en primitives génériques aurait dupliqué ce formatage sans
+  bénéfice. `ScCommand.execute()` ne fait plus que transmettre l'argv déjà
+  tokenisé ; l'implémentation vendeur (`WindowsServiceManagementApi`, dans
+  `WindowsMachineApi.ts`) reste seule responsable d'interpréter et
+  formatter — elle réutilise `cmdSc()`/`WinSc.ts` en interne (légitime : ce
+  code s'exécute maintenant DANS le pont, jamais depuis une commande).
+- `MachineApi.macros?: MacroApi` pour `doskey`.
+
+`find`/`sort`/`more`/`fc`/`xcopy`/`where` n'avaient besoin d'aucune extension
+— entièrement réimplémentées avec les primitives déjà existantes de
+`FileSystemApi` (`readFile`/`list`/`stat`/`exists`/`copy`/`mkdir`/`resolve`),
+suivant exactement le pattern déjà correct de `Findstr.ts`/`Copy.ts`/
+`Dir.ts` (jamais retouchées, elles n'avaient jamais eu ce problème).
+
+**Nettoyage legacy consécutif** — `migration puis suppression` (§ directive
+utilisateur) : `WinFileCommands.ts`, `WinDir.ts`, `WinIcacls.ts`,
+`WinWhoami.ts`, `WinTasklist.ts`, `WinTaskkill.ts` supprimés en entier
+(vérifié explicitement sans autre appelant que les commandes migrées
+elles-mêmes, y compris le pont PowerShell `runSyncNativeCommand` qui ne les
+utilisait pas) — net −18 fichiers/fonctions de maçonnerie legacy, dont un
+`cmdTasklist` mort dans `WinFileCommands.ts` qui renvoyait une liste de
+processus **entièrement codée en dur** (contraire à la règle « pas de valeur
+figée », jamais appelé nulle part).
+
+**Bug trouvé en écrivant `MacroApi`** : `WindowsMachineApiDeps.domainSession`
+était une VALEUR figée au premier appel de `getCommandKernelShell()`
+(construction paresseuse, une seule fois par `WindowsPC`) — une connexion de
+domaine établie APRÈS le premier appel `cmd` restait invisible à `whoami`.
+Fix : remplacé par `getDomainSession(): DomainSession | null`, un accesseur
+live, cohérent avec `isDHCPConfigured`/`bootedAt` déjà câblés en closures.
+
+**Nouvelles commandes** (toutes suivent le patron `BaseCommand` établi,
+n'appellent que `ctx.machine.*`) : `whoami` (`/user`, `/groups`, `/priv`,
+`/all`), `icacls` (affichage + `/grant`, `/deny`, `/remove`, gate
+`ctx.session.user.isRoot()`), `attrib` (`+r/-r/+a/-a/+h/-h/+s/-s`), `find`,
+`sort`, `more` (fidélité : lit `stdin` en pipeline quand aucun fichier n'est
+donné, comme `findstr` — legacy renvoyait `''`), `fc`, `xcopy` (`/s`, `/e`,
+récursif via `fs.list`/`fs.mkdir`/`fs.copy`), `where`, `doskey`.
+
+**Validation** : lot localisé de 16 fichiers (`windows-access-cmd`,
+`windows-access-powershell`, `windows-file-management`, `windows-filesystem`,
+`windows-filesystem-tree`, `windows-drive-switching`, `windows-ps-cmd-coherence`,
+`windows-consistency`, `basic-commandes`, `env-vars`, `windows-services-cmd`,
+`windows-services-powershell`, `windows-services-processes-comprehensive`,
+`windows-netstat-stream-ui`, `windows-scheduled-tasks`,
+`windows-server-domain-join`) comparé au commit précédent (`git stash`) :
+baseline 170 échecs / 449 réussites → après ce lot, 127 échecs / 492
+réussites — **43 tests corrigés, zéro régression** (les échecs restants sont
+tous préexistants et hors périmètre : `net start`/`net stop`, `nltest`/
+`dcdiag`/`klist`/`schtasks`, `ipconfig`/`Test-Connection` PS-vs-CMD — aucune
+commande touchée par cette phase). Typecheck ciblé
+(`command-kernel|WindowsPC|windows/`) propre.
+
+**Hors périmètre, repéré en passant** : `netstat -a`/`dir -a` (et plus
+généralement tout switch à un seul tiret sur une commande Windows migrée)
+lève `option inconnue` — `ArgumentParser` n'a pas de mode
+`lenientOptions: true` activé pour ces commandes (seul `EchoCommand` l'a).
+Préexistant à cette phase (reproduit identique sur `dir -a` avant tout
+changement) — pas corrigé ici pour rester dans le périmètre de la demande.
+
 ## Windows — Phase 4 : porte d'entrée unique, `CmdInterpreter` dédié, suppression du parsing legacy
 
 **État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
