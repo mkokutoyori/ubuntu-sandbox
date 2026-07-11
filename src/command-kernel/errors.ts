@@ -23,8 +23,8 @@ export class PermissionError extends ShellError {
 }
 
 export class CommandNotFoundError extends ShellError {
-  constructor(name: string) {
-    super(`commande introuvable : ${name}`, 127);
+  constructor(public readonly commandName: string) {
+    super(`commande introuvable : ${commandName}`, 127);
   }
 }
 

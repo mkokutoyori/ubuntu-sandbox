@@ -118,6 +118,513 @@ résiduels, tous confirmés pré-existants et sans rapport via comparaison
 command-kernel) et un gap déjà présent avant cette phase dans
 `cross-equipment-ssh-suite.test.ts` §9 (alias de fonction shell).
 
+## Windows — Phase 6 : `net` (user/localgroup/start/stop/share/session/use/accounts)
+
+**État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
+
+`net` n'était migré nulle part côté `cmd.exe` — le pont `runSyncNativeCommand`
+(shim synchrone dédié à PowerShell, jamais touché) gère bien `net user`/
+`net localgroup`/`net start`/`net stop`/`net share`/`net session`, mais
+`executeCmdCommand('net ...')` tombait systématiquement sur « not
+recognized » depuis la Phase 4 (cutover complet, régression jamais détectée
+faute d'être dans le lot de tests localisé de l'époque). `net use` et
+`net accounts` étaient morts des DEUX côtés : `cmdNetUse` n'était appelé
+nulle part (import de type seulement), et `net accounts` n'avait jamais eu
+de fonction `cmdNetAccounts` — seul l'état (`WindowsAccountsPolicy`) existait.
+
+**`MachineApi.netExe?: NetExeApi`** (méthode unique `execute(argv, caller)`)
+— même raisonnement documenté que `ServiceManagementApi`/`sc` (§3.4 règle 2) :
+`net.exe` a ~8 sous-commandes au format figé, chacune couplée à un
+sous-système vendeur distinct (SAM, SCM, table de partages SMB, table
+`net use`, politique de compte LSA) ; décomposer en primitives génériques
+réimplémenterait son dispatcher sans bénéfice pour un autre vendeur.
+`NetCommand.execute()` ne fait que transmettre l'argv déjà tokenisé ;
+`WindowsNetExeApi` (dans `WindowsMachineApi.ts`) reste seule responsable de
+l'interprétation — elle réutilise `cmdNetUser`/`cmdNetLocalgroup`/
+`cmdNetStart`/`cmdNetStop`/`cmdNetShare`/`cmdNetUse` en interne (légitime :
+exécuté depuis le pont, jamais depuis une commande), et implémente `net
+session`/`net accounts` directement (respectivement portés depuis l'ancienne
+méthode privée `WindowsPC.cmdNetSession`, et écrits pour la première fois
+contre `WindowsAccountsPolicy.render()`/`.apply()`, déjà correcte et déjà
+consultée par `WindowsUserManager` pour la politique de mot de passe réelle).
+
+**`cmdNetShare`/`cmdNetUse` découplés du `WinCommandContext` géant** —
+signatures réduites à `Pick<WinCommandContext, ...>` (`NetShareContext`,
+`NetUseContext`) portant seulement les 2 et 4 champs réellement utilisés
+(`isServiceRunning`+`smbShares`, `isServiceRunning`+`netUseTable`+
+`resolveHostname`+`dialSmbShare`) — évite de tirer toute la pile réseau
+(netsh/ipconfig/dhcp/dns, explicitement hors périmètre) dans `MachineApi`
+juste pour ces deux sous-commandes. `requireWindowsService`/
+`requireWindowsServices` (`WinFeatureGate.ts`) narrowés de la même façon
+(`ServiceGateContext = Pick<WinCommandContext, 'isServiceRunning'>`), pour
+rester réutilisables par ces deux contextes réduits sans dupliquer à la
+main le texte exact des refus de service (piège trouvé en écrivant cette
+phase : une première tentative de recopier `The Workstation service has
+not been started...` à la main s'est trompée de message — `LanmanWorkstation`
+a un texte dédié dans `WinFeatureGate.ts` que je n'avais pas vérifié).
+
+**Validation** : lot localisé de 22 fichiers (les 16 de la Phase 5 +
+`windows-phase-g`, `windows-password-policy`, `windows-server-smb`,
+`windows-smb-cmdlets`, `cross-equipment-ssh-suite`,
+`password-policy-ssh-scp-sftp-coherence`) comparé au commit précédent —
+baseline 189 échecs / 720 réussites → après ce lot, 111 échecs / 798
+réussites — **78 tests corrigés, zéro régression** (échecs restants tous
+préexistants et hors périmètre : `nltest`/`dcdiag`/`klist`, `schtasks`,
+`print`). Typecheck ciblé propre.
+
+**Hors périmètre, repéré en passant** : `schtasks`, `print` — mêmes gaps
+Phase-4 que `net`, mais familles de commandes distinctes ; laissées pour un
+prochain lot plutôt que d'élargir celui-ci au-delà de `net`.
+
+## Windows — Phase 5 : whoami/icacls/attrib/find/sort/more/fc/xcopy/where/doskey, suppression de l'échappatoire `.native`
+
+**État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
+
+**Correction architecturale majeure, sur retour explicite de l'utilisateur** :
+les commandes migrées de cette phase (et plusieurs déjà livrées en Phase 3 —
+`tasklist`, `taskkill`, `sc`, `netstat`) appelaient depuis `execute()` des
+fonctions autonomes du projet (`cmdWhoami`, `cmdFind`, `cmdSort`, `cmdTasklist`,
+etc., dans `WinWhoami.ts`/`WinFileCommands.ts`/`WinTasklist.ts`/...) en leur
+passant l'objet legacy réel récupéré via un champ `native: unknown` posé sur
+`MachineApi` (`fs.native`, `proc.native`, `users.native`, `servicesNative`,
+`domainSessionNative`, `doskeyNative`). C'est une violation du principe
+directeur §0.1 du framework (« une commande ne touche jamais l'implémentation
+réelle d'un équipement, elle ne connaît que `ctx.machine: MachineApi` ») :
+le `.native` déguisait un contournement complet de la façade sous une
+signature typée. Fix : suppression de TOUS les champs `.native`/`*Native` du
+contrat `MachineApi`, remplacés par des capacités décomposées et documentées
+(§3.4) :
+
+- `FileSystemApi.getAcl?`/`grantAcl?`/`removeAcl?` (ACL NTFS, `icacls`) et
+  `getAttributes?`/`setAttributes?` (attributs NTFS, `attrib`) — nouveaux
+  types `AclEntry`/`FileAttributes`.
+- `ProcessInfo` enrichi (`ownerName`, `sessionName`/`sessionNumber`,
+  `memoryKib`, `cpuSeconds`, `status`, `windowTitle`, `hostedServices`,
+  `critical`, `systemOwned`) + `ProcessApi.descendants?()` — `tasklist`/
+  `taskkill` reconstruisent tout leur formatage (TABLE/CSV/LIST, filtres
+  `/FI`, arbre `/T`, vérification `critical`/`systemOwned`) en local, à
+  partir de cette seule donnée typée.
+- `NetworkApi.connections?()` (nouveau type `SocketInfo`) pour `netstat`.
+- `UserManagementApi.securityIdentity?()` (nouveaux types `SecurityIdentity`/
+  `SecurityGroupMembership`/`SecurityPrivilege`) pour `whoami` — résout SID,
+  groupes et privilèges, session de domaine active incluse, entièrement côté
+  pont `WindowsMachineApi`.
+- `MachineApi.services?: ServiceManagementApi` (méthode unique
+  `execute(argv, {isAdmin, userName})`) pour `sc` — exception documentée
+  (§3.4 règle 2) : `sc.exe` a ~14 sous-commandes au format figé et
+  intimement lié au modèle SCM réel (SDDL, actions de reprise sur panne) ;
+  décomposer en primitives génériques aurait dupliqué ce formatage sans
+  bénéfice. `ScCommand.execute()` ne fait plus que transmettre l'argv déjà
+  tokenisé ; l'implémentation vendeur (`WindowsServiceManagementApi`, dans
+  `WindowsMachineApi.ts`) reste seule responsable d'interpréter et
+  formatter — elle réutilise `cmdSc()`/`WinSc.ts` en interne (légitime : ce
+  code s'exécute maintenant DANS le pont, jamais depuis une commande).
+- `MachineApi.macros?: MacroApi` pour `doskey`.
+
+`find`/`sort`/`more`/`fc`/`xcopy`/`where` n'avaient besoin d'aucune extension
+— entièrement réimplémentées avec les primitives déjà existantes de
+`FileSystemApi` (`readFile`/`list`/`stat`/`exists`/`copy`/`mkdir`/`resolve`),
+suivant exactement le pattern déjà correct de `Findstr.ts`/`Copy.ts`/
+`Dir.ts` (jamais retouchées, elles n'avaient jamais eu ce problème).
+
+**Nettoyage legacy consécutif** — `migration puis suppression` (§ directive
+utilisateur) : `WinFileCommands.ts`, `WinDir.ts`, `WinIcacls.ts`,
+`WinWhoami.ts`, `WinTasklist.ts`, `WinTaskkill.ts` supprimés en entier
+(vérifié explicitement sans autre appelant que les commandes migrées
+elles-mêmes, y compris le pont PowerShell `runSyncNativeCommand` qui ne les
+utilisait pas) — net −18 fichiers/fonctions de maçonnerie legacy, dont un
+`cmdTasklist` mort dans `WinFileCommands.ts` qui renvoyait une liste de
+processus **entièrement codée en dur** (contraire à la règle « pas de valeur
+figée », jamais appelé nulle part).
+
+**Bug trouvé en écrivant `MacroApi`** : `WindowsMachineApiDeps.domainSession`
+était une VALEUR figée au premier appel de `getCommandKernelShell()`
+(construction paresseuse, une seule fois par `WindowsPC`) — une connexion de
+domaine établie APRÈS le premier appel `cmd` restait invisible à `whoami`.
+Fix : remplacé par `getDomainSession(): DomainSession | null`, un accesseur
+live, cohérent avec `isDHCPConfigured`/`bootedAt` déjà câblés en closures.
+
+**Nouvelles commandes** (toutes suivent le patron `BaseCommand` établi,
+n'appellent que `ctx.machine.*`) : `whoami` (`/user`, `/groups`, `/priv`,
+`/all`), `icacls` (affichage + `/grant`, `/deny`, `/remove`, gate
+`ctx.session.user.isRoot()`), `attrib` (`+r/-r/+a/-a/+h/-h/+s/-s`), `find`,
+`sort`, `more` (fidélité : lit `stdin` en pipeline quand aucun fichier n'est
+donné, comme `findstr` — legacy renvoyait `''`), `fc`, `xcopy` (`/s`, `/e`,
+récursif via `fs.list`/`fs.mkdir`/`fs.copy`), `where`, `doskey`.
+
+**Validation** : lot localisé de 16 fichiers (`windows-access-cmd`,
+`windows-access-powershell`, `windows-file-management`, `windows-filesystem`,
+`windows-filesystem-tree`, `windows-drive-switching`, `windows-ps-cmd-coherence`,
+`windows-consistency`, `basic-commandes`, `env-vars`, `windows-services-cmd`,
+`windows-services-powershell`, `windows-services-processes-comprehensive`,
+`windows-netstat-stream-ui`, `windows-scheduled-tasks`,
+`windows-server-domain-join`) comparé au commit précédent (`git stash`) :
+baseline 170 échecs / 449 réussites → après ce lot, 127 échecs / 492
+réussites — **43 tests corrigés, zéro régression** (les échecs restants sont
+tous préexistants et hors périmètre : `net start`/`net stop`, `nltest`/
+`dcdiag`/`klist`/`schtasks`, `ipconfig`/`Test-Connection` PS-vs-CMD — aucune
+commande touchée par cette phase). Typecheck ciblé
+(`command-kernel|WindowsPC|windows/`) propre.
+
+**Hors périmètre, repéré en passant** : `netstat -a`/`dir -a` (et plus
+généralement tout switch à un seul tiret sur une commande Windows migrée)
+lève `option inconnue` — `ArgumentParser` n'a pas de mode
+`lenientOptions: true` activé pour ces commandes (seul `EchoCommand` l'a).
+Préexistant à cette phase (reproduit identique sur `dir -a` avant tout
+changement) — pas corrigé ici pour rester dans le périmètre de la demande.
+
+## Windows — Phase 4 : porte d'entrée unique, `CmdInterpreter` dédié, suppression du parsing legacy
+
+**État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
+Sur retour explicite de l'utilisateur : trop de « maçonnerie » autour du
+pont — `executeCmdCommand` gardait son propre découpage de chaînage
+(`splitCmdChain`), de pipes (`executePipedCommand`), de redirections
+(`handleRedirect`) et d'expansion `%VAR%`/tokenisation
+(`expandEnvVars`/`parseCommandLine`) EN PARALLÈLE du nouveau
+`Lexer`→`Parser`→`Executor`, qui sait pourtant déjà tout faire ça. Cette
+phase supprime cette duplication : `executeCmdCommand` ne fait plus que
+deux étapes qui ne sont PAS exprimables par la grammaire (dépouillement
+`2>&1`, expansion des macros doskey — un remplacement de texte brut,
+avant tout tokenizing, comme le vrai cmd.exe), puis un unique appel à
+`runCommandKernel()`, qui parse une fois et exécute tout l'AST — chaîne,
+pipeline ou redirection compris — en un seul passage par `Executor`.
+
+**`CmdInterpreter` (nouveau, dédié Windows)** — remplace la
+paramétrisation générique de l'`Interpreter` bash de la Phase 2 (retour
+en arrière sur ce point précis, sur demande explicite : « crée un lexer,
+tokenizer, parser, interpreter spécialement pour Windows, c'est plus
+simple »). `src/command-kernel/interpreter.ts` redevient la classe simple
+d'origine, sans option d'injection — le moteur partagé ne change plus du
+tout pour un nouvel équipement, conformément au §0/§4 du framework.
+`Executor` garde son `expander`/`globExpand` injectables (nécessaires :
+Windows construit son propre `Executor` directement, sans passer par
+`Interpreter`), c'est la seule extension qui reste sur le socle partagé.
+`CmdInterpreter` vit entièrement dans `windows/command-kernel/` et
+assemble `CmdLexer` + `Parser` (partagé, inchangé) + `CmdExpander` + un
+`globExpand` no-op.
+
+**Bug trouvé en unifiant — code de sortie fictif** : les commandes
+migrées de la Phase 1/3 renvoyaient toujours `EXIT_OK` même sur un échec
+« doux » (chemin introuvable, fichier déjà existant...), parce que
+l'ancien `splitCmdChain` décidait `&&`/`||` en scannant le TEXTE de
+sortie (`cmdOutputIsError`), pas un vrai code de sortie. En unifiant sur
+le AND/OR natif d'`Executor` (qui regarde le VRAI code de sortie), ce
+raccourci serait devenu un bug silencieux (`cd C:\Inexistant && echo
+ne-devrait-pas-s'afficher` aurait affiché le echo). Fix : chaque retour
+d'erreur « douce » dans les 10 commandes concernées (`cd`, `mkdir`,
+`rmdir`, `type`, `copy`, `move`, `ren`, `del`, `set`, `dir`, plus le
+helper partagé `reportLegacyFsError`) renvoie maintenant `1`, comme le
+vrai `%ERRORLEVEL%` de cmd.exe.
+
+**Bug trouvé en unifiant — noms de commande sensibles à la casse** :
+`CommandRegistry`/`Parser` sont délibérément insensibles à rien (corrects
+pour bash, où `LS` ≠ `ls`) — mais cmd.exe EST insensible à la casse pour
+les noms de commande (`DIR`, `Dir`, `dir` identiques), pas pour les
+arguments (`echo Hello` doit garder sa casse). Nouveau
+`lowercaseCommandNames()` (`windows/command-kernel/ast/
+lowercaseCommandNames.ts`) parcourt l'AST une fois après le parsing et ne
+touche qu'aux positions de nom de commande, jamais aux `argv`.
+
+**`findstr` migré** — nécessaire pour supprimer `executePipedCommand`
+sans régression : `dir | findstr Alpha` passait par un filtre ad hoc
+séparé (jamais par une vraie commande enregistrée). Nouvelle
+`FindstrCommand`, lit les fichiers passés en argument OU l'entrée
+standard si aucun n'est donné (contrairement à l'ancien `cmdFindstr`
+legacy qui exigeait toujours un fichier — un vrai gap face au findstr.exe
+réel, corrigé au passage), flags `/i` `/v` `/n` `/c` `/c:"…"`, motifs
+multi-mots en OR. Les filtres `find`/`grep`/`more` de l'ancien pipe ad hoc
+sont abandonnés sans remplacement : aucun test ne les exerçait côté cmd
+(`grep` n'existe même pas sur un vrai cmd.exe).
+
+**Supprimé** : `splitCmdChain`, `cmdOutputIsError`, `executePipedCommand`,
+`handleRedirect`, `parseCommandLine`, `expandEnvVars`,
+`parseFindstrFilter` — ~230 lignes nettes en moins sur `WindowsPC.ts`
+malgré les ajouts (`CmdInterpreter`, `lowercaseCommandNames`,
+`FindstrCommand`). `tryUncFileCommand` (SMB réel, pas une commande) et le
+changement de lecteur nu (`D:`) restent des cas spéciaux avant le
+dispatch — ce ne sont pas des commandes au sens de la grammaire, rien
+dans l'AST ne les représenterait proprement.
+
+**Validation** : lot localisé (8 fichiers) — 143/144, identique à la
+Phase 3 (même échec restant : `netsh`, hors périmètre). `cmd-bat-execution.
+test.ts` (exécution `.bat`, chemin non touché par cette phase) — 12/12.
+`cmd-missing-builtins.test.ts` — mêmes 9 échecs préexistants (`net`,
+`start`, `setx`, `schtasks`, `nbtstat`, `reg` — hors périmètre documenté),
+aucune régression. Typecheck ciblé propre.
+
+## Windows — Phase 3 : `dir` + commandes système (13 commandes), zéro donnée figée
+
+**État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
+Suite de la Phase 2, sur demande explicite de continuer la migration
+jusqu'à couverture complète. Périmètre : `dir`, `ver`, `hostname`, `vol`,
+`chcp`, `date`, `time`, `systeminfo`, `tasklist`, `taskkill`, `netstat`,
+`sc`/`sc.exe`, `wmic`.
+
+**Principe appliqué partout dans cette phase, sur retour explicite de
+l'utilisateur : aucune valeur figée, uniquement des données réelles de
+CET équipement** :
+
+- `ver` — la Phase 1 avait copié `'10.0.22631.6649'` en dur dans le
+  nouveau fichier, une DEUXIÈME copie du `WindowsPC.VER_STRING` déjà
+  utilisé par `runSyncNativeCommand` (le shim PowerShell). Corrigé :
+  extraction en constante partagée unique
+  (`windows/WindowsVersion.ts::WIN_VER_STRING`), important pour la
+  cohérence cmd/PowerShell (`cmd-ps-coherence.test.ts`) — les DEUX chemins
+  lisent maintenant la même source, pas deux copies qui peuvent diverger.
+- `dir`, `vol`, `wmic logicaldisk` — numéro de série et espace libre réels
+  via `WindowsFileSystem.getVolumeSerialNumber()`/`getFreeDiskSpace()`
+  (nouvelle capacité optionnelle `FileSystemApi.volumeInfo()`), jamais une
+  valeur constante.
+- `ver`(profil futur)/`systeminfo`/`wmic os get caption`/`wmic cpu get
+  name` — nouvelle capacité optionnelle `MachineApi.os`/`hardware` sourcée
+  de `EndHost.getIdentity()`/`this.hardware` (`HardwareProfile.
+  defaultFor()`), déjà différenciés par type d'équipement (station de
+  travail vs serveur) — jamais une chaîne unique pour tous les WindowsPC.
+- `tasklist`/`taskkill`/`sc`/`netstat` — plutôt que de réimplémenter ces
+  rendus complexes (filtres, formats CSV/LIST/TABLE, ACL de service...),
+  les commandes migrées appellent DIRECTEMENT les fonctions pures legacy
+  déjà existantes (`WinTasklist.cmdTasklist`, `WinTaskkill.cmdTaskkill`,
+  `WinSc.cmdSc`, `WinFileCommands.cmdNetstat`) via une nouvelle
+  échappatoire vendeur `ProcessApi.native`/`NetworkApi.native`/
+  `MachineApi.servicesNative` (type `unknown`, cast par la commande) qui
+  expose l'objet réel (`WindowsProcessManager`, `SocketTable`,
+  `WindowsServiceManager`) — mêmes données, même fonction de rendu, donc
+  zéro divergence possible avec `runSyncNativeCommand` (le shim
+  PowerShell natif, qui appelle ces mêmes fonctions).
+
+**Bug trouvé en migrant `dir`/`del *.tmp`** : `Executor.runSimple`
+appliquait automatiquement le glob POSIX partagé (`expandGlob`, séparateur
+`/`, sémantique bash) à chaque mot avant même que la commande migrée ne
+le voie — `del *.tmp` recevait donc déjà des noms de fichiers résolus
+(mal, avec des chemins complets à cause du mélange `/`/`\`) au lieu du
+motif littéral que chaque commande cmd doit gérer elle-même (`del` ne
+matche que dans `cwd`, non récursif ; `dir /s` récursif ; sémantiques
+différentes par commande). Fix : `Executor`/`Interpreter` acceptent
+maintenant un `GlobExpander` injectable (même principe que `Lexer`/
+`Expander`), `createWindowsHostShell` passe un no-op (`async (w) => [w]`)
+— chaque commande Windows fait son propre matching via
+`ctx.machine.fs.list()`, comme legacy.
+
+**`dir` — portée** : formats basique/large (`/w`)/récursif (`/s`)/bare
+(`/b`)/wildcard/fichier unique, en-tête volume + espace libre réels.
+Les flags `/a`/`/o` sont acceptés en no-op (comme legacy — le simulateur
+ne modélise pas les dates par attribut).
+
+**Hors périmètre, conservé pour une phase dédiée "réseau"** : `netsh`
+(3180 lignes, dizaines de sous-domaines — interface ip, firewall,
+advfirewall, portproxy, wlan, dhcpclient — nécessite une extension
+substantielle de `MachineApi.net` avant migration, pas une commande
+isolée), `ipconfig`, `ping`, `route`, `arp`, `getmac`, `tracert`,
+`nslookup`, `ssh`/`sftp`/`scp`/`telnet`, `net` (sous-commandes). `netstat
+-r` (table de routage) dégrade gracieusement (chaîne vide) faute du
+contexte réseau complet — sera couvert par la même phase réseau.
+
+**Validation** : lot localisé (8 fichiers) — 143/144, seul restant :
+`netsh` (hors périmètre ci-dessus, échoue explicitement). Typecheck ciblé
+propre.
+
+## Windows — Phase 2 : vrai `Lexer`/`Parser` cmd.exe, pont réécrit sur `Interpreter`
+
+**État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
+Suite directe de la Phase 1, sur retour explicite de l'utilisateur : la
+Phase 1 construisait un `SimpleCommandNode` à la main à partir d'un
+`(cmd, args)` déjà découpé par `WindowsPC` — ça marchait, mais ce n'était
+pas aligné avec le framework (pas de vraie porte d'entrée `Interpreter`)
+et ne posait aucune fondation pour exécuter un jour de vrais scripts
+`.bat`. Cette phase corrige les deux.
+
+**Extension du socle partagé (`src/command-kernel/`), rétrocompatible** :
+`Executor` et `Interpreter` acceptaient un `Lexer`/`Parser`/`Expander`
+bash codés en dur ; ils prennent maintenant des paramètres optionnels
+(`IExpander`, `ITokenizer`) avec les classes bash comme valeur par
+défaut — zéro changement de comportement pour Linux (vérifié : aucune
+régression sur le lot déjà validé). C'est la seule modification apportée
+au moteur partagé ; `CommandRegistry`/`PermissionGuard`/`ArgumentParser`
+restent strictement inchangés.
+
+**`CmdLexer` (nouveau, Windows)** : tokenizer dédié à la grammaire
+cmd.exe — guillemets doubles qui basculent et se suppriment sans
+échappement (règles reprises telles quelles de `splitCmdArgs`/
+`WindowsPC.parseCommandLine`, seule référence déjà validée par la suite
+de tests, jamais réinventées), pas de guillemets simples spéciaux
+(`echo 'x'` doit garder les apostrophes littérales), `&` seul émis comme
+`TokenType.SEMI` (séquence inconditionnelle — même sémantique que le `;`
+bash), `#` jamais traité comme un commentaire. Le `Parser` partagé
+(`ast/parser.ts`) est réutilisé **sans aucune modification** : il ne
+dépend que du flux de tokens, jamais de la syntaxe bash en dur — seule
+divergence connue et acceptée : son détecteur d'assignation `VAR=valeur`
+(bash) s'appliquerait aussi à une ligne cmd qui ressemblerait par hasard
+à `X=1` en position de commande (cas non testé, cmd.exe n'a pas cette
+notion — la traiterait comme une commande introuvable).
+
+**`CmdExpander` (nouveau, Windows)** : reproduit exactement
+`WindowsPC.expandEnvVars` (`%VAR%`, recherche insensible à la casse en
+majuscules, `%CD%` résolu vers le cwd vivant, variable non définie
+laissée intacte plutôt qu'effacée). Pas de `$`, pas de `~`, pas de glob
+générique — cmd n'a aucun des trois.
+
+**Pont réécrit** : `WindowsPC.tryCommandKernelCmd()` remplace
+`runCommandKernelCmd()` et suit maintenant EXACTEMENT la structure de
+`LinuxMachine.tryCommandKernel()` (§6 du framework) — parse en pré-vol
+avec `CmdLexer`+`Parser`, refus de router (retour `null`, pas un échec)
+si erreur de parsing / AST pas réductible à `command`/`pipeline` / une
+commande du pipeline non enregistrée ; une fois routé, aucun repli, une
+`ShellError` remonte telle quelle. `createWindowsHostShell` expose
+maintenant un vrai `Interpreter` (au lieu du couple `{registry, executor}`
+brut de la Phase 1).
+
+**Portée actuelle de ce pont, honnêtement documentée** : `WindowsPC.
+executeCmdCommand` continue de découper lui-même le chaînage (`&&`/`||`/
+`&`) et les pipes (`|`) AVANT d'atteindre le pont — chaque segment simple
+est donc ce qui arrive au `Interpreter`, jamais une ligne composite. Le
+`Parser`/`Executor` savent déjà traiter `pipeline`/`and`/`or`/`sequence`
+en un seul appel (utile dès qu'on voudra exécuter une ligne composite ou
+un script multi-lignes sans repasser par le découpage `WindowsPC`), mais
+ce chemin n'est pas encore exercé par l'intégration actuelle — fondation
+posée, pas encore branchée. `CmdSubShell.executeBat()` (exécution des
+`.bat`) n'est PAS touché dans cette phase : les scripts batch réels
+utilisent `if`/`goto`/`for`/labels, une grammaire entièrement différente
+de la ligne interactive cmd que `CmdLexer` couvre aujourd'hui — brancher
+`executeBat` sur `Interpreter` prématurément aurait fait échouer tout
+script utilisant un mot-clé batch non supporté, une vraie régression sur
+`cmd-bat-execution.test.ts`. Chantier séparé, à faire une fois ces
+mots-clés supportés par un parser batch dédié.
+
+**Réponse à « toutes les commandes supprimées doivent être migrées » :
+audit** — aucune implémentation legacy n'a été supprimée du dépôt en
+Phase 1 ; seul le ROUTAGE (le `switch` dans `executeCmdCommand`) a été
+retiré. Vérifié fichier par fichier (`WinDir.ts`, `WinPing.ts`,
+`WinIpconfig.ts`, `WinNetsh.ts`, `WinTasklist.ts`, `WinSc.ts`, etc.) :
+chaque fonction `cmdXxx` existe toujours, intacte, prête à être migrée
+commande par commande — c'est du matériel de référence en attente, pas
+du code perdu. `WindowsPC.executeCommand()` (méthode publique la plus
+utilisée par la suite de tests) délègue directement à
+`executeCmdCommand()` — c'est donc déjà, et reste, le point d'entrée
+observable pour mesurer la progression de la migration à chaque
+exécution de la suite de tests, sans changement nécessaire de ce côté.
+
+**Validation** : même lot localisé qu'en Phase 1 (8 fichiers) — 118/144,
+identique à la Phase 1 (aucune régression introduite par la réécriture).
+Lot élargi (`windows-consistency`, `basic-commandes`, `env-vars`) :
+86/149, cohérent avec l'écart déjà documenté (commandes réseau/système
+hors périmètre). Typecheck ciblé propre sur `command-kernel` (socle +
+Windows) et `WindowsPC.ts`.
+
+## Windows — Phase 1 : pont `command-kernel` + commandes fichiers/session de `cmd`, cutover complet du dispatcher legacy
+
+**État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
+Premier équipement non-Linux sur `command-kernel` (§4 du framework). Aucun
+pont Windows n'existait auparavant — tout est nouveau : `WindowsMachineApi`
+(`src/network/devices/windows/command-kernel/WindowsMachineApi.ts`),
+`WindowsUser`/`resolveWindowsUser`, `createWindowsHostShell`.
+
+**Décision d'architecture — pas de `Lexer`/`Parser` partagé pour cmd.exe** :
+la syntaxe cmd (`%VAR%`, `&` inconditionnel, lettres de lecteur, macros
+doskey, `.bat`) diverge trop du grammaire bash de `command-kernel` pour
+réutiliser son `Lexer`. `WindowsPC.executeCmdCommand` fait déjà tout ce
+travail de découpage (chaînage `&&`/`||`/`&`, pipes, redirections,
+changement de lecteur, expansion `%VAR%`, macros doskey) — le pont
+(`runCommandKernelCmd`) construit directement un `SimpleCommandNode` à
+partir du `(cmd, args)` déjà résolu et appelle `Executor.run()` sans
+passer par `Interpreter`/`Lexer`/`Parser`, qui restent donc inchangés et
+partagés uniquement au niveau moteur (`Executor`/`CommandRegistry`/
+`PermissionGuard`/`ArgumentParser`), pas au niveau syntaxe.
+
+**`MachineApi.fs` pour un filesystem sans owner/mode POSIX** : NTFS n'a ni
+bits de permission Unix ni uid/gid — `FileStat.mode/ownerUid/ownerGid`
+portent une valeur fixe (`0o666`/`0`/`0`), jamais lue par aucune commande
+migrée (l'ACL réelle passe par `icacls`, non migré). `User.uid/gid` sont
+dérivés d'un hash stable du SID Windows (pas d'identifiant numérique natif
+dans ce modèle) — voir `numericIdFromSid` dans `WindowsUser.ts`.
+
+**Périmètre migré (fichiers/session)** : `cd`/`chdir`, `mkdir`/`md`,
+`rmdir`/`rd`, `type`, `copy`, `move`, `ren`/`rename`, `del`/`erase`,
+`tree`, `set`, `cls`, `echo` (variante Windows dédiée — `echo -n foo`
+affiche `-n foo` littéralement, contrairement à l'`EchoCommand` bash de
+`registerCoreCommands` qui interprète `-n`/`-e`).
+
+**Cutover complet du dispatcher, sur demande explicite de l'utilisateur**
+(pas de fallback, même temporaire, vers le legacy) : tout
+`executeCmdCommand` routait auparavant vers un switch de ~50 commandes
+fichiers/système, un routeur `net <sous-commande>`, et un second switch
+réseau (~14 commandes : `ipconfig`, `ping`, `netsh`, `ssh`, `route`,
+`arp`, `nslookup`...). Les trois sont supprimés d'un bloc : le
+dispatcher ne route plus que ce qui est enregistré dans
+`createWindowsHostShell` ; toute commande non enregistrée renvoie
+désormais le message exact `'<cmd>' is not recognized as an internal or
+external command, operable program or batch file.` — un échec est donc,
+par construction, le signal qu'une commande n'est pas encore migrée, plus
+jamais un aiguillage silencieux vers une implémentation parallèle.
+Les implémentations legacy encore utiles (`WinDir.ts`, `WinSystemCommands.ts`,
+les commandes process/service/réseau de `WinFileCommands.ts`, etc.) sont
+laissées en place, inutilisées, comme matériel de référence pour leurs
+migrations futures (§3.1 étape 1 du framework — les supprimer maintenant
+détruirait la seule référence de fidélité exacte disponible) ; elles sont
+supprimées au fur et à mesure de leur migration réelle, jamais avant.
+`runSyncNativeCommand` (pont synchrone séparé utilisé par les cmdlets
+PowerShell natifs) n'est pas concerné par ce cutover — c'est un
+consommateur distinct, hors périmètre de cette phase.
+
+**Bugs trouvés en migrant (cause racine, pas juste le symptôme)** :
+
+- `rmdir` utilisait initialement `WindowsFileSystem.deleteDirectory()`
+  (suppression inconditionnelle) au lieu de `rmdir()`/`rmdirRecursive()`
+  — perdait donc la vérification « répertoire non vide » que legacy
+  `cmdRmdir` faisait réellement. Fix : `WindowsFileSystemApi.remove()`
+  appelle `rmdir()`/`rmdirRecursive()`, jamais `deleteDirectory()`,
+  exactement comme legacy (piège identique au §7.5 du framework, version
+  Windows : deux méthodes VFS d'apparence équivalente, comportement
+  différent).
+- `ren`/`rename` : `renameEntry()` (legacy) rejette une collision de nom
+  AVANT toute mutation (« A duplicate file name exists... ») et préserve
+  l'entrée d'origine (mtime, attributs, ACL) ; le slot générique
+  `FileSystemApi.rename()` (nécessairement `moveFile()`-backed pour
+  rester utilisable par `move`, qui doit pouvoir traverser les
+  répertoires) écraserait silencieusement une cible existante et recrée
+  une entrée neuve. `RenCommand` reproduit donc la vérification de
+  collision explicitement (avec exception pour un changement de casse
+  pur, `ren a.txt A.txt`) avant d'appeler `rename()` — limitation connue
+  et documentée : la préservation exacte de mtime/attributs/ACL au
+  travers d'un `ren` n'est pas garantie (non couverte par la suite de
+  tests localisée, donc non bloquante pour cette phase).
+
+**Hors périmètre, échoue désormais explicitement avec « not recognized »
+jusqu'à sa propre migration** : `dir`, `ver`, `hostname`, `systeminfo`,
+`tasklist`, `netstat`, `vol`, `wmic`, `sc`, `netsh`, `ipconfig`, `ping`,
+`ssh`/`sftp`/`scp`/`telnet`, `route`, `arp`, `nslookup`, `net`
+(user/localgroup/start/stop/use/share/session/accounts/help), `auditpol`,
+`winrm`, `whoami`, `icacls`, `runas`, `chcp`, `date`, `time`, `start`,
+`setx`, `schtasks`, `print`, `lpr`, `slmgr`, `nbtstat`, `reg`, `nltest`,
+`dcdiag`, `klist`, `netdom`, `dnscmd`, `certreq`, `certutil`, `query`,
+`qwinsta`, `logoff`, `rwinsta`, `gpupdate`, `gpresult`, `iisreset`,
+`doskey`, `powershell`/`pwsh` (sous-shell depuis cmd), `find`, `findstr`,
+`where`, `more`, `fc`, `xcopy`, `sort`, `attrib`, `taskkill`.
+
+**Validation** : lot localisé (8 fichiers ciblés fichiers/session/cwd —
+`windows-filesystem`, `windows-drive-switching`, `windows-per-drive-cwd`,
+`cmd-ps-coherence`, `subshell-isolation`, `windows-session-isolation`,
+`windows-session-migration`, `prompt-cwd`) : 118/144 passent. Les 26
+échecs restants pointent tous, sans exception, vers une commande
+explicitement hors périmètre ci-dessus (`dir`, `ver`, `hostname`,
+`systeminfo`, `tasklist`, `netstat`, `vol`, `wmic`, `sc`, `netsh`) —
+aucune régression sur le périmètre migré. Typecheck ciblé propre
+(`tsc --noEmit`, zéro erreur dans `command-kernel`/`WindowsPC`/
+`WinFileCommands` ; les erreurs préexistantes ailleurs dans le dépôt —
+`LinuxSshClient.ts`, `CiscoSwitchShell.ts`, `SshServerHandler.ts`,
+`vlan-filter-ordering.test.ts` — ne touchent aucun fichier de cette
+session). Lint ciblé non exécutable dans cet environnement (dépendance
+`@eslint/js` absente du sandbox, pré-existant, sans rapport avec ce
+changement).
+
+**Suite (prochaines phases)** : `dir` en priorité (nécessite son propre
+travail — numéro de série de volume, espace libre, correspondance
+wildcard, formats large/récursif — pas réductible au `FileSystemApi`
+générique sans l'étendre), puis `ver`/`hostname`/`systeminfo`/`tasklist`/
+`netstat`/`vol` (commandes système simples), puis le périmètre réseau
+(`ipconfig`, `ping`, `netsh`...) qui délèguera à `MachineApi.net` en
+s'appuyant sur `EndHost`/`Port`/`Cable` existants (§2 du framework),
+jamais une resimulation parallèle.
+
 ## Linux — Phase 5 : `rmdir`
 
 **État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**

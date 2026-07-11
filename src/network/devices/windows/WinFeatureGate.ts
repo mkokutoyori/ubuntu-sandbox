@@ -10,6 +10,8 @@
 
 import type { WinCommandContext } from './WinCommandExecutor';
 
+export type ServiceGateContext = Pick<WinCommandContext, 'isServiceRunning'>;
+
 /** Windows error message templates used when a service-gate fails. */
 const ERRORS = {
   /** sc.exe / NET HELPMSG 1058: ERROR_SERVICE_DISABLED. */
@@ -65,7 +67,7 @@ export interface GateOutcome { ok: boolean; error: string }
  * to error templates that need an interpolation (host name for DNS, …).
  */
 export function requireWindowsService(
-  ctx: WinCommandContext,
+  ctx: ServiceGateContext,
   service: string,
   templateArg?: string,
 ): GateOutcome {
@@ -81,7 +83,7 @@ export function requireWindowsService(
 
 /** Check multiple services in one shot; the first failure wins. */
 export function requireWindowsServices(
-  ctx: WinCommandContext,
+  ctx: ServiceGateContext,
   services: string[],
 ): GateOutcome {
   for (const s of services) {
