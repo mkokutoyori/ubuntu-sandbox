@@ -1,5 +1,6 @@
 import {
   AclEntry,
+  AuditPolicyApi,
   FileAttributes,
   FileNodeType,
   FileStat,
@@ -23,6 +24,7 @@ import {
   ServiceManagementApi,
   SocketInfo,
   UserManagementApi,
+  WinRmApi,
 } from '@/command-kernel/machine/types';
 import { FileSystemError } from '@/command-kernel/errors';
 import { User } from '@/command-kernel/session/types';
@@ -44,6 +46,8 @@ import type { NetUseEntry } from '../WinNetUse';
 import type { WindowsAccountsPolicy } from '../security/WindowsAccountsPolicy';
 import type { WinScheduledTask } from '../WinSystemCommands';
 import type { WinRegistryProvider } from '../WinRegCommand';
+import type { WindowsAuditPolicy } from '../WindowsAuditPolicy';
+import type { WindowsWinRmConfig } from '../WindowsWinRmConfig';
 import { cmdSc } from '../WinSc';
 import { cmdNetUser, cmdNetLocalgroup } from '../WinNetUser';
 import { cmdNetStart, cmdNetStop } from '../WinNetStart';
@@ -51,6 +55,8 @@ import { cmdNetShare } from '../WinNetShare';
 import { cmdNetUse } from '../WinNetUse';
 import { cmdSchtasks } from '../WinSystemCommands';
 import { cmdPrint } from '../WinPrint';
+import { cmdAuditpol } from '../WindowsAuditPolicy';
+import { cmdWinrm } from '../WindowsWinRmConfig';
 import { numericIdFromSid, resolveWindowsUser } from './WindowsUser';
 
 export interface WindowsMachineApiDeps {
@@ -74,6 +80,8 @@ export interface WindowsMachineApiDeps {
   dialSmbShare(targetIp: string, shareName: string, username: string, password: string): SmbDialResult;
   readonly scheduledTasks: Map<string, WinScheduledTask>;
   readonly registry: WinRegistryProvider;
+  readonly auditPolicy: WindowsAuditPolicy;
+  readonly winrm: WindowsWinRmConfig;
   isDHCPConfigured(ifName: string): boolean;
   bootedAt(): Date | null;
   now(): Date;
@@ -555,6 +563,22 @@ class WindowsPrintApi implements PrintApi {
   }
 }
 
+class WindowsAuditPolicyApi implements AuditPolicyApi {
+  constructor(private readonly policy: WindowsAuditPolicy) {}
+
+  async execute(argv: readonly string[]): Promise<string> {
+    return cmdAuditpol(this.policy, [...argv]);
+  }
+}
+
+class WindowsWinRmApi implements WinRmApi {
+  constructor(private readonly config: WindowsWinRmConfig) {}
+
+  async execute(argv: readonly string[]): Promise<string> {
+    return cmdWinrm(this.config, [...argv]);
+  }
+}
+
 class WindowsPowerApi implements PowerApi {
   constructor(private readonly deps: Pick<WindowsMachineApiDeps, 'powerOn' | 'powerOff'>) {}
 
@@ -593,6 +617,8 @@ export class WindowsMachineApi implements MachineApi {
   readonly scheduling: SchedulingApi;
   readonly printing: PrintApi;
   readonly registry: RegistryApi;
+  readonly auditPolicy: AuditPolicyApi;
+  readonly winRm: WinRmApi;
   readonly hostname: string;
   readonly os: OsIdentity;
   readonly hardware: CkHardwareProfile;
@@ -612,6 +638,8 @@ export class WindowsMachineApi implements MachineApi {
     this.scheduling = new WindowsSchedulingApi(deps);
     this.printing = new WindowsPrintApi(deps);
     this.registry = deps.registry;
+    this.auditPolicy = new WindowsAuditPolicyApi(deps.auditPolicy);
+    this.winRm = new WindowsWinRmApi(deps.winrm);
     this.hostname = deps.hostname;
     this.os = {
       name: deps.identity.os.name,

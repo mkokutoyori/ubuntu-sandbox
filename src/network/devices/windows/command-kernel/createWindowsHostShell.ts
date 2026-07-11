@@ -10,6 +10,7 @@ import { DirCommand } from './commands/Dir';
 import { DoskeyCommand } from './commands/Doskey';
 import { WinEchoCommand } from './commands/Echo';
 import { AttribCommand } from './commands/Attrib';
+import { AuditpolCommand } from './commands/Auditpol';
 import { FcCommand } from './commands/Fc';
 import { FindCommand } from './commands/Find';
 import { FindstrCommand } from './commands/Findstr';
@@ -42,6 +43,7 @@ import { TreeCommand } from './commands/Tree';
 import { TypeCommand } from './commands/Type';
 import { VerCommand } from './commands/Ver';
 import { VolCommand } from './commands/Vol';
+import { WinrmCommand } from './commands/Winrm';
 import { XcopyCommand } from './commands/Xcopy';
 import { WindowsMachineApi, WindowsMachineApiDeps } from './WindowsMachineApi';
 
@@ -97,6 +99,8 @@ export function createWindowsHostShell(deps: WindowsMachineApiDeps): { registry:
   registry.register(() => new SetxCommand());
   registry.register(() => new StartCommand());
   registry.register(() => new NbtstatCommand());
+  registry.register(() => new AuditpolCommand());
+  registry.register(() => new WinrmCommand());
 
   const interpreter = new CmdInterpreter(registry, machine);
 

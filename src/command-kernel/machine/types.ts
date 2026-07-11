@@ -171,6 +171,26 @@ export interface PrintApi {
 }
 
 /**
+ * Passerelle vers la politique d'audit (`auditpol`) — optionnel, même
+ * raisonnement que `SchedulingApi` : sous-commandes (`/get`, `/set`) au
+ * format figé, couplées à une table de sous-catégories vendeur sans
+ * équivalent générique.
+ */
+export interface AuditPolicyApi {
+  execute(argv: readonly string[]): Promise<string>;
+}
+
+/**
+ * Passerelle vers la configuration WinRM (`winrm`) — optionnel, même
+ * raisonnement que `SchedulingApi` : sous-commandes (`quickconfig`,
+ * `enumerate`, `get`/`set`) au format figé, couplées à une configuration
+ * vendeur (écouteurs HTTP/HTTPS, CredSSP) sans équivalent générique.
+ */
+export interface WinRmApi {
+  execute(argv: readonly string[]): Promise<string>;
+}
+
+/**
  * Registre système façon Windows (clés hiérarchiques, valeurs typées) —
  * optionnel, concept sans équivalent Linux direct. Surface déjà réduite
  * au strict nécessaire (`reg.exe`, et côté PowerShell le provider
@@ -318,6 +338,10 @@ export interface MachineApi {
   readonly printing?: PrintApi;
   /** Registre système (`reg`, `Registry::`) — optionnel, pas un concept universel. */
   readonly registry?: RegistryApi;
+  /** Politique d'audit (`auditpol`) — optionnel, pas un concept universel. */
+  readonly auditPolicy?: AuditPolicyApi;
+  /** Configuration WinRM (`winrm`) — optionnel, pas un concept universel. */
+  readonly winRm?: WinRmApi;
   now(): Date;
 }
 
