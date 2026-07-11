@@ -5,6 +5,54 @@ progressive par équipement. Un push = une entrée = une fonctionnalité
 complète et testée (voir `CLAUDE.md` / le framework de migration pour les
 principes directeurs).
 
+## Windows — Phase 11 : migration `arp`/`route`/`getmac` (pile réseau bas niveau)
+
+**État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
+
+`executeCmdCommand()` routait déjà tout cmd.exe exclusivement via
+`CmdInterpreter` (`runCommandKernel`, aucun fallback) — mais `ipconfig`,
+`netsh`, `arp`, `route`, `getmac`, `ping`, `tracert`, `nslookup` n'avaient
+jamais été enregistrées dans le `CommandRegistry` : elles restaient
+utilisables uniquement via `WindowsPC.runSyncNativeCommand` (le shim
+PowerShell), et tapées en cmd.exe elles produisaient
+`'ipconfig' is not recognized as an internal or external command`. Cette
+phase migre le premier lot — `arp`, `route`, `getmac` — auto-contenu (pas
+de dépendance à la passerelle DHCP nécessaire à `ipconfig`).
+
+**Nouvelle capacité `MachineApi.netConfig?: WindowsNetConfigApi`** —
+primitives granulaires, une par opération vendeur réelle :
+- `adapters()` — état brut des interfaces (nom, MAC, IP, up/connected/admin-down),
+  réutilisé par les trois commandes plutôt que dupliqué.
+- `arpEntries()`/`addStaticArp()`/`deleteArp()`/`clearArp()` — table ARP.
+- `routes()`/`addRoute()`/`removeRoute()`/`setDefaultGateway()`/`clearDefaultGateway()`
+  — table de routage (déjà résolue : connectées + statiques + défaut).
+
+`ArpCommand`/`RouteCommand`/`GetmacCommand` (nouvelles, dans
+`command-kernel/commands/`) portent l'intégralité de l'analyse d'arguments,
+du dispatch et du formatage de sortie — auparavant dans `WinArp.ts`/
+`WinRoute.ts`/`WinGetmac.ts` — y compris la validation de syntaxe utilisateur
+(`IPAddress`/`SubnetMask`/`MACAddress`, réutilisés comme n'importe quel type
+de domaine, pas une passerelle legacy) et les messages d'erreur exacts
+(« The specified mask parameter is invalid »,
+« The parameter is incorrect »...). `WinArp.ts`/`WinRoute.ts`/`WinGetmac.ts`
+restent intacts, seuls consommateurs désormais du shim PowerShell natif
+(`runSyncNativeCommand`).
+
+Point d'implémentation : `arp`/`route` acceptent des options style BSD
+(`-a`, `-d`, `-s`, `-f`, `-p`...) plutôt que le `/flag` habituel de cmd.exe
+— sans `lenientOptions: true` sur le descripteur, l'`ArgumentParser`
+générique les rejette (« option inconnue : -a ») puisqu'aucun `OptionSpec`
+n'est déclaré ; elles doivent atterrir en positionnels bruts pour que la
+commande fasse elle-même le dispatch, exactement comme `echo -w foo`.
+
+Validation : `npx tsc --noEmit` propre (mêmes 7 erreurs pré-existantes et
+sans rapport, ex. `AccountLifecycleVerdict`/`strictNullChecks:false`).
+Suite localisée (13 fichiers touchant windows/réseau + `arp-command.test.ts`,
+832 tests) comparée au commit pré-Phase-11 via `git stash` : 269 échecs/563
+réussites avant → 243 échecs/589 réussites après, soit 26 tests corrigés,
+zéro régression. Les échecs restants dans ce lot concernent exclusivement
+`ping`/`ipconfig`/`netsh`, pas encore migrés (prochaines phases).
+
 ## Convergence de branche : Linux Phase 2 (`umask`) + Windows Phase 10 (élimination du passthrough opaque `execute(argv)`)
 
 **État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**

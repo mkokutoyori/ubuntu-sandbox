@@ -37,13 +37,18 @@ import {
   SmbShareInfo,
   SocketInfo,
   UserManagementApi,
+  WindowsAdapterInfo,
+  WindowsArpEntry,
+  WindowsNetConfigApi,
+  WindowsRouteEntry,
   WinRmApi,
   WinRmListenerInfo,
 } from '@/command-kernel/machine/types';
 import { FileSystemError } from '@/command-kernel/errors';
 import { User } from '@/command-kernel/session/types';
 import type { Port } from '@/network/hardware/Port';
-import type { IPAddress } from '@/network/core/types';
+import { IPAddress, MACAddress, SubnetMask } from '@/network/core/types';
+import type { ARPEntry, HostRouteEntry } from '@/network/devices/EndHost';
 import type { SystemIdentity } from '@/network/devices/host/identity/SystemIdentity';
 import type { HardwareProfile } from '@/network/devices/host/hardware/HardwareProfile';
 import { WindowsFileSystem } from '../WindowsFileSystem';
@@ -88,6 +93,17 @@ export interface WindowsMachineApiDeps {
   readonly registry: WinRegistryProvider;
   readonly auditPolicy: WindowsAuditPolicy;
   readonly winrm: WindowsWinRmConfig;
+  /** Table ARP — référence live, jamais réassignée (mutée via `.set`/`.delete`/`.clear`), comme `smbShares`/`smbSessions`. */
+  readonly arpTable: Map<string, ARPEntry>;
+  /** Table de routage déjà résolue (connectées + statiques + défaut) — méthode, pas un champ : `routingTable` est réassigné en interne à chaque mutation. */
+  getRoutingTable(): HostRouteEntry[];
+  addStaticRoute(network: IPAddress, mask: SubnetMask, nextHop: IPAddress, metric: number): boolean;
+  removeRoute(network: IPAddress, mask: SubnetMask): boolean;
+  setDefaultGateway(gw: IPAddress): void;
+  clearDefaultGateway(): void;
+  addStaticARP(ip: IPAddress, mac: MACAddress, iface: string): void;
+  deleteARP(ip: IPAddress): boolean;
+  clearARPTable(): void;
   isDHCPConfigured(ifName: string): boolean;
   bootedAt(): Date | null;
   now(): Date;
@@ -903,6 +919,79 @@ class WindowsWinRmApi implements WinRmApi {
   }
 }
 
+class WindowsNetConfigApiImpl implements WindowsNetConfigApi {
+  constructor(
+    private readonly ports: () => readonly Port[],
+    private readonly deps: Pick<WindowsMachineApiDeps,
+      'arpTable' | 'getRoutingTable' | 'addStaticRoute' | 'removeRoute' | 'setDefaultGateway' | 'clearDefaultGateway'
+      | 'addStaticARP' | 'deleteARP' | 'clearARPTable'>,
+  ) {}
+
+  adapters(): readonly WindowsAdapterInfo[] {
+    return this.ports().map((port) => ({
+      name: port.getName(),
+      mac: port.getMAC().toString(),
+      ip: port.getIPAddress()?.toString(),
+      isUp: port.getIsUp(),
+      isConnected: port.isConnected(),
+      isAdminDown: port.isAdminDown(),
+    }));
+  }
+
+  arpEntries(): readonly WindowsArpEntry[] {
+    return [...this.deps.arpTable.entries()].map(([ip, entry]) => ({
+      ip,
+      mac: entry.mac.toString(),
+      iface: entry.iface,
+      type: entry.type,
+    }));
+  }
+
+  addStaticArp(ip: string, mac: string, iface: string): { ok: boolean; error?: string } {
+    try {
+      this.deps.addStaticARP(new IPAddress(ip), new MACAddress(mac), iface);
+      return { ok: true };
+    } catch (e) {
+      return { ok: false, error: e instanceof Error ? e.message : String(e) };
+    }
+  }
+
+  deleteArp(ip: string): void {
+    this.deps.deleteARP(new IPAddress(ip));
+  }
+
+  clearArp(): void {
+    this.deps.clearARPTable();
+  }
+
+  routes(): readonly WindowsRouteEntry[] {
+    return this.deps.getRoutingTable().map((r) => ({
+      network: r.network.toString(),
+      mask: r.mask.toString(),
+      nextHop: r.nextHop ? r.nextHop.toString() : null,
+      iface: r.iface,
+      metric: r.metric,
+      type: r.type,
+    }));
+  }
+
+  addRoute(network: string, mask: string, nextHop: string, metric: number): boolean {
+    return this.deps.addStaticRoute(new IPAddress(network), new SubnetMask(mask), new IPAddress(nextHop), metric);
+  }
+
+  removeRoute(network: string, mask: string): boolean {
+    return this.deps.removeRoute(new IPAddress(network), new SubnetMask(mask));
+  }
+
+  setDefaultGateway(gw: string): void {
+    this.deps.setDefaultGateway(new IPAddress(gw));
+  }
+
+  clearDefaultGateway(): void {
+    this.deps.clearDefaultGateway();
+  }
+}
+
 class WindowsPowerApi implements PowerApi {
   constructor(private readonly deps: Pick<WindowsMachineApiDeps, 'powerOn' | 'powerOff'>) {}
 
@@ -946,6 +1035,7 @@ export class WindowsMachineApi implements MachineApi {
   readonly registry: RegistryApi;
   readonly auditPolicy: AuditPolicyApi;
   readonly winRm: WinRmApi;
+  readonly netConfig: WindowsNetConfigApi;
   readonly hostname: string;
   readonly os: OsIdentity;
   readonly hardware: CkHardwareProfile;
@@ -970,6 +1060,7 @@ export class WindowsMachineApi implements MachineApi {
     this.registry = deps.registry;
     this.auditPolicy = new WindowsAuditPolicyApi(deps.auditPolicy);
     this.winRm = new WindowsWinRmApi(deps.winrm);
+    this.netConfig = new WindowsNetConfigApiImpl(() => deps.ports, deps);
     this.hostname = deps.hostname;
     this.os = {
       name: deps.identity.os.name,

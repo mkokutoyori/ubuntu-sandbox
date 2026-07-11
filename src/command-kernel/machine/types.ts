@@ -348,6 +348,58 @@ export interface SocketInfo {
   readonly pid?: number;
 }
 
+/** Adaptateur réseau tel que vu par `arp`/`route`/`getmac`/`ipconfig` — optionnel, modèle Windows (nom d'interface + MAC + IP + état physique/admin distincts). */
+export interface WindowsAdapterInfo {
+  readonly name: string;
+  /** Forme canonique deux-points minuscule (ex: `aa:bb:cc:dd:ee:ff`) — chaque commande applique son propre formatage d'affichage (tirets, majuscules...). */
+  readonly mac: string;
+  readonly ip: string | undefined;
+  readonly isUp: boolean;
+  readonly isConnected: boolean;
+  readonly isAdminDown: boolean;
+}
+
+/** Entrée de la table ARP (`arp -a`) — optionnel, modèle Windows. */
+export interface WindowsArpEntry {
+  readonly ip: string;
+  readonly mac: string;
+  readonly iface: string;
+  readonly type: 'dynamic' | 'static' | 'failed';
+}
+
+/** Entrée de la table de routage (`route print`) — optionnel, modèle Windows. */
+export interface WindowsRouteEntry {
+  readonly network: string;
+  readonly mask: string;
+  readonly nextHop: string | null;
+  readonly iface: string;
+  readonly metric: number;
+  readonly type: 'connected' | 'static' | 'default';
+}
+
+/**
+ * Configuration réseau bas niveau façon Windows (adaptateurs, ARP, table de
+ * routage) — optionnel, sans équivalent universel unique (Linux a `ip`/`ss`
+ * couverts ailleurs). Chaque méthode correspond à UNE opération vendeur
+ * réelle : aucun `execute(argv)` opaque — `arp`/`route`/`getmac` portent
+ * eux-mêmes l'analyse d'arguments et le formatage de sortie.
+ */
+export interface WindowsNetConfigApi {
+  adapters(): readonly WindowsAdapterInfo[];
+
+  arpEntries(): readonly WindowsArpEntry[];
+  addStaticArp(ip: string, mac: string, iface: string): { ok: boolean; error?: string };
+  deleteArp(ip: string): void;
+  clearArp(): void;
+
+  routes(): readonly WindowsRouteEntry[];
+  /** `false` si la passerelle suivante n'est pas joignable par une interface locale (échec réel, pas une erreur de syntaxe). */
+  addRoute(network: string, mask: string, nextHop: string, metric: number): boolean;
+  removeRoute(network: string, mask: string): boolean;
+  setDefaultGateway(gw: string): void;
+  clearDefaultGateway(): void;
+}
+
 export interface NetworkApi {
   /** `dhcp` optionnel : seuls certains vendeurs (Windows) le suivent par interface. */
   interfaces(): Promise<{ name: string; ip: string; up: boolean; dhcp?: boolean }[]>;
@@ -542,6 +594,8 @@ export interface MachineApi {
   readonly auditPolicy?: AuditPolicyApi;
   /** Configuration WinRM (`winrm`) — optionnel, pas un concept universel. */
   readonly winRm?: WinRmApi;
+  /** Adaptateurs/ARP/table de routage bas niveau (`arp`, `route`, `getmac`) — optionnel, pas un concept universel. */
+  readonly netConfig?: WindowsNetConfigApi;
   /** Masque de permissions par défaut (`umask`) — optionnel, pas un concept universel. */
   readonly permissions?: PermissionsApi;
   now(): Date;
