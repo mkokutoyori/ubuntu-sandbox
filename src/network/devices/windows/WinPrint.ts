@@ -9,6 +9,8 @@
 import type { WinCommandContext } from './WinCommandExecutor';
 import { requireWindowsService } from './WinFeatureGate';
 
+export type PrintContext = Pick<WinCommandContext, 'hostname' | 'isServiceRunning'>;
+
 export type PrintJobStatus = 'Spooling' | 'Printing' | 'Completed' | 'Error';
 
 export interface PrintJob {
@@ -24,13 +26,13 @@ export interface PrintJob {
 
 const QUEUES = new Map<string, PrintJob[]>();
 
-function getQueue(ctx: WinCommandContext): PrintJob[] {
+function getQueue(ctx: PrintContext): PrintJob[] {
   let q = QUEUES.get(ctx.hostname);
   if (!q) { q = []; QUEUES.set(ctx.hostname, q); }
   return q;
 }
 
-export function cmdPrint(ctx: WinCommandContext, args: string[]): string {
+export function cmdPrint(ctx: PrintContext, args: string[]): string {
   const gate = requireWindowsService(ctx, 'Spooler');
   if (!gate.ok) return gate.error;
 

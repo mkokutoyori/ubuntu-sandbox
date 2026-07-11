@@ -14,8 +14,10 @@ import {
   NetworkApi,
   OsIdentity,
   PowerApi,
+  PrintApi,
   ProcessApi,
   ProcessInfo as CkProcessInfo,
+  SchedulingApi,
   SecurityIdentity,
   ServiceManagementApi,
   SocketInfo,
@@ -39,11 +41,14 @@ import type { SmbSessionTable } from '../server/smb/SmbSessionTable';
 import type { SmbDialResult } from '../server/smb/SmbClient';
 import type { NetUseEntry } from '../WinNetUse';
 import type { WindowsAccountsPolicy } from '../security/WindowsAccountsPolicy';
+import type { WinScheduledTask } from '../WinSystemCommands';
 import { cmdSc } from '../WinSc';
 import { cmdNetUser, cmdNetLocalgroup } from '../WinNetUser';
 import { cmdNetStart, cmdNetStop } from '../WinNetStart';
 import { cmdNetShare } from '../WinNetShare';
 import { cmdNetUse } from '../WinNetUse';
+import { cmdSchtasks } from '../WinSystemCommands';
+import { cmdPrint } from '../WinPrint';
 import { numericIdFromSid, resolveWindowsUser } from './WindowsUser';
 
 export interface WindowsMachineApiDeps {
@@ -65,8 +70,10 @@ export interface WindowsMachineApiDeps {
   readonly accountsPolicy: WindowsAccountsPolicy;
   resolveHostname(name: string): Promise<IPAddress | null>;
   dialSmbShare(targetIp: string, shareName: string, username: string, password: string): SmbDialResult;
+  readonly scheduledTasks: Map<string, WinScheduledTask>;
   isDHCPConfigured(ifName: string): boolean;
   bootedAt(): Date | null;
+  now(): Date;
   powerOn(): void;
   powerOff(): void;
 }
@@ -519,6 +526,32 @@ class WindowsNetExeApi implements NetExeApi {
   }
 }
 
+class WindowsSchedulingApi implements SchedulingApi {
+  constructor(
+    private readonly deps: Pick<WindowsMachineApiDeps, 'serviceManager' | 'processManager' | 'scheduledTasks' | 'now'>,
+  ) {}
+
+  async execute(argv: readonly string[]): Promise<string> {
+    return cmdSchtasks({
+      isServiceRunning: (name) => this.deps.serviceManager.getService(name)?.state === 'Running',
+      processManager: this.deps.processManager,
+      scheduledTasks: this.deps.scheduledTasks,
+      now: this.deps.now,
+    }, [...argv]);
+  }
+}
+
+class WindowsPrintApi implements PrintApi {
+  constructor(private readonly deps: Pick<WindowsMachineApiDeps, 'hostname' | 'serviceManager'>) {}
+
+  async execute(argv: readonly string[]): Promise<string> {
+    return cmdPrint({
+      hostname: this.deps.hostname,
+      isServiceRunning: (name) => this.deps.serviceManager.getService(name)?.state === 'Running',
+    }, [...argv]);
+  }
+}
+
 class WindowsPowerApi implements PowerApi {
   constructor(private readonly deps: Pick<WindowsMachineApiDeps, 'powerOn' | 'powerOff'>) {}
 
@@ -554,10 +587,13 @@ export class WindowsMachineApi implements MachineApi {
   readonly services: ServiceManagementApi;
   readonly macros: MacroApi;
   readonly netExe: NetExeApi;
+  readonly scheduling: SchedulingApi;
+  readonly printing: PrintApi;
   readonly hostname: string;
   readonly os: OsIdentity;
   readonly hardware: CkHardwareProfile;
   private readonly bootedAtFn: () => Date | null;
+  private readonly nowFn: () => Date;
 
   constructor(deps: WindowsMachineApiDeps) {
     this.fs = new WindowsFileSystemApi(deps.fs);
@@ -569,6 +605,8 @@ export class WindowsMachineApi implements MachineApi {
     this.services = new WindowsServiceManagementApi(deps.serviceManager, deps.processManager);
     this.macros = new WindowsMacroApi(deps.doskey);
     this.netExe = new WindowsNetExeApi(deps);
+    this.scheduling = new WindowsSchedulingApi(deps);
+    this.printing = new WindowsPrintApi(deps);
     this.hostname = deps.hostname;
     this.os = {
       name: deps.identity.os.name,
@@ -599,6 +637,7 @@ export class WindowsMachineApi implements MachineApi {
       },
     };
     this.bootedAtFn = deps.bootedAt;
+    this.nowFn = deps.now;
   }
 
   bootedAt(): Date | null {
@@ -606,6 +645,6 @@ export class WindowsMachineApi implements MachineApi {
   }
 
   now(): Date {
-    return new Date();
+    return this.nowFn();
   }
 }
