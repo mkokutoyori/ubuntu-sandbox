@@ -115,7 +115,6 @@ import type { DnsQueryFn } from '../dns/compat/DnsWireCompat';
 import { SessionWorkQueue } from './host/session/SessionWorkQueue';
 import { SessionSwapWindow } from './host/session/SessionSwapWindow';
 import * as WinSys from './windows/WinSystemCommands';
-import { cmdReg as winCmdReg } from './windows/WinRegCommand';
 import { WIN_VER_STRING } from './windows/WindowsVersion';
 import { createWindowsHostShell } from './windows/command-kernel/createWindowsHostShell';
 import type { CmdInterpreter } from './windows/command-kernel/CmdInterpreter';
@@ -1714,6 +1713,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
         resolveHostname: (name) => this.resolveHostname(name),
         dialSmbShare: (targetIp, shareName, username, password) => this.dialSmbShare(targetIp, shareName, username, password),
         scheduledTasks: this.scheduledTasks,
+        registry: this.registry,
         isDHCPConfigured: (ifName) => this.isDHCPConfigured(ifName),
         bootedAt: () => this.getLifecycle().bootedAt() ?? null,
         now: () => this.simulatedDate(),
@@ -2236,22 +2236,6 @@ export class WindowsPC extends EndHost implements UserAccountHost {
 
   private cmdTime(args: string[]): string {
     return WinSys.cmdTime(args);
-  }
-
-  private cmdStart(args: string[]): string {
-    return WinSys.cmdStart(this.buildSystemContext(), args);
-  }
-
-  private cmdSetx(args: string[]): string {
-    return WinSys.cmdSetx(this.buildSystemContext(), args);
-  }
-
-  private cmdNbtstat(args: string[]): string {
-    return WinSys.cmdNbtstat(this.buildSystemContext(), args);
-  }
-
-  private cmdReg(args: string[]): string {
-    return winCmdReg(this.registry, args);
   }
 
   /** nslookup command implementation for Windows */

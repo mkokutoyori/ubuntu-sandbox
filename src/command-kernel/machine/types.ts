@@ -170,6 +170,24 @@ export interface PrintApi {
   execute(argv: readonly string[], caller: { userName: string }): Promise<string>;
 }
 
+/**
+ * Registre système façon Windows (clés hiérarchiques, valeurs typées) —
+ * optionnel, concept sans équivalent Linux direct. Surface déjà réduite
+ * au strict nécessaire (`reg.exe`, et côté PowerShell le provider
+ * `Registry::`), pas une passerelle opaque : chaque méthode est une
+ * primitive générique réutilisable par un futur vendeur avec un registre
+ * similaire.
+ */
+export interface RegistryApi {
+  testPath(key: string): boolean;
+  newItem(key: string, force: boolean): unknown;
+  setItemProperty(key: string, name: string, value: string | number): void;
+  removeItemProperty(key: string, name: string): void;
+  removeItem(key: string, recurse: boolean): void;
+  getItemPropertyValues(key: string): Record<string, unknown> | null | undefined;
+  listSubkeyNames(key: string): string[];
+}
+
 export interface SocketInfo {
   readonly protocol: string;
   readonly localAddress: string;
@@ -298,6 +316,8 @@ export interface MachineApi {
   readonly scheduling?: SchedulingApi;
   /** File d'impression (`print`) — optionnel, pas un concept universel. */
   readonly printing?: PrintApi;
+  /** Registre système (`reg`, `Registry::`) — optionnel, pas un concept universel. */
+  readonly registry?: RegistryApi;
   now(): Date;
 }
 

@@ -18,15 +18,19 @@ import { IcaclsCommand } from './commands/Icacls';
 import { MkdirCommand } from './commands/Mkdir';
 import { MoreCommand } from './commands/More';
 import { MoveCommand } from './commands/Move';
+import { NbtstatCommand } from './commands/Nbtstat';
 import { NetCommand } from './commands/Net';
 import { PrintCommand } from './commands/Print';
+import { RegCommand } from './commands/Reg';
 import { RenCommand } from './commands/Ren';
 import { RmdirCommand } from './commands/Rmdir';
 import { SchtasksCommand } from './commands/Schtasks';
 import { NetstatCommand } from './commands/Netstat';
 import { ScCommand } from './commands/Sc';
 import { SetCommand } from './commands/Set';
+import { SetxCommand } from './commands/Setx';
 import { SortCommand } from './commands/Sort';
+import { StartCommand } from './commands/Start';
 import { SysteminfoCommand } from './commands/Systeminfo';
 import { TaskkillCommand } from './commands/Taskkill';
 import { TasklistCommand } from './commands/Tasklist';
@@ -89,6 +93,10 @@ export function createWindowsHostShell(deps: WindowsMachineApiDeps): { registry:
   registry.register(() => new NetCommand());
   registry.register(() => new SchtasksCommand());
   registry.register(() => new PrintCommand());
+  registry.register(() => new RegCommand());
+  registry.register(() => new SetxCommand());
+  registry.register(() => new StartCommand());
+  registry.register(() => new NbtstatCommand());
 
   const interpreter = new CmdInterpreter(registry, machine);
 
