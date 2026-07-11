@@ -1713,8 +1713,10 @@ export class WindowsPC extends EndHost implements UserAccountHost {
         accountsPolicy: this.accountsPolicy,
         resolveHostname: (name) => this.resolveHostname(name),
         dialSmbShare: (targetIp, shareName, username, password) => this.dialSmbShare(targetIp, shareName, username, password),
+        scheduledTasks: this.scheduledTasks,
         isDHCPConfigured: (ifName) => this.isDHCPConfigured(ifName),
         bootedAt: () => this.getLifecycle().bootedAt() ?? null,
+        now: () => this.simulatedDate(),
         powerOn: () => this.powerOn(),
         powerOff: () => this.powerOff(),
       });
@@ -2242,10 +2244,6 @@ export class WindowsPC extends EndHost implements UserAccountHost {
 
   private cmdSetx(args: string[]): string {
     return WinSys.cmdSetx(this.buildSystemContext(), args);
-  }
-
-  private cmdSchtasks(args: string[]): string {
-    return WinSys.cmdSchtasks(this.buildSystemContext(), args);
   }
 
   private cmdNbtstat(args: string[]): string {

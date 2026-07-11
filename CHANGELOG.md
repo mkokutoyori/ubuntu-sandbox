@@ -5,6 +5,44 @@ progressive par équipement. Un push = une entrée = une fonctionnalité
 complète et testée (voir `CLAUDE.md` / le framework de migration pour les
 principes directeurs).
 
+## Windows — Phase 7 : `schtasks`, `print`, correction de `MachineApi.now()`
+
+**État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
+
+Même classe de régression Phase 4 que `net` : `schtasks` n'était dispatché
+nulle part côté `cmd.exe` (le wrapper privé `WindowsPC.cmdSchtasks` existait
+mais n'était appelé par rien, ni côté cmd ni côté shim PowerShell — mort des
+deux côtés) ; `print` n'avait jamais eu le moindre point d'entrée.
+
+**`MachineApi.scheduling?: SchedulingApi`** et **`MachineApi.printing?:
+PrintApi`** (chacune une méthode `execute(argv)`) — même raisonnement
+documenté que `NetExeApi`/`ServiceManagementApi`. `cmdSchtasks`/`cmdPrint`
+narrowés de `WinSystemContext`/`WinCommandContext` (les gros contextes
+système/réseau) à `Pick<>` portant seulement ce qu'ils lisent réellement
+(`isServiceRunning`+`processManager`+`scheduledTasks`+`now` pour l'un,
+`hostname`+`isServiceRunning` pour l'autre) — même technique que
+`NetShareContext`/`NetUseContext` en Phase 6, pour ne jamais tirer toute la
+pile réseau dans `MachineApi` pour un besoin aussi étroit.
+
+**Bug trouvé en implémentant `scheduling`** : `WindowsMachineApi.now()`
+retournait `new Date()` (horloge murale réelle) au lieu de l'horloge
+simulée de l'équipement — un `WindowsPC.advanceTime()` n'avait donc aucun
+effet sur ce que `ctx.machine.now()` répondait. Latent depuis la Phase 3
+(`date`/`time`, déjà migrées, lisaient déjà silencieusement la mauvaise
+horloge — juste jamais testé après un `advanceTime()`). Fix : nouveau
+`WindowsMachineApiDeps.now(): Date`, câblé sur `this.simulatedDate()` côté
+`WindowsPC`, consommé par `WindowsMachineApi.now()` — corrige `date`/`time`
+en plus de rendre `schtasks /create` + `advanceTime()` cohérents.
+
+**Validation** : lot localisé (les 22 fichiers de la Phase 6, `date`/`time`
+et `windows-scheduled-tasks` inclus pour couvrir le fix `now()`) comparé au
+commit précédent — 111 échecs / 798 réussites → 101 échecs / 808 réussites,
+**10 tests corrigés (les 6 `windows-scheduled-tasks` + les 4 `schtasks`/
+`print` de `windows-phase-g`), zéro régression**. Typecheck ciblé propre.
+
+**Hors périmètre, repéré en passant** : `runas` — même gap Phase-4, commande
+distincte, laissée pour un prochain lot.
+
 ## Windows — Phase 6 : `net` (user/localgroup/start/stop/share/session/use/accounts)
 
 **État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**

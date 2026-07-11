@@ -229,7 +229,9 @@ export function cmdSetx(ctx: WinSystemContext, args: string[]): string {
  * `scheduledTasks` map so PowerShell's `Get-ScheduledTask` and
  * `Register-ScheduledTask` see the same data.
  */
-export function cmdSchtasks(ctx: WinSystemContext, args: string[]): string {
+export type SchtasksContext = Pick<WinSystemContext, 'isServiceRunning' | 'processManager' | 'scheduledTasks' | 'now'>;
+
+export function cmdSchtasks(ctx: SchtasksContext, args: string[]): string {
   if (!ctx.isServiceRunning('Schedule')) {
     return `ERROR: The Task Scheduler service is not running.`;
   }

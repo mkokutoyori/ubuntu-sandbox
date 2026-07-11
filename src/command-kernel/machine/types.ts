@@ -151,6 +151,25 @@ export interface NetExeApi {
   execute(argv: readonly string[], caller: { isAdmin: boolean; userName: string }): Promise<string>;
 }
 
+/**
+ * Passerelle vers le planificateur de tâches (`schtasks`) — optionnel,
+ * même raisonnement que `NetExeApi` : sous-commandes (`/query`, `/create`,
+ * `/delete`, `/run`, `/change`, `/end`) au format figé, couplées à une
+ * table de tâches vendeur sans équivalent générique.
+ */
+export interface SchedulingApi {
+  execute(argv: readonly string[]): Promise<string>;
+}
+
+/**
+ * Passerelle vers la file d'impression (`print`) — optionnel, même
+ * raisonnement que `SchedulingApi` : concept vendeur (spouleur
+ * d'impression) sans équivalent générique.
+ */
+export interface PrintApi {
+  execute(argv: readonly string[], caller: { userName: string }): Promise<string>;
+}
+
 export interface SocketInfo {
   readonly protocol: string;
   readonly localAddress: string;
@@ -275,6 +294,10 @@ export interface MachineApi {
   readonly macros?: MacroApi;
   /** `net.exe` (comptes, groupes, services, partages SMB, lecteurs réseau) — optionnel, pas un concept universel. */
   readonly netExe?: NetExeApi;
+  /** Planificateur de tâches (`schtasks`) — optionnel, pas un concept universel. */
+  readonly scheduling?: SchedulingApi;
+  /** File d'impression (`print`) — optionnel, pas un concept universel. */
+  readonly printing?: PrintApi;
   now(): Date;
 }
 

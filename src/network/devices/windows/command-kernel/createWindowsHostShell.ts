@@ -19,8 +19,10 @@ import { MkdirCommand } from './commands/Mkdir';
 import { MoreCommand } from './commands/More';
 import { MoveCommand } from './commands/Move';
 import { NetCommand } from './commands/Net';
+import { PrintCommand } from './commands/Print';
 import { RenCommand } from './commands/Ren';
 import { RmdirCommand } from './commands/Rmdir';
+import { SchtasksCommand } from './commands/Schtasks';
 import { NetstatCommand } from './commands/Netstat';
 import { ScCommand } from './commands/Sc';
 import { SetCommand } from './commands/Set';
@@ -85,6 +87,8 @@ export function createWindowsHostShell(deps: WindowsMachineApiDeps): { registry:
   registry.register(() => new WhereCommand());
   registry.register(() => new DoskeyCommand());
   registry.register(() => new NetCommand());
+  registry.register(() => new SchtasksCommand());
+  registry.register(() => new PrintCommand());
 
   const interpreter = new CmdInterpreter(registry, machine);
 
