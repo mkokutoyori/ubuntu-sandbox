@@ -40,6 +40,7 @@ import {
   WindowsAdapterInfo,
   WindowsArpEntry,
   WindowsNetConfigApi,
+  WindowsPingReply,
   WindowsRouteEntry,
   WinRmApi,
   WinRmListenerInfo,
@@ -49,6 +50,7 @@ import { User } from '@/command-kernel/session/types';
 import type { Port } from '@/network/hardware/Port';
 import { IPAddress, MACAddress, SubnetMask } from '@/network/core/types';
 import type { ARPEntry, HostRouteEntry } from '@/network/devices/EndHost';
+import type { PingResult } from '@/network/devices/windows/WinCommandExecutor';
 import type { SystemIdentity } from '@/network/devices/host/identity/SystemIdentity';
 import type { HardwareProfile } from '@/network/devices/host/hardware/HardwareProfile';
 import { WindowsFileSystem } from '../WindowsFileSystem';
@@ -104,6 +106,7 @@ export interface WindowsMachineApiDeps {
   addStaticARP(ip: IPAddress, mac: MACAddress, iface: string): void;
   deleteARP(ip: IPAddress): boolean;
   clearARPTable(): void;
+  executePingSequence(target: IPAddress, count: number, timeoutMs?: number, ttl?: number): Promise<PingResult[]>;
   isDHCPConfigured(ifName: string): boolean;
   bootedAt(): Date | null;
   now(): Date;
@@ -924,7 +927,7 @@ class WindowsNetConfigApiImpl implements WindowsNetConfigApi {
     private readonly ports: () => readonly Port[],
     private readonly deps: Pick<WindowsMachineApiDeps,
       'arpTable' | 'getRoutingTable' | 'addStaticRoute' | 'removeRoute' | 'setDefaultGateway' | 'clearDefaultGateway'
-      | 'addStaticARP' | 'deleteARP' | 'clearARPTable'>,
+      | 'addStaticARP' | 'deleteARP' | 'clearARPTable' | 'resolveHostname' | 'executePingSequence'>,
   ) {}
 
   adapters(): readonly WindowsAdapterInfo[] {
@@ -989,6 +992,22 @@ class WindowsNetConfigApiImpl implements WindowsNetConfigApi {
 
   clearDefaultGateway(): void {
     this.deps.clearDefaultGateway();
+  }
+
+  async resolveHostname(name: string): Promise<string | null> {
+    const ip = await this.deps.resolveHostname(name);
+    return ip ? ip.toString() : null;
+  }
+
+  async pingSequence(targetIp: string, count: number, timeoutMs?: number, ttl?: number): Promise<readonly WindowsPingReply[]> {
+    const results = await this.deps.executePingSequence(new IPAddress(targetIp), count, timeoutMs, ttl);
+    return results.map((r) => ({
+      success: r.success,
+      fromIP: r.fromIP,
+      ttl: r.ttl,
+      rttMs: r.rttMs,
+      error: r.error,
+    }));
   }
 }
 
