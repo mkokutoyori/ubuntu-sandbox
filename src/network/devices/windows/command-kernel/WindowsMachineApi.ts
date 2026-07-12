@@ -65,6 +65,7 @@ import {
   DnsServerZoneRecord,
   DnsSrvRecordData,
   RunAsApi,
+  LicensingApi,
   WindowsHttpStore,
   WindowsIpsecDynamicSettings,
   WindowsIpsecFilter,
@@ -214,6 +215,10 @@ export interface WindowsMachineApiDeps {
   runasGetUser(name: string): { readonly name: string; readonly enabled: boolean } | undefined;
   runasCurrentUser(): string;
   runasCommandAs(userName: string, command: string): Promise<string>;
+  licensingInstallProductKey(key: string): { ok: boolean; message: string };
+  licensingActivate(): { ok: boolean; message: string };
+  licensingProductKey(): string | null;
+  licensingState(): string;
   locateDomainController(domain: string): DomainControllerLocation;
   dcDiagnostics(): DomainControllerDiagnostics;
   kerberosTickets(): readonly KerberosCachedTicket[];
@@ -1788,6 +1793,23 @@ class WindowsRunAsApiImpl implements RunAsApi {
   }
 }
 
+class WindowsLicensingApiImpl implements LicensingApi {
+  constructor(private readonly deps: Pick<WindowsMachineApiDeps,
+    'licensingInstallProductKey' | 'licensingActivate' | 'licensingProductKey' | 'licensingState'>) {}
+  installProductKey(key: string): { ok: boolean; message: string } {
+    return this.deps.licensingInstallProductKey(key);
+  }
+  activate(): { ok: boolean; message: string } {
+    return this.deps.licensingActivate();
+  }
+  productKey(): string | null {
+    return this.deps.licensingProductKey();
+  }
+  state(): string {
+    return this.deps.licensingState();
+  }
+}
+
 export class WindowsMachineApi implements MachineApi {
   readonly fs: FileSystemApi;
   readonly proc: ProcessApi;
@@ -1810,6 +1832,7 @@ export class WindowsMachineApi implements MachineApi {
   readonly eventLog: EventLogApi;
   readonly domain: DomainApi;
   readonly runAs: RunAsApi;
+  readonly licensing: LicensingApi;
   readonly hostname: string;
   readonly os: OsIdentity;
   readonly hardware: CkHardwareProfile;
@@ -1850,6 +1873,7 @@ export class WindowsMachineApi implements MachineApi {
     this.eventLog = new WindowsEventLogApiImpl(deps);
     this.domain = new WindowsDomainApiImpl(deps);
     this.runAs = new WindowsRunAsApiImpl(deps);
+    this.licensing = new WindowsLicensingApiImpl(deps);
     this.hostname = deps.hostname;
     this.os = {
       name: deps.identity.os.name,

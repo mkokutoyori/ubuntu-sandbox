@@ -1035,6 +1035,23 @@ export interface PowerApi {
 }
 
 /**
+ * État d'activation/licence de la machine (`slmgr`) — optionnel, pas un
+ * concept universel. `installProductKey`/`activate` mutent l'état ;
+ * `productKey`/`state` le lisent. Aucune vérification cryptographique
+ * (une clé au format `XXXXX-XXXXX-XXXXX-XXXXX-XXXXX` suffit).
+ */
+export interface LicensingApi {
+  /** `slmgr /ipk <clé>` — validation de forme uniquement. */
+  installProductKey(key: string): { ok: boolean; message: string };
+  /** `slmgr /ato` — active contre la clé installée. */
+  activate(): { ok: boolean; message: string };
+  /** Clé de produit installée (`null` si aucune). */
+  productKey(): string | null;
+  /** État de licence courant (`Notification`, `Licensed`, ...). */
+  state(): string;
+}
+
+/**
  * Élévation/changement d'identité (`runas`) — optionnel, pas un concept
  * universel. Le changement d'identité et la ré-entrée récursive du shell
  * (le programme s'exécute dans une logon session distincte) sont des
@@ -1176,6 +1193,8 @@ export interface MachineApi {
   readonly dnsServer?: DnsServerAdminApi;
   /** Élévation/changement d'identité (`runas`) — optionnel, pas un concept universel. */
   readonly runAs?: RunAsApi;
+  /** État d'activation/licence (`slmgr`) — optionnel, pas un concept universel. */
+  readonly licensing?: LicensingApi;
   /** Masque de permissions par défaut (`umask`) — optionnel, pas un concept universel. */
   readonly permissions?: PermissionsApi;
   now(): Date;

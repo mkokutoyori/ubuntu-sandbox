@@ -5,6 +5,26 @@ progressive par équipement. Un push = une entrée = une fonctionnalité
 complète et testée (voir `CLAUDE.md` / le framework de migration pour les
 principes directeurs).
 
+## Windows Phase 27 : migration de `slmgr` vers command-kernel
+
+**État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
+
+Migration de `slmgr` / `slmgr.vbs` (Software Licensing Management Tool) —
+jusqu'ici non dispatché — vers le socle `command-kernel`.
+
+- Nouvelle capacité optionnelle `licensing?: LicensingApi` sur
+  `MachineApi` : `installProductKey` (`/ipk`, validation de forme),
+  `activate` (`/ato`) et lecture `productKey`/`state` (`/dlv`, `/dli`).
+- `WindowsMachineApi` délègue à la primitive device `WindowsLicensingState`
+  (état d'activation par machine, présent sur tous les SKU).
+- Commande `SlmgrCommand` : dispatch `/ipk` / `/ato` / `/dlv` / `/dli`,
+  aide réelle complète en `usage`, formatage console (dont la ligne
+  « Name: » depuis `os.prettyName`) porté côté commande.
+- Fichier mort `WinSlmgr.ts` supprimé (migrate-then-delete).
+
+Validation : les 4 tests de `licensing-activation.test.ts` passent (4/4,
+contre 0/4 auparavant) ; aucune régression.
+
 ## Windows — correctif : `whoami` local préserve la casse du nom d'utilisateur
 
 **État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
