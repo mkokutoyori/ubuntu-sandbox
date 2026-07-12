@@ -5,7 +5,16 @@ progressive par équipement. Un push = une entrée = une fonctionnalité
 complète et testée (voir `CLAUDE.md` / le framework de migration pour les
 principes directeurs).
 
-## Windows Server — expiration de mot de passe (`maxPasswordAge`) et `DONT_EXPIRE_PASSWORD`
+## Convergence de branche : Windows Server (expiration de mot de passe) + Windows Phases 25-26 (`dnscmd`/`runas`)
+
+**État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
+
+Deux lots de travail parallèles sur la même branche, fusionnés dans ce
+commit — l'un sur le cœur Windows Server (contrôleur de domaine),
+l'autre sur le pont Windows `command-kernel`, sans recouvrement de
+fichiers en dehors de `CHANGELOG.md`.
+
+### Windows Server — expiration de mot de passe (`maxPasswordAge`) et `DONT_EXPIRE_PASSWORD`
 
 `maxPasswordAge` était le dernier champ mort de `GpoAccountPolicy`/PSO —
 déclaré, jamais vérifié. `checkPassword` (bind simple LDAP, même
@@ -41,6 +50,62 @@ de `enabled`/`passwordNeverExpires` via `setUser`, `Administrator`/
 `krbtgt` n'expirent jamais par défaut. Suite élargie (7 fichiers,
 verrouillage/politique de mot de passe/expiration/forêt/Kerberos) :
 97/97 au vert. Typecheck et lint ciblés propres.
+
+### Windows Phase 26 : migration de `runas` (chemin non-interactif) vers command-kernel
+
+Migration du chemin non-interactif de `runas`
+(`device.executeCommand('runas …')`, sans terminal donc sans vérification
+de mot de passe) — jusqu'ici non dispatché — vers le socle `command-kernel`.
+Le vrai prompt masqué vérifié de `WindowsTerminalSession` (chemin
+interactif) n'est **pas** touché.
+
+- Nouvelle capacité optionnelle `runAs?: RunAsApi` sur `MachineApi` :
+  `getUser` (validation, forme d'une `RunasUserSource`), `currentUser`
+  (`/netonly` = « exécuter en tant que l'appelant ») et `runCommandAs`
+  (changement d'identité + **ré-entrée récursive** du shell puis
+  restauration — vraie logon session distincte).
+- `WindowsMachineApi` expose `runAs` en déléguant à
+  `userMgr.getUser`/`currentUser` et à la primitive device
+  `runAsUserVerified`.
+- Commande `RunasCommand` : **réutilise** les helpers purs partagés
+  `parseRunasArgs` / `validateRunasUser` (mêmes fonctions que le chemin
+  terminal — pas de duplication) et porte l'orchestration/le formatage ;
+  aide réelle complète (`runas /?`) en `usage`.
+- Méthode morte `WindowsPC.cmdRunas` et helper orphelin
+  `runRunasNonInteractive` supprimés (migrate-then-delete) ;
+  `parseRunasArgs`/`validateRunasUser`/`runAsUser`/`runAsUserVerified`
+  conservés (toujours utilisés par le chemin terminal interactif).
+
+Validation : les 2 tests `runas` de `windows-access-cmd.test.ts` passent
+(53/53) ; le chemin interactif reste vert (`runas-interactive.test.ts`,
+`windows-access-powershell.test.ts`) ; aucune régression.
+
+### Windows Phase 25 : migration de `dnscmd` vers command-kernel
+
+Migration de `dnscmd` (administration cmd du serveur DNS) — jusqu'ici non
+dispatché (`'dnscmd' n'est pas reconnu…`) — vers le socle `command-kernel`.
+
+- Nouvelle capacité optionnelle `dnsServer?: DnsServerAdminApi` sur
+  `MachineApi` : miroir cmd de la surface du module PowerShell `DnsServer`
+  (zones primaires, enregistrements A/AAAA/CNAME/PTR/MX/SRV, suppression,
+  impression de zone, énumération, redirecteurs). Types
+  `DnsServerZoneRecord` / `DnsSrvRecordData` au contrat.
+- `WindowsMachineApi` expose `dnsServer` en **getter live** (jamais
+  mémoïsé) car le rôle DNS peut être installé après la construction du
+  shell ; `null` tant que le rôle n'est pas installé.
+- Commande `DnscmdCommand` : parsing des sous-commandes `/ZoneAdd`,
+  `/RecordAdd`, `/RecordDelete`, `/ZonePrint`, `/EnumZones`,
+  `/ResetForwarders`, saut du nom de serveur optionnel, aide réelle
+  complète en `usage`, formatage console (codes `status = …`) porté côté
+  commande.
+- Frontière client/serveur respectée : sans le rôle DNS installé (donc sur
+  un simple poste), `machine.dnsServer` est absent et `dnscmd` répond
+  « not recognized » — aucune fonctionnalité serveur exposée. Fichier mort
+  `WinDnscmd.ts` supprimé (migrate-then-delete).
+
+Validation : les 3 tests `dnscmd` de `windows-server-dns.test.ts` passent
+(21/21, contre 18/21 auparavant) ; aucune régression sur les suites DNS
+voisines (`windows-dns-server-role`, `windows-dns-cache` : 24/24).
 
 ## Windows Server — expiration de compte (`Set-ADAccountExpiration`)
 
