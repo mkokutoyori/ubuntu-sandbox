@@ -4251,25 +4251,6 @@ export class LinuxCommandExecutor {
         };
 
       case 'dirname': { const p = args[0] || ''; const idx = p.lastIndexOf('/'); return { output: idx > 0 ? p.slice(0, idx) : (idx === 0 ? '/' : '.'), exitCode: 0 }; }
-      case 'readlink': {
-        const canon = args.includes('-f') || args.includes('-e') || args.includes('-m');
-        const targets = args.filter(a => !a.startsWith('-'));
-        const out: string[] = [];
-        let failed = false;
-        for (const t of targets) {
-          const p = this.path(t);
-          if (canon) {
-            const r = p.realpath(args.includes('-e'));
-            if (!r) { failed = true; continue; }
-            out.push(r.value);
-          } else {
-            const node = p.lstatNode();
-            if (!node || node.type !== 'symlink') { failed = true; continue; }
-            out.push(node.target);
-          }
-        }
-        return { output: out.join('\n'), exitCode: failed && out.length === 0 ? 1 : 0 };
-      }
       case 'realpath': {
         const quiet = args.includes('-q');
         const noExist = args.includes('-m');

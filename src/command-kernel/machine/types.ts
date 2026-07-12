@@ -92,6 +92,14 @@ export interface FileSystemApi {
   getAttributes?(path: string, actor: FileSystemActor): Promise<FileAttributes>;
   /** Applique un delta d'attributs (`attrib +r -a`) — seuls les champs présents sont modifiés. */
   setAttributes?(path: string, changes: Partial<FileAttributes>, actor: FileSystemActor): Promise<void>;
+  /**
+   * Résout `path` en suivant tous les liens symboliques rencontrés
+   * (`readlink -f`, `realpath`) — optionnel, vendeurs avec liens
+   * symboliques uniquement. `requireFinal`: la dernière composante
+   * doit elle aussi exister (`-e`) ; `null` si une composante requise
+   * n'existe pas.
+   */
+  realpath?(path: string, actor: FileSystemActor, requireFinal: boolean): Promise<string | null>;
 }
 
 export interface ProcessInfo {

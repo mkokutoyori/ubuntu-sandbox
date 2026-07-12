@@ -363,6 +363,11 @@ class LinuxFileSystemApi implements FileSystemApi {
   resolve(cwd: string, path: string): string {
     return this.vfs.normalizePath(path, cwd);
   }
+
+  async realpath(path: string, actor: FileSystemActor, requireFinal: boolean): Promise<string | null> {
+    const p = this.vfs.path(path, '/', toPathActor(actor));
+    return p.realpath(requireFinal)?.value ?? null;
+  }
 }
 
 class LinuxProcessApi implements ProcessApi {
