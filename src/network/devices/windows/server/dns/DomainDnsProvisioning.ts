@@ -20,6 +20,8 @@ export function provisionDomainDnsZone(
   hostname: string,
   ownIp: IPAddress | null,
   ownMask: SubnetMask | null,
+  siteName: string,
+  isGlobalCatalog: boolean,
 ): void {
   if (!dns.getZone(domainName)) {
     dns.addPrimaryZone(domainName);
@@ -27,6 +29,12 @@ export function provisionDomainDnsZone(
     const dcTarget = `${hostname}.${domainName}`;
     dns.addSrvRecord(domainName, '_ldap._tcp.dc._msdcs', { priority: 0, weight: 100, port: 389, target: dcTarget });
     dns.addSrvRecord(domainName, '_kerberos._tcp.dc._msdcs', { priority: 0, weight: 100, port: 88, target: dcTarget });
+    dns.addSrvRecord(domainName, `_ldap._tcp.${siteName}._sites.dc._msdcs`, { priority: 0, weight: 100, port: 389, target: dcTarget });
+    dns.addSrvRecord(domainName, `_kerberos._tcp.${siteName}._sites.dc._msdcs`, { priority: 0, weight: 100, port: 88, target: dcTarget });
+    if (isGlobalCatalog) {
+      dns.addSrvRecord(domainName, '_gc._tcp', { priority: 0, weight: 100, port: 3268, target: dcTarget });
+      dns.addSrvRecord(domainName, `_gc._tcp.${siteName}._sites`, { priority: 0, weight: 100, port: 3268, target: dcTarget });
+    }
   }
   if (ownIp && ownMask) provisionReverseZone(dns, hostname, domainName, ownIp, ownMask);
 }

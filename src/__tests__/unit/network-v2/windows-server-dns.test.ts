@@ -249,4 +249,19 @@ describe('AD-integrated DNS zone auto-provisioned at DC promotion', () => {
     expect(records).not.toBeNull();
     expect(records!.some(r => r.type === 'PTR' && r.text === 'DNS1.lab.local')).toBe(true);
   });
+
+  it('registers site-scoped and Global Catalog SRV records for the forest-root DC', async () => {
+    const { dns: dc } = await buildLan();
+    await run(ps(dc), 'Install-WindowsFeature DNS');
+    await run(ps(dc), 'Install-WindowsFeature AD-Domain-Services');
+    await run(ps(dc), 'Install-ADDSForest -DomainName lab.local -SafeModeAdministratorPassword (ConvertTo-SecureString "P@ssw0rd" -AsPlainText -Force)');
+
+    expect(dc.isGlobalCatalogServer()).toBe(true);
+    const records = dc.getDnsServerRole()!.getRecords('lab.local');
+    expect(records).not.toBeNull();
+    expect(records!.some(r => r.name === '_ldap._tcp.Default-First-Site-Name._sites.dc._msdcs.lab.local' && r.type === 'SRV' && r.text.includes('389'))).toBe(true);
+    expect(records!.some(r => r.name === '_kerberos._tcp.Default-First-Site-Name._sites.dc._msdcs.lab.local' && r.type === 'SRV' && r.text.includes('88'))).toBe(true);
+    expect(records!.some(r => r.name === '_gc._tcp.lab.local' && r.type === 'SRV' && r.text.includes('3268'))).toBe(true);
+    expect(records!.some(r => r.name === '_gc._tcp.Default-First-Site-Name._sites.lab.local' && r.type === 'SRV' && r.text.includes('3268'))).toBe(true);
+  });
 });

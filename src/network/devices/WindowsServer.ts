@@ -44,6 +44,7 @@ const DEFAULT_SITE_NAME = 'Default-First-Site-Name';
 export class WindowsServer extends WindowsPC {
   private readonly roleManager: RoleManager = new RoleManager(this.getServiceManager());
   private directoryStore: DirectoryStore | null = null;
+  private isGlobalCatalog = false;
   private dnsServerRoleInstance: WindowsDnsServerRole | null = null;
   private dhcpServerRoleInstance: WindowsDhcpServerRole | null = null;
   private npsRoleInstance: WindowsNpsRole | null = null;
@@ -292,6 +293,7 @@ export class WindowsServer extends WindowsPC {
     this.directoryStore.promoteDomainController(this.getHostname(), safeModeAdminPassword);
     this.directoryStore.ensureKrbtgtPrincipal(randomSessionKey());
     this.directoryStore.newSite(DEFAULT_SITE_NAME);
+    this.isGlobalCatalog = true;
     createForest(domainName, netbios, this.directoryStore.getSchemaValidatorForSharing());
     this.provisionSysvol(domainName);
     this.registerDcServices();
@@ -341,12 +343,15 @@ export class WindowsServer extends WindowsPC {
     this.directoryStore.promoteDomainController(this.getHostname(), safeModeAdminPassword);
     this.directoryStore.ensureKrbtgtPrincipal(randomSessionKey());
     this.directoryStore.newSite(DEFAULT_SITE_NAME);
+    this.isGlobalCatalog = true;
     this.provisionSysvol(newDomainDnsName);
     this.registerDcServices();
     this.provisionDomainDnsZone(newDomainDnsName);
     this.provisionDefaultDomainPolicy();
     return { ok: true, message: '' };
   }
+
+  isGlobalCatalogServer(): boolean { return this.isGlobalCatalog; }
 
   /** `Get-ADForest` — the forest this domain belongs to, or null if this server isn't a DC. */
   getForest(): Forest | null {
@@ -520,7 +525,10 @@ export class WindowsServer extends WindowsPC {
     const dns = this.getDnsServerRole();
     if (!dns) return;
     const ownPort = this.getInterfaces().find(p => p.getIPAddress() !== null);
-    provisionDomainDnsZoneAndReverse(dns, domainName, this.getHostname(), ownPort?.getIPAddress() ?? null, ownPort?.getSubnetMask() ?? null);
+    provisionDomainDnsZoneAndReverse(
+      dns, domainName, this.getHostname(), ownPort?.getIPAddress() ?? null, ownPort?.getSubnetMask() ?? null,
+      DEFAULT_SITE_NAME, this.isGlobalCatalog,
+    );
   }
 
   /** Real DC promotion registers `NTDS`/`Netlogon`/`Kdc` with the SCM (PRD §5 P6) — `dcdiag`/`nltest` read their state. */

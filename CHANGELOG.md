@@ -5,6 +5,27 @@ progressive par équipement. Un push = une entrée = une fonctionnalité
 complète et testée (voir `CLAUDE.md` / le framework de migration pour les
 principes directeurs).
 
+## Windows Server — enregistrements SRV Global Catalog et scopés au site à la promotion DC
+
+`WindowsServer` sait désormais si l'instance est un Global Catalog
+(nouveau champ `isGlobalCatalog`, exposé via `isGlobalCatalogServer()`) :
+`true` pour le premier DC d'une forêt (`Install-ADDSForest`) et pour le
+premier DC de chaque nouveau domaine enfant (`New-ADDomain`), `false`
+par défaut pour un DC additionnel qui rejoint un domaine existant
+(`Install-ADDSDomainController`) — comportement par défaut réel d'AD.
+
+`DomainDnsProvisioning.provisionDomainDnsZone` ajoute maintenant, en plus
+des enregistrements déjà existants, les SRV scopés au site
+(`_ldap._tcp.<site>._sites.dc._msdcs`, `_kerberos._tcp.<site>._sites.dc.
+_msdcs`, toujours) et les SRV Global Catalog (`_gc._tcp` et
+`_gc._tcp.<site>._sites`, port 3268, seulement si `isGlobalCatalog`).
+
+**Validation** : nouveau test dans `windows-server-dns.test.ts`
+(promotion forêt → vérifie les 4 nouveaux SRV) + suite complète
+DNS/DC-promotion/forêt/sites (5 fichiers, 61 tests, 3 échecs
+`dnscmd` pré-existants et sans rapport, identiques avant/après).
+Typecheck et lint ciblés propres.
+
 ## Windows Server — auto-création de la zone inverse (in-addr.arpa) à la promotion DC
 
 Extrait `WindowsServer.provisionDomainDnsZone` (le fichier dépassait déjà
