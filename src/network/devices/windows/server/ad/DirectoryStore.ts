@@ -28,6 +28,7 @@ import { SchemaValidator } from './schema/SchemaValidator';
 import { SchemaPartition, seedDefaultSchema } from './schema/SchemaPartition';
 import type { AttributeSchema, ObjectClassSchema, SchemaOpResult } from './schema/SchemaValidator';
 import { TrustRegistry, type TrustDirection, type TrustOpResult, type TrustInfo, type TrustRecord } from './forest/TrustRelationship';
+import { GpoStore } from './gpo/GpoStore';
 
 export interface DirOpResult { ok: boolean; message: string }
 
@@ -76,6 +77,7 @@ export class DirectoryStore {
   private readonly schemaValidator: SchemaValidator;
   private readonly schema: SchemaPartition;
   private readonly trustRegistry: TrustRegistry;
+  private readonly gpoStore: GpoStore;
 
   /**
    * `opts.skipSeed` (PRD-Windows-Server-Advanced.md §5 P5): an additional
@@ -103,6 +105,7 @@ export class DirectoryStore {
     this.sites = new SiteRegistry(this.tree);
     this.schema = new SchemaPartition(this.tree, this.schemaValidator);
     this.trustRegistry = new TrustRegistry(this.tree);
+    this.gpoStore = new GpoStore(this.tree);
     if (!opts.skipSeed) {
       // A shared validator (PRD §5 P8 — a child domain joining an existing
       // forest) is already seeded by its forest root; seeding again would
@@ -171,7 +174,12 @@ export class DirectoryStore {
     recordUsn(this.inboundHighWatermark, stamp.originatingInvocationId, stamp.originatingUsn);
   }
 
-  private ouDn(name: string): DistinguishedName { return [...parseDN(`OU=${name}`), ...this.tree.getRootDn()]; }
+  /** Resolves an OU by name (`"Sales"`) or nested path (`"Sales/EU"`, top-down, matching `New-ADOrganizationalUnit -Path`'s parent-first convention). */
+  private ouDn(path: string): DistinguishedName {
+    const segments = path.split('/').filter(s => s.length > 0);
+    const rdns = segments.map(seg => parseDN(`OU=${seg}`)[0]).reverse();
+    return [...rdns, ...this.tree.getRootDn()];
+  }
   private cnDn(cn: string, containerDn: DistinguishedName): DistinguishedName { return [...parseDN(`CN=${cn}`), ...containerDn]; }
   private computerDn(name: string): DistinguishedName { return this.cnDn(name, this.computersOuDn); }
 
@@ -193,13 +201,17 @@ export class DirectoryStore {
 
   // ─── Organizational Units ───────────────────────────────────────────
 
-  newOrgUnit(name: string): DirOpResult {
-    const res = this.tree.addEntry(this.ouDn(name), { objectClass: ['top', 'organizationalUnit'], ou: [name] });
-    return res.ok ? { ok: true, message: '' } : { ok: false, message: 'An object with that name already exists.' };
+  newOrgUnit(path: string): DirOpResult {
+    const segments = path.split('/').filter(s => s.length > 0);
+    const leafName = segments[segments.length - 1] ?? path;
+    const res = this.tree.addEntry(this.ouDn(path), { objectClass: ['top', 'organizationalUnit'], ou: [leafName] });
+    if (res.ok) return { ok: true, message: '' };
+    if (res.message.startsWith('noSuchObject')) return { ok: false, message: `Cannot find an object with identity: parent of '${path}'.` };
+    return { ok: false, message: 'An object with that name already exists.' };
   }
 
-  getOrgUnit(name: string): AdOrgUnit | null {
-    const entry = this.tree.getByDn(this.ouDn(name));
+  getOrgUnit(path: string): AdOrgUnit | null {
+    const entry = this.tree.getByDn(this.ouDn(path));
     return entry ? this.projectOrgUnit(entry) : null;
   }
 
@@ -215,104 +227,15 @@ export class DirectoryStore {
 
   // ─── Group Policy Objects (PRD-Windows-Server.md §5 P10) ────────────
 
-  newGpo(name: string): DirOpResult {
-    const res = this.tree.addEntry(this.cnDn(name, this.policiesDn), {
-      objectClass: ['top', 'container', 'groupPolicyContainer'],
-      cn: [name], displayName: [name],
-    });
-    return res.ok ? { ok: true, message: '' } : { ok: false, message: `A GPO named "${name}" already exists.` };
-  }
+  newGpo(name: string): DirOpResult { return this.gpoStore.newGpo(name); }
+  getGpo(name: string): Gpo | null { return this.gpoStore.getGpo(name); }
+  listGpos(): Gpo[] { return this.gpoStore.listGpos(); }
+  setGpoSettings(name: string, settings: GpoSettings): DirOpResult { return this.gpoStore.setGpoSettings(name, settings); }
+  setGpoSecurityFiltering(name: string, principals: string[]): DirOpResult { return this.gpoStore.setGpoSecurityFiltering(name, principals); }
+  newGPLink(gpoName: string, targetDn: string): DirOpResult { return this.gpoStore.newGPLink(gpoName, targetDn); }
 
-  private findGpoEntry(name: string): DirectoryEntry | null {
-    return this.tree.getByDn(this.cnDn(name, this.policiesDn));
-  }
-
-  getGpo(name: string): Gpo | null {
-    const entry = this.findGpoEntry(name);
-    return entry ? this.projectGpo(entry) : null;
-  }
-
-  listGpos(): Gpo[] {
-    return this.tree.allDescendants(this.policiesDn)
-      .filter(e => hasObjectClass(e, 'groupPolicyContainer'))
-      .map(e => this.projectGpo(e));
-  }
-
-  private projectGpo(entry: DirectoryEntry): Gpo {
-    const accountPolicyJson = firstOf(entry.attributes.get('gpoaccountpolicy'));
-    const logonBannerJson = firstOf(entry.attributes.get('gpologonbanner'));
-    const startupScript = firstOf(entry.attributes.get('gpostartupscript'));
-    const gpoDn = formatDN(entry.dn);
-    return {
-      id: firstOf(entry.attributes.get('cn')),
-      name: firstOf(entry.attributes.get('displayname')),
-      links: this.tree.allDescendants(this.tree.getRootDn())
-        .filter(e => (e.attributes.get('gplink') ?? []).some(v => v.toLowerCase() === gpoDn.toLowerCase()))
-        .map(e => formatDN(e.dn)),
-      settings: {
-        accountPolicy: accountPolicyJson ? JSON.parse(accountPolicyJson) : undefined,
-        logonBanner: logonBannerJson ? JSON.parse(logonBannerJson) : undefined,
-        startupScript: startupScript || undefined,
-      },
-    };
-  }
-
-  setGpoSettings(name: string, settings: GpoSettings): DirOpResult {
-    const entry = this.findGpoEntry(name);
-    if (!entry) return { ok: false, message: `Cannot find a GPO with name "${name}".` };
-    const changes: { op: 'replace'; type: string; values: string[] }[] = [];
-    if (settings.accountPolicy !== undefined) changes.push({ op: 'replace', type: 'gpoAccountPolicy', values: [JSON.stringify(settings.accountPolicy)] });
-    if (settings.logonBanner !== undefined) changes.push({ op: 'replace', type: 'gpoLogonBanner', values: [JSON.stringify(settings.logonBanner)] });
-    if (settings.startupScript !== undefined) changes.push({ op: 'replace', type: 'gpoStartupScript', values: [settings.startupScript] });
-    this.tree.modifyEntry(entry.dn, changes);
-    return { ok: true, message: '' };
-  }
-
-  /** `New-GPLink` — links a GPO to a domain or OU DN (`gPLink`, RFC-faithful attribute name — real AD stores an ordered, precedence-flagged list; this simulator keeps only the unordered link set, applied in `resultantSetOfPolicy`'s fixed domain-then-OU order). */
-  newGPLink(gpoName: string, targetDn: string): DirOpResult {
-    const gpo = this.findGpoEntry(gpoName);
-    if (!gpo) return { ok: false, message: `Cannot find a GPO with name "${gpoName}".` };
-    let target: DistinguishedName;
-    try { target = parseDN(targetDn); } catch { return { ok: false, message: `"${targetDn}" is not a valid distinguished name.` }; }
-    const targetEntry = this.tree.getByDn(target);
-    if (!targetEntry) return { ok: false, message: `Cannot find an object with distinguished name: '${targetDn}'.` };
-    this.tree.modifyEntry(target, [{ op: 'add', type: 'gPLink', values: [formatDN(gpo.dn)] }]);
-    return { ok: true, message: '' };
-  }
-
-  /**
-   * RSoP for a computer, real precedence order: domain-linked GPOs first,
-   * then GPOs linked to the computer's own OU (more specific — its
-   * settings override the domain's on conflicting keys). Only direct
-   * links are honored (no OU-hierarchy walk beyond the computer's
-   * immediate container), matching this simulator's flat OU placement
-   * (P6 domain join always places computers in the Computers OU).
-   */
   resultantSetOfPolicy(computerName?: string): { appliedGpoNames: string[]; settings: GpoSettings } {
-    const domainLinked = this.linkedGposFor(this.tree.getRootDn());
-    let ouLinked: Gpo[] = [];
-    if (computerName) {
-      const computer = this.findComputerEntry(computerName);
-      const parentDn = computer ? computer.dn.slice(1) : null;
-      if (parentDn) ouLinked = this.linkedGposFor(parentDn);
-    }
-    const ordered = [...domainLinked, ...ouLinked];
-    const merged: GpoSettings = {};
-    for (const gpo of ordered) {
-      if (gpo.settings.accountPolicy !== undefined) merged.accountPolicy = { ...merged.accountPolicy, ...gpo.settings.accountPolicy };
-      if (gpo.settings.logonBanner !== undefined) merged.logonBanner = gpo.settings.logonBanner;
-      if (gpo.settings.startupScript !== undefined) merged.startupScript = gpo.settings.startupScript;
-    }
-    return { appliedGpoNames: ordered.map(g => g.name), settings: merged };
-  }
-
-  private linkedGposFor(dn: DistinguishedName): Gpo[] {
-    const entry = this.tree.getByDn(dn);
-    const links = entry?.attributes.get('gplink') ?? [];
-    return links
-      .map(gpoDn => { try { return this.tree.getByDn(parseDN(gpoDn)); } catch { return null; } })
-      .filter((e): e is DirectoryEntry => e !== null)
-      .map(e => this.projectGpo(e));
+    return this.gpoStore.resultantSetOfPolicy(computerName ? this.findComputerEntry(computerName) : null);
   }
 
   // ─── Users ──────────────────────────────────────────────────────────
@@ -500,9 +423,10 @@ export class DirectoryStore {
 
   // ─── Computers ──────────────────────────────────────────────────────
 
-  /** Creates the computer account — the side effect of a successful domain join (P6), or DC promotion for the DC's own account. */
-  newComputer(name: string, machineSecret: string): DirOpResult {
-    const res = this.tree.addEntry(this.computerDn(name), {
+  /** Creates the computer account — the side effect of a successful domain join (P6), or DC promotion for the DC's own account. `ouPath` (e.g. `"Sales/EU"`) places it in a nested OU instead of the default flat Computers container. */
+  newComputer(name: string, machineSecret: string, ouPath?: string): DirOpResult {
+    const dn = ouPath ? this.cnDn(name, this.ouDn(ouPath)) : this.computerDn(name);
+    const res = this.tree.addEntry(dn, {
       objectClass: ['top', 'person', 'organizationalPerson', 'user', 'computer'],
       cn: [name],
       sAMAccountName: [`${name}$`],
@@ -510,7 +434,7 @@ export class DirectoryStore {
       userPassword: [machineSecret],
     });
     if (!res.ok) return { ok: false, message: 'An object with that name already exists.' };
-    this.addGroupMemberByDn('Domain Computers', this.computerDn(name));
+    this.addGroupMemberByDn('Domain Computers', dn);
     return { ok: true, message: '' };
   }
 
@@ -560,6 +484,7 @@ export class DirectoryStore {
       dn: formatDN(entry.dn),
       machineSecret: firstOf(entry.attributes.get('userpassword')),
       enabled: isEnabledFromUac(entry.attributes.get('useraccountcontrol')),
+      lastKnownIp: firstOf(entry.attributes.get('ipaddress')) || undefined,
     };
   }
 

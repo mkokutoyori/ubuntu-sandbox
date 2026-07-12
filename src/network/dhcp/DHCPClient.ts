@@ -361,6 +361,7 @@ export class DHCPClient implements IProtocolEngine {
         xid: state.xid,
         clientIdentifier,
         parameterRequestList: DEFAULT_PARAMETER_REQUEST_LIST,
+        hostname: this.hostname || undefined,
       });
       if (result) {
         // XID validation (RFC 2131 §3.1): response xid must match our xid
@@ -423,6 +424,7 @@ export class DHCPClient implements IProtocolEngine {
       requestedIP: offer.ip,
       serverIdentifier: offer.serverIdentifier,
       clientIdentifier,
+      hostname: this.hostname || undefined,
     });
     const ackResult = replyResult && replyResult.type === 'ACK' && replyResult.binding
       ? { binding: replyResult.binding, serverIdentifier: replyResult.serverIdentifier, xid: replyResult.xid, renewalTime: replyResult.renewalTime, rebindingTime: replyResult.rebindingTime, serverMac: replyResult.serverMac }
@@ -619,6 +621,7 @@ export class DHCPClient implements IProtocolEngine {
         requestedIP: lastLease.ipAddress,    // Option 50
         // NO serverIdentifier (RFC 2131 §3.2)
         clientIdentifier,                     // Option 61
+        hostname: this.hostname || undefined,
       });
       if (result && result.xid === state.xid) {
         ackResult = result;
@@ -906,6 +909,7 @@ export class DHCPClient implements IProtocolEngine {
               requestedIP: lease.ipAddress,
               // No serverIdentifier in RENEWING (unicast, RFC 2131 §4.3.2)
               clientIdentifier,
+              hostname: this.hostname || undefined,
             });
             if (ackResult && ackResult.xid === state.xid) {
               const oldS2 = state.state as string;
@@ -948,6 +952,7 @@ export class DHCPClient implements IProtocolEngine {
             xid: state.xid,
             requestedIP: lease.ipAddress,
             clientIdentifier,
+            hostname: this.hostname || undefined,
           });
           if (ackResult && ackResult.xid === state.xid) {
             const oldS2 = state.state as string;

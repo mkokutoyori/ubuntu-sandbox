@@ -39,9 +39,247 @@ juste titre ; ils échouaient déjà avant toute migration `netsh`), plus
 `advfirewall`/`dhcp server`/`nps` — contextes encore différés (plan
 d'action réseau/rôle serveur distinct).
 
-## Windows — Phase 17 : migration `netsh` — contexte `ipsec` (static + dynamic)
+## Windows Server — élargit la couverture des types de réglages GPO
+
+Premier des deux chantiers de suivi identifiés lors de l'audit initial
+(priorité plus basse que les six premiers). `GpoSettings` couvrait
+seulement `accountPolicy`/`logonBanner`/`startupScript` ; ajoute
+`auditPolicy` (7 catégories `secpol.msc`, `None`/`Success`/`Failure`/
+`SuccessAndFailure`) et `userRightsAssignment` (sous-ensemble
+représentatif : logon local, service, réseau, RDP + leurs variantes
+"deny"), toutes deux fusionnées en RSoP avec la même sémantique
+"dernier lien gagne" que `accountPolicy`. Ajoute aussi le filtrage de
+sécurité (`Gpo.securityFiltering`, `Set-GPPermission`-lite via
+`setGpoSecurityFiltering`) : une GPO dont la liste est vide s'applique
+à tous (défaut réel d'AD, "Authenticated Users"), sinon seulement aux
+ordinateurs membres (directement ou via un groupe) d'un des principaux
+listés.
+
+À l'occasion de cet ajout, extrait tout le sous-système GPO
+(`newGpo`/`getGpo`/`listGpos`/`setGpoSettings`/`newGPLink`/
+`resultantSetOfPolicy` — ~110 lignes) de `DirectoryStore.ts` (déjà
+plus de 600 lignes) vers un nouveau `gpo/GpoStore.ts` (167 lignes),
+composé par référence exactement comme `SiteRegistry`/`TrustRegistry`/
+`SchemaPartition` le sont déjà — `DirectoryStore.ts` ne fait plus que
+déléguer. `DirectoryStore.ts` retombe à 564 lignes.
+
+**Validation** : trois nouveaux tests dans `windows-gpo-core.test.ts`
+(audit policy + user rights en RSoP, application par défaut sans
+filtrage, filtrage de sécurité qui exclut/inclut selon l'appartenance
+de groupe) + suite complète GPO/AD/DC-promotion (5 fichiers), tout au
+vert hors les 4 échecs `gpupdate`/`gpresult` pré-existants et sans
+rapport. Typecheck et lint ciblés propres.
+
+## Windows Server — OU imbriquées + parcours complet de la chaîne GPO ancêtres
+
+Dernier des six chantiers "cœur Windows Server" identifiés à l'audit
+initial. `DirectoryStore.ouDn`/`newOrgUnit`/`getOrgUnit` acceptent
+maintenant un chemin `"Parent/Enfant"` (rétro-compatible : un simple
+nom sans `/` se comporte exactement comme avant) — la création échoue
+proprement si le parent n'existe pas encore (`DirectoryTree.addEntry`
+le vérifiait déjà). `newComputer` accepte un `ouPath` optionnel pour
+placer un compte ordinateur dans une OU imbriquée.
+
+`resultantSetOfPolicy` et `GpoPullClient.applyLinksFrom` (client LDAP)
+ne s'arrêtaient qu'au parent immédiat de l'ordinateur — ils parcourent
+désormais toute la chaîne d'OU ancêtres, de la plus proche du domaine
+à la plus spécifique, en appliquant chaque niveau dans cet ordre (le
+comportement à plat existant reste un cas particulier de chaîne à un
+seul niveau, donc aucune régression sur le placement plat actuel de
+`Add-Computer`/DC promotion).
+
+**Validation** : trois nouveaux tests dans `windows-gpo-core.test.ts`
+(OU imbriquée + RSoP multi-niveaux côté `DirectoryStore`, refus sur
+parent inexistant, et le même parcours de bout en bout par-dessus le
+vrai LDAP/Kerberos de `GpoPullClient` après déplacement d'un ordinateur
+joint via `renameEntry`) + suite complète GPO/AD/DC-promotion, tout au
+vert. Typecheck et lint ciblés propres.
+
+## Windows Server — migre GpoPullClient (gpupdate) vers le vrai Kerberos (clôt P24)
+
+Dernier consommateur LDAP encore en bind simple plaintext
+(`ldap.bind(computerSam, machineSecret)`) — `DomainJoinClient` et
+`DomainLogonClient` étaient déjà passés au vrai AS/TGS/AP-REQ/
+`bindSasl('GSSAPI', ...)` dans un lot antérieur. `GpoPullClient.
+pullGroupPolicy` fait maintenant la même séquence, authentifié comme le
+compte ordinateur lui-même (`hostname$` + `machineSecret`, déjà supporté
+côté KDC — `KdcSessionHandler` route un sAMAccountName finissant par
+`$` vers `getComputerSecret`) ; le reste de la logique (lecture des
+`gPLink` racine + OU, résolution des GPO) est inchangé.
+
+**Validation** : `windows-gpo-core.test.ts` (100% — teste l'API
+directement) + `windows-domain-kerberos-migration.test.ts` (100%) +
+`windows-server-gpo.test.ts` / `windows-server-domain-join.test.ts`
+(échecs identiques avant/après : gap pré-existant, sans rapport, de
+dispatch cmd pour `gpupdate`/`gpresult`/`netdom`/`nltest`/`dcdiag`/
+`klist`). Typecheck et lint ciblés propres.
+
+## Windows Server — enregistrements SRV Global Catalog et scopés au site à la promotion DC
+
+`WindowsServer` sait désormais si l'instance est un Global Catalog
+(nouveau champ `isGlobalCatalog`, exposé via `isGlobalCatalogServer()`) :
+`true` pour le premier DC d'une forêt (`Install-ADDSForest`) et pour le
+premier DC de chaque nouveau domaine enfant (`New-ADDomain`), `false`
+par défaut pour un DC additionnel qui rejoint un domaine existant
+(`Install-ADDSDomainController`) — comportement par défaut réel d'AD.
+
+`DomainDnsProvisioning.provisionDomainDnsZone` ajoute maintenant, en plus
+des enregistrements déjà existants, les SRV scopés au site
+(`_ldap._tcp.<site>._sites.dc._msdcs`, `_kerberos._tcp.<site>._sites.dc.
+_msdcs`, toujours) et les SRV Global Catalog (`_gc._tcp` et
+`_gc._tcp.<site>._sites`, port 3268, seulement si `isGlobalCatalog`).
+
+**Validation** : nouveau test dans `windows-server-dns.test.ts`
+(promotion forêt → vérifie les 4 nouveaux SRV) + suite complète
+DNS/DC-promotion/forêt/sites (5 fichiers, 61 tests, 3 échecs
+`dnscmd` pré-existants et sans rapport, identiques avant/après).
+Typecheck et lint ciblés propres.
+
+## Windows Server — auto-création de la zone inverse (in-addr.arpa) à la promotion DC
+
+Extrait `WindowsServer.provisionDomainDnsZone` (le fichier dépassait déjà
+400 lignes) vers un nouveau module `windows/server/dns/
+DomainDnsProvisioning.ts` (32 lignes), qui reprend la logique existante
+(zone directe + A + SRV) et y ajoute l'auto-création de la zone inverse
+`/24` (`c.b.a.in-addr.arpa`) pour le sous-réseau propre du DC, avec son
+enregistrement PTR — seulement pour un masque `/24` exact (limitation
+assumée, cohérente avec `applyDynamicPtrRecord`). `WindowsServer.ts` ne
+fait plus que déléguer à ce module.
+
+**Validation** : nouveau test dans `windows-server-dns.test.ts`
+(promotion DC → vérifie la zone `60.168.192.in-addr.arpa` et son PTR)
++ suite complète DNS/domain-join/DHCP/AD-sites/AD-forest (5 fichiers,
+70+ tests, 15+3 échecs pré-existants et sans rapport, identiques
+avant/après). Typecheck et lint ciblés propres.
+
+## Windows Server — enregistrement DNS dynamique à l'octroi d'un bail DHCP (P7/P8)
+
+Suite directe du lot précédent (jonction de domaine → DNS). Le client
+DHCP (`DHCPClient.ts`, moteur partagé Linux/Windows) envoie maintenant
+son hostname sur l'option 12 dans DISCOVER/REQUEST/RENEW/REBIND
+(`WireDhcpChannel` dans `DhcpServerChannel.ts` pose l'option sur le vrai
+paquet DHCP posé sur le câble ; `EndHost` appelle
+`dhcpClient.setDeviceId(id, name)` à la construction pour lui donner ce
+hostname, ce qui n'était fait nulle part en production avant ce lot).
+
+Côté serveur, `WindowsDhcpServerRole.serveOnWire()` lit cette option 12
+sur le REQUEST au moment de construire l'ACK et déclenche un nouveau
+hook `onLeaseGranted(hostname, ip)`. `WindowsServer.getDhcpServerRole()`
+câble ce hook vers `this.getDnsServerRole()?.applyDynamicARecord(...)`
+en mémoire sur ce même device, avec la zone du domaine (DC ou serveur
+membre) comme zone cible — DHCP et DNS co-installés sur le même serveur
+étant la topologie visée par le PRD pour l'autorisation AD simulée. Le
+même hook, ainsi que celui de la jonction de domaine (`WindowsPC.ts`),
+appellent aussi un nouveau `applyDynamicPtrRecord(zoneName, hostName,
+ipv4)` qui dérive la zone inverse `/24` (`c.b.a.in-addr.arpa`) et
+réutilise `addPtrRecord` — no-op tant que cette zone n'existe pas
+(aucune zone inverse n'est encore auto-créée ; ce sera l'objet du lot
+suivant).
+
+`DHCP_OPTION.HOST_NAME` (12) ajouté à `DHCPPacket.ts`.
+
+**Validation** : deux nouveaux tests dans `windows-server-dhcp.test.ts`
+(DC avec AD DS + DNS + DHCP co-installés, autorisé via
+`Add-DhcpServerInDC`, client Windows qui obtient un bail réel sur le
+câble → vérifie l'enregistrement A, puis idem avec la zone inverse déjà
+créée → vérifie le PTR) + suite complète DHCP (13 fichiers, 148+ tests,
+15 échecs pré-existants et sans rapport, identiques avant/après par
+`git stash` — dont un bug pré-existant, hors périmètre, de troncature
+du nom de zone par le parseur d'arguments PowerShell sur
+`Add-DnsServerPrimaryZone -Name <zone-avec-tirets-et-points>`,
+contourné dans le test en appelant `addPrimaryZone` directement) +
+suite DNS/domain-join déjà validée au lot précédent. Typecheck et lint
+ciblés propres.
+
+## Windows Server — enregistrement DNS dynamique à la jonction de domaine (P7)
+
+Premier lot du chantier "cœur Windows Server" (AD DS/DNS/DHCP/objets/GPO,
+hors commandes et PowerShell) : `WindowsDnsServerRole.applyDynamicARecord`
+existait déjà mais n'était appelé nulle part (code mort confirmé par
+grep exhaustif) et était de toute façon cassé pour tout appelant réel
+(traitait son paramètre comme un FQDN déjà complet, sans jamais passer
+par `this.fqdn(...)` comme `addARecord` le fait).
+
+**Câblage** : la jonction de domaine (`Add-Computer`/`netdom join`) envoie
+déjà un vrai `AddRequest` LDAP par-dessus le câble pour créer le compte
+ordinateur — ce PDU porte désormais aussi l'IP de la machine qui rejoint
+(`DomainJoinClient.joinDomain()` accepte un `ownIp` optionnel, ajouté
+comme attribut `ipAddress` sur l'`AddRequest`). Côté DC, `LdapServerHandler`
+(`LdapServer.ts`) détecte après un `addRequest` réussi si l'entrée créée
+est un objet `computer` porteur d'un attribut IP, et déclenche alors
+`onComputerRegistered` — un nouveau hook optionnel de `LdapServerContext`,
+câblé dans `WindowsPC.ts` à l'écoute TCP/389 pour appeler
+`this.getDnsServerRole()?.applyDynamicARecord(...)` en mémoire sur ce
+même device. La mutation DNS elle-même reste un appel in-process (même
+convention que `PrimaryZoneAgent.applyUpdate`, déjà établie dans tout le
+moteur DNS pour BIND9 comme pour Windows) — seul le transfert de l'IP
+entre les deux machines devait obligatoirement passer par un PDU réel
+sur le câble, ce qui est désormais le cas.
+
+`AdComputer.lastKnownIp` (jusqu'ici un champ diagnostic jamais peuplé)
+est maintenant réellement projeté depuis l'attribut `ipAddress` de
+l'entrée LDAP par `DirectoryStore.projectComputer()`.
+
+**Validation** : nouveau test dans `windows-server-dns.test.ts`
+(jonction de domaine réelle avec le rôle DNS installé avant la
+promotion → vérifie l'enregistrement A du poste joint sur le DC) +
+suite complète DNS/LDAP/domain-join/AD (`windows-server-dns`,
+`windows-server-domain-join`, `ldap-server-client`, `ldap-gssapi-bind`,
+`ldap-wire-p11`, `windows-dns-server-role`, `ad-forest`, `ad-sites`) —
+87 tests, 13 échecs pré-existants et sans rapport (gap générique de
+dispatch cmd pour `dnscmd`/`netdom`/`nltest`/`dcdiag`/`klist`/`gpupdate`/
+`gpresult`, confirmé identique avant/après par `git stash`). Typecheck
+et lint ciblés propres (2 erreurs lint pré-existantes, lignes éloignées
+des modifications).
+
+## Convergence de branche : Linux Phase 4 (`realpath` + correctif cwd) + Windows Phase 17 (`netsh ipsec`)
 
 **État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
+
+Deux lots de travail parallèles sur la même branche, fusionnés dans ce
+commit — l'un sur le pont Linux, l'autre sur le pont Windows, sans
+recouvrement de fichiers en dehors de `CHANGELOG.md`.
+
+### Linux — `realpath` + correctif cwd inter-commandes
+
+**Commande migrée** : `realpath [-q] [-m] <cible...>` — réutilise la
+primitive `FileSystemApi.realpath?()` ajoutée pour `readlink -f` en Phase
+3 (même algorithme, deux commandes clientes). Sémantique de sortie
+distincte de `readlink` et reproduite à l'identique : défaut à `.` sans
+cible, `-q` supprime les messages d'erreur, `-m` n'exige l'existence
+d'aucune composante — code de sortie 1 dès qu'UNE cible échoue
+(contrairement à `readlink` où seul un échec total compte).
+
+**Bug trouvé et corrigé en testant `realpath`/`readlink` après un `cd`
+scripté** : `cd chemin && commande-migrée` dans une même ligne bash
+laissait `commande-migrée` voir un `cwd` périmé. Cause racine :
+`cd` est un *builtin* bash (intercepté avant même d'atteindre le pont
+externe), qui met à jour l'environnement bash (`PWD`) immédiatement,
+mais `LinuxCommandExecutor.cwd` — dont dépend la session construite pour
+`_commandKernelHook` — n'était resynchronisé depuis `env['PWD']` que dans
+`dispatchFromInterpreter()`. Or `dispatchMaybeNetwork()` consulte le hook
+`command-kernel` **avant** d'atteindre `dispatchFromInterpreter()` : toute
+commande déjà migrée voyait donc un `cwd` non rafraîchi tant qu'aucune
+commande non migrée n'était passée par ce second point auparavant.
+Symptôme concret : `cd /root/a/b && ls` renvoyait une liste vide au lieu
+du contenu de `/root/a/b`. Fix : extraction en `syncCwdFromEnv()`,
+appelée en tête de `dispatchMaybeNetwork()` (avant le hook) autant que
+dans `dispatchFromInterpreter()` — bug structurel de la Phase 0, pas
+propre à `realpath`, mais découvert en migrant cette commande.
+
+**Legacy supprimé** : `case 'realpath':` retiré de
+`LinuxCommandExecutor.dispatch()` — aucun autre appelant, pas présent
+dans l'autre framework `LinuxCommand` (§8 vérifié).
+
+**Validation** : lot audit/privilège du §7.2 + `linux-command-kernel.test.ts`
++ `linux-bash-details.test.ts` + `bash-advanced-scripts.test.ts` — 652
+tests, 1 échec pré-existant et sans rapport déjà documenté
+(`journalization.test.ts` #161). Vérification manuelle du bug cwd via un
+test jetable non versionné (5 exécutions consécutives sur un device
+neuf, 5/5 reproductibles avant le correctif, 0/5 après). Typecheck ciblé
+propre.
+
+### Windows — migration `netsh` — contexte `ipsec` (static + dynamic)
 
 Troisième tranche de `netsh` (voir Phases 15-16). Le contexte `ipsec` est
 le plus gros bloc autonome restant (~56 réf. de test `netsh ipsec static`,

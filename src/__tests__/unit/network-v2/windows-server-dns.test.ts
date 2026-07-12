@@ -223,4 +223,45 @@ describe('AD-integrated DNS zone auto-provisioned at DC promotion', () => {
     expect(out).toContain('389');
     expect(out.toLowerCase()).toContain('dns1.lab.local');
   });
+
+  it('registers a dynamic DNS A record for a computer that joins the domain over the real LDAP AddRequest', async () => {
+    const { dns: dc, client } = await buildLan();
+    await run(ps(dc), 'Install-WindowsFeature DNS');
+    await run(ps(dc), 'Install-WindowsFeature AD-Domain-Services');
+    await run(ps(dc), 'Install-ADDSForest -DomainName lab.local -SafeModeAdministratorPassword (ConvertTo-SecureString "P@ssw0rd" -AsPlainText -Force)');
+
+    client.joinDomainNow('lab.local', '192.168.60.10', 'Administrator', 'P@ssw0rd');
+
+    const records = dc.getDnsServerRole()!.getRecords('lab.local', 'CLIENT1');
+    expect(records).not.toBeNull();
+    expect(records!.some(r => r.type === 'A' && r.text === '192.168.60.20')).toBe(true);
+  });
+
+  it('auto-creates the reverse (in-addr.arpa) zone for the DC\'s own /24 and registers its PTR record', async () => {
+    const { dns: dc } = await buildLan();
+    await run(ps(dc), 'Install-WindowsFeature DNS');
+    await run(ps(dc), 'Install-WindowsFeature AD-Domain-Services');
+    await run(ps(dc), 'Install-ADDSForest -DomainName lab.local -SafeModeAdministratorPassword (ConvertTo-SecureString "P@ssw0rd" -AsPlainText -Force)');
+
+    const zone = dc.getDnsServerRole()!.getZone('60.168.192.in-addr.arpa');
+    expect(zone).not.toBeNull();
+    const records = dc.getDnsServerRole()!.getRecords('60.168.192.in-addr.arpa', '10');
+    expect(records).not.toBeNull();
+    expect(records!.some(r => r.type === 'PTR' && r.text === 'DNS1.lab.local')).toBe(true);
+  });
+
+  it('registers site-scoped and Global Catalog SRV records for the forest-root DC', async () => {
+    const { dns: dc } = await buildLan();
+    await run(ps(dc), 'Install-WindowsFeature DNS');
+    await run(ps(dc), 'Install-WindowsFeature AD-Domain-Services');
+    await run(ps(dc), 'Install-ADDSForest -DomainName lab.local -SafeModeAdministratorPassword (ConvertTo-SecureString "P@ssw0rd" -AsPlainText -Force)');
+
+    expect(dc.isGlobalCatalogServer()).toBe(true);
+    const records = dc.getDnsServerRole()!.getRecords('lab.local');
+    expect(records).not.toBeNull();
+    expect(records!.some(r => r.name === '_ldap._tcp.Default-First-Site-Name._sites.dc._msdcs.lab.local' && r.type === 'SRV' && r.text.includes('389'))).toBe(true);
+    expect(records!.some(r => r.name === '_kerberos._tcp.Default-First-Site-Name._sites.dc._msdcs.lab.local' && r.type === 'SRV' && r.text.includes('88'))).toBe(true);
+    expect(records!.some(r => r.name === '_gc._tcp.lab.local' && r.type === 'SRV' && r.text.includes('3268'))).toBe(true);
+    expect(records!.some(r => r.name === '_gc._tcp.Default-First-Site-Name._sites.lab.local' && r.type === 'SRV' && r.text.includes('3268'))).toBe(true);
+  });
 });

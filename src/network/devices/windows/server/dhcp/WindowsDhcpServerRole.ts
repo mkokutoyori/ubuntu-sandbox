@@ -62,6 +62,7 @@ export class WindowsDhcpServerRole {
   private running = false;
   private domainExists = false;
   private authorized = false;
+  onLeaseGranted: ((hostname: string, ip: string) => void) | null = null;
 
   constructor(private readonly host: EndHost) {}
 
@@ -135,6 +136,10 @@ export class WindowsDhcpServerRole {
           leaseDuration: pool?.leaseDuration ?? 86400,
           renewalTime: pool?.renewalTime, rebindingTime: pool?.rebindingTime,
         });
+        const hostname = pkt.getOption(12);
+        if (this.onLeaseGranted && typeof hostname === 'string' && hostname) {
+          this.onLeaseGranted(hostname, result.binding.ipAddress);
+        }
       }
     } else if (type === 'DHCPDECLINE') {
       this.engine.processDecline({

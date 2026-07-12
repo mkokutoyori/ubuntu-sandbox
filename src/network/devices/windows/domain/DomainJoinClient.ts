@@ -42,6 +42,7 @@ export function joinDomain(opts: {
   dcAddress: string;
   credentialUser: string;
   credentialPassword: string;
+  ownIp?: string;
 }): DomainJoinResult {
   const networkPathNotFound: DomainJoinResult = {
     ok: false,
@@ -86,6 +87,7 @@ export function joinDomain(opts: {
     { type: 'sAMAccountName', values: [`${opts.computerName}$`] },
     { type: 'userAccountControl', values: ['4096'] },
     { type: 'userPassword', values: [machineSecret] },
+    ...(opts.ownIp ? [{ type: 'ipAddress', values: [opts.ownIp] }] : []),
   ]);
   ldap.unbind();
 

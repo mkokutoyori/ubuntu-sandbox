@@ -13,6 +13,7 @@ import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';
 import { PowerShellSubShell } from '@/terminal/subshells/PowerShellSubShell';
 import { pullGroupPolicy } from '@/network/devices/windows/domain/GpoPullClient';
+import { parseDN } from '@/network/devices/windows/server/ad/ldap/LdapDN';
 
 beforeEach(() => {
   resetCounters();
@@ -74,6 +75,88 @@ describe('DirectoryStore — GPO CRUD/link (New-GPO/Get-GPO/New-GPLink engine)',
     expect(rsop.settings.accountPolicy?.minPasswordLength).toBe(10);
     expect(rsop.settings.accountPolicy?.lockoutThreshold).toBe(5);
   });
+
+  it('creates a nested OU and walks the full ancestor chain in RSoP, most-specific OU winning', async () => {
+    const dc = await buildDc();
+    const store = dc.getDirectoryStore()!;
+
+    expect(store.newOrgUnit('Sales').ok).toBe(true);
+    expect(store.newOrgUnit('Sales/EU').ok).toBe(true);
+    const eu = store.getOrgUnit('Sales/EU')!;
+    expect(eu.dn.toLowerCase()).toBe(`ou=eu,ou=sales,${store.getDomainDn().toLowerCase()}`);
+
+    store.newGpo('Sales Policy');
+    store.setGpoSettings('Sales Policy', { accountPolicy: { minPasswordLength: 12 } });
+    store.newGPLink('Sales Policy', store.getOrgUnit('Sales')!.dn);
+
+    store.newGpo('EU Policy');
+    store.setGpoSettings('EU Policy', { accountPolicy: { minPasswordLength: 15 } });
+    store.newGPLink('EU Policy', eu.dn);
+
+    expect(store.newComputer('PC1', 'machinesecret', 'Sales/EU').ok).toBe(true);
+
+    const rsop = store.resultantSetOfPolicy('PC1');
+    expect(rsop.appliedGpoNames).toEqual(['Default Domain Policy', 'Sales Policy', 'EU Policy']);
+    expect(rsop.settings.accountPolicy?.minPasswordLength).toBe(15);
+  });
+
+  it('refuses to create an OU under a non-existent parent', async () => {
+    const dc = await buildDc();
+    const store = dc.getDirectoryStore()!;
+    const res = store.newOrgUnit('Ghost/Child');
+    expect(res.ok).toBe(false);
+  });
+});
+
+describe('GPO extended settings — audit policy, user rights assignment, security filtering', () => {
+  it('stores and merges audit policy and user rights assignment settings in RSoP', async () => {
+    const dc = await buildDc();
+    const store = dc.getDirectoryStore()!;
+    store.newGpo('Extra Policy');
+    store.setGpoSettings('Extra Policy', {
+      auditPolicy: { accountLogon: 'SuccessAndFailure', logonEvents: 'Success' },
+      userRightsAssignment: { logOnLocally: ['Domain Admins'], denyLogOnLocally: ['Guests'] },
+    });
+    store.newGPLink('Extra Policy', store.getDomainDn());
+
+    const gpo = store.getGpo('Extra Policy')!;
+    expect(gpo.settings.auditPolicy?.accountLogon).toBe('SuccessAndFailure');
+    expect(gpo.settings.userRightsAssignment?.logOnLocally).toEqual(['Domain Admins']);
+
+    const rsop = store.resultantSetOfPolicy();
+    expect(rsop.settings.auditPolicy?.accountLogon).toBe('SuccessAndFailure');
+    expect(rsop.settings.auditPolicy?.logonEvents).toBe('Success');
+    expect(rsop.settings.userRightsAssignment?.denyLogOnLocally).toEqual(['Guests']);
+  });
+
+  it('applies to Authenticated Users by default (no security filtering)', async () => {
+    const dc = await buildDc();
+    const store = dc.getDirectoryStore()!;
+    expect(store.getGpo('Default Domain Policy')!.securityFiltering).toEqual([]);
+    expect(store.newComputer('PC1', 'secret').ok).toBe(true);
+    const rsop = store.resultantSetOfPolicy('PC1');
+    expect(rsop.appliedGpoNames).toContain('Default Domain Policy');
+  });
+
+  it('a security-filtered GPO only applies to computers that are members of the filtered group', async () => {
+    const dc = await buildDc();
+    const store = dc.getDirectoryStore()!;
+    store.newGpo('Restricted Policy');
+    store.setGpoSettings('Restricted Policy', { startupScript: 'restricted.ps1' });
+    store.newGPLink('Restricted Policy', store.getDomainDn());
+    store.setGpoSecurityFiltering('Restricted Policy', ['Special Computers']);
+    store.newGroup('Special Computers', 'DomainLocal');
+
+    expect(store.newComputer('OUTSIDE1', 'secret').ok).toBe(true);
+    const rsopOutside = store.resultantSetOfPolicy('OUTSIDE1');
+    expect(rsopOutside.appliedGpoNames).not.toContain('Restricted Policy');
+
+    expect(store.newComputer('INSIDE1', 'secret').ok).toBe(true);
+    expect(store.addGroupMember('Special Computers', 'INSIDE1').ok).toBe(true);
+    const rsopInside = store.resultantSetOfPolicy('INSIDE1');
+    expect(rsopInside.appliedGpoNames).toContain('Restricted Policy');
+    expect(rsopInside.settings.startupScript).toBe('restricted.ps1');
+  });
 });
 
 describe('GpoPullClient — real LDAP wire dialogue against the DC', () => {
@@ -113,5 +196,28 @@ describe('GpoPullClient — real LDAP wire dialogue against the DC', () => {
     const badMembership = { ...membership, dcAddress: '192.168.90.99' };
     const result = pullGroupPolicy(client.getTcpStack(), badMembership, client.getHostname());
     expect(result.ok).toBe(false);
+  });
+
+  it('walks the full OU ancestor chain over the wire once the joined computer is moved into a nested OU', async () => {
+    const { dc, client } = await topology()();
+    client.joinDomainNow('lab.local', '192.168.90.10', 'Administrator', 'P@ssw0rd');
+    const membership = client.getDomainMembership()!;
+
+    const store = dc.getDirectoryStore()!;
+    store.newOrgUnit('Sales');
+    store.newOrgUnit('Sales/EU');
+    const eu = store.getOrgUnit('Sales/EU')!;
+    store.newGpo('EU Policy');
+    store.setGpoSettings('EU Policy', { accountPolicy: { minPasswordLength: 15 } });
+    store.newGPLink('EU Policy', eu.dn);
+
+    const computer = store.getComputer('CLIENT1')!;
+    const moveResult = store.getTree().renameEntry(parseDN(computer.dn), 'CN=CLIENT1', true, parseDN(eu.dn));
+    expect(moveResult.ok).toBe(true);
+
+    const result = pullGroupPolicy(client.getTcpStack(), membership, client.getHostname());
+    expect(result.ok).toBe(true);
+    expect(result.appliedGpoNames).toEqual(['Default Domain Policy', 'EU Policy']);
+    expect(result.settings.accountPolicy?.minPasswordLength).toBe(15);
   });
 });

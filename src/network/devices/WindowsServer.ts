@@ -20,6 +20,7 @@ import { WindowsPC } from './WindowsPC';
 import { RoleManager } from './windows/server/RoleManager';
 import { DirectoryStore } from './windows/server/ad/DirectoryStore';
 import { WindowsDnsServerRole } from './windows/server/dns/WindowsDnsServerRole';
+import { provisionDomainDnsZone as provisionDomainDnsZoneAndReverse } from './windows/server/dns/DomainDnsProvisioning';
 import { WindowsDhcpServerRole } from './windows/server/dhcp/WindowsDhcpServerRole';
 import { WindowsNpsRole } from './windows/server/nps/WindowsNpsRole';
 import { WindowsIisRole } from './windows/server/iis/WindowsIisRole';
@@ -43,6 +44,7 @@ const DEFAULT_SITE_NAME = 'Default-First-Site-Name';
 export class WindowsServer extends WindowsPC {
   private readonly roleManager: RoleManager = new RoleManager(this.getServiceManager());
   private directoryStore: DirectoryStore | null = null;
+  private isGlobalCatalog = false;
   private dnsServerRoleInstance: WindowsDnsServerRole | null = null;
   private dhcpServerRoleInstance: WindowsDhcpServerRole | null = null;
   private npsRoleInstance: WindowsNpsRole | null = null;
@@ -107,6 +109,13 @@ export class WindowsServer extends WindowsPC {
     this.dhcpServerRoleInstance.setDomainContext(
       this.getDirectoryStore() !== null || this.getDomainMembership() !== null,
     );
+    this.dhcpServerRoleInstance.onLeaseGranted = (hostname, ip) => {
+      const zoneName = this.getDirectoryStore()?.dnsName ?? this.getDomainMembership()?.dnsName;
+      if (!zoneName) return;
+      const dns = this.getDnsServerRole();
+      dns?.applyDynamicARecord(zoneName, hostname, ip);
+      dns?.applyDynamicPtrRecord(zoneName, hostname, ip);
+    };
     return this.dhcpServerRoleInstance;
   }
 
@@ -284,6 +293,7 @@ export class WindowsServer extends WindowsPC {
     this.directoryStore.promoteDomainController(this.getHostname(), safeModeAdminPassword);
     this.directoryStore.ensureKrbtgtPrincipal(randomSessionKey());
     this.directoryStore.newSite(DEFAULT_SITE_NAME);
+    this.isGlobalCatalog = true;
     createForest(domainName, netbios, this.directoryStore.getSchemaValidatorForSharing());
     this.provisionSysvol(domainName);
     this.registerDcServices();
@@ -333,12 +343,15 @@ export class WindowsServer extends WindowsPC {
     this.directoryStore.promoteDomainController(this.getHostname(), safeModeAdminPassword);
     this.directoryStore.ensureKrbtgtPrincipal(randomSessionKey());
     this.directoryStore.newSite(DEFAULT_SITE_NAME);
+    this.isGlobalCatalog = true;
     this.provisionSysvol(newDomainDnsName);
     this.registerDcServices();
     this.provisionDomainDnsZone(newDomainDnsName);
     this.provisionDefaultDomainPolicy();
     return { ok: true, message: '' };
   }
+
+  isGlobalCatalogServer(): boolean { return this.isGlobalCatalog; }
 
   /** `Get-ADForest` — the forest this domain belongs to, or null if this server isn't a DC. */
   getForest(): Forest | null {
@@ -511,14 +524,11 @@ export class WindowsServer extends WindowsPC {
   private provisionDomainDnsZone(domainName: string): void {
     const dns = this.getDnsServerRole();
     if (!dns) return;
-    if (dns.getZone(domainName)) return;
-    dns.addPrimaryZone(domainName);
-    const hostname = this.getHostname();
-    const ownIp = this.getInterfaces().map(p => p.getIPAddress()).find((ip): ip is NonNullable<typeof ip> => ip !== null);
-    if (ownIp) dns.addARecord(domainName, hostname, ownIp.toString());
-    const dcTarget = `${hostname}.${domainName}`;
-    dns.addSrvRecord(domainName, '_ldap._tcp.dc._msdcs', { priority: 0, weight: 100, port: 389, target: dcTarget });
-    dns.addSrvRecord(domainName, '_kerberos._tcp.dc._msdcs', { priority: 0, weight: 100, port: 88, target: dcTarget });
+    const ownPort = this.getInterfaces().find(p => p.getIPAddress() !== null);
+    provisionDomainDnsZoneAndReverse(
+      dns, domainName, this.getHostname(), ownPort?.getIPAddress() ?? null, ownPort?.getSubnetMask() ?? null,
+      DEFAULT_SITE_NAME, this.isGlobalCatalog,
+    );
   }
 
   /** Real DC promotion registers `NTDS`/`Netlogon`/`Kdc` with the SCM (PRD §5 P6) — `dcdiag`/`nltest` read their state. */
