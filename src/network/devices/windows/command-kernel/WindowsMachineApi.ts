@@ -160,6 +160,9 @@ export interface WindowsMachineApiDeps {
   readonly portProxy: import('../PortProxyTable').PortProxyTable;
   getWinhttpProxy(): string;
   setWinhttpProxy(proxy: string): void;
+  setPrimaryDnsSuffix(suffix: string): void;
+  isServiceRunning(name: string): boolean;
+  readonly dhcpClientNetsh: { installed: boolean; tracingEnabled: boolean; tracingOutput: string; traceEnabled: boolean; releasedIfaces: Set<string> };
   bootedAt(): Date | null;
   now(): Date;
   powerOn(): void;
@@ -987,7 +990,7 @@ class WindowsNetConfigApiImpl implements WindowsNetConfigApi {
       | 'netInterfaces' | 'resolveAdapterName' | 'configureInterface' | 'setAddressDhcp' | 'clearInterfaceIP' | 'setDnsServers'
       | 'getDnsMode' | 'setDnsMode' | 'getInterfaceAdmin' | 'setInterfaceAdmin' | 'renameInterface'
       | 'resetTcpIpStack' | 'resetWinsockCatalog' | 'addIPv6Route' | 'getIPv6Routes' | 'portProxy'
-      | 'getWinhttpProxy' | 'setWinhttpProxy'>,
+      | 'getWinhttpProxy' | 'setWinhttpProxy' | 'setPrimaryDnsSuffix' | 'isServiceRunning' | 'dhcpClientNetsh'>,
   ) {}
 
   adapters(): readonly WindowsAdapterInfo[] {
@@ -1308,6 +1311,45 @@ class WindowsNetConfigApiImpl implements WindowsNetConfigApi {
 
   setWinhttpProxy(proxy: string): void {
     this.deps.setWinhttpProxy(proxy);
+  }
+
+  setPrimaryDnsSuffix(suffix: string): void {
+    this.deps.setPrimaryDnsSuffix(suffix);
+  }
+
+  isDhcpClientRunning(): boolean {
+    return this.deps.isServiceRunning('dhcp');
+  }
+
+  isDnsClientRunning(): boolean {
+    return this.deps.isServiceRunning('dnscache');
+  }
+
+  dhcpClientConfig() {
+    const s = this.deps.dhcpClientNetsh;
+    return { installed: s.installed, tracingEnabled: s.tracingEnabled, tracingOutput: s.tracingOutput, traceEnabled: s.traceEnabled };
+  }
+
+  setDhcpClientInstalled(installed: boolean): void {
+    this.deps.dhcpClientNetsh.installed = installed;
+  }
+
+  setDhcpClientTracing(enabled: boolean, output?: string): void {
+    this.deps.dhcpClientNetsh.tracingEnabled = enabled;
+    if (output !== undefined) this.deps.dhcpClientNetsh.tracingOutput = output;
+  }
+
+  setDhcpClientTraceEnabled(enabled: boolean): void {
+    this.deps.dhcpClientNetsh.traceEnabled = enabled;
+  }
+
+  setInterfaceReleased(ifName: string, released: boolean): void {
+    if (released) this.deps.dhcpClientNetsh.releasedIfaces.add(ifName);
+    else this.deps.dhcpClientNetsh.releasedIfaces.delete(ifName);
+  }
+
+  isInterfaceReleased(ifName: string): boolean {
+    return this.deps.dhcpClientNetsh.releasedIfaces.has(ifName);
   }
 }
 

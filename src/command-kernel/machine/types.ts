@@ -563,6 +563,30 @@ export interface WindowsNetConfigApi {
   /** Proxy WinHTTP global de la machine (`netsh winhttp` / `Set-WinHttpProxy`) — état partagé avec les cmdlets PowerShell équivalentes. */
   winhttpProxy(): string;
   setWinhttpProxy(proxy: string): void;
+
+  /** Suffixe DNS principal — positionné par `netsh dnsclient set global dnssuffix=` (lecture via `primaryDnsSuffix`). */
+  setPrimaryDnsSuffix(suffix: string): void;
+  /** Le service DHCP Client (`dhcp`) tourne-t-il (`netsh dhcpclient show state`) — distinct de l'état d'installation, qui est un booléen de configuration `netsh`. */
+  isDhcpClientRunning(): boolean;
+  /** Le service DNS Client (`dnscache`) tourne-t-il (`netsh dnsclient show state`). */
+  isDnsClientRunning(): boolean;
+
+  /** État de configuration `netsh dhcpclient` (service installé, traçage) — par-instance, sans équivalent universel. */
+  dhcpClientConfig(): WindowsDhcpClientConfig;
+  setDhcpClientInstalled(installed: boolean): void;
+  setDhcpClientTracing(enabled: boolean, output?: string): void;
+  setDhcpClientTraceEnabled(enabled: boolean): void;
+  /** Marque/démarque une interface comme ayant un bail libéré (`netsh dhcpclient release`/`renew`) — n'affecte que l'affichage `show parameters`. */
+  setInterfaceReleased(ifName: string, released: boolean): void;
+  isInterfaceReleased(ifName: string): boolean;
+}
+
+/** État de configuration du contexte `netsh dhcpclient` — par-instance, modèle Windows. */
+export interface WindowsDhcpClientConfig {
+  readonly installed: boolean;
+  readonly tracingEnabled: boolean;
+  readonly tracingOutput: string;
+  readonly traceEnabled: boolean;
 }
 
 /** Un écho ICMP individuel (`ping`) — optionnel, modèle Windows. */

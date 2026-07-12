@@ -167,6 +167,48 @@ const SUB_CONTEXT_STUB: Record<string, string> = {
   nlm: 'nlm', ras: 'ras', rpc: 'rpc', wcn: 'wcn', wfp: 'wfp',
 };
 
+const NETSH_DHCP_TRACE_HELP = `The following commands are available:
+
+Commands in this context:
+?              - Displays a list of commands.
+enable         - Enables DHCP client event tracing.
+disable        - Disables DHCP client event tracing.
+show           - Displays tracing information.
+
+To view help for a command, type the command, followed by a space, and then
+ type ?.`;
+
+const NETSH_DHCPCLIENT_HELP = `The following commands are available:
+
+Commands in this context:
+?              - Displays a list of commands.
+help           - Displays a list of commands.
+install        - Installs the DHCP client service.
+list           - Lists DHCP protocol interfaces and their state.
+release        - Releases a DHCP lease for an interface.
+renew          - Renews a DHCP lease for an interface.
+set            - Sets configuration information.
+show           - Displays information.
+trace          - Manages DHCP event tracing.
+uninstall      - Uninstalls the DHCP client service.
+
+To view help for a command, type the command, followed by a space, and then
+ type ?.`;
+
+const NETSH_DNSCLIENT_HELP = `The following commands are available:
+
+Commands in this context:
+?              - Displays a list of commands.
+add            - Adds a DNS server.
+delete         - Deletes a DNS server.
+help           - Displays a list of commands.
+reset          - Resets DNS client configuration.
+set            - Sets configuration information.
+show           - Displays information.
+
+To view help for a command, type the command, followed by a space, and then
+ type ?.`;
+
 const ADD_ADDRESS_USAGE = `Usage: netsh interface ipv4 add address [name=]<string>
        [address=]<IPv4 address> [mask=]<subnet mask>
        [[gateway=]<IPv4 address> [[gwmetric=]<integer>]]`;
@@ -247,6 +289,9 @@ export class NetshCommand extends BaseCommand {
     if (head === 'interface' || head === 'int') {
       return this.handleInterface(nc, args.slice(1));
     }
+
+    if (head === 'dhcpclient') return this.handleDhcpclient(nc, args.slice(1));
+    if (head === 'dnsclient') return this.handleDnsclient(nc, args.slice(1));
 
     if (head === 'winhttp') return this.handleWinhttp(nc, args.slice(1));
 
@@ -907,5 +952,299 @@ export class NetshCommand extends BaseCommand {
     }
 
     return IPV6_HELP;
+  }
+
+  // ─── netsh dhcpclient ─────────────────────────────────────────────
+  private handleDhcpclient(nc: WindowsNetConfigApi, args: string[]): string {
+    if (args.length === 0) return `Usage: netsh dhcpclient <command> [...]\n\n${NETSH_DHCPCLIENT_HELP}`;
+    const sub = args[0].toLowerCase();
+    if (sub === '?' || sub === '/?' || sub === 'help') return NETSH_DHCPCLIENT_HELP;
+    const cfg = nc.dhcpClientConfig();
+
+    if (sub === 'install') {
+      if (args.length > 1) return `Usage: netsh dhcpclient install`;
+      if (cfg.installed) return `The DHCP Client service is already installed.`;
+      nc.setDhcpClientInstalled(true);
+      return `DHCP Client service successfully installed.`;
+    }
+    if (sub === 'uninstall') {
+      if (args.length > 1) return `Usage: netsh dhcpclient uninstall`;
+      if (!cfg.installed) return `The DHCP Client service is not installed.`;
+      nc.setDhcpClientInstalled(false);
+      return `DHCP Client service successfully uninstalled.`;
+    }
+
+    if (sub === 'renew') {
+      const targets = this.dhcpTargets(nc, args[1]);
+      if (typeof targets === 'string') return targets;
+      nc.autoDiscoverDhcpServers();
+      for (const portName of targets) {
+        nc.setInterfaceReleased(portName, false);
+        nc.requestLease(portName);
+      }
+      return `Renewal of interface(s) completed.`;
+    }
+    if (sub === 'release') {
+      const targets = this.dhcpTargets(nc, args[1]);
+      if (typeof targets === 'string') return targets;
+      for (const portName of targets) {
+        nc.setInterfaceReleased(portName, true);
+        nc.releaseLease(portName);
+      }
+      return `Release of interface(s) completed.`;
+    }
+
+    if (sub === 'show') return this.handleDhcpclientShow(nc, args);
+    if (sub === 'set') return this.handleDhcpclientSet(nc, args);
+
+    if (sub === 'list') {
+      const header = `\n${'Interface Name'.padEnd(28)}${'IP Address'.padEnd(18)}State`;
+      const rows: string[] = [header, '-'.repeat(68)];
+      for (const a of nc.adapters()) {
+        const state = !a.isDhcp && a.ip ? 'Manual' : (a.isDhcp && a.ip ? 'BOUND' : 'INIT');
+        rows.push(`${displayName(a.name).padEnd(28)}${(a.ip || '---').padEnd(18)}${state}`);
+      }
+      rows.push('');
+      return rows.join('\n');
+    }
+
+    if (sub === 'trace') {
+      const traceCmd = (args[1] || '').toLowerCase();
+      if (!traceCmd || traceCmd === '?' || traceCmd === '/?') return NETSH_DHCP_TRACE_HELP;
+      if (traceCmd === 'enable') { nc.setDhcpClientTraceEnabled(true); return 'DHCP tracing enabled.'; }
+      if (traceCmd === 'disable') { nc.setDhcpClientTraceEnabled(false); return 'DHCP tracing disabled.'; }
+      if (traceCmd === 'show') {
+        if ((args[2] || '').toLowerCase() === '?') return `Usage: netsh dhcpclient trace show status`;
+        return ['', 'DHCP Client Trace Status',
+          '----------------------------------------------------------------------',
+          `  Trace:    ${nc.dhcpClientConfig().traceEnabled ? 'enabled' : 'disabled'}`, ''].join('\n');
+      }
+      return `The command "${args[1]}" was not found.\nType "netsh dhcpclient trace ?" for more information.`;
+    }
+
+    return `The command "${args[0]}" was not found.\nType "netsh dhcpclient ?" for more information.`;
+  }
+
+  /** Résout la ou les interfaces ciblées par renew/release — chaîne d'erreur si l'interface nommée est introuvable. */
+  private dhcpTargets(nc: WindowsNetConfigApi, ifArg: string | undefined): string[] | string {
+    if (ifArg) {
+      const portName = nc.resolveAdapterName(ifArg);
+      if (!portName) return `The interface "${ifArg}" was not found.`;
+      return [portName];
+    }
+    return nc.adapters().map((a) => a.name);
+  }
+
+  private handleDhcpclientShow(nc: WindowsNetConfigApi, args: string[]): string {
+    const obj = (args[1] || '').toLowerCase();
+    const ifName = args[2] || '';
+    if (obj === '?' || obj === '/?') {
+      return `The following commands are available:\n\nCommands in this context:\nstate         - Displays DHCP client state.\ninterfaces    - Displays DHCP-enabled interfaces.\nparameters    - Displays DHCP parameters for interfaces.\ntracing       - Displays tracing status.\n\nUsage: netsh dhcpclient show <state|interfaces|parameters|tracing> [interface]`;
+    }
+    if (obj === 'state') {
+      if (args[2] === '?') return `Usage: netsh dhcpclient show state`;
+      const svcRunning = nc.dhcpClientConfig().installed && nc.isDhcpClientRunning();
+      return ['', 'DHCP Client State',
+        '----------------------------------------------------------------------',
+        `  Service:          DHCP Client`, `  State:            ${svcRunning ? 'Running' : 'Stopped'}`,
+        `  Start Type:       Automatic`, ''].join('\n');
+    }
+    if (obj === 'interfaces') {
+      const lines = ['', `${'Interface'.padEnd(25)}${'DHCP Enabled'.padEnd(15)}IP Address`,
+        '----------------------------------------------------------------------'];
+      for (const a of nc.adapters()) {
+        lines.push(`${displayName(a.name).padEnd(25)}${a.isDhcp ? 'Yes' : 'No'.padEnd(14)} ${a.ip || '---'}`);
+      }
+      lines.push('');
+      return lines.join('\n');
+    }
+    if (obj === 'parameters') {
+      const portFilter = ifName ? nc.resolveAdapterName(ifName) : null;
+      if (ifName && !portFilter) return `The interface "${ifName}" was not found.`;
+      const lines: string[] = [''];
+      for (const a of nc.adapters()) {
+        if (portFilter && a.name !== portFilter) continue;
+        const released = nc.isInterfaceReleased(a.name);
+        lines.push(`DHCP parameters for interface "${displayName(a.name)}":`);
+        lines.push(`  IP Address:          ${a.ip || '(none)'}`);
+        lines.push(`  Lease obtained:      ${released ? 'N/A' : new Date().toLocaleDateString()}`);
+        if (released) lines.push(`  Lease expired:       Yes`);
+        lines.push('');
+      }
+      return lines.join('\n');
+    }
+    if (obj === 'tracing') {
+      const cfg = nc.dhcpClientConfig();
+      const lines = ['', 'DHCP Client Tracing',
+        '----------------------------------------------------------------------',
+        `  Tracing:   ${cfg.tracingEnabled ? 'Enabled' : 'Disabled'}`];
+      if (cfg.tracingOutput) lines.push(`  Output:    ${cfg.tracingOutput}`);
+      lines.push('');
+      return lines.join('\n');
+    }
+    return `Usage: netsh dhcpclient show <state|interfaces|parameters|tracing>`;
+  }
+
+  private handleDhcpclientSet(nc: WindowsNetConfigApi, args: string[]): string {
+    const obj = (args[1] || '').toLowerCase();
+    if (obj === 'tracing') {
+      const action = (args[3] || '').toLowerCase();
+      if (action !== 'enable' && action !== 'disable') {
+        return `Usage: netsh dhcpclient set tracing * enable|disable [output=<path>]`;
+      }
+      const outMatch = args.join(' ').match(/\boutput=(.+)/i);
+      nc.setDhcpClientTracing(action === 'enable', outMatch ? outMatch[1].trim() : undefined);
+      return `Ok.`;
+    }
+    if (obj === 'interface') {
+      const ifName = args[2] || '';
+      if (!ifName || ifName.includes('=')) return `Usage: netsh dhcpclient set interface <name> [dhcpclassid=<string>]`;
+      const portName = nc.resolveAdapterName(ifName);
+      if (!portName) return `The interface "${ifName}" was not found.`;
+      return `Ok.`;
+    }
+    return `Usage: netsh dhcpclient set tracing|interface ...`;
+  }
+
+  // ─── netsh dnsclient ──────────────────────────────────────────────
+  private handleDnsclient(nc: WindowsNetConfigApi, args: string[]): string {
+    if (args.length === 0) return `Commands in this context:\n${NETSH_DNSCLIENT_HELP}`;
+    const sub = args[0].toLowerCase();
+    if (sub === '?' || sub === '/?' || sub === 'help') return NETSH_DNSCLIENT_HELP;
+    if (sub === 'show') return this.handleDnsclientShow(nc, args.slice(1));
+    if (sub === 'add') return this.handleDnsclientAdd(nc, args.slice(1));
+    if (sub === 'delete') return this.handleDnsclientDelete(nc, args.slice(1));
+    if (sub === 'set') return this.handleDnsclientSet(nc, args.slice(1));
+    if (sub === 'reset') return this.handleDnsclientReset(nc, args.slice(1));
+    return `The command "${args[0]}" was not found.\nType "netsh dnsclient ?" for more information.`;
+  }
+
+  private handleDnsclientShow(nc: WindowsNetConfigApi, args: string[]): string {
+    const SHOW_HELP = `The following commands are available:\n\nCommands in this context:\nstate       - Displays DNS client state.\ninterfaces  - Displays interface DNS settings.\ndnsservers  - Displays DNS server addresses.\nencryption  - Displays DNS over HTTPS (DoH) encryption settings.`;
+    if (args.length === 0 || args[0] === '?') return SHOW_HELP;
+    const sub = args[0].toLowerCase();
+
+    if (sub === 'state') {
+      if (args[1] === '?') return `Usage: netsh dnsclient show state`;
+      const suffix = nc.primaryDnsSuffix();
+      const lines = ['', 'DNS Client State',
+        '----------------------------------------------------------------------',
+        `  DNS Client Service:    ${nc.isDnsClientRunning() ? 'Running' : 'Stopped'}`,
+        `  Query Resolution:      Enabled`,
+        `  Primary DNS Suffix:    ${suffix || '(none)'}`,
+        `  DNS Suffix List:       ${suffix || '(none)'}`, ''];
+      for (const a of nc.adapters()) {
+        const servers = nc.staticDnsServers(a.name);
+        lines.push(`  ${displayName(a.name)}: DNS Source: ${a.dnsMode === 'dhcp' ? 'DHCP' : 'Static'}, Servers: ${servers.join(', ') || '(none)'}`);
+      }
+      lines.push('');
+      return lines.join('\n');
+    }
+
+    if (sub === 'interfaces') {
+      const lines = ['', `${'Interface'.padEnd(25)}${'Mode'.padEnd(10)}DNS servers`,
+        '----------------------------------------------------------------------'];
+      for (const a of nc.adapters()) {
+        const servers = nc.staticDnsServers(a.name);
+        lines.push(`${displayName(a.name).padEnd(25)}${a.dnsMode.padEnd(10)}${servers.join(', ') || '(none)'}`);
+      }
+      lines.push('');
+      return lines.join('\n');
+    }
+
+    if (sub === 'dnsservers') {
+      const portFilter = args[1] ? nc.resolveAdapterName(args[1]) : null;
+      const lines: string[] = [''];
+      for (const a of nc.adapters()) {
+        if (portFilter && a.name !== portFilter) continue;
+        const servers = nc.staticDnsServers(a.name);
+        lines.push(`DNS servers for interface "${displayName(a.name)}":`);
+        if (a.dnsMode === 'dhcp' && servers.length === 0) lines.push('  DNS servers:  DHCP');
+        else if (servers.length > 0) for (const s of servers) lines.push(`  DNS server:   ${s}`);
+        else lines.push('  DNS servers:  (none)');
+        lines.push('');
+      }
+      return lines.join('\n');
+    }
+
+    if (sub === 'encryption') {
+      return ['', 'DNS Client Encryption Settings',
+        '----------------------------------------------------------------------',
+        '  DNS over HTTPS (DoH):  Disabled', '  Auto-upgrade:          Disabled',
+        '  No encryption fallback: Disabled', ''].join('\n');
+    }
+    return SHOW_HELP;
+  }
+
+  private handleDnsclientAdd(nc: WindowsNetConfigApi, args: string[]): string {
+    const ADD_HELP = `Usage: netsh dnsclient add dnsserver [name=]<interface> [address=]<IP> [index=<int>] [validate=yes|no]`;
+    if (args.length === 0 || args[0] === '?') return ADD_HELP;
+    if (args[0].toLowerCase() !== 'dnsserver') return `The subcommand "${args[0]}" was not found.\n${ADD_HELP}`;
+    if (args[1] === '?') return `Usage: netsh dnsclient add dnsserver [name=]<interface> [address=]<IP> [index=<int>]\n\nParameters:\nname - interface name\naddress - DNS server IP\nindex - position in list`;
+    const ifName = args[1] || '', addrRaw = args[2] || '';
+    if (!ifName || !addrRaw) return ADD_HELP;
+    const IP4 = /^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/, IP6 = /^[0-9a-fA-F:]+$/;
+    if (!IP4.test(addrRaw) && !IP6.test(addrRaw)) return `The parameter is invalid. "${addrRaw}" is not a valid IP address.`;
+    if (ifName === '*') return `The interface "${ifName}" was not found.`;
+    const portName = nc.resolveAdapterName(ifName);
+    if (!portName) return `The interface "${ifName}" was not found.`;
+    const indexMatch = args.join(' ').match(/\bindex=(\w+)/i);
+    if (indexMatch && isNaN(parseInt(indexMatch[1], 10))) return `The syntax of the index= parameter is not valid.`;
+    const existing = [...nc.staticDnsServers(portName)];
+    if (!indexMatch && existing.length > 0) return `The index= parameter is required when DNS servers already exist.`;
+    existing.push(addrRaw);
+    nc.setDnsServers(portName, existing);
+    return 'Ok.';
+  }
+
+  private handleDnsclientDelete(nc: WindowsNetConfigApi, args: string[]): string {
+    const DEL_HELP = `Usage: netsh dnsclient delete dnsserver [name=]<interface> [address=]<IP>|all`;
+    if (args.length === 0 || args[0] === '?') return `delete dnsserver - Removes a DNS server.\n\n${DEL_HELP}`;
+    if (args[0].toLowerCase() !== 'dnsserver') return `The subcommand "${args[0]}" was not found.\n${DEL_HELP}`;
+    const ifName = args[1] || '', addrRaw = args[2] || '';
+    if (!ifName) return DEL_HELP;
+    const portName = nc.resolveAdapterName(ifName);
+    if (!portName) return `The interface "${ifName}" was not found.`;
+    if (addrRaw.toLowerCase() === 'all') { nc.setDnsMode(portName, 'dhcp'); return 'Ok.'; }
+    const existing = nc.staticDnsServers(portName);
+    if (!existing.includes(addrRaw)) return `The DNS server "${addrRaw}" is not configured on "${ifName}".`;
+    nc.setDnsServers(portName, existing.filter((s) => s !== addrRaw));
+    return 'Ok.';
+  }
+
+  private handleDnsclientSet(nc: WindowsNetConfigApi, args: string[]): string {
+    const SET_HELP = `Usage: netsh dnsclient set dnsserver [name=]<interface> [source=]static|dhcp [address=]<IP> [...]`;
+    if (args.length === 0 || args[0] === '?') return `set dnsserver - Configures DNS servers.\n\n${SET_HELP}`;
+    const obj = args[0].toLowerCase();
+    if (obj === 'dnsserver') {
+      const ifName = args[1] || '', modeOrIp = (args[2] || '').toLowerCase();
+      if (!ifName || /^(static|dhcp)$/i.test(ifName)) return SET_HELP;
+      if (!modeOrIp) return SET_HELP;
+      const portName = nc.resolveAdapterName(ifName);
+      if (!portName) return `The interface "${ifName}" was not found.`;
+      if (modeOrIp === 'dhcp') { nc.setDnsMode(portName, 'dhcp'); return 'Ok.'; }
+      if (modeOrIp === 'static') {
+        nc.setDnsMode(portName, 'static');
+        nc.setDnsServers(portName, args.slice(3));
+        return 'Ok.';
+      }
+      return SET_HELP;
+    }
+    if (obj === 'global') {
+      const match = args.slice(1).join(' ').match(/dnssuffix=(.*)$/i);
+      if (!match) return `Usage: netsh dnsclient set global [dnssuffix=]<string>`;
+      nc.setPrimaryDnsSuffix(match[1].trim());
+      return 'Ok.';
+    }
+    return `The subcommand "${args[0]}" was not found.\n${SET_HELP}`;
+  }
+
+  private handleDnsclientReset(nc: WindowsNetConfigApi, args: string[]): string {
+    const ifName = args[0] || '';
+    if (!ifName) return `Usage: netsh dnsclient reset [name=]<interface>`;
+    const portName = nc.resolveAdapterName(ifName);
+    if (!portName) return `The interface "${ifName}" was not found.`;
+    nc.setDnsMode(portName, 'dhcp');
+    return 'Ok.';
   }
 }

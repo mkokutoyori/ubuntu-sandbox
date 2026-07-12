@@ -1789,6 +1789,9 @@ export class WindowsPC extends EndHost implements UserAccountHost {
         portProxy: this.portProxyTable,
         getWinhttpProxy: () => this.winhttpProxyValue,
         setWinhttpProxy: (proxy) => { this.winhttpProxyValue = proxy; },
+        setPrimaryDnsSuffix: (suffix) => { this.dnsSuffix = suffix; },
+        isServiceRunning: (name) => this.svcMgr.getService(name)?.state === 'Running',
+        dhcpClientNetsh: this.dhcpClientNetshState,
         bootedAt: () => this.getLifecycle().bootedAt() ?? null,
         now: () => this.simulatedDate(),
         powerOn: () => this.powerOn(),
@@ -2351,6 +2354,11 @@ export class WindowsPC extends EndHost implements UserAccountHost {
   private readonly ipv6Routes: WinIPv6RouteEntry[] = [];
   /** Proxy WinHTTP global (`netsh winhttp set proxy`) — état par-instance. */
   private winhttpProxyValue = '';
+  /** État de configuration `netsh dhcpclient` (service installé, traçage, interfaces libérées) — état par-instance. */
+  private readonly dhcpClientNetshState = {
+    installed: true, tracingEnabled: true, tracingOutput: '', traceEnabled: false,
+    releasedIfaces: new Set<string>(),
+  };
 
   private cmdVol(args: string[]): string {
     return WinSys.cmdVol(this.buildSystemContext(), args);

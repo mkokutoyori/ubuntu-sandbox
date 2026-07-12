@@ -5,6 +5,44 @@ progressive par équipement. Un push = une entrée = une fonctionnalité
 complète et testée (voir `CLAUDE.md` / le framework de migration pour les
 principes directeurs).
 
+## Windows — Phase 16 : migration `netsh` — contextes `dhcpclient`, `dnsclient`
+
+**État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
+
+Deuxième tranche de `netsh` (voir Phase 15). Ces deux contextes débloquent
+le cluster des tests de cohérence (`windows-consistency.test.ts`) qui
+recoupent `ipconfig`/`netsh`/`dhcpclient`/`dnsclient` pour vérifier qu'une
+même donnée (IP, serveurs DNS, suffixe, mode) est rapportée à l'identique
+par toutes les commandes.
+
+**`netsh dhcpclient`** (`install`/`uninstall`/`renew`/`release`/`list`/
+`show state|interfaces|parameters|tracing`/`set tracing|interface`/`trace
+enable|disable|show`) : réutilise les primitives DHCP déjà présentes
+(`requestLease`/`releaseLease`/`autoDiscoverDhcpServers`/`dhcpLease`) plus
+un état de configuration `netsh`-spécifique par-instance (service installé,
+traçage, interfaces libérées) stocké sur `WindowsPC` et exposé via
+`dhcpClientConfig()`/`setDhcpClient*()`/`setInterfaceReleased()` — même
+patron que `portProxy`/`ipv6Routes`/`winhttpProxy` aux phases précédentes.
+
+**`netsh dnsclient`** (`show state|interfaces|dnsservers|encryption`/`add|
+delete|set dnsserver`/`set global dnssuffix=`/`reset`) : réutilise
+`staticDnsServers`/`setDnsServers`/`setDnsMode`/`primaryDnsSuffix`, plus la
+nouvelle primitive `setPrimaryDnsSuffix` (le suffixe DNS principal était
+en lecture seule depuis la Phase 14) et `isDhcpClientRunning`/
+`isDnsClientRunning` (portes de service `dhcp`/`dnscache`).
+
+`NetshCommand` porte l'intégralité du dispatch et du formatage des deux
+contextes, copié depuis `WinNetsh.ts` (intact pour le shim PowerShell).
+
+Validation : typecheck et ESLint propres. Suite localisée (4 fichiers
+netsh/dhcp/dns/consistency, 113 tests) comparée au commit pré-Phase-16 via
+`git stash` : 32 échecs/81 réussites avant → 0/113 après, 32 tests
+corrigés, zéro régression. Suite arp/tracert/ipconfig (376 tests)
+re-vérifiée sans régression.
+
+Contextes `netsh` encore différés : `ipsec`, `lan`, `wlan`, `http`,
+`advfirewall`, `dhcp server`, `nps`, `bridge`, `namespace`.
+
 ## Windows — Phase 15 : migration `netsh` — contexte `interface`
 
 **État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
