@@ -5,6 +5,36 @@ progressive par équipement. Un push = une entrée = une fonctionnalité
 complète et testée (voir `CLAUDE.md` / le framework de migration pour les
 principes directeurs).
 
+## Windows Phase 24 : migration de `netdom` (join / trust) vers command-kernel
+
+**État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
+
+Migration de `netdom` (`netdom join`, `netdom trust`) — équivalent cmd de
+`Add-Computer -DomainName` / `New-ADTrust`, jusqu'ici non dispatché — vers
+le socle `command-kernel`.
+
+- Capacité `DomainApi` étendue de trois primitives : `joinDomain(...)`
+  (jointure, vraie négociation LDAP), `resolveDcAddress(domain)` (résolution
+  DNS synchrone du DC quand `/Server:` est absent) et `establishTrust(...)`
+  (approbation inter-domaines, `null` si la machine n'est pas un DC). Type
+  `DomainTrustDirection` au contrat.
+- `WindowsPC` porte join/resolve (via `joinDomainNow`/`resolveHostnameSync`)
+  et une base `establishDomainTrust()` renvoyant `null` (jamais un DC) ;
+  `WindowsServer` surcharge cette dernière via `newADTrust` (LDAP réel).
+- Commande `NetdomCommand` : dispatch `join`/`trust`, parsing des paramètres
+  `/Clé:Valeur`, aide réelle complète en `usage`, formatage console (succès
+  / « failed to complete successfully ») porté côté commande.
+- Frontière client/serveur respectée : `netdom trust` échoue proprement
+  (« not a domain controller ») sur un poste — aucune fonctionnalité serveur
+  exposée. Méthodes mortes `cmdNetdom`/`cmdNetdomTrust` supprimées de
+  `WindowsPC` (migrate-then-delete) ; `newADTrust` conservée (encore
+  utilisée par le fournisseur PowerShell `New-ADTrust`).
+
+Validation : les 2 tests `netdom` de `windows-server-domain-join.test.ts`
+passent (24 → 1 en échec : le dernier — bascule `whoami` après logon
+domaine — est antérieur et relève d'un autre chantier) ; aucune régression
+(dont `ad-trust-crossrealm.test.ts` 6/6).
+
 ## Windows Phase 23 : migration de `klist` / `nltest` / `dcdiag` vers command-kernel
 
 **État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**

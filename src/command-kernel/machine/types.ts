@@ -365,6 +365,9 @@ export interface DomainControllerDiagnostics {
   readonly sysvolShareExists: boolean;
 }
 
+/** Sens d'une relation d'approbation inter-domaines (`netdom trust /Direction:`). */
+export type DomainTrustDirection = 'Inbound' | 'Outbound' | 'Bidirectional';
+
 /** Un ticket Kerberos en cache (`klist`) — modèle Windows/AD. */
 export interface KerberosCachedTicket {
   readonly clientPrincipal: string;
@@ -395,6 +398,12 @@ export interface DomainApi {
   dcDiagnostics(): DomainControllerDiagnostics;
   /** `klist` — instantané typé du cache de tickets Kerberos (vide sans logon domaine). */
   kerberosTickets(): readonly KerberosCachedTicket[];
+  /** `netdom join` — jointure de domaine (vraie négociation LDAP). `ok:false` = échec (mauvais mot de passe, déjà joint...). */
+  joinDomain(domain: string, dcAddress: string, user: string, password: string): { ok: boolean; message: string };
+  /** Résout un nom de domaine en adresse de DC via DNS synchrone — `null` si irrésolu (pour `netdom join` sans `/Server:`). */
+  resolveDcAddress(domain: string): string | null;
+  /** `netdom trust` — établit une approbation inter-domaines ; `null` si la machine n'est pas un contrôleur de domaine (fonctionnalité serveur). */
+  establishTrust(remoteRealm: string, dcAddress: string, direction: DomainTrustDirection, transitive: boolean, user: string, password: string): { ok: boolean; message: string } | null;
 }
 
 /**

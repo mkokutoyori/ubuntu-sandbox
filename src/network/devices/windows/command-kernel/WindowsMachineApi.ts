@@ -60,6 +60,7 @@ import {
   DomainControllerLocation,
   DomainControllerDiagnostics,
   KerberosCachedTicket,
+  DomainTrustDirection,
   WindowsHttpStore,
   WindowsIpsecDynamicSettings,
   WindowsIpsecFilter,
@@ -208,6 +209,9 @@ export interface WindowsMachineApiDeps {
   locateDomainController(domain: string): DomainControllerLocation;
   dcDiagnostics(): DomainControllerDiagnostics;
   kerberosTickets(): readonly KerberosCachedTicket[];
+  joinDomain(domain: string, dcAddress: string, user: string, password: string): { ok: boolean; message: string };
+  resolveDcAddress(domain: string): string | null;
+  establishTrust(remoteRealm: string, dcAddress: string, direction: DomainTrustDirection, transitive: boolean, user: string, password: string): { ok: boolean; message: string } | null;
   bootedAt(): Date | null;
   now(): Date;
   powerOn(): void;
@@ -1696,7 +1700,8 @@ class WindowsEventLogApiImpl implements EventLogApi {
 
 class WindowsDomainApiImpl implements DomainApi {
   constructor(private readonly deps: Pick<WindowsMachineApiDeps,
-    'gpupdateForce' | 'groupPolicyResult' | 'locateDomainController' | 'dcDiagnostics' | 'kerberosTickets'>) {}
+    'gpupdateForce' | 'groupPolicyResult' | 'locateDomainController' | 'dcDiagnostics' | 'kerberosTickets'
+    | 'joinDomain' | 'resolveDcAddress' | 'establishTrust'>) {}
   gpupdateForce(): { ok: boolean; message: string } {
     return this.deps.gpupdateForce();
   }
@@ -1711,6 +1716,15 @@ class WindowsDomainApiImpl implements DomainApi {
   }
   kerberosTickets(): readonly KerberosCachedTicket[] {
     return this.deps.kerberosTickets();
+  }
+  joinDomain(domain: string, dcAddress: string, user: string, password: string): { ok: boolean; message: string } {
+    return this.deps.joinDomain(domain, dcAddress, user, password);
+  }
+  resolveDcAddress(domain: string): string | null {
+    return this.deps.resolveDcAddress(domain);
+  }
+  establishTrust(remoteRealm: string, dcAddress: string, direction: DomainTrustDirection, transitive: boolean, user: string, password: string): { ok: boolean; message: string } | null {
+    return this.deps.establishTrust(remoteRealm, dcAddress, direction, transitive, user, password);
   }
 }
 

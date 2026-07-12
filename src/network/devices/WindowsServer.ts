@@ -102,6 +102,19 @@ export class WindowsServer extends WindowsPC {
   }
 
   /**
+   * `netdom trust` — surcharge la primitive de base (`null` = non DC) pour
+   * établir une vraie relation d'approbation via `newADTrust` (LDAP
+   * `AddRequest` contre le directory distant). `newADTrust` refuse déjà si
+   * ce serveur n'est pas promu contrôleur de domaine.
+   */
+  override establishDomainTrust(
+    remoteRealm: string, dcAddress: string, direction: TrustDirection,
+    transitive: boolean, user: string, password: string,
+  ): AdDsOpResult {
+    return this.newADTrust(remoteRealm, dcAddress, direction, transitive, user, password);
+  }
+
+  /**
    * PRD Phase 7 (§5 P7): the DNS Server role, hosting the real DNS engine
    * over UDP/TCP 53 — null while the `DNS` role isn't installed. Lazily
    * created (and its listeners bound) on first access after
