@@ -5,6 +5,41 @@ progressive par équipement. Un push = une entrée = une fonctionnalité
 complète et testée (voir `CLAUDE.md` / le framework de migration pour les
 principes directeurs).
 
+## Windows Server — quota de comptes machine (`ms-DS-MachineAccountQuota`)
+
+Jusqu'ici, n'importe quel utilisateur authentifié pouvait joindre un
+nombre illimité d'ordinateurs au domaine — aucun quota n'était modélisé.
+`DirectoryStore` gagne `getMachineAccountQuota()`/
+`setMachineAccountQuota(n)` (par défaut 10, comme AD réel, stocké comme
+attribut `ms-DS-MachineAccountQuota` sur la racine du domaine — réplique
+comme n'importe quel autre attribut) et `checkMachineAccountQuota
+(creatorSam)` : compte les objets `computer` déjà créés par ce même
+principal (nouvel attribut `createdBySam`), refuse au-delà du quota,
+sauf pour un membre de Domain Admins (toujours exempté, comme AD réel —
+vérifié via `groupsForUser`, déjà existant).
+
+**Un seul point de contrôle** : `LdapServerHandler`'s `addRequest`
+vérifie le quota avant tout ajout d'un objet de classe `computer` — et
+timbre lui-même (côté serveur, jamais fourni par le client) l'attribut
+`createdBySam` du principal actuellement lié (`boundPrincipalSam`,
+déjà suivi depuis la tâche gMSA). `DirectoryStore.newComputer`/
+`promoteDomainController` (création directe/locale, utilisée par un
+administrateur ou par le bootstrap de promotion d'un DC) restent
+volontairement hors de portée du quota — AD réel ne l'applique lui
+aussi qu'au droit `SELF` create-child ordinaire, jamais à une création
+administrative explicite.
+
+**Validation** : nouveau `ad-machine-account-quota.test.ts` (2 tests)
+— valeur par défaut et configuration, refus une fois le quota d'un
+utilisateur ordinaire épuisé (deux jointures réelles réussies, une
+troisième refusée) mais un membre de Domain Admins toujours capable de
+joindre une machine supplémentaire. Suite élargie (jointure de domaine/
+AD/LDAP/Kerberos, 5 fichiers) : 104/105 au vert, seul échec préexistant
+hors périmètre (bascule `whoami`) — tous les tests existants
+s'authentifient en Administrator (membre de Domain Admins, exempté),
+donc risque de régression quasi nul, confirmé. Typecheck et lint
+ciblés propres.
+
 ## Windows Server — application de la politique de mot de passe sur un changement
 
 Complète la tâche précédente : `minPasswordLength`, `minPasswordAge` et

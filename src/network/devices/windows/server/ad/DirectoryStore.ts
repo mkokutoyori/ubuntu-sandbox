@@ -687,6 +687,31 @@ export class DirectoryStore {
     return { ok: true, message: '' };
   }
 
+  /** `ms-DS-MachineAccountQuota` (default 10) — only ever consulted for a computer account created via a real LDAP `addRequest` (domain join, `LdapServerHandler`); `newComputer`/`promoteDomainController` (admin-driven or DC-bootstrap, direct local calls) are never subject to it, matching real AD's own quota semantics (it only gates the ordinary `SELF` create-child right, not an explicit administrative creation). */
+  getMachineAccountQuota(): number {
+    const raw = firstOf(this.tree.getByDn(this.tree.getRootDn())?.attributes.get('ms-ds-machineaccountquota'));
+    return raw ? Number(raw) : 10;
+  }
+
+  setMachineAccountQuota(quota: number): void {
+    this.tree.modifyEntry(this.tree.getRootDn(), [{ op: 'replace', type: 'ms-DS-MachineAccountQuota', values: [String(quota)] }]);
+  }
+
+  /** Domain Admins are exempt (real AD's quota only ever matters for an ordinary user); an anonymous bind (`creatorSam === null`) is always refused. */
+  checkMachineAccountQuota(creatorSam: string | null): DirOpResult {
+    if (!creatorSam) return { ok: false, message: 'unwillingToPerform: authentication required to create a computer account' };
+    if (this.groupsForUser(creatorSam).some(g => g.sam === 'Domain Admins')) return { ok: true, message: '' };
+    const quota = this.getMachineAccountQuota();
+    const count = this.tree.allDescendants(this.tree.getRootDn())
+      .filter(e => hasObjectClass(e, 'computer'))
+      .filter(e => firstOf(e.attributes.get('createdbysam')).toLowerCase() === creatorSam.toLowerCase())
+      .length;
+    if (count >= quota) {
+      return { ok: false, message: `unwillingToPerform: the machine account quota (${quota}) for this user has been exceeded` };
+    }
+    return { ok: true, message: '' };
+  }
+
   private addGroupMemberByDn(groupSam: string, memberDn: DistinguishedName): void {
     const group = this.findGroupEntry(groupSam);
     if (!group) return;

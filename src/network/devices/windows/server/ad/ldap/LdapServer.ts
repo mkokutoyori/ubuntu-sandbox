@@ -67,6 +67,8 @@ export interface LdapServerContext {
   onComputerRegistered?: (computerName: string, ip: string) => void;
   /** `msDS-ManagedPassword` retrieval gate (MS-ADTS §3.1.1.8.1) — `null` (no such account, or `requestingPrincipalSam` not authorized) omits the attribute from search results entirely. Omitted (`undefined`) on hosts with no `DirectoryStore`. */
   retrieveManagedPassword?: (sam: string, requestingPrincipalSam: string | null) => string | null;
+  /** `ms-DS-MachineAccountQuota` gate (MS-ADTS §3.1.1.5.2.5) — checked before any `addRequest` whose `objectClass` includes `computer`; a refusal (`ok: false`) refuses the whole add. Omitted (`undefined`) on hosts with no `DirectoryStore`. */
+  checkMachineAccountQuota?: (creatorSam: string | null) => { ok: boolean; message: string };
 }
 
 const CLOCK_SKEW_SECONDS = 5 * 60;
@@ -203,6 +205,15 @@ export class LdapServerHandler {
         if (!dn) { this.reply(socket, msg.messageID, { kind: 'addResponse', result: ldapResult(LdapResultCode.invalidDNSyntax) }); return; }
         const attrs: Record<string, string[]> = {};
         for (const a of op.attributes) attrs[a.type] = a.values;
+        const isComputer = (attrs.objectClass ?? attrs.objectclass ?? []).some(v => v.toLowerCase() === 'computer');
+        if (isComputer && this.ctx.checkMachineAccountQuota) {
+          const quota = this.ctx.checkMachineAccountQuota(this.boundPrincipalSam);
+          if (!quota.ok) {
+            this.reply(socket, msg.messageID, { kind: 'addResponse', result: ldapResult(treeMessageToResultCode(quota.message), '', quota.message) });
+            return;
+          }
+          if (this.boundPrincipalSam) attrs.createdBySam = [this.boundPrincipalSam];
+        }
         const res = this.ctx.tree.addEntry(dn, attrs);
         if (res.ok) this.notifyComputerRegistered(dn, attrs);
         this.reply(socket, msg.messageID, {

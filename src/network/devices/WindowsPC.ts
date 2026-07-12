@@ -490,6 +490,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
           startTls: { serverCert: this.ldapStartTlsIdentity.cert, serverPrivateKey: this.ldapStartTlsIdentity.keyPair.privateKey },
           otherForestDomainRoots: () => otherDomainRoots,
           retrieveManagedPassword: (sam, requestingPrincipalSam) => store.retrieveManagedPassword(sam, requestingPrincipalSam),
+          checkMachineAccountQuota: (creatorSam) => store.checkMachineAccountQuota(creatorSam),
           onComputerRegistered: (computerName, ip) => {
             const dns = this.getDnsServerRole();
             dns?.applyDynamicARecord(store.dnsName, computerName, ip);
