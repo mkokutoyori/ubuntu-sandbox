@@ -18,6 +18,9 @@ import { FindstrCommand } from './commands/Findstr';
 import { GetmacCommand } from './commands/Getmac';
 import { GpupdateCommand } from './commands/Gpupdate';
 import { GpresultCommand } from './commands/Gpresult';
+import { KlistCommand } from './commands/Klist';
+import { NltestCommand } from './commands/Nltest';
+import { DcdiagCommand } from './commands/Dcdiag';
 import { HostnameCommand } from './commands/Hostname';
 import { IcaclsCommand } from './commands/Icacls';
 import { IpconfigCommand } from './commands/Ipconfig';
@@ -123,6 +126,9 @@ export function createWindowsHostShell(deps: WindowsMachineApiDeps): { registry:
   registry.register(() => new WevtutilCommand());
   registry.register(() => new GpupdateCommand());
   registry.register(() => new GpresultCommand());
+  registry.register(() => new KlistCommand());
+  registry.register(() => new NltestCommand());
+  registry.register(() => new DcdiagCommand());
 
   const interpreter = new CmdInterpreter(registry, machine);
 

@@ -350,10 +350,37 @@ export interface WindowsGpResult {
   readonly startupScript: string;
 }
 
+/** Résultat de `nltest /dsgetdc:<domaine>` — localisation d'un DC (modèle Windows/AD). */
+export type DomainControllerLocation =
+  | { readonly ok: true; readonly dnsName: string; readonly dcAddress: string; readonly siteName: string }
+  | { readonly ok: false; readonly reason: 'no-such-domain' | 'unreachable' };
+
+/** Instantané de santé d'un contrôleur de domaine (`dcdiag`) — `isDc: false` hors DC. */
+export interface DomainControllerDiagnostics {
+  readonly isDc: boolean;
+  readonly hostname: string;
+  readonly dnsName: string;
+  readonly siteName: string;
+  readonly servicesRunning: { readonly ntds: boolean; readonly netlogon: boolean; readonly kdc: boolean };
+  readonly sysvolShareExists: boolean;
+}
+
+/** Un ticket Kerberos en cache (`klist`) — modèle Windows/AD. */
+export interface KerberosCachedTicket {
+  readonly clientPrincipal: string;
+  readonly serverPrincipal: string;
+  readonly flagsHex: string;
+  readonly flagNames: readonly string[];
+  readonly startTime: number;
+  readonly endTime: number;
+  readonly renewTill: number | null;
+}
+
 /**
  * Appartenance à un domaine AD et diagnostics associés (`gpupdate`,
- * `gpresult`) — optionnel, concept sans équivalent universel. La plupart
- * des opérations échouent proprement (« not joined to a domain ») hors
+ * `gpresult`, `nltest`, `dcdiag`, `klist`) — optionnel, concept sans
+ * équivalent universel. La plupart des opérations échouent proprement
+ * (« not joined to a domain », `isDc: false`, cache de tickets vide) hors
  * domaine : aucune fonctionnalité serveur n'est exposée sur un poste non
  * joint.
  */
@@ -362,6 +389,12 @@ export interface DomainApi {
   gpupdateForce(): { ok: boolean; message: string };
   /** Instantané RSoP typé (`gpresult /r`) — `null` si la machine n'est pas jointe à un domaine. */
   groupPolicyResult(): WindowsGpResult | null;
+  /** `nltest /dsgetdc:<domaine>` — localisation d'un DC via une vraie sonde réseau (TCP/389). */
+  locateDomainController(domain: string): DomainControllerLocation;
+  /** `dcdiag` — instantané de santé du DC ; `isDc: false` sur une machine non promue. */
+  dcDiagnostics(): DomainControllerDiagnostics;
+  /** `klist` — instantané typé du cache de tickets Kerberos (vide sans logon domaine). */
+  kerberosTickets(): readonly KerberosCachedTicket[];
 }
 
 /**

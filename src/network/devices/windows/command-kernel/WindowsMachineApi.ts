@@ -57,6 +57,9 @@ import {
   EventLogApi,
   DomainApi,
   WindowsGpResult,
+  DomainControllerLocation,
+  DomainControllerDiagnostics,
+  KerberosCachedTicket,
   WindowsHttpStore,
   WindowsIpsecDynamicSettings,
   WindowsIpsecFilter,
@@ -202,6 +205,9 @@ export interface WindowsMachineApiDeps {
   addDhcpEvent(type: string, message: string): void;
   gpupdateForce(): { ok: boolean; message: string };
   groupPolicyResult(): WindowsGpResult | null;
+  locateDomainController(domain: string): DomainControllerLocation;
+  dcDiagnostics(): DomainControllerDiagnostics;
+  kerberosTickets(): readonly KerberosCachedTicket[];
   bootedAt(): Date | null;
   now(): Date;
   powerOn(): void;
@@ -1689,12 +1695,22 @@ class WindowsEventLogApiImpl implements EventLogApi {
 }
 
 class WindowsDomainApiImpl implements DomainApi {
-  constructor(private readonly deps: Pick<WindowsMachineApiDeps, 'gpupdateForce' | 'groupPolicyResult'>) {}
+  constructor(private readonly deps: Pick<WindowsMachineApiDeps,
+    'gpupdateForce' | 'groupPolicyResult' | 'locateDomainController' | 'dcDiagnostics' | 'kerberosTickets'>) {}
   gpupdateForce(): { ok: boolean; message: string } {
     return this.deps.gpupdateForce();
   }
   groupPolicyResult(): WindowsGpResult | null {
     return this.deps.groupPolicyResult();
+  }
+  locateDomainController(domain: string): DomainControllerLocation {
+    return this.deps.locateDomainController(domain);
+  }
+  dcDiagnostics(): DomainControllerDiagnostics {
+    return this.deps.dcDiagnostics();
+  }
+  kerberosTickets(): readonly KerberosCachedTicket[] {
+    return this.deps.kerberosTickets();
   }
 }
 

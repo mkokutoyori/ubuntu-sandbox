@@ -5,6 +5,36 @@ progressive par équipement. Un push = une entrée = une fonctionnalité
 complète et testée (voir `CLAUDE.md` / le framework de migration pour les
 principes directeurs).
 
+## Windows Phase 23 : migration de `klist` / `nltest` / `dcdiag` vers command-kernel
+
+**État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
+
+Migration du bloc de diagnostics domaine (`klist`, `nltest /dsgetdc:`,
+`dcdiag`) depuis les formateurs hérités `WinDomainDiag.ts` — jusqu'ici
+non dispatchés (`'…' n'est pas reconnu…`) — vers le socle `command-kernel`.
+
+- Capacité `DomainApi` étendue de trois primitives d'état typé :
+  `locateDomainController(domain)` (`nltest`, vraie sonde réseau TCP/389),
+  `dcDiagnostics()` (`dcdiag`, état des services AD + partage SYSVOL) et
+  `kerberosTickets()` (`klist`, instantané du cache de tickets alimenté par
+  un vrai échange AS/TGS). Types `DomainControllerLocation` /
+  `DomainControllerDiagnostics` / `KerberosCachedTicket` au contrat.
+- `WindowsPC` porte les primitives (base : `isDc: false`, jamais un DC) ;
+  `WindowsServer` surcharge `dcDiagnostics()` pour reporter l'état réel du
+  contrôleur de domaine une fois promu.
+- Commandes `KlistCommand` / `NltestCommand` / `DcdiagCommand` : parsing,
+  gate `/?`, aide réelle complète en `usage`, formatage console (mise en
+  page `#n>` de `klist`, sections de `dcdiag`) porté côté commande.
+- Frontière client/serveur respectée : sur un poste non joint / non promu,
+  `nltest` renvoie `ERROR_NO_SUCH_DOMAIN`, `dcdiag` « can only be run on a
+  domain controller », `klist` un cache vide — aucune fonctionnalité
+  serveur exposée. Fichier mort `WinDomainDiag.ts` supprimé (migrate-then-delete).
+
+Validation : les 7 tests `klist`/`nltest`/`dcdiag` de
+`windows-server-domain-join.test.ts` passent (24 → 21 en échec avant/après :
+les 3 restants — `netdom` ×2, bascule `whoami` — sont antérieurs, commandes
+non encore migrées) ; aucune régression sur les suites Windows voisines.
+
 ## Convergence de branche : Windows Server (AdminSDHolder/SDProp) + Windows Phase 22 (`gpupdate`/`gpresult`)
 
 **État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
