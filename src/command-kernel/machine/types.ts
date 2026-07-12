@@ -594,6 +594,10 @@ export interface WindowsNetConfigApi {
   readonly nrpt: WindowsNrptStore;
   /** Pare-feu Windows (`netsh advfirewall`) — état partagé plan de données/PowerShell. */
   readonly firewall: WindowsFirewallApi;
+  /** Rôle Serveur DHCP (`netsh dhcp server`) — `null` sur un poste client. */
+  readonly dhcpServer: WindowsDhcpServerApi | null;
+  /** Rôle NPS/RADIUS (`netsh nps`) — `null` sur un poste client. */
+  readonly nps: WindowsNpsApi | null;
 }
 
 /** État de configuration du contexte `netsh dhcpclient` — par-instance, modèle Windows. */
@@ -758,6 +762,40 @@ export interface WindowsFirewallApi {
   /** Supprime toutes les règles au nom donné (ou toutes si absent) — renvoie le nombre supprimé. */
   deleteRules(name?: string): number;
   clearRules(): void;
+}
+
+/** Résultat d'une opération de rôle serveur (`netsh dhcp server`/`nps`) — `message` est le texte d'erreur vendeur déjà formaté. */
+export interface WindowsServerOpResult { readonly ok: boolean; readonly message: string; }
+
+/** Étendue DHCP (`netsh dhcp server show scope`) — modèle Windows Server. */
+export interface WindowsDhcpScope { readonly name: string; readonly startRange: string; readonly subnetMask: string; }
+
+/**
+ * Rôle Serveur DHCP (`netsh dhcp server`) — présent UNIQUEMENT sur un
+ * `WindowsServer` avec la fonctionnalité DHCP installée. Adosse le vrai
+ * moteur DHCP (les baux qu'il distribue sont réels). `null` sur un poste
+ * client.
+ */
+export interface WindowsDhcpServerApi {
+  addScope(name: string, startRange: string, endRange: string, subnetMask: string): WindowsServerOpResult;
+  scopes(): readonly WindowsDhcpScope[];
+  addExclusionRange(startRange: string, endRange: string): WindowsServerOpResult;
+  addReservation(scopeName: string, ipAddress: string, clientMac: string): WindowsServerOpResult;
+  /** Résout l'étendue par nom OU par adresse réseau (`ScopeAddress`) — `null` si absente. */
+  findScope(scopeAddressOrName: string): WindowsDhcpScope | null;
+}
+
+/** Client RADIUS/NAS (`netsh nps show clients`) — modèle Windows Server. */
+export interface WindowsNasClient { readonly name: string; readonly ipAddress: string; }
+
+/**
+ * Rôle NPS/RADIUS (`netsh nps`) — présent UNIQUEMENT sur un
+ * `WindowsServer` avec la fonctionnalité NPAS installée. `null` sur un
+ * poste client.
+ */
+export interface WindowsNpsApi {
+  addNasClient(name: string, address: string, secret: string): WindowsServerOpResult;
+  nasClients(): readonly WindowsNasClient[];
 }
 
 /** Un écho ICMP individuel (`ping`) — optionnel, modèle Windows. */

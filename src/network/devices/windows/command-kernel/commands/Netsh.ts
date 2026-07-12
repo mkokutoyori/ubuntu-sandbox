@@ -500,6 +500,9 @@ export class NetshCommand extends BaseCommand {
       return this.handleAdvfirewall(nc, args.slice(1));
     }
 
+    if (head === 'dhcp') return this.handleDhcpServer(nc, args.slice(1));
+    if (head === 'nps') return this.handleNps(nc, args.slice(1));
+
     if (head === 'winhttp') return this.handleWinhttp(nc, args.slice(1));
 
     if (head === 'trace') return this.handleTrace(args.slice(1));
@@ -2109,5 +2112,97 @@ export class NetshCommand extends BaseCommand {
     }
 
     return `The subcommand "${args[0]}" was not found.\nType "netsh advfirewall firewall ?" for more information.`;
+  }
+
+  // ─── netsh dhcp server ────────────────────────────────────────────
+  private handleDhcpServer(nc: WindowsNetConfigApi, argv: string[]): string {
+    const HELP = `Usage: netsh dhcp server add scope <ScopeAddress> <SubnetMask> <ScopeName>
+       netsh dhcp server scope <ScopeAddress> add excluderange <StartIP> <EndIP>
+       netsh dhcp server scope <ScopeAddress> add reservedip <ReservedIP> <ClientMACAddress> [Name]
+       netsh dhcp server show scope`;
+    const server = nc.dhcpServer;
+    if (!server) return 'The DHCP Server service is not available on this computer.';
+    let args = argv;
+    if (args.length > 0 && args[0].toLowerCase() === 'server') args = args.slice(1);
+    if (args.length === 0 || args[0] === '?' || args[0] === '/?') return HELP;
+    const verb = args[0].toLowerCase();
+
+    if (verb === 'add' && args[1]?.toLowerCase() === 'scope') {
+      const [scopeAddress, subnetMask, ...nameParts] = args.slice(2);
+      if (!scopeAddress || !subnetMask) return HELP;
+      const scopeName = nameParts.join(' ') || scopeAddress;
+      let network: IPAddress, mask: SubnetMask;
+      try {
+        mask = new SubnetMask(subnetMask);
+        network = new IPAddress(scopeAddress).networkAddress(mask);
+      } catch { return 'The scope parameters are incorrect.'; }
+      const networkNum = network.toUint32();
+      const broadcastNum = (networkNum | (~mask.toUint32() >>> 0)) >>> 0;
+      const start = IPAddress.fromUint32(networkNum + 1).toString();
+      const end = IPAddress.fromUint32(broadcastNum - 1).toString();
+      const res = server.addScope(scopeName, start, end, subnetMask);
+      return res.ok ? 'Command completed successfully.' : res.message;
+    }
+
+    if (verb === 'show' && args[1]?.toLowerCase() === 'scope') {
+      const scopes = server.scopes();
+      if (scopes.length === 0) return 'No scopes configured on this DHCP server.';
+      return scopes.map((s) => `Scope Address - ${s.name}\tSubnetMask - ${s.subnetMask}\tState - Active`).join('\n');
+    }
+
+    if (verb === 'scope') {
+      const scopeAddress = args[1];
+      const scope = scopeAddress ? server.findScope(scopeAddress) : null;
+      if (!scope) return `The scope parameters are incorrect.\nThe scope ${scopeAddress ?? ''} does not exist.`;
+      const sub = args[2]?.toLowerCase();
+      if (sub === 'add' && args[3]?.toLowerCase() === 'excluderange') {
+        const startIp = args[4], endIp = args[5];
+        if (!startIp || !endIp) return 'Usage: netsh dhcp server scope <ScopeAddress> add excluderange <StartIP> <EndIP>';
+        const res = server.addExclusionRange(startIp, endIp);
+        return res.ok ? 'Command completed successfully.' : res.message;
+      }
+      if (sub === 'add' && args[3]?.toLowerCase() === 'reservedip') {
+        const reservedIp = args[4], clientMac = args[5];
+        if (!reservedIp || !clientMac) return 'Usage: netsh dhcp server scope <ScopeAddress> add reservedip <ReservedIP> <ClientMACAddress> [Name]';
+        const res = server.addReservation(scope.name, reservedIp, clientMac);
+        return res.ok ? 'Command completed successfully.' : res.message;
+      }
+      return HELP;
+    }
+
+    return HELP;
+  }
+
+  // ─── netsh nps ────────────────────────────────────────────────────
+  private handleNps(nc: WindowsNetConfigApi, args: string[]): string {
+    const HELP = `Usage: netsh nps add client name="<Name>" address="<IPAddress>" secret="<SharedSecret>"
+       netsh nps show clients`;
+    const nps = nc.nps;
+    if (!nps) return 'The Network Policy Server service is not available on this computer.';
+    if (args.length === 0 || args[0] === '?' || args[0] === '/?') return HELP;
+    const verb = args[0].toLowerCase();
+
+    if (verb === 'add' && args[1]?.toLowerCase() === 'client') {
+      const kv = this.parseQuotedKeyValue(args.slice(2));
+      const name = kv.get('name'), address = kv.get('address'), secret = kv.get('secret');
+      if (!name || !address || !secret) return HELP;
+      const res = nps.addNasClient(name, address, secret);
+      return res.ok ? 'Command completed successfully.' : res.message;
+    }
+    if (verb === 'show' && args[1]?.toLowerCase() === 'clients') {
+      const clients = nps.nasClients();
+      if (clients.length === 0) return 'No RADIUS clients configured on this NPS server.';
+      return clients.map((c) => `Name - ${c.name}\tAddress - ${c.ipAddress}`).join('\n');
+    }
+    return HELP;
+  }
+
+  private parseQuotedKeyValue(args: string[]): Map<string, string> {
+    const out = new Map<string, string>();
+    for (const a of args) {
+      const m = /^([a-zA-Z]+)=(?:"([^"]*)"|(\S+))$/.exec(a);
+      if (m) out.set(m[1].toLowerCase(), m[2] ?? m[3] ?? '');
+    }
+    return out;
   }
 }

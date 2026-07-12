@@ -45,9 +45,14 @@ import {
   WindowsIPv6RouteEntry,
   WindowsBridge,
   WindowsBridgeStore,
+  WindowsDhcpScope,
+  WindowsDhcpServerApi,
   WindowsFirewallApi,
   WindowsFirewallRule,
   WindowsHttpSslCert,
+  WindowsNasClient,
+  WindowsNpsApi,
+  WindowsServerOpResult,
   WindowsHttpStore,
   WindowsIpsecDynamicSettings,
   WindowsIpsecFilter,
@@ -185,6 +190,8 @@ export interface WindowsMachineApiDeps {
   readonly ipsecNetsh: WinIpsecMutableState;
   readonly netshFeatures: WinNetshFeatureState;
   readonly dynamicFirewallRules: FirewallRuleMap;
+  getDhcpServerRole(): DhcpServerRoleLike | null;
+  getNpsRole(): NpsRoleLike | null;
   bootedAt(): Date | null;
   now(): Date;
   powerOn(): void;
@@ -1177,6 +1184,55 @@ class WindowsFirewallApiImpl implements WindowsFirewallApi {
   clearRules(): void { this.map.clear(); }
 }
 
+/** Sous-ensemble du rôle Serveur DHCP réellement consommé par `netsh dhcp server`. */
+interface DhcpServerRoleLike {
+  addScope(name: string, startRange: string, endRange: string, subnetMask: string): WindowsServerOpResult;
+  listScopes(): readonly { name: string; startRange: string; subnetMask: string }[];
+  addExclusionRange(startRange: string, endRange: string): WindowsServerOpResult;
+  addReservation(scopeName: string, ipAddress: string, clientId: string): WindowsServerOpResult;
+}
+
+class WindowsDhcpServerApiImpl implements WindowsDhcpServerApi {
+  constructor(private readonly role: DhcpServerRoleLike) {}
+  addScope(name: string, startRange: string, endRange: string, subnetMask: string): WindowsServerOpResult {
+    return this.role.addScope(name, startRange, endRange, subnetMask);
+  }
+  scopes(): readonly WindowsDhcpScope[] {
+    return this.role.listScopes().map((s) => ({ name: s.name, startRange: s.startRange, subnetMask: s.subnetMask }));
+  }
+  addExclusionRange(startRange: string, endRange: string): WindowsServerOpResult {
+    return this.role.addExclusionRange(startRange, endRange);
+  }
+  addReservation(scopeName: string, ipAddress: string, clientMac: string): WindowsServerOpResult {
+    return this.role.addReservation(scopeName, ipAddress, clientMac);
+  }
+  findScope(scopeAddressOrName: string): WindowsDhcpScope | null {
+    const found = this.role.listScopes().find((s) => {
+      if (s.name === scopeAddressOrName) return true;
+      try {
+        return new IPAddress(s.startRange).networkAddress(new SubnetMask(s.subnetMask)).toString() === scopeAddressOrName;
+      } catch { return false; }
+    });
+    return found ? { name: found.name, startRange: found.startRange, subnetMask: found.subnetMask } : null;
+  }
+}
+
+/** Sous-ensemble du rôle NPS réellement consommé par `netsh nps`. */
+interface NpsRoleLike {
+  addNasClient(name: string, ipAddress: string, sharedSecret: string): WindowsServerOpResult;
+  listNasClients(): readonly { name: string; ipAddress: string }[];
+}
+
+class WindowsNpsApiImpl implements WindowsNpsApi {
+  constructor(private readonly role: NpsRoleLike) {}
+  addNasClient(name: string, address: string, secret: string): WindowsServerOpResult {
+    return this.role.addNasClient(name, address, secret);
+  }
+  nasClients(): readonly WindowsNasClient[] {
+    return this.role.listNasClients().map((c) => ({ name: c.name, ipAddress: c.ipAddress }));
+  }
+}
+
 class WindowsNetConfigApiImpl implements WindowsNetConfigApi {
   readonly ipsec: WindowsIpsecStore;
   readonly lan: WindowsLanStore;
@@ -1185,6 +1241,16 @@ class WindowsNetConfigApiImpl implements WindowsNetConfigApi {
   readonly bridge: WindowsBridgeStore;
   readonly nrpt: WindowsNrptStore;
   readonly firewall: WindowsFirewallApi;
+
+  /** Getters live : le rôle peut être installé APRÈS la construction du shell (mémoïsé une fois), ex. `Install-WindowsFeature DHCP`. */
+  get dhcpServer(): WindowsDhcpServerApi | null {
+    const role = this.deps.getDhcpServerRole();
+    return role ? new WindowsDhcpServerApiImpl(role) : null;
+  }
+  get nps(): WindowsNpsApi | null {
+    const role = this.deps.getNpsRole();
+    return role ? new WindowsNpsApiImpl(role) : null;
+  }
 
   constructor(
     private readonly ports: () => readonly Port[],
@@ -1199,7 +1265,7 @@ class WindowsNetConfigApiImpl implements WindowsNetConfigApi {
       | 'getDnsMode' | 'setDnsMode' | 'getInterfaceAdmin' | 'setInterfaceAdmin' | 'renameInterface'
       | 'resetTcpIpStack' | 'resetWinsockCatalog' | 'addIPv6Route' | 'getIPv6Routes' | 'portProxy'
       | 'getWinhttpProxy' | 'setWinhttpProxy' | 'setPrimaryDnsSuffix' | 'isServiceRunning' | 'dhcpClientNetsh'
-      | 'ipsecNetsh' | 'netshFeatures' | 'dynamicFirewallRules'>,
+      | 'ipsecNetsh' | 'netshFeatures' | 'dynamicFirewallRules' | 'getDhcpServerRole' | 'getNpsRole'>,
   ) {
     this.ipsec = new WindowsIpsecStoreImpl(deps.ipsecNetsh);
     this.lan = new WindowsLanStoreImpl(deps.netshFeatures.lan);

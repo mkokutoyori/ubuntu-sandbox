@@ -5,6 +5,47 @@ progressive par équipement. Un push = une entrée = une fonctionnalité
 complète et testée (voir `CLAUDE.md` / le framework de migration pour les
 principes directeurs).
 
+## Windows — Phase 20 : migration `netsh` — contextes `dhcp server`, `nps` (clôt `netsh`)
+
+**État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
+
+Dernière tranche de `netsh` : les deux contextes de rôle serveur
+(`dhcp server add/show/scope`, `nps add/show client`). Contrairement à
+tous les magasins précédents, ces contextes sont adossés aux objets de
+rôle `WindowsServer` (`WindowsDhcpServerRole`/`WindowsNpsRole`) — le rôle
+DHCP distribue de VRAIS baux via son moteur, pas un simple registre.
+
+**Garde-fou poste client respecté** : `getDhcpServerRole()`/`getNpsRole()`
+renvoient `null` sur un `WindowsPC` ordinaire (seul `WindowsServer` les
+surcharge quand la fonctionnalité est installée). Les nouvelles capacités
+`WindowsNetConfigApi.dhcpServer`/`nps` sont donc des **getters LIVE**
+`… | null` (ré-évalués à chaque accès, car la fonctionnalité peut être
+installée APRÈS la construction du shell mémoïsé). `NetshCommand` renvoie
+« The DHCP Server service is not available on this computer. » /
+« The Network Policy Server service is not available on this computer. »
+quand le rôle est absent — vérifié par un test dédié qu'un `windows-pc`
+refuse bien `netsh dhcp server`/`nps`.
+
+Types `WindowsDhcpScope`/`WindowsDhcpServerApi`/`WindowsNasClient`/
+`WindowsNpsApi`/`WindowsServerOpResult` ajoutés. Le calcul d'adressage de
+l'étendue (réseau/broadcast/plage début-fin depuis `ScopeAddress`+masque)
+vit dans `NetshCommand` (types de domaine `IPAddress`/`SubnetMask`), les
+opérations vendeur (`addScope`/`addExclusionRange`/`addReservation`/
+`addNasClient`) restent sur le rôle. `WinNetsh.ts` intact pour le shim.
+
+**`netsh` est désormais intégralement migré** : interface (Ph.15),
+dhcpclient/dnsclient (Ph.16), ipsec (Ph.17), lan/wlan/http/bridge/
+namespace (Ph.18), advfirewall (Ph.19), dhcp server/nps (Ph.20). Seul le
+`cmdNetsh` legacy subsiste pour le shim PowerShell natif, jamais appelé
+depuis le command-kernel.
+
+Validation : typecheck et ESLint propres. `windows-server-dhcp`/
+`windows-server-nps` comparés au commit pré-Phase-20 via `git stash` : 3
+échecs/18 réussites avant → 21/21 après, 3 tests corrigés, zéro
+régression. Test jetable confirmant le refus sur poste client (2/2).
+Suites cmd-netsh/netsh/consistency (259 tests) sans régression (4 échecs
+IPsec ordre-dépendants pré-existants, déjà documentés).
+
 ## Windows — Phase 19 : migration `netsh` — contexte `advfirewall`
 
 **État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
