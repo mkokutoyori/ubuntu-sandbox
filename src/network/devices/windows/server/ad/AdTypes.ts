@@ -26,6 +26,8 @@ export interface AdUser {
   accountExpires: number | null;
   /** `userAccountControl`'s `DONT_EXPIRE_PASSWORD` bit — exempts this account from `maxPasswordAge` (`DirectoryStore.checkPassword`). */
   passwordNeverExpires: boolean;
+  /** Epoch seconds of the last successful LDAP simple-bind authentication (`DirectoryStore.checkPassword`), or `null` before any. Real AD keeps a per-DC, non-replicated `lastLogon` alongside a replicated, staleness-gated `lastLogonTimestamp` — this simulator models only the latter, updated on every success rather than gated by staleness. */
+  lastLogonTimestamp: number | null;
 }
 
 export interface AdGroup {

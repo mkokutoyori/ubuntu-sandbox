@@ -495,6 +495,7 @@ export class DirectoryStore {
       lockedOut: this.isAccountLockedOut(firstOf(entry.attributes.get('samaccountname'))),
       accountExpires: Number(firstOf(entry.attributes.get('accountexpires'))) || null,
       passwordNeverExpires: hasUacFlag(entry.attributes.get('useraccountcontrol'), UAC.DONT_EXPIRE_PASSWORD),
+      lastLogonTimestamp: Number(firstOf(entry.attributes.get('lastlogontimestamp'))) || null,
     };
   }
 
@@ -598,7 +599,9 @@ export class DirectoryStore {
 
     const matches = firstOf(entry.attributes.get('userpassword')) === password;
     if (matches) {
-      if (firstOf(entry.attributes.get('badpwdcount'))) this.tree.modifyEntry(entry.dn, [{ op: 'replace', type: 'badPwdCount', values: [] }]);
+      const changes: { op: 'replace'; type: string; values: string[] }[] = [{ op: 'replace', type: 'lastLogonTimestamp', values: [String(now)] }];
+      if (firstOf(entry.attributes.get('badpwdcount'))) changes.push({ op: 'replace', type: 'badPwdCount', values: [] });
+      this.tree.modifyEntry(entry.dn, changes);
       return true;
     }
     if (threshold > 0) {

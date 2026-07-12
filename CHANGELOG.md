@@ -5,6 +5,27 @@ progressive par équipement. Un push = une entrée = une fonctionnalité
 complète et testée (voir `CLAUDE.md` / le framework de migration pour les
 principes directeurs).
 
+## Windows Server — suivi de la dernière connexion (`lastLogonTimestamp`)
+
+Totalement absent jusqu'ici. `checkPassword` (bind simple LDAP, même
+périmètre volontaire que le verrouillage/l'expiration) tamponne
+désormais `lastLogonTimestamp` sur chaque authentification réussie,
+fondu dans le même appel `modifyEntry` que la remise à zéro de
+`badPwdCount`. `AdUser` gagne `lastLogonTimestamp: number | null`.
+
+**Simplification documentée** : AD réel distingue `lastLogon`
+(par-DC, jamais répliqué) de `lastLogonTimestamp` (répliqué, mais mis
+à jour seulement au-delà d'un certain seuil d'ancienneté pour éviter
+les tempêtes de réplication) — ce simulateur ne modélise que
+l'équivalent de `lastLogonTimestamp`, mis à jour à chaque succès sans
+palier d'ancienneté.
+
+**Validation** : nouveau `ad-last-logon.test.ts` (4 tests) — `null`
+avant toute authentification, tamponné après un succès, jamais
+tamponné après un échec, avance à chaque nouveau succès. Suite élargie
+(verrouillage/politique de mot de passe/expiration/`ad-directory-store`) :
+66/66 au vert. Typecheck et lint ciblés propres.
+
 ## Windows Server — introspection des métadonnées de réplication (`Get-ADReplicationAttributeMetadata`)
 
 Le timbre par attribut (`AttributeReplStamp`, ajouté par la mise à
