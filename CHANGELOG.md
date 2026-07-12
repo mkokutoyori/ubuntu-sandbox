@@ -5,6 +5,27 @@ progressive par équipement. Un push = une entrée = une fonctionnalité
 complète et testée (voir `CLAUDE.md` / le framework de migration pour les
 principes directeurs).
 
+## Linux — Phase 8 : `sleep`
+
+**État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
+
+**Commande migrée** : `sleep NOMBRE[SUFFIXE]...` — portée par la commande
+command-kernel `SleepCommand`.
+
+- Le simulateur étant synchrone, la durée calculée est ignorée (exactement
+  comme le legacy) : seule la **validation** des opérandes compte (`1`,
+  `1s`, `2m`, `1h`, `1d`, `0.5`, sommes de plusieurs durées, erreur
+  « invalid time interval » sur token invalide). Le parsing des durées
+  reste porté par le module pur **partagé** `runSleep` (`coreutils/Sleep.ts`).
+- **Legacy supprimé** : le `case 'sleep'` retiré de
+  `LinuxCommandExecutor.dispatch()`, import `runSleep` devenu inutile
+  nettoyé ; `sleep` reste dans la liste des commandes connues.
+
+Validation : `test-expr-seq-sleep-time-watch.test.ts` passe intégralement
+(53/53, dont les cas `sleep 1 && echo DONE`, suffixes, `sleep || echo BAD`,
+`sleep abc`, `sleep 0.5`) ; cohérence stricte verte ; aucune régression
+Linux voisine (77 tests).
+
 ## Linux — Phase 7 : `expr`
 
 **État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**

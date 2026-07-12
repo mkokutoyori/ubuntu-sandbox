@@ -29,7 +29,7 @@ import {
 } from './resolve';
 import { cmdMkfifo } from './LinuxPermCommands';
 import {
-  runTest, runSleep, runWatch, formatTimes, chooseTimeFormat,
+  runTest, runWatch, formatTimes, chooseTimeFormat,
   runTail,
   cmdTar, cmdGzip, cmdZip, cmdUnzip, describeArchiveContent,
   type TestFs, type TestEnv, type TailFs, type TailSink, type TailFollowHandle, type TailRunResult,
@@ -3759,10 +3759,6 @@ export class LinuxCommandExecutor {
 
       // Sleep — parses the duration (incl. multi-arg sums and suffixes)
       // but never blocks; the simulator advances time logically.
-      case 'sleep': {
-        const r = runSleep(args);
-        return { output: r.output, exitCode: r.exitCode };
-      }
       // `timeout <N> <cmd ...>` — run the inner command. In real life
       // the cmd is killed with SIGTERM after N seconds; the simulator
       // is synchronous so we just delegate (the inner cmd runs to

@@ -25,6 +25,7 @@ import { RealpathCommand } from './commands/Realpath';
 import { RmCommand } from './commands/Rm';
 import { RmdirCommand } from './commands/Rmdir';
 import { SeqCommand } from './commands/Seq';
+import { SleepCommand } from './commands/Sleep';
 import { SortCommand } from './commands/Sort';
 import { StatCommand } from './commands/Stat';
 import { TailCommand } from './commands/Tail';
@@ -74,6 +75,7 @@ export function createLinuxHostShell(deps: LinuxMachineApiDeps): Interpreter {
   registry.register(() => new DirnameCommand());
   registry.register(() => new SeqCommand());
   registry.register(() => new ExprCommand());
+  registry.register(() => new SleepCommand());
 
   return new Interpreter(registry, machine);
 }
