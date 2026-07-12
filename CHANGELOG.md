@@ -5,6 +5,27 @@ progressive par équipement. Un push = une entrée = une fonctionnalité
 complète et testée (voir `CLAUDE.md` / le framework de migration pour les
 principes directeurs).
 
+## Windows Server — support des PSO (stratégie de mot de passe granulaire)
+
+Second et dernier chantier de suivi identifié à l'audit initial. Nouveau
+module `ad/pso/PsoStore.ts` (96 lignes, composé par référence dans
+`DirectoryStore` comme `GpoStore`/`SiteRegistry`/`TrustRegistry`) :
+objets `msDS-PasswordSettings` réels sous `CN=Password Settings
+Container,CN=System,<racine du domaine>`, réutilisant la forme de
+`GpoAccountPolicy` plutôt qu'un type parallèle. `newPso`/`getPso`/
+`listPsos`/`setPsoAppliesTo` sur `DirectoryStore`, plus
+`effectivePasswordPolicyFor(userSam)` qui résout le PSO gagnant
+(directement lié ou via appartenance à un groupe visé) — la précédence
+la plus basse gagne intégralement, jamais fusionnée entre PSO, fidèle
+au comportement réel d'AD. `null` si aucun PSO ne s'applique,
+l'appelant retombant alors sur la politique de compte par défaut du
+domaine (déjà exposée par `resultantSetOfPolicy`).
+
+**Validation** : six nouveaux tests dans `ad-directory-store.test.ts`
+(création/doublon, application directe et via groupe, absence de PSO,
+précédence la plus basse gagnante entre plusieurs PSO applicables) —
+42 tests, tous au vert. Typecheck et lint ciblés propres.
+
 ## Windows Server — élargit la couverture des types de réglages GPO
 
 Premier des deux chantiers de suivi identifiés lors de l'audit initial

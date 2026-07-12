@@ -18,7 +18,7 @@
 import { DirectoryTree, type DirectoryEntry, type EntryReplMeta } from './ldap/DirectoryTree';
 import { parseDN, formatDN, leafValue, type DistinguishedName } from './ldap/LdapDN';
 import type { LdapBindCheck } from './ldap/LdapServer';
-import type { AdUser, AdGroup, AdComputer, AdOrgUnit, Gpo, GpoSettings } from './AdTypes';
+import type { AdUser, AdGroup, AdComputer, AdOrgUnit, Gpo, GpoSettings, GpoAccountPolicy, PasswordSettingsObject } from './AdTypes';
 import { generateId } from '@/network/core/types';
 import {
   type HighWatermarkVector, emptyHighWatermarkVector, recordUsn, cloneHighWatermarkVector,
@@ -29,6 +29,7 @@ import { SchemaPartition, seedDefaultSchema } from './schema/SchemaPartition';
 import type { AttributeSchema, ObjectClassSchema, SchemaOpResult } from './schema/SchemaValidator';
 import { TrustRegistry, type TrustDirection, type TrustOpResult, type TrustInfo, type TrustRecord } from './forest/TrustRelationship';
 import { GpoStore } from './gpo/GpoStore';
+import { PsoStore } from './pso/PsoStore';
 
 export interface DirOpResult { ok: boolean; message: string }
 
@@ -78,6 +79,7 @@ export class DirectoryStore {
   private readonly schema: SchemaPartition;
   private readonly trustRegistry: TrustRegistry;
   private readonly gpoStore: GpoStore;
+  private readonly psoStore: PsoStore;
 
   /**
    * `opts.skipSeed` (PRD-Windows-Server-Advanced.md §5 P5): an additional
@@ -106,6 +108,7 @@ export class DirectoryStore {
     this.schema = new SchemaPartition(this.tree, this.schemaValidator);
     this.trustRegistry = new TrustRegistry(this.tree);
     this.gpoStore = new GpoStore(this.tree);
+    this.psoStore = new PsoStore(this.tree);
     if (!opts.skipSeed) {
       // A shared validator (PRD §5 P8 — a child domain joining an existing
       // forest) is already seeded by its forest root; seeding again would
@@ -236,6 +239,19 @@ export class DirectoryStore {
 
   resultantSetOfPolicy(computerName?: string): { appliedGpoNames: string[]; settings: GpoSettings } {
     return this.gpoStore.resultantSetOfPolicy(computerName ? this.findComputerEntry(computerName) : null);
+  }
+
+  // ─── Fine-grained password policy (PSO) ─────────────────────────────
+
+  newPso(name: string, precedence: number, settings: GpoAccountPolicy): DirOpResult { return this.psoStore.newPso(name, precedence, settings); }
+  getPso(name: string): PasswordSettingsObject | null { return this.psoStore.getPso(name); }
+  listPsos(): PasswordSettingsObject[] { return this.psoStore.listPsos(); }
+  setPsoAppliesTo(name: string, principals: string[]): DirOpResult { return this.psoStore.setPsoAppliesTo(name, principals); }
+
+  /** The winning PSO's settings for `userSam`, or `null` if none applies (caller falls back to the domain default `GpoAccountPolicy`). */
+  effectivePasswordPolicyFor(userSam: string): GpoAccountPolicy | null {
+    const user = this.findUserEntry(userSam);
+    return user ? this.psoStore.effectivePasswordPolicyFor(user) : null;
   }
 
   // ─── Users ──────────────────────────────────────────────────────────
