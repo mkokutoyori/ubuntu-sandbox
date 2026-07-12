@@ -339,9 +339,11 @@ export class DirectoryStore {
   setPsoAppliesTo(name: string, principals: string[]): DirOpResult { return this.psoStore.setPsoAppliesTo(name, principals); }
 
   /** The winning PSO's settings for `userSam`, or `null` if none applies (caller falls back to the domain default `GpoAccountPolicy`). */
+  /** A PSO covering this user wins outright (never merged, real AD's own precedence rule); otherwise falls back to the domain-wide default (Default Domain Policy's `accountPolicy`, PRD §5 P10). */
   effectivePasswordPolicyFor(userSam: string): GpoAccountPolicy | null {
     const user = this.findUserEntry(userSam);
-    return user ? this.psoStore.effectivePasswordPolicyFor(user) : null;
+    if (!user) return null;
+    return this.psoStore.effectivePasswordPolicyFor(user) ?? this.gpoStore.getGpo('Default Domain Policy')?.settings.accountPolicy ?? null;
   }
 
   // ─── FSMO roles (domain-wide: RID Master / PDC Emulator / Infrastructure Master) ────
@@ -442,6 +444,7 @@ export class DirectoryStore {
       fullName: firstOf(entry.attributes.get('displayname')),
       objectSid: firstOf(entry.attributes.get('objectsid')),
       adminCount: firstOf(entry.attributes.get('admincount')) === '1',
+      lockedOut: this.isAccountLockedOut(firstOf(entry.attributes.get('samaccountname'))),
     };
   }
 
@@ -471,10 +474,62 @@ export class DirectoryStore {
     return res.ok ? { ok: true, message: '' } : { ok: false, message: res.message };
   }
 
+  /**
+   * Real AD's account lockout policy (`lockoutThreshold`/
+   * `lockoutDurationMinutes`, PSO or domain default) — dormant until now:
+   * this is the sole gate for an LDAP simple bind (`getBindCheck`), never
+   * consulted by the real Kerberos AS-REQ path (`getUserSecret`), so
+   * lockout here only covers simple-bind authentication attempts, not a
+   * full AS-REQ preauth failure count.
+   */
   checkPassword(sam: string, password: string): boolean {
     const entry = this.findUserEntry(sam);
     if (!entry) return false;
-    return isEnabledFromUac(entry.attributes.get('useraccountcontrol')) && firstOf(entry.attributes.get('userpassword')) === password;
+    if (!isEnabledFromUac(entry.attributes.get('useraccountcontrol'))) return false;
+
+    const policy = this.effectivePasswordPolicyFor(sam);
+    const threshold = policy?.lockoutThreshold ?? 0;
+    const durationSeconds = (policy?.lockoutDurationMinutes ?? 30) * 60;
+    const now = Math.floor(Date.now() / 1000);
+    const lockoutTime = Number(firstOf(entry.attributes.get('lockouttime'))) || 0;
+    if (lockoutTime > 0) {
+      if (now - lockoutTime < durationSeconds) return false;
+      this.tree.modifyEntry(entry.dn, [
+        { op: 'replace', type: 'lockoutTime', values: [] }, { op: 'replace', type: 'badPwdCount', values: [] },
+      ]);
+    }
+
+    const matches = firstOf(entry.attributes.get('userpassword')) === password;
+    if (matches) {
+      if (firstOf(entry.attributes.get('badpwdcount'))) this.tree.modifyEntry(entry.dn, [{ op: 'replace', type: 'badPwdCount', values: [] }]);
+      return true;
+    }
+    if (threshold > 0) {
+      const badPwdCount = (Number(firstOf(entry.attributes.get('badpwdcount'))) || 0) + 1;
+      const changes: { op: 'replace'; type: string; values: string[] }[] = [{ op: 'replace', type: 'badPwdCount', values: [String(badPwdCount)] }];
+      if (badPwdCount >= threshold) changes.push({ op: 'replace', type: 'lockoutTime', values: [String(now)] });
+      this.tree.modifyEntry(entry.dn, changes);
+    }
+    return false;
+  }
+
+  isAccountLockedOut(sam: string): boolean {
+    const entry = this.findUserEntry(sam);
+    if (!entry) return false;
+    const lockoutTime = Number(firstOf(entry.attributes.get('lockouttime'))) || 0;
+    if (lockoutTime === 0) return false;
+    const durationSeconds = (this.effectivePasswordPolicyFor(sam)?.lockoutDurationMinutes ?? 30) * 60;
+    return Math.floor(Date.now() / 1000) - lockoutTime < durationSeconds;
+  }
+
+  /** `Unlock-ADAccount` — clears the lockout immediately, without waiting out the policy's duration. */
+  unlockAccount(sam: string): DirOpResult {
+    const entry = this.findUserEntry(sam);
+    if (!entry) return { ok: false, message: `Cannot find an object with identity: '${sam}'.` };
+    this.tree.modifyEntry(entry.dn, [
+      { op: 'replace', type: 'lockoutTime', values: [] }, { op: 'replace', type: 'badPwdCount', values: [] },
+    ]);
+    return { ok: true, message: '' };
   }
 
   /** The user's (or krbtgt's) long-term secret — for `KdcSession` to derive the client's/service's Kerberos key from, not for authentication (see `checkPassword`). Null if absent, matching `KDC_ERR_C_PRINCIPAL_UNKNOWN`. */

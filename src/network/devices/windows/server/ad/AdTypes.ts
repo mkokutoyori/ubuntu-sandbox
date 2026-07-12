@@ -20,6 +20,8 @@ export interface AdUser {
   objectSid: string;
   /** Set by SDProp once this user is (or ever was) a member of a protected group — real AD never clears it back automatically, even after removal. */
   adminCount: boolean;
+  /** True while the account's lockout duration (PSO or domain default) hasn't yet elapsed since its last lockout — see `DirectoryStore.checkPassword`/`unlockAccount`. */
+  lockedOut: boolean;
 }
 
 export interface AdGroup {

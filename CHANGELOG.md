@@ -5,6 +5,38 @@ progressive par équipement. Un push = une entrée = une fonctionnalité
 complète et testée (voir `CLAUDE.md` / le framework de migration pour les
 principes directeurs).
 
+## Windows Server — verrouillage de compte (politique de mots de passe enfin appliquée)
+
+`DirectoryStore.effectivePasswordPolicyFor` existait depuis la tâche
+PSO mais n'était appelée nulle part — code mort. Elle gagne d'abord un
+repli sur la politique par défaut du domaine (`accountPolicy` de
+Default Domain Policy) quand aucun PSO ne s'applique, puis est
+réellement branchée : `checkPassword` — seule porte d'un vrai bind
+simple LDAP — suit désormais `badPwdCount`/`lockoutTime` par utilisateur
+et verrouille le compte après `lockoutThreshold` échecs consécutifs,
+pour `lockoutDurationMinutes` (déverrouillage automatique une fois le
+délai écoulé, compteur remis à zéro dès une authentification réussie).
+Nouveaux `isAccountLockedOut(sam)` et `unlockAccount(sam)`
+(`Unlock-ADAccount`). `AdUser` gagne `lockedOut`.
+
+**Portée délibérément limitée** : seul le bind simple LDAP est couvert.
+L'échange Kerberos AS-REQ réel (`KdcSession`/`getUserSecret`) n'est PAS
+touché — il ne consulte jamais `checkPassword`, et le brancher sur le
+verrouillage aurait un rayon d'impact bien plus large (chaque test
+`kerberos-*`/logon de domaine) pour un gain hors de proportion avec une
+tâche auto-initiée. Documenté explicitement dans le code plutôt que
+laissé implicite.
+
+**Validation** : nouveau `ad-account-lockout.test.ts` (4 tests) —
+verrouillage après le seuil par défaut du domaine (5) vérifié sur un
+vrai bind LDAP distant depuis une seconde machine, remise à zéro du
+compteur sur un succès avant d'atteindre le seuil, déverrouillage
+manuel immédiat, priorité d'un PSO à seuil plus strict sur la politique
+par défaut. Suite élargie (AD/GPO/LDAP/Kerberos, 7 fichiers) : 103/103
+au vert, aucune régression, y compris sur `kerberos-as-exchange.test.ts`
+(confirmant l'absence d'impact sur le chemin Kerberos). Typecheck et
+lint ciblés propres.
+
 ## Windows Server — suppression d'unité d'organisation + protection contre la suppression accidentelle
 
 Aucune voie de suppression d'OU n'existait jusqu'ici dans ce simulateur.
