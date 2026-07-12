@@ -5,6 +5,51 @@ progressive par équipement. Un push = une entrée = une fonctionnalité
 complète et testée (voir `CLAUDE.md` / le framework de migration pour les
 principes directeurs).
 
+## Windows Server — contrôleur de domaine en lecture seule (RODC)
+
+`DirectoryTree` gagne un drapeau `readOnly` (MS-ADTS §3.1.1.1.11) :
+`addEntry`/`modifyEntry`/`deleteEntry`/`renameEntry` refusent
+systématiquement (`unwillingToPerform`) dès que le drapeau est actif —
+qu'ils soient invoqués localement (cmdlets) ou via une requête LDAP
+distante (`LdapServerHandler` passe par les mêmes méthodes de l'arbre,
+donc le refus s'applique aux deux sans plomberie séparée).
+`applyReplicatedEntry` reste volontairement exempté : un RODC continue
+d'absorber normalement les cycles de réplication entrants, seule
+l'origination de nouvelles écritures est bloquée. Nouveau code résultat
+LDAP `unwillingToPerform` (53, RFC 4511 §4.1.9) ajouté à
+`LdapMessage.ts` et mappé dans `treeMessageToResultCode`.
+
+**Bootstrap** : la promotion d'un RODC crée quand même son propre compte
+ordinateur localement (`DirectoryStore.promoteDomainController`) — seul
+appelant à passer `bypassReadOnly: true` à `addEntry`, jamais atteignable
+depuis LDAP ou un cmdlet (mirroring le fait que le vrai dcpromo garde
+cette étape distincte des écritures LDAP ordinaires).
+`WindowsServer.installADDSDomainController` gagne un paramètre
+`readOnlyReplica`.
+
+**Password Replication Policy** (nouveau module
+`ad/rodc/PasswordReplicationPolicy.ts`, listes autorisée/refusée par sam,
+appartenance directe uniquement — même simplification que
+`groupsForUser` — un refus explicite l'emporte toujours sur une
+autorisation) : `DirectoryStore.applyReplicatedEntry` retire désormais
+`userPassword` (attribut ET timbre de réplication associé) de tout
+utilisateur/ordinateur reçu par réplication qui n'est pas couvert par la
+politique du RODC — celui-ci n'a donc jamais le vrai secret d'un
+principal non autorisé, aucune plomberie fil supplémentaire requise
+(le filtrage est une décision locale du RODC receveur, pas un nouveau
+PDU).
+
+**Validation** : nouveau `ad-rodc.test.ts` (6 tests) — drapeau lecture
+seule correct des deux côtés après promotion, compte ordinateur du RODC
+bien créé malgré le lecture seule, refus d'une écriture locale
+(`New-ADUser`), refus d'une écriture LDAP distante réelle
+(`unwillingToPerform` vérifié sur le code de résultat), mise en cache
+du mot de passe d'un utilisateur couvert vs non couvert sur un cycle de
+réplication ultérieur, refus explicite qui l'emporte sur une
+autorisation pour le même principal. Suite élargie (AD/GPO/LDAP/
+réplication, 9 fichiers) : 151/152 au vert, seul échec préexistant hors
+périmètre (bascule `whoami`). Typecheck et lint ciblés propres.
+
 ## Windows Server — comptes de service (gérés / gérés par groupe), `msDS-ManagedPassword` gardé sur LDAP réel
 
 Nouveau module `ad/msa/ManagedServiceAccountStore.ts` : comptes de

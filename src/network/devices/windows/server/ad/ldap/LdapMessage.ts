@@ -39,6 +39,7 @@ export const LdapResultCode = {
   notAllowedOnNonLeaf: 66,
   entryAlreadyExists: 68,
   referral: 10,
+  unwillingToPerform: 53,
   other: 80,
 } as const;
 export type LdapResultCodeValue = typeof LdapResultCode[keyof typeof LdapResultCode];

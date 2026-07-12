@@ -34,6 +34,7 @@ import { DomainFsmoRoles, type DomainFsmoRole } from './fsmo/FsmoRoles';
 import { RidPool } from './fsmo/RidPool';
 import { SdPropEngine } from './security/SdProp';
 import { ManagedServiceAccountStore } from './msa/ManagedServiceAccountStore';
+import { PasswordReplicationPolicy } from './rodc/PasswordReplicationPolicy';
 
 export interface DirOpResult { ok: boolean; message: string }
 
@@ -108,6 +109,8 @@ export class DirectoryStore {
   private nextGlobalRidPoolStart: number | null = null;
   private readonly sdProp: SdPropEngine;
   private readonly msaStore: ManagedServiceAccountStore;
+  private readonly readOnly: boolean;
+  private readonly prp = new PasswordReplicationPolicy();
 
   /**
    * `opts.skipSeed` (PRD-Windows-Server-Advanced.md §5 P5): an additional
@@ -117,22 +120,29 @@ export class DirectoryStore {
    * duplicates. It instead starts with an empty tree and relies entirely
    * on the initial replication sync (§5 P4) to populate everything,
    * exactly like real DCPromo's initial-sync-from-a-source-DC step.
+   *
+   * `opts.readOnly`: an RODC (MS-ADTS §3.1.1.1.11) — implies `skipSeed`
+   * in practice (an RODC is always an *additional* DC), refuses every
+   * local/LDAP-originated write on its `DirectoryTree`, and filters
+   * uncached users'/computers' `userPassword` out of what it accepts via
+   * replication (see `applyReplicatedEntry`).
    */
   constructor(
     readonly dnsName: string,
     readonly netbiosName: string,
     adminPassword: string,
-    opts: { skipSeed?: boolean; sharedSchemaValidator?: SchemaValidator } = {},
+    opts: { skipSeed?: boolean; sharedSchemaValidator?: SchemaValidator; readOnly?: boolean } = {},
   ) {
     const rootDn = parseDN(this.dnsName.split('.').map(p => `DC=${p}`).join(','));
     this.schemaValidator = opts.sharedSchemaValidator ?? new SchemaValidator();
+    this.readOnly = opts.readOnly ?? false;
     const domainSid = opts.skipSeed ? undefined : generateDomainSid();
     this.tree = new DirectoryTree(rootDn, {
       objectClass: ['top', 'domain', 'domainDNS'],
       ...(domainSid ? { domainSid: [domainSid] } : {}),
     }, {
       invocationId: this.invocationId, nextUsn: () => ++this.localUsn,
-    }, this.schemaValidator);
+    }, this.schemaValidator, this.readOnly);
     this.usersOuDn = [...parseDN('CN=Users'), ...rootDn];
     this.computersOuDn = [...parseDN('CN=Computers'), ...rootDn];
     this.policiesDn = [...parseDN('CN=Policies'), ...parseDN('CN=System'), ...rootDn];
@@ -207,12 +217,28 @@ export class DirectoryStore {
     return this.tree.changedSince(partnerVector);
   }
 
-  /** Applies one entry pulled from a replication partner (attribute-by-attribute — see `DirectoryTree.applyReplicatedEntry`) and advances this DC's record of how caught-up it is with every DC whose writes appear in `stamp`, not just the partner dialed directly. */
+  /** Applies one entry pulled from a replication partner (attribute-by-attribute — see `DirectoryTree.applyReplicatedEntry`) and advances this DC's record of how caught-up it is with every DC whose writes appear in `stamp`, not just the partner dialed directly. On an RODC, a user/computer not covered by the Password Replication Policy never gets its real `userPassword` cached locally (MS-ADTS §3.1.1.1.11). */
   applyReplicatedEntry(dn: string, attributes: Record<string, string[]>, stamp: EntryReplMeta): void {
     let parsed: DistinguishedName;
     try { parsed = parseDN(dn); } catch { return; }
-    this.tree.applyReplicatedEntry(parsed, attributes, stamp);
+    const filtered = this.readOnly ? this.filterSecretsForRodc(attributes, stamp) : { attributes, stamp };
+    this.tree.applyReplicatedEntry(parsed, filtered.attributes, filtered.stamp);
     for (const attrStamp of stamp.values()) recordUsn(this.inboundHighWatermark, attrStamp.originatingInvocationId, attrStamp.originatingUsn);
+  }
+
+  private filterSecretsForRodc(attributes: Record<string, string[]>, stamp: EntryReplMeta): { attributes: Record<string, string[]>; stamp: EntryReplMeta } {
+    const sam = (attributes.sAMAccountName ?? attributes.samaccountname)?.[0];
+    if (!sam || this.prp.isCachingAllowed(sam.replace(/\$$/, ''))) return { attributes, stamp };
+    return {
+      attributes: Object.fromEntries(Object.entries(attributes).filter(([k]) => k.toLowerCase() !== 'userpassword')),
+      stamp: new Map([...stamp].filter(([k]) => k !== 'userpassword')),
+    };
+  }
+
+  isReadOnly(): boolean { return this.readOnly; }
+  setPasswordReplicationPolicy(allow: readonly string[], deny: readonly string[]): void { this.prp.setPolicy(allow, deny); }
+  getPasswordReplicationPolicy(): { allowed: string[]; denied: string[] } {
+    return { allowed: this.prp.getAllowed(), denied: this.prp.getDenied() };
   }
 
   /** Resolves an OU by name (`"Sales"`) or nested path (`"Sales/EU"`, top-down, matching `New-ADOrganizationalUnit -Path`'s parent-first convention). */
@@ -593,7 +619,7 @@ export class DirectoryStore {
       userAccountControl: [String(UAC.SERVER_TRUST_ACCOUNT)],
       userPassword: [machineSecret],
       objectSid: rid !== null ? [this.formatObjectSid(rid)] : [],
-    }));
+    }), { bypassReadOnly: true });
     return res.ok ? { ok: true, message: '' } : { ok: false, message: 'An object with that name already exists.' };
   }
 

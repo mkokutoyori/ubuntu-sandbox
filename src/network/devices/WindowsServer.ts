@@ -524,10 +524,17 @@ export class WindowsServer extends WindowsPC {
    * replication pull from the source DC (§5 P4) *before* adding this
    * server's own computer account, since that account's parent OU only
    * exists once the sync has populated it.
+   *
+   * `readOnlyReplica` (MS-ADTS §3.1.1.1.11): promotes an RODC instead —
+   * every local/LDAP write this DC's own `DirectoryTree` would otherwise
+   * accept is refused, and a user/computer not covered by the Password
+   * Replication Policy (`DirectoryStore.setPasswordReplicationPolicy`)
+   * never gets its real secret cached locally.
    */
   installADDSDomainController(
     domainName: string, netbiosName: string | undefined, sourceDcAddress: string,
     credentialUser: string, credentialPassword: string, safeModeAdminPassword: string,
+    readOnlyReplica = false,
   ): AdDsOpResult {
     if (!this.roleManager.isInstalled('AD-Domain-Services')) {
       return { ok: false, message: 'Install-ADDSDomainController : The Active Directory Domain Services role is not installed on this computer.' };
@@ -547,7 +554,7 @@ export class WindowsServer extends WindowsPC {
     }
 
     const netbios = netbiosName ?? domainName.split('.')[0].toUpperCase();
-    const store = new DirectoryStore(domainName, netbios, safeModeAdminPassword, { skipSeed: true });
+    const store = new DirectoryStore(domainName, netbios, safeModeAdminPassword, { skipSeed: true, readOnly: readOnlyReplica });
     const sync = pullReplication(this.getTcpStack(), sourceDcAddress, store);
     /**
      * The initial sync (PRD-Windows-Server-Advanced.md §5 P12) has no

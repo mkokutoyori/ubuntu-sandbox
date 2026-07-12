@@ -76,6 +76,7 @@ function treeMessageToResultCode(message: string): number {
   if (message.startsWith('entryAlreadyExists')) return LdapResultCode.entryAlreadyExists;
   if (message.startsWith('notAllowedOnNonLeaf')) return LdapResultCode.notAllowedOnNonLeaf;
   if (message.startsWith('namingViolation')) return LdapResultCode.namingViolation;
+  if (message.startsWith('unwillingToPerform')) return LdapResultCode.unwillingToPerform;
   return LdapResultCode.operationsError;
 }
 

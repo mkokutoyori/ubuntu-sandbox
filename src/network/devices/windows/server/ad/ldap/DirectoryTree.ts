@@ -105,6 +105,8 @@ export class DirectoryTree {
     private readonly replication?: ReplicationIdentity,
     /** RFC 4512 schema validation (PRD-Windows-Server-Advanced.md §5 P7) — absent on any `DirectoryTree` with no schema partition (e.g. the LDAP wire-protocol unit tests), which behaves exactly as before this phase. */
     private readonly schema?: SchemaValidator,
+    /** An RODC's replica (MS-ADTS §3.1.1.1.11): refuses every local/LDAP-originated write (`addEntry`/`modifyEntry`/`deleteEntry`/`renameEntry`) with `unwillingToPerform`, same as real AD — `applyReplicatedEntry` is deliberately exempt, since an RODC still absorbs a full (filtered) copy of the directory via ordinary replication. */
+    private readonly readOnly = false,
   ) {
     const dn = typeof baseDn === 'string' ? parseDN(baseDn) : baseDn;
     this.root = { dn, attributes: toAttrMap(rootAttributes), children: new Map(), replMeta: null };
@@ -134,8 +136,26 @@ export class DirectoryTree {
     return this.byDn.get(this.dnIndexKey(dn)) ?? null;
   }
 
-  /** RFC 4511 §4.6 AddRequest — fails with entryAlreadyExists / noSuchObject (missing parent) / objectClassViolation (RFC 4512 schema, §5 P7 — only for `objectClass` values that have a registered `classSchema`; permissive for everything else). */
-  addEntry(dn: DistinguishedName, attributes: Record<string, string[]>): TreeOpResult {
+  /** `unwillingToPerform` on an RODC's replica, `null` otherwise — checked first by every write operation. */
+  private refuseIfReadOnly(): TreeOpResult | null {
+    return this.readOnly ? { ok: false, message: 'unwillingToPerform: this DC hosts a read-only directory replica' } : null;
+  }
+
+  /**
+   * RFC 4511 §4.6 AddRequest — fails with entryAlreadyExists / noSuchObject
+   * (missing parent) / objectClassViolation (RFC 4512 schema, §5 P7 — only
+   * for `objectClass` values that have a registered `classSchema`;
+   * permissive for everything else). `bypassReadOnly` exists for exactly
+   * one caller — an RODC creating its own computer account during
+   * promotion (MS-ADTS §3.1.1.1.11's own bootstrap, distinct from ordinary
+   * directory writes real AD also keeps separate) — never reachable from
+   * LDAP or any AD cmdlet.
+   */
+  addEntry(dn: DistinguishedName, attributes: Record<string, string[]>, opts: { bypassReadOnly?: boolean } = {}): TreeOpResult {
+    if (!opts.bypassReadOnly) {
+      const refusal = this.refuseIfReadOnly();
+      if (refusal) return refusal;
+    }
     if (dn.length === 0) return { ok: false, message: 'namingViolation: cannot add the root entry' };
     if (this.getByDn(dn)) return { ok: false, message: 'entryAlreadyExists' };
     const parentDn = parentOf(dn);
@@ -156,6 +176,8 @@ export class DirectoryTree {
 
   /** RFC 4511 §4.8 DelRequest — real AD (and this tree) refuses to delete a non-leaf entry. */
   deleteEntry(dn: DistinguishedName): TreeOpResult {
+    const refusal = this.refuseIfReadOnly();
+    if (refusal) return refusal;
     const entry = this.getByDn(dn);
     if (!entry) return { ok: false, message: 'noSuchObject' };
     if (entry.children.size > 0) return { ok: false, message: 'notAllowedOnNonLeaf' };
@@ -168,6 +190,8 @@ export class DirectoryTree {
 
   /** RFC 4511 §4.6 ModifyRequest — add/delete/replace on one or more attribute types. */
   modifyEntry(dn: DistinguishedName, changes: readonly Modification[]): TreeOpResult {
+    const refusal = this.refuseIfReadOnly();
+    if (refusal) return refusal;
     const entry = this.getByDn(dn);
     if (!entry) return { ok: false, message: 'noSuchObject' };
     const touchedKeys = new Set<string>();
@@ -245,6 +269,8 @@ export class DirectoryTree {
    * entry's own DN, so they're all rewritten too.
    */
   renameEntry(dn: DistinguishedName, newRdnStr: string, deleteOldRdn: boolean, newSuperior?: DistinguishedName): TreeOpResult {
+    const refusal = this.refuseIfReadOnly();
+    if (refusal) return refusal;
     const entry = this.getByDn(dn);
     if (!entry) return { ok: false, message: 'noSuchObject' };
     const oldParentDn = parentOf(dn);
