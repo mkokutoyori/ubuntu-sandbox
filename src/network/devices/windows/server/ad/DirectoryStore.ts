@@ -270,10 +270,15 @@ export class DirectoryStore {
 
   // ─── Organizational Units ───────────────────────────────────────────
 
-  newOrgUnit(path: string): DirOpResult {
+  /** Matches `New-ADOrganizationalUnit`'s own default: a fresh OU is protected from accidental deletion unless the caller opts out. */
+  newOrgUnit(path: string, opts: { protectedFromAccidentalDeletion?: boolean } = {}): DirOpResult {
     const segments = path.split('/').filter(s => s.length > 0);
     const leafName = segments[segments.length - 1] ?? path;
-    const res = this.tree.addEntry(this.ouDn(path), { objectClass: ['top', 'organizationalUnit'], ou: [leafName] });
+    const protect = opts.protectedFromAccidentalDeletion ?? true;
+    const res = this.tree.addEntry(this.ouDn(path), {
+      objectClass: ['top', 'organizationalUnit'], ou: [leafName],
+      protectedFromAccidentalDeletion: [String(protect)],
+    });
     if (res.ok) return { ok: true, message: '' };
     if (res.message.startsWith('noSuchObject')) return { ok: false, message: `Cannot find an object with identity: parent of '${path}'.` };
     return { ok: false, message: 'An object with that name already exists.' };
@@ -290,8 +295,27 @@ export class DirectoryStore {
       .map(e => this.projectOrgUnit(e));
   }
 
+  setOuProtectedFromAccidentalDeletion(path: string, protect: boolean): DirOpResult {
+    const dn = this.ouDn(path);
+    if (!this.tree.getByDn(dn)) return { ok: false, message: `Cannot find an object with identity: '${path}'.` };
+    this.tree.modifyEntry(dn, [{ op: 'replace', type: 'protectedFromAccidentalDeletion', values: [String(protect)] }]);
+    return { ok: true, message: '' };
+  }
+
+  /** `Remove-ADOrganizationalUnit` — refuses (via `DirectoryTree.deleteEntry`'s own check) unless `protectedFromAccidentalDeletion` was cleared first, matching real AD's own two-step removal. */
+  removeOrgUnit(path: string): DirOpResult {
+    const dn = this.ouDn(path);
+    if (!this.tree.getByDn(dn)) return { ok: false, message: `Cannot find an object with identity: '${path}'.` };
+    return this.tree.deleteEntry(dn);
+  }
+
   private projectOrgUnit(entry: DirectoryEntry): AdOrgUnit {
-    return { name: firstOf(entry.attributes.get('ou')), dn: formatDN(entry.dn), gpLinks: entry.attributes.get('gplink') ?? [] };
+    return {
+      name: firstOf(entry.attributes.get('ou')),
+      dn: formatDN(entry.dn),
+      gpLinks: entry.attributes.get('gplink') ?? [],
+      protectedFromAccidentalDeletion: firstOf(entry.attributes.get('protectedfromaccidentaldeletion')) === 'true',
+    };
   }
 
   // ─── Group Policy Objects (PRD-Windows-Server.md §5 P10) ────────────

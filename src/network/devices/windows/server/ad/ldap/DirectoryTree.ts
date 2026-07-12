@@ -180,6 +180,9 @@ export class DirectoryTree {
     if (refusal) return refusal;
     const entry = this.getByDn(dn);
     if (!entry) return { ok: false, message: 'noSuchObject' };
+    if ((entry.attributes.get('protectedfromaccidentaldeletion') ?? [])[0] === 'true') {
+      return { ok: false, message: 'accessDenied: object is protected from accidental deletion' };
+    }
     if (entry.children.size > 0) return { ok: false, message: 'notAllowedOnNonLeaf' };
     const parentDn = parentOf(dn);
     const parent = parentDn ? this.getByDn(parentDn) : null;

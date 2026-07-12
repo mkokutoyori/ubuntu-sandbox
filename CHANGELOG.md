@@ -5,6 +5,36 @@ progressive par équipement. Un push = une entrée = une fonctionnalité
 complète et testée (voir `CLAUDE.md` / le framework de migration pour les
 principes directeurs).
 
+## Windows Server — suppression d'unité d'organisation + protection contre la suppression accidentelle
+
+Aucune voie de suppression d'OU n'existait jusqu'ici dans ce simulateur.
+`DirectoryStore.removeOrgUnit(path)` (équivalent `Remove-
+ADOrganizationalUnit`) comble ce manque — et reproduit d'emblée le
+comportement par défaut réel de `New-ADOrganizationalUnit` : une OU
+fraîchement créée est protégée contre la suppression accidentelle
+(`protectedFromAccidentalDeletion: true` par défaut, `newOrgUnit`
+acceptant `{ protectedFromAccidentalDeletion: false }` pour créer
+directement une OU non protégée). `setOuProtectedFromAccidentalDeletion`
+permet de lever/reposer la protection après coup.
+
+`DirectoryTree.deleteEntry` porte désormais ce refus (`accessDenied`) à
+la source — un seul point de contrôle, atteint aussi bien par un appel
+local que par un `delRequest` LDAP distant, sans plomberie séparée
+(même schéma que le refus `unwillingToPerform` d'un RODC). Nouveau
+mappage dans `treeMessageToResultCode` : `accessDenied` →
+`insufficientAccessRights` (50, code déjà existant, aucun nouveau code
+LDAP nécessaire). `AdOrgUnit` gagne le champ
+`protectedFromAccidentalDeletion`.
+
+**Validation** : nouveau `ad-ou-deletion-protection.test.ts` (6 tests)
+— protection par défaut, refus de suppression tant que protégée,
+suppression réussie après levée de la protection, création directe non
+protégée, refus de suppression d'une OU non-feuille (indépendant de la
+protection), refus `insufficientAccessRights` vérifié sur un vrai
+`delRequest` LDAP distant. Suite élargie (GPO/AD/réplication, 7
+fichiers) : 112/112 au vert, aucune régression. Typecheck et lint
+ciblés propres.
+
 ## Windows Server — contrôleur de domaine en lecture seule (RODC)
 
 `DirectoryTree` gagne un drapeau `readOnly` (MS-ADTS §3.1.1.1.11) :

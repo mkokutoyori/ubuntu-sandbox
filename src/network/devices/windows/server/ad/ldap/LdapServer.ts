@@ -77,6 +77,7 @@ function treeMessageToResultCode(message: string): number {
   if (message.startsWith('notAllowedOnNonLeaf')) return LdapResultCode.notAllowedOnNonLeaf;
   if (message.startsWith('namingViolation')) return LdapResultCode.namingViolation;
   if (message.startsWith('unwillingToPerform')) return LdapResultCode.unwillingToPerform;
+  if (message.startsWith('accessDenied')) return LdapResultCode.insufficientAccessRights;
   return LdapResultCode.operationsError;
 }
 
