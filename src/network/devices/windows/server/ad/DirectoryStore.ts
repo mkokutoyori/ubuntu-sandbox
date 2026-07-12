@@ -38,6 +38,15 @@ import { PasswordReplicationPolicy } from './rodc/PasswordReplicationPolicy';
 
 export interface DirOpResult { ok: boolean; message: string }
 
+/** One attribute's replication stamp, flattened for introspection (`getReplicationMetadataFor`) — see `AttributeReplStamp` for field semantics. */
+export interface ReplicationAttributeMetadata {
+  attributeName: string;
+  originatingInvocationId: string;
+  originatingUsn: number;
+  version: number;
+  timestamp: number;
+}
+
 /** RFC-faithful AD userAccountControl bit flags (the subset this simulator needs). */
 const UAC = {
   ACCOUNTDISABLE: 0x0002,
@@ -250,6 +259,16 @@ export class DirectoryStore {
   setPasswordReplicationPolicy(allow: readonly string[], deny: readonly string[]): void { this.prp.setPolicy(allow, deny); }
   getPasswordReplicationPolicy(): { allowed: string[]; denied: string[] } {
     return { allowed: this.prp.getAllowed(), denied: this.prp.getDenied() };
+  }
+
+  /** `Get-ADReplicationAttributeMetadata`-equivalent — every attribute's per-attribute replication stamp for the object at `dn`, or `null` if no such object exists. */
+  getReplicationMetadataFor(dn: string): ReplicationAttributeMetadata[] | null {
+    let parsed: DistinguishedName;
+    try { parsed = parseDN(dn); } catch { return null; }
+    const entry = this.tree.getByDn(parsed);
+    if (!entry) return null;
+    if (!entry.replMeta) return [];
+    return [...entry.replMeta.entries()].map(([attributeName, stamp]) => ({ attributeName, ...stamp }));
   }
 
   /** Resolves an OU by name (`"Sales"`) or nested path (`"Sales/EU"`, top-down, matching `New-ADOrganizationalUnit -Path`'s parent-first convention). */

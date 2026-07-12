@@ -5,6 +5,25 @@ progressive par équipement. Un push = une entrée = une fonctionnalité
 complète et testée (voir `CLAUDE.md` / le framework de migration pour les
 principes directeurs).
 
+## Windows Server — introspection des métadonnées de réplication (`Get-ADReplicationAttributeMetadata`)
+
+Le timbre par attribut (`AttributeReplStamp`, ajouté par la mise à
+niveau de réplication par attribut) n'était utilisable que par le
+moteur de réplication lui-même. Nouveau `getReplicationMetadataFor(dn)`
+sur `DirectoryStore`, projetant la `Map` interne en tableau plat
+`ReplicationAttributeMetadata[]` (`attributeName` +
+`originatingInvocationId`/`originatingUsn`/`version`/`timestamp`) —
+`null` si l'objet n'existe pas, `[]` s'il existe mais n'a jamais été
+timbré.
+
+**Validation** : nouveau `ad-replication-metadata.test.ts` (3 tests) —
+une écriture réelle fait progresser `version` (1 puis 2 après un second
+changement), `null` sur un DN inconnu, deux DC convergent vers des
+timbres strictement identiques (`originatingInvocationId`, `version`,
+`originatingUsn`) pour un attribut après un cycle de réplication réel.
+Suite élargie (`ad-replication`, `ad-directory-store`, `ad-rodc`) :
+65/65 au vert. Typecheck et lint ciblés propres.
+
 ## Windows Server — délégation contrainte basée sur la ressource (RBCD)
 
 Seule la délégation contrainte classique (front-end, `msDS-
