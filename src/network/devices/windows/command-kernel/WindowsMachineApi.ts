@@ -64,6 +64,7 @@ import {
   DnsServerAdminApi,
   DnsServerZoneRecord,
   DnsSrvRecordData,
+  RunAsApi,
   WindowsHttpStore,
   WindowsIpsecDynamicSettings,
   WindowsIpsecFilter,
@@ -210,6 +211,9 @@ export interface WindowsMachineApiDeps {
   addDhcpEvent(type: string, message: string): void;
   gpupdateForce(): { ok: boolean; message: string };
   groupPolicyResult(): WindowsGpResult | null;
+  runasGetUser(name: string): { readonly name: string; readonly enabled: boolean } | undefined;
+  runasCurrentUser(): string;
+  runasCommandAs(userName: string, command: string): Promise<string>;
   locateDomainController(domain: string): DomainControllerLocation;
   dcDiagnostics(): DomainControllerDiagnostics;
   kerberosTickets(): readonly KerberosCachedTicket[];
@@ -1771,6 +1775,19 @@ class WindowsDomainApiImpl implements DomainApi {
   }
 }
 
+class WindowsRunAsApiImpl implements RunAsApi {
+  constructor(private readonly deps: Pick<WindowsMachineApiDeps, 'runasGetUser' | 'runasCurrentUser' | 'runasCommandAs'>) {}
+  getUser(name: string): { readonly name: string; readonly enabled: boolean } | undefined {
+    return this.deps.runasGetUser(name);
+  }
+  currentUser(): string {
+    return this.deps.runasCurrentUser();
+  }
+  runCommandAs(userName: string, command: string): Promise<string> {
+    return this.deps.runasCommandAs(userName, command);
+  }
+}
+
 export class WindowsMachineApi implements MachineApi {
   readonly fs: FileSystemApi;
   readonly proc: ProcessApi;
@@ -1792,6 +1809,7 @@ export class WindowsMachineApi implements MachineApi {
   readonly netConfig: WindowsNetConfigApi;
   readonly eventLog: EventLogApi;
   readonly domain: DomainApi;
+  readonly runAs: RunAsApi;
   readonly hostname: string;
   readonly os: OsIdentity;
   readonly hardware: CkHardwareProfile;
@@ -1831,6 +1849,7 @@ export class WindowsMachineApi implements MachineApi {
     this.netConfig = new WindowsNetConfigApiImpl(() => deps.ports, deps);
     this.eventLog = new WindowsEventLogApiImpl(deps);
     this.domain = new WindowsDomainApiImpl(deps);
+    this.runAs = new WindowsRunAsApiImpl(deps);
     this.hostname = deps.hostname;
     this.os = {
       name: deps.identity.os.name,

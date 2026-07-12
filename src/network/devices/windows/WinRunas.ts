@@ -91,17 +91,6 @@ export async function runAsUser(host: RunasHost, userName: string, command: stri
   }
 }
 
-/** The plain, non-interactive `runas` path (no password check — see file header). */
-export async function runRunasNonInteractive(host: RunasHost, args: string[]): Promise<string> {
-  const parsed = parseRunasArgs(args);
-  if (parsed.ok === false) return parsed.error;
-  const { userName, command, netOnly } = parsed.invocation;
-  if (netOnly) return runAsUser(host, host.getCurrentUser(), command);
-  const validation = validateRunasUser(host, userName);
-  if (validation.ok === false) return validation.error;
-  return runAsUser(host, userName, command);
-}
-
 /** Real runas.exe's wrong-password message — a single attempt, no retry (unlike SSH). */
 export function runasIncorrectPasswordMessage(command: string): string {
   return `RUNAS ERROR: Unable to run - ${command}.\n1326: The user name or password is incorrect.`;

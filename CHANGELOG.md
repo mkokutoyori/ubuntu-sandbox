@@ -5,6 +5,37 @@ progressive par équipement. Un push = une entrée = une fonctionnalité
 complète et testée (voir `CLAUDE.md` / le framework de migration pour les
 principes directeurs).
 
+## Windows Phase 26 : migration de `runas` (chemin non-interactif) vers command-kernel
+
+**État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
+
+Migration du chemin non-interactif de `runas`
+(`device.executeCommand('runas …')`, sans terminal donc sans vérification
+de mot de passe) — jusqu'ici non dispatché — vers le socle `command-kernel`.
+Le vrai prompt masqué vérifié de `WindowsTerminalSession` (chemin
+interactif) n'est **pas** touché.
+
+- Nouvelle capacité optionnelle `runAs?: RunAsApi` sur `MachineApi` :
+  `getUser` (validation, forme d'une `RunasUserSource`), `currentUser`
+  (`/netonly` = « exécuter en tant que l'appelant ») et `runCommandAs`
+  (changement d'identité + **ré-entrée récursive** du shell puis
+  restauration — vraie logon session distincte).
+- `WindowsMachineApi` expose `runAs` en déléguant à
+  `userMgr.getUser`/`currentUser` et à la primitive device
+  `runAsUserVerified`.
+- Commande `RunasCommand` : **réutilise** les helpers purs partagés
+  `parseRunasArgs` / `validateRunasUser` (mêmes fonctions que le chemin
+  terminal — pas de duplication) et porte l'orchestration/le formatage ;
+  aide réelle complète (`runas /?`) en `usage`.
+- Méthode morte `WindowsPC.cmdRunas` et helper orphelin
+  `runRunasNonInteractive` supprimés (migrate-then-delete) ;
+  `parseRunasArgs`/`validateRunasUser`/`runAsUser`/`runAsUserVerified`
+  conservés (toujours utilisés par le chemin terminal interactif).
+
+Validation : les 2 tests `runas` de `windows-access-cmd.test.ts` passent
+(53/53) ; le chemin interactif reste vert (`runas-interactive.test.ts`,
+`windows-access-powershell.test.ts`) ; aucune régression.
+
 ## Windows Phase 25 : migration de `dnscmd` vers command-kernel
 
 **État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**

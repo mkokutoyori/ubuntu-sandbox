@@ -110,7 +110,7 @@ import { WindowsLicensingState } from './windows/licensing/LicensingState';
 import { generateSelfSignedCertificate } from '@/network/pki/SelfSignedCertificate';
 import { CertificateVerifier } from '@/network/pki/CertificateVerifier';
 import type { X509Certificate } from '@/network/pki/X509Certificate';
-import { runRunasNonInteractive, runAsUser } from './windows/WinRunas';
+import { runAsUser } from './windows/WinRunas';
 import type { RunasHost } from './windows/WinRunas';
 import { executeNslookup } from './linux/LinuxDnsService';
 import type { DnsQueryFn } from '../dns/compat/DnsWireCompat';
@@ -1914,6 +1914,9 @@ export class WindowsPC extends EndHost implements UserAccountHost {
         addDhcpEvent: (type, message) => this.addDHCPEvent(type, message),
         gpupdateForce: () => this.gpupdateForce(),
         groupPolicyResult: () => this.groupPolicyResult(),
+        runasGetUser: (name) => this.userMgr.getUser(name),
+        runasCurrentUser: () => this.userMgr.currentUser,
+        runasCommandAs: (userName, command) => this.runAsUserVerified(userName, command),
         locateDomainController: (domain) => this.locateDomainController(domain),
         dcDiagnostics: () => this.dcDiagnostics(),
         kerberosTickets: () => this.kerberosTickets(),
@@ -2704,19 +2707,6 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       setCurrentUser: (name) => this.setCurrentUser(name),
       executeCmdCommand: (command) => this.executeCmdCommand(command),
     };
-  }
-
-  /**
-   * `runas` — non-interactive path (no password prompt: this is
-   * `device.executeCommand()`, with no terminal to prompt through). The
-   * real, password-verified interactive prompt lives in
-   * `WindowsTerminalSession` (PRD-Nslookup-Dig-Rndc-Runas.md P11), which
-   * calls {@link runAsUserVerified} after collecting and checking the
-   * password via the same masked-prompt mechanism SSH's top-level password
-   * challenge already uses.
-   */
-  private async cmdRunas(args: string[]): Promise<string> {
-    return runRunasNonInteractive(this.runasHost(), args);
   }
 
   /** Runs `command` as `userName` — called by `WindowsTerminalSession` once the password has already been verified via `checkPassword`. */

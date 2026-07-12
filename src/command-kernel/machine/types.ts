@@ -1034,6 +1034,23 @@ export interface PowerApi {
   reboot(): Promise<void>;
 }
 
+/**
+ * Élévation/changement d'identité (`runas`) — optionnel, pas un concept
+ * universel. Le changement d'identité et la ré-entrée récursive du shell
+ * (le programme s'exécute dans une logon session distincte) sont des
+ * primitives de l'équipement ; le parsing/la validation/le formatage
+ * restent côté commande. `getUser` a la forme d'une `RunasUserSource` pour
+ * réutiliser le validateur partagé.
+ */
+export interface RunAsApi {
+  /** Compte local (nom + état d'activation) — `undefined` si inconnu (validation `runas`). */
+  getUser(name: string): { readonly name: string; readonly enabled: boolean } | undefined;
+  /** Nom du compte appelant courant (`runas /netonly` = « exécuter en tant que l'appelant »). */
+  currentUser(): string;
+  /** Exécute `command` sous l'identité `userName`, puis restaure l'appelant — vraie ré-entrée du shell. */
+  runCommandAs(userName: string, command: string): Promise<string>;
+}
+
 export interface GroupInfo {
   readonly gid: number;
   readonly name: string;
@@ -1157,6 +1174,8 @@ export interface MachineApi {
   readonly domain?: DomainApi;
   /** Administration du serveur DNS (`dnscmd`) — optionnel, présent seulement quand le rôle DNS Server est installé. */
   readonly dnsServer?: DnsServerAdminApi;
+  /** Élévation/changement d'identité (`runas`) — optionnel, pas un concept universel. */
+  readonly runAs?: RunAsApi;
   /** Masque de permissions par défaut (`umask`) — optionnel, pas un concept universel. */
   readonly permissions?: PermissionsApi;
   now(): Date;
