@@ -5,6 +5,26 @@ progressive par équipement. Un push = une entrée = une fonctionnalité
 complète et testée (voir `CLAUDE.md` / le framework de migration pour les
 principes directeurs).
 
+## Windows Server — application du bit `SMARTCARD_REQUIRED` (`userAccountControl`)
+
+Totalement absent jusqu'ici. `checkPassword` (bind simple LDAP, même
+périmètre volontaire que le verrouillage/l'expiration/`maxPasswordAge`)
+refuse désormais systématiquement l'authentification par mot de passe
+dès que le bit `SMARTCARD_REQUIRED` (`0x40000`) est posé — comportement
+réel d'AD : seule une ouverture de session par carte à puce (PKINIT,
+non modélisée ici) fonctionnerait. `AdUser` gagne
+`smartcardRequired: boolean` ; `setUser` accepte désormais
+`smartcardRequired` en lecture-modification-écriture du bit, sans
+toucher aux autres bits (`enabled`/`passwordNeverExpires`).
+
+**Validation** : nouveau `ad-smartcard-required.test.ts` (5 tests) —
+valeur par défaut, blocage de l'authentification une fois le bit posé
+même avec le bon mot de passe, réauthentification après levée du bit,
+non-altération des bits UAC non liés, absence d'effet sur
+`enabled`/`lockedOut`. Suite élargie (`ad-directory-store`/expiration/
+politique de mot de passe/dernière-connexion/types de chiffrement
+Kerberos/échange AS) : 85/85 au vert. Typecheck et lint ciblés propres.
+
 ## Windows Server — application de `msDS-SupportedEncryptionTypes` (Kerberos)
 
 Totalement absent jusqu'ici : le KDC (`KdcSession`) émettait toujours un

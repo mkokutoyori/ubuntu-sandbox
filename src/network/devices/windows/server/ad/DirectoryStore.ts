@@ -55,6 +55,7 @@ const UAC = {
   WORKSTATION_TRUST_ACCOUNT: 0x1000,
   SERVER_TRUST_ACCOUNT: 0x2000,
   DONT_EXPIRE_PASSWORD: 0x10000,
+  SMARTCARD_REQUIRED: 0x40000,
 } as const;
 
 /** `msDS-SupportedEncryptionTypes` bit flags (MS-ADA2 §2.253) — only the bits this simulator's Kerberos KDC (`KdcSession`) actually checks; DES bits are omitted since real AD treats them as disabled/deprecated by default anyway. */
@@ -512,6 +513,7 @@ export class DirectoryStore {
       passwordNeverExpires: hasUacFlag(entry.attributes.get('useraccountcontrol'), UAC.DONT_EXPIRE_PASSWORD),
       lastLogonTimestamp: Number(firstOf(entry.attributes.get('lastlogontimestamp'))) || null,
       supportedEncryptionTypes: supportedEncTypesValue(entry.attributes.get('msds-supportedencryptiontypes')),
+      smartcardRequired: hasUacFlag(entry.attributes.get('useraccountcontrol'), UAC.SMARTCARD_REQUIRED),
     };
   }
 
@@ -529,14 +531,15 @@ export class DirectoryStore {
     return entry ? supportedEncTypesValue(entry.attributes.get('msds-supportedencryptiontypes')) : DEFAULT_SUPPORTED_ENCRYPTION_TYPES;
   }
 
-  setUser(sam: string, opts: { enabled?: boolean; fullName?: string; password?: string; passwordNeverExpires?: boolean }): DirOpResult {
+  setUser(sam: string, opts: { enabled?: boolean; fullName?: string; password?: string; passwordNeverExpires?: boolean; smartcardRequired?: boolean }): DirOpResult {
     const entry = this.findUserEntry(sam);
     if (!entry) return { ok: false, message: `Cannot find an object with identity: '${sam}'.` };
     const changes: { op: 'replace'; type: string; values: string[] }[] = [];
-    if (opts.enabled !== undefined || opts.passwordNeverExpires !== undefined) {
+    if (opts.enabled !== undefined || opts.passwordNeverExpires !== undefined || opts.smartcardRequired !== undefined) {
       let uac = Number(firstOf(entry.attributes.get('useraccountcontrol'))) || UAC.NORMAL_ACCOUNT;
       if (opts.enabled !== undefined) uac = opts.enabled ? uac & ~UAC.ACCOUNTDISABLE : uac | UAC.ACCOUNTDISABLE;
       if (opts.passwordNeverExpires !== undefined) uac = opts.passwordNeverExpires ? uac | UAC.DONT_EXPIRE_PASSWORD : uac & ~UAC.DONT_EXPIRE_PASSWORD;
+      if (opts.smartcardRequired !== undefined) uac = opts.smartcardRequired ? uac | UAC.SMARTCARD_REQUIRED : uac & ~UAC.SMARTCARD_REQUIRED;
       changes.push({ op: 'replace', type: 'userAccountControl', values: [String(uac)] });
     }
     if (opts.fullName !== undefined) changes.push({ op: 'replace', type: 'displayName', values: opts.fullName ? [opts.fullName] : [] });
@@ -608,6 +611,8 @@ export class DirectoryStore {
     const entry = this.findUserEntry(sam);
     if (!entry) return false;
     if (!isEnabledFromUac(entry.attributes.get('useraccountcontrol'))) return false;
+    /** `SMARTCARD_REQUIRED` (real AD): interactive/simple-bind password logon is disabled outright — only a smart-card-backed (PKINIT) logon works, which this simulator doesn't model, so the account can never authenticate this way once the bit is set. */
+    if (hasUacFlag(entry.attributes.get('useraccountcontrol'), UAC.SMARTCARD_REQUIRED)) return false;
     const accountExpires = Number(firstOf(entry.attributes.get('accountexpires'))) || 0;
     if (accountExpires > 0 && Math.floor(Date.now() / 1000) >= accountExpires) return false;
 

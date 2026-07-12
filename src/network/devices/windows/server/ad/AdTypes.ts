@@ -30,6 +30,8 @@ export interface AdUser {
   lastLogonTimestamp: number | null;
   /** `msDS-SupportedEncryptionTypes` bitmask (MS-ADA2 §2.253) — which Kerberos etypes this principal may authenticate with; the KDC (`KdcSession`) refuses an AS-REQ when the AES256 bit is unset, since that's the only cipher this simulator's Kerberos actually implements. Defaults to RC4+AES128+AES256 (0x1C) when never explicitly set, matching a modern domain's effective default. */
   supportedEncryptionTypes: number;
+  /** `userAccountControl`'s `SMARTCARD_REQUIRED` bit — once set, `DirectoryStore.checkPassword` (LDAP simple bind) always refuses, since only a smart-card-backed logon (not modeled here) would work on real AD. */
+  smartcardRequired: boolean;
 }
 
 export interface AdGroup {
