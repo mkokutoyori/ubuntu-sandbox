@@ -13,7 +13,7 @@
  */
 import type { TcpStack, TcpSocket } from '@/network/tcp/TcpStack';
 import type { DirectoryStore } from '../DirectoryStore';
-import type { EntryReplMeta } from '../ldap/DirectoryTree';
+import { type EntryReplMetaWire, encodeEntryReplMeta, decodeEntryReplMeta } from '../ldap/DirectoryTree';
 import { formatDN } from '../ldap/LdapDN';
 import {
   type HighWatermarkVectorWire, encodeHighWatermarkVector, decodeHighWatermarkVector,
@@ -29,7 +29,7 @@ interface ReplicationPullRequest {
 interface ReplicatedObject {
   dn: string;
   attributes: Record<string, string[]>;
-  stamp: EntryReplMeta;
+  stamp: EntryReplMetaWire;
 }
 interface ReplicationPullResponse {
   kind: 'pullResponse';
@@ -68,7 +68,7 @@ export class ReplicationServerHandler {
       const changes: ReplicatedObject[] = this.store.changesSince(requesterVector).map((entry) => ({
         dn: formatDN(entry.dn),
         attributes: Object.fromEntries(entry.attributes),
-        stamp: entry.replMeta!,
+        stamp: encodeEntryReplMeta(entry.replMeta!),
       }));
       const response: ReplicationPullResponse = {
         kind: 'pullResponse', responderInvocationId: this.store.getInvocationId(), changes,
@@ -134,6 +134,6 @@ export function pullReplication(tcpStack: TcpStack, partnerIp: string, localStor
   unsubscribe();
 
   if (!response || response.kind !== 'pullResponse') return { ok: false, error: 'no reply from replication partner', applied: 0 };
-  for (const change of response.changes) localStore.applyReplicatedEntry(change.dn, change.attributes, change.stamp);
+  for (const change of response.changes) localStore.applyReplicatedEntry(change.dn, change.attributes, decodeEntryReplMeta(change.stamp));
   return { ok: true, applied: response.changes.length };
 }

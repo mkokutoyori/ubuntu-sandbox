@@ -96,6 +96,25 @@ describe('AD DS replication — two DCs diverge then converge over a real TCP/13
     expect(dc2.getDirectoryStore()!.getUser('alice')?.enabled).toBe(false);
   });
 
+  it('converges different attributes changed concurrently on both DCs without either clobbering the other (per-attribute replication metadata)', async () => {
+    const { dc1, dc2 } = await buildTwoDcs();
+    await run(ps(dc1), 'New-ADUser -Name alice -AccountPassword (ConvertTo-SecureString "alicepw" -AsPlainText -Force) -DisplayName "Alice"');
+    dc2.replicateFrom('192.168.60.10');
+
+    await run(ps(dc1), 'Set-ADUser -Identity alice -Enabled $false');
+    await run(ps(dc2), 'Set-ADUser -Identity alice -DisplayName "Alice B"');
+
+    dc2.replicateFrom('192.168.60.10');
+    dc1.replicateFrom('192.168.60.11');
+
+    const onDc1 = dc1.getDirectoryStore()!.getUser('alice')!;
+    const onDc2 = dc2.getDirectoryStore()!.getUser('alice')!;
+    expect(onDc1.enabled).toBe(false);
+    expect(onDc1.fullName).toBe('Alice B');
+    expect(onDc2.enabled).toBe(false);
+    expect(onDc2.fullName).toBe('Alice B');
+  });
+
   it('fails cleanly against a partner that is not (yet) a domain controller', async () => {
     const dc = new WindowsServer('DC3');
     const notADc = new WindowsServer('DC4');

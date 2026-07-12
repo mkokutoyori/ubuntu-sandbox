@@ -15,14 +15,45 @@ import type { SchemaValidator } from '../schema/SchemaValidator';
 
 /**
  * Multi-DC replication stamp (PRD-Windows-Server-Advanced.md §5 P4,
- * inspired by MS-DRSR's per-object USN, simplified to entry granularity
- * rather than real AD's per-attribute versioning — this simulator's scope
- * excludes attribute-level conflict resolution/tombstones/USN rollback).
+ * inspired by MS-DRSR's per-attribute `msDS-ReplAttributeMetadata`):
+ * one stamp per attribute, keyed by lowercase attribute name, rather than
+ * one stamp for the whole object — so two DCs concurrently changing
+ * *different* attributes on the same object each keep their own change
+ * on merge, instead of one write silently clobbering the other. Still
+ * simplified vs real AD: no tombstones/USN rollback modeled (per PRD
+ * §2.2 scope).
+ *
+ * `version` (matching real AD's own field name) is the primary conflict
+ * key, not `timestamp`: it starts at 1 when an attribute is first set and
+ * increments by 1 on every subsequent write to that same attribute,
+ * whether local or adopted via replication — a DC that adopts a
+ * replicated value's `version` continues incrementing from it on its own
+ * next local write. This stays correct regardless of wall-clock
+ * resolution, which real-time-driven `timestamp` alone cannot guarantee
+ * once two DCs write different attributes within the same clock tick (as
+ * happens routinely in a simulator with no real network latency).
+ * `timestamp` only breaks a tie between two writes that both produced the
+ * same `version` for the same attribute without ever replicating between
+ * each other first (a genuine simultaneous-origination conflict).
  */
-export interface EntryReplMeta {
+export interface AttributeReplStamp {
   readonly originatingInvocationId: string;
   readonly originatingUsn: number;
-  readonly timestamp: number; // epoch seconds — last-writer-wins tiebreak across invocationIds
+  readonly version: number;
+  readonly timestamp: number; // epoch seconds — final tiebreak only, when `version` itself ties
+}
+
+export type EntryReplMeta = Map<string, AttributeReplStamp>;
+
+/** JSON-serializable form for the replication wire protocol (a `Map` doesn't survive `JSON.stringify` directly — same convention as `HighWatermarkVectorWire`). */
+export type EntryReplMetaWire = [string, AttributeReplStamp][];
+
+export function encodeEntryReplMeta(meta: EntryReplMeta): EntryReplMetaWire {
+  return [...meta.entries()];
+}
+
+export function decodeEntryReplMeta(wire: EntryReplMetaWire): EntryReplMeta {
+  return new Map(wire);
 }
 
 /** Supplied by a replicating `DirectoryStore` so every local write is auto-stamped; absent (`undefined`) for any `DirectoryTree` that doesn't participate in replication (e.g. the LDAP wire-protocol unit tests), which never touch `replMeta`. */
@@ -76,13 +107,22 @@ export class DirectoryTree {
     private readonly schema?: SchemaValidator,
   ) {
     const dn = typeof baseDn === 'string' ? parseDN(baseDn) : baseDn;
-    this.root = { dn, attributes: toAttrMap(rootAttributes), children: new Map(), replMeta: this.stampFor() };
+    this.root = { dn, attributes: toAttrMap(rootAttributes), children: new Map(), replMeta: null };
+    this.stampKeys(this.root, this.root.attributes.keys());
     this.byDn.set(this.dnIndexKey(dn), this.root);
   }
 
-  private stampFor(): EntryReplMeta | null {
-    if (!this.replication) return null;
-    return { originatingInvocationId: this.replication.invocationId, originatingUsn: this.replication.nextUsn(), timestamp: Math.floor(Date.now() / 1000) };
+  /** Stamps every key in `keys` with one freshly allocated write (same originating USN/timestamp across all of them — one LDAP operation, one USN, matching real AD's `usnChanged`; `version` is per-key, continuing from whatever that specific attribute already carried). No-op on a non-replicating tree. */
+  private stampKeys(entry: DirectoryEntry, keys: Iterable<string>): void {
+    if (!this.replication) return;
+    const originatingInvocationId = this.replication.invocationId;
+    const originatingUsn = this.replication.nextUsn();
+    const timestamp = Math.floor(Date.now() / 1000);
+    if (!entry.replMeta) entry.replMeta = new Map();
+    for (const key of keys) {
+      const priorVersion = entry.replMeta.get(key)?.version ?? 0;
+      entry.replMeta.set(key, { originatingInvocationId, originatingUsn, version: priorVersion + 1, timestamp });
+    }
   }
 
   /** Canonical index key: each RDN's AVAs sorted+lowercased, so order-independent multi-valued RDNs (RFC 4514 §2.3) index identically — matches `dnEquals`. */
@@ -107,7 +147,8 @@ export class DirectoryTree {
       const validation = this.schema.validateNewEntry(objectClasses, attributes);
       if (!validation.ok) return validation;
     }
-    const entry: DirectoryEntry = { dn, attributes: toAttrMap(attributes), children: new Map(), replMeta: this.stampFor() };
+    const entry: DirectoryEntry = { dn, attributes: toAttrMap(attributes), children: new Map(), replMeta: null };
+    this.stampKeys(entry, entry.attributes.keys());
     parent.children.set(rdnKey(dn), entry);
     this.byDn.set(this.dnIndexKey(dn), entry);
     return { ok: true, message: '' };
@@ -129,8 +170,10 @@ export class DirectoryTree {
   modifyEntry(dn: DistinguishedName, changes: readonly Modification[]): TreeOpResult {
     const entry = this.getByDn(dn);
     if (!entry) return { ok: false, message: 'noSuchObject' };
+    const touchedKeys = new Set<string>();
     for (const change of changes) {
       const key = attrKey(change.type);
+      touchedKeys.add(key);
       const existing = entry.attributes.get(key) ?? [];
       if (change.op === 'replace') {
         if (change.values.length === 0) entry.attributes.delete(key);
@@ -146,40 +189,51 @@ export class DirectoryTree {
         else entry.attributes.set(key, remaining);
       }
     }
-    if (this.replication) entry.replMeta = this.stampFor();
+    this.stampKeys(entry, touchedKeys);
     return { ok: true, message: '' };
   }
 
-  /** Every entry whose replication stamp is newer than what `vector` already reflects for its originating DC — what a replication partner pulling from this tree hasn't seen yet (PRD-Windows-Server-Advanced.md §5 P4). No-op (`[]`) on a non-replicating tree. */
+  /** Every entry with at least one attribute whose stamp is newer than what `vector` already reflects for its originating DC — what a replication partner pulling from this tree hasn't seen yet (PRD-Windows-Server-Advanced.md §5 P4). No-op (`[]`) on a non-replicating tree. */
   changedSince(vector: HighWatermarkVector): DirectoryEntry[] {
     return this.allDescendants(this.root.dn).filter((e) => {
       if (!e.replMeta) return false;
-      return e.replMeta.originatingUsn > (vector.usnByInvocationId.get(e.replMeta.originatingInvocationId) ?? 0);
+      for (const stamp of e.replMeta.values()) {
+        if (stamp.originatingUsn > (vector.usnByInvocationId.get(stamp.originatingInvocationId) ?? 0)) return true;
+      }
+      return false;
     });
   }
 
   /**
-   * Writes a peer DC's own version of an entry, preserving its
-   * originating stamp (never re-stamped as a local write) — last-writer-
-   * wins by timestamp if the entry already exists locally. Creates the
-   * entry if absent (silently skipped if its parent hasn't replicated
-   * yet — picked up on a later cycle, same as MS-DRSR's linked-attribute
-   * convergence-over-multiple-cycles behavior). Deletions are not
-   * replicated (no tombstones modeled, per PRD §2.2 scope).
+   * Merges a peer DC's version of an entry attribute-by-attribute —
+   * each attribute wins on its own stamp (last-writer-wins by timestamp,
+   * same tiebreak as before) rather than the whole object winning or
+   * losing as one unit. This is what lets two DCs concurrently modify
+   * *different* attributes on the same object without one clobbering the
+   * other's change once they replicate. Creates the entry if absent
+   * (silently skipped if its parent hasn't replicated yet — picked up on
+   * a later cycle, same as MS-DRSR's linked-attribute convergence-over-
+   * multiple-cycles behavior). Deletions are not replicated (no
+   * tombstones modeled, per PRD §2.2 scope).
    */
-  applyReplicatedEntry(dn: DistinguishedName, attributes: Record<string, string[]>, stamp: EntryReplMeta): void {
+  applyReplicatedEntry(dn: DistinguishedName, attributes: Record<string, string[]>, incomingMeta: EntryReplMeta): void {
     const existing = this.getByDn(dn);
     if (existing) {
-      if (existing.replMeta && existing.replMeta.timestamp > stamp.timestamp) return;
-      existing.attributes.clear();
-      for (const [k, v] of toAttrMap(attributes)) existing.attributes.set(k, v);
-      existing.replMeta = stamp;
+      if (!existing.replMeta) existing.replMeta = new Map();
+      for (const [key, incomingStamp] of incomingMeta) {
+        const currentStamp = existing.replMeta.get(key);
+        if (currentStamp && !incomingAttributeWins(currentStamp, incomingStamp)) continue;
+        const values = attributes[key];
+        if (values && values.length > 0) existing.attributes.set(key, [...values]);
+        else existing.attributes.delete(key);
+        existing.replMeta.set(key, incomingStamp);
+      }
       return;
     }
     const parentDn = parentOf(dn);
     const parent = parentDn ? this.getByDn(parentDn) : null;
     if (!parent) return;
-    const entry: DirectoryEntry = { dn, attributes: toAttrMap(attributes), children: new Map(), replMeta: stamp };
+    const entry: DirectoryEntry = { dn, attributes: toAttrMap(attributes), children: new Map(), replMeta: new Map(incomingMeta) };
     parent.children.set(rdnKey(dn), entry);
     this.byDn.set(this.dnIndexKey(dn), entry);
   }
@@ -213,9 +267,11 @@ export class DirectoryTree {
     const newDn: DistinguishedName = [newRdn, ...targetParentDn];
     if (!dnEquals(newDn, dn) && this.getByDn(newDn)) return { ok: false, message: 'entryAlreadyExists' };
 
+    const touchedKeys = new Set<string>();
     if (deleteOldRdn) {
       for (const ava of dn[0]) {
         const key = attrKey(ava.type);
+        touchedKeys.add(key);
         const remaining = (entry.attributes.get(key) ?? []).filter(v => v.toLowerCase() !== ava.value.toLowerCase());
         if (remaining.length === 0) entry.attributes.delete(key);
         else entry.attributes.set(key, remaining);
@@ -223,6 +279,7 @@ export class DirectoryTree {
     }
     for (const ava of newRdn) {
       const key = attrKey(ava.type);
+      touchedKeys.add(key);
       const existing = entry.attributes.get(key) ?? [];
       if (!existing.some(v => v.toLowerCase() === ava.value.toLowerCase())) entry.attributes.set(key, [...existing, ava.value]);
     }
@@ -230,7 +287,7 @@ export class DirectoryTree {
     oldParent.children.delete(rdnKey(dn));
     this.reindexSubtree(entry, dn, newDn);
     targetParent.children.set(rdnKey(newDn), entry);
-    if (this.replication) entry.replMeta = this.stampFor();
+    this.stampKeys(entry, touchedKeys);
     return { ok: true, message: '' };
   }
 
@@ -291,4 +348,11 @@ export class DirectoryTree {
 
 function toAttrMap(attributes: Record<string, string[]>): Map<string, string[]> {
   return new Map(Object.entries(attributes).map(([k, v]) => [attrKey(k), [...v]]));
+}
+
+/** Higher `version` always wins; `timestamp` (then, for full determinism, `originatingInvocationId`) only breaks a tie when both sides reached the same `version` without ever replicating between each other. */
+function incomingAttributeWins(current: AttributeReplStamp, incoming: AttributeReplStamp): boolean {
+  if (incoming.version !== current.version) return incoming.version > current.version;
+  if (incoming.timestamp !== current.timestamp) return incoming.timestamp > current.timestamp;
+  return incoming.originatingInvocationId > current.originatingInvocationId;
 }

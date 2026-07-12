@@ -5,6 +5,63 @@ progressive par équipement. Un push = une entrée = une fonctionnalité
 complète et testée (voir `CLAUDE.md` / le framework de migration pour les
 principes directeurs).
 
+## Windows Server — réplication AD par métadonnées d'attribut (fin de l'écrasement silencieux multi-DC)
+
+Jusqu'ici, `EntryReplMeta` (`ldap/DirectoryTree.ts`) portait un seul
+timbre de réplication (USN/horodatage) pour l'objet entier. Conséquence :
+si deux DC modifiaient chacun un attribut *différent* du même objet sans
+avoir répliqué entre eux depuis, le cycle de réplication suivant faisait
+gagner l'objet entier au timbre le plus récent — écrasant silencieusement
+le changement de l'autre DC, même sur un attribut totalement sans
+rapport. Corrigé en passant à un timbre par attribut, à l'image de
+`msDS-ReplAttributeMetadata` d'AD réel :
+
+- `EntryReplMeta` devient `Map<nom d'attribut en minuscules,
+  AttributeReplStamp>` au lieu d'un timbre unique ; `AttributeReplStamp`
+  gagne un champ `version` (entier local à l'attribut, incrémenté à
+  chaque écriture — locale ou adoptée par réplication).
+- `DirectoryTree.modifyEntry`/`addEntry`/`renameEntry` ne (re)timbrent
+  plus que les clés d'attribut réellement touchées par l'opération (pas
+  l'objet entier).
+- `changedSince(vector)` inclut un objet dès qu'AU MOINS un de ses
+  attributs a un timbre plus récent que ce que le vecteur du demandeur
+  reflète déjà — inchangé en surface, mais désormais basé sur le
+  maximum par-attribut plutôt qu'un timbre global.
+- `applyReplicatedEntry` fusionne désormais attribut par attribut : pour
+  chaque clé du timbre entrant, seul l'attribut correspondant est
+  écrasé si son timbre entrant l'emporte (comparaison par `version`
+  d'abord, `timestamp` puis `originatingInvocationId` en dernier
+  recours) — les attributs non touchés par l'écriture distante restent
+  intacts localement, quel que soit l'état du reste de l'objet.
+- **Bug découvert et corrigé pendant l'écriture du test de non-
+  régression** : comparer uniquement par `timestamp` (résolution à la
+  seconde, `Math.floor(Date.now()/1000)`) échouait dès que deux écritures
+  sur des DC différents tombaient dans la même seconde — quasi toujours
+  le cas dans ce simulateur (aucune latence réseau réelle). D'où le
+  passage à `version` (compteur entier monotone par attribut,
+  propagé et poursuivi par le DC qui l'adopte) comme clé de comparaison
+  principale ; `timestamp` ne sert plus que de dernier recours en cas
+  d'égalité de version.
+- `DirectoryStore.applyReplicatedEntry` avance le vecteur haute-marque
+  entrant pour CHAQUE timbre reçu (pas un seul), puisqu'un objet peut
+  désormais porter des attributs originaires de DC différents.
+- Wire format : `EntryReplMetaWire` (encode/decode d'une `Map`, même
+  convention que `HighWatermarkVectorWire`) ajouté à `ReplicationSession.ts`.
+
+**Validation** : nouveau test dans `ad-replication.test.ts` — deux DC
+modifient chacun un attribut différent du même utilisateur sans se
+synchroniser entre-temps, puis répliquent dans les deux sens ; les deux
+changements survivent des deux côtés (ce test échouait de façon
+reproductible avant la correction du bug `version`, confirmant qu'il
+capture bien le défaut réel). Suite ciblée réplication/AD/GPO/LDAP/
+Kerberos (14 fichiers) : 180/181 au vert (seul échec, préexistant et
+hors périmètre : bascule `whoami`). Suite complète `network-v2/` (827
+fichiers) passée en filet de sécurité supplémentaire vu le risque élevé
+de cette tâche : aucune régression sur un fichier AD/GPO/LDAP/Kerberos ;
+les échecs observés ailleurs (SSH, historique bash, TLS, netstat...)
+sont sans rapport avec la réplication AD. Typecheck et lint ciblés
+propres.
+
 ## Convergence de branche : Windows Server (UGMC) + Windows Phase 23/24 (`klist`/`nltest`/`dcdiag`/`netdom`)
 
 **État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**

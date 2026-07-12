@@ -204,12 +204,12 @@ export class DirectoryStore {
     return this.tree.changedSince(partnerVector);
   }
 
-  /** Applies one entry pulled from a replication partner and advances this DC's record of how caught-up it is with that entry's originating DC. */
+  /** Applies one entry pulled from a replication partner (attribute-by-attribute — see `DirectoryTree.applyReplicatedEntry`) and advances this DC's record of how caught-up it is with every DC whose writes appear in `stamp`, not just the partner dialed directly. */
   applyReplicatedEntry(dn: string, attributes: Record<string, string[]>, stamp: EntryReplMeta): void {
     let parsed: DistinguishedName;
     try { parsed = parseDN(dn); } catch { return; }
     this.tree.applyReplicatedEntry(parsed, attributes, stamp);
-    recordUsn(this.inboundHighWatermark, stamp.originatingInvocationId, stamp.originatingUsn);
+    for (const attrStamp of stamp.values()) recordUsn(this.inboundHighWatermark, attrStamp.originatingInvocationId, attrStamp.originatingUsn);
   }
 
   /** Resolves an OU by name (`"Sales"`) or nested path (`"Sales/EU"`, top-down, matching `New-ADOrganizationalUnit -Path`'s parent-first convention). */
