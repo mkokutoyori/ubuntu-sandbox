@@ -117,6 +117,7 @@ import { SessionSwapWindow } from './host/session/SessionSwapWindow';
 import * as WinSys from './windows/WinSystemCommands';
 import { WIN_VER_STRING } from './windows/WindowsVersion';
 import { createWindowsHostShell } from './windows/command-kernel/createWindowsHostShell';
+import type { WinIpsecMutableState } from './windows/command-kernel/WindowsMachineApi';
 import type { CmdInterpreter } from './windows/command-kernel/CmdInterpreter';
 import { lowercaseCommandNames } from './windows/command-kernel/ast/lowercaseCommandNames';
 import { resolveWindowsUser } from './windows/command-kernel/WindowsUser';
@@ -1792,6 +1793,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
         setPrimaryDnsSuffix: (suffix) => { this.dnsSuffix = suffix; },
         isServiceRunning: (name) => this.svcMgr.getService(name)?.state === 'Running',
         dhcpClientNetsh: this.dhcpClientNetshState,
+        ipsecNetsh: this.ipsecNetshState,
         bootedAt: () => this.getLifecycle().bootedAt() ?? null,
         now: () => this.simulatedDate(),
         powerOn: () => this.powerOn(),
@@ -2358,6 +2360,11 @@ export class WindowsPC extends EndHost implements UserAccountHost {
   private readonly dhcpClientNetshState = {
     installed: true, tracingEnabled: true, tracingOutput: '', traceEnabled: false,
     releasedIfaces: new Set<string>(),
+  };
+  /** Magasin de politiques IPsec `netsh ipsec` (static + dynamic) — état par-instance. */
+  private readonly ipsecNetshState: WinIpsecMutableState = {
+    policies: [], filterLists: [], filterActions: [], rules: [],
+    dynamic: { mmSecMethods: '', qmSecMethods: '', ikeLogging: 0, config: {} },
   };
 
   private cmdVol(args: string[]): string {

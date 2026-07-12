@@ -579,6 +579,9 @@ export interface WindowsNetConfigApi {
   /** Marque/démarque une interface comme ayant un bail libéré (`netsh dhcpclient release`/`renew`) — n'affecte que l'affichage `show parameters`. */
   setInterfaceReleased(ifName: string, released: boolean): void;
   isInterfaceReleased(ifName: string): boolean;
+
+  /** Magasin de politiques IPsec (`netsh ipsec`) — par-instance. */
+  readonly ipsec: WindowsIpsecStore;
 }
 
 /** État de configuration du contexte `netsh dhcpclient` — par-instance, modèle Windows. */
@@ -587,6 +590,84 @@ export interface WindowsDhcpClientConfig {
   readonly tracingEnabled: boolean;
   readonly tracingOutput: string;
   readonly traceEnabled: boolean;
+}
+
+/** Politique IPsec statique (`netsh ipsec static`) — par-instance, modèle Windows. */
+export interface WindowsIpsecPolicy {
+  readonly name: string;
+  readonly description: string;
+  readonly assigned: boolean;
+}
+export interface WindowsIpsecFilter {
+  readonly srcAddr: string;
+  readonly dstAddr: string;
+  readonly protocol: string;
+  readonly srcPort: string;
+  readonly dstPort: string;
+  readonly mirrored: boolean;
+  readonly description: string;
+}
+export interface WindowsIpsecFilterList {
+  readonly name: string;
+  readonly filters: readonly WindowsIpsecFilter[];
+}
+export interface WindowsIpsecFilterAction {
+  readonly name: string;
+  readonly action: 'permit' | 'block' | 'negotiate';
+  readonly description: string;
+}
+export interface WindowsIpsecRule {
+  readonly name: string;
+  readonly policy: string;
+  readonly filterlist: string;
+  readonly filteraction: string;
+}
+export interface WindowsIpsecDynamicSettings {
+  readonly mmSecMethods: string;
+  readonly qmSecMethods: string;
+  readonly ikeLogging: number;
+  readonly config: Readonly<Record<string, string>>;
+}
+
+/**
+ * Magasin de politiques IPsec `netsh ipsec` — état de configuration
+ * par-instance, sans connexion au moteur IPsec réel (pur registre de
+ * politiques façon Windows XP/2003). CRUD granulaire ; `NetshCommand`
+ * porte tout le parsing, le dispatch de sous-objet et les messages
+ * (« already exists »/« not found »).
+ */
+export interface WindowsIpsecStore {
+  policies(): readonly WindowsIpsecPolicy[];
+  addPolicy(policy: WindowsIpsecPolicy): void;
+  /** `true` si une politique portait ce nom (supprimée), `false` sinon. */
+  deletePolicy(name: string): boolean;
+  deleteAllPolicies(): void;
+  /** `true` si la politique existait et a été modifiée. */
+  setPolicy(name: string, changes: { assigned?: boolean; description?: string }): boolean;
+
+  filterLists(): readonly WindowsIpsecFilterList[];
+  addFilterList(name: string): void;
+  deleteFilterList(name: string): boolean;
+  deleteAllFilterLists(): void;
+  /** Ajoute un filtre à une liste — `false` si la liste n'existe pas. */
+  addFilter(filterListName: string, filter: WindowsIpsecFilter): boolean;
+  /** Une liste de filtres est-elle référencée par une règle (blocage de suppression) ? */
+  filterListInUse(name: string): boolean;
+
+  filterActions(): readonly WindowsIpsecFilterAction[];
+  addFilterAction(action: WindowsIpsecFilterAction): void;
+  deleteFilterAction(name: string): boolean;
+  deleteAllFilterActions(): void;
+
+  rules(): readonly WindowsIpsecRule[];
+  addRule(rule: WindowsIpsecRule): void;
+  /** Supprime une règle par nom (et politique optionnelle) — `false` si absente. */
+  deleteRule(name: string, policy?: string): boolean;
+
+  dynamic(): WindowsIpsecDynamicSettings;
+  setDynamicMainMode(mmSecMethods: string): void;
+  setDynamicQm(qmSecMethods: string): void;
+  setDynamicConfig(key: string, value: string): void;
 }
 
 /** Un écho ICMP individuel (`ping`) — optionnel, modèle Windows. */

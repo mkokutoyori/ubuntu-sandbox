@@ -43,6 +43,13 @@ import {
   WindowsDnsCacheEntry,
   WindowsIPv6AddressEntry,
   WindowsIPv6RouteEntry,
+  WindowsIpsecDynamicSettings,
+  WindowsIpsecFilter,
+  WindowsIpsecFilterAction,
+  WindowsIpsecFilterList,
+  WindowsIpsecPolicy,
+  WindowsIpsecRule,
+  WindowsIpsecStore,
   WindowsNetConfigApi,
   WindowsPingReply,
   WindowsPortProxyRule,
@@ -163,6 +170,7 @@ export interface WindowsMachineApiDeps {
   setPrimaryDnsSuffix(suffix: string): void;
   isServiceRunning(name: string): boolean;
   readonly dhcpClientNetsh: { installed: boolean; tracingEnabled: boolean; tracingOutput: string; traceEnabled: boolean; releasedIfaces: Set<string> };
+  readonly ipsecNetsh: WinIpsecMutableState;
   bootedAt(): Date | null;
   now(): Date;
   powerOn(): void;
@@ -977,7 +985,90 @@ class WindowsWinRmApi implements WinRmApi {
   }
 }
 
+/** Forme mutable du magasin IPsec `netsh`, détenue par `WindowsPC` (par-instance). */
+export interface WinIpsecMutableState {
+  policies: { name: string; description: string; assigned: boolean }[];
+  filterLists: { name: string; filters: WindowsIpsecFilter[] }[];
+  filterActions: { name: string; action: 'permit' | 'block' | 'negotiate'; description: string }[];
+  rules: { name: string; policy: string; filterlist: string; filteraction: string }[];
+  dynamic: { mmSecMethods: string; qmSecMethods: string; ikeLogging: number; config: Record<string, string> };
+}
+
+class WindowsIpsecStoreImpl implements WindowsIpsecStore {
+  constructor(private readonly s: WinIpsecMutableState) {}
+
+  policies(): readonly WindowsIpsecPolicy[] { return this.s.policies; }
+  addPolicy(policy: WindowsIpsecPolicy): void { this.s.policies.push({ ...policy }); }
+  deletePolicy(name: string): boolean {
+    const i = this.s.policies.findIndex((p) => p.name === name);
+    if (i < 0) return false;
+    this.s.policies.splice(i, 1);
+    return true;
+  }
+  deleteAllPolicies(): void { this.s.policies.length = 0; }
+  setPolicy(name: string, changes: { assigned?: boolean; description?: string }): boolean {
+    const p = this.s.policies.find((x) => x.name === name);
+    if (!p) return false;
+    if (changes.assigned !== undefined) p.assigned = changes.assigned;
+    if (changes.description !== undefined) p.description = changes.description;
+    return true;
+  }
+
+  filterLists(): readonly WindowsIpsecFilterList[] { return this.s.filterLists; }
+  addFilterList(name: string): void { this.s.filterLists.push({ name, filters: [] }); }
+  deleteFilterList(name: string): boolean {
+    const i = this.s.filterLists.findIndex((f) => f.name === name);
+    if (i < 0) return false;
+    this.s.filterLists.splice(i, 1);
+    return true;
+  }
+  deleteAllFilterLists(): void { this.s.filterLists.length = 0; }
+  addFilter(filterListName: string, filter: WindowsIpsecFilter): boolean {
+    const fl = this.s.filterLists.find((f) => f.name === filterListName);
+    if (!fl) return false;
+    fl.filters.push({ ...filter });
+    return true;
+  }
+  filterListInUse(name: string): boolean { return this.s.rules.some((r) => r.filterlist === name); }
+
+  filterActions(): readonly WindowsIpsecFilterAction[] { return this.s.filterActions; }
+  addFilterAction(action: WindowsIpsecFilterAction): void { this.s.filterActions.push({ ...action }); }
+  deleteFilterAction(name: string): boolean {
+    const i = this.s.filterActions.findIndex((f) => f.name === name);
+    if (i < 0) return false;
+    this.s.filterActions.splice(i, 1);
+    return true;
+  }
+  deleteAllFilterActions(): void { this.s.filterActions.length = 0; }
+
+  rules(): readonly WindowsIpsecRule[] { return this.s.rules; }
+  addRule(rule: WindowsIpsecRule): void { this.s.rules.push({ ...rule }); }
+  deleteRule(name: string, policy?: string): boolean {
+    const i = this.s.rules.findIndex((r) => r.name === name && (!policy || r.policy === policy));
+    if (i < 0) return false;
+    this.s.rules.splice(i, 1);
+    return true;
+  }
+
+  dynamic(): WindowsIpsecDynamicSettings {
+    return {
+      mmSecMethods: this.s.dynamic.mmSecMethods,
+      qmSecMethods: this.s.dynamic.qmSecMethods,
+      ikeLogging: this.s.dynamic.ikeLogging,
+      config: { ...this.s.dynamic.config },
+    };
+  }
+  setDynamicMainMode(mmSecMethods: string): void { this.s.dynamic.mmSecMethods = mmSecMethods; }
+  setDynamicQm(qmSecMethods: string): void { this.s.dynamic.qmSecMethods = qmSecMethods; }
+  setDynamicConfig(key: string, value: string): void {
+    if (key === 'ikelogging') this.s.dynamic.ikeLogging = parseInt(value, 10) || 0;
+    else this.s.dynamic.config[key] = value;
+  }
+}
+
 class WindowsNetConfigApiImpl implements WindowsNetConfigApi {
+  readonly ipsec: WindowsIpsecStore;
+
   constructor(
     private readonly ports: () => readonly Port[],
     private readonly deps: Pick<WindowsMachineApiDeps,
@@ -990,8 +1081,11 @@ class WindowsNetConfigApiImpl implements WindowsNetConfigApi {
       | 'netInterfaces' | 'resolveAdapterName' | 'configureInterface' | 'setAddressDhcp' | 'clearInterfaceIP' | 'setDnsServers'
       | 'getDnsMode' | 'setDnsMode' | 'getInterfaceAdmin' | 'setInterfaceAdmin' | 'renameInterface'
       | 'resetTcpIpStack' | 'resetWinsockCatalog' | 'addIPv6Route' | 'getIPv6Routes' | 'portProxy'
-      | 'getWinhttpProxy' | 'setWinhttpProxy' | 'setPrimaryDnsSuffix' | 'isServiceRunning' | 'dhcpClientNetsh'>,
-  ) {}
+      | 'getWinhttpProxy' | 'setWinhttpProxy' | 'setPrimaryDnsSuffix' | 'isServiceRunning' | 'dhcpClientNetsh'
+      | 'ipsecNetsh'>,
+  ) {
+    this.ipsec = new WindowsIpsecStoreImpl(deps.ipsecNetsh);
+  }
 
   adapters(): readonly WindowsAdapterInfo[] {
     // `name` = clé de la table de ports (reflète un renommage `netsh`), pas

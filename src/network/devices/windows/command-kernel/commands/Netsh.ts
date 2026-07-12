@@ -209,6 +209,57 @@ show           - Displays information.
 To view help for a command, type the command, followed by a space, and then
  type ?.`;
 
+const NETSH_IPSEC_HELP = `The following commands are available:
+
+Commands in this context:
+?              - Displays a list of commands.
+dump           - Displays a configuration script.
+dynamic        - Changes to the \`netsh ipsec dynamic' context.
+help           - Displays a list of commands.
+static         - Changes to the \`netsh ipsec static' context.
+
+The following sub-contexts are available:
+ dynamic static
+
+To view help for a command, type the command, followed by a space, and then
+ type ?.`;
+
+const NETSH_IPSEC_STATIC_HELP = `The following commands are available:
+
+Commands in this context:
+?              - Displays a list of commands.
+add            - Adds a new policy, filter list, filter, filter action, or rule.
+delete         - Deletes a policy, filter list, filter, filter action, or rule.
+dump           - Displays a configuration script.
+exportpolicy   - Exports all policies from the policy store.
+help           - Displays a list of commands.
+importpolicy   - Imports policies from a file to the policy store.
+set            - Modifies existing policies, filter lists, filter actions, and rules.
+show           - Displays details of policies, filter lists, filters, and filter actions.
+
+The following sub-objects are available:
+ policy filterlist filteraction filter rule
+
+To view help for a command, type the command, followed by a space, and then
+ type ?.`;
+
+const NETSH_IPSEC_DYNAMIC_HELP = `The following commands are available:
+
+Commands in this context:
+?              - Displays a list of commands.
+add            - Adds policy, filter, filter action to SPD.
+delete         - Deletes policy, filter, filter action from SPD.
+dump           - Displays a configuration script.
+help           - Displays a list of commands.
+set            - Modifies IKE main mode, quick mode, and config settings in SPD.
+show           - Displays policy, filter, filter action, IKE settings from SPD.
+
+The following sub-objects are available:
+ IKE mmsas qmsas mmfilter qmfilter mmpolicy qmpolicy
+
+To view help for a command, type the command, followed by a space, and then
+ type ?.`;
+
 const ADD_ADDRESS_USAGE = `Usage: netsh interface ipv4 add address [name=]<string>
        [address=]<IPv4 address> [mask=]<subnet mask>
        [[gateway=]<IPv4 address> [[gwmetric=]<integer>]]`;
@@ -292,6 +343,7 @@ export class NetshCommand extends BaseCommand {
 
     if (head === 'dhcpclient') return this.handleDhcpclient(nc, args.slice(1));
     if (head === 'dnsclient') return this.handleDnsclient(nc, args.slice(1));
+    if (head === 'ipsec') return this.handleIpsec(nc, args.slice(1));
 
     if (head === 'winhttp') return this.handleWinhttp(nc, args.slice(1));
 
@@ -1246,5 +1298,287 @@ export class NetshCommand extends BaseCommand {
     if (!portName) return `The interface "${ifName}" was not found.`;
     nc.setDnsMode(portName, 'dhcp');
     return 'Ok.';
+  }
+
+  // ─── netsh ipsec ──────────────────────────────────────────────────
+  private handleIpsec(nc: WindowsNetConfigApi, args: string[]): string {
+    if (args.length === 0 || args[0] === '?' || args[0] === '/?' || args[0].toLowerCase() === 'help') return NETSH_IPSEC_HELP;
+    const sub = args[0].toLowerCase();
+    if (sub === 'static') return this.handleIpsecStatic(nc, args.slice(1));
+    if (sub === 'dynamic') return this.handleIpsecDynamic(nc, args.slice(1));
+    return `The subcommand "${args[0]}" was not found.\nType "netsh ipsec ?" for more information.`;
+  }
+
+  private parseNameValue(args: string[]): Record<string, string> {
+    const result: Record<string, string> = {};
+    for (const arg of args) {
+      const eq = arg.indexOf('=');
+      if (eq > 0) result[arg.slice(0, eq).toLowerCase()] = arg.slice(eq + 1).replace(/^["']|["']$/g, '');
+    }
+    return result;
+  }
+
+  private handleIpsecStatic(nc: WindowsNetConfigApi, args: string[]): string {
+    if (args.length === 0 || args[0] === '?' || args[0] === '/?' || args[0].toLowerCase() === 'help') return NETSH_IPSEC_STATIC_HELP;
+    const sub = args[0].toLowerCase();
+    if (sub === 'add') return this.handleIpsecStaticAdd(nc, args.slice(1));
+    if (sub === 'delete') return this.handleIpsecStaticDelete(nc, args.slice(1));
+    if (sub === 'show') return this.handleIpsecStaticShow(nc, args.slice(1));
+    if (sub === 'set') return this.handleIpsecStaticSet(nc, args.slice(1));
+    return NETSH_IPSEC_STATIC_HELP;
+  }
+
+  private handleIpsecStaticAdd(nc: WindowsNetConfigApi, args: string[]): string {
+    if (args.length === 0) return 'Usage: add policy|filterlist|filter|filteraction|rule name=<name> ...';
+    const obj = args[0].toLowerCase();
+    const p = this.parseNameValue(args.slice(1));
+    const store = nc.ipsec;
+
+    switch (obj) {
+      case 'policy': {
+        const name = p['name'];
+        if (!name) return 'Usage: netsh ipsec static add policy [name=]<string> [[description=]<string>] [[activatedefaultrule=]yes|no]';
+        if (store.policies().find((x) => x.name === name)) return `The policy "${name}" already exists.`;
+        store.addPolicy({ name, description: p['description'] || '', assigned: p['assign']?.toLowerCase() === 'yes' });
+        return 'Ok.';
+      }
+      case 'filterlist': {
+        const name = p['name'];
+        if (!name) return 'Usage: netsh ipsec static add filterlist [name=]<string> [[description=]<string>]';
+        if (store.filterLists().find((x) => x.name === name)) return `The filter list "${name}" already exists.`;
+        store.addFilterList(name);
+        return 'Ok.';
+      }
+      case 'filter': {
+        const filterlist = p['filterlist'];
+        if (!filterlist) return 'Usage: netsh ipsec static add filter [filterlist=]<string> [srcaddr=]<addr> [dstaddr=]<addr> ...';
+        if (!store.filterLists().find((f) => f.name === filterlist)) return `The filter list "${filterlist}" was not found.`;
+        const ipRe = /^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}(\/\d+)?$/;
+        const isSpecial = (s: string) => /^(any|me|dns|wins|dhcp)$/i.test(s);
+        const srcAddr = p['srcaddr'] || 'Any';
+        const dstAddr = p['dstaddr'] || 'Any';
+        if (!isSpecial(srcAddr) && ipRe.test(srcAddr.split('/')[0])) {
+          if (srcAddr.split('/')[0].split('.').some((x) => parseInt(x) > 255)) return `Invalid IP address: "${srcAddr}".`;
+        } else if (!isSpecial(srcAddr) && /^\d/.test(srcAddr)) {
+          return `Invalid IP address: "${srcAddr}".`;
+        }
+        store.addFilter(filterlist, {
+          srcAddr, dstAddr, protocol: p['protocol'] || 'Any',
+          srcPort: p['srcport'] || '0', dstPort: p['dstport'] || '0',
+          mirrored: p['mirrored']?.toLowerCase() === 'yes', description: p['description'] || '',
+        });
+        return 'Ok.';
+      }
+      case 'filteraction': {
+        const name = p['name'];
+        if (!name) return 'Usage: netsh ipsec static add filteraction [name=]<string> [[action=]permit|block|negotiate]';
+        const actionStr = (p['action'] || 'negotiate').toLowerCase();
+        const action = actionStr === 'permit' ? 'permit' : actionStr === 'block' ? 'block' : 'negotiate';
+        store.addFilterAction({ name, action, description: p['description'] || '' });
+        return 'Ok.';
+      }
+      case 'rule': {
+        const name = p['name'], policy = p['policy'];
+        if (!name || !policy) return 'Usage: netsh ipsec static add rule [name=]<string> [policy=]<string> [filterlist=]<string> [filteraction=]<string>';
+        if (!store.policies().find((x) => x.name === policy)) return `The policy "${policy}" was not found.`;
+        store.addRule({ name, policy, filterlist: p['filterlist'] || '', filteraction: p['filteraction'] || '' });
+        return 'Ok.';
+      }
+      default:
+        return 'Usage: add policy|filterlist|filter|filteraction|rule name=<name> ...';
+    }
+  }
+
+  private handleIpsecStaticDelete(nc: WindowsNetConfigApi, args: string[]): string {
+    if (args.length === 0) return 'Usage: delete policy|filterlist|filteraction|rule name=<name>';
+    const obj = args[0].toLowerCase();
+    const p = this.parseNameValue(args.slice(1));
+    const name = p['name'];
+    const store = nc.ipsec;
+
+    switch (obj) {
+      case 'policy':
+        if (name === 'all') { store.deleteAllPolicies(); return 'Ok.'; }
+        return store.deletePolicy(name) ? 'Ok.' : `The policy "${name}" was not found.`;
+      case 'filterlist':
+        if (name === 'all') { store.deleteAllFilterLists(); return 'Ok.'; }
+        if (!store.filterLists().find((f) => f.name === name)) return `The filter list "${name}" was not found.`;
+        if (store.filterListInUse(name)) return `The filter list "${name}" cannot be deleted because it is in use by a rule.`;
+        store.deleteFilterList(name);
+        return 'Ok.';
+      case 'filteraction':
+        if (name === 'all') { store.deleteAllFilterActions(); return 'Ok.'; }
+        return store.deleteFilterAction(name) ? 'Ok.' : `The filter action "${name}" was not found.`;
+      case 'rule':
+        return store.deleteRule(name, p['policy'] || undefined) ? 'Ok.' : `The rule "${name}" was not found.`;
+      default:
+        return 'Usage: delete policy|filterlist|filteraction|rule name=<name>';
+    }
+  }
+
+  private handleIpsecStaticShow(nc: WindowsNetConfigApi, args: string[]): string {
+    if (args.length === 0 || args[0] === '?' || args[0] === '/?') return 'Usage: show all|policy|filterlist|filteraction|rule [name=<name>]';
+    const obj = args[0].toLowerCase();
+    const p = this.parseNameValue(args.slice(1));
+    const store = nc.ipsec;
+
+    switch (obj) {
+      case 'all':
+        return [this.showPolicies(store), this.showFilterLists(store), this.showFilterActions(store), this.showRules(store)]
+          .filter(Boolean).join('\n\n') || 'No IPsec configuration.';
+      case 'policy': {
+        const n = p['name'];
+        if (n && !store.policies().find((x) => x.name === n)) return `The policy "${n}" was not found.`;
+        return this.showPolicies(store, n) || 'No policies configured.';
+      }
+      case 'filterlist': {
+        const n = p['name'];
+        if (n && !store.filterLists().find((x) => x.name === n)) return `The filter list "${n}" was not found.`;
+        return this.showFilterLists(store, n) || 'No filter lists configured.';
+      }
+      case 'filteraction': {
+        const n = p['name'];
+        if (n && !store.filterActions().find((x) => x.name === n)) return `The filter action "${n}" was not found.`;
+        return this.showFilterActions(store, n) || 'No filter actions configured.';
+      }
+      case 'rule': {
+        const n = p['name'];
+        if (n && !store.rules().find((x) => x.name === n)) return `The rule "${n}" was not found.`;
+        return this.showRules(store, n) || 'No rules configured.';
+      }
+      default:
+        return 'Usage: show all|policy|filterlist|filteraction|rule [name=<name>]';
+    }
+  }
+
+  private showPolicies(store: WindowsNetConfigApi['ipsec'], name?: string): string {
+    const items = name ? store.policies().filter((x) => x.name === name) : store.policies();
+    if (items.length === 0) return '';
+    const lines = ['IPSec Policies:', '---'];
+    for (const x of items) {
+      lines.push(`  Policy Name: ${x.name}`);
+      if (x.description) lines.push(`  Description: ${x.description}`);
+      lines.push(`  Assigned:    ${x.assigned ? 'YES' : 'NO'}`, '');
+    }
+    return lines.join('\n');
+  }
+
+  private showFilterLists(store: WindowsNetConfigApi['ipsec'], name?: string): string {
+    const items = name ? store.filterLists().filter((x) => x.name === name) : store.filterLists();
+    if (items.length === 0) return '';
+    const lines = ['IPSec Filter Lists:', '---'];
+    for (const fl of items) {
+      lines.push(`  Filter List Name: ${fl.name}`, `  Filters: ${fl.filters.length}`);
+      for (const f of fl.filters) {
+        lines.push(`    Source: ${f.srcAddr}  Destination: ${f.dstAddr}  Protocol: ${f.protocol}`);
+        lines.push(f.mirrored ? '  Mirrored: Yes' : '  Mirrored: No');
+        if (f.description) lines.push(`    Description: ${f.description}`);
+      }
+      lines.push('');
+    }
+    return lines.join('\n');
+  }
+
+  private showFilterActions(store: WindowsNetConfigApi['ipsec'], name?: string): string {
+    const items = name ? store.filterActions().filter((x) => x.name === name) : store.filterActions();
+    if (items.length === 0) return '';
+    const lines = ['IPSec Filter Actions:', '---'];
+    for (const fa of items) {
+      const label = fa.action === 'permit' ? 'Permit' : fa.action === 'block' ? 'Block' : 'Negotiate';
+      lines.push(`  Filter Action Name: ${fa.name}`, `  Action:             ${label}`);
+      if (fa.description) lines.push(`  Description:        ${fa.description}`);
+      lines.push('');
+    }
+    return lines.join('\n');
+  }
+
+  private showRules(store: WindowsNetConfigApi['ipsec'], name?: string): string {
+    const items = name ? store.rules().filter((x) => x.name === name) : store.rules();
+    if (items.length === 0) return '';
+    const lines = ['IPSec Rules:', '---'];
+    for (const r of items) {
+      lines.push(`  Rule Name:     ${r.name}`, `  Policy:        ${r.policy}`,
+        `  Filter List:   ${r.filterlist}`, `  Filter Action: ${r.filteraction}`, '');
+    }
+    return lines.join('\n');
+  }
+
+  private handleIpsecStaticSet(nc: WindowsNetConfigApi, args: string[]): string {
+    if (args.length === 0) return 'Usage: set policy|filteraction name=<name> ...';
+    const obj = args[0].toLowerCase();
+    const p = this.parseNameValue(args.slice(1));
+    if (obj === 'policy') {
+      const name = p['name'];
+      if (!name) return 'Error: name= is required.';
+      const changes: { assigned?: boolean; description?: string } = {};
+      if (p['assign'] !== undefined) changes.assigned = p['assign'].toLowerCase() === 'yes';
+      if (p['description'] !== undefined) changes.description = p['description'];
+      return nc.ipsec.setPolicy(name, changes) ? 'Ok.' : `The policy "${name}" was not found.`;
+    }
+    return 'Usage: set policy|filteraction name=<name> ...';
+  }
+
+  private handleIpsecDynamic(nc: WindowsNetConfigApi, args: string[]): string {
+    if (args.length === 0 || args[0] === '?' || args[0] === '/?' || args[0].toLowerCase() === 'help') return NETSH_IPSEC_DYNAMIC_HELP;
+    const sub = args[0].toLowerCase();
+    if (sub === 'show') return this.handleIpsecDynamicShow(nc, args.slice(1));
+    if (sub === 'set') return this.handleIpsecDynamicSet(nc, args.slice(1));
+    return `The subcommand "${args[0]}" was not found.\nType "netsh ipsec dynamic ?" for more information.`;
+  }
+
+  private handleIpsecDynamicSet(nc: WindowsNetConfigApi, args: string[]): string {
+    if (args.length === 0) return 'Usage: set mainmode|qm|config ...';
+    const obj = args[0].toLowerCase();
+    const joined = args.slice(1).join(' ');
+    if (obj === 'mainmode') {
+      const mm = joined.match(/mmsecmethods=["']?([^"'\s]+)["']?/i);
+      if (mm) nc.ipsec.setDynamicMainMode(mm[1]);
+      return 'Ok.';
+    }
+    if (obj === 'qm') {
+      const qm = joined.match(/qmsecmethods=["']?([^"'\s]+)["']?/i);
+      if (qm) nc.ipsec.setDynamicQm(qm[1]);
+      return 'Ok.';
+    }
+    if (obj === 'config') {
+      for (const [k, v] of Object.entries(this.parseNameValue(args.slice(1)))) nc.ipsec.setDynamicConfig(k, v);
+      return 'Ok.';
+    }
+    return 'Usage: set mainmode|qm|config ...';
+  }
+
+  private handleIpsecDynamicShow(nc: WindowsNetConfigApi, args: string[]): string {
+    if (args.length === 0 || args[0] === '?' || args[0] === '/?') return 'Usage: show all|mmsas|qmsas|mmfilter|mmpolicy|qmfilter|qmpolicy|stats|ikestats';
+    const obj = args[0].toLowerCase();
+    const d = nc.ipsec.dynamic();
+    switch (obj) {
+      case 'all': {
+        const lines = ['Main Mode SAs: 0', 'Quick Mode SAs: 0', '', 'IKE Configuration:', `  IKE Logging:   ${d.ikeLogging}`];
+        if (d.ikeLogging) lines.push(`  ikelogging:    ${d.ikeLogging}`);
+        if (d.mmSecMethods) lines.push(`  Main Mode Security Methods: ${d.mmSecMethods}`);
+        if (d.qmSecMethods) lines.push(`  Quick Mode Security Methods: ${d.qmSecMethods}`);
+        for (const [k, v] of Object.entries(d.config)) lines.push(`  ${k}: ${v}`);
+        lines.push('');
+        return lines.join('\n');
+      }
+      case 'mmsas': return 'No Main Mode Security Associations.';
+      case 'qmsas': return 'No Quick Mode Security Associations.';
+      case 'stats':
+      case 'ikestats':
+        return ['IKE Statistics', '---',
+          '  Active Acquire:               0', '  Active Receive:               0',
+          '  Acquire Failures:             0', '  Receive Failures:             0',
+          '  Send Failures:                0', '  Acquire Heap Size:            0',
+          '  Receive Heap Size:            0', '  Negotiation Failures:         0',
+          '  Authentication Failures:      0', '  Invalid Cookies Received:     0',
+          '  Total Acquire:                0', '  Total Get SPI:                0',
+          '  Key Additions:                0', '  Key Updates:                  0',
+          '  Get SPI Failures:             0', '  Key Addition Failures:        0',
+          '  Key Update Failures:          0', '  ISADB List Size:              0',
+          '  Connection List Size:         0', '  IKE Main Mode:                0',
+          '  IKE Quick Mode:               0', '  Soft Associations:            0',
+          '  Invalid Packets Received:     0'].join('\n');
+      default: return 'Usage: show all|mmsas|qmsas|mmfilter|mmpolicy|qmfilter|qmpolicy|stats|ikestats';
+    }
   }
 }

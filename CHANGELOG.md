@@ -5,6 +5,43 @@ progressive par équipement. Un push = une entrée = une fonctionnalité
 complète et testée (voir `CLAUDE.md` / le framework de migration pour les
 principes directeurs).
 
+## Windows — Phase 17 : migration `netsh` — contexte `ipsec` (static + dynamic)
+
+**État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
+
+Troisième tranche de `netsh` (voir Phases 15-16). Le contexte `ipsec` est
+le plus gros bloc autonome restant (~56 réf. de test `netsh ipsec static`,
+12 `dynamic`).
+
+**Magasin de politiques IPsec migré et assaini** : le legacy stockait
+`winIPSecPolicies`/`winIPSecFilterLists`/`winIPSecFilterActions`/
+`winIPSecRules`/`winIPSecDynamic` en **variables module-level globales** —
+partagées par TOUS les `WindowsPC` d'un même processus (bug latent
+d'isolation). La migration les déplace en état **par-instance** sur
+`WindowsPC` (`ipsecNetshState`), exposé via une nouvelle capacité
+`WindowsNetConfigApi.ipsec: WindowsIpsecStore` — CRUD granulaire typé
+(policies/filterLists/filters/filterActions/rules + réglages dynamic
+main-mode/qm/config). Types `WindowsIpsecPolicy`/`WindowsIpsecFilter`/
+`WindowsIpsecFilterList`/`WindowsIpsecFilterAction`/`WindowsIpsecRule`/
+`WindowsIpsecDynamicSettings` ajoutés.
+
+`NetshCommand` porte l'intégralité du parsing `name=value`, du dispatch de
+sous-objet (`add|delete|show|set policy|filterlist|filter|filteraction|
+rule`, `dynamic set|show mainmode|qm|config|all|stats`), de la validation
+(IP, doublons, liste de filtres en cours d'usage) et du formatage — copié
+depuis `WinNetsh.ts`, qui reste intact pour le shim PowerShell. Le magasin
+ne fait que du CRUD ; tous les messages (« already exists »/« was not
+found »/« cannot be deleted because it is in use ») vivent dans la
+commande.
+
+Validation : typecheck et ESLint propres. `cmd-netsh.test.ts` comparé au
+commit pré-Phase-17 via `git stash` : 68 échecs/118 réussites avant →
+44/142 après, 24 tests corrigés, zéro régression. Suites
+netsh/consistency/arp (140 tests) re-vérifiées sans régression.
+
+Contextes `netsh` encore différés : `lan`, `wlan`, `http`, `advfirewall`,
+`dhcp server`, `nps`, `bridge`, `namespace`.
+
 ## Windows — Phase 16 : migration `netsh` — contextes `dhcpclient`, `dnsclient`
 
 **État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
