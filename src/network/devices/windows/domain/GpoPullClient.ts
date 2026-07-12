@@ -1,22 +1,18 @@
 /**
  * GpoPullClient — `gpupdate /force`'s real network dialogue (PRD-Windows-
- * Server.md §5 P10): dials the DC's LDAP listener, binds as this
- * machine's own computer account (the real credential Group Policy
- * processing runs under, not the logged-on user), then reads the
+ * Server.md §5 P10): AS/TGS/AP-REQ Kerberos exchange for the machine's
+ * own computer account, then a GSSAPI-bound LDAP session reading the
  * domain root's `gPLink` and — if this computer's own OU carries links
  * too — that OU's `gPLink`, resolving each linked GPO container's
- * settings with a further real SearchRequest. Mirrors `DomainLogonClient`'s
- * wire shape exactly.
- *
- * Real gpupdate also reads GPO content from SYSVOL (file-based); this
- * simulator keeps everything in the directory (`gpoAccountPolicy`/
- * `gpoLogonBanner`/`gpoStartupScript` attributes) since no SYSVOL/FRS
- * replication content exists here (PRD §2.2 non-goal, already excluded
- * for domain join/SYSVOL provisioning in P6).
+ * settings with a further real SearchRequest.
  */
 
 import type { TcpStack } from '@/network/tcp/TcpStack';
 import { dialLdap } from '../server/ad/ldap/LdapClient';
+import { dialKdc, buildApReq } from '@/network/kerberos/KerberosClient';
+import { KU_AP_REQ_AUTHENTICATOR } from '@/network/kerberos/crypto';
+import { principalName, PrincipalNameType } from '@/network/kerberos/types';
+import { discoverDcHostname, rootDnOf } from './DcHostnameDiscovery';
 import type { DomainMembership } from './DomainTypes';
 import type { GpoSettings } from '../server/ad/AdTypes';
 
@@ -25,10 +21,6 @@ export interface GpoPullResult {
   message: string;
   appliedGpoNames: string[];
   settings: GpoSettings;
-}
-
-function rootDnOf(dnsName: string): string {
-  return dnsName.split('.').map(p => `DC=${p}`).join(',');
 }
 
 function parseGpoSettings(attrs: Array<{ type: string; values: string[] }>): GpoSettings {
@@ -51,16 +43,32 @@ function mergeSettings(target: GpoSettings, source: GpoSettings): void {
 }
 
 export function pullGroupPolicy(tcpStack: TcpStack, membership: DomainMembership, hostname: string): GpoPullResult {
-  const conn = dialLdap(tcpStack, membership.dcAddress);
-  if (!conn.ok || !conn.client) {
-    return { ok: false, message: 'The processing of Group Policy failed because of lack of network connectivity to a domain controller.', appliedGpoNames: [], settings: {} };
-  }
-  const ldap = conn.client;
+  const noNetwork: GpoPullResult = { ok: false, message: 'The processing of Group Policy failed because of lack of network connectivity to a domain controller.', appliedGpoNames: [], settings: {} };
+  const denied: GpoPullResult = { ok: false, message: 'Access is denied.', appliedGpoNames: [], settings: {} };
+
+  const dcHostname = discoverDcHostname(tcpStack, membership.dcAddress, membership.dnsName);
+  if (!dcHostname) return noNetwork;
+
+  const realm = membership.dnsName.toUpperCase();
+  const kdcConn = dialKdc(tcpStack, membership.dcAddress);
+  if (!kdcConn.ok || !kdcConn.client) return noNetwork;
   const computerSam = `${hostname}$`;
-  const bind = ldap.bind(computerSam, membership.machineSecret);
+  const cname = principalName(PrincipalNameType.NT_PRINCIPAL, computerSam);
+
+  const asResult = kdcConn.client.asExchange(computerSam, membership.machineSecret, realm);
+  if (!asResult.ok) return denied;
+  const tgsResult = kdcConn.client.tgsExchange(asResult.ticket!, asResult.sessionKey!, cname, realm, dcHostname);
+  if (!tgsResult.ok) return denied;
+  const apReqBytes = buildApReq(tgsResult.ticket!, tgsResult.sessionKey!, cname, realm, KU_AP_REQ_AUTHENTICATOR);
+
+  const conn = dialLdap(tcpStack, membership.dcAddress);
+  if (!conn.ok || !conn.client) return noNetwork;
+  const ldap = conn.client;
+
+  const bind = ldap.bindSasl('GSSAPI', apReqBytes);
   if (!bind.ok) {
     ldap.unbind();
-    return { ok: false, message: 'Access is denied.', appliedGpoNames: [], settings: {} };
+    return denied;
   }
 
   const rootDn = rootDnOf(membership.dnsName);

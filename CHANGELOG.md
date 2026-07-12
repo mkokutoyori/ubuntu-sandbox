@@ -5,6 +5,25 @@ progressive par équipement. Un push = une entrée = une fonctionnalité
 complète et testée (voir `CLAUDE.md` / le framework de migration pour les
 principes directeurs).
 
+## Windows Server — migre GpoPullClient (gpupdate) vers le vrai Kerberos (clôt P24)
+
+Dernier consommateur LDAP encore en bind simple plaintext
+(`ldap.bind(computerSam, machineSecret)`) — `DomainJoinClient` et
+`DomainLogonClient` étaient déjà passés au vrai AS/TGS/AP-REQ/
+`bindSasl('GSSAPI', ...)` dans un lot antérieur. `GpoPullClient.
+pullGroupPolicy` fait maintenant la même séquence, authentifié comme le
+compte ordinateur lui-même (`hostname$` + `machineSecret`, déjà supporté
+côté KDC — `KdcSessionHandler` route un sAMAccountName finissant par
+`$` vers `getComputerSecret`) ; le reste de la logique (lecture des
+`gPLink` racine + OU, résolution des GPO) est inchangé.
+
+**Validation** : `windows-gpo-core.test.ts` (100% — teste l'API
+directement) + `windows-domain-kerberos-migration.test.ts` (100%) +
+`windows-server-gpo.test.ts` / `windows-server-domain-join.test.ts`
+(échecs identiques avant/après : gap pré-existant, sans rapport, de
+dispatch cmd pour `gpupdate`/`gpresult`/`netdom`/`nltest`/`dcdiag`/
+`klist`). Typecheck et lint ciblés propres.
+
 ## Windows Server — enregistrements SRV Global Catalog et scopés au site à la promotion DC
 
 `WindowsServer` sait désormais si l'instance est un Global Catalog
