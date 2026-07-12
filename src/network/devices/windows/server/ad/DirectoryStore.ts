@@ -743,22 +743,42 @@ export class DirectoryStore {
     };
   }
 
+  /** `Add-ADGroupMember` — `memberSam` may itself be a group (real AD supports nested groups); refuses direct or transitive self-membership (`Cannot make a group a member of itself` — a real, well-known AD error). */
   addGroupMember(groupSam: string, memberSam: string): DirOpResult {
     const group = this.findGroupEntry(groupSam);
     if (!group) return { ok: false, message: `Cannot find an object with identity: '${groupSam}'.` };
-    const member = this.findUserEntry(memberSam) ?? this.findComputerEntry(memberSam);
+    const member = this.findUserEntry(memberSam) ?? this.findComputerEntry(memberSam) ?? this.findGroupEntry(memberSam);
     if (!member) return { ok: false, message: `Cannot find an object with identity: '${memberSam}'.` };
     const memberDn = formatDN(member.dn);
     const groupDn = formatDN(group.dn);
+    if (hasObjectClass(member, 'group')) {
+      if (memberDn.toLowerCase() === groupDn.toLowerCase() || this.isReachableViaMembership(member, groupDn, new Set())) {
+        return { ok: false, message: 'Cannot make a group a member of itself.' };
+      }
+    }
     this.tree.modifyEntry(group.dn, [{ op: 'add', type: 'member', values: [memberDn] }]);
     this.tree.modifyEntry(member.dn, [{ op: 'add', type: 'memberOf', values: [groupDn] }]);
     return { ok: true, message: '' };
   }
 
+  /** `true` if `targetDn` is reachable by walking `fromGroup`'s own (possibly nested) `member` list — i.e. whether adding `fromGroup` as a member of the group at `targetDn` would close a cycle. Cycle-safe via `seen`. */
+  private isReachableViaMembership(fromGroup: DirectoryEntry, targetDn: string, seen: Set<string>): boolean {
+    const key = formatDN(fromGroup.dn).toLowerCase();
+    if (seen.has(key)) return false;
+    seen.add(key);
+    for (const memberDnStr of fromGroup.attributes.get('member') ?? []) {
+      if (memberDnStr.toLowerCase() === targetDn.toLowerCase()) return true;
+      let entry: DirectoryEntry | null;
+      try { entry = this.tree.getByDn(parseDN(memberDnStr)); } catch { entry = null; }
+      if (entry && hasObjectClass(entry, 'group') && this.isReachableViaMembership(entry, targetDn, seen)) return true;
+    }
+    return false;
+  }
+
   removeGroupMember(groupSam: string, memberSam: string): DirOpResult {
     const group = this.findGroupEntry(groupSam);
     if (!group) return { ok: false, message: `Cannot find an object with identity: '${groupSam}'.` };
-    const member = this.findUserEntry(memberSam) ?? this.findComputerEntry(memberSam);
+    const member = this.findUserEntry(memberSam) ?? this.findComputerEntry(memberSam) ?? this.findGroupEntry(memberSam);
     const groupDn = formatDN(group.dn);
     this.tree.modifyEntry(group.dn, [{ op: 'delete', type: 'member', values: member ? [formatDN(member.dn)] : [] }]);
     if (member) this.tree.modifyEntry(member.dn, [{ op: 'delete', type: 'memberOf', values: [groupDn] }]);

@@ -5,6 +5,27 @@ progressive par équipement. Un push = une entrée = une fonctionnalité
 complète et testée (voir `CLAUDE.md` / le framework de migration pour les
 principes directeurs).
 
+## Windows Server — imbrication de groupes protégée contre les cycles
+
+`addGroupMember` n'acceptait jusqu'ici qu'un utilisateur ou un
+ordinateur comme membre — aucune voie publique n'existait pour imbriquer
+un groupe dans un autre. Résout désormais aussi les groupes (comme
+`Add-ADGroupMember` réel), avec une vérification anti-cycle : refuse
+l'auto-appartenance directe (`Cannot make a group a member of itself`,
+message réel d'AD) et transitive, via un nouveau
+`isReachableViaMembership` privé qui parcourt l'appartenance imbriquée
+du membre candidat pour vérifier si le groupe cible y est déjà
+atteignable. `removeGroupMember` mis à jour symétriquement pour
+résoudre aussi les groupes.
+
+**Validation** : nouveau `ad-group-nesting.test.ts` (6 tests) —
+imbrication simple autorisée, auto-appartenance directe refusée, cycle
+à deux et trois niveaux refusé, diamant non cyclique (deux groupes
+parents partageant un même groupe enfant) autorisé,
+`removeGroupMember` retire bien un membre imbriqué. Suite élargie
+(5 fichiers, y compris la conversion de portée de groupe de la tâche
+précédente) : 111/111 au vert. Typecheck et lint ciblés propres.
+
 ## Windows Server — règles de conversion de portée de groupe (`Set-ADGroup -GroupScope`)
 
 Aucune règle n'était appliquée jusqu'ici — n'importe quel changement de
