@@ -5,6 +5,47 @@ progressive par équipement. Un push = une entrée = une fonctionnalité
 complète et testée (voir `CLAUDE.md` / le framework de migration pour les
 principes directeurs).
 
+## Windows Server — enregistrement DNS dynamique à la jonction de domaine (P7)
+
+Premier lot du chantier "cœur Windows Server" (AD DS/DNS/DHCP/objets/GPO,
+hors commandes et PowerShell) : `WindowsDnsServerRole.applyDynamicARecord`
+existait déjà mais n'était appelé nulle part (code mort confirmé par
+grep exhaustif) et était de toute façon cassé pour tout appelant réel
+(traitait son paramètre comme un FQDN déjà complet, sans jamais passer
+par `this.fqdn(...)` comme `addARecord` le fait).
+
+**Câblage** : la jonction de domaine (`Add-Computer`/`netdom join`) envoie
+déjà un vrai `AddRequest` LDAP par-dessus le câble pour créer le compte
+ordinateur — ce PDU porte désormais aussi l'IP de la machine qui rejoint
+(`DomainJoinClient.joinDomain()` accepte un `ownIp` optionnel, ajouté
+comme attribut `ipAddress` sur l'`AddRequest`). Côté DC, `LdapServerHandler`
+(`LdapServer.ts`) détecte après un `addRequest` réussi si l'entrée créée
+est un objet `computer` porteur d'un attribut IP, et déclenche alors
+`onComputerRegistered` — un nouveau hook optionnel de `LdapServerContext`,
+câblé dans `WindowsPC.ts` à l'écoute TCP/389 pour appeler
+`this.getDnsServerRole()?.applyDynamicARecord(...)` en mémoire sur ce
+même device. La mutation DNS elle-même reste un appel in-process (même
+convention que `PrimaryZoneAgent.applyUpdate`, déjà établie dans tout le
+moteur DNS pour BIND9 comme pour Windows) — seul le transfert de l'IP
+entre les deux machines devait obligatoirement passer par un PDU réel
+sur le câble, ce qui est désormais le cas.
+
+`AdComputer.lastKnownIp` (jusqu'ici un champ diagnostic jamais peuplé)
+est maintenant réellement projeté depuis l'attribut `ipAddress` de
+l'entrée LDAP par `DirectoryStore.projectComputer()`.
+
+**Validation** : nouveau test dans `windows-server-dns.test.ts`
+(jonction de domaine réelle avec le rôle DNS installé avant la
+promotion → vérifie l'enregistrement A du poste joint sur le DC) +
+suite complète DNS/LDAP/domain-join/AD (`windows-server-dns`,
+`windows-server-domain-join`, `ldap-server-client`, `ldap-gssapi-bind`,
+`ldap-wire-p11`, `windows-dns-server-role`, `ad-forest`, `ad-sites`) —
+87 tests, 13 échecs pré-existants et sans rapport (gap générique de
+dispatch cmd pour `dnscmd`/`netdom`/`nltest`/`dcdiag`/`klist`/`gpupdate`/
+`gpresult`, confirmé identique avant/après par `git stash`). Typecheck
+et lint ciblés propres (2 erreurs lint pré-existantes, lignes éloignées
+des modifications).
+
 ## Convergence de branche : Linux Phase 4 (`realpath` + correctif cwd) + Windows Phase 17 (`netsh ipsec`)
 
 **État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**

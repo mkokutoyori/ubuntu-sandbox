@@ -487,6 +487,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
           kerberos: serviceSecret !== null ? { realm: store.getRealm(), serviceSecret } : undefined,
           startTls: { serverCert: this.ldapStartTlsIdentity.cert, serverPrivateKey: this.ldapStartTlsIdentity.keyPair.privateKey },
           otherForestDomainRoots: () => otherDomainRoots,
+          onComputerRegistered: (computerName, ip) => this.getDnsServerRole()?.applyDynamicARecord(store.dnsName, computerName, ip),
         }).register(socket);
       },
     });
@@ -750,6 +751,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     if (this.domainMembership) {
       return { ok: false, message: `The computer '${this.getHostname()}' is already joined to a domain.` };
     }
+    const ownIp = this.getInterfaces().map(p => p.getIPAddress()).find((ip): ip is NonNullable<typeof ip> => ip !== null)?.toString();
     const result = joinDomain({
       tcpStack: this.getTcpStack(),
       computerName: this.getHostname(),
@@ -757,6 +759,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       dcAddress,
       credentialUser,
       credentialPassword,
+      ownIp,
     });
     if (result.ok && result.membership) this.domainMembership = result.membership;
     return result;

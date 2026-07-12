@@ -285,12 +285,13 @@ export class WindowsDnsServerRole {
     }));
   }
 
-  /** Direct in-process zone mutation for dynamic updates (DHCP lease grant, domain join) — see file header. */
-  applyDynamicARecord(zoneName: string, fqdnName: string, ipv4: string, ttl = 3600): DnsOpResult {
+  /** Direct in-process zone mutation for dynamic updates (DHCP lease grant, domain join) — see file header. `recordName` is relative to `zoneName`, same convention as `addARecord`. */
+  applyDynamicARecord(zoneName: string, recordName: string, ipv4: string, ttl = 3600): DnsOpResult {
     const zone = this.store.getZone(zoneName);
     if (!zone) return { ok: false, message: `Zone "${zoneName}" does not exist on this server.` };
-    for (const rr of zone.getRRSet(fqdnName, RRType.A) ?? []) zone.removeRecord(rr);
-    zone.addRecord(makeARecord(fqdnName, ttl, ipv4));
+    const fqdn = this.fqdn(recordName, zone);
+    for (const rr of zone.getRRSet(fqdn, RRType.A) ?? []) zone.removeRecord(rr);
+    zone.addRecord(makeARecord(fqdn, ttl, ipv4));
     bumpSerial(zone);
     return { ok: true, message: '' };
   }

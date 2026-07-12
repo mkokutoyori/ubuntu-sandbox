@@ -223,4 +223,17 @@ describe('AD-integrated DNS zone auto-provisioned at DC promotion', () => {
     expect(out).toContain('389');
     expect(out.toLowerCase()).toContain('dns1.lab.local');
   });
+
+  it('registers a dynamic DNS A record for a computer that joins the domain over the real LDAP AddRequest', async () => {
+    const { dns: dc, client } = await buildLan();
+    await run(ps(dc), 'Install-WindowsFeature DNS');
+    await run(ps(dc), 'Install-WindowsFeature AD-Domain-Services');
+    await run(ps(dc), 'Install-ADDSForest -DomainName lab.local -SafeModeAdministratorPassword (ConvertTo-SecureString "P@ssw0rd" -AsPlainText -Force)');
+
+    client.joinDomainNow('lab.local', '192.168.60.10', 'Administrator', 'P@ssw0rd');
+
+    const records = dc.getDnsServerRole()!.getRecords('lab.local', 'CLIENT1');
+    expect(records).not.toBeNull();
+    expect(records!.some(r => r.type === 'A' && r.text === '192.168.60.20')).toBe(true);
+  });
 });

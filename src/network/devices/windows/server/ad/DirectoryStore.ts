@@ -560,6 +560,7 @@ export class DirectoryStore {
       dn: formatDN(entry.dn),
       machineSecret: firstOf(entry.attributes.get('userpassword')),
       enabled: isEnabledFromUac(entry.attributes.get('useraccountcontrol')),
+      lastKnownIp: firstOf(entry.attributes.get('ipaddress')) || undefined,
     };
   }
 

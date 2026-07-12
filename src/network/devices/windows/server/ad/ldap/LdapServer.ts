@@ -13,7 +13,7 @@
 
 import type { TcpSocket } from '@/network/tcp/TcpStack';
 import { DirectoryTree, type DirectoryEntry } from './DirectoryTree';
-import { parseDN, formatDN, type DistinguishedName } from './LdapDN';
+import { parseDN, formatDN, leafValue, type DistinguishedName } from './LdapDN';
 import {
   type LdapMessage, type ProtocolOp, type PartialAttribute, type LdapResult, type SaslCredentials, type LdapControl,
   encodeLdapMessage, decodeLdapMessage, ldapResult, LdapResultCode,
@@ -62,6 +62,17 @@ export interface LdapServerContext {
    * `searchResultReference` instead of an empty success.
    */
   otherForestDomainRoots?: () => string[];
+  /**
+   * Dynamic DNS registration hook (PRD-Windows-Server.md §5 P7): invoked
+   * after a successful `AddRequest` that creates a `computer` object
+   * carrying an `ipAddress` attribute — i.e. a real domain join whose
+   * `AddRequest` PDU (already crossing the wire for authentication) also
+   * happens to carry the joining computer's own IP. Registration itself
+   * stays an in-process call on this same device (mirrors
+   * `PrimaryZoneAgent.applyUpdate`'s own established convention), but the
+   * IP genuinely arrived over the wire, not via a cross-device shortcut.
+   */
+  onComputerRegistered?: (computerName: string, ip: string) => void;
 }
 
 const CLOCK_SKEW_SECONDS = 5 * 60;
@@ -192,6 +203,7 @@ export class LdapServerHandler {
         const attrs: Record<string, string[]> = {};
         for (const a of op.attributes) attrs[a.type] = a.values;
         const res = this.ctx.tree.addEntry(dn, attrs);
+        if (res.ok) this.notifyComputerRegistered(dn, attrs);
         this.reply(socket, msg.messageID, {
           kind: 'addResponse',
           result: res.ok ? ldapResult(LdapResultCode.success) : ldapResult(treeMessageToResultCode(res.message), '', res.message),
@@ -306,6 +318,18 @@ export class LdapServerHandler {
 
   private tryParseDn(s: string): ReturnType<typeof parseDN> | null {
     try { return parseDN(s); } catch { return null; }
+  }
+
+  /** Fires `onComputerRegistered` when the just-added entry is a `computer` object carrying an IP (a real domain join, not a plain `New-ADComputer` pre-provision). */
+  private notifyComputerRegistered(dn: DistinguishedName, attrs: Record<string, string[]>): void {
+    if (!this.ctx.onComputerRegistered) return;
+    const byLowerType = new Map(Object.entries(attrs).map(([k, v]) => [k.toLowerCase(), v]));
+    const objectClass = (byLowerType.get('objectclass') ?? []).map(v => v.toLowerCase());
+    if (!objectClass.includes('computer')) return;
+    const ip = byLowerType.get('ipaddress')?.[0];
+    if (!ip) return;
+    const cn = byLowerType.get('cn')?.[0] ?? leafValue(dn) ?? '';
+    if (cn) this.ctx.onComputerRegistered(cn, ip);
   }
 
   /**
