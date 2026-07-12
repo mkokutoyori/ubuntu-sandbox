@@ -5,6 +5,40 @@ progressive par équipement. Un push = une entrée = une fonctionnalité
 complète et testée (voir `CLAUDE.md` / le framework de migration pour les
 principes directeurs).
 
+## Windows — Phase 18 : migration `netsh` — contextes `lan`, `wlan`, `http`, `bridge`, `namespace`
+
+**État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
+
+Quatrième tranche de `netsh` (voir Phases 15-17). Ferme tous les
+sous-contextes « magasin de configuration en mémoire » restants : profils
+filaires (`lan`, 47 réf. de test), profils sans-fil (`wlan`), HTTP.sys
+(`http`), ponts réseau (`bridge`), politiques NRPT (`namespace`).
+
+Comme pour l'IPsec en Phase 17, ces magasins étaient stockés en état
+module-level / `WeakMap` par le legacy — pour NRPT (`nrptPolicies`) c'était
+un tableau global partagé par tous les `WindowsPC` (bug d'isolation). La
+migration les déplace en état **par-instance** sur `WindowsPC`
+(`netshFeatureState`), exposé via cinq nouvelles capacités typées
+`WindowsNetConfigApi.lan`/`wlan`/`http`/`bridge`/`nrpt` — CRUD granulaire
+(`WindowsLanStore`/`WindowsWlanStore`/`WindowsHttpStore`/
+`WindowsBridgeStore`/`WindowsNrptStore`). `NetshCommand` porte tout le
+parsing, le dispatch et le formatage, copié depuis `WinNetsh.ts` (intact
+pour le shim PowerShell).
+
+Validation : typecheck et ESLint propres. `cmd-netsh.test.ts` comparé au
+commit pré-Phase-18 via `git stash` : 44 échecs/142 réussites avant →
+9/177 après, 35 tests corrigés, zéro régression (échecs strictement en
+baisse, réussites strictement +35). Suites netsh/consistency/arp/ipconfig
+(149 tests) re-vérifiées sans régression.
+
+Les 9 échecs `cmd-netsh` restants : 4 tests IPsec ordre-dépendants
+(ils font `show` sur un `WindowsPC` neuf en attendant des données ajoutées
+par un test PRÉCÉDENT sur une AUTRE instance — anti-patron reposant sur
+l'ancienne fuite d'état global, que l'isolation par-instance corrige à
+juste titre ; ils échouaient déjà avant toute migration `netsh`), plus
+`advfirewall`/`dhcp server`/`nps` — contextes encore différés (plan
+d'action réseau/rôle serveur distinct).
+
 ## Windows — Phase 17 : migration `netsh` — contexte `ipsec` (static + dynamic)
 
 **État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
