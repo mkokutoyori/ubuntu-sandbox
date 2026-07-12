@@ -5,6 +5,37 @@ progressive par équipement. Un push = une entrée = une fonctionnalité
 complète et testée (voir `CLAUDE.md` / le framework de migration pour les
 principes directeurs).
 
+## Windows Server — application de `msDS-SupportedEncryptionTypes` (Kerberos)
+
+Totalement absent jusqu'ici : le KDC (`KdcSession`) émettait toujours un
+ticket AES256, sans jamais consulter la restriction de types de
+chiffrement d'un compte. `AdUser`/`AdComputer` gagnent
+`supportedEncryptionTypes: number` (bitmask), avec accesseurs
+`get/setUserSupportedEncryptionTypes` et `get/setComputerSupportedEncryptionTypes`
+sur `DirectoryStore`, et `supportsAes256(sam, isComputer)` pour
+l'application. Valeur par défaut quand l'attribut n'a jamais été posé :
+`0x1C` (RC4+AES128+AES256), reflet du comportement réel d'un domaine
+moderne — un `0` explicite reste distinct de « jamais configuré » et
+désactive bien AES256.
+
+`handleAsReq` (AS-REQ) refuse désormais avec `KDC_ERR_ETYPE_NOSUPP` dès
+que le compte authentifiant (utilisateur ou ordinateur) n'a pas le bit
+AES256, ou que le client n'offre pas l'etype 18 — AES256 étant le seul
+chiffrement réellement implémenté par ce simulateur (`crypto.ts`), un
+compte restreint ne peut pas être « replié » sur un autre algorithme.
+**Périmètre volontairement borné à l'AS-REQ** (authentification
+initiale) — le TGS-REQ/S4U2Proxy n'est pas touché, cohérent avec la
+discipline déjà appliquée au verrouillage/à l'expiration de compte.
+
+**Validation** : nouveau `ad-supported-encryption-types.test.ts` (9 tests :
+valeur par défaut, accesseurs get/set utilisateur et ordinateur, échec
+sur identité inconnue, `supportsAes256`, `0` explicite vs non configuré,
+plus 3 tests d'intégration bout-en-bout sur un vrai câble TCP/88 —
+échange réussi par défaut, refus après restriction, rétablissement après
+réautorisation). Suite Kerberos élargie (AS/TGS/S4U2Proxy/RBCD/
+`ad-directory-store`/dernière-connexion/contacts) : 86/86 au vert.
+Typecheck et lint ciblés propres.
+
 ## Windows Server — refactor : extraction de `ContactStore` hors de `DirectoryStore.ts`
 
 **Refactor, pas une nouvelle fonctionnalité.** `DirectoryStore.ts` avait

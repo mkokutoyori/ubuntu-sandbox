@@ -97,9 +97,22 @@ export class KdcSessionHandler {
      * for S4U2Proxy (PRD-Windows-Server-Advanced.md §5 P10), obtained
      * exactly the same way a user's is.
      */
-    const secret = sam.endsWith('$') ? this.ctx.store.getComputerSecret(sam.slice(0, -1)) : this.ctx.store.getUserSecret(sam);
+    const isComputer = sam.endsWith('$');
+    const bareSam = isComputer ? sam.slice(0, -1) : sam;
+    const secret = isComputer ? this.ctx.store.getComputerSecret(bareSam) : this.ctx.store.getUserSecret(bareSam);
     if (secret === null) {
       this.failAs(socket, req, cnameStr, KrbErrorCode.KDC_ERR_C_PRINCIPAL_UNKNOWN);
+      return;
+    }
+    /**
+     * `msDS-SupportedEncryptionTypes` (batch feature 10): AES256 is the
+     * only cipher this simulator's Kerberos actually implements
+     * (`crypto.ts`), so an account restricted away from it (or a client
+     * that never offers it) can't be serviced at all rather than silently
+     * downgraded to an unmodeled cipher.
+     */
+    if (!this.ctx.store.supportsAes256(bareSam, isComputer) || !req.reqBody.etype.includes(AES256_CTS_HMAC_SHA1_96)) {
+      this.failAs(socket, req, cnameStr, KrbErrorCode.KDC_ERR_ETYPE_NOSUPP, 'KDC has no support for encryption type');
       return;
     }
     const realm = this.ctx.store.getRealm();

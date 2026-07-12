@@ -28,6 +28,8 @@ export interface AdUser {
   passwordNeverExpires: boolean;
   /** Epoch seconds of the last successful LDAP simple-bind authentication (`DirectoryStore.checkPassword`), or `null` before any. Real AD keeps a per-DC, non-replicated `lastLogon` alongside a replicated, staleness-gated `lastLogonTimestamp` — this simulator models only the latter, updated on every success rather than gated by staleness. */
   lastLogonTimestamp: number | null;
+  /** `msDS-SupportedEncryptionTypes` bitmask (MS-ADA2 §2.253) — which Kerberos etypes this principal may authenticate with; the KDC (`KdcSession`) refuses an AS-REQ when the AES256 bit is unset, since that's the only cipher this simulator's Kerberos actually implements. Defaults to RC4+AES128+AES256 (0x1C) when never explicitly set, matching a modern domain's effective default. */
+  supportedEncryptionTypes: number;
 }
 
 export interface AdGroup {
@@ -106,6 +108,8 @@ export interface AdComputer {
   /** IP the computer account last joined/logged on from — diagnostic only. */
   lastKnownIp?: string;
   objectSid: string;
+  /** `msDS-SupportedEncryptionTypes` bitmask — see `AdUser.supportedEncryptionTypes`. */
+  supportedEncryptionTypes: number;
 }
 
 /** `New-ADObject -Type contact` (MS-ADTS): an external person with no logon capability — no sAMAccountName, no userAccountControl, no password. */

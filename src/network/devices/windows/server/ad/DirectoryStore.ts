@@ -57,6 +57,11 @@ const UAC = {
   DONT_EXPIRE_PASSWORD: 0x10000,
 } as const;
 
+/** `msDS-SupportedEncryptionTypes` bit flags (MS-ADA2 §2.253) — only the bits this simulator's Kerberos KDC (`KdcSession`) actually checks; DES bits are omitted since real AD treats them as disabled/deprecated by default anyway. */
+const ENC_TYPES = { RC4: 0x4, AES128: 0x8, AES256: 0x10 } as const;
+/** Real AD's effective default when the attribute is never explicitly set — RC4+AES128+AES256 enabled, DES disabled. */
+const DEFAULT_SUPPORTED_ENCRYPTION_TYPES = ENC_TYPES.RC4 | ENC_TYPES.AES128 | ENC_TYPES.AES256;
+
 /** Real AD groupType bit-flag values (security groups only — no distribution-group support). */
 const GROUP_TYPE: Record<AdGroup['scope'], number> = {
   Global: -2147483646,
@@ -99,6 +104,13 @@ function isEnabledFromUac(values: string[] | undefined): boolean {
 function hasUacFlag(values: string[] | undefined, flag: number): boolean {
   const uac = Number(firstOf(values));
   return Number.isFinite(uac) && (uac & flag) !== 0;
+}
+/** Parses `msDS-SupportedEncryptionTypes`, falling back to the domain default only when the attribute was never set at all (an explicit `0` — "no types supported" — is a valid, deliberately-restrictive value and must not be treated as unset). */
+function supportedEncTypesValue(values: string[] | undefined): number {
+  const raw = firstOf(values);
+  if (raw === '') return DEFAULT_SUPPORTED_ENCRYPTION_TYPES;
+  const n = Number(raw);
+  return Number.isFinite(n) ? n : DEFAULT_SUPPORTED_ENCRYPTION_TYPES;
 }
 function hasObjectClass(entry: DirectoryEntry, oc: string): boolean {
   return (entry.attributes.get('objectclass') ?? []).some(v => v.toLowerCase() === oc.toLowerCase());
@@ -499,7 +511,22 @@ export class DirectoryStore {
       accountExpires: Number(firstOf(entry.attributes.get('accountexpires'))) || null,
       passwordNeverExpires: hasUacFlag(entry.attributes.get('useraccountcontrol'), UAC.DONT_EXPIRE_PASSWORD),
       lastLogonTimestamp: Number(firstOf(entry.attributes.get('lastlogontimestamp'))) || null,
+      supportedEncryptionTypes: supportedEncTypesValue(entry.attributes.get('msds-supportedencryptiontypes')),
     };
+  }
+
+  /** `Set-ADUser -KerberosEncryptionType` (MS-ADA2 §2.253) — raw `msDS-SupportedEncryptionTypes` bitmask. The Kerberos KDC (`KdcSession`) consults it at AS-REQ time and refuses to issue a ticket if the AES256 bit is unset, since AES256 is the only cipher this simulator actually implements (`crypto.ts`). */
+  setUserSupportedEncryptionTypes(sam: string, value: number): DirOpResult {
+    const entry = this.findUserEntry(sam);
+    if (!entry) return { ok: false, message: `Cannot find an object with identity: '${sam}'.` };
+    this.tree.modifyEntry(entry.dn, [{ op: 'replace', type: 'msDS-SupportedEncryptionTypes', values: [String(value)] }]);
+    return { ok: true, message: '' };
+  }
+
+  /** Consulted by `KdcSession`'s AS-REQ path for both user and computer principals (`sam` bare, no trailing `$`). */
+  getUserSupportedEncryptionTypes(sam: string): number {
+    const entry = this.findUserEntry(sam);
+    return entry ? supportedEncTypesValue(entry.attributes.get('msds-supportedencryptiontypes')) : DEFAULT_SUPPORTED_ENCRYPTION_TYPES;
   }
 
   setUser(sam: string, opts: { enabled?: boolean; fullName?: string; password?: string; passwordNeverExpires?: boolean }): DirOpResult {
@@ -955,7 +982,28 @@ export class DirectoryStore {
       enabled: isEnabledFromUac(entry.attributes.get('useraccountcontrol')),
       lastKnownIp: firstOf(entry.attributes.get('ipaddress')) || undefined,
       objectSid: firstOf(entry.attributes.get('objectsid')),
+      supportedEncryptionTypes: supportedEncTypesValue(entry.attributes.get('msds-supportedencryptiontypes')),
     };
+  }
+
+  /** `Set-ADComputer -KerberosEncryptionType` — see `setUserSupportedEncryptionTypes`. */
+  setComputerSupportedEncryptionTypes(name: string, value: number): DirOpResult {
+    const entry = this.findComputerEntry(name);
+    if (!entry) return { ok: false, message: `Cannot find an object with identity: '${name}'.` };
+    this.tree.modifyEntry(entry.dn, [{ op: 'replace', type: 'msDS-SupportedEncryptionTypes', values: [String(value)] }]);
+    return { ok: true, message: '' };
+  }
+
+  /** Consulted by `KdcSession`'s AS-REQ path (`name` bare, no trailing `$`, mirrors `getComputerSecret`). */
+  getComputerSupportedEncryptionTypes(name: string): number {
+    const entry = this.findComputerEntry(name);
+    return entry ? supportedEncTypesValue(entry.attributes.get('msds-supportedencryptiontypes')) : DEFAULT_SUPPORTED_ENCRYPTION_TYPES;
+  }
+
+  /** Whether a principal's `msDS-SupportedEncryptionTypes` includes AES256 — the only cipher `KdcSession` actually implements, so this gates whether the KDC will issue it a ticket at all rather than silently downgrading to an unmodeled cipher. */
+  supportsAes256(sam: string, isComputer: boolean): boolean {
+    const value = isComputer ? this.getComputerSupportedEncryptionTypes(sam) : this.getUserSupportedEncryptionTypes(sam);
+    return (value & ENC_TYPES.AES256) !== 0;
   }
 
   checkComputerSecret(name: string, secret: string): boolean {
