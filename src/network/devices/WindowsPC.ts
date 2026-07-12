@@ -105,7 +105,7 @@ import { WindowsRdpConfig } from './windows/WindowsRdpConfig';
 import { RDP_PORT, RdpServerHandler, dialRdp, type RdpDialResult } from './windows/server/rdp/RdpSession';
 import { WindowsWsusClientConfig } from './windows/WindowsWsusClientConfig';
 import { WSUS_PORT, WsusServerHandler, queryWsusApprovedUpdates, type WsusUpdate } from './windows/server/wsus/WsusRole';
-import { LPD_PORT, LpdServerHandler } from './windows/server/print/LpdTransport';
+import { LPD_PORT, LpdServerHandler, submitLpdPrintJob } from './windows/server/print/LpdTransport';
 import { WindowsLicensingState } from './windows/licensing/LicensingState';
 import { generateSelfSignedCertificate } from '@/network/pki/SelfSignedCertificate';
 import { CertificateVerifier } from '@/network/pki/CertificateVerifier';
@@ -1921,6 +1921,8 @@ export class WindowsPC extends EndHost implements UserAccountHost {
         licensingActivate: () => this.licensing.activate(),
         licensingProductKey: () => this.licensing.getProductKey(),
         licensingState: () => this.licensing.getState(),
+        lprSubmitJob: (server, queue, jobName, content) =>
+          submitLpdPrintJob(this.getTcpStack(), server, queue, jobName, this.userMgr.currentUser, this.getHostname(), content),
         locateDomainController: (domain) => this.locateDomainController(domain),
         dcDiagnostics: () => this.dcDiagnostics(),
         kerberosTickets: () => this.kerberosTickets(),

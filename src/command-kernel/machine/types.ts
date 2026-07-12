@@ -1035,6 +1035,16 @@ export interface PowerApi {
 }
 
 /**
+ * Client d'impression réseau (`lpr`) — optionnel, pas un concept universel.
+ * Soumet un travail à une file LPD distante via un vrai échange RFC 1179 ;
+ * le nom du propriétaire et l'hôte d'origine sont fournis par l'équipement.
+ */
+export interface PrintClientApi {
+  /** `lpr -S <serveur> -P <file> <fichier>` — soumet `content` à la file LPD distante. `ok:false` = échec (file inexistante, injoignable...). */
+  submitLpdJob(server: string, queue: string, jobName: string, content: Uint8Array): { ok: boolean; error?: string };
+}
+
+/**
  * État d'activation/licence de la machine (`slmgr`) — optionnel, pas un
  * concept universel. `installProductKey`/`activate` mutent l'état ;
  * `productKey`/`state` le lisent. Aucune vérification cryptographique
@@ -1195,6 +1205,8 @@ export interface MachineApi {
   readonly runAs?: RunAsApi;
   /** État d'activation/licence (`slmgr`) — optionnel, pas un concept universel. */
   readonly licensing?: LicensingApi;
+  /** Client d'impression réseau (`lpr`) — optionnel, pas un concept universel. */
+  readonly printClient?: PrintClientApi;
   /** Masque de permissions par défaut (`umask`) — optionnel, pas un concept universel. */
   readonly permissions?: PermissionsApi;
   now(): Date;
