@@ -5,9 +5,15 @@ progressive par équipement. Un push = une entrée = une fonctionnalité
 complète et testée (voir `CLAUDE.md` / le framework de migration pour les
 principes directeurs).
 
-## Linux — Phase 4 : `realpath` + correctif cwd inter-commandes
+## Convergence de branche : Linux Phase 4 (`realpath` + correctif cwd) + Windows Phase 17 (`netsh ipsec`)
 
 **État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
+
+Deux lots de travail parallèles sur la même branche, fusionnés dans ce
+commit — l'un sur le pont Linux, l'autre sur le pont Windows, sans
+recouvrement de fichiers en dehors de `CHANGELOG.md`.
+
+### Linux — `realpath` + correctif cwd inter-commandes
 
 **Commande migrée** : `realpath [-q] [-m] <cible...>` — réutilise la
 primitive `FileSystemApi.realpath?()` ajoutée pour `readlink -f` en Phase
@@ -45,6 +51,233 @@ tests, 1 échec pré-existant et sans rapport déjà documenté
 test jetable non versionné (5 exécutions consécutives sur un device
 neuf, 5/5 reproductibles avant le correctif, 0/5 après). Typecheck ciblé
 propre.
+
+### Windows — migration `netsh` — contexte `ipsec` (static + dynamic)
+
+Troisième tranche de `netsh` (voir Phases 15-16). Le contexte `ipsec` est
+le plus gros bloc autonome restant (~56 réf. de test `netsh ipsec static`,
+12 `dynamic`).
+
+**Magasin de politiques IPsec migré et assaini** : le legacy stockait
+`winIPSecPolicies`/`winIPSecFilterLists`/`winIPSecFilterActions`/
+`winIPSecRules`/`winIPSecDynamic` en **variables module-level globales** —
+partagées par TOUS les `WindowsPC` d'un même processus (bug latent
+d'isolation). La migration les déplace en état **par-instance** sur
+`WindowsPC` (`ipsecNetshState`), exposé via une nouvelle capacité
+`WindowsNetConfigApi.ipsec: WindowsIpsecStore` — CRUD granulaire typé
+(policies/filterLists/filters/filterActions/rules + réglages dynamic
+main-mode/qm/config). Types `WindowsIpsecPolicy`/`WindowsIpsecFilter`/
+`WindowsIpsecFilterList`/`WindowsIpsecFilterAction`/`WindowsIpsecRule`/
+`WindowsIpsecDynamicSettings` ajoutés.
+
+`NetshCommand` porte l'intégralité du parsing `name=value`, du dispatch de
+sous-objet (`add|delete|show|set policy|filterlist|filter|filteraction|
+rule`, `dynamic set|show mainmode|qm|config|all|stats`), de la validation
+(IP, doublons, liste de filtres en cours d'usage) et du formatage — copié
+depuis `WinNetsh.ts`, qui reste intact pour le shim PowerShell. Le magasin
+ne fait que du CRUD ; tous les messages (« already exists »/« was not
+found »/« cannot be deleted because it is in use ») vivent dans la
+commande.
+
+Validation : typecheck et ESLint propres. `cmd-netsh.test.ts` comparé au
+commit pré-Phase-17 via `git stash` : 68 échecs/118 réussites avant →
+44/142 après, 24 tests corrigés, zéro régression. Suites
+netsh/consistency/arp (140 tests) re-vérifiées sans régression.
+
+Contextes `netsh` encore différés : `lan`, `wlan`, `http`, `advfirewall`,
+`dhcp server`, `nps`, `bridge`, `namespace`.
+
+## Windows — Phase 16 : migration `netsh` — contextes `dhcpclient`, `dnsclient`
+
+**État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
+
+Deuxième tranche de `netsh` (voir Phase 15). Ces deux contextes débloquent
+le cluster des tests de cohérence (`windows-consistency.test.ts`) qui
+recoupent `ipconfig`/`netsh`/`dhcpclient`/`dnsclient` pour vérifier qu'une
+même donnée (IP, serveurs DNS, suffixe, mode) est rapportée à l'identique
+par toutes les commandes.
+
+**`netsh dhcpclient`** (`install`/`uninstall`/`renew`/`release`/`list`/
+`show state|interfaces|parameters|tracing`/`set tracing|interface`/`trace
+enable|disable|show`) : réutilise les primitives DHCP déjà présentes
+(`requestLease`/`releaseLease`/`autoDiscoverDhcpServers`/`dhcpLease`) plus
+un état de configuration `netsh`-spécifique par-instance (service installé,
+traçage, interfaces libérées) stocké sur `WindowsPC` et exposé via
+`dhcpClientConfig()`/`setDhcpClient*()`/`setInterfaceReleased()` — même
+patron que `portProxy`/`ipv6Routes`/`winhttpProxy` aux phases précédentes.
+
+**`netsh dnsclient`** (`show state|interfaces|dnsservers|encryption`/`add|
+delete|set dnsserver`/`set global dnssuffix=`/`reset`) : réutilise
+`staticDnsServers`/`setDnsServers`/`setDnsMode`/`primaryDnsSuffix`, plus la
+nouvelle primitive `setPrimaryDnsSuffix` (le suffixe DNS principal était
+en lecture seule depuis la Phase 14) et `isDhcpClientRunning`/
+`isDnsClientRunning` (portes de service `dhcp`/`dnscache`).
+
+`NetshCommand` porte l'intégralité du dispatch et du formatage des deux
+contextes, copié depuis `WinNetsh.ts` (intact pour le shim PowerShell).
+
+Validation : typecheck et ESLint propres. Suite localisée (4 fichiers
+netsh/dhcp/dns/consistency, 113 tests) comparée au commit pré-Phase-16 via
+`git stash` : 32 échecs/81 réussites avant → 0/113 après, 32 tests
+corrigés, zéro régression. Suite arp/tracert/ipconfig (376 tests)
+re-vérifiée sans régression.
+
+Contextes `netsh` encore différés : `ipsec`, `lan`, `wlan`, `http`,
+`advfirewall`, `dhcp server`, `nps`, `bridge`, `namespace`.
+
+## Windows — Phase 15 : migration `netsh` — contexte `interface`
+
+**État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
+
+`netsh` (3180 lignes, plus grosse commande cmd.exe restante) migrée par
+sous-contextes, comme convenu. Cette première tranche couvre le contexte
+`interface` — de loin le plus utilisé (234 réf. de test `netsh interface
+ip`, 46 `ipv4`, 21 `interface show`, 21 `interface set`, 18 `portproxy`,
+23 `ipv6`) — plus les commandes de plus haut niveau stateless (`show`,
+`trace`, `winsock`, `winhttp`, `p2p`, stubs de sous-contextes, `int ip
+reset`).
+
+**`WindowsAdapterInfo` encore étendu** (`dnsMode`, `adminEnabled`,
+`secondaryIps`, `ipv6Addresses`) et **~30 primitives ajoutées à
+`WindowsNetConfigApi`** — une par opération vendeur réelle :
+`resolveAdapterName`, `configureAddress`, `setAddressDhcp`,
+`clearInterfaceIP`, `addSecondaryIp`/`removeSecondaryIp`, `setDnsServers`/
+`setDnsMode`, `setInterfaceAdmin`, `renameInterface`, `resetTcpIpStack`,
+`resetWinsockCatalog`, `addIPv6Address`/`removeIPv6Address`,
+`ipv6Routes`/`addIPv6Route`, `portProxyRules`/`addPortProxyRule`/
+`removePortProxyRule`/`resetPortProxy`, `winhttpProxy`/`setWinhttpProxy`.
+Types `WindowsIPv6AddressEntry`/`WindowsIPv6RouteEntry`/
+`WindowsPortProxyRule` ajoutés. `PortProxyRule`/`PortProxyTable` réutilisés
+tels quels (objets de domaine existants, pas des dispatchers `cmdX`).
+
+`NetshCommand` porte l'intégralité du dispatch de contexte et le parsing
+regex de chaque forme (`set/add/delete address/dns/route/neighbors`,
+`show config/dns/route/neighbors`, `set/show interface`, `portproxy
+add/delete/show`, `ipv6 add/delete/show address/route`) — copié depuis
+`WinNetsh.ts`, qui reste intact pour le shim PowerShell natif.
+
+**Bug de fond corrigé au passage** : `getCommandKernelShell()` passait
+`ports: this.getPorts()` — un SNAPSHOT figé — et `adapters()` lisait
+`port.getName()`. Or `netsh interface set interface newname=` re-clé la
+table de ports SANS muter le port (`Port.name` est `readonly`), donc le
+nom d'affichage restait figé après renommage. Nouvelle primitive de deps
+`netInterfaces()` exposant la vue LIVE `{ name: cléDeMap, port }` — le nom
+vient désormais de la clé de table (qui reflète le renommage), plus jamais
+d'un instantané ni du nom interne immuable.
+
+**Contextes différés** (phases suivantes, engines dédiés) : `dhcpclient`,
+`dnsclient`, `ipsec`, `lan`, `wlan`, `http`, `advfirewall`, `dhcp server`,
+`nps`, `bridge`, `namespace` — `NetshCommand` renvoie pour eux le message
+« subcommand not found » (comme un contexte non installé), sans jamais
+déléguer au `cmdNetsh` legacy (pas de passthrough).
+
+Validation : typecheck propre. Suite localisée (6 fichiers netsh/ipconfig/
+consistency, 158 tests) comparée au commit pré-Phase-15 via `git stash` :
+74 échecs/84 réussites avant → 10/148 après, 64 tests corrigés, zéro
+régression. Les 10 échecs restants dépendent tous de `netsh dhcpclient`/
+`dnsclient` (contextes différés, vérifié cas par cas). Suite arp/route/
+getmac/ping/tracert/nslookup re-vérifiée sans régression.
+
+## Windows — Phase 14 : migration `ipconfig`
+
+**État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
+
+Dernier morceau autonome du lot réseau bas niveau avant `netsh` (3000+
+lignes, phase à part). `cmdIpconfig`/`WinIpconfig.ts` (519 lignes)
+n'étaient — comme `ping`/`tracert` — jamais enregistrées dans le
+`CommandRegistry` ; `ipconfig` tapé en cmd.exe produisait `not
+recognized`.
+
+**`WindowsAdapterInfo` étendu** (`mask`, `globalIPv6`, `linkLocalIPv6`,
+`connectionDnsSuffix`, `isDhcp`) — réutilisé tel quel par `arp`/`route`/
+`getmac` sans les nouveaux champs, aucune rupture.
+
+**Nouvelles primitives `MachineApi.netConfig`**, une par opération
+vendeur réelle : `defaultGateway()`/`defaultGateway6()`,
+`primaryDnsSuffix()`, `staticDnsServers(ifName)`, `dhcpLease(ifName)`
+(bail DHCPv4 résolu, type `WindowsDhcpLease`), `releaseLease(ifName)` /
+`requestLease(ifName)` (l'appelant relit `dhcpLease()` ensuite pour
+déterminer auto-configuration/bail obtenu/échec — pas besoin que la
+primitive renvoie un résultat structuré), `autoDiscoverDhcpServers()`,
+`releaseDynamicIPv6(ifName)`, `sendRouterSolicitation(ifName)`,
+`classId`/`setClassId` (IPv4/IPv6 unifiés par un paramètre `isV6`),
+`flushDnsCache()`, `dnsCacheEntries()` (données brutes du cache
+résolveur, TTL déjà décompté côté pont — `IpconfigCommand` fait son
+propre formatage `/displaydns`, comme `renderDisplayDns` avant, mais
+depuis la commande).
+
+`IpconfigCommand` porte l'intégralité du dispatch (`/all`, `/release[6]`,
+`/renew[6]`, `/flushdns`, `/displaydns`, `/registerdns`,
+`/show|setclassid[6]`, filtre d'adaptateur wildcard `*`/`?`) et du
+formatage — copié depuis `WinIpconfig.ts`, qui reste intact pour le shim
+PowerShell. `toDisplayName` (`WindowsInterfaceNaming.ts`) réutilisé tel
+quel : utilitaire pur de renommage `eth0 → Ethernet 0` déjà partagé par
+6 autres modules (PowerShell inclus), pas un dispatcher `cmdX`.
+
+Piège évité : `getDnsSuffix` doit être une MÉTHODE dans
+`WindowsMachineApiDeps`, pas un champ figé — `getCommandKernelShell()`
+construit les deps UNE fois (mémoïsées par instance `WindowsPC`), et le
+suffixe DNS principal est réassigné en interne (`netsh`, une fois
+migré) ; un champ `readonly dnsSuffix: string` aurait capturé une valeur
+obsolète pour toute la durée de vie de l'instance.
+
+Validation : typecheck propre. Suite localisée (8 fichiers ipconfig/DNS/
+DHCP, 133 tests) comparée au commit précédent via `git stash` : 84
+échecs/49 réussites avant → 42/91 après, 42 tests corrigés, zéro
+régression. Suite arp/route/getmac/ping/tracert (391 tests) re-vérifiée
+sans régression suite à l'extension de `WindowsAdapterInfo`. Échecs
+restants dus à `netsh`, seule pièce manquante du lot réseau bas niveau.
+
+## Windows — Phase 13 : migration `tracert`, `nslookup`
+
+**État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
+
+Suite du lot réseau bas niveau. Même constat qu'à la Phase 12 pour
+`tracert` : `cmdTracert`/`WinTracert.ts` n'étaient jamais invoqués en
+production — `WindowsTerminalSession.tryStartWinTracertStream` intercepte
+`tracert` tapé en direct AVANT `executeCmdCommand` (streaming saut par
+saut), et n'utilise que les formateurs purs `formatWinTracertHeader`/
+`formatWinTracertHop`. `cmdTracert` restait donc inatteignable hors tests
+appelant `executeCommand('tracert ...')` directement.
+
+**Nouvelles primitives `MachineApi.netConfig`** : `traceroute(targetIp,
+maxHops?, timeoutMs?)` (délègue à `EndHost.executeTraceroute`, type
+`WindowsTracerouteHop` déjà entièrement en données plates — aucune
+conversion nécessaire, contrairement à ping) et `reverseLookup(ip)`
+(fichier hosts). `TracertCommand` porte l'intégralité du parsing
+(`parseWinTracertArgs`) et du formatage (en-tête, ligne de saut, mode
+numérique `-d`), copié depuis `WinTracert.ts` qui reste intact pour
+`WindowsTerminalSession`.
+
+**`nslookup`** — cas différent : `cmdNslookup` n'est PAS une simple
+fonction Windows-only comme `cmdSc`/`cmdNetUser` — son cœur,
+`executeNslookup` (`linux/commands/dns/NslookupRunner.ts`), est déjà un
+moteur DNS partagé par Linux ET Windows, vivant dans un module neutre,
+faisant du vrai travail protocolaire (parsing de requête, formatage de
+réponse RCODE/enregistrements via le moteur `@/network/dns`), pas de la
+logique dispositif. Le dupliquer dans `NslookupCommand` aurait été un
+recul (deux copies d'un formateur DNS déjà correct et testé). Traitement
+retenu : `NslookupCommand` migre la partie réellement Windows-spécifique
+de `cmdNslookup` (court-circuit fichier hosts/nom propre AVANT tout DNS,
+porte d'entrée service `Dnscache`) et appelle `executeNslookup` pour la
+partie protocolaire, exactement comme un `IPAddress`/`SubnetMask` ou tout
+autre composant du moteur réseau partagé — jamais un `ctx.machine`
+externe, jamais un dispatcher `cmdX` Windows.
+
+**Nouvelles primitives** : `resolveViaHostsFile(name)` (résolution fichier
+hosts SEUL, sans repli DNS — distinct de `resolveHostname` que `ping`/
+`tracert` utilisent, `nslookup` a besoin d'un court-circuit explicite),
+`firstConfiguredDnsServer()`, `queryDnsServer(server, name, qtype,
+timeoutMs?)` (type `DnsMessage` du moteur `@/network/dns` réutilisé tel
+quel dans `machine/types.ts` — DNS est un protocole, pas une réalité
+vendeur Windows, contrairement aux formats `sc`/`schtasks`).
+
+Validation : typecheck propre. Suite localisée (8 fichiers DNS/ping/
+tracert/arp/routing, 478 tests) comparée au commit précédent via
+`git stash` : 136 échecs/342 réussites avant → 96/382 après, 40 tests
+corrigés, zéro régression (vérifié : les échecs nslookup restants
+dépendent de `netsh interface ip set address/dns`, pas encore migré —
+même nature que le gap WAN de la Phase 12, confirmé en lisant le test).
 
 ## Convergence de branche : Linux Phase 3 (`readlink`) + Windows Phase 12 (`ping`)
 
