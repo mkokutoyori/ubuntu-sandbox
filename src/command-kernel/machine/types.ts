@@ -403,6 +403,24 @@ export interface WindowsNetConfigApi {
   resolveHostname(name: string): Promise<string | null>;
   /** Séquence d'échos ICMP réels vers `targetIp` — tableau vide = pas de route ou pas de réponse ARP (`ping`/`tracert`). */
   pingSequence(targetIp: string, count: number, timeoutMs?: number, ttl?: number): Promise<readonly WindowsPingReply[]>;
+  /** Traceroute réel vers `targetIp` — tableau vide = pas de route (`tracert`). */
+  traceroute(targetIp: string, maxHops?: number, timeoutMs?: number): Promise<readonly WindowsTracerouteHop[]>;
+  /** Résolution inverse (IP → nom d'hôte via le fichier hosts) — optionnel, `null` si absent (`tracert`). */
+  reverseLookup(ip: string): string | null;
+  /** Résolution VIA LE SEUL fichier hosts statique (pas de DNS) — distinct de `resolveHostname` (`nslookup` court-circuite le DNS sur un hit hosts). */
+  resolveViaHostsFile(name: string): string | null;
+  /** Premier serveur DNS configuré, toutes interfaces confondues — `''` si aucun (`nslookup`). */
+  firstConfiguredDnsServer(): string;
+  /**
+   * Requête DNS réelle vers `server` — `null` sur timeout/erreur. Type
+   * `DnsMessage` du moteur protocolaire `@/network/dns` réutilisé tel quel
+   * (pas une réinvention Windows) : DNS est un protocole, pas une réalité
+   * vendeur, et `executeNslookup` (moteur cross-vendor déjà partagé par
+   * Linux et Windows) attend exactement cette forme.
+   */
+  queryDnsServer(
+    server: string, name: string, qtype: string, timeoutMs?: number,
+  ): Promise<import("@/network/dns/wire/DnsMessage").DnsMessage | null>;
 }
 
 /** Un écho ICMP individuel (`ping`) — optionnel, modèle Windows. */
@@ -412,6 +430,26 @@ export interface WindowsPingReply {
   readonly ttl: number;
   readonly rttMs: number;
   readonly error?: string;
+}
+
+/** Une sonde individuelle au sein d'un saut de traceroute — optionnel, modèle Windows. */
+export interface WindowsTracerouteProbe {
+  readonly responded: boolean;
+  readonly rttMs?: number;
+  readonly ip?: string;
+  readonly unreachable?: boolean;
+  readonly icmpCode?: number;
+}
+
+/** Un saut de traceroute (`tracert`) — optionnel, modèle Windows. */
+export interface WindowsTracerouteHop {
+  readonly hop: number;
+  readonly ip?: string;
+  readonly rttMs?: number;
+  readonly timeout: boolean;
+  readonly unreachable?: boolean;
+  readonly icmpCode?: number;
+  readonly probes: readonly WindowsTracerouteProbe[];
 }
 
 export interface NetworkApi {

@@ -42,6 +42,7 @@ import {
   WindowsNetConfigApi,
   WindowsPingReply,
   WindowsRouteEntry,
+  WindowsTracerouteHop,
   WinRmApi,
   WinRmListenerInfo,
 } from '@/command-kernel/machine/types';
@@ -50,7 +51,8 @@ import { User } from '@/command-kernel/session/types';
 import type { Port } from '@/network/hardware/Port';
 import { IPAddress, MACAddress, SubnetMask } from '@/network/core/types';
 import type { ARPEntry, HostRouteEntry } from '@/network/devices/EndHost';
-import type { PingResult } from '@/network/devices/windows/WinCommandExecutor';
+import type { PingResult, TracerouteHop } from '@/network/devices/windows/WinCommandExecutor';
+import type { DnsMessage } from '@/network/dns/wire/DnsMessage';
 import type { SystemIdentity } from '@/network/devices/host/identity/SystemIdentity';
 import type { HardwareProfile } from '@/network/devices/host/hardware/HardwareProfile';
 import { WindowsFileSystem } from '../WindowsFileSystem';
@@ -107,6 +109,11 @@ export interface WindowsMachineApiDeps {
   deleteARP(ip: IPAddress): boolean;
   clearARPTable(): void;
   executePingSequence(target: IPAddress, count: number, timeoutMs?: number, ttl?: number): Promise<PingResult[]>;
+  executeTraceroute(target: IPAddress, maxHops?: number, timeoutMs?: number): Promise<TracerouteHop[]>;
+  reverseLookup(ip: string): string | null;
+  resolveViaHostsFile(name: string): string | null;
+  firstConfiguredDnsServer(): string;
+  queryDnsServer(server: IPAddress, name: string, qtype: string, timeoutMs?: number): Promise<DnsMessage | null>;
   isDHCPConfigured(ifName: string): boolean;
   bootedAt(): Date | null;
   now(): Date;
@@ -927,7 +934,8 @@ class WindowsNetConfigApiImpl implements WindowsNetConfigApi {
     private readonly ports: () => readonly Port[],
     private readonly deps: Pick<WindowsMachineApiDeps,
       'arpTable' | 'getRoutingTable' | 'addStaticRoute' | 'removeRoute' | 'setDefaultGateway' | 'clearDefaultGateway'
-      | 'addStaticARP' | 'deleteARP' | 'clearARPTable' | 'resolveHostname' | 'executePingSequence'>,
+      | 'addStaticARP' | 'deleteARP' | 'clearARPTable' | 'resolveHostname' | 'executePingSequence'
+      | 'executeTraceroute' | 'reverseLookup' | 'resolveViaHostsFile' | 'firstConfiguredDnsServer' | 'queryDnsServer'>,
   ) {}
 
   adapters(): readonly WindowsAdapterInfo[] {
@@ -1008,6 +1016,28 @@ class WindowsNetConfigApiImpl implements WindowsNetConfigApi {
       rttMs: r.rttMs,
       error: r.error,
     }));
+  }
+
+  async traceroute(targetIp: string, maxHops?: number, timeoutMs?: number): Promise<readonly WindowsTracerouteHop[]> {
+    return this.deps.executeTraceroute(new IPAddress(targetIp), maxHops, timeoutMs);
+  }
+
+  reverseLookup(ip: string): string | null {
+    return this.deps.reverseLookup(ip);
+  }
+
+  resolveViaHostsFile(name: string): string | null {
+    return this.deps.resolveViaHostsFile(name);
+  }
+
+  firstConfiguredDnsServer(): string {
+    return this.deps.firstConfiguredDnsServer();
+  }
+
+  async queryDnsServer(server: string, name: string, qtype: string, timeoutMs?: number): Promise<DnsMessage | null> {
+    let serverIP: IPAddress;
+    try { serverIP = new IPAddress(server); } catch { return null; }
+    return this.deps.queryDnsServer(serverIP, name, qtype, timeoutMs);
   }
 }
 

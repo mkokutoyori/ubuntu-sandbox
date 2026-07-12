@@ -5,6 +5,57 @@ progressive par équipement. Un push = une entrée = une fonctionnalité
 complète et testée (voir `CLAUDE.md` / le framework de migration pour les
 principes directeurs).
 
+## Windows — Phase 13 : migration `tracert`, `nslookup`
+
+**État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
+
+Suite du lot réseau bas niveau. Même constat qu'à la Phase 12 pour
+`tracert` : `cmdTracert`/`WinTracert.ts` n'étaient jamais invoqués en
+production — `WindowsTerminalSession.tryStartWinTracertStream` intercepte
+`tracert` tapé en direct AVANT `executeCmdCommand` (streaming saut par
+saut), et n'utilise que les formateurs purs `formatWinTracertHeader`/
+`formatWinTracertHop`. `cmdTracert` restait donc inatteignable hors tests
+appelant `executeCommand('tracert ...')` directement.
+
+**Nouvelles primitives `MachineApi.netConfig`** : `traceroute(targetIp,
+maxHops?, timeoutMs?)` (délègue à `EndHost.executeTraceroute`, type
+`WindowsTracerouteHop` déjà entièrement en données plates — aucune
+conversion nécessaire, contrairement à ping) et `reverseLookup(ip)`
+(fichier hosts). `TracertCommand` porte l'intégralité du parsing
+(`parseWinTracertArgs`) et du formatage (en-tête, ligne de saut, mode
+numérique `-d`), copié depuis `WinTracert.ts` qui reste intact pour
+`WindowsTerminalSession`.
+
+**`nslookup`** — cas différent : `cmdNslookup` n'est PAS une simple
+fonction Windows-only comme `cmdSc`/`cmdNetUser` — son cœur,
+`executeNslookup` (`linux/commands/dns/NslookupRunner.ts`), est déjà un
+moteur DNS partagé par Linux ET Windows, vivant dans un module neutre,
+faisant du vrai travail protocolaire (parsing de requête, formatage de
+réponse RCODE/enregistrements via le moteur `@/network/dns`), pas de la
+logique dispositif. Le dupliquer dans `NslookupCommand` aurait été un
+recul (deux copies d'un formateur DNS déjà correct et testé). Traitement
+retenu : `NslookupCommand` migre la partie réellement Windows-spécifique
+de `cmdNslookup` (court-circuit fichier hosts/nom propre AVANT tout DNS,
+porte d'entrée service `Dnscache`) et appelle `executeNslookup` pour la
+partie protocolaire, exactement comme un `IPAddress`/`SubnetMask` ou tout
+autre composant du moteur réseau partagé — jamais un `ctx.machine`
+externe, jamais un dispatcher `cmdX` Windows.
+
+**Nouvelles primitives** : `resolveViaHostsFile(name)` (résolution fichier
+hosts SEUL, sans repli DNS — distinct de `resolveHostname` que `ping`/
+`tracert` utilisent, `nslookup` a besoin d'un court-circuit explicite),
+`firstConfiguredDnsServer()`, `queryDnsServer(server, name, qtype,
+timeoutMs?)` (type `DnsMessage` du moteur `@/network/dns` réutilisé tel
+quel dans `machine/types.ts` — DNS est un protocole, pas une réalité
+vendeur Windows, contrairement aux formats `sc`/`schtasks`).
+
+Validation : typecheck propre. Suite localisée (8 fichiers DNS/ping/
+tracert/arp/routing, 478 tests) comparée au commit précédent via
+`git stash` : 136 échecs/342 réussites avant → 96/382 après, 40 tests
+corrigés, zéro régression (vérifié : les échecs nslookup restants
+dépendent de `netsh interface ip set address/dns`, pas encore migré —
+même nature que le gap WAN de la Phase 12, confirmé en lisant le test).
+
 ## Windows — Phase 12 : migration `ping`
 
 **État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**

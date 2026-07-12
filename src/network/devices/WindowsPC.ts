@@ -1726,6 +1726,15 @@ export class WindowsPC extends EndHost implements UserAccountHost {
         deleteARP: (ip) => this.deleteARP(ip),
         clearARPTable: () => this.clearARPTable(),
         executePingSequence: (target, count, timeoutMs, ttl) => this.executePingSequence(target, count, timeoutMs, ttl),
+        executeTraceroute: (target, maxHops, timeoutMs) =>
+          this.executeTraceroute(target, maxHops, timeoutMs ?? 500) as Promise<TracerouteHop[]>,
+        reverseLookup: (ip) => {
+          const entry = this.readHostsFile().reverse(ip);
+          return entry ? entry.canonicalName : null;
+        },
+        resolveViaHostsFile: (name) => this.readHostsFile().resolve(name, 4),
+        firstConfiguredDnsServer: () => this.firstConfiguredDnsServer(),
+        queryDnsServer: (server, name, qtype, timeoutMs) => this.queryDnsServer(server, name, qtype, timeoutMs),
         isDHCPConfigured: (ifName) => this.isDHCPConfigured(ifName),
         bootedAt: () => this.getLifecycle().bootedAt() ?? null,
         now: () => this.simulatedDate(),
