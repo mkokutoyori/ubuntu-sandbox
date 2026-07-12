@@ -31,6 +31,7 @@ import { TrustRegistry, type TrustDirection, type TrustOpResult, type TrustInfo,
 import { GpoStore } from './gpo/GpoStore';
 import { PsoStore } from './pso/PsoStore';
 import { DomainFsmoRoles, type DomainFsmoRole } from './fsmo/FsmoRoles';
+import { RidPool } from './fsmo/RidPool';
 
 export interface DirOpResult { ok: boolean; message: string }
 
@@ -51,6 +52,24 @@ const GROUP_TYPE: Record<AdGroup['scope'], number> = {
 const SCOPE_OF_GROUP_TYPE = new Map<number, AdGroup['scope']>(
   (Object.keys(GROUP_TYPE) as AdGroup['scope'][]).map(scope => [GROUP_TYPE[scope], scope]),
 );
+
+/** Real AD's fixed RIDs for its default security principals — same across every domain. */
+const WELL_KNOWN_RID = {
+  Administrator: 500,
+  Krbtgt: 502,
+  DomainAdmins: 512,
+  DomainUsers: 513,
+  DomainComputers: 515,
+} as const;
+
+/** This DC's own local RID allocation range when it's the first DC of a domain (and therefore its own RID Master) — generous enough that a lab domain never exhausts it. Blocks granted to *other* DCs start beyond this range (`grantRidPoolBlock`). */
+const RID_MASTER_LOCAL_POOL_START = 1000;
+const RID_MASTER_LOCAL_POOL_COUNT = 100_000;
+
+function generateDomainSid(): string {
+  const rand = () => Math.floor(Math.random() * 0xFFFFFFFF);
+  return `S-1-5-21-${rand()}-${rand()}-${rand()}`;
+}
 
 function firstOf(values: string[] | undefined): string { return values?.[0] ?? ''; }
 function isEnabledFromUac(values: string[] | undefined): boolean {
@@ -82,6 +101,9 @@ export class DirectoryStore {
   private readonly gpoStore: GpoStore;
   private readonly psoStore: PsoStore;
   private readonly fsmoRoles: DomainFsmoRoles;
+  private readonly localRidPool: RidPool;
+  /** Next block to grant a requesting DC — only meaningful while this DC holds the RID Master role; lazily initialized on first grant. */
+  private nextGlobalRidPoolStart: number | null = null;
 
   /**
    * `opts.skipSeed` (PRD-Windows-Server-Advanced.md §5 P5): an additional
@@ -100,7 +122,11 @@ export class DirectoryStore {
   ) {
     const rootDn = parseDN(this.dnsName.split('.').map(p => `DC=${p}`).join(','));
     this.schemaValidator = opts.sharedSchemaValidator ?? new SchemaValidator();
-    this.tree = new DirectoryTree(rootDn, { objectClass: ['top', 'domain', 'domainDNS'] }, {
+    const domainSid = opts.skipSeed ? undefined : generateDomainSid();
+    this.tree = new DirectoryTree(rootDn, {
+      objectClass: ['top', 'domain', 'domainDNS'],
+      ...(domainSid ? { domainSid: [domainSid] } : {}),
+    }, {
       invocationId: this.invocationId, nextUsn: () => ++this.localUsn,
     }, this.schemaValidator);
     this.usersOuDn = [...parseDN('CN=Users'), ...rootDn];
@@ -112,6 +138,9 @@ export class DirectoryStore {
     this.gpoStore = new GpoStore(this.tree);
     this.psoStore = new PsoStore(this.tree);
     this.fsmoRoles = new DomainFsmoRoles(this.tree, rootDn);
+    this.localRidPool = opts.skipSeed
+      ? new RidPool(0, 0)
+      : new RidPool(RID_MASTER_LOCAL_POOL_START, RID_MASTER_LOCAL_POOL_COUNT);
     if (!opts.skipSeed) {
       // A shared validator (PRD §5 P8 — a child domain joining an existing
       // forest) is already seeded by its forest root; seeding again would
@@ -196,11 +225,13 @@ export class DirectoryStore {
     this.tree.addEntry([...parseDN('CN=System'), ...this.tree.getRootDn()], { objectClass: ['top', 'container'], cn: ['System'] });
     this.tree.addEntry(this.policiesDn, { objectClass: ['top', 'container'], cn: ['Policies'] });
 
-    this.createGroupEntry('Domain Admins', 'Global', this.usersOuDn);
-    this.createGroupEntry('Domain Users', 'Global', this.usersOuDn);
-    this.createGroupEntry('Domain Computers', 'Global', this.usersOuDn);
+    this.createGroupEntry('Domain Admins', 'Global', this.usersOuDn, WELL_KNOWN_RID.DomainAdmins);
+    this.createGroupEntry('Domain Users', 'Global', this.usersOuDn, WELL_KNOWN_RID.DomainUsers);
+    this.createGroupEntry('Domain Computers', 'Global', this.usersOuDn, WELL_KNOWN_RID.DomainComputers);
 
-    this.createUserEntry('Administrator', { password: adminPassword, fullName: 'Administrator', containerDn: this.usersOuDn });
+    this.createUserEntry('Administrator', {
+      password: adminPassword, fullName: 'Administrator', containerDn: this.usersOuDn, wellKnownRid: WELL_KNOWN_RID.Administrator,
+    });
     this.addGroupMember('Domain Admins', 'Administrator');
     this.addGroupMember('Domain Users', 'Administrator');
   }
@@ -264,6 +295,33 @@ export class DirectoryStore {
   seedFsmoRoles(hostname: string): void { this.fsmoRoles.seedAllTo(hostname); }
   seizeFsmoRole(role: DomainFsmoRole, newOwnerHostname: string): void { this.fsmoRoles.seize(role, newOwnerHostname); }
 
+  // ─── RID pool (RID Master) / object SIDs ────────────────────────────
+
+  getDomainSid(): string | null {
+    return this.tree.getByDn(this.tree.getRootDn())?.attributes.get('domainsid')?.[0] ?? null;
+  }
+
+  private formatObjectSid(rid: number): string { return `${this.getDomainSid() ?? 'S-1-5-21-0-0-0'}-${rid}`; }
+
+  /** Allocates the next RID from this DC's own local pool, or `null` once exhausted (caller should request a fresh pool via `RidPoolClient` and `installRidPool`). */
+  allocateNextRid(): number | null { return this.localRidPool.allocateNext(); }
+
+  /** Installs a pool this DC received from the RID Master (`RidPoolClient.requestRidPool`), or re-seeds its own after a local exhaustion. */
+  installRidPool(startRid: number, count: number): void { this.localRidPool.install(startRid, count); }
+
+  /**
+   * Grants a block of RIDs to a requesting DC — only valid while this DC
+   * holds the RID Master role; callers (network handlers) must check
+   * `getFsmoRoleOwner('RidMaster')` themselves first, since
+   * `DirectoryStore` has no notion of its own hostname.
+   */
+  grantRidPoolBlock(requestedSize: number): { startRid: number; count: number } {
+    if (this.nextGlobalRidPoolStart === null) this.nextGlobalRidPoolStart = RID_MASTER_LOCAL_POOL_START + RID_MASTER_LOCAL_POOL_COUNT;
+    const startRid = this.nextGlobalRidPoolStart;
+    this.nextGlobalRidPoolStart += requestedSize;
+    return { startRid, count: requestedSize };
+  }
+
   // ─── Users ──────────────────────────────────────────────────────────
 
   newUser(sam: string, opts: { password: string; fullName?: string; ou?: string; enabled?: boolean }): DirOpResult {
@@ -277,8 +335,9 @@ export class DirectoryStore {
     return { ok: true, message: '' };
   }
 
-  private createUserEntry(sam: string, opts: { password: string; fullName: string; containerDn: DistinguishedName; enabled?: boolean }): DirOpResult {
+  private createUserEntry(sam: string, opts: { password: string; fullName: string; containerDn: DistinguishedName; enabled?: boolean; wellKnownRid?: number }): DirOpResult {
     const enabled = opts.enabled ?? true;
+    const rid = opts.wellKnownRid ?? this.localRidPool.allocateNext();
     const res = this.tree.addEntry(this.cnDn(sam, opts.containerDn), compact({
       objectClass: ['top', 'person', 'organizationalPerson', 'user'],
       cn: [sam],
@@ -287,6 +346,7 @@ export class DirectoryStore {
       userAccountControl: [String(enabled ? UAC.NORMAL_ACCOUNT : UAC.NORMAL_ACCOUNT | UAC.ACCOUNTDISABLE)],
       userPassword: [opts.password],
       displayName: opts.fullName ? [opts.fullName] : [],
+      objectSid: rid !== null ? [this.formatObjectSid(rid)] : [],
     }));
     return res.ok ? { ok: true, message: '' } : { ok: false, message: 'An object with that name already exists.' };
   }
@@ -319,6 +379,7 @@ export class DirectoryStore {
       password: firstOf(entry.attributes.get('userpassword')),
       memberOf: (entry.attributes.get('memberof') ?? []).map(dnStr => this.samOfDn(dnStr)).filter((s): s is string => s !== null),
       fullName: firstOf(entry.attributes.get('displayname')),
+      objectSid: firstOf(entry.attributes.get('objectsid')),
     };
   }
 
@@ -381,13 +442,15 @@ export class DirectoryStore {
     return res.ok ? { ok: true, message: '' } : { ok: false, message: 'An object with that name already exists.' };
   }
 
-  private createGroupEntry(sam: string, scope: AdGroup['scope'], containerDn: DistinguishedName): DirOpResult {
-    return this.tree.addEntry(this.cnDn(sam, containerDn), {
+  private createGroupEntry(sam: string, scope: AdGroup['scope'], containerDn: DistinguishedName, wellKnownRid?: number): DirOpResult {
+    const rid = wellKnownRid ?? this.localRidPool.allocateNext();
+    return this.tree.addEntry(this.cnDn(sam, containerDn), compact({
       objectClass: ['top', 'group'],
       cn: [sam],
       sAMAccountName: [sam],
       groupType: [String(GROUP_TYPE[scope])],
-    });
+      objectSid: rid !== null ? [this.formatObjectSid(rid)] : [],
+    }));
   }
 
   private findGroupEntry(sam: string): DirectoryEntry | null {
@@ -414,6 +477,7 @@ export class DirectoryStore {
       dn: formatDN(entry.dn),
       scope: SCOPE_OF_GROUP_TYPE.get(groupType) ?? 'Global',
       members: (entry.attributes.get('member') ?? []).map(dnStr => this.samOfDn(dnStr)).filter((s): s is string => s !== null),
+      objectSid: firstOf(entry.attributes.get('objectsid')),
     };
   }
 
@@ -452,13 +516,15 @@ export class DirectoryStore {
   /** Creates the computer account — the side effect of a successful domain join (P6), or DC promotion for the DC's own account. `ouPath` (e.g. `"Sales/EU"`) places it in a nested OU instead of the default flat Computers container. */
   newComputer(name: string, machineSecret: string, ouPath?: string): DirOpResult {
     const dn = ouPath ? this.cnDn(name, this.ouDn(ouPath)) : this.computerDn(name);
-    const res = this.tree.addEntry(dn, {
+    const rid = this.localRidPool.allocateNext();
+    const res = this.tree.addEntry(dn, compact({
       objectClass: ['top', 'person', 'organizationalPerson', 'user', 'computer'],
       cn: [name],
       sAMAccountName: [`${name}$`],
       userAccountControl: [String(UAC.WORKSTATION_TRUST_ACCOUNT)],
       userPassword: [machineSecret],
-    });
+      objectSid: rid !== null ? [this.formatObjectSid(rid)] : [],
+    }));
     if (!res.ok) return { ok: false, message: 'An object with that name already exists.' };
     this.addGroupMemberByDn('Domain Computers', dn);
     return { ok: true, message: '' };
@@ -480,13 +546,15 @@ export class DirectoryStore {
   /** Creates the DC's own computer account under the Domain Controllers OU at promotion time — a distinct container and UAC flag (SERVER_TRUST_ACCOUNT) from a regular domain-joined workstation, matching real AD. */
   promoteDomainController(name: string, machineSecret: string): DirOpResult {
     const dcOuDn = this.ouDn('Domain Controllers');
-    const res = this.tree.addEntry(this.cnDn(name, dcOuDn), {
+    const rid = this.localRidPool.allocateNext();
+    const res = this.tree.addEntry(this.cnDn(name, dcOuDn), compact({
       objectClass: ['top', 'person', 'organizationalPerson', 'user', 'computer'],
       cn: [name],
       sAMAccountName: [`${name}$`],
       userAccountControl: [String(UAC.SERVER_TRUST_ACCOUNT)],
       userPassword: [machineSecret],
-    });
+      objectSid: rid !== null ? [this.formatObjectSid(rid)] : [],
+    }));
     return res.ok ? { ok: true, message: '' } : { ok: false, message: 'An object with that name already exists.' };
   }
 
@@ -511,6 +579,7 @@ export class DirectoryStore {
       machineSecret: firstOf(entry.attributes.get('userpassword')),
       enabled: isEnabledFromUac(entry.attributes.get('useraccountcontrol')),
       lastKnownIp: firstOf(entry.attributes.get('ipaddress')) || undefined,
+      objectSid: firstOf(entry.attributes.get('objectsid')),
     };
   }
 
@@ -553,7 +622,7 @@ export class DirectoryStore {
     if (this.findUserEntry('krbtgt')) return { ok: true, message: '' };
     return this.createUserEntry('krbtgt', {
       password: secret, fullName: 'Key Distribution Center Service Account',
-      containerDn: this.usersOuDn, enabled: false,
+      containerDn: this.usersOuDn, enabled: false, wellKnownRid: WELL_KNOWN_RID.Krbtgt,
     });
   }
 

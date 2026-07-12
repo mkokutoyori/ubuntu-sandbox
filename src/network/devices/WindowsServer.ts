@@ -37,6 +37,7 @@ import { createForest, joinForestAsChildDomain, getForestForDomain, type Forest,
 import { mirroredDirection, type TrustDirection, type TrustInfo, type TrustRecord } from './windows/server/ad/forest/TrustRelationship';
 import { DOMAIN_FSMO_ROLES, type DomainFsmoRole } from './windows/server/ad/fsmo/FsmoRoles';
 import { transferDomainFsmoRole } from './windows/domain/FsmoTransferClient';
+import { requestRidPool } from './windows/domain/RidPoolClient';
 
 export interface AdDsOpResult { ok: boolean; message: string }
 export type FsmoRole = DomainFsmoRole | ForestFsmoRole;
@@ -48,6 +49,8 @@ function isDomainFsmoRole(role: FsmoRole): role is DomainFsmoRole {
 
 /** Real DC promotion auto-creates this site (PRD-Windows-Server-Advanced.md §5 P6) — matches the name `WinDomainDiag.cmdNltest` has always reported. */
 const DEFAULT_SITE_NAME = 'Default-First-Site-Name';
+/** Real AD's default RID pool block size (`msDS-RIDAllocationBlockSize`). */
+const RID_POOL_REQUEST_SIZE = 500;
 
 export class WindowsServer extends WindowsPC {
   private readonly roleManager: RoleManager = new RoleManager(this.getServiceManager());
@@ -531,6 +534,13 @@ export class WindowsServer extends WindowsPC {
     if (!sync.ok) {
       return { ok: false, message: `Install-ADDSDomainController : Initial synchronization with ${sourceDcAddress} failed: ${sync.error}` };
     }
+
+    const ridPool = requestRidPool(this.getTcpStack(), sourceDcAddress, RID_POOL_REQUEST_SIZE);
+    if (!ridPool.ok || ridPool.startRid === undefined || ridPool.count === undefined) {
+      return { ok: false, message: `Install-ADDSDomainController : Unable to allocate a relative identifier for use in creating the security descriptor: ${ridPool.message ?? 'unknown error'}` };
+    }
+    store.installRidPool(ridPool.startRid, ridPool.count);
+
     const promote = store.promoteDomainController(this.getHostname(), safeModeAdminPassword);
     if (!promote.ok) {
       return { ok: false, message: `Install-ADDSDomainController : ${promote.message}` };

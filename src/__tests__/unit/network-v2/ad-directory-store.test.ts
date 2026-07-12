@@ -365,3 +365,44 @@ describe('DirectoryStore — PSO (fine-grained password policy)', () => {
     expect(s.effectivePasswordPolicyFor('erin')?.minPasswordLength).toBe(20);
   });
 });
+
+describe('DirectoryStore — RID pool / objectSid', () => {
+  it('generates a domain SID and assigns real AD well-known RIDs to the seeded principals', () => {
+    const s = store();
+    const sid = s.getDomainSid();
+    expect(sid).toMatch(/^S-1-5-21-\d+-\d+-\d+$/);
+    expect(s.getUser('Administrator')?.objectSid).toBe(`${sid}-500`);
+    expect(s.getGroup('Domain Admins')?.objectSid).toBe(`${sid}-512`);
+    expect(s.getGroup('Domain Users')?.objectSid).toBe(`${sid}-513`);
+    expect(s.getGroup('Domain Computers')?.objectSid).toBe(`${sid}-515`);
+  });
+
+  it('assigns krbtgt the real AD well-known RID 502', () => {
+    const s = store();
+    s.ensureKrbtgtPrincipal('secret');
+    expect(s.getUser('krbtgt')?.objectSid).toBe(`${s.getDomainSid()}-502`);
+  });
+
+  it('allocates sequential RIDs from the local pool for ordinary new objects', () => {
+    const s = store();
+    s.newUser('bob', { password: 'x' });
+    s.newUser('carol', { password: 'x' });
+    const bobRid = Number(s.getUser('bob')!.objectSid.split('-').pop());
+    const carolRid = Number(s.getUser('carol')!.objectSid.split('-').pop());
+    expect(carolRid).toBe(bobRid + 1);
+    expect(bobRid).toBeGreaterThanOrEqual(1000);
+  });
+
+  it('assigns a computer account an objectSid from the same local pool', () => {
+    const s = store();
+    s.newComputer('WS01', 'secret');
+    expect(s.getComputer('WS01')?.objectSid).toMatch(new RegExp(`^${s.getDomainSid()}-\\d+$`));
+  });
+
+  it('grantRidPoolBlock hands out non-overlapping blocks to successive requesters', () => {
+    const s = store();
+    const block1 = s.grantRidPoolBlock(500);
+    const block2 = s.grantRidPoolBlock(500);
+    expect(block2.startRid).toBe(block1.startRid + block1.count);
+  });
+});

@@ -36,6 +36,8 @@ interface ReplicationPullResponse {
   responderInvocationId: string;
   changes: ReplicatedObject[];
 }
+interface RidPoolRequestMsg { kind: 'ridPoolRequest'; poolSize: number }
+interface RidPoolResponseMsg { kind: 'ridPoolResponse'; ok: boolean; startRid?: number; count?: number; message?: string }
 
 export class ReplicationServerHandler {
   /**
@@ -53,8 +55,13 @@ export class ReplicationServerHandler {
   register(socket: TcpSocket): void {
     socket.onData((data) => {
       if (!(data instanceof Uint8Array)) return;
-      let msg: ReplicationPullRequest;
-      try { msg = JSON.parse(new TextDecoder().decode(data)) as ReplicationPullRequest; } catch { return; }
+      let msg: ReplicationPullRequest | RidPoolRequestMsg;
+      try { msg = JSON.parse(new TextDecoder().decode(data)) as ReplicationPullRequest | RidPoolRequestMsg; } catch { return; }
+
+      if (msg.kind === 'ridPoolRequest') {
+        this.handleRidPoolRequest(socket, msg);
+        return;
+      }
       if (msg.kind !== 'pullRequest') return;
 
       const requesterVector = decodeHighWatermarkVector(msg.requesterVector);
@@ -73,6 +80,19 @@ export class ReplicationServerHandler {
         payload: { deviceId: this.deviceId ?? this.store.dnsName, invocationId: this.store.getInvocationId(), changesSent: changes.length },
       });
     });
+  }
+
+  /** `IDL_DRSAllocateRIDs`-lite — refuses unless this DC currently holds the RID Master role. */
+  private handleRidPoolRequest(socket: TcpSocket, msg: RidPoolRequestMsg): void {
+    const isRidMaster = this.deviceId !== undefined && this.store.getFsmoRoleOwner('RidMaster') === this.deviceId;
+    if (!isRidMaster) {
+      const response: RidPoolResponseMsg = { kind: 'ridPoolResponse', ok: false, message: 'this DC does not hold the RID Master role' };
+      socket.send(new TextEncoder().encode(JSON.stringify(response)));
+      return;
+    }
+    const { startRid, count } = this.store.grantRidPoolBlock(msg.poolSize);
+    const response: RidPoolResponseMsg = { kind: 'ridPoolResponse', ok: true, startRid, count };
+    socket.send(new TextEncoder().encode(JSON.stringify(response)));
   }
 }
 

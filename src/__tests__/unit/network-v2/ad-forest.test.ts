@@ -194,3 +194,22 @@ describe('FSMO roles', () => {
     expect(result.ok).toBe(false);
   });
 });
+
+describe('RID pool allocation', () => {
+  it('an additional DC requests and receives a real RID pool from the RID Master over the wire, non-overlapping with the source DC', async () => {
+    const { dc1, dc2 } = await buildRootDc();
+    await run(ps(dc2), 'Install-ADDSDomainController -DomainName lab.local -Server 192.168.90.10 -Credential "Administrator:P@ssw0rd" '
+      + '-SafeModeAdministratorPassword (ConvertTo-SecureString "P@ssw0rd" -AsPlainText -Force)');
+
+    const dc1Store = dc1.getDirectoryStore()!;
+    const dc2Store = dc2.getDirectoryStore()!;
+    expect(dc2Store.getDomainSid()).toBe(dc1Store.getDomainSid());
+
+    dc1Store.newUser('alice', { password: 'x' });
+    dc2Store.newUser('bob', { password: 'x' });
+    const aliceRid = Number(dc1Store.getUser('alice')!.objectSid.split('-').pop());
+    const bobRid = Number(dc2Store.getUser('bob')!.objectSid.split('-').pop());
+    expect(bobRid).toBeGreaterThanOrEqual(100_000);
+    expect(bobRid).not.toBe(aliceRid);
+  });
+});

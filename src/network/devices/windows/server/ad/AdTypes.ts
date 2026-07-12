@@ -16,6 +16,8 @@ export interface AdUser {
   password: string;
   memberOf: string[];
   fullName: string;
+  /** `S-1-5-21-<domain>-<rid>` — empty if the RID Master's local pool was exhausted when this object was created (never happens in normal lab use). */
+  objectSid: string;
 }
 
 export interface AdGroup {
@@ -23,6 +25,7 @@ export interface AdGroup {
   readonly dn: string;
   scope: 'DomainLocal' | 'Global' | 'Universal';
   members: string[];
+  objectSid: string;
 }
 
 /** Subset of `WindowsAccountsPolicyState` a GPO can carry (PRD-Windows-Server.md §5 P10 — "politique de mots de passe et de verrouillage du domaine"). */
@@ -91,6 +94,7 @@ export interface AdComputer {
   enabled: boolean;
   /** IP the computer account last joined/logged on from — diagnostic only. */
   lastKnownIp?: string;
+  objectSid: string;
 }
 
 export interface AdOrgUnit {

@@ -5,6 +5,46 @@ progressive par équipement. Un push = une entrée = une fonctionnalité
 complète et testée (voir `CLAUDE.md` / le framework de migration pour les
 principes directeurs).
 
+## Windows Server — pool de RID + objectSid réel sur les objets AD
+
+Suite directe du chantier FSMO : un SID de domaine réel
+(`S-1-5-21-<r1>-<r2>-<r3>`) est maintenant généré à la création d'un
+domaine (premier DC, `!skipSeed`) et stocké comme attribut
+`domainSid` sur l'entrée racine — donc répliqué vers les autres DC
+via le mécanisme existant, exactement comme les rôles FSMO. Les
+principaux par défaut reçoivent les RID bien connus réels d'AD
+(Administrator=500, krbtgt=502, Domain Admins=512, Domain Users=513,
+Domain Computers=515) ; tout nouvel objet (`newUser`/`newGroup`/
+`newComputer`/le compte ordinateur du DC lui-même) reçoit un
+`objectSid` alloué depuis un pool RID local par DC (nouveau
+`ad/fsmo/RidPool.ts`, 27 lignes).
+
+Le premier DC d'un domaine (RID Master par défaut) se réserve
+lui-même un grand pool local (1000-100000) et peut accorder des blocs
+à d'autres DC au-delà de cette plage (`grantRidPoolBlock`). Un DC
+additionnel (`Install-ADDSDomainController`) démarre avec un pool
+vide et demande un bloc initial de 500 RID au RID Master via un vrai
+échange réseau (nouveau `windows/domain/RidPoolClient.ts`) — réutilise
+le même point de terminaison JSON-sur-TCP/135 que la réplication
+(`ReplicationServerHandler` gagne un second type de message,
+`ridPoolRequest`/`ridPoolResponse` — le vrai MS-DRSR alloue aussi les
+RID sur la même interface RPC, pas un protocole séparé) plutôt que
+d'inventer un second protocole. Le serveur refuse si le DC contacté
+ne détient pas actuellement le rôle RID Master.
+
+Limite de portée assumée et documentée : un ordinateur créé via un
+vrai `AddRequest` LDAP (jonction de domaine) ne passe pas par
+`DirectoryStore.newComputer` et ne reçoit donc pas encore de SID —
+seuls les objets créés localement (cmdlets AD, promotion DC) en ont
+un pour l'instant.
+
+**Validation** : onze nouveaux tests (`ad-directory-store.test.ts` :
+SID de domaine + RID bien connus, allocation séquentielle, blocs
+`grantRidPoolBlock` non chevauchants ; `ad-forest.test.ts` : requête
+réelle de pool RID entre deux DC, SID de domaine identique des deux
+côtés, RID non chevauchants) + suite complète AD/forêt/GPO/schéma,
+tout au vert. Typecheck et lint ciblés propres.
+
 ## Convergence de branche : Windows Server (rôles FSMO) + Windows Phase 19 (`netsh advfirewall`)
 
 **État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
