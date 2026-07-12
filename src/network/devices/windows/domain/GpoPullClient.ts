@@ -94,8 +94,13 @@ export function pullGroupPolicy(tcpStack: TcpStack, membership: DomainMembership
   const selfSearch = ldap.search(rootDn, 'sub', { kind: 'equalityMatch', attr: 'sAMAccountName', value: computerSam }, []);
   const computerDn = selfSearch.entries[0]?.dn;
   if (computerDn) {
-    const parentDn = computerDn.split(',').slice(1).join(',');
-    if (parentDn && parentDn.toLowerCase() !== rootDn.toLowerCase()) applyLinksFrom(parentDn);
+    const ancestors: string[] = [];
+    let current = computerDn.split(',').slice(1).join(',');
+    while (current && current.toLowerCase() !== rootDn.toLowerCase()) {
+      ancestors.push(current);
+      current = current.split(',').slice(1).join(',');
+    }
+    for (const ouDn of ancestors.reverse()) applyLinksFrom(ouDn);
   }
 
   ldap.unbind();

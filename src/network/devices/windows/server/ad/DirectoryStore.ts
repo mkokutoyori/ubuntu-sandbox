@@ -16,7 +16,7 @@
  */
 
 import { DirectoryTree, type DirectoryEntry, type EntryReplMeta } from './ldap/DirectoryTree';
-import { parseDN, formatDN, leafValue, type DistinguishedName } from './ldap/LdapDN';
+import { parseDN, formatDN, leafValue, parentOf, type DistinguishedName } from './ldap/LdapDN';
 import type { LdapBindCheck } from './ldap/LdapServer';
 import type { AdUser, AdGroup, AdComputer, AdOrgUnit, Gpo, GpoSettings } from './AdTypes';
 import { generateId } from '@/network/core/types';
@@ -171,7 +171,12 @@ export class DirectoryStore {
     recordUsn(this.inboundHighWatermark, stamp.originatingInvocationId, stamp.originatingUsn);
   }
 
-  private ouDn(name: string): DistinguishedName { return [...parseDN(`OU=${name}`), ...this.tree.getRootDn()]; }
+  /** Resolves an OU by name (`"Sales"`) or nested path (`"Sales/EU"`, top-down, matching `New-ADOrganizationalUnit -Path`'s parent-first convention). */
+  private ouDn(path: string): DistinguishedName {
+    const segments = path.split('/').filter(s => s.length > 0);
+    const rdns = segments.map(seg => parseDN(`OU=${seg}`)[0]).reverse();
+    return [...rdns, ...this.tree.getRootDn()];
+  }
   private cnDn(cn: string, containerDn: DistinguishedName): DistinguishedName { return [...parseDN(`CN=${cn}`), ...containerDn]; }
   private computerDn(name: string): DistinguishedName { return this.cnDn(name, this.computersOuDn); }
 
@@ -193,13 +198,17 @@ export class DirectoryStore {
 
   // ─── Organizational Units ───────────────────────────────────────────
 
-  newOrgUnit(name: string): DirOpResult {
-    const res = this.tree.addEntry(this.ouDn(name), { objectClass: ['top', 'organizationalUnit'], ou: [name] });
-    return res.ok ? { ok: true, message: '' } : { ok: false, message: 'An object with that name already exists.' };
+  newOrgUnit(path: string): DirOpResult {
+    const segments = path.split('/').filter(s => s.length > 0);
+    const leafName = segments[segments.length - 1] ?? path;
+    const res = this.tree.addEntry(this.ouDn(path), { objectClass: ['top', 'organizationalUnit'], ou: [leafName] });
+    if (res.ok) return { ok: true, message: '' };
+    if (res.message.startsWith('noSuchObject')) return { ok: false, message: `Cannot find an object with identity: parent of '${path}'.` };
+    return { ok: false, message: 'An object with that name already exists.' };
   }
 
-  getOrgUnit(name: string): AdOrgUnit | null {
-    const entry = this.tree.getByDn(this.ouDn(name));
+  getOrgUnit(path: string): AdOrgUnit | null {
+    const entry = this.tree.getByDn(this.ouDn(path));
     return entry ? this.projectOrgUnit(entry) : null;
   }
 
@@ -282,21 +291,20 @@ export class DirectoryStore {
 
   /**
    * RSoP for a computer, real precedence order: domain-linked GPOs first,
-   * then GPOs linked to the computer's own OU (more specific — its
-   * settings override the domain's on conflicting keys). Only direct
-   * links are honored (no OU-hierarchy walk beyond the computer's
-   * immediate container), matching this simulator's flat OU placement
-   * (P6 domain join always places computers in the Computers OU).
+   * then GPOs linked to each OU from the top of the computer's OU chain
+   * down to its immediate container (more specific — its settings
+   * override less specific ones on conflicting keys).
    */
   resultantSetOfPolicy(computerName?: string): { appliedGpoNames: string[]; settings: GpoSettings } {
     const domainLinked = this.linkedGposFor(this.tree.getRootDn());
-    let ouLinked: Gpo[] = [];
+    const ouChainLinked: Gpo[] = [];
     if (computerName) {
       const computer = this.findComputerEntry(computerName);
-      const parentDn = computer ? computer.dn.slice(1) : null;
-      if (parentDn) ouLinked = this.linkedGposFor(parentDn);
+      if (computer) {
+        for (const ouDn of this.ouAncestorChain(computer.dn)) ouChainLinked.push(...this.linkedGposFor(ouDn));
+      }
     }
-    const ordered = [...domainLinked, ...ouLinked];
+    const ordered = [...domainLinked, ...ouChainLinked];
     const merged: GpoSettings = {};
     for (const gpo of ordered) {
       if (gpo.settings.accountPolicy !== undefined) merged.accountPolicy = { ...merged.accountPolicy, ...gpo.settings.accountPolicy };
@@ -304,6 +312,18 @@ export class DirectoryStore {
       if (gpo.settings.startupScript !== undefined) merged.startupScript = gpo.settings.startupScript;
     }
     return { appliedGpoNames: ordered.map(g => g.name), settings: merged };
+  }
+
+  /** Every OU containing `dn`, from the top-most (closest to the domain root) down to the immediate parent — excludes the domain root itself (handled separately as `domainLinked`). */
+  private ouAncestorChain(dn: DistinguishedName): DistinguishedName[] {
+    const rootDn = this.tree.getRootDn();
+    const chain: DistinguishedName[] = [];
+    let current = parentOf(dn);
+    while (current && current.length > rootDn.length) {
+      chain.push(current);
+      current = parentOf(current);
+    }
+    return chain.reverse();
   }
 
   private linkedGposFor(dn: DistinguishedName): Gpo[] {
@@ -500,9 +520,10 @@ export class DirectoryStore {
 
   // ─── Computers ──────────────────────────────────────────────────────
 
-  /** Creates the computer account — the side effect of a successful domain join (P6), or DC promotion for the DC's own account. */
-  newComputer(name: string, machineSecret: string): DirOpResult {
-    const res = this.tree.addEntry(this.computerDn(name), {
+  /** Creates the computer account — the side effect of a successful domain join (P6), or DC promotion for the DC's own account. `ouPath` (e.g. `"Sales/EU"`) places it in a nested OU instead of the default flat Computers container. */
+  newComputer(name: string, machineSecret: string, ouPath?: string): DirOpResult {
+    const dn = ouPath ? this.cnDn(name, this.ouDn(ouPath)) : this.computerDn(name);
+    const res = this.tree.addEntry(dn, {
       objectClass: ['top', 'person', 'organizationalPerson', 'user', 'computer'],
       cn: [name],
       sAMAccountName: [`${name}$`],
@@ -510,7 +531,7 @@ export class DirectoryStore {
       userPassword: [machineSecret],
     });
     if (!res.ok) return { ok: false, message: 'An object with that name already exists.' };
-    this.addGroupMemberByDn('Domain Computers', this.computerDn(name));
+    this.addGroupMemberByDn('Domain Computers', dn);
     return { ok: true, message: '' };
   }
 

@@ -5,6 +5,31 @@ progressive par équipement. Un push = une entrée = une fonctionnalité
 complète et testée (voir `CLAUDE.md` / le framework de migration pour les
 principes directeurs).
 
+## Windows Server — OU imbriquées + parcours complet de la chaîne GPO ancêtres
+
+Dernier des six chantiers "cœur Windows Server" identifiés à l'audit
+initial. `DirectoryStore.ouDn`/`newOrgUnit`/`getOrgUnit` acceptent
+maintenant un chemin `"Parent/Enfant"` (rétro-compatible : un simple
+nom sans `/` se comporte exactement comme avant) — la création échoue
+proprement si le parent n'existe pas encore (`DirectoryTree.addEntry`
+le vérifiait déjà). `newComputer` accepte un `ouPath` optionnel pour
+placer un compte ordinateur dans une OU imbriquée.
+
+`resultantSetOfPolicy` et `GpoPullClient.applyLinksFrom` (client LDAP)
+ne s'arrêtaient qu'au parent immédiat de l'ordinateur — ils parcourent
+désormais toute la chaîne d'OU ancêtres, de la plus proche du domaine
+à la plus spécifique, en appliquant chaque niveau dans cet ordre (le
+comportement à plat existant reste un cas particulier de chaîne à un
+seul niveau, donc aucune régression sur le placement plat actuel de
+`Add-Computer`/DC promotion).
+
+**Validation** : trois nouveaux tests dans `windows-gpo-core.test.ts`
+(OU imbriquée + RSoP multi-niveaux côté `DirectoryStore`, refus sur
+parent inexistant, et le même parcours de bout en bout par-dessus le
+vrai LDAP/Kerberos de `GpoPullClient` après déplacement d'un ordinateur
+joint via `renameEntry`) + suite complète GPO/AD/DC-promotion, tout au
+vert. Typecheck et lint ciblés propres.
+
 ## Windows Server — migre GpoPullClient (gpupdate) vers le vrai Kerberos (clôt P24)
 
 Dernier consommateur LDAP encore en bind simple plaintext
