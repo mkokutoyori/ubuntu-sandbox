@@ -122,7 +122,7 @@ import type { CmdInterpreter } from './windows/command-kernel/CmdInterpreter';
 import { lowercaseCommandNames } from './windows/command-kernel/ast/lowercaseCommandNames';
 import { resolveWindowsUser } from './windows/command-kernel/WindowsUser';
 import type { CommandRegistry } from '@/command-kernel/registry/command-registry';
-import type { WindowsIPv6RouteEntry as WinIPv6RouteEntry } from '@/command-kernel/machine/types';
+import type { WindowsIPv6RouteEntry as WinIPv6RouteEntry, WindowsGpResult } from '@/command-kernel/machine/types';
 import { createSession } from '@/command-kernel/session/types';
 import { PipeBuffer } from '@/command-kernel/io/pipe-buffer';
 import { ShellError, CommandNotFoundError } from '@/command-kernel/errors';
@@ -900,6 +900,25 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     this.gpoAppliedNames = appliedGpoNames;
     this.gpoLastAppliedAt = new Date();
     return { ok: true, message: '' };
+  }
+
+  /**
+   * Instantané RSoP typé pour `gpresult /r` — `null` hors domaine. Le
+   * formatage du texte est assuré par la commande `GpresultCommand` du
+   * command-kernel ; cette primitive ne fournit que l'état.
+   */
+  groupPolicyResult(): WindowsGpResult | null {
+    if (!this.domainMembership) return null;
+    return {
+      netbiosName: this.domainMembership.netbiosName,
+      dcAddress: this.domainMembership.dcAddress,
+      currentUser: this.userMgr.currentUser,
+      hostname: this.getHostname(),
+      lastAppliedAt: this.gpoLastAppliedAt,
+      appliedGpoNames: [...this.gpoAppliedNames],
+      logonBanner: this.gpoLogonBanner ? { title: this.gpoLogonBanner.title, text: this.gpoLogonBanner.text } : null,
+      startupScript: this.gpoStartupScript ?? '',
+    };
   }
 
   /** `gpresult /r` — RSoP summary text, matching the real tool's section layout. */
@@ -1809,6 +1828,8 @@ export class WindowsPC extends EndHost implements UserAccountHost {
         dhcpEventLog: () => this.dhcpEventLog,
         syncDhcpEvents: () => this.syncDHCPEvents(),
         addDhcpEvent: (type, message) => this.addDHCPEvent(type, message),
+        gpupdateForce: () => this.gpupdateForce(),
+        groupPolicyResult: () => this.groupPolicyResult(),
         bootedAt: () => this.getLifecycle().bootedAt() ?? null,
         now: () => this.simulatedDate(),
         powerOn: () => this.powerOn(),

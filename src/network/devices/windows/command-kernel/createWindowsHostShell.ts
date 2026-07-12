@@ -16,6 +16,8 @@ import { FcCommand } from './commands/Fc';
 import { FindCommand } from './commands/Find';
 import { FindstrCommand } from './commands/Findstr';
 import { GetmacCommand } from './commands/Getmac';
+import { GpupdateCommand } from './commands/Gpupdate';
+import { GpresultCommand } from './commands/Gpresult';
 import { HostnameCommand } from './commands/Hostname';
 import { IcaclsCommand } from './commands/Icacls';
 import { IpconfigCommand } from './commands/Ipconfig';
@@ -119,6 +121,8 @@ export function createWindowsHostShell(deps: WindowsMachineApiDeps): { registry:
   registry.register(() => new AuditpolCommand());
   registry.register(() => new WinrmCommand());
   registry.register(() => new WevtutilCommand());
+  registry.register(() => new GpupdateCommand());
+  registry.register(() => new GpresultCommand());
 
   const interpreter = new CmdInterpreter(registry, machine);
 

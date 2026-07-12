@@ -55,6 +55,8 @@ import {
   WindowsNpsApi,
   WindowsServerOpResult,
   EventLogApi,
+  DomainApi,
+  WindowsGpResult,
   WindowsHttpStore,
   WindowsIpsecDynamicSettings,
   WindowsIpsecFilter,
@@ -198,6 +200,8 @@ export interface WindowsMachineApiDeps {
   dhcpEventLog(): readonly string[];
   syncDhcpEvents(): void;
   addDhcpEvent(type: string, message: string): void;
+  gpupdateForce(): { ok: boolean; message: string };
+  groupPolicyResult(): WindowsGpResult | null;
   bootedAt(): Date | null;
   now(): Date;
   powerOn(): void;
@@ -1684,6 +1688,16 @@ class WindowsEventLogApiImpl implements EventLogApi {
   }
 }
 
+class WindowsDomainApiImpl implements DomainApi {
+  constructor(private readonly deps: Pick<WindowsMachineApiDeps, 'gpupdateForce' | 'groupPolicyResult'>) {}
+  gpupdateForce(): { ok: boolean; message: string } {
+    return this.deps.gpupdateForce();
+  }
+  groupPolicyResult(): WindowsGpResult | null {
+    return this.deps.groupPolicyResult();
+  }
+}
+
 export class WindowsMachineApi implements MachineApi {
   readonly fs: FileSystemApi;
   readonly proc: ProcessApi;
@@ -1704,6 +1718,7 @@ export class WindowsMachineApi implements MachineApi {
   readonly winRm: WinRmApi;
   readonly netConfig: WindowsNetConfigApi;
   readonly eventLog: EventLogApi;
+  readonly domain: DomainApi;
   readonly hostname: string;
   readonly os: OsIdentity;
   readonly hardware: CkHardwareProfile;
@@ -1730,6 +1745,7 @@ export class WindowsMachineApi implements MachineApi {
     this.winRm = new WindowsWinRmApi(deps.winrm);
     this.netConfig = new WindowsNetConfigApiImpl(() => deps.ports, deps);
     this.eventLog = new WindowsEventLogApiImpl(deps);
+    this.domain = new WindowsDomainApiImpl(deps);
     this.hostname = deps.hostname;
     this.os = {
       name: deps.identity.os.name,

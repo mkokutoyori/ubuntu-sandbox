@@ -5,7 +5,16 @@ progressive par équipement. Un push = une entrée = une fonctionnalité
 complète et testée (voir `CLAUDE.md` / le framework de migration pour les
 principes directeurs).
 
-## Windows Server — AdminSDHolder / SDProp (protection des groupes protégés)
+## Convergence de branche : Windows Server (AdminSDHolder/SDProp) + Windows Phase 22 (`gpupdate`/`gpresult`)
+
+**État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
+
+Deux lots de travail parallèles sur la même branche, fusionnés dans ce
+commit — l'un sur le cœur Windows Server (contrôleur de domaine),
+l'autre sur le pont Windows `command-kernel`, sans recouvrement de
+fichiers en dehors de `CHANGELOG.md`.
+
+### Windows Server — AdminSDHolder / SDProp (protection des groupes protégés)
 
 Nouveau module `ad/security/SdProp.ts` (63 lignes) : une passe SDProp
 marque `adminCount=1` sur tout membre — direct ou via imbrication de
@@ -35,6 +44,33 @@ non-effacement, idempotence ; `ad-forest.test.ts` : exécution sur le
 PDC Emulator par défaut, refus sur un DC additionnel/un serveur non-DC)
 — 69 tests au total sur ces deux fichiers, tout au vert. Typecheck et
 lint ciblés propres.
+
+### Windows Phase 22 : migration de `gpupdate` / `gpresult` vers command-kernel
+
+Migration des deux commandes client de stratégie de groupe (`gpupdate`,
+`gpresult`) depuis le dispatcher hérité vers le socle `command-kernel`,
+dans la continuité des phases précédentes (netsh, wevtutil).
+
+- Nouvelle capacité optionnelle `domain?: DomainApi` sur `MachineApi`
+  (`gpupdateForce()` : mutation réelle — pull LDAP + application des
+  overrides de politique ; `groupPolicyResult()` : instantané RSoP typé,
+  `null` hors domaine). Types `WindowsGpResult` / `WindowsGpLogonBanner`
+  ajoutés au contrat `machine/types.ts`.
+- `WindowsDomainApiImpl` dans `WindowsMachineApi.ts` délègue aux primitives
+  device `WindowsPC.gpupdateForce()` / nouvelle `WindowsPC.groupPolicyResult()`
+  (l'état reste sur l'équipement ; le formatage passe côté commandes).
+- Commandes `GpupdateCommand` / `GpresultCommand` : parsing des options,
+  gate `/?`, formatage console (dont la mise en page RSoP section par
+  section de `gpresult /r`), aide complète réelle en `usage`.
+- Respect strict de la frontière client/serveur : hors domaine, les deux
+  commandes échouent proprement (« not joined to a domain » /
+  « not a member of a domain ») — aucune fonctionnalité serveur exposée
+  sur un poste non joint.
+
+Validation : `windows-server-gpo.test.ts` passe intégralement (7/7,
+contre 3/7 auparavant) ; aucune régression sur les suites Windows
+voisines (les 2 échecs `runas` de `windows-access-cmd.test.ts` sont
+antérieurs — commande non encore migrée).
 
 ## Convergence de branche : Windows Server (pool RID + objectSid) + Windows Phase 21 (`wevtutil`)
 

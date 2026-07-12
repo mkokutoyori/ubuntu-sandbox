@@ -335,6 +335,35 @@ export interface WindowsEventLogEntry {
   readonly message: string;
 }
 
+/** Bannière d'ouverture de session appliquée par GPO (`gpresult /r`) — modèle Windows/AD. */
+export interface WindowsGpLogonBanner { readonly title: string; readonly text: string; }
+
+/** Instantané du jeu de stratégies résultant (`gpresult /r`) — modèle Windows/AD. */
+export interface WindowsGpResult {
+  readonly netbiosName: string;
+  readonly dcAddress: string;
+  readonly currentUser: string;
+  readonly hostname: string;
+  readonly lastAppliedAt: Date | null;
+  readonly appliedGpoNames: readonly string[];
+  readonly logonBanner: WindowsGpLogonBanner | null;
+  readonly startupScript: string;
+}
+
+/**
+ * Appartenance à un domaine AD et diagnostics associés (`gpupdate`,
+ * `gpresult`) — optionnel, concept sans équivalent universel. La plupart
+ * des opérations échouent proprement (« not joined to a domain ») hors
+ * domaine : aucune fonctionnalité serveur n'est exposée sur un poste non
+ * joint.
+ */
+export interface DomainApi {
+  /** Force l'application des stratégies de groupe (`gpupdate /force`) — mutation réelle (pull LDAP + application). `message` non vide = échec (ex. hors domaine). */
+  gpupdateForce(): { ok: boolean; message: string };
+  /** Instantané RSoP typé (`gpresult /r`) — `null` si la machine n'est pas jointe à un domaine. */
+  groupPolicyResult(): WindowsGpResult | null;
+}
+
 /**
  * Journal d'évènements Windows (`wevtutil`) — optionnel, concept sans
  * équivalent universel (Linux : syslog/journald). Expose les journaux
@@ -1046,6 +1075,8 @@ export interface MachineApi {
   readonly netConfig?: WindowsNetConfigApi;
   /** Journal d'évènements Windows (`wevtutil`) — optionnel, pas un concept universel (Linux a syslog/journald). */
   readonly eventLog?: EventLogApi;
+  /** Appartenance à un domaine AD (`gpupdate`, `gpresult`) — optionnel, pas un concept universel. */
+  readonly domain?: DomainApi;
   /** Masque de permissions par défaut (`umask`) — optionnel, pas un concept universel. */
   readonly permissions?: PermissionsApi;
   now(): Date;
