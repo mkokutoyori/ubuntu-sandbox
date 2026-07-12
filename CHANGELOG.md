@@ -5,6 +5,29 @@ progressive par équipement. Un push = une entrée = une fonctionnalité
 complète et testée (voir `CLAUDE.md` / le framework de migration pour les
 principes directeurs).
 
+## Linux — Phase 7 : `expr`
+
+**État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
+
+**Commande migrée** : `expr EXPRESSION` — évaluation d'expressions
+(arithmétique, comparaison, chaînes), portée par la commande
+command-kernel `ExprCommand`.
+
+- Toute l'évaluation (priorités, opérateurs `+ - * / % = < > | &`,
+  `match`/`substr`/`length`/`index`) reste assurée par l'évaluateur pur
+  **partagé** `runExpr` (`coreutils/ExprEvaluator.ts`). `ExprCommand` capte
+  les opérandes bruts (`lenientOptions`), termine la sortie par un saut de
+  ligne (comportement GNU) et conserve les codes de sortie exacts de GNU
+  `expr` (`0` vrai, `1` faux, `2`/`3` erreur).
+- **Legacy supprimé** : le `case 'expr'` et son wrapper `handleExpr()`
+  retirés de `LinuxCommandExecutor`, import `runExpr` devenu inutile
+  nettoyé ; `expr` reste dans la liste des commandes connues.
+
+Validation : le fichier `test-expr-seq-sleep-time-watch.test.ts` (qui
+pilote un `LinuxCommandExecutor` nu, résolu via son shell command-kernel
+par défaut) passe intégralement (53/53) ; cohérence stricte verte ; aucune
+régression Linux voisine (130 tests).
+
 ## Linux — Phase 6 : `seq`
 
 **État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**

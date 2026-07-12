@@ -5,6 +5,7 @@ import { BasenameCommand } from './commands/Basename';
 import { CatCommand } from './commands/Cat';
 import { CdCommand } from './commands/Cd';
 import { DirnameCommand } from './commands/Dirname';
+import { ExprCommand } from './commands/Expr';
 import { ChgrpCommand } from './commands/Chgrp';
 import { ChmodCommand } from './commands/Chmod';
 import { ChownCommand } from './commands/Chown';
@@ -72,6 +73,7 @@ export function createLinuxHostShell(deps: LinuxMachineApiDeps): Interpreter {
   registry.register(() => new BasenameCommand());
   registry.register(() => new DirnameCommand());
   registry.register(() => new SeqCommand());
+  registry.register(() => new ExprCommand());
 
   return new Interpreter(registry, machine);
 }

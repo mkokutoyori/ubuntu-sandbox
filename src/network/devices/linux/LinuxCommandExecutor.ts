@@ -29,7 +29,7 @@ import {
 } from './resolve';
 import { cmdMkfifo } from './LinuxPermCommands';
 import {
-  runTest, runExpr, runSleep, runWatch, formatTimes, chooseTimeFormat,
+  runTest, runSleep, runWatch, formatTimes, chooseTimeFormat,
   runTail,
   cmdTar, cmdGzip, cmdZip, cmdUnzip, describeArchiveContent,
   type TestFs, type TestEnv, type TailFs, type TailSink, type TailFollowHandle, type TailRunResult,
@@ -3389,7 +3389,6 @@ export class LinuxCommandExecutor {
       }
       case 'test':
       case '[': return this.handleTest(cmd, args);
-      case 'expr': return this.handleExpr(args);
       case 'mkfifo': return { output: cmdMkfifo(c, args), exitCode: 0 };
 
       // User commands
@@ -5502,11 +5501,6 @@ export class LinuxCommandExecutor {
     };
     const r = runTest(fs, env, args, cmd === '[');
     return { output: r.stderr, exitCode: r.exitCode };
-  }
-
-  private handleExpr(args: string[]): { output: string; exitCode: number } {
-    const r = runExpr(args);
-    return { output: r.output, exitCode: r.exitCode };
   }
 
   private async handleTime(args: string[]): Promise<{ output: string; exitCode: number }> {
