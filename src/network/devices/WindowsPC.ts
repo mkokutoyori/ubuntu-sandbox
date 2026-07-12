@@ -1925,6 +1925,8 @@ export class WindowsPC extends EndHost implements UserAccountHost {
           submitLpdPrintJob(this.getTcpStack(), server, queue, jobName, this.userMgr.currentUser, this.getHostname(), content),
         certificateAuthorityInstalled: () => this.getAdcsRole() !== null,
         submitCertRequest: (subject, template, eku) => this.submitCertRequest(subject, template, eku),
+        rdpSessionList: () => this.rdp.sessions.list().map((s) => ({ sessionId: s.sessionId, userName: s.userName, state: s.state })),
+        rdpSessionLogoff: (sessionId) => this.rdp.sessions.logoff(sessionId),
         locateDomainController: (domain) => this.locateDomainController(domain),
         dcDiagnostics: () => this.dcDiagnostics(),
         kerberosTickets: () => this.kerberosTickets(),
