@@ -5,6 +5,37 @@ progressive par équipement. Un push = une entrée = une fonctionnalité
 complète et testée (voir `CLAUDE.md` / le framework de migration pour les
 principes directeurs).
 
+## Windows Server — élargit la couverture des types de réglages GPO
+
+Premier des deux chantiers de suivi identifiés lors de l'audit initial
+(priorité plus basse que les six premiers). `GpoSettings` couvrait
+seulement `accountPolicy`/`logonBanner`/`startupScript` ; ajoute
+`auditPolicy` (7 catégories `secpol.msc`, `None`/`Success`/`Failure`/
+`SuccessAndFailure`) et `userRightsAssignment` (sous-ensemble
+représentatif : logon local, service, réseau, RDP + leurs variantes
+"deny"), toutes deux fusionnées en RSoP avec la même sémantique
+"dernier lien gagne" que `accountPolicy`. Ajoute aussi le filtrage de
+sécurité (`Gpo.securityFiltering`, `Set-GPPermission`-lite via
+`setGpoSecurityFiltering`) : une GPO dont la liste est vide s'applique
+à tous (défaut réel d'AD, "Authenticated Users"), sinon seulement aux
+ordinateurs membres (directement ou via un groupe) d'un des principaux
+listés.
+
+À l'occasion de cet ajout, extrait tout le sous-système GPO
+(`newGpo`/`getGpo`/`listGpos`/`setGpoSettings`/`newGPLink`/
+`resultantSetOfPolicy` — ~110 lignes) de `DirectoryStore.ts` (déjà
+plus de 600 lignes) vers un nouveau `gpo/GpoStore.ts` (167 lignes),
+composé par référence exactement comme `SiteRegistry`/`TrustRegistry`/
+`SchemaPartition` le sont déjà — `DirectoryStore.ts` ne fait plus que
+déléguer. `DirectoryStore.ts` retombe à 564 lignes.
+
+**Validation** : trois nouveaux tests dans `windows-gpo-core.test.ts`
+(audit policy + user rights en RSoP, application par défaut sans
+filtrage, filtrage de sécurité qui exclut/inclut selon l'appartenance
+de groupe) + suite complète GPO/AD/DC-promotion (5 fichiers), tout au
+vert hors les 4 échecs `gpupdate`/`gpresult` pré-existants et sans
+rapport. Typecheck et lint ciblés propres.
+
 ## Windows Server — OU imbriquées + parcours complet de la chaîne GPO ancêtres
 
 Dernier des six chantiers "cœur Windows Server" identifiés à l'audit

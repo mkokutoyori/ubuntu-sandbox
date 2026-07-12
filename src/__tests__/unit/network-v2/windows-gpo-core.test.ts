@@ -108,6 +108,57 @@ describe('DirectoryStore — GPO CRUD/link (New-GPO/Get-GPO/New-GPLink engine)',
   });
 });
 
+describe('GPO extended settings — audit policy, user rights assignment, security filtering', () => {
+  it('stores and merges audit policy and user rights assignment settings in RSoP', async () => {
+    const dc = await buildDc();
+    const store = dc.getDirectoryStore()!;
+    store.newGpo('Extra Policy');
+    store.setGpoSettings('Extra Policy', {
+      auditPolicy: { accountLogon: 'SuccessAndFailure', logonEvents: 'Success' },
+      userRightsAssignment: { logOnLocally: ['Domain Admins'], denyLogOnLocally: ['Guests'] },
+    });
+    store.newGPLink('Extra Policy', store.getDomainDn());
+
+    const gpo = store.getGpo('Extra Policy')!;
+    expect(gpo.settings.auditPolicy?.accountLogon).toBe('SuccessAndFailure');
+    expect(gpo.settings.userRightsAssignment?.logOnLocally).toEqual(['Domain Admins']);
+
+    const rsop = store.resultantSetOfPolicy();
+    expect(rsop.settings.auditPolicy?.accountLogon).toBe('SuccessAndFailure');
+    expect(rsop.settings.auditPolicy?.logonEvents).toBe('Success');
+    expect(rsop.settings.userRightsAssignment?.denyLogOnLocally).toEqual(['Guests']);
+  });
+
+  it('applies to Authenticated Users by default (no security filtering)', async () => {
+    const dc = await buildDc();
+    const store = dc.getDirectoryStore()!;
+    expect(store.getGpo('Default Domain Policy')!.securityFiltering).toEqual([]);
+    expect(store.newComputer('PC1', 'secret').ok).toBe(true);
+    const rsop = store.resultantSetOfPolicy('PC1');
+    expect(rsop.appliedGpoNames).toContain('Default Domain Policy');
+  });
+
+  it('a security-filtered GPO only applies to computers that are members of the filtered group', async () => {
+    const dc = await buildDc();
+    const store = dc.getDirectoryStore()!;
+    store.newGpo('Restricted Policy');
+    store.setGpoSettings('Restricted Policy', { startupScript: 'restricted.ps1' });
+    store.newGPLink('Restricted Policy', store.getDomainDn());
+    store.setGpoSecurityFiltering('Restricted Policy', ['Special Computers']);
+    store.newGroup('Special Computers', 'DomainLocal');
+
+    expect(store.newComputer('OUTSIDE1', 'secret').ok).toBe(true);
+    const rsopOutside = store.resultantSetOfPolicy('OUTSIDE1');
+    expect(rsopOutside.appliedGpoNames).not.toContain('Restricted Policy');
+
+    expect(store.newComputer('INSIDE1', 'secret').ok).toBe(true);
+    expect(store.addGroupMember('Special Computers', 'INSIDE1').ok).toBe(true);
+    const rsopInside = store.resultantSetOfPolicy('INSIDE1');
+    expect(rsopInside.appliedGpoNames).toContain('Restricted Policy');
+    expect(rsopInside.settings.startupScript).toBe('restricted.ps1');
+  });
+});
+
 describe('GpoPullClient — real LDAP wire dialogue against the DC', () => {
   function topology() {
     return async () => {

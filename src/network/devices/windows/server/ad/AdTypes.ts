@@ -36,18 +36,43 @@ export interface GpoAccountPolicy {
   lockoutWindowMinutes?: number;
 }
 
+export type GpoAuditSetting = 'None' | 'Success' | 'Failure' | 'SuccessAndFailure';
+
+export interface GpoAuditPolicy {
+  accountLogon?: GpoAuditSetting;
+  accountManagement?: GpoAuditSetting;
+  logonEvents?: GpoAuditSetting;
+  objectAccess?: GpoAuditSetting;
+  policyChange?: GpoAuditSetting;
+  privilegeUse?: GpoAuditSetting;
+  systemEvents?: GpoAuditSetting;
+}
+
+/** Principal SAM names per User Rights Assignment policy (a representative subset of `secpol.msc`'s full list). */
+export interface GpoUserRightsAssignment {
+  logOnLocally?: string[];
+  denyLogOnLocally?: string[];
+  logOnAsService?: string[];
+  accessComputerFromNetwork?: string[];
+  denyAccessComputerFromNetwork?: string[];
+  allowLogOnThroughRemoteDesktop?: string[];
+}
+
 export interface GpoSettings {
   accountPolicy?: GpoAccountPolicy;
+  auditPolicy?: GpoAuditPolicy;
+  userRightsAssignment?: GpoUserRightsAssignment;
   logonBanner?: { title: string; text: string };
   startupScript?: string;
 }
 
-/** `Gpo { id; name; links; settings }` — the exact minimal model from PRD-Windows-Server.md §4.4. */
+/** `Gpo { id; name; links; settings }` — the exact minimal model from PRD-Windows-Server.md §4.4, plus security filtering (empty = applies to Authenticated Users, real AD's default). */
 export interface Gpo {
   readonly id: string;
   readonly name: string;
   links: string[];
   settings: GpoSettings;
+  securityFiltering: string[];
 }
 
 export interface AdComputer {
