@@ -33,19 +33,14 @@ import { WindowsPrintServerRole } from './windows/server/print/PrintServerRole';
 import { randomSessionKey } from '@/network/kerberos/crypto';
 import { dialLdap } from './windows/server/ad/ldap/LdapClient';
 import { pullReplication } from './windows/server/ad/replication/ReplicationSession';
-import { createForest, joinForestAsChildDomain, getForestForDomain, type Forest, type ForestFsmoRole } from './windows/server/ad/forest/Forest';
+import { createForest, joinForestAsChildDomain, getForestForDomain, type Forest } from './windows/server/ad/forest/Forest';
 import { mirroredDirection, type TrustDirection, type TrustInfo, type TrustRecord } from './windows/server/ad/forest/TrustRelationship';
-import { DOMAIN_FSMO_ROLES, type DomainFsmoRole } from './windows/server/ad/fsmo/FsmoRoles';
-import { transferDomainFsmoRole } from './windows/domain/FsmoTransferClient';
 import { requestRidPool } from './windows/domain/RidPoolClient';
+import { DomainControllerOps, type FsmoRole, type FsmoOpResult } from './windows/server/ad/DomainControllerOps';
+import type { DomainFsmoRole } from './windows/server/ad/fsmo/FsmoRoles';
 
 export interface AdDsOpResult { ok: boolean; message: string }
-export type FsmoRole = DomainFsmoRole | ForestFsmoRole;
-export interface FsmoOpResult { ok: boolean; message: string }
-
-function isDomainFsmoRole(role: FsmoRole): role is DomainFsmoRole {
-  return (DOMAIN_FSMO_ROLES as readonly string[]).includes(role);
-}
+export type { FsmoRole, FsmoOpResult };
 
 /** Real DC promotion auto-creates this site (PRD-Windows-Server-Advanced.md §5 P6) — matches the name `WinDomainDiag.cmdNltest` has always reported. */
 const DEFAULT_SITE_NAME = 'Default-First-Site-Name';
@@ -56,6 +51,7 @@ export class WindowsServer extends WindowsPC {
   private readonly roleManager: RoleManager = new RoleManager(this.getServiceManager());
   private directoryStore: DirectoryStore | null = null;
   private isGlobalCatalog = false;
+  private readonly dcOps: DomainControllerOps = new DomainControllerOps(this);
   private dnsServerRoleInstance: WindowsDnsServerRole | null = null;
   private dhcpServerRoleInstance: WindowsDhcpServerRole | null = null;
   private npsRoleInstance: WindowsNpsRole | null = null;
@@ -373,41 +369,18 @@ export class WindowsServer extends WindowsPC {
   }
 
   /** `(Get-ADDomain).RIDMaster`/`PDCEmulator`/`InfrastructureMaster` or `(Get-ADForest).SchemaMaster`/`DomainNamingMaster` — the current holder's hostname, or null if this server isn't a DC (or, for the forest-wide roles, isn't part of a forest). */
-  getFsmoRoleOwner(role: FsmoRole): string | null {
-    if (isDomainFsmoRole(role)) return this.directoryStore?.getFsmoRoleOwner(role) ?? null;
-    return this.getForest()?.getFsmoRoleOwner(role) ?? null;
-  }
+  getFsmoRoleOwner(role: FsmoRole): string | null { return this.dcOps.getFsmoRoleOwner(role); }
 
   /** `Move-ADDirectoryServerOperationMasterRole -Force` — this DC unilaterally claims the role for itself, without contacting the current holder (disaster-recovery semantics; real AD's own seize doesn't contact it either). */
-  seizeFsmoRole(role: FsmoRole): FsmoOpResult {
-    if (!this.directoryStore) return { ok: false, message: 'This computer is not a domain controller.' };
-    if (isDomainFsmoRole(role)) {
-      this.directoryStore.seizeFsmoRole(role, this.getHostname());
-      return { ok: true, message: '' };
-    }
-    const forest = this.getForest();
-    if (!forest) return { ok: false, message: 'This computer is not part of a forest.' };
-    forest.seizeFsmoRole(role, this.getHostname());
-    return { ok: true, message: '' };
-  }
+  seizeFsmoRole(role: FsmoRole): FsmoOpResult { return this.dcOps.seizeFsmoRole(role); }
 
   /**
    * `Move-ADDirectoryServerOperationMasterRole` (graceful transfer) —
    * domain-wide roles only, see `FsmoTransferClient`'s header for why
    * Schema Master/Domain Naming Master use `seizeFsmoRole` instead.
-   * Records the same change locally once the remote write succeeds, so
-   * the result is immediately observable — matching what ordinary
-   * multi-master replication would converge to regardless.
    */
   transferFsmoRoleTo(role: DomainFsmoRole, currentHolderDcAddress: string, credentialUser: string, credentialPassword: string): FsmoOpResult {
-    if (!this.directoryStore) return { ok: false, message: 'This computer is not a domain controller.' };
-    const result = transferDomainFsmoRole({
-      tcpStack: this.getTcpStack(), role, currentHolderDcAddress,
-      domainRootDn: this.directoryStore.getDomainDn(), credentialUser, credentialPassword,
-      newOwnerHostname: this.getHostname(),
-    });
-    if (result.ok) this.directoryStore.seizeFsmoRole(role, this.getHostname());
-    return result;
+    return this.dcOps.transferFsmoRoleTo(role, currentHolderDcAddress, credentialUser, credentialPassword);
   }
 
   /**
@@ -416,12 +389,28 @@ export class WindowsServer extends WindowsPC {
    * manually, matching the existing convention for other periodic AD
    * processes (`ReplicationSession.ts`'s own header comment).
    */
-  runSdProp(): FsmoOpResult & { protectedMembers?: string[] } {
-    if (!this.directoryStore) return { ok: false, message: 'This computer is not a domain controller.' };
-    if (this.directoryStore.getFsmoRoleOwner('PdcEmulator') !== this.getHostname()) {
-      return { ok: false, message: 'This computer does not hold the PDC Emulator role.' };
-    }
-    return { ok: true, message: '', protectedMembers: this.directoryStore.runSdProp() };
+  runSdProp(): FsmoOpResult & { protectedMembers?: string[] } { return this.dcOps.runSdProp(); }
+
+  // ─── Universal Group Membership Caching (UGMC) ──────────────────────
+
+  isUgmcEnabled(): boolean { return this.dcOps.isUgmcEnabled(); }
+
+  enableUgmc(): FsmoOpResult { return this.dcOps.enableUgmc(); }
+
+  disableUgmc(): void { this.dcOps.disableUgmc(); }
+
+  /**
+   * Refreshes this DC's cache from a real Global Catalog over the wire
+   * (real AD: every 8 hours, on whichever site the DC belongs to; here,
+   * manually triggered — same convention as replication/SDProp).
+   */
+  refreshUgmc(gcAddress: string, credentialUser: string, credentialPassword: string): FsmoOpResult {
+    return this.dcOps.refreshUgmc(gcAddress, credentialUser, credentialPassword);
+  }
+
+  /** Cached universal-group SAMs for `userSam`, or `null` if UGMC isn't enabled/cache not yet populated (caller should fall back to a direct GC query). */
+  getCachedUniversalGroupsFor(userSam: string): string[] | null {
+    return this.dcOps.getCachedUniversalGroupsFor(userSam);
   }
 
   /**

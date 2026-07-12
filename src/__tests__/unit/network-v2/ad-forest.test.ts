@@ -239,3 +239,48 @@ describe('runSdProp — AdminSDHolder gated on the PDC Emulator role', () => {
     expect(result.ok).toBe(false);
   });
 });
+
+describe('Universal Group Membership Caching (UGMC)', () => {
+  it('a non-GC DC refreshes its cache from a real Global Catalog over the wire', async () => {
+    const { dc1, dc2 } = await buildRootDc();
+    await run(ps(dc2), 'Install-ADDSDomainController -DomainName lab.local -Server 192.168.90.10 -Credential "Administrator:P@ssw0rd" '
+      + '-SafeModeAdministratorPassword (ConvertTo-SecureString "P@ssw0rd" -AsPlainText -Force)');
+
+    const dc1Store = dc1.getDirectoryStore()!;
+    dc1Store.newUser('dave', { password: 'x' });
+    dc1Store.newGroup('Contractors', 'Universal');
+    dc1Store.addGroupMember('Contractors', 'dave');
+
+    expect(dc2.getCachedUniversalGroupsFor('dave')).toBeNull();
+    expect(dc2.enableUgmc().ok).toBe(true);
+    expect(dc2.getCachedUniversalGroupsFor('dave')).toEqual([]);
+
+    const refresh = dc2.refreshUgmc('192.168.90.10', 'Administrator', 'P@ssw0rd');
+    expect(refresh.ok).toBe(true);
+    expect(dc2.getCachedUniversalGroupsFor('dave')).toEqual(['Contractors']);
+  });
+
+  it('refuses to enable on a Global Catalog (already has full universal-group data)', async () => {
+    const { dc1 } = await buildRootDc();
+    expect(dc1.isGlobalCatalogServer()).toBe(true);
+    const result = dc1.enableUgmc();
+    expect(result.ok).toBe(false);
+  });
+
+  it('refuses to refresh before UGMC is enabled', async () => {
+    const { dc2 } = await buildRootDc();
+    await run(ps(dc2), 'Install-ADDSDomainController -DomainName lab.local -Server 192.168.90.10 -Credential "Administrator:P@ssw0rd" '
+      + '-SafeModeAdministratorPassword (ConvertTo-SecureString "P@ssw0rd" -AsPlainText -Force)');
+    const result = dc2.refreshUgmc('192.168.90.10', 'Administrator', 'P@ssw0rd');
+    expect(result.ok).toBe(false);
+  });
+
+  it('fails cleanly when the Global Catalog is unreachable', async () => {
+    const { dc2 } = await buildRootDc();
+    await run(ps(dc2), 'Install-ADDSDomainController -DomainName lab.local -Server 192.168.90.10 -Credential "Administrator:P@ssw0rd" '
+      + '-SafeModeAdministratorPassword (ConvertTo-SecureString "P@ssw0rd" -AsPlainText -Force)');
+    dc2.enableUgmc();
+    const result = dc2.refreshUgmc('192.168.90.250', 'Administrator', 'P@ssw0rd');
+    expect(result.ok).toBe(false);
+  });
+});

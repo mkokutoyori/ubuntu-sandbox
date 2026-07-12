@@ -5,6 +5,49 @@ progressive par équipement. Un push = une entrée = une fonctionnalité
 complète et testée (voir `CLAUDE.md` / le framework de migration pour les
 principes directeurs).
 
+## Windows Server — Universal Group Membership Caching (UGMC)
+
+Nouveau module `ad/gc/UgmcCache.ts` (35 lignes) : état purement local
+d'un DC non-GC (`enabled`, `lastRefresh`, `Map<sam utilisateur, sams de
+groupes universels>`), jamais répliqué — seul le rafraîchissement a
+besoin du réseau. `getCachedUniversalGroupsFor(sam)` retourne `null`
+tant que l'UGMC n'est pas activée (l'appelant doit alors interroger un
+GC directement), sinon la liste en cache (vide si jamais rafraîchie).
+
+Nouveau `domain/UgmcRefreshClient.ts` (51 lignes) : rafraîchissement
+réel par le réseau — dial LDAP réel (TCP/389) vers un Global Catalog,
+bind, recherche de tous les groupes sous la racine du domaine
+(`objectClass=group`, attributs `groupType`/`member`), filtrage
+côté client sur le bit `GROUP_TYPE_UNIVERSAL_GROUP` (`-2147483640`),
+puis inversion des DN `member` de chaque groupe universel en table
+`sam utilisateur → sams de groupes` (même simplification `leafValue(dn)`
+déjà établie ailleurs, ex. `DomainLogonClient.leafCn`).
+
+`WindowsServer` gagne `isUgmcEnabled()` / `enableUgmc()` (refuse sur un
+Global Catalog — déjà toute la donnée localement, comme le recommande
+AD réel) / `disableUgmc()` / `refreshUgmc(gcAddress, credentialUser,
+credentialPassword)` / `getCachedUniversalGroupsFor(sam)`. Rafraîchi
+manuellement (AD réel : toutes les 8 heures ; même convention que la
+réplication/SDProp — déclenchement manuel documenté, pas de
+scheduler réel modélisé).
+
+**Extraction de fichier** (discipline "pas de fichier de plus de ~400
+lignes" — `WindowsServer.ts` avait grossi à 662 lignes au fil des
+tâches FSMO/RID/SDProp/UGMC) : les opérations de niveau contrôleur de
+domaine sans sous-système AD dédié (FSMO, SDProp, UGMC) sont extraites
+dans un nouveau `ad/DomainControllerOps.ts` (121 lignes), construit
+avec une petite interface `DcOpsHost` (déjà satisfaite structurellement
+par `WindowsServer`) — `WindowsServer.ts` ne fait plus que déléguer,
+revenu à 615 lignes ; les futures fonctionnalités de niveau DC
+s'ajoutent désormais à ce nouveau module plutôt qu'à `WindowsServer.ts`.
+
+**Validation** : quatre nouveaux tests dans `ad-forest.test.ts`
+(parcours complet activation → rafraîchissement réel depuis un GC →
+lecture du cache ; refus d'activation sur un GC ; refus de
+rafraîchissement avant activation ; échec propre si le GC est
+injoignable) — 21 tests au total dans ce fichier, tout au vert.
+Typecheck et lint ciblés propres sur les quatre fichiers touchés.
+
 ## Convergence de branche : Windows Server (AdminSDHolder/SDProp) + Windows Phase 22 (`gpupdate`/`gpresult`)
 
 **État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
