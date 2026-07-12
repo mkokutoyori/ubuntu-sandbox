@@ -5,6 +5,47 @@ progressive par équipement. Un push = une entrée = une fonctionnalité
 complète et testée (voir `CLAUDE.md` / le framework de migration pour les
 principes directeurs).
 
+## Windows Server — application de la politique de mot de passe sur un changement
+
+Complète la tâche précédente : `minPasswordLength`, `minPasswordAge` et
+`passwordHistoryLength` (`GpoAccountPolicy`/PSO) étaient déclarés depuis
+la tâche PSO mais jamais réellement vérifiés. `DirectoryStore.setUser`
+(le seul point d'entrée `Set-ADAccountPassword`-like de ce simulateur)
+gagne un nouveau `rejectPasswordChange` privé, appelé avant tout
+changement de mot de passe :
+
+- `minPasswordLength` : refuse un nouveau mot de passe trop court.
+- `minPasswordAge` : refuse un second changement avant que le délai
+  (en jours, depuis un nouvel attribut `pwdLastSet`) ne soit écoulé —
+  sans effet sur le tout premier changement d'un compte (pas de
+  `pwdLastSet` antérieur à comparer).
+- `passwordHistoryLength` : refuse la réutilisation d'un mot de passe
+  encore présent dans les `N` derniers (nouvel attribut multi-valué
+  `pwdHistory`, courant + historique tronqué à `N`) — un mot de passe
+  sorti de cette fenêtre redevient réutilisable, comme AD réel.
+
+Réutilise tel quel `effectivePasswordPolicyFor` (PSO puis repli sur la
+politique par défaut du domaine, déjà branché par la tâche
+verrouillage).
+
+**Décision de portée délibérée** : `minPasswordLength` n'est PAS
+vérifié à la création (`newUser`) — `git grep` confirme que les tests
+de ce dépôt créent systématiquement des comptes avec des mots de passe
+courts (`'x'`, `'bobpw'`...) ; l'appliquer à la création aurait cassé
+un grand nombre de tests sans rapport pour un gain hors de proportion
+avec une tâche auto-initiée. Simplification documentée dans le code,
+pas oubliée.
+
+**Validation** : nouveau `ad-password-policy.test.ts` (5 tests) — refus/
+acceptation selon la longueur, refus d'un second changement avant
+`minPasswordAge`, absence de blocage sur le tout premier changement,
+réutilisation refusée puis acceptée une fois sortie de l'historique
+(via un PSO désactivant `minPasswordAge` pour isoler le test
+d'historique). Suite élargie (AD/GPO/réplication, 7 fichiers) :
+104/104 au vert, aucune régression sur `setUser`/`newUser` malgré leur
+usage très large dans la suite de tests. Typecheck et lint ciblés
+propres.
+
 ## Windows Server — verrouillage de compte (politique de mots de passe enfin appliquée)
 
 `DirectoryStore.effectivePasswordPolicyFor` existait depuis la tâche

@@ -387,6 +387,7 @@ export class DirectoryStore {
 
   // ─── Users ──────────────────────────────────────────────────────────
 
+  /** Deliberately does not enforce `minPasswordLength` at creation (unlike `setUser`'s password-change path): every AD-related test in this codebase creates users with short test passwords, and the domain default policy already carries a 7-character minimum — enforcing it here would be a disruptive, out-of-proportion change for what a self-initiated task should touch. Real `New-ADUser` does enforce it; this is a documented, deliberate simplification. */
   newUser(sam: string, opts: { password: string; fullName?: string; ou?: string; enabled?: boolean }): DirOpResult {
     const containerDn = opts.ou ? this.ouDn(opts.ou) : this.usersOuDn;
     if (opts.ou && !this.tree.getByDn(containerDn)) {
@@ -456,9 +457,47 @@ export class DirectoryStore {
       changes.push({ op: 'replace', type: 'userAccountControl', values: [String(opts.enabled ? UAC.NORMAL_ACCOUNT : UAC.NORMAL_ACCOUNT | UAC.ACCOUNTDISABLE)] });
     }
     if (opts.fullName !== undefined) changes.push({ op: 'replace', type: 'displayName', values: opts.fullName ? [opts.fullName] : [] });
-    if (opts.password !== undefined) changes.push({ op: 'replace', type: 'userPassword', values: [opts.password] });
+    if (opts.password !== undefined) {
+      const rejection = this.rejectPasswordChange(entry, opts.password);
+      if (rejection) return rejection;
+      const currentPassword = firstOf(entry.attributes.get('userpassword'));
+      const policy = this.effectivePasswordPolicyFor(sam);
+      const historyLength = policy?.passwordHistoryLength ?? 0;
+      const history = entry.attributes.get('pwdhistory') ?? [];
+      const newHistory = currentPassword ? [...history, currentPassword].slice(-historyLength) : history.slice(-historyLength);
+      changes.push({ op: 'replace', type: 'userPassword', values: [opts.password] });
+      changes.push({ op: 'replace', type: 'pwdLastSet', values: [String(Math.floor(Date.now() / 1000))] });
+      changes.push({ op: 'replace', type: 'pwdHistory', values: newHistory });
+    }
     this.tree.modifyEntry(entry.dn, changes);
     return { ok: true, message: '' };
+  }
+
+  /** `null` if `newPassword` satisfies the user's effective policy (PSO, or domain default) — `minPasswordLength`, `minPasswordAge` (days since `pwdLastSet`), and `passwordHistoryLength` (the current password counts as the most recent history entry). No admin-reset bypass modeled — no cmdlet currently distinguishes a self-service change from a reset. */
+  private rejectPasswordChange(entry: DirectoryEntry, newPassword: string): DirOpResult | null {
+    const sam = firstOf(entry.attributes.get('samaccountname'));
+    const policy = this.effectivePasswordPolicyFor(sam);
+    if (!policy) return null;
+    if (policy.minPasswordLength !== undefined && newPassword.length < policy.minPasswordLength) {
+      return { ok: false, message: 'Unable to update the password. The value provided does not meet the length, complexity, or history requirements of the domain.' };
+    }
+    if (policy.minPasswordAge !== undefined && policy.minPasswordAge > 0) {
+      const pwdLastSet = Number(firstOf(entry.attributes.get('pwdlastset'))) || 0;
+      const elapsedDays = (Math.floor(Date.now() / 1000) - pwdLastSet) / 86400;
+      if (pwdLastSet > 0 && elapsedDays < policy.minPasswordAge) {
+        return { ok: false, message: 'Unable to update the password. The password has not been changed enough time since it was last set.' };
+      }
+    }
+    const historyLength = policy.passwordHistoryLength ?? 0;
+    if (historyLength > 0) {
+      const currentPassword = firstOf(entry.attributes.get('userpassword'));
+      const history = entry.attributes.get('pwdhistory') ?? [];
+      const recent = [...history, currentPassword].filter(Boolean).slice(-historyLength);
+      if (recent.includes(newPassword)) {
+        return { ok: false, message: 'Unable to update the password. The value provided does not meet the length, complexity, or history requirements of the domain.' };
+      }
+    }
+    return null;
   }
 
   removeUser(sam: string): DirOpResult {
