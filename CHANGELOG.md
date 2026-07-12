@@ -5,6 +5,47 @@ progressive par équipement. Un push = une entrée = une fonctionnalité
 complète et testée (voir `CLAUDE.md` / le framework de migration pour les
 principes directeurs).
 
+## Windows Server — modélise les rôles FSMO
+
+Nouveau chantier (contrôleur de domaine), au-delà des deux lots de
+suivi de l'audit initial : jusqu'ici aucun concept de rôle FSMO
+n'existait (Schema Master, Domain Naming Master, RID Master, PDC
+Emulator, Infrastructure Master) — un vrai trou par rapport à AD réel,
+non documenté comme hors-périmètre par les PRD.
+
+Les trois rôles de portée domaine (RID Master, PDC Emulator,
+Infrastructure Master) sont modélisés comme de simples attributs sur
+l'entrée racine du domaine (nouveau `ad/fsmo/FsmoRoles.ts`, 48 lignes,
+même schéma "sous-registre composé par référence" que `GpoStore`/
+`PsoStore`) — ce qui les fait répliquer vers les autres DC du même
+domaine via le mécanisme de réplication déjà existant, sans plomberie
+supplémentaire : un DC ajouté via `Install-ADDSDomainController` les
+récupère dans sa synchro initiale comme n'importe quel autre attribut
+de la racine du domaine. Les deux rôles de portée forêt (Schema
+Master, Domain Naming Master) vivent sur `Forest` (partagé par
+référence entre domaines d'une même forêt — même simplification déjà
+en place pour le `SchemaValidator` partagé).
+
+Premier DC d'une forêt/d'un domaine enfant : détient tous les rôles
+pertinents à sa portée (comportement par défaut réel de DCPromo). DC
+additionnel (`Install-ADDSDomainController`) : n'en détient aucun par
+défaut, les hérite via la réplication initiale.
+
+`WindowsServer.getFsmoRoleOwner`/`seizeFsmoRole` (déclaratif local,
+`-Force`) plus `transferFsmoRoleTo` (transfert "gracieux", rôles de
+portée domaine uniquement) — ce dernier extrait dans un nouveau client
+dédié `windows/domain/FsmoTransferClient.ts` sur le même modèle que
+`DomainJoinClient`/`GpoPullClient` : dialogue réel avec le détenteur
+actuel via TCP/389, un vrai `ModifyRequest` LDAP enregistrant le
+nouveau propriétaire — pas de raccourci inter-appareils.
+
+**Validation** : six nouveaux tests dans `ad-forest.test.ts`
+(attribution par défaut forêt-racine/domaine-enfant, `null` hors DC/
+forêt, seize local visible immédiatement des deux côtés pour un rôle
+de forêt partagé, transfert réel réussi et échec propre si le
+détenteur est injoignable) + suite complète AD/forêt/schéma (5
+fichiers), tout au vert. Typecheck et lint ciblés propres.
+
 ## Windows Server — support des PSO (stratégie de mot de passe granulaire)
 
 Second et dernier chantier de suivi identifié à l'audit initial. Nouveau

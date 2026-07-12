@@ -136,3 +136,61 @@ describe('New-ADDomain / Get-ADForest — multi-domain forest', () => {
     expect(out).toMatch(/ERROR|Unable to contact/);
   });
 });
+
+describe('FSMO roles', () => {
+  it('the forest-root DC holds all three domain-wide roles and both forest-wide roles after Install-ADDSForest', async () => {
+    const { dc1 } = await buildRootDc();
+    expect(dc1.getFsmoRoleOwner('RidMaster')).toBe('DC1');
+    expect(dc1.getFsmoRoleOwner('PdcEmulator')).toBe('DC1');
+    expect(dc1.getFsmoRoleOwner('InfrastructureMaster')).toBe('DC1');
+    expect(dc1.getFsmoRoleOwner('SchemaMaster')).toBe('DC1');
+    expect(dc1.getFsmoRoleOwner('DomainNamingMaster')).toBe('DC1');
+  });
+
+  it("a child domain's first DC holds its own domain-wide roles, but the forest-wide roles stay with the forest root", async () => {
+    const { dc2 } = await buildRootDc();
+    await run(ps(dc2), newDomainCmd);
+
+    expect(dc2.getFsmoRoleOwner('RidMaster')).toBe('DC2');
+    expect(dc2.getFsmoRoleOwner('PdcEmulator')).toBe('DC2');
+    expect(dc2.getFsmoRoleOwner('InfrastructureMaster')).toBe('DC2');
+    expect(dc2.getFsmoRoleOwner('SchemaMaster')).toBe('DC1');
+    expect(dc2.getFsmoRoleOwner('DomainNamingMaster')).toBe('DC1');
+  });
+
+  it('returns null for a server that is not a DC, or not part of a forest', async () => {
+    const notADc = new WindowsServer('SRV1');
+    expect(notADc.getFsmoRoleOwner('RidMaster')).toBeNull();
+    expect(notADc.getFsmoRoleOwner('SchemaMaster')).toBeNull();
+  });
+
+  it('seizeFsmoRole lets a DC unilaterally claim a domain-wide or forest-wide role for itself', async () => {
+    const { dc1, dc2 } = await buildRootDc();
+    await run(ps(dc2), newDomainCmd);
+
+    const res = dc1.seizeFsmoRole('SchemaMaster');
+    expect(res.ok).toBe(true);
+    expect(dc1.getFsmoRoleOwner('SchemaMaster')).toBe('DC1');
+    // Forest-wide roles are shared by reference — dc2 sees the same change immediately.
+    expect(dc2.getFsmoRoleOwner('SchemaMaster')).toBe('DC1');
+  });
+
+  it('transferFsmoRoleTo dials the current holder over real LDAP and hands off a domain-wide role', async () => {
+    const { dc1, dc2 } = await buildRootDc();
+    await run(ps(dc2), 'Install-ADDSDomainController -DomainName lab.local -Server 192.168.90.10 -Credential "Administrator:P@ssw0rd" '
+      + '-SafeModeAdministratorPassword (ConvertTo-SecureString "P@ssw0rd" -AsPlainText -Force)');
+
+    expect(dc1.getFsmoRoleOwner('RidMaster')).toBe('DC1');
+    const result = dc2.transferFsmoRoleTo('RidMaster', '192.168.90.10', 'Administrator', 'P@ssw0rd');
+    expect(result.ok).toBe(true);
+    expect(dc2.getFsmoRoleOwner('RidMaster')).toBe('DC2');
+    expect(dc1.getDirectoryStore()!.getFsmoRoleOwner('RidMaster')).toBe('DC2');
+  });
+
+  it('transferFsmoRoleTo fails cleanly when the current holder is unreachable', async () => {
+    const { dc2 } = await buildRootDc();
+    await run(ps(dc2), newDomainCmd);
+    const result = dc2.transferFsmoRoleTo('RidMaster', '192.168.90.250', 'Administrator', 'P@ssw0rd');
+    expect(result.ok).toBe(false);
+  });
+});

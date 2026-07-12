@@ -29,10 +29,29 @@ export interface ForestDomain {
 
 export interface ForestOpResult { ok: boolean; message: string }
 
+export type ForestFsmoRole = 'SchemaMaster' | 'DomainNamingMaster';
+
 export class Forest {
   /** Cosmetic, matches this simulator's other functional-level fields — no real feature-level gating. */
   readonly functionalLevel = 'Windows Server 2016';
   private readonly domains = new Map<string, ForestDomain>();
+  private schemaMasterHostname: string;
+  private domainNamingMasterHostname: string;
+
+  constructor(rootDcHostname: string) {
+    this.schemaMasterHostname = rootDcHostname;
+    this.domainNamingMasterHostname = rootDcHostname;
+  }
+
+  getFsmoRoleOwner(role: ForestFsmoRole): string {
+    return role === 'SchemaMaster' ? this.schemaMasterHostname : this.domainNamingMasterHostname;
+  }
+
+  /** `Move-ADDirectoryServerOperationMasterRole -Force` (seize) — forest-wide roles are shared by reference (see file header), so this is visible to every domain of the forest immediately. */
+  seizeFsmoRole(role: ForestFsmoRole, newOwnerHostname: string): void {
+    if (role === 'SchemaMaster') this.schemaMasterHostname = newOwnerHostname;
+    else this.domainNamingMasterHostname = newOwnerHostname;
+  }
 
   addDomain(domain: ForestDomain): ForestOpResult {
     const key = domain.dnsName.toLowerCase();
@@ -58,8 +77,8 @@ const domainToForest = new Map<string, ForestRegistration>();
 function key(dnsName: string): string { return dnsName.toLowerCase(); }
 
 /** `Install-ADDSForest` — the first domain of a brand-new forest. */
-export function createForest(rootDnsName: string, rootNetbiosName: string, schemaValidator: SchemaValidator): Forest {
-  const forest = new Forest();
+export function createForest(rootDnsName: string, rootNetbiosName: string, schemaValidator: SchemaValidator, rootDcHostname: string): Forest {
+  const forest = new Forest(rootDcHostname);
   forest.addDomain({ dnsName: rootDnsName, netbiosName: rootNetbiosName });
   domainToForest.set(key(rootDnsName), { forest, schemaValidator });
   return forest;
