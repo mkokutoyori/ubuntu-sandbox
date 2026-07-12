@@ -1,0 +1,911 @@
+import { BaseCommand } from '@/command-kernel/command/base-command';
+import { CommandContext, CommandDescriptor, EXIT_OK, ExitCode } from '@/command-kernel/command/types';
+import { DefaultPrivilegePolicy } from '@/command-kernel/session/privilege-policy';
+import { PrivilegeLevel } from '@/command-kernel/session/types';
+import { IPAddress, SubnetMask, IPv6Address } from '@/network/core/types';
+import { isValidIPv4 } from '@/network/core/ip';
+import type { WindowsAdapterInfo, WindowsNetConfigApi } from '@/command-kernel/machine/types';
+
+const PORT_PROXY_FAMILIES = ['v4tov4', 'v4tov6', 'v6tov4', 'v6tov6'] as const;
+type PortProxyFamily = typeof PORT_PROXY_FAMILIES[number];
+
+// ─── Help text matching real Windows netsh ─────────────────────────
+
+const NETSH_USAGE = `Usage: netsh [-a AliasFile] [-c Context] [-r RemoteMachine] [-u [DomainName\\]UserName] [-p Password | *]
+             [Command | -f ScriptFile]
+
+The following commands are available:
+
+Commands in this context:
+?              - Displays a list of commands.
+add            - Adds a configuration entry to a list of entries.
+advfirewall    - Changes to the \`netsh advfirewall' context.
+branchcache    - Changes to the \`netsh branchcache' context.
+bridge         - Changes to the \`netsh bridge' context.
+delete         - Deletes a configuration entry from a list of entries.
+dhcpclient     - Changes to the \`netsh dhcpclient' context.
+dnsclient      - Changes to the \`netsh dnsclient' context.
+dump           - Displays a configuration script.
+exec           - Runs a script file.
+firewall       - Changes to the \`netsh firewall' context.
+help           - Displays a list of commands.
+http           - Changes to the \`netsh http' context.
+interface      - Changes to the \`netsh interface' context.
+ipsec          - Changes to the \`netsh ipsec' context.
+lan            - Changes to the \`netsh lan' context.
+mbn            - Changes to the \`netsh mbn' context.
+namespace      - Changes to the \`netsh namespace' context.
+netio          - Changes to the \`netsh netio' context.
+nlm            - Changes to the \`netsh nlm' context.
+p2p            - Changes to the \`netsh p2p' context.
+ras            - Changes to the \`netsh ras' context.
+rpc            - Changes to the \`netsh rpc' context.
+set            - Updates configuration settings.
+show           - Displays information.
+trace          - Changes to the \`netsh trace' context.
+wcn            - Changes to the \`netsh wcn' context.
+wfp            - Changes to the \`netsh wfp' context.
+winhttp        - Changes to the \`netsh winhttp' context.
+winsock        - Changes to the \`netsh winsock' context.
+wlan           - Changes to the \`netsh wlan' context.
+
+The following sub-contexts are available:
+ advfirewall branchcache bridge dhcpclient dnsclient firewall http interface ipsec lan mbn namespace netio nlm p2p ras rpc trace wcn wfp winhttp winsock wlan
+
+To view help for a command, type the command, followed by a space, and then
+ type ?.`;
+
+const NETSH_INTERFACE_HELP = `The following commands are available:
+
+Commands in this context:
+?              - Displays a list of commands.
+6to4           - Changes to the \`netsh interface 6to4' context.
+dump           - Displays a configuration script.
+help           - Displays a list of commands.
+httpstunnel    - Changes to the \`netsh interface httpstunnel' context.
+ip             - Changes to the \`netsh interface ip' context.
+ipv4           - Changes to the \`netsh interface ipv4' context.
+ipv6           - Changes to the \`netsh interface ipv6' context.
+isatap         - Changes to the \`netsh interface isatap' context.
+portproxy      - Changes to the \`netsh interface portproxy' context.
+set            - Sets configuration information.
+show           - Displays information.
+tcp            - Changes to the \`netsh interface tcp' context.
+teredo         - Changes to the \`netsh interface teredo' context.
+udp            - Changes to the \`netsh interface udp' context.
+
+The following sub-contexts are available:
+ 6to4 httpstunnel ip ipv4 ipv6 isatap portproxy tcp teredo udp
+
+To view help for a command, type the command, followed by a space, and then
+ type ?.`;
+
+const NETSH_INTERFACE_IP_HELP = `The following commands are available:
+
+Commands in this context:
+?              - Displays a list of commands.
+add            - Adds a configuration entry to a table.
+delete         - Deletes a configuration entry from a table.
+dump           - Displays a configuration script.
+help           - Displays a list of commands.
+reset          - Resets IP configurations.
+set            - Sets configuration information.
+show           - Displays information.
+
+To view help for a command, type the command, followed by a space, and then
+ type ?.`;
+
+const NETSH_SHOW_HELP = `The following commands are available:
+
+Commands in this context:
+show alias     - Lists all defined aliases.
+show helper    - Lists all the top-level helpers.`;
+
+const NETSH_IP_SHOW_HELP = `The following commands are available:
+
+Commands in this context:
+?              - Displays a list of commands.
+show addresses - Shows IP address configurations.
+show config    - Displays IP address and additional information.
+show dns       - Displays the DNS server addresses.
+show dnsservers - Displays the DNS server addresses.
+show ipstats   - Displays IP statistics.
+show joins     - Displays multicast groups joined.
+show neighbors - Displays neighbor (ARP) cache entries.
+show offload   - Displays the offload information.
+show route     - Displays route table entries.
+show subinterfaces - Shows subinterface parameters.
+show tcpstats  - Displays TCP statistics.
+show udpstats  - Displays UDP statistics.
+show wins      - Displays the WINS server addresses.
+
+To view help for a command, type the command, followed by a space, and then
+ type ?.`;
+
+const NETSH_PORTPROXY_HELP = [
+  'The following commands are available:',
+  '',
+  'Commands in this context:',
+  'add       - Adds a configuration entry to a table.',
+  'delete    - Deletes a configuration entry from a table.',
+  'reset     - Resets the port proxy configuration state.',
+  'set       - Updates configuration settings.',
+  'show      - Displays information.',
+].join('\n');
+
+const IPV6_HELP = `The following commands are available:
+
+Commands in this context:
+?              - Displays a list of commands.
+add            - Adds a configuration entry.
+delete         - Deletes a configuration entry.
+help           - Displays a list of commands.
+set            - Sets configuration information.
+show           - Displays information.
+
+To view help for a command, type the command, followed by a space, and then
+ type ?.`;
+
+const P2P_HELP = `The following commands are available:
+
+Commands in this context:
+?              - Displays a list of commands.
+dump           - Displays a configuration script.
+group          - Changes to the \`netsh p2p group' context.
+help           - Displays a list of commands.
+idmgr          - Changes to the \`netsh p2p idmgr' context.
+pnrp           - Changes to the \`netsh p2p pnrp' context.
+
+The following sub-contexts are available:
+ group idmgr pnrp
+
+To view help for a command, type the command, followed by a space, and then
+ type ?.`;
+
+const SUB_CONTEXT_STUB: Record<string, string> = {
+  branchcache: 'branchcache', firewall: 'firewall', mbn: 'mbn', netio: 'netio',
+  nlm: 'nlm', ras: 'ras', rpc: 'rpc', wcn: 'wcn', wfp: 'wfp',
+};
+
+const ADD_ADDRESS_USAGE = `Usage: netsh interface ipv4 add address [name=]<string>
+       [address=]<IPv4 address> [mask=]<subnet mask>
+       [[gateway=]<IPv4 address> [[gwmetric=]<integer>]]`;
+
+const ADD_ROUTE_USAGE = `Usage: netsh interface ipv4 add route [prefix=]<IPv4 address>/<prefix length>
+       [interface=]<string> [nexthop=]<IPv4 address>
+       [[siteprefixlength=]<integer>] [[metric=]<integer>]
+       [[publish=]no|age|yes]`;
+
+function unquote(name: string): string {
+  return name.trim().replace(/^["']|["']$/g, '').trim();
+}
+
+function displayName(portName: string): string {
+  return portName.replace(/^eth/, 'Ethernet ');
+}
+
+function defaultListenAddress(family: PortProxyFamily): string {
+  return family === 'v6tov4' || family === 'v6tov6' ? '::' : '0.0.0.0';
+}
+
+export class NetshCommand extends BaseCommand {
+  readonly descriptor: CommandDescriptor = {
+    name: 'netsh',
+    summary: 'Shell de configuration réseau',
+    usage: NETSH_USAGE,
+    args: [{ name: 'targets', type: 'string', required: false, variadic: true, description: 'contexte et sous-commande netsh' }],
+    options: [],
+    privileges: new DefaultPrivilegePolicy(PrivilegeLevel.ANY),
+    category: 'réseau',
+    lenientOptions: true,
+  };
+
+  async execute(ctx: CommandContext): Promise<ExitCode> {
+    const args = ctx.args.has('targets') ? ctx.args.get<string[]>('targets') : [];
+    if (!ctx.machine.netConfig) {
+      await ctx.io.stdout.write('NETSH: not supported on this device\n');
+      return 1;
+    }
+    const out = this.dispatch(ctx, ctx.machine.netConfig, args);
+    await ctx.io.stdout.write(out === '' ? '' : out + '\n');
+    return EXIT_OK;
+  }
+
+  private dispatch(ctx: CommandContext, nc: WindowsNetConfigApi, args: string[]): string {
+    if (args.length === 0) return NETSH_USAGE;
+
+    const joined = args.join(' ');
+    const joinedLower = joined.toLowerCase();
+    const head = args[0].toLowerCase();
+
+    if (args[0] === '/?' || args[0] === '?' || args[0] === '-?' || head === 'help') {
+      return NETSH_USAGE;
+    }
+
+    if (head === 'routing') {
+      return 'The following helper is not installed: routing. Invalid context. Routing And Remote Access service is required.';
+    }
+
+    if (head === 'show') return this.handleShow(args.slice(1));
+
+    if (head === 'add' || head === 'delete') {
+      if (args.length === 1 || args[1] === '?' || args[1] === '/?') {
+        return `The following commands are available:\n\nCommands in this context:\nadd            - Adds a configuration entry.\ndelete         - Deletes a configuration entry.\n\nThis command is context-sensitive. Use in a subcontext, e.g. "netsh interface ip add ...".\n\nTo view help for a command, type the command, followed by a space, and then\n type ?.`;
+      }
+    }
+
+    if (joinedLower.match(/winsock\s+reset/)) {
+      nc.resetWinsockCatalog();
+      return '\nWinsock Catalog successfully reset.\nYou must restart the computer in order to complete the reset.';
+    }
+
+    if (joinedLower.match(/int(?:erface)?\s+ip\s+reset/i)) {
+      nc.resetTcpIpStack();
+      return 'Resetting Interface, OK!\nRestart the computer to complete this action.';
+    }
+
+    if (head === 'interface' || head === 'int') {
+      return this.handleInterface(nc, args.slice(1));
+    }
+
+    if (head === 'winhttp') return this.handleWinhttp(nc, args.slice(1));
+
+    if (head === 'trace') return this.handleTrace(args.slice(1));
+
+    if (head === 'p2p') return P2P_HELP;
+
+    if (head === 'winsock') {
+      if (args.length === 1 || args[1] === '?' || args[1] === '/?') {
+        return `The following commands are available:\n\nCommands in this context:\n?              - Displays a list of commands.\naudit          - Displays a list of Winsock LSPs that have been installed and removed.\nhelp           - Displays a list of commands.\nremove         - Removes a Winsock LSP from the system.\nreset          - Resets the Winsock Catalog to a clean state.\nset            - Sets Winsock options.\nshow           - Displays information.\n\nTo view help for a command, type the command, followed by a space, and then\n type ?.`;
+      }
+    }
+
+    if (SUB_CONTEXT_STUB[head]) {
+      return `The following commands are available:\n\nCommands in this context:\n?              - Displays a list of commands.\ndump           - Displays a configuration script.\nhelp           - Displays a list of commands.\n\nTo view help for a command, type the command, followed by a space, and then\n type ?.`;
+    }
+
+    return `The subcommand "${args[0]}" was not found.\nType "netsh ?" for more information.`;
+  }
+
+  // ─── netsh show ───────────────────────────────────────────────────
+  private handleShow(args: string[]): string {
+    if (args.length === 0 || args[0] === '?' || args[0] === '/?') return NETSH_SHOW_HELP;
+    if (args[0].toLowerCase() === 'alias') {
+      if (args[1] === '/?' || args[1] === '?') {
+        return 'Usage: show alias\n\nRemarks:\n       Lists all defined aliases.';
+      }
+      return '';
+    }
+    if (args[0].toLowerCase() === 'helper') {
+      return 'Top-level helpers:\n  advfirewall  branchcache  bridge  dhcpclient  dnsclient\n  firewall  http  interface  ipsec  lan  mbn  namespace\n  netio  nlm  p2p  ras  rpc  trace  wcn  wfp  winhttp\n  winsock  wlan';
+    }
+    return NETSH_SHOW_HELP;
+  }
+
+  // ─── netsh trace ──────────────────────────────────────────────────
+  private handleTrace(args: string[]): string {
+    if (args.length === 0 || args[0] === '?' || args[0] === '/?') {
+      return `The following commands are available:\n\nCommands in this context:\n?              - Displays a list of commands.\nconvert        - Converts a trace file to an HTML report.\ndiagnose       - Auto-diagnose network issue.\nhelp           - Displays a list of commands.\nshow           - Displays trace status and settings.\nstart          - Starts tracing.\nstop           - Stops tracing.\n\nTo view help for a command, type the command, followed by a space, and then\n type ?.`;
+    }
+    const sub = args[0].toLowerCase();
+    if (sub === 'help') return `The following commands are available:\n\nCommands in this context:\nstart  - Starts tracing.\nstop   - Stops tracing.\nshow   - Shows trace status.\n`;
+    if (sub === 'start') return 'Tracing started.';
+    if (sub === 'stop') return 'Tracing stopped.';
+    return 'Ok.';
+  }
+
+  // ─── netsh winhttp ────────────────────────────────────────────────
+  private handleWinhttp(nc: WindowsNetConfigApi, args: string[]): string {
+    if (args.length === 0 || args[0] === '?' || args[0] === '/?') {
+      return `The following commands are available:\n\nCommands in this context:\n?              - Displays a list of commands.\nhelp           - Displays a list of commands.\nimport         - Imports WinHTTP proxy settings.\nreset          - Resets WinHTTP settings.\nset            - Configures WinHTTP settings.\nshow           - Displays current WinHTTP settings.\n\nTo view help for a command, type the command, followed by a space, and then\n type ?.`;
+    }
+    const sub = args[0].toLowerCase();
+    if (sub === 'help') return `The following commands are available:\n\nshow   - Displays WinHTTP settings.\nset    - Sets proxy settings.\nreset  - Resets proxy settings.\n`;
+    if (sub === 'show') {
+      const proxy = nc.winhttpProxy();
+      return proxy
+        ? `Current WinHTTP proxy settings:\n  Proxy Server(s) :  ${proxy}\n  Bypass List     :  (none)`
+        : 'Current WinHTTP proxy settings:\n  Direct access (no proxy server).';
+    }
+    if (sub === 'reset') {
+      nc.setWinhttpProxy('');
+      return 'Direct access (no proxy server).\nCurrent WinHTTP proxy settings were reset.';
+    }
+    if (sub === 'set' && args[1]?.toLowerCase() === 'proxy') {
+      const proxyArg = args[2]?.replace(/^["']|["']$/g, '') ?? '';
+      if (!proxyArg) return 'Usage: netsh winhttp set proxy <proxy-server> [<bypass-list>]';
+      nc.setWinhttpProxy(proxyArg);
+      return 'Ok.';
+    }
+    return 'Ok.';
+  }
+
+  // ─── netsh interface ──────────────────────────────────────────────
+  private handleInterface(nc: WindowsNetConfigApi, args: string[]): string {
+    if (args.length === 0 || args[0] === '?' || args[0] === '/?') return NETSH_INTERFACE_HELP;
+    const sub = args[0].toLowerCase();
+    if (sub === 'ip' || sub === 'ipv4') return this.handleInterfaceIp(nc, args.slice(1));
+    if (sub === 'ipv6') return this.handleInterfaceIpv6(nc, args.slice(1));
+    if (sub === 'show') return this.handleInterfaceShow(nc, args.slice(1));
+    if (sub === 'set') return this.handleInterfaceSet(nc, args.slice(1));
+    if (sub === 'portproxy') return this.handlePortproxy(nc, args.slice(1));
+    if (sub === 'help') return NETSH_INTERFACE_HELP;
+    return `The subcommand "${args[0]}" was not found.\nType "netsh interface ?" for more information.`;
+  }
+
+  private handleInterfaceShow(nc: WindowsNetConfigApi, args: string[]): string {
+    if (args.length === 0 || args[0] === '?' || args[0] === '/?' || args[0].toLowerCase() !== 'interface') {
+      return `The following commands are available:\n\nCommands in this context:\nshow interface - Shows interface table.`;
+    }
+    const lines: string[] = ['',
+      'Admin State    State          Type             Interface Name',
+      '-------------------------------------------------------------------------'];
+    for (const a of nc.adapters()) {
+      const adminState = a.adminEnabled ? 'Enabled' : 'Disabled';
+      const state = !a.adminEnabled ? 'Disconnected' : (a.isConnected ? 'Connected' : 'Disconnected');
+      lines.push(`${adminState.padEnd(15)}${state.padEnd(15)}${'Dedicated'.padEnd(17)}${displayName(a.name)}`);
+    }
+    lines.push('');
+    return lines.join('\n');
+  }
+
+  private handleInterfaceSet(nc: WindowsNetConfigApi, args: string[]): string {
+    const usage = 'Usage: set interface [name=]<string> [[admin=]enable|disable] [[newname=]<string>]';
+    if (args.length === 0 || args[0] === '?' || args[0] === '/?' || args[0].toLowerCase() !== 'interface') {
+      return usage;
+    }
+    const joined = args.slice(1).join(' ');
+
+    const renameMatch = joined.match(/^(?:name=)?(.+?)\s+newname=(.+)$/i);
+    if (renameMatch) {
+      const oldName = unquote(renameMatch[1]);
+      const newName = unquote(renameMatch[2]);
+      const portName = nc.resolveAdapterName(oldName);
+      if (!portName) return `The interface "${oldName}" was not found.`;
+      if (!nc.renameInterface(portName, newName)) return `The interface name "${newName}" is already in use.`;
+      return 'Ok.';
+    }
+
+    const match = joined.match(/^(?:name=)?(.+?)\s+admin=(enable|enabled|disable|disabled)$/i);
+    if (!match) return usage;
+
+    const ifName = unquote(match[1]);
+    const enable = match[2].toLowerCase().startsWith('enable');
+    const portName = nc.resolveAdapterName(ifName);
+    if (!portName) return `The interface "${ifName}" was not found.`;
+    nc.setInterfaceAdmin(portName, enable);
+    return 'Ok.';
+  }
+
+  // ─── netsh interface portproxy ────────────────────────────────────
+  private parsePortproxyParams(tokens: string[]): Map<string, string> {
+    const params = new Map<string, string>();
+    for (let i = 0; i < tokens.length; i++) {
+      const tok = tokens[i];
+      const eq = tok.indexOf('=');
+      if (eq > 0) {
+        params.set(tok.slice(0, eq).toLowerCase(), tok.slice(eq + 1));
+      } else if (tokens[i + 1] === '=' && tokens[i + 2] !== undefined) {
+        params.set(tok.toLowerCase(), tokens[i + 2]);
+        i += 2;
+      }
+    }
+    return params;
+  }
+
+  private handlePortproxy(nc: WindowsNetConfigApi, args: string[]): string {
+    if (args.length === 0 || args[0] === '?' || args[0] === '/?') return NETSH_PORTPROXY_HELP;
+    const sub = args[0].toLowerCase();
+    const rest = args.slice(1);
+    if (sub === 'add' || sub === 'set') return this.handlePortproxyAddSet(nc, rest);
+    if (sub === 'delete') return this.handlePortproxyDelete(nc, rest);
+    if (sub === 'show') return this.handlePortproxyShow(nc, rest);
+    if (sub === 'reset') { nc.resetPortProxy(); return ''; }
+    if (sub === 'help') return NETSH_PORTPROXY_HELP;
+    return `The following command was not found: portproxy ${args.join(' ')}.`;
+  }
+
+  private handlePortproxyAddSet(nc: WindowsNetConfigApi, rest: string[]): string {
+    const family = (rest[0] ?? '').toLowerCase() as PortProxyFamily;
+    if (!PORT_PROXY_FAMILIES.includes(family)) {
+      return `The following command was not found: portproxy add ${rest.join(' ')}.`;
+    }
+    const p = this.parsePortproxyParams(rest.slice(1));
+    const listenPort = Number.parseInt(p.get('listenport') ?? '', 10);
+    if (!Number.isInteger(listenPort) || listenPort <= 0 || listenPort > 65535) return 'The parameter is incorrect.';
+    const connectPort = Number.parseInt(p.get('connectport') ?? '', 10);
+    const listenAddress = p.get('listenaddress') || defaultListenAddress(family);
+    const connectAddress = p.get('connectaddress') || '';
+    nc.addPortProxyRule({
+      family, listenAddress, listenPort, connectAddress,
+      connectPort: Number.isInteger(connectPort) && connectPort > 0 ? connectPort : listenPort,
+    });
+    return '';
+  }
+
+  private handlePortproxyDelete(nc: WindowsNetConfigApi, rest: string[]): string {
+    const family = (rest[0] ?? '').toLowerCase() as PortProxyFamily;
+    if (!PORT_PROXY_FAMILIES.includes(family)) {
+      return `The following command was not found: portproxy delete ${rest.join(' ')}.`;
+    }
+    const p = this.parsePortproxyParams(rest.slice(1));
+    const listenPort = Number.parseInt(p.get('listenport') ?? '', 10);
+    if (!Number.isInteger(listenPort) || listenPort <= 0) return 'The parameter is incorrect.';
+    const listenAddress = p.get('listenaddress') || defaultListenAddress(family);
+    return nc.removePortProxyRule(family, listenAddress, listenPort)
+      ? '' : 'The system cannot find the file specified.';
+  }
+
+  private handlePortproxyShow(nc: WindowsNetConfigApi, rest: string[]): string {
+    const what = (rest[0] ?? 'all').toLowerCase();
+    const families: PortProxyFamily[] = what === 'all'
+      ? [...PORT_PROXY_FAMILIES]
+      : PORT_PROXY_FAMILIES.includes(what as PortProxyFamily) ? [what as PortProxyFamily] : [];
+    if (families.length === 0) return `The following command was not found: portproxy show ${rest.join(' ')}.`;
+    const sections: string[] = [];
+    for (const family of families) {
+      const rules = nc.portProxyRules(family);
+      if (rules.length === 0 && what === 'all') continue;
+      const listenFam = family.startsWith('v6') ? 'ipv6' : 'ipv4';
+      const connectFam = family.endsWith('v6') ? 'ipv6' : 'ipv4';
+      const lines = ['',
+        `Listen on ${listenFam}:             Connect to ${connectFam}:`, '',
+        'Address         Port        Address         Port',
+        '--------------- ----------  --------------- ----------'];
+      for (const r of rules) {
+        lines.push(`${r.listenAddress.padEnd(16)}${String(r.listenPort).padEnd(12)}${r.connectAddress.padEnd(16)}${r.connectPort}`);
+      }
+      sections.push(lines.join('\n'));
+    }
+    if (sections.length === 0) return '';
+    return sections.join('\n\n');
+  }
+
+  // ─── netsh interface ip ───────────────────────────────────────────
+  private handleInterfaceIp(nc: WindowsNetConfigApi, args: string[]): string {
+    if (args.length === 0 || args[0] === '?' || args[0] === '/?') return NETSH_INTERFACE_IP_HELP;
+    const sub = args[0].toLowerCase();
+    if (sub === 'show') return this.handleInterfaceIpShow(nc, args.slice(1));
+    if (sub === 'set') return this.handleInterfaceIpSet(nc, args.slice(1).join(' '));
+    if (sub === 'add') return this.handleInterfaceIpAdd(nc, args.slice(1).join(' '));
+    if (sub === 'delete') return this.handleInterfaceIpDelete(nc, args.slice(1).join(' '));
+    if (sub === 'reset') { nc.resetTcpIpStack(); return 'Resetting Interface, OK!\nRestart the computer to complete this action.'; }
+    if (sub === 'help') return NETSH_INTERFACE_IP_HELP;
+    return `The subcommand "${args[0]}" was not found.\nType "netsh interface ip ?" for more information.`;
+  }
+
+  private handleInterfaceIpShow(nc: WindowsNetConfigApi, args: string[]): string {
+    if (args.length === 0 || args[0] === '?' || args[0] === '/?') return NETSH_IP_SHOW_HELP;
+    const sub = args[0].toLowerCase();
+    const ifFilter = args[1] ? args[1].trim() : undefined;
+    if (sub === 'config' || sub === 'addresses' || sub === 'address') return this.handleShowConfig(nc, ifFilter);
+    if (sub === 'dns' || sub === 'dnsservers') return this.handleShowDns(nc, ifFilter);
+    if (sub === 'route') return this.handleShowRoute(nc);
+    if (sub === 'neighbors') return this.handleShowNeighbors(nc);
+    if (sub === 'dynamicport') return this.renderDynamicPort((args[1] ?? 'tcp').toLowerCase());
+    if (sub === '?') return NETSH_IP_SHOW_HELP;
+    return `The subcommand "${args[0]}" was not found in this context.\nType "netsh interface ipv4 show ?" for more information.`;
+  }
+
+  private renderDynamicPort(proto: string): string {
+    const label = proto === 'udp' ? 'udp' : 'tcp';
+    return [`Protocol ${label} Dynamic Port Range`, '---------------------------------',
+      'Start Port      : 49152', 'Number of Ports : 16384', ''].join('\n');
+  }
+
+  private adapterMatches(nc: WindowsNetConfigApi, a: WindowsAdapterInfo, ifFilter?: string): boolean {
+    if (!ifFilter) return true;
+    return a.name === nc.resolveAdapterName(ifFilter);
+  }
+
+  private handleShowConfig(nc: WindowsNetConfigApi, ifFilter?: string): string {
+    const gw = nc.defaultGateway();
+    const lines: string[] = [];
+    for (const a of nc.adapters()) {
+      if (!this.adapterMatches(nc, a, ifFilter)) continue;
+      const dhcpEnabled = a.isDhcp || !a.ip;
+      lines.push(`Configuration for interface "${displayName(a.name)}"`);
+      lines.push(`    DHCP enabled:                         ${dhcpEnabled ? 'Yes' : 'No'}`);
+      if (a.ip) {
+        const cidr = a.mask ? new SubnetMask(a.mask).toCIDR() : 24;
+        lines.push(`    IP Address:                           ${a.ip}`);
+        lines.push(`    Subnet Prefix:                        ${a.ip}/${cidr} (mask ${a.mask || '255.255.255.0'})`);
+        for (const sec of a.secondaryIps) {
+          lines.push(`    IP Address:                           ${sec.ip}`);
+          lines.push(`    Subnet Prefix:                        ${sec.ip}/${new SubnetMask(sec.mask).toCIDR()} (mask ${sec.mask})`);
+        }
+      }
+      if (a.ip && gw) {
+        lines.push(`    Default Gateway:                      ${gw}`);
+        lines.push(`    Gateway Metric:                       0`);
+      }
+      lines.push(`    InterfaceMetric:                      25`);
+      const dnsServers = nc.staticDnsServers(a.name);
+      if (dnsServers.length > 0) {
+        const label = a.dnsMode === 'static'
+          ? '    Statically Configured DNS Servers:    '
+          : '    DNS Servers Configured through DHCP:  ';
+        lines.push(`${label}${dnsServers[0]}`);
+        for (let i = 1; i < dnsServers.length; i++) lines.push(`                                        ${dnsServers[i]}`);
+      }
+      lines.push(`    Register with which suffix:           Primary only`);
+      lines.push('');
+    }
+    return lines.join('\n');
+  }
+
+  private handleShowNeighbors(nc: WindowsNetConfigApi): string {
+    const lines: string[] = ['',
+      `${'Interface'.padEnd(15)}${'IP Address'.padEnd(20)}${'Physical Address'.padEnd(22)}Type`,
+      '----------------------------------------------------------------------'];
+    for (const e of nc.arpEntries()) {
+      lines.push(`${displayName(e.iface).padEnd(15)}${e.ip.padEnd(20)}${e.mac.padEnd(22)}${e.type || 'static'}`);
+    }
+    lines.push('');
+    return lines.join('\n');
+  }
+
+  private handleShowDns(nc: WindowsNetConfigApi, ifFilter?: string): string {
+    const lines: string[] = [];
+    for (const a of nc.adapters()) {
+      if (!this.adapterMatches(nc, a, ifFilter)) continue;
+      const servers = nc.staticDnsServers(a.name);
+      lines.push(`Configuration for interface "${displayName(a.name)}"`);
+      if (a.dnsMode === 'dhcp') lines.push(`    DNS servers configured through DHCP`);
+      if (servers.length > 0) {
+        const label = a.dnsMode === 'static'
+          ? '    Statically Configured DNS Servers:    '
+          : '    DNS Servers:                          ';
+        lines.push(`${label}${servers[0]}`);
+        for (let i = 1; i < servers.length; i++) lines.push(`                                          ${servers[i]}`);
+      } else if (a.dnsMode === 'static') {
+        lines.push(`    Statically Configured DNS Servers:    None`);
+      } else {
+        lines.push(`    DNS Servers:                          None`);
+      }
+      lines.push('');
+    }
+    return lines.join('\n');
+  }
+
+  private handleShowRoute(nc: WindowsNetConfigApi): string {
+    const lines: string[] = ['',
+      'Publish  Type      Met  Prefix                    NextHop/Interface',
+      '---------  --------  ---  ------------------------  -------------------------------------------'];
+    for (const r of nc.routes()) {
+      const prefix = `${r.network}/${new SubnetMask(r.mask).toCIDR()}`;
+      const nextHop = r.nextHop || 'On-link';
+      lines.push(`No       ${r.type.padEnd(10)}${String(r.metric).padEnd(5)}${prefix.padEnd(26)}${nextHop}`);
+    }
+    lines.push('');
+    return lines.join('\n');
+  }
+
+  // ─── netsh interface ip set ───────────────────────────────────────
+  private handleInterfaceIpSet(nc: WindowsNetConfigApi, joined: string): string {
+    const lower = joined.toLowerCase();
+    if (lower.startsWith('dns')) {
+      if (/dns(?:servers?)?\b.*\bdhcp/.test(lower)) return this.handleSetDnsDhcp(nc, joined);
+      return this.handleSetDnsStatic(nc, joined);
+    }
+    if (lower.startsWith('address')) {
+      if (/(?:^|\s)(?:source\s*=\s*)?dhcp\b/.test(lower)) return this.handleSetAddressDhcp(nc, joined);
+      if (/(?:^|\s)(?:source\s*=\s*)?static\b/.test(lower)) return this.handleSetAddressStatic(nc, joined);
+      const mode = joined.trim().split(/\s+/)[2];
+      if (mode && !/^[\d.]+$/.test(mode) && !/^(?:name|address|addr|mask|gateway)=/i.test(mode)) {
+        return 'The syntax supplied for this command is not valid. Check help for the correct syntax.';
+      }
+      return this.handleSetAddressStatic(nc, joined);
+    }
+    return 'Usage: set address|dns [name=]<string> [source=]dhcp|static ...';
+  }
+
+  private handleSetAddressStatic(nc: WindowsNetConfigApi, joined: string): string {
+    const match = joined.match(/address\s+"([^"]+)"\s+static\s+([\d.]+)\s+([\d.]+)(?:\s+([\d.]+))?/i)
+      || joined.match(/address\s+(?:name=)?(.+?)\s+static\s+([\d.]+)\s+([\d.]+)(?:\s+([\d.]+))?/i);
+    if (!match) return 'Usage: netsh interface ip set address "name" static <ip> <mask> [gateway]';
+    const ifName = unquote(match[1]);
+    const portName = nc.resolveAdapterName(ifName);
+    if (!portName) return `Error: The interface "${ifName}" was not found.`;
+    const res = nc.configureAddress(portName, match[2], match[3]);
+    if (!res.ok) return `Error: ${res.error}`;
+    if (match[4]) {
+      try { nc.setDefaultGateway(new IPAddress(match[4]).toString()); }
+      catch (e) { return `Error: ${e instanceof Error ? e.message : String(e)}`; }
+    }
+    return '';
+  }
+
+  private handleSetAddressDhcp(nc: WindowsNetConfigApi, joined: string): string {
+    const match = joined.match(/address\s+"([^"]+)"\s+(?:source=)?dhcp/i)
+      || joined.match(/address\s+(?:name=)?(.+?)\s+(?:source=)?dhcp/i);
+    if (!match) return 'Usage: netsh interface ip set address "name" source=dhcp';
+    const ifName = unquote(match[1]);
+    const portName = nc.resolveAdapterName(ifName);
+    if (!portName) return `Error: The interface "${ifName}" was not found.`;
+    nc.setAddressDhcp(portName);
+    return '';
+  }
+
+  private handleSetDnsStatic(nc: WindowsNetConfigApi, joined: string): string {
+    const match = joined.match(/dns(?:servers?)?\s+"([^"]+)"\s+(?:source=)?static\s+(?:address=)?(\d+\.\d+\.\d+\.\d+)/i)
+      || joined.match(/dns(?:servers?)?\s+(?:name=)?(.+?)\s+(?:source=)?static\s+(?:address=)?(\d+\.\d+\.\d+\.\d+)/i);
+    if (!match) return 'Usage: netsh interface ip set dns "name" static <ip>';
+    const ifName = match[1].trim();
+    const portName = nc.resolveAdapterName(ifName);
+    if (!portName) return `The interface "${ifName}" was not found.`;
+    nc.setDnsServers(portName, [match[2]]);
+    return 'Ok.';
+  }
+
+  private handleSetDnsDhcp(nc: WindowsNetConfigApi, joined: string): string {
+    const match = joined.match(/dns(?:servers?)?\s+"([^"]+)"\s+(?:source=)?dhcp/i)
+      || joined.match(/dns(?:servers?)?\s+(?:name=)?(.+?)\s+(?:source=)?dhcp/i);
+    if (!match) return 'Usage: netsh interface ip set dns "name" dhcp';
+    const ifName = match[1].trim();
+    const portName = nc.resolveAdapterName(ifName);
+    if (!portName) return `The interface "${ifName}" was not found.`;
+    nc.setDnsMode(portName, 'dhcp');
+    return 'Ok.';
+  }
+
+  // ─── netsh interface ip add ───────────────────────────────────────
+  private handleInterfaceIpAdd(nc: WindowsNetConfigApi, joined: string): string {
+    const lower = joined.toLowerCase().trim();
+    if (!joined.trim()) {
+      return `Usage: add address|dnsserver|dns|route|neighbors ...\nType "netsh interface ipv4 add ?" for more information.`;
+    }
+    if (lower.startsWith('address')) return this.handleAddAddress(nc, joined);
+    if (lower.startsWith('dnsserver')) return this.handleAddDnsserver(nc, joined);
+    if (lower.startsWith('dns')) return this.handleAddDns(nc, joined);
+    if (lower.startsWith('route')) return this.handleAddRoute(nc, joined);
+    if (lower.startsWith('neighbor')) return this.handleAddNeighbors(nc, joined);
+    return `The subcommand "${joined.split(' ')[0]}" was not found.\nType "netsh interface ipv4 add ?" for more information.`;
+  }
+
+  private handleAddAddress(nc: WindowsNetConfigApi, joined: string): string {
+    if (/^address\s*\?/.test(joined.trim())) return ADD_ADDRESS_USAGE;
+    const IP4 = /\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}/;
+    const match = joined.match(new RegExp(`^address\\s+(.+?)\\s+(${IP4.source})\\s+(${IP4.source})(?:\\s+(${IP4.source}))?(?:\\s+(\\d+))?$`, 'i'));
+    if (!match) return ADD_ADDRESS_USAGE;
+    const ifName = match[1].trim();
+    const ip = match[2], mask = match[3], gateway = match[4];
+    const portName = nc.resolveAdapterName(ifName);
+    if (!portName) return `The interface "${ifName}" was not found.`;
+    const adapter = nc.adapters().find((a) => a.name === portName)!;
+    if ((adapter.ip && adapter.ip === ip) || adapter.secondaryIps.some((e) => e.ip === ip)) {
+      return `The object already exists.`;
+    }
+    if (adapter.ip) {
+      const res = nc.addSecondaryIp(portName, ip, mask);
+      if (!res.ok) return `Error: ${res.error}`;
+    } else {
+      const res = nc.configureAddress(portName, ip, mask);
+      if (!res.ok) return `Error: ${res.error}`;
+      if (gateway) {
+        try { nc.setDefaultGateway(new IPAddress(gateway).toString()); }
+        catch (e) { return `Error: ${e instanceof Error ? e.message : String(e)}`; }
+      }
+    }
+    return 'Ok.';
+  }
+
+  private handleAddDnsserver(nc: WindowsNetConfigApi, joined: string): string {
+    if (/^dnsserver\s*\?/.test(joined.trim())) {
+      return `Usage: netsh interface ipv4 add dnsserver [name=]<string> [address=]<IPv4 address> [index=<integer>] [validate=yes|no]`;
+    }
+    const indexMatch = joined.match(/\bindex=(\w+)/i);
+    const base = joined.replace(/\s+index=\w+/i, '').replace(/\s+validate=\w+/i, '').trim();
+    const IP4 = /\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}/;
+    const match = base.match(new RegExp(`^dnsserver\\s+(.+?)\\s+(${IP4.source})$`, 'i'));
+    if (!match) return `Usage: netsh interface ipv4 add dnsserver [name=]<string> [address=]<IPv4 address> [index=<integer>]`;
+    const ifName = match[1].trim();
+    const ip = match[2];
+    if (indexMatch && isNaN(parseInt(indexMatch[1], 10))) return `The syntax of the index= parameter is not valid.`;
+    const portName = nc.resolveAdapterName(ifName);
+    if (!portName) return `The interface "${ifName}" was not found.`;
+    const existing = [...nc.staticDnsServers(portName)];
+    if (!indexMatch && existing.length > 0) return `The index= parameter is required when DNS servers already exist.`;
+    existing.push(ip);
+    nc.setDnsServers(portName, existing);
+    return 'Ok.';
+  }
+
+  private handleAddNeighbors(nc: WindowsNetConfigApi, joined: string): string {
+    const IP4 = /\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}/;
+    const MAC = /[0-9a-fA-F]{2}(?:[-:][0-9a-fA-F]{2})*/;
+    const match = joined.match(new RegExp(`^neighbors?\\s+(.+?)\\s+(${IP4.source})\\s+(${MAC.source})$`, 'i'));
+    if (!match) return `Usage: netsh interface ipv4 add neighbors [interface=]<string> [address=]<IPv4 address> [neighbor=]<MAC address>`;
+    const ifName = match[1].trim(), ip = match[2], mac = match[3];
+    if (mac.split(/[-:]/).length !== 6) {
+      return `Invalid MAC address: "${mac}". A MAC address must have exactly 6 octets separated by hyphens.`;
+    }
+    const portName = nc.resolveAdapterName(ifName);
+    if (!portName) return `The interface "${ifName}" was not found.`;
+    if (!isValidIPv4(ip)) return `Invalid IPv4 address: "${ip}".`;
+    const res = nc.addStaticArp(ip, mac, portName);
+    if (!res.ok) return `Invalid IPv4 address: "${ip}".`;
+    return 'Ok.';
+  }
+
+  private handleAddDns(nc: WindowsNetConfigApi, joined: string): string {
+    const match = joined.match(/dns\s+"([^"]+)"\s+(\d+\.\d+\.\d+\.\d+)/i)
+      || joined.match(/dns\s+(?:name=)?(.+?)\s+(\d+\.\d+\.\d+\.\d+)/i);
+    if (!match) return 'Usage: netsh interface ip add dns "name" <ip>';
+    const ifName = match[1].trim();
+    const portName = nc.resolveAdapterName(ifName);
+    if (!portName) return `The interface "${ifName}" was not found.`;
+    const existing = [...nc.staticDnsServers(portName)];
+    existing.push(match[2]);
+    nc.setDnsServers(portName, existing);
+    return 'Ok.';
+  }
+
+  private handleAddRoute(nc: WindowsNetConfigApi, joined: string): string {
+    if (/^route\s*\?/.test(joined.trim())) return ADD_ROUTE_USAGE;
+    const metricMatch = joined.match(/\bmetric=(\d+)/i);
+    const base = joined.replace(/\s+metric=\d+/i, '').replace(/\s+publish=\w+/i, '').trim();
+    const match = base.match(/^route\s+([\d.]+)\/(\d+)\s+(.+?)\s+([\d.]+)$/i);
+    if (!match) return ADD_ROUTE_USAGE;
+    const network = match[1], cidr = parseInt(match[2], 10), ifName = match[3].trim(), nextHop = match[4];
+    const metric = metricMatch ? parseInt(metricMatch[1], 10) : 1;
+    const portName = nc.resolveAdapterName(ifName);
+    if (!portName) return `The interface "${ifName}" was not found.`;
+    try {
+      const mask = SubnetMask.fromCIDR(cidr);
+      nc.addRoute(new IPAddress(network).toString(), mask.toString(), new IPAddress(nextHop).toString(), metric);
+      return 'Ok.';
+    } catch (e) {
+      return `Error: ${e instanceof Error ? e.message : String(e)}`;
+    }
+  }
+
+  // ─── netsh interface ip delete ────────────────────────────────────
+  private handleInterfaceIpDelete(nc: WindowsNetConfigApi, joined: string): string {
+    const lower = joined.toLowerCase();
+    if (lower.startsWith('dns')) return this.handleDeleteDns(nc, joined);
+    if (lower.startsWith('route')) return this.handleDeleteRoute(nc, joined);
+    if (lower.startsWith('address')) return this.handleDeleteAddress(nc, joined);
+    return 'Usage: delete address|dns|route ...';
+  }
+
+  private handleDeleteDns(nc: WindowsNetConfigApi, joined: string): string {
+    const match = joined.match(/dns\s+"([^"]+)"\s+(\d+\.\d+\.\d+\.\d+)/i)
+      || joined.match(/dns\s+(?:name=)?(.+?)\s+(\d+\.\d+\.\d+\.\d+)/i);
+    if (!match) return 'Usage: netsh interface ip delete dns "name" <ip>';
+    const ifName = match[1].trim();
+    const portName = nc.resolveAdapterName(ifName);
+    if (!portName) return `The interface "${ifName}" was not found.`;
+    const filtered = nc.staticDnsServers(portName).filter((s) => s !== match[2]);
+    nc.setDnsServers(portName, filtered);
+    return 'Ok.';
+  }
+
+  private handleDeleteRoute(nc: WindowsNetConfigApi, joined: string): string {
+    const match = joined.match(/route\s+([\d.]+)\/(\d+)\s+"([^"]+)"/i)
+      || joined.match(/route\s+([\d.]+)\/(\d+)\s+(.+)/i);
+    if (!match) return 'Usage: netsh interface ip delete route <prefix>/<len> "interface"';
+    const network = match[1], cidr = parseInt(match[2], 10);
+    try {
+      const mask = SubnetMask.fromCIDR(cidr);
+      nc.removeRoute(new IPAddress(network).toString(), mask.toString());
+      return 'Ok.';
+    } catch (e) {
+      return `Error: ${e instanceof Error ? e.message : String(e)}`;
+    }
+  }
+
+  private handleDeleteAddress(nc: WindowsNetConfigApi, joined: string): string {
+    const IP4 = '\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}';
+    const match = joined.match(new RegExp(`address\\s+"([^"]+)"\\s+(?:addr=|address=)?(${IP4})`, 'i'))
+      || joined.match(new RegExp(`address\\s+(?:name=)?(.+?)\\s+(?:addr=|address=)?(${IP4})`, 'i'))
+      || joined.match(/address\s+"([^"]+)"\s*$/i)
+      || joined.match(/address\s+(?:name=)?(.+?)\s*$/i);
+    if (!match) return 'Usage: netsh interface ip delete address "name" [addr=]<ip>';
+    const ifName = match[1].trim();
+    const ipStr = match[2];
+    const portName = nc.resolveAdapterName(ifName);
+    if (!portName) return `The interface "${ifName}" was not found.`;
+    const adapter = nc.adapters().find((a) => a.name === portName)!;
+    if (ipStr) {
+      if (adapter.ip === ipStr) nc.clearInterfaceIP(portName);
+      else nc.removeSecondaryIp(portName, ipStr);
+    } else {
+      nc.clearInterfaceIP(portName);
+    }
+    return 'Ok.';
+  }
+
+  // ─── netsh interface ipv6 ─────────────────────────────────────────
+  private handleInterfaceIpv6(nc: WindowsNetConfigApi, args: string[]): string {
+    if (args.length === 0 || args[0] === '?' || args[0] === '/?' || args[0].toLowerCase() === 'help') return IPV6_HELP;
+    const sub = args[0].toLowerCase();
+
+    if (sub === 'add') {
+      const rest = args.slice(1);
+      const obj = (rest[0] || '').toLowerCase();
+      if (obj === 'address') {
+        const ifName = rest[1] || '', addrRaw = rest[2] || '';
+        if (!ifName || !addrRaw) return `Usage: netsh interface ipv6 add address [interface=]<string> [address=]<IPv6 address>[/<prefix>]`;
+        const portName = nc.resolveAdapterName(ifName);
+        if (!portName) return `The interface "${ifName}" was not found.`;
+        const [addr, pfxStr] = addrRaw.split('/');
+        const prefixLen = pfxStr ? parseInt(pfxStr, 10) : 64;
+        const res = nc.addIPv6Address(portName, addr, prefixLen);
+        return res.ok ? 'Ok.' : `The value for the IP address is invalid.`;
+      }
+      if (obj === 'route') {
+        const prefixRaw = rest[1] || '', ifName = rest[2] || '', nexthop = rest[3] || '';
+        if (!prefixRaw || !ifName || !nexthop) return `Usage: netsh interface ipv6 add route [prefix=]<string> [interface=]<string> [nexthop=]<IPv6 address>`;
+        const metricMatch = args.join(' ').match(/\bmetric=(\d+)/i);
+        const publishMatch = args.join(' ').match(/\bpublish=(\w+)/i);
+        const [prefix, pfxLen] = prefixRaw.split('/');
+        const portName = nc.resolveAdapterName(ifName) ?? ifName;
+        nc.addIPv6Route({
+          prefix, prefixLen: pfxLen ? parseInt(pfxLen, 10) : 48,
+          iface: portName, nexthop,
+          metric: metricMatch ? parseInt(metricMatch[1], 10) : 1,
+          published: publishMatch ? publishMatch[1].toLowerCase() === 'yes' : false,
+        });
+        return 'Ok.';
+      }
+      return `Usage: netsh interface ipv6 add address|route ...`;
+    }
+
+    if (sub === 'show') {
+      const rest = args.slice(1);
+      const obj = (rest[0] || '').toLowerCase();
+      const ifFilter = rest[1] || '';
+      if (obj === 'addresses') {
+        const lines: string[] = [''];
+        for (const a of nc.adapters()) {
+          if (ifFilter && a.name !== nc.resolveAdapterName(ifFilter)) continue;
+          if (a.ipv6Addresses.length === 0) continue;
+          lines.push(`Interface ${displayName(a.name)} Parameters`);
+          for (const e of a.ipv6Addresses) {
+            lines.push(`  Address ${e.address}/${e.prefixLength}`);
+            lines.push(`    Type:          Unicast`);
+            lines.push(`    DAD State:     Preferred`);
+            lines.push('');
+          }
+        }
+        return lines.join('\n');
+      }
+      if (obj === 'route' || obj === 'routes') {
+        const lines: string[] = ['', 'Publish  Type      Met  Prefix                              NextHop/Interface',
+          '----------------------------------------------------------------------'];
+        for (const r of nc.ipv6Routes()) {
+          if (ifFilter && r.iface !== nc.resolveAdapterName(ifFilter)) continue;
+          const prefix = `${r.prefix}/${r.prefixLen}`;
+          lines.push(`${r.published ? 'Yes' : 'No '.padEnd(9)}${'Static'.padEnd(10)}${String(r.metric).padEnd(5)}${prefix.padEnd(36)}${r.nexthop}`);
+        }
+        lines.push('');
+        return lines.join('\n');
+      }
+      return IPV6_HELP;
+    }
+
+    if (sub === 'delete') {
+      const rest = args.slice(1);
+      const obj = (rest[0] || '').toLowerCase();
+      if (obj === 'route' || obj === 'routes') {
+        if (args[args.length - 1] === '?') return `Usage: netsh interface ipv6 delete route [prefix=]<string> [interface=]<string>`;
+        return 'Ok.';
+      }
+      if (obj === 'address') {
+        const ifName = rest[1] || '', addrRaw = rest[2] || '';
+        if (!ifName || !addrRaw || addrRaw === '?') return `Usage: netsh interface ipv6 delete address [interface=]<string> [address=]<IPv6 address>`;
+        const portName = nc.resolveAdapterName(ifName);
+        if (!portName) return `The interface "${ifName}" was not found.`;
+        let valid = true;
+        try { new IPv6Address(addrRaw); } catch { valid = false; }
+        if (!valid) return `The value for the IP address is invalid.`;
+        return nc.removeIPv6Address(portName, addrRaw) ? 'Ok.' : `The specified value does not exist.`;
+      }
+      if (obj === '?') return `Usage: netsh interface ipv6 delete route|address ...`;
+      return `Usage: netsh interface ipv6 delete route|address ...`;
+    }
+
+    return IPV6_HELP;
+  }
+}

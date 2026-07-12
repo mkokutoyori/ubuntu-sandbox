@@ -54,7 +54,7 @@ import { HostClock } from './host/lifecycle/HostClock';
 import { PSRegistryProvider, WINDOWS_CLIENT_PRODUCT_IDENTITY, WINDOWS_SERVER_PRODUCT_IDENTITY } from './windows/PSRegistryProvider';
 import { PSEventLogProvider } from './windows/PSEventLogProvider';
 import { cmdIpconfig } from './windows/WinIpconfig';
-import { cmdNetsh } from './windows/WinNetsh';
+import { cmdNetsh, resolveAdapterName as resolveAdapterNameUtil } from './windows/WinNetsh';
 import { cmdArp } from './windows/WinArp';
 import { cmdGetmac } from './windows/WinGetmac';
 import { cmdRoute } from './windows/WinRoute';
@@ -121,6 +121,7 @@ import type { CmdInterpreter } from './windows/command-kernel/CmdInterpreter';
 import { lowercaseCommandNames } from './windows/command-kernel/ast/lowercaseCommandNames';
 import { resolveWindowsUser } from './windows/command-kernel/WindowsUser';
 import type { CommandRegistry } from '@/command-kernel/registry/command-registry';
+import type { WindowsIPv6RouteEntry as WinIPv6RouteEntry } from '@/command-kernel/machine/types';
 import { createSession } from '@/command-kernel/session/types';
 import { PipeBuffer } from '@/command-kernel/io/pipe-buffer';
 import { ShellError, CommandNotFoundError } from '@/command-kernel/errors';
@@ -1751,6 +1752,43 @@ export class WindowsPC extends EndHost implements UserAccountHost {
         requestDhcpLease: (ifName) => this.requestDhcpLease(ifName),
         releaseDynamicIPv6: (ifName) => this.releaseDynamicIPv6(ifName),
         dnsCache: this.dnsCache,
+        netInterfaces: () => [...this.ports.entries()].map(([name, port]) => ({ name, port })),
+        resolveAdapterName: (name) => resolveAdapterNameUtil(name, this.ports),
+        configureInterface: (ifName, ip, mask) => this.configureInterface(ifName, ip, mask),
+        setAddressDhcp: (ifName) => {
+          this.unconfigureInterface(ifName);
+          this.dhcpInterfaces.add(ifName);
+        },
+        clearInterfaceIP: (ifName) => this.unconfigureInterface(ifName),
+        setDnsServers: (ifName, servers) => {
+          this.dnsConfig.set(ifName, { servers: [...servers], mode: 'static' });
+        },
+        getDnsMode: (ifName) => this.dnsConfig.get(ifName)?.mode ?? 'dhcp',
+        setDnsMode: (ifName, mode) => {
+          if (mode === 'dhcp') {
+            this.dnsConfig.set(ifName, { servers: [], mode: 'dhcp' });
+          } else {
+            const cfg = this.dnsConfig.get(ifName);
+            if (cfg) cfg.mode = 'static';
+            else this.dnsConfig.set(ifName, { servers: [], mode: 'static' });
+          }
+        },
+        getInterfaceAdmin: (ifName) => {
+          const port = this.ports.get(ifName);
+          return port ? !port.isAdminDown() : false;
+        },
+        setInterfaceAdmin: (ifName, enabled) => {
+          const port = this.ports.get(ifName);
+          if (port) port.setAdminDown(!enabled);
+        },
+        renameInterface: (oldName, newName) => this.renameInterface(oldName, newName),
+        resetTcpIpStack: () => this.resetTcpIpStack(),
+        resetWinsockCatalog: () => this.resetWinsockCatalog(),
+        addIPv6Route: (entry) => { this.ipv6Routes.push(entry); },
+        getIPv6Routes: () => this.ipv6Routes,
+        portProxy: this.portProxyTable,
+        getWinhttpProxy: () => this.winhttpProxyValue,
+        setWinhttpProxy: (proxy) => { this.winhttpProxyValue = proxy; },
         bootedAt: () => this.getLifecycle().bootedAt() ?? null,
         now: () => this.simulatedDate(),
         powerOn: () => this.powerOn(),
@@ -1907,17 +1945,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
         return entry ? entry.canonicalName : null;
       },
 
-      resetStack: () => {
-        for (const [name, port] of this.ports) {
-          port.clearIP();
-          this.dhcpClient.releaseLease(name);
-        }
-        this.defaultGateway = null;
-        this.routingTable = [];
-        this.arpTable.clear();
-        this.dnsConfig.clear();
-        this.dnsSuffix = '';
-      },
+      resetStack: () => this.resetStackState(),
 
       // DNS management
       getDnsServers: (ifName: string) => this.effectiveDnsServers(ifName),
@@ -1978,23 +2006,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       clearARPTable: () => this.clearARPTable(),
 
       // Interface renaming
-      renameInterface: (oldName: string, newName: string): boolean => {
-        const port = this.ports.get(oldName);
-        if (!port || this.ports.has(newName)) return false;
-        this.ports.delete(oldName);
-        this.ports.set(newName, port);
-        // Migrate DNS config
-        const dns = this.dnsConfig.get(oldName);
-        if (dns) { this.dnsConfig.delete(oldName); this.dnsConfig.set(newName, dns); }
-        // Migrate DHCP state
-        if (this.dhcpInterfaces.has(oldName)) { this.dhcpInterfaces.delete(oldName); this.dhcpInterfaces.add(newName); }
-        // Migrate DHCP class ids
-        const cid = this.dhcpClassIds.get(oldName);
-        if (cid) { this.dhcpClassIds.delete(oldName); this.dhcpClassIds.set(newName, cid); }
-        const cid6 = this.dhcpClassIds6.get(oldName);
-        if (cid6) { this.dhcpClassIds6.delete(oldName); this.dhcpClassIds6.set(newName, cid6); }
-        return true;
-      },
+      renameInterface: (oldName: string, newName: string): boolean => this.renameInterface(oldName, newName),
 
       getClassId: (ifName: string) => this.getClassId(ifName),
       setClassId: (ifName: string, classId: string | null) => this.setClassId(ifName, classId),
@@ -2298,6 +2310,47 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     }
     return released.map((e) => e.address.toString());
   }
+
+  private resetStackState(): void {
+    for (const [name, port] of this.ports) {
+      port.clearIP();
+      this.dhcpClient.releaseLease(name);
+    }
+    this.defaultGateway = null;
+    this.routingTable = [];
+    this.arpTable.clear();
+    this.dnsConfig.clear();
+    this.dnsSuffix = '';
+  }
+
+  private resetTcpIpStack(): void {
+    this.resetStackState();
+    this.addDHCPEvent('RESET', 'TCP/IP stack has been reset');
+  }
+
+  private resetWinsockCatalog(): void {
+    this.addDHCPEvent('RESET', 'Winsock catalog has been reset');
+  }
+
+  private renameInterface(oldName: string, newName: string): boolean {
+    const port = this.ports.get(oldName);
+    if (!port || this.ports.has(newName)) return false;
+    this.ports.delete(oldName);
+    this.ports.set(newName, port);
+    const dns = this.dnsConfig.get(oldName);
+    if (dns) { this.dnsConfig.delete(oldName); this.dnsConfig.set(newName, dns); }
+    if (this.dhcpInterfaces.has(oldName)) { this.dhcpInterfaces.delete(oldName); this.dhcpInterfaces.add(newName); }
+    const cid = this.dhcpClassIds.get(oldName);
+    if (cid) { this.dhcpClassIds.delete(oldName); this.dhcpClassIds.set(newName, cid); }
+    const cid6 = this.dhcpClassIds6.get(oldName);
+    if (cid6) { this.dhcpClassIds6.delete(oldName); this.dhcpClassIds6.set(newName, cid6); }
+    return true;
+  }
+
+  /** Routes IPv6 statiques (`netsh interface ipv6 add route`) — état par-instance, jamais réassigné. */
+  private readonly ipv6Routes: WinIPv6RouteEntry[] = [];
+  /** Proxy WinHTTP global (`netsh winhttp set proxy`) — état par-instance. */
+  private winhttpProxyValue = '';
 
   private cmdVol(args: string[]): string {
     return WinSys.cmdVol(this.buildSystemContext(), args);

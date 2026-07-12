@@ -372,6 +372,40 @@ export interface WindowsAdapterInfo {
   readonly connectionDnsSuffix: string;
   /** Adresse obtenue par DHCP plutôt que statique (`ipconfig /all`). */
   readonly isDhcp: boolean;
+  /** Mode de résolution DNS de l'interface (`netsh interface ip show dns`). */
+  readonly dnsMode: 'static' | 'dhcp';
+  /** Interface administrativement activée (`netsh interface show interface`) — distinct de `isAdminDown`, qui reflète l'état lien physique. */
+  readonly adminEnabled: boolean;
+  /** Adresses IPv4 secondaires (`netsh interface ip add/delete address`, IP alias). */
+  readonly secondaryIps: readonly { readonly ip: string; readonly mask: string }[];
+  /** Adresses IPv6 complètes de l'interface (link-local + globales + toutes origines) — `netsh interface ipv6 show addresses`. */
+  readonly ipv6Addresses: readonly WindowsIPv6AddressEntry[];
+}
+
+/** Une adresse IPv6 assignée à une interface, avec sa longueur de préfixe et son origine — `netsh interface ipv6`. */
+export interface WindowsIPv6AddressEntry {
+  readonly address: string;
+  readonly prefixLength: number;
+  readonly origin: 'link-local' | 'static' | 'slaac' | 'dhcpv6';
+}
+
+/** Route IPv6 statique déclarée via `netsh interface ipv6 add route` — optionnel, modèle Windows. */
+export interface WindowsIPv6RouteEntry {
+  readonly prefix: string;
+  readonly prefixLen: number;
+  readonly iface: string;
+  readonly nexthop: string;
+  readonly metric: number;
+  readonly published: boolean;
+}
+
+/** Une règle `netsh interface portproxy` — optionnel, modèle Windows. */
+export interface WindowsPortProxyRule {
+  readonly family: 'v4tov4' | 'v4tov6' | 'v6tov4' | 'v6tov6';
+  readonly listenAddress: string;
+  readonly listenPort: number;
+  readonly connectAddress: string;
+  readonly connectPort: number;
 }
 
 /** Bail DHCPv4 actif sur une interface (`ipconfig /all`) — optionnel, modèle Windows. */
@@ -480,6 +514,55 @@ export interface WindowsNetConfigApi {
   flushDnsCache(): void;
   /** Entrées actives du cache résolveur DNS, déjà purgées des entrées expirées (`ipconfig /displaydns`). */
   dnsCacheEntries(): readonly WindowsDnsCacheEntry[];
+
+  /**
+   * Résout un nom d'interface façon `netsh` (nom réel `eth0`, nom
+   * d'affichage `Ethernet 0`, ou variantes `Local Area Connection`) vers
+   * le nom réel de port — `null` si aucune interface ne correspond.
+   */
+  resolveAdapterName(name: string): string | null;
+  /** Configure l'adresse IPv4 primaire d'une interface (`netsh interface ip set address ... static`). */
+  configureAddress(ifName: string, ip: string, mask: string): { ok: boolean; error?: string };
+  /** Bascule l'interface en configuration IPv4 par DHCP (`netsh interface ip set address ... dhcp`). */
+  setAddressDhcp(ifName: string): void;
+  /** Efface l'adresse IPv4 (et la route connectée associée) d'une interface (`netsh interface ip delete address` sans IP explicite). */
+  clearInterfaceIP(ifName: string): void;
+  /** Ajoute une adresse IPv4 secondaire (IP alias) — `netsh interface ip add address` quand l'interface a déjà une IP primaire. */
+  addSecondaryIp(ifName: string, ip: string, mask: string): { ok: boolean; error?: string };
+  /** Retire une adresse IPv4 secondaire (`netsh interface ip delete address` avec IP explicite ≠ primaire). */
+  removeSecondaryIp(ifName: string, ip: string): void;
+  /** Définit la liste des serveurs DNS statiques d'une interface (`netsh interface ip set/add/delete dns`). */
+  setDnsServers(ifName: string, servers: readonly string[]): void;
+  /** Bascule le mode de résolution DNS d'une interface (`netsh interface ip set dns ... dhcp`). */
+  setDnsMode(ifName: string, mode: 'static' | 'dhcp'): void;
+
+  /** État admin de l'interface (`netsh interface set interface admin=`). */
+  setInterfaceAdmin(ifName: string, enabled: boolean): void;
+  /** Renomme une interface — `false` si l'interface source n'existe pas ou si le nouveau nom est déjà pris (`netsh interface set interface newname=`). */
+  renameInterface(oldName: string, newName: string): boolean;
+  /** Réinitialise complètement la pile TCP/IP (adresses, routes, ARP, DNS) — `netsh interface ip reset` / `netsh int ip reset`. */
+  resetTcpIpStack(): void;
+  /** Journalise la réinitialisation du catalogue Winsock — aucun état modélisé à réinitialiser (`netsh winsock reset`). */
+  resetWinsockCatalog(): void;
+
+  /** Ajoute une adresse IPv6 à une interface (`netsh interface ipv6 add address`). */
+  addIPv6Address(ifName: string, address: string, prefixLength: number): { ok: boolean; error?: string };
+  /** Retire une adresse IPv6 d'une interface — `false` si elle n'existait pas (`netsh interface ipv6 delete address`). */
+  removeIPv6Address(ifName: string, address: string): boolean;
+  /** Routes IPv6 statiques déclarées sur cet équipement (`netsh interface ipv6 show route`). */
+  ipv6Routes(): readonly WindowsIPv6RouteEntry[];
+  /** Déclare une route IPv6 statique (`netsh interface ipv6 add route`) — pas de validation de joignabilité réelle, à l'identique du `netsh` d'origine. */
+  addIPv6Route(entry: WindowsIPv6RouteEntry): void;
+
+  /** Règles de redirection de port (`netsh interface portproxy show`), filtrées par famille si fournie. */
+  portProxyRules(family?: string): readonly WindowsPortProxyRule[];
+  addPortProxyRule(rule: WindowsPortProxyRule): void;
+  removePortProxyRule(family: string, listenAddress: string, listenPort: number): boolean;
+  resetPortProxy(): void;
+
+  /** Proxy WinHTTP global de la machine (`netsh winhttp` / `Set-WinHttpProxy`) — état partagé avec les cmdlets PowerShell équivalentes. */
+  winhttpProxy(): string;
+  setWinhttpProxy(proxy: string): void;
 }
 
 /** Un écho ICMP individuel (`ping`) — optionnel, modèle Windows. */

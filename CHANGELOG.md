@@ -5,6 +5,59 @@ progressive par équipement. Un push = une entrée = une fonctionnalité
 complète et testée (voir `CLAUDE.md` / le framework de migration pour les
 principes directeurs).
 
+## Windows — Phase 15 : migration `netsh` — contexte `interface`
+
+**État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
+
+`netsh` (3180 lignes, plus grosse commande cmd.exe restante) migrée par
+sous-contextes, comme convenu. Cette première tranche couvre le contexte
+`interface` — de loin le plus utilisé (234 réf. de test `netsh interface
+ip`, 46 `ipv4`, 21 `interface show`, 21 `interface set`, 18 `portproxy`,
+23 `ipv6`) — plus les commandes de plus haut niveau stateless (`show`,
+`trace`, `winsock`, `winhttp`, `p2p`, stubs de sous-contextes, `int ip
+reset`).
+
+**`WindowsAdapterInfo` encore étendu** (`dnsMode`, `adminEnabled`,
+`secondaryIps`, `ipv6Addresses`) et **~30 primitives ajoutées à
+`WindowsNetConfigApi`** — une par opération vendeur réelle :
+`resolveAdapterName`, `configureAddress`, `setAddressDhcp`,
+`clearInterfaceIP`, `addSecondaryIp`/`removeSecondaryIp`, `setDnsServers`/
+`setDnsMode`, `setInterfaceAdmin`, `renameInterface`, `resetTcpIpStack`,
+`resetWinsockCatalog`, `addIPv6Address`/`removeIPv6Address`,
+`ipv6Routes`/`addIPv6Route`, `portProxyRules`/`addPortProxyRule`/
+`removePortProxyRule`/`resetPortProxy`, `winhttpProxy`/`setWinhttpProxy`.
+Types `WindowsIPv6AddressEntry`/`WindowsIPv6RouteEntry`/
+`WindowsPortProxyRule` ajoutés. `PortProxyRule`/`PortProxyTable` réutilisés
+tels quels (objets de domaine existants, pas des dispatchers `cmdX`).
+
+`NetshCommand` porte l'intégralité du dispatch de contexte et le parsing
+regex de chaque forme (`set/add/delete address/dns/route/neighbors`,
+`show config/dns/route/neighbors`, `set/show interface`, `portproxy
+add/delete/show`, `ipv6 add/delete/show address/route`) — copié depuis
+`WinNetsh.ts`, qui reste intact pour le shim PowerShell natif.
+
+**Bug de fond corrigé au passage** : `getCommandKernelShell()` passait
+`ports: this.getPorts()` — un SNAPSHOT figé — et `adapters()` lisait
+`port.getName()`. Or `netsh interface set interface newname=` re-clé la
+table de ports SANS muter le port (`Port.name` est `readonly`), donc le
+nom d'affichage restait figé après renommage. Nouvelle primitive de deps
+`netInterfaces()` exposant la vue LIVE `{ name: cléDeMap, port }` — le nom
+vient désormais de la clé de table (qui reflète le renommage), plus jamais
+d'un instantané ni du nom interne immuable.
+
+**Contextes différés** (phases suivantes, engines dédiés) : `dhcpclient`,
+`dnsclient`, `ipsec`, `lan`, `wlan`, `http`, `advfirewall`, `dhcp server`,
+`nps`, `bridge`, `namespace` — `NetshCommand` renvoie pour eux le message
+« subcommand not found » (comme un contexte non installé), sans jamais
+déléguer au `cmdNetsh` legacy (pas de passthrough).
+
+Validation : typecheck propre. Suite localisée (6 fichiers netsh/ipconfig/
+consistency, 158 tests) comparée au commit pré-Phase-15 via `git stash` :
+74 échecs/84 réussites avant → 10/148 après, 64 tests corrigés, zéro
+régression. Les 10 échecs restants dépendent tous de `netsh dhcpclient`/
+`dnsclient` (contextes différés, vérifié cas par cas). Suite arp/route/
+getmac/ping/tracert/nslookup re-vérifiée sans régression.
+
 ## Windows — Phase 14 : migration `ipconfig`
 
 **État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**

@@ -24,6 +24,7 @@ import { MoreCommand } from './commands/More';
 import { MoveCommand } from './commands/Move';
 import { NbtstatCommand } from './commands/Nbtstat';
 import { NetCommand } from './commands/Net';
+import { NetshCommand } from './commands/Netsh';
 import { NslookupCommand } from './commands/Nslookup';
 import { PingCommand } from './commands/Ping';
 import { PrintCommand } from './commands/Print';
@@ -70,6 +71,7 @@ export function createWindowsHostShell(deps: WindowsMachineApiDeps): { registry:
   registry.register(() => new TracertCommand());
   registry.register(() => new NslookupCommand());
   registry.register(() => new IpconfigCommand());
+  registry.register(() => new NetshCommand());
   registry.register(() => new CdCommand());
   registry.register(() => new MkdirCommand());
   registry.register(() => new RmdirCommand());

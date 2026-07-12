@@ -41,8 +41,11 @@ import {
   WindowsArpEntry,
   WindowsDhcpLease,
   WindowsDnsCacheEntry,
+  WindowsIPv6AddressEntry,
+  WindowsIPv6RouteEntry,
   WindowsNetConfigApi,
   WindowsPingReply,
+  WindowsPortProxyRule,
   WindowsRouteEntry,
   WindowsTracerouteHop,
   WinRmApi,
@@ -55,6 +58,7 @@ import { IPAddress, IPv6Address, MACAddress, SubnetMask } from '@/network/core/t
 import type { ARPEntry, HostRouteEntry } from '@/network/devices/EndHost';
 import type { PingResult, TracerouteHop } from '@/network/devices/windows/WinCommandExecutor';
 import type { DnsMessage } from '@/network/dns/wire/DnsMessage';
+import { PortProxyRule, PORT_PROXY_FAMILIES, type PortProxyFamily } from '../PortProxyRule';
 import type { SystemIdentity } from '@/network/devices/host/identity/SystemIdentity';
 import type { HardwareProfile } from '@/network/devices/host/hardware/HardwareProfile';
 import { WindowsFileSystem } from '../WindowsFileSystem';
@@ -136,6 +140,26 @@ export interface WindowsMachineApiDeps {
   requestDhcpLease(ifName: string): void;
   releaseDynamicIPv6(ifName: string): string[];
   readonly dnsCache: WindowsDnsCache;
+  /** Interfaces réseau vues LIVE depuis la table de ports (nom = clé de la map, pas `port.getName()` — le renommage `netsh` re-clé la map sans muter le port). */
+  netInterfaces(): readonly { name: string; port: Port }[];
+  /** Résout un nom d'interface façon `netsh` (nom réel, nom d'affichage, "Local Area Connection"...) — retourne `name` inchangé si aucune interface ne correspond, à charge pour l'appelant de vérifier l'existence. */
+  resolveAdapterName(name: string): string;
+  configureInterface(ifName: string, ip: IPAddress, mask: SubnetMask): boolean;
+  setAddressDhcp(ifName: string): void;
+  clearInterfaceIP(ifName: string): void;
+  setDnsServers(ifName: string, servers: readonly string[]): void;
+  getDnsMode(ifName: string): 'static' | 'dhcp';
+  setDnsMode(ifName: string, mode: 'static' | 'dhcp'): void;
+  getInterfaceAdmin(ifName: string): boolean;
+  setInterfaceAdmin(ifName: string, enabled: boolean): void;
+  renameInterface(oldName: string, newName: string): boolean;
+  resetTcpIpStack(): void;
+  resetWinsockCatalog(): void;
+  addIPv6Route(entry: { prefix: string; prefixLen: number; iface: string; nexthop: string; metric: number; published: boolean }): void;
+  getIPv6Routes(): { prefix: string; prefixLen: number; iface: string; nexthop: string; metric: number; published: boolean }[];
+  readonly portProxy: import('../PortProxyTable').PortProxyTable;
+  getWinhttpProxy(): string;
+  setWinhttpProxy(proxy: string): void;
   bootedAt(): Date | null;
   now(): Date;
   powerOn(): void;
@@ -959,12 +983,18 @@ class WindowsNetConfigApiImpl implements WindowsNetConfigApi {
       | 'executeTraceroute' | 'reverseLookup' | 'resolveViaHostsFile' | 'firstConfiguredDnsServer' | 'queryDnsServer'
       | 'isDHCPConfigured' | 'getConnectionDnsSuffix' | 'getDefaultGateway6' | 'effectiveDnsServers' | 'getDnsSuffix'
       | 'getClassId' | 'setClassId' | 'getClassId6' | 'setClassId6' | 'sendRouterSolicitation' | 'autoDiscoverDHCPServers'
-      | 'getDhcpLease' | 'releaseDhcpLease' | 'requestDhcpLease' | 'releaseDynamicIPv6' | 'dnsCache'>,
+      | 'getDhcpLease' | 'releaseDhcpLease' | 'requestDhcpLease' | 'releaseDynamicIPv6' | 'dnsCache'
+      | 'netInterfaces' | 'resolveAdapterName' | 'configureInterface' | 'setAddressDhcp' | 'clearInterfaceIP' | 'setDnsServers'
+      | 'getDnsMode' | 'setDnsMode' | 'getInterfaceAdmin' | 'setInterfaceAdmin' | 'renameInterface'
+      | 'resetTcpIpStack' | 'resetWinsockCatalog' | 'addIPv6Route' | 'getIPv6Routes' | 'portProxy'
+      | 'getWinhttpProxy' | 'setWinhttpProxy'>,
   ) {}
 
   adapters(): readonly WindowsAdapterInfo[] {
-    return this.ports().map((port) => ({
-      name: port.getName(),
+    // `name` = clé de la table de ports (reflète un renommage `netsh`), pas
+    // `port.getName()` qui reste figé (nom interne immuable du port).
+    return this.deps.netInterfaces().map(({ name, port }) => ({
+      name,
       mac: port.getMAC().toString(),
       ip: port.getIPAddress()?.toString(),
       mask: port.getSubnetMask()?.toString(),
@@ -973,9 +1003,25 @@ class WindowsNetConfigApiImpl implements WindowsNetConfigApi {
       isUp: port.getIsUp(),
       isConnected: port.isConnected(),
       isAdminDown: port.isAdminDown(),
-      connectionDnsSuffix: this.deps.getConnectionDnsSuffix(port.getName()),
-      isDhcp: this.deps.isDHCPConfigured(port.getName()),
+      connectionDnsSuffix: this.deps.getConnectionDnsSuffix(name),
+      isDhcp: this.deps.isDHCPConfigured(name),
+      dnsMode: this.deps.getDnsMode(name),
+      adminEnabled: this.deps.getInterfaceAdmin(name),
+      secondaryIps: port.getSecondaryIPs().map((e) => ({ ip: e.ip.toString(), mask: e.mask.toString() })),
+      ipv6Addresses: this.mapIPv6Addresses(port),
     }));
+  }
+
+  private mapIPv6Addresses(port: Port): readonly WindowsIPv6AddressEntry[] {
+    return port.getIPv6Addresses().map((e) => ({
+      address: e.address.toString(),
+      prefixLength: e.prefixLength,
+      origin: e.origin,
+    }));
+  }
+
+  private findPort(ifName: string): Port | undefined {
+    return this.deps.netInterfaces().find((e) => e.name === ifName)?.port;
   }
 
   arpEntries(): readonly WindowsArpEntry[] {
@@ -1140,6 +1186,128 @@ class WindowsNetConfigApiImpl implements WindowsNetConfigApi {
       value: e.value,
       ttlRemainingSec: Math.max(0, e.ttl - Math.floor((now - e.insertedAt) / 1000)),
     }));
+  }
+
+  resolveAdapterName(name: string): string | null {
+    const resolved = this.deps.resolveAdapterName(name);
+    return this.findPort(resolved) ? resolved : null;
+  }
+
+  configureAddress(ifName: string, ip: string, mask: string): { ok: boolean; error?: string } {
+    try {
+      this.deps.configureInterface(ifName, new IPAddress(ip), new SubnetMask(mask));
+      return { ok: true };
+    } catch (e) {
+      return { ok: false, error: e instanceof Error ? e.message : String(e) };
+    }
+  }
+
+  setAddressDhcp(ifName: string): void {
+    this.deps.setAddressDhcp(ifName);
+  }
+
+  clearInterfaceIP(ifName: string): void {
+    this.deps.clearInterfaceIP(ifName);
+  }
+
+  addSecondaryIp(ifName: string, ip: string, mask: string): { ok: boolean; error?: string } {
+    const port = this.findPort(ifName);
+    if (!port) return { ok: false, error: `interface introuvable : ${ifName}` };
+    try {
+      port.addSecondaryIP(new IPAddress(ip), new SubnetMask(mask));
+      return { ok: true };
+    } catch (e) {
+      return { ok: false, error: e instanceof Error ? e.message : String(e) };
+    }
+  }
+
+  removeSecondaryIp(ifName: string, ip: string): void {
+    const port = this.findPort(ifName);
+    port?.removeSecondaryIP(new IPAddress(ip));
+  }
+
+  setDnsServers(ifName: string, servers: readonly string[]): void {
+    this.deps.setDnsServers(ifName, servers);
+  }
+
+  setDnsMode(ifName: string, mode: 'static' | 'dhcp'): void {
+    this.deps.setDnsMode(ifName, mode);
+  }
+
+  setInterfaceAdmin(ifName: string, enabled: boolean): void {
+    this.deps.setInterfaceAdmin(ifName, enabled);
+  }
+
+  renameInterface(oldName: string, newName: string): boolean {
+    return this.deps.renameInterface(oldName, newName);
+  }
+
+  resetTcpIpStack(): void {
+    this.deps.resetTcpIpStack();
+  }
+
+  resetWinsockCatalog(): void {
+    this.deps.resetWinsockCatalog();
+  }
+
+  addIPv6Address(ifName: string, address: string, prefixLength: number): { ok: boolean; error?: string } {
+    const port = this.findPort(ifName);
+    if (!port) return { ok: false, error: `interface introuvable : ${ifName}` };
+    try {
+      port.configureIPv6(new IPv6Address(address), prefixLength);
+      return { ok: true };
+    } catch (e) {
+      return { ok: false, error: e instanceof Error ? e.message : String(e) };
+    }
+  }
+
+  removeIPv6Address(ifName: string, address: string): boolean {
+    const port = this.findPort(ifName);
+    if (!port) return false;
+    try {
+      return port.removeIPv6Address(new IPv6Address(address));
+    } catch {
+      return false;
+    }
+  }
+
+  ipv6Routes(): readonly WindowsIPv6RouteEntry[] {
+    return this.deps.getIPv6Routes();
+  }
+
+  addIPv6Route(entry: WindowsIPv6RouteEntry): void {
+    this.deps.addIPv6Route(entry);
+  }
+
+  portProxyRules(family?: string): readonly WindowsPortProxyRule[] {
+    const families = family ? [family as PortProxyFamily] : [...PORT_PROXY_FAMILIES];
+    const out: WindowsPortProxyRule[] = [];
+    for (const f of families) {
+      for (const r of this.deps.portProxy.byFamily(f)) {
+        out.push({ family: r.family, listenAddress: r.listenAddress, listenPort: r.listenPort, connectAddress: r.connectAddress, connectPort: r.connectPort });
+      }
+    }
+    return out;
+  }
+
+  addPortProxyRule(rule: WindowsPortProxyRule): void {
+    this.deps.portProxy.add(new PortProxyRule(rule.family, rule.listenAddress, rule.listenPort, rule.connectAddress, rule.connectPort));
+  }
+
+  removePortProxyRule(family: string, listenAddress: string, listenPort: number): boolean {
+    return this.deps.portProxy.remove(family as PortProxyFamily, listenAddress, listenPort);
+  }
+
+  resetPortProxy(): void {
+    this.deps.portProxy.reset();
+  }
+
+  winhttpProxy(): string {
+    return this.deps.getWinhttpProxy();
+  }
+
+  setWinhttpProxy(proxy: string): void {
+    this.deps.setWinhttpProxy(proxy);
   }
 }
 
