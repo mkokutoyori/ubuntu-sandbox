@@ -18,6 +18,7 @@ import { MkdirCommand } from './commands/Mkdir';
 import { MvCommand } from './commands/Mv';
 import { PwdCommand } from './commands/Pwd';
 import { ReadlinkCommand } from './commands/Readlink';
+import { RealpathCommand } from './commands/Realpath';
 import { RmCommand } from './commands/Rm';
 import { RmdirCommand } from './commands/Rmdir';
 import { SortCommand } from './commands/Sort';
@@ -64,6 +65,7 @@ export function createLinuxHostShell(deps: LinuxMachineApiDeps): Interpreter {
   registry.register(() => new RmdirCommand());
   registry.register(() => new UmaskCommand());
   registry.register(() => new ReadlinkCommand());
+  registry.register(() => new RealpathCommand());
 
   return new Interpreter(registry, machine);
 }

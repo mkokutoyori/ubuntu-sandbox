@@ -5,6 +5,47 @@ progressive par équipement. Un push = une entrée = une fonctionnalité
 complète et testée (voir `CLAUDE.md` / le framework de migration pour les
 principes directeurs).
 
+## Linux — Phase 4 : `realpath` + correctif cwd inter-commandes
+
+**État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
+
+**Commande migrée** : `realpath [-q] [-m] <cible...>` — réutilise la
+primitive `FileSystemApi.realpath?()` ajoutée pour `readlink -f` en Phase
+3 (même algorithme, deux commandes clientes). Sémantique de sortie
+distincte de `readlink` et reproduite à l'identique : défaut à `.` sans
+cible, `-q` supprime les messages d'erreur, `-m` n'exige l'existence
+d'aucune composante — code de sortie 1 dès qu'UNE cible échoue
+(contrairement à `readlink` où seul un échec total compte).
+
+**Bug trouvé et corrigé en testant `realpath`/`readlink` après un `cd`
+scripté** : `cd chemin && commande-migrée` dans une même ligne bash
+laissait `commande-migrée` voir un `cwd` périmé. Cause racine :
+`cd` est un *builtin* bash (intercepté avant même d'atteindre le pont
+externe), qui met à jour l'environnement bash (`PWD`) immédiatement,
+mais `LinuxCommandExecutor.cwd` — dont dépend la session construite pour
+`_commandKernelHook` — n'était resynchronisé depuis `env['PWD']` que dans
+`dispatchFromInterpreter()`. Or `dispatchMaybeNetwork()` consulte le hook
+`command-kernel` **avant** d'atteindre `dispatchFromInterpreter()` : toute
+commande déjà migrée voyait donc un `cwd` non rafraîchi tant qu'aucune
+commande non migrée n'était passée par ce second point auparavant.
+Symptôme concret : `cd /root/a/b && ls` renvoyait une liste vide au lieu
+du contenu de `/root/a/b`. Fix : extraction en `syncCwdFromEnv()`,
+appelée en tête de `dispatchMaybeNetwork()` (avant le hook) autant que
+dans `dispatchFromInterpreter()` — bug structurel de la Phase 0, pas
+propre à `realpath`, mais découvert en migrant cette commande.
+
+**Legacy supprimé** : `case 'realpath':` retiré de
+`LinuxCommandExecutor.dispatch()` — aucun autre appelant, pas présent
+dans l'autre framework `LinuxCommand` (§8 vérifié).
+
+**Validation** : lot audit/privilège du §7.2 + `linux-command-kernel.test.ts`
++ `linux-bash-details.test.ts` + `bash-advanced-scripts.test.ts` — 652
+tests, 1 échec pré-existant et sans rapport déjà documenté
+(`journalization.test.ts` #161). Vérification manuelle du bug cwd via un
+test jetable non versionné (5 exécutions consécutives sur un device
+neuf, 5/5 reproductibles avant le correctif, 0/5 après). Typecheck ciblé
+propre.
+
 ## Convergence de branche : Linux Phase 3 (`readlink`) + Windows Phase 12 (`ping`)
 
 **État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**

@@ -2490,11 +2490,18 @@ export class LinuxCommandExecutor {
     return { output: chunks.join(''), exitCode };
   }
 
+  private syncCwdFromEnv(env?: Record<string, string>): void {
+    if (env && env['PWD'] && env['PWD'] !== this.cwd && this.vfs.resolveInode(env['PWD'])) {
+      this.cwd = env['PWD'];
+    }
+  }
+
   private dispatchMaybeNetwork(
     argv: string[],
     env?: Record<string, string>,
     background?: boolean,
   ): { output: string; exitCode: number } | Promise<{ output: string; exitCode: number }> {
+    this.syncCwdFromEnv(env);
     if (!background && argv.length > 0 && argv[0] !== 'sudo') {
       const cmd = argv[0];
       const rawArgs = argv.slice(1);
@@ -2642,9 +2649,7 @@ export class LinuxCommandExecutor {
     background?: boolean,
   ): Promise<{ output: string; exitCode: number; backgroundPid?: number }> {
     this._cmdEnv = env;
-    if (env && env['PWD'] && env['PWD'] !== this.cwd && this.vfs.resolveInode(env['PWD'])) {
-      this.cwd = env['PWD'];
-    }
+    this.syncCwdFromEnv(env);
     if (argv.length === 0) return { output: '', exitCode: 0 };
     if (background) {
       const spawned = await this.spawnBackgroundJob(argv.join(' '), false);
@@ -4251,24 +4256,6 @@ export class LinuxCommandExecutor {
         };
 
       case 'dirname': { const p = args[0] || ''; const idx = p.lastIndexOf('/'); return { output: idx > 0 ? p.slice(0, idx) : (idx === 0 ? '/' : '.'), exitCode: 0 }; }
-      case 'realpath': {
-        const quiet = args.includes('-q');
-        const noExist = args.includes('-m');
-        const targets = args.filter(a => !a.startsWith('-'));
-        if (targets.length === 0) targets.push('.');
-        const lines: string[] = [];
-        let exit = 0;
-        for (const t of targets) {
-          const r = this.path(t).realpath(!noExist);
-          if (!r) {
-            exit = 1;
-            if (!quiet) lines.push(`realpath: ${t}: No such file or directory`);
-          } else {
-            lines.push(r.value);
-          }
-        }
-        return { output: lines.join('\n'), exitCode: exit };
-      }
       case 'mktemp': return { output: '/tmp/tmp.' + Math.random().toString(36).slice(2, 12), exitCode: 0 };
 
       default: {
