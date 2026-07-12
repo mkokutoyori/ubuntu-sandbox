@@ -75,6 +75,15 @@ export interface Gpo {
   securityFiltering: string[];
 }
 
+/** A Fine-Grained Password Policy (real AD's `msDS-PasswordSettings` object): overrides the domain default `GpoAccountPolicy` wholesale (never merged) for whichever users/groups it targets, winner decided by lowest `precedence`. */
+export interface PasswordSettingsObject {
+  readonly name: string;
+  readonly dn: string;
+  precedence: number;
+  settings: GpoAccountPolicy;
+  appliesTo: string[];
+}
+
 export interface AdComputer {
   readonly name: string;
   readonly dn: string;

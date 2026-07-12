@@ -306,3 +306,62 @@ describe('DirectoryStore — genuinely backed by the real LDAP DIT (not a cosmet
     expect(entry?.attributes.get('objectclass')).toEqual(['top', 'person', 'organizationalPerson', 'user', 'computer']);
   });
 });
+
+describe('DirectoryStore — PSO (fine-grained password policy)', () => {
+  it('creates a PSO and reads its settings/precedence back', () => {
+    const s = store();
+    const res = s.newPso('Strict Admins Policy', 10, { minPasswordLength: 15, lockoutThreshold: 3 });
+    expect(res.ok).toBe(true);
+    const pso = s.getPso('Strict Admins Policy')!;
+    expect(pso.precedence).toBe(10);
+    expect(pso.settings.minPasswordLength).toBe(15);
+    expect(pso.appliesTo).toEqual([]);
+  });
+
+  it('refuses a duplicate PSO name', () => {
+    const s = store();
+    s.newPso('Strict Admins Policy', 10, { minPasswordLength: 15 });
+    const res = s.newPso('Strict Admins Policy', 20, { minPasswordLength: 8 });
+    expect(res.ok).toBe(false);
+  });
+
+  it('a PSO applied directly to a user overrides the domain default wholesale, not merged', () => {
+    const s = store();
+    s.newUser('bob', { password: 'x' });
+    s.newPso('Strict Policy', 10, { minPasswordLength: 15, lockoutThreshold: 3 });
+    s.setPsoAppliesTo('Strict Policy', ['bob']);
+
+    const effective = s.effectivePasswordPolicyFor('bob')!;
+    expect(effective.minPasswordLength).toBe(15);
+    expect(effective.lockoutThreshold).toBe(3);
+    expect(effective.maxPasswordAge).toBeUndefined();
+  });
+
+  it('a PSO applied via group membership resolves the same as a direct link', () => {
+    const s = store();
+    s.newUser('carol', { password: 'x' });
+    s.newGroup('Executives');
+    s.addGroupMember('Executives', 'carol');
+    s.newPso('Executive Policy', 5, { minPasswordLength: 20 });
+    s.setPsoAppliesTo('Executive Policy', ['Executives']);
+
+    expect(s.effectivePasswordPolicyFor('carol')?.minPasswordLength).toBe(20);
+  });
+
+  it('returns null when no PSO applies, letting the caller fall back to the domain default', () => {
+    const s = store();
+    s.newUser('dave', { password: 'x' });
+    expect(s.effectivePasswordPolicyFor('dave')).toBeNull();
+  });
+
+  it('the lowest-precedence PSO wins when several apply to the same user', () => {
+    const s = store();
+    s.newUser('erin', { password: 'x' });
+    s.newPso('Loose Policy', 50, { minPasswordLength: 6 });
+    s.setPsoAppliesTo('Loose Policy', ['erin']);
+    s.newPso('Strict Policy', 1, { minPasswordLength: 20 });
+    s.setPsoAppliesTo('Strict Policy', ['erin']);
+
+    expect(s.effectivePasswordPolicyFor('erin')?.minPasswordLength).toBe(20);
+  });
+});
