@@ -106,6 +106,17 @@ export interface AdComputer {
   objectSid: string;
 }
 
+/** `New-ADObject -Type contact` (MS-ADTS): an external person with no logon capability — no sAMAccountName, no userAccountControl, no password. */
+export interface AdContact {
+  readonly cn: string;
+  readonly dn: string;
+  ou: string;
+  displayName: string;
+  mail: string;
+  telephoneNumber: string;
+  objectSid: string;
+}
+
 export interface AdOrgUnit {
   readonly name: string;
   readonly dn: string;
@@ -134,7 +145,7 @@ export interface AdServiceAccount {
   objectSid: string;
 }
 
-export type AdObject = AdUser | AdGroup | AdComputer | AdOrgUnit | AdServiceAccount;
+export type AdObject = AdUser | AdGroup | AdComputer | AdOrgUnit | AdServiceAccount | AdContact;
 
 export interface DomainInfo {
   readonly dnsName: string;

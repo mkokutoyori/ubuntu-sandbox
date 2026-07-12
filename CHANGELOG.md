@@ -5,6 +5,25 @@ progressive par équipement. Un push = une entrée = une fonctionnalité
 complète et testée (voir `CLAUDE.md` / le framework de migration pour les
 principes directeurs).
 
+## Windows Server — objets contact (`New-ADObject -Type contact`)
+
+Absent jusqu'ici : `AdContact` (`AdTypes.ts`) et `newContact`/`getContact`/
+`listContacts` sur `DirectoryStore` — une personne externe sans capacité
+de connexion (`objectClass: ['top','person','organizationalPerson',
+'contact']`, ni `sAMAccountName`, ni `userAccountControl`, ni mot de
+passe). Attributs `displayName`/`mail`/`telephoneNumber`, placement en
+OU optionnel (même convention que `newUser`). Reçoit tout de même un
+`objectSid` du pool de RID local, comme tout autre objet ici (AD réel en
+attribue aussi un, même si un contact n'est jamais un principal de
+sécurité utile).
+
+**Validation** : nouveau `ad-contacts.test.ts` (7 tests) — création avec
+attributs complets/vides, placement en OU, refus de doublon,
+énumération, retour `null` sur un contact inconnu, confirmation qu'un
+contact n'apparaît jamais via `getUser`/`listUsers` (`findUserEntry`
+filtre déjà sur l'objectClass `user`, absent des contacts). Suite
+élargie (3 fichiers) : 78/78 au vert. Typecheck et lint ciblés propres.
+
 ## Windows Server — imbrication de groupes protégée contre les cycles
 
 `addGroupMember` n'acceptait jusqu'ici qu'un utilisateur ou un

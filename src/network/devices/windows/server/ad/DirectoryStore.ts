@@ -18,7 +18,7 @@
 import { DirectoryTree, type DirectoryEntry, type EntryReplMeta } from './ldap/DirectoryTree';
 import { parseDN, formatDN, leafValue, type DistinguishedName } from './ldap/LdapDN';
 import type { LdapBindCheck } from './ldap/LdapServer';
-import type { AdUser, AdGroup, AdComputer, AdOrgUnit, AdServiceAccount, Gpo, GpoSettings, GpoAccountPolicy, PasswordSettingsObject } from './AdTypes';
+import type { AdUser, AdGroup, AdComputer, AdOrgUnit, AdServiceAccount, AdContact, Gpo, GpoSettings, GpoAccountPolicy, PasswordSettingsObject } from './AdTypes';
 import { generateId } from '@/network/core/types';
 import {
   type HighWatermarkVector, emptyHighWatermarkVector, recordUsn, cloneHighWatermarkVector,
@@ -639,6 +639,53 @@ export class DirectoryStore {
       .map(dnStr => this.tree.getByDn(parseDN(dnStr)))
       .filter((e): e is DirectoryEntry => e !== null && hasObjectClass(e, 'group'))
       .map(e => this.projectGroup(e));
+  }
+
+  // ─── Contacts ───────────────────────────────────────────────────────
+
+  newContact(cn: string, opts: { displayName?: string; mail?: string; telephoneNumber?: string; ou?: string } = {}): DirOpResult {
+    const containerDn = opts.ou ? this.ouDn(opts.ou) : this.usersOuDn;
+    if (opts.ou && !this.tree.getByDn(containerDn)) {
+      return { ok: false, message: `Cannot find an object with identity: '${opts.ou}'.` };
+    }
+    const rid = this.localRidPool.allocateNext();
+    const res = this.tree.addEntry(this.cnDn(cn, containerDn), compact({
+      objectClass: ['top', 'person', 'organizationalPerson', 'contact'],
+      cn: [cn],
+      displayName: opts.displayName ? [opts.displayName] : [],
+      mail: opts.mail ? [opts.mail] : [],
+      telephoneNumber: opts.telephoneNumber ? [opts.telephoneNumber] : [],
+      objectSid: rid !== null ? [this.formatObjectSid(rid)] : [],
+    }));
+    return res.ok ? { ok: true, message: '' } : { ok: false, message: 'An object with that name already exists.' };
+  }
+
+  private findContactEntry(cn: string): DirectoryEntry | null {
+    const [entry] = this.tree.search(this.tree.getRootDn(), 'sub', { kind: 'equalityMatch', attr: 'cn', value: cn })
+      .filter(e => hasObjectClass(e, 'contact'));
+    return entry ?? null;
+  }
+
+  getContact(cn: string): AdContact | null {
+    const entry = this.findContactEntry(cn);
+    return entry ? this.projectContact(entry) : null;
+  }
+
+  listContacts(): AdContact[] {
+    return this.tree.allDescendants(this.tree.getRootDn()).filter(e => hasObjectClass(e, 'contact')).map(e => this.projectContact(e));
+  }
+
+  private projectContact(entry: DirectoryEntry): AdContact {
+    const containerDn = entry.dn.slice(1);
+    return {
+      cn: firstOf(entry.attributes.get('cn')),
+      dn: formatDN(entry.dn),
+      ou: dnEqualsOu(containerDn, this.usersOuDn) ? 'Users' : firstOf(entry.attributes.get('ou')) || leafOuName(containerDn),
+      displayName: firstOf(entry.attributes.get('displayname')),
+      mail: firstOf(entry.attributes.get('mail')),
+      telephoneNumber: firstOf(entry.attributes.get('telephonenumber')),
+      objectSid: firstOf(entry.attributes.get('objectsid')),
+    };
   }
 
   // ─── Groups ─────────────────────────────────────────────────────────
