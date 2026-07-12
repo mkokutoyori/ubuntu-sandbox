@@ -446,6 +446,7 @@ export class DirectoryStore {
       objectSid: firstOf(entry.attributes.get('objectsid')),
       adminCount: firstOf(entry.attributes.get('admincount')) === '1',
       lockedOut: this.isAccountLockedOut(firstOf(entry.attributes.get('samaccountname'))),
+      accountExpires: Number(firstOf(entry.attributes.get('accountexpires'))) || null,
     };
   }
 
@@ -525,6 +526,8 @@ export class DirectoryStore {
     const entry = this.findUserEntry(sam);
     if (!entry) return false;
     if (!isEnabledFromUac(entry.attributes.get('useraccountcontrol'))) return false;
+    const accountExpires = Number(firstOf(entry.attributes.get('accountexpires'))) || 0;
+    if (accountExpires > 0 && Math.floor(Date.now() / 1000) >= accountExpires) return false;
 
     const policy = this.effectivePasswordPolicyFor(sam);
     const threshold = policy?.lockoutThreshold ?? 0;
@@ -569,6 +572,21 @@ export class DirectoryStore {
       { op: 'replace', type: 'lockoutTime', values: [] }, { op: 'replace', type: 'badPwdCount', values: [] },
     ]);
     return { ok: true, message: '' };
+  }
+
+  /** `Set-ADAccountExpiration -DateTime`/`-TimeSpan` — `expiresAt` is an epoch-seconds timestamp; `null` clears it (`Clear-ADAccountExpiration`, real AD default: never expires). Only checked by `checkPassword` (LDAP simple bind), same deliberate scope as lockout — not consulted by the Kerberos AS-REQ path. */
+  setAccountExpiration(sam: string, expiresAt: number | null): DirOpResult {
+    const entry = this.findUserEntry(sam);
+    if (!entry) return { ok: false, message: `Cannot find an object with identity: '${sam}'.` };
+    this.tree.modifyEntry(entry.dn, [{ op: 'replace', type: 'accountExpires', values: expiresAt !== null ? [String(expiresAt)] : [] }]);
+    return { ok: true, message: '' };
+  }
+
+  isAccountExpired(sam: string): boolean {
+    const entry = this.findUserEntry(sam);
+    if (!entry) return false;
+    const accountExpires = Number(firstOf(entry.attributes.get('accountexpires'))) || 0;
+    return accountExpires > 0 && Math.floor(Date.now() / 1000) >= accountExpires;
   }
 
   /** The user's (or krbtgt's) long-term secret — for `KdcSession` to derive the client's/service's Kerberos key from, not for authentication (see `checkPassword`). Null if absent, matching `KDC_ERR_C_PRINCIPAL_UNKNOWN`. */

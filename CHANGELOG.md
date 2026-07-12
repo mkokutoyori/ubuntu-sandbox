@@ -5,6 +5,29 @@ progressive par équipement. Un push = une entrée = une fonctionnalité
 complète et testée (voir `CLAUDE.md` / le framework de migration pour les
 principes directeurs).
 
+## Windows Server — expiration de compte (`Set-ADAccountExpiration`)
+
+L'expiration de compte était totalement absente jusqu'ici. `DirectoryStore`
+gagne `setAccountExpiration(sam, epochSecondesOuNull)` (`null` =
+`Clear-ADAccountExpiration`, comportement par défaut réel : n'expire
+jamais) et `isAccountExpired(sam)`. `AdUser` gagne `accountExpires:
+number | null`.
+
+**Périmètre délibérément identique au verrouillage de compte** :
+`checkPassword` (bind simple LDAP) refuse désormais l'authentification
+une fois `accountExpires` dépassé — le chemin Kerberos AS-REQ/`KdcSession`
+n'est PAS touché, pour la même raison que le verrouillage : surface de
+modification bien plus large et risquée à toucher pour une tâche
+auto-initiée.
+
+**Validation** : nouveau `ad-account-expiration.test.ts` (5 tests) —
+n'expire jamais par défaut, refus après une date d'expiration passée,
+authentification toujours possible avant une date future,
+`Clear-ADAccountExpiration` (passage à `null`) lève la restriction,
+échec propre sur une identité inconnue. Suite élargie (4 fichiers,
+verrouillage/politique de mot de passe/forêt) : 82/82 au vert, aucune
+régression. Typecheck et lint ciblés propres.
+
 ## Windows Server — quota de comptes machine (`ms-DS-MachineAccountQuota`)
 
 Jusqu'ici, n'importe quel utilisateur authentifié pouvait joindre un

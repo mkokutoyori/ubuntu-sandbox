@@ -22,6 +22,8 @@ export interface AdUser {
   adminCount: boolean;
   /** True while the account's lockout duration (PSO or domain default) hasn't yet elapsed since its last lockout — see `DirectoryStore.checkPassword`/`unlockAccount`. */
   lockedOut: boolean;
+  /** Epoch seconds (`Set-ADAccountExpiration`), or `null` if the account never expires. */
+  accountExpires: number | null;
 }
 
 export interface AdGroup {
