@@ -52,7 +52,27 @@ commit — l'un sur le cœur Windows Server (contrôleur de domaine),
 l'autre sur le pont Windows `command-kernel`, sans recouvrement de
 fichiers en dehors de `CHANGELOG.md`.
 
-### Windows Phase 27 : migration de `slmgr` vers command-kernel
+### Windows Phase 28 : migration de `lpr` vers command-kernel
+
+**État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
+
+Migration de `lpr` (soumission d'un travail à une file LPD distante,
+RFC 1179) — jusqu'ici non dispatché — vers le socle `command-kernel`.
+
+- Nouvelle capacité optionnelle `printClient?: PrintClientApi` sur
+  `MachineApi` : `submitLpdJob(server, queue, jobName, content)` (vrai
+  échange RFC 1179 ; propriétaire et hôte d'origine remplis par
+  l'équipement).
+- Commande `LprCommand` : parsing des options `-S`/`-P` (+ `-C`/`-J`/`-o`
+  ignorées), lecture du fichier via `machine.fs`, aide réelle complète en
+  `usage`, formatage console (usage, « cannot access », erreur de
+  soumission) porté côté commande.
+- Fichier mort `WinLpr.ts` supprimé (migrate-then-delete).
+
+Validation : les 2 tests `lpr` de `print-services-lpd.test.ts` passent
+(4/4, contre 2/4 auparavant) ; aucune régression.
+
+## Windows Phase 27 : migration de `slmgr` vers command-kernel
 
 Migration de `slmgr` / `slmgr.vbs` (Software Licensing Management Tool) —
 jusqu'ici non dispatché — vers le socle `command-kernel`.

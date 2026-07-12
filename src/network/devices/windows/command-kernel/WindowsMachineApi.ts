@@ -66,6 +66,7 @@ import {
   DnsSrvRecordData,
   RunAsApi,
   LicensingApi,
+  PrintClientApi,
   WindowsHttpStore,
   WindowsIpsecDynamicSettings,
   WindowsIpsecFilter,
@@ -219,6 +220,7 @@ export interface WindowsMachineApiDeps {
   licensingActivate(): { ok: boolean; message: string };
   licensingProductKey(): string | null;
   licensingState(): string;
+  lprSubmitJob(server: string, queue: string, jobName: string, content: Uint8Array): { ok: boolean; error?: string };
   locateDomainController(domain: string): DomainControllerLocation;
   dcDiagnostics(): DomainControllerDiagnostics;
   kerberosTickets(): readonly KerberosCachedTicket[];
@@ -1810,6 +1812,13 @@ class WindowsLicensingApiImpl implements LicensingApi {
   }
 }
 
+class WindowsPrintClientApiImpl implements PrintClientApi {
+  constructor(private readonly deps: Pick<WindowsMachineApiDeps, 'lprSubmitJob'>) {}
+  submitLpdJob(server: string, queue: string, jobName: string, content: Uint8Array): { ok: boolean; error?: string } {
+    return this.deps.lprSubmitJob(server, queue, jobName, content);
+  }
+}
+
 export class WindowsMachineApi implements MachineApi {
   readonly fs: FileSystemApi;
   readonly proc: ProcessApi;
@@ -1833,6 +1842,7 @@ export class WindowsMachineApi implements MachineApi {
   readonly domain: DomainApi;
   readonly runAs: RunAsApi;
   readonly licensing: LicensingApi;
+  readonly printClient: PrintClientApi;
   readonly hostname: string;
   readonly os: OsIdentity;
   readonly hardware: CkHardwareProfile;
@@ -1874,6 +1884,7 @@ export class WindowsMachineApi implements MachineApi {
     this.domain = new WindowsDomainApiImpl(deps);
     this.runAs = new WindowsRunAsApiImpl(deps);
     this.licensing = new WindowsLicensingApiImpl(deps);
+    this.printClient = new WindowsPrintClientApiImpl(deps);
     this.hostname = deps.hostname;
     this.os = {
       name: deps.identity.os.name,
