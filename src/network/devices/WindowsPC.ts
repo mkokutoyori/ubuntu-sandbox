@@ -489,6 +489,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
           kerberos: serviceSecret !== null ? { realm: store.getRealm(), serviceSecret } : undefined,
           startTls: { serverCert: this.ldapStartTlsIdentity.cert, serverPrivateKey: this.ldapStartTlsIdentity.keyPair.privateKey },
           otherForestDomainRoots: () => otherDomainRoots,
+          retrieveManagedPassword: (sam, requestingPrincipalSam) => store.retrieveManagedPassword(sam, requestingPrincipalSam),
           onComputerRegistered: (computerName, ip) => {
             const dns = this.getDnsServerRole();
             dns?.applyDynamicARecord(store.dnsName, computerName, ip);

@@ -36,7 +36,10 @@ beforeEach(() => {
 });
 
 function fixedPasswordAuth(dn: string, password: string): LdapBindCheck {
-  return { checkBind: (name, pw) => name.toLowerCase() === dn.toLowerCase() && pw === password };
+  return {
+    checkBind: (name, pw) => name.toLowerCase() === dn.toLowerCase() && pw === password,
+    resolvePrincipal: (name) => name,
+  };
 }
 
 describe('LDAP wire round-trip — real BER PDUs over a real TcpStack', () => {

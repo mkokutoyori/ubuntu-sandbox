@@ -18,7 +18,7 @@
 import { DirectoryTree, type DirectoryEntry, type EntryReplMeta } from './ldap/DirectoryTree';
 import { parseDN, formatDN, leafValue, type DistinguishedName } from './ldap/LdapDN';
 import type { LdapBindCheck } from './ldap/LdapServer';
-import type { AdUser, AdGroup, AdComputer, AdOrgUnit, Gpo, GpoSettings, GpoAccountPolicy, PasswordSettingsObject } from './AdTypes';
+import type { AdUser, AdGroup, AdComputer, AdOrgUnit, AdServiceAccount, Gpo, GpoSettings, GpoAccountPolicy, PasswordSettingsObject } from './AdTypes';
 import { generateId } from '@/network/core/types';
 import {
   type HighWatermarkVector, emptyHighWatermarkVector, recordUsn, cloneHighWatermarkVector,
@@ -33,6 +33,7 @@ import { PsoStore } from './pso/PsoStore';
 import { DomainFsmoRoles, type DomainFsmoRole } from './fsmo/FsmoRoles';
 import { RidPool } from './fsmo/RidPool';
 import { SdPropEngine } from './security/SdProp';
+import { ManagedServiceAccountStore } from './msa/ManagedServiceAccountStore';
 
 export interface DirOpResult { ok: boolean; message: string }
 
@@ -106,6 +107,7 @@ export class DirectoryStore {
   /** Next block to grant a requesting DC — only meaningful while this DC holds the RID Master role; lazily initialized on first grant. */
   private nextGlobalRidPoolStart: number | null = null;
   private readonly sdProp: SdPropEngine;
+  private readonly msaStore: ManagedServiceAccountStore;
 
   /**
    * `opts.skipSeed` (PRD-Windows-Server-Advanced.md §5 P5): an additional
@@ -144,6 +146,7 @@ export class DirectoryStore {
       ? new RidPool(0, 0)
       : new RidPool(RID_MASTER_LOCAL_POOL_START, RID_MASTER_LOCAL_POOL_COUNT);
     this.sdProp = new SdPropEngine(this.tree);
+    this.msaStore = new ManagedServiceAccountStore(this.tree);
     if (!opts.skipSeed) {
       // A shared validator (PRD §5 P8 — a child domain joining an existing
       // forest) is already seeded by its forest root; seeding again would
@@ -553,6 +556,32 @@ export class DirectoryStore {
     return entry ?? null;
   }
 
+  // ─── (Group) Managed Service Accounts ───────────────────────────────
+
+  newServiceAccount(sam: string, opts: { isGroupManaged: boolean; principals: string[]; ou?: string }): DirOpResult {
+    const containerDn = opts.ou ? this.ouDn(opts.ou) : this.computersOuDn;
+    if (opts.ou && !this.tree.getByDn(containerDn)) {
+      return { ok: false, message: `Cannot find an object with identity: '${opts.ou}'.` };
+    }
+    const rid = this.localRidPool.allocateNext();
+    return this.msaStore.newServiceAccount(sam, containerDn, {
+      isGroupManaged: opts.isGroupManaged, principals: opts.principals,
+      objectSid: rid !== null ? this.formatObjectSid(rid) : undefined,
+    });
+  }
+
+  getServiceAccount(sam: string): AdServiceAccount | null { return this.msaStore.getServiceAccount(sam); }
+  listServiceAccounts(): AdServiceAccount[] { return this.msaStore.listServiceAccounts(); }
+  resetManagedPassword(sam: string): DirOpResult { return this.msaStore.resetManagedPassword(sam); }
+  setPrincipalsAllowedToRetrieveManagedPassword(sam: string, principals: string[]): DirOpResult {
+    return this.msaStore.setPrincipalsAllowedToRetrieveManagedPassword(sam, principals);
+  }
+
+  /** For `LdapServerHandler`'s search gate on the constructed `msDS-ManagedPassword` attribute — see `ManagedServiceAccountStore.retrieveManagedPassword`. */
+  retrieveManagedPassword(sam: string, requestingPrincipalSam: string | null): string | null {
+    return this.msaStore.retrieveManagedPassword(sam, requestingPrincipalSam);
+  }
+
   /** Creates the DC's own computer account under the Domain Controllers OU at promotion time — a distinct container and UAC flag (SERVER_TRUST_ACCOUNT) from a regular domain-joined workstation, matching real AD. */
   promoteDomainController(name: string, machineSecret: string): DirOpResult {
     const dcOuDn = this.ouDn('Domain Controllers');
@@ -657,6 +686,7 @@ export class DirectoryStore {
         const sam = this.resolveIdentity(name);
         return this.checkPassword(sam, password) || this.checkComputerSecret(sam.replace(/\$$/, ''), password);
       },
+      resolvePrincipal: (name) => this.resolveIdentity(name),
     };
   }
 }

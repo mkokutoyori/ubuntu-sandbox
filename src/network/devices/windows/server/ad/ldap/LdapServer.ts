@@ -30,6 +30,8 @@ import { stepServerHandshake } from './ldapStartTls';
 export interface LdapBindCheck {
   /** Validate a simple-bind DN + password. Anonymous bind (empty name and password) is always accepted per RFC 4511 §5.1.2, matching real DCs' default anonymous-bind allowance. */
   checkBind(name: string, password: string): boolean;
+  /** Resolves a simple-bind name (DN, UPN, or bare sAMAccountName) down to a plain sam — so the search handler knows which principal is bound, for gates like `msDS-ManagedPassword`'s. */
+  resolvePrincipal(name: string): string;
 }
 
 /**
@@ -63,6 +65,8 @@ export interface LdapServerContext {
    */
   otherForestDomainRoots?: () => string[];
   onComputerRegistered?: (computerName: string, ip: string) => void;
+  /** `msDS-ManagedPassword` retrieval gate (MS-ADTS §3.1.1.8.1) — `null` (no such account, or `requestingPrincipalSam` not authorized) omits the attribute from search results entirely. Omitted (`undefined`) on hosts with no `DirectoryStore`. */
+  retrieveManagedPassword?: (sam: string, requestingPrincipalSam: string | null) => string | null;
 }
 
 const CLOCK_SKEW_SECONDS = 5 * 60;
@@ -86,6 +90,8 @@ const NOT_BOUND: LdapResult = { resultCode: LdapResultCode.operationsError, matc
 
 export class LdapServerHandler {
   private bound = false;
+  /** The sAMAccountName this session bound as, or `null` while unbound/anonymous — read by the `msDS-ManagedPassword` search gate. */
+  private boundPrincipalSam: string | null = null;
   /** Non-null once an `extendedRequest` StartTLS has been accepted — `result === null` while the handshake itself is still in progress (§5 P11). */
   private tls: TlsServerSession | null = null;
   private tlsSendSeq = 0;
@@ -136,7 +142,9 @@ export class LdapServerHandler {
     switch (op.kind) {
       case 'bindRequest': {
         if (op.sasl) {
-          this.bound = this.checkSaslBind(op.sasl);
+          const saslCname = this.checkSaslBind(op.sasl);
+          this.bound = saslCname !== null;
+          this.boundPrincipalSam = saslCname;
           this.reply(socket, msg.messageID, {
             kind: 'bindResponse',
             result: this.bound ? ldapResult(LdapResultCode.success) : ldapResult(LdapResultCode.invalidCredentials),
@@ -145,6 +153,7 @@ export class LdapServerHandler {
         }
         const anonymous = op.name === '' && op.password === '';
         this.bound = anonymous || this.ctx.auth.checkBind(op.name, op.password);
+        this.boundPrincipalSam = this.bound && !anonymous ? this.ctx.auth.resolvePrincipal(op.name) : null;
         this.reply(socket, msg.messageID, {
           kind: 'bindResponse',
           result: this.bound ? ldapResult(LdapResultCode.success) : ldapResult(LdapResultCode.invalidCredentials),
@@ -180,7 +189,7 @@ export class LdapServerHandler {
           this.reply(socket, msg.messageID, {
             kind: 'searchResultEntry',
             objectName: formatDN(entry.dn),
-            attributes: entryToAttributes(entry, op.attributes),
+            attributes: this.gateManagedPassword(entry, entryToAttributes(entry, op.attributes)),
           });
         }
         this.reply(socket, msg.messageID, { kind: 'searchResultDone', result: ldapResult(LdapResultCode.success) }, responseControls);
@@ -274,6 +283,26 @@ export class LdapServerHandler {
     }
   }
 
+  /**
+   * `msDS-ManagedPassword` (MS-ADTS §3.1.1.8.1) is never returned as a
+   * plain stored value: strip it out of every search result and, only for
+   * a (group) managed service account entry, re-add it via the
+   * authorization-gated hook — omitted entirely for an unauthorized (or
+   * anonymous) bound principal, matching real AD's behavior for this
+   * constructed attribute.
+   */
+  private gateManagedPassword(entry: DirectoryEntry, attrs: PartialAttribute[]): PartialAttribute[] {
+    const isMsa = (entry.attributes.get('objectclass') ?? [])
+      .some(v => v.toLowerCase() === 'msds-groupmanagedserviceaccount' || v.toLowerCase() === 'msds-managedserviceaccount');
+    const stripped = attrs.filter(a => a.type.toLowerCase() !== 'msds-managedpassword');
+    if (!isMsa || !this.ctx.retrieveManagedPassword) return stripped;
+    const samWithDollar = entry.attributes.get('samaccountname')?.[0];
+    if (!samWithDollar) return stripped;
+    // `retrieveManagedPassword` (like every other DirectoryStore accessor) takes a bare sam — this entry's own stored sAMAccountName already carries the trailing `$`.
+    const password = this.ctx.retrieveManagedPassword(samWithDollar.replace(/\$$/, ''), this.boundPrincipalSam);
+    return password === null ? stripped : [...stripped, { type: 'msDS-ManagedPassword', values: [password] }];
+  }
+
   /** RFC 2696 paged results — `entries` sliced to the requested page, plus the response control for the *next* page (empty cookie once exhausted). No control at all if the client didn't ask for paging. */
   private paginate(entries: DirectoryEntry[], controls: LdapControl[] | undefined): { page: DirectoryEntry[]; responseControls?: LdapControl[] } {
     const pagedControl = controls?.find(c => c.controlType === PAGED_RESULTS_CONTROL_OID);
@@ -330,22 +359,23 @@ export class LdapServerHandler {
    * confidentiality) is modeled — a single round-trip either grants or
    * refuses the bind.
    */
-  private checkSaslBind(sasl: SaslCredentials): boolean {
-    if (sasl.mechanism !== 'GSSAPI' || !this.ctx.kerberos) return false;
+  /** Returns the authenticated principal's sam (its ticket's `cname`) on success, `null` on any failure. */
+  private checkSaslBind(sasl: SaslCredentials): string | null {
+    if (sasl.mechanism !== 'GSSAPI' || !this.ctx.kerberos) return null;
     const { realm, serviceSecret } = this.ctx.kerberos;
     try {
       const apReq = decodeApReq(sasl.credentials);
       const serviceKey = stringToKey(serviceSecret, realm);
       const ticketPart = decodeEncTicketPart(decryptWithUsage(serviceKey, KU_TICKET, apReq.ticket.encPart.cipher));
-      if (ticketPart.endtime < Math.floor(Date.now() / 1000)) return false;
+      if (ticketPart.endtime < Math.floor(Date.now() / 1000)) return null;
 
       const ticketSessionKey = new TextDecoder().decode(ticketPart.key.keyValue);
       const authenticator = decodeAuthenticator(decryptWithUsage(ticketSessionKey, KU_AP_REQ_AUTHENTICATOR, apReq.authenticator.cipher));
       const sameCname = authenticator.cname.nameString.join('/') === ticketPart.cname.nameString.join('/');
       const withinSkew = Math.abs(Math.floor(Date.now() / 1000) - authenticator.ctime) <= CLOCK_SKEW_SECONDS;
-      return sameCname && withinSkew;
+      return sameCname && withinSkew ? ticketPart.cname.nameString.join('/') : null;
     } catch {
-      return false;
+      return null;
     }
   }
 }

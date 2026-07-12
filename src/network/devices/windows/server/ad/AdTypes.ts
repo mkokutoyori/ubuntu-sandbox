@@ -106,7 +106,28 @@ export interface AdOrgUnit {
   gpLinks: string[];
 }
 
-export type AdObject = AdUser | AdGroup | AdComputer | AdOrgUnit;
+/**
+ * A (Group) Managed Service Account (`msDS-ManagedServiceAccount` /
+ * `msDS-GroupManagedServiceAccount`, MS-ADTS §3.1.1.8): its password is
+ * generated and rotated by the DC rather than an admin, and readable over
+ * LDAP as the constructed `msDS-ManagedPassword` attribute only by a
+ * principal listed in (or a direct member of a group listed in)
+ * `principalsAllowedToRetrieveManagedPassword` — never by anyone else,
+ * matching real AD's own targeted gate for this one attribute.
+ */
+export interface AdServiceAccount {
+  /** Stored as `sam$`, matching a computer account's own `sAMAccountName` convention. */
+  readonly sam: string;
+  readonly dn: string;
+  ou: string;
+  isGroupManaged: boolean;
+  principalsAllowedToRetrieveManagedPassword: string[];
+  managedPassword: string;
+  passwordLastSet: number;
+  objectSid: string;
+}
+
+export type AdObject = AdUser | AdGroup | AdComputer | AdOrgUnit | AdServiceAccount;
 
 export interface DomainInfo {
   readonly dnsName: string;

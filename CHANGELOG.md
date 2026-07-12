@@ -5,6 +5,49 @@ progressive par équipement. Un push = une entrée = une fonctionnalité
 complète et testée (voir `CLAUDE.md` / le framework de migration pour les
 principes directeurs).
 
+## Windows Server — comptes de service (gérés / gérés par groupe), `msDS-ManagedPassword` gardé sur LDAP réel
+
+Nouveau module `ad/msa/ManagedServiceAccountStore.ts` : comptes de
+service gérés (MSA) et gérés par groupe (gMSA, MS-ADTS §3.1.1.8) — mot
+de passe généré et pivoté par le DC, jamais choisi par un admin.
+`DirectoryStore` gagne `newServiceAccount`/`getServiceAccount`/
+`listServiceAccounts`/`resetManagedPassword` (pivot manuel, même
+convention que réplication/SDProp/UGMC : AD réel le fait automatiquement
+tous les `msDS-ManagedPasswordInterval`, ici sur demande)/
+`setPrincipalsAllowedToRetrieveManagedPassword`. `AdServiceAccount`
+ajouté à `AdTypes.ts`.
+
+**Lecture gardée sur LDAP réel** (`msDS-ManagedPassword`, §3.1.1.8.1) —
+la seule voie légitime par laquelle un ordinateur distant lit le mot de
+passe courant : `LdapServerHandler` retire désormais systématiquement
+cette valeur des résultats de recherche et ne la réintroduit que si le
+principal actuellement lié (`resolvePrincipal` sur `LdapBindCheck`,
+suivi sur bind simple *et* SASL/GSSAPI — `boundPrincipalSam`) figure,
+directement ou via l'appartenance directe à un groupe, dans
+`PrincipalsAllowedToRetrieveManagedPassword` de ce compte. Ciblé sur ce
+seul attribut construit (comme AD réel), pas un moteur générique d'ACL
+par attribut de schéma (hors périmètre, §2.2).
+
+**Bug détecté par le test dédié et corrigé** : `retrieveManagedPassword`
+attend un sam nu (même convention que le reste de `DirectoryStore`),
+mais `gateManagedPassword` lui passait directement le
+`sAMAccountName` stocké de l'entrée — déjà suffixé `$` — provoquant un
+double suffixe (`svc1$$`) et un échec de résolution systématique. Corrigé
+en retirant le `$` final avant l'appel.
+
+**Validation** : nouveau `ad-managed-service-account.test.ts` (7 tests)
+— création gMSA avec objectSid réel, refus de doublon, pivot de mot de
+passe, réplication vers un second DC comme n'importe quel autre objet,
+lecture autorisée via appartenance directe à un groupe (Administrator
+dans Domain Admins) sur une vraie recherche LDAP, refus pour un
+principal non listé, refus pour un bind anonyme. `ldap-server-client.test.ts`/
+`ldap-wire-p11.test.ts` mis à jour (leur mock `LdapBindCheck` gagne
+`resolvePrincipal`). Suite élargie (LDAP/AD/GPO, 8 fichiers) : 143/144
+au vert, seul échec préexistant hors périmètre (bascule `whoami`).
+Typecheck et lint ciblés propres (les 2 erreurs/2 avertissements
+préexistants de `WindowsPC.ts`, confirmés par `git stash`, ne sont pas
+de ce travail).
+
 ## Windows Server — réplication AD par métadonnées d'attribut (fin de l'écrasement silencieux multi-DC)
 
 Jusqu'ici, `EntryReplMeta` (`ldap/DirectoryTree.ts`) portait un seul

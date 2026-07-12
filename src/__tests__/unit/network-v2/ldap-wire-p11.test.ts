@@ -31,7 +31,10 @@ beforeEach(() => {
 });
 
 function fixedPasswordAuth(dn: string, password: string): LdapBindCheck {
-  return { checkBind: (name, pw) => name.toLowerCase() === dn.toLowerCase() && pw === password };
+  return {
+    checkBind: (name, pw) => name.toLowerCase() === dn.toLowerCase() && pw === password,
+    resolvePrincipal: (name) => name,
+  };
 }
 
 function buildLan() {
