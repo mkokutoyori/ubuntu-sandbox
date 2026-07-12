@@ -5,7 +5,16 @@ progressive par équipement. Un push = une entrée = une fonctionnalité
 complète et testée (voir `CLAUDE.md` / le framework de migration pour les
 principes directeurs).
 
-## Windows Server — pool de RID + objectSid réel sur les objets AD
+## Convergence de branche : Windows Server (pool RID + objectSid) + Windows Phase 21 (`wevtutil`)
+
+**État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
+
+Deux lots de travail parallèles sur la même branche, fusionnés dans ce
+commit — l'un sur le cœur Windows Server (contrôleur de domaine),
+l'autre sur le pont Windows `wevtutil`, sans recouvrement de fichiers
+en dehors de `CHANGELOG.md`.
+
+### Windows Server — pool de RID + objectSid réel sur les objets AD
 
 Suite directe du chantier FSMO : un SID de domaine réel
 (`S-1-5-21-<r1>-<r2>-<r3>`) est maintenant généré à la création d'un
@@ -44,6 +53,73 @@ SID de domaine + RID bien connus, allocation séquentielle, blocs
 réelle de pool RID entre deux DC, SID de domaine identique des deux
 côtés, RID non chevauchants) + suite complète AD/forêt/GPO/schéma,
 tout au vert. Typecheck et lint ciblés propres.
+
+### Windows — Phase 21 : migration `wevtutil`
+
+Après la clôture de `netsh`, migration de `wevtutil` (utilitaire de
+journal d'évènements Windows : `qe`/`query-events`, `el`/`enum-logs`,
+`cl`/`clear-log`) — commande fréquemment enchaînée après un scénario
+pare-feu/DHCP pour vérifier les évènements produits, bloquant plusieurs
+tests inter-commandes.
+
+Nouvelle capacité `MachineApi.eventLog?: EventLogApi` (concept sans
+équivalent universel — Linux a syslog/journald) : `entries(logName)`
+(journaux structurés `System`/`Security`/... via `PSEventLogProvider`,
+déjà partagé avec `Get-EventLog`/`Get-WinEvent`), plus l'accès dédié au
+journal DHCP-Client (`dhcpEventLog()` qui synchronise, `ensureDhcpInitEvent()`).
+Type `WindowsEventLogEntry` ajouté.
+
+`WevtutilCommand` porte le parsing des sous-commandes, la porte de service
+`EventLog` (message « Failed to query events. The Windows Event Log
+service is not running. ») et le formatage `Event[i]` — copié depuis
+`WinWevtutil.ts`, intact pour le shim PowerShell.
+
+Validation : typecheck et ESLint propres. Lot eventlog/feature-gates/
+firewall-vs-acl/dhcp-dns/ssh-audit comparé au commit pré-Phase-21 via
+`git stash` : 3 échecs/47 réussites avant → 50/50 après, 3 tests
+corrigés, zéro régression. Suites arp/consistency (107 tests) sans
+régression.
+
+## Windows — Phase 20 : migration `netsh` — contextes `dhcp server`, `nps` (clôt `netsh`)
+
+**État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
+
+Dernière tranche de `netsh` : les deux contextes de rôle serveur
+(`dhcp server add/show/scope`, `nps add/show client`). Contrairement à
+tous les magasins précédents, ces contextes sont adossés aux objets de
+rôle `WindowsServer` (`WindowsDhcpServerRole`/`WindowsNpsRole`) — le rôle
+DHCP distribue de VRAIS baux via son moteur, pas un simple registre.
+
+**Garde-fou poste client respecté** : `getDhcpServerRole()`/`getNpsRole()`
+renvoient `null` sur un `WindowsPC` ordinaire (seul `WindowsServer` les
+surcharge quand la fonctionnalité est installée). Les nouvelles capacités
+`WindowsNetConfigApi.dhcpServer`/`nps` sont donc des **getters LIVE**
+`… | null` (ré-évalués à chaque accès, car la fonctionnalité peut être
+installée APRÈS la construction du shell mémoïsé). `NetshCommand` renvoie
+« The DHCP Server service is not available on this computer. » /
+« The Network Policy Server service is not available on this computer. »
+quand le rôle est absent — vérifié par un test dédié qu'un `windows-pc`
+refuse bien `netsh dhcp server`/`nps`.
+
+Types `WindowsDhcpScope`/`WindowsDhcpServerApi`/`WindowsNasClient`/
+`WindowsNpsApi`/`WindowsServerOpResult` ajoutés. Le calcul d'adressage de
+l'étendue (réseau/broadcast/plage début-fin depuis `ScopeAddress`+masque)
+vit dans `NetshCommand` (types de domaine `IPAddress`/`SubnetMask`), les
+opérations vendeur (`addScope`/`addExclusionRange`/`addReservation`/
+`addNasClient`) restent sur le rôle. `WinNetsh.ts` intact pour le shim.
+
+**`netsh` est désormais intégralement migré** : interface (Ph.15),
+dhcpclient/dnsclient (Ph.16), ipsec (Ph.17), lan/wlan/http/bridge/
+namespace (Ph.18), advfirewall (Ph.19), dhcp server/nps (Ph.20). Seul le
+`cmdNetsh` legacy subsiste pour le shim PowerShell natif, jamais appelé
+depuis le command-kernel.
+
+Validation : typecheck et ESLint propres. `windows-server-dhcp`/
+`windows-server-nps` comparés au commit pré-Phase-20 via `git stash` : 3
+échecs/18 réussites avant → 21/21 après, 3 tests corrigés, zéro
+régression. Test jetable confirmant le refus sur poste client (2/2).
+Suites cmd-netsh/netsh/consistency (259 tests) sans régression (4 échecs
+IPsec ordre-dépendants pré-existants, déjà documentés).
 
 ## Convergence de branche : Windows Server (rôles FSMO) + Windows Phase 19 (`netsh advfirewall`)
 
