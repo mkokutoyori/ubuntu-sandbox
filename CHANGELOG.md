@@ -52,7 +52,33 @@ commit — l'un sur le cœur Windows Server (contrôleur de domaine),
 l'autre sur le pont Windows `command-kernel`, sans recouvrement de
 fichiers en dehors de `CHANGELOG.md`.
 
-### Windows Phase 28 : migration de `lpr` vers command-kernel
+### Windows Phase 29 : migration de `certreq` / `certutil` vers command-kernel
+
+**État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
+
+Migration de `certreq` / `certutil -submit` (demande de certificat à AD CS,
+MS-WCCE) — jusqu'ici non dispatchés — vers le socle `command-kernel`.
+
+- Nouvelle capacité optionnelle `certificateServices?: CertificateServicesApi`
+  sur `MachineApi` : `submitRequest(subject, template, eku)` (émission
+  signée par l'AC + stockage du certificat dans le magasin local). Types
+  `CertificateServicesApi` / `CertificateIssuance` au contrat.
+- `WindowsMachineApi` expose `certificateServices` en **getter live**
+  (jamais mémoïsé) car le rôle AD CS peut être installé après la
+  construction du shell ; `null` tant que l'AC n'est pas installée.
+- Commandes `CertreqCommand` / `CertutilCommand` : parsing `-submit`
+  `-template` `-subject` `-eku`, aide réelle complète en `usage`, formatage
+  console (« Certificate Retrieved », « RPC server is unavailable ») porté
+  côté commande via une logique de soumission partagée.
+- Frontière client/serveur respectée : sans le rôle AD CS installé (donc
+  sur un poste), `machine.certificateServices` est absent et `certreq`
+  répond « RPC server is unavailable » — aucune fonctionnalité serveur
+  exposée. Fichier mort `WinCertReq.ts` supprimé (migrate-then-delete).
+
+Validation : `adcs-role.test.ts` + `iis-https-binding.test.ts` passent
+(11/11, contre 8/11 auparavant) ; aucune régression.
+
+## Windows Phase 28 : migration de `lpr` vers command-kernel
 
 **État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
 
