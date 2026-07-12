@@ -1736,6 +1736,21 @@ export class WindowsPC extends EndHost implements UserAccountHost {
         firstConfiguredDnsServer: () => this.firstConfiguredDnsServer(),
         queryDnsServer: (server, name, qtype, timeoutMs) => this.queryDnsServer(server, name, qtype, timeoutMs),
         isDHCPConfigured: (ifName) => this.isDHCPConfigured(ifName),
+        getConnectionDnsSuffix: (ifName) => this.getConnectionDnsSuffix(ifName),
+        getDefaultGateway6: () => this.getDefaultGateway6(),
+        effectiveDnsServers: (ifName) => this.effectiveDnsServers(ifName),
+        getDnsSuffix: () => this.dnsSuffix,
+        getClassId: (ifName) => this.getClassId(ifName),
+        setClassId: (ifName, classId) => this.setClassId(ifName, classId),
+        getClassId6: (ifName) => this.getClassId6(ifName),
+        setClassId6: (ifName, classId) => this.setClassId6(ifName, classId),
+        sendRouterSolicitation: (ifName) => this.sendRouterSolicitation(ifName),
+        autoDiscoverDHCPServers: () => this.autoDiscoverDHCPServers(),
+        getDhcpLease: (ifName) => this.getDhcpLease(ifName),
+        releaseDhcpLease: (ifName) => this.releaseDhcpLease(ifName),
+        requestDhcpLease: (ifName) => this.requestDhcpLease(ifName),
+        releaseDynamicIPv6: (ifName) => this.releaseDynamicIPv6(ifName),
+        dnsCache: this.dnsCache,
         bootedAt: () => this.getLifecycle().bootedAt() ?? null,
         now: () => this.simulatedDate(),
         powerOn: () => this.powerOn(),
@@ -2241,6 +2256,47 @@ export class WindowsPC extends EndHost implements UserAccountHost {
   setClassId6(ifName: string, classId: string | null): void {
     if (classId) this.dhcpClassIds6.set(ifName, classId);
     else this.dhcpClassIds6.delete(ifName);
+  }
+
+  private getDhcpLease(ifName: string): { ipAddress: string; serverIdentifier: string; leaseStart: number; expiration: number; dnsServers: string[] } | null {
+    const lease = this.dhcpClient.getState(ifName)?.lease;
+    if (!lease) return null;
+    return {
+      ipAddress: lease.ipAddress,
+      serverIdentifier: lease.serverIdentifier,
+      leaseStart: lease.leaseStart,
+      expiration: lease.expiration,
+      dnsServers: lease.dnsServers ?? [],
+    };
+  }
+
+  /** Libère le bail actif s'il y en a un, puis réinitialise l'état du client DHCP à `INIT` — toujours, même sans bail (comportement `ipconfig /release` réel). */
+  private releaseDhcpLease(ifName: string): void {
+    const state = this.dhcpClient.getState(ifName);
+    if (state?.lease) {
+      const oldIP = state.lease.ipAddress;
+      this.dhcpClient.releaseLease(ifName);
+      this.addDHCPEvent('RELEASE', `Released IP ${oldIP} on ${ifName}`);
+    }
+    if (state) state.state = 'INIT';
+  }
+
+  private requestDhcpLease(ifName: string): void {
+    this.dhcpClient.requestLease(ifName, { verbose: false });
+    const state = this.dhcpClient.getState(ifName);
+    if (state?.lease && state.lease.serverIdentifier !== '0.0.0.0') {
+      this.addDHCPEvent('RENEW', `Renewed IP ${state.lease.ipAddress} on ${ifName}`);
+    }
+  }
+
+  private releaseDynamicIPv6(ifName: string): string[] {
+    const port = this.ports.get(ifName);
+    if (!port) return [];
+    const released = port.releaseDynamicIPv6Addresses();
+    if (released.length > 0) {
+      this.addDHCPEvent('RELEASE', `Released IPv6 address(es) ${released.map((e) => e.address.toString()).join(', ')} on ${ifName}`);
+    }
+    return released.map((e) => e.address.toString());
   }
 
   private cmdVol(args: string[]): string {

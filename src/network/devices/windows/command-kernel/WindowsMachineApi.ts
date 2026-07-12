@@ -39,6 +39,8 @@ import {
   UserManagementApi,
   WindowsAdapterInfo,
   WindowsArpEntry,
+  WindowsDhcpLease,
+  WindowsDnsCacheEntry,
   WindowsNetConfigApi,
   WindowsPingReply,
   WindowsRouteEntry,
@@ -49,7 +51,7 @@ import {
 import { FileSystemError } from '@/command-kernel/errors';
 import { User } from '@/command-kernel/session/types';
 import type { Port } from '@/network/hardware/Port';
-import { IPAddress, MACAddress, SubnetMask } from '@/network/core/types';
+import { IPAddress, IPv6Address, MACAddress, SubnetMask } from '@/network/core/types';
 import type { ARPEntry, HostRouteEntry } from '@/network/devices/EndHost';
 import type { PingResult, TracerouteHop } from '@/network/devices/windows/WinCommandExecutor';
 import type { DnsMessage } from '@/network/dns/wire/DnsMessage';
@@ -72,6 +74,7 @@ import { runScheduledProgram } from '../WinSystemCommands';
 import type { WinRegistryProvider } from '../WinRegCommand';
 import type { WindowsAuditPolicy } from '../WindowsAuditPolicy';
 import type { WindowsWinRmConfig } from '../WindowsWinRmConfig';
+import type { WindowsDnsCache } from '../WinDnsCache';
 import { numericIdFromSid, resolveWindowsUser } from './WindowsUser';
 
 export interface WindowsMachineApiDeps {
@@ -115,6 +118,24 @@ export interface WindowsMachineApiDeps {
   firstConfiguredDnsServer(): string;
   queryDnsServer(server: IPAddress, name: string, qtype: string, timeoutMs?: number): Promise<DnsMessage | null>;
   isDHCPConfigured(ifName: string): boolean;
+  getConnectionDnsSuffix(ifName: string): string;
+  getDefaultGateway6(): IPv6Address | null;
+  effectiveDnsServers(ifName: string): string[];
+  /** Méthode, pas un champ : le suffixe DNS principal est réassigné en interne (`netsh`/`Set-DnsClientGlobalSetting`), un snapshot figé au premier appel de `getCommandKernelShell()` deviendrait obsolète. */
+  getDnsSuffix(): string;
+  getClassId(ifName: string): string | null;
+  setClassId(ifName: string, classId: string | null): void;
+  getClassId6(ifName: string): string | null;
+  setClassId6(ifName: string, classId: string | null): void;
+  sendRouterSolicitation(ifName: string): void;
+  autoDiscoverDHCPServers(): void;
+  getDhcpLease(ifName: string): { ipAddress: string; serverIdentifier: string; leaseStart: number; expiration: number; dnsServers: string[] } | null;
+  /** Libère le bail (le cas échéant) et réinitialise l'état du client DHCP à `INIT` — appelé pour CHAQUE interface ciblée, avec ou sans bail actif (comportement `ipconfig /release` réel). */
+  releaseDhcpLease(ifName: string): void;
+  /** Redemande un bail ; l'appelant relit `getDhcpLease` ensuite pour déterminer le résultat (auto-configuration `0.0.0.0`, bail obtenu, ou échec). */
+  requestDhcpLease(ifName: string): void;
+  releaseDynamicIPv6(ifName: string): string[];
+  readonly dnsCache: WindowsDnsCache;
   bootedAt(): Date | null;
   now(): Date;
   powerOn(): void;
@@ -935,7 +956,10 @@ class WindowsNetConfigApiImpl implements WindowsNetConfigApi {
     private readonly deps: Pick<WindowsMachineApiDeps,
       'arpTable' | 'getRoutingTable' | 'addStaticRoute' | 'removeRoute' | 'setDefaultGateway' | 'clearDefaultGateway'
       | 'addStaticARP' | 'deleteARP' | 'clearARPTable' | 'resolveHostname' | 'executePingSequence'
-      | 'executeTraceroute' | 'reverseLookup' | 'resolveViaHostsFile' | 'firstConfiguredDnsServer' | 'queryDnsServer'>,
+      | 'executeTraceroute' | 'reverseLookup' | 'resolveViaHostsFile' | 'firstConfiguredDnsServer' | 'queryDnsServer'
+      | 'isDHCPConfigured' | 'getConnectionDnsSuffix' | 'getDefaultGateway6' | 'effectiveDnsServers' | 'getDnsSuffix'
+      | 'getClassId' | 'setClassId' | 'getClassId6' | 'setClassId6' | 'sendRouterSolicitation' | 'autoDiscoverDHCPServers'
+      | 'getDhcpLease' | 'releaseDhcpLease' | 'requestDhcpLease' | 'releaseDynamicIPv6' | 'dnsCache'>,
   ) {}
 
   adapters(): readonly WindowsAdapterInfo[] {
@@ -943,9 +967,14 @@ class WindowsNetConfigApiImpl implements WindowsNetConfigApi {
       name: port.getName(),
       mac: port.getMAC().toString(),
       ip: port.getIPAddress()?.toString(),
+      mask: port.getSubnetMask()?.toString(),
+      globalIPv6: port.getGlobalIPv6()?.toString(),
+      linkLocalIPv6: port.getLinkLocalIPv6()?.toString(),
       isUp: port.getIsUp(),
       isConnected: port.isConnected(),
       isAdminDown: port.isAdminDown(),
+      connectionDnsSuffix: this.deps.getConnectionDnsSuffix(port.getName()),
+      isDhcp: this.deps.isDHCPConfigured(port.getName()),
     }));
   }
 
@@ -1038,6 +1067,79 @@ class WindowsNetConfigApiImpl implements WindowsNetConfigApi {
     let serverIP: IPAddress;
     try { serverIP = new IPAddress(server); } catch { return null; }
     return this.deps.queryDnsServer(serverIP, name, qtype, timeoutMs);
+  }
+
+  defaultGateway(): string | null {
+    // Passerelle IPv4 : déjà portée par la route par défaut de `routes()`.
+    const def = this.deps.getRoutingTable().find((r) => r.type === 'default');
+    return def?.nextHop ? def.nextHop.toString() : null;
+  }
+
+  defaultGateway6(): string | null {
+    return this.deps.getDefaultGateway6()?.toString() ?? null;
+  }
+
+  primaryDnsSuffix(): string {
+    return this.deps.getDnsSuffix();
+  }
+
+  staticDnsServers(ifName: string): readonly string[] {
+    return this.deps.effectiveDnsServers(ifName);
+  }
+
+  dhcpLease(ifName: string): WindowsDhcpLease | null {
+    const lease = this.deps.getDhcpLease(ifName);
+    if (!lease) return null;
+    return {
+      ipAddress: lease.ipAddress,
+      serverIdentifier: lease.serverIdentifier,
+      leaseStartMs: lease.leaseStart,
+      expirationMs: lease.expiration,
+      dnsServers: lease.dnsServers,
+    };
+  }
+
+  releaseLease(ifName: string): void {
+    this.deps.releaseDhcpLease(ifName);
+  }
+
+  requestLease(ifName: string): void {
+    this.deps.requestDhcpLease(ifName);
+  }
+
+  autoDiscoverDhcpServers(): void {
+    this.deps.autoDiscoverDHCPServers();
+  }
+
+  releaseDynamicIPv6(ifName: string): readonly string[] {
+    return this.deps.releaseDynamicIPv6(ifName);
+  }
+
+  sendRouterSolicitation(ifName: string): void {
+    this.deps.sendRouterSolicitation(ifName);
+  }
+
+  classId(ifName: string, isV6: boolean): string | null {
+    return isV6 ? this.deps.getClassId6(ifName) : this.deps.getClassId(ifName);
+  }
+
+  setClassId(ifName: string, isV6: boolean, classId: string | null): void {
+    if (isV6) this.deps.setClassId6(ifName, classId);
+    else this.deps.setClassId(ifName, classId);
+  }
+
+  flushDnsCache(): void {
+    this.deps.dnsCache.flush();
+  }
+
+  dnsCacheEntries(): readonly WindowsDnsCacheEntry[] {
+    const now = this.deps.dnsCache.now();
+    return this.deps.dnsCache.activeEntries().map((e) => ({
+      name: e.name,
+      type: e.type,
+      value: e.value,
+      ttlRemainingSec: Math.max(0, e.ttl - Math.floor((now - e.insertedAt) / 1000)),
+    }));
   }
 }
 

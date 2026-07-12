@@ -18,6 +18,7 @@ import { FindstrCommand } from './commands/Findstr';
 import { GetmacCommand } from './commands/Getmac';
 import { HostnameCommand } from './commands/Hostname';
 import { IcaclsCommand } from './commands/Icacls';
+import { IpconfigCommand } from './commands/Ipconfig';
 import { MkdirCommand } from './commands/Mkdir';
 import { MoreCommand } from './commands/More';
 import { MoveCommand } from './commands/Move';
@@ -68,6 +69,7 @@ export function createWindowsHostShell(deps: WindowsMachineApiDeps): { registry:
   registry.register(() => new PingCommand());
   registry.register(() => new TracertCommand());
   registry.register(() => new NslookupCommand());
+  registry.register(() => new IpconfigCommand());
   registry.register(() => new CdCommand());
   registry.register(() => new MkdirCommand());
   registry.register(() => new RmdirCommand());

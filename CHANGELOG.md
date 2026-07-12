@@ -5,6 +5,56 @@ progressive par équipement. Un push = une entrée = une fonctionnalité
 complète et testée (voir `CLAUDE.md` / le framework de migration pour les
 principes directeurs).
 
+## Windows — Phase 14 : migration `ipconfig`
+
+**État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
+
+Dernier morceau autonome du lot réseau bas niveau avant `netsh` (3000+
+lignes, phase à part). `cmdIpconfig`/`WinIpconfig.ts` (519 lignes)
+n'étaient — comme `ping`/`tracert` — jamais enregistrées dans le
+`CommandRegistry` ; `ipconfig` tapé en cmd.exe produisait `not
+recognized`.
+
+**`WindowsAdapterInfo` étendu** (`mask`, `globalIPv6`, `linkLocalIPv6`,
+`connectionDnsSuffix`, `isDhcp`) — réutilisé tel quel par `arp`/`route`/
+`getmac` sans les nouveaux champs, aucune rupture.
+
+**Nouvelles primitives `MachineApi.netConfig`**, une par opération
+vendeur réelle : `defaultGateway()`/`defaultGateway6()`,
+`primaryDnsSuffix()`, `staticDnsServers(ifName)`, `dhcpLease(ifName)`
+(bail DHCPv4 résolu, type `WindowsDhcpLease`), `releaseLease(ifName)` /
+`requestLease(ifName)` (l'appelant relit `dhcpLease()` ensuite pour
+déterminer auto-configuration/bail obtenu/échec — pas besoin que la
+primitive renvoie un résultat structuré), `autoDiscoverDhcpServers()`,
+`releaseDynamicIPv6(ifName)`, `sendRouterSolicitation(ifName)`,
+`classId`/`setClassId` (IPv4/IPv6 unifiés par un paramètre `isV6`),
+`flushDnsCache()`, `dnsCacheEntries()` (données brutes du cache
+résolveur, TTL déjà décompté côté pont — `IpconfigCommand` fait son
+propre formatage `/displaydns`, comme `renderDisplayDns` avant, mais
+depuis la commande).
+
+`IpconfigCommand` porte l'intégralité du dispatch (`/all`, `/release[6]`,
+`/renew[6]`, `/flushdns`, `/displaydns`, `/registerdns`,
+`/show|setclassid[6]`, filtre d'adaptateur wildcard `*`/`?`) et du
+formatage — copié depuis `WinIpconfig.ts`, qui reste intact pour le shim
+PowerShell. `toDisplayName` (`WindowsInterfaceNaming.ts`) réutilisé tel
+quel : utilitaire pur de renommage `eth0 → Ethernet 0` déjà partagé par
+6 autres modules (PowerShell inclus), pas un dispatcher `cmdX`.
+
+Piège évité : `getDnsSuffix` doit être une MÉTHODE dans
+`WindowsMachineApiDeps`, pas un champ figé — `getCommandKernelShell()`
+construit les deps UNE fois (mémoïsées par instance `WindowsPC`), et le
+suffixe DNS principal est réassigné en interne (`netsh`, une fois
+migré) ; un champ `readonly dnsSuffix: string` aurait capturé une valeur
+obsolète pour toute la durée de vie de l'instance.
+
+Validation : typecheck propre. Suite localisée (8 fichiers ipconfig/DNS/
+DHCP, 133 tests) comparée au commit précédent via `git stash` : 84
+échecs/49 réussites avant → 42/91 après, 42 tests corrigés, zéro
+régression. Suite arp/route/getmac/ping/tracert (391 tests) re-vérifiée
+sans régression suite à l'extension de `WindowsAdapterInfo`. Échecs
+restants dus à `netsh`, seule pièce manquante du lot réseau bas niveau.
+
 ## Windows — Phase 13 : migration `tracert`, `nslookup`
 
 **État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**

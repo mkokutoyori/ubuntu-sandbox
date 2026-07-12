@@ -362,9 +362,33 @@ export interface WindowsAdapterInfo {
   /** Forme canonique deux-points minuscule (ex: `aa:bb:cc:dd:ee:ff`) — chaque commande applique son propre formatage d'affichage (tirets, majuscules...). */
   readonly mac: string;
   readonly ip: string | undefined;
+  readonly mask: string | undefined;
+  readonly globalIPv6: string | undefined;
+  readonly linkLocalIPv6: string | undefined;
   readonly isUp: boolean;
   readonly isConnected: boolean;
   readonly isAdminDown: boolean;
+  /** Suffixe DNS spécifique à la connexion (`ipconfig`) — `''` si aucun. */
+  readonly connectionDnsSuffix: string;
+  /** Adresse obtenue par DHCP plutôt que statique (`ipconfig /all`). */
+  readonly isDhcp: boolean;
+}
+
+/** Bail DHCPv4 actif sur une interface (`ipconfig /all`) — optionnel, modèle Windows. */
+export interface WindowsDhcpLease {
+  readonly ipAddress: string;
+  readonly serverIdentifier: string;
+  readonly leaseStartMs: number;
+  readonly expirationMs: number;
+  readonly dnsServers: readonly string[];
+}
+
+/** Entrée du cache résolveur DNS (`ipconfig /displaydns`) — optionnel, modèle Windows. */
+export interface WindowsDnsCacheEntry {
+  readonly name: string;
+  readonly type: string;
+  readonly value: string;
+  readonly ttlRemainingSec: number;
 }
 
 /** Entrée de la table ARP (`arp -a`) — optionnel, modèle Windows. */
@@ -429,6 +453,33 @@ export interface WindowsNetConfigApi {
   queryDnsServer(
     server: string, name: string, qtype: string, timeoutMs?: number,
   ): Promise<import("@/network/dns/wire/DnsMessage").DnsMessage | null>;
+
+  /** Passerelle par défaut IPv4/IPv6 — `null` si aucune (`ipconfig`). */
+  defaultGateway(): string | null;
+  defaultGateway6(): string | null;
+  /** Suffixe DNS principal de la machine (`ipconfig /all`). */
+  primaryDnsSuffix(): string;
+  /** Serveurs DNS statiques configurés sur une interface (hors bail DHCP) — `ipconfig` (mode non-DHCP). */
+  staticDnsServers(ifName: string): readonly string[];
+  /** Bail DHCPv4 actif sur l'interface, s'il y en a un — `ipconfig /all`, `/release`, `/renew`. */
+  dhcpLease(ifName: string): WindowsDhcpLease | null;
+  /** Libère le bail DHCPv4 de l'interface, journalise l'évènement DHCP et réinitialise l'état du client à `INIT` (`ipconfig /release`). */
+  releaseLease(ifName: string): void;
+  /** Redemande un bail DHCPv4 sur l'interface, synchrone côté simulation (`ipconfig /renew`). */
+  requestLease(ifName: string): void;
+  /** Relance la découverte des serveurs DHCP joignables avant un `/renew` (topologie déjà câblée). */
+  autoDiscoverDhcpServers(): void;
+  /** Libère les adresses IPv6 dynamiques (SLAAC/DHCPv6) d'une interface — renvoie les adresses effectivement libérées (`ipconfig /release6`) ; journalise l'évènement DHCP en interne. */
+  releaseDynamicIPv6(ifName: string): readonly string[];
+  /** Resollicite un routeur IPv6 sur l'interface pour un nouveau préfixe SLAAC (`ipconfig /renew6`). */
+  sendRouterSolicitation(ifName: string): void;
+  /** Vendor Class ID DHCP (option 60) affiché/positionné — `isV6` distingue `/showclassid[6]`/`/setclassid[6]`. */
+  classId(ifName: string, isV6: boolean): string | null;
+  setClassId(ifName: string, isV6: boolean, classId: string | null): void;
+  /** Vide le cache résolveur DNS (`ipconfig /flushdns`). */
+  flushDnsCache(): void;
+  /** Entrées actives du cache résolveur DNS, déjà purgées des entrées expirées (`ipconfig /displaydns`). */
+  dnsCacheEntries(): readonly WindowsDnsCacheEntry[];
 }
 
 /** Un écho ICMP individuel (`ping`) — optionnel, modèle Windows. */
