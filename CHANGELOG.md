@@ -46,9 +46,57 @@ régression. Test jetable confirmant le refus sur poste client (2/2).
 Suites cmd-netsh/netsh/consistency (259 tests) sans régression (4 échecs
 IPsec ordre-dépendants pré-existants, déjà documentés).
 
-## Windows — Phase 19 : migration `netsh` — contexte `advfirewall`
+## Convergence de branche : Windows Server (rôles FSMO) + Windows Phase 19 (`netsh advfirewall`)
 
 **État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
+
+Deux lots de travail parallèles sur la même branche, fusionnés dans ce
+commit — l'un sur le cœur Windows Server (contrôleur de domaine),
+l'autre sur le pont Windows `netsh`, sans recouvrement de fichiers en
+dehors de `CHANGELOG.md`.
+
+### Windows Server — modélise les rôles FSMO
+
+Nouveau chantier (contrôleur de domaine), au-delà des deux lots de
+suivi de l'audit initial : jusqu'ici aucun concept de rôle FSMO
+n'existait (Schema Master, Domain Naming Master, RID Master, PDC
+Emulator, Infrastructure Master) — un vrai trou par rapport à AD réel,
+non documenté comme hors-périmètre par les PRD.
+
+Les trois rôles de portée domaine (RID Master, PDC Emulator,
+Infrastructure Master) sont modélisés comme de simples attributs sur
+l'entrée racine du domaine (nouveau `ad/fsmo/FsmoRoles.ts`, 48 lignes,
+même schéma "sous-registre composé par référence" que `GpoStore`/
+`PsoStore`) — ce qui les fait répliquer vers les autres DC du même
+domaine via le mécanisme de réplication déjà existant, sans plomberie
+supplémentaire : un DC ajouté via `Install-ADDSDomainController` les
+récupère dans sa synchro initiale comme n'importe quel autre attribut
+de la racine du domaine. Les deux rôles de portée forêt (Schema
+Master, Domain Naming Master) vivent sur `Forest` (partagé par
+référence entre domaines d'une même forêt — même simplification déjà
+en place pour le `SchemaValidator` partagé).
+
+Premier DC d'une forêt/d'un domaine enfant : détient tous les rôles
+pertinents à sa portée (comportement par défaut réel de DCPromo). DC
+additionnel (`Install-ADDSDomainController`) : n'en détient aucun par
+défaut, les hérite via la réplication initiale.
+
+`WindowsServer.getFsmoRoleOwner`/`seizeFsmoRole` (déclaratif local,
+`-Force`) plus `transferFsmoRoleTo` (transfert "gracieux", rôles de
+portée domaine uniquement) — ce dernier extrait dans un nouveau client
+dédié `windows/domain/FsmoTransferClient.ts` sur le même modèle que
+`DomainJoinClient`/`GpoPullClient` : dialogue réel avec le détenteur
+actuel via TCP/389, un vrai `ModifyRequest` LDAP enregistrant le
+nouveau propriétaire — pas de raccourci inter-appareils.
+
+**Validation** : six nouveaux tests dans `ad-forest.test.ts`
+(attribution par défaut forêt-racine/domaine-enfant, `null` hors DC/
+forêt, seize local visible immédiatement des deux côtés pour un rôle
+de forêt partagé, transfert réel réussi et échec propre si le
+détenteur est injoignable) + suite complète AD/forêt/schéma (5
+fichiers), tout au vert. Typecheck et lint ciblés propres.
+
+### Windows — Phase 19 : migration `netsh` — contexte `advfirewall`
 
 Cinquième tranche de `netsh` (voir Phases 15-18). Le contexte
 `advfirewall` (`firewall add/delete/show rule`, `reset`) diffère des

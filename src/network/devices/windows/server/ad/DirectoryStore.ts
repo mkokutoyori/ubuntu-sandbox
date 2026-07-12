@@ -30,6 +30,7 @@ import type { AttributeSchema, ObjectClassSchema, SchemaOpResult } from './schem
 import { TrustRegistry, type TrustDirection, type TrustOpResult, type TrustInfo, type TrustRecord } from './forest/TrustRelationship';
 import { GpoStore } from './gpo/GpoStore';
 import { PsoStore } from './pso/PsoStore';
+import { DomainFsmoRoles, type DomainFsmoRole } from './fsmo/FsmoRoles';
 
 export interface DirOpResult { ok: boolean; message: string }
 
@@ -80,6 +81,7 @@ export class DirectoryStore {
   private readonly trustRegistry: TrustRegistry;
   private readonly gpoStore: GpoStore;
   private readonly psoStore: PsoStore;
+  private readonly fsmoRoles: DomainFsmoRoles;
 
   /**
    * `opts.skipSeed` (PRD-Windows-Server-Advanced.md §5 P5): an additional
@@ -109,6 +111,7 @@ export class DirectoryStore {
     this.trustRegistry = new TrustRegistry(this.tree);
     this.gpoStore = new GpoStore(this.tree);
     this.psoStore = new PsoStore(this.tree);
+    this.fsmoRoles = new DomainFsmoRoles(this.tree, rootDn);
     if (!opts.skipSeed) {
       // A shared validator (PRD §5 P8 — a child domain joining an existing
       // forest) is already seeded by its forest root; seeding again would
@@ -253,6 +256,13 @@ export class DirectoryStore {
     const user = this.findUserEntry(userSam);
     return user ? this.psoStore.effectivePasswordPolicyFor(user) : null;
   }
+
+  // ─── FSMO roles (domain-wide: RID Master / PDC Emulator / Infrastructure Master) ────
+
+  getFsmoRoleOwner(role: DomainFsmoRole): string | null { return this.fsmoRoles.getOwner(role); }
+  /** Called once by `WindowsServer` right after promoting the first DC of a (forest-root or child) domain — never for an additional DC, which inherits ownership via its initial replication sync instead. */
+  seedFsmoRoles(hostname: string): void { this.fsmoRoles.seedAllTo(hostname); }
+  seizeFsmoRole(role: DomainFsmoRole, newOwnerHostname: string): void { this.fsmoRoles.seize(role, newOwnerHostname); }
 
   // ─── Users ──────────────────────────────────────────────────────────
 

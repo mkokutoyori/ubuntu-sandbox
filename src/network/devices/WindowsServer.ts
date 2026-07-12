@@ -33,10 +33,18 @@ import { WindowsPrintServerRole } from './windows/server/print/PrintServerRole';
 import { randomSessionKey } from '@/network/kerberos/crypto';
 import { dialLdap } from './windows/server/ad/ldap/LdapClient';
 import { pullReplication } from './windows/server/ad/replication/ReplicationSession';
-import { createForest, joinForestAsChildDomain, getForestForDomain, type Forest } from './windows/server/ad/forest/Forest';
+import { createForest, joinForestAsChildDomain, getForestForDomain, type Forest, type ForestFsmoRole } from './windows/server/ad/forest/Forest';
 import { mirroredDirection, type TrustDirection, type TrustInfo, type TrustRecord } from './windows/server/ad/forest/TrustRelationship';
+import { DOMAIN_FSMO_ROLES, type DomainFsmoRole } from './windows/server/ad/fsmo/FsmoRoles';
+import { transferDomainFsmoRole } from './windows/domain/FsmoTransferClient';
 
 export interface AdDsOpResult { ok: boolean; message: string }
+export type FsmoRole = DomainFsmoRole | ForestFsmoRole;
+export interface FsmoOpResult { ok: boolean; message: string }
+
+function isDomainFsmoRole(role: FsmoRole): role is DomainFsmoRole {
+  return (DOMAIN_FSMO_ROLES as readonly string[]).includes(role);
+}
 
 /** Real DC promotion auto-creates this site (PRD-Windows-Server-Advanced.md §5 P6) — matches the name `WinDomainDiag.cmdNltest` has always reported. */
 const DEFAULT_SITE_NAME = 'Default-First-Site-Name';
@@ -293,8 +301,9 @@ export class WindowsServer extends WindowsPC {
     this.directoryStore.promoteDomainController(this.getHostname(), safeModeAdminPassword);
     this.directoryStore.ensureKrbtgtPrincipal(randomSessionKey());
     this.directoryStore.newSite(DEFAULT_SITE_NAME);
+    this.directoryStore.seedFsmoRoles(this.getHostname());
     this.isGlobalCatalog = true;
-    createForest(domainName, netbios, this.directoryStore.getSchemaValidatorForSharing());
+    createForest(domainName, netbios, this.directoryStore.getSchemaValidatorForSharing(), this.getHostname());
     this.provisionSysvol(domainName);
     this.registerDcServices();
     this.provisionDomainDnsZone(domainName);
@@ -343,6 +352,7 @@ export class WindowsServer extends WindowsPC {
     this.directoryStore.promoteDomainController(this.getHostname(), safeModeAdminPassword);
     this.directoryStore.ensureKrbtgtPrincipal(randomSessionKey());
     this.directoryStore.newSite(DEFAULT_SITE_NAME);
+    this.directoryStore.seedFsmoRoles(this.getHostname());
     this.isGlobalCatalog = true;
     this.provisionSysvol(newDomainDnsName);
     this.registerDcServices();
@@ -357,6 +367,44 @@ export class WindowsServer extends WindowsPC {
   getForest(): Forest | null {
     if (!this.directoryStore) return null;
     return getForestForDomain(this.directoryStore.dnsName);
+  }
+
+  /** `(Get-ADDomain).RIDMaster`/`PDCEmulator`/`InfrastructureMaster` or `(Get-ADForest).SchemaMaster`/`DomainNamingMaster` — the current holder's hostname, or null if this server isn't a DC (or, for the forest-wide roles, isn't part of a forest). */
+  getFsmoRoleOwner(role: FsmoRole): string | null {
+    if (isDomainFsmoRole(role)) return this.directoryStore?.getFsmoRoleOwner(role) ?? null;
+    return this.getForest()?.getFsmoRoleOwner(role) ?? null;
+  }
+
+  /** `Move-ADDirectoryServerOperationMasterRole -Force` — this DC unilaterally claims the role for itself, without contacting the current holder (disaster-recovery semantics; real AD's own seize doesn't contact it either). */
+  seizeFsmoRole(role: FsmoRole): FsmoOpResult {
+    if (!this.directoryStore) return { ok: false, message: 'This computer is not a domain controller.' };
+    if (isDomainFsmoRole(role)) {
+      this.directoryStore.seizeFsmoRole(role, this.getHostname());
+      return { ok: true, message: '' };
+    }
+    const forest = this.getForest();
+    if (!forest) return { ok: false, message: 'This computer is not part of a forest.' };
+    forest.seizeFsmoRole(role, this.getHostname());
+    return { ok: true, message: '' };
+  }
+
+  /**
+   * `Move-ADDirectoryServerOperationMasterRole` (graceful transfer) —
+   * domain-wide roles only, see `FsmoTransferClient`'s header for why
+   * Schema Master/Domain Naming Master use `seizeFsmoRole` instead.
+   * Records the same change locally once the remote write succeeds, so
+   * the result is immediately observable — matching what ordinary
+   * multi-master replication would converge to regardless.
+   */
+  transferFsmoRoleTo(role: DomainFsmoRole, currentHolderDcAddress: string, credentialUser: string, credentialPassword: string): FsmoOpResult {
+    if (!this.directoryStore) return { ok: false, message: 'This computer is not a domain controller.' };
+    const result = transferDomainFsmoRole({
+      tcpStack: this.getTcpStack(), role, currentHolderDcAddress,
+      domainRootDn: this.directoryStore.getDomainDn(), credentialUser, credentialPassword,
+      newOwnerHostname: this.getHostname(),
+    });
+    if (result.ok) this.directoryStore.seizeFsmoRole(role, this.getHostname());
+    return result;
   }
 
   /**
