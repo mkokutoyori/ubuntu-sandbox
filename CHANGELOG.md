@@ -5,6 +5,35 @@ progressive par équipement. Un push = une entrée = une fonctionnalité
 complète et testée (voir `CLAUDE.md` / le framework de migration pour les
 principes directeurs).
 
+## Windows Phase 25 : migration de `dnscmd` vers command-kernel
+
+**État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
+
+Migration de `dnscmd` (administration cmd du serveur DNS) — jusqu'ici non
+dispatché (`'dnscmd' n'est pas reconnu…`) — vers le socle `command-kernel`.
+
+- Nouvelle capacité optionnelle `dnsServer?: DnsServerAdminApi` sur
+  `MachineApi` : miroir cmd de la surface du module PowerShell `DnsServer`
+  (zones primaires, enregistrements A/AAAA/CNAME/PTR/MX/SRV, suppression,
+  impression de zone, énumération, redirecteurs). Types
+  `DnsServerZoneRecord` / `DnsSrvRecordData` au contrat.
+- `WindowsMachineApi` expose `dnsServer` en **getter live** (jamais
+  mémoïsé) car le rôle DNS peut être installé après la construction du
+  shell ; `null` tant que le rôle n'est pas installé.
+- Commande `DnscmdCommand` : parsing des sous-commandes `/ZoneAdd`,
+  `/RecordAdd`, `/RecordDelete`, `/ZonePrint`, `/EnumZones`,
+  `/ResetForwarders`, saut du nom de serveur optionnel, aide réelle
+  complète en `usage`, formatage console (codes `status = …`) porté côté
+  commande.
+- Frontière client/serveur respectée : sans le rôle DNS installé (donc sur
+  un simple poste), `machine.dnsServer` est absent et `dnscmd` répond
+  « not recognized » — aucune fonctionnalité serveur exposée. Fichier mort
+  `WinDnscmd.ts` supprimé (migrate-then-delete).
+
+Validation : les 3 tests `dnscmd` de `windows-server-dns.test.ts` passent
+(21/21, contre 18/21 auparavant) ; aucune régression sur les suites DNS
+voisines (`windows-dns-server-role`, `windows-dns-cache` : 24/24).
+
 ## Windows Server — expiration de compte (`Set-ADAccountExpiration`)
 
 L'expiration de compte était totalement absente jusqu'ici. `DirectoryStore`

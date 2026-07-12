@@ -61,6 +61,9 @@ import {
   DomainControllerDiagnostics,
   KerberosCachedTicket,
   DomainTrustDirection,
+  DnsServerAdminApi,
+  DnsServerZoneRecord,
+  DnsSrvRecordData,
   WindowsHttpStore,
   WindowsIpsecDynamicSettings,
   WindowsIpsecFilter,
@@ -200,6 +203,7 @@ export interface WindowsMachineApiDeps {
   readonly dynamicFirewallRules: FirewallRuleMap;
   getDhcpServerRole(): DhcpServerRoleLike | null;
   getNpsRole(): NpsRoleLike | null;
+  getDnsServerRole(): DnsServerRoleLike | null;
   eventLogEntries(logName: string): readonly WindowsEventLogEntry[] | null;
   dhcpEventLog(): readonly string[];
   syncDhcpEvents(): void;
@@ -1212,6 +1216,45 @@ interface DhcpServerRoleLike {
   addReservation(scopeName: string, ipAddress: string, clientId: string): WindowsServerOpResult;
 }
 
+/** Sous-ensemble structurel de `WindowsDnsServerRole` requis par `dnscmd` (délégué à l'identique). */
+interface DnsServerRoleLike {
+  addPrimaryZone(name: string): WindowsServerOpResult;
+  addARecord(zone: string, node: string, ipv4: string): WindowsServerOpResult;
+  addAaaaRecord(zone: string, node: string, ipv6: string): WindowsServerOpResult;
+  addCnameRecord(zone: string, node: string, hostNameAlias: string): WindowsServerOpResult;
+  addPtrRecord(zone: string, node: string, ptrDomainName: string): WindowsServerOpResult;
+  addMxRecord(zone: string, node: string, preference: number, mailExchange: string): WindowsServerOpResult;
+  addSrvRecord(zone: string, node: string, data: { priority: number; weight: number; port: number; target: string }): WindowsServerOpResult;
+  removeRecord(zone: string, node: string, type: string): WindowsServerOpResult;
+  getRecords(zone: string): readonly { name: string; type: string; ttl: number; text: string }[] | null;
+  listZones(): readonly { name: string }[];
+  setForwarders(addresses: readonly string[]): WindowsServerOpResult;
+}
+
+class WindowsDnsServerApiImpl implements DnsServerAdminApi {
+  constructor(private readonly role: DnsServerRoleLike) {}
+  addPrimaryZone(zone: string): WindowsServerOpResult { return this.role.addPrimaryZone(zone); }
+  addARecord(zone: string, node: string, ipv4: string): WindowsServerOpResult { return this.role.addARecord(zone, node, ipv4); }
+  addAaaaRecord(zone: string, node: string, ipv6: string): WindowsServerOpResult { return this.role.addAaaaRecord(zone, node, ipv6); }
+  addCnameRecord(zone: string, node: string, target: string): WindowsServerOpResult { return this.role.addCnameRecord(zone, node, target); }
+  addPtrRecord(zone: string, node: string, ptrDomain: string): WindowsServerOpResult { return this.role.addPtrRecord(zone, node, ptrDomain); }
+  addMxRecord(zone: string, node: string, preference: number, mailExchange: string): WindowsServerOpResult {
+    return this.role.addMxRecord(zone, node, preference, mailExchange);
+  }
+  addSrvRecord(zone: string, node: string, data: DnsSrvRecordData): WindowsServerOpResult {
+    return this.role.addSrvRecord(zone, node, { priority: data.priority, weight: data.weight, port: data.port, target: data.target });
+  }
+  removeRecord(zone: string, node: string, type: string): WindowsServerOpResult { return this.role.removeRecord(zone, node, type); }
+  getRecords(zone: string): readonly DnsServerZoneRecord[] | null {
+    const records = this.role.getRecords(zone);
+    return records ? records.map((r) => ({ name: r.name, ttl: r.ttl, type: r.type, text: r.text })) : null;
+  }
+  listZones(): readonly { readonly name: string }[] {
+    return this.role.listZones().map((z) => ({ name: z.name }));
+  }
+  setForwarders(addresses: readonly string[]): WindowsServerOpResult { return this.role.setForwarders(addresses); }
+}
+
 class WindowsDhcpServerApiImpl implements WindowsDhcpServerApi {
   constructor(private readonly role: DhcpServerRoleLike) {}
   addScope(name: string, startRange: string, endRange: string, subnetMask: string): WindowsServerOpResult {
@@ -1754,6 +1797,18 @@ export class WindowsMachineApi implements MachineApi {
   readonly hardware: CkHardwareProfile;
   private readonly bootedAtFn: () => Date | null;
   private readonly nowFn: () => Date;
+  private readonly getDnsServerRoleFn: () => DnsServerRoleLike | null;
+
+  /**
+   * `dnscmd` — administration du serveur DNS. Getter live (jamais mémoïsé)
+   * car le rôle DNS peut être installé après la construction du shell ;
+   * `null` tant que le rôle n'est pas installé (donc « not recognized » sur
+   * un simple poste, sans exposition de fonctionnalité serveur).
+   */
+  get dnsServer(): DnsServerAdminApi | null {
+    const role = this.getDnsServerRoleFn();
+    return role ? new WindowsDnsServerApiImpl(role) : null;
+  }
 
   constructor(deps: WindowsMachineApiDeps) {
     this.fs = new WindowsFileSystemApi(deps.fs);
@@ -1807,6 +1862,7 @@ export class WindowsMachineApi implements MachineApi {
     };
     this.bootedAtFn = deps.bootedAt;
     this.nowFn = deps.now;
+    this.getDnsServerRoleFn = deps.getDnsServerRole;
   }
 
   bootedAt(): Date | null {

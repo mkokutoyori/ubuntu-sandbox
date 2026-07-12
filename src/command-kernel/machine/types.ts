@@ -368,6 +368,42 @@ export interface DomainControllerDiagnostics {
 /** Sens d'une relation d'approbation inter-domaines (`netdom trust /Direction:`). */
 export type DomainTrustDirection = 'Inbound' | 'Outbound' | 'Bidirectional';
 
+/** Un enregistrement de zone DNS tel que listé par `dnscmd /ZonePrint`. */
+export interface DnsServerZoneRecord {
+  readonly name: string;
+  readonly ttl: number;
+  readonly type: string;
+  readonly text: string;
+}
+
+/** Données d'un enregistrement SRV (`dnscmd /RecordAdd … SRV`). */
+export interface DnsSrvRecordData {
+  readonly priority: number;
+  readonly weight: number;
+  readonly port: number;
+  readonly target: string;
+}
+
+/**
+ * Administration du serveur DNS (`dnscmd`) — optionnel, exposé uniquement
+ * quand le rôle DNS Server est installé (donc jamais sur un simple poste :
+ * `dnscmd` y reste « not recognized »). Miroir cmd de la surface du module
+ * PowerShell `DnsServer`.
+ */
+export interface DnsServerAdminApi {
+  addPrimaryZone(zone: string): { ok: boolean; message: string };
+  addARecord(zone: string, node: string, ipv4: string): { ok: boolean; message: string };
+  addAaaaRecord(zone: string, node: string, ipv6: string): { ok: boolean; message: string };
+  addCnameRecord(zone: string, node: string, target: string): { ok: boolean; message: string };
+  addPtrRecord(zone: string, node: string, ptrDomain: string): { ok: boolean; message: string };
+  addMxRecord(zone: string, node: string, preference: number, mailExchange: string): { ok: boolean; message: string };
+  addSrvRecord(zone: string, node: string, data: DnsSrvRecordData): { ok: boolean; message: string };
+  removeRecord(zone: string, node: string, type: string): { ok: boolean; message: string };
+  getRecords(zone: string): readonly DnsServerZoneRecord[] | null;
+  listZones(): readonly { readonly name: string }[];
+  setForwarders(addresses: readonly string[]): { ok: boolean; message: string };
+}
+
 /** Un ticket Kerberos en cache (`klist`) — modèle Windows/AD. */
 export interface KerberosCachedTicket {
   readonly clientPrincipal: string;
@@ -1119,6 +1155,8 @@ export interface MachineApi {
   readonly eventLog?: EventLogApi;
   /** Appartenance à un domaine AD (`gpupdate`, `gpresult`) — optionnel, pas un concept universel. */
   readonly domain?: DomainApi;
+  /** Administration du serveur DNS (`dnscmd`) — optionnel, présent seulement quand le rôle DNS Server est installé. */
+  readonly dnsServer?: DnsServerAdminApi;
   /** Masque de permissions par défaut (`umask`) — optionnel, pas un concept universel. */
   readonly permissions?: PermissionsApi;
   now(): Date;

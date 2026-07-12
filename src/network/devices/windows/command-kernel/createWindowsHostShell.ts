@@ -22,6 +22,7 @@ import { KlistCommand } from './commands/Klist';
 import { NltestCommand } from './commands/Nltest';
 import { DcdiagCommand } from './commands/Dcdiag';
 import { NetdomCommand } from './commands/Netdom';
+import { DnscmdCommand } from './commands/Dnscmd';
 import { HostnameCommand } from './commands/Hostname';
 import { IcaclsCommand } from './commands/Icacls';
 import { IpconfigCommand } from './commands/Ipconfig';
@@ -131,6 +132,7 @@ export function createWindowsHostShell(deps: WindowsMachineApiDeps): { registry:
   registry.register(() => new NltestCommand());
   registry.register(() => new DcdiagCommand());
   registry.register(() => new NetdomCommand());
+  registry.register(() => new DnscmdCommand());
 
   const interpreter = new CmdInterpreter(registry, machine);
 

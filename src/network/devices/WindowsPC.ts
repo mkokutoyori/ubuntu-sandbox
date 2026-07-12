@@ -1907,6 +1907,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
         dynamicFirewallRules: this.dynamicFirewallRules,
         getDhcpServerRole: () => this.getDhcpServerRole(),
         getNpsRole: () => this.getNpsRole(),
+        getDnsServerRole: () => this.getDnsServerRole(),
         eventLogEntries: (logName) => this.eventLog.getEntriesStructured(logName, {}),
         dhcpEventLog: () => this.dhcpEventLog,
         syncDhcpEvents: () => this.syncDHCPEvents(),
