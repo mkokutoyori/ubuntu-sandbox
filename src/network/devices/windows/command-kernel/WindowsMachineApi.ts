@@ -69,6 +69,8 @@ import {
   PrintClientApi,
   CertificateServicesApi,
   CertificateIssuance,
+  RdpSessionsApi,
+  RdpSessionInfo,
   WindowsHttpStore,
   WindowsIpsecDynamicSettings,
   WindowsIpsecFilter,
@@ -225,6 +227,8 @@ export interface WindowsMachineApiDeps {
   lprSubmitJob(server: string, queue: string, jobName: string, content: Uint8Array): { ok: boolean; error?: string };
   certificateAuthorityInstalled(): boolean;
   submitCertRequest(subject: string, template: string, eku: string | undefined): CertificateIssuance;
+  rdpSessionList(): readonly RdpSessionInfo[];
+  rdpSessionLogoff(sessionId: number): boolean;
   locateDomainController(domain: string): DomainControllerLocation;
   dcDiagnostics(): DomainControllerDiagnostics;
   kerberosTickets(): readonly KerberosCachedTicket[];
@@ -1830,6 +1834,16 @@ class WindowsCertificateServicesApiImpl implements CertificateServicesApi {
   }
 }
 
+class WindowsRdpSessionsApiImpl implements RdpSessionsApi {
+  constructor(private readonly deps: Pick<WindowsMachineApiDeps, 'rdpSessionList' | 'rdpSessionLogoff'>) {}
+  list(): readonly RdpSessionInfo[] {
+    return this.deps.rdpSessionList();
+  }
+  logoff(sessionId: number): boolean {
+    return this.deps.rdpSessionLogoff(sessionId);
+  }
+}
+
 export class WindowsMachineApi implements MachineApi {
   readonly fs: FileSystemApi;
   readonly proc: ProcessApi;
@@ -1854,6 +1868,7 @@ export class WindowsMachineApi implements MachineApi {
   readonly runAs: RunAsApi;
   readonly licensing: LicensingApi;
   readonly printClient: PrintClientApi;
+  readonly rdpSessions: RdpSessionsApi;
   readonly hostname: string;
   readonly os: OsIdentity;
   readonly hardware: CkHardwareProfile;
@@ -1909,6 +1924,7 @@ export class WindowsMachineApi implements MachineApi {
     this.runAs = new WindowsRunAsApiImpl(deps);
     this.licensing = new WindowsLicensingApiImpl(deps);
     this.printClient = new WindowsPrintClientApiImpl(deps);
+    this.rdpSessions = new WindowsRdpSessionsApiImpl(deps);
     this.hostname = deps.hostname;
     this.os = {
       name: deps.identity.os.name,

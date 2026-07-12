@@ -81,7 +81,30 @@ commit — l'un sur le cœur Windows Server (contrôleur de domaine),
 l'autre sur le pont Windows `command-kernel`, sans recouvrement de
 fichiers en dehors de `CHANGELOG.md`.
 
-### Windows Phase 29 : migration de `certreq` / `certutil` vers command-kernel
+### Windows Phase 30 : migration de `query session` / `qwinsta` / `logoff` / `rwinsta` vers command-kernel
+
+**État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
+
+Migration des utilitaires de session Bureau à distance (`query session`,
+`qwinsta`, `logoff`, `rwinsta`) — jusqu'ici non dispatchés — vers le socle
+`command-kernel`.
+
+- Nouvelle capacité optionnelle `rdpSessions?: RdpSessionsApi` sur
+  `MachineApi` : `list()` (introspection de la table de sessions RDP) et
+  `logoff(sessionId)` (fermeture). Type `RdpSessionInfo` au contrat. Les
+  sessions RDP vivent sur tout `WindowsPC` (client comme serveur) — pas de
+  frontière serveur ici.
+- Commandes `QueryCommand` (sous-commande `session`), `QwinstaCommand`,
+  `LogoffCommand`, `RwinstaCommand` : parsing, aide en `usage`, mise en
+  page de la table (`SESSIONNAME`/`USERNAME`/`ID`/`STATE`/`TYPE`) et
+  messages (`No session exists for ID …`) portés côté commande via des
+  helpers partagés.
+- Fichier mort `WinRdpCommands.ts` supprimé (migrate-then-delete).
+
+Validation : `rdp-negotiation.test.ts` passe intégralement (5/5, contre
+3/5 auparavant) ; aucune régression.
+
+## Windows Phase 29 : migration de `certreq` / `certutil` vers command-kernel
 
 **État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
 

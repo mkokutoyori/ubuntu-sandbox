@@ -1034,6 +1034,25 @@ export interface PowerApi {
   reboot(): Promise<void>;
 }
 
+/** Une session Bureau à distance (`query session`/`qwinsta`) — modèle Windows. */
+export interface RdpSessionInfo {
+  readonly sessionId: number;
+  readonly userName: string;
+  readonly state: string;
+}
+
+/**
+ * Sessions Bureau à distance (`query session`/`qwinsta`, `logoff`/`rwinsta`)
+ * — optionnel, pas un concept universel. Introspection et fermeture de la
+ * table de sessions RDP (aucun contenu graphique).
+ */
+export interface RdpSessionsApi {
+  /** `query session` / `qwinsta` — sessions RDP établies. */
+  list(): readonly RdpSessionInfo[];
+  /** `logoff` / `rwinsta` — ferme une session ; `false` si l'ID n'existe pas. */
+  logoff(sessionId: number): boolean;
+}
+
 /** Résultat d'une demande de certificat (`certreq -submit`) — modèle Windows/AD CS. */
 export interface CertificateIssuance {
   readonly ok: boolean;
@@ -1230,6 +1249,8 @@ export interface MachineApi {
   readonly printClient?: PrintClientApi;
   /** Services de certificats (`certreq`/`certutil`) — optionnel, présent seulement quand le rôle AD CS est installé. */
   readonly certificateServices?: CertificateServicesApi;
+  /** Sessions Bureau à distance (`query session`, `logoff`) — optionnel, pas un concept universel. */
+  readonly rdpSessions?: RdpSessionsApi;
   /** Masque de permissions par défaut (`umask`) — optionnel, pas un concept universel. */
   readonly permissions?: PermissionsApi;
   now(): Date;
