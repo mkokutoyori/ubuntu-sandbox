@@ -5,6 +5,44 @@ progressive par équipement. Un push = une entrée = une fonctionnalité
 complète et testée (voir `CLAUDE.md` / le framework de migration pour les
 principes directeurs).
 
+## Windows Server — groupes de sécurité intégrés (`Administrators`, `Account Operators`, etc.)
+
+Seuls Domain Admins/Domain Users/Domain Computers étaient semés
+jusqu'ici. `seedDefaults` sème désormais 8 groupes intégrés
+supplémentaires (`Administrators`, `Account Operators`, `Backup
+Operators`, `Server Operators`, `Print Operators`, `Cert Publishers`,
+`Group Policy Creator Owners`, `DnsAdmins`), portée `DomainLocal`.
+`Administrator` devient membre d'`Administrators` en plus de Domain
+Admins/Domain Users.
+
+**Simplification documentée** : AD réel place la plupart de ces groupes
+dans un conteneur `CN=Builtin` dédié, sous des SID bien connus non
+relatifs au domaine (`S-1-5-32-544` pour Administrators, etc.) —
+`formatObjectSid` de ce simulateur ne modélise que des RID relatifs au
+domaine, donc ces groupes sont semés dans `CN=Users` avec des SID
+ordinaires du pool de RID local, comme tout autre objet ici. Enterprise
+Admins/Schema Admins (niveau forêt) restent délibérément hors périmètre.
+
+`SdProp.ts`'s `PROTECTED_GROUPS` passe de `['Domain Admins']` à
+`['Domain Admins', 'Administrators', 'Account Operators', 'Backup
+Operators', 'Server Operators', 'Print Operators']` — une passe SDProp
+marque désormais aussi les membres de ces groupes fraîchement protégés.
+
+**Deux assertions à liste exacte corrigées** dans
+`ad-directory-store.test.ts` (« listGroups includes seeded and created
+groups », « Administrator's memberOf reflects seeded group
+membership ») — mécaniquement affectées par les 8 nouveaux groupes et
+la nouvelle appartenance d'Administrator.
+
+**Validation** : nouveau `ad-builtin-groups.test.ts` (5 tests) —
+existence et portée `DomainLocal` de chaque groupe intégré,
+appartenance d'Administrator, un utilisateur ordinaire n'y appartient
+pas par défaut, SDProp marque les membres d'Account Operators/Backup
+Operators/Server Operators/Print Operators. Suite élargie (9 fichiers,
+verrouillage/politique de mot de passe/expiration/forêt/GPO) : 69/69 au
+vert après correction des deux assertions. Typecheck et lint ciblés
+propres.
+
 ## Convergence de branche : Windows Server (expiration de mot de passe) + Windows Phases 25-27 (`dnscmd`/`runas`/`slmgr`) + correctif `whoami`
 
 **État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**

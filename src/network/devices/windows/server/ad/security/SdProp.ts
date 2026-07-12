@@ -12,8 +12,10 @@
 import { DirectoryTree, type DirectoryEntry } from '../ldap/DirectoryTree';
 import { parseDN, formatDN } from '../ldap/LdapDN';
 
-/** Groups real AD's own AdminSDHolder template protects — the subset this simulator actually seeds by default. */
-export const PROTECTED_GROUPS: readonly string[] = ['Domain Admins'];
+/** Groups real AD's own AdminSDHolder template protects — the subset this simulator actually seeds by default (Enterprise Admins/Schema Admins are forest-level and not currently seeded). */
+export const PROTECTED_GROUPS: readonly string[] = [
+  'Domain Admins', 'Administrators', 'Account Operators', 'Backup Operators', 'Server Operators', 'Print Operators',
+];
 
 function firstOf(values: string[] | undefined): string { return values?.[0] ?? ''; }
 

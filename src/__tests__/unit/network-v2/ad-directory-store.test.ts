@@ -38,7 +38,7 @@ describe('DirectoryStore — seeded defaults', () => {
 
   it("Administrator's memberOf reflects seeded group membership", () => {
     const s = store();
-    expect(s.getUser('Administrator')?.memberOf.sort()).toEqual(['Domain Admins', 'Domain Users'].sort());
+    expect(s.getUser('Administrator')?.memberOf.sort()).toEqual(['Domain Admins', 'Domain Users', 'Administrators'].sort());
   });
 });
 
@@ -205,7 +205,11 @@ describe('DirectoryStore — groups', () => {
     const s = store();
     s.newGroup('Engineers');
     const sams = s.listGroups().map(g => g.sam).sort();
-    expect(sams).toEqual(['Domain Admins', 'Domain Computers', 'Domain Users', 'Engineers'].sort());
+    expect(sams).toEqual([
+      'Domain Admins', 'Domain Computers', 'Domain Users', 'Engineers',
+      'Administrators', 'Account Operators', 'Backup Operators', 'Server Operators', 'Print Operators',
+      'Cert Publishers', 'Group Policy Creator Owners', 'DnsAdmins',
+    ].sort());
   });
 });
 

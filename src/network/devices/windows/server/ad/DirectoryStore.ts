@@ -70,6 +70,12 @@ const WELL_KNOWN_RID = {
 const RID_MASTER_LOCAL_POOL_START = 1000;
 const RID_MASTER_LOCAL_POOL_COUNT = 100_000;
 
+/** Real AD's other well-known built-in security groups (a representative subset — see `seedDefaults`'s own comment for the `CN=Builtin`/well-known-SID simplification). */
+const BUILTIN_GROUPS = [
+  'Administrators', 'Account Operators', 'Backup Operators', 'Server Operators', 'Print Operators',
+  'Cert Publishers', 'Group Policy Creator Owners', 'DnsAdmins',
+] as const;
+
 function generateDomainSid(): string {
   const rand = () => Math.floor(Math.random() * 0xFFFFFFFF);
   return `S-1-5-21-${rand()}-${rand()}-${rand()}`;
@@ -265,12 +271,23 @@ export class DirectoryStore {
     this.createGroupEntry('Domain Admins', 'Global', this.usersOuDn, WELL_KNOWN_RID.DomainAdmins);
     this.createGroupEntry('Domain Users', 'Global', this.usersOuDn, WELL_KNOWN_RID.DomainUsers);
     this.createGroupEntry('Domain Computers', 'Global', this.usersOuDn, WELL_KNOWN_RID.DomainComputers);
+    /**
+     * Real AD places these in a dedicated `CN=Builtin` container under
+     * well-known, non-domain-relative SIDs (`S-1-5-32-544` for
+     * Administrators, etc.) — this simulator's `formatObjectSid` only
+     * models domain-relative RIDs, so these are seeded in `CN=Users`
+     * with ordinary local-RID-pool SIDs instead, a deliberate
+     * simplification (same container/SID scheme every other object here
+     * already uses).
+     */
+    for (const builtin of BUILTIN_GROUPS) this.createGroupEntry(builtin, 'DomainLocal', this.usersOuDn);
 
     this.createUserEntry('Administrator', {
       password: adminPassword, fullName: 'Administrator', containerDn: this.usersOuDn, wellKnownRid: WELL_KNOWN_RID.Administrator, passwordNeverExpires: true,
     });
     this.addGroupMember('Domain Admins', 'Administrator');
     this.addGroupMember('Domain Users', 'Administrator');
+    this.addGroupMember('Administrators', 'Administrator');
   }
 
   // ─── Organizational Units ───────────────────────────────────────────
