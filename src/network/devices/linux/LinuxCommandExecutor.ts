@@ -4162,7 +4162,6 @@ export class LinuxCommandExecutor {
         return { output: r.output, exitCode: r.exitCode };
       }
       case 'rev': return { output: (stdin || '').split('\n').map(l => l.split('').reverse().join('')).join('\n'), exitCode: 0 };
-      case 'basename': return { output: (args[0] || '').split('/').pop() || '', exitCode: 0 };
 
       // Non-interactive fallbacks for commands the GUI normally routes to
       // overlays (editors) or sub-shells (Oracle CLIs). When invoked via
@@ -4255,7 +4254,6 @@ export class LinuxCommandExecutor {
           exitCode: 0,
         };
 
-      case 'dirname': { const p = args[0] || ''; const idx = p.lastIndexOf('/'); return { output: idx > 0 ? p.slice(0, idx) : (idx === 0 ? '/' : '.'), exitCode: 0 }; }
       case 'mktemp': return { output: '/tmp/tmp.' + Math.random().toString(36).slice(2, 12), exitCode: 0 };
 
       default: {

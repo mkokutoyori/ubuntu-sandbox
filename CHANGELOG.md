@@ -5,6 +5,31 @@ progressive par équipement. Un push = une entrée = une fonctionnalité
 complète et testée (voir `CLAUDE.md` / le framework de migration pour les
 principes directeurs).
 
+## Linux — Phase 5 : `basename` / `dirname`
+
+**État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
+
+**Commandes migrées** : `basename NOM [SUFFIXE]` / `basename -a [-s SUFFIXE]
+NOM...` et `dirname NOM...` — manipulation de chemin purement textuelle
+(aucun accès au VFS), portée par les commandes command-kernel
+`BasenameCommand` / `DirnameCommand`.
+
+- Sémantique POSIX complète (là où le legacy était simpliste) : les slashs
+  finaux sont ignorés (`basename /usr/` → `usr`, `dirname /usr/bin/` →
+  `/usr`), un chemin entièrement composé de slashs donne `/`, et les
+  formes multiples (`-a`, `-s SUFFIXE`, séparateur NUL `-z`) sont gérées —
+  aucune capacité `MachineApi` requise (chaînes pures).
+- **Legacy supprimé** : les `case 'basename'` et `case 'dirname'` retirés
+  de `LinuxCommandExecutor.dispatch()` — aucun autre appelant, absents du
+  framework `LinuxCommand`. Les deux restent dans la liste des commandes
+  connues (résolution `which`/`command -v` inchangée).
+
+Validation : les tests `basename`/`dirname` de
+`linux-commands-and-oracle-tools.test.ts` passent, cohérence stricte
+inter-machines `ssh-lan-strict-coherence.test.ts` (SC34) verte ; aucune
+régression sur les suites Linux voisines (command-kernel, vfs-path,
+availability, bash-scripts, sftp — 227 tests).
+
 ## Windows Server — application du bit `SMARTCARD_REQUIRED` (`userAccountControl`)
 
 Totalement absent jusqu'ici. `checkPassword` (bind simple LDAP, même

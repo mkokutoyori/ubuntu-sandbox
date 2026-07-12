@@ -1,8 +1,10 @@
 import { Interpreter } from '@/command-kernel/interpreter';
 import { registerCoreCommands } from '@/command-kernel/register-core-commands';
 import { CommandRegistry } from '@/command-kernel/registry/command-registry';
+import { BasenameCommand } from './commands/Basename';
 import { CatCommand } from './commands/Cat';
 import { CdCommand } from './commands/Cd';
+import { DirnameCommand } from './commands/Dirname';
 import { ChgrpCommand } from './commands/Chgrp';
 import { ChmodCommand } from './commands/Chmod';
 import { ChownCommand } from './commands/Chown';
@@ -66,6 +68,8 @@ export function createLinuxHostShell(deps: LinuxMachineApiDeps): Interpreter {
   registry.register(() => new UmaskCommand());
   registry.register(() => new ReadlinkCommand());
   registry.register(() => new RealpathCommand());
+  registry.register(() => new BasenameCommand());
+  registry.register(() => new DirnameCommand());
 
   return new Interpreter(registry, machine);
 }
