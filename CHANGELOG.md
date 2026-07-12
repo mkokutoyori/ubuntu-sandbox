@@ -5,6 +5,30 @@ progressive par équipement. Un push = une entrée = une fonctionnalité
 complète et testée (voir `CLAUDE.md` / le framework de migration pour les
 principes directeurs).
 
+## Linux — Phase 6 : `seq`
+
+**État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
+
+**Commande migrée** : `seq [OPTION]... PREMIER [PAS] DERNIER` — génération
+d'une suite de nombres, portée par la commande command-kernel
+`SeqCommand`.
+
+- Le rendu (formats GNU `-w`/`-f`/`-s`/`-t`, précision décimale, pas
+  négatif, largeur égale) reste assuré par le générateur pur **partagé**
+  `runSeq` (`coreutils/SeqGenerator.ts`) — pas de resimulation. `SeqCommand`
+  capte les opérandes bruts (`lenientOptions`, le parsing des options
+  appartient à `runSeq`) et termine la sortie par un saut de ligne dès
+  qu'elle est non vide (comportement GNU, indispensable en pipeline
+  `seq N | wc -l`).
+- **Legacy supprimé** : le `case 'seq'` retiré de
+  `LinuxCommandExecutor.dispatch()` et l'import `runSeq` devenu inutile
+  nettoyé ; `seq` reste dans la liste des commandes connues.
+
+Validation : les tests `seq` de `linux-commands-and-oracle-tools.test.ts`
+passent, cas limites vérifiés (séparateur `-s`, largeur `-w`, pipeline,
+premier négatif, pas) ; cohérence stricte inter-machines verte ; aucune
+régression Linux voisine (143 tests).
+
 ## Linux — Phase 5 : `basename` / `dirname`
 
 **État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**

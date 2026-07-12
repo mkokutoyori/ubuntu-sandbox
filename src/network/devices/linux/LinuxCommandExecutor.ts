@@ -29,7 +29,7 @@ import {
 } from './resolve';
 import { cmdMkfifo } from './LinuxPermCommands';
 import {
-  runTest, runExpr, runSeq, runSleep, runWatch, formatTimes, chooseTimeFormat,
+  runTest, runExpr, runSleep, runWatch, formatTimes, chooseTimeFormat,
   runTail,
   cmdTar, cmdGzip, cmdZip, cmdUnzip, describeArchiveContent,
   type TestFs, type TestEnv, type TailFs, type TailSink, type TailFollowHandle, type TailRunResult,
@@ -4156,10 +4156,6 @@ export class LinuxCommandExecutor {
           return { output: `${rows} ${cols}`, exitCode: 0 };
         }
         return { output: '', exitCode: 0 };
-      }
-      case 'seq': {
-        const r = runSeq(args);
-        return { output: r.output, exitCode: r.exitCode };
       }
       case 'rev': return { output: (stdin || '').split('\n').map(l => l.split('').reverse().join('')).join('\n'), exitCode: 0 };
 

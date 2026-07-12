@@ -23,6 +23,7 @@ import { ReadlinkCommand } from './commands/Readlink';
 import { RealpathCommand } from './commands/Realpath';
 import { RmCommand } from './commands/Rm';
 import { RmdirCommand } from './commands/Rmdir';
+import { SeqCommand } from './commands/Seq';
 import { SortCommand } from './commands/Sort';
 import { StatCommand } from './commands/Stat';
 import { TailCommand } from './commands/Tail';
@@ -70,6 +71,7 @@ export function createLinuxHostShell(deps: LinuxMachineApiDeps): Interpreter {
   registry.register(() => new RealpathCommand());
   registry.register(() => new BasenameCommand());
   registry.register(() => new DirnameCommand());
+  registry.register(() => new SeqCommand());
 
   return new Interpreter(registry, machine);
 }
