@@ -5,6 +5,31 @@ progressive par équipement. Un push = une entrée = une fonctionnalité
 complète et testée (voir `CLAUDE.md` / le framework de migration pour les
 principes directeurs).
 
+## Windows Server — refactor : extraction de `ContactStore` hors de `DirectoryStore.ts`
+
+**Refactor, pas une nouvelle fonctionnalité.** `DirectoryStore.ts` avait
+dépassé les 1000 lignes au fil du lot de 10+ fonctionnalités (discipline
+du projet : pas de fichier au-delà de ~400 lignes, déjà appliquée une
+fois cette session pour `WindowsServer.ts` via l'extraction de
+`DomainControllerOps.ts`). La section Contacts (`newContact`/
+`getContact`/`listContacts` + projection) était la tranche la plus
+proprement isolable — elle ne partage d'état avec le reste de
+`DirectoryStore` que l'arbre LDAP (`tree`) et l'OU `Users` par défaut.
+
+Extraite vers `ad/contact/ContactStore.ts` (même schéma que
+`ManagedServiceAccountStore`/`PasswordReplicationPolicy` : classe
+composée par référence, prenant `tree` + `usersOuDn`, avec ses propres
+petits helpers dupliqués plutôt que d'exporter les helpers internes de
+`DirectoryStore`). `DirectoryStore` ne garde que des méthodes de
+délégation fines ; `newContact` continue de résoudre le conteneur OU
+et d'allouer le RID/objectSid lui-même avant de déléguer.
+
+**Validation** : aucune régression de comportement — `ad-contacts.test.ts`
+(7 tests, écrit contre l'API publique de `DirectoryStore`, donc inchangé
+par ce refactor) plus la suite élargie (verrouillage/expiration/
+groupes/RBCD/réplication/dernière-connexion/politique de mot de passe/
+`ad-directory-store`) : 101/101 au vert. Typecheck et lint ciblés propres.
+
 ## Windows Server — suivi de la dernière connexion (`lastLogonTimestamp`)
 
 Totalement absent jusqu'ici. `checkPassword` (bind simple LDAP, même

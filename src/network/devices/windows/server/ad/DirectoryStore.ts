@@ -35,6 +35,7 @@ import { RidPool } from './fsmo/RidPool';
 import { SdPropEngine } from './security/SdProp';
 import { ManagedServiceAccountStore } from './msa/ManagedServiceAccountStore';
 import { PasswordReplicationPolicy } from './rodc/PasswordReplicationPolicy';
+import { ContactStore } from './contact/ContactStore';
 
 export interface DirOpResult { ok: boolean; message: string }
 
@@ -129,6 +130,7 @@ export class DirectoryStore {
   private nextGlobalRidPoolStart: number | null = null;
   private readonly sdProp: SdPropEngine;
   private readonly msaStore: ManagedServiceAccountStore;
+  private readonly contactStore: ContactStore;
   private readonly readOnly: boolean;
   private readonly prp = new PasswordReplicationPolicy();
 
@@ -177,6 +179,7 @@ export class DirectoryStore {
       : new RidPool(RID_MASTER_LOCAL_POOL_START, RID_MASTER_LOCAL_POOL_COUNT);
     this.sdProp = new SdPropEngine(this.tree);
     this.msaStore = new ManagedServiceAccountStore(this.tree);
+    this.contactStore = new ContactStore(this.tree, this.usersOuDn);
     if (!opts.skipSeed) {
       // A shared validator (PRD §5 P8 — a child domain joining an existing
       // forest) is already seeded by its forest root; seeding again would
@@ -671,44 +674,14 @@ export class DirectoryStore {
       return { ok: false, message: `Cannot find an object with identity: '${opts.ou}'.` };
     }
     const rid = this.localRidPool.allocateNext();
-    const res = this.tree.addEntry(this.cnDn(cn, containerDn), compact({
-      objectClass: ['top', 'person', 'organizationalPerson', 'contact'],
-      cn: [cn],
-      displayName: opts.displayName ? [opts.displayName] : [],
-      mail: opts.mail ? [opts.mail] : [],
-      telephoneNumber: opts.telephoneNumber ? [opts.telephoneNumber] : [],
-      objectSid: rid !== null ? [this.formatObjectSid(rid)] : [],
-    }));
-    return res.ok ? { ok: true, message: '' } : { ok: false, message: 'An object with that name already exists.' };
+    return this.contactStore.newContact(cn, containerDn, {
+      displayName: opts.displayName, mail: opts.mail, telephoneNumber: opts.telephoneNumber,
+      objectSid: rid !== null ? this.formatObjectSid(rid) : undefined,
+    });
   }
 
-  private findContactEntry(cn: string): DirectoryEntry | null {
-    const [entry] = this.tree.search(this.tree.getRootDn(), 'sub', { kind: 'equalityMatch', attr: 'cn', value: cn })
-      .filter(e => hasObjectClass(e, 'contact'));
-    return entry ?? null;
-  }
-
-  getContact(cn: string): AdContact | null {
-    const entry = this.findContactEntry(cn);
-    return entry ? this.projectContact(entry) : null;
-  }
-
-  listContacts(): AdContact[] {
-    return this.tree.allDescendants(this.tree.getRootDn()).filter(e => hasObjectClass(e, 'contact')).map(e => this.projectContact(e));
-  }
-
-  private projectContact(entry: DirectoryEntry): AdContact {
-    const containerDn = entry.dn.slice(1);
-    return {
-      cn: firstOf(entry.attributes.get('cn')),
-      dn: formatDN(entry.dn),
-      ou: dnEqualsOu(containerDn, this.usersOuDn) ? 'Users' : firstOf(entry.attributes.get('ou')) || leafOuName(containerDn),
-      displayName: firstOf(entry.attributes.get('displayname')),
-      mail: firstOf(entry.attributes.get('mail')),
-      telephoneNumber: firstOf(entry.attributes.get('telephonenumber')),
-      objectSid: firstOf(entry.attributes.get('objectsid')),
-    };
-  }
+  getContact(cn: string): AdContact | null { return this.contactStore.getContact(cn); }
+  listContacts(): AdContact[] { return this.contactStore.listContacts(); }
 
   // ─── Groups ─────────────────────────────────────────────────────────
 
