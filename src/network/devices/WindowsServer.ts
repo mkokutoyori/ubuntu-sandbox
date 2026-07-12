@@ -20,6 +20,7 @@ import { WindowsPC } from './WindowsPC';
 import { RoleManager } from './windows/server/RoleManager';
 import { DirectoryStore } from './windows/server/ad/DirectoryStore';
 import { WindowsDnsServerRole } from './windows/server/dns/WindowsDnsServerRole';
+import { provisionDomainDnsZone as provisionDomainDnsZoneAndReverse } from './windows/server/dns/DomainDnsProvisioning';
 import { WindowsDhcpServerRole } from './windows/server/dhcp/WindowsDhcpServerRole';
 import { WindowsNpsRole } from './windows/server/nps/WindowsNpsRole';
 import { WindowsIisRole } from './windows/server/iis/WindowsIisRole';
@@ -518,14 +519,8 @@ export class WindowsServer extends WindowsPC {
   private provisionDomainDnsZone(domainName: string): void {
     const dns = this.getDnsServerRole();
     if (!dns) return;
-    if (dns.getZone(domainName)) return;
-    dns.addPrimaryZone(domainName);
-    const hostname = this.getHostname();
-    const ownIp = this.getInterfaces().map(p => p.getIPAddress()).find((ip): ip is NonNullable<typeof ip> => ip !== null);
-    if (ownIp) dns.addARecord(domainName, hostname, ownIp.toString());
-    const dcTarget = `${hostname}.${domainName}`;
-    dns.addSrvRecord(domainName, '_ldap._tcp.dc._msdcs', { priority: 0, weight: 100, port: 389, target: dcTarget });
-    dns.addSrvRecord(domainName, '_kerberos._tcp.dc._msdcs', { priority: 0, weight: 100, port: 88, target: dcTarget });
+    const ownPort = this.getInterfaces().find(p => p.getIPAddress() !== null);
+    provisionDomainDnsZoneAndReverse(dns, domainName, this.getHostname(), ownPort?.getIPAddress() ?? null, ownPort?.getSubnetMask() ?? null);
   }
 
   /** Real DC promotion registers `NTDS`/`Netlogon`/`Kdc` with the SCM (PRD §5 P6) — `dcdiag`/`nltest` read their state. */

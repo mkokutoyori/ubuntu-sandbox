@@ -5,6 +5,23 @@ progressive par équipement. Un push = une entrée = une fonctionnalité
 complète et testée (voir `CLAUDE.md` / le framework de migration pour les
 principes directeurs).
 
+## Windows Server — auto-création de la zone inverse (in-addr.arpa) à la promotion DC
+
+Extrait `WindowsServer.provisionDomainDnsZone` (le fichier dépassait déjà
+400 lignes) vers un nouveau module `windows/server/dns/
+DomainDnsProvisioning.ts` (32 lignes), qui reprend la logique existante
+(zone directe + A + SRV) et y ajoute l'auto-création de la zone inverse
+`/24` (`c.b.a.in-addr.arpa`) pour le sous-réseau propre du DC, avec son
+enregistrement PTR — seulement pour un masque `/24` exact (limitation
+assumée, cohérente avec `applyDynamicPtrRecord`). `WindowsServer.ts` ne
+fait plus que déléguer à ce module.
+
+**Validation** : nouveau test dans `windows-server-dns.test.ts`
+(promotion DC → vérifie la zone `60.168.192.in-addr.arpa` et son PTR)
++ suite complète DNS/domain-join/DHCP/AD-sites/AD-forest (5 fichiers,
+70+ tests, 15+3 échecs pré-existants et sans rapport, identiques
+avant/après). Typecheck et lint ciblés propres.
+
 ## Windows Server — enregistrement DNS dynamique à l'octroi d'un bail DHCP (P7/P8)
 
 Suite directe du lot précédent (jonction de domaine → DNS). Le client

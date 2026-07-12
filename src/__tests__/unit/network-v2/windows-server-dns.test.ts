@@ -236,4 +236,17 @@ describe('AD-integrated DNS zone auto-provisioned at DC promotion', () => {
     expect(records).not.toBeNull();
     expect(records!.some(r => r.type === 'A' && r.text === '192.168.60.20')).toBe(true);
   });
+
+  it('auto-creates the reverse (in-addr.arpa) zone for the DC\'s own /24 and registers its PTR record', async () => {
+    const { dns: dc } = await buildLan();
+    await run(ps(dc), 'Install-WindowsFeature DNS');
+    await run(ps(dc), 'Install-WindowsFeature AD-Domain-Services');
+    await run(ps(dc), 'Install-ADDSForest -DomainName lab.local -SafeModeAdministratorPassword (ConvertTo-SecureString "P@ssw0rd" -AsPlainText -Force)');
+
+    const zone = dc.getDnsServerRole()!.getZone('60.168.192.in-addr.arpa');
+    expect(zone).not.toBeNull();
+    const records = dc.getDnsServerRole()!.getRecords('60.168.192.in-addr.arpa', '10');
+    expect(records).not.toBeNull();
+    expect(records!.some(r => r.type === 'PTR' && r.text === 'DNS1.lab.local')).toBe(true);
+  });
 });
