@@ -5,6 +5,35 @@ progressive par équipement. Un push = une entrée = une fonctionnalité
 complète et testée (voir `CLAUDE.md` / le framework de migration pour les
 principes directeurs).
 
+## Windows Server — règles de conversion de portée de groupe (`Set-ADGroup -GroupScope`)
+
+Aucune règle n'était appliquée jusqu'ici — n'importe quel changement de
+portée réussissait sans condition. `DirectoryStore` gagne
+`setGroupScope(sam, newScope)`, appliquant la vraie matrice de
+conversion d'AD :
+
+- `Global` ↔ `DomainLocal` : jamais direct (il faut passer par
+  `Universal`).
+- `Global` → `Universal` : refusé si le groupe est déjà membre d'un
+  autre groupe de portée `Global`.
+- `DomainLocal` → `Universal` : refusé si le groupe a un membre de
+  portée `DomainLocal`.
+- `Universal` → `Global` : refusé si le groupe a un membre de portée
+  `Universal`.
+- `Universal` → `DomainLocal` : toujours autorisé.
+- Même portée demandée que la portée actuelle : succès immédiat, sans
+  écriture.
+
+Nouveau helper privé `groupScopeOfDn(dn)` — résout un DN `member`/
+`memberOf` vers la portée du groupe qu'il désigne, réutilisant le même
+schéma d'attribut déjà établi partout ailleurs dans ce fichier.
+
+**Validation** : nouveau `ad-group-scope-conversion.test.ts` (11 tests)
+— chacune des 5 règles testée dans son sens autorisé et son sens
+refusé, no-op sur portée identique, échec propre sur un groupe inconnu.
+Suite élargie (`ad-directory-store`, `ad-builtin-groups`, `ad-forest`) :
+78/78 au vert. Typecheck et lint ciblés propres.
+
 ## Windows Server — groupes de sécurité intégrés (`Administrators`, `Account Operators`, etc.)
 
 Seuls Domain Admins/Domain Users/Domain Computers étaient semés

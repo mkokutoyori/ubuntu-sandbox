@@ -680,6 +680,57 @@ export class DirectoryStore {
 
   listGroups(): AdGroup[] { return this.listGroupEntries().map(e => this.projectGroup(e)); }
 
+  private groupScopeOfDn(dnStr: string): AdGroup['scope'] | null {
+    let dn: DistinguishedName;
+    try { dn = parseDN(dnStr); } catch { return null; }
+    const entry = this.tree.getByDn(dn);
+    if (!entry || !hasObjectClass(entry, 'group')) return null;
+    return SCOPE_OF_GROUP_TYPE.get(Number(firstOf(entry.attributes.get('grouptype')))) ?? null;
+  }
+
+  /**
+   * `Set-ADGroup -GroupScope` (MS-ADTS §3.1.1.5.2.2) — real AD's own
+   * conversion matrix: Global↔DomainLocal is never direct (must pass
+   * through Universal); Global→Universal requires not being a member of
+   * another Global group; DomainLocal→Universal requires no DomainLocal
+   * members; Universal→Global requires no Universal members;
+   * Universal→DomainLocal is always allowed.
+   */
+  setGroupScope(sam: string, newScope: AdGroup['scope']): DirOpResult {
+    const entry = this.findGroupEntry(sam);
+    if (!entry) return { ok: false, message: `Cannot find an object with identity: '${sam}'.` };
+    const currentScope = SCOPE_OF_GROUP_TYPE.get(Number(firstOf(entry.attributes.get('grouptype')))) ?? 'Global';
+    if (currentScope === newScope) return { ok: true, message: '' };
+
+    if (currentScope === 'Global' && newScope === 'DomainLocal') {
+      return { ok: false, message: 'Cannot directly convert a global-scope group to domain-local scope; convert to universal first.' };
+    }
+    if (currentScope === 'DomainLocal' && newScope === 'Global') {
+      return { ok: false, message: 'Cannot directly convert a domain-local-scope group to global scope; convert to universal first.' };
+    }
+    if (currentScope === 'Global' && newScope === 'Universal') {
+      const memberOfScopes = (entry.attributes.get('memberof') ?? []).map(dn => this.groupScopeOfDn(dn));
+      if (memberOfScopes.includes('Global')) {
+        return { ok: false, message: 'Cannot convert to universal scope: this group is a member of another global-scope group.' };
+      }
+    }
+    if (currentScope === 'DomainLocal' && newScope === 'Universal') {
+      const memberScopes = (entry.attributes.get('member') ?? []).map(dn => this.groupScopeOfDn(dn));
+      if (memberScopes.includes('DomainLocal')) {
+        return { ok: false, message: 'Cannot convert to universal scope: this group has a domain-local-scope member.' };
+      }
+    }
+    if (currentScope === 'Universal' && newScope === 'Global') {
+      const memberScopes = (entry.attributes.get('member') ?? []).map(dn => this.groupScopeOfDn(dn));
+      if (memberScopes.includes('Universal')) {
+        return { ok: false, message: 'Cannot convert to global scope: this group has a universal-scope member.' };
+      }
+    }
+
+    this.tree.modifyEntry(entry.dn, [{ op: 'replace', type: 'groupType', values: [String(GROUP_TYPE[newScope])] }]);
+    return { ok: true, message: '' };
+  }
+
   private projectGroup(entry: DirectoryEntry): AdGroup {
     const groupType = Number(firstOf(entry.attributes.get('grouptype')));
     return {
