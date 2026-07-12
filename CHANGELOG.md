@@ -5,6 +5,31 @@ progressive par équipement. Un push = une entrée = une fonctionnalité
 complète et testée (voir `CLAUDE.md` / le framework de migration pour les
 principes directeurs).
 
+## Windows Server — délégation contrainte basée sur la ressource (RBCD)
+
+Seule la délégation contrainte classique (front-end, `msDS-
+AllowedToDelegateTo` déclaré côté service intermédiaire) existait.
+Ajout du sens inverse (MS-SFU, `msDS-AllowedToActOnBehalfOfOtherIdentity`) :
+la ressource elle-même autorise des principaux spécifiques à déléguer
+vers elle, plutôt que l'inverse. Nouveaux
+`setResourceBasedConstrainedDelegation(resourceComputerName,
+allowedPrincipalSams)`/`getResourceBasedConstrainedDelegation(...)` sur
+`DirectoryStore` — même simplification de liste directe de sam déjà
+établie pour `PrincipalsAllowedToRetrieveManagedPassword` du gMSA.
+
+`isDelegationAllowedFrom` (le portail S4U2Proxy de `KdcSession`)
+vérifie désormais les deux voies — classique OU basée sur la ressource
+— sans aucun changement à `KdcSession.ts` : le même échange KDC S4U2Proxy
+existant sert les deux mécanismes, seule l'autorisation gagne une
+deuxième voie.
+
+**Validation** : nouveau `kerberos-rbcd.test.ts` (3 tests) — délégation
+autorisée uniquement via RBCD (sans configuration classique), refus
+quand la ressource ne liste pas le service délégant, échec propre sur
+un ordinateur ressource inconnu. Suite élargie (`kerberos-s4u2proxy`,
+`ad-directory-store`, `ad-contacts`) : 62/62 au vert, aucune régression
+sur la délégation classique. Typecheck et lint ciblés propres.
+
 ## Windows Server — objets contact (`New-ADObject -Type contact`)
 
 Absent jusqu'ici : `AdContact` (`AdTypes.ts`) et `newContact`/`getContact`/

@@ -983,12 +983,40 @@ export class DirectoryStore {
     return { ok: true, message: '' };
   }
 
-  /** Whether `delegatingComputerName`'s `msDS-AllowedToDelegateTo` lists `targetServiceName` — the S4U2Proxy gate (`KdcSession.handleS4U2Proxy`). */
+  /**
+   * The S4U2Proxy gate (`KdcSession.handleS4U2Proxy`) — `true` via either
+   * classic constrained delegation (`delegatingComputerName`'s own
+   * `msDS-AllowedToDelegateTo` lists `targetServiceName`) or
+   * resource-based constrained delegation (`targetServiceName`'s own
+   * `msDS-AllowedToActOnBehalfOfOtherIdentity` lists
+   * `delegatingComputerName` instead — the resource opts itself in,
+   * rather than the front-end declaring where it may delegate to).
+   */
   isDelegationAllowedFrom(delegatingComputerName: string, targetServiceName: string): boolean {
-    const entry = this.findComputerEntry(delegatingComputerName);
-    if (!entry) return false;
-    const allowed = entry.attributes.get('msds-allowedtodelegateto') ?? [];
-    return allowed.some(v => v.toLowerCase() === targetServiceName.toLowerCase());
+    const delegatingEntry = this.findComputerEntry(delegatingComputerName);
+    if (delegatingEntry) {
+      const allowed = delegatingEntry.attributes.get('msds-allowedtodelegateto') ?? [];
+      if (allowed.some(v => v.toLowerCase() === targetServiceName.toLowerCase())) return true;
+    }
+    const targetEntry = this.findComputerEntry(targetServiceName);
+    if (targetEntry) {
+      const rbcd = targetEntry.attributes.get('msds-allowedtoactonbehalfofotheridentity') ?? [];
+      if (rbcd.some(v => v.toLowerCase() === delegatingComputerName.toLowerCase())) return true;
+    }
+    return false;
+  }
+
+  /** `Set-ADComputer -Identity <resourceComputerName> -PrincipalsAllowedToDelegateToAccount <sam1,sam2,...>` — resource-based constrained delegation (RBCD): the resource opts in specific principals, rather than the classic front-end-declared `msDS-AllowedToDelegateTo`. Direct sam list, no group expansion (same simplification already established for gMSA's `PrincipalsAllowedToRetrieveManagedPassword`). */
+  setResourceBasedConstrainedDelegation(resourceComputerName: string, allowedPrincipalSams: string[]): DirOpResult {
+    const entry = this.findComputerEntry(resourceComputerName);
+    if (!entry) return { ok: false, message: `Cannot find an object with identity: '${resourceComputerName}'.` };
+    this.tree.modifyEntry(entry.dn, [{ op: 'replace', type: 'msDS-AllowedToActOnBehalfOfOtherIdentity', values: allowedPrincipalSams }]);
+    return { ok: true, message: '' };
+  }
+
+  getResourceBasedConstrainedDelegation(resourceComputerName: string): string[] {
+    const entry = this.findComputerEntry(resourceComputerName);
+    return entry ? [...(entry.attributes.get('msds-allowedtoactonbehalfofotheridentity') ?? [])] : [];
   }
 
   /**
