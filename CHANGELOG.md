@@ -5,6 +5,35 @@ progressive par équipement. Un push = une entrée = une fonctionnalité
 complète et testée (voir `CLAUDE.md` / le framework de migration pour les
 principes directeurs).
 
+## Windows Phase 22 : migration de `gpupdate` / `gpresult` vers command-kernel
+
+**État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
+
+Migration des deux commandes client de stratégie de groupe (`gpupdate`,
+`gpresult`) depuis le dispatcher hérité vers le socle `command-kernel`,
+dans la continuité des phases précédentes (netsh, wevtutil).
+
+- Nouvelle capacité optionnelle `domain?: DomainApi` sur `MachineApi`
+  (`gpupdateForce()` : mutation réelle — pull LDAP + application des
+  overrides de politique ; `groupPolicyResult()` : instantané RSoP typé,
+  `null` hors domaine). Types `WindowsGpResult` / `WindowsGpLogonBanner`
+  ajoutés au contrat `machine/types.ts`.
+- `WindowsDomainApiImpl` dans `WindowsMachineApi.ts` délègue aux primitives
+  device `WindowsPC.gpupdateForce()` / nouvelle `WindowsPC.groupPolicyResult()`
+  (l'état reste sur l'équipement ; le formatage passe côté commandes).
+- Commandes `GpupdateCommand` / `GpresultCommand` : parsing des options,
+  gate `/?`, formatage console (dont la mise en page RSoP section par
+  section de `gpresult /r`), aide complète réelle en `usage`.
+- Respect strict de la frontière client/serveur : hors domaine, les deux
+  commandes échouent proprement (« not joined to a domain » /
+  « not a member of a domain ») — aucune fonctionnalité serveur exposée
+  sur un poste non joint.
+
+Validation : `windows-server-gpo.test.ts` passe intégralement (7/7,
+contre 3/7 auparavant) ; aucune régression sur les suites Windows
+voisines (les 2 échecs `runas` de `windows-access-cmd.test.ts` sont
+antérieurs — commande non encore migrée).
+
 ## Convergence de branche : Windows Server (pool RID + objectSid) + Windows Phase 21 (`wevtutil`)
 
 **État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
