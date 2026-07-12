@@ -24,6 +24,7 @@ import { DcdiagCommand } from './commands/Dcdiag';
 import { NetdomCommand } from './commands/Netdom';
 import { DnscmdCommand } from './commands/Dnscmd';
 import { RunasCommand } from './commands/Runas';
+import { SlmgrCommand } from './commands/Slmgr';
 import { HostnameCommand } from './commands/Hostname';
 import { IcaclsCommand } from './commands/Icacls';
 import { IpconfigCommand } from './commands/Ipconfig';
@@ -135,6 +136,7 @@ export function createWindowsHostShell(deps: WindowsMachineApiDeps): { registry:
   registry.register(() => new NetdomCommand());
   registry.register(() => new DnscmdCommand());
   registry.register(() => new RunasCommand());
+  registry.register(() => new SlmgrCommand());
 
   const interpreter = new CmdInterpreter(registry, machine);
 
