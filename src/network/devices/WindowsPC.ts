@@ -1802,6 +1802,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
         dhcpClientNetsh: this.dhcpClientNetshState,
         ipsecNetsh: this.ipsecNetshState,
         netshFeatures: this.netshFeatureState,
+        dynamicFirewallRules: this.dynamicFirewallRules,
         bootedAt: () => this.getLifecycle().bootedAt() ?? null,
         now: () => this.simulatedDate(),
         powerOn: () => this.powerOn(),

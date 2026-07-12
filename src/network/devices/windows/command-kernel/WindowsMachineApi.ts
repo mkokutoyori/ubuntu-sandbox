@@ -45,6 +45,8 @@ import {
   WindowsIPv6RouteEntry,
   WindowsBridge,
   WindowsBridgeStore,
+  WindowsFirewallApi,
+  WindowsFirewallRule,
   WindowsHttpSslCert,
   WindowsHttpStore,
   WindowsIpsecDynamicSettings,
@@ -182,6 +184,7 @@ export interface WindowsMachineApiDeps {
   readonly dhcpClientNetsh: { installed: boolean; tracingEnabled: boolean; tracingOutput: string; traceEnabled: boolean; releasedIfaces: Set<string> };
   readonly ipsecNetsh: WinIpsecMutableState;
   readonly netshFeatures: WinNetshFeatureState;
+  readonly dynamicFirewallRules: FirewallRuleMap;
   bootedAt(): Date | null;
   now(): Date;
   powerOn(): void;
@@ -1155,6 +1158,25 @@ class WindowsNrptStoreImpl implements WindowsNrptStore {
   add(p: WindowsNrptPolicy): void { this.s.policies.push({ name: p.name, namespace: p.namespace, dnsservers: p.dnsservers }); }
 }
 
+/** Type de la valeur du magasin de règles pare-feu partagé (`WindowsPC.dynamicFirewallRules`). */
+type FirewallRuleMap = Map<string, { name: string; displayName: string; enabled: boolean; action: string; direction: string; protocol: string; localPort: string; remotePort: string; description: string }>;
+
+class WindowsFirewallApiImpl implements WindowsFirewallApi {
+  constructor(private readonly map: FirewallRuleMap) {}
+  private key(name: string): string { return name.trim().toLowerCase(); }
+  rules(): readonly WindowsFirewallRule[] { return [...this.map.values()]; }
+  hasRule(name: string): boolean { return this.map.has(this.key(name)); }
+  addRule(rule: WindowsFirewallRule): void { this.map.set(this.key(rule.name), { ...rule }); }
+  deleteRules(name?: string): number {
+    let removed = 0;
+    for (const [k, r] of [...this.map.entries()]) {
+      if (!name || r.name === name) { this.map.delete(k); removed++; }
+    }
+    return removed;
+  }
+  clearRules(): void { this.map.clear(); }
+}
+
 class WindowsNetConfigApiImpl implements WindowsNetConfigApi {
   readonly ipsec: WindowsIpsecStore;
   readonly lan: WindowsLanStore;
@@ -1162,6 +1184,7 @@ class WindowsNetConfigApiImpl implements WindowsNetConfigApi {
   readonly http: WindowsHttpStore;
   readonly bridge: WindowsBridgeStore;
   readonly nrpt: WindowsNrptStore;
+  readonly firewall: WindowsFirewallApi;
 
   constructor(
     private readonly ports: () => readonly Port[],
@@ -1176,7 +1199,7 @@ class WindowsNetConfigApiImpl implements WindowsNetConfigApi {
       | 'getDnsMode' | 'setDnsMode' | 'getInterfaceAdmin' | 'setInterfaceAdmin' | 'renameInterface'
       | 'resetTcpIpStack' | 'resetWinsockCatalog' | 'addIPv6Route' | 'getIPv6Routes' | 'portProxy'
       | 'getWinhttpProxy' | 'setWinhttpProxy' | 'setPrimaryDnsSuffix' | 'isServiceRunning' | 'dhcpClientNetsh'
-      | 'ipsecNetsh' | 'netshFeatures'>,
+      | 'ipsecNetsh' | 'netshFeatures' | 'dynamicFirewallRules'>,
   ) {
     this.ipsec = new WindowsIpsecStoreImpl(deps.ipsecNetsh);
     this.lan = new WindowsLanStoreImpl(deps.netshFeatures.lan);
@@ -1184,6 +1207,7 @@ class WindowsNetConfigApiImpl implements WindowsNetConfigApi {
     this.http = new WindowsHttpStoreImpl(deps.netshFeatures.http);
     this.bridge = new WindowsBridgeStoreImpl(deps.netshFeatures.bridge);
     this.nrpt = new WindowsNrptStoreImpl(deps.netshFeatures.nrpt);
+    this.firewall = new WindowsFirewallApiImpl(deps.dynamicFirewallRules);
   }
 
   adapters(): readonly WindowsAdapterInfo[] {

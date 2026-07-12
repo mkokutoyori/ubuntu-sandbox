@@ -592,6 +592,8 @@ export interface WindowsNetConfigApi {
   readonly bridge: WindowsBridgeStore;
   /** Politiques NRPT (`netsh namespace`) — par-instance. */
   readonly nrpt: WindowsNrptStore;
+  /** Pare-feu Windows (`netsh advfirewall`) — état partagé plan de données/PowerShell. */
+  readonly firewall: WindowsFirewallApi;
 }
 
 /** État de configuration du contexte `netsh dhcpclient` — par-instance, modèle Windows. */
@@ -727,6 +729,35 @@ export interface WindowsNrptPolicy { readonly name: string; readonly namespace: 
 export interface WindowsNrptStore {
   policies(): readonly WindowsNrptPolicy[];
   add(policy: WindowsNrptPolicy): void;
+}
+
+/** Règle de pare-feu Windows (`netsh advfirewall firewall` / `New-NetFirewallRule`) — modèle Windows. */
+export interface WindowsFirewallRule {
+  readonly name: string;
+  readonly displayName: string;
+  readonly enabled: boolean;
+  readonly action: string;
+  readonly direction: string;
+  readonly protocol: string;
+  readonly localPort: string;
+  readonly remotePort: string;
+  readonly description: string;
+}
+
+/**
+ * Pare-feu Windows (`netsh advfirewall firewall`) — état PARTAGÉ avec le
+ * plan de données (`WindowsPC.firewallFilter`) et les cmdlets PowerShell
+ * (`Get/New-NetFirewallRule`) : une règle ajoutée ici est honorée par le
+ * filtrage réel des paquets. Optionnel, modèle Windows.
+ */
+export interface WindowsFirewallApi {
+  rules(): readonly WindowsFirewallRule[];
+  /** Une règle porte-t-elle ce nom (clé normalisée casse/espaces) ? */
+  hasRule(name: string): boolean;
+  addRule(rule: WindowsFirewallRule): void;
+  /** Supprime toutes les règles au nom donné (ou toutes si absent) — renvoie le nombre supprimé. */
+  deleteRules(name?: string): number;
+  clearRules(): void;
 }
 
 /** Un écho ICMP individuel (`ping`) — optionnel, modèle Windows. */

@@ -5,6 +5,44 @@ progressive par équipement. Un push = une entrée = une fonctionnalité
 complète et testée (voir `CLAUDE.md` / le framework de migration pour les
 principes directeurs).
 
+## Windows — Phase 19 : migration `netsh` — contexte `advfirewall`
+
+**État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
+
+Cinquième tranche de `netsh` (voir Phases 15-18). Le contexte
+`advfirewall` (`firewall add/delete/show rule`, `reset`) diffère des
+magasins précédents : ses règles ne sont PAS un bookkeeping netsh-privé
+mais l'état de pare-feu RÉEL, partagé avec le plan de données
+(`WindowsPC.firewallFilter()` qui filtre effectivement les paquets) et les
+cmdlets PowerShell (`Get/New-NetFirewallRule`). Une règle `add rule
+action=block localport=22` fait donc réellement tomber les connexions.
+
+Nouvelle capacité `WindowsNetConfigApi.firewall: WindowsFirewallApi`
+(`rules`/`hasRule`/`addRule`/`deleteRules`/`clearRules`) opérant PAR
+RÉFÉRENCE sur la même `Map` `WindowsPC.dynamicFirewallRules` que le plan
+de données et PowerShell — aucune copie, l'état reste unique. Type
+`WindowsFirewallRule` ajouté. La porte de service `mpssvc` (Pare-feu
+Windows) est vérifiée dans `NetshCommand` avant dispatch, reproduisant le
+message exact « The Windows Firewall service is not running. (mpssvc) ».
+
+`NetshCommand` porte le parsing `name=value`, la normalisation
+direction/action/protocole et le formatage `show rule` — copié depuis
+`WinNetsh.ts`, intact pour le shim PowerShell.
+
+Validation : typecheck et ESLint propres. Lot cmd-netsh/feature-gates/
+firewall-vs-acl comparé au commit pré-Phase-19 via `git stash` : 14
+échecs/189 réussites avant → 6/197 après, 8 tests corrigés, zéro
+régression. Suites netsh/consistency/arp (140 tests) re-vérifiées sans
+régression.
+
+Les 6 échecs restants ne concernent PAS `advfirewall` (les deux tests de
+règle de blocage passent) : 4 tests IPsec ordre-dépendants (anti-patron
+d'état global déjà documenté Phase 18) + 2 tests dépendant de `wevtutil`
+(commande non encore migrée, séparée du plan `netsh`).
+
+Contextes `netsh` encore différés : `dhcp server`, `nps` (adossés aux
+objets de rôle `WindowsServer`, absents sur un poste client).
+
 ## Windows — Phase 18 : migration `netsh` — contextes `lan`, `wlan`, `http`, `bridge`, `namespace`
 
 **État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**

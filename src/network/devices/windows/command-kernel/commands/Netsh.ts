@@ -341,6 +341,67 @@ show           - Displays information.
 To view help for a command, type the command, followed by a space, and then
  type ?.`;
 
+const NETSH_ADVFW_HELP = `The following commands are available:
+
+Commands in this context:
+?              - Displays a list of commands.
+consec         - Changes to the \`netsh advfirewall consec' context.
+dump           - Displays a configuration script.
+export         - Exports the current policy to a file.
+firewall       - Changes to the \`netsh advfirewall firewall' context.
+help           - Displays a list of commands.
+import         - Imports a policy file into the current policy store.
+monitor        - Changes to the \`netsh advfirewall monitor' context.
+reset          - Resets the policy to the default out-of-box policy.
+set            - Sets the per-profile or global settings.
+show           - Displays profile or global properties.
+
+The following sub-contexts are available:
+ consec firewall monitor
+
+To view help for a command, type the command, followed by a space, and then
+ type ?.`;
+
+const NETSH_ADVFW_FIREWALL_HELP = `The following commands are available:
+
+Commands in this context:
+?              - Displays a list of commands.
+add            - Adds a new inbound or outbound firewall rule.
+delete         - Deletes all matching firewall rules.
+dump           - Displays a configuration script.
+help           - Displays a list of commands.
+set            - Sets new values for properties of a existing rule.
+show           - Displays a specified firewall rule.
+
+To view help for a command, type the command, followed by a space, and then
+ type ?.`;
+
+const NETSH_ADVFW_FIREWALL_ADD_RULE_HELP = `Usage: add rule name=<string>
+       dir=in|out
+       action=allow|block|bypass
+       [program=<program path>]
+       [protocol=<protocol>]
+       [localport=<port range>]
+       [remoteport=<port range>]
+       [localip=<ip range>]
+       [remoteip=<ip range>]
+       [profile=domain|private|public|any]
+       [enable=yes|no]`;
+
+function normalizeDirection(dir: string): 'Inbound' | 'Outbound' {
+  return dir.toLowerCase() === 'out' ? 'Outbound' : 'Inbound';
+}
+function normalizeAction(action: string): 'Allow' | 'Block' {
+  return action.toLowerCase() === 'block' ? 'Block' : 'Allow';
+}
+function normalizeProtocol(proto: string): string {
+  const p = proto.toUpperCase();
+  if (p === 'TCP') return 'TCP';
+  if (p === 'UDP') return 'UDP';
+  if (p === 'ICMPV4' || p === 'ICMP') return 'ICMPv4';
+  return 'Any';
+}
+
 const ADD_ADDRESS_USAGE = `Usage: netsh interface ipv4 add address [name=]<string>
        [address=]<IPv4 address> [mask=]<subnet mask>
        [[gateway=]<IPv4 address> [[gwmetric=]<integer>]]`;
@@ -430,6 +491,14 @@ export class NetshCommand extends BaseCommand {
     if (head === 'http') return this.handleHttp(nc, args.slice(1));
     if (head === 'bridge') return this.handleBridge(nc, args.slice(1));
     if (head === 'namespace') return this.handleNamespace(nc, args.slice(1));
+
+    if (head === 'advfirewall') {
+      // `netsh advfirewall` exige que le service Pare-feu Windows (mpssvc) tourne.
+      if (!ctx.machine.services?.isRunning('mpssvc')) {
+        return 'The Windows Firewall service is not running. (mpssvc)';
+      }
+      return this.handleAdvfirewall(nc, args.slice(1));
+    }
 
     if (head === 'winhttp') return this.handleWinhttp(nc, args.slice(1));
 
@@ -1970,5 +2039,75 @@ export class NetshCommand extends BaseCommand {
     }
     if (sub === 'delete') return 'Ok.';
     return `The subcommand "${args[0]}" was not found.\nType "netsh namespace ?" for more information.`;
+  }
+
+  // ─── netsh advfirewall ────────────────────────────────────────────
+  private handleAdvfirewall(nc: WindowsNetConfigApi, args: string[]): string {
+    if (args.length === 0 || args[0] === '?' || args[0] === '/?' || args[0].toLowerCase() === 'help') return NETSH_ADVFW_HELP;
+    const sub = args[0].toLowerCase();
+    if (sub === 'firewall') return this.handleAdvfwFirewall(nc, args.slice(1));
+    if (sub === 'reset') { nc.firewall.clearRules(); return 'Ok.'; }
+    if (sub === 'show') return 'Ok.';
+    if (sub === 'set') return 'Ok.';
+    return `The subcommand "${args[0]}" was not found.\nType "netsh advfirewall ?" for more information.`;
+  }
+
+  private handleAdvfwFirewall(nc: WindowsNetConfigApi, args: string[]): string {
+    if (args.length === 0 || args[0] === '?' || args[0] === '/?' || args[0].toLowerCase() === 'help') return NETSH_ADVFW_FIREWALL_HELP;
+    const sub = args[0].toLowerCase();
+    const fw = nc.firewall;
+
+    if (sub === 'add') {
+      if ((args[1] || '').toLowerCase() === 'rule') {
+        if (args.some((a) => a === '?')) return NETSH_ADVFW_FIREWALL_ADD_RULE_HELP;
+        const p = this.parseNameValue(args.slice(2));
+        const name = p['name'];
+        if (!name) return NETSH_ADVFW_FIREWALL_ADD_RULE_HELP;
+        if (fw.hasRule(name)) return `The rule "${name}" already exists.`;
+        fw.addRule({
+          name, displayName: name,
+          enabled: (p['enable'] ?? 'yes').toLowerCase() !== 'no',
+          action: normalizeAction(p['action'] ?? 'allow'),
+          direction: normalizeDirection(p['dir'] ?? 'in'),
+          protocol: normalizeProtocol(p['protocol'] ?? 'Any'),
+          localPort: p['localport'] ?? '',
+          remotePort: p['remoteport'] ?? '',
+          description: '',
+        });
+        return 'Ok.';
+      }
+      return NETSH_ADVFW_FIREWALL_HELP;
+    }
+
+    if (sub === 'show') {
+      if ((args[1] || '').toLowerCase() === 'rule') {
+        const name = this.parseNameValue(args.slice(2))['name'];
+        const matches = name ? fw.rules().filter((r) => r.name === name) : fw.rules();
+        if (matches.length === 0) return `No rules match the specified criteria.`;
+        const lines: string[] = [''];
+        for (const r of matches) {
+          lines.push(`Rule Name:                            ${r.name}`);
+          lines.push(`----------------------------------------------------------------------`);
+          lines.push(`Enabled:                              ${r.enabled ? 'Yes' : 'No'}`);
+          lines.push(`Direction:                            ${r.direction.toLowerCase().startsWith('out') ? 'out' : 'in'}`);
+          lines.push(`Profiles:                             Any`);
+          lines.push(`Action:                               ${r.action}`);
+          lines.push(`Protocol:                             ${r.protocol}`);
+          lines.push(`LocalPort:                            ${r.localPort || 'Any'}`, '');
+        }
+        return lines.join('\n');
+      }
+      return NETSH_ADVFW_FIREWALL_HELP;
+    }
+
+    if (sub === 'delete') {
+      if ((args[1] || '').toLowerCase() === 'rule') {
+        const name = this.parseNameValue(args.slice(2))['name'];
+        return fw.deleteRules(name) > 0 ? 'Ok.' : `No rules match the specified criteria.`;
+      }
+      return NETSH_ADVFW_FIREWALL_HELP;
+    }
+
+    return `The subcommand "${args[0]}" was not found.\nType "netsh advfirewall firewall ?" for more information.`;
   }
 }
