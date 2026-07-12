@@ -5,6 +5,45 @@ progressive par équipement. Un push = une entrée = une fonctionnalité
 complète et testée (voir `CLAUDE.md` / le framework de migration pour les
 principes directeurs).
 
+## Windows Server — enregistrement DNS dynamique à l'octroi d'un bail DHCP (P7/P8)
+
+Suite directe du lot précédent (jonction de domaine → DNS). Le client
+DHCP (`DHCPClient.ts`, moteur partagé Linux/Windows) envoie maintenant
+son hostname sur l'option 12 dans DISCOVER/REQUEST/RENEW/REBIND
+(`WireDhcpChannel` dans `DhcpServerChannel.ts` pose l'option sur le vrai
+paquet DHCP posé sur le câble ; `EndHost` appelle
+`dhcpClient.setDeviceId(id, name)` à la construction pour lui donner ce
+hostname, ce qui n'était fait nulle part en production avant ce lot).
+
+Côté serveur, `WindowsDhcpServerRole.serveOnWire()` lit cette option 12
+sur le REQUEST au moment de construire l'ACK et déclenche un nouveau
+hook `onLeaseGranted(hostname, ip)`. `WindowsServer.getDhcpServerRole()`
+câble ce hook vers `this.getDnsServerRole()?.applyDynamicARecord(...)`
+en mémoire sur ce même device, avec la zone du domaine (DC ou serveur
+membre) comme zone cible — DHCP et DNS co-installés sur le même serveur
+étant la topologie visée par le PRD pour l'autorisation AD simulée. Le
+même hook, ainsi que celui de la jonction de domaine (`WindowsPC.ts`),
+appellent aussi un nouveau `applyDynamicPtrRecord(zoneName, hostName,
+ipv4)` qui dérive la zone inverse `/24` (`c.b.a.in-addr.arpa`) et
+réutilise `addPtrRecord` — no-op tant que cette zone n'existe pas
+(aucune zone inverse n'est encore auto-créée ; ce sera l'objet du lot
+suivant).
+
+`DHCP_OPTION.HOST_NAME` (12) ajouté à `DHCPPacket.ts`.
+
+**Validation** : deux nouveaux tests dans `windows-server-dhcp.test.ts`
+(DC avec AD DS + DNS + DHCP co-installés, autorisé via
+`Add-DhcpServerInDC`, client Windows qui obtient un bail réel sur le
+câble → vérifie l'enregistrement A, puis idem avec la zone inverse déjà
+créée → vérifie le PTR) + suite complète DHCP (13 fichiers, 148+ tests,
+15 échecs pré-existants et sans rapport, identiques avant/après par
+`git stash` — dont un bug pré-existant, hors périmètre, de troncature
+du nom de zone par le parseur d'arguments PowerShell sur
+`Add-DnsServerPrimaryZone -Name <zone-avec-tirets-et-points>`,
+contourné dans le test en appelant `addPrimaryZone` directement) +
+suite DNS/domain-join déjà validée au lot précédent. Typecheck et lint
+ciblés propres.
+
 ## Windows Server — enregistrement DNS dynamique à la jonction de domaine (P7)
 
 Premier lot du chantier "cœur Windows Server" (AD DS/DNS/DHCP/objets/GPO,

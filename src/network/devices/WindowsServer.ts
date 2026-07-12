@@ -107,6 +107,13 @@ export class WindowsServer extends WindowsPC {
     this.dhcpServerRoleInstance.setDomainContext(
       this.getDirectoryStore() !== null || this.getDomainMembership() !== null,
     );
+    this.dhcpServerRoleInstance.onLeaseGranted = (hostname, ip) => {
+      const zoneName = this.getDirectoryStore()?.dnsName ?? this.getDomainMembership()?.dnsName;
+      if (!zoneName) return;
+      const dns = this.getDnsServerRole();
+      dns?.applyDynamicARecord(zoneName, hostname, ip);
+      dns?.applyDynamicPtrRecord(zoneName, hostname, ip);
+    };
     return this.dhcpServerRoleInstance;
   }
 

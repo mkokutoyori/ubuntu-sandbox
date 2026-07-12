@@ -168,6 +168,46 @@ describe('Real client leasing over the wire (Get-DhcpServerv4Lease)', () => {
   });
 });
 
+describe('Dynamic DNS registration on lease grant', () => {
+  it('registers an A record for a client that obtains a lease from a co-located DHCP+DNS DC', async () => {
+    const { dhcp: dc, winClient } = await buildLan();
+    await run(ps(dc), 'Install-WindowsFeature DNS');
+    await run(ps(dc), 'Install-WindowsFeature AD-Domain-Services');
+    await run(ps(dc), 'Install-ADDSForest -DomainName lab.local -SafeModeAdministratorPassword (ConvertTo-SecureString "P@ssw0rd" -AsPlainText -Force)');
+    await run(ps(dc), 'Install-WindowsFeature DHCP');
+    await run(ps(dc), 'Add-DhcpServerInDC');
+    await run(ps(dc), 'Add-DhcpServerv4Scope -Name LAN -StartRange 192.168.80.100 -EndRange 192.168.80.200 -SubnetMask 255.255.255.0');
+
+    winClient.getDHCPClient().requestLease('eth0');
+    const state = winClient.getDHCPClient().getState('eth0');
+    expect(state.state).toBe('BOUND');
+
+    const records = dc.getDnsServerRole()!.getRecords('lab.local', 'WINCLIENT1');
+    expect(records).not.toBeNull();
+    expect(records!.some(r => r.type === 'A' && r.text === state.lease!.ipAddress)).toBe(true);
+  });
+
+  it('also registers a PTR record when the matching reverse zone already exists', async () => {
+    const { dhcp: dc, winClient } = await buildLan();
+    await run(ps(dc), 'Install-WindowsFeature DNS');
+    dc.getDnsServerRole()!.addPrimaryZone('80.168.192.in-addr.arpa');
+    await run(ps(dc), 'Install-WindowsFeature AD-Domain-Services');
+    await run(ps(dc), 'Install-ADDSForest -DomainName lab.local -SafeModeAdministratorPassword (ConvertTo-SecureString "P@ssw0rd" -AsPlainText -Force)');
+    await run(ps(dc), 'Install-WindowsFeature DHCP');
+    await run(ps(dc), 'Add-DhcpServerInDC');
+    await run(ps(dc), 'Add-DhcpServerv4Scope -Name LAN -StartRange 192.168.80.100 -EndRange 192.168.80.200 -SubnetMask 255.255.255.0');
+
+    winClient.getDHCPClient().requestLease('eth0');
+    const state = winClient.getDHCPClient().getState('eth0');
+    expect(state.state).toBe('BOUND');
+    const lastOctet = state.lease!.ipAddress.split('.')[3];
+
+    const records = dc.getDnsServerRole()!.getRecords('80.168.192.in-addr.arpa', lastOctet);
+    expect(records).not.toBeNull();
+    expect(records!.some(r => r.type === 'PTR' && r.text === 'WINCLIENT1.lab.local')).toBe(true);
+  });
+});
+
 describe('Simulated AD authorization (Add-DhcpServerInDC)', () => {
   it('a domain-joined DHCP server serves no leases until authorized in AD', async () => {
     const { dhcp, winClient } = await buildLan();

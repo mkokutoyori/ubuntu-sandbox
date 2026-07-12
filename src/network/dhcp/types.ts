@@ -91,6 +91,7 @@ export interface DHCPDiscoverParams {
   /** IP of the local (non-relayed) ingress interface — used for subnet-based
    *  pool selection when giaddr is absent (directly-attached client). */
   localGatewayIP?: string;
+  hostname?: string;
 }
 
 /** Result returned by server for DHCPOFFER */
@@ -121,6 +122,7 @@ export interface DHCPRequestParams {
   serverIdentifier?: string;
   /** Option 61: Client Identifier */
   clientIdentifier: string;
+  hostname?: string;
 }
 
 /** Result returned by server for DHCPACK */

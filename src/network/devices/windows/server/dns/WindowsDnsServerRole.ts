@@ -285,7 +285,7 @@ export class WindowsDnsServerRole {
     }));
   }
 
-  /** Direct in-process zone mutation for dynamic updates (DHCP lease grant, domain join) — see file header. `recordName` is relative to `zoneName`, same convention as `addARecord`. */
+  /** Direct in-process zone mutation for dynamic updates (DHCP lease grant, domain join) — see file header. */
   applyDynamicARecord(zoneName: string, recordName: string, ipv4: string, ttl = 3600): DnsOpResult {
     const zone = this.store.getZone(zoneName);
     if (!zone) return { ok: false, message: `Zone "${zoneName}" does not exist on this server.` };
@@ -294,5 +294,12 @@ export class WindowsDnsServerRole {
     zone.addRecord(makeARecord(fqdn, ttl, ipv4));
     bumpSerial(zone);
     return { ok: true, message: '' };
+  }
+
+  applyDynamicPtrRecord(zoneName: string, hostName: string, ipv4: string, ttl = 3600): DnsOpResult {
+    const octets = ipv4.split('.');
+    if (octets.length !== 4) return { ok: false, message: `"${ipv4}" is not a valid IPv4 address.` };
+    const reverseZoneName = `${octets[2]}.${octets[1]}.${octets[0]}.in-addr.arpa`;
+    return this.addPtrRecord(reverseZoneName, octets[3], `${hostName}.${zoneName}`, ttl);
   }
 }

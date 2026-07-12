@@ -62,16 +62,6 @@ export interface LdapServerContext {
    * `searchResultReference` instead of an empty success.
    */
   otherForestDomainRoots?: () => string[];
-  /**
-   * Dynamic DNS registration hook (PRD-Windows-Server.md §5 P7): invoked
-   * after a successful `AddRequest` that creates a `computer` object
-   * carrying an `ipAddress` attribute — i.e. a real domain join whose
-   * `AddRequest` PDU (already crossing the wire for authentication) also
-   * happens to carry the joining computer's own IP. Registration itself
-   * stays an in-process call on this same device (mirrors
-   * `PrimaryZoneAgent.applyUpdate`'s own established convention), but the
-   * IP genuinely arrived over the wire, not via a cross-device shortcut.
-   */
   onComputerRegistered?: (computerName: string, ip: string) => void;
 }
 
@@ -320,7 +310,6 @@ export class LdapServerHandler {
     try { return parseDN(s); } catch { return null; }
   }
 
-  /** Fires `onComputerRegistered` when the just-added entry is a `computer` object carrying an IP (a real domain join, not a plain `New-ADComputer` pre-provision). */
   private notifyComputerRegistered(dn: DistinguishedName, attrs: Record<string, string[]>): void {
     if (!this.ctx.onComputerRegistered) return;
     const byLowerType = new Map(Object.entries(attrs).map(([k, v]) => [k.toLowerCase(), v]));

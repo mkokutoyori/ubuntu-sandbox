@@ -42,7 +42,6 @@ export function joinDomain(opts: {
   dcAddress: string;
   credentialUser: string;
   credentialPassword: string;
-  /** This computer's own IP, carried as a real `AddRequest` attribute so the DC can register it in DNS (dynamic DNS update, PRD-Windows-Server.md §5 P7) — omitted (`undefined`) when unknown, matching a real join from a host with no configured address yet. */
   ownIp?: string;
 }): DomainJoinResult {
   const networkPathNotFound: DomainJoinResult = {
