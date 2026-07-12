@@ -5,7 +5,7 @@ progressive par équipement. Un push = une entrée = une fonctionnalité
 complète et testée (voir `CLAUDE.md` / le framework de migration pour les
 principes directeurs).
 
-## Convergence de branche : Windows Server (expiration de mot de passe) + Windows Phases 25-26 (`dnscmd`/`runas`)
+## Convergence de branche : Windows Server (expiration de mot de passe) + Windows Phases 25-26 (`dnscmd`/`runas`) + correctif `whoami`
 
 **État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
 
@@ -13,6 +13,21 @@ Deux lots de travail parallèles sur la même branche, fusionnés dans ce
 commit — l'un sur le cœur Windows Server (contrôleur de domaine),
 l'autre sur le pont Windows `command-kernel`, sans recouvrement de
 fichiers en dehors de `CHANGELOG.md`.
+
+### Windows — correctif : `whoami` local préserve la casse du nom d'utilisateur
+
+Correctif ciblé dans `WindowsMachineApi.securityIdentity` : la forme
+locale de `whoami` (`<hôte>\<utilisateur>`) minusculisait à tort le nom
+d'utilisateur. Elle préserve désormais la casse du compte (`SRV1` →
+`srv1\Administrator`) tout en gardant le nom d'hôte en minuscules ; la
+forme domaine (`lab\alice`) reste inchangée (entièrement en minuscules,
+conformément aux tests existants).
+
+Validation : `windows-server-domain-join.test.ts` passe intégralement
+(24/24 — c'était le dernier échec, « reverts to local whoami formatting »,
+antérieur à la série de migrations) ; aucune régression sur les suites
+whoami voisines (`windows-access-cmd`, `windows-access-powershell`,
+`windows-drive-switching` : 122/122).
 
 ### Windows Server — expiration de mot de passe (`maxPasswordAge`) et `DONT_EXPIRE_PASSWORD`
 
