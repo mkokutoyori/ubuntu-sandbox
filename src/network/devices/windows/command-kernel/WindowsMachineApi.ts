@@ -43,6 +43,12 @@ import {
   WindowsDnsCacheEntry,
   WindowsIPv6AddressEntry,
   WindowsIPv6RouteEntry,
+  WindowsBridge,
+  WindowsBridgeStore,
+  WindowsFirewallApi,
+  WindowsFirewallRule,
+  WindowsHttpSslCert,
+  WindowsHttpStore,
   WindowsIpsecDynamicSettings,
   WindowsIpsecFilter,
   WindowsIpsecFilterAction,
@@ -50,7 +56,13 @@ import {
   WindowsIpsecPolicy,
   WindowsIpsecRule,
   WindowsIpsecStore,
+  WindowsLanProfile,
+  WindowsLanStore,
   WindowsNetConfigApi,
+  WindowsNrptPolicy,
+  WindowsNrptStore,
+  WindowsWlanProfile,
+  WindowsWlanStore,
   WindowsPingReply,
   WindowsPortProxyRule,
   WindowsRouteEntry,
@@ -171,6 +183,8 @@ export interface WindowsMachineApiDeps {
   isServiceRunning(name: string): boolean;
   readonly dhcpClientNetsh: { installed: boolean; tracingEnabled: boolean; tracingOutput: string; traceEnabled: boolean; releasedIfaces: Set<string> };
   readonly ipsecNetsh: WinIpsecMutableState;
+  readonly netshFeatures: WinNetshFeatureState;
+  readonly dynamicFirewallRules: FirewallRuleMap;
   bootedAt(): Date | null;
   now(): Date;
   powerOn(): void;
@@ -1066,8 +1080,111 @@ class WindowsIpsecStoreImpl implements WindowsIpsecStore {
   }
 }
 
+/** Formes mutables des magasins `netsh` de fonctionnalités, détenues par `WindowsPC` (par-instance). */
+export interface WinNetshFeatureState {
+  lan: { profiles: { name: string; interface: string }[]; tracingEnabled: boolean; autoconnect: Map<string, boolean> };
+  wlan: { profiles: { name: string; ssid: string }[] };
+  http: { ipListen: string[]; sslCerts: { ipport: string; certhash: string; appid: string }[] };
+  bridge: { bridges: { name: string; members: string[] }[] };
+  nrpt: { policies: { name: string; namespace: string; dnsservers: string }[] };
+}
+
+class WindowsLanStoreImpl implements WindowsLanStore {
+  constructor(private readonly s: WinNetshFeatureState['lan']) {}
+  profiles(): readonly WindowsLanProfile[] { return this.s.profiles; }
+  addProfile(p: WindowsLanProfile): void { this.s.profiles.push({ name: p.name, interface: p.interface }); }
+  deleteProfile(name: string): boolean {
+    const i = this.s.profiles.findIndex((x) => x.name === name);
+    if (i < 0) return false;
+    this.s.profiles.splice(i, 1);
+    return true;
+  }
+  deleteAllProfiles(): void { this.s.profiles.length = 0; }
+  tracingEnabled(): boolean { return this.s.tracingEnabled; }
+  setTracing(enabled: boolean): void { this.s.tracingEnabled = enabled; }
+  autoconnect(ifName: string): boolean | undefined { return this.s.autoconnect.get(ifName); }
+  setAutoconnect(ifName: string, enabled: boolean): void { this.s.autoconnect.set(ifName, enabled); }
+}
+
+class WindowsWlanStoreImpl implements WindowsWlanStore {
+  constructor(private readonly s: WinNetshFeatureState['wlan']) {}
+  profiles(): readonly WindowsWlanProfile[] { return this.s.profiles; }
+  addProfile(p: WindowsWlanProfile): void { this.s.profiles.push({ name: p.name, ssid: p.ssid }); }
+  deleteProfile(name: string): boolean {
+    const i = this.s.profiles.findIndex((x) => x.name === name);
+    if (i < 0) return false;
+    this.s.profiles.splice(i, 1);
+    return true;
+  }
+}
+
+class WindowsHttpStoreImpl implements WindowsHttpStore {
+  constructor(private readonly s: WinNetshFeatureState['http']) {}
+  ipListen(): readonly string[] { return this.s.ipListen; }
+  addIpListen(ip: string): void { this.s.ipListen.push(ip); }
+  removeIpListen(ip: string): boolean {
+    const i = this.s.ipListen.indexOf(ip);
+    if (i < 0) return false;
+    this.s.ipListen.splice(i, 1);
+    return true;
+  }
+  sslCerts(): readonly WindowsHttpSslCert[] { return this.s.sslCerts; }
+  addSslCert(cert: WindowsHttpSslCert): void { this.s.sslCerts.push({ ...cert }); }
+}
+
+class WindowsBridgeStoreImpl implements WindowsBridgeStore {
+  constructor(private readonly s: WinNetshFeatureState['bridge']) {}
+  bridges(): readonly WindowsBridge[] { return this.s.bridges; }
+  create(name: string): boolean {
+    if (this.s.bridges.find((b) => b.name === name)) return false;
+    this.s.bridges.push({ name, members: [] });
+    return true;
+  }
+  addMember(bridgeName: string, adapter: string): boolean {
+    const b = this.s.bridges.find((x) => x.name === bridgeName);
+    if (!b) return false;
+    if (adapter && !b.members.includes(adapter)) b.members.push(adapter);
+    return true;
+  }
+  delete(name: string): void {
+    const i = this.s.bridges.findIndex((b) => b.name === name);
+    if (i >= 0) this.s.bridges.splice(i, 1);
+  }
+}
+
+class WindowsNrptStoreImpl implements WindowsNrptStore {
+  constructor(private readonly s: WinNetshFeatureState['nrpt']) {}
+  policies(): readonly WindowsNrptPolicy[] { return this.s.policies; }
+  add(p: WindowsNrptPolicy): void { this.s.policies.push({ name: p.name, namespace: p.namespace, dnsservers: p.dnsservers }); }
+}
+
+/** Type de la valeur du magasin de règles pare-feu partagé (`WindowsPC.dynamicFirewallRules`). */
+type FirewallRuleMap = Map<string, { name: string; displayName: string; enabled: boolean; action: string; direction: string; protocol: string; localPort: string; remotePort: string; description: string }>;
+
+class WindowsFirewallApiImpl implements WindowsFirewallApi {
+  constructor(private readonly map: FirewallRuleMap) {}
+  private key(name: string): string { return name.trim().toLowerCase(); }
+  rules(): readonly WindowsFirewallRule[] { return [...this.map.values()]; }
+  hasRule(name: string): boolean { return this.map.has(this.key(name)); }
+  addRule(rule: WindowsFirewallRule): void { this.map.set(this.key(rule.name), { ...rule }); }
+  deleteRules(name?: string): number {
+    let removed = 0;
+    for (const [k, r] of [...this.map.entries()]) {
+      if (!name || r.name === name) { this.map.delete(k); removed++; }
+    }
+    return removed;
+  }
+  clearRules(): void { this.map.clear(); }
+}
+
 class WindowsNetConfigApiImpl implements WindowsNetConfigApi {
   readonly ipsec: WindowsIpsecStore;
+  readonly lan: WindowsLanStore;
+  readonly wlan: WindowsWlanStore;
+  readonly http: WindowsHttpStore;
+  readonly bridge: WindowsBridgeStore;
+  readonly nrpt: WindowsNrptStore;
+  readonly firewall: WindowsFirewallApi;
 
   constructor(
     private readonly ports: () => readonly Port[],
@@ -1082,9 +1199,15 @@ class WindowsNetConfigApiImpl implements WindowsNetConfigApi {
       | 'getDnsMode' | 'setDnsMode' | 'getInterfaceAdmin' | 'setInterfaceAdmin' | 'renameInterface'
       | 'resetTcpIpStack' | 'resetWinsockCatalog' | 'addIPv6Route' | 'getIPv6Routes' | 'portProxy'
       | 'getWinhttpProxy' | 'setWinhttpProxy' | 'setPrimaryDnsSuffix' | 'isServiceRunning' | 'dhcpClientNetsh'
-      | 'ipsecNetsh'>,
+      | 'ipsecNetsh' | 'netshFeatures' | 'dynamicFirewallRules'>,
   ) {
     this.ipsec = new WindowsIpsecStoreImpl(deps.ipsecNetsh);
+    this.lan = new WindowsLanStoreImpl(deps.netshFeatures.lan);
+    this.wlan = new WindowsWlanStoreImpl(deps.netshFeatures.wlan);
+    this.http = new WindowsHttpStoreImpl(deps.netshFeatures.http);
+    this.bridge = new WindowsBridgeStoreImpl(deps.netshFeatures.bridge);
+    this.nrpt = new WindowsNrptStoreImpl(deps.netshFeatures.nrpt);
+    this.firewall = new WindowsFirewallApiImpl(deps.dynamicFirewallRules);
   }
 
   adapters(): readonly WindowsAdapterInfo[] {

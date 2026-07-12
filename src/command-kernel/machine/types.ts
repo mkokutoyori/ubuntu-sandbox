@@ -582,6 +582,18 @@ export interface WindowsNetConfigApi {
 
   /** Magasin de politiques IPsec (`netsh ipsec`) — par-instance. */
   readonly ipsec: WindowsIpsecStore;
+  /** Profils filaires (`netsh lan`) — par-instance. */
+  readonly lan: WindowsLanStore;
+  /** Profils sans-fil (`netsh wlan`) — par-instance. */
+  readonly wlan: WindowsWlanStore;
+  /** Configuration HTTP.sys (`netsh http`) — par-instance. */
+  readonly http: WindowsHttpStore;
+  /** Ponts réseau (`netsh bridge`) — par-instance. */
+  readonly bridge: WindowsBridgeStore;
+  /** Politiques NRPT (`netsh namespace`) — par-instance. */
+  readonly nrpt: WindowsNrptStore;
+  /** Pare-feu Windows (`netsh advfirewall`) — état partagé plan de données/PowerShell. */
+  readonly firewall: WindowsFirewallApi;
 }
 
 /** État de configuration du contexte `netsh dhcpclient` — par-instance, modèle Windows. */
@@ -668,6 +680,84 @@ export interface WindowsIpsecStore {
   setDynamicMainMode(mmSecMethods: string): void;
   setDynamicQm(qmSecMethods: string): void;
   setDynamicConfig(key: string, value: string): void;
+}
+
+/** Profil filaire `netsh lan` — par-instance, modèle Windows. */
+export interface WindowsLanProfile { readonly name: string; readonly interface: string; }
+export interface WindowsLanStore {
+  profiles(): readonly WindowsLanProfile[];
+  addProfile(profile: WindowsLanProfile): void;
+  deleteProfile(name: string): boolean;
+  deleteAllProfiles(): void;
+  tracingEnabled(): boolean;
+  setTracing(enabled: boolean): void;
+  autoconnect(ifName: string): boolean | undefined;
+  setAutoconnect(ifName: string, enabled: boolean): void;
+}
+
+/** Profil sans-fil `netsh wlan` — par-instance, modèle Windows. */
+export interface WindowsWlanProfile { readonly name: string; readonly ssid: string; }
+export interface WindowsWlanStore {
+  profiles(): readonly WindowsWlanProfile[];
+  addProfile(profile: WindowsWlanProfile): void;
+  deleteProfile(name: string): boolean;
+}
+
+/** Binding certificat SSL `netsh http` — par-instance, modèle Windows. */
+export interface WindowsHttpSslCert { readonly ipport: string; readonly certhash: string; readonly appid: string; }
+export interface WindowsHttpStore {
+  ipListen(): readonly string[];
+  addIpListen(ip: string): void;
+  removeIpListen(ip: string): boolean;
+  sslCerts(): readonly WindowsHttpSslCert[];
+  addSslCert(cert: WindowsHttpSslCert): void;
+}
+
+/** Pont réseau `netsh bridge` — par-instance, modèle Windows. */
+export interface WindowsBridge { readonly name: string; readonly members: readonly string[]; }
+export interface WindowsBridgeStore {
+  bridges(): readonly WindowsBridge[];
+  /** `false` si un pont de ce nom existe déjà. */
+  create(name: string): boolean;
+  /** Ajoute un adaptateur à un pont — `false` si le pont n'existe pas. */
+  addMember(bridgeName: string, adapter: string): boolean;
+  delete(name: string): void;
+}
+
+/** Politique NRPT `netsh namespace` — par-instance, modèle Windows. */
+export interface WindowsNrptPolicy { readonly name: string; readonly namespace: string; readonly dnsservers: string; }
+export interface WindowsNrptStore {
+  policies(): readonly WindowsNrptPolicy[];
+  add(policy: WindowsNrptPolicy): void;
+}
+
+/** Règle de pare-feu Windows (`netsh advfirewall firewall` / `New-NetFirewallRule`) — modèle Windows. */
+export interface WindowsFirewallRule {
+  readonly name: string;
+  readonly displayName: string;
+  readonly enabled: boolean;
+  readonly action: string;
+  readonly direction: string;
+  readonly protocol: string;
+  readonly localPort: string;
+  readonly remotePort: string;
+  readonly description: string;
+}
+
+/**
+ * Pare-feu Windows (`netsh advfirewall firewall`) — état PARTAGÉ avec le
+ * plan de données (`WindowsPC.firewallFilter`) et les cmdlets PowerShell
+ * (`Get/New-NetFirewallRule`) : une règle ajoutée ici est honorée par le
+ * filtrage réel des paquets. Optionnel, modèle Windows.
+ */
+export interface WindowsFirewallApi {
+  rules(): readonly WindowsFirewallRule[];
+  /** Une règle porte-t-elle ce nom (clé normalisée casse/espaces) ? */
+  hasRule(name: string): boolean;
+  addRule(rule: WindowsFirewallRule): void;
+  /** Supprime toutes les règles au nom donné (ou toutes si absent) — renvoie le nombre supprimé. */
+  deleteRules(name?: string): number;
+  clearRules(): void;
 }
 
 /** Un écho ICMP individuel (`ping`) — optionnel, modèle Windows. */

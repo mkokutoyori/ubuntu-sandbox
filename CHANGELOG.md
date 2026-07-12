@@ -5,7 +5,16 @@ progressive par équipement. Un push = une entrée = une fonctionnalité
 complète et testée (voir `CLAUDE.md` / le framework de migration pour les
 principes directeurs).
 
-## Windows Server — modélise les rôles FSMO
+## Convergence de branche : Windows Server (rôles FSMO) + Windows Phase 19 (`netsh advfirewall`)
+
+**État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
+
+Deux lots de travail parallèles sur la même branche, fusionnés dans ce
+commit — l'un sur le cœur Windows Server (contrôleur de domaine),
+l'autre sur le pont Windows `netsh`, sans recouvrement de fichiers en
+dehors de `CHANGELOG.md`.
+
+### Windows Server — modélise les rôles FSMO
 
 Nouveau chantier (contrôleur de domaine), au-delà des deux lots de
 suivi de l'audit initial : jusqu'ici aucun concept de rôle FSMO
@@ -45,6 +54,76 @@ forêt, seize local visible immédiatement des deux côtés pour un rôle
 de forêt partagé, transfert réel réussi et échec propre si le
 détenteur est injoignable) + suite complète AD/forêt/schéma (5
 fichiers), tout au vert. Typecheck et lint ciblés propres.
+
+### Windows — Phase 19 : migration `netsh` — contexte `advfirewall`
+
+Cinquième tranche de `netsh` (voir Phases 15-18). Le contexte
+`advfirewall` (`firewall add/delete/show rule`, `reset`) diffère des
+magasins précédents : ses règles ne sont PAS un bookkeeping netsh-privé
+mais l'état de pare-feu RÉEL, partagé avec le plan de données
+(`WindowsPC.firewallFilter()` qui filtre effectivement les paquets) et les
+cmdlets PowerShell (`Get/New-NetFirewallRule`). Une règle `add rule
+action=block localport=22` fait donc réellement tomber les connexions.
+
+Nouvelle capacité `WindowsNetConfigApi.firewall: WindowsFirewallApi`
+(`rules`/`hasRule`/`addRule`/`deleteRules`/`clearRules`) opérant PAR
+RÉFÉRENCE sur la même `Map` `WindowsPC.dynamicFirewallRules` que le plan
+de données et PowerShell — aucune copie, l'état reste unique. Type
+`WindowsFirewallRule` ajouté. La porte de service `mpssvc` (Pare-feu
+Windows) est vérifiée dans `NetshCommand` avant dispatch, reproduisant le
+message exact « The Windows Firewall service is not running. (mpssvc) ».
+
+`NetshCommand` porte le parsing `name=value`, la normalisation
+direction/action/protocole et le formatage `show rule` — copié depuis
+`WinNetsh.ts`, intact pour le shim PowerShell.
+
+Validation : typecheck et ESLint propres. Lot cmd-netsh/feature-gates/
+firewall-vs-acl comparé au commit pré-Phase-19 via `git stash` : 14
+échecs/189 réussites avant → 6/197 après, 8 tests corrigés, zéro
+régression. Suites netsh/consistency/arp (140 tests) re-vérifiées sans
+régression.
+
+Les 6 échecs restants ne concernent PAS `advfirewall` (les deux tests de
+règle de blocage passent) : 4 tests IPsec ordre-dépendants (anti-patron
+d'état global déjà documenté Phase 18) + 2 tests dépendant de `wevtutil`
+(commande non encore migrée, séparée du plan `netsh`).
+
+Contextes `netsh` encore différés : `dhcp server`, `nps` (adossés aux
+objets de rôle `WindowsServer`, absents sur un poste client).
+
+## Windows — Phase 18 : migration `netsh` — contextes `lan`, `wlan`, `http`, `bridge`, `namespace`
+
+**État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
+
+Quatrième tranche de `netsh` (voir Phases 15-17). Ferme tous les
+sous-contextes « magasin de configuration en mémoire » restants : profils
+filaires (`lan`, 47 réf. de test), profils sans-fil (`wlan`), HTTP.sys
+(`http`), ponts réseau (`bridge`), politiques NRPT (`namespace`).
+
+Comme pour l'IPsec en Phase 17, ces magasins étaient stockés en état
+module-level / `WeakMap` par le legacy — pour NRPT (`nrptPolicies`) c'était
+un tableau global partagé par tous les `WindowsPC` (bug d'isolation). La
+migration les déplace en état **par-instance** sur `WindowsPC`
+(`netshFeatureState`), exposé via cinq nouvelles capacités typées
+`WindowsNetConfigApi.lan`/`wlan`/`http`/`bridge`/`nrpt` — CRUD granulaire
+(`WindowsLanStore`/`WindowsWlanStore`/`WindowsHttpStore`/
+`WindowsBridgeStore`/`WindowsNrptStore`). `NetshCommand` porte tout le
+parsing, le dispatch et le formatage, copié depuis `WinNetsh.ts` (intact
+pour le shim PowerShell).
+
+Validation : typecheck et ESLint propres. `cmd-netsh.test.ts` comparé au
+commit pré-Phase-18 via `git stash` : 44 échecs/142 réussites avant →
+9/177 après, 35 tests corrigés, zéro régression (échecs strictement en
+baisse, réussites strictement +35). Suites netsh/consistency/arp/ipconfig
+(149 tests) re-vérifiées sans régression.
+
+Les 9 échecs `cmd-netsh` restants : 4 tests IPsec ordre-dépendants
+(ils font `show` sur un `WindowsPC` neuf en attendant des données ajoutées
+par un test PRÉCÉDENT sur une AUTRE instance — anti-patron reposant sur
+l'ancienne fuite d'état global, que l'isolation par-instance corrige à
+juste titre ; ils échouaient déjà avant toute migration `netsh`), plus
+`advfirewall`/`dhcp server`/`nps` — contextes encore différés (plan
+d'action réseau/rôle serveur distinct).
 
 ## Windows Server — support des PSO (stratégie de mot de passe granulaire)
 

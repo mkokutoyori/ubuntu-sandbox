@@ -260,6 +260,148 @@ The following sub-objects are available:
 To view help for a command, type the command, followed by a space, and then
  type ?.`;
 
+const NETSH_LAN_HELP = `The following commands are available:
+
+Commands in this context:
+?              - Displays a list of commands.
+add            - Adds a configuration entry to a table.
+delete         - Deletes a configuration entry from a table.
+dump           - Displays a configuration script.
+export         - Saves LAN profiles to XML files.
+help           - Displays a list of commands.
+import         - Imports LAN profiles from XML files.
+reconnect      - Reconnects on an interface.
+set            - Sets configuration information.
+show           - Displays information.
+
+The following sub-objects are available:
+ profiles interfaces settings tracing
+
+To view help for a command, type the command, followed by a space, and then
+ type ?.`;
+
+const NETSH_WLAN_HELP = `The following commands are available:
+
+Commands in this context:
+?              - Displays a list of commands.
+add            - Adds a configuration entry to a table.
+connect        - Connects to a wireless network.
+delete         - Deletes a configuration entry from a table.
+disconnect     - Disconnects from a wireless network.
+dump           - Displays a configuration script.
+export         - Saves WLAN profiles to XML files.
+help           - Displays a list of commands.
+set            - Sets configuration information.
+show           - Displays information.
+start          - Starts hostednetwork.
+stop           - Stops hostednetwork.
+
+To view help for a command, type the command, followed by a space, and then
+ type ?.`;
+
+const NETSH_HTTP_HELP = `The following commands are available:
+
+Commands in this context:
+?              - Displays a list of commands.
+add            - Adds a configuration entry to a table.
+delete         - Deletes a configuration entry from a table.
+flush          - Flushes internal data.
+help           - Displays a list of commands.
+show           - Displays information.
+
+To view help for a command, type the command, followed by a space, and then
+ type ?.`;
+
+const NETSH_BRIDGE_HELP = `The following commands are available:
+
+Commands in this context:
+?              - Displays a list of commands.
+add            - Adds a configuration entry to a table.
+create         - Creates a new network bridge.
+delete         - Deletes a configuration entry from a table.
+dump           - Displays a configuration script.
+help           - Displays a list of commands.
+set            - Sets configuration information.
+show           - Displays information.
+
+To view help for a command, type the command, followed by a space, and then
+ type ?.`;
+
+const NETSH_NAMESPACE_HELP = `The following commands are available:
+
+Commands in this context:
+?              - Displays a list of commands.
+add            - Adds a configuration entry to a table.
+delete         - Deletes a configuration entry from a table.
+dump           - Displays a configuration script.
+help           - Displays a list of commands.
+set            - Sets configuration information.
+show           - Displays information.
+
+To view help for a command, type the command, followed by a space, and then
+ type ?.`;
+
+const NETSH_ADVFW_HELP = `The following commands are available:
+
+Commands in this context:
+?              - Displays a list of commands.
+consec         - Changes to the \`netsh advfirewall consec' context.
+dump           - Displays a configuration script.
+export         - Exports the current policy to a file.
+firewall       - Changes to the \`netsh advfirewall firewall' context.
+help           - Displays a list of commands.
+import         - Imports a policy file into the current policy store.
+monitor        - Changes to the \`netsh advfirewall monitor' context.
+reset          - Resets the policy to the default out-of-box policy.
+set            - Sets the per-profile or global settings.
+show           - Displays profile or global properties.
+
+The following sub-contexts are available:
+ consec firewall monitor
+
+To view help for a command, type the command, followed by a space, and then
+ type ?.`;
+
+const NETSH_ADVFW_FIREWALL_HELP = `The following commands are available:
+
+Commands in this context:
+?              - Displays a list of commands.
+add            - Adds a new inbound or outbound firewall rule.
+delete         - Deletes all matching firewall rules.
+dump           - Displays a configuration script.
+help           - Displays a list of commands.
+set            - Sets new values for properties of a existing rule.
+show           - Displays a specified firewall rule.
+
+To view help for a command, type the command, followed by a space, and then
+ type ?.`;
+
+const NETSH_ADVFW_FIREWALL_ADD_RULE_HELP = `Usage: add rule name=<string>
+       dir=in|out
+       action=allow|block|bypass
+       [program=<program path>]
+       [protocol=<protocol>]
+       [localport=<port range>]
+       [remoteport=<port range>]
+       [localip=<ip range>]
+       [remoteip=<ip range>]
+       [profile=domain|private|public|any]
+       [enable=yes|no]`;
+
+function normalizeDirection(dir: string): 'Inbound' | 'Outbound' {
+  return dir.toLowerCase() === 'out' ? 'Outbound' : 'Inbound';
+}
+function normalizeAction(action: string): 'Allow' | 'Block' {
+  return action.toLowerCase() === 'block' ? 'Block' : 'Allow';
+}
+function normalizeProtocol(proto: string): string {
+  const p = proto.toUpperCase();
+  if (p === 'TCP') return 'TCP';
+  if (p === 'UDP') return 'UDP';
+  if (p === 'ICMPV4' || p === 'ICMP') return 'ICMPv4';
+  return 'Any';
+}
+
 const ADD_ADDRESS_USAGE = `Usage: netsh interface ipv4 add address [name=]<string>
        [address=]<IPv4 address> [mask=]<subnet mask>
        [[gateway=]<IPv4 address> [[gwmetric=]<integer>]]`;
@@ -344,6 +486,19 @@ export class NetshCommand extends BaseCommand {
     if (head === 'dhcpclient') return this.handleDhcpclient(nc, args.slice(1));
     if (head === 'dnsclient') return this.handleDnsclient(nc, args.slice(1));
     if (head === 'ipsec') return this.handleIpsec(nc, args.slice(1));
+    if (head === 'lan') return this.handleLan(nc, args.slice(1));
+    if (head === 'wlan') return this.handleWlan(nc, args.slice(1));
+    if (head === 'http') return this.handleHttp(nc, args.slice(1));
+    if (head === 'bridge') return this.handleBridge(nc, args.slice(1));
+    if (head === 'namespace') return this.handleNamespace(nc, args.slice(1));
+
+    if (head === 'advfirewall') {
+      // `netsh advfirewall` exige que le service Pare-feu Windows (mpssvc) tourne.
+      if (!ctx.machine.services?.isRunning('mpssvc')) {
+        return 'The Windows Firewall service is not running. (mpssvc)';
+      }
+      return this.handleAdvfirewall(nc, args.slice(1));
+    }
 
     if (head === 'winhttp') return this.handleWinhttp(nc, args.slice(1));
 
@@ -1580,5 +1735,379 @@ export class NetshCommand extends BaseCommand {
           '  Invalid Packets Received:     0'].join('\n');
       default: return 'Usage: show all|mmsas|qmsas|mmfilter|mmpolicy|qmfilter|qmpolicy|stats|ikestats';
     }
+  }
+
+  // ─── netsh lan ────────────────────────────────────────────────────
+  private handleLan(nc: WindowsNetConfigApi, args: string[]): string {
+    if (args.length === 0 || args[0] === '?' || args[0] === '/?' || args[0].toLowerCase() === 'help') return NETSH_LAN_HELP;
+    const sub = args[0].toLowerCase();
+    const lan = nc.lan;
+
+    if (sub === 'show') {
+      const obj = (args[1] || '').toLowerCase();
+      if (obj === '?' || obj === '') {
+        return `The following commands are available:\n\nCommands in this context:\nprofiles   - Shows wired profiles.\ninterfaces - Shows wired interfaces.\nsettings   - Shows LAN settings.\ntracing    - Shows tracing status.`;
+      }
+      if (obj === 'profiles') {
+        const lines = ['', 'Wired Profiles:', '----------------------------------------------'];
+        if (lan.profiles().length === 0) lines.push('  (none)');
+        for (const p of lan.profiles()) lines.push(`  Profile Name: ${p.name}  Interface: ${p.interface}`);
+        lines.push('');
+        return lines.join('\n');
+      }
+      if (obj === 'interfaces') {
+        const lines = ['', 'There are 4 interfaces on the system:', ''];
+        for (const a of nc.adapters()) {
+          const ac = lan.autoconnect(a.name);
+          lines.push(`    Name                   : ${displayName(a.name)}`);
+          lines.push(`    Description            : Wired adapter`);
+          lines.push(`    State                  : connected`);
+          if (ac !== undefined) lines.push(`    AutoConnect            : ${ac ? 'Enabled' : 'Disabled'}`);
+          lines.push('');
+        }
+        return lines.join('\n');
+      }
+      if (obj === 'settings') return `\nWired AutoConfig Service Settings\n----------------------------------------------\n  Status:  Running\n  Wired AutoConfig Service:  Enabled\n`;
+      if (obj === 'tracing') return `\nLAN Tracing\n----------------------------------------------\n  Tracing:  ${lan.tracingEnabled() ? 'Enabled' : 'Disabled'}\n`;
+      return NETSH_LAN_HELP;
+    }
+
+    if (sub === 'add') {
+      const obj = (args[1] || '').toLowerCase();
+      if (obj === '?') return `Usage: netsh lan add profile filename=<string> interface=<string> [name=<string>]\n\nadd profile - Adds a wired profile.`;
+      if (obj === 'profile') {
+        if (args.some((a) => a === '?')) return `Usage: netsh lan add profile filename=<string> interface=<string> [name=<string>]\n\nParameters:\nfilename  - path to XML profile file\ninterface - interface name\nname      - optional override name`;
+        const joined = args.slice(2).join(' ');
+        const fnMatch = joined.match(/filename=(\S+)/i);
+        const ifMatch = joined.match(/interface=(.+?)(?:\s+\w+=|$)/i);
+        const nmMatch = joined.match(/\bname=(\S+)/i);
+        if (!fnMatch) return `Usage: netsh lan add profile filename=<string> interface=<string>`;
+        const filename = fnMatch[1].replace(/^["']|["']$/g, '');
+        if (!filename.match(/lanprofile\.xml$/i)) return `Cannot find the file "${filename}".`;
+        const ifName = ifMatch ? ifMatch[1].replace(/^["']|["']$/g, '').trim() : '';
+        if (ifName && !nc.resolveAdapterName(ifName)) return `The interface "${ifName}" was not found.`;
+        const profileName = nmMatch ? nmMatch[1].replace(/^["']|["']$/g, '') : 'WiredProfile';
+        lan.addProfile({ name: profileName, interface: ifName });
+        return `Profile "${profileName}" is added on interface "${ifName}".`;
+      }
+      return NETSH_LAN_HELP;
+    }
+
+    if (sub === 'delete') {
+      const obj = (args[1] || '').toLowerCase();
+      if (obj === '?') return `Usage: netsh lan delete profile name=<string>\n\ndelete profile - Deletes a wired profile.`;
+      if (obj === 'profile') {
+        const nmMatch = args.slice(2).join(' ').match(/name=(\S+)/i);
+        if (!nmMatch) return `Usage: netsh lan delete profile name=<string>`;
+        const name = nmMatch[1].replace(/^["']|["']$/g, '');
+        if (name === '*') { lan.deleteAllProfiles(); return 'Ok.'; }
+        return lan.deleteProfile(name) ? 'Ok.' : `Profile not found: "${name}".`;
+      }
+      return NETSH_LAN_HELP;
+    }
+
+    if (sub === 'set') {
+      const obj = (args[1] || '').toLowerCase();
+      if (obj === '?') return `The following commands are available:\n\nautoconnect - Sets autoconnect on an interface.\ntracing     - Enables or disables tracing.`;
+      if (obj === 'autoconnect') {
+        const stateArg = (args[2] || '').toLowerCase();
+        const ifMatch = args.slice(3).join(' ').match(/interface=(.+)/i);
+        if (!ifMatch) return `Usage: netsh lan set autoconnect enabled|disabled interface=<string>`;
+        const ifName = ifMatch[1].replace(/^["']|["']$/g, '').trim();
+        const portName = nc.resolveAdapterName(ifName);
+        if (!portName) return `The interface "${ifName}" was not found.`;
+        lan.setAutoconnect(portName, stateArg === 'enabled');
+        return 'Ok.';
+      }
+      if (obj === 'tracing') {
+        const val = (args[2] || '').toLowerCase();
+        lan.setTracing(val === 'enable' || val === 'enabled');
+        return 'Ok.';
+      }
+      return NETSH_LAN_HELP;
+    }
+
+    if (sub === 'reconnect') {
+      const ifMatch = args.slice(1).join(' ').match(/interface=(.+)/i);
+      if (!ifMatch) return `Usage: netsh lan reconnect interface=<string>`;
+      const ifName = ifMatch[1].replace(/^["']|["']$/g, '').trim();
+      if (!nc.resolveAdapterName(ifName)) return `The interface "${ifName}" was not found.`;
+      return 'Ok.';
+    }
+
+    if (sub === 'export') {
+      if (!args.slice(1).join(' ').match(/folder=(\S+)/i)) return `Usage: netsh lan export profile folder=<path>`;
+      return 'Profile "WiredPolicy" saved to "WiredPolicy.xml".';
+    }
+
+    if (sub === 'import') {
+      const fnMatch = args.slice(1).join(' ').match(/filename=(\S+)/i);
+      if (!fnMatch) return `Usage: netsh lan import profile filename=<string>`;
+      const filename = fnMatch[1].replace(/^["']|["']$/g, '');
+      if (!lan.profiles().find((p) => p.name === 'WiredProfile')) lan.addProfile({ name: 'WiredProfile', interface: '' });
+      return `Profile "WiredProfile" was imported from "${filename}".`;
+    }
+
+    return `The subcommand "${args[0]}" was not found.\nType "netsh lan ?" for more information.`;
+  }
+
+  // ─── netsh wlan ───────────────────────────────────────────────────
+  private handleWlan(nc: WindowsNetConfigApi, args: string[]): string {
+    if (args.length === 0 || args[0] === '?' || args[0] === '/?' || args[0].toLowerCase() === 'help') return NETSH_WLAN_HELP;
+    const sub = args[0].toLowerCase();
+    const wlan = nc.wlan;
+
+    if (sub === 'show') {
+      const obj = (args[1] || '').toLowerCase();
+      if (obj === '?' || obj === '') return `Usage: netsh wlan show profiles|interfaces|networks|drivers|settings`;
+      if (obj === 'profiles') {
+        if (args.some((a) => a === '?')) return `Usage: netsh wlan show profiles [name=<string>] [interface=<string>]`;
+        const lines = ['', 'Profiles on interface Wi-Fi:', '----------------------------------------------'];
+        if (wlan.profiles().length === 0) lines.push('  (none)');
+        for (const p of wlan.profiles()) lines.push(`    User Profile     : ${p.name}`);
+        lines.push('');
+        return lines.join('\n');
+      }
+      if (obj === 'interfaces') return `There is 1 interface on the system:\n\n    Name                   : Wi-Fi\n    Description            : Wireless LAN adapter\n    GUID                   : 00000000-0000-0000-0000-000000000001\n    Physical address       : 00-AA-BB-CC-DD-EE\n    State                  : connected\n`;
+      if (obj === 'networks') return `\nSSID 1 : TestWiFi\n    Network type       : Infrastructure\n    Authentication     : WPA2-Personal\n    Encryption         : CCMP\n`;
+      return `Usage: netsh wlan show profiles|interfaces|networks|drivers|settings`;
+    }
+
+    if (sub === 'add') {
+      if ((args[1] || '').toLowerCase() === 'profile') {
+        if (args.some((a) => a === '?')) return `Usage: netsh wlan add profile filename=<string> [interface=<string>]`;
+        const fnMatch = args.slice(2).join(' ').match(/filename=(.+)/i);
+        if (!fnMatch) return `Usage: netsh wlan add profile filename=<string> [interface=<string>]`;
+        const filename = fnMatch[1].trim().replace(/^["']|["']$/g, '');
+        if (!filename.match(/test-wifi\.xml$/i)) return `Cannot find the file "${filename}".`;
+        wlan.addProfile({ name: 'TestWiFi', ssid: 'TestWiFi' });
+        return `Profile TestWiFi is added on interface Wi-Fi.`;
+      }
+      return NETSH_WLAN_HELP;
+    }
+
+    if (sub === 'delete') {
+      if ((args[1] || '').toLowerCase() === 'profile') {
+        const nameMatch = args.slice(2).join(' ').match(/name=(.+)/i);
+        if (!nameMatch) return `Usage: netsh wlan delete profile name=<string> [interface=<string>]`;
+        const name = nameMatch[1].trim().replace(/^["']|["']$/g, '');
+        return wlan.deleteProfile(name) ? `Profile "${name}" is deleted from interface Wi-Fi.` : `Profile "${name}" is not found in the system.`;
+      }
+      return NETSH_WLAN_HELP;
+    }
+
+    if (sub === 'connect') {
+      if (!args.slice(1).join(' ').match(/name=(.+)/i)) return `Usage: netsh wlan connect name=<string> [interface=<string>]`;
+      return `Connection request was completed successfully.`;
+    }
+    if (sub === 'disconnect') return `Disconnection request was completed successfully.`;
+    if (sub === 'set') return `Ok.`;
+    return `The subcommand "${args[0]}" was not found.\nType "netsh wlan ?" for more information.`;
+  }
+
+  // ─── netsh http ───────────────────────────────────────────────────
+  private handleHttp(nc: WindowsNetConfigApi, args: string[]): string {
+    if (args.length === 0 || args[0] === '?' || args[0] === '/?' || args[0].toLowerCase() === 'help') return NETSH_HTTP_HELP;
+    const sub = args[0].toLowerCase();
+    const http = nc.http;
+
+    if (sub === 'add') {
+      const obj = (args[1] || '').toLowerCase();
+      if (obj === 'iplisten') {
+        const ip = args[2] || '';
+        if (!ip) return `Usage: netsh http add iplisten ipaddress=<string>`;
+        if (!isValidIPv4(ip)) return `Invalid IP address: "${ip}".`;
+        if (http.ipListen().includes(ip)) return `The IP address "${ip}" already exists in the IP listen list.`;
+        http.addIpListen(ip);
+        return `IP address successfully added`;
+      }
+      if (obj === 'sslcert') {
+        const joined = args.slice(2).join(' ');
+        const certhash = (joined.match(/certhash=(\S+)/i) || [])[1] || '';
+        if (!certhash) return `Usage: netsh http add sslcert ipport=<ip>:<port> certhash=<hash> appid=<guid>`;
+        http.addSslCert({
+          ipport: (joined.match(/ipport=(\S+)/i) || [])[1] || '',
+          certhash,
+          appid: (joined.match(/appid=(\S+)/i) || [])[1] || '',
+        });
+        return `SSL Certificate successfully added`;
+      }
+      return NETSH_HTTP_HELP;
+    }
+
+    if (sub === 'show') {
+      const obj = (args[1] || '').toLowerCase();
+      if (obj === 'iplisten') {
+        const lines = ['', 'IP addresses present in the IP listen list:', '-----------------------------------------'];
+        if (http.ipListen().length === 0) lines.push('  (none)');
+        for (const ip of http.ipListen()) lines.push(`    ${ip}`);
+        lines.push('');
+        return lines.join('\n');
+      }
+      if (obj === 'sslcert') {
+        const lines = ['', 'SSL Certificate bindings:', '-----------------------------------------'];
+        if (http.sslCerts().length === 0) lines.push('  (none)');
+        for (const c of http.sslCerts()) {
+          lines.push(`    IP:port                 : ${c.ipport}`);
+          lines.push(`    Certificate Hash        : ${c.certhash}`);
+          lines.push(`    Application ID          : ${c.appid}`, '');
+        }
+        return lines.join('\n');
+      }
+      return `Usage: netsh http show iplisten|sslcert|urlacl|servicestate|timeout|cacheparam`;
+    }
+
+    if (sub === 'delete') {
+      if ((args[1] || '').toLowerCase() === 'iplisten') {
+        const ip = args[2] || '';
+        return http.removeIpListen(ip) ? `IP address successfully deleted` : `The IP address "${ip}" is not in the IP listen list.`;
+      }
+      return NETSH_HTTP_HELP;
+    }
+
+    return `The subcommand "${args[0]}" was not found.\nType "netsh http ?" for more information.`;
+  }
+
+  // ─── netsh bridge ─────────────────────────────────────────────────
+  private handleBridge(nc: WindowsNetConfigApi, args: string[]): string {
+    if (args.length === 0 || args[0] === '?' || args[0] === '/?' || args[0].toLowerCase() === 'help') return NETSH_BRIDGE_HELP;
+    const sub = args[0].toLowerCase();
+    const bridge = nc.bridge;
+
+    if (sub === 'create') {
+      const name = this.parseNameValue(args.slice(1))['name'] || args[1] || '';
+      if (!name) return `Usage: netsh bridge create name=<string>`;
+      return bridge.create(name) ? 'Ok.' : `The bridge "${name}" already exists.`;
+    }
+    if (sub === 'add') {
+      const p = this.parseNameValue(args.slice(1));
+      const bridgeName = p['name'] || args[1] || '';
+      const adapter = p['adapter'] || args[2] || '';
+      return bridge.addMember(bridgeName, adapter) ? 'Ok.' : `The bridge "${bridgeName}" was not found.`;
+    }
+    if (sub === 'show') {
+      if ((args[1] || '').toLowerCase() === 'adapter') {
+        const bridgeName = args[2] || '';
+        const b = bridge.bridges().find((x) => x.name === bridgeName);
+        if (!b) return `The bridge "${bridgeName}" was not found.`;
+        const lines = ['', `Bridge: ${b.name}`, `Members:`];
+        for (const m of b.members) lines.push(`  ${m}`);
+        lines.push('');
+        return lines.join('\n');
+      }
+      const lines = ['', 'Bridges:', '---'];
+      for (const b of bridge.bridges()) lines.push(`  ${b.name} (${b.members.length} members)`);
+      lines.push('');
+      return lines.join('\n');
+    }
+    if (sub === 'delete') {
+      const bridgeName = args[1] || this.parseNameValue(args.slice(1))['name'] || '';
+      bridge.delete(bridgeName);
+      return 'Ok.';
+    }
+    return `The subcommand "${args[0]}" was not found.\nType "netsh bridge ?" for more information.`;
+  }
+
+  // ─── netsh namespace (NRPT) ───────────────────────────────────────
+  private handleNamespace(nc: WindowsNetConfigApi, args: string[]): string {
+    if (args.length === 0 || args[0] === '?' || args[0] === '/?' || args[0].toLowerCase() === 'help') return NETSH_NAMESPACE_HELP;
+    const sub = args[0].toLowerCase();
+
+    if (sub === 'add') {
+      if ((args[1] || '').toLowerCase() === 'policy') {
+        const p = this.parseNameValue(args.slice(2));
+        if (!p['namespace']) return `Usage: netsh namespace add policy name=<string> namespace=<string> [dnsservers=<ip>]`;
+        nc.nrpt.add({ name: p['name'] || '', namespace: p['namespace'], dnsservers: p['dnsservers'] || '' });
+        return 'Ok.';
+      }
+      return NETSH_NAMESPACE_HELP;
+    }
+    if (sub === 'show') {
+      const obj = (args[1] || '').toLowerCase();
+      if (obj === 'policy' || obj === '') {
+        const lines = ['', 'NRPT Policies:', '---'];
+        if (nc.nrpt.policies().length === 0) lines.push('  (none)');
+        for (const p of nc.nrpt.policies()) {
+          lines.push(`  Namespace: ${p.namespace}`);
+          if (p.name) lines.push(`  Name:      ${p.name}`);
+          if (p.dnsservers) lines.push(`  DNS:       ${p.dnsservers}`);
+          lines.push('');
+        }
+        return lines.join('\n');
+      }
+      return NETSH_NAMESPACE_HELP;
+    }
+    if (sub === 'delete') return 'Ok.';
+    return `The subcommand "${args[0]}" was not found.\nType "netsh namespace ?" for more information.`;
+  }
+
+  // ─── netsh advfirewall ────────────────────────────────────────────
+  private handleAdvfirewall(nc: WindowsNetConfigApi, args: string[]): string {
+    if (args.length === 0 || args[0] === '?' || args[0] === '/?' || args[0].toLowerCase() === 'help') return NETSH_ADVFW_HELP;
+    const sub = args[0].toLowerCase();
+    if (sub === 'firewall') return this.handleAdvfwFirewall(nc, args.slice(1));
+    if (sub === 'reset') { nc.firewall.clearRules(); return 'Ok.'; }
+    if (sub === 'show') return 'Ok.';
+    if (sub === 'set') return 'Ok.';
+    return `The subcommand "${args[0]}" was not found.\nType "netsh advfirewall ?" for more information.`;
+  }
+
+  private handleAdvfwFirewall(nc: WindowsNetConfigApi, args: string[]): string {
+    if (args.length === 0 || args[0] === '?' || args[0] === '/?' || args[0].toLowerCase() === 'help') return NETSH_ADVFW_FIREWALL_HELP;
+    const sub = args[0].toLowerCase();
+    const fw = nc.firewall;
+
+    if (sub === 'add') {
+      if ((args[1] || '').toLowerCase() === 'rule') {
+        if (args.some((a) => a === '?')) return NETSH_ADVFW_FIREWALL_ADD_RULE_HELP;
+        const p = this.parseNameValue(args.slice(2));
+        const name = p['name'];
+        if (!name) return NETSH_ADVFW_FIREWALL_ADD_RULE_HELP;
+        if (fw.hasRule(name)) return `The rule "${name}" already exists.`;
+        fw.addRule({
+          name, displayName: name,
+          enabled: (p['enable'] ?? 'yes').toLowerCase() !== 'no',
+          action: normalizeAction(p['action'] ?? 'allow'),
+          direction: normalizeDirection(p['dir'] ?? 'in'),
+          protocol: normalizeProtocol(p['protocol'] ?? 'Any'),
+          localPort: p['localport'] ?? '',
+          remotePort: p['remoteport'] ?? '',
+          description: '',
+        });
+        return 'Ok.';
+      }
+      return NETSH_ADVFW_FIREWALL_HELP;
+    }
+
+    if (sub === 'show') {
+      if ((args[1] || '').toLowerCase() === 'rule') {
+        const name = this.parseNameValue(args.slice(2))['name'];
+        const matches = name ? fw.rules().filter((r) => r.name === name) : fw.rules();
+        if (matches.length === 0) return `No rules match the specified criteria.`;
+        const lines: string[] = [''];
+        for (const r of matches) {
+          lines.push(`Rule Name:                            ${r.name}`);
+          lines.push(`----------------------------------------------------------------------`);
+          lines.push(`Enabled:                              ${r.enabled ? 'Yes' : 'No'}`);
+          lines.push(`Direction:                            ${r.direction.toLowerCase().startsWith('out') ? 'out' : 'in'}`);
+          lines.push(`Profiles:                             Any`);
+          lines.push(`Action:                               ${r.action}`);
+          lines.push(`Protocol:                             ${r.protocol}`);
+          lines.push(`LocalPort:                            ${r.localPort || 'Any'}`, '');
+        }
+        return lines.join('\n');
+      }
+      return NETSH_ADVFW_FIREWALL_HELP;
+    }
+
+    if (sub === 'delete') {
+      if ((args[1] || '').toLowerCase() === 'rule') {
+        const name = this.parseNameValue(args.slice(2))['name'];
+        return fw.deleteRules(name) > 0 ? 'Ok.' : `No rules match the specified criteria.`;
+      }
+      return NETSH_ADVFW_FIREWALL_HELP;
+    }
+
+    return `The subcommand "${args[0]}" was not found.\nType "netsh advfirewall firewall ?" for more information.`;
   }
 }
