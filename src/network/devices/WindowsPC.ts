@@ -124,7 +124,7 @@ import type { CmdInterpreter } from './windows/command-kernel/CmdInterpreter';
 import { lowercaseCommandNames } from './windows/command-kernel/ast/lowercaseCommandNames';
 import { resolveWindowsUser } from './windows/command-kernel/WindowsUser';
 import type { CommandRegistry } from '@/command-kernel/registry/command-registry';
-import type { WindowsIPv6RouteEntry as WinIPv6RouteEntry, WindowsGpResult, DomainControllerLocation, DomainControllerDiagnostics, KerberosCachedTicket, DomainTrustDirection } from '@/command-kernel/machine/types';
+import type { WindowsIPv6RouteEntry as WinIPv6RouteEntry, WindowsGpResult, DomainControllerLocation, DomainControllerDiagnostics, KerberosCachedTicket, DomainTrustDirection, CertificateIssuance } from '@/command-kernel/machine/types';
 import { createSession } from '@/command-kernel/session/types';
 import { PipeBuffer } from '@/command-kernel/io/pipe-buffer';
 import { ShellError, CommandNotFoundError } from '@/command-kernel/errors';
@@ -1923,6 +1923,8 @@ export class WindowsPC extends EndHost implements UserAccountHost {
         licensingState: () => this.licensing.getState(),
         lprSubmitJob: (server, queue, jobName, content) =>
           submitLpdPrintJob(this.getTcpStack(), server, queue, jobName, this.userMgr.currentUser, this.getHostname(), content),
+        certificateAuthorityInstalled: () => this.getAdcsRole() !== null,
+        submitCertRequest: (subject, template, eku) => this.submitCertRequest(subject, template, eku),
         locateDomainController: (domain) => this.locateDomainController(domain),
         dcDiagnostics: () => this.dcDiagnostics(),
         kerberosTickets: () => this.kerberosTickets(),
@@ -2658,6 +2660,31 @@ export class WindowsPC extends EndHost implements UserAccountHost {
    * `WindowsServer`; always null on a client, overridden by `WindowsServer`.
    */
   getAdcsRole(): import('./windows/server/adcs/CaRole').WindowsAdcsRole | null { return null; }
+
+  /**
+   * `certreq -submit` — soumet une demande de certificat à l'autorité AD CS
+   * locale et range le certificat émis dans le magasin (`certStore`), de
+   * sorte que `New-WebBinding -CertificateHash` puisse le référencer. L'état
+   * (cert émis) reste sur l'équipement ; le formatage passe côté commande.
+   * Ne peut aboutir que lorsque le rôle AD CS est installé (donc jamais sur
+   * un simple poste).
+   */
+  submitCertRequest(subject: string, template: string, eku: string | undefined): CertificateIssuance {
+    const adcs = this.getAdcsRole();
+    if (!adcs) {
+      return { ok: false, message: 'CertReq: The RPC server is unavailable. 0x800706ba (WIN32: 1722 RPC_S_SERVER_UNAVAILABLE)' };
+    }
+    const res = adcs.submitRequest(subject, template, { requestedEku: eku });
+    if (!res.ok) return { ok: false, message: res.message };
+    this.certStore.add(res.certificate!, res.privateKey!);
+    return {
+      ok: true,
+      message: res.message,
+      serialNumber: res.certificate!.serialNumber,
+      subject: res.certificate!.subject,
+      issuer: res.certificate!.issuer,
+    };
+  }
 
   /**
    * DFS Namespaces role (PRD-Windows-Server-Advanced.md §5 P16) — null

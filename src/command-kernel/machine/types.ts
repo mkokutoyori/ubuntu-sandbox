@@ -1034,6 +1034,27 @@ export interface PowerApi {
   reboot(): Promise<void>;
 }
 
+/** Résultat d'une demande de certificat (`certreq -submit`) — modèle Windows/AD CS. */
+export interface CertificateIssuance {
+  readonly ok: boolean;
+  readonly message: string;
+  readonly serialNumber?: string;
+  readonly subject?: string;
+  readonly issuer?: string;
+}
+
+/**
+ * Services de certificats côté client (`certreq`/`certutil -submit`) —
+ * optionnel, présent uniquement quand le rôle AD CS est installé (donc
+ * jamais sur un simple poste : `certreq` y répond « RPC server is
+ * unavailable »). Soumet une demande à l'autorité de certification et
+ * stocke le certificat émis dans le magasin local.
+ */
+export interface CertificateServicesApi {
+  /** `certreq -submit -template <modèle> -subject <sujet>` — émet un certificat signé par l'AC. */
+  submitRequest(subject: string, template: string, eku: string | undefined): CertificateIssuance;
+}
+
 /**
  * Client d'impression réseau (`lpr`) — optionnel, pas un concept universel.
  * Soumet un travail à une file LPD distante via un vrai échange RFC 1179 ;
@@ -1207,6 +1228,8 @@ export interface MachineApi {
   readonly licensing?: LicensingApi;
   /** Client d'impression réseau (`lpr`) — optionnel, pas un concept universel. */
   readonly printClient?: PrintClientApi;
+  /** Services de certificats (`certreq`/`certutil`) — optionnel, présent seulement quand le rôle AD CS est installé. */
+  readonly certificateServices?: CertificateServicesApi;
   /** Masque de permissions par défaut (`umask`) — optionnel, pas un concept universel. */
   readonly permissions?: PermissionsApi;
   now(): Date;

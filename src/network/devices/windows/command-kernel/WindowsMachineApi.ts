@@ -67,6 +67,8 @@ import {
   RunAsApi,
   LicensingApi,
   PrintClientApi,
+  CertificateServicesApi,
+  CertificateIssuance,
   WindowsHttpStore,
   WindowsIpsecDynamicSettings,
   WindowsIpsecFilter,
@@ -221,6 +223,8 @@ export interface WindowsMachineApiDeps {
   licensingProductKey(): string | null;
   licensingState(): string;
   lprSubmitJob(server: string, queue: string, jobName: string, content: Uint8Array): { ok: boolean; error?: string };
+  certificateAuthorityInstalled(): boolean;
+  submitCertRequest(subject: string, template: string, eku: string | undefined): CertificateIssuance;
   locateDomainController(domain: string): DomainControllerLocation;
   dcDiagnostics(): DomainControllerDiagnostics;
   kerberosTickets(): readonly KerberosCachedTicket[];
@@ -1819,6 +1823,13 @@ class WindowsPrintClientApiImpl implements PrintClientApi {
   }
 }
 
+class WindowsCertificateServicesApiImpl implements CertificateServicesApi {
+  constructor(private readonly submit: (subject: string, template: string, eku: string | undefined) => CertificateIssuance) {}
+  submitRequest(subject: string, template: string, eku: string | undefined): CertificateIssuance {
+    return this.submit(subject, template, eku);
+  }
+}
+
 export class WindowsMachineApi implements MachineApi {
   readonly fs: FileSystemApi;
   readonly proc: ProcessApi;
@@ -1849,6 +1860,19 @@ export class WindowsMachineApi implements MachineApi {
   private readonly bootedAtFn: () => Date | null;
   private readonly nowFn: () => Date;
   private readonly getDnsServerRoleFn: () => DnsServerRoleLike | null;
+  private readonly certificateAuthorityInstalledFn: () => boolean;
+  private readonly submitCertRequestFn: (subject: string, template: string, eku: string | undefined) => CertificateIssuance;
+
+  /**
+   * `certreq`/`certutil` — services de certificats. Getter live (jamais
+   * mémoïsé) car le rôle AD CS peut être installé après la construction du
+   * shell ; `null` tant que l'autorité de certification n'est pas installée
+   * (donc « RPC server is unavailable » sur un poste, sans fonctionnalité
+   * serveur exposée).
+   */
+  get certificateServices(): CertificateServicesApi | null {
+    return this.certificateAuthorityInstalledFn() ? new WindowsCertificateServicesApiImpl(this.submitCertRequestFn) : null;
+  }
 
   /**
    * `dnscmd` — administration du serveur DNS. Getter live (jamais mémoïsé)
@@ -1917,6 +1941,8 @@ export class WindowsMachineApi implements MachineApi {
     this.bootedAtFn = deps.bootedAt;
     this.nowFn = deps.now;
     this.getDnsServerRoleFn = deps.getDnsServerRole;
+    this.certificateAuthorityInstalledFn = deps.certificateAuthorityInstalled;
+    this.submitCertRequestFn = deps.submitCertRequest;
   }
 
   bootedAt(): Date | null {

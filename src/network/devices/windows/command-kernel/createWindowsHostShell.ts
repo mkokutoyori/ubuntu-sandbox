@@ -26,6 +26,7 @@ import { DnscmdCommand } from './commands/Dnscmd';
 import { RunasCommand } from './commands/Runas';
 import { SlmgrCommand } from './commands/Slmgr';
 import { LprCommand } from './commands/Lpr';
+import { CertreqCommand, CertutilCommand } from './commands/Certreq';
 import { HostnameCommand } from './commands/Hostname';
 import { IcaclsCommand } from './commands/Icacls';
 import { IpconfigCommand } from './commands/Ipconfig';
@@ -139,6 +140,8 @@ export function createWindowsHostShell(deps: WindowsMachineApiDeps): { registry:
   registry.register(() => new RunasCommand());
   registry.register(() => new SlmgrCommand());
   registry.register(() => new LprCommand());
+  registry.register(() => new CertreqCommand());
+  registry.register(() => new CertutilCommand());
 
   const interpreter = new CmdInterpreter(registry, machine);
 
