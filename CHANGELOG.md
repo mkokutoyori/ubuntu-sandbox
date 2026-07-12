@@ -5,6 +5,23 @@ progressive par équipement. Un push = une entrée = une fonctionnalité
 complète et testée (voir `CLAUDE.md` / le framework de migration pour les
 principes directeurs).
 
+## Windows — correctif : `whoami` local préserve la casse du nom d'utilisateur
+
+**État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
+
+Correctif ciblé dans `WindowsMachineApi.securityIdentity` : la forme
+locale de `whoami` (`<hôte>\<utilisateur>`) minusculisait à tort le nom
+d'utilisateur. Elle préserve désormais la casse du compte (`SRV1` →
+`srv1\Administrator`) tout en gardant le nom d'hôte en minuscules ; la
+forme domaine (`lab\alice`) reste inchangée (entièrement en minuscules,
+conformément aux tests existants).
+
+Validation : `windows-server-domain-join.test.ts` passe intégralement
+(24/24 — c'était le dernier échec, « reverts to local whoami formatting »,
+antérieur à la série de migrations) ; aucune régression sur les suites
+whoami voisines (`windows-access-cmd`, `windows-access-powershell`,
+`windows-drive-switching` : 122/122).
+
 ## Windows Phase 26 : migration de `runas` (chemin non-interactif) vers command-kernel
 
 **État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**

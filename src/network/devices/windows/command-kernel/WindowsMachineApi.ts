@@ -546,7 +546,7 @@ class WindowsUserManagementApi implements UserManagementApi {
     const sid = domain ? domainSid(domain.netbiosName) : (this.userManager.getUserSID(name) ?? 'S-1-5-21-0-0-0-0');
     const accountName = domain
       ? `${domain.netbiosName.toLowerCase()}\\${name.toLowerCase()}`
-      : `${this.hostname.toLowerCase()}\\${name.toLowerCase()}`;
+      : `${this.hostname.toLowerCase()}\\${name}`;
 
     const groups = domain
       ? domain.groups.map((g) => ({
