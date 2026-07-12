@@ -406,3 +406,48 @@ describe('DirectoryStore — RID pool / objectSid', () => {
     expect(block2.startRid).toBe(block1.startRid + block1.count);
   });
 });
+
+describe('DirectoryStore — AdminSDHolder / SDProp', () => {
+  it('marks a direct member of a protected group (Domain Admins) with adminCount=1', () => {
+    const s = store();
+    expect(s.getUser('Administrator')?.adminCount).toBe(false);
+    const marked = s.runSdProp();
+    expect(marked).toContain('Administrator');
+    expect(s.getUser('Administrator')?.adminCount).toBe(true);
+  });
+
+  it('does not mark a user outside any protected group', () => {
+    const s = store();
+    s.newUser('bob', { password: 'x' });
+    s.runSdProp();
+    expect(s.getUser('bob')?.adminCount).toBe(false);
+  });
+
+  it('marks members of a protected group reached only through nested group membership', () => {
+    const s = store();
+    s.newUser('carol', { password: 'x' });
+    s.newGroup('Junior Admins');
+    s.addGroupMember('Junior Admins', 'carol');
+    const juniorDn = s.getGroup('Junior Admins')!.dn;
+    s.getTree().modifyEntry(parseDN(s.getGroup('Domain Admins')!.dn), [{ op: 'add', type: 'member', values: [juniorDn] }]);
+
+    const marked = s.runSdProp();
+    expect(marked).toContain('carol');
+    expect(s.getUser('carol')?.adminCount).toBe(true);
+  });
+
+  it("real AD's quirk: adminCount is never cleared automatically after removal from the protected group", () => {
+    const s = store();
+    s.runSdProp();
+    expect(s.getUser('Administrator')?.adminCount).toBe(true);
+    s.removeGroupMember('Domain Admins', 'Administrator');
+    expect(s.getUser('Administrator')?.adminCount).toBe(true);
+  });
+
+  it('is idempotent across repeated passes', () => {
+    const s = store();
+    const first = s.runSdProp();
+    const second = s.runSdProp();
+    expect(second).toEqual(first);
+  });
+});

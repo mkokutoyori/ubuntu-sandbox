@@ -18,6 +18,8 @@ export interface AdUser {
   fullName: string;
   /** `S-1-5-21-<domain>-<rid>` — empty if the RID Master's local pool was exhausted when this object was created (never happens in normal lab use). */
   objectSid: string;
+  /** Set by SDProp once this user is (or ever was) a member of a protected group — real AD never clears it back automatically, even after removal. */
+  adminCount: boolean;
 }
 
 export interface AdGroup {
@@ -26,6 +28,7 @@ export interface AdGroup {
   scope: 'DomainLocal' | 'Global' | 'Universal';
   members: string[];
   objectSid: string;
+  adminCount: boolean;
 }
 
 /** Subset of `WindowsAccountsPolicyState` a GPO can carry (PRD-Windows-Server.md §5 P10 — "politique de mots de passe et de verrouillage du domaine"). */

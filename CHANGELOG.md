@@ -5,6 +5,37 @@ progressive par équipement. Un push = une entrée = une fonctionnalité
 complète et testée (voir `CLAUDE.md` / le framework de migration pour les
 principes directeurs).
 
+## Windows Server — AdminSDHolder / SDProp (protection des groupes protégés)
+
+Nouveau module `ad/security/SdProp.ts` (63 lignes) : une passe SDProp
+marque `adminCount=1` sur tout membre — direct ou via imbrication de
+groupes, résolution cycle-safe — d'un groupe protégé (`Domain Admins`,
+le seul réellement semé par défaut ; la liste `PROTECTED_GROUPS` est
+conçue pour en accueillir d'autres trivialement). Reproduit la
+bizarrerie bien connue d'AD réel : `adminCount` n'est JAMAIS effacé
+automatiquement, même après le retrait du groupe — vérifié par un
+test dédié. Comme ce simulateur ne modélise pas encore de DACL/
+descripteur de sécurité réel, le "re-tamponnage d'ACL" se limite à ce
+bookkeeping `adminCount`, déjà l'observable concret qu'un admin réel
+consulte (`Get-ADUser -Filter {adminCount -eq 1}`).
+
+`WindowsServer.runSdProp()` — déclenché manuellement (même convention
+que la réplication/FSMO : AD réel l'exécute automatiquement toutes les
+60 minutes sur le PDC Emulator ; ici sur demande), refuse si l'appelant
+ne détient pas le rôle PDC Emulator ou n'est pas DC. Aucun PDU
+inter-appareils requis : SDProp tourne localement sur la copie du DC,
+et `adminCount` se réplique comme n'importe quel autre attribut via le
+mécanisme existant.
+
+`AdUser`/`AdGroup` gagnent un champ `adminCount: boolean`.
+
+**Validation** : neuf nouveaux tests (`ad-directory-store.test.ts` :
+marquage direct/imbriqué, absence hors groupe protégé, bizarrerie de
+non-effacement, idempotence ; `ad-forest.test.ts` : exécution sur le
+PDC Emulator par défaut, refus sur un DC additionnel/un serveur non-DC)
+— 69 tests au total sur ces deux fichiers, tout au vert. Typecheck et
+lint ciblés propres.
+
 ## Convergence de branche : Windows Server (pool RID + objectSid) + Windows Phase 21 (`wevtutil`)
 
 **État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**

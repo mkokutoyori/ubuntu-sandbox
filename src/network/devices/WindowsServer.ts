@@ -411,6 +411,20 @@ export class WindowsServer extends WindowsPC {
   }
 
   /**
+   * One AdminSDHolder/SDProp pass — real AD only ever runs this on the
+   * PDC Emulator (every 60 minutes there); this simulator triggers it
+   * manually, matching the existing convention for other periodic AD
+   * processes (`ReplicationSession.ts`'s own header comment).
+   */
+  runSdProp(): FsmoOpResult & { protectedMembers?: string[] } {
+    if (!this.directoryStore) return { ok: false, message: 'This computer is not a domain controller.' };
+    if (this.directoryStore.getFsmoRoleOwner('PdcEmulator') !== this.getHostname()) {
+      return { ok: false, message: 'This computer does not hold the PDC Emulator role.' };
+    }
+    return { ok: true, message: '', protectedMembers: this.directoryStore.runSdProp() };
+  }
+
+  /**
    * `New-ADTrust`/`netdom trust` (PRD-Windows-Server-Advanced.md §5 P9):
    * establishes a simple trust with the domain reached at
    * `remoteDcAddress` — a real LDAP dial+bind verifies reachability/

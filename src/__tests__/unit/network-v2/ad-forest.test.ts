@@ -213,3 +213,29 @@ describe('RID pool allocation', () => {
     expect(bobRid).not.toBe(aliceRid);
   });
 });
+
+describe('runSdProp — AdminSDHolder gated on the PDC Emulator role', () => {
+  it('runs on the PDC Emulator (the forest-root DC, by default) and marks Domain Admins members', async () => {
+    const { dc1 } = await buildRootDc();
+    const result = dc1.runSdProp();
+    expect(result.ok).toBe(true);
+    expect(result.protectedMembers).toContain('Administrator');
+    expect(dc1.getDirectoryStore()!.getUser('Administrator')?.adminCount).toBe(true);
+  });
+
+  it('refuses on a DC that does not hold the PDC Emulator role', async () => {
+    const { dc2 } = await buildRootDc();
+    await run(ps(dc2), 'Install-ADDSDomainController -DomainName lab.local -Server 192.168.90.10 -Credential "Administrator:P@ssw0rd" '
+      + '-SafeModeAdministratorPassword (ConvertTo-SecureString "P@ssw0rd" -AsPlainText -Force)');
+
+    const result = dc2.runSdProp();
+    expect(result.ok).toBe(false);
+    expect(result.message).toMatch(/does not hold the PDC Emulator role/);
+  });
+
+  it('refuses on a server that is not a domain controller', () => {
+    const notADc = new WindowsServer('SRV1');
+    const result = notADc.runSdProp();
+    expect(result.ok).toBe(false);
+  });
+});

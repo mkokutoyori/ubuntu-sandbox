@@ -32,6 +32,7 @@ import { GpoStore } from './gpo/GpoStore';
 import { PsoStore } from './pso/PsoStore';
 import { DomainFsmoRoles, type DomainFsmoRole } from './fsmo/FsmoRoles';
 import { RidPool } from './fsmo/RidPool';
+import { SdPropEngine } from './security/SdProp';
 
 export interface DirOpResult { ok: boolean; message: string }
 
@@ -104,6 +105,7 @@ export class DirectoryStore {
   private readonly localRidPool: RidPool;
   /** Next block to grant a requesting DC — only meaningful while this DC holds the RID Master role; lazily initialized on first grant. */
   private nextGlobalRidPoolStart: number | null = null;
+  private readonly sdProp: SdPropEngine;
 
   /**
    * `opts.skipSeed` (PRD-Windows-Server-Advanced.md §5 P5): an additional
@@ -141,6 +143,7 @@ export class DirectoryStore {
     this.localRidPool = opts.skipSeed
       ? new RidPool(0, 0)
       : new RidPool(RID_MASTER_LOCAL_POOL_START, RID_MASTER_LOCAL_POOL_COUNT);
+    this.sdProp = new SdPropEngine(this.tree);
     if (!opts.skipSeed) {
       // A shared validator (PRD §5 P8 — a child domain joining an existing
       // forest) is already seeded by its forest root; seeding again would
@@ -322,6 +325,11 @@ export class DirectoryStore {
     return { startRid, count: requestedSize };
   }
 
+  // ─── AdminSDHolder / SDProp ──────────────────────────────────────────
+
+  /** One SDProp pass (real AD: every 60 minutes, on the PDC Emulator) — see `SdPropEngine` for what "protected" means here. */
+  runSdProp(): string[] { return this.sdProp.run(); }
+
   // ─── Users ──────────────────────────────────────────────────────────
 
   newUser(sam: string, opts: { password: string; fullName?: string; ou?: string; enabled?: boolean }): DirOpResult {
@@ -380,6 +388,7 @@ export class DirectoryStore {
       memberOf: (entry.attributes.get('memberof') ?? []).map(dnStr => this.samOfDn(dnStr)).filter((s): s is string => s !== null),
       fullName: firstOf(entry.attributes.get('displayname')),
       objectSid: firstOf(entry.attributes.get('objectsid')),
+      adminCount: firstOf(entry.attributes.get('admincount')) === '1',
     };
   }
 
@@ -478,6 +487,7 @@ export class DirectoryStore {
       scope: SCOPE_OF_GROUP_TYPE.get(groupType) ?? 'Global',
       members: (entry.attributes.get('member') ?? []).map(dnStr => this.samOfDn(dnStr)).filter((s): s is string => s !== null),
       objectSid: firstOf(entry.attributes.get('objectsid')),
+      adminCount: firstOf(entry.attributes.get('admincount')) === '1',
     };
   }
 
