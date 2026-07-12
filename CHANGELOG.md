@@ -5,6 +5,34 @@ progressive par équipement. Un push = une entrée = une fonctionnalité
 complète et testée (voir `CLAUDE.md` / le framework de migration pour les
 principes directeurs).
 
+## Windows — Phase 21 : migration `wevtutil`
+
+**État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
+
+Après la clôture de `netsh`, migration de `wevtutil` (utilitaire de
+journal d'évènements Windows : `qe`/`query-events`, `el`/`enum-logs`,
+`cl`/`clear-log`) — commande fréquemment enchaînée après un scénario
+pare-feu/DHCP pour vérifier les évènements produits, bloquant plusieurs
+tests inter-commandes.
+
+Nouvelle capacité `MachineApi.eventLog?: EventLogApi` (concept sans
+équivalent universel — Linux a syslog/journald) : `entries(logName)`
+(journaux structurés `System`/`Security`/... via `PSEventLogProvider`,
+déjà partagé avec `Get-EventLog`/`Get-WinEvent`), plus l'accès dédié au
+journal DHCP-Client (`dhcpEventLog()` qui synchronise, `ensureDhcpInitEvent()`).
+Type `WindowsEventLogEntry` ajouté.
+
+`WevtutilCommand` porte le parsing des sous-commandes, la porte de service
+`EventLog` (message « Failed to query events. The Windows Event Log
+service is not running. ») et le formatage `Event[i]` — copié depuis
+`WinWevtutil.ts`, intact pour le shim PowerShell.
+
+Validation : typecheck et ESLint propres. Lot eventlog/feature-gates/
+firewall-vs-acl/dhcp-dns/ssh-audit comparé au commit pré-Phase-21 via
+`git stash` : 3 échecs/47 réussites avant → 50/50 après, 3 tests
+corrigés, zéro régression. Suites arp/consistency (107 tests) sans
+régression.
+
 ## Windows — Phase 20 : migration `netsh` — contextes `dhcp server`, `nps` (clôt `netsh`)
 
 **État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**

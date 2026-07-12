@@ -50,9 +50,11 @@ import {
   WindowsFirewallApi,
   WindowsFirewallRule,
   WindowsHttpSslCert,
+  WindowsEventLogEntry,
   WindowsNasClient,
   WindowsNpsApi,
   WindowsServerOpResult,
+  EventLogApi,
   WindowsHttpStore,
   WindowsIpsecDynamicSettings,
   WindowsIpsecFilter,
@@ -192,6 +194,10 @@ export interface WindowsMachineApiDeps {
   readonly dynamicFirewallRules: FirewallRuleMap;
   getDhcpServerRole(): DhcpServerRoleLike | null;
   getNpsRole(): NpsRoleLike | null;
+  eventLogEntries(logName: string): readonly WindowsEventLogEntry[] | null;
+  dhcpEventLog(): readonly string[];
+  syncDhcpEvents(): void;
+  addDhcpEvent(type: string, message: string): void;
   bootedAt(): Date | null;
   now(): Date;
   powerOn(): void;
@@ -1661,6 +1667,23 @@ class WindowsMacroApi implements MacroApi {
   }
 }
 
+class WindowsEventLogApiImpl implements EventLogApi {
+  constructor(private readonly deps: Pick<WindowsMachineApiDeps, 'eventLogEntries' | 'dhcpEventLog' | 'syncDhcpEvents' | 'addDhcpEvent'>) {}
+  entries(logName: string): readonly WindowsEventLogEntry[] | null {
+    return this.deps.eventLogEntries(logName);
+  }
+  dhcpEventLog(): readonly string[] {
+    this.deps.syncDhcpEvents();
+    return this.deps.dhcpEventLog();
+  }
+  ensureDhcpInitEvent(): void {
+    this.deps.syncDhcpEvents();
+    if (this.deps.dhcpEventLog().length === 0) {
+      this.deps.addDhcpEvent('INIT', 'Dhcp-Client service initialized');
+    }
+  }
+}
+
 export class WindowsMachineApi implements MachineApi {
   readonly fs: FileSystemApi;
   readonly proc: ProcessApi;
@@ -1680,6 +1703,7 @@ export class WindowsMachineApi implements MachineApi {
   readonly auditPolicy: AuditPolicyApi;
   readonly winRm: WinRmApi;
   readonly netConfig: WindowsNetConfigApi;
+  readonly eventLog: EventLogApi;
   readonly hostname: string;
   readonly os: OsIdentity;
   readonly hardware: CkHardwareProfile;
@@ -1705,6 +1729,7 @@ export class WindowsMachineApi implements MachineApi {
     this.auditPolicy = new WindowsAuditPolicyApi(deps.auditPolicy);
     this.winRm = new WindowsWinRmApi(deps.winrm);
     this.netConfig = new WindowsNetConfigApiImpl(() => deps.ports, deps);
+    this.eventLog = new WindowsEventLogApiImpl(deps);
     this.hostname = deps.hostname;
     this.os = {
       name: deps.identity.os.name,

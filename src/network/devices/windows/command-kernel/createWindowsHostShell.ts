@@ -51,6 +51,7 @@ import { TreeCommand } from './commands/Tree';
 import { TypeCommand } from './commands/Type';
 import { VerCommand } from './commands/Ver';
 import { VolCommand } from './commands/Vol';
+import { WevtutilCommand } from './commands/Wevtutil';
 import { WinrmCommand } from './commands/Winrm';
 import { XcopyCommand } from './commands/Xcopy';
 import { WindowsMachineApi, WindowsMachineApiDeps } from './WindowsMachineApi';
@@ -117,6 +118,7 @@ export function createWindowsHostShell(deps: WindowsMachineApiDeps): { registry:
   registry.register(() => new NbtstatCommand());
   registry.register(() => new AuditpolCommand());
   registry.register(() => new WinrmCommand());
+  registry.register(() => new WevtutilCommand());
 
   const interpreter = new CmdInterpreter(registry, machine);
 

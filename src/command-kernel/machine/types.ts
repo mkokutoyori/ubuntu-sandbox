@@ -328,6 +328,27 @@ export interface WinRmApi {
   enable(): void;
 }
 
+/** Entrée structurée d'un journal d'évènements Windows (`wevtutil qe`) — modèle Windows. */
+export interface WindowsEventLogEntry {
+  readonly source: string;
+  readonly eventId: number;
+  readonly message: string;
+}
+
+/**
+ * Journal d'évènements Windows (`wevtutil`) — optionnel, concept sans
+ * équivalent universel (Linux : syslog/journald). Expose les journaux
+ * structurés plus le journal d'évènements DHCP-Client dédié.
+ */
+export interface EventLogApi {
+  /** Entrées structurées d'un journal nommé (`System`/`Security`/...) — `null` si le journal n'existe pas. */
+  entries(logName: string): readonly WindowsEventLogEntry[] | null;
+  /** Journal d'évènements du client DHCP (synchronisé à l'appel) — lignes brutes horodatées. */
+  dhcpEventLog(): readonly string[];
+  /** Amorce le journal DHCP avec un évènement `INIT` s'il est vide (première interrogation `wevtutil qe System ...dhcp`). */
+  ensureDhcpInitEvent(): void;
+}
+
 /**
  * Registre système façon Windows (clés hiérarchiques, valeurs typées) —
  * optionnel, concept sans équivalent Linux direct. Surface déjà réduite
@@ -1023,6 +1044,8 @@ export interface MachineApi {
   readonly winRm?: WinRmApi;
   /** Adaptateurs/ARP/table de routage bas niveau (`arp`, `route`, `getmac`) — optionnel, pas un concept universel. */
   readonly netConfig?: WindowsNetConfigApi;
+  /** Journal d'évènements Windows (`wevtutil`) — optionnel, pas un concept universel (Linux a syslog/journald). */
+  readonly eventLog?: EventLogApi;
   /** Masque de permissions par défaut (`umask`) — optionnel, pas un concept universel. */
   readonly permissions?: PermissionsApi;
   now(): Date;
