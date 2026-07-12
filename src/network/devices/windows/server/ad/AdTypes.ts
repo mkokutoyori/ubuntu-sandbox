@@ -24,6 +24,8 @@ export interface AdUser {
   lockedOut: boolean;
   /** Epoch seconds (`Set-ADAccountExpiration`), or `null` if the account never expires. */
   accountExpires: number | null;
+  /** `userAccountControl`'s `DONT_EXPIRE_PASSWORD` bit — exempts this account from `maxPasswordAge` (`DirectoryStore.checkPassword`). */
+  passwordNeverExpires: boolean;
 }
 
 export interface AdGroup {

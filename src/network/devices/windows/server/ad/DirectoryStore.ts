@@ -44,6 +44,7 @@ const UAC = {
   NORMAL_ACCOUNT: 0x0200,
   WORKSTATION_TRUST_ACCOUNT: 0x1000,
   SERVER_TRUST_ACCOUNT: 0x2000,
+  DONT_EXPIRE_PASSWORD: 0x10000,
 } as const;
 
 /** Real AD groupType bit-flag values (security groups only — no distribution-group support). */
@@ -78,6 +79,10 @@ function firstOf(values: string[] | undefined): string { return values?.[0] ?? '
 function isEnabledFromUac(values: string[] | undefined): boolean {
   const uac = Number(firstOf(values));
   return Number.isFinite(uac) && (uac & UAC.ACCOUNTDISABLE) === 0;
+}
+function hasUacFlag(values: string[] | undefined, flag: number): boolean {
+  const uac = Number(firstOf(values));
+  return Number.isFinite(uac) && (uac & flag) !== 0;
 }
 function hasObjectClass(entry: DirectoryEntry, oc: string): boolean {
   return (entry.attributes.get('objectclass') ?? []).some(v => v.toLowerCase() === oc.toLowerCase());
@@ -262,7 +267,7 @@ export class DirectoryStore {
     this.createGroupEntry('Domain Computers', 'Global', this.usersOuDn, WELL_KNOWN_RID.DomainComputers);
 
     this.createUserEntry('Administrator', {
-      password: adminPassword, fullName: 'Administrator', containerDn: this.usersOuDn, wellKnownRid: WELL_KNOWN_RID.Administrator,
+      password: adminPassword, fullName: 'Administrator', containerDn: this.usersOuDn, wellKnownRid: WELL_KNOWN_RID.Administrator, passwordNeverExpires: true,
     });
     this.addGroupMember('Domain Admins', 'Administrator');
     this.addGroupMember('Domain Users', 'Administrator');
@@ -388,26 +393,32 @@ export class DirectoryStore {
   // ─── Users ──────────────────────────────────────────────────────────
 
   /** Deliberately does not enforce `minPasswordLength` at creation (unlike `setUser`'s password-change path): every AD-related test in this codebase creates users with short test passwords, and the domain default policy already carries a 7-character minimum — enforcing it here would be a disruptive, out-of-proportion change for what a self-initiated task should touch. Real `New-ADUser` does enforce it; this is a documented, deliberate simplification. */
-  newUser(sam: string, opts: { password: string; fullName?: string; ou?: string; enabled?: boolean }): DirOpResult {
+  newUser(sam: string, opts: { password: string; fullName?: string; ou?: string; enabled?: boolean; passwordNeverExpires?: boolean }): DirOpResult {
     const containerDn = opts.ou ? this.ouDn(opts.ou) : this.usersOuDn;
     if (opts.ou && !this.tree.getByDn(containerDn)) {
       return { ok: false, message: `Cannot find an object with identity: '${opts.ou}'.` };
     }
-    const res = this.createUserEntry(sam, { password: opts.password, fullName: opts.fullName ?? '', containerDn, enabled: opts.enabled });
+    const res = this.createUserEntry(sam, {
+      password: opts.password, fullName: opts.fullName ?? '', containerDn, enabled: opts.enabled, passwordNeverExpires: opts.passwordNeverExpires,
+    });
     if (!res.ok) return res;
     this.addGroupMember('Domain Users', sam);
     return { ok: true, message: '' };
   }
 
-  private createUserEntry(sam: string, opts: { password: string; fullName: string; containerDn: DistinguishedName; enabled?: boolean; wellKnownRid?: number }): DirOpResult {
+  private createUserEntry(sam: string, opts: {
+    password: string; fullName: string; containerDn: DistinguishedName; enabled?: boolean; wellKnownRid?: number; passwordNeverExpires?: boolean;
+  }): DirOpResult {
     const enabled = opts.enabled ?? true;
     const rid = opts.wellKnownRid ?? this.localRidPool.allocateNext();
+    let uac = enabled ? UAC.NORMAL_ACCOUNT : UAC.NORMAL_ACCOUNT | UAC.ACCOUNTDISABLE;
+    if (opts.passwordNeverExpires) uac |= UAC.DONT_EXPIRE_PASSWORD;
     const res = this.tree.addEntry(this.cnDn(sam, opts.containerDn), compact({
       objectClass: ['top', 'person', 'organizationalPerson', 'user'],
       cn: [sam],
       sAMAccountName: [sam],
       userPrincipalName: [`${sam}@${this.dnsName}`],
-      userAccountControl: [String(enabled ? UAC.NORMAL_ACCOUNT : UAC.NORMAL_ACCOUNT | UAC.ACCOUNTDISABLE)],
+      userAccountControl: [String(uac)],
       userPassword: [opts.password],
       displayName: opts.fullName ? [opts.fullName] : [],
       objectSid: rid !== null ? [this.formatObjectSid(rid)] : [],
@@ -447,15 +458,19 @@ export class DirectoryStore {
       adminCount: firstOf(entry.attributes.get('admincount')) === '1',
       lockedOut: this.isAccountLockedOut(firstOf(entry.attributes.get('samaccountname'))),
       accountExpires: Number(firstOf(entry.attributes.get('accountexpires'))) || null,
+      passwordNeverExpires: hasUacFlag(entry.attributes.get('useraccountcontrol'), UAC.DONT_EXPIRE_PASSWORD),
     };
   }
 
-  setUser(sam: string, opts: { enabled?: boolean; fullName?: string; password?: string }): DirOpResult {
+  setUser(sam: string, opts: { enabled?: boolean; fullName?: string; password?: string; passwordNeverExpires?: boolean }): DirOpResult {
     const entry = this.findUserEntry(sam);
     if (!entry) return { ok: false, message: `Cannot find an object with identity: '${sam}'.` };
     const changes: { op: 'replace'; type: string; values: string[] }[] = [];
-    if (opts.enabled !== undefined) {
-      changes.push({ op: 'replace', type: 'userAccountControl', values: [String(opts.enabled ? UAC.NORMAL_ACCOUNT : UAC.NORMAL_ACCOUNT | UAC.ACCOUNTDISABLE)] });
+    if (opts.enabled !== undefined || opts.passwordNeverExpires !== undefined) {
+      let uac = Number(firstOf(entry.attributes.get('useraccountcontrol'))) || UAC.NORMAL_ACCOUNT;
+      if (opts.enabled !== undefined) uac = opts.enabled ? uac & ~UAC.ACCOUNTDISABLE : uac | UAC.ACCOUNTDISABLE;
+      if (opts.passwordNeverExpires !== undefined) uac = opts.passwordNeverExpires ? uac | UAC.DONT_EXPIRE_PASSWORD : uac & ~UAC.DONT_EXPIRE_PASSWORD;
+      changes.push({ op: 'replace', type: 'userAccountControl', values: [String(uac)] });
     }
     if (opts.fullName !== undefined) changes.push({ op: 'replace', type: 'displayName', values: opts.fullName ? [opts.fullName] : [] });
     if (opts.password !== undefined) {
@@ -530,9 +545,13 @@ export class DirectoryStore {
     if (accountExpires > 0 && Math.floor(Date.now() / 1000) >= accountExpires) return false;
 
     const policy = this.effectivePasswordPolicyFor(sam);
+    const now = Math.floor(Date.now() / 1000);
+    if (policy?.maxPasswordAge && policy.maxPasswordAge > 0 && !hasUacFlag(entry.attributes.get('useraccountcontrol'), UAC.DONT_EXPIRE_PASSWORD)) {
+      const pwdLastSet = Number(firstOf(entry.attributes.get('pwdlastset'))) || 0;
+      if (pwdLastSet > 0 && (now - pwdLastSet) / 86400 >= policy.maxPasswordAge) return false;
+    }
     const threshold = policy?.lockoutThreshold ?? 0;
     const durationSeconds = (policy?.lockoutDurationMinutes ?? 30) * 60;
-    const now = Math.floor(Date.now() / 1000);
     const lockoutTime = Number(firstOf(entry.attributes.get('lockouttime'))) || 0;
     if (lockoutTime > 0) {
       if (now - lockoutTime < durationSeconds) return false;
@@ -848,7 +867,7 @@ export class DirectoryStore {
     if (this.findUserEntry('krbtgt')) return { ok: true, message: '' };
     return this.createUserEntry('krbtgt', {
       password: secret, fullName: 'Key Distribution Center Service Account',
-      containerDn: this.usersOuDn, enabled: false, wellKnownRid: WELL_KNOWN_RID.Krbtgt,
+      containerDn: this.usersOuDn, enabled: false, wellKnownRid: WELL_KNOWN_RID.Krbtgt, passwordNeverExpires: true,
     });
   }
 

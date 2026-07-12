@@ -5,6 +5,43 @@ progressive par équipement. Un push = une entrée = une fonctionnalité
 complète et testée (voir `CLAUDE.md` / le framework de migration pour les
 principes directeurs).
 
+## Windows Server — expiration de mot de passe (`maxPasswordAge`) et `DONT_EXPIRE_PASSWORD`
+
+`maxPasswordAge` était le dernier champ mort de `GpoAccountPolicy`/PSO —
+déclaré, jamais vérifié. `checkPassword` (bind simple LDAP, même
+périmètre volontaire que le verrouillage/l'expiration de compte) refuse
+désormais l'authentification une fois le mot de passe trop ancien, sauf
+si le compte porte le bit `DONT_EXPIRE_PASSWORD` (`0x10000`) de
+`userAccountControl` (`Set-ADUser -PasswordNeverExpires`). `newUser`/
+`setUser` gagnent l'option `passwordNeverExpires` ; `AdUser` gagne le
+champ du même nom. `Administrator`/`krbtgt` (semés par
+`seedDefaults`/`ensureKrbtgtPrincipal`) portent désormais ce bit par
+défaut, comme AD réel.
+
+**Correction en cours de route** : `setUser({enabled: ...})` remplaçait
+jusqu'ici toute la valeur `userAccountControl` au lieu de ne modifier
+que le bit `ACCOUNTDISABLE` — inoffensif tant qu'aucun autre bit
+indépendant n'existait, mais aurait silencieusement effacé
+`DONT_EXPIRE_PASSWORD` sur un compte qui le portait. Passé à une
+lecture-modification-écriture qui préserve les autres bits.
+
+**Régression détectée et corrigée pendant les tests** : une première
+version tamponnait aussi `pwdLastSet` à la création du compte (pour
+donner une base à `maxPasswordAge`) — inutile (la garde
+`pwdLastSet > 0` de `checkPassword` neutralise déjà l'absence de
+tampon) et en conflit direct avec la convention de la tâche précédente
+(« le tout premier changement de mot de passe n'est jamais bloqué par
+`minPasswordAge`, faute de référence antérieure ») — retiré.
+
+**Validation** : nouveau `ad-password-expiration.test.ts` (5 tests) —
+pas d'expiration immédiate après création, refus une fois
+`maxPasswordAge` dépassé (tampon `pwdLastSet` simulé directement sur
+l'entrée), exemption via `passwordNeverExpires`, bascule indépendante
+de `enabled`/`passwordNeverExpires` via `setUser`, `Administrator`/
+`krbtgt` n'expirent jamais par défaut. Suite élargie (7 fichiers,
+verrouillage/politique de mot de passe/expiration/forêt/Kerberos) :
+97/97 au vert. Typecheck et lint ciblés propres.
+
 ## Windows Server — expiration de compte (`Set-ADAccountExpiration`)
 
 L'expiration de compte était totalement absente jusqu'ici. `DirectoryStore`
