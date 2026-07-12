@@ -38,11 +38,12 @@ import { mirroredDirection, type TrustDirection, type TrustInfo, type TrustRecor
 import { requestRidPool } from './windows/domain/RidPoolClient';
 import { DomainControllerOps, type FsmoRole, type FsmoOpResult } from './windows/server/ad/DomainControllerOps';
 import type { DomainFsmoRole } from './windows/server/ad/fsmo/FsmoRoles';
+import type { DomainControllerDiagnostics } from '@/command-kernel/machine/types';
 
 export interface AdDsOpResult { ok: boolean; message: string }
 export type { FsmoRole, FsmoOpResult };
 
-/** Real DC promotion auto-creates this site (PRD-Windows-Server-Advanced.md §5 P6) — matches the name `WinDomainDiag.cmdNltest` has always reported. */
+/** Real DC promotion auto-creates this site (PRD-Windows-Server-Advanced.md §5 P6) — matches the name `nltest`/`dcdiag` report. */
 const DEFAULT_SITE_NAME = 'Default-First-Site-Name';
 /** Real AD's default RID pool block size (`msDS-RIDAllocationBlockSize`). */
 const RID_POOL_REQUEST_SIZE = 500;
@@ -74,6 +75,27 @@ export class WindowsServer extends WindowsPC {
 
   /** PRD Phase 5 (§5 P5): the real AD DS directory, once `Install-ADDSForest` has promoted this server. */
   getDirectoryStore(): DirectoryStore | null { return this.directoryStore; }
+
+  /**
+   * `dcdiag` — surcharge l'instantané de base (`isDc: false`) pour reporter
+   * l'état réel des services AD une fois le serveur promu contrôleur de
+   * domaine. Un serveur non promu (pas de `DirectoryStore`) reste un non-DC :
+   * le diagnostic renvoie alors la valeur héritée (`isDc: false`).
+   */
+  override dcDiagnostics(): DomainControllerDiagnostics {
+    const store = this.getDirectoryStore();
+    if (!store) return super.dcDiagnostics();
+    const svcMgr = this.getServiceManager();
+    const running = (name: string): boolean => svcMgr.getService(name)?.state === 'Running';
+    return {
+      isDc: true,
+      hostname: this.getHostname(),
+      dnsName: store.dnsName,
+      siteName: DEFAULT_SITE_NAME,
+      servicesRunning: { ntds: running('NTDS'), netlogon: running('Netlogon'), kdc: running('Kdc') },
+      sysvolShareExists: this.smbShares.get('SYSVOL') !== undefined,
+    };
+  }
 
   /**
    * PRD Phase 7 (§5 P7): the DNS Server role, hosting the real DNS engine

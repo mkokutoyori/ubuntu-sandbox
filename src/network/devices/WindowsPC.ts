@@ -74,6 +74,8 @@ import { getForestForDomain } from './windows/server/ad/forest/Forest';
 import { KdcSessionHandler } from '@/network/kerberos/KdcSession';
 import { dialKdc } from '@/network/kerberos/KerberosClient';
 import { KerberosTicketCache } from '@/network/kerberos/KerberosTicketCache';
+import { ticketFlagsToHex } from '@/network/kerberos/codec';
+import type { TicketFlags } from '@/network/kerberos/types';
 import { KerberosSignalStore } from '@/network/kerberos/observables';
 import { KerberosSignalRefreshActor } from '@/network/kerberos/actors/KerberosSignalRefreshActor';
 import {
@@ -122,7 +124,7 @@ import type { CmdInterpreter } from './windows/command-kernel/CmdInterpreter';
 import { lowercaseCommandNames } from './windows/command-kernel/ast/lowercaseCommandNames';
 import { resolveWindowsUser } from './windows/command-kernel/WindowsUser';
 import type { CommandRegistry } from '@/command-kernel/registry/command-registry';
-import type { WindowsIPv6RouteEntry as WinIPv6RouteEntry, WindowsGpResult } from '@/command-kernel/machine/types';
+import type { WindowsIPv6RouteEntry as WinIPv6RouteEntry, WindowsGpResult, DomainControllerLocation, DomainControllerDiagnostics, KerberosCachedTicket } from '@/command-kernel/machine/types';
 import { createSession } from '@/command-kernel/session/types';
 import { PipeBuffer } from '@/command-kernel/io/pipe-buffer';
 import { ShellError, CommandNotFoundError } from '@/command-kernel/errors';
@@ -919,6 +921,70 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       logonBanner: this.gpoLogonBanner ? { title: this.gpoLogonBanner.title, text: this.gpoLogonBanner.text } : null,
       startupScript: this.gpoStartupScript ?? '',
     };
+  }
+
+  /**
+   * `nltest /dsgetdc:<domaine>` — localise un contrôleur de domaine. Sonde
+   * réseau réelle (TCP/389) contre l'adresse du DC ; le formatage du retour
+   * console est porté par la commande. Hors domaine, retourne
+   * `no-such-domain` — aucune fonctionnalité serveur exposée.
+   */
+  locateDomainController(domain: string): DomainControllerLocation {
+    if (!this.domainMembership || this.domainMembership.dnsName.toLowerCase() !== domain.toLowerCase()) {
+      return { ok: false, reason: 'no-such-domain' };
+    }
+    if (!this.probeTcpReachable(this.domainMembership.dcAddress, 389)) {
+      return { ok: false, reason: 'unreachable' };
+    }
+    return {
+      ok: true,
+      dnsName: this.domainMembership.dnsName,
+      dcAddress: this.domainMembership.dcAddress,
+      siteName: 'Default-First-Site-Name',
+    };
+  }
+
+  /**
+   * `dcdiag` — instantané de santé de contrôleur de domaine. Un poste ou un
+   * serveur non promu n'est jamais un DC (`isDc: false`) ; `WindowsServer`
+   * surcharge cette méthode pour reporter l'état réel de ses services AD.
+   * Garantit qu'aucun diagnostic serveur ne « passe » sur une machine non DC.
+   */
+  dcDiagnostics(): DomainControllerDiagnostics {
+    return {
+      isDc: false,
+      hostname: this.getHostname(),
+      dnsName: '',
+      siteName: 'Default-First-Site-Name',
+      servicesRunning: { ntds: false, netlogon: false, kdc: false },
+      sysvolShareExists: false,
+    };
+  }
+
+  /**
+   * `klist` — instantané typé du cache de tickets Kerberos, alimenté par un
+   * vrai échange AS/TGS lors du logon domaine. Le formatage texte est porté
+   * par la commande. Vide tant qu'aucun logon domaine n'a eu lieu.
+   */
+  kerberosTickets(): readonly KerberosCachedTicket[] {
+    const flagNames: ReadonlyArray<[keyof TicketFlags, string]> = [
+      ['forwardable', 'forwardable'], ['forwarded', 'forwarded'],
+      ['proxiable', 'proxiable'], ['proxy', 'proxy'],
+      ['renewable', 'renewable'], ['initial', 'initial'],
+      ['preAuthent', 'pre_authent'], ['hwAuthent', 'hw_authent'],
+    ];
+    return this.kerberosTicketCache.list().map((t) => {
+      const e = t.encKdcRepPart;
+      return {
+        clientPrincipal: t.clientPrincipal,
+        serverPrincipal: t.serverPrincipal,
+        flagsHex: ticketFlagsToHex(e.flags),
+        flagNames: flagNames.filter(([key]) => e.flags[key]).map(([, name]) => name),
+        startTime: e.starttime ?? e.authtime,
+        endTime: e.endtime,
+        renewTill: e.renewTill ?? null,
+      };
+    });
   }
 
   /** `gpresult /r` — RSoP summary text, matching the real tool's section layout. */
@@ -1830,6 +1896,9 @@ export class WindowsPC extends EndHost implements UserAccountHost {
         addDhcpEvent: (type, message) => this.addDHCPEvent(type, message),
         gpupdateForce: () => this.gpupdateForce(),
         groupPolicyResult: () => this.groupPolicyResult(),
+        locateDomainController: (domain) => this.locateDomainController(domain),
+        dcDiagnostics: () => this.dcDiagnostics(),
+        kerberosTickets: () => this.kerberosTickets(),
         bootedAt: () => this.getLifecycle().bootedAt() ?? null,
         now: () => this.simulatedDate(),
         powerOn: () => this.powerOn(),
