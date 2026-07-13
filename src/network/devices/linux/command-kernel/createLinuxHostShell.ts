@@ -22,6 +22,7 @@ import { MvCommand } from './commands/Mv';
 import { PwdCommand } from './commands/Pwd';
 import { ReadlinkCommand } from './commands/Readlink';
 import { RealpathCommand } from './commands/Realpath';
+import { RevCommand } from './commands/Rev';
 import { RmCommand } from './commands/Rm';
 import { RmdirCommand } from './commands/Rmdir';
 import { SeqCommand } from './commands/Seq';
@@ -76,6 +77,7 @@ export function createLinuxHostShell(deps: LinuxMachineApiDeps): Interpreter {
   registry.register(() => new SeqCommand());
   registry.register(() => new ExprCommand());
   registry.register(() => new SleepCommand());
+  registry.register(() => new RevCommand());
 
   return new Interpreter(registry, machine);
 }

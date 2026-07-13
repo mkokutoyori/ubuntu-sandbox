@@ -369,6 +369,18 @@ describe('seq', () => {
   });
 });
 
+describe('rev', () => {
+  it('reverses the characters of a single line from stdin', async () => {
+    const out = await server.executeCommand('echo hello | rev');
+    expect(out.trim()).toBe('olleh');
+  });
+
+  it('reverses each line independently', async () => {
+    const out = await server.executeCommand('printf "abc\\ndef\\n" | rev');
+    expect(out.trim()).toBe('cba\nfed');
+  });
+});
+
 describe('basename / dirname', () => {
   it('basename extracts filename', async () => {
     const out = await server.executeCommand('basename /usr/local/bin/sqlplus');

@@ -4152,7 +4152,6 @@ export class LinuxCommandExecutor {
         }
         return { output: '', exitCode: 0 };
       }
-      case 'rev': return { output: (stdin || '').split('\n').map(l => l.split('').reverse().join('')).join('\n'), exitCode: 0 };
 
       // Non-interactive fallbacks for commands the GUI normally routes to
       // overlays (editors) or sub-shells (Oracle CLIs). When invoked via

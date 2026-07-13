@@ -5,6 +5,25 @@ progressive par équipement. Un push = une entrée = une fonctionnalité
 complète et testée (voir `CLAUDE.md` / le framework de migration pour les
 principes directeurs).
 
+## Linux — Phase 9 : `rev`
+
+**État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
+
+**Commande migrée** : `rev [fichier...]` — inverse l'ordre des caractères
+de chaque ligne, portée par `RevCommand`.
+
+- Lit désormais l'entrée standard **ou les fichiers** passés en argument
+  (comportement GNU ; le legacy était limité à stdin) via les helpers
+  partagés `readTextInput`/`splitLines`/`joinLines`. La structure des
+  lignes et le saut de ligne final sont préservés à l'octet près (mêmes
+  résultats que le legacy pour le cas stdin).
+- **Legacy supprimé** : le `case 'rev'` retiré de
+  `LinuxCommandExecutor.dispatch()`. Nouveau test `rev` ajouté
+  (`linux-commands-and-oracle-tools.test.ts`).
+
+Validation : tests `rev` verts, cohérence stricte verte ; aucune
+régression (67 tests).
+
 ## Linux — Phase 8 : `sleep`
 
 **État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
