@@ -33,6 +33,7 @@ import {
 import {
   type BgpUpdateMessage, type BgpNlri, type BgpPathAttributes,
 } from './messages';
+import type { RouteMapEvalResult } from '../devices/inspection/config/PolicyRepository';
 
 export interface BgpNetworkStmt { network: string; mask: string; }
 export interface BgpNeighborCfg {
@@ -45,6 +46,10 @@ export interface BgpNeighborCfg {
   prefixListIn?: string;
   /** Cisco `neighbor <ip> prefix-list <name> out` — evaluated against every candidate route before it's advertised to this peer. */
   prefixListOut?: string;
+  /** Cisco `neighbor <ip> route-map <name> in` — filters like `prefixListIn`, plus applies `set weight`/`set local-preference` (the attributes real IOS applies on receipt) to accepted routes. */
+  routeMapIn?: string;
+  /** Cisco `neighbor <ip> route-map <name> out` — filters like `prefixListOut`, plus applies `set metric`/`set as-path prepend` (the attributes real IOS applies on advertisement) to the routes sent to this peer. */
+  routeMapOut?: string;
 }
 export interface BGPConfig {
   asn: number;
@@ -254,7 +259,11 @@ export class BGPEngine extends AbstractRoutingProtocolEngine<BGPConfig> {
         const cfg = this.config.neighbors.get(ip);
         for (const nlri of update.announced) {
           if (!this.passesPrefixList(cfg?.prefixListIn, nlri.network, nlri.prefixLength)) continue;
+          const rm = this.evalRouteMap(cfg?.routeMapIn, nlri.network, nlri.prefixLength);
+          if (rm && rm.action !== 'permit') continue;
           const entry = this.toRibEntry(ps, nlri, update.attributes);
+          if (rm?.set.weight !== undefined) entry.weight = rm.set.weight;
+          if (rm?.set.localPreference !== undefined) entry.localPref = rm.set.localPreference;
           ps.adjRibIn.set(`${entry.network}/${entry.mask}`, entry);
         }
       }
@@ -284,6 +293,12 @@ export class BGPEngine extends AbstractRoutingProtocolEngine<BGPConfig> {
   private passesPrefixList(listName: string | undefined, network: string, prefixLength: number): boolean {
     if (!listName) return true;
     return this.deviceCtx.evaluatePrefixList?.(listName, network, prefixLength) === 'permit';
+  }
+
+  /** `undefined` when no route-map is configured for this direction (no filtering/no set-clauses); otherwise the real evaluation result — a configured-but-non-matching-or-missing route-map is an implicit deny, same convention as `passesPrefixList`. */
+  private evalRouteMap(mapName: string | undefined, network: string, prefixLength: number): RouteMapEvalResult | undefined {
+    if (!mapName) return undefined;
+    return this.deviceCtx.evaluateRouteMap?.(mapName, network, prefixLength) ?? { action: 'deny', set: {} };
   }
 
   private toRibEntry(
@@ -394,12 +409,15 @@ export class BGPEngine extends AbstractRoutingProtocolEngine<BGPConfig> {
       if (e.peerIp === ip) continue;            // don't echo a route to its source
       if (e.asPath.includes(ps.session.remoteAsn ?? -1)) continue; // would loop
       if (!this.passesPrefixList(cfg?.prefixListOut, String(e.network), e.mask.toCIDR())) continue;
+      const rm = this.evalRouteMap(cfg?.routeMapOut, String(e.network), e.mask.toCIDR());
+      if (rm && rm.action !== 'permit') continue;
+      const prepend = rm?.set.asPathPrepend ?? [];
       const key = `${e.network}/${e.mask}`;
       const attrs: BgpPathAttributes = {
         origin: e.origin,
-        asPath: ibgpReceiver ? e.asPath : [this.config.asn, ...e.asPath],
+        asPath: ibgpReceiver ? e.asPath : [...prepend, this.config.asn, ...e.asPath],
         nextHop: ps.link.localIp,
-        med: e.med,
+        med: rm?.set.metric ?? e.med,
         ...(ibgpReceiver ? { localPref: e.localPref } : {}),
       };
       desired.set(key, {

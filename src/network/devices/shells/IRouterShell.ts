@@ -26,4 +26,7 @@ export interface IRouterShell {
   getLoggingConfig?(): import('../inspection/config/LoggingConfig').LoggingConfig;
   /** Evaluate a configured named `ip prefix-list` against a route (`null` = list missing or no match, i.e. implicit deny) — consulted by BGP neighbor `prefix-list in/out` filtering. */
   evaluatePrefixList?(name: string, network: string, prefixLength: number): 'permit' | 'deny' | null;
+  /** Evaluate a configured named `route-map` against a route (`null` = route-map missing or no clause matched, i.e. implicit deny) — consulted by BGP neighbor `route-map in/out` filtering. */
+  evaluateRouteMap?(name: string, network: string, prefixLength: number):
+    import('../inspection/config/PolicyRepository').RouteMapEvalResult | null;
 }

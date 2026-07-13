@@ -53,6 +53,9 @@ export interface DynamicRoutingCtx {
   getTcpStack(): TcpStack;
   /** Evaluate a configured named `ip prefix-list` against a route — see `RoutingDeviceContext.evaluatePrefixList`. */
   evaluatePrefixList?(name: string, network: string, prefixLength: number): 'permit' | 'deny' | null;
+  /** Evaluate a configured named `route-map` against a route — see `RoutingDeviceContext.evaluateRouteMap`. */
+  evaluateRouteMap?(name: string, network: string, prefixLength: number):
+    import('../inspection/config/PolicyRepository').RouteMapEvalResult | null;
 }
 
 function networkOf(ip: IPAddress, mask: SubnetMask): IPAddress {
@@ -80,6 +83,8 @@ export class RouterDynamicRouting {
       })),
       evaluatePrefixList: (name: string, network: string, prefixLength: number) =>
         this.ctx.evaluatePrefixList?.(name, network, prefixLength) ?? null,
+      evaluateRouteMap: (name: string, network: string, prefixLength: number) =>
+        this.ctx.evaluateRouteMap?.(name, network, prefixLength) ?? null,
     };
     // Both engines now converse on the wire (EIGRP proto-88 frames, BGP
     // TCP/179): neither reads a peer engine, so no peer locator is wired.

@@ -40,6 +40,9 @@ export interface RoutingDeviceContext {
   }>;
   /** Evaluate a configured named `ip prefix-list` against a route (`null` = list missing or no match) — consulted by `BGPEngine` neighbor `prefix-list in/out` filtering. */
   evaluatePrefixList?(name: string, network: string, prefixLength: number): 'permit' | 'deny' | null;
+  /** Evaluate a configured named `route-map` against a route (`null` = route-map missing or no clause matched) — consulted by `BGPEngine` neighbor `route-map in/out` filtering. */
+  evaluateRouteMap?(name: string, network: string, prefixLength: number):
+    import('../devices/inspection/config/PolicyRepository').RouteMapEvalResult | null;
 }
 
 /** Device context that exposes nothing (isolated engine default). */

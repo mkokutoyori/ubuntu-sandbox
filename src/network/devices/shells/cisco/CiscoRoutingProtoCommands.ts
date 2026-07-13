@@ -303,6 +303,11 @@ export function buildRoutingProtoConfig(
         const dir = a[3];
         if (!name || (dir !== 'in' && dir !== 'out')) return '% Incomplete command.';
         if (dir === 'in') bn.prefixListIn = name; else bn.prefixListOut = name;
+      } else if (a[1] === 'route-map') {
+        const name = a[2];
+        const dir = a[3];
+        if (!name || (dir !== 'in' && dir !== 'out')) return '% Incomplete command.';
+        if (dir === 'in') bn.routeMapIn = name; else bn.routeMapOut = name;
       }
       converge();
     }
@@ -453,6 +458,8 @@ export function registerRoutingProtoShow(
         `${v && v.isUp ? `, up for ${v.uptimeSec}s` : ''}`);
       if (cfg.prefixListIn) out.push(`  Prefix-list for incoming advertisements is ${cfg.prefixListIn}`);
       if (cfg.prefixListOut) out.push(`  Prefix-list for outgoing advertisements is ${cfg.prefixListOut}`);
+      if (cfg.routeMapIn) out.push(`  Route map for incoming advertisements is ${cfg.routeMapIn}`);
+      if (cfg.routeMapOut) out.push(`  Route map for outgoing advertisements is ${cfg.routeMapOut}`);
     }
     return out.length ? out.join('\n') : 'No bgp neighbors configured';
   });

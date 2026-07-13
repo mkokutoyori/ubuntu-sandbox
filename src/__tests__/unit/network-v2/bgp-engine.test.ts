@@ -424,6 +424,8 @@ function withPolicy(base: ReturnType<typeof ctxMulti>, policy: PolicyRepository)
     ...base,
     evaluatePrefixList: (name: string, network: string, prefixLength: number) =>
       policy.evaluatePrefixList(name, network, prefixLength),
+    evaluateRouteMap: (name: string, network: string, prefixLength: number) =>
+      policy.evaluateRouteMap(name, network, prefixLength),
   };
 }
 
@@ -542,5 +544,144 @@ describe('PolicyRepository — evaluatePrefixList', () => {
   it('an unknown list name returns null (caller treats as implicit deny)', () => {
     const p = new PolicyRepository();
     expect(p.evaluatePrefixList('NOPE', '10.0.0.0', 8)).toBeNull();
+  });
+});
+
+describe('PolicyRepository — evaluateRouteMap', () => {
+  it('a permit clause with no match statement matches unconditionally and carries its parsed set clauses', () => {
+    const p = new PolicyRepository();
+    const c = p.ensureRouteMap('RM1', 'permit', 10);
+    c.set.push('set weight 500', 'set local-preference 300', 'set metric 20', 'set as-path prepend 65001 65001');
+    const result = p.evaluateRouteMap('RM1', '10.0.0.0', 24);
+    expect(result).toEqual({
+      action: 'permit',
+      set: { weight: 500, localPreference: 300, metric: 20, asPathPrepend: [65001, 65001] },
+    });
+  });
+
+  it('a deny clause carries no set clauses even if some are configured', () => {
+    const p = new PolicyRepository();
+    const c = p.ensureRouteMap('RM2', 'deny', 10);
+    c.set.push('set weight 999');
+    expect(p.evaluateRouteMap('RM2', '10.0.0.0', 24)).toEqual({ action: 'deny', set: {} });
+  });
+
+  it('match ip address prefix-list gates which clause applies', () => {
+    const p = new PolicyRepository();
+    p.addPrefix('ONLY10', { seq: 5, action: 'permit', prefix: '10.0.0.0/8', le: 32 });
+    const c = p.ensureRouteMap('RM3', 'permit', 10);
+    c.match.push('match ip address prefix-list ONLY10');
+    expect(p.evaluateRouteMap('RM3', '10.1.1.0', 24)?.action).toBe('permit');
+    expect(p.evaluateRouteMap('RM3', '192.168.1.0', 24)).toBeNull(); // no clause matches -> implicit deny
+  });
+
+  it('an unknown route-map name returns null', () => {
+    const p = new PolicyRepository();
+    expect(p.evaluateRouteMap('NOPE', '10.0.0.0', 8)).toBeNull();
+  });
+});
+
+describe('BGPEngine — neighbor route-map filtering + set clauses', () => {
+  it('routeMapIn applies set weight/local-preference to accepted routes', () => {
+    const r1 = new BGPEngine('R1');
+    const r2 = new BGPEngine('R2');
+    const policy = new PolicyRepository();
+    const clause = policy.ensureRouteMap('IN', 'permit', 10);
+    clause.set.push('set weight 500', 'set local-preference 300');
+    r1.setDeviceContext(withPolicy(ctxMulti(['192.168.1.0']), policy));
+    r2.setDeviceContext(ctxMulti(['192.168.2.0']));
+    r1.enable({ asn: 65001 });
+    r2.enable({ asn: 65002 });
+    r1.getConfig().neighbors.set('10.0.0.2', {
+      ip: '10.0.0.2', remoteAs: 65002, activated: true, routeMapIn: 'IN',
+    });
+    r2.getConfig().neighbors.set('10.0.0.1', { ip: '10.0.0.1', remoteAs: 65001, activated: true });
+    r2.getConfig().networks.push({ network: '192.168.2.0', mask: '255.255.255.0' });
+    link(r1, '10.0.0.1', r2, '10.0.0.2');
+    r1.converge(); r2.converge();
+
+    const row = r1.getBgpTable().find((r) => String(r.network) === '192.168.2.0');
+    expect(row?.weight).toBe(500);
+    expect(row?.localPref).toBe(300);
+  });
+
+  it('routeMapIn denies a prefix the route-map has no permitting clause for', () => {
+    const r1 = new BGPEngine('R1');
+    const r2 = new BGPEngine('R2');
+    const policy = new PolicyRepository();
+    policy.addPrefix('ONLY2', { seq: 5, action: 'permit', prefix: '192.168.2.0/24' });
+    const clause = policy.ensureRouteMap('IN', 'permit', 10);
+    clause.match.push('match ip address prefix-list ONLY2');
+    r1.setDeviceContext(withPolicy(ctxMulti(['192.168.1.0']), policy));
+    r2.setDeviceContext(ctxMulti(['192.168.2.0', '192.168.3.0']));
+    r1.enable({ asn: 65001 });
+    r2.enable({ asn: 65002 });
+    r1.getConfig().neighbors.set('10.0.0.2', { ip: '10.0.0.2', remoteAs: 65002, activated: true, routeMapIn: 'IN' });
+    r2.getConfig().neighbors.set('10.0.0.1', { ip: '10.0.0.1', remoteAs: 65001, activated: true });
+    r2.getConfig().networks.push({ network: '192.168.2.0', mask: '255.255.255.0' });
+    r2.getConfig().networks.push({ network: '192.168.3.0', mask: '255.255.255.0' });
+    link(r1, '10.0.0.1', r2, '10.0.0.2');
+    r1.converge(); r2.converge();
+
+    const nets = r1.getContributedRoutes().map((r) => String(r.network));
+    expect(nets).toContain('192.168.2.0');
+    expect(nets).not.toContain('192.168.3.0');
+  });
+
+  it("routeMapOut's set as-path prepend is observable in the receiving peer's learned AS_PATH", () => {
+    const r1 = new BGPEngine('R1');
+    const r2 = new BGPEngine('R2');
+    const policy = new PolicyRepository();
+    const clause = policy.ensureRouteMap('OUT', 'permit', 10);
+    clause.set.push('set as-path prepend 65002 65002');
+    r2.setDeviceContext(withPolicy(ctxMulti(['192.168.2.0']), policy));
+    r1.setDeviceContext(ctxMulti(['192.168.1.0']));
+    r1.enable({ asn: 65001 });
+    r2.enable({ asn: 65002 });
+    r1.getConfig().neighbors.set('10.0.0.2', { ip: '10.0.0.2', remoteAs: 65002, activated: true });
+    r2.getConfig().neighbors.set('10.0.0.1', {
+      ip: '10.0.0.1', remoteAs: 65001, activated: true, routeMapOut: 'OUT',
+    });
+    r2.getConfig().networks.push({ network: '192.168.2.0', mask: '255.255.255.0' });
+    link(r1, '10.0.0.1', r2, '10.0.0.2');
+    r1.converge(); r2.converge();
+
+    const row = r1.getBgpTable().find((r) => String(r.network) === '192.168.2.0');
+    expect(row?.asPath).toEqual([65002, 65002, 65002]); // 2 prepended + the real origin ASN
+  });
+
+  it("routeMapOut's set metric changes best-path selection between two paths from the same neighboring AS", () => {
+    const r1 = new BGPEngine('R1');
+    const r2 = new BGPEngine('R2'); // no route-map -> MED stays default 0
+    const r3 = new BGPEngine('R3'); // route-map raises its own MED to 100
+    const policy = new PolicyRepository();
+    const clause = policy.ensureRouteMap('RAISEMED', 'permit', 10);
+    clause.set.push('set metric 100');
+    r1.setDeviceContext(ctxMulti(['192.168.1.0']));
+    r2.setDeviceContext(ctxMulti(['192.168.9.0']));
+    r3.setDeviceContext(withPolicy(ctxMulti(['192.168.9.0']), policy));
+    r1.enable({ asn: 65001 });
+    r2.enable({ asn: 65002 });
+    r2.getConfig().routerId = '9.9.9.9'; // higher router-id: would LOSE a tie-break at equal MED
+    r3.enable({ asn: 65002 });
+    r3.getConfig().routerId = '1.1.1.1'; // lower router-id: would WIN a tie-break at equal MED
+    r1.getConfig().neighbors.set('10.0.0.2', { ip: '10.0.0.2', remoteAs: 65002, activated: true });
+    r1.getConfig().neighbors.set('10.0.0.3', { ip: '10.0.0.3', remoteAs: 65002, activated: true });
+    r2.getConfig().neighbors.set('10.0.0.1', { ip: '10.0.0.1', remoteAs: 65001, activated: true });
+    r3.getConfig().neighbors.set('10.0.0.1', {
+      ip: '10.0.0.1', remoteAs: 65001, activated: true, routeMapOut: 'RAISEMED',
+    });
+    r2.getConfig().networks.push({ network: '192.168.9.0', mask: '255.255.255.0' });
+    r3.getConfig().networks.push({ network: '192.168.9.0', mask: '255.255.255.0' });
+    link(r1, '10.0.0.1', r2, '10.0.0.2');
+    link(r1, '10.0.0.1', r3, '10.0.0.3');
+    r1.converge(); r2.converge(); r3.converge();
+
+    // R2 (MED 0, higher router-id) must beat R3 (MED 100, lower router-id) --
+    // if `set metric` weren't actually applied, both would tie at MED 0 and
+    // R3's lower router-id would win instead, so this is feature-proving.
+    const routes = r1.getContributedRoutes().filter((r) => String(r.network) === '192.168.9.0');
+    expect(routes).toHaveLength(1);
+    expect(String(routes[0].nextHop)).toBe('10.0.0.2');
   });
 });

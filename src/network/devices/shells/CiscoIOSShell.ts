@@ -136,6 +136,9 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
   evaluatePrefixList(name: string, network: string, prefixLength: number): 'permit' | 'deny' | null {
     return this.policy.evaluatePrefixList(name, network, prefixLength);
   }
+  evaluateRouteMap(name: string, network: string, prefixLength: number) {
+    return this.policy.evaluateRouteMap(name, network, prefixLength);
+  }
   private readonly routingCfg = new RoutingConfigRepository();
   private selectedRoutingProto: { proto: 'rip' | 'eigrp' | 'bgp'; asn?: number } | null = null;
   getSelectedRoutingProto(): { proto: 'rip' | 'eigrp' | 'bgp'; asn?: number } | null {

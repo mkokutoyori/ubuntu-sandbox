@@ -5,6 +5,49 @@ progressive par équipement. Un push = une entrée = une fonctionnalité
 complète et testée (voir `CLAUDE.md` / le framework de migration pour les
 principes directeurs).
 
+## Routeur Cisco — route-map BGP par voisin (`neighbor <ip> route-map <name> in|out`)
+
+Suite directe du filtrage par `prefix-list` : les `route-map` (clauses
+`match`/`set`) existaient déjà côté CLI (`PolicyRepository`) mais,
+là aussi, n'étaient jamais évaluées par un moteur de protocole —
+seulement affichées par `show route-map`.
+
+`PolicyRepository` gagne `evaluateRouteMap(name, network, prefixLength)`
+— première clause correspondante en ordre de seq (une clause sans
+`match ip address prefix-list …` correspond sans condition ; les autres
+types de `match` — communauté, as-path, tag — ne sont pas évalués
+structurellement, portée volontairement limitée), renvoyant l'action
+**et** les `set` reconnus, réellement parsés depuis les chaînes brutes :
+`set weight`, `set local-preference`, `set metric`, `set as-path
+prepend`. `null` = route-map absente ou aucune clause ne correspond
+(deny implicite, même convention que `evaluatePrefixList`).
+
+`BgpNeighborCfg` gagne `routeMapIn`/`routeMapOut` (mêmes hooks
+`IRouterShell`/`RoutingDeviceContext`/`DynamicRoutingCtx` réutilisés,
+paresseusement propagés jusqu'à `BGPEngine` — zéro changement
+d'ownership). `onUpdate` applique `routeMapIn` : filtre comme un
+prefix-list, puis pose `set weight`/`set local-preference` sur l'entrée
+acceptée (attributs consultés à la réception, comme le fait réellement
+IOS). `advertiseTo` applique `routeMapOut` : filtre, puis pose `set
+metric` (MED) et préfixe l'AS_PATH sortant avec `set as-path prepend`
+(attributs posés à l'annonce). CLI : `neighbor <ip> route-map <name>
+in|out`, reflété dans `show ip bgp neighbors`.
+
+**Validation** : `PolicyRepository.evaluateRouteMap` (4 tests unitaires
+— clause sans match/deny sans set/gating par prefix-list/nom inconnu) +
+4 nouveaux tests `BGPEngine` : `set weight`/`set local-preference`
+observés sur `show ip bgp` du routeur récepteur ; refus par route-map
+sans clause permissive ; `set as-path prepend` observé dans l'AS_PATH
+appris par le voisin ; `set metric` **change réellement la sélection du
+meilleur chemin** entre deux annonces de la même AS voisine (le test
+force un scénario où, sans l'application du MED, le départage par
+router-id donnerait un gagnant différent — donc un test qui prouve
+vraiment la fonctionnalité, pas une coïncidence). Suite BGP élargie
+(engine/bestpath/session/messages/intégration CLI EIGRP+BGP) : 60/60 au
+vert. Régression routeur plus large (architecture/HSRP/ACL/NAT/show) :
+127/127 au vert. Typecheck et lint ciblés propres (mêmes erreurs/
+avertissements pré-existants qu'avant ce changement, aucun nouveau).
+
 ## Routeur Cisco — filtrage BGP par voisin (`neighbor <ip> prefix-list <name> in|out`)
 
 **Changement de couche métier** (fin du lot Windows Server AD DS — retour

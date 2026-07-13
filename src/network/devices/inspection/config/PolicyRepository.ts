@@ -22,6 +22,19 @@ export interface RouteMapClause {
   description?: string;
 }
 
+/** The subset of `set` actions this simulator's protocol engines (`BGPEngine`) actually apply — `set community`/`set next-hop`/etc. remain display-only in `RouteMapClause.set`. */
+export interface RouteMapSetClause {
+  weight?: number;
+  localPreference?: number;
+  metric?: number;
+  asPathPrepend?: number[];
+}
+
+export interface RouteMapEvalResult {
+  action: 'permit' | 'deny';
+  set: RouteMapSetClause;
+}
+
 export class PolicyRepository {
   private readonly prefixLists = new Map<string, PrefixListEntry[]>();
   private readonly v6PrefixLists = new Map<string, PrefixListEntry[]>();
@@ -136,6 +149,50 @@ export class PolicyRepository {
       }
     }
     return out.join('\n');
+  }
+
+  /**
+   * Real route-map evaluation: the first clause (in seq order) that
+   * matches wins — a clause with no `match ip address prefix-list …`
+   * statement matches unconditionally (real IOS: `match` is optional).
+   * Other `match` types (community, as-path, tag…) aren't structurally
+   * evaluated — a clause using only those is treated as unconditional
+   * too, a deliberate scoping decision. `null` means the route-map
+   * itself doesn't exist or no clause matched (implicit deny, same
+   * convention as `evaluatePrefixList`).
+   */
+  evaluateRouteMap(name: string, network: string, prefixLength: number): RouteMapEvalResult | null {
+    const clauses = this.routeMaps.get(name);
+    if (!clauses) return null;
+    for (const c of clauses) {
+      if (this.routeMapClauseMatches(c, network, prefixLength)) {
+        return { action: c.action, set: c.action === 'permit' ? this.parseSetClauses(c.set) : {} };
+      }
+    }
+    return null;
+  }
+
+  private routeMapClauseMatches(c: RouteMapClause, network: string, prefixLength: number): boolean {
+    const prefixListMatches = c.match.filter((m) => /^match\s+ip\s+address\s+prefix-list\s+/i.test(m));
+    if (prefixListMatches.length === 0) return true;
+    return prefixListMatches.some((m) => {
+      const listName = m.replace(/^match\s+ip\s+address\s+prefix-list\s+/i, '').trim().split(/\s+/)[0];
+      return this.evaluatePrefixList(listName, network, prefixLength) === 'permit';
+    });
+  }
+
+  private parseSetClauses(set: string[]): RouteMapSetClause {
+    const result: RouteMapSetClause = {};
+    for (const s of set) {
+      let m: RegExpMatchArray | null;
+      if ((m = s.match(/^set\s+weight\s+(\d+)/i))) result.weight = Number(m[1]);
+      else if ((m = s.match(/^set\s+local-preference\s+(\d+)/i))) result.localPreference = Number(m[1]);
+      else if ((m = s.match(/^set\s+metric\s+(\d+)/i))) result.metric = Number(m[1]);
+      else if ((m = s.match(/^set\s+as-path\s+prepend\s+(.+)/i))) {
+        result.asPathPrepend = m[1].trim().split(/\s+/).map(Number).filter((n) => Number.isFinite(n));
+      }
+    }
+    return result;
   }
 
   reset(): void {
