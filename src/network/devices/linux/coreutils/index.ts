@@ -4,8 +4,6 @@ export type { TestFs, TestEnv, TestEvaluation, TestResultKind } from './TestEval
 export { ExprEvaluator, runExpr } from './ExprEvaluator';
 export type { ExprResult } from './ExprEvaluator';
 
-export { runSeq, parseSeqArgs } from './SeqGenerator';
-export type { SeqOptions, SeqResult } from './SeqGenerator';
 
 
 export { formatTimes, measure, chooseTimeFormat } from './TimeReporter';

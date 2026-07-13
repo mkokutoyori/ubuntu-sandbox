@@ -116,6 +116,25 @@ large (architecture/HSRP/ACL/NAT/show) : 127/127 au vert. Typecheck et
 lint ciblés propres (mêmes 8 erreurs `tsc` et mêmes avertissements
 `eslint` pré-existants qu'avant ce changement, aucun nouveau).
 
+## Linux — Phase 20 : `seq` rendue autonome (+ `validate`, suppression de `SeqGenerator`)
+
+**État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
+
+`SeqCommand` implémente désormais **elle-même** tout le générateur GNU
+(analyse `-s`/`-t`/`-w`/`-f` + formes longues, précision décimale, pas
+négatif, largeur égale, printf `%f/%g/%e/%d/%s`) sous forme de méthodes
+privées, et fournit `validate`.
+
+- **`coreutils/SeqGenerator.ts` supprimé** (+ son ré-export depuis
+  `coreutils/index.ts`) : plus aucun appel au module hérité.
+- Garde-fou appris : une méthode privée **ne doit pas s'appeler `run`** —
+  cela masquerait le point d'entrée `BaseCommand.run(ctx)` ; la logique est
+  donc portée par `generate(argv)`.
+
+Validation : les 12 tests `seq` de `test-expr-seq-sleep-time-watch.test.ts`
++ `linux-commands-and-oracle-tools` + cohérence stricte passent (184) ;
+aucune régression.
+
 ## Linux — Phase 19 : `tty` / `sleep` rendues autonomes (+ `validate`, suppression des modules hérités)
 
 **État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
