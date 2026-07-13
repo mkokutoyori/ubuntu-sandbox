@@ -3763,17 +3763,6 @@ export class LinuxCommandExecutor {
         return { output: out, exitCode: this.lastExitCode };
       }
 
-      case 'truncate': {
-        const files = args.filter((a, i) => !a.startsWith('-') && args[i - 1] !== '-s');
-        for (const p of files) {
-          const abs = this.vfs.normalizePath(p, this.cwd);
-          this.publishFsAccess(abs, 'w', 'truncate');
-          this.publishSyscall('truncate', abs);
-          const existing = this.vfs.resolveInode(abs);
-          if (!existing) this.vfs.writeFile(abs, '', this.userMgr.currentUid, this.userMgr.currentGid, this.umask);
-        }
-        return { output: '', exitCode: 0 };
-      }
       // kill — send signal via process manager
       case 'kill': {
         this.publishSyscall('kill');

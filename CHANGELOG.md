@@ -5,6 +5,25 @@ progressive par équipement. Un push = une entrée = une fonctionnalité
 complète et testée (voir `CLAUDE.md` / le framework de migration pour les
 principes directeurs).
 
+## Linux — Phase 12 : `truncate`
+
+**État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
+
+**Commande migrée** : `truncate -s TAILLE FICHIER...` — portée par
+`TruncateCommand`.
+
+- Le simulateur ne modélisant pas les tailles d'octets, la commande se
+  limite (comme le legacy) à créer un fichier vide s'il n'existe pas, et
+  publie les évènements d'audit `fsAccess`/`syscall` « truncate » via la
+  capacité `ctx.machine.audit` — indispensable pour que `auditctl -w`
+  capte l'accès.
+- **Legacy supprimé** : le `case 'truncate'` retiré de
+  `LinuxCommandExecutor.dispatch()`.
+
+Validation : `auditctl-other.test.ts` passe intégralement (150/150, dont
+le suivi `syscall=truncate` d'un fichier surveillé) ; cohérence stricte
+verte ; aucune régression (67 tests).
+
 ## Linux — Phase 11 : `tty`
 
 **État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
