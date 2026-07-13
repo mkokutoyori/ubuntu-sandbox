@@ -381,6 +381,15 @@ describe('rev', () => {
   });
 });
 
+describe('locale', () => {
+  it('reflects LANG from the environment, falling back to it for unset categories', async () => {
+    const out = await server.executeCommand('export LANG=en_US.UTF-8; locale');
+    expect(out).toContain('LANG=en_US.UTF-8');
+    expect(out).toContain('LC_CTYPE="en_US.UTF-8"');
+    expect(out).toContain('LC_ALL=');
+  });
+});
+
 describe('mktemp', () => {
   it('prints a unique /tmp/tmp.* path', async () => {
     const a = (await server.executeCommand('mktemp')).trim();

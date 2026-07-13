@@ -3578,35 +3578,6 @@ export class LinuxCommandExecutor {
 
       // locale — report the active locale, sourced from the live shell
       // environment so SSH-forwarded LANG / LC_* are reflected.
-      case 'locale': {
-        const e = this._cmdEnv ?? Object.fromEntries(this.env);
-        const lang = e['LANG'] ?? '';
-        const lcAll = e['LC_ALL'] ?? '';
-        const effective = lcAll || lang || 'C';
-        const cat = (name: string) =>
-          `${name}="${e[name] ?? effective}"`;
-        return {
-          output: [
-            `LANG=${lang}`,
-            `LANGUAGE=${e['LANGUAGE'] ?? ''}`,
-            cat('LC_CTYPE'),
-            cat('LC_NUMERIC'),
-            cat('LC_TIME'),
-            cat('LC_COLLATE'),
-            cat('LC_MONETARY'),
-            cat('LC_MESSAGES'),
-            cat('LC_PAPER'),
-            cat('LC_NAME'),
-            cat('LC_ADDRESS'),
-            cat('LC_TELEPHONE'),
-            cat('LC_MEASUREMENT'),
-            cat('LC_IDENTIFICATION'),
-            `LC_ALL=${lcAll}`,
-          ].join('\n'),
-          exitCode: 0,
-        };
-      }
-
       // Crontab
       case 'crontab': return this.handleCrontab(args, stdin);
       case 'run-parts': return await this.handleRunParts(args);

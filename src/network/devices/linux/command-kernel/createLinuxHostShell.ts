@@ -17,6 +17,7 @@ import { GroupsCommand } from './commands/Groups';
 import { HeadCommand } from './commands/Head';
 import { IdCommand } from './commands/Id';
 import { LnCommand } from './commands/Ln';
+import { LocaleCommand } from './commands/Locale';
 import { LsCommand } from './commands/Ls';
 import { MkdirCommand } from './commands/Mkdir';
 import { MktempCommand } from './commands/Mktemp';
@@ -88,6 +89,7 @@ export function createLinuxHostShell(deps: LinuxMachineApiDeps): Interpreter {
   registry.register(() => new TruncateCommand());
   registry.register(() => new MktempCommand());
   registry.register(() => new FileCommand());
+  registry.register(() => new LocaleCommand());
 
   return new Interpreter(registry, machine);
 }

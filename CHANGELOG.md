@@ -45,6 +45,24 @@ large (architecture/HSRP/ACL/NAT/show) : 127/127 au vert. Typecheck et
 lint ciblés propres (mêmes 8 erreurs `tsc` et mêmes avertissements
 `eslint` pré-existants qu'avant ce changement, aucun nouveau).
 
+## Linux — Phase 15 : `locale`
+
+**État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
+
+**Commande migrée** : `locale` — affiche les paramètres régionaux actifs,
+portée par `LocaleCommand`.
+
+- Les catégories (`LANG`, `LANGUAGE`, `LC_CTYPE`…`LC_ALL`) sont dérivées de
+  l'environnement de la session (`ctx.session.env`) ; chaque `LC_*` non
+  défini retombe sur la locale effective (`LC_ALL` sinon `LANG` sinon `C`),
+  exactement comme le legacy.
+- **Legacy supprimé** : le `case 'locale'` retiré de
+  `LinuxCommandExecutor.dispatch()`. Nouveau test `locale`
+  (`export LANG=… ; locale`).
+
+Validation : test `locale` vert (LANG reflété, repli des catégories) ;
+cohérence stricte + host-identity verts ; aucune régression (74 tests).
+
 ## Linux — Phase 14 : `file`
 
 **État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
