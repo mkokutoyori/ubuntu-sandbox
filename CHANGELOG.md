@@ -116,6 +116,25 @@ large (architecture/HSRP/ACL/NAT/show) : 127/127 au vert. Typecheck et
 lint ciblés propres (mêmes 8 erreurs `tsc` et mêmes avertissements
 `eslint` pré-existants qu'avant ce changement, aucun nouveau).
 
+## Linux — Phase 19 : `tty` / `sleep` rendues autonomes (+ `validate`, suppression des modules hérités)
+
+**État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
+
+Application du nouveau standard aux commandes déjà migrées mais qui
+appelaient encore un module hérité : `tty` et `sleep` implémentent
+désormais **elles-mêmes** leur logique et fournissent `validate`.
+
+- `TtyCommand` : le format du chemin de terminal est inliné (plus d'appel à
+  `SystemInfo.cmdTty`) ; **`cmdTty` supprimé** de `system/SystemInfo.ts`.
+- `SleepCommand` : l'analyse des durées `NOMBRE[s|m|h|d]` (sommes
+  incluses) est inlinée ; **`coreutils/Sleep.ts` supprimé** ainsi que son
+  ré-export depuis `coreutils/index.ts`. Les erreurs conservent le code de
+  sortie GNU 1 (rendu dans `execute`, pas via `UsageError`/code 2), d'où un
+  `validate` explicite mais délibérément vide, documenté.
+
+Validation : `test-expr-seq-sleep-time-watch.test.ts` et
+`linux-system-info.test.ts` verts (69) ; aucune régression.
+
 ## Linux — Phase 18 : `clear` / `reset` (nouveau standard : commandes autonomes + `validate`)
 
 **État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**

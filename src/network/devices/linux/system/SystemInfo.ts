@@ -295,9 +295,6 @@ export function cmdDate(args: string[]): string {
   return fullDate(when);
 }
 
-export function cmdTty(currentTty: string): string {
-  return currentTty.startsWith('/dev/') ? currentTty : `/dev/${currentTty}`;
-}
 
 /** Default systemd target is graphical (5) for a PC, multi-user (3) for a server. */
 export function cmdRunlevel(isServer: boolean): string {
