@@ -29,7 +29,7 @@ import {
 } from './resolve';
 import { cmdMkfifo } from './LinuxPermCommands';
 import {
-  runTest, runExpr, runSeq, runSleep, runWatch, formatTimes, chooseTimeFormat,
+  runTest, runWatch, formatTimes, chooseTimeFormat,
   runTail,
   cmdTar, cmdGzip, cmdZip, cmdUnzip, describeArchiveContent,
   type TestFs, type TestEnv, type TailFs, type TailSink, type TailFollowHandle, type TailRunResult,
@@ -108,7 +108,7 @@ import { renderWho } from './network/whoFormatter';
 import { renderW } from './network/wFormatter';
 import { renderLast, renderLastb } from './network/lastFormatter';
 import { renderLoginctl } from './network/loginctlFormatter';
-import { cmdTty, cmdRunlevel } from './system/SystemInfo';
+import { cmdRunlevel } from './system/SystemInfo';
 import type { IEventBus } from '@/events/EventBus';
 import { LinuxServiceSupervisor } from './supervisor/LinuxServiceSupervisor';
 import { cmdNice, cmdRenice, cmdChrt, cmdIonice, cmdTaskset } from './process/PriorityCommands';
@@ -3389,7 +3389,6 @@ export class LinuxCommandExecutor {
       }
       case 'test':
       case '[': return this.handleTest(cmd, args);
-      case 'expr': return this.handleExpr(args);
       case 'mkfifo': return { output: cmdMkfifo(c, args), exitCode: 0 };
 
       // User commands
@@ -3573,27 +3572,6 @@ export class LinuxCommandExecutor {
         return this.dispatchFromInterpreter(cmdline, resultEnv);
       }
 
-      // printenv — print the whole environment, or specific variables.
-      // With names, one value per line; exit 1 if any name is unset.
-      case 'printenv': {
-        const envView = this._cmdEnv ?? Object.fromEntries(this.env);
-        const names = args.filter((a) => !a.startsWith('-'));
-        if (names.length === 0) {
-          return {
-            output: Object.entries(envView).map(([k, v]) => `${k}=${v}`).join('\n'),
-            exitCode: 0,
-          };
-        }
-        const out: string[] = [];
-        let missing = false;
-        for (const name of names) {
-          const v = envView[name];
-          if (v === undefined) missing = true;
-          else out.push(v);
-        }
-        return { output: out.join('\n'), exitCode: missing ? 1 : 0 };
-      }
-
       // time — run a command and report its elapsed wall/user/sys time
       case 'time': return await this.handleTime(args);
       case 'watch': return await this.handleWatch(args);
@@ -3760,10 +3738,6 @@ export class LinuxCommandExecutor {
 
       // Sleep — parses the duration (incl. multi-arg sums and suffixes)
       // but never blocks; the simulator advances time logically.
-      case 'sleep': {
-        const r = runSleep(args);
-        return { output: r.output, exitCode: r.exitCode };
-      }
       // `timeout <N> <cmd ...>` — run the inner command. In real life
       // the cmd is killed with SIGTERM after N seconds; the simulator
       // is synchronous so we just delegate (the inner cmd runs to
@@ -3789,17 +3763,6 @@ export class LinuxCommandExecutor {
         return { output: out, exitCode: this.lastExitCode };
       }
 
-      case 'truncate': {
-        const files = args.filter((a, i) => !a.startsWith('-') && args[i - 1] !== '-s');
-        for (const p of files) {
-          const abs = this.vfs.normalizePath(p, this.cwd);
-          this.publishFsAccess(abs, 'w', 'truncate');
-          this.publishSyscall('truncate', abs);
-          const existing = this.vfs.resolveInode(abs);
-          if (!existing) this.vfs.writeFile(abs, '', this.userMgr.currentUid, this.userMgr.currentGid, this.umask);
-        }
-        return { output: '', exitCode: 0 };
-      }
       // kill — send signal via process manager
       case 'kill': {
         this.publishSyscall('kill');
@@ -3849,14 +3812,6 @@ export class LinuxCommandExecutor {
       case 'ps': return { output: cmdPs(args, this.processCmdContext()), exitCode: 0 };
 
       // date, uptime, uname, tty, runlevel, hostnamectl — system info
-      case 'tty': {
-        // `not a tty` (exit 1) when running without a controlling terminal —
-        // e.g. ssh exec-mode without -t. The SSH client overlays SSH_NO_TTY=1.
-        if (this._cmdEnv?.['SSH_NO_TTY'] === '1' || this.env.get('SSH_NO_TTY') === '1') {
-          return { output: 'not a tty', exitCode: 1 };
-        }
-        return { output: cmdTty('pts/0'), exitCode: 0 };
-      }
       case 'runlevel': return { output: cmdRunlevel(this.isServer), exitCode: 0 };
 
       // true/false
@@ -4157,12 +4112,6 @@ export class LinuxCommandExecutor {
         }
         return { output: '', exitCode: 0 };
       }
-      case 'seq': {
-        const r = runSeq(args);
-        return { output: r.output, exitCode: r.exitCode };
-      }
-      case 'rev': return { output: (stdin || '').split('\n').map(l => l.split('').reverse().join('')).join('\n'), exitCode: 0 };
-      case 'basename': return { output: (args[0] || '').split('/').pop() || '', exitCode: 0 };
 
       // Non-interactive fallbacks for commands the GUI normally routes to
       // overlays (editors) or sub-shells (Oracle CLIs). When invoked via
@@ -4255,8 +4204,6 @@ export class LinuxCommandExecutor {
           exitCode: 0,
         };
 
-      case 'dirname': { const p = args[0] || ''; const idx = p.lastIndexOf('/'); return { output: idx > 0 ? p.slice(0, idx) : (idx === 0 ? '/' : '.'), exitCode: 0 }; }
-      case 'mktemp': return { output: '/tmp/tmp.' + Math.random().toString(36).slice(2, 12), exitCode: 0 };
 
       default: {
         // Check if it's an executable script (./script.sh or /path/to/script)
@@ -5508,11 +5455,6 @@ export class LinuxCommandExecutor {
     };
     const r = runTest(fs, env, args, cmd === '[');
     return { output: r.stderr, exitCode: r.exitCode };
-  }
-
-  private handleExpr(args: string[]): { output: string; exitCode: number } {
-    const r = runExpr(args);
-    return { output: r.output, exitCode: r.exitCode };
   }
 
   private async handleTime(args: string[]): Promise<{ output: string; exitCode: number }> {

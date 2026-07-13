@@ -369,6 +369,28 @@ describe('seq', () => {
   });
 });
 
+describe('rev', () => {
+  it('reverses the characters of a single line from stdin', async () => {
+    const out = await server.executeCommand('echo hello | rev');
+    expect(out.trim()).toBe('olleh');
+  });
+
+  it('reverses each line independently', async () => {
+    const out = await server.executeCommand('printf "abc\\ndef\\n" | rev');
+    expect(out.trim()).toBe('cba\nfed');
+  });
+});
+
+describe('mktemp', () => {
+  it('prints a unique /tmp/tmp.* path', async () => {
+    const a = (await server.executeCommand('mktemp')).trim();
+    const b = (await server.executeCommand('mktemp')).trim();
+    expect(a).toMatch(/^\/tmp\/tmp\.[a-z0-9]+$/);
+    expect(b).toMatch(/^\/tmp\/tmp\.[a-z0-9]+$/);
+    expect(a).not.toBe(b);
+  });
+});
+
 describe('basename / dirname', () => {
   it('basename extracts filename', async () => {
     const out = await server.executeCommand('basename /usr/local/bin/sqlplus');

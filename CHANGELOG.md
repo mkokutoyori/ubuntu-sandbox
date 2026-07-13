@@ -45,6 +45,194 @@ large (architecture/HSRP/ACL/NAT/show) : 127/127 au vert. Typecheck et
 lint ciblés propres (mêmes 8 erreurs `tsc` et mêmes avertissements
 `eslint` pré-existants qu'avant ce changement, aucun nouveau).
 
+## Linux — Phase 13 : `mktemp`
+
+**État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
+
+**Commande migrée** : `mktemp [OPTION]... [MODÈLE]` — portée par
+`MktempCommand`.
+
+- Renvoie un nom de fichier temporaire unique au format `/tmp/tmp.<aléa>`
+  (10 caractères base36). Le simulateur ne matérialise pas le fichier
+  (comportement historique conservé à l'identique) ; les options
+  (`-d`, template `XXXXXX`...) sont acceptées mais ignorées.
+- **Legacy supprimé** : le `case 'mktemp'` retiré de
+  `LinuxCommandExecutor.dispatch()`. Nouveau test `mktemp` (format + unicité).
+
+Validation : test `mktemp` vert ; aucune régression.
+
+## Linux — Phase 12 : `truncate`
+
+**État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
+
+**Commande migrée** : `truncate -s TAILLE FICHIER...` — portée par
+`TruncateCommand`.
+
+- Le simulateur ne modélisant pas les tailles d'octets, la commande se
+  limite (comme le legacy) à créer un fichier vide s'il n'existe pas, et
+  publie les évènements d'audit `fsAccess`/`syscall` « truncate » via la
+  capacité `ctx.machine.audit` — indispensable pour que `auditctl -w`
+  capte l'accès.
+- **Legacy supprimé** : le `case 'truncate'` retiré de
+  `LinuxCommandExecutor.dispatch()`.
+
+Validation : `auditctl-other.test.ts` passe intégralement (150/150, dont
+le suivi `syscall=truncate` d'un fichier surveillé) ; cohérence stricte
+verte ; aucune régression (67 tests).
+
+## Linux — Phase 11 : `tty`
+
+**État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
+
+**Commande migrée** : `tty [-s]` — affiche le nom du terminal relié à
+l'entrée standard, portée par `TtyCommand`.
+
+- En mode exec SSH sans pseudo-terminal (le client pose `SSH_NO_TTY=1`,
+  lu depuis `ctx.session.env`), répond « not a tty » avec le code de
+  sortie 1 ; sinon `/dev/pts/0`. Option `-s` (silencieux) gérée. Le
+  formatage du chemin reste porté par le helper pur partagé `cmdTty`.
+- **Legacy supprimé** : le `case 'tty'` retiré de
+  `LinuxCommandExecutor.dispatch()`, import `cmdTty` devenu inutile
+  nettoyé.
+
+Validation : `linux-system-info.test.ts` (`tty` → `/dev/pts/0`) et les cas
+SSH `cross-equipment-ssh-suite.test.ts` (`ssh -t … tty` → `/dev/pts`,
+`ssh … tty` → `not a tty`) passent ; aucune régression (les 19 échecs
+préexistants de cette suite, sans rapport avec `tty`, sont identiques
+avant/après).
+
+## Linux — Phase 10 : `printenv`
+
+**État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
+
+**Commande migrée** : `printenv [VARIABLE...]` — affiche tout
+l'environnement (`NOM=valeur`) ou la valeur de variables nommées (une par
+ligne, code de sortie 1 si l'une est absente), portée par
+`PrintenvCommand`.
+
+- L'environnement est lu depuis la session command-kernel
+  (`ctx.session.env`) — qui reflète bien les affectations `export`
+  antérieures dans la même ligne/pipeline (validé par
+  `export MYTOKEN=… ; printenv MYTOKEN`).
+- **Legacy supprimé** : le `case 'printenv'` retiré de
+  `LinuxCommandExecutor.dispatch()`.
+
+Validation : `env-vars.test.ts` passe intégralement (9/9, dont
+`printenv`, `printenv SHELL`, export puis lecture, variable absente) ;
+cohérence stricte verte ; aucune régression (66 tests).
+
+## Linux — Phase 9 : `rev`
+
+**État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
+
+**Commande migrée** : `rev [fichier...]` — inverse l'ordre des caractères
+de chaque ligne, portée par `RevCommand`.
+
+- Lit désormais l'entrée standard **ou les fichiers** passés en argument
+  (comportement GNU ; le legacy était limité à stdin) via les helpers
+  partagés `readTextInput`/`splitLines`/`joinLines`. La structure des
+  lignes et le saut de ligne final sont préservés à l'octet près (mêmes
+  résultats que le legacy pour le cas stdin).
+- **Legacy supprimé** : le `case 'rev'` retiré de
+  `LinuxCommandExecutor.dispatch()`. Nouveau test `rev` ajouté
+  (`linux-commands-and-oracle-tools.test.ts`).
+
+Validation : tests `rev` verts, cohérence stricte verte ; aucune
+régression (67 tests).
+
+## Linux — Phase 8 : `sleep`
+
+**État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
+
+**Commande migrée** : `sleep NOMBRE[SUFFIXE]...` — portée par la commande
+command-kernel `SleepCommand`.
+
+- Le simulateur étant synchrone, la durée calculée est ignorée (exactement
+  comme le legacy) : seule la **validation** des opérandes compte (`1`,
+  `1s`, `2m`, `1h`, `1d`, `0.5`, sommes de plusieurs durées, erreur
+  « invalid time interval » sur token invalide). Le parsing des durées
+  reste porté par le module pur **partagé** `runSleep` (`coreutils/Sleep.ts`).
+- **Legacy supprimé** : le `case 'sleep'` retiré de
+  `LinuxCommandExecutor.dispatch()`, import `runSleep` devenu inutile
+  nettoyé ; `sleep` reste dans la liste des commandes connues.
+
+Validation : `test-expr-seq-sleep-time-watch.test.ts` passe intégralement
+(53/53, dont les cas `sleep 1 && echo DONE`, suffixes, `sleep || echo BAD`,
+`sleep abc`, `sleep 0.5`) ; cohérence stricte verte ; aucune régression
+Linux voisine (77 tests).
+
+## Linux — Phase 7 : `expr`
+
+**État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
+
+**Commande migrée** : `expr EXPRESSION` — évaluation d'expressions
+(arithmétique, comparaison, chaînes), portée par la commande
+command-kernel `ExprCommand`.
+
+- Toute l'évaluation (priorités, opérateurs `+ - * / % = < > | &`,
+  `match`/`substr`/`length`/`index`) reste assurée par l'évaluateur pur
+  **partagé** `runExpr` (`coreutils/ExprEvaluator.ts`). `ExprCommand` capte
+  les opérandes bruts (`lenientOptions`), termine la sortie par un saut de
+  ligne (comportement GNU) et conserve les codes de sortie exacts de GNU
+  `expr` (`0` vrai, `1` faux, `2`/`3` erreur).
+- **Legacy supprimé** : le `case 'expr'` et son wrapper `handleExpr()`
+  retirés de `LinuxCommandExecutor`, import `runExpr` devenu inutile
+  nettoyé ; `expr` reste dans la liste des commandes connues.
+
+Validation : le fichier `test-expr-seq-sleep-time-watch.test.ts` (qui
+pilote un `LinuxCommandExecutor` nu, résolu via son shell command-kernel
+par défaut) passe intégralement (53/53) ; cohérence stricte verte ; aucune
+régression Linux voisine (130 tests).
+
+## Linux — Phase 6 : `seq`
+
+**État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
+
+**Commande migrée** : `seq [OPTION]... PREMIER [PAS] DERNIER` — génération
+d'une suite de nombres, portée par la commande command-kernel
+`SeqCommand`.
+
+- Le rendu (formats GNU `-w`/`-f`/`-s`/`-t`, précision décimale, pas
+  négatif, largeur égale) reste assuré par le générateur pur **partagé**
+  `runSeq` (`coreutils/SeqGenerator.ts`) — pas de resimulation. `SeqCommand`
+  capte les opérandes bruts (`lenientOptions`, le parsing des options
+  appartient à `runSeq`) et termine la sortie par un saut de ligne dès
+  qu'elle est non vide (comportement GNU, indispensable en pipeline
+  `seq N | wc -l`).
+- **Legacy supprimé** : le `case 'seq'` retiré de
+  `LinuxCommandExecutor.dispatch()` et l'import `runSeq` devenu inutile
+  nettoyé ; `seq` reste dans la liste des commandes connues.
+
+Validation : les tests `seq` de `linux-commands-and-oracle-tools.test.ts`
+passent, cas limites vérifiés (séparateur `-s`, largeur `-w`, pipeline,
+premier négatif, pas) ; cohérence stricte inter-machines verte ; aucune
+régression Linux voisine (143 tests).
+
+## Linux — Phase 5 : `basename` / `dirname`
+
+**État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
+
+**Commandes migrées** : `basename NOM [SUFFIXE]` / `basename -a [-s SUFFIXE]
+NOM...` et `dirname NOM...` — manipulation de chemin purement textuelle
+(aucun accès au VFS), portée par les commandes command-kernel
+`BasenameCommand` / `DirnameCommand`.
+
+- Sémantique POSIX complète (là où le legacy était simpliste) : les slashs
+  finaux sont ignorés (`basename /usr/` → `usr`, `dirname /usr/bin/` →
+  `/usr`), un chemin entièrement composé de slashs donne `/`, et les
+  formes multiples (`-a`, `-s SUFFIXE`, séparateur NUL `-z`) sont gérées —
+  aucune capacité `MachineApi` requise (chaînes pures).
+- **Legacy supprimé** : les `case 'basename'` et `case 'dirname'` retirés
+  de `LinuxCommandExecutor.dispatch()` — aucun autre appelant, absents du
+  framework `LinuxCommand`. Les deux restent dans la liste des commandes
+  connues (résolution `which`/`command -v` inchangée).
+
+Validation : les tests `basename`/`dirname` de
+`linux-commands-and-oracle-tools.test.ts` passent, cohérence stricte
+inter-machines `ssh-lan-strict-coherence.test.ts` (SC34) verte ; aucune
+régression sur les suites Linux voisines (command-kernel, vfs-path,
+availability, bash-scripts, sftp — 227 tests).
+
 ## Windows Server — application du bit `SMARTCARD_REQUIRED` (`userAccountControl`)
 
 Totalement absent jusqu'ici. `checkPassword` (bind simple LDAP, même
