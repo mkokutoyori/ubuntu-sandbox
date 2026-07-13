@@ -149,6 +149,25 @@ large (architecture/HSRP/ACL/NAT/show) : 127/127 au vert. Typecheck et
 lint ciblés propres (mêmes 8 erreurs `tsc` et mêmes avertissements
 `eslint` pré-existants qu'avant ce changement, aucun nouveau).
 
+## Linux — Phase 22 : `expr` rendue autonome (+ `validate`, suppression de `coreutils/ExprEvaluator`)
+
+**État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
+
+L'évaluateur POSIX complet (précédences `| & =…< + * :`, comparaison
+chaîne/entier, fonctions `length`/`substr`/`index`/`match`, BRE ancré) est
+désormais **co-localisé dans `Expr.ts`** (classe `ExprEvaluator` privée au
+module de la commande, instanciée à neuf par exécution pour éviter tout
+partage d'état). `ExprCommand` fournit `validate`.
+
+- **`coreutils/ExprEvaluator.ts` supprimé** (+ son ré-export) : plus aucun
+  appel au module hérité. La conversion BRE→JS réutilise l'utilitaire regex
+  **partagé** `posixToJsSource` (infrastructure, comme une bibliothèque
+  standard — pas une implémentation de commande héritée). Codes de sortie
+  GNU conservés (0/1/2/3), rendus dans `execute`.
+
+Validation : les 13 tests `expr` de `test-expr-seq-sleep-time-watch.test.ts`
+(fichier complet 53/53) passent ; aucune régression.
+
 ## Linux — Phase 21 : `diff` rendue autonome (+ `validate`, suppression de `coreutils/DiffCommand`)
 
 **État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
