@@ -12,6 +12,8 @@ import {
   PowerApi,
   ProcessApi,
   ProcessInfo as CkProcessInfo,
+  ProcessControlApi,
+  ProcessEntry,
   UserManagementApi,
 } from '@/command-kernel/machine/types';
 import { FileSystemError, FileSystemErrorCode } from '@/command-kernel/errors';
@@ -396,6 +398,28 @@ class LinuxProcessApi implements ProcessApi {
   }
 }
 
+class LinuxProcessControlApi implements ProcessControlApi {
+  constructor(private readonly processManager: LinuxProcessManager) {}
+
+  list(): readonly ProcessEntry[] {
+    return this.processManager.list().map((p) => ({
+      pid: p.pid,
+      ppid: p.ppid,
+      pgid: p.pgid,
+      uid: p.uid,
+      user: p.user,
+      comm: p.comm,
+      command: p.command,
+      state: p.state,
+      tty: p.tty,
+    }));
+  }
+
+  signal(pid: number, signal: string): boolean {
+    return this.processManager.kill(pid, signal as Signal);
+  }
+}
+
 class LinuxNetworkApi implements NetworkApi {
   constructor(private readonly ports: () => readonly Port[]) {}
 
@@ -492,6 +516,7 @@ class LinuxPowerApi implements PowerApi {
 export class LinuxMachineApi implements MachineApi {
   readonly fs: FileSystemApi;
   readonly proc: ProcessApi;
+  readonly processControl: ProcessControlApi;
   readonly net: NetworkApi;
   readonly users: UserManagementApi;
   readonly groups: GroupManagementApi;
@@ -503,6 +528,7 @@ export class LinuxMachineApi implements MachineApi {
   constructor(deps: LinuxMachineApiDeps) {
     this.fs = new LinuxFileSystemApi(deps.vfs, () => deps.getUmask(), deps.publishFsAccess);
     this.proc = new LinuxProcessApi(deps.processManager);
+    this.processControl = new LinuxProcessControlApi(deps.processManager);
     this.net = new LinuxNetworkApi(() => deps.ports);
     this.users = new LinuxUserManagementApi(deps.userManager);
     this.groups = new LinuxGroupManagementApi(deps.userManager);

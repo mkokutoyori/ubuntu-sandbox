@@ -1,7 +1,8 @@
+import { ParsedArgs } from '@/command-kernel/args/parsed-args';
 import { BaseCommand } from '@/command-kernel/command/base-command';
 import { CommandContext, CommandDescriptor, EXIT_OK, ExitCode } from '@/command-kernel/command/types';
 import { DefaultPrivilegePolicy } from '@/command-kernel/session/privilege-policy';
-import { PrivilegeLevel } from '@/command-kernel/session/types';
+import { PrivilegeLevel, Session } from '@/command-kernel/session/types';
 
 /** Dernier composant d'un chemin (`basename`), sémantique POSIX : les slashs finaux sont ignorés, un chemin entièrement composé de slashs donne `/`. */
 function baseComponent(path: string): string {
@@ -33,6 +34,11 @@ export class BasenameCommand extends BaseCommand {
     privileges: new DefaultPrivilegePolicy(PrivilegeLevel.ANY),
     category: 'fichiers',
   };
+
+  protected override validate(_args: ParsedArgs, _session: Session): void {
+    // La présence d'au moins un opérande est déjà garantie par le parseur
+    // (`required: true`) ; les formes `-a`/`-s` restent libres.
+  }
 
   async execute(ctx: CommandContext): Promise<ExitCode> {
     const operands = ctx.args.get<string[]>('operands');

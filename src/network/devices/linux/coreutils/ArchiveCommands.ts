@@ -94,18 +94,6 @@ function unpackGzip(raw: string): GzipBody | null {
 }
 
 /** What `file` should say about a content blob (archive awareness). */
-export function describeArchiveContent(raw: string): string | null {
-  const gz = unpackGzip(raw);
-  if (gz) {
-    return `gzip compressed data, was "${gz.name}", last modified: ` +
-      `${new Date(gz.mtime).toUTCString()}, from Unix`;
-  }
-  if (raw.startsWith(`${TAR_MAGIC}\n`)) return 'POSIX tar archive (GNU)';
-  if (raw.startsWith(`${ZIP_MAGIC}\n`)) {
-    return 'Zip archive data, at least v2.0 to extract';
-  }
-  return null;
-}
 
 // ── Shared walking helpers ──────────────────────────────────────────
 

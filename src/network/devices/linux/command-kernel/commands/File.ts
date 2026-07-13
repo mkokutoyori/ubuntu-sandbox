@@ -1,17 +1,27 @@
+import { ParsedArgs } from '@/command-kernel/args/parsed-args';
 import { BaseCommand } from '@/command-kernel/command/base-command';
 import { CommandContext, CommandDescriptor, EXIT_OK, ExitCode } from '@/command-kernel/command/types';
 import { FileSystemError } from '@/command-kernel/errors';
 import { toFileSystemActor } from '@/command-kernel/machine/types';
 import { DefaultPrivilegePolicy } from '@/command-kernel/session/privilege-policy';
-import { PrivilegeLevel } from '@/command-kernel/session/types';
-import { describeArchiveContent } from '../../coreutils/ArchiveCommands';
+import { PrivilegeLevel, Session } from '@/command-kernel/session/types';
+
+/**
+ * Marqueurs de format des archives simulées (contrat partagé avec les
+ * commandes `tar`/`gzip`/`zip`). Répliqués ici pour que `file` reste
+ * autonome — ce sont des constantes de format stables, pas de la logique de
+ * commande.
+ */
+const TAR_MAGIC = '!<simtar>';
+const GZ_MAGIC = '!<simgz>';
+const ZIP_MAGIC = '!<simzip>';
 
 /**
  * `file` — devine le type de chaque fichier (lien, répertoire, périphérique
- * caractère, archive gz/tar, script `#!`, texte ASCII, données binaires).
- * La classification reproduit à l'identique la logique historique
- * `describeFile`, désormais alimentée par `ctx.machine.fs` (lstat + lecture)
- * et le détecteur d'archives pur partagé `describeArchiveContent`.
+ * caractère, archive gz/tar/zip, script `#!`, texte ASCII, données
+ * binaires). Commande **autonome** : la classification, y compris la
+ * détection des archives simulées, est implémentée ici et alimentée par
+ * `ctx.machine.fs` (lstat + lecture).
  */
 export class FileCommand extends BaseCommand {
   readonly descriptor: CommandDescriptor = {
@@ -24,6 +34,11 @@ export class FileCommand extends BaseCommand {
     category: 'fichiers',
     lenientOptions: true,
   };
+
+  protected override validate(_args: ParsedArgs, _session: Session): void {
+    // `file` sans opérande écrit un rappel d'usage avec le code de sortie 1
+    // (rendu dans `execute`) ; rien à valider en amont.
+  }
 
   async execute(ctx: CommandContext): Promise<ExitCode> {
     const operands = ctx.args.has('operands') ? ctx.args.get<string[]>('operands') : [];
@@ -60,7 +75,7 @@ export class FileCommand extends BaseCommand {
     } catch { /* fifo / illisible → traité comme vide */ }
 
     if (content.length === 0) return `${target}: empty`;
-    const archive = describeArchiveContent(content);
+    const archive = this.detectArchive(content);
     if (archive) return `${target}: ${archive}`;
     if (content.startsWith('#!')) {
       const nl = content.indexOf('\n');
@@ -70,5 +85,20 @@ export class FileCommand extends BaseCommand {
     // eslint-disable-next-line no-control-regex
     if (/[\x00-\x08\x0e-\x1f]/.test(content)) return `${target}: data`;
     return `${target}: ASCII text`;
+  }
+
+  /** Reconnaît les archives simulées (gz/tar/zip) et retourne leur description `file`, ou `null`. */
+  private detectArchive(raw: string): string | null {
+    if (raw.startsWith(`${GZ_MAGIC}\n`)) {
+      try {
+        const body = JSON.parse(raw.slice(GZ_MAGIC.length + 1)) as { name?: string; mtime?: number; payload?: string };
+        if (typeof body.payload === 'string') {
+          return `gzip compressed data, was "${body.name ?? ''}", last modified: ${new Date(body.mtime ?? 0).toUTCString()}, from Unix`;
+        }
+      } catch { /* pas un gzip valide */ }
+    }
+    if (raw.startsWith(`${TAR_MAGIC}\n`)) return 'POSIX tar archive (GNU)';
+    if (raw.startsWith(`${ZIP_MAGIC}\n`)) return 'Zip archive data, at least v2.0 to extract';
+    return null;
   }
 }

@@ -1,7 +1,8 @@
+import { ParsedArgs } from '@/command-kernel/args/parsed-args';
 import { BaseCommand } from '@/command-kernel/command/base-command';
 import { CommandContext, CommandDescriptor, EXIT_OK, ExitCode } from '@/command-kernel/command/types';
 import { DefaultPrivilegePolicy } from '@/command-kernel/session/privilege-policy';
-import { PrivilegeLevel } from '@/command-kernel/session/types';
+import { PrivilegeLevel, Session } from '@/command-kernel/session/types';
 
 /**
  * `mktemp` — renvoie un nom de fichier temporaire unique sous `/tmp`. Le
@@ -21,6 +22,10 @@ export class MktempCommand extends BaseCommand {
     category: 'fichiers',
     lenientOptions: true,
   };
+
+  protected override validate(_args: ParsedArgs, _session: Session): void {
+    // Modèle simplifié (nom aléatoire, options ignorées) : rien à valider.
+  }
 
   async execute(ctx: CommandContext): Promise<ExitCode> {
     await ctx.io.stdout.write('/tmp/tmp.' + Math.random().toString(36).slice(2, 12) + '\n');

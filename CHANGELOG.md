@@ -175,6 +175,81 @@ large (architecture/HSRP/ACL/NAT/show) : 127/127 au vert. Typecheck et
 lint ciblés propres (mêmes 8 erreurs `tsc` et mêmes avertissements
 `eslint` pré-existants qu'avant ce changement, aucun nouveau).
 
+## Linux — Phase 25 : capacité `ProcessControlApi` + migration de `pidof`
+
+**État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
+
+Ouverture de la **famille processus** via une nouvelle capacité
+command-kernel, puis migration de sa première commande de façon autonome.
+
+- **Nouvelle capacité `processControl?: ProcessControlApi`** sur
+  `MachineApi` : `list()` (instantané de la table des processus, type
+  `ProcessEntry` riche — `pid`/`ppid`/`pgid`/`uid`/`user`/`comm`/`command`/
+  `state`/`tty`) et `signal(pid, signal)` (envoi de signal, `false` si le
+  PID n'existe pas). Implémentée dans `LinuxMachineApi`
+  (`LinuxProcessControlApi`) en enveloppant le `LinuxProcessManager`.
+- **`PidofCommand`** : sélection `comm === nom` faite **elle-même** sur
+  `list()`, PID triés décroissants, code de sortie 1 si aucun. **`case
+  'pidof'` retiré** de `LinuxCommandExecutor` (import `cmdPidof` nettoyé).
+
+Validation : `linux-process-service-integration.test.ts` (27/27) + contrôle
+positif (`pidof systemd` → `1`) ; aucune régression.
+
+## Linux — Phase 24 : `validate` généralisé aux commandes déjà migrées
+
+**État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
+
+Mise en conformité avec le standard « toujours implémenter `validate` » :
+ajout de la méthode `validate(args, session)` (override explicite,
+documenté) aux commandes command-kernel qui ne l'avaient pas encore :
+`basename`, `dirname`, `rev`, `printenv`, `truncate`, `mktemp`, `locale`,
+et la base `ChecksumCommand` (`md5sum`/`sha1sum`/`sha256sum`).
+
+- Pour ces commandes, les erreurs d'opérande à code de sortie GNU
+  spécifique (1) sont rendues dans `execute` (pas via `UsageError`, code 2)
+  ou déjà garanties par le parseur (`required: true`) ; les `validate`
+  documentent donc ce choix.
+
+Validation : `linux-commands-and-oracle-tools` + `env-vars` +
+`auditctl-other` verts (235) ; aucune régression.
+
+## Linux — Phase 23 : `file` rendue autonome (+ `validate`, suppression de `describeArchiveContent`)
+
+**État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
+
+`FileCommand` détecte désormais **elle-même** les archives simulées
+(gz/tar/zip) — les marqueurs de format et le mini-parseur d'en-tête gzip
+(`!<simgz>\n` + JSON `{name,mtime,payload}`) sont inlinés — au lieu
+d'appeler `describeArchiveContent`. `validate` fourni.
+
+- **`describeArchiveContent` supprimée** de `coreutils/ArchiveCommands.ts`
+  (+ son ré-export) : plus aucun appel au module hérité depuis le
+  command-kernel. `ArchiveCommands.ts` demeure (ses codecs servent encore
+  aux commandes `tar`/`gzip`/`zip` non migrées).
+
+Validation : `archive-commands.test.ts` passe intégralement (16/16, dont
+les 8 assertions `file` : texte, `.gz`, `.tar`, `.zip`, répertoire,
+absent, vide, script `#!`) ; aucune régression.
+
+## Linux — Phase 22 : `expr` rendue autonome (+ `validate`, suppression de `coreutils/ExprEvaluator`)
+
+**État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
+
+L'évaluateur POSIX complet (précédences `| & =…< + * :`, comparaison
+chaîne/entier, fonctions `length`/`substr`/`index`/`match`, BRE ancré) est
+désormais **co-localisé dans `Expr.ts`** (classe `ExprEvaluator` privée au
+module de la commande, instanciée à neuf par exécution pour éviter tout
+partage d'état). `ExprCommand` fournit `validate`.
+
+- **`coreutils/ExprEvaluator.ts` supprimé** (+ son ré-export) : plus aucun
+  appel au module hérité. La conversion BRE→JS réutilise l'utilitaire regex
+  **partagé** `posixToJsSource` (infrastructure, comme une bibliothèque
+  standard — pas une implémentation de commande héritée). Codes de sortie
+  GNU conservés (0/1/2/3), rendus dans `execute`.
+
+Validation : les 13 tests `expr` de `test-expr-seq-sleep-time-watch.test.ts`
+(fichier complet 53/53) passent ; aucune régression.
+
 ## Linux — Phase 21 : `diff` rendue autonome (+ `validate`, suppression de `coreutils/DiffCommand`)
 
 **État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**

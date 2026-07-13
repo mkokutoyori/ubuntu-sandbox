@@ -1,7 +1,8 @@
+import { ParsedArgs } from '@/command-kernel/args/parsed-args';
 import { BaseCommand } from '@/command-kernel/command/base-command';
 import { CommandContext, CommandDescriptor, EXIT_OK, ExitCode } from '@/command-kernel/command/types';
 import { DefaultPrivilegePolicy } from '@/command-kernel/session/privilege-policy';
-import { PrivilegeLevel } from '@/command-kernel/session/types';
+import { PrivilegeLevel, Session } from '@/command-kernel/session/types';
 
 /**
  * `printenv` — affiche l'environnement (toutes les variables `NOM=valeur`),
@@ -19,6 +20,11 @@ export class PrintenvCommand extends BaseCommand {
     category: 'système',
     lenientOptions: true,
   };
+
+  protected override validate(_args: ParsedArgs, _session: Session): void {
+    // Le code de sortie 1 sur variable absente est déterminé à l'exécution
+    // (lecture de l'environnement) — rien à valider en amont.
+  }
 
   async execute(ctx: CommandContext): Promise<ExitCode> {
     const operands = ctx.args.has('names') ? ctx.args.get<string[]>('names') : [];

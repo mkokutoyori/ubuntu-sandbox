@@ -25,6 +25,7 @@ import { LsCommand } from './commands/Ls';
 import { MkdirCommand } from './commands/Mkdir';
 import { MktempCommand } from './commands/Mktemp';
 import { MvCommand } from './commands/Mv';
+import { PidofCommand } from './commands/Pidof';
 import { PrintenvCommand } from './commands/Printenv';
 import { PwdCommand } from './commands/Pwd';
 import { ReadlinkCommand } from './commands/Readlink';
@@ -88,6 +89,7 @@ export function createLinuxHostShell(deps: LinuxMachineApiDeps): Interpreter {
   registry.register(() => new SleepCommand());
   registry.register(() => new RevCommand());
   registry.register(() => new PrintenvCommand());
+  registry.register(() => new PidofCommand());
   registry.register(() => new TtyCommand());
   registry.register(() => new TruncateCommand());
   registry.register(() => new MktempCommand());

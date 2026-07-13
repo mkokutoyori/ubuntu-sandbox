@@ -1,7 +1,8 @@
+import { ParsedArgs } from '@/command-kernel/args/parsed-args';
 import { BaseCommand } from '@/command-kernel/command/base-command';
 import { CommandContext, CommandDescriptor, EXIT_OK, ExitCode } from '@/command-kernel/command/types';
 import { DefaultPrivilegePolicy } from '@/command-kernel/session/privilege-policy';
-import { PrivilegeLevel } from '@/command-kernel/session/types';
+import { PrivilegeLevel, Session } from '@/command-kernel/session/types';
 
 /**
  * `locale` — affiche les paramètres régionaux actifs, dérivés de
@@ -20,6 +21,11 @@ export class LocaleCommand extends BaseCommand {
     category: 'système',
     lenientOptions: true,
   };
+
+  protected override validate(_args: ParsedArgs, _session: Session): void {
+    // `locale` (sans option de listing simulée) affiche toujours le résumé
+    // courant — aucune validation d'argument requise.
+  }
 
   async execute(ctx: CommandContext): Promise<ExitCode> {
     const e = ctx.session.env;

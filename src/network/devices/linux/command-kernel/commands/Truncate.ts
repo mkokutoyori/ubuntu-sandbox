@@ -1,8 +1,9 @@
+import { ParsedArgs } from '@/command-kernel/args/parsed-args';
 import { BaseCommand } from '@/command-kernel/command/base-command';
 import { CommandContext, CommandDescriptor, EXIT_OK, ExitCode } from '@/command-kernel/command/types';
 import { toFileSystemActor } from '@/command-kernel/machine/types';
 import { DefaultPrivilegePolicy } from '@/command-kernel/session/privilege-policy';
-import { PrivilegeLevel } from '@/command-kernel/session/types';
+import { PrivilegeLevel, Session } from '@/command-kernel/session/types';
 
 /**
  * `truncate` — ajuste la taille d'un fichier. Le simulateur ne modélise pas
@@ -21,6 +22,11 @@ export class TruncateCommand extends BaseCommand {
     category: 'fichiers',
     lenientOptions: true,
   };
+
+  protected override validate(_args: ParsedArgs, _session: Session): void {
+    // Modèle simplifié (création-si-absent + audit) : aucune contrainte
+    // d'option à valider en amont.
+  }
 
   async execute(ctx: CommandContext): Promise<ExitCode> {
     const operands = ctx.args.has('operands') ? ctx.args.get<string[]>('operands') : [];

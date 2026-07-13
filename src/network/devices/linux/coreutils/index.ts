@@ -1,8 +1,6 @@
 export { TestEvaluator, runTest, UNARY_OPS, BINARY_OPS } from './TestEvaluator';
 export type { TestFs, TestEnv, TestEvaluation, TestResultKind } from './TestEvaluator';
 
-export { ExprEvaluator, runExpr } from './ExprEvaluator';
-export type { ExprResult } from './ExprEvaluator';
 
 
 
@@ -20,6 +18,6 @@ export type {
 } from './TailCommand';
 
 export {
-  cmdTar, cmdGzip, cmdZip, cmdUnzip, describeArchiveContent,
+  cmdTar, cmdGzip, cmdZip, cmdUnzip,
 } from './ArchiveCommands';
 export type { ArchiveFs, ArchiveCtx, CmdResult } from './ArchiveCommands';
