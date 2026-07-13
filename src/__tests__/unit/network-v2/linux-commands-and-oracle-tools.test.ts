@@ -381,6 +381,24 @@ describe('rev', () => {
   });
 });
 
+describe('md5sum / sha1sum / sha256sum', () => {
+  it('computes the known hashes of "hello"', async () => {
+    await server.executeCommand('printf hello > /tmp/h.txt');
+    expect((await server.executeCommand('md5sum /tmp/h.txt')).trim())
+      .toBe('5d41402abc4b2a76b9719d911017c592  /tmp/h.txt');
+    expect((await server.executeCommand('sha1sum /tmp/h.txt')).trim())
+      .toBe('aaf4c61ddcc5e8a2dabede0f3b482cd9aea9434d  /tmp/h.txt');
+    expect((await server.executeCommand('sha256sum /tmp/h.txt')).trim())
+      .toBe('2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824  /tmp/h.txt');
+  });
+
+  it('verifies a checksum file with -c', async () => {
+    await server.executeCommand('printf hello > /tmp/h.txt');
+    await server.executeCommand('md5sum /tmp/h.txt > /tmp/sums.txt');
+    expect((await server.executeCommand('md5sum -c /tmp/sums.txt')).trim()).toBe('/tmp/h.txt: OK');
+  });
+});
+
 describe('locale', () => {
   it('reflects LANG from the environment, falling back to it for unset categories', async () => {
     const out = await server.executeCommand('export LANG=en_US.UTF-8; locale');

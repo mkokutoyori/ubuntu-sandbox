@@ -102,7 +102,6 @@ import { SftpCommandScript } from '../../protocols/ssh/sftp/SftpCommandScript';
 import type { ISftpFileSystem } from '../../protocols/ssh/sftp/ISftpFileSystem';
 import { SshKnownHostEntry } from './network/SshKnownHostEntry';
 import { SshForwardingTable } from './network/SshForwardingTable';
-import { md5Hex, sha1Hex, sha256Hex } from '@/crypto/hash';
 import type { SshSessionTable } from './network/SshSessionTable';
 import { renderWho } from './network/whoFormatter';
 import { renderW } from './network/wFormatter';
@@ -3896,40 +3895,6 @@ export class LinuxCommandExecutor {
       case 'lvdisplay': case 'vgdisplay': case 'pvdisplay':
         return { output: `  No volume groups found`, exitCode: 0 };
       case 'lsof': return { output: this.cmdLsof(args), exitCode: 0 };
-      case 'md5sum':
-      case 'sha256sum':
-      case 'sha1sum': {
-        const checkMode = args.includes('-c') || args.includes('--check');
-        const targets = args.filter(a => !a.startsWith('-'));
-        if (!targets.length) return { output: `${cmd}: missing file operand`, exitCode: 1 };
-        if (checkMode) {
-          const checksumFile = this.vfs.readFile(this.vfs.normalizePath(targets[0], this.cwd));
-          if (checksumFile === null) return { output: `${cmd}: ${targets[0]}: No such file or directory`, exitCode: 1 };
-          const lines = checksumFile.split('\n').filter(l => l.trim());
-          const results: string[] = [];
-          let failed = 0;
-          for (const line of lines) {
-            const m = line.match(/^([0-9a-f]+)\s+(.+)$/);
-            if (!m) continue;
-            const [, expectedHash, filePath] = m;
-            const content = this.vfs.readFile(this.vfs.normalizePath(filePath, this.cwd));
-            if (content === null) { results.push(`${filePath}: FAILED open or read`); failed++; continue; }
-            const actual = checksumVfs(content, cmd);
-            if (actual === expectedHash) results.push(`${filePath}: OK`);
-            else { results.push(`${filePath}: FAILED`); failed++; }
-          }
-          if (failed) results.push(`${cmd}: WARNING: ${failed} computed checksum did NOT match`);
-          return { output: results.join('\n'), exitCode: failed ? 1 : 0 };
-        }
-        const lines: string[] = [];
-        for (const target of targets) {
-          const resolved = this.vfs.normalizePath(target, this.cwd);
-          const content = this.vfs.readFile(resolved);
-          if (content === null) { lines.push(`${cmd}: ${target}: No such file or directory`); continue; }
-          lines.push(`${checksumVfs(content, cmd)}  ${target}`);
-        }
-        return { output: lines.join('\n'), exitCode: 0 };
-      }
       case 'diff': return cmdDiff({
         readFile: (p) => this.vfs.readFile(p),
         normalizePath: (p, cwd) => this.vfs.normalizePath(p, cwd),
@@ -6073,12 +6038,6 @@ function simpleTokenize(input: string): string[] {
   }
   if (buf) out.push(buf);
   return out;
-}
-
-function checksumVfs(content: string, cmd: string): string {
-  if (cmd === 'sha256sum') return sha256Hex(content);
-  if (cmd === 'sha1sum') return sha1Hex(content);
-  return md5Hex(content);
 }
 
 function basenameOf(path: string): string {
