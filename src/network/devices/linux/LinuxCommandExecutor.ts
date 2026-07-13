@@ -82,7 +82,7 @@ import { LinuxAtQueue, cmdAt, cmdAtq, cmdAtrm } from './jobs/LinuxAtQueue';
 import { PortActivityLogProjection } from './ports/PortActivityLogProjection';
 import { LinuxProcessManager, type Signal, SIGNAL_NUMBERS } from './LinuxProcessManager';
 import { LinuxServiceManager } from './LinuxServiceManager';
-import { cmdPs, cmdTop, cmdKill, cmdPidof, cmdPgrep, cmdPkill, cmdKillall, cmdSystemctl, cmdService } from './LinuxProcessCommands';
+import { cmdPs, cmdTop, cmdKill, cmdPgrep, cmdPkill, cmdKillall, cmdSystemctl, cmdService } from './LinuxProcessCommands';
 import { LinuxJobTable } from './jobs/LinuxJobTable';
 import { cmdJobs, cmdFg, cmdBg, cmdDisown, cmdPstree } from './jobs/JobCommands';
 import { runSshClient } from './network/LinuxSshClient';
@@ -3762,10 +3762,6 @@ export class LinuxCommandExecutor {
         const procs = this.processMgr.list({ comm: name });
         if (procs.length > 0) return { output: String(procs[0].pgid ?? procs[0].pid), exitCode: 0 };
         return { output: '', exitCode: 1 };
-      }
-      case 'pidof': {
-        const r = cmdPidof(args, this.processCmdContext());
-        return r;
       }
 
       // Priorities / scheduling — set with one cmd, read back with another

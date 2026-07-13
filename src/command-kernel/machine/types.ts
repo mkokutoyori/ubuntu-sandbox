@@ -131,6 +131,39 @@ export interface ProcessApi {
   descendants?(pid: number): Promise<readonly ProcessInfo[]>;
 }
 
+/**
+ * Entrée de la table des processus façon POSIX (`ps`/`pgrep`/`kill`) —
+ * champs riches d'un noyau Unix, sans équivalent dans le `ProcessInfo`
+ * générique (orienté Windows). Sert les commandes de la famille processus.
+ */
+export interface ProcessEntry {
+  readonly pid: number;
+  readonly ppid: number;
+  readonly pgid: number;
+  readonly uid: number;
+  readonly user: string;
+  /** Nom court (`comm`, basename de argv[0]). */
+  readonly comm: string;
+  /** Ligne de commande complète. */
+  readonly command: string;
+  /** État façon `ps` (`R`, `S`, `Z`...). */
+  readonly state: string;
+  readonly tty: string;
+}
+
+/**
+ * Contrôle des processus POSIX (`pidof`/`pgrep`/`pkill`/`kill`/`killall`) —
+ * optionnel, propre aux équipements de type Unix. Fournit l'instantané de
+ * la table des processus et l'envoi de signaux ; les commandes portent
+ * elles-mêmes leur logique de sélection.
+ */
+export interface ProcessControlApi {
+  /** Instantané de la table des processus. */
+  list(): readonly ProcessEntry[];
+  /** Envoie `signal` au PID ; `false` si le PID n'existe pas. */
+  signal(pid: number, signal: string): boolean;
+}
+
 export interface ServiceOpResult {
   readonly ok: boolean;
   readonly error?: string;
@@ -1201,6 +1234,8 @@ export interface HardwareProfile {
 export interface MachineApi {
   readonly fs: FileSystemApi;
   readonly proc: ProcessApi;
+  /** Contrôle des processus POSIX (`pidof`, `pgrep`, `pkill`, `kill`, `killall`) — optionnel, propre aux équipements Unix. */
+  readonly processControl?: ProcessControlApi;
   readonly net: NetworkApi;
   readonly users: UserManagementApi;
   readonly groups: GroupManagementApi;

@@ -149,6 +149,26 @@ large (architecture/HSRP/ACL/NAT/show) : 127/127 au vert. Typecheck et
 lint ciblés propres (mêmes 8 erreurs `tsc` et mêmes avertissements
 `eslint` pré-existants qu'avant ce changement, aucun nouveau).
 
+## Linux — Phase 25 : capacité `ProcessControlApi` + migration de `pidof`
+
+**État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
+
+Ouverture de la **famille processus** via une nouvelle capacité
+command-kernel, puis migration de sa première commande de façon autonome.
+
+- **Nouvelle capacité `processControl?: ProcessControlApi`** sur
+  `MachineApi` : `list()` (instantané de la table des processus, type
+  `ProcessEntry` riche — `pid`/`ppid`/`pgid`/`uid`/`user`/`comm`/`command`/
+  `state`/`tty`) et `signal(pid, signal)` (envoi de signal, `false` si le
+  PID n'existe pas). Implémentée dans `LinuxMachineApi`
+  (`LinuxProcessControlApi`) en enveloppant le `LinuxProcessManager`.
+- **`PidofCommand`** : sélection `comm === nom` faite **elle-même** sur
+  `list()`, PID triés décroissants, code de sortie 1 si aucun. **`case
+  'pidof'` retiré** de `LinuxCommandExecutor` (import `cmdPidof` nettoyé).
+
+Validation : `linux-process-service-integration.test.ts` (27/27) + contrôle
+positif (`pidof systemd` → `1`) ; aucune régression.
+
 ## Linux — Phase 24 : `validate` généralisé aux commandes déjà migrées
 
 **État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
