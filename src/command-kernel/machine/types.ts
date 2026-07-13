@@ -149,6 +149,18 @@ export interface ProcessEntry {
   /** État façon `ps` (`R`, `S`, `Z`...). */
   readonly state: string;
   readonly tty: string;
+  /** Gentillesse (`nice`/`renice`). */
+  readonly nice: number;
+  /** Politique d'ordonnancement (`chrt` : `SCHED_OTHER`/`SCHED_FIFO`...). */
+  readonly schedPolicy?: string;
+  /** Priorité temps réel (`chrt`). */
+  readonly rtPriority?: number;
+  /** Classe d'ordonnancement d'E/S (`ionice` : `best-effort`, `idle`...). */
+  readonly ioClass?: string;
+  /** Niveau au sein de la classe d'E/S (`ionice -n`). */
+  readonly ioClassData?: number;
+  /** Affinité CPU (`taskset`). */
+  readonly cpuAffinity?: readonly number[];
 }
 
 /**
@@ -160,8 +172,18 @@ export interface ProcessEntry {
 export interface ProcessControlApi {
   /** Instantané de la table des processus. */
   list(): readonly ProcessEntry[];
+  /** Un processus par PID, ou `null` s'il n'existe pas. */
+  get(pid: number): ProcessEntry | null;
   /** Envoie `signal` au PID ; `false` si le PID n'existe pas. */
   signal(pid: number, signal: string): boolean;
+  /** Change la gentillesse (`renice`) ; `false` si le PID n'existe pas. */
+  renice(pid: number, nice: number): boolean;
+  /** Change la politique d'ordonnancement temps réel (`chrt`) ; `false` si absent. */
+  setSchedPolicy(pid: number, policy: string, rtPriority: number): boolean;
+  /** Change la classe d'ordonnancement d'E/S (`ionice`) ; `false` si absent. */
+  setIoClass(pid: number, ioClass: string, ioClassData: number): boolean;
+  /** Change l'affinité CPU (`taskset`) ; `false` si absent. */
+  setCpuAffinity(pid: number, cpus: readonly number[]): boolean;
 }
 
 export interface ServiceOpResult {

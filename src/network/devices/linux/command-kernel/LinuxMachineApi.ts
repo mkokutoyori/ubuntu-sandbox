@@ -402,7 +402,47 @@ class LinuxProcessControlApi implements ProcessControlApi {
   constructor(private readonly processManager: LinuxProcessManager) {}
 
   list(): readonly ProcessEntry[] {
-    return this.processManager.list().map((p) => ({
+    return this.processManager.list().map((p) => LinuxProcessControlApi.toEntry(p));
+  }
+
+  get(pid: number): ProcessEntry | null {
+    const p = this.processManager.get(pid);
+    return p ? LinuxProcessControlApi.toEntry(p) : null;
+  }
+
+  signal(pid: number, signal: string): boolean {
+    return this.processManager.kill(pid, signal as Signal);
+  }
+
+  renice(pid: number, nice: number): boolean {
+    return this.processManager.renice(pid, nice);
+  }
+
+  setSchedPolicy(pid: number, policy: string, rtPriority: number): boolean {
+    const p = this.processManager.get(pid);
+    if (!p) return false;
+    p.schedPolicy = policy;
+    p.rtPriority = rtPriority;
+    return true;
+  }
+
+  setIoClass(pid: number, ioClass: string, ioClassData: number): boolean {
+    const p = this.processManager.get(pid);
+    if (!p) return false;
+    p.ioClass = ioClass;
+    p.ioClassData = ioClassData;
+    return true;
+  }
+
+  setCpuAffinity(pid: number, cpus: readonly number[]): boolean {
+    const p = this.processManager.get(pid);
+    if (!p) return false;
+    p.cpuAffinity = [...cpus];
+    return true;
+  }
+
+  private static toEntry(p: ReturnType<LinuxProcessManager['get']> & object): ProcessEntry {
+    return {
       pid: p.pid,
       ppid: p.ppid,
       pgid: p.pgid,
@@ -412,11 +452,13 @@ class LinuxProcessControlApi implements ProcessControlApi {
       command: p.command,
       state: p.state,
       tty: p.tty,
-    }));
-  }
-
-  signal(pid: number, signal: string): boolean {
-    return this.processManager.kill(pid, signal as Signal);
+      nice: p.nice,
+      schedPolicy: p.schedPolicy,
+      rtPriority: p.rtPriority,
+      ioClass: p.ioClass,
+      ioClassData: p.ioClassData,
+      cpuAffinity: p.cpuAffinity,
+    };
   }
 }
 

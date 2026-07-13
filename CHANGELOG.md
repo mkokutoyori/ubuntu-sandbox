@@ -175,6 +175,36 @@ large (architecture/HSRP/ACL/NAT/show) : 127/127 au vert. Typecheck et
 lint ciblés propres (mêmes 8 erreurs `tsc` et mêmes avertissements
 `eslint` pré-existants qu'avant ce changement, aucun nouveau).
 
+## Linux — Phase 27 : ordonnancement `nice` / `renice` / `chrt` / `ionice` / `taskset` (fin de la famille processus)
+
+**État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
+
+Complète la famille processus (volet ordonnancement) sur la capacité
+`processControl`, désormais étendue à cet effet.
+
+- **`ProcessControlApi` élargie** : `get(pid)`, `renice`,
+  `setSchedPolicy`, `setIoClass`, `setCpuAffinity` ; `ProcessEntry`
+  gagne `nice`, `schedPolicy`, `rtPriority`, `ioClass`, `ioClassData`,
+  `cpuAffinity`. `LinuxProcessControlApi` mappe le tout sur la table
+  vivante (`LinuxProcessManager`) — `renice` continue de passer par
+  `processManager.renice`, donc l'évènement réactif
+  `linux.process.priority-changed` est toujours publié.
+- **5 commandes autonomes** lisant/écrivant uniquement via
+  `ctx.machine.processControl` : `nice` (affiche/valide l'ajustement),
+  `renice` (règles POSIX root/utilisateur, priorité négative refusée aux
+  non-root), `chrt` (`-m`, get/set SCHED_*), `ionice` (classes 0-3,
+  get/set), `taskset` (masque hex / liste `-c`). Chacune implémente
+  `validate` (les erreurs GNU — priorité invalide, PID inexistant — sont
+  rendues dans `execute` avec le code de sortie exact, pas via `UsageError`).
+- **`case 'nice'/'renice'/'chrt'/'ionice'/'taskset'` retirés** de
+  `LinuxCommandExecutor` ; **module hérité `process/PriorityCommands.ts`
+  supprimé** (plus aucune référence).
+
+Validation : `linux-priority-commands` (13/13) ;
+`linux-process-service-events` + suites processus (67/70, les 3 échecs
+`$$`/`$PPID` étant préexistants et sans rapport) ; typecheck propre,
+lint ciblé sans nouvelle erreur.
+
 ## Linux — Phase 26 : migration de `pgrep` / `pkill` / `killall` (famille processus)
 
 **État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**

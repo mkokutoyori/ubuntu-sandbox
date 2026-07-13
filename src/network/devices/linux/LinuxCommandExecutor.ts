@@ -109,7 +109,6 @@ import { renderLoginctl } from './network/loginctlFormatter';
 import { cmdRunlevel } from './system/SystemInfo';
 import type { IEventBus } from '@/events/EventBus';
 import { LinuxServiceSupervisor } from './supervisor/LinuxServiceSupervisor';
-import { cmdNice, cmdRenice, cmdChrt, cmdIonice, cmdTaskset } from './process/PriorityCommands';
 import type { LinuxShellSession } from './shell/LinuxShellSession';
 import { LinuxLastlogRegistry } from './LinuxLastlogRegistry';
 import { NameServiceSwitch } from './nss/NameServiceSwitch';
@@ -3751,13 +3750,6 @@ export class LinuxCommandExecutor {
         if (procs.length > 0) return { output: String(procs[0].pgid ?? procs[0].pid), exitCode: 0 };
         return { output: '', exitCode: 1 };
       }
-
-      // Priorities / scheduling — set with one cmd, read back with another
-      case 'nice': return cmdNice(args, this.processCmdContext());
-      case 'renice': return cmdRenice(args, this.processCmdContext());
-      case 'chrt': return cmdChrt(args, this.processCmdContext());
-      case 'ionice': return cmdIonice(args, this.processCmdContext());
-      case 'taskset': return cmdTaskset(args, this.processCmdContext());
 
       // ps — process listing backed by ProcessManager
       case 'ps': return { output: cmdPs(args, this.processCmdContext()), exitCode: 0 };
