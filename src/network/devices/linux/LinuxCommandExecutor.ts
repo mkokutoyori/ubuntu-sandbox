@@ -82,7 +82,7 @@ import { LinuxAtQueue, cmdAt, cmdAtq, cmdAtrm } from './jobs/LinuxAtQueue';
 import { PortActivityLogProjection } from './ports/PortActivityLogProjection';
 import { LinuxProcessManager, type Signal, SIGNAL_NUMBERS } from './LinuxProcessManager';
 import { LinuxServiceManager } from './LinuxServiceManager';
-import { cmdPs, cmdTop, cmdKill, cmdPgrep, cmdPkill, cmdKillall, cmdSystemctl, cmdService } from './LinuxProcessCommands';
+import { cmdPs, cmdTop, cmdKill, cmdSystemctl, cmdService } from './LinuxProcessCommands';
 import { LinuxJobTable } from './jobs/LinuxJobTable';
 import { cmdJobs, cmdFg, cmdBg, cmdDisown, cmdPstree } from './jobs/JobCommands';
 import { runSshClient } from './network/LinuxSshClient';
@@ -3736,23 +3736,11 @@ export class LinuxCommandExecutor {
         const r = cmdKill(args, this.processCmdContext());
         return r;
       }
-      case 'pkill': {
-        const r = cmdPkill(args, this.processCmdContext());
-        return r;
-      }
-      case 'killall': {
-        const r = cmdKillall(args, this.processCmdContext());
-        return r;
-      }
       case 'arping': {
         const ctx = this.ipNetworkCtx;
         return cmdArping(args, {
           mac: (ip) => ctx?.getNeighborTable().find((n) => n.ip === ip)?.mac ?? null,
         });
-      }
-      case 'pgrep': {
-        const r = cmdPgrep(args, this.processCmdContext());
-        return r;
       }
       case 'pgid': {
         const name = args.find(a => !a.startsWith('-'));
