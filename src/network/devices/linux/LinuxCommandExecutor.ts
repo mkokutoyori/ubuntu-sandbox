@@ -3702,8 +3702,6 @@ export class LinuxCommandExecutor {
       case 'history': return this.handleHistory(args);
 
       // clear - send ANSI escape to clear terminal
-      case 'clear': return { output: '\x1b[2J\x1b[H', exitCode: 0 };
-      case 'reset': return { output: '\x1b[2J\x1b[H', exitCode: 0 };
 
       // Sleep — parses the duration (incl. multi-arg sums and suffixes)
       // but never blocks; the simulator advances time logically.

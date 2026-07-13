@@ -116,6 +116,27 @@ large (architecture/HSRP/ACL/NAT/show) : 127/127 au vert. Typecheck et
 lint ciblés propres (mêmes 8 erreurs `tsc` et mêmes avertissements
 `eslint` pré-existants qu'avant ce changement, aucun nouveau).
 
+## Linux — Phase 18 : `clear` / `reset` (nouveau standard : commandes autonomes + `validate`)
+
+**État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
+
+**Commandes migrées** : `clear` et `reset` — émettent la séquence ANSI
+d'effacement d'écran (`\x1b[2J\x1b[H`), portées par `ClearCommand` /
+`ResetCommand`.
+
+- **Nouveau standard adopté ici** (à généraliser) : chaque commande
+  command-kernel est désormais **autonome** — elle implémente sa propre
+  logique sans appeler les modules hérités, de sorte que ces derniers
+  pourront être supprimés ; et elle **implémente toujours** la méthode
+  `validate(args, session)` de `BaseCommand` (validation métier
+  post-parsing, `UsageError` en cas d'incohérence). `clear`/`reset`
+  n'ayant aucun argument significatif, leur `validate` est explicite mais
+  vide.
+- **Legacy supprimé** : les `case 'clear'`/`'reset'` retirés de
+  `LinuxCommandExecutor.dispatch()`. Nouveau test `clear`/`reset`.
+
+Validation : test `clear`/`reset` vert ; aucune régression.
+
 ## Linux — Phase 17 : `diff`
 
 **État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
