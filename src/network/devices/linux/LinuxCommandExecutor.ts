@@ -108,7 +108,7 @@ import { renderWho } from './network/whoFormatter';
 import { renderW } from './network/wFormatter';
 import { renderLast, renderLastb } from './network/lastFormatter';
 import { renderLoginctl } from './network/loginctlFormatter';
-import { cmdTty, cmdRunlevel } from './system/SystemInfo';
+import { cmdRunlevel } from './system/SystemInfo';
 import type { IEventBus } from '@/events/EventBus';
 import { LinuxServiceSupervisor } from './supervisor/LinuxServiceSupervisor';
 import { cmdNice, cmdRenice, cmdChrt, cmdIonice, cmdTaskset } from './process/PriorityCommands';
@@ -3823,14 +3823,6 @@ export class LinuxCommandExecutor {
       case 'ps': return { output: cmdPs(args, this.processCmdContext()), exitCode: 0 };
 
       // date, uptime, uname, tty, runlevel, hostnamectl — system info
-      case 'tty': {
-        // `not a tty` (exit 1) when running without a controlling terminal —
-        // e.g. ssh exec-mode without -t. The SSH client overlays SSH_NO_TTY=1.
-        if (this._cmdEnv?.['SSH_NO_TTY'] === '1' || this.env.get('SSH_NO_TTY') === '1') {
-          return { output: 'not a tty', exitCode: 1 };
-        }
-        return { output: cmdTty('pts/0'), exitCode: 0 };
-      }
       case 'runlevel': return { output: cmdRunlevel(this.isServer), exitCode: 0 };
 
       // true/false

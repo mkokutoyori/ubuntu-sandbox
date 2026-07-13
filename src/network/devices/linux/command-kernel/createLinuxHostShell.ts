@@ -33,6 +33,7 @@ import { StatCommand } from './commands/Stat';
 import { TailCommand } from './commands/Tail';
 import { TouchCommand } from './commands/Touch';
 import { TrCommand } from './commands/Tr';
+import { TtyCommand } from './commands/Tty';
 import { UmaskCommand } from './commands/Umask';
 import { UniqCommand } from './commands/Uniq';
 import { WcCommand } from './commands/Wc';
@@ -80,6 +81,7 @@ export function createLinuxHostShell(deps: LinuxMachineApiDeps): Interpreter {
   registry.register(() => new SleepCommand());
   registry.register(() => new RevCommand());
   registry.register(() => new PrintenvCommand());
+  registry.register(() => new TtyCommand());
 
   return new Interpreter(registry, machine);
 }

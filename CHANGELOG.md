@@ -5,6 +5,27 @@ progressive par équipement. Un push = une entrée = une fonctionnalité
 complète et testée (voir `CLAUDE.md` / le framework de migration pour les
 principes directeurs).
 
+## Linux — Phase 11 : `tty`
+
+**État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
+
+**Commande migrée** : `tty [-s]` — affiche le nom du terminal relié à
+l'entrée standard, portée par `TtyCommand`.
+
+- En mode exec SSH sans pseudo-terminal (le client pose `SSH_NO_TTY=1`,
+  lu depuis `ctx.session.env`), répond « not a tty » avec le code de
+  sortie 1 ; sinon `/dev/pts/0`. Option `-s` (silencieux) gérée. Le
+  formatage du chemin reste porté par le helper pur partagé `cmdTty`.
+- **Legacy supprimé** : le `case 'tty'` retiré de
+  `LinuxCommandExecutor.dispatch()`, import `cmdTty` devenu inutile
+  nettoyé.
+
+Validation : `linux-system-info.test.ts` (`tty` → `/dev/pts/0`) et les cas
+SSH `cross-equipment-ssh-suite.test.ts` (`ssh -t … tty` → `/dev/pts`,
+`ssh … tty` → `not a tty`) passent ; aucune régression (les 19 échecs
+préexistants de cette suite, sans rapport avec `tty`, sont identiques
+avant/après).
+
 ## Linux — Phase 10 : `printenv`
 
 **État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
