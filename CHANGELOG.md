@@ -88,6 +88,67 @@ large (architecture/HSRP/ACL/NAT/show) : 127/127 au vert. Typecheck et
 lint ciblés propres (mêmes 8 erreurs `tsc` et mêmes avertissements
 `eslint` pré-existants qu'avant ce changement, aucun nouveau).
 
+## Linux — Phase 17 : `diff`
+
+**État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
+
+**Commande migrée** : `diff FICHIER1 FICHIER2` — comparaison ligne à ligne
+(format « normal » GNU), portée par `DiffCommand`.
+
+- L'algorithme (LCS, hunks) reste porté par le module pur **partagé**
+  `cmdDiff`, qui attend un accès fichier **synchrone** : les opérandes sont
+  donc pré-lus via `ctx.machine.fs` (asynchrone) puis exposés à `cmdDiff`
+  par un cache indexé sur le chemin résolu — le pont sync/async sans
+  resimuler l'algorithme.
+- **Legacy supprimé** : le `case 'diff'` retiré de
+  `LinuxCommandExecutor.dispatch()`, import `cmdDiff` nettoyé. Nouveaux
+  tests `diff` (fichiers identiques, hunk de changement, fichier absent).
+
+Validation : tests `diff` verts ; cohérence stricte verte ; aucune
+régression (67 tests).
+
+## Linux — Phase 16 : `md5sum` / `sha1sum` / `sha256sum`
+
+**État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
+
+**Commandes migrées** : `md5sum`/`sha1sum`/`sha256sum [-c] FICHIER...` —
+calcul (`hash  fichier`) et vérification (`-c`) d'empreintes, portées par
+une base commune `ChecksumCommand` et trois sous-classes (une par
+algorithme).
+
+- La lecture des fichiers passe par `ctx.machine.fs` ; les fonctions de
+  hachage restent **partagées** (`@/crypto/hash` : `md5Hex`/`sha1Hex`/
+  `sha256Hex`), pas resimulées. Mode `-c` : parsing des lignes
+  `empreinte  chemin`, `OK`/`FAILED`, avertissement + code 1 en cas
+  d'échec ; mode direct : code 0 même si un fichier manque (quirk legacy
+  conservé).
+- **Legacy supprimé** : le `case 'md5sum'/'sha256sum'/'sha1sum'`, la
+  fonction `checksumVfs()` et l'import `md5Hex/sha1Hex/sha256Hex` retirés
+  de `LinuxCommandExecutor`. Nouveaux tests (empreintes connues de
+  « hello » + vérification `-c`).
+
+Validation : tests checksum verts (md5/sha1/sha256 de « hello » exacts,
+`-c` → `OK`) ; cohérence stricte + archive-commands verts ; aucune
+régression (83 tests).
+
+## Linux — Phase 15 : `locale`
+
+**État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
+
+**Commande migrée** : `locale` — affiche les paramètres régionaux actifs,
+portée par `LocaleCommand`.
+
+- Les catégories (`LANG`, `LANGUAGE`, `LC_CTYPE`…`LC_ALL`) sont dérivées de
+  l'environnement de la session (`ctx.session.env`) ; chaque `LC_*` non
+  défini retombe sur la locale effective (`LC_ALL` sinon `LANG` sinon `C`),
+  exactement comme le legacy.
+- **Legacy supprimé** : le `case 'locale'` retiré de
+  `LinuxCommandExecutor.dispatch()`. Nouveau test `locale`
+  (`export LANG=… ; locale`).
+
+Validation : test `locale` vert (LANG reflété, repli des catégories) ;
+cohérence stricte + host-identity verts ; aucune régression (74 tests).
+
 ## Linux — Phase 14 : `file`
 
 **État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**

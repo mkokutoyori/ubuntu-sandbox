@@ -381,6 +381,55 @@ describe('rev', () => {
   });
 });
 
+describe('diff', () => {
+  it('reports no output and exit 0 for identical files', async () => {
+    await server.executeCommand('printf "a\\nb\\nc\\n" > /tmp/d1.txt');
+    await server.executeCommand('printf "a\\nb\\nc\\n" > /tmp/d2.txt');
+    const out = await server.executeCommand('diff /tmp/d1.txt /tmp/d2.txt');
+    expect(out.trim()).toBe('');
+  });
+
+  it('shows a change hunk for differing files', async () => {
+    await server.executeCommand('printf "a\\nb\\nc\\n" > /tmp/d1.txt');
+    await server.executeCommand('printf "a\\nX\\nc\\n" > /tmp/d3.txt');
+    const out = await server.executeCommand('diff /tmp/d1.txt /tmp/d3.txt');
+    expect(out).toContain('< b');
+    expect(out).toContain('> X');
+  });
+
+  it('errors on a missing file', async () => {
+    const out = await server.executeCommand('diff /tmp/d1.txt /tmp/nope.txt');
+    expect(out).toMatch(/No such file or directory/);
+  });
+});
+
+describe('md5sum / sha1sum / sha256sum', () => {
+  it('computes the known hashes of "hello"', async () => {
+    await server.executeCommand('printf hello > /tmp/h.txt');
+    expect((await server.executeCommand('md5sum /tmp/h.txt')).trim())
+      .toBe('5d41402abc4b2a76b9719d911017c592  /tmp/h.txt');
+    expect((await server.executeCommand('sha1sum /tmp/h.txt')).trim())
+      .toBe('aaf4c61ddcc5e8a2dabede0f3b482cd9aea9434d  /tmp/h.txt');
+    expect((await server.executeCommand('sha256sum /tmp/h.txt')).trim())
+      .toBe('2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824  /tmp/h.txt');
+  });
+
+  it('verifies a checksum file with -c', async () => {
+    await server.executeCommand('printf hello > /tmp/h.txt');
+    await server.executeCommand('md5sum /tmp/h.txt > /tmp/sums.txt');
+    expect((await server.executeCommand('md5sum -c /tmp/sums.txt')).trim()).toBe('/tmp/h.txt: OK');
+  });
+});
+
+describe('locale', () => {
+  it('reflects LANG from the environment, falling back to it for unset categories', async () => {
+    const out = await server.executeCommand('export LANG=en_US.UTF-8; locale');
+    expect(out).toContain('LANG=en_US.UTF-8');
+    expect(out).toContain('LC_CTYPE="en_US.UTF-8"');
+    expect(out).toContain('LC_ALL=');
+  });
+});
+
 describe('mktemp', () => {
   it('prints a unique /tmp/tmp.* path', async () => {
     const a = (await server.executeCommand('mktemp')).trim();

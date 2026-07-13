@@ -35,7 +35,6 @@ import {
   type TestFs, type TestEnv, type TailFs, type TailSink, type TailFollowHandle, type TailRunResult,
   type ArchiveCtx,
 } from './coreutils';
-import { cmdDiff } from './coreutils/DiffCommand';
 import { cmdUseradd, cmdUsermod, cmdUserdel, cmdPasswd, cmdChpasswd, cmdFaillock, cmdGroupadd, cmdGroupmod, cmdGroupdel, cmdGpasswd, cmdWho, cmdW, cmdLast, cmdLastb, cmdSudoCheck } from './LinuxUserCommands';
 import { parseUseraddArgs } from './iam/useraddOptions';
 import {
@@ -102,7 +101,6 @@ import { SftpCommandScript } from '../../protocols/ssh/sftp/SftpCommandScript';
 import type { ISftpFileSystem } from '../../protocols/ssh/sftp/ISftpFileSystem';
 import { SshKnownHostEntry } from './network/SshKnownHostEntry';
 import { SshForwardingTable } from './network/SshForwardingTable';
-import { md5Hex, sha1Hex, sha256Hex } from '@/crypto/hash';
 import type { SshSessionTable } from './network/SshSessionTable';
 import { renderWho } from './network/whoFormatter';
 import { renderW } from './network/wFormatter';
@@ -3578,35 +3576,6 @@ export class LinuxCommandExecutor {
 
       // locale — report the active locale, sourced from the live shell
       // environment so SSH-forwarded LANG / LC_* are reflected.
-      case 'locale': {
-        const e = this._cmdEnv ?? Object.fromEntries(this.env);
-        const lang = e['LANG'] ?? '';
-        const lcAll = e['LC_ALL'] ?? '';
-        const effective = lcAll || lang || 'C';
-        const cat = (name: string) =>
-          `${name}="${e[name] ?? effective}"`;
-        return {
-          output: [
-            `LANG=${lang}`,
-            `LANGUAGE=${e['LANGUAGE'] ?? ''}`,
-            cat('LC_CTYPE'),
-            cat('LC_NUMERIC'),
-            cat('LC_TIME'),
-            cat('LC_COLLATE'),
-            cat('LC_MONETARY'),
-            cat('LC_MESSAGES'),
-            cat('LC_PAPER'),
-            cat('LC_NAME'),
-            cat('LC_ADDRESS'),
-            cat('LC_TELEPHONE'),
-            cat('LC_MEASUREMENT'),
-            cat('LC_IDENTIFICATION'),
-            `LC_ALL=${lcAll}`,
-          ].join('\n'),
-          exitCode: 0,
-        };
-      }
-
       // Crontab
       case 'crontab': return this.handleCrontab(args, stdin);
       case 'run-parts': return await this.handleRunParts(args);
@@ -3925,44 +3894,6 @@ export class LinuxCommandExecutor {
       case 'lvdisplay': case 'vgdisplay': case 'pvdisplay':
         return { output: `  No volume groups found`, exitCode: 0 };
       case 'lsof': return { output: this.cmdLsof(args), exitCode: 0 };
-      case 'md5sum':
-      case 'sha256sum':
-      case 'sha1sum': {
-        const checkMode = args.includes('-c') || args.includes('--check');
-        const targets = args.filter(a => !a.startsWith('-'));
-        if (!targets.length) return { output: `${cmd}: missing file operand`, exitCode: 1 };
-        if (checkMode) {
-          const checksumFile = this.vfs.readFile(this.vfs.normalizePath(targets[0], this.cwd));
-          if (checksumFile === null) return { output: `${cmd}: ${targets[0]}: No such file or directory`, exitCode: 1 };
-          const lines = checksumFile.split('\n').filter(l => l.trim());
-          const results: string[] = [];
-          let failed = 0;
-          for (const line of lines) {
-            const m = line.match(/^([0-9a-f]+)\s+(.+)$/);
-            if (!m) continue;
-            const [, expectedHash, filePath] = m;
-            const content = this.vfs.readFile(this.vfs.normalizePath(filePath, this.cwd));
-            if (content === null) { results.push(`${filePath}: FAILED open or read`); failed++; continue; }
-            const actual = checksumVfs(content, cmd);
-            if (actual === expectedHash) results.push(`${filePath}: OK`);
-            else { results.push(`${filePath}: FAILED`); failed++; }
-          }
-          if (failed) results.push(`${cmd}: WARNING: ${failed} computed checksum did NOT match`);
-          return { output: results.join('\n'), exitCode: failed ? 1 : 0 };
-        }
-        const lines: string[] = [];
-        for (const target of targets) {
-          const resolved = this.vfs.normalizePath(target, this.cwd);
-          const content = this.vfs.readFile(resolved);
-          if (content === null) { lines.push(`${cmd}: ${target}: No such file or directory`); continue; }
-          lines.push(`${checksumVfs(content, cmd)}  ${target}`);
-        }
-        return { output: lines.join('\n'), exitCode: 0 };
-      }
-      case 'diff': return cmdDiff({
-        readFile: (p) => this.vfs.readFile(p),
-        normalizePath: (p, cwd) => this.vfs.normalizePath(p, cwd),
-      }, this.cwd, args);
       case 'tar': return cmdTar(this.archiveCtx(), args);
       case 'gzip': return cmdGzip(this.archiveCtx(), args, 'gzip');
       case 'gunzip': return cmdGzip(this.archiveCtx(), args, 'gunzip');
@@ -6102,12 +6033,6 @@ function simpleTokenize(input: string): string[] {
   }
   if (buf) out.push(buf);
   return out;
-}
-
-function checksumVfs(content: string, cmd: string): string {
-  if (cmd === 'sha256sum') return sha256Hex(content);
-  if (cmd === 'sha1sum') return sha1Hex(content);
-  return md5Hex(content);
 }
 
 function basenameOf(path: string): string {

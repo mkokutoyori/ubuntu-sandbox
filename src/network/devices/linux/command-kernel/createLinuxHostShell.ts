@@ -4,6 +4,8 @@ import { CommandRegistry } from '@/command-kernel/registry/command-registry';
 import { BasenameCommand } from './commands/Basename';
 import { CatCommand } from './commands/Cat';
 import { CdCommand } from './commands/Cd';
+import { Md5sumCommand, Sha1sumCommand, Sha256sumCommand } from './commands/Checksum';
+import { DiffCommand } from './commands/Diff';
 import { DirnameCommand } from './commands/Dirname';
 import { ExprCommand } from './commands/Expr';
 import { FileCommand } from './commands/File';
@@ -17,6 +19,7 @@ import { GroupsCommand } from './commands/Groups';
 import { HeadCommand } from './commands/Head';
 import { IdCommand } from './commands/Id';
 import { LnCommand } from './commands/Ln';
+import { LocaleCommand } from './commands/Locale';
 import { LsCommand } from './commands/Ls';
 import { MkdirCommand } from './commands/Mkdir';
 import { MktempCommand } from './commands/Mktemp';
@@ -88,6 +91,11 @@ export function createLinuxHostShell(deps: LinuxMachineApiDeps): Interpreter {
   registry.register(() => new TruncateCommand());
   registry.register(() => new MktempCommand());
   registry.register(() => new FileCommand());
+  registry.register(() => new LocaleCommand());
+  registry.register(() => new Md5sumCommand());
+  registry.register(() => new Sha1sumCommand());
+  registry.register(() => new Sha256sumCommand());
+  registry.register(() => new DiffCommand());
 
   return new Interpreter(registry, machine);
 }
