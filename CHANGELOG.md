@@ -149,6 +149,24 @@ large (architecture/HSRP/ACL/NAT/show) : 127/127 au vert. Typecheck et
 lint ciblés propres (mêmes 8 erreurs `tsc` et mêmes avertissements
 `eslint` pré-existants qu'avant ce changement, aucun nouveau).
 
+## Linux — Phase 23 : `file` rendue autonome (+ `validate`, suppression de `describeArchiveContent`)
+
+**État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
+
+`FileCommand` détecte désormais **elle-même** les archives simulées
+(gz/tar/zip) — les marqueurs de format et le mini-parseur d'en-tête gzip
+(`!<simgz>\n` + JSON `{name,mtime,payload}`) sont inlinés — au lieu
+d'appeler `describeArchiveContent`. `validate` fourni.
+
+- **`describeArchiveContent` supprimée** de `coreutils/ArchiveCommands.ts`
+  (+ son ré-export) : plus aucun appel au module hérité depuis le
+  command-kernel. `ArchiveCommands.ts` demeure (ses codecs servent encore
+  aux commandes `tar`/`gzip`/`zip` non migrées).
+
+Validation : `archive-commands.test.ts` passe intégralement (16/16, dont
+les 8 assertions `file` : texte, `.gz`, `.tar`, `.zip`, répertoire,
+absent, vide, script `#!`) ; aucune régression.
+
 ## Linux — Phase 22 : `expr` rendue autonome (+ `validate`, suppression de `coreutils/ExprEvaluator`)
 
 **État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**

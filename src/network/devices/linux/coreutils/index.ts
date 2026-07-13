@@ -18,6 +18,6 @@ export type {
 } from './TailCommand';
 
 export {
-  cmdTar, cmdGzip, cmdZip, cmdUnzip, describeArchiveContent,
+  cmdTar, cmdGzip, cmdZip, cmdUnzip,
 } from './ArchiveCommands';
 export type { ArchiveFs, ArchiveCtx, CmdResult } from './ArchiveCommands';
