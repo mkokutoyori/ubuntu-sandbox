@@ -133,6 +133,9 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
   private readonly track = new TrackRepository();
   private readonly ipsla = new IpSlaRepository();
   private readonly policy = new PolicyRepository();
+  evaluatePrefixList(name: string, network: string, prefixLength: number): 'permit' | 'deny' | null {
+    return this.policy.evaluatePrefixList(name, network, prefixLength);
+  }
   private readonly routingCfg = new RoutingConfigRepository();
   private selectedRoutingProto: { proto: 'rip' | 'eigrp' | 'bgp'; asn?: number } | null = null;
   getSelectedRoutingProto(): { proto: 'rip' | 'eigrp' | 'bgp'; asn?: number } | null {

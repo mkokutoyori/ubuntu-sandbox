@@ -51,6 +51,8 @@ export interface DynamicRoutingCtx {
   getOspfIntegration(): RouterOSPFIntegration;
   /** The router's TCP stack — BGP peers over real TCP/179 sessions. */
   getTcpStack(): TcpStack;
+  /** Evaluate a configured named `ip prefix-list` against a route — see `RoutingDeviceContext.evaluatePrefixList`. */
+  evaluatePrefixList?(name: string, network: string, prefixLength: number): 'permit' | 'deny' | null;
 }
 
 function networkOf(ip: IPAddress, mask: SubnetMask): IPAddress {
@@ -76,6 +78,8 @@ export class RouterDynamicRouting {
       ribRoutes: () => this.ctx.getRoutingTable().map((r) => ({
         network: r.network, mask: r.mask, type: r.type,
       })),
+      evaluatePrefixList: (name: string, network: string, prefixLength: number) =>
+        this.ctx.evaluatePrefixList?.(name, network, prefixLength) ?? null,
     };
     // Both engines now converse on the wire (EIGRP proto-88 frames, BGP
     // TCP/179): neither reads a peer engine, so no peer locator is wired.

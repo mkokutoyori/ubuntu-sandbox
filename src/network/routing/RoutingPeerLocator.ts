@@ -38,6 +38,8 @@ export interface RoutingDeviceContext {
     mask: import('../core/types').SubnetMask;
     type: string;
   }>;
+  /** Evaluate a configured named `ip prefix-list` against a route (`null` = list missing or no match) — consulted by `BGPEngine` neighbor `prefix-list in/out` filtering. */
+  evaluatePrefixList?(name: string, network: string, prefixLength: number): 'permit' | 'deny' | null;
 }
 
 /** Device context that exposes nothing (isolated engine default). */

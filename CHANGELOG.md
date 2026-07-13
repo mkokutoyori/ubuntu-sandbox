@@ -5,6 +5,46 @@ progressive par équipement. Un push = une entrée = une fonctionnalité
 complète et testée (voir `CLAUDE.md` / le framework de migration pour les
 principes directeurs).
 
+## Routeur Cisco — filtrage BGP par voisin (`neighbor <ip> prefix-list <name> in|out`)
+
+**Changement de couche métier** (fin du lot Windows Server AD DS — retour
+à la simulation réseau générale). `ip prefix-list`/`route-map` existaient
+déjà côté CLI (`PolicyRepository`, `CiscoPolicyCommands.ts`) mais
+n'avaient **aucun effet réel** : `show ip prefix-list`/`show route-map`
+projetaient un état jamais consulté par un moteur de protocole — un vrai
+trou de couche métier derrière une façade CLI qui répondait normalement.
+
+`PolicyRepository` gagne `evaluatePrefixList(name, network, prefixLength)`
+— longest-first-match réel (bornes `ge`/`le`, sans elles une entrée exige
+une longueur de préfixe exacte, sémantique IOS authentique), `null` si la
+liste n'existe pas ou qu'aucune entrée ne correspond (deny implicite,
+charge à l'appelant). Exposé via un nouveau hook optionnel
+`IRouterShell.evaluatePrefixList` (implémenté par `CiscoIOSShell`),
+propagé paresseusement à travers `RoutingDeviceContext`/
+`DynamicRoutingCtx` jusqu'à `BGPEngine` (aucun changement d'ownership,
+aucun souci d'ordre de construction — uniquement des fermetures
+différées, sur le modèle déjà établi de `getRipEngine`/`getOspfIntegration`).
+
+`BgpNeighborCfg` gagne `prefixListIn`/`prefixListOut` ; `BGPEngine` les
+applique désormais réellement : `onUpdate` (Adj-RIB-In) rejette toute
+NLRI entrante que la liste nommée ne permet pas explicitement, et
+`advertiseTo` (Adj-RIB-Out) n'annonce à ce voisin que ce que la liste
+nommée permet. CLI : `neighbor <ip> prefix-list <name> in|out` dans
+`router bgp`, reflété dans `show ip bgp neighbors`.
+
+**Validation** : `PolicyRepository.evaluatePrefixList` (5 tests unitaires
+— première correspondance par ordre de seq, bornes ge/le, correspondance
+de longueur exacte sans ge/le, liste inconnue) + 4 nouveaux tests
+`BGPEngine` (filtrage entrant, filtrage sortant, liste inexistante =
+deny implicite, absence de filtre = comportement inchangé) + 1 test CLI
+bout-en-bout (deux `CiscoRouter` réellement câblés, `ip prefix-list` +
+`neighbor ... prefix-list ... in` filtrant un préfixe appris sur
+`show ip route`). Suite BGP élargie (engine/bestpath/session/messages/
+intégration CLI EIGRP+BGP) : 52/52 au vert. Régression routeur plus
+large (architecture/HSRP/ACL/NAT/show) : 127/127 au vert. Typecheck et
+lint ciblés propres (mêmes 8 erreurs `tsc` et mêmes avertissements
+`eslint` pré-existants qu'avant ce changement, aucun nouveau).
+
 ## Windows Server — application du bit `SMARTCARD_REQUIRED` (`userAccountControl`)
 
 Totalement absent jusqu'ici. `checkPassword` (bind simple LDAP, même

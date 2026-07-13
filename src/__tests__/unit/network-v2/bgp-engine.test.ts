@@ -13,6 +13,7 @@ import {
 import type { BgpTransport } from '@/network/bgp/BgpSession';
 import type { BgpMessage } from '@/network/bgp/messages';
 import { IPAddress, SubnetMask, resetCounters } from '@/network/core/types';
+import { PolicyRepository } from '@/network/devices/inspection/config/PolicyRepository';
 
 beforeEach(() => { resetCounters(); vi.useFakeTimers(); });
 afterEach(() => vi.useRealTimers());
@@ -404,5 +405,142 @@ describe('BGPEngine — AS_PATH propagation (RFC 4271)', () => {
     const nets = c.getContributedRoutes().map((r) => String(r.network));
     expect(nets).toContain('192.168.2.0');
     expect(nets).not.toContain('192.168.1.0'); // own ASN in path → rejected
+  });
+});
+
+function ctxMulti(nets: string[]) {
+  return {
+    connectedNetworks: () => nets.map((net) => ({
+      network: new IPAddress(net),
+      mask: new SubnetMask('255.255.255.0'),
+      iface: 'Gi0/1',
+      localIp: new IPAddress(net.replace(/0$/, '1')),
+    })),
+  };
+}
+
+function withPolicy(base: ReturnType<typeof ctxMulti>, policy: PolicyRepository) {
+  return {
+    ...base,
+    evaluatePrefixList: (name: string, network: string, prefixLength: number) =>
+      policy.evaluatePrefixList(name, network, prefixLength),
+  };
+}
+
+describe('BGPEngine — neighbor prefix-list filtering (Cisco `neighbor <ip> prefix-list <name> in|out`)', () => {
+  it('prefixListIn only accepts the prefixes the named list permits; a non-matching prefix is an implicit deny', () => {
+    const r1 = new BGPEngine('R1');
+    const r2 = new BGPEngine('R2');
+    const policy = new PolicyRepository();
+    policy.addPrefix('ALLOWED', { seq: 5, action: 'permit', prefix: '192.168.2.0/24' });
+    r1.setDeviceContext(withPolicy(ctxMulti(['192.168.1.0']), policy));
+    r2.setDeviceContext(ctxMulti(['192.168.2.0', '192.168.3.0']));
+    r1.enable({ asn: 65001 });
+    r2.enable({ asn: 65002 });
+    r1.getConfig().neighbors.set('10.0.0.2', {
+      ip: '10.0.0.2', remoteAs: 65002, activated: true, prefixListIn: 'ALLOWED',
+    });
+    r2.getConfig().neighbors.set('10.0.0.1', { ip: '10.0.0.1', remoteAs: 65001, activated: true });
+    r2.getConfig().networks.push({ network: '192.168.2.0', mask: '255.255.255.0' });
+    r2.getConfig().networks.push({ network: '192.168.3.0', mask: '255.255.255.0' });
+    link(r1, '10.0.0.1', r2, '10.0.0.2');
+    r1.converge(); r2.converge();
+
+    const nets = r1.getContributedRoutes().map((r) => String(r.network));
+    expect(nets).toContain('192.168.2.0');
+    expect(nets).not.toContain('192.168.3.0');
+  });
+
+  it('prefixListOut only advertises the prefixes the named list permits', () => {
+    const r1 = new BGPEngine('R1');
+    const r2 = new BGPEngine('R2');
+    const policy = new PolicyRepository();
+    policy.addPrefix('EXPORT', { seq: 5, action: 'permit', prefix: '192.168.1.0/24' });
+    r1.setDeviceContext(withPolicy(ctxMulti(['192.168.1.0', '192.168.4.0']), policy));
+    r2.setDeviceContext(ctxMulti(['192.168.2.0']));
+    r1.enable({ asn: 65001 });
+    r2.enable({ asn: 65002 });
+    r1.getConfig().neighbors.set('10.0.0.2', {
+      ip: '10.0.0.2', remoteAs: 65002, activated: true, prefixListOut: 'EXPORT',
+    });
+    r2.getConfig().neighbors.set('10.0.0.1', { ip: '10.0.0.1', remoteAs: 65001, activated: true });
+    r1.getConfig().networks.push({ network: '192.168.1.0', mask: '255.255.255.0' });
+    r1.getConfig().networks.push({ network: '192.168.4.0', mask: '255.255.255.0' });
+    link(r1, '10.0.0.1', r2, '10.0.0.2');
+    r1.converge(); r2.converge();
+
+    const nets = r2.getContributedRoutes().map((r) => String(r.network));
+    expect(nets).toContain('192.168.1.0');
+    expect(nets).not.toContain('192.168.4.0');
+  });
+
+  it('a prefix-list name that does not exist is an implicit deny for every prefix', () => {
+    const r1 = new BGPEngine('R1');
+    const r2 = new BGPEngine('R2');
+    const policy = new PolicyRepository(); // NOSUCHLIST never defined
+    r1.setDeviceContext(withPolicy(ctxMulti(['192.168.1.0']), policy));
+    r2.setDeviceContext(ctxMulti(['192.168.2.0']));
+    r1.enable({ asn: 65001 });
+    r2.enable({ asn: 65002 });
+    r1.getConfig().neighbors.set('10.0.0.2', {
+      ip: '10.0.0.2', remoteAs: 65002, activated: true, prefixListIn: 'NOSUCHLIST',
+    });
+    r2.getConfig().neighbors.set('10.0.0.1', { ip: '10.0.0.1', remoteAs: 65001, activated: true });
+    r2.getConfig().networks.push({ network: '192.168.2.0', mask: '255.255.255.0' });
+    link(r1, '10.0.0.1', r2, '10.0.0.2');
+    r1.converge(); r2.converge();
+
+    expect(r1.getContributedRoutes()).toHaveLength(0);
+  });
+
+  it('no prefix-list configured on the neighbor ⇒ unfiltered, same as before this feature', () => {
+    const r1 = new BGPEngine('R1');
+    const r2 = new BGPEngine('R2');
+    const policy = new PolicyRepository();
+    policy.addPrefix('UNRELATED', { seq: 5, action: 'permit', prefix: '10.10.10.0/24' });
+    r1.setDeviceContext(withPolicy(ctxMulti(['192.168.1.0']), policy));
+    r2.setDeviceContext(ctxMulti(['192.168.2.0']));
+    r1.enable({ asn: 65001 });
+    r2.enable({ asn: 65002 });
+    r1.getConfig().neighbors.set('10.0.0.2', { ip: '10.0.0.2', remoteAs: 65002, activated: true });
+    r2.getConfig().neighbors.set('10.0.0.1', { ip: '10.0.0.1', remoteAs: 65001, activated: true });
+    r2.getConfig().networks.push({ network: '192.168.2.0', mask: '255.255.255.0' });
+    link(r1, '10.0.0.1', r2, '10.0.0.2');
+    r1.converge(); r2.converge();
+
+    const nets = r1.getContributedRoutes().map((r) => String(r.network));
+    expect(nets).toContain('192.168.2.0');
+  });
+});
+
+describe('PolicyRepository — evaluatePrefixList', () => {
+  it('permits/denies by first applicable match in seq order', () => {
+    const p = new PolicyRepository();
+    // `le 32` makes the deny cover every subnet of 10.0.0.0/8, not just an exact /8 match.
+    p.addPrefix('L1', { seq: 5, action: 'deny', prefix: '10.0.0.0/8', le: 32 });
+    p.addPrefix('L1', { seq: 10, action: 'permit', prefix: '10.1.0.0/16' });
+    expect(p.evaluatePrefixList('L1', '10.1.0.0', 16)).toBe('deny'); // seq 5 (broader) matches first
+    expect(p.evaluatePrefixList('L1', '10.2.0.0', 16)).toBe('deny');
+    expect(p.evaluatePrefixList('L1', '192.168.0.0', 24)).toBeNull();
+  });
+
+  it('an entry with no ge/le requires an exact prefix-length match', () => {
+    const p = new PolicyRepository();
+    p.addPrefix('L3', { seq: 5, action: 'permit', prefix: '10.0.0.0/8' });
+    expect(p.evaluatePrefixList('L3', '10.0.0.0', 8)).toBe('permit');
+    expect(p.evaluatePrefixList('L3', '10.1.0.0', 16)).toBeNull(); // /16 subnet, not an exact /8
+  });
+
+  it('honours ge/le range bounds', () => {
+    const p = new PolicyRepository();
+    p.addPrefix('L2', { seq: 5, action: 'permit', prefix: '10.0.0.0/8', ge: 24, le: 30 });
+    expect(p.evaluatePrefixList('L2', '10.1.1.0', 24)).toBe('permit');
+    expect(p.evaluatePrefixList('L2', '10.1.1.0', 16)).toBeNull(); // below ge
+    expect(p.evaluatePrefixList('L2', '10.1.1.0', 31)).toBeNull(); // above le
+  });
+
+  it('an unknown list name returns null (caller treats as implicit deny)', () => {
+    const p = new PolicyRepository();
+    expect(p.evaluatePrefixList('NOPE', '10.0.0.0', 8)).toBeNull();
   });
 });

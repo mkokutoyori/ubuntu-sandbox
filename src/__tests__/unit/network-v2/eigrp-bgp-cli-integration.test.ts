@@ -138,4 +138,35 @@ describe('BGP via CLI — real RIB integration', () => {
     // R2 never configures BGP back.
     expect(await r1.executeCommand('show ip route')).not.toMatch(/^B\s/m);
   });
+
+  it('neighbor prefix-list in filters which learned prefixes reach the RIB', async () => {
+    const r1 = new CiscoRouter('R1');
+    const r2 = new CiscoRouter('R2');
+    await baseAddrs(r1, '192.168.1.1', '10.0.0.1');
+    await baseAddrs(r2, '192.168.2.1', '10.0.0.2');
+    wire(r1, r2);
+    await r1.executeCommand('configure terminal');
+    await r1.executeCommand('ip prefix-list ALLOWED permit 192.168.2.0/24');
+    await r1.executeCommand('router bgp 65001');
+    await r1.executeCommand('neighbor 10.0.0.2 remote-as 65002');
+    await r1.executeCommand('neighbor 10.0.0.2 prefix-list ALLOWED in');
+    await r1.executeCommand('end');
+    await r2.executeCommand('configure terminal');
+    await r2.executeCommand('interface GigabitEthernet0/2');
+    await r2.executeCommand('ip address 192.168.3.1 255.255.255.0');
+    await r2.executeCommand('no shutdown');
+    await r2.executeCommand('exit');
+    await r2.executeCommand('router bgp 65002');
+    await r2.executeCommand('neighbor 10.0.0.1 remote-as 65001');
+    await r2.executeCommand('network 192.168.2.0 mask 255.255.255.0');
+    await r2.executeCommand('network 192.168.3.0 mask 255.255.255.0');
+    await r2.executeCommand('end');
+
+    const route1 = await r1.executeCommand('show ip route');
+    expect(route1).toMatch(/B\s+192\.168\.2\.0\/24 \[20\/\d+\] via 10\.0\.0\.2/);
+    expect(route1).not.toMatch(/192\.168\.3\.0/);
+
+    const nbrs = await r1.executeCommand('show ip bgp neighbors');
+    expect(nbrs).toMatch(/Prefix-list for incoming advertisements is ALLOWED/);
+  });
 });

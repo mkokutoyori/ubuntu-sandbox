@@ -24,4 +24,6 @@ export interface IRouterShell {
   attachLoggingToBus?(bus: import('@/events/EventBus').IEventBus, deviceId: string): void;
   /** The shell's logging config — source of the `terminal monitor` syslog stream. */
   getLoggingConfig?(): import('../inspection/config/LoggingConfig').LoggingConfig;
+  /** Evaluate a configured named `ip prefix-list` against a route (`null` = list missing or no match, i.e. implicit deny) — consulted by BGP neighbor `prefix-list in/out` filtering. */
+  evaluatePrefixList?(name: string, network: string, prefixLength: number): 'permit' | 'deny' | null;
 }

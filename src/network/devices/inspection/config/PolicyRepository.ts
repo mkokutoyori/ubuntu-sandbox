@@ -4,6 +4,7 @@
  * `route-map …` mutate real entries; `show ip prefix-list` /
  * `show route-map` project them. No fabricated policy.
  */
+import { IPAddress } from '../../../core/types';
 
 export interface PrefixListEntry {
   seq: number;
@@ -66,6 +67,39 @@ export class PolicyRepository {
       }
     }
     return out.join('\n');
+  }
+
+  /**
+   * Real longest-match-first evaluation (`ip prefix-list` semantics):
+   * the first entry (in seq order) whose network/mask and `ge`/`le` bounds
+   * cover `network/prefixLength` wins; `null` means either the list itself
+   * doesn't exist or no entry matched — real IOS treats both as an
+   * implicit deny for a route consulting a named list, which callers
+   * (e.g. `BGPEngine`) are responsible for applying.
+   */
+  evaluatePrefixList(name: string, network: string, prefixLength: number, v6 = false): 'permit' | 'deny' | null {
+    const list = (v6 ? this.v6PrefixLists : this.prefixLists).get(name);
+    if (!list) return null;
+    for (const e of list) {
+      if (this.prefixEntryMatches(e, network, prefixLength)) return e.action;
+    }
+    return null;
+  }
+
+  private prefixEntryMatches(e: PrefixListEntry, network: string, prefixLength: number): boolean {
+    const [entryNet, entryLenStr] = e.prefix.split('/');
+    const entryLen = Number(entryLenStr);
+    if (!Number.isFinite(entryLen)) return false;
+    try {
+      const want = new IPAddress(entryNet).toUint32();
+      const got = new IPAddress(network).toUint32();
+      const mask = entryLen === 0 ? 0 : (0xffffffff << (32 - entryLen)) >>> 0;
+      if ((got & mask) !== (want & mask)) return false;
+    } catch { return false; }
+    if (e.ge !== undefined && prefixLength < e.ge) return false;
+    if (e.le !== undefined && prefixLength > e.le) return false;
+    if (e.ge === undefined && e.le === undefined && prefixLength !== entryLen) return false;
+    return true;
   }
 
   // ── Route-maps ──────────────────────────────────────────────────

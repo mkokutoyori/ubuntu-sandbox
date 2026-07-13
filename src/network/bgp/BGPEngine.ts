@@ -41,6 +41,10 @@ export interface BgpNeighborCfg {
   activated: boolean;
   /** Cisco `neighbor <ip> weight <n>` — local preference knob. */
   weight?: number;
+  /** Cisco `neighbor <ip> prefix-list <name> in` — named `ip prefix-list`, evaluated against every inbound UPDATE announcement before it's accepted into Adj-RIB-In. */
+  prefixListIn?: string;
+  /** Cisco `neighbor <ip> prefix-list <name> out` — evaluated against every candidate route before it's advertised to this peer. */
+  prefixListOut?: string;
 }
 export interface BGPConfig {
   asn: number;
@@ -247,7 +251,9 @@ export class BGPEngine extends AbstractRoutingProtocolEngine<BGPConfig> {
     if (update.announced.length > 0 && update.attributes) {
       // §6.3 loop prevention: never accept a path that already lists us.
       if (!update.attributes.asPath.includes(this.config.asn)) {
+        const cfg = this.config.neighbors.get(ip);
         for (const nlri of update.announced) {
+          if (!this.passesPrefixList(cfg?.prefixListIn, nlri.network, nlri.prefixLength)) continue;
           const entry = this.toRibEntry(ps, nlri, update.attributes);
           ps.adjRibIn.set(`${entry.network}/${entry.mask}`, entry);
         }
@@ -272,6 +278,12 @@ export class BGPEngine extends AbstractRoutingProtocolEngine<BGPConfig> {
 
   private maskOf(nlri: BgpNlri): SubnetMask {
     return SubnetMask.fromCIDR(nlri.prefixLength);
+  }
+
+  /** `true` when no prefix-list is configured for this direction (no filtering), or the configured named list permits `network/prefixLength`. A configured-but-non-matching-or-missing list is an implicit deny (real IOS `ip prefix-list` semantics). */
+  private passesPrefixList(listName: string | undefined, network: string, prefixLength: number): boolean {
+    if (!listName) return true;
+    return this.deviceCtx.evaluatePrefixList?.(listName, network, prefixLength) === 'permit';
   }
 
   private toRibEntry(
@@ -374,12 +386,14 @@ export class BGPEngine extends AbstractRoutingProtocolEngine<BGPConfig> {
     const ps = this.peers.get(ip);
     if (!ps || !ps.session.isEstablished()) return;
     const ibgpReceiver = (ps.session.remoteAsn ?? this.config.asn) === this.config.asn;
+    const cfg = this.config.neighbors.get(ip);
 
     const desired = new Map<string, { nlri: BgpNlri; attrs: BgpPathAttributes }>();
     for (const e of this.computeLocRib()) {
       if (ibgpReceiver && e.source === 'ibgp') continue;     // iBGP split-horizon
       if (e.peerIp === ip) continue;            // don't echo a route to its source
       if (e.asPath.includes(ps.session.remoteAsn ?? -1)) continue; // would loop
+      if (!this.passesPrefixList(cfg?.prefixListOut, String(e.network), e.mask.toCIDR())) continue;
       const key = `${e.network}/${e.mask}`;
       const attrs: BgpPathAttributes = {
         origin: e.origin,

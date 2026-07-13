@@ -298,6 +298,11 @@ export function buildRoutingProtoConfig(
         const w = parseInt(a[2], 10);
         if (Number.isNaN(w) || w < 0 || w > 65535) return '% Invalid weight (0-65535)';
         bn.weight = w;
+      } else if (a[1] === 'prefix-list') {
+        const name = a[2];
+        const dir = a[3];
+        if (!name || (dir !== 'in' && dir !== 'out')) return '% Incomplete command.';
+        if (dir === 'in') bn.prefixListIn = name; else bn.prefixListOut = name;
       }
       converge();
     }
@@ -446,6 +451,8 @@ export function registerRoutingProtoShow(
       out.push(`  Description: ${desc}`);
       out.push(`  BGP state = ${v ? v.state : 'Idle'}` +
         `${v && v.isUp ? `, up for ${v.uptimeSec}s` : ''}`);
+      if (cfg.prefixListIn) out.push(`  Prefix-list for incoming advertisements is ${cfg.prefixListIn}`);
+      if (cfg.prefixListOut) out.push(`  Prefix-list for outgoing advertisements is ${cfg.prefixListOut}`);
     }
     return out.length ? out.join('\n') : 'No bgp neighbors configured';
   });
