@@ -5,6 +5,32 @@ progressive par équipement. Un push = une entrée = une fonctionnalité
 complète et testée (voir `CLAUDE.md` / le framework de migration pour les
 principes directeurs).
 
+## Routeur Cisco — BGP `aggregate-address` réel (agrégation Loc-RIB + `summary-only`)
+
+Encore un gap "CLI qui répond mais ne fait rien" : `aggregate-address`
+n'était qu'une ligne de texte poussée pour `show run` — jamais consultée
+par le moteur BGP, aucun effet sur la table ni sur ce qui est annoncé.
+
+`BGPConfig` gagne `aggregates: BgpAggregate[]` (`{network, mask,
+summaryOnly}` — volontairement borné : pas de `as-set`/`suppress-map`/
+`advertise-map`/`attribute-map`). Nouvelle étape `applyAggregates()`
+dans `computeLocRib()` : pour chaque agrégat configuré, si au moins une
+route strictement plus spécifique existe déjà dans le Loc-RIB, l'agrégat
+est synthétisé (origine `incomplete`, AS_PATH vide, comme le vrai BGP) ;
+avec `summary-only`, les routes plus spécifiques couvertes sont retirées
+du Loc-RIB (donc ni installées ni annoncées, seul l'agrégat l'est). Sans
+route couvrante, l'agrégat n'est jamais créé — comportement réel.
+
+**Validation** : 4 nouveaux tests `BGPEngine` (agrégation déclenchée
+seulement si une route couvrante existe, annonce agrégat+spécifiques
+sans `summary-only`, suppression des spécifiques avec `summary-only`,
+absence de route couvrante = pas d'agrégat) + 1 test CLI bout-en-bout
+(deux `CiscoRouter` réellement câblés, `aggregate-address ... summary-
+only` filtrant les deux plus-spécifiques sur `show ip route` du
+routeur récepteur). Suite BGP élargie (engine/bestpath/session/
+messages/intégration CLI EIGRP+BGP) : 65+8 tests au vert. Typecheck et
+lint ciblés propres.
+
 ## Routeur Cisco — RIP `distribute-list prefix-list <name> in|out`
 
 Dernier volet du même chantier de filtrage, appliqué cette fois à RIP.

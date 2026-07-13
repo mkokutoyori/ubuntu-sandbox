@@ -394,6 +394,12 @@ export function buildRoutingProtoConfig(
   });
   routerTrie.registerGreedy('aggregate-address', 'BGP aggregate', (a, raw) => {
     bgp()?.networks.push(raw ?? `aggregate-address ${a.join(' ')}`);
+    if (curProto(ctx).proto === 'bgp' && a.length >= 2 && isValidIPv4(a[0])) {
+      bgpEng().getConfig().aggregates.push({
+        network: a[0], mask: a[1], summaryOnly: a.includes('summary-only'),
+      });
+      converge();
+    }
     return '';
   });
   routerTrie.registerGreedy('address-family', 'Enter address-family', (a) => {

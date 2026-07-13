@@ -51,6 +51,13 @@ export interface BgpNeighborCfg {
   /** Cisco `neighbor <ip> route-map <name> out` — filters like `prefixListOut`, plus applies `set metric`/`set as-path prepend` (the attributes real IOS applies on advertisement) to the routes sent to this peer. */
   routeMapOut?: string;
 }
+/** Cisco `aggregate-address <network> <mask> [summary-only]` — no `as-set`/`suppress-map`/`advertise-map`/`attribute-map`, a deliberately bounded slice. */
+export interface BgpAggregate {
+  network: string;
+  mask: string;
+  /** Suppresses the covering more-specific routes from being installed/advertised, leaving only the aggregate. */
+  summaryOnly: boolean;
+}
 export interface BGPConfig {
   asn: number;
   routerId?: string;
@@ -59,6 +66,7 @@ export interface BGPConfig {
   redistribute: string[];
   /** `bgp default local-preference <n>` (RFC 4271 LOCAL_PREF seed). */
   defaultLocalPref: number;
+  aggregates: BgpAggregate[];
 }
 
 /**
@@ -136,7 +144,7 @@ export class BGPEngine extends AbstractRoutingProtocolEngine<BGPConfig> {
   protected defaultConfig(): BGPConfig {
     return {
       asn: 0, networks: [], neighbors: new Map(), redistribute: [],
-      defaultLocalPref: BGP_DEFAULT_LOCAL_PREF,
+      defaultLocalPref: BGP_DEFAULT_LOCAL_PREF, aggregates: [],
     };
   }
 
@@ -355,7 +363,45 @@ export class BGPEngine extends AbstractRoutingProtocolEngine<BGPConfig> {
       if (!ps.session.isEstablished()) continue;
       for (const e of ps.adjRibIn.values()) consider(e);
     }
+    this.applyAggregates(byPrefix);
     return [...byPrefix.values()];
+  }
+
+  /**
+   * `aggregate-address <network> <mask> [summary-only]` (real IOS
+   * behaviour, no `as-set`/`suppress-map`/`advertise-map`/`attribute-map`
+   * — a deliberately bounded slice): an aggregate is only originated
+   * once at least one strictly-more-specific route already exists in
+   * Loc-RIB; `summary-only` then removes those covering routes so only
+   * the aggregate itself is installed/advertised.
+   */
+  private applyAggregates(byPrefix: Map<string, BgpRibEntry>): void {
+    for (const agg of this.config.aggregates) {
+      let aggNet: IPAddress;
+      let aggMask: SubnetMask;
+      try { aggNet = new IPAddress(agg.network); aggMask = new SubnetMask(agg.mask); } catch { continue; }
+      const aggCidr = aggMask.toCIDR();
+      const covered: string[] = [];
+      for (const [key, e] of byPrefix) {
+        if (e.mask.toCIDR() > aggCidr && sameNet(String(e.network), agg.mask, agg.network)) {
+          covered.push(key);
+        }
+      }
+      if (covered.length === 0) continue;
+      const key = `${aggNet}/${aggMask}`;
+      if (!byPrefix.has(key)) {
+        byPrefix.set(key, {
+          network: aggNet, mask: aggMask, asPath: [],
+          source: 'originated', nextHop: null, iface: '',
+          weight: BGP_WEIGHT_LOCAL, localPref: this.config.defaultLocalPref,
+          origin: 'incomplete', med: 0,
+          peerRouterId: this.routerId(), peerIp: '0.0.0.0',
+        });
+      }
+      if (agg.summaryOnly) {
+        for (const k of covered) byPrefix.delete(k);
+      }
+    }
   }
 
   private toRibRoute(e: BgpRibEntry): RibRoute {

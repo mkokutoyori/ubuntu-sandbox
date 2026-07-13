@@ -685,3 +685,73 @@ describe('BGPEngine — neighbor route-map filtering + set clauses', () => {
     expect(String(routes[0].nextHop)).toBe('10.0.0.2');
   });
 });
+
+describe('BGPEngine — aggregate-address', () => {
+  it('originates the aggregate only once a covering more-specific route exists in Loc-RIB', () => {
+    const r1 = new BGPEngine('R1');
+    r1.setDeviceContext(ctxMulti(['10.1.1.0']));
+    r1.enable({ asn: 65001 });
+    r1.getConfig().networks.push({ network: '10.1.1.0', mask: '255.255.255.0' });
+    r1.converge();
+    expect(r1.getBgpTable().some((r) => String(r.network) === '10.1.0.0')).toBe(false);
+
+    r1.getConfig().aggregates.push({ network: '10.1.0.0', mask: '255.255.0.0', summaryOnly: false });
+    r1.converge();
+    const agg = r1.getBgpTable().find((r) => String(r.network) === '10.1.0.0');
+    expect(agg).toBeDefined();
+    expect(agg!.asPath).toEqual([]);
+  });
+
+  it('without summary-only, advertises both the aggregate and its more-specifics', () => {
+    const r1 = new BGPEngine('R1');
+    const r2 = new BGPEngine('R2');
+    r1.setDeviceContext(ctxMulti(['10.1.1.0', '10.1.2.0']));
+    r2.setDeviceContext(ctxMulti(['192.168.9.0']));
+    r1.enable({ asn: 65001 });
+    r2.enable({ asn: 65002 });
+    r1.getConfig().networks.push({ network: '10.1.1.0', mask: '255.255.255.0' });
+    r1.getConfig().networks.push({ network: '10.1.2.0', mask: '255.255.255.0' });
+    r1.getConfig().aggregates.push({ network: '10.1.0.0', mask: '255.255.0.0', summaryOnly: false });
+    r1.getConfig().neighbors.set('10.0.0.2', { ip: '10.0.0.2', remoteAs: 65002, activated: true });
+    r2.getConfig().neighbors.set('10.0.0.1', { ip: '10.0.0.1', remoteAs: 65001, activated: true });
+    link(r1, '10.0.0.1', r2, '10.0.0.2');
+    r1.converge(); r2.converge();
+
+    const nets = r2.getContributedRoutes().map((r) => String(r.network));
+    expect(nets).toContain('10.1.1.0');
+    expect(nets).toContain('10.1.2.0');
+    expect(nets).toContain('10.1.0.0');
+  });
+
+  it('summary-only suppresses the covering more-specifics, advertising only the aggregate', () => {
+    const r1 = new BGPEngine('R1');
+    const r2 = new BGPEngine('R2');
+    r1.setDeviceContext(ctxMulti(['10.1.1.0', '10.1.2.0']));
+    r2.setDeviceContext(ctxMulti(['192.168.9.0']));
+    r1.enable({ asn: 65001 });
+    r2.enable({ asn: 65002 });
+    r1.getConfig().networks.push({ network: '10.1.1.0', mask: '255.255.255.0' });
+    r1.getConfig().networks.push({ network: '10.1.2.0', mask: '255.255.255.0' });
+    r1.getConfig().aggregates.push({ network: '10.1.0.0', mask: '255.255.0.0', summaryOnly: true });
+    r1.getConfig().neighbors.set('10.0.0.2', { ip: '10.0.0.2', remoteAs: 65002, activated: true });
+    r2.getConfig().neighbors.set('10.0.0.1', { ip: '10.0.0.1', remoteAs: 65001, activated: true });
+    link(r1, '10.0.0.1', r2, '10.0.0.2');
+    r1.converge(); r2.converge();
+
+    const nets = r2.getContributedRoutes().map((r) => String(r.network));
+    expect(nets).not.toContain('10.1.1.0');
+    expect(nets).not.toContain('10.1.2.0');
+    expect(nets).toContain('10.1.0.0');
+  });
+
+  it('an aggregate with no covering more-specific route is never originated', () => {
+    const r1 = new BGPEngine('R1');
+    r1.setDeviceContext(ctxMulti(['192.168.1.0']));
+    r1.enable({ asn: 65001 });
+    r1.getConfig().networks.push({ network: '192.168.1.0', mask: '255.255.255.0' });
+    r1.getConfig().aggregates.push({ network: '10.1.0.0', mask: '255.255.0.0', summaryOnly: false });
+    r1.converge();
+
+    expect(r1.getBgpTable().some((r) => String(r.network) === '10.1.0.0')).toBe(false);
+  });
+});
