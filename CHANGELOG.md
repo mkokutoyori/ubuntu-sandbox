@@ -116,6 +116,21 @@ large (architecture/HSRP/ACL/NAT/show) : 127/127 au vert. Typecheck et
 lint ciblés propres (mêmes 8 erreurs `tsc` et mêmes avertissements
 `eslint` pré-existants qu'avant ce changement, aucun nouveau).
 
+## Linux — Phase 21 : `diff` rendue autonome (+ `validate`, suppression de `coreutils/DiffCommand`)
+
+**État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
+
+`DiffCommand` implémente désormais **elle-même** tout l'algorithme (table
+LCS, calcul des hunks, rendu `<`/`---`/`>`, en-têtes `NcM`) en méthodes
+privées, et fournit `validate`. La lecture des deux fichiers passe par
+`ctx.machine.fs`.
+
+- **`coreutils/DiffCommand.ts` supprimé** : plus aucun appel au module
+  hérité. Codes de sortie GNU conservés (0/1/2), rendus dans `execute`.
+
+Validation : les 3 tests `diff` de `linux-commands-and-oracle-tools.test.ts`
+passent ; aucune régression.
+
 ## Linux — Phase 20 : `seq` rendue autonome (+ `validate`, suppression de `SeqGenerator`)
 
 **État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
