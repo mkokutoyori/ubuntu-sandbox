@@ -94,6 +94,36 @@ describe('EIGRP via CLI — real RIB integration', () => {
     await r1.executeCommand('end');
     expect(await r1.executeCommand('show ip route')).not.toMatch(/^D\s/m);
   });
+
+  it('distribute-list prefix-list in filters which learned prefixes reach the RIB', async () => {
+    const r1 = new CiscoRouter('R1');
+    const r2 = new CiscoRouter('R2');
+    await baseAddrs(r1, '192.168.1.1', '10.0.0.1');
+    await baseAddrs(r2, '192.168.2.1', '10.0.0.2');
+    wire(r1, r2);
+    await r2.executeCommand('configure terminal');
+    await r2.executeCommand('interface GigabitEthernet0/2');
+    await r2.executeCommand('ip address 192.168.3.1 255.255.255.0');
+    await r2.executeCommand('no shutdown');
+    await r2.executeCommand('exit');
+    await r2.executeCommand('end');
+    for (const r of [r1, r2]) {
+      await r.executeCommand('configure terminal');
+      await r.executeCommand('router eigrp 100');
+      await r.executeCommand('network 192.168.0.0 0.0.255.255');
+      await r.executeCommand('network 10.0.0.0 0.0.0.3');
+      await r.executeCommand('end');
+    }
+    await r1.executeCommand('configure terminal');
+    await r1.executeCommand('ip prefix-list ONLY2 permit 192.168.2.0/24');
+    await r1.executeCommand('router eigrp 100');
+    await r1.executeCommand('distribute-list prefix-list ONLY2 in');
+    await r1.executeCommand('end');
+
+    const route1 = await r1.executeCommand('show ip route');
+    expect(route1).toMatch(/D\s+192\.168\.2\.0\/24 \[90\/\d+\] via 10\.0\.0\.2/);
+    expect(route1).not.toMatch(/192\.168\.3\.0/);
+  });
 });
 
 describe('BGP via CLI — real RIB integration', () => {

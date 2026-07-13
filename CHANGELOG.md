@@ -5,6 +5,34 @@ progressive par équipement. Un push = une entrée = une fonctionnalité
 complète et testée (voir `CLAUDE.md` / le framework de migration pour les
 principes directeurs).
 
+## Routeur Cisco — EIGRP `distribute-list prefix-list <name> in|out`
+
+Suite du même chantier de filtrage par `ip prefix-list`, appliqué cette
+fois à EIGRP plutôt qu'à BGP. Contrairement au BGP, EIGRP n'a pas de
+config par voisin (`neighbor`) : le filtrage est global au processus,
+comme la vraie commande IOS `distribute-list prefix-list <name> in|out`
+sans interface. `EIGRPConfig` gagne `distributeListIn`/`distributeListOut`
+— l'engine avait déjà accès à `RoutingDeviceContext.evaluatePrefixList`
+(câblé pour BGP), donc **aucun nouveau câblage Router/CiscoIOSShell
+n'était nécessaire**, juste sa consultation dans `EIGRPEngine`.
+
+`onUpdate` filtre désormais les routes d'un Update entrant avant de les
+retenir dans la table de voisinage ; `buildUpdate` filtre les préfixes
+originés et réappris avant de les inclure dans l'Update sortant (les
+deux boucles de la table complète). CLI : `distribute-list prefix-list
+<name> in|out` sous `router eigrp`, appliqué immédiatement (le
+`converge()` déclenché par la commande relance un Hello, donc un
+Update complet, chez les voisins déjà adjacents — pas besoin de
+réinitialiser l'adjacence).
+
+**Validation** : 4 nouveaux tests `EIGRPEngine` (filtrage entrant,
+filtrage sortant, liste inexistante = deny implicite, absence de filtre
+= comportement inchangé) + 1 test CLI bout-en-bout (deux `CiscoRouter`
+réellement câblés, `distribute-list` configuré **après** que
+l'adjacence soit déjà établie, prouvant la re-convergence). Suite EIGRP
+élargie (engine/wire/metric/intégration CLI EIGRP+BGP) : 48+7 tests au
+vert. Typecheck et lint ciblés propres.
+
 ## Routeur Cisco — route-map BGP par voisin (`neighbor <ip> route-map <name> in|out`)
 
 Suite directe du filtrage par `prefix-list` : les `route-map` (clauses

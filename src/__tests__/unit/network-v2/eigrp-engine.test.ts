@@ -14,6 +14,7 @@ import { EventBus } from '@/events/EventBus';
 import {
   IPAddress, SubnetMask, resetCounters,
 } from '@/network/core/types';
+import { PolicyRepository } from '@/network/devices/inspection/config/PolicyRepository';
 
 beforeEach(() => resetCounters());
 
@@ -34,7 +35,7 @@ class TestDevice {
   private readonly links = new Map<string, { dev: TestDevice; iface: string }>();
   private rib: RibSpec[] = [];
 
-  constructor(readonly id: string, ifaces: IfaceSpec[], rib: RibSpec[] = []) {
+  constructor(readonly id: string, ifaces: IfaceSpec[], rib: RibSpec[] = [], policy?: PolicyRepository) {
     for (const i of ifaces) this.ifaces.set(i.iface, i);
     this.rib = rib;
     this.eng = new EIGRPEngine(id);
@@ -45,6 +46,10 @@ class TestDevice {
         mask: new SubnetMask(r.mask),
         type: r.type,
       })),
+      ...(policy ? {
+        evaluatePrefixList: (name: string, network: string, prefixLength: number) =>
+          policy.evaluatePrefixList(name, network, prefixLength),
+      } : {}),
     });
     this.eng.setWire({
       send: (iface, destIp, packet) => {
@@ -88,11 +93,11 @@ class TestDevice {
 
 /** R(lan, linkIp) — one LAN interface + one link interface. */
 function device(id: string, lanIp: string, linkIp: string,
-  link?: Partial<IfaceSpec>): TestDevice {
+  link?: Partial<IfaceSpec>, policy?: PolicyRepository): TestDevice {
   return new TestDevice(id, [
     { iface: 'Gi0/1', ip: lanIp },
     { iface: 'Gi0/0', ip: linkIp, maskBits: 24, ...link },
-  ]);
+  ], [], policy);
 }
 
 describe('EIGRPEngine — real config-driven, over the wire', () => {
@@ -445,5 +450,78 @@ describe('Redistribution into EIGRP', () => {
       (r) => String(r.network) === '192.168.2.0');
     expect(learned).toBeDefined();
     expect(learned!.adminDistance).toBe(170);
+  });
+});
+
+describe('EIGRPEngine — distribute-list prefix-list filtering (in/out)', () => {
+  it('distributeListIn only accepts prefixes the named list permits', () => {
+    const policy = new PolicyRepository();
+    policy.addPrefix('ALLOWED', { seq: 5, action: 'permit', prefix: '192.168.2.0/24' });
+    const r1 = device('R1', '192.168.1.1', '10.0.0.1', undefined, policy);
+    const r2 = new TestDevice('R2', [
+      { iface: 'Gi0/1', ip: '192.168.2.1' },
+      { iface: 'Gi0/2', ip: '192.168.3.1' },
+      { iface: 'Gi0/0', ip: '10.0.0.2', maskBits: 24 },
+    ]);
+    TestDevice.cable(r1, 'Gi0/0', r2, 'Gi0/0');
+    r1.eng.enable({ asn: 100, networks: [{ network: '10.0.0.0' }] });
+    r1.eng.getConfig().distributeListIn = 'ALLOWED';
+    r2.eng.enable({
+      asn: 100,
+      networks: [{ network: '192.168.2.0' }, { network: '192.168.3.0' }, { network: '10.0.0.0' }],
+    });
+    r1.eng.converge(); r2.eng.converge();
+
+    const nets = r1.eng.getContributedRoutes().map((r) => String(r.network));
+    expect(nets).toContain('192.168.2.0');
+    expect(nets).not.toContain('192.168.3.0');
+  });
+
+  it('distributeListOut only advertises prefixes the named list permits', () => {
+    const policy = new PolicyRepository();
+    policy.addPrefix('EXPORT', { seq: 5, action: 'permit', prefix: '192.168.2.0/24' });
+    const r1 = new TestDevice('R1', [
+      { iface: 'Gi0/1', ip: '192.168.2.1' },
+      { iface: 'Gi0/2', ip: '192.168.3.1' },
+      { iface: 'Gi0/0', ip: '10.0.0.1', maskBits: 24 },
+    ], [], policy);
+    const r2 = device('R2', '192.168.9.1', '10.0.0.2');
+    TestDevice.cable(r1, 'Gi0/0', r2, 'Gi0/0');
+    r1.eng.enable({
+      asn: 100,
+      networks: [{ network: '192.168.2.0' }, { network: '192.168.3.0' }, { network: '10.0.0.0' }],
+    });
+    r1.eng.getConfig().distributeListOut = 'EXPORT';
+    r2.eng.enable({ asn: 100, networks: [{ network: '10.0.0.0' }] });
+    r1.eng.converge(); r2.eng.converge();
+
+    const nets = r2.eng.getContributedRoutes().map((r) => String(r.network));
+    expect(nets).toContain('192.168.2.0');
+    expect(nets).not.toContain('192.168.3.0');
+  });
+
+  it('a prefix-list name that does not exist is an implicit deny for every prefix', () => {
+    const policy = new PolicyRepository(); // NOSUCHLIST never defined
+    const r1 = device('R1', '192.168.1.1', '10.0.0.1', undefined, policy);
+    const r2 = device('R2', '192.168.2.1', '10.0.0.2');
+    TestDevice.cable(r1, 'Gi0/0', r2, 'Gi0/0');
+    r1.eng.enable({ asn: 100, networks: [{ network: '10.0.0.0' }] });
+    r1.eng.getConfig().distributeListIn = 'NOSUCHLIST';
+    r2.eng.enable({ asn: 100, networks: [{ network: '192.168.2.0' }, { network: '10.0.0.0' }] });
+    r1.eng.converge(); r2.eng.converge();
+
+    expect(r1.eng.getContributedRoutes()).toHaveLength(0);
+  });
+
+  it('no distribute-list configured ⇒ unfiltered, same as before this feature', () => {
+    const r1 = device('R1', '192.168.1.1', '10.0.0.1');
+    const r2 = device('R2', '192.168.2.1', '10.0.0.2');
+    TestDevice.cable(r1, 'Gi0/0', r2, 'Gi0/0');
+    r1.eng.enable({ asn: 100, networks: [{ network: '192.168.1.0' }, { network: '10.0.0.0' }] });
+    r2.eng.enable({ asn: 100, networks: [{ network: '192.168.2.0' }, { network: '10.0.0.0' }] });
+    r1.eng.converge(); r2.eng.converge();
+
+    const nets = r1.eng.getContributedRoutes().map((r) => String(r.network));
+    expect(nets).toContain('192.168.2.0');
   });
 });

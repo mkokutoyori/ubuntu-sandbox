@@ -241,6 +241,14 @@ export function buildRoutingProtoConfig(
     }
     return '';
   });
+  routerTrie.registerGreedy('distribute-list', 'Filter routes via a named prefix-list', (a) => {
+    if (curProto(ctx).proto !== 'eigrp') return '';
+    if (a[0] !== 'prefix-list' || !a[1] || (a[2] !== 'in' && a[2] !== 'out')) return '% Incomplete command.';
+    const c = eigrpEng().getConfig();
+    if (a[2] === 'in') c.distributeListIn = a[1]; else c.distributeListOut = a[1];
+    converge();
+    return '';
+  });
   routerTrie.registerGreedy('distance', 'Administrative distance', (a) => {
     const n = parseInt(a[0], 10);
     if (!Number.isNaN(n) && curProto(ctx).proto === 'rip') repo.rip.distance = n;

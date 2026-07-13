@@ -72,6 +72,10 @@ export interface EIGRPConfig {
   redistributeSources: Set<'static' | 'connected' | 'rip' | 'ospf' | 'bgp'>;
   /** Composite-metric coefficients (`metric weights 0 k1 k2 k3 k4 k5`). */
   kValues: EigrpKValues;
+  /** Cisco `distribute-list prefix-list <name> in` — named `ip prefix-list`, evaluated against every route received in an Update before it's accepted into the topology table. */
+  distributeListIn?: string;
+  /** Cisco `distribute-list prefix-list <name> out` — evaluated against every candidate route before it's advertised in an outbound Update. */
+  distributeListOut?: string;
 }
 
 /** A prefix this engine really originates, with its link attributes. */
@@ -368,11 +372,18 @@ export class EIGRPEngine extends AbstractRoutingProtocolEngine<EIGRPConfig> {
     }
   }
 
+  /** `true` when no prefix-list is configured for this direction (no filtering), or the configured named list permits `network/prefixLength`. A configured-but-non-matching-or-missing list is an implicit deny (real IOS `ip prefix-list` semantics). */
+  private passesDistributeList(listName: string | undefined, network: string, prefixLength: number): boolean {
+    if (!listName) return true;
+    return this.deviceCtx.evaluatePrefixList?.(listName, network, prefixLength) === 'permit';
+  }
+
   private onUpdate(iface: string, srcIp: string, update: EigrpUpdatePacket): void {
     // §5.3.2 — Updates are only accepted from established neighbors.
     const known = this.wireNeighbors.get(`${srcIp}%${iface}`);
     if (!known) return;
-    known.advertised = [...update.routes];
+    known.advertised = update.routes.filter((r) =>
+      this.passesDistributeList(this.config.distributeListIn, r.network, r.prefixLength));
   }
 
   /**
@@ -386,6 +397,7 @@ export class EIGRPEngine extends AbstractRoutingProtocolEngine<EIGRPConfig> {
     const routes: EigrpRouteTlv[] = [];
     const advertised = new Set<string>();
     for (const pre of this.originatedPrefixes()) {
+      if (!this.passesDistributeList(this.config.distributeListOut, String(pre.network), pre.mask.toCIDR())) continue;
       const tlv: EigrpRouteTlv = {
         network: String(pre.network),
         prefixLength: pre.mask.toCIDR(),
@@ -400,6 +412,7 @@ export class EIGRPEngine extends AbstractRoutingProtocolEngine<EIGRPConfig> {
       if (best.neighbor.iface === egressIface) continue;  // split horizon
       const key = `${best.accumulated.network}/${best.accumulated.prefixLength}`;
       if (advertised.has(key)) continue;                  // local wins
+      if (!this.passesDistributeList(this.config.distributeListOut, best.accumulated.network, best.accumulated.prefixLength)) continue;
       advertised.add(key);
       routes.push(best.accumulated);
     }
