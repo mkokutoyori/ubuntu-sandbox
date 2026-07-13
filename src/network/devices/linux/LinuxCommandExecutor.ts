@@ -4204,7 +4204,6 @@ export class LinuxCommandExecutor {
           exitCode: 0,
         };
 
-      case 'mktemp': return { output: '/tmp/tmp.' + Math.random().toString(36).slice(2, 12), exitCode: 0 };
 
       default: {
         // Check if it's an executable script (./script.sh or /path/to/script)

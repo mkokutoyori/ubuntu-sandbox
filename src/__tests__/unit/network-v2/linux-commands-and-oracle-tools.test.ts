@@ -381,6 +381,16 @@ describe('rev', () => {
   });
 });
 
+describe('mktemp', () => {
+  it('prints a unique /tmp/tmp.* path', async () => {
+    const a = (await server.executeCommand('mktemp')).trim();
+    const b = (await server.executeCommand('mktemp')).trim();
+    expect(a).toMatch(/^\/tmp\/tmp\.[a-z0-9]+$/);
+    expect(b).toMatch(/^\/tmp\/tmp\.[a-z0-9]+$/);
+    expect(a).not.toBe(b);
+  });
+});
+
 describe('basename / dirname', () => {
   it('basename extracts filename', async () => {
     const out = await server.executeCommand('basename /usr/local/bin/sqlplus');

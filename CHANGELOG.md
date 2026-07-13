@@ -5,6 +5,22 @@ progressive par équipement. Un push = une entrée = une fonctionnalité
 complète et testée (voir `CLAUDE.md` / le framework de migration pour les
 principes directeurs).
 
+## Linux — Phase 13 : `mktemp`
+
+**État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
+
+**Commande migrée** : `mktemp [OPTION]... [MODÈLE]` — portée par
+`MktempCommand`.
+
+- Renvoie un nom de fichier temporaire unique au format `/tmp/tmp.<aléa>`
+  (10 caractères base36). Le simulateur ne matérialise pas le fichier
+  (comportement historique conservé à l'identique) ; les options
+  (`-d`, template `XXXXXX`...) sont acceptées mais ignorées.
+- **Legacy supprimé** : le `case 'mktemp'` retiré de
+  `LinuxCommandExecutor.dispatch()`. Nouveau test `mktemp` (format + unicité).
+
+Validation : test `mktemp` vert ; aucune régression.
+
 ## Linux — Phase 12 : `truncate`
 
 **État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**

@@ -18,6 +18,7 @@ import { IdCommand } from './commands/Id';
 import { LnCommand } from './commands/Ln';
 import { LsCommand } from './commands/Ls';
 import { MkdirCommand } from './commands/Mkdir';
+import { MktempCommand } from './commands/Mktemp';
 import { MvCommand } from './commands/Mv';
 import { PrintenvCommand } from './commands/Printenv';
 import { PwdCommand } from './commands/Pwd';
@@ -84,6 +85,7 @@ export function createLinuxHostShell(deps: LinuxMachineApiDeps): Interpreter {
   registry.register(() => new PrintenvCommand());
   registry.register(() => new TtyCommand());
   registry.register(() => new TruncateCommand());
+  registry.register(() => new MktempCommand());
 
   return new Interpreter(registry, machine);
 }
