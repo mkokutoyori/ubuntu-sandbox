@@ -1,7 +1,8 @@
+import { ParsedArgs } from '@/command-kernel/args/parsed-args';
 import { BaseCommand } from '@/command-kernel/command/base-command';
 import { CommandContext, CommandDescriptor, EXIT_OK, ExitCode } from '@/command-kernel/command/types';
 import { DefaultPrivilegePolicy } from '@/command-kernel/session/privilege-policy';
-import { PrivilegeLevel } from '@/command-kernel/session/types';
+import { PrivilegeLevel, Session } from '@/command-kernel/session/types';
 import { joinLines, readTextInput, splitLines } from './textInput';
 
 /**
@@ -20,6 +21,11 @@ export class RevCommand extends BaseCommand {
     privileges: new DefaultPrivilegePolicy(PrivilegeLevel.ANY),
     category: 'texte',
   };
+
+  protected override validate(_args: ParsedArgs, _session: Session): void {
+    // `rev` accepte zéro fichier (lecture de stdin) ou des chemins — rien de
+    // plus à valider en amont ; une lecture échouée est signalée à l'exécution.
+  }
 
   async execute(ctx: CommandContext): Promise<ExitCode> {
     const files = ctx.args.has('files') ? ctx.args.get<string[]>('files') : [];

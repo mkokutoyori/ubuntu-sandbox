@@ -149,6 +149,24 @@ large (architecture/HSRP/ACL/NAT/show) : 127/127 au vert. Typecheck et
 lint ciblés propres (mêmes 8 erreurs `tsc` et mêmes avertissements
 `eslint` pré-existants qu'avant ce changement, aucun nouveau).
 
+## Linux — Phase 24 : `validate` généralisé aux commandes déjà migrées
+
+**État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
+
+Mise en conformité avec le standard « toujours implémenter `validate` » :
+ajout de la méthode `validate(args, session)` (override explicite,
+documenté) aux commandes command-kernel qui ne l'avaient pas encore :
+`basename`, `dirname`, `rev`, `printenv`, `truncate`, `mktemp`, `locale`,
+et la base `ChecksumCommand` (`md5sum`/`sha1sum`/`sha256sum`).
+
+- Pour ces commandes, les erreurs d'opérande à code de sortie GNU
+  spécifique (1) sont rendues dans `execute` (pas via `UsageError`, code 2)
+  ou déjà garanties par le parseur (`required: true`) ; les `validate`
+  documentent donc ce choix.
+
+Validation : `linux-commands-and-oracle-tools` + `env-vars` +
+`auditctl-other` verts (235) ; aucune régression.
+
 ## Linux — Phase 23 : `file` rendue autonome (+ `validate`, suppression de `describeArchiveContent`)
 
 **État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**

@@ -1,9 +1,10 @@
 import { md5Hex, sha1Hex, sha256Hex } from '@/crypto/hash';
+import { ParsedArgs } from '@/command-kernel/args/parsed-args';
 import { BaseCommand } from '@/command-kernel/command/base-command';
 import { CommandContext, CommandDescriptor, ExitCode } from '@/command-kernel/command/types';
 import { toFileSystemActor } from '@/command-kernel/machine/types';
 import { DefaultPrivilegePolicy } from '@/command-kernel/session/privilege-policy';
-import { PrivilegeLevel } from '@/command-kernel/session/types';
+import { PrivilegeLevel, Session } from '@/command-kernel/session/types';
 
 /**
  * Base commune à `md5sum`/`sha1sum`/`sha256sum` — même surface (calcul en
@@ -26,6 +27,11 @@ abstract class ChecksumCommand extends BaseCommand {
       category: 'fichiers',
       lenientOptions: true,
     };
+  }
+
+  protected override validate(_args: ParsedArgs, _session: Session): void {
+    // « missing file operand » et les échecs de lecture sortent avec le code
+    // GNU 1, rendus dans `execute` plutôt que via `UsageError` (code 2).
   }
 
   async execute(ctx: CommandContext): Promise<ExitCode> {
