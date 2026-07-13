@@ -149,6 +149,80 @@ large (architecture/HSRP/ACL/NAT/show) : 127/127 au vert. Typecheck et
 lint ciblés propres (mêmes 8 erreurs `tsc` et mêmes avertissements
 `eslint` pré-existants qu'avant ce changement, aucun nouveau).
 
+## Linux — Phase 21 : `diff` rendue autonome (+ `validate`, suppression de `coreutils/DiffCommand`)
+
+**État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
+
+`DiffCommand` implémente désormais **elle-même** tout l'algorithme (table
+LCS, calcul des hunks, rendu `<`/`---`/`>`, en-têtes `NcM`) en méthodes
+privées, et fournit `validate`. La lecture des deux fichiers passe par
+`ctx.machine.fs`.
+
+- **`coreutils/DiffCommand.ts` supprimé** : plus aucun appel au module
+  hérité. Codes de sortie GNU conservés (0/1/2), rendus dans `execute`.
+
+Validation : les 3 tests `diff` de `linux-commands-and-oracle-tools.test.ts`
+passent ; aucune régression.
+
+## Linux — Phase 20 : `seq` rendue autonome (+ `validate`, suppression de `SeqGenerator`)
+
+**État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
+
+`SeqCommand` implémente désormais **elle-même** tout le générateur GNU
+(analyse `-s`/`-t`/`-w`/`-f` + formes longues, précision décimale, pas
+négatif, largeur égale, printf `%f/%g/%e/%d/%s`) sous forme de méthodes
+privées, et fournit `validate`.
+
+- **`coreutils/SeqGenerator.ts` supprimé** (+ son ré-export depuis
+  `coreutils/index.ts`) : plus aucun appel au module hérité.
+- Garde-fou appris : une méthode privée **ne doit pas s'appeler `run`** —
+  cela masquerait le point d'entrée `BaseCommand.run(ctx)` ; la logique est
+  donc portée par `generate(argv)`.
+
+Validation : les 12 tests `seq` de `test-expr-seq-sleep-time-watch.test.ts`
++ `linux-commands-and-oracle-tools` + cohérence stricte passent (184) ;
+aucune régression.
+
+## Linux — Phase 19 : `tty` / `sleep` rendues autonomes (+ `validate`, suppression des modules hérités)
+
+**État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
+
+Application du nouveau standard aux commandes déjà migrées mais qui
+appelaient encore un module hérité : `tty` et `sleep` implémentent
+désormais **elles-mêmes** leur logique et fournissent `validate`.
+
+- `TtyCommand` : le format du chemin de terminal est inliné (plus d'appel à
+  `SystemInfo.cmdTty`) ; **`cmdTty` supprimé** de `system/SystemInfo.ts`.
+- `SleepCommand` : l'analyse des durées `NOMBRE[s|m|h|d]` (sommes
+  incluses) est inlinée ; **`coreutils/Sleep.ts` supprimé** ainsi que son
+  ré-export depuis `coreutils/index.ts`. Les erreurs conservent le code de
+  sortie GNU 1 (rendu dans `execute`, pas via `UsageError`/code 2), d'où un
+  `validate` explicite mais délibérément vide, documenté.
+
+Validation : `test-expr-seq-sleep-time-watch.test.ts` et
+`linux-system-info.test.ts` verts (69) ; aucune régression.
+
+## Linux — Phase 18 : `clear` / `reset` (nouveau standard : commandes autonomes + `validate`)
+
+**État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
+
+**Commandes migrées** : `clear` et `reset` — émettent la séquence ANSI
+d'effacement d'écran (`\x1b[2J\x1b[H`), portées par `ClearCommand` /
+`ResetCommand`.
+
+- **Nouveau standard adopté ici** (à généraliser) : chaque commande
+  command-kernel est désormais **autonome** — elle implémente sa propre
+  logique sans appeler les modules hérités, de sorte que ces derniers
+  pourront être supprimés ; et elle **implémente toujours** la méthode
+  `validate(args, session)` de `BaseCommand` (validation métier
+  post-parsing, `UsageError` en cas d'incohérence). `clear`/`reset`
+  n'ayant aucun argument significatif, leur `validate` est explicite mais
+  vide.
+- **Legacy supprimé** : les `case 'clear'`/`'reset'` retirés de
+  `LinuxCommandExecutor.dispatch()`. Nouveau test `clear`/`reset`.
+
+Validation : test `clear`/`reset` vert ; aucune régression.
+
 ## Linux — Phase 17 : `diff`
 
 **État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**

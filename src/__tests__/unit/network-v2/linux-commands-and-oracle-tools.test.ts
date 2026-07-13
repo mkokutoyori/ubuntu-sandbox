@@ -381,6 +381,13 @@ describe('rev', () => {
   });
 });
 
+describe('clear / reset', () => {
+  it('emit the ANSI clear-screen sequence', async () => {
+    expect(await server.executeCommand('clear')).toBe('\x1b[2J\x1b[H');
+    expect(await server.executeCommand('reset')).toBe('\x1b[2J\x1b[H');
+  });
+});
+
 describe('diff', () => {
   it('reports no output and exit 0 for identical files', async () => {
     await server.executeCommand('printf "a\\nb\\nc\\n" > /tmp/d1.txt');

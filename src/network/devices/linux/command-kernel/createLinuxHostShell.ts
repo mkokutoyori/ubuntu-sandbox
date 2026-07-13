@@ -12,6 +12,7 @@ import { FileCommand } from './commands/File';
 import { ChgrpCommand } from './commands/Chgrp';
 import { ChmodCommand } from './commands/Chmod';
 import { ChownCommand } from './commands/Chown';
+import { ClearCommand, ResetCommand } from './commands/Clear';
 import { CpCommand } from './commands/Cp';
 import { CutCommand } from './commands/Cut';
 import { GrepCommand } from './commands/Grep';
@@ -96,6 +97,8 @@ export function createLinuxHostShell(deps: LinuxMachineApiDeps): Interpreter {
   registry.register(() => new Sha1sumCommand());
   registry.register(() => new Sha256sumCommand());
   registry.register(() => new DiffCommand());
+  registry.register(() => new ClearCommand());
+  registry.register(() => new ResetCommand());
 
   return new Interpreter(registry, machine);
 }
