@@ -31,7 +31,7 @@ import { cmdMkfifo } from './LinuxPermCommands';
 import {
   runTest, runWatch, formatTimes, chooseTimeFormat,
   runTail,
-  cmdTar, cmdGzip, cmdZip, cmdUnzip, describeArchiveContent,
+  cmdTar, cmdGzip, cmdZip, cmdUnzip,
   type TestFs, type TestEnv, type TailFs, type TailSink, type TailFollowHandle, type TailRunResult,
   type ArchiveCtx,
 } from './coreutils';
@@ -3925,11 +3925,6 @@ export class LinuxCommandExecutor {
       case 'lvdisplay': case 'vgdisplay': case 'pvdisplay':
         return { output: `  No volume groups found`, exitCode: 0 };
       case 'lsof': return { output: this.cmdLsof(args), exitCode: 0 };
-      case 'file': {
-        const targets = args.filter(a => !a.startsWith('-'));
-        if (!targets.length) return { output: 'Usage: file [-options] file...', exitCode: 1 };
-        return { output: targets.map(t => this.describeFile(t)).join('\n'), exitCode: 0 };
-      }
       case 'md5sum':
       case 'sha256sum':
       case 'sha1sum': {
@@ -6040,30 +6035,6 @@ export class LinuxCommandExecutor {
   }
 
   /** `file` — classify from the REAL inode/content, never canned. */
-  private describeFile(target: string): string {
-    const abs = this.vfs.normalizePath(target, this.cwd);
-    const lstat = this.vfs.resolveInode(abs, false);
-    if (!lstat) {
-      return `${target}: cannot open \`${target}' (No such file or directory)`;
-    }
-    if (lstat.type === 'symlink') {
-      return `${target}: symbolic link to ${lstat.target}`;
-    }
-    if (lstat.type === 'directory') return `${target}: directory`;
-    if (lstat.type === 'chardev') return `${target}: character special`;
-    const content = this.vfs.readFile(abs) ?? lstat.content;
-    if (content.length === 0) return `${target}: empty`;
-    const archive = describeArchiveContent(content);
-    if (archive) return `${target}: ${archive}`;
-    if (content.startsWith('#!')) {
-      const interp = content.slice(2, content.indexOf('\n') > 0
-        ? content.indexOf('\n') : undefined).trim();
-      return `${target}: ${interp} script, ASCII text executable`;
-    }
-    // eslint-disable-next-line no-control-regex
-    if (/[\x00-\x08\x0e-\x1f]/.test(content)) return `${target}: data`;
-    return `${target}: ASCII text`;
-  }
 }
 
 // ─── small parsing helpers (kept private to this file) ────────────────

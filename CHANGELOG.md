@@ -45,6 +45,27 @@ large (architecture/HSRP/ACL/NAT/show) : 127/127 au vert. Typecheck et
 lint ciblés propres (mêmes 8 erreurs `tsc` et mêmes avertissements
 `eslint` pré-existants qu'avant ce changement, aucun nouveau).
 
+## Linux — Phase 14 : `file`
+
+**État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
+
+**Commande migrée** : `file FICHIER...` — devine le type de chaque fichier
+(lien symbolique, répertoire, périphérique caractère, archive gz/tar/zip,
+script `#!`, texte ASCII, données binaires), portée par `FileCommand`.
+
+- La classification reproduit à l'identique la logique historique
+  `describeFile`, désormais alimentée par `ctx.machine.fs` (`lstat` +
+  lecture, `symlinkTarget`) et le détecteur d'archives pur **partagé**
+  `describeArchiveContent`.
+- **Legacy supprimé** : le `case 'file'` **et** la méthode `describeFile()`
+  retirés de `LinuxCommandExecutor`, import `describeArchiveContent`
+  devenu inutile nettoyé.
+
+Validation : `archive-commands.test.ts` passe intégralement (16/16, dont
+les 8 assertions `file` : texte, `.gz`, `.tar`, `.zip`, répertoire,
+fichier absent, vide, script `#!`) ; cohérence stricte verte ; aucune
+régression (67 tests).
+
 ## Linux — Phase 13 : `mktemp`
 
 **État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
