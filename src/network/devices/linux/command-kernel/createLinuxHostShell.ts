@@ -19,6 +19,7 @@ import { LnCommand } from './commands/Ln';
 import { LsCommand } from './commands/Ls';
 import { MkdirCommand } from './commands/Mkdir';
 import { MvCommand } from './commands/Mv';
+import { PrintenvCommand } from './commands/Printenv';
 import { PwdCommand } from './commands/Pwd';
 import { ReadlinkCommand } from './commands/Readlink';
 import { RealpathCommand } from './commands/Realpath';
@@ -78,6 +79,7 @@ export function createLinuxHostShell(deps: LinuxMachineApiDeps): Interpreter {
   registry.register(() => new ExprCommand());
   registry.register(() => new SleepCommand());
   registry.register(() => new RevCommand());
+  registry.register(() => new PrintenvCommand());
 
   return new Interpreter(registry, machine);
 }

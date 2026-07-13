@@ -5,6 +5,26 @@ progressive par équipement. Un push = une entrée = une fonctionnalité
 complète et testée (voir `CLAUDE.md` / le framework de migration pour les
 principes directeurs).
 
+## Linux — Phase 10 : `printenv`
+
+**État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
+
+**Commande migrée** : `printenv [VARIABLE...]` — affiche tout
+l'environnement (`NOM=valeur`) ou la valeur de variables nommées (une par
+ligne, code de sortie 1 si l'une est absente), portée par
+`PrintenvCommand`.
+
+- L'environnement est lu depuis la session command-kernel
+  (`ctx.session.env`) — qui reflète bien les affectations `export`
+  antérieures dans la même ligne/pipeline (validé par
+  `export MYTOKEN=… ; printenv MYTOKEN`).
+- **Legacy supprimé** : le `case 'printenv'` retiré de
+  `LinuxCommandExecutor.dispatch()`.
+
+Validation : `env-vars.test.ts` passe intégralement (9/9, dont
+`printenv`, `printenv SHELL`, export puis lecture, variable absente) ;
+cohérence stricte verte ; aucune régression (66 tests).
+
 ## Linux — Phase 9 : `rev`
 
 **État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**

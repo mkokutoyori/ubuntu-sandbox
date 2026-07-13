@@ -3572,27 +3572,6 @@ export class LinuxCommandExecutor {
         return this.dispatchFromInterpreter(cmdline, resultEnv);
       }
 
-      // printenv — print the whole environment, or specific variables.
-      // With names, one value per line; exit 1 if any name is unset.
-      case 'printenv': {
-        const envView = this._cmdEnv ?? Object.fromEntries(this.env);
-        const names = args.filter((a) => !a.startsWith('-'));
-        if (names.length === 0) {
-          return {
-            output: Object.entries(envView).map(([k, v]) => `${k}=${v}`).join('\n'),
-            exitCode: 0,
-          };
-        }
-        const out: string[] = [];
-        let missing = false;
-        for (const name of names) {
-          const v = envView[name];
-          if (v === undefined) missing = true;
-          else out.push(v);
-        }
-        return { output: out.join('\n'), exitCode: missing ? 1 : 0 };
-      }
-
       // time — run a command and report its elapsed wall/user/sys time
       case 'time': return await this.handleTime(args);
       case 'watch': return await this.handleWatch(args);
