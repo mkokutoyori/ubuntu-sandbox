@@ -149,6 +149,28 @@ large (architecture/HSRP/ACL/NAT/show) : 127/127 au vert. Typecheck et
 lint ciblés propres (mêmes 8 erreurs `tsc` et mêmes avertissements
 `eslint` pré-existants qu'avant ce changement, aucun nouveau).
 
+## Linux — Phase 26 : migration de `pgrep` / `pkill` / `killall` (famille processus)
+
+**État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
+
+Suite de la famille processus sur la capacité `processControl` : `pgrep`,
+`pkill`, `killall` migrées de façon **autonome**.
+
+- Sélection faite **elle-même** dans chaque commande sur
+  `ctx.machine.processControl.list()` : `pgrep` (sous-chaîne dans
+  `comm`/`command`, filtres `-u`/`-l`), `pkill` (sous-chaîne + `signal()`),
+  `killall` (correspondance exacte `comm`, protection du PID 1). Envoi de
+  signal via `processControl.signal()`.
+- **Nouvel utilitaire partagé `commands/signals.ts`** (table POSIX +
+  `parseSignalArg` pour `-9`/`-KILL`/`-SIGTERM`), propre à la couche
+  command-kernel — pas d'appel au module hérité.
+- **`case 'pgrep'/'pkill'/'killall'` retirés** de `LinuxCommandExecutor`
+  (imports `cmdPgrep`/`cmdPkill`/`cmdKillall` nettoyés).
+
+Validation : `linux-session-process-coherence` +
+`linux-process-service-integration` (37/37) ; `linux-lan-ssh-suite`
+inchangé (2 échecs préexistants sans rapport) ; aucune régression.
+
 ## Linux — Phase 25 : capacité `ProcessControlApi` + migration de `pidof`
 
 **État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
