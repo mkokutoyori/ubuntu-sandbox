@@ -381,6 +381,28 @@ describe('rev', () => {
   });
 });
 
+describe('diff', () => {
+  it('reports no output and exit 0 for identical files', async () => {
+    await server.executeCommand('printf "a\\nb\\nc\\n" > /tmp/d1.txt');
+    await server.executeCommand('printf "a\\nb\\nc\\n" > /tmp/d2.txt');
+    const out = await server.executeCommand('diff /tmp/d1.txt /tmp/d2.txt');
+    expect(out.trim()).toBe('');
+  });
+
+  it('shows a change hunk for differing files', async () => {
+    await server.executeCommand('printf "a\\nb\\nc\\n" > /tmp/d1.txt');
+    await server.executeCommand('printf "a\\nX\\nc\\n" > /tmp/d3.txt');
+    const out = await server.executeCommand('diff /tmp/d1.txt /tmp/d3.txt');
+    expect(out).toContain('< b');
+    expect(out).toContain('> X');
+  });
+
+  it('errors on a missing file', async () => {
+    const out = await server.executeCommand('diff /tmp/d1.txt /tmp/nope.txt');
+    expect(out).toMatch(/No such file or directory/);
+  });
+});
+
 describe('md5sum / sha1sum / sha256sum', () => {
   it('computes the known hashes of "hello"', async () => {
     await server.executeCommand('printf hello > /tmp/h.txt');

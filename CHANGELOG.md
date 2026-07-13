@@ -45,6 +45,25 @@ large (architecture/HSRP/ACL/NAT/show) : 127/127 au vert. Typecheck et
 lint ciblés propres (mêmes 8 erreurs `tsc` et mêmes avertissements
 `eslint` pré-existants qu'avant ce changement, aucun nouveau).
 
+## Linux — Phase 17 : `diff`
+
+**État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
+
+**Commande migrée** : `diff FICHIER1 FICHIER2` — comparaison ligne à ligne
+(format « normal » GNU), portée par `DiffCommand`.
+
+- L'algorithme (LCS, hunks) reste porté par le module pur **partagé**
+  `cmdDiff`, qui attend un accès fichier **synchrone** : les opérandes sont
+  donc pré-lus via `ctx.machine.fs` (asynchrone) puis exposés à `cmdDiff`
+  par un cache indexé sur le chemin résolu — le pont sync/async sans
+  resimuler l'algorithme.
+- **Legacy supprimé** : le `case 'diff'` retiré de
+  `LinuxCommandExecutor.dispatch()`, import `cmdDiff` nettoyé. Nouveaux
+  tests `diff` (fichiers identiques, hunk de changement, fichier absent).
+
+Validation : tests `diff` verts ; cohérence stricte verte ; aucune
+régression (67 tests).
+
 ## Linux — Phase 16 : `md5sum` / `sha1sum` / `sha256sum`
 
 **État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
