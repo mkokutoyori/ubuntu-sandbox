@@ -81,6 +81,10 @@ export interface RIPConfig {
   redistribute: Map<RIPRedistSource, { metric?: number }>;
   defaultMetric: number | null;
   defaultInformationOriginate: boolean;
+  /** Cisco `distribute-list prefix-list <name> in` — named `ip prefix-list`, evaluated against every route entry in a received Response before it's learned. */
+  distributeListIn?: string;
+  /** Cisco `distribute-list prefix-list <name> out` — evaluated against every candidate route before it's advertised in an outbound Response. */
+  distributeListOut?: string;
 }
 
 /**
@@ -112,6 +116,8 @@ export interface RIPCallbacks {
    * (RFC 1058). Defaults to 2 when absent.
    */
   getRipVersion?(): 1 | 2;
+  /** Evaluate a configured named `ip prefix-list` against a route (`null` = list missing or no match, i.e. implicit deny) — consulted by `distribute-list prefix-list <name> in|out`. */
+  evaluatePrefixList?(name: string, network: string, prefixLength: number): 'permit' | 'deny' | null;
 }
 
 // ─── Default Config ─────────────────────────────────────────────────
@@ -329,6 +335,11 @@ export class RIPEngine implements IProtocolEngine {
     this.config.defaultInformationOriginate = on;
   }
 
+  setDistributeList(direction: 'in' | 'out', name: string): void {
+    if (direction === 'in') this.config.distributeListIn = name;
+    else this.config.distributeListOut = name;
+  }
+
   /** Get route states for debugging/display */
   getRoutes(): Map<string, { metric: number; learnedFrom: string; age: number; garbageCollect: boolean }> {
     const result = new Map<string, { metric: number; learnedFrom: string; age: number; garbageCollect: boolean }>();
@@ -478,6 +489,7 @@ export class RIPEngine implements IProtocolEngine {
     for (const route of routingTable) {
       const metric = this.advertisableMetric(route);
       if (metric === null) continue;
+      if (!this.passesDistributeList(this.config.distributeListOut, route.network.toString(), route.mask.toCIDR())) continue;
 
       if (this.config.splitHorizon && route.iface === outIface) {
         if (this.config.poisonedReverse && route.type === 'rip') {
@@ -542,6 +554,7 @@ export class RIPEngine implements IProtocolEngine {
       if (this.isPassiveInterface(portName)) continue;
       const entries: RIPRouteEntry[] = [];
       for (const route of changed) {
+        if (!this.passesDistributeList(this.config.distributeListOut, route.network.toString(), route.mask.toCIDR())) continue;
         if (this.config.splitHorizon && route.iface === portName) {
           if (this.config.poisonedReverse) {
             entries.push(this.routeToRIPEntry(route, RIP_METRIC_INFINITY));
@@ -630,9 +643,16 @@ export class RIPEngine implements IProtocolEngine {
       `${this.hostname}: RIP ${ripPkt.command === 1 ? 'Request' : 'Response'} sent on ${outIface} (${ripPkt.entries.length} entries)`);
   }
 
+  /** `true` when no prefix-list is configured for this direction (no filtering), or the configured named list permits `network/prefixLength`. A configured-but-non-matching-or-missing list is an implicit deny (real IOS `ip prefix-list` semantics). */
+  private passesDistributeList(listName: string | undefined, network: string, prefixLength: number): boolean {
+    if (!listName) return true;
+    return this.callbacks.evaluatePrefixList?.(listName, network, prefixLength) === 'permit';
+  }
+
   private processRouteEntry(inPort: string, srcIP: IPAddress, entry: RIPRouteEntry): void {
     if (entry.afi !== 2 && entry.afi !== 0) return;
     if (entry.metric < 1 || entry.metric > RIP_METRIC_INFINITY) return;
+    if (!this.passesDistributeList(this.config.distributeListIn, entry.ipAddress.toString(), entry.subnetMask.toCIDR())) return;
 
     const newMetric = Math.min(entry.metric, RIP_METRIC_INFINITY);
     const key = `${entry.ipAddress}/${entry.subnetMask.toCIDR()}`;

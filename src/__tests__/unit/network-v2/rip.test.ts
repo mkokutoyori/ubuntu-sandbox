@@ -990,3 +990,105 @@ describe('Group 7: Advertisement filtering & redistribution', () => {
     r1.disableRIP();
   });
 });
+
+describe('Group 6: distribute-list prefix-list filtering (in/out)', () => {
+  it('distribute-list prefix-list in only accepts prefixes the named list permits', async () => {
+    const r1 = new CiscoRouter('R1');
+    const r2 = new CiscoRouter('R2');
+    r1.configureInterface('GigabitEthernet0/0', new IPAddress('10.0.1.1'), new SubnetMask('255.255.255.0'));
+    r2.configureInterface('GigabitEthernet0/0', new IPAddress('10.0.1.2'), new SubnetMask('255.255.255.0'));
+    r2.configureInterface('GigabitEthernet0/1', new IPAddress('192.168.1.1'), new SubnetMask('255.255.255.0'));
+    r2.configureInterface('GigabitEthernet0/2', new IPAddress('192.168.2.1'), new SubnetMask('255.255.255.0'));
+    const c1 = new Cable('c1');
+    c1.connect(r1.getPort('GigabitEthernet0/0')!, r2.getPort('GigabitEthernet0/0')!);
+
+    await r1.executeCommand('enable');
+    await r1.executeCommand('configure terminal');
+    await r1.executeCommand('ip prefix-list ALLOWED permit 192.168.1.0/24');
+    await r1.executeCommand('router rip');
+    await r1.executeCommand('network 10.0.0.0');
+    await r1.executeCommand('distribute-list prefix-list ALLOWED in');
+    await r1.executeCommand('end');
+
+    r1.enableRIP({ updateInterval: 1000, routeTimeout: 5000, gcTimeout: 3000 });
+    r2.enableRIP({ updateInterval: 1000, routeTimeout: 5000, gcTimeout: 3000 });
+    r2.ripAdvertiseNetwork(new IPAddress('10.0.0.0'), new SubnetMask('255.0.0.0'));
+    r2.ripAdvertiseNetwork(new IPAddress('192.168.1.0'), new SubnetMask('255.255.255.0'));
+    r2.ripAdvertiseNetwork(new IPAddress('192.168.2.0'), new SubnetMask('255.255.255.0'));
+
+    vi.advanceTimersByTime(1100);
+
+    const table = r1.getRoutingTable();
+    expect(table.some((r) => r.type === 'rip' && r.network.toString() === '192.168.1.0')).toBe(true);
+    expect(table.some((r) => r.type === 'rip' && r.network.toString() === '192.168.2.0')).toBe(false);
+
+    r1.disableRIP();
+    r2.disableRIP();
+  });
+
+  it('distribute-list prefix-list out only advertises prefixes the named list permits', async () => {
+    const r1 = new CiscoRouter('R1');
+    const r2 = new CiscoRouter('R2');
+    r1.configureInterface('GigabitEthernet0/0', new IPAddress('10.0.1.1'), new SubnetMask('255.255.255.0'));
+    r1.configureInterface('GigabitEthernet0/1', new IPAddress('192.168.1.1'), new SubnetMask('255.255.255.0'));
+    r1.configureInterface('GigabitEthernet0/2', new IPAddress('192.168.2.1'), new SubnetMask('255.255.255.0'));
+    r2.configureInterface('GigabitEthernet0/0', new IPAddress('10.0.1.2'), new SubnetMask('255.255.255.0'));
+    const c1 = new Cable('c1');
+    c1.connect(r1.getPort('GigabitEthernet0/0')!, r2.getPort('GigabitEthernet0/0')!);
+
+    // Pre-enable with fast timers: `enableRIP()` after CLI's `router rip`
+    // wouldn't reschedule an already-running periodic timer, so the fast
+    // interval must be in place before the process is first started.
+    r1.enableRIP({ updateInterval: 1000, routeTimeout: 5000, gcTimeout: 3000 });
+    r2.enableRIP({ updateInterval: 1000, routeTimeout: 5000, gcTimeout: 3000 });
+    r2.ripAdvertiseNetwork(new IPAddress('10.0.0.0'), new SubnetMask('255.0.0.0'));
+
+    await r1.executeCommand('enable');
+    await r1.executeCommand('configure terminal');
+    await r1.executeCommand('ip prefix-list EXPORT permit 192.168.1.0/24');
+    await r1.executeCommand('router rip');
+    await r1.executeCommand('network 10.0.0.0');
+    await r1.executeCommand('network 192.168.1.0');
+    await r1.executeCommand('network 192.168.2.0');
+    await r1.executeCommand('distribute-list prefix-list EXPORT out');
+    await r1.executeCommand('end');
+
+    vi.advanceTimersByTime(1100);
+
+    const table = r2.getRoutingTable();
+    expect(table.some((r) => r.type === 'rip' && r.network.toString() === '192.168.1.0')).toBe(true);
+    expect(table.some((r) => r.type === 'rip' && r.network.toString() === '192.168.2.0')).toBe(false);
+
+    r1.disableRIP();
+    r2.disableRIP();
+  });
+
+  it('a prefix-list name that does not exist is an implicit deny for every prefix', async () => {
+    const r1 = new CiscoRouter('R1');
+    const r2 = new CiscoRouter('R2');
+    r1.configureInterface('GigabitEthernet0/0', new IPAddress('10.0.1.1'), new SubnetMask('255.255.255.0'));
+    r2.configureInterface('GigabitEthernet0/0', new IPAddress('10.0.1.2'), new SubnetMask('255.255.255.0'));
+    r2.configureInterface('GigabitEthernet0/1', new IPAddress('192.168.1.1'), new SubnetMask('255.255.255.0'));
+    const c1 = new Cable('c1');
+    c1.connect(r1.getPort('GigabitEthernet0/0')!, r2.getPort('GigabitEthernet0/0')!);
+
+    await r1.executeCommand('enable');
+    await r1.executeCommand('configure terminal');
+    await r1.executeCommand('router rip');
+    await r1.executeCommand('network 10.0.0.0');
+    await r1.executeCommand('distribute-list prefix-list NOSUCHLIST in'); // never defined
+    await r1.executeCommand('end');
+
+    r1.enableRIP({ updateInterval: 1000, routeTimeout: 5000, gcTimeout: 3000 });
+    r2.enableRIP({ updateInterval: 1000, routeTimeout: 5000, gcTimeout: 3000 });
+    r2.ripAdvertiseNetwork(new IPAddress('10.0.0.0'), new SubnetMask('255.0.0.0'));
+    r2.ripAdvertiseNetwork(new IPAddress('192.168.1.0'), new SubnetMask('255.255.255.0'));
+
+    vi.advanceTimersByTime(1100);
+
+    expect(r1.getRoutingTable().some((r) => r.type === 'rip')).toBe(false);
+
+    r1.disableRIP();
+    r2.disableRIP();
+  });
+});

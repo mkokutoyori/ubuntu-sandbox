@@ -242,10 +242,15 @@ export function buildRoutingProtoConfig(
     return '';
   });
   routerTrie.registerGreedy('distribute-list', 'Filter routes via a named prefix-list', (a) => {
-    if (curProto(ctx).proto !== 'eigrp') return '';
+    const proto = curProto(ctx).proto;
+    if (proto !== 'eigrp' && proto !== 'rip') return '';
     if (a[0] !== 'prefix-list' || !a[1] || (a[2] !== 'in' && a[2] !== 'out')) return '% Incomplete command.';
-    const c = eigrpEng().getConfig();
-    if (a[2] === 'in') c.distributeListIn = a[1]; else c.distributeListOut = a[1];
+    if (proto === 'eigrp') {
+      const c = eigrpEng().getConfig();
+      if (a[2] === 'in') c.distributeListIn = a[1]; else c.distributeListOut = a[1];
+    } else {
+      ctx.r().ripSetDistributeList(a[2], a[1]);
+    }
     converge();
     return '';
   });

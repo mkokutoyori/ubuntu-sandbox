@@ -5,6 +5,39 @@ progressive par équipement. Un push = une entrée = une fonctionnalité
 complète et testée (voir `CLAUDE.md` / le framework de migration pour les
 principes directeurs).
 
+## Routeur Cisco — RIP `distribute-list prefix-list <name> in|out`
+
+Dernier volet du même chantier de filtrage, appliqué cette fois à RIP.
+Architecture différente d'EIGRP/BGP : `RIPEngine` n'hérite pas de
+`AbstractRoutingProtocolEngine`/`RoutingDeviceContext` (il implémente
+`RIPCallbacks` en direct, plus ancien) — un nouveau câblage complet a
+donc été nécessaire, contrairement à EIGRP qui réutilisait un hook déjà
+en place.
+
+`RIPConfig` gagne `distributeListIn`/`distributeListOut` (nouvelle
+méthode `setDistributeList`, exposée via `RouterRIPEngine` puis
+`Router.ripSetDistributeList`) ; `RIPCallbacks`/`RIPRouterContext`
+gagnent `evaluatePrefixList`, câblé depuis `Router.ts` vers
+`this.shell.evaluatePrefixList` — même fermeture paresseuse que pour
+BGP/EIGRP, aucun souci d'ordre de construction. `processRouteEntry`
+(chemin entrant) filtre chaque entrée d'une Response reçue avant
+apprentissage ; `sendUpdate` **et** `flushTriggeredUpdates` (les deux
+chemins sortants — périodique et déclenché) filtrent chaque route
+candidate avant annonce. CLI : `distribute-list prefix-list <name>
+in|out` sous `router rip`.
+
+**Validation** : 3 nouveaux tests bout-en-bout avec de vrais
+`CiscoRouter` câblés (filtrage entrant, filtrage sortant, liste
+inexistante = deny implicite) — 42/42 au vert sur `rip.test.ts` (39
+tests préexistants + 3 nouveaux, aucune régression). Un bug de
+timing découvert et corrigé **dans les tests eux-mêmes** en cours de
+route : appeler `enableRIP({updateInterval...})` après que `router rip`
+ait déjà démarré le timer périodique par défaut ne le reprogrammait pas
+— corrigé en pré-configurant l'intervalle rapide avant tout appel CLI.
+Suite élargie (RIP/EIGRP+BGP CLI/architecture routeur) : 41/41 au vert.
+Typecheck et lint ciblés propres (mêmes erreurs/avertissements
+pré-existants, aucun nouveau).
+
 ## Routeur Cisco — EIGRP `distribute-list prefix-list <name> in|out`
 
 Suite du même chantier de filtrage par `ip prefix-list`, appliqué cette

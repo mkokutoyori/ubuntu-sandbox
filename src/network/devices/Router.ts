@@ -329,6 +329,8 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       getRipVersion: () => this._ripVersion,
       getBus: () => this.getBus(),
       getScheduler: () => this.getRouterScheduler(),
+      evaluatePrefixList: (name, network, prefixLength) =>
+        this.shell.evaluatePrefixList?.(name, network, prefixLength) ?? null,
     });
     this.ipv6Engine = new IPv6DataPlane({
       id: this.id,
@@ -962,6 +964,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
   ripRemoveRedistribution(source: import('./router/RouterRIPEngine').RIPRedistSourceArg) { this.ripEngine.removeRedistribution(source); }
   ripSetDefaultMetric(metric: number | null) { this.ripEngine.setDefaultMetric(metric); }
   ripSetDefaultInformationOriginate(on: boolean) { this.ripEngine.setDefaultInformationOriginate(on); }
+  ripSetDistributeList(direction: 'in' | 'out', name: string) { this.ripEngine.setDistributeList(direction, name); }
 
   /** Real dynamic-routing engines (EIGRP/BGP) + topology adapter. */
   getDynamicRouting() { return this.dynamicRouting; }

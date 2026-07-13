@@ -37,6 +37,8 @@ export interface RIPRouterContext {
   /** Optional reactive overrides (multi-topology tests). */
   getBus?(): IEventBus;
   getScheduler?(): IScheduler;
+  /** Evaluate a configured named `ip prefix-list` against a route — see `RIPCallbacks.evaluatePrefixList`. */
+  evaluatePrefixList?(name: string, network: string, prefixLength: number): 'permit' | 'deny' | null;
 }
 
 export class RouterRIPEngine {
@@ -56,6 +58,7 @@ export class RouterRIPEngine {
       updateRoute: (network, mask, route) =>
         this.updateInRib(network, mask, route),
       getRipVersion: () => ctx.getRipVersion?.() ?? 2,
+      evaluatePrefixList: (name, network, prefixLength) => ctx.evaluatePrefixList?.(name, network, prefixLength) ?? null,
     });
     if (ctx.getBus) this.engine.setEventBus(ctx.getBus());
     if (ctx.getScheduler) this.engine.setScheduler(ctx.getScheduler());
@@ -107,6 +110,10 @@ export class RouterRIPEngine {
 
   setDefaultInformationOriginate(on: boolean): void {
     this.engine.setDefaultInformationOriginate(on);
+  }
+
+  setDistributeList(direction: 'in' | 'out', name: string): void {
+    this.engine.setDistributeList(direction, name);
   }
 
   /** Handle an incoming RIP packet (from the Router's local delivery). */
