@@ -59,6 +59,7 @@ export class LsCommand extends BaseCommand {
       { long: 'reverse', short: 'r', takesValue: false, description: 'inverse l\'ordre du tri' },
       { long: 'recursive', short: 'R', takesValue: false, description: 'liste récursivement les sous-répertoires' },
       { long: 'inode', short: 'i', takesValue: false, description: 'affiche le numéro d\'inode' },
+      { long: 'one-per-line', short: '1', takesValue: false, description: 'une entrée par ligne' },
     ],
     privileges: new DefaultPrivilegePolicy(PrivilegeLevel.ANY),
     category: 'fichiers',
@@ -97,12 +98,14 @@ export class LsCommand extends BaseCommand {
       } else {
         const entries = await this.listVisible(ctx, target, actor, options);
         const header = requestedTargets.length > 1 ? `${requested}:\n` : '';
-        dirSections.push(header + (await this.renderEntries(entries, ctx, options)));
+        dirSections.push(header + (await this.renderEntries(entries, ctx, options, true)));
       }
     }
 
     const parts: string[] = [];
-    if (looseFiles.length) parts.push(await this.renderEntries(looseFiles, ctx, options));
+    // `-d`/fichiers isolés affichent l'entrée elle-même, jamais une ligne
+    // `total` — celle-ci n'existe que pour un vrai listage de contenu.
+    if (looseFiles.length) parts.push(await this.renderEntries(looseFiles, ctx, options, false));
     parts.push(...dirSections);
     await ctx.io.stdout.write(parts.join('\n'));
     return EXIT_OK;
@@ -132,7 +135,7 @@ export class LsCommand extends BaseCommand {
     options: Options,
   ): Promise<string[]> {
     const entries = await this.listVisible(ctx, dir, actor, options);
-    const body = await this.renderEntries(entries, ctx, options);
+    const body = await this.renderEntries(entries, ctx, options, true);
     const sections = [`${dir}:\n${body}`];
     for (const entry of entries) {
       if (entry.type === 'directory') {
@@ -142,13 +145,25 @@ export class LsCommand extends BaseCommand {
     return sections;
   }
 
-  private async renderEntries(entries: Entry[], ctx: CommandContext, options: Options): Promise<string> {
+  private async renderEntries(
+    entries: Entry[],
+    ctx: CommandContext,
+    options: Options,
+    isDirectoryListing: boolean,
+  ): Promise<string> {
     if (!options.long) {
       const names = entries.map((e) => (options.inode ? `${e.inode} ${e.name}` : e.name));
       return names.join('\n');
     }
     const lines = await Promise.all(entries.map((e) => this.formatLong(ctx, e, options.inode)));
-    return lines.join('\n');
+    if (!isDirectoryListing) return lines.join('\n');
+    // `ls -l` commence toujours par une ligne `total N` (somme des blocs de
+    // 512 octets occupés) avant le détail par entrée — même un répertoire
+    // vide l'affiche (`total 0`) — mais UNIQUEMENT pour un vrai listage de
+    // contenu, jamais pour `-d` ou des fichiers isolés (une seule entrée
+    // affichée telle quelle, comme le vrai `ls`).
+    const totalBlocks = entries.reduce((sum, e) => sum + Math.ceil(e.size / 512), 0);
+    return [`total ${totalBlocks}`, ...lines].join('\n');
   }
 
   private async formatLong(ctx: CommandContext, e: Entry, showInode: boolean): Promise<string> {
