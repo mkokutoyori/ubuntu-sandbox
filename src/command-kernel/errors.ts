@@ -28,6 +28,25 @@ export class CommandNotFoundError extends ShellError {
   }
 }
 
+/** 141 = 128 + SIGPIPE(13) : écriture vers un pipe dont le lecteur est parti. */
+export class BrokenPipeError extends ShellError {
+  constructor(message = "pipe fermé") {
+    super(message, 141);
+  }
+}
+
+export class PipeCapacityError extends ShellError {
+  constructor(public readonly capacity: number) {
+    super(`pipe : capacité maximale dépassée (${capacity} caractères)`, 1);
+  }
+}
+
+export class InteractionUnavailableError extends ShellError {
+  constructor(commandName: string) {
+    super(`${commandName} : saisie interactive impossible dans ce contexte`, 1);
+  }
+}
+
 export type FileSystemErrorCode = "ENOENT" | "EACCES" | "ENOTDIR" | "EISDIR" | "EEXIST" | "ENOTEMPTY";
 
 export class FileSystemError extends ShellError {

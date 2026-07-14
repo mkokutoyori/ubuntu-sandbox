@@ -3,12 +3,16 @@
 **Version** : 1.0
 **Date** : 2026-07-14
 **Document parent** : `migration_framework.md` (proposition d'ajout d'un §14)
-**Statut** : PROPOSITION — en attente de revue et validation. Aucun code n'a été
-modifié pour produire ce document ; il ne fait que documenter l'état actuel de
-`src/command-kernel/io/` et lister les manques constatés en le lisant en
-entier (`types.ts`, `pipe-buffer.ts`, `file-output-stream.ts`), leurs usages
-réels dans `exec/executor.ts`, et le motif dupliqué hors socle
-(`textInput.ts` côté Linux).
+**Statut** : IMPLÉMENTÉ (socle) — voir `migration_framework.md` §14 pour la
+version normative. Décisions retenues : P1b (sémantique `read()` stricte,
+plus jamais `""` sur pipe vide), P2 (invariant séquentiel documenté +
+garde-fou `PIPE_CAPACITY_DEFAULT`), P3 (`BrokenPipeError`, 141), P4 (champ
+`fd?` réservé sur `RedirectionNode`, sans token), P5 (`text-input` remonté
+dans `src/command-kernel/command/`, ré-export de compatibilité côté Linux),
+P6/P7 (invariants documentés + `EXIT_INTERRUPTED`/`EXIT_BROKEN_PIPE`), P8a
+(documentation) et P8b **côté socle uniquement** (`InteractionChannel` +
+`InteractionBroker` + `requireInteraction`) — le câblage du pont legacy
+(`tryCommandKernel` → `PromptRequest`) reste un chantier séparé, non couvert.
 
 ---
 

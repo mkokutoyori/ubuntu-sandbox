@@ -1070,3 +1070,127 @@ suite complète** — ni par `npm run test:run`, ni par un motif trop large.
 - [ ] `CHANGELOG.md` mis à jour avec une entrée descriptive (cause
       racine des bugs trouvés, pas juste le symptôme) (§11).
 - [ ] Un seul push, correspondant à une fonctionnalité complète (§11).
+- [ ] Commande de traitement de texte : réutilise
+      `command/text-input.ts` du socle, jamais une redéfinition locale
+      (§14.3).
+- [ ] Commande interactive (mot de passe, GECOS, confirmation) : passe par
+      `requireInteraction()`/`ctx.io.interaction` — et n'est PAS migrée du
+      tout tant que le pont legacy n'expose pas les `PromptRequest`
+      (§14.4).
+
+---
+
+## 14. Buffers d'entrée/sortie et interactions utilisateur
+
+Origine : `docs/PROPOSAL-command-kernel-io-buffers.md` (constats §1.1–§1.9,
+propositions P1–P8). Cette section codifie ce qui a été retenu et
+implémenté dans le socle — toute nouvelle commande migrée s'appuie sur ces
+contrats, jamais sur des suppositions.
+
+### 14.1 Invariants du contrat de flux (`io/types.ts`)
+
+1. **`string` uniquement, jamais binaire.** Les flux transportent du texte
+   UTF-16 JS. Une commande qui aurait besoin de simuler un contenu binaire
+   (`xxd`, `base64 -d` vers un vrai binaire…) doit d'abord faire l'objet
+   d'une discussion explicite — jamais encoder des octets dans une `string`
+   par convention informelle.
+2. **`read()` ne renvoie jamais `""` pour dire « rien pour l'instant ».**
+   Il renvoie le prochain chunk disponible, ou `null` quand plus rien n'est
+   disponible. Aucun appelant ne doit boucler en attente active sur ce
+   contrat — si un besoin d'attente réelle apparaît un jour (`tail -f`),
+   il passera par les primitives de `src/events/` (`Signal`), pas par du
+   polling sur `read()`.
+3. **Pipelines séquentiels, flux bornés.** Les étages d'un pipeline
+   s'exécutent l'un après l'autre : le producteur termine avant que le
+   consommateur ne démarre (`Executor.runPipeline`, §5.3). Une commande à
+   flux non borné (générateur infini façon `yes`) est **hors périmètre**
+   de ce modèle — la migrer exige d'abord de faire évoluer ce modèle,
+   chantier à discuter explicitement. `PipeBuffer` porte un garde-fou de
+   capacité (`PIPE_CAPACITY_DEFAULT`, 8 M caractères) qui transforme une
+   dérive mémoire silencieuse en `PipeCapacityError` explicite.
+
+### 14.2 Erreurs I/O — toujours des `ShellError` (§9 s'applique)
+
+| Situation | Erreur | Exit code |
+|---|---|---|
+| écriture vers un pipe fermé | `BrokenPipeError` | 141 (= 128 + SIGPIPE) |
+| dépassement de capacité d'un pipe | `PipeCapacityError` | 1 |
+| saisie interactive sans canal disponible | `InteractionUnavailableError` | 1 |
+| interruption par Ctrl+C (`ctx.signal`) | retour direct | `EXIT_INTERRUPTED` (130) |
+
+Les constantes `EXIT_INTERRUPTED`/`EXIT_BROKEN_PIPE` vivent dans
+`command/types.ts`. Toute commande dont `execute()` contient une boucle non
+bornée (lecture répétée, attente d'événement) doit vérifier
+`ctx.signal.aborted` à chaque itération et retourner `EXIT_INTERRUPTED` —
+la couche I/O ne le fait pas à sa place.
+
+### 14.3 Lecture texte partagée (`command/text-input.ts`)
+
+`splitLines`/`joinLines`/`readTextInput`/`readPerFileInputs` vivent dans
+**le socle** (`src/command-kernel/command/text-input.ts`) — le module Linux
+historique (`linux/command-kernel/commands/textInput.ts`) n'est plus qu'un
+ré-export de compatibilité. Toute commande de traitement de texte, quel que
+soit le vendeur, réutilise ce module : le motif « stdin si aucun fichier,
+sinon chaque fichier, en préservant l'absence de saut de ligne final » ne
+se réécrit jamais localement (piège récurrent du saut de ligne final,
+§10.2).
+
+### 14.4 Dialogues interactifs : `CommandIO.interaction`
+
+Le canal `interaction?: InteractionChannel` (`io/interaction.ts`) est le
+**terminal de contrôle** d'une commande — la voie officielle pour tout
+dialogue en cours d'exécution : mot de passe masqué, champs GECOS,
+confirmation `[Y/n]`. À la différence de `stdin` (un flux de données
+redirigeable), il représente l'humain derrière le terminal et survit aux
+pipes et redirections (l'`Executor` le propage à chaque étage).
+
+```ts
+// Commande interactive — pattern canonique
+const ui = requireInteraction(ctx.io, 'passwd'); // ShellError propre si absent
+const current = await ui.prompt({ kind: 'secret', prompt: 'Current password: ' });
+if (current === null) return 1; // EOF / Ctrl+D = abandon, jamais une boucle
+const fullName = await ui.prompt({ kind: 'text', prompt: '\tFull Name []: ', allowEmpty: true });
+const ok = await ui.prompt({ kind: 'confirm', prompt: 'Is the information correct? [Y/n] ', defaultValue: 'Y' });
+```
+
+Règles :
+
+1. **Le canal est optionnel.** Présent quand l'IO vient d'un
+   `Terminal.asCommandIO()` (câblé sur `readLine`/`readSecret`) ou d'un
+   hôte qui fournit un `InteractionBroker`. Absent sur un pipe de test, un
+   script, ou le pont legacy actuel — `requireInteraction()` convertit
+   cette absence en `InteractionUnavailableError` (jamais un blocage ni une
+   `Error` native).
+2. **`InteractionBroker` est l'adaptateur pause/reprise.** Il réconcilie le
+   modèle « `execute()` déroulé jusqu'au bout » avec les hôtes pilotés par
+   l'UI (le pattern `InteractiveFlowEngine.advance()` de
+   `src/terminal/core/InteractiveFlow.ts`) : la commande `await`e
+   `prompt()`, le broker remet un `PromptRequest {spec, respond}` à l'hôte,
+   et l'exécution reste réellement suspendue jusqu'au `respond(saisie)` —
+   sans polling, sans file d'attente, sans réécrire la commande en machine
+   à états.
+3. **`command-kernel` ne réimplémente PAS `InteractiveFlowEngine`.** Le
+   moteur de flux UI (directives, validation/retry, rendu des prompts)
+   reste le système mature de `src/terminal/` (même statut que `ISubShell`,
+   §5.5). Le broker est le point de rencontre : côté session, un
+   `PromptRequest` se traduit en directive d'input existante
+   (`PasswordDirective`/`TextPromptDirective`/`ConfirmationDirective`) et
+   la saisie remonte par `respond()`.
+4. **Le pont legacy n'est pas encore câblé.** `LinuxMachine.tryCommandKernel()`
+   attend une réponse d'un seul tenant : tant qu'il n'expose pas un état
+   « en attente de saisie » (un `PromptRequest` remonté à la
+   `TerminalSession`), **aucune commande dépendant d'un dialogue
+   (`passwd`, `adduser`, `chfn`, `su`…) ne doit être migrée**. Ce câblage
+   est un chantier à part entière : il touche le contrat de retour du pont
+   (§6) et la session de terminal, et se discute explicitement avant de s'y
+   engager. La garde `requireInteraction()` garantit qu'une migration
+   prématurée échoue proprement au lieu de bloquer.
+
+### 14.5 Point d'extension réservé : redirections `stderr`
+
+`RedirectionNode.fd?: "stdout" | "stderr"` existe dans l'AST (absent =
+`stdout`, comportement inchangé) mais **aucun token du Lexer ne le produit
+encore** : `2>`/`2>&1`/heredoc restent non supportés, par choix (§3.5 — pas
+de complexité par anticipation). Le jour où une commande migrée en a
+réellement besoin, le travail commence par le Lexer/Parser et un nouveau
+lot de tests localisés — pas par un contournement dans la commande.

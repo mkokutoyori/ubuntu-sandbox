@@ -224,6 +224,7 @@ export class Executor {
         stdin: previous,
         stdout: isLast ? io.stdout : pipe,
         stderr: io.stderr,
+        interaction: io.interaction,
       });
       await pipe.close();
       previous = pipe;
@@ -268,6 +269,6 @@ export class Executor {
       stdout = ownedStdout;
     }
 
-    return { io: { stdin, stdout, stderr: io.stderr }, ownedStdout };
+    return { io: { stdin, stdout, stderr: io.stderr, interaction: io.interaction }, ownedStdout };
   }
 }

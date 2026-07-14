@@ -21,6 +21,9 @@ export interface RedirectionNode {
   readonly kind: "redirect";
   readonly mode: "in" | "out" | "append";
   readonly target: string; // chemin de fichier
+  /** Flux visé — absent = "stdout" (compat). Point d'extension réservé
+   *  pour `2>`/`2>&1` : aucun token du Lexer ne le produit encore. */
+  readonly fd?: "stdout" | "stderr";
 }
 
 export interface PipelineNode {

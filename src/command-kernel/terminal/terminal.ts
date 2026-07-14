@@ -1,3 +1,4 @@
+import { InteractionChannel, PromptSpec } from "../io/interaction";
 import { CommandIO, InputStream, OutputStream } from "../io/types";
 import { TerminalEventListener } from "./types";
 
@@ -44,10 +45,23 @@ export abstract class Terminal {
       write: fn,
       close: async () => {},
     });
+    const interaction: InteractionChannel = {
+      prompt: async (spec: PromptSpec) => {
+        const input =
+          spec.kind === "secret"
+            ? await this.readSecret(spec.prompt)
+            : await this.readLine(spec.prompt);
+        if (input !== null && input === "" && spec.defaultValue !== undefined) {
+          return spec.defaultValue;
+        }
+        return input;
+      },
+    };
     return {
       stdin,
       stdout: makeOut((t) => this.write(t)),
       stderr: makeOut((t) => this.writeError(t)),
+      interaction,
     };
   }
 }

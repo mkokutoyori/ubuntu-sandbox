@@ -7,6 +7,10 @@ import { Session } from "../session/types";
 
 export type ExitCode = number;
 export const EXIT_OK: ExitCode = 0;
+/** 128 + SIGINT(2) : commande interrompue par Ctrl+C (ctx.signal). */
+export const EXIT_INTERRUPTED: ExitCode = 130;
+/** 128 + SIGPIPE(13) : écriture vers un pipe dont le lecteur est parti. */
+export const EXIT_BROKEN_PIPE: ExitCode = 141;
 
 /**
  * Carte d'identité déclarative d'une commande : nom, alias, contrat

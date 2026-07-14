@@ -5,6 +5,49 @@ progressive par équipement. Un push = une entrée = une fonctionnalité
 complète et testée (voir `CLAUDE.md` / le framework de migration pour les
 principes directeurs).
 
+## Socle — Buffers d'entrée/sortie et canal d'interaction (framework §14)
+
+**État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
+
+Concrétise `docs/PROPOSAL-command-kernel-io-buffers.md` : le socle I/O
+devient un contrat spécifié au lieu d'un ensemble de comportements
+implicites, prérequis pour migrer les prochaines familles de commandes
+(dont, à terme, les commandes interactives type `passwd`/`adduser`).
+
+- **Sémantique `read()` clarifiée** (`io/types.ts`, `PipeBuffer`) : renvoie
+  un chunk ou `null` quand plus rien n'est disponible — plus jamais `""`
+  sur un pipe ouvert-mais-vide (supprime le risque de boucle active chez
+  tout futur consommateur incrémental).
+- **Erreurs métier I/O** (`errors.ts`) : `BrokenPipeError` (141 = 128 +
+  SIGPIPE, remplace l'`Error` native de `PipeBuffer.write()` après
+  fermeture — violation du §9), `PipeCapacityError` (garde-fou
+  `PIPE_CAPACITY_DEFAULT` de 8 M caractères contre la dérive mémoire du
+  modèle séquentiel), `InteractionUnavailableError`. Constantes
+  `EXIT_INTERRUPTED` (130) / `EXIT_BROKEN_PIPE` (141) dans
+  `command/types.ts`.
+- **Canal d'interaction** (`io/interaction.ts`) : `CommandIO.interaction?`
+  (terminal de contrôle, distinct de stdin, propagé par l'`Executor` à
+  travers pipelines et redirections), `PromptSpec`
+  (`text`/`secret`/`confirm`), `requireInteraction()` (erreur métier propre
+  si absent), et `InteractionBroker` — l'adaptateur pause/reprise qui
+  suspend réellement `execute()` sur un `await prompt()` jusqu'au
+  `respond()` de l'hôte, compatible avec le modèle
+  `InteractiveFlowEngine.advance()` de `src/terminal/`.
+  `Terminal.asCommandIO()` câble le canal sur `readLine`/`readSecret`.
+  Le câblage du pont legacy (`tryCommandKernel` → `PromptRequest`) reste un
+  chantier séparé : les commandes interactives demeurent non migrables
+  (garde explicite, framework §14.4).
+- **`text-input` remonté dans le socle**
+  (`command/text-input.ts`) : `splitLines`/`joinLines`/`readTextInput`/
+  `readPerFileInputs` étaient vendor-agnostic mais vivaient dans le pont
+  Linux ; le fichier Linux devient un ré-export de compatibilité (aucun
+  import de commande modifié).
+- **Point d'extension réservé** : `RedirectionNode.fd?: "stdout"|"stderr"`
+  (absent = stdout), sans nouveau token — `2>`/`2>&1` restent explicitement
+  non supportés.
+- **Framework** : nouveau §14 (invariants I/O, tableau des erreurs, règles
+  du canal d'interaction, limite du pont) + 2 entrées de checklist §13.
+
 ## Linux — Phase 32 : migration de `journalctl` (fin de la famille journalisation)
 
 **État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**

@@ -54,6 +54,7 @@ export * from "./session/privilege-policy";
 export * from "./io/types";
 export * from "./io/pipe-buffer";
 export * from "./io/file-output-stream";
+export * from "./io/interaction";
 
 // 3. Façade des méthodes internes de la machine
 export * from "./machine/types";
@@ -66,6 +67,7 @@ export * from "./args/argument-parser";
 // 5. La commande
 export * from "./command/types";
 export * from "./command/base-command";
+export * from "./command/text-input";
 
 // 6. Registre de commandes
 export * from "./registry/command-registry";
