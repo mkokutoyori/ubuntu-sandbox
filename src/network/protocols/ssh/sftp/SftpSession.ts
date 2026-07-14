@@ -114,73 +114,24 @@ export class SftpSession {
     return 'sftp> ';
   }
 
+  channelRequest(req: Parameters<ISshSftpChannel['sendRequest']>[0]): SftpResponse {
+    if (!this.channel) return { ok: false, error: 'Not connected.' };
+    return this.channel.sendRequest(req);
+  }
+
+  getRemoteCwdPath(): string { return this.remoteCwd; }
+  setRemoteCwdPath(path: string): void { this.remoteCwd = path; }
+  getRemoteUserName(): string { return this.remoteUser; }
+  getLocalCwdPath(): string { return this.localCwd; }
+  setLocalCwdPath(path: string): void { this.localCwd = path; }
+  localFs(): ISshLocalFs { return this.deps.localVfs; }
+  localOwner(): { uid: number; gid: number; user: string; home: string } {
+    return { uid: this.deps.localUid, gid: this.deps.localGid, user: this.deps.localUser, home: this.deps.homeDirectory };
+  }
+
   // ── Remote navigation ────────────────────────────────────────────
 
-  pwd(): string {
-    return `Remote working directory: ${this.remoteCwd}`;
-  }
-
-  ls(args: readonly string[], flags: ReadonlySet<string>): string {
-    if (!this.channel) return 'Not connected.';
-    const target = this.expandRemote(args[0] ?? '.');
-    const resp = this.channel.sendRequest({ op: 'ls', path: target });
-    if (!resp.ok) {
-      return `ls: cannot access '${args[0] ?? this.remoteCwd}': ${resp.error ?? 'No such file or directory'}`;
-    }
-    const entries = (resp.entries as readonly SftpDirEntry[]) ?? [];
-    const filtered = flags.has('a')
-      ? entries
-      : entries.filter((e) => !e.name.startsWith('.'));
-    if (flags.has('l')) {
-      return filtered.map(formatLsLongEntry).join('\n');
-    }
-    if (flags.has('1')) return filtered.map((e) => e.name).join('\n');
-    return filtered.map((e) => e.name).join('  ');
-  }
-
-  cd(path: string): string {
-    if (!this.channel) return 'Not connected.';
-    const target = this.expandRemote(path || '~');
-    const resp = this.channel.sendRequest({ op: 'cd', path: target });
-    if (!resp.ok) {
-      const msg = String(resp.error ?? '');
-      if (/not a directory/i.test(msg)) return `${path}: Not a directory`;
-      if (/permission denied/i.test(msg)) return `Couldn't canonicalize: Permission denied`;
-      return `Couldn't canonicalize: No such file or directory`;
-    }
-    if (typeof resp.cwd === 'string') this.remoteCwd = resp.cwd;
-    return '';
-  }
-
   // ── Local navigation ─────────────────────────────────────────────
-
-  lpwd(): string {
-    return `Local working directory: ${this.localCwd}`;
-  }
-
-  lls(args: readonly string[]): string {
-    const path = args[0]
-      ? this.deps.localVfs.normalizePath(this.expandLocal(args[0]), this.localCwd)
-      : this.localCwd;
-    const entries = this.deps.localVfs.listDirectory(path);
-    if (!entries) return `lls: cannot access '${path}': No such file or directory`;
-    return entries
-      .filter((e) => e.name !== '.' && e.name !== '..')
-      .map((e) => e.name)
-      .join('  ');
-  }
-
-  lcd(path: string): string {
-    const abs = this.deps.localVfs.normalizePath(
-      this.expandLocal(path),
-      this.localCwd,
-    );
-    const inode = this.deps.localVfs.resolveInode(abs);
-    if (!inode) return `Local directory not accessible: No such file or directory`;
-    if (inode.type !== 'directory') return `${abs}: Not a directory`;
-    this.localCwd = abs;
-    return '';
-  }
 
   lmkdir(path: string): string {
     const abs = this.deps.localVfs.normalizePath(
@@ -432,13 +383,6 @@ export class SftpSession {
       `        Size         Used        Avail       (root)    %Capacity`,
       `${fmt(a.totalBytes).padStart(12, ' ')} ${fmt(a.usedBytes).padStart(12, ' ')} ${fmt(a.availableBytes).padStart(12, ' ')} ${fmt(a.availableBytes).padStart(12, ' ')} ${(pct + '%').padStart(12, ' ')}`,
     ].join('\n');
-  }
-
-  version(): string {
-    if (!this.channel) return 'Not connected.';
-    const resp = this.channel.sendRequest({ op: 'version' });
-    if (!resp.ok) return 'SFTP protocol version 3';
-    return `SFTP protocol version ${(resp as { protocolVersion?: number }).protocolVersion ?? 3}`;
   }
 
   // ── helpers ──────────────────────────────────────────────────────

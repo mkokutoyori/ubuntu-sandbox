@@ -1,48 +1,38 @@
 /**
  * SftpSubShell — interactive SFTP sub-shell.
  *
- * Wraps the new ssh-stack SftpSession into the ISubShell contract used by
- * LinuxTerminalSession. Implements OpenSSH `sftp(1)` interactive commands
- * including the BRD additions: lmkdir, chmod, chown, stat, df, version,
- * Ctrl+D quit, and `-l/-a/-1` flag parsing for `ls`.
+ * Hôte REPL mince : chaque ligne est routée vers l'interpreter command-kernel
+ * dédié au shell sftp (`createSftpShell`, framework §14.4) — les commandes de
+ * navigation vivent dans leur propre registre avec descripteur/privilèges.
+ * Le switch legacy ne subsiste que pour les commandes pas encore migrées
+ * (transferts et mutations — Push B du plan DESIGN-SFTP-COMMAND-KERNEL.md).
  *
  * Reference: BRD-SSH-SFTP.md SFTP-10/11/12/14/15/16/17 ;
- *            DESIGN-SSH-SFTP.md section 9.3.
+ *            DESIGN-SSH-SFTP.md section 9.3 ; DESIGN-SFTP-COMMAND-KERNEL.md.
  */
 
 import type { KeyEvent } from '@/terminal/sessions/TerminalSession';
 import type { ISubShell, SubShellResult } from './ISubShell';
+import { CommandNotFoundError } from '@/command-kernel/errors';
+import { PipeBuffer } from '@/command-kernel/io/pipe-buffer';
+import { ExitRequest } from '@/command-kernel/shell/exit';
+import type { Interpreter } from '@/command-kernel/interpreter';
+import type { Session } from '@/command-kernel/session/types';
+import { createSftpShell } from '@/network/protocols/ssh/sftp/command-kernel/createSftpShell';
 import { ParsedArgs } from '@/network/protocols/ssh/sftp/ParsedArgs';
 import type { SftpSession } from '@/network/protocols/ssh/sftp/SftpSession';
-
-const HELP_TEXT = `Available commands:
-bye                                      Quit sftp
-cd path                                  Change remote directory to 'path'
-chmod mode path                          Change permissions of file
-chown uid path                           Change owner of file
-df [-h] [path]                           Display statistics for current dir or filesystem
-exit                                     Quit sftp
-get [-afpR] remote [local]               Download file
-help                                     Display this help text
-lcd path                                 Change local directory to 'path'
-lls [ls-options [path]]                  Display local directory listing
-lmkdir path                              Create local directory
-lpwd                                     Print local working directory
-ls [-1afhlnrSt] [path]                   Display remote directory listing
-mkdir path                               Create remote directory
-put [-afpR] local [remote]               Upload file
-pwd                                      Display remote working directory
-quit                                     Quit sftp
-rename oldpath newpath                   Rename remote file
-rm path                                  Delete remote file
-rmdir path                               Remove remote directory
-stat path                                Display file attributes
-version                                  Show SFTP version`;
 
 export class SftpSubShell implements ISubShell {
   readonly kind = 'sftp';
   readonly connection = 'subshell' as const;
-  constructor(private readonly session: SftpSession) {}
+  private readonly interpreter: Interpreter;
+  private readonly kernelSession: Session;
+
+  constructor(private readonly session: SftpSession) {
+    const shell = createSftpShell(session);
+    this.interpreter = shell.interpreter;
+    this.kernelSession = shell.session;
+  }
 
   getPrompt(): string {
     return this.session.getPrompt();
@@ -59,46 +49,40 @@ export class SftpSubShell implements ISubShell {
     return false;
   }
 
-  processLine(line: string): SubShellResult {
-    const trimmed = line.trim();
+  async processLine(line: string): Promise<SubShellResult> {
+    let trimmed = line.trim();
     if (!trimmed) return done(['']);
+    // Les verbes sftp(1) sont insensibles à la casse (`PWD` ≡ `pwd`) —
+    // normalisés ici, à l'entrée de l'hôte, jamais dans le registre.
+    const verbEnd = trimmed.search(/\s|$/);
+    trimmed = trimmed.slice(0, verbEnd).toLowerCase() + trimmed.slice(verbEnd);
 
+    this.kernelSession.cwd = this.session.getLocalCwdPath();
+    const stdout = new PipeBuffer();
+    const io = { stdin: new PipeBuffer(), stdout, stderr: stdout };
+    try {
+      await this.interpreter.interpretLine(trimmed, this.kernelSession, io);
+      this.session.setLocalCwdPath(this.kernelSession.cwd);
+      const text = (await stdout.readAll()).replace(/\n$/, '');
+      return done(text.split('\n'));
+    } catch (err) {
+      if (err instanceof ExitRequest) {
+        this.session.disconnect();
+        return { output: [''], exit: true, prompt: '' };
+      }
+      if (err instanceof CommandNotFoundError) {
+        return this.processLegacy(trimmed);
+      }
+      throw err;
+    }
+  }
+
+  private processLegacy(trimmed: string): SubShellResult {
     const [cmd, ...rest] = trimmed.split(/\s+/);
     const lower = cmd.toLowerCase();
     const args = ParsedArgs.parse(rest);
 
     switch (lower) {
-      case 'exit':
-      case 'quit':
-      case 'bye':
-        this.session.disconnect();
-        return { output: [''], exit: true, prompt: '' };
-
-      case 'help':
-      case '?':
-        return done(HELP_TEXT.split('\n'));
-
-      case 'version':
-        return done([this.session.version()]);
-
-      case 'pwd':
-        return done([this.session.pwd()]);
-
-      case 'lpwd':
-        return done([this.session.lpwd()]);
-
-      case 'ls':
-        return done([this.session.ls(args.positional, args.flags)]);
-
-      case 'lls':
-        return done([this.session.lls(args.positional)]);
-
-      case 'cd':
-        return doneErr(this.session.cd(args.positional[0] ?? ''));
-
-      case 'lcd':
-        return doneErr(this.session.lcd(args.positional[0] ?? ''));
-
       case 'lmkdir':
         if (!args.positional[0]) return done(['usage: lmkdir path']);
         return doneErr(this.session.lmkdir(args.positional[0]));

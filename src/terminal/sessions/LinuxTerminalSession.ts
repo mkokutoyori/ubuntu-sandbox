@@ -2375,7 +2375,7 @@ export class LinuxTerminalSession extends TerminalSession {
       const ignoreErrors = line.startsWith('-');
       const cmd = ignoreErrors ? line.slice(1).trim() : line;
       this.addEchoLine(shell.getPrompt(), cmd);
-      const result = shell.processLine(cmd);
+      const result = await shell.processLine(cmd);
       for (const out of result.output) {
         if (out) this.addLine(out);
       }

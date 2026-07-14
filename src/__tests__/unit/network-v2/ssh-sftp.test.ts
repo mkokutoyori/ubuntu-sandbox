@@ -140,6 +140,13 @@ function makeClient(
 
 // ─── tests ────────────────────────────────────────────────────────
 
+import { SftpSubShell } from '@/terminal/subshells/SftpSubShell';
+
+async function runSftpLine(sftp: SftpSession, line: string): Promise<string> {
+  const result = await new SftpSubShell(sftp).processLine(line);
+  return result.output.join('\n');
+}
+
 describe('SSH server context — config persistence (BRD SSH-07)', () => {
   it('creates /etc/ssh/sshd_config and host key files at construction', () => {
     const { vfs } = makeServer();
@@ -209,21 +216,21 @@ describe('SftpSession — operations (BRD SFTP-02..06,14..17)', () => {
 
   it('SFTP-02: announces protocol version 3', async () => {
     const { session } = await connectedSession();
-    expect(session.version()).toBe('SFTP protocol version 3');
+    expect(await runSftpLine(session, 'version')).toBe('SFTP protocol version 3');
   });
 
   it('SFTP-06: ls -l returns rich attributes', async () => {
     const { session } = await connectedSession();
-    const out = session.ls(['/home/alice'], new Set(['l']));
+    const out = await runSftpLine(session, 'ls -l /home/alice');
     expect(out).toContain('file.txt');
     expect(out).toMatch(/^[d\-l]/m);
   });
 
   it('SFTP-06: ls without -a hides dotfiles', async () => {
     const { session } = await connectedSession();
-    const out = session.ls(['/home/alice'], new Set());
+    const out = await runSftpLine(session, 'ls /home/alice');
     expect(out).not.toContain('.dotfile');
-    expect(session.ls(['/home/alice'], new Set(['a']))).toContain('.dotfile');
+    expect(await runSftpLine(session, 'ls -a /home/alice')).toContain('.dotfile');
   });
 
   it('SFTP-04: mkdir non-recursive fails when parent missing', async () => {

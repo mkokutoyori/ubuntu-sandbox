@@ -25,9 +25,18 @@ import {
 } from './ssh-lan-fixtures';
 import { sshCopyId } from '@/network/protocols/ssh/SshCopyId';
 import {
+
   parseSshKeygenArgs,
   generateAndWriteKeyPair,
 } from '@/network/protocols/ssh/SshKeygen';
+
+import { SftpSubShell } from '@/terminal/subshells/SftpSubShell';
+import type { SftpSession as SftpSessionForDriver } from '@/network/protocols/ssh/sftp/SftpSession';
+
+async function runSftpLine(sftp: SftpSessionForDriver, line: string): Promise<string> {
+  const result = await new SftpSubShell(sftp).processLine(line);
+  return result.output.join('\n');
+}
 
 describe('SSH LAN — file transfers', () => {
   let lan: SshLan;
@@ -47,7 +56,7 @@ describe('SSH LAN — file transfers', () => {
   // 51
   it('S51 — sftp `ls` lists the remote home over the LAN', async () => {
     const { sftp } = await openSftpSession(lan.pc1, PC2_IP);
-    const out = sftp.ls(['/home/user'], new Set());
+    const out = await runSftpLine(sftp, 'ls /home/user');
     expect(out).toContain('docs');
     sftp.disconnect();
   });
@@ -123,7 +132,7 @@ describe('SSH LAN — file transfers', () => {
   // 59
   it('S59 — sftp `version` announces protocol 3', async () => {
     const { sftp } = await openSftpSession(lan.pc1, PC2_IP);
-    expect(sftp.version()).toBe('SFTP protocol version 3');
+    expect(await runSftpLine(sftp, 'version')).toBe('SFTP protocol version 3');
     sftp.disconnect();
   });
 
@@ -225,7 +234,7 @@ describe('SSH LAN — file transfers', () => {
   // 68
   it('S68 — sftp `ls -l` produces lines matching the long format', async () => {
     const { sftp } = await openSftpSession(lan.pc1, PC2_IP);
-    const out = sftp.ls(['/home/user/docs'], new Set(['l']));
+    const out = await runSftpLine(sftp, 'ls -l /home/user/docs');
     expect(out).toMatch(/^[d\-l][r-][w-]/m);
     sftp.disconnect();
   });
@@ -234,8 +243,8 @@ describe('SSH LAN — file transfers', () => {
   it('S69 — sftp `ls -a` exposes dotfiles, default does not', async () => {
     await lan.pc2.executeCommand('echo h > /home/user/.hidden');
     const { sftp } = await openSftpSession(lan.pc1, PC2_IP);
-    expect(sftp.ls(['/home/user'], new Set())).not.toContain('.hidden');
-    expect(sftp.ls(['/home/user'], new Set(['a']))).toContain('.hidden');
+    expect(await runSftpLine(sftp, 'ls /home/user')).not.toContain('.hidden');
+    expect(await runSftpLine(sftp, 'ls -a /home/user')).toContain('.hidden');
     sftp.disconnect();
   });
 

@@ -148,6 +148,13 @@ async function execRemote(
 
 // ── 1. device.executeCommand level (no SSH connectivity, just bash dispatch) ──
 
+import { SftpSubShell } from '@/terminal/subshells/SftpSubShell';
+
+async function runSftpLine(sftp: import('@/network/protocols/ssh/sftp/SftpSession').SftpSession, line: string): Promise<string> {
+  const result = await new SftpSubShell(sftp).processLine(line);
+  return result.output.join('\n');
+}
+
 describe('SSH terminal — device.executeCommand stubs', () => {
   let lan: Lan;
   beforeEach(async () => {
@@ -382,10 +389,10 @@ describe('SSH terminal — SftpSession transfers', () => {
     expect(localVfs.readFile('/root/from-server.txt')).toBe('down-content\n');
   });
 
-  it('lists the remote home directory contents', () => {
+  it('lists the remote home directory contents', async () => {
     vfsOf(lan.pc2).writeFile('/home/user/a.txt', 'A', 1000, 1000, 0o022);
     vfsOf(lan.pc2).writeFile('/home/user/b.txt', 'B', 1000, 1000, 0o022);
-    const ls = sftp.ls(['.'], new Set());
+    const ls = await runSftpLine(sftp, 'ls .');
     expect(ls).toMatch(/a\.txt/);
     expect(ls).toMatch(/b\.txt/);
   });
@@ -408,9 +415,9 @@ describe('SSH terminal — SftpSession transfers', () => {
     expect(vfsOf(lan.pc2).exists('/home/user/newname')).toBe(true);
   });
 
-  it('changes the remote working directory with cd', () => {
-    expect(sftp.cd('/tmp')).toBe('');
-    expect(sftp.pwd()).toMatch(/\/tmp/);
+  it('changes the remote working directory with cd', async () => {
+    expect(await runSftpLine(sftp, 'cd /tmp')).toBe('');
+    expect(await runSftpLine(sftp, 'pwd')).toMatch(/\/tmp/);
   });
 });
 
