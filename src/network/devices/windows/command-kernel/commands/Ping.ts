@@ -283,7 +283,21 @@ export class PingCommand extends BaseCommand {
     // `ping` utilise des options style BSD (`-n`, `-t`, `-w`...) — doivent
     // atterrir en positionnels bruts, comme `arp`/`route`.
     lenientOptions: true,
+    // Commande à sortie continue (§14.6) : émet chaque réponse au fil de
+    // l'eau et `ping -t` tourne jusqu'à `ctx.signal.aborted` (Ctrl+C).
+    streaming: true,
   };
+
+  private readonly INTERVAL_MS = 1000;
+
+  private pace(ms: number, signal: AbortSignal): Promise<void> {
+    return new Promise<void>((resolve) => {
+      if (signal.aborted) { resolve(); return; }
+      const timer = setTimeout(() => { signal.removeEventListener('abort', onAbort); resolve(); }, ms);
+      const onAbort = () => { clearTimeout(timer); resolve(); };
+      signal.addEventListener('abort', onAbort, { once: true });
+    });
+  }
 
   async execute(ctx: CommandContext): Promise<ExitCode> {
     const args = ctx.args.has('targets') ? ctx.args.get<string[]>('targets') : [];
@@ -375,44 +389,42 @@ export class PingCommand extends BaseCommand {
       return 1;
     }
 
-    const results = await ctx.machine.netConfig.pingSequence(targetIP, parsed.count, parsed.timeoutMs, parsed.ttl);
     const hostname = parsed.targetStr !== targetIP ? parsed.targetStr : undefined;
-    await ctx.io.stdout.write(this.formatOutput(targetIP, parsed.count, parsed.size, results, hostname, parsed) + '\n');
+    const emit = (line: string) => ctx.io.stdout.write(line.endsWith('\n') ? line : `${line}\n`);
+
+    // Diffusion au fil de l'eau (§14.6) : un paquet à la fois, chaque
+    // réponse émise immédiatement, ~1 s entre les envois (respectant Ctrl+C).
+    // `ping -t` tourne jusqu'à l'annulation ; les statistiques sont émises à
+    // la fin comme sur interruption (comportement `ping.exe` réel).
+    await emit(formatPingHeader(targetIP, parsed.size, hostname));
+    // `ping -t` tourne jusqu'à Ctrl+C ; mais un `-n N` explicite le borne
+    // (`ping -t -n 2`), et un appelant sans terminal (script/SSH, aucun
+    // signal d'annulation) reçoit le décompte fixe — jamais de boucle infinie
+    // hors flux interactif, exactement comme le pont legacy plafonnait.
+    const countExplicit = args.some((a) => a.toLowerCase() === '-n');
+    const bounded = !parsed.continuous || countExplicit;
+    const results: WindowsPingReply[] = [];
+    for (let seq = 1; bounded ? seq <= parsed.count : !ctx.signal.aborted; seq++) {
+      if (ctx.signal.aborted) break;
+      const batch = await ctx.machine.netConfig.pingSequence(targetIP, 1, parsed.timeoutMs, parsed.ttl);
+      const r = batch[0] ?? { success: false, rttMs: 0, ttl: 0, seq, bytes: 0, fromIP: '', error: 'Request timed out' };
+      results.push(r);
+      await emit(formatPingReplyLine(r, parsed.size));
+      const hasNext = parsed.continuous || seq < parsed.count;
+      if (hasNext && !ctx.signal.aborted) await this.pace(this.INTERVAL_MS, ctx.signal);
+    }
+    for (const line of formatPingStats(targetIP, results.length, results)) await emit(line);
+
+    if (parsed.recordRoute) {
+      await emit('');
+      await emit('Route:');
+      for (let i = 0; i < parsed.recordRoute; i++) await emit(`    ${targetIP}`);
+    }
+    if (parsed.timestamp) {
+      await emit('');
+      await emit('Timestamp:');
+      for (let i = 0; i < parsed.timestamp; i++) await emit(`    ${targetIP} : ${Date.now() + i * 10}`);
+    }
     return EXIT_OK;
-  }
-
-  private formatOutput(
-    targetIP: string,
-    count: number,
-    size: number,
-    results: readonly WindowsPingReply[],
-    hostname: string | undefined,
-    opts: ParsedPing,
-  ): string {
-    const lines: string[] = [formatPingHeader(targetIP, size, hostname)];
-    if (results.length === 0) {
-      for (let i = 0; i < count; i++) lines.push('PING: transmit failed. General failure.');
-    } else {
-      for (const r of results) lines.push(formatPingReplyLine(r, size));
-    }
-    lines.push(...formatPingStats(targetIP, count, results));
-
-    if (opts.recordRoute) {
-      lines.push('');
-      lines.push('Route:');
-      for (let i = 0; i < opts.recordRoute; i++) {
-        lines.push(`    ${targetIP}`);
-      }
-    }
-
-    if (opts.timestamp) {
-      lines.push('');
-      lines.push('Timestamp:');
-      for (let i = 0; i < opts.timestamp; i++) {
-        lines.push(`    ${targetIP} : ${Date.now() + i * 10}`);
-      }
-    }
-
-    return lines.join('\n');
   }
 }

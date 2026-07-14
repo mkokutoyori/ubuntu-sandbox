@@ -476,9 +476,10 @@ describe('Group 7: LAN — Three PCs + Switch Advanced', () => {
     await configureIP(pcs[0], '10.10.10.1');
     await configureIP(pcs[1], '10.10.10.2');
     await configureIP(pcs[2], '10.10.10.3');
-    // PC0 pings PC1 and PC2
-    await pcs[0].executeCommand('ping 10.10.10.2');
-    await pcs[0].executeCommand('ping 10.10.10.3');
+    // PC0 pings PC1 and PC2 (un seul paquet suffit à peupler l'ARP ; `ping`
+    // est désormais une commande streaming au rythme réel ~1 s/paquet, §14.6).
+    await pcs[0].executeCommand('ping -n 1 10.10.10.2');
+    await pcs[0].executeCommand('ping -n 1 10.10.10.3');
     const arp = await pcs[0].executeCommand('arp -a');
     expect(arp).toContain('10.10.10.2');
     expect(arp).toContain('10.10.10.3');
@@ -556,9 +557,10 @@ describe('Group 7: LAN — Three PCs + Switch Advanced', () => {
       expect(ipcAll).toContain(hostname);
     }
 
-    // Verify cross-PC ARP consistency after pings
-    await pcs[0].executeCommand('ping 192.168.1.20');
-    await pcs[0].executeCommand('ping 192.168.1.30');
+    // Verify cross-PC ARP consistency after pings (un paquet suffit ; `ping`
+    // est une commande streaming au rythme réel ~1 s/paquet, §14.6).
+    await pcs[0].executeCommand('ping -n 1 192.168.1.20');
+    await pcs[0].executeCommand('ping -n 1 192.168.1.30');
     const arp0 = await pcs[0].executeCommand('arp -a');
     expect(arp0).toContain('192.168.1.20');
     expect(arp0).toContain('192.168.1.30');

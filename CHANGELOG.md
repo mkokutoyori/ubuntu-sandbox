@@ -5,6 +5,52 @@ progressive par équipement. Un push = une entrée = une fonctionnalité
 complète et testée (voir `CLAUDE.md` / le framework de migration pour les
 principes directeurs).
 
+## Windows — `ping` devient une commande streaming command-kernel + entrée terminal générique (§14.6)
+
+**État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
+
+Premier consommateur du canal hôte unifié Windows, en miroir strict de la
+migration Linux de `ping` : l'intercepteur streaming dédié
+`tryStartWinPingStream` (parsing + formatage dupliqués + `pingStreamInSession`)
+est remplacé par **une entrée terminal générique** pilotée par le descripteur
+de la commande.
+
+- **`PingCommand` (cmd) passe en streaming** (`streaming: true`) : émet
+  l'en-tête puis chaque réponse au fil de l'eau via `ctx.io.stdout`, un
+  paquet à la fois, ~1 s entre les envois (`setTimeout` respectant
+  `ctx.signal`, comme Linux) ; `ping -t` tourne jusqu'à Ctrl+C
+  (`ctx.signal.aborted`), un `-n N` explicite le borne, et un appelant sans
+  terminal reçoit le décompte fixe (jamais de boucle infinie hors flux). Les
+  statistiques sont émises à la fin comme sur interruption. Sections `-r`
+  (Route:) / `-s` (Timestamp:) préservées. L'ancien `formatOutput` bloc
+  supprimé — les formateurs de ligne/stats étaient déjà identiques à ceux de
+  l'intercepteur.
+- **`WindowsPC.isKernelStreamingLine`** (miroir de
+  `LinuxMachine.isKernelStreamingLine`) : parse la ligne cmd, résout la
+  commande dans le registre, renvoie vrai si son descripteur est `streaming`.
+- **`WindowsTerminalSession.tryStartWinKernelStream`** (miroir de
+  `LinuxTerminalSession.tryStartKernelStream`) : **une** route générique pour
+  toute commande cmd `streaming` — job de premier plan branchant `onOutput`
+  (diffusion ligne à ligne), `signal` (Ctrl+C) et `interaction`. Remplace
+  `tryStartWinPingStream`, qui est supprimé (plus de parsing/formatage
+  dupliqué côté session). C'est la première étape de convergence : les
+  intercepteurs restants (`tracert`/`netstat`/`pathping`) seront absorbés par
+  cette même entrée à mesure que leurs commandes migrent.
+
+Un test ajusté (parité de comportement, pas de la commande) : `windows-consistency`
+C-37/C-40 pinguaient 2× en décompte par défaut (instantané avec l'ancien bloc,
+désormais ~3 s/ping au rythme réel) — repassés en `ping -n 1` (un paquet suffit
+à peupler l'ARP), comportement identique à un `ping` Linux programmatique
+(mesuré 3013 ms lui aussi).
+
+Validation (localisée, §10) : `windows-ping-stream-ui` (2/2, `-n` progressif +
+`-t` jusqu'à Ctrl+C), `tracert-ping` (300/300, dont `-r`/`-s` et `ping -t -n 2`
+borné), `windows-consistency` (40/40), `windows-pathping-stream-ui` (10/10,
+inchangé), `host-model-loopback`/`ping-through-switch`/`windows-feature-gates`/
+`windows-services-processes-comprehensive` verts ; socle command-kernel (70/70).
+Typecheck propre, lint ciblé sans nouvelle erreur (les `any`/warnings restants
+sont préexistants).
+
 ## Windows — Canal hôte unifié (§14.6) câblé entre l'UI cmd et le pont command-kernel
 
 **État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**

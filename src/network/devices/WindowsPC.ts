@@ -1974,6 +1974,22 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     };
   }
 
+  /**
+   * Vrai si la ligne se résout à (au moins) une commande cmd migrée qui se
+   * déclare `streaming` (§14.6) — la session terminal la route alors comme
+   * un job de premier plan qui diffuse `onOutput` et s'arrête sur Ctrl+C,
+   * au lieu du chemin bloquant. Miroir de `LinuxMachine.isKernelStreamingLine`.
+   */
+  isKernelStreamingLine(line: string): boolean {
+    const { registry, interpreter } = this.getCommandKernelShell();
+    let ast: ScriptNode;
+    try { ast = interpreter.parse(line.trim()); } catch { return false; }
+    if (ast.kind !== 'command' && ast.kind !== 'pipeline') return false;
+    const resolved = lowercaseCommandNames(ast);
+    const stages = resolved.kind === 'command' ? [resolved] : resolved.stages;
+    return stages.some((s) => registry.resolve(s.name)?.descriptor.streaming === true);
+  }
+
   private async runCommandKernel(trimmed: string, channel?: CommandKernelChannel): Promise<string> {
     const { interpreter } = this.getCommandKernelShell();
 

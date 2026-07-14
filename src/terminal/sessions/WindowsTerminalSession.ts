@@ -20,7 +20,6 @@ import {
 } from './TerminalSession';
 import { createSessionForDevice } from './sessionFactory';
 import { WindowsPC } from '@/network/devices/WindowsPC';
-import { parseWinPingArgs, formatWinPingHeader, formatWinPingReplyLine, formatWinPingStats } from '@/network/devices/windows/WinPing';
 import { formatWinTracertHeader, formatWinTracertHop } from '@/network/devices/windows/WinTracert';
 import {
   parseGetCounterArgs, sampleCounterSet, formatCounterSnapshot, formatCounterSet,
@@ -39,7 +38,6 @@ import {
 } from '@/network/devices/windows/WinPathping';
 import type { PingResult, TracerouteHopResult } from '@/network/devices/EndHost';
 import type { IPAddress } from '@/network/core/types';
-import type { AsyncJobContext } from '@/terminal/async';
 import type { WindowsShellSession } from '@/network/devices/windows/shell/WindowsShellSession';
 import { PlainOutputFormatter, type IOutputFormatter } from '@/terminal/core/OutputFormatter';
 import { classifyWindowsLines } from '@/terminal/core/windowsOutputStyle';
@@ -378,49 +376,46 @@ export class WindowsTerminalSession extends TerminalSession {
 
   // ── Command execution (root cmd mode) ──────────────────────────
 
-  private tryStartWinPingStream(commandLine: string): boolean {
+  /**
+   * Route générique des commandes cmd migrées à sortie continue (§14.6) :
+   * `ping -t`, et tout futur `traceroute`/`netstat -t`… déclarés `streaming`
+   * dans leur descripteur. Miroir de `LinuxTerminalSession.tryStartKernelStream` :
+   * un job de premier plan branche `onOutput` (diffusion ligne à ligne),
+   * `signal` (Ctrl+C) et `interaction` sur `executeCommandInSession`. La
+   * commande écrit elle-même son en-tête, ses réponses et ses statistiques —
+   * plus aucun parsing/formatage dupliqué côté session.
+   */
+  private tryStartWinKernelStream(commandLine: string): boolean {
     if (this.hasForegroundAsyncJob) return false;
     if (this.shellMode !== 'cmd' || this.activeSubShell) return false;
     const dev = this.device;
-    if (!(dev instanceof WindowsPC)) return false;
-    const toks = commandLine.trim().split(/\s+/);
-    if (toks[0].toLowerCase() !== 'ping') return false;
+    if (!(dev instanceof WindowsPC) || !this.shell) return false;
     if (/[|<>&]/.test(commandLine)) return false;
-    const parsed = parseWinPingArgs(toks.slice(1));
-    if (!parsed.targetStr) return false;
-
-    const count = parsed.continuous ? 0 : parsed.count;
-    const results: PingResult[] = [];
-    let label = parsed.targetStr;
-    const emitStats = (ctx: AsyncJobContext) => {
-      for (const line of formatWinPingStats(label, results.length, results)) ctx.sink.line(line);
-    };
-
+    if (!dev.isKernelStreamingLine(commandLine)) return false;
+    const shell = this.shell;
     const job = this.startAsyncCommand({
       mode: 'foreground',
       kind: 'streaming',
       command: commandLine,
       run: async (ctx) => {
-        const outcome = await dev.pingStreamInSession(parsed.targetStr, {
-          count,
-          ttl: parsed.ttl,
-          timeoutMs: 2000,
-          intervalMs: 1000,
-          onResolved: (ip, hostname) => { label = ip.toString(); ctx.sink.line(formatWinPingHeader(ip, parsed.size, hostname)); },
-          onResult: (r) => { results.push(r); ctx.sink.line(formatWinPingReplyLine(r, parsed.size)); },
-          shouldStop: () => ctx.cancelled(),
-          sleep: (ms) => ctx.delay(ms),
+        const controller = new AbortController();
+        ctx.onCancel(() => controller.abort());
+        const broker = new PromiseInputBrokerCtor(this.getInputHost());
+        let pending = '';
+        await dev.executeCommandInSession(commandLine, shell, {
+          signal: controller.signal,
+          interaction: createKernelInteraction(broker),
+          onOutput: (chunk) => {
+            pending += chunk;
+            let idx;
+            while ((idx = pending.indexOf('\n')) >= 0) {
+              ctx.sink.line(pending.slice(0, idx));
+              pending = pending.slice(idx + 1);
+            }
+          },
         });
-        if (ctx.cancelled()) return;
-        if (!outcome.resolved && results.length === 0) {
-          ctx.sink.error(outcome.reason === 'name'
-            ? `Ping request could not find host ${parsed.targetStr}. Please check the name and try again.`
-            : 'Request timed out.');
-          return;
-        }
-        emitStats(ctx);
+        if (pending) ctx.sink.line(pending);
       },
-      onInterrupt: (ctx) => emitStats(ctx),
     });
     return job !== null;
   }
@@ -836,7 +831,7 @@ export class WindowsTerminalSession extends TerminalSession {
       return;
     }
 
-    if (this.tryStartWinPingStream(trimmed)) return;
+    if (this.tryStartWinKernelStream(trimmed)) return;
     if (this.tryStartWinTracertStream(trimmed)) return;
     if (this.tryStartWinNetstatStream(trimmed)) return;
     if (this.tryStartWinPathpingStream(trimmed)) return;
