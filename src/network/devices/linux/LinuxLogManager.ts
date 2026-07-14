@@ -177,6 +177,21 @@ export class LinuxLogManager {
     return { ok: true, line: this.formatSyslogLine(this.journal[this.journal.length - 1]) };
   }
 
+  /** Instantané du ring buffer noyau (primitive `LoggingApi` pour `dmesg`). */
+  kernelBuffer(): readonly { offsetSec: number; level: number; message: string }[] {
+    return this.dmesgBuffer.map((e) => ({ offsetSec: e.offsetSec, level: e.level, message: e.message }));
+  }
+
+  /** Vide le ring buffer noyau (`dmesg -c`/`-C`). */
+  clearKernelBuffer(): void {
+    this.dmesgBuffer = [];
+  }
+
+  /** Horodatage du démarrage (`dmesg -T`). */
+  kernelBootTime(): Date {
+    return this.bootTime;
+  }
+
   /**
    * Append a record at an explicit `facility.priority` spec (e.g.
    * `local0.info`) — the bridge a service uses when its syslog routing is
@@ -414,68 +429,6 @@ export class LinuxLogManager {
         return header + '\n' + lines.join('\n');
       }
     }
-
-    return lines.join('\n');
-  }
-
-  // ── dmesg command ──────────────────────────────────────────────
-  executeDmesg(args: string[]): string {
-    let humanTime = false;
-    let clearBuf = false;      // -c: print then clear
-    let clearOnly = false;     // -C: clear, no print
-    let raw = false;
-    let levelFilter: string[] = [];
-    let setConsoleLevel: number | null = null;
-
-    let i = 0;
-    while (i < args.length) {
-      const a = args[i];
-      switch (a) {
-        case '-T': case '--ctime': case '-H': case '--human': humanTime = true; i++; break;
-        case '-c': case '--read-clear': clearBuf = true; i++; break;
-        case '-C': case '--clear': clearOnly = true; i++; break;
-        case '-r': case '--raw': raw = true; i++; break;
-        case '-x': case '--decode': i++; break;
-        case '-w': case '--follow': case '-d': case '--show-delta': i++; break;
-        case '-h': case '--help':
-          return 'Usage:\n dmesg [options]\n\nDisplay or control the kernel ring buffer.\n\nOptions:\n -C, --clear        clear the kernel ring buffer\n -c, --read-clear   read and clear all messages\n -T, --ctime        show human-readable timestamp\n -l, --level <list> restrict output to defined levels\n -n, --console-level <level> set level of messages printed to console\n -r, --raw          print the raw message buffer\n -x, --decode       decode facility and level\n -h, --help         display this help\n -V, --version      display version';
-        case '-V': case '--version':
-          return 'dmesg from util-linux 2.37.2';
-        case '-n': case '--console-level': {
-          const lvl = args[++i] ?? '';
-          const n = /^\d+$/.test(lvl) ? parseInt(lvl, 10) : (PRIORITY_NAMES[lvl] ?? -1);
-          if (n < 1 || n > 8) return `dmesg: invalid console level: ${lvl}`;
-          setConsoleLevel = n; i++; break;
-        }
-        case '-l': case '--level': {
-          levelFilter = (args[++i] || '').split(',').map(l => l.trim()).filter(Boolean);
-          i++; break;
-        }
-        case '-f': case '--facility': i += 2; break;
-        default:
-          if (a.startsWith('--level=')) levelFilter = a.slice(8).split(',').map(l => l.trim()).filter(Boolean);
-          i++; break;
-      }
-    }
-
-    if (setConsoleLevel !== null) return '';
-
-    if (clearOnly) { this.dmesgBuffer = []; return ''; }
-
-    // Validate level filter names.
-    for (const l of levelFilter) {
-      if (PRIORITY_NAMES[l] === undefined) return `dmesg: unknown level '${l}'`;
-    }
-
-    let entries = [...this.dmesgBuffer];
-    if (levelFilter.length > 0) {
-      const levelNums = levelFilter.map(l => PRIORITY_NAMES[l]);
-      entries = entries.filter(e => levelNums.includes(e.level));
-    }
-
-    const lines = entries.map(e => this.formatDmesgEntry(e, { raw, humanTime }));
-
-    if (clearBuf) this.dmesgBuffer = [];
 
     return lines.join('\n');
   }

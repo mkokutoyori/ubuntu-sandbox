@@ -76,11 +76,5 @@ export function createDefaultCommandPrivileges(): CommandPrivilegePolicy {
     .declare('lastlog', {
       appliesWhen: (args) => args.some(a => a === '-C' || a === '--clear' || a === '-S' || a === '--set'),
       deny: Deny.withMessage('lastlog: must be root'),
-    })
-    .declare('dmesg', {
-      appliesWhen: (args) => args.some(a =>
-        a === '-c' || a === '--read-clear' || a === '-C' || a === '--clear' ||
-        a === '-n' || a === '--console-level'),
-      deny: Deny.withMessage('dmesg: read kernel buffer failed: Permission denied'),
     });
 }

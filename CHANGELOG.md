@@ -5,6 +5,45 @@ progressive par équipement. Un push = une entrée = une fonctionnalité
 complète et testée (voir `CLAUDE.md` / le framework de migration pour les
 principes directeurs).
 
+## Linux — Phase 31 : migration de `dmesg` (double dé-enregistrement + privilège conditionnel)
+
+**État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
+
+Deuxième volet de la journalisation. `dmesg` était **doublement
+enregistré** (case `dispatch` + `LinuxCommand` `dmesgCommand`) — les deux
+délégaient à `LinuxLogManager.executeDmesg`. Migration complète vers
+command-kernel, les deux enregistrements retirés.
+
+- **`LoggingApi` étendue** : `kernelBuffer()` (instantané du ring buffer
+  noyau), `clearKernelBuffer()`, `bootTime()` — primitives déléguant au vrai
+  `LinuxLogManager` (le buffer reste alimenté par `addEntry` pour les
+  messages de facilité `kern`).
+- **`DmesgCommand` autonome** : parse ses options (`-T`/`-c`/`-C`/`-r`/`-l`/
+  `-n`/`-x`/`-w`/`-h`/`-V`…), filtre par niveau, formate elle-même (raw /
+  temps humain / offset). Table `PRIORITY_NAMES` + `formatHumanDate`
+  extraites dans un utilitaire partagé `commands/syslog.ts` (réutilisé par
+  `journalctl` au volet suivant).
+- **Privilège conditionnel** (`-c`/`-C`/`-n` = root uniquement) : la
+  politique déclarative `authorize(user)` ne voit pas les arguments, donc le
+  contrôle est fait dans `validate(args, session)` qui lève
+  `PermissionError('read kernel buffer failed: Permission denied')` — rendue
+  `dmesg: read kernel buffer failed: Permission denied` (préfixe du nom de
+  commande), message et code 126 identiques au legacy.
+- **Suppressions** : `case 'dmesg'` du dispatch, `dmesgCommand`
+  (`commands/system/Dmesg.ts` + ses deux enregistrements dans
+  `commands/index.ts`), `LinuxLogManager.executeDmesg`, et l'entrée
+  `dmesg` de `defaultCommandPrivileges` (désormais portée par la commande).
+  `formatDmesgEntry` conservée (encore utilisée par le suivi `dmesg -w`).
+
+Validation (localisée, §10) : `journalization` (200/200, dont 102/103 =
+privilège root sur `-C`/`-n`), `linux-journal` (65), `linux-dmesg-stream-ui`
+(5, suivi `-w`), `command-privilege-policy` (17), `auditctl`/`auditctl-other`
+(250), `journalization-and-audit` (30), `linux-command-kernel` (12) ; socle
+command-kernel (70/70). Typecheck propre, lint ciblé sans nouvelle
+erreur/avertissement.
+
+Reste à migrer : `journalctl`.
+
 ## Linux — Phase 30 : migration de `logger` + capacité `LoggingApi`
 
 **État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**

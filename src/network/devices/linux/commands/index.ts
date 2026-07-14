@@ -64,7 +64,6 @@ import { aureportCommand } from './audit/Aureport';
 import { auditctlCommand } from './audit/Auditctl';
 import { logrotateCommand } from './system/Logrotate';
 import { rebootCommand } from './system/Reboot';
-import { dmesgCommand } from './system/Dmesg';
 import { ufwCommand } from './system/Ufw';
 import { chownCommand } from './fs/Chown';
 import { chgrpCommand } from './fs/Chgrp';
@@ -146,7 +145,6 @@ export {
   auditctlCommand,
   logrotateCommand,
   rebootCommand,
-  dmesgCommand,
   ufwCommand,
   chownCommand,
   chgrpCommand,
@@ -235,7 +233,6 @@ export const CORE_LINUX_COMMANDS: readonly LinuxCommand[] = [
   auditctlCommand,
   logrotateCommand,
   rebootCommand,
-  dmesgCommand,
   ufwCommand,
   chownCommand,
   chgrpCommand,

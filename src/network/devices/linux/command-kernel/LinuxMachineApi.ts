@@ -6,6 +6,7 @@ import {
   FileSystemApi,
   GroupInfo,
   GroupManagementApi,
+  KernelMessage,
   LoggingApi,
   MachineApi,
   NetworkApi,
@@ -539,6 +540,18 @@ class LinuxLoggingApi implements LoggingApi {
 
   writeSyslog(facilityPrioritySpec: string, tag: string, message: string, displayPid: boolean): SyslogWriteResult {
     return this.logManager.writeSyslog(facilityPrioritySpec, tag, message, displayPid);
+  }
+
+  kernelBuffer(): readonly KernelMessage[] {
+    return this.logManager.kernelBuffer();
+  }
+
+  clearKernelBuffer(): void {
+    this.logManager.clearKernelBuffer();
+  }
+
+  bootTime(): Date {
+    return this.logManager.kernelBootTime();
   }
 }
 

@@ -1221,6 +1221,14 @@ export interface SyslogWriteResult {
   readonly line: string;
 }
 
+/** Un message du ring buffer noyau (`dmesg`) : décalage en secondes depuis
+ * le démarrage, niveau syslog (0-7), texte. */
+export interface KernelMessage {
+  readonly offsetSec: number;
+  readonly level: number;
+  readonly message: string;
+}
+
 /**
  * Capacité optionnelle : journalisation système (syslog/journald/kernel
  * ring buffer) pour les équipements qui en tiennent une. Absente des
@@ -1232,6 +1240,12 @@ export interface SyslogWriteResult {
  */
 export interface LoggingApi {
   writeSyslog(facilityPrioritySpec: string, tag: string, message: string, displayPid: boolean): SyslogWriteResult;
+  /** Instantané du ring buffer noyau (`dmesg`). */
+  kernelBuffer(): readonly KernelMessage[];
+  /** Vide le ring buffer noyau (`dmesg -c`/`-C`). */
+  clearKernelBuffer(): void;
+  /** Horodatage du démarrage, pour les timestamps humains (`dmesg -T`). */
+  bootTime(): Date;
 }
 
 /**
