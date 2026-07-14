@@ -1156,6 +1156,31 @@ export interface UserManagementApi {
   domainAccountNames?(): readonly string[] | undefined;
   /** Détail d'un compte de domaine, déjà résolu — optionnel (`net user <name> /domain`). Champ réduit par rapport à `AccountDetail` : AD ne suit pas les mêmes attributs de mot de passe qu'un compte SAM local. */
   getDomainAccountDetail?(sam: string): { readonly sam: string; readonly fullName: string; readonly enabled: boolean; readonly globalGroups: readonly string[] } | undefined;
+  /** Création de compte POSIX complète (`useradd`) — délègue au gestionnaire
+   *  de comptes réel ; renvoie le message d'erreur vendeur exact, `''` si
+   *  succès. Optionnel, équipements Unix uniquement. */
+  posixUseradd?(name: string, spec: PosixUseraddSpec): string;
+  /** Copie le squelette (`/etc/skel`) dans le home du compte fraîchement
+   *  créé (`useradd -m`) — le vendeur résout home/uid/gid réels. Optionnel. */
+  createHomeSkeleton?(username: string): void;
+}
+
+/** Options structurées de `useradd` (grammaire util-linux). */
+export interface PosixUseraddSpec {
+  readonly createHome?: boolean;
+  readonly noCreateHome?: boolean;
+  readonly shell?: string;
+  readonly supplementaryGroups?: readonly string[];
+  readonly home?: string;
+  readonly primaryGroup?: string;
+  readonly comment?: string;
+  readonly uid?: number;
+  readonly nonUnique?: boolean;
+  readonly system?: boolean;
+  readonly noUserGroup?: boolean;
+  readonly passwordHash?: string;
+  readonly expireDays?: number;
+  readonly inactiveDays?: number;
 }
 
 export interface PowerApi {

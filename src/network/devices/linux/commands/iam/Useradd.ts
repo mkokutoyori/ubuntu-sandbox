@@ -1,8 +1,12 @@
 import type { LinuxCommand, LinuxCommandOption } from '../LinuxCommand';
-import type { LinuxCommandContext } from '../LinuxCommandContext';
-import { cmdUseradd } from '../../LinuxUserCommands';
-import { parseUseraddArgs } from '../../iam/useraddOptions';
 import { Satisfy } from '../../iam/policy/CommandPrivilegePolicy';
+
+/**
+ * L'exécution de useradd est migrée vers command-kernel
+ * (`linux/command-kernel/commands/Useradd.ts`) et le hook kernel est
+ * consulté avant ce registre sur tous les chemins de dispatch : cette
+ * entrée ne sert plus que `man`/`--help`/la complétion.
+ */
 
 const USERADD_OPTIONS: readonly LinuxCommandOption[] = [
   { flag: '-u', aliases: ['--uid'], dest: 'uid', takesArg: true, argName: 'uid', description: 'Set the numeric UID of the new account' },
@@ -24,16 +28,8 @@ const USERADD_OPTIONS: readonly LinuxCommandOption[] = [
   { flag: '-U', aliases: ['--user-group'], dest: 'userGroup', description: 'Create a group with the same name as the user' },
 ];
 
-function run(ctx: LinuxCommandContext, args: string[]): { output: string; exitCode: number } {
-  const out = cmdUseradd(ctx.executor.ctx(), args);
-  if (!out) {
-    const req = parseUseraddArgs(args);
-    if (req.username && req.createHome && !req.noCreateHome) {
-      const user = ctx.executor.userMgr.getUser(req.username);
-      if (user) ctx.executor.createSkeletonFiles(user.home, user.uid, user.gid);
-    }
-  }
-  return { output: out, exitCode: out ? 1 : 0 };
+function migratedToKernel(): never {
+  throw new Error('useradd: exécution migrée vers command-kernel — cette entrée ne sert que man/help');
 }
 
 export const useraddCommand: LinuxCommand = {
@@ -42,6 +38,6 @@ export const useraddCommand: LinuxCommand = {
   usage: 'useradd [options] LOGIN',
   options: USERADD_OPTIONS,
   privilege: { satisfiedBy: Satisfy.root },
-  run: (ctx, args) => run(ctx, args).output,
-  runWithStatus: (ctx, args) => Promise.resolve(run(ctx, args)),
+  run: () => migratedToKernel(),
+  runWithStatus: () => migratedToKernel(),
 };

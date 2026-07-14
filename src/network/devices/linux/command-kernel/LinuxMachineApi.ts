@@ -14,6 +14,7 @@ import {
   NetworkApi,
   NetProbeApi,
   PermissionsApi,
+  PosixUseraddSpec,
   TracerouteHopInfo,
   PowerApi,
   ProcessApi,
@@ -62,6 +63,7 @@ export interface LinuxMachineApiDeps {
   topologyMtus?(): readonly number[];
   reverseLookup?(ip: string): string | null;
   udpRangeDenied?(startPort: number, endPort: number): boolean;
+  createSkeleton?(username: string): void;
 }
 
 function toPathActor(actor: FileSystemActor): PathActor {
@@ -574,7 +576,33 @@ class LinuxNetProbeApi implements NetProbeApi {
 }
 
 class LinuxUserManagementApi implements UserManagementApi {
-  constructor(private readonly userManager: LinuxUserManager) {}
+  constructor(
+    private readonly userManager: LinuxUserManager,
+    private readonly createSkeleton?: (username: string) => void,
+  ) {}
+
+  posixUseradd(name: string, spec: PosixUseraddSpec): string {
+    return this.userManager.useradd(name, {
+      m: spec.createHome,
+      M: spec.noCreateHome,
+      s: spec.shell,
+      G: spec.supplementaryGroups && spec.supplementaryGroups.length > 0 ? spec.supplementaryGroups.join(',') : undefined,
+      d: spec.home,
+      g: spec.primaryGroup,
+      c: spec.comment,
+      u: spec.uid,
+      o: spec.nonUnique,
+      r: spec.system,
+      N: spec.noUserGroup,
+      p: spec.passwordHash,
+      e: spec.expireDays,
+      f: spec.inactiveDays,
+    });
+  }
+
+  createHomeSkeleton(username: string): void {
+    this.createSkeleton?.(username);
+  }
 
   async findByName(name: string): Promise<User | undefined> {
     const account = this.userManager.getAccount(name);
@@ -702,7 +730,7 @@ export class LinuxMachineApi implements MachineApi {
     if (deps.netKernel) {
       this.netProbe = new LinuxNetProbeApi(deps.netKernel, () => deps.ports, deps);
     }
-    this.users = new LinuxUserManagementApi(deps.userManager);
+    this.users = new LinuxUserManagementApi(deps.userManager, deps.createSkeleton);
     this.groups = new LinuxGroupManagementApi(deps.userManager);
     this.power = new LinuxPowerApi(deps);
     this.hostname = deps.hostname;

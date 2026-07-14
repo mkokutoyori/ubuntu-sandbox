@@ -35,8 +35,7 @@ import {
   type TestFs, type TestEnv, type TailFs, type TailSink, type TailFollowHandle, type TailRunResult,
   type ArchiveCtx,
 } from './coreutils';
-import { cmdUseradd, cmdUsermod, cmdUserdel, cmdPasswd, cmdChpasswd, cmdFaillock, cmdGroupadd, cmdGroupmod, cmdGroupdel, cmdGpasswd, cmdWho, cmdW, cmdLast, cmdLastb, cmdSudoCheck } from './LinuxUserCommands';
-import { parseUseraddArgs } from './iam/useraddOptions';
+import { cmdUsermod, cmdUserdel, cmdPasswd, cmdChpasswd, cmdFaillock, cmdGroupadd, cmdGroupmod, cmdGroupdel, cmdGpasswd, cmdWho, cmdW, cmdLast, cmdLastb, cmdSudoCheck } from './LinuxUserCommands';
 import {
   CommandPrivilegePolicy,
   evaluatePrivilegeRequirement,
@@ -2033,9 +2032,6 @@ export class LinuxCommandExecutor {
     } else if (head === 'groupadd') {
       output = cmdGroupadd(c, args);
       exitCode = output ? 1 : 0;
-    } else if (head === 'useradd') {
-      output = cmdUseradd(c, args);
-      exitCode = output ? 1 : 0;
     } else if (head === 'usermod') {
       output = cmdUsermod(c, args);
       exitCode = output ? 1 : 0;
@@ -2468,6 +2464,10 @@ export class LinuxCommandExecutor {
         powerOff: () => { /* no-op: no device lifecycle without a LinuxMachine */ },
         publishFsAccess: (path, perm, syscall) => this.publishFsAccess(path, perm, syscall),
         publishSyscall: (syscall, path) => this.publishSyscall(syscall, path),
+        createSkeleton: (username) => {
+          const account = this.userMgr.getUser(username);
+          if (account) this.createSkeletonFiles(account.home, account.uid, account.gid);
+        },
       });
       this._defaultCommandKernelShell = { interpreter, registry: interpreter.commands };
     }
@@ -3412,18 +3412,6 @@ export class LinuxCommandExecutor {
       case 'mkfifo': return { output: cmdMkfifo(c, args), exitCode: 0 };
 
       // User commands
-      case 'useradd': {
-        const out = cmdUseradd(c, args);
-        if (!out) {
-          // Create skeleton files in the new home dir when `-m` was given.
-          const req = parseUseraddArgs(args);
-          if (req.username && req.createHome && !req.noCreateHome) {
-            const user = this.userMgr.getUser(req.username);
-            if (user) this.createSkeletonFiles(user.home, user.uid, user.gid);
-          }
-        }
-        return { output: out, exitCode: out ? 1 : 0 };
-      }
       case 'adduser': return this.handleAdduser(args);
       case 'addgroup': return this.handleAdduser(args, true);
       case 'usermod': return { output: cmdUsermod(c, args), exitCode: 0 };

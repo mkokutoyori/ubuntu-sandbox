@@ -13,7 +13,7 @@ export class PermissionGuard {
     const verdict = command.descriptor.privileges.authorize(user);
     if (!verdict.granted) {
       throw new PermissionError(
-        `${command.descriptor.name} : accès refusé (${verdict.reason})`,
+        verdict.denialMessage ?? `${command.descriptor.name} : accès refusé (${verdict.reason})`,
       );
     }
     if (args) {

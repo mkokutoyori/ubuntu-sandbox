@@ -1751,6 +1751,10 @@ export abstract class LinuxMachine extends EndHost
         publishFsAccess: (path, perm, syscall) => this.executor.publishAuditFsAccess(path, perm, syscall),
         publishSyscall: (syscall, path) => this.executor.publishAuditSyscall(syscall, path),
         netKernel: this.net,
+        createSkeleton: (username) => {
+          const account = this.executor.userMgr.getUser(username);
+          if (account) this.executor.createSkeletonFiles(account.home, account.uid, account.gid);
+        },
         neighborMac: (ip) => this.executor.neighborMac(ip),
         reverseLookup: (ip) => this.executor.reverseHostLookup(ip),
         udpRangeDenied: (startPort, endPort) => {

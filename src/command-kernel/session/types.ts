@@ -52,6 +52,9 @@ export interface Session {
 export interface AuthorizationResult {
   readonly granted: boolean;
   readonly reason?: string;
+  /** Message de refus EXACT à afficher (parité vendeur) — prime sur le
+   *  format générique du PermissionGuard quand présent. */
+  readonly denialMessage?: string;
 }
 
 /** Implémentation minimale de `User`, utile pour les tests et l'amorçage. */

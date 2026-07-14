@@ -6,36 +6,6 @@
 import { ShellContext } from './LinuxFileCommands';
 import { parseUseraddArgs } from './iam/useraddOptions';
 
-export function cmdUseradd(ctx: ShellContext, args: string[]): string {
-  const req = parseUseraddArgs(args);
-  if (!req.username) return 'useradd: missing username';
-
-  return ctx.userMgr.useradd(req.username, {
-    m: req.createHome,
-    M: req.noCreateHome,
-    s: req.shell,
-    G: req.supplementaryGroups.length > 0 ? req.supplementaryGroups.join(',') : undefined,
-    d: req.home,
-    g: req.primaryGroup,
-    c: req.comment,
-    u: req.uid,
-    o: req.nonUnique,
-    r: req.systemAccount,
-    N: req.noUserGroup,
-    p: req.passwordHash,
-    e: parseExpireDays(req.expireDate),
-    f: req.inactiveDays,
-  });
-}
-
-/** Convert a `useradd -e` date string (YYYY-MM-DD) to days since the epoch. */
-function parseExpireDays(value: string | undefined): number | undefined {
-  if (value === undefined) return undefined;
-  const ms = Date.parse(value);
-  if (Number.isNaN(ms)) return undefined;
-  return Math.floor(ms / 86_400_000);
-}
-
 export function cmdUsermod(ctx: ShellContext, args: string[]): string {
   let s: string | undefined, d: string | undefined, m = false;
   let aG: string | undefined, L = false, U = false;
