@@ -5,6 +5,31 @@ progressive par équipement. Un push = une entrée = une fonctionnalité
 complète et testée (voir `CLAUDE.md` / le framework de migration pour les
 principes directeurs).
 
+## Socle — classe de base `StreamingCommand` (mécanique de flux factorisée, §14.6)
+
+**État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
+
+Pour que l'entrée terminal générique reste *seamless* — une seule route, le
+comportement défini par la commande — la mécanique de flux ne doit pas être
+recopiée dans chaque commande streaming. Nouvelle classe de base
+`command/streaming-command.ts` (`StreamingCommand extends BaseCommand`) :
+
+- `emit(ctx, line)` — écrit une ligne en garantissant le saut de ligne final.
+- `pace(ms, signal)` — attend en respectant l'annulation (Ctrl+C), sans laisser
+  de timer pendant.
+
+Une commande à sortie continue déclare `streaming: true` et se contente
+d'écrire sa logique par ligne ; la boucle/pacing/annulation n'est plus
+redupliquée. `PingCommand` (cmd) en est le premier client — sa méthode `pace`
+privée et son `emit` inline sont supprimés au profit de l'héritage. Les
+prochains intercepteurs terminal (`tracert`/`netstat`/`pathping`) migreront sur
+cette même base, puis leurs `if` dédiés disparaîtront au profit de l'unique
+`tryStartWinKernelStream`.
+
+Validation : `windows-ping-stream-ui` (2/2) + `tracert-ping` (300/300)
+inchangés (refactor sans changement de comportement) ; socle command-kernel
+(70/70). Typecheck propre.
+
 ## Windows — `ping` devient une commande streaming command-kernel + entrée terminal générique (§14.6)
 
 **État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**

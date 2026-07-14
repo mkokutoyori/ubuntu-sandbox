@@ -1,4 +1,4 @@
-import { BaseCommand } from '@/command-kernel/command/base-command';
+import { StreamingCommand } from '@/command-kernel/command/streaming-command';
 import { CommandContext, CommandDescriptor, EXIT_OK, ExitCode } from '@/command-kernel/command/types';
 import { DefaultPrivilegePolicy } from '@/command-kernel/session/privilege-policy';
 import { PrivilegeLevel } from '@/command-kernel/session/types';
@@ -271,7 +271,7 @@ function formatPingStats(targetLabel: string, count: number, results: readonly W
   return lines;
 }
 
-export class PingCommand extends BaseCommand {
+export class PingCommand extends StreamingCommand {
   readonly descriptor: CommandDescriptor = {
     name: 'ping',
     summary: "Envoie des échos ICMP vers un hôte",
@@ -289,15 +289,6 @@ export class PingCommand extends BaseCommand {
   };
 
   private readonly INTERVAL_MS = 1000;
-
-  private pace(ms: number, signal: AbortSignal): Promise<void> {
-    return new Promise<void>((resolve) => {
-      if (signal.aborted) { resolve(); return; }
-      const timer = setTimeout(() => { signal.removeEventListener('abort', onAbort); resolve(); }, ms);
-      const onAbort = () => { clearTimeout(timer); resolve(); };
-      signal.addEventListener('abort', onAbort, { once: true });
-    });
-  }
 
   async execute(ctx: CommandContext): Promise<ExitCode> {
     const args = ctx.args.has('targets') ? ctx.args.get<string[]>('targets') : [];
@@ -390,7 +381,7 @@ export class PingCommand extends BaseCommand {
     }
 
     const hostname = parsed.targetStr !== targetIP ? parsed.targetStr : undefined;
-    const emit = (line: string) => ctx.io.stdout.write(line.endsWith('\n') ? line : `${line}\n`);
+    const emit = (line: string) => this.emit(ctx, line);
 
     // Diffusion au fil de l'eau (§14.6) : un paquet à la fois, chaque
     // réponse émise immédiatement, ~1 s entre les envois (respectant Ctrl+C).
