@@ -5,6 +5,51 @@ progressive par équipement. Un push = une entrée = une fonctionnalité
 complète et testée (voir `CLAUDE.md` / le framework de migration pour les
 principes directeurs).
 
+## Linux — Phase 32 : migration de `journalctl` (fin de la famille journalisation)
+
+**État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
+
+Dernier volet de la journalisation. `journalctl` (uniquement au dispatch,
+sans entrée de privilège) migre vers command-kernel ; `executeJournalctl`
+et ses cinq aides privées sont supprimées.
+
+- **`LoggingApi` étendue** : `journalActive()`, `journalEntries()`
+  (instantané chronologique du journal, champs neutres via `JournalRecord`),
+  `bootId()`. Le journal reste détenu et alimenté par `LinuxLogManager`.
+- **`JournalctlCommand` autonome** : réimplémente tout — sous-commandes
+  (`--version`/`-N`/`--disk-usage`/`--list-boots`/`--rotate`/`--flush`/
+  `--vacuum-*`), parsing d'options (`-n`/`-r`/`-q`/`-k`/`-b`/`-D`/`--since`/
+  `--until`/`-o`/`-u`/`-p`/`_PID=`/`--output-fields=`…), filtrage
+  (unité/priorité/PID/noyau/depuis/jusqu'à + masquage des entrées futures),
+  troncature `-n`, inversion `-r`, en-tête « Logs begin… », et les **6
+  formats** de sortie (`short`/`short-iso`/`cat`/`json`/`json-pretty`/
+  `verbose`). Tables `PRIORITY_NAMES`/`FACILITY_NAMES` et formateurs de date
+  partagés via `commands/syslog.ts` (ajout de `formatSyslogTimestamp`/
+  `formatIsoTimestamp`).
+- **Sémantique du code de sortie** reproduite à l'identique : 1 seulement si
+  la sortie commence par « Invalid » (priorité / format), 0 sinon — y
+  compris pour `journalctl: invalid number…` / `Failed…` (quirk legacy
+  `out.startsWith('Invalid') ? 1 : 0`).
+- **Suppressions** : `case 'journalctl'` du dispatch, `executeJournalctl`,
+  `filterEntries`, `parseJournalTime`, `resolvePriority`, `cmdDiskUsage`,
+  `cmdListBoots`, constante `JOURNALCTL_HELP`. `formatEntry`/`entryMatches`
+  conservées (encore utilisées par le suivi `journalctl -f`).
+
+Bug de test corrigé : `observability-bridge` appelait directement
+`exec.logMgr.executeJournalctl([...])` (méthode interne supprimée) — repointé
+sur la commande publique `exec.execute('journalctl -u ssh')`.
+
+Validation (localisée, §10) : `journalization` (200/200), `linux-journal`
+(65), `systemd-scenario4-journald` (7), `observability-bridge` (11),
+`journalization-and-audit` (30), corrélation d'incidents / cohérence
+authlog / drift réseau / ssh-config / readiness-race (verts) ; socle
+command-kernel (70/70). Typecheck propre, lint ciblé sans nouvelle
+erreur/avertissement. Échecs préexistants sans rapport confirmés en base
+(`linux-top-journalctl-stream-ui` frame `top`, `scenario-20` ICMP/authlog).
+
+Famille journalisation désormais entièrement sur command-kernel :
+`logger` (Phase 30), `dmesg` (Phase 31), `journalctl` (Phase 32).
+
 ## Linux — Phase 31 : migration de `dmesg` (double dé-enregistrement + privilège conditionnel)
 
 **État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**

@@ -3689,10 +3689,6 @@ export class LinuxCommandExecutor {
       }
 
       // Logging commands
-      case 'journalctl': {
-        const out = this.logMgr.executeJournalctl(args);
-        return { output: out, exitCode: out.startsWith('Invalid') ? 1 : 0 };
-      }
       case 'logrotate': return this.cmdLogrotate(args);
 
       // Hostname

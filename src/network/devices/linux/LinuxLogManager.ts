@@ -46,24 +46,6 @@ interface DmesgEntry {
   message: string;
 }
 
-const JOURNALCTL_HELP = `journalctl [OPTIONS...] [MATCHES...]
-
-Query the journal.
-
-Options:
-  -n --lines=INTEGER   Number of journal entries to show
-  -r --reverse         Show the newest entries first
-  -u --unit=UNIT       Show logs from the specified unit
-  -p --priority=RANGE  Show entries with the specified priority
-  -k --dmesg           Show kernel message log from the current boot
-  -o --output=STRING   Change journal output mode
-  -b --boot[=ID]       Show data only from the specified boot
-  -N --fields          List all field names currently used
-  --since=DATE         Show entries not older than the specified date
-  --until=DATE         Show entries not newer than the specified date
-     --no-pager        Do not pipe output into a pager
-  -h --help            Show this help text`;
-
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
   'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -192,6 +174,34 @@ export class LinuxLogManager {
     return this.bootTime;
   }
 
+  /** `journald` actif ? (primitive `LoggingApi` pour `journalctl`). */
+  journalActive(): boolean {
+    return this.journaldActive;
+  }
+
+  /** Identifiant de boot courant (`journalctl --list-boots`/`verbose`). */
+  journalBootId(): string {
+    return this.bootId;
+  }
+
+  /** Instantané du journal système, ordre chronologique (`journalctl`). */
+  journalEntries(): readonly {
+    timestampMs: number; priority: number; facility: number; unit: string;
+    tag: string; message: string; pid: number; displayPid?: boolean; hostname: string;
+  }[] {
+    return this.journal.map((e) => ({
+      timestampMs: e.timestamp.getTime(),
+      priority: e.priority,
+      facility: e.facility,
+      unit: e.unit,
+      tag: e.tag,
+      message: e.message,
+      pid: e.pid,
+      displayPid: e.displayPid,
+      hostname: e.hostname,
+    }));
+  }
+
   /**
    * Append a record at an explicit `facility.priority` spec (e.g.
    * `local0.info`) — the bridge a service uses when its syslog routing is
@@ -281,156 +291,6 @@ export class LinuxLogManager {
       pid: 1,
       hostname: this.currentHostname(),
     });
-  }
-
-  // ── journalctl command ─────────────────────────────────────────
-  executeJournalctl(args: string[]): string {
-    for (const arg of args) {
-      if (arg === '--version') return 'systemd 249 (249.11-0ubuntu3)';
-      if (arg === '-h' || arg === '--help') return JOURNALCTL_HELP;
-      if (arg === '-N' || arg === '--fields') {
-        return ['MESSAGE', 'PRIORITY', 'SYSLOG_FACILITY', 'SYSLOG_IDENTIFIER',
-          '_PID', '_UID', '_GID', '_HOSTNAME', '_TRANSPORT', '_SYSTEMD_UNIT',
-          '__REALTIME_TIMESTAMP', '__MONOTONIC_TIMESTAMP'].join('\n');
-      }
-      if (arg === '--disk-usage') return this.cmdDiskUsage();
-      if (arg === '--list-boots') return this.cmdListBoots();
-      if (arg === '--rotate') return 'Rotating journal files...';
-      if (arg === '--flush') return 'Flushing journal to persistent storage...';
-      if (arg.startsWith('--vacuum-time')) return 'Vacuuming done, freed 0B of archived journals.';
-      if (arg.startsWith('--vacuum-size')) return 'Vacuuming done, freed 0B of archived journals.';
-    }
-
-    if (!this.journaldActive) return 'No journal files were found.';
-
-    let n = -1;
-    let reverse = false;
-    let quiet = false;
-    let outputFormat = 'short';
-    let unitFilter = '';
-    let priorityFilter = -1;
-    let pidFilter = -1;
-    let outputFields: string[] = [];
-    let kernelOnly = false;
-    let sinceMs = -1;
-    let untilMs = -1;
-
-    let i = 0;
-    while (i < args.length) {
-      switch (args[i]) {
-        case '-n':
-        case '--lines': {
-          const v = args[++i] ?? '';
-          if (!/^\d+$/.test(v)) return `journalctl: invalid number of lines: "${v}".`;
-          n = parseInt(v, 10);
-          i++; break;
-        }
-        case '-r':
-        case '--reverse':
-          reverse = true; i++; break;
-        case '-q':
-        case '--quiet':
-          quiet = true; i++; break;
-        case '-k':
-        case '--dmesg':
-          kernelOnly = true; i++; break;
-        case '-x': case '--catalog':
-        case '-f': case '--follow':
-          i++; break;
-        case '-b':
-        case '--boot': {
-          const nxt = args[i + 1];
-          if (nxt && /^-?\d+$/.test(nxt)) {
-            if (parseInt(nxt, 10) < 0) return `Failed to look up boot ${nxt}: no such boot ID`;
-            i++;
-          }
-          i++; break;
-        }
-        case '-D': case '--directory': {
-          const dir = args[++i] ?? '';
-          if (dir.startsWith('/sys') || dir.startsWith('/proc')) return `Failed to open directory ${dir}: error`;
-          i++; break;
-        }
-        case '--since': case '-S':
-          sinceMs = this.parseJournalTime(args[++i] ?? ''); i++; break;
-        case '--until': case '-U':
-          untilMs = this.parseJournalTime(args[++i] ?? ''); i++; break;
-        case '--no-pager':
-          i++; break;  // no-op
-        case '-o':
-        case '--output':
-          outputFormat = args[++i] || 'short';
-          i++; break;
-        case '-u':
-        case '--unit': {
-          unitFilter = args[++i] || '';
-          i++; break;
-        }
-        case '-p':
-        case '--priority': {
-          const pval = args[++i] || '';
-          const pnum = this.resolvePriority(pval);
-          if (pnum === -1) return `Invalid priority: ${pval}`;
-          priorityFilter = pnum;
-          i++; break;
-        }
-        default: {
-          if (args[i].startsWith('--facility')) { i++; break; }
-          if (args[i].startsWith('_PID=')) pidFilter = parseInt(args[i].slice(5));
-          if (args[i].startsWith('--output-fields=')) outputFields = args[i].slice(16).split(',');
-          i++; break;
-        }
-      }
-    }
-
-    // Validate output format
-    const validFormats = ['short', 'short-iso', 'json', 'json-pretty', 'cat', 'verbose'];
-    if (!validFormats.includes(outputFormat)) {
-      return `Invalid argument: unknown output format "${outputFormat}".`;
-    }
-
-    // Filter entries
-    let entries = this.filterEntries(unitFilter, priorityFilter, pidFilter);
-    if (kernelOnly) entries = entries.filter((e) => e.facility === FACILITY_NAMES.kern);
-    if (sinceMs >= 0) entries = entries.filter((e) => e.timestamp.getTime() >= sinceMs);
-    if (untilMs >= 0) entries = entries.filter((e) => e.timestamp.getTime() <= untilMs);
-
-    // Hide entries with timestamps in the future. The boot-time canned
-    // messages (kernel + systemd + sshd "Server listening on …") are
-    // staggered along synthetic offsets from bootTime — when the host
-    // is queried within the first few seconds, some offsets exceed real
-    // wall-clock time and would surface as "events that haven't
-    // happened yet" relative to `date(1)`. Real journalctl only ever
-    // returns entries it has already received.
-    const nowMs = Date.now();
-    entries = entries.filter((e) => e.timestamp.getTime() <= nowMs);
-
-    if (entries.length === 0) return '-- No entries --';
-
-    // Apply -n
-    if (n >= 0) {
-      entries = entries.slice(-n);
-    }
-
-    // Apply -r
-    if (reverse) {
-      entries = [...entries].reverse();
-    }
-
-    // Format output
-    const lines = entries.map(e => this.formatEntry(e, outputFormat, outputFields));
-
-    // Add header unless quiet, reversed, or non-short format
-    if (!quiet && !reverse && (outputFormat === 'short' || outputFormat === 'short-iso')) {
-      const first = this.journal[0];
-      const last = this.journal[this.journal.length - 1];
-      if (first && last) {
-        const header = `-- Logs begin at ${fmtHumanDate(first.timestamp)}, end at ${fmtHumanDate(last.timestamp)}. --`;
-        return header + '\n' + lines.join('\n');
-      }
-    }
-
-    return lines.join('\n');
   }
 
   private formatDmesgEntry(e: DmesgEntry, opts: { raw: boolean; humanTime: boolean }): string {
@@ -562,10 +422,6 @@ export class LinuxLogManager {
     }
   }
 
-  private filterEntries(unit: string, priority: number, pid: number): JournalEntry[] {
-    return this.journal.filter((e) => this.entryMatches(e, unit, priority, pid));
-  }
-
   private entryMatches(e: JournalEntry, unit: string, priority: number, pid: number): boolean {
     if (unit) {
       const u = unit.replace(/\.service$/, '');
@@ -579,20 +435,6 @@ export class LinuxLogManager {
     if (priority >= 0 && e.priority > priority) return false;
     if (pid >= 0 && e.pid !== pid) return false;
     return true;
-  }
-
-  private parseJournalTime(spec: string): number {
-    const s = spec.trim().toLowerCase();
-    if (s === '' || s === 'now') return Date.now();
-    const ago = s.match(/^(\d+)\s*(second|minute|hour|day|week)s?\s*(ago)?$/);
-    if (ago) {
-      const mult: Record<string, number> = {
-        second: 1000, minute: 60_000, hour: 3_600_000, day: 86_400_000, week: 604_800_000,
-      };
-      return Date.now() - parseInt(ago[1], 10) * mult[ago[2]];
-    }
-    const t = Date.parse(spec);
-    return isNaN(t) ? Date.now() : t;
   }
 
   private readonly followSubs = new Set<{ unit: string; priority: number; pid: number; listener: (line: string) => void }>();
@@ -706,35 +548,11 @@ export class LinuxLogManager {
     return files;
   }
 
-  private resolvePriority(val: string): number {
-    // Numeric
-    const num = parseInt(val);
-    if (!isNaN(num) && num >= 0 && num <= 7) return num;
-    // Named
-    const pri = PRIORITY_NAMES[val];
-    return pri !== undefined ? pri : -1;
-  }
-
   private facilityName(facility: number): string {
     for (const [name, num] of Object.entries(FACILITY_NAMES)) {
       if (num === facility) return name;
     }
     return 'user';
-  }
-
-  private cmdDiskUsage(): string {
-    const bytes = this.journal.length * 128; // rough estimate
-    let size: string;
-    if (bytes < 1024) size = `${bytes}B`;
-    else if (bytes < 1024 * 1024) size = `${(bytes / 1024).toFixed(1)}K`;
-    else size = `${(bytes / (1024 * 1024)).toFixed(1)}M`;
-    return `Archived and active journals take up ${size} in the file system.`;
-  }
-
-  private cmdListBoots(): string {
-    const ts = fmtHumanDate(this.bootTime);
-    const now = fmtHumanDate(new Date());
-    return ` 0 ${this.bootId} ${ts}—${now}`;
   }
 
   private generateBootId(): string {

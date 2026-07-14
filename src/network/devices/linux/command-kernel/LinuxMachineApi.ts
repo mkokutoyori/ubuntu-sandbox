@@ -6,6 +6,7 @@ import {
   FileSystemApi,
   GroupInfo,
   GroupManagementApi,
+  JournalRecord,
   KernelMessage,
   LoggingApi,
   MachineApi,
@@ -552,6 +553,18 @@ class LinuxLoggingApi implements LoggingApi {
 
   bootTime(): Date {
     return this.logManager.kernelBootTime();
+  }
+
+  journalActive(): boolean {
+    return this.logManager.journalActive();
+  }
+
+  journalEntries(): readonly JournalRecord[] {
+    return this.logManager.journalEntries();
+  }
+
+  bootId(): string {
+    return this.logManager.journalBootId();
   }
 }
 

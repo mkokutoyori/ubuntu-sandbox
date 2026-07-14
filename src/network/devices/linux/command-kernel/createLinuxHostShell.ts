@@ -7,6 +7,7 @@ import { CdCommand } from './commands/Cd';
 import { Md5sumCommand, Sha1sumCommand, Sha256sumCommand } from './commands/Checksum';
 import { DiffCommand } from './commands/Diff';
 import { DmesgCommand } from './commands/Dmesg';
+import { JournalctlCommand } from './commands/Journalctl';
 import { DirnameCommand } from './commands/Dirname';
 import { ExprCommand } from './commands/Expr';
 import { FileCommand } from './commands/File';
@@ -117,6 +118,7 @@ export function createLinuxHostShell(deps: LinuxMachineApiDeps): Interpreter {
   registry.register(() => new LocaleCommand());
   registry.register(() => new LoggerCommand());
   registry.register(() => new DmesgCommand());
+  registry.register(() => new JournalctlCommand());
   registry.register(() => new Md5sumCommand());
   registry.register(() => new Sha1sumCommand());
   registry.register(() => new Sha256sumCommand());

@@ -1229,6 +1229,19 @@ export interface KernelMessage {
   readonly message: string;
 }
 
+/** Un enregistrement du journal système (`journalctl`). */
+export interface JournalRecord {
+  readonly timestampMs: number;
+  readonly priority: number;
+  readonly facility: number;
+  readonly unit: string;
+  readonly tag: string;
+  readonly message: string;
+  readonly pid: number;
+  readonly displayPid?: boolean;
+  readonly hostname: string;
+}
+
 /**
  * Capacité optionnelle : journalisation système (syslog/journald/kernel
  * ring buffer) pour les équipements qui en tiennent une. Absente des
@@ -1246,6 +1259,12 @@ export interface LoggingApi {
   clearKernelBuffer(): void;
   /** Horodatage du démarrage, pour les timestamps humains (`dmesg -T`). */
   bootTime(): Date;
+  /** `journald` est-il actif (sinon `journalctl` ne trouve pas de journal). */
+  journalActive(): boolean;
+  /** Instantané du journal système, ordre chronologique (`journalctl`). */
+  journalEntries(): readonly JournalRecord[];
+  /** Identifiant de boot courant (`journalctl --list-boots`, format `verbose`). */
+  bootId(): string;
 }
 
 /**
