@@ -52,7 +52,12 @@ async read(): Promise<string | null> {
   `Rev`, `Diff`…) et le motif partagé `textInput.ts`
   (`src/network/devices/linux/command-kernel/commands/textInput.ts`)
   n'appellent que `ctx.io.stdin.readAll()`. Aucun appel à `read()` n'existe
-  dans le projet en dehors de sa propre définition.
+  dans le projet en dehors de sa propre définition et de
+  `Terminal.asCommandIO()` (voir §1.8 — nuance importante : quand l'IO vient
+  d'un `Terminal` réel plutôt que d'un `PipeBuffer`, `read()` relaie bien une
+  vraie ligne saisie par l'utilisateur ; le constat ci-dessous ne s'applique
+  qu'aux IO construites sur `PipeBuffer`, qui sont le cas de toutes les
+  commandes migrées à ce jour).
 - Sa sémantique est ambiguë : si le pipe est ouvert et vide, `read()` renvoie
   `""` (chaîne vide) — ni `null` (EOF), ni une vraie attente. Une commande qui
   l'utiliserait naïvement dans une boucle `while ((chunk = await
@@ -163,7 +168,95 @@ de s'arrêter proprement sur Ctrl+C autrement qu'en vérifiant
 `ctx.signal.aborted` lui-même à chaque itération, sans aide de la couche
 I/O.
 
-### 1.7 Tout est `string` — jamais documenté comme invariant explicite
+### 1.8 Aucun contrat pour les prompts interactifs en cours d'exécution (mot de passe, GECOS, confirmation)
+
+Ce point a été identifié après coup, en vérifiant précisément ce qu'offre
+`Terminal`/`asCommandIO()` avant d'écrire cette section — le constat est plus
+nuancé qu'un simple manque, il faut le détailler.
+
+**Ce qui existe déjà, mais hors de portée d'une commande migrée** :
+
+```ts
+// terminal/terminal.ts
+export abstract class Terminal {
+  abstract readLine(prompt: string): Promise<string | null>;
+  abstract readSecret(prompt: string): Promise<string | null>; // sans écho
+  asCommandIO(): CommandIO {
+    const stdin: InputStream = {
+      read: async () => this.readLine(""),       // ← lit une ligne réelle du device
+      readAll: async () => { /* boucle sur readLine jusqu'à EOF */ },
+    };
+    // ...
+  }
+}
+```
+
+Ceci **corrige une imprécision du §1.1 ci-dessus** : `InputStream.read()`
+n'est pas mort partout — quand l'IO vient de `Terminal.asCommandIO()`
+(chemin `Shell` → `Interpreter`), `read()` relaie une vraie ligne saisie par
+l'utilisateur au moment de l'appel. §1.1 reste vrai pour les IO construites
+sur `PipeBuffer` (pipes, redirections, pont legacy), qui elles n'ont
+jamais de source vivante derrière `read()`.
+
+Mais deux manques réels demeurent :
+
+1. **`readSecret()` (saisie sans écho) n'est jamais relayé vers
+   `CommandIO`.** `asCommandIO()` ne mappe que `readLine` sur `stdin.read`
+   — aucune commande exécutée via `ctx.io` ne peut demander une saisie
+   masquée. Une commande `passwd` migrée n'aurait aucun moyen standard de
+   demander un mot de passe sans l'afficher en clair sur `stdout`/dans
+   l'historique du shell.
+2. **Aucun mécanisme pour une saisie structurée à plusieurs champs avec
+   validation/retry/confirmation** (le motif GECOS : Full Name, Room
+   Number, Work Phone, Home Phone, Other, puis `Is the information correct?
+   [Y/n]`). Ce motif existe déjà, mais entièrement **en dehors de
+   `command-kernel`** : `src/terminal/core/InteractiveFlow.ts`
+   (`InteractiveFlowEngine`) + `src/terminal/flows/LinuxFlowBuilder.ts`
+   (`gecosSteps()`, `InteractiveStep[]` de type `password`/`text`/
+   `confirmation`/`choice`).
+
+**Le point le plus important, architectural** : `InteractiveFlowEngine` ne
+fonctionne PAS comme une fonction qui s'exécute jusqu'au bout — c'est une
+machine à états **pause/reprise pilotée par l'UI** :
+
+```ts
+// InteractiveFlow.ts — extrait
+async advance(userInput?: string): Promise<TerminalResponse> {
+  // ... valide/stocke la réponse précédente, avance d'une étape ...
+  return this.processUntilPause(); // s'arrête et RETOURNE au premier
+                                    // step d'entrée rencontré (password/
+                                    // text/confirmation/choice) ; c'est
+                                    // la session qui rappelle advance()
+                                    // au prochain Entrée de l'utilisateur.
+}
+```
+
+C'est l'inverse du modèle `execute(ctx): Promise<ExitCode>` de
+`command-kernel`, qui est une seule fonction asynchrone lancée une fois et
+menée à sa fin par l'`Executor`. Migrer `adduser`/`passwd`/`chfn`
+« proprement » suppose donc que le `CommandIO` fourni à une commande puisse
+**réellement suspendre** l'exécution en attendant une vraie saisie
+utilisateur (via une Promise qui ne se résout qu'au prochain tour d'UI) —
+ce qui n'est vrai QUE si la commande est lancée depuis le couple
+`Terminal`/`Shell` du socle. Or, en production, **aucun chemin ne passe par
+là aujourd'hui** : la seule voie réellement câblée
+(`LinuxMachine.tryCommandKernel()`, §6 du framework) construit un `io`
+synthétique — un `collector` qui accumule des chaînes en mémoire pour
+retourner une réponse d'un coup à l'appelant — sans aucune capacité de
+suspendre pour attendre une saisie humaine. Un `ctx.io.stdin.read()` appelé
+depuis une commande passant par ce pont ne recevrait jamais de second tour
+de dialogue.
+
+**Conclusion** : ce n'est pas un manque qu'on peut combler par un simple
+ajout à `io/types.ts` comme les points précédents — c'est un prérequis
+d'architecture distinct, à traiter à part (cohérent avec la note du
+framework en §2.2 : « un chantier à part, à documenter et discuter
+explicitement avant de s'y engager »). C'est très probablement *pourquoi*
+`passwd`/`adduser`/`chage`/`gpasswd` restent classés « IAM avancé, hors
+périmètre command-kernel » au §12 du framework — pas un oubli, mais une
+conséquence directe de cette limite.
+
+### 1.9 Tout est `string` — jamais documenté comme invariant explicite
 
 `InputStream`/`OutputStream` travaillent exclusivement en `string` (JS
 UTF-16), jamais en octets bruts (`Uint8Array`/`Buffer`). C'est cohérent avec
@@ -265,6 +358,54 @@ au lieu de le posséder. Documenter dans le framework (§3, checklist §13)
 que toute commande de traitement de texte, quel que soit le vendeur, doit
 réutiliser ce module plutôt que de le redéfinir.
 
+### P8 — Prompts interactifs (mot de passe, GECOS, confirmation) : constat de prérequis, pas d'ajout immédiat à `io/`
+
+Contrairement à P1–P7, ceci ne se résout pas par une extension de
+`io/types.ts`. Proposition en deux temps :
+
+**P8a (documentation seule, à valider en priorité)** — Ajouter au
+framework une clause explicite, sur le modèle du §5.5 (`ISubShell`) :
+*« Les prompts interactifs multi-étapes (mot de passe masqué, saisie GECOS,
+confirmation `[Y/n]`) sont un système séparé et déjà mature, extérieur à
+`command-kernel` : `InteractiveFlowEngine`
+(`src/terminal/core/InteractiveFlow.ts`) piloté par
+`src/terminal/flows/LinuxFlowBuilder.ts`. `command-kernel` ne le réimplémente
+pas. Toute commande dont le comportement legacy dépend de ce mécanisme
+(`passwd`, `adduser`, `chfn`, `usermod` sur le mot de passe...) reste hors
+périmètre de migration tant que le point P8b ci-dessous n'est pas résolu —
+ce n'est pas un oubli, c'est une conséquence directe de l'absence de
+suspension réelle sur le pont de production actuel. »*
+
+**P8b (chantier à part, à discuter explicitement avant de s'y engager,
+cohérent avec §2.2 du framework — PAS à implémenter dans le cadre de cette
+proposition I/O)** — Si l'on veut un jour migrer une commande interactive
+vers `command-kernel`, deux prérequis distincts doivent être résolus,
+indépendamment de tout ce qui précède dans ce document :
+
+1. Exposer `promptSecret(prompt): Promise<string | null>` (saisie masquée)
+   sur `CommandIO`, en plus de `stdin`/`stdout`/`stderr` — probablement une
+   capacité optionnelle (`ctx.io.promptSecret?`), sur le même principe que
+   `ctx.machine.audit?` (§7 du framework) : présente quand l'IO vient d'un
+   `Terminal` réel, absente sur une IO de pipe/redirection/pont legacy, avec
+   une erreur métier explicite (`ShellError`, jamais une `Error` native) si
+   une commande l'appelle alors qu'elle est indisponible dans le contexte
+   courant (script non interactif, pipeline, redirection de stdin).
+2. **Le prérequis bloquant réel** : `LinuxMachine.tryCommandKernel()` (le
+   seul pont câblé en production aujourd'hui, §6 du framework) devrait
+   pouvoir suspendre l'exécution d'une commande en attendant une vraie
+   saisie utilisateur, au lieu de construire un `collector` qui s'attend à
+   une réponse produite d'un seul tenant. Tant que ce pont reste
+   « appelle `interpretLine`, récupère une chaîne, termine », aucune
+   commande migrée ne peut dialoguer avec l'utilisateur en plusieurs tours
+   — quelle que soit la richesse de l'API `io/` elle-même. Ce point dépasse
+   la portée de l'enrichissement des buffers et mérite sa propre
+   discussion/PRD si l'utilisateur souhaite le poursuivre.
+
+Recommandation : valider **P8a maintenant** (documentation, coût nul,
+clarifie une zone grise) ; traiter **P8b séparément**, hors de ce document,
+le jour où une commande interactive est explicitement choisie pour
+migration.
+
 ### P6 — Documenter l'invariant « `string` uniquement, jamais binaire »
 
 Ajouter une ligne explicite dans `io/types.ts` (JSDoc sur `InputStream`/
@@ -303,14 +444,16 @@ couche I/O ne le fait pas à sa place. »*
 
 ## 4. Prochaines étapes proposées (après validation)
 
-1. Valider/ajuster chacune des propositions P1 à P7 (accepter / rejeter /
+1. Valider/ajuster chacune des propositions P1 à P8 (accepter / rejeter /
    modifier individuellement).
 2. Intégrer les points validés comme nouveau §14 (« Buffers d'entrée/sortie
    ») dans `migration_framework.md`, avec les mêmes extraits de code que ce
-   document pour cohérence.
+   document pour cohérence. P8a (documentation) peut y entrer directement ;
+   P8b doit rester noté comme chantier séparé, jamais implémenté au passage.
 3. Implémenter uniquement les points validés qui demandent un changement de
-   code (P1, P3, P5 principalement — P2, P6, P7 sont surtout de la
-   documentation ; P4 est une extension de type sans comportement).
+   code (P1, P3, P5 principalement — P2, P6, P7, P8a sont surtout de la
+   documentation ; P4 est une extension de type sans comportement ; P8b est
+   explicitement hors périmètre de cette proposition).
 4. Tests localisés (§10 du framework) : `executor-interpreter.test.ts`
    (pipelines, redirections) a minima, plus tout fichier qui exercerait une
    commande migrée utilisant `textInput.ts` si P5 est retenu (recherche
