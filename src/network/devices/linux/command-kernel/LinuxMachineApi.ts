@@ -604,6 +604,20 @@ class LinuxUserManagementApi implements UserManagementApi {
     this.createSkeleton?.(username);
   }
 
+  posixAccountInfo(name: string): { uid: number; gid: number; home: string } | undefined {
+    const account = this.userManager.getUser(name);
+    return account ? { uid: account.uid, gid: account.gid, home: account.home } : undefined;
+  }
+
+  primaryGroupName(name: string): string | undefined {
+    const account = this.userManager.getUser(name);
+    return account ? this.userManager.gidToName(account.gid) : undefined;
+  }
+
+  appendToGroup(name: string, group: string): void {
+    this.userManager.usermod(name, { aG: group });
+  }
+
   async findByName(name: string): Promise<User | undefined> {
     const account = this.userManager.getAccount(name);
     return account ? new LinuxUser(account, this.userManager) : undefined;
@@ -627,6 +641,10 @@ class LinuxUserManagementApi implements UserManagementApi {
 
 class LinuxGroupManagementApi implements GroupManagementApi {
   constructor(private readonly userManager: LinuxUserManager) {}
+
+  posixGroupadd(name: string, gid?: number): string {
+    return this.userManager.groupadd(name, { g: gid });
+  }
 
   async findByGid(gid: number): Promise<GroupInfo | undefined> {
     const entry = this.userManager.getGroupByGid(gid);

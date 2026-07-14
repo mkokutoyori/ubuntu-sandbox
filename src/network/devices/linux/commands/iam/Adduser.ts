@@ -1,6 +1,15 @@
 import type { LinuxCommand, LinuxCommandOption } from '../LinuxCommand';
 import { Satisfy } from '../../iam/policy/CommandPrivilegePolicy';
 
+/**
+ * L'exécution de adduser/addgroup est migrée vers command-kernel
+ * (`linux/command-kernel/commands/Adduser.ts`) et le hook kernel est
+ * consulté avant ce registre sur tous les chemins de dispatch : ces
+ * entrées ne servent plus que `man`/`--help`/la complétion. Les prompts
+ * interactifs (mot de passe, GECOS) restent pilotés par
+ * `LinuxFlowBuilder`, qui exécute la création via la commande migrée.
+ */
+
 const ADDUSER_OPTIONS: readonly LinuxCommandOption[] = [
   { flag: '--uid', dest: 'uid', takesArg: true, argName: 'id', description: 'Force the UID of the new account' },
   { flag: '--gid', dest: 'gid', takesArg: true, argName: 'id', description: 'Force the primary GID of the new account' },
@@ -15,14 +24,18 @@ const ADDUSER_OPTIONS: readonly LinuxCommandOption[] = [
   { flag: '--no-create-home', dest: 'noCreateHome', description: 'Do not create the home directory' },
 ];
 
+function migratedToKernel(name: string): never {
+  throw new Error(`${name}: exécution migrée vers command-kernel — cette entrée ne sert que man/help`);
+}
+
 export const adduserCommand: LinuxCommand = {
   name: 'adduser',
   needsNetworkContext: false,
   usage: 'adduser [options] LOGIN [GROUP]',
   options: ADDUSER_OPTIONS,
   privilege: { satisfiedBy: Satisfy.root },
-  run: (ctx, args) => ctx.executor.handleAdduser(args).output,
-  runWithStatus: (ctx, args) => Promise.resolve(ctx.executor.handleAdduser(args)),
+  run: () => migratedToKernel('adduser'),
+  runWithStatus: () => migratedToKernel('adduser'),
 };
 
 export const addgroupCommand: LinuxCommand = {
@@ -31,6 +44,6 @@ export const addgroupCommand: LinuxCommand = {
   usage: 'addgroup [options] GROUP',
   options: ADDUSER_OPTIONS,
   privilege: { satisfiedBy: Satisfy.root },
-  run: (ctx, args) => ctx.executor.handleAdduser(args, true).output,
-  runWithStatus: (ctx, args) => Promise.resolve(ctx.executor.handleAdduser(args, true)),
+  run: () => migratedToKernel('addgroup'),
+  runWithStatus: () => migratedToKernel('addgroup'),
 };

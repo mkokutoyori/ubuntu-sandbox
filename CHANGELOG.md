@@ -5,6 +5,32 @@ progressive par équipement. Un push = une entrée = une fonctionnalité
 complète et testée (voir `CLAUDE.md` / le framework de migration pour les
 principes directeurs).
 
+## Migration — useradd, adduser/addgroup vers command-kernel
+
+**État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
+
+- **`UseraddCommand`** : grammaire util-linux complète implémentée par la
+  commande, création déléguée à `UserManagementApi.posixUseradd` (façade
+  sur le `LinuxUserManager` réel), squelette via `createHomeSkeleton`
+  (le pont résout home/uid/gid). Politique ROOT avec message vendeur
+  exact via `AuthorizationResult.denialMessage` (nouveau champ générique
+  honoré par le `PermissionGuard`).
+- **`AdduserCommand`/`AddgroupCommand`** : les trois modes Debian
+  (création de compte avec sorties `Adding user/group/…` exactes,
+  ajout à un groupe, création de groupe) implémentés par la commande sur
+  les nouvelles capacités `posixAccountInfo`/`primaryGroupName`/
+  `appendToGroup`/`posixGroupadd`. Les prompts interactifs (mot de passe,
+  GECOS) restent pilotés par `LinuxFlowBuilder`, qui exécute la création
+  via la commande migrée (`executeCommandStep`) — leur migration vers
+  `ctx.io.interaction` suivra celle de `sudo`.
+- **Legacy supprimé** : `cmdUseradd`/`parseExpireDays`
+  (LinuxUserCommands), `handleAdduser` + `adduserCreateUser`/
+  `adduserAddToGroup`/`adduserCreateGroup` (exécuteur), les cases
+  `useradd`/`adduser`/`addgroup` du dispatch et du fast-path sudo,
+  wrappers iam réduits à des stubs man/help inexécutables.
+  `useraddOptions.ts` n'a plus d'appelant en production ;
+  `adduserOptions.ts` reste utilisé par `LinuxFlowBuilder` (couche UI).
+
 ## Réseau — Principe PDU : suppression de l'omniscience topologique (framework §2.3)
 
 **État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**

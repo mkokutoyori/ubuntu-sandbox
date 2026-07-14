@@ -43,7 +43,6 @@ import {
   type PrivilegeRequirement,
 } from './iam/policy/CommandPrivilegePolicy';
 import { createDefaultCommandPrivileges } from './iam/policy/defaultCommandPrivileges';
-import { parseAdduserArgs, type AdduserRequest } from './iam/adduserOptions';
 import { IamAuthLogProjection } from './iam/fs/IamAuthLogProjection';
 import { IamPolicyFilesProjection } from './iam/fs/IamPolicyFilesProjection';
 import { HardwareProfile } from '../host/hardware';
@@ -3412,8 +3411,6 @@ export class LinuxCommandExecutor {
       case 'mkfifo': return { output: cmdMkfifo(c, args), exitCode: 0 };
 
       // User commands
-      case 'adduser': return this.handleAdduser(args);
-      case 'addgroup': return this.handleAdduser(args, true);
       case 'usermod': return { output: cmdUsermod(c, args), exitCode: 0 };
       case 'userdel': return this.handleUserdel(args);
       case 'deluser': return this.handleDeluser(args);
@@ -4848,95 +4845,6 @@ export class LinuxCommandExecutor {
    * prints. The interactive password / GECOS capture is layered on top by
    * `LinuxFlowBuilder` when the terminal session runs the command.
    */
-  handleAdduser(args: string[], addGroupAlias = false): { output: string; exitCode: number } {
-    const req = parseAdduserArgs(args, addGroupAlias);
-
-    if (req.mode === 'create-group') {
-      return this.adduserCreateGroup(req, addGroupAlias ? 'addgroup' : 'adduser');
-    }
-    if (!req.name) {
-      return { output: 'adduser: missing user name', exitCode: 1 };
-    }
-    if (req.mode === 'add-to-group') {
-      return this.adduserAddToGroup(req);
-    }
-    return this.adduserCreateUser(req);
-  }
-
-  /** `adduser <user>` / `adduser --system <user>` — create an account. */
-  private adduserCreateUser(req: AdduserRequest): { output: string; exitCode: number } {
-    if (this.userMgr.getUser(req.name)) {
-      return { output: `adduser: The user \`${req.name}' already exists.`, exitCode: 1 };
-    }
-    if (req.ingroup && !this.userMgr.getGroup(req.ingroup)) {
-      return { output: `adduser: The group \`${req.ingroup}' does not exist.`, exitCode: 1 };
-    }
-
-    const createHome = !req.noCreateHome;
-    const shell = req.shell ?? (req.system ? '/usr/sbin/nologin' : '/bin/bash');
-    const result = this.userMgr.useradd(req.name, {
-      m: createHome,
-      M: req.noCreateHome,
-      s: shell,
-      d: req.home,
-      g: req.ingroup,
-      c: req.gecos,
-      u: req.uid,
-      r: req.system,
-    });
-    if (result) return { output: `adduser: ${result}`, exitCode: 1 };
-
-    const user = this.userMgr.getUser(req.name)!;
-    if (createHome) this.createSkeletonFiles(user.home, user.uid, user.gid);
-
-    const groupName = this.userMgr.gidToName(user.gid);
-    const lines: string[] = [];
-    lines.push(req.system
-      ? `Adding system user \`${req.name}' (${user.uid}) ...`
-      : `Adding user \`${req.name}' ...`);
-    if (!req.ingroup) {
-      lines.push(`Adding new group \`${groupName}' (${user.gid}) ...`);
-    }
-    lines.push(`Adding new user \`${req.name}' (${user.uid}) with group \`${groupName}' ...`);
-    if (createHome) {
-      lines.push(`Creating home directory \`${user.home}' ...`);
-      lines.push(`Copying files from \`/etc/skel' ...`);
-    } else {
-      lines.push(`Not creating home directory \`${user.home}'.`);
-    }
-    return { output: lines.join('\n'), exitCode: 0 };
-  }
-
-  /** `adduser <user> <group>` — add an existing user to an existing group. */
-  private adduserAddToGroup(req: AdduserRequest): { output: string; exitCode: number } {
-    if (!this.userMgr.getUser(req.name)) {
-      return { output: `adduser: The user \`${req.name}' does not exist.`, exitCode: 1 };
-    }
-    if (!this.userMgr.getGroup(req.group)) {
-      return { output: `adduser: The group \`${req.group}' does not exist.`, exitCode: 1 };
-    }
-    this.userMgr.usermod(req.name, { aG: req.group });
-    return {
-      output: `Adding user \`${req.name}' to group \`${req.group}' ...\nDone.`,
-      exitCode: 0,
-    };
-  }
-
-  /** `adduser --group <group>` / `addgroup <group>` — create a group. */
-  private adduserCreateGroup(req: AdduserRequest, cmd: string): { output: string; exitCode: number } {
-    if (!req.name) return { output: `${cmd}: missing group name`, exitCode: 1 };
-    if (this.userMgr.getGroup(req.name)) {
-      return { output: `${cmd}: The group \`${req.name}' already exists.`, exitCode: 1 };
-    }
-    const result = this.userMgr.groupadd(req.name, { g: req.gid });
-    if (result) return { output: `${cmd}: ${result}`, exitCode: 1 };
-    const group = this.userMgr.getGroup(req.name)!;
-    return {
-      output: `Adding group \`${req.name}' (GID ${group.gid}) ...\nDone.`,
-      exitCode: 0,
-    };
-  }
-
   private handleChfn(args: string[]): { output: string; exitCode: number } {
     let f: string | undefined, r: string | undefined, w: string | undefined, h: string | undefined;
     let username = '';

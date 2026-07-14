@@ -1163,6 +1163,12 @@ export interface UserManagementApi {
   /** Copie le squelette (`/etc/skel`) dans le home du compte fraîchement
    *  créé (`useradd -m`) — le vendeur résout home/uid/gid réels. Optionnel. */
   createHomeSkeleton?(username: string): void;
+  /** uid/gid/home réels d'un compte POSIX — optionnel (`adduser`, sorties Debian). */
+  posixAccountInfo?(name: string): { uid: number; gid: number; home: string } | undefined;
+  /** Nom du groupe primaire d'un compte — optionnel (`adduser`). */
+  primaryGroupName?(name: string): string | undefined;
+  /** Ajoute le compte à un groupe supplémentaire existant — optionnel (`adduser <user> <group>`). */
+  appendToGroup?(name: string, group: string): void;
 }
 
 /** Options structurées de `useradd` (grammaire util-linux). */
@@ -1297,6 +1303,8 @@ export interface GroupManagementApi {
   deleteGroup?(name: string): AccountMutationResult;
   /** Ajoute un membre à un groupe local — optionnel. */
   addGroupMember?(groupName: string, memberName: string): AccountMutationResult;
+  /** Création de groupe POSIX (`groupadd`) — message vendeur exact, `''` si succès. Optionnel. */
+  posixGroupadd?(name: string, gid?: number): string;
   /** Retire un membre d'un groupe local — optionnel. */
   removeGroupMember?(groupName: string, memberName: string): AccountMutationResult;
 }
