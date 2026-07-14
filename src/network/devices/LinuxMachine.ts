@@ -1735,6 +1735,7 @@ export abstract class LinuxMachine extends EndHost
         vfs: this.executor.vfs,
         userManager: this.executor.userMgr,
         processManager: this.executor.processMgr,
+        logManager: this.executor.logMgr,
         hostname: this.name,
         ports: this.getPorts(),
         getUmask: () => this.executor.getUmask(),

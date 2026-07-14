@@ -154,65 +154,27 @@ export class LinuxLogManager {
     ];
   }
 
-  // ── logger command ─────────────────────────────────────────────
-  executeLogger(args: string[], currentUser: string): string {
-    let tag = currentUser;
-    let priority = 'user.notice';
-    let includePid = false;
-    let toStderr = false;
-    let expandNewlines = false;
-    let fromFile: string | null = null;
-    const msgParts: string[] = [];
-
-    let i = 0;
-    while (i < args.length) {
-      const a = args[i];
-      if (a === '-t' || a === '--tag') { tag = args[++i] ?? tag; i++; }
-      else if (a === '-p' || a === '--priority') { priority = args[++i] ?? priority; i++; }
-      else if (a === '-i' || a === '--id') { includePid = true; i++; }
-      else if (a === '-s' || a === '--stderr') { toStderr = true; i++; }
-      else if (a === '-e') { expandNewlines = true; i++; }
-      else if (a === '-f' || a === '--file') { fromFile = args[++i] ?? null; i++; }
-      else { msgParts.push(a); i++; }
-    }
-
-    const parsed = this.parsePriority(priority);
-    if (!parsed) return `logger: unknown priority name: ${priority}`;
-
-    let messages: string[];
-    if (fromFile !== null) {
-      const content = this.vfs.readFile(fromFile);
-      if (content === null) return `logger: ${fromFile}: No such file or directory`;
-      messages = content.split('\n').filter((l) => l.length > 0);
-    } else {
-      if (args.length === 0) return 'Usage: logger [options] [<message>]';
-      let msg = msgParts.join(' ');
-      if (expandNewlines) msg = msg.replace(/\\n/g, '\n');
-      if (msg.length > 2048) msg = msg.slice(0, 2048);
-      messages = [msg];
-    }
-
-    const safeTag = tag.length > 255 ? tag.slice(0, 255) : tag;
-    const pid = this.nextPid++;
-    const echoed: string[] = [];
-    for (const message of messages) {
-      this.addEntry({
-        priority: parsed.priority,
-        facility: parsed.facility,
-        unit: '',
-        tag: safeTag,
-        message,
-        pid,
-        displayPid: includePid,
-        hostname: this.currentHostname(),
-      });
-      if (toStderr) {
-        const last = this.journal[this.journal.length - 1];
-        echoed.push(this.formatSyslogLine(last));
-      }
-    }
-
-    return echoed.join('\n');
+  /**
+   * Primitive de journalisation syslog exposée à `command-kernel` (façade
+   * `LoggingApi`) : valide le spec `facility.priority`, alloue un PID
+   * syslog, ajoute l'enregistrement (journal + ring buffer kern + fichiers
+   * `/var/log/*`) et renvoie la ligne syslog formatée (pour `logger -s`).
+   * `ok` est faux si le spec est invalide — rien n'est alors journalisé.
+   */
+  writeSyslog(facilityPrioritySpec: string, tag: string, message: string, displayPid: boolean): { ok: boolean; line: string } {
+    const parsed = this.parsePriority(facilityPrioritySpec);
+    if (!parsed) return { ok: false, line: '' };
+    this.addEntry({
+      priority: parsed.priority,
+      facility: parsed.facility,
+      unit: '',
+      tag,
+      message,
+      pid: this.nextPid++,
+      displayPid,
+      hostname: this.currentHostname(),
+    });
+    return { ok: true, line: this.formatSyslogLine(this.journal[this.journal.length - 1]) };
   }
 
   /**

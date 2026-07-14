@@ -6,6 +6,7 @@ import {
   FileSystemApi,
   GroupInfo,
   GroupManagementApi,
+  LoggingApi,
   MachineApi,
   NetworkApi,
   PermissionsApi,
@@ -14,6 +15,7 @@ import {
   ProcessInfo as CkProcessInfo,
   ProcessControlApi,
   ProcessEntry,
+  SyslogWriteResult,
   UserManagementApi,
 } from '@/command-kernel/machine/types';
 import { FileSystemError, FileSystemErrorCode } from '@/command-kernel/errors';
@@ -24,6 +26,7 @@ import type { INode } from '../VirtualFileSystem';
 import { VirtualFileSystem } from '../VirtualFileSystem';
 import type { LinuxUserManager } from '../LinuxUserManager';
 import type { LinuxProcessManager, Signal } from '../LinuxProcessManager';
+import type { LinuxLogManager } from '../LinuxLogManager';
 import { LinuxUser, resolveLinuxUser } from './LinuxUser';
 
 const NODE_TYPES: Record<INode['type'], FileNodeType> = {
@@ -38,6 +41,7 @@ export interface LinuxMachineApiDeps {
   readonly vfs: VirtualFileSystem;
   readonly userManager: LinuxUserManager;
   readonly processManager: LinuxProcessManager;
+  readonly logManager: LinuxLogManager;
   readonly hostname: string;
   readonly ports: readonly Port[];
   getUmask(): number;
@@ -530,6 +534,14 @@ class LinuxAuditApi implements AuditApi {
   }
 }
 
+class LinuxLoggingApi implements LoggingApi {
+  constructor(private readonly logManager: LinuxLogManager) {}
+
+  writeSyslog(facilityPrioritySpec: string, tag: string, message: string, displayPid: boolean): SyslogWriteResult {
+    return this.logManager.writeSyslog(facilityPrioritySpec, tag, message, displayPid);
+  }
+}
+
 class LinuxPermissionsApi implements PermissionsApi {
   constructor(private readonly deps: Pick<LinuxMachineApiDeps, 'getUmask' | 'setUmask'>) {}
 
@@ -565,6 +577,7 @@ export class LinuxMachineApi implements MachineApi {
   readonly power: PowerApi;
   readonly hostname: string;
   readonly audit: AuditApi;
+  readonly logging: LoggingApi;
   readonly permissions: PermissionsApi;
 
   constructor(deps: LinuxMachineApiDeps) {
@@ -577,6 +590,7 @@ export class LinuxMachineApi implements MachineApi {
     this.power = new LinuxPowerApi(deps);
     this.hostname = deps.hostname;
     this.audit = new LinuxAuditApi(deps);
+    this.logging = new LinuxLoggingApi(deps.logManager);
     this.permissions = new LinuxPermissionsApi(deps);
   }
 

@@ -2445,6 +2445,7 @@ export class LinuxCommandExecutor {
         vfs: this.vfs,
         userManager: this.userMgr,
         processManager: this.processMgr,
+        logManager: this.logMgr,
         hostname: (this.vfs.readFile('/etc/hostname') ?? 'localhost').trim(),
         ports: [],
         getUmask: () => this.umask,
@@ -3688,11 +3689,6 @@ export class LinuxCommandExecutor {
       }
 
       // Logging commands
-      case 'logger': {
-        const out = this.logMgr.executeLogger(args, this.userMgr.currentUser);
-        const isErr = out.startsWith('logger:') || out.startsWith('Usage');
-        return { output: out, exitCode: isErr ? 1 : 0 };
-      }
       case 'journalctl': {
         const out = this.logMgr.executeJournalctl(args);
         return { output: out, exitCode: out.startsWith('Invalid') ? 1 : 0 };

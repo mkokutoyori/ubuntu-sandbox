@@ -5,6 +5,47 @@ progressive par équipement. Un push = une entrée = une fonctionnalité
 complète et testée (voir `CLAUDE.md` / le framework de migration pour les
 principes directeurs).
 
+## Linux — Phase 30 : migration de `logger` + capacité `LoggingApi`
+
+**État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
+
+Premier volet de la migration des commandes de journalisation vers
+command-kernel. `LinuxLogManager` reste (c'est l'infrastructure partagée
+qui détient le journal, le ring buffer noyau et les projections
+`/var/log/*`, alimentée par SSH/systemd/cron/IAM…) ; seule la **commande**
+`logger` migre, et sa méthode `executeLogger` est supprimée.
+
+- **Nouvelle capacité `LoggingApi`** (optionnelle) sur `MachineApi` :
+  expose une **primitive** `writeSyslog(spec, tag, message, displayPid)`
+  qui valide le spec `facility.priority`, ajoute l'enregistrement via le
+  vrai `LinuxLogManager` (jamais un état parallèle, §2/§4.2) et renvoie la
+  ligne syslog formatée (pour `logger -s`). Implémentée par
+  `LinuxLoggingApi` enveloppant `logMgr`.
+- **`LoggerCommand` autonome** : parse elle-même `-t`/`-p`/`-i`/`-s`/`-e`/
+  `-f` et le message, tag par défaut = utilisateur de session, puis écrit
+  via `ctx.machine.logging.writeSyslog`. Le parsing/formatage propre à la
+  commande vit dans la commande ; l'état de journalisation reste dans
+  l'infrastructure. `validate` implémentée (erreurs GNU — priorité
+  inconnue, fichier absent, usage — rendues dans `execute`).
+- **`case 'logger'` retiré** du dispatch ; **`LinuxLogManager.executeLogger`
+  supprimée** ; nouvelle dépendance `logManager` câblée dans les deux sites
+  qui construisent le shell command-kernel (`LinuxCommandExecutor`,
+  `LinuxMachine`) et dans le test de socle `linux-command-kernel`.
+
+L'écriture passant par le même `addEntry` que le legacy, l'état journalisé
+(journal + `/var/log/*` + ring buffer kern) reste identique — seuls le
+parsing d'options et le renvoi `-s` sont réimplémentés.
+
+Validation (localisée, §10) : `journalization` (200/200), `linux-journal`,
+`linux-command-kernel` (socle, 277 au total avec les précédents) ; suites
+consommatrices de `logger` en isolation (`journalization-and-audit` 30,
+`auditctl-other` 150, `systemd-scenario4-journald` 7,
+`linux-hosts-hostname-hijack` 12, `ssh-lan-security-editors` 35) ; socle
+command-kernel (70/70). Typecheck propre, lint ciblé sans nouvelle
+erreur/avertissement (`PRIORITY_LABELS` inutilisé était déjà là).
+
+Reste à migrer (volets suivants) : `dmesg`, `journalctl`.
+
 ## Linux — Phase 29 : `logrotate` — abandon de rotation sur échec de `prerotate`
 
 **État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**

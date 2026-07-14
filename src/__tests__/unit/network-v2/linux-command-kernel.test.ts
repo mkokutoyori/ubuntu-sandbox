@@ -9,6 +9,7 @@ import { toFileSystemActor } from '@/command-kernel/machine/types';
 import { VirtualFileSystem } from '@/network/devices/linux/VirtualFileSystem';
 import { LinuxUserManager } from '@/network/devices/linux/LinuxUserManager';
 import { LinuxProcessManager } from '@/network/devices/linux/LinuxProcessManager';
+import { LinuxLogManager } from '@/network/devices/linux/LinuxLogManager';
 import { createLinuxHostShell } from '@/network/devices/linux/command-kernel/createLinuxHostShell';
 import { LinuxMachineApi, LinuxMachineApiDeps } from '@/network/devices/linux/command-kernel/LinuxMachineApi';
 import { resolveLinuxUser } from '@/network/devices/linux/command-kernel/LinuxUser';
@@ -23,6 +24,7 @@ describe('Linux coreutils on command-kernel (real VFS/IAM/process manager)', () 
   let vfs: VirtualFileSystem;
   let userManager: LinuxUserManager;
   let processManager: LinuxProcessManager;
+  let logManager: LinuxLogManager;
   let deps: LinuxMachineApiDeps;
   let interpreter: Interpreter;
 
@@ -30,12 +32,14 @@ describe('Linux coreutils on command-kernel (real VFS/IAM/process manager)', () 
     vfs = new VirtualFileSystem();
     userManager = new LinuxUserManager(vfs);
     processManager = new LinuxProcessManager();
+    logManager = new LinuxLogManager(vfs);
     userManager.useradd('alice', { m: true, s: '/bin/bash' });
     let umask = 0o022;
     deps = {
       vfs,
       userManager,
       processManager,
+      logManager,
       hostname: 'testhost',
       ports: [],
       getUmask: () => umask,

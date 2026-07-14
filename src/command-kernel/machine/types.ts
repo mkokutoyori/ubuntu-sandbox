@@ -1213,6 +1213,27 @@ export interface AuditApi {
   syscall(name: string, path?: string): void;
 }
 
+/** Résultat d'une écriture syslog (`logger`) : `ok` faux si le spec
+ * `facility.priority` est invalide ; `line` est la ligne syslog formatée
+ * (rendue par `logger -s`). */
+export interface SyslogWriteResult {
+  readonly ok: boolean;
+  readonly line: string;
+}
+
+/**
+ * Capacité optionnelle : journalisation système (syslog/journald/kernel
+ * ring buffer) pour les équipements qui en tiennent une. Absente des
+ * profils sans démon de log — les commandes l'appellent via
+ * `ctx.machine.logging?.` . Expose des primitives (écrire un
+ * enregistrement, lire le journal / le ring buffer noyau) ; le parsing et
+ * le formatage propres à chaque commande (`logger`/`journalctl`/`dmesg`)
+ * restent dans la commande.
+ */
+export interface LoggingApi {
+  writeSyslog(facilityPrioritySpec: string, tag: string, message: string, displayPid: boolean): SyslogWriteResult;
+}
+
 /**
  * Masque de permissions par défaut appliqué à la création de fichiers/
  * répertoires (`umask` POSIX) — optionnel, pas un concept universel : un
@@ -1264,6 +1285,8 @@ export interface MachineApi {
   readonly power: PowerApi;
   readonly hostname: string;
   readonly audit?: AuditApi;
+  /** Journalisation système (`logger`, `journalctl`, `dmesg`) — optionnel, propre aux équipements Unix avec syslog/journald. */
+  readonly logging?: LoggingApi;
   readonly os?: OsIdentity;
   readonly hardware?: HardwareProfile;
   /** Horodatage de démarrage, si l'équipement suit un cycle de vie power-on/off (`systeminfo`'s System Boot Time). */
