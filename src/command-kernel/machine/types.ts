@@ -1050,6 +1050,38 @@ export interface NetProbeApi {
   topologyMtus(): readonly number[];
   /** MAC connue du voisin — `null` si absent de la table (`arping`). */
   neighborMac(ip: string): string | null;
+  /** Sondes TTL croissant réelles à travers la topologie (`traceroute`). */
+  traceroute(targetIp: string, maxHops?: number, probesPerHop?: number, firstTtl?: number, timeoutMs?: number): Promise<readonly TracerouteHopInfo[]>;
+  /** Émet un datagramme UDP local (mode UDP de `traceroute`) — `false` si non émis. */
+  sendUdpProbe(targetIp: string, destinationPort: number, sourcePort: number): boolean;
+  /** Passerelle par défaut IPv4 — `null` si aucune. */
+  defaultGateway(): string | null;
+  /** Résolution inverse IP → nom (fichier hosts) — `null` si absent. */
+  reverseLookup(ip: string): string | null;
+  /** Vraie si un équipement de la topologie refuse (ACL deny) l'UDP sur toute la plage donnée. */
+  udpRangeDeniedByTopology(startPort: number, endPort: number): boolean;
+  /** Toutes les IP des ports de l'équipement possédant `ip` (alias multi-interfaces d'un saut). */
+  deviceIpsSharing(ip: string): readonly string[];
+}
+
+/** Détail d'une sonde individuelle d'un saut de `traceroute`. */
+export interface TracerouteProbeInfo {
+  readonly responded: boolean;
+  readonly rttMs?: number;
+  readonly ip?: string;
+  readonly unreachable?: boolean;
+  readonly icmpCode?: number;
+}
+
+/** Un saut de `traceroute` (une valeur de TTL). */
+export interface TracerouteHopInfo {
+  readonly hop: number;
+  readonly ip?: string;
+  readonly rttMs?: number;
+  readonly timeout: boolean;
+  readonly unreachable?: boolean;
+  readonly icmpCode?: number;
+  readonly probes: readonly TracerouteProbeInfo[];
 }
 
 /** Groupe de sécurité résolu pour un compte (`whoami /groups`) — modèle SID, optionnel (vendeurs sans notion de SID n'ont rien à fournir). */

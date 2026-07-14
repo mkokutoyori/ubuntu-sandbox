@@ -14,6 +14,7 @@ import {
   NetworkApi,
   NetProbeApi,
   PermissionsApi,
+  TracerouteHopInfo,
   PowerApi,
   ProcessApi,
   ProcessInfo as CkProcessInfo,
@@ -59,6 +60,9 @@ export interface LinuxMachineApiDeps {
   readonly netKernel?: LinuxNetKernel;
   neighborMac?(ip: string): string | null;
   topologyMtus?(): readonly number[];
+  reverseLookup?(ip: string): string | null;
+  udpRangeDenied?(startPort: number, endPort: number): boolean;
+  deviceIpsSharing?(ip: string): readonly string[];
 }
 
 function toPathActor(actor: FileSystemActor): PathActor {
@@ -497,8 +501,7 @@ class LinuxNetProbeApi implements NetProbeApi {
   constructor(
     private readonly kernel: LinuxNetKernel,
     private readonly ports: () => readonly Port[],
-    private readonly lookupNeighborMac: (ip: string) => string | null,
-    private readonly listTopologyMtus: () => readonly number[],
+    private readonly deps: Pick<LinuxMachineApiDeps, 'neighborMac' | 'topologyMtus' | 'reverseLookup' | 'udpRangeDenied' | 'deviceIpsSharing'>,
   ) {}
 
   async resolveHostname(name: string): Promise<string | null> {
@@ -538,11 +541,39 @@ class LinuxNetProbeApi implements NetProbeApi {
   }
 
   topologyMtus(): readonly number[] {
-    return this.listTopologyMtus();
+    return this.deps.topologyMtus?.() ?? [];
   }
 
   neighborMac(ip: string): string | null {
-    return this.lookupNeighborMac(ip);
+    return this.deps.neighborMac?.(ip) ?? null;
+  }
+
+  async traceroute(targetIp: string, maxHops?: number, probesPerHop?: number, firstTtl?: number, timeoutMs?: number): Promise<readonly TracerouteHopInfo[]> {
+    return this.kernel.traceroute(new IPAddress(targetIp), maxHops, probesPerHop, firstTtl, timeoutMs);
+  }
+
+  sendUdpProbe(targetIp: string, destinationPort: number, sourcePort: number): boolean {
+    try {
+      return this.kernel.sendUdpProbe(new IPAddress(targetIp), destinationPort, sourcePort);
+    } catch {
+      return false;
+    }
+  }
+
+  defaultGateway(): string | null {
+    return this.kernel.getDefaultGateway()?.toString() ?? null;
+  }
+
+  reverseLookup(ip: string): string | null {
+    return this.deps.reverseLookup?.(ip) ?? null;
+  }
+
+  udpRangeDeniedByTopology(startPort: number, endPort: number): boolean {
+    return this.deps.udpRangeDenied?.(startPort, endPort) ?? false;
+  }
+
+  deviceIpsSharing(ip: string): readonly string[] {
+    return this.deps.deviceIpsSharing?.(ip) ?? [];
   }
 }
 
@@ -673,12 +704,7 @@ export class LinuxMachineApi implements MachineApi {
     this.processControl = new LinuxProcessControlApi(deps.processManager);
     this.net = new LinuxNetworkApi(() => deps.ports);
     if (deps.netKernel) {
-      this.netProbe = new LinuxNetProbeApi(
-        deps.netKernel,
-        () => deps.ports,
-        (ip) => deps.neighborMac?.(ip) ?? null,
-        () => deps.topologyMtus?.() ?? [],
-      );
+      this.netProbe = new LinuxNetProbeApi(deps.netKernel, () => deps.ports, deps);
     }
     this.users = new LinuxUserManagementApi(deps.userManager);
     this.groups = new LinuxGroupManagementApi(deps.userManager);

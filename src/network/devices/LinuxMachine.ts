@@ -1752,6 +1752,38 @@ export abstract class LinuxMachine extends EndHost
         publishSyscall: (syscall, path) => this.executor.publishAuditSyscall(syscall, path),
         netKernel: this.net,
         neighborMac: (ip) => this.executor.neighborMac(ip),
+        reverseLookup: (ip) => this.executor.reverseHostLookup(ip),
+        udpRangeDenied: (startPort, endPort) => {
+          try {
+            for (const dev of EquipmentRegistry.getInstance().getAll()) {
+              const getAcls = (dev as unknown as { getAccessLists?: () => Array<{ entries: Array<{ action: string; protocol?: string; dstPortSpec?: { op: string; port: number; endPort?: number } }> }> }).getAccessLists;
+              if (typeof getAcls !== 'function') continue;
+              for (const acl of getAcls.call(dev)) {
+                for (const e of acl.entries) {
+                  if (e.action !== 'deny' || e.protocol !== 'udp') continue;
+                  if (e.dstPortSpec?.op === 'range') {
+                    const start = e.dstPortSpec.port;
+                    const end = e.dstPortSpec.endPort ?? start;
+                    if (start <= startPort && end >= endPort) return true;
+                  }
+                }
+              }
+            }
+          } catch { /* topologie indisponible */ }
+          return false;
+        },
+        deviceIpsSharing: (ip) => {
+          try {
+            for (const dev of EquipmentRegistry.getInstance().getAll()) {
+              const ips = dev.getPorts()
+                .map((p) => p.getIPAddress())
+                .filter((x): x is NonNullable<typeof x> => !!x)
+                .map((x) => x.toString());
+              if (ips.includes(ip)) return ips;
+            }
+          } catch { /* topologie indisponible */ }
+          return [];
+        },
         topologyMtus: () => {
           const mtus: number[] = [];
           try {

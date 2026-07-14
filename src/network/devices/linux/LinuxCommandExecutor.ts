@@ -891,6 +891,15 @@ export class LinuxCommandExecutor {
     return this.ipNetworkCtx?.getNeighborTable().find((n) => n.ip === ip)?.mac ?? null;
   }
 
+  /** Résolution inverse IP → nom canonique via la source NSS `files` (hosts). */
+  reverseHostLookup(ip: string): string | null {
+    try {
+      const r = this.filesNss.gethostbyaddr?.(ip);
+      if (r && r.status === 'SUCCESS' && r.entry?.canonicalName) return r.entry.canonicalName;
+    } catch { /* fichier hosts illisible : pas de nom */ }
+    return null;
+  }
+
   /**
    * scp / sftp / rsync share the SSH transport: same lookup + sshd gating
    * as runSshClient, but with command-specific output for the success case.
@@ -4728,6 +4737,17 @@ export class LinuxCommandExecutor {
     const session = this.beginSuSession(targetUser, loginShell, undefined);
     if (session.ok === false) return session.result;
     try {
+      // Même règle que le chemin sudo : une commande migrée n'a plus de
+      // voie legacy — le hook kernel est consulté sous l'identité cible
+      // déjà basculée, avant le registre réseau.
+      const [cmd, ...args] = innerArgv;
+      let handled: { output: string; exitCode: number } | null = null;
+      if (this._commandKernelHook) {
+        handled = await (this._commandKernelHook(cmd, args, undefined, env) ?? Promise.resolve(null));
+      } else if (this.getDefaultCommandKernelShell().registry.has(cmd)) {
+        handled = await this.runDefaultCommandKernelResolved(cmd, args, undefined, env);
+      }
+      if (handled) return handled;
       const pending = this.networkRunner!(innerArgv, env);
       return await (pending ?? { output: '', exitCode: 0 });
     } finally {
