@@ -159,6 +159,8 @@ export interface WindowsMachineApiDeps {
   clearARPTable(): void;
   executePingSequence(target: IPAddress, count: number, timeoutMs?: number, ttl?: number): Promise<PingResult[]>;
   executeTraceroute(target: IPAddress, maxHops?: number, timeoutMs?: number): Promise<TracerouteHop[]>;
+  /** IP source (interface d'égress) empruntée pour joindre `target` — `null` si aucune route (`pathping` : ligne du saut 0). */
+  getEgressIPFor(target: IPAddress): IPAddress | null;
   reverseLookup(ip: string): string | null;
   resolveViaHostsFile(name: string): string | null;
   firstConfiguredDnsServer(): string;
@@ -1339,7 +1341,7 @@ class WindowsNetConfigApiImpl implements WindowsNetConfigApi {
     private readonly deps: Pick<WindowsMachineApiDeps,
       'arpTable' | 'getRoutingTable' | 'addStaticRoute' | 'removeRoute' | 'setDefaultGateway' | 'clearDefaultGateway'
       | 'addStaticARP' | 'deleteARP' | 'clearARPTable' | 'resolveHostname' | 'executePingSequence'
-      | 'executeTraceroute' | 'reverseLookup' | 'resolveViaHostsFile' | 'firstConfiguredDnsServer' | 'queryDnsServer'
+      | 'executeTraceroute' | 'getEgressIPFor' | 'reverseLookup' | 'resolveViaHostsFile' | 'firstConfiguredDnsServer' | 'queryDnsServer'
       | 'isDHCPConfigured' | 'getConnectionDnsSuffix' | 'getDefaultGateway6' | 'effectiveDnsServers' | 'getDnsSuffix'
       | 'getClassId' | 'setClassId' | 'getClassId6' | 'setClassId6' | 'sendRouterSolicitation' | 'autoDiscoverDHCPServers'
       | 'getDhcpLease' | 'releaseDhcpLease' | 'requestDhcpLease' | 'releaseDynamicIPv6' | 'dnsCache'
@@ -1463,6 +1465,10 @@ class WindowsNetConfigApiImpl implements WindowsNetConfigApi {
 
   async traceroute(targetIp: string, maxHops?: number, timeoutMs?: number): Promise<readonly WindowsTracerouteHop[]> {
     return this.deps.executeTraceroute(new IPAddress(targetIp), maxHops, timeoutMs);
+  }
+
+  egressSourceIp(targetIp: string): string | null {
+    return this.deps.getEgressIPFor(new IPAddress(targetIp))?.toString() ?? null;
   }
 
   reverseLookup(ip: string): string | null {

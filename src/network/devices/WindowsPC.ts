@@ -1841,6 +1841,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
         executePingSequence: (target, count, timeoutMs, ttl) => this.executePingSequence(target, count, timeoutMs, ttl),
         executeTraceroute: (target, maxHops, timeoutMs) =>
           this.executeTraceroute(target, maxHops, timeoutMs ?? 500) as Promise<TracerouteHop[]>,
+        getEgressIPFor: (target) => this.getEgressIPFor(target),
         reverseLookup: (ip) => {
           const entry = this.readHostsFile().reverse(ip);
           return entry ? entry.canonicalName : null;
@@ -2124,6 +2125,8 @@ export class WindowsPC extends EndHost implements UserAccountHost {
         this.executePingSequence(target, count, timeout, ttl),
       executeTraceroute: (target: IPAddress, maxHops?: number, timeoutMs?: number) =>
         this.executeTraceroute(target, maxHops, timeoutMs ?? 500) as Promise<TracerouteHop[]>,
+
+      getEgressIPFor: (target: IPAddress): IPAddress | null => this.getEgressIPFor(target),
 
       reverseLookup: (ip: string): string | null => {
         const entry = this.readHostsFile().reverse(ip);

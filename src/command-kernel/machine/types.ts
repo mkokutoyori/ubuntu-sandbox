@@ -654,6 +654,8 @@ export interface WindowsNetConfigApi {
   pingSequence(targetIp: string, count: number, timeoutMs?: number, ttl?: number): Promise<readonly WindowsPingReply[]>;
   /** Traceroute réel vers `targetIp` — tableau vide = pas de route (`tracert`). */
   traceroute(targetIp: string, maxHops?: number, timeoutMs?: number): Promise<readonly WindowsTracerouteHop[]>;
+  /** IP source (interface d'égress) empruntée pour joindre `targetIp` — `null` si aucune route (`pathping` : saut 0). */
+  egressSourceIp(targetIp: string): string | null;
   /** Résolution inverse (IP → nom d'hôte via le fichier hosts) — optionnel, `null` si absent (`tracert`). */
   reverseLookup(ip: string): string | null;
   /** Résolution VIA LE SEUL fichier hosts statique (pas de DNS) — distinct de `resolveHostname` (`nslookup` court-circuite le DNS sur un hit hosts). */

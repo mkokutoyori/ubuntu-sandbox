@@ -5,6 +5,38 @@ progressive par équipement. Un push = une entrée = une fonctionnalité
 complète et testée (voir `CLAUDE.md` / le framework de migration pour les
 principes directeurs).
 
+## Socle + Windows — `pathping` migré : dernier intercepteur de flux `cmd` convergé (§14.6)
+
+**État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
+
+Quatrième et dernière convergence de la surface `cmd`. `pathping` était le
+seul intercepteur de flux restant sur le shell `cmd`
+(`tryStartWinPathpingStream`, propre à `WindowsTerminalSession`). Il est
+désormais une commande noyau à part entière : l'entrée terminal générique
+`tryStartWinKernelStream` est **la seule porte** du streaming `cmd`.
+
+- **`PathpingCommand extends StreamingCommand`** (`streaming: true`,
+  `lenientOptions`) : deux phases émises au fil de l'eau — découverte du
+  chemin (`netConfig.traceroute`, en-tête + liste des sauts) puis calcul des
+  statistiques par saut (`netConfig.pingSequence`, une requête à la fois,
+  `pace(periodMs)` entre chacune, jusqu'à `ctx.signal.aborted`). Réutilise les
+  formateurs purs de `WinPathping.ts`. Ctrl+C pendant les statistiques rend
+  la main sans émettre la table ni `Trace complete.`.
+- **Nouvelle capacité socle `WindowsNetConfigApi.egressSourceIp(targetIp)`**
+  (§0.1 : ajouter une capacité, ne jamais contourner) : expose l'IP source
+  d'égress vers une cible pour la ligne du saut 0, via le dep
+  `getEgressIPFor` déjà porté par `EndHost` — la commande n'accède à la
+  machine que par `ctx.machine.netConfig`.
+- `tryStartWinPathpingStream` supprimé de `WindowsTerminalSession`, avec ses
+  imports `WinPathping`/`EndHost`/`IPAddress` désormais inutilisés. Restent
+  hors périmètre les intercepteurs **PowerShell** (`Test-Connection
+  -Continuous`, `Get-Content -Wait`, `Get-Counter`), qui vivent sur
+  l'interpréteur PowerShell (non encore migré au noyau), pas sur `cmd`.
+- Tests : `windows-pathping-stream-ui` (10/10 : en-tête, sauts, message de
+  calcul, table, `Trace complete.`, non-résolution, Ctrl+C) ; sweep
+  `windows-netstat/ping/tracert-stream-ui` + `windows-consistency`
+  (50/50). `tsc` propre, aucune nouvelle alerte eslint.
+
 ## Socle + Windows — `netstat <intervalle>` : streaming décidé par la commande (`isStreaming(argv)`, §14.6)
 
 **État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**

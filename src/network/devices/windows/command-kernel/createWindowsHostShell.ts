@@ -56,6 +56,7 @@ import { TaskkillCommand } from './commands/Taskkill';
 import { TasklistCommand } from './commands/Tasklist';
 import { TimeCommand } from './commands/Time';
 import { TracertCommand } from './commands/Tracert';
+import { PathpingCommand } from './commands/Pathping';
 import { WhereCommand } from './commands/Where';
 import { WhoamiCommand } from './commands/Whoami';
 import { WmicCommand } from './commands/Wmic';
@@ -82,6 +83,7 @@ export function createWindowsHostShell(deps: WindowsMachineApiDeps): { registry:
   registry.register(() => new RouteCommand());
   registry.register(() => new PingCommand());
   registry.register(() => new TracertCommand());
+  registry.register(() => new PathpingCommand());
   registry.register(() => new NslookupCommand());
   registry.register(() => new IpconfigCommand());
   registry.register(() => new NetshCommand());
