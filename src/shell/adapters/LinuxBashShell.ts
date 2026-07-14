@@ -14,7 +14,8 @@
 import { AbstractShell, type AbstractShellOptions } from '../AbstractShell';
 import type { ShellLineResult } from '../IShell';
 import { ShellFactory } from '../ShellFactory';
-import { parseReadInvocation, performInteractiveRead } from '../input';
+import { createKernelInteraction, parseReadInvocation, performInteractiveRead } from '../input';
+import type { CommandKernelChannel } from '@/command-kernel/io/channel';
 import {
   tryInterpretSshLaunch,
   finalisePendingAuth,
@@ -73,7 +74,11 @@ export interface LinuxBashShellOptions extends AbstractShellOptions {
 
 interface LinuxDevice {
   executeCommand(cmd: string): Promise<string>;
-  executeCommandInSession?(cmd: string, s: LinuxShellSession): Promise<string>;
+  executeCommandInSession?(
+    cmd: string,
+    s: LinuxShellSession,
+    channel?: CommandKernelChannel,
+  ): Promise<string>;
   getHostname(): string;
 }
 
@@ -228,7 +233,7 @@ export class LinuxBashShell extends AbstractShell {
     const dev = this.device as unknown as LinuxDevice;
     const raw = (this.session && this.device instanceof LinuxMachine
       && dev.executeCommandInSession)
-      ? await dev.executeCommandInSession(line, this.session)
+      ? await dev.executeCommandInSession(line, this.session, this.buildKernelChannel())
       : await dev.executeCommand(line);
     if (this.session) {
       this.context.cwd = this.session.cwd;
@@ -248,6 +253,18 @@ export class LinuxBashShell extends AbstractShell {
     // so the recorded session reads cleanly without control bytes.
     const plain = output.map(stripAnsi);
     return { output: plain, styledOutput };
+  }
+
+  /**
+   * Canal hôte remis au pont command-kernel pour cette ligne : le dialogue
+   * (mot de passe, GECOS, confirmation) passe par le même InputBroker que
+   * le `read` interactif — la commande migrée suspend son exécution sur
+   * `prompt()` et reprend à la saisie, sans connaître le terminal.
+   */
+  private buildKernelChannel(): CommandKernelChannel | undefined {
+    const interaction = createKernelInteraction(this.input);
+    if (!interaction) return undefined;
+    return { interaction };
   }
 
   getPrompt(): string {

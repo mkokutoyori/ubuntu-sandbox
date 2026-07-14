@@ -5,6 +5,43 @@ progressive par équipement. Un push = une entrée = une fonctionnalité
 complète et testée (voir `CLAUDE.md` / le framework de migration pour les
 principes directeurs).
 
+## Socle + pont — Canal hôte unifié : câblage UI ↔ machine (framework §14.4/§14.6)
+
+**État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
+
+Refonte de l'intégration terminal ↔ équipement autour d'un canal unique et
+standardisé, `CommandKernelChannel` (`io/channel.ts`) : interaction
+(dialogues), `onOutput` (sortie en flux continu) et `signal` (Ctrl+C) —
+le même contrat pour les commandes à résultat direct et celles qui
+tiennent le terminal.
+
+- **Socle** : `Executor`/`Interpreter` acceptent un `AbortSignal` externe,
+  propagé à travers tous les nœuds de l'AST jusqu'à `ctx.signal` (jusqu'ici
+  chaque commande recevait un signal fabriqué, jamais abortable).
+- **Pont** (`LinuxMachine`) : `executeCommandInSession`/`executeCommand`/
+  `tryCommandKernel`/`buildCommandKernelIO` acceptent le canal ; chaque
+  `write` d'une commande part en temps réel vers `channel.onOutput` tout en
+  restant collecté pour l'appelant (rétrocompatible : le canal est
+  optionnel, aucun appelant existant ne change).
+- **UI** : `createKernelInteraction` (`src/shell/input/kernelInteraction.ts`)
+  adapte l'`InputBroker` existant (SessionInputHost/PromiseInputBroker —
+  la même machinerie Promise que le `read` interactif) au contrat
+  `InteractionChannel` du socle ; `LinuxBashShell.dispatch` construit le
+  canal et le passe à `executeCommandInSession`. Une commande migrée peut
+  donc faire `await ui.prompt({kind:'secret'…})` : l'exécution suspend
+  jusqu'à la saisie, Ctrl+C/Ctrl+D annule proprement (le broker résout
+  `cancelled` → `prompt()` renvoie `null`).
+- **Framework** : §14.4 documente la chaîne câblée (les commandes
+  dialoguantes deviennent migrables, une par push, avec suppression du flux
+  `LinuxFlowBuilder` correspondant) ; nouveau §14.6 déclare les
+  intercepteurs de streaming de `LinuxTerminalSession` (`tryStartPingStream`,
+  `tryStartTracerouteStream`, `tryStartTcpdump`…) chemins legacy à éteindre,
+  avec la recette de migration standard (capacité `MachineApi` optionnelle
+  déléguant au moteur réseau réel → commande kernel écrivant au fil de
+  l'eau et honorant `ctx.signal` → suppression de l'intercepteur et de son
+  parsing dupliqué). Chaque commande streaming reste un chantier propre —
+  la parité des formats de sortie est massivement testée.
+
 ## Socle — Buffers d'entrée/sortie et canal d'interaction (framework §14)
 
 **État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**

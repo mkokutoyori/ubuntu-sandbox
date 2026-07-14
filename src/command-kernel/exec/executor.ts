@@ -50,47 +50,47 @@ export class Executor {
     this.globExpand = globExpand;
   }
 
-  async run(node: ScriptNode, session: Session, io: CommandIO): Promise<ExitCode> {
+  async run(node: ScriptNode, session: Session, io: CommandIO, signal?: AbortSignal): Promise<ExitCode> {
     switch (node.kind) {
       case "command":
-        return this.runSimple(node, session, io);
+        return this.runSimple(node, session, io, signal);
       case "pipeline":
-        return this.runPipeline(node, session, io);
+        return this.runPipeline(node, session, io, signal);
       case "and": {
-        const code = await this.run(node.left, session, io);
-        return code === EXIT_OK ? this.run(node.right, session, io) : code;
+        const code = await this.run(node.left, session, io, signal);
+        return code === EXIT_OK ? this.run(node.right, session, io, signal) : code;
       }
       case "or": {
-        const code = await this.run(node.left, session, io);
-        return code !== EXIT_OK ? this.run(node.right, session, io) : code;
+        const code = await this.run(node.left, session, io, signal);
+        return code !== EXIT_OK ? this.run(node.right, session, io, signal) : code;
       }
       case "sequence": {
         let last: ExitCode = EXIT_OK;
         for (const stmt of node.statements) {
-          last = await this.run(stmt, session, io);
+          last = await this.run(stmt, session, io, signal);
           session.lastExitCode = last;
         }
         return last;
       }
       case "if": {
-        const cond = await this.run(node.condition, session, io);
-        if (cond === EXIT_OK) return this.run(node.thenBranch, session, io);
-        return node.elseBranch ? this.run(node.elseBranch, session, io) : EXIT_OK;
+        const cond = await this.run(node.condition, session, io, signal);
+        if (cond === EXIT_OK) return this.run(node.thenBranch, session, io, signal);
+        return node.elseBranch ? this.run(node.elseBranch, session, io, signal) : EXIT_OK;
       }
       case "for": {
         let last: ExitCode = EXIT_OK;
         for (const rawItem of node.items) {
           const [item] = this.expander.expand(rawItem, session);
           session.variables.set(node.variable, item);
-          last = await this.run(node.body, session, io);
+          last = await this.run(node.body, session, io, signal);
           session.lastExitCode = last;
         }
         return last;
       }
       case "while": {
         let last: ExitCode = EXIT_OK;
-        while ((await this.run(node.condition, session, io)) === EXIT_OK) {
-          last = await this.run(node.body, session, io);
+        while ((await this.run(node.condition, session, io, signal)) === EXIT_OK) {
+          last = await this.run(node.body, session, io, signal);
           session.lastExitCode = last;
         }
         return last;
@@ -107,7 +107,7 @@ export class Executor {
           variables: new Map(session.variables),
           env: new Map(session.env),
         };
-        const code = await this.run(node.body, cloned, io);
+        const code = await this.run(node.body, cloned, io, signal);
         // Le sous-shell n'expose PAS ses variables au parent (isolation),
         // mais le code de sortie retourné se propage bien vers l'appelant.
         return code;
@@ -120,6 +120,7 @@ export class Executor {
     node: SimpleCommandNode,
     session: Session,
     io: CommandIO,
+    signal?: AbortSignal,
   ): Promise<ExitCode> {
     const command = this.registry.resolve(node.name);
     if (!command) throw new CommandNotFoundError(node.name);
@@ -147,7 +148,7 @@ export class Executor {
       actor,
     );
     try {
-      return await this.runWithArgs(command, node.name, argv, session, effectiveIO);
+      return await this.runWithArgs(command, node.name, argv, session, effectiveIO, signal);
     } finally {
       if (ownedStdout) await ownedStdout.close();
     }
@@ -166,10 +167,11 @@ export class Executor {
     argv: readonly string[],
     session: Session,
     io: CommandIO,
+    signal?: AbortSignal,
   ): Promise<ExitCode | null> {
     const command = this.registry.resolve(name);
     if (!command) return null;
-    return this.runWithArgs(command, name, argv, session, io);
+    return this.runWithArgs(command, name, argv, session, io, signal);
   }
 
   private async runWithArgs(
@@ -178,6 +180,7 @@ export class Executor {
     argv: readonly string[],
     session: Session,
     io: CommandIO,
+    signal?: AbortSignal,
   ): Promise<ExitCode> {
     // Conversion entrée utilisateur -> arguments typés
     const args = this.argParser.parse(argv, command.descriptor);
@@ -191,7 +194,7 @@ export class Executor {
       machine: this.machine,
       args,
       rawArgv: argv,
-      signal: new AbortController().signal,
+      signal: signal ?? new AbortController().signal,
     };
     try {
       const runner =
@@ -214,6 +217,7 @@ export class Executor {
     node: PipelineNode,
     session: Session,
     io: CommandIO,
+    signal?: AbortSignal,
   ): Promise<ExitCode> {
     let previous: InputStream = io.stdin;
     let last: ExitCode = EXIT_OK;
@@ -225,7 +229,7 @@ export class Executor {
         stdout: isLast ? io.stdout : pipe,
         stderr: io.stderr,
         interaction: io.interaction,
-      });
+      }, signal);
       await pipe.close();
       previous = pipe;
     }

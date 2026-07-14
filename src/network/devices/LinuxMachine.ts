@@ -134,6 +134,7 @@ import { PipeBuffer } from '@/command-kernel/io/pipe-buffer';
 import { CommandRegistry } from '@/command-kernel/registry/command-registry';
 import { createSession, Session } from '@/command-kernel/session/types';
 import { CommandIO } from '@/command-kernel/io/types';
+import type { CommandKernelChannel } from '@/command-kernel/io/channel';
 import { createLinuxHostShell } from './linux/command-kernel/createLinuxHostShell';
 import { resolveLinuxUser } from './linux/command-kernel/LinuxUser';
 
@@ -1693,7 +1694,11 @@ export abstract class LinuxMachine extends EndHost
    *      dispatch the head token through the registry or the built-in
    *      network command handlers (iptables, ps, cat/rm of DHCP leases).
    */
-  async executeCommand(command: string, stdin?: string): Promise<string> {
+  async executeCommand(
+    command: string,
+    stdin?: string,
+    kernelChannel?: CommandKernelChannel,
+  ): Promise<string> {
     if (!this.isPoweredOn) return 'Device is powered off';
     if (stdin !== undefined) {
       (this.executor as unknown as { _scenarioStdin?: string })._scenarioStdin = stdin;
@@ -1708,7 +1713,7 @@ export abstract class LinuxMachine extends EndHost
     if (sessionView !== null) return sessionView;
 
     if (stdin === undefined) {
-      const migrated = await this.tryCommandKernel(trimmed);
+      const migrated = await this.tryCommandKernel(trimmed, kernelChannel);
       if (migrated !== null) return migrated;
     }
 
@@ -1750,7 +1755,10 @@ export abstract class LinuxMachine extends EndHost
     return this.commandKernelShell;
   }
 
-  private async tryCommandKernel(trimmed: string): Promise<string | null> {
+  private async tryCommandKernel(
+    trimmed: string,
+    channel?: CommandKernelChannel,
+  ): Promise<string | null> {
     if (trimmed.includes('$(') || trimmed.includes('`')) return null;
 
     const { interpreter, registry } = this.getCommandKernelShell();
@@ -1774,10 +1782,10 @@ export abstract class LinuxMachine extends EndHost
     for (const name of names) this.executor.publishCommandExecve(name);
 
     const session = this.buildCommandKernelSession();
-    const { io, chunks } = await this.buildCommandKernelIO();
+    const { io, chunks } = await this.buildCommandKernelIO(undefined, channel);
 
     try {
-      await interpreter.interpretLine(trimmed, session, io);
+      await interpreter.interpretLine(trimmed, session, io, channel?.signal);
     } catch (err) {
       if (err instanceof CommandNotFoundError) return null;
       if (err instanceof ShellError) return `${err.message}\n`;
@@ -1831,13 +1839,25 @@ export abstract class LinuxMachine extends EndHost
     });
   }
 
-  private async buildCommandKernelIO(stdinContent?: string): Promise<{ io: CommandIO; chunks: string[] }> {
+  private async buildCommandKernelIO(
+    stdinContent?: string,
+    channel?: CommandKernelChannel,
+  ): Promise<{ io: CommandIO; chunks: string[] }> {
     const chunks: string[] = [];
-    const collector = { write: async (text: string) => { chunks.push(text); }, close: async () => {} };
+    const collector = {
+      write: async (text: string) => {
+        chunks.push(text);
+        channel?.onOutput?.(text);
+      },
+      close: async () => {},
+    };
     const stdin = new PipeBuffer();
     if (stdinContent !== undefined) await stdin.write(stdinContent);
     await stdin.close();
-    return { io: { stdin, stdout: collector, stderr: collector }, chunks };
+    return {
+      io: { stdin, stdout: collector, stderr: collector, interaction: channel?.interaction },
+      chunks,
+    };
   }
 
   /**
@@ -2891,7 +2911,11 @@ export abstract class LinuxMachine extends EndHost
    * state holder. Calls are serialised per device so the executor's
    * mutation window is never observed by another concurrent terminal.
    */
-  executeCommandInSession(command: string, session: LinuxShellSession): Promise<string> {
+  executeCommandInSession(
+    command: string,
+    session: LinuxShellSession,
+    kernelChannel?: CommandKernelChannel,
+  ): Promise<string> {
     // Chain on the per-device queue: subsequent commands wait their turn.
     return this.sessionQueue.run(async () => {
       if (!this.isPoweredOn) return 'Device is powered off';
@@ -2899,7 +2923,7 @@ export abstract class LinuxMachine extends EndHost
       return this.sessionSwap.within(session, async () => {
         this.executor.displayColor = true;
         try {
-          return await this.executeCommand(command);
+          return await this.executeCommand(command, undefined, kernelChannel);
         } finally {
           this.executor.displayColor = false;
         }

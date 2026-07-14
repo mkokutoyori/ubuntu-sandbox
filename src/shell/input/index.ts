@@ -10,5 +10,6 @@ export { NULL_INPUT_HOST } from './InputHost';
 export { PromiseInputBroker } from './PromiseInputBroker';
 export { parseReadInvocation, performInteractiveRead } from './interactiveRead';
 export type { ParsedRead, InteractiveReadOutcome } from './interactiveRead';
+export { createKernelInteraction } from './kernelInteraction';
 export { runFlowOnBroker } from './runFlowOnBroker';
 export type { FlowRunnerEmitter, FlowRunnerResult, FlowRunnerStatus } from './runFlowOnBroker';

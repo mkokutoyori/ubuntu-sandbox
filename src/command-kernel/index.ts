@@ -55,6 +55,7 @@ export * from "./io/types";
 export * from "./io/pipe-buffer";
 export * from "./io/file-output-stream";
 export * from "./io/interaction";
+export * from "./io/channel";
 
 // 3. Façade des méthodes internes de la machine
 export * from "./machine/types";

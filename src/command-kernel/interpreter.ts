@@ -21,15 +21,25 @@ export class Interpreter {
   }
 
   /** Une ligne interactive : "ls -l /tmp | grep log && echo ok" */
-  async interpretLine(line: string, session: Session, io: CommandIO): Promise<ExitCode> {
+  async interpretLine(
+    line: string,
+    session: Session,
+    io: CommandIO,
+    signal?: AbortSignal,
+  ): Promise<ExitCode> {
     const tokens = this.lexer.tokenize(line);
     const ast = this.parser.parse(tokens);
-    return this.executor.run(ast, session, io);
+    return this.executor.run(ast, session, io, signal);
   }
 
   /** Un script complet, multi-lignes, avec if/for/while/variables. */
-  async runScript(source: string, session: Session, io: CommandIO): Promise<ExitCode> {
-    return this.interpretLine(source, session, io); // même pipeline lexer→parser→executor
+  async runScript(
+    source: string,
+    session: Session,
+    io: CommandIO,
+    signal?: AbortSignal,
+  ): Promise<ExitCode> {
+    return this.interpretLine(source, session, io, signal); // même pipeline lexer→parser→executor
   }
 
   /**
@@ -44,8 +54,9 @@ export class Interpreter {
     argv: readonly string[],
     session: Session,
     io: CommandIO,
+    signal?: AbortSignal,
   ): Promise<ExitCode | null> {
-    return this.executor.runResolved(name, argv, session, io);
+    return this.executor.runResolved(name, argv, session, io, signal);
   }
 
   get commands(): CommandRegistry {

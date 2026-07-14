@@ -1074,9 +1074,13 @@ suite complète** — ni par `npm run test:run`, ni par un motif trop large.
       `command/text-input.ts` du socle, jamais une redéfinition locale
       (§14.3).
 - [ ] Commande interactive (mot de passe, GECOS, confirmation) : passe par
-      `requireInteraction()`/`ctx.io.interaction` — et n'est PAS migrée du
-      tout tant que le pont legacy n'expose pas les `PromptRequest`
-      (§14.4).
+      `requireInteraction()`/`ctx.io.interaction`, gère `null` (Ctrl+C/EOF)
+      comme un abandon propre, et sa migration supprime le flux
+      `LinuxFlowBuilder` legacy correspondant (§14.4).
+- [ ] Commande à sortie continue (suivi, sonde réseau) : écrit sur
+      `ctx.io.stdout` au fil de l'eau, s'arrête sur `ctx.signal.aborted`,
+      et sa migration supprime l'intercepteur `tryStartXxx` de la session
+      ET son parsing dupliqué (§14.6).
 
 ---
 
@@ -1176,15 +1180,31 @@ Règles :
    `PromptRequest` se traduit en directive d'input existante
    (`PasswordDirective`/`TextPromptDirective`/`ConfirmationDirective`) et
    la saisie remonte par `respond()`.
-4. **Le pont legacy n'est pas encore câblé.** `LinuxMachine.tryCommandKernel()`
-   attend une réponse d'un seul tenant : tant qu'il n'expose pas un état
-   « en attente de saisie » (un `PromptRequest` remonté à la
-   `TerminalSession`), **aucune commande dépendant d'un dialogue
-   (`passwd`, `adduser`, `chfn`, `su`…) ne doit être migrée**. Ce câblage
-   est un chantier à part entière : il touche le contrat de retour du pont
-   (§6) et la session de terminal, et se discute explicitement avant de s'y
-   engager. La garde `requireInteraction()` garantit qu'une migration
-   prématurée échoue proprement au lieu de bloquer.
+4. **Le pont interactif est câblé sur le chemin terminal.** La chaîne
+   réelle, sans nouveau mécanisme inventé — chaque maillon existait déjà :
+
+   ```
+   TerminalSession (UI, inputMode password/interactive-text, Ctrl+C)
+      └─ SessionInputHost (requestInput/submitPending/cancelPending)
+           └─ PromiseInputBroker (Promise résolue à la saisie)
+                └─ createKernelInteraction(broker)        (src/shell/input/kernelInteraction.ts)
+                     └─ CommandKernelChannel.interaction
+                          └─ LinuxBashShell.dispatch → executeCommandInSession(line, session, channel)
+                               └─ tryCommandKernel → ctx.io.interaction  (la commande await prompt())
+   ```
+
+   Un `await ui.prompt(...)` dans une commande migrée suspend réellement
+   l'exécution jusqu'à la saisie ; Ctrl+C/Ctrl+D pendant le prompt passe
+   par `SessionInputHost.cancelPending()` → le broker résout `cancelled` →
+   `prompt()` renvoie `null` → la commande abandonne proprement. Les
+   commandes dialoguantes (`passwd`, `chfn`…) sont donc **migrables** —
+   chacune reste son propre chantier (§3, §7, parité stricte avec le flux
+   legacy `LinuxFlowBuilder` correspondant, qui n'est supprimé qu'avec la
+   migration de sa commande). Deux chemins restent SANS canal, par
+   construction : `runCommandKernelResolved` (commande invoquée depuis un
+   script bash — un script n'a pas de tty à offrir) et les appels
+   programmatiques `executeCommand()`/`executeCommandInSession()` sans
+   `channel` (tests, SSH exec) — `requireInteraction()` y échoue proprement.
 
 ### 14.5 Point d'extension réservé : redirections `stderr`
 
@@ -1194,3 +1214,53 @@ encore** : `2>`/`2>&1`/heredoc restent non supportés, par choix (§3.5 — pas
 de complexité par anticipation). Le jour où une commande migrée en a
 réellement besoin, le travail commence par le Lexer/Parser et un nouveau
 lot de tests localisés — pas par un contournement dans la commande.
+
+### 14.6 Canal hôte unifié : `CommandKernelChannel` — un seul chemin pour toutes les natures de commandes
+
+`io/channel.ts` définit LE contrat standard entre un hôte de terminal et le
+pont d'un équipement :
+
+```ts
+export interface CommandKernelChannel {
+  readonly interaction?: InteractionChannel;      // dialogues (§14.4)
+  readonly onOutput?: (chunk: string) => void;    // sortie en flux continu
+  readonly signal?: AbortSignal;                  // Ctrl+C de l'hôte
+}
+```
+
+Il est plombé de bout en bout : `executeCommandInSession(line, session,
+channel)` → `executeCommand` → `tryCommandKernel` → `buildCommandKernelIO`
+(chaque `write` d'une commande part en temps réel vers `channel.onOutput`
+tout en restant collecté pour l'appelant) et `interpretLine(...,
+channel.signal)` → `ctx.signal`.
+
+**Objectif de convergence** : les commandes « qui tiennent le terminal »
+(`ping`, `traceroute`, `mtr`, `tcpdump`, `watch`, suivis `-f`…) passent
+aujourd'hui par des intercepteurs dédiés dans `LinuxTerminalSession`
+(`tryStartPingStream`, `tryStartTracerouteStream`, `tryStartTcpdump`…),
+chacun avec son propre parsing d'arguments et son propre couplage
+session↔device. Ce sont des **chemins legacy à éteindre** : la cible est
+qu'une commande à sortie continue soit une commande command-kernel comme
+les autres — même registre, même `PrivilegePolicy`, même `ArgumentParser` —
+qui écrit sur `ctx.io.stdout` au fil de l'eau (l'hôte la voit vivre via
+`onOutput`) et s'arrête sur `ctx.signal.aborted` (Ctrl+C).
+
+Recette de migration d'un intercepteur (une commande = un chantier = un
+push, jamais un lot) :
+
+1. Exposer la capacité temps réel manquante comme extension **optionnelle**
+   de `MachineApi` (§3.4), déléguant au moteur réseau réel de l'équipement
+   (§2.2 — ex : le moteur ICMP que `pingStreamInSession` enveloppe déjà),
+   jamais une seconde implémentation du protocole.
+2. Écrire la commande kernel : parsing via le descripteur, sortie via
+   `ctx.io.stdout.write()` ligne à ligne, arrêt via `ctx.signal.aborted`,
+   statistiques finales émises aussi sur interruption (comportement `ping`
+   réel).
+3. Supprimer l'intercepteur `tryStartXxx` de la session ET le parsing
+   d'arguments dupliqué qu'il portait — la session n'a plus qu'à router la
+   ligne comme n'importe quelle commande, avec un `channel` branché sur sa
+   machinerie de job de premier plan existante (`startAsyncCommand` :
+   `ctx.sink` ↔ `onOutput`, `ctx.onCancel` ↔ `signal`).
+4. Parité de sortie stricte contre les tests existants de la commande
+   (§10) — les formats de ligne (`64 bytes from…`, en-têtes, stats) sont
+   massivement testés.
