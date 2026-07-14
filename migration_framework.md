@@ -1202,7 +1202,28 @@ Règles :
    `PromptRequest` se traduit en directive d'input existante
    (`PasswordDirective`/`TextPromptDirective`/`ConfirmationDirective`) et
    la saisie remonte par `respond()`.
-4. **Le pont interactif est câblé sur le chemin terminal.** La chaîne
+4. **Toute interactivité vit dans la commande, jamais dans un flux
+   legacy.** `LinuxFlowBuilder`/`InteractiveFlowEngine` ne construit plus
+   AUCUNE étape `password`/`text`/`confirmation` pour une commande migrée
+   (`adduser` en est la preuve : ses branches dédiées — `buildRootAdduserFlow`,
+   le cas `adduser` de `buildSudoFlow`, `gecosSteps`, `userCreationTail` —
+   ont toutes été supprimées). Une commande interactive migrée porte son
+   dialogue intégralement via `ctx.io.interaction` dans son propre
+   `execute()` — mot de passe, GECOS, confirmation inclus — qu'elle soit
+   invoquée nue ou via `sudo`/`su -c`. Le flux legacy ne garde que ce qui
+   n'est *pas* la commande elle-même : l'authentification `sudo` propre
+   (son propre mot de passe), `passwd`/`su` non encore migrés.
+5. **Commande interactive ⇒ commande streaming.** Une commande qui
+   dialogue écrit forcément du texte *avant* d'attendre une réponse
+   (bannière de création, en-tête…). Sans diffusion en direct, ce texte
+   resterait invisible jusqu'à la fin de tout le dialogue — l'hôte
+   n'affiche un résultat non-streaming qu'une fois la commande entièrement
+   terminée. Toute commande qui appelle `ctx.io.interaction.prompt()` doit
+   donc déclarer `streaming: true` (§9/descriptor), même si elle ne « tient »
+   pas le terminal au sens réseau (`ping`) — c'est le même mécanisme
+   (`tryStartKernelStream` pour la ligne nue, diffusion ligne à ligne dans
+   `executeOnDevice` pour `sudo <cmd>` via le flux d'authentification).
+6. **Le pont interactif est câblé sur le chemin terminal.** La chaîne
    réelle, sans nouveau mécanisme inventé — chaque maillon existait déjà :
 
    ```

@@ -32,6 +32,7 @@ interface ParsedAdduser {
   shell?: string;
   gecos?: string;
   noCreateHome: boolean;
+  disabledPassword: boolean;
 }
 
 const VALUE_OPTIONS = new Set(['--uid', '--gid', '--ingroup', '--home', '--shell', '--gecos']);
@@ -49,6 +50,12 @@ export class AdduserCommand extends BaseCommand {
     privileges: new RootWithVendorDenialPolicy('adduser'),
     category: 'iam',
     lenientOptions: true,
+    // Le dialogue mot de passe/GECOS s'étale sur plusieurs allers-retours
+    // avec l'utilisateur : l'hôte doit afficher la sortie déjà produite
+    // (bannière de création) avant même que le premier prompt n'apparaisse,
+    // exactement comme `ping`/`traceroute` (framework §14.6) — sinon la
+    // bannière resterait invisible jusqu'à la fin de tout le dialogue.
+    streaming: true,
   };
 
   protected get groupAlias(): boolean { return false; }
@@ -127,7 +134,73 @@ export class AdduserCommand extends BaseCommand {
     } else {
       await out(`Not creating home directory \`${home}'.`);
     }
+
+    // Le compte réel `adduser` interactif demande ensuite le mot de passe
+    // puis les cinq champs GECOS — mais UNIQUEMENT quand un humain peut
+    // répondre (`ctx.io.interaction`). Sans canal (script, appel direct
+    // hors terminal), on se comporte comme `useradd` : compte créé,
+    // aucune invite — jamais une InteractionUnavailableError sur un
+    // chemin non interactif qui n'en a jamais eu besoin.
+    const ui = ctx.io.interaction;
+    if (ui && !req.system) {
+      const withPassword = !req.disabledPassword;
+      const withGecos = req.gecos === undefined;
+      if (withPassword) {
+        const passwordOutcome = await this.promptPassword(ui, users, req.name, out);
+        if (passwordOutcome !== EXIT_OK) return passwordOutcome;
+      }
+      if (withGecos) {
+        await this.promptGecos(ui, users, req.name, out);
+      }
+    }
     return EXIT_OK;
+  }
+
+  private async promptPassword(
+    ui: NonNullable<CommandContext['io']['interaction']>,
+    users: CommandContext['machine']['users'],
+    name: string,
+    out: (t: string) => Promise<void>,
+  ): Promise<ExitCode> {
+    const password = await ui.prompt({ kind: 'secret', prompt: 'New password:' });
+    if (password === null) return 1;
+    if (password.length === 0) {
+      await out('No password supplied');
+      return 1;
+    }
+    const retype = await ui.prompt({ kind: 'secret', prompt: 'Retype new password:' });
+    if (retype === null) return 1;
+    if (retype !== password) {
+      await out('Sorry, passwords do not match.');
+      await out('passwd: Authentication token manipulation error');
+      await out('passwd: password unchanged');
+      return 1;
+    }
+    users.posixSetPassword?.(name, password);
+    await out('passwd: password updated successfully');
+    return EXIT_OK;
+  }
+
+  private async promptGecos(
+    ui: NonNullable<CommandContext['io']['interaction']>,
+    users: CommandContext['machine']['users'],
+    name: string,
+    out: (t: string) => Promise<void>,
+  ): Promise<void> {
+    await out(`Changing the user information for ${name}`);
+    await out('Enter the new value, or press ENTER for the default');
+    const fullName = (await ui.prompt({ kind: 'text', prompt: '\tFull Name []: ', allowEmpty: true })) ?? '';
+    const room = (await ui.prompt({ kind: 'text', prompt: '\tRoom Number []: ', allowEmpty: true })) ?? '';
+    const workPhone = (await ui.prompt({ kind: 'text', prompt: '\tWork Phone []: ', allowEmpty: true })) ?? '';
+    const homePhone = (await ui.prompt({ kind: 'text', prompt: '\tHome Phone []: ', allowEmpty: true })) ?? '';
+    const other = (await ui.prompt({ kind: 'text', prompt: '\tOther []: ', allowEmpty: true })) ?? '';
+    const confirmation = await ui.prompt({ kind: 'confirm', prompt: 'Is the information correct? [Y/n] ', defaultValue: 'Y' });
+    const answer = (confirmation ?? '').trim().toLowerCase();
+    if (answer === 'n' || answer === 'no') {
+      await out('Aborted.');
+      return;
+    }
+    users.posixSetGecos?.(name, { fullName, room, workPhone, homePhone, other });
   }
 
   private async addToGroup(
@@ -186,6 +259,7 @@ export class AdduserCommand extends BaseCommand {
       group: '',
       system: false,
       noCreateHome: false,
+      disabledPassword: false,
     };
     const positionals: string[] = [];
 
@@ -206,6 +280,7 @@ export class AdduserCommand extends BaseCommand {
         if (token === '--group') groupMode = true;
         else if (token === '--system') req.system = true;
         else if (token === '--no-create-home') req.noCreateHome = true;
+        else if (token === '--disabled-password' || token === '--disabled-login') req.disabledPassword = true;
         continue;
       }
       if (VALUE_OPTIONS.has(token)) {
@@ -242,6 +317,7 @@ export class AddgroupCommand extends AdduserCommand {
     privileges: new RootWithVendorDenialPolicy('addgroup'),
     category: 'iam',
     lenientOptions: true,
+    streaming: true,
   };
 
   protected override get groupAlias(): boolean { return true; }

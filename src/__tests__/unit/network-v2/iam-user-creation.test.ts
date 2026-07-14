@@ -327,29 +327,24 @@ describe('LinuxFlowBuilder — useradd is non-interactive (faithful)', () => {
 });
 
 describe('LinuxFlowBuilder — adduser (root)', () => {
-  it('builds an interactive flow for a plain user creation', () => {
+  // framework §14.4 : `adduser` n'est plus jamais intercepté au niveau
+  // flux, quels que soient les drapeaux — `AdduserCommand` porte
+  // elle-même son mot de passe/GECOS via `ctx.io.interaction`. Le
+  // comportement complet (prompts, --gecos, --disabled-password) est
+  // vérifié à travers le vrai terminal dans `e2e/user-creation.spec.ts`.
+  it('never builds flow steps for a plain user creation', () => {
     const device = createMockDevice();
-    const steps = LinuxFlowBuilder.build('adduser bob', 'root', 0, device);
-    expect(steps).not.toBeNull();
-    expect(countSteps(steps!, 'password')).toBe(2);   // new + retype
-    expect(countSteps(steps!, 'text')).toBe(5);       // 5 GECOS fields
-    expect(countSteps(steps!, 'confirmation')).toBe(1);
+    expect(LinuxFlowBuilder.build('adduser bob', 'root', 0, device)).toBeNull();
   });
 
-  it('skips the GECOS prompts when --gecos is supplied (quote-aware)', () => {
+  it('never builds flow steps even with --gecos supplied', () => {
     const device = createMockDevice();
-    const steps = LinuxFlowBuilder.build('adduser --gecos "Bob Martin" bob', 'root', 0, device);
-    expect(steps).not.toBeNull();
-    expect(countSteps(steps!, 'password')).toBe(2);
-    expect(countSteps(steps!, 'text')).toBe(0);
+    expect(LinuxFlowBuilder.build('adduser --gecos "Bob Martin" bob', 'root', 0, device)).toBeNull();
   });
 
-  it('skips the password prompts with --disabled-password', () => {
+  it('never builds flow steps even with --disabled-password', () => {
     const device = createMockDevice();
-    const steps = LinuxFlowBuilder.build('adduser --disabled-password bob', 'root', 0, device);
-    expect(steps).not.toBeNull();
-    expect(countSteps(steps!, 'password')).toBe(0);
-    expect(countSteps(steps!, 'text')).toBe(5);
+    expect(LinuxFlowBuilder.build('adduser --disabled-password bob', 'root', 0, device)).toBeNull();
   });
 
   it('returns null for the add-to-group overload', () => {
@@ -374,12 +369,12 @@ describe('LinuxFlowBuilder — adduser (root)', () => {
 });
 
 describe('LinuxFlowBuilder — sudo adduser', () => {
-  it('prepends a sudo password step to the creation flow', () => {
+  it('sudo adduser only authenticates at flow level — no password/GECOS steps', () => {
     const device = createMockDevice();
     const steps = LinuxFlowBuilder.build('sudo adduser bob', 'user', 1000, device);
     expect(steps).not.toBeNull();
-    expect(countSteps(steps!, 'password')).toBe(3); // sudo + new + retype
-    expect(countSteps(steps!, 'text')).toBe(5);
+    expect(countSteps(steps!, 'password')).toBe(1); // sudo password only
+    expect(countSteps(steps!, 'text')).toBe(0);
   });
 
   it('only authenticates sudo for the add-to-group overload', () => {

@@ -15,6 +15,7 @@ import {
   NetProbeApi,
   PermissionsApi,
   PosixUseraddSpec,
+  PosixGecosFields,
   TracerouteHopInfo,
   PowerApi,
   ProcessApi,
@@ -616,6 +617,14 @@ class LinuxUserManagementApi implements UserManagementApi {
 
   appendToGroup(name: string, group: string): void {
     this.userManager.usermod(name, { aG: group });
+  }
+
+  posixSetPassword(name: string, password: string): void {
+    this.userManager.setPassword(name, password);
+  }
+
+  posixSetGecos(name: string, fields: PosixGecosFields): void {
+    this.userManager.setUserGecos(name, fields.fullName, fields.room, fields.workPhone, fields.homePhone, fields.other);
   }
 
   async findByName(name: string): Promise<User | undefined> {

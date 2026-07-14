@@ -388,7 +388,40 @@ export class LinuxTerminalSession extends TerminalSession {
     const dev = this.device;
     if (!dev.getIsPoweredOn()) throw new DeviceOfflineError(dev.getName());
     if (this.shell && dev instanceof LinuxMachine) {
-      const promise = dev.executeCommandInSession(command, this.shell);
+      // Même canal que la commande directe (§14.6) : une commande
+      // interactive atteinte depuis un pas de flux (`sudo <cmd>`,
+      // `su -c`, …) dialogue exactement comme la même commande tapée nue —
+      // aucune interactivité ne doit dépendre du chemin d'entrée.
+      const broker = new PromiseInputBrokerLib(this.getInputHost());
+      const interaction = createKernelInteraction(broker);
+
+      const withoutSudo = command.startsWith('sudo ') ? command.slice(5).trim() : command;
+      if (dev.isKernelStreamingLine(withoutSudo)) {
+        // Une commande streaming (`adduser`, `ping`, …) écrit AVANT
+        // d'attendre une saisie (bannière de création, en-tête…) : sans
+        // diffusion en direct, ce texte resterait invisible jusqu'à la
+        // fin de tout le dialogue puisque `executeCommandStep` n'affiche
+        // le résultat qu'une fois la Promise résolue. On relaie donc
+        // chaque ligne au fil de l'eau et on renvoie '' pour que
+        // l'appelant ne la réaffiche pas une seconde fois.
+        let pending = '';
+        const promise = dev.executeCommandInSession(command, this.shell, {
+          interaction,
+          onOutput: (chunk) => {
+            pending += chunk;
+            let idx: number;
+            while ((idx = pending.indexOf('\n')) >= 0) {
+              this.addLine(pending.slice(0, idx));
+              pending = pending.slice(idx + 1);
+            }
+          },
+        });
+        await (timeoutMs != null ? withTimeout(promise, timeoutMs) : promise);
+        if (pending) this.addLine(pending);
+        return '';
+      }
+
+      const promise = dev.executeCommandInSession(command, this.shell, { interaction });
       return timeoutMs != null ? withTimeout(promise, timeoutMs) : promise;
     }
     return super.executeOnDevice(command, timeoutMs);

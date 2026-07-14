@@ -5,6 +5,60 @@ progressive par équipement. Un push = une entrée = une fonctionnalité
 complète et testée (voir `CLAUDE.md` / le framework de migration pour les
 principes directeurs).
 
+## adduser : l'interactivité (mot de passe + GECOS) migre de LinuxFlowBuilder vers la commande
+
+**État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
+
+Complète la migration `adduser`/`addgroup` : le dialogue mot de passe +
+GECOS, jusqu'ici porté par le flux legacy `LinuxFlowBuilder`/
+`InteractiveFlowEngine`, vit désormais entièrement dans `AdduserCommand`
+via `ctx.io.interaction` — conformément au principe (framework §14.4) que
+toute interactivité doit être gérée au niveau de la commande, jamais du
+flux.
+
+- **Nouvelles capacités `MachineApi`** : `UserManagementApi.posixSetPassword`/
+  `posixSetGecos` (façades sur `LinuxUserManager.setPassword`/
+  `setUserGecos`), en plus de `posixAccountInfo`/`primaryGroupName`/
+  `appendToGroup` déjà ajoutées.
+- **`AdduserCommand`** : après création du compte (bannière déjà émise),
+  si un canal d'interaction est disponible et que le compte n'est ni
+  `--system` ni couvert par `--disabled-password`/`--gecos`, demande
+  elle-même « New password: » puis « Retype new password: » (échec
+  immédiat si vide ou non concordant, messages identiques au legacy), puis
+  le wizard GECOS complet (Full Name/Room/Work Phone/Home Phone/Other +
+  confirmation, abandon sur réponse négative). Sans canal (script, appel
+  direct hors terminal) : comportement inchangé, silencieux — jamais
+  d'erreur sur un chemin qui n'a jamais eu besoin d'interactivité.
+- **Descripteur `streaming: true`** sur `AdduserCommand`/`AddgroupCommand` :
+  une commande qui dialogue écrit forcément du texte avant d'attendre une
+  réponse (la bannière de création) — sans diffusion en direct, ce texte
+  resterait invisible jusqu'à la fin de tout le dialogue. Câblage :
+  `LinuxTerminalSession.executeOnDevice` détecte maintenant (après avoir
+  ôté un éventuel préfixe `sudo `) qu'une commande est streaming et relaie
+  sa sortie ligne à ligne au fil de l'eau — c'est ce qui permet à `sudo
+  adduser` (qui passe par le flux d'authentification générique, pas par
+  l'entrée directe) d'afficher sa bannière AVANT le premier prompt, exactement
+  comme la commande nue. Bug réel trouvé en testant via Playwright : sans
+  ce câblage, la bannière de création restait invisible jusqu'à la fin du
+  dialogue mot de passe/GECOS (le résultat n'était affiché qu'une fois la
+  Promise entière résolue).
+- **Canal propagé plus profond** : `LinuxMachine.executeCommand` stashe le
+  canal actif (`_activeKernelChannel`, restauré en `finally`) le temps de
+  l'appel, pour que `_commandKernelHook`/`runCommandKernelResolved`
+  (invoqués depuis l'intérieur du dispatch `sudo` de l'interpréteur bash
+  legacy, qui ne portent pas le canal en paramètre) puissent tout de même
+  l'atteindre — sérialisé sans risque par `sessionQueue`.
+- **Legacy supprimé** : `buildRootAdduserFlow`, la branche `adduser` de
+  `buildSudoFlow`, `gecosSteps`, `userCreationTail` — entièrement retirés
+  de `LinuxFlowBuilder.ts` (seuls `newPasswordSteps`/`setPasswordStep`
+  restent, encore utilisés par `passwd`/`su`, non migrés). Tests unitaires
+  `linux-flow-builder.test.ts`/`iam-user-creation.test.ts` mis à jour pour
+  vérifier que `LinuxFlowBuilder.build()` ne construit plus aucune étape
+  pour `adduser` (plain ou sudo) au-delà de l'authentification sudo
+  elle-même — le comportement interactif complet est vérifié à travers le
+  vrai navigateur par `e2e/user-creation.spec.ts` (15/15 verts, y compris
+  ping/traceroute/arping de `e2e/network-probe-commands.spec.ts`).
+
 ## Migration — useradd, adduser/addgroup vers command-kernel
 
 **État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**

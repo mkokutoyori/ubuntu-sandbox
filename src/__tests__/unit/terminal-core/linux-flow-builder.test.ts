@@ -88,35 +88,24 @@ describe('LinuxFlowBuilder.build — sudo', () => {
     expect(steps![1].type).toBe('execute');
   });
 
-  it('builds sudo adduser with full interactive flow', () => {
+  it('sudo adduser only authenticates at flow level — adduser owns its own password/GECOS prompts', () => {
+    // framework §14.4 : la commande command-kernel migrée porte elle-même
+    // son interactivité via ctx.io.interaction ; le flux legacy ne fait
+    // plus que l'authentification sudo générique, quels que soient les
+    // drapeaux adduser.
     const device = createMockDevice();
     const steps = LinuxFlowBuilder.build('sudo adduser newuser', 'admin', 1000, device);
     expect(steps).not.toBeNull();
-
-    const types = steps!.map(s => s.type);
-    // Should include: sudo pwd, execute (adduser), new pwd, retype, execute (setPassword), output, GECOS steps
-    expect(types[0]).toBe('password'); // sudo password
-    expect(types).toContain('text');   // GECOS fields
-    expect(types).toContain('confirmation'); // "Is the information correct?"
+    expect(steps!.length).toBe(2); // sudo password + execute
+    expect(steps![0].type).toBe('password');
+    expect(steps![1].type).toBe('execute');
   });
 
-  it('builds sudo adduser --disabled-password --gecos as password + execute only', () => {
+  it('sudo adduser --disabled-password --gecos still only authenticates at flow level', () => {
     const device = createMockDevice();
     const steps = LinuxFlowBuilder.build('sudo adduser --disabled-password --gecos "" newuser', 'admin', 1000, device);
     expect(steps).not.toBeNull();
     expect(steps!.length).toBe(2); // sudo pwd + execute
-  });
-
-  it('builds sudo adduser --disabled-password without --gecos (GECOS prompts remain)', () => {
-    const device = createMockDevice();
-    const steps = LinuxFlowBuilder.build('sudo adduser --disabled-password newuser', 'admin', 1000, device);
-    expect(steps).not.toBeNull();
-    const types = steps!.map(s => s.type);
-    // No password steps for user, but GECOS steps should be present
-    expect(types.filter(t => t === 'text').length).toBeGreaterThanOrEqual(5); // 5 GECOS fields
-    // No 'new password' / 'retype' password steps
-    const passwordPrompts = steps!.filter(s => s.type === 'password').map(s => s.prompt);
-    expect(passwordPrompts.every(p => p?.includes('[sudo]'))).toBe(true);
   });
 
   it('builds sudo su flow', () => {
@@ -207,16 +196,12 @@ describe('LinuxFlowBuilder.build — passwd', () => {
 // ─── adduser flows (as root) ────────────────────────────────────────
 
 describe('LinuxFlowBuilder.build — adduser (root)', () => {
-  it('builds full adduser flow with password + GECOS', () => {
+  it('a plain root adduser is never intercepted at flow level (framework §14.4)', () => {
+    // La commande command-kernel `AdduserCommand` porte elle-même son
+    // dialogue (mot de passe + GECOS) via ctx.io.interaction — le flux
+    // legacy laisse toujours passer la ligne vers l'exécution normale.
     const device = createMockDevice();
-    const steps = LinuxFlowBuilder.build('adduser newuser', 'root', 0, device);
-    expect(steps).not.toBeNull();
-
-    const types = steps!.map(s => s.type);
-    expect(types).toContain('execute');      // create user
-    expect(types).toContain('password');      // new password
-    expect(types).toContain('text');          // GECOS fields
-    expect(types).toContain('confirmation');  // confirm
+    expect(LinuxFlowBuilder.build('adduser newuser', 'root', 0, device)).toBeNull();
   });
 
   it('returns null for adduser with --disabled-password --gecos (no interaction)', () => {

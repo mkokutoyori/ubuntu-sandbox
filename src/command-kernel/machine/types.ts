@@ -1169,6 +1169,18 @@ export interface UserManagementApi {
   primaryGroupName?(name: string): string | undefined;
   /** Ajoute le compte à un groupe supplémentaire existant — optionnel (`adduser <user> <group>`). */
   appendToGroup?(name: string, group: string): void;
+  /** Change le mot de passe du compte — optionnel (`adduser`, `passwd`). */
+  posixSetPassword?(name: string, password: string): void;
+  /** Renseigne les cinq champs GECOS (finger) — optionnel (`adduser`, `chfn`). */
+  posixSetGecos?(name: string, fields: PosixGecosFields): void;
+}
+
+export interface PosixGecosFields {
+  readonly fullName: string;
+  readonly room: string;
+  readonly workPhone: string;
+  readonly homePhone: string;
+  readonly other: string;
 }
 
 /** Options structurées de `useradd` (grammaire util-linux). */

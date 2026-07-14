@@ -352,7 +352,7 @@ export abstract class LinuxMachine extends EndHost
     this.executor._commandKernelHook = (cmd, args, stdin, env) => {
       const { registry } = this.getCommandKernelShell();
       if (!registry.has(cmd)) return null;
-      return this.runCommandKernelResolved(cmd, args, stdin, env);
+      return this.runCommandKernelResolved(cmd, args, stdin, env, this._activeKernelChannel);
     };
 
     // 5. Initialise SSH server config files on first boot:
@@ -1695,6 +1695,17 @@ export abstract class LinuxMachine extends EndHost
    *      dispatch the head token through the registry or the built-in
    *      network command handlers (iptables, ps, cat/rm of DHCP leases).
    */
+  /**
+   * Canal en cours (§14.6) — stashé le temps d'un `executeCommand` pour
+   * que les points d'entrée profonds qui ne portent pas le canal en
+   * paramètre (`_commandKernelHook`, invoqué depuis l'intérieur du
+   * dispatch `sudo` de l'interpréteur bash legacy) puissent tout de même
+   * l'atteindre. Jamais lu en dehors de la pile d'appel synchrone d'un
+   * même `executeCommand` — aucune commande concurrente ne partage le
+   * device pendant ce temps (sérialisé par `sessionQueue`).
+   */
+  private _activeKernelChannel?: CommandKernelChannel;
+
   async executeCommand(
     command: string,
     stdin?: string,
@@ -1707,6 +1718,21 @@ export abstract class LinuxMachine extends EndHost
 
     const trimmed = command.trim();
     if (!trimmed) return '';
+
+    const previousChannel = this._activeKernelChannel;
+    this._activeKernelChannel = kernelChannel;
+    try {
+      return await this.executeCommandBody(trimmed, stdin, kernelChannel);
+    } finally {
+      this._activeKernelChannel = previousChannel;
+    }
+  }
+
+  private async executeCommandBody(
+    trimmed: string,
+    stdin: string | undefined,
+    kernelChannel: CommandKernelChannel | undefined,
+  ): Promise<string> {
 
     // Session-table views (`w`, `who`, `last`) override the legacy
     // user-manager output because the session table is the live truth.
@@ -1866,14 +1892,15 @@ export abstract class LinuxMachine extends EndHost
     args: string[],
     stdin: string | undefined,
     env?: Record<string, string>,
+    channel?: CommandKernelChannel,
   ): Promise<{ output: string; exitCode: number } | null> {
     const { interpreter } = this.getCommandKernelShell();
     this.executor.publishCommandExecve(cmd);
 
     const session = this.buildCommandKernelSession(env);
-    const { io, chunks } = await this.buildCommandKernelIO(stdin);
+    const { io, chunks } = await this.buildCommandKernelIO(stdin, channel);
 
-    const exitCode = await interpreter.runResolved(cmd, args, session, io);
+    const exitCode = await interpreter.runResolved(cmd, args, session, io, channel?.signal);
     if (exitCode === null) return null;
     this.executor.setCwd(session.cwd);
     return { output: chunks.join(''), exitCode };
