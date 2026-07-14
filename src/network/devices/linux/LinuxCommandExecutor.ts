@@ -5608,7 +5608,7 @@ export class LinuxCommandExecutor {
   }
 
   /** `lsof` — list open files, honoring -p PID, -u USER, -i :PORT, -i :proto. */
-  cmdLogrotate(args: string[]): { output: string; exitCode: number } {
+  async cmdLogrotate(args: string[]): Promise<{ output: string; exitCode: number }> {
     let force = false;
     let dryRun = false;
     let stateFile: string | null = null;
@@ -5649,14 +5649,14 @@ export class LinuxCommandExecutor {
       }
       if (!this.shouldRotateLog(abs, opt, force)) continue;
       if (opt.prerotate && !opt.sharedscripts) {
-        this.execute(opt.prerotate);
+        await this.execute(opt.prerotate);
         if (this.lastExitCode !== 0) continue;
       }
       this.rotateOneLog(abs, opt);
       anyRotated = true;
-      if (opt.postrotate && !opt.sharedscripts) this.execute(opt.postrotate);
+      if (opt.postrotate && !opt.sharedscripts) await this.execute(opt.postrotate);
     }
-    if (!dryRun && opt.sharedscripts && anyRotated && opt.postrotate) this.execute(opt.postrotate);
+    if (!dryRun && opt.sharedscripts && anyRotated && opt.postrotate) await this.execute(opt.postrotate);
 
     if (stateFile && !dryRun) {
       const content = 'logrotate state -- version 2\n'

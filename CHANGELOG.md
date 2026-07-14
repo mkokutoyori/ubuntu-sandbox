@@ -5,6 +5,33 @@ progressive par équipement. Un push = une entrée = une fonctionnalité
 complète et testée (voir `CLAUDE.md` / le framework de migration pour les
 principes directeurs).
 
+## Linux — Phase 29 : `logrotate` — abandon de rotation sur échec de `prerotate`
+
+**État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
+
+**Bug trouvé puis corrigé en testant contre la suite existante** (cause
+racine, pas symptôme) : `logrotate` ne respectait pas l'abandon de
+rotation quand un script `prerotate` échoue (`journalization` test 161).
+
+- **Cause racine** : `cmdLogrotate` était **synchrone** mais appelait
+  `this.execute(opt.prerotate)` (asynchrone) **sans l'attendre**. Le test
+  `if (this.lastExitCode !== 0) continue;` s'exécutait donc *avant* que le
+  script `prerotate` n'ait tourné — `lastExitCode` valait encore 0, et la
+  rotation avait lieu malgré l'`exit 1`. Le script lui-même finissait par
+  s'exécuter (microtâche), ce qui masquait le bug : le voisin test 160
+  passait car son marqueur `touch` finissait bien par être créé (et son
+  assertion `ls /tmp/pre_rotate_marker` matchait de toute façon le chemin
+  dans le message d'erreur).
+- **Correctif** : `cmdLogrotate` rendue `async`, les scripts
+  `prerotate`/`postrotate` sont désormais `await`és — le code de sortie du
+  `prerotate` est observé au bon moment, la rotation est bien abandonnée.
+  Appelants mis à jour (`case 'logrotate'` du dispatch, déjà `async` ;
+  `Logrotate.ts` `run`/`runWithStatus`).
+
+Validation : `journalization` (200/200, dont 161), `journalization-and-audit`
+(30/30), `auditctl` (100/100), `auditctl-other` (150/150). Typecheck et lint
+ciblés propres.
+
 ## Linux — Phase 28 : migration de `kill` + correction de l'expansion `$$`/`$PPID`/`$?` du pont kernel
 
 **État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**

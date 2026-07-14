@@ -15,6 +15,6 @@ export const logrotateCommand: LinuxCommand = {
   usage: 'logrotate [options] CONFIG',
   options: LOGROTATE_OPTIONS,
   privilege: { satisfiedBy: Satisfy.root },
-  run: (ctx, args) => ctx.executor.cmdLogrotate(args).output,
-  runWithStatus: (ctx, args) => Promise.resolve(ctx.executor.cmdLogrotate(args)),
+  run: async (ctx, args) => (await ctx.executor.cmdLogrotate(args)).output,
+  runWithStatus: (ctx, args) => ctx.executor.cmdLogrotate(args),
 };
