@@ -54,4 +54,11 @@ export interface CommandContext {
 export interface ICommand {
   readonly descriptor: CommandDescriptor;
   execute(ctx: CommandContext): Promise<ExitCode>;
+  /**
+   * Une invocation donnée (`argv` bruts) tient-elle le terminal en flux
+   * continu ? Par défaut, reflète `descriptor.streaming`, mais une commande
+   * dont le mode dépend des arguments (ex : `netstat <intervalle>`) le
+   * redéfinit — c'est la commande, pas l'hôte, qui décide (§14.6).
+   */
+  isStreaming?(argv: readonly string[]): boolean;
 }

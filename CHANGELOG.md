@@ -5,6 +5,42 @@ progressive par équipement. Un push = une entrée = une fonctionnalité
 complète et testée (voir `CLAUDE.md` / le framework de migration pour les
 principes directeurs).
 
+## Socle + Windows — `netstat <intervalle>` : streaming décidé par la commande (`isStreaming(argv)`, §14.6)
+
+**État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
+
+Troisième convergence. `netstat` a un mode **dépendant des arguments** (un
+intervalle final le fait rafraîchir jusqu'à Ctrl+C, sinon un seul affichage)
+et un `streaming: boolean` statique ne peut pas l'exprimer. Nouveau hook —
+c'est la commande, pas l'hôte, qui décide.
+
+- **`ICommand.isStreaming?(argv)` + `BaseCommand.isStreaming(argv)`** (défaut
+  = `descriptor.streaming === true`). `WindowsPC.isKernelStreamingLine`
+  consulte désormais `cmd.isStreaming(argv)` (avec les arguments réels de
+  l'étage) au lieu du seul drapeau du descripteur — l'entrée terminal
+  générique route correctement une commande au mode variable.
+- **`NetstatCommand extends StreamingCommand`** : `isStreaming(argv)` renvoie
+  vrai ssi le dernier argument est un entier positif (l'intervalle) ; `execute`
+  boucle alors (ré-affiche la table, `pace(intervalle)`, jusqu'à
+  `ctx.signal.aborted`), sinon un seul affichage. `tryStartWinNetstatStream`
+  supprimé (le `startScrollingMonitor` partagé reste, il sert encore à
+  `top`/`journalctl`/`watch`).
+- **Bug préexistant corrigé au passage** : `netstat -an` était rejeté par le
+  parseur (`option inconnue : -an`) faute de `lenientOptions` — ajouté (comme
+  `ping`/`arp`). Les 2 tests `windows-netstat-stream-ui` rouges en base
+  (rafraîchissement + one-shot) repassent au vert.
+
+Dispatch terminal : `tryStartWinKernelStream` (générique, gère
+ping/tracert/netstat) + `tryStartWinPathpingStream` (dernier intercepteur, à
+absorber).
+
+Validation : `windows-netstat-stream-ui` (4/4, dont les 2 auparavant rouges),
+`ss-netstat` (32), `windows-port-forwarding` (8), `windows-consistency` (40),
+`windows-services-processes-comprehensive`, `windows-access-cmd`,
+`windows-filesystem` verts ; socle command-kernel (70/70). Typecheck propre.
+Échecs préexistants sans rapport confirmés en base (`windows-cli-ps-fixes`,
+`windows-ps-cmd-shared-state`, `linux-ping-stream-ui`).
+
 ## Windows — `tracert` migre en commande streaming, intercepteur dédié supprimé (§14.6)
 
 **État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**

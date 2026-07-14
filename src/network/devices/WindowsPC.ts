@@ -1987,7 +1987,12 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     if (ast.kind !== 'command' && ast.kind !== 'pipeline') return false;
     const resolved = lowercaseCommandNames(ast);
     const stages = resolved.kind === 'command' ? [resolved] : resolved.stages;
-    return stages.some((s) => registry.resolve(s.name)?.descriptor.streaming === true);
+    return stages.some((s) => {
+      const cmd = registry.resolve(s.name);
+      if (!cmd) return false;
+      const argv = s.argv.map((w) => w.text);
+      return cmd.isStreaming ? cmd.isStreaming(argv) : cmd.descriptor.streaming === true;
+    });
   }
 
   private async runCommandKernel(trimmed: string, channel?: CommandKernelChannel): Promise<string> {

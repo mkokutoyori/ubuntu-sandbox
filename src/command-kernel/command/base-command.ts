@@ -15,6 +15,15 @@ export abstract class BaseCommand implements ICommand {
     /* no-op par défaut */
   }
 
+  /**
+   * Nature d'une invocation donnée : par défaut, la commande est en flux
+   * continu si son descripteur le déclare. Une commande au mode dépendant
+   * des arguments (`netstat <intervalle>`) redéfinit ce hook (§14.6).
+   */
+  isStreaming(_argv: readonly string[]): boolean {
+    return this.descriptor.streaming === true;
+  }
+
   /** Point d'entrée appelé par l'Executor. */
   async run(ctx: CommandContext): Promise<ExitCode> {
     this.validate(ctx.args, ctx.session);
