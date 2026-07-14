@@ -20,6 +20,7 @@ import { CutCommand } from './commands/Cut';
 import { GrepCommand } from './commands/Grep';
 import { PingCommand, Ping6Command } from './commands/Ping';
 import { TracerouteCommand } from './commands/Traceroute';
+import { ArpingCommand } from './commands/Arping';
 import { GroupsCommand } from './commands/Groups';
 import { HeadCommand } from './commands/Head';
 import { IdCommand } from './commands/Id';
@@ -130,6 +131,7 @@ export function createLinuxHostShell(deps: LinuxMachineApiDeps): Interpreter {
   registry.register(() => new PingCommand());
   registry.register(() => new Ping6Command());
   registry.register(() => new TracerouteCommand());
+  registry.register(() => new ArpingCommand());
 
   return new Interpreter(registry, machine);
 }

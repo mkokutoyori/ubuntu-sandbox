@@ -63,7 +63,7 @@ import { cmdPidstat } from './system/Pidstat';
 import { parseDstatArgs, DSTAT_USAGE, DSTAT_VERSION, DSTAT_LISTING } from './system/Dstat';
 import { MountTable, MountEntry } from './MountTable';
 import { SysfsTree } from './Sysfs';
-import { cmdIfconfig, cmdNetstat, cmdCurl, cmdWget, cmdArping, cmdTcpdump } from './LinuxNetCommands';
+import { cmdIfconfig, cmdNetstat, cmdCurl, cmdWget, cmdTcpdump } from './LinuxNetCommands';
 import { PacketCaptureLog } from './network/PacketCaptureLog';
 import { publishWireSegment } from './network/WireCaptureBus';
 import { ensureCaptureRouterInstalled } from './network/CaptureRouter';
@@ -3740,12 +3740,6 @@ export class LinuxCommandExecutor {
       }
 
       // kill — send signal via process manager
-      case 'arping': {
-        const ctx = this.ipNetworkCtx;
-        return cmdArping(args, {
-          mac: (ip) => ctx?.getNeighborTable().find((n) => n.ip === ip)?.mac ?? null,
-        });
-      }
       case 'pgid': {
         const name = args.find(a => !a.startsWith('-'));
         if (!name) return { output: 'usage: pgid <name>', exitCode: 1 };
