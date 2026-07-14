@@ -5,6 +5,47 @@ progressive par équipement. Un push = une entrée = une fonctionnalité
 complète et testée (voir `CLAUDE.md` / le framework de migration pour les
 principes directeurs).
 
+## Windows — Canal hôte unifié (§14.6) câblé entre l'UI cmd et le pont command-kernel
+
+**État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
+
+Applique aux machines Windows la fondation I/O du framework (§14.6),
+exactement comme le volet Linux `Cable le canal hote unifie…` : le pont cmd
+accepte désormais un `CommandKernelChannel` et le propage de bout en bout,
+sans quoi aucune commande cmd migrée ne pourrait diffuser en continu,
+dialoguer, ni être interrompue.
+
+- **`CmdInterpreter`** : `interpretLine`/`runAst` acceptent un
+  `signal?: AbortSignal` relayé à `Executor.run(..., signal)` (déjà
+  compatible côté socle) → `ctx.signal` (Ctrl+C de l'hôte, §14.6).
+- **Pont `WindowsPC`** : `executeCommand`/`executeCmdCommand`/
+  `runCommandKernel`/`executeCommandInSession` acceptent un
+  `channel?: CommandKernelChannel`. Nouveau `buildKernelIO(channel)`
+  (miroir de `LinuxMachine.buildCommandKernelIO`) : chaque `write` part en
+  temps réel vers `channel.onOutput` tout en restant collecté pour
+  l'appelant, `interaction` porte les dialogues (§14.4), `channel.signal`
+  est passé à `runAst`.
+- **`WindowsTerminalSession.executeOnDevice`** : fournit le terminal de
+  contrôle (`interaction: createKernelInteraction(new PromiseInputBroker(
+  getInputHost()))`) à **toute** commande cmd migrée — comme la branche
+  générale Linux (`{ interaction }`), aucune interactivité future ne
+  dépendra du chemin d'entrée.
+
+Changement purement additif : le canal est optionnel, les chemins qui ne le
+fournissent pas (scripts, SSH exec, tests programmatiques) et les commandes
+qui ne l'utilisent pas se comportent à l'identique. C'est la fondation des
+prochains chantiers Windows (migration des intercepteurs streaming
+`tryStartWinPathpingStream`/`pingStreamInSession` vers de vraies commandes
+kernel, commandes cmd interactives type `runas`/`net user *`).
+
+Validation (localisée, §10) : `windows-access-cmd` (53), `windows-consistency`
+(40), `windows-drive-switching` (33), `windows-file-management` (45+6 skip),
+`windows-netsh` (33), `windows-filesystem` (61), `windows-domain-entities`
+(12), `windows-eventlog-cli` (4) ; socle command-kernel (70/70). Typecheck
+propre. Échecs préexistants sans rapport confirmés en base
+(`windows-netstat-stream-ui`, `windows-cli-ps-fixes`, `windows-lan-ssh-suite`,
+`cross-vendor-ssh-interactive`).
+
 ## adduser : l'interactivité (mot de passe + GECOS) migre de LinuxFlowBuilder vers la commande
 
 **État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**

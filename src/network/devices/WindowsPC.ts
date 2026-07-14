@@ -127,6 +127,8 @@ import type { CommandRegistry } from '@/command-kernel/registry/command-registry
 import type { WindowsIPv6RouteEntry as WinIPv6RouteEntry, WindowsGpResult, DomainControllerLocation, DomainControllerDiagnostics, KerberosCachedTicket, DomainTrustDirection, CertificateIssuance } from '@/command-kernel/machine/types';
 import { createSession } from '@/command-kernel/session/types';
 import { PipeBuffer } from '@/command-kernel/io/pipe-buffer';
+import type { CommandIO } from '@/command-kernel/io/types';
+import type { CommandKernelChannel } from '@/command-kernel/io/channel';
 import { ShellError, CommandNotFoundError } from '@/command-kernel/errors';
 import type { ScriptNode } from '@/command-kernel/ast/nodes';
 
@@ -1681,8 +1683,8 @@ export class WindowsPC extends EndHost implements UserAccountHost {
 
   // ─── Terminal ──────────────────────────────────────────────────
 
-  async executeCommand(command: string): Promise<string> {
-    return this.executeCmdCommand(command);
+  async executeCommand(command: string, channel?: CommandKernelChannel): Promise<string> {
+    return this.executeCmdCommand(command, channel);
   }
 
   /**
@@ -1698,7 +1700,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
    * (`>`/`>>`) — is handled by `CmdInterpreter` (`CmdLexer → Parser →
    * Executor`) in `runCommandKernel`, a single call, one path.
    */
-  async executeCmdCommand(trimmed: string): Promise<string> {
+  async executeCmdCommand(trimmed: string, channel?: CommandKernelChannel): Promise<string> {
     if (!this.isPoweredOn) return 'Device is powered off';
 
     trimmed = trimmed.trim();
@@ -1712,9 +1714,9 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     // pass over the whole line, same as real cmd.exe's console layer,
     // before any tokenizing.
     const doskeyExpanded = this.doskey.expand(trimmed);
-    if (doskeyExpanded !== trimmed) return this.executeCmdCommand(doskeyExpanded);
+    if (doskeyExpanded !== trimmed) return this.executeCmdCommand(doskeyExpanded, channel);
 
-    return this.runCommandKernel(trimmed);
+    return this.runCommandKernel(trimmed, channel);
   }
 
   // ─── Tab Completion ──────────────────────────────────────────────
@@ -1953,7 +1955,26 @@ export class WindowsPC extends EndHost implements UserAccountHost {
    * `CommandNotFoundError`/`ShellError` from inside is the real answer,
    * formatted exactly like cmd.exe, not a signal to retry elsewhere.
    */
-  private async runCommandKernel(trimmed: string): Promise<string> {
+  /**
+   * Construit le `CommandIO` du pont, câblé sur le canal hôte unifié
+   * (§14.6) : chaque `write` part en temps réel vers `channel.onOutput`
+   * tout en restant collecté pour l'appelant, `interaction` porte les
+   * dialogues (§14.4), et `channel.signal` (Ctrl+C) est relayé à
+   * `ctx.signal` par `runAst`.
+   */
+  private buildKernelIO(channel?: CommandKernelChannel): { io: CommandIO; chunks: string[] } {
+    const chunks: string[] = [];
+    const collector = {
+      write: async (t: string) => { chunks.push(t); channel?.onOutput?.(t); },
+      close: async () => {},
+    };
+    return {
+      io: { stdin: new PipeBuffer(), stdout: collector, stderr: collector, interaction: channel?.interaction },
+      chunks,
+    };
+  }
+
+  private async runCommandKernel(trimmed: string, channel?: CommandKernelChannel): Promise<string> {
     const { interpreter } = this.getCommandKernelShell();
 
     let ast: ScriptNode;
@@ -1988,12 +2009,10 @@ export class WindowsPC extends EndHost implements UserAccountHost {
 
     const user = resolveWindowsUser(this.userMgr, this.userMgr.currentUser);
     const session = createSession({ id: 'legacy-bridge', user, cwd: this.cwd, env: new Map(this.env) });
-    const chunks: string[] = [];
-    const collector = { write: async (t: string) => { chunks.push(t); }, close: async () => {} };
-    const io = { stdin: new PipeBuffer(), stdout: collector, stderr: collector };
+    const { io, chunks } = this.buildKernelIO(channel);
 
     try {
-      await interpreter.runAst(resolved, session, io);
+      await interpreter.runAst(resolved, session, io, channel?.signal);
     } catch (err) {
       this.setCwdTracked(session.cwd);
       this.env = session.env;
@@ -2836,11 +2855,11 @@ export class WindowsPC extends EndHost implements UserAccountHost {
    * around `this.cwd` / `this.env` is never observed concurrently from
    * another terminal.
    */
-  executeCommandInSession(command: string, session: WindowsShellSession): Promise<string> {
+  executeCommandInSession(command: string, session: WindowsShellSession, channel?: CommandKernelChannel): Promise<string> {
     return this.sessionQueue.run(async () => {
       if (!this.isPoweredOn) return 'Device is powered off';
       if (session.disposed) return '';
-      return this.sessionSwap.within(session, () => this.executeCommand(command));
+      return this.sessionSwap.within(session, () => this.executeCommand(command, channel));
     });
   }
 

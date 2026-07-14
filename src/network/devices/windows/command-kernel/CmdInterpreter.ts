@@ -35,13 +35,14 @@ export class CmdInterpreter {
     return this.parser.parse(this.lexer.tokenize(line));
   }
 
-  async interpretLine(line: string, session: Session, io: CommandIO): Promise<ExitCode> {
-    return this.executor.run(this.parse(line), session, io);
+  async interpretLine(line: string, session: Session, io: CommandIO, signal?: AbortSignal): Promise<ExitCode> {
+    return this.executor.run(this.parse(line), session, io, signal);
   }
 
   /** Exécute un AST déjà parsé (évite de re-tokeniser/re-parser une ligne
-   *  que l'appelant a dû inspecter avant exécution). */
-  async runAst(ast: ScriptNode, session: Session, io: CommandIO): Promise<ExitCode> {
-    return this.executor.run(ast, session, io);
+   *  que l'appelant a dû inspecter avant exécution). Le signal d'annulation
+   *  de l'hôte (Ctrl+C) est relayé à `ctx.signal` (§14.6). */
+  async runAst(ast: ScriptNode, session: Session, io: CommandIO, signal?: AbortSignal): Promise<ExitCode> {
+    return this.executor.run(ast, session, io, signal);
   }
 }

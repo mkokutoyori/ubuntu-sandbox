@@ -48,7 +48,7 @@ import type { ISubShell, SubShellResult } from '@/terminal/subshells/ISubShell';
 import { NslookupSubShell } from '@/terminal/subshells/NslookupSubShell';
 import { findHostByAddress } from '@/network/devices/linux/network/HostLookup';
 import { installDefaultShells } from '@/shell/registerDefaults';
-import { PromiseInputBroker as PromiseInputBrokerCtor } from '@/shell/input';
+import { PromiseInputBroker as PromiseInputBrokerCtor, createKernelInteraction } from '@/shell/input';
 import { ShellFactory } from '@/shell/ShellFactory';
 import { ShellSubShellAdapter } from '@/shell/ShellSubShellAdapter';
 import type { IShell } from '@/shell/IShell';
@@ -132,7 +132,13 @@ export class WindowsTerminalSession extends TerminalSession {
     const dev = this.device;
     if (!dev.getIsPoweredOn()) throw new DeviceOfflineError(dev.getName());
     if (this.shell && dev instanceof WindowsPC) {
-      const p = dev.executeCommandInSession(command, this.shell);
+      // Canal hôte unifié (§14.6) : le terminal de contrôle est offert à
+      // toute commande cmd migrée, qu'elle dialogue ou non — aucune
+      // interactivité future ne dépendra du chemin d'entrée.
+      const broker = new PromiseInputBrokerCtor(this.getInputHost());
+      const p = dev.executeCommandInSession(command, this.shell, {
+        interaction: createKernelInteraction(broker),
+      });
       return timeoutMs != null ? withTimeout(p, timeoutMs) : p;
     }
     return super.executeOnDevice(command, timeoutMs);
