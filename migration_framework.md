@@ -173,6 +173,28 @@ async ping(targetIp: string, count = 4): Promise<PingResult> {
 }
 ```
 
+### 2.3 Principe PDU : aucune machine n'est omnisciente
+
+**Toute communication entre machines passe par un échange de PDU à travers
+`Port`/`Cable` — une machine (ou son pont `MachineApi`) ne consulte JAMAIS
+`EquipmentRegistry` ni l'état interne d'un autre équipement.** Si une
+commande a besoin d'une information distante, elle l'obtient par une
+requête réseau réelle (ARP, ICMP, DNS…) ou par un état local construit par
+de tels échanges (table de voisinage, cache DNS, fichier hosts). Un
+comportement observable qui semble exiger l'omniscience (PMTU discovery,
+drop ACL en transit) doit être émulé par le protocole réel (ICMP
+Fragmentation-Needed émis par le routeur, sondes réellement droppées),
+jamais par une lecture directe de la topologie.
+
+Dette connue, à résorber (marquée dans `NetProbeApi`) :
+- `topologyMtus()` (`ping -M do`) — à remplacer par un vrai ICMP
+  Fragmentation-Needed émis par le routeur au MTU insuffisant.
+- `udpRangeDeniedByTopology()` (quirk traceroute/ACL) — à remplacer par de
+  vraies sondes UDP TTL-limitées soumises aux ACL des routeurs de transit.
+
+Toute NOUVELLE capacité qui violerait ce principe est refusée d'office —
+la dette ci-dessus ne sert pas de précédent.
+
 **Ce chapitre n'est pas une invitation à construire un nouveau
 `Topology`/`Fabric`/`NetworkScheduler`** — ces briques existent déjà sous
 d'autres noms (`Equipment`, `Port`, `Cable`, `IScheduler`). Le travail de

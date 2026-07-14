@@ -1772,18 +1772,6 @@ export abstract class LinuxMachine extends EndHost
           } catch { /* topologie indisponible */ }
           return false;
         },
-        deviceIpsSharing: (ip) => {
-          try {
-            for (const dev of EquipmentRegistry.getInstance().getAll()) {
-              const ips = dev.getPorts()
-                .map((p) => p.getIPAddress())
-                .filter((x): x is NonNullable<typeof x> => !!x)
-                .map((x) => x.toString());
-              if (ips.includes(ip)) return ips;
-            }
-          } catch { /* topologie indisponible */ }
-          return [];
-        },
         topologyMtus: () => {
           const mtus: number[] = [];
           try {

@@ -161,7 +161,7 @@ export class TracerouteCommand extends BaseCommand {
     }
 
     if (parsed.numeric) {
-      await out(this.renderNumeric(targetIp, hops, probe.deviceIpsSharing.bind(probe)));
+      await out(this.renderNumeric(targetIp, hops));
       return EXIT_OK;
     }
 
@@ -335,20 +335,8 @@ export class TracerouteCommand extends BaseCommand {
     return ` ${hop.hop}  ${hop.ip}  ${(hop.rttMs ?? 0).toFixed(3)}`;
   }
 
-  private renderNumeric(
-    targetIp: string,
-    hops: readonly TracerouteHopInfo[],
-    deviceIpsSharing: (ip: string) => readonly string[],
-  ): string {
+  private renderNumeric(targetIp: string, hops: readonly TracerouteHopInfo[]): string {
     if (hops.length === 0) return ` 1  ${targetIp}  *`;
-    const lines = hops.map((h) => this.numericHopLine(h));
-    const seen = new Set<string>();
-    for (const hop of hops) {
-      if (!hop.ip || seen.has(hop.ip)) continue;
-      seen.add(hop.ip);
-      const aliases = deviceIpsSharing(hop.ip);
-      for (const ip of aliases) if (ip !== hop.ip) lines.push(` ${hop.hop}  ${ip}  0.000`);
-    }
-    return lines.join('\n');
+    return hops.map((h) => this.numericHopLine(h)).join('\n');
   }
 }

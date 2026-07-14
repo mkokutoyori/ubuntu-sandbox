@@ -62,7 +62,6 @@ export interface LinuxMachineApiDeps {
   topologyMtus?(): readonly number[];
   reverseLookup?(ip: string): string | null;
   udpRangeDenied?(startPort: number, endPort: number): boolean;
-  deviceIpsSharing?(ip: string): readonly string[];
 }
 
 function toPathActor(actor: FileSystemActor): PathActor {
@@ -501,7 +500,7 @@ class LinuxNetProbeApi implements NetProbeApi {
   constructor(
     private readonly kernel: LinuxNetKernel,
     private readonly ports: () => readonly Port[],
-    private readonly deps: Pick<LinuxMachineApiDeps, 'neighborMac' | 'topologyMtus' | 'reverseLookup' | 'udpRangeDenied' | 'deviceIpsSharing'>,
+    private readonly deps: Pick<LinuxMachineApiDeps, 'neighborMac' | 'topologyMtus' | 'reverseLookup' | 'udpRangeDenied'>,
   ) {}
 
   async resolveHostname(name: string): Promise<string | null> {
@@ -572,9 +571,6 @@ class LinuxNetProbeApi implements NetProbeApi {
     return this.deps.udpRangeDenied?.(startPort, endPort) ?? false;
   }
 
-  deviceIpsSharing(ip: string): readonly string[] {
-    return this.deps.deviceIpsSharing?.(ip) ?? [];
-  }
 }
 
 class LinuxUserManagementApi implements UserManagementApi {

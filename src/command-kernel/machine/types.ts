@@ -1046,7 +1046,12 @@ export interface NetProbeApi {
   echo6Sequence(target6: string, count: number, timeoutMs?: number): Promise<{ readonly target: string; readonly replies: readonly IcmpEchoReply[] } | null>;
   /** État physique des interfaces (MTU inclus) — la vue `ip addr` complète reste ailleurs. */
   interfaceDetails(): readonly { name: string; up: boolean; mtu: number }[];
-  /** MTU de chaque port de toute la topologie (découverte PMTU de `ping -M do`). */
+  /**
+   * DETTE (framework §2.2) : MTU de chaque port de la topologie (PMTU de
+   * `ping -M do`). Viole le principe « tout échange passe par un PDU » —
+   * à remplacer par un vrai ICMP Fragmentation-Needed émis par le routeur
+   * au MTU insuffisant, puis à supprimer.
+   */
   topologyMtus(): readonly number[];
   /** MAC connue du voisin — `null` si absent de la table (`arping`). */
   neighborMac(ip: string): string | null;
@@ -1058,10 +1063,13 @@ export interface NetProbeApi {
   defaultGateway(): string | null;
   /** Résolution inverse IP → nom (fichier hosts) — `null` si absent. */
   reverseLookup(ip: string): string | null;
-  /** Vraie si un équipement de la topologie refuse (ACL deny) l'UDP sur toute la plage donnée. */
+  /**
+   * DETTE (framework §2.2) : vraie si un équipement refuse (ACL deny)
+   * l'UDP sur toute la plage donnée. Viole le principe « tout échange
+   * passe par un PDU » — à remplacer par de vraies sondes UDP TTL-limitées
+   * droppées par les ACL des routeurs, puis à supprimer.
+   */
   udpRangeDeniedByTopology(startPort: number, endPort: number): boolean;
-  /** Toutes les IP des ports de l'équipement possédant `ip` (alias multi-interfaces d'un saut). */
-  deviceIpsSharing(ip: string): readonly string[];
 }
 
 /** Détail d'une sonde individuelle d'un saut de `traceroute`. */

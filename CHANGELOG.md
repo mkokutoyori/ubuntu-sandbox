@@ -5,6 +5,44 @@ progressive par équipement. Un push = une entrée = une fonctionnalité
 complète et testée (voir `CLAUDE.md` / le framework de migration pour les
 principes directeurs).
 
+## Réseau — Principe PDU : suppression de l'omniscience topologique (framework §2.3)
+
+**État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
+
+Nouvelle règle codifiée : toute communication entre machines passe par un
+échange de PDU via Port/Cable — un pont `MachineApi` ne consulte jamais
+`EquipmentRegistry` ni l'état interne d'un autre équipement.
+
+- **`NetProbeApi.deviceIpsSharing` supprimée** (avec son câblage
+  LinuxMachine et l'expansion d'alias du rendu numérique de traceroute) :
+  elle listait les autres interfaces d'un équipement distant, connaissance
+  impossible sans omniscience. `traceroute -n` ne montre plus que
+  l'interface d'entrée réelle de chaque saut, comme le vrai traceroute.
+  Test 275 de `tracert-ping.test.ts` adapté en conséquence : il attendait
+  l'interface de sortie du routeur (produit de l'ancien alias omniscient) ;
+  il vérifie désormais les interfaces d'entrée réelles du chemin.
+- **Dette explicitée** (JSDoc `NetProbeApi` + framework §2.3) :
+  `topologyMtus()` et `udpRangeDeniedByTopology()` — quirks hérités du
+  legacy (PMTU `ping -M do`, ACL/UDP traceroute) qui violent le principe ;
+  à remplacer par les vrais mécanismes protocolaires (ICMP
+  Fragmentation-Needed, sondes UDP TTL-limitées droppées par les ACL),
+  chantier plan réseau à part. Aucune nouvelle capacité de ce type n'est
+  acceptée.
+
+## Migration — ping/ping6, traceroute, arping vers command-kernel
+
+**État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
+
+Voir les messages de commit dédiés : commandes autonomes (parsing,
+formatage, codes de sortie), sondes réelles via la façade optionnelle
+`MachineApi.netProbe`, `streaming:true` pour ping/traceroute (job de
+premier plan générique `tryStartKernelStream`, remplaçant les
+intercepteurs dédiés), entrées legacy réduites à des stubs man/help
+inexécutables, suppression de `cmdArping`, des formatters
+ping/traceroute de `LinuxFormatHelpers` et des intercepteurs de session.
+Bug trouvé en testant : `su user -c "…"` contournait le hook kernel
+(chemin corrigé, refus de privilège `-f`/`-i` rétablis pour non-root).
+
 ## Socle + pont — Canal hôte unifié : câblage UI ↔ machine (framework §14.4/§14.6)
 
 **État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
