@@ -5,6 +5,29 @@ progressive par équipement. Un push = une entrée = une fonctionnalité
 complète et testée (voir `CLAUDE.md` / le framework de migration pour les
 principes directeurs).
 
+## Windows — `tracert` migre en commande streaming, intercepteur dédié supprimé (§14.6)
+
+**État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
+
+Deuxième convergence vers l'entrée terminal unique, miroir de la migration
+Linux de `traceroute` (`streaming: true` + émission via la même entrée
+générique, pas de progression factice à reproduire).
+
+- `TracertCommand extends StreamingCommand` + `streaming: true`. Le sondage
+  hop-by-hop est déjà fait par `netConfig.traceroute` (batch temporisé) ; la
+  commande est routée comme un job de premier plan annulable par
+  `tryStartWinKernelStream`.
+- `tryStartWinTracertStream` supprimé (parsing + formatage dupliqués +
+  `tracerouteStreamInSession` côté session), son `if` de dispatch retiré,
+  imports `WinTracert` inutilisés nettoyés. Les formateurs `WinTracert`
+  restent (testés en unitaire directement).
+
+Dispatch terminal : il ne reste que `tryStartWinKernelStream` (générique) +
+`netstat`/`pathping` (à absorber ensuite).
+
+Validation : `windows-tracert-stream-ui` (2/2), `tracert-ping` (304/304).
+Typecheck propre.
+
 ## Socle — classe de base `StreamingCommand` (mécanique de flux factorisée, §14.6)
 
 **État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**

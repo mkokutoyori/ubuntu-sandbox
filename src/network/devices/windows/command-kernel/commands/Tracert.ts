@@ -1,4 +1,4 @@
-import { BaseCommand } from '@/command-kernel/command/base-command';
+import { StreamingCommand } from '@/command-kernel/command/streaming-command';
 import { CommandContext, CommandDescriptor, EXIT_OK, ExitCode } from '@/command-kernel/command/types';
 import { DefaultPrivilegePolicy } from '@/command-kernel/session/privilege-policy';
 import { PrivilegeLevel } from '@/command-kernel/session/types';
@@ -189,7 +189,7 @@ function formatNumericHopLine(hop: WindowsTracerouteHop): string {
   return `  ${num}    ${r}        ${r}        ${r}     ${hop.ip}`;
 }
 
-export class TracertCommand extends BaseCommand {
+export class TracertCommand extends StreamingCommand {
   readonly descriptor: CommandDescriptor = {
     name: 'tracert',
     summary: 'Trace le chemin réseau vers un hôte',
@@ -199,6 +199,9 @@ export class TracertCommand extends BaseCommand {
     privileges: new DefaultPrivilegePolicy(PrivilegeLevel.ANY),
     category: 'réseau',
     lenientOptions: true,
+    // Sortie continue (§14.6) : routée par l'entrée terminal générique comme
+    // un job de premier plan annulable, au lieu d'un intercepteur dédié.
+    streaming: true,
   };
 
   async execute(ctx: CommandContext): Promise<ExitCode> {
