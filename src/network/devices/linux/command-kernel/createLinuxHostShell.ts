@@ -30,6 +30,7 @@ import { IoniceCommand } from './commands/Ionice';
 import { NiceCommand } from './commands/Nice';
 import { ReniceCommand } from './commands/Renice';
 import { TasksetCommand } from './commands/Taskset';
+import { KillCommand } from './commands/Kill';
 import { KillallCommand } from './commands/Killall';
 import { PgrepCommand } from './commands/Pgrep';
 import { PidofCommand } from './commands/Pidof';
@@ -100,6 +101,7 @@ export function createLinuxHostShell(deps: LinuxMachineApiDeps): Interpreter {
   registry.register(() => new PidofCommand());
   registry.register(() => new PgrepCommand());
   registry.register(() => new PkillCommand());
+  registry.register(() => new KillCommand());
   registry.register(() => new KillallCommand());
   registry.register(() => new NiceCommand());
   registry.register(() => new ReniceCommand());

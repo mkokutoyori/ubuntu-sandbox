@@ -1761,8 +1761,14 @@ export abstract class LinuxMachine extends EndHost
       return null;
     }
     if (ast.kind !== 'command' && ast.kind !== 'pipeline') return null;
-    const names = ast.kind === 'command' ? [ast.name] : ast.stages.map((stage) => stage.name);
+    const stages = ast.kind === 'command' ? [ast] : ast.stages;
+    const names = stages.map((stage) => stage.name);
     if (!names.every((name) => registry.has(name))) return null;
+    // Un argument jobspec (`%1`, `%+`…) est de la syntaxe de contrôle de
+    // tâche, jamais implémentée par le kernel : refus structurel de router,
+    // au même titre que la substitution de commande — la ligne repart vers
+    // les builtins de contrôle de tâche (`runJobBuiltinIfMatching`).
+    if (stages.some((stage) => stage.argv.some((word) => word.text.startsWith('%')))) return null;
 
     for (const name of names) this.executor.publishCommandExecve(name);
 
@@ -1815,6 +1821,12 @@ export abstract class LinuxMachine extends EndHost
       user,
       cwd: this.executor.getCwd(),
       env: env ? new Map(Object.entries(env)) : this.executor.getEnvSnapshot(),
+      // `$?` doit refléter le code de sortie de la commande précédente et
+      // `$$`/`$PPID` le shell vivant, que la commande précédente ait été
+      // traitée par l'interpréteur bash ou par le kernel.
+      lastExitCode: this.executor.lastExitCode ?? 0,
+      shellPid: this.executor.loginShellPid(),
+      parentPid: this.executor.currentPpid(),
     });
   }
 

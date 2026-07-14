@@ -2595,10 +2595,18 @@ export class LinuxCommandExecutor {
     return this.currentBashPid();
   }
 
-  withProcessIdentity<T>(pid: number, fn: () => T): T {
+  currentPpid(): number {
+    return this.shellPpid;
+  }
+
+  loginShellPid(): number {
+    return this.shellPid;
+  }
+
+  async withProcessIdentity<T>(pid: number, fn: () => T | Promise<T>): Promise<T> {
     this.bashPids.push(pid);
     try {
-      return fn();
+      return await fn();
     } finally {
       this.bashPids.pop();
     }
@@ -3730,11 +3738,6 @@ export class LinuxCommandExecutor {
       }
 
       // kill — send signal via process manager
-      case 'kill': {
-        this.publishSyscall('kill');
-        const r = cmdKill(args, this.processCmdContext());
-        return r;
-      }
       case 'arping': {
         const ctx = this.ipNetworkCtx;
         return cmdArping(args, {

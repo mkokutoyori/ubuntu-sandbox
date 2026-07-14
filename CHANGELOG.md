@@ -5,6 +5,77 @@ progressive par équipement. Un push = une entrée = une fonctionnalité
 complète et testée (voir `CLAUDE.md` / le framework de migration pour les
 principes directeurs).
 
+## Linux — Phase 28 : migration de `kill` + correction de l'expansion `$$`/`$PPID`/`$?` du pont kernel
+
+**État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
+
+Migration de `kill` (par PID) vers command-kernel, en respectant le
+principe directeur « une seule porte d'entrée = l'interpréteur » : plutôt
+que de dérouter les lignes problématiques vers l'interpréteur bash, les
+capacités manquantes ont été ajoutées **dans les bonnes couches du
+socle**.
+
+- **`KillCommand` autonome** : `-l`, parsing de signal (`-9`/`-TERM`/`-s`/
+  `-n`), signalisation via `ctx.machine.processControl`, erreurs GNU
+  exactes (`No such process`, `not enough arguments`, `invalid signal
+  specification`), `validate`. Le syscall `kill(2)` est tracé
+  inconditionnellement (`ctx.machine.audit?.syscall('kill')`), comme le
+  `publishSyscall('kill')` du legacy — un `kill -9 <pid inexistant>` doit
+  apparaître dans `audit.log` (test 34 de `auditctl-other`).
+- **Auto-signalement (`kill $$`)** : viser le shell de connexion avec un
+  signal terminant renvoie `128+signal` (SIGINT → 130), le shell
+  interactif/distant n'ayant pas de superviseur de script ; viser le shell
+  d'un *script* signale le processus, et c'est `runScriptProcess` qui
+  traduit sa disparition en `128+signal`. La distinction se fait sur le PID
+  du shell de connexion (`session.shellPid`), exactement comme le
+  `ctx.shellPid` du `cmdKill` legacy — sans quoi `ssh … "bash -c 'kill
+  -INT $$'"` retombait à `rc=0` au lieu de 130.
+- **Jobspecs `%N`** : restent gérés par les builtins de contrôle de tâche
+  (`runJobBuiltinIfMatching`), au même titre que `fg`/`bg`/`wait` — le
+  pont `tryCommandKernel` refuse désormais structurellement de router une
+  ligne portant un argument `%…` (comme il refuse déjà `$(`/backtick),
+  puisque le kernel ne modélise pas le contrôle de tâche. `cmdKill` reste
+  donc vivant pour ce seul chemin (pas de code mort).
+
+**Bugs trouvés puis corrigés en testant contre la suite existante** (cause
+racine, pas symptôme) :
+
+- **`$$`/`$PPID` non expansés au niveau `LinuxPC`** : `LinuxMachine`
+  route les lignes simples via `tryCommandKernel`, dont l'`Expander`
+  ignorait les paramètres spéciaux du shell — `echo $$` ressortait
+  littéral, `$PPID` vide. Corrigé **dans l'`Expander` du socle**
+  (`$$`/`$BASHPID` → `session.shellPid`, `$PPID` → `session.parentPid`),
+  la session étant renseignée par le pont à partir du shell de connexion
+  réel. L'interpréteur reste l'unique porte d'entrée.
+- **`$?` toujours à 0 après une commande passée par le kernel** :
+  `buildCommandKernelSession` ne reportait pas `lastExitCode` de
+  l'exécuteur — corrigé (le pont ensemence `lastExitCode`/`shellPid`/
+  `parentPid`). Débloque `echo $?` après un script `exit 7` et le report
+  du code de sortie d'un auto-`kill`.
+- **`withProcessIdentity` synchrone enveloppant un corps asynchrone** :
+  le `finally { bashPids.pop() }` s'exécutait dès que `fn()` retournait sa
+  promesse *non résolue*, donc l'identité de PID était retirée avant que
+  le corps ne s'exécute — un script `ExecStart` de service voyait `$$` =
+  PID du shell de login au lieu du MainPID de l'unité. Rendu `async`
+  (les deux appelants attendaient déjà le résultat).
+
+Validation (localisée, §10) : `linux-process-identity` (4/4),
+`script-process-coherence` (13/13, dont les 6 auparavant rouges :
+identité, code de sortie de script, auto-`kill` 137/143, abandon de
+script, MainPID systemd), `linux-job-control` (21/21),
+`tcpdump-kill-cancels-capture`, `linux-process-service-integration`
+(27/27), `linux-priority-commands` (13/13) ; lot audit/privilège §7.2 en
+isolation (`auditctl` 100, `auditctl-other` 150, `journalization-and-audit`
+30, `command-privilege-policy` 17) ; socle command-kernel (82/82) ;
+systemd/service/cron/background (toutes vertes) ;
+`cross-equipment-ssh-suite` revenu à sa base (19 échecs préexistants sans
+rapport, dont une régression `rc=130` introduite puis corrigée en cours de
+route). Typecheck propre, lint ciblé sans nouvelle erreur.
+
+Hors périmètre (préexistant, sans rapport) : `run-parts` 108/118/119 (sh/
+fonctions/if dans un script `run-parts`), `journalization` 161 (prerotate
+logrotate).
+
 ## Routeur Cisco — BGP `aggregate-address` réel (agrégation Loc-RIB + `summary-only`)
 
 Encore un gap "CLI qui répond mais ne fait rien" : `aggregate-address`

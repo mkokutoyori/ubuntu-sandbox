@@ -45,6 +45,8 @@ export interface Session {
   readonly variables: Map<string, string>; // variables locales de script ($x)
   cwd: string;
   lastExitCode: number; // $? du dernier appel
+  shellPid?: number; // $$ / $BASHPID — PID du shell courant
+  parentPid?: number; // $PPID — PID du parent du shell
 }
 
 export interface AuthorizationResult {
@@ -73,6 +75,9 @@ export interface CreateSessionOptions {
   readonly user: User;
   readonly cwd?: string;
   readonly env?: Map<string, string>;
+  readonly shellPid?: number;
+  readonly parentPid?: number;
+  readonly lastExitCode?: number;
 }
 
 /** Fabrique une session neuve avec des collections isolées (pas de partage accidentel). */
@@ -83,6 +88,8 @@ export function createSession(options: CreateSessionOptions): Session {
     env: options.env ?? new Map<string, string>(),
     variables: new Map<string, string>(),
     cwd: options.cwd ?? "/",
-    lastExitCode: 0,
+    lastExitCode: options.lastExitCode ?? 0,
+    shellPid: options.shellPid,
+    parentPid: options.parentPid,
   };
 }
