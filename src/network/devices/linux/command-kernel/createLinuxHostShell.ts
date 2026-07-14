@@ -18,6 +18,7 @@ import { ClearCommand, ResetCommand } from './commands/Clear';
 import { CpCommand } from './commands/Cp';
 import { CutCommand } from './commands/Cut';
 import { GrepCommand } from './commands/Grep';
+import { PingCommand, Ping6Command } from './commands/Ping';
 import { GroupsCommand } from './commands/Groups';
 import { HeadCommand } from './commands/Head';
 import { IdCommand } from './commands/Id';
@@ -125,6 +126,8 @@ export function createLinuxHostShell(deps: LinuxMachineApiDeps): Interpreter {
   registry.register(() => new DiffCommand());
   registry.register(() => new ClearCommand());
   registry.register(() => new ResetCommand());
+  registry.register(() => new PingCommand());
+  registry.register(() => new Ping6Command());
 
   return new Interpreter(registry, machine);
 }

@@ -31,6 +31,10 @@ export interface CommandDescriptor {
   /** Un jeton non reconnu ressemblant à une option devient un positional
    *  au lieu de lever une erreur (ex: `echo -w foo`, comme le vrai `echo`). */
   readonly lenientOptions?: boolean;
+  /** Commande qui tient le terminal et émet au fil de l'eau (sonde réseau,
+   *  suivi) : l'hôte la fait tourner en job de premier plan avec un canal
+   *  vivant (onOutput/signal) au lieu d'attendre une réponse d'un bloc. */
+  readonly streaming?: boolean;
 }
 
 /** Tout ce dont une commande dispose au moment de l'exécution. */

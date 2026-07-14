@@ -886,6 +886,11 @@ export class LinuxCommandExecutor {
     this.ipNetworkCtx = ctx;
   }
 
+  /** MAC connue pour un voisin IP — table de voisinage vivante (`arping`). */
+  neighborMac(ip: string): string | null {
+    return this.ipNetworkCtx?.getNeighborTable().find((n) => n.ip === ip)?.mac ?? null;
+  }
+
   /**
    * scp / sftp / rsync share the SSH transport: same lookup + sshd gating
    * as runSshClient, but with command-specific output for the success case.

@@ -12,26 +12,12 @@
  * See `linux_gap.md` §7.3 and §8.4.
  */
 
-import type { IPAddress, IPv6Address } from '../../core/types';
-import type { PingResult } from '../EndHost';
+import type { IPAddress } from '../../core/types';
 import type { Port } from '../../hardware/Port';
 import type { TracerouteHop } from './LinuxNetKernel';
 import { formatIfconfigInterface } from './LinuxNetCommands';
 
 export interface LinuxFormatHelpers {
-  /**
-   * Render a full `ping` sequence output (header + per-packet + stats).
-   * @param size Payload size in bytes (defaults to 56, as in the real ping).
-   */
-  formatPingOutput(target: IPAddress, count: number, results: PingResult[], size?: number, hostname?: string): string;
-
-  /**
-   * Render a full `ping6` sequence output. iputils formats the IPv6
-   * header differently from IPv4: `PING <name>(<addr>) <size> data bytes`
-   * (no `(size+28)` total, since the IPv6 header is not counted there).
-   */
-  formatPing6Output(target: IPv6Address, count: number, results: PingResult[], size?: number, hostname?: string): string;
-
   /**
    * Render a `traceroute` output including header and per-hop lines.
    * @param maxHops Advertised maxHops in the header (defaults to 30).
@@ -81,76 +67,6 @@ function formatInterface(port: Port): string {
       scope: entry.origin === 'link-local' ? 'link' as const : 'global' as const,
     })),
   });
-}
-
-export function formatPingHeader(target: IPAddress, size: number = 56, hostname?: string): string {
-  const totalSize = size + 28; // ICMP header (8) + IP header (20)
-  const displayName = hostname ?? target.toString();
-  return `PING ${displayName} (${target}) ${size}(${totalSize}) bytes of data.`;
-}
-
-/** One `ping` reply line for a single probe, or null when the probe produced no line. */
-export function formatPingReplyLine(r: PingResult, size: number = 56): string | null {
-  if (r.success) {
-    const replySize = size + 8; // data size + ICMP header
-    return `${replySize} bytes from ${r.fromIP}: icmp_seq=${r.seq} ttl=${r.ttl} time=${r.rttMs.toFixed(3)} ms`;
-  }
-  if (r.error) {
-    if (r.error.includes('Time to live exceeded')) {
-      const match = r.error.match(/from ([\d.]+)/);
-      return `From ${match ? match[1] : 'unknown'} icmp_seq=${r.seq} Time to live exceeded`;
-    }
-    if (r.error.includes('Destination unreachable')) {
-      const match = r.error.match(/from ([\d.]+)/);
-      return `From ${match ? match[1] : 'unknown'} icmp_seq=${r.seq} Destination Host Unreachable`;
-    }
-  }
-  return null;
-}
-
-/** The trailing `--- statistics ---` block shared by block and streaming ping. */
-export function formatPingStats(targetStr: string, count: number, results: PingResult[]): string[] {
-  const received = results.filter(r => r.success);
-  const failed = count - received.length;
-  const lines = [
-    '',
-    `--- ${targetStr} ping statistics ---`,
-    `${count} packets transmitted, ${received.length} received, ${count === 0 ? 0 : Math.round((failed / count) * 100)}% packet loss`,
-  ];
-  if (received.length > 0) {
-    const rtts = received.map(r => r.rttMs);
-    const min = Math.min(...rtts).toFixed(3);
-    const max = Math.max(...rtts).toFixed(3);
-    const avg = (rtts.reduce((a, b) => a + b, 0) / rtts.length).toFixed(3);
-    const mdev = (Math.sqrt(rtts.reduce((s, r) => s + (r - +avg) ** 2, 0) / rtts.length)).toFixed(3);
-    lines.push(`rtt min/avg/max/mdev = ${min}/${avg}/${max}/${mdev} ms`);
-  }
-  return lines;
-}
-
-function formatPingOutput(target: IPAddress, count: number, results: PingResult[], size: number = 56, hostname?: string): string {
-  return renderPingBody(formatPingHeader(target, size, hostname), String(target), count, results, size);
-}
-
-function formatPing6Output(target: IPv6Address, count: number, results: PingResult[], size: number = 56, hostname?: string): string {
-  const displayName = hostname ?? target.toString();
-  const header = `PING ${displayName}(${target}) ${size} data bytes`;
-  return renderPingBody(header, String(target), count, results, size);
-}
-
-/** Per-packet lines + statistics block, shared by ping and ping6. */
-function renderPingBody(header: string, targetStr: string, count: number, results: PingResult[], size: number): string {
-  const lines: string[] = [header];
-  if (results.length === 0) {
-    lines.push('connect: Network is unreachable');
-  } else {
-    for (const r of results) {
-      const line = formatPingReplyLine(r, size);
-      if (line !== null) lines.push(line);
-    }
-  }
-  lines.push(...formatPingStats(targetStr, count, results));
-  return lines.join('\n');
 }
 
 export function icmpCodeAnnotation(code: number | undefined): string {
@@ -218,8 +134,6 @@ function formatTracerouteOutput(target: IPAddress, hops: TracerouteHop[], maxHop
 
 /** Default singleton — no state, safe to share across machines. */
 export const defaultLinuxFormatHelpers: LinuxFormatHelpers = {
-  formatPingOutput,
-  formatPing6Output,
   formatTracerouteOutput,
   formatTracerouteHeader,
   formatTracerouteHopLine,

@@ -23,6 +23,7 @@
  */
 
 import { EndHost, type PingResult, type ARPEntry, type HostRouteEntry, type HostPolicyRule, getNUDState } from './EndHost';
+import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
 import type { UserAccountHost, ShellIdentityHost, FileEditorHost } from '../equipment/HostCapabilities';
 import type { PathActor } from './linux/VfsPath';
 import type { NssHostEntry } from './linux/nss/types';
@@ -1749,20 +1750,26 @@ export abstract class LinuxMachine extends EndHost
         powerOff: () => this.powerOff(),
         publishFsAccess: (path, perm, syscall) => this.executor.publishAuditFsAccess(path, perm, syscall),
         publishSyscall: (syscall, path) => this.executor.publishAuditSyscall(syscall, path),
+        netKernel: this.net,
+        neighborMac: (ip) => this.executor.neighborMac(ip),
+        topologyMtus: () => {
+          const mtus: number[] = [];
+          try {
+            for (const dev of EquipmentRegistry.getInstance().getAll()) {
+              for (const p of dev.getPorts()) mtus.push(p.getMTU());
+            }
+          } catch { /* topologie indisponible : la découverte PMTU se limite aux ports locaux */ }
+          return mtus;
+        },
       });
       this.commandKernelShell = { interpreter, registry: interpreter.commands };
     }
     return this.commandKernelShell;
   }
 
-  private async tryCommandKernel(
-    trimmed: string,
-    channel?: CommandKernelChannel,
-  ): Promise<string | null> {
+  private parseKernelRoutable(trimmed: string): { names: string[] } | null {
     if (trimmed.includes('$(') || trimmed.includes('`')) return null;
-
-    const { interpreter, registry } = this.getCommandKernelShell();
-
+    const { registry } = this.getCommandKernelShell();
     let ast;
     try {
       ast = new Parser().parse(new Lexer().tokenize(trimmed));
@@ -1778,8 +1785,30 @@ export abstract class LinuxMachine extends EndHost
     // au même titre que la substitution de commande — la ligne repart vers
     // les builtins de contrôle de tâche (`runJobBuiltinIfMatching`).
     if (stages.some((stage) => stage.argv.some((word) => word.text.startsWith('%')))) return null;
+    return { names };
+  }
 
-    for (const name of names) this.executor.publishCommandExecve(name);
+  /**
+   * Vraie quand la ligne se résout intégralement dans le kernel ET qu'au
+   * moins un étage est déclaré `streaming` par son descripteur — l'hôte la
+   * fait alors tourner en job de premier plan avec un canal vivant.
+   */
+  isKernelStreamingLine(line: string): boolean {
+    const routable = this.parseKernelRoutable(line.trim());
+    if (!routable) return false;
+    const { registry } = this.getCommandKernelShell();
+    return routable.names.some((name) => registry.resolve(name)?.descriptor.streaming === true);
+  }
+
+  private async tryCommandKernel(
+    trimmed: string,
+    channel?: CommandKernelChannel,
+  ): Promise<string | null> {
+    const routable = this.parseKernelRoutable(trimmed);
+    if (!routable) return null;
+    const { interpreter } = this.getCommandKernelShell();
+
+    for (const name of routable.names) this.executor.publishCommandExecve(name);
 
     const session = this.buildCommandKernelSession();
     const { io, chunks } = await this.buildCommandKernelIO(undefined, channel);
@@ -1788,7 +1817,10 @@ export abstract class LinuxMachine extends EndHost
       await interpreter.interpretLine(trimmed, session, io, channel?.signal);
     } catch (err) {
       if (err instanceof CommandNotFoundError) return null;
-      if (err instanceof ShellError) return `${err.message}\n`;
+      if (err instanceof ShellError) {
+        channel?.onOutput?.(`${err.message}\n`);
+        return `${err.message}\n`;
+      }
       throw err;
     }
     this.executor.setCwd(session.cwd);

@@ -11,7 +11,6 @@
 
 import { Equipment, type HostCapableDevice } from '@/network';
 import { IPAddress } from '@/network/core/types';
-import { parsePingArgs } from '@/network/devices/linux/commands/net/Ping';
 import { parseTracerouteArgs } from '@/network/devices/linux/commands/net/Traceroute';
 import { parseMtrArgs, MtrHopStats, formatMtrFrame, MTR_USAGE, MTR_VERSION, type MtrHopProbe } from '@/network/devices/linux/Mtr';
 import { parseWatchArgs } from '@/network/devices/linux/coreutils/WatchRunner';
@@ -43,8 +42,7 @@ import {
 import { parseInvocation } from '@/network/devices/linux/network/tcpdump/TcpdumpCli';
 import { compileFilter } from '@/network/devices/linux/network/tcpdump/TcpdumpFilter';
 import { banner as tcpdumpBanner, footer as tcpdumpFooterLines, formatFrame as formatCaptureFrame } from '@/network/devices/linux/network/tcpdump/TcpdumpFormat';
-import { formatPingHeader, formatPingReplyLine, formatPingStats, formatTracerouteHeader, formatTracerouteHopLine } from '@/network/devices/linux/LinuxFormatHelpers';
-import type { PingResult } from '@/network/devices/EndHost';
+import { formatTracerouteHeader, formatTracerouteHopLine } from '@/network/devices/linux/LinuxFormatHelpers';
 import type { AsyncJobContext } from '@/terminal/async';
 import { primaryShellKindFor } from '@/shell/shellKind';
 import {
@@ -61,6 +59,7 @@ import {
   parseReadInvocation as parseReadInvocationLib,
   performInteractiveRead as performInteractiveReadLib,
   PromiseInputBroker as PromiseInputBrokerLib,
+  createKernelInteraction,
 } from '@/shell/input';
 import { SqlPlusSubShell } from '@/terminal/subshells/SqlPlusSubShell';
 import { ReactiveRmanSubShell } from '@/terminal/subshells/rman/ReactiveRmanSubShell';
@@ -830,47 +829,42 @@ export class LinuxTerminalSession extends TerminalSession {
     return job !== null;
   }
 
-  private tryStartPingStream(commandLine: string): boolean {
+  /**
+   * Canal unique pour toute commande command-kernel declaree `streaming`
+   * par son descripteur : job de premier plan, sortie ligne a ligne au fil
+   * de l'eau, Ctrl+C relaye via AbortSignal, dialogues via InteractionChannel.
+   * Remplace les intercepteurs par commande (ex-tryStartPingStream).
+   */
+  private tryStartKernelStream(commandLine: string): boolean {
     if (this.hasForegroundAsyncJob) return false;
     const dev = this.device;
-    if (!(dev instanceof LinuxMachine)) return false;
-    const toks = commandLine.trim().split(/\s+/);
-    if (toks[0] !== 'ping') return false;
-    if (/[|<>&]/.test(commandLine)) return false;
-    const parsed = parsePingArgs(toks.slice(1), 'ping');
-    if (!parsed.targetStr || parsed.v6) return false;
-
-    let targetLabel = parsed.targetStr;
-    const results: PingResult[] = [];
-    const emitStats = (ctx: AsyncJobContext) => {
-      for (const line of formatPingStats(targetLabel, results.length, results)) ctx.sink.line(line);
-    };
-
+    if (!(dev instanceof LinuxMachine) || !this.shell) return false;
+    if (!dev.isKernelStreamingLine(commandLine)) return false;
+    const shell = this.shell;
     const job = this.startAsyncCommand({
       mode: 'foreground',
       kind: 'streaming',
       command: commandLine,
       run: async (ctx) => {
-        const outcome = await dev.pingStreamInSession(parsed.targetStr, {
-          count: parsed.count,
-          timeoutMs: parsed.timeoutMs,
-          ttl: parsed.ttl,
-          intervalMs: parsed.intervalMs,
-          onResolved: (ip) => { targetLabel = ip.toString(); ctx.sink.line(formatPingHeader(ip, parsed.size, parsed.targetStr !== ip.toString() ? parsed.targetStr : undefined)); },
-          onResult: (r) => { results.push(r); const line = formatPingReplyLine(r, parsed.size); if (line !== null) ctx.sink.line(line); },
-          shouldStop: () => ctx.cancelled(),
-          sleep: (ms) => ctx.delay(ms),
+        const controller = new AbortController();
+        ctx.onCancel(() => controller.abort());
+        const broker = new PromiseInputBrokerLib(this.getInputHost());
+        let pending = '';
+        await dev.executeCommandInSession(commandLine, shell, {
+          signal: controller.signal,
+          interaction: createKernelInteraction(broker),
+          onOutput: (chunk) => {
+            pending += chunk;
+            let idx;
+            while ((idx = pending.indexOf('\n')) >= 0) {
+              ctx.sink.line(pending.slice(0, idx));
+              pending = pending.slice(idx + 1);
+            }
+          },
         });
-        if (ctx.cancelled()) return;
-        if (!outcome.resolved && results.length === 0) {
-          ctx.sink.error(outcome.reason === 'name'
-            ? `ping: ${parsed.targetStr}: Name or service not known`
-            : 'ping: connect: Network is unreachable');
-          return;
-        }
-        emitStats(ctx);
+        if (pending) ctx.sink.line(pending);
+        this.syncDeviceState();
       },
-      onInterrupt: (ctx) => emitStats(ctx),
     });
     return job !== null;
   }
@@ -1451,7 +1445,7 @@ export class LinuxTerminalSession extends TerminalSession {
     // VFS through the unified async runtime; appended bytes flow into the
     // terminal until Ctrl+C cancels the foreground job.
     if (this.tryStartTailStream(trimmed)) return;
-    if (this.tryStartPingStream(trimmed)) return;
+    if (this.tryStartKernelStream(trimmed)) return;
     if (this.tryStartTracerouteStream(trimmed)) return;
     if (this.tryStartMtrStream(trimmed)) return;
     if (this.tryStartWatchStream(trimmed)) return;

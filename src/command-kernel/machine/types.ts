@@ -1018,6 +1018,40 @@ export interface NetworkApi {
   connections?(): Promise<readonly SocketInfo[]>;
 }
 
+/** Réponse à un écho ICMP réel émis à travers la topologie simulée. */
+export interface IcmpEchoReply {
+  readonly success: boolean;
+  readonly rttMs: number;
+  readonly ttl: number;
+  readonly seq: number;
+  readonly bytes: number;
+  readonly fromIP: string;
+  readonly error?: string;
+}
+
+/**
+ * Sondes réseau bas niveau (`ping`/`traceroute`/`arping`) — optionnel.
+ * Chaque méthode émet de VRAIES trames à travers Equipment/Port/Cable ;
+ * la commande porte elle-même l'analyse d'arguments et le formatage.
+ */
+export interface NetProbeApi {
+  /** Résolution DNS/hosts réelle — `null` si introuvable. */
+  resolveHostname(name: string): Promise<string | null>;
+  /** `false` si aucune route locale ne couvre la destination. */
+  hasRoute(ip: string): boolean;
+  /** Séquence d'échos ICMP réels — tableau vide = pas de réponse ARP/route. */
+  echoSequence(targetIp: string, count: number, timeoutMs?: number, ttl?: number): Promise<readonly IcmpEchoReply[]>;
+  /** Variante ICMPv6 — `null` si `target6` n'est pas une adresse IPv6 valide ;
+   *  `target` est la forme canonique (compressée) de l'adresse. */
+  echo6Sequence(target6: string, count: number, timeoutMs?: number): Promise<{ readonly target: string; readonly replies: readonly IcmpEchoReply[] } | null>;
+  /** État physique des interfaces (MTU inclus) — la vue `ip addr` complète reste ailleurs. */
+  interfaceDetails(): readonly { name: string; up: boolean; mtu: number }[];
+  /** MTU de chaque port de toute la topologie (découverte PMTU de `ping -M do`). */
+  topologyMtus(): readonly number[];
+  /** MAC connue du voisin — `null` si absent de la table (`arping`). */
+  neighborMac(ip: string): string | null;
+}
+
 /** Groupe de sécurité résolu pour un compte (`whoami /groups`) — modèle SID, optionnel (vendeurs sans notion de SID n'ont rien à fournir). */
 export interface SecurityGroupMembership {
   readonly displayName: string;
@@ -1313,6 +1347,8 @@ export interface MachineApi {
   /** Contrôle des processus POSIX (`pidof`, `pgrep`, `pkill`, `kill`, `killall`) — optionnel, propre aux équipements Unix. */
   readonly processControl?: ProcessControlApi;
   readonly net: NetworkApi;
+  /** Sondes réseau réelles (`ping`/`traceroute`/`arping`) — optionnel. */
+  readonly netProbe?: NetProbeApi;
   readonly users: UserManagementApi;
   readonly groups: GroupManagementApi;
   readonly power: PowerApi;

@@ -1,6 +1,7 @@
 import {
   AuditApi,
   FileNodeType,
+  IcmpEchoReply,
   FileStat,
   FileSystemActor,
   FileSystemApi,
@@ -11,6 +12,7 @@ import {
   LoggingApi,
   MachineApi,
   NetworkApi,
+  NetProbeApi,
   PermissionsApi,
   PowerApi,
   ProcessApi,
@@ -29,6 +31,8 @@ import { VirtualFileSystem } from '../VirtualFileSystem';
 import type { LinuxUserManager } from '../LinuxUserManager';
 import type { LinuxProcessManager, Signal } from '../LinuxProcessManager';
 import type { LinuxLogManager } from '../LinuxLogManager';
+import type { LinuxNetKernel } from '../LinuxNetKernel';
+import { IPAddress, IPv6Address } from '@/network/core/types';
 import { LinuxUser, resolveLinuxUser } from './LinuxUser';
 
 const NODE_TYPES: Record<INode['type'], FileNodeType> = {
@@ -52,6 +56,9 @@ export interface LinuxMachineApiDeps {
   powerOff(): void;
   publishFsAccess(path: string, perm: 'r' | 'w' | 'x' | 'a', syscall?: string): void;
   publishSyscall(syscall: string, path?: string): void;
+  readonly netKernel?: LinuxNetKernel;
+  neighborMac?(ip: string): string | null;
+  topologyMtus?(): readonly number[];
 }
 
 function toPathActor(actor: FileSystemActor): PathActor {
@@ -486,6 +493,59 @@ class LinuxNetworkApi implements NetworkApi {
   }
 }
 
+class LinuxNetProbeApi implements NetProbeApi {
+  constructor(
+    private readonly kernel: LinuxNetKernel,
+    private readonly ports: () => readonly Port[],
+    private readonly lookupNeighborMac: (ip: string) => string | null,
+    private readonly listTopologyMtus: () => readonly number[],
+  ) {}
+
+  async resolveHostname(name: string): Promise<string | null> {
+    const ip = await this.kernel.resolveHostname(name);
+    return ip ? ip.toString() : null;
+  }
+
+  hasRoute(ip: string): boolean {
+    try {
+      return this.kernel.hasRoute(new IPAddress(ip));
+    } catch {
+      return false;
+    }
+  }
+
+  async echoSequence(targetIp: string, count: number, timeoutMs?: number, ttl?: number): Promise<readonly IcmpEchoReply[]> {
+    return this.kernel.pingSequence(new IPAddress(targetIp), count, timeoutMs, ttl);
+  }
+
+  async echo6Sequence(target6: string, count: number, timeoutMs?: number): Promise<{ readonly target: string; readonly replies: readonly IcmpEchoReply[] } | null> {
+    let target: IPv6Address;
+    try {
+      target = new IPv6Address(target6);
+    } catch {
+      return null;
+    }
+    const replies = await this.kernel.ping6Sequence(target, count, timeoutMs);
+    return { target: target.toString(), replies };
+  }
+
+  interfaceDetails(): readonly { name: string; up: boolean; mtu: number }[] {
+    return this.ports().map((port) => ({
+      name: port.getName(),
+      up: port.getIsUp(),
+      mtu: port.getMTU(),
+    }));
+  }
+
+  topologyMtus(): readonly number[] {
+    return this.listTopologyMtus();
+  }
+
+  neighborMac(ip: string): string | null {
+    return this.lookupNeighborMac(ip);
+  }
+}
+
 class LinuxUserManagementApi implements UserManagementApi {
   constructor(private readonly userManager: LinuxUserManager) {}
 
@@ -598,6 +658,7 @@ export class LinuxMachineApi implements MachineApi {
   readonly proc: ProcessApi;
   readonly processControl: ProcessControlApi;
   readonly net: NetworkApi;
+  readonly netProbe?: NetProbeApi;
   readonly users: UserManagementApi;
   readonly groups: GroupManagementApi;
   readonly power: PowerApi;
@@ -611,6 +672,14 @@ export class LinuxMachineApi implements MachineApi {
     this.proc = new LinuxProcessApi(deps.processManager);
     this.processControl = new LinuxProcessControlApi(deps.processManager);
     this.net = new LinuxNetworkApi(() => deps.ports);
+    if (deps.netKernel) {
+      this.netProbe = new LinuxNetProbeApi(
+        deps.netKernel,
+        () => deps.ports,
+        (ip) => deps.neighborMac?.(ip) ?? null,
+        () => deps.topologyMtus?.() ?? [],
+      );
+    }
     this.users = new LinuxUserManagementApi(deps.userManager);
     this.groups = new LinuxGroupManagementApi(deps.userManager);
     this.power = new LinuxPowerApi(deps);
