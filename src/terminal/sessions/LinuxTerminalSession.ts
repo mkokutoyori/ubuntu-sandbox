@@ -1054,35 +1054,6 @@ export class LinuxTerminalSession extends TerminalSession {
     return job !== null;
   }
 
-  private async tryStartJournalFollow(commandLine: string): Promise<boolean> {
-    if (this.hasForegroundAsyncJob) return false;
-    const dev = this.device;
-    if (!(dev instanceof LinuxMachine) || !this.shell) return false;
-    const toks = commandLine.trim().split(/\s+/);
-    if (toks[0] !== 'journalctl') return false;
-    if (!toks.includes('-f') && !toks.includes('--follow')) return false;
-    if (/[|<>&]/.test(commandLine)) return false;
-    const shell = this.shell;
-
-    const uIdx = Math.max(toks.indexOf('-u'), toks.indexOf('--unit'));
-    const unit = uIdx >= 0 ? toks[uIdx + 1] : undefined;
-    const nIdx = Math.max(toks.indexOf('-n'), toks.indexOf('--lines'));
-    const initialArgs = toks.slice(1).filter((t) => t !== '-f' && t !== '--follow');
-    if (nIdx < 0) { initialArgs.unshift('10'); initialArgs.unshift('-n'); }
-    const initialCommand = ['journalctl', ...initialArgs].join(' ');
-    const initial = await dev.runCommandFrameInSession(initialCommand, shell);
-
-    return this.startFollowStream({
-      commandLine,
-      prepare: (ctx) => {
-        if (initial.startsWith('No journal files')) { ctx.sink.line(initial); return false; }
-        for (const line of initial.split('\n')) ctx.sink.line(line);
-        return true;
-      },
-      subscribe: (sink) => dev.followJournal({ unit }, sink),
-    });
-  }
-
   private tryStartIpMonitor(commandLine: string): boolean {
     if (this.hasForegroundAsyncJob) return false;
     const dev = this.device;
@@ -1369,7 +1340,6 @@ export class LinuxTerminalSession extends TerminalSession {
     if (this.tryStartMtrStream(trimmed)) return;
     if (this.tryStartWatchStream(trimmed)) return;
     if (this.tryStartTopStream(trimmed)) return;
-    if (await this.tryStartJournalFollow(trimmed)) return;
     if (this.tryStartIpMonitor(trimmed)) return;
     if (this.tryStartNetstatStream(trimmed)) return;
     if (this.tryStartVmstatStream(trimmed)) return;

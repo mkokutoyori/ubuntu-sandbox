@@ -106,7 +106,7 @@ export class TailCommand extends BaseCommand {
   ): Promise<ExitCode> {
     if (files.length === 0) {
       await ctx.io.stdout.write('tail: warning: following standard input indefinitely is ineffective\n');
-      await this.blockUntilAborted(ctx);
+      if (ctx.io.interaction) await this.blockUntilAborted(ctx);
       return EXIT_OK;
     }
 
@@ -167,12 +167,15 @@ export class TailCommand extends BaseCommand {
       if (slice !== '') await ctx.io.stdout.write(slice.endsWith('\n') ? slice : `${slice}\n`);
     }
 
-    const unsubs: Array<() => void> = [];
+    // Suivi seulement sous un flux terminal vivant (`ctx.io.interaction`) :
+    // un appel programmatique (`executeCommand`/script, sans annulation)
+    // rend juste l'instantané au lieu de bloquer indéfiniment.
     const watch = ctx.machine.fs.watchWrites;
-    if (watch) {
-      for (const [display, tracker] of tracked) {
-        unsubs.push(watch.call(ctx.machine.fs, tracker.abs, (current) => emitAppend(display, current)));
-      }
+    if (!ctx.io.interaction || !watch) return exitCode;
+
+    const unsubs: Array<() => void> = [];
+    for (const [display, tracker] of tracked) {
+      unsubs.push(watch.call(ctx.machine.fs, tracker.abs, (current) => emitAppend(display, current)));
     }
 
     await this.blockUntilAborted(ctx);

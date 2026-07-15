@@ -719,6 +719,13 @@ class LinuxLoggingApi implements LoggingApi {
   ): () => void {
     return this.logManager.followDmesg(opts, listener);
   }
+
+  followJournal(
+    opts: { unit?: string; priority?: number; pid?: number },
+    listener: (line: string) => void,
+  ): () => void {
+    return this.logManager.followJournal(opts, listener);
+  }
 }
 
 class LinuxPermissionsApi implements PermissionsApi {

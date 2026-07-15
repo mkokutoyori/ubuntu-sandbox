@@ -5,6 +5,34 @@ progressive par équipement. Un push = une entrée = une fonctionnalité
 complète et testée (voir `CLAUDE.md` / le framework de migration pour les
 principes directeurs).
 
+## Socle + Linux — `journalctl -f` (suivi journal) migré au noyau (§14.6)
+
+**État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
+
+Troisième convergence d'un intercepteur de flux **Linux**, jumelle de
+`dmesg -w`. `journalctl -f` était routé par `tryStartJournalFollow` ; le suivi
+passe désormais par `tryStartKernelStream`, la commande noyau `journalctl`
+existant déjà pour l'instantané.
+
+- **`JournalctlCommand` gère `-f`/`--follow`** : `isStreaming(argv)` vrai dès
+  qu'un `-f`/`--follow` est présent ; l'instantané par défaut se limite aux 10
+  dernières entrées (comme le legacy) puis `execute` s'abonne aux nouvelles
+  entrées et les diffuse jusqu'à Ctrl+C. Refactor du bas de `execute` : la
+  sortie de l'instantané est calculée dans `snapshot`, émise, puis suivie.
+- **Nouvelle capacité socle `LoggingApi.followJournal?(opts, listener)`** (§0.1)
+  exposée via `LinuxLogManager.followJournal` : abonnement événementiel filtré
+  par unité/priorité/pid.
+- **Garde anti-blocage (les 3 commandes de suivi)** : `tail -f`/`dmesg -w`/
+  `journalctl -f` ne bloquent que sous un flux terminal vivant
+  (`ctx.io.interaction`) ; un appel programmatique (`executeCommand`/script,
+  sans canal d'annulation) rend l'instantané au lieu de tourner indéfiniment —
+  corrige un blocage de `journalctl -f -n 1` en appel direct.
+- `tryStartJournalFollow` + dispatch supprimés ; `LinuxMachine.followJournal`
+  (câblage mort) supprimé.
+- Tests : `linux-top-journalctl-stream-ui` (moitié journalctl) + `journalization`
+  60 (appel direct) verts ; suites journalisation 312/313 (seul échec : le test
+  `top` préexistant, non lié). `tsc` propre, aucune nouvelle alerte eslint.
+
 ## Socle + Linux — `dmesg -w` (suivi noyau) migré au noyau (§14.6)
 
 **État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**

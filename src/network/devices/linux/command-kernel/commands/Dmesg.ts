@@ -120,7 +120,9 @@ export class DmesgCommand extends BaseCommand {
 
     // Mode suivi (§14.6) : après l'instantané, diffuse les nouveaux
     // messages noyau au fil de l'eau jusqu'à Ctrl+C (`ctx.signal`).
-    if (follow && logging.followKernel) {
+    // Seulement sous un flux terminal vivant (`ctx.io.interaction`) : un
+    // appel programmatique (script, sans annulation) rend juste l'instantané.
+    if (follow && logging.followKernel && ctx.io.interaction) {
       const unsub = logging.followKernel({ raw, humanTime, levelFilter }, (line) => {
         void ctx.io.stdout.write(line.endsWith('\n') ? line : `${line}\n`);
       });

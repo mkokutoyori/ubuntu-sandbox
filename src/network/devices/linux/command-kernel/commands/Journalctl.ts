@@ -44,6 +44,15 @@ export class JournalctlCommand extends BaseCommand {
     lenientOptions: true,
   };
 
+  /**
+   * `-f`/`--follow` tient le terminal et diffuse les nouvelles entrées du
+   * journal au fil de l'eau : l'invocation est en flux continu (§14.6),
+   * sinon c'est un instantané. La commande décide selon ses arguments.
+   */
+  override isStreaming(argv: readonly string[]): boolean {
+    return argv.some((a) => a === '-f' || a === '--follow');
+  }
+
   protected override validate(_args: ParsedArgs, _session: Session): void {
     // Erreurs d'usage (format inconnu, priorité/nombre invalide) rendues
     // dans `execute` avec le message exact et le code de sortie 1.
@@ -85,6 +94,7 @@ export class JournalctlCommand extends BaseCommand {
     let kernelOnly = false;
     let sinceMs = -1;
     let untilMs = -1;
+    let follow = false;
 
     for (let i = 0; i < args.length; i++) {
       switch (args[i]) {
@@ -96,7 +106,8 @@ export class JournalctlCommand extends BaseCommand {
         case '-r': case '--reverse': reverse = true; break;
         case '-q': case '--quiet': quiet = true; break;
         case '-k': case '--dmesg': kernelOnly = true; break;
-        case '-x': case '--catalog': case '-f': case '--follow': break;
+        case '-f': case '--follow': follow = true; break;
+        case '-x': case '--catalog': break;
         case '-b': case '--boot': {
           const nxt = args[i + 1];
           if (nxt && /^-?\d+$/.test(nxt)) {
@@ -147,19 +158,49 @@ export class JournalctlCommand extends BaseCommand {
     const nowMs = Date.now();
     entries = entries.filter((e) => e.timestampMs <= nowMs);
 
-    if (entries.length === 0) return this.emit(ctx, '-- No entries --');
+    // En mode suivi, l'instantané par défaut se limite aux 10 dernières
+    // entrées (comme `journalctl -f`), avant de diffuser la suite.
+    if (follow && n < 0) n = 10;
 
-    if (n >= 0) entries = entries.slice(-n);
-    if (reverse) entries = [...entries].reverse();
-
-    const bootId = logging.bootId();
-    const lines = entries.map((e) => this.formatEntry(e, outputFormat, outputFields, bootId));
-
-    if (!quiet && !reverse && (outputFormat === 'short' || outputFormat === 'short-iso') && all.length > 0) {
-      const header = `-- Logs begin at ${formatHumanDate(new Date(all[0].timestampMs))}, end at ${formatHumanDate(new Date(all[all.length - 1].timestampMs))}. --`;
-      return this.emit(ctx, header + '\n' + lines.join('\n'));
+    let snapshot: string;
+    if (entries.length === 0) {
+      snapshot = '-- No entries --';
+    } else {
+      if (n >= 0) entries = entries.slice(-n);
+      if (reverse) entries = [...entries].reverse();
+      const bootId = logging.bootId();
+      const lines = entries.map((e) => this.formatEntry(e, outputFormat, outputFields, bootId));
+      if (!quiet && !reverse && (outputFormat === 'short' || outputFormat === 'short-iso') && all.length > 0) {
+        const header = `-- Logs begin at ${formatHumanDate(new Date(all[0].timestampMs))}, end at ${formatHumanDate(new Date(all[all.length - 1].timestampMs))}. --`;
+        snapshot = header + '\n' + lines.join('\n');
+      } else {
+        snapshot = lines.join('\n');
+      }
     }
-    return this.emit(ctx, lines.join('\n'));
+
+    // Mode suivi (§14.6) : après l'instantané, diffuse les nouvelles entrées
+    // au fil de l'eau jusqu'à Ctrl+C (`ctx.signal`). Seulement sous un flux
+    // terminal vivant (`ctx.io.interaction`) : un appel programmatique
+    // (`executeCommand`/script, sans annulation) rend juste l'instantané au
+    // lieu de bloquer indéfiniment.
+    if (follow && logging.followJournal && ctx.io.interaction) {
+      if (snapshot !== '') await ctx.io.stdout.write(snapshot + '\n');
+      const unsub = logging.followJournal(
+        {
+          unit: unitFilter || undefined,
+          priority: priorityFilter >= 0 ? priorityFilter : undefined,
+          pid: pidFilter >= 0 ? pidFilter : undefined,
+        },
+        (line) => { void ctx.io.stdout.write(line.endsWith('\n') ? line : `${line}\n`); },
+      );
+      await new Promise<void>((resolve) => {
+        if (ctx.signal.aborted) { resolve(); return; }
+        ctx.signal.addEventListener('abort', () => resolve(), { once: true });
+      });
+      unsub();
+      return 0;
+    }
+    return this.emit(ctx, snapshot);
   }
 
   private async emit(ctx: CommandContext, text: string): Promise<ExitCode> {

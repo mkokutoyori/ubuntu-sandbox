@@ -1463,6 +1463,16 @@ export interface LoggingApi {
     opts: { raw?: boolean; humanTime?: boolean; levelFilter?: readonly string[] },
     listener: (line: string) => void,
   ): () => void;
+  /**
+   * Abonnement aux nouvelles entrées du journal (`journalctl -f`/`--follow`)
+   * — optionnel. `listener` reçoit chaque entrée déjà formatée (`short`),
+   * filtrée par unité/priorité/pid ; renvoie une fonction de désabonnement.
+   * Suivi événementiel, sans sondage.
+   */
+  followJournal?(
+    opts: { unit?: string; priority?: number; pid?: number },
+    listener: (line: string) => void,
+  ): () => void;
 }
 
 /**

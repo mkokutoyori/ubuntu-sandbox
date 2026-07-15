@@ -3147,10 +3147,6 @@ export abstract class LinuxMachine extends EndHost
     this.executor.installCrontab(content, user);
   }
 
-  followJournal(opts: { unit?: string; priority?: number; pid?: number }, listener: (line: string) => void): () => void {
-    return this.executor.logMgr.followJournal(opts, listener);
-  }
-
   sampleVmstatSnapshot() {
     return sampleVmstat(this.executor.processMgr, this.getHardware().memory);
   }
