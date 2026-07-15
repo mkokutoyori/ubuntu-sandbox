@@ -12,6 +12,10 @@ import { AgentRegistry } from './AgentRegistry';
 import { cdpToNeighborDTO, lldpToNeighborDTO } from './inspection/neighborConverters';
 import type { IRouterShell } from './shells/IRouterShell';
 import { CiscoIOSShell } from './shells/CiscoIOSShell';
+import type { RouterCommandKernelCli } from './Router';
+import { createCiscoRouterHostShell } from './router/command-kernel/createCiscoRouterHostShell';
+import { createCliSession } from '@/command-kernel/cli';
+import { SimpleUser } from '@/command-kernel/session/types';
 import {
   showVersion,
   showInterfacesStatus,
@@ -373,6 +377,16 @@ export class CiscoRouter extends Router {
 
   protected createShell(): IRouterShell {
     return new CiscoIOSShell();
+  }
+
+  protected override createCommandKernelCli(): RouterCommandKernelCli {
+    const { interpreter, machine, promptBuilder } = createCiscoRouterHostShell(this);
+    const defaultSession = createCliSession({
+      id: 'router-default',
+      user: new SimpleUser(0, 0, 'admin'),
+      rootMode: 'user',
+    });
+    return { interpreter, machine, promptBuilder, defaultSession };
   }
 
   /** Synchronous IOS exec whitelist consumed by the SSH cross-platform dispatch. */

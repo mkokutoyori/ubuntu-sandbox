@@ -1675,6 +1675,13 @@ export interface MachineApi {
   readonly sftp?: SftpChannelApi;
   /** Ouverture d'une connexion SFTP cliente réelle (`sftp` lanceur) — optionnel, équipements Unix uniquement. */
   readonly sftpConnect?: SftpConnectApi;
+  /** Socle CLI vendeur (modes, prompt, interpréteur hiérarchique) —
+   *  optionnel, présent uniquement sur les équipements dotés d'un shell
+   *  vendeur (routeurs Cisco/Huawei, switches). Les commandes de
+   *  transition (`enable`, `configure terminal`, `exit`, `end`)
+   *  consultent cette capacité pour manipuler la pile de modes de la
+   *  `CliSession` sans importer directement le `ModeRegistry`. */
+  readonly cli?: import("../cli/cli-machine-api").CliMachineApi;
   readonly users: UserManagementApi;
   readonly groups: GroupManagementApi;
   readonly power: PowerApi;

@@ -12,6 +12,10 @@ import { AgentRegistry } from './AgentRegistry';
 import { lldpToNeighborDTO } from './inspection/neighborConverters';
 import type { IRouterShell } from './shells/IRouterShell';
 import { HuaweiVRPShell } from './shells/HuaweiVRPShell';
+import type { RouterCommandKernelCli } from './Router';
+import { createHuaweiRouterHostShell } from './router/command-kernel/createHuaweiRouterHostShell';
+import { createCliSession } from '@/command-kernel/cli';
+import { SimpleUser } from '@/command-kernel/session/types';
 import {
   displayVersion,
   displayInterfaceBrief,
@@ -298,6 +302,16 @@ export class HuaweiRouter extends Router {
 
   protected createShell(): IRouterShell {
     return new HuaweiVRPShell();
+  }
+
+  protected override createCommandKernelCli(): RouterCommandKernelCli {
+    const { interpreter, machine, promptBuilder } = createHuaweiRouterHostShell(this);
+    const defaultSession = createCliSession({
+      id: 'router-default',
+      user: new SimpleUser(0, 0, 'admin'),
+      rootMode: 'user-view',
+    });
+    return { interpreter, machine, promptBuilder, defaultSession };
   }
 
   /** Synchronous VRP exec whitelist consumed by the SSH cross-platform dispatch. */

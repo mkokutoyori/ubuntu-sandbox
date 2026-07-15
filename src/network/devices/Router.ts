@@ -90,6 +90,12 @@ import { isTimeRangeActive, type CiscoSecurityConfig } from './router/security/C
 export type { ACLEntry, AccessList, InterfaceACLBinding } from './router/ACLEngine';
 import { RouterRIPEngine } from './router/RouterRIPEngine';
 export type { RIPConfig } from './router/RouterRIPEngine';
+import type { CliInterpreter, CliPromptBuilder, CliSession } from '@/command-kernel/cli';
+import { createCliSession } from '@/command-kernel/cli';
+import { SimpleUser } from '@/command-kernel/session/types';
+import { PipeBuffer } from '@/command-kernel/io/pipe-buffer';
+import type { CommandIO, OutputStream } from '@/command-kernel/io/types';
+import type { RouterMachineApi } from './router/command-kernel/RouterMachineApi';
 import { IPv6DataPlane } from './router/IPv6DataPlane';
 export type { IPv6RouteEntry, NeighborState, NeighborCacheEntry, RAConfig } from './router/IPv6DataPlane';
 import { RouterOSPFIntegration } from './router/RouterOSPFIntegration';
@@ -203,6 +209,23 @@ export interface IPv6ACL {
   entries: IPv6ACLEntry[];
 }
 
+/**
+ * Ensemble command-kernel construit par la sous-classe vendeur — un
+ * interpréteur CLI vendeur, la `MachineApi` routeur associée, et le
+ * constructeur de prompt. Ces trois pièces vivent ensemble : la même
+ * `MachineApi` alimente l'interpréteur (exécution) et le prompt
+ * (hostname dynamique).
+ */
+export interface RouterCommandKernelCli {
+  readonly interpreter: CliInterpreter;
+  readonly machine: RouterMachineApi;
+  readonly promptBuilder: CliPromptBuilder;
+  /** Session par défaut du device — utilisée par `executeCommand` quand
+   *  aucune session vty n'est associée à l'appel. Chaque terminal vty
+   *  aura sa propre `CliSession` avec sa propre pile de modes. */
+  readonly defaultSession: CliSession;
+}
+
 export abstract class Router extends Equipment implements CredentialAuthenticator {
   // ── Control Plane ─────────────────────────────────────────────
   private routingTable: RouteEntry[] = [];
@@ -314,7 +337,24 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
   private inFlightFwdARPs: Set<string> = new Set();
 
   // ── Management Plane (vendor CLI shell) ───────────────────────
+  //
+  // LEGACY : ce shell reste construit pour des services annexes non
+  // encore migrés (tab-complete UI, evaluatePrefixList/evaluateRouteMap
+  // pour BGP, snapshotVtyState pour l'isolation vty). `executeCommand`
+  // ne le consulte PLUS — il passe exclusivement par le nouveau
+  // `CliInterpreter` du socle command-kernel (§4 du framework de
+  // migration). Chaque service annexe restant sera migré au fil du
+  // temps et ce shell sera supprimé quand plus rien ne l'utilise.
   private shell: IRouterShell;
+
+  // ── command-kernel CLI (nouveau chemin d'exécution) ────────────
+  //
+  // Fourni par la sous-classe vendeur (`CiscoRouter`, `HuaweiRouter`)
+  // via `createCommandKernelCli()`. TOUTES les commandes tapées passent
+  // par cet interpréteur — plus jamais par `this.shell.execute()`. Les
+  // tests deviennent rouges pour toute commande pas encore migrée :
+  // c'est le signal explicite de ce qu'il reste à faire.
+  private commandKernelCli?: RouterCommandKernelCli;
 
   constructor(type: DeviceType, name: string = 'Router', x: number = 0, y: number = 0) {
     super(type, name, x, y);
@@ -621,6 +661,18 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
 
   /** Create the vendor-specific CLI shell */
   protected abstract createShell(): IRouterShell;
+
+  /** Construit le pont command-kernel de cet équipement (interpréteur
+   *  CLI vendeur + `MachineApi` + prompt). Sous-classe vendeur
+   *  (`CiscoRouter`, `HuaweiRouter`) fournit son propre bootstrap. */
+  protected abstract createCommandKernelCli(): RouterCommandKernelCli;
+
+  protected getCommandKernelCli(): RouterCommandKernelCli {
+    if (!this.commandKernelCli) {
+      this.commandKernelCli = this.createCommandKernelCli();
+    }
+    return this.commandKernelCli;
+  }
 
   getShell(): IRouterShell { return this.shell; }
 
@@ -1847,11 +1899,47 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
 
   async executeCommand(command: string): Promise<string> {
     if (!this.isPoweredOn) return '% Device is powered off';
-    return this.shell.execute(this, command);
+    return this.executeCommandKernel(command, this.getCommandKernelCli().defaultSession);
+  }
+
+  /**
+   * Chemin d'exécution UNIQUE : la ligne passe par le `CliInterpreter`
+   * du socle command-kernel. Aucun repli sur `this.shell.execute()` — le
+   * shell CLI legacy n'est PLUS consulté pour l'exécution. Une commande
+   * pas encore migrée fait échouer la ligne (message vendeur `%
+   * Invalid input detected...` ou équivalent), signal explicite pour
+   * la migration incrémentale.
+   */
+  private async executeCommandKernel(command: string, session: CliSession): Promise<string> {
+    const cli = this.getCommandKernelCli();
+    const chunks: string[] = [];
+    const collector: OutputStream = {
+      write: async (text) => { chunks.push(text); },
+      close: async () => {},
+    };
+    const stdin = new PipeBuffer();
+    await stdin.close();
+    const io: CommandIO = { stdin, stdout: collector, stderr: collector };
+    try {
+      await cli.interpreter.interpretLine(command, session, io);
+    } catch (err) {
+      if (err instanceof Error) {
+        // `CommandNotFoundError` / autres `ShellError` : produire un
+        // texte type IOS/VRP. La distinction vendeur (`% Invalid input`
+        // vs `Error: Unrecognized command`) sera portée par une couche
+        // wrapper vendeur quand nécessaire — pour l'instant on remonte
+        // le message générique du socle sans le masquer.
+        chunks.push(`${err.message}\n`);
+      } else {
+        throw err;
+      }
+    }
+    return chunks.join('').replace(/\n$/, '');
   }
 
   getPrompt(): string {
-    return this.shell.getPrompt(this);
+    const cli = this.getCommandKernelCli();
+    return cli.promptBuilder.build(cli.defaultSession);
   }
 
   /** Get CLI help for the given input (used by terminal UI for inline ? behavior) */

@@ -178,6 +178,100 @@ Quatrième échantillonneur convergé. `pidstat` était éclaté entre le legacy
   routage noyau + process-manager 71/71 ; commandes générales 76/76. `tsc`
   propre, aucune nouvelle alerte eslint.
 
+## Routeur — socle CLI vendeur command-kernel + déconnexion `Router.executeCommand` du legacy
+
+**État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
+
+Base de migration pour tout équipement à CLI vendeur (routeurs Cisco/
+Huawei, switches, firewalls). Aucune ligne CLI ne passe plus par
+`IRouterShell.execute()` ; tout va au nouveau `CliInterpreter` du socle
+command-kernel. Les tests deviennent rouges pour toute commande pas
+encore migrée — c'est le signal explicite de ce qu'il reste à porter,
+comme voulu.
+
+**Nouveau socle CLI — `src/command-kernel/cli/`** (réutilisable par les
+4 profils vendeur, jamais dupliqué par vendeur) :
+
+- `CliMode`, `CliSession`, `CliCommand` : modes hiérarchiques avec
+  registre propre par mode, session avec pile de modes et champs
+  dynamiques de prompt, commandes optionnellement filtrées par mode
+  (`allowedModes`) et composites (`subRegistry`).
+- `CliInterpreter` : porte d'entrée UNIQUE. Pipeline strict tokeniser →
+  résoudre hiérarchiquement dans le mode courant → vérifier
+  `allowedModes` → parser (`ArgumentParser` du socle) → autoriser
+  (`PermissionGuard` du socle) → exécuter → filtre pipe terminal. Le
+  moteur d'exécution, le parseur d'arguments et la garde de privilèges
+  du socle sont RÉUTILISÉS TELS QUELS (aucun parallèle).
+- `tokenizeCliLine` : grammaire réduite (whitespace + guillemets +
+  filtre `| include|exclude|section|begin <motif>`) — pas de `&&`/`||`/
+  `;`, pas de redirections, pas d'expansion `$VAR`. Ce que IOS/VRP
+  supportent réellement, rien de plus.
+- `matchByPrefix` : abréviations préfixe-unique insensibles à la casse,
+  aliases inclus. Sert l'exécution ET la future auto-complétion (mêmes
+  règles).
+- `ModeRegistry` : table de modes avec racine et `execLevel` (cible de
+  `end`). Cisco : `user → privileged → config`, execLevel = privileged.
+  Huawei : `user-view → system-view`, execLevel = user-view.
+- `CliPromptBuilder` : rendu piloté par le mode courant (`mode.prompt
+  (session, hostname)` — chaque vendeur décide de sa forme complète).
+- `commands/mode-transition.ts` : `PushModeCommand` (base
+  Template-Method), `PopModeCommand` (`exit`/`quit`), `EndCommand`
+  (`end`/Ctrl-Z) — réutilisables tous vendeurs.
+- `MachineApi.cli?` (nouveau) : capacité optionnelle exposant le
+  `ModeRegistry` — les commandes de transition la consultent sans
+  importer directement le registre.
+
+**Pont routeur — `src/network/devices/router/command-kernel/`** :
+
+- `RouterMachineApi` : source UNIQUE d'information pour les commandes
+  routeur. Sous-façade `router` exposant des DTO stables
+  (`RouterInterfaceInfo` : name/ip/mask/mac/mtu/adminUp/linkUp/
+  description) — `Port`/`Router`/`ACLEngine` ne fuient jamais.
+  Sous-façade `net` réelle (interfaces + admin state). `fs`/`proc`/
+  `users`/`groups` en rejet explicite : un routeur n'a pas de VFS
+  POSIX, un stub silencieux masquerait des bugs.
+- `createCiscoRouterHostShell` : bootstrap Cisco. Modes user →
+  privileged → config avec leurs registres propres. Commandes primitives
+  livrées : `enable` (`en`), `disable`, `configure terminal` (`conf t`),
+  `show` (`sh`) + `show version`, `exit`, `logout`, `end`.
+- `createHuaweiRouterHostShell` : bootstrap Huawei. Modes user-view →
+  system-view. Commandes : `system-view` (`sys`), `display` (`dis`) +
+  `display version`, `quit`, `end`/`return`.
+- Chaque commande est **standalone** : formatage porté dans la commande,
+  seule source `ctx.machine` (jamais un import de `CiscoShowCommands`/
+  `HuaweiDisplayCommands` legacy). Descripteurs typés (args/options
+  déclarés, `PrivilegePolicy` embarquée) — base directe de la future
+  auto-complétion.
+
+**Déconnexion `Router.executeCommand`** :
+
+- Plus AUCUN appel à `this.shell.execute()` pour l'exécution de ligne.
+  Toute commande passe par `executeCommandKernel()` → `CliInterpreter`.
+  `Router.getPrompt()` bascule également sur le nouveau `CliPromptBuilder`.
+- Le shell legacy `IRouterShell` (`CiscoIOSShell`, `HuaweiVRPShell`)
+  reste construit pour les services annexes non encore migrés
+  (tab-complete UI, `evaluatePrefixList`/`evaluateRouteMap` BGP,
+  `snapshotVtyState` pour l'isolation vty). Chaque service migré fera
+  reculer d'un cran le legacy, jusqu'à sa suppression complète.
+
+**Preuve exécutable** : `src/__tests__/unit/command-kernel/
+router-cli-foundation.test.ts` — 15/15 verts. Couvre les prompts
+vendeur, transitions de mode (`enable`/`disable`/`configure terminal`/
+`exit`/`end` Cisco, `system-view`/`quit` Huawei), abréviations (`en`,
+`sh ver`, `conf t`, `sys`, `dis ver`), `show version`, `display
+version`, commande non migrée (`show ip route` échoue à travers le
+nouveau pipeline — signal migration).
+
+**Effet attendu (documenté, pas caché)** : la quasi-totalité des tests
+routeur existants deviennent rouges à ce push. Chaque test rouge = une
+sous-commande (`show ip route`, `interface Gi0/0`, `hostname X`,
+`ip address …`, `show running-config`, …) qui doit être portée en
+command-kernel dans un push ultérieur. La méthode : réutiliser la
+mécanique de sous-registre déjà en place (une classe par sous-commande,
+enregistrée dans le `subRegistry` de la racine appropriée — `show`,
+`interface`, etc.). Aucun repli sur le legacy : le but final est sa
+suppression complète.
+
 ## Socle + Linux — `mpstat` migré au noyau (`SystemMetricsApi.cpu` + capacité `os`) (§14.6)
 
 **État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**

@@ -109,3 +109,6 @@ export * from "./register-core-commands";
 
 // 14. Amorçage
 export * from "./bootstrap";
+
+// 15. Socle CLI vendeur (Cisco IOS, Huawei VRP, switches, firewalls)
+export * from "./cli";
