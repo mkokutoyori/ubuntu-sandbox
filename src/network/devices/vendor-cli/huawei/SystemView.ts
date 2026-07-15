@@ -5,9 +5,8 @@ import { PrivilegeLevel } from '@/command-kernel/session/types';
 
 /**
  * `system-view` (Huawei VRP) — transition user-view → system-view.
- * Équivalent VRP de `configure terminal` chez Cisco. Le vrai VRP
- * affiche `Enter system view, return user view with Ctrl+Z.` — texte
- * qui reste stable, écrit ici (pas dans un formateur legacy).
+ * Équivalent VRP de `configure terminal` chez Cisco. Identique sur
+ * routeur et switch, d'où son emplacement vendor-cli partagé.
  */
 export class HuaweiSystemViewCommand extends PushModeCommand {
   readonly descriptor: CommandDescriptor = {

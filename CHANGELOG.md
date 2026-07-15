@@ -178,6 +178,89 @@ Quatrième échantillonneur convergé. `pidstat` était éclaté entre le legacy
   routage noyau + process-manager 71/71 ; commandes générales 76/76. `tsc`
   propre, aucune nouvelle alerte eslint.
 
+## Switch — extension du socle CLI vendeur aux switches + déconnexion `Switch.executeCommand`
+
+**État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
+
+Complète le push précédent (routeurs) : le socle CLI vendeur
+command-kernel est maintenant étendu aux switches (Cisco Catalyst,
+Huawei S5720, générique), sans dupliquer la mécanique de modes/
+transitions. La déconnexion de `Switch.executeCommand` du shell CLI
+legacy est totale — miroir strict de `Router.executeCommand`.
+
+**Refactor structurel : `src/network/devices/vendor-cli/`** (nouveau)
+
+Les commandes CLI vendeur qui sont IDENTIQUES sur routeur et switch
+d'un même vendeur (transitions de mode, racines composites) ont été
+extraites dans un emplacement partagé :
+
+- `vendor-cli/cisco/Enable.ts`, `Disable.ts`, `ConfigureTerminal.ts`,
+  `Show.ts` (factory `createCiscoShowCommand(subRegistry)` : la
+  mécanique commune, le sous-registre change par équipement).
+- `vendor-cli/huawei/SystemView.ts`, `Display.ts` (même factory
+  pattern : `createHuaweiDisplayCommand(subRegistry)`).
+
+Les copies routeur des transitions (`router/command-kernel/commands/
+cisco/Enable.ts`, etc.) sont supprimées et remplacées par un import
+depuis `vendor-cli/`. Les sous-commandes de `show`/`display` restent
+device-spécifiques (routeur = `router/command-kernel/commands/cisco/
+show/Version.ts` avec bannière ISR2911, switch = `switch/command-
+kernel/commands/cisco/show/Version.ts` avec bannière C2960 — deux
+classes distinctes, aucun partage forcé).
+
+**Pont switch — `src/network/devices/switch/command-kernel/`** (nouveau)
+
+- `SwitchMachineApi` : façade UNIQUE pour les commandes switch. DTO
+  `SwitchInterfaceInfo` (avec `mode: access|trunk|hybrid|dot1q-tunnel`,
+  `accessVlan`, `trunkNativeVlan`, `trunkAllowedVlans`),
+  `SwitchVlanInfo` (id/name/memberPorts), `SwitchMacEntry` (mac/vlan/
+  port/type/ageSeconds). Sous-façade `switch` exposant `interfaces()`,
+  `interface(name)`, `setInterfaceAdminUp`, `setInterfaceDescription`,
+  `vlans()`, `vlan(id)`, `macTable()`. `Switch`/`Port`/`VLANEntry`/
+  `SwitchportConfig`/`MACTableEntry` ne fuient JAMAIS aux commandes.
+- `createCiscoSwitchHostShell` : bootstrap Cisco. Modes user →
+  privileged → config (config-vlan/config-if/config-mst à venir), même
+  mécanique que le routeur mais avec le sous-registre `show` propre au
+  switch (à ce stade : `show version` C2960 seul, `show vlan`/`show
+  mac-address-table`/`show interfaces status`/… à migrer).
+- `createHuaweiSwitchHostShell` : bootstrap Huawei. Modes user-view →
+  system-view (vlan-view/interface-view à venir). Sous-registre
+  `display` propre : `display version` S5720.
+
+**Déconnexion `Switch.executeCommand`** :
+
+- Plus AUCUN appel à `this.shell.execute()` pour l'exécution de ligne.
+  Toute commande passe par `executeCommandKernel()` → `CliInterpreter`.
+  `Switch.getPrompt()` bascule sur le nouveau `CliPromptBuilder`.
+- Miroir strict de `Router.executeCommand` — même contrat, même
+  pipeline. Aucun vecteur d'exécution parallèle : une seule porte
+  d'entrée, un seul socle.
+- Le shell legacy `ISwitchShell` (`CiscoSwitchShell`,
+  `HuaweiSwitchShell`) reste construit pour les services annexes
+  (tab-complete UI, snapshotVtyState). Migré au fil de l'eau.
+- Les trois sous-classes vendeur (`CiscoSwitch`, `HuaweiSwitch`,
+  `GenericSwitch`) implémentent `createCommandKernelCli()`.
+  `GenericSwitch` réutilise le bootstrap Cisco (comme il le fait déjà
+  pour son shell legacy).
+
+**Preuve exécutable** :
+
+- `switch-cli-foundation.test.ts` — 13/13 verts. Couvre prompts vendeur,
+  transitions de mode Cisco (`enable`/`configure terminal`/`end`) et
+  Huawei (`system-view`/`quit`), abréviations (`en`, `conf t`, `sh
+  ver`, `sys`), `show version` (banner C2960 distinct du routeur
+  ISR2911), `display version` (banner S5720 distinct du routeur
+  AR2220), commande non migrée (`show vlan` échoue à travers le nouveau
+  pipeline — signal migration).
+- `router-cli-foundation.test.ts` — 15/15 verts, inchangés par le
+  refactor `vendor-cli/`.
+
+**Effet attendu (documenté, pas caché)** : la quasi-totalité des tests
+switch existants deviennent rouges à ce push. Chaque test rouge = une
+sous-commande à migrer (`show vlan`, `switchport mode access`, `vlan
+10`, `spanning-tree portfast`, `mac-address-table static`, `interface
+GigabitEthernet0/1`, `interface range`, `port-security`, …).
+
 ## Routeur — socle CLI vendeur command-kernel + déconnexion `Router.executeCommand` du legacy
 
 **État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**

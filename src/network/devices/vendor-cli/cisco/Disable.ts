@@ -6,9 +6,9 @@ import { DefaultPrivilegePolicy } from '@/command-kernel/session/privilege-polic
 import { PrivilegeLevel } from '@/command-kernel/session/types';
 
 /**
- * `disable` (Cisco IOS) — transition privileged → user (pop d'un cran).
- * Distincte de `exit` (qui pop UN mode quelconque) : `disable` n'a de
- * sens qu'en mode privileged et n'exécute rien d'autre.
+ * `disable` (Cisco IOS) — transition privileged → user. Identique sur
+ * routeur et switch. Distincte de `exit` (qui pop n'importe quel mode) :
+ * `disable` n'a de sens qu'en mode privileged et n'exécute rien d'autre.
  */
 export class CiscoDisableCommand extends BaseCommand {
   readonly descriptor: CommandDescriptor = {

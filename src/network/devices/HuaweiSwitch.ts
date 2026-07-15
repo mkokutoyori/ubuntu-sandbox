@@ -1,9 +1,12 @@
 import { DeviceType, EthernetFrame, ETHERTYPE_IPV4, type IPv4Packet, IPAddress, type MACAddress } from '../core/types';
 import { AgentRegistry } from './AgentRegistry';
 import { lldpToNeighborDTO } from './inspection/neighborConverters';
-import { Switch, STPPortState } from './Switch';
+import { Switch, STPPortState, type SwitchCommandKernelCli } from './Switch';
 import type { ISwitchShell } from './shells/ISwitchShell';
 import { HuaweiSwitchShell } from './shells/HuaweiSwitchShell';
+import { createHuaweiSwitchHostShell } from './switch/command-kernel/createHuaweiSwitchHostShell';
+import { createCliSession } from '@/command-kernel/cli';
+import { SimpleUser } from '@/command-kernel/session/types';
 import { NATEngine } from './router/NATEngine';
 import { LldpAgent } from '../lldp/LldpAgent';
 import { ETHERTYPE_LLDP } from '../lldp/types';
@@ -150,6 +153,16 @@ export class HuaweiSwitch extends Switch {
 
   protected createShell(): ISwitchShell {
     return new HuaweiSwitchShell();
+  }
+
+  protected override createCommandKernelCli(): SwitchCommandKernelCli {
+    const { interpreter, machine, promptBuilder } = createHuaweiSwitchHostShell(this);
+    const defaultSession = createCliSession({
+      id: 'switch-default',
+      user: new SimpleUser(0, 0, 'admin'),
+      rootMode: 'user-view',
+    });
+    return { interpreter, machine, promptBuilder, defaultSession };
   }
 
   protected onVlanDeleted(_vlanId: number, affectedPorts: string[]): void {

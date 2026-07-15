@@ -5,11 +5,12 @@ import { DefaultPrivilegePolicy } from '@/command-kernel/session/privilege-polic
 import { PrivilegeLevel } from '@/command-kernel/session/types';
 
 /**
- * Sous-registre de `configure` — pour l'instant seule `terminal` y est
- * enregistrée (le seul sous-mot supporté est `configure terminal`). Le
- * jour où `configure replace` / `configure memory` seront migrés, ils
- * s'ajoutent ici — c'est LE point d'extension du dispatch hiérarchique.
+ * `configure terminal` (Cisco IOS) — transition privileged → config.
+ * Identique sur routeur et switch, d'où son emplacement vendor-cli
+ * partagé. Composée : `configure` seul est incomplete ; seul `configure
+ * terminal` (abrégeable `conf t`) est valide.
  */
+
 const CONFIGURE_SUB = new CommandRegistry();
 
 class TerminalSubCommand extends PushModeCommand {
@@ -30,12 +31,6 @@ class TerminalSubCommand extends PushModeCommand {
 }
 CONFIGURE_SUB.register(() => new TerminalSubCommand());
 
-/**
- * `configure` (Cisco IOS) — commande composite : `configure terminal`
- * pousse le mode `config`. La commande racine ne fait rien elle-même ;
- * elle expose son sous-registre pour que l'interpréteur y descende.
- * Écrire `configure` seul (sans sous-mot) est une erreur métier propre.
- */
 export class CiscoConfigureCommand extends PushModeCommand {
   readonly descriptor: CommandDescriptor = {
     name: 'configure',
@@ -51,14 +46,10 @@ export class CiscoConfigureCommand extends PushModeCommand {
   readonly subRegistry = CONFIGURE_SUB;
 
   protected async prepare(ctx: CommandContext): Promise<boolean> {
-    // Ce point n'est atteint que si l'interpréteur n'a PAS trouvé de
-    // sous-mot (donc `configure` tapé seul, sans `terminal`).
     await ctx.io.stderr.write('% Incomplete command.\n');
     return false;
   }
 
-  // Requis par `PushModeCommand` mais jamais atteint : `prepare()`
-  // retourne toujours `false` (commande incomplete).
   protected targetMode(_ctx: CommandContext): string {
     return 'config';
   }

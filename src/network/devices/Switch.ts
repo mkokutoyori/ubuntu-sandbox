@@ -28,6 +28,9 @@
  */
 
 import { Equipment } from '../equipment/Equipment';
+import { PipeBuffer } from '@/command-kernel/io/pipe-buffer';
+import type { CliSession } from '@/command-kernel/cli';
+import type { CommandIO, OutputStream } from '@/command-kernel/io/types';
 import { Port } from '../hardware/Port';
 import { CliShellSession } from './shells/vty/CliShellSession';
 import { EthernetFrame, DeviceType, MACAddress, ETHERTYPE_ARP, ARPPacket, IPAddress, SubnetMask, ETHERTYPE_IPV4, IPv4Packet } from '../core/types';
@@ -199,6 +202,21 @@ export interface VLANEntry {
 
 export type STPPortState = 'blocking' | 'listening' | 'learning' | 'forwarding' | 'disabled';
 
+/**
+ * Ensemble command-kernel construit par la sous-classe vendeur — un
+ * interpréteur CLI vendeur (Cisco IOS switch ou Huawei VRP switch), la
+ * `SwitchMachineApi` associée, et le constructeur de prompt. Ces trois
+ * pièces vivent ensemble (même MachineApi alimente exécution et
+ * prompt). Miroir strict de `RouterCommandKernelCli` : chaque
+ * équipement a son propre triplet, mais l'interface est unifiée.
+ */
+export interface SwitchCommandKernelCli {
+  readonly interpreter: import('@/command-kernel/cli').CliInterpreter;
+  readonly machine: import('./switch/command-kernel/SwitchMachineApi').SwitchMachineApi;
+  readonly promptBuilder: import('@/command-kernel/cli').CliPromptBuilder;
+  readonly defaultSession: import('@/command-kernel/cli').CliSession;
+}
+
 // ─── Switch Class (Abstract Base) ───────────────────────────────────
 
 export abstract class Switch extends Equipment {
@@ -348,7 +366,24 @@ export abstract class Switch extends Equipment {
   });
 
   // ─── CLI Shell ──────────────────────────────────────────────────
+  //
+  // LEGACY : ce shell reste construit pour les services annexes non
+  // encore migrés (tab-complete UI, snapshotVtyState). `executeCommand`
+  // ne le consulte PLUS pour exécuter des lignes — tout passe par le
+  // nouveau `CliInterpreter` du socle command-kernel (miroir strict de
+  // `Router.ts`, §4 du framework de migration). Chaque service annexe
+  // restant sera migré au fil du temps.
   private shell: ISwitchShell;
+
+  // ── command-kernel CLI (nouveau chemin d'exécution) ────────────
+  //
+  // Fourni par la sous-classe vendeur (`CiscoSwitch`, `HuaweiSwitch`,
+  // `GenericSwitch`) via `createCommandKernelCli()`. TOUTES les
+  // commandes tapées passent par cet interpréteur — plus jamais par
+  // `this.shell.execute()`. Les tests deviennent rouges pour toute
+  // commande pas encore migrée : c'est le signal explicite de ce qu'il
+  // reste à faire.
+  private commandKernelCli?: SwitchCommandKernelCli;
 
   constructor(type: DeviceType = 'switch-cisco', name: string = 'Switch', portCount: number = 50, x: number = 0, y: number = 0) {
     super(type, name, x, y);
@@ -621,6 +656,18 @@ export abstract class Switch extends Equipment {
 
   /** Create the appropriate CLI shell */
   protected abstract createShell(): ISwitchShell;
+
+  /** Construit le pont command-kernel de ce switch (interpréteur CLI
+   *  vendeur + `SwitchMachineApi` + prompt). Fourni par la sous-classe
+   *  vendeur (`CiscoSwitch`, `HuaweiSwitch`, `GenericSwitch`). */
+  protected abstract createCommandKernelCli(): SwitchCommandKernelCli;
+
+  protected getCommandKernelCli(): SwitchCommandKernelCli {
+    if (!this.commandKernelCli) {
+      this.commandKernelCli = this.createCommandKernelCli();
+    }
+    return this.commandKernelCli;
+  }
 
   /** Handle ports when their VLAN is deleted (vendor-specific behavior) */
   protected abstract onVlanDeleted(vlanId: number, affectedPorts: string[]): void;
@@ -2710,7 +2757,10 @@ export abstract class Switch extends Equipment {
 
   // ─── CLI ──────────────────────────────────────────────────────────
 
-  getPrompt(): string { return this.shell.getPrompt(this); }
+  getPrompt(): string {
+    const cli = this.getCommandKernelCli();
+    return cli.promptBuilder.build(cli.defaultSession);
+  }
 
   resetCliMode(): void { this.shell.resetCliMode?.(); }
 
@@ -2760,7 +2810,36 @@ export abstract class Switch extends Equipment {
 
   async executeCommand(command: string): Promise<string> {
     if (!this.isPoweredOn) return '% Device is powered off';
-    return this.shell.execute(this, command);
+    return this.executeCommandKernel(command, this.getCommandKernelCli().defaultSession);
+  }
+
+  /**
+   * Chemin d'exécution UNIQUE : la ligne passe par le `CliInterpreter`
+   * du socle command-kernel. Aucun repli sur `this.shell.execute()` —
+   * miroir strict de `Router.executeCommandKernel`. Une sous-commande
+   * pas encore migrée fait échouer la ligne, signal explicite pour la
+   * migration incrémentale.
+   */
+  private async executeCommandKernel(command: string, session: CliSession): Promise<string> {
+    const cli = this.getCommandKernelCli();
+    const chunks: string[] = [];
+    const collector: OutputStream = {
+      write: async (text) => { chunks.push(text); },
+      close: async () => {},
+    };
+    const stdin = new PipeBuffer();
+    await stdin.close();
+    const io: CommandIO = { stdin, stdout: collector, stderr: collector };
+    try {
+      await cli.interpreter.interpretLine(command, session, io);
+    } catch (err) {
+      if (err instanceof Error) {
+        chunks.push(`${err.message}\n`);
+      } else {
+        throw err;
+      }
+    }
+    return chunks.join('').replace(/\n$/, '');
   }
 
   // ─── vty sessions (per-terminal CLI isolation) ────────────────────

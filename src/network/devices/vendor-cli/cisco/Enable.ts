@@ -4,10 +4,11 @@ import { DefaultPrivilegePolicy } from '@/command-kernel/session/privilege-polic
 import { PrivilegeLevel } from '@/command-kernel/session/types';
 
 /**
- * `enable` (Cisco IOS) — transition user → privileged. Le vrai IOS
- * demande un mot de passe (enable secret / enable password) quand un
- * est configuré ; ce port initial ne le vérifie pas — à ajouter le jour
- * où la commande `enable secret ...` sera migrée.
+ * `enable` (Cisco IOS) — transition user → privileged. Identique sur
+ * routeur et switch, d'où son emplacement vendeur (partagé). Le vrai
+ * IOS vérifie le `enable secret` quand un est configuré ; ce port
+ * initial ne le fait pas — sera ajouté quand la commande `enable
+ * secret …` sera migrée.
  */
 export class CiscoEnableCommand extends PushModeCommand {
   readonly descriptor: CommandDescriptor = {

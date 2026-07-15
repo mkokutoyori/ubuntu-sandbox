@@ -1,35 +1,36 @@
 import { CliInterpreter, CliPromptBuilder, EndCommand, ModeRegistry, PopModeCommand } from '@/command-kernel/cli';
 import type { CliMode } from '@/command-kernel/cli';
 import { CommandRegistry } from '@/command-kernel/registry/command-registry';
-import type { Router } from '../../Router';
+import type { Switch } from '../../Switch';
 import { createHuaweiDisplayCommand, HuaweiSystemViewCommand } from '../../vendor-cli';
-import { RouterMachineApi } from './RouterMachineApi';
-import { HuaweiRouterDisplayVersionCommand } from './commands/huawei/display/Version';
+import { SwitchMachineApi } from './SwitchMachineApi';
+import { HuaweiSwitchDisplayVersionCommand } from './commands/huawei/display/Version';
 
 /**
  * =====================================================================
- *  Bootstrap CLI vendeur Huawei VRP pour routeur — modes, registres,
+ *  Bootstrap CLI vendeur Huawei VRP pour switch — modes, registres,
  *  interpréteur
  * =====================================================================
  *
- *  Structure VRP (routeur) :
+ *  Structure VRP (switch) :
  *
  *    user-view (racine, prompt `<host>`, exec-level)
  *      └── system-view (prompt `[host]`)
- *            └── interface, ospf, bgp, ipsec-policy, dhcp-pool, …
- *                (à ajouter au fil des migrations)
+ *            ├── vlan          (à venir)
+ *            ├── interface     (à venir)
+ *            └── stp / mstp    (à venir)
  *
  *  `system-view`/`quit` viennent de `vendor-cli/huawei/` — IDENTIQUES
- *  sur routeur et switch, jamais dupliquées. Les sous-commandes de
- *  `display` sont routeur-spécifiques.
+ *  à celles du routeur. Sous-registre `display` propre au switch
+ *  (S5720 pour l'instant, seule `version` migrée).
  */
-export function createHuaweiRouterHostShell(router: Router): {
+export function createHuaweiSwitchHostShell(sw: Switch): {
   interpreter: CliInterpreter;
-  machine: RouterMachineApi;
+  machine: SwitchMachineApi;
   promptBuilder: CliPromptBuilder;
 } {
   const displaySub = new CommandRegistry();
-  displaySub.register(() => new HuaweiRouterDisplayVersionCommand());
+  displaySub.register(() => new HuaweiSwitchDisplayVersionCommand());
 
   const userViewRegistry = new CommandRegistry();
   const systemViewRegistry = new CommandRegistry();
@@ -47,7 +48,7 @@ export function createHuaweiRouterHostShell(router: Router): {
     { name: 'system-view', prompt: (_s, host) => `[${host}]`, parent: 'user-view', registry: systemViewRegistry },
   ] satisfies CliMode[]);
 
-  const machine = new RouterMachineApi({ router, modes });
+  const machine = new SwitchMachineApi({ switch: sw, modes });
   const interpreter = new CliInterpreter(modes, machine);
   const promptBuilder = new CliPromptBuilder(modes, () => machine.hostname);
   return { interpreter, machine, promptBuilder };

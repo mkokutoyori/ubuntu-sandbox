@@ -3,7 +3,7 @@ import type { CommandContext, CommandDescriptor, ExitCode } from '@/command-kern
 import { EXIT_OK } from '@/command-kernel/command/types';
 import { DefaultPrivilegePolicy } from '@/command-kernel/session/privilege-policy';
 import { PrivilegeLevel } from '@/command-kernel/session/types';
-import type { RouterMachineApi } from '../../RouterMachineApi';
+import type { RouterMachineApi } from '../../../RouterMachineApi';
 
 const ANY = new DefaultPrivilegePolicy(PrivilegeLevel.ANY);
 
@@ -28,7 +28,7 @@ function formatUptime(ms: number): string {
  * uniquement `ctx.machine` (hostname + bootedAt) et met en forme le
  * texte VRP réel. Aucun formateur legacy réutilisé.
  */
-export class HuaweiDisplayVersionCommand extends BaseCommand {
+export class HuaweiRouterDisplayVersionCommand extends BaseCommand {
   readonly descriptor: CommandDescriptor = {
     name: 'version',
     summary: 'Display running system information',

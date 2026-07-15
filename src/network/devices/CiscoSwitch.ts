@@ -14,10 +14,13 @@
 import { DeviceType, EthernetFrame, ETHERTYPE_IPV4, IPv4Packet, IPAddress } from '../core/types';
 import { AgentRegistry } from './AgentRegistry';
 import { cdpToNeighborDTO, lldpToNeighborDTO } from './inspection/neighborConverters';
-import { Switch, STPPortState, type SwitchportMode } from './Switch';
+import { Switch, STPPortState, type SwitchportMode, type SwitchCommandKernelCli } from './Switch';
 import type { ISwitchShell } from './shells/ISwitchShell';
 import { C3560_SOFTWARE, ciscoSoftwareDescriptor } from './shells/cisco/CiscoPlatform';
 import { CiscoSwitchShell } from './shells/CiscoSwitchShell';
+import { createCiscoSwitchHostShell } from './switch/command-kernel/createCiscoSwitchHostShell';
+import { createCliSession } from '@/command-kernel/cli';
+import { SimpleUser } from '@/command-kernel/session/types';
 import { CdpAgent } from '../cdp/CdpAgent';
 import { ETHERTYPE_CDP } from '../cdp/types';
 import { LldpAgent } from '../lldp/LldpAgent';
@@ -264,6 +267,16 @@ export class CiscoSwitch extends Switch {
 
   protected createShell(): ISwitchShell {
     return new CiscoSwitchShell();
+  }
+
+  protected override createCommandKernelCli(): SwitchCommandKernelCli {
+    const { interpreter, machine, promptBuilder } = createCiscoSwitchHostShell(this);
+    const defaultSession = createCliSession({
+      id: 'switch-default',
+      user: new SimpleUser(0, 0, 'admin'),
+      rootMode: 'user',
+    });
+    return { interpreter, machine, promptBuilder, defaultSession };
   }
 
   /**

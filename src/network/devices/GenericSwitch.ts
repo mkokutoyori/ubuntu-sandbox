@@ -6,9 +6,12 @@
  */
 
 import { DeviceType } from '../core/types';
-import { Switch, STPPortState } from './Switch';
+import { Switch, STPPortState, type SwitchCommandKernelCli } from './Switch';
 import type { ISwitchShell } from './shells/ISwitchShell';
 import { CiscoSwitchShell } from './shells/CiscoSwitchShell';
+import { createCiscoSwitchHostShell } from './switch/command-kernel/createCiscoSwitchHostShell';
+import { createCliSession } from '@/command-kernel/cli';
+import { SimpleUser } from '@/command-kernel/session/types';
 
 export class GenericSwitch extends Switch {
 
@@ -26,6 +29,19 @@ export class GenericSwitch extends Switch {
 
   protected createShell(): ISwitchShell {
     return new CiscoSwitchShell();
+  }
+
+  protected override createCommandKernelCli(): SwitchCommandKernelCli {
+    // Un switch générique adopte la grammaire Cisco IOS (plus proche du
+    // « comportement basique attendu ») — comme il le fait déjà pour
+    // son shell CLI legacy (`createShell()` retourne un `CiscoSwitchShell`).
+    const { interpreter, machine, promptBuilder } = createCiscoSwitchHostShell(this);
+    const defaultSession = createCliSession({
+      id: 'switch-default',
+      user: new SimpleUser(0, 0, 'admin'),
+      rootMode: 'user',
+    });
+    return { interpreter, machine, promptBuilder, defaultSession };
   }
 
   protected onVlanDeleted(_vlanId: number, affectedPorts: string[]): void {

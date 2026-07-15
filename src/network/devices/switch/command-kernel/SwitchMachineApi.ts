@@ -1,0 +1,263 @@
+import {
+  FileStat,
+  FileSystemApi,
+  GroupInfo,
+  GroupManagementApi,
+  MachineApi,
+  NetworkApi,
+  PowerApi,
+  ProcessApi,
+  ProcessInfo,
+  UserManagementApi,
+} from '@/command-kernel/machine/types';
+import type { User } from '@/command-kernel/session/types';
+import type { CliMachineApi, ModeRegistry } from '@/command-kernel/cli';
+import { FileSystemError } from '@/command-kernel/errors';
+import type { Switch } from '../../Switch';
+
+/**
+ * =====================================================================
+ *  SwitchMachineApi — façade UNIQUE pour les commandes CLI switch
+ * =====================================================================
+ *
+ *  Toutes les commandes migrées (Cisco IOS switch ou Huawei VRP
+ *  switch) lisent et modifient l'état du switch EXCLUSIVEMENT à
+ *  travers cette façade — jamais un import direct de `Switch`, `Port`,
+ *  `VLANEntry`, `SwitchportConfig`, `MACTableEntry`, ni d'un formateur
+ *  legacy (`CiscoSwitchShell`, `HuaweiSwitchShell`).
+ *
+ *  Différences par rapport à `RouterMachineApi` : sous-façade `switch`
+ *  qui expose VLAN, MAC table, switchport config (concepts L2), au lieu
+ *  de `router` qui expose routing/ACL/NAT (concepts L3). Le socle CLI
+ *  (`cli`) et les capacités universelles (`fs`/`net`/`power`) sont
+ *  identiques.
+ */
+export interface SwitchMachineApiDeps {
+  readonly switch: Switch;
+  readonly modes: ModeRegistry;
+}
+
+/** DTO d'interface switch — inclut mode `access|trunk`, VLAN d'accès,
+ *  liste des VLANs autorisés en trunk. `Port`/`SwitchportConfig` ne
+ *  fuient jamais aux commandes. */
+export type SwitchInterfaceMode = 'access' | 'trunk' | 'hybrid' | 'dot1q-tunnel';
+
+export interface SwitchInterfaceInfo {
+  readonly name: string;
+  readonly mac: string;
+  readonly mtu: number;
+  readonly adminUp: boolean;
+  readonly linkUp: boolean;
+  readonly description: string;
+  readonly mode: SwitchInterfaceMode;
+  readonly accessVlan: number;
+  readonly trunkNativeVlan: number;
+  readonly trunkAllowedVlans: readonly number[];
+}
+
+export interface SwitchVlanInfo {
+  readonly id: number;
+  readonly name: string;
+  readonly memberPorts: readonly string[];
+}
+
+export interface SwitchMacEntry {
+  readonly mac: string;
+  readonly vlan: number;
+  readonly port: string;
+  readonly type: 'static' | 'dynamic';
+  readonly ageSeconds: number;
+}
+
+/**
+ * Sous-façade `switch` : lecture/écriture typée de l'état L2. Aucun
+ * `Switch`/`Port`/`ACLEngine` ne fuit — les commandes reçoivent des
+ * DTOs et appellent des méthodes explicites pour muter l'état.
+ */
+export interface SwitchCapabilityApi {
+  interfaces(): readonly SwitchInterfaceInfo[];
+  interface(name: string): SwitchInterfaceInfo | null;
+  setInterfaceAdminUp(name: string, up: boolean): boolean;
+  setInterfaceDescription(name: string, description: string): boolean;
+
+  vlans(): readonly SwitchVlanInfo[];
+  vlan(id: number): SwitchVlanInfo | null;
+
+  macTable(): readonly SwitchMacEntry[];
+}
+
+class SwitchCapabilityImpl implements SwitchCapabilityApi {
+  constructor(private readonly sw: Switch) {}
+
+  interfaces(): readonly SwitchInterfaceInfo[] {
+    return this.sw.getPorts().map((port) => this.buildInterface(port));
+  }
+
+  interface(name: string): SwitchInterfaceInfo | null {
+    const port = this.sw.getPort(name);
+    if (!port) return null;
+    return this.buildInterface(port);
+  }
+
+  private buildInterface(port: import('../../../hardware/Port').Port): SwitchInterfaceInfo {
+    const cfg = this.sw.getSwitchportConfig(port.getName());
+    return {
+      name: port.getName(),
+      mac: port.getMAC().toString(),
+      mtu: port.getMTU(),
+      adminUp: !port.isAdminDown(),
+      linkUp: port.getIsUp() && port.isConnected(),
+      description: this.sw.getInterfaceDescription(port.getName()) ?? '',
+      mode: cfg?.mode ?? 'access',
+      accessVlan: cfg?.accessVlan ?? 1,
+      trunkNativeVlan: cfg?.trunkNativeVlan ?? 1,
+      trunkAllowedVlans: cfg?.trunkAllowedVlans ? [...cfg.trunkAllowedVlans].sort((a, b) => a - b) : [],
+    };
+  }
+
+  setInterfaceAdminUp(name: string, up: boolean): boolean {
+    const port = this.sw.getPort(name);
+    if (!port) return false;
+    port.setAdminDown(!up);
+    return true;
+  }
+
+  setInterfaceDescription(name: string, description: string): boolean {
+    const port = this.sw.getPort(name);
+    if (!port) return false;
+    const map = (this.sw as unknown as { _getInterfaceDescriptions(): Map<string, string> })._getInterfaceDescriptions();
+    if (description === '') map.delete(name);
+    else map.set(name, description);
+    return true;
+  }
+
+  vlans(): readonly SwitchVlanInfo[] {
+    return [...this.sw.getVLANs().values()]
+      .sort((a, b) => a.id - b.id)
+      .map((v) => ({ id: v.id, name: v.name, memberPorts: [...v.ports].sort() }));
+  }
+
+  vlan(id: number): SwitchVlanInfo | null {
+    const v = this.sw.getVLANs().get(id);
+    if (!v) return null;
+    return { id: v.id, name: v.name, memberPorts: [...v.ports].sort() };
+  }
+
+  macTable(): readonly SwitchMacEntry[] {
+    return this.sw.getMACTable().map((e) => ({
+      mac: e.mac,
+      vlan: e.vlan,
+      port: e.port,
+      type: e.type,
+      ageSeconds: e.age,
+    }));
+  }
+}
+
+// ─── Réseau générique (interfaces / admin state) ────────────────────
+
+class SwitchNetworkApi implements NetworkApi {
+  constructor(private readonly sw: Switch) {}
+
+  async interfaces(): Promise<{ name: string; ip: string; up: boolean }[]> {
+    return this.sw.getPorts().map((port) => ({
+      name: port.getName(),
+      ip: port.getIPAddress()?.toString() ?? '',
+      up: !port.isAdminDown(),
+    }));
+  }
+
+  async setInterfaceState(name: string, up: boolean): Promise<void> {
+    const port = this.sw.getPort(name);
+    if (!port) throw new FileSystemError(name, 'ENOENT', `interface introuvable : ${name}`);
+    port.setAdminDown(!up);
+  }
+}
+
+// ─── Rejets explicites : capacités inapplicables à un switch ────────
+
+const UNSUPPORTED = (path: string): never => {
+  throw new FileSystemError(path, 'EACCES', `${path}: not supported on this equipment`);
+};
+
+class SwitchFileSystemApi implements FileSystemApi {
+  async readFile(path: string): Promise<string> { return UNSUPPORTED(path); }
+  async writeFile(path: string): Promise<void> { UNSUPPORTED(path); }
+  async touch(path: string): Promise<void> { UNSUPPORTED(path); }
+  async list(path: string): Promise<FileStat[]> { return UNSUPPORTED(path); }
+  async stat(path: string): Promise<FileStat> { return UNSUPPORTED(path); }
+  async lstat(path: string): Promise<FileStat> { return UNSUPPORTED(path); }
+  async exists(): Promise<boolean> { return false; }
+  async remove(path: string): Promise<void> { UNSUPPORTED(path); }
+  async mkdir(path: string): Promise<void> { UNSUPPORTED(path); }
+  async rmdir(path: string): Promise<void> { UNSUPPORTED(path); }
+  async chmod(path: string): Promise<void> { UNSUPPORTED(path); }
+  async chown(path: string): Promise<void> { UNSUPPORTED(path); }
+  async copy(source: string): Promise<void> { UNSUPPORTED(source); }
+  async rename(source: string): Promise<void> { UNSUPPORTED(source); }
+  async symlink(_target: string, path: string): Promise<void> { UNSUPPORTED(path); }
+  async readlink(path: string): Promise<string> { return UNSUPPORTED(path); }
+  async link(_target: string, path: string): Promise<void> { UNSUPPORTED(path); }
+  resolve(_cwd: string, path: string): string { return path; }
+}
+
+const EMPTY_PROC: ProcessApi = {
+  async list(): Promise<ProcessInfo[]> { return []; },
+  async kill(): Promise<void> { /* pas de table de processus sur un switch */ },
+  async spawn(): Promise<ProcessInfo> {
+    throw new FileSystemError('', 'EACCES', 'spawn: not supported on this equipment');
+  },
+};
+
+const EMPTY_USERS: UserManagementApi = {
+  async findByName(): Promise<User | undefined> { return undefined; },
+  async findByUid(): Promise<User | undefined> { return undefined; },
+  async create(): Promise<User> {
+    throw new FileSystemError('', 'EACCES', 'useradd: not supported on this equipment');
+  },
+  async delete(): Promise<void> { /* pas de compte AAA local géré ici */ },
+};
+
+const EMPTY_GROUPS: GroupManagementApi = {
+  async findByGid(): Promise<GroupInfo | undefined> { return undefined; },
+  async findByName(): Promise<GroupInfo | undefined> { return undefined; },
+};
+
+// ─── Assemblage ─────────────────────────────────────────────────────
+
+export class SwitchMachineApi implements MachineApi {
+  readonly fs: FileSystemApi = new SwitchFileSystemApi();
+  readonly proc = EMPTY_PROC;
+  readonly net: NetworkApi;
+  readonly users = EMPTY_USERS;
+  readonly groups = EMPTY_GROUPS;
+  readonly power: PowerApi;
+  readonly cli: CliMachineApi;
+  readonly switch: SwitchCapabilityApi;
+
+  constructor(private readonly deps: SwitchMachineApiDeps) {
+    this.net = new SwitchNetworkApi(deps.switch);
+    this.switch = new SwitchCapabilityImpl(deps.switch);
+    this.cli = { modes: deps.modes };
+    this.power = {
+      shutdown: async () => { deps.switch.powerOff(); },
+      reboot: async () => { deps.switch.powerOff(); deps.switch.powerOn(); },
+    };
+  }
+
+  get hostname(): string {
+    return this.deps.switch.getHostname();
+  }
+
+  setHostname(newName: string): void {
+    this.deps.switch.setHostname(newName);
+  }
+
+  bootedAt(): Date {
+    return new Date(this.deps.switch.getBootedAtMs());
+  }
+
+  now(): Date {
+    return new Date();
+  }
+}

@@ -3,7 +3,7 @@ import type { CommandContext, CommandDescriptor, ExitCode } from '@/command-kern
 import { EXIT_OK } from '@/command-kernel/command/types';
 import { DefaultPrivilegePolicy } from '@/command-kernel/session/privilege-policy';
 import { PrivilegeLevel } from '@/command-kernel/session/types';
-import type { RouterMachineApi } from '../../RouterMachineApi';
+import type { RouterMachineApi } from '../../../RouterMachineApi';
 
 const ANY = new DefaultPrivilegePolicy(PrivilegeLevel.ANY);
 
@@ -38,7 +38,7 @@ function formatUptime(ms: number): string {
  * lit son unique source d'information via `ctx.machine` (hostname,
  * interfaces, bootedAt) et met en forme le texte elle-même.
  */
-export class CiscoShowVersionCommand extends BaseCommand {
+export class CiscoRouterShowVersionCommand extends BaseCommand {
   readonly descriptor: CommandDescriptor = {
     name: 'version',
     summary: 'Display system hardware and software status',
