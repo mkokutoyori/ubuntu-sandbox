@@ -5,6 +5,35 @@ progressive par équipement. Un push = une entrée = une fonctionnalité
 complète et testée (voir `CLAUDE.md` / le framework de migration pour les
 principes directeurs).
 
+## Socle + Linux — `pidstat` migré au noyau (`ProcessEntry` + VSZ/RSS) (§14.6)
+
+**État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
+
+Quatrième échantillonneur convergé. `pidstat` était éclaté entre le legacy
+(`case 'pidstat'`/`cmdPidstat`, instantané) et l'intercepteur
+`tryStartPidstatStream` (mode `<intervalle>`, rapports CPU **et** mémoire).
+
+- **`PidstatCommand extends StreamingCommand`** : `isStreaming(argv)` vrai dès
+  qu'un intervalle est fourni ; deux rapports (`-u` CPU / `-r` mémoire) ;
+  bannière/en-tête une fois, lignes par processus par intervalle, puis les
+  moyennes (`Average:`) à la sortie (via `PidstatAccumulator`). `-p SELF`
+  utilise `ctx.session.shellPid`. Garde anti-blocage (`ctx.io.interaction`).
+- **`ProcessEntry` gagne `vsizeKib`/`rssKib`** (mémoire par processus, câblés
+  depuis le gestionnaire de processus) — nécessaires au rapport `pidstat -r`
+  et réutilisables par `top`. `metrics.cpu()`/`metrics.memory()`/`os`
+  (déjà posés) fournissent le reste.
+- **Fonctions pures rendues génériques** : `sampleCpuRows`/`sampleMemoryRows`/
+  `pidstatBanner` prennent désormais une vue `PidstatProc[]` + primitives
+  (plus de dépendance à `LinuxProcessManager`/`CpuSpec`/`MemoryProfile`/
+  `KernelInfo`).
+- Legacy supprimé : `tryStartPidstatStream` + dispatch, `case 'pidstat'`,
+  `cmdPidstat`/`PidstatContext`, `LinuxMachine.pidstatBannerLine`/
+  `samplePidstatCpu`/`samplePidstatMemory`, avec leurs imports.
+- Tests : `linux-pidstat-stream-ui` 10/10 (instantané CPU/mémoire, flux,
+  moyennes, parseurs/formateurs/accumulateur) ; sweep mpstat/iostat/vmstat +
+  routage noyau + process-manager 71/71 ; commandes générales 76/76. `tsc`
+  propre, aucune nouvelle alerte eslint.
+
 ## Socle + Linux — `mpstat` migré au noyau (`SystemMetricsApi.cpu` + capacité `os`) (§14.6)
 
 **État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**

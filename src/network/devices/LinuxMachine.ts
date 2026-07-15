@@ -48,12 +48,6 @@ import {
 import { LinuxCommandExecutor } from './linux/LinuxCommandExecutor';
 import { sampleIostatCpu, sampleIostatDevices, iostatBanner, type IostatArgs } from './linux/system/Iostat';
 import { sampleDstat, type DstatRateState, type PortByteSnapshot } from './linux/system/Dstat';
-import {
-  sampleCpuRows as samplePidstatCpu,
-  sampleMemoryRows as samplePidstatMemory,
-  pidstatBanner,
-  type PidstatArgs,
-} from './linux/system/Pidstat';
 import { CronEngine } from './linux/cron/CronEngine';
 import { SystemCron } from './linux/cron/SystemCron';
 import type { HardwareProfile } from './host/hardware';
@@ -3203,20 +3197,6 @@ export abstract class LinuxMachine extends EndHost
       memory: this.getHardware().memory,
       ports,
     }, rate);
-  }
-
-  pidstatBannerLine(): string {
-    const now = new Date();
-    const hostname = (this.executor.vfs.readFile('/etc/hostname') ?? 'localhost').trim();
-    return pidstatBanner(this.executor.identity.kernel, hostname, this.getHardware().cpu, now);
-  }
-
-  samplePidstatCpu(args: PidstatArgs) {
-    return samplePidstatCpu(args, this.executor.processMgr, this.getHardware().cpu);
-  }
-
-  samplePidstatMemory(args: PidstatArgs) {
-    return samplePidstatMemory(args, this.executor.processMgr, this.getHardware().memory);
   }
 
   iostatBannerLine(): string {

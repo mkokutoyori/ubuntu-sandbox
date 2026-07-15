@@ -1,9 +1,15 @@
-import type { CpuSpec } from '../../host/hardware/CpuSpec';
-import type { MemoryProfile } from '../../host/hardware/MemoryProfile';
-import type { KernelInfo } from '../../host/identity/KernelInfo';
-import type { LinuxProcessManager, ProcessInfo } from '../LinuxProcessManager';
 import { mpstatBanner } from './Mpstat';
 import { twelveHourClock as fmtTimestamp } from '@/lib/format';
+
+/** Vue minimale d'un processus dont `pidstat` a besoin (issue de `processControl.list()`). */
+export interface PidstatProc {
+  readonly pid: number;
+  readonly uid: number;
+  readonly state: string;
+  readonly comm: string;
+  readonly vsizeKib?: number;
+  readonly rssKib?: number;
+}
 
 export type PidstatReport = 'cpu' | 'memory';
 
@@ -83,7 +89,12 @@ export function parsePidstatArgs(args: string[]): PidstatArgs | { error: string 
   return { intervalSeconds, count, report, selectedPids, selfOnly, humanReadable };
 }
 
-export function pidstatBanner(kernel: KernelInfo, hostname: string, cpu: CpuSpec, now: Date): string {
+export function pidstatBanner(
+  kernel: { sysname: string; release: string },
+  hostname: string,
+  cpu: { architecture: string; logicalCpus: number },
+  now: Date,
+): string {
   return mpstatBanner(kernel, hostname, cpu, now);
 }
 
@@ -159,21 +170,19 @@ export function formatPidstatAverageMemRow(row: PidstatMemRow): string {
   ].join(' ');
 }
 
-function selectProcesses(args: PidstatArgs, pm: LinuxProcessManager, shellPid?: number): ProcessInfo[] {
-  let procs = pm.list();
+function selectProcesses(args: PidstatArgs, procs: readonly PidstatProc[], shellPid?: number): PidstatProc[] {
   if (args.selfOnly && shellPid !== undefined) {
-    procs = procs.filter((p) => p.pid === shellPid);
-  } else if (args.selectedPids) {
-    const set = new Set(args.selectedPids);
-    procs = procs.filter((p) => set.has(p.pid));
+    return procs.filter((p) => p.pid === shellPid);
   }
-  return procs;
+  if (args.selectedPids) {
+    const set = new Set(args.selectedPids);
+    return procs.filter((p) => set.has(p.pid));
+  }
+  return [...procs];
 }
 
-export function sampleCpuRows(args: PidstatArgs, pm: LinuxProcessManager, cpu: CpuSpec, shellPid?: number): PidstatCpuRow[] {
-  const procs = selectProcesses(args, pm, shellPid);
-  const cpuCount = cpu.logicalCpus;
-  return procs.map((p) => {
+export function sampleCpuRows(args: PidstatArgs, procs: readonly PidstatProc[], cpuCount: number, shellPid?: number): PidstatCpuRow[] {
+  return selectProcesses(args, procs, shellPid).map((p) => {
     const perCpu = p.state === 'R' ? 100 / cpuCount : 0;
     return {
       uid: p.uid,
@@ -189,18 +198,20 @@ export function sampleCpuRows(args: PidstatArgs, pm: LinuxProcessManager, cpu: C
   });
 }
 
-export function sampleMemoryRows(args: PidstatArgs, pm: LinuxProcessManager, memory: MemoryProfile, shellPid?: number): PidstatMemRow[] {
-  const procs = selectProcesses(args, pm, shellPid);
-  return procs.map((p) => ({
-    uid: p.uid,
-    pid: p.pid,
-    minfltPerSec: 0,
-    majfltPerSec: 0,
-    vszKib: p.vsize,
-    rssKib: p.rss,
-    memPct: memory.totalKib > 0 ? (p.rss / memory.totalKib) * 100 : 0,
-    command: p.comm,
-  }));
+export function sampleMemoryRows(args: PidstatArgs, procs: readonly PidstatProc[], totalKib: number, shellPid?: number): PidstatMemRow[] {
+  return selectProcesses(args, procs, shellPid).map((p) => {
+    const rssKib = p.rssKib ?? 0;
+    return {
+      uid: p.uid,
+      pid: p.pid,
+      minfltPerSec: 0,
+      majfltPerSec: 0,
+      vszKib: p.vsizeKib ?? 0,
+      rssKib,
+      memPct: totalKib > 0 ? (rssKib / totalKib) * 100 : 0,
+      command: p.comm,
+    };
+  });
 }
 
 export class PidstatAccumulator<R extends PidstatCpuRow | PidstatMemRow> {
@@ -264,29 +275,3 @@ export class PidstatAccumulator<R extends PidstatCpuRow | PidstatMemRow> {
   }
 }
 
-export interface PidstatContext {
-  pm: LinuxProcessManager;
-  cpu: CpuSpec;
-  memory: MemoryProfile;
-  kernel: KernelInfo;
-  hostname: string;
-  shellPid?: number;
-}
-
-export function cmdPidstat(args: string[], ctx: PidstatContext): { output: string; exitCode: number } {
-  const parsed = parsePidstatArgs(args);
-  if ('error' in parsed) return { output: parsed.error, exitCode: parsed.error.startsWith('sysstat') ? 0 : 1 };
-  const now = new Date();
-  const lines: string[] = [pidstatBanner(ctx.kernel, ctx.hostname, ctx.cpu, now)];
-  lines.push(pidstatColumnHeader(parsed, now));
-  if (parsed.report === 'cpu') {
-    for (const row of sampleCpuRows(parsed, ctx.pm, ctx.cpu, ctx.shellPid)) {
-      lines.push(formatPidstatCpuRow(now, row));
-    }
-  } else {
-    for (const row of sampleMemoryRows(parsed, ctx.pm, ctx.memory, ctx.shellPid)) {
-      lines.push(formatPidstatMemRow(now, row));
-    }
-  }
-  return { output: lines.join('\n'), exitCode: 0 };
-}

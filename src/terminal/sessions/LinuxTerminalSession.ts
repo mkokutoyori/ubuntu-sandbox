@@ -14,17 +14,6 @@ import { IPAddress } from '@/network/core/types';
 import { parseMtrArgs, MtrHopStats, formatMtrFrame, MTR_USAGE, MTR_VERSION, type MtrHopProbe } from '@/network/devices/linux/Mtr';
 import { parseWatchArgs } from '@/network/devices/linux/coreutils/WatchRunner';
 import { parseIpMonitorSpec } from '@/network/devices/linux/LinuxIpCommand';
-import {
-  parsePidstatArgs,
-  pidstatColumnHeader,
-  formatPidstatCpuRow,
-  formatPidstatMemRow,
-  formatPidstatAverageCpuRow,
-  formatPidstatAverageMemRow,
-  PidstatAccumulator,
-  type PidstatCpuRow,
-  type PidstatMemRow,
-} from '@/network/devices/linux/system/Pidstat';
 import { parseIostatArgs, renderIostatReport } from '@/network/devices/linux/system/Iostat';
 import {
   parseDstatArgs, formatDstatHeader, formatDstatRow, newDstatRateState,
@@ -1089,53 +1078,6 @@ export class LinuxTerminalSession extends TerminalSession {
     });
   }
 
-  private tryStartPidstatStream(commandLine: string): boolean {
-    const dev = this.device;
-    if (!(dev instanceof LinuxMachine)) return false;
-    if (/[|<>&]/.test(commandLine)) return false;
-    const toks = commandLine.trim().split(/\s+/);
-    if (toks[0] !== 'pidstat') return false;
-    const parsed = parsePidstatArgs(toks.slice(1));
-    if ('error' in parsed) return false;
-    if (parsed.intervalSeconds === null) return false;
-    if (parsed.report === 'cpu') {
-      const accumulator = new PidstatAccumulator<PidstatCpuRow>('cpu');
-      return this.startScrollingMonitor({
-        commandLine,
-        intervalMs: Math.max(100, parsed.intervalSeconds * 1000),
-        maxFrames: parsed.count ?? undefined,
-        header: () => `${dev.pidstatBannerLine()}\n${pidstatColumnHeader(parsed, new Date())}`,
-        frame: () => {
-          const rows = dev.samplePidstatCpu(parsed);
-          accumulator.add(rows);
-          const now = new Date();
-          return rows.map((r) => formatPidstatCpuRow(now, r)).join('\n');
-        },
-        trailer: () => {
-          if (accumulator.sampleCount() === 0) return '';
-          return ['', ...accumulator.averages().map((r) => formatPidstatAverageCpuRow(r))].join('\n');
-        },
-      });
-    }
-    const accumulator = new PidstatAccumulator<PidstatMemRow>('memory');
-    return this.startScrollingMonitor({
-      commandLine,
-      intervalMs: Math.max(100, parsed.intervalSeconds * 1000),
-      maxFrames: parsed.count ?? undefined,
-      header: () => `${dev.pidstatBannerLine()}\n${pidstatColumnHeader(parsed, new Date())}`,
-      frame: () => {
-        const rows = dev.samplePidstatMemory(parsed);
-        accumulator.add(rows);
-        const now = new Date();
-        return rows.map((r) => formatPidstatMemRow(now, r)).join('\n');
-      },
-      trailer: () => {
-        if (accumulator.sampleCount() === 0) return '';
-        return ['', ...accumulator.averages().map((r) => formatPidstatAverageMemRow(r))].join('\n');
-      },
-    });
-  }
-
   private tryStartIostatStream(commandLine: string): boolean {
     const dev = this.device;
     if (!(dev instanceof LinuxMachine)) return false;
@@ -1254,7 +1196,6 @@ export class LinuxTerminalSession extends TerminalSession {
     if (this.tryStartTopStream(trimmed)) return;
     if (this.tryStartIpMonitor(trimmed)) return;
     if (this.tryStartNetstatStream(trimmed)) return;
-    if (this.tryStartPidstatStream(trimmed)) return;
     if (this.tryStartIostatStream(trimmed)) return;
     if (this.tryStartDstatStream(trimmed)) return;
     if (this.tryStartTcpdump(trimmed)) return;

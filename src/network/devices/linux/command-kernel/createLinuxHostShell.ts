@@ -59,6 +59,7 @@ import { TailCommand } from './commands/Tail';
 import { VmstatCommand } from './commands/Vmstat';
 import { FreeCommand } from './commands/Free';
 import { MpstatCommand } from './commands/Mpstat';
+import { PidstatCommand } from './commands/Pidstat';
 import { TouchCommand } from './commands/Touch';
 import { TrCommand } from './commands/Tr';
 import { TruncateCommand } from './commands/Truncate';
@@ -131,6 +132,7 @@ export function createLinuxHostShell(deps: LinuxMachineApiDeps): Interpreter {
   registry.register(() => new VmstatCommand());
   registry.register(() => new FreeCommand());
   registry.register(() => new MpstatCommand());
+  registry.register(() => new PidstatCommand());
   registry.register(() => new Md5sumCommand());
   registry.register(() => new Sha1sumCommand());
   registry.register(() => new Sha256sumCommand());

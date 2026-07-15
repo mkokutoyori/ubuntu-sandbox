@@ -502,6 +502,8 @@ class LinuxProcessControlApi implements ProcessControlApi {
       ioClass: p.ioClass,
       ioClassData: p.ioClassData,
       cpuAffinity: p.cpuAffinity,
+      vsizeKib: p.vsize,
+      rssKib: p.rss,
     };
   }
 }

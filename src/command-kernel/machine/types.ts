@@ -169,6 +169,10 @@ export interface ProcessEntry {
   readonly ioClassData?: number;
   /** Affinité CPU (`taskset`). */
   readonly cpuAffinity?: readonly number[];
+  /** Taille mémoire virtuelle en Kio (`pidstat -r`, `top` : VSZ). */
+  readonly vsizeKib?: number;
+  /** Mémoire résidente (RSS) en Kio (`pidstat -r`, `top`). */
+  readonly rssKib?: number;
 }
 
 /**
