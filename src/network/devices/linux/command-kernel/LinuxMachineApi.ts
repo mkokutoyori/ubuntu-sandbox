@@ -11,6 +11,8 @@ import {
   KernelMessage,
   LoggingApi,
   MachineApi,
+  MemorySnapshot,
+  SystemMetricsApi,
   NetworkApi,
   NetProbeApi,
   PermissionsApi,
@@ -62,6 +64,8 @@ export interface LinuxMachineApiDeps {
   readonly logManager: LinuxLogManager;
   readonly hostname: string;
   readonly ports: readonly Port[];
+  /** Instantané mémoire live (`free`/`vmstat`/`top`) — absent sur les vendeurs sans profil mémoire. */
+  memoryProfile?(): MemorySnapshot;
   getUmask(): number;
   setUmask(mask: number): void;
   powerOn(): void;
@@ -832,6 +836,14 @@ class LinuxPowerApi implements PowerApi {
   }
 }
 
+class LinuxSystemMetricsApi implements SystemMetricsApi {
+  constructor(private readonly memoryProfile: () => MemorySnapshot) {}
+
+  memory(): MemorySnapshot {
+    return this.memoryProfile();
+  }
+}
+
 export class LinuxMachineApi implements MachineApi {
   readonly fs: FileSystemApi;
   readonly proc: ProcessApi;
@@ -845,6 +857,7 @@ export class LinuxMachineApi implements MachineApi {
   readonly hostname: string;
   readonly audit: AuditApi;
   readonly logging: LoggingApi;
+  readonly metrics?: SystemMetricsApi;
   readonly permissions: PermissionsApi;
 
   constructor(deps: LinuxMachineApiDeps) {
@@ -864,6 +877,10 @@ export class LinuxMachineApi implements MachineApi {
     this.hostname = deps.hostname;
     this.audit = new LinuxAuditApi(deps);
     this.logging = new LinuxLoggingApi(deps.logManager);
+    if (deps.memoryProfile) {
+      const mem = deps.memoryProfile;
+      this.metrics = new LinuxSystemMetricsApi(() => mem());
+    }
     this.permissions = new LinuxPermissionsApi(deps);
   }
 

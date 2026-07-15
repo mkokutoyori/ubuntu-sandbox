@@ -1547,6 +1547,28 @@ export interface OsIdentity {
  * différencié par type d'équipement (station de travail vs serveur), pas
  * une valeur figée par ce pont.
  */
+/** Instantané mémoire live, en Kio (`/proc/meminfo`) — sert `free`/`vmstat`/`top`. */
+export interface MemorySnapshot {
+  readonly totalKib: number;
+  readonly freeKib: number;
+  readonly availableKib: number;
+  readonly buffersKib: number;
+  readonly cacheKib: number;
+  readonly swapTotalKib: number;
+  readonly swapUsedKib: number;
+}
+
+/**
+ * Métriques système live (`free`/`vmstat`/`top`) — optionnel, propre aux
+ * équipements Unix. Distinct de `HardwareProfile` (inventaire matériel figé) :
+ * expose des compteurs qui évoluent (mémoire libre/cache/swap), lus au moment
+ * de l'échantillonnage.
+ */
+export interface SystemMetricsApi {
+  /** Instantané mémoire courant. */
+  memory(): MemorySnapshot;
+}
+
 export interface HardwareProfile {
   readonly manufacturer: string;
   readonly productName: string;
@@ -1575,6 +1597,8 @@ export interface MachineApi {
   readonly audit?: AuditApi;
   /** Journalisation système (`logger`, `journalctl`, `dmesg`) — optionnel, propre aux équipements Unix avec syslog/journald. */
   readonly logging?: LoggingApi;
+  /** Métriques système live (`free`, `vmstat`, `top`) — optionnel, propre aux équipements Unix. */
+  readonly metrics?: SystemMetricsApi;
   readonly os?: OsIdentity;
   readonly hardware?: HardwareProfile;
   /** Horodatage de démarrage, si l'équipement suit un cycle de vie power-on/off (`systeminfo`'s System Boot Time). */

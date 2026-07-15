@@ -5,6 +5,37 @@ progressive par équipement. Un push = une entrée = une fonctionnalité
 complète et testée (voir `CLAUDE.md` / le framework de migration pour les
 principes directeurs).
 
+## Socle + Linux — `vmstat` migré au noyau + capacité `SystemMetricsApi` (§14.6)
+
+**État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
+
+Première commande de la **famille des échantillonneurs** convergée. `vmstat`
+était éclaté entre le legacy (`case 'vmstat'` de l'exécuteur, instantané) et
+l'intercepteur `tryStartVmstatStream` (mode `<intervalle>`). Il devient une
+commande noyau unique gérant les deux modes via `isStreaming(argv)`.
+
+- **`VmstatCommand extends StreamingCommand`** : `isStreaming(argv)` vrai dès
+  qu'un intervalle est fourni ; sans intervalle → en-tête + une ligne ; avec
+  intervalle → en-tête une fois puis une ligne par intervalle, bornée par
+  `nombre` ou Ctrl+C. Réutilise les fonctions pures `parseVmstatArgs`/
+  `vmstatHeader`/`formatVmstatRow`.
+- **Nouvelle capacité socle `MachineApi.metrics?: SystemMetricsApi`** (§0.1)
+  avec `memory(): MemorySnapshot` (compteurs `/proc/meminfo` live) — distincte
+  de `HardwareProfile` (inventaire figé). Câblée côté Linux via le profil
+  mémoire de l'équipement. Les états de processus (R/D) viennent de
+  `processControl.list()` déjà exposé ; la synthèse CPU est dans la commande.
+- **Garde anti-blocage** : un appel programmatique (`vmstat 1` en script, sans
+  flux terminal `ctx.io.interaction`) rend une seule ligne au lieu de tourner
+  indéfiniment (parité avec l'ancien `cmdVmstat`).
+- Legacy supprimé : `tryStartVmstatStream` + dispatch, `case 'vmstat'` de
+  l'exécuteur, `cmdVmstat`/`sampleVmstat`/`VmstatContext` (system/Vmstat.ts),
+  `LinuxMachine.sampleVmstatSnapshot`, avec leurs imports.
+- Tests : `linux-vmstat-stream-ui` 9/9 (instantané, flux, `<intervalle> <nombre>`
+  auto-terminé, isolation, parseurs/formateurs). Sweep des autres
+  échantillonneurs (`free`/`mpstat`/`pidstat`/`iostat`/`netstat`-stream-ui)
+  41/41 inchangés ; routage noyau 27/27. `tsc` propre, aucune nouvelle alerte
+  eslint.
+
 ## Socle + Linux — `journalctl -f` (suivi journal) migré au noyau (§14.6)
 
 **État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**

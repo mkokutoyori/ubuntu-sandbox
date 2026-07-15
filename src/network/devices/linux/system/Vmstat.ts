@@ -1,6 +1,3 @@
-import type { MemoryProfile } from '../../host/hardware';
-import type { LinuxProcessManager } from '../LinuxProcessManager';
-
 export interface VmstatArgs {
   intervalSeconds: number | null;
   count: number | null;
@@ -129,45 +126,3 @@ export function formatVmstatRow(sample: VmstatSample, args: VmstatArgs): string 
   ].join(' ');
 }
 
-export function sampleVmstat(pm: LinuxProcessManager, memory: MemoryProfile): VmstatSample {
-  const procs = pm.list();
-  const procsR = procs.filter((p) => p.state === 'R').length;
-  const procsB = procs.filter((p) => p.state === 'D').length;
-  const cpuLoad = Math.min(100, procsR * 100);
-  const cpuUser = Math.round(cpuLoad * 0.6);
-  const cpuSystem = Math.round(cpuLoad * 0.4);
-  const cpuIdle = Math.max(0, 100 - cpuUser - cpuSystem);
-  return {
-    procsR,
-    procsB,
-    swpdKib: memory.swapUsedKib,
-    freeKib: memory.freeKib,
-    buffKib: memory.buffersKib,
-    cacheKib: memory.cacheKib,
-    siKibPerSec: 0,
-    soKibPerSec: 0,
-    biBlocksPerSec: 0,
-    boBlocksPerSec: 0,
-    interruptsPerSec: 0,
-    ctxSwitchesPerSec: 0,
-    cpuUser,
-    cpuSystem,
-    cpuIdle,
-    cpuIowait: 0,
-    cpuSteal: 0,
-  };
-}
-
-export interface VmstatContext {
-  pm: LinuxProcessManager;
-  memory: MemoryProfile;
-}
-
-export function cmdVmstat(args: string[], ctx: VmstatContext): { output: string; exitCode: number } {
-  const parsed = parseVmstatArgs(args);
-  if ('error' in parsed) return { output: parsed.error, exitCode: 1 };
-  const lines: string[] = [vmstatHeader(parsed)];
-  const sample = sampleVmstat(ctx.pm, ctx.memory);
-  lines.push(formatVmstatRow(sample, parsed));
-  return { output: lines.join('\n'), exitCode: 0 };
-}

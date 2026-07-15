@@ -46,7 +46,6 @@ import {
 
 // Linux kernel / userspace
 import { LinuxCommandExecutor } from './linux/LinuxCommandExecutor';
-import { sampleVmstat } from './linux/system/Vmstat';
 import { sampleMpstat, mpstatBanner, type MpstatArgs } from './linux/system/Mpstat';
 import { sampleIostatCpu, sampleIostatDevices, iostatBanner, type IostatArgs } from './linux/system/Iostat';
 import { sampleDstat, type DstatRateState, type PortByteSnapshot } from './linux/system/Dstat';
@@ -1771,6 +1770,18 @@ export abstract class LinuxMachine extends EndHost
         logManager: this.executor.logMgr,
         hostname: this.name,
         ports: this.getPorts(),
+        memoryProfile: () => {
+          const m = this.getHardware().memory;
+          return {
+            totalKib: m.totalKib,
+            freeKib: m.freeKib,
+            availableKib: m.availableKib,
+            buffersKib: m.buffersKib,
+            cacheKib: m.cacheKib,
+            swapTotalKib: m.swapTotalKib,
+            swapUsedKib: m.swapUsedKib,
+          };
+        },
         getUmask: () => this.executor.getUmask(),
         setUmask: (value) => this.executor.setUmask(value),
         powerOn: () => this.powerOn(),
@@ -3165,10 +3176,6 @@ export abstract class LinuxMachine extends EndHost
 
   installCrontabContent(content: string, user: string): void {
     this.executor.installCrontab(content, user);
-  }
-
-  sampleVmstatSnapshot() {
-    return sampleVmstat(this.executor.processMgr, this.getHardware().memory);
   }
 
   sampleDstatSnapshot(rate: DstatRateState) {

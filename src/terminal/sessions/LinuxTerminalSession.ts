@@ -14,7 +14,6 @@ import { IPAddress } from '@/network/core/types';
 import { parseMtrArgs, MtrHopStats, formatMtrFrame, MTR_USAGE, MTR_VERSION, type MtrHopProbe } from '@/network/devices/linux/Mtr';
 import { parseWatchArgs } from '@/network/devices/linux/coreutils/WatchRunner';
 import { parseIpMonitorSpec } from '@/network/devices/linux/LinuxIpCommand';
-import { parseVmstatArgs, vmstatHeader, formatVmstatRow } from '@/network/devices/linux/system/Vmstat';
 import {
   parseMpstatArgs,
   mpstatColumnHeader,
@@ -1131,24 +1130,6 @@ export class LinuxTerminalSession extends TerminalSession {
     });
   }
 
-  private tryStartVmstatStream(commandLine: string): boolean {
-    const dev = this.device;
-    if (!(dev instanceof LinuxMachine)) return false;
-    if (/[|<>&]/.test(commandLine)) return false;
-    const toks = commandLine.trim().split(/\s+/);
-    if (toks[0] !== 'vmstat') return false;
-    const parsed = parseVmstatArgs(toks.slice(1));
-    if ('error' in parsed) return false;
-    if (parsed.intervalSeconds === null) return false;
-    return this.startScrollingMonitor({
-      commandLine,
-      intervalMs: Math.max(100, parsed.intervalSeconds * 1000),
-      maxFrames: parsed.count ?? undefined,
-      header: () => vmstatHeader(parsed),
-      frame: () => formatVmstatRow(dev.sampleVmstatSnapshot(), parsed),
-    });
-  }
-
   private tryStartMpstatStream(commandLine: string): boolean {
     const dev = this.device;
     if (!(dev instanceof LinuxMachine)) return false;
@@ -1343,7 +1324,6 @@ export class LinuxTerminalSession extends TerminalSession {
     if (this.tryStartTopStream(trimmed)) return;
     if (this.tryStartIpMonitor(trimmed)) return;
     if (this.tryStartNetstatStream(trimmed)) return;
-    if (this.tryStartVmstatStream(trimmed)) return;
     if (this.tryStartFreeStream(trimmed)) return;
     if (this.tryStartMpstatStream(trimmed)) return;
     if (this.tryStartPidstatStream(trimmed)) return;
