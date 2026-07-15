@@ -34,6 +34,14 @@ import {
   type SshConnectionInfo,
 } from '@/network/protocols/ssh/session/ISshInteractionHandler';
 import { isOk, isErr } from '@/network/protocols/ssh/Result';
+import { SftpSubShell } from '@/terminal/subshells/SftpSubShell';
+import type { SftpSession as SftpSessionForDriver } from '@/network/protocols/ssh/sftp/SftpSession';
+
+async function runSftpLine(sftp: SftpSessionForDriver, line: string): Promise<string> {
+  const result = await new SftpSubShell(sftp).processLine(line);
+  return result.output.join('\n');
+}
+
 
 class CapturingHandler implements ISshInteractionHandler {
   warnings: string[] = [];
@@ -285,8 +293,8 @@ describe('SSH LAN — advanced scenarios', () => {
   it('S81 — SFTP `cd` updates the remote cwd reported by `pwd`', async () => {
     await lan.pc2.executeCommand('mkdir -p /home/user/sub');
     const { sftp } = await openSftpSession(lan.pc1, PC2_IP);
-    sftp.cd('/home/user/sub');
-    expect(sftp.pwd()).toContain('/home/user/sub');
+    await runSftpLine(sftp, 'cd /home/user/sub');
+    expect(await runSftpLine(sftp, 'pwd')).toContain('/home/user/sub');
     sftp.disconnect();
   });
 
@@ -294,8 +302,8 @@ describe('SSH LAN — advanced scenarios', () => {
   it('S82 — sftp `lcd` then `lpwd` track the local cwd', async () => {
     const { sftp, localVfs } = await openSftpSession(lan.pc1, PC2_IP);
     localVfs.mkdirp('/root/local-tree', 0o755, 0, 0);
-    expect(sftp.lcd('/root/local-tree')).toBe('');
-    expect(sftp.lpwd()).toContain('/root/local-tree');
+    expect(await runSftpLine(sftp, 'lcd /root/local-tree')).toBe('');
+    expect(await runSftpLine(sftp, 'lpwd')).toContain('/root/local-tree');
     sftp.disconnect();
   });
 
@@ -304,7 +312,7 @@ describe('SSH LAN — advanced scenarios', () => {
     const { sftp, localVfs } = await openSftpSession(lan.pc1, PC2_IP);
     localVfs.writeFile('/root/secret.txt', 'top-secret', 0, 0, 0o022);
     sftp.put('/root/secret.txt', '/home/user/secret.txt');
-    sftp.chmod('600', '/home/user/secret.txt');
+    await runSftpLine(sftp, 'chmod 600 /home/user/secret.txt');
     sftp.disconnect();
     const stat = await lan.pc2.executeCommand(
       'stat -c %a /home/user/secret.txt',

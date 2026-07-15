@@ -114,89 +114,24 @@ export class SftpSession {
     return 'sftp> ';
   }
 
+  channelRequest(req: Parameters<ISshSftpChannel['sendRequest']>[0]): SftpResponse {
+    if (!this.channel) return { ok: false, error: 'Not connected.' };
+    return this.channel.sendRequest(req);
+  }
+
+  getRemoteCwdPath(): string { return this.remoteCwd; }
+  setRemoteCwdPath(path: string): void { this.remoteCwd = path; }
+  getRemoteUserName(): string { return this.remoteUser; }
+  getLocalCwdPath(): string { return this.localCwd; }
+  setLocalCwdPath(path: string): void { this.localCwd = path; }
+  localFs(): ISshLocalFs { return this.deps.localVfs; }
+  localOwner(): { uid: number; gid: number; user: string; home: string } {
+    return { uid: this.deps.localUid, gid: this.deps.localGid, user: this.deps.localUser, home: this.deps.homeDirectory };
+  }
+
   // ── Remote navigation ────────────────────────────────────────────
 
-  pwd(): string {
-    return `Remote working directory: ${this.remoteCwd}`;
-  }
-
-  ls(args: readonly string[], flags: ReadonlySet<string>): string {
-    if (!this.channel) return 'Not connected.';
-    const target = this.expandRemote(args[0] ?? '.');
-    const resp = this.channel.sendRequest({ op: 'ls', path: target });
-    if (!resp.ok) {
-      return `ls: cannot access '${args[0] ?? this.remoteCwd}': ${resp.error ?? 'No such file or directory'}`;
-    }
-    const entries = (resp.entries as readonly SftpDirEntry[]) ?? [];
-    const filtered = flags.has('a')
-      ? entries
-      : entries.filter((e) => !e.name.startsWith('.'));
-    if (flags.has('l')) {
-      return filtered.map(formatLsLongEntry).join('\n');
-    }
-    if (flags.has('1')) return filtered.map((e) => e.name).join('\n');
-    return filtered.map((e) => e.name).join('  ');
-  }
-
-  cd(path: string): string {
-    if (!this.channel) return 'Not connected.';
-    const target = this.expandRemote(path || '~');
-    const resp = this.channel.sendRequest({ op: 'cd', path: target });
-    if (!resp.ok) {
-      const msg = String(resp.error ?? '');
-      if (/not a directory/i.test(msg)) return `${path}: Not a directory`;
-      if (/permission denied/i.test(msg)) return `Couldn't canonicalize: Permission denied`;
-      return `Couldn't canonicalize: No such file or directory`;
-    }
-    if (typeof resp.cwd === 'string') this.remoteCwd = resp.cwd;
-    return '';
-  }
-
   // ── Local navigation ─────────────────────────────────────────────
-
-  lpwd(): string {
-    return `Local working directory: ${this.localCwd}`;
-  }
-
-  lls(args: readonly string[]): string {
-    const path = args[0]
-      ? this.deps.localVfs.normalizePath(this.expandLocal(args[0]), this.localCwd)
-      : this.localCwd;
-    const entries = this.deps.localVfs.listDirectory(path);
-    if (!entries) return `lls: cannot access '${path}': No such file or directory`;
-    return entries
-      .filter((e) => e.name !== '.' && e.name !== '..')
-      .map((e) => e.name)
-      .join('  ');
-  }
-
-  lcd(path: string): string {
-    const abs = this.deps.localVfs.normalizePath(
-      this.expandLocal(path),
-      this.localCwd,
-    );
-    const inode = this.deps.localVfs.resolveInode(abs);
-    if (!inode) return `Local directory not accessible: No such file or directory`;
-    if (inode.type !== 'directory') return `${abs}: Not a directory`;
-    this.localCwd = abs;
-    return '';
-  }
-
-  lmkdir(path: string): string {
-    const abs = this.deps.localVfs.normalizePath(
-      this.expandLocal(path),
-      this.localCwd,
-    );
-    const created = this.deps.localVfs.mkdir(
-      abs,
-      0o755,
-      this.deps.localUid,
-      this.deps.localGid,
-    );
-    return created
-      ? ''
-      : `Couldn't create local directory: ${abs}: File exists or parent missing`;
-  }
 
   // ── Transfers ────────────────────────────────────────────────────
 
@@ -334,124 +269,7 @@ export class SftpSession {
     }
   }
 
-  // ── Remote file operations ───────────────────────────────────────
-
-  mkdir(path: string): string {
-    return this.simpleRemote('mkdir', { op: 'mkdir', path: this.expandRemote(path) }, (r) =>
-      `Couldn't create directory: ${r.error ?? 'Failure'}`,
-    );
-  }
-
-  rm(path: string): string {
-    return this.simpleRemote('rm', { op: 'rm', path: this.expandRemote(path) }, (r) =>
-      `Couldn't remove file: remove "${path}": ${r.error ?? 'Failure'}`,
-    );
-  }
-
-  rmdir(path: string): string {
-    return this.simpleRemote('rmdir', { op: 'rmdir', path: this.expandRemote(path) }, (r) =>
-      `Couldn't remove directory: rmdir "${path}": ${r.error ?? 'Failure'}`,
-    );
-  }
-
-  rename(oldPath: string, newPath: string): string {
-    return this.simpleRemote(
-      'rename',
-      {
-        op: 'rename',
-        src: this.expandRemote(oldPath),
-        dst: this.expandRemote(newPath),
-      },
-      (r) =>
-        `Couldn't rename file: rename ${oldPath} ${newPath}: ${r.error ?? 'Failure'}`,
-    );
-  }
-
-  chmod(modeOctal: string, path: string): string {
-    const mode = Number.parseInt(modeOctal, 8);
-    if (Number.isNaN(mode)) return `chmod: invalid mode '${modeOctal}'`;
-    const remote = this.expandRemote(path);
-    const resp = this.channel?.sendRequest({ op: 'chmod', path: remote, mode });
-    if (!resp || !resp.ok) {
-      return `Couldn't setstat on "${remote}": ${resp?.error ?? 'Failure'}`;
-    }
-    return `Changing mode on ${remote}`;
-  }
-
-  chown(uid: string, path: string): string {
-    const numericUid = Number.parseInt(uid, 10);
-    if (Number.isNaN(numericUid)) return `chown: invalid uid '${uid}'`;
-    const remote = this.expandRemote(path);
-    const resp = this.channel?.sendRequest({
-      op: 'chown',
-      path: remote,
-      uid: numericUid,
-      gid: numericUid,
-    });
-    if (!resp || !resp.ok) {
-      return `Couldn't setstat on "${remote}": ${resp?.error ?? 'Failure'}`;
-    }
-    return `Changing owner on ${remote}`;
-  }
-
-  stat(path: string): string {
-    if (!this.channel) return 'Not connected.';
-    const remote = this.expandRemote(path);
-    const resp = this.channel.sendRequest({ op: 'stat', path: remote });
-    if (!resp.ok) return `${remote}: ${resp.error ?? 'No such file or directory'}`;
-    const a = resp as unknown as {
-      mode: number;
-      uid: number;
-      gid: number;
-      size: number;
-      mtime: number;
-    };
-    const mtime = new Date(a.mtime).toUTCString();
-    return [
-      `  File: ${remote}`,
-      `  Size: ${a.size}`,
-      `  Mode: 0${(a.mode & 0o7777).toString(8).padStart(4, '0')}   UID: ${a.uid}   GID: ${a.gid}`,
-      `  Access: ${mtime}`,
-      `  Modify: ${mtime}`,
-    ].join('\n');
-  }
-
-  df(path: string | undefined, human: boolean): string {
-    if (!this.channel) return 'Not connected.';
-    const remote = path ? this.expandRemote(path) : this.remoteCwd;
-    const resp = this.channel.sendRequest({ op: 'df', path: remote });
-    if (!resp.ok) return `df: ${resp.error ?? 'Failure'}`;
-    const a = resp as unknown as {
-      totalBytes: number;
-      usedBytes: number;
-      availableBytes: number;
-    };
-    const fmt = human ? humanBytes : (n: number) => String(Math.round(n / 1024));
-    const pct = Math.round((a.usedBytes / a.totalBytes) * 100);
-    return [
-      `        Size         Used        Avail       (root)    %Capacity`,
-      `${fmt(a.totalBytes).padStart(12, ' ')} ${fmt(a.usedBytes).padStart(12, ' ')} ${fmt(a.availableBytes).padStart(12, ' ')} ${fmt(a.availableBytes).padStart(12, ' ')} ${(pct + '%').padStart(12, ' ')}`,
-    ].join('\n');
-  }
-
-  version(): string {
-    if (!this.channel) return 'Not connected.';
-    const resp = this.channel.sendRequest({ op: 'version' });
-    if (!resp.ok) return 'SFTP protocol version 3';
-    return `SFTP protocol version ${(resp as { protocolVersion?: number }).protocolVersion ?? 3}`;
-  }
-
   // ── helpers ──────────────────────────────────────────────────────
-
-  private simpleRemote(
-    _label: string,
-    payload: Record<string, unknown>,
-    onError: (resp: SftpResponse) => string,
-  ): string {
-    if (!this.channel) return 'Not connected.';
-    const resp = this.channel.sendRequest(payload as never);
-    return resp.ok ? '' : onError(resp);
-  }
 
   private expandRemote(path: string): string {
     return expandTilde(path, `/home/${this.remoteUser}`);
@@ -475,13 +293,6 @@ function parseUserAtHost(
 
 function baseName(path: string): string {
   return path.replace(/[/\\]+$/, '').split(/[/\\]/).pop() ?? 'file';
-}
-
-function humanBytes(n: number): string {
-  if (n < 1024) return `${n}B`;
-  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)}KB`;
-  if (n < 1024 * 1024 * 1024) return `${(n / (1024 * 1024)).toFixed(1)}MB`;
-  return `${(n / (1024 * 1024 * 1024)).toFixed(1)}GB`;
 }
 
 function formatConnectError(

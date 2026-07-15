@@ -1092,6 +1092,65 @@ export interface TracerouteProbeInfo {
 }
 
 /** Un saut de `traceroute` (une valeur de TTL). */
+
+/** Entrée distante renvoyée par le canal SFTP réel. */
+export interface SftpRemoteEntry {
+  readonly name: string;
+  readonly type: string;
+  readonly mode: number;
+  readonly uid: number;
+  readonly gid: number;
+  readonly size: number;
+  readonly mtime: number;
+}
+
+export interface SftpOpResult<T = void> {
+  readonly ok: boolean;
+  readonly error?: string;
+  readonly value?: T;
+}
+
+/**
+ * Canal SFTP client d'une session connectée — optionnel, présent uniquement
+ * sur la machine d'un shell sftp. Enveloppe fine du canal réel
+ * (`ISshSftpChannel`, vraies trames à travers la topologie) : chaque méthode
+ * = un op du protocole, AUCUN formatage (celui-ci vit dans les commandes).
+ * `remoteCwd` est un état de la connexion, jamais des commandes.
+ */
+export interface SftpChannelApi {
+  remoteCwd(): string;
+  remoteHome(): string;
+  cd(path: string): SftpOpResult;
+  ls(path: string): SftpOpResult<readonly SftpRemoteEntry[]>;
+  version(): SftpOpResult<number>;
+  mkdir(path: string): SftpOpResult;
+  rm(path: string): SftpOpResult;
+  rmdir(path: string): SftpOpResult;
+  rename(source: string, destination: string): SftpOpResult;
+  chmod(path: string, mode: number): SftpOpResult;
+  chown(path: string, uid: number, gid: number): SftpOpResult;
+  stat(path: string): SftpOpResult<SftpRemoteStat>;
+  df(path: string): SftpOpResult<SftpRemoteDiskUsage>;
+  /** Délégation au moteur de transfert partagé de la connexion (aussi
+   *  emprunté par SCP) — renvoie la transcription sftp(1) exacte. */
+  download(remotePath: string, localPath?: string): string;
+  upload(localPath: string, remotePath?: string): string;
+}
+
+export interface SftpRemoteStat {
+  readonly mode: number;
+  readonly uid: number;
+  readonly gid: number;
+  readonly size: number;
+  readonly mtime: number;
+}
+
+export interface SftpRemoteDiskUsage {
+  readonly totalBytes: number;
+  readonly usedBytes: number;
+  readonly availableBytes: number;
+}
+
 export interface TracerouteHopInfo {
   readonly hop: number;
   readonly ip?: string;
@@ -1444,6 +1503,8 @@ export interface MachineApi {
   readonly net: NetworkApi;
   /** Sondes réseau réelles (`ping`/`traceroute`/`arping`) — optionnel. */
   readonly netProbe?: NetProbeApi;
+  /** Canal SFTP de la session connectée — optionnel, machine d'un shell sftp. */
+  readonly sftp?: SftpChannelApi;
   readonly users: UserManagementApi;
   readonly groups: GroupManagementApi;
   readonly power: PowerApi;
