@@ -1997,7 +1997,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
   }
 
   private async runCommandKernel(trimmed: string, channel?: CommandKernelChannel): Promise<string> {
-    const { interpreter } = this.getCommandKernelShell();
+    const { registry, interpreter } = this.getCommandKernelShell();
 
     let ast: ScriptNode;
     try {
@@ -2005,6 +2005,18 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     } catch (err) {
       if (err instanceof ShellError) return `${err.message}\n`;
       throw err;
+    }
+
+    // `ssh` n'a jamais été migré vers le registre command-kernel (le
+    // cutover cmd.exe a supprimé le switch legacy sans repli, laissant
+    // `cmdSsh` orphelin — voir historique) : sans ce détour, l'exec-mode
+    // (`ssh user@host <commande>`) atteint via `device.executeCommand()`
+    // répond « not recognized » au lieu d'exécuter le vrai client SSH.
+    // Repli ciblé, jamais un registre legacy général — dès que `ssh`
+    // rejoindra le registre, `registry.has('ssh')` fait disparaître ce
+    // détour de lui-même.
+    if (ast.kind === 'command' && ast.name.toLowerCase() === 'ssh' && !registry.has('ssh')) {
+      return this.cmdSsh(ast.argv.map((w) => w.text));
     }
 
     // Bare drive letter (`D:` / `D:\path`) — change current drive and
