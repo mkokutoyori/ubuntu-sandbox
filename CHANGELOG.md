@@ -5,6 +5,33 @@ progressive par équipement. Un push = une entrée = une fonctionnalité
 complète et testée (voir `CLAUDE.md` / le framework de migration pour les
 principes directeurs).
 
+## Socle + Linux — `dmesg -w` (suivi noyau) migré au noyau (§14.6)
+
+**État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
+
+Deuxième convergence d'un intercepteur de flux **Linux**, dans la lignée de
+`tail -f`. `dmesg -w` était routé par l'intercepteur dédié
+`tryStartDmesgFollow` de `LinuxTerminalSession` ; le suivi passe désormais par
+l'entrée générique `tryStartKernelStream`, la commande noyau `dmesg` existant
+déjà pour l'instantané.
+
+- **`DmesgCommand` gère `-w`/`--follow`** : `isStreaming(argv)` vrai dès qu'un
+  `-w`/`--follow` est présent (jamais `-f`, qui est `--facility` pour `dmesg`) ;
+  après l'instantané du ring buffer, `execute` s'abonne aux nouveaux messages
+  noyau et les diffuse au fil de l'eau jusqu'à Ctrl+C (`ctx.signal`). Réutilise
+  la validation de niveau et le formatage existants.
+- **Nouvelle capacité socle `LoggingApi.followKernel?(opts, listener)`** (§0.1)
+  exposée côté Linux via `LinuxLogManager.followDmesg` : abonnement événementiel
+  aux messages noyau (filtre de niveau/brut/horodatage humain appliqués par le
+  gestionnaire de journaux), la commande n'accède aux journaux que par
+  `ctx.machine.logging`.
+- `tryStartDmesgFollow` + le dispatch supprimés de `LinuxTerminalSession` ;
+  `LinuxMachine.followDmesg` (câblage de production mort) supprimé.
+- Tests : `linux-dmesg-stream-ui` 5/5 (instantané + flux, `--level`, niveau
+  inconnu, isolation multi-session, `listAttachedStreams`). Suites
+  `journalization`/`observability-bridge`/`linux-journal` 277/277 inchangées ;
+  `tsc` propre, aucune nouvelle alerte eslint.
+
 ## Socle + Linux — `tail -f`/`-F` migré au noyau + `isStreaming(argv)` côté Linux (§14.6)
 
 **État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**

@@ -712,6 +712,13 @@ class LinuxLoggingApi implements LoggingApi {
   bootId(): string {
     return this.logManager.journalBootId();
   }
+
+  followKernel(
+    opts: { raw?: boolean; humanTime?: boolean; levelFilter?: readonly string[] },
+    listener: (line: string) => void,
+  ): () => void {
+    return this.logManager.followDmesg(opts, listener);
+  }
 }
 
 class LinuxPermissionsApi implements PermissionsApi {

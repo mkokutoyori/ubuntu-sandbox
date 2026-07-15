@@ -39,6 +39,15 @@ export class DmesgCommand extends BaseCommand {
     lenientOptions: true,
   };
 
+  /**
+   * `-w`/`--follow` tient le terminal et diffuse les nouveaux messages
+   * noyau au fil de l'eau : l'invocation est en flux continu (§14.6),
+   * sinon c'est un instantané. La commande décide selon ses arguments.
+   */
+  override isStreaming(argv: readonly string[]): boolean {
+    return argv.some((a) => a === '-w' || a === '--follow');
+  }
+
   protected override validate(args: ParsedArgs, session: Session): void {
     // Privilège conditionnel (arg-dépendant) : seul root peut vider le
     // buffer ou changer le niveau console. Message identique au legacy.
@@ -56,6 +65,7 @@ export class DmesgCommand extends BaseCommand {
     let raw = false;
     let levelFilter: string[] = [];
     let setConsoleLevel: number | null = null;
+    let follow = false;
 
     for (let i = 0; i < args.length; i++) {
       const a = args[i];
@@ -64,7 +74,8 @@ export class DmesgCommand extends BaseCommand {
         case '-c': case '--read-clear': clearBuf = true; break;
         case '-C': case '--clear': clearOnly = true; break;
         case '-r': case '--raw': raw = true; break;
-        case '-x': case '--decode': case '-w': case '--follow': case '-d': case '--show-delta': break;
+        case '-w': case '--follow': follow = true; break;
+        case '-x': case '--decode': case '-d': case '--show-delta': break;
         case '-h': case '--help': await ctx.io.stdout.write(HELP + '\n'); return 0;
         case '-V': case '--version': await ctx.io.stdout.write('dmesg from util-linux 2.37.2\n'); return 0;
         case '-n': case '--console-level': {
@@ -106,6 +117,19 @@ export class DmesgCommand extends BaseCommand {
 
     const output = lines.join('\n');
     if (output !== '') await ctx.io.stdout.write(output + '\n');
+
+    // Mode suivi (§14.6) : après l'instantané, diffuse les nouveaux
+    // messages noyau au fil de l'eau jusqu'à Ctrl+C (`ctx.signal`).
+    if (follow && logging.followKernel) {
+      const unsub = logging.followKernel({ raw, humanTime, levelFilter }, (line) => {
+        void ctx.io.stdout.write(line.endsWith('\n') ? line : `${line}\n`);
+      });
+      await new Promise<void>((resolve) => {
+        if (ctx.signal.aborted) { resolve(); return; }
+        ctx.signal.addEventListener('abort', () => resolve(), { once: true });
+      });
+      unsub();
+    }
     return 0;
   }
 

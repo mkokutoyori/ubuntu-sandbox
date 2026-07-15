@@ -1453,6 +1453,16 @@ export interface LoggingApi {
   journalEntries(): readonly JournalRecord[];
   /** Identifiant de boot courant (`journalctl --list-boots`, format `verbose`). */
   bootId(): string;
+  /**
+   * Abonnement aux nouveaux messages noyau (`dmesg -w`/`--follow`) —
+   * optionnel. `listener` reçoit chaque ligne déjà formatée selon `opts`
+   * (brut, horodatage humain, filtre de niveau) ; renvoie une fonction de
+   * désabonnement. Suivi événementiel, sans sondage.
+   */
+  followKernel?(
+    opts: { raw?: boolean; humanTime?: boolean; levelFilter?: readonly string[] },
+    listener: (line: string) => void,
+  ): () => void;
 }
 
 /**

@@ -3206,13 +3206,6 @@ export abstract class LinuxMachine extends EndHost
     return sampleIostatDevices(args, this.getHardware().storage);
   }
 
-  followDmesg(
-    opts: { raw?: boolean; humanTime?: boolean; levelFilter?: readonly string[] },
-    listener: (line: string) => void,
-  ): () => void {
-    return this.executor.logMgr.followDmesg(opts, listener);
-  }
-
   monitorNetlink(
     opts: { objects: ReadonlySet<IpMonitorObject>; labelled: boolean },
     listener: (block: string) => void,
