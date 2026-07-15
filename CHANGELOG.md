@@ -180,6 +180,62 @@ commande noyau normale à mode dépendant des arguments.
   (`free`/`netstat`/`vmstat`/`mpstat`/`dmesg`-stream-ui) 33/33 — inchangés.
   `tsc` propre, aucune nouvelle alerte eslint.
 
+## Correction des tests legacy préexistants (après SFTP)
+
+**État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
+
+Cinq root causes distinctes, un commit chacune, identifiées après la
+migration SFTP (tâche différée par décision utilisateur) :
+
+- **`ssh-lan-gap.test.ts`** appelait encore `SftpSubShell.processLine()`
+  sans `await` (devenu asynchrone lors de la migration sftp) —
+  `result.output is not iterable`.
+- **Alias/fonction shell masqués par le kernel** : `echo`/`cd` (et toute
+  commande kernel) étaient toujours résolus directement, avant même que
+  l'interpréteur bash historique n'ait la moindre chance d'appliquer un
+  `alias echo=...` actif ou une fonction shell `function cd { ... }` qui
+  masque le même nom. `LinuxMachine.parseKernelRoutable` décline
+  désormais le routage (repli sur le chemin bash, seul à porter cette
+  expansion) dès qu'un des noms de la ligne a un alias ou une fonction
+  définis dans la session courante.
+- **Tests de session SSH backgroundée** (`w`, `auth.log`, shadowing de
+  fonction sur un shell distant) : le `setup` démarrait `ssh ... &`/une
+  définition de fonction via `void executeCommand(...)`
+  (fire-and-forget) puis vérifiait immédiatement l'état côté serveur —
+  rien ne garantissait que la connexion (ou la définition) ait atteint
+  son état final avant l'assertion. Aligné sur le reste des mêmes
+  fichiers, qui attendent déjà ces mêmes commandes ailleurs.
+- **Exec-mode `ssh` orphelin sur Windows** : le cutover command-kernel de
+  `cmd.exe` (`df772421`) a supprimé tout le switch legacy sans repli,
+  orphelinant `cmdSsh` (jamais migré vers le registre) — `ssh user@host
+  <commande>` via `device.executeCommand()` répondait `'ssh' is not
+  recognized...` au lieu d'exécuter le vrai client SSH. `runCommandKernel`
+  détourne désormais spécifiquement `ssh` vers `cmdSsh` tant que le nom
+  n'est pas enregistré dans le registre kernel (`registry.has('ssh')`
+  fait disparaître ce détour de lui-même le jour où `ssh` sera migré) —
+  pas de résurrection d'un switch legacy général, uniquement ce cas
+  orphelin.
+- **`ls` sans saut de ligne final** : `LsCommand` écrivait `parts.
+  join('\n')` sans `\n` terminal ; le vrai `ls` termine toujours sa
+  dernière ligne par un saut de ligne. Un consommateur en aval d'un pipe
+  qui compte les vrais caractères `\n` (`wc -l`) sous-comptait d'une
+  entrée (`ls -1 /tmp/x | wc -l` sur 3 fichiers répondait 2).
+
+**Hors périmètre (nouvellement découvert, pas les root causes visées)** :
+PowerShell n'est pas du tout câblé sous `cmd.exe` (`powershell -Command
+"..."` répond « not recognized ») — un chantier de migration à part
+entière, pas un correctif ponctuel comme `ssh`. Les 7 échecs Windows-sftp
+(§26 `linux-lan-sftp-suite.test.ts`) restent également hors périmètre —
+confirmés identiques à la baseline avant SFTP, un chantier séparé.
+
+Validation : `linux-lan-ssh-suite.test.ts` (216/216, contre 5+ échecs
+avant), `cross-equipment-ssh-suite.test.ts` (231/234, seuls les 2
+PowerShell hors périmètre restent), `ssh-terminal-stack.test.ts`,
+`ssh-lan-gap.test.ts`, `shell-alias-command.test.ts`,
+`which-whereis-type.test.ts` tous verts ; sweep large (bash/command-kernel/
+iam/adduser/audit, 800+ tests) sans régression ; `tsc`/`eslint` propres sur
+les fichiers touchés (mêmes alertes préexistantes qu'à la baseline).
+
 ## SFTP Push C : lanceur en command-kernel, suppression du legacy `enterSftp`
 
 **État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
