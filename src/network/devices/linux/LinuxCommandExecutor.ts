@@ -53,7 +53,6 @@ import { ExitSignal } from '@/bash/errors/BashError';
 import { AliasTable } from '@/bash/runtime/AliasTable';
 import { type IpNetworkContext } from './LinuxIpCommand';
 import { cmdDf, cmdDu } from './LinuxSystemCommands';
-import { cmdMpstat } from './system/Mpstat';
 import { cmdIostat } from './system/Iostat';
 import { cmdPidstat } from './system/Pidstat';
 import { parseDstatArgs, DSTAT_USAGE, DSTAT_VERSION, DSTAT_LISTING } from './system/Dstat';
@@ -3781,12 +3780,6 @@ export class LinuxCommandExecutor {
       }
       case 'df': return { output: cmdDf(c, args), exitCode: 0 };
       case 'du': return { output: cmdDu(c, args), exitCode: 0 };
-      case 'mpstat': return cmdMpstat(args, {
-        pm: this.processMgr,
-        cpu: this.hardware.cpu,
-        kernel: this.identity.kernel,
-        hostname: (this.vfs.readFile('/etc/hostname') ?? 'localhost').trim(),
-      });
       case 'pidstat': return cmdPidstat(args, {
         pm: this.processMgr,
         cpu: this.hardware.cpu,

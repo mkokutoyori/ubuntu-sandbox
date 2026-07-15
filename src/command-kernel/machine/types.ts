@@ -1566,9 +1566,18 @@ export interface MemorySnapshot {
  * expose des compteurs qui évoluent (mémoire libre/cache/swap), lus au moment
  * de l'échantillonnage.
  */
+/** Informations processeur (`mpstat`/`iostat`/`pidstat`/`nproc`). */
+export interface CpuInfo {
+  readonly logicalCpus: number;
+  readonly architecture: string;
+  readonly modelName: string;
+}
+
 export interface SystemMetricsApi {
   /** Instantané mémoire courant. */
   memory(): MemorySnapshot;
+  /** Instantané processeur courant. */
+  cpu(): CpuInfo;
 }
 
 export interface HardwareProfile {

@@ -12,6 +12,8 @@ import {
   LoggingApi,
   MachineApi,
   MemorySnapshot,
+  CpuInfo,
+  OsIdentity,
   SystemMetricsApi,
   NetworkApi,
   NetProbeApi,
@@ -66,6 +68,10 @@ export interface LinuxMachineApiDeps {
   readonly ports: readonly Port[];
   /** Instantané mémoire live (`free`/`vmstat`/`top`) — absent sur les vendeurs sans profil mémoire. */
   memoryProfile?(): MemorySnapshot;
+  /** Informations processeur (`mpstat`/`iostat`/`pidstat`) — absent sans profil matériel. */
+  cpuInfo?(): CpuInfo;
+  /** Identité du système d'exploitation (`uname`, bannières sysstat) — absent sans identité. */
+  osIdentity?(): OsIdentity;
   getUmask(): number;
   setUmask(mask: number): void;
   powerOn(): void;
@@ -837,10 +843,17 @@ class LinuxPowerApi implements PowerApi {
 }
 
 class LinuxSystemMetricsApi implements SystemMetricsApi {
-  constructor(private readonly memoryProfile: () => MemorySnapshot) {}
+  constructor(
+    private readonly memoryProfile: () => MemorySnapshot,
+    private readonly cpuProfile: () => CpuInfo,
+  ) {}
 
   memory(): MemorySnapshot {
     return this.memoryProfile();
+  }
+
+  cpu(): CpuInfo {
+    return this.cpuProfile();
   }
 }
 
@@ -858,6 +871,7 @@ export class LinuxMachineApi implements MachineApi {
   readonly audit: AuditApi;
   readonly logging: LoggingApi;
   readonly metrics?: SystemMetricsApi;
+  readonly os?: OsIdentity;
   readonly permissions: PermissionsApi;
 
   constructor(deps: LinuxMachineApiDeps) {
@@ -877,10 +891,12 @@ export class LinuxMachineApi implements MachineApi {
     this.hostname = deps.hostname;
     this.audit = new LinuxAuditApi(deps);
     this.logging = new LinuxLoggingApi(deps.logManager);
-    if (deps.memoryProfile) {
+    if (deps.memoryProfile && deps.cpuInfo) {
       const mem = deps.memoryProfile;
-      this.metrics = new LinuxSystemMetricsApi(() => mem());
+      const cpu = deps.cpuInfo;
+      this.metrics = new LinuxSystemMetricsApi(() => mem(), () => cpu());
     }
+    if (deps.osIdentity) this.os = deps.osIdentity();
     this.permissions = new LinuxPermissionsApi(deps);
   }
 

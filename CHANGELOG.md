@@ -5,6 +5,35 @@ progressive par équipement. Un push = une entrée = une fonctionnalité
 complète et testée (voir `CLAUDE.md` / le framework de migration pour les
 principes directeurs).
 
+## Socle + Linux — `mpstat` migré au noyau (`SystemMetricsApi.cpu` + capacité `os`) (§14.6)
+
+**État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
+
+Troisième échantillonneur convergé, premier à métriques CPU. `mpstat` était
+éclaté entre le legacy (`case 'mpstat'`/`cmdMpstat`, instantané) et
+l'intercepteur `tryStartMpstatStream` (mode `<intervalle>` avec moyennes).
+
+- **`MpstatCommand extends StreamingCommand`** : `isStreaming(argv)` vrai dès
+  qu'un intervalle est fourni ; sans intervalle → bannière + en-tête + lignes ;
+  avec intervalle → bannière/en-tête une fois, une ligne par intervalle, puis
+  les moyennes (`Average:`) à la sortie (`nombre` atteint ou Ctrl+C, via
+  `MpstatAccumulator`). Garde anti-blocage (`ctx.io.interaction`).
+- **`SystemMetricsApi.cpu(): CpuInfo`** (logicalCpus/architecture/modelName) —
+  sert `mpstat`/`iostat`/`pidstat`. **Capacité `MachineApi.os?: OsIdentity`
+  câblée côté Linux** (depuis `SystemIdentity`) pour `kernelRelease` de la
+  bannière. La charge (run-queue) vient de `processControl.list()`.
+- **Fonctions pures rendues génériques** : `mpstatBanner`/`sampleMpstat`
+  prennent désormais des primitives/types structurels (plus de dépendance à
+  `CpuSpec`/`KernelInfo`/`LinuxProcessManager`), partagées entre la commande
+  noyau et les tests.
+- Legacy supprimé : `tryStartMpstatStream` + dispatch, `case 'mpstat'`,
+  `cmdMpstat`/`MpstatContext`, `LinuxMachine.sampleMpstatSnapshot`/
+  `mpstatBannerLine`, avec leurs imports.
+- Tests : `linux-mpstat-stream-ui` 11/11 (instantané, `-P ALL`, flux, moyennes
+  sur `<nombre>`/Ctrl+C, en-tête unique, parseurs/formateurs/accumulateur) ;
+  sweep vmstat/free/pidstat/iostat + routage noyau 48/48 ; commandes générales
+  366/366. `tsc` propre, aucune nouvelle alerte eslint.
+
 ## Socle + Linux — `free` migré au noyau (réutilise `SystemMetricsApi`) (§14.6)
 
 **État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**

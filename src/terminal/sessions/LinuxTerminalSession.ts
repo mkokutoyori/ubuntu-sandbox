@@ -15,13 +15,6 @@ import { parseMtrArgs, MtrHopStats, formatMtrFrame, MTR_USAGE, MTR_VERSION, type
 import { parseWatchArgs } from '@/network/devices/linux/coreutils/WatchRunner';
 import { parseIpMonitorSpec } from '@/network/devices/linux/LinuxIpCommand';
 import {
-  parseMpstatArgs,
-  mpstatColumnHeader,
-  formatMpstatRow,
-  formatMpstatAverageRow,
-  MpstatAccumulator,
-} from '@/network/devices/linux/system/Mpstat';
-import {
   parsePidstatArgs,
   pidstatColumnHeader,
   formatPidstatCpuRow,
@@ -1096,35 +1089,6 @@ export class LinuxTerminalSession extends TerminalSession {
     });
   }
 
-  private tryStartMpstatStream(commandLine: string): boolean {
-    const dev = this.device;
-    if (!(dev instanceof LinuxMachine)) return false;
-    if (/[|<>&]/.test(commandLine)) return false;
-    const toks = commandLine.trim().split(/\s+/);
-    if (toks[0] !== 'mpstat') return false;
-    const parsed = parseMpstatArgs(toks.slice(1));
-    if ('error' in parsed) return false;
-    if (parsed.intervalSeconds === null) return false;
-    const accumulator = new MpstatAccumulator();
-    return this.startScrollingMonitor({
-      commandLine,
-      intervalMs: Math.max(100, parsed.intervalSeconds * 1000),
-      maxFrames: parsed.count ?? undefined,
-      header: () => `${dev.mpstatBannerLine()}\n${mpstatColumnHeader(new Date())}`,
-      frame: () => {
-        const rows = dev.sampleMpstatSnapshot(parsed);
-        accumulator.add(rows);
-        const now = new Date();
-        return rows.map((r) => formatMpstatRow(now, r)).join('\n');
-      },
-      trailer: () => {
-        if (accumulator.sampleCount() === 0) return '';
-        const lines = ['', ...accumulator.averages().map((r) => formatMpstatAverageRow(r))];
-        return lines.join('\n');
-      },
-    });
-  }
-
   private tryStartPidstatStream(commandLine: string): boolean {
     const dev = this.device;
     if (!(dev instanceof LinuxMachine)) return false;
@@ -1290,7 +1254,6 @@ export class LinuxTerminalSession extends TerminalSession {
     if (this.tryStartTopStream(trimmed)) return;
     if (this.tryStartIpMonitor(trimmed)) return;
     if (this.tryStartNetstatStream(trimmed)) return;
-    if (this.tryStartMpstatStream(trimmed)) return;
     if (this.tryStartPidstatStream(trimmed)) return;
     if (this.tryStartIostatStream(trimmed)) return;
     if (this.tryStartDstatStream(trimmed)) return;

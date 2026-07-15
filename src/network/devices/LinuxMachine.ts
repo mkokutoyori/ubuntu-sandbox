@@ -46,7 +46,6 @@ import {
 
 // Linux kernel / userspace
 import { LinuxCommandExecutor } from './linux/LinuxCommandExecutor';
-import { sampleMpstat, mpstatBanner, type MpstatArgs } from './linux/system/Mpstat';
 import { sampleIostatCpu, sampleIostatDevices, iostatBanner, type IostatArgs } from './linux/system/Iostat';
 import { sampleDstat, type DstatRateState, type PortByteSnapshot } from './linux/system/Dstat';
 import {
@@ -1784,6 +1783,19 @@ export abstract class LinuxMachine extends EndHost
             swapUsedKib: m.swapUsedKib,
           };
         },
+        cpuInfo: () => {
+          const c = this.getHardware().cpu;
+          return { logicalCpus: c.logicalCpus, architecture: c.architecture, modelName: c.modelName };
+        },
+        osIdentity: () => {
+          const id = this.executor.identity;
+          return {
+            name: id.os.name,
+            prettyName: id.os.prettyName,
+            version: id.os.versionId,
+            kernelRelease: id.kernel.release,
+          };
+        },
         getUmask: () => this.executor.getUmask(),
         setUmask: (value) => this.executor.setUmask(value),
         powerOn: () => this.powerOn(),
@@ -3191,16 +3203,6 @@ export abstract class LinuxMachine extends EndHost
       memory: this.getHardware().memory,
       ports,
     }, rate);
-  }
-
-  sampleMpstatSnapshot(args: MpstatArgs) {
-    return sampleMpstat(args, this.executor.processMgr, this.getHardware().cpu);
-  }
-
-  mpstatBannerLine(): string {
-    const now = new Date();
-    const hostname = (this.executor.vfs.readFile('/etc/hostname') ?? 'localhost').trim();
-    return mpstatBanner(this.executor.identity.kernel, hostname, this.getHardware().cpu, now);
   }
 
   pidstatBannerLine(): string {

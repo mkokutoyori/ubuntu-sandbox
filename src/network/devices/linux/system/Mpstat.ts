@@ -1,6 +1,3 @@
-import type { CpuSpec } from '../../host/hardware/CpuSpec';
-import type { KernelInfo } from '../../host/identity/KernelInfo';
-import type { LinuxProcessManager } from '../LinuxProcessManager';
 import { twelveHourClock as fmtTimestamp } from '@/lib/format';
 
 export interface MpstatArgs {
@@ -71,7 +68,12 @@ function fmtDateBanner(d: Date): string {
   return `${mm}/${dd}/${yyyy}`;
 }
 
-export function mpstatBanner(kernel: KernelInfo, hostname: string, cpu: CpuSpec, now: Date): string {
+export function mpstatBanner(
+  kernel: { sysname: string; release: string },
+  hostname: string,
+  cpu: { architecture: string; logicalCpus: number },
+  now: Date,
+): string {
   return `${kernel.sysname} ${kernel.release} (${hostname})  ${fmtDateBanner(now)}  _${cpu.architecture}_  (${cpu.logicalCpus} CPU)\n`;
 }
 
@@ -93,10 +95,7 @@ export function formatMpstatAverageRow(row: MpstatCpuRow): string {
   ].map((v) => v.toFixed(2).padStart(8)).join('');
 }
 
-export function sampleMpstat(args: MpstatArgs, pm: LinuxProcessManager, cpu: CpuSpec): MpstatCpuRow[] {
-  const procs = pm.list();
-  const runQueue = procs.filter((p) => p.state === 'R').length;
-  const cpuCount = cpu.logicalCpus;
+export function sampleMpstat(args: MpstatArgs, runQueue: number, cpuCount: number): MpstatCpuRow[] {
   const totalLoadPct = Math.min(100, runQueue * 100);
   const perCpuLoad = totalLoadPct / cpuCount;
   const sysPct = perCpuLoad * 0.4;
@@ -161,20 +160,3 @@ export class MpstatAccumulator {
   }
 }
 
-export interface MpstatContext {
-  pm: LinuxProcessManager;
-  cpu: CpuSpec;
-  kernel: KernelInfo;
-  hostname: string;
-}
-
-export function cmdMpstat(args: string[], ctx: MpstatContext): { output: string; exitCode: number } {
-  const parsed = parseMpstatArgs(args);
-  if ('error' in parsed) return { output: parsed.error, exitCode: parsed.error.startsWith('sysstat') ? 0 : 1 };
-  const now = new Date();
-  const lines: string[] = [mpstatBanner(ctx.kernel, ctx.hostname, ctx.cpu, now)];
-  lines.push(mpstatColumnHeader(now));
-  const sample = sampleMpstat(parsed, ctx.pm, ctx.cpu);
-  for (const row of sample) lines.push(formatMpstatRow(now, row));
-  return { output: lines.join('\n'), exitCode: 0 };
-}
