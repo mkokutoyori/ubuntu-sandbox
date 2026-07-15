@@ -2,7 +2,7 @@ import { StreamingCommand } from '@/command-kernel/command/streaming-command';
 import { CommandContext, CommandDescriptor, EXIT_OK, ExitCode } from '@/command-kernel/command/types';
 import { DefaultPrivilegePolicy } from '@/command-kernel/session/privilege-policy';
 import { PrivilegeLevel } from '@/command-kernel/session/types';
-import { cmdNetstat, type NetstatInputs } from '../../LinuxNetCommands';
+import { renderNetstat, type NetstatInputs } from './netstatRender';
 
 function wantsContinuous(argv: readonly string[]): boolean {
   return argv.some((a) => a.startsWith('-') && !a.startsWith('--') && a.includes('c'))
@@ -50,7 +50,7 @@ export class NetstatCommand extends StreamingCommand {
         isServer: inspect.isServer(),
         resolveService: (port, proto) => inspect.resolveService(port, proto),
       };
-      return cmdNetstat(argv, inputs);
+      return renderNetstat(argv, inputs);
     };
 
     // Un seul affichage : pas de `-c`, OU appel programmatique (sans flux

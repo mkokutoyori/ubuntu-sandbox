@@ -5,6 +5,34 @@ progressive par équipement. Un push = une entrée = une fonctionnalité
 complète et testée (voir `CLAUDE.md` / le framework de migration pour les
 principes directeurs).
 
+## Correctif d'architecture — `netstat` : donnée depuis l'équipement, rendu hors legacy
+
+**État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
+
+La migration `netstat` précédente violait le principe : elle **ajoutait**
+`buildNetstatInspect()` à `LinuxCommandExecutor` (la classe qu'on veut
+supprimer) et le rendu restait dans `LinuxNetCommands` (net command legacy).
+Correction alignée sur les 4 classes pivots (équipement, interpréteur,
+commande, `MachineApi`) — la commande n'est qu'une **façade** vers
+l'équipement.
+
+- **Donnée depuis l'équipement** : `buildNetstatInspect()` retiré de
+  l'exécuteur. `NetstatInspectApi` est désormais câblée dans **`LinuxMachine`**
+  (l'équipement), qui lit son propre `IpNetworkContext` (routes/interfaces —
+  déjà construit par l'équipement puis prêté à l'exécuteur), sa propre
+  `SocketTable` (`getSocketTable`), son `profile.isServer`, et la résolution de
+  service via l'API publique existante — **sans étendre l'exécuteur**.
+- **Rendu hors legacy** : la logique de rendu quitte `LinuxNetCommands` pour la
+  couche commande — `command-kernel/commands/netstatRender.ts`
+  (`renderNetstat`). Les formateurs partagés avec `ss` (`formatEndpoint`/
+  `familyVisible`/`socketVisible`) sont extraits dans un module pur neutre
+  `linux/net/socketDisplay.ts` (ni exécuteur, ni classe de commande). `cmdSs`
+  et `cmdNetstat`(→`renderNetstat`) l'importent ; sortie inchangée.
+- Tests : `ss-netstat` + `netstat-stream-ui` + `socket-table` +
+  `service-port-coherence` 133/133 ; sweep routing/ssh-lan/command-kernel/
+  oracle-tools inchangé (seul échec Windows-ping préexistant). `tsc` propre,
+  aucune nouvelle alerte eslint.
+
 ## Socle + Linux — `netstat` migré au noyau (`NetstatInspectApi`, mode `-c`) (§14.6)
 
 **État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**

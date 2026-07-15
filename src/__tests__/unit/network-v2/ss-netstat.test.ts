@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { SocketTable } from '@/network/core/SocketTable';
-import { cmdSs, cmdNetstat, type NetstatInputs } from '@/network/devices/linux/LinuxNetCommands';
+import { cmdSs } from '@/network/devices/linux/LinuxNetCommands';
+import { renderNetstat as cmdNetstat, type NetstatInputs } from '@/network/devices/linux/command-kernel/commands/netstatRender';
 import { LinuxPC } from '@/network/devices/LinuxPC';
 import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
 import { EventBus, __setDefaultEventBus } from '@/events/EventBus';

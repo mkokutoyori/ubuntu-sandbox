@@ -126,6 +126,7 @@ import { CommandRegistry } from '@/command-kernel/registry/command-registry';
 import { createSession, Session } from '@/command-kernel/session/types';
 import { CommandIO } from '@/command-kernel/io/types';
 import type { CommandKernelChannel } from '@/command-kernel/io/channel';
+import type { NetstatIfaceView } from '@/command-kernel/machine/types';
 import { createLinuxHostShell } from './linux/command-kernel/createLinuxHostShell';
 import { resolveLinuxUser } from './linux/command-kernel/LinuxUser';
 
@@ -153,6 +154,9 @@ export abstract class LinuxMachine extends EndHost
 
   /** Active profile — describes the "flavor" of this Linux machine. */
   public readonly profile: LinuxProfile;
+
+  /** Vue réseau (routes/interfaces) construite par l'équipement — source de `netstat -r`/`-i`. */
+  private ipNetworkContext?: IpNetworkContext;
 
   /** Kernel services: VFS, users, iptables, services, processes. */
   protected readonly executor: LinuxCommandExecutor;
@@ -279,7 +283,8 @@ export abstract class LinuxMachine extends EndHost
     this.greAgentInstance = new GreAgent(greHost, () => this.getBus());
     this.greAgentInstance.start();
     this.greAgent = this.greAgentInstance;
-    this.executor.setIpNetworkContext(buildIpCtx(this.net, this.xfrmCtx, this.greAgentInstance));
+    this.ipNetworkContext = buildIpCtx(this.net, this.xfrmCtx, this.greAgentInstance);
+    this.executor.setIpNetworkContext(this.ipNetworkContext);
     // NSS `dns` source resolves through real UDP/53 once resolv.conf
     // names a non-loopback server (loopback = systemd-resolved stub,
     // modelled by the legacy fallback).
@@ -1793,7 +1798,30 @@ export abstract class LinuxMachine extends EndHost
           }
           return { bytesIn, bytesOut };
         },
-        netstatInspect: this.executor.buildNetstatInspect(),
+        netstatInspect: {
+          routes: () => this.ipNetworkContext
+            ? this.ipNetworkContext.getRoutingTable().map((r) => ({
+                network: r.network, cidr: r.cidr, nextHop: r.nextHop, iface: r.iface, isDefault: r.type === 'default',
+              }))
+            : null,
+          interfaces: () => {
+            const ctx = this.ipNetworkContext;
+            if (!ctx) return null;
+            const out: NetstatIfaceView[] = [];
+            for (const name of ctx.getInterfaceNames()) {
+              const i = ctx.getInterfaceInfo(name);
+              if (!i) continue;
+              out.push({ name: i.name, mtu: i.mtu, framesIn: i.counters.framesIn, framesOut: i.counters.framesOut, isUp: i.isUp, isConnected: i.isConnected });
+            }
+            return out;
+          },
+          sockets: () => this.getSocketTable().getAll().map((s) => ({
+            protocol: s.protocol, localAddress: s.localAddress, localPort: s.localPort,
+            remoteAddress: s.remoteAddress, remotePort: s.remotePort, state: s.state, pid: s.pid, processName: s.processName,
+          })),
+          resolveService: (port, proto) => this.executor.resolveServiceName(port, proto),
+          isServer: () => this.profile.isServer,
+        },
         osIdentity: () => {
           const id = this.executor.identity;
           return {
