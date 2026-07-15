@@ -22,10 +22,14 @@ import {
   ProcessInfo as CkProcessInfo,
   ProcessControlApi,
   ProcessEntry,
+  SftpBatchLineResult,
+  SftpConnectApi,
+  SftpConnectResult,
   SyslogWriteResult,
   UserManagementApi,
 } from '@/command-kernel/machine/types';
-import { FileSystemError, FileSystemErrorCode } from '@/command-kernel/errors';
+import { CommandNotFoundError, FileSystemError, FileSystemErrorCode } from '@/command-kernel/errors';
+import { ExitRequest } from '@/command-kernel/shell/exit';
 import { User } from '@/command-kernel/session/types';
 import type { Port } from '@/network/hardware/Port';
 import { PathError, type PathActor, type VfsPath } from '../VfsPath';
@@ -37,6 +41,11 @@ import type { LinuxLogManager } from '../LinuxLogManager';
 import type { LinuxNetKernel } from '../LinuxNetKernel';
 import { IPAddress, IPv6Address } from '@/network/core/types';
 import { LinuxUser, resolveLinuxUser } from './LinuxUser';
+import { SftpSession } from '@/network/protocols/ssh/sftp/SftpSession';
+import { SilentSshInteractionHandler } from '@/network/protocols/ssh/session/ISshInteractionHandler';
+import { createSftpShell } from '@/network/protocols/ssh/sftp/command-kernel/createSftpShell';
+import { normalizeSftpVerbCase, runSftpLine } from '@/network/protocols/ssh/sftp/command-kernel/runSftpLine';
+import type { TcpConnector } from '@/network/tcp/types';
 
 const NODE_TYPES: Record<INode['type'], FileNodeType> = {
   file: 'file',
@@ -65,6 +74,8 @@ export interface LinuxMachineApiDeps {
   reverseLookup?(ip: string): string | null;
   udpRangeDenied?(startPort: number, endPort: number): boolean;
   createSkeleton?(username: string): void;
+  /** Ouvre une vraie connexion TCP sortante depuis cet équipement (`sftp` lanceur) — absent sur les vendeurs sans pile TCP cliente. */
+  tcpConnect?(host: string, port: number): Promise<unknown>;
 }
 
 function toPathActor(actor: FileSystemActor): PathActor {
@@ -733,6 +744,74 @@ class LinuxPermissionsApi implements PermissionsApi {
   }
 }
 
+/**
+ * Ouverture d'une connexion sftp cliente réelle (`sftp` lanceur, framework
+ * §14.6 Push C) — construit et connecte une VRAIE `SftpSession` (SSH + canal
+ * SFTP, trames à travers Equipment/Port/Cable), exactement comme le faisait
+ * l'ancien `connectAndEnterSftp` legacy. `runLine`/`prompt`/`disconnect` du
+ * résultat retour délèguent au même shell command-kernel sftp que le
+ * sous-shell interactif (`createSftpShell` + `runSftpLine`, jamais une
+ * seconde implémentation) — seule la politique du fichier de batch reste
+ * portée par `SftpLauncherCommand`.
+ */
+class LinuxSftpConnectApi implements SftpConnectApi {
+  constructor(
+    private readonly vfs: VirtualFileSystem,
+    private readonly userManager: LinuxUserManager,
+    private readonly tcpConnect: (host: string, port: number) => Promise<unknown>,
+  ) {}
+
+  async connect(
+    userAtHost: string,
+    password: string,
+    opts: { readonly port?: number; readonly localCwd: string },
+  ): Promise<SftpConnectResult> {
+    const currentUser = this.userManager.currentUser;
+    const account = this.userManager.getUser(currentUser);
+    const home = account?.home ?? `/home/${currentUser}`;
+    const session = new SftpSession({
+      tcpConnector: (host, port) => this.tcpConnect(host, port) as ReturnType<TcpConnector>,
+      localVfs: this.vfs as never,
+      localUser: currentUser,
+      localUid: account?.uid ?? 1000,
+      localGid: account?.gid ?? 1000,
+      localCwd: opts.localCwd,
+      knownHostsPath: `${home}/.ssh/known_hosts`,
+      interactionHandler: new SilentSshInteractionHandler(password),
+      homeDirectory: home,
+    });
+
+    const banner = await session.connect(userAtHost, { password, port: opts.port });
+    if (!session.isConnected()) return { ok: false, banner };
+
+    const shell = createSftpShell(session);
+    return {
+      ok: true,
+      banner,
+      handle: session,
+      prompt: session.getPrompt(),
+      runLine: async (line: string): Promise<SftpBatchLineResult> => {
+        const verb = normalizeSftpVerbCase(line.trim());
+        if (!verb) return { output: [''], exit: false };
+        try {
+          const text = await runSftpLine(shell, session, verb);
+          return { output: text.split('\n'), exit: false };
+        } catch (err) {
+          if (err instanceof ExitRequest) {
+            session.disconnect();
+            return { output: [''], exit: true };
+          }
+          if (err instanceof CommandNotFoundError) {
+            return { output: ['Invalid command.'], exit: false };
+          }
+          throw err;
+        }
+      },
+      disconnect: () => session.disconnect(),
+    };
+  }
+}
+
 class LinuxPowerApi implements PowerApi {
   constructor(private readonly deps: Pick<LinuxMachineApiDeps, 'powerOn' | 'powerOff'>) {}
 
@@ -752,6 +831,7 @@ export class LinuxMachineApi implements MachineApi {
   readonly processControl: ProcessControlApi;
   readonly net: NetworkApi;
   readonly netProbe?: NetProbeApi;
+  readonly sftpConnect?: SftpConnectApi;
   readonly users: UserManagementApi;
   readonly groups: GroupManagementApi;
   readonly power: PowerApi;
@@ -767,6 +847,9 @@ export class LinuxMachineApi implements MachineApi {
     this.net = new LinuxNetworkApi(() => deps.ports);
     if (deps.netKernel) {
       this.netProbe = new LinuxNetProbeApi(deps.netKernel, () => deps.ports, deps);
+    }
+    if (deps.tcpConnect) {
+      this.sftpConnect = new LinuxSftpConnectApi(deps.vfs, deps.userManager, deps.tcpConnect);
     }
     this.users = new LinuxUserManagementApi(deps.userManager, deps.createSkeleton);
     this.groups = new LinuxGroupManagementApi(deps.userManager);

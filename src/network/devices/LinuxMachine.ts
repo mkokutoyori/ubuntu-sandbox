@@ -352,6 +352,7 @@ export abstract class LinuxMachine extends EndHost
     this.executor._commandKernelHook = (cmd, args, stdin, env) => {
       const { registry } = this.getCommandKernelShell();
       if (!registry.has(cmd)) return null;
+      if (!LinuxMachine.kernelClaimsCommand(cmd, this._activeKernelChannel)) return null;
       return this.runCommandKernelResolved(cmd, args, stdin, env, this._activeKernelChannel);
     };
 
@@ -1783,6 +1784,7 @@ export abstract class LinuxMachine extends EndHost
         },
         neighborMac: (ip) => this.executor.neighborMac(ip),
         reverseLookup: (ip) => this.executor.reverseHostLookup(ip),
+        tcpConnect: (host, port) => this.tcpConnect(host, port),
         udpRangeDenied: (startPort, endPort) => {
           try {
             for (const dev of EquipmentRegistry.getInstance().getAll()) {
@@ -1860,12 +1862,30 @@ export abstract class LinuxMachine extends EndHost
     });
   }
 
+  /**
+   * `sftp` porte deux usages distincts : le lanceur command-kernel
+   * (dialogue de mot de passe interactif, remise de sous-shell — §14.6
+   * Push C) et l'ancien moteur de script `runSshTransport`/
+   * `SftpInteractiveSession` (invocation sans terminal humain — tests,
+   * heredoc, exec SSH distant — jamais migré, un chantier séparé). Sans
+   * canal d'interaction réel, le lanceur ne peut de toute façon rien faire
+   * d'utile (mot de passe introuvable) : on décline pour laisser le
+   * dispatch legacy le prendre en charge, exactement comme avant cette
+   * migration. Les autres commandes migrées n'ont pas cette double vie —
+   * elles restent toujours réclamées par le kernel.
+   */
+  private static kernelClaimsCommand(name: string, channel: CommandKernelChannel | undefined): boolean {
+    if (name !== 'sftp') return true;
+    return channel?.interaction !== undefined;
+  }
+
   private async tryCommandKernel(
     trimmed: string,
     channel?: CommandKernelChannel,
   ): Promise<string | null> {
     const routable = this.parseKernelRoutable(trimmed);
     if (!routable) return null;
+    if (!routable.names.every((name) => LinuxMachine.kernelClaimsCommand(name, channel))) return null;
     const { interpreter } = this.getCommandKernelShell();
 
     for (const name of routable.names) this.executor.publishCommandExecve(name);
@@ -1948,7 +1968,7 @@ export abstract class LinuxMachine extends EndHost
     if (stdinContent !== undefined) await stdin.write(stdinContent);
     await stdin.close();
     return {
-      io: { stdin, stdout: collector, stderr: collector, interaction: channel?.interaction },
+      io: { stdin, stdout: collector, stderr: collector, interaction: channel?.interaction, openSubShell: channel?.openSubShell },
       chunks,
     };
   }

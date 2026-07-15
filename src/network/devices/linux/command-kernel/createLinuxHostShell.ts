@@ -21,6 +21,7 @@ import { GrepCommand } from './commands/Grep';
 import { PingCommand, Ping6Command } from './commands/Ping';
 import { TracerouteCommand } from './commands/Traceroute';
 import { ArpingCommand } from './commands/Arping';
+import { SftpLauncherCommand } from './commands/Sftp';
 import { UseraddCommand } from './commands/Useradd';
 import { AdduserCommand, AddgroupCommand } from './commands/Adduser';
 import { GroupsCommand } from './commands/Groups';
@@ -134,6 +135,7 @@ export function createLinuxHostShell(deps: LinuxMachineApiDeps): Interpreter {
   registry.register(() => new Ping6Command());
   registry.register(() => new TracerouteCommand());
   registry.register(() => new ArpingCommand());
+  registry.register(() => new SftpLauncherCommand());
   registry.register(() => new UseraddCommand());
   registry.register(() => new AdduserCommand());
   registry.register(() => new AddgroupCommand());

@@ -38,4 +38,12 @@ export interface CommandIO {
    * absence en erreur métier propre.
    */
   readonly interaction?: InteractionChannel;
+  /**
+   * Remise d'un sous-shell interactif à l'hôte (ex: `sftp` après connexion,
+   * framework §5.5) — absent quand aucun hôte ne sait en accueillir un
+   * (script, pont non câblé). `kind` identifie le type de sous-shell,
+   * `payload` est la poignée opaque renvoyée par la capacité machine qui a
+   * ouvert la connexion.
+   */
+  readonly openSubShell?: (kind: string, payload: unknown) => void;
 }
