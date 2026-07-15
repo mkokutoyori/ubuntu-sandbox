@@ -4,13 +4,13 @@ import { FileSystemError } from '@/command-kernel/errors';
 import { toFileSystemActor } from '@/command-kernel/machine/types';
 import { DefaultPrivilegePolicy } from '@/command-kernel/session/privilege-policy';
 import { PrivilegeLevel } from '@/command-kernel/session/types';
-import { sliceTail, tailHeader, type TailOptions } from '../../coreutils/TailCommand';
+import { sliceTail, tailHeader, computeAppended, type TailOptions } from '../../coreutils/TailCommand';
 
 export class TailCommand extends BaseCommand {
   readonly descriptor: CommandDescriptor = {
     name: 'tail',
     summary: 'Affiche les dernières lignes d\'un fichier ou de l\'entrée standard',
-    usage: 'tail [-n N] [-c N] [-q] [-v] [fichier...]',
+    usage: 'tail [-f] [-F] [-n N] [-c N] [-q] [-v] [fichier...]',
     args: [{ name: 'files', type: 'path', required: false, variadic: true, description: 'fichiers à lire' }],
     options: [
       { long: 'lines', short: 'n', takesValue: true, type: 'string', defaultValue: '10', numericShorthand: true, description: 'nombre de lignes' },
@@ -18,10 +18,28 @@ export class TailCommand extends BaseCommand {
       { long: 'quiet', short: 'q', takesValue: false, description: 'jamais d\'en-tête de fichier' },
       { long: 'silent', takesValue: false, description: 'alias de --quiet' },
       { long: 'verbose', short: 'v', takesValue: false, description: 'toujours un en-tête de fichier' },
+      { long: 'follow', short: 'f', takesValue: false, description: 'suit le fichier et émet les ajouts au fil de l\'eau' },
+      { long: 'follow-name', short: 'F', takesValue: false, description: 'comme -f mais réessaie un fichier absent (implique --retry)' },
+      { long: 'retry', takesValue: false, description: 'réessaie d\'ouvrir un fichier inaccessible' },
+      { long: 'sleep-interval', short: 's', takesValue: true, type: 'string', description: 'intervalle de sondage (sans effet : suivi événementiel)' },
     ],
     privileges: new DefaultPrivilegePolicy(PrivilegeLevel.ANY),
     category: 'texte',
   };
+
+  /**
+   * `-f`/`-F` tiennent le terminal et émettent les ajouts au fil de l'eau :
+   * l'invocation est en flux continu (§14.6), sinon c'est un instantané. La
+   * commande décide selon ses arguments, pas l'hôte.
+   */
+  override isStreaming(argv: readonly string[]): boolean {
+    for (const a of argv) {
+      if (a === '--follow' || a.startsWith('--follow=')) return true;
+      if (a.startsWith('--')) continue;
+      if (a.startsWith('-') && a.length > 1 && /[fF]/.test(a)) return true;
+    }
+    return false;
+  }
 
   async execute(ctx: CommandContext): Promise<ExitCode> {
     const files = ctx.args.has('files') ? ctx.args.get<string[]>('files') : [];
@@ -31,6 +49,11 @@ export class TailCommand extends BaseCommand {
     const opts: TailOptions = ctx.args.has('bytes')
       ? parseCount(ctx.args.get<string>('bytes'), 'bytes')
       : parseCount(ctx.args.has('lines') ? ctx.args.get<string>('lines') : '10', 'lines');
+
+    if (ctx.args.flag('follow') || ctx.args.flag('follow-name')) {
+      const retry = ctx.args.flag('follow-name') || ctx.args.flag('retry');
+      return this.runFollow(ctx, files, opts, quiet, verbose, retry);
+    }
 
     if (files.length === 0) {
       const content = await ctx.io.stdin.readAll();
@@ -65,6 +88,103 @@ export class TailCommand extends BaseCommand {
     }
     await ctx.io.stdout.write(parts.length > 0 ? `${parts.join('\n')}\n` : '');
     return exitCode;
+  }
+
+  /**
+   * Mode suivi (`-f`/`-F`, §14.6) : émet l'instantané tail-N puis s'abonne
+   * aux écritures (`ctx.machine.fs.watchWrites`) pour diffuser les octets
+   * ajoutés au fil de l'eau, jusqu'à Ctrl+C (`ctx.signal`). Événementiel :
+   * chaque écriture déclenche l'émission dans le même tick, sans sondage.
+   */
+  private async runFollow(
+    ctx: CommandContext,
+    files: readonly string[],
+    opts: TailOptions,
+    quiet: boolean,
+    verbose: boolean,
+    retry: boolean,
+  ): Promise<ExitCode> {
+    if (files.length === 0) {
+      await ctx.io.stdout.write('tail: warning: following standard input indefinitely is ineffective\n');
+      await this.blockUntilAborted(ctx);
+      return EXIT_OK;
+    }
+
+    const actor = toFileSystemActor(ctx.session.user);
+    const showHeaders = verbose || (!quiet && files.length > 1);
+    const tracked = new Map<string, { abs: string; last: string }>();
+    let activeFile: string | null = null;
+    let exitCode: ExitCode = EXIT_OK;
+
+    const emitAppend = (display: string, current: string): void => {
+      const tracker = tracked.get(display);
+      if (!tracker) return;
+      const appended = computeAppended(tracker.last, current);
+      if (appended === null) {
+        void ctx.io.stdout.write(`tail: ${display}: file truncated\n`);
+        tracker.last = current;
+        return;
+      }
+      if (appended.length === 0) return;
+      if (showHeaders && activeFile !== display) {
+        void ctx.io.stdout.write(`\n${tailHeader(display)}\n`);
+        activeFile = display;
+      } else if (activeFile === null) {
+        activeFile = display;
+      }
+      void ctx.io.stdout.write(appended);
+      tracker.last = current;
+    };
+
+    // Phase d'amorçage : chaque fichier émet son tail-N avant l'abonnement,
+    // pour que le flux vivant reprenne exactement là où l'instantané s'arrête.
+    for (let i = 0; i < files.length; i++) {
+      const display = files[i];
+      const abs = ctx.machine.fs.resolve(ctx.session.cwd, display);
+      let initial: string | null;
+      try {
+        initial = await ctx.machine.fs.readFile(abs, actor);
+      } catch (err) {
+        if (!(err instanceof FileSystemError)) throw err;
+        initial = null;
+      }
+      if (initial === null) {
+        await ctx.io.stdout.write(`tail: cannot open '${display}' for reading: No such file or directory\n`);
+        if (retry) {
+          tracked.set(display, { abs, last: '' });
+        } else {
+          exitCode = 1;
+        }
+        continue;
+      }
+      tracked.set(display, { abs, last: initial });
+      const slice = sliceTail(initial, opts);
+      if (showHeaders) {
+        if (i > 0 && activeFile !== null) await ctx.io.stdout.write('\n');
+        await ctx.io.stdout.write(`${tailHeader(display)}\n`);
+        activeFile = display;
+      }
+      if (slice !== '') await ctx.io.stdout.write(slice.endsWith('\n') ? slice : `${slice}\n`);
+    }
+
+    const unsubs: Array<() => void> = [];
+    const watch = ctx.machine.fs.watchWrites;
+    if (watch) {
+      for (const [display, tracker] of tracked) {
+        unsubs.push(watch.call(ctx.machine.fs, tracker.abs, (current) => emitAppend(display, current)));
+      }
+    }
+
+    await this.blockUntilAborted(ctx);
+    for (const unsub of unsubs) unsub();
+    return exitCode;
+  }
+
+  private blockUntilAborted(ctx: CommandContext): Promise<void> {
+    return new Promise<void>((resolve) => {
+      if (ctx.signal.aborted) { resolve(); return; }
+      ctx.signal.addEventListener('abort', () => resolve(), { once: true });
+    });
   }
 }
 

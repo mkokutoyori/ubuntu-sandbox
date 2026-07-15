@@ -389,6 +389,10 @@ class LinuxFileSystemApi implements FileSystemApi {
     const p = this.vfs.path(path, '/', toPathActor(actor));
     return p.realpath(requireFinal)?.value ?? null;
   }
+
+  watchWrites(path: string, cb: (current: string) => void): () => void {
+    return this.vfs.onWrite(path, (event) => cb(event.current));
+  }
 }
 
 class LinuxProcessApi implements ProcessApi {

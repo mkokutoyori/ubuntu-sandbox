@@ -100,6 +100,14 @@ export interface FileSystemApi {
    * n'existe pas.
    */
   realpath?(path: string, actor: FileSystemActor, requireFinal: boolean): Promise<string | null>;
+  /**
+   * Souscrit aux écritures sur `path` (`tail -f`/`tail -F`) — optionnel,
+   * vendeurs dont le système de fichiers notifie les écritures. `cb` reçoit
+   * le contenu courant complet du fichier à chaque écriture ; renvoie une
+   * fonction de désabonnement. `path` doit être déjà résolu en absolu
+   * (`resolve(cwd, p)`), comme pour `readFile`.
+   */
+  watchWrites?(path: string, cb: (current: string) => void): () => void;
 }
 
 export interface ProcessInfo {

@@ -5,6 +5,40 @@ progressive par équipement. Un push = une entrée = une fonctionnalité
 complète et testée (voir `CLAUDE.md` / le framework de migration pour les
 principes directeurs).
 
+## Socle + Linux — `tail -f`/`-F` migré au noyau + `isStreaming(argv)` côté Linux (§14.6)
+
+**État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
+
+Première convergence d'un intercepteur de flux **Linux**. `tail -f` était routé
+par l'intercepteur dédié `tryStartTailStream` de `LinuxTerminalSession` ; il
+passe désormais par l'entrée générique `tryStartKernelStream`, comme une
+commande noyau normale à mode dépendant des arguments.
+
+- **`LinuxMachine.isKernelStreamingLine` consulte `cmd.isStreaming(argv)`**
+  (miroir de Windows) : `parseKernelRoutable` remonte désormais l'`argv` par
+  étage, et c'est la commande — pas l'hôte — qui décide du mode flux. Le
+  drapeau statique `descriptor.streaming` reste le défaut.
+- **`TailCommand` (noyau) gère `-f`/`-F`/`--retry`/`-s`** : `isStreaming(argv)`
+  vrai dès qu'un `-f`/`-F` est présent ; `runFollow` émet l'instantané tail-N
+  puis diffuse les octets ajoutés au fil de l'eau jusqu'à Ctrl+C
+  (`ctx.signal`). Réutilise les fonctions pures partagées `sliceTail`/
+  `tailHeader`/`computeAppended`.
+- **Nouvelle capacité socle `FileSystemApi.watchWrites?(path, cb)`** (§0.1 :
+  ajouter une capacité, ne jamais contourner) : abonnement aux écritures d'un
+  fichier, exposé côté Linux via `VirtualFileSystem.onWrite` — la commande
+  n'accède au système de fichiers que par `ctx.machine.fs`. Suivi
+  **événementiel** (émission dans le même tick que l'écriture), pas de sondage.
+- `tryStartTailStream` + le dispatch supprimés de `LinuxTerminalSession` ;
+  `LinuxMachine.startTailFollowInSession` et
+  `LinuxCommandExecutor.startTailFollow`/`tryStartTailFollow`/`tailFs`
+  supprimés (câblage de production désormais mort), avec leurs imports.
+- Tests : `tail-follow-ui` (chemin bout-en-bout via la session : amorçage,
+  ajouts, Ctrl+C, compteur React, repli non-suivi) + `tail` (35/35 ; le bloc
+  suivi retargeté sur le moteur pur partagé `TailCommand.startFollow` que la
+  commande noyau réutilise). Sweep des intercepteurs restants
+  (`free`/`netstat`/`vmstat`/`mpstat`/`dmesg`-stream-ui) 33/33 — inchangés.
+  `tsc` propre, aucune nouvelle alerte eslint.
+
 ## Socle + Windows — `pathping` migré : dernier intercepteur de flux `cmd` convergé (§14.6)
 
 **État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**

@@ -2,10 +2,11 @@
  * tail — exhaustive behaviour spec.
  *
  * Snapshot mode is driven through the live LinuxCommandExecutor;
- * follow mode is driven through the new VFS write-listener registry
- * plus the executor's `startTailFollow()` entry point. A separate
- * integration block drives the terminal session end-to-end so the
- * UI-facing addLine pipeline is exercised.
+ * follow mode is exercised through the shared `TailCommand.startFollow`
+ * engine (which the `tail` command-kernel command reuses) on top of the
+ * VFS write-listener registry. The end-to-end production path — the kernel
+ * `tail -f` command streaming through a terminal session — is covered by
+ * `tail-follow-ui.test.ts`.
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';
@@ -103,7 +104,12 @@ describe('sliceTail', () => {
 });
 
 // ─── Follow mode via the executor ───────────────────────────────────────
-describe('tail -f via executor.startTailFollow', () => {
+// La logique de suivi de production vit désormais dans la commande noyau
+// `TailCommand` (voir `tail-follow-ui.test.ts` pour le chemin bout-en-bout via
+// la session). Ces cas exercent le moteur pur partagé `TailCommand.startFollow`
+// (mêmes sémantiques : amorçage, ajouts, en-têtes multi-fichiers, `-F`,
+// troncature) que la commande noyau réutilise.
+describe('tail -f follow engine (TailCommand.startFollow)', () => {
   function collect(): { sink: TailSink; lines: string[]; flush(): string } {
     const buf: string[] = [];
     return {
@@ -117,10 +123,24 @@ describe('tail -f via executor.startTailFollow', () => {
     };
   }
 
+  function follow(line: string, sink: TailSink): TailFollowHandle | null {
+    const toks = line.trim().split(/\s+/);
+    if (toks[0] !== 'tail') return null;
+    const opts = parseTailArgs(toks.slice(1));
+    if (opts.follow === 'none') return null;
+    const cmd = new TailCommand({
+      readFile: (p) => exec.vfs.readFile(p),
+      exists:   (p) => exec.vfs.exists(p),
+      onWrite:  (p, cb) => exec.vfs.onWrite(p, cb),
+      normalizePath: (p, cwd) => exec.vfs.normalizePath(p, cwd),
+    });
+    return cmd.startFollow({ ...opts }, '/', sink);
+  }
+
   it('F1 emits the initial tail snapshot through the sink', () => {
     write('/tmp/log', 'one\ntwo\nthree\n');
     const c = collect();
-    const handle = exec.startTailFollow('tail -f /tmp/log', c.sink);
+    const handle = follow('tail -f /tmp/log', c.sink);
     expect(handle).not.toBeNull();
     expect(c.flush()).toContain('three');
     handle!.cancel();
@@ -128,7 +148,7 @@ describe('tail -f via executor.startTailFollow', () => {
   it('F2 streams every appended write while the handle is active', () => {
     write('/tmp/log', 'start\n');
     const c = collect();
-    const handle = exec.startTailFollow('tail -f /tmp/log', c.sink)!;
+    const handle = follow('tail -f /tmp/log', c.sink)!;
     append('/tmp/log', 'live-1\n');
     append('/tmp/log', 'live-2\n');
     const out = c.flush();
@@ -139,7 +159,7 @@ describe('tail -f via executor.startTailFollow', () => {
   it('F3 cancel() detaches the listener — further writes are dropped', () => {
     write('/tmp/log', 'seed\n');
     const c = collect();
-    const handle = exec.startTailFollow('tail -f /tmp/log', c.sink)!;
+    const handle = follow('tail -f /tmp/log', c.sink)!;
     const before = c.flush();
     handle.cancel();
     append('/tmp/log', 'after-cancel\n');
@@ -148,7 +168,7 @@ describe('tail -f via executor.startTailFollow', () => {
   it('F4 reports truncation as a non-fatal warning', () => {
     write('/tmp/log', 'long-line-1\nlong-line-2\n');
     const c = collect();
-    const handle = exec.startTailFollow('tail -f /tmp/log', c.sink)!;
+    const handle = follow('tail -f /tmp/log', c.sink)!;
     write('/tmp/log', 'tiny\n');
     expect(c.flush()).toContain('file truncated');
     handle.cancel();
@@ -157,7 +177,7 @@ describe('tail -f via executor.startTailFollow', () => {
     write('/tmp/a', 'A\n');
     write('/tmp/b', 'B\n');
     const c = collect();
-    const handle = exec.startTailFollow('tail -f /tmp/a /tmp/b', c.sink)!;
+    const handle = follow('tail -f /tmp/a /tmp/b', c.sink)!;
     append('/tmp/a', 'append-a\n');
     append('/tmp/b', 'append-b\n');
     const out = c.flush();
@@ -169,12 +189,12 @@ describe('tail -f via executor.startTailFollow', () => {
   });
   it('F6 startTailFollow returns null for non-follow tails', () => {
     write('/tmp/log', 'x\n');
-    expect(exec.startTailFollow('tail -n 5 /tmp/log', collect().sink)).toBeNull();
-    expect(exec.startTailFollow('cat /tmp/log',       collect().sink)).toBeNull();
+    expect(follow('tail -n 5 /tmp/log', collect().sink)).toBeNull();
+    expect(follow('cat /tmp/log',       collect().sink)).toBeNull();
   });
   it('F7 -F enables retry mode and tracks a not-yet-created file', () => {
     const c = collect();
-    const handle = exec.startTailFollow('tail -F /tmp/future', c.sink)!;
+    const handle = follow('tail -F /tmp/future', c.sink)!;
     expect(c.flush()).toContain('No such file or directory');
     write('/tmp/future', 'arrived\n');
     expect(c.flush()).toContain('arrived');
@@ -182,14 +202,14 @@ describe('tail -f via executor.startTailFollow', () => {
   });
   it('F8 active flag transitions on cancel', () => {
     write('/tmp/log', 'x\n');
-    const handle = exec.startTailFollow('tail -f /tmp/log', collect().sink)!;
+    const handle = follow('tail -f /tmp/log', collect().sink)!;
     expect(handle.active).toBe(true);
     handle.cancel();
     expect(handle.active).toBe(false);
   });
   it('F9 cancel() is idempotent', () => {
     write('/tmp/log', 'x\n');
-    const handle = exec.startTailFollow('tail -f /tmp/log', collect().sink)!;
+    const handle = follow('tail -f /tmp/log', collect().sink)!;
     handle.cancel(); handle.cancel();    // second cancel must not throw
     expect(handle.active).toBe(false);
   });

@@ -327,7 +327,7 @@ export class TailCommand {
  * the appended suffix; otherwise (`current` shorter, or divergent) return
  * `null` to signal a truncation/rotation that the caller should report.
  */
-function computeAppended(previous: string, current: string): string | null {
+export function computeAppended(previous: string, current: string): string | null {
   if (current.length < previous.length) return null;
   if (current.startsWith(previous)) return current.slice(previous.length);
   return null;

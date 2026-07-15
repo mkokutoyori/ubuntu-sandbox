@@ -1817,7 +1817,7 @@ export abstract class LinuxMachine extends EndHost
     return this.commandKernelShell;
   }
 
-  private parseKernelRoutable(trimmed: string): { names: string[] } | null {
+  private parseKernelRoutable(trimmed: string): { names: string[]; stages: { name: string; argv: string[] }[] } | null {
     if (trimmed.includes('$(') || trimmed.includes('`')) return null;
     const { registry } = this.getCommandKernelShell();
     let ast;
@@ -1835,7 +1835,10 @@ export abstract class LinuxMachine extends EndHost
     // au même titre que la substitution de commande — la ligne repart vers
     // les builtins de contrôle de tâche (`runJobBuiltinIfMatching`).
     if (stages.some((stage) => stage.argv.some((word) => word.text.startsWith('%')))) return null;
-    return { names };
+    return {
+      names,
+      stages: stages.map((stage) => ({ name: stage.name, argv: stage.argv.map((word) => word.text) })),
+    };
   }
 
   /**
@@ -1847,7 +1850,14 @@ export abstract class LinuxMachine extends EndHost
     const routable = this.parseKernelRoutable(line.trim());
     if (!routable) return false;
     const { registry } = this.getCommandKernelShell();
-    return routable.names.some((name) => registry.resolve(name)?.descriptor.streaming === true);
+    return routable.stages.some((stage) => {
+      const cmd = registry.resolve(stage.name);
+      if (!cmd) return false;
+      // C'est la commande qui décide (`isStreaming(argv)`), pas l'hôte : un
+      // mode dépendant des arguments (`tail -f`, `netstat <intervalle>`) le
+      // redéfinit ; sinon le drapeau statique du descripteur fait foi (§14.6).
+      return cmd.isStreaming ? cmd.isStreaming(stage.argv) : cmd.descriptor.streaming === true;
+    });
   }
 
   private async tryCommandKernel(
@@ -3012,28 +3022,6 @@ export abstract class LinuxMachine extends EndHost
         }
       });
     });
-  }
-
-  /**
-   * Open a `tail -f` / `tail -F` follow stream against the given shell
-   * session's cwd. The handle's VFS subscriptions persist after the
-   * session-state restore — once paths are resolved at attach time, the
-   * stream lives on the filesystem listener registry independent of any
-   * executor swap-in. Returns `null` when `commandLine` is not a follow
-   * tail; the caller should then fall back to the normal command path.
-   */
-  startTailFollowInSession(
-    commandLine: string,
-    session: LinuxShellSession,
-    sink: import('./linux/coreutils').TailSink,
-  ): import('./linux/coreutils').TailFollowHandle | null {
-    if (!this.isPoweredOn) return null;
-    if (session.disposed) return null;
-    return this.sessionSwap.withinSync(
-      session,
-      () => this.executor.startTailFollow(commandLine, sink),
-      { capture: false },
-    );
   }
 
   async runCommandFrameInSession(commandLine: string, session: LinuxShellSession): Promise<string> {

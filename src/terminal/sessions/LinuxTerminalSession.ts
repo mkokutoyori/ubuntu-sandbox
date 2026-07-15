@@ -825,42 +825,6 @@ export class LinuxTerminalSession extends TerminalSession {
   }
 
   /**
-   * Detect `tail -f` / `tail -F` and, on a match, open a follow stream
-   * whose sink pumps appended file content through `addLine` so React
-   * re-renders pick it up live. Returns `true` when a stream was opened
-   * (caller must stop processing this command); `false` for any other
-   * input. Falls back silently when the device is not a LinuxMachine or
-   * no shell session is allocated.
-   */
-  private tryStartTailStream(commandLine: string): boolean {
-    if (this.hasForegroundAsyncJob) return false;
-    const dev = this.device;
-    if (!(dev instanceof LinuxMachine) || !this.shell) return false;
-    const shell = this.shell;
-    let handle: import('@/network/devices/linux/coreutils').TailFollowHandle | null = null;
-    const job = this.startAsyncCommand({
-      mode: 'foreground',
-      kind: 'streaming',
-      command: commandLine,
-      prepare: (ctx) => {
-        handle = dev.startTailFollowInSession(commandLine, shell, {
-          write: (chunk) => ctx.sink.write(chunk),
-          warn:  (msg)   => ctx.sink.error(msg),
-          error: (msg)   => ctx.sink.error(msg),
-        });
-        if (!handle) return false;
-        ctx.onCancel(() => handle?.cancel());
-        return true;
-      },
-      run: (ctx) => new Promise<void>((resolve) => {
-        if (ctx.cancelled()) { resolve(); return; }
-        ctx.onCancel(() => resolve());
-      }),
-    });
-    return job !== null;
-  }
-
-  /**
    * Canal unique pour toute commande command-kernel declaree `streaming`
    * par son descripteur : job de premier plan, sortie ligne a ligne au fil
    * de l'eau, Ctrl+C relaye via AbortSignal, dialogues via InteractionChannel.
@@ -1443,7 +1407,6 @@ export class LinuxTerminalSession extends TerminalSession {
     // Intercept `tail -f` / `tail -F` — open a streaming follow on the
     // VFS through the unified async runtime; appended bytes flow into the
     // terminal until Ctrl+C cancels the foreground job.
-    if (this.tryStartTailStream(trimmed)) return;
     if (this.tryStartKernelStream(trimmed)) return;
     if (this.tryStartMtrStream(trimmed)) return;
     if (this.tryStartWatchStream(trimmed)) return;
