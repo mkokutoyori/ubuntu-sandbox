@@ -4,8 +4,8 @@
  * Hôte REPL mince : chaque ligne est routée vers l'interpreter command-kernel
  * dédié au shell sftp (`createSftpShell`, framework §14.4) — les commandes de
  * navigation vivent dans leur propre registre avec descripteur/privilèges.
- * Le switch legacy ne subsiste que pour les commandes pas encore migrées
- * (transferts et mutations — Push B du plan DESIGN-SFTP-COMMAND-KERNEL.md).
+ * Toutes les commandes de la session (navigation, transferts, mutations)
+ * vivent dans le registre command-kernel — plus aucun switch legacy.
  *
  * Reference: BRD-SSH-SFTP.md SFTP-10/11/12/14/15/16/17 ;
  *            DESIGN-SSH-SFTP.md section 9.3 ; DESIGN-SFTP-COMMAND-KERNEL.md.
@@ -19,7 +19,6 @@ import { ExitRequest } from '@/command-kernel/shell/exit';
 import type { Interpreter } from '@/command-kernel/interpreter';
 import type { Session } from '@/command-kernel/session/types';
 import { createSftpShell } from '@/network/protocols/ssh/sftp/command-kernel/createSftpShell';
-import { ParsedArgs } from '@/network/protocols/ssh/sftp/ParsedArgs';
 import type { SftpSession } from '@/network/protocols/ssh/sftp/SftpSession';
 
 export class SftpSubShell implements ISubShell {
@@ -71,76 +70,12 @@ export class SftpSubShell implements ISubShell {
         return { output: [''], exit: true, prompt: '' };
       }
       if (err instanceof CommandNotFoundError) {
-        return this.processLegacy(trimmed);
+        if (trimmed.split(/\s+/)[0] === 'clear') {
+          return { output: [''], exit: false, prompt: 'sftp> ', clearScreen: true };
+        }
+        return done(['Invalid command.']);
       }
       throw err;
-    }
-  }
-
-  private processLegacy(trimmed: string): SubShellResult {
-    const [cmd, ...rest] = trimmed.split(/\s+/);
-    const lower = cmd.toLowerCase();
-    const args = ParsedArgs.parse(rest);
-
-    switch (lower) {
-      case 'lmkdir':
-        if (!args.positional[0]) return done(['usage: lmkdir path']);
-        return doneErr(this.session.lmkdir(args.positional[0]));
-
-      case 'get': {
-        const [remote, local] = args.positional;
-        if (!remote) return done(['usage: get remote [local]']);
-        return done(this.session.get(remote, local).split('\n'));
-      }
-
-      case 'put': {
-        const [local, remote] = args.positional;
-        if (!local) return done(['usage: put local [remote]']);
-        return done(this.session.put(local, remote).split('\n'));
-      }
-
-      case 'mkdir':
-        if (!args.positional[0]) return done(['usage: mkdir path']);
-        return doneErr(this.session.mkdir(args.positional[0]));
-
-      case 'rm':
-        if (!args.positional[0]) return done(['usage: rm path']);
-        return doneErr(this.session.rm(args.positional[0]));
-
-      case 'rmdir':
-        if (!args.positional[0]) return done(['usage: rmdir path']);
-        return doneErr(this.session.rmdir(args.positional[0]));
-
-      case 'rename': {
-        const [oldP, newP] = args.positional;
-        if (!oldP || !newP) return done(['usage: rename oldpath newpath']);
-        return doneErr(this.session.rename(oldP, newP));
-      }
-
-      case 'chmod': {
-        const [mode, path] = args.positional;
-        if (!mode || !path) return done(['usage: chmod mode path']);
-        return done([this.session.chmod(mode, path)]);
-      }
-
-      case 'chown': {
-        const [uid, path] = args.positional;
-        if (!uid || !path) return done(['usage: chown uid path']);
-        return done([this.session.chown(uid, path)]);
-      }
-
-      case 'stat':
-        if (!args.positional[0]) return done(['usage: stat path']);
-        return done(this.session.stat(args.positional[0]).split('\n'));
-
-      case 'df':
-        return done(this.session.df(args.positional[0], args.has('h')).split('\n'));
-
-      case 'clear':
-        return { output: [''], exit: false, prompt: 'sftp> ', clearScreen: true };
-
-      default:
-        return done(['Invalid command.']);
     }
   }
 
@@ -153,6 +88,3 @@ function done(output: string[]): SubShellResult {
   return { output, exit: false, prompt: 'sftp> ' };
 }
 
-function doneErr(errOrEmpty: string): SubShellResult {
-  return errOrEmpty ? done([errOrEmpty]) : done(['']);
-}

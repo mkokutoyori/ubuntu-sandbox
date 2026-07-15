@@ -84,7 +84,7 @@ describe('SSH LAN — file transfers', () => {
   // 54
   it('S54 — sftp `mkdir` non-recursive: parent missing returns error', async () => {
     const { sftp } = await openSftpSession(lan.pc1, PC2_IP);
-    const out = sftp.mkdir('/home/user/nope/inner');
+    const out = await runSftpLine(sftp, 'mkdir /home/user/nope/inner');
     expect(out).toMatch(/Couldn't create directory/);
     sftp.disconnect();
   });
@@ -93,7 +93,7 @@ describe('SSH LAN — file transfers', () => {
   it('S55 — sftp `rename` refuses if destination already exists', async () => {
     await lan.pc2.executeCommand('echo a > /home/user/dst.txt');
     const { sftp } = await openSftpSession(lan.pc1, PC2_IP);
-    const out = sftp.rename('/home/user/docs/report.txt', '/home/user/dst.txt');
+    const out = await runSftpLine(sftp, 'rename /home/user/docs/report.txt /home/user/dst.txt');
     expect(out).toMatch(/Couldn't rename file/);
     sftp.disconnect();
   });
@@ -101,7 +101,7 @@ describe('SSH LAN — file transfers', () => {
   // 56
   it('S56 — sftp `chmod 600` updates remote permissions', async () => {
     const { sftp } = await openSftpSession(lan.pc1, PC2_IP);
-    expect(sftp.chmod('600', '/home/user/docs/report.txt')).toContain(
+    expect(await runSftpLine(sftp, 'chmod 600 /home/user/docs/report.txt')).toContain(
       'Changing mode',
     );
     sftp.disconnect();
@@ -114,7 +114,7 @@ describe('SSH LAN — file transfers', () => {
   // 57
   it('S57 — sftp `stat` returns a Mode/UID/GID block', async () => {
     const { sftp } = await openSftpSession(lan.pc1, PC2_IP);
-    const out = sftp.stat('/home/user/docs/report.txt');
+    const out = await runSftpLine(sftp, 'stat /home/user/docs/report.txt');
     expect(out).toContain('Mode:');
     expect(out).toContain('UID:');
     expect(out).toContain('GID:');
@@ -124,7 +124,7 @@ describe('SSH LAN — file transfers', () => {
   // 58
   it('S58 — sftp `df` reports a capacity table', async () => {
     const { sftp } = await openSftpSession(lan.pc1, PC2_IP);
-    const out = sftp.df(undefined, true);
+    const out = await runSftpLine(sftp, 'df -h');
     expect(out).toContain('%Capacity');
     sftp.disconnect();
   });
@@ -209,7 +209,7 @@ describe('SSH LAN — file transfers', () => {
   // 65
   it('S65 — sftp `lmkdir` creates a local directory', async () => {
     const { sftp, localVfs } = await openSftpSession(lan.pc1, PC2_IP);
-    expect(sftp.lmkdir('/root/local-dir')).toBe('');
+    expect(await runSftpLine(sftp, 'lmkdir /root/local-dir')).toBe('');
     expect(localVfs.exists('/root/local-dir')).toBe(true);
     sftp.disconnect();
   });
@@ -217,7 +217,7 @@ describe('SSH LAN — file transfers', () => {
   // 66
   it('S66 — sftp `rm` deletes a remote file (visible locally as missing)', async () => {
     const { sftp } = await openSftpSession(lan.pc1, PC2_IP);
-    sftp.rm('/home/user/docs/report.txt');
+    await runSftpLine(sftp, 'rm /home/user/docs/report.txt');
     sftp.disconnect();
     const out = await lan.pc2.executeCommand('cat /home/user/docs/report.txt');
     expect(out.toLowerCase()).toContain('no such');
@@ -226,7 +226,7 @@ describe('SSH LAN — file transfers', () => {
   // 67
   it('S67 — sftp `rmdir` on a non-empty directory fails (Failure)', async () => {
     const { sftp } = await openSftpSession(lan.pc1, PC2_IP);
-    const out = sftp.rmdir('/home/user/docs');
+    const out = await runSftpLine(sftp, 'rmdir /home/user/docs');
     expect(out).toMatch(/Couldn't remove directory/);
     sftp.disconnect();
   });

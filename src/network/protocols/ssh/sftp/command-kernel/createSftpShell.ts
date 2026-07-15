@@ -14,6 +14,19 @@ import {
   SftpPwdCommand,
   SftpVersionCommand,
 } from './commands/navigation';
+import {
+  SftpChmodCommand,
+  SftpChownCommand,
+  SftpDfCommand,
+  SftpGetCommand,
+  SftpLmkdirCommand,
+  SftpMkdirCommand,
+  SftpPutCommand,
+  SftpRenameCommand,
+  SftpRmCommand,
+  SftpRmdirCommand,
+  SftpStatCommand,
+} from './commands/transfer';
 
 /**
  * Bootstrap du shell sftp — même modèle que `create<Vendeur>HostShell`
@@ -33,6 +46,17 @@ export function createSftpShell(sftpSession: SftpSession): { interpreter: Interp
   registry.register(() => new SftpVersionCommand());
   registry.register(() => new SftpHelpCommand());
   registry.register(() => new SftpExitCommand());
+  registry.register(() => new SftpGetCommand());
+  registry.register(() => new SftpPutCommand());
+  registry.register(() => new SftpMkdirCommand());
+  registry.register(() => new SftpRmCommand());
+  registry.register(() => new SftpRmdirCommand());
+  registry.register(() => new SftpRenameCommand());
+  registry.register(() => new SftpChmodCommand());
+  registry.register(() => new SftpChownCommand());
+  registry.register(() => new SftpStatCommand());
+  registry.register(() => new SftpDfCommand());
+  registry.register(() => new SftpLmkdirCommand());
 
   const machine = new SftpMachineApi(sftpSession);
   const owner = sftpSession.localOwner();

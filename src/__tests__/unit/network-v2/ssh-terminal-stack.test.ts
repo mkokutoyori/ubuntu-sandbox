@@ -397,20 +397,20 @@ describe('SSH terminal — SftpSession transfers', () => {
     expect(ls).toMatch(/b\.txt/);
   });
 
-  it('creates a remote directory with mkdir', () => {
-    expect(sftp.mkdir('newdir')).toBe('');
+  it('creates a remote directory with mkdir', async () => {
+    expect(await runSftpLine(sftp, 'mkdir newdir')).toBe('');
     expect(vfsOf(lan.pc2).exists('/home/user/newdir')).toBe(true);
   });
 
-  it('removes a remote file with rm', () => {
+  it('removes a remote file with rm', async () => {
     vfsOf(lan.pc2).writeFile('/home/user/doomed.txt', 'x', 1000, 1000, 0o022);
-    expect(sftp.rm('doomed.txt')).toBe('');
+    expect(await runSftpLine(sftp, 'rm doomed.txt')).toBe('');
     expect(vfsOf(lan.pc2).exists('/home/user/doomed.txt')).toBe(false);
   });
 
-  it('renames a remote file', () => {
+  it('renames a remote file', async () => {
     vfsOf(lan.pc2).writeFile('/home/user/oldname', 'x', 1000, 1000, 0o022);
-    expect(sftp.rename('oldname', 'newname')).toBe('');
+    expect(await runSftpLine(sftp, 'rename oldname newname')).toBe('');
     expect(vfsOf(lan.pc2).exists('/home/user/oldname')).toBe(false);
     expect(vfsOf(lan.pc2).exists('/home/user/newname')).toBe(true);
   });

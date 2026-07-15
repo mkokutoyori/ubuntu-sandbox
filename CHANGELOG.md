@@ -5,6 +5,36 @@ progressive par équipement. Un push = une entrée = une fonctionnalité
 complète et testée (voir `CLAUDE.md` / le framework de migration pour les
 principes directeurs).
 
+## SFTP Push B : transferts et mutations en command-kernel, fin du switch legacy
+
+**État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
+
+Deuxième étape du plan `DESIGN-SFTP-COMMAND-KERNEL.md`. Les 11 commandes
+restantes de la session sftp migrent vers le registre kernel : `get`,
+`put`, `mkdir`, `rm`, `rmdir`, `rename`, `chmod`, `chown`, `stat`, `df`,
+`lmkdir` — parité byte-exacte avec le legacy (messages `Couldn't create
+directory:`/`Couldn't setstat on "..."`/`Changing mode on ...`, bloc
+`stat` 5 lignes, tableau `df` avec `-h`, usages du switch).
+
+- **`SftpChannelApi` étendue** (machine/types.ts) : mkdir/rm/rmdir/
+  rename/chmod/chown/stat/df en ops fines du canal réel, plus
+  `download`/`upload` qui délèguent au moteur de transfert partagé de la
+  connexion. Nouveaux types `SftpRemoteStat`/`SftpRemoteDiskUsage`.
+- **Décision framework (§8)** : `SftpSession.get/put/getRecursive/
+  putRecursive` NE sont PAS supprimés — `WindowsScpClient` les emprunte
+  comme moteur de transfert SCP. Ils restent le moteur partagé ; les
+  commandes kernel `get`/`put` y délèguent via la façade (une seule
+  implémentation, deux consommateurs). Le reste est supprimé de
+  `SftpSession` : lmkdir, mkdir, rm, rmdir, rename, chmod, chown, stat,
+  df, simpleRemote, humanBytes.
+- **`SftpSubShell` : plus AUCUN switch** — toutes les commandes de la
+  session passent par `interpretLine` ; `clear` reste un geste d'hôte
+  (clearScreen) ; verbe inconnu → `Invalid command.` (parité).
+- Tests adaptés pour passer par le vrai chemin (`processLine`) sur les
+  mutations comme sur la navigation ; 610 tests verts sur le lot SFTP +
+  audit/privilège, seuls persistent les 7 échecs Windows-sftp
+  préexistants confirmés à la baseline.
+
 ## Socle + Windows — `pathping` migré : dernier intercepteur de flux `cmd` convergé (§14.6)
 
 **État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**

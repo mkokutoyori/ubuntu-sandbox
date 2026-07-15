@@ -147,27 +147,27 @@ describe('SFTP-over-SSH speaks the real SSH_FXP_* wire protocol (§2.1.20/P19)',
     await session.connect(`alice@${REMOTE_IP}`);
 
     clientToServer.length = 0;
-    expect(session.mkdir('newdir')).toBe('');
+    expect(await runSftpLine(session, 'mkdir newdir')).toBe('');
     expect(wirePacketTypes(clientToServer)).toContain('MKDIR');
 
     clientToServer.length = 0;
-    expect(session.chmod('600', 'target.txt')).toContain('Changing mode');
+    expect(await runSftpLine(session, 'chmod 600 target.txt')).toContain('Changing mode');
     expect(wirePacketTypes(clientToServer)).toContain('SETSTAT');
 
     clientToServer.length = 0;
-    expect(session.stat('target.txt')).toContain('Size:');
+    expect(await runSftpLine(session, 'stat target.txt')).toContain('Size:');
     expect(wirePacketTypes(clientToServer)).toContain('STAT');
 
     clientToServer.length = 0;
-    expect(session.rename('target.txt', 'renamed.txt')).toBe('');
+    expect(await runSftpLine(session, 'rename target.txt renamed.txt')).toBe('');
     expect(wirePacketTypes(clientToServer)).toContain('RENAME');
 
     clientToServer.length = 0;
-    expect(session.rm('renamed.txt')).toBe('');
+    expect(await runSftpLine(session, 'rm renamed.txt')).toBe('');
     expect(wirePacketTypes(clientToServer)).toContain('REMOVE');
 
     clientToServer.length = 0;
-    expect(session.rmdir('newdir')).toBe('');
+    expect(await runSftpLine(session, 'rmdir newdir')).toBe('');
     expect(wirePacketTypes(clientToServer)).toContain('RMDIR');
   });
 
@@ -184,7 +184,7 @@ describe('SFTP-over-SSH speaks the real SSH_FXP_* wire protocol (§2.1.20/P19)',
     const { session, clientToServer } = buildTopology();
     await session.connect(`alice@${REMOTE_IP}`);
     clientToServer.length = 0;
-    const out = session.df(undefined, false);
+    const out = await runSftpLine(session, 'df');
     expect(out).toContain('Size');
 
     expect(wirePacketTypes(clientToServer)).toHaveLength(0);

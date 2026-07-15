@@ -312,7 +312,7 @@ describe('SSH LAN — advanced scenarios', () => {
     const { sftp, localVfs } = await openSftpSession(lan.pc1, PC2_IP);
     localVfs.writeFile('/root/secret.txt', 'top-secret', 0, 0, 0o022);
     sftp.put('/root/secret.txt', '/home/user/secret.txt');
-    sftp.chmod('600', '/home/user/secret.txt');
+    await runSftpLine(sftp, 'chmod 600 /home/user/secret.txt');
     sftp.disconnect();
     const stat = await lan.pc2.executeCommand(
       'stat -c %a /home/user/secret.txt',

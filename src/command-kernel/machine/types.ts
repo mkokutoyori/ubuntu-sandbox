@@ -1115,6 +1115,32 @@ export interface SftpChannelApi {
   cd(path: string): SftpOpResult;
   ls(path: string): SftpOpResult<readonly SftpRemoteEntry[]>;
   version(): SftpOpResult<number>;
+  mkdir(path: string): SftpOpResult;
+  rm(path: string): SftpOpResult;
+  rmdir(path: string): SftpOpResult;
+  rename(source: string, destination: string): SftpOpResult;
+  chmod(path: string, mode: number): SftpOpResult;
+  chown(path: string, uid: number, gid: number): SftpOpResult;
+  stat(path: string): SftpOpResult<SftpRemoteStat>;
+  df(path: string): SftpOpResult<SftpRemoteDiskUsage>;
+  /** Délégation au moteur de transfert partagé de la connexion (aussi
+   *  emprunté par SCP) — renvoie la transcription sftp(1) exacte. */
+  download(remotePath: string, localPath?: string): string;
+  upload(localPath: string, remotePath?: string): string;
+}
+
+export interface SftpRemoteStat {
+  readonly mode: number;
+  readonly uid: number;
+  readonly gid: number;
+  readonly size: number;
+  readonly mtime: number;
+}
+
+export interface SftpRemoteDiskUsage {
+  readonly totalBytes: number;
+  readonly usedBytes: number;
+  readonly availableBytes: number;
 }
 
 export interface TracerouteHopInfo {

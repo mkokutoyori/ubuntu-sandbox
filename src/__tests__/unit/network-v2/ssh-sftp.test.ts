@@ -235,20 +235,20 @@ describe('SftpSession — operations (BRD SFTP-02..06,14..17)', () => {
 
   it('SFTP-04: mkdir non-recursive fails when parent missing', async () => {
     const { session } = await connectedSession();
-    const out = session.mkdir('/home/alice/a/b/c');
+    const out = await runSftpLine(session, 'mkdir /home/alice/a/b/c');
     expect(out).toContain("Couldn't create directory");
   });
 
   it('SFTP-04: mkdir succeeds when parent exists', async () => {
     const { session } = await connectedSession();
-    expect(session.mkdir('/home/alice/newdir')).toBe('');
+    expect(await runSftpLine(session, 'mkdir /home/alice/newdir')).toBe('');
     expect(setup.vfs.exists('/home/alice/newdir')).toBe(true);
   });
 
   it('SFTP-05: rename refuses when destination exists', async () => {
     setup.vfs.writeFile('/home/alice/dst.txt', 'existing', 1000, 1000, 0o022);
     const { session } = await connectedSession();
-    const out = session.rename('/home/alice/file.txt', '/home/alice/dst.txt');
+    const out = await runSftpLine(session, 'rename /home/alice/file.txt /home/alice/dst.txt');
     expect(out).toContain("Couldn't rename file");
   });
 
@@ -261,13 +261,13 @@ describe('SftpSession — operations (BRD SFTP-02..06,14..17)', () => {
 
   it('SFTP-14: chmod returns "Changing mode" message', async () => {
     const { session } = await connectedSession();
-    const out = session.chmod('600', '/home/alice/file.txt');
+    const out = await runSftpLine(session, 'chmod 600 /home/alice/file.txt');
     expect(out).toContain('Changing mode on');
   });
 
   it('SFTP-16: stat returns formatted attributes', async () => {
     const { session } = await connectedSession();
-    const out = session.stat('/home/alice/file.txt');
+    const out = await runSftpLine(session, 'stat /home/alice/file.txt');
     expect(out).toContain('Size:');
     expect(out).toContain('UID:');
     expect(out).toContain('GID:');
@@ -275,7 +275,7 @@ describe('SftpSession — operations (BRD SFTP-02..06,14..17)', () => {
 
   it('SFTP-17: df returns capacity table', async () => {
     const { session } = await connectedSession();
-    const out = session.df(undefined, false);
+    const out = await runSftpLine(session, 'df');
     expect(out).toContain('Size');
     expect(out).toContain('%Capacity');
   });

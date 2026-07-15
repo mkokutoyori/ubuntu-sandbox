@@ -9,7 +9,9 @@ import {
   ProcessApi,
   SftpChannelApi,
   SftpOpResult,
+  SftpRemoteDiskUsage,
   SftpRemoteEntry,
+  SftpRemoteStat,
   UserManagementApi,
 } from '@/command-kernel/machine/types';
 import { FileSystemError } from '@/command-kernel/errors';
@@ -45,6 +47,40 @@ class SftpChannelFacade implements SftpChannelApi {
     const resp = this.session.channelRequest({ op: 'version' });
     if (!resp.ok) return { ok: false, error: String(resp.error ?? '') };
     return { ok: true, value: (resp as { protocolVersion?: number }).protocolVersion ?? 3 };
+  }
+
+  private simple(payload: Record<string, unknown>): SftpOpResult {
+    const resp = this.session.channelRequest(payload as never);
+    return resp.ok ? { ok: true } : { ok: false, error: String(resp.error ?? '') };
+  }
+
+  mkdir(path: string): SftpOpResult { return this.simple({ op: 'mkdir', path }); }
+  rm(path: string): SftpOpResult { return this.simple({ op: 'rm', path }); }
+  rmdir(path: string): SftpOpResult { return this.simple({ op: 'rmdir', path }); }
+  rename(source: string, destination: string): SftpOpResult { return this.simple({ op: 'rename', src: source, dst: destination }); }
+  chmod(path: string, mode: number): SftpOpResult { return this.simple({ op: 'chmod', path, mode }); }
+  chown(path: string, uid: number, gid: number): SftpOpResult { return this.simple({ op: 'chown', path, uid, gid }); }
+
+  stat(path: string): SftpOpResult<SftpRemoteStat> {
+    const resp = this.session.channelRequest({ op: 'stat', path });
+    if (!resp.ok) return { ok: false, error: String(resp.error ?? '') };
+    const a = resp as unknown as SftpRemoteStat;
+    return { ok: true, value: { mode: a.mode, uid: a.uid, gid: a.gid, size: a.size, mtime: a.mtime } };
+  }
+
+  df(path: string): SftpOpResult<SftpRemoteDiskUsage> {
+    const resp = this.session.channelRequest({ op: 'df', path });
+    if (!resp.ok) return { ok: false, error: String(resp.error ?? '') };
+    const a = resp as unknown as SftpRemoteDiskUsage;
+    return { ok: true, value: { totalBytes: a.totalBytes, usedBytes: a.usedBytes, availableBytes: a.availableBytes } };
+  }
+
+  download(remotePath: string, localPath?: string): string {
+    return this.session.get(remotePath, localPath);
+  }
+
+  upload(localPath: string, remotePath?: string): string {
+    return this.session.put(localPath, remotePath);
   }
 }
 

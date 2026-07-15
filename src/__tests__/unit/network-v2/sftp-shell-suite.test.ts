@@ -149,7 +149,7 @@ describe('§A — SFTP shell: every command behaves like OpenSSH sftp(1)', () =>
 
   it('lmkdir creates a local directory and is visible via lpwd/lcd', async () => {
     const { sftp, local } = await openSftp(lan.client);
-    expect(sftp.lmkdir('/tmp/freshlocal')).toBe('');
+    expect(await run(sftp, 'lmkdir /tmp/freshlocal')).toBe('');
     expect(local.exists('/tmp/freshlocal')).toBe(true);
     expect(await run(sftp, 'lcd /tmp/freshlocal')).toBe('');
   });
@@ -173,44 +173,44 @@ describe('§A — SFTP shell: every command behaves like OpenSSH sftp(1)', () =>
 
   it('mkdir creates a new remote directory under the cwd', async () => {
     const { sftp } = await openSftp(lan.client);
-    expect(sftp.mkdir('newdir')).toBe('');
+    expect(await run(sftp, 'mkdir newdir')).toBe('');
     expect(vfsOf(lan.server).exists('/home/user/newdir')).toBe(true);
   });
 
   it('mkdir reports an error when the parent does not exist', async () => {
     const { sftp } = await openSftp(lan.client);
-    expect(sftp.mkdir('/no/such/parent/leaf')).toMatch(/Couldn't|error|No such|Failure/i);
+    expect(await run(sftp, 'mkdir /no/such/parent/leaf')).toMatch(/Couldn't|error|No such|Failure/i);
   });
 
   it('mkdir of an existing directory surfaces an error', async () => {
     const { sftp } = await openSftp(lan.client);
-    sftp.mkdir('twice');
-    expect(sftp.mkdir('twice')).toMatch(/Couldn't|exist|error|Failure/i);
+    await run(sftp, 'mkdir twice');
+    expect(await run(sftp, 'mkdir twice')).toMatch(/Couldn't|exist|error|Failure/i);
   });
 
   it('rmdir removes an empty remote directory', async () => {
     const { sftp } = await openSftp(lan.client);
     vfsOf(lan.server).mkdir('/home/user/togo', 0o755, 1000, 1000);
-    expect(sftp.rmdir('togo')).toBe('');
+    expect(await run(sftp, 'rmdir togo')).toBe('');
     expect(vfsOf(lan.server).exists('/home/user/togo')).toBe(false);
   });
 
   it('rm removes a remote file', async () => {
     const { sftp } = await openSftp(lan.client);
     vfsOf(lan.server).writeFile('/home/user/doomed.txt', 'x', 1000, 1000, 0o022);
-    expect(sftp.rm('doomed.txt')).toBe('');
+    expect(await run(sftp, 'rm doomed.txt')).toBe('');
     expect(vfsOf(lan.server).exists('/home/user/doomed.txt')).toBe(false);
   });
 
   it('rm of a missing file produces an error string', async () => {
     const { sftp } = await openSftp(lan.client);
-    expect(sftp.rm('ghost.txt')).toMatch(/No such file|Failure|error/i);
+    expect(await run(sftp, 'rm ghost.txt')).toMatch(/No such file|Failure|error/i);
   });
 
   it('rename moves a remote file to a new name in the same directory', async () => {
     const { sftp } = await openSftp(lan.client);
     vfsOf(lan.server).writeFile('/home/user/old.txt', 'x', 1000, 1000, 0o022);
-    expect(sftp.rename('old.txt', 'new.txt')).toBe('');
+    expect(await run(sftp, 'rename old.txt new.txt')).toBe('');
     expect(vfsOf(lan.server).exists('/home/user/old.txt')).toBe(false);
     expect(vfsOf(lan.server).exists('/home/user/new.txt')).toBe(true);
   });
@@ -219,45 +219,45 @@ describe('§A — SFTP shell: every command behaves like OpenSSH sftp(1)', () =>
     const { sftp } = await openSftp(lan.client);
     vfsOf(lan.server).writeFile('/home/user/source.txt', 'x', 1000, 1000, 0o022);
     vfsOf(lan.server).mkdir('/home/user/target', 0o755, 1000, 1000);
-    expect(sftp.rename('source.txt', 'target/source.txt')).toBe('');
+    expect(await run(sftp, 'rename source.txt target/source.txt')).toBe('');
     expect(vfsOf(lan.server).exists('/home/user/target/source.txt')).toBe(true);
   });
 
   it('chmod returns a success acknowledgement for a writable file', async () => {
     const { sftp } = await openSftp(lan.client);
     vfsOf(lan.server).writeFile('/home/user/exe.sh', '#!/bin/sh', 1000, 1000, 0o022);
-    const out = sftp.chmod('755', 'exe.sh');
+    const out = await run(sftp, 'chmod 755 exe.sh');
     expect(out).toMatch(/Changing mode|exe\.sh/i);
   });
 
   it('chown returns a success acknowledgement when the SFTP user is allowed', async () => {
     const { sftp } = await openSftp(lan.client);
     vfsOf(lan.server).writeFile('/home/user/owned.txt', 'x', 1000, 1000, 0o022);
-    const out = sftp.chown('0', 'owned.txt');
+    const out = await run(sftp, 'chown 0 owned.txt');
     expect(out).toBeDefined();
   });
 
   it('stat returns a multi-line attribute block', async () => {
     const { sftp } = await openSftp(lan.client);
     vfsOf(lan.server).writeFile('/home/user/inspectme', 'data', 1000, 1000, 0o022);
-    const out = sftp.stat('inspectme');
+    const out = await run(sftp, 'stat inspectme');
     expect(out).toMatch(/Size|Mode|UID|Permissions/i);
   });
 
   it('stat on a missing path reports No such file', async () => {
     const { sftp } = await openSftp(lan.client);
-    expect(sftp.stat('nope')).toMatch(/No such file|Failure/i);
+    expect(await run(sftp, 'stat nope')).toMatch(/No such file|Failure/i);
   });
 
   it('df reports filesystem space totals', async () => {
     const { sftp } = await openSftp(lan.client);
-    const out = sftp.df(undefined, false);
+    const out = await run(sftp, 'df');
     expect(out).toMatch(/Size|Used|Avail|blocks/i);
   });
 
   it('df -h returns human-readable units', async () => {
     const { sftp } = await openSftp(lan.client);
-    const out = sftp.df(undefined, true);
+    const out = await run(sftp, 'df -h');
     expect(out).toMatch(/[KMG]B?\b/);
   });
 
@@ -309,14 +309,14 @@ describe('§B — SFTP view vs remote terminal view are coherent', () => {
   it('a file removed through rm vanishes from `ls` and `cat` on the remote', async () => {
     const { sftp } = await openSftp(lan.client);
     vfsOf(lan.server).writeFile('/home/user/bye.txt', 'bye', 1000, 1000, 0o022);
-    sftp.rm('bye.txt');
+    await run(sftp, 'rm bye.txt');
     expect(await lan.server.executeCommand('ls /home/user')).not.toContain('bye.txt');
     expect(await lan.server.executeCommand('cat /home/user/bye.txt')).toMatch(/No such/i);
   });
 
   it('a directory made through mkdir is listed by `ls -ld` on the remote', async () => {
     const { sftp } = await openSftp(lan.client);
-    sftp.mkdir('viewable');
+    await run(sftp, 'mkdir viewable');
     const out = await lan.server.executeCommand('ls -ld /home/user/viewable');
     expect(out).toMatch(/drwx/);
   });
@@ -324,7 +324,7 @@ describe('§B — SFTP view vs remote terminal view are coherent', () => {
   it('a chmod from SFTP is reflected in `ls -l` mode column', async () => {
     const { sftp } = await openSftp(lan.client);
     vfsOf(lan.server).writeFile('/home/user/script.sh', '#!/bin/sh', 1000, 1000, 0o022);
-    sftp.chmod('755', 'script.sh');
+    await run(sftp, 'chmod 755 script.sh');
     const out = await lan.server.executeCommand('ls -l /home/user/script.sh');
     expect(out).toMatch(/rwxr-xr-x/);
   });
@@ -332,7 +332,7 @@ describe('§B — SFTP view vs remote terminal view are coherent', () => {
   it('a chmod from SFTP can be observed via stat on the remote', async () => {
     const { sftp } = await openSftp(lan.client);
     vfsOf(lan.server).writeFile('/home/user/owner.txt', 'x', 1000, 1000, 0o022);
-    sftp.chmod('600', 'owner.txt');
+    await run(sftp, 'chmod 600 owner.txt');
     const out = await lan.server.executeCommand('stat /home/user/owner.txt');
     expect(out).toMatch(/owner\.txt/);
   });
@@ -340,7 +340,7 @@ describe('§B — SFTP view vs remote terminal view are coherent', () => {
   it('a rename through SFTP renames the file as seen by the remote shell', async () => {
     const { sftp } = await openSftp(lan.client);
     vfsOf(lan.server).writeFile('/home/user/before.txt', 'x', 1000, 1000, 0o022);
-    sftp.rename('before.txt', 'after.txt');
+    await run(sftp, 'rename before.txt after.txt');
     const out = await lan.server.executeCommand('ls /home/user');
     expect(out).not.toContain('before.txt');
     expect(out).toContain('after.txt');
@@ -390,7 +390,7 @@ describe('§B — SFTP view vs remote terminal view are coherent', () => {
   it('rmdir over SFTP removes the dir as seen from `ls` on remote', async () => {
     const { sftp } = await openSftp(lan.client);
     await lan.server.executeCommand('mkdir /home/user/temp-rm');
-    sftp.rmdir('temp-rm');
+    await run(sftp, 'rmdir temp-rm');
     expect(await lan.server.executeCommand('ls /home/user')).not.toContain('temp-rm');
   });
 });
@@ -425,14 +425,14 @@ describe('§C — SFTP edge cases & error parity', () => {
     const { sftp } = await openSftp(lan.client);
     vfsOf(lan.server).mkdir('/home/user/full', 0o755, 1000, 1000);
     vfsOf(lan.server).writeFile('/home/user/full/keepme.txt', 'x', 1000, 1000, 0o022);
-    const out = sftp.rmdir('full');
+    const out = await run(sftp, 'rmdir full');
     expect(out).toMatch(/not empty|Failure|error|Directory/i);
   });
 
   it('rm on a directory refuses (use rmdir)', async () => {
     const { sftp } = await openSftp(lan.client);
     vfsOf(lan.server).mkdir('/home/user/somedir', 0o755, 1000, 1000);
-    const out = sftp.rm('somedir');
+    const out = await run(sftp, 'rm somedir');
     expect(out).toMatch(/Failure|directory|error/i);
   });
 
@@ -440,7 +440,7 @@ describe('§C — SFTP edge cases & error parity', () => {
     const { sftp } = await openSftp(lan.client);
     vfsOf(lan.server).writeFile('/home/user/a.txt', 'a', 1000, 1000, 0o022);
     vfsOf(lan.server).writeFile('/home/user/b.txt', 'b', 1000, 1000, 0o022);
-    const out = sftp.rename('a.txt', 'b.txt');
+    const out = await run(sftp, 'rename a.txt b.txt');
     expect(out).toMatch(/Failure|exist|error/i);
   });
 
@@ -453,16 +453,16 @@ describe('§C — SFTP edge cases & error parity', () => {
 
   it('repeated mkdir is not idempotent — second call errors', async () => {
     const { sftp } = await openSftp(lan.client);
-    sftp.mkdir('idempotent');
-    expect(sftp.mkdir('idempotent')).toMatch(/Couldn't|exist|Failure|error/i);
+    await run(sftp, 'mkdir idempotent');
+    expect(await run(sftp, 'mkdir idempotent')).toMatch(/Couldn't|exist|Failure|error/i);
   });
 
   it('deeply nested mkdir requires every parent to pre-exist', async () => {
     const { sftp } = await openSftp(lan.client);
-    expect(sftp.mkdir('a/b/c')).toMatch(/No such|Failure|error/i);
-    sftp.mkdir('a');
-    sftp.mkdir('a/b');
-    expect(sftp.mkdir('a/b/c')).toBe('');
+    expect(await run(sftp, 'mkdir a/b/c')).toMatch(/No such|Failure|error/i);
+    await run(sftp, 'mkdir a');
+    await run(sftp, 'mkdir a/b');
+    expect(await run(sftp, 'mkdir a/b/c')).toBe('');
   });
 
   it('put then get round-trip preserves bytes for a multi-line file', async () => {
@@ -498,13 +498,13 @@ describe('§C — SFTP edge cases & error parity', () => {
 
   it('rename of a non-existent source reports an error', async () => {
     const { sftp } = await openSftp(lan.client);
-    expect(sftp.rename('ghost', 'shadow')).toMatch(/No such|Failure|error/i);
+    expect(await run(sftp, 'rename ghost shadow')).toMatch(/No such|Failure|error/i);
   });
 
   it('chmod / chown on a missing path are reported, not silently ignored', async () => {
     const { sftp } = await openSftp(lan.client);
-    expect(sftp.chmod('644', 'ghost')).toMatch(/No such|Failure|error|Couldn't|Permission/i);
-    expect(sftp.chown('0', 'ghost')).toMatch(/No such|Failure|error|Couldn't|Permission/i);
+    expect(await run(sftp, 'chmod 644 ghost')).toMatch(/No such|Failure|error|Couldn't|Permission/i);
+    expect(await run(sftp, 'chown 0 ghost')).toMatch(/No such|Failure|error|Couldn't|Permission/i);
   });
 
   it('cd absolute / cd relative each move the cwd individually', async () => {
@@ -527,7 +527,7 @@ describe('§C — SFTP edge cases & error parity', () => {
   it('disconnect makes write operations fail', async () => {
     const { sftp } = await openSftp(lan.client);
     sftp.disconnect();
-    expect(sftp.mkdir('whatever')).toMatch(/Not connected|Failure|error/i);
+    expect(await run(sftp, 'mkdir whatever')).toMatch(/Not connected|Failure|error/i);
   });
 
   it('put preserves zero-byte content', async () => {
