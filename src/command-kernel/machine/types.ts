@@ -1577,11 +1577,19 @@ export interface CpuInfo {
   readonly modelName: string;
 }
 
+/** Un disque et ses partitions (`iostat`, `lsblk`). */
+export interface DiskInfo {
+  readonly name: string;
+  readonly partitions: readonly string[];
+}
+
 export interface SystemMetricsApi {
   /** Instantané mémoire courant. */
   memory(): MemorySnapshot;
   /** Instantané processeur courant. */
   cpu(): CpuInfo;
+  /** Disques et partitions présents (`iostat`). */
+  disks(): readonly DiskInfo[];
 }
 
 export interface HardwareProfile {

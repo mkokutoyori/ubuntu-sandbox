@@ -5,6 +5,35 @@ progressive par équipement. Un push = une entrée = une fonctionnalité
 complète et testée (voir `CLAUDE.md` / le framework de migration pour les
 principes directeurs).
 
+## Socle + Linux — `iostat` migré au noyau (`SystemMetricsApi.disks`) (§14.6)
+
+**État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
+
+Cinquième échantillonneur convergé. `iostat` était éclaté entre le legacy
+(`case 'iostat'`/`cmdIostat`, instantané) et l'intercepteur
+`tryStartIostatStream` (mode `<intervalle>`).
+
+- **`IostatCommand extends StreamingCommand`** : `isStreaming(argv)` vrai dès
+  qu'un intervalle est fourni ; sans intervalle → bannière + rapport
+  (avg-cpu + périphériques) ; avec intervalle → bannière une fois puis le
+  rapport réaffiché à chaque intervalle, borné par `nombre` ou Ctrl+C. Garde
+  anti-blocage (`ctx.io.interaction`).
+- **`SystemMetricsApi.disks(): DiskInfo[]`** (nom + partitions) câblée côté
+  Linux depuis le profil de stockage. Complète `memory()`/`cpu()`.
+- **Correction d'une régression latente** : `sampleIostatCpu` appelait encore
+  `sampleMpstat` avec l'ancienne signature (objets au lieu de
+  `runQueue`/`cpuCount`) depuis la migration `mpstat` — la ligne avg-cpu
+  produisait des `NaN` (non détecté car le test ne vérifiait que l'en-tête).
+  Signatures désormais primitives : `sampleIostatCpu(runQueue, cpuCount)`,
+  `sampleIostatDevices(args, disks)`, `iostatBanner` structurel.
+- Legacy supprimé : `tryStartIostatStream` + dispatch, `case 'iostat'`,
+  `cmdIostat`/`IostatContext`, `LinuxMachine.iostatBannerLine`/
+  `sampleIostatCpuSnapshot`/`sampleIostatDevicesSnapshot`, avec leurs imports.
+- Tests : `linux-iostat-stream-ui` 12/12 (instantané, `-c`/`-d`/`-x`/`-p`,
+  flux, parseurs/formateurs — bloc « pures » recâblé sur la vue `IostatDisk`) ;
+  sweep mpstat/pidstat/vmstat/free + routage noyau + commandes générales
+  123/123. `tsc` propre, aucune nouvelle alerte eslint.
+
 ## Socle + Linux — `pidstat` migré au noyau (`ProcessEntry` + VSZ/RSS) (§14.6)
 
 **État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**

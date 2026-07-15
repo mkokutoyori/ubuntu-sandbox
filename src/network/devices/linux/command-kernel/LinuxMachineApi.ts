@@ -13,6 +13,7 @@ import {
   MachineApi,
   MemorySnapshot,
   CpuInfo,
+  DiskInfo,
   OsIdentity,
   SystemMetricsApi,
   NetworkApi,
@@ -70,6 +71,8 @@ export interface LinuxMachineApiDeps {
   memoryProfile?(): MemorySnapshot;
   /** Informations processeur (`mpstat`/`iostat`/`pidstat`) — absent sans profil matériel. */
   cpuInfo?(): CpuInfo;
+  /** Disques et partitions (`iostat`) — absent sans profil de stockage. */
+  diskInfo?(): readonly DiskInfo[];
   /** Identité du système d'exploitation (`uname`, bannières sysstat) — absent sans identité. */
   osIdentity?(): OsIdentity;
   getUmask(): number;
@@ -848,6 +851,7 @@ class LinuxSystemMetricsApi implements SystemMetricsApi {
   constructor(
     private readonly memoryProfile: () => MemorySnapshot,
     private readonly cpuProfile: () => CpuInfo,
+    private readonly diskProfile: () => readonly DiskInfo[],
   ) {}
 
   memory(): MemorySnapshot {
@@ -856,6 +860,10 @@ class LinuxSystemMetricsApi implements SystemMetricsApi {
 
   cpu(): CpuInfo {
     return this.cpuProfile();
+  }
+
+  disks(): readonly DiskInfo[] {
+    return this.diskProfile();
   }
 }
 
@@ -893,10 +901,11 @@ export class LinuxMachineApi implements MachineApi {
     this.hostname = deps.hostname;
     this.audit = new LinuxAuditApi(deps);
     this.logging = new LinuxLoggingApi(deps.logManager);
-    if (deps.memoryProfile && deps.cpuInfo) {
+    if (deps.memoryProfile && deps.cpuInfo && deps.diskInfo) {
       const mem = deps.memoryProfile;
       const cpu = deps.cpuInfo;
-      this.metrics = new LinuxSystemMetricsApi(() => mem(), () => cpu());
+      const disks = deps.diskInfo;
+      this.metrics = new LinuxSystemMetricsApi(() => mem(), () => cpu(), () => disks());
     }
     if (deps.osIdentity) this.os = deps.osIdentity();
     this.permissions = new LinuxPermissionsApi(deps);

@@ -53,7 +53,6 @@ import { ExitSignal } from '@/bash/errors/BashError';
 import { AliasTable } from '@/bash/runtime/AliasTable';
 import { type IpNetworkContext } from './LinuxIpCommand';
 import { cmdDf, cmdDu } from './LinuxSystemCommands';
-import { cmdIostat } from './system/Iostat';
 import { parseDstatArgs, DSTAT_USAGE, DSTAT_VERSION, DSTAT_LISTING } from './system/Dstat';
 import { MountTable, MountEntry } from './MountTable';
 import { SysfsTree } from './Sysfs';
@@ -3779,13 +3778,6 @@ export class LinuxCommandExecutor {
       }
       case 'df': return { output: cmdDf(c, args), exitCode: 0 };
       case 'du': return { output: cmdDu(c, args), exitCode: 0 };
-      case 'iostat': return cmdIostat(args, {
-        pm: this.processMgr,
-        cpu: this.hardware.cpu,
-        storage: this.hardware.storage,
-        kernel: this.identity.kernel,
-        hostname: (this.vfs.readFile('/etc/hostname') ?? 'localhost').trim(),
-      });
       case 'mount': return this.handleMount(args);
       case 'umount': return this.handleUmount(args);
       case 'findmnt': return this.handleFindmnt(args);

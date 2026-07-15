@@ -14,7 +14,6 @@ import { IPAddress } from '@/network/core/types';
 import { parseMtrArgs, MtrHopStats, formatMtrFrame, MTR_USAGE, MTR_VERSION, type MtrHopProbe } from '@/network/devices/linux/Mtr';
 import { parseWatchArgs } from '@/network/devices/linux/coreutils/WatchRunner';
 import { parseIpMonitorSpec } from '@/network/devices/linux/LinuxIpCommand';
-import { parseIostatArgs, renderIostatReport } from '@/network/devices/linux/system/Iostat';
 import {
   parseDstatArgs, formatDstatHeader, formatDstatRow, newDstatRateState,
   DSTAT_USAGE, DSTAT_VERSION, DSTAT_LISTING,
@@ -1078,29 +1077,6 @@ export class LinuxTerminalSession extends TerminalSession {
     });
   }
 
-  private tryStartIostatStream(commandLine: string): boolean {
-    const dev = this.device;
-    if (!(dev instanceof LinuxMachine)) return false;
-    if (/[|<>&]/.test(commandLine)) return false;
-    const toks = commandLine.trim().split(/\s+/);
-    if (toks[0] !== 'iostat') return false;
-    const parsed = parseIostatArgs(toks.slice(1));
-    if ('error' in parsed) return false;
-    if (parsed.intervalSeconds === null) return false;
-    return this.startScrollingMonitor({
-      commandLine,
-      intervalMs: Math.max(100, parsed.intervalSeconds * 1000),
-      maxFrames: parsed.count ?? undefined,
-      header: () => dev.iostatBannerLine(),
-      frame: () => `\n${renderIostatReport(
-        parsed,
-        dev.sampleIostatCpuSnapshot(),
-        dev.sampleIostatDevicesSnapshot(parsed),
-        new Date(),
-      )}`,
-    });
-  }
-
   private tryStartDstatStream(commandLine: string): boolean {
     const dev = this.device;
     if (!(dev instanceof LinuxMachine)) return false;
@@ -1196,7 +1172,6 @@ export class LinuxTerminalSession extends TerminalSession {
     if (this.tryStartTopStream(trimmed)) return;
     if (this.tryStartIpMonitor(trimmed)) return;
     if (this.tryStartNetstatStream(trimmed)) return;
-    if (this.tryStartIostatStream(trimmed)) return;
     if (this.tryStartDstatStream(trimmed)) return;
     if (this.tryStartTcpdump(trimmed)) return;
     if (this.tryCrontabEdit(trimmed)) return;

@@ -46,7 +46,6 @@ import {
 
 // Linux kernel / userspace
 import { LinuxCommandExecutor } from './linux/LinuxCommandExecutor';
-import { sampleIostatCpu, sampleIostatDevices, iostatBanner, type IostatArgs } from './linux/system/Iostat';
 import { sampleDstat, type DstatRateState, type PortByteSnapshot } from './linux/system/Dstat';
 import { CronEngine } from './linux/cron/CronEngine';
 import { SystemCron } from './linux/cron/SystemCron';
@@ -1781,6 +1780,10 @@ export abstract class LinuxMachine extends EndHost
           const c = this.getHardware().cpu;
           return { logicalCpus: c.logicalCpus, architecture: c.architecture, modelName: c.modelName };
         },
+        diskInfo: () => this.getHardware().storage.map((d) => ({
+          name: d.name,
+          partitions: d.partitions.map((p) => p.name),
+        })),
         osIdentity: () => {
           const id = this.executor.identity;
           return {
@@ -3207,20 +3210,6 @@ export abstract class LinuxMachine extends EndHost
       memory: this.getHardware().memory,
       ports,
     }, rate);
-  }
-
-  iostatBannerLine(): string {
-    const now = new Date();
-    const hostname = (this.executor.vfs.readFile('/etc/hostname') ?? 'localhost').trim();
-    return iostatBanner(this.executor.identity.kernel, hostname, this.getHardware().cpu, now);
-  }
-
-  sampleIostatCpuSnapshot() {
-    return sampleIostatCpu(this.executor.processMgr, this.getHardware().cpu);
-  }
-
-  sampleIostatDevicesSnapshot(args: IostatArgs) {
-    return sampleIostatDevices(args, this.getHardware().storage);
   }
 
   monitorNetlink(

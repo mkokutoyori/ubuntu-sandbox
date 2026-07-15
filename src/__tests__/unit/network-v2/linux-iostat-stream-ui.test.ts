@@ -12,7 +12,6 @@ import {
   sampleIostatDevices,
   type IostatArgs,
 } from '@/network/devices/linux/system/Iostat';
-import { StorageDevice, DiskPartition } from '@/network/devices/host/hardware/StorageDevice';
 
 function key(k: string, opts: { ctrlKey?: boolean } = {}): KeyEvent {
   return { key: k, ctrlKey: opts.ctrlKey ?? false, altKey: false, metaKey: false, shiftKey: false };
@@ -150,13 +149,10 @@ describe('Linux iostat — pure parser + formatters', () => {
   });
 
   it('samples whole disks by default and partitions under -p', () => {
-    const storage = [new StorageDevice({
-      name: 'sda', sizeBytes: 1024,
-      partitions: [new DiskPartition({ name: 'sda1', sizeBytes: 512 })],
-    })];
-    const whole = sampleIostatDevices(args(), storage);
+    const disks = [{ name: 'sda', partitions: ['sda1'] }];
+    const whole = sampleIostatDevices(args(), disks);
     expect(whole.map((d) => d.device)).toEqual(['sda']);
-    const parts = sampleIostatDevices(args({ perPartition: true }), storage);
+    const parts = sampleIostatDevices(args({ perPartition: true }), disks);
     expect(parts.map((d) => d.device)).toEqual(['sda', 'sda1']);
   });
 });

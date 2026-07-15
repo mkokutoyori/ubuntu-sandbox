@@ -1,9 +1,11 @@
-import type { CpuSpec } from '../../host/hardware/CpuSpec';
-import type { StorageDevice } from '../../host/hardware/StorageDevice';
-import type { KernelInfo } from '../../host/identity/KernelInfo';
-import type { LinuxProcessManager } from '../LinuxProcessManager';
 import { mpstatBanner, sampleMpstat } from './Mpstat';
 import { pad2 } from '@/lib/format';
+
+/** Un disque et ses partitions dont `iostat` a besoin. */
+export interface IostatDisk {
+  readonly name: string;
+  readonly partitions: readonly string[];
+}
 
 export interface IostatArgs {
   intervalSeconds: number | null;
@@ -107,7 +109,12 @@ export function parseIostatArgs(args: string[]): IostatArgs | { error: string } 
   };
 }
 
-export function iostatBanner(kernel: KernelInfo, hostname: string, cpu: CpuSpec, now: Date): string {
+export function iostatBanner(
+  kernel: { sysname: string; release: string },
+  hostname: string,
+  cpu: { architecture: string; logicalCpus: number },
+  now: Date,
+): string {
   return mpstatBanner(kernel, hostname, cpu, now);
 }
 
@@ -159,10 +166,10 @@ export function formatIostatDeviceRow(args: IostatArgs, row: IostatDeviceRow): s
   return row.device.padEnd(13) + rates + totals;
 }
 
-export function sampleIostatCpu(pm: LinuxProcessManager, cpu: CpuSpec): IostatCpuRow {
+export function sampleIostatCpu(runQueue: number, cpuCount: number): IostatCpuRow {
   const aggregate = sampleMpstat(
     { intervalSeconds: null, count: null, showAllCpus: false, selectedCpus: null },
-    pm, cpu,
+    runQueue, cpuCount,
   )[0];
   return {
     user: aggregate.usr,
@@ -174,12 +181,12 @@ export function sampleIostatCpu(pm: LinuxProcessManager, cpu: CpuSpec): IostatCp
   };
 }
 
-export function sampleIostatDevices(args: IostatArgs, storage: StorageDevice[]): IostatDeviceRow[] {
+export function sampleIostatDevices(args: IostatArgs, disks: readonly IostatDisk[]): IostatDeviceRow[] {
   const rows: IostatDeviceRow[] = [];
-  for (const disk of storage) {
+  for (const disk of disks) {
     rows.push(makeDeviceRow(disk.name));
     if (args.perPartition) {
-      for (const part of disk.partitions) rows.push(makeDeviceRow(part.name));
+      for (const part of disk.partitions) rows.push(makeDeviceRow(part));
     }
   }
   if (args.omitIdle) return rows.filter((r) => r.active);
@@ -220,23 +227,3 @@ export function renderIostatReport(
   return lines.join('\n');
 }
 
-export interface IostatContext {
-  pm: LinuxProcessManager;
-  cpu: CpuSpec;
-  storage: StorageDevice[];
-  kernel: KernelInfo;
-  hostname: string;
-}
-
-export function cmdIostat(args: string[], ctx: IostatContext): { output: string; exitCode: number } {
-  const parsed = parseIostatArgs(args);
-  if ('error' in parsed) {
-    return { output: parsed.error, exitCode: parsed.error.startsWith('sysstat') ? 0 : 1 };
-  }
-  const now = new Date();
-  const banner = iostatBanner(ctx.kernel, ctx.hostname, ctx.cpu, now);
-  const cpuRow = sampleIostatCpu(ctx.pm, ctx.cpu);
-  const devices = sampleIostatDevices(parsed, ctx.storage);
-  const report = renderIostatReport(parsed, cpuRow, devices, now);
-  return { output: `${banner}\n${report}`, exitCode: 0 };
-}
