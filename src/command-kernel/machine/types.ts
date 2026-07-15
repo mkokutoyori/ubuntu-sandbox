@@ -1550,8 +1550,10 @@ export interface OsIdentity {
 /** Instantané mémoire live, en Kio (`/proc/meminfo`) — sert `free`/`vmstat`/`top`. */
 export interface MemorySnapshot {
   readonly totalKib: number;
+  readonly usedKib: number;
   readonly freeKib: number;
   readonly availableKib: number;
+  readonly sharedKib: number;
   readonly buffersKib: number;
   readonly cacheKib: number;
   readonly swapTotalKib: number;

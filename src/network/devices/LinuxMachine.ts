@@ -1774,8 +1774,10 @@ export abstract class LinuxMachine extends EndHost
           const m = this.getHardware().memory;
           return {
             totalKib: m.totalKib,
+            usedKib: m.usedKib,
             freeKib: m.freeKib,
             availableKib: m.availableKib,
+            sharedKib: m.sharedKib,
             buffersKib: m.buffersKib,
             cacheKib: m.cacheKib,
             swapTotalKib: m.swapTotalKib,

@@ -134,44 +134,20 @@ export class MemoryProfile {
    *  (KiB by default; matches `-b/-k/-m/-g` flags); `human` switches to
    *  `-h` (auto units); `wide` is `-w`; `total` is `-t`. */
   toFree(human = false, wide = false, unit: 'b' | 'k' | 'm' | 'g' = 'k', total = false): string {
-    const divide = (kib: number): number => {
-      switch (unit) {
-        case 'b': return kib * 1024;
-        case 'm': return Math.round(kib / 1024);
-        case 'g': return Math.round(kib / 1024 / 1024);
-        default:  return kib;
-      }
-    };
-    const fmt = human
-      ? (kib: number) => humanKib(kib)
-      : (kib: number) => String(divide(kib));
-    const memCols = wide
-      ? ['total', 'used', 'free', 'shared', 'buffers', 'cache', 'available']
-      : ['total', 'used', 'free', 'shared', 'buff/cache', 'available'];
-    const memValues = wide
-      ? [this.totalKib, this.usedKib, this.freeKib, this.sharedKib,
-         this.buffersKib, this.cacheKib, this.availableKib]
-      : [this.totalKib, this.usedKib, this.freeKib, this.sharedKib,
-         this.buffCacheKib, this.availableKib];
-
-    const header = ''.padEnd(FREE_LABEL_WIDTH) +
-      memCols.map((c) => c.padStart(FREE_COLUMN_WIDTH)).join('');
-    const memRow = 'Mem:'.padEnd(FREE_LABEL_WIDTH) +
-      memValues.map((v) => fmt(v).padStart(FREE_COLUMN_WIDTH)).join('');
-    const swapRow = 'Swap:'.padEnd(FREE_LABEL_WIDTH) +
-      [this.swapTotalKib, this.swapUsedKib, this.swapFreeKib]
-        .map((v) => fmt(v).padStart(FREE_COLUMN_WIDTH)).join('');
-
-    const rows = [header, memRow, swapRow];
-    if (total) {
-      const totalKib = this.totalKib + this.swapTotalKib;
-      const usedKib = this.usedKib + this.swapUsedKib;
-      const freeKib = this.freeKib + this.swapFreeKib;
-      rows.push('Total:'.padEnd(FREE_LABEL_WIDTH) +
-        [totalKib, usedKib, freeKib]
-          .map((v) => fmt(v).padStart(FREE_COLUMN_WIDTH)).join(''));
-    }
-    return rows.join('\n');
+    return renderFree(
+      {
+        totalKib: this.totalKib,
+        usedKib: this.usedKib,
+        freeKib: this.freeKib,
+        availableKib: this.availableKib,
+        sharedKib: this.sharedKib,
+        buffersKib: this.buffersKib,
+        cacheKib: this.cacheKib,
+        swapTotalKib: this.swapTotalKib,
+        swapUsedKib: this.swapUsedKib,
+      },
+      { human, wide, unit, total },
+    );
   }
 
   /** Render `/proc/meminfo`. */
@@ -192,6 +168,72 @@ export class MemoryProfile {
       line('Shmem', this.sharedKib),
     ].join('\n') + '\n';
   }
+}
+
+/** Champs mémoire (Kio) que consomme le rapport `free` — satisfait structurellement par `MemorySnapshot` du socle. */
+export interface FreeMemoryFields {
+  readonly totalKib: number;
+  readonly usedKib: number;
+  readonly freeKib: number;
+  readonly availableKib: number;
+  readonly sharedKib: number;
+  readonly buffersKib: number;
+  readonly cacheKib: number;
+  readonly swapTotalKib: number;
+  readonly swapUsedKib: number;
+}
+
+export interface FreeRenderOptions {
+  human: boolean;
+  wide: boolean;
+  unit: 'b' | 'k' | 'm' | 'g';
+  total: boolean;
+}
+
+/**
+ * Rend le rapport `free` à partir d'un instantané mémoire — fonction pure
+ * partagée par `MemoryProfile.toFree` et la commande noyau `free`. `unit`
+ * choisit le diviseur (`-b/-k/-m/-g`), `human` bascule en `-h`, `wide` est
+ * `-w`, `total` est `-t`.
+ */
+export function renderFree(mem: FreeMemoryFields, opts: FreeRenderOptions): string {
+  const buffCacheKib = mem.buffersKib + mem.cacheKib;
+  const swapFreeKib = mem.swapTotalKib - mem.swapUsedKib;
+  const divide = (kib: number): number => {
+    switch (opts.unit) {
+      case 'b': return kib * 1024;
+      case 'm': return Math.round(kib / 1024);
+      case 'g': return Math.round(kib / 1024 / 1024);
+      default:  return kib;
+    }
+  };
+  const fmt = opts.human
+    ? (kib: number) => humanKib(kib)
+    : (kib: number) => String(divide(kib));
+  const memCols = opts.wide
+    ? ['total', 'used', 'free', 'shared', 'buffers', 'cache', 'available']
+    : ['total', 'used', 'free', 'shared', 'buff/cache', 'available'];
+  const memValues = opts.wide
+    ? [mem.totalKib, mem.usedKib, mem.freeKib, mem.sharedKib, mem.buffersKib, mem.cacheKib, mem.availableKib]
+    : [mem.totalKib, mem.usedKib, mem.freeKib, mem.sharedKib, buffCacheKib, mem.availableKib];
+
+  const header = ''.padEnd(FREE_LABEL_WIDTH) +
+    memCols.map((c) => c.padStart(FREE_COLUMN_WIDTH)).join('');
+  const memRow = 'Mem:'.padEnd(FREE_LABEL_WIDTH) +
+    memValues.map((v) => fmt(v).padStart(FREE_COLUMN_WIDTH)).join('');
+  const swapRow = 'Swap:'.padEnd(FREE_LABEL_WIDTH) +
+    [mem.swapTotalKib, mem.swapUsedKib, swapFreeKib]
+      .map((v) => fmt(v).padStart(FREE_COLUMN_WIDTH)).join('');
+
+  const rows = [header, memRow, swapRow];
+  if (opts.total) {
+    const totalKib = mem.totalKib + mem.swapTotalKib;
+    const usedKib = mem.usedKib + mem.swapUsedKib;
+    const freeKib = mem.freeKib + swapFreeKib;
+    rows.push('Total:'.padEnd(FREE_LABEL_WIDTH) +
+      [totalKib, usedKib, freeKib].map((v) => fmt(v).padStart(FREE_COLUMN_WIDTH)).join(''));
+  }
+  return rows.join('\n');
 }
 
 /** Format a KiB count the way `free -h` does: `0B`, `24Mi`, `3.8Gi`. */

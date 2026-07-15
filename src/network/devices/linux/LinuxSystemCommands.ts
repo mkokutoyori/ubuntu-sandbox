@@ -1,5 +1,4 @@
 import type { ShellContext } from './LinuxFileCommands';
-import type { MemoryProfile } from '../host/hardware';
 
 
 /**
@@ -250,38 +249,6 @@ export function cmdDu(ctx: ShellContext, args: string[]): string {
   };
   visit(absPath, target);
   return lines.join('\n');
-}
-
-/**
- * `free` — report memory usage. Rendered from the host's {@link MemoryProfile}
- * so it stays coherent with `/proc/meminfo` and the hardware inventory.
- */
-export function cmdFree(args: string[], memory: MemoryProfile): string {
-  for (let i = 0; i < args.length; i++) {
-    const a = args[i];
-    if (a === '-c' || a === '--count') {
-      const v = args[++i];
-      if (!v || !/^\d+$/.test(v) || parseInt(v, 10) < 1) {
-        return `free: invalid count value '${v ?? ''}'`;
-      }
-      continue;
-    }
-    if (a === '-s' || a === '--seconds') {
-      const v = args[++i];
-      if (!v || !/^\d+(?:\.\d+)?$/.test(v)) {
-        return `free: invalid seconds value '${v ?? ''}'`;
-      }
-      continue;
-    }
-  }
-  const human = args.includes('-h') || args.includes('--human-readable');
-  const wide = args.includes('-w') || args.includes('--wide');
-  const total = args.includes('-t') || args.includes('--total');
-  let unit: 'b' | 'k' | 'm' | 'g' = 'k';
-  if (args.includes('-b') || args.includes('--bytes')) unit = 'b';
-  else if (args.includes('-m') || args.includes('--mega') || args.includes('--mebi')) unit = 'm';
-  else if (args.includes('-g') || args.includes('--giga') || args.includes('--gibi')) unit = 'g';
-  return memory.toFree(human, wide, unit, total);
 }
 
 export function cmdLsblk(args: string[]): string {

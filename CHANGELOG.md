@@ -5,6 +5,32 @@ progressive par équipement. Un push = une entrée = une fonctionnalité
 complète et testée (voir `CLAUDE.md` / le framework de migration pour les
 principes directeurs).
 
+## Socle + Linux — `free` migré au noyau (réutilise `SystemMetricsApi`) (§14.6)
+
+**État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
+
+Deuxième échantillonneur convergé, sur le socle métriques posé par `vmstat`.
+`free` était éclaté entre le legacy (`case 'free'`/`cmdFree`, instantané) et
+l'intercepteur `tryStartFreeStream` (mode `-s`). Il devient une commande noyau
+unique.
+
+- **`FreeCommand extends StreamingCommand`** : `isStreaming(argv)` vrai dès
+  qu'un `-s` est fourni ; sans `-s` → une table ; avec `-s` → réaffiche la
+  table entière à chaque intervalle, bornée par `-c` ou Ctrl+C. Garde
+  anti-blocage identique (`ctx.io.interaction`).
+- **`MachineApi.metrics.memory()` étendu** : `MemorySnapshot` gagne `usedKib`
+  et `sharedKib` (nécessaires au rapport `free`). Le rendu est extrait dans
+  une fonction pure **`renderFree(mem, opts)`** dans `MemoryProfile.ts` (couche
+  hôte), partagée par `MemoryProfile.toFree` (qui délègue désormais) et la
+  commande noyau — une seule implémentation, deux appelants, bon sens de
+  dépendance (linux → hôte).
+- Legacy supprimé : `tryStartFreeStream` + dispatch, `case 'free'` de
+  l'exécuteur, `cmdFree` (LinuxSystemCommands.ts), avec leurs imports.
+- Tests : `linux-free-stream-ui` (instantané, `-s`, `-c` auto-terminé,
+  isolation, `-h`) + `host-hardware` (`toFree`/`humanKib`) verts ; cohérence
+  mémoire Oracle SGA/top + commandes générales 452/452 inchangées. `tsc`
+  propre, aucune nouvelle alerte eslint.
+
 ## Socle + Linux — `vmstat` migré au noyau + capacité `SystemMetricsApi` (§14.6)
 
 **État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
