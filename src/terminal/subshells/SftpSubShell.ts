@@ -14,11 +14,11 @@
 import type { KeyEvent } from '@/terminal/sessions/TerminalSession';
 import type { ISubShell, SubShellResult } from './ISubShell';
 import { CommandNotFoundError } from '@/command-kernel/errors';
-import { PipeBuffer } from '@/command-kernel/io/pipe-buffer';
 import { ExitRequest } from '@/command-kernel/shell/exit';
 import type { Interpreter } from '@/command-kernel/interpreter';
 import type { Session } from '@/command-kernel/session/types';
 import { createSftpShell } from '@/network/protocols/ssh/sftp/command-kernel/createSftpShell';
+import { normalizeSftpVerbCase, runSftpLine } from '@/network/protocols/ssh/sftp/command-kernel/runSftpLine';
 import type { SftpSession } from '@/network/protocols/ssh/sftp/SftpSession';
 
 export class SftpSubShell implements ISubShell {
@@ -49,20 +49,13 @@ export class SftpSubShell implements ISubShell {
   }
 
   async processLine(line: string): Promise<SubShellResult> {
-    let trimmed = line.trim();
+    const trimmed = line.trim();
     if (!trimmed) return done(['']);
     // Les verbes sftp(1) sont insensibles à la casse (`PWD` ≡ `pwd`) —
     // normalisés ici, à l'entrée de l'hôte, jamais dans le registre.
-    const verbEnd = trimmed.search(/\s|$/);
-    trimmed = trimmed.slice(0, verbEnd).toLowerCase() + trimmed.slice(verbEnd);
-
-    this.kernelSession.cwd = this.session.getLocalCwdPath();
-    const stdout = new PipeBuffer();
-    const io = { stdin: new PipeBuffer(), stdout, stderr: stdout };
+    const verb = normalizeSftpVerbCase(trimmed);
     try {
-      await this.interpreter.interpretLine(trimmed, this.kernelSession, io);
-      this.session.setLocalCwdPath(this.kernelSession.cwd);
-      const text = (await stdout.readAll()).replace(/\n$/, '');
+      const text = await runSftpLine({ interpreter: this.interpreter, session: this.kernelSession }, this.session, verb);
       return done(text.split('\n'));
     } catch (err) {
       if (err instanceof ExitRequest) {

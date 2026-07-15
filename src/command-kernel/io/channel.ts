@@ -18,4 +18,13 @@ export interface CommandKernelChannel {
   readonly onOutput?: (chunk: string) => void;
   /** Annulation par l'hôte (Ctrl+C) — relayée telle quelle à ctx.signal. */
   readonly signal?: AbortSignal;
+  /**
+   * Remise d'un sous-shell interactif à l'hôte (ex: `sftp` une fois
+   * connecté, §5.5) — absent quand l'hôte ne sait pas en accueillir
+   * (script, pont non câblé). `kind` identifie le type de sous-shell,
+   * `payload` est la poignée opaque renvoyée par la capacité machine qui a
+   * ouvert la connexion — le pont hôte, seul à connaître le type réel, sait
+   * la reconvertir.
+   */
+  readonly openSubShell?: (kind: string, payload: unknown) => void;
 }

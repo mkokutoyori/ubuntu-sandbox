@@ -94,6 +94,65 @@ commande noyau normale à mode dépendant des arguments.
   (`free`/`netstat`/`vmstat`/`mpstat`/`dmesg`-stream-ui) 33/33 — inchangés.
   `tsc` propre, aucune nouvelle alerte eslint.
 
+## SFTP Push C : lanceur en command-kernel, suppression du legacy `enterSftp`
+
+**État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
+
+Dernière étape du plan `DESIGN-SFTP-COMMAND-KERNEL.md`. Le lanceur `sftp`
+(parsing, dialogue mot de passe, remise du sous-shell) devient une
+commande kernel à part entière — `enterSftp`/`connectAndEnterSftp`/
+`runSftpBatch`/l'interception en dur `parts[0] === 'sftp'` disparaissent
+de `LinuxTerminalSession`.
+
+- **`SftpLauncherCommand`** (`src/network/devices/linux/command-kernel/
+  commands/Sftp.ts`, `streaming: true`) : parse `-b batchfile`/`-P port`/
+  `[user@]host` elle-même ; mot de passe via `ctx.io.interaction`
+  (`requireInteraction`, même socle qu'`adduser`) ; mode batch (`-b`)
+  entièrement porté par la commande (lecture du fichier via `ctx.machine.
+  fs`, écho de la transcription, préfixe `-` non bloquant, arrêt sur
+  erreur) ; mode interactif : remise via `ctx.io.openSubShell('sftp',
+  handle)`.
+- **Nouvelle capacité `MachineApi.sftpConnect?`** (`SftpConnectApi`) :
+  ouvre une VRAIE `SftpSession` (SSH + canal SFTP, trames à travers
+  Equipment/Port/Cable) — implémentation `LinuxSftpConnectApi` dans
+  `LinuxMachineApi.ts`, calquée sur l'ancien `connectAndEnterSftp` (mêmes
+  uid/gid/home résolus via `LinuxUserManager`, même `SilentSshInteraction
+  Handler`). Le résultat porte un `handle` opaque (remis tel quel à
+  `openSubShell`, jamais inspecté par la commande) et, en mode batch,
+  `runLine`/`prompt`/`disconnect` qui délèguent au même shell
+  command-kernel sftp que le sous-shell interactif.
+- **`runSftpLine()`** (nouveau, `network/protocols/ssh/sftp/command-kernel/
+  runSftpLine.ts`) : extrait la mécanique commune (normalisation de casse
+  du verbe, synchronisation du cwd local, collecte de sortie) partagée
+  par `SftpSubShell.processLine` (hôte REPL interactif) et
+  `LinuxSftpConnectApi.runLine` (mode batch du lanceur) — une seule
+  implémentation, jamais dupliquée.
+- **`CommandKernelChannel`/`CommandIO` gagnent `openSubShell?(kind,
+  payload)`** (framework §5.5/§14.6) : remise d'un sous-shell interactif à
+  l'hôte. Câblé dans `LinuxTerminalSession` (`handleOpenSubShell`) sur le
+  mécanisme `ShellFactory`/`ShellSubShellAdapter` déjà existant (identique
+  à sqlplus/rman) — le pont, seul à connaître le type réel de la poignée,
+  la reconvertit en `extras.sftpSession`.
+- **Piège de parité découvert (framework §7)** : `sftp` a une seconde vie
+  legacy jamais migrée — `runSshTransport`/`SftpInteractiveSession`/
+  `SftpCommandScript` (`LinuxCommandExecutor.ts`), qui gère l'invocation
+  scriptée/heredoc (`sftp host <<EOF ...`) et les tests appelant
+  `device.executeCommand()` directement (aucun terminal, donc aucun canal
+  d'interaction réel). Router `sftp` vers le kernel sans discernement
+  cassait ces deux usages (mot de passe introuvable → erreur). Fix :
+  `LinuxMachine.kernelClaimsCommand(name, channel)` — le kernel décline
+  `sftp` quand `channel.interaction` est absent, laissant le dispatch
+  legacy (`tryNetworkCommand`/`dispatch()`) le prendre en charge exactement
+  comme avant cette migration ; les autres commandes migrées n'ont pas
+  cette double vie et restent toujours réclamées.
+- Après ce push, `SftpSession` ne porte plus que la connexion (lifecycle +
+  moteur de transfert partagé avec SCP) — toute la logique de commande
+  (session interne ET lanceur) vit en command-kernel.
+- Tests : même lot que Push B (610 passés / 617, les 7 échecs Windows-
+  sftp préexistants confirmés à la baseline) + `scenario-08-sftp-
+  chroot.test.ts` et `ssh-terminal-stack.test.ts` (sftp interactif)
+  vérifiés individuellement. `tsc` propre sur les fichiers touchés.
+
 ## SFTP Push B : transferts et mutations en command-kernel, fin du switch legacy
 
 **État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**

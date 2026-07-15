@@ -1137,6 +1137,47 @@ export interface SftpChannelApi {
   upload(localPath: string, remotePath?: string): string;
 }
 
+/** Sortie d'une ligne de la grammaire sftp exécutée en mode batch (`sftp -b`). */
+export interface SftpBatchLineResult {
+  readonly output: readonly string[];
+  readonly exit: boolean;
+}
+
+/**
+ * Résultat de connexion du lanceur `sftp` — `handle` est une poignée opaque
+ * remise telle quelle à `ctx.io.openSubShell('sftp', handle)` pour la remise
+ * du sous-shell interactif (le pont hôte, seul à connaître le type réel,
+ * sait la reconvertir ; la commande ne l'inspecte jamais). `prompt`/
+ * `runLine`/`disconnect` ne sont utiles qu'en mode batch (`-b`) : chacun
+ * délègue à la connexion réelle déjà ouverte, mais toute la politique du
+ * fichier de batch (commentaires, préfixe `-` silencieux, arrêt sur erreur,
+ * écho de la transcription) reste portée par la commande, jamais ici.
+ */
+export interface SftpConnectResult {
+  readonly ok: boolean;
+  readonly banner: string;
+  readonly handle?: unknown;
+  readonly prompt?: string;
+  runLine?(line: string): Promise<SftpBatchLineResult>;
+  disconnect?(): void;
+}
+
+/**
+ * Ouverture d'une connexion SFTP cliente réelle (`sftp` lanceur) —
+ * optionnel, présent uniquement sur un équipement Unix pouvant héberger un
+ * client SFTP. Chaque appel construit et connecte une VRAIE session (SSH +
+ * canal SFTP, trames à travers Equipment/Port/Cable) ; parsing des
+ * arguments, dialogue mot de passe et remise du sous-shell restent portés
+ * par la commande.
+ */
+export interface SftpConnectApi {
+  connect(
+    userAtHost: string,
+    password: string,
+    opts: { readonly port?: number; readonly localCwd: string },
+  ): Promise<SftpConnectResult>;
+}
+
 export interface SftpRemoteStat {
   readonly mode: number;
   readonly uid: number;
@@ -1525,6 +1566,8 @@ export interface MachineApi {
   readonly netProbe?: NetProbeApi;
   /** Canal SFTP de la session connectée — optionnel, machine d'un shell sftp. */
   readonly sftp?: SftpChannelApi;
+  /** Ouverture d'une connexion SFTP cliente réelle (`sftp` lanceur) — optionnel, équipements Unix uniquement. */
+  readonly sftpConnect?: SftpConnectApi;
   readonly users: UserManagementApi;
   readonly groups: GroupManagementApi;
   readonly power: PowerApi;

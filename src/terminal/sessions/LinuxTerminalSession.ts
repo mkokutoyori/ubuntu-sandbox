@@ -61,7 +61,6 @@ import {
 } from '@/shell/input';
 import { SqlPlusSubShell } from '@/terminal/subshells/SqlPlusSubShell';
 import { ReactiveRmanSubShell } from '@/terminal/subshells/rman/ReactiveRmanSubShell';
-import { SftpSubShell } from '@/terminal/subshells/SftpSubShell';
 import { FtpSubShell } from '@/terminal/subshells/FtpSubShell';
 import { FtpClientSession } from '@/network/ftp/FtpClientSession';
 import { NslookupSubShell } from '@/terminal/subshells/NslookupSubShell';
@@ -415,6 +414,7 @@ export class LinuxTerminalSession extends TerminalSession {
               pending = pending.slice(idx + 1);
             }
           },
+          openSubShell: (kind, payload) => this.handleOpenSubShell(kind, payload),
         });
         await (timeoutMs != null ? withTimeout(promise, timeoutMs) : promise);
         if (pending) this.addLine(pending);
@@ -856,6 +856,7 @@ export class LinuxTerminalSession extends TerminalSession {
               pending = pending.slice(idx + 1);
             }
           },
+          openSubShell: (kind, payload) => this.handleOpenSubShell(kind, payload),
         });
         if (pending) ctx.sink.line(pending);
         this.syncDeviceState();
@@ -1386,10 +1387,6 @@ export class LinuxTerminalSession extends TerminalSession {
     if (!trimmed.startsWith('sudo ')) {
       const noSudo = trimmed;
       const parts = noSudo.split(/\s+/);
-      if (parts[0] === 'sftp') {
-        this.enterSftp(parts.slice(1));
-        return;
-      }
       if (parts[0] === 'ftp') {
         this.enterFtp(parts.slice(1));
         return;
@@ -1904,16 +1901,6 @@ export class LinuxTerminalSession extends TerminalSession {
       this.enterSqlPlus(JSON.parse(sqlplusArgs));
       return;
     }
-    const sftpMeta = ctx.metadata.get('enter_sftp') as string | undefined;
-    if (sftpMeta) {
-      const { userAtHost, batchFile } = JSON.parse(sftpMeta) as {
-        userAtHost: string;
-        batchFile?: string | null;
-      };
-      const password = ctx.values.get('sftp_password') ?? '';
-      this.connectAndEnterSftp(userAtHost, password, batchFile ?? null);
-      return;
-    }
     const ftpMeta = ctx.metadata.get('enter_ftp') as string | undefined;
     if (ftpMeta) {
       const { host, port, user } = JSON.parse(ftpMeta) as { host: string; port?: number; user: string };
@@ -2020,128 +2007,27 @@ export class LinuxTerminalSession extends TerminalSession {
   }
 
   /**
-   * Start an interactive sftp session.
-   * Parses args for `[user@]host`, prompts for a password, then connects.
-   * Non-interactive batch-mode transfers (sftp user@host:/path /local) are
-   * handled by the LinuxCommandExecutor fallback (returns a canned error for now).
+   * Remise d'un sous-shell interactif depuis une commande command-kernel
+   * (`ctx.io.openSubShell`, framework §5.5/§14.6) — pour `sftp`, `payload`
+   * est la `SftpSession` réelle déjà connectée par `machine.sftpConnect`
+   * (`SftpLauncherCommand`) ; ce pont, seul côté Linux à connaître le type
+   * concret, la reconvertit vers le mécanisme `ShellFactory`/`ISubShell`
+   * existant — identique à celui de sqlplus/rman.
    */
-  private enterSftp(args: string[]): void {
-    // Strip flags we care about and find the host argument.
-    let batchFile: string | null = null;
-    const positional: string[] = [];
-    for (let i = 0; i < args.length; i++) {
-      const a = args[i];
-      if (a === '-b' && i + 1 < args.length) {
-        batchFile = args[++i];
-      } else if (!a.startsWith('-')) {
-        positional.push(a);
-      }
-    }
-    const userAtHost = positional[0] ?? '';
-    if (!userAtHost) {
-      this.addLine('usage: sftp [options] [user@]host[:path]', 'error');
-      this.notify();
-      return;
-    }
-
-    // Derive display name for the password prompt ("user@host's password:")
-    const user = userAtHost.includes('@')
-      ? userAtHost.split('@')[0]
-      : this.currentUser;
-    const host = userAtHost.includes('@')
-      ? userAtHost.split('@')[1]
-      : userAtHost;
-    const displayTarget = `${user}@${host}`;
-
-    const steps: InteractiveStep[] = [
-      {
-        type: 'password',
-        prompt: `${displayTarget}'s password: `,
-        mask: 'hidden',
-        storeAs: 'sftp_password',
-      },
-      {
-        type: 'execute',
-        action: async (ctx: FlowContext) => {
-          ctx.metadata.set(
-            'enter_sftp',
-            JSON.stringify({ userAtHost: displayTarget, batchFile }),
-          );
-        },
-      },
-    ];
-    this.startFlowFromSteps(steps, `sftp ${userAtHost}`);
-  }
-
-  private async connectAndEnterSftp(
-    userAtHost: string,
-    password: string,
-    batchFile: string | null = null,
-  ): Promise<void> {
-    const dev = this.device as unknown as {
-      executor?: {
-        vfs?: import('@/network/devices/linux/VirtualFileSystem').VirtualFileSystem;
-        userMgr?: { getUser(name: string): { uid?: number; gid?: number; home?: string } | undefined };
-      };
-      tcpConnect?: (host: string, port: number) => Promise<unknown>;
-    };
-    const localVfs = dev.executor?.vfs;
-    if (!localVfs) {
-      this.addLine('sftp: this device does not support SFTP', 'error');
-      this.notify();
-      return;
-    }
-
-    const tcpConnector: TcpConnector = (host, port) =>
-      (dev.tcpConnect?.(host, port) ?? Promise.resolve(null)) as ReturnType<TcpConnector>;
-
-    const userEntry = dev.executor?.userMgr?.getUser(this.currentUser);
-    const homeDir = userEntry?.home ?? `/home/${this.currentUser}`;
-    const session = new SftpSession({
-      tcpConnector,
-      localVfs: localVfs as never,
-      localUser: this.currentUser,
-      localUid: userEntry?.uid ?? 1000,
-      localGid: userEntry?.gid ?? 1000,
-      localCwd: this.currentPath,
-      knownHostsPath: `${homeDir}/.ssh/known_hosts`,
-      interactionHandler: new SilentSshInteractionHandler(password),
-      homeDirectory: homeDir,
-    });
-
-    const banner = await session.connect(userAtHost, { password });
-    if (!session.isConnected()) {
-      this.addLine(banner, 'error');
-      this.notify();
-      return;
-    }
-    this.addLine(banner);
-
-    // BRD SFTP-13 / analysis doc P5: `sftp -b <file>` runs the batch then
-    // exits without installing the interactive sub-shell. Each line of the
-    // batch is echoed with the prompt (mirroring OpenSSH), output captured,
-    // and the session is disconnected at EOF. A leading `-` on a command
-    // suppresses failure (parity with OpenSSH).
-    if (batchFile) {
-      await this.runSftpBatch(session, localVfs, batchFile);
-      this._inputBuf = '';
-      this.notify();
-      return;
-    }
-
+  private handleOpenSubShell(kind: string, payload: unknown): void {
+    if (kind !== 'sftp') return;
     installDefaultShells();
     const shell = ShellFactory.create('sftp', {
       device: this.device,
       user: this.currentUser,
-      extras: { sftpSession: session },
+      extras: { sftpSession: payload as SftpSession },
     });
     this.activeSubShell = new ShellSubShellAdapter(shell);
     shell.activate();
     this._inputBuf = '';
-    this.notify();
   }
 
-  /** `ftp [user@]host [port]` (PRD-FTP-SFTP.md §2.1.11) — like `enterSftp()`, but for the plain FTP engine (`FtpClientSession`). */
+  /** `ftp [user@]host [port]` (PRD-FTP-SFTP.md §2.1.11) — like the removed legacy `enterSftp()`, but for the plain FTP engine (`FtpClientSession`). */
   private enterFtp(args: string[]): void {
     const positional = args.filter((a) => !a.startsWith('-'));
     const target = positional[0] ?? '';
@@ -2244,35 +2130,6 @@ export class LinuxTerminalSession extends TerminalSession {
     this.activeSubShell = shell;
     this._inputBuf = '';
     this.notify();
-  }
-
-  private async runSftpBatch(
-    session: SftpSession,
-    vfs: import('@/network/devices/linux/VirtualFileSystem').VirtualFileSystem,
-    batchPath: string,
-  ): Promise<void> {
-    const raw = vfs.readFile(batchPath);
-    if (raw === null) {
-      this.addLine(`Couldn't open batch file ${batchPath}`, 'error');
-      session.disconnect();
-      return;
-    }
-    const shell = new SftpSubShell(session);
-    const lines = raw.split('\n');
-    for (const rawLine of lines) {
-      const line = rawLine.trim();
-      if (!line || line.startsWith('#')) continue;
-      const ignoreErrors = line.startsWith('-');
-      const cmd = ignoreErrors ? line.slice(1).trim() : line;
-      this.addEchoLine(shell.getPrompt(), cmd);
-      const result = await shell.processLine(cmd);
-      for (const out of result.output) {
-        if (out) this.addLine(out);
-      }
-      if (result.exit) break;
-      if (!ignoreErrors && hasSftpError(result.output)) break;
-    }
-    session.disconnect();
   }
 
   // ── ssh entry point ─────────────────────────────────────────────
@@ -3715,12 +3572,4 @@ export function shouldExecuteSegment(
   if (connector === ';') return true;
   if (connector === '&&') return previousExitCode === 0;
   return previousExitCode !== 0;
-}
-
-function hasSftpError(output: readonly string[]): boolean {
-  return output.some((line) =>
-    /Couldn't|No such file|Permission denied|Failure|invalid|command not found/i.test(
-      line,
-    ),
-  );
 }
