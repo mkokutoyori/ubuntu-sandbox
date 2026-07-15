@@ -46,7 +46,6 @@ import {
 
 // Linux kernel / userspace
 import { LinuxCommandExecutor } from './linux/LinuxCommandExecutor';
-import { sampleDstat, type DstatRateState, type PortByteSnapshot } from './linux/system/Dstat';
 import { CronEngine } from './linux/cron/CronEngine';
 import { SystemCron } from './linux/cron/SystemCron';
 import type { HardwareProfile } from './host/hardware';
@@ -1784,6 +1783,16 @@ export abstract class LinuxMachine extends EndHost
           name: d.name,
           partitions: d.partitions.map((p) => p.name),
         })),
+        netTraffic: () => {
+          let bytesIn = 0;
+          let bytesOut = 0;
+          for (const p of this.getPorts()) {
+            const c = p.getCounters();
+            bytesIn += c.bytesIn;
+            bytesOut += c.bytesOut;
+          }
+          return { bytesIn, bytesOut };
+        },
         osIdentity: () => {
           const id = this.executor.identity;
           return {
@@ -3197,19 +3206,6 @@ export abstract class LinuxMachine extends EndHost
 
   installCrontabContent(content: string, user: string): void {
     this.executor.installCrontab(content, user);
-  }
-
-  sampleDstatSnapshot(rate: DstatRateState) {
-    const ports: PortByteSnapshot[] = [];
-    for (const p of this.getPorts()) {
-      const c = p.getCounters();
-      ports.push({ bytesIn: c.bytesIn, bytesOut: c.bytesOut });
-    }
-    return sampleDstat({
-      pm: this.executor.processMgr,
-      memory: this.getHardware().memory,
-      ports,
-    }, rate);
   }
 
   monitorNetlink(

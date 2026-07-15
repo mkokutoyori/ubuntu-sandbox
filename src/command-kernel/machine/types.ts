@@ -1583,6 +1583,12 @@ export interface DiskInfo {
   readonly partitions: readonly string[];
 }
 
+/** Compteurs d'octets réseau cumulés, toutes interfaces confondues (`dstat`). */
+export interface NetTraffic {
+  readonly bytesIn: number;
+  readonly bytesOut: number;
+}
+
 export interface SystemMetricsApi {
   /** Instantané mémoire courant. */
   memory(): MemorySnapshot;
@@ -1590,6 +1596,8 @@ export interface SystemMetricsApi {
   cpu(): CpuInfo;
   /** Disques et partitions présents (`iostat`). */
   disks(): readonly DiskInfo[];
+  /** Compteurs d'octets réseau cumulés (`dstat` : débits par différence). */
+  network(): NetTraffic;
 }
 
 export interface HardwareProfile {

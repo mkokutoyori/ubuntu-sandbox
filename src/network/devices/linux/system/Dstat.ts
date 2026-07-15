@@ -1,6 +1,3 @@
-import type { MemoryProfile } from '../../host/hardware/MemoryProfile';
-import type { LinuxProcessManager } from '../LinuxProcessManager';
-
 export interface DstatGroups {
   time: boolean;
   cpu: boolean;
@@ -128,11 +125,6 @@ export interface DstatSample {
   system: { interruptsPerSec: number; ctxSwitchesPerSec: number };
 }
 
-export interface PortByteSnapshot {
-  bytesIn: number;
-  bytesOut: number;
-}
-
 export interface DstatRateState {
   lastTsMs: number | null;
   prevTotalBytesIn: number;
@@ -143,22 +135,22 @@ export function newDstatRateState(): DstatRateState {
   return { lastTsMs: null, prevTotalBytesIn: 0, prevTotalBytesOut: 0 };
 }
 
-export interface DstatSampleContext {
-  pm: LinuxProcessManager;
-  memory: MemoryProfile;
-  ports: PortByteSnapshot[];
+/** Entrées brutes d'un échantillon `dstat`, découplées des types équipement. */
+export interface DstatInputs {
+  runQueue: number;
+  memory: { totalKib: number; freeKib: number; buffersKib: number; cacheKib: number };
+  totalBytesIn: number;
+  totalBytesOut: number;
 }
 
-export function sampleDstat(ctx: DstatSampleContext, rate: DstatRateState): DstatSample {
-  const procs = ctx.pm.list();
-  const procsR = procs.filter((p) => p.state === 'R').length;
-  const cpuLoad = Math.min(100, procsR * 100);
+export function sampleDstat(inputs: DstatInputs, rate: DstatRateState): DstatSample {
+  const cpuLoad = Math.min(100, inputs.runQueue * 100);
   const user = Math.round(cpuLoad * 0.6);
   const system = Math.round(cpuLoad * 0.4);
   const idle = Math.max(0, 100 - user - system);
 
-  const totalIn = ctx.ports.reduce((a, p) => a + p.bytesIn, 0);
-  const totalOut = ctx.ports.reduce((a, p) => a + p.bytesOut, 0);
+  const totalIn = inputs.totalBytesIn;
+  const totalOut = inputs.totalBytesOut;
   const now = Date.now();
   let recvPerSec = 0;
   let sendPerSec = 0;
@@ -171,15 +163,16 @@ export function sampleDstat(ctx: DstatSampleContext, rate: DstatRateState): Dsta
   rate.prevTotalBytesIn = totalIn;
   rate.prevTotalBytesOut = totalOut;
 
+  const mem = inputs.memory;
   return {
     ts: new Date(now),
     cpu: { user, system, idle, wait: 0, steal: 0 },
     disk: { readBytesPerSec: 0, writeBytesPerSec: 0 },
     memory: {
-      usedKib: Math.max(0, ctx.memory.totalKib - ctx.memory.freeKib - ctx.memory.buffersKib - ctx.memory.cacheKib),
-      buffersKib: ctx.memory.buffersKib,
-      cacheKib: ctx.memory.cacheKib,
-      freeKib: ctx.memory.freeKib,
+      usedKib: Math.max(0, mem.totalKib - mem.freeKib - mem.buffersKib - mem.cacheKib),
+      buffersKib: mem.buffersKib,
+      cacheKib: mem.cacheKib,
+      freeKib: mem.freeKib,
     },
     net: { recvBytesPerSec: recvPerSec, sendBytesPerSec: sendPerSec },
     paging: { inKib: 0, outKib: 0 },

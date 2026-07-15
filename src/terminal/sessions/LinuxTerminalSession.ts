@@ -14,10 +14,6 @@ import { IPAddress } from '@/network/core/types';
 import { parseMtrArgs, MtrHopStats, formatMtrFrame, MTR_USAGE, MTR_VERSION, type MtrHopProbe } from '@/network/devices/linux/Mtr';
 import { parseWatchArgs } from '@/network/devices/linux/coreutils/WatchRunner';
 import { parseIpMonitorSpec } from '@/network/devices/linux/LinuxIpCommand';
-import {
-  parseDstatArgs, formatDstatHeader, formatDstatRow, newDstatRateState,
-  DSTAT_USAGE, DSTAT_VERSION, DSTAT_LISTING,
-} from '@/network/devices/linux/system/Dstat';
 import { parseInvocation } from '@/network/devices/linux/network/tcpdump/TcpdumpCli';
 import { compileFilter } from '@/network/devices/linux/network/tcpdump/TcpdumpFilter';
 import { banner as tcpdumpBanner, footer as tcpdumpFooterLines, formatFrame as formatCaptureFrame } from '@/network/devices/linux/network/tcpdump/TcpdumpFormat';
@@ -1077,29 +1073,6 @@ export class LinuxTerminalSession extends TerminalSession {
     });
   }
 
-  private tryStartDstatStream(commandLine: string): boolean {
-    const dev = this.device;
-    if (!(dev instanceof LinuxMachine)) return false;
-    if (/[|<>&]/.test(commandLine)) return false;
-    const toks = commandLine.trim().split(/\s+/);
-    if (toks[0] !== 'dstat') return false;
-
-    const parsed = parseDstatArgs(toks.slice(1));
-    if (parsed.showHelp) { this.addLine(DSTAT_USAGE); this.notify(); return true; }
-    if (parsed.showVersion) { this.addLine(DSTAT_VERSION); this.notify(); return true; }
-    if (parsed.listStats) { this.addLine(DSTAT_LISTING); this.notify(); return true; }
-    if (parsed.parseError) { this.addLine(parsed.parseError); this.notify(); return true; }
-
-    const rate = newDstatRateState();
-    return this.startScrollingMonitor({
-      commandLine,
-      intervalMs: Math.max(100, parsed.intervalSeconds * 1000),
-      maxFrames: parsed.count ?? undefined,
-      header: () => formatDstatHeader(parsed.groups),
-      frame: () => formatDstatRow(dev.sampleDstatSnapshot(rate), parsed.groups),
-    });
-  }
-
   private async tryInteractiveRead(line: string): Promise<boolean> {
     if (!/^\s*read\b/.test(line)) return false;
     if (/[|<>]/.test(line)) return false;
@@ -1172,7 +1145,6 @@ export class LinuxTerminalSession extends TerminalSession {
     if (this.tryStartTopStream(trimmed)) return;
     if (this.tryStartIpMonitor(trimmed)) return;
     if (this.tryStartNetstatStream(trimmed)) return;
-    if (this.tryStartDstatStream(trimmed)) return;
     if (this.tryStartTcpdump(trimmed)) return;
     if (this.tryCrontabEdit(trimmed)) return;
     if (await this.tryInteractiveRead(trimmed)) return;

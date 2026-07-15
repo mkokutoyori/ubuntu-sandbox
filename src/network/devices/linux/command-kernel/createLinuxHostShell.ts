@@ -61,6 +61,7 @@ import { FreeCommand } from './commands/Free';
 import { MpstatCommand } from './commands/Mpstat';
 import { PidstatCommand } from './commands/Pidstat';
 import { IostatCommand } from './commands/Iostat';
+import { DstatCommand } from './commands/Dstat';
 import { TouchCommand } from './commands/Touch';
 import { TrCommand } from './commands/Tr';
 import { TruncateCommand } from './commands/Truncate';
@@ -135,6 +136,7 @@ export function createLinuxHostShell(deps: LinuxMachineApiDeps): Interpreter {
   registry.register(() => new MpstatCommand());
   registry.register(() => new PidstatCommand());
   registry.register(() => new IostatCommand());
+  registry.register(() => new DstatCommand());
   registry.register(() => new Md5sumCommand());
   registry.register(() => new Sha1sumCommand());
   registry.register(() => new Sha256sumCommand());

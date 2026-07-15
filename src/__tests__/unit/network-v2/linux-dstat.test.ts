@@ -97,24 +97,22 @@ describe('dstat — formatter', () => {
 });
 
 describe('dstat — sampleDstat', () => {
+  const mem = { totalKib: 4_000_000, freeKib: 2_000_000, buffersKib: 100_000, cacheKib: 200_000 };
+
   it('first sample reports 0 B/sec for net (no previous reference)', () => {
-    const pm = { list: () => [] } as unknown as Parameters<typeof sampleDstat>[0]['pm'];
-    const mem = { totalKib: 4_000_000, freeKib: 2_000_000, buffersKib: 100_000, cacheKib: 200_000 } as Parameters<typeof sampleDstat>[0]['memory'];
     const rate = newDstatRateState();
-    const snap = sampleDstat({ pm, memory: mem, ports: [{ bytesIn: 5000, bytesOut: 9000 }] }, rate);
+    const snap = sampleDstat({ runQueue: 0, memory: mem, totalBytesIn: 5000, totalBytesOut: 9000 }, rate);
     expect(snap.net.recvBytesPerSec).toBe(0);
     expect(snap.net.sendBytesPerSec).toBe(0);
     expect(snap.memory.usedKib).toBe(4_000_000 - 2_000_000 - 100_000 - 200_000);
   });
 
   it('second sample reports delta bytes per second', () => {
-    const pm = { list: () => [] } as unknown as Parameters<typeof sampleDstat>[0]['pm'];
-    const mem = { totalKib: 4_000_000, freeKib: 2_000_000, buffersKib: 100_000, cacheKib: 200_000 } as Parameters<typeof sampleDstat>[0]['memory'];
     const rate = newDstatRateState();
-    sampleDstat({ pm, memory: mem, ports: [{ bytesIn: 1000, bytesOut: 2000 }] }, rate);
+    sampleDstat({ runQueue: 0, memory: mem, totalBytesIn: 1000, totalBytesOut: 2000 }, rate);
     // simulate time passing
     rate.lastTsMs = Date.now() - 1000;
-    const snap = sampleDstat({ pm, memory: mem, ports: [{ bytesIn: 2000, bytesOut: 3000 }] }, rate);
+    const snap = sampleDstat({ runQueue: 0, memory: mem, totalBytesIn: 2000, totalBytesOut: 3000 }, rate);
     expect(snap.net.recvBytesPerSec).toBeGreaterThan(900);
     expect(snap.net.recvBytesPerSec).toBeLessThan(1100);
     expect(snap.net.sendBytesPerSec).toBeGreaterThan(900);

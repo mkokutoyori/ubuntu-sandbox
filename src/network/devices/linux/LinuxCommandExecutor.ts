@@ -53,7 +53,6 @@ import { ExitSignal } from '@/bash/errors/BashError';
 import { AliasTable } from '@/bash/runtime/AliasTable';
 import { type IpNetworkContext } from './LinuxIpCommand';
 import { cmdDf, cmdDu } from './LinuxSystemCommands';
-import { parseDstatArgs, DSTAT_USAGE, DSTAT_VERSION, DSTAT_LISTING } from './system/Dstat';
 import { MountTable, MountEntry } from './MountTable';
 import { SysfsTree } from './Sysfs';
 import { cmdIfconfig, cmdNetstat, cmdCurl, cmdWget, cmdTcpdump } from './LinuxNetCommands';
@@ -3789,15 +3788,6 @@ export class LinuxCommandExecutor {
       case 'netstat': return { output: cmdNetstat(args, this.ipNetworkCtx, this.isServer, this.socketTable, (p, pr) => this.resolveServiceName(p, pr)), exitCode: 0 };
       case 'curl': return { output: cmdCurl(args), exitCode: 0 };
       case 'wget': return { output: cmdWget(args), exitCode: 0 };
-      case 'dstat': {
-        const parsed = parseDstatArgs(args);
-        if (parsed.showHelp) return { output: DSTAT_USAGE, exitCode: 0 };
-        if (parsed.showVersion) return { output: DSTAT_VERSION, exitCode: 0 };
-        if (parsed.listStats) return { output: DSTAT_LISTING, exitCode: 0 };
-        if (parsed.parseError) return { output: parsed.parseError, exitCode: 1 };
-        return { output: '', exitCode: 0 };
-      }
-
       // ── Miscellaneous common commands ────────────────────────────────
       case 'apt':
       case 'apt-get': {

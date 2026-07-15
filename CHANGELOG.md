@@ -5,6 +5,33 @@ progressive par équipement. Un push = une entrée = une fonctionnalité
 complète et testée (voir `CLAUDE.md` / le framework de migration pour les
 principes directeurs).
 
+## Socle + Linux — `dstat` migré au noyau (`SystemMetricsApi.network`) — famille échantillonneurs complète (§14.6)
+
+**État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
+
+Sixième et **dernier échantillonneur** convergé. `dstat` était éclaté entre
+le legacy (`case 'dstat'`, méta-commandes seules) et l'intercepteur
+`tryStartDstatStream`. La famille `vmstat`/`free`/`mpstat`/`pidstat`/`iostat`/
+`dstat` est désormais **entièrement au noyau**.
+
+- **`DstatCommand extends StreamingCommand`** : moniteur pur — `isStreaming`
+  vrai sauf `--version`/`--help`/`--list`/erreur ; en-tête une fois, une ligne
+  par intervalle (CPU/disque/mémoire/réseau/paging/système selon les groupes),
+  bornée par `nombre` ou Ctrl+C. Un appel programmatique (sans
+  `ctx.io.interaction`) ne produit rien, comme le legacy.
+- **`SystemMetricsApi.network(): NetTraffic`** (octets in/out cumulés, câblés
+  depuis les compteurs de ports) — complète `memory()`/`cpu()`/`disks()`. La
+  capacité métriques est maintenant fournie ssi les quatre profils existent.
+- **`sampleDstat` rendu pur** : prend des `DstatInputs` primitives (runQueue,
+  mémoire, octets réseau cumulés) au lieu de `LinuxProcessManager`/
+  `MemoryProfile`/`PortByteSnapshot[]`.
+- Legacy supprimé : `tryStartDstatStream` + dispatch, `case 'dstat'`,
+  `DstatSampleContext`/`PortByteSnapshot`, `LinuxMachine.sampleDstatSnapshot`,
+  avec leurs imports.
+- Tests : `linux-dstat` 17/17 (parseur, `sampleDstat` recâblé sur `DstatInputs`,
+  flux `dstat 1 2`/`-c -m`/live+Ctrl+C, méta-commandes) ; sweep complet de la
+  famille + routage noyau 59/59. `tsc` propre, aucune nouvelle alerte eslint.
+
 ## Socle + Linux — `iostat` migré au noyau (`SystemMetricsApi.disks`) (§14.6)
 
 **État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
