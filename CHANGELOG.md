@@ -5,6 +5,37 @@ progressive par équipement. Un push = une entrée = une fonctionnalité
 complète et testée (voir `CLAUDE.md` / le framework de migration pour les
 principes directeurs).
 
+## Socle + Linux — `netstat` migré au noyau (`NetstatInspectApi`, mode `-c`) (§14.6)
+
+**État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
+
+`netstat` — commande réseau à 4 modes (connexions, `-r` routes, `-i`
+interfaces, `-s` statistiques), largement testée (20+ suites) — était éclaté
+entre le legacy (`case 'netstat'`) et l'intercepteur `tryStartNetstatStream`
+(mode `-c` continu). Il devient une commande noyau unique.
+
+- **`NetstatCommand extends StreamingCommand`** : `isStreaming(argv)` vrai avec
+  `-c`/`--continuous` ; sans `-c` → un affichage ; avec `-c` → la liste entière
+  réaffichée chaque seconde jusqu'à Ctrl+C. Garde anti-blocage
+  (`ctx.io.interaction`).
+- **Nouvelle capacité socle `MachineApi.netstat?: NetstatInspectApi`** (§0.1)
+  exposant des vues en lecture (`routes`/`interfaces`/`sockets`/
+  `resolveService`/`isServer`) via `NetstatRouteView`/`NetstatIfaceView`/
+  `NetstatSocketView`, câblée depuis `LinuxCommandExecutor.buildNetstatInspect`
+  (table de routage + interfaces + `SocketTable` + `/etc/services`).
+- **Rendu partagé préservé** : `cmdNetstat` refactoré pour consommer
+  `NetstatInputs` (les vues socle) au lieu de `IpNetworkContext`/`SocketTable` —
+  **sortie inchangée octet pour octet** (formatage identique), réutilisé tel
+  quel par la commande noyau. `cmdSs` intact.
+- Legacy supprimé : `tryStartNetstatStream` + dispatch, `case 'netstat'`,
+  avec l'import `cmdNetstat` de l'exécuteur.
+- Tests : `linux-netstat-stream-ui` (flux `-c`, un-coup, isolation,
+  `listAttachedStreams`) + `socket-table` + `ss-netstat` (appels directs
+  `cmdNetstat` recâblés sur `NetstatInputs`) 118/118 ; sweep routing-table /
+  service-port / oracle-listener / ssh-lan / cross-equipment 735+ verts (seuls
+  persistent des échecs Windows-ping et PowerShell préexistants, non liés).
+  `tsc` propre, aucune nouvelle alerte eslint.
+
 ## Socle + Linux — `dstat` migré au noyau (`SystemMetricsApi.network`) — famille échantillonneurs complète (§14.6)
 
 **État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**

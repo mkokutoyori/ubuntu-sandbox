@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { SocketTable } from '@/network/core/SocketTable';
-import { cmdSs, cmdNetstat } from '@/network/devices/linux/LinuxNetCommands';
+import { cmdSs, cmdNetstat, type NetstatInputs } from '@/network/devices/linux/LinuxNetCommands';
 import { LinuxPC } from '@/network/devices/LinuxPC';
 import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
 import { EventBus, __setDefaultEventBus } from '@/events/EventBus';
@@ -17,6 +17,19 @@ function fixture(): SocketTable {
 const services: Record<string, string> = { '22/tcp': 'ssh', '53/udp': 'domain', '80/tcp': 'http' };
 const resolveService = (port: number, proto: string): string | null =>
   services[`${port}/${proto}`] ?? null;
+
+function netstatInputs(): NetstatInputs {
+  return {
+    routes: null,
+    interfaces: null,
+    sockets: fixture().getAll().map((s) => ({
+      protocol: s.protocol, localAddress: s.localAddress, localPort: s.localPort,
+      remoteAddress: s.remoteAddress, remotePort: s.remotePort, state: s.state, pid: s.pid, processName: s.processName,
+    })),
+    isServer: false,
+    resolveService,
+  };
+}
 
 describe('ss — service names, states, filtering', () => {
   it('resolves the port to a service name without -n', () => {
@@ -152,14 +165,14 @@ describe('ss — src/dst and address-family filters', () => {
 
 describe('netstat — address family', () => {
   it('-6 marks rows tcp6 and excludes IPv4', () => {
-    const out = cmdNetstat(['-ltan', '-6'], null, false, fixture(), resolveService);
+    const out = cmdNetstat(['-ltan', '-6'], netstatInputs());
     expect(out).toMatch(/^tcp6/m);
     expect(out).toMatch(/631/);
     expect(out).not.toMatch(/0\.0\.0\.0:22/);
   });
 
   it('-4 excludes IPv6 rows', () => {
-    const out = cmdNetstat(['-ltan', '-4'], null, false, fixture(), resolveService);
+    const out = cmdNetstat(['-ltan', '-4'], netstatInputs());
     expect(out).toMatch(/0\.0\.0\.0:22/);
     expect(out).not.toMatch(/^tcp6/m);
   });
@@ -167,30 +180,30 @@ describe('netstat — address family', () => {
 
 describe('netstat — service names, filtering, header', () => {
   it('resolves the port to a service name without -n', () => {
-    const out = cmdNetstat(['-lt'], null, false, fixture(), resolveService);
+    const out = cmdNetstat(['-lt'], netstatInputs());
     expect(out).toMatch(/:ssh\b/);
   });
 
   it('keeps numeric with -n', () => {
-    const out = cmdNetstat(['-ltn'], null, false, fixture(), resolveService);
+    const out = cmdNetstat(['-ltn'], netstatInputs());
     expect(out).toMatch(/:22\b/);
     expect(out).not.toMatch(/:ssh\b/);
   });
 
   it('default hides listeners and labels them "w/o servers"', () => {
-    const out = cmdNetstat(['-tn'], null, false, fixture(), resolveService);
+    const out = cmdNetstat(['-tn'], netstatInputs());
     expect(out).toMatch(/w\/o servers/);
     expect(out).not.toMatch(/\bLISTEN\b/);
   });
 
   it('-l shows only listeners labelled "only servers"', () => {
-    const out = cmdNetstat(['-ltn'], null, false, fixture(), resolveService);
+    const out = cmdNetstat(['-ltn'], netstatInputs());
     expect(out).toMatch(/only servers/);
     expect(out).toMatch(/\bLISTEN\b/);
   });
 
   it('-a shows servers and established', () => {
-    const out = cmdNetstat(['-atn'], null, false, fixture(), resolveService);
+    const out = cmdNetstat(['-atn'], netstatInputs());
     expect(out).toMatch(/servers and established/);
     expect(out).toMatch(/\bLISTEN\b/);
     expect(out).toMatch(/\bESTABLISHED\b/);

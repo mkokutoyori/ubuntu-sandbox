@@ -551,6 +551,54 @@ export interface SocketInfo {
   readonly pid?: number;
 }
 
+/** Route de la table de routage telle que `netstat -r` la lit. */
+export interface NetstatRouteView {
+  readonly network: string;
+  readonly cidr: number;
+  readonly nextHop: string | null;
+  readonly iface: string;
+  readonly isDefault: boolean;
+}
+
+/** Interface telle que `netstat -i` la lit (compteurs de trames + état). */
+export interface NetstatIfaceView {
+  readonly name: string;
+  readonly mtu: number;
+  readonly framesIn: number;
+  readonly framesOut: number;
+  readonly isUp: boolean;
+  readonly isConnected: boolean;
+}
+
+/** Socket tel que `netstat` (mode connexions/statistiques) le lit. */
+export interface NetstatSocketView {
+  readonly protocol: string;
+  readonly localAddress: string;
+  readonly localPort: number;
+  readonly remoteAddress: string;
+  readonly remotePort: number;
+  readonly state: string;
+  readonly pid?: number;
+  readonly processName?: string;
+}
+
+/**
+ * Inspection de l'état réseau pour `netstat` — optionnel, propre aux
+ * équipements Unix. Chaque méthode expose UNE vue en lecture (routes,
+ * interfaces, sockets, résolution de service) : la commande porte elle-même
+ * l'analyse d'arguments et le formatage. `null` pour routes/interfaces/sockets
+ * signifie « source non câblée » (repli de démonstration côté commande).
+ */
+export interface NetstatInspectApi {
+  routes(): readonly NetstatRouteView[] | null;
+  interfaces(): readonly NetstatIfaceView[] | null;
+  sockets(): readonly NetstatSocketView[] | null;
+  /** Nom de service pour un port/protocole (`/etc/services`) — `null` si inconnu. */
+  resolveService(port: number, protocol: string): string | null;
+  /** L'équipement joue-t-il un rôle serveur (influe sur le repli de démonstration). */
+  isServer(): boolean;
+}
+
 /** Adaptateur réseau tel que vu par `arp`/`route`/`getmac`/`ipconfig` — optionnel, modèle Windows (nom d'interface + MAC + IP + état physique/admin distincts). */
 export interface WindowsAdapterInfo {
   readonly name: string;
@@ -1630,6 +1678,8 @@ export interface MachineApi {
   readonly logging?: LoggingApi;
   /** Métriques système live (`free`, `vmstat`, `top`) — optionnel, propre aux équipements Unix. */
   readonly metrics?: SystemMetricsApi;
+  /** Inspection de l'état réseau (`netstat`) — optionnel, propre aux équipements Unix. */
+  readonly netstat?: NetstatInspectApi;
   readonly os?: OsIdentity;
   readonly hardware?: HardwareProfile;
   /** Horodatage de démarrage, si l'équipement suit un cycle de vie power-on/off (`systeminfo`'s System Boot Time). */

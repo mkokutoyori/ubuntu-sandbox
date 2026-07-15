@@ -55,7 +55,8 @@ import { type IpNetworkContext } from './LinuxIpCommand';
 import { cmdDf, cmdDu } from './LinuxSystemCommands';
 import { MountTable, MountEntry } from './MountTable';
 import { SysfsTree } from './Sysfs';
-import { cmdIfconfig, cmdNetstat, cmdCurl, cmdWget, cmdTcpdump } from './LinuxNetCommands';
+import { cmdIfconfig, cmdCurl, cmdWget, cmdTcpdump } from './LinuxNetCommands';
+import type { NetstatInspectApi, NetstatIfaceView } from '@/command-kernel/machine/types';
 import { PacketCaptureLog } from './network/PacketCaptureLog';
 import { publishWireSegment } from './network/WireCaptureBus';
 import { ensureCaptureRouterInstalled } from './network/CaptureRouter';
@@ -305,6 +306,35 @@ export class LinuxCommandExecutor {
   private ipNetworkCtx: IpNetworkContext | null = null;
   private socketTable: SocketTable | null = null;
   getSocketTable(): SocketTable | null { return this.socketTable; }
+
+  /** Vue en lecture live de l'état réseau pour la commande noyau `netstat`. */
+  buildNetstatInspect(): NetstatInspectApi {
+    return {
+      routes: () => this.ipNetworkCtx
+        ? this.ipNetworkCtx.getRoutingTable().map((r) => ({
+            network: r.network, cidr: r.cidr, nextHop: r.nextHop, iface: r.iface, isDefault: r.type === 'default',
+          }))
+        : null,
+      interfaces: () => {
+        if (!this.ipNetworkCtx) return null;
+        const out: NetstatIfaceView[] = [];
+        for (const name of this.ipNetworkCtx.getInterfaceNames()) {
+          const i = this.ipNetworkCtx.getInterfaceInfo(name);
+          if (!i) continue;
+          out.push({ name: i.name, mtu: i.mtu, framesIn: i.counters.framesIn, framesOut: i.counters.framesOut, isUp: i.isUp, isConnected: i.isConnected });
+        }
+        return out;
+      },
+      sockets: () => this.socketTable
+        ? this.socketTable.getAll().map((s) => ({
+            protocol: s.protocol, localAddress: s.localAddress, localPort: s.localPort,
+            remoteAddress: s.remoteAddress, remotePort: s.remotePort, state: s.state, pid: s.pid, processName: s.processName,
+          }))
+        : null,
+      resolveService: (port, proto) => this.resolveServiceName(port, proto),
+      isServer: () => this.isServer,
+    };
+  }
   /** Active SSH port-forwards (`-L`/`-R`/`-D`) owned by this machine. */
   private forwarding: SshForwardingTable | null = null;
   getForwardingTable(): SshForwardingTable | null { return this.forwarding; }
@@ -3785,7 +3815,6 @@ export class LinuxCommandExecutor {
 
       // ── Network commands ────────────────────────────────────────────
       case 'ifconfig': return { output: cmdIfconfig(args, this.ipNetworkCtx), exitCode: 0 };
-      case 'netstat': return { output: cmdNetstat(args, this.ipNetworkCtx, this.isServer, this.socketTable, (p, pr) => this.resolveServiceName(p, pr)), exitCode: 0 };
       case 'curl': return { output: cmdCurl(args), exitCode: 0 };
       case 'wget': return { output: cmdWget(args), exitCode: 0 };
       // ── Miscellaneous common commands ────────────────────────────────

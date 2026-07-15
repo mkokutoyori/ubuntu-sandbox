@@ -1055,24 +1055,6 @@ export class LinuxTerminalSession extends TerminalSession {
     });
   }
 
-  private tryStartNetstatStream(commandLine: string): boolean {
-    const dev = this.device;
-    if (!(dev instanceof LinuxMachine) || !this.shell) return false;
-    if (/[|<>&]/.test(commandLine)) return false;
-    const toks = commandLine.trim().split(/\s+/);
-    if (toks[0] !== 'netstat') return false;
-    const continuous = toks.some(
-      (t) => t.startsWith('-') && !t.startsWith('--') && t.includes('c'),
-    ) || toks.includes('--continuous');
-    if (!continuous) return false;
-    const shell = this.shell;
-    return this.startScrollingMonitor({
-      commandLine,
-      intervalMs: 1000,
-      frame: () => dev.runCommandFrameInSession(commandLine, shell),
-    });
-  }
-
   private async tryInteractiveRead(line: string): Promise<boolean> {
     if (!/^\s*read\b/.test(line)) return false;
     if (/[|<>]/.test(line)) return false;
@@ -1144,7 +1126,6 @@ export class LinuxTerminalSession extends TerminalSession {
     if (this.tryStartWatchStream(trimmed)) return;
     if (this.tryStartTopStream(trimmed)) return;
     if (this.tryStartIpMonitor(trimmed)) return;
-    if (this.tryStartNetstatStream(trimmed)) return;
     if (this.tryStartTcpdump(trimmed)) return;
     if (this.tryCrontabEdit(trimmed)) return;
     if (await this.tryInteractiveRead(trimmed)) return;

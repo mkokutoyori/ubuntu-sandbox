@@ -1793,6 +1793,7 @@ export abstract class LinuxMachine extends EndHost
           }
           return { bytesIn, bytesOut };
         },
+        netstatInspect: this.executor.buildNetstatInspect(),
         osIdentity: () => {
           const id = this.executor.identity;
           return {

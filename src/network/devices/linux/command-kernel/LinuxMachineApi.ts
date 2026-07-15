@@ -15,6 +15,7 @@ import {
   CpuInfo,
   DiskInfo,
   NetTraffic,
+  NetstatInspectApi,
   OsIdentity,
   SystemMetricsApi,
   NetworkApi,
@@ -76,6 +77,8 @@ export interface LinuxMachineApiDeps {
   diskInfo?(): readonly DiskInfo[];
   /** Compteurs d'octets réseau cumulés (`dstat`) — absent sans ports. */
   netTraffic?(): NetTraffic;
+  /** Inspection de l'état réseau (`netstat`) — absent sans pile réseau. */
+  netstatInspect?: NetstatInspectApi;
   /** Identité du système d'exploitation (`uname`, bannières sysstat) — absent sans identité. */
   osIdentity?(): OsIdentity;
   getUmask(): number;
@@ -889,6 +892,7 @@ export class LinuxMachineApi implements MachineApi {
   readonly audit: AuditApi;
   readonly logging: LoggingApi;
   readonly metrics?: SystemMetricsApi;
+  readonly netstat?: NetstatInspectApi;
   readonly os?: OsIdentity;
   readonly permissions: PermissionsApi;
 
@@ -917,6 +921,7 @@ export class LinuxMachineApi implements MachineApi {
       this.metrics = new LinuxSystemMetricsApi(() => mem(), () => cpu(), () => disks(), () => net());
     }
     if (deps.osIdentity) this.os = deps.osIdentity();
+    this.netstat = deps.netstatInspect;
     this.permissions = new LinuxPermissionsApi(deps);
   }
 

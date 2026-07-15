@@ -7,6 +7,7 @@
 
 import type { IpInterfaceInfo, IpNetworkContext } from './LinuxIpCommand';
 import type { SocketTable, SocketEntry, SocketState } from '../../core/SocketTable';
+import type { NetstatRouteView, NetstatIfaceView, NetstatSocketView } from '@/command-kernel/machine/types';
 import type { CapturedPacket, PacketCaptureLog } from './network/PacketCaptureLog';
 import { broadcastAddress, tryIpToUint32, prefixLengthToMaskUint32 } from '../../core/ip';
 import { serializeCaptureFile, deserializeCaptureFile } from './network/tcpdump/CaptureFileFormat';
@@ -26,7 +27,7 @@ function ssStateLabel(sock: SocketEntry): string {
   return SS_TCP_STATE[sock.state] ?? sock.state;
 }
 
-function socketVisible(state: SocketState, wantAll: boolean, wantListening: boolean): boolean {
+function socketVisible(state: string, wantAll: boolean, wantListening: boolean): boolean {
   if (wantListening) return state === 'LISTEN';
   if (wantAll) return true;
   return state !== 'LISTEN';
@@ -242,13 +243,16 @@ export function formatIfconfigInterface(i: IpInterfaceInfo): string {
 
 // ─── netstat ────────────────────────────────────────────────────────
 
-export function cmdNetstat(
-  args: string[],
-  ctx: IpNetworkContext | null,
-  isServer: boolean,
-  socketTable?: SocketTable | null,
-  resolveService?: ServiceResolver,
-): string {
+export interface NetstatInputs {
+  routes: readonly NetstatRouteView[] | null;
+  interfaces: readonly NetstatIfaceView[] | null;
+  sockets: readonly NetstatSocketView[] | null;
+  isServer: boolean;
+  resolveService?: ServiceResolver;
+}
+
+export function cmdNetstat(args: string[], inputs: NetstatInputs): string {
+  const { routes, interfaces, sockets, isServer, resolveService } = inputs;
   // Expand combined flags: '-tlnp' → individual chars t,l,n,p
   const hasFlag = (ch: string): boolean =>
     args.some(a => a.startsWith('-') && !a.startsWith('--') && a.includes(ch)) ||
@@ -263,12 +267,12 @@ export function cmdNetstat(
       'Destination     Gateway         Genmask         Flags   MSS Window  irtt Iface',
     ];
     const rows: string[] = [];
-    if (ctx) {
-      for (const r of ctx.getRoutingTable()) {
-        const dest = r.type === 'default' ? '0.0.0.0' : r.network;
+    if (routes) {
+      for (const r of routes) {
+        const dest = r.isDefault ? '0.0.0.0' : r.network;
         const gw   = r.nextHop ?? '0.0.0.0';
         const mask = cidrToMask(r.cidr);
-        const flags = (r.type === 'default' || r.nextHop) ? 'UG' : 'U';
+        const flags = (r.isDefault || r.nextHop) ? 'UG' : 'U';
         rows.push(
           `${dest.padEnd(16)}${gw.padEnd(16)}${mask.padEnd(16)}${flags.padEnd(8)}0 0          0 ${r.iface}`,
         );
@@ -288,15 +292,13 @@ export function cmdNetstat(
       'Iface      MTU    RX-OK RX-ERR RX-DRP RX-OVR    TX-OK TX-ERR TX-DRP TX-OVR Flg',
     ];
     const rows: string[] = [];
-    if (ctx) {
-      for (const name of ctx.getInterfaceNames()) {
-        const info = ctx.getInterfaceInfo(name);
-        if (!info) continue;
+    if (interfaces) {
+      for (const info of interfaces) {
         const mtu = String(info.mtu).padStart(7);
-        const rx  = String(info.counters.framesIn).padStart(8);
-        const tx  = String(info.counters.framesOut).padStart(9);
+        const rx  = String(info.framesIn).padStart(8);
+        const tx  = String(info.framesOut).padStart(9);
         const flags = info.isUp ? (info.isConnected ? 'BMRU' : 'BMU') : 'BMU';
-        rows.push(`${name.padEnd(11)}${mtu} ${rx}      0      0 0        ${tx}      0      0      0 ${flags}`);
+        rows.push(`${info.name.padEnd(11)}${mtu} ${rx}      0      0 0        ${tx}      0      0      0 ${flags}`);
       }
       rows.push(`lo        65536      128      0      0 0           128      0      0      0 LRU`);
     } else {
@@ -307,7 +309,7 @@ export function cmdNetstat(
   }
 
   if (hasFlag('s') || args.includes('--statistics')) {
-    return cmdNetstatStatistics(socketTable);
+    return cmdNetstatStatistics(sockets);
   }
 
   // Determine which protocols to show (no -t/-u → show both)
@@ -332,8 +334,8 @@ export function cmdNetstat(
     'Proto Recv-Q Send-Q Local Address           Foreign Address         State       PID/Program name',
   ];
 
-  if (socketTable) {
-    for (const sock of socketTable.getAll()) {
+  if (sockets) {
+    for (const sock of sockets) {
       const isTcp = sock.protocol === 'tcp';
       const isUdp = sock.protocol === 'udp';
       if (!showAll && isTcp && !wantTcp) continue;
@@ -368,11 +370,11 @@ export function cmdNetstat(
   return lines.join('\n');
 }
 
-function cmdNetstatStatistics(socketTable?: SocketTable | null): string {
+function cmdNetstatStatistics(sockets?: readonly NetstatSocketView[] | null): string {
   let tcpListen = 0;
   let tcpEstablished = 0;
-  if (socketTable) {
-    for (const sock of socketTable.getAll()) {
+  if (sockets) {
+    for (const sock of sockets) {
       if (sock.protocol !== 'tcp') continue;
       if (sock.state === 'LISTEN') tcpListen++;
       else if (sock.state === 'ESTABLISHED') tcpEstablished++;
