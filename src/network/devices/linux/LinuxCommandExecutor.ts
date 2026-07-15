@@ -74,7 +74,7 @@ import { LinuxAtQueue, cmdAt, cmdAtq, cmdAtrm } from './jobs/LinuxAtQueue';
 import { PortActivityLogProjection } from './ports/PortActivityLogProjection';
 import { LinuxProcessManager, type Signal, SIGNAL_NUMBERS } from './LinuxProcessManager';
 import { LinuxServiceManager } from './LinuxServiceManager';
-import { cmdPs, cmdTop, cmdKill, cmdSystemctl, cmdService } from './LinuxProcessCommands';
+import { cmdPs, cmdKill, cmdSystemctl, cmdService } from './LinuxProcessCommands';
 import { LinuxJobTable } from './jobs/LinuxJobTable';
 import { cmdJobs, cmdFg, cmdBg, cmdDisown, cmdPstree } from './jobs/JobCommands';
 import { runSshClient } from './network/LinuxSshClient';
@@ -3780,8 +3780,6 @@ export class LinuxCommandExecutor {
       case 'mount': return this.handleMount(args);
       case 'umount': return this.handleUmount(args);
       case 'findmnt': return this.handleFindmnt(args);
-      case 'top': return { output: cmdTop(args, this.processCmdContext()), exitCode: 0 };
-      case 'htop': return { output: cmdTop(args, this.processCmdContext()), exitCode: 0 };
 
       // ── Network commands ────────────────────────────────────────────
       case 'ifconfig': return { output: cmdIfconfig(args, this.ipNetworkCtx), exitCode: 0 };

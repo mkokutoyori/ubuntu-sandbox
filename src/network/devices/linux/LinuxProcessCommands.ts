@@ -11,19 +11,6 @@ import { SIGNAL_NUMBERS } from './LinuxProcessManager';
 import type { LinuxServiceManager, ServiceUnit, ServiceState } from './LinuxServiceManager';
 import type { LinuxJobTable } from './jobs/LinuxJobTable';
 import { runPs } from './ps/PsCommand';
-import { memPercent, kbToMiB } from './system/ProcFormat';
-
-function topCpuTime(ms: number): string {
-  const min = Math.floor(ms / 60_000);
-  const sec = Math.floor((ms % 60_000) / 1000);
-  const cs = Math.floor((ms % 1000) / 10);
-  return `${min}:${String(sec).padStart(2, '0')}.${String(cs).padStart(2, '0')}`;
-}
-
-function loadAverage(running: number): string {
-  const v = running.toFixed(2);
-  return `${v}, ${v}, ${v}`;
-}
 import { LinuxService } from './service/LinuxService';
 import { fullUnitName, unitSuffix } from './systemd/DependencyGraph';
 import { renderDependencyTree } from './systemd/DependencyTree';
@@ -54,71 +41,6 @@ export interface ProcessCmdContext {
  */
 export function cmdPs(args: string[], ctx: ProcessCmdContext): string {
   return runPs(args, ctx);
-}
-
-// ─── top ──────────────────────────────────────────────────────────────
-
-export function cmdTop(args: string[], ctx: ProcessCmdContext): string {
-  // We always print one snapshot — the simulator has no interactive top.
-  const procs = ctx.pm.list();
-  const now = new Date();
-  const timeStr = now.toLocaleTimeString('en-US', { hour12: false });
-  const mib = (kib: number) => Math.round(kib / 1024);
-  const mem = ctx.memory;
-  const totalMem = mem ? mib(mem.totalKib) : 3981;
-  const usedMem = mem ? mib(mem.usedKib) : 1258;
-  const freeMem = mem ? mib(mem.freeKib) : 1468;
-  const bufCache = mem ? mib(mem.buffCacheKib) : 1254;
-
-  const sleeping = procs.filter(p => p.state === 'S').length;
-  const running = procs.filter(p => p.state === 'R').length;
-  const stopped = procs.filter(p => p.state === 'T').length;
-  const zombie = procs.filter(p => p.state === 'Z').length;
-
-  const lines: string[] = [];
-  const upSec = ctx.uptimeSeconds ?? 0;
-  const upDays = Math.floor(upSec / 86_400);
-  const upH = Math.floor((upSec % 86_400) / 3600);
-  const upM = Math.floor((upSec % 3600) / 60);
-  const upClause = upDays > 0
-    ? `${upDays} day${upDays > 1 ? 's' : ''}, ${upH}:${String(upM).padStart(2, '0')}`
-    : upH > 0 ? `${upH}:${String(upM).padStart(2, '0')}` : `${upM} min`;
-  const runnable = procs.filter(p => p.state === 'R' || p.state === 'D').length;
-  lines.push(`top - ${timeStr} up  ${upClause},  1 user,  load average: ${loadAverage(runnable)}`);
-  lines.push(
-    `Tasks: ${procs.length} total,  ${running} running, ${sleeping} sleeping,  ${stopped} stopped,  ${zombie} zombie`,
-  );
-  const busyPct = Math.min(100, running * 100);
-  const us = (busyPct * 0.6).toFixed(1);
-  const sy = (busyPct * 0.4).toFixed(1);
-  const id = (100 - busyPct).toFixed(1);
-  lines.push(`%Cpu(s):  ${us} us,  ${sy} sy,  0.0 ni,${id.padStart(5)} id,  0.0 wa,  0.0 hi,  0.0 si,  0.0 st`);
-  lines.push(`MiB Mem :  ${totalMem}.0 total,  ${freeMem}.0 free,  ${usedMem}.0 used,  ${bufCache}.0 buff/cache`);
-  lines.push('MiB Swap:  2048.0 total,  2048.0 free,      0.0 used.  2519.0 avail Mem');
-  lines.push('');
-  lines.push('    PID USER      PR  NI    VIRT    RES    SHR S  %CPU  %MEM     TIME+ COMMAND');
-
-  for (const p of procs) {
-    const pcpu = upSec > 0 ? ((p.cpuTime / 1000) / upSec) * 100 : 0;
-    const mem = memPercent(p.rss);
-    lines.push(
-      [
-        String(p.pid).padStart(7),
-        p.user.padEnd(9),
-        String(p.priority).padStart(3),
-        String(p.nice).padStart(4),
-        `${kbToMiB(p.vsize)}M`.padStart(7),
-        `${kbToMiB(p.rss)}M`.padStart(6),
-        '4M'.padStart(6),
-        p.state,
-        pcpu.toFixed(1).padStart(5),
-        mem.padStart(5),
-        topCpuTime(p.cpuTime).padStart(9),
-        p.comm,
-      ].join(' '),
-    );
-  }
-  return lines.join('\n');
 }
 
 // ─── kill ─────────────────────────────────────────────────────────────

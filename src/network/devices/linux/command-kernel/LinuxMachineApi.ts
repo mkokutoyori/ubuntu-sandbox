@@ -77,6 +77,8 @@ export interface LinuxMachineApiDeps {
   diskInfo?(): readonly DiskInfo[];
   /** Compteurs d'octets réseau cumulés (`dstat`) — absent sans ports. */
   netTraffic?(): NetTraffic;
+  /** Temps écoulé depuis le démarrage, en secondes (`top`/`uptime`). */
+  uptimeSeconds?(): number;
   /** Inspection de l'état réseau (`netstat`) — absent sans pile réseau. */
   netstatInspect?: NetstatInspectApi;
   /** Identité du système d'exploitation (`uname`, bannières sysstat) — absent sans identité. */
@@ -513,6 +515,8 @@ class LinuxProcessControlApi implements ProcessControlApi {
       cpuAffinity: p.cpuAffinity,
       vsizeKib: p.vsize,
       rssKib: p.rss,
+      priority: p.priority,
+      cpuTimeMs: p.cpuTime,
     };
   }
 }
@@ -859,6 +863,7 @@ class LinuxSystemMetricsApi implements SystemMetricsApi {
     private readonly cpuProfile: () => CpuInfo,
     private readonly diskProfile: () => readonly DiskInfo[],
     private readonly netProfile: () => NetTraffic,
+    private readonly uptime: () => number,
   ) {}
 
   memory(): MemorySnapshot {
@@ -875,6 +880,10 @@ class LinuxSystemMetricsApi implements SystemMetricsApi {
 
   network(): NetTraffic {
     return this.netProfile();
+  }
+
+  uptimeSeconds(): number {
+    return this.uptime();
   }
 }
 
@@ -913,12 +922,13 @@ export class LinuxMachineApi implements MachineApi {
     this.hostname = deps.hostname;
     this.audit = new LinuxAuditApi(deps);
     this.logging = new LinuxLoggingApi(deps.logManager);
-    if (deps.memoryProfile && deps.cpuInfo && deps.diskInfo && deps.netTraffic) {
+    if (deps.memoryProfile && deps.cpuInfo && deps.diskInfo && deps.netTraffic && deps.uptimeSeconds) {
       const mem = deps.memoryProfile;
       const cpu = deps.cpuInfo;
       const disks = deps.diskInfo;
       const net = deps.netTraffic;
-      this.metrics = new LinuxSystemMetricsApi(() => mem(), () => cpu(), () => disks(), () => net());
+      const up = deps.uptimeSeconds;
+      this.metrics = new LinuxSystemMetricsApi(() => mem(), () => cpu(), () => disks(), () => net(), () => up());
     }
     if (deps.osIdentity) this.os = deps.osIdentity();
     this.netstat = deps.netstatInspect;

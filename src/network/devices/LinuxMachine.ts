@@ -1798,6 +1798,7 @@ export abstract class LinuxMachine extends EndHost
           }
           return { bytesIn, bytesOut };
         },
+        uptimeSeconds: () => this.lifecycle.uptimeSeconds(),
         netstatInspect: {
           routes: () => this.ipNetworkContext
             ? this.ipNetworkContext.getRoutingTable().map((r) => ({
@@ -3117,6 +3118,16 @@ export abstract class LinuxMachine extends EndHost
   async runCommandFrameInSession(commandLine: string, session: LinuxShellSession): Promise<string> {
     if (!this.isPoweredOn || session.disposed) return '';
     return this.executor.executeInSession(commandLine, session);
+  }
+
+  /**
+   * Produit UNE frame via le noyau (`top` : la donnée vient de l'équipement,
+   * jamais de l'exécuteur). Utilisé par les moniteurs de repeinte du terminal
+   * pour les commandes migrées ; `''` si la ligne n'est pas revendiquée.
+   */
+  async runCommandFrameViaKernel(commandLine: string): Promise<string> {
+    if (!this.isPoweredOn) return '';
+    return (await this.tryCommandKernel(commandLine)) ?? '';
   }
 
   subscribeCapture(listener: (pkt: import('./linux/network/PacketCaptureLog').CapturedPacket) => void): () => void {

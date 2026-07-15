@@ -5,6 +5,35 @@ progressive par équipement. Un push = une entrée = une fonctionnalité
 complète et testée (voir `CLAUDE.md` / le framework de migration pour les
 principes directeurs).
 
+## Socle + Linux — `top`/`htop` migré au noyau (façade, frame de repeinte depuis le noyau) (§14.6)
+
+**État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
+
+`top` était un moniteur à **repeinte en place** (une frame réaffichée en
+boucle). Application du principe corrigé : la repeinte reste une affaire du
+terminal (comme le scroll), mais la **frame vient du noyau** (façade lisant
+l'équipement), plus jamais de l'exécuteur.
+
+- **`TopCommand` (façade)** : lit la table des processus via
+  `ctx.machine.processControl`, la mémoire et l'uptime via `ctx.machine.metrics`,
+  puis délègue le formatage à `renderTop` (module pur `topRender.ts`, couche
+  commande). Une frame par invocation ; `top -bn1` (batch) passe par le noyau.
+- **Extensions socle** : `ProcessEntry` gagne `priority`/`cpuTimeMs` (colonnes
+  PR / %CPU / TIME+) ; `SystemMetricsApi` gagne `uptimeSeconds()`. Câblés côté
+  équipement (process manager, `lifecycle`).
+- **Frame de repeinte depuis le noyau** : nouvelle méthode équipement
+  `LinuxMachine.runCommandFrameViaKernel` (route par `tryCommandKernel`). Le
+  moniteur `startRepaintingMonitor` prend désormais un callback `frame` :
+  `top` la produit via le noyau, `watch` conserve le chemin legacy (il lance
+  des commandes arbitraires encore non migrées).
+- Legacy supprimé : `case 'top'`/`'htop'` de l'exécuteur + `cmdTop`
+  (`LinuxProcessCommands`) et ses aides exclusives — **rien ajouté à
+  l'exécuteur**.
+- Tests : `top -b -n 1` (façade noyau) vert dans `linux-commands-and-oracle-
+  tools` 76/76 ; sweep process-manager/pidstat/vmstat/command-kernel/ps 64/64.
+  Les 4 échecs restants (repeinte `top` + 3 tests Windows) sont préexistants,
+  identiques à la baseline. `tsc` propre, aucune nouvelle alerte eslint.
+
 ## Correctif d'architecture — `netstat` : donnée depuis l'équipement, rendu hors legacy
 
 **État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**

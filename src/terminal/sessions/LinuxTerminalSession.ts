@@ -926,11 +926,10 @@ export class LinuxTerminalSession extends TerminalSession {
     return job !== null;
   }
 
-  private startRepaintingMonitor(commandLine: string, intervalMs: number): boolean {
+  private startRepaintingMonitor(commandLine: string, intervalMs: number, frame: () => Promise<string>): boolean {
     if (this.hasForegroundAsyncJob) return false;
     const dev = this.device;
     if (!(dev instanceof LinuxMachine) || !this.shell) return false;
-    const shell = this.shell;
     let baseLen = this.lines.length;
 
     const job = this.startAsyncCommand({
@@ -940,9 +939,9 @@ export class LinuxTerminalSession extends TerminalSession {
       prepare: () => { baseLen = this.lines.length; return true; },
       run: async (ctx) => {
         while (!ctx.cancelled()) {
-          const frame = await dev.runCommandFrameInSession(commandLine, shell);
+          const painted = await frame();
           this.lines = this.lines.slice(0, baseLen);
-          for (const line of frame.split('\n')) this.addLine(line);
+          for (const line of painted.split('\n')) this.addLine(line);
           this.notify();
           await ctx.delay(intervalMs);
         }
@@ -957,17 +956,25 @@ export class LinuxTerminalSession extends TerminalSession {
     let parsed: ReturnType<typeof parseWatchArgs>;
     try { parsed = parseWatchArgs(toks.slice(1)); } catch { return false; }
     if (parsed.command.length === 0) return false;
-    return this.startRepaintingMonitor(commandLine, Math.max(100, parsed.intervalSeconds * 1000));
+    const dev = this.device;
+    if (!(dev instanceof LinuxMachine) || !this.shell) return false;
+    const shell = this.shell;
+    return this.startRepaintingMonitor(commandLine, Math.max(100, parsed.intervalSeconds * 1000),
+      () => dev.runCommandFrameInSession(commandLine, shell));
   }
 
   private tryStartTopStream(commandLine: string): boolean {
     const toks = commandLine.trim().split(/\s+/);
     if (toks[0] !== 'top') return false;
     if (toks.includes('-n') || toks.includes('-b')) return false;
+    const dev = this.device;
+    if (!(dev instanceof LinuxMachine)) return false;
     const dIdx = toks.indexOf('-d');
     const delay = dIdx >= 0 ? parseFloat(toks[dIdx + 1]) : 3;
     const intervalMs = Math.max(100, (Number.isFinite(delay) && delay > 0 ? delay : 3) * 1000);
-    return this.startRepaintingMonitor(commandLine, intervalMs);
+    // La frame `top` vient du noyau (façade lisant l'équipement), pas de l'exécuteur.
+    return this.startRepaintingMonitor(commandLine, intervalMs,
+      () => dev.runCommandFrameViaKernel(commandLine));
   }
 
   private tryStartTcpdump(commandLine: string): boolean {

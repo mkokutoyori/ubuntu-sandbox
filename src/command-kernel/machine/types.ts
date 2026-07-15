@@ -173,6 +173,10 @@ export interface ProcessEntry {
   readonly vsizeKib?: number;
   /** Mémoire résidente (RSS) en Kio (`pidstat -r`, `top`). */
   readonly rssKib?: number;
+  /** Priorité d'ordonnancement (`top` : colonne PR). */
+  readonly priority?: number;
+  /** Temps CPU cumulé en millisecondes (`top` : %CPU, TIME+). */
+  readonly cpuTimeMs?: number;
 }
 
 /**
@@ -1646,6 +1650,8 @@ export interface SystemMetricsApi {
   disks(): readonly DiskInfo[];
   /** Compteurs d'octets réseau cumulés (`dstat` : débits par différence). */
   network(): NetTraffic;
+  /** Temps écoulé depuis le démarrage, en secondes (`top`/`uptime`). */
+  uptimeSeconds(): number;
 }
 
 export interface HardwareProfile {
