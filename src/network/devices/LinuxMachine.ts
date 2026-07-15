@@ -1856,6 +1856,16 @@ export abstract class LinuxMachine extends EndHost
     // au même titre que la substitution de commande — la ligne repart vers
     // les builtins de contrôle de tâche (`runJobBuiltinIfMatching`).
     if (stages.some((stage) => stage.argv.some((word) => word.text.startsWith('%')))) return null;
+    // Un nom en position de commande lié par `alias` OU masqué par une
+    // fonction shell (`function cd { ... }`) doit rester du ressort de
+    // l'interpréteur bash historique, seul à porter l'expansion d'alias
+    // et la priorité fonction-avant-builtin. Router directement au kernel
+    // court-circuiterait les deux (`echo hi` ignorerait un `alias
+    // echo=...` actif, `cd /tmp` ignorerait une fonction `cd` locale) ;
+    // on décline pour repartir par le chemin bash, qui réinjecte la ligne
+    // (développée si besoin) dans le kernel via `_commandKernelHook`
+    // seulement si elle ne matche plus rien de local.
+    if (names.some((name) => this.executor.aliases.has(name) || this.executor.functions.has(name))) return null;
     return {
       names,
       stages: stages.map((stage) => ({ name: stage.name, argv: stage.argv.map((word) => word.text) })),

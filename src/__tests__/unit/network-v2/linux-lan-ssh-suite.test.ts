@@ -1643,14 +1643,14 @@ describe('§25 — full end-to-end audit story', () => {
   const rows: Row[] = [
     {
       name: 'after an ssh login, w on the remote lists the user',
-      setup: (l) => { void l.pc1.executeCommand('ssh alice@10.0.0.10 sleep 60 &'); },
+      setup: async (l) => { await l.pc1.executeCommand('ssh alice@10.0.0.10 sleep 60 &'); },
       on: l => l.srv1,
       cmd: 'w',
       contains: [/alice.*pts\/\d+\s+10\.0\.0\.1/],
     },
     {
       name: 'cat /var/log/auth.log + ps -ef tell a coherent story (both PIDs match)',
-      setup: (l) => { void l.pc1.executeCommand('ssh alice@10.0.0.10 sleep 60 &'); },
+      setup: async (l) => { await l.pc1.executeCommand('ssh alice@10.0.0.10 sleep 60 &'); },
       on: l => l.srv1,
       cmd: 'sh -c "tail -3 /var/log/auth.log; ps -ef | grep sshd | grep alice"',
       contains: [/Accepted password for alice/, /sshd.*alice/],

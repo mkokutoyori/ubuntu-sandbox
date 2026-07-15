@@ -666,8 +666,8 @@ describe('§9 — Command flow respects aliases on every shell', () => {
     },
     {
       name: 'bash: shell function shadows the same name as a builtin',
-      setup: (l) => {
-        void l.linux1.executeCommand("function cd { echo CUSTOM:$1; }");
+      setup: async (l) => {
+        await l.linux1.executeCommand("function cd { echo CUSTOM:$1; }");
       },
       on: l => l.linux1, cmd: 'cd /tmp',
       contains: [/^CUSTOM:\/tmp$/m],

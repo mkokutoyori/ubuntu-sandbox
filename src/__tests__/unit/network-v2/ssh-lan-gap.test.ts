@@ -157,7 +157,7 @@ describe('SSH gap-analysis remediations (P5/P8/P9)', () => {
     const lines = ['pwd', 'mkdir batch-target', 'ls', 'quit'];
     const captured: string[] = [];
     for (const line of lines) {
-      const result = shell.processLine(line);
+      const result = await shell.processLine(line);
       for (const out of result.output) captured.push(out);
       if (result.exit) break;
     }
@@ -185,7 +185,7 @@ describe('SSH gap-analysis remediations (P5/P8/P9)', () => {
     for (const rawLine of script) {
       const line = rawLine.trim();
       if (!line || line.startsWith('#')) continue;
-      const r = shell.processLine(line);
+      const r = await shell.processLine(line);
       const hasError = r.output.some((l) =>
         /Couldn't|No such|Failure/i.test(l),
       );

@@ -107,7 +107,10 @@ export class LsCommand extends BaseCommand {
     // `total` — celle-ci n'existe que pour un vrai listage de contenu.
     if (looseFiles.length) parts.push(await this.renderEntries(looseFiles, ctx, options, false));
     parts.push(...dirSections);
-    await ctx.io.stdout.write(parts.join('\n'));
+    // Le vrai `ls` termine toujours sa dernière ligne par un `\n` — sans
+    // lui, `wc -l`/tout consommateur en aval d'un pipe (qui compte les
+    // `\n` réels, pas les lignes visuelles) sous-compte d'une entrée.
+    await ctx.io.stdout.write(`${parts.join('\n')}\n`);
     return EXIT_OK;
   }
 
