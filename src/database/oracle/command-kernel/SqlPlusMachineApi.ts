@@ -107,6 +107,12 @@ export interface OracleSqlPlusApi {
   spfileParameters(): ReadonlyMap<string, string> | null;
   /** Termine la connexion courante (EXIT/QUIT/DISCONNECT). */
   disconnect(): void;
+  /** Variables de substitution (`DEFINE`). */
+  defines(): ReadonlyMap<string, string>;
+  setDefine(name: string, value: string): void;
+  /** Variables liées (`VARIABLE`/`PRINT`). */
+  bindVariables(): ReadonlyMap<string, { type: string; value: unknown }>;
+  declareBindVariable(name: string, type: string): void;
 }
 
 class SqlPlusOracleFacade implements OracleSqlPlusApi {
@@ -140,6 +146,22 @@ class SqlPlusOracleFacade implements OracleSqlPlusApi {
 
   disconnect(): void {
     this.session.disconnect();
+  }
+
+  defines(): ReadonlyMap<string, string> {
+    return this.session.getDefinesSnapshot();
+  }
+
+  setDefine(name: string, value: string): void {
+    this.session.setDefine(name, value);
+  }
+
+  bindVariables(): ReadonlyMap<string, { type: string; value: unknown }> {
+    return this.session.getBindVariablesSnapshot();
+  }
+
+  declareBindVariable(name: string, type: string): void {
+    this.session.declareBindVariable(name, type);
   }
 }
 

@@ -9,16 +9,21 @@ import { SqlPlusHelpCommand } from './commands/Help';
 import { SqlPlusClearCommand } from './commands/Clear';
 import { SqlPlusExitCommand } from './commands/Exit';
 import { SqlPlusDisconnectCommand } from './commands/Disconnect';
+import { SqlPlusPromptCommand } from './commands/Prompt';
+import { SqlPlusEditCommand } from './commands/Edit';
+import { SqlPlusDefineCommand } from './commands/Define';
+import { SqlPlusVariableCommand } from './commands/Variable';
+import { SqlPlusPrintCommand } from './commands/Print';
 
 /**
- * Bootstrap du socle command-kernel SQL*Plus (Wave 1 — voir CHANGELOG) :
+ * Bootstrap du socle command-kernel SQL*Plus (Wave 1-3 — voir CHANGELOG) :
  * un registre plat (pas de modes, grammaire SQL*Plus non hiérarchique) avec
- * les 6 commandes de session/réglages migrées, et une `SqlPlusMachineApi`
+ * les commandes de session/réglages migrées, et une `SqlPlusMachineApi`
  * qui lit/mute l'état réel de la `SQLPlusSession` fournie.
  *
- * Pas encore câblé sur `SqlPlusSubShell` (frontière sync/async documentée
- * dans le CHANGELOG) : ce bootstrap est consommé directement par les tests
- * de fondation en attendant la vague de branchement live.
+ * Câblé sur `SqlPlusSubShell` (Wave 2) pour les verbes reconnus par
+ * `recognizeSqlPlusKernelVerb` ci-dessous ; ce bootstrap est aussi consommé
+ * directement par les tests de fondation.
  */
 export function createSqlPlusKernel(
   sqlPlusSession: SQLPlusSession,
@@ -31,6 +36,11 @@ export function createSqlPlusKernel(
   registry.register(() => new SqlPlusClearCommand());
   registry.register(() => new SqlPlusExitCommand());
   registry.register(() => new SqlPlusDisconnectCommand());
+  registry.register(() => new SqlPlusPromptCommand());
+  registry.register(() => new SqlPlusEditCommand());
+  registry.register(() => new SqlPlusDefineCommand());
+  registry.register(() => new SqlPlusVariableCommand());
+  registry.register(() => new SqlPlusPrintCommand());
 
   const machine = new SqlPlusMachineApi(sqlPlusSession, hostname);
   const session = createSession({
@@ -69,17 +79,33 @@ const VERB_FAMILIES: Readonly<Record<string, VerbTest>> = {
   DISC: exact('DISCONNECT', 'DISC'),
   HELP: exact('HELP', 'HELP INDEX'),
   CLEAR: prefixOnly('CLEAR'),
+  PROMPT: wordOrPrefix('PROMPT'),
+  EDIT: wordOrPrefix('EDIT'),
+  DEFINE: wordOrPrefix('DEFINE'),
+  VARIABLE: (u) => u === 'VARIABLE' || u.startsWith('VARIABLE ') || u.startsWith('VAR '),
+  VAR: (u) => u === 'VARIABLE' || u.startsWith('VARIABLE ') || u.startsWith('VAR '),
+  PRINT: wordOrPrefix('PRINT'),
 };
 
 /**
+ * Verbes dont le texte qui suit doit être transmis TEL QUEL (un seul
+ * élément d'argv, jamais retokenisé par espaces) plutôt que découpé en
+ * mots — `PROMPT texte` doit préserver les espaces internes exacts du
+ * texte affiché, contrairement à `SET`/`SHOW`/`DEFINE`/… dont la valeur
+ * est de toute façon rejointe par un espace unique côté commande (même
+ * normalisation que le legacy `parts.slice(1).join(' ')`).
+ */
+const VERBATIM_REST_VERBS: ReadonlySet<string> = new Set(['PROMPT']);
+
+/**
  * Reconnaît une ligne SQL*Plus déjà "fraîche" (pas de tampon SQL/PL-SQL en
- * cours — appelant responsable de cette vérification) comme l'une des 6
+ * cours — appelant responsable de cette vérification) comme l'une des
  * commandes migrées. Retourne le nom de verbe (résolu par `CommandRegistry`,
  * alias compris) et l'argv déjà tokenisé par simples espaces — la grammaire
  * SQL*Plus de ces commandes ne connaît ni quotes ni échappements au niveau
  * verbe (chaque commande gère elle-même son texte libre, comme le legacy).
- * `null` si la ligne ne correspond à aucune des 6 (reste porté par le
- * pipeline legacy `SQLPlusSession`).
+ * `null` si la ligne ne correspond à aucune commande migrée (reste porté
+ * par le pipeline legacy `SQLPlusSession`).
  */
 export function recognizeSqlPlusKernelVerb(line: string): { name: string; argv: string[] } | null {
   const trimmed = line.trim();
@@ -89,6 +115,8 @@ export function recognizeSqlPlusKernelVerb(line: string): { name: string; argv: 
   const test = VERB_FAMILIES[firstToken];
   if (!test || !test(upper)) return null;
   const rest = trimmed.slice(firstToken.length).trim();
-  const argv = rest ? rest.split(/\s+/) : [];
+  const argv = rest
+    ? (VERBATIM_REST_VERBS.has(firstToken) ? [rest] : rest.split(/\s+/))
+    : [];
   return { name: firstToken, argv };
 }

@@ -218,3 +218,83 @@ describe('SQL*Plus — câblage live sur SqlPlusSubShell (Wave 2)', () => {
     subShell.dispose();
   });
 });
+
+describe('SQL*Plus — Wave 3 : PROMPT / EDIT / DEFINE / VARIABLE / PRINT', () => {
+  it('PROMPT affiche le texte tel quel ; nu, affiche une ligne vide', async () => {
+    expect(await run('PROMPT Hello World')).toBe('Hello World');
+    expect(await run('PROMPT')).toBe('');
+  });
+
+  it('EDIT répond toujours SP2-0107, avec ou sans argument', async () => {
+    expect(await run('EDIT')).toBe('SP2-0107: Nothing to save.');
+    expect(await run('EDIT afiedt.buf')).toBe('SP2-0107: Nothing to save.');
+  });
+
+  it('DEFINE nu liste les built-ins tant qu\'aucune variable n\'est définie', async () => {
+    const out = await run('DEFINE');
+    expect(out).toContain('DEFINE _SQLPLUS_RELEASE = "1903000000"');
+    expect(out).toContain('DEFINE _EDITOR         = "vi"');
+  });
+
+  it('DEFINE var=valeur positionne la variable, DEFINE var l\'affiche', async () => {
+    expect(await run('DEFINE MYVAR = hello')).toBe('');
+    expect(await run('DEFINE MYVAR')).toBe('DEFINE MYVAR           = "hello"');
+    expect(kernel.machine.oracle.defines().get('MYVAR')).toBe('hello');
+  });
+
+  it('DEFINE var=valeur retire les guillemets englobants', async () => {
+    await run('DEFINE QUOTED = "a value"');
+    expect(kernel.machine.oracle.defines().get('QUOTED')).toBe('a value');
+  });
+
+  it('DEFINE d\'une variable inconnue renvoie SP2-0135', async () => {
+    expect(await run('DEFINE NOPE')).toBe('SP2-0135: symbol nope is UNDEFINED');
+  });
+
+  it('VARIABLE nu est silencieux tant qu\'aucune n\'est déclarée, puis liste après déclaration', async () => {
+    expect(await run('VARIABLE')).toBe('');
+    expect(await run('VARIABLE g_result NUMBER')).toBe('');
+    expect(await run('VARIABLE')).toBe('variable   G_RESULT\ndatatype   NUMBER');
+    expect(kernel.machine.oracle.bindVariables().get('G_RESULT')?.type).toBe('NUMBER');
+  });
+
+  it('VAR (alias) déclare comme VARIABLE, type par défaut VARCHAR2(100)', async () => {
+    expect(await run('VAR g_name')).toBe('');
+    expect(kernel.machine.oracle.bindVariables().get('G_NAME')).toEqual({ type: 'VARCHAR2(100)', value: null });
+  });
+
+  it('PRINT nu est silencieux tant qu\'aucune variable n\'est déclarée', async () => {
+    expect(await run('PRINT')).toBe('');
+  });
+
+  it('PRINT d\'une variable déclarée affiche le bloc nom/soulignement/valeur', async () => {
+    await run('VARIABLE g_result NUMBER');
+    expect(await run('PRINT g_result')).toBe('\nG_RESULT\n----------\n');
+  });
+
+  it('PRINT d\'une variable non déclarée renvoie SP2-0552', async () => {
+    expect(await run('PRINT nope')).toBe('SP2-0552: Bind variable "NOPE" not declared.');
+  });
+
+  it('les quirks de reconnaissance sont corrects pour les 5 nouveaux verbes', () => {
+    expect(recognizeSqlPlusKernelVerb('PROMPT')).not.toBeNull();
+    expect(recognizeSqlPlusKernelVerb('EDIT')).not.toBeNull();
+    expect(recognizeSqlPlusKernelVerb('DEFINE')).not.toBeNull();
+    expect(recognizeSqlPlusKernelVerb('VARIABLE')).not.toBeNull();
+    // `VAR` seul (sans texte final) ne matche PAS, comme le legacy.
+    expect(recognizeSqlPlusKernelVerb('VAR')).toBeNull();
+    expect(recognizeSqlPlusKernelVerb('VAR x')).not.toBeNull();
+    expect(recognizeSqlPlusKernelVerb('PRINT')).not.toBeNull();
+  });
+
+  it('PROMPT préserve les espaces internes du texte (argv non retokenisé)', async () => {
+    expect(await run('PROMPT a   b')).toBe('a   b');
+  });
+
+  it('câblage live sur SqlPlusSubShell : DEFINE/VARIABLE/PRINT retournent une Promise', () => {
+    const srv = new LinuxServer('linux-server', 'kernel-wiring-6', 100, 100);
+    const { subShell } = SqlPlusSubShell.create(srv, ['/', 'as', 'sysdba']);
+    expect(subShell.processLine('DEFINE X = 1')).toBeInstanceOf(Promise);
+    subShell.dispose();
+  });
+});

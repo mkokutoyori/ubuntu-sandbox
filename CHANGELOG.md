@@ -1,5 +1,104 @@
 # Changelog
 
+## Oracle SQL*Plus — Wave 3 : `PROMPT` / `EDIT` / `DEFINE` / `VARIABLE` / `PRINT` (générées via `scripts/generate_command.py`)
+
+**État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
+
+Cinquième et sixième commandes migrées côté variables (`DEFINE`,
+`VARIABLE`/`VAR`, `PRINT`) plus les deux plus simples restantes
+(`PROMPT`, `EDIT`) — portent le socle command-kernel SQL*Plus à 11
+commandes enregistrées. Première vague à être accélérée par le
+générateur `scripts/generate_command.py` (livré et committé séparément) :
+chaque fichier a été scaffoldé par `generate_command.py new --target
+oracle-sqlplus ...` puis fini à la main pour la logique métier — le
+gain est net sur le boilerplate (imports, `CommandDescriptor`,
+`PrivilegePolicy`, squelette `execute`), l'ajustement restant se limite
+au corps de chaque commande.
+
+- **`SQLPlusSession`** (`src/database/oracle/commands/SQLPlusSession.ts`,
+  additions pures, zéro changement de comportement existant) :
+  - `getDefinesSnapshot()` / `setDefine(varName, value)` — copie
+    immuable et mutation réelle des variables de substitution
+    (`DEFINE`), partagées avec le legacy `handleDefine`.
+  - `getBindVariablesSnapshot()` / `declareBindVariable(varName,
+    varType)` — idem pour les variables liées (`VARIABLE`/`PRINT`),
+    partagées avec le legacy `handleVariable`.
+
+- **`SqlPlusMachineApi`** (`OracleSqlPlusApi` étendue) : `defines()`,
+  `setDefine()`, `bindVariables()`, `declareBindVariable()` exposées à
+  travers la façade — aucune autre commande n'a besoin d'y toucher.
+
+- **5 nouvelles commandes** (`src/database/oracle/command-kernel/commands/`) :
+  - **`Prompt.ts`** — affiche le texte tel quel (ligne vide si nu).
+    Seule commande de cette vague qui n'a besoin d'aucun accès à
+    `machine.oracle` (pas de state à lire/muter).
+  - **`Edit.ts`** — répond invariablement `SP2-0107: Nothing to save.`,
+    avec ou sans argument (aucune édition réelle du buffer simulée,
+    identique au legacy).
+  - **`Define.ts`** — nu : liste toutes les variables définies, ou les
+    2 built-ins (`_SQLPLUS_RELEASE`/`_EDITOR`) si aucune ; `DEFINE var` :
+    affiche une variable (`SP2-0135` si absente) ; `DEFINE var=valeur` :
+    la positionne (guillemets englobants retirés).
+  - **`Variable.ts`** (alias `VAR`) — nu : liste les variables liées
+    déjà déclarées (silencieux si aucune) ; `VARIABLE nom [type]` : la
+    déclare (type par défaut `VARCHAR2(100)`).
+  - **`Print.ts`** — nu : affiche toutes les variables liées (bloc nom
+    + soulignement + valeur, silencieux si aucune) ; `PRINT nom` :
+    affiche cette seule variable (`SP2-0552` si non déclarée). Le
+    soulignement suit exactement la règle legacy `'-'.repeat(name.length
+    > 10 ? name.length : 10)` — minimum 10 tirets même pour un nom plus
+    court (vérifié par test contre le comportement réel, pas contre une
+    intuition : la première version du test attendait `--------` sur 8
+    caractères pour `G_RESULT`, corrigée en `----------` après lecture du
+    legacy).
+
+- **`createSqlPlusKernel.ts`** : les 5 verbes enregistrés dans
+  `VERB_FAMILIES`, miroir exact des prédicats legacy (`VARIABLE`/`VAR`
+  acceptent la forme nue et la forme avec argument ; `VAR` seul sans
+  texte ne matche pas, comme le legacy qui exige `VAR ` avec espace pour
+  la forme alias).
+
+- **Nouveau mécanisme `VERBATIM_REST_VERBS`** : `PROMPT` a besoin que le
+  texte qui suit soit transmis **tel quel** en un seul élément d'argv
+  (espaces internes préservés), contrairement aux autres verbes dont la
+  valeur est de toute façon rejointe par un espace unique côté commande
+  (même normalisation que le legacy `parts.slice(1).join(' ')`). Un
+  `ReadonlySet` dédié dans `recognizeSqlPlusKernelVerb` bascule ce verbe
+  sur un argv à un seul élément non retokenisé, sans affecter le
+  comportement des 10 autres verbes déjà migrés.
+
+- **Câblage live** : aucun changement nécessaire à
+  `SqlPlusSubShell.ts` — le mécanisme générique posé en Wave 2 (verbe
+  reconnu → route kernel async, sinon legacy synchrone) absorbe
+  automatiquement les 5 nouveaux verbes dès leur enregistrement dans
+  `createSqlPlusKernel.ts`. Preuve directe de la valeur de cette
+  conception : une vague de migration entière sans toucher au point de
+  câblage.
+
+- **Preuve** : `sqlplus-cli-foundation.test.ts` étendu à 36/36 tests
+  verts — nouveau bloc « Wave 3 » (13 cas) couvrant les 3 branches de
+  chaque commande à état (`DEFINE`/`VARIABLE`/`PRINT`), les quirks de
+  reconnaissance des 5 verbes (y compris le cas négatif `VAR` seul),
+  la préservation des espaces internes de `PROMPT`, et un smoke test de
+  câblage live confirmant que `DEFINE`/`VARIABLE`/`PRINT` retournent
+  bien une `Promise` via `SqlPlusSubShell`.
+
+- **Validation de non-régression** : `tsc --noEmit` — 55 erreurs
+  avant/après (`git stash -u`), diff vide, aucune imputable à cette
+  vague. `eslint` sur les fichiers touchés — 0 erreur, mêmes 2
+  warnings pré-existants (`no-unused-vars` sur du code legacy inchangé).
+  Suite `database/` + `terminal/` + `command-kernel/` complète (205
+  fichiers, 3795 tests) — 32 échecs, tous confirmés pré-existants par
+  comparaison `git stash -u` (mêmes 8 fichiers, mêmes échecs avant/après :
+  provisioning OS `oracle`/DAC fichier hors sandbox, isolation vty
+  switch/routeur sans rapport avec Oracle).
+
+- **Prochaines cibles** : `SHOW ERRORS` (DTOs de compilation du
+  catalogue) ; `CONNECT`/`DISCONNECT` réseau (Oracle Net/TNS) ;
+  `COLUMN` ; puis la vague la plus significative — l'exécution
+  SQL/PL-SQL elle-même (tampon multi-lignes, `/`, blocs PL/SQL) et
+  `SPOOL`/`@script`.
+
 ## Outillage — générateur de commandes command-kernel (`scripts/generate_command.py`)
 
 **État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**

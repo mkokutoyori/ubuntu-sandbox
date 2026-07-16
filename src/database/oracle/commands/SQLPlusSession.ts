@@ -1783,6 +1783,16 @@ export class SQLPlusSession {
     return { output: [], exit: false, needsMoreInput: false, prompt: this.getPrompt() };
   }
 
+  /** Copie immuable des variables de substitution (`DEFINE` sans argument) — pour la façade command-kernel. */
+  getDefinesSnapshot(): ReadonlyMap<string, string> {
+    return new Map(this.defines);
+  }
+
+  /** Positionne une variable de substitution — mutation réelle, partagée avec `handleDefine`. */
+  setDefine(varName: string, value: string): void {
+    this.defines.set(varName.toUpperCase(), value);
+  }
+
   // ── VARIABLE ───────────────────────────────────────────────────
 
   private handleVariable(args: string): SQLPlusResult {
@@ -1806,6 +1816,16 @@ export class SQLPlusSession {
 
     this.bindVariables.set(varName, { type: varType, value: null });
     return { output: [], exit: false, needsMoreInput: false, prompt: this.getPrompt() };
+  }
+
+  /** Copie immuable des variables liées (`VARIABLE`/`PRINT` sans argument) — pour la façade command-kernel. */
+  getBindVariablesSnapshot(): ReadonlyMap<string, { type: string; value: unknown }> {
+    return new Map(this.bindVariables);
+  }
+
+  /** Déclare une variable liée — mutation réelle, partagée avec `handleVariable`. */
+  declareBindVariable(varName: string, varType: string): void {
+    this.bindVariables.set(varName.toUpperCase(), { type: varType.toUpperCase(), value: null });
   }
 
   // ── PRINT ──────────────────────────────────────────────────────
