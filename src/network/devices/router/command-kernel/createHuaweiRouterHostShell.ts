@@ -3,7 +3,7 @@ import type { CliMode, KernelErrorFormatter } from '@/command-kernel/cli';
 import { PermissionGuard } from '@/command-kernel/exec/permission-guard';
 import { CommandRegistry } from '@/command-kernel/registry/command-registry';
 import type { Router } from '../../Router';
-import { createHuaweiDisplayCommand, HuaweiSystemViewCommand } from '../../vendor-cli';
+import { createHuaweiDisplayCommand, HuaweiDisplayClockCommand, HuaweiSystemViewCommand } from '../../vendor-cli';
 import { RouterMachineApi } from './RouterMachineApi';
 import { HuaweiRouterDisplayVersionCommand } from './commands/huawei/display/Version';
 import { HuaweiRouterDisplayIpCommand } from './commands/huawei/display/Ip';
@@ -45,6 +45,7 @@ export function createHuaweiRouterHostShell(
   const displaySub = new CommandRegistry();
   displaySub.register(() => new HuaweiRouterDisplayVersionCommand());
   displaySub.register(() => new HuaweiRouterDisplayIpCommand());
+  displaySub.register(() => new HuaweiDisplayClockCommand());
 
   const userViewRegistry = new CommandRegistry();
   const systemViewRegistry = new CommandRegistry();
@@ -60,14 +61,14 @@ export function createHuaweiRouterHostShell(
   systemViewRegistry.register(() => new HuaweiRouterSysIpCommand());
   systemViewRegistry.register(() => new HuaweiRouterSysUndoCommand());
   systemViewRegistry.register(() => new PopModeCommand('quit', 'Exit from the current view'));
-  systemViewRegistry.register(() => new EndCommand());
+  systemViewRegistry.register(() => new EndCommand(['return']));
 
   interfaceViewRegistry.register(() => new HuaweiRouterIfIpCommand());
   interfaceViewRegistry.register(() => new HuaweiRouterIfShutdownCommand());
   interfaceViewRegistry.register(() => new HuaweiRouterIfDescriptionCommand());
   interfaceViewRegistry.register(() => new HuaweiRouterIfUndoCommand());
   interfaceViewRegistry.register(() => new PopModeCommand('quit', 'Exit from the current view'));
-  interfaceViewRegistry.register(() => new EndCommand());
+  interfaceViewRegistry.register(() => new EndCommand(['return']));
 
   const modes = new ModeRegistry([
     { name: 'user-view',      prompt: (_s, host) => `<${host}>`,                                                            parent: null,           registry: userViewRegistry },

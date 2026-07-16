@@ -3,7 +3,7 @@ import type { CliMode, KernelErrorFormatter } from '@/command-kernel/cli';
 import { PermissionGuard } from '@/command-kernel/exec/permission-guard';
 import { CommandRegistry } from '@/command-kernel/registry/command-registry';
 import type { Switch } from '../../Switch';
-import { createHuaweiDisplayCommand, HuaweiSystemViewCommand } from '../../vendor-cli';
+import { createHuaweiDisplayCommand, HuaweiDisplayClockCommand, HuaweiSystemViewCommand } from '../../vendor-cli';
 import { SwitchMachineApi } from './SwitchMachineApi';
 import { HuaweiSwitchDisplayVersionCommand } from './commands/huawei/display/Version';
 import { HuaweiSwitchDisplayVlanCommand } from './commands/huawei/display/Vlan';
@@ -17,6 +17,7 @@ import { HuaweiSwitchIfDescriptionCommand } from './commands/huawei/interface-vi
 import { HuaweiSwitchIfPortCommand } from './commands/huawei/interface-view/Port';
 import { HuaweiSwitchIfUndoCommand } from './commands/huawei/interface-view/Undo';
 import { HuaweiSwitchVlanDescriptionCommand } from './commands/huawei/vlan-view/Description';
+import { HuaweiSwitchVlanNameCommand } from './commands/huawei/vlan-view/Name';
 
 /**
  * =====================================================================
@@ -51,6 +52,7 @@ export function createHuaweiSwitchHostShell(
   displaySub.register(() => new HuaweiSwitchDisplayVersionCommand());
   displaySub.register(() => new HuaweiSwitchDisplayVlanCommand());
   displaySub.register(() => new HuaweiSwitchDisplayMacAddressCommand());
+  displaySub.register(() => new HuaweiDisplayClockCommand());
 
   const userViewRegistry = new CommandRegistry();
   const systemViewRegistry = new CommandRegistry();
@@ -67,18 +69,19 @@ export function createHuaweiSwitchHostShell(
   systemViewRegistry.register(() => new HuaweiSwitchVlanCommand());
   systemViewRegistry.register(() => new HuaweiSwitchSysUndoCommand());
   systemViewRegistry.register(() => new PopModeCommand('quit', 'Exit from the current view'));
-  systemViewRegistry.register(() => new EndCommand());
+  systemViewRegistry.register(() => new EndCommand(['return']));
 
   interfaceViewRegistry.register(() => new HuaweiSwitchIfShutdownCommand());
   interfaceViewRegistry.register(() => new HuaweiSwitchIfDescriptionCommand());
   interfaceViewRegistry.register(() => new HuaweiSwitchIfPortCommand());
   interfaceViewRegistry.register(() => new HuaweiSwitchIfUndoCommand());
   interfaceViewRegistry.register(() => new PopModeCommand('quit', 'Exit from the current view'));
-  interfaceViewRegistry.register(() => new EndCommand());
+  interfaceViewRegistry.register(() => new EndCommand(['return']));
 
+  vlanViewRegistry.register(() => new HuaweiSwitchVlanNameCommand());
   vlanViewRegistry.register(() => new HuaweiSwitchVlanDescriptionCommand());
   vlanViewRegistry.register(() => new PopModeCommand('quit', 'Exit from the current view'));
-  vlanViewRegistry.register(() => new EndCommand());
+  vlanViewRegistry.register(() => new EndCommand(['return']));
 
   const modes = new ModeRegistry([
     { name: 'user-view',      prompt: (_s, host) => `<${host}>`,                                                             parent: null,          registry: userViewRegistry },

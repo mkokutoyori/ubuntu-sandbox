@@ -21,3 +21,4 @@ export * from './cisco/ConfigureTerminal';
 export * from './cisco/Show';
 export * from './huawei/SystemView';
 export * from './huawei/Display';
+export * from './huawei/DisplayClock';

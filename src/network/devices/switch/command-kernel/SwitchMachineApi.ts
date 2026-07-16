@@ -97,7 +97,7 @@ export interface SwitchCapabilityApi {
    *  (comportement standard côté switch). Retourne `false` si le port
    *  n'existe pas ou si l'id est invalide. */
   setInterfaceAccessVlan(name: string, vlanId: number): boolean;
-  /** `switchport trunk native vlan <id>` — VLAN natif sur trunk. */
+  /** `switchport trunk native vlan <id>` — VLAN natif sur trunk (Huawei PVID / Cisco native). */
   setInterfaceTrunkNativeVlan(name: string, vlanId: number): boolean;
   /** `switchport trunk allowed vlan {all|none|<list>|add <list>|remove <list>|except <list>}`.
    *  `op` distingue les modes de mise à jour ; `vlans` est la liste

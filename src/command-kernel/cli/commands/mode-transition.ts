@@ -83,15 +83,26 @@ export class PopModeCommand extends BaseCommand {
  * `clearOnExit` des modes traversés.
  */
 export class EndCommand extends BaseCommand {
-  readonly descriptor: CommandDescriptor = {
-    name: 'end',
-    summary: 'Retour au mode d\'exécution privilégié',
-    usage: 'end',
-    args: [],
-    options: [],
-    privileges: ANY,
-    category: 'cli-mode',
-  };
+  readonly descriptor: CommandDescriptor;
+
+  /**
+   * `end` primitif ; le vendeur peut passer des alias
+   * (Huawei VRP : `return` — synonyme officiel de `end` côté VRP,
+   * confondu par les manuels et les automatismes).
+   */
+  constructor(aliases: readonly string[] = []) {
+    super();
+    this.descriptor = {
+      name: 'end',
+      aliases: aliases.length ? [...aliases] : undefined,
+      summary: 'Retour au mode d\'exécution privilégié',
+      usage: 'end',
+      args: [],
+      options: [],
+      privileges: ANY,
+      category: 'cli-mode',
+    };
+  }
 
   async execute(ctx: CommandContext): Promise<ExitCode> {
     if (!ctx.machine.cli) return EXIT_OK;

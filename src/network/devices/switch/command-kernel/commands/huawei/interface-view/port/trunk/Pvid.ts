@@ -3,23 +3,20 @@ import type { CommandContext, CommandDescriptor, ExitCode } from '@/command-kern
 import { CommandRegistry } from '@/command-kernel/registry/command-registry';
 import { DefaultPrivilegePolicy } from '@/command-kernel/session/privilege-policy';
 import { PrivilegeLevel } from '@/command-kernel/session/types';
-import { HuaweiSwitchPortLinkTypeCommand } from './port/LinkType';
-import { HuaweiSwitchPortDefaultCommand } from './port/Default';
-import { HuaweiSwitchPortTrunkCommand } from './port/Trunk';
+import { HuaweiSwitchPortTrunkPvidVlanCommand } from './pvid/Vlan';
 
 const OP = new DefaultPrivilegePolicy(PrivilegeLevel.OPERATOR);
 
 /**
- * `port` (Huawei VRP switch, interface-view) — commande COMPOSITE.
- * Racine des commandes de configuration du port L2 (`port link-type`,
- * `port default vlan`, plus tard `port trunk allow-pass vlan`,
- * `port hybrid tagged`, …). `port` seul est incomplete côté VRP.
+ * `port trunk pvid` (Huawei VRP, interface-view) — COMPOSITE. Une seule
+ * sous-forme : `pvid vlan <id>` (le VRP exige littéralement le mot
+ * `vlan` avant l'id).
  */
-export class HuaweiSwitchIfPortCommand extends BaseCommand {
+export class HuaweiSwitchPortTrunkPvidCommand extends BaseCommand {
   readonly descriptor: CommandDescriptor = {
-    name: 'port',
-    summary: 'Configure the switch port',
-    usage: 'port <subcommand>',
+    name: 'pvid',
+    summary: 'Set the trunk PVID (native VLAN)',
+    usage: 'port trunk pvid vlan <id>',
     args: [],
     options: [],
     privileges: OP,
@@ -30,9 +27,7 @@ export class HuaweiSwitchIfPortCommand extends BaseCommand {
 
   constructor() {
     super();
-    this.subRegistry.register(() => new HuaweiSwitchPortLinkTypeCommand());
-    this.subRegistry.register(() => new HuaweiSwitchPortDefaultCommand());
-    this.subRegistry.register(() => new HuaweiSwitchPortTrunkCommand());
+    this.subRegistry.register(() => new HuaweiSwitchPortTrunkPvidVlanCommand());
   }
 
   async execute(ctx: CommandContext): Promise<ExitCode> {

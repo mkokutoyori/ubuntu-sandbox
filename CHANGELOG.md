@@ -200,6 +200,81 @@ progressive par équipement. Un push = une entrée = une fonctionnalité
 complète et testée (voir `CLAUDE.md` / le framework de migration pour les
 principes directeurs).
 
+## Huawei — alias `return` (VRP) + `name` en vlan-view + `port trunk allow-pass vlan` / `port trunk pvid vlan` + `display clock` partagé routeur/switch
+
+**État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
+
+Vague ciblée sur les signaux migration remontés par les suites Huawei
+après le débranchement `runSshCommandSync` et le wrapper vendor : cinq
+commandes ajoutées, une extension mineure du socle CLI, une nouvelle
+capacité utilisée sur la `SwitchMachineApi` (déjà rebasée du switch
+Cisco).
+
+- **Socle CLI** (`command-kernel/cli/commands/mode-transition.ts`) :
+  - `EndCommand` accepte désormais un tableau d'alias en constructor.
+    Compat totale (défaut = pas d'alias). Utilisé côté Huawei pour
+    déclarer `return` comme synonyme officiel de `end` (le VRP
+    accepte les deux, la doc et les scripts d'ops utilisent
+    indifféremment l'un ou l'autre — 2 tests `huawei-shell-fixes`
+    passent grâce à ce simple alias).
+
+- **Commande partagée routeur + switch Huawei**
+  (`vendor-cli/huawei/DisplayClock.ts`) :
+  - `HuaweiDisplayClockCommand` — feuille standalone, lit
+    `ctx.machine.now()` (méthode commune aux 2 MachineApi), rend le
+    format VRP exact (`YYYY-MM-DD HH:MM:SS` + weekday + `Time
+    Zone(UTC) : UTC`). Enregistrée dans les `displaySub` des 2
+    bootstraps Huawei.
+
+- **Vlan-view (switch Huawei)**
+  (`commands/huawei/vlan-view/Name.ts`) :
+  - `HuaweiSwitchVlanNameCommand` — feuille : `name <text>` renomme
+    le VLAN sélectionné via `SwitchMachineApi.switch.renameVlan`.
+    C'est la commande VRP canonique pour changer le nom d'un VLAN.
+    (La `description` VRP en vlan-view est un champ séparé — pas
+    encore migré, cible d'une vague ultérieure qui ajoutera
+    `setVlanDescription` à la MachineApi.)
+
+- **Interface-view — port trunk** (switch Huawei) :
+  - `interface-view/port/Trunk.ts` (composite) + `trunk/Allow.ts`
+    (composite `allow-pass`) + `trunk/allow/Pass.ts` (feuille) :
+    `port trunk allow-pass vlan {all|<id>[ …]|<start> to <end>}` —
+    sémantique additive VRP (add), avec support des ranges (`10 to
+    20`) et du mot-clé `all` (via
+    `resetInterfaceTrunkAllowedVlans`).
+  - `trunk/Pvid.ts` (composite) + `trunk/pvid/Vlan.ts` (feuille) :
+    `port trunk pvid vlan <id>` — positionne le PVID (VLAN natif
+    VRP) via `SwitchMachineApi.switch.setInterfaceTrunkNativeVlan`.
+
+- **Bootstraps** :
+  - `createHuaweiRouterHostShell` : `EndCommand(['return'])` en
+    system-view et interface-view ; `HuaweiDisplayClockCommand`
+    dans `displaySub`.
+  - `createHuaweiSwitchHostShell` : `EndCommand(['return'])` sur les
+    3 modes ; `HuaweiDisplayClockCommand` dans `displaySub` ;
+    `HuaweiSwitchVlanNameCommand` en vlan-view.
+  - `HuaweiSwitchIfPortCommand` : ajout du sous-registre
+    `HuaweiSwitchPortTrunkCommand`.
+
+- **Preuve** :
+  - Suite command-kernel = **237/237 verte** (foundation Cisco/Huawei
+    router+switch inchangée, plus la palette
+    `switch-config-cisco.test.ts` rebasée = 23 cas).
+  - Suites Huawei ciblées mesurées avant/après cette vague :
+    39/51 → **32/58** sur les 90 cas de `huawei-vrp`,
+    `huawei-shell-fixes`, `huawei-vlan-extras` — **7 tests
+    supplémentaires passent au vert** grâce aux 5 commandes migrées.
+
+- **Effet attendu** : les scripts VRP utilisant `return` (fin de
+  session), `display clock` (audit), `name` en vlan-view (base VLAN
+  correctement nommée) et `port trunk allow-pass vlan` (config trunk
+  standard) fonctionnent désormais end-to-end via le kernel.
+  Prochaines cibles fortes d'après les signaux restants : `display
+  current-configuration` (running-config VRP synthétisée à partir de
+  la MachineApi — grosse commande à découper), `undo port link-type`,
+  `interface Vlanif <id>` + `ip address` sur SVI, `dhcp enable`,
+  `stp` racine + mode.
+
 ## Socle + Cisco + Huawei — wrapper vendor pour les erreurs kernel (`CommandNotFound` / `ambigu` → messages IOS/VRP exacts)
 
 **État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**

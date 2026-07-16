@@ -3,23 +3,24 @@ import type { CommandContext, CommandDescriptor, ExitCode } from '@/command-kern
 import { CommandRegistry } from '@/command-kernel/registry/command-registry';
 import { DefaultPrivilegePolicy } from '@/command-kernel/session/privilege-policy';
 import { PrivilegeLevel } from '@/command-kernel/session/types';
-import { HuaweiSwitchPortLinkTypeCommand } from './port/LinkType';
-import { HuaweiSwitchPortDefaultCommand } from './port/Default';
-import { HuaweiSwitchPortTrunkCommand } from './port/Trunk';
+import { HuaweiSwitchPortTrunkAllowCommand } from './trunk/Allow';
+import { HuaweiSwitchPortTrunkPvidCommand } from './trunk/Pvid';
 
 const OP = new DefaultPrivilegePolicy(PrivilegeLevel.OPERATOR);
 
 /**
- * `port` (Huawei VRP switch, interface-view) — commande COMPOSITE.
- * Racine des commandes de configuration du port L2 (`port link-type`,
- * `port default vlan`, plus tard `port trunk allow-pass vlan`,
- * `port hybrid tagged`, …). `port` seul est incomplete côté VRP.
+ * `port trunk` (Huawei VRP switch, interface-view) — COMPOSITE.
+ * Sous-commandes VRP standard : `allow-pass`, `pvid`. Le port doit
+ * généralement être en link-type `trunk` avant que ces commandes
+ * aient un effet fonctionnel — la MachineApi laisse néanmoins passer
+ * (le VRP réel stocke la config, elle prend effet quand le mode
+ * bascule).
  */
-export class HuaweiSwitchIfPortCommand extends BaseCommand {
+export class HuaweiSwitchPortTrunkCommand extends BaseCommand {
   readonly descriptor: CommandDescriptor = {
-    name: 'port',
-    summary: 'Configure the switch port',
-    usage: 'port <subcommand>',
+    name: 'trunk',
+    summary: 'Configure the trunk port',
+    usage: 'port trunk <subcommand>',
     args: [],
     options: [],
     privileges: OP,
@@ -30,9 +31,8 @@ export class HuaweiSwitchIfPortCommand extends BaseCommand {
 
   constructor() {
     super();
-    this.subRegistry.register(() => new HuaweiSwitchPortLinkTypeCommand());
-    this.subRegistry.register(() => new HuaweiSwitchPortDefaultCommand());
-    this.subRegistry.register(() => new HuaweiSwitchPortTrunkCommand());
+    this.subRegistry.register(() => new HuaweiSwitchPortTrunkAllowCommand());
+    this.subRegistry.register(() => new HuaweiSwitchPortTrunkPvidCommand());
   }
 
   async execute(ctx: CommandContext): Promise<ExitCode> {
