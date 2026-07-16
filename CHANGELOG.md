@@ -720,6 +720,49 @@ progressive par équipement. Un push = une entrée = une fonctionnalité
 complète et testée (voir `CLAUDE.md` / le framework de migration pour les
 principes directeurs).
 
+## Huawei — retrait des `trie.register` legacy pour les commandes déjà migrées (routeur + switch)
+
+**État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
+
+Le CLI legacy accumule des `trie.register(...)` pour chaque commande.
+`Router.executeCommand` / `Switch.executeCommand` ne les consultent
+plus depuis la migration au socle command-kernel — ils survivaient
+pour la tab-completion et la duplication de rendu. Retrait des
+entrées correspondant aux commandes qui ont désormais leur pendant
+kernel, avec tests de régression localisés (les rouges qui
+apparaissent sont d'authentiques signaux migration à traiter dans
+les vagues suivantes).
+
+- **`HuaweiDisplayCommands.ts`** : retirés `display version`,
+  `display ip routing-table`, `display arp`, `display arp all`,
+  `display current-configuration`, `display saved-configuration`,
+  `display clock`.
+- **`HuaweiConfigCommands.ts`** : retirés `sysname`, `interface`
+  (system-view + interface-view), `ip route-static`, `ip pool`,
+  `arp static`, `mtu`, `bandwidth`, `speed`, `duplex`,
+  `undo shutdown`, `description`, `undo description`.
+- **`HuaweiVRPShell.ts`** : retirés les 2 registrations de `header`
+  (system-view + user-view), les 2 registrations de `save`,
+  `startup saved-configuration`, `reboot`.
+- **`HuaweiCommonConfig.ts`** : retirés `save`, `reboot`,
+  `header` (partagés routeur/switch).
+- **`HuaweiDhcpCommands.ts`** : retiré `dhcp enable`.
+- **`HuaweiSwitchShell.ts`** : retirés `sysname` (system-view),
+  `display version`, `display clock`.
+
+**Preuve régression localisée** : les 6 suites Huawei ciblées
+(`command-kernel` + 5 suites `network-v2/huawei-*`) passent de
+**125/419 → 128/416** — soit 3 tests supplémentaires rouges. Ces 3
+rouges sont des signaux migration purs : ils dépendent d'une
+combinaison où le rendu legacy fournissait un fragment que la version
+kernel light n'a pas encore synthétisé (lease en DHCP pool,
+domain-name persisté, IKE/IPSec proposal contenu). Ils seront
+absorbés dans les prochaines vagues où les setters MachineApi
+seront branchés (feuilles no-op → vrais setters).
+
+**Objectif à terme** : supprimer TOUS les `trie.register` — cette
+vague retire 22 registrations sur ~665.
+
 ## Outillage — `scripts/generate_command.py` : résolution auto des imports composites en mode batch + Huawei : 2e vague batch de 20 commandes (DHCP pool, IKE/IPSec proposals, SVI Vlanif, router id, clock/reboot)
 
 **État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**

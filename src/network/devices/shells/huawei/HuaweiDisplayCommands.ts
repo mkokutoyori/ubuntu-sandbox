@@ -1059,27 +1059,15 @@ export function registerDisplayCommands(
   getRouter: () => Router,
   getState: () => HuaweiDisplayState,
 ): void {
-  trie.register('display version', 'Display version information', () => displayVersion(getRouter()));
-  trie.registerGreedy('display ip routing-table', 'Display IP routing table', (args) => {
-    if (args.length === 0) return displayIpRoutingTable(getRouter());
-    if (/^\d+\.\d+\.\d+\.\d+$/.test(args[0])) return displayIpRoutingTableForDest(getRouter(), args[0]);
-    return displayIpRoutingTable(getRouter());
-  });
   trie.register('display ip traffic', 'Display IP traffic statistics', () => displayCounters(getRouter()));
   trie.register('display ip statistics', 'Display IP statistics', () => displayIpStatistics(getRouter()));
   trie.register('display icmp statistics', 'Display ICMP statistics', () => displayIcmpStatistics(getRouter()));
-  trie.register('display arp', 'Display ARP table', () => displayArp(getRouter()));
-  trie.register('display arp all', 'Display all ARP entries', () => displayArp(getRouter()));
   trie.register('display arp static', 'Display static ARP entries', () => displayArpFiltered(getRouter(), 'static'));
   trie.register('display arp dynamic', 'Display dynamic ARP entries', () => displayArpFiltered(getRouter(), 'dynamic'));
   trie.register('display arp statistics', 'Display ARP statistics', () => displayArpStatistics(getRouter()));
   trie.register('display arp statistics all', 'Display all ARP statistics', () => displayArpStatistics(getRouter()));
   trie.registerGreedy('display arp interface', 'Display ARP entries on an interface', (args) =>
     displayArpInterface(getRouter(), args.join(' ')));
-  trie.register('display current-configuration', 'Display running configuration', () => {
-    const s = getState();
-    return displayCurrentConfig(getRouter(), s.isDhcpEnabled(), s.isDhcpSnoopingEnabled(), s.getDhcpSelectGlobal());
-  });
 
   trie.registerGreedy('display current-configuration configuration', 'Display module configuration', (args) => {
     const s = getState();
@@ -1102,10 +1090,6 @@ export function registerDisplayCommands(
   trie.register('display traffic-filter applied-record', 'Display traffic-filter applications', () =>
     displayTrafficFilterApplied(getRouter()));
 
-  trie.register('display saved-configuration', 'Display saved configuration', () => {
-    const s = getState();
-    return displayCurrentConfig(getRouter(), s.isDhcpEnabled(), s.isDhcpSnoopingEnabled(), s.getDhcpSelectGlobal());
-  });
 
   trie.register('display startup', 'Display startup configuration', () => {
     return [
@@ -1628,7 +1612,6 @@ export function registerDisplayCommands(
     displayIpPoolAll(getRouter()));
 
   // ── Common VRP display commands (shared with the switch, DRY) ──
-  trie.register('display clock', 'Display system clock', () => commonDisplayClock());
   trie.register('display cpu-usage', 'Display CPU usage', () => commonDisplayCpuUsage());
   trie.register('display memory-usage', 'Display memory usage', () => commonDisplayMemoryUsage());
   trie.register('display users', 'Display user sessions', () => commonDisplayUsers());

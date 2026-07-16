@@ -1118,14 +1118,6 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
 
     // VRP lifecycle/management commands (shared with the switch, DRY)
     registerHuaweiCommonMgmt(t, this.huaweiDebugFlags);
-    t.registerGreedy('header', 'Configure login/shell banner', (args) => {
-      const router = getRouter() as unknown as { _setSshBanner?: (b: string) => void };
-      if (typeof router._setSshBanner === 'function') {
-        const rest = args.slice(args[0] === 'login' && args[1] === 'information' ? 2 : 1).join(' ');
-        router._setSshBanner(rest.replace(/^["']/, '').replace(/["']$/, ''));
-      }
-      return '';
-    });
     this.registerScreenSizeCommands(t);
     registerHuaweiCommonSecurityDisplay(t, () => new Map());
 
@@ -1291,11 +1283,6 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     t.registerGreedy('debugging isis', 'Enable IS-IS debugging', (_args) => '');
     t.registerGreedy('undo debugging isis', 'Disable IS-IS debugging', (_args) => '');
 
-    // save — persist configuration (Huawei equivalent of write memory)
-    t.register('save', 'Save current configuration', () => {
-      return 'The current configuration will be written to the device.\nInfo: Please input the file name ( *.cfg, *.zip ) [vrpcfg.zip]:vrpcfg.zip\nNow saving the current configuration to the slot.\nSave the configuration successfully.';
-    });
-
     t.registerGreedy('telnet', 'Open Telnet session', (args) => {
       if (!args[0]) return 'Error: Incomplete command.';
       return `Trying ${args[0]} ...\nError: Failed to connect to the remote host.`;
@@ -1303,14 +1290,6 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
 
     t.register('compare configuration', 'Compare running vs saved configuration', () => {
       return 'Info: The current configuration is the same as the saved configuration.';
-    });
-
-    t.registerGreedy('startup saved-configuration', 'Set startup configuration file', (_args) => {
-      return 'Info: Succeeded in setting the file for booting system.';
-    });
-
-    t.registerGreedy('reboot', 'Reboot device', (_args) => {
-      return 'Info: This operation will reboot the system. Continue? [Y/N]:';
     });
 
     t.register('display health', 'Display device health', () =>
@@ -1377,14 +1356,6 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
       return '';
     });
 
-    t.registerGreedy('header', 'Configure login/shell banner', (args) => {
-      const router = getRouter() as unknown as { _setSshBanner?: (b: string) => void };
-      if (typeof router._setSshBanner === 'function') {
-        const rest = args.slice(args[0] === 'login' && args[1] === 'information' ? 2 : 1).join(' ');
-        router._setSshBanner(rest.replace(/^["']/, '').replace(/["']$/, ''));
-      }
-      return '';
-    });
     t.registerGreedy('ssh', 'SSH server configuration', (args) => {
       const router = getRouter() as unknown as {
         _configureSshAuthRetries?: (n: number) => void;
@@ -1565,10 +1536,6 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
 
     // DHCP debug/clear commands
     registerDhcpDebugCommands(t, () => this.r());
-
-    t.register('save', 'Save current configuration', () => {
-      return 'The current configuration will be written to the device.\nInfo: Please input the file name ( *.cfg, *.zip ) [vrpcfg.zip]:vrpcfg.zip\nNow saving the current configuration to the slot.\nSave the configuration successfully.';
-    });
 
     registerHuaweiPolicySystemCommands(t, this);
     registerHuaweiPolicyDisplayCommands(t, () => this.r());

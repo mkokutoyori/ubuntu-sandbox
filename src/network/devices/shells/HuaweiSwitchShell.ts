@@ -644,13 +644,6 @@ export class HuaweiSwitchShell implements ISwitchShell {
       return '';
     });
 
-    // sysname <name>
-    this.systemTrie.registerGreedy('sysname', 'Set system hostname', (args) => {
-      if (!this.swRef || args.length < 1) return 'Error: Incomplete command.';
-      this.swRef._setHostnameInternal(args[0]);
-      return '';
-    });
-
     // vlan <id> or vlan batch <id> <id> ...
     this.systemTrie.registerGreedy('vlan', 'VLAN configuration', (args) => {
       if (!this.swRef || args.length < 1) return 'Error: Incomplete command.';
@@ -1686,10 +1679,6 @@ export class HuaweiSwitchShell implements ISwitchShell {
   // ─── Shared Display Commands ──────────────────────────────────────
 
   private registerDisplayCommands(trie: CommandTrie): void {
-    trie.register('display version', 'Display VRP version information', () => {
-      if (!this.swRef) return '';
-      return this.displayVersion(this.swRef);
-    });
     trie.register('display port-security', 'Display port-security status', () =>
       this.displayPortSecurity());
 
@@ -1911,7 +1900,6 @@ export class HuaweiSwitchShell implements ISwitchShell {
     });
 
     // ── Common VRP display commands (shared with the router, DRY) ──
-    trie.register('display clock', 'Display system clock', () => displayClock());
     trie.register('display cpu-usage', 'Display CPU usage', () => displayCpuUsage());
     trie.register('display memory-usage', 'Display memory usage', () => displayMemoryUsage());
     trie.register('display users', 'Display user sessions', () => displayUsers());

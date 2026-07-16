@@ -40,12 +40,6 @@ export function registerDhcpSystemCommands(
 ): void {
   const getRouter = () => ctx.r();
 
-  trie.register('dhcp enable', 'Enable DHCP service', () => {
-    callbacks.setDhcpEnabled(true);
-    getRouter()._getDHCPServerInternal().enable();
-    return '';
-  });
-
   trie.register('dhcp snooping enable', 'Enable DHCP snooping', () => {
     callbacks.setDhcpSnoopingEnabled(true);
     return '';

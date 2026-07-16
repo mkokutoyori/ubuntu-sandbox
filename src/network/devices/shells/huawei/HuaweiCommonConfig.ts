@@ -61,13 +61,10 @@ export function registerHuaweiCommonMgmt(trie: CommandTrie, debugFlags?: Set<str
     if (!label) { debugFlags.clear(); return; }
     debugFlags.delete(label);
   };
-  trie.registerGreedy('save', 'Save current configuration', () => saveConfiguration());
-  trie.register('reboot', 'Reboot the device', () => rebootDevice());
   trie.register('reset saved-configuration', 'Erase startup configuration', () =>
     resetSavedConfiguration());
   trie.register('commit', 'Commit candidate configuration', () => commitConfiguration());
   trie.registerGreedy('screen-length', 'Set terminal screen length', () => screenLength());
-  trie.registerGreedy('header', 'Configure login/shell banner', () => setHeader());
   trie.register('terminal monitor', 'Enable terminal monitoring', () => 'Info: Current terminal monitor is on.');
   trie.register('undo terminal monitor', 'Disable terminal monitoring', () => 'Info: Current terminal monitor is off.');
   trie.register('terminal debugging', 'Enable terminal debugging', () => 'Info: Current terminal debugging is on.');

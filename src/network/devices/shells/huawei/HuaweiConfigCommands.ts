@@ -376,37 +376,8 @@ function cmdDhcpSelectGlobal(ctx: HuaweiShellContext): string {
 export function buildSystemCommands(trie: CommandTrie, ctx: HuaweiShellContext): void {
   const getRouter = () => ctx.r();
 
-  trie.registerGreedy('sysname', 'Set device name', (args) => {
-    if (args.length < 1) return 'Error: Incomplete command.';
-    getRouter()._setHostnameInternal(args[0]);
-    return '';
-  });
-
-  trie.registerGreedy('interface', 'Enter interface view', (args) => {
-    if (args.length < 1) return 'Error: Incomplete command.';
-    const raw = args.join('');
-    const portName = resolveOrCreateHuaweiInterface(getRouter(), raw);
-    if (!portName) return `Error: Wrong parameter found at '^' position.`;
-    ctx.setSelectedInterface(portName);
-    ctx.setMode('interface');
-    return '';
-  });
-
-  trie.registerGreedy('ip route-static', 'Configure static route', (args) => {
-    return cmdIpRouteStatic(getRouter(), args);
-  });
-
-  trie.registerGreedy('ip pool', 'Enter DHCP pool view', (args) => {
-    if (args.length < 1) return 'Error: Incomplete command.';
-    return cmdIpPool(getRouter(), ctx, args[0]);
-  });
-
   trie.registerGreedy('undo', 'Undo configuration', (args) => {
     return cmdUndo(getRouter(), ctx, args);
-  });
-
-  trie.registerGreedy('undo ip route-static', 'Remove a static route', (args) => {
-    return cmdUndo(getRouter(), ctx, ['ip', 'route-static', ...args]);
   });
 
   trie.registerGreedy('undo ipv6 route-static', 'Remove an IPv6 static route', (args) => {
@@ -425,11 +396,6 @@ export function buildSystemCommands(trie: CommandTrie, ctx: HuaweiShellContext):
       return '';
     }
     return cmdRip(getRouter(), args);
-  });
-
-  trie.registerGreedy('arp static', 'Configure static ARP entry', (args) => {
-    if (args.length < 2) return 'Error: Incomplete command.';
-    return cmdArpStatic(getRouter(), args[0], args[1]);
   });
 
   // ip routing — Huawei equivalent of Cisco's "ip routing" (routing is enabled by default)
@@ -494,39 +460,6 @@ export function buildSystemCommands(trie: CommandTrie, ctx: HuaweiShellContext):
 export function buildInterfaceCommands(trie: CommandTrie, ctx: HuaweiShellContext): void {
   const getRouter = () => ctx.r();
 
-  trie.registerGreedy('interface', 'Switch to another interface view', (args) => {
-    if (args.length < 1) return 'Error: Incomplete command.';
-    const raw = args.join('');
-    const portName = resolveOrCreateHuaweiInterface(getRouter(), raw);
-    if (!portName) return `Error: Wrong parameter found at '^' position.`;
-    ctx.setSelectedInterface(portName);
-    return '';
-  });
-
-  trie.registerGreedy('ip address', 'Configure IP address', (args) => {
-    return cmdIpAddress(getRouter(), ctx, args);
-  });
-
-  trie.register('shutdown', 'Shutdown interface', () => {
-    return cmdShutdown(getRouter(), ctx);
-  });
-
-  trie.register('undo shutdown', 'Enable interface', () => {
-    return cmdUndoShutdown(getRouter(), ctx);
-  });
-
-  trie.registerGreedy('description', 'Set interface description', (args) => {
-    if (!ctx.getSelectedInterface()) return 'Error: No interface selected';
-    if (args.length < 1) return 'Error: Incomplete command.';
-    getRouter().setInterfaceDescription(ctx.getSelectedInterface()!, args.join(' '));
-    return '';
-  });
-
-  trie.register('undo description', 'Remove interface description', () => {
-    if (!ctx.getSelectedInterface()) return 'Error: No interface selected';
-    getRouter().setInterfaceDescription(ctx.getSelectedInterface()!, '');
-    return '';
-  });
 
   trie.registerGreedy('undo', 'Undo configuration', (args) => {
     return cmdUndo(getRouter(), ctx, args);
@@ -645,46 +578,12 @@ export function buildInterfaceCommands(trie: CommandTrie, ctx: HuaweiShellContex
     return '';
   });
 
-  trie.registerGreedy('mtu', 'Set interface MTU', (args) => {
-    const ifName = ctx.getSelectedInterface();
-    if (!ifName) return 'Error: No interface selected';
-    const port = ctx.r().getPort(ifName);
-    const n = parseInt(args[0] ?? '', 10);
-    if (port && !isNaN(n)) { try { port.setMTU(n); } catch (e: any) { return `Error: ${e.message}`; } }
-    return '';
-  });
   trie.registerGreedy('jumboframe enable', 'Enable jumbo frames', (args) => {
     const ifName = ctx.getSelectedInterface();
     if (!ifName) return '';
     const port = ctx.r().getPort(ifName);
     const n = parseInt(args[0] ?? '9216', 10);
     if (port && !isNaN(n)) { try { port.setMTU(n); } catch { /* ignore */ } }
-    return '';
-  });
-  trie.registerGreedy('bandwidth', 'Set interface bandwidth (kbps)', (args) => {
-    const ifName = ctx.getSelectedInterface();
-    if (!ifName) return '';
-    const port = ctx.r().getPort(ifName);
-    const n = parseInt(args[0] ?? '', 10);
-    if (port && !isNaN(n)) port.setBandwidthKbps(n);
-    return '';
-  });
-  trie.registerGreedy('speed', 'Set interface speed', (args) => {
-    const ifName = ctx.getSelectedInterface();
-    if (!ifName) return '';
-    const port = ctx.r().getPort(ifName);
-    if (!port) return '';
-    if (args[0]?.toLowerCase() === 'auto') { port.setNegotiationAuto(true); return ''; }
-    const n = parseInt(args[0] ?? '', 10);
-    if (!isNaN(n)) { try { port.setSpeed(n); } catch { /* ignore */ } }
-    return '';
-  });
-  trie.registerGreedy('duplex', 'Set interface duplex', (args) => {
-    const ifName = ctx.getSelectedInterface();
-    if (!ifName) return '';
-    const port = ctx.r().getPort(ifName);
-    const a = (args[0] ?? '').toLowerCase();
-    if (port && (a === 'full' || a === 'half' || a === 'auto')) port.setDuplex(a as any);
     return '';
   });
   trie.registerGreedy('negotiation', 'Set auto-negotiation', (args) => {
