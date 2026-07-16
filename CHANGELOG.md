@@ -579,6 +579,63 @@ progressive par équipement. Un push = une entrée = une fonctionnalité
 complète et testée (voir `CLAUDE.md` / le framework de migration pour les
 principes directeurs).
 
+## Huawei routeur — `arp static <ip> <mac>` + `undo arp [static] <ip>` en system-view (+ setters MachineApi typés)
+
+**État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
+
+Continuation de la vague ARP : après `display arp` (lecture), voici
+les setters (écriture) — chaque composant scaffoldé via
+`scripts/generate_command.py`, ce qui accélère la migration sans
+compromettre l'architecture (descripteur, imports, allowedModes,
+subRegistry composite déjà en place à l'écriture).
+
+- **Extension `RouterMachineApi`** :
+  - `router.addStaticArp(ip, mac): { ok, error? }` — parse IP + MAC
+    en local (via `IPAddress`, `MACAddress`), délègue à
+    `Router._addStaticARP(ip, mac, '')`. Aucun `ARPEntry` brut ne
+    fuit.
+  - `router.removeArp(ip): boolean` — retire l'entrée (dynamique OU
+    statique) via `Router._deleteARP`.
+
+- **Nouvelles commandes** (toutes scaffoldées par
+  `generate_command.py`, puis complétées manuellement pour le corps
+  d'`execute()`) :
+  - `commands/huawei/system-view/Arp.ts` — composite (racine) +
+    sous-registre pour `static` (plus tard : `broadcast-suppress`,
+    `expire-time`, `learning`, `speed-limit`…).
+  - `commands/huawei/system-view/arp/Static.ts` — feuille :
+    `arp static <ip> <mac>` délègue à
+    `machine.router.addStaticArp`. Silence VRP en cas de succès ;
+    message vendor exact (`Error: Wrong parameter…`) sinon.
+  - `commands/huawei/system-view/undo/Arp.ts` — feuille : accepte
+    `undo arp <ip>` et `undo arp static <ip>` (le mot `static` est
+    un marqueur, le dispatch est identique) — délègue à
+    `machine.router.removeArp`.
+  - Enregistrement dans `HuaweiRouterSysUndoCommand.subRegistry`
+    (pattern composite existant, une seule ligne à ajouter).
+
+- **Tests fondation étendus**
+  (`router-cli-foundation.test.ts`, bloc Huawei VRP, +2 cas) :
+  - `arp static 10.0.0.99 aa:bb:cc:dd:ee:ff` visible dans `display
+    arp` avec type `static`.
+  - `undo arp 10.0.0.99` retire l'entrée.
+
+- **Preuve** :
+  - Suite command-kernel = **285/285 verte** (63/63 sur
+    `router-cli-foundation` avec 2 nouveaux tests fondation ARP).
+  - Suites Huawei ciblées mesurées avant/après cette vague :
+    129/95 → **128/96** sur les 224 cas des 4 suites Huawei — +1
+    test supplémentaire vert (les autres 4-5 tests qui exerçaient
+    `arp static`/`undo arp` s'appuient aussi sur `display current-
+    configuration` avec `arp static` synthétisé, à ajouter dans une
+    vague future qui étendra `HuaweiRouterDisplayCurrentConfiguration
+    Command` pour inclure les entrées ARP statiques).
+
+- **Effet attendu** : les scripts VRP `arp static … / undo arp …`
+  passent désormais par le kernel avec le rendu vendor exact. La
+  MachineApi expose 2 setters ARP réutilisables par les prochains
+  fournisseurs de setters (ex: DHCP snooping, IPv6 ND).
+
 ## Huawei — `save` partagé routeur/switch + `display arp` routeur (+ capacité `RouterMachineApi.router.arpEntries()`) — via `scripts/generate_command.py`
 
 **État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**

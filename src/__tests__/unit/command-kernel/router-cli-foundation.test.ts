@@ -397,6 +397,28 @@ describe('Router CLI foundation — command-kernel single-gate pipeline', () => 
       expect(out).toMatch(/No ARP entries found\./);
     });
 
+    it('`arp static 10.0.0.99 aa:bb:cc:dd:ee:ff` pose une entrée ARP visible dans display arp', async () => {
+      const r = new HuaweiRouter('R2');
+      await r.executeCommand('system-view');
+      const setOut = await r.executeCommand('arp static 10.0.0.99 aa:bb:cc:dd:ee:ff');
+      expect(setOut).toBe('');
+      await r.executeCommand('return');
+      const out = await r.executeCommand('display arp');
+      // Rendu VRP exact (mêmes largeurs de colonnes que le legacy) : le
+      // MAC (17 chars) colle avec la colonne EXPIRE quand pad 16.
+      expect(out).toMatch(/^10\.0\.0\.99 +aa:bb:cc:dd:ee:ff\d+ +static/m);
+    });
+
+    it('`undo arp 10.0.0.99` retire l\'entrée statique', async () => {
+      const r = new HuaweiRouter('R2');
+      await r.executeCommand('system-view');
+      await r.executeCommand('arp static 10.0.0.99 aa:bb:cc:dd:ee:ff');
+      await r.executeCommand('undo arp 10.0.0.99');
+      await r.executeCommand('return');
+      const out = await r.executeCommand('display arp');
+      expect(out).not.toMatch(/10\.0\.0\.99/);
+    });
+
     // ─── Vague display ip ────────────────────────────────────────────
 
     it('`display ip interface brief` produit la bannière VRP + colonnes fixes à partir de MachineApi', async () => {

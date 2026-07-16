@@ -4,6 +4,7 @@ import { CommandRegistry } from '@/command-kernel/registry/command-registry';
 import { DefaultPrivilegePolicy } from '@/command-kernel/session/privilege-policy';
 import { PrivilegeLevel } from '@/command-kernel/session/types';
 import { HuaweiRouterUndoIpCommand } from './undo/Ip';
+import { HuaweiRouterUndoArpCommand } from './undo/Arp';
 
 const OP = new DefaultPrivilegePolicy(PrivilegeLevel.OPERATOR);
 
@@ -29,6 +30,7 @@ export class HuaweiRouterSysUndoCommand extends BaseCommand {
   constructor() {
     super();
     this.subRegistry.register(() => new HuaweiRouterUndoIpCommand());
+    this.subRegistry.register(() => new HuaweiRouterUndoArpCommand());
   }
 
   async execute(ctx: CommandContext): Promise<ExitCode> {

@@ -13,7 +13,7 @@ import {
 import type { User } from '@/command-kernel/session/types';
 import type { CliMachineApi, ModeRegistry } from '@/command-kernel/cli';
 import { FileSystemError } from '@/command-kernel/errors';
-import { IPAddress, SubnetMask } from '@/network/core/types';
+import { IPAddress, MACAddress, SubnetMask } from '@/network/core/types';
 import type { Router } from '../../Router';
 
 /**
@@ -119,6 +119,12 @@ export interface RouterCapabilityApi {
   /** Table ARP courante sous forme de DTOs stables. Ordre d'insertion
    *  préservé — les commandes trient/filtrent elles-mêmes. */
   arpEntries(): readonly RouterArpEntry[];
+  /** Pose une entrée ARP statique (`arp static <ip> <mac>`). Retourne
+   *  `{ ok: false, error }` si l'IP ou la MAC sont invalides. */
+  addStaticArp(ip: string, mac: string): { ok: boolean; error?: string };
+  /** Retire une entrée ARP par IP (`undo arp <ip>` / `undo arp static
+   *  <ip>`). Retourne `false` si l'entrée n'existe pas. */
+  removeArp(ip: string): boolean;
   /** Ajoute une route statique (`ip route <net> <mask> <nexthop>`).
    *  Retourne `{ ok: false, error }` sans exception si les valeurs
    *  sont invalides ou la limite RIB atteinte. */
@@ -294,6 +300,20 @@ class RouterCapabilityImpl implements RouterCapabilityApi {
       });
     }
     return out;
+  }
+
+  addStaticArp(ip: string, mac: string): { ok: boolean; error?: string } {
+    let parsedIp: IPAddress, parsedMac: MACAddress;
+    try { parsedIp = new IPAddress(ip); } catch { return { ok: false, error: `invalid IP: ${ip}` }; }
+    try { parsedMac = new MACAddress(mac); } catch { return { ok: false, error: `invalid MAC: ${mac}` }; }
+    (this.router as unknown as { _addStaticARP(ip: IPAddress, mac: MACAddress, iface: string): void })._addStaticARP(parsedIp, parsedMac, '');
+    return { ok: true };
+  }
+
+  removeArp(ip: string): boolean {
+    let parsedIp: IPAddress;
+    try { parsedIp = new IPAddress(ip); } catch { return false; }
+    return (this.router as unknown as { _deleteARP(ip: IPAddress): boolean })._deleteARP(parsedIp);
   }
 }
 

@@ -12,6 +12,7 @@ import { HuaweiRouterDisplayArpCommand } from './commands/huawei/display/Arp';
 import { HuaweiRouterSysnameCommand } from './commands/huawei/system-view/Sysname';
 import { HuaweiRouterInterfaceCommand } from './commands/huawei/system-view/Interface';
 import { HuaweiRouterSysIpCommand } from './commands/huawei/system-view/Ip';
+import { HuaweiRouterSysArpCommand } from './commands/huawei/system-view/Arp';
 import { HuaweiRouterSysUndoCommand } from './commands/huawei/system-view/Undo';
 import { HuaweiRouterIfIpCommand } from './commands/huawei/interface-view/Ip';
 import { HuaweiRouterIfShutdownCommand } from './commands/huawei/interface-view/Shutdown';
@@ -65,6 +66,7 @@ export function createHuaweiRouterHostShell(
   systemViewRegistry.register(() => new HuaweiRouterSysnameCommand());
   systemViewRegistry.register(() => new HuaweiRouterInterfaceCommand());
   systemViewRegistry.register(() => new HuaweiRouterSysIpCommand());
+  systemViewRegistry.register(() => new HuaweiRouterSysArpCommand());
   systemViewRegistry.register(() => new HuaweiRouterSysUndoCommand());
   systemViewRegistry.register(() => new PopModeCommand('quit', 'Exit from the current view'));
   systemViewRegistry.register(() => new EndCommand(['return']));
