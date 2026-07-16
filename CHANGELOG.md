@@ -5,6 +5,134 @@ progressive par équipement. Un push = une entrée = une fonctionnalité
 complète et testée (voir `CLAUDE.md` / le framework de migration pour les
 principes directeurs).
 
+## Huawei routeur — vague `display ip` + `sysname` + `interface-view` complet (`ip address` / `shutdown` / `description` / `undo *`) + `ip route-static`
+
+**État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
+
+Passage à parité fonctionnelle avec la couverture Cisco déjà migrée :
+Huawei VRP dispose désormais de son mode `interface-view`, de son
+`sysname`, de ses affichages IP de base, de ses routes statiques et de
+toutes les négations `undo` correspondantes — tout ça exclusivement à
+travers `RouterMachineApi`, aucun formateur ni engine legacy réutilisé.
+
+- **Bootstrap** (`createHuaweiRouterHostShell.ts`) :
+  - Nouveau mode `interface-view` (prompt `[<host>-<iface>]`, parent
+    `system-view`, `clearOnExit: ['selectedInterface']` — miroir
+    strict de `config-if` côté Cisco). L'arbre VRP devient :
+    `user-view → system-view → interface-view`.
+  - Nouvelles racines enregistrées : `display ip` (composite,
+    sous-registre partagé user-view/system-view), `sysname`,
+    `interface`, `ip` (system-view), `undo` (system-view), `ip`
+    (interface-view), `shutdown`, `description`, `undo`
+    (interface-view). Chaque `undo` est composite avec son propre
+    sous-registre — jamais de dispatch ad-hoc par nom.
+
+- **Vague 1 — `display ip` composite** :
+  - `display/Ip.ts` — composite, allowedModes user-view + system-view.
+  - `display/ip/Interface.ts` — composite, sous-commande `brief`.
+  - `display/ip/interface/Brief.ts` — feuille : bannière VRP complète
+    (`*down: administratively down` + compteurs UP/DOWN Physical/
+    Protocol) + colonnes fixes (`Interface`/`IP Address/Mask`/
+    `Physical`/`Protocol`). `GE0/0/N` interne rendu en
+    `GigabitEthernet0/0/N` par une fonction pure locale. Masque
+    affiché en CIDR (`/24`) via un helper local `maskToCidr`.
+  - `display/ip/RoutingTable.ts` — feuille : bannière `Route Flags`,
+    séparateur, ligne `Routing Tables: Public`, compteurs
+    Destinations/Routes, colonnes fixes. Preference VRP par défaut
+    (`Direct=0`, `Static=60`, `OSPF=10`, `RIP=100`, `BGP=255`)
+    résolue localement (`defaultPreference`). Nom du protocole
+    (`Direct`/`Static`/`OSPF`/`RIP`/`BGP`/`EIGRP`) résolu par une
+    table pure locale. Next-hop d'une route connectée résolu via
+    l'IP de l'interface (lecture MachineApi).
+
+- **Vague 2 — `sysname` + `interface-view`** :
+  - `system-view/Sysname.ts` — feuille, validation regex identifiant
+    VRP (`[A-Za-z][A-Za-z0-9_-]*`), délègue à
+    `machine.setHostname`.
+  - `system-view/Interface.ts` — `PushModeCommand` : réutilise le
+    util pur `resolveHuaweiInterfaceName` (partagé, pas un
+    formateur) pour accepter les alias vendeur (`gi0/0/0`,
+    `ge0/0/0`, `GigabitEthernet0/0/0`), pose
+    `promptFields['selectedInterface']` puis pousse
+    `interface-view`. Refus explicite avec message VRP
+    (`Wrong parameter found at '^' position.`) si l'interface
+    n'existe pas.
+  - `interface-view/Ip.ts` — composite (`ip address` uniquement pour
+    l'instant).
+  - `interface-view/ip/Address.ts` — feuille : accepte masque
+    décimal (`255.255.255.0`) ET CIDR (`24`) — comportement VRP
+    standard, converti localement (`cidrToMask`). Délègue à
+    `machine.router.setInterfaceIp`.
+  - `interface-view/Shutdown.ts` — feuille : `admin-down` via
+    `setInterfaceAdminUp(iface, false)`.
+  - `interface-view/Description.ts` — feuille variadic : capture le
+    reste de la ligne comme texte libre, délègue à
+    `machine.router.setInterfaceDescription`.
+
+- **Vague 3 — routes statiques + négations `undo`** :
+  - `system-view/Ip.ts` + `system-view/ip/RouteStatic.ts` —
+    composite + feuille : `ip route-static <net> <mask|cidr> <nh>`
+    avec support CIDR local, délègue à `addStaticRoute`.
+  - `system-view/Undo.ts` + `system-view/undo/Ip.ts` +
+    `system-view/undo/ip/RouteStatic.ts` — chaîne composite
+    complète : `undo ip route-static` retire une route via
+    `removeStaticRoute`, message VRP `Route not found.` si le
+    triplet est absent.
+  - `interface-view/Undo.ts` + `undo/Shutdown.ts` +
+    `undo/Description.ts` + `undo/Ip.ts` +
+    `undo/ip/Address.ts` — miroir strict : `undo shutdown`
+    (`setInterfaceAdminUp(true)`), `undo description` (setter avec
+    chaîne vide), `undo ip address` (`clearInterfaceIp`).
+
+- **Palette de tests étendue** (`router-cli-foundation.test.ts`) :
+  22 nouveaux cas Huawei ajoutés au bloc `Huawei VRP` :
+  - `display ip interface brief` — bannière + colonnes + rendu
+    `GigabitEthernet0/0/N`.
+  - abréviation `dis ip int b`.
+  - `display ip` incomplete.
+  - `display ip routing-table` — bannière + colonnes.
+  - `sysname R99` met à jour le prompt.
+  - `sysname` seul incomplete.
+  - `interface Gi0/0/0` push interface-view.
+  - `interface gi0/0/0` accepte l'alias VRP.
+  - `interface Inexistante` refuse + message VRP.
+  - `ip address ... 255.255.255.0` — visible dans display ip int
+    brief.
+  - `ip address ... 24` — notation CIDR.
+  - `undo shutdown` + IP → route Direct dans display ip
+    routing-table.
+  - `shutdown` — état `*down` visible.
+  - `undo ip address` — retire l'IP.
+  - `quit` d'interface-view efface `selectedInterface` (règle
+    `clearOnExit`).
+  - `ip route-static 10.9.9.0 255.255.255.0 192.168.0.2` — route
+    Static.
+  - `ip route-static ... 24 ...` — CIDR.
+  - `undo ip route-static ...` — retrait.
+  - `description Uplink WAN` + `undo description` — via MachineApi
+    (lecture DTO).
+  - `shutdown` en system-view indisponible (règle 9 : modes
+    isolés).
+  - Une commande VRP non migrée (`dhcp enable`) échoue via le
+    nouveau pipeline (signal migration).
+
+- **Preuve exécutable globale** :
+  `src/__tests__/unit/command-kernel/router-cli-foundation.test.ts`
+  = **55/55 verts** (33 Cisco + 22 Huawei). Suite command-kernel
+  complète = **168/168 verts**. `tsc` propre sur les fichiers
+  touchés (baseline inchangée).
+
+- **Effet attendu** : les suites legacy VRP qui exerçaient déjà
+  `sysname` / `interface` / `ip address` / `shutdown` /
+  `description` / `ip route-static` / `display ip interface brief` /
+  `display ip routing-table` vont progressivement passer au vert.
+  `huawei-parity.test.ts` reste sur son baseline (40 fail
+  pré-existants — dépendances au shell legacy non exercées par
+  cette vague ; suite intacte, cible d'une vague ultérieure).
+  Prochaines cibles Huawei : `display current-configuration`,
+  `display interface <name>` détaillé, `mtu` en interface-view,
+  mode OSPF (system-view → ospf → ospf-area).
+
 ## Cisco routeur — sous-interfaces (`interface Gi0/0.N` + `encapsulation dot1Q`) + palette de tests dédiée
 
 **État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**

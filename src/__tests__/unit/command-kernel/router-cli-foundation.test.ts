@@ -335,5 +335,235 @@ describe('Router CLI foundation — command-kernel single-gate pipeline', () => 
       const out = await r.executeCommand('dis ver');
       expect(out).toMatch(/Huawei Versatile Routing Platform/);
     });
+
+    // ─── Vague display ip ────────────────────────────────────────────
+
+    it('`display ip interface brief` produit la bannière VRP + colonnes fixes à partir de MachineApi', async () => {
+      const r = new HuaweiRouter('R2');
+      const out = await r.executeCommand('display ip interface brief');
+      // Bannière VRP obligatoire.
+      expect(out).toMatch(/^\*down: administratively down$/m);
+      expect(out).toMatch(/^The number of interface that is UP in Physical is /m);
+      // En-tête de colonnes exact.
+      expect(out).toMatch(/^Interface {25}IP Address\/Mask {6}Physical {3}Protocol$/m);
+      // `GE0/0/0` interne rendu comme `GigabitEthernet0/0/0` — les
+      // 4 ports de démarrage sont admin-up mais pas connectés → `down`
+      // (physique) / `down` (protocole).
+      expect(out).toMatch(/^GigabitEthernet0\/0\/0 {14}unassigned {11}down {7}down$/m);
+      expect(out).toMatch(/^GigabitEthernet0\/0\/3 /m);
+    });
+
+    it('abbreviation `dis ip int b` résout jusqu\'à la feuille (préfixe-unique)', async () => {
+      const r = new HuaweiRouter('R2');
+      const out = await r.executeCommand('dis ip int b');
+      expect(out).toMatch(/^Interface {25}IP Address\/Mask /m);
+      expect(out).toMatch(/GigabitEthernet0\/0\/0/);
+    });
+
+    it('`display ip` seul est incomplete (composite non exécutable, pas de fallback legacy)', async () => {
+      const r = new HuaweiRouter('R2');
+      const out = await r.executeCommand('display ip');
+      expect(out).toMatch(/Incomplete/i);
+    });
+
+    it('`display ip routing-table` produit la bannière Route Flags + colonnes VRP à partir de MachineApi', async () => {
+      const r = new HuaweiRouter('R2');
+      const out = await r.executeCommand('display ip routing-table');
+      expect(out).toMatch(/^Route Flags: R - relay, D - download to fib$/m);
+      expect(out).toMatch(/^Routing Tables: Public$/m);
+      expect(out).toMatch(/^Destination\/Mask +Proto +Pre +Cost +Flags NextHop +Interface$/m);
+    });
+
+    // ─── Vague sysname + interface + config-if ────────────────────────
+
+    it('`sysname R99` (system-view) met à jour le prompt à travers MachineApi', async () => {
+      const r = new HuaweiRouter('R2');
+      await r.executeCommand('system-view');
+      await r.executeCommand('sysname R99');
+      expect(r.getPrompt()).toBe('[R99]');
+    });
+
+    it('`sysname` seul est incomplete', async () => {
+      const r = new HuaweiRouter('R2');
+      await r.executeCommand('system-view');
+      const out = await r.executeCommand('sysname');
+      expect(out).toMatch(/manquant|missing|Incomplete|introuvable/i);
+    });
+
+    it('`interface GigabitEthernet0/0/0` push interface-view avec le nom d\'interface dans le prompt', async () => {
+      const r = new HuaweiRouter('R2');
+      await r.executeCommand('system-view');
+      const out = await r.executeCommand('interface GigabitEthernet0/0/0');
+      expect(out).toBe('');
+      expect(r.getPrompt()).toBe('[R2-GE0/0/0]');
+    });
+
+    it('`interface gi0/0/0` accepte l\'alias VRP (résolution préfixe)', async () => {
+      const r = new HuaweiRouter('R2');
+      await r.executeCommand('sys');
+      await r.executeCommand('interface gi0/0/0');
+      expect(r.getPrompt()).toBe('[R2-GE0/0/0]');
+    });
+
+    it('`interface DoesNotExist` refuse la transition avec le message VRP et reste en system-view', async () => {
+      const r = new HuaweiRouter('R2');
+      await r.executeCommand('system-view');
+      const out = await r.executeCommand('interface DoesNotExist');
+      expect(out).toMatch(/Wrong parameter/);
+      expect(r.getPrompt()).toBe('[R2]');
+    });
+
+    it('`ip address 10.1.1.1 255.255.255.0` (interface-view) configure l\'IP, visible dans display ip interface brief', async () => {
+      const r = new HuaweiRouter('R2');
+      await r.executeCommand('system-view');
+      await r.executeCommand('interface GigabitEthernet0/0/0');
+      const out = await r.executeCommand('ip address 10.1.1.1 255.255.255.0');
+      expect(out).toBe('');
+      await r.executeCommand('end');
+      const brief = await r.executeCommand('display ip interface brief');
+      expect(brief).toMatch(/^GigabitEthernet0\/0\/0\s+10\.1\.1\.1\/24\s+/m);
+    });
+
+    it('`ip address 10.1.1.1 24` accepte la notation CIDR VRP', async () => {
+      const r = new HuaweiRouter('R2');
+      await r.executeCommand('system-view');
+      await r.executeCommand('interface GigabitEthernet0/0/0');
+      await r.executeCommand('ip address 10.1.1.1 24');
+      await r.executeCommand('end');
+      const brief = await r.executeCommand('display ip interface brief');
+      expect(brief).toMatch(/^GigabitEthernet0\/0\/0\s+10\.1\.1\.1\/24\s+/m);
+    });
+
+    it('`undo shutdown` puis IP → route Direct présente dans display ip routing-table', async () => {
+      const r = new HuaweiRouter('R2');
+      await r.executeCommand('system-view');
+      await r.executeCommand('interface GigabitEthernet0/0/0');
+      await r.executeCommand('ip address 10.1.1.1 255.255.255.0');
+      await r.executeCommand('undo shutdown');
+      await r.executeCommand('end');
+      const routes = await r.executeCommand('display ip routing-table');
+      // Une ligne pour la /24 Direct connectée sur GE0/0/0.
+      expect(routes).toMatch(/10\.1\.1\.0\/24 +Direct/);
+    });
+
+    it('`shutdown` remet l\'interface admin-down (visible dans display ip int brief)', async () => {
+      const r = new HuaweiRouter('R2');
+      await r.executeCommand('system-view');
+      await r.executeCommand('interface GigabitEthernet0/0/0');
+      await r.executeCommand('shutdown');
+      await r.executeCommand('end');
+      const brief = await r.executeCommand('display ip interface brief');
+      expect(brief).toMatch(/GigabitEthernet0\/0\/0.*\*down/);
+    });
+
+    it('`undo ip address` (interface-view) retire l\'IP', async () => {
+      const r = new HuaweiRouter('R2');
+      await r.executeCommand('system-view');
+      await r.executeCommand('interface GigabitEthernet0/0/0');
+      await r.executeCommand('ip address 10.1.1.1 255.255.255.0');
+      await r.executeCommand('undo ip address');
+      await r.executeCommand('end');
+      const brief = await r.executeCommand('display ip interface brief');
+      expect(brief).toMatch(/^GigabitEthernet0\/0\/0\s+unassigned\s+/m);
+    });
+
+    it('`quit` d\'interface-view efface `selectedInterface` (clearOnExit) et revient à system-view', async () => {
+      const r = new HuaweiRouter('R2');
+      await r.executeCommand('system-view');
+      await r.executeCommand('interface GigabitEthernet0/0/0');
+      expect(r.getPrompt()).toBe('[R2-GE0/0/0]');
+      await r.executeCommand('quit');
+      expect(r.getPrompt()).toBe('[R2]');
+      await r.executeCommand('interface GigabitEthernet0/0/1');
+      await r.executeCommand('ip address 10.2.2.2 255.255.255.0');
+      await r.executeCommand('end');
+      const brief = await r.executeCommand('display ip interface brief');
+      expect(brief).toMatch(/^GigabitEthernet0\/0\/1\s+10\.2\.2\.2/m);
+    });
+
+    // ─── Vague routes statiques + description ─────────────────────────
+
+    it('`ip route-static 10.9.9.0 255.255.255.0 192.168.0.2` ajoute une route Static visible dans display ip routing-table', async () => {
+      const r = new HuaweiRouter('R2');
+      await r.executeCommand('system-view');
+      await r.executeCommand('interface GigabitEthernet0/0/0');
+      await r.executeCommand('ip address 192.168.0.1 255.255.255.0');
+      await r.executeCommand('undo shutdown');
+      await r.executeCommand('quit');
+      const setOut = await r.executeCommand('ip route-static 10.9.9.0 255.255.255.0 192.168.0.2');
+      expect(setOut).toBe('');
+      await r.executeCommand('end');
+      const routes = await r.executeCommand('display ip routing-table');
+      expect(routes).toMatch(/10\.9\.9\.0\/24 +Static/);
+    });
+
+    it('`ip route-static 10.9.9.0 24 192.168.0.2` accepte la notation CIDR VRP', async () => {
+      const r = new HuaweiRouter('R2');
+      await r.executeCommand('system-view');
+      await r.executeCommand('interface GigabitEthernet0/0/0');
+      await r.executeCommand('ip address 192.168.0.1 24');
+      await r.executeCommand('undo shutdown');
+      await r.executeCommand('quit');
+      await r.executeCommand('ip route-static 10.9.9.0 24 192.168.0.2');
+      await r.executeCommand('end');
+      const routes = await r.executeCommand('display ip routing-table');
+      expect(routes).toMatch(/10\.9\.9\.0\/24 +Static/);
+    });
+
+    it('`undo ip route-static 10.9.9.0 255.255.255.0 192.168.0.2` retire la route', async () => {
+      const r = new HuaweiRouter('R2');
+      await r.executeCommand('system-view');
+      await r.executeCommand('interface GigabitEthernet0/0/0');
+      await r.executeCommand('ip address 192.168.0.1 255.255.255.0');
+      await r.executeCommand('undo shutdown');
+      await r.executeCommand('quit');
+      await r.executeCommand('ip route-static 10.9.9.0 255.255.255.0 192.168.0.2');
+      await r.executeCommand('undo ip route-static 10.9.9.0 255.255.255.0 192.168.0.2');
+      await r.executeCommand('end');
+      const routes = await r.executeCommand('display ip routing-table');
+      expect(routes).not.toMatch(/10\.9\.9\.0/);
+    });
+
+    it('`description Uplink WAN` (interface-view) via MachineApi (lecture DTO)', async () => {
+      const r = new HuaweiRouter('R2');
+      await r.executeCommand('system-view');
+      await r.executeCommand('interface GigabitEthernet0/0/0');
+      const out = await r.executeCommand('description Uplink WAN');
+      expect(out).toBe('');
+      const cli = (r as unknown as { getCommandKernelCli(): { machine: { router: { interface(name: string): { description: string } | null } } } })
+        .getCommandKernelCli();
+      const info = cli.machine.router.interface('GE0/0/0');
+      expect(info?.description).toBe('Uplink WAN');
+    });
+
+    it('`undo description` retire la description via MachineApi', async () => {
+      const r = new HuaweiRouter('R2');
+      await r.executeCommand('system-view');
+      await r.executeCommand('interface GigabitEthernet0/0/0');
+      await r.executeCommand('description Temp');
+      await r.executeCommand('undo description');
+      const cli = (r as unknown as { getCommandKernelCli(): { machine: { router: { interface(name: string): { description: string } | null } } } })
+        .getCommandKernelCli();
+      const info = cli.machine.router.interface('GE0/0/0');
+      expect(info?.description).toBe('');
+    });
+
+    it('`shutdown` en system-view est indisponible (mode isolation — règle 9)', async () => {
+      const r = new HuaweiRouter('R2');
+      await r.executeCommand('system-view');
+      const out = await r.executeCommand('shutdown');
+      // `shutdown` n'est pas dans systemViewRegistry → not-found via le
+      // nouveau pipeline. Signal explicite d'isolation des modes.
+      expect(out).toMatch(/inconnu|Incomplete|not-found|introuvable/i);
+    });
+
+    it('an unmigrated command fails through the new pipeline (signal for migration)', async () => {
+      const r = new HuaweiRouter('R2');
+      await r.executeCommand('system-view');
+      // `dhcp enable` : sous-commande pas encore migrée → not-found via
+      // le nouveau pipeline.
+      const out = await r.executeCommand('dhcp enable');
+      expect(out).toMatch(/inconnu|Incomplete|not-found|introuvable/i);
+    });
   });
 });
