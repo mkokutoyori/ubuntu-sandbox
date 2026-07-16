@@ -336,6 +336,53 @@ describe('Router CLI foundation — command-kernel single-gate pipeline', () => 
       expect(out).toMatch(/Huawei Versatile Routing Platform/);
     });
 
+    it('`return` (alias VRP de `end`) revient à user-view depuis interface-view', async () => {
+      const r = new HuaweiRouter('R2');
+      await r.executeCommand('system-view');
+      await r.executeCommand('interface GigabitEthernet0/0/0');
+      expect(r.getPrompt()).toBe('[R2-GE0/0/0]');
+      await r.executeCommand('return');
+      expect(r.getPrompt()).toBe('<R2>');
+    });
+
+    it('`display clock` produit la ligne date + weekday + timezone VRP', async () => {
+      const r = new HuaweiRouter('R2');
+      const out = await r.executeCommand('display clock');
+      expect(out).toMatch(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/m);
+      expect(out).toMatch(/^(Sunday|Monday|Tuesday|Wednesday|Thursday|Friday|Saturday)$/m);
+      expect(out).toMatch(/^Time Zone\(UTC\) : UTC$/m);
+    });
+
+    it('`display current-configuration` synthétise sysname + interfaces + ip route-static depuis MachineApi', async () => {
+      const r = new HuaweiRouter('R2');
+      // Configure quelques éléments via le kernel.
+      await r.executeCommand('system-view');
+      await r.executeCommand('sysname R99');
+      await r.executeCommand('interface GigabitEthernet0/0/0');
+      await r.executeCommand('description Uplink WAN');
+      await r.executeCommand('ip address 10.1.1.1 255.255.255.0');
+      await r.executeCommand('undo shutdown');
+      await r.executeCommand('quit');
+      await r.executeCommand('ip route-static 20.0.0.0 255.0.0.0 10.1.1.2');
+      await r.executeCommand('return');
+      const out = await r.executeCommand('display current-configuration');
+      expect(out).toMatch(/^sysname R99$/m);
+      expect(out).toMatch(/^interface GigabitEthernet0\/0\/0$/m);
+      expect(out).toMatch(/^ description Uplink WAN$/m);
+      expect(out).toMatch(/^ ip address 10\.1\.1\.1 255\.255\.255\.0$/m);
+      expect(out).toMatch(/^ip route-static 20\.0\.0\.0 255\.0\.0\.0 10\.1\.1\.2$/m);
+      expect(out).toMatch(/^return$/m);
+    });
+
+    it('`display current-configuration | include interface` filtre via le pipe kernel', async () => {
+      const r = new HuaweiRouter('R2');
+      const out = await r.executeCommand('display current-configuration | include interface');
+      // Chaque ligne restante doit contenir "interface".
+      const lines = out.split('\n').filter((l) => l.length > 0);
+      expect(lines.length).toBeGreaterThan(0);
+      for (const l of lines) expect(l).toMatch(/interface/);
+    });
+
     // ─── Vague display ip ────────────────────────────────────────────
 
     it('`display ip interface brief` produit la bannière VRP + colonnes fixes à partir de MachineApi', async () => {

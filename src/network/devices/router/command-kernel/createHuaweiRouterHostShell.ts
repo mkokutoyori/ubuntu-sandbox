@@ -7,6 +7,7 @@ import { createHuaweiDisplayCommand, HuaweiDisplayClockCommand, HuaweiSystemView
 import { RouterMachineApi } from './RouterMachineApi';
 import { HuaweiRouterDisplayVersionCommand } from './commands/huawei/display/Version';
 import { HuaweiRouterDisplayIpCommand } from './commands/huawei/display/Ip';
+import { HuaweiRouterDisplayCurrentConfigurationCommand } from './commands/huawei/display/CurrentConfiguration';
 import { HuaweiRouterSysnameCommand } from './commands/huawei/system-view/Sysname';
 import { HuaweiRouterInterfaceCommand } from './commands/huawei/system-view/Interface';
 import { HuaweiRouterSysIpCommand } from './commands/huawei/system-view/Ip';
@@ -46,6 +47,7 @@ export function createHuaweiRouterHostShell(
   displaySub.register(() => new HuaweiRouterDisplayVersionCommand());
   displaySub.register(() => new HuaweiRouterDisplayIpCommand());
   displaySub.register(() => new HuaweiDisplayClockCommand());
+  displaySub.register(() => new HuaweiRouterDisplayCurrentConfigurationCommand());
 
   const userViewRegistry = new CommandRegistry();
   const systemViewRegistry = new CommandRegistry();

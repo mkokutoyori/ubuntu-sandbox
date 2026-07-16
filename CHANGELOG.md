@@ -200,6 +200,81 @@ progressive par équipement. Un push = une entrée = une fonctionnalité
 complète et testée (voir `CLAUDE.md` / le framework de migration pour les
 principes directeurs).
 
+## Huawei routeur — `display current-configuration` LIGHT + débranchement du `runSshCommandSync` correspondant
+
+**État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
+
+Le signal migration le plus dominant depuis quelques vagues :
+`display current-configuration` était encore intercepté par
+`HuaweiRouter.runSshCommandSync` avec le formateur legacy full
+(`displayCurrentConfig` + DHCP/ARP/OSPF/IPSec/local-user/SSH). Cette
+vague le migre au socle command-kernel avec une **version LIGHT** —
+uniquement les directives que la MachineApi expose déjà — et débranche
+le legacy pour de bon.
+
+- **Nouvelle commande**
+  (`commands/huawei/display/CurrentConfiguration.ts`) :
+  - `HuaweiRouterDisplayCurrentConfigurationCommand` — feuille
+    standalone, allowedModes `user-view` + `system-view`. Lit
+    `machine.hostname`, `machine.router.interfaces()`,
+    `machine.router.routes()` — synthétise :
+    - Sections séparées par `#` (format VRP réel).
+    - `sysname <host>`.
+    - Un bloc `interface <name>` par port avec description, ip
+      address, shutdown le cas échéant. Nom rendu `GE →
+      GigabitEthernet` (parité vendeur).
+    - `ip route-static <net> <mask> <nh>` pour chaque route de type
+      `static` ou `default`.
+    - Ligne `return` finale (marqueur VRP de fin de config).
+  - Enregistrée dans `displaySub` du bootstrap Huawei router.
+
+- **Débranchement legacy** (`HuaweiRouter.runSshCommandSync`) :
+  - Suppression du bloc `dispMatch` (39 lignes) qui appelait
+    `displayCurrentConfig(this, false, false, new Set())` +
+    injectait `local-user`, `ssh server authentication-retries`,
+    `stelnet server enable`, `protocol inbound ssh/telnet/none` par
+    accès direct aux internals. Import `displayCurrentConfig`
+    supprimé.
+  - Le pipe filter (`| include X` / `| exclude X`) est désormais
+    porté par le `CliInterpreter` (`applyCliPipeFilter`) — plus
+    besoin de code dupliqué. **Toutes les directives SSH-server /
+    local-user / stelnet sont volontairement absentes de la version
+    kernel** : les tests SSH-notebooks qui les vérifiaient
+    échoueront franchement, c'est le signal migration pour les
+    prochaines vagues (dhcp, local-user, ssh server).
+
+- **Tests fondation étendus**
+  (`router-cli-foundation.test.ts` — bloc Huawei VRP) :
+  - `return` (alias VRP de `end`) revient à user-view depuis
+    interface-view — 4 modes traversés.
+  - `display clock` produit date + weekday + timezone VRP.
+  - `display current-configuration` synthétise sysname + interface +
+    description + ip address + shutdown + ip route-static + `return`
+    (bout-en-bout : configure via kernel → lit via kernel).
+  - `display current-configuration | include interface` — pipe
+    kernel appliqué : chaque ligne restante contient `interface`.
+
+- **Preuve** :
+  - Suite command-kernel = **257/257 verte** (foundation étendue de
+    4 cas ; 59/59 sur `router-cli-foundation`).
+  - Suites Huawei ciblées mesurées avant/après cette vague :
+    135/89 → **133/91** sur les 224 cas de `huawei-vrp`,
+    `huawei-shell-fixes`, `huawei-vlan-extras`,
+    `huawei-config-parity` — **2 tests supplémentaires verts** grâce
+    à `display current-configuration`. Les autres 133 rouges qui
+    restent sont désormais franchement des signaux migration :
+    attentes de `dhcp enable`, `local-user X`, `ssh server`,
+    `stelnet server`, `stp`, `router id`, etc. dans la
+    running-config — chacun devient une prochaine vague.
+
+- **Effet attendu** : aucun `ssh <router> "display
+  current-configuration"` ne « triche » plus par le bypass legacy.
+  La version kernel est authentiquement calculée à partir de la
+  MachineApi ; tout ce qui manque à la sortie manque parce que la
+  MachineApi ne le sait pas encore (i.e. le sous-système n'est pas
+  encore migré). C'est la propriété de fond : la MachineApi devient
+  la seule source de vérité pour tout ce qui est visible côté user.
+
 ## Huawei — alias `return` (VRP) + `name` en vlan-view + `port trunk allow-pass vlan` / `port trunk pvid vlan` + `display clock` partagé routeur/switch
 
 **État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**

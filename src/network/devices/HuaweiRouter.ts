@@ -17,7 +17,6 @@ import { createHuaweiRouterHostShell } from './router/command-kernel/createHuawe
 import { createCliSession } from '@/command-kernel/cli';
 import { SimpleUser } from '@/command-kernel/session/types';
 import { CommandNotFoundError } from '@/command-kernel/errors';
-import { displayCurrentConfig } from './shells/huawei/HuaweiDisplayCommands';
 import { LldpAgent } from '../lldp/LldpAgent';
 import { ETHERTYPE_LLDP, LLDP_MULTICAST_MAC } from '../lldp/types';
 import { VrrpAgent } from '../vrrp/VrrpAgent';
@@ -373,39 +372,12 @@ export class HuaweiRouter extends Router {
       const users = this._listLocalUsers();
       return { output: `User-name              State   Type   Privilege\n${users.map(u => `${u.name.padEnd(22)} A       SSH    ${u.privilege}`).join('\n')}\n`, exitCode: 0 };
     }
-    // `display current-configuration [ | include … ]` — synthesises a
-    // VRP-style running config with the SSH-relevant directives that
-    // were captured by the shell hooks.
-    const dispMatch = /^display\s+current-configuration(?:\s*\|\s*(include|exclude)\s+(.+))?$/i.exec(cmd);
-    if (dispMatch) {
-      const base = displayCurrentConfig(this, false, false, new Set());
-      const lines = base.split('\n');
-      for (const u of this._listLocalUsers()) {
-        lines.push(`local-user ${u.name} password cipher ${u.secret}`);
-        lines.push(`local-user ${u.name} privilege level ${u.privilege}`);
-      }
-      const retries = this.getSshAuthenticationRetries();
-      if (retries !== null) lines.push(`ssh server authentication-retries ${retries}`);
-      // Append SSH-state directives so SSH-aware tests see them. Real
-      // VRP emits "protocol inbound ssh" specifically when ssh is among
-      // the permitted protocols (not just when 'all' is set), so the
-      // grep-style assertions in operations notebooks keep working.
-      if (this.sshServerEnabled) lines.push('stelnet server enable');
-      if (this.vtyTransportInput === 'all' || this.vtyTransportInput === 'ssh') {
-        lines.push('protocol inbound ssh');
-      } else if (this.vtyTransportInput === 'telnet') {
-        lines.push('protocol inbound telnet');
-      } else if (this.vtyTransportInput === 'none') {
-        lines.push('protocol inbound none');
-      }
-      const out = lines.join('\n');
-      if (!dispMatch[1]) return { output: `${out}\n`, exitCode: 0 };
-      const needle = dispMatch[2].trim();
-      const filtered = dispMatch[1].toLowerCase() === 'include'
-        ? lines.filter(l => l.includes(needle))
-        : lines.filter(l => !l.includes(needle));
-      return { output: `${filtered.join('\n')}\n`, exitCode: 0 };
-    }
+    // Débranchement legacy : `display current-configuration [| include|exclude …]`
+    // est désormais migré au socle command-kernel (version LIGHT :
+    // sysname + interfaces + ip route-static uniquement). Le pipe filter
+    // terminal est géré nativement par le CliInterpreter. Les
+    // directives SSH-server / local-user / stelnet ne sont pas encore
+    // synthétisées — signal migration pour les vagues futures.
     return null;
   }
 
