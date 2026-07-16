@@ -154,6 +154,183 @@ describe('Switch CLI foundation — command-kernel single-gate pipeline', () => 
       expect(out).toMatch(/S5720/);
       expect(out).not.toMatch(/AR2220/);
     });
+
+    // ─── Vague display L2 ────────────────────────────────────────────
+
+    it('`display vlan` liste au moins le VLAN 1 par défaut à partir de MachineApi', async () => {
+      const sw = new HuaweiSwitch('sw-huawei', 'SW2', 24);
+      const out = await sw.executeCommand('display vlan');
+      expect(out).toMatch(/^VLAN ID +Name +Status +Ports$/m);
+      // VLAN 1 est initialisé avec le nom `default` côté Switch.
+      expect(out).toMatch(/^1 +default +active/m);
+    });
+
+    it('`display mac-address` produit la bannière S5720 (aucune entrée par défaut)', async () => {
+      const sw = new HuaweiSwitch('sw-huawei', 'SW2', 24);
+      const out = await sw.executeCommand('display mac-address');
+      expect(out).toMatch(/^MAC address table of slot 0:$/m);
+      expect(out).toMatch(/^MAC Address +VLAN\/VSI +Learned-From +Type$/m);
+      expect(out).toMatch(/^Total items displayed = 0$/m);
+    });
+
+    it('abbreviation `dis mac` résout jusqu\'à `display mac-address` (préfixe-unique)', async () => {
+      const sw = new HuaweiSwitch('sw-huawei', 'SW2', 24);
+      const out = await sw.executeCommand('dis mac');
+      expect(out).toMatch(/^MAC address table of slot 0:$/m);
+    });
+
+    // ─── Vague sysname + interface-view ──────────────────────────────
+
+    it('`sysname SW99` met à jour le prompt via MachineApi', async () => {
+      const sw = new HuaweiSwitch('sw-huawei', 'SW2', 24);
+      await sw.executeCommand('system-view');
+      await sw.executeCommand('sysname SW99');
+      expect(sw.getPrompt()).toBe('[SW99]');
+    });
+
+    it('`interface GigabitEthernet0/0/1` push interface-view avec l\'interface dans le prompt', async () => {
+      const sw = new HuaweiSwitch('sw-huawei', 'SW2', 24);
+      await sw.executeCommand('system-view');
+      const out = await sw.executeCommand('interface GigabitEthernet0/0/1');
+      expect(out).toBe('');
+      expect(sw.getPrompt()).toBe('[SW2-GigabitEthernet0/0/1]');
+    });
+
+    it('`interface DoesNotExist` refuse la transition avec le message VRP', async () => {
+      const sw = new HuaweiSwitch('sw-huawei', 'SW2', 24);
+      await sw.executeCommand('system-view');
+      const out = await sw.executeCommand('interface DoesNotExist');
+      expect(out).toMatch(/Wrong parameter/);
+      expect(sw.getPrompt()).toBe('[SW2]');
+    });
+
+    it('`shutdown` (interface-view) marque le port admin-down via MachineApi', async () => {
+      const sw = new HuaweiSwitch('sw-huawei', 'SW2', 24);
+      await sw.executeCommand('system-view');
+      await sw.executeCommand('interface GigabitEthernet0/0/1');
+      await sw.executeCommand('shutdown');
+      const cli = (sw as unknown as { getCommandKernelCli(): { machine: { switch: { interface(n: string): { adminUp: boolean } | null } } } }).getCommandKernelCli();
+      const info = cli.machine.switch.interface('GigabitEthernet0/0/1');
+      expect(info?.adminUp).toBe(false);
+    });
+
+    it('`undo shutdown` remonte le port', async () => {
+      const sw = new HuaweiSwitch('sw-huawei', 'SW2', 24);
+      await sw.executeCommand('system-view');
+      await sw.executeCommand('interface GigabitEthernet0/0/1');
+      await sw.executeCommand('shutdown');
+      await sw.executeCommand('undo shutdown');
+      const cli = (sw as unknown as { getCommandKernelCli(): { machine: { switch: { interface(n: string): { adminUp: boolean } | null } } } }).getCommandKernelCli();
+      expect(cli.machine.switch.interface('GigabitEthernet0/0/1')?.adminUp).toBe(true);
+    });
+
+    it('`description WAN uplink` pose la description via MachineApi', async () => {
+      const sw = new HuaweiSwitch('sw-huawei', 'SW2', 24);
+      await sw.executeCommand('system-view');
+      await sw.executeCommand('interface GigabitEthernet0/0/1');
+      await sw.executeCommand('description WAN uplink');
+      const cli = (sw as unknown as { getCommandKernelCli(): { machine: { switch: { interface(n: string): { description: string } | null } } } }).getCommandKernelCli();
+      expect(cli.machine.switch.interface('GigabitEthernet0/0/1')?.description).toBe('WAN uplink');
+    });
+
+    it('`quit` d\'interface-view efface `selectedInterface` (clearOnExit)', async () => {
+      const sw = new HuaweiSwitch('sw-huawei', 'SW2', 24);
+      await sw.executeCommand('system-view');
+      await sw.executeCommand('interface GigabitEthernet0/0/1');
+      expect(sw.getPrompt()).toBe('[SW2-GigabitEthernet0/0/1]');
+      await sw.executeCommand('quit');
+      expect(sw.getPrompt()).toBe('[SW2]');
+    });
+
+    // ─── Vague VLAN + port link-type + port default vlan ─────────────
+
+    it('`vlan 10` (system-view) crée le VLAN et push vlan-view avec l\'id dans le prompt', async () => {
+      const sw = new HuaweiSwitch('sw-huawei', 'SW2', 24);
+      await sw.executeCommand('system-view');
+      await sw.executeCommand('vlan 10');
+      expect(sw.getPrompt()).toBe('[SW2-vlan10]');
+      const cli = (sw as unknown as { getCommandKernelCli(): { machine: { switch: { vlan(id: number): { id: number } | null } } } }).getCommandKernelCli();
+      expect(cli.machine.switch.vlan(10)).not.toBeNull();
+    });
+
+    it('`description Servers` en vlan-view renomme le VLAN sélectionné', async () => {
+      const sw = new HuaweiSwitch('sw-huawei', 'SW2', 24);
+      await sw.executeCommand('system-view');
+      await sw.executeCommand('vlan 10');
+      await sw.executeCommand('description Servers');
+      const cli = (sw as unknown as { getCommandKernelCli(): { machine: { switch: { vlan(id: number): { name: string } | null } } } }).getCommandKernelCli();
+      expect(cli.machine.switch.vlan(10)?.name).toBe('Servers');
+    });
+
+    it('`quit` de vlan-view efface `selectedVlan` (clearOnExit)', async () => {
+      const sw = new HuaweiSwitch('sw-huawei', 'SW2', 24);
+      await sw.executeCommand('system-view');
+      await sw.executeCommand('vlan 10');
+      expect(sw.getPrompt()).toBe('[SW2-vlan10]');
+      await sw.executeCommand('quit');
+      expect(sw.getPrompt()).toBe('[SW2]');
+    });
+
+    it('`undo vlan 10` supprime le VLAN via MachineApi', async () => {
+      const sw = new HuaweiSwitch('sw-huawei', 'SW2', 24);
+      await sw.executeCommand('system-view');
+      await sw.executeCommand('vlan 10');
+      await sw.executeCommand('quit');
+      await sw.executeCommand('undo vlan 10');
+      const cli = (sw as unknown as { getCommandKernelCli(): { machine: { switch: { vlan(id: number): unknown | null } } } }).getCommandKernelCli();
+      expect(cli.machine.switch.vlan(10)).toBeNull();
+    });
+
+    it('`undo vlan 1` refuse (VLAN par défaut) avec le message vendeur', async () => {
+      const sw = new HuaweiSwitch('sw-huawei', 'SW2', 24);
+      await sw.executeCommand('system-view');
+      const out = await sw.executeCommand('undo vlan 1');
+      expect(out).toMatch(/default VLAN cannot be deleted/i);
+    });
+
+    it('`port link-type access` puis `port default vlan 10` assigne l\'access-VLAN visible dans display vlan', async () => {
+      const sw = new HuaweiSwitch('sw-huawei', 'SW2', 24);
+      await sw.executeCommand('system-view');
+      await sw.executeCommand('vlan 10');
+      await sw.executeCommand('quit');
+      await sw.executeCommand('interface GigabitEthernet0/0/1');
+      await sw.executeCommand('port link-type access');
+      await sw.executeCommand('port default vlan 10');
+      await sw.executeCommand('end');
+      const out = await sw.executeCommand('display vlan');
+      // La ligne VLAN 10 doit lister GE0/0/1 dans ses ports.
+      expect(out).toMatch(/^10 +VLAN0010 +active +GigabitEthernet0\/0\/1$/m);
+    });
+
+    it('`port default vlan 10` avant `port link-type access` échoue avec le message VRP', async () => {
+      const sw = new HuaweiSwitch('sw-huawei', 'SW2', 24);
+      await sw.executeCommand('system-view');
+      await sw.executeCommand('interface GigabitEthernet0/0/1');
+      await sw.executeCommand('port link-type trunk');
+      const out = await sw.executeCommand('port default vlan 10');
+      expect(out).toMatch(/first set the port link-type as access/i);
+    });
+
+    it('`undo port default vlan` remet le port en VLAN 1', async () => {
+      const sw = new HuaweiSwitch('sw-huawei', 'SW2', 24);
+      await sw.executeCommand('system-view');
+      await sw.executeCommand('vlan 10');
+      await sw.executeCommand('quit');
+      await sw.executeCommand('interface GigabitEthernet0/0/1');
+      await sw.executeCommand('port link-type access');
+      await sw.executeCommand('port default vlan 10');
+      await sw.executeCommand('undo port default vlan');
+      const cli = (sw as unknown as { getCommandKernelCli(): { machine: { switch: { interface(n: string): { accessVlan: number } | null } } } }).getCommandKernelCli();
+      expect(cli.machine.switch.interface('GigabitEthernet0/0/1')?.accessVlan).toBe(1);
+    });
+
+    it('an unmigrated command fails through the new pipeline (signal for migration)', async () => {
+      const sw = new HuaweiSwitch('sw-huawei', 'SW2', 24);
+      await sw.executeCommand('system-view');
+      // `stp enable` n'est pas migré → not-found via le nouveau pipeline.
+      const out = await sw.executeCommand('stp enable');
+      expect(out).toMatch(/inconnu|Incomplete|not-found|introuvable/i);
+    });
   });
 
   describe('GenericSwitch (Cisco-flavored grammar)', () => {

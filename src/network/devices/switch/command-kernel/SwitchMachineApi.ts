@@ -79,9 +79,23 @@ export interface SwitchCapabilityApi {
   interface(name: string): SwitchInterfaceInfo | null;
   setInterfaceAdminUp(name: string, up: boolean): boolean;
   setInterfaceDescription(name: string, description: string): boolean;
+  /** Change le mode L2 d'un port (`access` / `trunk` / …). Retourne
+   *  `false` si le port n'existe pas ou si le mode est refusé. */
+  setInterfaceMode(name: string, mode: SwitchInterfaceMode): boolean;
+  /** Assigne l'access-VLAN d'un port. Le VLAN est créé si absent
+   *  (comportement standard côté switch). Retourne `false` si le port
+   *  n'existe pas ou si l'id est invalide. */
+  setInterfaceAccessVlan(name: string, vlanId: number): boolean;
 
   vlans(): readonly SwitchVlanInfo[];
   vlan(id: number): SwitchVlanInfo | null;
+  /** Crée un VLAN. Retourne `{ ok: false, error }` si l'id est invalide
+   *  ou déjà pris. */
+  createVlan(id: number, name?: string): { ok: boolean; error?: string };
+  /** Supprime un VLAN (interdit sur VLAN 1). */
+  deleteVlan(id: number): { ok: boolean; error?: string };
+  /** Renomme un VLAN existant. */
+  renameVlan(id: number, name: string): { ok: boolean; error?: string };
 
   macTable(): readonly SwitchMacEntry[];
 }
@@ -129,6 +143,32 @@ class SwitchCapabilityImpl implements SwitchCapabilityApi {
     if (description === '') map.delete(name);
     else map.set(name, description);
     return true;
+  }
+
+  setInterfaceMode(name: string, mode: SwitchInterfaceMode): boolean {
+    if (!this.sw.getPort(name)) return false;
+    return this.sw.setSwitchportMode(name, mode);
+  }
+
+  setInterfaceAccessVlan(name: string, vlanId: number): boolean {
+    if (!this.sw.getPort(name)) return false;
+    if (!Number.isInteger(vlanId) || vlanId < 1 || vlanId > 4094) return false;
+    return this.sw.setSwitchportAccessVlan(name, vlanId);
+  }
+
+  createVlan(id: number, name?: string): { ok: boolean; error?: string } {
+    if (!Number.isInteger(id) || id < 1 || id > 4094) return { ok: false, error: 'invalid VLAN id' };
+    return this.sw.createVLAN(id, name) ? { ok: true } : { ok: false, error: 'VLAN already exists or reserved' };
+  }
+
+  deleteVlan(id: number): { ok: boolean; error?: string } {
+    if (id === 1) return { ok: false, error: 'cannot delete default VLAN' };
+    return this.sw.deleteVLAN(id) ? { ok: true } : { ok: false, error: 'VLAN not found' };
+  }
+
+  renameVlan(id: number, name: string): { ok: boolean; error?: string } {
+    if (!name) return { ok: false, error: 'name required' };
+    return this.sw.renameVLAN(id, name) ? { ok: true } : { ok: false, error: 'VLAN not found' };
   }
 
   vlans(): readonly SwitchVlanInfo[] {

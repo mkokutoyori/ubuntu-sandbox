@@ -5,6 +5,119 @@ progressive par équipement. Un push = une entrée = une fonctionnalité
 complète et testée (voir `CLAUDE.md` / le framework de migration pour les
 principes directeurs).
 
+## Huawei switch — vague `display vlan` / `display mac-address` + `sysname` + `interface-view` + `vlan-view` complet (`port link-type` / `port default vlan` / `shutdown` / `description` / `undo *`) + `undo vlan`
+
+**État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
+
+Miroir strict de la vague routeur Huawei sur le switch S5720 : mode
+`interface-view` **et** nouveau mode `vlan-view` ajoutés, `sysname`,
+config VLAN (création via `vlan <id>` + suppression via `undo vlan
+<id>`), config de port L2 (link-type + default vlan), description
+d'interface, `shutdown`/`undo shutdown`, ainsi que les affichages
+essentiels — tout via `SwitchMachineApi`, aucun formateur ni
+`HuaweiSwitchShell` legacy réutilisé.
+
+- **Extension `SwitchMachineApi`** (`SwitchCapabilityApi`) :
+  - `setInterfaceMode(name, mode)` — délègue à
+    `Switch.setSwitchportMode`.
+  - `setInterfaceAccessVlan(name, vlanId)` — délègue à
+    `Switch.setSwitchportAccessVlan` (validation `1..4094` locale ;
+    VLAN auto-créé côté vendeur).
+  - `createVlan(id, name?)` / `deleteVlan(id)` / `renameVlan(id, name)`
+    — pattern `{ ok, error? }` cohérent avec `addStaticRoute`.
+    Rejets typés (id invalide, VLAN 1 non supprimable, VLAN introuvable).
+
+- **Bootstrap** (`createHuaweiSwitchHostShell.ts`) :
+  - Deux nouveaux modes VRP-idiomatiques :
+    - `interface-view` (prompt `[<host>-<iface>]`, parent
+      `system-view`, `clearOnExit: ['selectedInterface']`).
+    - `vlan-view` (prompt `[<host>-vlan<id>]`, parent `system-view`,
+      `clearOnExit: ['selectedVlan']`).
+  - Racines enregistrées : `display` (élargi), `sysname`,
+    `interface`, `vlan`, `undo` (system-view) ; `shutdown`,
+    `description`, `port`, `undo` (interface-view) ; `description`
+    (vlan-view).
+
+- **Vague display L2** :
+  - `display/Vlan.ts` — feuille : rendu VRP exact
+    (`VLAN ID | Name | Status | Ports`), ports d'accès agrégés depuis
+    les DTOs d'interfaces (`SwitchInterfaceInfo.mode === 'access'`).
+  - `display/MacAddress.ts` — feuille : bannière S5720 (`MAC address
+    table of slot 0`) + total. Tri stable par VLAN puis MAC.
+
+- **Vague sysname + interface-view** :
+  - `system-view/Sysname.ts` — feuille, miroir routeur.
+  - `system-view/Interface.ts` — `PushModeCommand`, réutilise
+    `resolveHuaweiInterfaceName` (util pur partagé) pour les alias
+    VRP (`gi0/0/1`, `ge0/0/1`).
+  - `interface-view/Shutdown.ts` / `Description.ts` — feuilles
+    standard, délèguent à `setInterfaceAdminUp` /
+    `setInterfaceDescription`.
+  - `interface-view/Port.ts` (composite) + `port/LinkType.ts`
+    (feuille) : `port link-type access|trunk|hybrid|dot1q-tunnel`
+    délègue à `setInterfaceMode`.
+  - `interface-view/port/Default.ts` (composite) +
+    `port/default/Vlan.ts` (feuille) : `port default vlan <id>`
+    refuse si le port n'est pas en `access` (message vendeur exact
+    `Please first set the port link-type as access`), sinon délègue
+    à `setInterfaceAccessVlan`.
+  - `interface-view/Undo.ts` (composite) → `undo/Shutdown.ts`,
+    `undo/Description.ts`, `undo/Port.ts` (composite) →
+    `undo/port/Default.ts` (composite) → `undo/port/default/Vlan.ts`
+    (feuille — remet le port en VLAN 1). Toutes les négations en
+    arbre pur, aucun dispatch ad-hoc par nom.
+
+- **Vague VLAN — création / suppression / renommage** :
+  - `system-view/Vlan.ts` — `PushModeCommand` : idempotent (crée le
+    VLAN si absent, entre dans `vlan-view` dans tous les cas). Pose
+    `promptFields['selectedVlan']` pour piloter le prompt.
+  - `system-view/Undo.ts` (composite) → `undo/Vlan.ts` (feuille) :
+    `undo vlan <id>` délègue à `deleteVlan`. Refuse `undo vlan 1`
+    avec le message VRP réel (`The default VLAN cannot be
+    deleted.`).
+  - `vlan-view/Description.ts` — feuille variadic : renomme le VLAN
+    sélectionné via `renameVlan` (côté VRP, `description` en
+    vlan-view = nom du VLAN).
+
+- **Palette de tests étendue** (`switch-cli-foundation.test.ts`) : 19
+  nouveaux cas Huawei ajoutés au bloc `Huawei S5720 switch` :
+  - `display vlan` — colonnes + VLAN 1 par défaut listé.
+  - `display mac-address` — bannière + total 0 par défaut.
+  - abréviation `dis mac`.
+  - `sysname SW99` met à jour le prompt.
+  - `interface GigabitEthernet0/0/1` push interface-view.
+  - `interface Inexistante` refuse + message VRP.
+  - `shutdown` / `undo shutdown` — état admin lu via MachineApi.
+  - `description WAN uplink` — via MachineApi.
+  - `quit` d'interface-view efface `selectedInterface`
+    (`clearOnExit`).
+  - `vlan 10` — création + push vlan-view + prompt `[SW2-vlan10]`.
+  - `description Servers` en vlan-view — renommage.
+  - `quit` de vlan-view efface `selectedVlan` (`clearOnExit`).
+  - `undo vlan 10` — suppression.
+  - `undo vlan 1` — refus vendeur.
+  - `port link-type access` + `port default vlan 10` — visible dans
+    `display vlan` (ligne VLAN 10 listant GigabitEthernet0/0/1).
+  - `port default vlan 10` sur port trunk — refus vendeur exact.
+  - `undo port default vlan` — remet le port en VLAN 1.
+  - Une commande non migrée (`stp enable`) échoue via le nouveau
+    pipeline (signal migration).
+
+- **Preuve exécutable globale** :
+  `src/__tests__/unit/command-kernel/switch-cli-foundation.test.ts`
+  = **38/38 verts** (19 Cisco + 19 Huawei). Suite command-kernel
+  complète = **187/187 verte**. `tsc` propre sur les fichiers
+  touchés (baseline inchangée, 27 erreurs pré-existantes hors
+  scope).
+
+- **Effet attendu** : les suites legacy VRP switch qui exerçaient
+  déjà `sysname` / `interface` / `vlan` / `port link-type` /
+  `port default vlan` / `display vlan` / `display mac-address`
+  vont progressivement passer au vert. Prochaines cibles Huawei
+  switch : `port trunk allow-pass vlan`, `stp` (mode + enable),
+  `display interface brief`, `display stp brief`, `interface
+  Vlanif <id>` + `ip address` sur SVI.
+
 ## Huawei routeur — vague `display ip` + `sysname` + `interface-view` complet (`ip address` / `shutdown` / `description` / `undo *`) + `ip route-static`
 
 **État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
