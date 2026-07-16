@@ -305,7 +305,14 @@ class RouterCapabilityImpl implements RouterCapabilityApi {
   addStaticArp(ip: string, mac: string): { ok: boolean; error?: string } {
     let parsedIp: IPAddress, parsedMac: MACAddress;
     try { parsedIp = new IPAddress(ip); } catch { return { ok: false, error: `invalid IP: ${ip}` }; }
-    try { parsedMac = new MACAddress(mac); } catch { return { ok: false, error: `invalid MAC: ${mac}` }; }
+    // Accepte les 3 formats vendeurs courants : colon (`aa:bb:cc:dd:ee:ff`),
+    // Cisco dotted (`aabb.ccdd.eeff`), Huawei dashed (`aabb-ccdd-eeff`).
+    // Le parser MACAddress connaît les 2 premiers ; on normalise le
+    // 3e en dotted avant de le passer.
+    const normalized = /^[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}$/.test(mac)
+      ? mac.replace(/-/g, '.')
+      : mac;
+    try { parsedMac = new MACAddress(normalized); } catch { return { ok: false, error: `invalid MAC: ${mac}` }; }
     (this.router as unknown as { _addStaticARP(ip: IPAddress, mac: MACAddress, iface: string): void })._addStaticARP(parsedIp, parsedMac, '');
     return { ok: true };
   }

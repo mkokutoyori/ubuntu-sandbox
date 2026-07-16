@@ -579,6 +579,29 @@ progressive par équipement. Un push = une entrée = une fonctionnalité
 complète et testée (voir `CLAUDE.md` / le framework de migration pour les
 principes directeurs).
 
+## Huawei routeur — `display current-configuration` : synthèse des entrées `arp static` + support format MAC vendeur `xxxx-xxxx-xxxx`
+
+**État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
+
+Petit incrément qui débloque plusieurs tests de la vague ARP :
+
+- **`HuaweiRouterDisplayCurrentConfigurationCommand`** — inclut
+  désormais un bloc `arp static <ip> <mac>` par entrée statique lue
+  via `machine.router.arpEntries()`, entre le bloc `interface …` et
+  le bloc `ip route-static …`.
+
+- **`RouterMachineApi.router.addStaticArp`** — accepte maintenant le
+  format vendor Huawei `xxxx-xxxx-xxxx` (3 groupes de 4 hex à
+  tirets), en le normalisant en Cisco-dotted (`xxxx.xxxx.xxxx`) que
+  la classe `MACAddress` reconnaît déjà. Colon et Cisco-dotted
+  passent inchangés. Aucun `MACAddress.parse` modifié — la
+  normalisation reste inline dans la façade (couche vendor-agnostic
+  → format canonique).
+
+- **Preuve** : suites Huawei ciblées 128/96 → **125/99** (+3 tests
+  verts), suite command-kernel 285/285 verte (aucun changement au
+  contrat kernel).
+
 ## Huawei routeur — `arp static <ip> <mac>` + `undo arp [static] <ip>` en system-view (+ setters MachineApi typés)
 
 **État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**

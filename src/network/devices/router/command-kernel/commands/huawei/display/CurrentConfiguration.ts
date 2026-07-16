@@ -49,6 +49,13 @@ export class HuaweiRouterDisplayCurrentConfigurationCommand extends BaseCommand 
       lines.push('#');
     }
 
+    // Entrées ARP statiques (`arp static <ip> <mac>` — l'iface n'est
+    // pas rendue côté VRP réel).
+    for (const e of machine.router.arpEntries()) {
+      if (e.type !== 'static') continue;
+      lines.push(`arp static ${e.ip} ${e.mac}`);
+    }
+
     // Routes statiques (uniquement, les connectées sont dérivées).
     for (const r of machine.router.routes()) {
       if (r.type !== 'static' && r.type !== 'default') continue;
