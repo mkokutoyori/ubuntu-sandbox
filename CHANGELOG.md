@@ -5,6 +5,73 @@ progressive par équipement. Un push = une entrée = une fonctionnalité
 complète et testée (voir `CLAUDE.md` / le framework de migration pour les
 principes directeurs).
 
+## Cisco routeur — sous-interfaces (`interface Gi0/0.N` + `encapsulation dot1Q`) + palette de tests dédiée
+
+**État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
+
+Prolongement de la vague statiques : support complet des
+sous-interfaces routées Cisco — création à la volée par `interface
+Gi0/0.<sub-id>`, encapsulation dot1Q (optionnellement `native`),
+héritage automatique des commandes L3 existantes (`ip address`,
+`shutdown`, `description`), affichage vendeur cohérent dans `show ip
+interface brief` / `show ip route`.
+
+- **Enrichissement `RouterMachineApi`** :
+  - Extension `RouterInterfaceInfo` : nouveaux champs `parent: string
+    | null` (nom parent d'une sous-if, ou `null`) et `encapsulation:
+    RouterInterfaceEncapsulation | null` (`type`, `vlan?`, `native`).
+    DTO stable, aucun `Port` ne fuit aux commandes.
+  - `router.createSubInterface(parent, subId): { ok, error?, name? }`
+    — refuse si le parent n'existe pas. Idempotent (crée-ou-retourne).
+  - `router.setInterfaceEncapsulation(name, type, vlan, native):
+    { ok, error? }` — refuse sur interface principale, valide le VLAN
+    (1..4094), n'accepte que `dot1Q` pour l'instant (extensible).
+  - Deux helpers privés (`parentOf`, `readEncapsulation`) isolent la
+    seule dépendance à la structure interne du `Port` dans la façade —
+    règle 1 : les commandes ne voient que les DTOs.
+
+- **Nouveau côté commandes** (`commands/cisco/config/config-if/`) :
+  - `Encapsulation.ts` — composite (`encapsulation`) avec sous-registre.
+  - `encapsulation/Dot1q.ts` — feuille `dot1Q <vid> [native]`, args
+    typés (`int` pour vlan, `string` optionnel pour le mot-clé
+    `native`), alias `dot1q` (comportement Cisco insensible à la
+    casse).
+  - Extension `config/Interface.ts` — détecte le pattern
+    `<parent>.<sub-id>` et appelle `router.createSubInterface` si
+    l'interface n'existe pas encore ; silence côté Cisco.
+
+- **Palette de tests dédiée** :
+  `src/__tests__/unit/command-kernel/subinterface-cisco.test.ts` (24
+  cas, tous verts), organisée en 6 blocs :
+  1. **Création à la volée** (5 cas) — nominal, parent inexistant,
+     sub-ids 1/4094, idempotence de la ré-entrée, coexistence
+     multi-sous-if sur le même parent.
+  2. **Encapsulation dot1Q** (7 cas) — nominal, `native`, casse
+     minuscule (alias), VLAN hors bornes, rejet sur principale,
+     `encapsulation` seul incomplete, remplacement d'une encap
+     existante.
+  3. **Configuration L3 sur sous-interface** (4 cas) — `ip address`,
+     `no ip address`, `description`, `shutdown` / `no shutdown` —
+     réutilisation intégrale du setter unique côté MachineApi.
+  4. **Affichage vendeur** (3 cas) — `show ip interface brief`
+     liste la sous-if, `show ip route` montre la route connectée via
+     la sous-if, sous-if sans IP reste `unassigned`.
+  5. **Transitions / clearOnExit** (3 cas) — `exit` efface
+     `selectedInterface`, `end` revient à privileged, `encapsulation`
+     indisponible en mode config (règle 9).
+  6. **Abréviations** (2 cas) — `int Gi0/0.10`, `enc dot1Q 10`.
+
+- **Preuve exécutable globale** : suite command-kernel **146/146
+  verte**. `tsc` propre sur les fichiers touchés (baseline inchangée).
+
+- **Effet attendu** : le legacy `no-ip-address.test.ts` passe désormais
+  **2/2** (avant : 0/2 — le test principal utilisait
+  `interface Gi0/0.10` puis `ip addr add` via bash Linux, les deux
+  échoueraient sans cette vague). D'autres suites L3
+  (`cisco-routeur-cli-shell.test.ts`, `cisco-wan.test.ts`) gagneront
+  aussi des verts. Prochaines cibles : `mtu` en config-if, mode
+  `config-router` (OSPF/EIGRP/BGP racine), `switchport` côté switch.
+
 ## Cisco routeur — vague statiques + description + correction format `show ip route`
 
 **État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**

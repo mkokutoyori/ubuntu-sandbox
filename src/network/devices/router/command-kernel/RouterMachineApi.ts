@@ -43,6 +43,15 @@ export interface RouterMachineApiDeps {
 
 /** Info d'interface exposée aux commandes — DTO stable, pas l'objet
  *  `Port` réel (les commandes n'ont pas à connaître la classe). */
+/** Encapsulation L2 posée sur une sous-interface routeur.
+ *  `type` reste texte pour rester ouvert aux futurs types (`isl`,
+ *  `ppp`…) — dot1Q est le seul migré pour l'instant. */
+export interface RouterInterfaceEncapsulation {
+  readonly type: string;
+  readonly vlan?: number;
+  readonly native: boolean;
+}
+
 export interface RouterInterfaceInfo {
   readonly name: string;
   readonly ip: string;
@@ -52,6 +61,11 @@ export interface RouterInterfaceInfo {
   readonly adminUp: boolean;
   readonly linkUp: boolean;
   readonly description: string;
+  /** Sous-interface : nom de l'interface parent (`Gi0/0` si le nom est
+   *  `Gi0/0.10`). `null` pour une interface principale. */
+  readonly parent: string | null;
+  /** Sous-interface : encapsulation configurée (`dot1Q <vid>`). */
+  readonly encapsulation: RouterInterfaceEncapsulation | null;
 }
 
 /** DTO de route exposé aux commandes — évite de fuiter `RouteEntry`
@@ -98,6 +112,30 @@ export interface RouterCapabilityApi {
   /** Retire une route statique. `nextHop` optionnel : si absent,
    *  retire toutes les routes statiques correspondant au (net, mask). */
   removeStaticRoute(network: string, mask: string, nextHop?: string): { ok: boolean; error?: string };
+  /** Crée à la volée une sous-interface `<parent>.<id>` (pattern
+   *  Cisco). Le parent doit exister. La sous-interface créée est
+   *  virtuelle (`up`) et sans encapsulation par défaut. Retourne le
+   *  nom canonique de la sous-interface (`Gi0/0.10`). */
+  createSubInterface(parent: string, subId: number): { ok: boolean; error?: string; name?: string };
+  /** Configure l'encapsulation d'une sous-interface (`encapsulation
+   *  dot1Q <vid> [native]`). Refuse si l'interface n'est pas une
+   *  sous-interface. */
+  setInterfaceEncapsulation(name: string, type: string, vlan: number | undefined, native: boolean): { ok: boolean; error?: string };
+}
+
+/** Nom parent d'une sous-interface Cisco (`Gi0/0.10` → `Gi0/0`). */
+function parentOf(name: string): string | null {
+  const dot = name.indexOf('.');
+  return dot > 0 ? name.slice(0, dot) : null;
+}
+
+/** Lecture non-typée du champ `encapsulation` posé sur le `Port` par
+ *  le setter — la seule dépendance à la structure vendeur est isolée
+ *  ici, jamais dans une commande. */
+function readEncapsulation(port: import('../../../hardware/Port').Port): RouterInterfaceEncapsulation | null {
+  const enc = (port as unknown as { encapsulation?: { type?: string; vlan?: number; native?: boolean } }).encapsulation;
+  if (!enc || !enc.type) return null;
+  return { type: enc.type, vlan: enc.vlan, native: enc.native ?? false };
 }
 
 class RouterCapabilityImpl implements RouterCapabilityApi {
@@ -113,6 +151,8 @@ class RouterCapabilityImpl implements RouterCapabilityApi {
       adminUp: !port.isAdminDown(),
       linkUp: port.getIsUp() && port.isConnected(),
       description: this.router.getInterfaceDescription(port.getName()) ?? '',
+      parent: parentOf(port.getName()),
+      encapsulation: readEncapsulation(port),
     }));
   }
 
@@ -128,6 +168,8 @@ class RouterCapabilityImpl implements RouterCapabilityApi {
       adminUp: !port.isAdminDown(),
       linkUp: port.getIsUp() && port.isConnected(),
       description: this.router.getInterfaceDescription(name) ?? '',
+      parent: parentOf(name),
+      encapsulation: readEncapsulation(port),
     };
   }
 
@@ -183,6 +225,32 @@ class RouterCapabilityImpl implements RouterCapabilityApi {
     }
     const ok = this.router.removeStaticRoute(n, m, nh);
     return ok ? { ok: true } : { ok: false, error: 'route not found' };
+  }
+
+  createSubInterface(parent: string, subId: number): { ok: boolean; error?: string; name?: string } {
+    if (!this.router.getPort(parent)) return { ok: false, error: `unknown parent interface: ${parent}` };
+    if (!Number.isInteger(subId) || subId < 0) return { ok: false, error: `invalid sub-id: ${subId}` };
+    const name = `${parent}.${subId}`;
+    const already = this.router.getPort(name);
+    if (already) return { ok: true, name };
+    const created = (this.router as unknown as { _createVirtualInterface(name: string): boolean })._createVirtualInterface(name);
+    if (!created) return { ok: false, error: `failed to create ${name}` };
+    return { ok: true, name };
+  }
+
+  setInterfaceEncapsulation(name: string, type: string, vlan: number | undefined, native: boolean): { ok: boolean; error?: string } {
+    const port = this.router.getPort(name);
+    if (!port) return { ok: false, error: `unknown interface: ${name}` };
+    if (parentOf(name) === null) return { ok: false, error: `encapsulation only valid on sub-interfaces` };
+    const kind = type.toLowerCase();
+    if (kind !== 'dot1q') return { ok: false, error: `unsupported encapsulation type: ${type}` };
+    if (vlan === undefined || !Number.isInteger(vlan) || vlan < 1 || vlan > 4094) {
+      return { ok: false, error: `invalid VLAN id` };
+    }
+    (port as unknown as { encapsulation?: { type: string; vlan?: number; native?: boolean } }).encapsulation = {
+      type: kind, vlan, native,
+    };
+    return { ok: true };
   }
 
   routes(): readonly RouterRouteInfo[] {

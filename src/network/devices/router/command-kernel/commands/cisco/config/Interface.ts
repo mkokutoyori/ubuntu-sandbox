@@ -37,11 +37,23 @@ export class CiscoRouterInterfaceCommand extends PushModeCommand {
       await ctx.io.stderr.write('% Incomplete command.\n');
       return false;
     }
-    if (!machine.router.interface(name)) {
+    // Interface existante → sélection directe.
+    let resolved: string | null = machine.router.interface(name) ? name : null;
+    // Pattern sous-interface (Cisco : `<parent>.<sub-id>`) → création à la
+    // volée si le parent existe. Silence en cas de succès, comme le vrai IOS.
+    if (!resolved) {
+      const m = /^(.+)\.(\d+)$/.exec(name);
+      if (m) {
+        const [, parent, subIdStr] = m;
+        const created = machine.router.createSubInterface(parent, Number.parseInt(subIdStr, 10));
+        if (created.ok && created.name) resolved = created.name;
+      }
+    }
+    if (!resolved) {
       await ctx.io.stderr.write("% Invalid input detected at '^' marker.\n");
       return false;
     }
-    (ctx.session as CliSession).promptFields.set('selectedInterface', name);
+    (ctx.session as CliSession).promptFields.set('selectedInterface', resolved);
     return true;
   }
 
