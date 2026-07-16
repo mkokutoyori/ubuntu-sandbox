@@ -69,10 +69,38 @@ describe('Switch CLI foundation — command-kernel single-gate pipeline', () => 
       expect(out).not.toMatch(/C2900|ISR2911/);
     });
 
+    it('`show vlan brief` produces the IOS tabular banner using only MachineApi', async () => {
+      const sw = new CiscoSwitch('sw-cisco', 'SW1', 24);
+      const out = await sw.executeCommand('show vlan brief');
+      // En-tête et séparateur IOS (largeurs de colonnes reproduites
+      // inline par la commande — aucun formateur legacy).
+      expect(out).toMatch(/^VLAN Name {29}Status {4}Ports$/m);
+      expect(out).toMatch(/^---- -{32} -{9} -{31}$/m);
+      // VLAN 1 par défaut (`default`) actif, présent sur un switch
+      // Catalyst 24 ports.
+      expect(out).toMatch(/^1 {4}default {26}active {4}/m);
+      // Les ports d'accès sont abrégés à la Cisco (Fa0/1, …) — la
+      // commande fait elle-même l'abréviation, sans helper legacy.
+      expect(out).toMatch(/Fa0\/1/);
+    });
+
+    it('abbreviation `sh vl br` résout jusqu\'à la feuille (préfixe-unique)', async () => {
+      const sw = new CiscoSwitch('sw-cisco', 'SW1', 24);
+      const out = await sw.executeCommand('sh vl br');
+      expect(out).toMatch(/^VLAN Name /m);
+      expect(out).toMatch(/^1 {4}default/m);
+    });
+
+    it('`show vlan` seul est incomplete (vue full non migrée, signal explicite)', async () => {
+      const sw = new CiscoSwitch('sw-cisco', 'SW1', 24);
+      const out = await sw.executeCommand('show vlan');
+      expect(out).toMatch(/Incomplete/);
+    });
+
     it('an unmigrated command fails through the new pipeline (signal for migration)', async () => {
       const sw = new CiscoSwitch('sw-cisco', 'SW1', 24);
       await sw.executeCommand('enable');
-      const out = await sw.executeCommand('show vlan');
+      const out = await sw.executeCommand('show mac address-table');
       expect(out).toMatch(/inconnu|Incomplete|not-found|introuvable/i);
     });
   });

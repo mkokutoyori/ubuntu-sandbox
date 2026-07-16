@@ -5,6 +5,60 @@ progressive par équipement. Un push = une entrée = une fonctionnalité
 complète et testée (voir `CLAUDE.md` / le framework de migration pour les
 principes directeurs).
 
+## Cisco — `show ip interface brief` (routeur) + `show vlan brief` (switch) migrés
+
+**État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
+
+Première vague de migration de sous-commandes vendeur après la
+déconnexion complète des `executeCommand` routeur/switch. Deux
+diagnostics classiques Cisco IOS, source unique = `MachineApi`, mise
+en forme inline strictement conforme au vendeur.
+
+- **Nouveau côté routeur** (`src/network/devices/router/command-kernel/commands/cisco/show/`) :
+  - `Ip.ts` — commande composite `show ip` (sous-registre propre, futures
+    sous-commandes L3 s'y ajouteront), retourne « Incomplete command. »
+    seule.
+  - `ip/Interface.ts` — commande composite `show ip interface`
+    (sous-registre pour `brief`, plus tard `<name>`).
+  - `ip/interface/Brief.ts` — feuille standalone `show ip interface
+    brief` : lit `RouterMachineApi.router.interfaces()` (DTOs), gère
+    admin-down/link-up/virtuelles, formate elle-même l'en-tête et les
+    colonnes IOS (27/16/22).
+  - Enregistrement dans `createCiscoRouterHostShell` : `showSub.register
+    (() => new CiscoRouterShowIpCommand())`.
+
+- **Nouveau côté switch** (`src/network/devices/switch/command-kernel/commands/cisco/show/`) :
+  - `Vlan.ts` — commande composite `show vlan` (sous-registre pour
+    `brief`) ; `show vlan` seul reste « Incomplete command. » — signal
+    explicite que la vue complète n'est pas encore migrée.
+  - `vlan/Brief.ts` — feuille standalone `show vlan brief` : lit
+    `SwitchMachineApi.switch.vlans()` + `SwitchMachineApi.switch.
+    interfaces()`, indexe les ports d'accès par VLAN, formate elle-même
+    l'en-tête et le séparateur IOS, abrège Fa/Gi/Te inline (aucun
+    `abbreviateInterface` legacy importé).
+  - Enregistrement dans `createCiscoSwitchHostShell` : `showSub.register
+    (() => new CiscoSwitchShowVlanCommand())`.
+
+- **Rien de nouveau côté `MachineApi`** — la façade `router.interfaces()`
+  et la sous-façade `switch` (`vlans()` + `interfaces()`) avec leurs DTOs
+  existaient déjà. Preuve que la conception initiale supporte l'ajout de
+  commandes sans rupture ni extension.
+
+- **Preuve exécutable** : `router-cli-foundation.test.ts` étendu
+  (+4 cas : sortie brute IOS avec en-tête, abréviation `sh ip int br`,
+  `show ip` / `show ip interface` seuls = incomplete) et
+  `switch-cli-foundation.test.ts` étendu (+3 cas : sortie brute IOS
+  avec en-tête et séparateur, VLAN 1 par défaut avec ports abrégés Fa0/N,
+  abréviation `sh vl br`, `show vlan` seul = incomplete). Suite
+  command-kernel 105/105 verte. `tsc` propre sur les fichiers touchés.
+
+- **Effet attendu (signal migration)** : les tests legacy qui
+  exerçaient `show ip interface brief` ou `show vlan brief` continuent
+  de passer (comportement identique en surface). Les tests legacy qui
+  exerçaient `show ip route`, `show mac address-table`, `show vlan`
+  (vue full), `show interfaces status`, etc. rougissent — signal
+  explicite des prochaines commandes à migrer.
+
 ## Socle + Linux — `top`/`htop` migré au noyau (façade, frame de repeinte depuis le noyau) (§14.6)
 
 **État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**

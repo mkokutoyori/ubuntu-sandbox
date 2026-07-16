@@ -9,6 +9,7 @@ import {
   createCiscoShowCommand,
 } from '../../vendor-cli';
 import { RouterMachineApi } from './RouterMachineApi';
+import { CiscoRouterShowIpCommand } from './commands/cisco/show/Ip';
 import { CiscoRouterShowVersionCommand } from './commands/cisco/show/Version';
 
 /**
@@ -43,6 +44,7 @@ export function createCiscoRouterHostShell(router: Router): {
   // migrée s'y ajoute.
   const showSub = new CommandRegistry();
   showSub.register(() => new CiscoRouterShowVersionCommand());
+  showSub.register(() => new CiscoRouterShowIpCommand());
 
   const userRegistry = new CommandRegistry();
   const privilegedRegistry = new CommandRegistry();

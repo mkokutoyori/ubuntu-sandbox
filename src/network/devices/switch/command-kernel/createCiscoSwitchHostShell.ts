@@ -9,6 +9,7 @@ import {
   createCiscoShowCommand,
 } from '../../vendor-cli';
 import { SwitchMachineApi } from './SwitchMachineApi';
+import { CiscoSwitchShowVlanCommand } from './commands/cisco/show/Vlan';
 import { CiscoSwitchShowVersionCommand } from './commands/cisco/show/Version';
 
 /**
@@ -49,6 +50,7 @@ export function createCiscoSwitchHostShell(sw: Switch): {
   // ajoutés au fil des pushes de migration.
   const showSub = new CommandRegistry();
   showSub.register(() => new CiscoSwitchShowVersionCommand());
+  showSub.register(() => new CiscoSwitchShowVlanCommand());
 
   const userRegistry = new CommandRegistry();
   const privilegedRegistry = new CommandRegistry();

@@ -90,14 +90,46 @@ describe('Router CLI foundation — command-kernel single-gate pipeline', () => 
       expect(out).toMatch(/Incomplete/);
     });
 
+    it('`show ip interface brief` produces the IOS tabular banner using only MachineApi', async () => {
+      const r = new CiscoRouter('R1');
+      const out = await r.executeCommand('show ip interface brief');
+      // En-tête IOS exact (largeurs de colonnes reproduites inline par
+      // la commande — aucun formateur legacy).
+      expect(out).toMatch(/^Interface {18}IP-Address {6}OK\? Method Status {16}Protocol$/m);
+      // Chaque interface de démarrage (GigabitEthernet0/0..3) est listée
+      // avec `unassigned` (aucune IP par défaut) et `down`/`down` (câble
+      // non connecté).
+      expect(out).toMatch(/^GigabitEthernet0\/0 {9}unassigned {6}YES manual down {18}down$/m);
+      expect(out).toMatch(/^GigabitEthernet0\/3 /m);
+    });
+
+    it('abbreviation `sh ip int br` résout jusqu\'à la feuille (préfixe-unique)', async () => {
+      const r = new CiscoRouter('R1');
+      const out = await r.executeCommand('sh ip int br');
+      expect(out).toMatch(/^Interface {18}IP-Address /m);
+      expect(out).toMatch(/GigabitEthernet0\/0/);
+    });
+
+    it('`show ip` seul est incomplete (composite non exécutable, pas de fallback legacy)', async () => {
+      const r = new CiscoRouter('R1');
+      const out = await r.executeCommand('show ip');
+      expect(out).toMatch(/Incomplete/);
+    });
+
+    it('`show ip interface` seul est incomplete (composite non exécutable)', async () => {
+      const r = new CiscoRouter('R1');
+      const out = await r.executeCommand('show ip interface');
+      expect(out).toMatch(/Incomplete/);
+    });
+
     it('an unmigrated command fails through the new pipeline (signal for migration)', async () => {
       const r = new CiscoRouter('R1');
       await r.executeCommand('enable');
+      // `show ip route` : `route` n'est pas encore une sous-commande de
+      // `show ip` → l'interpréteur s'arrête sur `ip` (composite), qui
+      // retourne « Incomplete command. ». Signal explicite : migrer
+      // `show ip route` viendra plus tard.
       const out = await r.executeCommand('show ip route');
-      // La sous-commande `ip` de `show` n'est pas migrée : le nouveau
-      // pipeline la refuse. Message générique du socle (le format
-      // vendor-exact `% Invalid input detected at '^' marker.` sera
-      // porté par un wrapper vendeur ultérieur).
       expect(out).toMatch(/inconnu|Incomplete|not-found|introuvable/i);
     });
   });
