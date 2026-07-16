@@ -60,7 +60,11 @@ const VERB_FAMILIES: Readonly<Record<string, VerbTest>> = {
   EXIT: wordOrPrefix('EXIT', 'QUIT'),
   QUIT: wordOrPrefix('EXIT', 'QUIT'),
   SET: prefixOnly('SET'),
-  SHOW: (u) => u === 'SHOW' || u.startsWith('SHOW '),
+  // `SHOW ERRORS`/`SHOW ERR <target>` reste porté par le legacy : nécessite
+  // les DTOs de compilation du catalogue, pas encore exposés côté
+  // MachineApi (voir CHANGELOG, Wave 1) — exclu explicitement pour ne pas
+  // régresser sur un sous-shell déjà migré pour le reste de SHOW.
+  SHOW: (u) => (u === 'SHOW' || u.startsWith('SHOW ')) && !/^SHOW\s+ERR(ORS)?(\s|$)/.test(u),
   DISCONNECT: exact('DISCONNECT', 'DISC'),
   DISC: exact('DISCONNECT', 'DISC'),
   HELP: exact('HELP', 'HELP INDEX'),

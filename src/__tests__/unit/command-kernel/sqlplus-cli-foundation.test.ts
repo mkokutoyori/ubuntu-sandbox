@@ -4,6 +4,12 @@ import { SQLPlusSession } from '@/database/oracle/commands/SQLPlusSession';
 import { createSqlPlusKernel, recognizeSqlPlusKernelVerb } from '@/database/oracle/command-kernel/createSqlPlusKernel';
 import { PipeBuffer } from '@/command-kernel/io/pipe-buffer';
 import type { CommandIO } from '@/command-kernel/io/types';
+import { LinuxServer } from '@/network/devices/LinuxServer';
+import { resetCounters } from '@/network/core/types';
+import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
+import { Logger } from '@/network/core/Logger';
+import { resetAllOracleInstances } from '@/terminal/commands/database';
+import { SqlPlusSubShell } from '@/terminal/subshells/SqlPlusSubShell';
 
 let db: OracleDatabase;
 let session: SQLPlusSession;
@@ -132,5 +138,83 @@ describe('SQL*Plus CLI foundation — command-kernel single-gate pipeline (Wave 
     expect(recognizeSqlPlusKernelVerb('SELECT * FROM DUAL')).toBeNull();
     expect(recognizeSqlPlusKernelVerb('CONNECT scott/tiger')).toBeNull();
     expect(recognizeSqlPlusKernelVerb('SPOOL out.lst')).toBeNull();
+  });
+
+  it('SHOW ERRORS / SHOW ERR <cible> restent hors du pipeline kernel — nécessitent les DTOs catalogue (régression couverte)', () => {
+    expect(recognizeSqlPlusKernelVerb('SHOW ERRORS')).toBeNull();
+    expect(recognizeSqlPlusKernelVerb('SHOW ERRORS HR.BAD_PROC')).toBeNull();
+    expect(recognizeSqlPlusKernelVerb('SHOW ERR HR.BAD_PROC')).toBeNull();
+    // Toutes les autres formes de SHOW restent bien routées vers le kernel.
+    expect(recognizeSqlPlusKernelVerb('SHOW USER')).not.toBeNull();
+  });
+});
+
+describe('SQL*Plus — câblage live sur SqlPlusSubShell (Wave 2)', () => {
+  beforeEach(() => {
+    resetCounters();
+    resetDeviceCounters();
+    resetAllOracleInstances();
+    Logger.reset();
+  });
+
+  it('un verbe migré (SET) retourne une Promise ; une instruction SQL reste synchrone', () => {
+    const srv = new LinuxServer('linux-server', 'kernel-wiring-1', 100, 100);
+    const { subShell } = SqlPlusSubShell.create(srv, ['/', 'as', 'sysdba']);
+
+    const kernelResult = subShell.processLine('SET LINESIZE 120');
+    expect(kernelResult).toBeInstanceOf(Promise);
+
+    const legacyResult = subShell.processLine('SELECT 1 FROM DUAL;');
+    expect(legacyResult).not.toBeInstanceOf(Promise);
+
+    subShell.dispose();
+  });
+
+  it('SET/SHOW via le sous-shell live mutent et lisent le même état que le SQL brut', async () => {
+    const srv = new LinuxServer('linux-server', 'kernel-wiring-2', 100, 100);
+    const { subShell } = SqlPlusSubShell.create(srv, ['/', 'as', 'sysdba']);
+
+    const setResult = await subShell.processLine('SET SERVEROUTPUT ON');
+    expect(setResult.output).toEqual([]);
+
+    const showResult = await subShell.processLine('SHOW SERVEROUTPUT');
+    expect(showResult.output.join('\n')).toBe('serveroutput ON');
+
+    subShell.dispose();
+  });
+
+  it('EXIT via le sous-shell live signale la sortie (exit: true) et déconnecte', async () => {
+    const srv = new LinuxServer('linux-server', 'kernel-wiring-3', 100, 100);
+    const { subShell } = SqlPlusSubShell.create(srv, ['/', 'as', 'sysdba']);
+
+    const result = await subShell.processLine('EXIT');
+    expect(result.exit).toBe(true);
+    expect(result.output.join('\n')).toContain('Disconnected from Oracle Database');
+  });
+
+  it('DISCONNECT via le sous-shell live NE signale PAS la sortie (reste dans SQL*Plus)', async () => {
+    const srv = new LinuxServer('linux-server', 'kernel-wiring-4', 100, 100);
+    const { subShell } = SqlPlusSubShell.create(srv, ['/', 'as', 'sysdba']);
+
+    const result = await subShell.processLine('DISCONNECT');
+    expect(result.exit).toBe(false);
+    subShell.dispose();
+  });
+
+  it('SPOOL capture les commandes migrées exactement comme le SQL brut (parité)', async () => {
+    const srv = new LinuxServer('linux-server', 'kernel-wiring-5', 100, 100);
+    const { subShell } = SqlPlusSubShell.create(srv, ['/', 'as', 'sysdba']);
+
+    await subShell.processLine('SPOOL /root/kernel-spool-test.lst');
+    await subShell.processLine('SET LINESIZE 150');
+    await subShell.processLine('SHOW LINESIZE');
+    subShell.processLine('SPOOL OFF');
+
+    const content = (srv as unknown as { readFileForEditor?: (p: string) => string | null })
+      .readFileForEditor?.('/root/kernel-spool-test.lst') ?? '';
+    expect(content).toContain('SET LINESIZE 150');
+    expect(content).toContain('SHOW LINESIZE');
+    expect(content).toContain('linesize 150');
+    subShell.dispose();
   });
 });

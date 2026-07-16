@@ -44,53 +44,53 @@ function boot(name: string): SqlPlusSubShell {
   return SqlPlusSubShell.create(srv, ['/', 'as', 'sysdba']).subShell;
 }
 
-const run = (sh: SqlPlusSubShell, sql: string) => sh.processLine(sql).output.join('\n');
+const run = async (sh: SqlPlusSubShell, sql: string) => (await sh.processLine(sql)).output.join('\n');
 
 describe('CJQ0 sweeper auto-executes due jobs', () => {
-  it('a one-time job runs on the next sweep without RUN_JOB', () => {
+  it('a one-time job runs on the next sweep without RUN_JOB', async () => {
     const sh = boot('autorun-1');
-    run(sh, 'CREATE TABLE auto_t (id NUMBER);');
+    (await run(sh, 'CREATE TABLE auto_t (id NUMBER);'));
     // enabled, no start_date → next_run_date defaults to creation time,
     // so the job is immediately due.
-    run(sh,
+    (await run(sh,
       "BEGIN DBMS_SCHEDULER.CREATE_JOB('AUTO_JOB', 'PLSQL_BLOCK', "
-      + "'INSERT INTO auto_t VALUES (42)', '', '', '', 'TRUE'); END;");
+      + "'INSERT INTO auto_t VALUES (42)', '', '', '', 'TRUE'); END;"));
 
     // Nothing has swept yet.
-    expect(run(sh, 'SELECT COUNT(*) FROM auto_t;')).toMatch(/\b0\b/);
+    expect((await run(sh, 'SELECT COUNT(*) FROM auto_t;'))).toMatch(/\b0\b/);
 
     // Advance past one 1000 ms coordinator tick.
     vts.advance(1100);
 
-    expect(run(sh, 'SELECT id FROM auto_t;')).toMatch(/42/);
-    const runs = run(sh,
-      "SELECT STATUS FROM DBA_SCHEDULER_JOB_RUN_DETAILS WHERE JOB_NAME='AUTO_JOB';");
+    expect((await run(sh, 'SELECT id FROM auto_t;'))).toMatch(/42/);
+    const runs = (await run(sh,
+      "SELECT STATUS FROM DBA_SCHEDULER_JOB_RUN_DETAILS WHERE JOB_NAME='AUTO_JOB';"));
     expect(runs).toMatch(/SUCCEEDED/);
     sh.dispose();
   });
 
-  it('a disabled job is NOT swept', () => {
+  it('a disabled job is NOT swept', async () => {
     const sh = boot('autorun-2');
-    run(sh, 'CREATE TABLE auto_d (id NUMBER);');
-    run(sh,
+    (await run(sh, 'CREATE TABLE auto_d (id NUMBER);'));
+    (await run(sh,
       "BEGIN DBMS_SCHEDULER.CREATE_JOB('DIS_JOB', 'PLSQL_BLOCK', "
-      + "'INSERT INTO auto_d VALUES (1)', '', '', '', 'FALSE'); END;");
+      + "'INSERT INTO auto_d VALUES (1)', '', '', '', 'FALSE'); END;"));
     vts.advance(2000);
-    expect(run(sh, 'SELECT COUNT(*) FROM auto_d;')).toMatch(/\b0\b/);
+    expect((await run(sh, 'SELECT COUNT(*) FROM auto_d;'))).toMatch(/\b0\b/);
     sh.dispose();
   });
 
-  it('the sweeper survives a SHUTDOWN/STARTUP cycle', () => {
+  it('the sweeper survives a SHUTDOWN/STARTUP cycle', async () => {
     const sh = boot('autorun-3');
-    run(sh, 'CREATE TABLE auto_r (id NUMBER);');
-    run(sh, 'COMMIT;');
-    sh.processLine('SHUTDOWN IMMEDIATE');
-    sh.processLine('STARTUP');
-    run(sh,
+    (await run(sh, 'CREATE TABLE auto_r (id NUMBER);'));
+    (await run(sh, 'COMMIT;'));
+    (await sh.processLine('SHUTDOWN IMMEDIATE'));
+    (await sh.processLine('STARTUP'));
+    (await run(sh,
       "BEGIN DBMS_SCHEDULER.CREATE_JOB('RESTART_JOB', 'PLSQL_BLOCK', "
-      + "'INSERT INTO auto_r VALUES (7)', '', '', '', 'TRUE'); END;");
+      + "'INSERT INTO auto_r VALUES (7)', '', '', '', 'TRUE'); END;"));
     vts.advance(1100);
-    expect(run(sh, 'SELECT id FROM auto_r;')).toMatch(/7/);
+    expect((await run(sh, 'SELECT id FROM auto_r;'))).toMatch(/7/);
     sh.dispose();
   });
 });

@@ -111,16 +111,16 @@ describe('the SQL*Plus session establishes end to end over the alias', () => {
     r.subShell.dispose();
   });
 
-  it('a query on the remote instance actually runs there, not locally', () => {
+  it('a query on the remote instance actually runs there, not locally', async () => {
     const { client, dbhost } = lan();
     const remoteSetup = SqlPlusSubShell.create(dbhost, ['/', 'as', 'sysdba']);
-    remoteSetup.subShell.processLine('CREATE TABLE system.probe (city VARCHAR2(20));');
-    remoteSetup.subShell.processLine("INSERT INTO system.probe VALUES ('YAOUNDE');");
-    remoteSetup.subShell.processLine('COMMIT;');
+    (await remoteSetup.subShell.processLine('CREATE TABLE system.probe (city VARCHAR2(20));'));
+    (await remoteSetup.subShell.processLine("INSERT INTO system.probe VALUES ('YAOUNDE');"));
+    (await remoteSetup.subShell.processLine('COMMIT;'));
     remoteSetup.subShell.dispose();
 
     const r = SqlPlusSubShell.create(client, ['system/oracle@ORCLDB']);
-    const rows = r.subShell.processLine('SELECT city FROM system.probe;');
+    const rows = (await r.subShell.processLine('SELECT city FROM system.probe;'));
     expect(rows.output.join('\n')).toContain('YAOUNDE');
     r.subShell.dispose();
   });
@@ -148,14 +148,14 @@ describe('listener.log records the connection with the real client IP and outcom
 });
 
 describe('V$SESSION on the DB host reflects the connected client', () => {
-  it('shows the client username, machine, program and an active status', () => {
+  it('shows the client username, machine, program and an active status', async () => {
     const { client, dbhost } = lan();
     const r = SqlPlusSubShell.create(client, ['system/oracle@ORCLDB']);
 
     const admin = SqlPlusSubShell.create(dbhost, ['/', 'as', 'sysdba']);
-    const rows = admin.subShell.processLine(
+    const rows = (await admin.subShell.processLine(
       "SELECT username, machine, program, status FROM v$session WHERE username = 'SYSTEM';"
-    ).output.join('\n');
+    )).output.join('\n');
     expect(rows).toContain('SYSTEM');
     expect(rows).toContain('appclient');
     expect(rows).toMatch(/sqlplus@appclient/);

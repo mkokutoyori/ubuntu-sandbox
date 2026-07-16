@@ -56,20 +56,20 @@ function twoNodeCluster() {
 }
 
 describe('a two-node cluster reports both instances while healthy', () => {
-  it('V$ACTIVE_INSTANCES lists racnode1 and racnode2 from either node', () => {
+  it('V$ACTIVE_INSTANCES lists racnode1 and racnode2 from either node', async () => {
     const { node1, node2 } = twoNodeCluster();
     const q1 = SqlPlusSubShell.create(node1, ['/', 'as', 'sysdba']);
-    const rows = q1.subShell.processLine('SELECT inst_name FROM v$active_instances;').output.join('\n');
+    const rows = (await q1.subShell.processLine('SELECT inst_name FROM v$active_instances;')).output.join('\n');
     expect(rows).toContain('racnode1');
     expect(rows).toContain('racnode2');
     q1.subShell.dispose();
     void node2;
   });
 
-  it('CLUSTER_DATABASE is TRUE on both instances', () => {
+  it('CLUSTER_DATABASE is TRUE on both instances', async () => {
     const { node1 } = twoNodeCluster();
     const q1 = SqlPlusSubShell.create(node1, ['/', 'as', 'sysdba']);
-    const val = q1.subShell.processLine("SELECT value FROM v$parameter WHERE name = 'cluster_database';").output.join('\n');
+    const val = (await q1.subShell.processLine("SELECT value FROM v$parameter WHERE name = 'cluster_database';")).output.join('\n');
     expect(val).toMatch(/TRUE/i);
     q1.subShell.dispose();
   });
@@ -94,11 +94,11 @@ describe('losing the cluster interconnect on node1 triggers a documented evictio
     await node1.executeCommand('ip link set eth1 down');
 
     const q2 = SqlPlusSubShell.create(node2, ['/', 'as', 'sysdba']);
-    const rows = q2.subShell.processLine('SELECT instance_name, status FROM v$instance;').output.join('\n');
+    const rows = (await q2.subShell.processLine('SELECT instance_name, status FROM v$instance;')).output.join('\n');
     expect(rows).toContain('racnode2');
     expect(rows).toMatch(/OPEN/);
 
-    const active = q2.subShell.processLine('SELECT inst_name FROM v$active_instances;').output.join('\n');
+    const active = (await q2.subShell.processLine('SELECT inst_name FROM v$active_instances;')).output.join('\n');
     expect(active).not.toContain('racnode1');
     expect(active).toContain('racnode2');
     q2.subShell.dispose();
@@ -111,9 +111,9 @@ describe('client behaviour differs with and without TAF once node1 disappears', 
     void node2;
 
     const setup = SqlPlusSubShell.create(node1, ['/', 'as', 'sysdba']);
-    setup.subShell.processLine('CREATE TABLE system.orders (id NUMBER);');
-    setup.subShell.processLine('INSERT INTO system.orders VALUES (1);');
-    setup.subShell.processLine('COMMIT;');
+    (await setup.subShell.processLine('CREATE TABLE system.orders (id NUMBER);'));
+    (await setup.subShell.processLine('INSERT INTO system.orders VALUES (1);'));
+    (await setup.subShell.processLine('COMMIT;'));
     setup.subShell.dispose();
 
     const taf = SqlPlusSubShell.create(client, [
@@ -126,7 +126,7 @@ describe('client behaviour differs with and without TAF once node1 disappears', 
 
     await node1.executeCommand('ip link set eth0 down');
 
-    const afterFailover = taf.subShell.processLine('SELECT id FROM system.orders;');
+    const afterFailover = (await taf.subShell.processLine('SELECT id FROM system.orders;'));
     expect(afterFailover.output.join('\n')).toContain('1');
     taf.subShell.dispose();
   });
@@ -135,7 +135,7 @@ describe('client behaviour differs with and without TAF once node1 disappears', 
     const { node1, client } = twoNodeCluster();
 
     const setup = SqlPlusSubShell.create(node1, ['/', 'as', 'sysdba']);
-    setup.subShell.processLine('CREATE TABLE system.orders (id NUMBER);');
+    (await setup.subShell.processLine('CREATE TABLE system.orders (id NUMBER);'));
     setup.subShell.dispose();
 
     const plain = SqlPlusSubShell.create(client, ['system/oracle@//10.0.0.1/ORCL']);
@@ -143,7 +143,7 @@ describe('client behaviour differs with and without TAF once node1 disappears', 
 
     await node1.executeCommand('ip link set eth0 down');
 
-    const afterOutage = plain.subShell.processLine('SELECT id FROM system.orders;').output.join('\n');
+    const afterOutage = (await plain.subShell.processLine('SELECT id FROM system.orders;')).output.join('\n');
     expect(afterOutage).toMatch(/ORA-03135|ORA-01033/);
     plain.subShell.dispose();
   });

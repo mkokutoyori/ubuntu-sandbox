@@ -75,13 +75,13 @@ function makeUserShell(name: string, user: string, password: string) {
   return SqlPlusSubShell.create(srv, [`${user}/${password}`]).subShell;
 }
 
-function run(sh: ReturnType<typeof makeSysShell>, sql: string): string {
-  return sh.processLine(sql).output.join('\n');
+async function run(sh: ReturnType<typeof makeSysShell>, sql: string): Promise<string> {
+  return (await sh.processLine(sql)).output.join('\n');
 }
 
-function drive(sh: ReturnType<typeof makeSysShell>, cases: Case[]): void {
+async function drive(sh: ReturnType<typeof makeSysShell>, cases: Case[]): Promise<void> {
   for (const c of cases) {
-    const out = run(sh, c.sql);
+    const out = (await run(sh, c.sql));
     expect(
       matches(out, c.want),
       `Case failed:\n  SQL:      ${c.sql}\n  Expected: ${describeExpectation(c.want)}\n  Actual:   ${out}`
@@ -137,8 +137,8 @@ describe('1. Session bootstrap and SYS context', () => {
     { sql: 'SELECT COUNT(*) FROM DUAL;',                                        want: /^\s*1\s*$/m },
     // The currently-open user session is visible in V$SESSION.
     { sql: "SELECT COUNT(*) FROM v$session WHERE username = 'SYS' AND type = 'USER';", want: /^\s*[1-9]\d*\s*$/m },
-  ])('§1: $sql', ({ sql, want }) => {
-    const out = run(sys, sql);
+  ])('§1: $sql', async ({ sql, want }) => {
+    const out = (await run(sys, sql));
     expect(
       matches(out, want),
       `Expected ${describeExpectation(want)}\nActual:\n${out}`
@@ -187,8 +187,8 @@ describe('2. Profile creation and lifecycle', () => {
     { sql: "SELECT COUNT(*) FROM dba_profiles WHERE profile = 'TEMP_DROP_PROFILE';",                                                   want: /^\s*0\s*$/m },
     // Dropping an unknown profile raises the specific dictionary error.
     { sql: 'DROP PROFILE nonexistent_profile;',                                                                                        want: /ORA-02380/ },
-  ])('§2: $sql', ({ sql, want }) => {
-    const out = run(sys, sql);
+  ])('§2: $sql', async ({ sql, want }) => {
+    const out = (await run(sys, sql));
     expect(
       matches(out, want),
       `Expected ${describeExpectation(want)}\nActual:\n${out}`
@@ -251,8 +251,8 @@ describe('3. User creation — every authentication variant', () => {
       { sql: "SELECT authentication_type FROM dba_users WHERE username = 'GLOBAL_USER';",                                             want: /\bGLOBAL\b/ },
       { sql: "SELECT external_name FROM dba_users WHERE username = 'KERB_USER';",                                                     want: /kerberos@REALM\.LOCAL/ },
       { sql: "SELECT external_name FROM dba_users WHERE username = 'GLOBAL_USER';",                                                   want: /CN=global,O=Acme/ },
-  ])('§3: $sql', ({ sql, want }) => {
-    const out = run(sys, sql);
+  ])('§3: $sql', async ({ sql, want }) => {
+    const out = (await run(sys, sql));
     expect(
       matches(out, want),
       `Expected ${describeExpectation(want)}\nActual:\n${out}`
@@ -299,8 +299,8 @@ describe('4. Role creation', () => {
     { sql: "SELECT role FROM dba_roles WHERE role = 'CONNECT';",                           want: /^\s*CONNECT\s*$/m },
     { sql: "SELECT role FROM dba_roles WHERE role = 'RESOURCE';",                          want: /^\s*RESOURCE\s*$/m },
     { sql: "SELECT role FROM dba_roles WHERE role = 'DBA';",                               want: /^\s*DBA\s*$/m },
-  ])('§4: $sql', ({ sql, want }) => {
-    const out = run(sys, sql);
+  ])('§4: $sql', async ({ sql, want }) => {
+    const out = (await run(sys, sql));
     expect(
       matches(out, want),
       `Expected ${describeExpectation(want)}\nActual:\n${out}`
@@ -390,8 +390,8 @@ describe('5. GRANT system privileges', () => {
       { sql: "SELECT COUNT(*) FROM dba_role_privs WHERE grantee = 'ALICE' AND granted_role IN ('CONNECT','RESOURCE');",                want: /^\s*2\s*$/m },
       // DBA was granted to ops_user WITH ADMIN OPTION.
       { sql: "SELECT admin_option FROM dba_role_privs WHERE grantee = 'OPS_USER' AND granted_role = 'DBA';",                          want: /\bYES\b/ },
-  ])('§5: $sql', ({ sql, want }) => {
-    const out = run(sys, sql);
+  ])('§5: $sql', async ({ sql, want }) => {
+    const out = (await run(sys, sql));
     expect(
       matches(out, want),
       `Expected ${describeExpectation(want)}\nActual:\n${out}`
@@ -457,8 +457,8 @@ describe('6. GRANT object privileges', () => {
     { sql: 'GRANT SELECT ON hr.employees TO bob;',                                                                                  want: /Grant succeeded\./i },
     // GRANT TO owner → ORA-01749 (self-grant prevention).
     { sql: 'GRANT SELECT ON hr.employees TO HR;',                                                                                   want: /ORA-01749/ },
-  ])('§6: $sql', ({ sql, want }) => {
-    const out = run(sys, sql);
+  ])('§6: $sql', async ({ sql, want }) => {
+    const out = (await run(sys, sql));
     expect(
       matches(out, want),
       `Expected ${describeExpectation(want)}\nActual:\n${out}`
@@ -493,8 +493,8 @@ describe('7. Column-level GRANT / REVOKE', () => {
     // PUBLIC column grant.
     { sql: 'GRANT SELECT (employee_id, first_name, last_name, email) ON hr.employees TO PUBLIC;',                                            want: /Grant succeeded\./i },
     { sql: "SELECT COUNT(*) FROM dba_col_privs WHERE table_name = 'EMPLOYEES' AND grantee = 'PUBLIC';",                                       want: /^\s*4\s*$/m },
-  ])('§7: $sql', ({ sql, want }) => {
-    const out = run(sys, sql);
+  ])('§7: $sql', async ({ sql, want }) => {
+    const out = (await run(sys, sql));
     expect(
       matches(out, want),
       `Expected ${describeExpectation(want)}\nActual:\n${out}`
@@ -533,8 +533,8 @@ describe('8. Role-to-user / role-to-role grants', () => {
     { sql: "SELECT COUNT(*) FROM dba_role_privs WHERE granted_role = 'APP_ROLE' AND grantee = 'BOB';",                      want: /^\s*1\s*$/m },
     // Multi-grantee created three rows (alice, bob, carol).
     { sql: "SELECT COUNT(*) FROM dba_role_privs WHERE granted_role = 'DEVELOPER_ROLE' AND grantee IN ('ALICE','BOB','CAROL');", want: /^\s*3\s*$/m },
-  ])('§8: $sql', ({ sql, want }) => {
-    const out = run(sys, sql);
+  ])('§8: $sql', async ({ sql, want }) => {
+    const out = (await run(sys, sql));
     expect(
       matches(out, want),
       `Expected ${describeExpectation(want)}\nActual:\n${out}`
@@ -595,8 +595,8 @@ describe('9. ALTER USER — every realistic alteration', () => {
     { sql: "SELECT account_status FROM dba_users WHERE username = 'BOB';",                                       want: /\bOPEN\b/ },
     // Proxy was granted then revoked — final state is no rows.
     { sql: "SELECT COUNT(*) FROM proxy_users WHERE client = 'ALICE' AND proxy = 'BOB';",                         want: /^\s*0\s*$/m },
-  ])('§9: $sql', ({ sql, want }) => {
-    const out = run(sys, sql);
+  ])('§9: $sql', async ({ sql, want }) => {
+    const out = (await run(sys, sql));
     expect(
       matches(out, want),
       `Expected ${describeExpectation(want)}\nActual:\n${out}`
@@ -663,8 +663,8 @@ describe('10. Object lifecycle in HR schema', () => {
     // After-drop assertions.
     { sql: "SELECT COUNT(*) FROM dba_indexes WHERE owner = 'HR' AND index_name = 'BM_AUDIT';",                                  want: /^\s*0\s*$/m },
     { sql: "SELECT COUNT(*) FROM dba_views WHERE owner = 'HR' AND view_name = 'V_RECENT_AUDITS';",                              want: /^\s*0\s*$/m },
-  ])('§10: $sql', ({ sql, want }) => {
-    const out = run(sys, sql);
+  ])('§10: $sql', async ({ sql, want }) => {
+    const out = (await run(sys, sql));
     expect(
       matches(out, want),
       `Expected ${describeExpectation(want)}\nActual:\n${out}`
@@ -722,8 +722,8 @@ describe('11. Connection attempts under different identities', () => {
     { sql: 'CONNECT alice/wrong2@orcl',                                       want: /ORA-01017/ },
     { sql: 'CONNECT alice/wrong3@orcl',                                       want: /ORA-01017/ },
     { sql: 'CONNECT / AS SYSDBA',                                             want: /\bConnected\b/i },
-  ])('§11: $sql', ({ sql, want }) => {
-    const out = run(sys, sql);
+  ])('§11: $sql', async ({ sql, want }) => {
+    const out = (await run(sys, sql));
     expect(
       matches(out, want),
       `Expected ${describeExpectation(want)}\nActual:\n${out}`
@@ -784,8 +784,8 @@ describe('12. Object-access enforcement under non-SYS sessions', () => {
     // Create a no-grant user we will reuse later in negative tests.
     { sql: 'CREATE USER nograntee IDENTIFIED BY "NoGrant1#";',                                          want: /User created\./i },
     { sql: 'GRANT CREATE SESSION TO nograntee;',                                                         want: /Grant succeeded\./i },
-  ])('§12: $sql', ({ sql, want }) => {
-    const out = run(sys, sql);
+  ])('§12: $sql', async ({ sql, want }) => {
+    const out = (await run(sys, sql));
     expect(
       matches(out, want),
       `Expected ${describeExpectation(want)}\nActual:\n${out}`
@@ -836,8 +836,8 @@ describe('13. Session, process, and resource inspection', () => {
     { sql: "SELECT sid, command, server FROM v$session WHERE type = 'USER' FETCH FIRST 5 ROWS ONLY;",     want: /\bSERVER\b/i },
     { sql: "SELECT name, bytes FROM v$sgainfo WHERE name = 'Maximum SGA Size';",                          want: /\bMaximum SGA Size\b/i },
     { sql: 'SELECT name, value FROM v$pgastat FETCH FIRST 5 ROWS ONLY;',                                  want: /\bVALUE\b/i },
-  ])('§13: $sql', ({ sql, want }) => {
-    const out = run(sys, sql);
+  ])('§13: $sql', async ({ sql, want }) => {
+    const out = (await run(sys, sql));
     expect(
       matches(out, want),
       `Expected ${describeExpectation(want)}\nActual:\n${out}`
@@ -905,8 +905,8 @@ describe('14. Dictionary queries on users, roles, and privileges', () => {
     { sql: "SELECT DISTINCT privilege FROM (SELECT p.privilege FROM dba_role_privs r JOIN dba_sys_privs p ON p.grantee = r.granted_role WHERE r.grantee = 'BOB' UNION SELECT privilege FROM dba_sys_privs WHERE grantee = 'BOB') WHERE privilege = 'CREATE SESSION';", want: /^\s*CREATE SESSION\s*$/m },
     { sql: "SELECT COUNT(*) FROM dba_users WHERE oracle_maintained = 'N';",                                        want: /^\s*[1-9]\d*\s*$/m },
     { sql: "SELECT COUNT(*) FROM dba_users WHERE expiry_date < SYSDATE;",                                          want: /^\s*[0-9]+\s*$/m },
-  ])('§14: $sql', ({ sql, want }) => {
-    const out = run(sys, sql);
+  ])('§14: $sql', async ({ sql, want }) => {
+    const out = (await run(sys, sql));
     expect(
       matches(out, want),
       `Expected ${describeExpectation(want)}\nActual:\n${out}`
@@ -964,8 +964,8 @@ describe('15. Audit configuration', () => {
     { sql: 'DROP TABLE hr.audited_demo PURGE;',                                  want: /Table dropped\./i },
     // FGA log surface.
     { sql: "SELECT COUNT(*) FROM dba_fga_audit_trail;",                          want: /^\s*\d+\s*$/m },
-  ])('§15: $sql', ({ sql, want }) => {
-    const out = run(sys, sql);
+  ])('§15: $sql', async ({ sql, want }) => {
+    const out = (await run(sys, sql));
     expect(
       matches(out, want),
       `Expected ${describeExpectation(want)}\nActual:\n${out}`
@@ -1015,8 +1015,8 @@ describe('16. Audit trail inspection', () => {
     // Final counts.
     { sql: "SELECT COUNT(*) FROM dba_audit_trail WHERE sessionid IS NOT NULL;",                                                     want: /^\s*\d+\s*$/m },
     { sql: "SELECT username, sql_text FROM dba_audit_trail WHERE sql_text LIKE 'GRANT%' FETCH FIRST 5 ROWS ONLY;",                  want: /\bSQL_TEXT\b/i },
-  ])('§16: $sql', ({ sql, want }) => {
-    const out = run(sys, sql);
+  ])('§16: $sql', async ({ sql, want }) => {
+    const out = (await run(sys, sql));
     expect(
       matches(out, want),
       `Expected ${describeExpectation(want)}\nActual:\n${out}`
@@ -1058,8 +1058,8 @@ describe('17. Transparent Data Encryption', () => {
     { sql: "ADMINISTER KEY MANAGEMENT SET KEYSTORE OPEN IDENTIFIED BY \"WalletP@ss1\";",                                              want: /\bsucceeded\b/i },
     { sql: 'SELECT status FROM v$encryption_wallet;',                                                                                    want: /\bOPEN\b/ },
     { sql: "ADMINISTER KEY MANAGEMENT BACKUP KEYSTORE USING 'rotation-backup' IDENTIFIED BY \"WalletP@ss1\" TO '/opt/oracle/wallet_bk';", want: /\bsucceeded\b/i },
-  ])('§17: $sql', ({ sql, want }) => {
-    const out = run(sys, sql);
+  ])('§17: $sql', async ({ sql, want }) => {
+    const out = (await run(sys, sql));
     expect(
       matches(out, want),
       `Expected ${describeExpectation(want)}\nActual:\n${out}`
@@ -1097,8 +1097,8 @@ describe('18. Database Vault provisioning', () => {
     { sql: "SELECT COUNT(*) FROM dba_dv_realm WHERE name IN ('HR REALM','FINANCE REALM');",                                                              want: /^\s*0\s*$/m },
     { sql: "SELECT COUNT(*) FROM dba_dv_role WHERE role = 'DV_HR_ANALYST';",                                                                              want: /^\s*0\s*$/m },
     { sql: "SELECT COUNT(*) FROM dba_dv_factor WHERE name = 'CLIENT_IP';",                                                                                want: /^\s*0\s*$/m },
-  ])('§18: $sql', ({ sql, want }) => {
-    const out = run(sys, sql);
+  ])('§18: $sql', async ({ sql, want }) => {
+    const out = (await run(sys, sql));
     expect(
       matches(out, want),
       `Expected ${describeExpectation(want)}\nActual:\n${out}`
@@ -1130,8 +1130,8 @@ describe('19. Row-level security (DBMS_RLS)', () => {
     { sql: "BEGIN DBMS_RLS.DROP_POLICY('HR','EMPLOYEES','emp_sal_pol'); END;",                                                                                                                                         want: /PL\/SQL procedure successfully completed\./i },
     { sql: "BEGIN DBMS_RLS.DROP_GROUPED_POLICY('HR','EMPLOYEES','PII_GROUP','mask_email'); END;",                                                                                                                      want: /PL\/SQL procedure successfully completed\./i },
     { sql: "SELECT COUNT(*) FROM dba_policies WHERE object_name = 'EMPLOYEES';",                                                                                                                                       want: /^\s*0\s*$/m },
-  ])('§19: $sql', ({ sql, want }) => {
-    const out = run(sys, sql);
+  ])('§19: $sql', async ({ sql, want }) => {
+    const out = (await run(sys, sql));
     expect(
       matches(out, want),
       `Expected ${describeExpectation(want)}\nActual:\n${out}`
@@ -1169,8 +1169,8 @@ describe('20. ALTER SYSTEM — session lifecycle administration', () => {
     { sql: "SELECT value FROM v\$parameter WHERE name = 'resource_limit';",                     want: /\bTRUE\b/i },
     { sql: 'ALTER SYSTEM SUSPEND;',                                                              want: /System altered\./i },
     { sql: 'ALTER SYSTEM RESUME;',                                                                want: /System altered\./i },
-  ])('§20: $sql', ({ sql, want }) => {
-    const out = run(sys, sql);
+  ])('§20: $sql', async ({ sql, want }) => {
+    const out = (await run(sys, sql));
     expect(
       matches(out, want),
       `Expected ${describeExpectation(want)}\nActual:\n${out}`
@@ -1234,8 +1234,8 @@ describe('21. REVOKE privileges, roles, and access', () => {
     { sql: 'REVOKE CONNECT FROM alice;',                                             want: /Revoke succeeded\./i },
     { sql: 'REVOKE RESOURCE FROM alice;',                                            want: /Revoke succeeded\./i },
     { sql: "SELECT COUNT(*) FROM dba_role_privs WHERE grantee = 'ALICE' AND granted_role IN ('CONNECT','RESOURCE');", want: /^\s*0\s*$/m },
-  ])('§21: $sql', ({ sql, want }) => {
-    const out = run(sys, sql);
+  ])('§21: $sql', async ({ sql, want }) => {
+    const out = (await run(sys, sql));
     expect(
       matches(out, want),
       `Expected ${describeExpectation(want)}\nActual:\n${out}`
@@ -1283,8 +1283,8 @@ describe('22. DROP USER / ROLE / PROFILE — final cleanup', () => {
     { sql: "SELECT COUNT(*) FROM dba_profiles WHERE profile = 'DEV_PROFILE';",   want: /^\s*0\s*$/m },
     { sql: "SELECT COUNT(*) FROM dba_users WHERE username = 'ALICE';",           want: /^\s*1\s*$/m },
     { sql: "SELECT COUNT(*) FROM dba_audit_trail WHERE action_name = 'DROP USER';", want: /^\s*[1-9]\d*\s*$/m },
-  ])('§22: $sql', ({ sql, want }) => {
-    const out = run(sys, sql);
+  ])('§22: $sql', async ({ sql, want }) => {
+    const out = (await run(sys, sql));
     expect(
       matches(out, want),
       `Expected ${describeExpectation(want)}\nActual:\n${out}`
@@ -1327,8 +1327,8 @@ describe('23. Cross-cutting metadata views', () => {
     { sql: 'SELECT local_tran_id FROM dba_2pc_pending;',                                                                        want: /(?:\bLOCAL_TRAN_ID\b)|no rows selected/i },
     { sql: 'SELECT log_group_name FROM dba_log_groups FETCH FIRST 5 ROWS ONLY;',                                                want: /(?:\bLOG_GROUP_NAME\b)|no rows selected/i },
     { sql: "SELECT parameter FROM v\$option WHERE parameter LIKE '%Encryption%';",                                              want: /\bPARAMETER\b/i },
-  ])('§23: $sql', ({ sql, want }) => {
-    const out = run(sys, sql);
+  ])('§23: $sql', async ({ sql, want }) => {
+    const out = (await run(sys, sql));
     expect(
       matches(out, want),
       `Expected ${describeExpectation(want)}\nActual:\n${out}`
@@ -1362,8 +1362,8 @@ describe('24. SYSDATE / TIMESTAMP arithmetic across views', () => {
     { sql: "SELECT COUNT(*) FROM dba_audit_trail WHERE timestamp > SYSTIMESTAMP - INTERVAL '1' HOUR;",  want: /^\s*\d+\s*$/m },
     { sql: "SELECT COUNT(*) FROM dba_audit_trail WHERE timestamp >= SYSDATE - INTERVAL '7' DAY;",       want: /^\s*\d+\s*$/m },
     { sql: 'SELECT SESSIONTIMEZONE FROM dual;',                                                          want: /[+\-]\d{2}:\d{2}|\b[A-Z]{3,}\b/ },
-  ])('§24: $sql', ({ sql, want }) => {
-    const out = run(sys, sql);
+  ])('§24: $sql', async ({ sql, want }) => {
+    const out = (await run(sys, sql));
     expect(
       matches(out, want),
       `Expected ${describeExpectation(want)}\nActual:\n${out}`
@@ -1396,8 +1396,8 @@ describe('25. SYS_CONTEXT and USERENV', () => {
     { sql: "SELECT SYS_CONTEXT('USERENV','SESSIONID') FROM dual;",                    want: /^\s*[1-9]\d*\s*$/m },
     // Multi-column DUAL projection.
     { sql: "SELECT USER, USERENV('SESSIONID'), USERENV('TERMINAL') FROM dual;",        want: /\bSYS\b/ },
-  ])('§25: $sql', ({ sql, want }) => {
-    const out = run(sys, sql);
+  ])('§25: $sql', async ({ sql, want }) => {
+    const out = (await run(sys, sql));
     expect(
       matches(out, want),
       `Expected ${describeExpectation(want)}\nActual:\n${out}`
@@ -1439,8 +1439,8 @@ describe('26. PL/SQL procedures and privilege resolution', () => {
     { sql: "SELECT COUNT(*) FROM dba_errors WHERE owner = 'HR' AND name = 'BAD_PROC';",                                                                                                       want: /^\s*\d+\s*$/m },
     { sql: 'DROP PROCEDURE hr.bad_proc;',                                                                                                                                                      want: /Procedure dropped\./i },
     { sql: 'ALTER PROCEDURE hr.bump_salary COMPILE;',                                                                                                                                          want: /Procedure altered\./i },
-  ])('§26: $sql', ({ sql, want }) => {
-    const out = run(sys, sql);
+  ])('§26: $sql', async ({ sql, want }) => {
+    const out = (await run(sys, sql));
     expect(
       matches(out, want),
       `Expected ${describeExpectation(want)}\nActual:\n${out}`
@@ -1478,8 +1478,8 @@ describe('27. Password policies', () => {
     { sql: 'ALTER USER weakpw IDENTIFIED BY "FreshPwd1#" REPLACE "Different1#";',                want: /User altered\./i },
     { sql: "SELECT account_status FROM dba_users WHERE username = 'WEAKPW';",                    want: /\bOPEN\b/ },
     { sql: 'DROP USER weakpw;',                                                                    want: /User dropped\./i },
-  ])('§27: $sql', ({ sql, want }) => {
-    const out = run(sys, sql);
+  ])('§27: $sql', async ({ sql, want }) => {
+    const out = (await run(sys, sql));
     expect(
       matches(out, want),
       `Expected ${describeExpectation(want)}\nActual:\n${out}`
@@ -1507,8 +1507,8 @@ describe('28. Performance, wait and metric views', () => {
     { sql: 'SELECT sequence#, status FROM v$archived_log FETCH FIRST 5 ROWS ONLY;',                              want: /(?:\bSEQUENCE#?\b)|no rows selected/i },
     { sql: 'SELECT group#, status FROM v$log;',                                                                  want: /\bSTATUS\b/i },
     { sql: 'SELECT group#, member FROM v$logfile;',                                                              want: /\bMEMBER\b/i },
-  ])('§28: $sql', ({ sql, want }) => {
-    const out = run(sys, sql);
+  ])('§28: $sql', async ({ sql, want }) => {
+    const out = (await run(sys, sql));
     expect(
       matches(out, want),
       `Expected ${describeExpectation(want)}\nActual:\n${out}`
@@ -1562,8 +1562,8 @@ describe('29. Negative paths — privilege denial and bad input', () => {
     { sql: "SELECT COUNT(*) FROM dba_roles WHERE role = 'DBA';",                      want: /^\s*1\s*$/m },
     // Cleanup.
     { sql: 'DROP USER guest;',                                                        want: /User dropped\./i },
-  ])('§29: $sql', ({ sql, want }) => {
-    const out = run(sys, sql);
+  ])('§29: $sql', async ({ sql, want }) => {
+    const out = (await run(sys, sql));
     expect(
       matches(out, want),
       `Expected ${describeExpectation(want)}\nActual:\n${out}`
@@ -1616,8 +1616,8 @@ describe('30. Reporting and forensic queries', () => {
     { sql: "SELECT COUNT(*) FROM dba_encrypted_columns WHERE owner = 'HR';",                                                                    want: /^\s*\d+\s*$/m },
     // FGA / RLS inventory.
     { sql: "SELECT COUNT(*) FROM dba_policies;",                                                                                                  want: /^\s*\d+\s*$/m },
-  ])('§30: $sql', ({ sql, want }) => {
-    const out = run(sys, sql);
+  ])('§30: $sql', async ({ sql, want }) => {
+    const out = (await run(sys, sql));
     expect(
       matches(out, want),
       `Expected ${describeExpectation(want)}\nActual:\n${out}`

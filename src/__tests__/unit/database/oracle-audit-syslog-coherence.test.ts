@@ -21,41 +21,40 @@ beforeEach(() => {
   Logger.reset();
 });
 
-const syslog = (sh: SqlPlusSubShell): string =>
-  sh.processLine('HOST cat /var/log/syslog').output.join('\n');
+const syslog = async (sh: SqlPlusSubShell): Promise<string> => (await sh.processLine('HOST cat /var/log/syslog')).output.join('\n');
 
 describe('AUDIT_SYSLOG_LEVEL → host syslog', () => {
-  it('forwards an audited DDL to /var/log/syslog when the level is set', () => {
+  it('forwards an audited DDL to /var/log/syslog when the level is set', async () => {
     const srv = new LinuxServer('linux-server', 'ora-syslog', 100, 100);
     const { subShell } = SqlPlusSubShell.create(srv, ['/', 'as', 'sysdba']);
 
-    subShell.processLine("ALTER SYSTEM SET audit_syslog_level = 'local0.info';");
-    subShell.processLine("CREATE TABLESPACE sl_data DATAFILE '/u01/oradata/ORCL/sl_data01.dbf' SIZE 10M;");
+    (await subShell.processLine("ALTER SYSTEM SET audit_syslog_level = 'local0.info';"));
+    (await subShell.processLine("CREATE TABLESPACE sl_data DATAFILE '/u01/oradata/ORCL/sl_data01.dbf' SIZE 10M;"));
 
-    const log = syslog(subShell);
+    const log = (await syslog(subShell));
     expect(log).toMatch(/Oracle Audit/);
     expect(log).toMatch(/CREATE TABLESPACE/);
     subShell.dispose();
   });
 
-  it('writes nothing to syslog when AUDIT_SYSLOG_LEVEL is unset (default)', () => {
+  it('writes nothing to syslog when AUDIT_SYSLOG_LEVEL is unset (default)', async () => {
     const srv = new LinuxServer('linux-server', 'ora-nosyslog', 100, 100);
     const { subShell } = SqlPlusSubShell.create(srv, ['/', 'as', 'sysdba']);
 
-    subShell.processLine("CREATE TABLESPACE ns_data DATAFILE '/u01/oradata/ORCL/ns_data01.dbf' SIZE 10M;");
+    (await subShell.processLine("CREATE TABLESPACE ns_data DATAFILE '/u01/oradata/ORCL/ns_data01.dbf' SIZE 10M;"));
 
-    expect(syslog(subShell)).not.toMatch(/Oracle Audit/);
+    expect((await syslog(subShell))).not.toMatch(/Oracle Audit/);
     subShell.dispose();
   });
 
-  it('the forwarded line carries the database user and action', () => {
+  it('the forwarded line carries the database user and action', async () => {
     const srv = new LinuxServer('linux-server', 'ora-syslog-fields', 100, 100);
     const { subShell } = SqlPlusSubShell.create(srv, ['/', 'as', 'sysdba']);
 
-    subShell.processLine("ALTER SYSTEM SET audit_syslog_level = 'local0.info';");
-    subShell.processLine("CREATE TABLESPACE fld_data DATAFILE '/u01/oradata/ORCL/fld01.dbf' SIZE 10M;");
+    (await subShell.processLine("ALTER SYSTEM SET audit_syslog_level = 'local0.info';"));
+    (await subShell.processLine("CREATE TABLESPACE fld_data DATAFILE '/u01/oradata/ORCL/fld01.dbf' SIZE 10M;"));
 
-    const oracleAuditLines = syslog(subShell)
+    const oracleAuditLines = (await syslog(subShell))
       .split('\n')
       .filter(l => /Oracle Audit/.test(l) && /CREATE TABLESPACE/.test(l));
     expect(oracleAuditLines.length).toBeGreaterThan(0);

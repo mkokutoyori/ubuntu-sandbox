@@ -1,5 +1,104 @@
 # Changelog
 
+## Oracle SQL*Plus — Wave 2 : câblage live sur `SqlPlusSubShell` (débranchement réel du legacy pour SET/SHOW/HELP/CLEAR/EXIT/QUIT/DISCONNECT)
+
+**État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
+
+Suite directe de la Wave 1 (socle command-kernel construit mais non
+branché). Cette vague résout la frontière sync/async documentée
+précédemment et câble réellement les 6 commandes migrées sur le
+sous-shell interactif — un utilisateur tapant `SET LINESIZE 100` dans un
+vrai terminal SQL*Plus passe désormais par le socle command-kernel, plus
+jamais par `SQLPlusSession.handleSet`.
+
+- **La clé qui débloque le câblage sans casser ~70 fichiers de tests** :
+  `ISubShell.processLine` autorise déjà `SubShellResult | Promise<
+  SubShellResult>` (l'hôte terminal gère déjà les deux via `instanceof
+  Promise`). `SqlPlusSubShell.processLine` n'est donc **pas** rendu
+  entièrement `async` — seule la branche kernel (`processKernelVerb`,
+  nouvelle méthode privée) est asynchrone ; la branche legacy (toute
+  instruction SQL/PL-SQL, `CONNECT`, `SPOOL`, `HOST`, scripts — l'écrasante
+  majorité des appels dans la suite de tests) reste strictement
+  synchrone, à l'identique d'avant. Zéro fichier de test n'a eu besoin
+  d'être touché pour le legacy ; environ 70 fichiers l'ont été pour la
+  minorité de lignes qui exercent directement `SqlPlusSubShell.processLine`
+  avec un verbe migré ou dans un contexte nécessitant `await` en cascade
+  (conversion mécanique, voir plus bas).
+
+- **`SqlPlusSubShell.processLine`** (`src/terminal/subshells/SqlPlusSubShell.ts`) :
+  - Reconnaît les 6 verbes via `recognizeSqlPlusKernelVerb` — mais
+    seulement quand `session.isAwaitingMoreInput()` est faux (jamais en
+    plein tampon SQL/PL-SQL).
+  - Route vers `createSqlPlusKernel` (construit paresseusement, une fois
+    par sous-shell, lié à `this.session`), puis appelle `session.
+    recordExternalLine(line, output, prompt)` pour que le SPOOL actif
+    capture la commande migrée exactement comme avant (même bloc
+    prompt+ligne+sortie que le legacy `processLine`).
+  - `EXIT`/`QUIT` signalent `SubShellResult.exit = true` (calculé côté
+    hôte, pas dans la commande kernel) ; `DISCONNECT`/`DISC` ne quittent
+    pas SQL*Plus, comme le legacy.
+
+- **`SQLPlusSession`** (2 méthodes additives, zéro changement de
+  comportement existant) :
+  - `isAwaitingMoreInput()` — expose la garde tampon SQL/PL-SQL déjà
+    interne.
+  - `recordExternalLine(line, output, resultPrompt)` — reproduit
+    exactement la logique de capture SPOOL de `processLine` pour une
+    ligne exécutée en dehors de `processLineInner`.
+  - `buildCommands()` n'est **pas** modifié : un test qui instancie
+    `SQLPlusSession` directement (hors `SqlPlusSubShell`) et appelle
+    `session.processLine('EXIT')`/`'SHOW USER'`/etc. continue de
+    fonctionner via le legacy, inchangé — la porte unique kernel vit au
+    niveau du sous-shell (le point d'entrée réellement utilisateur), pas
+    au niveau du moteur `SQLPlusSession` sur lequel ~3000 tests unitaires
+    s'appuient directement.
+
+- **Régression détectée et corrigée avant de considérer cette vague
+  terminée** : `SHOW ERRORS`/`SHOW ERR <cible>` étaient auparavant
+  servis par le legacy (`renderShowErrors`, catalogue de compilation) ;
+  le matcher kernel `SHOW` les interceptait aussi (`SHOW ...` générique)
+  mais la commande kernel `Show` (Wave 1) ne les implémente pas encore
+  → régression (`SP2-0158: unknown SHOW option "ERRORS"` au lieu du
+  rapport d'erreurs réel). Corrigé en excluant explicitement `SHOW
+  ERRORS`/`SHOW ERR <cible>` du matcher (`createSqlPlusKernel.ts`),
+  laissant cette forme au legacy jusqu'à l'exposition des DTOs de
+  compilation — prochaine cible documentée.
+
+- **Conversion mécanique des tests (~70 fichiers)** : la conversion
+  sync→async de `SqlPlusSubShell.processLine` (nécessaire pour la
+  branche kernel) a été appliquée à tous les fichiers qui appellent
+  cette méthode dans un contexte qui a besoin d'`await` en cascade
+  (helpers `run`/`sql`/`ls`/`session` top-level, callbacks `it`/`test`/
+  `beforeEach`/`it.each`, callbacks `.map`/`.filter`/…) — comportement
+  runtime identique, uniquement la mécanique d'attente change. Script de
+  transformation dédié (masque string/regex/commentaire + scan à
+  parenthèses équilibrées, pour ne jamais confondre un `(` de texte SQL
+  ou de motif regex avec une vraie structure de code), plus une poignée
+  de corrections manuelles pour les chaînes d'appel multi-lignes que le
+  script ne couvre pas. Chaque fichier validé individuellement par
+  `tsc`/`eslint`/`vitest` avant d'être généralisé.
+
+- **Preuve** : `sqlplus-cli-foundation.test.ts` étendu à 22/22 tests
+  verts — nouveau bloc « câblage live sur SqlPlusSubShell » : Promise
+  vs synchrone selon le verbe, mutation SET/lecture SHOW via le
+  sous-shell réel, signal `exit` pour EXIT mais pas DISCONNECT, parité
+  SPOOL bout-en-bout, et régression `SHOW ERRORS` couverte.
+
+- **Validation de non-régression** : suite Oracle complète + scénarios
+  RAC/TNS/audit réseau + isolation sous-shell (152 fichiers, 3515 tests)
+  — 18 échecs, tous confirmés pré-existants par comparaison `git stash
+  -u` (méthode §7.2), sans rapport avec cette vague (provisioning OS
+  `oracle`, DAC fichier, scénarios RAC non simulés). `tsc --noEmit` :
+  48 erreurs avant/après (identique). `eslint` : mêmes 12 erreurs/6
+  warnings avant/après (pré-existants, décalages de colonne cosmétiques
+  seulement).
+
+- **Prochaines cibles** : `SHOW ERRORS` (DTOs de compilation du
+  catalogue) ; `CONNECT`/`DISCONNECT` réseau (Oracle Net/TNS) ;
+  `COLUMN`/`DEFINE`/`VARIABLE`/`PRINT` ; puis la vague la plus
+  significative — l'exécution SQL/PL-SQL elle-même (tampon
+  multi-lignes, `/`, blocs PL/SQL) et `SPOOL`/`@script`.
+
 ## Oracle SQL*Plus — Wave 1 : socle command-kernel (session/réglages : SET, SHOW, HELP, CLEAR, EXIT/QUIT, DISCONNECT)
 
 **État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**

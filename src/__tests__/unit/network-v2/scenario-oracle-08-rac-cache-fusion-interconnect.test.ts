@@ -49,41 +49,41 @@ function twoNodeClusterWithInterconnect() {
 }
 
 describe('two RAC instances contend on the same blocks and generate Cache Fusion traffic', () => {
-  it('a table created on node1 is visible and updatable from node2 through shared storage', () => {
+  it('a table created on node1 is visible and updatable from node2 through shared storage', async () => {
     const { node1, node2 } = twoNodeClusterWithInterconnect();
 
     const s1 = SqlPlusSubShell.create(node1, ['/', 'as', 'sysdba']);
-    s1.subShell.processLine('CREATE TABLE system.shared_counter (n NUMBER);');
-    s1.subShell.processLine('INSERT INTO system.shared_counter VALUES (0);');
-    s1.subShell.processLine('COMMIT;');
+    (await s1.subShell.processLine('CREATE TABLE system.shared_counter (n NUMBER);'));
+    (await s1.subShell.processLine('INSERT INTO system.shared_counter VALUES (0);'));
+    (await s1.subShell.processLine('COMMIT;'));
     s1.subShell.dispose();
 
     const s2 = SqlPlusSubShell.create(node2, ['/', 'as', 'sysdba']);
-    const rows = s2.subShell.processLine('SELECT n FROM system.shared_counter;').output.join('\n');
+    const rows = (await s2.subShell.processLine('SELECT n FROM system.shared_counter;')).output.join('\n');
     expect(rows).not.toMatch(/ORA-00942/);
     expect(rows).toContain('0');
     s2.subShell.dispose();
   });
 
-  it('gc cr blocks received / gc current blocks received increase after cross-node access to the same block', () => {
+  it('gc cr blocks received / gc current blocks received increase after cross-node access to the same block', async () => {
     const { node1, node2 } = twoNodeClusterWithInterconnect();
     const s1 = SqlPlusSubShell.create(node1, ['/', 'as', 'sysdba']);
-    s1.subShell.processLine('CREATE TABLE system.shared_counter (n NUMBER);');
-    s1.subShell.processLine('INSERT INTO system.shared_counter VALUES (0);');
-    s1.subShell.processLine('COMMIT;');
+    (await s1.subShell.processLine('CREATE TABLE system.shared_counter (n NUMBER);'));
+    (await s1.subShell.processLine('INSERT INTO system.shared_counter VALUES (0);'));
+    (await s1.subShell.processLine('COMMIT;'));
 
-    const before = s1.subShell.processLine(
+    const before = (await s1.subShell.processLine(
       "SELECT value FROM v$sysstat WHERE name = 'gc cr blocks received';"
-    ).output.join('\n');
+    )).output.join('\n');
 
     const s2 = SqlPlusSubShell.create(node2, ['/', 'as', 'sysdba']);
-    s2.subShell.processLine('UPDATE system.shared_counter SET n = n + 1;');
-    s2.subShell.processLine('COMMIT;');
+    (await s2.subShell.processLine('UPDATE system.shared_counter SET n = n + 1;'));
+    (await s2.subShell.processLine('COMMIT;'));
     s2.subShell.dispose();
 
-    const after = s1.subShell.processLine(
+    const after = (await s1.subShell.processLine(
       "SELECT value FROM v$sysstat WHERE name = 'gc cr blocks received';"
-    ).output.join('\n');
+    )).output.join('\n');
     expect(Number(after.match(/\d+/)?.[0] ?? 0)).toBeGreaterThan(Number(before.match(/\d+/)?.[0] ?? 0));
     s1.subShell.dispose();
   });
@@ -108,34 +108,34 @@ describe('degrading the private interconnect measurably degrades Cache Fusion re
   it('Oracle wait events (gc buffer busy / gc cr request) correlate with the interconnect degradation', async () => {
     const { node1, node2 } = twoNodeClusterWithInterconnect();
     const s1 = SqlPlusSubShell.create(node1, ['/', 'as', 'sysdba']);
-    s1.subShell.processLine('CREATE TABLE system.shared_counter (n NUMBER);');
-    s1.subShell.processLine('INSERT INTO system.shared_counter VALUES (0);');
-    s1.subShell.processLine('COMMIT;');
+    (await s1.subShell.processLine('CREATE TABLE system.shared_counter (n NUMBER);'));
+    (await s1.subShell.processLine('INSERT INTO system.shared_counter VALUES (0);'));
+    (await s1.subShell.processLine('COMMIT;'));
 
     await node1.executeCommand('tc qdisc add dev eth1 root netem delay 200ms loss 10%');
 
     const s2 = SqlPlusSubShell.create(node2, ['/', 'as', 'sysdba']);
     for (let i = 0; i < 20; i++) {
-      s2.subShell.processLine('UPDATE system.shared_counter SET n = n + 1;');
-      s2.subShell.processLine('COMMIT;');
+      (await s2.subShell.processLine('UPDATE system.shared_counter SET n = n + 1;'));
+      (await s2.subShell.processLine('COMMIT;'));
     }
     s2.subShell.dispose();
 
-    const waits = s1.subShell.processLine(
+    const waits = (await s1.subShell.processLine(
       "SELECT event, total_waits FROM v$system_event WHERE event IN ('gc buffer busy', 'gc cr request');"
-    ).output.join('\n');
+    )).output.join('\n');
     expect(waits).toMatch(/gc buffer busy/);
     expect(Number(waits.match(/\d+/)?.[0] ?? 0)).toBeGreaterThan(0);
 
-    const alert = s1.subShell.processLine('SELECT 1 FROM dual;');
+    const alert = (await s1.subShell.processLine('SELECT 1 FROM dual;'));
     void alert;
     s1.subShell.dispose();
   });
 
-  it('V$CLUSTER_INTERCONNECTS reflects the private interconnect and its degraded state', () => {
+  it('V$CLUSTER_INTERCONNECTS reflects the private interconnect and its degraded state', async () => {
     const { node1 } = twoNodeClusterWithInterconnect();
     const s1 = SqlPlusSubShell.create(node1, ['/', 'as', 'sysdba']);
-    const rows = s1.subShell.processLine('SELECT name, ip_address, source FROM v$cluster_interconnects;').output.join('\n');
+    const rows = (await s1.subShell.processLine('SELECT name, ip_address, source FROM v$cluster_interconnects;')).output.join('\n');
     expect(rows).toMatch(/192\.168\.1\.1/);
     expect(rows).not.toMatch(/ORA-00942/);
     s1.subShell.dispose();

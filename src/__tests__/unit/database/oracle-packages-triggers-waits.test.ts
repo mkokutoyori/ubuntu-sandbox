@@ -26,128 +26,128 @@ function newSession(name: string): SqlPlusSubShell {
   return SqlPlusSubShell.create(srv, ['/', 'as', 'sysdba']).subShell;
 }
 
-function run(sh: SqlPlusSubShell, sql: string): string {
-  return sh.processLine(sql).output.join('\n');
+async function run(sh: SqlPlusSubShell, sql: string): Promise<string> {
+  return (await sh.processLine(sql)).output.join('\n');
 }
 
 describe('DBMS_APPLICATION_INFO', () => {
-  it('SET_MODULE updates V$SESSION.MODULE and V$SESSION_CONTEXT', () => {
+  it('SET_MODULE updates V$SESSION.MODULE and V$SESSION_CONTEXT', async () => {
     const sh = newSession('dai-1');
-    sh.processLine("BEGIN DBMS_APPLICATION_INFO.SET_MODULE('billing', 'invoice-run'); END;");
-    const sess = run(sh, "SELECT MODULE, ACTION FROM V$SESSION WHERE TYPE='USER' AND USERNAME='SYS';");
+    (await sh.processLine("BEGIN DBMS_APPLICATION_INFO.SET_MODULE('billing', 'invoice-run'); END;"));
+    const sess = (await run(sh, "SELECT MODULE, ACTION FROM V$SESSION WHERE TYPE='USER' AND USERNAME='SYS';"));
     expect(sess).toMatch(/billing/);
     expect(sess).toMatch(/invoice-run/);
-    const ctx = run(sh, "SELECT ATTRIBUTE, VALUE FROM V$SESSION_CONTEXT WHERE ATTRIBUTE IN ('MODULE','ACTION');");
+    const ctx = (await run(sh, "SELECT ATTRIBUTE, VALUE FROM V$SESSION_CONTEXT WHERE ATTRIBUTE IN ('MODULE','ACTION');"));
     expect(ctx).toMatch(/MODULE\s+billing/);
     expect(ctx).toMatch(/ACTION\s+invoice-run/);
     sh.dispose();
   });
 
-  it('SET_ACTION updates only ACTION', () => {
+  it('SET_ACTION updates only ACTION', async () => {
     const sh = newSession('dai-2');
-    sh.processLine("BEGIN DBMS_APPLICATION_INFO.SET_MODULE('m', 'a1'); END;");
-    sh.processLine("BEGIN DBMS_APPLICATION_INFO.SET_ACTION('a2'); END;");
-    const out = run(sh, "SELECT MODULE, ACTION FROM V$SESSION WHERE TYPE='USER';");
+    (await sh.processLine("BEGIN DBMS_APPLICATION_INFO.SET_MODULE('m', 'a1'); END;"));
+    (await sh.processLine("BEGIN DBMS_APPLICATION_INFO.SET_ACTION('a2'); END;"));
+    const out = (await run(sh, "SELECT MODULE, ACTION FROM V$SESSION WHERE TYPE='USER';"));
     expect(out).toMatch(/m\s+a2/);
     sh.dispose();
   });
 
-  it('SET_CLIENT_INFO updates V$SESSION.CLIENT_INFO', () => {
+  it('SET_CLIENT_INFO updates V$SESSION.CLIENT_INFO', async () => {
     const sh = newSession('dai-3');
-    sh.processLine("BEGIN DBMS_APPLICATION_INFO.SET_CLIENT_INFO('mobile-app v1.2'); END;");
-    const out = run(sh, "SELECT CLIENT_INFO FROM V$SESSION WHERE TYPE='USER';");
+    (await sh.processLine("BEGIN DBMS_APPLICATION_INFO.SET_CLIENT_INFO('mobile-app v1.2'); END;"));
+    const out = (await run(sh, "SELECT CLIENT_INFO FROM V$SESSION WHERE TYPE='USER';"));
     expect(out).toMatch(/mobile-app v1\.2/);
     sh.dispose();
   });
 });
 
 describe('DBMS_SESSION', () => {
-  it('SET_IDENTIFIER populates V$SESSION.CLIENT_IDENTIFIER', () => {
+  it('SET_IDENTIFIER populates V$SESSION.CLIENT_IDENTIFIER', async () => {
     const sh = newSession('ds-1');
-    sh.processLine("BEGIN DBMS_SESSION.SET_IDENTIFIER('order-7281'); END;");
-    const out = run(sh, "SELECT CLIENT_IDENTIFIER FROM V$SESSION WHERE TYPE='USER';");
+    (await sh.processLine("BEGIN DBMS_SESSION.SET_IDENTIFIER('order-7281'); END;"));
+    const out = (await run(sh, "SELECT CLIENT_IDENTIFIER FROM V$SESSION WHERE TYPE='USER';"));
     expect(out).toMatch(/order-7281/);
     sh.dispose();
   });
 
-  it('CLEAR_IDENTIFIER blanks the value', () => {
+  it('CLEAR_IDENTIFIER blanks the value', async () => {
     const sh = newSession('ds-2');
-    sh.processLine("BEGIN DBMS_SESSION.SET_IDENTIFIER('xyz'); END;");
-    sh.processLine("BEGIN DBMS_SESSION.CLEAR_IDENTIFIER; END;");
-    const out = run(sh, "SELECT CLIENT_IDENTIFIER FROM V$SESSION WHERE TYPE='USER';");
+    (await sh.processLine("BEGIN DBMS_SESSION.SET_IDENTIFIER('xyz'); END;"));
+    (await sh.processLine("BEGIN DBMS_SESSION.CLEAR_IDENTIFIER; END;"));
+    const out = (await run(sh, "SELECT CLIENT_IDENTIFIER FROM V$SESSION WHERE TYPE='USER';"));
     expect(out).not.toMatch(/xyz/);
     sh.dispose();
   });
 
-  it('SET_CONTEXT registers a user-defined context that surfaces in V$SESSION_CONTEXT', () => {
+  it('SET_CONTEXT registers a user-defined context that surfaces in V$SESSION_CONTEXT', async () => {
     const sh = newSession('ds-3');
-    sh.processLine("BEGIN DBMS_SESSION.SET_CONTEXT('APP_CTX', 'TENANT_ID', 'TENANT_42'); END;");
-    const out = run(sh, "SELECT NAMESPACE, ATTRIBUTE, VALUE FROM V$SESSION_CONTEXT WHERE NAMESPACE='APP_CTX';");
+    (await sh.processLine("BEGIN DBMS_SESSION.SET_CONTEXT('APP_CTX', 'TENANT_ID', 'TENANT_42'); END;"));
+    const out = (await run(sh, "SELECT NAMESPACE, ATTRIBUTE, VALUE FROM V$SESSION_CONTEXT WHERE NAMESPACE='APP_CTX';"));
     expect(out).toMatch(/APP_CTX\s+TENANT_ID\s+TENANT_42/);
     sh.dispose();
   });
 
-  it('CLEAR_CONTEXT removes the entry', () => {
+  it('CLEAR_CONTEXT removes the entry', async () => {
     const sh = newSession('ds-4');
-    sh.processLine("BEGIN DBMS_SESSION.SET_CONTEXT('APP_CTX', 'TENANT_ID', 'T42'); END;");
-    sh.processLine("BEGIN DBMS_SESSION.CLEAR_CONTEXT('APP_CTX', 'TENANT_ID'); END;");
-    const out = run(sh, "SELECT VALUE FROM V$SESSION_CONTEXT WHERE NAMESPACE='APP_CTX' AND ATTRIBUTE='TENANT_ID';");
+    (await sh.processLine("BEGIN DBMS_SESSION.SET_CONTEXT('APP_CTX', 'TENANT_ID', 'T42'); END;"));
+    (await sh.processLine("BEGIN DBMS_SESSION.CLEAR_CONTEXT('APP_CTX', 'TENANT_ID'); END;"));
+    const out = (await run(sh, "SELECT VALUE FROM V$SESSION_CONTEXT WHERE NAMESPACE='APP_CTX' AND ATTRIBUTE='TENANT_ID';"));
     expect(out).not.toMatch(/T42/);
     sh.dispose();
   });
 });
 
 describe('System-level event triggers', () => {
-  it('CREATE TRIGGER … AFTER LOGON ON DATABASE registers in DBA_TRIGGERS', () => {
+  it('CREATE TRIGGER … AFTER LOGON ON DATABASE registers in DBA_TRIGGERS', async () => {
     const sh = newSession('st-1');
-    sh.processLine("CREATE TRIGGER LOG_LOGON AFTER LOGON ON DATABASE BEGIN NULL; END;");
-    const out = run(sh, "SELECT TRIGGER_NAME, TRIGGERING_EVENT, STATUS FROM DBA_TRIGGERS WHERE TRIGGER_NAME='LOG_LOGON';");
+    (await sh.processLine("CREATE TRIGGER LOG_LOGON AFTER LOGON ON DATABASE BEGIN NULL; END;"));
+    const out = (await run(sh, "SELECT TRIGGER_NAME, TRIGGERING_EVENT, STATUS FROM DBA_TRIGGERS WHERE TRIGGER_NAME='LOG_LOGON';"));
     expect(out).toMatch(/LOG_LOGON/);
     expect(out).toMatch(/LOGON/);
     expect(out).toMatch(/ENABLED/);
     sh.dispose();
   });
 
-  it('CREATE TRIGGER … BEFORE LOGOFF ON DATABASE fires on disconnect', () => {
+  it('CREATE TRIGGER … BEFORE LOGOFF ON DATABASE fires on disconnect', async () => {
     const sh = newSession('st-2');
-    sh.processLine("CREATE TRIGGER LOG_LOGOFF BEFORE LOGOFF ON DATABASE BEGIN NULL; END;");
-    sh.processLine("CONNECT HR/hr;");
-    sh.processLine("DISCONNECT;");
-    sh.processLine("CONNECT / AS SYSDBA;");
+    (await sh.processLine("CREATE TRIGGER LOG_LOGOFF BEFORE LOGOFF ON DATABASE BEGIN NULL; END;"));
+    (await sh.processLine("CONNECT HR/hr;"));
+    (await sh.processLine("DISCONNECT;"));
+    (await sh.processLine("CONNECT / AS SYSDBA;"));
     // The alert log must mention the trigger firing.
-    const out = run(sh, "SELECT MESSAGE FROM DBA_ALERT_HISTORY WHERE MESSAGE LIKE '%LOG_LOGOFF%';");
+    const out = (await run(sh, "SELECT MESSAGE FROM DBA_ALERT_HISTORY WHERE MESSAGE LIKE '%LOG_LOGOFF%';"));
     expect(out).toMatch(/LOG_LOGOFF/);
     sh.dispose();
   });
 });
 
 describe('Wait events', () => {
-  it('SQL execution populates V$SESSION_EVENT', () => {
+  it('SQL execution populates V$SESSION_EVENT', async () => {
     const sh = newSession('we-1');
-    sh.processLine("CREATE TABLE W_TAB (id NUMBER);");
-    sh.processLine("INSERT INTO W_TAB VALUES (1);");
-    sh.processLine("COMMIT;");
-    const out = run(sh, "SELECT EVENT, WAIT_CLASS FROM V$SESSION_EVENT;");
+    (await sh.processLine("CREATE TABLE W_TAB (id NUMBER);"));
+    (await sh.processLine("INSERT INTO W_TAB VALUES (1);"));
+    (await sh.processLine("COMMIT;"));
+    const out = (await run(sh, "SELECT EVENT, WAIT_CLASS FROM V$SESSION_EVENT;"));
     expect(out).toMatch(/SQL\*Net message from client|SQL\*Net message to client|db file sequential read|log file sync/);
     sh.dispose();
   });
 
-  it('COMMIT triggers a log file sync wait', () => {
+  it('COMMIT triggers a log file sync wait', async () => {
     const sh = newSession('we-2');
-    sh.processLine("CREATE TABLE W_TAB2 (id NUMBER);");
-    sh.processLine("INSERT INTO W_TAB2 VALUES (1);");
-    sh.processLine("COMMIT;");
-    const out = run(sh, "SELECT EVENT, TOTAL_WAITS FROM V$SYSTEM_EVENT WHERE EVENT='log file sync';");
+    (await sh.processLine("CREATE TABLE W_TAB2 (id NUMBER);"));
+    (await sh.processLine("INSERT INTO W_TAB2 VALUES (1);"));
+    (await sh.processLine("COMMIT;"));
+    const out = (await run(sh, "SELECT EVENT, TOTAL_WAITS FROM V$SYSTEM_EVENT WHERE EVENT='log file sync';"));
     expect(out).toMatch(/log file sync/);
     sh.dispose();
   });
 
-  it('V$EVENT_HISTOGRAM contains a row per (event, log bucket)', () => {
+  it('V$EVENT_HISTOGRAM contains a row per (event, log bucket)', async () => {
     const sh = newSession('we-3');
-    sh.processLine("CREATE TABLE W_TAB3 (id NUMBER);");
-    sh.processLine("INSERT INTO W_TAB3 VALUES (1);");
-    sh.processLine("COMMIT;");
-    const out = run(sh, "SELECT EVENT, WAIT_TIME_MILLI, WAIT_COUNT FROM V$EVENT_HISTOGRAM WHERE EVENT='log file sync';");
+    (await sh.processLine("CREATE TABLE W_TAB3 (id NUMBER);"));
+    (await sh.processLine("INSERT INTO W_TAB3 VALUES (1);"));
+    (await sh.processLine("COMMIT;"));
+    const out = (await run(sh, "SELECT EVENT, WAIT_TIME_MILLI, WAIT_COUNT FROM V$EVENT_HISTOGRAM WHERE EVENT='log file sync';"));
     expect(out).toMatch(/log file sync/);
     sh.dispose();
   });

@@ -35,7 +35,7 @@ describe('Sub-shell isolation across concurrent terminals', () => {
   });
 
   describe('SQL*Plus — per-session executor.context', () => {
-    it('two SQL*Plus shells on the same DB have independent sessions', () => {
+    it('two SQL*Plus shells on the same DB have independent sessions', async () => {
       const dba = new LinuxServer('linux-server', 'dba1', 0, 0);
       dba.setEventBus(bus);
       // Pre-install Oracle so SqlPlusSubShell.create finds it.
@@ -53,12 +53,12 @@ describe('Sub-shell isolation across concurrent terminals', () => {
       // shellB is still usable: it has its own connected session.
       // (Sanity probe: processLine returns a SubShellResult — it should
       // not throw "session disposed" because that is a per-shell flag.)
-      const r = shellB.processLine('SELECT 1 FROM dual;');
+      const r = (await shellB.processLine('SELECT 1 FROM dual;'));
       expect(r).toBeDefined();
       shellB.dispose();
     });
 
-    it('ALTER SESSION SET CURRENT_SCHEMA in shell A does not affect shell B', () => {
+    it('ALTER SESSION SET CURRENT_SCHEMA in shell A does not affect shell B', async () => {
       const dba = new LinuxServer('linux-server', 'dba2', 0, 0);
       dba.setEventBus(bus);
       const { subShell: shellA } = SqlPlusSubShell.create(
@@ -68,11 +68,11 @@ describe('Sub-shell isolation across concurrent terminals', () => {
         dba, ['sys/oracle', 'as', 'sysdba'],
       );
 
-      shellA.processLine('ALTER SESSION SET CURRENT_SCHEMA = HR;');
+      (await shellA.processLine('ALTER SESSION SET CURRENT_SCHEMA = HR;'));
       // shellB's prompt / context must still be SYS — we can't easily
       // probe context.currentSchema from outside, so use SHOW USER as
       // a soft proxy.
-      const r = shellB.processLine('SHOW USER;');
+      const r = (await shellB.processLine('SHOW USER;'));
       const text = r.output.join('\n');
       // Real SQL*Plus prints `USER is "SYS"` for sysdba sessions. Match
       // case-insensitively to tolerate small formatting variations.

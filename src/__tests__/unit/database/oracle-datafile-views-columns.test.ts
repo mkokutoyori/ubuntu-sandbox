@@ -26,48 +26,48 @@ beforeEach(() => {
   Logger.reset();
 });
 
-function sql(s: { processLine: (l: string) => { output: string[] } }, q: string): string {
-  return s.processLine(q).output.join('\n');
+async function sql(s: { processLine: (l: string) => { output: string[] } | Promise<{ output: string[] }> }, q: string): Promise<string> {
+  return (await s.processLine(q)).output.join('\n');
 }
 
 describe('dba_data_files / v$datafile column set', () => {
-  it('dba_data_files exposes STATUS / MAXBYTES / BLOCKS / USER_BYTES', () => {
+  it('dba_data_files exposes STATUS / MAXBYTES / BLOCKS / USER_BYTES', async () => {
     const srv = new LinuxServer('linux-server', 'ora-df-cols', 100, 100);
     const { subShell } = SqlPlusSubShell.create(srv, ['/', 'as', 'sysdba']);
-    const out = sql(subShell,
+    const out = (await sql(subShell,
       'SELECT file_id, file_name, tablespace_name, bytes, status, autoextensible, maxbytes, blocks, user_bytes FROM dba_data_files;'
-    );
+    ));
     expect(out).not.toMatch(/ORA-/);
     expect(out).toMatch(/AVAILABLE/);
     subShell.dispose();
   });
 
-  it('v$datafile exposes STATUS / CHECKPOINT_CHANGE# / CREATION_TIME', () => {
+  it('v$datafile exposes STATUS / CHECKPOINT_CHANGE# / CREATION_TIME', async () => {
     const srv = new LinuxServer('linux-server', 'ora-vdf-cols', 100, 100);
     const { subShell } = SqlPlusSubShell.create(srv, ['/', 'as', 'sysdba']);
-    const out = sql(subShell,
+    const out = (await sql(subShell,
       'SELECT file#, name, status, checkpoint_change#, creation_time FROM v$datafile;'
-    );
+    ));
     expect(out).not.toMatch(/ORA-/);
     expect(out).toMatch(/ONLINE/);
     subShell.dispose();
   });
 
-  it('v$datafile excludes TEMP files (they belong to v$tempfile)', () => {
+  it('v$datafile excludes TEMP files (they belong to v$tempfile)', async () => {
     const srv = new LinuxServer('linux-server', 'ora-vdf-temp', 100, 100);
     const { subShell } = SqlPlusSubShell.create(srv, ['/', 'as', 'sysdba']);
-    const out = sql(subShell, 'SELECT name FROM v$datafile;');
+    const out = (await sql(subShell, 'SELECT name FROM v$datafile;'));
     expect(out).not.toMatch(/temp01\.dbf/);
-    const t = sql(subShell, 'SELECT name FROM v$tempfile;');
+    const t = (await sql(subShell, 'SELECT name FROM v$tempfile;'));
     expect(t).toMatch(/temp01\.dbf/);
     subShell.dispose();
   });
 
-  it('dba_data_files COUNT matches v$datafile COUNT (cross-validation)', () => {
+  it('dba_data_files COUNT matches v$datafile COUNT (cross-validation)', async () => {
     const srv = new LinuxServer('linux-server', 'ora-cross', 100, 100);
     const { subShell } = SqlPlusSubShell.create(srv, ['/', 'as', 'sysdba']);
-    const a = sql(subShell, 'SELECT COUNT(*) FROM dba_data_files;');
-    const b = sql(subShell, 'SELECT COUNT(*) FROM v$datafile;');
+    const a = (await sql(subShell, 'SELECT COUNT(*) FROM dba_data_files;'));
+    const b = (await sql(subShell, 'SELECT COUNT(*) FROM v$datafile;'));
     const numA = Number(a.match(/\d+/g)?.pop());
     const numB = Number(b.match(/\d+/g)?.pop());
     expect(numA).toBe(numB);
@@ -75,12 +75,12 @@ describe('dba_data_files / v$datafile column set', () => {
     subShell.dispose();
   });
 
-  it('SUM(bytes)/1024/1024 returns a number, not NaN', () => {
+  it('SUM(bytes)/1024/1024 returns a number, not NaN', async () => {
     const srv = new LinuxServer('linux-server', 'ora-bytes', 100, 100);
     const { subShell } = SqlPlusSubShell.create(srv, ['/', 'as', 'sysdba']);
-    const out = sql(subShell,
+    const out = (await sql(subShell,
       'SELECT tablespace_name, SUM(bytes)/1024/1024 AS total_mb FROM dba_data_files GROUP BY tablespace_name;'
-    );
+    ));
     expect(out).not.toMatch(/NaN/);
     expect(out).toMatch(/SYSTEM\s+\d/);
     subShell.dispose();

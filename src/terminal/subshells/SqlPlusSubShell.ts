@@ -12,6 +12,11 @@ import type { SQLPlusSession } from '@/database/oracle/commands/SQLPlusSession';
 import type { HostCommandRunner } from '@/database/oracle/commands/HostCommandRunner';
 import type { OsSecurityContext } from '@/database/oracle/security/types';
 import { createSQLPlusSession, initOracleFilesystem } from '@/terminal/commands/database';
+import { createSqlPlusKernel, recognizeSqlPlusKernelVerb } from '@/database/oracle/command-kernel/createSqlPlusKernel';
+import { PipeBuffer } from '@/command-kernel/io/pipe-buffer';
+import type { CommandIO } from '@/command-kernel/io/types';
+import type { Interpreter } from '@/command-kernel/interpreter';
+import type { Session as KernelSession } from '@/command-kernel/session/types';
 
 interface SyncShellHost {
   runOracleHostCommandSync(command: string): { output: string; exitCode: number } | null;
@@ -73,10 +78,23 @@ export class SqlPlusSubShell implements ISubShell {
   readonly connection = 'subshell' as const;
   private session: SQLPlusSession;
   private prompt: string;
+  private readonly hostname: string;
+  /** Socle command-kernel (Wave 2) — construit paresseusement, lié à `this.session`. */
+  private kernel: { interpreter: Interpreter; session: KernelSession } | null = null;
 
-  private constructor(session: SQLPlusSession, prompt: string) {
+  private constructor(session: SQLPlusSession, prompt: string, hostname: string) {
     this.session = session;
     this.prompt = prompt;
+    this.hostname = hostname;
+  }
+
+  /** Construit le socle command-kernel au premier besoin (une seule fois par sous-shell). */
+  private getKernel(): { interpreter: Interpreter; session: KernelSession } {
+    if (!this.kernel) {
+      const { interpreter, session } = createSqlPlusKernel(this.session, this.hostname);
+      this.kernel = { interpreter, session };
+    }
+    return this.kernel;
   }
 
   /**
@@ -126,7 +144,7 @@ export class SqlPlusSubShell implements ISubShell {
     });
 
     return {
-      subShell: new SqlPlusSubShell(session, session.getPrompt()),
+      subShell: new SqlPlusSubShell(session, session.getPrompt(), osCtx?.hostname ?? 'localhost'),
       banner,
       loginOutput,
     };
@@ -145,7 +163,31 @@ export class SqlPlusSubShell implements ISubShell {
     return false;
   }
 
-  processLine(line: string): SubShellResult {
+  /**
+   * Single-gate pour les 6 verbes de session/réglages migrés (Wave 2,
+   * `src/database/oracle/command-kernel/`) : `SET`/`SHOW`/`HELP`/`CLEAR`/
+   * `EXIT`/`QUIT`/`DISCONNECT`/`DISC`, reconnus via `recognizeSqlPlusKernelVerb`
+   * — jamais atteints en dehors d'un tampon SQL/PL-SQL en cours
+   * (`session.isAwaitingMoreInput()`). Toute autre ligne (instructions SQL,
+   * PL/SQL, `CONNECT`, `SPOOL`, `@`/`START`…) reste portée par le legacy
+   * `SQLPlusSession.processLine` — pas encore migrée.
+   *
+   * `ISubShell.processLine` autorise `SubShellResult | Promise<SubShellResult>`
+   * (l'appelant terminal gère déjà les deux) : seule la branche kernel est
+   * async ; la branche legacy (l'immense majorité des appels — toute
+   * instruction SQL/PL-SQL, `CONNECT`, `SPOOL`, `HOST`…) reste strictement
+   * synchrone, à l'identique d'avant cette vague — aucun des ~70 fichiers de
+   * tests qui appellent `subShell.processLine(sql)` de façon synchrone n'a
+   * besoin d'être touché.
+   */
+  processLine(line: string): SubShellResult | Promise<SubShellResult> {
+    const trimmed = line.trim();
+    const recognized = this.session.isAwaitingMoreInput() ? null : recognizeSqlPlusKernelVerb(trimmed);
+
+    if (recognized) {
+      return this.processKernelVerb(recognized, line, trimmed);
+    }
+
     const result = this.session.processLine(line);
     this.prompt = result.prompt;
 
@@ -154,13 +196,39 @@ export class SqlPlusSubShell implements ISubShell {
     // and processes by subscribing to oracle.* bus events. No manual
     // post-execute sync needed.
 
-    const isClear = /^CLEAR\s+SCR/i.test(line.trim());
+    const isClear = /^CLEAR\s+SCR/i.test(trimmed);
     return {
       output: result.output,
       exit: result.exit,
       prompt: result.prompt,
       clearScreen: isClear,
     };
+  }
+
+  private async processKernelVerb(
+    recognized: { name: string; argv: string[] },
+    line: string,
+    trimmed: string,
+  ): Promise<SubShellResult> {
+    const kernel = this.getKernel();
+    const stdout = new PipeBuffer();
+    const io: CommandIO = { stdin: new PipeBuffer(), stdout, stderr: stdout };
+    const code = await kernel.interpreter.runResolved(recognized.name, recognized.argv, kernel.session, io);
+    await stdout.close();
+    if (code === null) {
+      // Ne doit jamais arriver : `recognizeSqlPlusKernelVerb` ne reconnaît
+      // que des verbes réellement enregistrés par `createSqlPlusKernel`.
+      throw new Error(`sqlplus command-kernel: verbe reconnu mais non enregistré : ${recognized.name}`);
+    }
+    const text = (await stdout.readAll()).replace(/\n$/, '');
+    const output = text ? text.split('\n') : [];
+    const prompt = this.session.getPrompt();
+    this.session.recordExternalLine(line, output, prompt);
+    this.prompt = prompt;
+
+    const exit = recognized.name === 'EXIT' || recognized.name === 'QUIT';
+    const isClear = /^CLEAR\s+SCR/i.test(trimmed);
+    return { output, exit, prompt, clearScreen: isClear };
   }
 
   getCompletions(line: string): string[] {

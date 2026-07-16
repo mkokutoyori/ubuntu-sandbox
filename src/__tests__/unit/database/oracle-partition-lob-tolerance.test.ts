@@ -26,37 +26,37 @@ function s(name: string) {
   const srv = new LinuxServer('linux-server', name, 100, 100);
   return SqlPlusSubShell.create(srv, ['/', 'as', 'sysdba']).subShell;
 }
-const run = (sh: ReturnType<typeof s>, q: string) => sh.processLine(q).output.join('\n');
+const run = async (sh: ReturnType<typeof s>, q: string) => (await sh.processLine(q)).output.join('\n');
 
 describe('CREATE TABLE … PARTITION BY …', () => {
-  it('accepts PARTITION BY RANGE with INTERVAL', () => {
+  it('accepts PARTITION BY RANGE with INTERVAL', async () => {
     const sh = s('p1');
-    const out = run(sh,
+    const out = (await run(sh,
       "CREATE TABLE hr.sales_part (id NUMBER, sale_date DATE, region VARCHAR2(50), amount NUMBER) " +
       "PARTITION BY RANGE (sale_date) INTERVAL (NUMTOYMINTERVAL(1,'MONTH')) " +
       "(PARTITION p0 VALUES LESS THAN (DATE '2023-01-01'));"
-    );
+    ));
     expect(out).toMatch(/Table created/i);
-    expect(run(sh, "SELECT table_name FROM dba_tables WHERE table_name='SALES_PART';"))
+    expect((await run(sh, "SELECT table_name FROM dba_tables WHERE table_name='SALES_PART';")))
       .toContain('SALES_PART');
     sh.dispose();
   });
 
-  it('accepts PARTITION BY LIST', () => {
+  it('accepts PARTITION BY LIST', async () => {
     const sh = s('p2');
-    const out = run(sh,
+    const out = (await run(sh,
       "CREATE TABLE hr.r (id NUMBER, region VARCHAR2(10)) " +
       "PARTITION BY LIST (region) (PARTITION p_eu VALUES ('EU'), PARTITION p_us VALUES ('US'));"
-    );
+    ));
     expect(out).toMatch(/Table created/i);
     sh.dispose();
   });
 
-  it('accepts PARTITION BY HASH (col) PARTITIONS n', () => {
+  it('accepts PARTITION BY HASH (col) PARTITIONS n', async () => {
     const sh = s('p3');
-    const out = run(sh,
+    const out = (await run(sh,
       "CREATE TABLE hr.h (id NUMBER) PARTITION BY HASH (id) PARTITIONS 4;"
-    );
+    ));
     expect(out).toMatch(/Table created/i);
     sh.dispose();
   });
@@ -65,12 +65,12 @@ describe('CREATE TABLE … PARTITION BY …', () => {
 describe('ALTER TABLE … (partition operations)', () => {
   beforeEach(() => undefined);
 
-  it('partition operations don\'t throw', () => {
+  it('partition operations don\'t throw', async () => {
     const sh = s('part-ops');
-    run(sh,
+    (await run(sh,
       "CREATE TABLE hr.sp (id NUMBER, d DATE) " +
       "PARTITION BY RANGE (d) (PARTITION p0 VALUES LESS THAN (DATE '2023-01-01'));"
-    );
+    ));
     for (const stmt of [
       'ALTER TABLE hr.sp MODIFY PARTITION p0 SHRINK SPACE;',
       "ALTER TABLE hr.sp MOVE PARTITION FOR (DATE '2024-05-15') TABLESPACE users;",
@@ -79,7 +79,7 @@ describe('ALTER TABLE … (partition operations)', () => {
       'ALTER TABLE hr.sp MERGE PARTITIONS p_old, p_new INTO PARTITION p0;',
       'ALTER TABLE hr.sp DROP PARTITION p0;',
     ]) {
-      const out = run(sh, stmt);
+      const out = (await run(sh, stmt));
       expect(out, `failed: ${stmt}`).toMatch(/Table altered/i);
     }
     sh.dispose();
@@ -87,24 +87,24 @@ describe('ALTER TABLE … (partition operations)', () => {
 });
 
 describe('CREATE TABLE … LOB (col) STORE AS …', () => {
-  it('accepts LOB storage clauses', () => {
+  it('accepts LOB storage clauses', async () => {
     const sh = s('lob1');
-    const out = run(sh,
+    const out = (await run(sh,
       "CREATE TABLE hr.with_lob (id NUMBER PRIMARY KEY, payload CLOB, photo BLOB) " +
       "LOB(payload) STORE AS SECUREFILE (TABLESPACE users COMPRESS HIGH DEDUPLICATE CACHE) " +
       "LOB(photo) STORE AS BASICFILE (TABLESPACE users);"
-    );
+    ));
     expect(out).toMatch(/Table created/i);
     sh.dispose();
   });
 
-  it('ALTER TABLE … MODIFY LOB / MOVE LOB are accepted', () => {
+  it('ALTER TABLE … MODIFY LOB / MOVE LOB are accepted', async () => {
     const sh = s('lob2');
-    run(sh,
+    (await run(sh,
       "CREATE TABLE hr.with_lob (id NUMBER, payload CLOB);"
-    );
-    expect(run(sh, 'ALTER TABLE hr.with_lob MODIFY LOB (payload) (RETENTION);')).toMatch(/Table altered/i);
-    expect(run(sh, 'ALTER TABLE hr.with_lob MOVE LOB (payload) STORE AS SECUREFILE (TABLESPACE users);')).toMatch(/Table altered/i);
+    ));
+    expect((await run(sh, 'ALTER TABLE hr.with_lob MODIFY LOB (payload) (RETENTION);'))).toMatch(/Table altered/i);
+    expect((await run(sh, 'ALTER TABLE hr.with_lob MOVE LOB (payload) STORE AS SECUREFILE (TABLESPACE users);'))).toMatch(/Table altered/i);
     sh.dispose();
   });
 });

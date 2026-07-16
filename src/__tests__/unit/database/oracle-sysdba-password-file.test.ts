@@ -40,8 +40,7 @@ function localSysdba(): SqlPlusSubShell {
   return SqlPlusSubShell.create(srv, ['/', 'as', 'sysdba']).subShell;
 }
 
-const run = (sh: SqlPlusSubShell, sql: string): string =>
-  sh.processLine(sql).output.join('\n');
+const run = async (sh: SqlPlusSubShell, sql: string): Promise<string> => (await sh.processLine(sql)).output.join('\n');
 
 /** Two-host LAN: a client and a database host on 10.0.0.0/24. */
 function lan() {
@@ -64,45 +63,45 @@ const ezSysdba = (host: string, user: string, pw: string) =>
   [`${user}/${pw}@//${host}/ORCL`, 'as', 'sysdba'];
 
 describe('V$PWFILE_USERS reflects the password file', () => {
-  it('lists SYS with SYSDBA and SYSOPER on a fresh instance', () => {
+  it('lists SYS with SYSDBA and SYSOPER on a fresh instance', async () => {
     const sh = localSysdba();
-    const out = run(sh, "SELECT username, sysdba, sysoper FROM v$pwfile_users WHERE username = 'SYS';");
+    const out = (await run(sh, "SELECT username, sysdba, sysoper FROM v$pwfile_users WHERE username = 'SYS';"));
     expect(out).toMatch(/\bSYS\b/);
     expect(out).toMatch(/TRUE/);
   });
 
-  it('SYSTEM is NOT a default password-file member', () => {
+  it('SYSTEM is NOT a default password-file member', async () => {
     const sh = localSysdba();
-    const out = run(sh, "SELECT username FROM v$pwfile_users WHERE username = 'SYSTEM';");
+    const out = (await run(sh, "SELECT username FROM v$pwfile_users WHERE username = 'SYSTEM';"));
     expect(out).not.toMatch(/\bSYSTEM\b/);
   });
 
-  it('GRANT SYSDBA adds the user to V$PWFILE_USERS but NOT to DBA_SYS_PRIVS', () => {
+  it('GRANT SYSDBA adds the user to V$PWFILE_USERS but NOT to DBA_SYS_PRIVS', async () => {
     const sh = localSysdba();
-    run(sh, 'CREATE USER bob IDENTIFIED BY "Welcome1#";');
-    expect(run(sh, 'GRANT SYSDBA TO bob;')).toMatch(/Grant succeeded/i);
+    (await run(sh, 'CREATE USER bob IDENTIFIED BY "Welcome1#";'));
+    expect((await run(sh, 'GRANT SYSDBA TO bob;'))).toMatch(/Grant succeeded/i);
 
-    const pwfile = run(sh, "SELECT username FROM v$pwfile_users WHERE username = 'BOB';");
+    const pwfile = (await run(sh, "SELECT username FROM v$pwfile_users WHERE username = 'BOB';"));
     expect(pwfile).toMatch(/\bBOB\b/);
 
-    const sysPrivs = run(sh, "SELECT privilege FROM dba_sys_privs WHERE grantee = 'BOB';");
+    const sysPrivs = (await run(sh, "SELECT privilege FROM dba_sys_privs WHERE grantee = 'BOB';"));
     expect(sysPrivs).not.toMatch(/SYSDBA/);
   });
 
-  it('REVOKE SYSDBA removes the user from the password file', () => {
+  it('REVOKE SYSDBA removes the user from the password file', async () => {
     const sh = localSysdba();
-    run(sh, 'CREATE USER carol IDENTIFIED BY "Welcome1#";');
-    run(sh, 'GRANT SYSDBA TO carol;');
-    expect(run(sh, 'REVOKE SYSDBA FROM carol;')).toMatch(/Revoke succeeded/i);
-    const pwfile = run(sh, "SELECT username FROM v$pwfile_users WHERE username = 'CAROL';");
+    (await run(sh, 'CREATE USER carol IDENTIFIED BY "Welcome1#";'));
+    (await run(sh, 'GRANT SYSDBA TO carol;'));
+    expect((await run(sh, 'REVOKE SYSDBA FROM carol;'))).toMatch(/Revoke succeeded/i);
+    const pwfile = (await run(sh, "SELECT username FROM v$pwfile_users WHERE username = 'CAROL';"));
     expect(pwfile).not.toMatch(/\bCAROL\b/);
   });
 
-  it('SYSDBA is never part of GRANT ALL PRIVILEGES', () => {
+  it('SYSDBA is never part of GRANT ALL PRIVILEGES', async () => {
     const sh = localSysdba();
-    run(sh, 'CREATE USER dave IDENTIFIED BY "Welcome1#";');
-    run(sh, 'GRANT ALL PRIVILEGES TO dave;');
-    const pwfile = run(sh, "SELECT username FROM v$pwfile_users WHERE username = 'DAVE';");
+    (await run(sh, 'CREATE USER dave IDENTIFIED BY "Welcome1#";'));
+    (await run(sh, 'GRANT ALL PRIVILEGES TO dave;'));
+    const pwfile = (await run(sh, "SELECT username FROM v$pwfile_users WHERE username = 'DAVE';"));
     expect(pwfile).not.toMatch(/\bDAVE\b/);
   });
 });
@@ -130,11 +129,11 @@ describe('remote AS SYSDBA authenticates against the password file', () => {
     r.subShell.dispose();
   });
 
-  it('a user granted SYSDBA on the remote can connect AS SYSDBA over the network', () => {
+  it('a user granted SYSDBA on the remote can connect AS SYSDBA over the network', async () => {
     const { client, dbhost } = lan();
     const admin = SqlPlusSubShell.create(dbhost, ['/', 'as', 'sysdba']).subShell;
-    run(admin, 'CREATE USER appdba IDENTIFIED BY "Strong1#";');
-    run(admin, 'GRANT SYSDBA TO appdba;');
+    (await run(admin, 'CREATE USER appdba IDENTIFIED BY "Strong1#";'));
+    (await run(admin, 'GRANT SYSDBA TO appdba;'));
     admin.dispose();
 
     const ok = SqlPlusSubShell.create(client, ezSysdba('10.0.0.2', 'appdba', 'Strong1#'));
@@ -148,25 +147,25 @@ describe('remote AS SYSDBA authenticates against the password file', () => {
 });
 
 describe('local bequeath AS SYSDBA is unaffected (OS authentication)', () => {
-  it('connects without any password regardless of the password file', () => {
+  it('connects without any password regardless of the password file', async () => {
     const sh = localSysdba();
     // A bare `/ as sysdba` is an OS-authenticated bequeath connection;
     // the session lands on SYS and can run a privileged query.
-    expect(run(sh, 'SHOW USER')).toMatch(/USER is "SYS"/i);
+    expect((await run(sh, 'SHOW USER'))).toMatch(/USER is "SYS"/i);
   });
 });
 
 describe('the LOGOFF audit record carries the session role', () => {
-  it('a SYSDBA disconnect is audited as LOGOFF with SYSTEM_PRIVILEGE_USED = SYSDBA', () => {
+  it('a SYSDBA disconnect is audited as LOGOFF with SYSTEM_PRIVILEGE_USED = SYSDBA', async () => {
     const srv = new LinuxServer('linux-server', 'orcl', 0, 0);
     // First SYSDBA session connects then disconnects (logoff trace).
     SqlPlusSubShell.create(srv, ['/', 'as', 'sysdba']).subShell.dispose();
 
     // A fresh SYSDBA session inspects the persistent audit journal.
     const sh = SqlPlusSubShell.create(srv, ['/', 'as', 'sysdba']).subShell;
-    const out = run(sh,
+    const out = (await run(sh,
       "SELECT system_privilege_used FROM unified_audit_trail " +
-      "WHERE action_name = 'LOGOFF' AND dbusername = 'SYS';");
+      "WHERE action_name = 'LOGOFF' AND dbusername = 'SYS';"));
     expect(out).toMatch(/SYSDBA/);
     expect(out).not.toMatch(/CREATE SESSION/);
   });

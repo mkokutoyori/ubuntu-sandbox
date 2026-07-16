@@ -29,14 +29,14 @@ const sh = (srv: LinuxServer, cmd: string) => srv.executeShellCommandSync(cmd);
 describe('RMAN sees the same archived logs the instance created', () => {
   it('getArchivelogPaths matches V$ARCHIVED_LOG and the VFS files', async () => {
     const { srv, sql } = bootArchivelog('arc-rman-1');
-    sql.processLine('ALTER SYSTEM SWITCH LOGFILE;');
-    sql.processLine('ALTER SYSTEM SWITCH LOGFILE;');
+    (await sql.processLine('ALTER SYSTEM SWITCH LOGFILE;'));
+    (await sql.processLine('ALTER SYSTEM SWITCH LOGFILE;'));
 
     const ctx = LinuxRmanContext.forDevice(srv);
     const rmanPaths = ctx.getArchivelogPaths();
     expect(rmanPaths.length).toBeGreaterThan(0);
 
-    const viewNames = sql.processLine('SELECT name FROM v$archived_log;').output.join('\n');
+    const viewNames = (await sql.processLine('SELECT name FROM v$archived_log;')).output.join('\n');
     for (const p of rmanPaths) {
       expect(viewNames).toContain(p);
       expect(await sh(srv, `ls ${p}`)).not.toMatch(/No such file/);
@@ -51,9 +51,9 @@ describe('RMAN sees the same archived logs the instance created', () => {
     sql.dispose();
   });
 
-  it('no phantom /u01/backup archivelog paths are reported', () => {
+  it('no phantom /u01/backup archivelog paths are reported', async () => {
     const { srv, sql } = bootArchivelog('arc-rman-3');
-    sql.processLine('ALTER SYSTEM SWITCH LOGFILE;');
+    (await sql.processLine('ALTER SYSTEM SWITCH LOGFILE;'));
     const ctx = LinuxRmanContext.forDevice(srv);
     for (const p of ctx.getArchivelogPaths()) {
       expect(p.startsWith(ARC_DIR)).toBe(true);

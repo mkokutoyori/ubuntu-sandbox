@@ -35,114 +35,114 @@ function s(name: string) {
   const srv = new LinuxServer('linux-server', name, 100, 100);
   return SqlPlusSubShell.create(srv, ['/', 'as', 'sysdba']).subShell;
 }
-const run = (sh: ReturnType<typeof s>, q: string) => sh.processLine(q).output.join('\n');
+const run = async (sh: ReturnType<typeof s>, q: string) => (await sh.processLine(q)).output.join('\n');
 
 describe('ANALYZE TABLE updates DBA_TABLES statistics', () => {
-  it('NUM_ROWS reflects the actual row count after COMPUTE STATISTICS', () => {
+  it('NUM_ROWS reflects the actual row count after COMPUTE STATISTICS', async () => {
     const sh = s('analyze');
-    run(sh, 'CREATE TABLE hr.t (id NUMBER);');
-    run(sh, 'INSERT INTO hr.t SELECT level FROM dual CONNECT BY level <= 7;');
+    (await run(sh, 'CREATE TABLE hr.t (id NUMBER);'));
+    (await run(sh, 'INSERT INTO hr.t SELECT level FROM dual CONNECT BY level <= 7;'));
     // Before ANALYZE, num_rows is NULL or stale.
-    run(sh, 'ANALYZE TABLE hr.t COMPUTE STATISTICS;');
-    const out = run(sh, "SELECT num_rows, last_analyzed FROM dba_tables WHERE owner='HR' AND table_name='T';");
+    (await run(sh, 'ANALYZE TABLE hr.t COMPUTE STATISTICS;'));
+    const out = (await run(sh, "SELECT num_rows, last_analyzed FROM dba_tables WHERE owner='HR' AND table_name='T';"));
     expect(out).toMatch(/\b7\b/);
     sh.dispose();
   });
 });
 
 describe('Recyclebin', () => {
-  it('DROP TABLE moves to recyclebin; DBA_RECYCLEBIN shows the entry', () => {
+  it('DROP TABLE moves to recyclebin; DBA_RECYCLEBIN shows the entry', async () => {
     const sh = s('rb1');
-    run(sh, 'CREATE TABLE hr.gone (id NUMBER);');
-    run(sh, 'DROP TABLE hr.gone;');
-    const out = run(sh, "SELECT original_name, type FROM dba_recyclebin WHERE owner='HR';");
+    (await run(sh, 'CREATE TABLE hr.gone (id NUMBER);'));
+    (await run(sh, 'DROP TABLE hr.gone;'));
+    const out = (await run(sh, "SELECT original_name, type FROM dba_recyclebin WHERE owner='HR';"));
     expect(out).toContain('GONE');
     expect(out).toMatch(/TABLE/);
     sh.dispose();
   });
 
-  it('DROP TABLE … PURGE skips the recyclebin', () => {
+  it('DROP TABLE … PURGE skips the recyclebin', async () => {
     const sh = s('rb2');
-    run(sh, 'CREATE TABLE hr.gone (id NUMBER);');
-    run(sh, 'DROP TABLE hr.gone PURGE;');
-    const out = run(sh, "SELECT original_name FROM dba_recyclebin WHERE owner='HR';");
+    (await run(sh, 'CREATE TABLE hr.gone (id NUMBER);'));
+    (await run(sh, 'DROP TABLE hr.gone PURGE;'));
+    const out = (await run(sh, "SELECT original_name FROM dba_recyclebin WHERE owner='HR';"));
     expect(out).not.toContain('GONE');
     sh.dispose();
   });
 
-  it('FLASHBACK TABLE … TO BEFORE DROP restores the table', () => {
+  it('FLASHBACK TABLE … TO BEFORE DROP restores the table', async () => {
     const sh = s('rb3');
-    run(sh, 'CREATE TABLE hr.back (id NUMBER);');
-    run(sh, 'DROP TABLE hr.back;');
-    expect(run(sh, "SELECT * FROM hr.back;")).toMatch(/ORA-00942/);
-    expect(run(sh, 'FLASHBACK TABLE hr.back TO BEFORE DROP;')).toMatch(/Flashback complete/i);
-    expect(run(sh, 'SELECT COUNT(*) FROM hr.back;')).not.toMatch(/ORA-/);
+    (await run(sh, 'CREATE TABLE hr.back (id NUMBER);'));
+    (await run(sh, 'DROP TABLE hr.back;'));
+    expect((await run(sh, "SELECT * FROM hr.back;"))).toMatch(/ORA-00942/);
+    expect((await run(sh, 'FLASHBACK TABLE hr.back TO BEFORE DROP;'))).toMatch(/Flashback complete/i);
+    expect((await run(sh, 'SELECT COUNT(*) FROM hr.back;'))).not.toMatch(/ORA-/);
     sh.dispose();
   });
 
-  it('PURGE RECYCLEBIN empties it', () => {
+  it('PURGE RECYCLEBIN empties it', async () => {
     const sh = s('rb4');
-    run(sh, 'CREATE TABLE hr.a (id NUMBER);');
-    run(sh, 'CREATE TABLE hr.b (id NUMBER);');
-    run(sh, 'DROP TABLE hr.a;');
-    run(sh, 'DROP TABLE hr.b;');
+    (await run(sh, 'CREATE TABLE hr.a (id NUMBER);'));
+    (await run(sh, 'CREATE TABLE hr.b (id NUMBER);'));
+    (await run(sh, 'DROP TABLE hr.a;'));
+    (await run(sh, 'DROP TABLE hr.b;'));
     // SYSDBA owns no objects here; HR does — DBA_RECYCLEBIN is the
     // correct purge target for a cross-schema clean-up.
-    run(sh, 'PURGE DBA_RECYCLEBIN;');
-    const out = run(sh, 'SELECT COUNT(*) FROM dba_recyclebin;');
+    (await run(sh, 'PURGE DBA_RECYCLEBIN;'));
+    const out = (await run(sh, 'SELECT COUNT(*) FROM dba_recyclebin;'));
     expect(out).toMatch(/\b0\b/);
     sh.dispose();
   });
 });
 
 describe('Supplemental log groups', () => {
-  it('ALTER TABLE ADD SUPPLEMENTAL LOG GROUP populates DBA_LOG_GROUPS', () => {
+  it('ALTER TABLE ADD SUPPLEMENTAL LOG GROUP populates DBA_LOG_GROUPS', async () => {
     const sh = s('sup');
-    run(sh, 'CREATE TABLE hr.t (id NUMBER, name VARCHAR2(50));');
-    run(sh, 'ALTER TABLE hr.t ADD SUPPLEMENTAL LOG GROUP emp_sg (id, name) ALWAYS;');
-    const groups = run(sh, "SELECT log_group_name, table_name FROM dba_log_groups WHERE owner='HR';");
+    (await run(sh, 'CREATE TABLE hr.t (id NUMBER, name VARCHAR2(50));'));
+    (await run(sh, 'ALTER TABLE hr.t ADD SUPPLEMENTAL LOG GROUP emp_sg (id, name) ALWAYS;'));
+    const groups = (await run(sh, "SELECT log_group_name, table_name FROM dba_log_groups WHERE owner='HR';"));
     expect(groups).toContain('EMP_SG');
     expect(groups).toContain('T');
-    const cols = run(sh, "SELECT column_name FROM dba_log_group_columns WHERE log_group_name='EMP_SG';");
+    const cols = (await run(sh, "SELECT column_name FROM dba_log_group_columns WHERE log_group_name='EMP_SG';"));
     expect(cols).toContain('ID');
     expect(cols).toContain('NAME');
     sh.dispose();
   });
 
-  it('DROP SUPPLEMENTAL LOG GROUP removes the entries', () => {
+  it('DROP SUPPLEMENTAL LOG GROUP removes the entries', async () => {
     const sh = s('sup2');
-    run(sh, 'CREATE TABLE hr.t (id NUMBER);');
-    run(sh, 'ALTER TABLE hr.t ADD SUPPLEMENTAL LOG GROUP g (id);');
-    run(sh, 'ALTER TABLE hr.t DROP SUPPLEMENTAL LOG GROUP g;');
-    expect(run(sh, "SELECT COUNT(*) FROM dba_log_groups WHERE owner='HR';"))
+    (await run(sh, 'CREATE TABLE hr.t (id NUMBER);'));
+    (await run(sh, 'ALTER TABLE hr.t ADD SUPPLEMENTAL LOG GROUP g (id);'));
+    (await run(sh, 'ALTER TABLE hr.t DROP SUPPLEMENTAL LOG GROUP g;'));
+    expect((await run(sh, "SELECT COUNT(*) FROM dba_log_groups WHERE owner='HR';")))
       .toMatch(/\b0\b/);
     sh.dispose();
   });
 });
 
 describe('Partitioning', () => {
-  it('CREATE TABLE … PARTITION BY RANGE marks PARTITIONED=YES on DBA_TABLES', () => {
+  it('CREATE TABLE … PARTITION BY RANGE marks PARTITIONED=YES on DBA_TABLES', async () => {
     const sh = s('part');
-    run(sh,
+    (await run(sh,
       "CREATE TABLE hr.sales (id NUMBER, d DATE) " +
       "PARTITION BY RANGE (d) " +
       "(PARTITION p2024 VALUES LESS THAN (DATE '2025-01-01'), " +
       " PARTITION p2025 VALUES LESS THAN (DATE '2026-01-01'));"
-    );
-    const out = run(sh, "SELECT partitioned FROM dba_tables WHERE owner='HR' AND table_name='SALES';");
+    ));
+    const out = (await run(sh, "SELECT partitioned FROM dba_tables WHERE owner='HR' AND table_name='SALES';"));
     expect(out).toContain('YES');
     sh.dispose();
   });
 
-  it('exposes one row per partition in DBA_TAB_PARTITIONS', () => {
+  it('exposes one row per partition in DBA_TAB_PARTITIONS', async () => {
     const sh = s('partlist');
-    run(sh,
+    (await run(sh,
       "CREATE TABLE hr.sales (id NUMBER, d DATE) " +
       "PARTITION BY RANGE (d) " +
       "(PARTITION p2024 VALUES LESS THAN (DATE '2025-01-01'), " +
       " PARTITION p2025 VALUES LESS THAN (DATE '2026-01-01'));"
-    );
-    const out = run(sh, "SELECT partition_name FROM dba_tab_partitions WHERE table_owner='HR' AND table_name='SALES';");
+    ));
+    const out = (await run(sh, "SELECT partition_name FROM dba_tab_partitions WHERE table_owner='HR' AND table_name='SALES';"));
     expect(out).toContain('P2024');
     expect(out).toContain('P2025');
     sh.dispose();
@@ -150,10 +150,10 @@ describe('Partitioning', () => {
 });
 
 describe('LOB columns', () => {
-  it('CREATE TABLE with CLOB/BLOB columns populates DBA_LOBS', () => {
+  it('CREATE TABLE with CLOB/BLOB columns populates DBA_LOBS', async () => {
     const sh = s('lob');
-    run(sh, 'CREATE TABLE hr.docs (id NUMBER PRIMARY KEY, body CLOB, photo BLOB);');
-    const out = run(sh, "SELECT column_name FROM dba_lobs WHERE owner='HR' AND table_name='DOCS';");
+    (await run(sh, 'CREATE TABLE hr.docs (id NUMBER PRIMARY KEY, body CLOB, photo BLOB);'));
+    const out = (await run(sh, "SELECT column_name FROM dba_lobs WHERE owner='HR' AND table_name='DOCS';"));
     expect(out).toContain('BODY');
     expect(out).toContain('PHOTO');
     sh.dispose();

@@ -51,7 +51,7 @@ describe('rm of a datafile follows the real Oracle failure ladder', () => {
     const srv = bootOracleServer('df1');
     await sh(srv, `rm ${USERS_DBF}`);
     const sql = sqlplus(srv);
-    const out = sql.processLine('SELECT COUNT(*) FROM hr.employees;').output.join('\n');
+    const out = (await sql.processLine('SELECT COUNT(*) FROM hr.employees;')).output.join('\n');
     expect(out).not.toMatch(/ORA-/);
     sql.dispose();
   });
@@ -62,8 +62,8 @@ describe('rm of a datafile follows the real Oracle failure ladder', () => {
     await sh(srv, `rm ${USERS_DBF}`);
 
     const sql = sqlplus(srv);
-    sql.processLine('SHUTDOWN IMMEDIATE');
-    sql.processLine('STARTUP'); // re-mounts → datafile sync runs again
+    (await sql.processLine('SHUTDOWN IMMEDIATE'));
+    (await sql.processLine('STARTUP')); // re-mounts → datafile sync runs again
     sql.dispose();
     expect(await sh(srv, `ls ${USERS_DBF}`)).toMatch(/No such file/);
   });
@@ -74,8 +74,8 @@ describe('rm of a datafile follows the real Oracle failure ladder', () => {
     await sh(srv, `rm ${USERS_DBF}`);
 
     const sql = sqlplus(srv);
-    sql.processLine('SHUTDOWN IMMEDIATE');
-    const out = sql.processLine('STARTUP').output.join('\n');
+    (await sql.processLine('SHUTDOWN IMMEDIATE'));
+    const out = (await sql.processLine('STARTUP')).output.join('\n');
     expect(out).toMatch(/ORA-01157: cannot identify\/lock data file 4/);
     expect(out).toMatch(/ORA-01110: data file 4: '\/u01\/app\/oracle\/oradata\/ORCL\/users01\.dbf'/);
     expect(out).toMatch(/Database mounted/);
@@ -90,24 +90,24 @@ describe('rm of a datafile follows the real Oracle failure ladder', () => {
 
     // Take a backup while everything is healthy.
     const rman1 = ReactiveRmanSubShell.create(srv, ['target', '/']);
-    rman1.subShell.processLine('backup database;');
+    (await rman1.subShell.processLine('backup database;'));
     rman1.subShell.dispose();
 
     // Lose the datafile, restart: stuck at MOUNT.
     await sh(srv, `rm ${USERS_DBF}`);
     const sql = sqlplus(srv);
-    sql.processLine('SHUTDOWN IMMEDIATE');
-    sql.processLine('STARTUP');
+    (await sql.processLine('SHUTDOWN IMMEDIATE'));
+    (await sql.processLine('STARTUP'));
     expect(db.instance.state).toBe('MOUNT');
 
     // Standard recovery: restore the lost file from the backup.
     const rman2 = ReactiveRmanSubShell.create(srv, ['target', '/']);
-    const restoreOut = rman2.subShell.processLine('restore datafile 4;').output.join('\n');
+    const restoreOut = (await rman2.subShell.processLine('restore datafile 4;')).output.join('\n');
     expect(restoreOut).not.toMatch(/RMAN-06023/);
     rman2.subShell.dispose();
     expect(await sh(srv, `ls ${USERS_DBF}`)).toContain('users01.dbf');
 
-    const openOut = sql.processLine('ALTER DATABASE OPEN;').output.join('\n');
+    const openOut = (await sql.processLine('ALTER DATABASE OPEN;')).output.join('\n');
     expect(openOut).not.toMatch(/ORA-01157/);
     expect(db.instance.state).toBe('OPEN');
     sql.dispose();

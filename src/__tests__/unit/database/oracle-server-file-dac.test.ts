@@ -36,10 +36,10 @@ function boot(name: string): LinuxServer {
   return srv;
 }
 
-function sql(srv: LinuxServer, lines: string[]): string {
+async function sql(srv: LinuxServer, lines: string[]): Promise<string> {
   const s = SqlPlusSubShell.create(srv, ['/', 'as', 'sysdba']).subShell;
   let out = '';
-  for (const line of lines) out += s.processLine(line).output.join('\n') + '\n';
+  for (const line of lines) out += (await s.processLine(line)).output.join('\n') + '\n';
   s.dispose();
   return out;
 }
@@ -47,14 +47,14 @@ function sql(srv: LinuxServer, lines: string[]): string {
 describe('Oracle server-side file I/O under host DAC', () => {
   it('a file written by UTL_FILE is owned by the oracle OS user and visible to cat', async () => {
     const srv = boot('dac-1');
-    sql(srv, [
+    (await sql(srv, [
       "CREATE DIRECTORY home_dir AS '/home/oracle';",
       `DECLARE f UTL_FILE.FILE_TYPE; BEGIN
          f := UTL_FILE.FOPEN('HOME_DIR', 'report.txt', 'W');
          UTL_FILE.PUT_LINE(f, 'written-by-oracle');
          UTL_FILE.FCLOSE(f);
        END;`,
-    ]);
+    ]));
     // The OS shell sees exactly what PL/SQL wrote …
     expect(await sh(srv, 'cat /home/oracle/report.txt')).toContain('written-by-oracle');
     // … owned by the oracle user, not by whoever ran the SQL.
@@ -69,7 +69,7 @@ describe('Oracle server-side file I/O under host DAC', () => {
     await sh(srv, 'echo top-secret > /home/oracle/files/secret.txt');
     await sh(srv, 'chmod 600 /home/oracle/files/secret.txt');
 
-    const out = sql(srv, [
+    const out = (await sql(srv, [
       'SET SERVEROUTPUT ON',
       "CREATE DIRECTORY files_dir AS '/home/oracle/files';",
       // Readable file → content surfaces.
@@ -85,7 +85,7 @@ describe('Oracle server-side file I/O under host DAC', () => {
          DBMS_OUTPUT.PUT_LINE('LEAKED:' || l);
        EXCEPTION WHEN OTHERS THEN DBMS_OUTPUT.PUT_LINE('DENIED');
        END;`,
-    ]);
+    ]));
 
     expect(out).toContain('READ_OK:public-data');
     expect(out).toContain('DENIED');
@@ -95,7 +95,7 @@ describe('Oracle server-side file I/O under host DAC', () => {
   it('UTL_FILE write into a directory not writable by oracle fails', async () => {
     const srv = boot('dac-3');
     // /root is mode 0700 owned by root — oracle cannot create files there.
-    const out = sql(srv, [
+    const out = (await sql(srv, [
       'SET SERVEROUTPUT ON',
       "CREATE DIRECTORY root_dir AS '/root';",
       `BEGIN
@@ -107,7 +107,7 @@ describe('Oracle server-side file I/O under host DAC', () => {
          EXCEPTION WHEN OTHERS THEN DBMS_OUTPUT.PUT_LINE('WRITE_DENIED');
          END;
        END;`,
-    ]);
+    ]));
     expect(out).toContain('WRITE_DENIED');
     expect(await sh(srv, 'cat /root/x.txt')).not.toContain('should-not-land');
   });

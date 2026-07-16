@@ -36,56 +36,56 @@ function boot(name: string): LinuxServer {
   return srv;
 }
 
-function sql(srv: LinuxServer, lines: string[]): string {
+async function sql(srv: LinuxServer, lines: string[]): Promise<string> {
   const s = SqlPlusSubShell.create(srv, ['/', 'as', 'sysdba']).subShell;
   let out = '';
-  for (const line of lines) out += s.processLine(line).output.join('\n') + '\n';
+  for (const line of lines) out += (await s.processLine(line)).output.join('\n') + '\n';
   s.dispose();
   return out;
 }
 
 describe('DBMS_SCHEDULER STORED_PROCEDURE jobs', () => {
-  it('invokes the named procedure and persists its side effects', () => {
+  it('invokes the named procedure and persists its side effects', async () => {
     const srv = boot('sched-sp-1');
-    sql(srv, [
+    (await sql(srv, [
       'CREATE TABLE sp_audit (note VARCHAR2(40));',
       'CREATE OR REPLACE PROCEDURE log_run AS BEGIN '
         + "INSERT INTO sp_audit VALUES ('job-fired'); END;",
       "EXEC DBMS_SCHEDULER.CREATE_JOB('SP_JOB', 'STORED_PROCEDURE', 'LOG_RUN');",
       "EXEC DBMS_SCHEDULER.RUN_JOB('SP_JOB');",
-    ]);
+    ]));
 
-    const run = sql(srv, [
+    const run = (await sql(srv, [
       "SELECT STATUS FROM DBA_SCHEDULER_JOB_RUN_DETAILS WHERE JOB_NAME='SP_JOB';",
-    ]);
+    ]));
     expect(run).toMatch(/SUCCEEDED/);
     expect(run).not.toMatch(/FAILED/);
 
-    const rows = sql(srv, ['SELECT note FROM sp_audit;']);
+    const rows = (await sql(srv, ['SELECT note FROM sp_audit;']));
     expect(rows).toMatch(/job-fired/);
   });
 
-  it('records the real job_type in DBA_SCHEDULER_JOBS (not miscast to PLSQL_BLOCK)', () => {
+  it('records the real job_type in DBA_SCHEDULER_JOBS (not miscast to PLSQL_BLOCK)', async () => {
     const srv = boot('sched-sp-2');
-    sql(srv, [
+    (await sql(srv, [
       'CREATE OR REPLACE PROCEDURE noop_proc AS BEGIN NULL; END;',
       "EXEC DBMS_SCHEDULER.CREATE_JOB('TYPED_JOB', 'STORED_PROCEDURE', 'NOOP_PROC');",
-    ]);
-    const out = sql(srv, [
+    ]));
+    const out = (await sql(srv, [
       "SELECT JOB_TYPE FROM DBA_SCHEDULER_JOBS WHERE JOB_NAME='TYPED_JOB';",
-    ]);
+    ]));
     expect(out).toMatch(/STORED_PROCEDURE/);
   });
 
-  it('a missing procedure makes the run FAIL with a PL/SQL error', () => {
+  it('a missing procedure makes the run FAIL with a PL/SQL error', async () => {
     const srv = boot('sched-sp-3');
-    sql(srv, [
+    (await sql(srv, [
       "EXEC DBMS_SCHEDULER.CREATE_JOB('GHOST_JOB', 'STORED_PROCEDURE', 'NO_SUCH_PROC');",
       "EXEC DBMS_SCHEDULER.RUN_JOB('GHOST_JOB');",
-    ]);
-    const out = sql(srv, [
+    ]));
+    const out = (await sql(srv, [
       "SELECT STATUS FROM DBA_SCHEDULER_JOB_RUN_DETAILS WHERE JOB_NAME='GHOST_JOB';",
-    ]);
+    ]));
     expect(out).toMatch(/FAILED/);
   });
 });

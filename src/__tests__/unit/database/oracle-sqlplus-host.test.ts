@@ -24,50 +24,50 @@ beforeEach(() => {
 });
 
 describe('SQL*Plus HOST command', () => {
-  it('falls back to SP2-0734 when no runner is wired', () => {
+  it('falls back to SP2-0734 when no runner is wired', async () => {
     const session = new SQLPlusSession(new OracleDatabase());
     session.login('SYS', '', true);
-    const result = session.processLine('HOST ls /');
+    const result = (await session.processLine('HOST ls /'));
     expect(result.output.join('\n')).toContain('SP2-0734');
   });
 
-  it('executes a real shell command on the LinuxServer via SqlPlusSubShell', () => {
+  it('executes a real shell command on the LinuxServer via SqlPlusSubShell', async () => {
     const srv = new LinuxServer('linux-server', 'ora-host', 100, 100);
     const { subShell } = SqlPlusSubShell.create(srv, ['/', 'as', 'sysdba']);
-    const out = subShell.processLine(`HOST ls ${ORACLE_CONFIG.ORADATA}`).output.join('\n');
+    const out = (await subShell.processLine(`HOST ls ${ORACLE_CONFIG.ORADATA}`)).output.join('\n');
     expect(out).toContain('system01.dbf');
     expect(out).toContain('control01.ctl');
     expect(out).toContain('redo01.log');
     subShell.dispose();
   });
 
-  it('supports the `!` alias for HOST', () => {
+  it('supports the `!` alias for HOST', async () => {
     const srv = new LinuxServer('linux-server', 'ora-host-bang', 100, 100);
     const { subShell } = SqlPlusSubShell.create(srv, ['/', 'as', 'sysdba']);
-    const out = subShell.processLine(`!ls ${ORACLE_CONFIG.ORADATA}`).output.join('\n');
+    const out = (await subShell.processLine(`!ls ${ORACLE_CONFIG.ORADATA}`)).output.join('\n');
     expect(out).toContain('system01.dbf');
     subShell.dispose();
   });
 
-  it('every datafile from v$datafile is reachable via HOST ls', () => {
+  it('every datafile from v$datafile is reachable via HOST ls', async () => {
     const srv = new LinuxServer('linux-server', 'ora-host-cross', 100, 100);
     const { subShell } = SqlPlusSubShell.create(srv, ['/', 'as', 'sysdba']);
     // Datafiles are listed via the view…
-    const dfList = subShell.processLine('SELECT name FROM v$datafile;').output.join('\n');
+    const dfList = (await subShell.processLine('SELECT name FROM v$datafile;')).output.join('\n');
     const paths = Array.from(dfList.matchAll(/(\/\S+\.dbf)/g)).map(m => m[1]);
     expect(paths.length).toBeGreaterThan(0);
     // …and must each be visible on the host filesystem.
     for (const p of paths) {
-      const lsOut = subShell.processLine(`HOST ls ${p}`).output.join('\n');
+      const lsOut = (await subShell.processLine(`HOST ls ${p}`)).output.join('\n');
       expect(lsOut).toContain(p.split('/').pop()!);
     }
     subShell.dispose();
   });
 
-  it('reports an empty HOST command without crashing', () => {
+  it('reports an empty HOST command without crashing', async () => {
     const srv = new LinuxServer('linux-server', 'ora-host-empty', 100, 100);
     const { subShell } = SqlPlusSubShell.create(srv, ['/', 'as', 'sysdba']);
-    const result = subShell.processLine('HOST');
+    const result = (await subShell.processLine('HOST'));
     expect(result.output.join('\n')).toMatch(/SP2-/);
     subShell.dispose();
   });

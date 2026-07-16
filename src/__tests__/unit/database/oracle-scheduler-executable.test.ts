@@ -21,59 +21,59 @@ function boot(name: string): LinuxServer {
   return srv;
 }
 
-function sql(srv: LinuxServer, lines: string[]): string {
+async function sql(srv: LinuxServer, lines: string[]): Promise<string> {
   const s = SqlPlusSubShell.create(srv, ['/', 'as', 'sysdba']).subShell;
   let out = '';
-  for (const line of lines) out += s.processLine(line).output.join('\n') + '\n';
+  for (const line of lines) out += (await s.processLine(line)).output.join('\n') + '\n';
   s.dispose();
   return out;
 }
 
 describe('DBMS_SCHEDULER EXECUTABLE jobs run on the host', () => {
-  it('runs a host command and captures its output as SUCCEEDED', () => {
+  it('runs a host command and captures its output as SUCCEEDED', async () => {
     const srv = boot('sched-1');
-    sql(srv, [
+    (await sql(srv, [
       "EXEC DBMS_SCHEDULER.CREATE_JOB('ECHO_JOB', 'EXECUTABLE', 'echo scheduler-ran');",
       "EXEC DBMS_SCHEDULER.RUN_JOB('ECHO_JOB');",
-    ]);
-    const out = sql(srv, [
+    ]));
+    const out = (await sql(srv, [
       "SELECT STATUS, OUTPUT FROM DBA_SCHEDULER_JOB_RUN_DETAILS WHERE JOB_NAME='ECHO_JOB';",
-    ]);
+    ]));
     expect(out).toMatch(/SUCCEEDED/);
     expect(out).toMatch(/scheduler-ran/);
   });
 
-  it('a failing command yields STATUS FAILED with ORA-27369', () => {
+  it('a failing command yields STATUS FAILED with ORA-27369', async () => {
     const srv = boot('sched-2');
-    sql(srv, [
+    (await sql(srv, [
       "EXEC DBMS_SCHEDULER.CREATE_JOB('BAD_JOB', 'EXECUTABLE', 'no_such_command_xyz');",
       "EXEC DBMS_SCHEDULER.RUN_JOB('BAD_JOB');",
-    ]);
-    const out = sql(srv, [
+    ]));
+    const out = (await sql(srv, [
       "SELECT STATUS, ERROR# FROM DBA_SCHEDULER_JOB_RUN_DETAILS WHERE JOB_NAME='BAD_JOB';",
-    ]);
+    ]));
     expect(out).toMatch(/FAILED/);
     expect(out).toMatch(/27369/);
   });
 
   it('the job really executes on the host (file it writes is visible to cat)', async () => {
     const srv = boot('sched-3');
-    sql(srv, [
+    (await sql(srv, [
       "EXEC DBMS_SCHEDULER.CREATE_JOB('WRITE_JOB', 'EXECUTABLE', 'echo from-the-job > /tmp/sched.out');",
       "EXEC DBMS_SCHEDULER.RUN_JOB('WRITE_JOB');",
-    ]);
+    ]));
     expect(await sh(srv, 'cat /tmp/sched.out')).toContain('from-the-job');
   });
 
-  it('a PLSQL_BLOCK job still runs as SQL, not on the host', () => {
+  it('a PLSQL_BLOCK job still runs as SQL, not on the host', async () => {
     const srv = boot('sched-4');
-    sql(srv, [
+    (await sql(srv, [
       "EXEC DBMS_SCHEDULER.CREATE_JOB('PL_JOB', 'PLSQL_BLOCK', 'BEGIN NULL; END;');",
       "EXEC DBMS_SCHEDULER.RUN_JOB('PL_JOB');",
-    ]);
-    const out = sql(srv, [
+    ]));
+    const out = (await sql(srv, [
       "SELECT STATUS FROM DBA_SCHEDULER_JOB_RUN_DETAILS WHERE JOB_NAME='PL_JOB';",
-    ]);
+    ]));
     expect(out).toMatch(/SUCCEEDED/);
   });
 });

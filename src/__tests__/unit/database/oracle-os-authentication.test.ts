@@ -125,24 +125,24 @@ describe('terminal — bequeath authentication follows the real shell user', () 
     expect(granted.loginOutput.join('\n')).toContain('Connected.');
 
     // The session carries the real OS identity into V$SESSION.
-    const osusers = granted.subShell
-      .processLine("SELECT osuser FROM v$session;").output.join('\n');
+    const osusers = (await granted.subShell
+      .processLine("SELECT osuser FROM v$session;")).output.join('\n');
     expect(osusers).toContain('eve');
     granted.subShell.dispose();
   });
 
-  it('password logins also audit the real OS user', () => {
+  it('password logins also audit the real OS user', async () => {
     const srv = makeServer('dbsrv4');
     const boot = SqlPlusSubShell.create(srv, ['/', 'as', 'sysdba']);
-    boot.subShell.processLine('CREATE USER appuser IDENTIFIED BY secret;');
-    boot.subShell.processLine('GRANT CREATE SESSION TO appuser;');
+    (await boot.subShell.processLine('CREATE USER appuser IDENTIFIED BY secret;'));
+    (await boot.subShell.processLine('GRANT CREATE SESSION TO appuser;'));
     boot.subShell.dispose();
 
     const app = SqlPlusSubShell.create(srv, ['appuser/secret']);
     expect(app.loginOutput.join('\n')).toContain('Connected.');
     app.subShell.dispose();
 
-    const audit = SqlPlusSubShell.create(srv, ['/', 'as', 'sysdba']).subShell
+    const audit = await SqlPlusSubShell.create(srv, ['/', 'as', 'sysdba']).subShell
       .processLine("SELECT os_username, username FROM dba_audit_trail WHERE action_name = 'LOGON' AND username = 'APPUSER';");
     // Engine-level default would have been 'oracle'; the shell user is root.
     expect(audit.output.join('\n')).toMatch(/root/i);

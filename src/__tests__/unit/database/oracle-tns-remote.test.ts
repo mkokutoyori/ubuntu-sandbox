@@ -29,7 +29,7 @@ beforeEach(() => {
   Logger.reset();
 });
 
-function lan() {
+async function lan() {
   const client = new LinuxServer('linux-server', 'dbclient', 0, 0);
   const dbhost = new LinuxServer('linux-server', 'dbhost', 0, 0);
   const sw = new GenericSwitch('switch-generic', 'sw1', 8, 0, 0);
@@ -44,9 +44,9 @@ function lan() {
   // Plant a marker table on the REMOTE database so a successful remote
   // connection is distinguishable from silently landing on local.
   const boot = SqlPlusSubShell.create(dbhost, ['/', 'as', 'sysdba']);
-  boot.subShell.processLine('CREATE TABLE system.remote_marker (city VARCHAR2(30));');
-  boot.subShell.processLine("INSERT INTO system.remote_marker VALUES ('YAOUNDE');");
-  boot.subShell.processLine('COMMIT;');
+  (await boot.subShell.processLine('CREATE TABLE system.remote_marker (city VARCHAR2(30));'));
+  (await boot.subShell.processLine("INSERT INTO system.remote_marker VALUES ('YAOUNDE');"));
+  (await boot.subShell.processLine('COMMIT;'));
   boot.subShell.dispose();
   return { client, dbhost };
 }
@@ -58,32 +58,32 @@ const tnsping = (dev: LinuxServer, target: string): string => {
 };
 
 describe('sqlplus over EZConnect reaches the remote database', () => {
-  it('user/pass@//ip/service binds the session to the remote instance', () => {
-    const { client } = lan();
+  it('user/pass@//ip/service binds the session to the remote instance', async () => {
+    const { client } = (await lan());
     const r = SqlPlusSubShell.create(client, ['system/oracle@//10.0.0.2/ORCL']);
     expect(r.loginOutput.join('\n')).toContain('Connected.');
-    const rows = r.subShell.processLine('SELECT city FROM system.remote_marker;');
+    const rows = (await r.subShell.processLine('SELECT city FROM system.remote_marker;'));
     expect(rows.output.join('\n')).toContain('YAOUNDE');
     r.subShell.dispose();
   });
 
-  it('a plain local connection does NOT see the remote marker', () => {
-    const { client } = lan();
+  it('a plain local connection does NOT see the remote marker', async () => {
+    const { client } = (await lan());
     const r = SqlPlusSubShell.create(client, ['/', 'as', 'sysdba']);
-    const rows = r.subShell.processLine('SELECT city FROM system.remote_marker;');
+    const rows = (await r.subShell.processLine('SELECT city FROM system.remote_marker;'));
     expect(rows.output.join('\n')).toMatch(/ORA-00942/);
     r.subShell.dispose();
   });
 
-  it('wrong service name → ORA-12514 from the remote listener', () => {
-    const { client } = lan();
+  it('wrong service name → ORA-12514 from the remote listener', async () => {
+    const { client } = (await lan());
     const r = SqlPlusSubShell.create(client, ['system/oracle@//10.0.0.2/NOPE']);
     expect(r.loginOutput.join('\n')).toMatch(/ORA-12514/);
     r.subShell.dispose();
   });
 
-  it('remote listener stopped → ORA-12541; restart → connects again', () => {
-    const { client, dbhost } = lan();
+  it('remote listener stopped → ORA-12541; restart → connects again', async () => {
+    const { client, dbhost } = (await lan());
     handleLsnrctl(dbhost, ['stop'], () => {});
     const refused = SqlPlusSubShell.create(client, ['system/oracle@//10.0.0.2/ORCL']);
     expect(refused.loginOutput.join('\n')).toMatch(/ORA-12541/);
@@ -95,8 +95,8 @@ describe('sqlplus over EZConnect reaches the remote database', () => {
     ok.subShell.dispose();
   });
 
-  it('unknown host → ORA-12545', () => {
-    const { client } = lan();
+  it('unknown host → ORA-12545', async () => {
+    const { client } = (await lan());
     const r = SqlPlusSubShell.create(client, ['system/oracle@//10.0.0.99/ORCL']);
     expect(r.loginOutput.join('\n')).toMatch(/ORA-12545/);
     r.subShell.dispose();
@@ -104,8 +104,8 @@ describe('sqlplus over EZConnect reaches the remote database', () => {
 });
 
 describe('tnsnames.ora aliases are really consulted', () => {
-  it('an alias added to the client tnsnames.ora resolves to the remote host', () => {
-    const { client } = lan();
+  it('an alias added to the client tnsnames.ora resolves to the remote host', async () => {
+    const { client } = (await lan());
     // First sqlplus provisions the Oracle home (and tnsnames.ora).
     SqlPlusSubShell.create(client, ['/', 'as', 'sysdba']).subShell.dispose();
     const path = '/u01/app/oracle/product/19c/dbhome_1/network/admin/tnsnames.ora';
@@ -119,13 +119,13 @@ REMOTEDB =
 `);
     const r = SqlPlusSubShell.create(client, ['system/oracle@REMOTEDB']);
     expect(r.loginOutput.join('\n')).toContain('Connected.');
-    const rows = r.subShell.processLine('SELECT city FROM system.remote_marker;');
+    const rows = (await r.subShell.processLine('SELECT city FROM system.remote_marker;'));
     expect(rows.output.join('\n')).toContain('YAOUNDE');
     r.subShell.dispose();
   });
 
-  it('an alias absent from tnsnames.ora → ORA-12154', () => {
-    const { client } = lan();
+  it('an alias absent from tnsnames.ora → ORA-12154', async () => {
+    const { client } = (await lan());
     const r = SqlPlusSubShell.create(client, ['system/oracle@GHOSTDB']);
     expect(r.loginOutput.join('\n')).toMatch(/ORA-12154/);
     r.subShell.dispose();
@@ -133,25 +133,25 @@ REMOTEDB =
 });
 
 describe('in-session CONNECT and tnsping follow the same client', () => {
-  it('CONNECT user/pass@//ip/service re-binds the live session remotely', () => {
-    const { client } = lan();
+  it('CONNECT user/pass@//ip/service re-binds the live session remotely', async () => {
+    const { client } = (await lan());
     const r = SqlPlusSubShell.create(client, ['/', 'as', 'sysdba']);
-    const conn = r.subShell.processLine('CONNECT system/oracle@//10.0.0.2/ORCL');
+    const conn = (await r.subShell.processLine('CONNECT system/oracle@//10.0.0.2/ORCL'));
     expect(conn.output.join('\n')).toContain('Connected.');
-    const rows = r.subShell.processLine('SELECT city FROM system.remote_marker;');
+    const rows = (await r.subShell.processLine('SELECT city FROM system.remote_marker;'));
     expect(rows.output.join('\n')).toContain('YAOUNDE');
     r.subShell.dispose();
   });
 
-  it('tnsping reflects the remote listener state', () => {
-    const { client, dbhost } = lan();
+  it('tnsping reflects the remote listener state', async () => {
+    const { client, dbhost } = (await lan());
     expect(tnsping(client, '//10.0.0.2:1521/ORCL')).toMatch(/OK \(\d+ msec\)/);
     handleLsnrctl(dbhost, ['stop'], () => {});
     expect(tnsping(client, '//10.0.0.2:1521/ORCL')).toMatch(/TNS-12541/);
   });
 
-  it('tnsping an unknown host fails, the local alias still answers OK', () => {
-    const { client } = lan();
+  it('tnsping an unknown host fails, the local alias still answers OK', async () => {
+    const { client } = (await lan());
     expect(tnsping(client, '//10.0.0.77/ORCL')).toMatch(/TNS-12541/);
     expect(tnsping(client, 'ORCL')).toMatch(/OK \(\d+ msec\)/);
   });
@@ -162,19 +162,19 @@ describe('queries cross database links (SELECT … FROM t@link)', () => {
     return SqlPlusSubShell.create(client, ['/', 'as', 'sysdba']).subShell;
   }
 
-  it('a link with EZConnect USING reaches the remote rows', () => {
-    const { client } = lan();
+  it('a link with EZConnect USING reaches the remote rows', async () => {
+    const { client } = (await lan());
     const sh = localSysdba(client);
-    sh.processLine("CREATE DATABASE LINK farlink CONNECT TO system IDENTIFIED BY oracle USING '//10.0.0.2/ORCL';");
-    const rows = sh.processLine('SELECT city FROM remote_marker@farlink;');
+    (await sh.processLine("CREATE DATABASE LINK farlink CONNECT TO system IDENTIFIED BY oracle USING '//10.0.0.2/ORCL';"));
+    const rows = (await sh.processLine('SELECT city FROM remote_marker@farlink;'));
     expect(rows.output.join('\n')).toContain('YAOUNDE');
     // The local database genuinely has no such table.
-    expect(sh.processLine('SELECT city FROM remote_marker;').output.join('\n')).toMatch(/ORA-00942/);
+    expect((await sh.processLine('SELECT city FROM remote_marker;')).output.join('\n')).toMatch(/ORA-00942/);
     sh.dispose();
   });
 
-  it('a link whose USING is a tnsnames alias resolves through the file', () => {
-    const { client } = lan();
+  it('a link whose USING is a tnsnames alias resolves through the file', async () => {
+    const { client } = (await lan());
     const sh = localSysdba(client);
     const path = '/u01/app/oracle/product/19c/dbhome_1/network/admin/tnsnames.ora';
     const existing = client.readFileForEditor(path) ?? '';
@@ -185,90 +185,90 @@ FARDB =
     (CONNECT_DATA = (SERVICE_NAME = ORCL))
   )
 `);
-    sh.processLine("CREATE DATABASE LINK aliaslink CONNECT TO system IDENTIFIED BY oracle USING 'FARDB';");
-    const rows = sh.processLine('SELECT city FROM remote_marker@aliaslink;');
+    (await sh.processLine("CREATE DATABASE LINK aliaslink CONNECT TO system IDENTIFIED BY oracle USING 'FARDB';"));
+    const rows = (await sh.processLine('SELECT city FROM remote_marker@aliaslink;'));
     expect(rows.output.join('\n')).toContain('YAOUNDE');
     sh.dispose();
   });
 
-  it('an undefined link raises ORA-02019', () => {
-    const { client } = lan();
+  it('an undefined link raises ORA-02019', async () => {
+    const { client } = (await lan());
     const sh = localSysdba(client);
-    expect(sh.processLine('SELECT * FROM remote_marker@ghostlink;').output.join('\n'))
+    expect((await sh.processLine('SELECT * FROM remote_marker@ghostlink;')).output.join('\n'))
       .toMatch(/ORA-02019/);
     sh.dispose();
   });
 
-  it('bad link credentials surface the remote ORA-01017', () => {
-    const { client } = lan();
+  it('bad link credentials surface the remote ORA-01017', async () => {
+    const { client } = (await lan());
     const sh = localSysdba(client);
-    sh.processLine("CREATE DATABASE LINK badlink CONNECT TO system IDENTIFIED BY wrong USING '//10.0.0.2/ORCL';");
-    expect(sh.processLine('SELECT * FROM remote_marker@badlink;').output.join('\n'))
+    (await sh.processLine("CREATE DATABASE LINK badlink CONNECT TO system IDENTIFIED BY wrong USING '//10.0.0.2/ORCL';"));
+    expect((await sh.processLine('SELECT * FROM remote_marker@badlink;')).output.join('\n'))
       .toMatch(/ORA-01017/);
     sh.dispose();
   });
 
-  it('remote listener down → the link query fails with ORA-12541', () => {
-    const { client, dbhost } = lan();
+  it('remote listener down → the link query fails with ORA-12541', async () => {
+    const { client, dbhost } = (await lan());
     const sh = localSysdba(client);
-    sh.processLine("CREATE DATABASE LINK farlink CONNECT TO system IDENTIFIED BY oracle USING '//10.0.0.2/ORCL';");
+    (await sh.processLine("CREATE DATABASE LINK farlink CONNECT TO system IDENTIFIED BY oracle USING '//10.0.0.2/ORCL';"));
     handleLsnrctl(dbhost, ['stop'], () => {});
-    expect(sh.processLine('SELECT * FROM remote_marker@farlink;').output.join('\n'))
+    expect((await sh.processLine('SELECT * FROM remote_marker@farlink;')).output.join('\n'))
       .toMatch(/ORA-12541/);
     sh.dispose();
   });
 });
 
 describe('DML across database links settles with the local transaction', () => {
-  function linked(client: import('@/network/devices/LinuxServer').LinuxServer) {
+  async function linked(client: import('@/network/devices/LinuxServer').LinuxServer) {
     const sh = SqlPlusSubShell.create(client, ['/', 'as', 'sysdba']).subShell;
-    sh.processLine("CREATE DATABASE LINK dmllink CONNECT TO system IDENTIFIED BY oracle USING '//10.0.0.2/ORCL';");
+    (await sh.processLine("CREATE DATABASE LINK dmllink CONNECT TO system IDENTIFIED BY oracle USING '//10.0.0.2/ORCL';"));
     return sh;
   }
-  const remoteRows = (dbhost: import('@/network/devices/LinuxServer').LinuxServer) => {
+  const remoteRows = async (dbhost: import('@/network/devices/LinuxServer').LinuxServer) => {
     const sh = SqlPlusSubShell.create(dbhost, ['/', 'as', 'sysdba']).subShell;
-    const out = sh.processLine('SELECT city FROM system.remote_marker ORDER BY city;').output.join('\n');
+    const out = (await sh.processLine('SELECT city FROM system.remote_marker ORDER BY city;')).output.join('\n');
     sh.dispose();
     return out;
   };
 
-  it('INSERT @link then COMMIT lands on the remote database', () => {
-    const { client, dbhost } = lan();
-    const sh = linked(client);
-    expect(sh.processLine("INSERT INTO remote_marker@dmllink VALUES ('DOUALA');").output.join('\n'))
+  it('INSERT @link then COMMIT lands on the remote database', async () => {
+    const { client, dbhost } = (await lan());
+    const sh = (await linked(client));
+    expect((await sh.processLine("INSERT INTO remote_marker@dmllink VALUES ('DOUALA');")).output.join('\n'))
       .toMatch(/1 row created/);
-    sh.processLine('COMMIT;');
+    (await sh.processLine('COMMIT;'));
     sh.dispose();
-    expect(remoteRows(dbhost)).toContain('DOUALA');
+    expect((await remoteRows(dbhost))).toContain('DOUALA');
   });
 
-  it('UPDATE and DELETE @link work with WHERE clauses', () => {
-    const { client, dbhost } = lan();
-    const sh = linked(client);
-    sh.processLine("INSERT INTO remote_marker@dmllink VALUES ('GAROUA');");
-    sh.processLine("UPDATE remote_marker@dmllink SET city = 'MAROUA' WHERE city = 'GAROUA';");
-    sh.processLine("DELETE FROM remote_marker@dmllink WHERE city = 'YAOUNDE';");
-    sh.processLine('COMMIT;');
+  it('UPDATE and DELETE @link work with WHERE clauses', async () => {
+    const { client, dbhost } = (await lan());
+    const sh = (await linked(client));
+    (await sh.processLine("INSERT INTO remote_marker@dmllink VALUES ('GAROUA');"));
+    (await sh.processLine("UPDATE remote_marker@dmllink SET city = 'MAROUA' WHERE city = 'GAROUA';"));
+    (await sh.processLine("DELETE FROM remote_marker@dmllink WHERE city = 'YAOUNDE';"));
+    (await sh.processLine('COMMIT;'));
     sh.dispose();
-    const out = remoteRows(dbhost);
+    const out = (await remoteRows(dbhost));
     expect(out).toContain('MAROUA');
     expect(out).not.toContain('GAROUA');
     expect(out).not.toContain('YAOUNDE');
   });
 
-  it('ROLLBACK undoes the remote change', () => {
-    const { client, dbhost } = lan();
-    const sh = linked(client);
-    sh.processLine("INSERT INTO remote_marker@dmllink VALUES ('BAFOUSSAM');");
-    sh.processLine('ROLLBACK;');
+  it('ROLLBACK undoes the remote change', async () => {
+    const { client, dbhost } = (await lan());
+    const sh = (await linked(client));
+    (await sh.processLine("INSERT INTO remote_marker@dmllink VALUES ('BAFOUSSAM');"));
+    (await sh.processLine('ROLLBACK;'));
     sh.dispose();
-    expect(remoteRows(dbhost)).not.toContain('BAFOUSSAM');
+    expect((await remoteRows(dbhost))).not.toContain('BAFOUSSAM');
   });
 
-  it('DML through an undefined link raises ORA-02019', () => {
-    const { client } = lan();
+  it('DML through an undefined link raises ORA-02019', async () => {
+    const { client } = (await lan());
     const sh = SqlPlusSubShell.create(client, ['/', 'as', 'sysdba']).subShell;
-    expect(sh.processLine("INSERT INTO remote_marker@nolink VALUES ('X');").output.join('\n'))
+    expect((await sh.processLine("INSERT INTO remote_marker@nolink VALUES ('X');")).output.join('\n'))
       .toMatch(/ORA-02019/);
     sh.dispose();
   });
@@ -276,7 +276,7 @@ describe('DML across database links settles with the local transaction', () => {
 
 describe('remote connections honour the host firewall (iptables)', () => {
   it('DROP on tcp/1521 makes the listener time out (ORA-12170)', async () => {
-    const { client, dbhost } = lan();
+    const { client, dbhost } = (await lan());
     await dbhost.executeCommand('iptables -A INPUT -p tcp --dport 1521 -j DROP');
 
     const blocked = SqlPlusSubShell.create(client, ['system/oracle@//10.0.0.2/ORCL']);
@@ -291,7 +291,7 @@ describe('remote connections honour the host firewall (iptables)', () => {
   });
 
   it('REJECT on tcp/1521 refuses the connection (ORA-12541)', async () => {
-    const { client, dbhost } = lan();
+    const { client, dbhost } = (await lan());
     await dbhost.executeCommand('iptables -A INPUT -p tcp --dport 1521 -j REJECT');
     const refused = SqlPlusSubShell.create(client, ['system/oracle@//10.0.0.2/ORCL']);
     expect(refused.loginOutput.join('\n')).toMatch(/ORA-12541/);
@@ -299,7 +299,7 @@ describe('remote connections honour the host firewall (iptables)', () => {
   });
 
   it('a rule on another port does not block the listener', async () => {
-    const { client, dbhost } = lan();
+    const { client, dbhost } = (await lan());
     await dbhost.executeCommand('iptables -A INPUT -p tcp --dport 22 -j DROP');
     const ok = SqlPlusSubShell.create(client, ['system/oracle@//10.0.0.2/ORCL']);
     expect(ok.loginOutput.join('\n')).toContain('Connected.');
@@ -307,7 +307,7 @@ describe('remote connections honour the host firewall (iptables)', () => {
   });
 
   it('local bequest connections are exempt from the firewall', async () => {
-    const { dbhost } = lan();
+    const { dbhost } = (await lan());
     await dbhost.executeCommand('iptables -A INPUT -p tcp --dport 1521 -j DROP');
     // `/ as sysdba` on the host itself never crosses the network.
     const local = SqlPlusSubShell.create(dbhost, ['/', 'as', 'sysdba']);
@@ -317,8 +317,8 @@ describe('remote connections honour the host firewall (iptables)', () => {
 });
 
 describe('remote connections honour the configured listener port', () => {
-  it('after moving the remote listener to 1530, only that port answers', () => {
-    const { client, dbhost } = lan();
+  it('after moving the remote listener to 1530, only that port answers', async () => {
+    const { client, dbhost } = (await lan());
     const path = '/u01/app/oracle/product/19c/dbhome_1/network/admin/listener.ora';
     const conf = dbhost.readFileForEditor(path)!;
     dbhost.writeFileFromEditor(path, conf.replace('(PORT = 1521)', '(PORT = 1530)'));

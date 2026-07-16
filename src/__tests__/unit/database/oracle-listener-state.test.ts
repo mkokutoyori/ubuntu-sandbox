@@ -53,61 +53,61 @@ describe('@connect_identifier goes through the listener', () => {
     const srv = new LinuxServer('linux-server', name, 100, 100);
     return SqlPlusSubShell.create(srv, ['/', 'as', 'sysdba']).subShell;
   }
-  function run(sh: SqlPlusSubShell, sql: string): string {
-    return sh.processLine(sql).output.join('\n');
+  async function run(sh: SqlPlusSubShell, sql: string): Promise<string> {
+    return (await sh.processLine(sql)).output.join('\n');
   }
-  function prepareUser(sh: SqlPlusSubShell): void {
-    run(sh, 'CREATE USER app IDENTIFIED BY secret;');
-    run(sh, 'GRANT CREATE SESSION TO app;');
+  async function prepareUser(sh: SqlPlusSubShell): Promise<void> {
+    (await run(sh, 'CREATE USER app IDENTIFIED BY secret;'));
+    (await run(sh, 'GRANT CREATE SESSION TO app;'));
   }
 
-  it('fails with ORA-12541 when the listener is stopped', () => {
+  it('fails with ORA-12541 when the listener is stopped', async () => {
     const sh = session('lsn1');
-    prepareUser(sh);
+    (await prepareUser(sh));
     const db = (sh as unknown as { session: { db: OracleDatabase } }).session.db;
     db.instance.stopListener(); // provisioning auto-starts it
-    expect(run(sh, 'CONNECT app/secret@ORCL')).toContain('ORA-12541');
+    expect((await run(sh, 'CONNECT app/secret@ORCL'))).toContain('ORA-12541');
     sh.dispose();
   });
 
-  it('connects and counts established once the listener runs', () => {
+  it('connects and counts established once the listener runs', async () => {
     const sh = session('lsn2');
-    prepareUser(sh);
+    (await prepareUser(sh));
     const db = (sh as unknown as { session: { db: OracleDatabase } }).session.db;
     db.instance.startListener();
-    expect(run(sh, 'CONNECT app/secret@ORCL')).toContain('Connected');
+    expect((await run(sh, 'CONNECT app/secret@ORCL'))).toContain('Connected');
     expect(db.instance.listener.established).toBe(1);
     sh.dispose();
   });
 
-  it('unknown service yields ORA-12514 and counts a refusal', () => {
+  it('unknown service yields ORA-12514 and counts a refusal', async () => {
     const sh = session('lsn3');
-    prepareUser(sh);
+    (await prepareUser(sh));
     const db = (sh as unknown as { session: { db: OracleDatabase } }).session.db;
     db.instance.startListener();
     // EZConnect with a bogus service reaches the listener, which refuses.
-    expect(run(sh, 'CONNECT app/secret@localhost/NOPE')).toContain('ORA-12514');
+    expect((await run(sh, 'CONNECT app/secret@localhost/NOPE'))).toContain('ORA-12514');
     expect(db.instance.listener.refused).toBe(1);
     sh.dispose();
   });
 
-  it('an alias missing from tnsnames.ora yields ORA-12154 before any listener probe', () => {
+  it('an alias missing from tnsnames.ora yields ORA-12154 before any listener probe', async () => {
     // Real client behaviour since the Oracle Net client landed: a bare
     // word is a tnsnames alias; unresolvable → ORA-12154, the listener
     // is never contacted (refusal counter untouched).
     const sh = session('lsn3b');
-    prepareUser(sh);
+    (await prepareUser(sh));
     const db = (sh as unknown as { session: { db: OracleDatabase } }).session.db;
     db.instance.startListener();
-    expect(run(sh, 'CONNECT app/secret@NOPE')).toContain('ORA-12154');
+    expect((await run(sh, 'CONNECT app/secret@NOPE'))).toContain('ORA-12154');
     expect(db.instance.listener.refused).toBe(0);
     sh.dispose();
   });
 
-  it('local bequeath connection works without any listener', () => {
+  it('local bequeath connection works without any listener', async () => {
     const sh = session('lsn4');
-    prepareUser(sh);
-    expect(run(sh, 'CONNECT app/secret')).toContain('Connected');
+    (await prepareUser(sh));
+    expect((await run(sh, 'CONNECT app/secret'))).toContain('Connected');
     sh.dispose();
   });
 });

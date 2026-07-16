@@ -29,14 +29,14 @@ function newSession(name: string): SqlPlusSubShell {
   return SqlPlusSubShell.create(srv, ['/', 'as', 'sysdba']).subShell;
 }
 
-function run(sh: SqlPlusSubShell, sql: string): string {
-  return sh.processLine(sql).output.join('\n');
+async function run(sh: SqlPlusSubShell, sql: string): Promise<string> {
+  return (await sh.processLine(sql)).output.join('\n');
 }
 
 describe('V$SESSION enrichment', () => {
-  it('exposes the full Oracle 19c column set including CLIENT_IDENTIFIER and ROW_WAIT_OBJ#', () => {
+  it('exposes the full Oracle 19c column set including CLIENT_IDENTIFIER and ROW_WAIT_OBJ#', async () => {
     const sh = newSession('vs-1');
-    const out = run(sh, 'SELECT SID, USERNAME, CLIENT_IDENTIFIER, ROW_WAIT_OBJ#, SERVICE_NAME FROM V$SESSION;');
+    const out = (await run(sh, 'SELECT SID, USERNAME, CLIENT_IDENTIFIER, ROW_WAIT_OBJ#, SERVICE_NAME FROM V$SESSION;'));
     expect(out).toMatch(/SID/);
     expect(out).toMatch(/USERNAME/);
     expect(out).toMatch(/CLIENT_IDENTIFIER/);
@@ -45,9 +45,9 @@ describe('V$SESSION enrichment', () => {
     sh.dispose();
   });
 
-  it('shows PMON/SMON/DBW0/LGWR background processes', () => {
+  it('shows PMON/SMON/DBW0/LGWR background processes', async () => {
     const sh = newSession('vs-2');
-    const out = run(sh, "SELECT SID, PROGRAM FROM V$SESSION WHERE TYPE='BACKGROUND';");
+    const out = (await run(sh, "SELECT SID, PROGRAM FROM V$SESSION WHERE TYPE='BACKGROUND';"));
     expect(out).toMatch(/PMON/);
     expect(out).toMatch(/SMON/);
     expect(out).toMatch(/DBW0/);
@@ -57,9 +57,9 @@ describe('V$SESSION enrichment', () => {
 });
 
 describe('V$SESSION_CONTEXT (USERENV)', () => {
-  it('reports SESSION_USER, OS_USER, HOST and SERVICE_NAME for the live session', () => {
+  it('reports SESSION_USER, OS_USER, HOST and SERVICE_NAME for the live session', async () => {
     const sh = newSession('vsc-1');
-    const out = run(sh, "SELECT NAMESPACE, ATTRIBUTE, VALUE FROM V$SESSION_CONTEXT WHERE ATTRIBUTE IN ('SESSION_USER','OS_USER','HOST','SERVICE_NAME');");
+    const out = (await run(sh, "SELECT NAMESPACE, ATTRIBUTE, VALUE FROM V$SESSION_CONTEXT WHERE ATTRIBUTE IN ('SESSION_USER','OS_USER','HOST','SERVICE_NAME');"));
     expect(out).toMatch(/USERENV\s+SESSION_USER\s+SYS/);
     // The OS user of the shell that launched sqlplus (root on these
     // devices). It used to read 'oracle' because the view answered for a
@@ -71,9 +71,9 @@ describe('V$SESSION_CONTEXT (USERENV)', () => {
 });
 
 describe('DBA_CONTEXT', () => {
-  it('registers the implicit USERENV namespace', () => {
+  it('registers the implicit USERENV namespace', async () => {
     const sh = newSession('dc-1');
-    const out = run(sh, 'SELECT NAMESPACE, SCHEMA FROM DBA_CONTEXT;');
+    const out = (await run(sh, 'SELECT NAMESPACE, SCHEMA FROM DBA_CONTEXT;'));
     expect(out).toMatch(/USERENV/);
     expect(out).toMatch(/SYS/);
     sh.dispose();
@@ -81,11 +81,11 @@ describe('DBA_CONTEXT', () => {
 });
 
 describe('DBA_AUDIT_EXISTS', () => {
-  it('captures failed logons (ORA-01017) recorded with a non-zero returncode', () => {
+  it('captures failed logons (ORA-01017) recorded with a non-zero returncode', async () => {
     const sh = newSession('dae-1');
-    sh.processLine('CONNECT SCOTT/wrong-password;');
-    sh.processLine('CONNECT / AS SYSDBA;');
-    const out = run(sh, "SELECT USERNAME, ACTION_NAME, RETURNCODE FROM DBA_AUDIT_EXISTS;");
+    (await sh.processLine('CONNECT SCOTT/wrong-password;'));
+    (await sh.processLine('CONNECT / AS SYSDBA;'));
+    const out = (await run(sh, "SELECT USERNAME, ACTION_NAME, RETURNCODE FROM DBA_AUDIT_EXISTS;"));
     expect(out).toMatch(/SCOTT/);
     expect(out).toMatch(/LOGON/);
     expect(out).toMatch(/1017/);
@@ -94,12 +94,12 @@ describe('DBA_AUDIT_EXISTS', () => {
 });
 
 describe('DBA_AUDIT_SESSION pairing', () => {
-  it('records both LOGON and LOGOFF events with sessionId pairing', () => {
+  it('records both LOGON and LOGOFF events with sessionId pairing', async () => {
     const sh = newSession('das-1');
-    sh.processLine('CONNECT HR/hr;');
-    sh.processLine('DISCONNECT;');
-    sh.processLine('CONNECT / AS SYSDBA;');
-    const out = run(sh, "SELECT USERNAME, ACTION_NAME FROM DBA_AUDIT_SESSION WHERE USERNAME='HR';");
+    (await sh.processLine('CONNECT HR/hr;'));
+    (await sh.processLine('DISCONNECT;'));
+    (await sh.processLine('CONNECT / AS SYSDBA;'));
+    const out = (await run(sh, "SELECT USERNAME, ACTION_NAME FROM DBA_AUDIT_SESSION WHERE USERNAME='HR';"));
     expect(out).toMatch(/HR\s+LOGON/);
     expect(out).toMatch(/HR\s+LOGOFF/);
     sh.dispose();
@@ -107,38 +107,38 @@ describe('DBA_AUDIT_SESSION pairing', () => {
 });
 
 describe('UserActivityTracker (USERACT)', () => {
-  it('tallies logons + password changes per user', () => {
+  it('tallies logons + password changes per user', async () => {
     const sh = newSession('ua-1');
-    sh.processLine('ALTER USER SCOTT IDENTIFIED BY t1ger2;');
-    sh.processLine('ALTER USER SCOTT IDENTIFIED BY t1ger3;');
-    sh.processLine('CONNECT SCOTT/t1ger3;');
-    sh.processLine('DISCONNECT;');
-    sh.processLine('CONNECT / AS SYSDBA;');
-    const out = run(sh, 'USERACT SCOTT;');
+    (await sh.processLine('ALTER USER SCOTT IDENTIFIED BY t1ger2;'));
+    (await sh.processLine('ALTER USER SCOTT IDENTIFIED BY t1ger3;'));
+    (await sh.processLine('CONNECT SCOTT/t1ger3;'));
+    (await sh.processLine('DISCONNECT;'));
+    (await sh.processLine('CONNECT / AS SYSDBA;'));
+    const out = (await run(sh, 'USERACT SCOTT;'));
     expect(out).toMatch(/SCOTT/);
     // Password change count >= 2
     expect(out).toMatch(/\s+1\s+0\s+2/);
     sh.dispose();
   });
 
-  it('counts failed logon attempts', () => {
+  it('counts failed logon attempts', async () => {
     const sh = newSession('ua-2');
-    sh.processLine('CONNECT SCOTT/wrongpw;');
-    sh.processLine('CONNECT SCOTT/anotherwrong;');
-    sh.processLine('CONNECT / AS SYSDBA;');
-    const out = run(sh, 'USERACT SCOTT;');
+    (await sh.processLine('CONNECT SCOTT/wrongpw;'));
+    (await sh.processLine('CONNECT SCOTT/anotherwrong;'));
+    (await sh.processLine('CONNECT / AS SYSDBA;'));
+    const out = (await run(sh, 'USERACT SCOTT;'));
     // FAILED column shows >= 2
     expect(out).toMatch(/SCOTT/);
     expect(out).toMatch(/\s+2/);
     sh.dispose();
   });
 
-  it('accumulates total session seconds after a LOGOFF closes the trace', () => {
+  it('accumulates total session seconds after a LOGOFF closes the trace', async () => {
     const sh = newSession('ua-3');
-    sh.processLine('CONNECT HR/hr;');
-    sh.processLine('DISCONNECT;');
-    sh.processLine('CONNECT / AS SYSDBA;');
-    const out = run(sh, 'USERACT HR;');
+    (await sh.processLine('CONNECT HR/hr;'));
+    (await sh.processLine('DISCONNECT;'));
+    (await sh.processLine('CONNECT / AS SYSDBA;'));
+    const out = (await run(sh, 'USERACT HR;'));
     expect(out).toMatch(/HR/);
     // total session secs is a number (>= 0)
     expect(out).toMatch(/\s+\d+\s*$/m);
@@ -147,18 +147,18 @@ describe('UserActivityTracker (USERACT)', () => {
 });
 
 describe('PMON SWEEP — IDLE_TIME enforcement', () => {
-  it('snipes idle sessions exceeding their profile IDLE_TIME', () => {
+  it('snipes idle sessions exceeding their profile IDLE_TIME', async () => {
     const sh = newSession('pmon-1');
     // Configure a profile with IDLE_TIME 1 minute and bind HR to it.
-    sh.processLine('CREATE PROFILE quick_idle LIMIT IDLE_TIME 1;');
-    sh.processLine('ALTER USER HR PROFILE quick_idle;');
-    sh.processLine('CONNECT HR/hr;');
+    (await sh.processLine('CREATE PROFILE quick_idle LIMIT IDLE_TIME 1;'));
+    (await sh.processLine('ALTER USER HR PROFILE quick_idle;'));
+    (await sh.processLine('CONNECT HR/hr;'));
     // Reconnect as SYSDBA to drive the sweep.
-    sh.processLine('CONNECT / AS SYSDBA;');
+    (await sh.processLine('CONNECT / AS SYSDBA;'));
     // Fast-forward HR's idle counter past 60 seconds via the simulator
     // and then sweep.
     // (We reach in via global; the SQL-only path would need a real clock.)
-    const out = sh.processLine('PMON SWEEP;').output.join('\n');
+    const out = (await sh.processLine('PMON SWEEP;')).output.join('\n');
     // 0 sniped is acceptable in this short test — the API should still
     // return its canonical status line.
     expect(out).toMatch(/PMON sweep complete/);

@@ -20,35 +20,35 @@ function newSession(name: string): { sh: SqlPlusSubShell; deviceId: string } {
   return { sh, deviceId: srv.id };
 }
 
-function run(sh: SqlPlusSubShell, sql: string): string {
-  return sh.processLine(sql).output.join('\n');
+async function run(sh: SqlPlusSubShell, sql: string): Promise<string> {
+  return (await sh.processLine(sql)).output.join('\n');
 }
 
 describe('Replication (Streams / GoldenGate)', () => {
-  it('DBA_CAPTURE / DBA_APPLY reflect registered processes', () => {
+  it('DBA_CAPTURE / DBA_APPLY reflect registered processes', async () => {
     const { sh, deviceId } = newSession('rep-1');
     const db = getOracleDatabase(deviceId);
     db.instance.replication.addCapture(new CaptureProcess({ captureName: 'CAP1', startScn: 1000, state: 'CAPTURING CHANGES' }));
     db.instance.replication.addApply(new ApplyProcess({ applyName: 'APP1' }));
-    const cap = run(sh, "SELECT CAPTURE_NAME, STATUS FROM DBA_CAPTURE WHERE CAPTURE_NAME='CAP1';");
+    const cap = (await run(sh, "SELECT CAPTURE_NAME, STATUS FROM DBA_CAPTURE WHERE CAPTURE_NAME='CAP1';"));
     expect(cap).toMatch(/CAP1/);
     expect(cap).toMatch(/CAPTURING CHANGES/);
-    const app = run(sh, "SELECT APPLY_NAME, STATUS FROM DBA_APPLY WHERE APPLY_NAME='APP1';");
+    const app = (await run(sh, "SELECT APPLY_NAME, STATUS FROM DBA_APPLY WHERE APPLY_NAME='APP1';"));
     expect(app).toMatch(/APP1/);
     expect(app).toMatch(/ENABLED/);
     sh.dispose();
   });
 
-  it('DBA_GG_EXTRACT / DBA_GG_REPLICAT reflect GoldenGate processes', () => {
+  it('DBA_GG_EXTRACT / DBA_GG_REPLICAT reflect GoldenGate processes', async () => {
     const { sh, deviceId } = newSession('rep-2');
     const db = getOracleDatabase(deviceId);
     db.instance.replication.addExtract(new GoldenGateExtract({ extractName: 'EXT1', sourceDb: 'ORCL', lagSeconds: 3 }));
     db.instance.replication.addReplicat(new GoldenGateReplicat({ replicatName: 'REP1', targetDb: 'TGT' }));
-    const ext = run(sh, "SELECT EXTRACT_NAME, EXTRACT_TYPE, STATUS, LAG_SECONDS FROM DBA_GG_EXTRACT WHERE EXTRACT_NAME='EXT1';");
+    const ext = (await run(sh, "SELECT EXTRACT_NAME, EXTRACT_TYPE, STATUS, LAG_SECONDS FROM DBA_GG_EXTRACT WHERE EXTRACT_NAME='EXT1';"));
     expect(ext).toMatch(/EXT1/);
     expect(ext).toMatch(/INTEGRATED/);
     expect(ext).toMatch(/RUNNING/);
-    const rep = run(sh, "SELECT REPLICAT_NAME, TARGET_DB FROM DBA_GG_REPLICAT WHERE REPLICAT_NAME='REP1';");
+    const rep = (await run(sh, "SELECT REPLICAT_NAME, TARGET_DB FROM DBA_GG_REPLICAT WHERE REPLICAT_NAME='REP1';"));
     expect(rep).toMatch(/REP1/);
     expect(rep).toMatch(/TGT/);
     sh.dispose();
@@ -56,31 +56,31 @@ describe('Replication (Streams / GoldenGate)', () => {
 });
 
 describe('Flashback Data Archive', () => {
-  it('CREATE FLASHBACK ARCHIVE registers in DBA_FLASHBACK_ARCHIVE', () => {
+  it('CREATE FLASHBACK ARCHIVE registers in DBA_FLASHBACK_ARCHIVE', async () => {
     const { sh } = newSession('fba-1');
-    sh.processLine('CREATE FLASHBACK ARCHIVE fla1 TABLESPACE USERS QUOTA 100 M RETENTION 365 DAY;');
-    const out = run(sh, "SELECT FLASHBACK_ARCHIVE_NAME, RETENTION_IN_DAYS FROM DBA_FLASHBACK_ARCHIVE WHERE FLASHBACK_ARCHIVE_NAME='FLA1';");
+    (await sh.processLine('CREATE FLASHBACK ARCHIVE fla1 TABLESPACE USERS QUOTA 100 M RETENTION 365 DAY;'));
+    const out = (await run(sh, "SELECT FLASHBACK_ARCHIVE_NAME, RETENTION_IN_DAYS FROM DBA_FLASHBACK_ARCHIVE WHERE FLASHBACK_ARCHIVE_NAME='FLA1';"));
     expect(out).toMatch(/FLA1/);
     expect(out).toMatch(/365/);
     sh.dispose();
   });
 
-  it('ALTER TABLE ... FLASHBACK ARCHIVE enrolls the table', () => {
+  it('ALTER TABLE ... FLASHBACK ARCHIVE enrolls the table', async () => {
     const { sh } = newSession('fba-2');
-    sh.processLine('CREATE FLASHBACK ARCHIVE fla2 TABLESPACE USERS RETENTION 30 DAY;');
-    sh.processLine('CREATE TABLE FBA_T (id NUMBER);');
-    sh.processLine('ALTER TABLE FBA_T FLASHBACK ARCHIVE fla2;');
-    const out = run(sh, "SELECT TABLE_NAME, FLASHBACK_ARCHIVE_NAME, STATUS FROM DBA_FLASHBACK_ARCHIVE_TABLES WHERE TABLE_NAME='FBA_T';");
+    (await sh.processLine('CREATE FLASHBACK ARCHIVE fla2 TABLESPACE USERS RETENTION 30 DAY;'));
+    (await sh.processLine('CREATE TABLE FBA_T (id NUMBER);'));
+    (await sh.processLine('ALTER TABLE FBA_T FLASHBACK ARCHIVE fla2;'));
+    const out = (await run(sh, "SELECT TABLE_NAME, FLASHBACK_ARCHIVE_NAME, STATUS FROM DBA_FLASHBACK_ARCHIVE_TABLES WHERE TABLE_NAME='FBA_T';"));
     expect(out).toMatch(/FBA_T/);
     expect(out).toMatch(/FLA2/);
     expect(out).toMatch(/ENABLED/);
     sh.dispose();
   });
 
-  it('DBA_FLASHBACK_ARCHIVE_TS lists backing tablespaces', () => {
+  it('DBA_FLASHBACK_ARCHIVE_TS lists backing tablespaces', async () => {
     const { sh } = newSession('fba-3');
-    sh.processLine('CREATE FLASHBACK ARCHIVE fla3 TABLESPACE USERS QUOTA 50 M RETENTION 90 DAY;');
-    const out = run(sh, "SELECT FLASHBACK_ARCHIVE_NAME, TABLESPACE_NAME, QUOTA_IN_MB FROM DBA_FLASHBACK_ARCHIVE_TS WHERE FLASHBACK_ARCHIVE_NAME='FLA3';");
+    (await sh.processLine('CREATE FLASHBACK ARCHIVE fla3 TABLESPACE USERS QUOTA 50 M RETENTION 90 DAY;'));
+    const out = (await run(sh, "SELECT FLASHBACK_ARCHIVE_NAME, TABLESPACE_NAME, QUOTA_IN_MB FROM DBA_FLASHBACK_ARCHIVE_TS WHERE FLASHBACK_ARCHIVE_NAME='FLA3';"));
     expect(out).toMatch(/FLA3/);
     expect(out).toMatch(/USERS/);
     expect(out).toMatch(/50/);
@@ -89,64 +89,64 @@ describe('Flashback Data Archive', () => {
 });
 
 describe('Result Cache', () => {
-  it('V$RESULT_CACHE_OBJECTS reflects cached results', () => {
+  it('V$RESULT_CACHE_OBJECTS reflects cached results', async () => {
     const { sh, deviceId } = newSession('rc-1');
     const db = getOracleDatabase(deviceId);
     const e = db.instance.resultCache.add('SELECT count(*) FROM HR.EMPLOYEES', { rowCount: 1, rowSize: 8, columnCount: 1, creator: 'HR' });
     db.instance.resultCache.addDependency('HR', 'EMPLOYEES', 'TABLE', e.id);
-    const out = run(sh, 'SELECT TYPE, STATUS, NAME, DEPEND_COUNT FROM V$RESULT_CACHE_OBJECTS;');
+    const out = (await run(sh, 'SELECT TYPE, STATUS, NAME, DEPEND_COUNT FROM V$RESULT_CACHE_OBJECTS;'));
     expect(out).toMatch(/Result/);
     expect(out).toMatch(/PUBLISHED/);
     expect(out).toMatch(/EMPLOYEES/);
-    const dep = run(sh, "SELECT OBJECT_OWNER, OBJECT_NAME FROM V$RESULT_CACHE_DEPENDENCY WHERE OBJECT_NAME='EMPLOYEES';");
+    const dep = (await run(sh, "SELECT OBJECT_OWNER, OBJECT_NAME FROM V$RESULT_CACHE_DEPENDENCY WHERE OBJECT_NAME='EMPLOYEES';"));
     expect(dep).toMatch(/HR\s+EMPLOYEES/);
     sh.dispose();
   });
 
-  it('invalidating by object marks cached results INVALID', () => {
+  it('invalidating by object marks cached results INVALID', async () => {
     const { sh, deviceId } = newSession('rc-2');
     const db = getOracleDatabase(deviceId);
     const e = db.instance.resultCache.add('SELECT * FROM HR.JOBS', { rowCount: 19, rowSize: 30 });
     db.instance.resultCache.addDependency('HR', 'JOBS', 'TABLE', e.id);
     const n = db.instance.resultCache.invalidateByObject('HR', 'JOBS');
     expect(n).toBe(1);
-    const out = run(sh, "SELECT STATUS, INVALIDATIONS FROM V$RESULT_CACHE_OBJECTS WHERE NAME='SELECT * FROM HR.JOBS';");
+    const out = (await run(sh, "SELECT STATUS, INVALIDATIONS FROM V$RESULT_CACHE_OBJECTS WHERE NAME='SELECT * FROM HR.JOBS';"));
     expect(out).toMatch(/INVALID/);
     sh.dispose();
   });
 
-  it('/*+ RESULT_CACHE */ hint actually serves the second execution from cache', () => {
+  it('/*+ RESULT_CACHE */ hint actually serves the second execution from cache', async () => {
     const { sh, deviceId } = newSession('rc-3');
     const db = getOracleDatabase(deviceId);
     db.instance.resultCache.enabled = true;
-    run(sh, 'CREATE TABLE HR.RC_T (id NUMBER, v VARCHAR2(20));');
-    run(sh, "INSERT INTO HR.RC_T VALUES (1, 'alice');");
-    run(sh, 'COMMIT;');
-    run(sh, 'SELECT /*+ RESULT_CACHE */ * FROM HR.RC_T;');
+    (await run(sh, 'CREATE TABLE HR.RC_T (id NUMBER, v VARCHAR2(20));'));
+    (await run(sh, "INSERT INTO HR.RC_T VALUES (1, 'alice');"));
+    (await run(sh, 'COMMIT;'));
+    (await run(sh, 'SELECT /*+ RESULT_CACHE */ * FROM HR.RC_T;'));
     const after = db.instance.resultCache.getEntries()
       .filter((e) => e.status === 'PUBLISHED');
     expect(after.length).toBeGreaterThan(0);
     const beforeScan = after[after.length - 1].scanCount;
-    run(sh, 'SELECT /*+ RESULT_CACHE */ * FROM HR.RC_T;');
+    (await run(sh, 'SELECT /*+ RESULT_CACHE */ * FROM HR.RC_T;'));
     const afterScan = db.instance.resultCache.getEntries()
       .find((e) => e.id === after[after.length - 1].id)!.scanCount;
     expect(afterScan).toBe(beforeScan + 1);
     sh.dispose();
   });
 
-  it('DML on a tracked table auto-invalidates cached results', () => {
+  it('DML on a tracked table auto-invalidates cached results', async () => {
     const { sh, deviceId } = newSession('rc-4');
     const db = getOracleDatabase(deviceId);
     db.instance.resultCache.enabled = true;
-    run(sh, 'CREATE TABLE HR.RC_INV (id NUMBER);');
-    run(sh, 'INSERT INTO HR.RC_INV VALUES (1);');
-    run(sh, 'COMMIT;');
-    run(sh, 'SELECT /*+ RESULT_CACHE */ * FROM HR.RC_INV;');
+    (await run(sh, 'CREATE TABLE HR.RC_INV (id NUMBER);'));
+    (await run(sh, 'INSERT INTO HR.RC_INV VALUES (1);'));
+    (await run(sh, 'COMMIT;'));
+    (await run(sh, 'SELECT /*+ RESULT_CACHE */ * FROM HR.RC_INV;'));
     const before = db.instance.resultCache.getEntries()
       .filter((e) => e.status === 'PUBLISHED').length;
     expect(before).toBeGreaterThan(0);
-    run(sh, 'INSERT INTO HR.RC_INV VALUES (2);');
-    run(sh, 'COMMIT;');
+    (await run(sh, 'INSERT INTO HR.RC_INV VALUES (2);'));
+    (await run(sh, 'COMMIT;'));
     const after = db.instance.resultCache.getEntries()
       .filter((e) => e.status === 'PUBLISHED' && e.cacheKey.includes('RC_INV')).length;
     expect(after).toBe(0);
@@ -155,11 +155,11 @@ describe('Result Cache', () => {
 });
 
 describe('In-Memory column store', () => {
-  it('ALTER TABLE ... INMEMORY populates V$IM_SEGMENTS', () => {
+  it('ALTER TABLE ... INMEMORY populates V$IM_SEGMENTS', async () => {
     const { sh } = newSession('im-1');
-    sh.processLine('CREATE TABLE IM_T (id NUMBER, name VARCHAR2(60));');
-    sh.processLine('ALTER TABLE IM_T INMEMORY;');
-    const out = run(sh, "SELECT SEGMENT_NAME, INMEMORY_PRIORITY, INMEMORY_COMPRESSION, POPULATE_STATUS FROM V$IM_SEGMENTS WHERE SEGMENT_NAME='IM_T';");
+    (await sh.processLine('CREATE TABLE IM_T (id NUMBER, name VARCHAR2(60));'));
+    (await sh.processLine('ALTER TABLE IM_T INMEMORY;'));
+    const out = (await run(sh, "SELECT SEGMENT_NAME, INMEMORY_PRIORITY, INMEMORY_COMPRESSION, POPULATE_STATUS FROM V$IM_SEGMENTS WHERE SEGMENT_NAME='IM_T';"));
     expect(out).toMatch(/IM_T/);
     expect(out).toMatch(/MEDIUM/);
     expect(out).toMatch(/MEMCOMPRESS FOR QUERY LOW/);
@@ -167,12 +167,12 @@ describe('In-Memory column store', () => {
     sh.dispose();
   });
 
-  it('ALTER TABLE ... NO INMEMORY removes the segment', () => {
+  it('ALTER TABLE ... NO INMEMORY removes the segment', async () => {
     const { sh } = newSession('im-2');
-    sh.processLine('CREATE TABLE IM_T2 (id NUMBER);');
-    sh.processLine('ALTER TABLE IM_T2 INMEMORY;');
-    sh.processLine('ALTER TABLE IM_T2 NO INMEMORY;');
-    const out = run(sh, "SELECT SEGMENT_NAME FROM V$IM_SEGMENTS WHERE SEGMENT_NAME='IM_T2';");
+    (await sh.processLine('CREATE TABLE IM_T2 (id NUMBER);'));
+    (await sh.processLine('ALTER TABLE IM_T2 INMEMORY;'));
+    (await sh.processLine('ALTER TABLE IM_T2 NO INMEMORY;'));
+    const out = (await run(sh, "SELECT SEGMENT_NAME FROM V$IM_SEGMENTS WHERE SEGMENT_NAME='IM_T2';"));
     expect(out).not.toMatch(/IM_T2/);
     sh.dispose();
   });

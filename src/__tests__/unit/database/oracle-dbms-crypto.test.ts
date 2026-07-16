@@ -25,10 +25,10 @@ function newSession(name: string): SqlPlusSubShell {
 }
 
 describe('DBMS_CRYPTO via SQL*Plus', () => {
-  it('EXEC DBMS_CRYPTO.HASH returns the real SHA-256 digest', () => {
+  it('EXEC DBMS_CRYPTO.HASH returns the real SHA-256 digest', async () => {
     const sh = newSession('dc-1');
-    sh.processLine('SET SERVEROUTPUT ON');
-    const out = sh.processLine("EXEC DBMS_CRYPTO.HASH('Hello', 4);").output.join('\n');
+    (await sh.processLine('SET SERVEROUTPUT ON'));
+    const out = (await sh.processLine("EXEC DBMS_CRYPTO.HASH('Hello', 4);")).output.join('\n');
     const expected = bytesToHex(sha256(utf8ToBytes('Hello'))).toUpperCase();
     expect(out).toContain(expected);
     sh.dispose();

@@ -58,19 +58,19 @@ describe('bequeath connections appear in ps as oracleSID (LOCAL=YES)', () => {
   it('SHUTDOWN kills every dedicated server (PMON cleanup)', async () => {
     const srv = bootOracleServer('sp3');
     const { subShell } = SqlPlusSubShell.create(srv, ['/', 'as', 'sysdba']);
-    subShell.processLine('SHUTDOWN IMMEDIATE');
+    (await subShell.processLine('SHUTDOWN IMMEDIATE'));
     expect(await sh(srv, 'ps aux')).not.toMatch(/oracleORCL \(/);
     subShell.dispose();
   });
 });
 
 describe('V$PROCESS and V$SESSION tell the same story as ps', () => {
-  it('V$PROCESS has a dedicated server row (PNAME null, oracle@SID)', () => {
+  it('V$PROCESS has a dedicated server row (PNAME null, oracle@SID)', async () => {
     const srv = bootOracleServer('sp4');
     const { subShell } = SqlPlusSubShell.create(srv, ['/', 'as', 'sysdba']);
-    const out = subShell.processLine(
+    const out = (await subShell.processLine(
       "SELECT COUNT(*) FROM v$process WHERE pname IS NULL AND program = 'oracle@ORCL';"
-    ).output.join('\n');
+    )).output.join('\n');
     expect(out).toMatch(/\b1\b/);
     subShell.dispose();
   });
@@ -82,10 +82,10 @@ describe('V$PROCESS and V$SESSION tell the same story as ps', () => {
     const procs = db.instance.getServerProcesses();
     expect(procs.length).toBeGreaterThan(0);
     const spid = procs[procs.length - 1].pid;
-    const out = subShell.processLine(
+    const out = (await subShell.processLine(
       'SELECT p.spid FROM v$session s, v$process p '
       + "WHERE s.paddr = p.addr AND s.username = 'SYS';"
-    ).output.join('\n');
+    )).output.join('\n');
     expect(out).toContain(String(spid));
     // …and ps shows the dedicated server owned by the oracle software
     // account. (The host process table allocates its own pid namespace,

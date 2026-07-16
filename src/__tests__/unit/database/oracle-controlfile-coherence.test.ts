@@ -55,9 +55,9 @@ describe('rm of a control file follows the real Oracle failure ladder', () => {
     const srv = bootOracleServer('cf2');
     await sh(srv, `rm ${CTL1}`);
     const sql = sqlplus(srv);
-    sql.processLine('ALTER SYSTEM SWITCH LOGFILE;'); // triggers a sync
-    sql.processLine('SHUTDOWN IMMEDIATE');
-    sql.processLine('STARTUP');
+    (await sql.processLine('ALTER SYSTEM SWITCH LOGFILE;')); // triggers a sync
+    (await sql.processLine('SHUTDOWN IMMEDIATE'));
+    (await sql.processLine('STARTUP'));
     sql.dispose();
     expect(await sh(srv, `ls ${CTL1}`)).toMatch(/No such file/);
   });
@@ -68,8 +68,8 @@ describe('rm of a control file follows the real Oracle failure ladder', () => {
     await sh(srv, `rm ${CTL1}`);
 
     const sql = sqlplus(srv);
-    sql.processLine('SHUTDOWN IMMEDIATE');
-    const out = sql.processLine('STARTUP').output.join('\n');
+    (await sql.processLine('SHUTDOWN IMMEDIATE'));
+    const out = (await sql.processLine('STARTUP')).output.join('\n');
     sql.dispose();
     expect(out).toContain('ORACLE instance started.');
     expect(out).toContain('ORA-00205: error in identifying control file, check alert log for more info');
@@ -84,9 +84,9 @@ describe('rm of a control file follows the real Oracle failure ladder', () => {
     const srv = bootOracleServer('cf4');
     await sh(srv, `rm ${CTL2}`);
     const sql = sqlplus(srv);
-    sql.processLine('SHUTDOWN IMMEDIATE');
-    sql.processLine('STARTUP NOMOUNT');
-    const out = sql.processLine('ALTER DATABASE MOUNT;').output.join('\n');
+    (await sql.processLine('SHUTDOWN IMMEDIATE'));
+    (await sql.processLine('STARTUP NOMOUNT'));
+    const out = (await sql.processLine('ALTER DATABASE MOUNT;')).output.join('\n');
     sql.dispose();
     expect(out).toContain('ORA-00205');
   });
@@ -95,7 +95,7 @@ describe('rm of a control file follows the real Oracle failure ladder', () => {
     const srv = bootOracleServer('cf5');
     await sh(srv, `rm ${CTL1}`);
     const sql = sqlplus(srv);
-    const out = sql.processLine('SELECT COUNT(*) FROM hr.employees;').output.join('\n');
+    const out = (await sql.processLine('SELECT COUNT(*) FROM hr.employees;')).output.join('\n');
     sql.dispose();
     expect(out).not.toMatch(/ORA-/);
   });
@@ -105,12 +105,12 @@ describe('rm of a control file follows the real Oracle failure ladder', () => {
     const db = getRegisteredOracleDatabase(srv.getId())!;
     await sh(srv, `rm ${CTL1}`);
     const sql = sqlplus(srv);
-    sql.processLine('SHUTDOWN IMMEDIATE');
-    expect(sql.processLine('STARTUP').output.join('\n')).toContain('ORA-00205');
+    (await sql.processLine('SHUTDOWN IMMEDIATE'));
+    expect((await sql.processLine('STARTUP')).output.join('\n')).toContain('ORA-00205');
     // The canonical DBA fix: copy a surviving multiplexed copy in place.
     await sh(srv, `cp ${CTL2} ${CTL1}`);
-    const out = sql.processLine('ALTER DATABASE MOUNT;').output.join('\n');
-    const open = sql.processLine('ALTER DATABASE OPEN;').output.join('\n');
+    const out = (await sql.processLine('ALTER DATABASE MOUNT;')).output.join('\n');
+    const open = (await sql.processLine('ALTER DATABASE OPEN;')).output.join('\n');
     sql.dispose();
     expect(out).toContain('Database altered.');
     expect(open).toContain('Database altered.');

@@ -36,12 +36,12 @@ describe('shell expdp/impdp/adrci use the real handlers (not stubs)', () => {
     const srv = boot('shell-dp-2');
     await sh(srv, 'expdp sys/oracle TABLES=HR.EMPLOYEES DUMPFILE=emp.dmp');
     const sql = SqlPlusSubShell.create(srv, ['/', 'as', 'sysdba']).subShell;
-    sql.processLine('DROP TABLE hr.employees CASCADE CONSTRAINTS;');
+    (await sql.processLine('DROP TABLE hr.employees CASCADE CONSTRAINTS;'));
     sql.dispose();
     const imp = await sh(srv, 'impdp sys/oracle TABLES=HR.EMPLOYEES DUMPFILE=emp.dmp');
     expect(imp).toMatch(/imported|successfully completed/i);
     const check = SqlPlusSubShell.create(srv, ['/', 'as', 'sysdba']).subShell;
-    const rows = check.processLine('SELECT COUNT(*) FROM hr.employees;').output.join('\n');
+    const rows = (await check.processLine('SELECT COUNT(*) FROM hr.employees;')).output.join('\n');
     check.dispose();
     expect(rows).not.toMatch(/ORA-00942/);
   });

@@ -42,37 +42,37 @@ function admin(dbhost: LinuxServer) {
   return SqlPlusSubShell.create(dbhost, ['/', 'as', 'sysdba']);
 }
 
-function setupSensitiveTable(dbhost: LinuxServer) {
+async function setupSensitiveTable(dbhost: LinuxServer) {
   const a = admin(dbhost);
-  a.subShell.processLine('CREATE USER finance IDENTIFIED BY finpass;');
-  a.subShell.processLine('GRANT CREATE SESSION, CREATE TABLE, UNLIMITED TABLESPACE TO finance;');
+  (await a.subShell.processLine('CREATE USER finance IDENTIFIED BY finpass;'));
+  (await a.subShell.processLine('GRANT CREATE SESSION, CREATE TABLE, UNLIMITED TABLESPACE TO finance;'));
   const owner = SqlPlusSubShell.create(dbhost, ['finance/finpass']);
-  owner.subShell.processLine('CREATE TABLE finance.accounts (customer VARCHAR2(30), balance NUMBER);');
-  owner.subShell.processLine("INSERT INTO finance.accounts VALUES ('ALICE', 1000);");
-  owner.subShell.processLine('COMMIT;');
+  (await owner.subShell.processLine('CREATE TABLE finance.accounts (customer VARCHAR2(30), balance NUMBER);'));
+  (await owner.subShell.processLine("INSERT INTO finance.accounts VALUES ('ALICE', 1000);"));
+  (await owner.subShell.processLine('COMMIT;'));
   owner.subShell.dispose();
 
-  a.subShell.processLine('CREATE USER analyst IDENTIFIED BY anpass;');
-  a.subShell.processLine('GRANT CREATE SESSION TO analyst;');
-  a.subShell.processLine('GRANT SELECT ON finance.accounts TO analyst;');
+  (await a.subShell.processLine('CREATE USER analyst IDENTIFIED BY anpass;'));
+  (await a.subShell.processLine('GRANT CREATE SESSION TO analyst;'));
+  (await a.subShell.processLine('GRANT SELECT ON finance.accounts TO analyst;'));
 
-  a.subShell.processLine('AUDIT SELECT ON finance.accounts BY ACCESS;');
+  (await a.subShell.processLine('AUDIT SELECT ON finance.accounts BY ACCESS;'));
   a.subShell.dispose();
 }
 
 describe('AUDIT SELECT ON finance.accounts BY ACCESS produces a real, per-access trail', () => {
-  it('a legitimate SELECT from the analyst machine is recorded with the real client host', () => {
+  it('a legitimate SELECT from the analyst machine is recorded with the real client host', async () => {
     const { dbhost, legit } = lan();
-    setupSensitiveTable(dbhost);
+    (await setupSensitiveTable(dbhost));
 
     const session = SqlPlusSubShell.create(legit, ['analyst/anpass@//10.0.0.2/ORCL']);
-    session.subShell.processLine('SELECT customer FROM finance.accounts;');
+    (await session.subShell.processLine('SELECT customer FROM finance.accounts;'));
 
     const admin2 = admin(dbhost);
-    const trail = admin2.subShell.processLine(
+    const trail = (await admin2.subShell.processLine(
       "SELECT username, userhost, action_name, sql_text, returncode FROM dba_audit_trail "
       + "WHERE action_name = 'SELECT' AND obj_name = 'ACCOUNTS';"
-    ).output.join('\n');
+    )).output.join('\n');
     expect(trail).toContain('ANALYST');
     expect(trail).toContain('reportingclient');
     expect(trail).toMatch(/SELECT customer FROM finance\.accounts/i);
@@ -81,24 +81,24 @@ describe('AUDIT SELECT ON finance.accounts BY ACCESS produces a real, per-access
     session.subShell.dispose();
   });
 
-  it('an unauthorized SELECT attempt from another machine is still recorded, with a non-zero return code', () => {
+  it('an unauthorized SELECT attempt from another machine is still recorded, with a non-zero return code', async () => {
     const { dbhost, rogue } = lan();
-    setupSensitiveTable(dbhost);
+    (await setupSensitiveTable(dbhost));
 
     const a = admin(dbhost);
-    a.subShell.processLine('CREATE USER outsider IDENTIFIED BY outpass;');
-    a.subShell.processLine('GRANT CREATE SESSION TO outsider;');
+    (await a.subShell.processLine('CREATE USER outsider IDENTIFIED BY outpass;'));
+    (await a.subShell.processLine('GRANT CREATE SESSION TO outsider;'));
     a.subShell.dispose();
 
     const session = SqlPlusSubShell.create(rogue, ['outsider/outpass@//10.0.0.2/ORCL']);
-    const attempt = session.subShell.processLine('SELECT customer FROM finance.accounts;').output.join('\n');
+    const attempt = (await session.subShell.processLine('SELECT customer FROM finance.accounts;')).output.join('\n');
     expect(attempt).toMatch(/ORA-00942/);
 
     const admin2 = admin(dbhost);
-    const trail = admin2.subShell.processLine(
+    const trail = (await admin2.subShell.processLine(
       "SELECT username, userhost, returncode FROM dba_audit_trail "
       + "WHERE action_name = 'SELECT' AND username = 'OUTSIDER';"
-    ).output.join('\n');
+    )).output.join('\n');
     expect(trail).toContain('OUTSIDER');
     expect(trail).toContain('intruderbox');
     expect(trail).not.toMatch(/\s0\s*$/m);
@@ -107,12 +107,12 @@ describe('AUDIT SELECT ON finance.accounts BY ACCESS produces a real, per-access
     session.subShell.dispose();
   });
 
-  it('the listener log source IP and the audit trail USERHOST correlate to the same client for the same access', () => {
+  it('the listener log source IP and the audit trail USERHOST correlate to the same client for the same access', async () => {
     const { dbhost, legit } = lan();
-    setupSensitiveTable(dbhost);
+    (await setupSensitiveTable(dbhost));
 
     const session = SqlPlusSubShell.create(legit, ['analyst/anpass@//10.0.0.2/ORCL']);
-    session.subShell.processLine('SELECT customer FROM finance.accounts;');
+    (await session.subShell.processLine('SELECT customer FROM finance.accounts;'));
 
     const db = getOracleDatabase(dbhost.getId());
     const listenerEntry = db.instance.getListenerLog().find(e => e.service === 'ORCL' && e.result === 'established');
@@ -121,26 +121,26 @@ describe('AUDIT SELECT ON finance.accounts BY ACCESS produces a real, per-access
     expect(legit.getHostname()).toBe('reportingclient');
 
     const a = admin(dbhost);
-    const trail = a.subShell.processLine(
+    const trail = (await a.subShell.processLine(
       "SELECT userhost FROM dba_audit_trail WHERE action_name = 'SELECT' AND obj_name = 'ACCOUNTS';"
-    ).output.join('\n');
+    )).output.join('\n');
     expect(trail).toContain(legit.getHostname());
 
     a.subShell.dispose();
     session.subShell.dispose();
   });
 
-  it('the successful session is still visible in v$session at the moment of access', () => {
+  it('the successful session is still visible in v$session at the moment of access', async () => {
     const { dbhost, legit } = lan();
-    setupSensitiveTable(dbhost);
+    (await setupSensitiveTable(dbhost));
 
     const session = SqlPlusSubShell.create(legit, ['analyst/anpass@//10.0.0.2/ORCL']);
-    session.subShell.processLine('SELECT customer FROM finance.accounts;');
+    (await session.subShell.processLine('SELECT customer FROM finance.accounts;'));
 
     const a = admin(dbhost);
-    const rows = a.subShell.processLine(
+    const rows = (await a.subShell.processLine(
       "SELECT username, machine, status FROM v$session WHERE username = 'ANALYST';"
-    ).output.join('\n');
+    )).output.join('\n');
     expect(rows).toContain('ANALYST');
     expect(rows).toContain('reportingclient');
     expect(rows).toMatch(/ACTIVE|INACTIVE/);
@@ -149,14 +149,14 @@ describe('AUDIT SELECT ON finance.accounts BY ACCESS produces a real, per-access
     session.subShell.dispose();
   });
 
-  it('no session escapes the trail: even the local DBA connection is audited', () => {
+  it('no session escapes the trail: even the local DBA connection is audited', async () => {
     const { dbhost } = lan();
-    setupSensitiveTable(dbhost);
+    (await setupSensitiveTable(dbhost));
 
     const a = admin(dbhost);
-    const trail = a.subShell.processLine(
+    const trail = (await a.subShell.processLine(
       "SELECT username, action_name FROM dba_audit_trail WHERE action_name = 'LOGON';"
-    ).output.join('\n');
+    )).output.join('\n');
     expect(trail).toContain('SYS');
     a.subShell.dispose();
   });

@@ -36,17 +36,17 @@ function s(name: string) {
   const srv = new LinuxServer('linux-server', name, 100, 100);
   return SqlPlusSubShell.create(srv, ['/', 'as', 'sysdba']).subShell;
 }
-const run = (sh: ReturnType<typeof s>, q: string) => sh.processLine(q).output.join('\n');
+const run = async (sh: ReturnType<typeof s>, q: string) => (await sh.processLine(q)).output.join('\n');
 
 describe('ANALYZE updates LAST_ANALYZED', () => {
-  it('LAST_ANALYZED is null before, set after COMPUTE STATISTICS', () => {
+  it('LAST_ANALYZED is null before, set after COMPUTE STATISTICS', async () => {
     const sh = s('an1');
-    run(sh, 'CREATE TABLE hr.t (id NUMBER);');
-    const before = run(sh, "SELECT last_analyzed FROM dba_tables WHERE owner='HR' AND table_name='T';");
+    (await run(sh, 'CREATE TABLE hr.t (id NUMBER);'));
+    const before = (await run(sh, "SELECT last_analyzed FROM dba_tables WHERE owner='HR' AND table_name='T';"));
     // 19c-style: NULL before ANALYZE/GATHER
     expect(before).not.toMatch(/2026/);
-    run(sh, 'ANALYZE TABLE hr.t COMPUTE STATISTICS;');
-    const after = run(sh, "SELECT last_analyzed FROM dba_tables WHERE owner='HR' AND table_name='T';");
+    (await run(sh, 'ANALYZE TABLE hr.t COMPUTE STATISTICS;'));
+    const after = (await run(sh, "SELECT last_analyzed FROM dba_tables WHERE owner='HR' AND table_name='T';"));
     // Oracle's default NLS_DATE_FORMAT is DD-MON-YY (e.g. 19-MAY-26).
     expect(after).toMatch(/\d{2}-[A-Z]{3}-\d{2}|\d{4}-\d{2}-\d{2}/);
     sh.dispose();
@@ -54,13 +54,13 @@ describe('ANALYZE updates LAST_ANALYZED', () => {
 });
 
 describe('MOVE COMPRESS records the compression mode on the table', () => {
-  it('DBA_TABLES.COMPRESSION reflects ENABLED after ALTER TABLE … MOVE COMPRESS', () => {
+  it('DBA_TABLES.COMPRESSION reflects ENABLED after ALTER TABLE … MOVE COMPRESS', async () => {
     const sh = s('cmp');
-    run(sh, 'CREATE TABLE hr.t (id NUMBER);');
-    expect(run(sh, "SELECT compression FROM dba_tables WHERE owner='HR' AND table_name='T';"))
+    (await run(sh, 'CREATE TABLE hr.t (id NUMBER);'));
+    expect((await run(sh, "SELECT compression FROM dba_tables WHERE owner='HR' AND table_name='T';")))
       .toContain('DISABLED');
-    run(sh, 'ALTER TABLE hr.t MOVE COMPRESS FOR QUERY HIGH;');
-    const out = run(sh, "SELECT compression, compress_for FROM dba_tables WHERE owner='HR' AND table_name='T';");
+    (await run(sh, 'ALTER TABLE hr.t MOVE COMPRESS FOR QUERY HIGH;'));
+    const out = (await run(sh, "SELECT compression, compress_for FROM dba_tables WHERE owner='HR' AND table_name='T';"));
     expect(out).toContain('ENABLED');
     expect(out).toMatch(/QUERY HIGH/i);
     sh.dispose();
@@ -68,53 +68,53 @@ describe('MOVE COMPRESS records the compression mode on the table', () => {
 });
 
 describe('CREATE PFILE FROM SPFILE writes a real pfile to the VFS', () => {
-  it('the pfile lists at least db_name, instance_name, compatible', () => {
+  it('the pfile lists at least db_name, instance_name, compatible', async () => {
     const sh = s('pfile');
-    run(sh, "CREATE PFILE='/tmp/pf.ora' FROM SPFILE;");
-    const cat = run(sh, 'HOST cat /tmp/pf.ora');
+    (await run(sh, "CREATE PFILE='/tmp/pf.ora' FROM SPFILE;"));
+    const cat = (await run(sh, 'HOST cat /tmp/pf.ora'));
     expect(cat).toMatch(/db_name=/i);
     expect(cat).toMatch(/instance_name=/i);
     expect(cat).toMatch(/compatible=/i);
     sh.dispose();
   });
 
-  it('raises ORA-01565 when the source spfile is gone (no silent fallback)', () => {
+  it('raises ORA-01565 when the source spfile is gone (no silent fallback)', async () => {
     const sh = s('pfile-missing');
     // Remove the spfile the instance would read from.
-    run(sh, 'HOST rm /u01/app/oracle/product/19c/dbhome_1/dbs/spfileORCL.ora');
-    const out = run(sh, "CREATE PFILE='/tmp/pf2.ora' FROM SPFILE;");
+    (await run(sh, 'HOST rm /u01/app/oracle/product/19c/dbhome_1/dbs/spfileORCL.ora'));
+    const out = (await run(sh, "CREATE PFILE='/tmp/pf2.ora' FROM SPFILE;"));
     expect(out).toMatch(/ORA-01565/);
     expect(out).not.toMatch(/File created/);
     // …and an explicitly bogus source path errors the same way.
-    const bogus = run(sh, "CREATE PFILE='/tmp/pf3.ora' FROM PFILE='/tmp/nope.ora';");
+    const bogus = (await run(sh, "CREATE PFILE='/tmp/pf3.ora' FROM PFILE='/tmp/nope.ora';"));
     expect(bogus).toMatch(/ORA-01565/);
     sh.dispose();
   });
 });
 
 describe('CREATE SPFILE FROM PFILE imports parameters', () => {
-  it('parameters defined in the source pfile become visible in v$parameter', () => {
+  it('parameters defined in the source pfile become visible in v$parameter', async () => {
     const sh = s('sp1');
     // Write a stub pfile via HOST echo.
-    run(sh, "HOST mkdir -p /tmp/imp");
-    run(sh, "HOST echo '*.cursor_sharing=FORCE' > /tmp/imp/init.ora");
+    (await run(sh, "HOST mkdir -p /tmp/imp"));
+    (await run(sh, "HOST echo '*.cursor_sharing=FORCE' > /tmp/imp/init.ora"));
     // Sanity check the file was actually written via HOST.
-    const cat = run(sh, 'HOST cat /tmp/imp/init.ora');
+    const cat = (await run(sh, 'HOST cat /tmp/imp/init.ora'));
     expect(cat, `pfile not written: ${cat}`).toContain('cursor_sharing=FORCE');
-    run(sh, "CREATE SPFILE FROM PFILE='/tmp/imp/init.ora';");
-    const out = run(sh, "SELECT value FROM v$parameter WHERE name='cursor_sharing';");
+    (await run(sh, "CREATE SPFILE FROM PFILE='/tmp/imp/init.ora';"));
+    const out = (await run(sh, "SELECT value FROM v$parameter WHERE name='cursor_sharing';"));
     expect(out).toContain('FORCE');
     sh.dispose();
   });
 });
 
 describe('V$DATAFILE.STATUS tracks tablespace state', () => {
-  it('OFFLINE tablespace → datafile STATUS is OFFLINE', () => {
+  it('OFFLINE tablespace → datafile STATUS is OFFLINE', async () => {
     const sh = s('dfst');
-    run(sh, "CREATE TABLESPACE x DATAFILE '/u01/oradata/ORCL/x.dbf' SIZE 100M;");
-    expect(run(sh, "SELECT name, status FROM v$datafile WHERE name LIKE '%x.dbf';")).toMatch(/ONLINE/);
-    run(sh, 'ALTER TABLESPACE x OFFLINE;');
-    expect(run(sh, "SELECT name, status FROM v$datafile WHERE name LIKE '%x.dbf';")).toMatch(/OFFLINE/);
+    (await run(sh, "CREATE TABLESPACE x DATAFILE '/u01/oradata/ORCL/x.dbf' SIZE 100M;"));
+    expect((await run(sh, "SELECT name, status FROM v$datafile WHERE name LIKE '%x.dbf';"))).toMatch(/ONLINE/);
+    (await run(sh, 'ALTER TABLESPACE x OFFLINE;'));
+    expect((await run(sh, "SELECT name, status FROM v$datafile WHERE name LIKE '%x.dbf';"))).toMatch(/OFFLINE/);
     sh.dispose();
   });
 });

@@ -335,6 +335,42 @@ export class SQLPlusSession {
   }
 
   /**
+   * `true` tant qu'un tampon SQL ou PL/SQL multi-lignes est en cours de
+   * constitution (attend `;`, `/`, ou un `END;` de profondeur 0) — une ligne
+   * "fraîche" ne doit être routée vers une commande (legacy ou
+   * command-kernel) que lorsque ceci renvoie `false`. Utilisé par l'hôte du
+   * sous-shell (`SqlPlusSubShell`) pour décider s'il peut intercepter la
+   * ligne vers le socle command-kernel.
+   */
+  isAwaitingMoreInput(): boolean {
+    return this.plsqlMode || this.sqlBuffer.length > 0;
+  }
+
+  /**
+   * Enregistre dans le SPOOL actif (le cas échéant) une ligne exécutée EN
+   * DEHORS de `processLine` — utilisé par l'hôte du sous-shell quand la
+   * ligne a été routée vers une commande command-kernel (`SET`/`SHOW`/…)
+   * plutôt que vers `processLineInner`. Reproduit exactement la logique de
+   * capture SPOOL de `processLine`, pour que le fichier de spool voie ces
+   * commandes comme s'il s'agissait d'un appel normal.
+   */
+  recordExternalLine(line: string, output: readonly string[], resultPrompt: string): void {
+    const promptBefore = this.lastPromptShown ?? this.getPrompt();
+    if (this.spool) {
+      this.spool.lines.push(`${promptBefore}${line}`);
+      for (const out of output) {
+        this.spool.lines.push(this.settings.trimspool ? out.replace(/\s+$/, '') : out);
+      }
+      this.flushSpool();
+      if (this.spoolClosing) {
+        this.spool = null;
+        this.spoolClosing = false;
+      }
+    }
+    this.lastPromptShown = resultPrompt;
+  }
+
+  /**
    * Process a line of input. Returns structured result.
    *
    * This wrapper owns the SPOOL capture: like the real client, the

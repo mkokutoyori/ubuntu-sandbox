@@ -20,7 +20,7 @@ beforeEach(() => {
 });
 
 describe('archive log → VFS', () => {
-  it('writes an .arc file under archivelog/ on each log switch in ARCHIVELOG mode', () => {
+  it('writes an .arc file under archivelog/ on each log switch in ARCHIVELOG mode', async () => {
     const srv = new LinuxServer('linux-server', 'ora-arc', 100, 100);
     const { subShell } = SqlPlusSubShell.create(srv, ['/', 'as', 'sysdba']);
 
@@ -29,23 +29,23 @@ describe('archive log → VFS', () => {
     const db = getOracleDatabase(srv.getId());
     (db.instance as unknown as { _archiveLogMode: boolean })._archiveLogMode = true;
 
-    subShell.processLine('ALTER SYSTEM SWITCH LOGFILE;');
-    subShell.processLine('ALTER SYSTEM SWITCH LOGFILE;');
+    (await subShell.processLine('ALTER SYSTEM SWITCH LOGFILE;'));
+    (await subShell.processLine('ALTER SYSTEM SWITCH LOGFILE;'));
 
-    const out = subShell.processLine(
+    const out = (await subShell.processLine(
       'HOST ls /u01/app/oracle/archivelog'
-    ).output.join('\n');
+    )).output.join('\n');
     expect(out).toMatch(/\.arc/);
     subShell.dispose();
   });
 
-  it('does not write archive files in NOARCHIVELOG mode (default)', () => {
+  it('does not write archive files in NOARCHIVELOG mode (default)', async () => {
     const srv = new LinuxServer('linux-server', 'ora-noarc', 100, 100);
     const { subShell } = SqlPlusSubShell.create(srv, ['/', 'as', 'sysdba']);
-    subShell.processLine('ALTER SYSTEM SWITCH LOGFILE;');
-    const out = subShell.processLine(
+    (await subShell.processLine('ALTER SYSTEM SWITCH LOGFILE;'));
+    const out = (await subShell.processLine(
       "HOST find /u01/app/oracle/archivelog -name '*.arc' -type f"
-    ).output.join('\n');
+    )).output.join('\n');
     expect(out).not.toMatch(/\.arc/);
     subShell.dispose();
   });
