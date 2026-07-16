@@ -136,6 +136,100 @@ describe('Router CLI foundation — command-kernel single-gate pipeline', () => 
       expect(out).toMatch(/^Codes: C - connected/m);
     });
 
+    // ─── Vague setup config/config-if ─────────────────────────────────
+
+    it('`hostname R99` (config) met à jour le prompt à travers MachineApi', async () => {
+      const r = new CiscoRouter('R1');
+      await r.executeCommand('enable');
+      await r.executeCommand('configure terminal');
+      await r.executeCommand('hostname R99');
+      expect(r.getPrompt()).toBe('R99(config)#');
+    });
+
+    it('`interface GigabitEthernet0/0` push config-if avec le nom d\'interface dans le prompt/état', async () => {
+      const r = new CiscoRouter('R1');
+      await r.executeCommand('enable');
+      await r.executeCommand('configure terminal');
+      const out = await r.executeCommand('interface GigabitEthernet0/0');
+      expect(out).toBe('');
+      expect(r.getPrompt()).toBe('R1(config-if)#');
+    });
+
+    it('`interface DoesNotExist` refuse la transition avec le message Cisco et reste en config', async () => {
+      const r = new CiscoRouter('R1');
+      await r.executeCommand('enable');
+      await r.executeCommand('configure terminal');
+      const out = await r.executeCommand('interface DoesNotExist');
+      expect(out).toMatch(/Invalid input/);
+      expect(r.getPrompt()).toBe('R1(config)#');
+    });
+
+    it('`ip address 10.1.1.1 255.255.255.0` (config-if) configure l\'IP, visible dans `show ip interface brief`', async () => {
+      const r = new CiscoRouter('R1');
+      await r.executeCommand('enable');
+      await r.executeCommand('configure terminal');
+      await r.executeCommand('interface GigabitEthernet0/0');
+      const out = await r.executeCommand('ip address 10.1.1.1 255.255.255.0');
+      expect(out).toBe('');
+      await r.executeCommand('end');
+      const brief = await r.executeCommand('show ip interface brief');
+      expect(brief).toMatch(/^GigabitEthernet0\/0\s+10\.1\.1\.1\s+/m);
+    });
+
+    it('`no shutdown` puis IP → route connectée présente dans `show ip route`', async () => {
+      const r = new CiscoRouter('R1');
+      await r.executeCommand('enable');
+      await r.executeCommand('configure terminal');
+      await r.executeCommand('interface GigabitEthernet0/0');
+      await r.executeCommand('ip address 10.1.1.1 255.255.255.0');
+      await r.executeCommand('no shutdown');
+      await r.executeCommand('end');
+      const routes = await r.executeCommand('show ip route');
+      // La route directement connectée doit apparaître avec le code C.
+      expect(routes).toMatch(/^C\s+10\.1\.1\.0\/24 is directly connected, GigabitEthernet0\/0$/m);
+    });
+
+    it('`shutdown` remet l\'interface admin-down (visible dans show ip int brief)', async () => {
+      const r = new CiscoRouter('R1');
+      await r.executeCommand('enable');
+      await r.executeCommand('configure terminal');
+      await r.executeCommand('interface GigabitEthernet0/0');
+      await r.executeCommand('shutdown');
+      await r.executeCommand('end');
+      const brief = await r.executeCommand('show ip interface brief');
+      expect(brief).toMatch(/GigabitEthernet0\/0.*administratively down/);
+    });
+
+    it('`no ip address` (config-if) retire l\'IP', async () => {
+      const r = new CiscoRouter('R1');
+      await r.executeCommand('enable');
+      await r.executeCommand('configure terminal');
+      await r.executeCommand('interface GigabitEthernet0/0');
+      await r.executeCommand('ip address 10.1.1.1 255.255.255.0');
+      await r.executeCommand('no ip address');
+      await r.executeCommand('end');
+      const brief = await r.executeCommand('show ip interface brief');
+      expect(brief).toMatch(/^GigabitEthernet0\/0\s+unassigned\s+/m);
+    });
+
+    it('`exit` de config-if efface `selectedInterface` (clearOnExit) et revient à config', async () => {
+      const r = new CiscoRouter('R1');
+      await r.executeCommand('enable');
+      await r.executeCommand('configure terminal');
+      await r.executeCommand('interface GigabitEthernet0/0');
+      expect(r.getPrompt()).toBe('R1(config-if)#');
+      await r.executeCommand('exit');
+      expect(r.getPrompt()).toBe('R1(config)#');
+      // Rentrer à nouveau dans config-if, ip address doit demander la
+      // sélection (déjà refaite par le nouveau push) — vérif indirecte :
+      // pas d'effet résiduel de la session précédente.
+      await r.executeCommand('interface GigabitEthernet0/1');
+      await r.executeCommand('ip address 10.2.2.2 255.255.255.0');
+      await r.executeCommand('end');
+      const brief = await r.executeCommand('show ip interface brief');
+      expect(brief).toMatch(/^GigabitEthernet0\/1\s+10\.2\.2\.2/m);
+    });
+
     it('an unmigrated command fails through the new pipeline (signal for migration)', async () => {
       const r = new CiscoRouter('R1');
       await r.executeCommand('enable');

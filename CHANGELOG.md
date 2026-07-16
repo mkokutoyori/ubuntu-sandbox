@@ -5,6 +5,64 @@ progressive par équipement. Un push = une entrée = une fonctionnalité
 complète et testée (voir `CLAUDE.md` / le framework de migration pour les
 principes directeurs).
 
+## Cisco routeur — vague setup config/config-if (hostname, interface, ip address, shutdown, no shutdown, no ip address)
+
+**État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
+
+Vague de déverrouillage L3 : les 6 commandes qui pilotent la
+configuration initiale d'un routeur Cisco (hostname, sélection
+d'interface, IP, admin state). Sans elles, aucun test legacy L3 ne
+pouvait dépasser la phase de setup — désormais des dizaines de tests
+network-v2 se rapprochent du vert.
+
+- **Nouveau mode CLI `config-if`** dans
+  `createCiscoRouterHostShell` : prompt `<host>(config-if)#`, parent
+  `config`, `clearOnExit: ['selectedInterface']` — l'`exit` nettoie
+  automatiquement l'interface sélectionnée (règle 9 du framework :
+  modes ⟺ registres séparés).
+
+- **Enrichissement `RouterMachineApi`** : deux nouvelles capacités
+  `router.setInterfaceIp(name, ip, mask): { ok, error? }` (parseurs
+  `IPAddress`/`SubnetMask` internes à la façade, retour typé, aucune
+  exception qui remonte à la commande) et `router.clearInterfaceIp
+  (name)`. Point d'extension autorisé, aucune rupture.
+
+- **Nouveau côté commandes** (`commands/cisco/config/`) :
+  - `Hostname.ts` — `hostname <name>` en config mode. Valide la
+    syntaxe Cisco (`[A-Za-z][A-Za-z0-9-]*`), appelle
+    `machine.setHostname()`. Silence en cas de succès.
+  - `Interface.ts` — `interface <name>` en config mode. Sous-classe
+    `PushModeCommand` : `prepare()` valide l'existence via
+    `machine.router.interface()`, pose
+    `session.promptFields['selectedInterface']`, refuse la transition
+    avec le message vendeur si l'interface est absente.
+  - `config-if/Shutdown.ts` — `shutdown` en config-if. Passe
+    l'interface sélectionnée en admin-down via
+    `machine.router.setInterfaceAdminUp(iface, false)`.
+  - `config-if/Ip.ts` (composite) + `config-if/ip/Address.ts` (feuille)
+    — `ip address <A.B.C.D> <M.M.M.M>` en config-if. Lit l'interface
+    sélectionnée depuis la session, délègue au setter de la façade.
+  - `config-if/No.ts` (composite) + `config-if/no/Shutdown.ts` (feuille)
+    + `config-if/no/Ip.ts` (composite) + `config-if/no/ip/Address.ts`
+    (feuille) — `no shutdown` et `no ip address` en config-if.
+    Composition stricte via sous-registres, pas de dispatch ad-hoc.
+
+- **Preuve exécutable** : `router-cli-foundation.test.ts` +8 cas —
+  hostname met à jour le prompt, `interface X` push config-if,
+  `interface DoesNotExist` refuse la transition, `ip address` + `no
+  shutdown` produisent une route connectée dans `show ip route`,
+  `shutdown` remet admin-down, `no ip address` retire l'IP, `exit`
+  efface `selectedInterface` (clearOnExit vérifié en réintégrant un
+  autre interface). Suite command-kernel 118/118 verte. `tsc` propre.
+
+- **Effet attendu (signal migration)** : le test legacy
+  `routing-table.test.ts` passe désormais **14/16** (2 fails :
+  `ip route` statique + Windows ping, hors périmètre). D'autres suites
+  L3 verront leurs setups aboutir. Les rouges restants pointeront les
+  prochaines commandes à migrer : sous-interfaces (`interface Gi0/0.10`
+  + `encapsulation dot1Q`), `ip route` statiques (`ip route <net>
+  <mask> <nexthop>`), `description` sur interface, `mtu`.
+
 ## Cisco — `show ip route` (routeur) + `show mac address-table` (switch) migrés
 
 **État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**

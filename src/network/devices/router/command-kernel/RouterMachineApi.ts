@@ -13,6 +13,7 @@ import {
 import type { User } from '@/command-kernel/session/types';
 import type { CliMachineApi, ModeRegistry } from '@/command-kernel/cli';
 import { FileSystemError } from '@/command-kernel/errors';
+import { IPAddress, SubnetMask } from '@/network/core/types';
 import type { Router } from '../../Router';
 
 /**
@@ -80,6 +81,13 @@ export interface RouterCapabilityApi {
   setInterfaceDescription(name: string, description: string): boolean;
   /** État admin (`no shutdown`/`shutdown`). Retourne `false` si absente. */
   setInterfaceAdminUp(name: string, up: boolean): boolean;
+  /** Configure l'IP primaire (`ip address A.B.C.D M.M.M.M`). Retourne
+   *  `{ ok: false, error }` si l'interface est absente ou les valeurs
+   *  invalides — sans exception. Les commandes reçoivent des chaînes
+   *  ; la façade parse (jamais l'inverse). */
+  setInterfaceIp(name: string, ip: string, mask: string): { ok: boolean; error?: string };
+  /** Retire toute IP primaire (`no ip address`). */
+  clearInterfaceIp(name: string): boolean;
   /** Table de routage IPv4 (RIB) sous forme de DTOs stables. Ordre
    *  d'insertion préservé — les commandes trient elles-mêmes. */
   routes(): readonly RouterRouteInfo[];
@@ -129,6 +137,24 @@ class RouterCapabilityImpl implements RouterCapabilityApi {
     const port = this.router.getPort(name);
     if (!port) return false;
     port.setAdminDown(!up);
+    return true;
+  }
+
+  setInterfaceIp(name: string, ip: string, mask: string): { ok: boolean; error?: string } {
+    const port = this.router.getPort(name);
+    if (!port) return { ok: false, error: `unknown interface: ${name}` };
+    let parsedIp: IPAddress;
+    let parsedMask: SubnetMask;
+    try { parsedIp = new IPAddress(ip); } catch { return { ok: false, error: `invalid IP: ${ip}` }; }
+    try { parsedMask = new SubnetMask(mask); } catch { return { ok: false, error: `invalid mask: ${mask}` }; }
+    this.router.configureInterface(name, parsedIp, parsedMask, false);
+    return { ok: true };
+  }
+
+  clearInterfaceIp(name: string): boolean {
+    const port = this.router.getPort(name);
+    if (!port) return false;
+    this.router.unconfigureInterface(name);
     return true;
   }
 
