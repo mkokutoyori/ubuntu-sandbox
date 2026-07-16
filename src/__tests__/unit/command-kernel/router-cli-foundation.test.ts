@@ -720,10 +720,9 @@ describe('Router CLI foundation — command-kernel single-gate pipeline', () => 
     it('an unmigrated command fails through the new pipeline (signal for migration)', async () => {
       const r = new HuaweiRouter('R2');
       await r.executeCommand('system-view');
-      // `ospf 100 router-id 1.1.1.1` : commande pas encore migrée →
-      // not-found via le nouveau pipeline (dhcp enable, router id, etc.
-      // sont désormais migrés).
-      const out = await r.executeCommand('ospf 100 router-id 1.1.1.1');
+      // Une commande VRP pas encore migrée doit échouer via le nouveau
+      // pipeline.
+      const out = await r.executeCommand('multicast-suppression 10');
       expect(out).toMatch(/inconnu|Incomplete|not-found|introuvable|Invalid input|Unrecognized command/i);
     });
   });

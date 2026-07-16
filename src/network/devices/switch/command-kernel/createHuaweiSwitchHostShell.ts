@@ -21,6 +21,11 @@ import { HuaweiSwitchVlanNameCommand } from './commands/huawei/vlan-view/Name';
 import { HuaweiSwitchSysStpCommand } from './commands/huawei/system-view/Stp';
 import { HuaweiSwitchSysMacAddressCommand } from './commands/huawei/system-view/MacAddress';
 import { HuaweiSwitchDisplayStpCommand } from './commands/huawei/display/Stp';
+import { HuaweiSwitchDisplayInterfaceCommand } from './commands/huawei/display/Interface';
+import { HuaweiSwitchDisplayCurrentConfigurationCommand } from './commands/huawei/display/CurrentConfiguration';
+import { HuaweiSwitchStpRegionConfigurationRegionNameCommand } from './commands/huawei/mst-region-view/RegionName';
+import { HuaweiSwitchStpRegionConfigurationActiveCommand } from './commands/huawei/mst-region-view/Active';
+import { HuaweiSwitchIfStpCommand } from './commands/huawei/interface-view/Stp';
 // `HuaweiSwitchInterfaceVlanifCommand` est scaffoldé mais NON registered :
 // le vrai VRP réutilise le composite `interface <name>` avec le pattern
 // `Vlanif<id>` reconnu dans `HuaweiSwitchInterfaceCommand.prepare()`.
@@ -60,12 +65,15 @@ export function createHuaweiSwitchHostShell(
   displaySub.register(() => new HuaweiSwitchDisplayVlanCommand());
   displaySub.register(() => new HuaweiSwitchDisplayMacAddressCommand());
   displaySub.register(() => new HuaweiSwitchDisplayStpCommand());
+  displaySub.register(() => new HuaweiSwitchDisplayInterfaceCommand());
+  displaySub.register(() => new HuaweiSwitchDisplayCurrentConfigurationCommand());
   displaySub.register(() => new HuaweiDisplayClockCommand());
 
   const userViewRegistry = new CommandRegistry();
   const systemViewRegistry = new CommandRegistry();
   const interfaceViewRegistry = new CommandRegistry();
   const vlanViewRegistry = new CommandRegistry();
+  const mstRegionViewRegistry = new CommandRegistry();
 
   userViewRegistry.register(() => createHuaweiDisplayCommand(displaySub));
   userViewRegistry.register(() => new HuaweiSystemViewCommand());
@@ -86,6 +94,7 @@ export function createHuaweiSwitchHostShell(
   interfaceViewRegistry.register(() => new HuaweiSwitchIfShutdownCommand());
   interfaceViewRegistry.register(() => new HuaweiSwitchIfDescriptionCommand());
   interfaceViewRegistry.register(() => new HuaweiSwitchIfPortCommand());
+  interfaceViewRegistry.register(() => new HuaweiSwitchIfStpCommand());
   interfaceViewRegistry.register(() => new HuaweiSwitchIfUndoCommand());
   interfaceViewRegistry.register(() => new PopModeCommand('quit', 'Exit from the current view'));
   interfaceViewRegistry.register(() => new EndCommand(['return']));
@@ -95,11 +104,17 @@ export function createHuaweiSwitchHostShell(
   vlanViewRegistry.register(() => new PopModeCommand('quit', 'Exit from the current view'));
   vlanViewRegistry.register(() => new EndCommand(['return']));
 
+  mstRegionViewRegistry.register(() => new HuaweiSwitchStpRegionConfigurationRegionNameCommand());
+  mstRegionViewRegistry.register(() => new HuaweiSwitchStpRegionConfigurationActiveCommand());
+  mstRegionViewRegistry.register(() => new PopModeCommand('quit', 'Exit from the current view'));
+  mstRegionViewRegistry.register(() => new EndCommand(['return']));
+
   const modes = new ModeRegistry([
     { name: 'user-view',      prompt: (_s, host) => `<${host}>`,                                                             parent: null,          registry: userViewRegistry },
     { name: 'system-view',    prompt: (_s, host) => `[${host}]`,                                                              parent: 'user-view',   registry: systemViewRegistry },
     { name: 'interface-view', prompt: (s, host) => `[${host}-${s.promptFields.get('selectedInterface') ?? ''}]`,              parent: 'system-view', registry: interfaceViewRegistry, clearOnExit: ['selectedInterface'] },
     { name: 'vlan-view',      prompt: (s, host) => `[${host}-vlan${s.promptFields.get('selectedVlan') ?? ''}]`,               parent: 'system-view', registry: vlanViewRegistry,      clearOnExit: ['selectedVlan'] },
+    { name: 'mst-region-view', prompt: (_s, host) => `[${host}-mst-region]`,                                                    parent: 'system-view', registry: mstRegionViewRegistry },
   ] satisfies CliMode[]);
 
   const machine = new SwitchMachineApi({ switch: sw, modes });

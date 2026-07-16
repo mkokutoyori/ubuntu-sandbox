@@ -4,11 +4,8 @@ import { EXIT_OK } from '@/command-kernel/command/types';
 import { DefaultPrivilegePolicy } from '@/command-kernel/session/privilege-policy';
 import { PrivilegeLevel } from '@/command-kernel/session/types';
 import { CommandRegistry } from '@/command-kernel/registry/command-registry';
-import { HuaweiSwitchSysStpEnableCommand } from './stp/Enable';
-import { HuaweiSwitchSysStpModeCommand } from './stp/Mode';
-import { HuaweiSwitchStpRootCommand } from './stp/Root';
-import { HuaweiSwitchStpPriorityCommand } from './stp/Priority';
-import { HuaweiSwitchSysStpRegionConfigurationCommand } from './stp/RegionConfiguration';
+import { HuaweiSwitchIfStpBpduCommand } from './stp/Bpdu';
+import { HuaweiSwitchIfStpEdgedPortCommand } from './stp/EdgedPort';
 
 const OP = new DefaultPrivilegePolicy(PrivilegeLevel.OPERATOR);
 
@@ -18,26 +15,23 @@ const OP = new DefaultPrivilegePolicy(PrivilegeLevel.OPERATOR);
  * « incomplete command »), sinon l'interpréteur descend dans
  * `subRegistry` jusqu'à la feuille.
  */
-export class HuaweiSwitchSysStpCommand extends BaseCommand {
+export class HuaweiSwitchIfStpCommand extends BaseCommand {
   readonly descriptor: CommandDescriptor = {
     name: 'stp',
-    summary: 'STP configuration',
+    summary: 'STP per-interface configuration',
     usage: 'stp <subcommand>',
     args: [],
     options: [],
     privileges: OP,
     category: 'switch',
   };
-  readonly allowedModes = ['system-view'];
+  readonly allowedModes = ['interface-view'];
   readonly subRegistry = new CommandRegistry();
 
   constructor() {
     super();
-    this.subRegistry.register(() => new HuaweiSwitchSysStpEnableCommand());
-    this.subRegistry.register(() => new HuaweiSwitchSysStpModeCommand());
-    this.subRegistry.register(() => new HuaweiSwitchStpRootCommand());
-    this.subRegistry.register(() => new HuaweiSwitchStpPriorityCommand());
-    this.subRegistry.register(() => new HuaweiSwitchSysStpRegionConfigurationCommand());
+    this.subRegistry.register(() => new HuaweiSwitchIfStpBpduCommand());
+    this.subRegistry.register(() => new HuaweiSwitchIfStpEdgedPortCommand());
   }
 
   async execute(ctx: CommandContext): Promise<ExitCode> {

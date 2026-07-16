@@ -720,6 +720,55 @@ progressive par équipement. Un push = une entrée = une fonctionnalité
 complète et testée (voir `CLAUDE.md` / le framework de migration pour les
 principes directeurs).
 
+## Huawei — vague batch 3 : 40 nouvelles commandes scaffoldées (SNMP/NTP/AAA/ACL/OSPF/BGP/RIP/STP-adv/display switch)
+
+**État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
+
+Utilisation du mode `batch` amélioré (résolution auto des imports
+composites). 40 commandes générées d'un coup, 0 TODO à corriger à la
+main.
+
+**Routeur Huawei (33 commandes)** :
+
+- **SNMP** : composite `snmp-agent` + feuilles `enable`, `community`,
+  `sys-info`.
+- **NTP** : composites `ntp-service` + `unicast-server` + feuille
+  serveur.
+- **SSH** : composite `stelnet` + `server` + `enable`.
+- **AAA** : push-mode `aaa` → `aaa-view` + feuilles `local-user`,
+  `authentication-scheme`.
+- **Logging / ACL / MAC** : leaves `info-center`, `acl`,
+  `mac-address flapping` (via composite `mac-address` étendu).
+- **OSPF** : push-mode `ospf [<pid>]` → `ospf-view` + composite
+  `router` + feuille `router id` + push-mode `area <id>` →
+  `ospf-area-view` + feuille `network <ip> <wildcard>`.
+- **BGP** : push-mode `bgp <asn>` → `bgp-view` + feuille `peer`,
+  composite `router` + feuille `router id`.
+- **RIP** : push-mode `rip [<pid>]` → `rip-view` + feuille `network`.
+- **User-view** : `banner`.
+- **5 nouveaux modes CLI** enregistrés avec `clearOnExit` :
+  `aaa-view`, `ospf-view`, `ospf-area-view`, `bgp-view`, `rip-view`.
+
+**Switch Huawei (7 commandes)** :
+
+- **Display** : `display interface brief` (via composite `display
+  interface`), `display current-configuration` (synthèse depuis
+  MachineApi : vlan/interfaces/mode/allowed-vlans).
+- **STP** : le composite `stp` s'enrichit de `root`, `priority`,
+  `region-configuration` (push-mode → `mst-region-view`).
+- **STP interface** : composite `stp` en interface-view + feuilles
+  `bpdu`, `edged-port`.
+- **MST region** : nouveau mode `mst-region-view` + feuilles
+  `region-name`, `active`.
+
+**Preuve** :
+- Suite command-kernel = **354/354 verte** (le test « unmigrated
+  command » bascule sur `multicast-suppression 10`).
+- Suites Huawei ciblées (5 network-v2/huawei-*) mesurées avant/après
+  cette vague : **125/104 → 108/121** (+17 tests verts) grâce aux
+  nouvelles racines OSPF/BGP/RIP/AAA/STP/SNMP/NTP + `display current-
+  configuration` switch avec synthèse réelle.
+
 ## Huawei — retrait des `trie.register` legacy pour les commandes déjà migrées (routeur + switch)
 
 **État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
