@@ -5,6 +5,52 @@ progressive par équipement. Un push = une entrée = une fonctionnalité
 complète et testée (voir `CLAUDE.md` / le framework de migration pour les
 principes directeurs).
 
+## Cisco — `show ip route` (routeur) + `show mac address-table` (switch) migrés
+
+**État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
+
+Deuxième vague de sous-commandes Cisco IOS. `show ip route` s'ajoute au
+sous-registre `show ip` existant, `show mac address-table` introduit une
+nouvelle composition `show mac` côté switch.
+
+- **Enrichissement `RouterMachineApi`** : nouvelle capacité
+  `router.routes(): readonly RouterRouteInfo[]` avec DTO stable
+  (`network`, `mask`, `cidr`, `nextHop`, `iface`, `type`, `ad`, `metric`
+  — types texte + entier, aucune fuite d'objets `IPAddress` / `SubnetMask`
+  / `RouteEntry`). Cas d'école du point d'extension autorisé : capacité
+  ajoutée à la sous-façade sans rupture, DTOs typés.
+
+- **Nouveau côté routeur** :
+  `commands/cisco/show/ip/Route.ts` — feuille standalone `show ip route`.
+  Lit `RouterMachineApi.router.routes()`, formate la ligne de codes IOS
+  (`Codes: C - connected, S - static, R - RIP, O - OSPF, D - EIGRP,
+  B - BGP, * - candidate default`), le « Gateway of last resort », puis
+  une ligne par route triée par type (connected → OSPF → EIGRP → BGP →
+  RIP → static → default). Codes par type, format `${code}    ${network}/
+  ${cidr}${metricStr} ${via}, ${iface}` reproduits inline.
+
+- **Nouveau côté switch** :
+  - `commands/cisco/show/Mac.ts` — composite `show mac` (sous-registre
+    pour `address-table`, plus tard `count`, `aging-time`, etc.).
+  - `commands/cisco/show/mac/AddressTable.ts` — feuille standalone
+    `show mac address-table`. Lit `SwitchMachineApi.switch.macTable()`,
+    formate l'en-tête `Mac Address Table` + tableau `Vlan/Mac Address/
+    Type/Ports` + total. Tri par VLAN puis MAC. Gère « No entries. »
+    lorsque la table est vide.
+
+- **Preuve exécutable** : `router-cli-foundation.test.ts` +2 cas
+  (codes IOS + gateway, abréviation `sh ip ro`) et
+  `switch-cli-foundation.test.ts` +3 cas (en-tête + séparateur, `sh mac
+  add`, `show mac` seul incomplete). Suite command-kernel 110/110
+  verte. `tsc` propre sur les fichiers touchés.
+
+- **Effet attendu (signal migration)** : les tests legacy exerçant
+  `show running-config`, `show interfaces status`, `show vlan` (full),
+  `clear mac address-table`, etc. rougissent — signal explicite des
+  prochaines commandes à migrer. Le test « unmigrated signal » côté
+  routeur pointe désormais `show running-config`, côté switch
+  `show interfaces status`.
+
 ## Cisco — `show ip interface brief` (routeur) + `show vlan brief` (switch) migrés
 
 **État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**

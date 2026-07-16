@@ -122,14 +122,26 @@ describe('Router CLI foundation — command-kernel single-gate pipeline', () => 
       expect(out).toMatch(/Incomplete/);
     });
 
+    it('`show ip route` produit la ligne de codes IOS et « Gateway of last resort » à partir de MachineApi', async () => {
+      const r = new CiscoRouter('R1');
+      const out = await r.executeCommand('show ip route');
+      expect(out).toMatch(/^Codes: C - connected, S - static, R - RIP, O - OSPF, D - EIGRP, B - BGP/m);
+      // Sans nexthop par défaut → gateway not set.
+      expect(out).toMatch(/^Gateway of last resort is not set$/m);
+    });
+
+    it('abbreviation `sh ip ro` résout jusqu\'à `show ip route`', async () => {
+      const r = new CiscoRouter('R1');
+      const out = await r.executeCommand('sh ip ro');
+      expect(out).toMatch(/^Codes: C - connected/m);
+    });
+
     it('an unmigrated command fails through the new pipeline (signal for migration)', async () => {
       const r = new CiscoRouter('R1');
       await r.executeCommand('enable');
-      // `show ip route` : `route` n'est pas encore une sous-commande de
-      // `show ip` → l'interpréteur s'arrête sur `ip` (composite), qui
-      // retourne « Incomplete command. ». Signal explicite : migrer
-      // `show ip route` viendra plus tard.
-      const out = await r.executeCommand('show ip route');
+      // `show running-config` : sous-commande `running-config` de `show`
+      // pas encore migrée → « Incomplete » via le nouveau pipeline.
+      const out = await r.executeCommand('show running-config');
       expect(out).toMatch(/inconnu|Incomplete|not-found|introuvable/i);
     });
   });

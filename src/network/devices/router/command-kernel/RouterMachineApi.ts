@@ -53,6 +53,22 @@ export interface RouterInterfaceInfo {
   readonly description: string;
 }
 
+/** DTO de route exposé aux commandes — évite de fuiter `RouteEntry`
+ *  (qui référence des instances `IPAddress`/`SubnetMask`). Sous forme
+ *  texte + entier prêts à formater. */
+export type RouterRouteType = 'connected' | 'static' | 'default' | 'rip' | 'ospf' | 'eigrp' | 'bgp';
+
+export interface RouterRouteInfo {
+  readonly network: string;
+  readonly mask: string;
+  readonly cidr: number;
+  readonly nextHop: string | null;
+  readonly iface: string;
+  readonly type: RouterRouteType;
+  readonly ad: number;
+  readonly metric: number;
+}
+
 /** Sous-façade `router` : lecture/écriture typée de l'état routeur.
  *  Aucun `Port`/`Router`/`ACLEngine` ne fuit ; les commandes reçoivent
  *  des DTOs et appellent des méthodes explicites pour muter l'état. */
@@ -64,6 +80,9 @@ export interface RouterCapabilityApi {
   setInterfaceDescription(name: string, description: string): boolean;
   /** État admin (`no shutdown`/`shutdown`). Retourne `false` si absente. */
   setInterfaceAdminUp(name: string, up: boolean): boolean;
+  /** Table de routage IPv4 (RIB) sous forme de DTOs stables. Ordre
+   *  d'insertion préservé — les commandes trient elles-mêmes. */
+  routes(): readonly RouterRouteInfo[];
 }
 
 class RouterCapabilityImpl implements RouterCapabilityApi {
@@ -111,6 +130,19 @@ class RouterCapabilityImpl implements RouterCapabilityApi {
     if (!port) return false;
     port.setAdminDown(!up);
     return true;
+  }
+
+  routes(): readonly RouterRouteInfo[] {
+    return this.router.getRoutingTable().map((r) => ({
+      network: r.network.toString(),
+      mask: r.mask.toString(),
+      cidr: r.mask.toCIDR(),
+      nextHop: r.nextHop ? r.nextHop.toString() : null,
+      iface: r.iface,
+      type: r.type as RouterRouteType,
+      ad: r.ad,
+      metric: r.metric,
+    }));
   }
 }
 

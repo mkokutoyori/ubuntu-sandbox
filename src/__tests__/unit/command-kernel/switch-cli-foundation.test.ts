@@ -97,10 +97,31 @@ describe('Switch CLI foundation — command-kernel single-gate pipeline', () => 
       expect(out).toMatch(/Incomplete/);
     });
 
+    it('`show mac address-table` produit l\'en-tête IOS 2960 depuis MachineApi', async () => {
+      const sw = new CiscoSwitch('sw-cisco', 'SW1', 24);
+      const out = await sw.executeCommand('show mac address-table');
+      expect(out).toMatch(/^Mac Address Table$/m);
+      expect(out).toMatch(/^-{43}$/m);
+      // Aucune entrée dynamique par défaut → « No entries. » (format vendeur).
+      expect(out).toMatch(/^No entries\.$/m);
+    });
+
+    it('abbreviation `sh mac add` résout jusqu\'à `show mac address-table`', async () => {
+      const sw = new CiscoSwitch('sw-cisco', 'SW1', 24);
+      const out = await sw.executeCommand('sh mac add');
+      expect(out).toMatch(/^Mac Address Table$/m);
+    });
+
+    it('`show mac` seul est incomplete (composite non exécutable)', async () => {
+      const sw = new CiscoSwitch('sw-cisco', 'SW1', 24);
+      const out = await sw.executeCommand('show mac');
+      expect(out).toMatch(/Incomplete/);
+    });
+
     it('an unmigrated command fails through the new pipeline (signal for migration)', async () => {
       const sw = new CiscoSwitch('sw-cisco', 'SW1', 24);
       await sw.executeCommand('enable');
-      const out = await sw.executeCommand('show mac address-table');
+      const out = await sw.executeCommand('show interfaces status');
       expect(out).toMatch(/inconnu|Incomplete|not-found|introuvable/i);
     });
   });

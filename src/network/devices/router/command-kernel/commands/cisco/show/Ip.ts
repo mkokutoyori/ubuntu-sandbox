@@ -4,6 +4,7 @@ import { CommandRegistry } from '@/command-kernel/registry/command-registry';
 import { DefaultPrivilegePolicy } from '@/command-kernel/session/privilege-policy';
 import { PrivilegeLevel } from '@/command-kernel/session/types';
 import { CiscoRouterShowIpInterfaceCommand } from './ip/Interface';
+import { CiscoRouterShowIpRouteCommand } from './ip/Route';
 
 const ANY = new DefaultPrivilegePolicy(PrivilegeLevel.ANY);
 
@@ -32,6 +33,7 @@ export class CiscoRouterShowIpCommand extends BaseCommand {
   constructor() {
     super();
     this.subRegistry.register(() => new CiscoRouterShowIpInterfaceCommand());
+    this.subRegistry.register(() => new CiscoRouterShowIpRouteCommand());
   }
 
   async execute(ctx: CommandContext): Promise<ExitCode> {
