@@ -510,4 +510,179 @@ describe('Cisco Catalyst — configuration L2 (command-kernel)', () => {
       expect(machineOf(sw).switch.interface('FastEthernet0/2')?.adminUp).toBe(false);
     });
   });
+
+  // ─── Bloc 15 : vlan <range/list> (batch creation) ───────────────
+
+  describe('vlan <plage/liste> (création batch en config)', () => {
+    it('`vlan 30-35` crée 6 VLANs et RESTE en config (pas de push)', async () => {
+      const sw = await toConfig();
+      const out = await sw.executeCommand('vlan 30-35');
+      expect(out).toBe('');
+      expect(sw.getPrompt()).toBe('SW1(config)#');
+      for (let v = 30; v <= 35; v++) {
+        expect(machineOf(sw).switch.vlan(v)).not.toBeNull();
+      }
+    });
+
+    it('`vlan 100,200,300` crée 3 VLANs (liste)', async () => {
+      const sw = await toConfig();
+      await sw.executeCommand('vlan 100,200,300');
+      expect(sw.getPrompt()).toBe('SW1(config)#');
+      for (const v of [100, 200, 300]) {
+        expect(machineOf(sw).switch.vlan(v)).not.toBeNull();
+      }
+    });
+
+    it('`vlan 40` (ID unique) push config-vlan comme avant', async () => {
+      const sw = await toConfig();
+      await sw.executeCommand('vlan 40');
+      expect(sw.getPrompt()).toBe('SW1(config-vlan)#');
+      expect(machineOf(sw).switch.vlan(40)).not.toBeNull();
+    });
+
+    it('`vlan 30-4095` refuse (borne max)', async () => {
+      const sw = await toConfig();
+      const out = await sw.executeCommand('vlan 30-4095');
+      expect(out).toMatch(/Invalid input/);
+    });
+
+    it('`vlan junk` refuse (spec invalide)', async () => {
+      const sw = await toConfig();
+      const out = await sw.executeCommand('vlan junk');
+      expect(out).toMatch(/Invalid input/);
+    });
+
+    it('la création batch apparaît dans show vlan brief', async () => {
+      const sw = await toConfig();
+      await sw.executeCommand('vlan 200,201');
+      await sw.executeCommand('end');
+      const out = await sw.executeCommand('show vlan brief');
+      expect(out).toMatch(/^200\s+VLAN0200\s+active/m);
+      expect(out).toMatch(/^201\s+VLAN0201\s+active/m);
+    });
+  });
+
+  // ─── Bloc 16 : port-security ────────────────────────────────────
+
+  describe('switchport port-security', () => {
+    it('`switchport port-security` seul active port-security (default max=1, violation=shutdown)', async () => {
+      const sw = await toConfig();
+      await sw.executeCommand('interface FastEthernet0/1');
+      await sw.executeCommand('switchport port-security');
+      const info = machineOf(sw).switch.interface('FastEthernet0/1');
+      expect(info?.portSecurity.enabled).toBe(true);
+      expect(info?.portSecurity.maxMac).toBe(1);
+      expect(info?.portSecurity.violationMode).toBe('shutdown');
+      expect(info?.portSecurity.sticky).toBe(false);
+    });
+
+    it('`switchport port-security maximum 4` positionne maxMac=4', async () => {
+      const sw = await toConfig();
+      await sw.executeCommand('interface FastEthernet0/1');
+      await sw.executeCommand('switchport port-security maximum 4');
+      const info = machineOf(sw).switch.interface('FastEthernet0/1');
+      expect(info?.portSecurity.maxMac).toBe(4);
+    });
+
+    it('`switchport port-security maximum 0` refuse (au moins 1)', async () => {
+      const sw = await toConfig();
+      await sw.executeCommand('interface FastEthernet0/1');
+      const out = await sw.executeCommand('switchport port-security maximum 0');
+      expect(out).toMatch(/Invalid input/);
+    });
+
+    it('`switchport port-security violation restrict` positionne violation=restrict', async () => {
+      const sw = await toConfig();
+      await sw.executeCommand('interface FastEthernet0/1');
+      await sw.executeCommand('switchport port-security violation restrict');
+      const info = machineOf(sw).switch.interface('FastEthernet0/1');
+      expect(info?.portSecurity.violationMode).toBe('restrict');
+    });
+
+    it('`switchport port-security violation protect` positionne violation=protect', async () => {
+      const sw = await toConfig();
+      await sw.executeCommand('interface FastEthernet0/1');
+      await sw.executeCommand('switchport port-security violation protect');
+      const info = machineOf(sw).switch.interface('FastEthernet0/1');
+      expect(info?.portSecurity.violationMode).toBe('protect');
+    });
+
+    it('`switchport port-security violation shutdown` positionne violation=shutdown (défaut)', async () => {
+      const sw = await toConfig();
+      await sw.executeCommand('interface FastEthernet0/1');
+      await sw.executeCommand('switchport port-security violation restrict');
+      await sw.executeCommand('switchport port-security violation shutdown');
+      const info = machineOf(sw).switch.interface('FastEthernet0/1');
+      expect(info?.portSecurity.violationMode).toBe('shutdown');
+    });
+
+    it('`switchport port-security violation` seul est incomplete', async () => {
+      const sw = await toConfig();
+      await sw.executeCommand('interface FastEthernet0/1');
+      const out = await sw.executeCommand('switchport port-security violation');
+      expect(out).toMatch(/Incomplete/);
+    });
+
+    it('`switchport port-security mac-address sticky` positionne sticky=true', async () => {
+      const sw = await toConfig();
+      await sw.executeCommand('interface FastEthernet0/1');
+      await sw.executeCommand('switchport port-security mac-address sticky');
+      const info = machineOf(sw).switch.interface('FastEthernet0/1');
+      expect(info?.portSecurity.sticky).toBe(true);
+    });
+
+    it('`switchport port-security mac-address` seul est incomplete', async () => {
+      const sw = await toConfig();
+      await sw.executeCommand('interface FastEthernet0/1');
+      const out = await sw.executeCommand('switchport port-security mac-address');
+      expect(out).toMatch(/Incomplete/);
+    });
+
+    it('port-security fonctionne aussi en `interface range` (broadcast)', async () => {
+      const sw = await toConfig();
+      await sw.executeCommand('interface range FastEthernet0/1-3');
+      await sw.executeCommand('switchport port-security');
+      await sw.executeCommand('switchport port-security maximum 2');
+      for (const p of ['FastEthernet0/1', 'FastEthernet0/2', 'FastEthernet0/3']) {
+        const info = machineOf(sw).switch.interface(p);
+        expect(info?.portSecurity.enabled).toBe(true);
+        expect(info?.portSecurity.maxMac).toBe(2);
+      }
+    });
+  });
+
+  // ─── Bloc 17 : abréviations vlan-range / port-security ──────────
+
+  describe('Abréviations vlan-range / port-security', () => {
+    it('`sw po max 5` résout `switchport port-security maximum 5`', async () => {
+      const sw = await toConfig();
+      await sw.executeCommand('interface FastEthernet0/1');
+      await sw.executeCommand('sw po max 5');
+      const info = machineOf(sw).switch.interface('FastEthernet0/1');
+      expect(info?.portSecurity.maxMac).toBe(5);
+    });
+
+    it('`sw po m` seul est ambigu (maximum vs mac-address)', async () => {
+      const sw = await toConfig();
+      await sw.executeCommand('interface FastEthernet0/1');
+      const out = await sw.executeCommand('sw po m 5');
+      expect(out).toMatch(/ambigu|Ambiguous/i);
+    });
+
+    it('`sw po v r` résout `switchport port-security violation restrict`', async () => {
+      const sw = await toConfig();
+      await sw.executeCommand('interface FastEthernet0/1');
+      await sw.executeCommand('sw po v r');
+      const info = machineOf(sw).switch.interface('FastEthernet0/1');
+      expect(info?.portSecurity.violationMode).toBe('restrict');
+    });
+
+    it('`sw po mac st` résout `switchport port-security mac-address sticky`', async () => {
+      const sw = await toConfig();
+      await sw.executeCommand('interface FastEthernet0/1');
+      await sw.executeCommand('sw po mac st');
+      const info = machineOf(sw).switch.interface('FastEthernet0/1');
+      expect(info?.portSecurity.sticky).toBe(true);
+    });
+  });
 });

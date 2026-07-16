@@ -135,6 +135,66 @@ migrées (shutdown, description, switchport …).
   `nonegotiate` / `voice` / `port-security`, `channel-group` +
   `Port-channel` + `show etherchannel`.
 
+## Cisco switch — vlan &lt;plage/liste&gt; + switchport port-security
+
+**État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
+
+Prolongement direct des vagues précédentes. Deux fonctionnalités
+majeures Cisco :
+
+1. **`vlan <spec>` dual-mode** (config) :
+   - ID unique (`vlan 40`) → create + push config-vlan (comportement
+     historique).
+   - Plage (`vlan 30-35`) ou liste (`vlan 10,20,30`) → batch de
+     création + RESTE en config (le vrai IOS ne bascule pas quand la
+     sélection cible plusieurs entrées).
+   - Réutilise le parseur PUR `parseVlanList` déjà écrit pour
+     `switchport trunk allowed vlan` — règle 2 : source unique de
+     parsing, aucune duplication.
+
+2. **`switchport port-security` (composite dual-role) + toute son
+   arborescence** (config-if) :
+   - `switchport port-security` seul → enable.
+   - `switchport port-security maximum <n>` → maxMac.
+   - `switchport port-security violation {protect|restrict|shutdown}`
+     (composite → 3 feuilles via `CiscoSwitchPortSecurityViolationLeaf
+     Base`).
+   - `switchport port-security mac-address sticky` (composite → feuille).
+   - Toutes broadcastent via `broadcastInterfaces` — fonctionne avec
+     `interface range`.
+
+- **Enrichissement `SwitchMachineApi`** :
+  - Nouveau DTO `SwitchPortSecurityInfo` (`enabled`, `maxMac`,
+    `violationMode`, `sticky`) — ajouté à `SwitchInterfaceInfo`
+    (extension sans rupture).
+  - Nouveau type public `SwitchPortViolationMode`.
+  - Helper privé `readPortSecurity(port)` isole l'unique dépendance à
+    l'accessor `Port.getPortSecurity()`.
+  - Setters : `setInterfacePortSecurityEnabled`,
+    `setInterfacePortSecurityMaximum`,
+    `setInterfacePortSecurityViolation`,
+    `setInterfacePortSecuritySticky` (tous retournent `boolean`).
+
+- **Palette de tests étendue** (`switch-config-cisco.test.ts`) : passe
+  de 50 à **69 cas verts**, +3 blocs :
+  - **Bloc 15 : `vlan <plage/liste>` batch** (6) — plage, liste, ID
+    unique préserve le push, hors bornes, spec invalide, effet sur
+    `show vlan brief`.
+  - **Bloc 16 : port-security** (10) — enable seul, maximum,
+    maximum 0 refusé, violation restrict/protect/shutdown, violation
+    incomplete, mac-address sticky, mac-address incomplete, broadcast
+    en `interface range`.
+  - **Bloc 17 : Abréviations port-security** (4) — `sw po max`,
+    `sw po m` ambigu (rejet propre), `sw po mac st`, `sw po v r`.
+
+- **Preuve exécutable globale** : suite command-kernel **257/257
+  verte**. `tsc` propre.
+
+- **Effet attendu (signal migration)** : le legacy
+  `cisco-switchport.test.ts` passe désormais **2/4** (contre 1/4). Les
+  2 rouges restants : `trunk encapsulation` / `nonegotiate` / `voice`,
+  et `channel-group` / `Port-channel` — cibles suivantes.
+
 Journal des évolutions du socle `command-kernel` et de sa migration
 progressive par équipement. Un push = une entrée = une fonctionnalité
 complète et testée (voir `CLAUDE.md` / le framework de migration pour les

@@ -42,6 +42,16 @@ export interface SwitchMachineApiDeps {
  *  fuient jamais aux commandes. */
 export type SwitchInterfaceMode = 'access' | 'trunk' | 'hybrid' | 'dot1q-tunnel';
 
+export type SwitchPortViolationMode = 'protect' | 'restrict' | 'shutdown';
+
+/** État port-security exposé aux commandes migrées — DTO stable. */
+export interface SwitchPortSecurityInfo {
+  readonly enabled: boolean;
+  readonly maxMac: number;
+  readonly violationMode: SwitchPortViolationMode;
+  readonly sticky: boolean;
+}
+
 export interface SwitchInterfaceInfo {
   readonly name: string;
   readonly mac: string;
@@ -53,6 +63,7 @@ export interface SwitchInterfaceInfo {
   readonly accessVlan: number;
   readonly trunkNativeVlan: number;
   readonly trunkAllowedVlans: readonly number[];
+  readonly portSecurity: SwitchPortSecurityInfo;
 }
 
 export interface SwitchVlanInfo {
@@ -99,6 +110,14 @@ export interface SwitchCapabilityApi {
   ): boolean;
   /** Réinitialise à `all` (1-4094) — utilisé par `switchport trunk allowed vlan all`. */
   resetInterfaceTrunkAllowedVlans(name: string): boolean;
+  /** Active/désactive `switchport port-security` sur un port. */
+  setInterfacePortSecurityEnabled(name: string, enabled: boolean): boolean;
+  /** `switchport port-security maximum <n>`. */
+  setInterfacePortSecurityMaximum(name: string, max: number): boolean;
+  /** `switchport port-security violation {protect|restrict|shutdown}`. */
+  setInterfacePortSecurityViolation(name: string, mode: SwitchPortViolationMode): boolean;
+  /** `switchport port-security mac-address sticky`. */
+  setInterfacePortSecuritySticky(name: string, sticky: boolean): boolean;
 
   vlans(): readonly SwitchVlanInfo[];
   vlan(id: number): SwitchVlanInfo | null;
@@ -111,6 +130,18 @@ export interface SwitchCapabilityApi {
   renameVlan(id: number, name: string): { ok: boolean; error?: string };
 
   macTable(): readonly SwitchMacEntry[];
+}
+
+/** Lecture d'état port-security via l'accessor du `Port` — isolé ici
+ *  pour que les commandes ne connaissent que le DTO. */
+function readPortSecurity(port: import('../../../hardware/Port').Port): SwitchPortSecurityInfo {
+  const sec = port.getPortSecurity();
+  return {
+    enabled: sec.isEnabled(),
+    maxMac: sec.getMaxMACAddresses(),
+    violationMode: sec.getViolationMode(),
+    sticky: sec.isStickyEnabled(),
+  };
 }
 
 class SwitchCapabilityImpl implements SwitchCapabilityApi {
@@ -139,6 +170,7 @@ class SwitchCapabilityImpl implements SwitchCapabilityApi {
       accessVlan: cfg?.accessVlan ?? 1,
       trunkNativeVlan: cfg?.trunkNativeVlan ?? 1,
       trunkAllowedVlans: cfg?.trunkAllowedVlans ? [...cfg.trunkAllowedVlans].sort((a, b) => a - b) : [],
+      portSecurity: readPortSecurity(port),
     };
   }
 
@@ -210,6 +242,37 @@ class SwitchCapabilityImpl implements SwitchCapabilityApi {
     const all = new Set<number>();
     for (let i = 1; i <= 4094; i++) all.add(i);
     return this.sw.setTrunkAllowedVlans(name, all);
+  }
+
+  setInterfacePortSecurityEnabled(name: string, enabled: boolean): boolean {
+    const port = this.sw.getPort(name);
+    if (!port) return false;
+    if (enabled) port.getPortSecurity().enable();
+    else port.getPortSecurity().disable();
+    return true;
+  }
+
+  setInterfacePortSecurityMaximum(name: string, max: number): boolean {
+    const port = this.sw.getPort(name);
+    if (!port) return false;
+    if (!Number.isInteger(max) || max < 1) return false;
+    try { port.getPortSecurity().setMaxMACAddresses(max); return true; }
+    catch { return false; }
+  }
+
+  setInterfacePortSecurityViolation(name: string, mode: SwitchPortViolationMode): boolean {
+    const port = this.sw.getPort(name);
+    if (!port) return false;
+    port.getPortSecurity().setViolationMode(mode);
+    return true;
+  }
+
+  setInterfacePortSecuritySticky(name: string, sticky: boolean): boolean {
+    const port = this.sw.getPort(name);
+    if (!port) return false;
+    if (sticky) port.getPortSecurity().enableSticky();
+    else port.getPortSecurity().disableSticky();
+    return true;
   }
 
   createVlan(id: number, name?: string): { ok: boolean; error?: string } {
