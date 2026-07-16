@@ -13,6 +13,14 @@ import { HuaweiRouterSysnameCommand } from './commands/huawei/system-view/Sysnam
 import { HuaweiRouterInterfaceCommand } from './commands/huawei/system-view/Interface';
 import { HuaweiRouterSysIpCommand } from './commands/huawei/system-view/Ip';
 import { HuaweiRouterSysArpCommand } from './commands/huawei/system-view/Arp';
+import { HuaweiRouterSysDhcpCommand } from './commands/huawei/system-view/Dhcp';
+import { HuaweiRouterHeaderCommand } from './commands/huawei/system-view/Header';
+import { HuaweiRouterStartupCommand } from './commands/huawei/user-view/Startup';
+import { HuaweiRouterDisplaySavedConfigurationCommand } from './commands/huawei/display/SavedConfiguration';
+import { HuaweiRouterIfMtuCommand } from './commands/huawei/interface-view/Mtu';
+import { HuaweiRouterIfBandwidthCommand } from './commands/huawei/interface-view/Bandwidth';
+import { HuaweiRouterIfSpeedCommand } from './commands/huawei/interface-view/Speed';
+import { HuaweiRouterIfDuplexCommand } from './commands/huawei/interface-view/Duplex';
 import { HuaweiRouterSysUndoCommand } from './commands/huawei/system-view/Undo';
 import { HuaweiRouterIfIpCommand } from './commands/huawei/interface-view/Ip';
 import { HuaweiRouterIfShutdownCommand } from './commands/huawei/interface-view/Shutdown';
@@ -50,6 +58,7 @@ export function createHuaweiRouterHostShell(
   displaySub.register(() => new HuaweiRouterDisplayIpCommand());
   displaySub.register(() => new HuaweiDisplayClockCommand());
   displaySub.register(() => new HuaweiRouterDisplayCurrentConfigurationCommand());
+  displaySub.register(() => new HuaweiRouterDisplaySavedConfigurationCommand());
   displaySub.register(() => new HuaweiRouterDisplayArpCommand());
 
   const userViewRegistry = new CommandRegistry();
@@ -59,6 +68,7 @@ export function createHuaweiRouterHostShell(
   userViewRegistry.register(() => createHuaweiDisplayCommand(displaySub));
   userViewRegistry.register(() => new HuaweiSystemViewCommand());
   userViewRegistry.register(() => new HuaweiSaveCommand());
+  userViewRegistry.register(() => new HuaweiRouterStartupCommand());
   userViewRegistry.register(() => new PopModeCommand('quit', 'Exit from the current view'));
 
   systemViewRegistry.register(() => createHuaweiDisplayCommand(displaySub));
@@ -67,6 +77,8 @@ export function createHuaweiRouterHostShell(
   systemViewRegistry.register(() => new HuaweiRouterInterfaceCommand());
   systemViewRegistry.register(() => new HuaweiRouterSysIpCommand());
   systemViewRegistry.register(() => new HuaweiRouterSysArpCommand());
+  systemViewRegistry.register(() => new HuaweiRouterSysDhcpCommand());
+  systemViewRegistry.register(() => new HuaweiRouterHeaderCommand());
   systemViewRegistry.register(() => new HuaweiRouterSysUndoCommand());
   systemViewRegistry.register(() => new PopModeCommand('quit', 'Exit from the current view'));
   systemViewRegistry.register(() => new EndCommand(['return']));
@@ -74,6 +86,10 @@ export function createHuaweiRouterHostShell(
   interfaceViewRegistry.register(() => new HuaweiRouterIfIpCommand());
   interfaceViewRegistry.register(() => new HuaweiRouterIfShutdownCommand());
   interfaceViewRegistry.register(() => new HuaweiRouterIfDescriptionCommand());
+  interfaceViewRegistry.register(() => new HuaweiRouterIfMtuCommand());
+  interfaceViewRegistry.register(() => new HuaweiRouterIfBandwidthCommand());
+  interfaceViewRegistry.register(() => new HuaweiRouterIfSpeedCommand());
+  interfaceViewRegistry.register(() => new HuaweiRouterIfDuplexCommand());
   interfaceViewRegistry.register(() => new HuaweiRouterIfUndoCommand());
   interfaceViewRegistry.register(() => new PopModeCommand('quit', 'Exit from the current view'));
   interfaceViewRegistry.register(() => new EndCommand(['return']));

@@ -3,36 +3,32 @@ import type { CommandContext, CommandDescriptor, ExitCode } from '@/command-kern
 import { CommandRegistry } from '@/command-kernel/registry/command-registry';
 import { DefaultPrivilegePolicy } from '@/command-kernel/session/privilege-policy';
 import { PrivilegeLevel } from '@/command-kernel/session/types';
-import { HuaweiRouterUndoIpCommand } from './undo/Ip';
-import { HuaweiRouterUndoArpCommand } from './undo/Arp';
-import { HuaweiRouterUndoDhcpCommand } from './undo/Dhcp';
+import { HuaweiSwitchSysMacAddressAgingTimeCommand } from './mac-address/AgingTime';
 
 const OP = new DefaultPrivilegePolicy(PrivilegeLevel.OPERATOR);
 
 /**
- * `undo` (Huawei VRP, mode system-view) — commande COMPOSITE. Racine
- * des négations en system-view (`undo ip route-static`, plus tard
- * `undo sysname`, `undo dhcp enable`, `undo ipv6`, …). VRP utilise
- * `undo` au lieu du `no` Cisco.
+ * `mac-address` (Huawei VRP switch, system-view) — commande COMPOSITE.
+ * Racine des commandes de la MAC address table côté control-plane
+ * (`mac-address aging-time`, plus tard `mac-address static`,
+ * `mac-address blackhole`, `mac-address flapping`, …).
  */
-export class HuaweiRouterSysUndoCommand extends BaseCommand {
+export class HuaweiSwitchSysMacAddressCommand extends BaseCommand {
   readonly descriptor: CommandDescriptor = {
-    name: 'undo',
-    summary: 'Negate a command / restore its default',
-    usage: 'undo <command>',
+    name: 'mac-address',
+    summary: 'MAC address table configuration',
+    usage: 'mac-address <subcommand>',
     args: [],
     options: [],
     privileges: OP,
-    category: 'router',
+    category: 'switch',
   };
   readonly allowedModes = ['system-view'];
   readonly subRegistry = new CommandRegistry();
 
   constructor() {
     super();
-    this.subRegistry.register(() => new HuaweiRouterUndoIpCommand());
-    this.subRegistry.register(() => new HuaweiRouterUndoArpCommand());
-    this.subRegistry.register(() => new HuaweiRouterUndoDhcpCommand());
+    this.subRegistry.register(() => new HuaweiSwitchSysMacAddressAgingTimeCommand());
   }
 
   async execute(ctx: CommandContext): Promise<ExitCode> {

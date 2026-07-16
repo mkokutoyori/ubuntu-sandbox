@@ -4,7 +4,7 @@ import { EXIT_OK } from '@/command-kernel/command/types';
 import { DefaultPrivilegePolicy } from '@/command-kernel/session/privilege-policy';
 import { PrivilegeLevel } from '@/command-kernel/session/types';
 import type { CliSession } from '@/command-kernel/cli';
-import type { SwitchMachineApi } from '../../../../../SwitchMachineApi';
+import type { SwitchMachineApi } from '../../../../../../SwitchMachineApi';
 
 const OP = new DefaultPrivilegePolicy(PrivilegeLevel.OPERATOR);
 

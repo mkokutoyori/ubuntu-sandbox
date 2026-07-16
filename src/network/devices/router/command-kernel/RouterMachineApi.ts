@@ -125,6 +125,9 @@ export interface RouterCapabilityApi {
   /** Retire une entrée ARP par IP (`undo arp <ip>` / `undo arp static
    *  <ip>`). Retourne `false` si l'entrée n'existe pas. */
   removeArp(ip: string): boolean;
+  /** Ajuste le MTU d'une interface (`mtu <bytes>`). Retourne `false`
+   *  si l'interface est absente ou la valeur invalide (68..9216). */
+  setInterfaceMtu(name: string, bytes: number): boolean;
   /** Ajoute une route statique (`ip route <net> <mask> <nexthop>`).
    *  Retourne `{ ok: false, error }` sans exception si les valeurs
    *  sont invalides ou la limite RIB atteinte. */
@@ -322,6 +325,14 @@ class RouterCapabilityImpl implements RouterCapabilityApi {
     try { parsedIp = new IPAddress(ip); } catch { return false; }
     return (this.router as unknown as { _deleteARP(ip: IPAddress): boolean })._deleteARP(parsedIp);
   }
+
+  setInterfaceMtu(name: string, bytes: number): boolean {
+    const port = this.router.getPort(name);
+    if (!port) return false;
+    if (!Number.isInteger(bytes) || bytes < 68 || bytes > 9216) return false;
+    port.setMTU(bytes);
+    return true;
+  }
 }
 
 class RouterNetworkApi implements NetworkApi {
@@ -427,5 +438,24 @@ export class RouterMachineApi implements MachineApi {
 
   now(): Date {
     return new Date();
+  }
+
+  /** `dhcp enable` — active le service DHCP global. */
+  enableDhcp(): void {
+    (this.deps.router as unknown as { _getDHCPServerInternal(): { enable(): void } })._getDHCPServerInternal().enable();
+  }
+
+  /** `undo dhcp enable` — désactive le service DHCP global. */
+  disableDhcp(): void {
+    (this.deps.router as unknown as { _getDHCPServerInternal(): { disable(): void } })._getDHCPServerInternal().disable();
+  }
+
+  isDhcpEnabled(): boolean {
+    return (this.deps.router as unknown as { _getDHCPServerInternal(): { isEnabled(): boolean } })._getDHCPServerInternal().isEnabled();
+  }
+
+  /** `mtu <bytes>` (interface-view) — délègue au sous-capability `router`. */
+  setInterfaceMtu(name: string, bytes: number): boolean {
+    return this.router.setInterfaceMtu(name, bytes);
   }
 }

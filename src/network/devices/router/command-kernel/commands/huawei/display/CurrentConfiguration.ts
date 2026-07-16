@@ -38,6 +38,11 @@ export class HuaweiRouterDisplayCurrentConfigurationCommand extends BaseCommand 
     const machine = ctx.machine as RouterMachineApi;
     const lines: string[] = ['#', `sysname ${machine.hostname}`, '#'];
 
+    // Services globaux : DHCP.
+    if (machine.isDhcpEnabled()) {
+      lines.push('dhcp enable', '#');
+    }
+
     // Interfaces — bloc par port, `#` en séparateur.
     for (const info of machine.router.interfaces()) {
       lines.push(`interface ${renderInterfaceName(info.name)}`);

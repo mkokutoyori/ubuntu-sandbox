@@ -18,6 +18,9 @@ import { HuaweiSwitchIfPortCommand } from './commands/huawei/interface-view/Port
 import { HuaweiSwitchIfUndoCommand } from './commands/huawei/interface-view/Undo';
 import { HuaweiSwitchVlanDescriptionCommand } from './commands/huawei/vlan-view/Description';
 import { HuaweiSwitchVlanNameCommand } from './commands/huawei/vlan-view/Name';
+import { HuaweiSwitchSysStpCommand } from './commands/huawei/system-view/Stp';
+import { HuaweiSwitchSysMacAddressCommand } from './commands/huawei/system-view/MacAddress';
+import { HuaweiSwitchDisplayStpCommand } from './commands/huawei/display/Stp';
 
 /**
  * =====================================================================
@@ -52,6 +55,7 @@ export function createHuaweiSwitchHostShell(
   displaySub.register(() => new HuaweiSwitchDisplayVersionCommand());
   displaySub.register(() => new HuaweiSwitchDisplayVlanCommand());
   displaySub.register(() => new HuaweiSwitchDisplayMacAddressCommand());
+  displaySub.register(() => new HuaweiSwitchDisplayStpCommand());
   displaySub.register(() => new HuaweiDisplayClockCommand());
 
   const userViewRegistry = new CommandRegistry();
@@ -69,6 +73,8 @@ export function createHuaweiSwitchHostShell(
   systemViewRegistry.register(() => new HuaweiSwitchSysnameCommand());
   systemViewRegistry.register(() => new HuaweiSwitchInterfaceCommand());
   systemViewRegistry.register(() => new HuaweiSwitchVlanCommand());
+  systemViewRegistry.register(() => new HuaweiSwitchSysStpCommand());
+  systemViewRegistry.register(() => new HuaweiSwitchSysMacAddressCommand());
   systemViewRegistry.register(() => new HuaweiSwitchSysUndoCommand());
   systemViewRegistry.register(() => new PopModeCommand('quit', 'Exit from the current view'));
   systemViewRegistry.register(() => new EndCommand(['return']));

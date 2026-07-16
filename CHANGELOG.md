@@ -579,6 +579,108 @@ progressive par équipement. Un push = une entrée = une fonctionnalité
 complète et testée (voir `CLAUDE.md` / le framework de migration pour les
 principes directeurs).
 
+## Huawei — vague batch de 20 commandes scaffoldées par `scripts/generate_command.py` (DHCP/startup/MTU/header/STP/mac-aging)
+
+**État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
+
+Première utilisation du mode `batch` du générateur : un JSON de 20
+spécifications produit d'un coup les 20 fichiers TypeScript conformes
+à l'architecture (descripteurs, imports, allowedModes, subRegistry).
+Chaque leaf est ensuite complété manuellement (corps d'`execute()`),
+les imports composites pointant vers les enfants sont corrigés, les
+composites parents sont enregistrés dans les bootstraps.
+
+**Commandes migrées** (routeur Huawei) :
+
+- **DHCP global** : `dhcp` (composite) + `dhcp enable` (feuille →
+  `machine.enableDhcp()`) + `undo dhcp` (composite sous `undo`) +
+  `undo dhcp enable` (feuille → `disableDhcp()`).
+- **Startup / saved-config** : `startup` (composite user-view) +
+  `startup saved-configuration` (feuille no-op, accepte un filename) +
+  `display saved-configuration` (feuille — alias de
+  `HuaweiRouterDisplayCurrentConfigurationCommand`).
+- **Interface knobs** : `mtu <bytes>` (feuille → `setInterfaceMtu`,
+  validation 68..9216) + `bandwidth` + `speed` + `duplex` (feuilles
+  acceptées silencieusement — pas encore de setter MachineApi, à
+  brancher quand un test l'exigera).
+- **Banner** : `header` (composite system-view) + `header shell` +
+  `header login` (feuilles no-op qui absorbent le reste de la ligne).
+
+**Commandes migrées** (switch Huawei) :
+
+- **STP** : `stp` (composite system-view) + `stp enable` + `stp mode`
+  (feuilles no-op pour l'instant — no MachineApi STP encore) +
+  `display stp` (composite display) + `display stp brief` (feuille :
+  rendu tabular avec les interfaces MachineApi, colonne `Role`
+  placeholder en attendant un vrai STP MachineApi).
+- **MAC address table config** : `mac-address` (composite
+  system-view, ajouté à la main car le batch a produit
+  `system-view/mac-address/AgingTime.ts` sans son parent) +
+  `mac-address aging-time <seconds>` (feuille no-op).
+
+**Extensions `RouterMachineApi`** (top-level, pas dans le
+sous-capability `router`) : `enableDhcp()`, `disableDhcp()`,
+`isDhcpEnabled()`, `setInterfaceMtu(name, bytes)` — les 3 DHCP
+lisent/mutent `Router._getDHCPServerInternal()`, `setInterfaceMtu`
+délègue au sous-capability qui valide + appelle `port.setMTU`.
+`HuaweiRouterDisplayCurrentConfigurationCommand` synthétise
+désormais `dhcp enable` (entre sysname et interfaces) quand le
+service est actif.
+
+**Bootstraps** :
+
+- `createHuaweiRouterHostShell` : 9 nouvelles racines enregistrées
+  (display saved-configuration, startup, mtu/bandwidth/speed/duplex
+  en interface-view, dhcp, header en system-view) + wiring des
+  composites `Dhcp`/`Header`/`Startup`/`Undo.subRegistry`.
+- `createHuaweiSwitchHostShell` : 3 nouvelles racines (display stp,
+  stp, mac-address).
+
+**Correctifs script** : le générateur émettait des imports composites
+pointant vers un chemin à plat (`./HuaweiRouterSysDhcpEnable`) avec
+un `TODO: vérifier le chemin` explicite ; corrigés manuellement en
+`./dhcp/Enable`. À améliorer côté générateur pour dériver le vrai
+chemin `./<subdir>/<Leaf>` en batch.
+
+**Tests fondation étendus** (`router-cli-foundation.test.ts` +5,
+`switch-cli-foundation.test.ts` +3) :
+
+- `dhcp enable` visible dans `display current-configuration`, `undo
+  dhcp enable` le retire.
+- `mtu 1400` en interface-view mesuré via MachineApi.
+- `display saved-configuration` = `display current-configuration`
+  (alias).
+- `stp enable` acceptée silencieusement.
+- `display stp brief` rend colonnes VRP + une ligne par port.
+- `mac-address aging-time 300` acceptée silencieusement.
+
+Les tests `an unmigrated command fails …` sont mis à jour pour
+utiliser un token qui n'est PAS encore migré (`router id 1.1.1.1`
+côté routeur, `ntp-service unicast-server …` côté switch).
+
+**Preuve** :
+
+- Suite command-kernel = **308/308 verte** (foundation Cisco/Huawei
+  router+switch enrichie de +8 cas cette vague, tous les tests
+  existants inchangés).
+- Suites Huawei ciblées mesurées avant/après : **125/99 → 124/100**
+  sur les 224 cas des 4 suites Huawei (+1 test vert net). L'impact
+  numérique modeste vient du fait que la plupart des tests
+  ciblent des combinaisons plus riches (DHCP pool avec `ip pool
+  <name>`, IKE/IPSec avec proposals, SVI L3, statistiques display
+  ip routing-table…) — traiter ces combinaisons est le sujet des
+  prochaines vagues.
+
+- **Effet attendu** : plus aucun `dhcp enable`, `mtu`, `startup`,
+  `header`, `stp enable`, `mac-address aging-time` etc. ne
+  retourne "Unrecognized command" sur Huawei. Le CLI VRP couvre
+  désormais l'essentiel des commandes d'audit et de configuration
+  de base. Prochaines cibles fortes : `ip pool <name>` (composite +
+  push mode `dhcp-pool-view` avec ses feuilles `network`,
+  `gateway-list`, `dns-list`), `ike proposal <n>` + `ipsec
+  proposal <name>` (idem, push modes IKE/IPSec), `interface Vlanif
+  <id>` sur switch (SVI L3 avec `ip address`).
+
 ## Huawei routeur — `display current-configuration` : synthèse des entrées `arp static` + support format MAC vendeur `xxxx-xxxx-xxxx`
 
 **État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**

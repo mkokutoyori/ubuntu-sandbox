@@ -409,6 +409,43 @@ describe('Router CLI foundation — command-kernel single-gate pipeline', () => 
       expect(out).toMatch(/^10\.0\.0\.99 +aa:bb:cc:dd:ee:ff\d+ +static/m);
     });
 
+    it('`dhcp enable` active DHCP et apparaît dans display current-configuration', async () => {
+      const r = new HuaweiRouter('R2');
+      await r.executeCommand('system-view');
+      await r.executeCommand('dhcp enable');
+      await r.executeCommand('return');
+      const cfg = await r.executeCommand('display current-configuration');
+      expect(cfg).toMatch(/^dhcp enable$/m);
+    });
+
+    it('`undo dhcp enable` désactive DHCP et retire la ligne', async () => {
+      const r = new HuaweiRouter('R2');
+      await r.executeCommand('system-view');
+      await r.executeCommand('dhcp enable');
+      await r.executeCommand('undo dhcp enable');
+      await r.executeCommand('return');
+      const cfg = await r.executeCommand('display current-configuration');
+      expect(cfg).not.toMatch(/^dhcp enable$/m);
+    });
+
+    it('`mtu 1400` (interface-view) ajuste le MTU via MachineApi', async () => {
+      const r = new HuaweiRouter('R2');
+      await r.executeCommand('system-view');
+      await r.executeCommand('interface GigabitEthernet0/0/0');
+      await r.executeCommand('mtu 1400');
+      const cli = (r as unknown as { getCommandKernelCli(): { machine: { router: { interface(n: string): { mtu: number } | null } } } }).getCommandKernelCli();
+      expect(cli.machine.router.interface('GE0/0/0')?.mtu).toBe(1400);
+    });
+
+    it('`display saved-configuration` retourne le même rendu que current-configuration (alias)', async () => {
+      const r = new HuaweiRouter('R2');
+      const [current, saved] = await Promise.all([
+        r.executeCommand('display current-configuration'),
+        r.executeCommand('display saved-configuration'),
+      ]);
+      expect(saved).toBe(current);
+    });
+
     it('`undo arp 10.0.0.99` retire l\'entrée statique', async () => {
       const r = new HuaweiRouter('R2');
       await r.executeCommand('system-view');
@@ -643,9 +680,9 @@ describe('Router CLI foundation — command-kernel single-gate pipeline', () => 
     it('an unmigrated command fails through the new pipeline (signal for migration)', async () => {
       const r = new HuaweiRouter('R2');
       await r.executeCommand('system-view');
-      // `dhcp enable` : sous-commande pas encore migrée → not-found via
-      // le nouveau pipeline.
-      const out = await r.executeCommand('dhcp enable');
+      // `router id 1.1.1.1` : commande pas encore migrée → not-found via
+      // le nouveau pipeline (dhcp enable est désormais migré).
+      const out = await r.executeCommand('router id 1.1.1.1');
       expect(out).toMatch(/inconnu|Incomplete|not-found|introuvable|Invalid input|Unrecognized command/i);
     });
   });

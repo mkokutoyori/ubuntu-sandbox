@@ -324,11 +324,33 @@ describe('Switch CLI foundation — command-kernel single-gate pipeline', () => 
       expect(cli.machine.switch.interface('GigabitEthernet0/0/1')?.accessVlan).toBe(1);
     });
 
+    it('`stp enable` (system-view) est acceptée silencieusement (no-op vendor)', async () => {
+      const sw = new HuaweiSwitch('sw-huawei', 'SW2', 24);
+      await sw.executeCommand('system-view');
+      const out = await sw.executeCommand('stp enable');
+      expect(out).toBe('');
+    });
+
+    it('`display stp brief` produit les colonnes VRP à partir des interfaces MachineApi', async () => {
+      const sw = new HuaweiSwitch('sw-huawei', 'SW2', 24);
+      const out = await sw.executeCommand('display stp brief');
+      expect(out).toMatch(/^MSTID +Port +Role +STP State +Protection$/m);
+      expect(out).toMatch(/^0 +GigabitEthernet0\/0\/1 /m);
+    });
+
+    it('`mac-address aging-time 300` (system-view) est acceptée silencieusement', async () => {
+      const sw = new HuaweiSwitch('sw-huawei', 'SW2', 24);
+      await sw.executeCommand('system-view');
+      const out = await sw.executeCommand('mac-address aging-time 300');
+      expect(out).toBe('');
+    });
+
     it('an unmigrated command fails through the new pipeline (signal for migration)', async () => {
       const sw = new HuaweiSwitch('sw-huawei', 'SW2', 24);
       await sw.executeCommand('system-view');
-      // `stp enable` n'est pas migré → not-found via le nouveau pipeline.
-      const out = await sw.executeCommand('stp enable');
+      // `ntp-service unicast-server 1.1.1.1` n'est pas migré → not-found
+      // via le nouveau pipeline (stp enable est désormais migré).
+      const out = await sw.executeCommand('ntp-service unicast-server 1.1.1.1');
       expect(out).toMatch(/inconnu|Incomplete|not-found|introuvable|Invalid input|Unrecognized command/i);
     });
   });
