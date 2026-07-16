@@ -29,13 +29,28 @@ export class HuaweiSwitchInterfaceCommand extends PushModeCommand {
 
   protected async prepare(ctx: CommandContext): Promise<boolean> {
     const machine = ctx.machine as SwitchMachineApi;
-    const name = ctx.args.get<string>('name');
-    if (!name) {
+    // On lit `rawArgv` : le vrai VRP accepte à la fois `interface
+    // Vlanif10` (1 token) et `interface Vlanif 10` (2 tokens). On
+    // colle donc tous les tokens restants avant de résoudre.
+    const joined = ctx.rawArgv.join('').trim();
+    if (!joined) {
       await ctx.io.stderr.write("Error: Incomplete command found at '^' position.\n");
       return false;
     }
+    // `interface Vlanif<id>` — SVI L3 (le VRP la crée à l'entrée si
+    // absente). Le nom canonique est `Vlanif<id>` (contigu).
+    const vlanifMatch = /^vlanif(\d+)$/i.exec(joined);
+    if (vlanifMatch) {
+      const id = Number.parseInt(vlanifMatch[1], 10);
+      if (!Number.isInteger(id) || id < 1 || id > 4094) {
+        await ctx.io.stderr.write("Error: Wrong parameter found at '^' position.\n");
+        return false;
+      }
+      (ctx.session as CliSession).promptFields.set('selectedInterface', `Vlanif${id}`);
+      return true;
+    }
     const portNames = machine.switch.interfaces().map((info) => info.name);
-    const resolved = resolveHuaweiInterfaceName(portNames, name);
+    const resolved = resolveHuaweiInterfaceName(portNames, joined);
     if (!resolved) {
       await ctx.io.stderr.write("Error: Wrong parameter found at '^' position.\n");
       return false;

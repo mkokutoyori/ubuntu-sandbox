@@ -437,6 +437,46 @@ describe('Router CLI foundation — command-kernel single-gate pipeline', () => 
       expect(cli.machine.router.interface('GE0/0/0')?.mtu).toBe(1400);
     });
 
+    it('`ip pool MYPOOL` push dhcp-pool-view et crée le pool via MachineApi', async () => {
+      const r = new HuaweiRouter('R2');
+      await r.executeCommand('system-view');
+      await r.executeCommand('ip pool MYPOOL');
+      expect(r.getPrompt()).toBe('[R2-ip-pool-MYPOOL]');
+      const cli = (r as unknown as { getCommandKernelCli(): { machine: { dhcpPoolNames(): readonly string[] } } }).getCommandKernelCli();
+      expect(cli.machine.dhcpPoolNames()).toContain('MYPOOL');
+    });
+
+    it('`undo ip pool MYPOOL` retire le pool', async () => {
+      const r = new HuaweiRouter('R2');
+      await r.executeCommand('system-view');
+      await r.executeCommand('ip pool MYPOOL');
+      await r.executeCommand('quit');
+      await r.executeCommand('undo ip pool MYPOOL');
+      const cli = (r as unknown as { getCommandKernelCli(): { machine: { dhcpPoolNames(): readonly string[] } } }).getCommandKernelCli();
+      expect(cli.machine.dhcpPoolNames()).not.toContain('MYPOOL');
+    });
+
+    it('`ike proposal 10` push ike-proposal-view avec l\'id dans le prompt', async () => {
+      const r = new HuaweiRouter('R2');
+      await r.executeCommand('system-view');
+      await r.executeCommand('ike proposal 10');
+      expect(r.getPrompt()).toBe('[R2-ike-proposal-10]');
+    });
+
+    it('`ipsec proposal PROP1` push ipsec-proposal-view avec le nom dans le prompt', async () => {
+      const r = new HuaweiRouter('R2');
+      await r.executeCommand('system-view');
+      await r.executeCommand('ipsec proposal PROP1');
+      expect(r.getPrompt()).toBe('[R2-ipsec-proposal-PROP1]');
+    });
+
+    it('`router id 1.1.1.1` (system-view) est acceptée silencieusement', async () => {
+      const r = new HuaweiRouter('R2');
+      await r.executeCommand('system-view');
+      const out = await r.executeCommand('router id 1.1.1.1');
+      expect(out).toBe('');
+    });
+
     it('`display saved-configuration` retourne le même rendu que current-configuration (alias)', async () => {
       const r = new HuaweiRouter('R2');
       const [current, saved] = await Promise.all([
@@ -680,9 +720,10 @@ describe('Router CLI foundation — command-kernel single-gate pipeline', () => 
     it('an unmigrated command fails through the new pipeline (signal for migration)', async () => {
       const r = new HuaweiRouter('R2');
       await r.executeCommand('system-view');
-      // `router id 1.1.1.1` : commande pas encore migrée → not-found via
-      // le nouveau pipeline (dhcp enable est désormais migré).
-      const out = await r.executeCommand('router id 1.1.1.1');
+      // `ospf 100 router-id 1.1.1.1` : commande pas encore migrée →
+      // not-found via le nouveau pipeline (dhcp enable, router id, etc.
+      // sont désormais migrés).
+      const out = await r.executeCommand('ospf 100 router-id 1.1.1.1');
       expect(out).toMatch(/inconnu|Incomplete|not-found|introuvable|Invalid input|Unrecognized command/i);
     });
   });

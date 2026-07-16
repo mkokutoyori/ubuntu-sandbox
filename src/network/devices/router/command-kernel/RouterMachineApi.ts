@@ -458,4 +458,23 @@ export class RouterMachineApi implements MachineApi {
   setInterfaceMtu(name: string, bytes: number): boolean {
     return this.router.setInterfaceMtu(name, bytes);
   }
+
+  /** Liste des noms de pools DHCP existants — utilisé par `display ip pool`
+   *  et la synthèse `display current-configuration`. */
+  dhcpPoolNames(): readonly string[] {
+    const server = (this.deps.router as unknown as { _getDHCPServerInternal(): { getAllPools(): Map<string, unknown> } })._getDHCPServerInternal();
+    return [...server.getAllPools().keys()];
+  }
+
+  /** Crée un pool DHCP s'il n'existe pas (push `ip pool <name>` VRP). */
+  ensureDhcpPool(name: string): void {
+    const server = (this.deps.router as unknown as { _getDHCPServerInternal(): { getPool(n: string): unknown; createPool(n: string): unknown } })._getDHCPServerInternal();
+    if (!server.getPool(name)) server.createPool(name);
+  }
+
+  /** Supprime un pool DHCP (`undo ip pool <name>`). */
+  removeDhcpPool(name: string): boolean {
+    const server = (this.deps.router as unknown as { _getDHCPServerInternal(): { deletePool(n: string): boolean } })._getDHCPServerInternal();
+    return server.deletePool(name);
+  }
 }

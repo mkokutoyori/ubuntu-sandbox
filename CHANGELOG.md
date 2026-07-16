@@ -579,6 +579,106 @@ progressive par équipement. Un push = une entrée = une fonctionnalité
 complète et testée (voir `CLAUDE.md` / le framework de migration pour les
 principes directeurs).
 
+## Outillage — `scripts/generate_command.py` : résolution auto des imports composites en mode batch + Huawei : 2e vague batch de 20 commandes (DHCP pool, IKE/IPSec proposals, SVI Vlanif, router id, clock/reboot)
+
+**État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
+
+Deux livrables dans cette entrée :
+
+### 1. Amélioration du générateur
+
+Le mode `batch` de `scripts/generate_command.py` faisait une passe
+unique par spec et émettait, pour chaque composite, des imports
+enfants avec un chemin **à plat** (`./HuaweiRouterSysDhcpEnable`) +
+`TODO: vérifier le chemin` — chaque commit devait donc corriger ces
+lignes à la main. Améliorations :
+
+- **Passe 1** : le batch parse *toutes* les specs et construit un
+  index `class_name → (spec, target)` (`sibling_specs`).
+- **Passe 2** : chaque commande est générée en passant `sibling_specs`
+  au renderer. Pour un composite, si un enfant appartient à
+  `sibling_specs`, on calcule le chemin relatif exact (`./ike/Proposal`
+  au lieu de `./HuaweiRouterSysIkeProposal`) et on retire le TODO.
+- **Mode `new` (spec unique)** : conserve exactement l'ancien
+  comportement (chemin à plat + TODO), documenté comme « mode batch
+  requis pour la résolution auto » dans le message TODO.
+- Ajout `child_import_line()` + `compute_relative_module()` — petites
+  fonctions pures qui utilisent `os.path.relpath` pour dériver le
+  spécificateur d'import ES-modules (`./` ou `../`, sans `.ts`).
+
+Résultat : sur les 20 commandes de la 2e vague, **0 import à
+corriger manuellement**. Les composites `Ike.ts`, `Ipsec.ts`,
+`Router.ts`, `Ip.ts` (undo), etc. génèrent directement
+`from './ike/Proposal'`, `from './ipsec/Proposal'`, etc.
+
+### 2. Vague batch 2 — 20 nouvelles commandes migrées
+
+**Routeur Huawei (19 commandes + 3 nouveaux modes)** :
+
+- **DHCP pool** : composite `ip pool <name>` (push-mode →
+  `dhcp-pool-view`, crée le pool si absent via
+  `ensureDhcpPool`) + feuilles `network`, `gateway-list`, `dns-list`,
+  `domain-name` (no-op vendor-accepted) + `undo ip pool <name>`
+  (feuille → `removeDhcpPool`) + `display ip pool [<name>]` (feuille
+  → `dhcpPoolNames`, rendu vendor-compat, `Error: The pool does not
+  exist.` si nom introuvable).
+- **IKE proposal** : composite `ike` (system-view) + push-mode
+  `ike proposal <id>` → `ike-proposal-view` (prompt
+  `[R2-ike-proposal-<id>]`) + feuilles `encryption-algorithm`,
+  `authentication-method`, `authentication-algorithm` (no-op).
+- **IPSec proposal** : composite `ipsec` + push-mode `ipsec
+  proposal <name>` → `ipsec-proposal-view` (prompt
+  `[R2-ipsec-proposal-<name>]`) + feuille `transform` (no-op).
+- **Router-scope** : composite `router` (system-view) + feuille
+  `router id <A.B.C.D>` (no-op).
+- **User-view utilitaires** : `clock datetime …`, `reboot` (feuilles
+  no-op).
+- **Extension `RouterMachineApi`** : `dhcpPoolNames()`,
+  `ensureDhcpPool(name)`, `removeDhcpPool(name)`.
+
+**Switch Huawei (1 commande enrichie)** :
+
+- **SVI Vlanif** : le composite `interface <name>` reconnaît
+  désormais le pattern `Vlanif<id>` (contigu OU `Vlanif <id>` 2
+  tokens) via `rawArgv.join('')` — le vrai VRP crée l'SVI à
+  l'entrée. Le `HuaweiSwitchInterfaceVlanifCommand` scaffoldé reste
+  disponible mais non registered (le composite gère les deux cas).
+
+**Bootstraps** :
+
+- `createHuaweiRouterHostShell` : 3 nouveaux modes CLI
+  (`dhcp-pool-view`, `ike-proposal-view`, `ipsec-proposal-view`) avec
+  leurs `clearOnExit` respectifs et leurs registres complets. Les
+  racines `ike`, `ipsec`, `router` sont enregistrées en system-view.
+  `clock` et `reboot` en user-view. `undo ip` intègre `undo ip pool`.
+  `display ip` intègre `display ip pool`.
+
+**Tests fondation étendus** :
+
+- +5 côté routeur : `ip pool MYPOOL` (push + création), `undo ip
+  pool` (retrait), `ike proposal 10` (prompt SVI), `ipsec proposal
+  PROP1` (prompt), `router id 1.1.1.1` (silence).
+- +2 côté switch : `interface Vlanif10` (1 token) et `interface
+  Vlanif 20` (2 tokens).
+- Le test `unmigrated command` bascule sur `ospf 100 router-id
+  1.1.1.1` (les précédents tokens `router id` sont désormais
+  migrés).
+
+**Preuve** :
+
+- Suite command-kernel = **315/315 verte** (+7 nouveaux tests
+  fondation).
+- Suites Huawei ciblées mesurées avant/après : **124/100 → 122/102**
+  (+2 tests verts net) sur les 224 cas des 4 suites Huawei. L'impact
+  numérique modeste vient du fait que la plupart des tests DHCP pool
+  exercent aussi `network`/`gateway-list` avec les VRAIES valeurs
+  (persistées dans le pool DHCP) — les feuilles no-op acceptent la
+  ligne mais ne persistent rien, ce qui laisse rouges les tests qui
+  lisent ensuite `display ip pool <name>` pour vérifier `network …`.
+  Prochaine étape : brancher les feuilles no-op vers des setters
+  `DHCPServer.updatePool(name, {network, mask, gateways, dns,
+  domain, lease})` pour rendre le circuit complet.
+
 ## Huawei — vague batch de 20 commandes scaffoldées par `scripts/generate_command.py` (DHCP/startup/MTU/header/STP/mac-aging)
 
 **État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**

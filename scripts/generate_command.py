@@ -761,11 +761,16 @@ def render_leaf_or_streaming_command(spec: CommandSpec, target: TargetConfig, fi
     )
 
 
-def render_composite_command(spec: CommandSpec, target: TargetConfig, file_path: Path) -> str:
+def render_composite_command(
+    spec: CommandSpec,
+    target: TargetConfig,
+    file_path: Path,
+    sibling_specs: Optional[dict[str, tuple[CommandSpec, TargetConfig]]] = None,
+) -> str:
     imports = list(HEADER_IMPORTS_COMMON)
     imports.append("import { CommandRegistry } from '@/command-kernel/registry/command-registry';")
     for child in spec.children:
-        imports.append(f"import {{ {child} }} from './{child.removesuffix('Command')}';  // TODO: vérifier le chemin")
+        imports.append(child_import_line(child, file_path, sibling_specs))
 
     priv_name, priv_decl = privilege_const_decl(spec)
     descriptor = render_descriptor_object(spec, priv_name)
@@ -852,14 +857,58 @@ def render_push_mode_command(spec: CommandSpec, target: TargetConfig, file_path:
     )
 
 
-def render_command_file(spec: CommandSpec, target: TargetConfig, file_path: Path) -> str:
+def render_command_file(
+    spec: CommandSpec,
+    target: TargetConfig,
+    file_path: Path,
+    sibling_specs: Optional[dict[str, tuple[CommandSpec, TargetConfig]]] = None,
+) -> str:
     if spec.kind in ("leaf", "streaming"):
         return render_leaf_or_streaming_command(spec, target, file_path)
     if spec.kind == "composite":
-        return render_composite_command(spec, target, file_path)
+        return render_composite_command(spec, target, file_path, sibling_specs)
     if spec.kind == "push-mode":
         return render_push_mode_command(spec, target, file_path)
     raise ValueError(f"kind '{spec.kind}' ne produit pas de fichier (voir render_registration_snippet)")
+
+
+def child_import_line(
+    child_class: str,
+    parent_file: Path,
+    sibling_specs: Optional[dict[str, tuple[CommandSpec, TargetConfig]]],
+) -> str:
+    """Compute the correct relative import for a composite's child.
+
+    In batch mode (`sibling_specs` non vide), on retrouve la spec de
+    l'enfant par son nom de classe et on calcule le chemin relatif
+    `./<subdir>/<Stem>` depuis le fichier du parent — plus de `TODO:
+    vérifier le chemin`. En mode `new` (spec unique), on retombe sur
+    l'ancien comportement (chemin à plat + TODO) parce qu'on ne connaît
+    pas où vit l'enfant.
+    """
+    if sibling_specs and child_class in sibling_specs:
+        child_spec, child_target = sibling_specs[child_class]
+        child_path = compute_file_path(child_spec, child_target)
+        rel = compute_relative_module(parent_file, child_path)
+        return f"import {{ {child_class} }} from '{rel}';"
+    stem = child_class.removesuffix("Command")
+    return f"import {{ {child_class} }} from './{stem}';  // TODO: vérifier le chemin (mode batch requis pour la résolution auto)"
+
+
+def compute_relative_module(from_file: Path, to_file: Path) -> str:
+    """`from_file` et `to_file` sont des chemins repo-relatifs (fichiers).
+    Retourne un spécificateur d'import ES-modules (avec `./` ou `../`,
+    sans extension `.ts`)."""
+    import os
+    from_dir = from_file.parent
+    to_no_ext = to_file.with_suffix("")
+    rel = os.path.relpath(to_no_ext, start=from_dir)
+    # Windows-style backslashes → forward slashes (au cas où l'auteur
+    # tourne le script sous Windows).
+    rel = rel.replace(os.sep, "/")
+    if not rel.startswith("."):
+        rel = "./" + rel
+    return rel
 
 
 # ===========================================================================
@@ -1147,7 +1196,11 @@ def spec_from_namespace(ns: argparse.Namespace) -> CommandSpec:
     return spec
 
 
-def generate_one(spec: CommandSpec, ns: argparse.Namespace) -> int:
+def generate_one(
+    spec: CommandSpec,
+    ns: argparse.Namespace,
+    sibling_specs: Optional[dict[str, tuple[CommandSpec, TargetConfig]]] = None,
+) -> int:
     target = target_or_die(spec.target)
     errors = validate_spec(spec, target)
     if errors:
@@ -1170,7 +1223,7 @@ def generate_one(spec: CommandSpec, ns: argparse.Namespace) -> int:
         return 0
 
     file_path = compute_file_path(spec, target)
-    content = render_command_file(spec, target, file_path)
+    content = render_command_file(spec, target, file_path, sibling_specs)
 
     try:
         result = write_text_file(file_path, content, force=ns.force, dry_run=ns.dry_run)
@@ -1215,18 +1268,32 @@ def cmd_batch(ns: argparse.Namespace) -> int:
         insert_after = None
         with_test = ns.with_test
 
-    failures = 0
+    # Passe 1 : parser toutes les specs et construire l'index par
+    # class_name (pour résoudre les imports composites → enfants).
+    parsed: list[tuple[CommandSpec, Optional[str]]] = []
+    sibling_specs: dict[str, tuple[CommandSpec, TargetConfig]] = {}
+    parse_failures = 0
     for i, item in enumerate(items):
         item_insert_after = item.pop("insert_after", None)
         try:
             spec = CommandSpec.from_dict(item)
-        except (KeyError, ValueError) as e:
+            target = target_or_die(spec.target)
+            spec = finalize_spec(spec, target)
+        except (KeyError, ValueError, SystemExit) as e:
             print(f"[{i}] spécification invalide : {e}", file=sys.stderr)
-            failures += 1
+            parse_failures += 1
             continue
+        parsed.append((spec, item_insert_after))
+        sibling_specs[spec.class_name] = (spec, target_or_die(spec.target))
+
+    # Passe 2 : générer chaque commande en passant le map complet, ce
+    # qui donne à `render_composite_command` les vrais chemins des
+    # enfants (plus de TODO à corriger à la main).
+    failures = parse_failures
+    for spec, item_insert_after in parsed:
         fake_ns = _FakeNs()
         fake_ns.insert_after = item_insert_after
-        code = generate_one(spec, fake_ns)  # type: ignore[arg-type]
+        code = generate_one(spec, fake_ns, sibling_specs)  # type: ignore[arg-type]
         if code != 0:
             failures += 1
 

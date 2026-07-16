@@ -5,6 +5,7 @@ import { DefaultPrivilegePolicy } from '@/command-kernel/session/privilege-polic
 import { PrivilegeLevel } from '@/command-kernel/session/types';
 import { HuaweiRouterDisplayIpInterfaceCommand } from './ip/Interface';
 import { HuaweiRouterDisplayIpRoutingTableCommand } from './ip/RoutingTable';
+import { HuaweiRouterDisplayIpPoolCommand } from './ip/Pool';
 
 const ANY = new DefaultPrivilegePolicy(PrivilegeLevel.ANY);
 
@@ -31,6 +32,7 @@ export class HuaweiRouterDisplayIpCommand extends BaseCommand {
     super();
     this.subRegistry.register(() => new HuaweiRouterDisplayIpInterfaceCommand());
     this.subRegistry.register(() => new HuaweiRouterDisplayIpRoutingTableCommand());
+    this.subRegistry.register(() => new HuaweiRouterDisplayIpPoolCommand());
   }
 
   async execute(ctx: CommandContext): Promise<ExitCode> {

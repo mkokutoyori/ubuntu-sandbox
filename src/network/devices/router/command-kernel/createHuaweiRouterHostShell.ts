@@ -26,6 +26,22 @@ import { HuaweiRouterIfIpCommand } from './commands/huawei/interface-view/Ip';
 import { HuaweiRouterIfShutdownCommand } from './commands/huawei/interface-view/Shutdown';
 import { HuaweiRouterIfDescriptionCommand } from './commands/huawei/interface-view/Description';
 import { HuaweiRouterIfUndoCommand } from './commands/huawei/interface-view/Undo';
+import { HuaweiRouterSysIpPoolCommand } from './commands/huawei/system-view/ip/Pool';
+import { HuaweiRouterUndoIpPoolCommand } from './commands/huawei/system-view/undo/ip/Pool';
+import { HuaweiRouterDisplayIpPoolCommand } from './commands/huawei/display/ip/Pool';
+import { HuaweiRouterPoolNetworkCommand } from './commands/huawei/dhcp-pool-view/Network';
+import { HuaweiRouterPoolGatewayListCommand } from './commands/huawei/dhcp-pool-view/GatewayList';
+import { HuaweiRouterPoolDnsListCommand } from './commands/huawei/dhcp-pool-view/DnsList';
+import { HuaweiRouterPoolDomainNameCommand } from './commands/huawei/dhcp-pool-view/DomainName';
+import { HuaweiRouterSysIkeCommand } from './commands/huawei/system-view/Ike';
+import { HuaweiRouterIkeEncryptionAlgorithmCommand } from './commands/huawei/ike-proposal-view/EncryptionAlgorithm';
+import { HuaweiRouterIkeAuthenticationMethodCommand } from './commands/huawei/ike-proposal-view/AuthenticationMethod';
+import { HuaweiRouterIkeAuthenticationAlgorithmCommand } from './commands/huawei/ike-proposal-view/AuthenticationAlgorithm';
+import { HuaweiRouterSysIpsecCommand } from './commands/huawei/system-view/Ipsec';
+import { HuaweiRouterIpsecTransformCommand } from './commands/huawei/ipsec-proposal-view/Transform';
+import { HuaweiRouterSysRouterCommand } from './commands/huawei/system-view/Router';
+import { HuaweiRouterClockCommand } from './commands/huawei/user-view/Clock';
+import { HuaweiRouterRebootCommand } from './commands/huawei/user-view/Reboot';
 
 /**
  * =====================================================================
@@ -64,11 +80,16 @@ export function createHuaweiRouterHostShell(
   const userViewRegistry = new CommandRegistry();
   const systemViewRegistry = new CommandRegistry();
   const interfaceViewRegistry = new CommandRegistry();
+  const dhcpPoolViewRegistry = new CommandRegistry();
+  const ikeProposalViewRegistry = new CommandRegistry();
+  const ipsecProposalViewRegistry = new CommandRegistry();
 
   userViewRegistry.register(() => createHuaweiDisplayCommand(displaySub));
   userViewRegistry.register(() => new HuaweiSystemViewCommand());
   userViewRegistry.register(() => new HuaweiSaveCommand());
   userViewRegistry.register(() => new HuaweiRouterStartupCommand());
+  userViewRegistry.register(() => new HuaweiRouterClockCommand());
+  userViewRegistry.register(() => new HuaweiRouterRebootCommand());
   userViewRegistry.register(() => new PopModeCommand('quit', 'Exit from the current view'));
 
   systemViewRegistry.register(() => createHuaweiDisplayCommand(displaySub));
@@ -79,6 +100,9 @@ export function createHuaweiRouterHostShell(
   systemViewRegistry.register(() => new HuaweiRouterSysArpCommand());
   systemViewRegistry.register(() => new HuaweiRouterSysDhcpCommand());
   systemViewRegistry.register(() => new HuaweiRouterHeaderCommand());
+  systemViewRegistry.register(() => new HuaweiRouterSysIkeCommand());
+  systemViewRegistry.register(() => new HuaweiRouterSysIpsecCommand());
+  systemViewRegistry.register(() => new HuaweiRouterSysRouterCommand());
   systemViewRegistry.register(() => new HuaweiRouterSysUndoCommand());
   systemViewRegistry.register(() => new PopModeCommand('quit', 'Exit from the current view'));
   systemViewRegistry.register(() => new EndCommand(['return']));
@@ -94,10 +118,30 @@ export function createHuaweiRouterHostShell(
   interfaceViewRegistry.register(() => new PopModeCommand('quit', 'Exit from the current view'));
   interfaceViewRegistry.register(() => new EndCommand(['return']));
 
+  dhcpPoolViewRegistry.register(() => new HuaweiRouterPoolNetworkCommand());
+  dhcpPoolViewRegistry.register(() => new HuaweiRouterPoolGatewayListCommand());
+  dhcpPoolViewRegistry.register(() => new HuaweiRouterPoolDnsListCommand());
+  dhcpPoolViewRegistry.register(() => new HuaweiRouterPoolDomainNameCommand());
+  dhcpPoolViewRegistry.register(() => new PopModeCommand('quit', 'Exit from the current view'));
+  dhcpPoolViewRegistry.register(() => new EndCommand(['return']));
+
+  ikeProposalViewRegistry.register(() => new HuaweiRouterIkeEncryptionAlgorithmCommand());
+  ikeProposalViewRegistry.register(() => new HuaweiRouterIkeAuthenticationMethodCommand());
+  ikeProposalViewRegistry.register(() => new HuaweiRouterIkeAuthenticationAlgorithmCommand());
+  ikeProposalViewRegistry.register(() => new PopModeCommand('quit', 'Exit from the current view'));
+  ikeProposalViewRegistry.register(() => new EndCommand(['return']));
+
+  ipsecProposalViewRegistry.register(() => new HuaweiRouterIpsecTransformCommand());
+  ipsecProposalViewRegistry.register(() => new PopModeCommand('quit', 'Exit from the current view'));
+  ipsecProposalViewRegistry.register(() => new EndCommand(['return']));
+
   const modes = new ModeRegistry([
     { name: 'user-view',      prompt: (_s, host) => `<${host}>`,                                                            parent: null,           registry: userViewRegistry },
     { name: 'system-view',    prompt: (_s, host) => `[${host}]`,                                                             parent: 'user-view',    registry: systemViewRegistry },
     { name: 'interface-view', prompt: (s, host) => `[${host}-${s.promptFields.get('selectedInterface') ?? ''}]`,             parent: 'system-view',  registry: interfaceViewRegistry, clearOnExit: ['selectedInterface'] },
+    { name: 'dhcp-pool-view', prompt: (s, host) => `[${host}-ip-pool-${s.promptFields.get('selectedPool') ?? ''}]`,          parent: 'system-view',  registry: dhcpPoolViewRegistry,      clearOnExit: ['selectedPool'] },
+    { name: 'ike-proposal-view',   prompt: (s, host) => `[${host}-ike-proposal-${s.promptFields.get('selectedIkeProposal') ?? ''}]`,     parent: 'system-view',  registry: ikeProposalViewRegistry,   clearOnExit: ['selectedIkeProposal'] },
+    { name: 'ipsec-proposal-view', prompt: (s, host) => `[${host}-ipsec-proposal-${s.promptFields.get('selectedIpsecProposal') ?? ''}]`, parent: 'system-view',  registry: ipsecProposalViewRegistry, clearOnExit: ['selectedIpsecProposal'] },
   ] satisfies CliMode[]);
 
   const machine = new RouterMachineApi({ router, modes });

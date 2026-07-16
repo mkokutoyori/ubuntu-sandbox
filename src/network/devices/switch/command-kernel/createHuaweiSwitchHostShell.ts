@@ -21,6 +21,10 @@ import { HuaweiSwitchVlanNameCommand } from './commands/huawei/vlan-view/Name';
 import { HuaweiSwitchSysStpCommand } from './commands/huawei/system-view/Stp';
 import { HuaweiSwitchSysMacAddressCommand } from './commands/huawei/system-view/MacAddress';
 import { HuaweiSwitchDisplayStpCommand } from './commands/huawei/display/Stp';
+// `HuaweiSwitchInterfaceVlanifCommand` est scaffoldé mais NON registered :
+// le vrai VRP réutilise le composite `interface <name>` avec le pattern
+// `Vlanif<id>` reconnu dans `HuaweiSwitchInterfaceCommand.prepare()`.
+// La classe reste disponible pour un futur découplage.
 
 /**
  * =====================================================================

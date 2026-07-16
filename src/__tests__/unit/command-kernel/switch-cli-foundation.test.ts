@@ -338,6 +338,20 @@ describe('Switch CLI foundation — command-kernel single-gate pipeline', () => 
       expect(out).toMatch(/^0 +GigabitEthernet0\/0\/1 /m);
     });
 
+    it('`interface Vlanif10` push interface-view avec le nom SVI dans le prompt', async () => {
+      const sw = new HuaweiSwitch('sw-huawei', 'SW2', 24);
+      await sw.executeCommand('system-view');
+      await sw.executeCommand('interface Vlanif10');
+      expect(sw.getPrompt()).toBe('[SW2-Vlanif10]');
+    });
+
+    it('`interface Vlanif 20` (2 tokens) push interface-view (identique 1 token)', async () => {
+      const sw = new HuaweiSwitch('sw-huawei', 'SW2', 24);
+      await sw.executeCommand('system-view');
+      await sw.executeCommand('interface Vlanif 20');
+      expect(sw.getPrompt()).toBe('[SW2-Vlanif20]');
+    });
+
     it('`mac-address aging-time 300` (system-view) est acceptée silencieusement', async () => {
       const sw = new HuaweiSwitch('sw-huawei', 'SW2', 24);
       await sw.executeCommand('system-view');

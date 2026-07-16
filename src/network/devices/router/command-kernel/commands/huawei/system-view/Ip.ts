@@ -4,6 +4,7 @@ import { CommandRegistry } from '@/command-kernel/registry/command-registry';
 import { DefaultPrivilegePolicy } from '@/command-kernel/session/privilege-policy';
 import { PrivilegeLevel } from '@/command-kernel/session/types';
 import { HuaweiRouterIpRouteStaticCommand } from './ip/RouteStatic';
+import { HuaweiRouterSysIpPoolCommand } from './ip/Pool';
 
 const OP = new DefaultPrivilegePolicy(PrivilegeLevel.OPERATOR);
 
@@ -32,6 +33,7 @@ export class HuaweiRouterSysIpCommand extends BaseCommand {
   constructor() {
     super();
     this.subRegistry.register(() => new HuaweiRouterIpRouteStaticCommand());
+    this.subRegistry.register(() => new HuaweiRouterSysIpPoolCommand());
   }
 
   async execute(ctx: CommandContext): Promise<ExitCode> {
