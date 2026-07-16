@@ -158,7 +158,13 @@ class SwitchCapabilityImpl implements SwitchCapabilityApi {
 
   createVlan(id: number, name?: string): { ok: boolean; error?: string } {
     if (!Number.isInteger(id) || id < 1 || id > 4094) return { ok: false, error: 'invalid VLAN id' };
-    return this.sw.createVLAN(id, name) ? { ok: true } : { ok: false, error: 'VLAN already exists or reserved' };
+    // Idempotent : si le VLAN existe déjà, on renomme (si demandé) et
+    // on retourne succès — comportement Cisco standard.
+    if (this.sw.getVLANs().has(id)) {
+      if (name !== undefined) this.sw.renameVLAN(id, name);
+      return { ok: true };
+    }
+    return this.sw.createVLAN(id, name) ? { ok: true } : { ok: false, error: 'VLAN reserved' };
   }
 
   deleteVlan(id: number): { ok: boolean; error?: string } {

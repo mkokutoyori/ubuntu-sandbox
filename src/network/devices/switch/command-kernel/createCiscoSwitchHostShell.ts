@@ -12,6 +12,14 @@ import { SwitchMachineApi } from './SwitchMachineApi';
 import { CiscoSwitchShowMacCommand } from './commands/cisco/show/Mac';
 import { CiscoSwitchShowVlanCommand } from './commands/cisco/show/Vlan';
 import { CiscoSwitchShowVersionCommand } from './commands/cisco/show/Version';
+import { CiscoSwitchHostnameCommand } from './commands/cisco/config/Hostname';
+import { CiscoSwitchInterfaceCommand } from './commands/cisco/config/Interface';
+import { CiscoSwitchVlanCommand } from './commands/cisco/config/Vlan';
+import { CiscoSwitchDescriptionCommand } from './commands/cisco/config/config-if/Description';
+import { CiscoSwitchConfigIfNoCommand } from './commands/cisco/config/config-if/No';
+import { CiscoSwitchShutdownCommand } from './commands/cisco/config/config-if/Shutdown';
+import { CiscoSwitchportCommand } from './commands/cisco/config/config-if/Switchport';
+import { CiscoSwitchVlanNameCommand } from './commands/cisco/config/config-vlan/Name';
 
 /**
  * =====================================================================
@@ -57,6 +65,8 @@ export function createCiscoSwitchHostShell(sw: Switch): {
   const userRegistry = new CommandRegistry();
   const privilegedRegistry = new CommandRegistry();
   const configRegistry = new CommandRegistry();
+  const configIfRegistry = new CommandRegistry();
+  const configVlanRegistry = new CommandRegistry();
 
   userRegistry.register(() => new CiscoEnableCommand());
   userRegistry.register(() => createCiscoShowCommand(showSub));
@@ -69,13 +79,29 @@ export function createCiscoSwitchHostShell(sw: Switch): {
   privilegedRegistry.register(() => new PopModeCommand('exit', 'Exit from the current mode'));
   privilegedRegistry.register(() => new PopModeCommand('logout', 'Exit from the EXEC'));
 
+  configRegistry.register(() => new CiscoSwitchHostnameCommand());
+  configRegistry.register(() => new CiscoSwitchInterfaceCommand());
+  configRegistry.register(() => new CiscoSwitchVlanCommand());
   configRegistry.register(() => new PopModeCommand('exit', 'Exit from the current mode'));
   configRegistry.register(() => new EndCommand());
 
+  configIfRegistry.register(() => new CiscoSwitchShutdownCommand());
+  configIfRegistry.register(() => new CiscoSwitchDescriptionCommand());
+  configIfRegistry.register(() => new CiscoSwitchConfigIfNoCommand());
+  configIfRegistry.register(() => new CiscoSwitchportCommand());
+  configIfRegistry.register(() => new PopModeCommand('exit', 'Exit from the current mode'));
+  configIfRegistry.register(() => new EndCommand());
+
+  configVlanRegistry.register(() => new CiscoSwitchVlanNameCommand());
+  configVlanRegistry.register(() => new PopModeCommand('exit', 'Exit from the current mode'));
+  configVlanRegistry.register(() => new EndCommand());
+
   const modes = new ModeRegistry([
-    { name: 'user',       prompt: (_s, host) => `${host}>`,         parent: null,         registry: userRegistry },
-    { name: 'privileged', prompt: (_s, host) => `${host}#`,         parent: 'user',       registry: privilegedRegistry },
-    { name: 'config',     prompt: (_s, host) => `${host}(config)#`, parent: 'privileged', registry: configRegistry },
+    { name: 'user',        prompt: (_s, host) => `${host}>`,             parent: null,         registry: userRegistry },
+    { name: 'privileged',  prompt: (_s, host) => `${host}#`,             parent: 'user',       registry: privilegedRegistry },
+    { name: 'config',      prompt: (_s, host) => `${host}(config)#`,     parent: 'privileged', registry: configRegistry },
+    { name: 'config-if',   prompt: (_s, host) => `${host}(config-if)#`,  parent: 'config',     registry: configIfRegistry, clearOnExit: ['selectedInterface'] },
+    { name: 'config-vlan', prompt: (_s, host) => `${host}(config-vlan)#`, parent: 'config',    registry: configVlanRegistry, clearOnExit: ['selectedVlan'] },
   ] satisfies CliMode[], { execLevel: 'privileged' });
 
   const machine = new SwitchMachineApi({ switch: sw, modes });

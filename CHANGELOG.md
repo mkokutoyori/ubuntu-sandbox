@@ -1,5 +1,68 @@
 # Changelog
 
+## Cisco switch — vague config/config-if/config-vlan (hostname, interface, switchport, vlan, name) + palette dédiée
+
+**État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
+
+Symétrique de la vague setup routeur : les commandes de configuration
+initiale d'un switch Cisco Catalyst (hostname, sélection d'interface,
+switchport access/trunk, base VLAN nommée). Débloque les tests
+network-v2 dédiés au switching (VLAN, MAC, switchport).
+
+- **Nouveaux modes CLI côté switch Cisco** (`createCiscoSwitchHostShell`) :
+  - `config-if` — prompt `<host>(config-if)#`, `clearOnExit:
+    ['selectedInterface']`.
+  - `config-vlan` — prompt `<host>(config-vlan)#`, `clearOnExit:
+    ['selectedVlan']`.
+
+- **Nouveau côté commandes** (`commands/cisco/config/`) :
+  - `Hostname.ts`, `Interface.ts` (push config-if), `Vlan.ts` (push
+    config-vlan, create-or-select).
+  - `config-if/Shutdown.ts` / `Description.ts` / `No.ts` (composite) +
+    `no/Shutdown.ts` + `no/Description.ts`.
+  - `config-if/Switchport.ts` (composite) → `switchport/Mode.ts` +
+    `switchport/Access.ts` (composites) → `mode/Access.ts`,
+    `mode/Trunk.ts`, `access/Vlan.ts` (feuilles). Composition stricte
+    par sous-registres, aucun dispatch ad-hoc.
+  - `config-vlan/Name.ts` — renomme le VLAN sélectionné.
+
+- **Résolution de conflit avec la vague Huawei fusionnée juste avant** :
+  la façade `SwitchMachineApi` avait été enrichie en parallèle par la
+  vague Huawei (`setInterfaceMode`, `setInterfaceAccessVlan` retour
+  `boolean`, `createVlan`/`deleteVlan`/`renameVlan` retour typé). Cette
+  vague adopte strictement le nommage/signature déjà en place —
+  aucune rupture pour les commandes Huawei existantes. `createVlan`
+  reste idempotent (le pattern Cisco `vlan 10` répété doit passer).
+
+- **Palette de tests dédiée** :
+  `src/__tests__/unit/command-kernel/switch-config-cisco.test.ts` (27
+  cas, tous verts), organisée en 9 blocs :
+  1. **Hostname / transitions** (2) — nominal, validation Cisco.
+  2. **Push config-if** (3) — nominal, interface inexistante,
+     `clearOnExit`.
+  3. **switchport mode** (4) — access, trunk, incomplete×2.
+  4. **switchport access vlan** (3) — création implicite, hors bornes
+     (0 et 4095).
+  5. **Mode config-vlan** (5) — création, `name`, idempotence,
+     hors bornes, `clearOnExit`.
+  6. **Shutdown / description / no** (2) — bascule bidirectionnelle.
+  7. **Effet bout-en-bout sur `show vlan brief`** (2) — port sous
+     VLAN 10, VLAN nommé apparaît.
+  8. **Abréviations préfixe-unique** (3) — `int`, `sw mo acc`,
+     `sw acc vl 10`.
+  9. **Isolation entre modes (règle 9)** (3) — `switchport` indispo
+     en config, `name` indispo en config-if, `interface` indispo en
+     config-vlan.
+
+- **Preuve exécutable globale** : suite command-kernel **214/214
+  verte**. `tsc` propre sur les fichiers touchés (baseline inchangée).
+
+- **Effet attendu (signal migration)** : les tests legacy `switch-cli.
+  test.ts`, `cisco-switch-vlan-report.test.ts`, `cisco-switchport.
+  test.ts` verront leurs setups aboutir. Prochaines cibles switch :
+  `switchport trunk native/allowed`, `interface range` (multi-if),
+  `port-security`, `spanning-tree` en config, `no vlan <id>`.
+
 Journal des évolutions du socle `command-kernel` et de sa migration
 progressive par équipement. Un push = une entrée = une fonctionnalité
 complète et testée (voir `CLAUDE.md` / le framework de migration pour les
