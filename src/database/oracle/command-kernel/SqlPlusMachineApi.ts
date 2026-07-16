@@ -20,7 +20,9 @@ import {
   UserManagementApi,
 } from '@/command-kernel/machine/types';
 import { FileSystemError } from '@/command-kernel/errors';
-import type { SetOptionResult, SQLPlusSession, SQLPlusSettings } from '../commands/SQLPlusSession';
+import type { ColumnFormat, SetOptionResult, SQLPlusSession, SQLPlusSettings } from '../commands/SQLPlusSession';
+import type { MetadataObjectType } from '../metadata/MetadataExtractor';
+import type { UserActivityStats } from '../security/audit/UserActivityTracker';
 
 const UNSUPPORTED = (path: string): never => {
   throw new FileSystemError(path, 'EACCES', `${path}: opération non prise en charge par le shell sqlplus`);
@@ -113,6 +115,28 @@ export interface OracleSqlPlusApi {
   /** Variables liées (`VARIABLE`/`PRINT`). */
   bindVariables(): ReadonlyMap<string, { type: string; value: unknown }>;
   declareBindVariable(name: string, type: string): void;
+  /** Formats de colonne (`COLUMN`). */
+  columnFormats(): ReadonlyMap<string, ColumnFormat>;
+  setColumnFormat(name: string, fmt: ColumnFormat): void;
+  clearColumnFormat(name: string): void;
+  /** `ORADEBUG TRACEFILE_NAME`. */
+  instanceSid(): string;
+  /** `DDL [type] [schema.]objet`. */
+  objectDdl(objectType: MetadataObjectType, name: string, owner: string): string | null;
+  /** `USERACT [utilisateur]`. */
+  userActivityStats(): ReadonlyArray<UserActivityStats>;
+  /** `PMON SWEEP` — mutation réelle, retourne le nombre de sessions sniped. */
+  sweepIdleSessions(): number;
+  /** `SECDEMO RUN`/`RUN ALL`/`SCAN SOD`/`SCAN DORMANT`/`STATUS`. */
+  runFraudScenarios(): ReadonlyArray<{ scenario: string; stepCount: number }>;
+  scanSodViolations(): number;
+  sweepDormantAccounts(): number;
+  securityAuditJournalCounts(): {
+    connectionTraces: number; ddlHistory: number; dmlHistory: number; sensitiveAccess: number;
+    privilegeUsage: number; sodPolicies: number; sodViolations: number; dormantAccounts: number; anomalies: number;
+  };
+  /** `ARCHIVE LOG LIST`. */
+  archiveLogInfo(): { archiveLogMode: boolean; redoLogGroups: ReadonlyArray<{ status: string; sequence: number }> };
 }
 
 class SqlPlusOracleFacade implements OracleSqlPlusApi {
@@ -162,6 +186,54 @@ class SqlPlusOracleFacade implements OracleSqlPlusApi {
 
   declareBindVariable(name: string, type: string): void {
     this.session.declareBindVariable(name, type);
+  }
+
+  columnFormats(): ReadonlyMap<string, ColumnFormat> {
+    return this.session.getColumnFormatsSnapshot();
+  }
+
+  setColumnFormat(name: string, fmt: ColumnFormat): void {
+    this.session.setColumnFormat(name, fmt);
+  }
+
+  clearColumnFormat(name: string): void {
+    this.session.clearColumnFormat(name);
+  }
+
+  instanceSid(): string {
+    return this.session.getInstanceSid();
+  }
+
+  objectDdl(objectType: MetadataObjectType, name: string, owner: string): string | null {
+    return this.session.getObjectDdl(objectType, name, owner);
+  }
+
+  userActivityStats(): ReadonlyArray<UserActivityStats> {
+    return this.session.getUserActivityStats();
+  }
+
+  sweepIdleSessions(): number {
+    return this.session.sweepIdleSessions();
+  }
+
+  runFraudScenarios(): ReadonlyArray<{ scenario: string; stepCount: number }> {
+    return this.session.runFraudScenarios();
+  }
+
+  scanSodViolations(): number {
+    return this.session.scanSodViolations();
+  }
+
+  sweepDormantAccounts(): number {
+    return this.session.sweepDormantAccounts();
+  }
+
+  securityAuditJournalCounts() {
+    return this.session.getSecurityAuditJournalCounts();
+  }
+
+  archiveLogInfo() {
+    return this.session.getArchiveLogInfo();
   }
 }
 

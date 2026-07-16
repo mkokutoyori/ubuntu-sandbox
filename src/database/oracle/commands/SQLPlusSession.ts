@@ -24,6 +24,8 @@ import { ORACLE_ERRORS } from '../OracleConfig';
 import { ParserError } from '../../engine/parser/ParserError';
 import { DatabaseError } from '../../engine/types/DatabaseError';
 import type { HostCommandRunner } from './HostCommandRunner';
+import type { MetadataObjectType } from '../metadata/MetadataExtractor';
+import type { UserActivityStats } from '../security/audit/UserActivityTracker';
 
 import { QueryResultRenderer, type ColumnFormat } from './QueryResultRenderer';
 export type { ColumnFormat } from './QueryResultRenderer';
@@ -1826,6 +1828,86 @@ export class SQLPlusSession {
   /** Déclare une variable liée — mutation réelle, partagée avec `handleVariable`. */
   declareBindVariable(varName: string, varType: string): void {
     this.bindVariables.set(varName.toUpperCase(), { type: varType.toUpperCase(), value: null });
+  }
+
+  // ── Wave 4 : accesseurs additifs pour COLUMN/ORADEBUG/DDL/USERACT/PMON/SECDEMO/ARCHIVE LOG LIST ──
+
+  /** Copie immuable des formats de colonne (`COLUMN` sans argument) — pour la façade command-kernel. */
+  getColumnFormatsSnapshot(): ReadonlyMap<string, ColumnFormat> {
+    return new Map(this.columnFormats);
+  }
+
+  /** Positionne un format de colonne — mutation réelle, partagée avec `handleColumn`. */
+  setColumnFormat(colName: string, fmt: ColumnFormat): void {
+    this.columnFormats.set(colName, fmt);
+  }
+
+  /** `COLUMN col CLEAR` — mutation réelle, partagée avec `handleColumn`. */
+  clearColumnFormat(colName: string): void {
+    this.columnFormats.delete(colName);
+  }
+
+  /** SID de l'instance — pour `ORADEBUG TRACEFILE_NAME`. */
+  getInstanceSid(): string {
+    return this.db.instance.config.sid;
+  }
+
+  /** DDL reconstruit d'un objet du catalogue — pour `DDL`. */
+  getObjectDdl(objectType: MetadataObjectType, name: string, owner: string): string | null {
+    return this.db.metadata.getDdl(objectType, name, owner);
+  }
+
+  /** Statistiques d'activité utilisateur — pour `USERACT`. */
+  getUserActivityStats(): UserActivityStats[] {
+    return this.db.userActivity.getAllStats();
+  }
+
+  /** `PMON SWEEP` — mutation réelle (snipe les sessions idle), retourne le nombre sniped. */
+  sweepIdleSessions(): number {
+    return this.db.idleMonitor.sweep().length;
+  }
+
+  /** `SECDEMO RUN`/`RUN ALL` — exécute tous les scénarios de fraude, retourne un résumé par scénario. */
+  runFraudScenarios(): { scenario: string; stepCount: number }[] {
+    return this.db.fraudSimulator.runAll().map(r => ({ scenario: r.scenario, stepCount: r.steps.length }));
+  }
+
+  /** `SECDEMO SCAN SOD` — mutation réelle, retourne le nombre de nouvelles violations journalisées. */
+  scanSodViolations(): number {
+    return this.db.sodEvaluator.scanAll();
+  }
+
+  /** `SECDEMO SCAN DORMANT` — mutation réelle, retourne le nombre de comptes signalés. */
+  sweepDormantAccounts(): number {
+    return this.db.dormantAnalyzer.sweep();
+  }
+
+  /** `SECDEMO` (STATUS/défaut) — tailles du journal d'audit sécurité. */
+  getSecurityAuditJournalCounts(): {
+    connectionTraces: number; ddlHistory: number; dmlHistory: number; sensitiveAccess: number;
+    privilegeUsage: number; sodPolicies: number; sodViolations: number; dormantAccounts: number; anomalies: number;
+  } {
+    const journal = this.db.instance.getAuditJournal();
+    return {
+      connectionTraces: journal.getConnectionTraces().length,
+      ddlHistory: journal.getDdlHistory().length,
+      dmlHistory: journal.getDmlHistory().length,
+      sensitiveAccess: journal.getSensitiveAccessRecords().length,
+      privilegeUsage: journal.getPrivilegeUsage().length,
+      sodPolicies: journal.getSodPolicies().length,
+      sodViolations: journal.getSodViolations().length,
+      dormantAccounts: journal.getDormantAccounts().length,
+      anomalies: journal.getAnomalies().length,
+    };
+  }
+
+  /** `ARCHIVE LOG LIST` — mode d'archivage + groupes de journalisation. */
+  getArchiveLogInfo(): { archiveLogMode: boolean; redoLogGroups: { status: string; sequence: number }[] } {
+    const inst = this.db.instance;
+    return {
+      archiveLogMode: inst.archiveLogMode,
+      redoLogGroups: inst.getRedoLogGroups().map(g => ({ status: g.status, sequence: g.sequence })),
+    };
   }
 
   // ── PRINT ──────────────────────────────────────────────────────

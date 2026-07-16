@@ -10,6 +10,7 @@ import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';
 import { resetAllOracleInstances } from '@/terminal/commands/database';
 import { SqlPlusSubShell } from '@/terminal/subshells/SqlPlusSubShell';
+import { ORACLE_CONFIG } from '@/database/oracle/OracleConfig';
 
 let db: OracleDatabase;
 let session: SQLPlusSession;
@@ -295,6 +296,163 @@ describe('SQL*Plus — Wave 3 : PROMPT / EDIT / DEFINE / VARIABLE / PRINT', () =
     const srv = new LinuxServer('linux-server', 'kernel-wiring-6', 100, 100);
     const { subShell } = SqlPlusSubShell.create(srv, ['/', 'as', 'sysdba']);
     expect(subShell.processLine('DEFINE X = 1')).toBeInstanceOf(Promise);
+    subShell.dispose();
+  });
+});
+
+describe('SQL*Plus — Wave 4 : COLUMN / ORADEBUG / DDL / USERACT / PMON SWEEP / SECDEMO / ARCHIVE LOG LIST', () => {
+  it('COLUMN nu est silencieux tant qu\'aucun format n\'est défini', async () => {
+    expect(await run('COLUMN')).toBe('');
+  });
+
+  it('COLUMN col FORMAT positionne un format, COLUMN nu l\'affiche ensuite', async () => {
+    expect(await run('COLUMN empno FORMAT A10')).toBe('');
+    expect(await run('COLUMN')).toBe('COLUMN   EMPNO FORMAT   A10');
+    expect(kernel.machine.oracle.columnFormats().get('EMPNO')?.format).toBe('A10');
+  });
+
+  it('COLUMN col HEADING ajoute le libellé au format affiché', async () => {
+    await run('COLUMN empno FORMAT A10');
+    await run(`COLUMN empno HEADING 'Employee #'`);
+    expect(await run('COLUMN')).toBe(`COLUMN   EMPNO FORMAT   A10 HEADING  'Employee #'`);
+  });
+
+  it('COLUMN col CLEAR efface le format', async () => {
+    await run('COLUMN empno FORMAT A10');
+    expect(await run('COLUMN empno CLEAR')).toBe('');
+    expect(await run('COLUMN')).toBe('');
+    expect(kernel.machine.oracle.columnFormats().has('EMPNO')).toBe(false);
+  });
+
+  it('ORADEBUG TRACEFILE_NAME calcule un chemin de trace à partir du SID d\'instance (ORCL par défaut)', async () => {
+    expect(await run('ORADEBUG TRACEFILE_NAME'))
+      .toBe(`/u01/app/oracle/diag/rdbms/orcl/ORCL/trace/orcl_ora_${process.pid}.trc`);
+  });
+
+  it('ORADEBUG SETOSPID/SETORAPID renvoient un pid factice', async () => {
+    expect(await run('ORADEBUG SETOSPID 1'))
+      .toBe('Oracle pid: 1, Unix process pid: 1000, image: oracle@localhost');
+    expect(await run('ORADEBUG SETORAPID 1'))
+      .toBe('Oracle pid: 1, Unix process pid: 1000, image: oracle@localhost');
+  });
+
+  it('ORADEBUG (toute autre sous-commande : SETMYPID, DUMP…) répond "Statement processed."', async () => {
+    expect(await run('ORADEBUG SETMYPID')).toBe('Statement processed.');
+    expect(await run('ORADEBUG DUMP some_dump_name')).toBe('Statement processed.');
+  });
+
+  it('DDL sans argument affiche l\'usage', async () => {
+    const out = await run('DDL');
+    expect(out).toContain('Usage: DDL [object_type] [schema.]object_name');
+  });
+
+  it('DDL d\'un objet inconnu renvoie ORA-31603 (type et schéma par défaut : TABLE, utilisateur courant)', async () => {
+    expect(await run('DDL NOPE')).toBe('ORA-31603: object "NOPE" of type TABLE not found in schema "SYS"');
+  });
+
+  it('DDL d\'un identifiant illisible renvoie SP2-0734', async () => {
+    expect(await run('DDL bad!name')).toBe('SP2-0734: cannot parse object identifier "bad!name"');
+  });
+
+  it('DDL reconstruit le DDL d\'une table réellement créée', async () => {
+    session.processLine('CREATE TABLE t (x NUMBER);');
+    const out = await run('DDL t');
+    expect(out.toUpperCase()).toContain('CREATE TABLE');
+    expect(out.toUpperCase()).toContain('"T"');
+  });
+
+  it('USERACT liste l\'activité utilisateur (SYS a au moins un logon depuis le login initial)', async () => {
+    const out = await run('USERACT');
+    expect(out).toContain('USER       LOGONS');
+    expect(out).toContain('SYS');
+  });
+
+  it('USERACT <utilisateur> filtre sur ce seul compte', async () => {
+    const out = await run('USERACT SYS');
+    expect(out.split('\n')).toHaveLength(3);
+    expect(out).toContain('SYS');
+  });
+
+  it('USERACT sur un utilisateur sans activité l\'indique explicitement', async () => {
+    expect(await run('USERACT NOBODY')).toBe('No activity recorded for NOBODY.');
+  });
+
+  it('PMON SWEEP retourne un rapport de balayage (0 session sniped sur une session fraîche)', async () => {
+    expect(await run('PMON SWEEP')).toBe('PMON sweep complete — 0 session(s) sniped.');
+  });
+
+  it('SECDEMO STATUS affiche les tailles du journal d\'audit sécurité (sans relancer de scénario)', async () => {
+    const counts = kernel.machine.oracle.securityAuditJournalCounts();
+    expect(await run('SECDEMO STATUS')).toBe([
+      'Security audit journal status:',
+      `  Connection traces:    ${counts.connectionTraces}`,
+      `  DDL history:          ${counts.ddlHistory}`,
+      `  DML history:          ${counts.dmlHistory}`,
+      `  Sensitive accesses:   ${counts.sensitiveAccess}`,
+      `  Privilege usage rows: ${counts.privilegeUsage}`,
+      `  SoD policies:         ${counts.sodPolicies}`,
+      `  SoD violations:       ${counts.sodViolations}`,
+      `  Dormant accounts:     ${counts.dormantAccounts}`,
+      `  Anomalies:            ${counts.anomalies}`,
+    ].join('\n'));
+  });
+
+  it('SECDEMO nu / RUN exécute tous les scénarios de fraude puis affiche le statut', async () => {
+    const out = await run('SECDEMO');
+    expect(out).toContain('Running security-audit fraud scenarios...');
+    expect(out).toContain('Security audit journal status:');
+  });
+
+  it('SECDEMO SCAN SOD relance uniquement l\'évaluateur SoD (pas de statut)', async () => {
+    expect(await run('SECDEMO SCAN SOD')).toMatch(/^SoD scan complete — \d+ new violation\(s\) journaled\.$/);
+  });
+
+  it('SECDEMO SCAN DORMANT relance uniquement l\'analyseur de comptes dormants (pas de statut)', async () => {
+    expect(await run('SECDEMO SCAN DORMANT')).toMatch(/^Dormant-account sweep complete — \d+ account\(s\) flagged\.$/);
+  });
+
+  it('SECDEMO <sous-commande inconnue> renvoie SP2-0734', async () => {
+    expect(await run('SECDEMO BOGUS')).toBe(
+      'SP2-0734: unknown SECDEMO subcommand "BOGUS"\nAvailable: RUN | SCAN SOD | SCAN DORMANT | STATUS',
+    );
+  });
+
+  it('ARCHIVE LOG LIST affiche le mode d\'archivage et les journaux de redo (état par défaut après startup)', async () => {
+    expect(await run('ARCHIVE LOG LIST')).toBe([
+      'Database log mode              No Archive Mode',
+      'Automatic archival             Disabled',
+      `Archive destination            LOCATION=${ORACLE_CONFIG.BASE}/archivelog`,
+      'Archive format                 arch_%t_%s_%r.arc',
+      'Oldest online log sequence     1',
+      'Current log sequence           0',
+    ].join('\n'));
+  });
+
+  it('les quirks de reconnaissance sont corrects pour les 7 nouveaux verbes', () => {
+    // `COLUMN` nu matche, mais `COL` nu (sans texte final) ne matche PAS, comme le legacy.
+    expect(recognizeSqlPlusKernelVerb('COLUMN')).not.toBeNull();
+    expect(recognizeSqlPlusKernelVerb('COL')).toBeNull();
+    expect(recognizeSqlPlusKernelVerb('COL empno')).not.toBeNull();
+    expect(recognizeSqlPlusKernelVerb('ORADEBUG')).not.toBeNull();
+    expect(recognizeSqlPlusKernelVerb('ORADEBUG TRACEFILE_NAME')).not.toBeNull();
+    expect(recognizeSqlPlusKernelVerb('DDL')).not.toBeNull();
+    expect(recognizeSqlPlusKernelVerb('USERACT')).not.toBeNull();
+    // `PMON` seul (sans `SWEEP` exact) ne matche PAS, comme le legacy.
+    expect(recognizeSqlPlusKernelVerb('PMON')).toBeNull();
+    expect(recognizeSqlPlusKernelVerb('PMON SWEEP ALL')).toBeNull();
+    expect(recognizeSqlPlusKernelVerb('PMON SWEEP')).not.toBeNull();
+    expect(recognizeSqlPlusKernelVerb('SECDEMO')).not.toBeNull();
+    // `ARCHIVE` seul ou `ARCHIVE LOG` (sans `LIST`) ne matchent PAS.
+    expect(recognizeSqlPlusKernelVerb('ARCHIVE')).toBeNull();
+    expect(recognizeSqlPlusKernelVerb('ARCHIVE LOG')).toBeNull();
+    expect(recognizeSqlPlusKernelVerb('ARCHIVE LOG LIST')).not.toBeNull();
+  });
+
+  it('câblage live sur SqlPlusSubShell : COLUMN/ARCHIVE LOG LIST retournent une Promise', () => {
+    const srv = new LinuxServer('linux-server', 'kernel-wiring-7', 100, 100);
+    const { subShell } = SqlPlusSubShell.create(srv, ['/', 'as', 'sysdba']);
+    expect(subShell.processLine('COLUMN')).toBeInstanceOf(Promise);
+    expect(subShell.processLine('ARCHIVE LOG LIST')).toBeInstanceOf(Promise);
     subShell.dispose();
   });
 });

@@ -14,6 +14,13 @@ import { SqlPlusEditCommand } from './commands/Edit';
 import { SqlPlusDefineCommand } from './commands/Define';
 import { SqlPlusVariableCommand } from './commands/Variable';
 import { SqlPlusPrintCommand } from './commands/Print';
+import { SqlPlusColumnCommand } from './commands/Column';
+import { SqlPlusOradebugCommand } from './commands/Oradebug';
+import { SqlPlusDdlCommand } from './commands/Ddl';
+import { SqlPlusUseractCommand } from './commands/Useract';
+import { SqlPlusPmonSweepCommand } from './commands/PmonSweep';
+import { SqlPlusSecdemoCommand } from './commands/Secdemo';
+import { SqlPlusArchiveLogListCommand } from './commands/ArchiveLogList';
 
 /**
  * Bootstrap du socle command-kernel SQL*Plus (Wave 1-3 — voir CHANGELOG) :
@@ -41,6 +48,13 @@ export function createSqlPlusKernel(
   registry.register(() => new SqlPlusDefineCommand());
   registry.register(() => new SqlPlusVariableCommand());
   registry.register(() => new SqlPlusPrintCommand());
+  registry.register(() => new SqlPlusColumnCommand());
+  registry.register(() => new SqlPlusOradebugCommand());
+  registry.register(() => new SqlPlusDdlCommand());
+  registry.register(() => new SqlPlusUseractCommand());
+  registry.register(() => new SqlPlusPmonSweepCommand());
+  registry.register(() => new SqlPlusSecdemoCommand());
+  registry.register(() => new SqlPlusArchiveLogListCommand());
 
   const machine = new SqlPlusMachineApi(sqlPlusSession, hostname);
   const session = createSession({
@@ -66,6 +80,10 @@ const prefixOnly = (...names: readonly string[]): VerbTest =>
  * ne matchent PAS ; `DISCONNECT`/`DISC`/`HELP` n'acceptent aucun texte
  * final ; `SHOW`/`EXIT`/`QUIT` acceptent la forme nue).
  */
+// `COLUMN`/`COL` : bare `COLUMN` (liste tout) matche, mais `COL` bare seul
+// ne matche PAS (le legacy exige `COL ` suivi de texte) — quirk préservé.
+const columnTest: VerbTest = (u) => u === 'COLUMN' || u.startsWith('COLUMN ') || u.startsWith('COL ');
+
 const VERB_FAMILIES: Readonly<Record<string, VerbTest>> = {
   EXIT: wordOrPrefix('EXIT', 'QUIT'),
   QUIT: wordOrPrefix('EXIT', 'QUIT'),
@@ -85,6 +103,20 @@ const VERB_FAMILIES: Readonly<Record<string, VerbTest>> = {
   VARIABLE: (u) => u === 'VARIABLE' || u.startsWith('VARIABLE ') || u.startsWith('VAR '),
   VAR: (u) => u === 'VARIABLE' || u.startsWith('VARIABLE ') || u.startsWith('VAR '),
   PRINT: wordOrPrefix('PRINT'),
+  COLUMN: columnTest,
+  COL: columnTest,
+  ORADEBUG: wordOrPrefix('ORADEBUG'),
+  DDL: wordOrPrefix('DDL'),
+  USERACT: wordOrPrefix('USERACT'),
+  // `PMON SWEEP` : seule forme exacte reconnue, comme le legacy — pas de
+  // `PMON` bare ni d'autre sous-commande PMON.
+  PMON: exact('PMON SWEEP'),
+  SECDEMO: wordOrPrefix('SECDEMO'),
+  // `ARCHIVE LOG LIST` : verbe à 3 mots, reconnu via le premier
+  // (`ARCHIVE`) — le descripteur de la commande garde donc `name:
+  // 'ARCHIVE'`, jamais la phrase complète (voir `recognizeSqlPlusKernelVerb`,
+  // qui ne renvoie que le premier mot comme `name` résolu par le registre).
+  ARCHIVE: wordOrPrefix('ARCHIVE LOG LIST'),
 };
 
 /**

@@ -1,5 +1,113 @@
 # Changelog
 
+## Oracle SQL*Plus — Wave 4 : `COLUMN` / `ORADEBUG` / `DDL` / `USERACT` / `PMON SWEEP` / `SECDEMO` / `ARCHIVE LOG LIST` (batch-générées via `scripts/generate_command.py`)
+
+**État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
+
+Sept commandes supplémentaires migrées (18 au total sur le socle
+command-kernel SQL*Plus) — le reste des verbes autonomes ne dépendant ni
+du réseau (CONNECT/DISCONNECT distant), ni des DTOs de compilation du
+catalogue (SHOW ERRORS), ni du moteur d'exécution SQL/PL-SQL (`/`,
+EXECUTE, START, SPOOL, HOST). Première vague à suivre un flux
+« générer TOUT d'abord, implémenter ensuite » : les 7 squelettes ont été
+scaffoldés en un seul appel `generate_command.py batch` à partir d'un
+fichier de spécifications JSON, avant qu'aucune logique métier ne soit
+écrite.
+
+- **Fichier de specs batch** (`scripts/generate_command.py batch
+  <fichier.json>`) : un tableau de 7 objets `CommandSpec` (mêmes clés que
+  l'API `--arg`/`--option` en ligne de commande, mais en JSON — `target`,
+  `name`, `summary`, `usage`, `args: [{name, type, required, variadic,
+  description}]`). Validé par `--dry-run` avant écriture réelle ; les 7
+  fichiers générés compilent tous individuellement (imports corrects,
+  `CommandDescriptor` complet) avant tout ajustement métier.
+
+- **Quirk découvert pendant la vague — verbes à plusieurs mots** :
+  `recognizeSqlPlusKernelVerb` ne renvoie jamais que le **premier mot**
+  de la ligne comme `name` résolu par `CommandRegistry.resolve()` (qui
+  fait une recherche exacte nom/alias). Pour `PMON SWEEP` et `ARCHIVE LOG
+  LIST`, le descripteur de commande doit donc porter `name: 'PMON'` /
+  `name: 'ARCHIVE'` (pas la phrase complète) — le reste de la phrase est
+  absorbé par un argument variadique ignoré dans `execute()`, exactement
+  comme `HELP INDEX` le faisait déjà en Wave 1 (`name: 'HELP'`, `INDEX`
+  jamais lu). `VERB_FAMILIES.PMON`/`.ARCHIVE` testent la phrase complète
+  (`u === 'PMON SWEEP'`, `u === 'ARCHIVE LOG LIST' || u.startsWith(...)`)
+  pour préserver le quirk exact du legacy (`PMON` bare ou `PMON SWEEP
+  ALL` ne matchent pas ; `ARCHIVE`/`ARCHIVE LOG` seuls non plus).
+
+- **`SQLPlusSession`** (accesseurs additifs, zéro changement de
+  comportement existant) : `getColumnFormatsSnapshot`/`setColumnFormat`/
+  `clearColumnFormat` (formats `COLUMN`, partagés avec `handleColumn`) ;
+  `getInstanceSid` ; `getObjectDdl` (délègue à `MetadataExtractor.getDdl`) ;
+  `getUserActivityStats` (délègue à `UserActivityTracker.getAllStats`) ;
+  `sweepIdleSessions` (délègue à `IdleSessionMonitor.sweep`, mutation
+  réelle) ; `runFraudScenarios`/`scanSodViolations`/`sweepDormantAccounts`
+  (délèguent à `FraudScenarioSimulator`/`SodEvaluator`/
+  `DormantAccountAnalyzer`, mutations réelles) ; `getSecurityAuditJournalCounts`
+  (tailles du `AuditJournal`) ; `getArchiveLogInfo` (mode d'archivage +
+  groupes de redo). `SqlPlusMachineApi`/`OracleSqlPlusApi` étendues en
+  miroir direct.
+
+- **7 nouvelles commandes** (`src/database/oracle/command-kernel/commands/`) :
+  - **`Column.ts`** (alias `COL`) — nu : liste les formats définis
+    (silencieux si aucun) ; `COLUMN col [FORMAT fmt] [HEADING texte]
+    [CLEAR]` : positionne/efface. Quirk préservé : `COLUMN` bare matche,
+    `COL` bare seul ne matche PAS (exige `COL ` suivi de texte).
+  - **`Oradebug.ts`** — diagnostic simulé : `TRACEFILE_NAME` calcule un
+    chemin de trace depuis le SID d'instance ; `SETOSPID`/`SETORAPID`
+    renvoient un pid factice ; tout le reste répond invariablement
+    `Statement processed.`.
+  - **`Ddl.ts`** — raccourci `DBMS_METADATA.GET_DDL` : sans argument,
+    usage ; `DDL [type] [schema.]objet` reconstruit le DDL (`ORA-31603`
+    si absent, `SP2-0734` si l'identifiant est illisible).
+  - **`Useract.ts`** — inspecte `UserActivityTracker` : nu, liste tous
+    les utilisateurs suivis ; `USERACT user`, filtre.
+  - **`PmonSweep.ts`** — force `IdleSessionMonitor.sweep()`, retourne le
+    nombre de sessions sniped.
+  - **`Secdemo.ts`** — pilote la démonstration d'audit sécurité : `RUN`/
+    `RUN ALL`/nu exécute tous les scénarios de fraude puis affiche le
+    statut du journal ; `SCAN SOD`/`SCAN DORMANT` relancent un seul
+    évaluateur et retournent immédiatement (sans statut) ; `STATUS`/reste
+    : statut seul, ou `SP2-0734` si sous-commande inconnue.
+  - **`ArchiveLogList.ts`** — mode d'archivage + journaux de redo, en
+    réutilisant `allParameters()` (déjà exposé en Wave 1) pour
+    `log_archive_dest`/`log_archive_format`.
+
+- **`createSqlPlusKernel.ts`** : 7 verbes enregistrés dans
+  `VERB_FAMILIES`, miroir exact des prédicats legacy — y compris les
+  deux verbes à plusieurs mots (voir quirk ci-dessus).
+
+- **Câblage live** : aucun changement à `SqlPlusSubShell.ts`, comme en
+  Wave 3 — le mécanisme générique posé en Wave 2 absorbe les 7 nouveaux
+  verbes dès leur enregistrement.
+
+- **Preuve** : `sqlplus-cli-foundation.test.ts` étendu à 59/59 tests
+  verts — nouveau bloc « Wave 4 » (23 cas) : formats de colonne
+  (positionner/afficher/effacer), diagnostic ORADEBUG (3 branches),
+  DDL (usage/introuvable/identifiant illisible/reconstruction réelle sur
+  une table créée par `CREATE TABLE`), USERACT (liste/filtre/inconnu),
+  PMON SWEEP, SECDEMO (5 branches, dont 2 assertions exactes contre un
+  instantané `securityAuditJournalCounts()` pris au moment du test plutôt
+  que deviné), ARCHIVE LOG LIST (assertion exacte contre l'état par
+  défaut post-`startup()`, SID `ORCL`, `archiveLogMode` par défaut
+  `false`), quirks de reconnaissance des 7 verbes (y compris les cas
+  négatifs `COL` bare, `PMON` bare, `ARCHIVE`/`ARCHIVE LOG` sans `LIST`),
+  et un smoke test de câblage live confirmant que `COLUMN`/`ARCHIVE LOG
+  LIST` retournent bien une `Promise` via `SqlPlusSubShell`.
+
+- **Validation de non-régression** : `tsc --noEmit` — 55 erreurs
+  avant/après (`git stash -u`), diff vide. `eslint` sur les fichiers
+  touchés — 0 erreur, mêmes 2 warnings pré-existants. Suite `database/`
+  + `terminal/` + `command-kernel/` complète (205 fichiers, 3820 tests)
+  — 32 échecs, mêmes 8 fichiers pré-existants qu'en Wave 3 (provisioning
+  OS `oracle`/DAC fichier, isolation vty switch/routeur — sans rapport
+  avec Oracle).
+
+- **Prochaines cibles** : `SHOW ERRORS` (DTOs de compilation du
+  catalogue) ; `CONNECT`/`DISCONNECT` réseau (Oracle Net/TNS) ; puis la
+  vague la plus significative — l'exécution SQL/PL-SQL elle-même (tampon
+  multi-lignes, `/`, blocs PL/SQL) et `SPOOL`/`@script`/`HOST`.
+
 ## Oracle SQL*Plus — Wave 3 : `PROMPT` / `EDIT` / `DEFINE` / `VARIABLE` / `PRINT` (générées via `scripts/generate_command.py`)
 
 **État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
