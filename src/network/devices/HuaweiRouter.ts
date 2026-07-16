@@ -16,13 +16,7 @@ import type { RouterCommandKernelCli } from './Router';
 import { createHuaweiRouterHostShell } from './router/command-kernel/createHuaweiRouterHostShell';
 import { createCliSession } from '@/command-kernel/cli';
 import { SimpleUser } from '@/command-kernel/session/types';
-import {
-  displayVersion,
-  displayInterfaceBrief,
-  displayCurrentConfig,
-  displayIpIntBrief,
-} from './shells/huawei/HuaweiDisplayCommands';
-import { resolveHuaweiInterfaceName as resolveHuaweiIfName } from './shells/cli-utils';
+import { displayCurrentConfig } from './shells/huawei/HuaweiDisplayCommands';
 import { LldpAgent } from '../lldp/LldpAgent';
 import { ETHERTYPE_LLDP, LLDP_MULTICAST_MAC } from '../lldp/types';
 import { VrrpAgent } from '../vrrp/VrrpAgent';
@@ -336,9 +330,11 @@ export class HuaweiRouter extends Router {
     // matching so `ssh ... "dis-int Gi0/0/0"` invokes display interface.
     const expanded = this._getCommandAliases().expand(cmd);
     if (expanded !== cmd) return await this.runSshCommandSync(_user, expanded);
-    if (/^display\s+version\s*$/i.test(cmd)) {
-      return { output: `${displayVersion(this)}\n`, exitCode: 0 };
-    }
+    // Débranchement legacy : `display version`, `display interface [brief|<name>]`,
+    // `display ip interface brief` sont désormais migrés au socle
+    // command-kernel — leurs anciens dispatches shell-based ici
+    // court-circuitaient le kernel. Ils tombent à travers vers
+    // `runSshCommand` → `executeCommand` (= CliInterpreter).
     if (/^display\s+logbuffer\s*$/i.test(cmd)) {
       const audit = this.getSecurityAuditLog();
       const header = 'Logging buffer configuration and contents: enabled\nAllowed max buffer size : 1024\nActual buffer size : 1024\nChannel number : 4, Channel name : logbuffer\nDropped messages : 0\nOverwritten messages : 0\nCurrent messages : ' + audit.entries().length + '\n';
@@ -350,33 +346,6 @@ export class HuaweiRouter extends Router {
     if (/^display\s+local-user\s*$/i.test(cmd)) {
       const users = this._listLocalUsers();
       return { output: `User-name              State   Type   Privilege\n${users.map(u => `${u.name.padEnd(22)} A       SSH    ${u.privilege}`).join('\n')}\n`, exitCode: 0 };
-    }
-    if (/^display\s+int(?:erface)?\s+brief\s*$/i.test(cmd)) {
-      return { output: `${displayInterfaceBrief(this)}\n`, exitCode: 0 };
-    }
-    // `display interface <name>` — per-interface details (matches the
-    // VRP convention used after the command-alias expansion above).
-    const dispInt = /^display\s+int(?:erface)?\s+(\S+)\s*$/i.exec(cmd);
-    if (dispInt) {
-      const portName = resolveHuaweiIfName(Array.from(this._getPortsInternal().keys()), dispInt[1]) || dispInt[1];
-      const port = this.getPort(portName);
-      if (!port) {
-        return { output: `Error: Wrong parameter found at '^' position.\n`, exitCode: 1 };
-      }
-      const ip = port.getIPAddress();
-      const mask = port.getSubnetMask();
-      const lines = [
-        `${dispInt[1]} current state : ${port.getIsUp() ? 'UP' : 'DOWN'}`,
-        `Line protocol current state : ${port.getIsUp() ? 'UP' : 'DOWN'}`,
-        `Description:`,
-        `Switch Port, Link-type : auto negotiation,`,
-        `Hardware address is ${port.getMAC()}`,
-        ip && mask ? `Internet Address is ${ip}/${mask}` : 'Internet protocol processing : disabled',
-      ];
-      return { output: `${lines.join('\n')}\n`, exitCode: 0 };
-    }
-    if (/^display\s+ip\s+int(?:erface)?\s+brief\s*$/i.test(cmd)) {
-      return { output: `${displayIpIntBrief(this)}\n`, exitCode: 0 };
     }
     // `display current-configuration [ | include … ]` — synthesises a
     // VRP-style running config with the SSH-relevant directives that

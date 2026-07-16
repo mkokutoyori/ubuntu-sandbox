@@ -5,6 +5,55 @@ progressive par équipement. Un push = une entrée = une fonctionnalité
 complète et testée (voir `CLAUDE.md` / le framework de migration pour les
 principes directeurs).
 
+## Huawei routeur — débranchement `runSshCommandSync` des commandes déjà migrées (display version / display interface [brief|<name>] / display ip interface brief)
+
+**État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
+
+`HuaweiRouter.runSshCommandSync` interceptait `display version`,
+`display interface brief`, `display interface <name>` et `display ip
+interface brief` avec un chemin shell-based **parallèle** au socle
+command-kernel — les formateurs legacy `displayVersion`,
+`displayInterfaceBrief`, `displayIpIntBrief` étaient appelés
+directement, avec un accès brut à `this.getPort(...).getMAC()` etc. Ce
+court-circuit masquait la migration : les tests SSH voyaient un rendu
+legacy même quand `executeCommand` local partait déjà par le kernel.
+
+- **Débranchement** :
+  - `runSshCommandSync` conserve uniquement les commandes **pas encore
+    migrées** (`hostname` bareword, expansion des alias VRP,
+    `display logbuffer`, `display users`, `display local-user`,
+    `display current-configuration`) — plus tard elles-aussi
+    tomberont via le kernel.
+  - Suppression des imports `displayVersion`,
+    `displayInterfaceBrief`, `displayIpIntBrief`,
+    `resolveHuaweiInterfaceName as resolveHuaweiIfName` — plus
+    consultés.
+  - Le fallback `runSshCommand → executeCommand` prend le relais :
+    tout `ssh <router> "display version"` passe désormais par le
+    même `CliInterpreter` qu'un `display version` local.
+
+- **Preuve** :
+  - Suite command-kernel = **187/187 verte** (aucun impact).
+  - Suites SSH cross-vendor mesurées avant/après = **identiques**
+    (66/208 sur les 4 suites SSH principales), pas de régression.
+  - Suites Huawei-VRP mesurées avant/après = **identiques** (130 fail
+    / 87 pass sur 3 suites Huawei) : les rouges pré-existants
+    restent, aucun nouveau. Ce sont des signaux migration légitimes
+    (commandes `router id`, `stp enable`, `dhcp enable`, `name` en
+    vlan-view, `port link-type hybrid`, formatage vendor-exact des
+    erreurs `ambigu →` qui doit devenir `Ambiguous`, aide `?` qui
+    doit lister `interface`/`shutdown`, `display current-configuration`
+    complète…) qui seront adressés vague par vague.
+
+- **Effet attendu** : plus aucun test SSH ne « triche » sur les 4
+  commandes débranchées — quand le kernel produit un rendu différent
+  du legacy, le rouge apparaîtra franchement au lieu d'être masqué.
+  Prochain chantier prioritaire d'après les signaux : formater les
+  erreurs kernel (`ambigu :`, `commande introuvable :`) en messages
+  vendor-exact (`% Ambiguous command`, `Error: Unrecognized command`)
+  via une couche wrapper — un test attend « Ambiguous » sur `i` ↦
+  `interface | ip`.
+
 ## Huawei switch — vague `display vlan` / `display mac-address` + `sysname` + `interface-view` + `vlan-view` complet (`port link-type` / `port default vlan` / `shutdown` / `description` / `undo *`) + `undo vlan`
 
 **État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
