@@ -2834,12 +2834,22 @@ export abstract class Switch extends Equipment {
       await cli.interpreter.interpretLine(command, session, io);
     } catch (err) {
       if (err instanceof Error) {
-        chunks.push(`${err.message}\n`);
+        chunks.push(`${this.formatKernelErrorMessage(err)}\n`);
       } else {
         throw err;
       }
     }
     return chunks.join('').replace(/\n$/, '');
+  }
+
+  /**
+   * Miroir strict de `Router.formatKernelErrorMessage` : traduit une
+   * erreur du socle command-kernel vers le format exact du vendeur
+   * switch. Défaut = message générique ; `CiscoSwitch`/`HuaweiSwitch`
+   * fournissent leur override.
+   */
+  protected formatKernelErrorMessage(err: Error): string {
+    return err.message;
   }
 
   // ─── vty sessions (per-terminal CLI isolation) ────────────────────

@@ -140,6 +140,73 @@ progressive par équipement. Un push = une entrée = une fonctionnalité
 complète et testée (voir `CLAUDE.md` / le framework de migration pour les
 principes directeurs).
 
+## Socle + Cisco + Huawei — wrapper vendor pour les erreurs kernel (`CommandNotFound` / `ambigu` → messages IOS/VRP exacts)
+
+**État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
+
+Le message d'erreur brut du `CliInterpreter` (`ambigu : "i" ↦
+interface | ip` ou `commande introuvable : X`) atteignait directement
+l'utilisateur même sur les équipements vendeur — les tests attendant
+les messages IOS/VRP exacts (`% Ambiguous command:  "i"`, `Error:
+Unrecognized command...`) échouaient sur le formatage. Extension
+minimale et non-rupture du socle : un `errorFormatter` optionnel est
+injecté au bootstrap vendeur.
+
+- **Nouveau contrat socle** (`cli-interpreter.ts`) :
+  - `export type KernelErrorFormatter = (err: ShellError) => string;`
+  - `CliInterpreter` constructor accepte un 4e argument optionnel
+    `errorFormatter: KernelErrorFormatter = (err) => err.message`.
+  - Chaque catch de `ShellError` dans `interpretLine` passe désormais
+    par `this.errorFormatter(err)` — un SEUL point de traduction,
+    aucune extension du contrat `ICommand`/`CommandContext`. Défaut
+    inchangé pour tous les consommateurs actuels.
+
+- **Wiring vendeur** (bootstraps 4 fichiers + 4 classes équipement) :
+  - `createCisco/HuaweiRouterHostShell` et `createCisco/HuaweiSwitchHostShell`
+    reçoivent le formatter en 2e argument optionnel et l'injectent
+    dans le `new CliInterpreter(...)`.
+  - `CiscoRouter`/`HuaweiRouter`/`CiscoSwitch`/`HuaweiSwitch`
+    exposent une méthode statique `formatKernelError(err) → string`
+    utilisée à la fois par le bootstrap (injection kernel) et par
+    l'override d'instance `formatKernelErrorMessage(err)` appelé
+    par `Router.executeCommandKernel` / `Switch.executeCommandKernel`
+    au catch. Un seul mapping vendeur, deux points de sortie qui le
+    partagent.
+
+- **Mapping vendeur** (miroir strict router/switch) :
+  - **Cisco IOS/Catalyst** :
+    - `CommandNotFoundError` → `% Invalid input detected at '^' marker.`
+    - `UsageError` "ambigu :" → `% Ambiguous command:  "<X>"`
+    - autres `ShellError` → préfixé `%` si absent.
+  - **Huawei VRP (routeur & switch)** :
+    - `CommandNotFoundError` → `Error: Unrecognized command found at '^' position.`
+    - `UsageError` "ambigu :" → `Error: Ambiguous command found at '^' position.`
+    - autres `ShellError` → préfixé `Error:` si absent.
+
+- **Preuve** :
+  - Suite command-kernel = **214/214 verte** (foundation Cisco/Huawei
+    router+switch + subinterface + switch-config-cisco). Les regex des
+    tests fondation étendues pour matcher `Invalid input|Unrecognized
+    command`.
+  - Test cible `huawei-vrp.test.ts > should report ambiguous commands`
+    passe désormais (baseline : rouge).
+  - Suites Huawei ciblées mesurées avant/après = signal net positif :
+    quelques tests précédemment verts « par accident » (contenant le
+    token dans le message d'erreur legacy `commande introuvable : X`)
+    passent en rouge — ils exposent des commandes non migrées
+    (`display current-configuration`, `display clock`, `return` VRP,
+    `name` en vlan-view, `port trunk allow-pass vlan`, …). Ce sont
+    d'authentiques signaux migration à absorber vague par vague.
+
+- **Effet attendu** : plus aucun message d'erreur kernel brut ne fuit
+  vers l'utilisateur sur Cisco/Huawei. Le rendu vendor-exact devient
+  la base — les commandes migrées héritent gratuitement du bon
+  formatage, les commandes non migrées échouent avec le message
+  attendu par le vendeur (utile pour l'aide `?` et pour les tests qui
+  vérifient un rendu VRP/IOS). Prochaine étape logique : formater les
+  autres `UsageError` (arguments manquants, valeurs invalides) qui
+  aujourd'hui remontent avec le message générique du kernel.
+
 ## Huawei routeur — débranchement `runSshCommandSync` des commandes déjà migrées (display version / display interface [brief|<name>] / display ip interface brief)
 
 **État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**

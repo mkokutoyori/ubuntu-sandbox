@@ -16,6 +16,7 @@ import type { RouterCommandKernelCli } from './Router';
 import { createCiscoRouterHostShell } from './router/command-kernel/createCiscoRouterHostShell';
 import { createCliSession } from '@/command-kernel/cli';
 import { SimpleUser } from '@/command-kernel/session/types';
+import { CommandNotFoundError } from '@/command-kernel/errors';
 import {
   showVersion,
   showInterfacesStatus,
@@ -380,13 +381,40 @@ export class CiscoRouter extends Router {
   }
 
   protected override createCommandKernelCli(): RouterCommandKernelCli {
-    const { interpreter, machine, promptBuilder } = createCiscoRouterHostShell(this);
+    const { interpreter, machine, promptBuilder } = createCiscoRouterHostShell(
+      this,
+      CiscoRouter.formatKernelError,
+    );
     const defaultSession = createCliSession({
       id: 'router-default',
       user: new SimpleUser(0, 0, 'admin'),
       rootMode: 'user',
     });
     return { interpreter, machine, promptBuilder, defaultSession };
+  }
+
+  /**
+   * Traduit une erreur du socle command-kernel vers le format exact
+   * Cisco IOS (`% Invalid input detected at '^' marker.` pour une
+   * commande inconnue, `% Ambiguous command:  "<X>"` pour un préfixe
+   * ambigu). Utilisé simultanément par le `CliInterpreter` (via
+   * l'injection au bootstrap) et par le `catch` de `Router.
+   * executeCommandKernel` : les deux points de sortie partagent le
+   * même formatage vendeur.
+   */
+  static formatKernelError(err: Error): string {
+    if (err instanceof CommandNotFoundError) {
+      return "% Invalid input detected at '^' marker.";
+    }
+    const m = /^ambigu\s*:\s*"([^"]+)"/i.exec(err.message);
+    if (m) {
+      return `% Ambiguous command:  "${m[1]}"`;
+    }
+    return err.message.startsWith('%') ? err.message : `% ${err.message}`;
+  }
+
+  protected override formatKernelErrorMessage(err: Error): string {
+    return CiscoRouter.formatKernelError(err);
   }
 
   /** Synchronous IOS exec whitelist consumed by the SSH cross-platform dispatch. */

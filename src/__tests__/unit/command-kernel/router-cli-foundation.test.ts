@@ -297,7 +297,7 @@ describe('Router CLI foundation — command-kernel single-gate pipeline', () => 
       // `show running-config` : sous-commande `running-config` de `show`
       // pas encore migrée → « Incomplete » via le nouveau pipeline.
       const out = await r.executeCommand('show running-config');
-      expect(out).toMatch(/inconnu|Incomplete|not-found|introuvable/i);
+      expect(out).toMatch(/inconnu|Incomplete|not-found|introuvable|Invalid input|Unrecognized command/i);
     });
   });
 
@@ -554,7 +554,7 @@ describe('Router CLI foundation — command-kernel single-gate pipeline', () => 
       const out = await r.executeCommand('shutdown');
       // `shutdown` n'est pas dans systemViewRegistry → not-found via le
       // nouveau pipeline. Signal explicite d'isolation des modes.
-      expect(out).toMatch(/inconnu|Incomplete|not-found|introuvable/i);
+      expect(out).toMatch(/inconnu|Incomplete|not-found|introuvable|Invalid input|Unrecognized command/i);
     });
 
     it('an unmigrated command fails through the new pipeline (signal for migration)', async () => {
@@ -563,7 +563,7 @@ describe('Router CLI foundation — command-kernel single-gate pipeline', () => 
       // `dhcp enable` : sous-commande pas encore migrée → not-found via
       // le nouveau pipeline.
       const out = await r.executeCommand('dhcp enable');
-      expect(out).toMatch(/inconnu|Incomplete|not-found|introuvable/i);
+      expect(out).toMatch(/inconnu|Incomplete|not-found|introuvable|Invalid input|Unrecognized command/i);
     });
   });
 });

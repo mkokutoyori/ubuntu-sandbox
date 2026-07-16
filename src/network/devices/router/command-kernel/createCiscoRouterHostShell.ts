@@ -1,5 +1,6 @@
 import { CliInterpreter, CliPromptBuilder, EndCommand, ModeRegistry, PopModeCommand } from '@/command-kernel/cli';
-import type { CliMode } from '@/command-kernel/cli';
+import type { CliMode, KernelErrorFormatter } from '@/command-kernel/cli';
+import { PermissionGuard } from '@/command-kernel/exec/permission-guard';
 import { CommandRegistry } from '@/command-kernel/registry/command-registry';
 import type { Router } from '../../Router';
 import {
@@ -43,7 +44,10 @@ import { CiscoRouterShutdownCommand } from './commands/cisco/config/config-if/Sh
  *  version` avec bannière ISR2911, `show ip route`…) — enregistrées ici
  *  dans le sous-registre passé à `createCiscoShowCommand()`.
  */
-export function createCiscoRouterHostShell(router: Router): {
+export function createCiscoRouterHostShell(
+  router: Router,
+  errorFormatter?: KernelErrorFormatter,
+): {
   interpreter: CliInterpreter;
   machine: RouterMachineApi;
   promptBuilder: CliPromptBuilder;
@@ -94,7 +98,7 @@ export function createCiscoRouterHostShell(router: Router): {
   ] satisfies CliMode[], { execLevel: 'privileged' });
 
   const machine = new RouterMachineApi({ router, modes });
-  const interpreter = new CliInterpreter(modes, machine);
+  const interpreter = new CliInterpreter(modes, machine, new PermissionGuard(), errorFormatter);
   const promptBuilder = new CliPromptBuilder(modes, () => machine.hostname);
   return { interpreter, machine, promptBuilder };
 }

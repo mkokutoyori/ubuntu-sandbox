@@ -38,6 +38,18 @@ import { PipeBuffer } from "../io/pipe-buffer";
  *  session, SSH exec, tests) l'invoquent, jamais les commandes elles-
  *  mêmes.
  */
+/**
+ * Formatage vendor-exact d'une `ShellError` produite par le socle
+ * (`CommandNotFoundError`, `UsageError` "ambigu :", "indisponible en
+ * mode", tokenisation). Injecté au constructeur du `CliInterpreter`
+ * par le bootstrap vendeur — c'est le SEUL point où un message
+ * kernel générique devient une chaîne vendeur (`% Invalid input...` /
+ * `Error: Unrecognized command...`). Défaut = message brut.
+ */
+export type KernelErrorFormatter = (err: ShellError) => string;
+
+const DEFAULT_ERROR_FORMATTER: KernelErrorFormatter = (err) => err.message;
+
 export class CliInterpreter {
   private readonly argParser = new ArgumentParser();
 
@@ -45,6 +57,7 @@ export class CliInterpreter {
     private readonly modes: ModeRegistry,
     private readonly machine: MachineApi,
     private readonly guard: PermissionGuard = new PermissionGuard(),
+    private readonly errorFormatter: KernelErrorFormatter = DEFAULT_ERROR_FORMATTER,
   ) {}
 
   async interpretLine(line: string, session: CliSession, io: CommandIO, signal?: AbortSignal): Promise<ExitCode> {
@@ -55,7 +68,7 @@ export class CliInterpreter {
       tokens = tokenizeCliLine(line);
     } catch (err) {
       if (err instanceof ShellError) {
-        await io.stderr.write(`${err.message}\n`);
+        await io.stderr.write(`${this.errorFormatter(err)}\n`);
         session.lastExitCode = err.exitCode;
         return err.exitCode;
       }
@@ -71,7 +84,7 @@ export class CliInterpreter {
       resolved = this.resolveHierarchy(mode.registry, tokens.argv, currentMode);
     } catch (err) {
       if (err instanceof ShellError) {
-        await io.stderr.write(`${err.message}\n`);
+        await io.stderr.write(`${this.errorFormatter(err)}\n`);
         session.lastExitCode = err.exitCode;
         return err.exitCode;
       }

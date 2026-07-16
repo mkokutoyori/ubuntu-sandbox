@@ -6,6 +6,7 @@ import type { ISwitchShell } from './shells/ISwitchShell';
 import { HuaweiSwitchShell } from './shells/HuaweiSwitchShell';
 import { createHuaweiSwitchHostShell } from './switch/command-kernel/createHuaweiSwitchHostShell';
 import { createCliSession } from '@/command-kernel/cli';
+import { CommandNotFoundError } from '@/command-kernel/errors';
 import { SimpleUser } from '@/command-kernel/session/types';
 import { NATEngine } from './router/NATEngine';
 import { LldpAgent } from '../lldp/LldpAgent';
@@ -156,13 +157,31 @@ export class HuaweiSwitch extends Switch {
   }
 
   protected override createCommandKernelCli(): SwitchCommandKernelCli {
-    const { interpreter, machine, promptBuilder } = createHuaweiSwitchHostShell(this);
+    const { interpreter, machine, promptBuilder } = createHuaweiSwitchHostShell(
+      this,
+      HuaweiSwitch.formatKernelError,
+    );
     const defaultSession = createCliSession({
       id: 'switch-default',
       user: new SimpleUser(0, 0, 'admin'),
       rootMode: 'user-view',
     });
     return { interpreter, machine, promptBuilder, defaultSession };
+  }
+
+  /** Cf. `HuaweiRouter.formatKernelError` — miroir strict côté switch. */
+  static formatKernelError(err: Error): string {
+    if (err instanceof CommandNotFoundError) {
+      return "Error: Unrecognized command found at '^' position.";
+    }
+    if (/^ambigu\s*:/i.test(err.message)) {
+      return "Error: Ambiguous command found at '^' position.";
+    }
+    return err.message.startsWith('Error:') ? err.message : `Error: ${err.message}`;
+  }
+
+  protected override formatKernelErrorMessage(err: Error): string {
+    return HuaweiSwitch.formatKernelError(err);
   }
 
   protected onVlanDeleted(_vlanId: number, affectedPorts: string[]): void {

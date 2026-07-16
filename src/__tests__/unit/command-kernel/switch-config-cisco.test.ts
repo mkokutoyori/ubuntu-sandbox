@@ -271,21 +271,21 @@ describe('Cisco Catalyst — configuration L2 (command-kernel)', () => {
     it('`switchport` est indisponible en config (registre séparé)', async () => {
       const sw = await toConfig();
       const out = await sw.executeCommand('switchport mode access');
-      expect(out).toMatch(/inconnu|introuvable|Incomplete|not-found/i);
+      expect(out).toMatch(/inconnu|introuvable|Incomplete|not-found|Invalid input|Unrecognized command/i);
     });
 
     it('`name` est indisponible en config-if (mode config-vlan uniquement)', async () => {
       const sw = await toConfig();
       await sw.executeCommand('interface FastEthernet0/1');
       const out = await sw.executeCommand('name Foo');
-      expect(out).toMatch(/inconnu|introuvable|Incomplete|not-found/i);
+      expect(out).toMatch(/inconnu|introuvable|Incomplete|not-found|Invalid input|Unrecognized command/i);
     });
 
     it('`interface` est indisponible en config-vlan', async () => {
       const sw = await toConfig();
       await sw.executeCommand('vlan 10');
       const out = await sw.executeCommand('interface FastEthernet0/1');
-      expect(out).toMatch(/inconnu|introuvable|Incomplete|not-found/i);
+      expect(out).toMatch(/inconnu|introuvable|Incomplete|not-found|Invalid input|Unrecognized command/i);
     });
   });
 

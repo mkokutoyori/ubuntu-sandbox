@@ -1924,17 +1924,25 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       await cli.interpreter.interpretLine(command, session, io);
     } catch (err) {
       if (err instanceof Error) {
-        // `CommandNotFoundError` / autres `ShellError` : produire un
-        // texte type IOS/VRP. La distinction vendeur (`% Invalid input`
-        // vs `Error: Unrecognized command`) sera portée par une couche
-        // wrapper vendeur quand nécessaire — pour l'instant on remonte
-        // le message générique du socle sans le masquer.
-        chunks.push(`${err.message}\n`);
+        chunks.push(`${this.formatKernelErrorMessage(err)}\n`);
       } else {
         throw err;
       }
     }
     return chunks.join('').replace(/\n$/, '');
+  }
+
+  /**
+   * Traduit un message d'erreur du socle command-kernel
+   * (`CommandNotFoundError`, `UsageError` ambigu, …) vers le format
+   * exact du vendeur. Défaut = message générique du kernel ; les
+   * sous-classes vendeur (`CiscoRouter`, `HuaweiRouter`) fournissent
+   * leur override pour `% Invalid input...` / `Error: Unrecognized
+   * command...`. Isolé ici pour rester la SEULE traduction — aucune
+   * commande ne s'occupe de ces messages.
+   */
+  protected formatKernelErrorMessage(err: Error): string {
+    return err.message;
   }
 
   getPrompt(): string {

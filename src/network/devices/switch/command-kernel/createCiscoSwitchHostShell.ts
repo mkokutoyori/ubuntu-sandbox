@@ -1,5 +1,6 @@
 import { CliInterpreter, CliPromptBuilder, EndCommand, ModeRegistry, PopModeCommand } from '@/command-kernel/cli';
-import type { CliMode } from '@/command-kernel/cli';
+import type { CliMode, KernelErrorFormatter } from '@/command-kernel/cli';
+import { PermissionGuard } from '@/command-kernel/exec/permission-guard';
 import { CommandRegistry } from '@/command-kernel/registry/command-registry';
 import type { Switch } from '../../Switch';
 import {
@@ -49,7 +50,10 @@ import { CiscoSwitchVlanNameCommand } from './commands/cisco/config/config-vlan/
  *  le reste tombera à travers le nouveau pipeline avec une erreur —
  *  c'est le signal explicite pour la migration future.
  */
-export function createCiscoSwitchHostShell(sw: Switch): {
+export function createCiscoSwitchHostShell(
+  sw: Switch,
+  errorFormatter?: KernelErrorFormatter,
+): {
   interpreter: CliInterpreter;
   machine: SwitchMachineApi;
   promptBuilder: CliPromptBuilder;
@@ -107,7 +111,7 @@ export function createCiscoSwitchHostShell(sw: Switch): {
   ] satisfies CliMode[], { execLevel: 'privileged' });
 
   const machine = new SwitchMachineApi({ switch: sw, modes });
-  const interpreter = new CliInterpreter(modes, machine);
+  const interpreter = new CliInterpreter(modes, machine, new PermissionGuard(), errorFormatter);
   const promptBuilder = new CliPromptBuilder(modes, () => machine.hostname);
   return { interpreter, machine, promptBuilder };
 }

@@ -279,7 +279,7 @@ describe('Cisco routeur — sous-interfaces (command-kernel)', () => {
       const r = await goToConfig();
       // On est en config, pas config-if : `encapsulation` n'existe pas.
       const out = await r.executeCommand('encapsulation dot1Q 10');
-      expect(out).toMatch(/inconnu|introuvable|Incomplete|indisponible|not-found/i);
+      expect(out).toMatch(/inconnu|introuvable|Incomplete|indisponible|not-found|Invalid input|Unrecognized command/i);
     });
   });
 

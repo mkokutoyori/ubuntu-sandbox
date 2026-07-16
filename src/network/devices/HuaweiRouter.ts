@@ -16,6 +16,7 @@ import type { RouterCommandKernelCli } from './Router';
 import { createHuaweiRouterHostShell } from './router/command-kernel/createHuaweiRouterHostShell';
 import { createCliSession } from '@/command-kernel/cli';
 import { SimpleUser } from '@/command-kernel/session/types';
+import { CommandNotFoundError } from '@/command-kernel/errors';
 import { displayCurrentConfig } from './shells/huawei/HuaweiDisplayCommands';
 import { LldpAgent } from '../lldp/LldpAgent';
 import { ETHERTYPE_LLDP, LLDP_MULTICAST_MAC } from '../lldp/types';
@@ -299,13 +300,38 @@ export class HuaweiRouter extends Router {
   }
 
   protected override createCommandKernelCli(): RouterCommandKernelCli {
-    const { interpreter, machine, promptBuilder } = createHuaweiRouterHostShell(this);
+    const { interpreter, machine, promptBuilder } = createHuaweiRouterHostShell(
+      this,
+      HuaweiRouter.formatKernelError,
+    );
     const defaultSession = createCliSession({
       id: 'router-default',
       user: new SimpleUser(0, 0, 'admin'),
       rootMode: 'user-view',
     });
     return { interpreter, machine, promptBuilder, defaultSession };
+  }
+
+  /**
+   * Traduit une erreur du socle command-kernel vers le format exact
+   * VRP (`Error: Unrecognized command found at '^' position.` pour
+   * une commande inconnue, `Error: Ambiguous command found at '^'
+   * position.` pour un préfixe ambigu). Utilisé simultanément par le
+   * `CliInterpreter` (via l'injection au bootstrap) et par le
+   * `catch` de `Router.executeCommandKernel`.
+   */
+  static formatKernelError(err: Error): string {
+    if (err instanceof CommandNotFoundError) {
+      return "Error: Unrecognized command found at '^' position.";
+    }
+    if (/^ambigu\s*:/i.test(err.message)) {
+      return "Error: Ambiguous command found at '^' position.";
+    }
+    return err.message.startsWith('Error:') ? err.message : `Error: ${err.message}`;
+  }
+
+  protected override formatKernelErrorMessage(err: Error): string {
+    return HuaweiRouter.formatKernelError(err);
   }
 
   /** Synchronous VRP exec whitelist consumed by the SSH cross-platform dispatch. */

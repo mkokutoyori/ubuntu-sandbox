@@ -42,6 +42,7 @@ import { ETHERTYPE_EAPOL } from '../dot1x/types';
 import type { NeighborDTO } from './inspection/DeviceStateView';
 import type { IEventBus } from '@/events/EventBus';
 import { SwitchDebugService } from './switch/SwitchDebugService';
+import { CommandNotFoundError } from '@/command-kernel/errors';
 
 export class CiscoSwitch extends Switch {
   private readonly agents = new AgentRegistry();
@@ -270,13 +271,32 @@ export class CiscoSwitch extends Switch {
   }
 
   protected override createCommandKernelCli(): SwitchCommandKernelCli {
-    const { interpreter, machine, promptBuilder } = createCiscoSwitchHostShell(this);
+    const { interpreter, machine, promptBuilder } = createCiscoSwitchHostShell(
+      this,
+      CiscoSwitch.formatKernelError,
+    );
     const defaultSession = createCliSession({
       id: 'switch-default',
       user: new SimpleUser(0, 0, 'admin'),
       rootMode: 'user',
     });
     return { interpreter, machine, promptBuilder, defaultSession };
+  }
+
+  /** Cf. `CiscoRouter.formatKernelError` — miroir strict côté switch. */
+  static formatKernelError(err: Error): string {
+    if (err instanceof CommandNotFoundError) {
+      return "% Invalid input detected at '^' marker.";
+    }
+    const m = /^ambigu\s*:\s*"([^"]+)"/i.exec(err.message);
+    if (m) {
+      return `% Ambiguous command:  "${m[1]}"`;
+    }
+    return err.message.startsWith('%') ? err.message : `% ${err.message}`;
+  }
+
+  protected override formatKernelErrorMessage(err: Error): string {
+    return CiscoSwitch.formatKernelError(err);
   }
 
   /**

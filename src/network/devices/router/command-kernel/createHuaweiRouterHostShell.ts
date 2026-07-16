@@ -1,5 +1,6 @@
 import { CliInterpreter, CliPromptBuilder, EndCommand, ModeRegistry, PopModeCommand } from '@/command-kernel/cli';
-import type { CliMode } from '@/command-kernel/cli';
+import type { CliMode, KernelErrorFormatter } from '@/command-kernel/cli';
+import { PermissionGuard } from '@/command-kernel/exec/permission-guard';
 import { CommandRegistry } from '@/command-kernel/registry/command-registry';
 import type { Router } from '../../Router';
 import { createHuaweiDisplayCommand, HuaweiSystemViewCommand } from '../../vendor-cli';
@@ -33,7 +34,10 @@ import { HuaweiRouterIfUndoCommand } from './commands/huawei/interface-view/Undo
  *  sur routeur et switch, jamais dupliquées. Les sous-commandes de
  *  `display` sont routeur-spécifiques.
  */
-export function createHuaweiRouterHostShell(router: Router): {
+export function createHuaweiRouterHostShell(
+  router: Router,
+  errorFormatter?: KernelErrorFormatter,
+): {
   interpreter: CliInterpreter;
   machine: RouterMachineApi;
   promptBuilder: CliPromptBuilder;
@@ -72,7 +76,7 @@ export function createHuaweiRouterHostShell(router: Router): {
   ] satisfies CliMode[]);
 
   const machine = new RouterMachineApi({ router, modes });
-  const interpreter = new CliInterpreter(modes, machine);
+  const interpreter = new CliInterpreter(modes, machine, new PermissionGuard(), errorFormatter);
   const promptBuilder = new CliPromptBuilder(modes, () => machine.hostname);
   return { interpreter, machine, promptBuilder };
 }

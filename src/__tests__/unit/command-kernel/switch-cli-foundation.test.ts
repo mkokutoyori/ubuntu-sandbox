@@ -122,7 +122,7 @@ describe('Switch CLI foundation — command-kernel single-gate pipeline', () => 
       const sw = new CiscoSwitch('sw-cisco', 'SW1', 24);
       await sw.executeCommand('enable');
       const out = await sw.executeCommand('show interfaces status');
-      expect(out).toMatch(/inconnu|Incomplete|not-found|introuvable/i);
+      expect(out).toMatch(/inconnu|Incomplete|not-found|introuvable|Invalid input|Unrecognized command/i);
     });
   });
 
@@ -329,7 +329,7 @@ describe('Switch CLI foundation — command-kernel single-gate pipeline', () => 
       await sw.executeCommand('system-view');
       // `stp enable` n'est pas migré → not-found via le nouveau pipeline.
       const out = await sw.executeCommand('stp enable');
-      expect(out).toMatch(/inconnu|Incomplete|not-found|introuvable/i);
+      expect(out).toMatch(/inconnu|Incomplete|not-found|introuvable|Invalid input|Unrecognized command/i);
     });
   });
 
