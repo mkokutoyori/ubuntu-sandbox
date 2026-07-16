@@ -3,11 +3,12 @@ import type { CliMode, KernelErrorFormatter } from '@/command-kernel/cli';
 import { PermissionGuard } from '@/command-kernel/exec/permission-guard';
 import { CommandRegistry } from '@/command-kernel/registry/command-registry';
 import type { Router } from '../../Router';
-import { createHuaweiDisplayCommand, HuaweiDisplayClockCommand, HuaweiSystemViewCommand } from '../../vendor-cli';
+import { createHuaweiDisplayCommand, HuaweiDisplayClockCommand, HuaweiSaveCommand, HuaweiSystemViewCommand } from '../../vendor-cli';
 import { RouterMachineApi } from './RouterMachineApi';
 import { HuaweiRouterDisplayVersionCommand } from './commands/huawei/display/Version';
 import { HuaweiRouterDisplayIpCommand } from './commands/huawei/display/Ip';
 import { HuaweiRouterDisplayCurrentConfigurationCommand } from './commands/huawei/display/CurrentConfiguration';
+import { HuaweiRouterDisplayArpCommand } from './commands/huawei/display/Arp';
 import { HuaweiRouterSysnameCommand } from './commands/huawei/system-view/Sysname';
 import { HuaweiRouterInterfaceCommand } from './commands/huawei/system-view/Interface';
 import { HuaweiRouterSysIpCommand } from './commands/huawei/system-view/Ip';
@@ -48,6 +49,7 @@ export function createHuaweiRouterHostShell(
   displaySub.register(() => new HuaweiRouterDisplayIpCommand());
   displaySub.register(() => new HuaweiDisplayClockCommand());
   displaySub.register(() => new HuaweiRouterDisplayCurrentConfigurationCommand());
+  displaySub.register(() => new HuaweiRouterDisplayArpCommand());
 
   const userViewRegistry = new CommandRegistry();
   const systemViewRegistry = new CommandRegistry();
@@ -55,9 +57,11 @@ export function createHuaweiRouterHostShell(
 
   userViewRegistry.register(() => createHuaweiDisplayCommand(displaySub));
   userViewRegistry.register(() => new HuaweiSystemViewCommand());
+  userViewRegistry.register(() => new HuaweiSaveCommand());
   userViewRegistry.register(() => new PopModeCommand('quit', 'Exit from the current view'));
 
   systemViewRegistry.register(() => createHuaweiDisplayCommand(displaySub));
+  systemViewRegistry.register(() => new HuaweiSaveCommand());
   systemViewRegistry.register(() => new HuaweiRouterSysnameCommand());
   systemViewRegistry.register(() => new HuaweiRouterInterfaceCommand());
   systemViewRegistry.register(() => new HuaweiRouterSysIpCommand());

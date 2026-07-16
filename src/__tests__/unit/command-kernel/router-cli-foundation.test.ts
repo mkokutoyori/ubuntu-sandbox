@@ -383,6 +383,20 @@ describe('Router CLI foundation — command-kernel single-gate pipeline', () => 
       for (const l of lines) expect(l).toMatch(/interface/);
     });
 
+    it('`save` produit le dialogue VRP exact (partagé routeur/switch)', async () => {
+      const r = new HuaweiRouter('R2');
+      const out = await r.executeCommand('save');
+      expect(out).toMatch(/^The current configuration will be written to the device\.$/m);
+      expect(out).toMatch(/Save the configuration successfully\./);
+    });
+
+    it('`display arp` produit les colonnes VRP (aucune entrée par défaut)', async () => {
+      const r = new HuaweiRouter('R2');
+      const out = await r.executeCommand('display arp');
+      expect(out).toMatch(/^IP ADDRESS +MAC ADDRESS +EXPIRE\(M\) +TYPE +INTERFACE$/m);
+      expect(out).toMatch(/No ARP entries found\./);
+    });
+
     // ─── Vague display ip ────────────────────────────────────────────
 
     it('`display ip interface brief` produit la bannière VRP + colonnes fixes à partir de MachineApi', async () => {

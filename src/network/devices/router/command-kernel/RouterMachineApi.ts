@@ -84,6 +84,17 @@ export interface RouterRouteInfo {
   readonly metric: number;
 }
 
+/** Entrée ARP exposée aux commandes — DTO stable. `ageSeconds` mesuré
+ *  depuis le timestamp du plan de données. `iface` peut être vide pour
+ *  les entrées statiques posées sans interface d'ancrage. */
+export interface RouterArpEntry {
+  readonly ip: string;
+  readonly mac: string;
+  readonly iface: string;
+  readonly type: 'dynamic' | 'static';
+  readonly ageSeconds: number;
+}
+
 /** Sous-façade `router` : lecture/écriture typée de l'état routeur.
  *  Aucun `Port`/`Router`/`ACLEngine` ne fuit ; les commandes reçoivent
  *  des DTOs et appellent des méthodes explicites pour muter l'état. */
@@ -105,6 +116,9 @@ export interface RouterCapabilityApi {
   /** Table de routage IPv4 (RIB) sous forme de DTOs stables. Ordre
    *  d'insertion préservé — les commandes trient elles-mêmes. */
   routes(): readonly RouterRouteInfo[];
+  /** Table ARP courante sous forme de DTOs stables. Ordre d'insertion
+   *  préservé — les commandes trient/filtrent elles-mêmes. */
+  arpEntries(): readonly RouterArpEntry[];
   /** Ajoute une route statique (`ip route <net> <mask> <nexthop>`).
    *  Retourne `{ ok: false, error }` sans exception si les valeurs
    *  sont invalides ou la limite RIB atteinte. */
@@ -264,6 +278,22 @@ class RouterCapabilityImpl implements RouterCapabilityApi {
       ad: r.ad,
       metric: r.metric,
     }));
+  }
+
+  arpEntries(): readonly RouterArpEntry[] {
+    const table = (this.router as unknown as { _getArpTableInternal(): Map<string, { mac: { toString(): string }; iface: string; timestamp: number; type: 'dynamic' | 'static' }> })._getArpTableInternal();
+    const now = Date.now();
+    const out: RouterArpEntry[] = [];
+    for (const [ip, entry] of table) {
+      out.push({
+        ip,
+        mac: entry.mac.toString(),
+        iface: entry.iface,
+        type: entry.type,
+        ageSeconds: entry.type === 'static' ? 0 : Math.max(0, Math.floor((now - entry.timestamp) / 1000)),
+      });
+    }
+    return out;
   }
 }
 

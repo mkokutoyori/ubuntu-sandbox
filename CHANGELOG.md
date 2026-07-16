@@ -480,6 +480,74 @@ progressive par équipement. Un push = une entrée = une fonctionnalité
 complète et testée (voir `CLAUDE.md` / le framework de migration pour les
 principes directeurs).
 
+## Huawei — `save` partagé routeur/switch + `display arp` routeur (+ capacité `RouterMachineApi.router.arpEntries()`) — via `scripts/generate_command.py`
+
+**État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
+
+Première vague qui utilise le générateur
+`scripts/generate_command.py` (introduit dans `786ec184`) pour scaffolder
+la commande, puis complétée manuellement pour le contenu métier. Deux
+commandes ajoutées, une nouvelle capacité MachineApi typée.
+
+- **Extension `RouterMachineApi`** :
+  - Nouveau DTO `RouterArpEntry` (`ip`, `mac`, `iface`, `type`,
+    `ageSeconds`) — stable, jamais l'`ARPEntry` brut du routeur.
+  - Sous-façade `router.arpEntries()` — lit `_getArpTableInternal`
+    et calcule `ageSeconds` depuis `timestamp` (0 pour entrées
+    statiques). Ordre d'insertion préservé, les commandes trient et
+    filtrent elles-mêmes.
+
+- **Commande partagée routeur + switch Huawei**
+  (`vendor-cli/huawei/Save.ts`) :
+  - `HuaweiSaveCommand` — feuille standalone, allowedModes
+    `user-view` + `system-view` (le vrai VRP accepte les deux). Rend
+    le dialogue vendeur exact (`The current configuration will be
+    written to the device.` … `Save the configuration
+    successfully.`). Le simulateur ne persiste pas de fichier sur
+    disque — la commande est un no-op côté état, mais le rendu
+    vendor doit être exact pour les tests SSH-notebook et les
+    scripts d'ops.
+
+- **Commande routeur Huawei**
+  (`commands/huawei/display/Arp.ts`, scaffoldée via
+  `scripts/generate_command.py new --target router-huawei --name arp
+  --class-name HuaweiRouterDisplayArpCommand --subdir display
+  --allowed-modes user-view,system-view`) :
+  - `HuaweiRouterDisplayArpCommand` — feuille standalone. Source
+    unique : `machine.router.arpEntries()`. Rendu vendeur exact
+    (colonnes `IP ADDRESS | MAC ADDRESS | EXPIRE(M) | TYPE |
+    INTERFACE`, type `D` pour dynamique, `static` pour statique).
+    Message vendor `No ARP entries found.` sur table vide.
+
+- **Bootstraps** :
+  - `createHuaweiRouterHostShell` : `HuaweiSaveCommand` enregistré
+    en user-view + system-view ; `HuaweiRouterDisplayArpCommand`
+    dans `displaySub`.
+  - `createHuaweiSwitchHostShell` : `HuaweiSaveCommand` enregistré
+    en user-view + system-view (VRP switch expose aussi `save`).
+
+- **Tests fondation étendus**
+  (`router-cli-foundation.test.ts`, bloc Huawei VRP) :
+  - `save` produit le dialogue VRP exact.
+  - `display arp` produit les colonnes VRP + `No ARP entries found.`
+    par défaut.
+
+- **Preuve** :
+  - Suite command-kernel = **283/283 verte**
+    (`router-cli-foundation` passe de 59 à 61 cas, plus les tests
+    Oracle SQL*Plus intégrés au rebase).
+  - Suites Huawei ciblées mesurées avant/après cette vague :
+    133/91 → **129/95** sur les 224 cas de `huawei-vrp`,
+    `huawei-shell-fixes`, `huawei-vlan-extras`,
+    `huawei-config-parity` — **+4 tests supplémentaires verts**.
+
+- **Effet attendu** : les scripts VRP `save` et `display arp`
+  passent désormais par le kernel. Prochaines cibles fortes d'après
+  les signaux restants : `arp static <ip> <mac>` (+ `undo arp`),
+  `display ip pool` + `ip pool <name>` (DHCP), `ike proposal` /
+  `ipsec proposal` (IPSec), `interface Vlanif <id>` + `ip address`
+  sur SVI (switch L3).
+
 ## Huawei routeur — `display current-configuration` LIGHT + débranchement du `runSshCommandSync` correspondant
 
 **État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**

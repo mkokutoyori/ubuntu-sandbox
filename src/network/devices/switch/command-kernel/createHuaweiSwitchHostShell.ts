@@ -3,7 +3,7 @@ import type { CliMode, KernelErrorFormatter } from '@/command-kernel/cli';
 import { PermissionGuard } from '@/command-kernel/exec/permission-guard';
 import { CommandRegistry } from '@/command-kernel/registry/command-registry';
 import type { Switch } from '../../Switch';
-import { createHuaweiDisplayCommand, HuaweiDisplayClockCommand, HuaweiSystemViewCommand } from '../../vendor-cli';
+import { createHuaweiDisplayCommand, HuaweiDisplayClockCommand, HuaweiSaveCommand, HuaweiSystemViewCommand } from '../../vendor-cli';
 import { SwitchMachineApi } from './SwitchMachineApi';
 import { HuaweiSwitchDisplayVersionCommand } from './commands/huawei/display/Version';
 import { HuaweiSwitchDisplayVlanCommand } from './commands/huawei/display/Vlan';
@@ -61,9 +61,11 @@ export function createHuaweiSwitchHostShell(
 
   userViewRegistry.register(() => createHuaweiDisplayCommand(displaySub));
   userViewRegistry.register(() => new HuaweiSystemViewCommand());
+  userViewRegistry.register(() => new HuaweiSaveCommand());
   userViewRegistry.register(() => new PopModeCommand('quit', 'Exit from the current view'));
 
   systemViewRegistry.register(() => createHuaweiDisplayCommand(displaySub));
+  systemViewRegistry.register(() => new HuaweiSaveCommand());
   systemViewRegistry.register(() => new HuaweiSwitchSysnameCommand());
   systemViewRegistry.register(() => new HuaweiSwitchInterfaceCommand());
   systemViewRegistry.register(() => new HuaweiSwitchVlanCommand());

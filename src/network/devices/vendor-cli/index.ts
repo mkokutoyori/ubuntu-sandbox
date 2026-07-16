@@ -22,3 +22,4 @@ export * from './cisco/Show';
 export * from './huawei/SystemView';
 export * from './huawei/Display';
 export * from './huawei/DisplayClock';
+export * from './huawei/Save';
