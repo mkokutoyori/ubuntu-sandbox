@@ -1682,6 +1682,10 @@ export interface MachineApi {
    *  consultent cette capacité pour manipuler la pile de modes de la
    *  `CliSession` sans importer directement le `ModeRegistry`. */
   readonly cli?: import("../cli/cli-machine-api").CliMachineApi;
+  /** Capacité SQL*Plus (SET/SHOW/session) — optionnelle, propre au sous-shell
+   *  Oracle SQL*Plus. Wave 1 : session/réglages uniquement (l'exécution SQL/
+   *  PL-SQL, CONNECT, SPOOL et les scripts restent portés par le legacy). */
+  readonly oracle?: import("@/database/oracle/command-kernel/SqlPlusMachineApi").OracleSqlPlusApi;
   readonly users: UserManagementApi;
   readonly groups: GroupManagementApi;
   readonly power: PowerApi;

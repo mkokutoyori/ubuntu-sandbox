@@ -64,6 +64,12 @@ export interface SQLPlusResult {
   prompt: string;
 }
 
+/** Résultat d'une mutation de réglage (`applySetOption`) — forme aplatie, voir sa JSDoc. */
+export interface SetOptionResult {
+  readonly ok: boolean;
+  readonly error?: string;
+}
+
 /**
  * Filesystem surface for SPOOL / @script — resolution of relative paths
  * and read/write against the device VFS. Injected by the sub-shell
@@ -154,6 +160,36 @@ export class SQLPlusSession {
   /** Access the underlying OracleDatabase for VFS sync. */
   getDatabase(): OracleDatabase | null {
     return this.connected ? this.db : null;
+  }
+
+  /** Copie immuable des réglages SQL*Plus courants — pour la façade command-kernel (`SqlPlusMachineApi`). */
+  getSettingsSnapshot(): Readonly<SQLPlusSettings> {
+    return { ...this.settings };
+  }
+
+  /** Nom du conteneur courant (`SHOW CON_NAME`) — 'CDB$ROOT' hors connexion, comme le legacy. */
+  getConName(): string {
+    return this.executor ? this.executor.getCurrentContainer().name : 'CDB$ROOT';
+  }
+
+  /** Identifiant du conteneur courant (`SHOW CON_ID`) — 1 hors connexion, comme le legacy. */
+  getConId(): number {
+    return this.executor ? this.executor.getCurrentContainer().id : 1;
+  }
+
+  /** Infos SGA (`SHOW SGA`) — `null` hors connexion (ORA-01012 côté legacy). */
+  getSgaInfoSnapshot(): ReturnType<OracleDatabase['instance']['getSGAInfo']> | null {
+    return this.connected ? this.db.instance.getSGAInfo() : null;
+  }
+
+  /** Paramètres d'instance (`SHOW PARAMETER[S]`) — `null` hors connexion. */
+  getAllParametersSnapshot(): Map<string, string> | null {
+    return this.connected ? this.db.instance.getAllParameters() : null;
+  }
+
+  /** Paramètres du spfile (`SHOW SPPARAMETER[S]`) — `null` hors connexion. */
+  getSpfileParametersSnapshot(): Map<string, string> | null {
+    return this.connected ? this.db.instance.getSpfileParameters() : null;
   }
 
   /** Wire a HOST executor (typically delegated to the underlying device). */
@@ -843,6 +879,24 @@ export class SQLPlusSession {
     const option = parts[0]?.toUpperCase();
     const value = parts.slice(1).join(' ');
 
+    const result = this.applySetOption(option, value);
+    if (!result.ok) {
+      return { output: [result.error ?? ''], exit: false, needsMoreInput: false, prompt: this.getPrompt() };
+    }
+    return { output: [], exit: false, needsMoreInput: false, prompt: this.getPrompt() };
+  }
+
+  /**
+   * Applique une option SET — mutation pure des réglages, partagée par la
+   * ligne de commande legacy (`handleSet`) et la commande command-kernel
+   * `SET` (`src/database/oracle/command-kernel/commands/Set.ts`).
+   *
+   * Forme aplatie (`error?` plutôt qu'union discriminée stricte) : ce
+   * dépôt compile avec `strict: false` (`strictNullChecks` désactivé), sous
+   * lequel TypeScript ne rétrécit pas `{ok:true} | {ok:false; error:string}`
+   * via `if (!result.ok)` — vérifié par un repro isolé (`tsc --strict false`).
+   */
+  applySetOption(option: string | undefined, value: string): SetOptionResult {
     switch (option) {
       case 'LINESIZE': case 'LIN': {
         const parsed = parseInt(value);
@@ -908,10 +962,9 @@ export class SQLPlusSession {
         this.settings.trimspool = value.toUpperCase() === 'ON';
         break;
       default:
-        return { output: [`SP2-0158: unknown SET option "${option}"`], exit: false, needsMoreInput: false, prompt: this.getPrompt() };
+        return { ok: false, error: `SP2-0158: unknown SET option "${option}"` };
     }
-
-    return { output: [], exit: false, needsMoreInput: false, prompt: this.getPrompt() };
+    return { ok: true };
   }
 
   // ── SHOW command ─────────────────────────────────────────────────

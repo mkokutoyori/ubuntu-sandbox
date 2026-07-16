@@ -1,5 +1,103 @@
 # Changelog
 
+## Oracle SQL*Plus — Wave 1 : socle command-kernel (session/réglages : SET, SHOW, HELP, CLEAR, EXIT/QUIT, DISCONNECT)
+
+**État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
+
+Premier socle command-kernel pour Oracle SQL*Plus (`src/database/oracle/commands/SQLPlusSession.ts`,
+1767 lignes) — jusqu'ici entièrement legacy, aucune trace de command-kernel
+sur ce shell. Migration « shell entièrement nouveau » (§ dédiée du
+framework) : squelette de `MachineApi` + 6 commandes de preuve, **pas
+encore câblé sur le sous-shell interactif live** — la raison est
+architecturale et documentée ci-dessous, pas un report de confort.
+
+- **Pourquoi ce périmètre (session/réglages, pas SQL/PL-SQL/CONNECT/SPOOL/scripts)** :
+  `SQLPlusSession` porte à la fois la grammaire (tampon SQL multi-lignes,
+  profondeur de bloc PL/SQL, capture SPOOL, substitution DEFINE) et
+  l'exécution (`OracleExecutor`/`OracleDatabase`). Migrer l'exécution SQL
+  d'un coup aurait démesurément dépassé une première vague ; les 6
+  commandes retenues (SET/SHOW/HELP/CLEAR/EXIT-QUIT/DISCONNECT-DISC) sont
+  un bloc « administration de session » cohérent, sans dépendance à
+  l'exécution SQL, au CONNECT réseau (Oracle Net/TNS) ni aux scripts.
+
+- **Pourquoi pas encore câblé sur le sous-shell live** : toute la chaîne
+  `SqlPlusSubShell.processLine` → `SQLPlusSession.processLine` →
+  `processLineInner` est **synchrone de bout en bout**, et le déjà-documenté
+  §Linux-Phase-0 signalait `SqlPlusSubShell.create` comme frontière
+  sync/async volontairement non cascadée. Le socle command-kernel
+  (`Interpreter`/`Executor`/`ICommand.execute`) est intrinsèquement
+  asynchrone (`Promise<ExitCode>`) — même sans I/O réel, un `Promise` ne se
+  résout jamais de façon synchrone en JS. Convertir `SQLPlusSession.
+  processLine` en async cascaderait à travers ~30 gestionnaires internes et
+  aux ~3000 tests Oracle qui l'appellent directement de façon synchrone
+  (`session.processLine(x).output`) — un changement mécanique mais bien
+  trop large et risqué pour cette vague. Le framework sanctionne
+  explicitement ce choix pour un « shell entièrement nouveau » : construire
+  le squelette et le prouver isolément d'abord, étendre ensuite. La vague
+  qui câblera ce socle sur `SqlPlusSubShell` devra soit convertir tout
+  `SQLPlusSession` en async (gros chantier dédié), soit trouver un point
+  d'interception async-safe côté `SqlPlusSubShell` qui laisse le legacy
+  100% intact pour les lignes non reconnues.
+
+- **`SQLPlusSession` (additif + un refactor mécanique, zéro régression)** :
+  - Nouveaux accesseurs purs : `getSettingsSnapshot()`, `getConName()`,
+    `getConId()`, `getSgaInfoSnapshot()`, `getAllParametersSnapshot()`,
+    `getSpfileParametersSnapshot()`.
+  - `handleSet` refactoré pour déléguer à une nouvelle méthode publique
+    `applySetOption(option, value): SetOptionResult` — même switch, même
+    comportement, extrait pour être partagé avec la commande kernel `SET`.
+    Forme aplatie (`{ok:boolean; error?:string}` plutôt qu'union
+    discriminée stricte) : ce dépôt compile avec `strict: false`
+    (`strictNullChecks` désactivé), sous lequel TypeScript ne rétrécit
+    **pas** `{ok:true} | {ok:false; error:string}` via `if (!result.ok)`
+    (repro isolé confirmé avec `tsc --strict false` vs `--strict`).
+
+- **`MachineApi` (`src/command-kernel/machine/types.ts`)** : nouvelle
+  capacité optionnelle `oracle?: OracleSqlPlusApi` (type importé
+  dynamiquement, même technique que `cli?`), extension pure, aucune rupture.
+
+- **Nouveau** (`src/database/oracle/command-kernel/`) :
+  - `SqlPlusMachineApi.ts` — `fs` rejette explicitement tout (aucune
+    commande de cette vague ne touche au VFS ; SPOOL/@script restent
+    legacy), `proc`/`net`/`users`/`groups`/`power` en stubs vides (miroir
+    exact de `SftpMachineApi`), capacité `oracle: OracleSqlPlusApi` qui
+    lit/mute l'état réel via les accesseurs `SQLPlusSession` ci-dessus —
+    jamais d'état parallèle.
+  - `commands/{Set,Show,Help,Clear,Exit,Disconnect}.ts` — 6 commandes
+    standalone, descripteur complet, `PrivilegeLevel.ANY`, formatage
+    inline parité vendeur (`SP2-0158`, bannière de déconnexion 19c...).
+    `SHOW` couvre USER/CON_NAME/CON_ID/LINESIZE/PAGESIZE/SERVEROUTPUT/
+    FEEDBACK/TIMING/AUTOCOMMIT/HEADING/SGA/PARAMETER[S]/SPPARAMETER[S]/
+    ALL/RELEASE/SQLPROMPT — `SHOW ERRORS` explicitement hors périmètre
+    (nécessite des DTOs de compilation du catalogue pas encore exposés).
+  - `createSqlPlusKernel.ts` — bootstrap (registre plat, pas de modes :
+    grammaire SQL*Plus non hiérarchique) + `recognizeSqlPlusKernelVerb()`,
+    miroir exact des prédicats `matches()` legacy pour les 6 verbes (mêmes
+    quirks préservés : `SET`/`CLEAR` seuls sans argument ne matchent pas,
+    `DISCONNECT`/`DISC`/`HELP` n'acceptent aucun texte final, `SHOW`/
+    `EXIT`/`QUIT` acceptent la forme nue).
+
+- **Preuve** : `src/__tests__/unit/command-kernel/sqlplus-cli-foundation.
+  test.ts` — 16/16 verts, contre une vraie `OracleDatabase`+`SQLPlusSession`
+  (pas de mock), incluant la parité des quirks de reconnaissance et la
+  non-reconnaissance explicite d'une instruction SQL brute/CONNECT/SPOOL
+  (signal de migration pour les prochaines vagues).
+
+- **Validation de non-régression** : suite Oracle complète (137 fichiers,
+  3206 tests avec la nouvelle suite) — 7 échecs, tous confirmés
+  pré-existants par comparaison `git stash -u` (méthode §7.2), sans
+  rapport avec cette vague (provisioning OS `oracle`/`su`/DAC fichier,
+  hors périmètre). `tsc --noEmit` : 55 erreurs avant/après (identique,
+  `git stash -u` inclus pour une comparaison honnête). `eslint` propre sur
+  les fichiers touchés (2 warnings pré-existants dans `SQLPlusSession.ts`,
+  sans rapport).
+
+- **Prochaines cibles** : câblage live sur `SqlPlusSubShell` (résoudre la
+  frontière sync/async ci-dessus) ; `SHOW ERRORS` ; `CONNECT`/`DISCONNECT`
+  réseau (Oracle Net/TNS) ; `COLUMN`/`DEFINE`/`VARIABLE`/`PRINT` ; puis la
+  vague la plus significative — l'exécution SQL/PL-SQL elle-même (tampon
+  multi-lignes, `/`, blocs PL/SQL) et `SPOOL`/`@script`.
+
 ## Cisco switch — vague config/config-if/config-vlan (hostname, interface, switchport, vlan, name) + palette dédiée
 
 **État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
