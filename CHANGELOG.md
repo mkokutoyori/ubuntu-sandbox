@@ -5,6 +5,54 @@ progressive par équipement. Un push = une entrée = une fonctionnalité
 complète et testée (voir `CLAUDE.md` / le framework de migration pour les
 principes directeurs).
 
+## Cisco routeur — vague statiques + description + correction format `show ip route`
+
+**État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
+
+Prolongement de la vague setup : routes statiques (`ip route` /
+`no ip route`), `description` sur interface, et alignement du format
+`show ip route` sur le vrai IOS (`[AD/metric]` désormais pour toutes
+les routes non-connected, pas seulement pour les protocoles
+dynamiques).
+
+- **Enrichissement `RouterMachineApi`** : deux nouvelles capacités
+  `router.addStaticRoute(network, mask, nextHop): { ok, error? }` et
+  `router.removeStaticRoute(network, mask, nextHop?): { ok, error? }`.
+  Parseurs `IPAddress`/`SubnetMask` internes à la façade, retour
+  typé, jamais d'exception qui remonte à la commande.
+
+- **Correction format `show ip route` (feuille `Route.ts`)** :
+  `hasMetric()` retourne désormais `true` pour tous les types sauf
+  `connected`. Résultat : `S    10.0.3.0/24 [1/0] via 10.0.2.2, ...`
+  au lieu de `S    10.0.3.0/24 via 10.0.2.2, ...`. Le legacy avait
+  un écart avec le vrai Cisco — la migration corrige.
+
+- **Nouveau côté commandes** (`commands/cisco/config/`) :
+  - `config/Ip.ts` (composite) + `config/ip/Route.ts` (feuille)
+    — `ip route <A.B.C.D> <M.M.M.M> <next-hop>` en config.
+  - `config/No.ts` (composite) + `config/no/Ip.ts` (composite) +
+    `config/no/ip/Route.ts` (feuille) — `no ip route <net> <mask>
+    [<next-hop>]`. Silencieux si la route n'existe pas (Cisco).
+  - `config-if/Description.ts` — `description <text...>` (variadic,
+    prend le reste de la ligne). Rejette texte vide.
+  - `config-if/no/Description.ts` — `no description` (efface).
+
+- **Composition attention** : `ip` existe SÉPARÉMENT dans `config`
+  (racine `ip route`) et dans `config-if` (racine `ip address`). Deux
+  registres distincts, deux racines distinctes — application stricte
+  de la règle 9 (modes ⟺ registres séparés).
+
+- **Preuve exécutable** : `router-cli-foundation.test.ts` +4 cas
+  (route statique visible en `S ... [1/0]`, `no ip route` silencieux,
+  `description Uplink WAN` posée via DTO, `no description` efface).
+  Suite command-kernel 122/122 verte. `tsc` propre.
+
+- **Effet attendu** : `routing-table.test.ts` passe désormais **15/16**
+  (contre 14/16). Le seul rouge restant est Windows « General failure »
+  — hors périmètre. Les prochaines commandes L3 à migrer :
+  sous-interfaces (`Gi0/0.10` + `encapsulation dot1Q`), `mtu`, `router
+  ospf` (nouveau mode config-router), `switchport` (côté switch).
+
 ## Cisco routeur — vague setup config/config-if (hostname, interface, ip address, shutdown, no shutdown, no ip address)
 
 **État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**

@@ -3,19 +3,16 @@ import type { CommandContext, CommandDescriptor, ExitCode } from '@/command-kern
 import { CommandRegistry } from '@/command-kernel/registry/command-registry';
 import { DefaultPrivilegePolicy } from '@/command-kernel/session/privilege-policy';
 import { PrivilegeLevel } from '@/command-kernel/session/types';
-import { CiscoRouterNoDescriptionCommand } from './no/Description';
-import { CiscoRouterConfigIfNoIpCommand } from './no/Ip';
-import { CiscoRouterNoShutdownCommand } from './no/Shutdown';
+import { CiscoRouterConfigNoIpCommand } from './no/Ip';
 
 const OP = new DefaultPrivilegePolicy(PrivilegeLevel.OPERATOR);
 
 /**
- * `no` (Cisco IOS, mode config-if) — commande COMPOSITE. Racine des
- * « négations » à l'interface (`no shutdown`, `no ip address`, plus
- * tard `no description`, `no mtu`). Chaque négation est une feuille
- * dans le sous-registre — pas de dispatch ad-hoc.
+ * `no` (Cisco IOS, mode config) — commande COMPOSITE. Racine des
+ * négations en config (`no ip route`, plus tard `no ip access-list`,
+ * `no hostname`, `no interface X.Y`, `no router ospf`, …).
  */
-export class CiscoRouterConfigIfNoCommand extends BaseCommand {
+export class CiscoRouterConfigNoCommand extends BaseCommand {
   readonly descriptor: CommandDescriptor = {
     name: 'no',
     summary: 'Negate a command / restore its default',
@@ -25,14 +22,12 @@ export class CiscoRouterConfigIfNoCommand extends BaseCommand {
     privileges: OP,
     category: 'router',
   };
-  readonly allowedModes = ['config-if'];
+  readonly allowedModes = ['config'];
   readonly subRegistry = new CommandRegistry();
 
   constructor() {
     super();
-    this.subRegistry.register(() => new CiscoRouterNoShutdownCommand());
-    this.subRegistry.register(() => new CiscoRouterConfigIfNoIpCommand());
-    this.subRegistry.register(() => new CiscoRouterNoDescriptionCommand());
+    this.subRegistry.register(() => new CiscoRouterConfigNoIpCommand());
   }
 
   async execute(ctx: CommandContext): Promise<ExitCode> {

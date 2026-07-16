@@ -28,7 +28,10 @@ const TYPE_ORDER: Record<RouterRouteType, number> = {
 };
 
 function hasMetric(type: RouterRouteType): boolean {
-  return type === 'rip' || type === 'ospf' || type === 'eigrp' || type === 'bgp';
+  // Vrai IOS : toutes les routes sauf `connected` affichent `[AD/metric]`
+  // (`S    10.0.3.0/24 [1/0] via 10.0.2.2` par exemple). Le legacy ne le
+  // faisait que pour les protocoles dynamiques — écart corrigé ici.
+  return type !== 'connected';
 }
 
 /**

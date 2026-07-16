@@ -230,6 +230,67 @@ describe('Router CLI foundation — command-kernel single-gate pipeline', () => 
       expect(brief).toMatch(/^GigabitEthernet0\/1\s+10\.2\.2\.2/m);
     });
 
+    // ─── Vague statiques + description ─────────────────────────────────
+
+    it('`ip route 10.9.9.0 255.255.255.0 192.168.0.2` ajoute une route statique visible dans show ip route', async () => {
+      const r = new CiscoRouter('R1');
+      // Setup : monter une interface pour que le next-hop soit résolu.
+      await r.executeCommand('enable');
+      await r.executeCommand('configure terminal');
+      await r.executeCommand('interface GigabitEthernet0/0');
+      await r.executeCommand('ip address 192.168.0.1 255.255.255.0');
+      await r.executeCommand('no shutdown');
+      await r.executeCommand('exit');
+      const setOut = await r.executeCommand('ip route 10.9.9.0 255.255.255.0 192.168.0.2');
+      expect(setOut).toBe('');
+      await r.executeCommand('end');
+      const routes = await r.executeCommand('show ip route');
+      // Cisco code `S` pour static + AD 1 par défaut, métrique 0.
+      expect(routes).toMatch(/^S\s+10\.9\.9\.0\/24 \[1\/0\] via 192\.168\.0\.2, /m);
+    });
+
+    it('`no ip route 10.9.9.0 255.255.255.0 192.168.0.2` retire la route (silencieux si absente)', async () => {
+      const r = new CiscoRouter('R1');
+      await r.executeCommand('enable');
+      await r.executeCommand('configure terminal');
+      await r.executeCommand('interface GigabitEthernet0/0');
+      await r.executeCommand('ip address 192.168.0.1 255.255.255.0');
+      await r.executeCommand('no shutdown');
+      await r.executeCommand('exit');
+      await r.executeCommand('ip route 10.9.9.0 255.255.255.0 192.168.0.2');
+      await r.executeCommand('no ip route 10.9.9.0 255.255.255.0 192.168.0.2');
+      await r.executeCommand('end');
+      const routes = await r.executeCommand('show ip route');
+      expect(routes).not.toMatch(/10\.9\.9\.0/);
+    });
+
+    it('`description Uplink WAN` (config-if) via MachineApi (lecture DTO)', async () => {
+      const r = new CiscoRouter('R1');
+      await r.executeCommand('enable');
+      await r.executeCommand('configure terminal');
+      await r.executeCommand('interface GigabitEthernet0/0');
+      const out = await r.executeCommand('description Uplink WAN');
+      expect(out).toBe('');
+      // Preuve via la MachineApi : la description est bien posée.
+      const cli = (r as unknown as { getCommandKernelCli(): { machine: { router: { interface(name: string): { description: string } | null } } } })
+        .getCommandKernelCli();
+      const info = cli.machine.router.interface('GigabitEthernet0/0');
+      expect(info?.description).toBe('Uplink WAN');
+    });
+
+    it('`no description` efface la description via MachineApi', async () => {
+      const r = new CiscoRouter('R1');
+      await r.executeCommand('enable');
+      await r.executeCommand('configure terminal');
+      await r.executeCommand('interface GigabitEthernet0/0');
+      await r.executeCommand('description Temp');
+      await r.executeCommand('no description');
+      const cli = (r as unknown as { getCommandKernelCli(): { machine: { router: { interface(name: string): { description: string } | null } } } })
+        .getCommandKernelCli();
+      const info = cli.machine.router.interface('GigabitEthernet0/0');
+      expect(info?.description).toBe('');
+    });
+
     it('an unmigrated command fails through the new pipeline (signal for migration)', async () => {
       const r = new CiscoRouter('R1');
       await r.executeCommand('enable');

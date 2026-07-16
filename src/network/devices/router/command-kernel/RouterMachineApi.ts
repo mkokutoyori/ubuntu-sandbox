@@ -91,6 +91,13 @@ export interface RouterCapabilityApi {
   /** Table de routage IPv4 (RIB) sous forme de DTOs stables. Ordre
    *  d'insertion préservé — les commandes trient elles-mêmes. */
   routes(): readonly RouterRouteInfo[];
+  /** Ajoute une route statique (`ip route <net> <mask> <nexthop>`).
+   *  Retourne `{ ok: false, error }` sans exception si les valeurs
+   *  sont invalides ou la limite RIB atteinte. */
+  addStaticRoute(network: string, mask: string, nextHop: string): { ok: boolean; error?: string };
+  /** Retire une route statique. `nextHop` optionnel : si absent,
+   *  retire toutes les routes statiques correspondant au (net, mask). */
+  removeStaticRoute(network: string, mask: string, nextHop?: string): { ok: boolean; error?: string };
 }
 
 class RouterCapabilityImpl implements RouterCapabilityApi {
@@ -156,6 +163,26 @@ class RouterCapabilityImpl implements RouterCapabilityApi {
     if (!port) return false;
     this.router.unconfigureInterface(name);
     return true;
+  }
+
+  addStaticRoute(network: string, mask: string, nextHop: string): { ok: boolean; error?: string } {
+    let n: IPAddress, m: SubnetMask, nh: IPAddress;
+    try { n = new IPAddress(network); } catch { return { ok: false, error: `invalid network: ${network}` }; }
+    try { m = new SubnetMask(mask); } catch { return { ok: false, error: `invalid mask: ${mask}` }; }
+    try { nh = new IPAddress(nextHop); } catch { return { ok: false, error: `invalid next-hop: ${nextHop}` }; }
+    const ok = this.router.addStaticRoute(n, m, nh);
+    return ok ? { ok: true } : { ok: false, error: 'routing table full' };
+  }
+
+  removeStaticRoute(network: string, mask: string, nextHop?: string): { ok: boolean; error?: string } {
+    let n: IPAddress, m: SubnetMask, nh: IPAddress | undefined;
+    try { n = new IPAddress(network); } catch { return { ok: false, error: `invalid network: ${network}` }; }
+    try { m = new SubnetMask(mask); } catch { return { ok: false, error: `invalid mask: ${mask}` }; }
+    if (nextHop !== undefined) {
+      try { nh = new IPAddress(nextHop); } catch { return { ok: false, error: `invalid next-hop: ${nextHop}` }; }
+    }
+    const ok = this.router.removeStaticRoute(n, m, nh);
+    return ok ? { ok: true } : { ok: false, error: 'route not found' };
   }
 
   routes(): readonly RouterRouteInfo[] {

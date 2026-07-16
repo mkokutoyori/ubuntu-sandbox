@@ -13,6 +13,9 @@ import { CiscoRouterShowIpCommand } from './commands/cisco/show/Ip';
 import { CiscoRouterShowVersionCommand } from './commands/cisco/show/Version';
 import { CiscoRouterHostnameCommand } from './commands/cisco/config/Hostname';
 import { CiscoRouterInterfaceCommand } from './commands/cisco/config/Interface';
+import { CiscoRouterConfigIpCommand } from './commands/cisco/config/Ip';
+import { CiscoRouterConfigNoCommand } from './commands/cisco/config/No';
+import { CiscoRouterDescriptionCommand } from './commands/cisco/config/config-if/Description';
 import { CiscoRouterConfigIfIpCommand } from './commands/cisco/config/config-if/Ip';
 import { CiscoRouterConfigIfNoCommand } from './commands/cisco/config/config-if/No';
 import { CiscoRouterShutdownCommand } from './commands/cisco/config/config-if/Shutdown';
@@ -69,12 +72,15 @@ export function createCiscoRouterHostShell(router: Router): {
 
   configRegistry.register(() => new CiscoRouterHostnameCommand());
   configRegistry.register(() => new CiscoRouterInterfaceCommand());
+  configRegistry.register(() => new CiscoRouterConfigIpCommand());
+  configRegistry.register(() => new CiscoRouterConfigNoCommand());
   configRegistry.register(() => new PopModeCommand('exit', 'Exit from the current mode'));
   configRegistry.register(() => new EndCommand());
 
   configIfRegistry.register(() => new CiscoRouterShutdownCommand());
   configIfRegistry.register(() => new CiscoRouterConfigIfIpCommand());
   configIfRegistry.register(() => new CiscoRouterConfigIfNoCommand());
+  configIfRegistry.register(() => new CiscoRouterDescriptionCommand());
   configIfRegistry.register(() => new PopModeCommand('exit', 'Exit from the current mode'));
   configIfRegistry.register(() => new EndCommand());
 
