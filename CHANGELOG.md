@@ -1,5 +1,88 @@
 # Changelog
 
+## Outillage — générateur de commandes command-kernel (`scripts/generate_command.py`)
+
+**État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
+
+Script Python (argparse, stdlib uniquement — aucune dépendance) qui génère
+le boilerplate d'une nouvelle commande command-kernel conforme à
+`migration_framework.md` / `.claude/skills/command-kernel-migration` :
+fichier `.ts` avec `CommandDescriptor` complet (args/options typés,
+`PrivilegePolicy` embarquée, imports corrects), et en option l'insertion
+de l'enregistrement + de l'import dans le bootstrap de la cible, plus un
+stub de test dans le fichier de fondation. Objectif : que migrer une
+commande devienne « générer, puis ajuster le corps métier », pas
+« recopier le boilerplate à la main à chaque fois ».
+
+- **Registre de cibles** (`TARGETS`, extensible sans toucher l'existant) :
+  `oracle-sqlplus`, `sftp`, `linux`, `windows`, `router-cisco`,
+  `router-huawei`, `switch-cisco`, `switch-huawei` — chacune avec son
+  `commands_root`, son préfixe de classe (vérifié contre le code réel :
+  `SqlPlusSetCommand`, `SftpLsCommand`, `LsCommand`/`RegCommand` sans
+  préfixe côté Linux/Windows, `CiscoRouterShowVersionCommand`…), son mode
+  d'accès à la MachineApi (`cast` pour router/switch, `capability` pour
+  oracle/sftp — capacité optionnelle dédiée sur le `MachineApi` commun,
+  `direct` pour linux/windows — capacités universelles déjà typées), et
+  si elle a des modes CLI hiérarchiques (`uses_modes`, conditionne quels
+  `--kind` sont valides).
+- **5 formes de commande** (`--kind`) : `leaf` (feuille standalone),
+  `composite` (racine + `subRegistry`, réservé aux cibles à modes —
+  `Executor`/`Interpreter` génériques ne dispatchent pas de subRegistry,
+  seul `CliInterpreter` le fait), `push-mode` (sous-classe
+  `PushModeCommand`), `pop-mode`/`end-mode` (pas de fichier généré —
+  `PopModeCommand`/`EndCommand` s'utilisent directement, le script
+  affiche juste le snippet), `streaming` (`descriptor.streaming: true` +
+  gabarit de boucle sur `ctx.signal.aborted`).
+- **DSL `--arg`/`--option`** : `"name=X|type=string|required=true|…"`
+  (séparateur `|`, pas `,` — une description contient souvent des
+  virgules) ; alternative `--args-json`/`--options-json` (tableau JSON
+  inline ou `@fichier.json`) pour les cas complexes ou la génération
+  scriptée. Sous-commande `batch <fichier.json>` pour générer plusieurs
+  commandes en un seul appel à partir d'un tableau de spécifications.
+- **Enregistrement automatique best-effort** (`--register`) : ancre par
+  défaut (dernière ligne `X.register(() => new YCommand());` du
+  bootstrap) pour les cibles à registre unique (oracle-sqlplus, sftp,
+  linux, windows) ; refuse l'automatique pour les cibles à registres
+  multiples (router/switch — plusieurs registres par mode + sous-registres
+  de composites, deviner LEQUEL serait dangereux) **sauf** si
+  `--insert-after "<extrait exact d'une ligne existante>"` est fourni
+  explicitement — mécanisme générique, ne présuppose la structure d'aucun
+  bootstrap précis. Ajoute aussi l'import de la classe (dédupliqué).
+  `--with-test` ajoute un stub `it(...)` dans le fichier de fondation de
+  la cible (`TODO` à remplir — jamais d'assertion inventée).
+- **Import relatif calculé, jamais deviné** : `relative_import()` utilise
+  `posixpath.relpath` entre le dossier du fichier généré et le module de
+  la MachineApi cible — correct quelle que soit la profondeur de
+  `--subdir` (show/config/config-if/interface-view/…), les imports
+  `@/command-kernel/...` du socle restant en alias (indépendants de la
+  profondeur).
+- **Dérivation du nom de classe** : `{préfixe cible}{dernier segment de
+  --subdir en PascalCase}{--name en PascalCase}Command` — reproduit
+  exactement `CiscoRouterShowIpCommand` (subdir `show`) et
+  `CiscoRouterConfigIfIpCommand` (subdir `config/config-if`, dernier
+  segment `config-if`) vérifiés contre le code réel ; toujours
+  surchargeable via `--class-name` quand la forme courte non ambiguë est
+  préférée (ex: `CiscoRouterHostnameCommand` sans infixe `Config`).
+- **`--dry-run`** sur toute commande `new`/`batch` : affiche le contenu
+  généré et les actions d'enregistrement/test sans rien écrire ;
+  fonctionne aussi sur un nom de fichier déjà existant (avertit, n'échoue
+  pas — l'échec dur `--force` requis ne s'applique qu'en écriture réelle).
+
+- **Validation** : généré + vérifié en conditions réelles (pas seulement
+  en `--dry-run`) — commande `oracle-sqlplus DEFINE` avec `--register
+  --with-test` : fichier compilé (`tsc --noEmit` propre), enregistrement
+  + import corrects dans `createSqlPlusKernel.ts`, stub de test ajouté et
+  vert (23/23 sur `sqlplus-cli-foundation.test.ts`), puis nettoyé (ce
+  n'était qu'une validation, pas une migration demandée). Cas de rejet
+  vérifiés : `--kind composite`/`push-mode` sur une cible sans modes,
+  `push-mode` sans `--target-mode`, `--arg` sans `name`, fichier existant
+  sans `--force`.
+
+- **Prochaine étape suggérée** : l'utiliser pour accélérer les prochaines
+  vagues de migration (`SHOW ERRORS`, `COLUMN`/`VARIABLE`/`PRINT` côté
+  Oracle, ou toute commande router/switch/linux/windows restante) —
+  générer, puis n'ajuster que le corps métier de `execute()`.
+
 ## Oracle SQL*Plus — Wave 2 : câblage live sur `SqlPlusSubShell` (débranchement réel du legacy pour SET/SHOW/HELP/CLEAR/EXIT/QUIT/DISCONNECT)
 
 **État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
