@@ -63,6 +63,78 @@ network-v2 dédiés au switching (VLAN, MAC, switchport).
   `switchport trunk native/allowed`, `interface range` (multi-if),
   `port-security`, `spanning-tree` en config, `no vlan <id>`.
 
+## Cisco switch — vague trunk / no vlan / interface range + broadcast config-if
+
+**État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
+
+Prolongement direct de la vague config/config-if/config-vlan : les
+commandes trunk (native + allowed avec DSL Cisco complet), suppression
+de VLAN, ET la commande de sélection multi-interfaces `interface
+range` qui broadcast automatiquement les commandes config-if déjà
+migrées (shutdown, description, switchport …).
+
+- **Enrichissement `SwitchMachineApi`** :
+  - `router.setInterfaceTrunkNativeVlan(name, vlanId): boolean`.
+  - `router.setInterfaceTrunkAllowedVlans(name, op, vlans): boolean` —
+    `op ∈ {'set','add','remove','except'}`.
+  - `router.resetInterfaceTrunkAllowedVlans(name): boolean` — `all`.
+
+- **Nouveau helper `config-if/selected-interfaces.ts`** :
+  `broadcastInterfaces(session)` — lit `selectedInterfaces` (CSV posé
+  par `interface range`) sinon `selectedInterface` (unique, posé par
+  `interface X`). Sémantique unique et pure partagée par toutes les
+  feuilles config-if — règle 2 : commande standalone, helper pur autorisé.
+
+- **Toutes les commandes config-if déjà migrées** (`shutdown`,
+  `no shutdown`, `description`, `no description`, `switchport mode
+  access|trunk`, `switchport access vlan`) **appliquent leurs mutations
+  à la LISTE d'interfaces** via `broadcastInterfaces` — extension sans
+  rupture : mono-interface reste équivalent.
+
+- **Nouveau côté commandes** (`commands/cisco/config/`) :
+  - `config-if/switchport/Trunk.ts` (composite) → `trunk/Native.ts`,
+    `trunk/Allowed.ts` (composites) → `trunk/native/Vlan.ts` (feuille),
+    `trunk/allowed/Vlan.ts` (feuille avec DSL Cisco : `all | none |
+    <list> | add <list> | remove <list> | except <list>`).
+  - `config-if/switchport/trunk/vlan-list.ts` — parseur PUR
+    `10,20-30,50 → Set<number>` avec validation bornes (1..4094).
+  - `config/No.ts` (composite) + `config/no/Vlan.ts` (feuille
+    `no vlan <id>`, refuse VLAN 1).
+  - `config/InterfaceRange.ts` — push `interface range <spec>` (est
+    une SOUS-commande de `interface`, ajoutée à
+    `CiscoSwitchInterfaceCommand.subRegistry`).
+  - `config/interface-range/parse.ts` — parseur PUR
+    `FastEthernet0/1-4, Fa0/10 → string[]`.
+
+- **Correction bootstrap** : le mode `config-if` a désormais
+  `clearOnExit: ['selectedInterface', 'selectedInterfaces']` — les
+  deux clés du prompt sont nettoyées à l'`exit`.
+
+- **Palette de tests étendue** (`switch-config-cisco.test.ts`) :
+  passe de 27 à **50 cas verts**, avec 4 nouveaux blocs :
+  - **Bloc 10 : `switchport trunk native vlan`** (3) — nominal, hors
+    bornes, incomplete.
+  - **Bloc 11 : `switchport trunk allowed vlan` toutes les formes** (8)
+    — liste simple, plage, `none`, `all`, `add`, `remove`, plage
+    inversée refusée, `add junk` refusé.
+  - **Bloc 12 : `no vlan <id>`** (3) — nominal, refus sur VLAN 1,
+    absent.
+  - **Bloc 13 : `interface range`** (6) — plage simple, syntaxe
+    composée, interface inexistante, `description` broadcasté,
+    `clearOnExit`, plage inversée refusée.
+  - **Bloc 14 : Abréviations trunk / range** (3) — `sw tr nat vl`,
+    `sw tr al vl`, `int ra`.
+
+- **Preuve exécutable globale** : suite command-kernel **237/237
+  verte**. `tsc` propre sur les fichiers touchés.
+
+- **Effet attendu (signal migration)** : le legacy
+  `cisco-switchport.test.ts` passe désormais **1/4** (contre 0/4). Les
+  3 rouges pointent exactement les prochaines commandes à migrer :
+  `vlan 30-35` (plage VLAN en config), `trunk encapsulation` /
+  `nonegotiate` / `voice` / `port-security`, `channel-group` +
+  `Port-channel` + `show etherchannel`.
+
 Journal des évolutions du socle `command-kernel` et de sa migration
 progressive par équipement. Un push = une entrée = une fonctionnalité
 complète et testée (voir `CLAUDE.md` / le framework de migration pour les

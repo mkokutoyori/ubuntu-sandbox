@@ -3,20 +3,16 @@ import type { CommandContext, CommandDescriptor, ExitCode } from '@/command-kern
 import { CommandRegistry } from '@/command-kernel/registry/command-registry';
 import { DefaultPrivilegePolicy } from '@/command-kernel/session/privilege-policy';
 import { PrivilegeLevel } from '@/command-kernel/session/types';
-import { CiscoSwitchportAccessCommand } from './switchport/Access';
-import { CiscoSwitchportModeCommand } from './switchport/Mode';
-import { CiscoSwitchportTrunkCommand } from './switchport/Trunk';
+import { CiscoSwitchTrunkNativeVlanCommand } from './native/Vlan';
 
 const OP = new DefaultPrivilegePolicy(PrivilegeLevel.OPERATOR);
 
-/** `switchport` (Cisco Catalyst, config-if) — commande COMPOSITE
- *  racine des configs L2 par-port (`mode`, `access`, plus tard
- *  `trunk`, `port-security`, …). */
-export class CiscoSwitchportCommand extends BaseCommand {
+/** `switchport trunk native` (Cisco Catalyst, config-if) — composite. */
+export class CiscoSwitchTrunkNativeCommand extends BaseCommand {
   readonly descriptor: CommandDescriptor = {
-    name: 'switchport',
-    summary: 'Set switching characteristics',
-    usage: 'switchport <subcommand>',
+    name: 'native',
+    summary: 'Set trunking native characteristics',
+    usage: 'switchport trunk native vlan <vlan-id>',
     args: [], options: [],
     privileges: OP,
     category: 'switch',
@@ -26,9 +22,7 @@ export class CiscoSwitchportCommand extends BaseCommand {
 
   constructor() {
     super();
-    this.subRegistry.register(() => new CiscoSwitchportModeCommand());
-    this.subRegistry.register(() => new CiscoSwitchportAccessCommand());
-    this.subRegistry.register(() => new CiscoSwitchportTrunkCommand());
+    this.subRegistry.register(() => new CiscoSwitchTrunkNativeVlanCommand());
   }
 
   async execute(ctx: CommandContext): Promise<ExitCode> {

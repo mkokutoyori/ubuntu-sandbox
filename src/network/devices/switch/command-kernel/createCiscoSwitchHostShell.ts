@@ -14,6 +14,7 @@ import { CiscoSwitchShowVlanCommand } from './commands/cisco/show/Vlan';
 import { CiscoSwitchShowVersionCommand } from './commands/cisco/show/Version';
 import { CiscoSwitchHostnameCommand } from './commands/cisco/config/Hostname';
 import { CiscoSwitchInterfaceCommand } from './commands/cisco/config/Interface';
+import { CiscoSwitchConfigNoCommand } from './commands/cisco/config/No';
 import { CiscoSwitchVlanCommand } from './commands/cisco/config/Vlan';
 import { CiscoSwitchDescriptionCommand } from './commands/cisco/config/config-if/Description';
 import { CiscoSwitchConfigIfNoCommand } from './commands/cisco/config/config-if/No';
@@ -82,6 +83,7 @@ export function createCiscoSwitchHostShell(sw: Switch): {
   configRegistry.register(() => new CiscoSwitchHostnameCommand());
   configRegistry.register(() => new CiscoSwitchInterfaceCommand());
   configRegistry.register(() => new CiscoSwitchVlanCommand());
+  configRegistry.register(() => new CiscoSwitchConfigNoCommand());
   configRegistry.register(() => new PopModeCommand('exit', 'Exit from the current mode'));
   configRegistry.register(() => new EndCommand());
 
@@ -100,7 +102,7 @@ export function createCiscoSwitchHostShell(sw: Switch): {
     { name: 'user',        prompt: (_s, host) => `${host}>`,             parent: null,         registry: userRegistry },
     { name: 'privileged',  prompt: (_s, host) => `${host}#`,             parent: 'user',       registry: privilegedRegistry },
     { name: 'config',      prompt: (_s, host) => `${host}(config)#`,     parent: 'privileged', registry: configRegistry },
-    { name: 'config-if',   prompt: (_s, host) => `${host}(config-if)#`,  parent: 'config',     registry: configIfRegistry, clearOnExit: ['selectedInterface'] },
+    { name: 'config-if',   prompt: (_s, host) => `${host}(config-if)#`,  parent: 'config',     registry: configIfRegistry, clearOnExit: ['selectedInterface', 'selectedInterfaces'] },
     { name: 'config-vlan', prompt: (_s, host) => `${host}(config-vlan)#`, parent: 'config',    registry: configVlanRegistry, clearOnExit: ['selectedVlan'] },
   ] satisfies CliMode[], { execLevel: 'privileged' });
 

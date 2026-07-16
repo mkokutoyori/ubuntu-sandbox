@@ -3,8 +3,8 @@ import type { CommandContext, CommandDescriptor, ExitCode } from '@/command-kern
 import { EXIT_OK } from '@/command-kernel/command/types';
 import { DefaultPrivilegePolicy } from '@/command-kernel/session/privilege-policy';
 import { PrivilegeLevel } from '@/command-kernel/session/types';
-import type { CliSession } from '@/command-kernel/cli';
 import type { SwitchMachineApi } from '../../../../../../SwitchMachineApi';
+import { broadcastInterfaces } from '../../selected-interfaces';
 
 const OP = new DefaultPrivilegePolicy(PrivilegeLevel.OPERATOR);
 
@@ -25,16 +25,18 @@ export class CiscoSwitchportAccessVlanCommand extends BaseCommand {
 
   async execute(ctx: CommandContext): Promise<ExitCode> {
     const machine = ctx.machine as SwitchMachineApi;
-    const iface = (ctx.session as CliSession).promptFields.get('selectedInterface');
-    if (!iface) { await ctx.io.stderr.write('% No interface selected.\n'); return 1; }
+    const ifaces = broadcastInterfaces(ctx.session);
+    if (ifaces.length === 0) { await ctx.io.stderr.write('% No interface selected.\n'); return 1; }
     const id = ctx.args.get<number>('id');
     if (!Number.isInteger(id) || id < 1 || id > 4094) {
       await ctx.io.stderr.write("% Invalid input detected at '^' marker.\n");
       return 1;
     }
-    if (!machine.switch.setInterfaceAccessVlan(iface, id)) {
-      await ctx.io.stderr.write("% Invalid input detected at '^' marker.\n");
-      return 1;
+    for (const iface of ifaces) {
+      if (!machine.switch.setInterfaceAccessVlan(iface, id)) {
+        await ctx.io.stderr.write("% Invalid input detected at '^' marker.\n");
+        return 1;
+      }
     }
     return EXIT_OK;
   }

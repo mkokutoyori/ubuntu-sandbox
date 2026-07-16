@@ -86,6 +86,19 @@ export interface SwitchCapabilityApi {
    *  (comportement standard côté switch). Retourne `false` si le port
    *  n'existe pas ou si l'id est invalide. */
   setInterfaceAccessVlan(name: string, vlanId: number): boolean;
+  /** `switchport trunk native vlan <id>` — VLAN natif sur trunk. */
+  setInterfaceTrunkNativeVlan(name: string, vlanId: number): boolean;
+  /** `switchport trunk allowed vlan {all|none|<list>|add <list>|remove <list>|except <list>}`.
+   *  `op` distingue les modes de mise à jour ; `vlans` est la liste
+   *  parsée (Set) — la commande a la responsabilité du parse texte
+   *  (ex: `10,20-30,50`). */
+  setInterfaceTrunkAllowedVlans(
+    name: string,
+    op: 'set' | 'add' | 'remove' | 'except',
+    vlans: ReadonlySet<number>,
+  ): boolean;
+  /** Réinitialise à `all` (1-4094) — utilisé par `switchport trunk allowed vlan all`. */
+  resetInterfaceTrunkAllowedVlans(name: string): boolean;
 
   vlans(): readonly SwitchVlanInfo[];
   vlan(id: number): SwitchVlanInfo | null;
@@ -154,6 +167,49 @@ class SwitchCapabilityImpl implements SwitchCapabilityApi {
     if (!this.sw.getPort(name)) return false;
     if (!Number.isInteger(vlanId) || vlanId < 1 || vlanId > 4094) return false;
     return this.sw.setSwitchportAccessVlan(name, vlanId);
+  }
+
+  setInterfaceTrunkNativeVlan(name: string, vlanId: number): boolean {
+    if (!this.sw.getPort(name)) return false;
+    if (!Number.isInteger(vlanId) || vlanId < 1 || vlanId > 4094) return false;
+    return this.sw.setTrunkNativeVlan(name, vlanId);
+  }
+
+  setInterfaceTrunkAllowedVlans(
+    name: string,
+    op: 'set' | 'add' | 'remove' | 'except',
+    vlans: ReadonlySet<number>,
+  ): boolean {
+    if (!this.sw.getPort(name)) return false;
+    const cfg = this.sw.getSwitchportConfig(name);
+    if (!cfg) return false;
+    switch (op) {
+      case 'set': {
+        return this.sw.setTrunkAllowedVlans(name, new Set(vlans));
+      }
+      case 'add': {
+        const next = new Set(cfg.trunkAllowedVlans);
+        for (const v of vlans) next.add(v);
+        return this.sw.setTrunkAllowedVlans(name, next);
+      }
+      case 'remove': {
+        const next = new Set(cfg.trunkAllowedVlans);
+        for (const v of vlans) next.delete(v);
+        return this.sw.setTrunkAllowedVlans(name, next);
+      }
+      case 'except': {
+        const next = new Set<number>();
+        for (let i = 1; i <= 4094; i++) if (!vlans.has(i)) next.add(i);
+        return this.sw.setTrunkAllowedVlans(name, next);
+      }
+    }
+  }
+
+  resetInterfaceTrunkAllowedVlans(name: string): boolean {
+    if (!this.sw.getPort(name)) return false;
+    const all = new Set<number>();
+    for (let i = 1; i <= 4094; i++) all.add(i);
+    return this.sw.setTrunkAllowedVlans(name, all);
   }
 
   createVlan(id: number, name?: string): { ok: boolean; error?: string } {

@@ -3,32 +3,28 @@ import type { CommandContext, CommandDescriptor, ExitCode } from '@/command-kern
 import { CommandRegistry } from '@/command-kernel/registry/command-registry';
 import { DefaultPrivilegePolicy } from '@/command-kernel/session/privilege-policy';
 import { PrivilegeLevel } from '@/command-kernel/session/types';
-import { CiscoSwitchportAccessCommand } from './switchport/Access';
-import { CiscoSwitchportModeCommand } from './switchport/Mode';
-import { CiscoSwitchportTrunkCommand } from './switchport/Trunk';
+import { CiscoSwitchNoVlanCommand } from './no/Vlan';
 
 const OP = new DefaultPrivilegePolicy(PrivilegeLevel.OPERATOR);
 
-/** `switchport` (Cisco Catalyst, config-if) — commande COMPOSITE
- *  racine des configs L2 par-port (`mode`, `access`, plus tard
- *  `trunk`, `port-security`, …). */
-export class CiscoSwitchportCommand extends BaseCommand {
+/** `no` (Cisco Catalyst, mode config) — racine des négations globales
+ *  du switch (`no vlan`, plus tard `no interface X.Y`, `no hostname`,
+ *  …). Distinct du `no` de config-if (interface-scope). */
+export class CiscoSwitchConfigNoCommand extends BaseCommand {
   readonly descriptor: CommandDescriptor = {
-    name: 'switchport',
-    summary: 'Set switching characteristics',
-    usage: 'switchport <subcommand>',
+    name: 'no',
+    summary: 'Negate a command / restore its default',
+    usage: 'no <command>',
     args: [], options: [],
     privileges: OP,
     category: 'switch',
   };
-  readonly allowedModes = ['config-if'];
+  readonly allowedModes = ['config'];
   readonly subRegistry = new CommandRegistry();
 
   constructor() {
     super();
-    this.subRegistry.register(() => new CiscoSwitchportModeCommand());
-    this.subRegistry.register(() => new CiscoSwitchportAccessCommand());
-    this.subRegistry.register(() => new CiscoSwitchportTrunkCommand());
+    this.subRegistry.register(() => new CiscoSwitchNoVlanCommand());
   }
 
   async execute(ctx: CommandContext): Promise<ExitCode> {

@@ -3,8 +3,8 @@ import type { CommandContext, CommandDescriptor, ExitCode } from '@/command-kern
 import { EXIT_OK } from '@/command-kernel/command/types';
 import { DefaultPrivilegePolicy } from '@/command-kernel/session/privilege-policy';
 import { PrivilegeLevel } from '@/command-kernel/session/types';
-import type { CliSession } from '@/command-kernel/cli';
 import type { SwitchMachineApi } from '../../../../SwitchMachineApi';
+import { broadcastInterfaces } from './selected-interfaces';
 
 const OP = new DefaultPrivilegePolicy(PrivilegeLevel.OPERATOR);
 
@@ -24,13 +24,16 @@ export class CiscoSwitchDescriptionCommand extends BaseCommand {
 
   async execute(ctx: CommandContext): Promise<ExitCode> {
     const machine = ctx.machine as SwitchMachineApi;
-    const iface = (ctx.session as CliSession).promptFields.get('selectedInterface');
-    if (!iface) { await ctx.io.stderr.write('% No interface selected.\n'); return 1; }
+    const ifaces = broadcastInterfaces(ctx.session);
+    if (ifaces.length === 0) { await ctx.io.stderr.write('% No interface selected.\n'); return 1; }
     const words = ctx.args.get<string[]>('text') ?? [];
     if (words.length === 0) { await ctx.io.stderr.write('% Incomplete command.\n'); return 1; }
-    if (!machine.switch.setInterfaceDescription(iface, words.join(' '))) {
-      await ctx.io.stderr.write("% Invalid input detected at '^' marker.\n");
-      return 1;
+    const text = words.join(' ');
+    for (const iface of ifaces) {
+      if (!machine.switch.setInterfaceDescription(iface, text)) {
+        await ctx.io.stderr.write("% Invalid input detected at '^' marker.\n");
+        return 1;
+      }
     }
     return EXIT_OK;
   }

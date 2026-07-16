@@ -288,4 +288,226 @@ describe('Cisco Catalyst — configuration L2 (command-kernel)', () => {
       expect(out).toMatch(/inconnu|introuvable|Incomplete|not-found/i);
     });
   });
+
+  // ─── Bloc 10 : switchport trunk native ──────────────────────────
+
+  describe('switchport trunk native vlan', () => {
+    it('`switchport trunk native vlan 99` positionne trunkNativeVlan=99', async () => {
+      const sw = await toConfig();
+      await sw.executeCommand('interface FastEthernet0/1');
+      await sw.executeCommand('switchport mode trunk');
+      const out = await sw.executeCommand('switchport trunk native vlan 99');
+      expect(out).toBe('');
+      const info = machineOf(sw).switch.interface('FastEthernet0/1');
+      expect(info?.trunkNativeVlan).toBe(99);
+    });
+
+    it('`switchport trunk native vlan 4095` refuse (hors bornes)', async () => {
+      const sw = await toConfig();
+      await sw.executeCommand('interface FastEthernet0/1');
+      const out = await sw.executeCommand('switchport trunk native vlan 4095');
+      expect(out).toMatch(/Invalid input/);
+    });
+
+    it('`switchport trunk native` seul est incomplete', async () => {
+      const sw = await toConfig();
+      await sw.executeCommand('interface FastEthernet0/1');
+      const out = await sw.executeCommand('switchport trunk native');
+      expect(out).toMatch(/Incomplete/);
+    });
+  });
+
+  // ─── Bloc 11 : switchport trunk allowed ─────────────────────────
+
+  describe('switchport trunk allowed vlan (toutes les formes)', () => {
+    it('`switchport trunk allowed vlan 10,20,30` positionne exactement 3 VLANs', async () => {
+      const sw = await toConfig();
+      await sw.executeCommand('interface FastEthernet0/1');
+      await sw.executeCommand('switchport mode trunk');
+      await sw.executeCommand('switchport trunk allowed vlan 10,20,30');
+      const info = machineOf(sw).switch.interface('FastEthernet0/1');
+      expect(info?.trunkAllowedVlans).toEqual([10, 20, 30]);
+    });
+
+    it('`switchport trunk allowed vlan 10-15` développe la plage', async () => {
+      const sw = await toConfig();
+      await sw.executeCommand('interface FastEthernet0/1');
+      await sw.executeCommand('switchport mode trunk');
+      await sw.executeCommand('switchport trunk allowed vlan 10-15');
+      const info = machineOf(sw).switch.interface('FastEthernet0/1');
+      expect(info?.trunkAllowedVlans).toEqual([10, 11, 12, 13, 14, 15]);
+    });
+
+    it('`switchport trunk allowed vlan none` vide la liste', async () => {
+      const sw = await toConfig();
+      await sw.executeCommand('interface FastEthernet0/1');
+      await sw.executeCommand('switchport mode trunk');
+      await sw.executeCommand('switchport trunk allowed vlan none');
+      const info = machineOf(sw).switch.interface('FastEthernet0/1');
+      expect(info?.trunkAllowedVlans).toEqual([]);
+    });
+
+    it('`switchport trunk allowed vlan all` réinitialise 1-4094', async () => {
+      const sw = await toConfig();
+      await sw.executeCommand('interface FastEthernet0/1');
+      await sw.executeCommand('switchport mode trunk');
+      await sw.executeCommand('switchport trunk allowed vlan 10');
+      await sw.executeCommand('switchport trunk allowed vlan all');
+      const info = machineOf(sw).switch.interface('FastEthernet0/1');
+      expect(info?.trunkAllowedVlans.length).toBe(4094);
+    });
+
+    it('`switchport trunk allowed vlan add 40` ajoute à la liste existante', async () => {
+      const sw = await toConfig();
+      await sw.executeCommand('interface FastEthernet0/1');
+      await sw.executeCommand('switchport mode trunk');
+      await sw.executeCommand('switchport trunk allowed vlan 10,20');
+      await sw.executeCommand('switchport trunk allowed vlan add 40');
+      const info = machineOf(sw).switch.interface('FastEthernet0/1');
+      expect(info?.trunkAllowedVlans).toEqual([10, 20, 40]);
+    });
+
+    it('`switchport trunk allowed vlan remove 20` retire de la liste existante', async () => {
+      const sw = await toConfig();
+      await sw.executeCommand('interface FastEthernet0/1');
+      await sw.executeCommand('switchport mode trunk');
+      await sw.executeCommand('switchport trunk allowed vlan 10,20,30');
+      await sw.executeCommand('switchport trunk allowed vlan remove 20');
+      const info = machineOf(sw).switch.interface('FastEthernet0/1');
+      expect(info?.trunkAllowedVlans).toEqual([10, 30]);
+    });
+
+    it('liste avec plage inversée `20-10` refuse', async () => {
+      const sw = await toConfig();
+      await sw.executeCommand('interface FastEthernet0/1');
+      const out = await sw.executeCommand('switchport trunk allowed vlan 20-10');
+      expect(out).toMatch(/Invalid input/);
+    });
+
+    it('`switchport trunk allowed vlan add junk` refuse (parsing)', async () => {
+      const sw = await toConfig();
+      await sw.executeCommand('interface FastEthernet0/1');
+      const out = await sw.executeCommand('switchport trunk allowed vlan add junk');
+      expect(out).toMatch(/Invalid input/);
+    });
+  });
+
+  // ─── Bloc 12 : no vlan (suppression) ────────────────────────────
+
+  describe('no vlan <id>', () => {
+    it('`no vlan 10` supprime le VLAN 10 après création', async () => {
+      const sw = await toConfig();
+      await sw.executeCommand('vlan 10');
+      await sw.executeCommand('exit');
+      await sw.executeCommand('no vlan 10');
+      expect(machineOf(sw).switch.vlan(10)).toBeNull();
+    });
+
+    it('`no vlan 1` refuse (VLAN par défaut non supprimable)', async () => {
+      const sw = await toConfig();
+      const out = await sw.executeCommand('no vlan 1');
+      expect(out).toMatch(/cannot delete default VLAN/);
+      expect(machineOf(sw).switch.vlan(1)).not.toBeNull();
+    });
+
+    it('`no vlan 999` sur un VLAN absent renvoie un message d\'erreur', async () => {
+      const sw = await toConfig();
+      const out = await sw.executeCommand('no vlan 999');
+      expect(out).toMatch(/VLAN not found|not found/i);
+    });
+  });
+
+  // ─── Bloc 13 : interface range (multi-interfaces) ───────────────
+
+  describe('interface range', () => {
+    it('`interface range FastEthernet0/1-3` bascule en config-if et broadcast', async () => {
+      const sw = await toConfig();
+      const out = await sw.executeCommand('interface range FastEthernet0/1-3');
+      expect(out).toBe('');
+      expect(sw.getPrompt()).toBe('SW1(config-if)#');
+      await sw.executeCommand('switchport mode access');
+      await sw.executeCommand('switchport access vlan 42');
+      // Les 3 interfaces reçoivent la même config.
+      for (const p of ['FastEthernet0/1', 'FastEthernet0/2', 'FastEthernet0/3']) {
+        const info = machineOf(sw).switch.interface(p);
+        expect(info?.mode).toBe('access');
+        expect(info?.accessVlan).toBe(42);
+      }
+      // Un port hors plage n'est pas affecté.
+      const untouched = machineOf(sw).switch.interface('FastEthernet0/4');
+      expect(untouched?.accessVlan).toBe(1);
+    });
+
+    it('`interface range Fa0/1-2, Fa0/10` accepte la syntaxe composée', async () => {
+      const sw = await toConfig();
+      await sw.executeCommand('interface range FastEthernet0/1-2, FastEthernet0/10');
+      await sw.executeCommand('shutdown');
+      for (const p of ['FastEthernet0/1', 'FastEthernet0/2', 'FastEthernet0/10']) {
+        expect(machineOf(sw).switch.interface(p)?.adminUp).toBe(false);
+      }
+      // Port hors plage : reste up.
+      expect(machineOf(sw).switch.interface('FastEthernet0/3')?.adminUp).toBe(true);
+    });
+
+    it('`interface range FastEthernet0/1-99` refuse (interface inexistante)', async () => {
+      const sw = await toConfig();
+      const out = await sw.executeCommand('interface range FastEthernet0/1-99');
+      expect(out).toMatch(/Invalid input/);
+      expect(sw.getPrompt()).toBe('SW1(config)#');
+    });
+
+    it('`interface range` supporte `description` broadcasté', async () => {
+      const sw = await toConfig();
+      await sw.executeCommand('interface range FastEthernet0/1-2');
+      await sw.executeCommand('description Access ports');
+      for (const p of ['FastEthernet0/1', 'FastEthernet0/2']) {
+        expect(machineOf(sw).switch.interface(p)?.description).toBe('Access ports');
+      }
+    });
+
+    it('`exit` d\'un range efface `selectedInterfaces` (clearOnExit)', async () => {
+      const sw = await toConfig();
+      await sw.executeCommand('interface range FastEthernet0/1-2');
+      await sw.executeCommand('exit');
+      expect(sw.getPrompt()).toBe('SW1(config)#');
+      // Nouveau push simple : la sélection précédente n'affecte pas la
+      // nouvelle interface.
+      await sw.executeCommand('interface FastEthernet0/3');
+      await sw.executeCommand('switchport mode trunk');
+      expect(machineOf(sw).switch.interface('FastEthernet0/1')?.mode).toBe('access');
+      expect(machineOf(sw).switch.interface('FastEthernet0/3')?.mode).toBe('trunk');
+    });
+
+    it('range avec plage inversée `Fa0/5-3` refuse', async () => {
+      const sw = await toConfig();
+      const out = await sw.executeCommand('interface range FastEthernet0/5-3');
+      expect(out).toMatch(/Invalid input/);
+    });
+  });
+
+  // ─── Bloc 14 : abréviations trunk / range ───────────────────────
+
+  describe('Abréviations trunk / range', () => {
+    it('`sw tr nat vl 99` résout `switchport trunk native vlan 99`', async () => {
+      const sw = await toConfig();
+      await sw.executeCommand('interface FastEthernet0/1');
+      await sw.executeCommand('sw tr nat vl 99');
+      expect(machineOf(sw).switch.interface('FastEthernet0/1')?.trunkNativeVlan).toBe(99);
+    });
+
+    it('`sw tr al vl 10,20` résout `switchport trunk allowed vlan 10,20`', async () => {
+      const sw = await toConfig();
+      await sw.executeCommand('interface FastEthernet0/1');
+      await sw.executeCommand('sw tr al vl 10,20');
+      expect(machineOf(sw).switch.interface('FastEthernet0/1')?.trunkAllowedVlans).toEqual([10, 20]);
+    });
+
+    it('`int ra Fa0/1-2` résout `interface range FastEthernet0/1-2`', async () => {
+      const sw = await toConfig();
+      await sw.executeCommand('int ra FastEthernet0/1-2');
+      expect(sw.getPrompt()).toBe('SW1(config-if)#');
+      await sw.executeCommand('shutdown');
+      expect(machineOf(sw).switch.interface('FastEthernet0/2')?.adminUp).toBe(false);
+    });
+  });
 });
