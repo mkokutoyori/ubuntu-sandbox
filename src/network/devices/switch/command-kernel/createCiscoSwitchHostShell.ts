@@ -17,6 +17,7 @@ import { CiscoSwitchHostnameCommand } from './commands/cisco/config/Hostname';
 import { CiscoSwitchInterfaceCommand } from './commands/cisco/config/Interface';
 import { CiscoSwitchConfigNoCommand } from './commands/cisco/config/No';
 import { CiscoSwitchVlanCommand } from './commands/cisco/config/Vlan';
+import { CiscoSwitchChannelGroupCommand } from './commands/cisco/config/config-if/ChannelGroup';
 import { CiscoSwitchDescriptionCommand } from './commands/cisco/config/config-if/Description';
 import { CiscoSwitchConfigIfNoCommand } from './commands/cisco/config/config-if/No';
 import { CiscoSwitchShutdownCommand } from './commands/cisco/config/config-if/Shutdown';
@@ -95,6 +96,7 @@ export function createCiscoSwitchHostShell(
   configIfRegistry.register(() => new CiscoSwitchDescriptionCommand());
   configIfRegistry.register(() => new CiscoSwitchConfigIfNoCommand());
   configIfRegistry.register(() => new CiscoSwitchportCommand());
+  configIfRegistry.register(() => new CiscoSwitchChannelGroupCommand());
   configIfRegistry.register(() => new PopModeCommand('exit', 'Exit from the current mode'));
   configIfRegistry.register(() => new EndCommand());
 

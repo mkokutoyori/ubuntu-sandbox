@@ -3,19 +3,20 @@ import type { CommandContext, CommandDescriptor, ExitCode } from '@/command-kern
 import { CommandRegistry } from '@/command-kernel/registry/command-registry';
 import { DefaultPrivilegePolicy } from '@/command-kernel/session/privilege-policy';
 import { PrivilegeLevel } from '@/command-kernel/session/types';
-import { CiscoSwitchTrunkAllowedCommand } from './trunk/Allowed';
-import { CiscoSwitchTrunkEncapsulationCommand } from './trunk/Encapsulation';
-import { CiscoSwitchTrunkNativeCommand } from './trunk/Native';
+import {
+  CiscoSwitchTrunkEncapDot1qCommand,
+  CiscoSwitchTrunkEncapIslCommand,
+  CiscoSwitchTrunkEncapNegotiateCommand,
+} from './encapsulation/encapsulation-leaves';
 
 const OP = new DefaultPrivilegePolicy(PrivilegeLevel.OPERATOR);
 
-/** `switchport trunk` (Cisco Catalyst, config-if) — composite pour
- *  `native vlan <id>` et `allowed vlan ...`. */
-export class CiscoSwitchportTrunkCommand extends BaseCommand {
+/** `switchport trunk encapsulation` (composite → dot1q | isl | negotiate). */
+export class CiscoSwitchTrunkEncapsulationCommand extends BaseCommand {
   readonly descriptor: CommandDescriptor = {
-    name: 'trunk',
-    summary: 'Set trunking characteristics of the interface',
-    usage: 'switchport trunk <subcommand>',
+    name: 'encapsulation',
+    summary: 'Set trunking encapsulation',
+    usage: 'switchport trunk encapsulation {dot1q|isl|negotiate}',
     args: [], options: [],
     privileges: OP,
     category: 'switch',
@@ -25,9 +26,9 @@ export class CiscoSwitchportTrunkCommand extends BaseCommand {
 
   constructor() {
     super();
-    this.subRegistry.register(() => new CiscoSwitchTrunkNativeCommand());
-    this.subRegistry.register(() => new CiscoSwitchTrunkAllowedCommand());
-    this.subRegistry.register(() => new CiscoSwitchTrunkEncapsulationCommand());
+    this.subRegistry.register(() => new CiscoSwitchTrunkEncapDot1qCommand());
+    this.subRegistry.register(() => new CiscoSwitchTrunkEncapIslCommand());
+    this.subRegistry.register(() => new CiscoSwitchTrunkEncapNegotiateCommand());
   }
 
   async execute(ctx: CommandContext): Promise<ExitCode> {

@@ -3,8 +3,10 @@ import type { CommandContext, CommandDescriptor, ExitCode } from '@/command-kern
 import { CommandRegistry } from '@/command-kernel/registry/command-registry';
 import { DefaultPrivilegePolicy } from '@/command-kernel/session/privilege-policy';
 import { PrivilegeLevel } from '@/command-kernel/session/types';
+import { CiscoSwitchNoChannelGroupCommand } from './no/ChannelGroup';
 import { CiscoSwitchNoDescriptionCommand } from './no/Description';
 import { CiscoSwitchNoShutdownCommand } from './no/Shutdown';
+import { CiscoSwitchNoSwitchportCommand } from './no/Switchport';
 
 const OP = new DefaultPrivilegePolicy(PrivilegeLevel.OPERATOR);
 
@@ -26,6 +28,8 @@ export class CiscoSwitchConfigIfNoCommand extends BaseCommand {
     super();
     this.subRegistry.register(() => new CiscoSwitchNoShutdownCommand());
     this.subRegistry.register(() => new CiscoSwitchNoDescriptionCommand());
+    this.subRegistry.register(() => new CiscoSwitchNoSwitchportCommand());
+    this.subRegistry.register(() => new CiscoSwitchNoChannelGroupCommand());
   }
 
   async execute(ctx: CommandContext): Promise<ExitCode> {

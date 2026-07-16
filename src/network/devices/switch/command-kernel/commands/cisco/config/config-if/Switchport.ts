@@ -5,8 +5,10 @@ import { DefaultPrivilegePolicy } from '@/command-kernel/session/privilege-polic
 import { PrivilegeLevel } from '@/command-kernel/session/types';
 import { CiscoSwitchportAccessCommand } from './switchport/Access';
 import { CiscoSwitchportModeCommand } from './switchport/Mode';
+import { CiscoSwitchportNonegotiateCommand } from './switchport/Nonegotiate';
 import { CiscoSwitchportPortSecurityCommand } from './switchport/PortSecurity';
 import { CiscoSwitchportTrunkCommand } from './switchport/Trunk';
+import { CiscoSwitchportVoiceCommand } from './switchport/Voice';
 
 const OP = new DefaultPrivilegePolicy(PrivilegeLevel.OPERATOR);
 
@@ -31,6 +33,8 @@ export class CiscoSwitchportCommand extends BaseCommand {
     this.subRegistry.register(() => new CiscoSwitchportAccessCommand());
     this.subRegistry.register(() => new CiscoSwitchportTrunkCommand());
     this.subRegistry.register(() => new CiscoSwitchportPortSecurityCommand());
+    this.subRegistry.register(() => new CiscoSwitchportNonegotiateCommand());
+    this.subRegistry.register(() => new CiscoSwitchportVoiceCommand());
   }
 
   async execute(ctx: CommandContext): Promise<ExitCode> {

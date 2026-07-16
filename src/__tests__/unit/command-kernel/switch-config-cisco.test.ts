@@ -685,4 +685,148 @@ describe('Cisco Catalyst — configuration L2 (command-kernel)', () => {
       expect(info?.portSecurity.sticky).toBe(true);
     });
   });
+
+  // ─── Bloc 18 : switchport trunk encapsulation ───────────────────
+
+  describe('switchport trunk encapsulation', () => {
+    it('`switchport trunk encapsulation dot1q` positionne encapsulation=dot1q', async () => {
+      const sw = await toConfig();
+      await sw.executeCommand('interface FastEthernet0/1');
+      const out = await sw.executeCommand('switchport trunk encapsulation dot1q');
+      expect(out).toBe('');
+      const info = machineOf(sw).switch.interface('FastEthernet0/1');
+      expect(info?.trunkEncapsulation).toBe('dot1q');
+    });
+
+    it('`switchport trunk encapsulation isl` positionne encapsulation=isl', async () => {
+      const sw = await toConfig();
+      await sw.executeCommand('interface FastEthernet0/1');
+      await sw.executeCommand('switchport trunk encapsulation isl');
+      const info = machineOf(sw).switch.interface('FastEthernet0/1');
+      expect(info?.trunkEncapsulation).toBe('isl');
+    });
+
+    it('`switchport trunk encapsulation negotiate` (DTP)', async () => {
+      const sw = await toConfig();
+      await sw.executeCommand('interface FastEthernet0/1');
+      await sw.executeCommand('switchport trunk encapsulation negotiate');
+      const info = machineOf(sw).switch.interface('FastEthernet0/1');
+      expect(info?.trunkEncapsulation).toBe('negotiate');
+    });
+
+    it('`switchport trunk encapsulation` seul est incomplete', async () => {
+      const sw = await toConfig();
+      await sw.executeCommand('interface FastEthernet0/1');
+      const out = await sw.executeCommand('switchport trunk encapsulation');
+      expect(out).toMatch(/Incomplete/);
+    });
+  });
+
+  // ─── Bloc 19 : switchport nonegotiate + voice ───────────────────
+
+  describe('switchport nonegotiate + voice vlan', () => {
+    it('`switchport nonegotiate` positionne DTP=nonegotiate', async () => {
+      const sw = await toConfig();
+      await sw.executeCommand('interface FastEthernet0/1');
+      await sw.executeCommand('switchport nonegotiate');
+      const info = machineOf(sw).switch.interface('FastEthernet0/1');
+      expect(info?.dtpAdminMode).toBe('nonegotiate');
+    });
+
+    it('`no switchport nonegotiate` retire l\'état nonegotiate (retour à un mode DTP standard)', async () => {
+      const sw = await toConfig();
+      await sw.executeCommand('interface FastEthernet0/1');
+      await sw.executeCommand('switchport nonegotiate');
+      await sw.executeCommand('no switchport nonegotiate');
+      const info = machineOf(sw).switch.interface('FastEthernet0/1');
+      // La négation retire le lock nonegotiate — le mode DTP effectif
+      // dépend de l'état interne de l'agent DTP (`trunk`/`dynamic-auto`
+      // suivant les invariants amont) mais NE DOIT PLUS être `nonegotiate`.
+      expect(info?.dtpAdminMode).not.toBe('nonegotiate');
+    });
+
+    it('`switchport voice vlan 50` positionne voiceVlan=50', async () => {
+      const sw = await toConfig();
+      await sw.executeCommand('interface FastEthernet0/1');
+      await sw.executeCommand('switchport voice vlan 50');
+      const info = machineOf(sw).switch.interface('FastEthernet0/1');
+      expect(info?.voiceVlan).toBe(50);
+    });
+
+    it('`no switchport voice vlan` retire voiceVlan', async () => {
+      const sw = await toConfig();
+      await sw.executeCommand('interface FastEthernet0/1');
+      await sw.executeCommand('switchport voice vlan 50');
+      await sw.executeCommand('no switchport voice vlan');
+      const info = machineOf(sw).switch.interface('FastEthernet0/1');
+      expect(info?.voiceVlan).toBeUndefined();
+    });
+
+    it('`switchport voice vlan 4095` refuse (hors bornes)', async () => {
+      const sw = await toConfig();
+      await sw.executeCommand('interface FastEthernet0/1');
+      const out = await sw.executeCommand('switchport voice vlan 4095');
+      expect(out).toMatch(/Invalid input/);
+    });
+
+    it('`switchport voice` seul est incomplete', async () => {
+      const sw = await toConfig();
+      await sw.executeCommand('interface FastEthernet0/1');
+      const out = await sw.executeCommand('switchport voice');
+      expect(out).toMatch(/Incomplete/);
+    });
+  });
+
+  // ─── Bloc 20 : channel-group (EtherChannel) ─────────────────────
+
+  describe('channel-group', () => {
+    it('`channel-group 1 mode active` positionne lacpGroupId=1', async () => {
+      const sw = await toConfig();
+      await sw.executeCommand('interface FastEthernet0/1');
+      const out = await sw.executeCommand('channel-group 1 mode active');
+      expect(out).toBe('');
+      const info = machineOf(sw).switch.interface('FastEthernet0/1');
+      expect(info?.lacpGroupId).toBe(1);
+    });
+
+    it('`channel-group 1 mode desirable` mappe vers active (compat legacy)', async () => {
+      const sw = await toConfig();
+      await sw.executeCommand('interface FastEthernet0/1');
+      await sw.executeCommand('channel-group 1 mode desirable');
+      const info = machineOf(sw).switch.interface('FastEthernet0/1');
+      expect(info?.lacpGroupId).toBe(1);
+    });
+
+    it('`channel-group 65 mode active` refuse (hors bornes)', async () => {
+      const sw = await toConfig();
+      await sw.executeCommand('interface FastEthernet0/1');
+      const out = await sw.executeCommand('channel-group 65 mode active');
+      expect(out).toMatch(/Invalid input/);
+    });
+
+    it('`channel-group 1 mode invalidMode` refuse', async () => {
+      const sw = await toConfig();
+      await sw.executeCommand('interface FastEthernet0/1');
+      const out = await sw.executeCommand('channel-group 1 mode invalidMode');
+      expect(out).toMatch(/Invalid input/);
+    });
+
+    it('`no channel-group` retire l\'adhésion', async () => {
+      const sw = await toConfig();
+      await sw.executeCommand('interface FastEthernet0/1');
+      await sw.executeCommand('channel-group 1 mode active');
+      await sw.executeCommand('no channel-group');
+      const info = machineOf(sw).switch.interface('FastEthernet0/1');
+      expect(info?.lacpGroupId).toBeUndefined();
+    });
+
+    it('`channel-group 2 mode passive` broadcasté en interface range', async () => {
+      const sw = await toConfig();
+      await sw.executeCommand('interface range FastEthernet0/1-3');
+      await sw.executeCommand('channel-group 2 mode passive');
+      for (const p of ['FastEthernet0/1', 'FastEthernet0/2', 'FastEthernet0/3']) {
+        expect(machineOf(sw).switch.interface(p)?.lacpGroupId).toBe(2);
+      }
+    });
+  });
 });

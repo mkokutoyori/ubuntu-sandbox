@@ -64,6 +64,14 @@ export interface SwitchInterfaceInfo {
   readonly trunkNativeVlan: number;
   readonly trunkAllowedVlans: readonly number[];
   readonly portSecurity: SwitchPortSecurityInfo;
+  /** VLAN voix (`switchport voice vlan <id>`), `undefined` si absent. */
+  readonly voiceVlan: number | undefined;
+  /** DTP admin-mode (`nonegotiate` désactive DTP tout en gardant le trunk). */
+  readonly dtpAdminMode: 'access' | 'trunk' | 'nonegotiate' | 'dynamic-auto' | 'dynamic-desirable' | 'unknown';
+  /** ID du channel-group (EtherChannel) si le port est membre. */
+  readonly lacpGroupId: number | undefined;
+  /** Trunk encapsulation cosmétique (`dot1q` par défaut sur 2960). */
+  readonly trunkEncapsulation: 'dot1q' | 'isl' | 'negotiate';
 }
 
 export interface SwitchVlanInfo {
@@ -118,6 +126,16 @@ export interface SwitchCapabilityApi {
   setInterfacePortSecurityViolation(name: string, mode: SwitchPortViolationMode): boolean;
   /** `switchport port-security mac-address sticky`. */
   setInterfacePortSecuritySticky(name: string, sticky: boolean): boolean;
+  /** `switchport voice vlan <id>` (undefined = no voice VLAN). */
+  setInterfaceVoiceVlan(name: string, vlanId: number | undefined): boolean;
+  /** `switchport nonegotiate` (via DTP admin-mode). */
+  setInterfaceNonegotiate(name: string, on: boolean): boolean;
+  /** `switchport trunk encapsulation {dot1q|isl|negotiate}` (cosmétique). */
+  setInterfaceTrunkEncapsulation(name: string, type: 'dot1q' | 'isl' | 'negotiate'): boolean;
+  /** `channel-group <id> mode {active|passive|on|desirable|auto}`. */
+  setInterfaceChannelGroup(name: string, groupId: number, mode: 'active' | 'passive' | 'on'): boolean;
+  /** `no channel-group`. */
+  clearInterfaceChannelGroup(name: string): boolean;
 
   vlans(): readonly SwitchVlanInfo[];
   vlan(id: number): SwitchVlanInfo | null;
@@ -130,6 +148,30 @@ export interface SwitchCapabilityApi {
   renameVlan(id: number, name: string): { ok: boolean; error?: string };
 
   macTable(): readonly SwitchMacEntry[];
+}
+
+/** Lecture DTP admin-mode d'un port switch, si l'agent DTP existe.
+ *  Le vendeur Cisco expose `access | trunk | nonegotiate | dynamic-*`
+ *  — on renvoie `unknown` si l'équipement ne connait pas DTP (Huawei). */
+function readDtpAdminMode(
+  sw: Switch,
+  portName: string,
+): 'access' | 'trunk' | 'nonegotiate' | 'dynamic-auto' | 'dynamic-desirable' | 'unknown' {
+  const dtp = (sw as unknown as {
+    getDtpAgent?: () => { getAdminMode(p: string): string | undefined };
+  }).getDtpAgent?.();
+  const m = dtp?.getAdminMode(portName);
+  if (m === 'access' || m === 'trunk' || m === 'nonegotiate' ||
+      m === 'dynamic-auto' || m === 'dynamic-desirable') return m;
+  return 'unknown';
+}
+
+/** Lecture LACP group-id via l'agent LACP (uniquement Cisco pour l'instant). */
+function readLacpGroupId(sw: Switch, portName: string): number | undefined {
+  const lacp = (sw as unknown as {
+    getLacpAgent?: () => { getPortInfo(p: string): { groupId?: number } | undefined };
+  }).getLacpAgent?.();
+  return lacp?.getPortInfo(portName)?.groupId;
 }
 
 /** Lecture d'état port-security via l'accessor du `Port` — isolé ici
@@ -171,6 +213,10 @@ class SwitchCapabilityImpl implements SwitchCapabilityApi {
       trunkNativeVlan: cfg?.trunkNativeVlan ?? 1,
       trunkAllowedVlans: cfg?.trunkAllowedVlans ? [...cfg.trunkAllowedVlans].sort((a, b) => a - b) : [],
       portSecurity: readPortSecurity(port),
+      voiceVlan: (cfg as unknown as { voiceVlan?: number } | undefined)?.voiceVlan,
+      dtpAdminMode: readDtpAdminMode(this.sw, port.getName()),
+      lacpGroupId: readLacpGroupId(this.sw, port.getName()),
+      trunkEncapsulation: (cfg as unknown as { trunkEncapsulation?: 'dot1q' | 'isl' | 'negotiate' } | undefined)?.trunkEncapsulation ?? 'dot1q',
     };
   }
 
@@ -272,6 +318,60 @@ class SwitchCapabilityImpl implements SwitchCapabilityApi {
     if (!port) return false;
     if (sticky) port.getPortSecurity().enableSticky();
     else port.getPortSecurity().disableSticky();
+    return true;
+  }
+
+  setInterfaceVoiceVlan(name: string, vlanId: number | undefined): boolean {
+    if (!this.sw.getPort(name)) return false;
+    if (vlanId !== undefined && (!Number.isInteger(vlanId) || vlanId < 1 || vlanId > 4094)) return false;
+    const cfg = this.sw.getSwitchportConfig(name);
+    if (!cfg) return false;
+    (cfg as unknown as { voiceVlan?: number }).voiceVlan = vlanId;
+    return true;
+  }
+
+  setInterfaceNonegotiate(name: string, on: boolean): boolean {
+    if (!this.sw.getPort(name)) return false;
+    const dtp = (this.sw as unknown as {
+      getDtpAgent?: () => { setAdminMode(p: string, mode: string): void; getAdminMode(p: string): string };
+    }).getDtpAgent?.();
+    if (!dtp) return false;
+    if (on) {
+      dtp.setAdminMode(name, 'nonegotiate');
+    } else {
+      // `no switchport nonegotiate` → retour au défaut (dynamic-auto).
+      const cfg = this.sw.getSwitchportConfig(name);
+      dtp.setAdminMode(name, cfg?.mode === 'trunk' ? 'trunk' : 'dynamic-auto');
+    }
+    return true;
+  }
+
+  setInterfaceTrunkEncapsulation(name: string, type: 'dot1q' | 'isl' | 'negotiate'): boolean {
+    if (!this.sw.getPort(name)) return false;
+    const cfg = this.sw.getSwitchportConfig(name);
+    if (!cfg) return false;
+    (cfg as unknown as { trunkEncapsulation?: 'dot1q' | 'isl' | 'negotiate' }).trunkEncapsulation = type;
+    return true;
+  }
+
+  setInterfaceChannelGroup(name: string, groupId: number, mode: 'active' | 'passive' | 'on'): boolean {
+    if (!this.sw.getPort(name)) return false;
+    if (!Number.isInteger(groupId) || groupId < 1 || groupId > 64) return false;
+    const lacp = (this.sw as unknown as {
+      getLacpAgent?: () => { addPortToGroup(p: string, id: number, mode: 'active' | 'passive' | 'on'): void };
+    }).getLacpAgent?.();
+    if (!lacp) return false;
+    lacp.addPortToGroup(name, groupId, mode);
+    return true;
+  }
+
+  clearInterfaceChannelGroup(name: string): boolean {
+    if (!this.sw.getPort(name)) return false;
+    const lacp = (this.sw as unknown as {
+      getLacpAgent?: () => { removePort(p: string): void };
+    }).getLacpAgent?.();
+    if (!lacp) return false;
+    lacp.removePort(name);
     return true;
   }
 

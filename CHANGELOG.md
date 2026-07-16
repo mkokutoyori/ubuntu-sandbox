@@ -682,6 +682,39 @@ majeures Cisco :
   2 rouges restants : `trunk encapsulation` / `nonegotiate` / `voice`,
   et `channel-group` / `Port-channel` — cibles suivantes.
 
+## Cisco switch — trunk encapsulation + nonegotiate + voice vlan + channel-group
+
+**État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
+
+Vague fermeture de `cisco-switchport.test.ts` : les 4 features restantes
+côté switchport IOS (trunk encapsulation cosmétique, nonegotiate DTP,
+voice VLAN, EtherChannel).
+
+- **Enrichissement `SwitchMachineApi`** : `SwitchInterfaceInfo` gagne
+  `voiceVlan`, `dtpAdminMode`, `lacpGroupId`, `trunkEncapsulation`.
+  Setters : `setInterfaceVoiceVlan`, `setInterfaceNonegotiate`,
+  `setInterfaceTrunkEncapsulation`, `setInterfaceChannelGroup`,
+  `clearInterfaceChannelGroup`. Deux nouveaux helpers privés
+  (`readDtpAdminMode`, `readLacpGroupId`) isolent les seules
+  dépendances aux agents DTP/LACP.
+- **Commandes migrées** (`commands/cisco/config/config-if/`) :
+  - `switchport/Trunk.ts` étendu (composite) → `trunk/Encapsulation.ts`
+    (composite) → `encapsulation/{dot1q|isl|negotiate}` (3 feuilles
+    via base).
+  - `switchport/Nonegotiate.ts` (feuille) + `no/switchport/Nonegotiate.ts`.
+  - `switchport/Voice.ts` (composite) + `switchport/voice/Vlan.ts`
+    (feuille) + `no/switchport/Voice.ts` + `no/switchport/voice/Vlan.ts`.
+  - `ChannelGroup.ts` (feuille, argv `id mode <mode>`) + `no/ChannelGroup.ts`.
+  - `no/Switchport.ts` (composite) regroupe les négations
+    `nonegotiate` et `voice vlan`.
+- **Palette étendue** — 69 → **86 cas verts**, +3 blocs (18-20) :
+  encapsulation (4), nonegotiate + voice (6), channel-group (6, dont
+  desirable→active, bornes, broadcast range).
+- **Preuve** : suite command-kernel **273/273 verte**. `tsc` propre.
+  Legacy `cisco-switchport.test.ts` reste 2/4 rouge (attend
+  `show running-config` et `show etherchannel summary` — sorties de
+  vue non migrées, hors périmètre).
+
 Journal des évolutions du socle `command-kernel` et de sa migration
 progressive par équipement. Un push = une entrée = une fonctionnalité
 complète et testée (voir `CLAUDE.md` / le framework de migration pour les

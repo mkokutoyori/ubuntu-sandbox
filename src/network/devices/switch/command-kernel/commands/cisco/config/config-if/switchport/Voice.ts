@@ -3,19 +3,16 @@ import type { CommandContext, CommandDescriptor, ExitCode } from '@/command-kern
 import { CommandRegistry } from '@/command-kernel/registry/command-registry';
 import { DefaultPrivilegePolicy } from '@/command-kernel/session/privilege-policy';
 import { PrivilegeLevel } from '@/command-kernel/session/types';
-import { CiscoSwitchTrunkAllowedCommand } from './trunk/Allowed';
-import { CiscoSwitchTrunkEncapsulationCommand } from './trunk/Encapsulation';
-import { CiscoSwitchTrunkNativeCommand } from './trunk/Native';
+import { CiscoSwitchportVoiceVlanCommand } from './voice/Vlan';
 
 const OP = new DefaultPrivilegePolicy(PrivilegeLevel.OPERATOR);
 
-/** `switchport trunk` (Cisco Catalyst, config-if) — composite pour
- *  `native vlan <id>` et `allowed vlan ...`. */
-export class CiscoSwitchportTrunkCommand extends BaseCommand {
+/** `switchport voice` (Cisco Catalyst, config-if) — composite. */
+export class CiscoSwitchportVoiceCommand extends BaseCommand {
   readonly descriptor: CommandDescriptor = {
-    name: 'trunk',
-    summary: 'Set trunking characteristics of the interface',
-    usage: 'switchport trunk <subcommand>',
+    name: 'voice',
+    summary: 'Voice-related configuration',
+    usage: 'switchport voice vlan <vlan-id>',
     args: [], options: [],
     privileges: OP,
     category: 'switch',
@@ -25,9 +22,7 @@ export class CiscoSwitchportTrunkCommand extends BaseCommand {
 
   constructor() {
     super();
-    this.subRegistry.register(() => new CiscoSwitchTrunkNativeCommand());
-    this.subRegistry.register(() => new CiscoSwitchTrunkAllowedCommand());
-    this.subRegistry.register(() => new CiscoSwitchTrunkEncapsulationCommand());
+    this.subRegistry.register(() => new CiscoSwitchportVoiceVlanCommand());
   }
 
   async execute(ctx: CommandContext): Promise<ExitCode> {
