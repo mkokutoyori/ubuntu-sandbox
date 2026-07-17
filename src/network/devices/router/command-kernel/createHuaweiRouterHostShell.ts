@@ -114,6 +114,31 @@ import { HuaweiRouterOspfDefaultRouteAdvertiseCommand } from './commands/huawei/
 import { HuaweiRouterOspfAreaAuthenticationModeCommand } from './commands/huawei/ospf-area-view/AuthenticationMode';
 import { HuaweiRouterOspfAreaStubCommand } from './commands/huawei/ospf-area-view/Stub';
 import { HuaweiRouterOspfAreaNssaCommand } from './commands/huawei/ospf-area-view/Nssa';
+import { HuaweiRouterBgpRouterIdCommand } from './commands/huawei/bgp-view/RouterId';
+import { HuaweiRouterBgpDefaultCommand } from './commands/huawei/bgp-view/Default';
+import { HuaweiRouterOspfSilentInterfaceCommand } from './commands/huawei/ospf-view/SilentInterface';
+import { HuaweiRouterOspfBandwidthReferenceCommand } from './commands/huawei/ospf-view/BandwidthReference';
+import { HuaweiRouterIpsecPolicyProposalCommand } from './commands/huawei/ipsec-policy-view/Proposal';
+import { HuaweiRouterIpsecPolicySecurityAclCommand } from './commands/huawei/ipsec-policy-view/Security';
+import { HuaweiRouterIpsecPolicyIkePeerCommand } from './commands/huawei/ipsec-policy-view/IkePeer';
+import { HuaweiRouterIpsecPolicyLocalAddressCommand } from './commands/huawei/ipsec-policy-view/LocalAddress';
+import { HuaweiRouterIfIpsecPolicyApplyCommand } from './commands/huawei/interface-view/Ipsec';
+import { HuaweiRouterSysDhcpSnoopingCommand } from './commands/huawei/system-view/dhcp/Snooping';
+import { HuaweiRouterIfDhcpSnoopingTrustedCommand } from './commands/huawei/interface-view/dhcp/Trusted';
+import { HuaweiRouterSysHttpCommand } from './commands/huawei/system-view/Http';
+import { HuaweiRouterTelnetCommand } from './commands/huawei/user-view/Telnet';
+import { HuaweiRouterTracertCommand } from './commands/huawei/user-view/Tracert';
+import { HuaweiRouterTerminalCommand } from './commands/huawei/user-view/Terminal';
+import { HuaweiRouterUserResetCommand } from './commands/huawei/user-view/Reset';
+import { HuaweiRouterRoutePolicyApplyCostCommand } from './commands/huawei/route-policy-view/apply/Cost';
+import { HuaweiRouterRoutePolicyApplyLocalPrefCommand } from './commands/huawei/route-policy-view/apply/LocalPreference';
+import { HuaweiRouterRoutePolicyApplyCommunityCommand } from './commands/huawei/route-policy-view/apply/Community';
+import { HuaweiRouterRoutePolicyApplyAsPathCommand } from './commands/huawei/route-policy-view/apply/AsPath';
+import { HuaweiRouterIfLoopbackDetectCommand } from './commands/huawei/interface-view/LoopbackDetect';
+import { HuaweiRouterSysVoiceVlanCommand } from './commands/huawei/system-view/VoiceVlan';
+import { HuaweiRouterSysSftpCommand } from './commands/huawei/system-view/Sftp';
+import { HuaweiRouterSysFtpCommand } from './commands/huawei/system-view/Ftp';
+import { HuaweiRouterSysUserInterfaceCommand } from './commands/huawei/system-view/UserInterface';
 
 /**
  * =====================================================================
@@ -171,6 +196,7 @@ export function createHuaweiRouterHostShell(
   const trafficClassifierViewRegistry = new CommandRegistry();
   const trafficBehaviorViewRegistry = new CommandRegistry();
   const trafficPolicyViewRegistry = new CommandRegistry();
+  const ipsecPolicyViewRegistry = new CommandRegistry();
 
   userViewRegistry.register(() => createHuaweiDisplayCommand(displaySub));
   userViewRegistry.register(() => new HuaweiSystemViewCommand());
@@ -179,6 +205,10 @@ export function createHuaweiRouterHostShell(
   userViewRegistry.register(() => new HuaweiRouterClockCommand());
   userViewRegistry.register(() => new HuaweiRouterRebootCommand());
   userViewRegistry.register(() => new HuaweiRouterUserViewBannerCommand());
+  userViewRegistry.register(() => new HuaweiRouterTelnetCommand());
+  userViewRegistry.register(() => new HuaweiRouterTracertCommand());
+  userViewRegistry.register(() => new HuaweiRouterTerminalCommand());
+  userViewRegistry.register(() => new HuaweiRouterUserResetCommand());
   userViewRegistry.register(() => new PopModeCommand('quit', 'Exit from the current view'));
 
   systemViewRegistry.register(() => createHuaweiDisplayCommand(displaySub));
@@ -211,6 +241,12 @@ export function createHuaweiRouterHostShell(
   systemViewRegistry.register(() => new HuaweiRouterSysTrafficPolicyCommand());
   systemViewRegistry.register(() => new HuaweiRouterSysDnsCommand());
   systemViewRegistry.register(() => new HuaweiRouterSysSshCommand());
+  systemViewRegistry.register(() => new HuaweiRouterSysHttpCommand());
+  systemViewRegistry.register(() => new HuaweiRouterSysVoiceVlanCommand());
+  systemViewRegistry.register(() => new HuaweiRouterSysSftpCommand());
+  systemViewRegistry.register(() => new HuaweiRouterSysFtpCommand());
+  systemViewRegistry.register(() => new HuaweiRouterSysUserInterfaceCommand());
+  systemViewRegistry.register(() => new HuaweiRouterSysDhcpSnoopingCommand());
   systemViewRegistry.register(() => new HuaweiRouterSysUndoCommand());
   systemViewRegistry.register(() => new PopModeCommand('quit', 'Exit from the current view'));
   systemViewRegistry.register(() => new EndCommand(['return']));
@@ -227,6 +263,9 @@ export function createHuaweiRouterHostShell(
   interfaceViewRegistry.register(() => new HuaweiRouterIfHelperAddressCommand());
   interfaceViewRegistry.register(() => new HuaweiRouterIfNatCommand());
   interfaceViewRegistry.register(() => new HuaweiRouterIfTrafficPolicyCommand());
+  interfaceViewRegistry.register(() => new HuaweiRouterIfIpsecPolicyApplyCommand());
+  interfaceViewRegistry.register(() => new HuaweiRouterIfDhcpSnoopingTrustedCommand());
+  interfaceViewRegistry.register(() => new HuaweiRouterIfLoopbackDetectCommand());
   interfaceViewRegistry.register(() => new HuaweiRouterIfUndoCommand());
   interfaceViewRegistry.register(() => new PopModeCommand('quit', 'Exit from the current view'));
   interfaceViewRegistry.register(() => new EndCommand(['return']));
@@ -258,6 +297,10 @@ export function createHuaweiRouterHostShell(
 
   routePolicyViewRegistry.register(() => new HuaweiRouterRoutePolicyIfMatchCommand());
   routePolicyViewRegistry.register(() => new HuaweiRouterRoutePolicyApplyCommand());
+  routePolicyViewRegistry.register(() => new HuaweiRouterRoutePolicyApplyCostCommand());
+  routePolicyViewRegistry.register(() => new HuaweiRouterRoutePolicyApplyLocalPrefCommand());
+  routePolicyViewRegistry.register(() => new HuaweiRouterRoutePolicyApplyCommunityCommand());
+  routePolicyViewRegistry.register(() => new HuaweiRouterRoutePolicyApplyAsPathCommand());
   routePolicyViewRegistry.register(() => new PopModeCommand('quit', 'Exit from the current view'));
   routePolicyViewRegistry.register(() => new EndCommand(['return']));
 
@@ -281,6 +324,8 @@ export function createHuaweiRouterHostShell(
   ospfViewRegistry.register(() => new HuaweiRouterOspfAreaCommand());
   ospfViewRegistry.register(() => new HuaweiRouterOspfImportRouteCommand());
   ospfViewRegistry.register(() => new HuaweiRouterOspfDefaultRouteAdvertiseCommand());
+  ospfViewRegistry.register(() => new HuaweiRouterOspfSilentInterfaceCommand());
+  ospfViewRegistry.register(() => new HuaweiRouterOspfBandwidthReferenceCommand());
   ospfViewRegistry.register(() => new PopModeCommand('quit', 'Exit from the current view'));
   ospfViewRegistry.register(() => new EndCommand(['return']));
 
@@ -295,6 +340,8 @@ export function createHuaweiRouterHostShell(
   bgpViewRegistry.register(() => new HuaweiRouterBgpRouterCommand());
   bgpViewRegistry.register(() => new HuaweiRouterBgpNetworkCommand());
   bgpViewRegistry.register(() => new HuaweiRouterBgpImportRouteCommand());
+  bgpViewRegistry.register(() => new HuaweiRouterBgpRouterIdCommand());
+  bgpViewRegistry.register(() => new HuaweiRouterBgpDefaultCommand());
   bgpViewRegistry.register(() => new PopModeCommand('quit', 'Exit from the current view'));
   bgpViewRegistry.register(() => new EndCommand(['return']));
 
@@ -316,6 +363,13 @@ export function createHuaweiRouterHostShell(
   trafficPolicyViewRegistry.register(() => new HuaweiRouterTrafficPolicyClassifierCommand());
   trafficPolicyViewRegistry.register(() => new PopModeCommand('quit', 'Exit from the current view'));
   trafficPolicyViewRegistry.register(() => new EndCommand(['return']));
+
+  ipsecPolicyViewRegistry.register(() => new HuaweiRouterIpsecPolicyProposalCommand());
+  ipsecPolicyViewRegistry.register(() => new HuaweiRouterIpsecPolicySecurityAclCommand());
+  ipsecPolicyViewRegistry.register(() => new HuaweiRouterIpsecPolicyIkePeerCommand());
+  ipsecPolicyViewRegistry.register(() => new HuaweiRouterIpsecPolicyLocalAddressCommand());
+  ipsecPolicyViewRegistry.register(() => new PopModeCommand('quit', 'Exit from the current view'));
+  ipsecPolicyViewRegistry.register(() => new EndCommand(['return']));
 
   ripViewRegistry.register(() => new HuaweiRouterRipNetworkCommand());
   ripViewRegistry.register(() => new PopModeCommand('quit', 'Exit from the current view'));
@@ -340,6 +394,7 @@ export function createHuaweiRouterHostShell(
     { name: 'traffic-classifier-view', prompt: (s, host) => `[${host}-classifier-${s.promptFields.get('selectedTrafficClassifier') ?? ''}]`, parent: 'system-view', registry: trafficClassifierViewRegistry, clearOnExit: ['selectedTrafficClassifier'] },
     { name: 'traffic-behavior-view',   prompt: (s, host) => `[${host}-behavior-${s.promptFields.get('selectedTrafficBehavior') ?? ''}]`,     parent: 'system-view', registry: trafficBehaviorViewRegistry,   clearOnExit: ['selectedTrafficBehavior'] },
     { name: 'traffic-policy-view',     prompt: (s, host) => `[${host}-trafficpolicy-${s.promptFields.get('selectedTrafficPolicy') ?? ''}]`,  parent: 'system-view', registry: trafficPolicyViewRegistry,     clearOnExit: ['selectedTrafficPolicy'] },
+    { name: 'ipsec-policy-view',       prompt: (s, host) => `[${host}-ipsec-policy-${s.promptFields.get('selectedIpsecPolicy') ?? ''}]`,     parent: 'system-view', registry: ipsecPolicyViewRegistry,       clearOnExit: ['selectedIpsecPolicy'] },
   ] satisfies CliMode[]);
 
   const machine = new RouterMachineApi({ router, modes });

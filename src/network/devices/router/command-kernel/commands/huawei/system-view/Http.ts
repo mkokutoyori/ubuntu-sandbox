@@ -4,22 +4,24 @@ import { EXIT_OK } from '@/command-kernel/command/types';
 import { DefaultPrivilegePolicy } from '@/command-kernel/session/privilege-policy';
 import { PrivilegeLevel } from '@/command-kernel/session/types';
 import { CommandRegistry } from '@/command-kernel/registry/command-registry';
-import { HuaweiRouterSysIpsecProposalCommand } from './ipsec/Proposal';
-import { HuaweiRouterSysIpsecPolicyPushCommand } from './ipsec-policy/Ipsec';
+import { HuaweiRouterSysHttpServerCommand } from './http/Server';
+import { HuaweiRouterSysHttpSecureServerCommand } from './http/SecureServer';
+import { HuaweiRouterSysHttpServerPortCommand } from './http/ServerPort';
+import { HuaweiRouterSysHttpTimeoutCommand } from './http/Timeout';
 
 const OP = new DefaultPrivilegePolicy(PrivilegeLevel.OPERATOR);
 
 /**
- * `ipsec` — commande COMPOSITE (racine + sous-registre) : seule
+ * `http` — commande COMPOSITE (racine + sous-registre) : seule
  * appelée directement si aucun sous-mot ne matche (message vendeur
  * « incomplete command »), sinon l'interpréteur descend dans
  * `subRegistry` jusqu'à la feuille.
  */
-export class HuaweiRouterSysIpsecCommand extends BaseCommand {
+export class HuaweiRouterSysHttpCommand extends BaseCommand {
   readonly descriptor: CommandDescriptor = {
-    name: 'ipsec',
-    summary: 'IPSec configuration',
-    usage: 'ipsec <subcommand>',
+    name: 'http',
+    summary: 'HTTP(S) server configuration',
+    usage: 'http <subcommand>',
     args: [],
     options: [],
     privileges: OP,
@@ -30,8 +32,10 @@ export class HuaweiRouterSysIpsecCommand extends BaseCommand {
 
   constructor() {
     super();
-    this.subRegistry.register(() => new HuaweiRouterSysIpsecProposalCommand());
-    this.subRegistry.register(() => new HuaweiRouterSysIpsecPolicyPushCommand());
+    this.subRegistry.register(() => new HuaweiRouterSysHttpServerCommand());
+    this.subRegistry.register(() => new HuaweiRouterSysHttpSecureServerCommand());
+    this.subRegistry.register(() => new HuaweiRouterSysHttpServerPortCommand());
+    this.subRegistry.register(() => new HuaweiRouterSysHttpTimeoutCommand());
   }
 
   async execute(ctx: CommandContext): Promise<ExitCode> {

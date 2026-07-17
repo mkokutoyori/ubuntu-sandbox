@@ -5,6 +5,11 @@ import { DefaultPrivilegePolicy } from '@/command-kernel/session/privilege-polic
 import { PrivilegeLevel } from '@/command-kernel/session/types';
 import { CommandRegistry } from '@/command-kernel/registry/command-registry';
 import { HuaweiRouterSysSnmpAgentEnableCommand } from './snmp-agent/Enable';
+import { HuaweiRouterSnmpAgentCommunityCommand } from './snmp-agent/Community';
+import { HuaweiRouterSnmpAgentSysInfoCommand } from './snmp-agent/SysInfo';
+import { HuaweiRouterSnmpAgentTargetHostCommand } from './snmp-agent/TargetHost';
+import { HuaweiRouterSnmpAgentTrapCommand } from './snmp-agent/Trap';
+import { HuaweiRouterSnmpAgentGroupCommand } from './snmp-agent/Group';
 
 const OP = new DefaultPrivilegePolicy(PrivilegeLevel.OPERATOR);
 
@@ -30,6 +35,11 @@ export class HuaweiRouterSysSnmpAgentCommand extends BaseCommand {
   constructor() {
     super();
     this.subRegistry.register(() => new HuaweiRouterSysSnmpAgentEnableCommand());
+    this.subRegistry.register(() => new HuaweiRouterSnmpAgentCommunityCommand());
+    this.subRegistry.register(() => new HuaweiRouterSnmpAgentSysInfoCommand());
+    this.subRegistry.register(() => new HuaweiRouterSnmpAgentTargetHostCommand());
+    this.subRegistry.register(() => new HuaweiRouterSnmpAgentTrapCommand());
+    this.subRegistry.register(() => new HuaweiRouterSnmpAgentGroupCommand());
   }
 
   async execute(ctx: CommandContext): Promise<ExitCode> {

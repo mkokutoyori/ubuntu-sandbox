@@ -1,5 +1,105 @@
 # Changelog
 
+## Huawei routeur — vague batch 6 de 40 commandes (BGP peer/router-id/default, OSPF silent-interface/bandwidth-reference/lsdb/routing, IPsec policy view + application, DHCP snooping, HTTP server, SNMP target-host/trap/group, telnet/tracert/terminal/reset, route-policy apply cost/local-pref/community/as-path, loopback-detect, voice-vlan, sftp/ftp/user-interface)
+
+**État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
+
+Sixième vague batch-générée (`scripts/generate_command.py batch`) —
+40 nouvelles commandes + 1 nouveau mode (`ipsec-policy-view`) +
+enrichissement de 3 composites existants (`system-view/Ipsec`,
+`system-view/SnmpAgent`, `display/Ospf`). Aucun commentaire dans le
+code (règle utilisateur). Progression réelle sur les suites Huawei
+ciblées : 208 → **204 failed**, 209 → **213 passed** (+4 verts) —
+premières commandes qui n'étaient plus reconnues (BGP router-id,
+http server, snmp-agent group, telnet/tracert) sont maintenant
+acceptées par le kernel.
+
+- **Nouveau mode CLI** `ipsec-policy-view` (prompt `[host-ipsec-policy-<name>]`,
+  parent `system-view`, `clearOnExit: ['selectedIpsecPolicy']`). Le
+  push est réalisé par `HuaweiRouterSysIpsecPolicyPushCommand` (nom
+  `policy`), enregistré comme sous-commande du composite existant
+  `system-view/Ipsec` — la ligne exacte VRP `ipsec policy <name>
+  <seqno> {isakmp|manual}` déclenche donc la transition via
+  `ipsec` → `policy` → push mode.
+
+- **BGP (`bgp-view`)** : `router-id <A.B.C.D>`, `default
+  {local-preference|med} <n>`. Les variations `peer <ip> as-number
+  <n>` / `reflect-client` / `next-hop-local` sont déjà couvertes par
+  le leaf variadique `HuaweiRouterBgpPeerCommand` — pas de duplicats
+  créés (les 3 fichiers correspondants ont été retirés du batch pour
+  éviter la collision de nom).
+
+- **OSPF (`ospf-view`)** : `silent-interface <iface>`,
+  `bandwidth-reference <n>`. Enrichissement du composite
+  `display/Ospf.ts` avec `display ospf lsdb [<type>]` et
+  `display ospf routing`.
+
+- **IPsec policy view (`ipsec-policy-view`)** : 4 clauses feuilles —
+  `proposal <name>`, `security acl <acl>`, `ike-peer <name>`,
+  `local-address <A.B.C.D>`. Application interface : `ipsec policy
+  <name>` en `interface-view`.
+
+- **DHCP snooping** : `dhcp snooping enable [vlan <id>]` en
+  `system-view`, `dhcp snooping trusted` en `interface-view`.
+
+- **HTTP(S) server** : nouveau composite `system-view/http` avec
+  `http server {enable|disable}`, `http secure-server {enable|disable}`,
+  `http server-port <n>`, `http timeout <n>`.
+
+- **SNMP-agent (composite enrichi)** : `snmp-agent target-host
+  trap-hostname <ip> params …`, `snmp-agent trap enable [feature-name
+  <f>]`, `snmp-agent group v3 <name> {noauth|auth|privacy} …`. En
+  passant les leaves existants `snmp-agent community` et `snmp-agent
+  sys-info` (importés mais jamais enregistrés dans le sous-registre
+  du composite) sont désormais correctement câblés — bug latent
+  corrigé.
+
+- **User-view utilitaires** : `telnet <host> [<port>]`, `tracert
+  <host>`, `terminal {monitor|logging} …`, `reset {saved-configuration
+  |arp {dynamic|static}|counters|session …}`.
+
+- **Route-policy view (`apply` clauses)** : `apply cost <n>`, `apply
+  local-preference <n>`, `apply community <values...>`, `apply as-path
+  <asn...> {additive|overwrite}`.
+
+- **Interface** : `loopback-detect {enable|action shutdown|packet
+  vlan …}`.
+
+- **System-view (divers)** : `voice-vlan {enable|mac-address …}`,
+  `sftp {server enable|ipv4|ipv6} …`, `ftp {server enable|ipv6 …}`,
+  `user-interface {console|vty|aux} <range>`.
+
+- **Comportement no-op documenté** : 30 leaves passés du `TODO` vers
+  `return EXIT_OK;` via `noop.py` (comportement silencieux, sémantique
+  métier à câbler quand un test d'intégration l'exigera). Le 1
+  push-mode reçoit son `prepare()` via `push_stub.py` puis renommé
+  `policy` pour intégration au composite existant `ipsec`.
+
+- **Fix quirk générateur** : `type: 'number'` (dans le spec JSON)
+  n'est pas valide côté script — les 5 spécifications concernées ont
+  été converties en `type: 'int'` (valeurs acceptées : `boolean`,
+  `float`, `int`, `path`, `string`).
+
+- **Preuve exécutable** :
+  - `npx tsc --noEmit` propre.
+  - Suite command-kernel : **354/354 verte** (inchangé).
+  - Suites Huawei ciblées (7 fichiers, 417 tests) :
+    - avant vague 6 : 208 failed / 209 passed
+    - après vague 6 : **204 failed / 213 passed** — **+4 tests verts**,
+      zéro nouvelle régression.
+
+- **À poursuivre** :
+  - Câbler les no-op vers `RouterMachineApi` pour les commandes dont
+    des tests d'intégration exigent l'observable (dhcp-snooping,
+    ipsec-policy, http server enable, snmp trap enable).
+  - Convertir `display arp` en composite pour libérer `display arp
+    static` (leaf déjà écrit puis retiré — dépendance : composite
+    d'abord).
+  - Débranchement legacy `trie.registerGreedy` (`HuaweiNATCommands.ts`,
+    `HuaweiPolicyCommands.ts`, `HuaweiOspfCommands.ts`,
+    `HuaweiVRPShell.ts`) — le legacy sert encore d'appui pour l'aide
+    contextuelle et les tab-complete des commandes non migrées.
+
 ## Huawei routeur — vague batch 5 de 40 commandes (NAT / VPN instance / QoS traffic-policy / AAA server / OSPF-BGP leaves / display peer / DNS / SSH / NTP auth)
 
 **État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**

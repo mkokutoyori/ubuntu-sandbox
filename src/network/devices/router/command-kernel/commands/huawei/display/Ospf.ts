@@ -6,6 +6,8 @@ import { PrivilegeLevel } from '@/command-kernel/session/types';
 import { CommandRegistry } from '@/command-kernel/registry/command-registry';
 import { HuaweiRouterDisplayOspfBriefCommand } from './ospf/Brief';
 import { HuaweiRouterDisplayOspfPeerCommand } from './ospf/Peer';
+import { HuaweiRouterDisplayOspfLsdbCommand } from './ospf/Lsdb';
+import { HuaweiRouterDisplayOspfRoutingCommand } from './ospf/Routing';
 
 const ANY = new DefaultPrivilegePolicy(PrivilegeLevel.ANY);
 
@@ -32,6 +34,8 @@ export class HuaweiRouterDisplayOspfCommand extends BaseCommand {
     super();
     this.subRegistry.register(() => new HuaweiRouterDisplayOspfBriefCommand());
     this.subRegistry.register(() => new HuaweiRouterDisplayOspfPeerCommand());
+    this.subRegistry.register(() => new HuaweiRouterDisplayOspfLsdbCommand());
+    this.subRegistry.register(() => new HuaweiRouterDisplayOspfRoutingCommand());
   }
 
   async execute(ctx: CommandContext): Promise<ExitCode> {
