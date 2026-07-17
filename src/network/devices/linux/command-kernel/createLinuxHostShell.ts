@@ -93,6 +93,26 @@ import { DfCommand } from './commands/Df';
 import { DuCommand } from './commands/Du';
 import { GetentCommand } from './commands/Getent';
 import { BlkidCommand } from './commands/Blkid';
+import { PasswdCommand } from './commands/Passwd';
+import { ChpasswdCommand } from './commands/Chpasswd';
+import { UsermodCommand } from './commands/Usermod';
+import { UserdelCommand } from './commands/Userdel';
+import { DeluserCommand } from './commands/Deluser';
+import { GroupaddCommand } from './commands/Groupadd';
+import { GroupmodCommand } from './commands/Groupmod';
+import { GroupdelCommand } from './commands/Groupdel';
+import { GpasswdCommand } from './commands/Gpasswd';
+import { LsofCommand } from './commands/Lsof';
+import { AusearchCommand } from './commands/Ausearch';
+import { AureportCommand } from './commands/Aureport';
+import { AuditctlCommand } from './commands/Auditctl';
+import { MountCommand } from './commands/Mount';
+import { UmountCommand } from './commands/Umount';
+import { FindmntCommand } from './commands/Findmnt';
+import { CrontabCommand } from './commands/Crontab';
+import { AtqCommand } from './commands/Atq';
+import { AtrmCommand } from './commands/Atrm';
+import { RunlevelCommand } from './commands/Runlevel';
 
 export function createLinuxHostShell(deps: LinuxMachineApiDeps): Interpreter {
   const registry = new CommandRegistry();
@@ -195,6 +215,26 @@ export function createLinuxHostShell(deps: LinuxMachineApiDeps): Interpreter {
   registry.register(() => new DuCommand());
   registry.register(() => new GetentCommand());
   registry.register(() => new BlkidCommand());
+  registry.register(() => new PasswdCommand());
+  registry.register(() => new ChpasswdCommand());
+  registry.register(() => new UsermodCommand());
+  registry.register(() => new UserdelCommand());
+  registry.register(() => new DeluserCommand());
+  registry.register(() => new GroupaddCommand());
+  registry.register(() => new GroupmodCommand());
+  registry.register(() => new GroupdelCommand());
+  registry.register(() => new GpasswdCommand());
+  registry.register(() => new LsofCommand());
+  registry.register(() => new AusearchCommand());
+  registry.register(() => new AureportCommand());
+  registry.register(() => new AuditctlCommand());
+  registry.register(() => new MountCommand());
+  registry.register(() => new UmountCommand());
+  registry.register(() => new FindmntCommand());
+  registry.register(() => new CrontabCommand());
+  registry.register(() => new AtqCommand());
+  registry.register(() => new AtrmCommand());
+  registry.register(() => new RunlevelCommand());
 
   return new Interpreter(registry, machine);
 }

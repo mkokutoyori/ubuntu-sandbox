@@ -1,5 +1,106 @@
 # Changelog
 
+## Linux — Wave 6 : `passwd`/`chpasswd`/`usermod`/`userdel`/`deluser`/`groupadd`/`groupmod`/`groupdel`/`gpasswd`/`lsof`/`ausearch`/`aureport`/`auditctl`/`mount`/`umount`/`findmnt`/`crontab`/`atq`/`atrm`/`runlevel`
+
+**État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
+
+Sixième vague de migration côté **Linux** : 20 commandes supplémentaires
+(gestion de comptes/groupes POSIX, `lsof`, journal d'audit, table de
+montage, `crontab`, file `at`, `runlevel`), scaffoldées en un seul appel
+`generate_command.py batch` avant toute implémentation, comme les vagues
+précédentes. `fuser` a été écarté de la liste initiale : aucune
+implémentation legacy n'existe pour lui (juste listé dans
+`KNOWN_LINUX_COMMANDS`), l'écrire aurait été une commande neuve, pas une
+migration — remplacé par `runlevel`, qui a un vrai moteur legacy
+(`cmdRunlevel`) et ne demande aucun nouveau branchement de capacité.
+
+- **`command-kernel/machine/types.ts`** (extensions additives) :
+  - `UserManagementApi` : `posixUsermod`/`posixUserdel`/
+    `posixChangePassword`/`posixExpirePassword`/`posixDeletePassword`/
+    `posixAccountStatus` (état brut pour `passwd -S`, formatage laissé à
+    la commande).
+  - `GroupManagementApi` : `posixGroupmod`/`posixGroupdel`/`posixGpasswd`/
+    `posixRemoveMember` (forme secondaire `deluser USER GROUP`).
+  - 4 nouvelles capacités optionnelles sur `MachineApi` : `AuditJournalApi`
+    (`ausearch`/`aureport`/`auditctl`), `MountManagementApi`
+    (`mount`/`umount`/`findmnt`), `CronTabApi` (`crontab`), `AtJobsApi`
+    (`atq`/`atrm`).
+  - `ProcessEntry.cwd` et `NetstatSocketView.id` (nouveaux champs optionnels,
+    nécessaires à `lsof` pour reconstruire les colonnes FD/NODE/NAME).
+
+- **`LinuxUserManager.ts`** : nouvelle méthode `removeUserFromGroup`
+  (extraite du couple `handleDeluser`/`handleGpasswd -d` de l'exécuteur —
+  retire l'appartenance seule, sans toucher au compte).
+
+- **Visibilité additive, zéro changement de comportement** :
+  `LinuxCommandExecutor.handleFindmnt` passe de `private` à public ;
+  nouvel accesseur `getAtQueue()` (même motif que `getSocketTable()`).
+
+- **20 nouvelles commandes** (`src/network/devices/linux/command-kernel/commands/`) :
+  - **`Passwd.ts`** — réimplémentation fidèle du dispatch `cmdPasswd`
+    (`-S`/`-l`/`-u`/`-e`/`-d`/`-n`/`-x`/`-w`), y compris la règle de
+    privilège déclarative legacy (`passwd USER` par un non-root est
+    refusé, même pour son propre nom) et le stub de la forme nue
+    (`"passwd: password updated successfully"`, la modification réelle
+    restant pilotée par le flux interactif du terminal).
+  - **`Chpasswd.ts`** — lit `username:password` sur stdin, toujours
+    silencieux (comme `cmdChpasswd`).
+  - **`Usermod.ts`/`Userdel.ts`/`Deluser.ts`/`Groupadd.ts`/`Groupmod.ts`/
+    `Groupdel.ts`** — délèguent aux méthodes `LinuxUserManager`
+    correspondantes (messages vendeur exacts déjà produits par le moteur) ;
+    `Deluser.ts` porte aussi la forme secondaire `deluser USER GROUP`
+    (retrait de groupe seul, sans supprimer le compte).
+  - **`Gpasswd.ts`** — délègue à `LinuxUserManager.gpasswd`, avec une
+    reproduction inline du cas `-d` de l'exécuteur legacy
+    (`handleGpasswd`, distinct de `cmdGpasswd`) : contrairement à `-A`/
+    `-M`, `-d` imprime une ligne de confirmation
+    (`"Removing user X from group Y"`) que le moteur `gpasswd()` seul ne
+    produit pas — reproduit fidèlement plutôt que silencieusement
+    perdu.
+  - **`Lsof.ts`** — reconstruit la table à l'identique de `cmdLsof` (une
+    ligne `cwd` par processus, une ligne par socket, mêmes filtres
+    `-p`/`-u`/`-i` et même mise en forme colonnes).
+  - **`Ausearch.ts`/`Aureport.ts`/`Auditctl.ts`** — délèguent aux
+    fonctions pures déjà découplées (`cmdAusearch`/`cmdAureport`) ou à
+    `handleAuditctl` (déjà public). Privilège vérifié inline (message
+    vendeur exact `"<commande>: Permission denied"`) plutôt que via la
+    politique `ROOT` générique — voir le correctif ci-dessous.
+  - **`Mount.ts`/`Umount.ts`/`Findmnt.ts`** — délèguent à
+    `handleMount`/`handleUmount`/`handleFindmnt` (rendu public), contre la
+    vraie `MountTable`. `mount` conserve l'exemption de listing
+    (`mount`/`mount -l` sans privilège) ; `umount` l'exige toujours.
+  - **`Crontab.ts`** — délègue à `handleCrontab` (déjà public, porte lui
+    même `cron.allow`/`cron.deny` et la résolution d'utilisateur cible) ;
+    `-u AUTRE_UTILISATEUR` par un non-root est refusé inline (règle vivant
+    dans la couche déclarative legacy, pas dans `handleCrontab`).
+  - **`Atq.ts`/`Atrm.ts`** — délèguent à `cmdAtq`/`cmdAtrm` (fonctions
+    pures) contre la vraie `LinuxAtQueue`.
+  - **`Runlevel.ts`** — délègue à `cmdRunlevel(machine.netstat.isServer())`.
+
+- **Correctif découvert pendant la régression** :
+  `LinuxMachine.runCommandKernelResolved` (le pont utilisé quand une
+  commande du kernel est invoquée depuis *l'intérieur* d'un script bash —
+  boucle, fonction, ou `su USER -c "commande"`) ne rattrapait aucune
+  exception : une commande refusée par sa `PrivilegePolicy` (`PermissionError`,
+  sous-classe de `ShellError`) remontait donc telle quelle jusqu'à
+  l'interpréteur bash, qui l'avalait silencieusement (sortie vide, pas de
+  message). Ce chemin n'avait jamais été exercé par un test avant cette
+  vague : `ausearch`/`aureport`/`auditctl`/`crontab` sont les premières
+  commandes migrées à porter des tests legacy `su user -c "..."` sur un
+  refus de privilège (`auditctl.test.ts`, `auditctl-other.test.ts`,
+  `cron-integration.test.ts`). Corrigé en reproduisant dans
+  `runCommandKernelResolved` le même `catch` que `tryCommandKernel` :
+  `CommandNotFoundError` → repli legacy (`null`), `ShellError` → message
+  converti en sortie + code 1.
+
+- **Tests** : nouvelle suite `linux-command-kernel-wave6.test.ts` (26 tests,
+  fixtures adossées à un vrai `LinuxCommandExecutor` plutôt qu'à des
+  doublures — mêmes `MountTable`/`LinuxAuditLog`/`LinuxAtQueue`/
+  `LinuxUserManager` réels que la production, comme câblés dans
+  `LinuxMachine.createLinuxHostShell`). Régression ciblée (IAM, cron,
+  audit, mount, sudo/su) : 15 fichiers / 564 tests, 0 échec. `tsc`/`eslint`
+  sans nouvelle erreur (baseline pré-existante inchangée, 59 lignes).
+
 ## Huawei routeur — vague batch 6 de 40 commandes (BGP peer/router-id/default, OSPF silent-interface/bandwidth-reference/lsdb/routing, IPsec policy view + application, DHCP snooping, HTTP server, SNMP target-host/trap/group, telnet/tracert/terminal/reset, route-policy apply cost/local-pref/community/as-path, loopback-detect, voice-vlan, sftp/ftp/user-interface)
 
 **État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**

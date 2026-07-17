@@ -177,6 +177,8 @@ export interface ProcessEntry {
   readonly priority?: number;
   /** Temps CPU cumulé en millisecondes (`top` : %CPU, TIME+). */
   readonly cpuTimeMs?: number;
+  /** Répertoire de travail courant (`lsof` : ligne `cwd`). */
+  readonly cwd?: string;
 }
 
 /**
@@ -584,6 +586,8 @@ export interface NetstatSocketView {
   readonly state: string;
   readonly pid?: number;
   readonly processName?: string;
+  /** Identifiant interne de la table de sockets (`lsof` : dérive le numéro de FD/NODE). */
+  readonly id?: number;
 }
 
 /**
@@ -1339,6 +1343,27 @@ export interface UserManagementApi {
   posixSetPassword?(name: string, password: string): void;
   /** Renseigne les cinq champs GECOS (finger) — optionnel (`adduser`, `chfn`). */
   posixSetGecos?(name: string, fields: PosixGecosFields): void;
+  /** `usermod` — délègue à `LinuxUserManager.usermod`, message vendeur exact. Optionnel. */
+  posixUsermod?(name: string, opts: PosixUsermodOptions): string;
+  /** `userdel [-r]` — délègue à `LinuxUserManager.userdel`. Optionnel. */
+  posixUserdel?(name: string, removeHome: boolean): string;
+  /** Change effectivement le mot de passe (`passwd` sans option, `chpasswd`) — retourne le message vendeur, contrairement à `posixSetGecos`/`posixSetPassword` (void). Optionnel. */
+  posixChangePassword?(name: string, password: string): string;
+  /** `passwd -e` — expire immédiatement le mot de passe. Optionnel. */
+  posixExpirePassword?(name: string): string;
+  /** `passwd -d` — supprime le mot de passe (compte sans mot de passe). Optionnel. */
+  posixDeletePassword?(name: string): string;
+  /** État brut du compte pour `passwd -S` — formatage laissé à la commande. Optionnel. */
+  posixAccountStatus?(name: string): { readonly locked: boolean; readonly hasPassword: boolean } | undefined;
+}
+
+export interface PosixUsermodOptions {
+  readonly shell?: string;
+  readonly home?: string;
+  readonly moveHome?: boolean;
+  readonly appendToGroup?: string;
+  readonly lock?: boolean;
+  readonly unlock?: boolean;
 }
 
 export interface PosixGecosFields {
@@ -1485,6 +1510,16 @@ export interface GroupManagementApi {
   posixGroupadd?(name: string, gid?: number): string;
   /** Retire un membre d'un groupe local — optionnel. */
   removeGroupMember?(groupName: string, memberName: string): AccountMutationResult;
+  /** `groupmod` — délègue à `LinuxUserManager.groupmod`, message vendeur exact. Optionnel. */
+  posixGroupmod?(name: string, opts: { readonly gid?: number; readonly newName?: string }): string;
+  /** `groupdel` — délègue à `LinuxUserManager.groupdel`. Optionnel. */
+  posixGroupdel?(name: string): string;
+  /** `gpasswd` — argv déjà façonné en verbe POSIX autonome par le legacy
+   *  (`LinuxUserManager.gpasswd`) ; délégation directe, pas un formateur à
+   *  contourner. Optionnel. */
+  posixGpasswd?(args: readonly string[]): string;
+  /** `deluser USER GROUP` — retire l'appartenance seule (forme secondaire Debian). Optionnel. */
+  posixRemoveMember?(groupName: string, username: string): string;
 }
 
 /**
@@ -1496,6 +1531,53 @@ export interface GroupManagementApi {
 export interface AuditApi {
   fsAccess(path: string, perm: "r" | "w" | "x" | "a", syscall?: string): void;
   syscall(name: string, path?: string): void;
+}
+
+/**
+ * Lecture du journal d'audit et des règles `auditd` (`ausearch`/`aureport`/
+ * `auditctl`) — délègue directement aux fonctions pures déjà découplées de
+ * l'exécuteur (`cmdAusearch`/`cmdAureport`/`cmdAuditctl`, qui ne prennent
+ * que le moteur réel + argv) : ce sont les verbes eux-mêmes, pas des
+ * formateurs à contourner. Optionnel, propre aux équipements Unix avec
+ * auditd.
+ */
+export interface AuditJournalApi {
+  ausearch(args: readonly string[]): string;
+  aureport(args: readonly string[]): string;
+  auditctl(args: readonly string[]): { readonly output: string; readonly exitCode: number };
+}
+
+/**
+ * Table de montage réelle (`mount`/`umount`/`findmnt`) — délègue aux
+ * gestionnaires déjà publics de l'exécuteur (`handleMount`/`handleUmount`/
+ * `handleFindmnt`), qui portent déjà l'analyse d'arguments et le formatage
+ * vendeur exact contre `MountTable`. Optionnel, propre aux équipements
+ * Unix avec table de montage.
+ */
+export interface MountManagementApi {
+  mount(args: readonly string[]): { readonly output: string; readonly exitCode: number };
+  umount(args: readonly string[]): { readonly output: string; readonly exitCode: number };
+  findmnt(args: readonly string[]): { readonly output: string; readonly exitCode: number };
+}
+
+/**
+ * `crontab` — délègue à `LinuxCommandExecutor.handleCrontab` (déjà public,
+ * porte la validation `cron.allow`/`cron.deny`, la synchronisation VFS du
+ * spool et le journal `syslog`). Optionnel, propre aux équipements Unix
+ * avec ordonnanceur cron.
+ */
+export interface CronTabApi {
+  crontab(args: readonly string[], stdin?: string): { readonly output: string; readonly exitCode: number };
+}
+
+/**
+ * File `at` (`atq`/`atrm`) — délègue aux fonctions pures `cmdAtq`/`cmdAtrm`
+ * contre la file réelle de l'exécuteur. Optionnel, propre aux équipements
+ * Unix avec ordonnanceur `at`.
+ */
+export interface AtJobsApi {
+  atq(): string;
+  atrm(args: readonly string[]): string;
 }
 
 /** Résultat d'une écriture syslog (`logger`) : `ok` faux si le spec
@@ -1837,6 +1919,14 @@ export interface MachineApi {
   readonly directoryUsage?: DirectoryUsageApi;
   /** Interrogation NSS (`getent`) — optionnel, propre aux équipements Unix. */
   readonly nssQuery?: NssQueryApi;
+  /** Journal d'audit et règles `auditd` (`ausearch`/`aureport`/`auditctl`) — optionnel. */
+  readonly auditJournal?: AuditJournalApi;
+  /** Table de montage réelle (`mount`/`umount`/`findmnt`) — optionnel. */
+  readonly mountTable?: MountManagementApi;
+  /** Ordonnanceur cron (`crontab`) — optionnel. */
+  readonly cronTab?: CronTabApi;
+  /** File `at` (`atq`/`atrm`) — optionnel. */
+  readonly atJobs?: AtJobsApi;
   /** Horodatage de démarrage, si l'équipement suit un cycle de vie power-on/off (`systeminfo`'s System Boot Time). */
   bootedAt?(): Date | null;
   /** Gestionnaire de services façon SCM (`sc`, `net start`/`stop`) — optionnel, pas un concept universel (voir systemd côté `LinuxCommand`). */

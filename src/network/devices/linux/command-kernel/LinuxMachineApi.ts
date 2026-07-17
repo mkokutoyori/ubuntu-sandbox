@@ -41,6 +41,11 @@ import {
   DiskUsageApi,
   DirectoryUsageApi,
   NssQueryApi,
+  PosixUsermodOptions,
+  AuditJournalApi,
+  MountManagementApi,
+  CronTabApi,
+  AtJobsApi,
 } from '@/command-kernel/machine/types';
 import { CommandNotFoundError, FileSystemError, FileSystemErrorCode } from '@/command-kernel/errors';
 import { ExitRequest } from '@/command-kernel/shell/exit';
@@ -118,6 +123,14 @@ export interface LinuxMachineApiDeps {
   directoryUsage?: DirectoryUsageApi;
   /** Interrogation NSS `getent` (Wave 5) — absent sans commutateur NSS. */
   nssQuery?: NssQueryApi;
+  /** Journal d'audit et règles `auditd` (Wave 6). */
+  auditJournal?: AuditJournalApi;
+  /** Table de montage réelle (Wave 6). */
+  mountTable?: MountManagementApi;
+  /** Ordonnanceur cron (Wave 6). */
+  cronTab?: CronTabApi;
+  /** File `at` (Wave 6). */
+  atJobs?: AtJobsApi;
 }
 
 function toPathActor(actor: FileSystemActor): PathActor {
@@ -538,6 +551,7 @@ class LinuxProcessControlApi implements ProcessControlApi {
       rssKib: p.rss,
       priority: p.priority,
       cpuTimeMs: p.cpuTime,
+      cwd: p.cwd,
     };
   }
 }
@@ -688,6 +702,35 @@ class LinuxUserManagementApi implements UserManagementApi {
     this.userManager.setUserGecos(name, fields.fullName, fields.room, fields.workPhone, fields.homePhone, fields.other);
   }
 
+  posixUsermod(name: string, opts: PosixUsermodOptions): string {
+    return this.userManager.usermod(name, {
+      s: opts.shell, d: opts.home, m: opts.moveHome, aG: opts.appendToGroup, L: opts.lock, U: opts.unlock,
+    });
+  }
+
+  posixUserdel(name: string, removeHome: boolean): string {
+    return this.userManager.userdel(name, removeHome);
+  }
+
+  posixChangePassword(name: string, password: string): string {
+    return this.userManager.setPassword(name, password);
+  }
+
+  posixExpirePassword(name: string): string {
+    return this.userManager.expirePassword(name);
+  }
+
+  posixDeletePassword(name: string): string {
+    return this.userManager.deletePassword(name);
+  }
+
+  posixAccountStatus(name: string): { locked: boolean; hasPassword: boolean } | undefined {
+    const account = this.userManager.getUser(name);
+    if (!account) return undefined;
+    const noPassword = account.password === '' || account.password === '!' || account.password === '!!';
+    return { locked: account.locked, hasPassword: !noPassword };
+  }
+
   async findByName(name: string): Promise<User | undefined> {
     const account = this.userManager.getAccount(name);
     return account ? new LinuxUser(account, this.userManager) : undefined;
@@ -714,6 +757,31 @@ class LinuxGroupManagementApi implements GroupManagementApi {
 
   posixGroupadd(name: string, gid?: number): string {
     return this.userManager.groupadd(name, { g: gid });
+  }
+
+  posixGroupmod(name: string, opts: { gid?: number; newName?: string }): string {
+    return this.userManager.groupmod(name, { g: opts.gid, n: opts.newName });
+  }
+
+  posixGroupdel(name: string): string {
+    return this.userManager.groupdel(name);
+  }
+
+  posixGpasswd(args: readonly string[]): string {
+    // `-d` prints a confirmation line in the live executor's `handleGpasswd`
+    // wrapper (unlike `-A`/`-M`, silent on success in the engine itself) —
+    // replicated here since it's the actually-observed behavior.
+    if (args[0] === '-d' && args.length >= 3) {
+      const group = this.userManager.getGroup(args[2]);
+      if (!group) return `gpasswd: group '${args[2]}' does not exist`;
+      this.userManager.gpasswd([...args]);
+      return `Removing user ${args[1]} from group ${args[2]}`;
+    }
+    return this.userManager.gpasswd([...args]);
+  }
+
+  posixRemoveMember(groupName: string, username: string): string {
+    return this.userManager.removeUserFromGroup(username, groupName);
   }
 
   async findByGid(gid: number): Promise<GroupInfo | undefined> {
@@ -932,6 +1000,10 @@ export class LinuxMachineApi implements MachineApi {
   readonly diskUsage?: DiskUsageApi;
   readonly directoryUsage?: DirectoryUsageApi;
   readonly nssQuery?: NssQueryApi;
+  readonly auditJournal?: AuditJournalApi;
+  readonly mountTable?: MountManagementApi;
+  readonly cronTab?: CronTabApi;
+  readonly atJobs?: AtJobsApi;
 
   constructor(deps: LinuxMachineApiDeps) {
     this.fs = new LinuxFileSystemApi(deps.vfs, () => deps.getUmask(), deps.publishFsAccess);
@@ -968,6 +1040,10 @@ export class LinuxMachineApi implements MachineApi {
     this.diskUsage = deps.diskUsage;
     this.directoryUsage = deps.directoryUsage;
     this.nssQuery = deps.nssQuery;
+    this.auditJournal = deps.auditJournal;
+    this.mountTable = deps.mountTable;
+    this.cronTab = deps.cronTab;
+    this.atJobs = deps.atJobs;
   }
 
   now(): Date {

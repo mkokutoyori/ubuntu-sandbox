@@ -129,6 +129,8 @@ import type { CommandKernelChannel } from '@/command-kernel/io/channel';
 import type { NetstatIfaceView } from '@/command-kernel/machine/types';
 import { createLinuxHostShell } from './linux/command-kernel/createLinuxHostShell';
 import { dfTable, dfTableAll, duWalk } from './linux/LinuxSystemCommands';
+import { cmdAusearch, cmdAureport } from './linux/audit/AuditCommands';
+import { cmdAtq, cmdAtrm } from './linux/jobs/LinuxAtQueue';
 import { resolveLinuxUser } from './linux/command-kernel/LinuxUser';
 
 /**
@@ -1820,6 +1822,7 @@ export abstract class LinuxMachine extends EndHost
           sockets: () => this.getSocketTable().getAll().map((s) => ({
             protocol: s.protocol, localAddress: s.localAddress, localPort: s.localPort,
             remoteAddress: s.remoteAddress, remotePort: s.remotePort, state: s.state, pid: s.pid, processName: s.processName,
+            id: s.id,
           })),
           resolveService: (port, proto) => this.executor.resolveServiceName(port, proto),
           isServer: () => this.profile.isServer,
@@ -1890,6 +1893,23 @@ export abstract class LinuxMachine extends EndHost
         },
         nssQuery: {
           getent: (args) => this.executor.runGetentQuery([...args]),
+        },
+        auditJournal: {
+          ausearch: (args) => cmdAusearch(this.executor.auditLog, this.executor.resolveAusearchUserArgs([...args])),
+          aureport: (args) => cmdAureport(this.executor.auditLog, [...args]),
+          auditctl: (args) => this.executor.handleAuditctl([...args]),
+        },
+        mountTable: {
+          mount: (args) => this.executor.handleMount([...args]),
+          umount: (args) => this.executor.handleUmount([...args]),
+          findmnt: (args) => this.executor.handleFindmnt([...args]),
+        },
+        cronTab: {
+          crontab: (args, stdin) => this.executor.handleCrontab([...args], stdin),
+        },
+        atJobs: {
+          atq: () => cmdAtq(this.executor.getAtQueue()),
+          atrm: (args) => cmdAtrm(this.executor.getAtQueue(), [...args]),
         },
         getUmask: () => this.executor.getUmask(),
         setUmask: (value) => this.executor.setUmask(value),
@@ -2060,7 +2080,18 @@ export abstract class LinuxMachine extends EndHost
     const session = this.buildCommandKernelSession(env);
     const { io, chunks } = await this.buildCommandKernelIO(stdin, channel);
 
-    const exitCode = await interpreter.runResolved(cmd, args, session, io, channel?.signal);
+    let exitCode: number | null;
+    try {
+      exitCode = await interpreter.runResolved(cmd, args, session, io, channel?.signal);
+    } catch (err) {
+      if (err instanceof CommandNotFoundError) return null;
+      if (err instanceof ShellError) {
+        const msg = `${err.message}\n`;
+        channel?.onOutput?.(msg);
+        return { output: msg, exitCode: 1 };
+      }
+      throw err;
+    }
     if (exitCode === null) return null;
     this.executor.setCwd(session.cwd);
     return { output: chunks.join(''), exitCode };

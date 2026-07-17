@@ -421,6 +421,15 @@ export class LinuxUserManager {
     return '';
   }
 
+  /** `deluser USER GROUP` (Debian) — retire l'appartenance seule, sans toucher au compte. */
+  removeUserFromGroup(username: string, groupName: string): string {
+    const grp = this.groups.get(groupName);
+    if (!grp) return `deluser: group '${groupName}' does not exist`;
+    grp.removeMember(username);
+    this.syncToFilesystem();
+    return '';
+  }
+
   userdel(username: string, removeHome: boolean): string {
     const user = this.users.get(username);
     if (!user) return `userdel: user '${username}' does not exist`;

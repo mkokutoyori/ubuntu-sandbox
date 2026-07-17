@@ -305,6 +305,7 @@ export class LinuxCommandExecutor {
   private ipNetworkCtx: IpNetworkContext | null = null;
   private socketTable: SocketTable | null = null;
   getSocketTable(): SocketTable | null { return this.socketTable; }
+  getAtQueue(): LinuxAtQueue { return this.atQueue; }
   /** Active SSH port-forwards (`-L`/`-R`/`-D`) owned by this machine. */
   private forwarding: SshForwardingTable | null = null;
   getForwardingTable(): SshForwardingTable | null { return this.forwarding; }
@@ -2978,7 +2979,7 @@ export class LinuxCommandExecutor {
     return { output: '', exitCode: 0 };
   }
 
-  private handleFindmnt(args: string[]): { output: string; exitCode: number } {
+  handleFindmnt(args: string[]): { output: string; exitCode: number } {
     let fstype: string | undefined;
     const positionals: string[] = [];
     for (let i = 0; i < args.length; i++) {
