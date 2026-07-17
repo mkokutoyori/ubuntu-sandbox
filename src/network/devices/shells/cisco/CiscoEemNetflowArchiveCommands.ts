@@ -96,10 +96,11 @@ export function buildEemAppletSubmode(trie: CommandTrie, ctx: CiscoEemNetflowArc
     const name = ctx.getApplet?.();
     return name ? ctx.r().getEemService().ensureApplet(name) : null;
   };
-  trie.registerGreedy('description', 'Applet description', (args) => {
-    const a = get(); if (a) a.description = args.join(' ');
-    return '';
-  });
+  // MIGRATED (command-kernel): 'description' — retrait trie legacy
+//     trie.registerGreedy('description', 'Applet description', (args) => {
+//       const a = get(); if (a) a.description = args.join(' ');
+//       return '';
+//     });
   trie.registerGreedy('event syslog', 'Syslog trigger', (args) => {
     const a = get(); if (!a) return '';
     if (args[0]?.toLowerCase() === 'pattern' && args[1]) {

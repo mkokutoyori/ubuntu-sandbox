@@ -3,8 +3,10 @@ import type { CommandContext, CommandDescriptor, ExitCode } from '@/command-kern
 import { CommandRegistry } from '@/command-kernel/registry/command-registry';
 import { DefaultPrivilegePolicy } from '@/command-kernel/session/privilege-policy';
 import { PrivilegeLevel } from '@/command-kernel/session/types';
+import { CiscoRouterConfigIfNoBandwidthCommand } from './no/Bandwidth';
 import { CiscoRouterNoDescriptionCommand } from './no/Description';
 import { CiscoRouterConfigIfNoIpCommand } from './no/Ip';
+import { CiscoRouterConfigIfNoMtuCommand } from './no/Mtu';
 import { CiscoRouterNoShutdownCommand } from './no/Shutdown';
 
 const OP = new DefaultPrivilegePolicy(PrivilegeLevel.OPERATOR);
@@ -33,6 +35,8 @@ export class CiscoRouterConfigIfNoCommand extends BaseCommand {
     this.subRegistry.register(() => new CiscoRouterNoShutdownCommand());
     this.subRegistry.register(() => new CiscoRouterConfigIfNoIpCommand());
     this.subRegistry.register(() => new CiscoRouterNoDescriptionCommand());
+    this.subRegistry.register(() => new CiscoRouterConfigIfNoMtuCommand());
+    this.subRegistry.register(() => new CiscoRouterConfigIfNoBandwidthCommand());
   }
 
   async execute(ctx: CommandContext): Promise<ExitCode> {

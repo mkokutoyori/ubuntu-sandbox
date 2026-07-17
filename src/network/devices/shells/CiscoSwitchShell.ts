@@ -375,8 +375,9 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     });
     this.registerL3Commands();
     for (const t of [this.userTrie, this.privilegedTrie]) {
-      t.register('show ip interface brief', 'Display IP interface brief', () =>
-        this.showIpInterfaceBrief());
+      // MIGRATED (command-kernel): 'show ip interface brief' — retrait trie legacy
+//         t.register('show ip interface brief', 'Display IP interface brief', () =>
+//           this.showIpInterfaceBrief());
       t.registerGreedy('show access-lists', 'Display ACLs', () => {
         if (this.acls.size === 0) return '';
         const out: string[] = [];
@@ -3668,23 +3669,25 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     cfg.register('no ip routing', 'Disable Layer-3 routing', () => { this.d().setIpRoutingEnabled(false); return ''; });
 
     // ip route <net> <mask> <next-hop>
-    cfg.registerGreedy('ip route', 'Add a static route', (args) => {
-      if (args.length < 3) return '% Incomplete command.';
-      let net: IPAddress, mask: SubnetMask, gw: IPAddress;
-      try { net = new IPAddress(args[0]); } catch { return `% Invalid network ${args[0]}`; }
-      try { mask = new SubnetMask(args[1]); } catch { return `% Invalid mask ${args[1]}`; }
-      try { gw = new IPAddress(args[2]); } catch { return `% Invalid next-hop ${args[2]}`; }
-      this.d().addStaticRoute(net, mask, gw);
-      return '';
-    });
-    cfg.registerGreedy('no ip route', 'Remove a static route', (args) => {
-      if (args.length < 2) return '% Incomplete command.';
-      let net: IPAddress, mask: SubnetMask;
-      try { net = new IPAddress(args[0]); } catch { return `% Invalid network ${args[0]}`; }
-      try { mask = new SubnetMask(args[1]); } catch { return `% Invalid mask ${args[1]}`; }
-      this.d().removeStaticRoute(net, mask);
-      return '';
-    });
+    // MIGRATED (command-kernel): 'ip route' — retrait trie legacy
+//       cfg.registerGreedy('ip route', 'Add a static route', (args) => {
+//         if (args.length < 3) return '% Incomplete command.';
+//         let net: IPAddress, mask: SubnetMask, gw: IPAddress;
+//         try { net = new IPAddress(args[0]); } catch { return `% Invalid network ${args[0]}`; }
+//         try { mask = new SubnetMask(args[1]); } catch { return `% Invalid mask ${args[1]}`; }
+//         try { gw = new IPAddress(args[2]); } catch { return `% Invalid next-hop ${args[2]}`; }
+//         this.d().addStaticRoute(net, mask, gw);
+//         return '';
+//       });
+    // MIGRATED (command-kernel): 'no ip route' — retrait trie legacy
+//       cfg.registerGreedy('no ip route', 'Remove a static route', (args) => {
+//         if (args.length < 2) return '% Incomplete command.';
+//         let net: IPAddress, mask: SubnetMask;
+//         try { net = new IPAddress(args[0]); } catch { return `% Invalid network ${args[0]}`; }
+//         try { mask = new SubnetMask(args[1]); } catch { return `% Invalid mask ${args[1]}`; }
+//         this.d().removeStaticRoute(net, mask);
+//         return '';
+//       });
 
     // ip dhcp pool <name> → enter dhcp-config view, reuse shared builder
     cfg.registerGreedy('ip dhcp pool', 'Define a DHCP address pool', (args) => {
@@ -3733,10 +3736,11 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
 
     // ── Show commands ──────────────────────────────────────────────
     for (const t of [this.userTrie, this.privilegedTrie]) {
-      t.registerGreedy('show ip route', 'Display IP routing table', (args) => {
-        if (args[0]?.toLowerCase() === 'summary') return this.showIpRouteSummary();
-        return this.showIpRoute();
-      });
+      // MIGRATED (command-kernel): 'show ip route' — retrait trie legacy
+//         t.registerGreedy('show ip route', 'Display IP routing table', (args) => {
+//           if (args[0]?.toLowerCase() === 'summary') return this.showIpRouteSummary();
+//           return this.showIpRoute();
+//         });
       t.register('show ip traffic', 'IP traffic statistics', () =>
         showIpTraffic(this.d()._getPortsInternal().values(), this.d()._getArpStats()));
       t.registerGreedy('show adjacency', 'Display CEF adjacency table', (args) =>
@@ -3760,12 +3764,13 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
         dhcp().formatDatabaseShow());
       t.register('show ip dhcp snooping statistics', 'Display DHCP snooping statistics', () =>
         this.showIpDhcpSnoopingStatistics());
-      t.registerGreedy('show ip interface', 'Display verbose L3 state per interface', (args) => {
-        if (args.length === 0 || args[0]?.toLowerCase() === 'brief') {
-          return this.showIpInterfaceBrief();
-        }
-        return this.showIpInterfaceVerbose(args.join(' '));
-      });
+      // MIGRATED (command-kernel): 'show ip interface' — retrait trie legacy
+//         t.registerGreedy('show ip interface', 'Display verbose L3 state per interface', (args) => {
+//           if (args.length === 0 || args[0]?.toLowerCase() === 'brief') {
+//             return this.showIpInterfaceBrief();
+//           }
+//           return this.showIpInterfaceVerbose(args.join(' '));
+//         });
       t.registerGreedy('show track', 'Display tracked objects', (args) => {
         const objs = this.trackObjects.list();
         if (objs.length === 0) return '';

@@ -138,58 +138,59 @@ export function buildSecurityConfigCommands(trie: CommandTrie, ctx: CiscoSecurit
     return '';
   });
 
-  trie.registerGreedy('username', 'Local user', (args) => {
-    if (args.length < 1) return '% Incomplete command.';
-    const name = args[0];
-    let privilege: number | undefined;
-    let secret: string | undefined;
-    let secretAlgo: 'plain' | 'md5' | 'sha256' | 'scrypt' | 'type-7' = 'plain';
-    let nopassword = false;
-    let description: string | undefined;
-    // Set only for forms where the operator typed a real cleartext password
-    // (type 0, or the bare/unqualified form) — never for a pre-computed
-    // hash pasted in via `secret 5|8|9|4` / `password 7`, which `security
-    // passwords min-length` does not (and cannot) validate.
-    let plaintextEntered: string | undefined;
-    for (let i = 1; i < args.length; i++) {
-      const t = args[i];
-      if (t === 'privilege' && args[i + 1]) { privilege = parseInt(args[i + 1], 10); i++; }
-      else if (t === 'nopassword') { nopassword = true; }
-      else if (t === 'description') { description = args.slice(i + 1).join(' '); break; }
-      else if (t === 'secret') {
-        const next = args[i + 1];
-        if (next === '0') { secret = args.slice(i + 2).join(' '); secretAlgo = 'plain'; plaintextEntered = secret; break; }
-        if (next === '5') { secret = args.slice(i + 2).join(' '); secretAlgo = 'md5'; break; }
-        if (next === '8') { secret = args.slice(i + 2).join(' '); secretAlgo = 'sha256'; break; }
-        if (next === '9') { secret = args.slice(i + 2).join(' '); secretAlgo = 'scrypt'; break; }
-        if (next === '4') { secret = args.slice(i + 2).join(' '); secretAlgo = 'sha256'; break; }
-        // Bare `secret <pwd>` is hashed (type 5) by real IOS, like CiscoShellBase.
-        secret = args.slice(i + 1).join(' '); secretAlgo = 'md5'; plaintextEntered = secret; break;
-      }
-      else if (t === 'password') {
-        const next = args[i + 1];
-        if (next === '0') { secret = args.slice(i + 2).join(' '); secretAlgo = 'plain'; plaintextEntered = secret; break; }
-        if (next === '7') { secret = args.slice(i + 2).join(' '); secretAlgo = 'type-7'; break; }
-        secret = args.slice(i + 1).join(' '); secretAlgo = 'plain'; plaintextEntered = secret; break;
-      }
-    }
-    const minLength = sec().passwords.minLength;
-    if (!nopassword && plaintextEntered !== undefined && minLength && plaintextEntered.length < minLength) {
-      return `Password too short - must be at least ${minLength} characters. Password configuration failed`;
-    }
-    const router = ctx.r() as unknown as {
-      _upsertCiscoUsername?: (n: string, kv: {
-        privilege?: number; secret?: string;
-        secretAlgo?: 'plain' | 'md5' | 'sha256' | 'scrypt' | 'type-7';
-        nopassword?: boolean; description?: string;
-      }) => void;
-    };
-    if (router._upsertCiscoUsername) {
-      router._upsertCiscoUsername(name, { privilege, secret, secretAlgo, nopassword, description });
-    }
-    sec().usernames.set(name, { name, privilege: privilege ?? 1, secret, password: undefined });
-    return '';
-  });
+  // MIGRATED (command-kernel): 'username' — retrait trie legacy
+//     trie.registerGreedy('username', 'Local user', (args) => {
+//       if (args.length < 1) return '% Incomplete command.';
+//       const name = args[0];
+//       let privilege: number | undefined;
+//       let secret: string | undefined;
+//       let secretAlgo: 'plain' | 'md5' | 'sha256' | 'scrypt' | 'type-7' = 'plain';
+//       let nopassword = false;
+//       let description: string | undefined;
+//       // Set only for forms where the operator typed a real cleartext password
+//       // (type 0, or the bare/unqualified form) — never for a pre-computed
+//       // hash pasted in via `secret 5|8|9|4` / `password 7`, which `security
+//       // passwords min-length` does not (and cannot) validate.
+//       let plaintextEntered: string | undefined;
+//       for (let i = 1; i < args.length; i++) {
+//         const t = args[i];
+//         if (t === 'privilege' && args[i + 1]) { privilege = parseInt(args[i + 1], 10); i++; }
+//         else if (t === 'nopassword') { nopassword = true; }
+//         else if (t === 'description') { description = args.slice(i + 1).join(' '); break; }
+//         else if (t === 'secret') {
+//           const next = args[i + 1];
+//           if (next === '0') { secret = args.slice(i + 2).join(' '); secretAlgo = 'plain'; plaintextEntered = secret; break; }
+//           if (next === '5') { secret = args.slice(i + 2).join(' '); secretAlgo = 'md5'; break; }
+//           if (next === '8') { secret = args.slice(i + 2).join(' '); secretAlgo = 'sha256'; break; }
+//           if (next === '9') { secret = args.slice(i + 2).join(' '); secretAlgo = 'scrypt'; break; }
+//           if (next === '4') { secret = args.slice(i + 2).join(' '); secretAlgo = 'sha256'; break; }
+//           // Bare `secret <pwd>` is hashed (type 5) by real IOS, like CiscoShellBase.
+//           secret = args.slice(i + 1).join(' '); secretAlgo = 'md5'; plaintextEntered = secret; break;
+//         }
+//         else if (t === 'password') {
+//           const next = args[i + 1];
+//           if (next === '0') { secret = args.slice(i + 2).join(' '); secretAlgo = 'plain'; plaintextEntered = secret; break; }
+//           if (next === '7') { secret = args.slice(i + 2).join(' '); secretAlgo = 'type-7'; break; }
+//           secret = args.slice(i + 1).join(' '); secretAlgo = 'plain'; plaintextEntered = secret; break;
+//         }
+//       }
+//       const minLength = sec().passwords.minLength;
+//       if (!nopassword && plaintextEntered !== undefined && minLength && plaintextEntered.length < minLength) {
+//         return `Password too short - must be at least ${minLength} characters. Password configuration failed`;
+//       }
+//       const router = ctx.r() as unknown as {
+//         _upsertCiscoUsername?: (n: string, kv: {
+//           privilege?: number; secret?: string;
+//           secretAlgo?: 'plain' | 'md5' | 'sha256' | 'scrypt' | 'type-7';
+//           nopassword?: boolean; description?: string;
+//         }) => void;
+//       };
+//       if (router._upsertCiscoUsername) {
+//         router._upsertCiscoUsername(name, { privilege, secret, secretAlgo, nopassword, description });
+//       }
+//       sec().usernames.set(name, { name, privilege: privilege ?? 1, secret, password: undefined });
+//       return '';
+//     });
 
   trie.registerGreedy('service password-encryption', 'Enable password encryption', () => {
     sec().servicePasswordEncryption = true;
@@ -512,7 +513,8 @@ export function buildSecuritySubmodeCommands(
   pmapClassTrie.registerGreedy('set dscp', 'Set DSCP', (args) => { addAction(ctx, 'set-dscp', args); return ''; });
   pmapClassTrie.registerGreedy('set precedence', 'Set precedence', (args) => { addAction(ctx, 'set-precedence', args); return ''; });
   pmapClassTrie.registerGreedy('priority', 'Reserve bandwidth for priority', (args) => { addAction(ctx, 'priority', args); return ''; });
-  pmapClassTrie.registerGreedy('bandwidth', 'Reserve bandwidth', (args) => { addAction(ctx, 'bandwidth', args); return ''; });
+  // MIGRATED (command-kernel): 'bandwidth' — retrait trie legacy
+//     pmapClassTrie.registerGreedy('bandwidth', 'Reserve bandwidth', (args) => { addAction(ctx, 'bandwidth', args); return ''; });
   pmapClassTrie.register('fair-queue', 'Enable WFQ', () => { addAction(ctx, 'fair-queue', []); return ''; });
   pmapClassTrie.registerGreedy('random-detect', 'WRED configuration', (args) => { addAction(ctx, 'random-detect', args); return ''; });
   pmapClassTrie.registerGreedy('shape', 'Traffic shape', (args) => { addAction(ctx, 'shape', args); return ''; });
@@ -526,13 +528,14 @@ export function buildSecuritySubmodeCommands(
     return '';
   });
 
-  zoneTrie.registerGreedy('description', 'Zone description', (args) => {
-    const name = ctx.getZone?.();
-    if (!name) return '';
-    const z = sec().zones.get(name);
-    if (z) (z as unknown as { description?: string }).description = args.join(' ');
-    return '';
-  });
+  // MIGRATED (command-kernel): 'description' — retrait trie legacy
+//     zoneTrie.registerGreedy('description', 'Zone description', (args) => {
+//       const name = ctx.getZone?.();
+//       if (!name) return '';
+//       const z = sec().zones.get(name);
+//       if (z) (z as unknown as { description?: string }).description = args.join(' ');
+//       return '';
+//     });
 
   zonePairTrie.registerGreedy('service-policy', 'Apply policy', (args) => {
     const name = ctx.getZonePair?.();

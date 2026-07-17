@@ -10,18 +10,25 @@ import {
   createCiscoShowCommand,
 } from '../../vendor-cli';
 import { SwitchMachineApi } from './SwitchMachineApi';
+import { CiscoSwitchShowCdpCommand } from './commands/cisco/show/Cdp';
+import { CiscoSwitchShowClockCommand } from './commands/cisco/show/Clock';
 import { CiscoSwitchShowEtherchannelCommand } from './commands/cisco/show/Etherchannel';
 import { CiscoSwitchShowInterfacesCommand } from './commands/cisco/show/Interfaces';
 import { CiscoSwitchShowMacCommand } from './commands/cisco/show/Mac';
 import { CiscoSwitchShowRunningConfigCommand } from './commands/cisco/show/RunningConfig';
 import { CiscoSwitchShowVlanCommand } from './commands/cisco/show/Vlan';
 import { CiscoSwitchShowVersionCommand } from './commands/cisco/show/Version';
+import { CiscoSwitchConfigBannerCommand } from './commands/cisco/config/Banner';
+import { CiscoSwitchConfigEnableCommand } from './commands/cisco/config/Enable';
+import { CiscoSwitchConfigErrdisableCommand } from './commands/cisco/config/Errdisable';
 import { CiscoSwitchHostnameCommand } from './commands/cisco/config/Hostname';
 import { CiscoSwitchInterfaceCommand } from './commands/cisco/config/Interface';
 import { CiscoSwitchGlobalIpCommand } from './commands/cisco/config/Ip';
+import { CiscoSwitchConfigLoggingCommand } from './commands/cisco/config/Logging';
 import { CiscoSwitchConfigNoCommand } from './commands/cisco/config/No';
 import { CiscoSwitchGlobalSpanningTreeCommand } from './commands/cisco/config/SpanningTree';
 import { CiscoSwitchVlanCommand } from './commands/cisco/config/Vlan';
+import { CiscoSwitchConfigVtpCommand } from './commands/cisco/config/Vtp';
 import { CiscoSwitchChannelGroupCommand } from './commands/cisco/config/config-if/ChannelGroup';
 import { CiscoSwitchDescriptionCommand } from './commands/cisco/config/config-if/Description';
 import { CiscoSwitchConfigIfDuplexCommand } from './commands/cisco/config/config-if/Duplex';
@@ -79,6 +86,8 @@ export function createCiscoSwitchHostShell(
   showSub.register(() => new CiscoSwitchShowInterfacesCommand());
   showSub.register(() => new CiscoSwitchShowRunningConfigCommand());
   showSub.register(() => new CiscoSwitchShowEtherchannelCommand());
+  showSub.register(() => new CiscoSwitchShowClockCommand());
+  showSub.register(() => new CiscoSwitchShowCdpCommand());
 
   const userRegistry = new CommandRegistry();
   const privilegedRegistry = new CommandRegistry();
@@ -103,6 +112,11 @@ export function createCiscoSwitchHostShell(
   configRegistry.register(() => new CiscoSwitchConfigNoCommand());
   configRegistry.register(() => new CiscoSwitchGlobalSpanningTreeCommand());
   configRegistry.register(() => new CiscoSwitchGlobalIpCommand());
+  configRegistry.register(() => new CiscoSwitchConfigBannerCommand());
+  configRegistry.register(() => new CiscoSwitchConfigEnableCommand());
+  configRegistry.register(() => new CiscoSwitchConfigErrdisableCommand());
+  configRegistry.register(() => new CiscoSwitchConfigLoggingCommand());
+  configRegistry.register(() => new CiscoSwitchConfigVtpCommand());
   configRegistry.register(() => new PopModeCommand('exit', 'Exit from the current mode'));
   configRegistry.register(() => new EndCommand());
 

@@ -4,6 +4,9 @@ import { CommandRegistry } from '@/command-kernel/registry/command-registry';
 import { DefaultPrivilegePolicy } from '@/command-kernel/session/privilege-policy';
 import { PrivilegeLevel } from '@/command-kernel/session/types';
 import { CiscoRouterIpAddressCommand } from './ip/Address';
+import { CiscoRouterConfigIfIpAccessGroupCommand } from './ip/AccessGroup';
+import { CiscoRouterConfigIfIpHelperAddressCommand } from './ip/HelperAddress';
+import { CiscoRouterConfigIfIpNatCommand } from './ip/Nat';
 
 const OP = new DefaultPrivilegePolicy(PrivilegeLevel.OPERATOR);
 
@@ -29,6 +32,9 @@ export class CiscoRouterConfigIfIpCommand extends BaseCommand {
   constructor() {
     super();
     this.subRegistry.register(() => new CiscoRouterIpAddressCommand());
+    this.subRegistry.register(() => new CiscoRouterConfigIfIpAccessGroupCommand());
+    this.subRegistry.register(() => new CiscoRouterConfigIfIpHelperAddressCommand());
+    this.subRegistry.register(() => new CiscoRouterConfigIfIpNatCommand());
   }
 
   async execute(ctx: CommandContext): Promise<ExitCode> {

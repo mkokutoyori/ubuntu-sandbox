@@ -14,12 +14,13 @@ import type { CiscoShellContext } from './CiscoConfigCommands';
 // ─── DHCP Pool Config Mode Commands ──────────────────────────────────
 
 export function buildConfigDhcpCommands(trie: CommandTrie, ctx: CiscoShellContext): void {
-  trie.registerGreedy('network', 'Define DHCP pool network', (args) => {
-    if (args.length < 2) return '% Incomplete command.';
-    if (!ctx.getSelectedDHCPPool()) return '% No DHCP pool selected';
-    ctx.r()._getDHCPServerInternal().configurePoolNetwork(ctx.getSelectedDHCPPool()!, args[0], args[1]);
-    return '';
-  });
+  // MIGRATED (command-kernel): 'network' — retrait trie legacy
+//     trie.registerGreedy('network', 'Define DHCP pool network', (args) => {
+//       if (args.length < 2) return '% Incomplete command.';
+//       if (!ctx.getSelectedDHCPPool()) return '% No DHCP pool selected';
+//       ctx.r()._getDHCPServerInternal().configurePoolNetwork(ctx.getSelectedDHCPPool()!, args[0], args[1]);
+//       return '';
+//     });
 
   trie.registerGreedy('default-router', 'Set default router for DHCP clients', (args) => {
     if (args.length < 1) return '% Incomplete command.';
@@ -168,13 +169,14 @@ export function buildConfigDhcpClassCommands(trie: CommandTrie, ctx: CiscoShellC
     if (c) c.options.push(raw ?? `option ${args.join(' ')}`);
     return '';
   });
-  trie.registerGreedy('description', 'Set DHCP class description', (args) => {
-    const r = ctx.r() as any;
-    const cur = r._ciscoDhcpCurrentClass;
-    const c = cur ? (r._ciscoDhcpClasses as Map<string, any> | undefined)?.get(cur) : null;
-    if (c) c.description = args.join(' ');
-    return '';
-  });
+  // MIGRATED (command-kernel): 'description' — retrait trie legacy
+//     trie.registerGreedy('description', 'Set DHCP class description', (args) => {
+//       const r = ctx.r() as any;
+//       const cur = r._ciscoDhcpCurrentClass;
+//       const c = cur ? (r._ciscoDhcpClasses as Map<string, any> | undefined)?.get(cur) : null;
+//       if (c) c.description = args.join(' ');
+//       return '';
+//     });
 }
 
 export function buildConfigIpv6DhcpCommands(trie: CommandTrie, ctx: CiscoShellContext): void {
@@ -224,10 +226,11 @@ export function buildConfigIpv6DhcpCommands(trie: CommandTrie, ctx: CiscoShellCo
     const p = cur(); if (p && args[0]) p.linkAddress = args[0];
     return '';
   });
-  trie.registerGreedy('description', 'Pool description', (args) => {
-    const p = cur(); if (p) p.description = args.join(' ');
-    return '';
-  });
+  // MIGRATED (command-kernel): 'description' — retrait trie legacy
+//     trie.registerGreedy('description', 'Pool description', (args) => {
+//       const p = cur(); if (p) p.description = args.join(' ');
+//       return '';
+//     });
 }
 
 // ─── DHCP Show Commands (registered on user/privileged show tries) ───

@@ -459,6 +459,53 @@ introduites par la vague).
     (`HuaweiNATCommands.ts`, `HuaweiPolicyCommands.ts`,
     `HuaweiOspfCommands.ts`, `HuaweiVRPShell.ts`) — dépendance :
     implémentation métier des leaves d'abord.
+## Cisco routeur + switch — vague batch 2 : 40 commandes câblées (config global + config-if/ip / no + config-router + show)
+
+**État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
+
+Deuxième vague massive de scaffolding + câblage bootstrap, générée
+via `scripts/generate_command.py batch` puis wiring à la main dans les
+`createCiscoRouterHostShell.ts` / `createCiscoSwitchHostShell.ts`.
+Complémentaire de la vague 1 — même méthode, aucune régression sur la
+suite `command-kernel` (354/354 verts) et amélioration marginale sur la
+palette network-v2 (−4 tests rouges par rapport au baseline).
+
+### Nouveautés routeur Cisco
+
+- **config (global)** : `banner motd`, `enable secret`,
+  `enable password`, `service password-encryption`,
+  `service timestamps`, `snmp-server community`, `snmp-server host`.
+- **config-if / ip** : `ip helper-address`, `ip nat inside`,
+  `ip nat outside`, `ip access-group`.
+- **config-if / no** : `no mtu`, `no bandwidth`.
+- **config-router** : `auto-summary`, `maximum-paths`,
+  `default-information originate`.
+- **show** (exec) : `show clock`, `show cdp neighbors`, `show users`.
+
+### Nouveautés switch Cisco
+
+- **config (global)** : `vtp domain`, `vtp mode`, `vtp password`,
+  `banner motd`, `enable secret`, `errdisable recovery`, `logging`.
+- **show** (exec) : `show clock`, `show cdp neighbors`.
+
+### Câblage bootstrap
+
+- `createCiscoRouterHostShell.ts` : nouveaux imports + register dans
+  `showSub`, `configRegistry`, `configRouterRegistry` ; composites
+  `Ip.ts` (config-if) et `No.ts` (config-if) enrichis de leurs
+  sous-feuilles ; `default-information` = composite avec
+  `default-information/Originate` en enfant.
+- `createCiscoSwitchHostShell.ts` : nouveaux imports + register dans
+  `showSub` et `configRegistry` (7 nouveaux enregistrements config
+  global, 2 nouveaux show).
+
+### Validation
+
+- `npx tsc --noEmit` : 0 erreur.
+- `src/__tests__/unit/command-kernel` : **354/354 passent** (10 fichiers).
+- Palette network-v2 étendue (14 fichiers Cisco routeur/switch de
+  référence) : 260 échecs vs. 264 baseline (pré-existants — commandes
+  legacy `show` non encore migrées interceptées par la nouvelle porte).
 
 ## Cisco routeur + switch — 40 commandes batch-générées via `scripts/generate_command.py`
 

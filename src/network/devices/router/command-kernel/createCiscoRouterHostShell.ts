@@ -12,12 +12,19 @@ import {
 import { RouterMachineApi } from './RouterMachineApi';
 // ─── show ───────────────────────────────────────────────────────────
 import { CiscoRouterShowArpCommand } from './commands/cisco/show/Arp';
+import { CiscoRouterShowCdpCommand } from './commands/cisco/show/Cdp';
+import { CiscoRouterShowClockCommand } from './commands/cisco/show/Clock';
 import { CiscoRouterShowInterfacesCommand } from './commands/cisco/show/Interfaces';
 import { CiscoRouterShowIpCommand } from './commands/cisco/show/Ip';
 import { CiscoRouterShowRunningConfigCommand } from './commands/cisco/show/RunningConfig';
+import { CiscoRouterShowUsersCommand } from './commands/cisco/show/Users';
 import { CiscoRouterShowVersionCommand } from './commands/cisco/show/Version';
 // ─── config ─────────────────────────────────────────────────────────
+import { CiscoRouterConfigBannerCommand } from './commands/cisco/config/Banner';
 import { CiscoRouterGlobalCdpCommand } from './commands/cisco/config/Cdp';
+import { CiscoRouterConfigEnableCommand } from './commands/cisco/config/Enable';
+import { CiscoRouterConfigServiceCommand } from './commands/cisco/config/Service';
+import { CiscoRouterConfigSnmpServerCommand } from './commands/cisco/config/SnmpServer';
 import { CiscoRouterHostnameCommand } from './commands/cisco/config/Hostname';
 import { CiscoRouterInterfaceCommand } from './commands/cisco/config/Interface';
 import { CiscoRouterConfigIpCommand } from './commands/cisco/config/Ip';
@@ -39,6 +46,9 @@ import { CiscoRouterConfigIfMtuCommand } from './commands/cisco/config/config-if
 import { CiscoRouterConfigIfNoCommand } from './commands/cisco/config/config-if/No';
 import { CiscoRouterShutdownCommand } from './commands/cisco/config/config-if/Shutdown';
 // ─── config-router ──────────────────────────────────────────────────
+import { CiscoRouterConfigRouterAutoSummaryCommand } from './commands/cisco/config/config-router/AutoSummary';
+import { CiscoRouterConfigRouterDefaultInformationCommand } from './commands/cisco/config/config-router/DefaultInformation';
+import { CiscoRouterConfigRouterMaximumPathsCommand } from './commands/cisco/config/config-router/MaximumPaths';
 import { CiscoRouterConfigRouterNeighborCommand } from './commands/cisco/config/config-router/Neighbor';
 import { CiscoRouterConfigRouterNetworkCommand } from './commands/cisco/config/config-router/Network';
 import { CiscoRouterConfigRouterPassiveInterfaceCommand } from './commands/cisco/config/config-router/PassiveInterface';
@@ -62,6 +72,9 @@ export function createCiscoRouterHostShell(
   showSub.register(() => new CiscoRouterShowRunningConfigCommand());
   showSub.register(() => new CiscoRouterShowArpCommand());
   showSub.register(() => new CiscoRouterShowInterfacesCommand());
+  showSub.register(() => new CiscoRouterShowClockCommand());
+  showSub.register(() => new CiscoRouterShowCdpCommand());
+  showSub.register(() => new CiscoRouterShowUsersCommand());
 
   const userRegistry = new CommandRegistry();
   const privilegedRegistry = new CommandRegistry();
@@ -91,6 +104,10 @@ export function createCiscoRouterHostShell(
   configRegistry.register(() => new CiscoRouterConfigLoggingCommand());
   configRegistry.register(() => new CiscoRouterConfigUsernameCommand());
   configRegistry.register(() => new CiscoRouterGlobalCdpCommand());
+  configRegistry.register(() => new CiscoRouterConfigBannerCommand());
+  configRegistry.register(() => new CiscoRouterConfigEnableCommand());
+  configRegistry.register(() => new CiscoRouterConfigServiceCommand());
+  configRegistry.register(() => new CiscoRouterConfigSnmpServerCommand());
   configRegistry.register(() => new PopModeCommand('exit', 'Exit from the current mode'));
   configRegistry.register(() => new EndCommand());
 
@@ -111,6 +128,9 @@ export function createCiscoRouterHostShell(
   configRouterRegistry.register(() => new CiscoRouterConfigRouterRouterIdCommand());
   configRouterRegistry.register(() => new CiscoRouterConfigRouterPassiveInterfaceCommand());
   configRouterRegistry.register(() => new CiscoRouterConfigRouterNeighborCommand());
+  configRouterRegistry.register(() => new CiscoRouterConfigRouterAutoSummaryCommand());
+  configRouterRegistry.register(() => new CiscoRouterConfigRouterMaximumPathsCommand());
+  configRouterRegistry.register(() => new CiscoRouterConfigRouterDefaultInformationCommand());
   configRouterRegistry.register(() => new PopModeCommand('exit', 'Exit from the current mode'));
   configRouterRegistry.register(() => new EndCommand());
 
