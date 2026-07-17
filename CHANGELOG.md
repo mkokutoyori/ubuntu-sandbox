@@ -1,5 +1,95 @@
 # Changelog
 
+## Huawei routeur — vague batch 5 de 40 commandes (NAT / VPN instance / QoS traffic-policy / AAA server / OSPF-BGP leaves / display peer / DNS / SSH / NTP auth)
+
+**État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
+
+Cinquième vague batch-générée (`scripts/generate_command.py batch`) —
+40 nouveaux fichiers TypeScript + 4 nouveaux modes CLI ajoutés à la
+`ModeRegistry` du bootstrap routeur, aucun commentaire dans le code
+(règle utilisateur). Suite command-kernel toujours **354/354 verte**,
+suites Huawei ciblées inchangées (208/209 baseline — les échecs
+existants sont du legacy non encore migré, pas des régressions
+introduites par la vague).
+
+- **4 nouveaux modes CLI** dans `createHuaweiRouterHostShell.ts` :
+  `vpn-instance-view` (prompt `[host-vpn-instance-<name>]`),
+  `traffic-classifier-view` (`[host-classifier-<name>]`),
+  `traffic-behavior-view` (`[host-behavior-<name>]`),
+  `traffic-policy-view` (`[host-trafficpolicy-<name>]`) — tous
+  `clearOnExit` de leur promptField dédié, tous en parent
+  `system-view`.
+
+- **NAT** : `nat` composite en interface-view (`nat outbound <acl> [address-group ...]`,
+  `nat server protocol ... global ... inside ...`) et en system-view
+  (`nat address-group <name> <start> <end>`).
+
+- **VPN instance (VRF)** : `ip vpn-instance <name>` (push-mode vers
+  `vpn-instance-view`), `route-distinguisher <asn:nn|ip:nn>`, `vpn-target
+  <rt> {import|export|both}`.
+
+- **QoS traffic-policy chain** : `traffic-classifier <name>` (push),
+  `traffic-behavior <name>` (push), `traffic-policy <name>` (push) +
+  clauses feuilles `if-match`, `permit`, `deny`, `car`, `classifier <c>
+  behavior <b>` + application interface `traffic-policy <name>
+  {inbound|outbound}`.
+
+- **AAA server** : `radius-server` (composite en aaa-view, sous-registre
+  `radius-server <subcommand>`), `hwtacacs-server`,
+  `authorization-scheme <name>`, `accounting-scheme <name>`, `domain
+  <name>` — tous en aaa-view.
+
+- **BGP leaves** en `bgp-view` : `network <A.B.C.D> [<mask|len>]`,
+  `import-route <protocol> [med <m>] [route-policy <p>]`.
+
+- **OSPF leaves** : `import-route <protocol> [type <t>] [tag <n>]`,
+  `default-route-advertise [always]` (en `ospf-view`), et en
+  `ospf-area-view` : `authentication-mode`, `stub [no-summary]`, `nssa
+  [default-route-advertise] [no-summary]`.
+
+- **DNS resolver** : composite `dns` en system-view avec `dns server
+  <ip>` et `dns resolve`.
+
+- **SSH** : composite `ssh` avec `ssh user <name> {authentication-type|
+  service-type|password} <value>`.
+
+- **NTP authentification** : `ntp-service authentication-keyid <n>
+  authentication-mode <mode> <key>` et `ntp-service reliable
+  authentication-keyid <n>` — enrichissement du composite
+  `ntp-service` existant.
+
+- **Display** : nouveau composite `display bgp` avec `display bgp peer
+  [verbose]`, enrichissement de `display ospf` avec `display ospf peer
+  [brief]`. Autorisés en user-view et system-view.
+
+- **Enrichissement de composites existants** : `system-view/Ip.ts` (+
+  `HuaweiRouterSysIpVpnInstanceCommand`), `system-view/NtpService.ts`
+  (+ AuthenticationKeyid, ReliableKeyid), `display/Ospf.ts` (+ Peer).
+
+- **Bodies TODO → no-op via `noop.py`** : 30 leaves passés du `TODO`
+  vers `return EXIT_OK;` (comportement silencieux, la config est
+  scaffoldée mais la sémantique métier reste à câbler quand un test
+  d'intégration l'exigera). Les 4 push-modes reçoivent leur `prepare()`
+  via `push_stub.py` (validation d'argument + set du promptField).
+
+- **Preuve exécutable** :
+  - `npx tsc --noEmit` propre après la vague.
+  - Suite command-kernel : **354/354 verte** (inchangé).
+  - Suites Huawei ciblées (7 fichiers, 417 tests) : baseline avant
+    vague = 208 failed / 209 passed ; après vague = 208 failed / 209
+    passed. **Zéro nouvelle régression** — les échecs existants sont
+    des features legacy non encore complètement migrées, pas
+    introduites par cette vague.
+
+- **À poursuivre dans les vagues suivantes** :
+  - Câbler les bodies no-op vers `RouterMachineApi` (NAT, VPN
+    instance, traffic-policy, AAA server) quand les tests
+    correspondants exigeront un comportement observable.
+  - Débranchement des `trie.registerGreedy` legacy correspondants
+    (`HuaweiNATCommands.ts`, `HuaweiPolicyCommands.ts`,
+    `HuaweiOspfCommands.ts`, `HuaweiVRPShell.ts`) — dépendance :
+    implémentation métier des leaves d'abord.
+
 ## Cisco routeur + switch — 40 commandes batch-générées via `scripts/generate_command.py`
 
 **État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**

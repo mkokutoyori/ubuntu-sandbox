@@ -4,22 +4,21 @@ import { EXIT_OK } from '@/command-kernel/command/types';
 import { DefaultPrivilegePolicy } from '@/command-kernel/session/privilege-policy';
 import { PrivilegeLevel } from '@/command-kernel/session/types';
 import { CommandRegistry } from '@/command-kernel/registry/command-registry';
-import { HuaweiRouterDisplayOspfBriefCommand } from './ospf/Brief';
-import { HuaweiRouterDisplayOspfPeerCommand } from './ospf/Peer';
+import { HuaweiRouterDisplayBgpPeerCommand } from './bgp/Peer';
 
 const ANY = new DefaultPrivilegePolicy(PrivilegeLevel.ANY);
 
 /**
- * `ospf` — commande COMPOSITE (racine + sous-registre) : seule
+ * `bgp` — commande COMPOSITE (racine + sous-registre) : seule
  * appelée directement si aucun sous-mot ne matche (message vendeur
  * « incomplete command »), sinon l'interpréteur descend dans
  * `subRegistry` jusqu'à la feuille.
  */
-export class HuaweiRouterDisplayOspfCommand extends BaseCommand {
+export class HuaweiRouterDisplayBgpCommand extends BaseCommand {
   readonly descriptor: CommandDescriptor = {
-    name: 'ospf',
-    summary: 'Display OSPF information',
-    usage: 'display ospf [<subcommand>]',
+    name: 'bgp',
+    summary: 'Display BGP information',
+    usage: 'display bgp <subcommand>',
     args: [],
     options: [],
     privileges: ANY,
@@ -30,8 +29,7 @@ export class HuaweiRouterDisplayOspfCommand extends BaseCommand {
 
   constructor() {
     super();
-    this.subRegistry.register(() => new HuaweiRouterDisplayOspfBriefCommand());
-    this.subRegistry.register(() => new HuaweiRouterDisplayOspfPeerCommand());
+    this.subRegistry.register(() => new HuaweiRouterDisplayBgpPeerCommand());
   }
 
   async execute(ctx: CommandContext): Promise<ExitCode> {

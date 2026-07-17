@@ -5,6 +5,8 @@ import { DefaultPrivilegePolicy } from '@/command-kernel/session/privilege-polic
 import { PrivilegeLevel } from '@/command-kernel/session/types';
 import { CommandRegistry } from '@/command-kernel/registry/command-registry';
 import { HuaweiRouterSysNtpServiceUnicastCommand } from './ntp-service/UnicastServer';
+import { HuaweiRouterSysNtpServiceAuthenticationKeyidCommand } from './ntp-service/AuthenticationKeyid';
+import { HuaweiRouterSysNtpServiceReliableKeyidCommand } from './ntp-service/ReliableKeyid';
 
 const OP = new DefaultPrivilegePolicy(PrivilegeLevel.OPERATOR);
 
@@ -30,6 +32,8 @@ export class HuaweiRouterSysNtpServiceCommand extends BaseCommand {
   constructor() {
     super();
     this.subRegistry.register(() => new HuaweiRouterSysNtpServiceUnicastCommand());
+    this.subRegistry.register(() => new HuaweiRouterSysNtpServiceAuthenticationKeyidCommand());
+    this.subRegistry.register(() => new HuaweiRouterSysNtpServiceReliableKeyidCommand());
   }
 
   async execute(ctx: CommandContext): Promise<ExitCode> {

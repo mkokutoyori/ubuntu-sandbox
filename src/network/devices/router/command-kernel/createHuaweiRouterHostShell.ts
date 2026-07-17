@@ -86,6 +86,34 @@ import { HuaweiRouterDisplayIpsecCommand } from './commands/huawei/display/Ipsec
 import { HuaweiRouterDisplayIkeCommand } from './commands/huawei/display/Ike';
 import { HuaweiRouterDisplayOspfCommand } from './commands/huawei/display/Ospf';
 import { HuaweiRouterDisplayUsersCommand } from './commands/huawei/display/User';
+import { HuaweiRouterDisplayBgpCommand } from './commands/huawei/display/Bgp';
+import { HuaweiRouterIfNatCommand } from './commands/huawei/interface-view/Nat';
+import { HuaweiRouterIfTrafficPolicyCommand } from './commands/huawei/interface-view/TrafficPolicy';
+import { HuaweiRouterSysNatCommand } from './commands/huawei/system-view/Nat';
+import { HuaweiRouterSysTrafficClassifierCommand } from './commands/huawei/system-view/traffic/TrafficClassifier';
+import { HuaweiRouterSysTrafficBehaviorCommand } from './commands/huawei/system-view/traffic/TrafficBehavior';
+import { HuaweiRouterSysTrafficPolicyCommand } from './commands/huawei/system-view/traffic/TrafficPolicy';
+import { HuaweiRouterSysDnsCommand } from './commands/huawei/system-view/Dns';
+import { HuaweiRouterSysSshCommand } from './commands/huawei/system-view/Ssh';
+import { HuaweiRouterVpnRouteDistinguisherCommand } from './commands/huawei/vpn-instance-view/RouteDistinguisher';
+import { HuaweiRouterVpnTargetCommand } from './commands/huawei/vpn-instance-view/VpnTarget';
+import { HuaweiRouterTrafficClassifierIfMatchCommand } from './commands/huawei/traffic-classifier-view/IfMatch';
+import { HuaweiRouterTrafficBehaviorPermitCommand } from './commands/huawei/traffic-behavior-view/Permit';
+import { HuaweiRouterTrafficBehaviorDenyCommand } from './commands/huawei/traffic-behavior-view/Deny';
+import { HuaweiRouterTrafficBehaviorCarCommand } from './commands/huawei/traffic-behavior-view/Car';
+import { HuaweiRouterTrafficPolicyClassifierCommand } from './commands/huawei/traffic-policy-view/Classifier';
+import { HuaweiRouterAaaRadiusServerRootCommand } from './commands/huawei/aaa-view/RadiusServer';
+import { HuaweiRouterAaaHwtacacsServerCommand } from './commands/huawei/aaa-view/HwtacacsServer';
+import { HuaweiRouterAaaAuthorizationSchemeCommand } from './commands/huawei/aaa-view/AuthorizationScheme';
+import { HuaweiRouterAaaAccountingSchemeCommand } from './commands/huawei/aaa-view/AccountingScheme';
+import { HuaweiRouterAaaDomainCommand } from './commands/huawei/aaa-view/Domain';
+import { HuaweiRouterBgpNetworkCommand } from './commands/huawei/bgp-view/Network';
+import { HuaweiRouterBgpImportRouteCommand } from './commands/huawei/bgp-view/ImportRoute';
+import { HuaweiRouterOspfImportRouteCommand } from './commands/huawei/ospf-view/ImportRoute';
+import { HuaweiRouterOspfDefaultRouteAdvertiseCommand } from './commands/huawei/ospf-view/DefaultRouteAdvertise';
+import { HuaweiRouterOspfAreaAuthenticationModeCommand } from './commands/huawei/ospf-area-view/AuthenticationMode';
+import { HuaweiRouterOspfAreaStubCommand } from './commands/huawei/ospf-area-view/Stub';
+import { HuaweiRouterOspfAreaNssaCommand } from './commands/huawei/ospf-area-view/Nssa';
 
 /**
  * =====================================================================
@@ -124,6 +152,7 @@ export function createHuaweiRouterHostShell(
   displaySub.register(() => new HuaweiRouterDisplayIkeCommand());
   displaySub.register(() => new HuaweiRouterDisplayOspfCommand());
   displaySub.register(() => new HuaweiRouterDisplayUsersCommand());
+  displaySub.register(() => new HuaweiRouterDisplayBgpCommand());
 
   const userViewRegistry = new CommandRegistry();
   const systemViewRegistry = new CommandRegistry();
@@ -138,6 +167,10 @@ export function createHuaweiRouterHostShell(
   const ripViewRegistry = new CommandRegistry();
   const routePolicyViewRegistry = new CommandRegistry();
   const aclViewRegistry = new CommandRegistry();
+  const vpnInstanceViewRegistry = new CommandRegistry();
+  const trafficClassifierViewRegistry = new CommandRegistry();
+  const trafficBehaviorViewRegistry = new CommandRegistry();
+  const trafficPolicyViewRegistry = new CommandRegistry();
 
   userViewRegistry.register(() => createHuaweiDisplayCommand(displaySub));
   userViewRegistry.register(() => new HuaweiSystemViewCommand());
@@ -172,6 +205,12 @@ export function createHuaweiRouterHostShell(
   systemViewRegistry.register(() => new HuaweiRouterSysIpv6RootCommand());
   systemViewRegistry.register(() => new HuaweiRouterSysRoutePolicyCommand());
   systemViewRegistry.register(() => new HuaweiRouterInterfaceRangeCommand());
+  systemViewRegistry.register(() => new HuaweiRouterSysNatCommand());
+  systemViewRegistry.register(() => new HuaweiRouterSysTrafficClassifierCommand());
+  systemViewRegistry.register(() => new HuaweiRouterSysTrafficBehaviorCommand());
+  systemViewRegistry.register(() => new HuaweiRouterSysTrafficPolicyCommand());
+  systemViewRegistry.register(() => new HuaweiRouterSysDnsCommand());
+  systemViewRegistry.register(() => new HuaweiRouterSysSshCommand());
   systemViewRegistry.register(() => new HuaweiRouterSysUndoCommand());
   systemViewRegistry.register(() => new PopModeCommand('quit', 'Exit from the current view'));
   systemViewRegistry.register(() => new EndCommand(['return']));
@@ -186,6 +225,8 @@ export function createHuaweiRouterHostShell(
   interfaceViewRegistry.register(() => new HuaweiRouterIfIpv6Command());
   interfaceViewRegistry.register(() => new HuaweiRouterIfDhcpCommand());
   interfaceViewRegistry.register(() => new HuaweiRouterIfHelperAddressCommand());
+  interfaceViewRegistry.register(() => new HuaweiRouterIfNatCommand());
+  interfaceViewRegistry.register(() => new HuaweiRouterIfTrafficPolicyCommand());
   interfaceViewRegistry.register(() => new HuaweiRouterIfUndoCommand());
   interfaceViewRegistry.register(() => new PopModeCommand('quit', 'Exit from the current view'));
   interfaceViewRegistry.register(() => new EndCommand(['return']));
@@ -228,22 +269,53 @@ export function createHuaweiRouterHostShell(
 
   aaaViewRegistry.register(() => new HuaweiRouterAaaLocalUserCommand());
   aaaViewRegistry.register(() => new HuaweiRouterAaaAuthenticationSchemeCommand());
+  aaaViewRegistry.register(() => new HuaweiRouterAaaRadiusServerRootCommand());
+  aaaViewRegistry.register(() => new HuaweiRouterAaaHwtacacsServerCommand());
+  aaaViewRegistry.register(() => new HuaweiRouterAaaAuthorizationSchemeCommand());
+  aaaViewRegistry.register(() => new HuaweiRouterAaaAccountingSchemeCommand());
+  aaaViewRegistry.register(() => new HuaweiRouterAaaDomainCommand());
   aaaViewRegistry.register(() => new PopModeCommand('quit', 'Exit from the current view'));
   aaaViewRegistry.register(() => new EndCommand(['return']));
 
   ospfViewRegistry.register(() => new HuaweiRouterOspfRouterCommand());
   ospfViewRegistry.register(() => new HuaweiRouterOspfAreaCommand());
+  ospfViewRegistry.register(() => new HuaweiRouterOspfImportRouteCommand());
+  ospfViewRegistry.register(() => new HuaweiRouterOspfDefaultRouteAdvertiseCommand());
   ospfViewRegistry.register(() => new PopModeCommand('quit', 'Exit from the current view'));
   ospfViewRegistry.register(() => new EndCommand(['return']));
 
   ospfAreaViewRegistry.register(() => new HuaweiRouterOspfAreaNetworkCommand());
+  ospfAreaViewRegistry.register(() => new HuaweiRouterOspfAreaAuthenticationModeCommand());
+  ospfAreaViewRegistry.register(() => new HuaweiRouterOspfAreaStubCommand());
+  ospfAreaViewRegistry.register(() => new HuaweiRouterOspfAreaNssaCommand());
   ospfAreaViewRegistry.register(() => new PopModeCommand('quit', 'Exit from the current view'));
   ospfAreaViewRegistry.register(() => new EndCommand(['return']));
 
   bgpViewRegistry.register(() => new HuaweiRouterBgpPeerCommand());
   bgpViewRegistry.register(() => new HuaweiRouterBgpRouterCommand());
+  bgpViewRegistry.register(() => new HuaweiRouterBgpNetworkCommand());
+  bgpViewRegistry.register(() => new HuaweiRouterBgpImportRouteCommand());
   bgpViewRegistry.register(() => new PopModeCommand('quit', 'Exit from the current view'));
   bgpViewRegistry.register(() => new EndCommand(['return']));
+
+  vpnInstanceViewRegistry.register(() => new HuaweiRouterVpnRouteDistinguisherCommand());
+  vpnInstanceViewRegistry.register(() => new HuaweiRouterVpnTargetCommand());
+  vpnInstanceViewRegistry.register(() => new PopModeCommand('quit', 'Exit from the current view'));
+  vpnInstanceViewRegistry.register(() => new EndCommand(['return']));
+
+  trafficClassifierViewRegistry.register(() => new HuaweiRouterTrafficClassifierIfMatchCommand());
+  trafficClassifierViewRegistry.register(() => new PopModeCommand('quit', 'Exit from the current view'));
+  trafficClassifierViewRegistry.register(() => new EndCommand(['return']));
+
+  trafficBehaviorViewRegistry.register(() => new HuaweiRouterTrafficBehaviorPermitCommand());
+  trafficBehaviorViewRegistry.register(() => new HuaweiRouterTrafficBehaviorDenyCommand());
+  trafficBehaviorViewRegistry.register(() => new HuaweiRouterTrafficBehaviorCarCommand());
+  trafficBehaviorViewRegistry.register(() => new PopModeCommand('quit', 'Exit from the current view'));
+  trafficBehaviorViewRegistry.register(() => new EndCommand(['return']));
+
+  trafficPolicyViewRegistry.register(() => new HuaweiRouterTrafficPolicyClassifierCommand());
+  trafficPolicyViewRegistry.register(() => new PopModeCommand('quit', 'Exit from the current view'));
+  trafficPolicyViewRegistry.register(() => new EndCommand(['return']));
 
   ripViewRegistry.register(() => new HuaweiRouterRipNetworkCommand());
   ripViewRegistry.register(() => new PopModeCommand('quit', 'Exit from the current view'));
@@ -264,6 +336,10 @@ export function createHuaweiRouterHostShell(
     { name: 'route-policy-view',   prompt: (s, host) => `[${host}-route-policy]`,                                                          parent: 'system-view',  registry: routePolicyViewRegistry, clearOnExit: ['selectedRoutePolicy'] },
     { name: 'acl-basic-view',      prompt: (_s, host) => `[${host}-acl-basic]`,                                                            parent: 'system-view',  registry: aclViewRegistry },
     { name: 'acl-adv-view',        prompt: (_s, host) => `[${host}-acl-adv]`,                                                              parent: 'system-view',  registry: aclViewRegistry },
+    { name: 'vpn-instance-view',   prompt: (s, host) => `[${host}-vpn-instance-${s.promptFields.get('selectedVpnInstance') ?? ''}]`,       parent: 'system-view',  registry: vpnInstanceViewRegistry,   clearOnExit: ['selectedVpnInstance'] },
+    { name: 'traffic-classifier-view', prompt: (s, host) => `[${host}-classifier-${s.promptFields.get('selectedTrafficClassifier') ?? ''}]`, parent: 'system-view', registry: trafficClassifierViewRegistry, clearOnExit: ['selectedTrafficClassifier'] },
+    { name: 'traffic-behavior-view',   prompt: (s, host) => `[${host}-behavior-${s.promptFields.get('selectedTrafficBehavior') ?? ''}]`,     parent: 'system-view', registry: trafficBehaviorViewRegistry,   clearOnExit: ['selectedTrafficBehavior'] },
+    { name: 'traffic-policy-view',     prompt: (s, host) => `[${host}-trafficpolicy-${s.promptFields.get('selectedTrafficPolicy') ?? ''}]`,  parent: 'system-view', registry: trafficPolicyViewRegistry,     clearOnExit: ['selectedTrafficPolicy'] },
   ] satisfies CliMode[]);
 
   const machine = new RouterMachineApi({ router, modes });

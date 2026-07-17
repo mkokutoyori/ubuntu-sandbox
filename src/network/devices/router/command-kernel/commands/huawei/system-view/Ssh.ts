@@ -4,34 +4,32 @@ import { EXIT_OK } from '@/command-kernel/command/types';
 import { DefaultPrivilegePolicy } from '@/command-kernel/session/privilege-policy';
 import { PrivilegeLevel } from '@/command-kernel/session/types';
 import { CommandRegistry } from '@/command-kernel/registry/command-registry';
-import { HuaweiRouterDisplayOspfBriefCommand } from './ospf/Brief';
-import { HuaweiRouterDisplayOspfPeerCommand } from './ospf/Peer';
+import { HuaweiRouterSysSshUserCommand } from './ssh/User';
 
-const ANY = new DefaultPrivilegePolicy(PrivilegeLevel.ANY);
+const OP = new DefaultPrivilegePolicy(PrivilegeLevel.OPERATOR);
 
 /**
- * `ospf` — commande COMPOSITE (racine + sous-registre) : seule
+ * `ssh` — commande COMPOSITE (racine + sous-registre) : seule
  * appelée directement si aucun sous-mot ne matche (message vendeur
  * « incomplete command »), sinon l'interpréteur descend dans
  * `subRegistry` jusqu'à la feuille.
  */
-export class HuaweiRouterDisplayOspfCommand extends BaseCommand {
+export class HuaweiRouterSysSshCommand extends BaseCommand {
   readonly descriptor: CommandDescriptor = {
-    name: 'ospf',
-    summary: 'Display OSPF information',
-    usage: 'display ospf [<subcommand>]',
+    name: 'ssh',
+    summary: 'SSH server configuration',
+    usage: 'ssh <subcommand>',
     args: [],
     options: [],
-    privileges: ANY,
+    privileges: OP,
     category: 'router',
   };
-  readonly allowedModes = ['user-view', 'system-view'];
+  readonly allowedModes = ['system-view'];
   readonly subRegistry = new CommandRegistry();
 
   constructor() {
     super();
-    this.subRegistry.register(() => new HuaweiRouterDisplayOspfBriefCommand());
-    this.subRegistry.register(() => new HuaweiRouterDisplayOspfPeerCommand());
+    this.subRegistry.register(() => new HuaweiRouterSysSshUserCommand());
   }
 
   async execute(ctx: CommandContext): Promise<ExitCode> {
