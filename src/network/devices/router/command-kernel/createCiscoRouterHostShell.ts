@@ -16,6 +16,10 @@ import { CiscoRouterShowCdpCommand } from './commands/cisco/show/Cdp';
 import { CiscoRouterShowClockCommand } from './commands/cisco/show/Clock';
 import { CiscoRouterShowInterfacesCommand } from './commands/cisco/show/Interfaces';
 import { CiscoRouterShowIpCommand } from './commands/cisco/show/Ip';
+import { CiscoRouterShowLoggingCommand } from './commands/cisco/show/Logging';
+import { CiscoRouterShowMemoryCommand } from './commands/cisco/show/Memory';
+import { CiscoRouterShowNtpCommand } from './commands/cisco/show/Ntp';
+import { CiscoRouterShowProcessesCommand } from './commands/cisco/show/Processes';
 import { CiscoRouterShowRunningConfigCommand } from './commands/cisco/show/RunningConfig';
 import { CiscoRouterShowUsersCommand } from './commands/cisco/show/Users';
 import { CiscoRouterShowVersionCommand } from './commands/cisco/show/Version';
@@ -35,27 +39,37 @@ import { CiscoRouterConfigNtpCommand } from './commands/cisco/config/Ntp';
 import { CiscoRouterConfigRouterCommand } from './commands/cisco/config/Router';
 import { CiscoRouterConfigUsernameCommand } from './commands/cisco/config/Username';
 // ─── config-if ──────────────────────────────────────────────────────
+import { CiscoRouterConfigIfArpCommand } from './commands/cisco/config/config-if/Arp';
 import { CiscoRouterConfigIfBandwidthCommand } from './commands/cisco/config/config-if/Bandwidth';
 import { CiscoRouterConfigIfCdpCommand } from './commands/cisco/config/config-if/Cdp';
 import { CiscoRouterConfigIfDelayCommand } from './commands/cisco/config/config-if/Delay';
 import { CiscoRouterDescriptionCommand } from './commands/cisco/config/config-if/Description';
+import { CiscoRouterConfigIfDuplexCommand } from './commands/cisco/config/config-if/Duplex';
 import { CiscoRouterEncapsulationCommand } from './commands/cisco/config/config-if/Encapsulation';
+import { CiscoRouterConfigIfHoldQueueCommand } from './commands/cisco/config/config-if/HoldQueue';
 import { CiscoRouterConfigIfIpCommand } from './commands/cisco/config/config-if/Ip';
 import { CiscoRouterConfigIfKeepaliveCommand } from './commands/cisco/config/config-if/Keepalive';
 import { CiscoRouterConfigIfMtuCommand } from './commands/cisco/config/config-if/Mtu';
 import { CiscoRouterConfigIfNoCommand } from './commands/cisco/config/config-if/No';
 import { CiscoRouterShutdownCommand } from './commands/cisco/config/config-if/Shutdown';
+import { CiscoRouterConfigIfSpeedCommand } from './commands/cisco/config/config-if/Speed';
 // ─── config-router ──────────────────────────────────────────────────
 import { CiscoRouterConfigRouterAutoSummaryCommand } from './commands/cisco/config/config-router/AutoSummary';
 import { CiscoRouterConfigRouterDefaultInformationCommand } from './commands/cisco/config/config-router/DefaultInformation';
+import { CiscoRouterConfigRouterDistanceCommand } from './commands/cisco/config/config-router/Distance';
 import { CiscoRouterConfigRouterMaximumPathsCommand } from './commands/cisco/config/config-router/MaximumPaths';
 import { CiscoRouterConfigRouterNeighborCommand } from './commands/cisco/config/config-router/Neighbor';
 import { CiscoRouterConfigRouterNetworkCommand } from './commands/cisco/config/config-router/Network';
 import { CiscoRouterConfigRouterPassiveInterfaceCommand } from './commands/cisco/config/config-router/PassiveInterface';
 import { CiscoRouterConfigRouterRouterIdCommand } from './commands/cisco/config/config-router/RouterId';
+import { CiscoRouterConfigRouterTimersCommand } from './commands/cisco/config/config-router/Timers';
 // ─── config-line ────────────────────────────────────────────────────
+import { CiscoRouterConfigLineExecTimeoutCommand } from './commands/cisco/config/config-line/ExecTimeout';
+import { CiscoRouterConfigLineHistoryCommand } from './commands/cisco/config/config-line/History';
+import { CiscoRouterConfigLineLoggingCommand } from './commands/cisco/config/config-line/Logging';
 import { CiscoRouterConfigLineLoginCommand } from './commands/cisco/config/config-line/Login';
 import { CiscoRouterConfigLinePasswordCommand } from './commands/cisco/config/config-line/Password';
+import { CiscoRouterConfigLinePrivilegeCommand } from './commands/cisco/config/config-line/Privilege';
 import { CiscoRouterConfigLineTransportCommand } from './commands/cisco/config/config-line/Transport';
 
 export function createCiscoRouterHostShell(
@@ -75,6 +89,10 @@ export function createCiscoRouterHostShell(
   showSub.register(() => new CiscoRouterShowClockCommand());
   showSub.register(() => new CiscoRouterShowCdpCommand());
   showSub.register(() => new CiscoRouterShowUsersCommand());
+  showSub.register(() => new CiscoRouterShowMemoryCommand());
+  showSub.register(() => new CiscoRouterShowProcessesCommand());
+  showSub.register(() => new CiscoRouterShowLoggingCommand());
+  showSub.register(() => new CiscoRouterShowNtpCommand());
 
   const userRegistry = new CommandRegistry();
   const privilegedRegistry = new CommandRegistry();
@@ -121,6 +139,10 @@ export function createCiscoRouterHostShell(
   configIfRegistry.register(() => new CiscoRouterConfigIfDelayCommand());
   configIfRegistry.register(() => new CiscoRouterConfigIfKeepaliveCommand());
   configIfRegistry.register(() => new CiscoRouterConfigIfCdpCommand());
+  configIfRegistry.register(() => new CiscoRouterConfigIfDuplexCommand());
+  configIfRegistry.register(() => new CiscoRouterConfigIfSpeedCommand());
+  configIfRegistry.register(() => new CiscoRouterConfigIfHoldQueueCommand());
+  configIfRegistry.register(() => new CiscoRouterConfigIfArpCommand());
   configIfRegistry.register(() => new PopModeCommand('exit', 'Exit from the current mode'));
   configIfRegistry.register(() => new EndCommand());
 
@@ -131,12 +153,18 @@ export function createCiscoRouterHostShell(
   configRouterRegistry.register(() => new CiscoRouterConfigRouterAutoSummaryCommand());
   configRouterRegistry.register(() => new CiscoRouterConfigRouterMaximumPathsCommand());
   configRouterRegistry.register(() => new CiscoRouterConfigRouterDefaultInformationCommand());
+  configRouterRegistry.register(() => new CiscoRouterConfigRouterDistanceCommand());
+  configRouterRegistry.register(() => new CiscoRouterConfigRouterTimersCommand());
   configRouterRegistry.register(() => new PopModeCommand('exit', 'Exit from the current mode'));
   configRouterRegistry.register(() => new EndCommand());
 
   configLineRegistry.register(() => new CiscoRouterConfigLinePasswordCommand());
   configLineRegistry.register(() => new CiscoRouterConfigLineLoginCommand());
   configLineRegistry.register(() => new CiscoRouterConfigLineTransportCommand());
+  configLineRegistry.register(() => new CiscoRouterConfigLineExecTimeoutCommand());
+  configLineRegistry.register(() => new CiscoRouterConfigLineHistoryCommand());
+  configLineRegistry.register(() => new CiscoRouterConfigLineLoggingCommand());
+  configLineRegistry.register(() => new CiscoRouterConfigLinePrivilegeCommand());
   configLineRegistry.register(() => new PopModeCommand('exit', 'Exit from the current mode'));
   configLineRegistry.register(() => new EndCommand());
 

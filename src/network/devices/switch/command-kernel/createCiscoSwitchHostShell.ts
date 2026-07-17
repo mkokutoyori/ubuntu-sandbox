@@ -15,7 +15,9 @@ import { CiscoSwitchShowClockCommand } from './commands/cisco/show/Clock';
 import { CiscoSwitchShowEtherchannelCommand } from './commands/cisco/show/Etherchannel';
 import { CiscoSwitchShowInterfacesCommand } from './commands/cisco/show/Interfaces';
 import { CiscoSwitchShowMacCommand } from './commands/cisco/show/Mac';
+import { CiscoSwitchShowPortSecurityCommand } from './commands/cisco/show/PortSecurity';
 import { CiscoSwitchShowRunningConfigCommand } from './commands/cisco/show/RunningConfig';
+import { CiscoSwitchShowSpanningTreeCommand } from './commands/cisco/show/SpanningTree';
 import { CiscoSwitchShowVlanCommand } from './commands/cisco/show/Vlan';
 import { CiscoSwitchShowVersionCommand } from './commands/cisco/show/Version';
 import { CiscoSwitchConfigBannerCommand } from './commands/cisco/config/Banner';
@@ -25,7 +27,9 @@ import { CiscoSwitchHostnameCommand } from './commands/cisco/config/Hostname';
 import { CiscoSwitchInterfaceCommand } from './commands/cisco/config/Interface';
 import { CiscoSwitchGlobalIpCommand } from './commands/cisco/config/Ip';
 import { CiscoSwitchConfigLoggingCommand } from './commands/cisco/config/Logging';
+import { CiscoSwitchConfigMacCommand } from './commands/cisco/config/Mac';
 import { CiscoSwitchConfigNoCommand } from './commands/cisco/config/No';
+import { CiscoSwitchConfigNtpCommand } from './commands/cisco/config/Ntp';
 import { CiscoSwitchGlobalSpanningTreeCommand } from './commands/cisco/config/SpanningTree';
 import { CiscoSwitchVlanCommand } from './commands/cisco/config/Vlan';
 import { CiscoSwitchConfigVtpCommand } from './commands/cisco/config/Vtp';
@@ -36,7 +40,9 @@ import { CiscoSwitchConfigIfMtuCommand } from './commands/cisco/config/config-if
 import { CiscoSwitchConfigIfNoCommand } from './commands/cisco/config/config-if/No';
 import { CiscoSwitchShutdownCommand } from './commands/cisco/config/config-if/Shutdown';
 import { CiscoSwitchConfigIfSpanningTreeCommand } from './commands/cisco/config/config-if/SpanningTree';
+import { CiscoSwitchConfigIfMlsCommand } from './commands/cisco/config/config-if/Mls';
 import { CiscoSwitchConfigIfSpeedCommand } from './commands/cisco/config/config-if/Speed';
+import { CiscoSwitchConfigIfStormControlCommand } from './commands/cisco/config/config-if/StormControl';
 import { CiscoSwitchportCommand } from './commands/cisco/config/config-if/Switchport';
 import { CiscoSwitchVlanNameCommand } from './commands/cisco/config/config-vlan/Name';
 
@@ -88,6 +94,8 @@ export function createCiscoSwitchHostShell(
   showSub.register(() => new CiscoSwitchShowEtherchannelCommand());
   showSub.register(() => new CiscoSwitchShowClockCommand());
   showSub.register(() => new CiscoSwitchShowCdpCommand());
+  showSub.register(() => new CiscoSwitchShowPortSecurityCommand());
+  showSub.register(() => new CiscoSwitchShowSpanningTreeCommand());
 
   const userRegistry = new CommandRegistry();
   const privilegedRegistry = new CommandRegistry();
@@ -117,6 +125,8 @@ export function createCiscoSwitchHostShell(
   configRegistry.register(() => new CiscoSwitchConfigErrdisableCommand());
   configRegistry.register(() => new CiscoSwitchConfigLoggingCommand());
   configRegistry.register(() => new CiscoSwitchConfigVtpCommand());
+  configRegistry.register(() => new CiscoSwitchConfigNtpCommand());
+  configRegistry.register(() => new CiscoSwitchConfigMacCommand());
   configRegistry.register(() => new PopModeCommand('exit', 'Exit from the current mode'));
   configRegistry.register(() => new EndCommand());
 
@@ -129,6 +139,8 @@ export function createCiscoSwitchHostShell(
   configIfRegistry.register(() => new CiscoSwitchConfigIfSpeedCommand());
   configIfRegistry.register(() => new CiscoSwitchConfigIfDuplexCommand());
   configIfRegistry.register(() => new CiscoSwitchConfigIfSpanningTreeCommand());
+  configIfRegistry.register(() => new CiscoSwitchConfigIfStormControlCommand());
+  configIfRegistry.register(() => new CiscoSwitchConfigIfMlsCommand());
   configIfRegistry.register(() => new PopModeCommand('exit', 'Exit from the current mode'));
   configIfRegistry.register(() => new EndCommand());
 

@@ -269,6 +269,50 @@ inchangés vs batch 6).
   - Suites Huawei ciblées : **204 failed / 213 passed** (inchangé
     vs batch 6 — zéro nouvelle régression, zéro nouveau vert car ces
     commandes n'apparaissent pas dans les cas de test actuels).
+## Cisco routeur + switch — vague batch 3 : 32 commandes câblées (config-if fine-tuning + config-router timers/distance + config-line UX + show ops/mls)
+
+**État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
+
+Troisième vague batch-générée. Focus : compléter les leaves opérateur
+manquants sur config-if (arp/duplex/speed/hold-queue), config-router
+(distance/timers basic), config-line (exec-timeout/history size/logging
+synchronous/privilege level), plus la vue exec côté ops (show
+memory/processes/logging/ntp status+associations). Switch : mls
+qos trust, storm-control, ntp server, mac address-table static, show
+port-security, show spanning-tree.
+
+### Routeur Cisco (22 nouveaux)
+
+- **config-if** : `duplex`, `speed`, `hold-queue`, `arp timeout`.
+- **config-router** : `distance`, `timers basic`.
+- **config-line** : `exec-timeout`, `history size`, `logging synchronous`,
+  `privilege level`.
+- **show** : `show memory`, `show processes`, `show logging`,
+  `show ntp {status|associations}`.
+
+### Switch Cisco (10 nouveaux)
+
+- **config-if** : `storm-control`, `mls qos trust`.
+- **config (global)** : `ntp server`, `mac address-table static`.
+- **show** : `show port-security`, `show spanning-tree`.
+
+### Câblage bootstrap
+
+- `createCiscoRouterHostShell.ts` : imports + register sur `showSub`,
+  `configIfRegistry`, `configRouterRegistry`, `configLineRegistry`
+  (nouveaux composites `arp`/`timers`/`history`/`logging`/`privilege`/
+  `ntp` avec leur sous-registre déjà rempli côté classe composite).
+- `createCiscoSwitchHostShell.ts` : imports + register sur `showSub`,
+  `configRegistry`, `configIfRegistry` (nouveaux composites `mls`,
+  `ntp`, `mac`).
+- `switch-cli-foundation.test.ts` : la sentinelle « unmigrated show »
+  passe de `show port-security` (désormais migré) à `show environment`
+  pour rester rouge tant qu'on n'a pas migré cette vue.
+
+### Validation
+
+- `npx tsc --noEmit` : 0 erreur.
+- `src/__tests__/unit/command-kernel` : **354/354 passent** (10 fichiers).
 
 ## Huawei routeur — vague batch 6 de 40 commandes (BGP peer/router-id/default, OSPF silent-interface/bandwidth-reference/lsdb/routing, IPsec policy view + application, DHCP snooping, HTTP server, SNMP target-host/trap/group, telnet/tracert/terminal/reset, route-policy apply cost/local-pref/community/as-path, loopback-detect, voice-vlan, sftp/ftp/user-interface)
 
