@@ -26,6 +26,15 @@ import { HuaweiSwitchDisplayCurrentConfigurationCommand } from './commands/huawe
 import { HuaweiSwitchStpRegionConfigurationRegionNameCommand } from './commands/huawei/mst-region-view/RegionName';
 import { HuaweiSwitchStpRegionConfigurationActiveCommand } from './commands/huawei/mst-region-view/Active';
 import { HuaweiSwitchIfStpCommand } from './commands/huawei/interface-view/Stp';
+import { HuaweiSwitchIfPortSecurityCommand } from './commands/huawei/interface-view/PortSecurity';
+import { HuaweiSwitchIfEthTrunkCommand } from './commands/huawei/interface-view/EthTrunk';
+import { HuaweiSwitchIfVoiceVlanCommand } from './commands/huawei/interface-view/VoiceVlan';
+import { HuaweiSwitchIfQinqCommand } from './commands/huawei/interface-view/Qinq';
+import { HuaweiSwitchIfDot1xCommand } from './commands/huawei/interface-view/Dot1x';
+import { HuaweiSwitchIfStormControlCommand } from './commands/huawei/interface-view/StormControl';
+import { HuaweiSwitchSysIgmpSnoopingCommand } from './commands/huawei/system-view/IgmpSnooping';
+import { HuaweiSwitchSysLldpCommand } from './commands/huawei/system-view/Lldp';
+import { HuaweiSwitchSysEthTrunkCommand } from './commands/huawei/system-view/interface/Trunk';
 // `HuaweiSwitchInterfaceVlanifCommand` est scaffoldé mais NON registered :
 // le vrai VRP réutilise le composite `interface <name>` avec le pattern
 // `Vlanif<id>` reconnu dans `HuaweiSwitchInterfaceCommand.prepare()`.
@@ -87,6 +96,9 @@ export function createHuaweiSwitchHostShell(
   systemViewRegistry.register(() => new HuaweiSwitchVlanCommand());
   systemViewRegistry.register(() => new HuaweiSwitchSysStpCommand());
   systemViewRegistry.register(() => new HuaweiSwitchSysMacAddressCommand());
+  systemViewRegistry.register(() => new HuaweiSwitchSysIgmpSnoopingCommand());
+  systemViewRegistry.register(() => new HuaweiSwitchSysLldpCommand());
+  systemViewRegistry.register(() => new HuaweiSwitchSysEthTrunkCommand());
   systemViewRegistry.register(() => new HuaweiSwitchSysUndoCommand());
   systemViewRegistry.register(() => new PopModeCommand('quit', 'Exit from the current view'));
   systemViewRegistry.register(() => new EndCommand(['return']));
@@ -95,6 +107,12 @@ export function createHuaweiSwitchHostShell(
   interfaceViewRegistry.register(() => new HuaweiSwitchIfDescriptionCommand());
   interfaceViewRegistry.register(() => new HuaweiSwitchIfPortCommand());
   interfaceViewRegistry.register(() => new HuaweiSwitchIfStpCommand());
+  interfaceViewRegistry.register(() => new HuaweiSwitchIfPortSecurityCommand());
+  interfaceViewRegistry.register(() => new HuaweiSwitchIfEthTrunkCommand());
+  interfaceViewRegistry.register(() => new HuaweiSwitchIfVoiceVlanCommand());
+  interfaceViewRegistry.register(() => new HuaweiSwitchIfQinqCommand());
+  interfaceViewRegistry.register(() => new HuaweiSwitchIfDot1xCommand());
+  interfaceViewRegistry.register(() => new HuaweiSwitchIfStormControlCommand());
   interfaceViewRegistry.register(() => new HuaweiSwitchIfUndoCommand());
   interfaceViewRegistry.register(() => new PopModeCommand('quit', 'Exit from the current view'));
   interfaceViewRegistry.register(() => new EndCommand(['return']));

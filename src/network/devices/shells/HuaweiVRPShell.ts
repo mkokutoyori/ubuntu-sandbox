@@ -1541,7 +1541,6 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     registerHuaweiPolicyDisplayCommands(t, () => this.r());
 
     const aaa = () => this.r().getHuaweiAaaService();
-    t.register('aaa', 'Enter AAA view', () => { this.setMode('aaa' as any); return ''; });
     t.registerGreedy('idle-timeout', 'Set idle timeout (system-level no-op)', (_args) => '');
     t.registerGreedy('set authentication password', 'Set authentication password', (_args) => '');
     t.registerGreedy('protocol inbound', 'Set inbound protocol (system-level no-op)', (_args) => '');
@@ -1639,8 +1638,7 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
 
     this.registerSecurityDisplayCommands(t);
 
-    for (const kw of ['snmp-agent', 'info-center enable',
-      'ntp-service enable', 'telnet server enable', 'http server',
+    for (const kw of ['telnet server enable', 'http server',
       'icmp ttl-exceeded send', 'icmp host-unreachable send']) {
       t.register(kw, `Toggle: ${kw}`, () => {
         this.r()._setGlobalToggle?.(kw.replace(/\s+enable\s*$/, ''), true);

@@ -791,6 +791,68 @@ progressive par équipement. Un push = une entrée = une fonctionnalité
 complète et testée (voir `CLAUDE.md` / le framework de migration pour les
 principes directeurs).
 
+## Huawei — vague batch 4 : 40 nouvelles commandes (IPv6, ACL rules, route-policy, DHCP pool leases, IKE/IPSec/port-security switch)
+
+**État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
+
+Continuation avec le mode batch amélioré : 40 commandes scaffoldées,
+0 TODO chemin à corriger. Le débranchement legacy a également porté
+sur `snmp-agent`, `info-center enable`, `ntp-service enable`, `aaa`
+(system-view) qui étaient encore dans les `trie.register` du legacy
+`HuaweiVRPShell.ts`.
+
+**Routeur Huawei (32 nouvelles commandes)** :
+
+- **IPv6** : composite `ipv6` (system-view — retourne OK à l'appel
+  seul = active IPv6 ; sous-registre `route-static`) + composite
+  `ipv6` interface-view avec feuilles `address`, `enable`.
+- **ACL** : composite `acl-view` (basic + adv) + feuilles `rule`,
+  `description`, `step`. Modes CLI `acl-basic-view`, `acl-adv-view`.
+- **Route-policy** : push-mode `route-policy <name> {permit|deny} node <n>`
+  → `route-policy-view` + feuilles `if-match`, `apply`.
+- **DHCP pool étendu** : feuilles `lease`, `excluded-ip-address`,
+  `static-bind`, `vpn-instance`.
+- **IKE proposal étendu** : feuilles `peer`, `dh`.
+- **IPSec proposal étendu** : feuilles `esp`, `encapsulation-mode`.
+- **Interface range** : push-mode `interface range` → `interface-view`.
+- **Interface config** : leaves `dhcp` (interface-view), `ip
+  helper-address`.
+- **Display** : composites `display ipsec` (session + sa), `display
+  ike` (peer), `display ospf` (brief), leaf `display users`.
+
+**Switch Huawei (8 nouvelles commandes)** :
+
+- **Interface-view** : leaves `port-security`, `eth-trunk`,
+  `voice-vlan`, `qinq`, `dot1x`, `storm-control`.
+- **System-view** : leaves `igmp-snooping`, `lldp` ; push-mode
+  `interface Eth-Trunk <id>`.
+
+**Débranchement legacy complémentaire** (HuaweiVRPShell.ts) :
+
+- Retrait de `snmp-agent`, `info-center enable`, `ntp-service enable`
+  du for-loop `_setGlobalToggle` — ces toggles étaient encore
+  interceptés par le legacy.
+- Retrait de `t.register('aaa', …)` qui poussait le legacy `mode =
+  'aaa'` — le kernel `HuaweiRouterSysAaaCommand` en a la charge.
+
+**Preuve** :
+
+- Suite command-kernel = **354/354 verte**.
+- Suites Huawei ciblées mesurées avant/après : **121/108 → 120/109**
+  (+1 test vert net). L'impact numérique reste modeste parce que
+  la plupart des 120 rouges restants nécessitent des combinaisons
+  complexes (persistance MachineApi côté DHCP pool `lease`,
+  synthèse `display current-configuration` avec route-policy /
+  IPSec / IKE / OSPF process ID / BGP AS number, `display ospf brief`
+  avec état d'un vrai OSPF configuré). Les setters MachineApi
+  correspondants sont la prochaine cible.
+
+**5 nouveaux modes CLI** : `route-policy-view`, `acl-basic-view`,
+`acl-adv-view`, plus enrichissement des modes existants
+(`dhcp-pool-view`, `ike-proposal-view`, `ipsec-proposal-view`,
+`interface-view` router/switch, `system-view` router/switch,
+`display` router/switch).
+
 ## Huawei — vague batch 3 : 40 nouvelles commandes scaffoldées (SNMP/NTP/AAA/ACL/OSPF/BGP/RIP/STP-adv/display switch)
 
 **État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**

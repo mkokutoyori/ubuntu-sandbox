@@ -63,6 +63,29 @@ import { HuaweiRouterBgpRouterCommand } from './commands/huawei/bgp-view/Router'
 import { HuaweiRouterSysRipCommand } from './commands/huawei/system-view/Rip';
 import { HuaweiRouterRipNetworkCommand } from './commands/huawei/rip-view/Network';
 import { HuaweiRouterUserViewBannerCommand } from './commands/huawei/user-view/Banner';
+import { HuaweiRouterSysIpv6RootCommand } from './commands/huawei/system-view/root/Ipv6';
+import { HuaweiRouterIfIpv6Command } from './commands/huawei/interface-view/Ipv6';
+import { HuaweiRouterAclRuleCommand } from './commands/huawei/acl-view/Rule';
+import { HuaweiRouterAclDescriptionCommand } from './commands/huawei/acl-view/Description';
+import { HuaweiRouterAclStepCommand } from './commands/huawei/acl-view/Step';
+import { HuaweiRouterSysRoutePolicyCommand } from './commands/huawei/system-view/RoutePolicy';
+import { HuaweiRouterRoutePolicyIfMatchCommand } from './commands/huawei/route-policy-view/IfMatch';
+import { HuaweiRouterRoutePolicyApplyCommand } from './commands/huawei/route-policy-view/Apply';
+import { HuaweiRouterPoolLeaseCommand } from './commands/huawei/dhcp-pool-view/Lease';
+import { HuaweiRouterPoolExcludedIpAddressCommand } from './commands/huawei/dhcp-pool-view/ExcludedIpAddress';
+import { HuaweiRouterPoolStaticBindCommand } from './commands/huawei/dhcp-pool-view/StaticBind';
+import { HuaweiRouterPoolVpnInstanceCommand } from './commands/huawei/dhcp-pool-view/VpnInstance';
+import { HuaweiRouterIkeProposalPeerCommand } from './commands/huawei/ike-proposal-view/Peer';
+import { HuaweiRouterIkeProposalDhCommand } from './commands/huawei/ike-proposal-view/Dh';
+import { HuaweiRouterIpsecProposalEspCommand } from './commands/huawei/ipsec-proposal-view/Esp';
+import { HuaweiRouterIpsecProposalEncapsulationModeCommand } from './commands/huawei/ipsec-proposal-view/EncapsulationMode';
+import { HuaweiRouterInterfaceRangeCommand } from './commands/huawei/system-view/interface/Range';
+import { HuaweiRouterIfDhcpCommand } from './commands/huawei/interface-view/Dhcp';
+import { HuaweiRouterIfHelperAddressCommand } from './commands/huawei/interface-view/ip/HelperAddress';
+import { HuaweiRouterDisplayIpsecCommand } from './commands/huawei/display/Ipsec';
+import { HuaweiRouterDisplayIkeCommand } from './commands/huawei/display/Ike';
+import { HuaweiRouterDisplayOspfCommand } from './commands/huawei/display/Ospf';
+import { HuaweiRouterDisplayUsersCommand } from './commands/huawei/display/User';
 
 /**
  * =====================================================================
@@ -97,6 +120,10 @@ export function createHuaweiRouterHostShell(
   displaySub.register(() => new HuaweiRouterDisplayCurrentConfigurationCommand());
   displaySub.register(() => new HuaweiRouterDisplaySavedConfigurationCommand());
   displaySub.register(() => new HuaweiRouterDisplayArpCommand());
+  displaySub.register(() => new HuaweiRouterDisplayIpsecCommand());
+  displaySub.register(() => new HuaweiRouterDisplayIkeCommand());
+  displaySub.register(() => new HuaweiRouterDisplayOspfCommand());
+  displaySub.register(() => new HuaweiRouterDisplayUsersCommand());
 
   const userViewRegistry = new CommandRegistry();
   const systemViewRegistry = new CommandRegistry();
@@ -109,6 +136,8 @@ export function createHuaweiRouterHostShell(
   const ospfAreaViewRegistry = new CommandRegistry();
   const bgpViewRegistry = new CommandRegistry();
   const ripViewRegistry = new CommandRegistry();
+  const routePolicyViewRegistry = new CommandRegistry();
+  const aclViewRegistry = new CommandRegistry();
 
   userViewRegistry.register(() => createHuaweiDisplayCommand(displaySub));
   userViewRegistry.register(() => new HuaweiSystemViewCommand());
@@ -140,6 +169,9 @@ export function createHuaweiRouterHostShell(
   systemViewRegistry.register(() => new HuaweiRouterSysOspfCommand());
   systemViewRegistry.register(() => new HuaweiRouterSysBgpCommand());
   systemViewRegistry.register(() => new HuaweiRouterSysRipCommand());
+  systemViewRegistry.register(() => new HuaweiRouterSysIpv6RootCommand());
+  systemViewRegistry.register(() => new HuaweiRouterSysRoutePolicyCommand());
+  systemViewRegistry.register(() => new HuaweiRouterInterfaceRangeCommand());
   systemViewRegistry.register(() => new HuaweiRouterSysUndoCommand());
   systemViewRegistry.register(() => new PopModeCommand('quit', 'Exit from the current view'));
   systemViewRegistry.register(() => new EndCommand(['return']));
@@ -151,6 +183,9 @@ export function createHuaweiRouterHostShell(
   interfaceViewRegistry.register(() => new HuaweiRouterIfBandwidthCommand());
   interfaceViewRegistry.register(() => new HuaweiRouterIfSpeedCommand());
   interfaceViewRegistry.register(() => new HuaweiRouterIfDuplexCommand());
+  interfaceViewRegistry.register(() => new HuaweiRouterIfIpv6Command());
+  interfaceViewRegistry.register(() => new HuaweiRouterIfDhcpCommand());
+  interfaceViewRegistry.register(() => new HuaweiRouterIfHelperAddressCommand());
   interfaceViewRegistry.register(() => new HuaweiRouterIfUndoCommand());
   interfaceViewRegistry.register(() => new PopModeCommand('quit', 'Exit from the current view'));
   interfaceViewRegistry.register(() => new EndCommand(['return']));
@@ -159,18 +194,37 @@ export function createHuaweiRouterHostShell(
   dhcpPoolViewRegistry.register(() => new HuaweiRouterPoolGatewayListCommand());
   dhcpPoolViewRegistry.register(() => new HuaweiRouterPoolDnsListCommand());
   dhcpPoolViewRegistry.register(() => new HuaweiRouterPoolDomainNameCommand());
+  dhcpPoolViewRegistry.register(() => new HuaweiRouterPoolLeaseCommand());
+  dhcpPoolViewRegistry.register(() => new HuaweiRouterPoolExcludedIpAddressCommand());
+  dhcpPoolViewRegistry.register(() => new HuaweiRouterPoolStaticBindCommand());
+  dhcpPoolViewRegistry.register(() => new HuaweiRouterPoolVpnInstanceCommand());
   dhcpPoolViewRegistry.register(() => new PopModeCommand('quit', 'Exit from the current view'));
   dhcpPoolViewRegistry.register(() => new EndCommand(['return']));
 
   ikeProposalViewRegistry.register(() => new HuaweiRouterIkeEncryptionAlgorithmCommand());
   ikeProposalViewRegistry.register(() => new HuaweiRouterIkeAuthenticationMethodCommand());
   ikeProposalViewRegistry.register(() => new HuaweiRouterIkeAuthenticationAlgorithmCommand());
+  ikeProposalViewRegistry.register(() => new HuaweiRouterIkeProposalPeerCommand());
+  ikeProposalViewRegistry.register(() => new HuaweiRouterIkeProposalDhCommand());
   ikeProposalViewRegistry.register(() => new PopModeCommand('quit', 'Exit from the current view'));
   ikeProposalViewRegistry.register(() => new EndCommand(['return']));
 
   ipsecProposalViewRegistry.register(() => new HuaweiRouterIpsecTransformCommand());
+  ipsecProposalViewRegistry.register(() => new HuaweiRouterIpsecProposalEspCommand());
+  ipsecProposalViewRegistry.register(() => new HuaweiRouterIpsecProposalEncapsulationModeCommand());
   ipsecProposalViewRegistry.register(() => new PopModeCommand('quit', 'Exit from the current view'));
   ipsecProposalViewRegistry.register(() => new EndCommand(['return']));
+
+  routePolicyViewRegistry.register(() => new HuaweiRouterRoutePolicyIfMatchCommand());
+  routePolicyViewRegistry.register(() => new HuaweiRouterRoutePolicyApplyCommand());
+  routePolicyViewRegistry.register(() => new PopModeCommand('quit', 'Exit from the current view'));
+  routePolicyViewRegistry.register(() => new EndCommand(['return']));
+
+  aclViewRegistry.register(() => new HuaweiRouterAclRuleCommand());
+  aclViewRegistry.register(() => new HuaweiRouterAclDescriptionCommand());
+  aclViewRegistry.register(() => new HuaweiRouterAclStepCommand());
+  aclViewRegistry.register(() => new PopModeCommand('quit', 'Exit from the current view'));
+  aclViewRegistry.register(() => new EndCommand(['return']));
 
   aaaViewRegistry.register(() => new HuaweiRouterAaaLocalUserCommand());
   aaaViewRegistry.register(() => new HuaweiRouterAaaAuthenticationSchemeCommand());
@@ -207,6 +261,9 @@ export function createHuaweiRouterHostShell(
     { name: 'ospf-area-view',      prompt: (s, host) => `[${host}-ospf-${s.promptFields.get('selectedOspfProcess') ?? '1'}-area-${s.promptFields.get('selectedOspfArea') ?? ''}]`, parent: 'ospf-view', registry: ospfAreaViewRegistry, clearOnExit: ['selectedOspfArea'] },
     { name: 'bgp-view',            prompt: (s, host) => `[${host}-bgp-${s.promptFields.get('selectedBgpAsn') ?? ''}]`,                    parent: 'system-view',  registry: bgpViewRegistry,       clearOnExit: ['selectedBgpAsn'] },
     { name: 'rip-view',            prompt: (s, host) => `[${host}-rip-${s.promptFields.get('selectedRipProcess') ?? '1'}]`,               parent: 'system-view',  registry: ripViewRegistry,       clearOnExit: ['selectedRipProcess'] },
+    { name: 'route-policy-view',   prompt: (s, host) => `[${host}-route-policy]`,                                                          parent: 'system-view',  registry: routePolicyViewRegistry, clearOnExit: ['selectedRoutePolicy'] },
+    { name: 'acl-basic-view',      prompt: (_s, host) => `[${host}-acl-basic]`,                                                            parent: 'system-view',  registry: aclViewRegistry },
+    { name: 'acl-adv-view',        prompt: (_s, host) => `[${host}-acl-adv]`,                                                              parent: 'system-view',  registry: aclViewRegistry },
   ] satisfies CliMode[]);
 
   const machine = new RouterMachineApi({ router, modes });
