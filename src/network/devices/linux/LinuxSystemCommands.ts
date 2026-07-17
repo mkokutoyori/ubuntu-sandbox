@@ -9,7 +9,7 @@ import type { ShellContext } from './LinuxFileCommands';
  * realistic constants because they represent virtual mounts the
  * simulator doesn't track yet.
  */
-const ROOT_FS_CAPACITY_KB = 52_428_800; // 50 GB
+export const ROOT_FS_CAPACITY_KB = 52_428_800; // 50 GB
 
 /** Walk a directory tree and return cumulative file-byte total. */
 function vfsDirectorySize(ctx: ShellContext, absPath: string): number {
@@ -33,6 +33,39 @@ function vfsDirectorySize(ctx: ShellContext, absPath: string): number {
   return total;
 }
 
+/** One visited directory and its cumulative byte total (`du`, raw data — no formatting). */
+export interface DuWalkEntry { readonly path: string; readonly bytes: number; }
+
+/**
+ * Walk a directory tree post-order, returning one entry per descendant
+ * directory (deepest first), terminated by the total for `absPath` itself
+ * — the same recursion `cmdDu`'s full-mode `visit()` performs, extracted
+ * as a pure data producer (no `fmt()`/formatting) for reuse by the
+ * command-kernel `du` capability.
+ */
+export function duWalk(ctx: ShellContext, absPath: string, display: string): DuWalkEntry[] {
+  const out: DuWalkEntry[] = [];
+  const visit = (path: string, disp: string): number => {
+    const stat = ctx.vfs.lstat(path);
+    if (!stat) return 0;
+    if (stat.type !== 'directory') return stat.size;
+    let subtotal = 0;
+    const entries = ctx.vfs.listDirectory(path);
+    if (entries) {
+      for (const { name, inode } of entries) {
+        if (name === '.' || name === '..') continue;
+        const childPath = path === '/' ? `/${name}` : `${path}/${name}`;
+        const childDisplay = disp === '.' ? `./${name}` : `${disp}/${name}`;
+        subtotal += inode.type === 'directory' ? visit(childPath, childDisplay) : inode.size;
+      }
+    }
+    out.push({ path: disp, bytes: subtotal });
+    return subtotal;
+  };
+  visit(absPath, display);
+  return out;
+}
+
 /** Inode count under a directory (recursive). Used by `df -i`. */
 function vfsInodeCount(ctx: ShellContext, absPath: string): number {
   const node = ctx.vfs.lstat(absPath);
@@ -52,7 +85,7 @@ function vfsInodeCount(ctx: ShellContext, absPath: string): number {
 }
 
 /** Format a kilobyte count as df-style human-readable string. */
-function formatKbHuman(kb: number): string {
+export function formatKbHuman(kb: number): string {
   if (kb < 1024) return `${kb}K`;
   const mb = kb / 1024;
   if (mb < 1024) return mb >= 10 ? `${Math.round(mb)}M` : `${mb.toFixed(1)}M`;
@@ -63,14 +96,14 @@ function formatKbHuman(kb: number): string {
 }
 
 /** Format a byte count as du-style human-readable string. */
-function formatBytesHuman(bytes: number): string {
+export function formatBytesHuman(bytes: number): string {
   if (bytes < 1024) return `${bytes}B`;
   return formatKbHuman(Math.max(1, Math.round(bytes / 1024)));
 }
 
-interface DfEntry { fs: string; type: string; sizeKb: number; usedKb: number; availKb: number; usePct: number; mount: string; }
+export interface DfEntry { fs: string; type: string; sizeKb: number; usedKb: number; availKb: number; usePct: number; mount: string; }
 
-function dfTable(ctx: ShellContext): DfEntry[] {
+export function dfTable(ctx: ShellContext): DfEntry[] {
   const rootUsedBytes = vfsDirectorySize(ctx, '/');
   const rootUsedKb = Math.max(1, Math.ceil(rootUsedBytes / 1024));
   const rootAvailKb = Math.max(0, ROOT_FS_CAPACITY_KB - rootUsedKb);
@@ -84,7 +117,7 @@ function dfTable(ctx: ShellContext): DfEntry[] {
   ];
 }
 
-function dfTableAll(ctx: ShellContext): DfEntry[] {
+export function dfTableAll(ctx: ShellContext): DfEntry[] {
   return [
     ...dfTable(ctx),
     { fs: 'proc', type: 'proc', sizeKb: 0, usedKb: 0, availKb: 0, usePct: 0, mount: '/proc' },

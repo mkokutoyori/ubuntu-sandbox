@@ -125,7 +125,7 @@ const STDIN_COMMANDS = new Set([
  * completion and `command -v` / `which` / `type` resolution — the
  * simulator's stand-in for walking `$PATH`.
  */
-const KNOWN_LINUX_COMMANDS: readonly string[] = [
+export const KNOWN_LINUX_COMMANDS: readonly string[] = [
   // File/dir basics
   'ls', 'cd', 'cat', 'cp', 'mv', 'rm', 'mkdir', 'rmdir', 'touch', 'chmod',
   'chown', 'chgrp', 'ln', 'find', 'grep', 'egrep', 'fgrep', 'head', 'tail',
@@ -1977,6 +1977,11 @@ export class LinuxCommandExecutor {
       gid: this.userMgr.currentGid,
       color: this.displayColor,
     };
+  }
+
+  /** Public entry point for `getent` — same NSS engine the legacy `getent` case dispatches to. */
+  runGetentQuery(args: string[]): { output: string; exitCode: number } {
+    return runGetent(this.nss, args, this.filesNss);
   }
 
   /**

@@ -261,6 +261,134 @@ sur les setups L3 (config-router, config-line) et compléments de vue.
   Suppression déférée pour ne pas casser d'éventuels annexes
   tab-complete — à faire dans une vague de nettoyage dédiée.
 
+## Linux — Wave 5 : `arch`/`nproc`/`date`/`hostname`/`uptime`/`uname`/`timedatectl`/`hostnamectl`/`chage`/`faillock`/`which`/`whereis`/`true`/`false`/`printf`/`lastlog`/`df`/`du`/`getent`/`blkid` (batch-générées via `scripts/generate_command.py`)
+
+**État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
+
+Première vague de migration côté **Linux** (cible `linux` du générateur,
+déjà enregistrée, ~70 commandes coreutils déjà migrées) : 20 commandes
+supplémentaires, choisies parmi les commandes non migrées après une revue
+qui a écarté (pour cette vague) les builtins bash `alias`/`unalias`/`let`/
+`type`/`getopts` — leur état (table d'alias, variables) doit rester
+synchronisé avec celui de l'interpréteur de script bash lui-même ; les
+migrer isolément aurait introduit une divergence entre exécution
+interactive et exécution de script, pas juste un effort supplémentaire.
+Comme pour Oracle Wave 4/5, les 20 squelettes ont été scaffoldés en un
+seul appel `generate_command.py batch` avant qu'aucune logique métier ne
+soit écrite.
+
+- **`command-kernel/machine/types.ts`** (extensions additives) :
+  - `OsIdentity` reçoit des champs optionnels (`kernelSysname`,
+    `kernelBuildVersion`, `machine`, `operatingSystem`, `timezone`,
+    `chassis`, `iconName`, `machineId`, `bootId`, `virtualization`) —
+    absents côté Windows (déjà consommateur de `OsIdentity`), utilisés par
+    `uname`/`timedatectl`/`hostnamectl`.
+  - 7 nouvelles capacités optionnelles sur `MachineApi` : `LastlogApi`,
+    `AccountLockoutApi` (`faillock`), `PasswordAgingApi` (`chage`),
+    `DiskPartitionsApi` (`blkid`), `DiskUsageApi` (`df`),
+    `DirectoryUsageApi` (`du`), `NssQueryApi` (`getent`).
+
+- **Fonctions pures rendues réutilisables (`export` additif, zéro
+  changement de comportement)** : `LinuxSystemCommands.ts` —
+  `dfTable`/`dfTableAll`/`DfEntry`/`ROOT_FS_CAPACITY_KB`/
+  `formatKbHuman`/`formatBytesHuman` ; nouvelle fonction `duWalk` (extraite
+  du `visit()` privé de `cmdDu`, données brutes sans formatage) ;
+  `SystemInfo.ts` — `two`/`hhmmss`/`prettyUptime` ; `Builtins.ts` (moteur
+  bash) — `printfFormat`/`countFormatSpecs`, réutilisées telles quelles
+  par le `printf` migré (même grammaire de format que le builtin bash,
+  jamais dupliquée) ; `LinuxUserCommands.ts` — `parseChageDate` (déjà
+  exportée) ; `KNOWN_LINUX_COMMANDS` (déjà la liste canonique, rendue
+  `export`) réutilisée par `which`/`whereis`.
+
+- **Nouveau point d'entrée public** `LinuxCommandExecutor.runGetentQuery(args)`,
+  wrapper mince sur le même moteur NSS (`runGetent(this.nss, args,
+  this.filesNss)`) que le `case 'getent'` du legacy — `filesNss` reste
+  privé, aucun changement de visibilité de champ.
+
+- **20 nouvelles commandes** (`src/network/devices/linux/command-kernel/commands/`) :
+  - **`Arch.ts`/`Nproc.ts`** — triviales, lisent `machine.metrics.cpu()`
+    (déjà exposé, utilisé par `mpstat`/`iostat`/`pidstat`).
+  - **`Date.ts`** — délègue entièrement à `cmdDate`, fonction pure sans
+    aucune dépendance d'état.
+  - **`Hostname.ts`/`Uname.ts`/`Hostnamectl.ts`** — lisent/écrivent
+    `/etc/hostname` via `machine.fs` avec un acteur root explicite en
+    écriture (le legacy écrit sans vérification de permission — reproduit
+    à l'identique pour ne pas introduire une restriction inédite).
+  - **`Uptime.ts`** — `machine.metrics.uptimeSeconds()` ; `-s`/`--since`
+    calcule l'heure de boot par soustraction plutôt que via une capacité
+    dédiée.
+  - **`Timedatectl.ts`/`Hostnamectl.ts`** — champs additifs `machine.os`
+    (fuseau horaire, chassis, machine-id, boot-id, virtualisation).
+  - **`Chage.ts`** — `-l` formate le rapport de vieillissement depuis
+    `machine.passwordAging.get()` (jamais `LinuxUserManager.formatAgingReport`
+    directement) ; mutation via `.set()`, partagée avec `chage()`.
+  - **`Faillock.ts`** — rapport/reset via `machine.accountLockout`.
+  - **`Which.ts`/`Whereis.ts`** — `which` réimplémente la résolution
+    `$PATH` pure (équivalent `CommandResolver.resolveAll(forcePath:true)`,
+    qui ignore alias/fonction/builtin) directement en async via
+    `machine.fs`/`session.env`. `whereis` réutilise la classe pure déjà
+    découplée `WhereisResolver` (interface abstraite `WhereisFs`) : les
+    ~15 répertoires de recherche fixes sont pré-listés une fois via
+    `machine.fs` (asynchrone) avant de construire l'adaptateur synchrone
+    que le résolveur consomme.
+  - **`True.ts`/`False.ts`** — aucun état.
+  - **`Printf.ts`** — délègue le formatage à `printfFormat`/
+    `countFormatSpecs` (moteur bash) ; `-v var` écrit dans
+    `session.variables` (variables locales de script `$x`).
+  - **`Lastlog.ts`** — `machine.lastlog` (registre `LinuxLastlogRegistry`
+    déjà existant, capacités `accounts`/`current`/`clear`/`setNow`).
+  - **`Df.ts`** — `machine.diskUsage.entries(all)` ; **piège de parité
+    découvert et corrigé en cours de route** : `usePct` n'est PAS dérivable
+    de `sizeKb`/`usedKb` (le vrai `df` calcule sur `used/(used+avail)`, qui
+    exclut les blocs réservés du total — une ligne legacy en dur donne
+    `usePct: 16` là où `ceil(used/size*100)` aurait donné `15`) ; `usePct`
+    est donc une donnée propre transmise telle quelle par la capacité, pas
+    recalculée côté commande. Mode `-i` (inodes) : le compte de la racine
+    est recalculé via un comptage récursif asynchrone propre
+    (`machine.fs.list`), les 2 autres lignes restent les constantes
+    figées du legacy (mounts virtuels non simulés).
+  - **`Du.ts`** — `machine.directoryUsage.walk()` (nouvelle fonction pure
+    `duWalk`, résultats bruts formatés côté commande).
+  - **`Getent.ts`** — délègue à `machine.nssQuery.getent()`, qui appelle
+    `runGetentQuery`/`runGetent` (le moteur NSS réel) : c'est la commande
+    elle-même, pas un formateur contourné.
+  - **`Blkid.ts`** — `machine.diskPartitions.list()` (métadonnées de
+    partitions étendues : `fsType`/`uuid`/`mountPoint`/`sizeBytes`/`label`,
+    absentes du `DiskInfo` existant `iostat`/`lsblk` — capacité séparée
+    pour ne rien changer aux consommateurs actuels).
+
+- **Câblage** : les 20 commandes enregistrées dans
+  `createLinuxHostShell.ts` ; aucun changement au point de câblage
+  générique (`LinuxMachine.tryCommandKernel` → registre → legacy en
+  fallback, déjà en place) — seul `LinuxMachine.ts` gagne les 7 nouvelles
+  capacités dans l'objet `deps` passé à `createLinuxHostShell`.
+
+- **Preuve** : nouveau fichier `linux-command-kernel-wave5.test.ts` —
+  29/29 tests verts, construits sur le même socle que
+  `linux-command-kernel.test.ts` (VFS/IAM/process manager réels, pas de
+  doubles), couvrant les 20 commandes avec des scénarios réels (vraie
+  arborescence VFS pour `du`/`which`/`whereis`, vrai `LinuxUserManager`
+  pour `chage`/`faillock`, vrai `LinuxLastlogRegistry` pour `lastlog`).
+  Deux hypothèses de test corrigées après un premier run : le VFS seedé
+  par défaut contient déjà `/usr/bin/ls` et un compte système `nobody`
+  (les tests ciblaient une base vide, ajustés vers des noms garantis
+  absents).
+
+- **Validation de non-régression** : `tsc --noEmit` — 59 erreurs
+  avant/après (`git stash -u`), diff vide. `eslint` sur les fichiers
+  touchés — 0 erreur, seulement des warnings `no-unused-vars`
+  pré-existants (vérifiés via `git diff`, aucun introduit par cette
+  vague). Suite `network-v2/` + `bash/` + `terminal/` complète en cours
+  (voir suivi de session) — méthodologie `git stash -u` identique aux
+  vagues précédentes.
+
+- **Prochaines cibles Linux** : la couche Group B identifiée pendant la
+  planification (`getent`/`which`/`whereis` étaient dans ce lot au
+  départ, finalement migrés cette vague) — reste `mount`/`umount`/
+  `findmnt` (table de montage réelle, pas encore exposée), `systemctl`/
+  `service` (cycle de vie async), `iptables`/`ip`/`ss` (pile réseau),
+  `crontab`/`at` (ordonnanceur), `tar`/`gzip`/`zip` (moteur d'archive).
+
 ## Oracle SQL*Plus — Wave 4 : `COLUMN` / `ORADEBUG` / `DDL` / `USERACT` / `PMON SWEEP` / `SECDEMO` / `ARCHIVE LOG LIST` (batch-générées via `scripts/generate_command.py`)
 
 **État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**

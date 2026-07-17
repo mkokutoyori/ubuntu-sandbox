@@ -251,7 +251,7 @@ function builtinPrintf(args: string[], env: Environment): BuiltinResult {
 }
 
 /** Count the number of format specifiers (excluding %%) in a format string. */
-function countFormatSpecs(format: string): number {
+export function countFormatSpecs(format: string): number {
   let count = 0;
   for (let i = 0; i < format.length; i++) {
     if (format[i] === '%' && i + 1 < format.length) {
@@ -272,7 +272,7 @@ function countFormatSpecs(format: string): number {
 }
 
 /** Format a single pass through the format string with given args starting at argIdx. */
-function printfFormat(format: string, fmtArgs: string[], argIdx: number): string {
+export function printfFormat(format: string, fmtArgs: string[], argIdx: number): string {
   let output = '';
   let ai = argIdx;
 

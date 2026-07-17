@@ -34,6 +34,13 @@ import {
   SftpConnectResult,
   SyslogWriteResult,
   UserManagementApi,
+  LastlogApi,
+  AccountLockoutApi,
+  PasswordAgingApi,
+  DiskPartitionsApi,
+  DiskUsageApi,
+  DirectoryUsageApi,
+  NssQueryApi,
 } from '@/command-kernel/machine/types';
 import { CommandNotFoundError, FileSystemError, FileSystemErrorCode } from '@/command-kernel/errors';
 import { ExitRequest } from '@/command-kernel/shell/exit';
@@ -97,6 +104,20 @@ export interface LinuxMachineApiDeps {
   createSkeleton?(username: string): void;
   /** Ouvre une vraie connexion TCP sortante depuis cet équipement (`sftp` lanceur) — absent sur les vendeurs sans pile TCP cliente. */
   tcpConnect?(host: string, port: number): Promise<unknown>;
+  /** Registre `lastlog` (Wave 5) — absent sans suivi des connexions par utilisateur. */
+  lastlog?: LastlogApi;
+  /** Compteurs `faillock` (Wave 5) — absent sans politique de verrouillage de compte. */
+  accountLockout?: AccountLockoutApi;
+  /** Vieillissement `chage` (Wave 5) — absent sans aging shadow-style. */
+  passwordAging?: PasswordAgingApi;
+  /** Métadonnées de partitions `blkid` (Wave 5) — absent sans profil de stockage détaillé. */
+  diskPartitions?: DiskPartitionsApi;
+  /** Utilisation des montages `df` (Wave 5) — absent sans table de montage. */
+  diskUsage?: DiskUsageApi;
+  /** Taille récursive d'arborescence `du` (Wave 5). */
+  directoryUsage?: DirectoryUsageApi;
+  /** Interrogation NSS `getent` (Wave 5) — absent sans commutateur NSS. */
+  nssQuery?: NssQueryApi;
 }
 
 function toPathActor(actor: FileSystemActor): PathActor {
@@ -904,6 +925,13 @@ export class LinuxMachineApi implements MachineApi {
   readonly netstat?: NetstatInspectApi;
   readonly os?: OsIdentity;
   readonly permissions: PermissionsApi;
+  readonly lastlog?: LastlogApi;
+  readonly accountLockout?: AccountLockoutApi;
+  readonly passwordAging?: PasswordAgingApi;
+  readonly diskPartitions?: DiskPartitionsApi;
+  readonly diskUsage?: DiskUsageApi;
+  readonly directoryUsage?: DirectoryUsageApi;
+  readonly nssQuery?: NssQueryApi;
 
   constructor(deps: LinuxMachineApiDeps) {
     this.fs = new LinuxFileSystemApi(deps.vfs, () => deps.getUmask(), deps.publishFsAccess);
@@ -933,6 +961,13 @@ export class LinuxMachineApi implements MachineApi {
     if (deps.osIdentity) this.os = deps.osIdentity();
     this.netstat = deps.netstatInspect;
     this.permissions = new LinuxPermissionsApi(deps);
+    this.lastlog = deps.lastlog;
+    this.accountLockout = deps.accountLockout;
+    this.passwordAging = deps.passwordAging;
+    this.diskPartitions = deps.diskPartitions;
+    this.diskUsage = deps.diskUsage;
+    this.directoryUsage = deps.directoryUsage;
+    this.nssQuery = deps.nssQuery;
   }
 
   now(): Date {

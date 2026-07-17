@@ -17,11 +17,11 @@ const LOAD_AVERAGE = '0.00, 0.01, 0.05';
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
-function two(n: number): string {
+export function two(n: number): string {
   return String(n).padStart(2, '0');
 }
 
-function hhmmss(d: Date): string {
+export function hhmmss(d: Date): string {
   return `${two(d.getUTCHours())}:${two(d.getUTCMinutes())}:${two(d.getUTCSeconds())}`;
 }
 
@@ -32,7 +32,7 @@ function fullDate(d: Date): string {
 }
 
 /** Pretty uptime: `up 17 minutes` / `up 2 hours, 5 minutes`. */
-function prettyUptime(totalMin: number): string {
+export function prettyUptime(totalMin: number): string {
   const days = Math.floor(totalMin / 1440);
   const hours = Math.floor((totalMin % 1440) / 60);
   const mins = totalMin % 60;

@@ -73,6 +73,26 @@ import { UniqCommand } from './commands/Uniq';
 import { WcCommand } from './commands/Wc';
 import { WhoamiCommand } from './commands/Whoami';
 import { LinuxMachineApi, LinuxMachineApiDeps } from './LinuxMachineApi';
+import { ArchCommand } from './commands/Arch';
+import { NprocCommand } from './commands/Nproc';
+import { DateCommand } from './commands/Date';
+import { HostnameCommand } from './commands/Hostname';
+import { UptimeCommand } from './commands/Uptime';
+import { UnameCommand } from './commands/Uname';
+import { TimedatectlCommand } from './commands/Timedatectl';
+import { HostnamectlCommand } from './commands/Hostnamectl';
+import { ChageCommand } from './commands/Chage';
+import { FaillockCommand } from './commands/Faillock';
+import { WhichCommand } from './commands/Which';
+import { WhereisCommand } from './commands/Whereis';
+import { TrueCommand } from './commands/True';
+import { FalseCommand } from './commands/False';
+import { PrintfCommand } from './commands/Printf';
+import { LastlogCommand } from './commands/Lastlog';
+import { DfCommand } from './commands/Df';
+import { DuCommand } from './commands/Du';
+import { GetentCommand } from './commands/Getent';
+import { BlkidCommand } from './commands/Blkid';
 
 export function createLinuxHostShell(deps: LinuxMachineApiDeps): Interpreter {
   const registry = new CommandRegistry();
@@ -155,6 +175,26 @@ export function createLinuxHostShell(deps: LinuxMachineApiDeps): Interpreter {
   registry.register(() => new UseraddCommand());
   registry.register(() => new AdduserCommand());
   registry.register(() => new AddgroupCommand());
+  registry.register(() => new ArchCommand());
+  registry.register(() => new NprocCommand());
+  registry.register(() => new DateCommand());
+  registry.register(() => new HostnameCommand());
+  registry.register(() => new UptimeCommand());
+  registry.register(() => new UnameCommand());
+  registry.register(() => new TimedatectlCommand());
+  registry.register(() => new HostnamectlCommand());
+  registry.register(() => new ChageCommand());
+  registry.register(() => new FaillockCommand());
+  registry.register(() => new WhichCommand());
+  registry.register(() => new WhereisCommand());
+  registry.register(() => new TrueCommand());
+  registry.register(() => new FalseCommand());
+  registry.register(() => new PrintfCommand());
+  registry.register(() => new LastlogCommand());
+  registry.register(() => new DfCommand());
+  registry.register(() => new DuCommand());
+  registry.register(() => new GetentCommand());
+  registry.register(() => new BlkidCommand());
 
   return new Interpreter(registry, machine);
 }

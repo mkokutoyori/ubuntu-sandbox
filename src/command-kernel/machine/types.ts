@@ -1594,6 +1594,81 @@ export interface OsIdentity {
   readonly prettyName: string;
   readonly version: string;
   readonly kernelRelease: string;
+  /** Champs additifs (`uname`/`timedatectl`/`hostnamectl` Unix) — absents côté Windows. */
+  readonly kernelSysname?: string;
+  readonly kernelBuildVersion?: string;
+  readonly machine?: string;
+  readonly operatingSystem?: string;
+  readonly timezone?: string;
+  readonly chassis?: string;
+  readonly iconName?: string;
+  readonly machineId?: string;
+  readonly bootId?: string;
+  readonly virtualization?: string;
+}
+
+/**
+ * `getent` (interrogation NSS multi-base) — optionnel, propre aux
+ * équipements Unix avec commutateur NSS (`/etc/nsswitch.conf`). Délègue au
+ * moteur NSS réel (`runGetent`) plutôt que de dupliquer sa logique — c'est
+ * la commande elle-même, pas un formateur legacy à contourner.
+ */
+export interface NssQueryApi {
+  getent(argv: readonly string[]): { readonly output: string; readonly exitCode: number };
+}
+
+/** Une entrée `lastlog` — dernière connexion réussie d'un utilisateur. */
+export interface LastlogEntry {
+  readonly when: number;
+  readonly sourceHost: string;
+  readonly tty: string;
+}
+
+/**
+ * Registre `lastlog` (`lastlog(8)`) — optionnel, propre aux équipements Unix
+ * avec suivi des connexions par utilisateur.
+ */
+export interface LastlogApi {
+  accounts(): ReadonlyArray<{ readonly username: string; readonly uid: number }>;
+  current(username: string): LastlogEntry | undefined;
+  clear(username: string): void;
+  setNow(username: string): void;
+}
+
+/** Rapport de verrouillage `faillock(8)` pour un compte. */
+export interface FaillockReport {
+  readonly username: string;
+  readonly failures: number;
+  readonly lockedOut: boolean;
+}
+
+/**
+ * Compteurs d'échecs d'authentification (`faillock`) — optionnel, propre aux
+ * équipements Unix avec politique de verrouillage de compte.
+ */
+export interface AccountLockoutApi {
+  report(username?: string): ReadonlyArray<FaillockReport>;
+  reset(username: string): void;
+  userExists(username: string): boolean;
+}
+
+/** Champs de vieillissement de mot de passe (`chage`), en jours depuis l'epoch. */
+export interface PasswordAgingFields {
+  maxDays: number;
+  minDays: number;
+  warnDays: number;
+  lastChange: number;
+  expireDate: number;
+  inactiveDays: number;
+}
+
+/**
+ * Vieillissement de mot de passe (`chage`) — optionnel, propre aux
+ * équipements Unix avec shadow-style aging.
+ */
+export interface PasswordAgingApi {
+  get(username: string): PasswordAgingFields | undefined;
+  set(username: string, fields: Partial<PasswordAgingFields>): void;
 }
 
 /**
@@ -1633,6 +1708,55 @@ export interface CpuInfo {
 export interface DiskInfo {
   readonly name: string;
   readonly partitions: readonly string[];
+}
+
+/** Une partition disque avec ses métadonnées de système de fichiers (`blkid`). */
+export interface DiskPartitionInfo {
+  readonly disk: string;
+  readonly name: string;
+  readonly fsType: string;
+  readonly uuid: string;
+  readonly mountPoint: string;
+  readonly sizeBytes: number;
+  readonly label: string;
+}
+
+/** Inventaire des partitions avec métadonnées FS (`blkid`) — optionnel, propre aux équipements Unix avec profil de stockage détaillé. */
+export interface DiskPartitionsApi {
+  list(): ReadonlyArray<DiskPartitionInfo>;
+}
+
+/** Une ligne de système de fichiers monté (`df`). `usePct` est une donnée
+ *  propre (pas dérivable de sizeKb/usedKb : `df` réel calcule sur
+ *  used/(used+avail), qui exclut les blocs réservés du total). */
+export interface MountUsageEntry {
+  readonly fs: string;
+  readonly type: string;
+  readonly sizeKb: number;
+  readonly usedKb: number;
+  readonly availKb: number;
+  readonly usePct: number;
+  readonly mountPoint: string;
+}
+
+/** Utilisation des systèmes de fichiers montés (`df`) — optionnel, propre aux équipements Unix. */
+export interface DiskUsageApi {
+  entries(all: boolean): ReadonlyArray<MountUsageEntry>;
+}
+
+/** Un répertoire visité et sa taille cumulée en octets (`du`, ordre post-fixe). */
+export interface DirectoryUsageEntry {
+  readonly path: string;
+  readonly bytes: number;
+}
+
+/**
+ * Taille récursive d'une arborescence (`du`) — optionnel, propre aux
+ * équipements Unix. `walk` retourne une entrée par sous-répertoire visité
+ * (ordre post-fixe, la dernière entrée est le total de `absPath` lui-même).
+ */
+export interface DirectoryUsageApi {
+  walk(absPath: string, display: string): ReadonlyArray<DirectoryUsageEntry>;
 }
 
 /** Compteurs d'octets réseau cumulés, toutes interfaces confondues (`dstat`). */
@@ -1699,6 +1823,20 @@ export interface MachineApi {
   readonly netstat?: NetstatInspectApi;
   readonly os?: OsIdentity;
   readonly hardware?: HardwareProfile;
+  /** Registre `lastlog` — optionnel, propre aux équipements Unix. */
+  readonly lastlog?: LastlogApi;
+  /** Compteurs d'échecs d'authentification (`faillock`) — optionnel, propre aux équipements Unix. */
+  readonly accountLockout?: AccountLockoutApi;
+  /** Vieillissement de mot de passe (`chage`) — optionnel, propre aux équipements Unix. */
+  readonly passwordAging?: PasswordAgingApi;
+  /** Partitions disque avec métadonnées FS (`blkid`) — optionnel, propre aux équipements Unix. */
+  readonly diskPartitions?: DiskPartitionsApi;
+  /** Utilisation des systèmes de fichiers montés (`df`) — optionnel, propre aux équipements Unix. */
+  readonly diskUsage?: DiskUsageApi;
+  /** Taille récursive d'une arborescence (`du`) — optionnel, propre aux équipements Unix. */
+  readonly directoryUsage?: DirectoryUsageApi;
+  /** Interrogation NSS (`getent`) — optionnel, propre aux équipements Unix. */
+  readonly nssQuery?: NssQueryApi;
   /** Horodatage de démarrage, si l'équipement suit un cycle de vie power-on/off (`systeminfo`'s System Boot Time). */
   bootedAt?(): Date | null;
   /** Gestionnaire de services façon SCM (`sc`, `net start`/`stop`) — optionnel, pas un concept universel (voir systemd côté `LinuxCommand`). */

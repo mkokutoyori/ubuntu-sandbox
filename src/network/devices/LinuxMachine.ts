@@ -128,6 +128,7 @@ import { CommandIO } from '@/command-kernel/io/types';
 import type { CommandKernelChannel } from '@/command-kernel/io/channel';
 import type { NetstatIfaceView } from '@/command-kernel/machine/types';
 import { createLinuxHostShell } from './linux/command-kernel/createLinuxHostShell';
+import { dfTable, dfTableAll, duWalk } from './linux/LinuxSystemCommands';
 import { resolveLinuxUser } from './linux/command-kernel/LinuxUser';
 
 /**
@@ -1830,7 +1831,65 @@ export abstract class LinuxMachine extends EndHost
             prettyName: id.os.prettyName,
             version: id.os.versionId,
             kernelRelease: id.kernel.release,
+            kernelSysname: id.kernel.sysname,
+            kernelBuildVersion: id.kernel.version,
+            machine: id.kernel.machine,
+            operatingSystem: id.kernel.operatingSystem,
+            timezone: id.timezone,
+            chassis: id.chassis,
+            iconName: id.iconName,
+            machineId: id.machineId,
+            bootId: id.bootId,
+            virtualization: id.virtualization,
           };
+        },
+        lastlog: {
+          accounts: () => this.executor.userMgr.getAllUsers().map((u) => ({ username: u.username, uid: u.uid })),
+          current: (username) => this.executor.lastlog.getCurrent(username),
+          clear: (username) => this.executor.lastlog.clearUser(username),
+          setNow: (username) => this.executor.lastlog.record(username, '0.0.0.0', 'pts/0'),
+        },
+        accountLockout: {
+          report: (username) => this.executor.userMgr.getFaillockReport(username),
+          reset: (username) => { this.executor.userMgr.resetFaillock(username); },
+          userExists: (username) => this.executor.userMgr.getUser(username) !== undefined,
+        },
+        passwordAging: {
+          get: (username) => {
+            const u = this.executor.userMgr.getUser(username);
+            if (!u) return undefined;
+            return {
+              maxDays: u.maxDays, minDays: u.minDays, warnDays: u.warnDays,
+              lastChange: u.lastChange, expireDate: u.expireDate, inactiveDays: u.inactiveDays,
+            };
+          },
+          set: (username, fields) => {
+            this.executor.userMgr.chage(username, {
+              M: fields.maxDays, m: fields.minDays, W: fields.warnDays,
+              d: fields.lastChange, E: fields.expireDate, I: fields.inactiveDays,
+            });
+          },
+        },
+        diskPartitions: {
+          list: () => {
+            const out: Array<{ disk: string; name: string; fsType: string; uuid: string; mountPoint: string; sizeBytes: number; label: string }> = [];
+            for (const d of this.getHardware().storage) {
+              for (const p of d.partitions) {
+                out.push({ disk: d.name, name: p.name, fsType: p.fsType, uuid: p.uuid, mountPoint: p.mountPoint, sizeBytes: p.sizeBytes, label: p.label });
+              }
+            }
+            return out;
+          },
+        },
+        diskUsage: {
+          entries: (all) => (all ? dfTableAll(this.executor.ctx()) : dfTable(this.executor.ctx()))
+            .map((r) => ({ fs: r.fs, type: r.type, sizeKb: r.sizeKb, usedKb: r.usedKb, availKb: r.availKb, usePct: r.usePct, mountPoint: r.mount })),
+        },
+        directoryUsage: {
+          walk: (absPath, display) => duWalk(this.executor.ctx(), absPath, display),
+        },
+        nssQuery: {
+          getent: (args) => this.executor.runGetentQuery([...args]),
         },
         getUmask: () => this.executor.getUmask(),
         setUmask: (value) => this.executor.setUmask(value),
