@@ -294,9 +294,9 @@ describe('Router CLI foundation — command-kernel single-gate pipeline', () => 
     it('an unmigrated command fails through the new pipeline (signal for migration)', async () => {
       const r = new CiscoRouter('R1');
       await r.executeCommand('enable');
-      // `show running-config` : sous-commande `running-config` de `show`
-      // pas encore migrée → « Incomplete » via le nouveau pipeline.
-      const out = await r.executeCommand('show running-config');
+      // `show ip nat translations` : vue NAT non migrée →
+      // « Incomplete » via le nouveau pipeline (`show ip` composite).
+      const out = await r.executeCommand('show ip nat translations');
       expect(out).toMatch(/inconnu|Incomplete|not-found|introuvable|Invalid input|Unrecognized command/i);
     });
   });

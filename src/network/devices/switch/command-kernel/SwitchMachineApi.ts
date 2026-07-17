@@ -136,6 +136,16 @@ export interface SwitchCapabilityApi {
   setInterfaceChannelGroup(name: string, groupId: number, mode: 'active' | 'passive' | 'on'): boolean;
   /** `no channel-group`. */
   clearInterfaceChannelGroup(name: string): boolean;
+  /** `mtu <bytes>` — bornes 68..9216. */
+  setInterfaceMtu(name: string, bytes: number): boolean;
+  /** `speed {10|100|1000|auto}` — stocké cosmétique. */
+  setInterfaceSpeed(name: string, speed: '10' | '100' | '1000' | 'auto'): boolean;
+  /** `duplex {half|full|auto}` — stocké cosmétique. */
+  setInterfaceDuplex(name: string, duplex: 'half' | 'full' | 'auto'): boolean;
+  /** `spanning-tree portfast [trunk|disable]`. */
+  setInterfacePortfast(name: string, mode: 'edge' | 'trunk' | 'disable'): boolean;
+  /** `spanning-tree bpduguard {enable|disable}`. */
+  setInterfaceBpduguard(name: string, enabled: boolean): boolean;
 
   vlans(): readonly SwitchVlanInfo[];
   vlan(id: number): SwitchVlanInfo | null;
@@ -372,6 +382,42 @@ class SwitchCapabilityImpl implements SwitchCapabilityApi {
     }).getLacpAgent?.();
     if (!lacp) return false;
     lacp.removePort(name);
+    return true;
+  }
+
+  setInterfaceMtu(name: string, bytes: number): boolean {
+    const port = this.sw.getPort(name);
+    if (!port) return false;
+    if (!Number.isInteger(bytes) || bytes < 68 || bytes > 9216) return false;
+    port.setMTU(bytes);
+    return true;
+  }
+
+  setInterfaceSpeed(name: string, speed: '10' | '100' | '1000' | 'auto'): boolean {
+    const port = this.sw.getPort(name);
+    if (!port) return false;
+    (port as unknown as { speedSetting?: string }).speedSetting = speed;
+    return true;
+  }
+
+  setInterfaceDuplex(name: string, duplex: 'half' | 'full' | 'auto'): boolean {
+    const port = this.sw.getPort(name);
+    if (!port) return false;
+    (port as unknown as { duplexSetting?: string }).duplexSetting = duplex;
+    return true;
+  }
+
+  setInterfacePortfast(name: string, mode: 'edge' | 'trunk' | 'disable'): boolean {
+    const port = this.sw.getPort(name);
+    if (!port) return false;
+    (port as unknown as { portfastMode?: string }).portfastMode = mode;
+    return true;
+  }
+
+  setInterfaceBpduguard(name: string, enabled: boolean): boolean {
+    const port = this.sw.getPort(name);
+    if (!port) return false;
+    (port as unknown as { bpduguard?: boolean }).bpduguard = enabled;
     return true;
   }
 

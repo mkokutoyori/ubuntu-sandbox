@@ -128,6 +128,12 @@ export interface RouterCapabilityApi {
   /** Ajuste le MTU d'une interface (`mtu <bytes>`). Retourne `false`
    *  si l'interface est absente ou la valeur invalide (68..9216). */
   setInterfaceMtu(name: string, bytes: number): boolean;
+  /** `bandwidth <kbps>` — cosmétique côté SNMP/OSPF cost, stocké sur le port. */
+  setInterfaceBandwidthKbps(name: string, kbps: number): boolean;
+  /** `delay <units>` — cosmétique, stocké sur le port. */
+  setInterfaceDelayUs(name: string, us: number): boolean;
+  /** `keepalive <seconds>` — intervalle keepalive stocké sur le port. */
+  setInterfaceKeepalive(name: string, seconds: number): boolean;
   /** Ajoute une route statique (`ip route <net> <mask> <nexthop>`).
    *  Retourne `{ ok: false, error }` sans exception si les valeurs
    *  sont invalides ou la limite RIB atteinte. */
@@ -331,6 +337,30 @@ class RouterCapabilityImpl implements RouterCapabilityApi {
     if (!port) return false;
     if (!Number.isInteger(bytes) || bytes < 68 || bytes > 9216) return false;
     port.setMTU(bytes);
+    return true;
+  }
+
+  setInterfaceBandwidthKbps(name: string, kbps: number): boolean {
+    const port = this.router.getPort(name);
+    if (!port) return false;
+    if (!Number.isInteger(kbps) || kbps < 1 || kbps > 10_000_000) return false;
+    port.setBandwidthKbps(kbps);
+    return true;
+  }
+
+  setInterfaceDelayUs(name: string, us: number): boolean {
+    const port = this.router.getPort(name);
+    if (!port) return false;
+    if (!Number.isInteger(us) || us < 0) return false;
+    port.setDelayUs(us);
+    return true;
+  }
+
+  setInterfaceKeepalive(name: string, seconds: number): boolean {
+    const port = this.router.getPort(name);
+    if (!port) return false;
+    if (!Number.isInteger(seconds) || seconds < 0) return false;
+    (port as unknown as { keepaliveSec?: number }).keepaliveSec = seconds;
     return true;
   }
 }

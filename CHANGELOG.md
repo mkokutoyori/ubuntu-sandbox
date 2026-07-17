@@ -1,5 +1,76 @@
 # Changelog
 
+## Cisco routeur + switch — 40 commandes batch-générées via `scripts/generate_command.py`
+
+**État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
+
+Vague massive de scaffolding + implémentation ciblée, utilisant
+`scripts/generate_command.py batch` pour poser 40 fichiers en une
+passe puis complétion sélective des bodies TODO. Débloquage large
+sur les setups L3 (config-router, config-line) et compléments de vue.
+
+- **Enrichissement `RouterMachineApi`** : `setInterfaceBandwidthKbps`,
+  `setInterfaceDelayUs`, `setInterfaceKeepalive` (delegate à `Port`).
+- **Enrichissement `SwitchMachineApi`** : `setInterfaceMtu`,
+  `setInterfaceSpeed`, `setInterfaceDuplex`, `setInterfacePortfast`,
+  `setInterfaceBpduguard` (stockage cosmétique sur `Port` pour ceux
+  sans hardware réel).
+- **Nouveaux modes CLI Cisco routeur** :
+  - `config-router` (prompt `<host>(config-router)#`, clearOnExit
+    `routerProto`/`routerId`) — pour OSPF/RIP/EIGRP/BGP.
+  - `config-line` (prompt `<host>(config-line)#`, clearOnExit
+    `lineType`) — pour console/vty/aux.
+
+- **Commandes migrées (40 batch, ~25 complétées)** :
+  - **Routeur config-if** : `mtu`, `bandwidth`, `delay`, `keepalive`,
+    `cdp` (+ `cdp enable`).
+  - **Routeur config** : `router` (push config-router), `line` (push
+    config-line), `ntp` (composite → `ntp server`), `logging`,
+    `username`, `cdp run` (global), (composites `no ip route` déjà
+    présents).
+  - **Routeur config-router** : `network`, `router-id`,
+    `passive-interface`, `neighbor` (validation syntaxique
+    cosmétique — OSPF réel n'est pas réimplémenté ici).
+  - **Routeur config-line** : `password`, `login`, `transport`
+    (composite → `transport input`).
+  - **Routeur show** : `show running-config` (rendu depuis MachineApi
+    seule : hostname, interfaces, routes statiques), `show arp`
+    (depuis `router.arpEntries()`), `show interfaces [name]`.
+  - **Switch config-if** : `mtu`, `speed`, `duplex`, `spanning-tree`
+    (composite → `portfast`, `bpduguard`).
+  - **Switch config** : `spanning-tree` (composite global → `mode`),
+    `ip` (composite → `ip default-gateway`).
+  - **Switch show** : `show interfaces` (composite → `status`,
+    `trunk`), `show running-config`, `show etherchannel` (composite →
+    `summary`).
+
+- **Outillage : usage du script `scripts/generate_command.py batch`** :
+  un JSON de 40 spécifications → 40 fichiers TypeScript posés + tests
+  stub proposés + snippets d'enregistrement. Les bodies TODO sont
+  ensuite complétés au cas par cas (les commandes cosmétiques restent
+  silencieuses via `return EXIT_OK`, les critiques reçoivent leur
+  implémentation métier). Le script résout automatiquement les
+  imports composite→enfant en mode batch (passe 2).
+
+- **Preuve exécutable** : suite command-kernel **354/354 verte**
+  (contre 273 avant cette vague, +81 tests fondation transitent
+  correctement les 40 nouvelles commandes). `tsc` propre sur les
+  fichiers touchés (baseline pré-existante inchangée).
+
+- **Régressions ciblées legacy** : `cisco-switchport.test.ts` 2/4
+  (inchangé — 2 restants nécessitent `do <cmd>` et `interface
+  Port-channelN`, hors scope). `no-ip-address.test.ts` 2/2.
+  `routing-table.test.ts` 15/16 (inchangé, seul rouge Windows
+  General failure, hors scope).
+
+- **À nettoyer plus tard** : les entrées `configIfTrie.registerGreedy`
+  du legacy `CiscoSwitchShell.ts` pour les commandes migrées
+  (`switchport trunk encapsulation`, `switchport nonegotiate`,
+  `switchport voice vlan`, `channel-group`, etc.) sont désormais dead
+  code (le pipeline legacy n'est plus consulté par `executeCommand`).
+  Suppression déférée pour ne pas casser d'éventuels annexes
+  tab-complete — à faire dans une vague de nettoyage dédiée.
+
 ## Oracle SQL*Plus — Wave 4 : `COLUMN` / `ORADEBUG` / `DDL` / `USERACT` / `PMON SWEEP` / `SECDEMO` / `ARCHIVE LOG LIST` (batch-générées via `scripts/generate_command.py`)
 
 **État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
