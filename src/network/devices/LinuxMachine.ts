@@ -1660,6 +1660,11 @@ export abstract class LinuxMachine extends EndHost
     return false;
   }
 
+  /** Advance the simulated clock — completes due background jobs/at-jobs/cron ticks. */
+  advanceTime(ms: number): void {
+    this.executor.advanceTime(ms);
+  }
+
   /**
    * Execute a command string. The dispatch order mirrors the original
    * `LinuxPC.executeCommand()`:

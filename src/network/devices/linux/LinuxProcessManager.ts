@@ -109,16 +109,12 @@ export interface ProcessFilter {
 /** PID 1 — init/systemd is special and cannot be killed. */
 const INIT_PID = 1;
 
-/** PID 2 — kthreadd, the kernel thread daemon. Parent of every kernel
- *  thread; special-cased the same way init is (cannot be killed). */
+/** PID 2 — kthreadd. Special-cased like init: cannot be killed. */
 const KTHREADD_PID = 2;
 
 /** Linux PID_MAX_DEFAULT (32768) — wraparound boundary for PID allocation. */
 const PID_MAX = 32768;
 
-/** Kernel threads seeded under kthreadd at boot, matching what a real
- *  `ps -ef --forest` shows under PID 2 on a freshly booted Ubuntu box —
- *  comm in brackets, no argv, owned by root, parented to kthreadd. */
 const KERNEL_THREADS: ReadonlyArray<{ comm: string; state: ProcessState }> = [
   { comm: '[rcu_gp]', state: 'S' },
   { comm: '[rcu_par_gp]', state: 'S' },
@@ -278,11 +274,21 @@ export class LinuxProcessManager {
     return true;
   }
 
+  /** Signal-disposition check attached by the owning executor — lets a
+   *  trapped signal run its handler instead of the default action. */
+  private trapHandlerHook: ((pid: number, signal: Signal) => 'terminated' | 'handled' | 'no-trap') | null = null;
+
+  attachSignalTrapHandler(fn: (pid: number, signal: Signal) => 'terminated' | 'handled' | 'no-trap'): void {
+    this.trapHandlerHook = fn;
+  }
+
   /**
    * Send a signal to a process. Returns true on success.
    *
-   * Termination signals (TERM, KILL, INT, QUIT, HUP) remove the process.
-   * STOP transitions to T; CONT resumes to S. PID 1 is protected.
+   * Termination signals (TERM, KILL, INT, QUIT, HUP) remove the process —
+   * unless trapped (see {@link trapHandlerHook}), in which case the process
+   * only dies if the handler itself calls `exit`. SIGKILL is always fatal.
+   * STOP transitions to T; CONT resumes to S. PID 1/2 are protected.
    */
   kill(pid: number, signal: Signal, opts?: { silent?: boolean }): boolean {
     const p = this.processes.get(pid);
@@ -312,14 +318,26 @@ export class LinuxProcessManager {
       case 'SIGUSR1':
       case 'SIGUSR2':
       case 'SIGALRM':
-      case 'SIGPIPE':
-        // Default disposition for these is ignore or core, but our simulator
-        // simply delivers them and lets the process keep running.
+      case 'SIGPIPE': {
+        // Default disposition for these is ignore or core, but a process
+        // may have trapped one — give the hook a chance to actually react.
+        this.trapHandlerHook?.(pid, signal);
         return true;
+      }
       case 'SIGHUP':
       case 'SIGINT':
       case 'SIGQUIT':
-      case 'SIGTERM':
+      case 'SIGTERM': {
+        const outcome = this.trapHandlerHook?.(pid, signal) ?? 'no-trap';
+        if (outcome === 'handled') return true; // trap ran, didn't exit — process lives on
+        this.lastKill.set(pid, signal);
+        const reparented = this.terminate(pid);
+        this.publish({
+          topic: 'linux.process.exited',
+          payload: { deviceId: this.deviceId, pid, comm: p.comm, signal, reparented },
+        });
+        return true;
+      }
       case 'SIGKILL': {
         this.lastKill.set(pid, signal);
         const reparented = this.terminate(pid);

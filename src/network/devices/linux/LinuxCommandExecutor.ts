@@ -47,7 +47,8 @@ import { HostLifecycle } from '../host/lifecycle';
 import { HostClock } from '../host/lifecycle/HostClock';
 import { SystemIdentity } from '../host/identity';
 import { runScript, runScriptContent, runScriptContentAsync, type ScriptResult } from '@/bash/runtime/ScriptRunner';
-import { ExitSignal } from '@/bash/errors/BashError';
+import type { BashInterpreter } from '@/bash/interpreter/BashInterpreter';
+import { ExitSignal, DaemonParkSignal } from '@/bash/errors/BashError';
 import { AliasTable } from '@/bash/runtime/AliasTable';
 import { type IpNetworkContext } from './LinuxIpCommand';
 import { cmdDf, cmdDu, cmdFree } from './LinuxSystemCommands';
@@ -434,6 +435,22 @@ export class LinuxCommandExecutor {
     this.auditLog = new LinuxAuditLog(this.vfs);
     this.auditRules = new LinuxAuditRules(this.auditLog, this.vfs);
     this.processMgr = new LinuxProcessManager();
+    // Lets a trapped signal actually run its handler before kill() applies
+    // the default action — see LinuxProcessManager.trapHandlerHook.
+    this.processMgr.attachSignalTrapHandler((pid, signal) => {
+      const job = this.jobTable.findByPid(pid);
+      if (!job?.parkedInterp) return 'no-trap';
+      const sigName = signal.replace(/^SIG/, '');
+      const handler = job.parkedInterp.getTrap(sigName);
+      if (!handler) return 'no-trap';
+      const result = job.parkedInterp.runInterrupt(handler);
+      job.capturedOutput = (job.capturedOutput ?? '') + result.output;
+      if (result.exited) {
+        job.parkedInterp = undefined;
+        return 'terminated';
+      }
+      return 'handled';
+    });
     this.serviceMgr = new LinuxServiceManager(this.vfs, this.processMgr, { isServer }, this.dynamicUsers);
     this.auditRules.bindAuditdPidProvider(() => this.serviceMgr.status('auditd')?.mainPid);
     this.auditRules.bindActorContextProvider(() => this.snapshotActor());
@@ -703,6 +720,19 @@ export class LinuxCommandExecutor {
       this.vfs.registerGeneratedFile(`/proc/${pid}/cgroup`, () => {
         return `0::${this.cgroupPathFor(pid)}\n`;
       });
+      this.vfs.registerGeneratedFile(`/proc/${pid}/sched`, () => {
+        const p = this.processMgr.get(pid);
+        if (!p) return '';
+        // Real /proc/<pid>/sched has no "nice" field — the kernel exposes
+        // it as `prio` (120+nice for SCHED_OTHER) instead.
+        return [
+          `${p.comm} (${p.pid}, #threads: ${p.numThreads ?? 1})`,
+          '-------------------------------------------------------------------',
+          `policy                                      : ${p.schedPolicy === 'SCHED_OTHER' || !p.schedPolicy ? 0 : 1}`,
+          `prio                                        : ${120 + p.nice}`,
+          '',
+        ].join('\n');
+      });
       this.materializeProcFd(pid);
       this.materializedProcPids.add(pid);
     }
@@ -712,13 +742,7 @@ export class LinuxCommandExecutor {
     }
   }
 
-  /**
-   * Materialize `/proc/<pid>/fd/` — stdin/stdout/stderr plus any file the
-   * process explicitly opened (`OSProcess.openFiles`). Symlinks are created
-   * once at process-spawn time (real fd churn mid-life isn't tracked by the
-   * simulator), matching what `ls -la /proc/<pid>/fd` shows for a process
-   * whose descriptor table isn't actively changing.
-   */
+  /** `/proc/<pid>/fd/` — stdin/stdout/stderr plus any `OSProcess.openFiles`. */
   private materializeProcFd(pid: number): void {
     const p = this.processMgr.get(pid);
     if (!p) return;
@@ -1622,9 +1646,14 @@ export class LinuxCommandExecutor {
       currentUid: this.userMgr.currentUid,
       tty: 'pts/0',
       shellPid: this.shellPid,
+      currentPid: this.currentBashPid(),
       jobs: this.jobTable,
       uptimeSeconds: this.lifecycle.uptimeSeconds(),
       memory: this.hardware.memory,
+      execute: (cmd: string) => {
+        const out = this.execute(cmd);
+        return { output: out, exitCode: this.lastExitCode };
+      },
     };
   }
 
@@ -1664,9 +1693,14 @@ export class LinuxCommandExecutor {
     const argv = simpleTokenize(cmdLine);
     if (argv.length === 0) return null;
     const c = this.ctx();
+    // real nice(1) execve()s over itself, so comm/cmdline should reflect
+    // the wrapped command, not "nice" — see niceWrappedCommand().
+    const niceInner = niceWrappedCommand(argv);
+    const spawnCommand = niceInner ? niceInner.join(' ') : cmdLine;
+    const spawnComm = basenameOf((niceInner ?? argv)[0]);
     const proc = this.processMgr.spawn({
-      command: cmdLine,
-      comm: basenameOf(argv[0]),
+      command: spawnCommand,
+      comm: spawnComm,
       user: this.userMgr.currentUser,
       uid: c.uid,
       gid: c.gid,
@@ -1675,8 +1709,6 @@ export class LinuxCommandExecutor {
       cwd: this.cwd,
     });
     const job = this.jobTable.add(proc.pid, `${cmdLine} &`);
-    job.durationMs = parseBackgroundDurationMs(cmdLine);
-    job.completesAt = this.clock.now() + job.durationMs;
     // `$!` — PID of the most-recently backgrounded process. Bash exposes
     // this through the special parameter table; we propagate it via the
     // environment so `echo $!` / `kill -15 $!` resolve correctly.
@@ -1688,9 +1720,18 @@ export class LinuxCommandExecutor {
     // command's own stdout is detached from the terminal.
     let captured = '';
     let exitCode = 0;
+    let parked = false;
     try {
-      captured = this.execute(cmdLine);
-      exitCode = this.lastExitCode;
+      this.withProcessIdentity(proc.pid, () => {
+        const r = this.executeCoreWithResult(cmdLine, true);
+        captured = r.text;
+        exitCode = this.lastExitCode;
+        if (r.parked) {
+          parked = true;
+          job.parkedInterp = r.interp;
+          this.processMgr.setState(proc.pid, 'S');
+        }
+      });
     } catch { /* background failures are silent */ }
     if (exitCode === 127 && this.networkRunner) {
       const netArgv = simpleTokenize(cmdLine.replace(/^sudo\s+/, ''));
@@ -1711,7 +1752,12 @@ export class LinuxCommandExecutor {
     // brings it forward with `fg`/`wait`/`bg`, mirroring how a real
     // bash shows `sleep 60 &` for the duration of the sleep. The
     // captured output and exit code are stashed on the job for cmdFg
-    // to drain when the user actually waits on it.
+    // to drain when the user actually waits on it. A parked job never
+    // auto-completes — only actually signalling it removes it.
+    if (!parked) {
+      job.durationMs = parseBackgroundDurationMs(cmdLine);
+      job.completesAt = this.clock.now() + job.durationMs;
+    }
     job.capturedOutput = captured;
     job.exitCode = exitCode;
     return { pid: proc.pid, jobId: job.id };
@@ -1781,9 +1827,20 @@ export class LinuxCommandExecutor {
     }
   }
 
+  /**
+   * Complete jobs whose duration elapsed (Running → Z), and separately
+   * reap jobs already notified on a prior prompt. Splitting these into two
+   * passes keeps a zombie observable via `ps` for one command before it's
+   * actually removed — matching a real unreaped child.
+   */
   private reapDueBackgroundJobs(): void {
     const now = this.clock.now();
     for (const job of this.jobTable.list()) {
+      if (job.notified && job.isFinished()) {
+        this.processMgr.reap(job.pid);
+        this.jobTable.remove(job.id);
+        continue;
+      }
       if (!job.isRunning() || job.completesAt === undefined) continue;
       if (job.completesAt <= now) this.completeBackgroundJob(job);
     }
@@ -1808,9 +1865,10 @@ export class LinuxCommandExecutor {
       const label = job.state === 'Done' ? 'Done'
         : job.state === 'Killed' ? `Killed` : `Exit ${job.exitCode ?? 1}`;
       out.push(`[${job.id}]${marker}  ${label.padEnd(20)}${stripTrailingAmp(job.command)}`);
+      // Notified but NOT reaped here — see reapDueBackgroundJobs, which
+      // cleans this job up on the *next* command so the zombie window
+      // stays genuinely observable in between.
       job.notified = true;
-      this.processMgr.reap(job.pid);
-      this.jobTable.remove(job.id);
     }
     return out;
   }
@@ -2097,8 +2155,18 @@ export class LinuxCommandExecutor {
   private executeDepth = 0;
 
   private executeCore(input: string): string {
+    return this.executeCoreWithResult(input, false).text;
+  }
+
+  /** Shared core behind `execute()` and `spawnBackgroundJob`; `daemonMode`
+   *  makes an unconditional loop park instead of looping (see
+   *  {@link DaemonParkSignal}) and returns the live interpreter for it. */
+  private executeCoreWithResult(
+    input: string,
+    daemonMode: boolean,
+  ): { text: string; parked: boolean; interp?: BashInterpreter } {
     const trimmed = input.trim();
-    if (!trimmed) { this.lastExitCode = 0; return ''; }
+    if (!trimmed) { this.lastExitCode = 0; return { text: '', parked: false }; }
     this.currentCommandHead = extractCommandHead(trimmed);
 
     this.syncProcPids();
@@ -2108,29 +2176,40 @@ export class LinuxCommandExecutor {
 
     // Intercept builtins that the bash interpreter doesn't know about.
     const builtin = this.runJobBuiltinIfMatching(trimmed);
-    if (builtin !== null) return builtin;
+    if (builtin !== null) return { text: builtin, parked: false };
 
-    // Handle top-level background `cmd &` (and `nohup cmd &`).
-    const bgHandled = this.handleBackgroundIfTrailing(trimmed);
-    if (bgHandled !== null) return bgHandled;
+    if (!daemonMode) {
+      // Handle top-level background `cmd &` (and `nohup cmd &`).
+      const bgHandled = this.handleBackgroundIfTrailing(trimmed);
+      if (bgHandled !== null) return { text: bgHandled, parked: false };
+    }
+
+    const savedDaemonMode = this.daemonMode;
+    if (daemonMode) this.daemonMode = true;
 
     // Route through the bash interpreter for full bash syntax support
     const io = this.buildIOContext();
     const initialPwd = this.cwd;
     const initialVars = this.buildEnvVars();
-    const result = runScriptContent(
-      trimmed,
-      'bash',
-      [],
-      (argv, env, background) => this.dispatchFromInterpreter(argv, env, background),
-      initialVars,
-      io,
-      { pid: this.currentBashPid(), ppid: this.shellPpid, initialExitCode: this.lastExitCode },
-      this.aliases,
-      this.functions,
-    );
+    let result: ScriptResult;
+    try {
+      result = runScriptContent(
+        trimmed,
+        'bash',
+        [],
+        (argv, env, background) => this.dispatchFromInterpreter(argv, env, background),
+        initialVars,
+        io,
+        { pid: this.currentBashPid(), ppid: this.shellPpid, initialExitCode: this.lastExitCode, daemonMode },
+        this.aliases,
+        this.functions,
+      );
+    } finally {
+      this.daemonMode = savedDaemonMode;
+    }
 
-    return this.applyInterpreterResult(result, initialPwd, initialVars);
+    const text = this.applyInterpreterResult(result, initialPwd, initialVars);
+    return { text, parked: !!result.parked, interp: result.interp };
   }
 
   /**
@@ -2299,7 +2378,7 @@ export class LinuxCommandExecutor {
       collector,
       this.buildEnvVars(),
       io,
-      { pid: this.currentBashPid(), ppid: this.shellPpid, initialExitCode: this.lastExitCode },
+      { pid: this.currentBashPid(), ppid: this.shellPpid, initialExitCode: this.lastExitCode, daemonMode: this.daemonMode },
       this.aliases,
       this.functions,
     );
@@ -2326,6 +2405,11 @@ export class LinuxCommandExecutor {
   }
 
   private readonly bashPids: number[] = [];
+
+  /** True while executing a backgrounded job's own script — inherited by
+   *  anything it dispatches (e.g. a nested `bash -c`), so an unconditional
+   *  loop parks no matter how deep it's nested. See executeCoreWithResult. */
+  private daemonMode = false;
 
   private currentBashPid(): number {
     return this.bashPids[this.bashPids.length - 1] ?? this.shellPid;
@@ -2373,6 +2457,16 @@ export class LinuxCommandExecutor {
     this.bashPids.push(proc.pid);
     try {
       const result = run({ pid: proc.pid, ppid }, bridge);
+      if (result.parked) {
+        // The nested fork parked in an unconditional loop — it never gets
+        // a normal exit, and this inner PID is just a fork/exec artifact
+        // of dispatching `bash -c`, not a separately observable process;
+        // drop it silently and let the DaemonParkSignal re-propagate so
+        // the *outer* backgrounded job (spawnBackgroundJob's own PID)
+        // ends up parked instead.
+        if (this.processMgr.get(proc.pid)) this.processMgr.kill(proc.pid, 'SIGKILL', { silent: true });
+        throw new DaemonParkSignal(result.output, result.interp);
+      }
       if (this.processMgr.get(proc.pid)) this.processMgr.exit(proc.pid, result.exitCode);
       return { output: result.output, exitCode: result.exitCode };
     } finally {
@@ -2544,7 +2638,8 @@ export class LinuxCommandExecutor {
     let result: { output: string; exitCode: number };
     try {
       result = this.dispatch(actualCmd, actualArgs, stdin, isSudo);
-    } catch {
+    } catch (e) {
+      if (e instanceof DaemonParkSignal || e instanceof ExitSignal) throw e;
       result = { output: `${actualCmd}: error`, exitCode: 1 };
     }
 
@@ -3530,7 +3625,8 @@ export class LinuxCommandExecutor {
           return this.runScriptProcess(`${cmd} -c ${cmdString}`, (identity, bridge) =>
             runScriptContent(
               cmdString!, arg0, args.slice(i), bridge,
-              this.buildEnvVars(), this.buildIOContext(), identity, this.aliases, this.functions,
+              this.buildEnvVars(), this.buildIOContext(),
+              { ...identity, daemonMode: this.daemonMode }, this.aliases, this.functions,
             ));
         }
         if (i < args.length) {
@@ -6103,6 +6199,18 @@ function checksumVfs(content: string, cmd: string): string {
 function basenameOf(path: string): string {
   const i = path.lastIndexOf('/');
   return i >= 0 ? path.slice(i + 1) : path;
+}
+
+/** For `nice [-n ADJ] realcmd…`, return the wrapped command's argv (or
+ *  null if `argv` isn't that shape) — see call site for why. */
+function niceWrappedCommand(argv: string[]): string[] | null {
+  if (argv[0] !== 'nice') return null;
+  let i = 1;
+  if (argv[i] === '-n' || argv[i] === '--adjustment') i += 2;
+  else if (argv[i] && /^-n\d/.test(argv[i])) i += 1;
+  else if (argv[i] && /^--adjustment=/.test(argv[i])) i += 1;
+  else if (argv[i] && /^-\d+$/.test(argv[i])) i += 1;
+  return i < argv.length ? argv.slice(i) : null;
 }
 
 /**

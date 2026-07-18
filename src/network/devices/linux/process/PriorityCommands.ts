@@ -57,11 +57,16 @@ export function cmdNice(args: string[], ctx: ProcessCmdContext): CmdResult {
   }
   const cmd = args.slice(i);
   if (cmd.length === 0) {
-    // `nice -n N` with no command is a no-op in our non-forking sim.
     return { output: '', exitCode: 0 };
   }
-  // We cannot truly fork; the command would run at the adjusted nice.
-  return { output: '', exitCode: 0 };
+  // real nice(1) setpriority()s itself then execve()s into the target —
+  // same PID, new image.
+  const target = ctx.currentPid ?? ctx.shellPid;
+  if (target !== undefined) {
+    ctx.pm.renice(target, Math.max(-20, Math.min(19, adj)));
+  }
+  if (!ctx.execute) return { output: '', exitCode: 0 };
+  return ctx.execute(cmd.join(' '));
 }
 
 // ─── renice ────────────────────────────────────────────────────────────
