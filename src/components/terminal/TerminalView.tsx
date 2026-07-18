@@ -21,6 +21,8 @@ import type { TerminalSession, OutputLine, InputMode, TerminalTheme } from '@/te
 import type { LinuxTerminalSession } from '@/terminal/sessions/LinuxTerminalSession';
 import type { WindowsTerminalSession } from '@/terminal/sessions/WindowsTerminalSession';
 import { parseAnsiToSegments, stripAnsi } from '@/terminal/core/OutputFormatter';
+import { LinuxMachine } from '@/network/devices/LinuxMachine';
+import { LinuxEditorFsContext } from '@/terminal/sessions/LinuxEditorFsContext';
 
 // ─── Hook: subscribe to a session's state changes ─────────────────
 
@@ -172,6 +174,17 @@ export const TerminalView: React.FC<TerminalViewProps> = ({ session }) => {
 
   if (session.currentInputMode.type === 'editor') {
     const editorMode = session.currentInputMode;
+    // The editing device is whichever session is actually driving the
+    // overlay — for a plain terminal that's `session` itself, but over an
+    // SSH hop (or any nested child session) it's `session.foreground`,
+    // the same session `currentInputMode`/`editorSave`/`editorExit` above
+    // already delegate to (LinuxTerminalSession/WindowsTerminalSession
+    // `currentInputMode` overrides both forward to `foreground`).
+    const linuxSession = session.foreground as LinuxTerminalSession;
+    const fsContext = new LinuxEditorFsContext(
+      linuxSession.device as LinuxMachine,
+      linuxSession.shell ?? undefined,
+    );
     if (editorMode.editorType === 'nano') {
       return (
         <div className="h-full w-full flex flex-col">
@@ -179,8 +192,8 @@ export const TerminalView: React.FC<TerminalViewProps> = ({ session }) => {
             filePath={editorMode.absolutePath}
             initialContent={editorMode.content}
             isNewFile={editorMode.isNewFile}
-            onSave={(content: string, path: string) => session.editorSave(content, path)}
-            onExit={() => session.editorExit()}
+            fsContext={fsContext}
+            onExit={(saved: boolean) => session.editorExit(saved)}
           />
         </div>
       );
@@ -192,8 +205,8 @@ export const TerminalView: React.FC<TerminalViewProps> = ({ session }) => {
           initialContent={editorMode.content}
           isNewFile={editorMode.isNewFile}
           editorName={editorMode.editorType === 'vi' ? 'vi' : 'vim'}
-          onSave={(content: string, path: string) => session.editorSave(content, path)}
-          onExit={() => session.editorExit()}
+          fsContext={fsContext}
+          onExit={(saved: boolean) => session.editorExit(saved)}
         />
       </div>
     );

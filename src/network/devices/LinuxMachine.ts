@@ -3073,4 +3073,11 @@ export abstract class LinuxMachine extends EndHost
     const absPath = this.executor.vfs.normalizePath(path, session.cwd);
     return this.executor.vfs.writeFile(absPath, content, session.uid, session.gid, session.umask);
   }
+
+  /** Per-session variant of deleteFileFromEditor (used by editor swap/lock file cleanup). */
+  deleteFileFromEditorInSession(path: string, session: LinuxShellSession): boolean {
+    if (session.disposed) return this.deleteFileFromEditor(path);
+    const absPath = this.executor.vfs.normalizePath(path, session.cwd);
+    return this.executor.vfs.deleteFile(absPath);
+  }
 }
