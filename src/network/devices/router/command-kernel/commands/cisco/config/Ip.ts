@@ -3,6 +3,9 @@ import type { CommandContext, CommandDescriptor, ExitCode } from '@/command-kern
 import { CommandRegistry } from '@/command-kernel/registry/command-registry';
 import { DefaultPrivilegePolicy } from '@/command-kernel/session/privilege-policy';
 import { PrivilegeLevel } from '@/command-kernel/session/types';
+import { CiscoRouterConfigIpDomainLookupCommand } from './ip/DomainLookup';
+import { CiscoRouterConfigIpDomainNameCommand } from './ip/DomainName';
+import { CiscoRouterConfigIpNameServerCommand } from './ip/NameServer';
 import { CiscoRouterIpRouteCommand } from './ip/Route';
 
 const OP = new DefaultPrivilegePolicy(PrivilegeLevel.OPERATOR);
@@ -33,6 +36,9 @@ export class CiscoRouterConfigIpCommand extends BaseCommand {
   constructor() {
     super();
     this.subRegistry.register(() => new CiscoRouterIpRouteCommand());
+    this.subRegistry.register(() => new CiscoRouterConfigIpDomainNameCommand());
+    this.subRegistry.register(() => new CiscoRouterConfigIpNameServerCommand());
+    this.subRegistry.register(() => new CiscoRouterConfigIpDomainLookupCommand());
   }
 
   async execute(ctx: CommandContext): Promise<ExitCode> {

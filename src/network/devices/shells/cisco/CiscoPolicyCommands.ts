@@ -102,11 +102,6 @@ export function buildPolicyConfig(
     c.set = c.set.filter(l => !l.toLowerCase().startsWith(pattern));
     return '';
   });
-  // MIGRATED (command-kernel): 'description' — retrait trie legacy
-//     routeMapTrie.registerGreedy('description', 'Route-map description', (args) => {
-//       const c = clause(); if (c) c.description = args.join(' ');
-//       return '';
-//     });
 }
 
 export function registerPolicyShow(

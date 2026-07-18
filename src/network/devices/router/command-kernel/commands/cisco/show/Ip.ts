@@ -3,7 +3,12 @@ import type { CommandContext, CommandDescriptor, ExitCode } from '@/command-kern
 import { CommandRegistry } from '@/command-kernel/registry/command-registry';
 import { DefaultPrivilegePolicy } from '@/command-kernel/session/privilege-policy';
 import { PrivilegeLevel } from '@/command-kernel/session/types';
+import { CiscoRouterShowIpBgpCommand } from './ip/Bgp';
+import { CiscoRouterShowIpEigrpCommand } from './ip/Eigrp';
 import { CiscoRouterShowIpInterfaceCommand } from './ip/Interface';
+import { CiscoRouterShowIpNatCommand } from './ip/Nat';
+import { CiscoRouterShowIpOspfCommand } from './ip/Ospf';
+import { CiscoRouterShowIpProtocolsCommand } from './ip/Protocols';
 import { CiscoRouterShowIpRouteCommand } from './ip/Route';
 
 const ANY = new DefaultPrivilegePolicy(PrivilegeLevel.ANY);
@@ -34,6 +39,11 @@ export class CiscoRouterShowIpCommand extends BaseCommand {
     super();
     this.subRegistry.register(() => new CiscoRouterShowIpInterfaceCommand());
     this.subRegistry.register(() => new CiscoRouterShowIpRouteCommand());
+    this.subRegistry.register(() => new CiscoRouterShowIpProtocolsCommand());
+    this.subRegistry.register(() => new CiscoRouterShowIpOspfCommand());
+    this.subRegistry.register(() => new CiscoRouterShowIpBgpCommand());
+    this.subRegistry.register(() => new CiscoRouterShowIpEigrpCommand());
+    this.subRegistry.register(() => new CiscoRouterShowIpNatCommand());
   }
 
   async execute(ctx: CommandContext): Promise<ExitCode> {

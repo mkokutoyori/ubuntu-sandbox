@@ -14,7 +14,14 @@ import { CiscoSwitchShowCdpCommand } from './commands/cisco/show/Cdp';
 import { CiscoSwitchShowClockCommand } from './commands/cisco/show/Clock';
 import { CiscoSwitchShowDtpCommand } from './commands/cisco/show/Dtp';
 import { CiscoSwitchShowFlashCommand } from './commands/cisco/show/Flash';
+import { CiscoSwitchShowHistoryCommand } from './commands/cisco/show/History';
 import { CiscoSwitchShowInventoryCommand } from './commands/cisco/show/Inventory';
+import { CiscoSwitchShowLineCommand } from './commands/cisco/show/Line';
+import { CiscoSwitchShowLoggingCommand } from './commands/cisco/show/Logging';
+import { CiscoSwitchShowMemoryCommand } from './commands/cisco/show/Memory';
+import { CiscoSwitchShowProcessesCommand } from './commands/cisco/show/Processes';
+import { CiscoSwitchShowSnmpCommand } from './commands/cisco/show/Snmp';
+import { CiscoSwitchShowStartupConfigCommand } from './commands/cisco/show/StartupConfig';
 import { CiscoSwitchShowStandbyCommand } from './commands/cisco/show/Standby';
 import { CiscoSwitchShowEtherchannelCommand } from './commands/cisco/show/Etherchannel';
 import { CiscoSwitchShowInterfacesCommand } from './commands/cisco/show/Interfaces';
@@ -25,6 +32,10 @@ import { CiscoSwitchShowSpanningTreeCommand } from './commands/cisco/show/Spanni
 import { CiscoSwitchShowVlanCommand } from './commands/cisco/show/Vlan';
 import { CiscoSwitchShowVersionCommand } from './commands/cisco/show/Version';
 import { CiscoSwitchConfigAaaCommand } from './commands/cisco/config/Aaa';
+import { CiscoSwitchConfigAccessListCommand } from './commands/cisco/config/AccessList';
+import { CiscoSwitchConfigAliasCommand } from './commands/cisco/config/Alias';
+import { CiscoSwitchConfigBootCommand } from './commands/cisco/config/Boot';
+import { CiscoSwitchConfigClockCommand } from './commands/cisco/config/Clock';
 import { CiscoSwitchConfigBannerCommand } from './commands/cisco/config/Banner';
 import { CiscoSwitchConfigSnmpServerCommand } from './commands/cisco/config/SnmpServer';
 import { CiscoSwitchConfigEnableCommand } from './commands/cisco/config/Enable';
@@ -107,6 +118,13 @@ export function createCiscoSwitchHostShell(
   showSub.register(() => new CiscoSwitchShowStandbyCommand());
   showSub.register(() => new CiscoSwitchShowInventoryCommand());
   showSub.register(() => new CiscoSwitchShowFlashCommand());
+  showSub.register(() => new CiscoSwitchShowSnmpCommand());
+  showSub.register(() => new CiscoSwitchShowLineCommand());
+  showSub.register(() => new CiscoSwitchShowHistoryCommand());
+  showSub.register(() => new CiscoSwitchShowStartupConfigCommand());
+  showSub.register(() => new CiscoSwitchShowLoggingCommand());
+  showSub.register(() => new CiscoSwitchShowProcessesCommand());
+  showSub.register(() => new CiscoSwitchShowMemoryCommand());
 
   const userRegistry = new CommandRegistry();
   const privilegedRegistry = new CommandRegistry();
@@ -140,6 +158,10 @@ export function createCiscoSwitchHostShell(
   configRegistry.register(() => new CiscoSwitchConfigMacCommand());
   configRegistry.register(() => new CiscoSwitchConfigSnmpServerCommand());
   configRegistry.register(() => new CiscoSwitchConfigAaaCommand());
+  configRegistry.register(() => new CiscoSwitchConfigBootCommand());
+  configRegistry.register(() => new CiscoSwitchConfigClockCommand());
+  configRegistry.register(() => new CiscoSwitchConfigAccessListCommand());
+  configRegistry.register(() => new CiscoSwitchConfigAliasCommand());
   configRegistry.register(() => new PopModeCommand('exit', 'Exit from the current mode'));
   configRegistry.register(() => new EndCommand());
 

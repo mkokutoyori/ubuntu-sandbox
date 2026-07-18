@@ -67,6 +67,59 @@ les suites Huawei ciblées (204 → 201 failed).
   - Suites Huawei ciblées : **201 failed / 216 passed** (avant vague :
     204/213 → **+3 tests verts** grâce à `ospf enable`/`isis`/
     `authentication-server`/`shared-key`/etc. maintenant reconnus).
+## Cisco routeur + switch — vague batch 5 : 40 commandes + suppression physique des 57 blocs `// MIGRATED (command-kernel)` legacy
+
+**État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
+
+Cinquième vague : câble 40 nouvelles feuilles / composites côté routeur
++ switch, ET nettoie physiquement les 57 blocs `// MIGRATED
+(command-kernel)` commentés en place par `strip-trie.py` — les `trie.
+register(Greedy)?` correspondant aux vagues 1-4 disparaissent
+purement, plus de commentaires « fantômes » dans les shells legacy.
+
+### Routeur Cisco (28 nouveaux)
+
+- **config / ip** (sous-registre existant enrichi) : `ip domain-name`,
+  `ip name-server`, `ip domain-lookup`.
+- **config (global)** : `tftp-server`, `boot`, `clock`, `crypto key
+  generate rsa`, `access-list`, `alias`, `domain`.
+- **show / ip** (sous-registre existant enrichi) : `show ip protocols`,
+  `show ip ospf`, `show ip bgp`, `show ip eigrp`, `show ip nat`.
+- **show** : `show snmp`, `show line`, `show sessions`, `show history`,
+  `show startup-config`, `show vrf`, `show policy-map`, `show class-map`,
+  `show access-lists`, `show route-map`.
+
+### Switch Cisco (12 nouveaux)
+
+- **config / ip** (sous-registre existant enrichi) : `ip domain-name`,
+  `ip name-server`.
+- **config (global)** : `clock`, `boot`, `access-list`, `alias`.
+- **show** : `show snmp`, `show line`, `show history`,
+  `show startup-config`, `show logging`, `show processes`, `show memory`.
+
+### Nettoyage legacy
+
+- `delete-migrated.py` : suppression physique de **57 blocs
+  `// MIGRATED (command-kernel):`** dans `CiscoIOSShell.ts` (5),
+  `CiscoSwitchShell.ts` (5), et 11 fichiers `cisco/*Commands.ts` —
+  plus aucun résidu commenté après la migration.
+
+### Sentinelles rebasculées
+
+- `router-cli-foundation.test.ts` : sentinelle « unmigrated show »
+  passe de `show ip nat translations` (désormais migré) à `show ip
+  mroute` (vue multicast non encore migrée).
+
+### Validation
+
+- `npx tsc --noEmit` : 0 erreur.
+- `src/__tests__/unit/command-kernel` : **354/354 passent** (10 fichiers).
+- Palette network-v2 étendue : rouges pré-existants restent liés à
+  des flux legacy (tab-complétion, prompt hostname interactif) que la
+  nouvelle porte ne modélise pas — non-régression sur les tests qui
+  passaient.
+
+
 
 ## Huawei switch + routeur — vague batch 8 de 40 commandes (switch : storm/mac-limit/port-isolate/loopback-detect/bpdu/traffic-filter/traffic-secure/arp-limit/arp-detect en interface-view, voice-vlan/super-vlan/mux-vlan/arp-security/dhcp/vlan-batch/dtp/gvrp/vtp/cdp/udld/user-interface/aaa/info-center/snmp-agent/ntp-service/acl en system-view, clock/reboot/startup en user-view ; routeur : nqa/track/bfd/dot1x/cdp/lldp/assign/firewall/device-name en system-view, arp-broadcast en interface-view)
 

@@ -821,10 +821,6 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       for (const p of ports) out.push(`${p}\n  No accounting protocols configured.`);
       return out.join('\n');
     });
-    // MIGRATED (command-kernel): 'show ip interface brief' — retrait trie legacy
-//       trie.register('show ip interface brief', 'Display interface status summary', () => Show.showIpIntBrief(getRouter()));
-    // MIGRATED (command-kernel): 'show running-config' — retrait trie legacy
-//       trie.register('show running-config', 'Display running configuration', () => Show.showRunningConfig(getRouter()));
     trie.register('show startup-config', 'Display saved configuration', () =>
       this.startupConfig ?? '% startup-config is not present');
     trie.register('show configuration', 'Display saved configuration', () =>
@@ -859,8 +855,6 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       return Show.showRunningConfigInterface(getRouter(), ifName);
     });
 
-    // MIGRATED (command-kernel): 'show version' — retrait trie legacy
-//       trie.register('show version', 'Display system hardware and software status', () => Show.showVersion(getRouter(), this.getChassisProfile()));
 
     // `show interface[s] [<name>|description|status|summary]`.
     // Registered under both the singular and plural IOS spellings;
@@ -882,8 +876,6 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       if (last === 'switchport') return Show.showInterfaceSwitchport(getRouter(), ifName);
       return Show.showInterface(getRouter(), ifName);
     };
-    // MIGRATED (command-kernel): 'show interfaces' — retrait trie legacy
-//       trie.registerGreedy('show interfaces', 'Display interface status', showInterfaceCmd);
     trie.register('show vlans', 'Display VLANs (router)', () => Show.showVlansRouter(getRouter()));
     trie.registerGreedy('show ipv6 interface', 'Display IPv6 interface state', (args) => {
       const sub = (args[0] || '').toLowerCase();
@@ -902,8 +894,6 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       if (!ifName) return `% Invalid input detected at '^' marker.`;
       return Show.showInterface(getRouter(), ifName);
     };
-    // MIGRATED (command-kernel): 'show ip interface' — retrait trie legacy
-//       trie.registerGreedy('show ip interface', 'Display IP interface status', showIpInterfaceCmd);
   }
 
   // ─── Ping Command ────────────────────────────────────────────────

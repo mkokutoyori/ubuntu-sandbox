@@ -18,20 +18,6 @@ import type { CiscoShellContext } from './CiscoConfigCommands';
 // ─── Config Mode: "router ospf <id>" ─────────────────────────────────
 
 export function registerOSPFConfigCommands(configTrie: CommandTrie, ctx: CiscoShellContext): void {
-  // MIGRATED (command-kernel): 'router ospf' — retrait trie legacy
-//     configTrie.registerGreedy('router ospf', 'Enter OSPF routing protocol configuration', (args) => {
-//       if (args.length < 1) return '% Incomplete command.';
-//       const processId = parseInt(args[0], 10);
-//       if (isNaN(processId) || processId < 1 || processId > 65535) {
-//         return '% Invalid OSPF process ID';
-//       }
-//       const router = ctx.r();
-//       if (!router._getOSPFEngineInternal()) {
-//         router._enableOSPF(processId);
-//       }
-//       ctx.setMode('config-router-ospf');
-//       return '';
-//     });
 
   configTrie.registerGreedy('no router ospf', 'Disable OSPF routing protocol', (_args) => {
     ctx.r()._disableOSPF();
@@ -134,10 +120,6 @@ export function buildConfigRouterOSPFCommands(trie: CommandTrie, ctx: CiscoShell
   });
   trie.register('ispf', 'Enable incremental SPF', () => { extra().ispf = true; return ''; });
   trie.register('prefix-suppression', 'Enable prefix suppression', () => { extra().prefixSuppression = true; return ''; });
-  // MIGRATED (command-kernel): 'shutdown' — retrait trie legacy
-//     trie.register('shutdown', 'Disable OSPF process', () => { extra().shutdown = true; return ''; });
-  // MIGRATED (command-kernel): 'no shutdown' — retrait trie legacy
-//     trie.register('no shutdown', 'Re-enable OSPF process', () => { extra().shutdown = false; return ''; });
   trie.registerGreedy('segment-routing', 'Segment routing', (args) => {
     if (args[0]?.toLowerCase() === 'mpls') extra().segmentRoutingMpls = true;
     return '';
@@ -147,51 +129,8 @@ export function buildConfigRouterOSPFCommands(trie: CommandTrie, ctx: CiscoShell
     return '';
   });
 
-  // MIGRATED (command-kernel): 'network' — retrait trie legacy
-//     trie.registerGreedy('network', 'Define OSPF network/area', (args) => {
-//       const ospf = ctx.r()._getOSPFEngineInternal();
-//       if (!ospf) return '% OSPF is not enabled.';
-//   
-//       // Syntax: network <ip> <wildcard> area <area-id>
-//       if (args.length < 4) return '% Incomplete command.';
-//       const network = args[0];
-//       const wildcard = args[1];
-//       if (!'area'.startsWith(args[2].toLowerCase())) return '% Invalid input. Expected "area" keyword.';
-//       const areaId = args[3];
-//   
-//       ospf.addNetwork(network, wildcard, areaId);
-//       ctx.r()._ospfAutoConverge();
-//       return '';
-//     });
 
-  // MIGRATED (command-kernel): 'router-id' — retrait trie legacy
-//     trie.registerGreedy('router-id', 'Set OSPF Router ID', (args) => {
-//       if (args.length < 1) return '% Incomplete command.';
-//       if (!isValidIPv4(args[0])) return "% Invalid input detected at '^' marker.";
-//       const ospf = ctx.r()._getOSPFEngineInternal();
-//       if (!ospf) return '% OSPF is not enabled.';
-//       ospf.setRouterId(args[0]);
-//       return '';
-//     });
 
-  // MIGRATED (command-kernel): 'passive-interface' — retrait trie legacy
-//     trie.registerGreedy('passive-interface', 'Suppress routing updates on an interface', (args) => {
-//       if (args.length < 1) return '% Incomplete command.';
-//       const ospf = ctx.r()._getOSPFEngineInternal();
-//       if (!ospf) return '% OSPF is not enabled.';
-//   
-//       if (args[0].toLowerCase() === 'default') {
-//         const ports = ctx.r()._getPortsInternal();
-//         for (const [name] of ports) {
-//           ospf.setPassiveInterface(name);
-//         }
-//       } else {
-//         const ifName = ctx.resolveInterfaceName(args.join(' '));
-//         if (!ifName) return `% Invalid interface "${args.join(' ')}"`;
-//         ospf.setPassiveInterface(ifName);
-//       }
-//       return '';
-//     });
 
   trie.registerGreedy('no passive-interface', 'Enable routing updates on a passive interface', (args) => {
     if (args.length < 1) return '% Incomplete command.';
@@ -434,25 +373,6 @@ export function buildConfigRouterOSPFCommands(trie: CommandTrie, ctx: CiscoShell
     return '';
   });
 
-  // MIGRATED (command-kernel): 'neighbor' — retrait trie legacy
-//     trie.registerGreedy('neighbor', 'Configure NBMA neighbor', (args) => {
-//       if (args.length < 1) return '% Incomplete command.';
-//       const ip = args[0];
-//       const extra = ctx.r()._getOSPFExtraConfig();
-//       if (!extra.nbmaNeighbors) extra.nbmaNeighbors = [];
-//       let priority: number | undefined;
-//       let pollInterval: number | undefined;
-//       for (let i = 1; i < args.length - 1; i++) {
-//         if (args[i].toLowerCase() === 'priority') priority = parseInt(args[i + 1], 10);
-//         if (args[i].toLowerCase() === 'poll-interval') pollInterval = parseInt(args[i + 1], 10);
-//       }
-//       // Replace or add neighbor
-//       const existing = extra.nbmaNeighbors.findIndex(n => n.ip === ip);
-//       const entry = { ip, priority, pollInterval };
-//       if (existing >= 0) extra.nbmaNeighbors[existing] = entry;
-//       else extra.nbmaNeighbors.push(entry);
-//       return '';
-//     });
 
   trie.registerGreedy('summary-address', 'Summarize external routes for ASBR', (args) => {
     if (args.length < 2) return '% Incomplete command.';
@@ -490,29 +410,7 @@ export function buildConfigRouterOSPFCommands(trie: CommandTrie, ctx: CiscoShell
 // ─── Config-Router Mode: OSPFv3 sub-commands ──────────────────────────
 
 export function buildConfigRouterOSPFv3Commands(trie: CommandTrie, ctx: CiscoShellContext): void {
-  // MIGRATED (command-kernel): 'router-id' — retrait trie legacy
-//     trie.registerGreedy('router-id', 'Set OSPFv3 Router ID', (args) => {
-//       if (args.length < 1) return '% Incomplete command.';
-//       const v3 = ctx.r()._getOSPFv3EngineInternal();
-//       if (!v3) return '% OSPFv3 is not enabled.';
-//       v3.setRouterId(args[0]);
-//       return '';
-//     });
 
-  // MIGRATED (command-kernel): 'passive-interface' — retrait trie legacy
-//     trie.registerGreedy('passive-interface', 'Suppress routing updates on an interface', (args) => {
-//       if (args.length < 1) return '% Incomplete command.';
-//       const v3 = ctx.r()._getOSPFv3EngineInternal();
-//       if (!v3) return '% OSPFv3 is not enabled.';
-//       if (args[0].toLowerCase() === 'default') {
-//         v3.setPassiveInterfaceDefault?.(true);
-//         return '';
-//       }
-//       const ifName = ctx.resolveInterfaceName(args.join(' '));
-//       if (!ifName) return `% Invalid interface`;
-//       v3.setPassiveInterface(ifName);
-//       return '';
-//     });
 
   trie.registerGreedy('no passive-interface', 'Re-enable routing updates on an interface', (args) => {
     if (args.length < 1) return '% Incomplete command.';
@@ -1220,20 +1118,6 @@ export function registerOSPFShowCommands(trie: CommandTrie, getRouter: () => Rou
   trie.register('show ip ospf border-routers', 'Display OSPF border routers', () => showIpOspfBorderRouters(getRouter()));
   trie.register('show ip ospf statistics', 'Display OSPF statistics', () => showIpOspfStatistics(getRouter()));
   trie.registerGreedy('show ip route ospf', 'Display OSPF routes', (_args) => showIpRouteOspf(getRouter()));
-  // MIGRATED (command-kernel): 'show ip route' — retrait trie legacy
-//     trie.registerGreedy('show ip route', 'Display IP routing table', (args) => {
-//       if (args.length === 0) return showIpRouteAll(getRouter());
-//       const first = args[0].toLowerCase();
-//       if (first === 'vrf') {
-//         if (!args[1]) return '% Incomplete command.';
-//         return showIpRouteVrf(getRouter(), args[1]);
-//       }
-//       if (first === 'ospf') return showIpRouteOspf(getRouter());
-//       if (first === 'summary') return showIpRouteSummary(getRouter());
-//       if (first === 'connected') return showIpRouteAll(getRouter()).split('\n').filter(l => l.startsWith('C') || l.startsWith('Codes') || l === '').join('\n');
-//       if (first === 'static') return showIpRouteAll(getRouter()).split('\n').filter(l => l.startsWith('S') || l.startsWith('Codes') || l === '').join('\n');
-//       return showIpRouteSpecific(getRouter(), args[0]);
-//     });
 
   // OSPFv3 show commands
   trie.registerGreedy('show ipv6 ospf', 'Display OSPFv3 information', (args) => {
