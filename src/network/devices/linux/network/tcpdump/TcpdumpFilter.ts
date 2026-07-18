@@ -391,7 +391,7 @@ class Parser {
   }
 
   private parseBareValue(token: string, dir: 'src' | 'dst' | null): FilterResult {
-    if (token.startsWith('ip[') || token.startsWith('icmp[') || token.startsWith('tcp[') || token.startsWith('udp[')) {
+    if (token.startsWith('ip[') || token.startsWith('arp[') || token.startsWith('icmp[') || token.startsWith('tcp[') || token.startsWith('udp[')) {
       return this.parseByteSlice(token);
     }
     if (IPAddress.isValid(token)) {
@@ -463,7 +463,7 @@ class Parser {
 }
 
 interface ByteSliceSpec {
-  proto: 'ip' | 'tcp' | 'udp' | 'icmp';
+  proto: 'ip' | 'arp' | 'tcp' | 'udp' | 'icmp';
   offset: number;
   length: number;
 }
@@ -497,7 +497,7 @@ const BPF_NAMED_CONSTANTS: Record<string, number> = {
 const COMPARATORS = new Set(['=', '==', '!=', '<', '>', '<=', '>=']);
 
 function parseByteSliceSpec(token: string): ByteSliceSpec | null {
-  const numeric = /^(ip|tcp|udp|icmp)\[(\d+)(?::([124]))?\]$/.exec(token);
+  const numeric = /^(ip|arp|tcp|udp|icmp)\[(\d+)(?::([124]))?\]$/.exec(token);
   if (numeric) {
     return {
       proto: numeric[1] as ByteSliceSpec['proto'],
@@ -505,7 +505,7 @@ function parseByteSliceSpec(token: string): ByteSliceSpec | null {
       length: numeric[3] ? parseInt(numeric[3], 10) : 1,
     };
   }
-  const symbolic = /^(ip|tcp|udp|icmp)\[([a-z]+)\]$/.exec(token);
+  const symbolic = /^(ip|arp|tcp|udp|icmp)\[([a-z]+)\]$/.exec(token);
   if (symbolic) {
     const field = SYMBOLIC_FIELD_OFFSET[symbolic[2]];
     if (!field || field.proto !== symbolic[1]) return null;
@@ -523,13 +523,16 @@ function resolveByteSliceValue(token: string): number | null {
 
 function byteSliceProtoMatches(frame: CaptureFrame, proto: ByteSliceSpec['proto']): boolean {
   if (proto === 'ip') return frame.l3 === 'ipv4' || frame.l3 === 'ipv6';
+  if (proto === 'arp') return frame.l3 === 'arp';
   if (proto === 'icmp') return frame.l4 === 'icmp' || frame.l4 === 'icmp6';
   return frame.l4 === proto;
 }
 
 function readByteSliceValue(frame: CaptureFrame, spec: ByteSliceSpec): number | null {
   if (!byteSliceProtoMatches(frame, spec.proto)) return null;
-  const base = spec.proto === 'ip' ? frame.rawLinkOffset : frame.rawLinkOffset + (frame.ipHeaderLen ?? 20);
+  const base = spec.proto === 'ip' || spec.proto === 'arp'
+    ? frame.rawLinkOffset
+    : frame.rawLinkOffset + (frame.ipHeaderLen ?? 20);
   const abs = base + spec.offset;
   if (abs < 0 || abs + spec.length > frame.raw.length) return null;
   let value = 0;

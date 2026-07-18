@@ -26,46 +26,59 @@ const CAPTURE_WINDOW_MS = 200;
 const CAPTURE_DEADLINE_WITH_TARGET_MS = 3000;
 const MAX_FILTER_TOKENS = 64;
 
-export async function runTcpdump(tokens: string[], deps: TcpdumpDeps): Promise<string> {
+export interface TcpdumpResult {
+  stdout: string;
+  stderr: string;
+  exitCode: number;
+}
+
+/** Real tcpdump writes its banner, per-packet lines, and summary footer to different fds; only the packet lines are stdout — piping through awk/grep never sees the rest. */
+export async function runTcpdump(tokens: string[], deps: TcpdumpDeps): Promise<TcpdumpResult> {
   const invocation = parseInvocation(tokens);
 
   switch (invocation.kind) {
     case 'error':
-      return invocation.message;
+      return { stdout: '', stderr: invocation.message, exitCode: 1 };
     case 'help':
-      return invocation.text;
+      return { stdout: invocation.text, stderr: '', exitCode: 0 };
     case 'version':
-      return invocation.text;
+      return { stdout: invocation.text, stderr: '', exitCode: 0 };
     case 'list-interfaces':
-      return listInterfacesText(deps.interfaceNames(), (name) => name === 'lo' || deps.interfaceUp(name));
+      return {
+        stdout: listInterfacesText(deps.interfaceNames(), (name) => name === 'lo' || deps.interfaceUp(name)),
+        stderr: '', exitCode: 0,
+      };
     case 'list-link-types':
-      return listLinkTypesText(invocation.iface);
+      return { stdout: listLinkTypesText(invocation.iface), stderr: '', exitCode: 0 };
     case 'capture':
       return runCapture(invocation.options, deps);
   }
 }
 
-async function runCapture(opt: TcpdumpOptions, deps: TcpdumpDeps): Promise<string> {
+async function runCapture(opt: TcpdumpOptions, deps: TcpdumpDeps): Promise<TcpdumpResult> {
   if (opt.readFile) return readCaptureFile(opt, deps);
 
   if (opt.filterTokens.length > MAX_FILTER_TOKENS) {
-    return 'tcpdump: error: too many arguments in filter expression';
+    return { stdout: '', stderr: 'tcpdump: error: too many arguments in filter expression', exitCode: 1 };
   }
 
   const filter = compileFilter(opt.filterTokens);
-  if (filter.ok === false) return filter.message;
+  if (filter.ok === false) return { stdout: '', stderr: filter.message, exitCode: 1 };
 
   if (opt.iface !== 'any' && opt.iface !== 'lo') {
     if (!deps.interfaceExists(opt.iface)) {
-      return `tcpdump: error: ${opt.iface}: No such device exists`;
+      return { stdout: '', stderr: `tcpdump: error: ${opt.iface}: No such device exists`, exitCode: 1 };
     }
     if (!deps.interfaceUp(opt.iface)) {
-      return `tcpdump: error: ${opt.iface} is down`;
+      return { stdout: '', stderr: `tcpdump: error: ${opt.iface} is down`, exitCode: 1 };
     }
   }
 
   if (opt.writeFile && !deps.dirWritable(opt.writeFile)) {
-    return `tcpdump: error: ${opt.writeFile}: Permission denied (cannot open for writing)`;
+    return {
+      stdout: '', exitCode: 1,
+      stderr: `tcpdump: error: ${opt.writeFile}: Permission denied (cannot open for writing)`,
+    };
   }
 
   const collected: CaptureFrame[] = [];
@@ -102,46 +115,58 @@ async function runCapture(opt: TcpdumpOptions, deps: TcpdumpDeps): Promise<strin
 
   if (opt.writeFile) {
     persistCapture(opt.writeFile, printed, deps);
-    return [...banner(opt), ...footer(printed.length, printed.length)].join('\n');
+    return {
+      stdout: '',
+      stderr: [...banner(opt), ...footer(printed.length, printed.length)].join('\n'),
+      exitCode: 0,
+    };
   }
 
-  const lines: string[] = [...banner(opt)];
+  const stdoutLines: string[] = [];
   let prev: Date | null = null;
   for (const frame of printed) {
-    lines.push(formatFrame(frame, opt, prev));
+    stdoutLines.push(formatFrame(frame, opt, prev));
     prev = frame.at;
   }
-  lines.push(...footer(printed.length, printed.length));
-  return lines.join('\n');
+  return {
+    stdout: stdoutLines.join('\n'),
+    stderr: [...banner(opt), ...footer(printed.length, printed.length)].join('\n'),
+    exitCode: 0,
+  };
 }
 
 function persistCapture(path: string, frames: CaptureFrame[], deps: TcpdumpDeps): void {
   deps.writeFile(path, serializeCaptureFile(frames));
 }
 
-function readCaptureFile(opt: TcpdumpOptions, deps: TcpdumpDeps): string {
+function readCaptureFile(opt: TcpdumpOptions, deps: TcpdumpDeps): TcpdumpResult {
   const content = deps.readFile(opt.readFile!);
   if (content === null) {
-    return `tcpdump: error: ${opt.readFile}: No such file or directory`;
+    return { stdout: '', stderr: `tcpdump: error: ${opt.readFile}: No such file or directory`, exitCode: 1 };
   }
   const frames = deserializeCaptureFile(content);
   if (frames === null) {
-    return `tcpdump: error: ${opt.readFile}: unknown file format (bad dump file)`;
+    return {
+      stdout: '', exitCode: 1,
+      stderr: `tcpdump: error: ${opt.readFile}: unknown file format (bad dump file)`,
+    };
   }
   const filter = compileFilter(opt.filterTokens);
   const predicate = filter.ok ? filter.predicate : () => true;
-  const lines: string[] = [
-    `reading from file ${opt.readFile}, link-type ${opt.linkType} (Ethernet), snapshot length ${opt.snaplen}`,
-  ];
+  const stdoutLines: string[] = [];
   let prev: Date | null = null;
   let printed = 0;
   for (const frame of frames) {
     if (opt.direction !== 'inout' && frame.direction !== opt.direction) continue;
     if (!predicate(frame)) continue;
-    lines.push(formatFrame(frame, opt, prev));
+    stdoutLines.push(formatFrame(frame, opt, prev));
     prev = frame.at;
     printed++;
     if (opt.count !== null && printed >= opt.count) break;
   }
-  return lines.join('\n');
+  return {
+    stdout: stdoutLines.join('\n'),
+    stderr: `reading from file ${opt.readFile}, link-type ${opt.linkType} (Ethernet), snapshot length ${opt.snaplen}`,
+    exitCode: 0,
+  };
 }

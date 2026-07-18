@@ -58,7 +58,7 @@ import { cmdPidstat } from './system/Pidstat';
 import { parseDstatArgs, DSTAT_USAGE, DSTAT_VERSION, DSTAT_LISTING } from './system/Dstat';
 import { MountTable, MountEntry } from './MountTable';
 import { SysfsTree } from './Sysfs';
-import { cmdIfconfig, cmdNetstat, cmdCurl, cmdWget, cmdArping, cmdTcpdump } from './LinuxNetCommands';
+import { cmdIfconfig, cmdNetstat, cmdCurl, cmdWget, cmdTcpdump } from './LinuxNetCommands';
 import { PacketCaptureLog } from './network/PacketCaptureLog';
 import { publishWireSegment } from './network/WireCaptureBus';
 import { ensureCaptureRouterInstalled } from './network/CaptureRouter';
@@ -2154,11 +2154,11 @@ export class LinuxCommandExecutor {
    * argv is not a network command and the synchronous dispatch applies.
    */
   private networkRunner:
-    | ((argv: string[], env?: Record<string, string>) => Promise<{ output: string; exitCode: number }> | null)
+    | ((argv: string[], env?: Record<string, string>) => Promise<{ output: string; exitCode: number; stderr?: string }> | null)
     | null = null;
 
   setNetworkCommandRunner(
-    runner: (argv: string[], env?: Record<string, string>) => Promise<{ output: string; exitCode: number }> | null,
+    runner: (argv: string[], env?: Record<string, string>) => Promise<{ output: string; exitCode: number; stderr?: string }> | null,
   ): void {
     this.networkRunner = runner;
   }
@@ -2229,7 +2229,7 @@ export class LinuxCommandExecutor {
     argv: string[],
     env?: Record<string, string>,
     background?: boolean,
-  ): { output: string; exitCode: number } | Promise<{ output: string; exitCode: number }> {
+  ): { output: string; exitCode: number; stderr?: string } | Promise<{ output: string; exitCode: number; stderr?: string }> {
     if (!background && this.networkRunner && argv.length > 0) {
       const effective = argv[0] === 'sudo' ? argv.slice(1) : argv;
       const pending = effective.length > 0 ? this.networkRunner(effective, env) : null;
@@ -3666,12 +3666,6 @@ export class LinuxCommandExecutor {
       case 'killall': {
         const r = cmdKillall(args, this.processCmdContext());
         return r;
-      }
-      case 'arping': {
-        const ctx = this.ipNetworkCtx;
-        return cmdArping(args, {
-          mac: (ip) => ctx?.getNeighborTable().find((n) => n.ip === ip)?.mac ?? null,
-        });
       }
       case 'pgrep': {
         const r = cmdPgrep(args, this.processCmdContext());

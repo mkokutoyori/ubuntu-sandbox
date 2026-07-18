@@ -178,6 +178,8 @@ export class BashInterpreter {
    * this lets a caller's `2>` redirection peel stderr off coherently.
    */
   private stderrParts: string[] = [];
+  /** >0 while running a stage inside a multi-command pipeline — see `runPipelineStages`. */
+  private pipelineDepth = 0;
   private functions: Map<string, Command>;
   /** Command aliases — shared with the owning shell when one is passed. */
   readonly aliases: AliasTable;
@@ -486,32 +488,42 @@ export class BashInterpreter {
     // Multi-stage pipeline: chain stdout → stdin (simplified: pass output as arg)
     const stageCodes: number[] = [];
     let pipeInput = '';
-    for (let i = 0; i < node.commands.length; i++) {
-      const cmd = node.commands[i];
-      const savedOutput = this.output;
-      this.output = [];
+    const stderrMarker = this.stderrParts.length;
+    this.pipelineDepth++;
+    try {
+      for (let i = 0; i < node.commands.length; i++) {
+        const cmd = node.commands[i];
+        const savedOutput = this.output;
+        this.output = [];
 
-      // Every stage except the last is itself a guard — its failure
-      // must NOT trigger errexit, only the final stage's (or, with
-      // pipefail, the aggregate) does.
-      const isLast = i === node.commands.length - 1;
-      if (!isLast) this.errexitSuppress++;
-      try {
-        if (cmd.type === 'SimpleCommand' && pipeInput) {
-          yield* this.visitSimpleCommandWithInput(cmd, pipeInput);
-        } else {
-          yield* this.visitCommand(cmd);
+        // Every stage except the last is itself a guard — its failure
+        // must NOT trigger errexit, only the final stage's (or, with
+        // pipefail, the aggregate) does.
+        const isLast = i === node.commands.length - 1;
+        if (!isLast) this.errexitSuppress++;
+        try {
+          if (cmd.type === 'SimpleCommand' && pipeInput) {
+            yield* this.visitSimpleCommandWithInput(cmd, pipeInput);
+          } else {
+            yield* this.visitCommand(cmd);
+          }
+        } finally {
+          if (!isLast) this.errexitSuppress--;
         }
-      } finally {
-        if (!isLast) this.errexitSuppress--;
-      }
-      stageCodes.push(this.env.lastExitCode);
+        stageCodes.push(this.env.lastExitCode);
 
-      pipeInput = this.output.join('');
-      this.output = savedOutput;
+        pipeInput = this.output.join('');
+        this.output = savedOutput;
+      }
+    } finally {
+      this.pipelineDepth--;
     }
     // Final stage output goes to real output
     if (pipeInput) this.output.push(pipeInput);
+    // Every stage's fd 2 bypasses the pipe and reaches the terminal
+    // directly, like real concurrent processes sharing the inherited fd 2.
+    const pipelineStderr = this.stderrParts.slice(stderrMarker).join('');
+    if (pipelineStderr) this.output.push(pipelineStderr);
     if (this.isPipefail()) {
       const nonZero = stageCodes.filter(c => c !== 0);
       this.env.lastExitCode = nonZero.length > 0 ? nonZero[nonZero.length - 1] : 0;
@@ -722,17 +734,18 @@ export class BashInterpreter {
       if (result.stderr !== undefined) {
         // The command separates fd 1 / fd 2. Stdout flows normally;
         // stderr is mirrored to the pure stderr stream (and, with no
-        // fd-2 redirection, also to the merged terminal view).
+        // fd-2 redirection, also to the merged terminal view) — except
+        // inside a pipeline stage, where fd 2 bypasses the pipe entirely
+        // and must not leak into the next stage's stdin (see
+        // `runPipelineStages`).
         explicitStderr = result.stderr;
         if (result.output) {
           this.output.push(hasAnyRedirect ? result.output : ensureTrailingNewline(result.output));
         }
         if (result.stderr) {
-          if (hasAnyRedirect) {
-            this.stderrParts.push(result.stderr);
-          } else {
+          this.stderrParts.push(result.stderr);
+          if (!hasAnyRedirect && this.pipelineDepth === 0) {
             this.output.push(ensureTrailingNewline(result.stderr));
-            this.stderrParts.push(result.stderr);
           }
         }
       } else if (result.output) {

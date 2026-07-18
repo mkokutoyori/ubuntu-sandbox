@@ -52,10 +52,12 @@ describe('TCP flow control (PRD-TCP.md P3)', () => {
     const { cli, srv, bus } = buildPair();
     let serverSocket: TcpSocket | null = null;
     const received: string[] = [];
+    // 10 × 128: RFC 7323 window scale is always negotiated between two of
+    // this simulator's own hosts.
     srv.getTcpStack().listen(7100, {
       onAccept: (s) => {
         serverSocket = s;
-        s.windowSize = 10;
+        s.windowSize = 10 * 128;
         s.onData((d) => received.push(d as string));
       },
     });
@@ -69,11 +71,11 @@ describe('TCP flow control (PRD-TCP.md P3)', () => {
       if (p.sourcePort === clientSocket.localPort && p.payloadSize > 0) dataSizes.push(p.payloadSize);
     });
 
-    clientSocket.send('A'.repeat(50));
+    clientSocket.send('A'.repeat(5000));
 
-    expect(received.join('')).toBe('A'.repeat(50));
-    expect(dataSizes.length).toBeGreaterThan(1); // never one 50-byte blast
-    for (const size of dataSizes) expect(size).toBeLessThanOrEqual(10);
+    expect(received.join('')).toBe('A'.repeat(5000));
+    expect(dataSizes.length).toBeGreaterThan(1); // never one 5000-byte blast
+    for (const size of dataSizes) expect(size).toBeLessThanOrEqual(10 * 128);
   });
 
   it('a zero window blocks all new sends until a persist probe reveals it has reopened', () => {
@@ -95,9 +97,8 @@ describe('TCP flow control (PRD-TCP.md P3)', () => {
     expect(clientSocket.sendBacklog.length).toBeGreaterThan(0);
     expect(clientSocket.persistTimer).not.toBeNull();
 
-    // The peer reopens its window; only a persist probe will reveal this
-    // (nothing else is scheduled to talk to the client right now).
-    serverSocket!.windowSize = 100;
+    // The peer reopens its window; only a persist probe will reveal this.
+    serverSocket!.windowSize = 100 * 128;
     scheduler.advance(TCP_INITIAL_RTO_MS + 10);
 
     expect(received.join('')).toBe('hello');

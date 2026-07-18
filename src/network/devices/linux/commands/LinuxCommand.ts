@@ -115,7 +115,7 @@ export interface LinuxCommand {
   runWithStatus?(
     ctx: LinuxCommandContext,
     args: string[],
-  ): Promise<{ output: string; exitCode: number }>;
+  ): Promise<{ output: string; exitCode: number; stderr?: string }>;
 
   /**
    * Optional tab-completion callback. Called when the user presses TAB

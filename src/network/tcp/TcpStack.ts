@@ -781,7 +781,7 @@ export class TcpStack {
     // a pure window-update segment (no new ACK progress, no data) is how a
     // peer reopens a previously-advertised zero window, so this must run
     // unconditionally, not just alongside the ack-handling above.
-    socket.peerWindow = seg.window;
+    socket.peerWindow = this.decodeWindowField(socket, seg);
     this.flushSendBacklog(socket);
     switch (socket.state) {
       case 'syn-sent':
@@ -1169,12 +1169,24 @@ export class TcpStack {
       sourcePort: socket.localPort, destinationPort: socket.remotePort,
       sequence, acknowledgement: flags.ack ? ackNum : 0,
       dataOffset: optionsDataOffset(options), flags,
-      window: socket.windowSize, checksum: 0, urgentPointer: 0,
+      window: this.encodeWindowField(socket, flags), checksum: 0, urgentPointer: 0,
       options, payload,
     };
     seg.checksum = computeTcpChecksum(seg, egress.srcIp, socket.remoteIp);
     this.shipSegment(egress, egress.srcIp, socket.remoteIp, seg);
     return sentTsVal;
+  }
+
+  // RFC 7323 §2.2 — only scale once both sides negotiated it; SYN/SYN-ACK
+  // window fields are never scaled.
+  private encodeWindowField(socket: TcpSocket, flags: TcpFlags): number {
+    if (flags.syn || socket.peerWindowScale === null) return socket.windowSize;
+    return Math.min(0xffff, socket.windowSize >>> socket.windowScale);
+  }
+
+  private decodeWindowField(socket: TcpSocket, seg: TcpSegment): number {
+    if (seg.flags.syn || socket.peerWindowScale === null) return seg.window;
+    return (seg.window << socket.peerWindowScale) >>> 0;
   }
 
   /** Merge buffered out-of-order ranges (PRD-TCP.md P6) into RFC 2018 SACK blocks. */

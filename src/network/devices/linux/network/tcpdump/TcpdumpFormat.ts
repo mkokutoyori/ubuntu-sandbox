@@ -94,6 +94,38 @@ function udpChecksumToken(frame: CaptureFrame): string {
   return frame.udpChecksumOk ? `, cksum 0x${hex} (correct)` : `, cksum 0x${hex} (incorrect)`;
 }
 
+const DNS_RCODE_TEXT: Record<number, string> = {
+  1: 'FormErr',
+  2: 'ServFail',
+  3: 'NXDomain',
+  4: 'NotImp',
+  5: 'Refused',
+};
+
+function dnsLine(frame: CaptureFrame, opt: TcpdumpOptions): string {
+  const length = frame.payloadLength ?? 0;
+  if (!frame.dnsQr) {
+    const rd = frame.dnsRd ? '+' : '';
+    return `${frame.dnsId}${rd} ${frame.dnsQtype}? ${frame.dnsQname} (${length})`;
+  }
+  const counts = frame.dnsCounts
+    ? `${frame.dnsCounts.an}/${frame.dnsCounts.ns}/${frame.dnsCounts.ar}` : '0/0/0';
+  const rcodeText = frame.dnsRcode ? DNS_RCODE_TEXT[frame.dnsRcode] : undefined;
+  const rcodePart = rcodeText ? ` ${rcodeText}` : '';
+  const showTtl = opt.verbose > 0;
+  const answerList = (frame.dnsAnswers ?? []).map((a) => {
+    const base = `${a.type}${a.data ? ` ${a.data}` : ''}`;
+    return showTtl ? `${base} ttl ${a.ttl}` : base;
+  }).join(', ');
+  const tcPart = showTtl && frame.dnsTc ? ' (truncated, TC)' : '';
+  const authorityList = showTtl ? (frame.dnsAuthority ?? []).map((a) => {
+    const base = `${a.type}${a.data ? ` ${a.data}` : ''}`;
+    return `${base} ttl ${a.ttl}`;
+  }).join(', ') : '';
+  const authorityPart = authorityList ? `; authority: ${authorityList}` : '';
+  return `${frame.dnsId}${rcodePart} ${counts}${answerList ? ` ${answerList}` : ''}${tcPart}${authorityPart} (${length})`;
+}
+
 function tcpOptionsToken(frame: CaptureFrame): string {
   if (!frame.tcpOptions || frame.tcpOptions.length === 0) return '';
   const decoded = decodeOptions(frame.tcpOptions);
@@ -123,10 +155,14 @@ function l4Detail(frame: CaptureFrame, opt: TcpdumpOptions): string {
     const cksum = opt.verbose > 0 ? tcpChecksumToken(frame) : '';
     const ack = frame.tcpFlags?.ack ? `, ack ${frame.tcpAck ?? 0}` : '';
     const options = tcpOptionsToken(frame);
-    return `Flags [${tcpFlagToken(frame)}]${cksum}, seq ${frame.tcpSeq ?? 0}${ack}, win ${frame.tcpWindow ?? 0}${options}, length ${frame.payloadLength ?? 0}`;
+    const base = `Flags [${tcpFlagToken(frame)}]${cksum}, seq ${frame.tcpSeq ?? 0}${ack}, win ${frame.tcpWindow ?? 0}${options}, length ${frame.payloadLength ?? 0}`;
+    if (frame.dnsQr !== undefined && (frame.payloadLength ?? 0) > 0) {
+      return `${base}: ${dnsLine(frame, opt)}`;
+    }
+    return base;
   }
   if (frame.l4 === 'udp') {
-    if (frame.dnsSummary !== undefined) return frame.dnsSummary;
+    if (frame.dnsQr !== undefined) return dnsLine(frame, opt);
     const cksum = opt.verbose > 0 ? udpChecksumToken(frame) : '';
     return `UDP${cksum}, length ${frame.payloadLength ?? 0}`;
   }
@@ -202,6 +238,10 @@ function ip6Line(frame: CaptureFrame, opt: TcpdumpOptions): string {
 function ethPrefix(frame: CaptureFrame): string {
   const typeName = frame.l3 === 'arp' ? 'ARP' : frame.l3 === 'ipv6' ? 'IPv6' : 'IPv4';
   const typeHex = frame.l3 === 'arp' ? '0x0806' : frame.l3 === 'ipv6' ? '0x86dd' : '0x0800';
+  if (frame.vlanId !== undefined) {
+    return `${frame.srcMac} > ${frame.dstMac}, ethertype 802.1Q (0x8100), length ${frame.length}: `
+      + `vlan ${frame.vlanId}, p ${frame.vlanPriority ?? 0}, ethertype ${typeName} (${typeHex}), `;
+  }
   return `${frame.srcMac} > ${frame.dstMac}, ethertype ${typeName} (${typeHex}), length ${frame.length}: `;
 }
 
@@ -232,7 +272,7 @@ export function formatFrame(frame: CaptureFrame, opt: TcpdumpOptions, prev: Date
   const ts = timestamp(frame, opt, prev);
   let body: string;
   if (frame.l3 === 'arp') {
-    body = opt.linkLevel ? `${frame.srcMac} > ${frame.dstMac}, ${arpLine(frame)}` : arpLine(frame);
+    body = opt.linkLevel ? `${ethPrefix(frame)}${arpLine(frame)}` : arpLine(frame);
   } else if (frame.l3 === 'ipv4') {
     body = opt.linkLevel ? `${ethPrefix(frame)}${ipLine(frame, opt)}` : ipLine(frame, opt);
   } else if (frame.l3 === 'ipv6') {

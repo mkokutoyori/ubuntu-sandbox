@@ -859,25 +859,37 @@ export abstract class EndHost extends Equipment {
     });
 
     // Send gratuitous ARP (RFC 5227) to announce new IP and update neighbors' caches
-    if (port.isConnected()) {
-      const gratuitousARP: ARPPacket = {
-        type: 'arp',
-        operation: 'request',
-        senderMAC: port.getMAC(),
-        senderIP: ip,
-        targetMAC: MACAddress.broadcast(),
-        targetIP: ip,
-      };
-      this.sendFrame(ifName, {
-        srcMAC: port.getMAC(),
-        dstMAC: MACAddress.broadcast(),
-        etherType: ETHERTYPE_ARP,
-        payload: gratuitousARP,
-      });
-      Logger.info(this.id, 'arp:gratuitous',
-        `${this.name}: gratuitous ARP for ${ip} on ${ifName}`);
-    }
+    this.sendGratuitousArp(ifName, ip, 'request');
 
+    return true;
+  }
+
+  /**
+   * Broadcast an unsolicited ARP announcement for `ip` on `ifName` — RFC 5227
+   * gratuitous ARP. `mode` picks the wire opcode: 'request' is the common
+   * convention (used automatically by {@link configureInterface}); 'reply'
+   * matches real `arping -A`, which announces via an unsolicited ARP REPLY
+   * instead. Returns false if the interface has no cable attached.
+   */
+  sendGratuitousArp(ifName: string, ip: IPAddress, mode: 'request' | 'reply' = 'request'): boolean {
+    const port = this.ports.get(ifName);
+    if (!port || !port.isConnected()) return false;
+    const gratuitousARP: ARPPacket = {
+      type: 'arp',
+      operation: mode,
+      senderMAC: port.getMAC(),
+      senderIP: ip,
+      targetMAC: MACAddress.broadcast(),
+      targetIP: ip,
+    };
+    this.sendFrame(ifName, {
+      srcMAC: port.getMAC(),
+      dstMAC: MACAddress.broadcast(),
+      etherType: ETHERTYPE_ARP,
+      payload: gratuitousARP,
+    });
+    Logger.info(this.id, 'arp:gratuitous',
+      `${this.name}: gratuitous ARP ${mode} for ${ip} on ${ifName}`);
     return true;
   }
 
