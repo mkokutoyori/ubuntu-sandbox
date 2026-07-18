@@ -1,5 +1,47 @@
 # Changelog
 
+## Cisco routeur + switch — vague batch 7 : 28 commandes exec (privileged) + LLDP + show ip cef/rip — inventaire piloté par les échecs de tests network-v2
+
+**État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
+
+Septième vague, pilotée par un inventaire des commandes réellement
+attendues par les tests `network-v2` qui échouaient sur le socle
+kernel : `terminal length`, `clear counters / mac address-table`,
+`write`, `reload`, `ping`, `copy` (privileged EXEC), `lldp run`
+(config) et `show lldp` / `show ip cef` / `show ip rip [database]`.
+
+### Routeur Cisco (16 nouveaux)
+
+- **privileged (EXEC)** — 6 nouvelles racines : `terminal length`
+  / `terminal monitor` (composite), `clear counters` / `clear mac
+  address-table` (composite), `write`, `reload`, `copy`, `ping`.
+- **config** : `lldp run` / `lldp receive` (composite).
+- **show / ip** (enrichi) : `show ip cef`, `show ip rip [database]`.
+- **show** : `show lldp`.
+
+### Switch Cisco (12 nouveaux)
+
+- **privileged (EXEC)** — 6 nouvelles racines : `terminal length`
+  (composite), `clear counters` / `clear mac address-table`
+  (composite), `write`, `reload`, `copy`, `ping`.
+- **config** : `lldp run` (composite).
+- **show** : `show lldp`.
+
+### Méthode
+
+Voix utilisateur → inventaire :
+- Run des tests `network-v2` (14 fichiers Cisco).
+- Extraction des `executeCommand('...')` échouant → identification des
+  commandes attendues mais non migrées.
+- Rédaction du JSON d'inventaire `batch-v7-inventaire.json`.
+- Génération via `scripts/generate_command.py batch`.
+
+### Validation
+
+- `npx tsc --noEmit` : 0 erreur.
+- `src/__tests__/unit/command-kernel` : **354/354 passent** (10 fichiers).
+
+
 ## Cisco routeur + switch — vague batch 6 : 39 commandes câblées (enrichissement composites config/aaa, config/ntp, config/ip, config-if/ip, config-if/no, show/interfaces + nouveaux top-level crypto map / udld / port-channel / show ssh/boot/vtp/dot1x/errdisable/authentication/udld)
 
 **État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**

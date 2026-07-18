@@ -34,6 +34,7 @@ import { CiscoRouterShowStartupConfigCommand } from './commands/cisco/show/Start
 import { CiscoRouterShowVrfCommand } from './commands/cisco/show/Vrf';
 import { CiscoRouterShowTechSupportCommand } from './commands/cisco/show/TechSupport';
 import { CiscoRouterShowIpCommand } from './commands/cisco/show/Ip';
+import { CiscoRouterShowLldpCommand } from './commands/cisco/show/Lldp';
 import { CiscoRouterShowLoggingCommand } from './commands/cisco/show/Logging';
 import { CiscoRouterShowMemoryCommand } from './commands/cisco/show/Memory';
 import { CiscoRouterShowNtpCommand } from './commands/cisco/show/Ntp';
@@ -59,11 +60,19 @@ import { CiscoRouterHostnameCommand } from './commands/cisco/config/Hostname';
 import { CiscoRouterInterfaceCommand } from './commands/cisco/config/Interface';
 import { CiscoRouterConfigIpCommand } from './commands/cisco/config/Ip';
 import { CiscoRouterConfigLineCommand } from './commands/cisco/config/Line';
+import { CiscoRouterConfigLldpCommand } from './commands/cisco/config/Lldp';
 import { CiscoRouterConfigLoggingCommand } from './commands/cisco/config/Logging';
 import { CiscoRouterConfigNoCommand } from './commands/cisco/config/No';
 import { CiscoRouterConfigNtpCommand } from './commands/cisco/config/Ntp';
 import { CiscoRouterConfigRouterCommand } from './commands/cisco/config/Router';
 import { CiscoRouterConfigUsernameCommand } from './commands/cisco/config/Username';
+// ─── privileged (exec) ──────────────────────────────────────────────
+import { CiscoRouterClearCommand } from './commands/cisco/privileged/Clear';
+import { CiscoRouterCopyCommand } from './commands/cisco/privileged/Copy';
+import { CiscoRouterPingCommand } from './commands/cisco/privileged/Ping';
+import { CiscoRouterReloadCommand } from './commands/cisco/privileged/Reload';
+import { CiscoRouterTerminalCommand } from './commands/cisco/privileged/Terminal';
+import { CiscoRouterWriteCommand } from './commands/cisco/privileged/Write';
 // ─── config-if ──────────────────────────────────────────────────────
 import { CiscoRouterConfigIfArpCommand } from './commands/cisco/config/config-if/Arp';
 import { CiscoRouterConfigIfBandwidthCommand } from './commands/cisco/config/config-if/Bandwidth';
@@ -142,6 +151,7 @@ export function createCiscoRouterHostShell(
   showSub.register(() => new CiscoRouterShowControllersCommand());
   showSub.register(() => new CiscoRouterShowSshCommand());
   showSub.register(() => new CiscoRouterShowBootCommand());
+  showSub.register(() => new CiscoRouterShowLldpCommand());
 
   const userRegistry = new CommandRegistry();
   const privilegedRegistry = new CommandRegistry();
@@ -158,6 +168,12 @@ export function createCiscoRouterHostShell(
   privilegedRegistry.register(() => new CiscoDisableCommand());
   privilegedRegistry.register(() => new CiscoConfigureCommand());
   privilegedRegistry.register(() => createCiscoShowCommand(showSub));
+  privilegedRegistry.register(() => new CiscoRouterTerminalCommand());
+  privilegedRegistry.register(() => new CiscoRouterClearCommand());
+  privilegedRegistry.register(() => new CiscoRouterWriteCommand());
+  privilegedRegistry.register(() => new CiscoRouterReloadCommand());
+  privilegedRegistry.register(() => new CiscoRouterCopyCommand());
+  privilegedRegistry.register(() => new CiscoRouterPingCommand());
   privilegedRegistry.register(() => new PopModeCommand('exit', 'Exit from the current mode'));
   privilegedRegistry.register(() => new PopModeCommand('logout', 'Exit from the EXEC'));
 
@@ -183,6 +199,7 @@ export function createCiscoRouterHostShell(
   configRegistry.register(() => new CiscoRouterConfigAccessListCommand());
   configRegistry.register(() => new CiscoRouterConfigAliasCommand());
   configRegistry.register(() => new CiscoRouterConfigDomainCommand());
+  configRegistry.register(() => new CiscoRouterConfigLldpCommand());
   configRegistry.register(() => new PopModeCommand('exit', 'Exit from the current mode'));
   configRegistry.register(() => new EndCommand());
 

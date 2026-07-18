@@ -24,6 +24,7 @@ import { CiscoSwitchShowUdldCommand } from './commands/cisco/show/Udld';
 import { CiscoSwitchShowVtpCommand } from './commands/cisco/show/Vtp';
 import { CiscoSwitchShowInventoryCommand } from './commands/cisco/show/Inventory';
 import { CiscoSwitchShowLineCommand } from './commands/cisco/show/Line';
+import { CiscoSwitchShowLldpCommand } from './commands/cisco/show/Lldp';
 import { CiscoSwitchShowLoggingCommand } from './commands/cisco/show/Logging';
 import { CiscoSwitchShowMemoryCommand } from './commands/cisco/show/Memory';
 import { CiscoSwitchShowProcessesCommand } from './commands/cisco/show/Processes';
@@ -53,6 +54,13 @@ import { CiscoSwitchHostnameCommand } from './commands/cisco/config/Hostname';
 import { CiscoSwitchInterfaceCommand } from './commands/cisco/config/Interface';
 import { CiscoSwitchGlobalIpCommand } from './commands/cisco/config/Ip';
 import { CiscoSwitchConfigLoggingCommand } from './commands/cisco/config/Logging';
+import { CiscoSwitchConfigLldpCommand } from './commands/cisco/config/Lldp';
+import { CiscoSwitchClearCommand } from './commands/cisco/privileged/Clear';
+import { CiscoSwitchCopyCommand } from './commands/cisco/privileged/Copy';
+import { CiscoSwitchPingCommand } from './commands/cisco/privileged/Ping';
+import { CiscoSwitchReloadCommand } from './commands/cisco/privileged/Reload';
+import { CiscoSwitchTerminalCommand } from './commands/cisco/privileged/Terminal';
+import { CiscoSwitchWriteCommand } from './commands/cisco/privileged/Write';
 import { CiscoSwitchConfigMacCommand } from './commands/cisco/config/Mac';
 import { CiscoSwitchConfigNoCommand } from './commands/cisco/config/No';
 import { CiscoSwitchConfigNtpCommand } from './commands/cisco/config/Ntp';
@@ -141,6 +149,7 @@ export function createCiscoSwitchHostShell(
   showSub.register(() => new CiscoSwitchShowUdldCommand());
   showSub.register(() => new CiscoSwitchShowVtpCommand());
   showSub.register(() => new CiscoSwitchShowDot1xCommand());
+  showSub.register(() => new CiscoSwitchShowLldpCommand());
 
   const userRegistry = new CommandRegistry();
   const privilegedRegistry = new CommandRegistry();
@@ -156,6 +165,12 @@ export function createCiscoSwitchHostShell(
   privilegedRegistry.register(() => new CiscoDisableCommand());
   privilegedRegistry.register(() => new CiscoConfigureCommand());
   privilegedRegistry.register(() => createCiscoShowCommand(showSub));
+  privilegedRegistry.register(() => new CiscoSwitchTerminalCommand());
+  privilegedRegistry.register(() => new CiscoSwitchClearCommand());
+  privilegedRegistry.register(() => new CiscoSwitchWriteCommand());
+  privilegedRegistry.register(() => new CiscoSwitchReloadCommand());
+  privilegedRegistry.register(() => new CiscoSwitchCopyCommand());
+  privilegedRegistry.register(() => new CiscoSwitchPingCommand());
   privilegedRegistry.register(() => new PopModeCommand('exit', 'Exit from the current mode'));
   privilegedRegistry.register(() => new PopModeCommand('logout', 'Exit from the EXEC'));
 
@@ -180,6 +195,7 @@ export function createCiscoSwitchHostShell(
   configRegistry.register(() => new CiscoSwitchConfigAliasCommand());
   configRegistry.register(() => new CiscoSwitchConfigUdldCommand());
   configRegistry.register(() => new CiscoSwitchConfigPortChannelCommand());
+  configRegistry.register(() => new CiscoSwitchConfigLldpCommand());
   configRegistry.register(() => new PopModeCommand('exit', 'Exit from the current mode'));
   configRegistry.register(() => new EndCommand());
 
