@@ -661,9 +661,16 @@ export class BashLexer {
     return { type, value, position: this.position() };
   }
 
+  /** `\<newline>` outside a word is a line continuation: both characters
+   *  vanish, unlike a bare `\n` which is a significant statement
+   *  separator — this is what lets `cmd1 && \` + newline + `cmd2` read
+   *  as one logical line, a common real-world script formatting idiom. */
   private skipSpacesAndTabs(): void {
-    while (!this.isAtEnd() && (this.peek() === ' ' || this.peek() === '\t')) {
-      this.advance();
+    while (!this.isAtEnd()) {
+      const ch = this.peek();
+      if (ch === ' ' || ch === '\t') { this.advance(); continue; }
+      if (ch === '\\' && this.peekAt(1) === '\n') { this.advance(); this.advance(); continue; }
+      break;
     }
   }
 

@@ -30,7 +30,7 @@ export interface BuiltinResult {
 
 const BUILTIN_NAMES = new Set([
   'echo', 'printf', 'cd', 'pwd', 'export', 'unset', 'set',
-  'local', 'read', 'true', 'false',
+  'local', 'read', 'true', 'false', ':',
   'exit', 'return', 'break', 'continue',
   'shift', 'source', '.', 'declare', 'readonly', 'let',
   'eval', 'alias', 'unalias', 'getopts', 'trap', 'mapfile', 'readarray',
@@ -58,6 +58,11 @@ export function executeBuiltin(
     case 'unset': return builtinUnset(args, env);
     case 'true': return { output: '', exitCode: 0 };
     case 'false': return { output: '', exitCode: 1 };
+    // `:` (colon) — the classic no-op; args are already expanded by the
+    // time we get here, so any `${VAR:=default}`-style side effect has
+    // already happened. Common in `case ... : ;;` no-op branches and
+    // `while : ; do` infinite loops.
+    case ':': return { output: '', exitCode: 0 };
     case 'exit': return builtinExit(args);
     case 'return': return builtinReturn(args);
     case 'break': return builtinBreak(args);
