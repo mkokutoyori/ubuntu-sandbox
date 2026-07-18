@@ -2,13 +2,40 @@ import type { EditorFsContext } from './EditorFsContext';
 import type { EditorKeyInput } from './EditorKeyInput';
 import { dotSwapPathFor } from './editorPaths';
 
-export type VimMode = 'normal' | 'insert' | 'command' | 'search' | 'confirm-substitute' | 'visual' | 'visual-line' | 'visual-block';
+export type VimMode = 'normal' | 'insert' | 'command' | 'search' | 'confirm-substitute' | 'visual' | 'visual-line' | 'visual-block' | 'swap-recovery';
 export type VimVariant = 'vim' | 'vi';
 
 interface UndoSnapshot {
   lines: string[];
   cursorLine: number;
   cursorCol: number;
+}
+
+export interface PendingSwapRecovery {
+  swapPath: string;
+  filePath: string;
+  ownedBySameUser: boolean;
+  swapOwner: string;
+}
+
+interface SwapMeta {
+  owner: string;
+  filePath: string;
+  lines: string[];
+}
+
+function serializeSwapMeta(meta: SwapMeta): string {
+  return JSON.stringify(meta);
+}
+
+function parseSwapMeta(raw: string): SwapMeta | null {
+  try {
+    const parsed = JSON.parse(raw);
+    if (parsed && typeof parsed.owner === 'string' && Array.isArray(parsed.lines)) return parsed as SwapMeta;
+    return null;
+  } catch {
+    return null;
+  }
 }
 
 export interface PendingSubstMatch {
@@ -157,7 +184,13 @@ export class VimEngine {
   private pendingOperator: 'd' | 'y' | 'c' | null = null;
   private pendingCountStr = '';
   private pendingG = false;
-  private readonly swapPath: string;
+  private swapPath: string;
+  private orphanSwapPath: string | null = null;
+  private _pendingSwapRecovery: PendingSwapRecovery | null = null;
+  private recoveredLinesFromSwap: string[] = [];
+  private originalDiskLines: string[] = [];
+  private _readOnly = false;
+  private readonly owner: string;
   private substState: { rangeEnd: number; regex: RegExp; replacementTemplate: string; global: boolean; currentLine: number; currentCol: number; totalReplaced: number; linesTouched: Set<number> } | null = null;
   private _pendingMatch: PendingSubstMatch | null = null;
 
@@ -207,14 +240,32 @@ export class VimEngine {
     initialContent: string,
     isNewFile: boolean,
     public readonly variant: VimVariant = 'vim',
+    owner = 'user',
   ) {
     const body = initialContent.endsWith('\n') ? initialContent.slice(0, -1) : initialContent;
     this.linesArr = body.length === 0 && initialContent.length === 0 ? [''] : body.split('\n');
+    this.originalDiskLines = [...this.linesArr];
+    this.owner = owner;
     this._message = isNewFile
       ? `"${filePath}" [New File]`
       : `"${filePath}" ${this.linesArr.length}L, ${initialContent.length}C`;
-    this.swapPath = dotSwapPathFor(fs.resolvePath(filePath));
-    this.fs.writeFile(this.swapPath, `b0VIM vim swap file for ${filePath}\n`);
+
+    const primarySwap = dotSwapPathFor(fs.resolvePath(filePath));
+    if (this.fs.exists(primarySwap)) {
+      const meta = parseSwapMeta(this.fs.readFile(primarySwap) ?? '');
+      this._pendingSwapRecovery = {
+        swapPath: primarySwap,
+        filePath,
+        ownedBySameUser: meta?.owner === owner,
+        swapOwner: meta?.owner ?? 'unknown',
+      };
+      this.recoveredLinesFromSwap = meta?.lines ?? [];
+      this._mode = 'swap-recovery';
+      this.swapPath = '';
+    } else {
+      this.swapPath = primarySwap;
+      this.fs.writeFile(this.swapPath, serializeSwapMeta({ owner, filePath, lines: this.linesArr }));
+    }
   }
 
   // ── Public state ─────────────────────────────────────────────────
@@ -231,7 +282,11 @@ export class VimEngine {
   get commandLineText(): string { return this.commandBuffer; }
   get searchText(): string { return this.searchBuffer; }
   get swapFilePath(): string { return this.swapPath; }
-  get swapFileExists(): boolean { return this.fs.exists(this.swapPath); }
+  get swapFileExists(): boolean { return this.swapPath !== '' && this.fs.exists(this.swapPath); }
+  get pendingSwapRecovery(): PendingSwapRecovery | null { return this._pendingSwapRecovery; }
+  /** Set once a recovery/edit-anyway choice leaves the original .swp behind — real vim never auto-deletes it. */
+  get orphanSwapFilePath(): string | null { return this.orphanSwapPath; }
+  get isReadOnly(): boolean { return this._readOnly; }
   /** True while in insert mode AND the variant shows a mode indicator (vim, not strict vi). */
   get showsInsertIndicator(): boolean { return this._mode === 'insert' && this.variant === 'vim'; }
   get pendingSubstMatch(): PendingSubstMatch | null { return this._pendingMatch; }
@@ -264,7 +319,7 @@ export class VimEngine {
   applyKey(k: EditorKeyInput): void {
     if (this._exited) return;
 
-    if (this.isDotReplay || this.isMacroReplay) { this.dispatchByMode(k); return; }
+    if (this.isDotReplay || this.isMacroReplay) { this.dispatchByMode(k); this.syncSwapFile(); return; }
 
     if (this._mode === 'normal' && k.key === '.' && this.pendingOperator === null && !this.pendingG) {
       this.replayDotRepeat();
@@ -285,6 +340,7 @@ export class VimEngine {
     else if (wasRecording) this.dotRecording!.push(k);
 
     this.dispatchByMode(k);
+    this.syncSwapFile();
 
     const awaitingFollowUpKey = this.awaitingReplaceChar || this.awaitingRegisterName
       || this.awaitingMacroName || this.awaitingMacroPlayback;
@@ -302,7 +358,73 @@ export class VimEngine {
       case 'search': return this.applySearchKey(k);
       case 'confirm-substitute': return this.applyConfirmSubstKey(k);
       case 'visual': case 'visual-line': case 'visual-block': return this.applyVisualKey(k);
+      case 'swap-recovery': return this.applySwapRecoveryKey(k);
     }
+  }
+
+  /** Keep the swap file's recorded content live so an abrupt kill can be recovered from. */
+  private syncSwapFile(): void {
+    if (this._exited || this.swapPath === '') return;
+    this.fs.writeFile(this.swapPath, serializeSwapMeta({ owner: this.owner, filePath: this.filePath, lines: this.linesArr }));
+  }
+
+  private applySwapRecoveryKey(k: EditorKeyInput): void {
+    const key = k.key.toLowerCase();
+    const info = this._pendingSwapRecovery;
+    if (!info) return;
+
+    if (key === 'r' && info.ownedBySameUser) {
+      this.linesArr = this.recoveredLinesFromSwap.length > 0 ? [...this.recoveredLinesFromSwap] : [''];
+      this._modified = true;
+      this.orphanSwapPath = info.swapPath;
+      this.swapPath = this.pickAvailableSwapPath();
+      this.syncSwapFile();
+      this._message = `"${info.swapPath}" E325: recovered — check the buffer, then delete the swap file when you're done`;
+      this._pendingSwapRecovery = null;
+      this._mode = 'normal';
+      return;
+    }
+    if (key === 'e') {
+      this.linesArr = [...this.originalDiskLines];
+      this.orphanSwapPath = info.swapPath;
+      this.swapPath = this.pickAvailableSwapPath();
+      this.syncSwapFile();
+      this._message = '';
+      this._pendingSwapRecovery = null;
+      this._mode = 'normal';
+      return;
+    }
+    if (key === 'o') {
+      this.linesArr = [...this.originalDiskLines];
+      this._readOnly = true;
+      this.swapPath = ''; // read-only sessions don't lock the file
+      this._message = '';
+      this._pendingSwapRecovery = null;
+      this._mode = 'normal';
+      return;
+    }
+    if (key === 'q' || key === 'a') {
+      this._pendingSwapRecovery = null;
+      this._exited = true;
+      this._savedOnExit = false;
+      // No swap was created by this (aborted) session, and the existing
+      // one — belonging to whichever session is still using the file —
+      // is left completely untouched.
+      return;
+    }
+  }
+
+  /** Real vim's actual suffix sequence when `.swp` is taken: .swo, .swn, .swm, ... .swa. */
+  private pickAvailableSwapPath(): string {
+    const abs = this.fs.resolvePath(this.filePath);
+    const idx = abs.lastIndexOf('/');
+    const dir = idx >= 0 ? abs.slice(0, idx) : '';
+    const base = idx >= 0 ? abs.slice(idx + 1) : abs;
+    for (const letter of 'ponmlkjihgfedcba') {
+      const candidate = `${dir}/.${base}.sw${letter}`;
+      if (!this.fs.exists(candidate)) return candidate;
+    }
+    return `${dir}/.${base}.sw${Date.now()}`;
   }
 
   private replayDotRepeat(): void {
@@ -1193,17 +1315,17 @@ export class VimEngine {
     }
 
     if (trimmed === 'w' || trimmed === 'write') {
-      this.writeFile(this.filePath);
+      this.writeFile(this.filePath, false);
       this._mode = 'normal';
       return;
     }
     if (trimmed.startsWith('w ')) {
-      this.writeFile(trimmed.slice(2).trim());
+      this.writeFile(trimmed.slice(2).trim(), false);
       this._mode = 'normal';
       return;
     }
     if (trimmed === 'w!') {
-      this.writeFile(this.filePath);
+      this.writeFile(this.filePath, true);
       this._mode = 'normal';
       return;
     }
@@ -1220,8 +1342,13 @@ export class VimEngine {
       this.finishExit(false);
       return;
     }
-    if (trimmed === 'wq' || trimmed === 'x' || trimmed === 'wq!' || trimmed === 'xit') {
-      this.writeFile(this.filePath);
+    if (trimmed === 'wq' || trimmed === 'x' || trimmed === 'xit') {
+      if (this.writeFile(this.filePath, false)) this.finishExit(true);
+      else this._mode = 'normal';
+      return;
+    }
+    if (trimmed === 'wq!') {
+      this.writeFile(this.filePath, true);
       this.finishExit(true);
       return;
     }
@@ -1298,10 +1425,15 @@ export class VimEngine {
     this._mode = 'normal';
   }
 
-  private writeFile(path: string): void {
+  private writeFile(path: string, force: boolean): boolean {
+    if (this._readOnly && !force) {
+      this._message = "E45: 'readonly' option is set (add ! to override)";
+      return false;
+    }
     this.fs.writeFile(path, `${this.content}\n`);
     this._modified = false;
     this._message = `"${path}" ${this.linesArr.length}L, ${this.content.length}C written`;
+    return true;
   }
 
   // ── :s substitution (non-interactive) ──────────────────────────────
@@ -1510,6 +1642,12 @@ export class VimEngine {
   private finishExit(saved: boolean): void {
     this._exited = true;
     this._savedOnExit = saved;
-    this.fs.deleteFile(this.swapPath);
+    if (this.swapPath !== '') {
+      this.fs.deleteFile(this.swapPath);
+      this.swapPath = '';
+    }
+    // orphanSwapPath (if any) is deliberately left behind — matches real
+    // vim, which never auto-deletes the swap file a recovery was read
+    // from, requiring an explicit manual `rm`.
   }
 }

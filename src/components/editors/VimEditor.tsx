@@ -16,6 +16,7 @@ interface VimEditorProps {
   isNewFile: boolean;
   editorName: VimVariant;
   fsContext: EditorFsContext;
+  owner?: string;
   onExit: (saved: boolean) => void;
 }
 
@@ -29,11 +30,12 @@ export const VimEditor: React.FC<VimEditorProps> = ({
   isNewFile,
   editorName,
   fsContext,
+  owner,
   onExit,
 }) => {
   const engineRef = useRef<VimEngine>();
   if (!engineRef.current) {
-    engineRef.current = new VimEngine(fsContext, filePath, initialContent, isNewFile, editorName);
+    engineRef.current = new VimEngine(fsContext, filePath, initialContent, isNewFile, editorName, owner ?? 'user');
   }
   const engine = engineRef.current;
   const [, bump] = useReducer((x: number) => x + 1, 0);
@@ -42,6 +44,7 @@ export const VimEditor: React.FC<VimEditorProps> = ({
   const commandRef = useRef<HTMLInputElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const swapPromptRef = useRef<HTMLInputElement>(null);
 
   const lines = engine.lines;
   const totalLines = lines.length;
@@ -53,6 +56,8 @@ export const VimEditor: React.FC<VimEditorProps> = ({
       commandRef.current?.focus();
     } else if (engine.mode === 'search') {
       searchRef.current?.focus();
+    } else if (engine.mode === 'swap-recovery') {
+      swapPromptRef.current?.focus();
     } else {
       textareaRef.current?.focus();
       const pos = flatOffset(engine.lines, engine.cursorLine, engine.cursorCol);
@@ -71,6 +76,39 @@ export const VimEditor: React.FC<VimEditorProps> = ({
   }, [engine, onExit, bump]);
 
   const showSplash = isNewFile && engine.content === '' && engine.mode === 'normal';
+
+  if (engine.mode === 'swap-recovery' && engine.pendingSwapRecovery) {
+    const info = engine.pendingSwapRecovery;
+    return (
+      <div
+        className="h-full w-full flex flex-col items-center justify-center p-4"
+        style={{
+          backgroundColor: '#1e1e2e',
+          color: '#cdd6f4',
+          fontFamily: "'Ubuntu Mono', 'Fira Code', 'Cascadia Code', 'Consolas', monospace",
+          fontSize: '14px',
+        }}
+      >
+        <div style={{ color: '#f9e2af', fontWeight: 'bold' }}>E325: ATTENTION</div>
+        <div className="mt-2">Found a swap file by the name &quot;{info.swapPath}&quot;</div>
+        <div>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;owned by: {info.swapOwner}</div>
+        <div>&nbsp;&nbsp;&nbsp;&nbsp;file name: {info.filePath}</div>
+        <div>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;modified: YES</div>
+        <div className="mt-2">Swap file &quot;{info.swapPath}&quot; already exists!</div>
+        <div className="mt-2">
+          {info.ownedBySameUser
+            ? '[O]pen Read-Only, (E)dit anyway, (R)ecover, (Q)uit, (A)bort: '
+            : '[O]pen Read-Only, (Q)uit, (A)bort: '}
+        </div>
+        <input
+          ref={swapPromptRef}
+          onKeyDown={dispatch}
+          className="absolute opacity-0 w-0 h-0"
+          autoFocus
+        />
+      </div>
+    );
+  }
 
   return (
     <div
@@ -185,6 +223,7 @@ export const VimEditor: React.FC<VimEditorProps> = ({
       >
         <span>
           {engine.modified && <span style={{ color: '#f38ba8' }}>[+] </span>}
+          {engine.isReadOnly && <span style={{ color: '#f9e2af' }}>[RO] </span>}
           <span>{fileName}</span>
         </span>
         <span style={{ color: '#a6adc8' }}>

@@ -181,10 +181,9 @@ export const TerminalView: React.FC<TerminalViewProps> = ({ session }) => {
     // already delegate to (LinuxTerminalSession/WindowsTerminalSession
     // `currentInputMode` overrides both forward to `foreground`).
     const linuxSession = session.foreground as LinuxTerminalSession;
-    const fsContext = new LinuxEditorFsContext(
-      linuxSession.device as LinuxMachine,
-      linuxSession.shell ?? undefined,
-    );
+    const linuxDevice = linuxSession.device as LinuxMachine;
+    const fsContext = new LinuxEditorFsContext(linuxDevice, linuxSession.shell ?? undefined);
+    const owner = linuxSession.shell?.user ?? linuxDevice.getCurrentUser();
     if (editorMode.editorType === 'nano') {
       return (
         <div className="h-full w-full flex flex-col">
@@ -206,6 +205,7 @@ export const TerminalView: React.FC<TerminalViewProps> = ({ session }) => {
           isNewFile={editorMode.isNewFile}
           editorName={editorMode.editorType === 'vi' ? 'vi' : 'vim'}
           fsContext={fsContext}
+          owner={owner}
           onExit={(saved: boolean) => session.editorExit(saved)}
         />
       </div>
