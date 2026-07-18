@@ -2913,39 +2913,50 @@ export class LinuxCommandExecutor {
    * ~/.bash_login, ~/.profile that exists; a non-login interactive shell
    * sources /etc/bash.bashrc then ~/.bashrc; a non-interactive shell
    * sources nothing except $BASH_ENV, if set.
+   *
+   * Returns the resulting variable set for the *new* shell — it does not
+   * mutate `this.env`, matching real Unix process semantics: a child
+   * shell's own rc-file exports never leak back into whatever spawned it.
    */
-  private runBashStartupFiles(login: boolean, interactive: boolean): void {
+  private runBashStartupFiles(login: boolean, interactive: boolean): Record<string, string> {
     const home = this.userMgr.currentUid === 0 ? '/root' : `/home/${this.userMgr.currentUser}`;
+    let vars = this.buildEnvVars();
     // Real bash sets PS1 before sourcing rc files for an interactive shell —
     // /etc/bash.bashrc / ~/.bashrc commonly bail out early on `[ -z "$PS1" ]`.
-    if ((login || interactive) && !this.env.get('PS1')) {
-      this.env.set('PS1', this.userMgr.currentUid === 0 ? '# ' : '$ ');
+    if ((login || interactive) && !vars.PS1) {
+      vars = { ...vars, PS1: this.userMgr.currentUid === 0 ? '# ' : '$ ' };
     }
+    const source = (path: string): boolean => {
+      if (!this.vfs.exists(path)) return false;
+      const result = runScriptContent(
+        `. ${path}`, 'bash', [],
+        (argv, env, background) => this.dispatchFromInterpreter(argv, env, background),
+        vars, this.buildIOContext(),
+        { pid: this.currentBashPid(), ppid: this.shellPpid, initialExitCode: 0 },
+        this.aliases, this.functions,
+      );
+      if (result.env) vars = result.env;
+      return true;
+    };
     if (login) {
-      this.sourceIfExists('/etc/profile');
+      source('/etc/profile');
       const entries = this.vfs.listDirectory('/etc/profile.d');
       if (entries) {
         for (const e of entries.filter((f) => f.name.endsWith('.sh')).sort((a, b) => a.name.localeCompare(b.name))) {
-          this.sourceIfExists(`/etc/profile.d/${e.name}`);
+          source(`/etc/profile.d/${e.name}`);
         }
       }
       for (const rc of ['.bash_profile', '.bash_login', '.profile']) {
-        if (this.sourceIfExists(`${home}/${rc}`)) break;
+        if (source(`${home}/${rc}`)) break;
       }
     } else if (interactive) {
-      this.sourceIfExists('/etc/bash.bashrc');
-      this.sourceIfExists(`${home}/.bashrc`);
+      source('/etc/bash.bashrc');
+      source(`${home}/.bashrc`);
     } else {
-      const bashEnv = this.env.get('BASH_ENV');
-      if (bashEnv) this.sourceIfExists(this.vfs.normalizePath(bashEnv, this.cwd));
+      const bashEnv = vars.BASH_ENV;
+      if (bashEnv) source(this.vfs.normalizePath(bashEnv, this.cwd));
     }
-  }
-
-  /** `. path` if it exists — returns whether it was sourced. */
-  private sourceIfExists(path: string): boolean {
-    if (!this.vfs.exists(path)) return false;
-    this.execute(`. ${path}`);
-    return true;
+    return vars;
   }
 
   /** Build initial environment variables for the bash interpreter. */
@@ -3680,12 +3691,12 @@ export class LinuxCommandExecutor {
           i++;
         }
         const arg0 = login ? '-bash' : cmd;
-        if (cmd === 'bash') this.runBashStartupFiles(login, interactive);
+        const startupVars = cmd === 'bash' ? this.runBashStartupFiles(login, interactive) : this.buildEnvVars();
         if (cmdString !== null) {
           return this.runScriptProcess(`${cmd} -c ${cmdString}`, (identity, bridge) =>
             runScriptContent(
               cmdString!, arg0, args.slice(i), bridge,
-              this.buildEnvVars(), this.buildIOContext(),
+              startupVars, this.buildIOContext(),
               { ...identity, daemonMode: this.daemonMode }, this.aliases, this.functions,
             ));
         }
