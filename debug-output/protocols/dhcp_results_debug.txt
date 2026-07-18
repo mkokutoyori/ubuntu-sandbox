@@ -232,7 +232,7 @@ Total steps: 300
   2: eth0: <BROADCAST,UP,MULTICAST,LOWER_UP> mtu 1500 qdisc fq_codel state UP group default qlen 1000
       link/ether 02:00:00:00:00:47 brd ff:ff:ff:ff:ff:ff
       inet 10.1.1.10/24 brd 10.1.1.255 dynamic scope global eth0
-      inet6 fe80::ff:fe00:47%eth0/64 scope link
+      inet6 fe80::ff:fe00:47/64 scope link
          valid_lft forever preferred_lft forever
 
 [56/300] lhq lhq$ ip route show
@@ -241,11 +241,11 @@ Total steps: 300
 
 [57/300] lhq lhq$ ping -c 1 10.1.1.1
   PING 10.1.1.1 (10.1.1.1) 56(84) bytes of data.
-  64 bytes from 10.1.1.1: icmp_seq=1 ttl=255 time=0.576 ms
+  64 bytes from 10.1.1.1: icmp_seq=1 ttl=255 time=0.463 ms
   
   --- 10.1.1.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.576/0.576/0.576/0.000 ms
+  rtt min/avg/max/mdev = 0.463/0.463/0.463/0.000 ms
 
 [58/300] whq whq$ ipconfig /release
   Windows IP Configuration
@@ -369,7 +369,7 @@ Total steps: 300
   2: eth0: <BROADCAST,UP,MULTICAST,LOWER_UP> mtu 1500 qdisc fq_codel state UP group default qlen 1000
       link/ether 02:00:00:00:00:53 brd ff:ff:ff:ff:ff:ff
       inet 10.2.2.10/24 brd 10.2.2.255 dynamic scope global eth0
-      inet6 fe80::ff:fe00:53%eth0/64 scope link
+      inet6 fe80::ff:fe00:53/64 scope link
          valid_lft forever preferred_lft forever
 
 [65/300] lbr lbr$ ip route show
@@ -378,11 +378,11 @@ Total steps: 300
 
 [66/300] lbr lbr$ ping -c 1 10.2.2.1
   PING 10.2.2.1 (10.2.2.1) 56(84) bytes of data.
-  64 bytes from 10.2.2.1: icmp_seq=1 ttl=255 time=0.376 ms
+  64 bytes from 10.2.2.1: icmp_seq=1 ttl=255 time=0.460 ms
   
   --- 10.2.2.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.376/0.376/0.376/0.000 ms
+  rtt min/avg/max/mdev = 0.460/0.460/0.460/0.000 ms
 
 [67/300] wbr wbr$ ipconfig /release
   Windows IP Configuration
@@ -506,7 +506,7 @@ Total steps: 300
   2: eth0: <BROADCAST,UP,MULTICAST,LOWER_UP> mtu 1500 qdisc fq_codel state UP group default qlen 1000
       link/ether 02:00:00:00:00:5b brd ff:ff:ff:ff:ff:ff
       inet 10.3.3.11/24 brd 10.3.3.255 dynamic scope global eth0
-      inet6 fe80::ff:fe00:5b%eth0/64 scope link
+      inet6 fe80::ff:fe00:5b/64 scope link
          valid_lft forever preferred_lft forever
 
 [74/300] ldc ldc$ ip route show
@@ -515,29 +515,29 @@ Total steps: 300
 
 [75/300] ldc ldc$ ping -c 1 10.3.3.1
   PING 10.3.3.1 (10.3.3.1) 56(84) bytes of data.
-  64 bytes from 10.3.3.1: icmp_seq=1 ttl=255 time=0.414 ms
+  64 bytes from 10.3.3.1: icmp_seq=1 ttl=255 time=0.367 ms
   
   --- 10.3.3.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.414/0.414/0.414/0.000 ms
+  rtt min/avg/max/mdev = 0.367/0.367/0.367/0.000 ms
 
 
 --- [76] § DHCP — joignabilité avec adresses obtenues ---
 [76/300] lhq lhq$ ping -c 1 10.1.1.1
   PING 10.1.1.1 (10.1.1.1) 56(84) bytes of data.
-  64 bytes from 10.1.1.1: icmp_seq=1 ttl=255 time=0.341 ms
+  64 bytes from 10.1.1.1: icmp_seq=1 ttl=255 time=0.364 ms
   
   --- 10.1.1.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.341/0.341/0.341/0.000 ms
+  rtt min/avg/max/mdev = 0.364/0.364/0.364/0.000 ms
 
 [77/300] lhq lhq$ ping -c 1 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
-  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=0.541 ms
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=0.578 ms
   
   --- 10.3.3.10 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.541/0.541/0.541/0.000 ms
+  rtt min/avg/max/mdev = 0.578/0.578/0.578/0.000 ms
 
 [78/300] wbr wbr$ ping -n 1 10.1.1.1
   
@@ -547,23 +547,23 @@ Total steps: 300
   Ping statistics for 10.1.1.1:
       Packets: Sent = 1, Received = 1, Lost = 0 (0% loss),
   Approximate round trip times in milli-seconds:
-      Minimum = 1ms, Maximum = 1ms, Average = 1ms
+      Minimum = 0ms, Maximum = 0ms, Average = 0ms
 
 [79/300] ldc ldc$ ping -c 1 10.2.2.1
   PING 10.2.2.1 (10.2.2.1) 56(84) bytes of data.
-  64 bytes from 10.2.2.1: icmp_seq=1 ttl=253 time=0.411 ms
+  64 bytes from 10.2.2.1: icmp_seq=1 ttl=253 time=0.463 ms
   
   --- 10.2.2.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.411/0.411/0.411/0.000 ms
+  rtt min/avg/max/mdev = 0.463/0.463/0.463/0.000 ms
 
 [80/300] lbr lbr$ ping -c 1 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
-  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=0.442 ms
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=0.490 ms
   
   --- 10.3.3.10 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.442/0.442/0.442/0.000 ms
+  rtt min/avg/max/mdev = 0.490/0.490/0.490/0.000 ms
 
 [81/300] whq whq$ ping -n 1 10.2.2.1
   
@@ -915,7 +915,6 @@ Total steps: 300
   
   Ethernet adapter Ethernet 0:
      Connection-specific DNS Suffix  . :
-     Media State . . . . . . . . . . . : Media disconnected
   
   Ethernet adapter Ethernet 1:
      Connection-specific DNS Suffix  . :
@@ -968,7 +967,6 @@ Total steps: 300
   
   Ethernet adapter Ethernet 0:
      Connection-specific DNS Suffix  . :
-     Media State . . . . . . . . . . . : Media disconnected
   
   Ethernet adapter Ethernet 1:
      Connection-specific DNS Suffix  . :
@@ -1043,7 +1041,6 @@ Total steps: 300
   
   Ethernet adapter Ethernet 0:
      Connection-specific DNS Suffix  . :
-     Media State . . . . . . . . . . . : Media disconnected
   
   Ethernet adapter Ethernet 1:
      Connection-specific DNS Suffix  . :
@@ -1095,7 +1092,6 @@ Total steps: 300
   
   Ethernet adapter Ethernet 0:
      Connection-specific DNS Suffix  . :
-     Media State . . . . . . . . . . . : Media disconnected
   
   Ethernet adapter Ethernet 1:
      Connection-specific DNS Suffix  . :
@@ -1372,7 +1368,7 @@ Total steps: 300
   2: eth0: <BROADCAST,UP,MULTICAST,LOWER_UP> mtu 1500 qdisc fq_codel state UP group default qlen 1000
       link/ether 02:00:00:00:00:5b brd ff:ff:ff:ff:ff:ff
       inet 10.3.3.1/24 brd 10.3.3.255 dynamic scope global eth0
-      inet6 fe80::ff:fe00:5b%eth0/64 scope link
+      inet6 fe80::ff:fe00:5b/64 scope link
          valid_lft forever preferred_lft forever
 
 [199/300] rdc R-DC# show ip dhcp relay statistics
@@ -1559,35 +1555,35 @@ Total steps: 300
 --- [209] § DHCP — matrice de connectivité post-bail ---
 [209/300] lhq lhq$ ping -c 1 10.1.1.11
   PING 10.1.1.11 (10.1.1.11) 56(84) bytes of data.
-  64 bytes from 10.1.1.11: icmp_seq=1 ttl=128 time=0.328 ms
+  64 bytes from 10.1.1.11: icmp_seq=1 ttl=128 time=0.370 ms
   
   --- 10.1.1.11 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.328/0.328/0.328/0.000 ms
+  rtt min/avg/max/mdev = 0.370/0.370/0.370/0.000 ms
 
 [210/300] lhq lhq$ ping -c 1 10.1.1.1
   PING 10.1.1.1 (10.1.1.1) 56(84) bytes of data.
-  64 bytes from 10.1.1.1: icmp_seq=1 ttl=255 time=0.168 ms
+  64 bytes from 10.1.1.1: icmp_seq=1 ttl=255 time=0.209 ms
   
   --- 10.1.1.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.168/0.168/0.168/0.000 ms
+  rtt min/avg/max/mdev = 0.209/0.209/0.209/0.000 ms
 
 [211/300] lhq lhq$ ping -c 1 10.2.2.1
   PING 10.2.2.1 (10.2.2.1) 56(84) bytes of data.
-  64 bytes from 10.2.2.1: icmp_seq=1 ttl=253 time=0.466 ms
+  64 bytes from 10.2.2.1: icmp_seq=1 ttl=253 time=0.451 ms
   
   --- 10.2.2.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.466/0.466/0.466/0.000 ms
+  rtt min/avg/max/mdev = 0.451/0.451/0.451/0.000 ms
 
 [212/300] lhq lhq$ ping -c 1 10.3.3.1
   PING 10.3.3.1 (10.3.3.1) 56(84) bytes of data.
-  64 bytes from 10.3.3.1: icmp_seq=1 ttl=253 time=4.118 ms
+  64 bytes from 10.3.3.1: icmp_seq=1 ttl=253 time=0.313 ms
   
   --- 10.3.3.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 4.118/4.118/4.118/0.000 ms
+  rtt min/avg/max/mdev = 0.313/0.313/0.313/0.000 ms
 
 [213/300] lhq lhq$ ping -c 1 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
@@ -1637,27 +1633,27 @@ Total steps: 300
 
 [218/300] lbr lbr$ ping -c 1 10.1.1.1
   PING 10.1.1.1 (10.1.1.1) 56(84) bytes of data.
-  64 bytes from 10.1.1.1: icmp_seq=1 ttl=253 time=0.726 ms
+  64 bytes from 10.1.1.1: icmp_seq=1 ttl=253 time=0.995 ms
   
   --- 10.1.1.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.726/0.726/0.726/0.000 ms
+  rtt min/avg/max/mdev = 0.995/0.995/0.995/0.000 ms
 
 [219/300] lbr lbr$ ping -c 1 10.2.2.1
   PING 10.2.2.1 (10.2.2.1) 56(84) bytes of data.
-  64 bytes from 10.2.2.1: icmp_seq=1 ttl=255 time=0.236 ms
+  64 bytes from 10.2.2.1: icmp_seq=1 ttl=255 time=0.313 ms
   
   --- 10.2.2.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.236/0.236/0.236/0.000 ms
+  rtt min/avg/max/mdev = 0.313/0.313/0.313/0.000 ms
 
 [220/300] lbr lbr$ ping -c 1 10.3.3.1
   PING 10.3.3.1 (10.3.3.1) 56(84) bytes of data.
-  64 bytes from 10.3.3.1: icmp_seq=1 ttl=253 time=0.256 ms
+  64 bytes from 10.3.3.1: icmp_seq=1 ttl=253 time=0.379 ms
   
   --- 10.3.3.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.256/0.256/0.256/0.000 ms
+  rtt min/avg/max/mdev = 0.379/0.379/0.379/0.000 ms
 
 [221/300] lbr lbr$ ping -c 1 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
@@ -1729,11 +1725,11 @@ Total steps: 300
 
 [229/300] ldc ldc$ ping -c 1 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
-  64 bytes from 10.3.3.10: icmp_seq=1 ttl=64 time=0.503 ms
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=64 time=0.568 ms
   
   --- 10.3.3.10 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.503/0.503/0.503/0.000 ms
+  rtt min/avg/max/mdev = 0.568/0.568/0.568/0.000 ms
 
 
 --- [230] § DHCP — inspection détaillée des pools/baux ---
@@ -1858,7 +1854,6 @@ Total steps: 300
   
   Ethernet adapter Ethernet 0:
      Connection-specific DNS Suffix  . :
-     Media State . . . . . . . . . . . : Media disconnected
   
   Ethernet adapter Ethernet 1:
      Connection-specific DNS Suffix  . :
@@ -1998,7 +1993,7 @@ Total steps: 300
 [270/300] lhq lhq$ ip -6 addr show eth0
   2: eth0: <BROADCAST,UP,MULTICAST,LOWER_UP> mtu 1500 qdisc fq_codel state UP group default qlen 1000
       link/ether 02:00:00:00:00:47 brd ff:ff:ff:ff:ff:ff
-      inet6 fe80::ff:fe00:47%eth0/64 scope link
+      inet6 fe80::ff:fe00:47/64 scope link
          valid_lft forever preferred_lft forever
 
 [271/300] whq whq$ ipconfig /all

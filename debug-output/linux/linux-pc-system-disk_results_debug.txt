@@ -1,6 +1,6 @@
 ============================================================
 Shell debug transcript — linux-pc-system-disk
-Generated: 2026-07-09T17:19:21.914Z
+Generated: 2026-07-18T20:50:06.852Z
 Engine: linux
 host=L-PC-SYS-DBG (linux-pc) — focus: système, disque, noyau & paquets
 Total commands: 300
@@ -106,39 +106,39 @@ $ [23/300]> cat /etc/hostname
   linux-pc
 
 $ [24/300]> date
-  Thu Jul 09 17:19:21 UTC 2026
+  Sat Jul 18 20:50:06 UTC 2026
 
 $ [25/300]> date -u
-  Thu Jul 09 17:19:21 UTC 2026
+  Sat Jul 18 20:50:06 UTC 2026
 
 $ [26/300]> date +%Y-%m-%d
-  2026-07-09
+  2026-07-18
 
 $ [27/300]> date "+%H:%M:%S"
-  17:19:21
+  20:50:06
 
 $ [28/300]> date +%s
-  1783617561
+  1784407806
 
 $ [29/300]> date -d "2026-01-01"
   Thu Jan 01 00:00:00 UTC 2026
 
 $ [30/300]> date --iso-8601=seconds
-  Thu Jul 09 17:19:21 UTC 2026
+  Sat Jul 18 20:50:06 UTC 2026
 
 $ [31/300]> timedatectl
-                 Local time: Thu 2026-07-09 17:19:21 UTC
-             Universal time: Thu 2026-07-09 17:19:21 UTC
-                   RTC time: Thu 2026-07-09 17:19:21
+                 Local time: Sat 2026-07-18 20:50:06 UTC
+             Universal time: Sat 2026-07-18 20:50:06 UTC
+                   RTC time: Sat 2026-07-18 20:50:06
                   Time zone: Etc/UTC (UTC, +0000)
   System clock synchronized: yes
                 NTP service: active
             RTC in local TZ: no
 
 $ [32/300]> timedatectl status
-                 Local time: Thu 2026-07-09 17:19:21 UTC
-             Universal time: Thu 2026-07-09 17:19:21 UTC
-                   RTC time: Thu 2026-07-09 17:19:21
+                 Local time: Sat 2026-07-18 20:50:06 UTC
+             Universal time: Sat 2026-07-18 20:50:06 UTC
+                   RTC time: Sat 2026-07-18 20:50:06
                   Time zone: Etc/UTC (UTC, +0000)
   System clock synchronized: yes
                 NTP service: active
@@ -148,16 +148,16 @@ $ [33/300]> cal
   cal: command not found
 
 $ [34/300]> uptime
-   17:19:21 up 0 min,  1 user,  load average: 0.00, 0.01, 0.05
+   20:50:06 up 0 min,  1 user,  load average: 0.00, 0.01, 0.05
 
 $ [35/300]> uptime -p
   up 0 minutes
 
 $ [36/300]> uptime -s
-  2026-07-09 17:19:21
+  2026-07-18 20:50:06
 
 $ [37/300]> date --truc
-  Thu Jul 09 17:19:21 UTC 2026
+  Sat Jul 18 20:50:06 UTC 2026
 
 
 --- [38] § CPU — lscpu/nproc/proc ---
@@ -360,45 +360,45 @@ $ [65/300]> swapon -s
 --- [66] § disques — df/du ---
 $ [66/300]> df
   Filesystem     1K-blocks     Used Available Use% Mounted on
-  /dev/sda1        52428800       42  52428758   1% /
+  /dev/sda1        52428800       45  52428755   1% /
   tmpfs                5120        4      5116   1% /run/lock
   /dev/sda2          999424   148480    782080  16% /boot
   /dev/sdb1       104857600 29360128  71303168  29% /u01
 
 $ [67/300]> df -h
   Filesystem      Size  Used Avail Use% Mounted on
-  /dev/sda1        50G   42K   50G   1% /
+  /dev/sda1        50G   45K   50G   1% /
   tmpfs           5.0M    4K  5.0M   1% /run/lock
   /dev/sda2       976M  145M  764M  16% /boot
   /dev/sdb1       100G   28G   68G  29% /u01
 
 $ [68/300]> df -h /
   Filesystem      Size  Used Avail Use% Mounted on
-  /dev/sda1        50G   42K   50G   1% /
+  /dev/sda1        50G   45K   50G   1% /
 
 $ [69/300]> df -i
   Filesystem      Inodes  IUsed   IFree IUse% Mounted on
-  /dev/sda1       655360    507  654853    1% /
+  /dev/sda1       655360    882  654478    1% /
   tmpfs           127960      1  127959    1% /dev/shm
   /dev/sda2       131072   2145  128927    2% /boot
 
 $ [70/300]> df -T
   Filesystem     Type    1K-blocks     Used Available Use% Mounted on
-  /dev/sda1       ext4     52428800       42  52428758   1% /
+  /dev/sda1       ext4     52428800       45  52428755   1% /
   tmpfs           tmpfs        5120        4      5116   1% /run/lock
   /dev/sda2       ext4       999424   148480    782080  16% /boot
   /dev/sdb1       ext4    104857600 29360128  71303168  29% /u01
 
 $ [71/300]> df -k
   Filesystem     1K-blocks     Used Available Use% Mounted on
-  /dev/sda1        52428800       42  52428758   1% /
+  /dev/sda1        52428800       45  52428755   1% /
   tmpfs                5120        4      5116   1% /run/lock
   /dev/sda2          999424   148480    782080  16% /boot
   /dev/sdb1       104857600 29360128  71303168  29% /u01
 
 $ [72/300]> df -m
   Filesystem     1K-blocks     Used Available Use% Mounted on
-  /dev/sda1        52428800       42  52428758   1% /
+  /dev/sda1        52428800       45  52428755   1% /
   tmpfs                5120        4      5116   1% /run/lock
   /dev/sda2          999424   148480    782080  16% /boot
   /dev/sdb1       104857600 29360128  71303168  29% /u01
@@ -410,7 +410,7 @@ $ [74/300]> df --output=source,size,used,avail,target
   df: invalid option -- 'output=source,size,used,avail,target'
 
 $ [75/300]> du -sh /etc
-  19K	/etc
+  20K	/etc
 
 $ [76/300]> du -sh /var
   6K	/var
@@ -421,7 +421,7 @@ $ [77/300]> du -sh /tmp
 $ [78/300]> du -h --max-depth=1 /var
   0B	/var/lib/dhcp
   0B	/var/lib
-  132B	/var/log/audit
+  133B	/var/log/audit
   6K	/var/log
   0B	/var/tmp
   0B	/var/cache
@@ -441,11 +441,11 @@ $ [79/300]> du -ch /etc/*.conf
   510B	/etc/nsswitch.conf
 
 $ [80/300]> du -a /etc | sort -rn | head -5
+  1	/etc/NetworkManager
   1	/etc/audit
   1	/etc/audit/rules.d
   1	/etc/cron.d
   1	/etc/cron.daily
-  1	/etc/cron.hourly
 
 $ [81/300]> df /chemin/inexistant_xyz
   df: /chemin/inexistant_xyz: No such file or directory
@@ -586,16 +586,16 @@ $ [108/300]> dmesg | head
   [    0.320000] usbcore: registered new interface driver usbfs
 
 $ [109/300]> dmesg -T | head
-  [Thu Jul  9 17:18:51 2026] Linux version 5.15.0-generic (buildd@lcy02-amd64-032) (gcc-11 (Ubuntu 11.3.0-1ubuntu1~22.04) 11.3.0) #1 SMP x86_64
-  [Thu Jul  9 17:18:51 2026] Command line: BOOT_IMAGE=/vmlinuz-5.15.0-generic root=/dev/sda1 ro quiet splash
-  [Thu Jul  9 17:18:51 2026] DMI: QEMU Standard PC (i440FX + PIIX, 1996), BIOS 1.16.2-debian-1.16.2-1 04/01/2014
-  [Thu Jul  9 17:18:51 2026] Memory: 2048000K/2097152K available (14339K kernel code, 2560K rwdata)
-  [Thu Jul  9 17:18:51 2026] CPU: Intel(R) Core(TM) i7-10750H CPU @ 2.60GHz
-  [Thu Jul  9 17:18:52 2026] NET: Registered PF_INET protocol family
-  [Thu Jul  9 17:18:52 2026] NET: Registered PF_INET6 protocol family
-  [Thu Jul  9 17:18:52 2026] PCI: Using configuration type 1 for base access
-  [Thu Jul  9 17:18:52 2026] pci 0000:00:01.0: PIIX/ICH IDE controller
-  [Thu Jul  9 17:18:52 2026] usbcore: registered new interface driver usbfs
+  [Sat Jul 18 20:49:36 2026] Linux version 5.15.0-generic (buildd@lcy02-amd64-032) (gcc-11 (Ubuntu 11.3.0-1ubuntu1~22.04) 11.3.0) #1 SMP x86_64
+  [Sat Jul 18 20:49:36 2026] Command line: BOOT_IMAGE=/vmlinuz-5.15.0-generic root=/dev/sda1 ro quiet splash
+  [Sat Jul 18 20:49:36 2026] DMI: QEMU Standard PC (i440FX + PIIX, 1996), BIOS 1.16.2-debian-1.16.2-1 04/01/2014
+  [Sat Jul 18 20:49:36 2026] Memory: 2048000K/2097152K available (14339K kernel code, 2560K rwdata)
+  [Sat Jul 18 20:49:36 2026] CPU: Intel(R) Core(TM) i7-10750H CPU @ 2.60GHz
+  [Sat Jul 18 20:49:37 2026] NET: Registered PF_INET protocol family
+  [Sat Jul 18 20:49:37 2026] NET: Registered PF_INET6 protocol family
+  [Sat Jul 18 20:49:37 2026] PCI: Using configuration type 1 for base access
+  [Sat Jul 18 20:49:37 2026] pci 0000:00:01.0: PIIX/ICH IDE controller
+  [Sat Jul 18 20:49:37 2026] usbcore: registered new interface driver usbfs
 
 $ [110/300]> dmesg --level=err
 <empty>
@@ -726,139 +726,99 @@ $ [135/300]> type ll
   bash: type: ll: not found
 
 $ [136/300]> history
-      1  uname
-      2  uname -a
-      3  uname -s
-      4  uname -n
-      5  uname -r
-      6  uname -v
-      7  uname -m
-      8  uname -p
-      9  uname -i
-     10  uname -o
-     11  uname -s -r -m
-     12  cat /etc/os-release
-     13  cat /etc/issue
-     14  cat /proc/version
-     15  lsb_release -a
-     16  arch
-     17  uname --truc
-     18  hostname
-     19  hostname -f
-     20  hostname -s
-     21  hostnamectl
-     22  hostnamectl status
-     23  cat /etc/hostname
-     24  date
-     25  date -u
-     26  date +%Y-%m-%d
-     27  date "+%H:%M:%S"
-     28  date +%s
-     29  date -d "2026-01-01"
-     30  date --iso-8601=seconds
-     31  timedatectl
-     32  timedatectl status
-     33  cal
-     34  uptime
-     35  uptime -p
-     36  uptime -s
-     37  date --truc
-     38  lscpu
-     39  nproc
-     40  nproc --all
-     41  cat /proc/cpuinfo
-     42  cat /proc/cpuinfo | grep -c processor
-     43  cat /proc/cpuinfo | grep "model name" | head -1
-     44  cat /proc/loadavg
-     45  cat /proc/stat | head -1
-     46  lscpu | grep -E "^CPU|Model|MHz"
-     47  getconf _NPROCESSORS_ONLN
-     48  free
-     49  free -h
-     50  free -m
-     51  free -g
-     52  free -k
-     53  free -b
-     54  free -t
-     55  free -w
-     56  free -s 1 -c 1
-     57  cat /proc/meminfo
-     58  cat /proc/meminfo | head -5
-     59  grep -E "MemTotal|MemFree|MemAvailable" /proc/meminfo
-     60  grep -E "SwapTotal|SwapFree" /proc/meminfo
-     61  vmstat
-     62  vmstat 1 2
-     63  vmstat -s
-     64  swapon --show
-     65  swapon -s
-     66  df
-     67  df -h
-     68  df -h /
-     69  df -i
-     70  df -T
-     71  df -k
-     72  df -m
-     73  df -h --total
-     74  df --output=source,size,used,avail,target
-     75  du -sh /etc
-     76  du -sh /var
-     77  du -sh /tmp
-     78  du -h --max-depth=1 /var
-     79  du -ch /etc/*.conf
-     80  du -a /etc | sort -rn | head -5
-     81  df /chemin/inexistant_xyz
-     82  lsblk
-     83  lsblk -f
-     84  lsblk -a
-     85  lsblk -o NAME,SIZE,TYPE,MOUNTPOINT
-     86  lsblk -p
-     87  blkid
-     88  mount
-     89  mount | column -t | head
-     90  cat /proc/mounts | head
-     91  cat /etc/fstab
-     92  findmnt
-     93  findmnt /
-     94  umount /chemin/inexistant_xyz
-     95  mount /dev/inexistant_xyz /mnt
-     96  sysctl -a | head -20
-     97  cat /proc/sys/kernel/hostname
-     98  cat /proc/sys/kernel/pid_max
-     99  dmesg | head
-    100  dmesg -T | head
-    101  dmesg --level=err
-    102  lsmod
-    103  lsmod | head
-    104  modinfo overlay
-    105  env
-    106  env | head
-    107  printenv
-    108  printenv PATH
-    109  printenv HOME
-    110  echo $PATH
-    111  echo $SHELL
-    112  echo $PWD
-    113  echo $?
-    114  export DEMO_VAR=hello
-    115  echo $DEMO_VAR
-    116  env | grep DEMO_VAR
-    117  unset DEMO_VAR
-    118  echo "[$DEMO_VAR]"
-    119  set | head
-    120  declare -p PATH
-    121  alias
-    122  alias ll='ls -la'
-    123  alias
-    124  unalias ll
-    125  type ll
-    126  history
+      1  cat /etc/os-release
+      2  cat /etc/issue
+      3  cat /proc/version
+      4  lsb_release -a
+      5  cat /etc/hostname
+      6  cal
+      7  cat /proc/cpuinfo
+      8  cat /proc/cpuinfo | grep -c processor
+      9  cat /proc/cpuinfo | grep "model name" | head -1
+     10  cat /proc/loadavg
+     11  cat /proc/stat | head -1
+     12  lscpu | grep -E "^CPU|Model|MHz"
+     13  getconf _NPROCESSORS_ONLN
+     14  free
+     15  free -h
+     16  free -m
+     17  free -g
+     18  free -k
+     19  free -b
+     20  free -t
+     21  free -w
+     22  free -s 1 -c 1
+     23  cat /proc/meminfo
+     24  cat /proc/meminfo | head -5
+     25  grep -E "MemTotal|MemFree|MemAvailable" /proc/meminfo
+     26  grep -E "SwapTotal|SwapFree" /proc/meminfo
+     27  vmstat
+     28  vmstat 1 2
+     29  vmstat -s
+     30  swapon --show
+     31  swapon -s
+     32  df
+     33  df -h
+     34  df -h /
+     35  df -i
+     36  df -T
+     37  df -k
+     38  df -m
+     39  df -h --total
+     40  df --output=source,size,used,avail,target
+     41  du -sh /etc
+     42  du -sh /var
+     43  du -sh /tmp
+     44  du -h --max-depth=1 /var
+     45  du -ch /etc/*.conf
+     46  du -a /etc | sort -rn | head -5
+     47  df /chemin/inexistant_xyz
+     48  mount
+     49  mount | column -t | head
+     50  cat /proc/mounts | head
+     51  cat /etc/fstab
+     52  findmnt
+     53  findmnt /
+     54  umount /chemin/inexistant_xyz
+     55  mount /dev/inexistant_xyz /mnt
+     56  sysctl -a | head -20
+     57  cat /proc/sys/kernel/hostname
+     58  cat /proc/sys/kernel/pid_max
+     59  dmesg | head
+     60  dmesg -T | head
+     61  dmesg --level=err
+     62  lsmod
+     63  lsmod | head
+     64  modinfo overlay
+     65  env
+     66  env | head
+     67  printenv
+     68  printenv PATH
+     69  printenv HOME
+     70  echo $PATH
+     71  echo $SHELL
+     72  echo $PWD
+     73  echo $?
+     74  export DEMO_VAR=hello
+     75  echo $DEMO_VAR
+     76  env | grep DEMO_VAR
+     77  unset DEMO_VAR
+     78  echo "[$DEMO_VAR]"
+     79  set | head
+     80  declare -p PATH
+     81  alias
+     82  alias ll='ls -la'
+     83  alias
+     84  unalias ll
+     85  type ll
+     86  history
 
 $ [137/300]> history | tail -5
-    123  alias
-    124  unalias ll
-    125  type ll
-    126  history
-    127  history | tail -5
+     83  alias
+     84  unalias ll
+     85  type ll
+     86  history
+     87  history | tail -5
 
 $ [138/300]> shopt
 <empty>
@@ -990,7 +950,7 @@ $ [161/300]> tar -cf arch.tar arch_src
 <empty>
 
 $ [162/300]> ls -l arch.tar
-  -rw-r--r-- 1 user user 348 Jul  9 17:19 arch.tar
+  -rw-r--r-- 1 user user 348 Jul 18 20:50 arch.tar
 
 $ [163/300]> tar -tf arch.tar
   arch_src/
@@ -1001,7 +961,7 @@ $ [164/300]> tar -czf arch.tar.gz arch_src
 <empty>
 
 $ [165/300]> ls -l arch.tar.gz
-  -rw-r--r-- 1 user user 474 Jul  9 17:19 arch.tar.gz
+  -rw-r--r-- 1 user user 474 Jul 18 20:50 arch.tar.gz
 
 $ [166/300]> tar -tzf arch.tar.gz
   arch_src/
@@ -1023,25 +983,25 @@ $ [169/300]> gzip arch_src/a.txt
 
 $ [170/300]> ls -l arch_src
   total 16
-  -rw-r--r-- 1 user user 67 Jul  9 17:19 a.txt.gz
-  -rw-r--r-- 1 user user  6 Jul  9 17:19 b.txt
+  -rw-r--r-- 1 user user 67 Jul 18 20:50 a.txt.gz
+  -rw-r--r-- 1 user user  6 Jul 18 20:50 b.txt
 
 $ [171/300]> gunzip arch_src/a.txt.gz
 <empty>
 
 $ [172/300]> ls -l arch_src
   total 16
-  -rw-r--r-- 1 user user 6 Jul  9 17:19 a.txt
-  -rw-r--r-- 1 user user 6 Jul  9 17:19 b.txt
+  -rw-r--r-- 1 user user 6 Jul 18 20:50 a.txt
+  -rw-r--r-- 1 user user 6 Jul 18 20:50 b.txt
 
 $ [173/300]> gzip -k arch_src/b.txt
 <empty>
 
 $ [174/300]> ls -l arch_src
   total 24
-  -rw-r--r-- 1 user user  6 Jul  9 17:19 a.txt
-  -rw-r--r-- 1 user user  6 Jul  9 17:19 b.txt
-  -rw-r--r-- 1 user user 67 Jul  9 17:19 b.txt.gz
+  -rw-r--r-- 1 user user  6 Jul 18 20:50 a.txt
+  -rw-r--r-- 1 user user  6 Jul 18 20:50 b.txt
+  -rw-r--r-- 1 user user 67 Jul 18 20:50 b.txt.gz
 
 $ [175/300]> zip -r arch.zip arch_src
     adding: arch_src/ (stored 0%)
@@ -1050,16 +1010,16 @@ $ [175/300]> zip -r arch.zip arch_src
     adding: arch_src/b.txt.gz (deflated 23%)
 
 $ [176/300]> ls -l arch.zip
-  -rw-r--r-- 1 user user 538 Jul  9 17:19 arch.zip
+  -rw-r--r-- 1 user user 538 Jul 18 20:50 arch.zip
 
 $ [177/300]> unzip -l arch.zip
   Archive:  arch.zip
     Length      Date    Time    Name
   ---------  ---------- -----   ----
-          0  2026-07-09 17:19   arch_src/
-          6  2026-07-09 17:19   arch_src/b.txt
-          6  2026-07-09 17:19   arch_src/a.txt
-         67  2026-07-09 17:19   arch_src/b.txt.gz
+          0  2026-07-18 20:50   arch_src/
+          6  2026-07-18 20:50   arch_src/b.txt
+          6  2026-07-18 20:50   arch_src/a.txt
+         67  2026-07-18 20:50   arch_src/b.txt.gz
   ---------                     -------
          79                     4 files
 
@@ -1103,53 +1063,53 @@ $ [188/300]> logger -t debugtag "tag debug"
 <empty>
 
 $ [189/300]> journalctl -n 10 --no-pager
-  -- Logs begin at Thu Jul  9 17:18:51 2026, end at Thu Jul  9 17:19:22 2026. --
-  Jul  9 17:18:54 localhost systemd[1]: Reached target multi-user.target - Multi-User System.
-  Jul  9 17:18:54 localhost sshd[1234]: Server listening on 0.0.0.0 port 22.
-  Jul  9 17:18:55 localhost sshd[1234]: Server listening on :: port 22.
-  Jul  9 17:18:54 localhost systemd-logind[456]: New seat seat0.
-  Jul  9 17:18:54 localhost systemd-logind[456]: Watching system buttons on /dev/input/event0.
-  Jul  9 17:19:21 localhost systemd-resolved[100]: Listening on TCP 127.0.0.53:53
-  Jul  9 17:19:21 linux-pc sshd[101]: Server listening on 0.0.0.0 port 22.
-  Jul  9 17:19:22 linux-pc user: message de test debug
-  Jul  9 17:19:22 linux-pc user: info debug
-  Jul  9 17:19:22 linux-pc debugtag: tag debug
+  -- Logs begin at Sat Jul 18 20:49:36 2026, end at Sat Jul 18 20:50:07 2026. --
+  Jul 18 20:49:39 localhost systemd[1]: Reached target multi-user.target - Multi-User System.
+  Jul 18 20:49:39 localhost sshd[1234]: Server listening on 0.0.0.0 port 22.
+  Jul 18 20:49:40 localhost sshd[1234]: Server listening on :: port 22.
+  Jul 18 20:49:39 localhost systemd-logind[456]: New seat seat0.
+  Jul 18 20:49:39 localhost systemd-logind[456]: Watching system buttons on /dev/input/event0.
+  Jul 18 20:50:06 localhost systemd-resolved[100]: Listening on TCP 127.0.0.53:53
+  Jul 18 20:50:06 linux-pc sshd[101]: Server listening on 0.0.0.0 port 22.
+  Jul 18 20:50:07 linux-pc user: message de test debug
+  Jul 18 20:50:07 linux-pc user: info debug
+  Jul 18 20:50:07 linux-pc debugtag: tag debug
 
 $ [190/300]> journalctl -p err -n 5
   -- No entries --
 
 $ [191/300]> journalctl -b
-  -- Logs begin at Thu Jul  9 17:18:51 2026, end at Thu Jul  9 17:19:22 2026. --
-  Jul  9 17:18:51 localhost kernel: Linux version 5.15.0-generic (buildd@lcy02-amd64-032) (gcc-11 (Ubuntu 11.3.0-1ubuntu1~22.04) 11.3.0) #1 SMP x86_64
-  Jul  9 17:18:51 localhost kernel: Command line: BOOT_IMAGE=/vmlinuz-5.15.0-generic root=/dev/sda1 ro quiet splash
-  Jul  9 17:18:51 localhost kernel: DMI: QEMU Standard PC (i440FX + PIIX, 1996), BIOS 1.16.2-debian-1.16.2-1 04/01/2014
-  Jul  9 17:18:51 localhost kernel: Memory: 2048000K/2097152K available (14339K kernel code, 2560K rwdata)
-  Jul  9 17:18:51 localhost kernel: CPU: Intel(R) Core(TM) i7-10750H CPU @ 2.60GHz
-  Jul  9 17:18:52 localhost kernel: NET: Registered PF_INET protocol family
-  Jul  9 17:18:52 localhost kernel: NET: Registered PF_INET6 protocol family
-  Jul  9 17:18:52 localhost kernel: PCI: Using configuration type 1 for base access
-  Jul  9 17:18:52 localhost kernel: pci 0000:00:01.0: PIIX/ICH IDE controller
-  Jul  9 17:18:52 localhost kernel: usbcore: registered new interface driver usbfs
-  Jul  9 17:18:52 localhost kernel: usbcore: registered new interface driver hub
-  Jul  9 17:18:52 localhost kernel: e1000: Intel(R) PRO/1000 Network Driver
-  Jul  9 17:18:52 localhost kernel: e1000 0000:00:03.0 eth0: (PCI:33MHz:32-bit) link up
-  Jul  9 17:18:52 localhost kernel: EXT4-fs (sda1): mounted filesystem with ordered data mode. Opts: (null)
-  Jul  9 17:18:53 localhost kernel: EXT4-fs (sda1): re-mounted. Opts: errors=remount-ro
-  Jul  9 17:18:53 localhost systemd[1]: systemd 249.11-0ubuntu3 running in system mode (+PAM +AUDIT +SELINUX +APPARMOR)
-  Jul  9 17:18:54 localhost systemd[1]: Started systemd-journald.service - Journal Service.
-  Jul  9 17:18:54 localhost systemd[1]: Started systemd-logind.service - User Login Management.
-  Jul  9 17:18:54 localhost systemd[1]: Started cron.service - Regular background program processing daemon.
-  Jul  9 17:18:54 localhost systemd[1]: Started ssh.service - OpenBSD Secure Shell server.
-  Jul  9 17:18:54 localhost systemd[1]: Reached target multi-user.target - Multi-User System.
-  Jul  9 17:18:54 localhost sshd[1234]: Server listening on 0.0.0.0 port 22.
-  Jul  9 17:18:55 localhost sshd[1234]: Server listening on :: port 22.
-  Jul  9 17:18:54 localhost systemd-logind[456]: New seat seat0.
-  Jul  9 17:18:54 localhost systemd-logind[456]: Watching system buttons on /dev/input/event0.
-  Jul  9 17:19:21 localhost systemd-resolved[100]: Listening on TCP 127.0.0.53:53
-  Jul  9 17:19:21 linux-pc sshd[101]: Server listening on 0.0.0.0 port 22.
-  Jul  9 17:19:22 linux-pc user: message de test debug
-  Jul  9 17:19:22 linux-pc user: info debug
-  Jul  9 17:19:22 linux-pc debugtag: tag debug
+  -- Logs begin at Sat Jul 18 20:49:36 2026, end at Sat Jul 18 20:50:07 2026. --
+  Jul 18 20:49:36 localhost kernel: Linux version 5.15.0-generic (buildd@lcy02-amd64-032) (gcc-11 (Ubuntu 11.3.0-1ubuntu1~22.04) 11.3.0) #1 SMP x86_64
+  Jul 18 20:49:36 localhost kernel: Command line: BOOT_IMAGE=/vmlinuz-5.15.0-generic root=/dev/sda1 ro quiet splash
+  Jul 18 20:49:36 localhost kernel: DMI: QEMU Standard PC (i440FX + PIIX, 1996), BIOS 1.16.2-debian-1.16.2-1 04/01/2014
+  Jul 18 20:49:36 localhost kernel: Memory: 2048000K/2097152K available (14339K kernel code, 2560K rwdata)
+  Jul 18 20:49:36 localhost kernel: CPU: Intel(R) Core(TM) i7-10750H CPU @ 2.60GHz
+  Jul 18 20:49:37 localhost kernel: NET: Registered PF_INET protocol family
+  Jul 18 20:49:37 localhost kernel: NET: Registered PF_INET6 protocol family
+  Jul 18 20:49:37 localhost kernel: PCI: Using configuration type 1 for base access
+  Jul 18 20:49:37 localhost kernel: pci 0000:00:01.0: PIIX/ICH IDE controller
+  Jul 18 20:49:37 localhost kernel: usbcore: registered new interface driver usbfs
+  Jul 18 20:49:37 localhost kernel: usbcore: registered new interface driver hub
+  Jul 18 20:49:37 localhost kernel: e1000: Intel(R) PRO/1000 Network Driver
+  Jul 18 20:49:37 localhost kernel: e1000 0000:00:03.0 eth0: (PCI:33MHz:32-bit) link up
+  Jul 18 20:49:37 localhost kernel: EXT4-fs (sda1): mounted filesystem with ordered data mode. Opts: (null)
+  Jul 18 20:49:38 localhost kernel: EXT4-fs (sda1): re-mounted. Opts: errors=remount-ro
+  Jul 18 20:49:38 localhost systemd[1]: systemd 249.11-0ubuntu3 running in system mode (+PAM +AUDIT +SELINUX +APPARMOR)
+  Jul 18 20:49:39 localhost systemd[1]: Started systemd-journald.service - Journal Service.
+  Jul 18 20:49:39 localhost systemd[1]: Started systemd-logind.service - User Login Management.
+  Jul 18 20:49:39 localhost systemd[1]: Started cron.service - Regular background program processing daemon.
+  Jul 18 20:49:39 localhost systemd[1]: Started ssh.service - OpenBSD Secure Shell server.
+  Jul 18 20:49:39 localhost systemd[1]: Reached target multi-user.target - Multi-User System.
+  Jul 18 20:49:39 localhost sshd[1234]: Server listening on 0.0.0.0 port 22.
+  Jul 18 20:49:40 localhost sshd[1234]: Server listening on :: port 22.
+  Jul 18 20:49:39 localhost systemd-logind[456]: New seat seat0.
+  Jul 18 20:49:39 localhost systemd-logind[456]: Watching system buttons on /dev/input/event0.
+  Jul 18 20:50:06 localhost systemd-resolved[100]: Listening on TCP 127.0.0.53:53
+  Jul 18 20:50:06 linux-pc sshd[101]: Server listening on 0.0.0.0 port 22.
+  Jul 18 20:50:07 linux-pc user: message de test debug
+  Jul 18 20:50:07 linux-pc user: info debug
+  Jul 18 20:50:07 linux-pc debugtag: tag debug
 
 $ [192/300]> journalctl --disk-usage
   Archived and active journals take up 3.8K in the file system.
@@ -1167,23 +1127,23 @@ $ [193/300]> dmesg | tail
   [    1.200000] EXT4-fs (sda1): re-mounted. Opts: errors=remount-ro
 
 $ [194/300]> tail -n 5 /var/log/syslog
-  Jul  9 17:19:21 localhost systemd-resolved[100]: Listening on TCP 127.0.0.53:53
-  Jul  9 17:19:21 linux-pc sshd[101]: Server listening on 0.0.0.0 port 22.
-  Jul  9 17:19:22 linux-pc user: message de test debug
-  Jul  9 17:19:22 linux-pc user: info debug
-  Jul  9 17:19:22 linux-pc debugtag: tag debug
+  Jul 18 20:50:06 localhost systemd-resolved[100]: Listening on TCP 127.0.0.53:53
+  Jul 18 20:50:06 linux-pc sshd[101]: Server listening on 0.0.0.0 port 22.
+  Jul 18 20:50:07 linux-pc user: message de test debug
+  Jul 18 20:50:07 linux-pc user: info debug
+  Jul 18 20:50:07 linux-pc debugtag: tag debug
 
 $ [195/300]> ls -l /var/log
   total 72
-  drwxr-x--- 2 root root    0 Jul  9 17:19 audit
-  -rw-r----- 1 root adm   156 Jul  9 17:19 auth.log
-  -rw-r----- 1 root adm  1976 Jul  9 17:19 boot.log
-  -rw-r--r-- 1 root root    2 Jul  9 17:19 btmp
-  -rw-r----- 1 root adm  1386 Jul  9 17:19 kern.log
-  -rw-r--r-- 1 root root    2 Jul  9 17:19 lastlog
-  -rw-r--r-- 1 root root  165 Jul  9 17:19 messages
-  -rw-r----- 1 root adm  2414 Jul  9 17:19 syslog
-  -rw-r--r-- 1 root root   75 Jul  9 17:19 wtmp
+  drwxr-x--- 2 root root    0 Jul 18 20:50 audit
+  -rw-r----- 1 root adm   156 Jul 18 20:50 auth.log
+  -rw-r----- 1 root adm  1976 Jul 18 20:50 boot.log
+  -rw-r--r-- 1 root root    2 Jul 18 20:50 btmp
+  -rw-r----- 1 root adm  1386 Jul 18 20:50 kern.log
+  -rw-r--r-- 1 root root    2 Jul 18 20:50 lastlog
+  -rw-r--r-- 1 root root  165 Jul 18 20:50 messages
+  -rw-r----- 1 root adm  2414 Jul 18 20:50 syslog
+  -rw-r--r-- 1 root root   75 Jul 18 20:50 wtmp
 
 
 --- [196] § utilitaires divers ---
@@ -1224,7 +1184,7 @@ $ [204/300]> yes | head -3
   yes: command not found
 
 $ [205/300]> watch -n 1 -c 1 date
-  Every 1s: 1 date	linux-pc: 17:19:22
+  Every 1s: 1 date	linux-pc: 20:50:07
   
   1: command not found
 
@@ -1250,7 +1210,7 @@ $ [209/300]> echo "=== HOST ==="; hostname; uname -r
 $ [210/300]> echo "=== CPU ==="; nproc; uptime
   === CPU ===
   2
-   17:19:22 up 0 min,  1 user,  load average: 0.00, 0.01, 0.05
+   20:50:07 up 0 min,  1 user,  load average: 0.00, 0.01, 0.05
 
 $ [211/300]> echo "=== MEM ==="; free -h | head -2
   === MEM ===
@@ -1259,7 +1219,7 @@ $ [211/300]> echo "=== MEM ==="; free -h | head -2
 
 $ [212/300]> echo "=== DISK ==="; df -h / | tail -1
   === DISK ===
-  /dev/sda1        50G   44K   50G   1% /
+  /dev/sda1        50G   47K   50G   1% /
 
 $ [213/300]> echo "=== TOP DIRS ==="; du -sh /etc /var /tmp 2>/dev/null
   === TOP DIRS ===
@@ -1270,7 +1230,7 @@ $ [214/300]> echo "kernel=$(uname -r) host=$(hostname)"
 
 $ [215/300]> df -h | awk 'NR==1 || /\/$/'
   Filesystem      Size  Used Avail Use% Mounted on
-  /dev/sda1        50G   44K   50G   1% /
+  /dev/sda1        50G   47K   50G   1% /
 
 $ [216/300]> free -m | awk '/Mem/ {printf "RAM: %d/%d MB\n", $3, $2}'
   RAM: 1229/3888 MB
@@ -1278,9 +1238,12 @@ $ [216/300]> free -m | awk '/Mem/ {printf "RAM: %d/%d MB\n", $3, $2}'
 
 --- [217] § introspection /proc ---
 $ [217/300]> ls /proc
-  1        12       15       4        7        cpuinfo  net      uptime
-  10       13       2        5        8        meminfo  self     version
-  11       14       3        6        9        mounts   sys
+  1        15       20       26       31       37       9        sys
+  10       16       21       27       32       4        cpuinfo  uptime
+  11       17       22       28       33       5        meminfo  version
+  12       18       23       29       34       6        mounts
+  13       19       24       3        35       7        net
+  14       2        25       30       36       8        self
 
 $ [218/300]> cat /proc/uptime
   0.00 0.00
@@ -1316,6 +1279,7 @@ $ [226/300]> cat /proc/1/status | head
   Gid:	0	0	0	0
   VmSize:	169000 kB
   VmRSS:	13000 kB
+  Threads:	1
 
 $ [227/300]> cat /proc/1/cmdline
    
@@ -1367,31 +1331,31 @@ $ [241/300]> cat /sys/kernel/hostname 2>/dev/null || hostname
 
 --- [242] § formats de date avancés ---
 $ [242/300]> date "+%A %d %B %Y"
-  Thursday 09 July 2026
+  Saturday 18 July 2026
 
 $ [243/300]> date "+%j"
-  190
+  199
 
 $ [244/300]> date "+%V"
-  28
+  29
 
 $ [245/300]> date "+%u"
-  4
+  6
 
 $ [246/300]> date "+%Z %z"
   UTC +0000
 
 $ [247/300]> date -u "+%Y-%m-%dT%H:%M:%SZ"
-  2026-07-09T17:19:22Z
+  2026-07-18T20:50:07Z
 
 $ [248/300]> date -d "next monday"
   date: invalid date 'next monday'
 
 $ [249/300]> date -d "yesterday"
-  Wed Jul 08 00:00:00 UTC 2026
+  Fri Jul 17 00:00:00 UTC 2026
 
 $ [250/300]> date -d "1 hour ago"
-  date: invalid date '1 hour ago'
+  Sat Jul 18 19:50:07 UTC 2026
 
 $ [251/300]> date -d "@0"
   Thu Jan 01 00:00:00 UTC 1970
@@ -1400,7 +1364,7 @@ $ [252/300]> date -d "@1700000000"
   Tue Nov 14 22:13:20 UTC 2023
 
 $ [253/300]> TZ=UTC date
-  Thu Jul 09 17:19:22 UTC 2026
+  Sat Jul 18 20:50:07 UTC 2026
 
 $ [254/300]> cal -3
   cal: command not found
@@ -1529,86 +1493,87 @@ $ [276/300]> getconf -a | head
 --- [277] § snapshot processus & charge ---
 $ [277/300]> ps aux | head
   USER     PID   %CPU %MEM VSZ     RSS    TTY      STAT START    TIME     COMMAND
-  root         1  0.0  0.3  169000  13000 ?        S    17:19       00:00 /sbin/init
-  root         2  0.0  0.1   44083   4054 ?        S    17:19       00:00 /usr/sbin/sshd -D
-  root         3  0.0  0.1    9414   2302 ?        S    17:19       00:00 /usr/sbin/cron -f
-  root         4  0.0  0.1  205896   4448 ?        S    17:19       00:00 /usr/sbin/rsyslogd -n -iNONE
-  root         5  0.0  0.1   84501   4290 ?        S    17:19       00:00 /sbin/auditd
-  root         6  0.0  0.0    8129   1590 ?        S    17:19       00:00 /usr/sbin/atd -f
-  systemd+     7  0.0  0.2   93688   6591 ?        S    17:19       00:00 /lib/systemd/systemd-resolved
-  root         8  0.0  0.1   52080   5199 ?        S    17:19       00:00 /lib/systemd/systemd-journald
-  root         9  0.0  0.1   80778   3859 ?        S    17:19       00:00 /lib/systemd/systemd-logind
+  root         1  0.0  0.3  169000  13000 ?        S    20:50       00:00 /sbin/init
+  root         2  0.0  0.0       0      0 ?        S    20:50       00:00 [kthreadd]
+  root         3  0.0  0.0       0      0 ?        S    20:50       00:00 [rcu_gp]
+  root         4  0.0  0.0       0      0 ?        S    20:50       00:00 [rcu_par_gp]
+  root         5  0.0  0.0       0      0 ?        I    20:50       00:00 [slub_flushwq]
+  root         6  0.0  0.0       0      0 ?        S    20:50       00:00 [netns]
+  root         7  0.0  0.0       0      0 ?        I    20:50       00:00 [kworker/0:0-events]
+  root         8  0.0  0.0       0      0 ?        I    20:50       00:00 [kworker/0:1-events]
+  root         9  0.0  0.0       0      0 ?        I    20:50       00:00 [kworker/1:0-events]
 
 $ [278/300]> ps -ef | head
   UID      PID   PPID  C  STIME TTY      TIME     CMD
-  root         1     0  0 17:19 ?           00:00 /sbin/init
-  root         2     1  0 17:19 ?           00:00 /usr/sbin/sshd -D
-  root         3     1  0 17:19 ?           00:00 /usr/sbin/cron -f
-  root         4     1  0 17:19 ?           00:00 /usr/sbin/rsyslogd -n -iNONE
-  root         5     1  0 17:19 ?           00:00 /sbin/auditd
-  root         6     1  0 17:19 ?           00:00 /usr/sbin/atd -f
-  systemd+     7     1  0 17:19 ?           00:00 /lib/systemd/systemd-resolved
-  root         8     1  0 17:19 ?           00:00 /lib/systemd/systemd-journald
-  root         9     1  0 17:19 ?           00:00 /lib/systemd/systemd-logind
+  root         1     0  0 20:50 ?           00:00 /sbin/init
+  root         2     0  0 20:50 ?           00:00 [kthreadd]
+  root         3     2  0 20:50 ?           00:00 [rcu_gp]
+  root         4     2  0 20:50 ?           00:00 [rcu_par_gp]
+  root         5     2  0 20:50 ?           00:00 [slub_flushwq]
+  root         6     2  0 20:50 ?           00:00 [netns]
+  root         7     2  0 20:50 ?           00:00 [kworker/0:0-events]
+  root         8     2  0 20:50 ?           00:00 [kworker/0:1-events]
+  root         9     2  0 20:50 ?           00:00 [kworker/1:0-events]
 
 $ [279/300]> ps -eo pid,ppid,pcpu,pmem,comm --sort=-pcpu | head -5
   PID   PPID  %CPU %MEM COMMAND
       1     0  0.0  0.3 systemd
-      2     1  0.0  0.1 sshd
-      3     1  0.0  0.1 cron
-      4     1  0.0  0.1 rsyslogd
+      2     0  0.0  0.0 [kthreadd]
+      3     2  0.0  0.0 [rcu_gp]
+      4     2  0.0  0.0 [rcu_par_gp]
 
 $ [280/300]> top -b -n 1 | head -12
-  top - 17:19:22 up  0 min,  1 user,  load average: 0.00, 0.00, 0.00
-  Tasks: 15 total,  0 running, 15 sleeping,  0 stopped,  0 zombie
+  top - 20:50:07 up  0 min,  1 user,  load average: 0.00, 0.00, 0.00
+  Tasks: 37 total,  0 running, 31 sleeping,  0 stopped,  0 zombie
   %Cpu(s):  0.0 us,  0.0 sy,  0.0 ni,100.0 id,  0.0 wa,  0.0 hi,  0.0 si,  0.0 st
   MiB Mem :  3888.0 total,  1434.0 free,  1229.0 used,  1225.0 buff/cache
   MiB Swap:  2048.0 total,  2048.0 free,      0.0 used.  2519.0 avail Mem
   
       PID USER      PR  NI    VIRT    RES    SHR S  %CPU  %MEM     TIME+ COMMAND
         1 root       20    0    165M    12M     4M S   0.0   0.3   0:00.00 systemd
-        2 root       20    0     43M     3M     4M S   0.0   0.1   0:00.00 sshd
-        3 root       20    0      9M     2M     4M S   0.0   0.1   0:00.00 cron
-        4 root       20    0    201M     4M     4M S   0.0   0.1   0:00.00 rsyslogd
-        5 root       20    0     82M     4M     4M S   0.0   0.1   0:00.00 auditd
+        2 root       20    0      0M     0M     4M S   0.0   0.0   0:00.00 [kthreadd]
+        3 root       20    0      0M     0M     4M S   0.0   0.0   0:00.00 [rcu_gp]
+        4 root       20    0      0M     0M     4M S   0.0   0.0   0:00.00 [rcu_par_gp]
+        5 root       20    0      0M     0M     4M I   0.0   0.0   0:00.00 [slub_flushwq]
 
 $ [281/300]> uptime
-   17:19:22 up 0 min,  1 user,  load average: 0.00, 0.01, 0.05
+   20:50:07 up 0 min,  1 user,  load average: 0.00, 0.01, 0.05
 
 $ [282/300]> cat /proc/loadavg
   cat: /proc/loadavg: No such file or directory
 
 $ [283/300]> pgrep -l systemd
   1 systemd
-  7 systemd-resolved
-  8 systemd-journald
-  9 systemd-logind
-  10 dbus-daemon
-  14 apparmor.systemd
+  28 systemd-resolved
+  29 systemd-journald
+  30 systemd-logind
+  31 dbus-daemon
+  33 systemd-networkd
+  36 apparmor.systemd
 
 $ [284/300]> ps -e | wc -l
-  17
+  39
 
 $ [285/300]> free -m && df -h /
                  total        used        free      shared  buff/cache   available
   Mem:            3888        1229        1434          24        1225        2460
   Swap:           2048           0        2048
   Filesystem      Size  Used Avail Use% Mounted on
-  /dev/sda1        50G   44K   50G   1% /
+  /dev/sda1        50G   47K   50G   1% /
 
 
 --- [286] § horloge & disponibilité ---
 $ [286/300]> timedatectl show
-                 Local time: Thu 2026-07-09 17:19:22 UTC
-             Universal time: Thu 2026-07-09 17:19:22 UTC
-                   RTC time: Thu 2026-07-09 17:19:22
+                 Local time: Sat 2026-07-18 20:50:07 UTC
+             Universal time: Sat 2026-07-18 20:50:07 UTC
+                   RTC time: Sat 2026-07-18 20:50:07
                   Time zone: Etc/UTC (UTC, +0000)
   System clock synchronized: yes
                 NTP service: active
             RTC in local TZ: no
 
 $ [287/300]> date +%s
-  1783617562
+  1784407807
 
 $ [288/300]> cat /proc/uptime | awk '{print $1" secondes"}'
   0.00 secondes
@@ -1617,12 +1582,12 @@ $ [289/300]> uptime -p
   up 0 minutes
 
 $ [290/300]> who -b
-  system boot  2026-07-09 17:19
+  system boot  2026-07-18 20:50
 
 $ [291/300]> last reboot 2>/dev/null | head
-  reboot   system boot  5.15.0-91-generic Thu Jul  9 17:19   still running
+  reboot   system boot  5.15.0-91-generic Sat Jul 18 20:50   still running
   
-  wtmp begins Thu Jul  9 17:19:21 2026
+  wtmp begins Sat Jul 18 20:50:06 2026
 
 
 --- [292] § mal formées — fin de transcript ---
