@@ -43,9 +43,9 @@ export const NanoEditor: React.FC<NanoEditorProps> = ({
   const fileName = filePath.split('/').pop() || 'New Buffer';
 
   useEffect(() => {
-    if (engine.mode === 'save-prompt' || engine.mode === 'exit-save-prompt') {
+    if (engine.mode === 'save-prompt' || engine.mode === 'exit-save-prompt' || engine.mode === 'replace-confirm') {
       saveInputRef.current?.focus();
-    } else if (engine.mode === 'search') {
+    } else if (engine.mode === 'search' || engine.mode === 'replace-search' || engine.mode === 'replace-with') {
       searchInputRef.current?.focus();
     } else {
       textareaRef.current?.focus();
@@ -176,7 +176,7 @@ export const NanoEditor: React.FC<NanoEditorProps> = ({
         )}
         {engine.mode === 'search' && (
           <div className="flex items-center px-1">
-            <span style={{ color: '#d3d7cf' }}>Search: </span>
+            <span style={{ color: '#d3d7cf' }}>{engine.regexSearchEnabled ? 'Search [Regexp]: ' : 'Search: '}</span>
             <input
               ref={searchInputRef}
               value={engine.searchQuery}
@@ -191,6 +191,67 @@ export const NanoEditor: React.FC<NanoEditorProps> = ({
               }}
               spellCheck={false}
               autoComplete="off"
+            />
+          </div>
+        )}
+        {engine.mode === 'replace-search' && (
+          <div className="flex items-center px-1">
+            <span style={{ color: '#d3d7cf' }}>
+              {engine.regexSearchEnabled ? 'Search (to replace) [Regexp]: ' : 'Search (to replace): '}
+            </span>
+            <input
+              ref={searchInputRef}
+              value={engine.replaceSearchQuery}
+              onChange={() => { /* engine-authoritative */ }}
+              onKeyDown={handlePromptKeyDown}
+              className="flex-1 bg-transparent outline-none"
+              style={{
+                color: '#ffffff',
+                caretColor: '#ffffff',
+                fontFamily: 'inherit',
+                fontSize: 'inherit',
+              }}
+              spellCheck={false}
+              autoComplete="off"
+            />
+          </div>
+        )}
+        {engine.mode === 'replace-with' && (
+          <div className="flex items-center px-1">
+            <span style={{ color: '#d3d7cf' }}>Replace with: </span>
+            <input
+              ref={searchInputRef}
+              value={engine.replaceWithText}
+              onChange={() => { /* engine-authoritative */ }}
+              onKeyDown={handlePromptKeyDown}
+              className="flex-1 bg-transparent outline-none"
+              style={{
+                color: '#ffffff',
+                caretColor: '#ffffff',
+                fontFamily: 'inherit',
+                fontSize: 'inherit',
+              }}
+              spellCheck={false}
+              autoComplete="off"
+            />
+          </div>
+        )}
+        {engine.mode === 'replace-confirm' && (
+          <div className="flex items-center px-1">
+            <span style={{ color: '#d3d7cf' }}>Replace this instance? &nbsp;</span>
+            <span style={{ color: '#ffffff', fontWeight: 'bold' }}> Y</span>
+            <span style={{ color: '#d3d7cf' }}>es</span>
+            <span className="mx-1" />
+            <span style={{ color: '#ffffff', fontWeight: 'bold' }}> N</span>
+            <span style={{ color: '#d3d7cf' }}>o</span>
+            <span className="mx-1" />
+            <span style={{ color: '#ffffff', fontWeight: 'bold' }}> A</span>
+            <span style={{ color: '#d3d7cf' }}>ll</span>
+            <input
+              ref={saveInputRef}
+              onKeyDown={handlePromptKeyDown}
+              className="absolute opacity-0 w-0 h-0"
+              autoFocus
             />
           </div>
         )}

@@ -2,7 +2,27 @@ import type { EditorFsContext } from './EditorFsContext';
 import type { EditorKeyInput } from './EditorKeyInput';
 import { dotSwapPathFor } from './editorPaths';
 
-export type NanoMode = 'edit' | 'save-prompt' | 'exit-save-prompt' | 'search';
+export type NanoMode =
+  | 'edit' | 'save-prompt' | 'exit-save-prompt' | 'search'
+  | 'replace-search' | 'replace-with' | 'replace-confirm';
+
+export interface PendingReplaceMatch {
+  line: number;
+  start: number;
+  end: number;
+  matchText: string;
+}
+
+function escapeRegExp(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/** Search `line` for the next match of `regex` at or after column `fromCol`. */
+function execFrom(line: string, regex: RegExp, fromCol: number): RegExpExecArray | null {
+  const re = new RegExp(regex.source, regex.flags.includes('g') ? regex.flags : regex.flags + 'g');
+  re.lastIndex = fromCol;
+  return re.exec(line);
+}
 
 /**
  * Headless GNU nano engine. Owns the buffer, cursor, and modal
@@ -23,6 +43,12 @@ export class NanoEngine {
   private _savedOnExit = false;
   private saveFileNameBuffer: string;
   private searchQueryBuffer = '';
+  private lastSearchTerm = '';
+  private useRegex = false;
+  private replaceSearchBuffer = '';
+  private replaceWithBuffer = '';
+  private replaceState: { regex: RegExp; replacement: string; currentLine: number; currentCol: number; totalReplaced: number } | null = null;
+  private _pendingReplaceMatch: PendingReplaceMatch | null = null;
   private cutBuffer: string[] = [];
   private lastActionWasCut = false;
   private readonly lockPath: string;
@@ -61,6 +87,11 @@ export class NanoEngine {
   get searchQuery(): string { return this.searchQueryBuffer; }
   get swapFilePath(): string { return this.lockPath; }
   get swapFileExists(): boolean { return this.fs.exists(this.lockPath); }
+  /** Real nano's regex-search toggle (Meta+R / Alt+R inside a search or replace prompt). */
+  get regexSearchEnabled(): boolean { return this.useRegex; }
+  get replaceSearchQuery(): string { return this.replaceSearchBuffer; }
+  get replaceWithText(): string { return this.replaceWithBuffer; }
+  get pendingReplaceMatch(): PendingReplaceMatch | null { return this._pendingReplaceMatch; }
 
   // ── Key dispatch ─────────────────────────────────────────────────
 
@@ -71,6 +102,9 @@ export class NanoEngine {
       case 'save-prompt': return this.applySavePromptKey(k);
       case 'exit-save-prompt': return this.applyExitSavePromptKey(k);
       case 'search': return this.applySearchKey(k);
+      case 'replace-search': return this.applyReplaceSearchKey(k);
+      case 'replace-with': return this.applyReplaceWithKey(k);
+      case 'replace-confirm': return this.applyReplaceConfirmKey(k);
     }
   }
 
@@ -195,9 +229,14 @@ export class NanoEngine {
         }
         this.lastActionWasCut = false;
         return;
-      case 'w': // Where Is (search)
-        this.searchQueryBuffer = '';
+      case 'w': // Where Is (search) — prefilled with the last search term, like real nano
+        this.searchQueryBuffer = this.lastSearchTerm;
         this._mode = 'search';
+        this.lastActionWasCut = false;
+        return;
+      case '\\': // Replace
+        this.replaceSearchBuffer = this.lastSearchTerm;
+        this._mode = 'replace-search';
         this.lastActionWasCut = false;
         return;
       case 'g': { // cursor position
@@ -267,8 +306,13 @@ export class NanoEngine {
   // ── Search ───────────────────────────────────────────────────────
 
   private applySearchKey(k: EditorKeyInput): void {
+    if (k.alt && k.key.toLowerCase() === 'r') {
+      this.useRegex = !this.useRegex;
+      return;
+    }
     if (k.key === 'Enter') {
       if (this.searchQueryBuffer) {
+        this.lastSearchTerm = this.searchQueryBuffer;
         this.performSearch(this.searchQueryBuffer);
       }
       this._mode = 'edit';
@@ -287,14 +331,21 @@ export class NanoEngine {
     }
   }
 
+  private buildSearchRegex(query: string): RegExp {
+    return new RegExp(this.useRegex ? query : escapeRegExp(query));
+  }
+
   private performSearch(query: string): void {
     const flatOffset = this.linesArr.slice(0, this._cursorLine).join('\n').length
       + (this._cursorLine > 0 ? 1 : 0) + this._cursorCol;
     const text = this.content;
-    let idx = text.indexOf(query, flatOffset + 1);
+    const re = this.buildSearchRegex(query);
+    let m = text.slice(flatOffset + 1).match(re);
+    let idx = m && m.index !== undefined ? flatOffset + 1 + m.index : -1;
     let wrapped = false;
     if (idx < 0) {
-      idx = text.indexOf(query);
+      m = text.match(re);
+      idx = m && m.index !== undefined ? m.index : -1;
       wrapped = true;
     }
     if (idx < 0) {
@@ -305,6 +356,122 @@ export class NanoEngine {
     this._cursorLine = before.length - 1;
     this._cursorCol = before[before.length - 1].length;
     this._statusMessage = wrapped ? '[ Search Wrapped ]' : '';
+  }
+
+  // ── Replace (Ctrl+\) ────────────────────────────────────────────
+
+  private applyReplaceSearchKey(k: EditorKeyInput): void {
+    if (k.alt && k.key.toLowerCase() === 'r') {
+      this.useRegex = !this.useRegex;
+      return;
+    }
+    if (k.key === 'Enter') {
+      if (!this.replaceSearchBuffer) { this._mode = 'edit'; return; }
+      this.lastSearchTerm = this.replaceSearchBuffer;
+      this.replaceWithBuffer = '';
+      this._mode = 'replace-with';
+      return;
+    }
+    if (k.key === 'Escape' || (k.ctrl && k.key.toLowerCase() === 'c')) {
+      this._mode = 'edit';
+      return;
+    }
+    if (k.key === 'Backspace') {
+      this.replaceSearchBuffer = this.replaceSearchBuffer.slice(0, -1);
+      return;
+    }
+    if (k.key.length === 1) {
+      this.replaceSearchBuffer += k.key;
+    }
+  }
+
+  private applyReplaceWithKey(k: EditorKeyInput): void {
+    if (k.key === 'Enter') {
+      this.startReplace();
+      return;
+    }
+    if (k.key === 'Escape' || (k.ctrl && k.key.toLowerCase() === 'c')) {
+      this._mode = 'edit';
+      return;
+    }
+    if (k.key === 'Backspace') {
+      this.replaceWithBuffer = this.replaceWithBuffer.slice(0, -1);
+      return;
+    }
+    if (k.key.length === 1) {
+      this.replaceWithBuffer += k.key;
+    }
+  }
+
+  private startReplace(): void {
+    const regex = this.buildSearchRegex(this.lastSearchTerm);
+    this.replaceState = { regex, replacement: this.replaceWithBuffer, currentLine: 0, currentCol: 0, totalReplaced: 0 };
+    if (!this.advanceReplaceMatch()) this.finishReplace();
+  }
+
+  private advanceReplaceMatch(): boolean {
+    const st = this.replaceState;
+    if (!st) return false;
+    while (st.currentLine < this.linesArr.length) {
+      const m = execFrom(this.linesArr[st.currentLine], st.regex, st.currentCol);
+      if (m) {
+        this._pendingReplaceMatch = { line: st.currentLine, start: m.index, end: m.index + m[0].length, matchText: m[0] };
+        this._mode = 'replace-confirm';
+        return true;
+      }
+      st.currentLine++;
+      st.currentCol = 0;
+    }
+    return false;
+  }
+
+  private applyPendingReplaceMatch(): void {
+    const st = this.replaceState!;
+    const pm = this._pendingReplaceMatch!;
+    const line = this.linesArr[pm.line];
+    // Real nano's replacement text is always literal — it does not support
+    // \1-style backreferences even when the search side is a regex.
+    this.linesArr[pm.line] = line.slice(0, pm.start) + st.replacement + line.slice(pm.end);
+    st.totalReplaced++;
+    this._modified = true;
+    st.currentCol = pm.start + st.replacement.length;
+  }
+
+  private applyReplaceConfirmKey(k: EditorKeyInput): void {
+    const key = k.key.toLowerCase();
+    if (k.key === 'Escape' || (k.ctrl && key === 'c')) { this.finishReplace(); return; }
+    if (key === 'y') {
+      this.applyPendingReplaceMatch();
+      this._pendingReplaceMatch = null;
+      if (!this.advanceReplaceMatch()) this.finishReplace();
+      return;
+    }
+    if (key === 'n') {
+      const st = this.replaceState!;
+      const pm = this._pendingReplaceMatch!;
+      st.currentCol = pm.end;
+      this._pendingReplaceMatch = null;
+      if (!this.advanceReplaceMatch()) this.finishReplace();
+      return;
+    }
+    if (key === 'a') {
+      this.applyPendingReplaceMatch();
+      this._pendingReplaceMatch = null;
+      while (this.advanceReplaceMatch()) this.applyPendingReplaceMatch();
+      this._pendingReplaceMatch = null;
+      this.finishReplace();
+      return;
+    }
+  }
+
+  private finishReplace(): void {
+    const st = this.replaceState;
+    this._mode = 'edit';
+    this._pendingReplaceMatch = null;
+    this.replaceState = null;
+    if (st) {
+      this._statusMessage = `Replaced ${st.totalReplaced} occurrence${st.totalReplaced === 1 ? '' : 's'}`;
+    }
   }
 
   // ── Exit bookkeeping ─────────────────────────────────────────────
