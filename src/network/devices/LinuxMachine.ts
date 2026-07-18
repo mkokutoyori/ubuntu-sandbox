@@ -126,6 +126,8 @@ import { LogindStateSync } from './linux/network/LogindStateSync';
 import type { TcpdumpDeps } from './linux/network/tcpdump/TcpdumpRunner';
 import { serializeCaptureFile } from './linux/network/tcpdump/CaptureFileFormat';
 import { decodeEthernetFrame, makeLoopbackIcmpFrame, makeTcpFrame, type CaptureFrame } from './linux/network/tcpdump/CaptureFrame';
+import { buildLinuxInteractionPlan } from './linux/interaction/LinuxInteractionPlanner';
+import type { CommandInteractionPlan, InteractionPlanContext } from '@/shell/interaction/CommandInteraction';
 
 /**
  * Minimal sshd-style glob matcher: `*` matches any sequence including
@@ -2643,6 +2645,24 @@ export abstract class LinuxMachine extends EndHost
     this.executor.setUserGecos(username, fullName, room, workPhone, homePhone, other);
   }
   canSudo(): boolean { return this.executor.canSudo(); }
+
+  /**
+   * Command-owned interactive flows (IoC): sudo/su/passwd/adduser declare
+   * their dialogue here, on the device — the terminal just renders it.
+   */
+  interactionPlanFor(
+    commandLine: string,
+    ctx?: InteractionPlanContext,
+  ): CommandInteractionPlan | null {
+    return buildLinuxInteractionPlan(
+      commandLine,
+      {
+        currentUser: ctx?.currentUser ?? this.getCurrentUser(),
+        currentUid: ctx?.currentUid ?? this.getCurrentUid(),
+      },
+      this,
+    );
+  }
 
   // ── Shell sessions (per-terminal isolation, §2 of terminal_gap.md) ─
 

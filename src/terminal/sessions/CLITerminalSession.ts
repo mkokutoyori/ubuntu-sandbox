@@ -24,6 +24,8 @@ import {
   type CompletionPolicy,
 } from '@/terminal/completion';
 import type { InteractiveStep } from '@/terminal/core/types';
+import { isInteractionPlanner, type InteractionPlanContext } from '@/shell/interaction/CommandInteraction';
+import { toInteractiveSteps } from '@/terminal/flows/planAdapter';
 import { findHostByAddress } from '@/network/devices/linux/network/HostLookup';
 import { createSessionForDevice } from './sessionFactory';
 import { SshConnectionRequest } from '@/network/protocols/ssh/server/SshConnectionRequest';
@@ -91,10 +93,22 @@ export abstract class CLITerminalSession extends TerminalSession {
   protected abstract getPagerIndicator(): string;
 
   /**
-   * Subclasses override to define which commands trigger interactive flows.
-   * Returns InteractiveStep[] if the command needs interaction, null otherwise.
+   * Command-owned interactive flows (IoC): the DEVICE SHELL declares which
+   * commands are interactive via `interactionPlanFor`; this session merely
+   * renders the returned plan. No vendor-specific string matching lives in
+   * the terminal layer anymore.
    */
-  protected abstract buildInteractiveFlow(command: string): InteractiveStep[] | null;
+  protected buildInteractiveFlow(command: string): InteractiveStep[] | null {
+    const shell = (this.device as { getShell?: () => unknown }).getShell?.();
+    if (!isInteractionPlanner(shell)) return null;
+    const plan = shell.interactionPlanFor(command, this.interactionPlanContext());
+    return plan ? toInteractiveSteps(plan) : null;
+  }
+
+  /** Caller-side facts (CLI mode, identity) handed to the planner. */
+  protected interactionPlanContext(): InteractionPlanContext {
+    return {};
+  }
 
   // ── Input mode ─────────────────────────────────────────────────
 

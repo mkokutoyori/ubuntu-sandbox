@@ -7,7 +7,7 @@
  * passwd prompts on the bare command — `sudo adduser zoe` when already
  * root ran silently, dropping the GECOS / password prompts.
  *
- * LinuxFlowBuilder.build() now strips the `sudo` prefix (and its
+ * buildFlow() now strips the `sudo` prefix (and its
  * valueless flags) when isRoot and recurses on the remainder so the
  * right per-command flow fires regardless of whether the user typed
  * sudo or not. `sudo -u <user>` is intentionally NOT stripped because
@@ -15,7 +15,16 @@
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';
-import { LinuxFlowBuilder } from '@/terminal/flows/LinuxFlowBuilder';
+import { buildLinuxInteractionPlan } from '@/network/devices/linux/interaction/LinuxInteractionPlanner';
+
+/** Compat shim over the device-layer planner (ex-LinuxFlowBuilder API). */
+const buildFlow = (
+  cmd: string, user: string, uid: number, device: unknown,
+) => buildLinuxInteractionPlan(
+  cmd, { currentUser: user, currentUid: uid },
+  device as import('@/network/devices/linux/interaction/LinuxInteractionPlanner').LinuxPlannerDevice,
+)?.steps ?? null;
+
 import { LinuxPC } from '@/network/devices/LinuxPC';
 import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
 import { EventBus, __setDefaultEventBus } from '@/events/EventBus';
@@ -35,42 +44,42 @@ describe('sudo <cmd> consistency when already root', () => {
   });
 
   it('`sudo adduser zoe` as root triggers the same flow as `adduser zoe`', () => {
-    const bare = LinuxFlowBuilder.build('adduser zoe', 'root', 0, pc);
-    const sudo = LinuxFlowBuilder.build('sudo adduser zoe', 'root', 0, pc);
+    const bare = buildFlow('adduser zoe', 'root', 0, pc);
+    const sudo = buildFlow('sudo adduser zoe', 'root', 0, pc);
     expect(bare).not.toBeNull();
     expect(sudo).not.toBeNull();
     // Same number of steps (execute + password + GECOS).
     expect(sudo!.length).toBe(bare!.length);
     // First step is the executeCommandStep — both must run the same
     // command (the recursion uses the stripped form).
-    expect(sudo![0].type).toBe(bare![0].type);
+    expect(sudo![0].kind).toBe(bare![0].kind);
   });
 
   it('`sudo passwd zoe` as root triggers the same flow as `passwd zoe`', () => {
-    const bare = LinuxFlowBuilder.build('passwd zoe', 'root', 0, pc);
-    const sudo = LinuxFlowBuilder.build('sudo passwd zoe', 'root', 0, pc);
+    const bare = buildFlow('passwd zoe', 'root', 0, pc);
+    const sudo = buildFlow('sudo passwd zoe', 'root', 0, pc);
     expect(bare).not.toBeNull();
     expect(sudo).not.toBeNull();
     expect(sudo!.length).toBe(bare!.length);
   });
 
   it('`sudo passwd` as root triggers the same flow as `passwd` (own password)', () => {
-    const bare = LinuxFlowBuilder.build('passwd', 'root', 0, pc);
-    const sudo = LinuxFlowBuilder.build('sudo passwd', 'root', 0, pc);
+    const bare = buildFlow('passwd', 'root', 0, pc);
+    const sudo = buildFlow('sudo passwd', 'root', 0, pc);
     expect(bare).not.toBeNull();
     expect(sudo).not.toBeNull();
     expect(sudo!.length).toBe(bare!.length);
   });
 
   it('`sudo -n adduser zoe` (non-interactive flag) is stripped and the flow still fires', () => {
-    const bare = LinuxFlowBuilder.build('adduser zoe', 'root', 0, pc);
-    const sudo = LinuxFlowBuilder.build('sudo -n adduser zoe', 'root', 0, pc);
+    const bare = buildFlow('adduser zoe', 'root', 0, pc);
+    const sudo = buildFlow('sudo -n adduser zoe', 'root', 0, pc);
     expect(sudo).not.toBeNull();
     expect(sudo!.length).toBe(bare!.length);
   });
 
   it('`sudo -S adduser zoe` (read-pass-from-stdin) is stripped too', () => {
-    const sudo = LinuxFlowBuilder.build('sudo -S adduser zoe', 'root', 0, pc);
+    const sudo = buildFlow('sudo -S adduser zoe', 'root', 0, pc);
     expect(sudo).not.toBeNull();
     // execute + password steps + gecos
     expect(sudo!.length).toBeGreaterThan(1);
@@ -78,24 +87,24 @@ describe('sudo <cmd> consistency when already root', () => {
 
   it('`sudo -u alice useradd zoe` falls through to silent dispatch (-u special-case)', () => {
     // Identity swap is dispatcher-driven; the flow builder hands off.
-    const out = LinuxFlowBuilder.build('sudo -u alice useradd zoe', 'root', 0, pc);
+    const out = buildFlow('sudo -u alice useradd zoe', 'root', 0, pc);
     expect(out).toBeNull();
   });
 
   it('`sudo useradd zoe` as root remains silent — useradd is non-interactive', () => {
-    const bare = LinuxFlowBuilder.build('useradd zoe', 'root', 0, pc);
-    const sudo = LinuxFlowBuilder.build('sudo useradd zoe', 'root', 0, pc);
+    const bare = buildFlow('useradd zoe', 'root', 0, pc);
+    const sudo = buildFlow('sudo useradd zoe', 'root', 0, pc);
     expect(bare).toBeNull();
     expect(sudo).toBeNull();
   });
 
   it('`sudo` alone as root returns null (no command to dispatch)', () => {
-    expect(LinuxFlowBuilder.build('sudo', 'root', 0, pc)).toBeNull();
+    expect(buildFlow('sudo', 'root', 0, pc)).toBeNull();
   });
 
   it('`sudo adduser` (no user) as root returns null — usage error path', () => {
     // The dispatcher will print the usage banner; no prompts to inject.
-    const out = LinuxFlowBuilder.build('sudo adduser', 'root', 0, pc);
+    const out = buildFlow('sudo adduser', 'root', 0, pc);
     expect(out).toBeNull();
   });
 
@@ -103,15 +112,15 @@ describe('sudo <cmd> consistency when already root', () => {
     // Sanity check that the new branch did not regress the !isRoot path.
     pc.executor.userMgr.useradd('user', { p: 'pass' });
     pc.executor.userMgr.usermod('user', { aG: 'sudo' });
-    const out = LinuxFlowBuilder.build('sudo adduser zoe', 'user', 1000, pc);
+    const out = buildFlow('sudo adduser zoe', 'user', 1000, pc);
     expect(out).not.toBeNull();
     // First step is the sudo password prompt.
-    expect(out![0].type).toBe('password');
+    expect(out![0].kind).toBe('password');
   });
 
   it('non-root `adduser zoe` returns null — needs sudo on Ubuntu/Debian', () => {
     pc.executor.userMgr.useradd('user', { p: 'pass' });
-    const out = LinuxFlowBuilder.build('adduser zoe', 'user', 1000, pc);
+    const out = buildFlow('adduser zoe', 'user', 1000, pc);
     expect(out).toBeNull();
   });
 });

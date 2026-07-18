@@ -24,4 +24,13 @@ export interface IRouterShell {
   attachLoggingToBus?(bus: import('@/events/EventBus').IEventBus, deviceId: string): void;
   /** The shell's logging config — source of the `terminal monitor` syslog stream. */
   getLoggingConfig?(): import('../inspection/config/LoggingConfig').LoggingConfig;
+  /**
+   * Command-owned interactive flows (IoC): the shell declares which
+   * commands are interactive and what their dialogue is. Terminals render
+   * the returned plan; null = execute the line normally.
+   */
+  interactionPlanFor?(
+    commandLine: string,
+    ctx?: import('@/shell/interaction/CommandInteraction').InteractionPlanContext,
+  ): import('@/shell/interaction/CommandInteraction').CommandInteractionPlan | null;
 }

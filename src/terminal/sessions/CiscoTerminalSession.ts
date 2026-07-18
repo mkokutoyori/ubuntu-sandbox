@@ -9,7 +9,6 @@
 import type { ICLIDevice } from '@/network';
 import { CLITerminalSession } from './CLITerminalSession';
 import { TerminalTheme, SessionType, withTimeout, DeviceOfflineError } from './TerminalSession';
-import { CiscoFlowBuilder } from '@/terminal/flows/CiscoFlowBuilder';
 import type { InteractiveStep } from '@/terminal/core/types';
 import { Router } from '@/network/devices/Router';
 import { Switch } from '@/network/devices/Switch';
@@ -155,36 +154,13 @@ export class CiscoTerminalSession extends CLITerminalSession {
   }
 
   /**
-   * Cisco IOS interactive commands:
-   * - copy running-config startup-config → asks Destination filename
-   * - reload → asks Proceed with reload? [confirm]
-   * - erase startup-config → confirms erase
+   * Interactive commands (copy/reload/erase) are declared by the IOS shell
+   * itself (CiscoShellBase.interactionPlanFor) — the generic planner-driven
+   * buildInteractiveFlow in CLITerminalSession renders them. Only the CLI
+   * mode is supplied here so plans stay privileged-EXEC-only.
    */
-  protected buildInteractiveFlow(command: string): InteractiveStep[] | null {
-    const lower = command.toLowerCase().trim();
-
-    // IOS accepts any unambiguous keyword abbreviation ("copy run start",
-    // "copy runn star", …) — the interactive filename prompt must trigger
-    // for all of them, exactly like it does on the device shell.
-    const toks = lower.split(/\s+/);
-    const isCopyRunStart =
-      toks.length === 3 &&
-      'copy'.startsWith(toks[0]) && toks[0].length >= 3 &&
-      'running-config'.startsWith(toks[1]) &&
-      'startup-config'.startsWith(toks[2]);
-    if (isCopyRunStart) {
-      return CiscoFlowBuilder.copyRunningConfig();
-    }
-
-    if (lower === 'reload') {
-      return CiscoFlowBuilder.reloadConfirmation();
-    }
-
-    if (lower === 'erase startup-config') {
-      return CiscoFlowBuilder.eraseStartupConfig();
-    }
-
-    return null;
+  protected override interactionPlanContext() {
+    return { mode: this.vty?.state.mode ?? 'user' };
   }
 
   private debugJob: AsyncJobHandle | null = null;
