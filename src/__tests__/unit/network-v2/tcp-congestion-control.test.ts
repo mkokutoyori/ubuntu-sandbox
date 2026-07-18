@@ -123,12 +123,12 @@ describe('TCP congestion control (PRD-TCP.md P5)', () => {
     let serverSocket: TcpSocket | null = null;
     const received: string[] = [];
     srv.getTcpStack().listen(7304, {
-      onAccept: (s) => { serverSocket = s; s.windowSize = 5; s.onData((d) => received.push(d as string)); },
+      onAccept: (s) => { serverSocket = s; s.windowSize = 5 * 128; s.onData((d) => received.push(d as string)); },
     });
     const clientSocket = cli.getTcpStack().connect('10.0.0.2', 7304)!;
     expect(serverSocket).not.toBeNull();
-    // cwnd is comfortably large (thousands of bytes) but the peer's
-    // window (5 bytes) must still be the binding constraint.
+    // 5 × 128: RFC 7323 window scale is always negotiated between two of
+    // this simulator's own hosts.
     expect(clientSocket.cc.cwnd).toBeGreaterThan(1000);
 
     clientSocket.send('hello world');

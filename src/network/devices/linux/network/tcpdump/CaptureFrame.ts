@@ -87,6 +87,18 @@ export interface CaptureFrame {
   rawLinkOffset: number;
   tcpPayload?: number[];
   vlanId?: number;
+  vlanPriority?: number;
+  vlanDei?: number;
+  dnsId?: number;
+  dnsQr?: boolean;
+  dnsRd?: boolean;
+  dnsQtype?: string;
+  dnsQname?: string;
+  dnsRcode?: number;
+  dnsTc?: boolean;
+  dnsCounts?: { an: number; ns: number; ar: number };
+  dnsAnswers?: readonly { type: string; data: string; ttl: number }[];
+  dnsAuthority?: readonly { type: string; data: string; ttl: number }[];
 }
 
 function formatResourceRecordData(rr: ResourceRecord<ResourceRecordData>): string {
@@ -98,28 +110,38 @@ function formatResourceRecordData(rr: ResourceRecord<ResourceRecordData>): strin
     case RRType.NS: return d.nsdname;
     case RRType.PTR: return d.ptrdname;
     case RRType.MX: return `${d.preference} ${d.exchange}`;
+    case RRType.SOA: return `${d.mname} ${d.rname} ${d.serial}`;
     default: return rrTypeName(d.type as number);
   }
 }
 
-function formatDnsSummary(payload: unknown, length: number): string | undefined {
-  if (!(payload instanceof Uint8Array)) return undefined;
+function decodeDnsPayload(base: CaptureFrame, payload: unknown): void {
+  if (!(payload instanceof Uint8Array)) return;
   let msg: DnsMessage;
   try {
     msg = decodeDnsMessage(payload);
   } catch {
-    return undefined;
+    return;
   }
   const question = msg.questions[0];
-  const qtype = question ? rrTypeName(question.qtype as number) : '';
-  if (!msg.flags.qr) {
-    const rd = msg.flags.rd ? '+' : '';
-    return `${msg.id}${rd} ${qtype}? ${question?.qname ?? ''} (${length})`;
-  }
-  const counts = `${msg.answers.length}/${msg.authorities.length}/${msg.additionals.length}`;
-  const first = msg.answers[0];
-  const answerText = first ? formatResourceRecordData(first) : '';
-  return `${msg.id} ${counts} ${qtype}${answerText ? ` ${answerText}` : ''} (${length})`;
+  base.dnsId = msg.id;
+  base.dnsQr = msg.flags.qr;
+  base.dnsRd = msg.flags.rd;
+  base.dnsQtype = question ? rrTypeName(question.qtype as number) : '';
+  base.dnsQname = question?.qname ?? '';
+  base.dnsRcode = msg.flags.rcode;
+  base.dnsTc = msg.flags.tc;
+  base.dnsCounts = { an: msg.answers.length, ns: msg.authorities.length, ar: msg.additionals.length };
+  base.dnsAnswers = msg.answers.map((rr) => ({
+    type: rrTypeName(rr.data.type as number),
+    data: formatResourceRecordData(rr),
+    ttl: rr.ttl,
+  }));
+  base.dnsAuthority = msg.authorities.map((rr) => ({
+    type: rrTypeName(rr.data.type as number),
+    data: formatResourceRecordData(rr),
+    ttl: rr.ttl,
+  }));
 }
 
 function normalizeTcpSegment(payload: unknown): TcpSegment {
@@ -322,6 +344,7 @@ export function decodeEthernetFrame(
   direction: CaptureDirection,
   at: Date,
 ): CaptureFrame {
+  const tag = dot1qTagOf(frame);
   const base: CaptureFrame = {
     at,
     iface,
@@ -335,7 +358,9 @@ export function decodeEthernetFrame(
     length: ethernetFrameBytes(frame),
     raw: [],
     rawLinkOffset: 0,
-    vlanId: dot1qTagOf(frame)?.vid,
+    vlanId: tag?.vid,
+    vlanPriority: tag?.pcp,
+    vlanDei: tag?.dei,
   };
 
   if (frame.etherType === ETHERTYPE_ARP) {
@@ -420,6 +445,9 @@ function decodeIpv4Payload(base: CaptureFrame, ip: IPv4Packet): void {
     base.tcpChecksumComputed = computeTcpChecksum(seg, base.srcIp!, base.dstIp!);
     base.tcpChecksumOk = seg.checksum === 0 || base.tcpChecksumComputed === seg.checksum;
     base.payloadLength = Math.max(0, (ip.totalLength ?? 40) - (ip.ihl ?? 5) * 4 - seg.dataOffset * 4);
+    if (seg.sourcePort === 53 || seg.destinationPort === 53) {
+      decodeDnsPayload(base, seg.payload);
+    }
     return;
   }
   if (ip.protocol === IP_PROTO_UDP) {
@@ -432,7 +460,7 @@ function decodeIpv4Payload(base: CaptureFrame, ip: IPv4Packet): void {
       || computeUdpChecksum(udp, base.srcIp!, base.dstIp!) === udp.checksum;
     base.payloadLength = Math.max(0, (udp.length ?? 8) - 8);
     if (udp.sourcePort === 53 || udp.destinationPort === 53) {
-      base.dnsSummary = formatDnsSummary(udp.payload, base.payloadLength);
+      decodeDnsPayload(base, udp.payload);
     }
     return;
   }
@@ -464,6 +492,9 @@ function decodeIpv6Payload(base: CaptureFrame, ip6: IPv6Packet): void {
     base.tcpChecksumComputed = computeTcpChecksum(seg, base.srcIp!, base.dstIp!);
     base.tcpChecksumOk = seg.checksum === 0 || base.tcpChecksumComputed === seg.checksum;
     base.payloadLength = Math.max(0, ip6.payloadLength - seg.dataOffset * 4);
+    if (seg.sourcePort === 53 || seg.destinationPort === 53) {
+      decodeDnsPayload(base, seg.payload);
+    }
     return;
   }
   if (ip6.nextHeader === IP_PROTO_UDP) {
@@ -476,7 +507,7 @@ function decodeIpv6Payload(base: CaptureFrame, ip6: IPv6Packet): void {
       || computeUdpChecksum(udp, base.srcIp!, base.dstIp!) === udp.checksum;
     base.payloadLength = Math.max(0, (udp.length ?? 8) - 8);
     if (udp.sourcePort === 53 || udp.destinationPort === 53) {
-      base.dnsSummary = formatDnsSummary(udp.payload, base.payloadLength);
+      decodeDnsPayload(base, udp.payload);
     }
     return;
   }

@@ -40,6 +40,7 @@ import { ssCommand } from './net/Ss';
 import { ncCommand } from './net/Nc';
 import { radtestCommand } from './net/Radtest';
 import { tcpdumpCommand } from './net/Tcpdump';
+import { arpingCommand } from './net/Arping';
 import { netplanCommand } from './net/Netplan';
 import { networkctlCommand } from './net/Networkctl';
 import { nmcliCommand } from './net/Nmcli';
@@ -118,6 +119,7 @@ export {
   ncCommand,
   radtestCommand,
   tcpdumpCommand,
+  arpingCommand,
   netplanCommand,
   networkctlCommand,
   nmcliCommand,
@@ -207,6 +209,7 @@ export const CORE_LINUX_COMMANDS: readonly LinuxCommand[] = [
   ncCommand,
   radtestCommand,
   tcpdumpCommand,
+  arpingCommand,
   netplanCommand,
   networkctlCommand,
   nmcliCommand,

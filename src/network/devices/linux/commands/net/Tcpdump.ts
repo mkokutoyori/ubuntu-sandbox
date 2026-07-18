@@ -33,6 +33,12 @@ export const tcpdumpCommand: LinuxCommand = {
   ],
 
   async run(ctx: LinuxCommandContext, args: string[]): Promise<string> {
-    return runTcpdump(args, ctx.net.buildTcpdumpDeps());
+    const result = await runTcpdump(args, ctx.net.buildTcpdumpDeps());
+    return [result.stdout, result.stderr].filter((s) => s.length > 0).join('\n');
+  },
+
+  async runWithStatus(ctx: LinuxCommandContext, args: string[]) {
+    const result = await runTcpdump(args, ctx.net.buildTcpdumpDeps());
+    return { output: result.stdout, exitCode: result.exitCode, stderr: result.stderr };
   },
 };

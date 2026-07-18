@@ -154,7 +154,8 @@ export async function runScriptContentAsync(
   scriptName: string,
   scriptArgs: string[],
   executeCommand: (args: string[], env?: Record<string, string>, background?: boolean) =>
-    { output: string; exitCode: number; backgroundPid?: number } | Promise<{ output: string; exitCode: number; backgroundPid?: number }>,
+    { output: string; exitCode: number; stderr?: string; backgroundPid?: number }
+    | Promise<{ output: string; exitCode: number; stderr?: string; backgroundPid?: number }>,
   variables?: Record<string, string>,
   io?: IOContext,
   identity?: { pid?: number; ppid?: number; initialExitCode?: number; daemonMode?: boolean },
