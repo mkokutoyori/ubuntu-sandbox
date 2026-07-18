@@ -47,4 +47,14 @@ export class LinuxEditorFsContext implements EditorFsContext {
   runShellCommand(cmd: string): string {
     return this.dev.executeShellCommandSync(cmd);
   }
+
+  filterThroughShell(cmd: string, input: string): string {
+    const tmpPath = `/tmp/.vim-filter-${Math.floor(Math.random() * 1e9)}`;
+    this.writeFile(tmpPath, input);
+    try {
+      return this.dev.executeShellCommandSync(`${cmd} < ${tmpPath}`);
+    } finally {
+      this.deleteFile(tmpPath);
+    }
+  }
 }

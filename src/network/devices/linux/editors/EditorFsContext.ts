@@ -19,7 +19,12 @@ export interface EditorFsContext {
   deleteFile(path: string): boolean;
   /**
    * Run a shell command synchronously and return its stdout. Used by
-   * vim's `:!cmd`, `:r !cmd` and `:%!cmd` filter pipelines.
+   * vim's `:!cmd` and `:r !cmd`.
    */
   runShellCommand(cmd: string): string;
+  /**
+   * Run a shell command with `input` piped to its stdin and return its
+   * stdout. Used by vim's `:%!cmd` buffer filter (e.g. `:%!sort`).
+   */
+  filterThroughShell(cmd: string, input: string): string;
 }

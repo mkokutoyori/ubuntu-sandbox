@@ -87,43 +87,45 @@ export const VimEditor: React.FC<VimEditorProps> = ({
       {/* ── Editor area with line numbers ── */}
       <div className="flex-1 flex overflow-hidden relative">
         {/* Line numbers gutter */}
-        <div
-          className="select-none overflow-hidden shrink-0 text-right pr-1"
-          style={{
-            backgroundColor: '#181825',
-            color: '#585b70',
-            minWidth: '3.5em',
-            paddingTop: '2px',
-            lineHeight: '1.4',
-            fontSize: 'inherit',
-            fontFamily: 'inherit',
-          }}
-        >
-          {lines.map((_, i) => (
-            <div
-              key={i}
-              style={{
-                minHeight: '1.4em',
-                color: i === engine.cursorLine ? '#cdd6f4' : '#585b70',
-              }}
-            >
-              {i + 1}
-            </div>
-          ))}
-          {Array.from({ length: Math.max(0, visibleLineCount - totalLines) }).map((_, i) => (
-            <div
-              key={`tilde-${i}`}
-              style={{
-                minHeight: '1.4em',
-                color: '#45475a',
-                textAlign: 'left',
-                paddingLeft: '4px',
-              }}
-            >
-              ~
-            </div>
-          ))}
-        </div>
+        {engine.lineNumbersShown && (
+          <div
+            className="select-none overflow-hidden shrink-0 text-right pr-1"
+            style={{
+              backgroundColor: '#181825',
+              color: '#585b70',
+              minWidth: '3.5em',
+              paddingTop: '2px',
+              lineHeight: '1.4',
+              fontSize: 'inherit',
+              fontFamily: 'inherit',
+            }}
+          >
+            {lines.map((_, i) => (
+              <div
+                key={i}
+                style={{
+                  minHeight: '1.4em',
+                  color: i === engine.cursorLine ? '#cdd6f4' : '#585b70',
+                }}
+              >
+                {i + 1}
+              </div>
+            ))}
+            {Array.from({ length: Math.max(0, visibleLineCount - totalLines) }).map((_, i) => (
+              <div
+                key={`tilde-${i}`}
+                style={{
+                  minHeight: '1.4em',
+                  color: '#45475a',
+                  textAlign: 'left',
+                  paddingLeft: '4px',
+                }}
+              >
+                ~
+              </div>
+            ))}
+          </div>
+        )}
 
         {/* Content area */}
         <div className="flex-1 relative">
@@ -186,6 +188,9 @@ export const VimEditor: React.FC<VimEditorProps> = ({
           <span>{fileName}</span>
         </span>
         <span style={{ color: '#a6adc8' }}>
+          {engine.isRecordingMacro && (
+            <span style={{ color: '#f38ba8' }} className="mr-4">recording @{engine.recordingMacroName}</span>
+          )}
           {engine.cursorLine + 1},{engine.cursorCol + 1}
           <span className="ml-4">
             {totalLines > 0 ? Math.round(((engine.cursorLine + 1) / totalLines) * 100) : 100}%
@@ -242,6 +247,12 @@ export const VimEditor: React.FC<VimEditorProps> = ({
           <span style={{ color: '#cdd6f4' }}>
             replace with {engine.pendingSubstMatch.replacementPreview} (y/n/a/q/l)?
           </span>
+        ) : engine.mode === 'visual' ? (
+          <span style={{ color: '#a6e3a1', fontWeight: 'bold' }}>-- VISUAL --</span>
+        ) : engine.mode === 'visual-line' ? (
+          <span style={{ color: '#a6e3a1', fontWeight: 'bold' }}>-- VISUAL LINE --</span>
+        ) : engine.mode === 'visual-block' ? (
+          <span style={{ color: '#a6e3a1', fontWeight: 'bold' }}>-- VISUAL BLOCK --</span>
         ) : (
           <span style={{
             color: engine.message.startsWith('E') ? '#f38ba8' :
