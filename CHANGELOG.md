@@ -101,6 +101,49 @@ migration — remplacé par `runlevel`, qui a un vrai moteur legacy
   audit, mount, sudo/su) : 15 fichiers / 564 tests, 0 échec. `tsc`/`eslint`
   sans nouvelle erreur (baseline pré-existante inchangée, 59 lignes).
 
+## Huawei routeur — vague batch 7 de 40 commandes (display cpu/memory/device/power/temperature/fan/buffer, interface tunnel-protocol/source/destination/mac-address/qos/arp-detect/arp-limit, system multicast/pim/cluster/stack/bridge/port-mirroring, user-view fs cmds arp-ping/delete/mkdir/rmdir/copy/rename/dir/more/cd/pwd)
+
+**État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
+
+Septième vague batch-générée (`scripts/generate_command.py batch`) —
+40 nouvelles commandes reparties en 4 groupes : status hardware
+(display cpu-usage/memory-usage/device/power/temperature/fan/buffer),
+tunneling + QoS interface (7 leaves), configuration système avancée
+(multicast/pim/cluster/stack/bridge/port-mirroring), et filesystem
+user-view (10 verbes équivalents Unix). Aucun commentaire. Zéro
+régression sur les suites Huawei ciblées (204 failed / 213 passed
+inchangés vs batch 6).
+
+- **7 display hardware** dans le sous-registre `display` :
+  `cpu-usage`, `memory-usage`, `device [manufacture-info]`, `power`,
+  `temperature all`, `fan`, `buffer`.
+- **7 leaves interface-view** : `tunnel-protocol {gre|ipsec|ipv4-ipv4|
+  ipv6-ipv6|null}`, `source {ip|iface}`, `destination <ip>`,
+  `mac-address <H-H-H>`, `qos {car|lr|priority} {inbound|outbound} …`,
+  `arp-detect {enable|mode …}`, `arp-limit maximum <n> [vlan <id>]`.
+- **6 leaves system-view avancées** : `multicast {routing-enable|
+  policy|boundary}`, `pim {dm|sm} …`, `cluster {enable|ip-pool|name}`,
+  `stack {enable|member <n>|priority <p>}`, `bridge <id> …`,
+  `port-mirroring {group|observe-port} …`.
+- **10 verbes user-view (filesystem/ops)** : `arp-ping ip <ip>
+  [interface <iface>]`, `delete [/force] <file>`, `mkdir <dir>`,
+  `rmdir <dir>`, `copy <src> <dst>`, `rename <old> <new>`, `dir
+  [<path>]`, `more <file>`, `cd <dir>`, `pwd`.
+- **Nettoyage** : 10 fichiers générés retirés du disque après
+  découverte que leur `name` (route-policy/description/allow-as-loop/
+  connect-interface/ebgp-max-hop/password/ip-domain/usm-user/location/
+  contact) ne correspond pas à un premier token VRP valide (VRP les
+  emploie systématiquement en suffixe : `peer <ip> route-policy X
+  import`, `snmp-agent sys-info location <text>`, etc.). Un futur
+  refactor de `peer` et `sys-info` en composites libérera ces
+  sous-commandes.
+- **Preuve exécutable** :
+  - `npx tsc --noEmit` propre.
+  - Suite command-kernel : **354/354 verte** (inchangé).
+  - Suites Huawei ciblées : **204 failed / 213 passed** (inchangé
+    vs batch 6 — zéro nouvelle régression, zéro nouveau vert car ces
+    commandes n'apparaissent pas dans les cas de test actuels).
+
 ## Huawei routeur — vague batch 6 de 40 commandes (BGP peer/router-id/default, OSPF silent-interface/bandwidth-reference/lsdb/routing, IPsec policy view + application, DHCP snooping, HTTP server, SNMP target-host/trap/group, telnet/tracert/terminal/reset, route-policy apply cost/local-pref/community/as-path, loopback-detect, voice-vlan, sftp/ftp/user-interface)
 
 **État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**

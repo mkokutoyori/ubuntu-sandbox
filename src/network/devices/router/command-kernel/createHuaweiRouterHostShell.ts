@@ -139,6 +139,36 @@ import { HuaweiRouterSysVoiceVlanCommand } from './commands/huawei/system-view/V
 import { HuaweiRouterSysSftpCommand } from './commands/huawei/system-view/Sftp';
 import { HuaweiRouterSysFtpCommand } from './commands/huawei/system-view/Ftp';
 import { HuaweiRouterSysUserInterfaceCommand } from './commands/huawei/system-view/UserInterface';
+import { HuaweiRouterDisplayCpuUsageCommand } from './commands/huawei/display/CpuUsage';
+import { HuaweiRouterDisplayMemoryUsageCommand } from './commands/huawei/display/MemoryUsage';
+import { HuaweiRouterDisplayDeviceCommand } from './commands/huawei/display/Device';
+import { HuaweiRouterDisplayPowerCommand } from './commands/huawei/display/Power';
+import { HuaweiRouterDisplayTemperatureCommand } from './commands/huawei/display/Temperature';
+import { HuaweiRouterDisplayFanCommand } from './commands/huawei/display/Fan';
+import { HuaweiRouterDisplayBufferCommand } from './commands/huawei/display/Buffer';
+import { HuaweiRouterIfTunnelProtocolCommand } from './commands/huawei/interface-view/TunnelProtocol';
+import { HuaweiRouterIfSourceCommand } from './commands/huawei/interface-view/Source';
+import { HuaweiRouterIfDestinationCommand } from './commands/huawei/interface-view/Destination';
+import { HuaweiRouterIfMacAddressCommand } from './commands/huawei/interface-view/MacAddress';
+import { HuaweiRouterIfQosCommand } from './commands/huawei/interface-view/Qos';
+import { HuaweiRouterIfArpDetectCommand } from './commands/huawei/interface-view/ArpDetect';
+import { HuaweiRouterIfArpLimitCommand } from './commands/huawei/interface-view/ArpLimit';
+import { HuaweiRouterSysMulticastCommand } from './commands/huawei/system-view/Multicast';
+import { HuaweiRouterSysPimCommand } from './commands/huawei/system-view/Pim';
+import { HuaweiRouterSysClusterCommand } from './commands/huawei/system-view/Cluster';
+import { HuaweiRouterSysStackCommand } from './commands/huawei/system-view/Stack';
+import { HuaweiRouterSysBridgeCommand } from './commands/huawei/system-view/Bridge';
+import { HuaweiRouterSysPortMirroringCommand } from './commands/huawei/system-view/PortMirroring';
+import { HuaweiRouterUserArpPingCommand } from './commands/huawei/user-view/ArpPing';
+import { HuaweiRouterUserDeleteCommand } from './commands/huawei/user-view/Delete';
+import { HuaweiRouterUserMkdirCommand } from './commands/huawei/user-view/Mkdir';
+import { HuaweiRouterUserRmdirCommand } from './commands/huawei/user-view/Rmdir';
+import { HuaweiRouterUserCopyCommand } from './commands/huawei/user-view/Copy';
+import { HuaweiRouterUserRenameCommand } from './commands/huawei/user-view/Rename';
+import { HuaweiRouterUserDirCommand } from './commands/huawei/user-view/Dir';
+import { HuaweiRouterUserMoreCommand } from './commands/huawei/user-view/More';
+import { HuaweiRouterUserCdCommand } from './commands/huawei/user-view/Cd';
+import { HuaweiRouterUserPwdCommand } from './commands/huawei/user-view/Pwd';
 
 /**
  * =====================================================================
@@ -178,6 +208,13 @@ export function createHuaweiRouterHostShell(
   displaySub.register(() => new HuaweiRouterDisplayOspfCommand());
   displaySub.register(() => new HuaweiRouterDisplayUsersCommand());
   displaySub.register(() => new HuaweiRouterDisplayBgpCommand());
+  displaySub.register(() => new HuaweiRouterDisplayCpuUsageCommand());
+  displaySub.register(() => new HuaweiRouterDisplayMemoryUsageCommand());
+  displaySub.register(() => new HuaweiRouterDisplayDeviceCommand());
+  displaySub.register(() => new HuaweiRouterDisplayPowerCommand());
+  displaySub.register(() => new HuaweiRouterDisplayTemperatureCommand());
+  displaySub.register(() => new HuaweiRouterDisplayFanCommand());
+  displaySub.register(() => new HuaweiRouterDisplayBufferCommand());
 
   const userViewRegistry = new CommandRegistry();
   const systemViewRegistry = new CommandRegistry();
@@ -209,6 +246,16 @@ export function createHuaweiRouterHostShell(
   userViewRegistry.register(() => new HuaweiRouterTracertCommand());
   userViewRegistry.register(() => new HuaweiRouterTerminalCommand());
   userViewRegistry.register(() => new HuaweiRouterUserResetCommand());
+  userViewRegistry.register(() => new HuaweiRouterUserArpPingCommand());
+  userViewRegistry.register(() => new HuaweiRouterUserDeleteCommand());
+  userViewRegistry.register(() => new HuaweiRouterUserMkdirCommand());
+  userViewRegistry.register(() => new HuaweiRouterUserRmdirCommand());
+  userViewRegistry.register(() => new HuaweiRouterUserCopyCommand());
+  userViewRegistry.register(() => new HuaweiRouterUserRenameCommand());
+  userViewRegistry.register(() => new HuaweiRouterUserDirCommand());
+  userViewRegistry.register(() => new HuaweiRouterUserMoreCommand());
+  userViewRegistry.register(() => new HuaweiRouterUserCdCommand());
+  userViewRegistry.register(() => new HuaweiRouterUserPwdCommand());
   userViewRegistry.register(() => new PopModeCommand('quit', 'Exit from the current view'));
 
   systemViewRegistry.register(() => createHuaweiDisplayCommand(displaySub));
@@ -247,6 +294,12 @@ export function createHuaweiRouterHostShell(
   systemViewRegistry.register(() => new HuaweiRouterSysFtpCommand());
   systemViewRegistry.register(() => new HuaweiRouterSysUserInterfaceCommand());
   systemViewRegistry.register(() => new HuaweiRouterSysDhcpSnoopingCommand());
+  systemViewRegistry.register(() => new HuaweiRouterSysMulticastCommand());
+  systemViewRegistry.register(() => new HuaweiRouterSysPimCommand());
+  systemViewRegistry.register(() => new HuaweiRouterSysClusterCommand());
+  systemViewRegistry.register(() => new HuaweiRouterSysStackCommand());
+  systemViewRegistry.register(() => new HuaweiRouterSysBridgeCommand());
+  systemViewRegistry.register(() => new HuaweiRouterSysPortMirroringCommand());
   systemViewRegistry.register(() => new HuaweiRouterSysUndoCommand());
   systemViewRegistry.register(() => new PopModeCommand('quit', 'Exit from the current view'));
   systemViewRegistry.register(() => new EndCommand(['return']));
@@ -266,6 +319,13 @@ export function createHuaweiRouterHostShell(
   interfaceViewRegistry.register(() => new HuaweiRouterIfIpsecPolicyApplyCommand());
   interfaceViewRegistry.register(() => new HuaweiRouterIfDhcpSnoopingTrustedCommand());
   interfaceViewRegistry.register(() => new HuaweiRouterIfLoopbackDetectCommand());
+  interfaceViewRegistry.register(() => new HuaweiRouterIfTunnelProtocolCommand());
+  interfaceViewRegistry.register(() => new HuaweiRouterIfSourceCommand());
+  interfaceViewRegistry.register(() => new HuaweiRouterIfDestinationCommand());
+  interfaceViewRegistry.register(() => new HuaweiRouterIfMacAddressCommand());
+  interfaceViewRegistry.register(() => new HuaweiRouterIfQosCommand());
+  interfaceViewRegistry.register(() => new HuaweiRouterIfArpDetectCommand());
+  interfaceViewRegistry.register(() => new HuaweiRouterIfArpLimitCommand());
   interfaceViewRegistry.register(() => new HuaweiRouterIfUndoCommand());
   interfaceViewRegistry.register(() => new PopModeCommand('quit', 'Exit from the current view'));
   interfaceViewRegistry.register(() => new EndCommand(['return']));
