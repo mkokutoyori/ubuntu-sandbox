@@ -63,6 +63,23 @@ import { HuaweiSwitchSysAclCommand } from './commands/huawei/system-view/Acl';
 import { HuaweiSwitchUserClockCommand } from './commands/huawei/user-view/Clock';
 import { HuaweiSwitchUserRebootCommand } from './commands/huawei/user-view/Reboot';
 import { HuaweiSwitchUserStartupCommand } from './commands/huawei/user-view/Startup';
+import { HuaweiSwitchDisplayDeviceCommand } from './commands/huawei/display/Device';
+import { HuaweiSwitchDisplayCpuUsageCommand } from './commands/huawei/display/CpuUsage';
+import { HuaweiSwitchDisplayMemoryUsageCommand } from './commands/huawei/display/MemoryUsage';
+import { HuaweiSwitchDisplayPortSecurityCommand } from './commands/huawei/display/PortSecurity';
+import { HuaweiSwitchDisplayEthTrunkCommand } from './commands/huawei/display/EthTrunk';
+import { HuaweiSwitchDisplayArpCommand } from './commands/huawei/display/Arp';
+import { HuaweiSwitchDisplayIpRoutingTableCommand } from './commands/huawei/display/IpRoutingTable';
+import { HuaweiSwitchDisplayDhcpSnoopingCommand } from './commands/huawei/display/DhcpSnooping';
+import { HuaweiSwitchDisplayIgmpSnoopingCommand } from './commands/huawei/display/IgmpSnooping';
+import { HuaweiSwitchDisplayUsersCommand } from './commands/huawei/display/Users';
+import { HuaweiSwitchSysLinkAggregationCommand } from './commands/huawei/system-view/LinkAggregation';
+import { HuaweiSwitchSysObservePortCommand } from './commands/huawei/system-view/ObservePort';
+import { HuaweiSwitchSysPortGroupCommand } from './commands/huawei/system-view/PortGroup';
+import { HuaweiSwitchSysUserVlanCommand } from './commands/huawei/system-view/UserVlan';
+import { HuaweiSwitchSysLldpReportCommand } from './commands/huawei/system-view/LldpReport';
+import { HuaweiSwitchSysPoeCommand } from './commands/huawei/system-view/Poe';
+import { HuaweiSwitchUserResetCommand } from './commands/huawei/user-view/Reset';
 // `HuaweiSwitchInterfaceVlanifCommand` est scaffoldé mais NON registered :
 // le vrai VRP réutilise le composite `interface <name>` avec le pattern
 // `Vlanif<id>` reconnu dans `HuaweiSwitchInterfaceCommand.prepare()`.
@@ -105,6 +122,16 @@ export function createHuaweiSwitchHostShell(
   displaySub.register(() => new HuaweiSwitchDisplayInterfaceCommand());
   displaySub.register(() => new HuaweiSwitchDisplayCurrentConfigurationCommand());
   displaySub.register(() => new HuaweiDisplayClockCommand());
+  displaySub.register(() => new HuaweiSwitchDisplayDeviceCommand());
+  displaySub.register(() => new HuaweiSwitchDisplayCpuUsageCommand());
+  displaySub.register(() => new HuaweiSwitchDisplayMemoryUsageCommand());
+  displaySub.register(() => new HuaweiSwitchDisplayPortSecurityCommand());
+  displaySub.register(() => new HuaweiSwitchDisplayEthTrunkCommand());
+  displaySub.register(() => new HuaweiSwitchDisplayArpCommand());
+  displaySub.register(() => new HuaweiSwitchDisplayIpRoutingTableCommand());
+  displaySub.register(() => new HuaweiSwitchDisplayDhcpSnoopingCommand());
+  displaySub.register(() => new HuaweiSwitchDisplayIgmpSnoopingCommand());
+  displaySub.register(() => new HuaweiSwitchDisplayUsersCommand());
 
   const userViewRegistry = new CommandRegistry();
   const systemViewRegistry = new CommandRegistry();
@@ -119,6 +146,7 @@ export function createHuaweiSwitchHostShell(
   userViewRegistry.register(() => new HuaweiSwitchUserClockCommand());
   userViewRegistry.register(() => new HuaweiSwitchUserRebootCommand());
   userViewRegistry.register(() => new HuaweiSwitchUserStartupCommand());
+  userViewRegistry.register(() => new HuaweiSwitchUserResetCommand());
   userViewRegistry.register(() => new PopModeCommand('quit', 'Exit from the current view'));
 
   systemViewRegistry.register(() => createHuaweiDisplayCommand(displaySub));
@@ -148,6 +176,12 @@ export function createHuaweiSwitchHostShell(
   systemViewRegistry.register(() => new HuaweiSwitchSysSnmpAgentCommand());
   systemViewRegistry.register(() => new HuaweiSwitchSysNtpServiceCommand());
   systemViewRegistry.register(() => new HuaweiSwitchSysAclCommand());
+  systemViewRegistry.register(() => new HuaweiSwitchSysLinkAggregationCommand());
+  systemViewRegistry.register(() => new HuaweiSwitchSysObservePortCommand());
+  systemViewRegistry.register(() => new HuaweiSwitchSysPortGroupCommand());
+  systemViewRegistry.register(() => new HuaweiSwitchSysUserVlanCommand());
+  systemViewRegistry.register(() => new HuaweiSwitchSysLldpReportCommand());
+  systemViewRegistry.register(() => new HuaweiSwitchSysPoeCommand());
   systemViewRegistry.register(() => new HuaweiSwitchSysUndoCommand());
   systemViewRegistry.register(() => new PopModeCommand('quit', 'Exit from the current view'));
   systemViewRegistry.register(() => new EndCommand(['return']));

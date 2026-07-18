@@ -1,5 +1,73 @@
 # Changelog
 
+## Huawei switch + routeur — vague batch 9 de 40 commandes (switch : 10 display leaves + 3 STP interface-view sous-composites + 2 STP system-view + 2 mac-address sous-composites + 6 system-view leaves + reset user-view ; routeur : 5 interface-view leaves ospf/isis/rip/bfd/vrrp + AAA RADIUS/HWTACACS templates push-modes + 4 leaves radius-server-view)
+
+**État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
+
+Neuvième vague batch-générée. **2 nouveaux modes CLI côté routeur** :
+`radius-server-view` (parent aaa-view, `[host-radius-<name>]`,
+`clearOnExit selectedRadiusTemplate`) et `hwtacacs-server-view`
+(parent aaa-view, `[host-hwtacacs-<name>]`,
+`clearOnExit selectedHwtacacsTemplate`). Conversion de la commande
+leaf `HuaweiRouterAaaHwtacacsServerCommand` en composite pour
+héberger la sous-commande push `template`. **+3 tests verts** sur
+les suites Huawei ciblées (204 → 201 failed).
+
+- **Switch display (10 nouveaux leaves dans displaySub)** : `device`,
+  `cpu-usage`, `memory-usage`, `port-security`, `eth-trunk`, `arp`,
+  `ip-routing-table`, `dhcp-snooping`, `igmp-snooping`, `users`.
+- **Switch STP interface-view (3 sous-composites)** : `stp priority
+  <n>`, `stp cost <n>`, `stp bpdu-filter {enable|disable}` — ajoutés
+  au sous-registre de `HuaweiSwitchIfStpCommand`. `edged-port` déjà
+  registered (batch antérieure).
+- **Switch STP system-view (1 sous-composite)** : `stp
+  bpdu-protection` — ajouté au sous-registre de
+  `HuaweiSwitchSysStpCommand`. `stp root` skippé (déjà exposé sous
+  `HuaweiSwitchStpRootCommand` du même composite).
+- **Switch mac-address system-view (2 sous-composites)** :
+  `mac-address static <mac> <iface> vlan <id>`, `mac-address
+  blackhole <mac> vlan <id>` — ajoutés au sous-registre de
+  `HuaweiSwitchSysMacAddressCommand`.
+- **Switch system-view (6 nouveaux leaves)** : `link-aggregation
+  {mode|load-balance}`, `observe-port <n> interface <iface>`,
+  `port-group <name>`, `user-vlan {voice|guest|principal|
+  subordinate}`, `lldp report {enable|management-address}`, `poe
+  {enable|power|priority}`.
+- **Switch user-view (1 leaf)** : `reset {counters|
+  saved-configuration|mac-address|arp} …`.
+- **Routeur interface-view (5 leaves)** : `ospf {enable|cost|timer|
+  authentication-mode|network-type}` (première brique OSPF-on-interface,
+  hors ospf-view), `isis {enable|circuit-level|silent}`,
+  `rip {authentication-mode|split-horizon|version}`, `bfd {enable|
+  min-tx-interval|min-rx-interval|detect-multiplier}` (nom effectif
+  `bfd-if` dans le spec mais name `bfd` dans le descriptor), `vrrp
+  vrid <n> {virtual-ip|priority|preempt-mode|authentication}`.
+- **Routeur AAA (2 push-modes + 4 leaves radius)** :
+  - `radius-server template <name>` (push vers `radius-server-view`,
+    ajouté au sous-registre du composite `RadiusServer` existant).
+  - `hwtacacs-server template <name>` (push vers
+    `hwtacacs-server-view`, conversion de `HwtacacsServer` de leaf
+    → composite avec ce push comme unique enfant).
+  - En `radius-server-view` : `authentication-server <A.B.C.D>
+    [<port>]`, `accounting-server <A.B.C.D> [<port>]`, `shared-key
+    {cipher|simple} <key>`, `retransmit <n>`.
+  - En `hwtacacs-server-view` : registry vide (transitions
+    `quit`/`return` uniquement) — l'infra est en place pour de
+    futures leaves.
+- **Nettoyage** : sous-répertoire `aaa-view/local-user/` retiré
+  (password/service-type/privilege/level générés en tant que leaves
+  top-level en aaa-view — noms `password`/`service-type`/etc. ne sont
+  pas des premiers tokens VRP valides ; VRP les emploie en suffixe :
+  `local-user <name> password …`). Le leaf existant
+  `HuaweiRouterAaaLocalUserCommand` (variadic) reste seul et couvre
+  toutes ces variantes.
+- **Preuve exécutable** :
+  - `npx tsc --noEmit` propre.
+  - Suite command-kernel : **354/354 verte**.
+  - Suites Huawei ciblées : **201 failed / 216 passed** (avant vague :
+    204/213 → **+3 tests verts** grâce à `ospf enable`/`isis`/
+    `authentication-server`/`shared-key`/etc. maintenant reconnus).
+
 ## Huawei switch + routeur — vague batch 8 de 40 commandes (switch : storm/mac-limit/port-isolate/loopback-detect/bpdu/traffic-filter/traffic-secure/arp-limit/arp-detect en interface-view, voice-vlan/super-vlan/mux-vlan/arp-security/dhcp/vlan-batch/dtp/gvrp/vtp/cdp/udld/user-interface/aaa/info-center/snmp-agent/ntp-service/acl en system-view, clock/reboot/startup en user-view ; routeur : nqa/track/bfd/dot1x/cdp/lldp/assign/firewall/device-name en system-view, arp-broadcast en interface-view)
 
 **État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**

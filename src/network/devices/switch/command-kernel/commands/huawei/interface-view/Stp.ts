@@ -6,6 +6,9 @@ import { PrivilegeLevel } from '@/command-kernel/session/types';
 import { CommandRegistry } from '@/command-kernel/registry/command-registry';
 import { HuaweiSwitchIfStpBpduCommand } from './stp/Bpdu';
 import { HuaweiSwitchIfStpEdgedPortCommand } from './stp/EdgedPort';
+import { HuaweiSwitchIfStpPriorityCommand } from './stp/Priority';
+import { HuaweiSwitchIfStpCostCommand } from './stp/Cost';
+import { HuaweiSwitchIfStpBpduFilterCommand } from './stp/BpduFilter';
 
 const OP = new DefaultPrivilegePolicy(PrivilegeLevel.OPERATOR);
 
@@ -32,6 +35,9 @@ export class HuaweiSwitchIfStpCommand extends BaseCommand {
     super();
     this.subRegistry.register(() => new HuaweiSwitchIfStpBpduCommand());
     this.subRegistry.register(() => new HuaweiSwitchIfStpEdgedPortCommand());
+    this.subRegistry.register(() => new HuaweiSwitchIfStpPriorityCommand());
+    this.subRegistry.register(() => new HuaweiSwitchIfStpCostCommand());
+    this.subRegistry.register(() => new HuaweiSwitchIfStpBpduFilterCommand());
   }
 
   async execute(ctx: CommandContext): Promise<ExitCode> {

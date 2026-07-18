@@ -5,6 +5,7 @@ import { DefaultPrivilegePolicy } from '@/command-kernel/session/privilege-polic
 import { PrivilegeLevel } from '@/command-kernel/session/types';
 import { CommandRegistry } from '@/command-kernel/registry/command-registry';
 import { HuaweiRouterAaaRadiusServerCommand } from './radius/Server';
+import { HuaweiRouterAaaRadiusServerTemplatePushCommand } from './radius-server/Template';
 
 const OP = new DefaultPrivilegePolicy(PrivilegeLevel.OPERATOR);
 
@@ -30,6 +31,7 @@ export class HuaweiRouterAaaRadiusServerRootCommand extends BaseCommand {
   constructor() {
     super();
     this.subRegistry.register(() => new HuaweiRouterAaaRadiusServerCommand());
+    this.subRegistry.register(() => new HuaweiRouterAaaRadiusServerTemplatePushCommand());
   }
 
   async execute(ctx: CommandContext): Promise<ExitCode> {

@@ -4,6 +4,8 @@ import { CommandRegistry } from '@/command-kernel/registry/command-registry';
 import { DefaultPrivilegePolicy } from '@/command-kernel/session/privilege-policy';
 import { PrivilegeLevel } from '@/command-kernel/session/types';
 import { HuaweiSwitchSysMacAddressAgingTimeCommand } from './mac-address/AgingTime';
+import { HuaweiSwitchSysMacAddressStaticCommand } from './mac-address/Static';
+import { HuaweiSwitchSysMacAddressBlackholeCommand } from './mac-address/Blackhole';
 
 const OP = new DefaultPrivilegePolicy(PrivilegeLevel.OPERATOR);
 
@@ -29,6 +31,8 @@ export class HuaweiSwitchSysMacAddressCommand extends BaseCommand {
   constructor() {
     super();
     this.subRegistry.register(() => new HuaweiSwitchSysMacAddressAgingTimeCommand());
+    this.subRegistry.register(() => new HuaweiSwitchSysMacAddressStaticCommand());
+    this.subRegistry.register(() => new HuaweiSwitchSysMacAddressBlackholeCommand());
   }
 
   async execute(ctx: CommandContext): Promise<ExitCode> {

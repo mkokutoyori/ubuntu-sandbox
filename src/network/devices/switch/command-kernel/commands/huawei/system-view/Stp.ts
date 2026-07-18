@@ -9,6 +9,7 @@ import { HuaweiSwitchSysStpModeCommand } from './stp/Mode';
 import { HuaweiSwitchStpRootCommand } from './stp/Root';
 import { HuaweiSwitchStpPriorityCommand } from './stp/Priority';
 import { HuaweiSwitchSysStpRegionConfigurationCommand } from './stp/RegionConfiguration';
+import { HuaweiSwitchSysStpBpduProtectionCommand } from './stp/BpduProtection';
 
 const OP = new DefaultPrivilegePolicy(PrivilegeLevel.OPERATOR);
 
@@ -38,6 +39,7 @@ export class HuaweiSwitchSysStpCommand extends BaseCommand {
     this.subRegistry.register(() => new HuaweiSwitchStpRootCommand());
     this.subRegistry.register(() => new HuaweiSwitchStpPriorityCommand());
     this.subRegistry.register(() => new HuaweiSwitchSysStpRegionConfigurationCommand());
+    this.subRegistry.register(() => new HuaweiSwitchSysStpBpduProtectionCommand());
   }
 
   async execute(ctx: CommandContext): Promise<ExitCode> {

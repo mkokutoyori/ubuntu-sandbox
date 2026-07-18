@@ -179,6 +179,15 @@ import { HuaweiRouterSysLldpCommand } from './commands/huawei/system-view/Lldp';
 import { HuaweiRouterSysAssignCommand } from './commands/huawei/system-view/Assign';
 import { HuaweiRouterSysFirewallCommand } from './commands/huawei/system-view/Firewall';
 import { HuaweiRouterSysDeviceNameCommand } from './commands/huawei/system-view/DeviceName';
+import { HuaweiRouterIfOspfCommand } from './commands/huawei/interface-view/Ospf';
+import { HuaweiRouterIfIsisCommand } from './commands/huawei/interface-view/Isis';
+import { HuaweiRouterIfRipCommand } from './commands/huawei/interface-view/Rip';
+import { HuaweiRouterIfBfdCommand } from './commands/huawei/interface-view/BfdIf';
+import { HuaweiRouterIfVrrpCommand } from './commands/huawei/interface-view/Vrrp';
+import { HuaweiRouterRadiusAuthenticationServerCommand } from './commands/huawei/radius-server-view/AuthenticationServer';
+import { HuaweiRouterRadiusAccountingServerCommand } from './commands/huawei/radius-server-view/AccountingServer';
+import { HuaweiRouterRadiusSharedKeyCommand } from './commands/huawei/radius-server-view/SharedKey';
+import { HuaweiRouterRadiusRetransmitCommand } from './commands/huawei/radius-server-view/Retransmit';
 
 /**
  * =====================================================================
@@ -244,6 +253,8 @@ export function createHuaweiRouterHostShell(
   const trafficBehaviorViewRegistry = new CommandRegistry();
   const trafficPolicyViewRegistry = new CommandRegistry();
   const ipsecPolicyViewRegistry = new CommandRegistry();
+  const radiusServerViewRegistry = new CommandRegistry();
+  const hwtacacsServerViewRegistry = new CommandRegistry();
 
   userViewRegistry.register(() => createHuaweiDisplayCommand(displaySub));
   userViewRegistry.register(() => new HuaweiSystemViewCommand());
@@ -346,6 +357,11 @@ export function createHuaweiRouterHostShell(
   interfaceViewRegistry.register(() => new HuaweiRouterIfArpDetectCommand());
   interfaceViewRegistry.register(() => new HuaweiRouterIfArpLimitCommand());
   interfaceViewRegistry.register(() => new HuaweiRouterIfArpBroadcastCommand());
+  interfaceViewRegistry.register(() => new HuaweiRouterIfOspfCommand());
+  interfaceViewRegistry.register(() => new HuaweiRouterIfIsisCommand());
+  interfaceViewRegistry.register(() => new HuaweiRouterIfRipCommand());
+  interfaceViewRegistry.register(() => new HuaweiRouterIfBfdCommand());
+  interfaceViewRegistry.register(() => new HuaweiRouterIfVrrpCommand());
   interfaceViewRegistry.register(() => new HuaweiRouterIfUndoCommand());
   interfaceViewRegistry.register(() => new PopModeCommand('quit', 'Exit from the current view'));
   interfaceViewRegistry.register(() => new EndCommand(['return']));
@@ -451,6 +467,16 @@ export function createHuaweiRouterHostShell(
   ipsecPolicyViewRegistry.register(() => new PopModeCommand('quit', 'Exit from the current view'));
   ipsecPolicyViewRegistry.register(() => new EndCommand(['return']));
 
+  radiusServerViewRegistry.register(() => new HuaweiRouterRadiusAuthenticationServerCommand());
+  radiusServerViewRegistry.register(() => new HuaweiRouterRadiusAccountingServerCommand());
+  radiusServerViewRegistry.register(() => new HuaweiRouterRadiusSharedKeyCommand());
+  radiusServerViewRegistry.register(() => new HuaweiRouterRadiusRetransmitCommand());
+  radiusServerViewRegistry.register(() => new PopModeCommand('quit', 'Exit from the current view'));
+  radiusServerViewRegistry.register(() => new EndCommand(['return']));
+
+  hwtacacsServerViewRegistry.register(() => new PopModeCommand('quit', 'Exit from the current view'));
+  hwtacacsServerViewRegistry.register(() => new EndCommand(['return']));
+
   ripViewRegistry.register(() => new HuaweiRouterRipNetworkCommand());
   ripViewRegistry.register(() => new PopModeCommand('quit', 'Exit from the current view'));
   ripViewRegistry.register(() => new EndCommand(['return']));
@@ -475,6 +501,8 @@ export function createHuaweiRouterHostShell(
     { name: 'traffic-behavior-view',   prompt: (s, host) => `[${host}-behavior-${s.promptFields.get('selectedTrafficBehavior') ?? ''}]`,     parent: 'system-view', registry: trafficBehaviorViewRegistry,   clearOnExit: ['selectedTrafficBehavior'] },
     { name: 'traffic-policy-view',     prompt: (s, host) => `[${host}-trafficpolicy-${s.promptFields.get('selectedTrafficPolicy') ?? ''}]`,  parent: 'system-view', registry: trafficPolicyViewRegistry,     clearOnExit: ['selectedTrafficPolicy'] },
     { name: 'ipsec-policy-view',       prompt: (s, host) => `[${host}-ipsec-policy-${s.promptFields.get('selectedIpsecPolicy') ?? ''}]`,     parent: 'system-view', registry: ipsecPolicyViewRegistry,       clearOnExit: ['selectedIpsecPolicy'] },
+    { name: 'radius-server-view',      prompt: (s, host) => `[${host}-radius-${s.promptFields.get('selectedRadiusTemplate') ?? ''}]`,        parent: 'aaa-view',    registry: radiusServerViewRegistry,      clearOnExit: ['selectedRadiusTemplate'] },
+    { name: 'hwtacacs-server-view',    prompt: (s, host) => `[${host}-hwtacacs-${s.promptFields.get('selectedHwtacacsTemplate') ?? ''}]`,    parent: 'aaa-view',    registry: hwtacacsServerViewRegistry,    clearOnExit: ['selectedHwtacacsTemplate'] },
   ] satisfies CliMode[]);
 
   const machine = new RouterMachineApi({ router, modes });
