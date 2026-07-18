@@ -471,6 +471,21 @@ export class LinuxCommandExecutor {
     if (this.vfs.readFile('/etc/protocols') == null) this.vfs.writeFile('/etc/protocols', ETC_PROTOCOLS, 0, 0, 0o022);
     if (this.vfs.readFile('/etc/networks')  == null) this.vfs.writeFile('/etc/networks',  ETC_NETWORKS,  0, 0, 0o022);
     if (this.vfs.readFile('/etc/rpc')       == null) this.vfs.writeFile('/etc/rpc',       ETC_RPC,       0, 0, 0o022);
+    if (this.vfs.readFile('/etc/profile') == null) {
+      this.vfs.writeFile('/etc/profile',
+        '# /etc/profile: system-wide .profile file for the Bourne shell (sh(1))\n'
+        + '# and Bourne compatible shells (bash(1), ksh(1), ash(1), ...).\n\n'
+        + 'if [ "$(id -u)" -eq 0 ]; then\n  PS1=\'# \'\nelse\n  PS1=\'$ \'\nfi\n\n'
+        + 'if [ -d /etc/profile.d ]; then\n  for i in /etc/profile.d/*.sh; do\n'
+        + '    if [ -r "$i" ]; then\n      . "$i"\n    fi\n  done\n  unset i\nfi\n', 0, 0, 0o022);
+    }
+    if (this.vfs.readFile('/etc/bash.bashrc') == null) {
+      this.vfs.writeFile('/etc/bash.bashrc',
+        '# System-wide .bashrc file for interactive bash(1) shells.\n\n'
+        + 'if [ -z "$PS1" ]; then\n  return\nfi\n\nHISTCONTROL=ignoreboth\nHISTSIZE=1000\nHISTFILESIZE=2000\n',
+        0, 0, 0o022);
+    }
+    if (!this.vfs.exists('/etc/profile.d')) this.vfs.mkdirp('/etc/profile.d', 0o755, 0, 0);
 
     // ── NSS resolver ────────────────────────────────────────────────
     this.filesNss = new FilesNssSource(this.vfs, this.userMgr);
@@ -2891,6 +2906,48 @@ export class LinuxCommandExecutor {
     };
   }
 
+  /**
+   * Source the real bash startup files for a `bash` invocation, matching
+   * POSIX/bash invocation rules: a login shell sources /etc/profile, then
+   * every /etc/profile.d/*.sh, then the first of ~/.bash_profile,
+   * ~/.bash_login, ~/.profile that exists; a non-login interactive shell
+   * sources /etc/bash.bashrc then ~/.bashrc; a non-interactive shell
+   * sources nothing except $BASH_ENV, if set.
+   */
+  private runBashStartupFiles(login: boolean, interactive: boolean): void {
+    const home = this.userMgr.currentUid === 0 ? '/root' : `/home/${this.userMgr.currentUser}`;
+    // Real bash sets PS1 before sourcing rc files for an interactive shell —
+    // /etc/bash.bashrc / ~/.bashrc commonly bail out early on `[ -z "$PS1" ]`.
+    if ((login || interactive) && !this.env.get('PS1')) {
+      this.env.set('PS1', this.userMgr.currentUid === 0 ? '# ' : '$ ');
+    }
+    if (login) {
+      this.sourceIfExists('/etc/profile');
+      const entries = this.vfs.listDirectory('/etc/profile.d');
+      if (entries) {
+        for (const e of entries.filter((f) => f.name.endsWith('.sh')).sort((a, b) => a.name.localeCompare(b.name))) {
+          this.sourceIfExists(`/etc/profile.d/${e.name}`);
+        }
+      }
+      for (const rc of ['.bash_profile', '.bash_login', '.profile']) {
+        if (this.sourceIfExists(`${home}/${rc}`)) break;
+      }
+    } else if (interactive) {
+      this.sourceIfExists('/etc/bash.bashrc');
+      this.sourceIfExists(`${home}/.bashrc`);
+    } else {
+      const bashEnv = this.env.get('BASH_ENV');
+      if (bashEnv) this.sourceIfExists(this.vfs.normalizePath(bashEnv, this.cwd));
+    }
+  }
+
+  /** `. path` if it exists — returns whether it was sourced. */
+  private sourceIfExists(path: string): boolean {
+    if (!this.vfs.exists(path)) return false;
+    this.execute(`. ${path}`);
+    return true;
+  }
+
   /** Build initial environment variables for the bash interpreter. */
   private buildEnvVars(): Record<string, string> {
     const user = this.userMgr.currentUser;
@@ -3609,10 +3666,12 @@ export class LinuxCommandExecutor {
         // such as `-lc` (login + command); `-l` makes $0 a login `-bash`.
         let i = 0;
         let login = false;
+        let interactive = false;
         let cmdString: string | null = null;
         while (i < args.length && args[i].startsWith('-') && args[i] !== '-') {
           const flags = args[i].slice(1);
           if (flags.includes('l')) login = true;
+          if (flags.includes('i')) interactive = true;
           if (flags.includes('c')) {
             cmdString = args[i + 1] ?? '';
             i += 2;
@@ -3621,6 +3680,7 @@ export class LinuxCommandExecutor {
           i++;
         }
         const arg0 = login ? '-bash' : cmd;
+        if (cmd === 'bash') this.runBashStartupFiles(login, interactive);
         if (cmdString !== null) {
           return this.runScriptProcess(`${cmd} -c ${cmdString}`, (identity, bridge) =>
             runScriptContent(
