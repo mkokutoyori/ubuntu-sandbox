@@ -164,9 +164,10 @@ function readCaptureFile(opt: TcpdumpOptions, deps: TcpdumpDeps): TcpdumpResult 
     printed++;
     if (opt.count !== null && printed >= opt.count) break;
   }
+  const readingLine = `reading from file ${opt.readFile}, link-type ${opt.linkType} (Ethernet), snapshot length ${opt.snaplen}`;
   return {
     stdout: stdoutLines.join('\n'),
-    stderr: `reading from file ${opt.readFile}, link-type ${opt.linkType} (Ethernet), snapshot length ${opt.snaplen}`,
+    stderr: [readingLine, ...footer(printed, printed)].join('\n'),
     exitCode: 0,
   };
 }
