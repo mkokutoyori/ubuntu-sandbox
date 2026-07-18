@@ -125,6 +125,44 @@ place pour de futures leaves radius/hwtacacs côté switch).
     refléter l'expansion du kernel).
   - Suites Huawei ciblées : **204 failed / 213 passed** (inchangé
     vs batch 7 — zéro nouvelle régression).
+## Cisco routeur + switch — vague batch 4 : 27 commandes câblées (HSRP standby, channel-group, OSPF area/redistribute, AAA, show ops matériel — routeur + service-policy/SNMP/AAA/DTP/HSRP/inventory/flash — switch)
+
+**État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
+
+Quatrième vague batch-générée. Focus opérateur avancé : HSRP côté
+routeur (`standby` composite + ip/priority/preempt), agrégation
+`channel-group`, OSPF `area {stub|nssa}` + `redistribute`, `aaa
+new-model` (routeur + switch), plus la vue matérielle exec (`show
+flash`/`environment`/`inventory`/`tech-support`) et côté switch
+`service-policy input|output`, `snmp-server {community|host}`, et
+`show {dtp|standby|inventory|flash}`.
+
+### Routeur Cisco (15 nouveaux)
+
+- **config-if** : `standby {ip|priority|preempt}` (HSRP), `channel-group`.
+- **config-router** : `area {stub|nssa}` (OSPF), `redistribute`.
+- **config (global)** : `aaa new-model`.
+- **show** : `show flash`, `show environment`, `show inventory`,
+  `show tech-support`.
+
+### Switch Cisco (12 nouveaux)
+
+- **config-if** : `service-policy {input|output}`.
+- **config (global)** : `snmp-server {community|host}`, `aaa new-model`.
+- **show** : `show dtp`, `show standby`, `show inventory`, `show flash`.
+
+### Câblage bootstrap
+
+- `createCiscoRouterHostShell.ts` : imports + register sur `showSub`,
+  `configRegistry`, `configIfRegistry`, `configRouterRegistry`.
+- `createCiscoSwitchHostShell.ts` : imports + register sur `showSub`,
+  `configRegistry`, `configIfRegistry`.
+
+### Validation
+
+- `npx tsc --noEmit` : 0 erreur.
+- `src/__tests__/unit/command-kernel` : **354/354 passent** (10 fichiers).
+
 
 ## Linux — Wave 6 : `passwd`/`chpasswd`/`usermod`/`userdel`/`deluser`/`groupadd`/`groupmod`/`groupdel`/`gpasswd`/`lsof`/`ausearch`/`aureport`/`auditctl`/`mount`/`umount`/`findmnt`/`crontab`/`atq`/`atrm`/`runlevel`
 

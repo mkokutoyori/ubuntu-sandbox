@@ -14,7 +14,11 @@ import { RouterMachineApi } from './RouterMachineApi';
 import { CiscoRouterShowArpCommand } from './commands/cisco/show/Arp';
 import { CiscoRouterShowCdpCommand } from './commands/cisco/show/Cdp';
 import { CiscoRouterShowClockCommand } from './commands/cisco/show/Clock';
+import { CiscoRouterShowEnvironmentCommand } from './commands/cisco/show/Environment';
+import { CiscoRouterShowFlashCommand } from './commands/cisco/show/Flash';
 import { CiscoRouterShowInterfacesCommand } from './commands/cisco/show/Interfaces';
+import { CiscoRouterShowInventoryCommand } from './commands/cisco/show/Inventory';
+import { CiscoRouterShowTechSupportCommand } from './commands/cisco/show/TechSupport';
 import { CiscoRouterShowIpCommand } from './commands/cisco/show/Ip';
 import { CiscoRouterShowLoggingCommand } from './commands/cisco/show/Logging';
 import { CiscoRouterShowMemoryCommand } from './commands/cisco/show/Memory';
@@ -24,6 +28,7 @@ import { CiscoRouterShowRunningConfigCommand } from './commands/cisco/show/Runni
 import { CiscoRouterShowUsersCommand } from './commands/cisco/show/Users';
 import { CiscoRouterShowVersionCommand } from './commands/cisco/show/Version';
 // ─── config ─────────────────────────────────────────────────────────
+import { CiscoRouterConfigAaaCommand } from './commands/cisco/config/Aaa';
 import { CiscoRouterConfigBannerCommand } from './commands/cisco/config/Banner';
 import { CiscoRouterGlobalCdpCommand } from './commands/cisco/config/Cdp';
 import { CiscoRouterConfigEnableCommand } from './commands/cisco/config/Enable';
@@ -41,6 +46,8 @@ import { CiscoRouterConfigUsernameCommand } from './commands/cisco/config/Userna
 // ─── config-if ──────────────────────────────────────────────────────
 import { CiscoRouterConfigIfArpCommand } from './commands/cisco/config/config-if/Arp';
 import { CiscoRouterConfigIfBandwidthCommand } from './commands/cisco/config/config-if/Bandwidth';
+import { CiscoRouterConfigIfChannelGroupCommand } from './commands/cisco/config/config-if/ChannelGroup';
+import { CiscoRouterConfigIfStandbyCommand } from './commands/cisco/config/config-if/Standby';
 import { CiscoRouterConfigIfCdpCommand } from './commands/cisco/config/config-if/Cdp';
 import { CiscoRouterConfigIfDelayCommand } from './commands/cisco/config/config-if/Delay';
 import { CiscoRouterDescriptionCommand } from './commands/cisco/config/config-if/Description';
@@ -54,8 +61,10 @@ import { CiscoRouterConfigIfNoCommand } from './commands/cisco/config/config-if/
 import { CiscoRouterShutdownCommand } from './commands/cisco/config/config-if/Shutdown';
 import { CiscoRouterConfigIfSpeedCommand } from './commands/cisco/config/config-if/Speed';
 // ─── config-router ──────────────────────────────────────────────────
+import { CiscoRouterConfigRouterAreaCommand } from './commands/cisco/config/config-router/Area';
 import { CiscoRouterConfigRouterAutoSummaryCommand } from './commands/cisco/config/config-router/AutoSummary';
 import { CiscoRouterConfigRouterDefaultInformationCommand } from './commands/cisco/config/config-router/DefaultInformation';
+import { CiscoRouterConfigRouterRedistributeCommand } from './commands/cisco/config/config-router/Redistribute';
 import { CiscoRouterConfigRouterDistanceCommand } from './commands/cisco/config/config-router/Distance';
 import { CiscoRouterConfigRouterMaximumPathsCommand } from './commands/cisco/config/config-router/MaximumPaths';
 import { CiscoRouterConfigRouterNeighborCommand } from './commands/cisco/config/config-router/Neighbor';
@@ -93,6 +102,10 @@ export function createCiscoRouterHostShell(
   showSub.register(() => new CiscoRouterShowProcessesCommand());
   showSub.register(() => new CiscoRouterShowLoggingCommand());
   showSub.register(() => new CiscoRouterShowNtpCommand());
+  showSub.register(() => new CiscoRouterShowFlashCommand());
+  showSub.register(() => new CiscoRouterShowEnvironmentCommand());
+  showSub.register(() => new CiscoRouterShowInventoryCommand());
+  showSub.register(() => new CiscoRouterShowTechSupportCommand());
 
   const userRegistry = new CommandRegistry();
   const privilegedRegistry = new CommandRegistry();
@@ -126,6 +139,7 @@ export function createCiscoRouterHostShell(
   configRegistry.register(() => new CiscoRouterConfigEnableCommand());
   configRegistry.register(() => new CiscoRouterConfigServiceCommand());
   configRegistry.register(() => new CiscoRouterConfigSnmpServerCommand());
+  configRegistry.register(() => new CiscoRouterConfigAaaCommand());
   configRegistry.register(() => new PopModeCommand('exit', 'Exit from the current mode'));
   configRegistry.register(() => new EndCommand());
 
@@ -143,6 +157,8 @@ export function createCiscoRouterHostShell(
   configIfRegistry.register(() => new CiscoRouterConfigIfSpeedCommand());
   configIfRegistry.register(() => new CiscoRouterConfigIfHoldQueueCommand());
   configIfRegistry.register(() => new CiscoRouterConfigIfArpCommand());
+  configIfRegistry.register(() => new CiscoRouterConfigIfStandbyCommand());
+  configIfRegistry.register(() => new CiscoRouterConfigIfChannelGroupCommand());
   configIfRegistry.register(() => new PopModeCommand('exit', 'Exit from the current mode'));
   configIfRegistry.register(() => new EndCommand());
 
@@ -155,6 +171,8 @@ export function createCiscoRouterHostShell(
   configRouterRegistry.register(() => new CiscoRouterConfigRouterDefaultInformationCommand());
   configRouterRegistry.register(() => new CiscoRouterConfigRouterDistanceCommand());
   configRouterRegistry.register(() => new CiscoRouterConfigRouterTimersCommand());
+  configRouterRegistry.register(() => new CiscoRouterConfigRouterAreaCommand());
+  configRouterRegistry.register(() => new CiscoRouterConfigRouterRedistributeCommand());
   configRouterRegistry.register(() => new PopModeCommand('exit', 'Exit from the current mode'));
   configRouterRegistry.register(() => new EndCommand());
 

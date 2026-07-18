@@ -12,6 +12,10 @@ import {
 import { SwitchMachineApi } from './SwitchMachineApi';
 import { CiscoSwitchShowCdpCommand } from './commands/cisco/show/Cdp';
 import { CiscoSwitchShowClockCommand } from './commands/cisco/show/Clock';
+import { CiscoSwitchShowDtpCommand } from './commands/cisco/show/Dtp';
+import { CiscoSwitchShowFlashCommand } from './commands/cisco/show/Flash';
+import { CiscoSwitchShowInventoryCommand } from './commands/cisco/show/Inventory';
+import { CiscoSwitchShowStandbyCommand } from './commands/cisco/show/Standby';
 import { CiscoSwitchShowEtherchannelCommand } from './commands/cisco/show/Etherchannel';
 import { CiscoSwitchShowInterfacesCommand } from './commands/cisco/show/Interfaces';
 import { CiscoSwitchShowMacCommand } from './commands/cisco/show/Mac';
@@ -20,7 +24,9 @@ import { CiscoSwitchShowRunningConfigCommand } from './commands/cisco/show/Runni
 import { CiscoSwitchShowSpanningTreeCommand } from './commands/cisco/show/SpanningTree';
 import { CiscoSwitchShowVlanCommand } from './commands/cisco/show/Vlan';
 import { CiscoSwitchShowVersionCommand } from './commands/cisco/show/Version';
+import { CiscoSwitchConfigAaaCommand } from './commands/cisco/config/Aaa';
 import { CiscoSwitchConfigBannerCommand } from './commands/cisco/config/Banner';
+import { CiscoSwitchConfigSnmpServerCommand } from './commands/cisco/config/SnmpServer';
 import { CiscoSwitchConfigEnableCommand } from './commands/cisco/config/Enable';
 import { CiscoSwitchConfigErrdisableCommand } from './commands/cisco/config/Errdisable';
 import { CiscoSwitchHostnameCommand } from './commands/cisco/config/Hostname';
@@ -41,6 +47,7 @@ import { CiscoSwitchConfigIfNoCommand } from './commands/cisco/config/config-if/
 import { CiscoSwitchShutdownCommand } from './commands/cisco/config/config-if/Shutdown';
 import { CiscoSwitchConfigIfSpanningTreeCommand } from './commands/cisco/config/config-if/SpanningTree';
 import { CiscoSwitchConfigIfMlsCommand } from './commands/cisco/config/config-if/Mls';
+import { CiscoSwitchConfigIfServicePolicyCommand } from './commands/cisco/config/config-if/ServicePolicy';
 import { CiscoSwitchConfigIfSpeedCommand } from './commands/cisco/config/config-if/Speed';
 import { CiscoSwitchConfigIfStormControlCommand } from './commands/cisco/config/config-if/StormControl';
 import { CiscoSwitchportCommand } from './commands/cisco/config/config-if/Switchport';
@@ -96,6 +103,10 @@ export function createCiscoSwitchHostShell(
   showSub.register(() => new CiscoSwitchShowCdpCommand());
   showSub.register(() => new CiscoSwitchShowPortSecurityCommand());
   showSub.register(() => new CiscoSwitchShowSpanningTreeCommand());
+  showSub.register(() => new CiscoSwitchShowDtpCommand());
+  showSub.register(() => new CiscoSwitchShowStandbyCommand());
+  showSub.register(() => new CiscoSwitchShowInventoryCommand());
+  showSub.register(() => new CiscoSwitchShowFlashCommand());
 
   const userRegistry = new CommandRegistry();
   const privilegedRegistry = new CommandRegistry();
@@ -127,6 +138,8 @@ export function createCiscoSwitchHostShell(
   configRegistry.register(() => new CiscoSwitchConfigVtpCommand());
   configRegistry.register(() => new CiscoSwitchConfigNtpCommand());
   configRegistry.register(() => new CiscoSwitchConfigMacCommand());
+  configRegistry.register(() => new CiscoSwitchConfigSnmpServerCommand());
+  configRegistry.register(() => new CiscoSwitchConfigAaaCommand());
   configRegistry.register(() => new PopModeCommand('exit', 'Exit from the current mode'));
   configRegistry.register(() => new EndCommand());
 
@@ -141,6 +154,7 @@ export function createCiscoSwitchHostShell(
   configIfRegistry.register(() => new CiscoSwitchConfigIfSpanningTreeCommand());
   configIfRegistry.register(() => new CiscoSwitchConfigIfStormControlCommand());
   configIfRegistry.register(() => new CiscoSwitchConfigIfMlsCommand());
+  configIfRegistry.register(() => new CiscoSwitchConfigIfServicePolicyCommand());
   configIfRegistry.register(() => new PopModeCommand('exit', 'Exit from the current mode'));
   configIfRegistry.register(() => new EndCommand());
 
