@@ -45,6 +45,7 @@ import { netplanCommand } from './net/Netplan';
 import { networkctlCommand } from './net/Networkctl';
 import { nmcliCommand } from './net/Nmcli';
 import { ifupCommand, ifdownCommand } from './net/Ifupdown';
+import { sshdCommand } from './net/Sshd';
 import { xxdCommand } from './coreutils/Xxd';
 import { nftCommand } from './net/Nft';
 import { firewallCmdCommand } from './net/FirewallCmd';
@@ -126,6 +127,7 @@ export {
   nmcliCommand,
   ifupCommand,
   ifdownCommand,
+  sshdCommand,
   xxdCommand,
   nftCommand,
   firewallCmdCommand,
@@ -217,6 +219,7 @@ export const CORE_LINUX_COMMANDS: readonly LinuxCommand[] = [
   nmcliCommand,
   ifupCommand,
   ifdownCommand,
+  sshdCommand,
   xxdCommand,
   nftCommand,
   firewallCmdCommand,

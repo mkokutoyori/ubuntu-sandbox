@@ -1198,6 +1198,30 @@ export class VimEngine {
     }
   }
 
+  /** Expand a bare `%` to the current file path in `:!cmd`/`:r !cmd`, like real vim. `\%` is a literal percent. */
+  private expandPercent(cmd: string): string {
+    return cmd.replace(/\\%|%/g, (m) => (m === '%' ? this.filePath : '%'));
+  }
+
+  /**
+   * Real vim's `filetype` autodetection is driven by a large, pluggable
+   * table (filetype.vim) keyed on path/extension patterns. This models
+   * just the handful of system-config detections the standard
+   * distribution ships with — anything vim itself would recognize
+   * out of the box, no custom ftdetect required.
+   */
+  private detectFiletype(): string {
+    const path = this.filePath;
+    if (/(^|\/)fstab$/.test(path)) return 'fstab';
+    if (/(^|\/)crontab$/.test(path) || /\/cron\.d\//.test(path) || /(^|\/)crontab\.\d+$/.test(path)) return 'crontab';
+    if (/(^|\/)sshd_config(\.d\/.*\.conf)?$/.test(path)) return 'sshconfig';
+    if (/(^|\/)ssh_config$/.test(path)) return 'sshconfig';
+    if (/\.sh$/.test(path)) return 'sh';
+    if (/\.ya?ml$/.test(path)) return 'yaml';
+    if (/\.conf$/.test(path)) return 'conf';
+    return '';
+  }
+
   /** Parse an optional leading ex range (`%`, `N`, `N,M`, `$`, `.`, `'<,'>`) off a command string. */
   private parseExRange(s: string): { start: number | null; end: number | null; rest: string } {
     if (s.startsWith('%')) return { start: 0, end: this.linesArr.length - 1, rest: s.slice(1) };
@@ -1237,7 +1261,7 @@ export class VimEngine {
     // :!cmd (shell escape, no range) vs :%!cmd / :N,M!cmd (filter the range
     // through an external command, replacing its content with the output).
     if (rest.startsWith('!')) {
-      const cmdStr = rest.slice(1).trim();
+      const cmdStr = this.expandPercent(rest.slice(1).trim());
       if (rangeStart !== null) {
         this.pushUndoSnapshot();
         const lo = Math.max(0, Math.min(rangeStart, rangeEnd ?? rangeStart));
@@ -1266,7 +1290,7 @@ export class VimEngine {
       this.pushUndoSnapshot();
       let newLines: string[];
       if (arg.startsWith('!')) {
-        const output = this.fs.runShellCommand(arg.slice(1).trim());
+        const output = this.fs.runShellCommand(this.expandPercent(arg.slice(1).trim()));
         const body = output.endsWith('\n') ? output.slice(0, -1) : output;
         newLines = body.length === 0 ? [] : body.split('\n');
       } else {
@@ -1348,8 +1372,8 @@ export class VimEngine {
       return;
     }
     if (trimmed === 'wq!') {
-      this.writeFile(this.filePath, true);
-      this.finishExit(true);
+      if (this.writeFile(this.filePath, true)) this.finishExit(true);
+      else this._mode = 'normal';
       return;
     }
     if (trimmed === 'registers' || trimmed === 'reg' || trimmed.startsWith('registers ') || trimmed.startsWith('reg ')) {
@@ -1407,6 +1431,11 @@ export class VimEngine {
       this._mode = 'normal';
       return;
     }
+    if (trimmed === 'set filetype?' || trimmed === 'set ft?') {
+      this._message = `filetype=${this.detectFiletype()}`;
+      this._mode = 'normal';
+      return;
+    }
     if (trimmed === '$') {
       this.gotoLine(this.linesArr.length - 1);
       this._message = '';
@@ -1430,7 +1459,11 @@ export class VimEngine {
       this._message = "E45: 'readonly' option is set (add ! to override)";
       return false;
     }
-    this.fs.writeFile(path, `${this.content}\n`);
+    const ok = this.fs.writeFile(path, `${this.content}\n`);
+    if (!ok) {
+      this._message = `E212: Can't open file for writing`;
+      return false;
+    }
     this._modified = false;
     this._message = `"${path}" ${this.linesArr.length}L, ${this.content.length}C written`;
     return true;
@@ -1618,13 +1651,23 @@ export class VimEngine {
     const flatOffset = this.linesArr.slice(0, this._cursorLine).join('\n').length
       + (this._cursorLine > 0 ? 1 : 0) + this._cursorCol;
     const text = this.content;
-    const regex = compileVimPattern(query, this.ignoreCaseSearch);
-    let m = text.slice(flatOffset + 1).match(regex);
-    let idx = m && m.index !== undefined ? flatOffset + 1 + m.index : -1;
+    const base = compileVimPattern(query, this.ignoreCaseSearch);
+    // `m` (multiline) so `^`/`$` anchor to each line's boundaries — matching
+    // real vim — rather than only the start/end of the whole buffer. Search
+    // the full, unsliced text (not text.slice(flatOffset)) so a `^`-anchored
+    // pattern can't spuriously match mid-line at the slice point.
+    const regex = new RegExp(base.source, `gm${base.flags}`);
+    let idx = -1;
     let wrapped = false;
+    let match: RegExpExecArray | null;
+    while ((match = regex.exec(text)) !== null) {
+      if (match.index > flatOffset) { idx = match.index; break; }
+      if (match[0].length === 0) regex.lastIndex++;
+    }
     if (idx < 0) {
-      m = text.match(regex);
-      idx = m && m.index !== undefined ? m.index : -1;
+      regex.lastIndex = 0;
+      match = regex.exec(text);
+      idx = match ? match.index : -1;
       wrapped = true;
     }
     if (idx < 0) {

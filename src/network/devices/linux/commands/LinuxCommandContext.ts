@@ -25,6 +25,7 @@ import type { RadiusClientAgent } from '@/network/radius/RadiusClientAgent';
 import type { GreAgent } from '@/network/gre/GreAgent';
 import type { LinuxNetworkConfigManager } from '../LinuxNetworkConfigManager';
 import type { X509Certificate } from '@/network/pki/X509Certificate';
+import type { SshdServerConfigSnapshot } from '@/network/protocols/ssh/server/SshdServerConfig';
 
 export interface LinuxCommandContext {
   /** Kernel-level services: VFS, users, iptables, services, processes. */
@@ -76,4 +77,12 @@ export interface LinuxCommandContext {
   readonly radtestClient?: RadiusClientAgent;
 
   readonly tlsTrustAnchors: readonly X509Certificate[];
+
+  /**
+   * The sshd daemon's *live, cached* effective configuration — reflects
+   * the last (re)load of `/etc/ssh/sshd_config`, not necessarily the
+   * file's current on-disk content (real sshd only re-reads its config on
+   * SIGHUP / `systemctl reload ssh`). Backs `sshd -T`.
+   */
+  readonly sshServerConfig: () => SshdServerConfigSnapshot;
 }
