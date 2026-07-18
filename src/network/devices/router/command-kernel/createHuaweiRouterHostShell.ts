@@ -169,6 +169,16 @@ import { HuaweiRouterUserDirCommand } from './commands/huawei/user-view/Dir';
 import { HuaweiRouterUserMoreCommand } from './commands/huawei/user-view/More';
 import { HuaweiRouterUserCdCommand } from './commands/huawei/user-view/Cd';
 import { HuaweiRouterUserPwdCommand } from './commands/huawei/user-view/Pwd';
+import { HuaweiRouterSysNqaCommand } from './commands/huawei/system-view/Nqa';
+import { HuaweiRouterSysTrackCommand } from './commands/huawei/system-view/Track';
+import { HuaweiRouterSysBfdCommand } from './commands/huawei/system-view/Bfd';
+import { HuaweiRouterSysDot1xCommand } from './commands/huawei/system-view/Dot1x';
+import { HuaweiRouterIfArpBroadcastCommand } from './commands/huawei/interface-view/ArpBroadcast';
+import { HuaweiRouterSysCdpCommand } from './commands/huawei/system-view/Cdp';
+import { HuaweiRouterSysLldpCommand } from './commands/huawei/system-view/Lldp';
+import { HuaweiRouterSysAssignCommand } from './commands/huawei/system-view/Assign';
+import { HuaweiRouterSysFirewallCommand } from './commands/huawei/system-view/Firewall';
+import { HuaweiRouterSysDeviceNameCommand } from './commands/huawei/system-view/DeviceName';
 
 /**
  * =====================================================================
@@ -300,6 +310,15 @@ export function createHuaweiRouterHostShell(
   systemViewRegistry.register(() => new HuaweiRouterSysStackCommand());
   systemViewRegistry.register(() => new HuaweiRouterSysBridgeCommand());
   systemViewRegistry.register(() => new HuaweiRouterSysPortMirroringCommand());
+  systemViewRegistry.register(() => new HuaweiRouterSysNqaCommand());
+  systemViewRegistry.register(() => new HuaweiRouterSysTrackCommand());
+  systemViewRegistry.register(() => new HuaweiRouterSysBfdCommand());
+  systemViewRegistry.register(() => new HuaweiRouterSysDot1xCommand());
+  systemViewRegistry.register(() => new HuaweiRouterSysCdpCommand());
+  systemViewRegistry.register(() => new HuaweiRouterSysLldpCommand());
+  systemViewRegistry.register(() => new HuaweiRouterSysAssignCommand());
+  systemViewRegistry.register(() => new HuaweiRouterSysFirewallCommand());
+  systemViewRegistry.register(() => new HuaweiRouterSysDeviceNameCommand());
   systemViewRegistry.register(() => new HuaweiRouterSysUndoCommand());
   systemViewRegistry.register(() => new PopModeCommand('quit', 'Exit from the current view'));
   systemViewRegistry.register(() => new EndCommand(['return']));
@@ -326,6 +345,7 @@ export function createHuaweiRouterHostShell(
   interfaceViewRegistry.register(() => new HuaweiRouterIfQosCommand());
   interfaceViewRegistry.register(() => new HuaweiRouterIfArpDetectCommand());
   interfaceViewRegistry.register(() => new HuaweiRouterIfArpLimitCommand());
+  interfaceViewRegistry.register(() => new HuaweiRouterIfArpBroadcastCommand());
   interfaceViewRegistry.register(() => new HuaweiRouterIfUndoCommand());
   interfaceViewRegistry.register(() => new PopModeCommand('quit', 'Exit from the current view'));
   interfaceViewRegistry.register(() => new EndCommand(['return']));

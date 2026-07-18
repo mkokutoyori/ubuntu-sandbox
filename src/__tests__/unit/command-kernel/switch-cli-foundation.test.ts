@@ -364,9 +364,7 @@ describe('Switch CLI foundation — command-kernel single-gate pipeline', () => 
     it('an unmigrated command fails through the new pipeline (signal for migration)', async () => {
       const sw = new HuaweiSwitch('sw-huawei', 'SW2', 24);
       await sw.executeCommand('system-view');
-      // `ntp-service unicast-server 1.1.1.1` n'est pas migré → not-found
-      // via le nouveau pipeline (stp enable est désormais migré).
-      const out = await sw.executeCommand('ntp-service unicast-server 1.1.1.1');
+      const out = await sw.executeCommand('nonexistent-command-xyz foo bar');
       expect(out).toMatch(/inconnu|Incomplete|not-found|introuvable|Invalid input|Unrecognized command/i);
     });
   });

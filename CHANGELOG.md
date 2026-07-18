@@ -1,5 +1,63 @@
 # Changelog
 
+## Huawei switch + routeur — vague batch 8 de 40 commandes (switch : storm/mac-limit/port-isolate/loopback-detect/bpdu/traffic-filter/traffic-secure/arp-limit/arp-detect en interface-view, voice-vlan/super-vlan/mux-vlan/arp-security/dhcp/vlan-batch/dtp/gvrp/vtp/cdp/udld/user-interface/aaa/info-center/snmp-agent/ntp-service/acl en system-view, clock/reboot/startup en user-view ; routeur : nqa/track/bfd/dot1x/cdp/lldp/assign/firewall/device-name en system-view, arp-broadcast en interface-view)
+
+**État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
+
+Huitième vague batch-générée. Focalisée sur les commandes **switch**
+peu couvertes jusqu'ici (30/40 des commandes ciblent le switch, 10/40
+le routeur). Aucun commentaire. **Nouveau mode CLI `aaa-view` côté
+switch** (parent system-view, vide pour l'instant — l'infra est en
+place pour de futures leaves radius/hwtacacs côté switch).
+
+- **Switch interface-view (8 leaves)** : `mac-limit maximum <n>
+  [action <a>] [alarm <b>]`, `port-isolate {enable|group <n>|mode
+  {all|l2}}`, `loopback-detect`, `bpdu {enable|filter}`,
+  `traffic-filter {inbound|outbound} acl <n>`, `traffic-secure
+  {inbound|outbound} acl <n>`, `arp-limit maximum <n> [vlan <id>]`,
+  `arp-detect {enable|mode …}`.
+- **Switch system-view (17 leaves + 1 push-mode)** : `voice-vlan`,
+  `super-vlan {enable|arp-proxy}`, `mux-vlan {enable|principal|
+  subordinate}`, `arp {learning|anti-attack} {enable|disable}`,
+  `dhcp {enable|snooping …}`, `vlan batch <start> [<end>]`,
+  `dtp {enable|mode}`, `gvrp {enable|disable}`, `vtp {mode|domain|
+  password}`, `cdp {enable|run}`, `udld {enable|aggressive}`,
+  `user-interface {console|vty|aux} <range>`, `info-center {enable|
+  loghost|source}`, `snmp-agent {enable|community|sys-info|
+  trap-source}`, `ntp-service {enable|unicast-server|
+  authentication-keyid}`, `acl {name|number} <id>`, et push-mode
+  `aaa` → nouveau mode `aaa-view` (registry vide, transitions
+  `quit`/`return` seules pour l'instant).
+- **Switch user-view (3 leaves)** : `clock datetime HH:MM:SS
+  YYYY-MM-DD`, `reboot [fast]`, `startup {saved-configuration|
+  system-software}`.
+- **Routeur system-view (9 leaves)** : `nqa test-instance <admin>
+  <test>`, `track <id> {interface|nqa|route}`, `bfd {bind|
+  discriminator|min-tx-interval}`, `dot1x {enable|
+  authentication-method}`, `cdp {enable|run}`, `lldp enable
+  [tx-interval <n>]`, `assign {forward-mode|resource-mode}`,
+  `firewall {enable|packet-filter|zone}`, `device-name <name>`.
+- **Routeur interface-view (1 leaf)** : `arp-broadcast {enable|
+  disable}`.
+
+- **Correctif d'un test de fondation** : `switch-cli-foundation.test.ts`
+  utilisait `ntp-service unicast-server 1.1.1.1` comme exemple de
+  commande NON migrée pour prouver que le pipeline kernel rejette
+  bien l'inconnu. `ntp-service` étant maintenant migré (batch 8), le
+  test a été mis à jour pour utiliser un identifiant garanti inconnu
+  (`nonexistent-command-xyz foo bar`) — même intention, même regex
+  de matching, exemple stable dans le temps.
+- **Nettoyage** : 1 fichier retiré (`HuaweiSwitchIfPortSecMainCommand`
+  sous `interface-view/port-security/`) — collisionne avec
+  `HuaweiSwitchIfPortSecurityCommand` déjà registered en
+  interface-view.
+- **Preuve exécutable** :
+  - `npx tsc --noEmit` propre.
+  - Suite command-kernel : **354/354 verte** (1 test corrigé pour
+    refléter l'expansion du kernel).
+  - Suites Huawei ciblées : **204 failed / 213 passed** (inchangé
+    vs batch 7 — zéro nouvelle régression).
+
 ## Linux — Wave 6 : `passwd`/`chpasswd`/`usermod`/`userdel`/`deluser`/`groupadd`/`groupmod`/`groupdel`/`gpasswd`/`lsof`/`ausearch`/`aureport`/`auditctl`/`mount`/`umount`/`findmnt`/`crontab`/`atq`/`atrm`/`runlevel`
 
 **État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
