@@ -67,7 +67,8 @@ type ProcessInfoRequired =
   | 'vsize' | 'rss' | 'tty' | 'nice' | 'priority' | 'cwd' | 'exe';
 
 type ProcessInfoOptional =
-  | 'serviceName' | 'schedPolicy' | 'rtPriority' | 'ioClass' | 'ioClassData' | 'cpuAffinity';
+  | 'serviceName' | 'schedPolicy' | 'rtPriority' | 'ioClass' | 'ioClassData' | 'cpuAffinity'
+  | 'numThreads';
 
 export type ProcessInfo =
   & Pick<OSProcess, ProcessInfoRequired>
@@ -108,8 +109,37 @@ export interface ProcessFilter {
 /** PID 1 — init/systemd is special and cannot be killed. */
 const INIT_PID = 1;
 
+/** PID 2 — kthreadd, the kernel thread daemon. Parent of every kernel
+ *  thread; special-cased the same way init is (cannot be killed). */
+const KTHREADD_PID = 2;
+
 /** Linux PID_MAX_DEFAULT (32768) — wraparound boundary for PID allocation. */
 const PID_MAX = 32768;
+
+/** Kernel threads seeded under kthreadd at boot, matching what a real
+ *  `ps -ef --forest` shows under PID 2 on a freshly booted Ubuntu box —
+ *  comm in brackets, no argv, owned by root, parented to kthreadd. */
+const KERNEL_THREADS: ReadonlyArray<{ comm: string; state: ProcessState }> = [
+  { comm: '[rcu_gp]', state: 'S' },
+  { comm: '[rcu_par_gp]', state: 'S' },
+  { comm: '[slub_flushwq]', state: 'I' },
+  { comm: '[netns]', state: 'S' },
+  { comm: '[kworker/0:0-events]', state: 'I' },
+  { comm: '[kworker/0:1-events]', state: 'I' },
+  { comm: '[kworker/1:0-events]', state: 'I' },
+  { comm: '[mm_percpu_wq]', state: 'I' },
+  { comm: '[ksoftirqd/0]', state: 'S' },
+  { comm: '[migration/0]', state: 'S' },
+  { comm: '[cpuhp/0]', state: 'S' },
+  { comm: '[kdevtmpfs]', state: 'S' },
+  { comm: '[kauditd]', state: 'S' },
+  { comm: '[khungtaskd]', state: 'S' },
+  { comm: '[oom_reaper]', state: 'S' },
+  { comm: '[writeback]', state: 'I' },
+  { comm: '[kcompactd0]', state: 'S' },
+  { comm: '[kswapd0]', state: 'S' },
+  { comm: '[jbd2/sda1-8]', state: 'S' },
+];
 
 export class LinuxProcessManager {
   private processes = new Map<number, ProcessInfo>();
@@ -256,7 +286,7 @@ export class LinuxProcessManager {
    */
   kill(pid: number, signal: Signal, opts?: { silent?: boolean }): boolean {
     const p = this.processes.get(pid);
-    const delivered = !!p && pid !== INIT_PID;
+    const delivered = !!p && pid !== INIT_PID && pid !== KTHREADD_PID;
     // `silent` removals (the simulator reaping a process-table overlay entry,
     // e.g. Oracle un-registering a background process) are bookkeeping, not a
     // signal a user or the OS actually delivered — so they don't publish
@@ -269,7 +299,7 @@ export class LinuxProcessManager {
       });
     }
     if (!p) return false;
-    if (pid === INIT_PID) return false;
+    if (pid === INIT_PID || pid === KTHREADD_PID) return false;
 
     switch (signal) {
       case 'SIGSTOP':
@@ -321,7 +351,7 @@ export class LinuxProcessManager {
   /** The process terminates by itself with an exit status. */
   exit(pid: number, exitCode: number): boolean {
     const p = this.processes.get(pid);
-    if (!p || pid === INIT_PID) return false;
+    if (!p || pid === INIT_PID || pid === KTHREADD_PID) return false;
     const reparented = this.terminate(pid);
     this.publish({
       topic: 'linux.process.exited',
@@ -406,8 +436,62 @@ export class LinuxProcessManager {
       priority: 20,
       cwd: '/',
       exe: '/lib/systemd/systemd',
+      numThreads: 1,
     });
     this.processes.set(INIT_PID, init);
+
+    const kthreadd = new LinuxProcess({
+      pid: KTHREADD_PID,
+      ppid: 0,
+      pgid: 0,
+      sid: 0,
+      uid: 0,
+      gid: 0,
+      user: 'root',
+      command: '[kthreadd]',
+      comm: '[kthreadd]',
+      args: [],
+      state: 'S',
+      startTime: new Date(),
+      cpuTime: 0,
+      vsize: 0,
+      rss: 0,
+      tty: '?',
+      nice: 0,
+      priority: 20,
+      cwd: '/',
+      exe: '',
+      numThreads: 1,
+    });
+    this.processes.set(KTHREADD_PID, kthreadd);
+
+    for (const kt of KERNEL_THREADS) {
+      const pid = this.allocPid();
+      const proc = new LinuxProcess({
+        pid,
+        ppid: KTHREADD_PID,
+        pgid: 0,
+        sid: 0,
+        uid: 0,
+        gid: 0,
+        user: 'root',
+        command: kt.comm,
+        comm: kt.comm,
+        args: [],
+        state: kt.state,
+        startTime: new Date(),
+        cpuTime: 0,
+        vsize: 0,
+        rss: 0,
+        tty: '?',
+        nice: 0,
+        priority: 20,
+        cwd: '/',
+        exe: '',
+        numThreads: 1,
+      });
+      this.processes.set(pid, proc);
+    }
   }
 
   /** Allocate the next free PID, wrapping at PID_MAX. */

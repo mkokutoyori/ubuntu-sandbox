@@ -247,6 +247,7 @@ function stateLabel(s: string): string {
     case 'T': return 'stopped';
     case 'Z': return 'zombie';
     case 'X': return 'dead';
+    case 'I': return 'idle';
     default:  return 'unknown';
   }
 }
@@ -648,10 +649,7 @@ export class LinuxCommandExecutor {
     for (const pid of [...this.materializedProcPids]) {
       if (!live.has(pid)) {
         try {
-          for (const f of ['status', 'cmdline', 'comm', 'stat', 'loginuid', 'sessionid', 'cgroup']) {
-            this.vfs.deleteFile(`/proc/${pid}/${f}`);
-          }
-          this.vfs.rmdir(`/proc/${pid}`);
+          this.vfs.rmrf(`/proc/${pid}`);
         } catch { /* ignore */ }
         this.materializedProcPids.delete(pid);
       }
@@ -682,6 +680,7 @@ export class LinuxCommandExecutor {
           `Gid:\t${p.gid}\t${p.gid}\t${p.gid}\t${p.gid}`,
           `VmSize:\t${p.vsize} kB`,
           `VmRSS:\t${p.rss} kB`,
+          `Threads:\t${p.numThreads ?? 1}`,
           '',
         ].join('\n');
       });
@@ -704,11 +703,33 @@ export class LinuxCommandExecutor {
       this.vfs.registerGeneratedFile(`/proc/${pid}/cgroup`, () => {
         return `0::${this.cgroupPathFor(pid)}\n`;
       });
+      this.materializeProcFd(pid);
       this.materializedProcPids.add(pid);
     }
     // Also expose /proc/self → /proc/<shellPid> symlink for convenience.
     if (this.shellPid && !this.vfs.exists('/proc/self')) {
       this.vfs.createSymlink('/proc/self', String(this.shellPid), 0, 0);
+    }
+  }
+
+  /**
+   * Materialize `/proc/<pid>/fd/` — stdin/stdout/stderr plus any file the
+   * process explicitly opened (`OSProcess.openFiles`). Symlinks are created
+   * once at process-spawn time (real fd churn mid-life isn't tracked by the
+   * simulator), matching what `ls -la /proc/<pid>/fd` shows for a process
+   * whose descriptor table isn't actively changing.
+   */
+  private materializeProcFd(pid: number): void {
+    const p = this.processMgr.get(pid);
+    if (!p) return;
+    const fdDir = `/proc/${pid}/fd`;
+    this.vfs.mkdirp(fdDir, 0o500, p.uid, p.gid);
+    const stdTarget = p.tty && p.tty !== '?' ? `/dev/${p.tty}` : `socket:[${10000 + pid}]`;
+    for (const n of [0, 1, 2]) {
+      this.vfs.createSymlink(`${fdDir}/${n}`, stdTarget, p.uid, p.gid);
+    }
+    for (const f of p.openFiles ?? []) {
+      this.vfs.createSymlink(`${fdDir}/${f.fd}`, f.path, p.uid, p.gid);
     }
   }
 
