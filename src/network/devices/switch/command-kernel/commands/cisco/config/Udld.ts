@@ -4,36 +4,34 @@ import { EXIT_OK } from '@/command-kernel/command/types';
 import { DefaultPrivilegePolicy } from '@/command-kernel/session/privilege-policy';
 import { PrivilegeLevel } from '@/command-kernel/session/types';
 import { CommandRegistry } from '@/command-kernel/registry/command-registry';
-import { CiscoSwitchShowInterfacesStatusCommand } from './interfaces/Status';
-import { CiscoSwitchShowInterfacesSwitchportCommand } from './interfaces/Switchport';
-import { CiscoSwitchShowInterfacesTrunkCommand } from './interfaces/Trunk';
+import { CiscoSwitchConfigUdldEnableCommand } from './udld/Enable';
+import { CiscoSwitchConfigUdldAggressiveCommand } from './udld/Aggressive';
 
-const ANY = new DefaultPrivilegePolicy(PrivilegeLevel.ANY);
+const OP = new DefaultPrivilegePolicy(PrivilegeLevel.OPERATOR);
 
 /**
- * `interfaces` — commande COMPOSITE (racine + sous-registre) : seule
+ * `udld` — commande COMPOSITE (racine + sous-registre) : seule
  * appelée directement si aucun sous-mot ne matche (message vendeur
  * « incomplete command »), sinon l'interpréteur descend dans
  * `subRegistry` jusqu'à la feuille.
  */
-export class CiscoSwitchShowInterfacesCommand extends BaseCommand {
+export class CiscoSwitchConfigUdldCommand extends BaseCommand {
   readonly descriptor: CommandDescriptor = {
-    name: 'interfaces',
-    summary: 'Display interface status/trunk',
-    usage: 'show interfaces {status|trunk|<name>}',
+    name: 'udld',
+    summary: 'UDLD global configuration',
+    usage: 'udld {enable|aggressive}',
     args: [],
     options: [],
-    privileges: ANY,
+    privileges: OP,
     category: 'switch',
   };
-  readonly allowedModes = ['user', 'privileged'];
+  readonly allowedModes = ['config'];
   readonly subRegistry = new CommandRegistry();
 
   constructor() {
     super();
-    this.subRegistry.register(() => new CiscoSwitchShowInterfacesStatusCommand());
-    this.subRegistry.register(() => new CiscoSwitchShowInterfacesTrunkCommand());
-    this.subRegistry.register(() => new CiscoSwitchShowInterfacesSwitchportCommand());
+    this.subRegistry.register(() => new CiscoSwitchConfigUdldEnableCommand());
+    this.subRegistry.register(() => new CiscoSwitchConfigUdldAggressiveCommand());
   }
 
   async execute(ctx: CommandContext): Promise<ExitCode> {

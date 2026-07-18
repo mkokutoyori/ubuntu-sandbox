@@ -14,7 +14,14 @@ import { CiscoSwitchShowCdpCommand } from './commands/cisco/show/Cdp';
 import { CiscoSwitchShowClockCommand } from './commands/cisco/show/Clock';
 import { CiscoSwitchShowDtpCommand } from './commands/cisco/show/Dtp';
 import { CiscoSwitchShowFlashCommand } from './commands/cisco/show/Flash';
+import { CiscoSwitchShowAuthenticationCommand } from './commands/cisco/show/Authentication';
+import { CiscoSwitchShowBootCommand } from './commands/cisco/show/Boot';
+import { CiscoSwitchShowDot1xCommand } from './commands/cisco/show/Dot1x';
+import { CiscoSwitchShowErrdisableCommand } from './commands/cisco/show/Errdisable';
 import { CiscoSwitchShowHistoryCommand } from './commands/cisco/show/History';
+import { CiscoSwitchShowSshCommand } from './commands/cisco/show/Ssh';
+import { CiscoSwitchShowUdldCommand } from './commands/cisco/show/Udld';
+import { CiscoSwitchShowVtpCommand } from './commands/cisco/show/Vtp';
 import { CiscoSwitchShowInventoryCommand } from './commands/cisco/show/Inventory';
 import { CiscoSwitchShowLineCommand } from './commands/cisco/show/Line';
 import { CiscoSwitchShowLoggingCommand } from './commands/cisco/show/Logging';
@@ -32,6 +39,8 @@ import { CiscoSwitchShowSpanningTreeCommand } from './commands/cisco/show/Spanni
 import { CiscoSwitchShowVlanCommand } from './commands/cisco/show/Vlan';
 import { CiscoSwitchShowVersionCommand } from './commands/cisco/show/Version';
 import { CiscoSwitchConfigAaaCommand } from './commands/cisco/config/Aaa';
+import { CiscoSwitchConfigPortChannelCommand } from './commands/cisco/config/PortChannel';
+import { CiscoSwitchConfigUdldCommand } from './commands/cisco/config/Udld';
 import { CiscoSwitchConfigAccessListCommand } from './commands/cisco/config/AccessList';
 import { CiscoSwitchConfigAliasCommand } from './commands/cisco/config/Alias';
 import { CiscoSwitchConfigBootCommand } from './commands/cisco/config/Boot';
@@ -125,6 +134,13 @@ export function createCiscoSwitchHostShell(
   showSub.register(() => new CiscoSwitchShowLoggingCommand());
   showSub.register(() => new CiscoSwitchShowProcessesCommand());
   showSub.register(() => new CiscoSwitchShowMemoryCommand());
+  showSub.register(() => new CiscoSwitchShowSshCommand());
+  showSub.register(() => new CiscoSwitchShowBootCommand());
+  showSub.register(() => new CiscoSwitchShowAuthenticationCommand());
+  showSub.register(() => new CiscoSwitchShowErrdisableCommand());
+  showSub.register(() => new CiscoSwitchShowUdldCommand());
+  showSub.register(() => new CiscoSwitchShowVtpCommand());
+  showSub.register(() => new CiscoSwitchShowDot1xCommand());
 
   const userRegistry = new CommandRegistry();
   const privilegedRegistry = new CommandRegistry();
@@ -162,6 +178,8 @@ export function createCiscoSwitchHostShell(
   configRegistry.register(() => new CiscoSwitchConfigClockCommand());
   configRegistry.register(() => new CiscoSwitchConfigAccessListCommand());
   configRegistry.register(() => new CiscoSwitchConfigAliasCommand());
+  configRegistry.register(() => new CiscoSwitchConfigUdldCommand());
+  configRegistry.register(() => new CiscoSwitchConfigPortChannelCommand());
   configRegistry.register(() => new PopModeCommand('exit', 'Exit from the current mode'));
   configRegistry.register(() => new EndCommand());
 

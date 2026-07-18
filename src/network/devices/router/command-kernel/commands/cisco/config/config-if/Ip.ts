@@ -7,6 +7,9 @@ import { CiscoRouterIpAddressCommand } from './ip/Address';
 import { CiscoRouterConfigIfIpAccessGroupCommand } from './ip/AccessGroup';
 import { CiscoRouterConfigIfIpHelperAddressCommand } from './ip/HelperAddress';
 import { CiscoRouterConfigIfIpNatCommand } from './ip/Nat';
+import { CiscoRouterConfigIfIpProxyArpCommand } from './ip/ProxyArp';
+import { CiscoRouterConfigIfIpRedirectsCommand } from './ip/Redirects';
+import { CiscoRouterConfigIfIpUnreachablesCommand } from './ip/Unreachables';
 
 const OP = new DefaultPrivilegePolicy(PrivilegeLevel.OPERATOR);
 
@@ -35,6 +38,9 @@ export class CiscoRouterConfigIfIpCommand extends BaseCommand {
     this.subRegistry.register(() => new CiscoRouterConfigIfIpAccessGroupCommand());
     this.subRegistry.register(() => new CiscoRouterConfigIfIpHelperAddressCommand());
     this.subRegistry.register(() => new CiscoRouterConfigIfIpNatCommand());
+    this.subRegistry.register(() => new CiscoRouterConfigIfIpProxyArpCommand());
+    this.subRegistry.register(() => new CiscoRouterConfigIfIpRedirectsCommand());
+    this.subRegistry.register(() => new CiscoRouterConfigIfIpUnreachablesCommand());
   }
 
   async execute(ctx: CommandContext): Promise<ExitCode> {

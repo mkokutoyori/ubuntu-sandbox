@@ -4,7 +4,10 @@ import { EXIT_OK } from '@/command-kernel/command/types';
 import { DefaultPrivilegePolicy } from '@/command-kernel/session/privilege-policy';
 import { PrivilegeLevel } from '@/command-kernel/session/types';
 import { CommandRegistry } from '@/command-kernel/registry/command-registry';
+import { CiscoSwitchConfigNtpAuthenticateCommand } from './ntp/Authenticate';
+import { CiscoSwitchConfigNtpAuthenticationKeyCommand } from './ntp/AuthenticationKey';
 import { CiscoSwitchConfigNtpServerCommand } from './ntp/Server';
+import { CiscoSwitchConfigNtpTrustedKeyCommand } from './ntp/TrustedKey';
 
 const OP = new DefaultPrivilegePolicy(PrivilegeLevel.OPERATOR);
 
@@ -30,6 +33,9 @@ export class CiscoSwitchConfigNtpCommand extends BaseCommand {
   constructor() {
     super();
     this.subRegistry.register(() => new CiscoSwitchConfigNtpServerCommand());
+    this.subRegistry.register(() => new CiscoSwitchConfigNtpAuthenticateCommand());
+    this.subRegistry.register(() => new CiscoSwitchConfigNtpAuthenticationKeyCommand());
+    this.subRegistry.register(() => new CiscoSwitchConfigNtpTrustedKeyCommand());
   }
 
   async execute(ctx: CommandContext): Promise<ExitCode> {

@@ -4,6 +4,7 @@ import { EXIT_OK } from '@/command-kernel/command/types';
 import { DefaultPrivilegePolicy } from '@/command-kernel/session/privilege-policy';
 import { PrivilegeLevel } from '@/command-kernel/session/types';
 import { CommandRegistry } from '@/command-kernel/registry/command-registry';
+import { CiscoSwitchConfigAaaAuthenticationCommand } from './aaa/Authentication';
 import { CiscoSwitchConfigAaaNewModelCommand } from './aaa/NewModel';
 
 const OP = new DefaultPrivilegePolicy(PrivilegeLevel.OPERATOR);
@@ -30,6 +31,7 @@ export class CiscoSwitchConfigAaaCommand extends BaseCommand {
   constructor() {
     super();
     this.subRegistry.register(() => new CiscoSwitchConfigAaaNewModelCommand());
+    this.subRegistry.register(() => new CiscoSwitchConfigAaaAuthenticationCommand());
   }
 
   async execute(ctx: CommandContext): Promise<ExitCode> {

@@ -3,7 +3,9 @@ import type { CommandContext, CommandDescriptor, ExitCode } from '@/command-kern
 import { CommandRegistry } from '@/command-kernel/registry/command-registry';
 import { DefaultPrivilegePolicy } from '@/command-kernel/session/privilege-policy';
 import { PrivilegeLevel } from '@/command-kernel/session/types';
+import { CiscoRouterConfigIpCefCommand } from './ip/Cef';
 import { CiscoRouterConfigIpDomainLookupCommand } from './ip/DomainLookup';
+import { CiscoRouterConfigIpForwardProtocolCommand } from './ip/ForwardProtocol';
 import { CiscoRouterConfigIpDomainNameCommand } from './ip/DomainName';
 import { CiscoRouterConfigIpNameServerCommand } from './ip/NameServer';
 import { CiscoRouterIpRouteCommand } from './ip/Route';
@@ -39,6 +41,8 @@ export class CiscoRouterConfigIpCommand extends BaseCommand {
     this.subRegistry.register(() => new CiscoRouterConfigIpDomainNameCommand());
     this.subRegistry.register(() => new CiscoRouterConfigIpNameServerCommand());
     this.subRegistry.register(() => new CiscoRouterConfigIpDomainLookupCommand());
+    this.subRegistry.register(() => new CiscoRouterConfigIpCefCommand());
+    this.subRegistry.register(() => new CiscoRouterConfigIpForwardProtocolCommand());
   }
 
   async execute(ctx: CommandContext): Promise<ExitCode> {

@@ -1,5 +1,47 @@
 # Changelog
 
+## Cisco routeur + switch — vague batch 6 : 39 commandes câblées (enrichissement composites config/aaa, config/ntp, config/ip, config-if/ip, config-if/no, show/interfaces + nouveaux top-level crypto map / udld / port-channel / show ssh/boot/vtp/dot1x/errdisable/authentication/udld)
+
+**État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**
+
+Sixième vague. Focus « profondeur » : au lieu d'ajouter des racines,
+on enrichit les composites déjà migrés avec leurs feuilles-sœurs
+manquantes (proxy-arp / redirects / unreachables sous `ip` interface,
+cdp / keepalive / encapsulation / delay / arp sous `no` interface,
+authenticate / authentication-key / trusted-key sous `ntp`, etc.).
+
+### Routeur Cisco (23 nouveaux)
+
+- **config / ip** (enrichi) : `ip cef`, `ip forward-protocol`.
+- **config / ntp** (enrichi) : `ntp authenticate`,
+  `ntp authentication-key`, `ntp trusted-key`.
+- **config / aaa** (enrichi) : `aaa authentication login`.
+- **config-if / ip** (enrichi) : `ip proxy-arp`, `ip redirects`,
+  `ip unreachables`.
+- **config-if / no** (enrichi) : `no cdp`, `no keepalive`,
+  `no encapsulation`, `no delay`, `no arp`.
+- **config-if** (nouveau top-level) : `crypto map`.
+- **show** (nouveaux top-level) : `show buffers`, `show controllers`,
+  `show ssh`, `show boot`.
+
+### Switch Cisco (16 nouveaux)
+
+- **config / ntp** (enrichi) : `ntp authenticate`,
+  `ntp authentication-key`, `ntp trusted-key`.
+- **config / aaa** (enrichi) : `aaa authentication login`.
+- **config** (nouveaux top-level) : `udld {enable|aggressive}`,
+  `port-channel load-balance`.
+- **show / interfaces** (enrichi) : `show interfaces switchport`.
+- **show** (nouveaux top-level) : `show ssh`, `show boot`,
+  `show authentication`, `show errdisable`, `show udld`, `show vtp`,
+  `show dot1x`.
+
+### Validation
+
+- `npx tsc --noEmit` : 0 erreur.
+- `src/__tests__/unit/command-kernel` : **354/354 passent** (10 fichiers).
+
+
 ## Huawei switch + routeur — vague batch 9 de 40 commandes (switch : 10 display leaves + 3 STP interface-view sous-composites + 2 STP system-view + 2 mac-address sous-composites + 6 system-view leaves + reset user-view ; routeur : 5 interface-view leaves ospf/isis/rip/bfd/vrrp + AAA RADIUS/HWTACACS templates push-modes + 4 leaves radius-server-view)
 
 **État : branche de travail (`arthur`), pas encore mergée sur `mandeng`.**

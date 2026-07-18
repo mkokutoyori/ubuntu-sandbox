@@ -4,36 +4,32 @@ import { EXIT_OK } from '@/command-kernel/command/types';
 import { DefaultPrivilegePolicy } from '@/command-kernel/session/privilege-policy';
 import { PrivilegeLevel } from '@/command-kernel/session/types';
 import { CommandRegistry } from '@/command-kernel/registry/command-registry';
-import { CiscoSwitchShowInterfacesStatusCommand } from './interfaces/Status';
-import { CiscoSwitchShowInterfacesSwitchportCommand } from './interfaces/Switchport';
-import { CiscoSwitchShowInterfacesTrunkCommand } from './interfaces/Trunk';
+import { CiscoRouterConfigAaaAuthenticationLoginCommand } from './authentication/Login';
 
-const ANY = new DefaultPrivilegePolicy(PrivilegeLevel.ANY);
+const OP = new DefaultPrivilegePolicy(PrivilegeLevel.OPERATOR);
 
 /**
- * `interfaces` — commande COMPOSITE (racine + sous-registre) : seule
+ * `authentication` — commande COMPOSITE (racine + sous-registre) : seule
  * appelée directement si aucun sous-mot ne matche (message vendeur
  * « incomplete command »), sinon l'interpréteur descend dans
  * `subRegistry` jusqu'à la feuille.
  */
-export class CiscoSwitchShowInterfacesCommand extends BaseCommand {
+export class CiscoRouterConfigAaaAuthenticationCommand extends BaseCommand {
   readonly descriptor: CommandDescriptor = {
-    name: 'interfaces',
-    summary: 'Display interface status/trunk',
-    usage: 'show interfaces {status|trunk|<name>}',
+    name: 'authentication',
+    summary: 'AAA authentication method list',
+    usage: 'aaa authentication login <name> <method...>',
     args: [],
     options: [],
-    privileges: ANY,
-    category: 'switch',
+    privileges: OP,
+    category: 'router',
   };
-  readonly allowedModes = ['user', 'privileged'];
+  readonly allowedModes = ['config'];
   readonly subRegistry = new CommandRegistry();
 
   constructor() {
     super();
-    this.subRegistry.register(() => new CiscoSwitchShowInterfacesStatusCommand());
-    this.subRegistry.register(() => new CiscoSwitchShowInterfacesTrunkCommand());
-    this.subRegistry.register(() => new CiscoSwitchShowInterfacesSwitchportCommand());
+    this.subRegistry.register(() => new CiscoRouterConfigAaaAuthenticationLoginCommand());
   }
 
   async execute(ctx: CommandContext): Promise<ExitCode> {

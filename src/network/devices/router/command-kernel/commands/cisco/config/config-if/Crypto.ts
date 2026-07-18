@@ -4,36 +4,32 @@ import { EXIT_OK } from '@/command-kernel/command/types';
 import { DefaultPrivilegePolicy } from '@/command-kernel/session/privilege-policy';
 import { PrivilegeLevel } from '@/command-kernel/session/types';
 import { CommandRegistry } from '@/command-kernel/registry/command-registry';
-import { CiscoSwitchShowInterfacesStatusCommand } from './interfaces/Status';
-import { CiscoSwitchShowInterfacesSwitchportCommand } from './interfaces/Switchport';
-import { CiscoSwitchShowInterfacesTrunkCommand } from './interfaces/Trunk';
+import { CiscoRouterConfigIfCryptoMapCommand } from './crypto/Map';
 
-const ANY = new DefaultPrivilegePolicy(PrivilegeLevel.ANY);
+const OP = new DefaultPrivilegePolicy(PrivilegeLevel.OPERATOR);
 
 /**
- * `interfaces` — commande COMPOSITE (racine + sous-registre) : seule
+ * `crypto` — commande COMPOSITE (racine + sous-registre) : seule
  * appelée directement si aucun sous-mot ne matche (message vendeur
  * « incomplete command »), sinon l'interpréteur descend dans
  * `subRegistry` jusqu'à la feuille.
  */
-export class CiscoSwitchShowInterfacesCommand extends BaseCommand {
+export class CiscoRouterConfigIfCryptoCommand extends BaseCommand {
   readonly descriptor: CommandDescriptor = {
-    name: 'interfaces',
-    summary: 'Display interface status/trunk',
-    usage: 'show interfaces {status|trunk|<name>}',
+    name: 'crypto',
+    summary: 'Crypto attach on interface',
+    usage: 'crypto map <name>',
     args: [],
     options: [],
-    privileges: ANY,
-    category: 'switch',
+    privileges: OP,
+    category: 'router',
   };
-  readonly allowedModes = ['user', 'privileged'];
+  readonly allowedModes = ['config-if'];
   readonly subRegistry = new CommandRegistry();
 
   constructor() {
     super();
-    this.subRegistry.register(() => new CiscoSwitchShowInterfacesStatusCommand());
-    this.subRegistry.register(() => new CiscoSwitchShowInterfacesTrunkCommand());
-    this.subRegistry.register(() => new CiscoSwitchShowInterfacesSwitchportCommand());
+    this.subRegistry.register(() => new CiscoRouterConfigIfCryptoMapCommand());
   }
 
   async execute(ctx: CommandContext): Promise<ExitCode> {

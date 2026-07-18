@@ -18,6 +18,10 @@ import { CiscoRouterShowEnvironmentCommand } from './commands/cisco/show/Environ
 import { CiscoRouterShowFlashCommand } from './commands/cisco/show/Flash';
 import { CiscoRouterShowInterfacesCommand } from './commands/cisco/show/Interfaces';
 import { CiscoRouterShowAccessListsCommand } from './commands/cisco/show/AccessLists';
+import { CiscoRouterShowBootCommand } from './commands/cisco/show/Boot';
+import { CiscoRouterShowBuffersCommand } from './commands/cisco/show/Buffers';
+import { CiscoRouterShowControllersCommand } from './commands/cisco/show/Controllers';
+import { CiscoRouterShowSshCommand } from './commands/cisco/show/Ssh';
 import { CiscoRouterShowClassMapCommand } from './commands/cisco/show/ClassMap';
 import { CiscoRouterShowHistoryCommand } from './commands/cisco/show/History';
 import { CiscoRouterShowInventoryCommand } from './commands/cisco/show/Inventory';
@@ -64,6 +68,7 @@ import { CiscoRouterConfigUsernameCommand } from './commands/cisco/config/Userna
 import { CiscoRouterConfigIfArpCommand } from './commands/cisco/config/config-if/Arp';
 import { CiscoRouterConfigIfBandwidthCommand } from './commands/cisco/config/config-if/Bandwidth';
 import { CiscoRouterConfigIfChannelGroupCommand } from './commands/cisco/config/config-if/ChannelGroup';
+import { CiscoRouterConfigIfCryptoCommand } from './commands/cisco/config/config-if/Crypto';
 import { CiscoRouterConfigIfStandbyCommand } from './commands/cisco/config/config-if/Standby';
 import { CiscoRouterConfigIfCdpCommand } from './commands/cisco/config/config-if/Cdp';
 import { CiscoRouterConfigIfDelayCommand } from './commands/cisco/config/config-if/Delay';
@@ -133,6 +138,10 @@ export function createCiscoRouterHostShell(
   showSub.register(() => new CiscoRouterShowClassMapCommand());
   showSub.register(() => new CiscoRouterShowAccessListsCommand());
   showSub.register(() => new CiscoRouterShowRouteMapCommand());
+  showSub.register(() => new CiscoRouterShowBuffersCommand());
+  showSub.register(() => new CiscoRouterShowControllersCommand());
+  showSub.register(() => new CiscoRouterShowSshCommand());
+  showSub.register(() => new CiscoRouterShowBootCommand());
 
   const userRegistry = new CommandRegistry();
   const privilegedRegistry = new CommandRegistry();
@@ -193,6 +202,7 @@ export function createCiscoRouterHostShell(
   configIfRegistry.register(() => new CiscoRouterConfigIfArpCommand());
   configIfRegistry.register(() => new CiscoRouterConfigIfStandbyCommand());
   configIfRegistry.register(() => new CiscoRouterConfigIfChannelGroupCommand());
+  configIfRegistry.register(() => new CiscoRouterConfigIfCryptoCommand());
   configIfRegistry.register(() => new PopModeCommand('exit', 'Exit from the current mode'));
   configIfRegistry.register(() => new EndCommand());
 
