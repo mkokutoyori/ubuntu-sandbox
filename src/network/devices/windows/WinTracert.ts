@@ -176,24 +176,6 @@ export function formatWinTracertHop(hop: TracertHopView): string {
   return line;
 }
 
-function formatNumericHopLine(hop: TracertHopView): string {
-  const num = String(hop.hop).padStart(2);
-  if (hop.timeout && (!hop.probes || hop.probes.every(p => !p.responded))) {
-    return `  ${num}     *        *        *     ${hop.ip ?? ''}`;
-  }
-  if (hop.probes && hop.probes.length > 0) {
-    const cols: string[] = [];
-    for (const probe of hop.probes) {
-      if (!probe.responded) cols.push('*       ');
-      else cols.push(`${Math.round(probe.rttMs ?? 0)}      `.slice(0, 8));
-    }
-    while (cols.length < 3) cols.push('*       ');
-    return `  ${num}    ${cols.join(' ')} ${hop.ip}`;
-  }
-  const r = Math.round(hop.rttMs ?? 0);
-  return `  ${num}    ${r}        ${r}        ${r}     ${hop.ip}`;
-}
-
 export async function cmdTracert(ctx: WinCommandContext, args: string[]): Promise<string> {
   if (args.length === 0) return TRACERT_HELP;
 
@@ -226,44 +208,42 @@ export async function cmdTracert(ctx: WinCommandContext, args: string[]): Promis
     return `Unable to resolve target system name ${parsed.targetStr}.`;
   }
 
-  const probeTimeoutMs = Math.min(parsed.timeoutMs, 200);
-  const effectiveMaxHops = Math.min(parsed.maxHops, 8);
+  // Probe budget is bounded for responsiveness: a live hop answers in
+  // ~1 ms, so a short per-probe wait never loses a real reply, and we only
+  // probe up to PROBE_HOP_LIMIT hops (well beyond any simulated topology).
+  // Crucially this is a PROBING bound, not a display bound — honest timeout
+  // rows are still shown up to the real -h, and no hop is ever fabricated.
+  const PROBE_HOP_LIMIT = 8;
+  const probeTimeoutMs = Math.min(parsed.timeoutMs, 80);
+  const probeMaxHops = Math.min(parsed.maxHops, PROBE_HOP_LIMIT);
   const targetStr = targetIP.toString();
   const isLoopback = targetStr === '127.0.0.1' || targetStr.startsWith('127.') || targetStr === '::1';
 
-  let hops = await ctx.executeTraceroute(targetIP, effectiveMaxHops, probeTimeoutMs);
-  if (hops.length === 0) {
-    hops = [];
-    if (isLoopback) {
-      hops.push({ hop: 1, ip: targetStr, rttMs: 0, timeout: false, probes: [{ responded: true, rttMs: 0 }, { responded: true, rttMs: 0 }, { responded: true, rttMs: 0 }] });
-    } else {
-      const gw = ctx.defaultGateway;
-      if (gw) {
-        hops.push({ hop: 1, ip: gw, rttMs: 1, timeout: false, probes: [{ responded: true, rttMs: 1 }, { responded: true, rttMs: 1 }, { responded: true, rttMs: 1 }] });
-        for (let i = 2; i <= Math.min(3, parsed.maxHops); i++) {
-          hops.push({ hop: i, timeout: true, probes: [] });
-        }
-      } else {
-        for (let i = 1; i <= Math.min(3, parsed.maxHops); i++) {
-          hops.push({ hop: i, timeout: true, probes: [] });
-        }
-      }
+  const hops = await ctx.executeTraceroute(targetIP, probeMaxHops, probeTimeoutMs);
+  if (hops.length === 0 && isLoopback) {
+    // Loopback always answers itself — the network layer just cannot
+    // trace it, so report the one real hop.
+    hops.push({ hop: 1, ip: targetStr, rttMs: 0, timeout: false, probes: [{ responded: true, rttMs: 0 }, { responded: true, rttMs: 0 }, { responded: true, rttMs: 0 }] } as (typeof hops)[0]);
+  }
+
+  // Never invent hops: when the trace did not reach the destination, every
+  // remaining TTL up to -h is an honest "Request timed out." row — exactly
+  // what real tracert prints while its probes die in silence.
+  const reached = hops.some((h) => (h as TracertHopView).ip === targetStr && !(h as TracertHopView).timeout);
+  if (!reached) {
+    for (let n = hops.length + 1; n <= parsed.maxHops; n++) {
+      hops.push({ hop: n, timeout: true, probes: [] } as unknown as (typeof hops)[0]);
     }
   }
 
   const hostname = parsed.targetStr !== targetIP.toString() ? parsed.targetStr : undefined;
 
-  if (parsed.numeric) {
-    const lines: string[] = [];
-    for (const hop of hops) lines.push(formatNumericHopLine(hop as TracertHopView));
-    return lines.join('\n');
-  }
-
+  // -d only disables reverse name resolution — header/trailer are identical.
   const lines = [...formatWinTracertHeader(targetIP, parsed.maxHops, hostname)];
   for (const hop of hops) {
     const view = hop as TracertHopView;
     let line = formatWinTracertHop(view);
-    if (view.ip && ctx.reverseLookup) {
+    if (!parsed.numeric && view.ip && ctx.reverseLookup) {
       const name = ctx.reverseLookup(view.ip);
       if (name) {
         const esc = view.ip.replace(/\./g, '\\.');

@@ -288,6 +288,21 @@ export function showCdp(dev: ShowStateDevice, arg = '', enabled = true): string 
     const blocks = matches.map(cdpDetailBlock);
     return `${blocks.join('\n\n')}\n\nTotal cdp entries displayed : ${matches.length}`;
   }
+  if (a.includes('traffic')) {
+    const learned = dev.getCdpAgent?.()?.getNeighbors() ?? [];
+    // The agent does not keep packet counters; derive a consistent view
+    // from what it has actually learned so the counters are never pure
+    // fiction (0 neighbors → 0 packets received).
+    const received = learned.length;
+    return [
+      'CDP counters :',
+      `        Total packets output: ${received}, Input: ${received}`,
+      '        Hdr syntax: 0, Chksum error: 0, Encaps failed: 0',
+      '        No memory: 0, Invalid packet: 0,',
+      `        CDP version 1 advertisements output: 0, Input: 0`,
+      `        CDP version 2 advertisements output: ${received}, Input: ${received}`,
+    ].join('\n');
+  }
   if (a.includes('neighbor')) {
     const ns = cdpNeighbours(dev);
     const detail = a.includes('detail');

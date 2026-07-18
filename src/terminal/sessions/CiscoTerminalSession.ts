@@ -163,7 +163,16 @@ export class CiscoTerminalSession extends CLITerminalSession {
   protected buildInteractiveFlow(command: string): InteractiveStep[] | null {
     const lower = command.toLowerCase().trim();
 
-    if (lower === 'copy running-config startup-config' || lower === 'copy run start') {
+    // IOS accepts any unambiguous keyword abbreviation ("copy run start",
+    // "copy runn star", …) — the interactive filename prompt must trigger
+    // for all of them, exactly like it does on the device shell.
+    const toks = lower.split(/\s+/);
+    const isCopyRunStart =
+      toks.length === 3 &&
+      'copy'.startsWith(toks[0]) && toks[0].length >= 3 &&
+      'running-config'.startsWith(toks[1]) &&
+      'startup-config'.startsWith(toks[2]);
+    if (isCopyRunStart) {
       return CiscoFlowBuilder.copyRunningConfig();
     }
 

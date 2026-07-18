@@ -1298,7 +1298,15 @@ class WindowsNetworkAdapter implements INetworkProvider {
     };
   }
   private resolveTargetSync(target: string): IPAddress | null {
-    return this.pc.resolveHostnameSync(target);
+    // Same chain as cmd's ping: literal IP / hosts file / own name first,
+    // then the full DNS chain (resolver cache + configured servers over
+    // the wire). Without the DNS step, Test-NetConnection failed on names
+    // that ping resolved fine (audit §2.1).
+    const direct = this.pc.resolveHostnameSync(target);
+    if (direct) return direct;
+    const viaDns = this.pc.resolveDnsSync(target).find((ip) => !ip.includes(':'));
+    if (!viaDns) return null;
+    try { return new IPAddress(viaDns); } catch { return null; }
   }
   getNeighbors(filter?: { ipAddress?: IPAddress; state?: string; ifIndex?: number }) {
     const arp = (this.pc as unknown as { arpTable: Map<string, { mac: { toString: () => string }; iface: string; timestamp: number; type: 'dynamic' | 'static' | 'failed' }> }).arpTable;

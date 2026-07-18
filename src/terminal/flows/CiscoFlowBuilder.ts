@@ -78,7 +78,12 @@ export class CiscoFlowBuilder {
     ];
   }
 
-  /** Erase startup-config: confirm, then show result */
+  /**
+   * Erase startup-config: confirm, then execute the REAL device command.
+   * The device handler performs the NVRAM erase (the flow only supplies
+   * the interactive confirmation); its inline confirm text is dropped
+   * because this flow already rendered the prompt.
+   */
   static eraseStartupConfig(): InteractiveStep[] {
     return [
       {
@@ -86,6 +91,13 @@ export class CiscoFlowBuilder {
         prompt: 'Erasing the nvram filesystem will remove all configuration files! Continue? [confirm]',
         defaultAnswer: 'yes',
         storeAs: 'erase_confirmed',
+      },
+      {
+        type: 'execute',
+        action: async (ctx: FlowContext) => {
+          const exec = ctx.executeCommand ?? (async (cmd: string) => ctx.device.executeCommand(cmd));
+          await exec('erase startup-config');
+        },
       },
       {
         type: 'output',

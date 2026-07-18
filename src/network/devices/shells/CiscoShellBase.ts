@@ -226,6 +226,16 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
   /** Optional: called on 'write memory' / 'copy running-config startup-config' */
   protected abstract onSave(): string;
 
+  /**
+   * Called on 'erase startup-config' / 'write erase' / 'erase nvram:'.
+   * Subclasses that keep a shell-level saved-config snapshot MUST clear it
+   * here, so `show startup-config` reflects the erase. The base default
+   * only clears the device-level snapshot; overrides should call super.
+   */
+  protected onErase(): void {
+    (this.d() as unknown as { _eraseStartupConfig?: () => void })._eraseStartupConfig?.();
+  }
+
   /** Register device-specific commands on the tries (called from constructor) */
   protected abstract registerDeviceCommands(): void;
 
@@ -832,7 +842,13 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       return '';
     });
     trie.registerGreedy('terminal', 'Set terminal parameters', (args) =>
-      this.handleTerminalCommand(args));
+      this.handleTerminalCommand(args), [
+      { keyword: 'length',  description: 'Set number of lines on a screen' },
+      { keyword: 'width',   description: 'Set width of the display terminal' },
+      { keyword: 'monitor', description: 'Copy debug output to the current terminal line' },
+      { keyword: 'history', description: 'Enable and control the command history function' },
+      { keyword: 'no',      description: 'Negate a command or set its defaults' },
+    ]);
 
     // NOTE: `copy` is a privileged-EXEC command — it is registered once, with
     // full file-system semantics, in registerPrivilegedExtras (the rich
@@ -844,11 +860,21 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     // router and switch, so it lives here in the shared base (DRY).
     trie.register('show ntp status', 'Display NTP status', () => showNtpStatus(this.cs()));
     trie.registerGreedy('show ntp', 'Display NTP associations', () =>
-      showNtpAssociations(this.cs()));
+      showNtpAssociations(this.cs()), [
+      { keyword: 'associations', description: 'NTP associations' },
+    ]);
     trie.registerGreedy('show cdp', 'Display CDP information', (a) =>
-      showCdp(this.cs(), a.join(' '), this.configState.isEnabled('cdp')));
+      showCdp(this.cs(), a.join(' '), this.configState.isEnabled('cdp')), [
+      { keyword: 'neighbors', description: 'CDP neighbor entries' },
+      { keyword: 'entry',     description: 'Information for specific neighbor entry' },
+      { keyword: 'interface', description: 'CDP interface status and configuration' },
+      { keyword: 'traffic',   description: 'CDP statistics' },
+    ]);
     trie.registerGreedy('show lldp', 'Display LLDP information', (a) =>
-      showLldp(this.cs(), a.join(' '), this.configState.isEnabled('lldp')));
+      showLldp(this.cs(), a.join(' '), this.configState.isEnabled('lldp')), [
+      { keyword: 'neighbors', description: 'LLDP neighbor entries' },
+      { keyword: 'interface', description: 'LLDP interface status and configuration' },
+    ]);
     trie.register('show snmp community', 'Display SNMP communities', () => showSnmpCommunity(this.cs()));
     trie.register('show snmp host', 'Display SNMP hosts', () => showSnmpHost(this.cs()));
     trie.register('show snmp group', 'Display SNMP groups', () => showSnmpGroup(this.cs()));
@@ -887,7 +913,9 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     trie.registerGreedy('show buffers', 'Display buffer pools', () =>
       showBuffers());
     trie.registerGreedy('show tcp', 'Display TCP connections', () =>
-      showTcpBrief());
+      showTcpBrief(), [
+      { keyword: 'brief', description: 'Brief display of TCP connection status' },
+    ]);
     trie.registerGreedy('show sockets', 'Display open sockets', () =>
       showSockets());
     trie.registerGreedy('show stacks', 'Display process stacks', () =>
@@ -1016,7 +1044,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     this.privilegedTrie.register('write memory', 'Save configuration', () => this.onSave());
 
     const eraseNvram = () => {
-      (this.d() as unknown as { _eraseStartupConfig?: () => void })._eraseStartupConfig?.();
+      this.onErase();
       return 'Erasing the nvram filesystem will remove all configuration files! Continue? [confirm]\n[OK]\nErase of nvram: complete';
     };
     this.privilegedTrie.register('write erase', 'Erase saved configuration', eraseNvram);
