@@ -114,7 +114,7 @@ export class LinuxNetworkConfigManager {
     return lines.join('\n');
   }
 
-  ifup(net: LinuxNetKernel, ifaceName?: string): string {
+  ifup(net: LinuxNetKernel, ifaceName?: string, noAct = false): string {
     const configs = this.readInterfacesFile();
     if (!configs) return 'ifup: could not read /etc/network/interfaces';
     const targets = ifaceName ? [ifaceName] : [...configs.keys()];
@@ -122,12 +122,31 @@ export class LinuxNetworkConfigManager {
     for (const name of targets) {
       const cfg = configs.get(name);
       if (!cfg) { lines.push(`ifup: unknown interface ${name}`); continue; }
+      if (noAct) {
+        lines.push(...this.describeDeclaredConfig(name, cfg));
+        continue;
+      }
       net.setInterfaceAdmin(name, true);
       const applied = this.applyDeclaredConfig(net, name, cfg);
       for (const line of applied) this.logMgr.logDaemon('ifup', line);
       lines.push(...applied);
     }
     return lines.length ? lines.join('\n') : '';
+  }
+
+  /** Dry-run (`--no-act`) equivalent of applyDeclaredConfig: validates and
+   * describes what would happen, without touching interface state. */
+  private describeDeclaredConfig(name: string, cfg: DeclaredInterfaceConfig): string[] {
+    const described: string[] = [];
+    if (cfg.method === 'static' && cfg.address) {
+      described.push(`ifup: (dry-run) would set ${name} IPv4 address ${cfg.address}/${cfg.cidr ?? 24}`);
+      if (cfg.gateway) described.push(`ifup: (dry-run) would set ${name} default gateway ${cfg.gateway}`);
+    } else if (cfg.method === 'dhcp') {
+      described.push(`ifup: (dry-run) would run dhclient on ${name}`);
+    }
+    if (cfg.mtu !== undefined) described.push(`ifup: (dry-run) would set ${name} MTU to ${cfg.mtu}`);
+    if (described.length === 0) described.push(`ifup: (dry-run) ${name}: nothing to apply`);
+    return described;
   }
 
   ifdown(net: LinuxNetKernel, ifaceName: string): string {

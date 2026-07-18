@@ -1312,6 +1312,7 @@ export abstract class LinuxMachine extends EndHost
         list: () => this.listNetNamespaces(),
         exec: (name: string, cmdLine: string) => this.execInNamespace(name, cmdLine),
       },
+      sshServerConfig: () => this.getSshServerContext().effectiveSshdServerConfig(),
     };
   }
 
@@ -1911,33 +1912,6 @@ export abstract class LinuxMachine extends EndHost
 
     // 2. Commands that need special handling outside the registry
     switch (firstCmd) {
-      case 'sshd': {
-        const sshdArgs = noSudo.split(/\s+/).slice(1);
-        if (sshdArgs.includes('-t')) {
-          const raw = this.executor.vfs.readFile('/etc/ssh/sshd_config') ?? '';
-          const verdict = validateSshdConfig(raw);
-          return verdict.ok ? '' : verdict.errors.join('\n');
-        }
-        if (sshdArgs.includes('-T')) {
-          const cfg = this.getSshServerContext().effectiveSshdServerConfig();
-          const lines = [
-            `port ${cfg.ports[0] ?? 22}`,
-            `permitrootlogin ${cfg.permitRootLogin}`,
-            `passwordauthentication ${cfg.passwordAuthentication ? 'yes' : 'no'}`,
-            `pubkeyauthentication ${cfg.pubkeyAuthentication ? 'yes' : 'no'}`,
-            `kbdinteractiveauthentication ${cfg.kbdInteractiveAuthentication ? 'yes' : 'no'}`,
-            `maxauthtries ${cfg.maxAuthTries}`,
-            `maxsessions ${cfg.maxSessions}`,
-            `x11forwarding ${cfg.x11Forwarding ? 'yes' : 'no'}`,
-            `permitemptypasswords ${cfg.permitEmptyPasswords ? 'yes' : 'no'}`,
-            `allowtcpforwarding ${cfg.allowTcpForwarding}`,
-            `clientaliveinterval ${cfg.clientAliveIntervalSeconds}`,
-            `clientalivecountmax ${cfg.clientAliveCountMax}`,
-          ];
-          return lines.join('\n');
-        }
-        return 'usage: sshd [-t | -T]';
-      }
       case 'cat': {
         const parts = noSudo.split(/\s+/);
         const path = parts[1];
@@ -3137,5 +3111,12 @@ export abstract class LinuxMachine extends EndHost
     if (session.disposed) return this.writeFileFromEditor(path, content);
     const absPath = this.executor.vfs.normalizePath(path, session.cwd);
     return this.executor.vfs.writeFile(absPath, content, session.uid, session.gid, session.umask);
+  }
+
+  /** Per-session variant of deleteFileFromEditor (used by editor swap/lock file cleanup). */
+  deleteFileFromEditorInSession(path: string, session: LinuxShellSession): boolean {
+    if (session.disposed) return this.deleteFileFromEditor(path);
+    const absPath = this.executor.vfs.normalizePath(path, session.cwd);
+    return this.executor.vfs.deleteFile(absPath);
   }
 }

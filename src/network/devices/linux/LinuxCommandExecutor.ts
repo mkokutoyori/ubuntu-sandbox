@@ -2724,6 +2724,11 @@ export class LinuxCommandExecutor {
     let bind = false;
     let readOnly = false;
     let mountAll = false;
+    // `--fake` (also spelled `-f`): do everything except the actual mount
+    // syscall — validates fstab/target without mutating mount state.
+    // Real-world use: `mount --fake -a` before a reboot to catch a broken
+    // /etc/fstab without touching the live mount table.
+    let fake = false;
 
     for (let i = 0; i < args.length; i++) {
       const a = args[i];
@@ -2742,6 +2747,8 @@ export class LinuxCommandExecutor {
         options.push('rw');
       } else if (a === '-a' || a === '--all') {
         mountAll = true;
+      } else if (a === '--fake' || a === '-f') {
+        fake = true;
       } else if (a === '-l' || a === '-v' || a === '--make-private' || a === '-n') {
         continue;
       } else if (a.startsWith('-')) {
@@ -2763,6 +2770,7 @@ export class LinuxCommandExecutor {
         const parts = line.split(/\s+/);
         if (parts.length < 3) { errors.push(`mount: error: bad line in /etc/fstab: "${line}"`); continue; }
         const [src, tgt, fs] = parts;
+        if (fake) continue; // validate the line only — no mount syscall, no state change
         if (this.mountTable.find(tgt)) continue;
         if (!this.vfs.exists(tgt)) this.vfs.mkdirp(tgt, 0o755, 0, 0);
         const entry = this.mountTable.mount(new MountEntry({ source: src, target: tgt, fstype: fs, options: ['rw'] }));
@@ -2812,6 +2820,7 @@ export class LinuxCommandExecutor {
       return { output: `mount: ${positionals[0]}: error: special device does not exist (No such file or directory)`, exitCode: 32 };
     }
     if (!this.vfs.exists(target)) return { output: `mount: ${positionals[1]}: No such file or directory`, exitCode: 32 };
+    if (fake) return { output: '', exitCode: 0 }; // validated only — no mount syscall, no state change
     const entry = this.mountTable.mount(new MountEntry({
       source,
       target,

@@ -4,10 +4,11 @@ import type { LinuxCommandContext } from '../LinuxCommandContext';
 export const ifupCommand: LinuxCommand = {
   name: 'ifup',
   needsNetworkContext: true,
-  usage: 'ifup [ -a | INTERFACE ]',
+  usage: 'ifup [ -a | --no-act | INTERFACE ]',
   run(ctx: LinuxCommandContext, args: string[]): string {
-    const filtered = args.filter(a => a !== '-a' && a !== '--read-environment');
-    return ctx.netConfig.ifup(ctx.net, filtered[0]);
+    const noAct = args.includes('--no-act') || args.includes('-n');
+    const filtered = args.filter(a => a !== '-a' && a !== '--read-environment' && a !== '--no-act' && a !== '-n');
+    return ctx.netConfig.ifup(ctx.net, filtered[0], noAct);
   },
 };
 
