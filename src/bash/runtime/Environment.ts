@@ -389,8 +389,11 @@ export class Environment {
 
   /** Create a child scope (for function calls). */
   createChild(): Environment {
-    // Functions / subshells keep the parent shell's $$ and $PPID.
-    const child = new Environment({ pid: this.pid, ppid: this.ppid });
+    // Functions / subshells keep the parent shell's $$ and $PPID, and see
+    // whatever $? was set to just before the call — a function body's
+    // first statement (e.g. a trap handler checking `$?`) must observe
+    // the caller's exit status, not a reset-to-0 default.
+    const child = new Environment({ pid: this.pid, ppid: this.ppid, initialExitCode: this.lastExitCode });
     child.parent = this;
     // Inherit PID and script name
     child.vars.set('0', this.get('0') ?? '');
