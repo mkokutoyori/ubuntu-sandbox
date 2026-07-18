@@ -324,6 +324,9 @@ export abstract class LinuxMachine extends EndHost
     this.executor._registryCommandHook = (cmd, args) => {
       const registered = this.commands.get(cmd);
       if (!registered || !registered.needsNetworkContext) return null;
+      if (registered.runWithStatusSync) {
+        return registered.runWithStatusSync(this.buildCommandContext(), args);
+      }
       const result = registered.run(this.buildCommandContext(), args);
       if (result instanceof Promise) return null;
       return { output: result, exitCode: this.inferRegistryExitCode(cmd, result) };
@@ -1877,10 +1880,32 @@ export abstract class LinuxMachine extends EndHost
 
       // A registry command bypasses LinuxCommandExecutor's dispatch(), so
       // the declarative privilege gate (and `sudo` elevation) that gate
-      // applies there must be re-applied here explicitly.
+      // applies there must be re-applied here explicitly. Likewise `$?`:
+      // dispatch() would have set it from the command's real exit code,
+      // so a status-aware command sets it here too instead of leaving
+      // whatever the previous command left behind (bare run() commands
+      // have no exit code to report and implicitly succeed, as before).
+      // A plain terminal view shows stdout and stderr together (no
+      // redirect has separated them here), matching what `run()` alone
+      // already did for commands — like tcpdump — whose stderr carries
+      // real content (its capture summary) that `runWithStatus`'s status
+      // field otherwise leaves stranded off `output`.
       return this.withSudoAndPrivilegeGate(
         firstCmd, cmdArgs, isSudo, cmd.privilege,
-        () => cmd.run(this.buildCommandContext(), cmdArgs),
+        async () => {
+          if (cmd.runWithStatusSync) {
+            const result = cmd.runWithStatusSync(this.buildCommandContext(), cmdArgs);
+            this.executor.lastExitCode = result.exitCode;
+            return [result.output, result.stderr].filter((s) => s).join('\n');
+          }
+          if (cmd.runWithStatus) {
+            const result = await cmd.runWithStatus(this.buildCommandContext(), cmdArgs);
+            this.executor.lastExitCode = result.exitCode;
+            return [result.output, result.stderr].filter((s) => s).join('\n');
+          }
+          this.executor.lastExitCode = 0;
+          return cmd.run(this.buildCommandContext(), cmdArgs);
+        },
       );
     }
 

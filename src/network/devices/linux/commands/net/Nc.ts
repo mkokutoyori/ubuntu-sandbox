@@ -1,6 +1,13 @@
 /**
- * `nc` / `ncat` — netcat TCP client (connect-and-probe only; no listen/UDP
- * modes, matching the simulator's synchronous connection model).
+ * `nc` / `ncat` — netcat TCP/UDP client and listener.
+ *
+ * Listen mode (`-l`, `-l -u`) binds a real socket in the host's
+ * `SocketTable` — the same table `ss` and `/proc/net/{tcp,udp}` render
+ * from — so a backgrounded `nc -l -p PORT &` shows up consistently across
+ * all three views, keyed by the same socket id. It does not accept or
+ * exchange data on the connection (the simulator's synchronous execution
+ * model has no notion of a blocking accept() loop) — only the bind/listen
+ * half, which is what every other observability tool actually inspects.
  *
  * Extracted from `LinuxCommandExecutor.runNetcatClient` so the command
  * lives in its own file like `route`/`ifconfig`/`nmap`
@@ -40,13 +47,14 @@ function firstConfiguredIpv6(ctx: LinuxCommandContext): string | null {
 }
 
 function parseNcArgs(args: string[]): {
-  positional: string[]; zero: boolean; verbose: boolean; listen: boolean; udp: boolean;
+  positional: string[]; zero: boolean; verbose: boolean; listen: boolean; udp: boolean; port?: number;
 } {
   const positional: string[] = [];
   let zero = false;
   let verbose = false;
   let listen = false;
   let udp = false;
+  let port: number | undefined;
   for (let i = 0; i < args.length; i++) {
     const a = args[i];
     if (a === '-z') zero = true;
@@ -54,7 +62,7 @@ function parseNcArgs(args: string[]): {
     else if (a === '-l') listen = true;
     else if (a === '-u') udp = true;
     else if (a === '-w' && i + 1 < args.length) i++;
-    else if (a === '-p' && i + 1 < args.length) i++;
+    else if (a === '-p' && i + 1 < args.length) port = parseInt(args[++i], 10);
     else if (!a.startsWith('-')) positional.push(a);
     else if (/^-[a-zA-Z]+$/.test(a)) {
       for (const ch of a.slice(1)) {
@@ -65,7 +73,28 @@ function parseNcArgs(args: string[]): {
       }
     }
   }
-  return { positional, zero, verbose, listen, udp };
+  return { positional, zero, verbose, listen, udp, port };
+}
+
+/** `nc -l [-u] [-p PORT] [PORT]` — bind a listening socket and report the
+ *  outcome. No accept()/data exchange; see the file-level doc comment. */
+function runListen(
+  ctx: LinuxCommandContext,
+  parsed: ReturnType<typeof parseNcArgs>,
+): { output: string; exitCode: number } {
+  const { positional, port: pFlagPort, udp, verbose } = parsed;
+  const port = pFlagPort ?? (positional.length > 0 ? parseInt(positional[0], 10) : NaN);
+  if (!Number.isFinite(port) || port <= 0 || port > 65535) {
+    return { output: 'nc: invalid port for listen', exitCode: 1 };
+  }
+  const table = ctx.executor.getSocketTable();
+  if (!table) return { output: 'nc: no socket table available', exitCode: 1 };
+  try {
+    table.bind(udp ? 'udp' : 'tcp', '0.0.0.0', port, ctx.executor.currentPid(), 'nc');
+  } catch {
+    return { output: `nc: Address already in use`, exitCode: 1 };
+  }
+  return { output: verbose ? `Listening on 0.0.0.0 ${port}` : '', exitCode: 0 };
 }
 
 export const ncCommand: LinuxCommand = {
@@ -86,9 +115,10 @@ export const ncCommand: LinuxCommand = {
   ],
 
   run(ctx: LinuxCommandContext, args: string[]): string {
-    const { positional, zero, verbose, listen, udp } = parseNcArgs(args);
+    const parsed = parseNcArgs(args);
+    if (parsed.listen) return runListen(ctx, parsed).output;
+    const { positional, zero, verbose, udp } = parsed;
 
-    if (listen) return 'nc: listen mode is not supported in this simulator';
     if (udp) return `nc: UDP mode (-u) is not supported in this simulator`;
     if (positional.length < 2) return 'usage: nc [-z] [-v] [-w secs] host port';
 
@@ -198,5 +228,11 @@ export const ncCommand: LinuxCommand = {
 
     if (verbose) return `Connection to ${host} ${port} port [tcp/*] succeeded!`;
     return '';
+  },
+
+  runWithStatusSync(ctx: LinuxCommandContext, args: string[]) {
+    const parsed = parseNcArgs(args);
+    if (parsed.listen) return runListen(ctx, parsed);
+    return { output: ncCommand.run(ctx, args) as string, exitCode: 0 };
   },
 };

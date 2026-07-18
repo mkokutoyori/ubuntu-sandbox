@@ -55,10 +55,12 @@ describe('nc / ncat — real TCP probe', () => {
     expect(out).toMatch(/succeeded/);
   });
 
-  it('rejects unsupported listen mode with a clear note', async () => {
+  it('-l binds a real listening socket, visible to ss', async () => {
     const { pc } = await buildPair();
-    const out = await pc.executeCommand('nc -l 8080');
-    expect(out).toMatch(/listen mode is not supported/);
+    await pc.executeCommand('nc -l -p 8080 &');
+    const out = await pc.executeCommand('ss -tlnp');
+    expect(out).toMatch(/LISTEN/);
+    expect(out).toContain(':8080');
   });
 
   it('rejects unsupported UDP mode', async () => {

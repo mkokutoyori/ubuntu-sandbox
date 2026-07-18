@@ -60,6 +60,9 @@ import { groupaddCommand, groupmodCommand, groupdelCommand } from './iam/Group';
 import { faillockCommand } from './iam/Faillock';
 import { passwdCommand } from './iam/Passwd';
 import { lastlogCommand } from './iam/Lastlog';
+import { pwckCommand } from './iam/Pwck';
+import { grpckCommand } from './iam/Grpck';
+import { visudoCommand } from './iam/Visudo';
 import { ausearchCommand } from './audit/Ausearch';
 import { aureportCommand } from './audit/Aureport';
 import { auditctlCommand } from './audit/Auditctl';
@@ -143,6 +146,9 @@ export {
   faillockCommand,
   passwdCommand,
   lastlogCommand,
+  pwckCommand,
+  grpckCommand,
+  visudoCommand,
   ausearchCommand,
   aureportCommand,
   auditctlCommand,
@@ -233,6 +239,9 @@ export const CORE_LINUX_COMMANDS: readonly LinuxCommand[] = [
   faillockCommand,
   passwdCommand,
   lastlogCommand,
+  pwckCommand,
+  grpckCommand,
+  visudoCommand,
   ausearchCommand,
   aureportCommand,
   auditctlCommand,
