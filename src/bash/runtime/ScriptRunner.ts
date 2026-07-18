@@ -281,10 +281,13 @@ function preprocessHeredocs(source: string): string {
 
   while (i < lines.length) {
     const line = lines[i];
-    // Match << or <<- followed by optional space and a delimiter word
-    // Use (?<!<) lookbehind and (?!<) lookahead to avoid matching <<< (herestring)
+    // Match << or <<- followed by optional space and a delimiter word.
+    // Use (?<!<) lookbehind and (?!<) lookahead to avoid matching <<< (herestring).
+    // No end-of-line anchor: `cat << 'EOF' > file` is common and valid —
+    // whatever trails the delimiter (a redirection, another word) is kept
+    // verbatim after the `<<<` replacement below.
     const heredocMatch = line.match(
-      /(?<!<)<<(-?)(?!<)\s*(?:'([^']+)'|"([^"]+)"|(\S+))\s*$/,
+      /(?<!<)<<(-?)(?!<)\s*(?:'([^']+)'|"([^"]+)"|(\S+))/,
     );
 
     if (!heredocMatch) {
@@ -313,15 +316,17 @@ function preprocessHeredocs(source: string): string {
 
     const body = bodyLines.join('\n');
 
-    // Replace << ... with <<< 'body' or <<< "body"
+    // Replace << ... with <<< 'body' or <<< "body", preserving whatever
+    // trailed the delimiter on the original line (e.g. `> file`).
     const prefix = line.substring(0, heredocMatch.index!);
+    const suffix = line.substring(heredocMatch.index! + heredocMatch[0].length);
     if (isQuoted) {
       // Single-quoted herestring: no expansion, and no escape processing
       // either — a literal backslash in the body must stay a single
       // backslash, so only the quote character itself needs the
       // close-quote/escape/reopen-quote trick.
       const escaped = body.replace(/'/g, "'\\''");
-      result.push(prefix + "<<< '" + escaped + "'");
+      result.push(prefix + "<<< '" + escaped + "'" + suffix);
     } else {
       // Double-quoted herestring: expansion will happen. An unquoted
       // heredoc's own escaping rules (\$, \`, \\ are special; any other
@@ -330,7 +335,7 @@ function preprocessHeredocs(source: string): string {
       // character itself needs escaping so it doesn't end the herestring
       // early when re-lexed.
       const escaped = body.replace(/"/g, '\\"');
-      result.push(prefix + '<<< "' + escaped + '"');
+      result.push(prefix + '<<< "' + escaped + '"' + suffix);
     }
   }
 
@@ -382,6 +387,7 @@ function buildIOContext(ctx: ShellContext): IOContext {
 
 /** Build initial environment variables from ShellContext. */
 function buildEnvVars(ctx: ShellContext): Record<string, string> {
+  if (ctx.envOverride) return { ...ctx.envOverride };
   return {
     HOME: ctx.uid === 0 ? '/root' : `/home/${ctx.userMgr.currentUser}`,
     PWD: ctx.cwd,

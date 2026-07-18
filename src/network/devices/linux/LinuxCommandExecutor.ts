@@ -1804,17 +1804,35 @@ export class LinuxCommandExecutor {
     });
     this.cronEngine = new CronEngine({
       sources: [source],
-      runner: (command) => {
-        const output = this.execute(command);
-        return { output, exitCode: this.lastExitCode };
-      },
-      syslog: () => { void 0; },
+      runner: (command, ctx) => this.runWithEnv(command, ctx.env),
+      syslog: (tag, message) => this.logMgr.logDaemon(tag, message),
       deliverMail: () => { void 0; },
       homeFor: (user) => this.userMgr.getUser(user)?.home ?? `/home/${user}`,
       hostname: (this.vfs.readFile('/etc/hostname') ?? 'localhost').trim(),
       now: () => this.simulatedDate(),
     });
     return this.cronEngine;
+  }
+
+  /**
+   * Run a command with an explicit, isolated environment (`env` replaces,
+   * doesn't merge with, the caller's own) — used by cron, whose jobs run
+   * under a minimal environment, not the interactive session's. Sets an
+   * ambient override that every env-building call site consults, since
+   * direct-executable dispatch (`/path/to/script`) builds its nested
+   * interpreter via a different code path than `bash -c` does.
+   */
+  private runWithEnv(command: string, env: Record<string, string>): { output: string; exitCode: number } {
+    const savedOverride = this.envOverride;
+    const savedEnv = new Map(this.env); // undo any export leaking back — real subprocesses don't
+    this.envOverride = env;
+    try {
+      const output = this.execute(command);
+      return { output, exitCode: this.lastExitCode };
+    } finally {
+      this.envOverride = savedOverride;
+      this.env = savedEnv;
+    }
   }
 
   private tickCron(fromMs: number): void {
@@ -2040,8 +2058,12 @@ export class LinuxCommandExecutor {
       uid: this.userMgr.currentUid,
       gid: this.userMgr.currentGid,
       color: this.displayColor,
+      envOverride: this.envOverride ?? undefined,
     };
   }
+
+  /** Ambient environment override — see {@link runWithEnv}. */
+  private envOverride: Record<string, string> | null = null;
 
   displayColor = false;
 
@@ -2961,6 +2983,7 @@ export class LinuxCommandExecutor {
 
   /** Build initial environment variables for the bash interpreter. */
   private buildEnvVars(): Record<string, string> {
+    if (this.envOverride) return { ...this.envOverride };
     const user = this.userMgr.currentUser;
     const home = this.userMgr.currentUid === 0 ? '/root' : `/home/${user}`;
     const hostname = (this.vfs.readFile('/etc/hostname') ?? 'localhost').trim();
