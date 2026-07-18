@@ -5,6 +5,7 @@ import { DefaultPrivilegePolicy } from '@/command-kernel/session/privilege-polic
 import { PrivilegeLevel } from '@/command-kernel/session/types';
 import { CommandRegistry } from '@/command-kernel/registry/command-registry';
 import { CiscoSwitchShowInterfacesStatusCommand } from './interfaces/Status';
+import { CiscoSwitchShowInterfacesSwitchportCommand } from './interfaces/Switchport';
 import { CiscoSwitchShowInterfacesTrunkCommand } from './interfaces/Trunk';
 
 const ANY = new DefaultPrivilegePolicy(PrivilegeLevel.ANY);
@@ -32,6 +33,7 @@ export class CiscoSwitchShowInterfacesCommand extends BaseCommand {
     super();
     this.subRegistry.register(() => new CiscoSwitchShowInterfacesStatusCommand());
     this.subRegistry.register(() => new CiscoSwitchShowInterfacesTrunkCommand());
+    this.subRegistry.register(() => new CiscoSwitchShowInterfacesSwitchportCommand());
   }
 
   async execute(ctx: CommandContext): Promise<ExitCode> {

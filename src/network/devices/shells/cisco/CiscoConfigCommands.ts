@@ -98,46 +98,6 @@ export function buildConfigCommands(trie: CommandTrie, ctx: CiscoShellContext): 
     return '';
   });
 
-  trie.registerGreedy('interface', 'Select an interface to configure', (args) => {
-    if (args.length < 1) return '% Incomplete command.';
-    const typeIdx = args.findIndex((a) => a.toLowerCase() === 'type');
-    const stripped = typeIdx >= 0 ? args.slice(0, typeIdx) : args;
-    const raw = stripped.join(' ');
-    let ifName = ctx.resolveInterfaceName(raw);
-    if (!ifName) {
-      const combined = raw.replace(/\s+/g, '');
-      const vMatch = combined.match(/^(loopback|lo|tunnel|tu|serial|virtual-template|port-channel|po|vlan|nve)([\d/.]+)$/i);
-      if (vMatch) {
-        const typeMap: Record<string, string> = {
-          'loopback': 'Loopback', 'lo': 'Loopback',
-          'tunnel': 'Tunnel', 'tu': 'Tunnel',
-          'serial': 'Serial',
-          'virtual-template': 'Virtual-Template',
-          'port-channel': 'Port-channel', 'po': 'Port-channel',
-          'vlan': 'Vlan',
-          'nve': 'Nve',
-        };
-        const fullName = `${typeMap[vMatch[1].toLowerCase()]}${vMatch[2]}`;
-        ctx.r()._createVirtualInterface(fullName);
-        ifName = fullName;
-      }
-      if (!ifName) {
-        const subMatch = combined.match(/^([a-z]+\d+(?:\/\d+){1,2})\.(\d+)$/i);
-        if (subMatch) {
-          const baseName = ctx.resolveInterfaceName(subMatch[1]);
-          if (baseName) {
-            const fullName = `${baseName}.${subMatch[2]}`;
-            ctx.r()._createVirtualInterface(fullName);
-            ifName = fullName;
-          }
-        }
-      }
-      if (!ifName) return `% Invalid input detected at '^' marker.\ninterface ${raw}\n          ^`;
-    }
-    ctx.setSelectedInterface(ifName);
-    ctx.setMode(/\.\d+$/.test(ifName) ? 'config-subif' : 'config-if');
-    return '';
-  });
 
   trie.registerGreedy('ip dhcp pool', 'Define a DHCP address pool', (args) => {
     if (args.length < 1) return '% Incomplete command.';
@@ -243,13 +203,7 @@ export function buildConfigCommands(trie: CommandTrie, ctx: CiscoShellContext): 
     (ctx.r() as any)._ciscoDhcpSnoopingInfoOption = true; return '';
   });
 
-  trie.registerGreedy('ip route', 'Establish static routes', (args) => {
-    return cmdIpRoute(ctx.r(), args);
-  });
 
-  trie.registerGreedy('no ip route', 'Remove static route', (args) => {
-    return cmdNoIpRoute(ctx.r(), args);
-  });
 
   trie.registerGreedy('ip default-network', 'Configure default-network', (args) => {
     (ctx.r() as any)._ciscoDefaultNetwork = args[0];
@@ -260,19 +214,12 @@ export function buildConfigCommands(trie: CommandTrie, ctx: CiscoShellContext): 
     return '';
   });
 
-  trie.register('router rip', 'Enter RIP routing protocol configuration', () => {
-    if (!ctx.r().isRIPEnabled()) ctx.r().enableRIP();
-    ctx.setSelectedRoutingProto({ proto: 'rip' });
-    ctx.setMode('config-router');
-    return '';
-  });
 
   trie.register('no router rip', 'Disable RIP routing protocol', () => {
     ctx.r().disableRIP();
     return '';
   });
 
-  trie.register('no shutdown', 'Enable (no-op in global config)', () => '');
 
   // ARP config commands are registered once for both vendors by the shared
   // CiscoShellBase (registerArpConfigCommands on the config trie); no need to
@@ -351,118 +298,14 @@ export function buildConfigIfCommands(trie: CommandTrie, ctx: CiscoShellContext)
     if (args[0]) m.set(iface, args[0]);
     return '';
   });
-  trie.registerGreedy('interface', 'Select an interface to configure', (args) => {
-    if (args.length < 1) return '% Incomplete command.';
-    const raw = args.join(' ');
-    let ifName = resolveInterfaceName(ctx.r(), raw);
-    if (!ifName) {
-      const combined = raw.replace(/\s+/g, '');
-      const vMatch = combined.match(/^(loopback|tunnel|serial|nve)([\d/.]+)$/i);
-      if (vMatch) {
-        const typeMap: Record<string, string> = { 'loopback': 'Loopback', 'tunnel': 'Tunnel', 'serial': 'Serial', 'nve': 'Nve' };
-        const fullName = `${typeMap[vMatch[1].toLowerCase()]}${vMatch[2]}`;
-        ctx.r()._createVirtualInterface(fullName);
-        ifName = fullName;
-      }
-      if (!ifName) {
-        const subMatch = combined.match(/^([a-z]+\d+\/\d+(?:\/\d+)?)\.(\d+)$/i);
-        if (subMatch) {
-          const baseName = resolveInterfaceName(ctx.r(), subMatch[1]);
-          if (baseName) {
-            const fullName = `${baseName}.${subMatch[2]}`;
-            ctx.r()._createVirtualInterface(fullName);
-            ifName = fullName;
-          }
-        }
-      }
-      if (!ifName) return `% Invalid input detected at '^' marker.\ninterface ${raw}\n          ^`;
-    }
-    ctx.setSelectedInterface(ifName);
-    ctx.setMode('config-if');
-    return '';
-  });
 
-  trie.registerGreedy('ip address', 'Set interface IP address', (args) => {
-    if (args.length < 2) return '% Incomplete command.';
-    if (!ctx.getSelectedInterface()) return '% No interface selected';
-    if (!isValidIPv4(args[0]) || !isValidSubnetMask(args[1])) {
-      return "% Invalid input detected at '^' marker.";
-    }
-    const secondary = args[2]?.toLowerCase() === 'secondary';
-    if (args[2] !== undefined && !secondary) {
-      return "% Invalid input detected at '^' marker.";
-    }
-    try {
-      ctx.r().configureInterface(ctx.getSelectedInterface()!, new IPAddress(args[0]), new SubnetMask(args[1]), secondary);
-      return '';
-    } catch (e: any) {
-      return `% Invalid input: ${e.message}`;
-    }
-  });
 
-  trie.registerGreedy('no ip address', 'Remove interface IP address', (args) => {
-    const ifName = ctx.getSelectedInterface();
-    if (!ifName) return '% No interface selected';
-    if (args[2]?.toLowerCase() === 'secondary' && isValidIPv4(args[0]) && isValidSubnetMask(args[1])) {
-      ctx.r().removeSecondaryAddress(ifName, new IPAddress(args[0]), new SubnetMask(args[1]));
-      return '';
-    }
-    ctx.r().unconfigureInterface(ifName);
-    return '';
-  });
 
-  trie.registerGreedy('mtu', 'Set MTU', (args) => {
-    if (!ctx.getSelectedInterface()) return '% No interface selected';
-    const port = ctx.r().getPort(ctx.getSelectedInterface()!);
-    if (!port) return '';
-    if (!/^\d+$/.test(args[0] ?? '')) return "% Invalid input detected at '^' marker.";
-    try { port.setMTU(parseInt(args[0], 10)); } catch (e: unknown) { return e instanceof Error ? `% ${e.message}` : '% Invalid MTU'; }
-    return '';
-  });
-  trie.registerGreedy('bandwidth', 'Set interface bandwidth (kbps)', (args) => {
-    if (!ctx.getSelectedInterface()) return '% No interface selected';
-    const port = ctx.r().getPort(ctx.getSelectedInterface()!);
-    if (!port) return '';
-    const n = parseInt(args[0] ?? '', 10);
-    if (!/^\d+$/.test(args[0] ?? '') || n < 1 || n > 10000000) {
-      return "% Invalid input detected at '^' marker.";
-    }
-    port.setBandwidthKbps(n);
-    return '';
-  });
-  trie.registerGreedy('delay', 'Set interface delay (10us)', (args) => {
-    if (!ctx.getSelectedInterface()) return '% No interface selected';
-    const port = ctx.r().getPort(ctx.getSelectedInterface()!);
-    const n = parseInt(args[0] ?? '', 10);
-    if (port && !isNaN(n)) port.setDelayUs(n * 10);
-    return '';
-  });
   trie.registerGreedy('arp timeout', 'Set ARP timeout (seconds)', (args) => {
     if (!ctx.getSelectedInterface()) return '% No interface selected';
     const port = ctx.r().getPort(ctx.getSelectedInterface()!);
     const n = parseInt(args[0] ?? '', 10);
     if (port && !isNaN(n)) port.setArpTimeoutSec(n);
-    return '';
-  });
-  trie.registerGreedy('duplex', 'Set interface duplex', (args) => {
-    if (!ctx.getSelectedInterface()) return '% No interface selected';
-    const port = ctx.r().getPort(ctx.getSelectedInterface()!);
-    if (!port) return '';
-    const a = (args[0] ?? '').toLowerCase();
-    if (a !== 'full' && a !== 'half' && a !== 'auto') return "% Invalid input detected at '^' marker.";
-    // Port only models the negotiated outcome, not the negotiation mode
-    // itself — `duplex auto` resolves to full, the realistic result on a
-    // modern switched link.
-    port.setDuplex(a === 'half' ? 'half' : 'full');
-    return '';
-  });
-  trie.registerGreedy('speed', 'Set interface speed', (args) => {
-    if (!ctx.getSelectedInterface()) return '% No interface selected';
-    const port = ctx.r().getPort(ctx.getSelectedInterface()!);
-    if (!port) return '';
-    if (args[0]?.toLowerCase() === 'auto') { port.setNegotiationAuto(true); return ''; }
-    if (!/^\d+$/.test(args[0] ?? '')) return "% Invalid input detected at '^' marker.";
-    try { port.setSpeed(parseInt(args[0], 10)); } catch { return "% Invalid input detected at '^' marker."; }
     return '';
   });
   trie.registerGreedy('negotiation', 'Set auto-negotiation', (args) => {
@@ -474,13 +317,6 @@ export function buildConfigIfCommands(trie: CommandTrie, ctx: CiscoShellContext)
   trie.register('no keepalive', 'Disable keepalive', () => {
     if (!ctx.getSelectedInterface()) return '';
     ctx.r().getPort(ctx.getSelectedInterface()!)?.setKeepalive(null);
-    return '';
-  });
-  trie.registerGreedy('keepalive', 'Set keepalive interval', (args) => {
-    if (!ctx.getSelectedInterface()) return '';
-    const port = ctx.r().getPort(ctx.getSelectedInterface()!);
-    const n = parseInt(args[0] ?? '10', 10);
-    if (port) port.setKeepalive(isNaN(n) ? 10 : n);
     return '';
   });
   trie.register('ip directed-broadcast', 'Enable directed broadcast', () => {
@@ -778,55 +614,10 @@ export function buildConfigIfCommands(trie: CommandTrie, ctx: CiscoShellContext)
     if (port && !isNaN(n)) (port as unknown as { loadIntervalSec?: number }).loadIntervalSec = n;
     return '';
   });
-  trie.registerGreedy('encapsulation', 'Set encapsulation', (args) => {
-    if (!ctx.getSelectedInterface()) return '';
-    const port = ctx.r().getPort(ctx.getSelectedInterface()!);
-    if (!port) return '';
-    const type = args[0]?.toLowerCase() ?? '';
-    if (!type) return '% Incomplete command.';
-    let vlan: number | undefined;
-    if (args[1] !== undefined) {
-      if (!/^\d+$/.test(args[1])) return "% Invalid input detected at '^' marker.";
-      vlan = parseInt(args[1], 10);
-    }
-    (port as unknown as { encapsulation?: { type: string; vlan?: number; native?: boolean } }).encapsulation = {
-      type, vlan, native: args.includes('native'),
-    };
-    return '';
-  });
 
-  trie.registerGreedy('description', 'Set interface description', (args) => {
-    if (!ctx.getSelectedInterface()) return '% No interface selected';
-    if (args.length < 1) return '% Incomplete command.';
-    ctx.r().setInterfaceDescription(ctx.getSelectedInterface()!, args.join(' '));
-    return '';
-  });
 
-  trie.register('no description', 'Remove interface description', () => {
-    if (!ctx.getSelectedInterface()) return '% No interface selected';
-    ctx.r().setInterfaceDescription(ctx.getSelectedInterface()!, '');
-    return '';
-  });
 
-  trie.register('no shutdown', 'Enable interface', () => {
-    if (!ctx.getSelectedInterface()) return '% No interface selected';
-    const port = ctx.r().getPort(ctx.getSelectedInterface()!);
-    if (port) port.setUp(true);
-    return '';
-  });
 
-  trie.register('shutdown', 'Disable interface', () => {
-    if (!ctx.getSelectedInterface()) return '% No interface selected';
-    const ifName = ctx.getSelectedInterface()!;
-    const port = ctx.r().getPort(ifName);
-    if (port) {
-      port.setUp(false);
-      // Clear IPSec SAs bound to this interface (like a real Cisco router)
-      const ipsecEngine = (ctx.r() as any)._getIPSecEngineInternal?.();
-      if (ipsecEngine) ipsecEngine.clearSAsForInterface(ifName);
-    }
-    return '';
-  });
 
   trie.registerGreedy('ip helper-address', 'Set DHCP relay agent address', (args) => {
     if (args.length < 1) return '% Incomplete command.';

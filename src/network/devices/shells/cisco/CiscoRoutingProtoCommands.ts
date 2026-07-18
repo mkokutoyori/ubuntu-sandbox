@@ -32,29 +32,9 @@ export function buildRoutingProtoConfig(
   const bgpEng = () => ctx.r().getBGPEngine();
   const converge = () => ctx.r().convergeDynamicRouting();
 
-  configTrie.registerGreedy('router eigrp', 'Enter EIGRP configuration', (a) => {
-    if (a.length < 1) return '% Incomplete command.';
-    const asn = parseInt(a[0], 10);
-    const named = Number.isNaN(asn);
-    repo.ensureEigrp(named ? 0 : asn, named);
-    eigrpEng().enable({ asn: named ? 0 : asn });
-    ctx.setSelectedRoutingProto({ proto: 'eigrp', asn: named ? 0 : asn });
-    ctx.setMode('config-router');
-    converge();
-    return '';
-  });
   configTrie.registerGreedy('no router eigrp', 'Disable EIGRP', (a) => {
     repo.removeEigrp(parseInt(a[0], 10) || 0);
     eigrpEng().disable();
-    converge();
-    return '';
-  });
-  configTrie.registerGreedy('router bgp', 'Enter BGP configuration', (a) => {
-    if (a.length < 1) return '% Incomplete command.';
-    repo.ensureBgp(parseInt(a[0], 10));
-    bgpEng().enable({ asn: parseInt(a[0], 10) });
-    ctx.setSelectedRoutingProto({ proto: 'bgp', asn: parseInt(a[0], 10) });
-    ctx.setMode('config-router');
     converge();
     return '';
   });
@@ -69,38 +49,6 @@ export function buildRoutingProtoConfig(
   const eigrp = () => repo.ensureEigrp(curProto(ctx).asn ?? 0);
   const bgp = () => repo.getBgp();
 
-  routerTrie.registerGreedy('network', 'Advertise a network', (args) => {
-    const { proto } = curProto(ctx);
-    if (proto === 'rip') {
-      if (args.length < 1) return '% Incomplete command.';
-      if (!ctx.r().isRIPEnabled()) return '% RIP is not enabled.';
-      try {
-        const net = new IPAddress(args[0]);
-        const mask = args.length >= 2 && args[1] !== 'mask'
-          ? new SubnetMask(args[1]) : classfulMask(net);
-        ctx.r().ripAdvertiseNetwork(net, mask);
-        repo.rip.networks.push(args.join(' '));
-        return '';
-      } catch (e) {
-        return `% Invalid input: ${e instanceof Error ? e.message : e}`;
-      }
-    }
-    if (args.length < 1) return '% Incomplete command.';
-    if (!isValidIPv4(args[0])) return "% Invalid input detected at '^' marker.";
-    if (proto === 'eigrp') {
-      eigrp().networks.push(args.join(' '));
-      eigrpEng().getConfig().networks.push({
-        network: args[0], wildcard: args[1] && args[1] !== 'mask' ? args[1] : undefined,
-      });
-    } else {
-      bgp()?.networks.push(args.join(' '));
-      const mask = args[1] === 'mask' && args[2]
-        ? args[2] : String(classfulMask(new IPAddress(args[0])));
-      bgpEng().getConfig().networks.push({ network: args[0], mask });
-    }
-    converge();
-    return '';
-  });
 
   routerTrie.register('version 2', 'Use RIPv2', () => {
     repo.rip.version = 2; return '';
@@ -140,19 +88,6 @@ export function buildRoutingProtoConfig(
       converge();
     }
   };
-  routerTrie.registerGreedy('passive-interface', 'Suppress updates', (a) => {
-    if (a.length < 1) return '% Incomplete command.';
-    const p = curProto(ctx).proto;
-    if (a[0].toLowerCase() === 'default') {
-      if (p === 'rip') repo.rip.passiveDefault = true;
-      for (const name of ctx.r()._getPortsInternal().keys()) setPassive(p, name, true);
-      return '';
-    }
-    const ifName = ctx.resolveInterfaceName(a.join(' '));
-    if (!ifName) return `% Invalid interface "${a.join(' ')}"`;
-    setPassive(p, ifName, true);
-    return '';
-  });
   routerTrie.registerGreedy('no passive-interface', 'Allow updates', (a) => {
     if (a.length < 1) return '% Incomplete command.';
     const p = curProto(ctx).proto;
@@ -271,69 +206,6 @@ export function buildRoutingProtoConfig(
       eigrp().maximumPaths = n;
       eigrpEng().getConfig().maximumPaths = n;
       converge();
-    }
-    return '';
-  });
-  routerTrie.registerGreedy('neighbor', 'Configure a peer/neighbor', (a, raw) => {
-    const { proto } = curProto(ctx);
-    if (!a[0]) return '% Incomplete command.';
-    if (proto === 'rip') {
-      if (!isValidIPv4(a[0])) return "% Invalid input detected at '^' marker.";
-      repo.rip.neighbors.push(a[0]); return '';
-    }
-    if (proto === 'bgp') {
-      const isPeerGroupDef = a[1] === 'peer-group' && !a[2];
-      if (!isPeerGroupDef && !isValidIPv4(a[0])) return "% Invalid input detected at '^' marker.";
-      if (!a[1]) return '% Incomplete command.';
-      if (a[1] === 'remote-as') {
-        if (!a[2]) return '% Incomplete command.';
-        const as = parseInt(a[2], 10);
-        if (Number.isNaN(as) || as < 1 || as > 4294967295) return "% Invalid input detected at '^' marker.";
-      }
-      const b = bgp();
-      if (!b) return '';
-      const n = repo.ensureBgpNeighbor(a[0]);
-      if (n) {
-        if (a[1] === 'remote-as') n.remoteAs = parseInt(a[2], 10);
-        else if (a[1] === 'description') n.description = a.slice(2).join(' ');
-        else if (a[1] === 'update-source') n.updateSource = a[2];
-        else if (a[1] === 'peer-group') n.peerGroup = a[2];
-        else if (a[1] === 'activate') n.activated = true;
-        else n.attrs.push(raw ?? a.join(' '));
-      }
-      // Drive the real BGP engine session config.
-      const ec = bgpEng().getConfig();
-      let bn = ec.neighbors.get(a[0]);
-      if (!bn) { bn = { ip: a[0], activated: false }; ec.neighbors.set(a[0], bn); }
-      if (a[1] === 'remote-as') bn.remoteAs = parseInt(a[2], 10);
-      else if (a[1] === 'activate') bn.activated = true;
-      else if (a[1] === 'weight') {
-        const w = parseInt(a[2], 10);
-        if (Number.isNaN(w) || w < 0 || w > 65535) return '% Invalid weight (0-65535)';
-        bn.weight = w;
-      } else if (a[1] === 'prefix-list') {
-        const name = a[2];
-        const dir = a[3];
-        if (!name || (dir !== 'in' && dir !== 'out')) return '% Incomplete command.';
-        if (dir === 'in') bn.prefixListIn = name; else bn.prefixListOut = name;
-      } else if (a[1] === 'route-map') {
-        const name = a[2];
-        const dir = a[3];
-        if (!name || (dir !== 'in' && dir !== 'out')) return '% Incomplete command.';
-        if (dir === 'in') bn.routeMapIn = name; else bn.routeMapOut = name;
-      }
-      converge();
-    }
-    return '';
-  });
-  routerTrie.registerGreedy('router-id', 'Set router-id', (a) => {
-    if (!a[0]) return '% Incomplete command.';
-    if (!isValidIPv4(a[0])) return "% Invalid input detected at '^' marker.";
-    const p = curProto(ctx).proto;
-    if (p === 'eigrp') { eigrp().routerId = a[0]; eigrpEng().getConfig().routerId = a[0]; }
-    else if (p === 'bgp') {
-      const b = bgp(); if (b) b.routerId = a[0];
-      bgpEng().getConfig().routerId = a[0];
     }
     return '';
   });

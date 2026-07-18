@@ -186,16 +186,6 @@ export function buildTrackSlaConfig(
     }
     return '';
   });
-  trackTrie.registerGreedy('delay', 'Set track delay', (args) => {
-    const obj = ctx.getSelectedTrack() !== null
-      ? track.get(ctx.getSelectedTrack()!) : undefined;
-    if (obj) {
-      const up = args.indexOf('up'); const dn = args.indexOf('down');
-      if (up >= 0) obj.delayUp = parseInt(args[up + 1], 10);
-      if (dn >= 0) obj.delayDown = parseInt(args[dn + 1], 10);
-    }
-    return '';
-  });
 
   // ── config-ipsla sub-mode ──
   const slaProto = (type: 'icmp-echo' | 'udp-jitter' | 'tcp-connect' | 'http' | 'dns') =>
