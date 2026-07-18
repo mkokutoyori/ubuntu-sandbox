@@ -9,10 +9,19 @@ function targetPath(args: string[]): string {
   return '/etc/sudoers';
 }
 
+/**
+ * Interactive `visudo` (no `-c`) is handled before this ever runs, by
+ * `LinuxTerminalSession.tryVisudoEdit()` — it opens a real editor on a
+ * temp copy of the target and only installs it once validated. That
+ * interception only exists in the interactive terminal UI; this
+ * fallback covers everywhere else a command can run headless (a bash
+ * script, an SSH exec, a unit test driving `executeCommand` directly) —
+ * exactly where real visudo would also have no TTY to edit through.
+ */
 function runChecked(ctx: LinuxCommandContext, args: string[]): { output: string; exitCode: number } {
   if (!args.includes('-c')) {
     return {
-      output: 'visudo: interactive editing is not supported in this simulator; use -c to check syntax',
+      output: 'visudo: no terminal available for interactive editing; use -c to check syntax',
       exitCode: 1,
     };
   }

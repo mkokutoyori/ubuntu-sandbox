@@ -286,15 +286,13 @@ export function validateSudoersLine(line: string): string | null {
 }
 
 /**
- * `visudo -c -f <path>` — syntax-checks a sudoers-style file without
- * modifying it. Reports the first syntax error's line number, matching
- * real `visudo -c` behaviour (`>>> path: syntax error near line N <<<`).
+ * Syntax-check sudoers-style content line by line. Shared by `visudo -c`
+ * (reads from the VFS) and interactive `visudo` (validates an edited
+ * buffer before it's ever written to the real file) — both must apply
+ * the exact same rules, or a save that `visudo -c` would reject could
+ * slip through the interactive path and corrupt the real sudoers file.
  */
-export function checkSudoersFile(vfs: VirtualFileSystem, path: string): CheckResult {
-  const content = vfs.readFile(path);
-  if (content === null) {
-    return { lines: [`visudo: ${path}: No such file or directory`], exitCode: 1 };
-  }
+export function validateSudoersContent(content: string, path: string): CheckResult {
   const rawLines = content.split('\n');
   for (let i = 0; i < rawLines.length; i++) {
     const error = validateSudoersLine(rawLines[i]);
@@ -306,4 +304,17 @@ export function checkSudoersFile(vfs: VirtualFileSystem, path: string): CheckRes
     }
   }
   return { lines: [`${path}: parsed OK`], exitCode: 0 };
+}
+
+/**
+ * `visudo -c -f <path>` — syntax-checks a sudoers-style file without
+ * modifying it. Reports the first syntax error's line number, matching
+ * real `visudo -c` behaviour (`>>> path: syntax error near line N <<<`).
+ */
+export function checkSudoersFile(vfs: VirtualFileSystem, path: string): CheckResult {
+  const content = vfs.readFile(path);
+  if (content === null) {
+    return { lines: [`visudo: ${path}: No such file or directory`], exitCode: 1 };
+  }
+  return validateSudoersContent(content, path);
 }
