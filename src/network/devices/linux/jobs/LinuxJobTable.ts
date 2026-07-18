@@ -42,6 +42,14 @@ export class LinuxJobTable {
     return this.jobs.get(id);
   }
 
+  /** Find the job whose backing process has this PID, if any. */
+  findByPid(pid: number): LinuxJob | undefined {
+    for (const job of this.jobs.values()) {
+      if (job.pid === pid) return job;
+    }
+    return undefined;
+  }
+
   /** All jobs ordered by id. */
   list(): LinuxJob[] {
     return Array.from(this.jobs.values()).sort((a, b) => a.id - b.id);

@@ -25,10 +25,11 @@ function makeCtx(pm: LinuxProcessManager): PsContext {
 describe('ps engine — process selection', () => {
   let pm: LinuxProcessManager;
   let ctx: PsContext;
+  let sshdPid: number;
 
   beforeEach(() => {
     pm = new LinuxProcessManager();
-    pm.spawn({ command: '/usr/sbin/sshd -D', comm: 'sshd', user: 'root', uid: 0, gid: 0 });
+    sshdPid = pm.spawn({ command: '/usr/sbin/sshd -D', comm: 'sshd', user: 'root', uid: 0, gid: 0 }).pid;
     pm.spawn({ command: '/usr/sbin/cron -f', comm: 'cron', user: 'root', uid: 0, gid: 0 });
     ctx = makeCtx(pm);
   });
@@ -56,7 +57,7 @@ describe('ps engine — process selection', () => {
   });
 
   it('-p accepts a comma-separated pid list', () => {
-    const out = runPs(['-p', '1,2'], ctx);
+    const out = runPs(['-p', `1,${sshdPid}`], ctx);
     expect(out).toContain('systemd');
     expect(out).toContain('sshd');
     expect(out).not.toContain('cron');

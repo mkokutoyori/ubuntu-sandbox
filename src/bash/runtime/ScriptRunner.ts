@@ -15,6 +15,7 @@ import type { INode } from '@/network/devices/linux/VirtualFileSystem';
 import { BashLexer } from '@/bash/lexer/BashLexer';
 import { BashParser } from '@/bash/parser/BashParser';
 import { BashInterpreter, type IOContext } from '@/bash/interpreter/BashInterpreter';
+import { DaemonParkSignal } from '@/bash/errors/BashError';
 import type { AliasTable } from '@/bash/runtime/AliasTable';
 
 export interface ScriptResult {
@@ -27,6 +28,11 @@ export interface ScriptResult {
    * merged terminal view; this lets callers route stderr independently.
    */
   stderr?: string;
+  /** True when a `daemonMode` job parked in an unconditional loop instead
+   *  of running forever — see {@link DaemonParkSignal}. `interp` is the
+   *  live interpreter, kept alive so `kill -SIGNAL` can fire its traps. */
+  parked?: boolean;
+  interp?: BashInterpreter;
 }
 
 /**
@@ -88,13 +94,14 @@ export function runScriptContent(
   executeCommand: (args: string[], env?: Record<string, string>, background?: boolean) => { output: string; exitCode: number; backgroundPid?: number },
   variables?: Record<string, string>,
   io?: IOContext,
-  identity?: { pid?: number; ppid?: number; initialExitCode?: number },
+  identity?: { pid?: number; ppid?: number; initialExitCode?: number; daemonMode?: boolean },
   aliases?: AliasTable,
   functions?: Map<string, import('@/bash/parser/ASTNode').Command>,
 ): ScriptResult {
   // Strip shebang, then preprocess heredocs
   const source = preprocessHeredocs(stripShebang(content));
 
+  let interp: BashInterpreter | undefined;
   try {
     const lexer = new BashLexer();
     const parser = new BashParser();
@@ -102,7 +109,7 @@ export function runScriptContent(
     const tokens = lexer.tokenize(source);
     const ast = parser.parse(tokens);
 
-    const interp = new BashInterpreter({
+    interp = new BashInterpreter({
       executeCommand: (args, env, background) => executeCommand(args, env, background),
       variables: variables ?? {},
       scriptName,
@@ -113,6 +120,7 @@ export function runScriptContent(
       initialExitCode: identity?.initialExitCode,
       aliases,
       functions,
+      daemonMode: identity?.daemonMode,
     });
 
     const result = interp.execute(ast);
@@ -123,6 +131,12 @@ export function runScriptContent(
     }
     return { ...result, env: finalEnv };
   } catch (e: unknown) {
+    if (e instanceof DaemonParkSignal) {
+      const parkedInterp = (e.interp as BashInterpreter | undefined) ?? interp;
+      const finalEnv: Record<string, string> = {};
+      if (parkedInterp) for (const [k, v] of parkedInterp.env.getAll()) finalEnv[k] = v;
+      return { output: e.output, exitCode: 0, env: finalEnv, parked: true, interp: parkedInterp };
+    }
     const msg = e instanceof Error ? e.message : String(e);
     // Normalize lexer/parser errors to "syntax error" format for compatibility
     const normalized = msg.replace(/Lexer error|Parse error/, 'syntax error');
@@ -144,12 +158,13 @@ export async function runScriptContentAsync(
     | Promise<{ output: string; exitCode: number; stderr?: string; backgroundPid?: number }>,
   variables?: Record<string, string>,
   io?: IOContext,
-  identity?: { pid?: number; ppid?: number; initialExitCode?: number },
+  identity?: { pid?: number; ppid?: number; initialExitCode?: number; daemonMode?: boolean },
   aliases?: AliasTable,
   functions?: Map<string, import('@/bash/parser/ASTNode').Command>,
 ): Promise<ScriptResult> {
   const source = preprocessHeredocs(stripShebang(content));
 
+  let interp: BashInterpreter | undefined;
   try {
     const lexer = new BashLexer();
     const parser = new BashParser();
@@ -157,7 +172,7 @@ export async function runScriptContentAsync(
     const tokens = lexer.tokenize(source);
     const ast = parser.parse(tokens);
 
-    const interp = new BashInterpreter({
+    interp = new BashInterpreter({
       executeCommand: (args, env, background) => executeCommand(args, env, background),
       variables: variables ?? {},
       scriptName,
@@ -168,6 +183,7 @@ export async function runScriptContentAsync(
       initialExitCode: identity?.initialExitCode,
       aliases,
       functions,
+      daemonMode: identity?.daemonMode,
     });
 
     const result = await interp.executeAsync(ast);
@@ -177,6 +193,12 @@ export async function runScriptContentAsync(
     }
     return { ...result, env: finalEnv };
   } catch (e: unknown) {
+    if (e instanceof DaemonParkSignal) {
+      const parkedInterp = (e.interp as BashInterpreter | undefined) ?? interp;
+      const finalEnv: Record<string, string> = {};
+      if (parkedInterp) for (const [k, v] of parkedInterp.env.getAll()) finalEnv[k] = v;
+      return { output: e.output, exitCode: 0, env: finalEnv, parked: true, interp: parkedInterp };
+    }
     const msg = e instanceof Error ? e.message : String(e);
     const normalized = msg.replace(/Lexer error|Parse error/, 'syntax error');
     return { output: `bash: ${scriptName}: ${normalized}\n`, exitCode: 2 };

@@ -29,7 +29,7 @@ import { Environment } from '@/bash/runtime/Environment';
 import { expandWord, expandWords, BashRuntimeError, evaluateArithmetic } from '@/bash/runtime/Expansion';
 import type { GlobFn, HomeForFn } from '@/bash/runtime/Expansion';
 import {
-  ExitSignal, ReturnSignal, BreakSignal, ContinueSignal,
+  ExitSignal, ReturnSignal, BreakSignal, ContinueSignal, DaemonParkSignal,
 } from '@/bash/errors/BashError';
 import { isBuiltin, executeBuiltin } from '@/bash/runtime/Builtins';
 import { AliasTable } from '@/bash/runtime/AliasTable';
@@ -128,6 +128,9 @@ export interface InterpreterOptions {
    */
   aliases?: AliasTable;
   functions?: Map<string, Command>;
+  /** True for a backgrounded job — makes unconditional loops (`while
+   *  true`) run their body once, then park via {@link DaemonParkSignal}. */
+  daemonMode?: boolean;
 }
 
 /**
@@ -183,12 +186,14 @@ export class BashInterpreter {
   private functions: Map<string, Command>;
   /** Command aliases — shared with the owning shell when one is passed. */
   readonly aliases: AliasTable;
+  private readonly daemonMode: boolean;
 
   constructor(options: InterpreterOptions) {
     this.executeCommand = options.executeCommand;
     this.io = options.io ?? null;
     this.aliases = options.aliases ?? new AliasTable();
     this.functions = options.functions ?? new Map();
+    this.daemonMode = options.daemonMode ?? false;
     this.env = new Environment({
       variables: options.variables,
       scriptName: options.scriptName ?? 'bash',
@@ -222,6 +227,33 @@ export class BashInterpreter {
     return this.driveSync(this.subcommandG(cmd));
   }
 
+  getTrap(signal: string): string | undefined {
+    return this.env.getTrap(signal);
+  }
+
+  /** Run a `trap` handler against this interpreter's live env — how a
+   *  POSIX signal reaches a parked background job. Returns whether the
+   *  handler called `exit` (only then should the caller terminate). */
+  runInterrupt(signalHandlerBody: string): { output: string; exited: boolean; exitCode: number } {
+    const savedOutput = this.output;
+    this.output = [];
+    let exited = false;
+    let exitCode = this.env.lastExitCode;
+    try {
+      this.driveSync(this.executeEvalG(signalHandlerBody));
+    } catch (e) {
+      if (e instanceof ExitSignal) {
+        exited = true;
+        exitCode = e.exitCode;
+      } else {
+        throw e;
+      }
+    }
+    const out = this.output.join('');
+    this.output = savedOutput;
+    return { output: out, exited, exitCode };
+  }
+
   // ─── Drivers ──────────────────────────────────────────────────
 
   private driveSync<T>(gen: Effects<T>): T {
@@ -239,7 +271,7 @@ export class BashInterpreter {
           feed = normalizeResult(raw);
         }
       } catch (e) {
-        if (e instanceof ExitSignal) {
+        if (e instanceof ExitSignal || e instanceof DaemonParkSignal) {
           step = gen.throw(e);
           continue;
         }
@@ -257,7 +289,7 @@ export class BashInterpreter {
       try {
         feed = normalizeResult(await this.executeCommand(step.value.argv, step.value.env, step.value.background));
       } catch (e) {
-        if (e instanceof ExitSignal) {
+        if (e instanceof ExitSignal || e instanceof DaemonParkSignal) {
           step = gen.throw(e);
           continue;
         }
@@ -279,6 +311,8 @@ export class BashInterpreter {
       } else if (e instanceof BashRuntimeError) {
         this.output.push(`bash: ${e.message}\n`);
         this.env.lastExitCode = 1;
+      } else if (e instanceof DaemonParkSignal) {
+        throw e; // parked, not exiting — no EXIT trap
       } else {
         yield* this.fireExitTrap();
         throw e;
@@ -1146,12 +1180,14 @@ export class BashInterpreter {
 
   private *runWhileLoop(node: WhileClause): Effects<void> {
     const MAX_ITERATIONS = 10000;
+    const parkAfterFirst = this.daemonMode && isUnconditional(node.condition, true);
     let iterations = 0;
     while (iterations++ < MAX_ITERATIONS) {
       this.errexitSuppress++;
       try { yield* this.visitCommandList(node.condition); }
       finally { this.errexitSuppress--; }
       if (this.env.lastExitCode !== 0) break;
+      if (parkAfterFirst && iterations > 1) throw new DaemonParkSignal(this.output.join(''), this);
       try {
         yield* this.visitCommandList(node.body);
       } catch (e) {
@@ -1172,12 +1208,14 @@ export class BashInterpreter {
 
   private *visitUntil(node: UntilClause): Effects<void> {
     const MAX_ITERATIONS = 10000;
+    const parkAfterFirst = this.daemonMode && isUnconditional(node.condition, false);
     let iterations = 0;
     while (iterations++ < MAX_ITERATIONS) {
       this.errexitSuppress++;
       try { yield* this.visitCommandList(node.condition); }
       finally { this.errexitSuppress--; }
       if (this.env.lastExitCode === 0) break;
+      if (parkAfterFirst && iterations > 1) throw new DaemonParkSignal(this.output.join(''), this);
       try {
         yield* this.visitCommandList(node.body);
       } catch (e) {
@@ -1444,6 +1482,21 @@ export class BashInterpreter {
  * arguments to the local scope. `readonly` and `export` are NOT in
  * this list — they keep the parent-walking semantics.
  */
+/** True for a bare `true`/`:` (expectTrue) or `false` (!expectTrue) condition
+ *  — an unconditional loop head like `while true`/`until false`. */
+function isUnconditional(condition: CommandList, expectTrue: boolean): boolean {
+  if (condition.commands.length !== 1) return false;
+  const andOr = condition.commands[0];
+  if (andOr.rest.length !== 0) return false;
+  const pipeline = andOr.first;
+  if (pipeline.commands.length !== 1 || pipeline.negated) return false;
+  const cmd = pipeline.commands[0];
+  if (cmd.type !== 'SimpleCommand' || cmd.words.length !== 1 || cmd.assignments.length !== 0) return false;
+  const w = cmd.words[0];
+  if (w.type !== 'LiteralWord') return false;
+  return expectTrue ? (w.value === 'true' || w.value === ':') : w.value === 'false';
+}
+
 function isDeclScopingCommand(name: string): boolean {
   return name === 'local' || name === 'declare' || name === 'typeset';
 }
