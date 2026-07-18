@@ -85,6 +85,10 @@ export class LinuxJob {
   durationMs?: number;
   completesAt?: number;
 
+  /** Set when this job parked in an unconditional loop (see
+   *  DaemonParkSignal) — kept alive so `kill -SIGNAL` can fire its traps. */
+  parkedInterp?: import('@/bash/interpreter/BashInterpreter').BashInterpreter;
+
   constructor(init: LinuxJobInit) {
     this.id = init.id;
     this.pid = init.pid;
@@ -157,6 +161,7 @@ export class LinuxJob {
     const out: Record<string, unknown> = {};
     for (const [k, v] of Object.entries(this)) {
       if (typeof v === 'function') continue;
+      if (k === 'parkedInterp') continue; // live object, not serializable state
       out[k] = v;
     }
     return out;

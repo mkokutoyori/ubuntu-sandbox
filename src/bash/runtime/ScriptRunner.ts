@@ -15,6 +15,7 @@ import type { INode } from '@/network/devices/linux/VirtualFileSystem';
 import { BashLexer } from '@/bash/lexer/BashLexer';
 import { BashParser } from '@/bash/parser/BashParser';
 import { BashInterpreter, type IOContext } from '@/bash/interpreter/BashInterpreter';
+import { DaemonParkSignal } from '@/bash/errors/BashError';
 import type { AliasTable } from '@/bash/runtime/AliasTable';
 
 export interface ScriptResult {
@@ -27,6 +28,11 @@ export interface ScriptResult {
    * merged terminal view; this lets callers route stderr independently.
    */
   stderr?: string;
+  /** True when a `daemonMode` job parked in an unconditional loop instead
+   *  of running forever — see {@link DaemonParkSignal}. `interp` is the
+   *  live interpreter, kept alive so `kill -SIGNAL` can fire its traps. */
+  parked?: boolean;
+  interp?: BashInterpreter;
 }
 
 /**
@@ -88,13 +94,14 @@ export function runScriptContent(
   executeCommand: (args: string[], env?: Record<string, string>, background?: boolean) => { output: string; exitCode: number; backgroundPid?: number },
   variables?: Record<string, string>,
   io?: IOContext,
-  identity?: { pid?: number; ppid?: number; initialExitCode?: number },
+  identity?: { pid?: number; ppid?: number; initialExitCode?: number; daemonMode?: boolean },
   aliases?: AliasTable,
   functions?: Map<string, import('@/bash/parser/ASTNode').Command>,
 ): ScriptResult {
   // Strip shebang, then preprocess heredocs
   const source = preprocessHeredocs(stripShebang(content));
 
+  let interp: BashInterpreter | undefined;
   try {
     const lexer = new BashLexer();
     const parser = new BashParser();
@@ -102,7 +109,7 @@ export function runScriptContent(
     const tokens = lexer.tokenize(source);
     const ast = parser.parse(tokens);
 
-    const interp = new BashInterpreter({
+    interp = new BashInterpreter({
       executeCommand: (args, env, background) => executeCommand(args, env, background),
       variables: variables ?? {},
       scriptName,
@@ -113,6 +120,7 @@ export function runScriptContent(
       initialExitCode: identity?.initialExitCode,
       aliases,
       functions,
+      daemonMode: identity?.daemonMode,
     });
 
     const result = interp.execute(ast);
@@ -123,6 +131,12 @@ export function runScriptContent(
     }
     return { ...result, env: finalEnv };
   } catch (e: unknown) {
+    if (e instanceof DaemonParkSignal) {
+      const parkedInterp = (e.interp as BashInterpreter | undefined) ?? interp;
+      const finalEnv: Record<string, string> = {};
+      if (parkedInterp) for (const [k, v] of parkedInterp.env.getAll()) finalEnv[k] = v;
+      return { output: e.output, exitCode: 0, env: finalEnv, parked: true, interp: parkedInterp };
+    }
     const msg = e instanceof Error ? e.message : String(e);
     // Normalize lexer/parser errors to "syntax error" format for compatibility
     const normalized = msg.replace(/Lexer error|Parse error/, 'syntax error');
@@ -140,15 +154,17 @@ export async function runScriptContentAsync(
   scriptName: string,
   scriptArgs: string[],
   executeCommand: (args: string[], env?: Record<string, string>, background?: boolean) =>
-    { output: string; exitCode: number; backgroundPid?: number } | Promise<{ output: string; exitCode: number; backgroundPid?: number }>,
+    { output: string; exitCode: number; stderr?: string; backgroundPid?: number }
+    | Promise<{ output: string; exitCode: number; stderr?: string; backgroundPid?: number }>,
   variables?: Record<string, string>,
   io?: IOContext,
-  identity?: { pid?: number; ppid?: number; initialExitCode?: number },
+  identity?: { pid?: number; ppid?: number; initialExitCode?: number; daemonMode?: boolean },
   aliases?: AliasTable,
   functions?: Map<string, import('@/bash/parser/ASTNode').Command>,
 ): Promise<ScriptResult> {
   const source = preprocessHeredocs(stripShebang(content));
 
+  let interp: BashInterpreter | undefined;
   try {
     const lexer = new BashLexer();
     const parser = new BashParser();
@@ -156,7 +172,7 @@ export async function runScriptContentAsync(
     const tokens = lexer.tokenize(source);
     const ast = parser.parse(tokens);
 
-    const interp = new BashInterpreter({
+    interp = new BashInterpreter({
       executeCommand: (args, env, background) => executeCommand(args, env, background),
       variables: variables ?? {},
       scriptName,
@@ -167,6 +183,7 @@ export async function runScriptContentAsync(
       initialExitCode: identity?.initialExitCode,
       aliases,
       functions,
+      daemonMode: identity?.daemonMode,
     });
 
     const result = await interp.executeAsync(ast);
@@ -176,6 +193,12 @@ export async function runScriptContentAsync(
     }
     return { ...result, env: finalEnv };
   } catch (e: unknown) {
+    if (e instanceof DaemonParkSignal) {
+      const parkedInterp = (e.interp as BashInterpreter | undefined) ?? interp;
+      const finalEnv: Record<string, string> = {};
+      if (parkedInterp) for (const [k, v] of parkedInterp.env.getAll()) finalEnv[k] = v;
+      return { output: e.output, exitCode: 0, env: finalEnv, parked: true, interp: parkedInterp };
+    }
     const msg = e instanceof Error ? e.message : String(e);
     const normalized = msg.replace(/Lexer error|Parse error/, 'syntax error');
     return { output: `bash: ${scriptName}: ${normalized}\n`, exitCode: 2 };
@@ -259,10 +282,13 @@ function preprocessHeredocs(source: string): string {
 
   while (i < lines.length) {
     const line = lines[i];
-    // Match << or <<- followed by optional space and a delimiter word
-    // Use (?<!<) lookbehind and (?!<) lookahead to avoid matching <<< (herestring)
+    // Match << or <<- followed by optional space and a delimiter word.
+    // Use (?<!<) lookbehind and (?!<) lookahead to avoid matching <<< (herestring).
+    // No end-of-line anchor: `cat << 'EOF' > file` is common and valid —
+    // whatever trails the delimiter (a redirection, another word) is kept
+    // verbatim after the `<<<` replacement below.
     const heredocMatch = line.match(
-      /(?<!<)<<(-?)(?!<)\s*(?:'([^']+)'|"([^"]+)"|(\S+))\s*$/,
+      /(?<!<)<<(-?)(?!<)\s*(?:'([^']+)'|"([^"]+)"|(\S+))/,
     );
 
     if (!heredocMatch) {
@@ -291,15 +317,17 @@ function preprocessHeredocs(source: string): string {
 
     const body = bodyLines.join('\n');
 
-    // Replace << ... with <<< 'body' or <<< "body"
+    // Replace << ... with <<< 'body' or <<< "body", preserving whatever
+    // trailed the delimiter on the original line (e.g. `> file`).
     const prefix = line.substring(0, heredocMatch.index!);
+    const suffix = line.substring(heredocMatch.index! + heredocMatch[0].length);
     if (isQuoted) {
       // Single-quoted herestring: no expansion, and no escape processing
       // either — a literal backslash in the body must stay a single
       // backslash, so only the quote character itself needs the
       // close-quote/escape/reopen-quote trick.
       const escaped = body.replace(/'/g, "'\\''");
-      result.push(prefix + "<<< '" + escaped + "'");
+      result.push(prefix + "<<< '" + escaped + "'" + suffix);
     } else {
       // Double-quoted herestring: expansion will happen. An unquoted
       // heredoc's own escaping rules (\$, \`, \\ are special; any other
@@ -308,7 +336,7 @@ function preprocessHeredocs(source: string): string {
       // character itself needs escaping so it doesn't end the herestring
       // early when re-lexed.
       const escaped = body.replace(/"/g, '\\"');
-      result.push(prefix + '<<< "' + escaped + '"');
+      result.push(prefix + '<<< "' + escaped + '"' + suffix);
     }
   }
 
@@ -360,6 +388,7 @@ function buildIOContext(ctx: ShellContext): IOContext {
 
 /** Build initial environment variables from ShellContext. */
 function buildEnvVars(ctx: ShellContext): Record<string, string> {
+  if (ctx.envOverride) return { ...ctx.envOverride };
   return {
     HOME: ctx.uid === 0 ? '/root' : `/home/${ctx.userMgr.currentUser}`,
     PWD: ctx.cwd,

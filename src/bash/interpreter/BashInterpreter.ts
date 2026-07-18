@@ -29,7 +29,7 @@ import { Environment } from '@/bash/runtime/Environment';
 import { expandWord, expandWords, BashRuntimeError, evaluateArithmetic } from '@/bash/runtime/Expansion';
 import type { GlobFn, HomeForFn } from '@/bash/runtime/Expansion';
 import {
-  ExitSignal, ReturnSignal, BreakSignal, ContinueSignal,
+  ExitSignal, ReturnSignal, BreakSignal, ContinueSignal, DaemonParkSignal,
 } from '@/bash/errors/BashError';
 import { isBuiltin, executeBuiltin } from '@/bash/runtime/Builtins';
 import { AliasTable } from '@/bash/runtime/AliasTable';
@@ -128,6 +128,9 @@ export interface InterpreterOptions {
    */
   aliases?: AliasTable;
   functions?: Map<string, Command>;
+  /** True for a backgrounded job — makes unconditional loops (`while
+   *  true`) run their body once, then park via {@link DaemonParkSignal}. */
+  daemonMode?: boolean;
 }
 
 /**
@@ -178,15 +181,21 @@ export class BashInterpreter {
    * this lets a caller's `2>` redirection peel stderr off coherently.
    */
   private stderrParts: string[] = [];
+  /** Set by a bare `exec >> file 2>> errfile` — see visitSimpleCommandWithInput. */
+  private execRedirect: { stdout?: { path: string; append: boolean }; stderr?: { path: string; append: boolean } } | null = null;
+  /** >0 while running a stage inside a multi-command pipeline — see `runPipelineStages`. */
+  private pipelineDepth = 0;
   private functions: Map<string, Command>;
   /** Command aliases — shared with the owning shell when one is passed. */
   readonly aliases: AliasTable;
+  private readonly daemonMode: boolean;
 
   constructor(options: InterpreterOptions) {
     this.executeCommand = options.executeCommand;
     this.io = options.io ?? null;
     this.aliases = options.aliases ?? new AliasTable();
     this.functions = options.functions ?? new Map();
+    this.daemonMode = options.daemonMode ?? false;
     this.env = new Environment({
       variables: options.variables,
       scriptName: options.scriptName ?? 'bash',
@@ -220,6 +229,35 @@ export class BashInterpreter {
     return this.driveSync(this.subcommandG(cmd));
   }
 
+  getTrap(signal: string): string | undefined {
+    return this.env.getTrap(signal);
+  }
+
+  /** Run a `trap` handler against this interpreter's live env — how a
+   *  POSIX signal reaches a parked background job. Returns whether the
+   *  handler called `exit` (only then should the caller terminate). */
+  runInterrupt(signalHandlerBody: string): { output: string; exited: boolean; exitCode: number } {
+    const savedOutput = this.output;
+    this.output = [];
+    let exited = false;
+    let exitCode = this.env.lastExitCode;
+    try {
+      this.driveSync(this.executeEvalG(signalHandlerBody));
+    } catch (e) {
+      if (e instanceof ExitSignal) {
+        exited = true;
+        exitCode = e.exitCode;
+        this.env.lastExitCode = exitCode;
+        this.driveSync(this.fireExitTrap()); // exit always fires EXIT, even mid-signal-handler
+      } else {
+        throw e;
+      }
+    }
+    const out = this.output.join('');
+    this.output = savedOutput;
+    return { output: out, exited, exitCode };
+  }
+
   // ─── Drivers ──────────────────────────────────────────────────
 
   private driveSync<T>(gen: Effects<T>): T {
@@ -237,7 +275,7 @@ export class BashInterpreter {
           feed = normalizeResult(raw);
         }
       } catch (e) {
-        if (e instanceof ExitSignal) {
+        if (e instanceof ExitSignal || e instanceof DaemonParkSignal) {
           step = gen.throw(e);
           continue;
         }
@@ -255,7 +293,7 @@ export class BashInterpreter {
       try {
         feed = normalizeResult(await this.executeCommand(step.value.argv, step.value.env, step.value.background));
       } catch (e) {
-        if (e instanceof ExitSignal) {
+        if (e instanceof ExitSignal || e instanceof DaemonParkSignal) {
           step = gen.throw(e);
           continue;
         }
@@ -277,13 +315,31 @@ export class BashInterpreter {
       } else if (e instanceof BashRuntimeError) {
         this.output.push(`bash: ${e.message}\n`);
         this.env.lastExitCode = 1;
+      } else if (e instanceof DaemonParkSignal) {
+        throw e; // parked, not exiting — no EXIT trap
       } else {
         yield* this.fireExitTrap();
         throw e;
       }
     }
     yield* this.fireExitTrap();
-    return { output: this.output.join(''), exitCode: this.env.lastExitCode, stderr: this.stderrParts.join('') };
+    const output = this.output.join('');
+    const stderr = this.stderrParts.join('');
+    if (this.execRedirect && this.io) {
+      // Lines explicitly routed to fd 2 (e.g. `echo x >&2`) also land in
+      // the merged `output` view — strip them out so they aren't
+      // duplicated into the stdout target too.
+      const stderrLines = new Set(stderr.split('\n').filter((l) => l.length > 0));
+      const stdoutOnly = output.split('\n').filter((l) => !stderrLines.has(l)).join('\n');
+      if (this.execRedirect.stdout) {
+        this.io.writeFile(this.execRedirect.stdout.path, stdoutOnly, this.execRedirect.stdout.append);
+      }
+      if (this.execRedirect.stderr) {
+        this.io.writeFile(this.execRedirect.stderr.path, stderr, this.execRedirect.stderr.append);
+      }
+      return { output: '', exitCode: this.env.lastExitCode, stderr: '' };
+    }
+    return { output, exitCode: this.env.lastExitCode, stderr };
   }
 
   // ─── Expansion bridge (replay with memoization) ───────────────
@@ -486,32 +542,42 @@ export class BashInterpreter {
     // Multi-stage pipeline: chain stdout → stdin (simplified: pass output as arg)
     const stageCodes: number[] = [];
     let pipeInput = '';
-    for (let i = 0; i < node.commands.length; i++) {
-      const cmd = node.commands[i];
-      const savedOutput = this.output;
-      this.output = [];
+    const stderrMarker = this.stderrParts.length;
+    this.pipelineDepth++;
+    try {
+      for (let i = 0; i < node.commands.length; i++) {
+        const cmd = node.commands[i];
+        const savedOutput = this.output;
+        this.output = [];
 
-      // Every stage except the last is itself a guard — its failure
-      // must NOT trigger errexit, only the final stage's (or, with
-      // pipefail, the aggregate) does.
-      const isLast = i === node.commands.length - 1;
-      if (!isLast) this.errexitSuppress++;
-      try {
-        if (cmd.type === 'SimpleCommand' && pipeInput) {
-          yield* this.visitSimpleCommandWithInput(cmd, pipeInput);
-        } else {
-          yield* this.visitCommand(cmd);
+        // Every stage except the last is itself a guard — its failure
+        // must NOT trigger errexit, only the final stage's (or, with
+        // pipefail, the aggregate) does.
+        const isLast = i === node.commands.length - 1;
+        if (!isLast) this.errexitSuppress++;
+        try {
+          if (cmd.type === 'SimpleCommand' && pipeInput) {
+            yield* this.visitSimpleCommandWithInput(cmd, pipeInput);
+          } else {
+            yield* this.visitCommand(cmd);
+          }
+        } finally {
+          if (!isLast) this.errexitSuppress--;
         }
-      } finally {
-        if (!isLast) this.errexitSuppress--;
-      }
-      stageCodes.push(this.env.lastExitCode);
+        stageCodes.push(this.env.lastExitCode);
 
-      pipeInput = this.output.join('');
-      this.output = savedOutput;
+        pipeInput = this.output.join('');
+        this.output = savedOutput;
+      }
+    } finally {
+      this.pipelineDepth--;
     }
     // Final stage output goes to real output
     if (pipeInput) this.output.push(pipeInput);
+    // Every stage's fd 2 bypasses the pipe and reaches the terminal
+    // directly, like real concurrent processes sharing the inherited fd 2.
+    const pipelineStderr = this.stderrParts.slice(stderrMarker).join('');
+    if (pipelineStderr) this.output.push(pipelineStderr);
     if (this.isPipefail()) {
       const nonZero = stageCodes.filter(c => c !== 0);
       this.env.lastExitCode = nonZero.length > 0 ? nonZero[nonZero.length - 1] : 0;
@@ -676,6 +742,14 @@ export class BashInterpreter {
     const args = this.expandAliases(yield* this.expandWordsG(node.words));
     const cmdName = args[0];
 
+    // `exec >> file 2>> errfile` (no command, only redirections) rewires
+    // the shell's own stdout/stderr for the rest of the script.
+    // `exec cmd …` (a real command follows) is unrelated, not handled here.
+    if (cmdName === 'exec' && args.length === 1 && node.redirections.length > 0) {
+      yield* this.applyExecRedirections(node.redirections);
+      return;
+    }
+
     // Handle eval: re-parse and execute the joined args
     if (cmdName === 'eval') {
       yield* this.executeEvalG(args.slice(1).join(' '));
@@ -722,17 +796,18 @@ export class BashInterpreter {
       if (result.stderr !== undefined) {
         // The command separates fd 1 / fd 2. Stdout flows normally;
         // stderr is mirrored to the pure stderr stream (and, with no
-        // fd-2 redirection, also to the merged terminal view).
+        // fd-2 redirection, also to the merged terminal view) — except
+        // inside a pipeline stage, where fd 2 bypasses the pipe entirely
+        // and must not leak into the next stage's stdin (see
+        // `runPipelineStages`).
         explicitStderr = result.stderr;
         if (result.output) {
           this.output.push(hasAnyRedirect ? result.output : ensureTrailingNewline(result.output));
         }
         if (result.stderr) {
-          if (hasAnyRedirect) {
-            this.stderrParts.push(result.stderr);
-          } else {
+          this.stderrParts.push(result.stderr);
+          if (!hasAnyRedirect && this.pipelineDepth === 0) {
             this.output.push(ensureTrailingNewline(result.stderr));
-            this.stderrParts.push(result.stderr);
           }
         }
       } else if (result.output) {
@@ -945,13 +1020,15 @@ export class BashInterpreter {
 
       try {
         if (redir.op === '>&') {
-          // `N>&M` duplicates fd N onto fd M. Numeric target → fd merge
-          // (e.g. `2>&1` keeps everything on stdout); only treat as a
-          // file-write if the target is not a digit.
+          // `N>&M` duplicates fd N onto fd M. Numeric target → fd merge;
+          // only treat as a file-write if the target is not a digit.
           if (/^\d+$/.test(target)) {
-            // Merge — output stays captured and flows to stdout below.
-            stderrHandled = true;
-            if (target === '2') dupToStderr = true;
+            // `2>&1` shares fd 1's fate: if fd 1 was already redirected
+            // earlier in this command (`> file 2>&1`), stderr follows it
+            // there; otherwise leave it merged into the terminal output.
+            // `1>&2`/`>&2` marks stderrHandled so a parent `2>` can peel it off.
+            if (target === '2') { stderrHandled = true; dupToStderr = true; }
+            else if (target === '1' && redir.fd === 2 && stdoutHandled) { stderrHandled = true; }
           } else {
             this.io.writeFile(path, capturedOutput, false);
             stdoutHandled = true;
@@ -994,6 +1071,26 @@ export class BashInterpreter {
       this.output.push(capturedOutput);
       this.stderrParts.push(capturedOutput);
     }
+  }
+
+  /**
+   * `exec >> file 2>> errfile` — resolve each redirection target and
+   * remember it as the shell's own stdout/stderr for the remainder of
+   * this script; `runProgram` flushes accumulated output there instead
+   * of returning it as terminal text once the script finishes.
+   */
+  private *applyExecRedirections(redirections: Redirection[]): Effects<void> {
+    for (const redir of redirections) {
+      if (redir.op !== '>' && redir.op !== '>>') continue;
+      const target = yield* this.expandWordG(redir.target);
+      const path = this.io ? this.io.resolvePath(target) : target;
+      const append = redir.op === '>>';
+      const fd = redir.fd ?? 1;
+      this.execRedirect ??= {};
+      if (fd === 2) this.execRedirect.stderr = { path, append };
+      else this.execRedirect.stdout = { path, append };
+    }
+    this.env.lastExitCode = 0;
   }
 
   /**
@@ -1133,12 +1230,14 @@ export class BashInterpreter {
 
   private *runWhileLoop(node: WhileClause): Effects<void> {
     const MAX_ITERATIONS = 10000;
+    const parkAfterFirst = this.daemonMode && isUnconditional(node.condition, true);
     let iterations = 0;
     while (iterations++ < MAX_ITERATIONS) {
       this.errexitSuppress++;
       try { yield* this.visitCommandList(node.condition); }
       finally { this.errexitSuppress--; }
       if (this.env.lastExitCode !== 0) break;
+      if (parkAfterFirst && iterations > 1) throw new DaemonParkSignal(this.output.join(''), this);
       try {
         yield* this.visitCommandList(node.body);
       } catch (e) {
@@ -1159,12 +1258,14 @@ export class BashInterpreter {
 
   private *visitUntil(node: UntilClause): Effects<void> {
     const MAX_ITERATIONS = 10000;
+    const parkAfterFirst = this.daemonMode && isUnconditional(node.condition, false);
     let iterations = 0;
     while (iterations++ < MAX_ITERATIONS) {
       this.errexitSuppress++;
       try { yield* this.visitCommandList(node.condition); }
       finally { this.errexitSuppress--; }
       if (this.env.lastExitCode === 0) break;
+      if (parkAfterFirst && iterations > 1) throw new DaemonParkSignal(this.output.join(''), this);
       try {
         yield* this.visitCommandList(node.body);
       } catch (e) {
@@ -1431,6 +1532,21 @@ export class BashInterpreter {
  * arguments to the local scope. `readonly` and `export` are NOT in
  * this list — they keep the parent-walking semantics.
  */
+/** True for a bare `true`/`:` (expectTrue) or `false` (!expectTrue) condition
+ *  — an unconditional loop head like `while true`/`until false`. */
+function isUnconditional(condition: CommandList, expectTrue: boolean): boolean {
+  if (condition.commands.length !== 1) return false;
+  const andOr = condition.commands[0];
+  if (andOr.rest.length !== 0) return false;
+  const pipeline = andOr.first;
+  if (pipeline.commands.length !== 1 || pipeline.negated) return false;
+  const cmd = pipeline.commands[0];
+  if (cmd.type !== 'SimpleCommand' || cmd.words.length !== 1 || cmd.assignments.length !== 0) return false;
+  const w = cmd.words[0];
+  if (w.type !== 'LiteralWord') return false;
+  return expectTrue ? (w.value === 'true' || w.value === ':') : w.value === 'false';
+}
+
 function isDeclScopingCommand(name: string): boolean {
   return name === 'local' || name === 'declare' || name === 'typeset';
 }

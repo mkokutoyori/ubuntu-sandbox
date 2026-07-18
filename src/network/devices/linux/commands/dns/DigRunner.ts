@@ -367,6 +367,15 @@ async function executeSingleQuery(invocation: DigInvocation, query: DnsQueryFn):
   }
   if (!message) return noServersLine(banner);
 
+  // RFC 1035 §4.2.1 — real dig retries TC=1 over TCP by default.
+  if (message.flags.tc && !options.tcp) {
+    const tcpMessage = await query(
+      invocation.server, invocation.domain, invocation.qtype,
+      invocation.timeoutSeconds * 1000, { ...options, tcp: true },
+    );
+    if (tcpMessage) message = tcpMessage;
+  }
+
   if (invocation.qtype === 'AXFR' || invocation.qtype === 'IXFR') {
     return transferOutput(invocation, message);
   }

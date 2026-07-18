@@ -670,6 +670,11 @@ export class AwkInterpreter {
     const s = toStr(this.eval(args[0]), this.convfmt());
     const ere = args[1].kind === 'regex' ? args[1].value : toStr(this.eval(args[1]), this.convfmt());
     const m = compileEre(ere).exec(s);
+    if (args.length > 2) {
+      const arr = this.getArray((args[2] as { name: string }).name);
+      arr.clear();
+      if (m) m.forEach((g, i) => arr.set(String(i), new StrNum(g ?? '')));
+    }
     if (!m) { this.globals.set('RSTART', 0); this.globals.set('RLENGTH', -1); return 0; }
     this.globals.set('RSTART', m.index + 1);
     this.globals.set('RLENGTH', m[0].length);

@@ -114,6 +114,8 @@ export interface LinuxNetKernel {
   addStaticARP(ip: IPAddress, mac: MACAddress, iface: string): void;
   deleteARP(ip: IPAddress): boolean;
   clearARPTable(): void;
+  /** RFC 5227 gratuitous ARP broadcast (`arping -A`/`-U`). False if the interface has no cable. */
+  sendGratuitousArp(iface: string, ip: IPAddress, mode: 'request' | 'reply'): boolean;
 
   // ─── L3 probes ───────────────────────────────────────────────────
   /** True if the kernel has a route (default or specific) to reach `target`. */

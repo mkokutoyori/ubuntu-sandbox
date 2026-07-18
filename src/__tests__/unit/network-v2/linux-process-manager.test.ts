@@ -22,17 +22,33 @@ describe('LinuxProcessManager', () => {
 
     it('lists init in process list', () => {
       const procs = pm.list();
-      expect(procs.length).toBe(1);
       expect(procs[0].pid).toBe(1);
+      expect(procs[0].comm).toBe('systemd');
+    });
+
+    it('boots with kthreadd as PID 2, parent of every kernel thread', () => {
+      const kthreadd = pm.get(2);
+      expect(kthreadd).toBeDefined();
+      expect(kthreadd!.comm).toBe('[kthreadd]');
+      expect(kthreadd!.ppid).toBe(0);
+      expect(kthreadd!.uid).toBe(0);
+
+      const kernelThreads = pm.list({ ppid: 2 });
+      expect(kernelThreads.length).toBeGreaterThan(0);
+      for (const kt of kernelThreads) {
+        expect(kt.comm.startsWith('[')).toBe(true);
+        expect(kt.comm.endsWith(']')).toBe(true);
+        expect(kt.uid).toBe(0);
+      }
     });
   });
 
   describe('spawn', () => {
-    it('allocates sequential PIDs starting from 2', () => {
+    it('allocates sequential PIDs after the reserved kernel-thread range', () => {
       const p1 = pm.spawn({ command: '/usr/bin/sleep 60', user: 'root', uid: 0, gid: 0 });
       const p2 = pm.spawn({ command: '/usr/bin/cat /tmp/x', user: 'root', uid: 0, gid: 0 });
-      expect(p1.pid).toBe(2);
-      expect(p2.pid).toBe(3);
+      expect(p1.pid).toBeGreaterThan(2);
+      expect(p2.pid).toBe(p1.pid + 1);
     });
 
     it('parses comm from command path', () => {
@@ -79,9 +95,10 @@ describe('LinuxProcessManager', () => {
     });
 
     it('lists all processes', () => {
+      const before = pm.list().length;
       pm.spawn({ command: '/a', user: 'u', uid: 1, gid: 1 });
       pm.spawn({ command: '/b', user: 'u', uid: 1, gid: 1 });
-      expect(pm.list().length).toBe(3); // +init
+      expect(pm.list().length).toBe(before + 2);
     });
 
     it('filters by user', () => {

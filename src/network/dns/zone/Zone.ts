@@ -29,6 +29,8 @@ export class Zone {
   readonly origin: string;
   private soaRecord: ResourceRecord<SoaRecordData>;
   private readonly rrsets = new Map<string, Map<number, ResourceRecord<ResourceRecordData>[]>>();
+  // RFC 1035 §4.3.5 round-robin rotation state, keyed by name|type.
+  private readonly rrRotation = new Map<string, number>();
 
   constructor(origin: string, soa: ResourceRecord<SoaRecordData>) {
     this.origin = normalize(origin);
@@ -108,6 +110,16 @@ export class Zone {
     return this.rrsets.has(normalize(name));
   }
 
+  private rotated(
+    name: string, type: number, records: readonly ResourceRecord<ResourceRecordData>[],
+  ): ResourceRecord<ResourceRecordData>[] {
+    if (records.length <= 1) return [...records];
+    const key = `${name}|${type}`;
+    const start = (this.rrRotation.get(key) ?? 0) % records.length;
+    this.rrRotation.set(key, (start + 1) % records.length);
+    return [...records.slice(start), ...records.slice(0, start)];
+  }
+
   private findEnclosingDelegation(name: string): readonly ResourceRecord<NsRecordData>[] | null {
     let ancestor = parentOf(name);
     while (ancestor !== null && isWithinOrigin(ancestor, this.origin) && ancestor !== this.origin) {
@@ -132,9 +144,16 @@ export class Zone {
       return { kind: 'delegation', nsRecords: ownNs as ResourceRecord<NsRecordData>[] };
     }
 
+    // RFC 1035 §3.2.3 — ANY is a meta-QTYPE, not a stored record type.
+    if (qtype === RRType.ANY && ownRrsets && ownRrsets.size > 0) {
+      const all: ResourceRecord<ResourceRecordData>[] = [];
+      for (const [type, set] of ownRrsets) all.push(...this.rotated(name, type, set));
+      return { kind: 'answer', records: all };
+    }
+
     const exact = ownRrsets?.get(qtype);
     if (exact) {
-      return { kind: 'answer', records: exact };
+      return { kind: 'answer', records: this.rotated(name, qtype, exact) };
     }
 
     const cname = ownRrsets?.get(RRType.CNAME);

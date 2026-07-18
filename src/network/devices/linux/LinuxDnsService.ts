@@ -174,9 +174,27 @@ export { executeNslookup } from './commands/dns/NslookupRunner';
 
 // ─── host command implementation ─────────────────────────────────
 
+function formatHostAnswer(domain: string, r: DnsRecord): string {
+  switch (r.type) {
+    case 'AAAA': return `${domain} has IPv6 address ${r.value}`;
+    case 'MX': return `${domain} mail is handled by ${r.priority ?? 0} ${r.value}`;
+    case 'TXT': return `${domain} descriptive text "${r.value}"`;
+    case 'CNAME': return `${domain} is an alias for ${r.value}`;
+    case 'NS': return `${domain} name server ${r.value}`;
+    case 'PTR': return `${domain} domain name pointer ${r.value}`;
+    default: return `${domain} has address ${r.value}`;
+  }
+}
+
 export async function executeHost(args: string[], query: DnsQueryFn, resolverIP?: string): Promise<string> {
-  const domain = args[0];
-  const server = args[1] || resolverIP || '';
+  let qtype = 'A';
+  const positional: string[] = [];
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] === '-t') { qtype = args[++i]?.toUpperCase() ?? qtype; continue; }
+    if (!args[i].startsWith('-')) positional.push(args[i]);
+  }
+  const domain = positional[0];
+  const server = positional[1] || resolverIP || '';
 
   if (!domain) return 'Usage: host [-t type] name [server]';
 
@@ -184,7 +202,7 @@ export async function executeHost(args: string[], query: DnsQueryFn, resolverIP?
     return `Host ${domain} not found: 5(REFUSED)`;
   }
 
-  const message = await query(server, domain, 'A');
+  const message = await query(server, domain, qtype);
   if (!message) {
     return `;; connection timed out; no servers could be reached`;
   }
@@ -194,5 +212,5 @@ export async function executeHost(args: string[], query: DnsQueryFn, resolverIP?
     return `Host ${domain} not found: 3(NXDOMAIN)`;
   }
 
-  return response.answers.map(r => `${domain} has address ${r.value}`).join('\n');
+  return response.answers.map(r => formatHostAnswer(domain, r)).join('\n');
 }

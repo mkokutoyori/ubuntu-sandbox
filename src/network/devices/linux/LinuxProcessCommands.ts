@@ -37,12 +37,17 @@ export interface ProcessCmdContext {
   tty: string;
   /** PID of the interactive `-bash`, so `ps -p $$` resolves. */
   shellPid?: number;
+  /** PID of whoever is currently executing this command (`currentBashPid()`);
+   *  used by `nice <cmd>`, which applies to the calling process, not `shellPid`. */
+  currentPid?: number;
   /** Optional per-shell job table — needed for `kill %N` jobspec resolution. */
   jobs?: LinuxJobTable;
   /** Seconds since boot, for `top`'s header. Same source as `uptime`. */
   uptimeSeconds?: number;
   /** Host memory model — same source as `free` / `/proc/meminfo`. */
   memory?: import('../host/hardware').MemoryProfile;
+  /** Runs a command line through the shell — backs `nice <cmd>`. */
+  execute?: (cmd: string) => { output: string; exitCode: number };
 }
 
 // ─── ps ───────────────────────────────────────────────────────────────

@@ -39,6 +39,9 @@ export interface ShellContext {
   uid: number;
   gid: number;
   color?: boolean;
+  /** When set, a script run through this context (e.g. a cron job) uses
+   *  this exact environment instead of the interactive session's. */
+  envOverride?: Record<string, string>;
 }
 
 export function cmdTouch(ctx: ShellContext, args: string[]): string {
