@@ -148,7 +148,8 @@ function splitSshArgs(args: string[]): { positional: string[]; flags: string[] }
   return { positional, flags };
 }
 
-function readForceCommand(
+/** Exported for {@link file://../../../../shell/sshLauncher.ts} — the interactive `ssh` (no exec command) path enforces the same ForceCommand policy as this exec-mode client. */
+export function readForceCommand(
   machine: { executor?: { vfs?: { readFile: (p: string) => string | null }; userMgr?: { getUserGroups?: (u: string) => Array<{ name: string }> } } },
   user: string,
   sourceIp?: string,
@@ -1203,7 +1204,13 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
       readForceCommand(machine, remoteUser, opts.sourceIp, opts.sourceHostname)
       ?? auth.matchedKey?.options?.command
       ?? null;
-    if (forcedInteractive && forcedInteractive !== 'internal-sftp') {
+    // Real sshd refuses a bare interactive session just as it refuses one
+    // with an explicit remote command — internal-sftp never hands out a
+    // shell either way.
+    if (forcedInteractive === 'internal-sftp') {
+      return { output: 'This service allows sftp connections only.\n', exitCode: 1, connection };
+    }
+    if (forcedInteractive) {
       const restore = swapRemoteUser(machine, remoteUser);
       const execMod = machine.executor as undefined | { execute: (c: string) => string; lastExitCode?: number };
       let out = '';
