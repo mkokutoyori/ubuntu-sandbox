@@ -44,7 +44,7 @@ import {
 } from '../core/types';
 
 // Linux kernel / userspace
-import { LinuxCommandExecutor } from './linux/LinuxCommandExecutor';
+import { LinuxCommandExecutor, type SudoAuthorization } from './linux/LinuxCommandExecutor';
 import { sampleVmstat } from './linux/system/Vmstat';
 import { sampleMpstat, mpstatBanner, type MpstatArgs } from './linux/system/Mpstat';
 import { sampleIostatCpu, sampleIostatDevices, iostatBanner, type IostatArgs } from './linux/system/Iostat';
@@ -1819,8 +1819,17 @@ export abstract class LinuxMachine extends EndHost
     run: () => Promise<string> | string,
   ): Promise<string> {
     const userMgr = this.executor.userMgr;
-    if (isSudo && !this.executor.canSudo()) {
-      return `${userMgr.currentUser} is not in the sudoers file. This incident will be reported.`;
+    let auth: SudoAuthorization | null = null;
+    if (isSudo) {
+      auth = this.executor.authorizeSudo(firstCmd, args, 'root');
+      if (auth.reason === 'not-in-sudoers' || auth.reason === 'unknown-target-user') {
+        this.executor.writeSudoAuditLine('not-in-sudoers', auth, [firstCmd, ...args].join(' '));
+        return `${auth.invokingUser} is not in the sudoers file. This incident will be reported.`;
+      }
+      if (auth.reason === 'command-not-allowed') {
+        this.executor.writeSudoAuditLine('command-not-allowed', auth, [firstCmd, ...args].join(' '));
+        return `Sorry, user ${auth.invokingUser} is not allowed to execute '${[firstCmd, ...args].join(' ')}' as ${auth.runasUser} on ${auth.hostname}.`;
+      }
     }
     const savedUser = isSudo
       ? { user: userMgr.currentUser, uid: userMgr.currentUid, gid: userMgr.currentGid }
@@ -1829,6 +1838,7 @@ export abstract class LinuxMachine extends EndHost
       userMgr.currentUser = 'root';
       userMgr.currentUid = 0;
       userMgr.currentGid = 0;
+      this.executor.writeSudoAuditLine('success', auth!, [firstCmd, ...args].join(' '));
     }
     try {
       const actor = {
@@ -3111,6 +3121,14 @@ export abstract class LinuxMachine extends EndHost
     if (session.disposed) return this.writeFileFromEditor(path, content);
     const absPath = this.executor.vfs.normalizePath(path, session.cwd);
     return this.executor.vfs.writeFile(absPath, content, session.uid, session.gid, session.umask);
+  }
+
+  /** Force a path to root:root 0440 — visudo's own guarantee for every
+   *  sudoers-family file it installs, independent of the editing
+   *  session's umask. */
+  setSudoersFilePermissions(path: string): void {
+    this.executor.vfs.chown(path, 0, 0);
+    this.executor.vfs.chmod(path, 0o440);
   }
 
   /** Per-session variant of deleteFileFromEditor (used by editor swap/lock file cleanup). */

@@ -148,7 +148,7 @@ export class VirtualFileSystem {
       'DISTRIB_ID=Ubuntu\nDISTRIB_RELEASE=22.04\n' +
       'DISTRIB_CODENAME=jammy\nDISTRIB_DESCRIPTION="Ubuntu 22.04.4 LTS"\n',
       0o644, 0, 0);
-    this.createFileAt('/etc/sudoers', 'root ALL=(ALL:ALL) ALL\n%sudo ALL=(ALL:ALL) ALL\n', 0o440, 0, 0);
+    this.createFileAt('/etc/sudoers', 'root ALL=(ALL:ALL) ALL\n%sudo ALL=(ALL:ALL) ALL\n\n#includedir /etc/sudoers.d\n', 0o440, 0, 0);
     this.createFileAt('/etc/resolv.conf', '', 0o644, 0, 0);
 
     // UFW default config files

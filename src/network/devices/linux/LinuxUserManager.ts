@@ -14,6 +14,7 @@
 
 import { VirtualFileSystem } from './VirtualFileSystem';
 import { uptimeHeader } from './system/SystemInfo';
+import { loadSudoPolicy } from './iam/SudoPolicyEngine';
 import type { IEventBus } from '@/events/EventBus';
 import { GecosInfo } from './iam/GecosInfo';
 import {
@@ -1054,26 +1055,19 @@ export class LinuxUserManager {
     return '';
   }
 
+  /** Real sudoers-rule resolution (aliases, host/runas matching, fail-
+   *  closed on a broken chain) — not a substring search over raw files. */
   sudoList(username: string): string {
     const user = this.users.get(username);
     if (!user) return `User ${username} is not allowed to run sudo`;
-    const groups = this.getUserGroups(username);
-    const isSudo = groups.some(g => g.name === 'sudo');
-    if (isSudo || username === 'root') {
-      return `User ${username} may run the following commands on this host:\n    (ALL : ALL) ALL`;
+    const hostname = (this.vfs.readFile('/etc/hostname') ?? 'localhost').trim();
+    const actor = { user: username, groups: this.getUserGroups(username).map((g) => g.name) };
+    const load = loadSudoPolicy(this.vfs);
+    if (!load.ok || !load.engine || !load.engine.hasAnyAccess(actor, hostname, [])) {
+      return `User ${username} is not allowed to run sudo`;
     }
-    // Check sudoers.d
-    const sudoersDir = this.vfs.listDirectory('/etc/sudoers.d');
-    if (sudoersDir) {
-      for (const entry of sudoersDir) {
-        if (entry.name === '.' || entry.name === '..') continue;
-        const content = this.vfs.readFile(`/etc/sudoers.d/${entry.name}`);
-        if (content && content.includes(username)) {
-          return `User ${username} may run the following commands on this host:\n    ${content.trim()}`;
-        }
-      }
-    }
-    return `User ${username} is not allowed to run sudo`;
+    const lines = load.engine.renderMatchingRules(actor, hostname, []);
+    return `User ${username} may run the following commands on ${hostname}:\n${lines.map((l) => `    ${l}`).join('\n')}`;
   }
 
   who(): string {
