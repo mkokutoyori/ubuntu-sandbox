@@ -2776,6 +2776,15 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
   }
 
   /**
+   * Real `transport input` on the VTY lines — read by peers deciding
+   * whether an OUTBOUND telnet/ssh from THEM would be accepted here
+   * (`CiscoShellBase.remoteAcceptsTelnet`).
+   */
+  _getVtyTransportInput(): 'ssh' | 'telnet' | 'all' | 'none' {
+    return this.vtyTransportInput;
+  }
+
+  /**
    * Validate <user, password> through the local-user AAA database the
    * router builds from `username … secret …` (Cisco) or `local-user …
    * password cipher …` (Huawei). Overrides the {@link Equipment} stub

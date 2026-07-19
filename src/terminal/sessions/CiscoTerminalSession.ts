@@ -144,11 +144,18 @@ export class CiscoTerminalSession extends CLITerminalSession {
         type: 'execute',
         action: async (ctx) => {
           const username = ctx.values.get('console_login_account') ?? '';
-          const privilege = this.lookupAccountPrivilege(username);
+          // Real IOS: a `privilege level N` configured on the line
+          // OVERRIDES the authenticated user's own account privilege
+          // (confirmed behaviour, not just a "default when unset") --
+          // only fall back to the account's privilege when the line
+          // itself has no override configured.
+          const linePrivilege = this.consoleLinePrivilegeOverride();
+          const privilege = linePrivilege ?? this.lookupAccountPrivilege(username);
           if (this.vty) {
             this.vty.state.mode = privilege === 15 ? 'privileged' : 'user';
             this.vty.state.privilegeLevel = privilege;
           }
+          this.rearmExecTimeout();
         },
       },
       /* 5 */ { type: 'branch', predicate: () => 11 },
@@ -169,13 +176,104 @@ export class CiscoTerminalSession extends CLITerminalSession {
     ];
   }
 
-  protected override prepareAsRemoteUser(_user: string): void {
+  // Set by `prepareAsRemoteUser` -- `this.isRemoteChild` (`_parent !==
+  // null`) is NOT yet true at that point (`adoptRemoteChild` calls
+  // `prepareAsRemoteUser` BEFORE `attachAsChildOf`), so exec-timeout
+  // resolution needs its own explicit "this is a VTY line, not the
+  // console" flag rather than relying on parent-attachment timing.
+  private isVtyRemoteSession = false;
+
+  protected override prepareAsRemoteUser(user: string): void {
+    this.isVtyRemoteSession = true;
     if (this.vty) {
-      this.vty.state.mode = 'privileged';
-      this.vty.state.privilegeLevel = 15;
+      // Real IOS: a `privilege level N` configured on the VTY line
+      // OVERRIDES the authenticated user's own account privilege (same
+      // rule as the console line above) -- confirmed via Cisco's own
+      // documentation, not just a default-when-unset fallback.
+      const linePrivilege = this.vtyLinePrivilegeOverride();
+      const privilege = linePrivilege ?? this.lookupAccountPrivilege(user);
+      this.vty.state.mode = privilege === 15 ? 'privileged' : 'user';
+      this.vty.state.privilegeLevel = privilege;
     }
     this.isBooting = false;
     this.updatePrompt();
+    this.rearmExecTimeout();
+  }
+
+  /** `privilege level N` configured on `line console 0`, if any. */
+  private consoleLinePrivilegeOverride(): number | null {
+    const shell = (this.device as unknown as { getShell?: () => unknown }).getShell?.();
+    const cfg = (shell as {
+      _getConsoleLineConfig?: () => { privilegeLevel: number | null } | null;
+    } | undefined)?._getConsoleLineConfig?.();
+    return cfg?.privilegeLevel ?? null;
+  }
+
+  /**
+   * `privilege level N` configured on the (first) `line vty …` block, if
+   * any. The simulator does not track which specific VTY slot number an
+   * incoming session occupies, so — matching the common single-block
+   * configuration this scenario (and real small deployments) uses — the
+   * first configured VTY block's privilege applies.
+   */
+  private vtyLinePrivilegeOverride(): number | null {
+    const dev = this.device as unknown as {
+      _getVtyLineConfig?: () => { all: () => ReadonlyArray<{ privilege: number | null }> };
+    };
+    const block = dev._getVtyLineConfig?.().all()[0];
+    return block?.privilege ?? null;
+  }
+
+  // ── exec-timeout (idle disconnect) ──────────────────────────────────
+
+  protected override onCommandActivity(): void {
+    this.rearmExecTimeout();
+  }
+
+  /** Effective exec-timeout, in milliseconds, for the line this session represents. */
+  private resolveExecTimeoutMs(): number | null {
+    if (this.isVtyRemoteSession) {
+      const dev = this.device as unknown as {
+        _getVtyLineConfig?: () => { all: () => ReadonlyArray<{ execTimeoutMinutes: number | null; execTimeoutSeconds: number | null }> };
+      };
+      const block = dev._getVtyLineConfig?.().all()[0];
+      if (!block || (block.execTimeoutMinutes == null && block.execTimeoutSeconds == null)) return null;
+      return ((block.execTimeoutMinutes ?? 0) * 60 + (block.execTimeoutSeconds ?? 0)) * 1000;
+    }
+    const shell = (this.device as unknown as { getShell?: () => unknown }).getShell?.();
+    const cfg = (shell as {
+      _getConsoleLineConfig?: () => { execTimeoutMin: number | null; execTimeoutSec: number } | null;
+    } | undefined)?._getConsoleLineConfig?.();
+    if (!cfg || cfg.execTimeoutMin == null) return null;
+    return (cfg.execTimeoutMin * 60 + cfg.execTimeoutSec) * 1000;
+  }
+
+  private rearmExecTimeout(): void {
+    const ms = this.resolveExecTimeoutMs();
+    if (ms == null) { this.clearIdleTimer(); return; }
+    this.armIdleTimer(ms, () => this.onExecTimeout());
+  }
+
+  private onExecTimeout(): void {
+    if (this.disposed) return;
+    if (this.isRemoteChild) {
+      // VTY: the line drops -- the local (client) session sees the same
+      // "Connection to X closed." footer any other SSH teardown produces.
+      this.endRemoteSession();
+      return;
+    }
+    // Console: the EXEC session times out and resets to an unauthenticated
+    // line -- if `login local` is configured, the login banner reappears;
+    // otherwise this is a silent no-op (matches real IOS: exec-timeout on
+    // a line with no login configured just resets an idle session with
+    // nothing to reauthenticate).
+    if (this.vty) {
+      this.vty.state.mode = 'user';
+      this.vty.state.privilegeLevel = 1;
+    }
+    this.updatePrompt();
+    this.addLine(this.prompt);
+    this.maybeStartConsoleLogin();
   }
 
   /**
@@ -262,6 +360,25 @@ export class CiscoTerminalSession extends CLITerminalSession {
 
   protected getFallbackBootLines(): string[] {
     return []; // Cisco devices should always provide getBootSequence()
+  }
+
+  /**
+   * `logging synchronous` on the console line: while the operator has an
+   * unsubmitted command in progress, async output (syslog/monitor/debug)
+   * is deferred instead of visually interrupting the in-progress line —
+   * flushed once the command is submitted (`CLITerminalSession.
+   * executeCommand` calls `flushDeferredAsyncQueue()` right before
+   * echoing it). Without `logging synchronous` (real IOS default),
+   * nothing is deferred — async lines interrupt immediately.
+   */
+  protected override shouldDeferAsyncOutput(): boolean {
+    if (this.isRemoteChild) return false; // scoped to the console line for now
+    if (this.input.length === 0) return false;
+    const shell = (this.device as unknown as { getShell?: () => unknown }).getShell?.();
+    const cfg = (shell as {
+      _getConsoleLineConfig?: () => { loggingSynchronous: boolean } | null;
+    } | undefined)?._getConsoleLineConfig?.();
+    return cfg?.loggingSynchronous ?? false;
   }
 
   /**

@@ -262,6 +262,8 @@ export abstract class CLITerminalSession extends TerminalSession {
 
   private async executeCommand(cmd: string): Promise<void> {
     const trimmed = cmd.trim();
+    this.flushDeferredAsyncQueue();
+    this.onCommandActivity();
     this.addEchoLine(this.prompt, cmd);
 
     if (trimmed) {

@@ -166,6 +166,14 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
   protected consoleLinePrivilegeLevel: number | null = null;
   protected consoleLineExecTimeoutMin: number | null = null;
   protected consoleLineExecTimeoutSec: number = 0;
+  protected consoleLineLoggingSynchronous: boolean = false;
+
+  // `line aux 0` — real storage for `no exec` / `transport input`, which
+  // used to be silently swallowed (any directive typed under the AUX
+  // sub-mode fell through the console/VTY branches and was dropped).
+  protected selectedAuxLine: number | null = null;
+  protected auxLineNoExec: boolean = false;
+  protected auxLineTransportInput: 'ssh' | 'telnet' | 'all' | 'none' | null = null;
 
   _getAliasRunningConfigLines(): string[] {
     return this.aliases.toRunningConfig();
@@ -179,8 +187,9 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     privilegeLevel: number | null;
     execTimeoutMin: number | null;
     execTimeoutSec: number;
+    loggingSynchronous: boolean;
   } | null {
-    if (this.consoleLinePassword == null && this.consoleLineLogin == null && this.consoleLinePrivilegeLevel == null && this.consoleLineExecTimeoutMin == null) return null;
+    if (this.consoleLinePassword == null && this.consoleLineLogin == null && this.consoleLinePrivilegeLevel == null && this.consoleLineExecTimeoutMin == null && !this.consoleLineLoggingSynchronous) return null;
     return {
       line: this.selectedConsoleLine ?? 0,
       password: this.consoleLinePassword,
@@ -189,6 +198,16 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       privilegeLevel: this.consoleLinePrivilegeLevel,
       execTimeoutMin: this.consoleLineExecTimeoutMin,
       execTimeoutSec: this.consoleLineExecTimeoutSec,
+      loggingSynchronous: this.consoleLineLoggingSynchronous,
+    };
+  }
+
+  _getAuxLineConfig(): { line: number; noExec: boolean; transportInput: 'ssh' | 'telnet' | 'all' | 'none' | null } | null {
+    if (!this.auxLineNoExec && this.auxLineTransportInput == null) return null;
+    return {
+      line: this.selectedAuxLine ?? 0,
+      noExec: this.auxLineNoExec,
+      transportInput: this.auxLineTransportInput,
     };
   }
   protected terminalMonitor = false;
@@ -1094,8 +1113,8 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       showControllers(this.cs(), a.join(' ')));
     trie.registerGreedy('show environment', 'Display environment', () =>
       showEnvironment());
-    trie.registerGreedy('show line', 'Display TTY lines', () =>
-      showLine(this.cs()));
+    trie.registerGreedy('show line', 'Display TTY lines', (a) =>
+      showLine(this.cs(), a));
     trie.register('show ip ssh', 'Display SSH server status', () => showIpSsh());
     trie.register('show ip ssh known-hosts', 'Display learned SSH host keys', () => {
       const dev = this.d() as unknown as { _getSshKnownHosts?: () => { renderCisco: () => string } };
@@ -2379,9 +2398,15 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       } else if (kind === 'console' || kind === 'con') {
         this.selectedVtyRange = null;
         this.selectedConsoleLine = Number.parseInt(args[1] ?? '0', 10);
+        this.selectedAuxLine = null;
+      } else if (kind === 'aux') {
+        this.selectedVtyRange = null;
+        this.selectedConsoleLine = null;
+        this.selectedAuxLine = Number.parseInt(args[1] ?? '0', 10);
       } else {
         this.selectedVtyRange = null;
         this.selectedConsoleLine = null;
+        this.selectedAuxLine = null;
       }
       return '';
     });
@@ -2392,6 +2417,11 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       this.configLineTrie.registerGreedy(kw, `line ${kw}`, (args, raw) => {
         const range = this.selectedVtyRange;
         if (!range) {
+          if (this.selectedAuxLine != null) {
+            if (kw === 'exec') { this.auxLineNoExec = false; return ''; }
+            if (kw === 'no' && args[0]?.toLowerCase() === 'exec') { this.auxLineNoExec = true; return ''; }
+            return '';
+          }
           if (this.selectedConsoleLine == null) return '';
           if (kw === 'password') {
             if (!args[0]) return '% Incomplete command.';
@@ -2405,6 +2435,10 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
           if (kw === 'login') {
             const sub = args[0]?.toLowerCase();
             this.consoleLineLogin = sub === 'local' ? 'local' : 'password';
+            return '';
+          }
+          if (kw === 'logging' && args[0]?.toLowerCase() === 'synchronous') {
+            this.consoleLineLoggingSynchronous = true;
             return '';
           }
           if (kw === 'privilege' && args[0]?.toLowerCase() === 'level' && args[1]) {
@@ -2427,6 +2461,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
             }
             if (sub === 'password') { this.consoleLinePassword = null; return ''; }
             if (sub === 'privilege') { this.consoleLinePrivilegeLevel = null; return ''; }
+            if (sub === 'logging') { this.consoleLineLoggingSynchronous = false; return ''; }
           }
           return '';
         }
@@ -2445,7 +2480,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
         } else if (kw === 'logging' && args[0]?.toLowerCase() === 'synchronous') {
           update.loggingSynchronous = true;
         } else if (kw === 'privilege' && args[0]?.toLowerCase() === 'level' && args[1]) {
-          update.privilegeLevel = parseInt(args[1], 10);
+          update.privilege = parseInt(args[1], 10);
         } else if (kw === 'session-timeout' && args[0]) {
           update.sessionTimeoutMinutes = parseInt(args[0], 10);
         } else if (kw === 'history' && args[0]?.toLowerCase() === 'size' && args[1]) {
@@ -2539,7 +2574,12 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       if (proto !== 'all' && proto !== 'ssh' && proto !== 'telnet' && proto !== 'none') {
         return "% Invalid input detected at '^' marker.";
       }
-      if (dir === 'input' && typeof dev._setVtyTransportInput === 'function') {
+      if (dir !== 'input') return '';
+      if (this.selectedAuxLine != null) {
+        this.auxLineTransportInput = proto;
+        return '';
+      }
+      if (typeof dev._setVtyTransportInput === 'function') {
         dev._setVtyTransportInput(proto);
         const range = this.selectedVtyRange;
         if (range) dev._getVtyLineConfig?.().upsert({ first: range.first, last: range.last, transportInput: proto });

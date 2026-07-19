@@ -238,6 +238,7 @@ export function showRunningConfig(router: Router): string {
   const shell = (router as unknown as {
     shell?: {
       _getConsoleLineConfig?: () => unknown;
+      _getAuxLineConfig?: () => unknown;
       _getAliasRunningConfigLines?: () => string[];
     };
   }).shell;
@@ -256,6 +257,7 @@ export function showRunningConfig(router: Router): string {
     privilegeLevel: number | null;
     execTimeoutMin: number | null;
     execTimeoutSec: number;
+    loggingSynchronous: boolean;
   };
   if (consoleCfg) {
     lines.push(`line console ${consoleCfg.line}`);
@@ -269,6 +271,19 @@ export function showRunningConfig(router: Router): string {
     if (consoleCfg.execTimeoutMin != null) {
       lines.push(` exec-timeout ${consoleCfg.execTimeoutMin} ${consoleCfg.execTimeoutSec}`);
     }
+    if (consoleCfg.loggingSynchronous) lines.push(' logging synchronous');
+    lines.push('!');
+  }
+
+  const auxCfg = shell?._getAuxLineConfig?.() as null | {
+    line: number;
+    noExec: boolean;
+    transportInput: 'ssh' | 'telnet' | 'all' | 'none' | null;
+  };
+  if (auxCfg) {
+    lines.push(`line aux ${auxCfg.line}`);
+    if (auxCfg.noExec) lines.push(' no exec');
+    if (auxCfg.transportInput != null) lines.push(` transport input ${auxCfg.transportInput}`);
     lines.push('!');
   }
 

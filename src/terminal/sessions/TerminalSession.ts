@@ -266,12 +266,63 @@ export abstract class TerminalSession {
       isDisposed: () => this.disposed,
     });
     this.asyncRuntime = new TerminalAsyncRuntime({
-      addLine: (text, type) => this.addLine(text, type),
-      addLines: (texts, type) => this.addLines(texts, type),
+      addLine: (text, type) => {
+        if (this.shouldDeferAsyncOutput()) { this.deferredAsyncLines.push({ text, type }); this.notify(); return; }
+        this.addLine(text, type);
+      },
+      addLines: (texts, type) => {
+        if (this.shouldDeferAsyncOutput()) {
+          for (const text of texts) this.deferredAsyncLines.push({ text, type });
+          this.notify();
+          return;
+        }
+        this.addLines(texts, type);
+      },
       notify: () => this.notify(),
       attachStream: (opts) => this.inputHostImpl.attachStream(opts),
     });
   }
+
+  // ── Deferred async output ("logging synchronous"-style behaviour) ──
+  //
+  // Background/async job output (syslog monitors, debug streams, …) is
+  // routed through here rather than straight into `lines` so a vendor
+  // shell can defer it while the operator has an unsubmitted command in
+  // progress -- reusable by any future protocol's async output, not
+  // hardcoded to Cisco syslog. `shouldDeferAsyncOutput` is the opt-in
+  // hook (off by default); `flushDeferredAsyncQueue` must be called by
+  // the subclass at a sensible point (e.g. right before echoing a
+  // newly-submitted command) or queued lines will simply build up.
+  private deferredAsyncLines: Array<{ text: string; type?: string }> = [];
+
+  protected shouldDeferAsyncOutput(): boolean { return false; }
+
+  protected flushDeferredAsyncQueue(): void {
+    if (this.deferredAsyncLines.length === 0) return;
+    const pending = this.deferredAsyncLines;
+    this.deferredAsyncLines = [];
+    for (const { text, type } of pending) this.addLine(text, type);
+  }
+
+  // ── Idle timer (generic `exec-timeout`-style mechanism) ────────────
+  //
+  // Any session-affinity feature that needs to react to "no activity for
+  // N ms" (Cisco/Huawei `exec-timeout`, a future Linux `TMOUT`, …) can
+  // build on this instead of rolling its own setTimeout bookkeeping.
+  private idleTimer: ReturnType<typeof setTimeout> | null = null;
+
+  protected armIdleTimer(ms: number, onTimeout: () => void): void {
+    this.clearIdleTimer();
+    if (!Number.isFinite(ms) || ms <= 0) return;
+    this.idleTimer = setTimeout(() => { this.idleTimer = null; onTimeout(); }, ms);
+  }
+
+  protected clearIdleTimer(): void {
+    if (this.idleTimer) { clearTimeout(this.idleTimer); this.idleTimer = null; }
+  }
+
+  /** Vendor hook: called after every submitted command (activity). */
+  protected onCommandActivity(): void { /* no-op by default */ }
 
   getInputHost(): import('@/shell/input').InputHost { return this.inputHostImpl; }
 
@@ -657,6 +708,7 @@ export abstract class TerminalSession {
 
   dispose(): void {
     if (this.disposed) return;
+    this.clearIdleTimer();
     this.asyncRuntime.cancelAll();
     // Subclasses may register a teardown to release SSH sessions, sub-shells,
     // remote-forwarders, etc. Run them BEFORE flagging disposed so handlers
