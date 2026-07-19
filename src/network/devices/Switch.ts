@@ -1250,6 +1250,17 @@ export abstract class Switch extends Equipment {
     return false;
   }
 
+  /** Huawei `traffic-filter inbound|outbound acl <N>` on a physical port. */
+  private portAclPermits(portName: string, direction: 'in' | 'out', frame: EthernetFrame): boolean {
+    if (!this.vaclEngine) return true;
+    const aclRef = this.vaclEngine.getInterfaceACL(portName, direction);
+    if (aclRef === null) return true;
+    if (frame.etherType !== ETHERTYPE_IPV4) return true;
+    const ip = frame.payload as IPv4Packet | undefined;
+    if (!ip || ip.type !== 'ipv4') return true;
+    return this.vaclEngine.evaluateACL(aclRef, ip) !== 'deny';
+  }
+
   // ─── MQC (Huawei traffic classifier/behavior/policy) API ──────────
 
   mqcEnsureClassifier(name: string): void {
@@ -1577,6 +1588,13 @@ export abstract class Switch extends Equipment {
 
     // SPAN ingress copy must happen before any DAI/STP/VLAN drop.
     this.mirrorIngress(portName, frame);
+
+    // ─── Port ACL (Huawei `traffic-filter inbound`) ─────────────
+    if (!this.portAclPermits(portName, 'in', frame)) {
+      Logger.debug(this.id, 'switch:port-acl-drop',
+        `${this.name}: inbound ACL dropped frame on ${portName}`);
+      return;
+    }
 
     const taggedFrame = frame as TaggedEthernetFrame;
 
@@ -2004,6 +2022,9 @@ export abstract class Switch extends Equipment {
 
     const port = this.getPort(portName);
     if (!port || !port.getIsUp()) return;
+
+    // ─── Port ACL (Huawei `traffic-filter outbound`) ────────────
+    if (!this.portAclPermits(portName, 'out', frame)) return;
 
     const stpState = this.getStpVlanState(portName, vlan);
     if (stpState === 'blocking' || stpState === 'disabled' || stpState === 'listening' || stpState === 'learning') return;

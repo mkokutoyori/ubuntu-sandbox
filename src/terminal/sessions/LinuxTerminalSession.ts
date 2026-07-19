@@ -1937,6 +1937,10 @@ export class LinuxTerminalSession extends TerminalSession {
       this.printVisudoWhatNow(result.lines);
     } else {
       dev.writeFileFromEditorInSession(pending!.targetPath, content, this.shell);
+      // Real visudo always leaves sudoers-family files root-owned 0440,
+      // regardless of the editing session's umask — a world/group-writable
+      // (or non-root-owned) sudoers file is a privilege-escalation hole.
+      dev.setSudoersFilePermissions(pending!.targetPath);
     }
     this.notify();
   }

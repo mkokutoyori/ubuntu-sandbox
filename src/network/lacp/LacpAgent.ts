@@ -23,6 +23,13 @@ export interface LacpHost {
 export class LacpAgent extends ReactiveAgentBase {
   private config: LacpConfig;
   private readonly advertising = new Set<string>();
+  private readonly lacpduSent = new Map<string, number>();
+  private readonly lacpduReceived = new Map<string, number>();
+
+  /** `display lacp statistics` — real per-port LACPDU tx/rx counts. */
+  getStatistics(portName: string): { sent: number; received: number } {
+    return { sent: this.lacpduSent.get(portName) ?? 0, received: this.lacpduReceived.get(portName) ?? 0 };
+  }
 
   constructor(
     private readonly host: LacpHost,
@@ -124,6 +131,7 @@ export class LacpAgent extends ReactiveAgentBase {
     const p = this.config.ports.get(portName);
     if (!p) return;
     if (p.mode === 'on') return;
+    this.lacpduReceived.set(portName, (this.lacpduReceived.get(portName) ?? 0) + 1);
     p.partner = { ...payload.actor };
     p.lastRxMs = Date.now();
     // A fresh LACPDU revives an expired port (802.3ad receive machine:
@@ -174,6 +182,7 @@ export class LacpAgent extends ReactiveAgentBase {
     this.advertising.add(portName);
     try { this.host.sendFrame(portName, eth); }
     finally { this.advertising.delete(portName); }
+    this.lacpduSent.set(portName, (this.lacpduSent.get(portName) ?? 0) + 1);
     this.getBus().publish({
       topic: 'lacp.frame.sent',
       payload: {

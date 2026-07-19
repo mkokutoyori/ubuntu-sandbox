@@ -777,7 +777,16 @@ export function buildInterfaceCommands(trie: CommandTrie, ctx: HuaweiShellContex
     if (!ifName) return '';
     const port = ctx.r().getPort(ifName);
     const n = parseInt(args[0] ?? '', 10);
-    if (port && !isNaN(n)) (port as any).dot1qVlan = n;
+    if (port && !isNaN(n)) {
+      (port as any).dot1qVlan = n;
+      // Router.ts's dataplane (findSubinterfaceForVlan / sendFrame) keys
+      // on `encapsulation.vlan` — the same field Cisco's `encapsulation
+      // dot1Q` sets — so a Huawei sub-interface actually demuxes/tags
+      // real 802.1Q traffic instead of only showing up in `display`.
+      (port as unknown as { encapsulation?: { type: string; vlan?: number; native?: boolean } }).encapsulation = {
+        type: 'dot1q', vlan: n,
+      };
+    }
     return '';
   });
   trie.registerGreedy('qos queue', 'Configure QoS queue', (args) => {

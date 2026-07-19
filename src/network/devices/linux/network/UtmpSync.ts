@@ -1,4 +1,5 @@
 import type { VirtualFileSystem } from '../VirtualFileSystem';
+import { encodeUtmpFile, encodeBtmpFile, decodeUtmpFile, decodeBtmpFile } from './UtmpBinaryFormat';
 
 export interface UtmpRecord {
   user: string;
@@ -27,9 +28,11 @@ export class UtmpSync {
   constructor(private readonly vfs: VirtualFileSystem) {}
 
   bootstrap(): void {
-    this.ensure(UTMP_PATH);
-    this.ensure(WTMP_PATH);
-    this.ensure(BTMP_PATH);
+    this.ensure(UTMP_PATH, 0o644);
+    this.ensure(WTMP_PATH, 0o644);
+    // btmp holds failed-login usernames/sources — real Linux keeps it
+    // 0600 root:root (lastb itself requires root), unlike wtmp's 0644.
+    this.ensure(BTMP_PATH, 0o600);
   }
 
   appendRebootMark(at: Date): void {
@@ -71,32 +74,31 @@ export class UtmpSync {
   appendFailure(rec: BtmpRecord): void {
     const btmp = this.readBtmp();
     btmp.push(rec);
-    this.writeRaw(BTMP_PATH, btmp);
+    this.vfs.writeFile(BTMP_PATH, encodeBtmpFile(btmp), 0, 0, 0o022, false);
   }
 
   readUtmp(): UtmpRecord[] { return this.readArray(UTMP_PATH); }
   readWtmp(): UtmpRecord[] { return this.readArray(WTMP_PATH); }
   readBtmp(): BtmpRecord[] {
     const raw = this.vfs.readFile(BTMP_PATH);
-    if (!raw || raw.trim().length === 0) return [];
-    try { const parsed = JSON.parse(raw); return Array.isArray(parsed) ? parsed : []; }
-    catch { return []; }
+    if (!raw) return [];
+    return decodeBtmpFile(raw);
   }
 
   private readArray(path: string): UtmpRecord[] {
     const raw = this.vfs.readFile(path);
-    if (!raw || raw.trim().length === 0) return [];
-    try { const parsed = JSON.parse(raw); return Array.isArray(parsed) ? parsed : []; }
-    catch { return []; }
+    if (!raw) return [];
+    return decodeUtmpFile(raw);
   }
 
-  private writeRaw(path: string, arr: unknown): void {
-    this.vfs.writeFile(path, JSON.stringify(arr), 0, 0, 0o022, false);
+  private writeRaw(path: string, arr: UtmpRecord[]): void {
+    this.vfs.writeFile(path, encodeUtmpFile(arr), 0, 0, 0o022, false);
   }
 
-  private ensure(path: string): void {
+  private ensure(path: string, mode: number): void {
     if (!this.vfs.exists(path)) {
-      this.vfs.writeFile(path, '[]', 0, 0, 0o022, false);
+      this.vfs.writeFile(path, '', 0, 0, 0o022, false);
+      this.vfs.chmod(path, mode);
     }
   }
 }

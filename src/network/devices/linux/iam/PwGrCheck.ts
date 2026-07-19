@@ -210,9 +210,12 @@ export function checkGrpck(vfs: VirtualFileSystem): CheckResult {
 const SUDOERS_TAG =
   '(?:NOPASSWD|PASSWD|NOEXEC|EXEC|SETENV|NOSETENV|LOG_INPUT|NOLOG_INPUT|LOG_OUTPUT|NOLOG_OUTPUT)';
 const NAME_RE = String.raw`!?%?[\w.\-]+`;
+/** Host tokens additionally allow a `/NN` CIDR suffix (`10.0.0.0/24`),
+ *  whether written directly in a rule's host list or inside a Host_Alias. */
+const HOST_NAME_RE = String.raw`!?%?[\w.\-]+(?:/\d{1,2})?`;
 const LIST_RE = (item: string) => new RegExp(`^${item}(?:\\s*,\\s*${item})*$`);
 const USER_LIST_RE = LIST_RE(NAME_RE);
-const HOST_LIST_RE = LIST_RE(NAME_RE);
+const HOST_LIST_RE = LIST_RE(HOST_NAME_RE);
 const ALIAS_NAME_RE = /^[A-Z][A-Z0-9_]*$/;
 const CMND_ITEM_RE = String.raw`!?(?:ALL|[A-Z][A-Z0-9_]*|/\S+(?:\s+\S+)*)`;
 const CMND_LIST_RE = LIST_RE(CMND_ITEM_RE);

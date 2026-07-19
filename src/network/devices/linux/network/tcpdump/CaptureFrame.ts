@@ -66,6 +66,10 @@ export interface CaptureFrame {
   icmpCode?: number;
   icmpId?: number;
   icmpSeq?: number;
+  /** RFC 1191 §4 Next-Hop MTU, present on Fragmentation Needed (type 3, code 4). */
+  icmpNextHopMtu?: number;
+  /** Original IP header + first 8 bytes, encapsulated in an ICMP error (RFC 792). */
+  icmpOrig?: IcmpOrigInfo;
   tcpFlags?: CaptureTcpFlags;
   tcpSeq?: number;
   tcpAck?: number;
@@ -99,6 +103,20 @@ export interface CaptureFrame {
   dnsCounts?: { an: number; ns: number; ar: number };
   dnsAnswers?: readonly { type: string; data: string; ttl: number }[];
   dnsAuthority?: readonly { type: string; data: string; ttl: number }[];
+}
+
+export interface IcmpOrigInfo {
+  srcIp: string;
+  dstIp: string;
+  ttl: number;
+  ipId: number;
+  protocol: number;
+  ipFlags: number;
+  ipTotalLength: number;
+  l4: 'tcp' | 'udp' | 'icmp' | 'other';
+  srcPort?: number;
+  dstPort?: number;
+  payloadLength?: number;
 }
 
 function formatResourceRecordData(rr: ResourceRecord<ResourceRecordData>): string {
@@ -420,6 +438,35 @@ export function decodeEthernetFrame(
   return base;
 }
 
+function decodeIcmpOrig(orig: IPv4Packet): IcmpOrigInfo {
+  const info: IcmpOrigInfo = {
+    srcIp: orig.sourceIP.toString(),
+    dstIp: orig.destinationIP.toString(),
+    ttl: orig.ttl,
+    ipId: orig.identification,
+    protocol: orig.protocol,
+    ipFlags: orig.flags,
+    ipTotalLength: orig.totalLength,
+    l4: 'other',
+  };
+  if (orig.protocol === IP_PROTO_UDP) {
+    const udp = orig.payload as UDPPacket;
+    info.l4 = 'udp';
+    info.srcPort = udp.sourcePort;
+    info.dstPort = udp.destinationPort;
+    info.payloadLength = Math.max(0, (udp.length ?? 8) - 8);
+  } else if (orig.protocol === IP_PROTO_TCP) {
+    const seg = normalizeTcpSegment(orig.payload);
+    info.l4 = 'tcp';
+    info.srcPort = seg.sourcePort;
+    info.dstPort = seg.destinationPort;
+    info.payloadLength = Math.max(0, (orig.totalLength ?? 40) - (orig.ihl ?? 5) * 4 - seg.dataOffset * 4);
+  } else if (orig.protocol === IP_PROTO_ICMP) {
+    info.l4 = 'icmp';
+  }
+  return info;
+}
+
 function decodeIpv4Payload(base: CaptureFrame, ip: IPv4Packet): void {
   if (ip.protocol === IP_PROTO_ICMP) {
     const icmp = ip.payload as ICMPPacket;
@@ -429,6 +476,8 @@ function decodeIpv4Payload(base: CaptureFrame, ip: IPv4Packet): void {
     base.icmpId = icmp.id;
     base.icmpSeq = icmp.sequence;
     base.payloadLength = (icmp.dataSize ?? 0) + 8;
+    base.icmpNextHopMtu = icmp.mtu;
+    if (icmp.originalPacket) base.icmpOrig = decodeIcmpOrig(icmp.originalPacket);
     return;
   }
   if (ip.protocol === IP_PROTO_TCP) {

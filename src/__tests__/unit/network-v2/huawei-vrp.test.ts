@@ -428,7 +428,7 @@ describe('Group 3: ICMP Protocol — Huawei Devices', () => {
   // ----------------------------------------------------------------
   describe('3.3 ICMP Destination Unreachable', () => {
 
-    it('should generate "Destination Host Unreachable" when no route exists', async () => {
+    it('should generate "Destination Net Unreachable" when no route exists (ICMP code 0)', async () => {
       const r1 = new HuaweiRouter('R1');
       const pc = new LinuxPC('linux-pc', 'PC');
 
@@ -439,9 +439,11 @@ describe('Group 3: ICMP Protocol — Huawei Devices', () => {
       const c = new Cable('c');
       c.connect(pc.getPort('eth0')!, r1.getPort('GE0/0/0')!);
 
-      // No route to 172.16.1.1 on R1
+      // No route to 172.16.1.1 on R1 — a missing route is ICMP code 0
+      // (net unreachable), which real ping reports distinctly from code 1
+      // (host unreachable).
       const output = await pc.executeCommand('ping -c 1 172.16.1.1');
-      expect(output).toContain('Destination Host Unreachable');
+      expect(output).toContain('Destination Net Unreachable');
 
       const counters = r1.getCounters();
       expect(counters.icmpOutDestUnreachs).toBeGreaterThanOrEqual(1);

@@ -6,7 +6,8 @@ const USERMOD_OPTIONS: readonly LinuxCommandOption[] = [
   { flag: '-s', aliases: ['--shell'], dest: 's', takesArg: true, argName: 'shell', description: 'Set the login shell' },
   { flag: '-d', aliases: ['--home'], dest: 'd', takesArg: true, argName: 'home_dir', description: 'Set the home directory' },
   { flag: '-m', aliases: ['--move-home'], dest: 'm', description: 'Move the content of the home directory (used with -d)' },
-  { flag: '-G', aliases: ['-aG', '--groups'], dest: 'aG', takesArg: true, argName: 'group1,group2,...', description: 'Set supplementary groups' },
+  { flag: '-G', aliases: ['--groups'], dest: 'G', takesArg: true, argName: 'group1,group2,...', description: 'Set supplementary groups (replaces the existing list)' },
+  { flag: '-a', aliases: ['--append'], dest: 'a', description: 'Used with -G: append the user to the supplementary groups instead of replacing the list' },
   { flag: '-L', aliases: ['--lock'], dest: 'L', description: 'Lock the account password' },
   { flag: '-U', aliases: ['--unlock'], dest: 'U', description: 'Unlock the account password' },
 ];

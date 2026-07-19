@@ -40,6 +40,8 @@ import {
   registerHuaweiCommonSecurity, registerHuaweiCommonSecurityDisplay,
 } from './huawei/HuaweiCommonSecurity';
 import { buildDhcpPoolCommands } from './huawei/HuaweiDhcpCommands';
+import { parseHuaweiPortSpec } from './huawei/HuaweiAclCommands';
+import { formatHuaweiAclEntry } from '../router/ACLEngine';
 import { vrrpVirtualMac, effectivePriority as vrrpEffectivePriority } from '../../vrrp/types';
 
 type VRPSwitchMode =
@@ -670,7 +672,7 @@ export class HuaweiSwitchShell implements ISwitchShell {
             this.swRef.createVLAN(id);
           }
         }
-        return '';
+        return 'Info: This operation may take a few seconds. Please wait for a moment...done.';
       }
 
       // vlan <id> → enter VLAN config mode
@@ -880,7 +882,7 @@ export class HuaweiSwitchShell implements ISwitchShell {
         return '';
       }
 
-      const portName = this.resolveInterfaceName(args[0]);
+      const portName = this.resolveInterfaceName(joined);
       if (!portName) return `Error: Wrong parameter found at '^' position.`;
       this.selectedInterface = portName;
       this.mode = 'interface';
@@ -899,6 +901,10 @@ export class HuaweiSwitchShell implements ISwitchShell {
       return 'Error: Incomplete command.';
     });
 
+    this.systemTrie.register('ip routing-enable', 'Enable IP routing', () => {
+      this.swRef?.setIpRoutingEnabled(true);
+      return '';
+    });
     this.systemTrie.registerGreedy('ip route-static', 'Add a static route', (args) => {
       if (!this.swRef || args.length < 3) return 'Error: Incomplete command.';
       let net: IPAddress, mask: SubnetMask, gw: IPAddress;
@@ -1026,7 +1032,13 @@ export class HuaweiSwitchShell implements ISwitchShell {
     // port link-type trunk
     this.interfaceTrie.register('port link-type trunk', 'Set port to trunk mode', () => {
       if (!this.swRef || !this.selectedInterface) return 'Error: Wrong parameter.';
+      const wasTrunk = this.swRef.getSwitchportConfig(this.selectedInterface)?.mode === 'trunk';
       this.swRef.setSwitchportMode(this.selectedInterface, 'trunk');
+      // Unlike Cisco (trunk default: all VLANs), VRP's default trunk
+      // allowed-VLAN list is VLAN 1 only — `port trunk allow-pass vlan`
+      // then adds to it. Only reset on an actual access→trunk transition,
+      // never on a no-op re-run that would wipe an already-configured list.
+      if (!wasTrunk) this.swRef.setTrunkAllowedVlans(this.selectedInterface, new Set([1]));
       return '';
     });
 
@@ -1613,6 +1625,27 @@ export class HuaweiSwitchShell implements ISwitchShell {
     return [`acl ${kind} ${a.key}`, ...a.rules.map(r => ` ${r}`)].join('\n');
   }
 
+  /** Operational `display acl` — rule list rendered from the engine that
+   * actually evaluates traffic (protocol/ports/match counts), unlike
+   * `renderAcl`'s verbatim echo of the configured command text. */
+  private renderAclOperational(key: string | null): string {
+    if (!key || !this.swRef) return '';
+    const a = this.acls.get(key);
+    if (!a) return `Error: The ACL ${key} does not exist.`;
+    const engine = this.swRef.getVaclEngine();
+    const num = parseInt(key, 10);
+    const acl = !isNaN(num) ? engine.findById(num) : engine.findByName(key);
+    const kind = a.type === 'adv' ? 'Advanced' : 'Basic';
+    if (!acl || acl.entries.length === 0) {
+      return `${kind} ACL ${key}, 0 rule(s)`;
+    }
+    const lines = [`${kind} ACL ${key}, ${acl.entries.length} rule(s)`, `ACL's step is 5`];
+    acl.entries.forEach((entry, idx) => {
+      lines.push(` rule ${idx * 5} ${formatHuaweiAclEntry(entry)}`);
+    });
+    return lines.join('\n');
+  }
+
   private parseVrpVlanTokens(args: string[]): number[] {
     const ids: number[] = [];
     for (let i = 0; i < args.length; i++) {
@@ -1685,7 +1718,15 @@ export class HuaweiSwitchShell implements ISwitchShell {
       if (!dst) return;
       dstIP = dst.ip; dstWc = dst.wc;
     }
-    const opts = { protocol, srcIP, srcWildcard: srcWc, dstIP, dstWildcard: dstWc };
+    const spi = args.findIndex(a => a.toLowerCase() === 'source-port');
+    const srcPortSpec = spi >= 0 ? parseHuaweiPortSpec(args, spi + 1)?.spec : undefined;
+    const dpi = args.findIndex(a => a.toLowerCase() === 'destination-port');
+    const dstPortSpec = dpi >= 0 ? parseHuaweiPortSpec(args, dpi + 1)?.spec : undefined;
+    const opts: Parameters<typeof engine.addAccessListEntry>[2] = {
+      protocol, srcIP, srcWildcard: srcWc, dstIP, dstWildcard: dstWc,
+    };
+    if (srcPortSpec) { opts.srcPortSpec = srcPortSpec; if (srcPortSpec.op === 'eq') opts.srcPort = srcPortSpec.port; }
+    if (dstPortSpec) { opts.dstPortSpec = dstPortSpec; if (dstPortSpec.op === 'eq') opts.dstPort = dstPortSpec.port; }
     if (!isNaN(num)) engine.addAccessListEntry(num, action, opts);
     else engine.addNamedAccessListEntry(aclKey, 'extended', action, opts);
   }
@@ -1725,11 +1766,14 @@ export class HuaweiSwitchShell implements ISwitchShell {
       return full;
     });
 
-    // display port vlan [active]
-    trie.registerGreedy('display port vlan', 'Display port VLAN assignment', () => {
+    // display port vlan [active | <interface>]
+    trie.registerGreedy('display port vlan', 'Display port VLAN assignment', (args) => {
       if (!this.swRef) return '';
+      const filterArg = args.filter((a) => a.toLowerCase() !== 'active').join(' ');
+      const filterPort = filterArg ? this.resolveInterfaceName(filterArg) : null;
       const rows = ['Port                    Link Type    PVID  Trunk VLAN List'];
       for (const p of this.swRef.getPortNames()) {
+        if (filterPort && p !== filterPort) continue;
         const cfg = this.swRef.getSwitchportConfig(p);
         if (!cfg) continue;
         if (cfg.mode === 'hybrid') {
@@ -1740,7 +1784,10 @@ export class HuaweiSwitchShell implements ISwitchShell {
           continue;
         }
         const pvid = cfg.mode === 'trunk' ? cfg.trunkNativeVlan : cfg.accessVlan;
-        rows.push(`${p.padEnd(24)}${cfg.mode.padEnd(13)}${String(pvid).padEnd(6)}-`);
+        const trunkList = cfg.mode === 'trunk'
+          ? [...cfg.trunkAllowedVlans].sort((a, b) => a - b).join(' ')
+          : '';
+        rows.push(`${p.padEnd(24)}${cfg.mode.padEnd(13)}${String(pvid).padEnd(6)}${trunkList || '-'}`);
       }
       return rows.join('\n');
     });
@@ -1958,6 +2005,15 @@ export class HuaweiSwitchShell implements ISwitchShell {
       this.swRef?._eraseStartupConfig();
       return 'Warning: The action will delete the saved configuration on the device.';
     });
+    // reboot — REAL restart (parity with the VRP router shell). The
+    // interactive Y/N dialogue is the interaction plan's job.
+    trie.registerGreedy('reboot', 'Reboot device', () => {
+      this.swRef?.powerOff();
+      this.swRef?.powerOn();
+      this.mode = 'user';
+      this.selectedInterface = null;
+      return 'Info: The system is rebooting ...\nSystem restart completed.';
+    });
 
     // Informational displays (shared with the router, DRY).
     trie.register('display alarm', 'Display alarm records', () => displayAlarm());
@@ -1987,9 +2043,23 @@ export class HuaweiSwitchShell implements ISwitchShell {
       if (this.acls.size === 0) return 'Info: No ACL is configured.';
       const sel = (args[0] ?? 'all').toLowerCase();
       if (sel === 'all') {
-        return [...this.acls.keys()].map(k => this.renderAcl(k)).join('\n');
+        return [...this.acls.keys()].map(k => this.renderAclOperational(k)).join('\n');
       }
-      return this.renderAcl(this.acls.has(args[0]) ? args[0] : sel);
+      return this.renderAclOperational(this.acls.has(args[0]) ? args[0] : sel);
+    });
+
+    // reset acl counter { all | name <name> | <number> }
+    trie.registerGreedy('reset acl counter', 'Reset ACL match counters', (args) => {
+      if (!this.swRef) return '';
+      const engine = this.swRef.getVaclEngine();
+      if (!args[0] || args[0].toLowerCase() === 'all') {
+        engine.resetAllCounters();
+        return '';
+      }
+      const ref = args[0].toLowerCase() === 'name' ? args[1] : args[0];
+      if (!ref) return 'Error: Incomplete command.';
+      engine.resetCounters(/^\d+$/.test(ref) ? parseInt(ref, 10) : ref);
+      return '';
     });
 
     // Eth-Trunk + counters.
@@ -2027,6 +2097,27 @@ export class HuaweiSwitchShell implements ISwitchShell {
       }
       return this.displayEthTrunk(id);
     });
+    trie.registerGreedy('display lacp statistics', 'Display LACP statistics', (args) => {
+      if (!this.swRef) return '';
+      const agent = (this.swRef as unknown as { getLacpAgent?: () => import('@/network/lacp/LacpAgent').LacpAgent } | null)?.getLacpAgent?.();
+      if (!agent) return 'Info: LACP is not running.';
+      const filterArg = args.join(' ');
+      const filterPort = filterArg ? this.resolveInterfaceName(filterArg) : null;
+      const ports = filterPort
+        ? [filterPort]
+        : agent.getAllGroups().flatMap(g => g.members.map(m => m.portName));
+      if (ports.length === 0) return 'Info: No Eth-Trunk is configured.';
+      const blocks = ports.map((p) => {
+        const stats = agent.getStatistics(p);
+        return [
+          p,
+          '                        LACPDU               Marker',
+          '             Sent       Received   Sent       Received',
+          `             ${String(stats.sent).padEnd(11)}${String(stats.received).padEnd(11)}0          0`,
+        ].join('\n');
+      });
+      return blocks.join('\n\n');
+    });
     trie.registerGreedy('display counters', 'Display interface counters', (args) => {
       if (!this.swRef) return '';
       const ifName = args.filter(a => /\d\/\d/.test(a)).join(' ');
@@ -2059,7 +2150,12 @@ export class HuaweiSwitchShell implements ISwitchShell {
    * Single source via huawei/HuaweiCommonConfig (DRY).
    */
   private registerCommonMgmt(trie: CommandTrie): void {
-    registerHuaweiCommonMgmt(trie);
+    registerHuaweiCommonMgmt(
+      trie,
+      undefined,
+      () => { if (this.swRef) this.swRef._captureStartupConfig(this.displayCurrentConfig(this.swRef)); },
+      () => { this.swRef?._eraseStartupConfig(); },
+    );
   }
 
   // ─── STP / RSTP / MSTP (switch-only, L2) ──────────────────────────
@@ -2146,6 +2242,16 @@ export class HuaweiSwitchShell implements ISwitchShell {
       const list = this.ifStp.get(this.selectedInterface) ?? [];
       list.push(`stp ${args.join(' ')}`);
       this.ifStp.set(this.selectedInterface, list);
+      const port = this.selectedInterface;
+      if (a[0] === 'edged-port' && a[1] === 'enable') {
+        this.applyToStpAgent(ag => ag.setPortFast(port, true));
+      } else if (a[0] === 'edged-port' && a[1] === 'disable') {
+        this.applyToStpAgent(ag => ag.setPortFast(port, false));
+      } else if (a[0] === 'bpdu-protection' && a[1] === 'enable') {
+        this.applyToStpAgent(ag => ag.setPortBpduGuard(port, true));
+      } else if (a[0] === 'bpdu-protection' && a[1] === 'disable') {
+        this.applyToStpAgent(ag => ag.setPortBpduGuard(port, false));
+      }
       return '';
     });
   }
@@ -2171,12 +2277,33 @@ export class HuaweiSwitchShell implements ISwitchShell {
       'speed', 'duplex', 'negotiation', 'mtu', 'jumboframe', 'flow-control',
       'loopback-detect', 'port-security', 'storm-control',
       'broadcast-suppression', 'port-mirroring',
-      'qos', 'traffic-policy', 'traffic-filter', 'am',
+      'qos', 'traffic-policy', 'am',
       'mac-limit',
     ]) {
       trie.registerGreedy(kw, `Interface ${kw} configuration`, (args) =>
         record(`${kw} ${args.join(' ')}`.trim()));
     }
+
+    // `traffic-filter inbound|outbound acl <number>` binds a real numbered
+    // ACL to this port; the switch dataplane consults it on ingress/egress.
+    trie.registerGreedy('traffic-filter', 'Apply ACL to this port', (args) => {
+      if (!this.selectedInterface || !this.swRef) return 'Error: Incomplete command.';
+      const direction = args[0]?.toLowerCase();
+      if (direction !== 'inbound' && direction !== 'outbound') return 'Error: Expected inbound or outbound.';
+      if (args[1]?.toLowerCase() !== 'acl' || !args[2]) return 'Error: Expected "acl".';
+      const aclNum = parseInt(args[2], 10);
+      if (isNaN(aclNum)) return 'Error: Invalid ACL number.';
+      const dir = direction === 'inbound' ? 'in' : 'out';
+      this.swRef.getVaclEngine().setInterfaceACL(this.selectedInterface, dir, aclNum);
+      return record(`traffic-filter ${args.join(' ')}`.trim());
+    });
+    trie.registerGreedy('undo traffic-filter', 'Remove ACL from this port', (args) => {
+      if (!this.selectedInterface || !this.swRef) return 'Error: Incomplete command.';
+      const direction = args[0]?.toLowerCase();
+      const dir = direction === 'outbound' ? 'out' : 'in';
+      this.swRef.getVaclEngine().removeInterfaceACL(this.selectedInterface, dir);
+      return '';
+    });
   }
 
   /** MST region sub-view command tree ([host-mst-region]). */
@@ -2505,7 +2632,10 @@ export class HuaweiSwitchShell implements ISwitchShell {
       const r = ag?.getPortRole(p) ?? 'designated';
       const role = r === 'root' ? 'ROOT' : r === 'alternate' ? 'ALTE'
         : r === 'backup' ? 'BACK' : r === 'disabled' ? 'DISA' : 'DESI';
-      rows.push(`${mst}  ${p.padEnd(27)} ${role}  ${state.padEnd(13)} NONE`);
+      const guards = ag?.getPortGuards(p);
+      const protection = guards?.bpduGuard ? 'BPDU'
+        : guards?.portFast ? 'EDGE' : 'NONE';
+      rows.push(`${mst}  ${p.padEnd(27)} ${role}  ${state.padEnd(13)} ${protection}`);
     }
     if (only && rows.length === 0) {
       return `Error: The port ${only} does not exist.`;
@@ -2540,7 +2670,7 @@ export class HuaweiSwitchShell implements ISwitchShell {
       'PortName                      Status      Weight',
       ...t.members.map(m => {
         const info = liveByPort.get(m);
-        const status = info?.bundled ? 'Up' : 'Down';
+        const status = info?.selected ? 'Selected' : 'Unselect';
         return `${m.padEnd(30)}${status.padEnd(12)}1`;
       }),
     ];
@@ -2613,6 +2743,11 @@ export class HuaweiSwitchShell implements ISwitchShell {
       const portsInVlan: string[] = [];
       for (const [portName, cfg] of configs) {
         if (cfg.mode === 'access' && cfg.accessVlan === id) {
+          portsInVlan.push(portName);
+        } else if (cfg.mode === 'trunk' && cfg.trunkAllowedVlans.has(id)) {
+          portsInVlan.push(portName);
+        } else if (cfg.mode === 'hybrid'
+          && (cfg.hybridUntaggedVlans?.has(id) || cfg.hybridTaggedVlans?.has(id))) {
           portsInVlan.push(portName);
         }
       }
@@ -2894,8 +3029,12 @@ export class HuaweiSwitchShell implements ISwitchShell {
 
   // ─── Interface Name Resolution ──────────────────────────────────
 
-  private resolveInterfaceName(input: string): string | null {
+  private resolveInterfaceName(rawInput: string): string | null {
     if (!this.swRef) return null;
+    // VRP accepts both "GigabitEthernet0/0/1" and "GigabitEthernet 0/0/1"
+    // (the space form is standard syntax, not an abbreviation) — collapse
+    // whitespace before matching so both resolve identically.
+    const input = rawInput.replace(/\s+/g, '');
 
     // Direct match
     for (const name of this.swRef.getPortNames()) {

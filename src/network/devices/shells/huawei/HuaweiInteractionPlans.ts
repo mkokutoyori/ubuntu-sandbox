@@ -86,6 +86,10 @@ function rebootPlan(): CommandInteractionPlan {
         storeAs: 'reboot_confirmed',
         validate: cancelOnNo('Info: The reboot command is canceled.'),
       },
+      // The device command performs the REAL power-cycle; the plan renders
+      // its own dialogue, so the inline text is dropped.
+      { kind: 'run', run: async (rt) => { await rt.exec('reboot'); } },
+      { kind: 'output', lines: ['Info: The system is rebooting ...'] },
     ],
   };
 }

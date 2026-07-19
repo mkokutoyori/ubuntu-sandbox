@@ -4,6 +4,19 @@
 
 import { VirtualFileSystem, type INode } from './VirtualFileSystem';
 import { LinuxUserManager } from './LinuxUserManager';
+import { loadSudoPolicy, type SudoActor } from './iam/SudoPolicyEngine';
+
+export interface SudoAuthorization {
+  allowed: boolean;
+  nopasswd: boolean;
+  reason: 'ok' | 'not-in-sudoers' | 'command-not-allowed' | 'unknown-target-user';
+  invokingUser: string;
+  runasUser: string;
+  hostname: string;
+  /** `Defaults logfile=PATH`, if configured — written to in addition to
+   *  /var/log/auth.log, never instead of it. */
+  logfile?: string;
+}
 import type { UserEntry } from './iam/LinuxUserAccount';
 import { SshAgent } from '../../protocols/ssh/SshAgent';
 import { LinuxCronManager } from './LinuxCronManager';
@@ -1230,6 +1243,25 @@ export class LinuxCommandExecutor {
     return { output: `${header}\n`, exitCode: 0 };
   }
 
+  /**
+   * `captureTcpHandshake` only writes into the calling machine's own
+   * `captureLog` — unlike `emitSshWire`'s `publishWireSegment` calls, it
+   * isn't routed through `CaptureRouter` to the peer, so a tcpdump running
+   * on the remote end never sees the SYN/SYN-ACK/ACK. Mirror it onto the
+   * peer's own captureLog too, the same way `Nc.ts` already does for its
+   * TCP banner grab.
+   */
+  private mirrorSshHandshakeCapture(
+    src: { ip: string; port: number },
+    dst: { ip: string; port: number },
+  ): void {
+    this.captureLog.captureTcpHandshake(src, dst);
+    const remote = findHostByAddress(dst.ip, { readFile: (p) => this.vfs.readFile(p) });
+    const remoteCap = (remote?.device as unknown as { executor?: { captureLog?: PacketCaptureLog } } | undefined)
+      ?.executor?.captureLog;
+    if (remoteCap && remoteCap !== this.captureLog) remoteCap.captureTcpHandshake(src, dst);
+  }
+
   private emitSshWire(srcIp: string, srcPort: number, dstIp: string, dstPort: number): void {
     ensureCaptureRouterInstalled();
     const enc = new TextEncoder();
@@ -1501,6 +1533,65 @@ export class LinuxCommandExecutor {
       ].join('\n'),
       exitCode: 0,
     };
+  }
+
+  /** All configured IPv4 addresses (for Host_Alias/CIDR matching in sudoers). */
+  private getHostIps(): string[] {
+    if (!this.ipNetworkCtx) return [];
+    const ips: string[] = [];
+    for (const name of this.ipNetworkCtx.getInterfaceNames()) {
+      const info = this.ipNetworkCtx.getInterfaceInfo(name);
+      if (info?.ip) ips.push(info.ip);
+    }
+    return ips;
+  }
+
+  private sudoActor(user: string): SudoActor {
+    return { user, groups: this.userMgr.getUserGroups(user).map((g) => g.name) };
+  }
+
+  /**
+   * The single real authorization decision for a `sudo <cmd> …`
+   * invocation, shared by every dispatch path (the bash-interpreter
+   * sudo-prefix handling and the network-command registry gate) so
+   * they can never silently diverge on who's allowed to run what.
+   */
+  authorizeSudo(cmdName: string, args: readonly string[], runasUser = 'root'): SudoAuthorization {
+    const invokingUser = this.userMgr.currentUser;
+    const hostname = (this.vfs.readFile('/etc/hostname') ?? 'localhost').trim();
+    if (!this.userMgr.getUser(runasUser)) {
+      return { allowed: false, nopasswd: false, reason: 'unknown-target-user', invokingUser, runasUser, hostname };
+    }
+    const hostIps = this.getHostIps();
+    const actor = this.sudoActor(invokingUser);
+    const load = loadSudoPolicy(this.vfs);
+    if (!load.ok || !load.engine || !load.engine.hasAnyAccess(actor, hostname, hostIps)) {
+      return { allowed: false, nopasswd: false, reason: 'not-in-sudoers', invokingUser, runasUser, hostname, logfile: load.engine?.defaults.logfile };
+    }
+    const logfile = load.engine.defaults.logfile;
+    const cmdPath = resolveExePath(cmdName);
+    const evalResult = load.engine.evaluate(actor, hostname, hostIps, runasUser, cmdPath, args);
+    if (!evalResult.allowed) {
+      return { allowed: false, nopasswd: evalResult.nopasswd, reason: 'command-not-allowed', invokingUser, runasUser, hostname, logfile };
+    }
+    return { allowed: true, nopasswd: evalResult.nopasswd, reason: 'ok', invokingUser, runasUser, hostname, logfile };
+  }
+
+  /** Append the matching `/var/log/auth.log` line for a sudo decision
+   *  (a no-op when rsyslog isn't running, exactly like real syslog). Real
+   *  sudo additionally appends to `Defaults logfile=PATH` when set — *in
+   *  addition to* syslog, not instead of it. */
+  writeSudoAuditLine(kind: 'success' | 'not-in-sudoers' | 'command-not-allowed', auth: SudoAuthorization, cmdStr: string): void {
+    if (!this.serviceMgr.isActive('rsyslog')) return;
+    const ts = new Date().toUTCString().replace(/^... /, '').slice(0, 15);
+    const reasonSuffix = kind === 'success' ? '' : kind === 'not-in-sudoers' ? 'user NOT in sudoers ; ' : 'command not allowed ; ';
+    const line = `${ts} ${auth.hostname} sudo: ${auth.invokingUser} : ${reasonSuffix}TTY=pts/0 ; PWD=${this.cwd} ; USER=${auth.runasUser} ; COMMAND=/usr/bin/${cmdStr}\n`;
+    const existing = this.vfs.readFile('/var/log/auth.log') ?? '';
+    this.vfs.writeFile('/var/log/auth.log', existing + line, 0, 0, 0o022);
+    if (auth.logfile) {
+      const existingCustom = this.vfs.readFile(auth.logfile) ?? '';
+      this.vfs.writeFile(auth.logfile, existingCustom + line, 0, 0, 0o022);
+    }
   }
 
   /** First non-loopback IPv4 address configured on this machine. */
@@ -2571,53 +2662,68 @@ export class LinuxCommandExecutor {
       while (cmdArgs.length > 0 && /^-[nSEkbiHvP]+$/.test(cmdArgs[0])) cmdArgs.shift();
       if (cmdArgs.length === 0) return { output: 'usage: sudo [-u user] command\n       sudo -l', exitCode: 1 };
       if (cmdArgs[0] === '-l') return this.dispatch('sudo', cmdArgs, undefined, true);
-      if (!this.canSudo()) {
+
+      // Parse `-u user` up front — authorization (runas restriction) and
+      // the audit trail both need the real target, not just "root", and
+      // the command line logged must not include the "-u user" prefix.
+      let sudoTargetUser: string | null = null;
+      if (cmdArgs[0] === '-u' && cmdArgs.length >= 3) {
+        sudoTargetUser = cmdArgs[1];
+        cmdArgs = cmdArgs.slice(2);
+      }
+      const runasUser = sudoTargetUser ?? 'root';
+      const auth = this.authorizeSudo(cmdArgs[0], cmdArgs.slice(1), runasUser);
+      const invokingUser = auth.invokingUser;
+      const hostname = auth.hostname;
+
+      if (auth.reason === 'unknown-target-user') {
+        return { output: `sudo: unknown user: ${sudoTargetUser}`, exitCode: 1 };
+      }
+      if (auth.reason === 'not-in-sudoers') {
         // Real sudo audits the refusal too — `sudo: <u> : user NOT in
         // sudoers ; …` lands in /var/log/auth.log next to the existing
         // "Accepted password" line. Critical for the SSH→sudo
         // traceability scenario where the SOC needs to see who tried
         // to escalate without permission.
-        if (this.serviceMgr.isActive('rsyslog')) {
-          const ts = new Date().toUTCString().replace(/^... /, '').slice(0, 15);
-          const hostname = (this.vfs.readFile('/etc/hostname') ?? 'localhost').trim();
-          const u = this.userMgr.currentUser;
-          const cmdStr = cmdArgs.join(' ');
-          const fail = `${ts} ${hostname} sudo: ${u} : user NOT in sudoers ; TTY=pts/0 ; ` +
-            `PWD=${this.cwd} ; USER=root ; COMMAND=/usr/bin/${cmdStr}\n`;
-          const existing = this.vfs.readFile('/var/log/auth.log') ?? '';
-          this.vfs.writeFile('/var/log/auth.log', existing + fail, 0, 0, 0o022);
-        }
+        this.writeSudoAuditLine('not-in-sudoers', auth, cmdArgs.join(' '));
         return {
-          output: `${this.userMgr.currentUser} is not in the sudoers file. This incident will be reported.`,
+          output: `${invokingUser} is not in the sudoers file. This incident will be reported.`,
           exitCode: 1,
         };
       }
+      if (auth.reason === 'command-not-allowed') {
+        this.writeSudoAuditLine('command-not-allowed', auth, cmdArgs.join(' '));
+        return {
+          output: `Sorry, user ${invokingUser} is not allowed to execute '${cmdArgs.join(' ')}' as ${runasUser} on ${hostname}.`,
+          exitCode: 1,
+        };
+      }
+
       // `sudo -S` authenticates against the invoking user's password,
       // piped in on stdin. A wrong password is rejected and audited
-      // through PAM, exactly as on a real host.
+      // through PAM, exactly as on a real host — unless the matched
+      // rule carries NOPASSWD, in which case sudo never checks it.
       const last0 = cmdArgs[cmdArgs.length - 1];
       const passwordPiped = !!last0 && last0.includes('\n');
-      if (readsStdinPassword && passwordPiped) {
+      if (readsStdinPassword && passwordPiped && !auth.nopasswd) {
         const last = cmdArgs[cmdArgs.length - 1];
         const supplied = last && last.includes('\n')
           ? (last.replace(/\n+$/, '').split('\n').pop() ?? '').trim()
           : '';
-        if (!this.userMgr.checkPassword(this.userMgr.currentUser, supplied)) {
+        if (!this.userMgr.checkPassword(invokingUser, supplied)) {
           if (this.serviceMgr.isActive('rsyslog')) {
             const ts = new Date().toUTCString().replace(/^... /, '').slice(0, 15);
-            const hostname = (this.vfs.readFile('/etc/hostname') ?? 'localhost').trim();
-            const u = this.userMgr.currentUser;
             const cmdStr = cmdArgs.filter((a) => !a.includes('\n')).join(' ');
             const fail =
               `${ts} ${hostname} sudo: pam_unix(sudo:auth): authentication failure; ` +
-              `logname=${u} uid=${this.userMgr.currentUid} euid=0 tty=pts/0 ruser=${u} rhost=  user=${u}\n` +
-              `${ts} ${hostname} sudo:  ${u} : 1 incorrect password attempt ; TTY=pts/0 ; ` +
-              `PWD=${this.cwd} ; USER=root ; COMMAND=/usr/bin/${cmdStr}\n`;
+              `logname=${invokingUser} uid=${this.userMgr.currentUid} euid=0 tty=pts/0 ruser=${invokingUser} rhost=  user=${invokingUser}\n` +
+              `${ts} ${hostname} sudo:  ${invokingUser} : 1 incorrect password attempt ; TTY=pts/0 ; ` +
+              `PWD=${this.cwd} ; USER=${runasUser} ; COMMAND=/usr/bin/${cmdStr}\n`;
             const existing = this.vfs.readFile('/var/log/auth.log') ?? '';
             this.vfs.writeFile('/var/log/auth.log', existing + fail, 0, 0, 0o022);
           }
           return {
-            output: `[sudo] password for ${this.userMgr.currentUser}: \n` +
+            output: `[sudo] password for ${invokingUser}: \n` +
               'Sorry, try again.\nsudo: 1 incorrect password attempt',
             exitCode: 1,
           };
@@ -2625,36 +2731,19 @@ export class LinuxCommandExecutor {
         // Correct password — drop the stdin token so the command never
         // sees it as an argument.
         if (last && last.includes('\n')) cmdArgs.pop();
+      } else if (readsStdinPassword && passwordPiped && auth.nopasswd) {
+        // NOPASSWD: the piped token is never a password prompt reply —
+        // drop it so it isn't mistaken for a command argument.
+        if (last0 && last0.includes('\n')) cmdArgs.pop();
       }
       // Audit: write a syslog-style sudo line to /var/log/auth.log
       // (real sudo logs through pam_systemd → journald → rsyslog).
-      if (this.serviceMgr.isActive('rsyslog')) {
-        const ts = new Date().toUTCString().replace(/^... /, '').slice(0, 15);
-        const hostname = (this.vfs.readFile('/etc/hostname') ?? 'localhost').trim();
-        const line = `${ts} ${hostname} sudo: ${this.userMgr.currentUser} : TTY=pts/0 ; PWD=${this.cwd} ; USER=root ; COMMAND=/usr/bin/${cmdArgs.join(' ')}\n`;
-        const existing = this.vfs.readFile('/var/log/auth.log') ?? '';
-        this.vfs.writeFile('/var/log/auth.log', existing + line, 0, 0, 0o022);
-      }
-      let sudoTargetUser: string | null = null;
-      if (cmdArgs[0] === '-u' && cmdArgs.length >= 3) {
-        sudoTargetUser = cmdArgs[1];
-        cmdArgs = cmdArgs.slice(2);
-      }
+      this.writeSudoAuditLine('success', auth, cmdArgs.join(' '));
       savedUser = { user: this.userMgr.currentUser, uid: this.userMgr.currentUid, gid: this.userMgr.currentGid, cwd: this.cwd };
-      if (sudoTargetUser) {
-        const targetUserEntry = this.userMgr.getUser(sudoTargetUser);
-        if (targetUserEntry) {
-          this.userMgr.currentUser = targetUserEntry.username;
-          this.userMgr.currentUid = targetUserEntry.uid;
-          this.userMgr.currentGid = targetUserEntry.gid;
-        } else {
-          return { output: `sudo: unknown user: ${sudoTargetUser}`, exitCode: 1 };
-        }
-      } else {
-        this.userMgr.currentUser = 'root';
-        this.userMgr.currentUid = 0;
-        this.userMgr.currentGid = 0;
-      }
+      const targetUserEntry = this.userMgr.getUser(runasUser)!;
+      this.userMgr.currentUser = targetUserEntry.username;
+      this.userMgr.currentUid = targetUserEntry.uid;
+      this.userMgr.currentGid = targetUserEntry.gid;
     }
 
     if (cmdArgs.length === 0) {
@@ -3255,11 +3344,15 @@ export class LinuxCommandExecutor {
         return { output: out, exitCode: isErr ? 2 : 0 };
       }
       case 'cat': {
-        // If no file args and stdin is provided, output stdin (cat from stdin)
+        // If no file args and stdin is provided, output stdin (cat from stdin).
+        // `cat` is a byte-exact passthrough — it must not drop stdin's own
+        // trailing newline, or `cat <<EOF > file` silently truncates the
+        // last line when written to a file (terminal display already
+        // tolerates the newline via `ensureTrailingNewline`, which is a
+        // no-op when one is already present).
         const fileArgs = args.filter(a => !a.startsWith('-'));
         if (fileArgs.length === 0 && stdin) {
-          const content = stdin.endsWith('\n') ? stdin.slice(0, -1) : stdin;
-          return { output: content, exitCode: 0 };
+          return { output: stdin, exitCode: 0 };
         }
         for (const arg of fileArgs) {
           const p = this.path(arg);
@@ -4129,7 +4222,7 @@ export class LinuxCommandExecutor {
         if (sshpassResult.connection) {
           const srcPort = this.socketTable?.allocateEphemeralPort()
             ?? 49152 + Math.floor(Math.random() * 16000);
-          this.captureLog.captureTcpHandshake(
+          this.mirrorSshHandshakeCapture(
             { ip: sshpassResult.connection.localIp, port: srcPort },
             { ip: sshpassResult.connection.peerIp, port: sshpassResult.connection.peerPort },
           );
@@ -4154,7 +4247,7 @@ export class LinuxCommandExecutor {
             undefined, 'ssh',
           );
           const srcPort = entry?.localPort ?? 49152 + Math.floor(Math.random() * 16000);
-          this.captureLog.captureTcpHandshake(
+          this.mirrorSshHandshakeCapture(
             { ip: result.connection.localIp, port: srcPort },
             { ip: result.connection.peerIp, port: result.connection.peerPort },
           );
@@ -5716,12 +5809,16 @@ export class LinuxCommandExecutor {
 
   private handleSudoCmd(args: string[]): { output: string; exitCode: number } {
     if (args.length === 0 || args[0] === '-l') {
-      // sudo -l: show what current user can do
-      const hostname = 'linux-pc';
-      const user = this.userMgr.currentUser;
-      const userGroups = this.userMgr.getUserGroups(user);
-      const isSudoer = user === 'root' || userGroups.some(g => g.name === 'sudo');
-      if (!isSudoer) {
+      // sudo -l [-U user]: show what a user (default: current user) can do.
+      const hostname = (this.vfs.readFile('/etc/hostname') ?? 'localhost').trim();
+      const user = (args[0] === '-l' && args[1] === '-U' && args[2]) ? args[2] : this.userMgr.currentUser;
+      if (!this.userMgr.getUser(user)) {
+        return { output: `sudo: unknown user: ${user}`, exitCode: 1 };
+      }
+      const hostIps = this.getHostIps();
+      const actor = this.sudoActor(user);
+      const load = loadSudoPolicy(this.vfs);
+      if (!load.ok || !load.engine || !load.engine.hasAnyAccess(actor, hostname, hostIps)) {
         return {
           output: `${user} is not in the sudoers file. This incident will be reported.`,
           exitCode: 1,
@@ -5733,7 +5830,7 @@ export class LinuxCommandExecutor {
           `    env_reset, mail_badpass, secure_path=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/snap/bin`,
           ``,
           `User ${user} may run the following commands on ${hostname}:`,
-          `    (ALL : ALL) ALL`,
+          ...load.engine.renderMatchingRules(actor, hostname, hostIps).map((l) => `    ${l}`),
         ].join('\n'),
         exitCode: 0,
       };
@@ -5741,12 +5838,16 @@ export class LinuxCommandExecutor {
     return { output: cmdSudoCheck(this.ctx(), args), exitCode: 0 };
   }
 
-  /** Check if the current user is allowed to use sudo */
+  /** Check if the current user is allowed to use sudo at all (any rule,
+   *  any command) — the real sudoers policy chain, not just group
+   *  membership; fails closed if the chain has a syntax error anywhere. */
   canSudo(): boolean {
     const user = this.userMgr.currentUser;
     if (user === 'root' || this.userMgr.currentUid === 0) return true;
-    const userGroups = this.userMgr.getUserGroups(user);
-    return userGroups.some(g => g.name === 'sudo');
+    const load = loadSudoPolicy(this.vfs);
+    if (!load.ok || !load.engine) return false;
+    const hostname = (this.vfs.readFile('/etc/hostname') ?? 'localhost').trim();
+    return load.engine.hasAnyAccess(this.sudoActor(user), hostname, this.getHostIps());
   }
 
   // ─── IPSec (strongSwan) ─────────────────────────────────────────
