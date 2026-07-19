@@ -899,6 +899,10 @@ export class HuaweiSwitchShell implements ISwitchShell {
       return 'Error: Incomplete command.';
     });
 
+    this.systemTrie.register('ip routing-enable', 'Enable IP routing', () => {
+      this.swRef?.setIpRoutingEnabled(true);
+      return '';
+    });
     this.systemTrie.registerGreedy('ip route-static', 'Add a static route', (args) => {
       if (!this.swRef || args.length < 3) return 'Error: Incomplete command.';
       let net: IPAddress, mask: SubnetMask, gw: IPAddress;

@@ -665,7 +665,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     // parent's (the frame is tagged and sent through the parent by sendFrame).
     const dotIdx = ifName.indexOf('.');
     const wirePort = dotIdx > 0 ? this.ports.get(ifName.slice(0, dotIdx)) ?? port : port;
-    if (wirePort.isConnected() && wirePort.getIsUp()) {
+    if (wirePort.isConnected() && wirePort.getIsUp() && this.subinterfaceAllowsArpBroadcast(ifName)) {
       this.sendFrame(ifName, {
         srcMAC: port.getMAC(),
         dstMAC: MACAddress.broadcast(),
@@ -1013,6 +1013,18 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     return true;
   }
 
+  /**
+   * True unless `subif` is a Huawei `dot1q termination vid` sub-interface
+   * with ARP broadcast left disabled (VRP's default). Cisco sub-interfaces
+   * (`encapsulation dot1Q`) never set `dot1qVlan`, so they always pass.
+   */
+  private subinterfaceAllowsArpBroadcast(subif: string): boolean {
+    const subPort = this.ports.get(subif) as unknown as
+      { dot1qVlan?: number; arpBroadcastEnabled?: boolean } | undefined;
+    if (subPort?.dot1qVlan === undefined) return true;
+    return !!subPort.arpBroadcastEnabled;
+  }
+
   // ─── Data Plane: Phase A — Frame Handling (L2 → dispatch) ─────
 
   protected handleFrame(portName: string, frame: EthernetFrame): void {
@@ -1020,6 +1032,16 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     if (tag) {
       const subif = this.findSubinterfaceForVlan(portName, tag.vid);
       if (subif) {
+        // Huawei VRP: a `dot1q termination vid` sub-interface drops ARP
+        // broadcasts unless `arp broadcast enable` was configured on it —
+        // real hardware behaviour distinct from Cisco's `encapsulation
+        // dot1Q`, which floods ARP on a sub-interface unconditionally.
+        // `dot1qVlan` is only ever set by the Huawei command handler, so it
+        // doubles as the marker distinguishing the two.
+        if (frame.etherType === ETHERTYPE_ARP && frame.dstMAC.isBroadcast()
+          && !this.subinterfaceAllowsArpBroadcast(subif)) {
+          return;
+        }
         portName = subif;
         frame = {
           srcMAC: frame.srcMAC, dstMAC: frame.dstMAC,
