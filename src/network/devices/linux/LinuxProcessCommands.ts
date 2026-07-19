@@ -268,28 +268,35 @@ export function cmdPidof(args: string[], ctx: ProcessCmdContext): KillResult {
 }
 
 export function cmdPgrep(args: string[], ctx: ProcessCmdContext): KillResult {
-  // pgrep [-l] [-x] [-u user] pattern
+  // pgrep [-l] [-a] [-x] [-u user[,user...]] [pattern]
   let listLong = false;
+  let listFull = false;
   let exact = false;
-  let user: string | null = null;
+  let users: string[] | null = null;
   const patterns: string[] = [];
   for (let i = 0; i < args.length; i++) {
     const a = args[i];
     if (a === '-l') listLong = true;
+    else if (a === '-a') listFull = true;
     else if (a === '-x') exact = true;
-    else if (a === '-u') user = args[++i];
+    else if (a === '-u') users = (args[++i] ?? '').split(',').filter(Boolean);
     else patterns.push(a);
   }
-  if (patterns.length === 0) {
+  // Real pgrep only requires *some* selection criterion — a name pattern
+  // is one, but `-u user` alone (list everything that user owns) is
+  // equally valid and a common idiom.
+  if (patterns.length === 0 && !users) {
     return { output: 'pgrep: no matching criteria specified', exitCode: 2 };
   }
   const pattern = patterns[0];
-  const pids = ctx.pm.pgrep(pattern, exact);
+  const pids = pattern ? ctx.pm.pgrep(pattern, exact) : ctx.pm.list().map(p => p.pid);
   const filtered = pids
     .map(pid => ctx.pm.get(pid)!)
-    .filter(p => (user ? p.user === user : true));
+    .filter(p => (users ? users.includes(p.user) : true));
   if (filtered.length === 0) return { output: '', exitCode: 1 };
-  const lines = filtered.map(p => (listLong ? `${p.pid} ${p.comm}` : String(p.pid)));
+  const lines = filtered.map(p => (
+    listFull ? `${p.pid} ${p.command}` : listLong ? `${p.pid} ${p.comm}` : String(p.pid)
+  ));
   return { output: lines.join('\n'), exitCode: 0 };
 }
 

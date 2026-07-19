@@ -252,6 +252,11 @@ export abstract class LinuxMachine extends EndHost
     this.sessionTable.attachUtmp(utmpSync);
     this.utmpSync = utmpSync;
     this.executor.setUtmpSync(utmpSync);
+    // Real Linux establishes the tty1 console login at boot (agetty/login),
+    // not lazily on the first `who`/`w`/`last` invocation — materialising
+    // it here keeps /var/log/wtmp's entry count stable across the boot
+    // sequence instead of growing as a side effect of a monitoring command.
+    this.ensureLocalConsoleSession();
     const logindSync = new LogindStateSync(this.executor.vfs);
     logindSync.bootstrap();
     this.logindSync = logindSync;
@@ -819,6 +824,8 @@ export abstract class LinuxMachine extends EndHost
         user, uid, sshdPid: 0,
         fromIp, fromHost,
       });
+      this.materializePtsNode(session.tty, uid, gid);
+      this.executor.lastlog.record(user, fromIp, session.tty);
       const sshdMasterPid = this.executor.processMgr.list({ comm: 'sshd' })
         .find((p) => p.ppid === 1)?.pid ?? 1;
       const sshdChild = this.executor.processMgr.spawn({
@@ -1023,7 +1030,9 @@ export abstract class LinuxMachine extends EndHost
   private ensureLocalConsoleSession(): void {
     const user = this.executor.userMgr.currentUser;
     const uid = this.executor.userMgr.getUser(user)?.uid ?? 0;
+    const existed = this.sessionTable.list().some((s) => s.tty === 'tty1');
     this.sessionTable.ensureConsoleSession(user, uid);
+    if (!existed) this.executor.lastlog.record(user, '', 'tty1');
   }
 
   /**
@@ -1076,6 +1085,23 @@ export abstract class LinuxMachine extends EndHost
     return null;
   }
 
+  /** Materialise `/dev/pts/N` for a newly opened pty session — `ls
+   *  /dev/pts/` (excluding ptmx) is real Linux's own way of counting
+   *  active pseudo-terminals, and `who`/`w` must agree with it. */
+  private materializePtsNode(tty: string, uid: number, gid: number): void {
+    if (!tty.startsWith('pts/')) return;
+    // The devpts filesystem, not the logging-in user, creates the slave
+    // node — real Linux never requires write access to /dev/pts itself
+    // to get a pty. Create as root, then hand ownership to the session.
+    const inode = this.executor.vfs.createFileAt(`/dev/${tty}`, '', 0o620, 0, 0);
+    if (inode) this.executor.vfs.chown(`/dev/${tty}`, uid, gid);
+  }
+
+  private removePtsNode(tty: string): void {
+    if (!tty.startsWith('pts/')) return;
+    this.executor.vfs.deleteFile(`/dev/${tty}`);
+  }
+
   private buildLoginctlAction(): import('./linux/network/loginctlFormatter').LoginctlSessionAction {
     const findSession = (sessionId: string) => {
       const sessions = this.sessionTable.list();
@@ -1093,6 +1119,7 @@ export abstract class LinuxMachine extends EndHost
       if (s.shellPid) this.executor.processMgr.kill(s.shellPid, signal);
       if (s.sshdPid) this.executor.processMgr.kill(s.sshdPid, signal);
       this.sessionTable.close(s.tty, 'admin');
+      this.removePtsNode(s.tty);
       this.dropLogindSession(sessionId, s.uid);
       this.emitSessionClosedLog(s.user, sshdPid, sessionId);
       return { ok: true };
@@ -1704,9 +1731,14 @@ export abstract class LinuxMachine extends EndHost
     if (!trimmed) return '';
 
     // Session-table views (`w`, `who`, `last`) override the legacy
-    // user-manager output because the session table is the live truth.
-    const sessionView = this.renderSessionView(trimmed);
-    if (sessionView !== null) return sessionView;
+    // user-manager output because the session table is the live truth —
+    // but only for a bare invocation. `who | wc -l` etc. must still go
+    // through the bash interpreter's real pipe/redirect machinery, or
+    // the pipe/flag tokens after `who` get fed to who's own arg parser.
+    if (!LinuxMachine.hasCompositeSyntax(trimmed) && !this.hasShellConstructs(trimmed)) {
+      const sessionView = this.renderSessionView(trimmed);
+      if (sessionView !== null) return sessionView;
+    }
 
     if (!this.containsNetworkCommand(trimmed)) {
       return this.executor.execute(trimmed);
