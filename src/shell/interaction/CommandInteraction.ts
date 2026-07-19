@@ -72,6 +72,15 @@ export interface InteractionPlanContext {
   currentUid?: number;
   /** CLI mode for network equipment ('user' | 'privileged' | config modes…). */
   mode?: string;
+  /**
+   * The live device instance, opaque at this vendor-neutral layer (cast by
+   * the specific planner that knows its own device type). Needed by plans
+   * that must read persistent device state (e.g. a configured enable
+   * secret) while BUILDING the plan — before any `run` step has executed,
+   * so the shell's own transient execute()-scoped device reference isn't
+   * set yet.
+   */
+  device?: unknown;
 }
 
 /**
