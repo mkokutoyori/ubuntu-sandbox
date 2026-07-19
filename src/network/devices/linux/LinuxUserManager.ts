@@ -376,7 +376,7 @@ export class LinuxUserManager {
     return undefined;
   }
 
-  usermod(username: string, opts: { s?: string; d?: string; m?: boolean; aG?: string; L?: boolean; U?: boolean; g?: string }): string {
+  usermod(username: string, opts: { s?: string; d?: string; m?: boolean; aG?: string; G?: string; L?: boolean; U?: boolean; g?: string }): string {
     const user = this.users.get(username);
     if (!user) return `usermod: user '${username}' does not exist`;
 
@@ -397,6 +397,33 @@ export class LinuxUserManager {
     if (opts.U && user.locked) {
       user.unlock();
       this.publish({ topic: 'linux.iam.user.lock-state-changed', payload: { deviceId: this.deviceId, username, uid: user.uid, locked: false } });
+    }
+
+    if (opts.G !== undefined) {
+      // `-G` (without `-a`) *replaces* the supplementary-group list: drop
+      // membership from every group not named here (the primary group is
+      // untouched — it isn't a supplementary membership at all).
+      const wanted = new Set(opts.G.split(',').map((g) => g.trim()).filter(Boolean));
+      for (const grp of this.groups.values()) {
+        if (grp.gid === user.gid) continue;
+        if (grp.hasMember(username) && !wanted.has(grp.name) && grp.removeMember(username)) {
+          changed.push('groups');
+          this.publish({
+            topic: 'linux.iam.group.membership-changed',
+            payload: { deviceId: this.deviceId, groupName: grp.name, gid: grp.gid, username, action: 'removed' },
+          });
+        }
+      }
+      for (const gName of wanted) {
+        const grp = this.groups.get(gName);
+        if (grp && grp.addMember(username)) {
+          changed.push('groups');
+          this.publish({
+            topic: 'linux.iam.group.membership-changed',
+            payload: { deviceId: this.deviceId, groupName: grp.name, gid: grp.gid, username, action: 'added' },
+          });
+        }
+      }
     }
 
     if (opts.aG) {
@@ -588,6 +615,10 @@ export class LinuxUserManager {
    */
   checkPassword(username: string, password: string): boolean {
     const account = this.users.get(username);
+    // `usermod -L` / `passwd -l` prefixes the shadow hash with `!` —
+    // no password, however correct, authenticates against it until
+    // unlocked. Distinct from (and checked ahead of) the faillock tally.
+    if (account?.locked) return false;
     // pam_faillock denies every attempt — even the correct password — once
     // an account has tripped the lockout threshold, until it's reset.
     if (account && this.isAccountLockedOut(username)) return false;

@@ -44,6 +44,11 @@ async function attemptInvalidSave(invalidContent: string): Promise<void> {
   session.editorSave(invalidContent, mode.absolutePath);
   session.editorExit(true);
   await flush();
+  // Real visudo never silently discards a rejected save — it prints a
+  // "What now?" recovery prompt and awaits e/x/Q on the next line before
+  // the terminal is usable again. Answer (x)exit so callers get a normal,
+  // reusable prompt back.
+  await type('x');
 }
 
 describe('Scénario 1 — visudo : validation syntaxique et intégrité', () => {
