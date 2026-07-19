@@ -191,6 +191,8 @@ export const TerminalView: React.FC<TerminalViewProps> = ({ session }) => {
             filePath={editorMode.absolutePath}
             initialContent={editorMode.content}
             isNewFile={editorMode.isNewFile}
+            readOnly={editorMode.readOnly}
+            showPosition={editorMode.showPosition}
             fsContext={fsContext}
             onExit={(saved: boolean) => session.editorExit(saved)}
           />

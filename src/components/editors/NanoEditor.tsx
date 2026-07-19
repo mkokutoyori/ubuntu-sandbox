@@ -16,6 +16,63 @@ interface NanoEditorProps {
   isNewFile: boolean;
   fsContext: EditorFsContext;
   onExit: (saved: boolean) => void;
+  /** `nano -v`: buffer is immutable, no Write Out. */
+  readOnly?: boolean;
+  /** `nano -c`: title bar shows the live cursor position. */
+  showPosition?: boolean;
+}
+
+type Shortcut = readonly [string, string];
+
+/** The bottom two-row shortcut bar is strictly contextual in real nano —
+ *  only the keys meaningful in the active mode are ever shown. */
+function shortcutsForMode(engine: NanoEngine): readonly [readonly Shortcut[], readonly Shortcut[]] {
+  switch (engine.mode) {
+    case 'search':
+      return [
+        [['^G', 'Help'], ['^W', 'Search'], ['M-C', 'Case Sens'], ['M-R', 'Regexp'], ['^R', 'Bck/Fwd']],
+        [['^C', 'Cancel'], ['M-B', 'Backwards']],
+      ];
+    case 'replace-search':
+      return [
+        [['^G', 'Help'], ['M-C', 'Case Sens'], ['M-R', 'Regexp']],
+        [['^C', 'Cancel']],
+      ];
+    case 'replace-with':
+      return [
+        [['^G', 'Help'], ['M-C', 'Case Sens']],
+        [['^C', 'Cancel']],
+      ];
+    case 'replace-confirm':
+      return [
+        [['^G', 'Help'], ['Y', 'Yes'], ['A', 'All']],
+        [['N', 'No'], ['^C', 'Cancel']],
+      ];
+    case 'save-prompt':
+      return [
+        [['^G', 'Help'], ['M-D', 'DOS Format'], ['M-A', 'Append'], ['M-B', 'Backup File']],
+        [['^C', 'Cancel'], ['M-M', 'Mac Format'], ['M-P', 'Prepend']],
+      ];
+    case 'exit-save-prompt':
+      return [
+        [['^G', 'Help'], ['Y', 'Yes']],
+        [['N', 'No'], ['^C', 'Cancel']],
+      ];
+    case 'edit':
+    default:
+      if (engine.isReadOnly) {
+        // View mode: no Write Out, Cut, Paste, or Replace — nothing that
+        // could touch the buffer is bound.
+        return [
+          [['^G', 'Help'], ['^W', 'Where Is'], ['^T', 'Execute']],
+          [['^X', 'Exit'], ['^_', 'Go To Line']],
+        ];
+      }
+      return [
+        [['^G', 'Help'], ['^O', 'Write Out'], ['^W', 'Where Is'], ['^K', 'Cut'], ['^T', 'Execute']],
+        [['^X', 'Exit'], ['^R', 'Read File'], ['^\\', 'Replace'], ['^U', 'Paste'], ['^J', 'Justify']],
+      ];
+  }
 }
 
 function flatOffset(lines: readonly string[], line: number, col: number): number {
@@ -28,10 +85,12 @@ export const NanoEditor: React.FC<NanoEditorProps> = ({
   isNewFile,
   fsContext,
   onExit,
+  readOnly = false,
+  showPosition = false,
 }) => {
   const engineRef = useRef<NanoEngine>();
   if (!engineRef.current) {
-    engineRef.current = new NanoEngine(fsContext, filePath, initialContent, isNewFile);
+    engineRef.current = new NanoEngine(fsContext, filePath, initialContent, isNewFile, readOnly);
   }
   const engine = engineRef.current;
   const [, bump] = useReducer((x: number) => x + 1, 0);
@@ -39,8 +98,6 @@ export const NanoEditor: React.FC<NanoEditorProps> = ({
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const saveInputRef = useRef<HTMLInputElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
-
-  const fileName = filePath.split('/').pop() || 'New Buffer';
 
   useEffect(() => {
     if (engine.mode === 'save-prompt' || engine.mode === 'exit-save-prompt' || engine.mode === 'replace-confirm') {
@@ -67,12 +124,18 @@ export const NanoEditor: React.FC<NanoEditorProps> = ({
   const handleEditKeyDown = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => dispatch(e), [dispatch]);
   const handlePromptKeyDown = useCallback((e: React.KeyboardEvent<HTMLInputElement>) => dispatch(e), [dispatch]);
 
-  // Shortcut definitions for the bottom bar (matching real nano)
-  const shortcuts = [
-    ['^G', 'Help'],     ['^O', 'Write Out'], ['^W', 'Where Is'],  ['^K', 'Cut'],
-    ['^C', 'Location'], ['^X', 'Exit'],      ['^R', 'Read File'], ['^\\ ', 'Replace'],
-    ['^U', 'Paste'],    ['^J', 'Justify'],   ['^T', 'Execute'],   ['^_', 'Go To Line'],
-  ];
+  const [shortcutsRow1, shortcutsRow2] = shortcutsForMode(engine);
+
+  const titleStatus = engine.isReadOnly
+    ? '[view]'
+    : engine.modified
+      ? 'Modified'
+      : isNewFile
+        ? 'New Buffer'
+        : '';
+  const titlePosition = showPosition
+    ? `line ${engine.cursorLine + 1}/${engine.lines.length} col ${engine.cursorCol + 1}`
+    : '';
 
   return (
     <div
@@ -87,7 +150,8 @@ export const NanoEditor: React.FC<NanoEditorProps> = ({
     >
       {/* ── Header bar (inverted: white bg, dark text, like real nano) ── */}
       <div
-        className="flex items-center justify-center shrink-0 px-2"
+        data-testid="nano-titlebar"
+        className="flex items-center shrink-0 px-2"
         style={{
           backgroundColor: '#d3d7cf',
           color: '#300a24',
@@ -96,9 +160,11 @@ export const NanoEditor: React.FC<NanoEditorProps> = ({
         }}
       >
         <span className="mx-1">GNU nano 6.2</span>
-        {engine.modified && <span className="mx-2">Modified</span>}
+        <span className="flex-1 text-center mx-1">{filePath}</span>
         <span className="mx-1">
-          {isNewFile ? 'New Buffer' : fileName}
+          {titleStatus}
+          {titleStatus && titlePosition && '    '}
+          {titlePosition}
         </span>
       </div>
 
@@ -259,10 +325,12 @@ export const NanoEditor: React.FC<NanoEditorProps> = ({
       </div>
 
       {/* ── Bottom shortcut bar (two rows, inverted colors like real nano) ── */}
-      <div className="shrink-0" style={{ backgroundColor: '#300a24' }}>
-        {[0, 1].map((row) => (
-          <div key={row} className="flex flex-wrap" style={{ minHeight: '1.35em' }}>
-            {shortcuts.slice(row * 6, row * 6 + 6).map(([key, label]) => (
+      {/* Strictly contextual: shows exactly the shortcuts bound in the
+          active mode (edit/search/replace/save/...), like real nano. */}
+      <div data-testid="nano-shortcut-bar" className="shrink-0" style={{ backgroundColor: '#300a24' }}>
+        {[shortcutsRow1, shortcutsRow2].map((row, rowIdx) => (
+          <div key={rowIdx} className="flex flex-wrap" style={{ minHeight: '1.35em' }}>
+            {row.map(([key, label]) => (
               <div key={key} className="flex" style={{ minWidth: '16.66%' }}>
                 <span
                   style={{

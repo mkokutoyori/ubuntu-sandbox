@@ -226,8 +226,10 @@ export class VimEngine {
   private lastVisualEnd = 0;
   private blockInsertContext: { lines: number[]; col: number; suffixLenAtStart: number } | null = null;
 
-  // `:set` toggles.
-  private showLineNumbers = true;
+  // `:set` toggles. Real vim ships with `number`/`relativenumber` both off
+  // by default — the user opts in explicitly (e.g. via ~/.vimrc).
+  private showLineNumbers = false;
+  private showRelativeNumbers = false;
   private hlsearchEnabled = false;
   private ignoreCaseSearch = false;
   private _shellOutput = '';
@@ -318,6 +320,7 @@ export class VimEngine {
   get pendingSubstMatch(): PendingSubstMatch | null { return this._pendingMatch; }
   get visualAnchor(): { line: number; col: number } { return { line: this.visualAnchorLine, col: this.visualAnchorCol }; }
   get lineNumbersShown(): boolean { return this.showLineNumbers; }
+  get relativeNumbersShown(): boolean { return this.showRelativeNumbers; }
   get hlsearch(): boolean { return this.hlsearchEnabled; }
   get shellOutput(): string { return this._shellOutput; }
   get fileFormat(): 'unix' | 'dos' { return this._fileFormat; }
@@ -1429,6 +1432,18 @@ export class VimEngine {
       this._mode = 'normal';
       return;
     }
+    if (trimmed === 'set relativenumber' || trimmed === 'set rnu') {
+      this.showRelativeNumbers = true;
+      this._message = '';
+      this._mode = 'normal';
+      return;
+    }
+    if (trimmed === 'set norelativenumber' || trimmed === 'set nornu') {
+      this.showRelativeNumbers = false;
+      this._message = '';
+      this._mode = 'normal';
+      return;
+    }
     if (trimmed === 'set hlsearch') {
       this.hlsearchEnabled = true;
       this._message = '';
@@ -1510,7 +1525,10 @@ export class VimEngine {
       return false;
     }
     this._modified = false;
-    this._message = `"${path}" ${this.linesArr.length}L, ${this.content.length}C written`;
+    // Real vim reports the byte count actually written (UTF-8), not the
+    // in-memory JS string length — they diverge for any multi-byte char.
+    const byteLength = new TextEncoder().encode(body).length;
+    this._message = `"${path}" ${this.linesArr.length}L, ${byteLength}B written`;
     return true;
   }
 

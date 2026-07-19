@@ -1880,6 +1880,11 @@ export class LinuxTerminalSession extends TerminalSession {
       if (!arg.startsWith('-') && !arg.startsWith('+')) { filePath = arg; break; }
     }
     if (!filePath) filePath = editorCmd === 'nano' ? 'New Buffer' : '';
+    // nano -v/--view: open read-only, no Write Out. nano -c/--constantshow:
+    // title bar shows the live cursor position. Both no-ops for vi/vim
+    // (which use their own :view / :set ruler commands for the same idea).
+    const readOnly = editorCmd === 'nano' && args.some((a) => a === '-v' || a === '--view');
+    const showPosition = editorCmd === 'nano' && args.some((a) => a === '-c' || a === '--constantshow');
 
     // Resolve against the per-terminal cwd when a shell session is owned
     // (terminal_gap.md §10.1) — falls back to the device's shared cwd for
@@ -1900,6 +1905,8 @@ export class LinuxTerminalSession extends TerminalSession {
       absolutePath,
       content: existingContent ?? '',
       isNewFile,
+      readOnly,
+      showPosition,
     };
     this.notify();
   }

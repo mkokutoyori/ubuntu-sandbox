@@ -24,6 +24,15 @@ function flatOffset(lines: readonly string[], line: number, col: number): number
   return lines.slice(0, line).join('\n').length + (line > 0 ? 1 : 0) + col;
 }
 
+/** Real vim's ruler position label: "All" when the whole file fits on
+ *  screen, "Top"/"Bot" at either edge, otherwise a percentage. */
+export function vimPositionLabel(cursorLine: number, totalLines: number, visibleLineCount: number): string {
+  if (totalLines <= visibleLineCount) return 'All';
+  if (cursorLine === 0) return 'Top';
+  if (cursorLine === totalLines - 1) return 'Bot';
+  return `${Math.round(((cursorLine + 1) / totalLines) * 100)}%`;
+}
+
 export const VimEditor: React.FC<VimEditorProps> = ({
   filePath,
   initialContent,
@@ -124,46 +133,59 @@ export const VimEditor: React.FC<VimEditorProps> = ({
     >
       {/* ── Editor area with line numbers ── */}
       <div className="flex-1 flex overflow-hidden relative">
-        {/* Line numbers gutter */}
-        {engine.lineNumbersShown && (
-          <div
-            className="select-none overflow-hidden shrink-0 text-right pr-1"
-            style={{
-              backgroundColor: '#181825',
-              color: '#585b70',
-              minWidth: '3.5em',
-              paddingTop: '2px',
-              lineHeight: '1.4',
-              fontSize: 'inherit',
-              fontFamily: 'inherit',
-            }}
-          >
-            {lines.map((_, i) => (
+        {/* Left gutter: always present (real vim always reserves this
+            column for `~` on lines past EOF) — line numbers are an
+            independent overlay within it, off by default like real vim. */}
+        <div
+          data-testid="vim-gutter"
+          className="select-none overflow-hidden shrink-0 text-right pr-1"
+          style={{
+            backgroundColor: '#181825',
+            color: '#585b70',
+            minWidth: (engine.lineNumbersShown || engine.relativeNumbersShown) ? '3.5em' : '1em',
+            paddingTop: '2px',
+            lineHeight: '1.4',
+            fontSize: 'inherit',
+            fontFamily: 'inherit',
+          }}
+        >
+          {lines.map((_, i) => {
+            const isCursor = i === engine.cursorLine;
+            let label = '';
+            if (engine.relativeNumbersShown) {
+              label = isCursor
+                ? (engine.lineNumbersShown ? String(i + 1) : '0')
+                : String(Math.abs(i - engine.cursorLine));
+            } else if (engine.lineNumbersShown) {
+              label = String(i + 1);
+            }
+            return (
               <div
                 key={i}
                 style={{
                   minHeight: '1.4em',
-                  color: i === engine.cursorLine ? '#cdd6f4' : '#585b70',
+                  color: isCursor ? '#cdd6f4' : '#585b70',
                 }}
               >
-                {i + 1}
+                {label}
               </div>
-            ))}
-            {Array.from({ length: Math.max(0, visibleLineCount - totalLines) }).map((_, i) => (
-              <div
-                key={`tilde-${i}`}
-                style={{
-                  minHeight: '1.4em',
-                  color: '#45475a',
-                  textAlign: 'left',
-                  paddingLeft: '4px',
-                }}
-              >
-                ~
-              </div>
-            ))}
-          </div>
-        )}
+            );
+          })}
+          {Array.from({ length: Math.max(0, visibleLineCount - totalLines) }).map((_, i) => (
+            <div
+              key={`tilde-${i}`}
+              data-testid="vim-tilde"
+              style={{
+                minHeight: '1.4em',
+                color: '#45475a',
+                textAlign: 'left',
+                paddingLeft: '4px',
+              }}
+            >
+              ~
+            </div>
+          ))}
+        </div>
 
         {/* Content area */}
         <div className="flex-1 relative">
@@ -211,8 +233,12 @@ export const VimEditor: React.FC<VimEditorProps> = ({
         </div>
       </div>
 
-      {/* ── Status line (penultimate line) ── */}
+      {/* ── Status line (penultimate line) ──
+          Real classic vi shows only the filename here — no live ruler, no
+          [+] modified marker, no percentage. vim's full ruler (position +
+          Top/Bot/All/N%) is a vim extension vi never had. */}
       <div
+        data-testid="vim-statusline"
         className="flex items-center justify-between px-2 shrink-0"
         style={{
           backgroundColor: '#313244',
@@ -222,19 +248,21 @@ export const VimEditor: React.FC<VimEditorProps> = ({
         }}
       >
         <span>
-          {engine.modified && <span style={{ color: '#f38ba8' }}>[+] </span>}
+          {engine.variant === 'vim' && engine.modified && <span style={{ color: '#f38ba8' }}>[+] </span>}
           {engine.isReadOnly && <span style={{ color: '#f9e2af' }}>[RO] </span>}
           <span>{fileName}</span>
         </span>
-        <span style={{ color: '#a6adc8' }}>
-          {engine.isRecordingMacro && (
-            <span style={{ color: '#f38ba8' }} className="mr-4">recording @{engine.recordingMacroName}</span>
-          )}
-          {engine.cursorLine + 1},{engine.cursorCol + 1}
-          <span className="ml-4">
-            {totalLines > 0 ? Math.round(((engine.cursorLine + 1) / totalLines) * 100) : 100}%
+        {engine.variant === 'vim' && (
+          <span style={{ color: '#a6adc8' }}>
+            {engine.isRecordingMacro && (
+              <span style={{ color: '#f38ba8' }} className="mr-4">recording @{engine.recordingMacroName}</span>
+            )}
+            {engine.cursorLine + 1},{engine.cursorCol + 1}
+            <span className="ml-4">
+              {vimPositionLabel(engine.cursorLine, totalLines, visibleLineCount)}
+            </span>
           </span>
-        </span>
+        )}
       </div>
 
       {/* ── Command/message line (last line) ── */}
