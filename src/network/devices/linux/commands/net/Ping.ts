@@ -287,11 +287,6 @@ async function runPing(
 
   const isRoot = ctx.executor.userMgr.currentUid === 0;
 
-  const sawC = args.indexOf('-c') !== -1;
-  if (parsed.flood && sawC) {
-    return 'ping: invalid argument: -f and -c are mutually exclusive';
-  }
-
   if (parsed.flood && !isRoot) {
     return 'ping: -f flood: Permission denied (privileged operation, must run as root)';
   }
@@ -375,6 +370,9 @@ async function runPing(
   }
 
   const isHostname = rawTarget !== targetStr;
+  // -f sends as fast as the wire allows instead of waiting -i seconds
+  // between echoes — that's the whole point of a flood ping.
+  const sendIntervalMs = parsed.flood ? 0 : parsed.intervalMs;
   const results: PingResult[] = [];
   for (let seq = 1; seq <= parsed.count; seq++) {
     const batch = await ctx.net.pingSequence(targetIP, 1, parsed.timeoutMs, parsed.ttl);
@@ -383,8 +381,8 @@ async function runPing(
     } else {
       results.push({ success: false, rttMs: 0, ttl: 0, seq, bytes: 0, fromIP: '', error: 'Destination unreachable' });
     }
-    if (seq < parsed.count && parsed.intervalMs > 0) {
-      await new Promise<void>(resolve => setTimeout(resolve, parsed.intervalMs));
+    if (seq < parsed.count && sendIntervalMs > 0) {
+      await new Promise<void>(resolve => setTimeout(resolve, sendIntervalMs));
     }
   }
 

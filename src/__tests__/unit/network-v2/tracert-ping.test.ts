@@ -2168,10 +2168,11 @@ describe('WAN-level Ping and Traceroute Command Suite', () => {
       expect(output.toLowerCase()).toMatch(/invalid|error/);
     });
 
-    it('282. should reject Linux ping if multiple flags conflict (-c 5 -f)', async () => {
+    it('282. real ping allows -c with -f — a root flood ping bounded to a count sends exactly that many packets', async () => {
       const pc = new LinuxPC('PC', 0, 0);
-      const output = await pc.executeCommand('ping -c 5 -f 127.0.0.1');
-      expect(output.toLowerCase()).toMatch(/invalid|error/); // Flood mode conflicts with specific non-root rate counts
+      const output = await pc.executeCommand('sudo ping -c 5 -f 127.0.0.1');
+      expect(output.toLowerCase()).not.toMatch(/invalid|permission denied/);
+      expect(output).toMatch(/5 packets transmitted/);
     });
 
     it('283. should log error if the target interface is administratively down on Windows PC', async () => {
