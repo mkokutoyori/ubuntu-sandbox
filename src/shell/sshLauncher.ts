@@ -20,6 +20,8 @@ import { findEquipmentByIp, findEquipmentByHostname } from './hostResolution';
 import { primaryShellKindFor } from './shellKind';
 import { CrossVendorRemoteShell } from './CrossVendorRemoteShell';
 import type { IShell, ShellLineResult } from './IShell';
+import { SshKnownHostsFile, type SshHostKeyType } from '@/network/protocols/ssh/SshKnownHostsFile';
+import { readForceCommand } from '@/network/devices/linux/network/LinuxSshClient';
 
 /** Tokenise an ssh command line into flags, optional value, user/host, and remaining argv. */
 interface ParsedSshLine {
@@ -79,6 +81,13 @@ export type TcpWireOutcome = 'open' | 'refused' | 'timeout';
 export interface SshLaunchOptions {
   /** Default user when the ssh line omits `user@`. */
   readonly defaultUser: string;
+  /**
+   * The device this shell runs on — needed to check the launching
+   * device's own `~/.ssh/known_hosts` against the target's real host key
+   * (see {@link checkKnownHosts}). Omit to skip that check (falls back
+   * to the pre-existing cosmetic "Warning: Permanently added" banner).
+   */
+  readonly sourceDevice?: Equipment;
   readonly wireProbe?: (host: string, port: number) => TcpWireOutcome;
   /**
    * Track which (user, host) pairs already wrote a known_hosts entry in
@@ -107,6 +116,8 @@ export interface PendingSshAuth {
   /** Source IP / hostname propagated for auth.log + last-login records. */
   sourceIp?: string;
   sourceHostname?: string;
+  /** The launching device — see {@link SshLaunchOptions.sourceDevice}. */
+  sourceDevice?: Equipment;
 }
 
 export type SshLaunchInterpretation =
@@ -245,6 +256,7 @@ export async function tryInterpretSshLaunch(
         knownHostsTracker: opts.knownHostsTracker,
         sourceIp: opts.sourceIp,
         sourceHostname: opts.sourceHostname,
+        sourceDevice: opts.sourceDevice,
       },
     };
   }
@@ -262,6 +274,9 @@ export async function tryInterpretSshLaunch(
       target, user, host: parsed.host, port, primaryKind,
       attempts: 0,
       knownHostsTracker: opts.knownHostsTracker,
+      sourceIp: opts.sourceIp,
+      sourceHostname: opts.sourceHostname,
+      sourceDevice: opts.sourceDevice,
     },
   };
 }
@@ -277,21 +292,86 @@ export interface FinalisedAuth {
   readonly banner: readonly string[];
 }
 
+export type FinaliseAuthOutcome =
+  | ({ kind: 'success' } & FinalisedAuth)
+  | { kind: 'bad-password' }
+  /** Password was right but the server refuses the session outright (host-key mismatch, ForceCommand=internal-sftp) — the caller must NOT re-prompt for a password. */
+  | { kind: 'refused'; message: string };
+
+const HOST_KEY_CHANGED_MESSAGE =
+  '@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@\n' +
+  '@    WARNING: REMOTE HOST IDENTIFICATION HAS CHANGED!     @\n' +
+  '@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@\n' +
+  'IT IS POSSIBLE THAT SOMEONE IS DOING SOMETHING NASTY!\n' +
+  'Add correct host key in /root/.ssh/known_hosts to get rid of this message.\n' +
+  'Offending key in /root/.ssh/known_hosts:1\n' +
+  'Host key verification failed.';
+
+interface DeviceVfsLike {
+  readFile: (p: string) => string | null;
+  writeFile: (p: string, c: string, uid: number, gid: number, umask: number) => void;
+}
+
+function vfsOf(device: unknown): DeviceVfsLike | null {
+  return (device as { executor?: { vfs?: DeviceVfsLike } } | undefined)?.executor?.vfs ?? null;
+}
+
 /**
- * Verify the supplied password against the target device. Returns the
- * built CrossVendorRemoteShell with the OpenSSH-style banner on success,
- * or null on failure (caller drives retry).
+ * Real known_hosts comparison for the interactive `ssh` path — mirrors
+ * {@link file://../network/devices/linux/network/LinuxSshClient.ts}'s
+ * `updateKnownHosts`. Returns `'unsupported'` (skip, no-op) when either
+ * side lacks a VFS — e.g. a non-Linux source or target — so this never
+ * regresses cross-vendor SSH that isn't in scope for host-key checking.
+ */
+function checkKnownHosts(auth: PendingSshAuth): 'changed' | 'ok' | 'unsupported' {
+  const targetVfs = vfsOf(auth.target);
+  const sourceVfs = vfsOf(auth.sourceDevice);
+  if (!targetVfs || !sourceVfs) return 'unsupported';
+  const pubKeyRaw = targetVfs.readFile('/etc/ssh/ssh_host_ed25519_key.pub') ?? '';
+  const tokens = pubKeyRaw.trim().split(/\s+/);
+  if (tokens.length < 2) return 'unsupported';
+  const keyType = tokens[0] as SshHostKeyType;
+  const publicKey = tokens[1];
+
+  const knownHostsPath = '/root/.ssh/known_hosts';
+  const existing = sourceVfs.readFile(knownHostsPath) ?? '';
+  const file = SshKnownHostsFile.parse(existing);
+  if (file.hostKeyChanged(auth.host, keyType, publicKey)) return 'changed';
+  if (!file.find(auth.host, keyType)) {
+    const updated = file.add({ hostnames: [auth.host], keyType, publicKey });
+    sourceVfs.writeFile(knownHostsPath, updated.serialize(), 0, 0, 0o022);
+  }
+  return 'ok';
+}
+
+/**
+ * Verify the supplied password against the target device, then apply the
+ * same server-side policy `LinuxSshClient`'s exec-mode path enforces
+ * (host-key change, ForceCommand=internal-sftp) before handing back a
+ * live interactive shell.
  */
 export function finalisePendingAuth(
   auth: PendingSshAuth,
   password: string,
-): FinalisedAuth | null {
+): FinaliseAuthOutcome {
   if (!verifyCredentials(auth.target, auth.user, password)) {
     auth.attempts++;
     // Best-effort: record the failure for auth.log realism.
     tryRecordSshLogin(auth, false);
-    return null;
+    return { kind: 'bad-password' };
   }
+
+  if (checkKnownHosts(auth) === 'changed') {
+    return { kind: 'refused', message: HOST_KEY_CHANGED_MESSAGE };
+  }
+  const forced = readForceCommand(
+    auth.target as unknown as Parameters<typeof readForceCommand>[0],
+    auth.user, auth.sourceIp, auth.sourceHostname,
+  );
+  if (forced === 'internal-sftp') {
+    return { kind: 'refused', message: 'This service allows sftp connections only.' };
+  }
+
   // Build the banner BEFORE recording — the OpenSSH "Last login" line
   // must reflect the PREVIOUS login, not this one.
   const banner = buildLoginBanner(auth);
@@ -325,7 +405,7 @@ export function finalisePendingAuth(
     sshClient,
     onClose: () => { if (session) registry?.close(session.id, 'logout'); },
   });
-  return { shell, banner };
+  return { kind: 'success', shell, banner };
 }
 
 function firstConfiguredIp(dev: Equipment): string | undefined {

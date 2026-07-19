@@ -68,8 +68,9 @@ async function openInteractiveSession(pc: LinuxPC, ip: string): Promise<IShell> 
     (attempt as { pendingAuth: Parameters<typeof finalisePendingAuth>[0] }).pendingAuth,
     'alice',
   );
-  expect(finalised).not.toBeNull();
-  return finalised!.shell;
+  expect(finalised.kind).toBe('success');
+  if (finalised.kind !== 'success') throw new Error('unreachable');
+  return finalised.shell;
 }
 
 function registryOf(router: CiscoRouter | HuaweiRouter) {
