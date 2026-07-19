@@ -2048,6 +2048,27 @@ export class HuaweiSwitchShell implements ISwitchShell {
       }
       return this.displayEthTrunk(id);
     });
+    trie.registerGreedy('display lacp statistics', 'Display LACP statistics', (args) => {
+      if (!this.swRef) return '';
+      const agent = (this.swRef as unknown as { getLacpAgent?: () => import('@/network/lacp/LacpAgent').LacpAgent } | null)?.getLacpAgent?.();
+      if (!agent) return 'Info: LACP is not running.';
+      const filterArg = args.join(' ');
+      const filterPort = filterArg ? this.resolveInterfaceName(filterArg) : null;
+      const ports = filterPort
+        ? [filterPort]
+        : agent.getAllGroups().flatMap(g => g.members.map(m => m.portName));
+      if (ports.length === 0) return 'Info: No Eth-Trunk is configured.';
+      const blocks = ports.map((p) => {
+        const stats = agent.getStatistics(p);
+        return [
+          p,
+          '                        LACPDU               Marker',
+          '             Sent       Received   Sent       Received',
+          `             ${String(stats.sent).padEnd(11)}${String(stats.received).padEnd(11)}0          0`,
+        ].join('\n');
+      });
+      return blocks.join('\n\n');
+    });
     trie.registerGreedy('display counters', 'Display interface counters', (args) => {
       if (!this.swRef) return '';
       const ifName = args.filter(a => /\d\/\d/.test(a)).join(' ');
@@ -2172,6 +2193,16 @@ export class HuaweiSwitchShell implements ISwitchShell {
       const list = this.ifStp.get(this.selectedInterface) ?? [];
       list.push(`stp ${args.join(' ')}`);
       this.ifStp.set(this.selectedInterface, list);
+      const port = this.selectedInterface;
+      if (a[0] === 'edged-port' && a[1] === 'enable') {
+        this.applyToStpAgent(ag => ag.setPortFast(port, true));
+      } else if (a[0] === 'edged-port' && a[1] === 'disable') {
+        this.applyToStpAgent(ag => ag.setPortFast(port, false));
+      } else if (a[0] === 'bpdu-protection' && a[1] === 'enable') {
+        this.applyToStpAgent(ag => ag.setPortBpduGuard(port, true));
+      } else if (a[0] === 'bpdu-protection' && a[1] === 'disable') {
+        this.applyToStpAgent(ag => ag.setPortBpduGuard(port, false));
+      }
       return '';
     });
   }
@@ -2531,7 +2562,10 @@ export class HuaweiSwitchShell implements ISwitchShell {
       const r = ag?.getPortRole(p) ?? 'designated';
       const role = r === 'root' ? 'ROOT' : r === 'alternate' ? 'ALTE'
         : r === 'backup' ? 'BACK' : r === 'disabled' ? 'DISA' : 'DESI';
-      rows.push(`${mst}  ${p.padEnd(27)} ${role}  ${state.padEnd(13)} NONE`);
+      const guards = ag?.getPortGuards(p);
+      const protection = guards?.bpduGuard ? 'BPDU'
+        : guards?.portFast ? 'EDGE' : 'NONE';
+      rows.push(`${mst}  ${p.padEnd(27)} ${role}  ${state.padEnd(13)} ${protection}`);
     }
     if (only && rows.length === 0) {
       return `Error: The port ${only} does not exist.`;
@@ -2566,7 +2600,7 @@ export class HuaweiSwitchShell implements ISwitchShell {
       'PortName                      Status      Weight',
       ...t.members.map(m => {
         const info = liveByPort.get(m);
-        const status = info?.bundled ? 'Up' : 'Down';
+        const status = info?.selected ? 'Selected' : 'Unselect';
         return `${m.padEnd(30)}${status.padEnd(12)}1`;
       }),
     ];
