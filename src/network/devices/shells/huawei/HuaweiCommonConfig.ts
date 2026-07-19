@@ -13,7 +13,9 @@ import type { CommandTrie } from '../CommandTrie';
 /** `save` / `save force` — persist running config to "flash". */
 export function saveConfiguration(): string {
   return [
-    'Info: The current configuration was saved to the device successfully.',
+    'Warning: The current configuration will be written to the device.',
+    'Now saving the current configuration to the slot 0.',
+    'Save the configuration successfully.',
   ].join('\n');
 }
 
@@ -54,17 +56,27 @@ export function setHeader(): string {
  * Called by BOTH HuaweiSwitchShell and HuaweiVRPShell so the wiring
  * itself isn't duplicated (DRY).
  */
-export function registerHuaweiCommonMgmt(trie: CommandTrie, debugFlags?: Set<string>): void {
+export function registerHuaweiCommonMgmt(
+  trie: CommandTrie,
+  debugFlags?: Set<string>,
+  onSave?: () => void,
+  onResetSaved?: () => void,
+): void {
   const onDebug = (label: string) => { debugFlags?.add(label); };
   const offDebug = (label?: string) => {
     if (!debugFlags) return;
     if (!label) { debugFlags.clear(); return; }
     debugFlags.delete(label);
   };
-  trie.registerGreedy('save', 'Save current configuration', () => saveConfiguration());
+  trie.registerGreedy('save', 'Save current configuration', () => {
+    onSave?.();
+    return saveConfiguration();
+  });
   trie.register('reboot', 'Reboot the device', () => rebootDevice());
-  trie.register('reset saved-configuration', 'Erase startup configuration', () =>
-    resetSavedConfiguration());
+  trie.register('reset saved-configuration', 'Erase startup configuration', () => {
+    onResetSaved?.();
+    return resetSavedConfiguration();
+  });
   trie.register('commit', 'Commit candidate configuration', () => commitConfiguration());
   trie.registerGreedy('screen-length', 'Set terminal screen length', () => screenLength());
   trie.registerGreedy('header', 'Configure login/shell banner', () => setHeader());

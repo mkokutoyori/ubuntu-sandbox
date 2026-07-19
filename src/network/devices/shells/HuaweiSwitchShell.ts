@@ -880,7 +880,7 @@ export class HuaweiSwitchShell implements ISwitchShell {
         return '';
       }
 
-      const portName = this.resolveInterfaceName(args[0]);
+      const portName = this.resolveInterfaceName(joined);
       if (!portName) return `Error: Wrong parameter found at '^' position.`;
       this.selectedInterface = portName;
       this.mode = 'interface';
@@ -1026,7 +1026,13 @@ export class HuaweiSwitchShell implements ISwitchShell {
     // port link-type trunk
     this.interfaceTrie.register('port link-type trunk', 'Set port to trunk mode', () => {
       if (!this.swRef || !this.selectedInterface) return 'Error: Wrong parameter.';
+      const wasTrunk = this.swRef.getSwitchportConfig(this.selectedInterface)?.mode === 'trunk';
       this.swRef.setSwitchportMode(this.selectedInterface, 'trunk');
+      // Unlike Cisco (trunk default: all VLANs), VRP's default trunk
+      // allowed-VLAN list is VLAN 1 only — `port trunk allow-pass vlan`
+      // then adds to it. Only reset on an actual access→trunk transition,
+      // never on a no-op re-run that would wipe an already-configured list.
+      if (!wasTrunk) this.swRef.setTrunkAllowedVlans(this.selectedInterface, new Set([1]));
       return '';
     });
 
@@ -2059,7 +2065,12 @@ export class HuaweiSwitchShell implements ISwitchShell {
    * Single source via huawei/HuaweiCommonConfig (DRY).
    */
   private registerCommonMgmt(trie: CommandTrie): void {
-    registerHuaweiCommonMgmt(trie);
+    registerHuaweiCommonMgmt(
+      trie,
+      undefined,
+      () => { if (this.swRef) this.swRef._captureStartupConfig(this.displayCurrentConfig(this.swRef)); },
+      () => { this.swRef?._eraseStartupConfig(); },
+    );
   }
 
   // ─── STP / RSTP / MSTP (switch-only, L2) ──────────────────────────
@@ -2894,8 +2905,12 @@ export class HuaweiSwitchShell implements ISwitchShell {
 
   // ─── Interface Name Resolution ──────────────────────────────────
 
-  private resolveInterfaceName(input: string): string | null {
+  private resolveInterfaceName(rawInput: string): string | null {
     if (!this.swRef) return null;
+    // VRP accepts both "GigabitEthernet0/0/1" and "GigabitEthernet 0/0/1"
+    // (the space form is standard syntax, not an abbreviation) — collapse
+    // whitespace before matching so both resolve identically.
+    const input = rawInput.replace(/\s+/g, '');
 
     // Direct match
     for (const name of this.swRef.getPortNames()) {

@@ -2035,7 +2035,9 @@ export abstract class EndHost extends Equipment {
       case 'icmp-net-prohibited': return ICMP_UNREACH_NET_PROHIBITED;
       case 'icmp-host-prohibited': return ICMP_UNREACH_HOST_PROHIBITED;
       case 'icmp-admin-prohibited': return ICMP_UNREACH_ADMIN_PROHIBITED;
-      default: return ICMP_UNREACH_ADMIN_PROHIBITED;
+      // Real iptables: a bare `-j REJECT` with no `--reject-with` defaults
+      // to icmp-port-unreachable, not admin-prohibited.
+      default: return ICMP_UNREACH_PORT;
     }
   }
 

@@ -1206,9 +1206,10 @@ describe('Group 8: UFW (Uncomplicated Firewall)', () => {
       await srv.executeCommand('ufw default reject incoming');
       await srv.executeCommand('ufw enable');
 
-      // Ping should fail fast with "Destination Host Unreachable" instead of timeout
+      // Ping should fail fast with an ICMP unreachable instead of timeout —
+      // ufw's default-reject policy explicitly uses icmp-port-unreachable.
       const result = await pc.executeCommand('ping -c 1 10.0.0.2');
-      expect(result).toContain('Destination Host Unreachable');
+      expect(result).toContain('Destination Port Unreachable');
       expect(result).toContain('0 received');
     });
 
@@ -1221,8 +1222,10 @@ describe('Group 8: UFW (Uncomplicated Firewall)', () => {
       await srv.executeCommand('ufw reject from 10.0.0.1');
       await srv.executeCommand('ufw enable');
 
+      // Bare reject (no explicit icmp type) defaults to
+      // icmp-port-unreachable, exactly like real iptables REJECT.
       const result = await pc.executeCommand('ping -c 1 10.0.0.2');
-      expect(result).toContain('Destination Host Unreachable');
+      expect(result).toContain('Destination Port Unreachable');
       expect(result).toContain('0 received');
     });
   });
