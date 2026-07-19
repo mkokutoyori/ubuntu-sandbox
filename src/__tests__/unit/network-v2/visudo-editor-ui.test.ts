@@ -54,7 +54,7 @@ describe('visudo — editor UI flow', () => {
     expect(sudoers).toContain('deploy ALL=(ALL) NOPASSWD: ALL');
   });
 
-  it('saving syntactically invalid content is rejected — /etc/sudoers stays untouched', async () => {
+  it('saving syntactically invalid content triggers the real "What now?" recovery prompt, not a silent discard', async () => {
     const before = await srv.executeCommand('cat /etc/sudoers');
     await type('visudo');
     const mode = session.inputMode as { absolutePath: string };
@@ -62,9 +62,80 @@ describe('visudo — editor UI flow', () => {
     session.editorExit(true);
     await flush();
 
+    // Real visudo never silently discards a rejected save — it drops back
+    // to a recovery prompt with the file still untouched until the user
+    // chooses what to do next.
     const after = await srv.executeCommand('cat /etc/sudoers');
     expect(after).toBe(before);
+    expect(session.inputMode.type).toBe('normal'); // no full-screen editor — this is a plain prompt
     expect(session.lines.some((l) => l.text.includes('syntax error'))).toBe(true);
+    expect(session.lines.some((l) => l.text === 'What now?')).toBe(true);
+    expect(session.lines.some((l) => l.text.includes('(e)dit sudoers file again'))).toBe(true);
+    expect(session.lines.some((l) => l.text.includes('unchanged'))).toBe(false); // not yet — no answer given
+
+    await type('x');
+    expect(session.lines.some((l) => l.text.includes('unchanged'))).toBe(true);
+  });
+
+  it('"What now?" (e) re-opens the editor on the same temp buffer, preserving the invalid content', async () => {
+    await type('visudo');
+    const mode1 = session.inputMode as { absolutePath: string };
+    session.editorSave('deploy ALL(ALL) NOPASSWD: ALL\n', mode1.absolutePath);
+    session.editorExit(true);
+    await flush();
+    expect(session.inputMode.type).toBe('normal');
+
+    await type('e');
+    expect(session.inputMode.type).toBe('editor');
+    const mode2 = session.inputMode as { content: string; absolutePath: string };
+    expect(mode2.content).toBe('deploy ALL(ALL) NOPASSWD: ALL\n');
+    expect(mode2.absolutePath).toBe(mode1.absolutePath); // same temp file, not a new one
+
+    session.editorSave('deploy ALL=(ALL) NOPASSWD: ALL\n', mode2.absolutePath);
+    session.editorExit(true);
+    await flush();
+    expect(await srv.executeCommand('cat /etc/sudoers')).toContain('deploy ALL=(ALL) NOPASSWD: ALL');
+  });
+
+  it('"What now?" (x) exits without saving — /etc/sudoers stays untouched', async () => {
+    const before = await srv.executeCommand('cat /etc/sudoers');
+    await type('visudo');
+    const mode = session.inputMode as { absolutePath: string };
+    session.editorSave('deploy ALL(ALL) NOPASSWD: ALL\n', mode.absolutePath);
+    session.editorExit(true);
+    await flush();
+
+    await type('x');
+    expect(await srv.executeCommand('cat /etc/sudoers')).toBe(before);
+    expect(session.lines.some((l) => l.text.includes('unchanged'))).toBe(true);
+  });
+
+  it('"What now?" (Q) force-saves the syntactically broken content anyway, with a DANGER warning', async () => {
+    await type('visudo');
+    const mode = session.inputMode as { absolutePath: string };
+    session.editorSave('deploy ALL(ALL) NOPASSWD: ALL\n', mode.absolutePath);
+    session.editorExit(true);
+    await flush();
+
+    await type('Q');
+    const after = await srv.executeCommand('cat /etc/sudoers');
+    expect(after).toBe('deploy ALL(ALL) NOPASSWD: ALL');
+    expect(session.lines.some((l) => l.text.includes('DANGER'))).toBe(true);
+  });
+
+  it('an unrecognized answer re-prints the "What now?" menu instead of silently proceeding', async () => {
+    await type('visudo');
+    const mode = session.inputMode as { absolutePath: string };
+    session.editorSave('deploy ALL(ALL) NOPASSWD: ALL\n', mode.absolutePath);
+    session.editorExit(true);
+    await flush();
+
+    await type('zzz');
+    expect(session.inputMode.type).toBe('normal'); // still stuck at the prompt
+    const whatNowCount = session.lines.filter((l) => l.text === 'What now?').length;
+    expect(whatNowCount).toBe(2); // printed once on rejection, once more after the bad answer
+
+    await type('x'); // still answerable afterwards
     expect(session.lines.some((l) => l.text.includes('unchanged'))).toBe(true);
   });
 
@@ -104,6 +175,27 @@ describe('visudo — editor UI flow', () => {
 
     expect(pcSession.inputMode.type).toBe('normal');
     expect(pcSession.lines.some((l) => l.text.includes('must be root'))).toBe(true);
+  });
+
+  it('a user who elevated via "sudo su -" in this session CAN run visudo (session-scoped, not device-global)', async () => {
+    EquipmentRegistry.resetInstance();
+    const pc = new LinuxPC('linux-pc', 'PC1', 0, 0);
+    pc.powerOn();
+    const pcSession = new LinuxTerminalSession('term-3', pc);
+    pcSession.setInput('sudo su -');
+    pcSession.handleKey(key('Enter'));
+    await flush();
+    expect(pcSession.currentInputMode.type).toBe('password');
+    pcSession.insertText('admin');
+    pcSession.handleKey(key('Enter'));
+    await flush();
+
+    pcSession.setInput('visudo');
+    pcSession.handleKey(key('Enter'));
+    await flush();
+
+    expect(pcSession.inputMode.type).toBe('editor');
+    expect(pcSession.lines.some((l) => l.text.includes('must be root'))).toBe(false);
   });
 
   it('visudo -c still runs the (non-editor) syntax check path', async () => {

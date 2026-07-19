@@ -172,7 +172,7 @@ export const NanoEditor: React.FC<NanoEditorProps> = ({
       <div className="flex-1 relative overflow-hidden">
         <textarea
           ref={textareaRef}
-          value={engine.content}
+          value={engine.displayContent}
           onChange={() => { /* content is engine-authoritative; keys drive all mutation */ }}
           onKeyDown={handleEditKeyDown}
           readOnly

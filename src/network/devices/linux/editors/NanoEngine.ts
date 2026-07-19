@@ -79,6 +79,24 @@ export class NanoEngine {
   // ── Public state (read-only) ──────────────────────────────────────
 
   get content(): string { return this.linesArr.join('\n'); }
+  /**
+   * Real nano always renders non-printable control bytes as `^X` (never
+   * the raw byte, which would corrupt the terminal) — unlike vim's opt-in
+   * `:set list`, this isn't a toggle. Tab and newline stay real characters
+   * (they're structural, not garbage); everything else below 0x20, plus
+   * DEL (0x7f), gets the caret notation.
+   */
+  get displayContent(): string {
+    let out = '';
+    for (const ch of this.content) {
+      const code = ch.charCodeAt(0);
+      if (ch === '\t' || ch === '\n') out += ch;
+      else if (code < 0x20) out += '^' + String.fromCharCode(code + 64);
+      else if (code === 0x7f) out += '^?';
+      else out += ch;
+    }
+    return out;
+  }
   /** What gets written to disk: buffer content plus the trailing newline nano always restores on save. */
   private serialize(): string { return this.linesArr.join('\n') + '\n'; }
   get lines(): readonly string[] { return this.linesArr; }

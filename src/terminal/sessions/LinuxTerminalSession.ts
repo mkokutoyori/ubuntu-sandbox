@@ -1411,6 +1411,10 @@ export class LinuxTerminalSession extends TerminalSession {
 
     this.addEchoLine(this.getPrompt(), cmd);
 
+    // A pending visudo "What now?" recovery prompt consumes the very next
+    // line typed (e/x/Q) before anything else is interpreted as a command.
+    if (this.tryVisudoPromptResponse(typed)) return;
+
     // Handle exit/logout
     if (trimmed === 'exit' || trimmed === 'logout') {
       // BRD SSH-04-R4/R5: when nested in an SSH session, exit/logout
@@ -1814,6 +1818,62 @@ export class LinuxTerminalSession extends TerminalSession {
   }
 
   private _pendingVisudoEdit: { targetPath: string; tmpPath: string } | null = null;
+  /** Set when a save was rejected for a syntax error — the exact real
+   *  visudo "What now?" recovery prompt, awaiting e/x/Q on the next line. */
+  private _pendingVisudoPrompt: { targetPath: string; tmpPath: string } | null = null;
+
+  /** Print real visudo's "What now?" recovery menu after a rejected save. */
+  private printVisudoWhatNow(errorLines: readonly string[]): void {
+    for (const line of errorLines) this.addLine(line);
+    this.addLine('What now?');
+    this.addLine('Options are:');
+    this.addLine("  (e)dit sudoers file again");
+    this.addLine('  e(x)it without saving changes to sudoers file');
+    this.addLine('  (Q)uit and save changes to sudoers file (DANGER!)');
+    this.addLine('');
+    this.addLine('What now? ');
+  }
+
+  /** Consumes the next typed line as the response to printVisudoWhatNow(). */
+  private tryVisudoPromptResponse(commandLine: string): boolean {
+    const pending = this._pendingVisudoPrompt;
+    if (!pending) return false;
+    const answer = commandLine.trim();
+    const dev = this.device;
+
+    if (answer === 'e') {
+      this._pendingVisudoPrompt = null;
+      this._pendingVisudoEdit = pending;
+      const content = (dev instanceof LinuxMachine && this.shell)
+        ? dev.readFileForEditorInSession(pending.tmpPath, this.shell) ?? ''
+        : '';
+      const editorVar = (this.shell?.env.get('VISUAL') || this.shell?.env.get('EDITOR') || 'vi').toLowerCase();
+      const editorCmd: 'nano' | 'vi' | 'vim' = editorVar.includes('nano') ? 'nano' : editorVar.includes('vim') ? 'vim' : 'vi';
+      this.openEditor(editorCmd, [pending.tmpPath]);
+      void content; // buffer already lives at tmpPath — openEditor re-reads it
+      return true;
+    }
+    if (answer === 'x') {
+      this._pendingVisudoPrompt = null;
+      this.addLine(`visudo: ${pending.targetPath} unchanged`);
+      this.notify();
+      return true;
+    }
+    if (answer === 'Q') {
+      this._pendingVisudoPrompt = null;
+      if (dev instanceof LinuxMachine && this.shell) {
+        const content = dev.readFileForEditorInSession(pending.tmpPath, this.shell) ?? '';
+        dev.writeFileFromEditorInSession(pending.targetPath, content, this.shell);
+      }
+      this.addLine(`visudo: ${pending.targetPath}: saved with a known syntax error (DANGER!)`);
+      this.notify();
+      return true;
+    }
+    // Any other input: invalid choice — real visudo re-prompts.
+    this.printVisudoWhatNow([]);
+    this.notify();
+    return true;
+  }
 
   /**
    * `visudo` (no `-c`) — real visudo edits a *temp copy* of the target
@@ -1832,7 +1892,12 @@ export class LinuxTerminalSession extends TerminalSession {
     if (isSudo) toks = toks.slice(1);
     if (toks[0] !== 'visudo' || toks.includes('-c')) return false;
 
-    const isRoot = dev.getCurrentUser() === 'root';
+    // Session-scoped, not device-global: after `sudo su -` in THIS
+    // terminal, `this.shell.user` is 'root' even though the device's
+    // legacy executor-wide current user (dev.getCurrentUser()) never
+    // changes — the same distinction every other check in this method
+    // already respects via the `InSession` VFS calls below.
+    const isRoot = this.shell.user === 'root';
     if (!isRoot && !(isSudo && dev.canSudo())) {
       this.addLine('visudo: you must be root to run visudo');
       return true;
@@ -1866,8 +1931,10 @@ export class LinuxTerminalSession extends TerminalSession {
     const content = dev.readFileForEditorInSession(pending!.tmpPath, this.shell) ?? '';
     const result = validateSudoersContent(content, pending!.targetPath);
     if (result.exitCode !== 0) {
-      for (const line of result.lines) this.addLine(line);
-      this.addLine(`visudo: ${pending!.targetPath} unchanged`);
+      // Real visudo never silently discards a rejected save — it asks
+      // what to do next (re-edit / discard / force-save anyway).
+      this._pendingVisudoPrompt = pending!;
+      this.printVisudoWhatNow(result.lines);
     } else {
       dev.writeFileFromEditorInSession(pending!.targetPath, content, this.shell);
     }

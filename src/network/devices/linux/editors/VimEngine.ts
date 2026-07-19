@@ -2,7 +2,7 @@ import type { EditorFsContext } from './EditorFsContext';
 import type { EditorKeyInput } from './EditorKeyInput';
 import { dotSwapPathFor } from './editorPaths';
 
-export type VimMode = 'normal' | 'insert' | 'command' | 'search' | 'confirm-substitute' | 'visual' | 'visual-line' | 'visual-block' | 'swap-recovery';
+export type VimMode = 'normal' | 'insert' | 'command' | 'search' | 'confirm-substitute' | 'visual' | 'visual-line' | 'visual-block' | 'swap-recovery' | 'binary-warning';
 export type VimVariant = 'vim' | 'vi';
 
 interface UndoSnapshot {
@@ -233,6 +233,11 @@ export class VimEngine {
   private hlsearchEnabled = false;
   private ignoreCaseSearch = false;
   private _shellOutput = '';
+  private listModeEnabled = false;
+  private listCharsCfg: { tab: string; trail: string; eol: string } = { tab: '^I', trail: '', eol: '$' };
+  private showMatchEnabled = false;
+  private incSearchEnabled = false;
+  private colorColumnCfg: number | null = null;
 
   // Named registers ("a-"z, "*, "+) plus the unnamed register kept at
   // key '"'. Macros live in a separate namespace (recorded key sequences,
@@ -293,6 +298,12 @@ export class VimEngine {
     } else {
       this.swapPath = primarySwap;
       this.fs.writeFile(this.swapPath, serializeSwapMeta({ owner, filePath, lines: this.linesArr }));
+      // Real vim detects a NUL byte anywhere in the file and asks before
+      // rendering it as text — takes priority over the swap check having
+      // already been resolved (no competing swap, this is the next gate).
+      if (!isNewFile && initialContent.includes('\0')) {
+        this._mode = 'binary-warning';
+      }
     }
   }
 
@@ -312,6 +323,12 @@ export class VimEngine {
   get swapFilePath(): string { return this.swapPath; }
   get swapFileExists(): boolean { return this.swapPath !== '' && this.fs.exists(this.swapPath); }
   get pendingSwapRecovery(): PendingSwapRecovery | null { return this._pendingSwapRecovery; }
+  /** Real vim's binary-file gate: a NUL byte anywhere triggers a confirm
+   *  before rendering the file as text, exactly like a real terminal would
+   *  refuse to treat arbitrary binary data as a stream of characters. */
+  get pendingBinaryWarning(): string | null {
+    return this._mode === 'binary-warning' ? `"${this.filePath}" may be a binary file, see it anyway?` : null;
+  }
   /** Set once a recovery/edit-anyway choice leaves the original .swp behind — real vim never auto-deletes it. */
   get orphanSwapFilePath(): string | null { return this.orphanSwapPath; }
   get isReadOnly(): boolean { return this._readOnly; }
@@ -324,6 +341,27 @@ export class VimEngine {
   get hlsearch(): boolean { return this.hlsearchEnabled; }
   get shellOutput(): string { return this._shellOutput; }
   get fileFormat(): 'unix' | 'dos' { return this._fileFormat; }
+  get listMode(): boolean { return this.listModeEnabled; }
+  get showMatch(): boolean { return this.showMatchEnabled; }
+  get incSearch(): boolean { return this.incSearchEnabled; }
+  get colorColumn(): number | null { return this.colorColumnCfg; }
+  /** Real vim's `:set list` rendering: `$` at end of line, `^I` (or the
+   *  configured `listchars` symbol) for tabs, a literal `^M` for a stray
+   *  embedded CR (real CRLF pairs are already stripped from the buffer at
+   *  load time, so any \r left here is genuine corruption to surface). */
+  renderListLine(line: string): string {
+    if (!this.listModeEnabled) return line;
+    const trailStart = this.listCharsCfg.trail ? line.trimEnd().length : line.length;
+    let out = '';
+    for (let i = 0; i < line.length; i++) {
+      const ch = line[i];
+      if (ch === '\t') out += this.listCharsCfg.tab;
+      else if (ch === '\r') out += '^M';
+      else if (ch === ' ' && i >= trailStart && this.listCharsCfg.trail) out += this.listCharsCfg.trail;
+      else out += ch;
+    }
+    return out + this.listCharsCfg.eol;
+  }
   get canUndo(): boolean { return this.undoStack.length > 0; }
   get canRedo(): boolean { return this.redoStack.length > 0; }
   /** Text register content, `null` if empty/unset. Named registers, the unnamed register ("), and "/. */
@@ -389,6 +427,22 @@ export class VimEngine {
       case 'confirm-substitute': return this.applyConfirmSubstKey(k);
       case 'visual': case 'visual-line': case 'visual-block': return this.applyVisualKey(k);
       case 'swap-recovery': return this.applySwapRecoveryKey(k);
+      case 'binary-warning': return this.applyBinaryWarningKey(k);
+    }
+  }
+
+  private applyBinaryWarningKey(k: EditorKeyInput): void {
+    const key = k.key.toLowerCase();
+    if (key === 'y' || k.key === 'Enter') {
+      this._mode = 'normal';
+      this._message = `"${this.filePath}" [noeol] ${this.linesArr.length}L, binary`;
+      return;
+    }
+    if (key === 'n' || k.key === 'Escape') {
+      if (this.swapPath !== '') { this.fs.deleteFile(this.swapPath); this.swapPath = ''; }
+      this._exited = true;
+      this._savedOnExit = false;
+      return;
     }
   }
 
@@ -1246,6 +1300,12 @@ export class VimEngine {
     if (/(^|\/)crontab$/.test(path) || /\/cron\.d\//.test(path) || /(^|\/)crontab\.\d+$/.test(path)) return 'crontab';
     if (/(^|\/)sshd_config(\.d\/.*\.conf)?$/.test(path)) return 'sshconfig';
     if (/(^|\/)ssh_config$/.test(path)) return 'sshconfig';
+    if (/(^|\/)hosts$/.test(path)) return 'hostsfile';
+    if (/\/network\/interfaces(\.d\/.*)?$/.test(path)) return 'interfaces';
+    if (/(^|\/)resolv\.conf$/.test(path)) return 'resolv';
+    if (/(^|\/)sudoers(\.d\/.*)?$/.test(path)) return 'sudoers';
+    if (/(^|\/)passwd$/.test(path)) return 'passwd';
+    if (/(^|\/)group$/.test(path)) return 'group';
     if (/\.sh$/.test(path)) return 'sh';
     if (/\.ya?ml$/.test(path)) return 'yaml';
     if (/\.conf$/.test(path)) return 'conf';
@@ -1440,6 +1500,73 @@ export class VimEngine {
     }
     if (trimmed === 'set norelativenumber' || trimmed === 'set nornu') {
       this.showRelativeNumbers = false;
+      this._message = '';
+      this._mode = 'normal';
+      return;
+    }
+    if (trimmed === 'set list') {
+      this.listModeEnabled = true;
+      this._message = '';
+      this._mode = 'normal';
+      return;
+    }
+    if (trimmed === 'set nolist') {
+      this.listModeEnabled = false;
+      this._message = '';
+      this._mode = 'normal';
+      return;
+    }
+    const listcharsMatch = trimmed.match(/^set listchars=(.*)$/);
+    if (listcharsMatch) {
+      for (const part of listcharsMatch[1].split(',')) {
+        const [key, ...rest] = part.split(':');
+        const val = rest.join(':').replace(/\\ /g, ' ');
+        if (key === 'tab') this.listCharsCfg.tab = val;
+        else if (key === 'trail') this.listCharsCfg.trail = val;
+        else if (key === 'eol') this.listCharsCfg.eol = val;
+      }
+      this._message = '';
+      this._mode = 'normal';
+      return;
+    }
+    if (trimmed === 'set showmatch' || trimmed === 'set sm') {
+      this.showMatchEnabled = true;
+      this._message = '';
+      this._mode = 'normal';
+      return;
+    }
+    if (trimmed === 'set noshowmatch' || trimmed === 'set nosm') {
+      this.showMatchEnabled = false;
+      this._message = '';
+      this._mode = 'normal';
+      return;
+    }
+    if (trimmed === 'set incsearch') {
+      this.incSearchEnabled = true;
+      this._message = '';
+      this._mode = 'normal';
+      return;
+    }
+    if (trimmed === 'set noincsearch') {
+      this.incSearchEnabled = false;
+      this._message = '';
+      this._mode = 'normal';
+      return;
+    }
+    if (trimmed === 'set fileencoding?' || trimmed === 'set fenc?') {
+      this._message = 'fileencoding=utf-8';
+      this._mode = 'normal';
+      return;
+    }
+    const colorColumnMatch = trimmed.match(/^set colorcolumn=(\d+)$/);
+    if (colorColumnMatch) {
+      this.colorColumnCfg = parseInt(colorColumnMatch[1], 10);
+      this._message = '';
+      this._mode = 'normal';
+      return;
+    }
+    if (trimmed === 'set colorcolumn=') {
+      this.colorColumnCfg = null;
       this._message = '';
       this._mode = 'normal';
       return;
