@@ -1,8 +1,16 @@
 import type { Port } from '../../hardware/Port';
 import { isValidIPv4, isValidIPv6 } from '../../core/ip';
+import { IPAddress, SubnetMask } from '../../core/types';
 import { toDisplayName, toPortName, formatLinkSpeedMbps } from './WindowsInterfaceNaming';
 import { parsePSArgs } from './psArgs';
 import type { PSDeviceContext } from './PowerShellExecutor';
+
+/** Dotted-quad mask for an IPv4 prefix length (24 → 255.255.255.0). */
+function prefixToMaskString(prefixLength: number): string {
+  const bits = 0xffffffff << (32 - prefixLength);
+  if (prefixLength === 0) return '0.0.0.0';
+  return [24, 16, 8, 0].map((shift) => (bits >>> shift) & 0xff).join('.');
+}
 
 export interface PSNetContext {
   device: PSDeviceContext;
@@ -64,19 +72,28 @@ export function buildAllIPEntries(ctx: PSNetContext): Array<{ ip: string; ifAlia
     const entries: Array<{ ip: string; ifAlias: string; ifIndex: number; addressFamily: string; prefixLength: number; prefixOrigin: string; suffixOrigin: string; addressState: string; skipAsSource: boolean }> = [];
     const ports = ctx.device.getPortsMap();
     let idx = 2;
-    let ethIdx = 0;
     for (const [name, port] of ports) {
       const displayName = toDisplayName(name);
       const ip = port.getIPAddress()?.toString() ?? '';
       const mask = port.getSubnetMask()?.toString() ?? '';
       const prefixLength = mask ? maskToPrefixLength(mask) : 0;
       const isDhcp = ctx.device.isDHCPConfigured(name);
+      // An unconfigured adapter simply has no IPv4 entry — the sim used to
+      // invent a 192.168.1.10x address here, which made PowerShell disagree
+      // with ipconfig about the machine's real addresses.
       if (ip) {
-        entries.push({ ip, ifAlias: displayName, ifIndex: idx, addressFamily: 'IPv4', prefixLength, prefixOrigin: isDhcp ? 'Dhcp' : 'Manual', suffixOrigin: isDhcp ? 'Dhcp' : 'Manual', addressState: 'Preferred', skipAsSource: false });
-      } else if (!ctx.device.extraIPs.has(displayName.toLowerCase())) {
-        // Simulated default private IP for unconfigured adapters (192.168.1.100+offset/24)
-        const simIp = `192.168.1.${100 + ethIdx}`;
-        entries.push({ ip: simIp, ifAlias: displayName, ifIndex: idx, addressFamily: 'IPv4', prefixLength: 24, prefixOrigin: 'WellKnown', suffixOrigin: 'WellKnown', addressState: 'Preferred', skipAsSource: false });
+        // The address itself is owned by the port (single source of truth);
+        // per-address attributes Windows tracks but the port model doesn't
+        // (SkipAsSource, explicit PrefixOrigin) are merged from the metadata
+        // side-map when present.
+        const attr = ctx.device.extraIPs.get(ip.toLowerCase());
+        entries.push({
+          ip, ifAlias: displayName, ifIndex: idx, addressFamily: 'IPv4', prefixLength,
+          prefixOrigin: attr?.prefixOrigin ?? (isDhcp ? 'Dhcp' : 'Manual'),
+          suffixOrigin: attr?.suffixOrigin ?? (isDhcp ? 'Dhcp' : 'Manual'),
+          addressState: 'Preferred',
+          skipAsSource: attr?.skipAsSource ?? false,
+        });
       }
       // Link-local IPv6
       const macStr = port.getMAC()?.toString() ?? '00:00:00:00:00:00';
@@ -86,10 +103,14 @@ export function buildAllIPEntries(ctx: PSNetContext): Array<{ ip: string; ifAlia
         entries.push({ ip: fe80, ifAlias: displayName, ifIndex: idx, addressFamily: 'IPv6', prefixLength: 64, prefixOrigin: 'WellKnown', suffixOrigin: 'Link', addressState: 'Preferred', skipAsSource: false });
       }
       idx++;
-      ethIdx++;
     }
-    // Extra IPs (added via New-NetIPAddress)
+    // Extra IPs: virtual-adapter addresses AND attribute-only metadata for
+    // real port addresses. Skip any whose address already appears on a port
+    // (that entry was emitted above with the merged attributes) so an
+    // address is never listed twice.
+    const portIps = new Set(entries.filter(e => e.addressFamily === 'IPv4').map(e => e.ip.toLowerCase()));
     for (const [ip, info] of ctx.device.extraIPs) {
+      if (portIps.has(ip.toLowerCase())) continue;
       entries.push({ ip, ifAlias: info.ifAlias, ifIndex: idx++, addressFamily: info.addressFamily, prefixLength: info.prefixLength, prefixOrigin: info.prefixOrigin, suffixOrigin: info.suffixOrigin, addressState: 'Preferred', skipAsSource: info.skipAsSource });
     }
     // Loopback
@@ -186,10 +207,22 @@ export function handleNewNetIPAddress(ctx: PSNetContext, args: string[]): string
     }
 
     const addressFamily = afParam === 'ipv6' || isIPv6 ? 'IPv6' : 'IPv4';
-    ctx.device.extraIPs.set(ip.toLowerCase(), { ifAlias, prefixLength, prefixOrigin: 'Manual', suffixOrigin: 'Manual', skipAsSource, gateway, addressFamily });
 
-    if (gateway) {
-      ctx.device.extraRoutes.set('0.0.0.0/0', { ifAlias, nextHop: gateway, metric: 0 });
+    // Configure the REAL interface whenever the alias maps to a physical
+    // port, so ipconfig/route/ARP all see the same address. The extraIPs
+    // side-store remains only for virtual adapters with no backing port.
+    const port = resolveAdapterPort(ctx, ifAlias);
+    if (port && addressFamily === 'IPv4') {
+      ctx.device.configureInterface(port.getName(), new IPAddress(ip), new SubnetMask(prefixToMaskString(prefixLength)));
+      // Retain the per-address attributes as metadata (the address lives on
+      // the port; this map only carries flags the port model doesn't hold).
+      ctx.device.extraIPs.set(ip.toLowerCase(), { ifAlias, prefixLength, prefixOrigin: 'Manual', suffixOrigin: 'Manual', skipAsSource, gateway, addressFamily });
+    } else {
+      ctx.device.extraIPs.set(ip.toLowerCase(), { ifAlias, prefixLength, prefixOrigin: 'Manual', suffixOrigin: 'Manual', skipAsSource, gateway, addressFamily });
+    }
+
+    if (gateway && isValidIPv4(gateway)) {
+      ctx.device.setDefaultGateway(new IPAddress(gateway));
     }
 
     return formatIPEntry({ ip, ifAlias, ifIndex: 99, addressFamily, prefixLength, prefixOrigin: 'Manual', suffixOrigin: 'Manual', addressState: 'Preferred', skipAsSource });
@@ -216,6 +249,12 @@ export function handleRemoveNetIPAddress(ctx: PSNetContext, args: string[]): str
       return `What if: Performing the operation "Remove-NetIPAddress" on target "IPAddress: ${ip}, InterfaceAlias: ${found.ifAlias}".`;
     }
 
+    // Real port address → unconfigure the interface (clears the address AND
+    // its connected route); side-store address → drop the store entry.
+    const port = resolveAdapterPort(ctx, found.ifAlias);
+    if (port && port.getIPAddress()?.toString().toLowerCase() === ip.toLowerCase()) {
+      ctx.device.unconfigureInterface(port.getName());
+    }
     ctx.device.extraIPs.delete(ip.toLowerCase());
     return '';
   }
@@ -232,6 +271,13 @@ export function handleSetNetIPAddress(ctx: PSNetContext, args: string[]): string
       if (!isValidIP(ip)) return `Set-NetIPAddress : Invalid IP address '${ip}'.`;
       const all = buildAllIPEntries(ctx);
       const existing = all.find(e => e.ifAlias.toLowerCase() === ifAlias.toLowerCase() && e.addressFamily === 'IPv4');
+      const port = resolveAdapterPort(ctx, ifAlias);
+      if (port && !ip.includes(':')) {
+        // Physical adapter → reconfigure the REAL interface.
+        const prefix = prefixLength ?? existing?.prefixLength ?? 24;
+        ctx.device.configureInterface(port.getName(), new IPAddress(ip), new SubnetMask(prefixToMaskString(prefix)));
+        return '';
+      }
       if (existing) ctx.device.extraIPs.delete(existing.ip.toLowerCase());
       ctx.device.extraIPs.set(ip.toLowerCase(), {
         ifAlias, prefixLength: prefixLength ?? existing?.prefixLength ?? 24,
@@ -257,39 +303,47 @@ export function handleSetNetIPAddress(ctx: PSNetContext, args: string[]): string
     if (params.has('prefixorigin')) e.prefixOrigin = params.get('prefixorigin')!;
     if (params.has('suffixorigin')) e.suffixOrigin = params.get('suffixorigin')!;
     if (params.has('skipassource')) e.skipAsSource = (params.get('skipassource') ?? '').toLowerCase() !== 'false' && (params.get('skipassource') ?? '') !== '$false';
+
+    // If the address lives on a real port, a prefix change must reconfigure
+    // the port so ipconfig/route/Get-NetIPAddress agree on the new mask.
+    if (prefixLength !== undefined) {
+      const port = resolveAdapterPort(ctx, e.ifAlias);
+      if (port && port.getIPAddress()?.toString().toLowerCase() === ip.toLowerCase()) {
+        ctx.device.configureInterface(port.getName(), new IPAddress(ip), new SubnetMask(prefixToMaskString(prefixLength)));
+      }
+    }
     return '';
   }
 
 export function buildDefaultRoutes(ctx: PSNetContext): Array<{ dest: string; ifAlias: string; nextHop: string; metric: number }> {
+    // Single source of truth: the SAME routing table `route print` renders.
+    // (This function's name is kept for its many call sites; it no longer
+    // synthesizes anything.)
     const routes: Array<{ dest: string; ifAlias: string; nextHop: string; metric: number }> = [];
-    const gw = ctx.device.getDefaultGatewayString();
-    const ports = ctx.device.getPortsMap();
-    let firstIF = '';
-    for (const [name] of ports) { firstIF = toDisplayName(name); break; }
-    // Default route — skip built-in if extraRoutes already has a 0.0.0.0/0 (set by New-NetIPAddress -DefaultGateway)
-    if (!ctx.device.extraRoutes.has('0.0.0.0/0')) {
-      routes.push({ dest: '0.0.0.0/0', ifAlias: firstIF || 'Ethernet', nextHop: gw || '0.0.0.0', metric: 0 });
-    }
-    // Loopback
     routes.push({ dest: '127.0.0.0/8', ifAlias: 'Loopback Pseudo-Interface 1', nextHop: '0.0.0.0', metric: 306 });
-    // Connected network routes
-    let idx = 2;
-    for (const [name, port] of ports) {
-      const displayName = toDisplayName(name);
-      const ip = port.getIPAddress()?.toString() ?? '';
-      const mask = port.getSubnetMask()?.toString() ?? '';
-      if (ip && mask) {
-        const prefix = maskToPrefixLength(mask);
-        const network = ip.split('.').map((o, i) => (parseInt(o) & parseInt(mask.split('.')[i])).toString()).join('.');
-        routes.push({ dest: `${network}/${prefix}`, ifAlias: displayName, nextHop: '0.0.0.0', metric: 256 });
-      }
-      idx++;
-    }
-    // Extra routes
-    for (const [dest, info] of ctx.device.extraRoutes) {
-      routes.push({ dest, ifAlias: info.ifAlias, nextHop: info.nextHop, metric: info.metric });
+    for (const r of ctx.device.getRoutingTable()) {
+      const prefix = maskToPrefixLength(r.mask.toString());
+      routes.push({
+        dest: `${r.network.toString()}/${prefix}`,
+        ifAlias: toDisplayName(r.iface),
+        nextHop: r.nextHop ? r.nextHop.toString() : '0.0.0.0',
+        metric: r.metric,
+      });
     }
     return routes;
+  }
+
+/** Parse "a.b.c.d/len" into network + mask; null when malformed. */
+function parseDestinationPrefix(dest: string): { network: IPAddress; mask: SubnetMask } | null {
+    const m = /^(\d{1,3}(?:\.\d{1,3}){3})\/(\d{1,2})$/.exec(dest);
+    if (!m) return null;
+    const prefix = parseInt(m[2], 10);
+    if (prefix > 32 || !isValidIPv4(m[1])) return null;
+    try {
+      return { network: new IPAddress(m[1]), mask: new SubnetMask(prefixToMaskString(prefix)) };
+    } catch {
+      return null;
+    }
   }
 
 export function handleGetNetRoute(ctx: PSNetContext, args: string[]): string {
@@ -335,12 +389,24 @@ export function handleNewNetRoute(ctx: PSNetContext, args: string[]): string {
     if (!ifAlias) return `New-NetRoute : The -InterfaceAlias parameter is required.\nAt line:1 char:1\n    + CategoryInfo          : InvalidArgument`;
     if (!nextHop) return `New-NetRoute : The -NextHop parameter is required.\nAt line:1 char:1\n    + CategoryInfo          : InvalidArgument`;
 
-    // Check for duplicates
-    if (ctx.device.extraRoutes.has(dest)) {
-      return `New-NetRoute : Route '${dest}' already exists.\nAt line:1 char:1\n    + CategoryInfo          : InvalidArgument`;
+    // Write to the REAL routing table (the same one `route add` uses).
+    if (dest === '0.0.0.0/0') {
+      if (!isValidIPv4(nextHop)) return `New-NetRoute : Invalid NextHop '${nextHop}'.`;
+      ctx.device.setDefaultGateway(new IPAddress(nextHop));
+    } else {
+      const parsed = parseDestinationPrefix(dest);
+      if (!parsed) return `New-NetRoute : Invalid DestinationPrefix: '${dest}'.\nAt line:1 char:1\n    + CategoryInfo          : InvalidArgument`;
+      if (!isValidIPv4(nextHop)) return `New-NetRoute : Invalid NextHop '${nextHop}'.`;
+      const dup = ctx.device.getRoutingTable().some(
+        (r) => r.network.toString() === parsed.network.toString() && r.mask.toString() === parsed.mask.toString(),
+      );
+      if (dup) {
+        return `New-NetRoute : Route '${dest}' already exists.\nAt line:1 char:1\n    + CategoryInfo          : InvalidArgument`;
+      }
+      if (!ctx.device.addStaticRoute(parsed.network, parsed.mask, new IPAddress(nextHop), metric)) {
+        return `New-NetRoute : The gateway '${nextHop}' is not reachable.`;
+      }
     }
-
-    ctx.device.extraRoutes.set(dest, { ifAlias, nextHop, metric });
     return [
       `DestinationPrefix : ${dest}`,
       `NextHop           : ${nextHop}`,
@@ -360,7 +426,7 @@ export function handleRemoveNetRoute(ctx: PSNetContext, args: string[]): string 
 
     const routes = buildDefaultRoutes(ctx);
     const found = routes.find(r => r.dest === dest);
-    if (!found && !ctx.device.extraRoutes.has(dest)) {
+    if (!found) {
       return `Remove-NetRoute : No MSFT_NetRoute objects found with property 'DestinationPrefix' equal to '${dest}'.`;
     }
 
@@ -368,7 +434,12 @@ export function handleRemoveNetRoute(ctx: PSNetContext, args: string[]): string 
       return `What if: Performing the operation "Remove-NetRoute" on target "DestinationPrefix: ${dest}".`;
     }
 
-    ctx.device.extraRoutes.delete(dest);
+    if (dest === '0.0.0.0/0') {
+      ctx.device.clearDefaultGateway();
+      return '';
+    }
+    const parsed = parseDestinationPrefix(dest);
+    if (parsed) ctx.device.removeRoute(parsed.network, parsed.mask);
     return '';
   }
 
@@ -380,14 +451,22 @@ export function handleSetNetRoute(ctx: PSNetContext, args: string[]): string {
 
     if (!dest) return `Set-NetRoute : The -DestinationPrefix parameter is required.`;
 
-    const existing = ctx.device.extraRoutes.get(dest);
-    if (existing) {
-      if (nextHop) existing.nextHop = nextHop;
-      if (ifAlias) existing.ifAlias = ifAlias;
-    } else {
-      // Create if not exists
-      ctx.device.extraRoutes.set(dest, { ifAlias: ifAlias ?? '', nextHop: nextHop ?? '0.0.0.0', metric: 256 });
+    // Update = remove + re-add on the REAL routing table.
+    if (dest === '0.0.0.0/0') {
+      if (nextHop && isValidIPv4(nextHop)) ctx.device.setDefaultGateway(new IPAddress(nextHop));
+      return '';
     }
+    const parsed = parseDestinationPrefix(dest);
+    if (!parsed) return `Set-NetRoute : Invalid DestinationPrefix: '${dest}'.`;
+    const current = ctx.device.getRoutingTable().find(
+      (r) => r.network.toString() === parsed.network.toString() && r.mask.toString() === parsed.mask.toString(),
+    );
+    const newNextHop = nextHop && isValidIPv4(nextHop)
+      ? new IPAddress(nextHop)
+      : current?.nextHop ?? null;
+    if (!newNextHop) return `Set-NetRoute : No MSFT_NetRoute objects found with property 'DestinationPrefix' equal to '${dest}'.`;
+    if (current) ctx.device.removeRoute(parsed.network, parsed.mask);
+    ctx.device.addStaticRoute(parsed.network, parsed.mask, newNextHop, current?.metric ?? 256);
     return '';
   }
 
@@ -512,7 +591,15 @@ export function handleTestNetConnection(ctx: PSNetContext, args: string[]): stri
     const port = params.has('port') ? parseInt(params.get('port')!, 10) : undefined;
     if (!target) return 'Test-NetConnection requires -ComputerName';
 
-    const resolved = ctx.device.resolveHostnameSync(target);
+    // Same resolution chain as ping: literal / hosts / own name first, then
+    // the full DNS chain (cache + configured servers over the wire).
+    let resolved = ctx.device.resolveHostnameSync(target);
+    if (!resolved) {
+      const viaDns = ctx.device.resolveDnsSync(target).find((ip) => !ip.includes(':'));
+      if (viaDns) {
+        try { resolved = new IPAddress(viaDns); } catch { resolved = null; }
+      }
+    }
     const remoteAddress = resolved?.toString() ?? target;
     const ping = resolved ? ctx.device.sendPingProbeSync(resolved) : { success: false, rttMs: 0, ttl: 0 };
     const egress = resolved ? ctx.device.getEgressFor(resolved) : null;
@@ -535,44 +622,26 @@ export function handleTestNetConnection(ctx: PSNetContext, args: string[]): stri
   }
 
 export function formatGetNetTCPConnection(ctx: PSNetContext, args: string[]): string {
-    const ports = ctx.device.getPortsMap();
-    // Simulate standard TCP connections for a Windows PC
+    // Read the REAL socket table — the same one netstat (cmd) renders.
     const lines: string[] = [
       '',
       'LocalAddress           LocalPort RemoteAddress          RemotePort State       AppliedSetting',
       '------------           --------- -------------          ---------- -----       --------------',
     ];
 
-    // Listening ports based on running services
-    const serviceMgr = ctx.device.getServiceManager();
-    const runningServices = serviceMgr.getAllServices().filter(s => s.state === 'Running');
-    const listeningPorts: Array<{ port: number; name: string }> = [
-      { port: 135, name: 'RpcSs' },
-      { port: 445, name: 'LanmanServer' },
-      { port: 49152, name: 'Services' },
-    ];
-    for (const svc of runningServices) {
-      if (svc.name === 'WinRM') listeningPorts.push({ port: 5985, name: 'WinRM' });
-    }
-
-    let localIp = '0.0.0.0';
-    for (const port of ports.values()) {
-      const ip = port.getIPAddress();
-      if (ip) { localIp = ip.toString(); break; }
-    }
-
     const params = parsePSArgs(args);
     const stateFilter = params.get('state')?.toLowerCase();
 
-    for (const lp of listeningPorts) {
-      if (!stateFilter || stateFilter === 'listen') {
-        lines.push(`${('0.0.0.0').padEnd(23)}${String(lp.port).padEnd(10)}${'0.0.0.0'.padEnd(23)}${'0'.padEnd(11)}Listen`);
-      }
-    }
-
-    // Simulate established connection to DNS server
-    if (!stateFilter || stateFilter === 'established') {
-      lines.push(`${localIp.padEnd(23)}${String(49153 + Math.floor(Math.random() * 100)).padEnd(10)}${'8.8.8.8'.padEnd(23)}${'53'.padEnd(11)}Established`);
+    for (const sock of ctx.device.getSocketTable().getAll()) {
+      if (sock.protocol.toLowerCase() !== 'tcp') continue;
+      const state = sock.state === 'LISTEN' ? 'Listen'
+        : sock.state === 'ESTABLISHED' ? 'Established'
+        : sock.state.charAt(0) + sock.state.slice(1).toLowerCase();
+      if (stateFilter && state.toLowerCase() !== stateFilter) continue;
+      const local = sock.localAddress || '0.0.0.0';
+      const remote = sock.state === 'LISTEN' ? '0.0.0.0' : sock.remoteAddress;
+      const remotePort = sock.state === 'LISTEN' ? 0 : sock.remotePort;
+      lines.push(`${local.padEnd(23)}${String(sock.localPort).padEnd(10)}${remote.padEnd(23)}${String(remotePort).padEnd(11)}${state}`);
     }
 
     if (lines.length <= 3) return '';
@@ -588,30 +657,36 @@ export function maskToPrefixLength(mask: string): number {
     return bits;
   }
 
-export function renderResolveDnsName(target: string): string {
-    const isIPv4 = /^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(target);
+export function renderResolveDnsName(ctx: PSNetContext, target: string): string {
+    // Resolve through the device's REAL chain (hosts file → resolver cache
+    // → configured servers over the wire) — the same chain nslookup and
+    // ping use. No hard-coded answers: an unresolvable name fails here
+    // exactly like it fails in cmd.
     const header =
       'Name                                           Type   TTL   Section    IPAddress\n' +
       '----                                           ----   ---   -------    ---------';
-    let row: string;
+
+    const isIPv4 = /^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(target);
     if (isIPv4) {
       const reversed = target.split('.').reverse().join('.');
       const ptrName = `${reversed}.in-addr.arpa`;
-      const hostName = target === '127.0.0.1' ? 'localhost' : `host-${target.replace(/\./g, '-')}`;
-      row =
-        ptrName.padEnd(47) +
-        'PTR    ' +
-        '3600  ' +
-        'Answer     ' +
-        hostName;
-    } else {
-      const ip = target.toLowerCase() === 'localhost' ? '127.0.0.1' : '192.168.1.1';
-      row =
-        target.padEnd(47) +
-        'A      ' +
-        (target.toLowerCase() === 'localhost' ? '86400' : '3600 ') +
-        ' Answer     ' +
-        ip;
+      if (target !== '127.0.0.1') {
+        return `Resolve-DnsName : ${ptrName} : DNS name does not exist\n    + CategoryInfo          : ResourceUnavailable: (${ptrName}:String) [Resolve-DnsName], Win32Exception`;
+      }
+      const row = ptrName.padEnd(47) + 'PTR    ' + '3600  ' + 'Answer     ' + 'localhost';
+      return `\n${header}\n${row}\n`;
     }
-    return `\n${header}\n${row}\n`;
+
+    if (target.toLowerCase() === 'localhost') {
+      const row = 'localhost'.padEnd(47) + 'A      86400  Answer     127.0.0.1';
+      return `\n${header}\n${row}\n`;
+    }
+
+    const ips = ctx.device.resolveDnsSync(target);
+    if (ips.length === 0) {
+      return `Resolve-DnsName : ${target} : DNS name does not exist\n    + CategoryInfo          : ResourceUnavailable: (${target}:String) [Resolve-DnsName], Win32Exception`;
+    }
+    const rows = ips.map((ip) =>
+      target.padEnd(47) + (ip.includes(':') ? 'AAAA   ' : 'A      ') + '3600  ' + 'Answer     ' + ip);
+    return `\n${header}\n${rows.join('\n')}\n`;
   }

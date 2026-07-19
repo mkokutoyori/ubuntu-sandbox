@@ -126,6 +126,8 @@ import { LogindStateSync } from './linux/network/LogindStateSync';
 import type { TcpdumpDeps } from './linux/network/tcpdump/TcpdumpRunner';
 import { serializeCaptureFile } from './linux/network/tcpdump/CaptureFileFormat';
 import { decodeEthernetFrame, makeLoopbackIcmpFrame, makeTcpFrame, type CaptureFrame } from './linux/network/tcpdump/CaptureFrame';
+import { buildLinuxInteractionPlan } from './linux/interaction/LinuxInteractionPlanner';
+import type { CommandInteractionPlan, InteractionPlanContext } from '@/shell/interaction/CommandInteraction';
 
 /**
  * Minimal sshd-style glob matcher: `*` matches any sequence including
@@ -324,6 +326,9 @@ export abstract class LinuxMachine extends EndHost
     this.executor._registryCommandHook = (cmd, args) => {
       const registered = this.commands.get(cmd);
       if (!registered || !registered.needsNetworkContext) return null;
+      if (registered.runWithStatusSync) {
+        return registered.runWithStatusSync(this.buildCommandContext(), args);
+      }
       const result = registered.run(this.buildCommandContext(), args);
       if (result instanceof Promise) return null;
       return { output: result, exitCode: this.inferRegistryExitCode(cmd, result) };
@@ -1878,10 +1883,32 @@ export abstract class LinuxMachine extends EndHost
 
       // A registry command bypasses LinuxCommandExecutor's dispatch(), so
       // the declarative privilege gate (and `sudo` elevation) that gate
-      // applies there must be re-applied here explicitly.
+      // applies there must be re-applied here explicitly. Likewise `$?`:
+      // dispatch() would have set it from the command's real exit code,
+      // so a status-aware command sets it here too instead of leaving
+      // whatever the previous command left behind (bare run() commands
+      // have no exit code to report and implicitly succeed, as before).
+      // A plain terminal view shows stdout and stderr together (no
+      // redirect has separated them here), matching what `run()` alone
+      // already did for commands — like tcpdump — whose stderr carries
+      // real content (its capture summary) that `runWithStatus`'s status
+      // field otherwise leaves stranded off `output`.
       return this.withSudoAndPrivilegeGate(
         firstCmd, cmdArgs, isSudo, cmd.privilege,
-        () => cmd.run(this.buildCommandContext(), cmdArgs),
+        async () => {
+          if (cmd.runWithStatusSync) {
+            const result = cmd.runWithStatusSync(this.buildCommandContext(), cmdArgs);
+            this.executor.lastExitCode = result.exitCode;
+            return [result.output, result.stderr].filter((s) => s).join('\n');
+          }
+          if (cmd.runWithStatus) {
+            const result = await cmd.runWithStatus(this.buildCommandContext(), cmdArgs);
+            this.executor.lastExitCode = result.exitCode;
+            return [result.output, result.stderr].filter((s) => s).join('\n');
+          }
+          this.executor.lastExitCode = 0;
+          return cmd.run(this.buildCommandContext(), cmdArgs);
+        },
       );
     }
 
@@ -2627,6 +2654,24 @@ export abstract class LinuxMachine extends EndHost
     this.executor.setUserGecos(username, fullName, room, workPhone, homePhone, other);
   }
   canSudo(): boolean { return this.executor.canSudo(); }
+
+  /**
+   * Command-owned interactive flows (IoC): sudo/su/passwd/adduser declare
+   * their dialogue here, on the device — the terminal just renders it.
+   */
+  interactionPlanFor(
+    commandLine: string,
+    ctx?: InteractionPlanContext,
+  ): CommandInteractionPlan | null {
+    return buildLinuxInteractionPlan(
+      commandLine,
+      {
+        currentUser: ctx?.currentUser ?? this.getCurrentUser(),
+        currentUid: ctx?.currentUid ?? this.getCurrentUid(),
+      },
+      this,
+    );
+  }
 
   // ── Shell sessions (per-terminal isolation, §2 of terminal_gap.md) ─
 

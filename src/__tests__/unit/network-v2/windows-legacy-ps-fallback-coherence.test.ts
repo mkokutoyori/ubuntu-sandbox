@@ -1,0 +1,197 @@
+/**
+ * Legacy PowerShellExecutor fallback — cmd/PS state coherence.
+ *
+ * The PSInterpreter (src/powershell/) is the primary engine behind the
+ * PowerShell subshell, but the legacy PowerShellExecutor is still reachable:
+ *   - as the fallback when the interpreter cannot parse/handle a line,
+ *   - through `powershell -Command` invoked from cmd (PowerShellCmdShim).
+ *
+ * Whatever path serves a cmdlet, it must read and write the SAME device
+ * state as the cmd commands. These tests pin that contract on the legacy
+ * executor directly (audit AUDIT-COHERENCE-CMD-PS-UX-HELP.md §1).
+ */
+
+import { describe, it, expect, beforeEach } from 'vitest';
+import { WindowsPC } from '@/network/devices/WindowsPC';
+import { PowerShellExecutor, type PSDeviceContext } from '@/network/devices/windows/PowerShellExecutor';
+import { IPAddress, SubnetMask, MACAddress, resetCounters } from '@/network/core/types';
+import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
+import { Logger } from '@/network/core/Logger';
+
+beforeEach(() => {
+  resetCounters();
+  resetDeviceCounters();
+  MACAddress.resetCounter();
+  Logger.reset();
+});
+
+const makePc = (): WindowsPC => new WindowsPC('windows-pc', 'PC1', 0, 0);
+const makePs = (pc: WindowsPC): PowerShellExecutor =>
+  new PowerShellExecutor(pc as unknown as PSDeviceContext);
+
+// ═══════════════════════════════════════════════════════════════════
+// Get-NetIPAddress — reads real port state, never invents addresses
+// ═══════════════════════════════════════════════════════════════════
+
+describe('legacy Get-NetIPAddress reflects real interface state', () => {
+  it('does not fabricate a 192.168.1.10x address for an unconfigured adapter', async () => {
+    const pc = makePc();
+    const ps = makePs(pc);
+    const out = await ps.execute('Get-NetIPAddress');
+    expect(out).not.toMatch(/192\.168\.1\.10\d/);
+  });
+
+  it('shows the address actually configured on the port', async () => {
+    const pc = makePc();
+    pc.configureInterface('eth0', new IPAddress('10.0.1.5'), new SubnetMask('255.255.255.0'));
+    const ps = makePs(pc);
+    const out = await ps.execute('Get-NetIPAddress');
+    expect(out).toContain('10.0.1.5');
+  });
+
+  it('reflects an address set from cmd via netsh', async () => {
+    const pc = makePc();
+    await pc.executeCommand('netsh interface ip set address "Ethernet 0" static 10.0.2.9 255.255.255.0');
+    const ps = makePs(pc);
+    const out = await ps.execute('Get-NetIPAddress');
+    expect(out).toContain('10.0.2.9');
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════
+// New-NetIPAddress — configures the real interface
+// ═══════════════════════════════════════════════════════════════════
+
+describe('legacy New-NetIPAddress configures the real interface', () => {
+  it('makes the address visible to ipconfig (cmd)', async () => {
+    const pc = makePc();
+    const ps = makePs(pc);
+    await ps.execute('New-NetIPAddress -InterfaceAlias "Ethernet 0" -IPAddress 10.0.6.7 -PrefixLength 24');
+    const out = await pc.executeCommand('ipconfig');
+    expect(out).toContain('10.0.6.7');
+  });
+
+  it('actually sets the address on the underlying port', async () => {
+    const pc = makePc();
+    const ps = makePs(pc);
+    await ps.execute('New-NetIPAddress -InterfaceAlias eth0 -IPAddress 10.0.6.8 -PrefixLength 24');
+    expect(pc.getPort('eth0')!.getIPAddress()?.toString()).toBe('10.0.6.8');
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════
+// NetRoute — one routing table shared with route (cmd)
+// ═══════════════════════════════════════════════════════════════════
+
+describe('legacy Get/New-NetRoute share the real routing table with route (cmd)', () => {
+  it('a route added via "route add" (cmd) is visible to Get-NetRoute', async () => {
+    const pc = makePc();
+    pc.configureInterface('eth0', new IPAddress('10.0.7.5'), new SubnetMask('255.255.255.0'));
+    await pc.executeCommand('route add 172.16.9.0 mask 255.255.255.0 10.0.7.1');
+    const ps = makePs(pc);
+    const out = await ps.execute('Get-NetRoute');
+    expect(out).toContain('172.16.9.0/24');
+  });
+
+  it('a route added via New-NetRoute (PS) is visible to "route print" (cmd)', async () => {
+    const pc = makePc();
+    pc.configureInterface('eth0', new IPAddress('10.0.8.5'), new SubnetMask('255.255.255.0'));
+    const ps = makePs(pc);
+    await ps.execute('New-NetRoute -DestinationPrefix "172.16.10.0/24" -InterfaceAlias eth0 -NextHop "10.0.8.1"');
+    const out = await pc.executeCommand('route print');
+    expect(out).toContain('172.16.10.0');
+  });
+
+  it('Remove-NetRoute removes the route from the real table', async () => {
+    const pc = makePc();
+    pc.configureInterface('eth0', new IPAddress('10.0.8.5'), new SubnetMask('255.255.255.0'));
+    await pc.executeCommand('route add 172.16.11.0 mask 255.255.255.0 10.0.8.1');
+    const ps = makePs(pc);
+    await ps.execute('Remove-NetRoute -DestinationPrefix "172.16.11.0/24" -Confirm:$false');
+    const out = await pc.executeCommand('route print');
+    expect(out).not.toContain('172.16.11.0');
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════
+// Get-NetTCPConnection — real socket table, no fabricated sockets
+// ═══════════════════════════════════════════════════════════════════
+
+describe('legacy Get-NetTCPConnection reflects the real socket table', () => {
+  it('does not fabricate an Established connection to 8.8.8.8', async () => {
+    const pc = makePc();
+    const ps = makePs(pc);
+    const out = await ps.execute('Get-NetTCPConnection');
+    expect(out).not.toContain('8.8.8.8');
+  });
+
+  it('every port it reports is also reported by netstat (cmd)', async () => {
+    const pc = makePc();
+    const ps = makePs(pc);
+    const psOut = await ps.execute('Get-NetTCPConnection');
+    const cmdOut = await pc.executeCommand('netstat -an');
+    const psPorts = [...psOut.matchAll(/^\s*\S+\s+(\d+)\s/gm)].map((m) => m[1]);
+    for (const port of psPorts) {
+      if (port === '0') continue;
+      expect(cmdOut).toContain(port);
+    }
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════
+// Resolve-DnsName — real resolver chain, no hardcoded answers
+// ═══════════════════════════════════════════════════════════════════
+
+describe('legacy Resolve-DnsName resolves through the real chain', () => {
+  it('resolves a hosts-file entry to its real address, not 192.168.1.1', async () => {
+    const pc = makePc();
+    await pc.executeCommand('echo 10.5.5.5 realhost.local >> C:\\Windows\\System32\\drivers\\etc\\hosts');
+    const ps = makePs(pc);
+    const out = await ps.execute('Resolve-DnsName realhost.local');
+    expect(out).toContain('10.5.5.5');
+    expect(out).not.toContain('192.168.1.1');
+  });
+
+  it('fails like nslookup for an unresolvable name instead of inventing 192.168.1.1', async () => {
+    const pc = makePc();
+    const ps = makePs(pc);
+    const out = await ps.execute('Resolve-DnsName no-such-host.nowhere');
+    expect(out).not.toContain('192.168.1.1');
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════
+// Scheduled tasks — schtasks (cmd) and Get/Register-ScheduledTask (PS)
+// operate on the same store
+// ═══════════════════════════════════════════════════════════════════
+
+describe('legacy Get/Register-ScheduledTask share the schtasks store', () => {
+  it('a task created via schtasks /create (cmd) is visible to Get-ScheduledTask (PS)', async () => {
+    const pc = makePc();
+    await pc.executeCommand('schtasks /create /tn CoherenceTask /tr "cmd /c echo hi" /sc daily /st 10:00');
+    const ps = makePs(pc);
+    const out = await ps.execute('Get-ScheduledTask');
+    expect(out).toContain('CoherenceTask');
+  });
+
+  it('does not report fabricated tasks that schtasks /query does not know', async () => {
+    const pc = makePc();
+    const ps = makePs(pc);
+    const psOut = await ps.execute('Get-ScheduledTask');
+    const cmdOut = await pc.executeCommand('schtasks /query');
+    const psNames = [...psOut.matchAll(/^\\?\S*\s{2,}(\S[^ ]*(?: [^ ]+)*?)\s{2,}\S+\s*$/gm)]
+      .map((m) => m[1])
+      .filter((n) => n && n !== 'TaskName' && !/^-+$/.test(n));
+    for (const name of psNames) {
+      expect(cmdOut).toContain(name);
+    }
+  });
+
+  it('a task created via Register-ScheduledTask (PS) is visible to schtasks /query (cmd)', async () => {
+    const pc = makePc();
+    const ps = makePs(pc);
+    await ps.execute('Register-ScheduledTask -TaskName PsBornTask -Action X');
+    const out = await pc.executeCommand('schtasks /query');
+    expect(out).toContain('PsBornTask');
+  });
+});

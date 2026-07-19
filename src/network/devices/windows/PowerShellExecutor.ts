@@ -16,7 +16,7 @@ import type { WindowsUserManager } from './WindowsUserManager';
 import type { WindowsServiceManager } from './WindowsServiceManager';
 import type { WindowsProcessManager } from './WindowsProcessManager';
 import { isValidIPv4, isValidIPv6 } from '../../core/ip';
-import type { IPAddress } from '../../core/types';
+import type { IPAddress, SubnetMask } from '../../core/types';
 import { toDisplayName, toPortName, formatLinkSpeedMbps } from './WindowsInterfaceNaming';
 import {
   runPipeline, formatDefault, formatTable,
@@ -103,6 +103,24 @@ export interface PSDeviceContext {
   getServiceManager(): WindowsServiceManager;
   /** Get the process manager for process management cmdlets */
   getProcessManager(): WindowsProcessManager;
+  /**
+   * Real network-state primitives (all implemented by WindowsPC/EndHost).
+   * The legacy Net* cmdlets MUST use these — never a parallel PS-only
+   * store — so cmd and PowerShell always describe the same device state
+   * (see AUDIT-COHERENCE-CMD-PS-UX-HELP.md §1).
+   */
+  configureInterface(ifName: string, ip: IPAddress, mask: SubnetMask, origin?: string): boolean;
+  unconfigureInterface(ifName: string): boolean;
+  setDefaultGateway(gw: IPAddress): void;
+  clearDefaultGateway(): void;
+  getRoutingTable(): Array<{ network: IPAddress; mask: SubnetMask; nextHop: IPAddress | null; iface: string; metric: number; type?: string }>;
+  addStaticRoute(network: IPAddress, mask: SubnetMask, nextHop: IPAddress, metric?: number): boolean;
+  removeRoute(dest: IPAddress, mask: SubnetMask): boolean;
+  getSocketTable(): { getAll(): Array<{ protocol: string; localAddress: string; localPort: number; remoteAddress: string; remotePort: number; state: string; pid?: number }> };
+  /** Full sync DNS chain: hosts file → resolver cache → servers on the wire. */
+  resolveDnsSync(name: string): string[];
+  /** Shared scheduled-task store — the same map cmd's schtasks reads/writes. */
+  readonly scheduledTasks: Map<string, { taskName: string; taskPath: string; state: string; command?: string; runAt?: Date; intervalMs?: number }>;
   /**
    * Phase 4 relocation: state holders that used to live as private fields
    * on PowerShellExecutor now live on the device. The executor reads/writes
@@ -2544,35 +2562,48 @@ export class PowerShellExecutor {
         /^["']|["']$/g,
         '',
       );
-      return net.renderResolveDnsName(target);
+      return net.renderResolveDnsName(this.buildPSNetCtx(), target);
     }
 
     if (STORAGE_CMDLETS[cmdLower]) {
       return STORAGE_CMDLETS[cmdLower]({ fs: this.device.getFileSystem() }, args);
     }
 
-    // Get-ScheduledTask
+    // Get-ScheduledTask — reads the SAME store cmd's schtasks writes.
     if (cmdLower === 'get-scheduledtask') {
       const nameParam = args.find((a, i) => args[i - 1]?.toLowerCase() === '-taskname') || args.find(a => !a.startsWith('-'));
-      const tasks = [
-        { TaskName: 'GoogleUpdateTaskUser', TaskPath: '\\', State: 'Ready' },
-        { TaskName: 'OneDrive Standalone Update Task', TaskPath: '\\', State: 'Ready' },
-        { TaskName: '.NET Framework NGEN v4.0.30319', TaskPath: '\\Microsoft\\Windows\\.NET', State: 'Ready' },
-        { TaskName: 'SimTestTask', TaskPath: '\\', State: 'Ready' },
-      ];
-      const filtered = nameParam ? tasks.filter(t => t.TaskName.toLowerCase().includes(nameParam.toLowerCase())) : tasks;
+      const tasks = [...this.device.scheduledTasks.values()];
+      const filtered = nameParam
+        ? tasks.filter(t => t.taskName.toLowerCase().includes(nameParam.replace(/^["']|["']$/g, '').toLowerCase()))
+        : tasks;
+      if (filtered.length === 0) {
+        return nameParam
+          ? `Get-ScheduledTask : No MSFT_ScheduledTask objects found with property 'TaskName' equal to '${nameParam}'.`
+          : '';
+      }
       const lines = ['', 'TaskPath                          TaskName                        State    ', '--------                          --------                        -----    '];
       for (const t of filtered) {
-        lines.push(`${t.TaskPath.padEnd(34)}${t.TaskName.padEnd(32)}${t.State}`);
+        lines.push(`${t.taskPath.padEnd(34)}${t.taskName.padEnd(32)}${t.state}`);
       }
       return lines.join('\n');
     }
 
-    // Register-ScheduledTask
+    // Register-ScheduledTask — writes the SAME store cmd's schtasks reads.
     if (cmdLower === 'register-scheduledtask') {
       const nameIdx = args.findIndex(a => a.toLowerCase() === '-taskname');
       const name = nameIdx >= 0 ? args[nameIdx + 1]?.replace(/^["']|["']$/g, '') : 'Task';
+      if (name) {
+        this.device.scheduledTasks.set(name.toLowerCase(), { taskName: name, taskPath: '\\', state: 'Ready' });
+      }
       return `\n\\${name}\n`;
+    }
+
+    // Unregister-ScheduledTask — removes from the shared store.
+    if (cmdLower === 'unregister-scheduledtask') {
+      const nameIdx = args.findIndex(a => a.toLowerCase() === '-taskname');
+      const name = nameIdx >= 0 ? args[nameIdx + 1]?.replace(/^["']|["']$/g, '') : '';
+      if (name) this.device.scheduledTasks.delete(name.toLowerCase());
+      return '';
     }
 
     // New-ScheduledTaskAction / New-ScheduledTaskTrigger
@@ -2580,10 +2611,6 @@ export class PowerShellExecutor {
       return '';
     }
 
-    // Unregister-ScheduledTask
-    if (cmdLower === 'unregister-scheduledtask') {
-      return '';
-    }
 
     // Set-Acl
     if (cmdLower === 'set-acl') {

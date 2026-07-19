@@ -17,6 +17,7 @@
  */
 
 import { extractHandlerKeywords } from './HandlerKeywordExtractor';
+import { descriptionForKeyword } from './CliKeywordDescriptions';
 
 // ─── Parameter Types ────────────────────────────────────────────────
 
@@ -162,7 +163,9 @@ export class CommandTrie {
 
   private resolveDescription(node: CommandNode): string {
     if (node.description === node.keyword) {
-      return this.canonicalDescriptions.get(node.keyword) ?? node.description;
+      return this.canonicalDescriptions.get(node.keyword)
+        ?? descriptionForKeyword(node.keyword)
+        ?? node.description;
     }
     return node.description;
   }
@@ -681,7 +684,7 @@ export class CommandTrie {
     const fullKeywords = [...curated, ...children, ...extracted];
     node._autoKeywords = extracted
       .filter(kw => !fullKeywords.some(other => other !== kw && other.startsWith(kw)))
-      .map(kw => ({ keyword: kw, description: '' }));
+      .map(kw => ({ keyword: kw, description: descriptionForKeyword(kw) }));
     return node._autoKeywords;
   }
 

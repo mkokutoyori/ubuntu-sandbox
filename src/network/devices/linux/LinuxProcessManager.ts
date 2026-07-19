@@ -411,18 +411,21 @@ export class LinuxProcessManager {
   }
 
   /** Return PIDs of processes whose comm contains `pattern`. */
-  pgrep(pattern: string): number[] {
+  /** `exact` mirrors `pgrep -x`/`pkill -x`: match the whole `comm` field
+   *  (real `basename(argv[0])`, ≤15 chars in the kernel), not a substring. */
+  pgrep(pattern: string, exact = false): number[] {
     const out: number[] = [];
     for (const p of this.processes.values()) {
-      if (p.comm.includes(pattern) || p.command.includes(pattern)) out.push(p.pid);
+      const matches = exact ? p.comm === pattern : (p.comm.includes(pattern) || p.command.includes(pattern));
+      if (matches) out.push(p.pid);
     }
     return out;
   }
 
   /** Send `signal` to all processes whose comm contains `pattern`.
    *  Returns the number of processes signalled. */
-  pkill(pattern: string, signal: Signal = 'SIGTERM'): number {
-    const pids = this.pgrep(pattern);
+  pkill(pattern: string, signal: Signal = 'SIGTERM', exact = false): number {
+    const pids = this.pgrep(pattern, exact);
     let count = 0;
     for (const pid of pids) {
       if (this.kill(pid, signal)) count++;

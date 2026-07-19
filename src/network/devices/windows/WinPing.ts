@@ -263,8 +263,6 @@ export function formatWinPingStats(targetIP: string, count: number, results: Pin
     const avg = Math.round(rtts.reduce((a, b) => a + b, 0) / rtts.length);
     lines.push('Approximate round trip times in milli-seconds:');
     lines.push(`    Minimum = ${min}ms, Maximum = ${max}ms, Average = ${avg}ms`);
-  } else if (lossPct === 100 && count > 0) {
-    lines.push(`Request timed out. Destination host unreachable.`);
   }
   return lines;
 }
@@ -308,9 +306,13 @@ export async function cmdPing(ctx: WinCommandContext, args: string[]): Promise<s
   }
 
   {
-    const primary = ctx.ports.get('eth0');
-    const anyAdminUp = primary ? primary.getIsUp() && !primary.isAdminDown() : true;
-    if (!anyAdminUp) {
+    // "General failure" only when NO interface can transmit at all. Which
+    // interface actually carries the packet is the egress decision of the
+    // network layer — checking eth0 alone broke multi-homed hosts.
+    const anyUsable = [...ctx.ports.values()].some(
+      (p) => p.getIsUp() && !p.isAdminDown(),
+    );
+    if (!anyUsable) {
       const cnt = parsed.count;
       const transmitLines: string[] = [];
       for (let i = 0; i < cnt; i++) transmitLines.push('PING: transmit failed. General failure.');

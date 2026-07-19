@@ -558,6 +558,19 @@ export class BashInterpreter {
         try {
           if (cmd.type === 'SimpleCommand' && pipeInput) {
             yield* this.visitSimpleCommandWithInput(cmd, pipeInput);
+          } else if (pipeInput && (cmd.type === 'WhileClause' || cmd.type === 'UntilClause')) {
+            // `producer | while read line; do …; done` — feed the prior
+            // stage's stdout to the loop's `read` calls line-by-line, the
+            // same mechanism `visitWhile` already uses for `< file`.
+            const lines = pipeInput.split('\n');
+            if (lines[lines.length - 1] === '') lines.pop();
+            const savedLoopStdin = this.loopStdin;
+            this.loopStdin = lines;
+            try {
+              yield* this.visitCommand(cmd);
+            } finally {
+              this.loopStdin = savedLoopStdin;
+            }
           } else {
             yield* this.visitCommand(cmd);
           }
@@ -732,8 +745,13 @@ export class BashInterpreter {
       return;
     }
 
-    // If only assignments, no command to run
+    // If only assignments, no command to run — but a bare `> file` (no
+    // command, only a redirection) is real bash idiom for truncating or
+    // creating a file, and must still take effect.
     if (node.words.length === 0) {
+      if (node.redirections.length > 0 && this.io) {
+        yield* this.applyRedirections(node.redirections, '');
+      }
       this.env.lastExitCode = 0;
       return;
     }
@@ -1058,17 +1076,23 @@ export class BashInterpreter {
       }
     }
 
-    // Output not captured by any redirect goes to stdout
+    // Output not captured by any redirect goes to stdout. These three
+    // branches all mean "this content is actually reaching the terminal
+    // or the next pipeline stage, not a file" — so, like the no-redirect
+    // path elsewhere, it gets a trailing newline if missing. Skipping this
+    // (as file writes above correctly do, for byte-exact output) broke the
+    // next pipeline stage's stdin-vs-argument heuristic for single-line,
+    // no-trailing-newline output (e.g. `pgrep -x sshd 2>/dev/null | head`).
     if (!stdoutHandled && !stderrHandled && capturedOutput) {
-      this.output.push(capturedOutput);
+      this.output.push(ensureTrailingNewline(capturedOutput));
     } else if (!stdoutHandled && stderrHandled && !isError && capturedOutput) {
       // stdout wasn't redirected but stderr was — show stdout (unless this
       // was a `>&2` dup, in which case the content IS stderr).
-      this.output.push(capturedOutput);
+      this.output.push(ensureTrailingNewline(capturedOutput));
       if (dupToStderr) this.stderrParts.push(capturedOutput);
     } else if (stdoutHandled && !stderrHandled && isError && capturedOutput) {
       // stderr wasn't redirected but stdout was — show stderr
-      this.output.push(capturedOutput);
+      this.output.push(ensureTrailingNewline(capturedOutput));
       this.stderrParts.push(capturedOutput);
     }
   }

@@ -9,7 +9,6 @@
 import type { ICLIDevice } from '@/network';
 import { CLITerminalSession } from './CLITerminalSession';
 import { TerminalTheme, SessionType, withTimeout, DeviceOfflineError } from './TerminalSession';
-import { CiscoFlowBuilder } from '@/terminal/flows/CiscoFlowBuilder';
 import type { InteractiveStep } from '@/terminal/core/types';
 import { Router } from '@/network/devices/Router';
 import { Switch } from '@/network/devices/Switch';
@@ -155,27 +154,13 @@ export class CiscoTerminalSession extends CLITerminalSession {
   }
 
   /**
-   * Cisco IOS interactive commands:
-   * - copy running-config startup-config → asks Destination filename
-   * - reload → asks Proceed with reload? [confirm]
-   * - erase startup-config → confirms erase
+   * Interactive commands (copy/reload/erase) are declared by the IOS shell
+   * itself (CiscoShellBase.interactionPlanFor) — the generic planner-driven
+   * buildInteractiveFlow in CLITerminalSession renders them. Only the CLI
+   * mode is supplied here so plans stay privileged-EXEC-only.
    */
-  protected buildInteractiveFlow(command: string): InteractiveStep[] | null {
-    const lower = command.toLowerCase().trim();
-
-    if (lower === 'copy running-config startup-config' || lower === 'copy run start') {
-      return CiscoFlowBuilder.copyRunningConfig();
-    }
-
-    if (lower === 'reload') {
-      return CiscoFlowBuilder.reloadConfirmation();
-    }
-
-    if (lower === 'erase startup-config') {
-      return CiscoFlowBuilder.eraseStartupConfig();
-    }
-
-    return null;
+  protected override interactionPlanContext() {
+    return { mode: this.vty?.state.mode ?? 'user' };
   }
 
   private debugJob: AsyncJobHandle | null = null;

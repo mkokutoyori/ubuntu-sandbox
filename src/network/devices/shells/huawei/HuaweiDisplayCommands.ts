@@ -1103,8 +1103,13 @@ export function registerDisplayCommands(
     displayTrafficFilterApplied(getRouter()));
 
   trie.register('display saved-configuration', 'Display saved configuration', () => {
-    const s = getState();
-    return displayCurrentConfig(getRouter(), s.isDhcpEnabled(), s.isDhcpSnoopingEnabled(), s.getDhcpSelectGlobal());
+    // Real semantics: render the snapshot captured by `save` — NOT a
+    // mirror of the running configuration. An unsaved device has no
+    // configuration file, exactly like real VRP.
+    const snapshot = (getRouter() as unknown as { getStartupConfigSnapshot?: () => string | null })
+      .getStartupConfigSnapshot?.();
+    if (!snapshot) return "Error: The configuration file doesn't exist.";
+    return snapshot;
   });
 
   trie.register('display startup', 'Display startup configuration', () => {

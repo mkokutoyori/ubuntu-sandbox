@@ -454,6 +454,12 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     return 'Building configuration...\n[OK]';
   }
 
+  protected override onErase(): void {
+    super.onErase();
+    this.startupConfig = null;
+    this.startupAliases = null;
+  }
+
   protected override performImmediateReload(): string {
     const out = super.performImmediateReload();
     if (this.startupAliases) this.aliases.restore(this.startupAliases);

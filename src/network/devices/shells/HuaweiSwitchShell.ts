@@ -15,6 +15,8 @@
 
 import { CommandTrie } from './CommandTrie';
 import { EquipmentParamResolver } from './EquipmentParamResolver';
+import { huaweiInteractionPlanFor } from './huawei/HuaweiInteractionPlans';
+import type { CommandInteractionPlan } from '@/shell/interaction/CommandInteraction';
 import type { ISwitchShell } from './ISwitchShell';
 import type { Switch } from '../Switch';
 import { MACAddress, IPAddress, SubnetMask, type PortViolationMode } from '../../core/types';
@@ -49,6 +51,11 @@ export class HuaweiSwitchShell implements ISwitchShell {
   private mode: VRPSwitchMode = 'user';
   private selectedInterface: string | null = null;
   private selectedVlan: number | null = null;
+
+  /** Command-owned interactive flows (IoC) — see HuaweiInteractionPlans. */
+  interactionPlanFor(commandLine: string): CommandInteractionPlan | null {
+    return huaweiInteractionPlanFor(commandLine);
+  }
 
   // Per-mode command tries
   private userTrie = new CommandTrie();
@@ -1931,12 +1938,26 @@ export class HuaweiSwitchShell implements ISwitchShell {
       return this.displayCurrentConfig(this.swRef);
     });
 
-    // `display saved-configuration` / `display startup` — mirror running
-    // config (the sim has no separate flash image).
-    trie.register('display saved-configuration', 'Display saved configuration', () =>
-      this.swRef ? this.displayCurrentConfig(this.swRef) : '');
+    // `display saved-configuration` — real semantics: render the snapshot
+    // captured by `save`, never a mirror of the running configuration.
+    trie.register('display saved-configuration', 'Display saved configuration', () => {
+      const snapshot = this.swRef?.getStartupConfig();
+      return snapshot ?? "Error: The configuration file doesn't exist.";
+    });
     trie.register('display startup', 'Display startup configuration', () =>
       this.swRef ? this.displayCurrentConfig(this.swRef) : '');
+
+    // save / reset saved-configuration — REAL persistence into the switch
+    // NVRAM. The interactive Y/N dialogue is declared by the interaction
+    // plan (huaweiInteractionPlanFor); the inline forms assume yes.
+    trie.register('save', 'Save current configuration', () => {
+      if (this.swRef) this.swRef._captureStartupConfig(this.displayCurrentConfig(this.swRef));
+      return 'The current configuration will be written to the device.\nInfo: Please input the file name ( *.cfg, *.zip ) [vrpcfg.zip]:vrpcfg.zip\nNow saving the current configuration to the slot.\nSave the configuration successfully.';
+    });
+    trie.registerGreedy('reset saved-configuration', 'Clear the saved configuration', () => {
+      this.swRef?._eraseStartupConfig();
+      return 'Warning: The action will delete the saved configuration on the device.';
+    });
 
     // Informational displays (shared with the router, DRY).
     trie.register('display alarm', 'Display alarm records', () => displayAlarm());

@@ -53,10 +53,11 @@ import {
 } from './TerminalSession';
 import { createSessionForDevice } from './sessionFactory';
 import { LinuxMachine } from '@/network/devices/LinuxMachine';
+import { validateSudoersContent } from '@/network/devices/linux/iam/PwGrCheck';
 import type { LinuxShellSession } from '@/network/devices/linux/shell/LinuxShellSession';
 import { AnsiOutputFormatter, type IOutputFormatter } from '@/terminal/core/OutputFormatter';
 import { CompletionController, ReadlinePolicy, CyclingPolicy, LastWordSource, ghostRemainder } from '@/terminal/completion';
-import { LinuxFlowBuilder } from '@/terminal/flows/LinuxFlowBuilder';
+import { toInteractiveSteps } from '@/terminal/flows/planAdapter';
 import {
   parseReadInvocation as parseReadInvocationLib,
   performInteractiveRead as performInteractiveReadLib,
@@ -1468,6 +1469,7 @@ export class LinuxTerminalSession extends TerminalSession {
     if (this.tryStartDstatStream(trimmed)) return;
     if (this.tryStartTcpdump(trimmed)) return;
     if (this.tryCrontabEdit(trimmed)) return;
+    if (this.tryVisudoEdit(trimmed)) return;
     if (await this.tryInteractiveRead(trimmed)) return;
 
     // Intercept editor commands — at top level OR embedded in a chain
@@ -1811,6 +1813,67 @@ export class LinuxTerminalSession extends TerminalSession {
     this.notify();
   }
 
+  private _pendingVisudoEdit: { targetPath: string; tmpPath: string } | null = null;
+
+  /**
+   * `visudo` (no `-c`) — real visudo edits a *temp copy* of the target
+   * file and only installs it if the saved content parses cleanly,
+   * guaranteeing /etc/sudoers is never left syntactically broken (which
+   * would lock every admin out of sudo). `-c`/`-c -f` stay on the normal
+   * LinuxCommand dispatch path (Visudo.ts) since they never touch the
+   * editor at all.
+   */
+  private tryVisudoEdit(commandLine: string): boolean {
+    const dev = this.device;
+    if (!(dev instanceof LinuxMachine) || !this.shell) return false;
+    const trimmedCmd = commandLine.trim();
+    const isSudo = trimmedCmd.startsWith('sudo ');
+    let toks = trimmedCmd.split(/\s+/);
+    if (isSudo) toks = toks.slice(1);
+    if (toks[0] !== 'visudo' || toks.includes('-c')) return false;
+
+    const isRoot = dev.getCurrentUser() === 'root';
+    if (!isRoot && !(isSudo && dev.canSudo())) {
+      this.addLine('visudo: you must be root to run visudo');
+      return true;
+    }
+
+    const fIdx = toks.indexOf('-f');
+    const targetArg = fIdx !== -1 && toks[fIdx + 1] ? toks[fIdx + 1] : '/etc/sudoers';
+    const targetPath = dev.resolveAbsolutePathInSession(targetArg, this.shell);
+    const existing = dev.readFileForEditorInSession(targetPath, this.shell) ?? '';
+
+    const tmpPath = `/tmp/visudo.${Math.floor(Math.random() * 1e6)}`;
+    dev.writeFileFromEditorInSession(tmpPath, existing, this.shell);
+    this._pendingVisudoEdit = { targetPath, tmpPath };
+
+    const editorVar = (this.shell.env.get('VISUAL') || this.shell.env.get('EDITOR') || 'vi').toLowerCase();
+    const editorCmd: 'nano' | 'vi' | 'vim' = editorVar.includes('nano') ? 'nano' : editorVar.includes('vim') ? 'vim' : 'vi';
+    this.openEditor(editorCmd, [tmpPath]);
+    return true;
+  }
+
+  private finishVisudoEdit(saved: boolean): void {
+    const pending = this._pendingVisudoEdit;
+    this._pendingVisudoEdit = null;
+    this.inputMode = { type: 'normal' };
+    const dev = this.device;
+    if (!saved || !(dev instanceof LinuxMachine) || !this.shell) {
+      this.addLine('visudo: no changes made');
+      this.notify();
+      return;
+    }
+    const content = dev.readFileForEditorInSession(pending!.tmpPath, this.shell) ?? '';
+    const result = validateSudoersContent(content, pending!.targetPath);
+    if (result.exitCode !== 0) {
+      for (const line of result.lines) this.addLine(line);
+      this.addLine(`visudo: ${pending!.targetPath} unchanged`);
+    } else {
+      dev.writeFileFromEditorInSession(pending!.targetPath, content, this.shell);
+    }
+    this.notify();
+  }
+
   private openEditor(editorCmd: 'nano' | 'vi' | 'vim', args: string[]): void {
     let filePath = '';
     for (const arg of args) {
@@ -1862,6 +1925,7 @@ export class LinuxTerminalSession extends TerminalSession {
   override editorExit(saved: boolean = true): void {
     if (this.hasActiveChild) { super.editorExit(saved); return; }
     if (this._pendingCrontabEdit) { this.finishCrontabEdit(saved); return; }
+    if (this._pendingVisudoEdit) { this.finishVisudoEdit(saved); return; }
     this.inputMode = { type: 'normal' };
     const tail = this._pendingChainAfterEditor;
     this._pendingChainAfterEditor = null;
@@ -1935,6 +1999,28 @@ export class LinuxTerminalSession extends TerminalSession {
     return head + rest;
   }
 
+  /**
+   * Command-owned interactive flows (IoC): the DEVICE declares the
+   * sudo/su/passwd/adduser dialogue via `interactionPlanFor`; this session
+   * renders it. The session's only contributions are its per-terminal
+   * identity and the subshell-entry patches (rman/sqlplus) below.
+   */
+  private buildDeviceFlowSteps(
+    command: string,
+    currentUser: string,
+    currentUid: number,
+  ): InteractiveStep[] | null {
+    const device = this.device as unknown as {
+      interactionPlanFor?: (
+        line: string,
+        ctx?: { currentUser?: string; currentUid?: number },
+      ) => import('@/shell/interaction/CommandInteraction').CommandInteractionPlan | null;
+    };
+    if (typeof device.interactionPlanFor !== 'function') return null;
+    const plan = device.interactionPlanFor(command, { currentUser, currentUid });
+    return plan ? toInteractiveSteps(plan) : null;
+  }
+
   private startInteractiveFlow(command: string): boolean {
     // Use the per-terminal shell session's identity, not the device-wide
     // executor's: `su`/`sudo -s` push a frame onto *this* terminal's shell
@@ -1947,7 +2033,7 @@ export class LinuxTerminalSession extends TerminalSession {
     const noSudo = command.startsWith('sudo ') ? command.slice(5).trim() : command;
     const cmdParts = noSudo.split(/\s+/);
     if (cmdParts[0] === 'rman' && command.startsWith('sudo ')) {
-      const steps = LinuxFlowBuilder.build(command, currentUser, currentUid, this.device);
+      const steps = this.buildDeviceFlowSteps(command, currentUser, currentUid);
       if (steps) {
         const rmanArgs = cmdParts.slice(1);
         const patchedSteps: InteractiveStep[] = steps.map(step => {
@@ -1966,7 +2052,7 @@ export class LinuxTerminalSession extends TerminalSession {
       }
     }
     if (cmdParts[0] === 'sqlplus' && command.startsWith('sudo ')) {
-      const steps = LinuxFlowBuilder.build(command, currentUser, currentUid, this.device);
+      const steps = this.buildDeviceFlowSteps(command, currentUser, currentUid);
       if (steps) {
         // Replace the generic execute step with sqlplus entry
         const sqlplusArgs = cmdParts.slice(1);
@@ -1986,7 +2072,7 @@ export class LinuxTerminalSession extends TerminalSession {
       }
     }
 
-    const steps = LinuxFlowBuilder.build(command, currentUser, currentUid, this.device);
+    const steps = this.buildDeviceFlowSteps(command, currentUser, currentUid);
     if (!steps) return false;
 
     this.startFlowFromSteps(steps, command);
