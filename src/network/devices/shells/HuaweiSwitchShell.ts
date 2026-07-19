@@ -1964,6 +1964,15 @@ export class HuaweiSwitchShell implements ISwitchShell {
       this.swRef?._eraseStartupConfig();
       return 'Warning: The action will delete the saved configuration on the device.';
     });
+    // reboot — REAL restart (parity with the VRP router shell). The
+    // interactive Y/N dialogue is the interaction plan's job.
+    trie.registerGreedy('reboot', 'Reboot device', () => {
+      this.swRef?.powerOff();
+      this.swRef?.powerOn();
+      this.mode = 'user';
+      this.selectedInterface = null;
+      return 'Info: The system is rebooting ...\nSystem restart completed.';
+    });
 
     // Informational displays (shared with the router, DRY).
     trie.register('display alarm', 'Display alarm records', () => displayAlarm());
