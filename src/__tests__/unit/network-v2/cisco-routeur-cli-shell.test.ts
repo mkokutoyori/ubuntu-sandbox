@@ -1605,7 +1605,9 @@ describe('Cisco IOS CLI Terminal & Mode Transitions', () => {
       await r.executeCommand('enable');
       await r.executeCommand('configure terminal');
       const output = await r.executeCommand('username admin password cisco');
-      expect(output.trim()).toBe('');
+      // Real IOS: a bare/type-0 `username … password …` triggers the
+      // type-0 deprecation warning as the command's own output.
+      expect(output).toContain('WARNING: Command has been added to the configuration using a type 0');
     });
 
     it('183. should show username credentials in running-config output', async () => {
@@ -2040,7 +2042,10 @@ describe('Cisco IOS CLI Terminal & Mode Transitions', () => {
       await r.executeCommand('enable password normalpassword');
       await r.executeCommand('end');
       const running = await r.executeCommand('show running-config');
-      expect(running).toContain('enable password 0 normalpassword');
+      // Real IOS shows enable password unencrypted with NO type-0 digit
+      // (unlike `username … password 0 …`, which always shows it).
+      expect(running).toContain('enable password normalpassword');
+      expect(running).not.toContain('enable password 0 normalpassword');
     });
 
     it('230. should encrypt enable password inside show running-config when service password-encryption is enabled', async () => {

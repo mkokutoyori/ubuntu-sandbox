@@ -2240,6 +2240,31 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       dev._setEnableSecretForLevel?.(level, secret, algo);
       return '';
     });
+    // `enable algorithm-type {md5|scrypt|sha256} secret [level N] <pwd>` —
+    // explicit-algorithm form of `enable secret` (IOS 15.3+), always takes
+    // a cleartext password and hashes it with the named algorithm.
+    this.configTrie.registerGreedy('enable algorithm-type', 'Set enable secret with an explicit hash algorithm', (args) => {
+      const dev = this.d() as unknown as { _setEnableSecretForLevel?: (level: number, s: string, algo: 'plain' | 'md5' | 'sha256' | 'scrypt' | 'type-7') => void };
+      const algoName = args[0]?.toLowerCase();
+      const algoMap: Record<string, 'md5' | 'scrypt' | 'sha256'> = { md5: 'md5', scrypt: 'scrypt', sha256: 'sha256' };
+      const algo = algoMap[algoName ?? ''];
+      if (!algo) return "% Invalid input detected at '^' marker.";
+      if (args[1]?.toLowerCase() !== 'secret') return "% Invalid input detected at '^' marker.";
+      let level = 15;
+      let rest = args.slice(2);
+      if (rest[0]?.toLowerCase() === 'level' && /^\d+$/.test(rest[1] ?? '')) {
+        level = parseInt(rest[1], 10);
+        rest = rest.slice(2);
+      }
+      const secret = rest.join(' ');
+      if (secret === '') return CISCO_ERRORS.INCOMPLETE;
+      const minLength = getSecurityConfig(this.d()).passwords.minLength;
+      if (minLength && secret.length < minLength) {
+        return `Password too short - must be at least ${minLength} characters. Password configuration failed`;
+      }
+      dev._setEnableSecretForLevel?.(level, secret, algo);
+      return '';
+    });
     this.configTrie.registerGreedy('enable password', 'Set enable password', (args) => {
       const dev = this.d() as unknown as {
         _setEnablePasswordForLevel?: (level: number, p: string, algo: 'plain' | 'type-7') => void;

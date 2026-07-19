@@ -143,7 +143,7 @@ export function buildSecurityConfigCommands(trie: CommandTrie, ctx: CiscoSecurit
     const name = args[0];
     let privilege: number | undefined;
     let secret: string | undefined;
-    let secretAlgo: 'plain' | 'md5' | 'sha256' | 'scrypt' | 'type-7' = 'plain';
+    let secretAlgo: 'plain' | 'plain-password' | 'md5' | 'sha256' | 'scrypt' | 'type-7' = 'plain';
     let nopassword = false;
     let description: string | undefined;
     // Set only for forms where the operator typed a real cleartext password
@@ -151,6 +151,10 @@ export function buildSecurityConfigCommands(trie: CommandTrie, ctx: CiscoSecurit
     // hash pasted in via `secret 5|8|9|4` / `password 7`, which `security
     // passwords min-length` does not (and cannot) validate.
     let plaintextEntered: string | undefined;
+    // Real IOS: entering a type-0 (cleartext) password via `password`
+    // triggers a deprecation warning as the command's own output — never
+    // for `secret`, which real IOS always hashes on save.
+    let type0PasswordWarning = false;
     for (let i = 1; i < args.length; i++) {
       const t = args[i];
       if (t === 'privilege' && args[i + 1]) { privilege = parseInt(args[i + 1], 10); i++; }
@@ -168,9 +172,13 @@ export function buildSecurityConfigCommands(trie: CommandTrie, ctx: CiscoSecurit
       }
       else if (t === 'password') {
         const next = args[i + 1];
-        if (next === '0') { secret = args.slice(i + 2).join(' '); secretAlgo = 'plain'; plaintextEntered = secret; break; }
+        if (next === '0') {
+          secret = args.slice(i + 2).join(' '); secretAlgo = 'plain-password';
+          plaintextEntered = secret; type0PasswordWarning = true; break;
+        }
         if (next === '7') { secret = args.slice(i + 2).join(' '); secretAlgo = 'type-7'; break; }
-        secret = args.slice(i + 1).join(' '); secretAlgo = 'plain'; plaintextEntered = secret; break;
+        secret = args.slice(i + 1).join(' '); secretAlgo = 'plain-password';
+        plaintextEntered = secret; type0PasswordWarning = true; break;
       }
     }
     const minLength = sec().passwords.minLength;
@@ -180,7 +188,7 @@ export function buildSecurityConfigCommands(trie: CommandTrie, ctx: CiscoSecurit
     const router = ctx.r() as unknown as {
       _upsertCiscoUsername?: (n: string, kv: {
         privilege?: number; secret?: string;
-        secretAlgo?: 'plain' | 'md5' | 'sha256' | 'scrypt' | 'type-7';
+        secretAlgo?: 'plain' | 'plain-password' | 'md5' | 'sha256' | 'scrypt' | 'type-7';
         nopassword?: boolean; description?: string;
       }) => void;
     };
@@ -188,6 +196,11 @@ export function buildSecurityConfigCommands(trie: CommandTrie, ctx: CiscoSecurit
       router._upsertCiscoUsername(name, { privilege, secret, secretAlgo, nopassword, description });
     }
     sec().usernames.set(name, { name, privilege: privilege ?? 1, secret, password: undefined });
+    if (type0PasswordWarning) {
+      return "WARNING: Command has been added to the configuration using a type 0\n"
+        + "password. However, type 0 passwords will soon be deprecated. Migrate\n"
+        + "to a supported password type";
+    }
     return '';
   });
 
@@ -197,12 +210,29 @@ export function buildSecurityConfigCommands(trie: CommandTrie, ctx: CiscoSecurit
       _setServiceFlag?: (n: string, on: boolean) => void;
       getEnablePassword?: () => { value: string; algo: 'plain' | 'type-7' } | null;
       _setEnablePassword?: (v: string, algo: 'plain' | 'type-7') => void;
+      listEnablePasswordLevels?: () => ReadonlyArray<{ level: number; value: string; algo: 'plain' | 'type-7' }>;
+      _setEnablePasswordForLevel?: (level: number, v: string, algo: 'plain' | 'type-7') => void;
+      _listLocalUsers?: () => ReadonlyArray<{ name: string; privilege: number; secret: string; secretAlgo?: string }>;
+      _upsertCiscoUsername?: (n: string, kv: { secret?: string; secretAlgo?: 'type-7' }) => void;
     };
     r._setServiceFlag?.('password-encryption', true);
+    const encrypt = (value: string): string => {
+      const salt = parseInt(md5Hex(`cisco-type7:${value}`).slice(0, 1), 16);
+      return encryptType7(value, salt);
+    };
+    // Real IOS: turning `service password-encryption` ON retroactively
+    // obfuscates every currently type-0 password already in the config —
+    // enable password (every level), and every `username … password`
+    // entry — not just newly-typed ones going forward.
     const ep = r.getEnablePassword?.();
-    if (ep && ep.algo === 'plain') {
-      const salt = parseInt(md5Hex(`cisco-type7:${ep.value}`).slice(0, 1), 16);
-      r._setEnablePassword?.(encryptType7(ep.value, salt), 'type-7');
+    if (ep && ep.algo === 'plain') r._setEnablePassword?.(encrypt(ep.value), 'type-7');
+    for (const e of r.listEnablePasswordLevels?.() ?? []) {
+      if (e.algo === 'plain') r._setEnablePasswordForLevel?.(e.level, encrypt(e.value), 'type-7');
+    }
+    for (const u of r._listLocalUsers?.() ?? []) {
+      if (u.secretAlgo === 'plain-password') {
+        r._upsertCiscoUsername?.(u.name, { secret: encrypt(u.secret), secretAlgo: 'type-7' });
+      }
     }
     return '';
   });

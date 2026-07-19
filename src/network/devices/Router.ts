@@ -2674,7 +2674,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
 
   _upsertCiscoUsername(name: string, kv: {
     privilege?: number; secret?: string;
-    secretAlgo?: 'plain' | 'md5' | 'sha256' | 'scrypt' | 'type-7';
+    secretAlgo?: 'plain' | 'plain-password' | 'md5' | 'sha256' | 'scrypt' | 'type-7';
     autocommand?: string; nopassword?: boolean; description?: string;
   }): void {
     this.getSecurityAuditLog();

@@ -82,12 +82,20 @@ export function applyPipeFilter(output: string, filter: PipeFilter | null): stri
   }
 
   const lowerPattern = pattern.toLowerCase();
+  // Real IOS `| include`/`| exclude` support basic regex alternation —
+  // `include foo|bar|baz` matches any line containing ANY of the
+  // `|`-separated terms, not the literal string "foo|bar|baz".
+  const alternatives = lowerPattern.split('|').map(p => p.trim()).filter(p => p.length > 0);
+  const matchesAny = (l: string): boolean => {
+    const lower = l.toLowerCase();
+    return alternatives.some(alt => lower.includes(alt));
+  };
 
   if (filter.type === 'include' || filter.type === 'grep' || filter.type === 'findstr') {
-    return lines.filter(l => l.toLowerCase().includes(lowerPattern)).join('\n');
+    return lines.filter(matchesAny).join('\n');
   }
   if (filter.type === 'exclude') {
-    return lines.filter(l => !l.toLowerCase().includes(lowerPattern)).join('\n');
+    return lines.filter(l => !matchesAny(l)).join('\n');
   }
   if (filter.type === 'begin') {
     const start = lines.findIndex(l => l.toLowerCase().includes(lowerPattern));
