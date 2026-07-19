@@ -828,8 +828,10 @@ describe('iptables', () => {
       await setupIPs(pc, srv);
       await srv.executeCommand('iptables -A INPUT -p icmp -j REJECT');
 
+      // Bare REJECT (no --reject-with) defaults to icmp-port-unreachable,
+      // exactly like real iptables.
       const result = await pc.executeCommand('ping -c 1 10.0.0.2');
-      expect(result).toContain('Destination Host Unreachable');
+      expect(result).toContain('Destination Port Unreachable');
     });
 
     it('should handle negated source (!)', async () => {

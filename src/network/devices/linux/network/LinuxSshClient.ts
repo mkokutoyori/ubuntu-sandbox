@@ -148,7 +148,8 @@ function splitSshArgs(args: string[]): { positional: string[]; flags: string[] }
   return { positional, flags };
 }
 
-function readForceCommand(
+/** Exported for {@link file://../../../../shell/sshLauncher.ts} — the interactive `ssh` (no exec command) path enforces the same ForceCommand policy as this exec-mode client. */
+export function readForceCommand(
   machine: { executor?: { vfs?: { readFile: (p: string) => string | null }; userMgr?: { getUserGroups?: (u: string) => Array<{ name: string }> } } },
   user: string,
   sourceIp?: string,
@@ -895,6 +896,12 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
     };
   }
 
+  // From here on, the TCP handshake has genuinely reached a live sshd —
+  // everything past this point is an SSH/PAM-layer outcome, not a
+  // connectivity one, so a failure here is still a real, wire-visible
+  // connection for `tcpdump` / socket accounting to record.
+  const connectedTuple: SshConnectionTuple = { localIp: opts.sourceIp, peerIp: destIp, peerPort: port };
+
   // Login policy gate (root login, allowed users, etc.).
   const login = machine.sshdAcceptsLogin?.(remoteUser, { address: opts.sourceIp, host: opts.sourceHostname }) ?? { ok: true };
   if (!login.ok) {
@@ -918,6 +925,7 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
     return {
       output: `${remoteUser}@${host}: Permission denied (publickey,password).`,
       exitCode: 255,
+      connection: connectedTuple,
     };
   }
 
@@ -949,6 +957,7 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
     return {
       output: `${remoteUser}@${host}: Permission denied, please try again.\n`,
       exitCode: 255,
+      connection: connectedTuple,
     };
   }
   if (!auth.method) {
@@ -961,6 +970,7 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
         auth.clientMethods.join(',') || 'publickey,password'
       }).`,
       exitCode: 255,
+      connection: connectedTuple,
     };
   }
   // PAM account phase: credentials are correct, but chage-tracked account
@@ -979,6 +989,7 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
     return {
       output: `Your account has expired; please contact your system administrator\n${remoteUser}@${host}: Permission denied (publickey,password).`,
       exitCode: 255,
+      connection: connectedTuple,
     };
   }
 
@@ -1203,7 +1214,13 @@ export function runSshClient(opts: SshClientOpts): SshClientResult {
       readForceCommand(machine, remoteUser, opts.sourceIp, opts.sourceHostname)
       ?? auth.matchedKey?.options?.command
       ?? null;
-    if (forcedInteractive && forcedInteractive !== 'internal-sftp') {
+    // Real sshd refuses a bare interactive session just as it refuses one
+    // with an explicit remote command — internal-sftp never hands out a
+    // shell either way.
+    if (forcedInteractive === 'internal-sftp') {
+      return { output: 'This service allows sftp connections only.\n', exitCode: 1, connection };
+    }
+    if (forcedInteractive) {
       const restore = swapRemoteUser(machine, remoteUser);
       const execMod = machine.executor as undefined | { execute: (c: string) => string; lastExitCode?: number };
       let out = '';

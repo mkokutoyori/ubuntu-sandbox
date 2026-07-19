@@ -119,6 +119,12 @@ describe('Scénario 10 — octet NUL embarqué : nettoyage via :%!xxd puis :%!xx
 
     const vim = new VimEngine(fsCtx, '/tmp/nul-corrupt.bin', fsCtx.readFile('/tmp/nul-corrupt.bin')!, false, 'vim');
 
+    // Real vim gates any file containing a raw NUL byte behind a binary
+    // warning before rendering it as text — acknowledge it first.
+    expect(vim.mode).toBe('binary-warning');
+    press(vim, 'y');
+    expect(vim.mode).toBe('normal');
+
     exCommand(vim, '%!xxd');
     expect(vim.lines.length).toBe(1);
     expect(vim.lines[0]).toContain('0049'); // the NUL (00) + 'I' (49) byte pair, grouped together

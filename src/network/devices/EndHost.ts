@@ -1856,7 +1856,8 @@ export abstract class EndHost extends Equipment {
     } else if (icmp.icmpType === 'time-exceeded' || icmp.icmpType === 'destination-unreachable') {
       const reason = icmp.icmpType === 'time-exceeded'
         ? `Time to live exceeded (from ${ipPkt.sourceIP})`
-        : `Destination unreachable (from ${ipPkt.sourceIP}) code ${icmp.code}`;
+        : `Destination unreachable (from ${ipPkt.sourceIP}) code ${icmp.code}`
+          + (icmp.mtu !== undefined ? ` mtu ${icmp.mtu}` : '');
 
       const isHardTcpError = icmp.icmpType === 'destination-unreachable'
         && (icmp.code === ICMP_UNREACH_PORT || icmp.code === ICMP_UNREACH_ADMIN_PROHIBITED);
@@ -1962,6 +1963,10 @@ export abstract class EndHost extends Equipment {
     };
 
     const icmpSize = 8 + requestICMP.dataSize; // ICMP header + data
+    // Mirror the request's DF bit: an echo request that made it here
+    // unfragmented (DF unset) took a path whose MTU allows that size, so the
+    // reply — same size, reverse direction — should be free to do the same
+    // rather than picking up this stack's DF-by-default and bouncing.
     const replyIP = createIPv4Packet(
       myIP,
       requestIP.sourceIP,
@@ -1969,6 +1974,7 @@ export abstract class EndHost extends Equipment {
       this.defaultTTL,
       replyICMP,
       icmpSize,
+      { flags: requestIP.flags },
     );
 
     // Route the reply — source may be on a different subnet (via default gateway)
@@ -2029,7 +2035,9 @@ export abstract class EndHost extends Equipment {
       case 'icmp-net-prohibited': return ICMP_UNREACH_NET_PROHIBITED;
       case 'icmp-host-prohibited': return ICMP_UNREACH_HOST_PROHIBITED;
       case 'icmp-admin-prohibited': return ICMP_UNREACH_ADMIN_PROHIBITED;
-      default: return ICMP_UNREACH_ADMIN_PROHIBITED;
+      // Real iptables: a bare `-j REJECT` with no `--reject-with` defaults
+      // to icmp-port-unreachable, not admin-prohibited.
+      default: return ICMP_UNREACH_PORT;
     }
   }
 
@@ -2511,6 +2519,7 @@ export abstract class EndHost extends Equipment {
     seq: number = 1,
     timeoutMs: number = 2000,
     ttl?: number,
+    opts?: { dataSize?: number; df?: boolean },
   ): Promise<PingResult> {
     const port = this.ports.get(portName);
     if (!port) throw new Error('Port not found');
@@ -2545,12 +2554,16 @@ export abstract class EndHost extends Equipment {
     replyPromise.catch(() => {});
     failedPromise.catch(() => {});
 
+    const dataSize = opts?.dataSize ?? 56;
     const icmp: ICMPPacket = {
       type: 'icmp', icmpType: 'echo-request', code: 0,
-      id, sequence: seq, dataSize: 56,
+      id, sequence: seq, dataSize,
     };
-    const icmpSize = 8 + 56;
-    const ipPkt = createIPv4Packet(myIP, targetIP, IP_PROTO_ICMP, useTtl, icmp, icmpSize);
+    const icmpSize = 8 + dataSize;
+    const ipPkt = createIPv4Packet(
+      myIP, targetIP, IP_PROTO_ICMP, useTtl, icmp, icmpSize,
+      opts?.df === undefined ? {} : { flags: opts.df ? 0b010 : 0b000 },
+    );
 
     this.emitIcmpEchoSent({
       fromIp: myIP.toString(), toIp: targetIpStr,
@@ -2726,6 +2739,7 @@ export abstract class EndHost extends Equipment {
     count: number = 4,
     timeoutMs: number = 2000,
     ttl?: number,
+    opts?: { dataSize?: number; df?: boolean },
   ): Promise<PingResult[]> {
     // Local delivery without touching the wire: loopback (127/8) and any
     // address owned by one of our interfaces (self-ping), like a real kernel.
@@ -2753,7 +2767,7 @@ export abstract class EndHost extends Equipment {
     const results: PingResult[] = [];
     for (let seq = 1; seq <= count; seq++) {
       try {
-        const result = await this.sendPing(portName, targetIP, nextHopMAC, seq, timeoutMs, ttl);
+        const result = await this.sendPing(portName, targetIP, nextHopMAC, seq, timeoutMs, ttl, opts);
         results.push(result);
       } catch (err: any) {
         const errorMsg = typeof err === 'string'

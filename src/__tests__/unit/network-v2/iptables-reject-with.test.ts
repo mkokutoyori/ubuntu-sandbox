@@ -6,14 +6,13 @@
  * but never consulted when actually generating the ICMP error — every
  * REJECT verdict produced destination-unreachable/admin-prohibited (code
  * 13) regardless of the configured value. The default (no `--reject-with`
- * on the rule) is deliberately left unchanged at admin-prohibited to avoid
- * regressing existing behavior/tests that depend on it.
+ * on the rule) now matches real iptables: icmp-port-unreachable (code 3).
  *
- * The resulting ICMP code isn't visible in `ping`'s rendered text (it always
- * prints "Destination Host Unreachable" regardless of code — see
- * `formatReplyLine` in `Ping.ts`), so these tests observe the code via the
- * `host.icmp.echo-failed` bus event's `reason` string on the client, which
- * threads the real `icmp.code` value through (`EndHost.handleICMP`).
+ * `ping`'s rendered text now differentiates by code too (see
+ * `icmpUnreachText` in `Ping.ts`), but these tests still observe the code
+ * via the `host.icmp.echo-failed` bus event's `reason` string on the
+ * client, which threads the real `icmp.code` value through
+ * (`EndHost.handleICMP`).
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';
@@ -60,13 +59,13 @@ describe('iptables --reject-with', () => {
     return reasons;
   }
 
-  it('default REJECT (no --reject-with) still sends admin-prohibited, code 13 (unchanged)', async () => {
+  it('default REJECT (no --reject-with) sends icmp-port-unreachable, code 3 (real iptables default)', async () => {
     await server.executeCommand('iptables -A INPUT -p udp --dport 9999 -j REJECT');
     const reasons = captureReasons();
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (client as any).sendUdpDatagram(new IPAddress('10.0.0.1'), 9999, 5000, 'x', 1);
     await waitUntil(() => reasons.length > 0);
-    expect(reasons[0]).toContain('code 13');
+    expect(reasons[0]).toContain('code 3');
   });
 
   it('--reject-with icmp-host-unreachable selects code 1', async () => {

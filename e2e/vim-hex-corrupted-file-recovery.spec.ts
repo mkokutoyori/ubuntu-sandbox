@@ -78,6 +78,10 @@ test.describe('Scénario 10 (e2e) — récupération de fichiers corrompus', () 
   test('vim removes an embedded NUL byte via :%!xxd editing, then :%!xxd -r restores clean binary', async ({ page }) => {
     await typeCmd(page, "printf 'ID:001\\x00ID:002\\n' > /tmp/nul-e2e.bin");
     await typeCmd(page, 'vim /tmp/nul-e2e.bin');
+    // Real vim gates any file with a raw NUL byte behind a binary warning
+    // before ever rendering it as text.
+    await expect(page.getByText('may be a binary file')).toBeVisible({ timeout: 5_000 });
+    await page.keyboard.press('y');
     await expect(page.getByText('nul-e2e.bin', { exact: true })).toBeVisible({ timeout: 5_000 });
 
     await exCmd(page, '%!xxd');

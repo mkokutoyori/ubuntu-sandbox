@@ -119,6 +119,29 @@ export const VimEditor: React.FC<VimEditorProps> = ({
     );
   }
 
+  if (engine.mode === 'binary-warning' && engine.pendingBinaryWarning) {
+    return (
+      <div
+        data-testid="vim-binary-warning"
+        className="h-full w-full flex flex-col items-center justify-center p-4"
+        style={{
+          backgroundColor: '#1e1e2e',
+          color: '#cdd6f4',
+          fontFamily: "'Ubuntu Mono', 'Fira Code', 'Cascadia Code', 'Consolas', monospace",
+          fontSize: '14px',
+        }}
+      >
+        <div>{engine.pendingBinaryWarning}</div>
+        <input
+          ref={swapPromptRef}
+          onKeyDown={dispatch}
+          className="absolute opacity-0 w-0 h-0"
+          autoFocus
+        />
+      </div>
+    );
+  }
+
   return (
     <div
       ref={containerRef}
@@ -189,9 +212,20 @@ export const VimEditor: React.FC<VimEditorProps> = ({
 
         {/* Content area */}
         <div className="flex-1 relative">
+          {engine.colorColumn !== null && (
+            <div
+              data-testid="vim-colorcolumn"
+              className="absolute top-0 bottom-0 pointer-events-none"
+              style={{
+                left: `calc(0.5rem + ${engine.colorColumn}ch)`,
+                width: '1px',
+                backgroundColor: '#45475a',
+              }}
+            />
+          )}
           <textarea
             ref={textareaRef}
-            value={engine.content}
+            value={engine.listMode ? engine.lines.map((l) => engine.renderListLine(l)).join('\n') : engine.content}
             onChange={() => { /* content is engine-authoritative; keys drive all mutation */ }}
             onKeyDown={dispatch}
             readOnly
@@ -251,6 +285,7 @@ export const VimEditor: React.FC<VimEditorProps> = ({
           {engine.variant === 'vim' && engine.modified && <span style={{ color: '#f38ba8' }}>[+] </span>}
           {engine.isReadOnly && <span style={{ color: '#f9e2af' }}>[RO] </span>}
           <span>{fileName}</span>
+          {engine.variant === 'vim' && engine.fileFormat === 'dos' && <span style={{ color: '#a6adc8' }}> [dos]</span>}
         </span>
         {engine.variant === 'vim' && (
           <span style={{ color: '#a6adc8' }}>

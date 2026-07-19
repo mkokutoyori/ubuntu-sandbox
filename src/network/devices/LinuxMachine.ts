@@ -2167,8 +2167,9 @@ export abstract class LinuxMachine extends EndHost
         count: number,
         timeoutMs = 2000,
         ttl?: number,
+        opts?: { dataSize?: number; df?: boolean },
       ): Promise<PingResult[]> => {
-        return this.executePingSequence(target, count, timeoutMs, ttl);
+        return this.executePingSequence(target, count, timeoutMs, ttl, opts);
       },
       tcpProbe: (target: string, port: number): boolean => {
         if (target.includes(':')) return this.tcpProbeSyncIPv6(target, port);

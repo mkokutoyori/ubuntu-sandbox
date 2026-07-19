@@ -126,6 +126,7 @@ export interface LinuxNetKernel {
     count: number,
     timeoutMs?: number,
     ttl?: number,
+    opts?: { dataSize?: number; df?: boolean },
   ): Promise<PingResult[]>;
 
   /** ICMPv6 echo through the real NDP/route resolution path (`ping6`). */

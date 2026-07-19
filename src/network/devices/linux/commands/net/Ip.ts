@@ -350,6 +350,16 @@ export function buildIpCtx(
       net.setInterfaceAdmin(ifName, false);
       return '';
     },
+    setInterfaceMTU(ifName: string, mtu: number): string {
+      const port = net.getPorts().get(ifName);
+      if (!port) return `Cannot find device "${ifName}"`;
+      try {
+        port.setMTU(mtu);
+        return '';
+      } catch (e) {
+        return `Error: ${e instanceof Error ? e.message : String(e)}`;
+      }
+    },
     xfrm,
     tunnel: greAgent ? buildTunnelCtx(greAgent) : undefined,
     linkOps,

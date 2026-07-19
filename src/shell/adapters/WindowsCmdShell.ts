@@ -198,7 +198,10 @@ export class WindowsCmdShell extends AbstractShell {
       const pw = await this.input.password(promptText);
       if (pw === null) return { output: [] };
       const finalised = finalisePendingAuth(auth, pw);
-      if (finalised) {
+      if (finalised.kind === 'refused') {
+        return { output: finalised.message.split('\n') };
+      }
+      if (finalised.kind === 'success') {
         if (execCmd !== null) {
           const lines = await runSshExec(auth, execCmd);
           finalised.shell.dispose();
@@ -217,7 +220,12 @@ export class WindowsCmdShell extends AbstractShell {
     const auth = this.pendingSshAuth;
     if (!auth) return { output: [] };
     const finalised = finalisePendingAuth(auth, value);
-    if (finalised) {
+    if (finalised.kind === 'refused') {
+      this.pendingSshAuth = null;
+      this.pendingExecCommand = null;
+      return { output: finalised.message.split('\n') };
+    }
+    if (finalised.kind === 'success') {
       const execCmd = this.pendingExecCommand;
       this.pendingSshAuth = null;
       this.pendingExecCommand = null;

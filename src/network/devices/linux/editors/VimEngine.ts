@@ -2,7 +2,7 @@ import type { EditorFsContext } from './EditorFsContext';
 import type { EditorKeyInput } from './EditorKeyInput';
 import { dotSwapPathFor } from './editorPaths';
 
-export type VimMode = 'normal' | 'insert' | 'command' | 'search' | 'confirm-substitute' | 'visual' | 'visual-line' | 'visual-block' | 'swap-recovery';
+export type VimMode = 'normal' | 'insert' | 'command' | 'search' | 'confirm-substitute' | 'visual' | 'visual-line' | 'visual-block' | 'swap-recovery' | 'binary-warning';
 export type VimVariant = 'vim' | 'vi';
 
 interface UndoSnapshot {
@@ -168,6 +168,36 @@ function prevWordStart(line: string, col: number, big = false): number | null {
   return i;
 }
 
+/** Find the quote pair (same open/close char) a text object should act on: the pair enclosing `col`, or the next one forward on the line. */
+function findQuotePair(line: string, col: number, quoteChar: string): { start: number; end: number } | null {
+  const positions: number[] = [];
+  for (let i = 0; i < line.length; i++) if (line[i] === quoteChar) positions.push(i);
+  for (let i = 0; i + 1 < positions.length; i += 2) {
+    const start = positions[i];
+    const end = positions[i + 1];
+    if (col <= end) return { start, end };
+  }
+  return null;
+}
+
+/** Find the innermost matched bracket pair enclosing `col` on this line (nesting-aware). */
+function findEnclosingBracketPair(line: string, col: number, open: string, close: string): { start: number; end: number } | null {
+  const stack: number[] = [];
+  let best: { start: number; end: number } | null = null;
+  for (let i = 0; i < line.length; i++) {
+    if (line[i] === open && open !== close) {
+      stack.push(i);
+    } else if (line[i] === close) {
+      const start = stack.pop();
+      if (start === undefined) continue;
+      if (start <= col && col <= i && (!best || i - start < best.end - best.start)) {
+        best = { start, end: i };
+      }
+    }
+  }
+  return best;
+}
+
 interface UnnamedRegister {
   linewise: boolean;
   lines: string[];
@@ -194,6 +224,15 @@ export class VimEngine {
   private _savedOnExit = false;
   private commandBuffer = '';
   private searchBuffer = '';
+
+  // Command-line history recall (Up/Down in `:` and `/`), scoped to this
+  // editing session (no persistence across sessions, no viminfo). Both
+  // prompts share the nav-index/stash fields since only one prompt is
+  // ever open at a time.
+  private commandHistoryList: string[] = [];
+  private searchHistoryList: string[] = [];
+  private historyNavIndex: number | null = null;
+  private historyNavStash = '';
   private pendingOperator: 'd' | 'y' | 'c' | null = null;
   private pendingCountStr = '';
   private pendingG = false;
@@ -233,6 +272,12 @@ export class VimEngine {
   private hlsearchEnabled = false;
   private ignoreCaseSearch = false;
   private _shellOutput = '';
+  private listModeEnabled = false;
+  private listCharsCfg: { tab: string; trail: string; eol: string } = { tab: '^I', trail: '', eol: '$' };
+  private showMatchEnabled = false;
+  private incSearchEnabled = false;
+  private colorColumnCfg: number | null = null;
+  private autoindentEnabled = false;
 
   // Named registers ("a-"z, "*, "+) plus the unnamed register kept at
   // key '"'. Macros live in a separate namespace (recorded key sequences,
@@ -248,6 +293,26 @@ export class VimEngine {
   private lastMacroName: string | null = null;
   private isMacroReplay = false;
   private _registersOutput = '';
+
+  // Marks (`m{a-z}`, `` `{mark} ``, `'{mark}`) and a minimal jumplist
+  // scoped to mark-jumps only (not the full G/gg/search jumplist real vim
+  // maintains) — see the scenario's test file docstring for the exact,
+  // disclosed scope. Marks are NOT re-adjusted when lines are inserted or
+  // removed elsewhere in the buffer (no jumplist/mark renumbering).
+  private marks: Map<string, { line: number; col: number }> = new Map();
+  private awaitingMarkSet = false;
+  private awaitingMarkJumpExact = false;
+  private awaitingMarkJumpLine = false;
+  private lastJumpPosition: { line: number; col: number } | null = null;
+  private operatorPendingMarkMode: 'exact' | 'line' | null = null;
+  private _marksOutput = '';
+
+  // Text objects (`iw`/`aw`, `i"`/`a(`/...) — only meaningful as an
+  // operator's motion (real vim also allows them in VISUAL mode, e.g.
+  // `viw`; not implemented here, a disclosed scope cut). Resolution is
+  // single-line only, consistent with the rest of this engine's charwise
+  // operator machinery (dw/d$/mark motions).
+  private operatorPendingTextObjectKind: 'i' | 'a' | null = null;
 
   // `fileformat` — autodetected from the presence of any \r\n pair in the
   // file as loaded (real vim's heuristic). A CRLF-terminated line has its
@@ -293,6 +358,12 @@ export class VimEngine {
     } else {
       this.swapPath = primarySwap;
       this.fs.writeFile(this.swapPath, serializeSwapMeta({ owner, filePath, lines: this.linesArr }));
+      // Real vim detects a NUL byte anywhere in the file and asks before
+      // rendering it as text — takes priority over the swap check having
+      // already been resolved (no competing swap, this is the next gate).
+      if (!isNewFile && initialContent.includes('\0')) {
+        this._mode = 'binary-warning';
+      }
     }
   }
 
@@ -312,6 +383,12 @@ export class VimEngine {
   get swapFilePath(): string { return this.swapPath; }
   get swapFileExists(): boolean { return this.swapPath !== '' && this.fs.exists(this.swapPath); }
   get pendingSwapRecovery(): PendingSwapRecovery | null { return this._pendingSwapRecovery; }
+  /** Real vim's binary-file gate: a NUL byte anywhere triggers a confirm
+   *  before rendering the file as text, exactly like a real terminal would
+   *  refuse to treat arbitrary binary data as a stream of characters. */
+  get pendingBinaryWarning(): string | null {
+    return this._mode === 'binary-warning' ? `"${this.filePath}" may be a binary file, see it anyway?` : null;
+  }
   /** Set once a recovery/edit-anyway choice leaves the original .swp behind — real vim never auto-deletes it. */
   get orphanSwapFilePath(): string | null { return this.orphanSwapPath; }
   get isReadOnly(): boolean { return this._readOnly; }
@@ -324,6 +401,28 @@ export class VimEngine {
   get hlsearch(): boolean { return this.hlsearchEnabled; }
   get shellOutput(): string { return this._shellOutput; }
   get fileFormat(): 'unix' | 'dos' { return this._fileFormat; }
+  get listMode(): boolean { return this.listModeEnabled; }
+  get showMatch(): boolean { return this.showMatchEnabled; }
+  get incSearch(): boolean { return this.incSearchEnabled; }
+  get colorColumn(): number | null { return this.colorColumnCfg; }
+  get autoindent(): boolean { return this.autoindentEnabled; }
+  /** Real vim's `:set list` rendering: `$` at end of line, `^I` (or the
+   *  configured `listchars` symbol) for tabs, a literal `^M` for a stray
+   *  embedded CR (real CRLF pairs are already stripped from the buffer at
+   *  load time, so any \r left here is genuine corruption to surface). */
+  renderListLine(line: string): string {
+    if (!this.listModeEnabled) return line;
+    const trailStart = this.listCharsCfg.trail ? line.trimEnd().length : line.length;
+    let out = '';
+    for (let i = 0; i < line.length; i++) {
+      const ch = line[i];
+      if (ch === '\t') out += this.listCharsCfg.tab;
+      else if (ch === '\r') out += '^M';
+      else if (ch === ' ' && i >= trailStart && this.listCharsCfg.trail) out += this.listCharsCfg.trail;
+      else out += ch;
+    }
+    return out + this.listCharsCfg.eol;
+  }
   get canUndo(): boolean { return this.undoStack.length > 0; }
   get canRedo(): boolean { return this.redoStack.length > 0; }
   /** Text register content, `null` if empty/unset. Named registers, the unnamed register ("), and "/. */
@@ -337,6 +436,7 @@ export class VimEngine {
   get recordingMacroName(): string | null { return this.recordingMacro?.name ?? null; }
   macroKeyCount(name: string): number { return this.macroRegisters.get(name)?.length ?? 0; }
   get registersOutput(): string { return this._registersOutput; }
+  get marksOutput(): string { return this._marksOutput; }
 
   private line(i: number): string { return this.linesArr[i] ?? ''; }
   private clampCol(lineIdx: number, col: number, insertEdge = false): number {
@@ -389,6 +489,22 @@ export class VimEngine {
       case 'confirm-substitute': return this.applyConfirmSubstKey(k);
       case 'visual': case 'visual-line': case 'visual-block': return this.applyVisualKey(k);
       case 'swap-recovery': return this.applySwapRecoveryKey(k);
+      case 'binary-warning': return this.applyBinaryWarningKey(k);
+    }
+  }
+
+  private applyBinaryWarningKey(k: EditorKeyInput): void {
+    const key = k.key.toLowerCase();
+    if (key === 'y' || k.key === 'Enter') {
+      this._mode = 'normal';
+      this._message = `"${this.filePath}" [noeol] ${this.linesArr.length}L, binary`;
+      return;
+    }
+    if (key === 'n' || k.key === 'Escape') {
+      if (this.swapPath !== '') { this.fs.deleteFile(this.swapPath); this.swapPath = ''; }
+      this._exited = true;
+      this._savedOnExit = false;
+      return;
     }
   }
 
@@ -536,7 +652,11 @@ export class VimEngine {
       if (/^[a-zA-Z*+]$/.test(key)) this.pendingRegister = key;
       return;
     }
-    if (key === '"') { this.awaitingRegisterName = true; return; }
+    // Register selection only precedes an operator/motion in real vim
+    // (`"ayy`, never `y"a`) — with an operator already pending, `"` must
+    // fall through to the operator's own motion handling instead (e.g.
+    // the `i"`/`a"` text object).
+    if (key === '"' && !this.pendingOperator) { this.awaitingRegisterName = true; return; }
 
     if (this.awaitingReplaceChar) {
       this.awaitingReplaceChar = false;
@@ -567,6 +687,22 @@ export class VimEngine {
       return;
     }
     if (key === '@') { this.awaitingMacroPlayback = true; return; }
+
+    if (this.awaitingMarkSet) {
+      this.awaitingMarkSet = false;
+      if (/^[a-z]$/.test(key)) this.marks.set(key, { line: this._cursorLine, col: this._cursorCol });
+      return;
+    }
+    if (this.awaitingMarkJumpExact) {
+      this.awaitingMarkJumpExact = false;
+      this.jumpToMark(key, false);
+      return;
+    }
+    if (this.awaitingMarkJumpLine) {
+      this.awaitingMarkJumpLine = false;
+      this.jumpToMark(key, true);
+      return;
+    }
     if (key === 'q') {
       if (this.recordingMacro) {
         this.macroRegisters.set(this.recordingMacro.name, this.recordingMacro.keys);
@@ -633,21 +769,25 @@ export class VimEngine {
         this._cursorCol = this.line(this._cursorLine).length;
         this.enterInsert();
         return;
-      case 'o':
+      case 'o': {
         this.pushUndoSnapshot();
-        this.linesArr.splice(this._cursorLine + 1, 0, '');
+        const indent = this.autoindentEnabled ? this.line(this._cursorLine).match(/^[ \t]*/)?.[0] ?? '' : '';
+        this.linesArr.splice(this._cursorLine + 1, 0, indent);
         this._cursorLine++;
-        this._cursorCol = 0;
+        this._cursorCol = indent.length;
         this._modified = true;
         this.enterInsert();
         return;
-      case 'O':
+      }
+      case 'O': {
         this.pushUndoSnapshot();
-        this.linesArr.splice(this._cursorLine, 0, '');
-        this._cursorCol = 0;
+        const indent = this.autoindentEnabled ? this.line(this._cursorLine).match(/^[ \t]*/)?.[0] ?? '' : '';
+        this.linesArr.splice(this._cursorLine, 0, indent);
+        this._cursorCol = indent.length;
         this._modified = true;
         this.enterInsert();
         return;
+      }
       case 's': {
         this.pushUndoSnapshot();
         const count = this.takeCount() ?? 1;
@@ -670,13 +810,18 @@ export class VimEngine {
       }
       case 'v': this.enterVisual('visual'); return;
       case 'V': this.enterVisual('visual-line'); return;
+      case 'm': this.awaitingMarkSet = true; return;
+      case '`': this.awaitingMarkJumpExact = true; return;
+      case "'": this.awaitingMarkJumpLine = true; return;
       case ':':
         this.commandBuffer = '';
         this._mode = 'command';
+        this.historyNavIndex = null;
         return;
       case '/':
         this.searchBuffer = '';
         this._mode = 'search';
+        this.historyNavIndex = null;
         return;
       case 'x': {
         const count = this.takeCount() ?? 1;
@@ -792,6 +937,37 @@ export class VimEngine {
 
   private setLine(i: number, text: string): void { this.linesArr[i] = text; }
 
+  /**
+   * Resolve and perform a mark-jump triggered from NORMAL mode (`` `x ``,
+   * `'x`, ``` `` ```, `''`). `key` is the second key of the pair; for the
+   * "jump back" pair (`` `` ``/`''`) it repeats the same character used to
+   * enter the awaiting state, which this treats as "use lastJumpPosition"
+   * rather than a mark named backtick/quote (neither is a valid mark name).
+   */
+  private jumpToMark(key: string, linewise: boolean): void {
+    const isBackToggle = (!linewise && key === '`') || (linewise && key === "'");
+    const target = isBackToggle ? this.lastJumpPosition : (this.marks.get(key) ?? null);
+    if (!target) {
+      this._message = 'E20: Mark not set';
+      return;
+    }
+    this.performJump(target, linewise);
+  }
+
+  private performJump(target: { line: number; col: number }, linewise: boolean): void {
+    const before = { line: this._cursorLine, col: this._cursorCol };
+    this.lastJumpPosition = before;
+    this._cursorLine = Math.max(0, Math.min(target.line, this.linesArr.length - 1));
+    if (linewise) {
+      const l = this.line(this._cursorLine);
+      const firstNonBlank = l.search(/\S/);
+      this._cursorCol = firstNonBlank >= 0 ? firstNonBlank : 0;
+    } else {
+      this._cursorCol = this.clampCol(this._cursorLine, target.col);
+    }
+    this._message = '';
+  }
+
   private enterInsert(): void {
     this._mode = 'insert';
     this._message = this.variant === 'vim' ? '-- INSERT --' : '';
@@ -802,6 +978,39 @@ export class VimEngine {
   private applyOperatorMotion(key: string): void {
     const op = this.pendingOperator!;
     const count = this.takeCount() ?? 1;
+
+    // Two-key operator motions ("awaiting second key" sub-states) are
+    // consumed first, before either one's own trigger key is checked —
+    // otherwise an armed text object's second key (e.g. the `'` in `ci'`)
+    // could be misread as arming a *different* two-key motion instead of
+    // resolving the one already pending.
+    if (this.operatorPendingMarkMode) {
+      const linewise = this.operatorPendingMarkMode === 'line';
+      this.operatorPendingMarkMode = null;
+      this.resolveMarkOperatorMotion(op, key, linewise);
+      return;
+    }
+    if (this.operatorPendingTextObjectKind) {
+      const kind = this.operatorPendingTextObjectKind;
+      this.operatorPendingTextObjectKind = null;
+      this.resolveTextObjectMotion(op, kind, key);
+      return;
+    }
+
+    // A mark used as an operator's motion (`` d`a ``, `d'a`, ...) — the
+    // first ` or ' just arms this and keeps the operator pending; the
+    // following key (a mark name, or a repeated `/'`) resolves it.
+    if (key === '`' || key === "'") {
+      this.operatorPendingMarkMode = key === '`' ? 'exact' : 'line';
+      return;
+    }
+
+    // A text object (`iw`, `a"`, `i(`, ...) — `i`/`a` arms this and keeps
+    // the operator pending; the following key (the object) resolves it.
+    if (key === 'i' || key === 'a') {
+      this.operatorPendingTextObjectKind = key;
+      return;
+    }
 
     // Doubled operator (dd/yy/cc) → linewise on `count` lines from cursor.
     if (key === op || (op === 'c' && key === 'c') || (key === 'd' && op === 'd') || (key === 'y' && op === 'y')) {
@@ -814,7 +1023,14 @@ export class VimEngine {
         removed = this.linesArr.splice(this._cursorLine, n);
       }
       this.setRegister({ linewise: true, lines: removed });
-      if (op !== 'y') {
+      if (op === 'c') {
+        // Real vim's linewise "change" always leaves exactly one blank
+        // line at the removal point to type into, regardless of how many
+        // lines were removed — not just when the buffer became empty.
+        this.linesArr.splice(this._cursorLine, 0, '');
+        this._cursorCol = 0;
+        this._modified = true;
+      } else if (op === 'd') {
         if (this.linesArr.length === 0) this.linesArr.push('');
         this._cursorLine = Math.min(this._cursorLine, this.linesArr.length - 1);
         this._cursorCol = 0;
@@ -849,12 +1065,138 @@ export class VimEngine {
     this.pendingOperator = null;
   }
 
-  private applyCharwiseOperator(op: 'd' | 'y' | 'c', text: string): void {
+  /**
+   * Resolve `d`{mark}`, `d'{mark}`, and the `` `` ``/`''` jump-back
+   * variants used as an operator's motion. `linewise` mirrors the
+   * backtick/quote distinction of a bare mark-jump: `'` always acts on
+   * whole lines (multi-line safe); `` ` `` is an exclusive charwise
+   * motion, which this engine's charwise machinery only resolves when
+   * mark and cursor share a line (see the scenario's test docstring for
+   * the disclosed scope) — a cross-line `` `mark `` motion cancels, like
+   * any other unrecognized motion after an operator.
+   */
+  private resolveMarkOperatorMotion(op: 'd' | 'y' | 'c', key: string, linewise: boolean): void {
+    const isBackToggle = (!linewise && key === '`') || (linewise && key === "'");
+    const target = isBackToggle ? this.lastJumpPosition : (this.marks.get(key) ?? null);
+    if (!target) {
+      this.pendingOperator = null;
+      return;
+    }
+
+    if (linewise) {
+      const lo = Math.min(this._cursorLine, target.line);
+      const hi = Math.max(this._cursorLine, target.line);
+      let removed: string[];
+      if (op === 'y') {
+        removed = this.linesArr.slice(lo, hi + 1);
+      } else {
+        this.pushUndoSnapshot();
+        removed = this.linesArr.splice(lo, hi - lo + 1);
+      }
+      this.setRegister({ linewise: true, lines: removed });
+      if (op === 'c') {
+        this.linesArr.splice(lo, 0, '');
+        this._cursorLine = lo;
+        this._cursorCol = 0;
+        this._modified = true;
+      } else if (op === 'd') {
+        if (this.linesArr.length === 0) this.linesArr.push('');
+        this._cursorLine = Math.min(lo, this.linesArr.length - 1);
+        this._cursorCol = 0;
+        this._modified = true;
+      }
+      this._message = op === 'y' ? `${removed.length} line${removed.length === 1 ? '' : 's'} yanked` : '';
+      this.pendingOperator = null;
+      if (op === 'c') this.enterInsert();
+      return;
+    }
+
+    if (target.line !== this._cursorLine) {
+      this.pendingOperator = null;
+      return;
+    }
+    const lo = Math.min(this._cursorCol, target.col);
+    const hi = Math.max(this._cursorCol, target.col);
+    const l = this.line(this._cursorLine);
+    const removedText = l.slice(lo, hi);
+    this.applyCharwiseOperator(op, removedText, lo);
+    this.pendingOperator = null;
+  }
+
+  private resolveTextObjectMotion(op: 'd' | 'y' | 'c', kind: 'i' | 'a', objectKey: string): void {
+    const range = this.computeTextObjectRange(kind, objectKey);
+    if (!range) { this.pendingOperator = null; return; }
+    const l = this.line(this._cursorLine);
+    const removedText = l.slice(range.start, range.end);
+    this.applyCharwiseOperator(op, removedText, range.start);
+    this.pendingOperator = null;
+  }
+
+  private computeTextObjectRange(kind: 'i' | 'a', objectKey: string): { start: number; end: number } | null {
+    const l = this.line(this._cursorLine);
+    const col = this._cursorCol;
+
+    if (objectKey === 'w') {
+      if (l.length === 0) return null;
+      const c = col < l.length ? col : l.length - 1;
+      const cls = charClass(l[c]);
+      let start = c, end = c + 1;
+      while (start > 0 && charClass(l[start - 1]) === cls) start--;
+      while (end < l.length && charClass(l[end]) === cls) end++;
+      if (kind === 'i') return { start, end };
+      if (end < l.length && charClass(l[end]) === 0) {
+        let e2 = end;
+        while (e2 < l.length && charClass(l[e2]) === 0) e2++;
+        return { start, end: e2 };
+      }
+      let s2 = start;
+      while (s2 > 0 && charClass(l[s2 - 1]) === 0) s2--;
+      return { start: s2, end };
+    }
+
+    if (objectKey === '"' || objectKey === "'") {
+      const pair = findQuotePair(l, col, objectKey);
+      if (!pair) return null;
+      if (kind === 'i') return { start: pair.start + 1, end: pair.end };
+      return this.expandTextObjectForA(l, pair.start, pair.end);
+    }
+
+    const bracketChars: Record<string, [string, string]> = {
+      '(': ['(', ')'], ')': ['(', ')'], b: ['(', ')'],
+      '{': ['{', '}'], '}': ['{', '}'], B: ['{', '}'],
+      '[': ['[', ']'], ']': ['[', ']'],
+    };
+    const pairChars = bracketChars[objectKey];
+    if (pairChars) {
+      const [open, close] = pairChars;
+      const pair = findEnclosingBracketPair(l, col, open, close);
+      if (!pair) return null;
+      if (kind === 'i') return { start: pair.start + 1, end: pair.end };
+      return this.expandTextObjectForA(l, pair.start, pair.end);
+    }
+
+    return null;
+  }
+
+  /** "a"-variant expansion shared by quotes/brackets: include the delimiters, then prefer trailing whitespace, else leading — the same rule `aw` uses. */
+  private expandTextObjectForA(l: string, start: number, end: number): { start: number; end: number } {
+    let s = start, e = end + 1;
+    if (e < l.length && /\s/.test(l[e])) {
+      while (e < l.length && /\s/.test(l[e])) e++;
+    } else {
+      while (s > 0 && /\s/.test(l[s - 1])) s--;
+    }
+    return { start: s, end: e };
+  }
+
+  private applyCharwiseOperator(op: 'd' | 'y' | 'c', text: string, atCol?: number): void {
     this.setRegister({ linewise: false, lines: [text] });
+    const col = atCol ?? this._cursorCol;
     if (op !== 'y') {
       this.pushUndoSnapshot();
       const l = this.line(this._cursorLine);
-      this.setLine(this._cursorLine, l.slice(0, this._cursorCol) + l.slice(this._cursorCol + text.length));
+      this.setLine(this._cursorLine, l.slice(0, col) + l.slice(col + text.length));
+      this._cursorCol = col;
       this._modified = true;
     }
     if (op === 'c') this.enterInsert();
@@ -1143,10 +1485,15 @@ export class VimEngine {
       case 'Enter': {
         const l = this.line(this._cursorLine);
         const before = l.slice(0, this._cursorCol);
-        const after = l.slice(this._cursorCol);
+        let after = l.slice(this._cursorCol);
+        let indent = '';
+        if (this.autoindentEnabled) {
+          indent = l.match(/^[ \t]*/)?.[0] ?? '';
+          after = indent + after;
+        }
         this.linesArr.splice(this._cursorLine, 1, before, after);
         this._cursorLine++;
-        this._cursorCol = 0;
+        this._cursorCol = indent.length;
         this._modified = true;
         return;
       }
@@ -1211,12 +1558,23 @@ export class VimEngine {
 
   private applyCommandKey(k: EditorKeyInput): void {
     if (k.key === 'Enter') {
+      if (this.commandBuffer) this.commandHistoryList.push(this.commandBuffer);
+      this.historyNavIndex = null;
       this.executeExCommand(this.commandBuffer);
       return;
     }
     if (k.key === 'Escape') {
       this._mode = 'normal';
       this.commandBuffer = '';
+      this.historyNavIndex = null;
+      return;
+    }
+    if (k.key === 'ArrowUp') {
+      this.commandBuffer = this.recallHistory(this.commandHistoryList, this.commandBuffer);
+      return;
+    }
+    if (k.key === 'ArrowDown') {
+      this.commandBuffer = this.advanceHistory(this.commandHistoryList, this.commandBuffer);
       return;
     }
     if (k.key === 'Backspace') {
@@ -1226,6 +1584,29 @@ export class VimEngine {
     if (k.key.length === 1) {
       this.commandBuffer += k.key;
     }
+  }
+
+  /** Up in a `:`/`/` prompt: step back into `history`, stashing `current` (the in-progress line) the first time. Returns the buffer text to show. */
+  private recallHistory(history: readonly string[], current: string): string {
+    if (this.historyNavIndex === null) {
+      if (history.length === 0) return current;
+      this.historyNavStash = current;
+      this.historyNavIndex = history.length - 1;
+    } else if (this.historyNavIndex > 0) {
+      this.historyNavIndex--;
+    }
+    return history[this.historyNavIndex];
+  }
+
+  /** Down in a `:`/`/` prompt: step forward through `history`, restoring the stashed in-progress line past the newest entry. */
+  private advanceHistory(history: readonly string[], current: string): string {
+    if (this.historyNavIndex === null) return current;
+    if (this.historyNavIndex < history.length - 1) {
+      this.historyNavIndex++;
+      return history[this.historyNavIndex];
+    }
+    this.historyNavIndex = null;
+    return this.historyNavStash;
   }
 
   /** Expand a bare `%` to the current file path in `:!cmd`/`:r !cmd`, like real vim. `\%` is a literal percent. */
@@ -1246,6 +1627,12 @@ export class VimEngine {
     if (/(^|\/)crontab$/.test(path) || /\/cron\.d\//.test(path) || /(^|\/)crontab\.\d+$/.test(path)) return 'crontab';
     if (/(^|\/)sshd_config(\.d\/.*\.conf)?$/.test(path)) return 'sshconfig';
     if (/(^|\/)ssh_config$/.test(path)) return 'sshconfig';
+    if (/(^|\/)hosts$/.test(path)) return 'hostsfile';
+    if (/\/network\/interfaces(\.d\/.*)?$/.test(path)) return 'interfaces';
+    if (/(^|\/)resolv\.conf$/.test(path)) return 'resolv';
+    if (/(^|\/)sudoers(\.d\/.*)?$/.test(path)) return 'sudoers';
+    if (/(^|\/)passwd$/.test(path)) return 'passwd';
+    if (/(^|\/)group$/.test(path)) return 'group';
     if (/\.sh$/.test(path)) return 'sh';
     if (/\.ya?ml$/.test(path)) return 'yaml';
     if (/\.conf$/.test(path)) return 'conf';
@@ -1420,6 +1807,15 @@ export class VimEngine {
       this._mode = 'normal';
       return;
     }
+    if (trimmed === 'marks') {
+      const rows = [...this.marks.entries()]
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([name, pos]) => ` ${name}   ${pos.line + 1}   ${pos.col}  ${this.line(pos.line).trim()}`);
+      this._marksOutput = ['mark line  col file/text', ...rows].join('\n');
+      this._message = '';
+      this._mode = 'normal';
+      return;
+    }
     if (trimmed === 'set number' || trimmed === 'set nu') {
       this.showLineNumbers = true;
       this._message = '';
@@ -1444,6 +1840,73 @@ export class VimEngine {
       this._mode = 'normal';
       return;
     }
+    if (trimmed === 'set list') {
+      this.listModeEnabled = true;
+      this._message = '';
+      this._mode = 'normal';
+      return;
+    }
+    if (trimmed === 'set nolist') {
+      this.listModeEnabled = false;
+      this._message = '';
+      this._mode = 'normal';
+      return;
+    }
+    const listcharsMatch = trimmed.match(/^set listchars=(.*)$/);
+    if (listcharsMatch) {
+      for (const part of listcharsMatch[1].split(',')) {
+        const [key, ...rest] = part.split(':');
+        const val = rest.join(':').replace(/\\ /g, ' ');
+        if (key === 'tab') this.listCharsCfg.tab = val;
+        else if (key === 'trail') this.listCharsCfg.trail = val;
+        else if (key === 'eol') this.listCharsCfg.eol = val;
+      }
+      this._message = '';
+      this._mode = 'normal';
+      return;
+    }
+    if (trimmed === 'set showmatch' || trimmed === 'set sm') {
+      this.showMatchEnabled = true;
+      this._message = '';
+      this._mode = 'normal';
+      return;
+    }
+    if (trimmed === 'set noshowmatch' || trimmed === 'set nosm') {
+      this.showMatchEnabled = false;
+      this._message = '';
+      this._mode = 'normal';
+      return;
+    }
+    if (trimmed === 'set incsearch') {
+      this.incSearchEnabled = true;
+      this._message = '';
+      this._mode = 'normal';
+      return;
+    }
+    if (trimmed === 'set noincsearch') {
+      this.incSearchEnabled = false;
+      this._message = '';
+      this._mode = 'normal';
+      return;
+    }
+    if (trimmed === 'set fileencoding?' || trimmed === 'set fenc?') {
+      this._message = 'fileencoding=utf-8';
+      this._mode = 'normal';
+      return;
+    }
+    const colorColumnMatch = trimmed.match(/^set colorcolumn=(\d+)$/);
+    if (colorColumnMatch) {
+      this.colorColumnCfg = parseInt(colorColumnMatch[1], 10);
+      this._message = '';
+      this._mode = 'normal';
+      return;
+    }
+    if (trimmed === 'set colorcolumn=') {
+      this.colorColumnCfg = null;
+      this._message = '';
+      this._mode = 'normal';
+      return;
+    }
     if (trimmed === 'set hlsearch') {
       this.hlsearchEnabled = true;
       this._message = '';
@@ -1464,6 +1927,18 @@ export class VimEngine {
     }
     if (trimmed === 'set noignorecase') {
       this.ignoreCaseSearch = false;
+      this._message = '';
+      this._mode = 'normal';
+      return;
+    }
+    if (trimmed === 'set autoindent' || trimmed === 'set ai') {
+      this.autoindentEnabled = true;
+      this._message = '';
+      this._mode = 'normal';
+      return;
+    }
+    if (trimmed === 'set noautoindent' || trimmed === 'set noai') {
+      this.autoindentEnabled = false;
       this._message = '';
       this._mode = 'normal';
       return;
@@ -1692,12 +2167,25 @@ export class VimEngine {
 
   private applySearchKey(k: EditorKeyInput): void {
     if (k.key === 'Enter') {
-      if (this.searchBuffer) this.performSearch(this.searchBuffer);
+      if (this.searchBuffer) {
+        this.searchHistoryList.push(this.searchBuffer);
+        this.performSearch(this.searchBuffer);
+      }
       this._mode = 'normal';
+      this.historyNavIndex = null;
       return;
     }
     if (k.key === 'Escape') {
       this._mode = 'normal';
+      this.historyNavIndex = null;
+      return;
+    }
+    if (k.key === 'ArrowUp') {
+      this.searchBuffer = this.recallHistory(this.searchHistoryList, this.searchBuffer);
+      return;
+    }
+    if (k.key === 'ArrowDown') {
+      this.searchBuffer = this.advanceHistory(this.searchHistoryList, this.searchBuffer);
       return;
     }
     if (k.key === 'Backspace') {

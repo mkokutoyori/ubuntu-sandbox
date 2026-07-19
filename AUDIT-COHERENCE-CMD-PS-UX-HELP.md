@@ -2,6 +2,18 @@
 
 **Branche auditée :** `mandeng` (commit `d61ff4b0`) — **Date :** 2026-07-18
 
+> **Statut des remédiations (2026-07-19)** :
+> - **P0 livré** — cmdlets legacy rebranchées sur l'état réel, tracert/ping honnêtes,
+>   résolution DNS unifiée, `erase startup-config` réel, aide `?` complétée
+>   (commit *Fix cmd/PowerShell state coherence…*).
+> - **P1 livré** — inversion de contrôle des flows : protocole
+>   `CommandInteractionPlan`, planners Cisco/Huawei/Linux, sessions génériques,
+>   FlowBuilders supprimés (commit *Invert control of interactive flows…*) ;
+>   puis reboot VRP réel et **chemin SSH branché sur les mêmes plans**
+>   (`InteractionPlanRunner` + adaptateurs cisco-ios/huawei-vrp).
+> - Restent ouverts : les P2 cosmétiques non traités (§7) et les 13 échecs de
+>   tests préexistants hors périmètre (scénarios Oracle RAC, capture SSH).
+
 Périmètre demandé :
 1. Cohérence entre `cmd` et PowerShell sur les machines Windows (état interne affiché différemment).
 2. Commandes réseau (`ping`, `tracert`, …) qui fonctionnent différemment selon le shell.

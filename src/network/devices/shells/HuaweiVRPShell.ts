@@ -320,6 +320,16 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     return huaweiInteractionPlanFor(commandLine);
   }
 
+  /** Power-cycle the router and reset the shell to user view (VRP reboot). */
+  private performReboot(): string {
+    const r = this.r();
+    r.powerOff();
+    r.powerOn();
+    this.mode = 'user';
+    this.selectedInterface = null;
+    return 'Info: The system is rebooting ...\nSystem restart completed.';
+  }
+
   setMode(mode: HuaweiShellMode): void { this.mode = mode; }
   getMode(): string { return this.mode; }
 
@@ -1339,9 +1349,10 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
       return 'Info: Succeeded in setting the file for booting system.';
     });
 
-    t.registerGreedy('reboot', 'Reboot device', (_args) => {
-      return 'Info: This operation will reboot the system. Continue? [Y/N]:';
-    });
+    // reboot — REAL restart (parity with Cisco reload): power-cycle the
+    // device and drop back to user view. The interactive Y/N dialogue is
+    // the interaction plan's job; this inline (vty) form assumes yes.
+    t.registerGreedy('reboot', 'Reboot device', (_args) => this.performReboot());
 
     t.register('display health', 'Display device health', () =>
       renderHealth(this.r().getHostname(), AR2220_HARDWARE_PROFILE));
@@ -1604,6 +1615,7 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
       this.r()._eraseStartupConfig();
       return 'Warning: The action will delete the saved configuration on the device.';
     });
+    t.registerGreedy('reboot', 'Reboot device', (_args) => this.performReboot());
 
     registerHuaweiPolicySystemCommands(t, this);
     registerHuaweiPolicyDisplayCommands(t, () => this.r());
