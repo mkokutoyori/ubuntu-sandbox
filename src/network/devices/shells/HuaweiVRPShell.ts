@@ -483,6 +483,11 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     const trimmed = rawInput.trim();
     if (!trimmed) return '';
 
+    // VRP comment/separator lines: `#` (optionally followed by text) is a
+    // silent no-op in every view — VRP configuration files use it as the
+    // section separator, so pasting a config must not error on each `#`.
+    if (trimmed.startsWith('#')) return '';
+
     if (trimmed.endsWith('?')) {
       const helpInput = trimmed.slice(0, -1);
       return this.getHelp(helpInput);

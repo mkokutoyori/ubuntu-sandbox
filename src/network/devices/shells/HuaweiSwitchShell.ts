@@ -437,6 +437,9 @@ export class HuaweiSwitchShell implements ISwitchShell {
   execute(sw: Switch, input: string): string {
     const trimmed = input.trim();
     if (!trimmed) return '';
+    // VRP comment/separator lines: `#` is a silent no-op in every view
+    // (config-file section separator) — pasting a config must not error.
+    if (trimmed.startsWith('#')) return '';
     if (!trimmed.endsWith('?')) this.history.push(trimmed);
 
     // Handle ? for help

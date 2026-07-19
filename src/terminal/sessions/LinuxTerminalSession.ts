@@ -58,6 +58,7 @@ import type { LinuxShellSession } from '@/network/devices/linux/shell/LinuxShell
 import { AnsiOutputFormatter, type IOutputFormatter } from '@/terminal/core/OutputFormatter';
 import { CompletionController, ReadlinePolicy, CyclingPolicy, LastWordSource, ghostRemainder } from '@/terminal/completion';
 import { toInteractiveSteps } from '@/terminal/flows/planAdapter';
+import { analyzeBashInput } from '@/bash/incompleteInput';
 import {
   parseReadInvocation as parseReadInvocationLib,
   performInteractiveRead as performInteractiveReadLib,
@@ -138,6 +139,15 @@ export class LinuxTerminalSession extends TerminalSession {
   private readonly subShellCompletion = new CompletionController(new CyclingPolicy());
   /** Active sub-shell (SQL*Plus, or any future REPL). Null when in normal bash mode. */
   private activeSubShell: ISubShell | null = null;
+
+  /**
+   * Accumulated physical lines of a not-yet-complete command (open quote,
+   * trailing `\`, dangling connector, open block, or here-document). Null
+   * when no continuation is in progress. Drives the PS2 `>` prompt.
+   */
+  private _continuationBuffer: string | null = null;
+  /** PS2 continuation prompt — real bash default. */
+  private readonly ps2Prompt = '> ';
 
   /**
    * Top of the active shell stack — for IShellBase introspection. When
@@ -406,6 +416,9 @@ export class LinuxTerminalSession extends TerminalSession {
   getPrompt(): string {
     if (this.hasActiveChild) return this.foreground.getPrompt();
     if (this.activeSubShell) return this.activeSubShell.getPrompt();
+    // PS2 continuation prompt while accumulating an incomplete command
+    // (open quote, trailing `\`, dangling connector, open block, heredoc).
+    if (this._continuationBuffer !== null) return this.ps2Prompt;
     const hostname = this.device.getHostname() || 'localhost';
     const user = this.currentUser;
     const homeDir = user === 'root' ? '/root' : `/home/${user}`;
@@ -787,6 +800,36 @@ export class LinuxTerminalSession extends TerminalSession {
     this.input = '';
     this._inputBuf = '';
     this.tabSuggestions = null;
+
+    // Interactive line continuation (PS2): only on the local root bash,
+    // never inside a sub-shell / SSH device shell / active flow. Accumulate
+    // physical lines until the command is lexically complete, echoing each
+    // at the current prompt exactly like real bash.
+    if (!this.activeSubShell && !this.isFlowActive) {
+      const accumulated = this._continuationBuffer !== null
+        ? `${this._continuationBuffer}\n${cmd}`
+        : cmd;
+      const analysis = analyzeBashInput(accumulated);
+      if (!analysis.complete) {
+        this.addEchoLine(this.getPrompt(), cmd);
+        this._continuationBuffer = accumulated;
+        this.updatePrompt?.();
+        this.notify();
+        return;
+      }
+      if (this._continuationBuffer !== null) {
+        // Final line of a multi-line command: echo it, then run the whole
+        // accumulated text without re-echoing (executeCommand echoes the
+        // first line; the continuation lines were already echoed live).
+        this.addEchoLine(this.getPrompt(), cmd);
+        this._continuationBuffer = null;
+        this.updatePrompt?.();
+        const doneMulti = this.executeCommand(accumulated, { echo: false });
+        this.notify();
+        return doneMulti;
+      }
+    }
+
     // The 'input' record event is emitted by addEchoLine inside
     // executeCommand — recording here too would duplicate every typed
     // command in the session transcript.
@@ -1405,11 +1448,13 @@ export class LinuxTerminalSession extends TerminalSession {
     return true;
   }
 
-  private async executeCommand(cmd: string): Promise<void> {
+  private async executeCommand(cmd: string, opts?: { echo?: boolean }): Promise<void> {
     const typed = cmd.trim();
     const trimmed = this.resolveActionLine(typed);
 
-    this.addEchoLine(this.getPrompt(), cmd);
+    // Multi-line commands assembled by the PS2 continuation loop already
+    // echoed each physical line live; re-echoing here would duplicate them.
+    if (opts?.echo !== false) this.addEchoLine(this.getPrompt(), cmd);
 
     // A pending visudo "What now?" recovery prompt consumes the very next
     // line typed (e/x/Q) before anything else is interpreted as a command.
