@@ -44,6 +44,10 @@ export class NanoEngine {
   private saveFileNameBuffer: string;
   private searchQueryBuffer = '';
   private lastSearchTerm = '';
+  // Up/Down history recall in the Search: prompt, scoped to this session.
+  private searchHistoryList: string[] = [];
+  private historyNavIndex: number | null = null;
+  private historyNavStash = '';
   private useRegex = false;
   private replaceSearchBuffer = '';
   private replaceWithBuffer = '';
@@ -52,6 +56,14 @@ export class NanoEngine {
   private cutBuffer: string[] = [];
   private lastActionWasCut = false;
   private readonly lockPath: string;
+
+  // Undo/redo (Alt+U / Alt+E — real nano's M-U/M-E), multi-level, with
+  // real nano's action-grouping: a run of consecutive keystrokes of the
+  // same coalescable kind (typing, or Backspace, or Delete) is one undo
+  // step; a cursor move or a different action kind starts a new step.
+  private undoStack: { lines: string[]; cursorLine: number; cursorCol: number }[] = [];
+  private redoStack: { lines: string[]; cursorLine: number; cursorCol: number }[] = [];
+  private lastEditKind: 'type' | 'backspace' | 'delete' | null = null;
 
   constructor(
     private readonly fs: EditorFsContext,
@@ -140,10 +152,54 @@ export class NanoEngine {
     return Math.max(0, Math.min(col, this.line(line).length));
   }
 
+  // ── Undo/redo ────────────────────────────────────────────────────
+
+  private pushUndoSnapshot(): void {
+    this.undoStack.push({ lines: [...this.linesArr], cursorLine: this._cursorLine, cursorCol: this._cursorCol });
+    this.redoStack = [];
+  }
+
+  /** Start (or continue) a run of same-kind edits as one undo step; a kind change snapshots the pre-edit state. */
+  private beginCoalescableEdit(kind: 'type' | 'backspace' | 'delete'): void {
+    if (this.lastEditKind !== kind) this.pushUndoSnapshot();
+    this.lastEditKind = kind;
+  }
+
+  /** Always its own undo step (Enter, Cut, Paste — never coalesced with adjacent edits). */
+  private beginDiscreteEdit(): void {
+    this.pushUndoSnapshot();
+    this.lastEditKind = null;
+  }
+
+  private performUndo(): void {
+    const snap = this.undoStack.pop();
+    if (!snap) { this._statusMessage = 'Nothing to undo!'; return; }
+    this.redoStack.push({ lines: [...this.linesArr], cursorLine: this._cursorLine, cursorCol: this._cursorCol });
+    this.linesArr = [...snap.lines];
+    this._cursorLine = Math.min(snap.cursorLine, this.linesArr.length - 1);
+    this._cursorCol = snap.cursorCol;
+    this._modified = this.undoStack.length > 0;
+    this._statusMessage = 'Undid action';
+    this.lastEditKind = null;
+  }
+
+  private performRedo(): void {
+    const snap = this.redoStack.pop();
+    if (!snap) { this._statusMessage = 'Nothing to redo!'; return; }
+    this.undoStack.push({ lines: [...this.linesArr], cursorLine: this._cursorLine, cursorCol: this._cursorCol });
+    this.linesArr = [...snap.lines];
+    this._cursorLine = Math.min(snap.cursorLine, this.linesArr.length - 1);
+    this._cursorCol = snap.cursorCol;
+    this._modified = true;
+    this._statusMessage = 'Redid action';
+    this.lastEditKind = null;
+  }
+
   // ── Edit mode ────────────────────────────────────────────────────
 
   private applyEditKey(k: EditorKeyInput): void {
     if (k.ctrl) return this.applyEditCtrlKey(k);
+    if (k.alt) return this.applyEditAltKey(k);
     // View mode (-v): navigation still works, but the buffer is immutable —
     // real nano simply ignores keys that would modify it.
     if (this._readOnly && (k.key === 'Enter' || k.key === 'Backspace' || k.key === 'Delete'
@@ -155,24 +211,31 @@ export class NanoEngine {
       case 'ArrowLeft':
         if (this._cursorCol > 0) this._cursorCol--;
         else if (this._cursorLine > 0) { this._cursorLine--; this._cursorCol = this.line(this._cursorLine).length; }
+        this.lastEditKind = null;
         return;
       case 'ArrowRight':
         if (this._cursorCol < this.line(this._cursorLine).length) this._cursorCol++;
         else if (this._cursorLine < this.linesArr.length - 1) { this._cursorLine++; this._cursorCol = 0; }
+        this.lastEditKind = null;
         return;
       case 'ArrowUp':
         if (this._cursorLine > 0) { this._cursorLine--; this._cursorCol = this.clampCol(this._cursorLine, this._cursorCol); }
+        this.lastEditKind = null;
         return;
       case 'ArrowDown':
         if (this._cursorLine < this.linesArr.length - 1) { this._cursorLine++; this._cursorCol = this.clampCol(this._cursorLine, this._cursorCol); }
+        this.lastEditKind = null;
         return;
       case 'Home':
         this._cursorCol = 0;
+        this.lastEditKind = null;
         return;
       case 'End':
         this._cursorCol = this.line(this._cursorLine).length;
+        this.lastEditKind = null;
         return;
       case 'Enter': {
+        this.beginDiscreteEdit();
         const cur = this.line(this._cursorLine);
         const before = cur.slice(0, this._cursorCol);
         const after = cur.slice(this._cursorCol);
@@ -184,6 +247,7 @@ export class NanoEngine {
         return;
       }
       case 'Backspace': {
+        if (this._cursorCol > 0 || this._cursorLine > 0) this.beginCoalescableEdit('backspace');
         if (this._cursorCol > 0) {
           const cur = this.line(this._cursorLine);
           this.linesArr[this._cursorLine] = cur.slice(0, this._cursorCol - 1) + cur.slice(this._cursorCol);
@@ -202,6 +266,7 @@ export class NanoEngine {
       }
       case 'Delete': {
         const cur = this.line(this._cursorLine);
+        if (this._cursorCol < cur.length || this._cursorLine < this.linesArr.length - 1) this.beginCoalescableEdit('delete');
         if (this._cursorCol < cur.length) {
           this.linesArr[this._cursorLine] = cur.slice(0, this._cursorCol) + cur.slice(this._cursorCol + 1);
           this._modified = true;
@@ -215,6 +280,7 @@ export class NanoEngine {
       }
       default:
         if (k.key.length === 1 && !k.alt) {
+          this.beginCoalescableEdit('type');
           const cur = this.line(this._cursorLine);
           this.linesArr[this._cursorLine] = cur.slice(0, this._cursorCol) + k.key + cur.slice(this._cursorCol);
           this._cursorCol++;
@@ -247,6 +313,7 @@ export class NanoEngine {
         return;
       case 'k': { // Cut line
         if (this._cursorLine < this.linesArr.length) {
+          this.beginDiscreteEdit();
           const cut = this.linesArr[this._cursorLine];
           this.cutBuffer = this.lastActionWasCut ? [...this.cutBuffer, cut] : [cut];
           this.linesArr.splice(this._cursorLine, 1);
@@ -260,6 +327,7 @@ export class NanoEngine {
       }
       case 'u': // Paste (uncut)
         if (this.cutBuffer.length > 0) {
+          this.beginDiscreteEdit();
           this.linesArr.splice(this._cursorLine, 0, ...this.cutBuffer);
           this._modified = true;
           this._statusMessage = `Pasted ${this.cutBuffer.length} line(s)`;
@@ -269,6 +337,7 @@ export class NanoEngine {
       case 'w': // Where Is (search) — prefilled with the last search term, like real nano
         this.searchQueryBuffer = this.lastSearchTerm;
         this._mode = 'search';
+        this.historyNavIndex = null;
         this.lastActionWasCut = false;
         return;
       case '\\': // Replace
@@ -293,6 +362,12 @@ export class NanoEngine {
         this.lastActionWasCut = false;
         return;
     }
+  }
+
+  private applyEditAltKey(k: EditorKeyInput): void {
+    const key = k.key.toLowerCase();
+    if (key === 'u') { this.performUndo(); this.lastActionWasCut = false; return; }
+    if (key === 'e') { this.performRedo(); this.lastActionWasCut = false; return; }
   }
 
   // ── Save prompt ──────────────────────────────────────────────────
@@ -350,13 +425,38 @@ export class NanoEngine {
     if (k.key === 'Enter') {
       if (this.searchQueryBuffer) {
         this.lastSearchTerm = this.searchQueryBuffer;
+        this.searchHistoryList.push(this.searchQueryBuffer);
         this.performSearch(this.searchQueryBuffer);
       }
       this._mode = 'edit';
+      this.historyNavIndex = null;
       return;
     }
     if (k.key === 'Escape' || (k.ctrl && k.key.toLowerCase() === 'c')) {
       this._mode = 'edit';
+      this.historyNavIndex = null;
+      return;
+    }
+    if (k.key === 'ArrowUp') {
+      if (this.historyNavIndex === null) {
+        if (this.searchHistoryList.length === 0) return;
+        this.historyNavStash = this.searchQueryBuffer;
+        this.historyNavIndex = this.searchHistoryList.length - 1;
+      } else if (this.historyNavIndex > 0) {
+        this.historyNavIndex--;
+      }
+      this.searchQueryBuffer = this.searchHistoryList[this.historyNavIndex];
+      return;
+    }
+    if (k.key === 'ArrowDown') {
+      if (this.historyNavIndex === null) return;
+      if (this.historyNavIndex < this.searchHistoryList.length - 1) {
+        this.historyNavIndex++;
+        this.searchQueryBuffer = this.searchHistoryList[this.historyNavIndex];
+      } else {
+        this.historyNavIndex = null;
+        this.searchQueryBuffer = this.historyNavStash;
+      }
       return;
     }
     if (k.key === 'Backspace') {
