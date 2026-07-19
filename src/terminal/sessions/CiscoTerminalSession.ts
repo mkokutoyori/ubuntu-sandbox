@@ -190,73 +190,11 @@ export class CiscoTerminalSession extends CLITerminalSession {
     ];
   }
 
-  /**
-   * `banner <kind> <delim>` typed with NOTHING after the delimiter opens
-   * real IOS's interactive multi-line capture: the prompt goes blank,
-   * every subsequent line typed is appended verbatim, until a line
-   * containing the delimiter character is entered (text before the
-   * delimiter on that final line is the last chunk; text after it is
-   * discarded). `banner <kind> <delim>TEXT<delim>` on a single line
-   * (the common form used throughout the existing test suite) is left
-   * untouched — it's still handled synchronously by the config-trie
-   * handler in `CiscoShellBase`.
-   */
-  protected override buildInteractiveFlow(command: string): InteractiveStep[] | null {
-    const start = this.matchBannerCaptureStart(command);
-    if (start) return this.buildBannerCaptureSteps(start.kind, start.delim);
-    return super.buildInteractiveFlow(command);
-  }
-
-  private matchBannerCaptureStart(command: string): { kind: 'motd' | 'login' | 'exec' | 'incoming'; delim: string } | null {
-    if (this.vty?.state.mode !== 'config') return null;
-    const m = /^banner\s+(motd|login|exec|incoming)\s+(\S)\s*$/i.exec(command.trim());
-    if (!m) return null;
-    return { kind: m[1].toLowerCase() as 'motd' | 'login' | 'exec' | 'incoming', delim: m[2] };
-  }
-
-  private buildBannerCaptureSteps(kind: 'motd' | 'login' | 'exec' | 'incoming', delim: string): InteractiveStep[] {
-    return [
-      /* 0 */ { type: 'text', prompt: '', allowEmpty: true, storeAs: 'banner_line' },
-      /* 1 */ {
-        type: 'execute',
-        action: async (ctx) => {
-          const line = ctx.values.get('banner_line') ?? '';
-          const idx = line.indexOf(delim);
-          const acc = ctx.values.get('banner_acc') ?? '';
-          if (idx >= 0) {
-            const finalChunk = line.slice(0, idx);
-            const body = acc.length > 0
-              ? (finalChunk.length > 0 ? `${acc}\n${finalChunk}` : acc)
-              : finalChunk;
-            ctx.values.set('banner_body', body);
-            ctx.values.set('banner_done', '1');
-          } else {
-            ctx.values.set('banner_acc', acc.length > 0 ? `${acc}\n${line}` : line);
-            ctx.values.set('banner_done', '0');
-          }
-        },
-      },
-      /* 2 */ { type: 'branch', predicate: (ctx) => (ctx.values.get('banner_done') === '1' ? 3 : 0) },
-      /* 3 */ {
-        type: 'execute',
-        action: async (ctx) => { this.applyBannerCapture(kind, ctx.values.get('banner_body') ?? ''); },
-      },
-    ];
-  }
-
-  private applyBannerCapture(kind: 'motd' | 'login' | 'exec' | 'incoming', text: string): void {
-    const dev = this.device as unknown as {
-      _setMotdBanner?: (b: string) => void;
-      _setSshBanner?: (b: string) => void;
-      _setLoginBanner?: (b: string) => void;
-      _setExecBanner?: (b: string) => void;
-      _setIncomingBanner?: (b: string) => void;
-    };
-    if (kind === 'motd') { dev._setMotdBanner?.(text); dev._setSshBanner?.(text); }
-    else if (kind === 'login') dev._setLoginBanner?.(text);
-    else if (kind === 'exec') dev._setExecBanner?.(text);
-    else if (kind === 'incoming') dev._setIncomingBanner?.(text);
-  }
+  // `banner <kind> <delim>` multi-line capture is declared by the IOS
+  // shell itself (CiscoShellBase.bannerCaptureInteractionPlan, a `collect`
+  // step) — the generic planner-driven buildInteractiveFlow renders it
+  // here, and the SSH adapters render the SAME plan. Nothing banner-
+  // specific remains in the terminal layer.
 
   // Set by `prepareAsRemoteUser` -- `this.isRemoteChild` (`_parent !==
   // null`) is NOT yet true at that point (`adoptRemoteChild` calls

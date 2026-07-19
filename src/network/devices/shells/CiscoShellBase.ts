@@ -296,6 +296,22 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       }
       return null;
     }
+
+    // Config-mode dialogue: `banner <kind> <delim>` with nothing after the
+    // delimiter opens real IOS's multi-line capture (lines accumulate
+    // until one contains the delimiter). The single-line
+    // `banner <kind> <delim>TEXT<delim>` form stays synchronous in the
+    // config-trie handler.
+    if (mode === 'config') {
+      const bm = /^banner\s+(motd|login|exec|incoming)\s+(\S)\s*$/i.exec(line);
+      if (bm) {
+        return this.bannerCaptureInteractionPlan(
+          bm[1].toLowerCase() as 'motd' | 'login' | 'exec' | 'incoming', bm[2], ctx?.device,
+        );
+      }
+      return null;
+    }
+
     if (mode !== 'privileged') return null;
 
     const m = this.privilegedTrie.match(line);
@@ -386,6 +402,54 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
           storeAs: 'reload_confirmed',
         },
         { kind: 'run', run: async (rt) => { await rt.exec('reload'); } },
+      ],
+    };
+  }
+
+  /** Apply a banner — single write path shared by the config-trie handler
+   *  and the multi-line capture plan (motd also feeds the SSH banner). */
+  protected setBanner(
+    kind: 'motd' | 'login' | 'exec' | 'incoming',
+    text: string,
+    target?: unknown,
+  ): void {
+    const dev = (target ?? this.deviceRef) as {
+      _setSshBanner?: (b: string) => void;
+      _setMotdBanner?: (b: string) => void;
+      _setLoginBanner?: (b: string) => void;
+      _setExecBanner?: (b: string) => void;
+      _setIncomingBanner?: (b: string) => void;
+    } | null;
+    if (!dev) return;
+    if (kind === 'motd') { dev._setMotdBanner?.(text); dev._setSshBanner?.(text); }
+    else if (kind === 'login') dev._setLoginBanner?.(text);
+    else if (kind === 'exec') dev._setExecBanner?.(text);
+    else if (kind === 'incoming') dev._setIncomingBanner?.(text);
+  }
+
+  private bannerCaptureInteractionPlan(
+    kind: 'motd' | 'login' | 'exec' | 'incoming',
+    delim: string,
+    device?: unknown,
+  ): CommandInteractionPlan {
+    return {
+      steps: [
+        {
+          kind: 'collect',
+          prompt: '',
+          storeAs: 'banner_body',
+          accept: (line, accumulated) => {
+            const idx = line.indexOf(delim);
+            if (idx < 0) return { done: false };
+            const finalChunk = line.slice(0, idx);
+            const parts = finalChunk.length > 0 ? [...accumulated, finalChunk] : [...accumulated];
+            return { done: true, body: parts.join('\n') };
+          },
+        },
+        {
+          kind: 'run',
+          run: async (rt) => { this.setBanner(kind, rt.values.get('banner_body') ?? '', device); },
+        },
       ],
     };
   }
@@ -656,6 +720,10 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     }
     const trimmed = rawInput.trim();
     if (!trimmed) return '';
+    // IOS comment lines: `!` (optionally followed by text) is a silent
+    // no-op in EVERY mode — real configs are full of them, and pasting a
+    // config must not spray "% Invalid input" at each separator.
+    if (trimmed.startsWith('!')) return '';
     if (/^[\x00-\x1f]+$/.test(trimmed) && trimmed !== '\x03' && trimmed !== '\x1a') return '';
     if (!trimmed.endsWith('?') && this.terminalHistoryEnabled
         && this.terminalHistorySize > 0

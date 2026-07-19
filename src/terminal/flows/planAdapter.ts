@@ -41,40 +41,85 @@ function runtimeFrom(ctx: FlowContext): InteractionRuntime {
 }
 
 export function toInteractiveSteps(plan: CommandInteractionPlan): InteractiveStep[] {
-  return plan.steps.map((step): InteractiveStep => {
+  const out: InteractiveStep[] = [];
+  for (const step of plan.steps) {
     switch (step.kind) {
       case 'output':
-        return { type: 'output', outputLines: [...step.lines] };
+        out.push({ type: 'output', outputLines: [...step.lines] });
+        break;
       case 'text':
-        return {
+        out.push({
           type: 'text',
           prompt: step.prompt,
           allowEmpty: step.allowEmpty ?? false,
           defaultValue: step.defaultValue,
           storeAs: step.storeAs,
           validation: adaptValidation(step.validate),
-        };
+        });
+        break;
       case 'password':
-        return {
+        out.push({
           type: 'password',
           prompt: step.prompt,
           mask: 'hidden',
           storeAs: step.storeAs,
           validation: adaptValidation(step.validate),
-        };
+        });
+        break;
       case 'confirmation':
-        return {
+        out.push({
           type: 'confirmation',
           prompt: step.prompt,
           defaultAnswer: step.defaultAnswer,
           storeAs: step.storeAs,
           validation: adaptValidation(step.validate),
-        };
+        });
+        break;
       case 'run':
-        return {
+        out.push({
           type: 'execute',
           action: async (ctx: FlowContext) => step.run(runtimeFrom(ctx)),
-        };
+        });
+        break;
+      case 'collect': {
+        // Multi-line capture unrolls onto the flow engine's primitives:
+        // text prompt → accept() evaluation → branch back until done.
+        const textIdx = out.length;
+        const lineKey = `__collect_line_${textIdx}`;
+        const accKey = `__collect_acc_${textIdx}`;
+        const doneKey = `__collect_done_${textIdx}`;
+        out.push({
+          type: 'text',
+          prompt: step.prompt ?? '',
+          allowEmpty: true,
+          storeAs: lineKey,
+        });
+        out.push({
+          type: 'execute',
+          action: async (ctx: FlowContext) => {
+            const line = ctx.values.get(lineKey) ?? '';
+            const accRaw = ctx.metadata.get(accKey);
+            const acc: string[] = Array.isArray(accRaw) ? (accRaw as string[]) : [];
+            const res = step.accept(line, acc);
+            if (res.done) {
+              ctx.values.set(step.storeAs, res.body ?? '');
+              ctx.metadata.set(doneKey, '1');
+              ctx.metadata.delete(accKey);
+            } else {
+              acc.push(line);
+              ctx.metadata.set(accKey, acc);
+              ctx.metadata.set(doneKey, '0');
+            }
+          },
+        });
+        out.push({
+          type: 'branch',
+          predicate: (ctx: FlowContext) =>
+            (ctx.metadata.get(doneKey) === '1' ? textIdx + 3 : textIdx),
+        });
+        break;
+      }
     }
-  });
+  }
+  return out;
 }

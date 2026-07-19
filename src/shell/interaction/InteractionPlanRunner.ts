@@ -17,6 +17,7 @@ import type {
 } from './CommandInteraction';
 
 type PromptStep = Extract<InteractionStep, { kind: 'text' | 'password' | 'confirmation' }>;
+type CollectStep = Extract<InteractionStep, { kind: 'collect' }>;
 
 export interface PlanPendingInput {
   readonly kind: 'password' | 'text';
@@ -36,6 +37,8 @@ export class InteractionPlanRunner {
   private idx = 0;
   private retriesUsed = 0;
   private currentPrompt: PromptStep | null = null;
+  private currentCollect: CollectStep | null = null;
+  private collectBuffer: string[] = [];
   private readonly values = new Map<string, string>();
   private readonly metadata = new Map<string, unknown>();
 
@@ -51,6 +54,20 @@ export class InteractionPlanRunner {
 
   /** Feed the value collected for the current prompt and advance. */
   async provide(value: string): Promise<PlanAdvanceResult> {
+    const collect = this.currentCollect;
+    if (collect) {
+      const res = collect.accept(value, this.collectBuffer);
+      if (!res.done) {
+        this.collectBuffer.push(value);
+        return { lines: [], pending: collectPending(collect), done: false };
+      }
+      this.values.set(collect.storeAs, res.body ?? '');
+      this.currentCollect = null;
+      this.collectBuffer = [];
+      this.idx++;
+      return this.advance();
+    }
+
     const step = this.currentPrompt;
     if (!step) return { lines: [], done: true };
 
@@ -107,11 +124,20 @@ export class InteractionPlanRunner {
         this.idx++;
         continue;
       }
+      if (step.kind === 'collect') {
+        this.currentCollect = step;
+        this.collectBuffer = [];
+        return { lines, pending: collectPending(step), done: false };
+      }
       this.currentPrompt = step;
       return { lines, pending: pendingFor(step), done: false };
     }
     return { lines, done: true };
   }
+}
+
+function collectPending(step: CollectStep): PlanPendingInput {
+  return { kind: 'text', promptText: step.prompt ?? '' };
 }
 
 function pendingFor(step: PromptStep): PlanPendingInput {

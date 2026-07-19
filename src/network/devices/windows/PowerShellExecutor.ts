@@ -2501,14 +2501,11 @@ export class PowerShellExecutor {
 
     // Restart-NetAdapter
     if (cmdLower === 'restart-netadapter') {
-      const params = this.parsePSArgs(args);
-      const name = (params.get('name') ?? params.get('_positional') ?? '').replace(/^["']|["']$/g, '').toLowerCase();
-      if (name) {
-        const override = this.adapterOverrides.get(name) ?? {};
-        override.status = 'Up';
-        this.adapterOverrides.set(name, override);
-      }
-      return '';
+      // Real restart = down then up on the actual adapter. Route through
+      // the shared handler so a backing port is truly cycled (admin down →
+      // up), visible to ipconfig/netsh — not just a PS-only override flip.
+      net.handleDisableEnableNetAdapter(this.buildPSNetCtx(), args, 'Disabled');
+      return net.handleDisableEnableNetAdapter(this.buildPSNetCtx(), args, 'Up');
     }
 
     // Set-NetRoute
@@ -2551,8 +2548,10 @@ export class PowerShellExecutor {
       return psRemoveVpnConnection({ vpnConnections: this.vpnConnections }, args);
     }
 
-    // Clear-DnsClientCache
+    // Clear-DnsClientCache — flush the REAL resolver cache (the same one
+    // ipconfig /flushdns and Get-DnsClientCache read), not a no-op.
     if (cmdLower === 'clear-dnsclientcache') {
+      await this.device.executeCmdCommand('ipconfig /flushdns');
       return '';
     }
 
@@ -2622,9 +2621,13 @@ export class PowerShellExecutor {
       return '';
     }
 
-    // Get-Date
+    // Get-Date — PowerShell's default rendering is the full culture long
+    // date/time ("Sunday, July 19, 2026 3:04:05 PM"), not JS's Date string.
     if (cmdLower === 'get-date') {
-      return new Date().toString();
+      return new Date().toLocaleString('en-US', {
+        weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
+        hour: 'numeric', minute: '2-digit', second: '2-digit', hour12: true,
+      });
     }
 
     // Get-History / h / history
