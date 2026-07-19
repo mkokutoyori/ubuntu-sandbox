@@ -333,6 +333,19 @@ export class HuaweiRouter extends Router {
     if (/^display\s+users\s*$/i.test(cmd)) {
       return { output: `${this.getSshSessionRegistry().formatDisplayUsers()}\n`, exitCode: 0 };
     }
+    if (/^display\s+ssh\s+server\s+session\s*$/i.test(cmd)) {
+      const header = 'Conn   Ver  Idle    User       IP';
+      const sessions = this.getSshSessionRegistry().list();
+      const rows = sessions.length === 0
+        ? [`(none) 2    --      --         --`]
+        : sessions.map((s, i) => {
+          const h = Math.floor(s.idleSeconds / 3600).toString().padStart(2, '0');
+          const m = Math.floor((s.idleSeconds % 3600) / 60).toString().padStart(2, '0');
+          const sec = Math.floor(s.idleSeconds % 60).toString().padStart(2, '0');
+          return `${(i + 1).toString().padEnd(6)} 2    ${h}:${m}:${sec}  ${s.user.padEnd(10)} ${s.fromIp}`;
+        });
+      return { output: `${[header, ...rows].join('\n')}\n`, exitCode: 0 };
+    }
     if (/^display\s+local-user\s*$/i.test(cmd)) {
       const users = this._listLocalUsers();
       return { output: `User-name              State   Type   Privilege\n${users.map(u => `${u.name.padEnd(22)} A       SSH    ${u.privilege}`).join('\n')}\n`, exitCode: 0 };

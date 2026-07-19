@@ -967,7 +967,18 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     t.register('display radius-server configuration', 'Display RADIUS templates', () => {
       const s = aaa();
       if (s.radiusTemplates.size === 0) return ' No RADIUS template configured.';
-      return [...s.radiusTemplates.keys()].map(n => ` RADIUS template: ${n}`).join('\n');
+      return [...s.radiusTemplates.values()].map((t) => {
+        const lines = [` RADIUS template: ${t.name}`];
+        if (t.authentication) {
+          lines.push(`  Authentication IP           : ${t.authentication.ip}`);
+          lines.push(`  Authentication port         : ${t.authentication.port ?? 1812}`);
+        }
+        if (t.accounting) {
+          lines.push(`  Accounting IP               : ${t.accounting.ip}`);
+          lines.push(`  Accounting port             : ${t.accounting.port ?? 1813}`);
+        }
+        return lines.join('\n');
+      }).join('\n');
     });
     t.register('display hwtacacs-server template', 'Display HWTACACS templates', () => {
       const s = aaa();
@@ -977,7 +988,16 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     t.register('display ssh server session', 'Display SSH server sessions', () => {
       const ssh = this.r().getManagementService().getSsh();
       if (!ssh.enabled) return 'SSH server is not enabled.';
-      return `Conn   Ver  Idle    User       IP\n(none) ${ssh.version}    --      --         --`;
+      const header = 'Conn   Ver  Idle    User       IP';
+      const sessions = this.r().getSshSessionRegistry().list();
+      if (sessions.length === 0) return `${header}\n(none) ${ssh.version}    --      --         --`;
+      const rows = sessions.map((s, i) => {
+        const h = Math.floor(s.idleSeconds / 3600).toString().padStart(2, '0');
+        const m = Math.floor((s.idleSeconds % 3600) / 60).toString().padStart(2, '0');
+        const sec = Math.floor(s.idleSeconds % 60).toString().padStart(2, '0');
+        return `${(i + 1).toString().padEnd(6)} ${ssh.version}    ${h}:${m}:${sec}  ${s.user.padEnd(10)} ${s.fromIp}`;
+      });
+      return [header, ...rows].join('\n');
     });
     t.register('display rsa local-key-pair public', 'Display RSA public key', () => {
       const ks = this.r().getKeypairService();
