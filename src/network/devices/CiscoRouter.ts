@@ -375,8 +375,16 @@ export class CiscoRouter extends Router {
     return new CiscoIOSShell();
   }
 
-  /** Synchronous IOS exec whitelist consumed by the SSH cross-platform dispatch. */
+  /**
+   * Vendor-identifying line shown to a non-interactive SSH client that
+   * lands with no `banner motd` configured — mirrors the real prompt's
+   * hostname so cross-vendor tooling (and the cross-vendor SSH test
+   * suite) can tell which device family it reached. Suppressed when a
+   * real `banner motd` IS configured (via `sshBanner()`, populated by
+   * the `banner motd` command) so the two don't double up.
+   */
   override getSshMotd(): string {
+    if (this.sshBannerText) return '';
     return `Cisco IOS Software\n${this.hostname}#`;
   }
 

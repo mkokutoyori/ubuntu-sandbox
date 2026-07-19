@@ -87,6 +87,11 @@ export class CiscoTerminalSession extends CLITerminalSession {
     this.startFlowFromSteps(this.buildConsoleLoginSteps(), '');
   }
 
+  private deviceBanner(kind: 'motd' | 'login' | 'exec' | 'incoming'): string {
+    const dev = this.device as unknown as { getBanner?: (k: string) => string };
+    return dev.getBanner?.(kind) ?? '';
+  }
+
   private verifyConsoleLogin(username: string, password: string): boolean {
     const dev = this.device as unknown as {
       getCredentialStore?: () => { authenticate: (u: string, p: string) => boolean };
@@ -112,8 +117,13 @@ export class CiscoTerminalSession extends CLITerminalSession {
    * mirrors the existing outbound-SSH interactive flow's construction.
    */
   private buildConsoleLoginSteps(): InteractiveStep[] {
+    // Real IOS order: `banner login` is shown right before the login
+    // prompt (unlike `banner motd`, already shown earlier in `init()`,
+    // before this flow even starts).
+    const loginBanner = this.deviceBanner('login');
+    const preLines = loginBanner.length > 0 ? [...loginBanner.split('\n'), ''] : [];
     return [
-      /* 0 */ { type: 'output', outputLines: ['User Access Verification', ''] },
+      /* 0 */ { type: 'output', outputLines: [...preLines, 'User Access Verification', ''] },
       /* 1 */ { type: 'text', prompt: 'Username: ', allowEmpty: true, storeAs: 'console_login_username' },
       /* 2 */ {
         type: 'password',
@@ -156,6 +166,10 @@ export class CiscoTerminalSession extends CLITerminalSession {
             this.vty.state.privilegeLevel = privilege;
           }
           this.rearmExecTimeout();
+          // Real IOS: `banner exec` is shown after a SUCCESSFUL login only,
+          // right before the command prompt -- never on a failed attempt.
+          const execBanner = this.deviceBanner('exec');
+          if (execBanner) for (const ln of execBanner.split('\n')) this.addLine(ln);
         },
       },
       /* 5 */ { type: 'branch', predicate: () => 11 },
@@ -174,6 +188,74 @@ export class CiscoTerminalSession extends CLITerminalSession {
       // immediately (InteractiveFlowEngine.isComplete is currentIndex >=
       // steps.length) without an extra no-op step.
     ];
+  }
+
+  /**
+   * `banner <kind> <delim>` typed with NOTHING after the delimiter opens
+   * real IOS's interactive multi-line capture: the prompt goes blank,
+   * every subsequent line typed is appended verbatim, until a line
+   * containing the delimiter character is entered (text before the
+   * delimiter on that final line is the last chunk; text after it is
+   * discarded). `banner <kind> <delim>TEXT<delim>` on a single line
+   * (the common form used throughout the existing test suite) is left
+   * untouched — it's still handled synchronously by the config-trie
+   * handler in `CiscoShellBase`.
+   */
+  protected override buildInteractiveFlow(command: string): InteractiveStep[] | null {
+    const start = this.matchBannerCaptureStart(command);
+    if (start) return this.buildBannerCaptureSteps(start.kind, start.delim);
+    return super.buildInteractiveFlow(command);
+  }
+
+  private matchBannerCaptureStart(command: string): { kind: 'motd' | 'login' | 'exec' | 'incoming'; delim: string } | null {
+    if (this.vty?.state.mode !== 'config') return null;
+    const m = /^banner\s+(motd|login|exec|incoming)\s+(\S)\s*$/i.exec(command.trim());
+    if (!m) return null;
+    return { kind: m[1].toLowerCase() as 'motd' | 'login' | 'exec' | 'incoming', delim: m[2] };
+  }
+
+  private buildBannerCaptureSteps(kind: 'motd' | 'login' | 'exec' | 'incoming', delim: string): InteractiveStep[] {
+    return [
+      /* 0 */ { type: 'text', prompt: '', allowEmpty: true, storeAs: 'banner_line' },
+      /* 1 */ {
+        type: 'execute',
+        action: async (ctx) => {
+          const line = ctx.values.get('banner_line') ?? '';
+          const idx = line.indexOf(delim);
+          const acc = ctx.values.get('banner_acc') ?? '';
+          if (idx >= 0) {
+            const finalChunk = line.slice(0, idx);
+            const body = acc.length > 0
+              ? (finalChunk.length > 0 ? `${acc}\n${finalChunk}` : acc)
+              : finalChunk;
+            ctx.values.set('banner_body', body);
+            ctx.values.set('banner_done', '1');
+          } else {
+            ctx.values.set('banner_acc', acc.length > 0 ? `${acc}\n${line}` : line);
+            ctx.values.set('banner_done', '0');
+          }
+        },
+      },
+      /* 2 */ { type: 'branch', predicate: (ctx) => (ctx.values.get('banner_done') === '1' ? 3 : 0) },
+      /* 3 */ {
+        type: 'execute',
+        action: async (ctx) => { this.applyBannerCapture(kind, ctx.values.get('banner_body') ?? ''); },
+      },
+    ];
+  }
+
+  private applyBannerCapture(kind: 'motd' | 'login' | 'exec' | 'incoming', text: string): void {
+    const dev = this.device as unknown as {
+      _setMotdBanner?: (b: string) => void;
+      _setSshBanner?: (b: string) => void;
+      _setLoginBanner?: (b: string) => void;
+      _setExecBanner?: (b: string) => void;
+      _setIncomingBanner?: (b: string) => void;
+    };
+    if (kind === 'motd') { dev._setMotdBanner?.(text); dev._setSshBanner?.(text); }
+    else if (kind === 'login') dev._setLoginBanner?.(text);
+    else if (kind === 'exec') dev._setExecBanner?.(text);
+    else if (kind === 'incoming') dev._setIncomingBanner?.(text);
   }
 
   // Set by `prepareAsRemoteUser` -- `this.isRemoteChild` (`_parent !==

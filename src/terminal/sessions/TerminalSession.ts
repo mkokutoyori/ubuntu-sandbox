@@ -516,6 +516,7 @@ export abstract class TerminalSession {
       getSshMotd?: () => string;
       getLastSshLoginFor?: (u: string) => { at: Date; from: string } | null;
       recordSshLogin?: (u: string, ip: string, host: string, ok: boolean, m?: 'password' | 'publickey') => void;
+      getBanner?: (kind: string) => string;
     };
     const lines: string[] = [];
     if (!quiet) {
@@ -534,6 +535,16 @@ export abstract class TerminalSession {
       }
     }
     dev.recordSshLogin?.(user, sourceIp, sourceHost, true, 'password');
+    // Real IOS: `banner exec` is shown on every successful EXEC session
+    // start (unlike `banner login`, which SSH2 never sends — it
+    // authenticates before any banner exchange). Applies regardless of
+    // `quiet`, matching that it's tied to the exec session, not the SSH
+    // transport-level banner exchange.
+    const execBanner = dev.getBanner?.('exec') ?? '';
+    if (execBanner) {
+      if (lines.length > 0) lines.push('');
+      for (const ln of execBanner.replace(/\n+$/, '').split('\n')) lines.push(ln);
+    }
     return lines;
   }
 
