@@ -670,7 +670,7 @@ export class HuaweiSwitchShell implements ISwitchShell {
             this.swRef.createVLAN(id);
           }
         }
-        return '';
+        return 'Info: This operation may take a few seconds. Please wait for a moment...done.';
       }
 
       // vlan <id> → enter VLAN config mode
@@ -1731,11 +1731,14 @@ export class HuaweiSwitchShell implements ISwitchShell {
       return full;
     });
 
-    // display port vlan [active]
-    trie.registerGreedy('display port vlan', 'Display port VLAN assignment', () => {
+    // display port vlan [active | <interface>]
+    trie.registerGreedy('display port vlan', 'Display port VLAN assignment', (args) => {
       if (!this.swRef) return '';
+      const filterArg = args.filter((a) => a.toLowerCase() !== 'active').join(' ');
+      const filterPort = filterArg ? this.resolveInterfaceName(filterArg) : null;
       const rows = ['Port                    Link Type    PVID  Trunk VLAN List'];
       for (const p of this.swRef.getPortNames()) {
+        if (filterPort && p !== filterPort) continue;
         const cfg = this.swRef.getSwitchportConfig(p);
         if (!cfg) continue;
         if (cfg.mode === 'hybrid') {
@@ -1746,7 +1749,10 @@ export class HuaweiSwitchShell implements ISwitchShell {
           continue;
         }
         const pvid = cfg.mode === 'trunk' ? cfg.trunkNativeVlan : cfg.accessVlan;
-        rows.push(`${p.padEnd(24)}${cfg.mode.padEnd(13)}${String(pvid).padEnd(6)}-`);
+        const trunkList = cfg.mode === 'trunk'
+          ? [...cfg.trunkAllowedVlans].sort((a, b) => a - b).join(' ')
+          : '';
+        rows.push(`${p.padEnd(24)}${cfg.mode.padEnd(13)}${String(pvid).padEnd(6)}${trunkList || '-'}`);
       }
       return rows.join('\n');
     });
@@ -2633,6 +2639,11 @@ export class HuaweiSwitchShell implements ISwitchShell {
       const portsInVlan: string[] = [];
       for (const [portName, cfg] of configs) {
         if (cfg.mode === 'access' && cfg.accessVlan === id) {
+          portsInVlan.push(portName);
+        } else if (cfg.mode === 'trunk' && cfg.trunkAllowedVlans.has(id)) {
+          portsInVlan.push(portName);
+        } else if (cfg.mode === 'hybrid'
+          && (cfg.hybridUntaggedVlans?.has(id) || cfg.hybridTaggedVlans?.has(id))) {
           portsInVlan.push(portName);
         }
       }
