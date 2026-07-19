@@ -141,6 +141,12 @@ function createMockContext(overrides: Partial<IpNetworkContext> = {}): IpNetwork
       iface.isUp = false;
       return '';
     },
+    setInterfaceMTU: (ifName: string, mtu: number) => {
+      const iface = interfaces.get(ifName);
+      if (!iface) return `Cannot find device "${ifName}"`;
+      iface.mtu = mtu;
+      return '';
+    },
     ...overrides,
   };
 }

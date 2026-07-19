@@ -53,6 +53,7 @@ function createMockContext(overrides: Partial<IpNetworkContext> = {}): IpNetwork
     flushNeighbors: () => '',
     setInterfaceUp: () => '',
     setInterfaceDown: () => '',
+    setInterfaceMTU: () => '',
     ...overrides,
   };
 }

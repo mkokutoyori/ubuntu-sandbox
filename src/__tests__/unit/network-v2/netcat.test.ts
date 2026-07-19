@@ -63,10 +63,16 @@ describe('nc / ncat — real TCP probe', () => {
     expect(out).toContain(':8080');
   });
 
-  it('rejects unsupported UDP mode', async () => {
+  it('-u sends a real UDP datagram on the wire (no output, connectionless)', async () => {
     const { pc } = await buildPair();
     const out = await pc.executeCommand('nc -u 10.0.0.2 53');
-    expect(out).toMatch(/UDP mode .-u. is not supported/);
+    expect(out).toBe('');
+  });
+
+  it('-uv reports success for the connectionless send', async () => {
+    const { pc } = await buildPair();
+    const out = await pc.executeCommand('nc -uv 10.0.0.2 53');
+    expect(out).toMatch(/Connection to 10\.0\.0\.2 53 port \[udp\/\*\] succeeded!/);
   });
 
   it('prints usage when called with too few positional args', async () => {

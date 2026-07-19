@@ -131,6 +131,7 @@ export interface IpNetworkContext {
   flushNeighbors(ifName?: string): string;
   setInterfaceUp(ifName: string): string;
   setInterfaceDown(ifName: string): string;
+  setInterfaceMTU(ifName: string, mtu: number): string;
   /** Optional XFRM (IPsec) context for ip xfrm commands */
   xfrm?: IpXfrmContext;
   /** Optional GRE tunnel context for ip tunnel commands */
@@ -937,10 +938,11 @@ export function formatIpMonitorNeigh(change: IpMonitorNeighChange, labelled: boo
 function ipLinkSet(ctx: IpNetworkContext, args: string[]): string {
   if (args.length === 0) return 'Not enough information: arguments are required.';
 
-  // ip link set <dev> { up | down }
-  // ip link set dev <dev> { up | down }
+  // ip link set <dev> { up | down | mtu MTU }
+  // ip link set dev <dev> { up | down | mtu MTU }
   let devName: string | null = null;
   let action: string | null = null;
+  let mtu: number | null = null;
 
   for (let i = 0; i < args.length; i++) {
     if (args[i] === 'dev' && args[i + 1]) {
@@ -948,12 +950,21 @@ function ipLinkSet(ctx: IpNetworkContext, args: string[]): string {
       i++;
     } else if (args[i] === 'up' || args[i] === 'down') {
       action = args[i];
+    } else if (args[i] === 'mtu' && args[i + 1]) {
+      mtu = parseInt(args[i + 1], 10);
+      i++;
     } else if (!devName && !args[i].startsWith('-')) {
       devName = args[i];
     }
   }
 
   if (!devName) return 'Not enough information: arguments are required.';
+
+  if (mtu !== null) {
+    if (isNaN(mtu)) return 'Error: argument "mtu" is wrong: invalid numeric value';
+    const mtuResult = ctx.setInterfaceMTU(devName, mtu);
+    if (mtuResult) return mtuResult;
+  }
 
   if (action === 'up') return ctx.setInterfaceUp(devName);
   if (action === 'down') return ctx.setInterfaceDown(devName);

@@ -61,6 +61,50 @@ const ICMP_PHRASE: Record<string, string> = {
   redirect: 'redirect',
 };
 
+function icmpUnreachPhrase(frame: CaptureFrame): string {
+  const code = frame.icmpCode ?? 0;
+  const target = frame.icmpOrig?.dstIp ?? frame.srcIp ?? '';
+  switch (code) {
+    case 0: return `${target} net unreachable`;
+    case 1: return `${target} host unreachable`;
+    case 2: return `${target} protocol ${frame.icmpOrig?.protocol ?? ''} unreachable`;
+    case 3: {
+      const port = frame.icmpOrig?.dstPort;
+      return port !== undefined ? `${target} udp port ${port} unreachable` : `${target} unreachable`;
+    }
+    case 4: {
+      const mtu = frame.icmpNextHopMtu;
+      return mtu !== undefined ? `${target} unreachable - need to frag (mtu ${mtu})` : `${target} unreachable - need to frag`;
+    }
+    case 9: return `${target} net unreachable - admin prohibited`;
+    case 10: return `${target} host unreachable - admin prohibited`;
+    case 13: return `${target} unreachable - admin prohibited`;
+    default: return `${target} unreachable`;
+  }
+}
+
+function icmpTimeExceededPhrase(frame: CaptureFrame): string {
+  return frame.icmpCode === 1 ? 'time exceeded reassembly' : 'time exceeded in-transit';
+}
+
+/** Nested "IP (...)\n    src > dst: detail" block for the packet an ICMP error encapsulates (RFC 792), as real `tcpdump -v` renders it. */
+function encapsulatedLines(frame: CaptureFrame, opt: TcpdumpOptions): string {
+  if (opt.verbose <= 0 || frame.l4 !== 'icmp' || !frame.icmpOrig) return '';
+  if (frame.icmpType !== 'time-exceeded' && frame.icmpType !== 'destination-unreachable') return '';
+  const orig = frame.icmpOrig;
+  const protoName = orig.l4 === 'tcp' ? 'TCP' : orig.l4 === 'udp' ? 'UDP' : orig.l4 === 'icmp' ? 'ICMP' : 'unknown';
+  const df = (orig.ipFlags & 0x2) !== 0;
+  const mf = (orig.ipFlags & 0x1) !== 0;
+  const flagsToken = mf ? '+' : df ? 'DF' : 'none';
+  const header = `\tIP (tos 0x0, ttl ${orig.ttl}, id ${orig.ipId}, offset 0, flags [${flagsToken}], `
+    + `proto ${protoName} (${orig.protocol}), length ${orig.ipTotalLength})`;
+  const withPort = orig.l4 === 'tcp' || orig.l4 === 'udp';
+  const src = withPort ? `${orig.srcIp}.${orig.srcPort}` : orig.srcIp;
+  const dst = withPort ? `${orig.dstIp}.${orig.dstPort}` : orig.dstIp;
+  const detail = orig.l4 === 'other' ? `ip-proto-${orig.protocol}` : `${protoName}, length ${orig.payloadLength ?? 0}`;
+  return `\n${header}\n    ${src} > ${dst}: ${detail}`;
+}
+
 export function tcpFlagToken(frame: CaptureFrame): string {
   const f = frame.tcpFlags;
   if (!f) return '.';
@@ -143,7 +187,14 @@ function tcpOptionsToken(frame: CaptureFrame): string {
 
 function l4Detail(frame: CaptureFrame, opt: TcpdumpOptions): string {
   if (frame.l4 === 'icmp') {
-    const phrase = ICMP_PHRASE[frame.icmpType ?? ''] ?? frame.icmpType ?? 'unknown';
+    let phrase: string;
+    if (frame.icmpType === 'destination-unreachable') {
+      phrase = icmpUnreachPhrase(frame);
+    } else if (frame.icmpType === 'time-exceeded') {
+      phrase = icmpTimeExceededPhrase(frame);
+    } else {
+      phrase = ICMP_PHRASE[frame.icmpType ?? ''] ?? frame.icmpType ?? 'unknown';
+    }
     if (opt.quiet) return `ICMP ${phrase}, length ${frame.payloadLength ?? 0}`;
     if (frame.icmpType === 'echo-request' || frame.icmpType === 'echo-reply') {
       return `ICMP ${phrase}, id ${frame.icmpId ?? 0}, seq ${frame.icmpSeq ?? 0}, length ${frame.payloadLength ?? 0}`;
@@ -222,7 +273,7 @@ function ipLine(frame: CaptureFrame, opt: TcpdumpOptions): string {
     const offset = (frame.ipFragmentOffset ?? 0) * 8;
     const header = `IP (tos 0x0, ttl ${frame.ttl ?? 0}, id ${frame.ipId ?? 0}, offset ${offset}, flags [${ipFlagsToken(frame)}], `
       + `proto ${ipProtoName(frame)} (${frame.ipProtocol ?? 0}), length ${frame.ipTotalLength ?? frame.length}${ipChecksumSuffix(frame, opt)})`;
-    return `${header}\n    ${src} > ${dst}: ${detail}`;
+    return `${header}\n    ${src} > ${dst}: ${detail}${encapsulatedLines(frame, opt)}`;
   }
   return `IP ${src} > ${dst}: ${detail}`;
 }

@@ -212,6 +212,21 @@ function formatPingHeader(target: string, size: number, hostname?: string): stri
   return `PING ${displayName} (${target}) ${size}(${totalSize}) bytes of data.`;
 }
 
+/** Real ping's per-code wording for a Destination Unreachable reply (RFC 792 codes). */
+function icmpUnreachText(code: number | undefined, mtu: number | undefined): string {
+  switch (code) {
+    case 0: return 'Destination Net Unreachable';
+    case 1: return 'Destination Host Unreachable';
+    case 2: return 'Destination Protocol Unreachable';
+    case 3: return 'Destination Port Unreachable';
+    case 4: return mtu !== undefined ? `Frag needed and DF set (mtu = ${mtu})` : 'Frag needed and DF set';
+    case 9: return 'Destination Net Prohibited';
+    case 10: return 'Destination Host Prohibited';
+    case 13: return 'Packet filtered';
+    default: return 'Destination Host Unreachable';
+  }
+}
+
 function formatReplyLine(r: PingResult, size: number, timestamp: boolean): string {
   const replySize = size + ICMP_HEADER_SIZE;
   let line: string;
@@ -223,11 +238,12 @@ function formatReplyLine(r: PingResult, size: number, timestamp: boolean): strin
     line = `From ${m ? m[1] : 'unknown'} icmp_seq=${r.seq} Time to live exceeded`;
   } else if (r.error?.includes('Destination unreachable') || r.error?.includes('Network is unreachable')) {
     const m = r.error.match(/from ([\d.]+)/);
-    if (m) {
-      line = `From ${m[1]} icmp_seq=${r.seq} Destination Host Unreachable`;
-    } else {
-      line = `From ${r.fromIP ?? 'unknown'} icmp_seq=${r.seq} Destination Host Unreachable`;
-    }
+    const from = m ? m[1] : (r.fromIP ?? 'unknown');
+    const codeMatch = r.error.match(/code (\d+)/);
+    const code = codeMatch ? parseInt(codeMatch[1], 10) : undefined;
+    const mtuMatch = r.error.match(/mtu (\d+)/);
+    const mtu = mtuMatch ? parseInt(mtuMatch[1], 10) : undefined;
+    line = `From ${from} icmp_seq=${r.seq} ${icmpUnreachText(code, mtu)}`;
   } else {
     return '';
   }
@@ -312,6 +328,12 @@ async function runPing(
   const dfSet = parsed.mtuDisc === 'do' || parsed.mtuDisc === 'want';
   const totalPktSize = parsed.size + IP_HEADER_SIZE + ICMP_HEADER_SIZE;
 
+  // The kernel knows its own outbound interface MTU before ever sending, so
+  // a locally-oversized DF packet is refused without touching the wire —
+  // but path MTU beyond this host is genuinely unknown until a router along
+  // the way replies with Fragmentation Needed (RFC 1191), so that part is
+  // left to the real send/receive path below, not guessed from every
+  // device's MTU in the topology.
   if (dfSet) {
     let pathMtu = DEFAULT_MTU;
     const ports = ctx.net.getPorts();
@@ -326,17 +348,6 @@ async function runPing(
     if (totalPktSize > pathMtu) {
       return `ping: local error: Message too long, mtu=${pathMtu}`;
     }
-    try {
-      const { EquipmentRegistry } = await import('@/network/equipment/EquipmentRegistry');
-      for (const dev of EquipmentRegistry.getInstance().getAll()) {
-        for (const p of dev.getPorts()) {
-          const m = p.getMTU();
-          if (m > 0 && totalPktSize > m) {
-            return `ping: local error: Message too long, mtu=${m}`;
-          }
-        }
-      }
-    } catch { /* ignore */ }
   }
 
   if (parsed.v6 || rawTarget.includes(':')) {
@@ -373,9 +384,16 @@ async function runPing(
   // -f sends as fast as the wire allows instead of waiting -i seconds
   // between echoes — that's the whole point of a flood ping.
   const sendIntervalMs = parsed.flood ? 0 : parsed.intervalMs;
+  // Real ping only sets DF when explicitly asked (-M do/want) — unlike this
+  // simulator's IPv4 default (DF set unless told otherwise), so this always
+  // states the bit explicitly instead of falling through to that default.
+  const dfOverride = dfSet;
   const results: PingResult[] = [];
   for (let seq = 1; seq <= parsed.count; seq++) {
-    const batch = await ctx.net.pingSequence(targetIP, 1, parsed.timeoutMs, parsed.ttl);
+    const batch = await ctx.net.pingSequence(
+      targetIP, 1, parsed.timeoutMs, parsed.ttl,
+      { dataSize: parsed.size, df: dfOverride },
+    );
     if (batch.length > 0) {
       results.push({ ...batch[0], seq });
     } else {

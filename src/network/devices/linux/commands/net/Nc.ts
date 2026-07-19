@@ -119,7 +119,6 @@ export const ncCommand: LinuxCommand = {
     if (parsed.listen) return runListen(ctx, parsed).output;
     const { positional, zero, verbose, udp } = parsed;
 
-    if (udp) return `nc: UDP mode (-u) is not supported in this simulator`;
     if (positional.length < 2) return 'usage: nc [-z] [-v] [-w secs] host port';
 
     const host = positional[0];
@@ -131,6 +130,22 @@ export const ncCommand: LinuxCommand = {
     }
     if (!Number.isFinite(port) || port <= 0 || port > 65535) {
       return `nc: port number invalid: ${portToken}`;
+    }
+
+    if (udp) {
+      // Connectionless: there is no handshake to probe, so this just puts a
+      // real datagram on the wire — including whatever ICMP error a closed
+      // remote port or unreachable host elicits, exactly like real `nc -u`.
+      const found = findHostByAddress(host, { readFile: (p) => ctx.executor.vfs.readFile(p) });
+      if (!found) return `nc: getaddrinfo for host "${host}" port ${port}: Name or service not known`;
+      if (found.poweredOff || found.interfaceDown) {
+        return `nc: connect to ${host} port ${port} (udp) failed: No route to host`;
+      }
+      const srcPort = ctx.executor.getSocketTable()?.allocateEphemeralPort()
+        ?? 49152 + Math.floor(Math.random() * 16000);
+      ctx.net.sendUdpProbe(new IPAddress(found.ip), port, srcPort);
+      if (verbose) return `Connection to ${host} ${port} port [udp/*] succeeded!`;
+      return '';
     }
 
     const targetIsV6 = isIPv6Literal(host);
