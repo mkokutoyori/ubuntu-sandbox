@@ -3,6 +3,9 @@ import { getSecurityConfig } from '../../shells/cisco/CiscoSecurityCommands';
 import type { AaaMethodEntry, AaaServerGroup, CiscoSecurityConfig, RadiusServer, TacacsServer } from '../security/CiscoSecurityConfig';
 import type { RadiusClientAgent } from '../../../radius/RadiusClientAgent';
 import type { TacacsClientAgent } from '../../../tacacs/TacacsClientAgent';
+import type { VtyLineConfig } from '../vty/VtyLineConfig';
+import type { VtyLineConfigStore } from '../vty/VtyLineConfigStore';
+import type { HuaweiAaaService } from './HuaweiAaaService';
 
 export interface AaaAuthenticationOutcome {
   accepted: boolean;
@@ -15,16 +18,7 @@ type MethodVerdict = 'accept' | 'reject' | 'continue';
 interface AaaCapableRouter {
   getRadiusClient?(): RadiusClientAgent;
   getTacacsClient?(): TacacsClientAgent;
-}
-
-interface VtyLineSnapshot {
-  loginMode: string;
-  aaaAuthenticationList: string | null;
-  password: string | null;
-}
-
-interface VtyLineConfigStoreLike {
-  all(): readonly VtyLineSnapshot[];
+  getHuaweiAaaService?(): HuaweiAaaService;
 }
 
 function radiusClientOf(router: Router): RadiusClientAgent | undefined {
@@ -35,8 +29,12 @@ function tacacsClientOf(router: Router): TacacsClientAgent | undefined {
   return (router as unknown as AaaCapableRouter).getTacacsClient?.();
 }
 
-function vtyStoreOf(router: Router): VtyLineConfigStoreLike | undefined {
-  return (router as unknown as { _getVtyLineConfig?: () => VtyLineConfigStoreLike })._getVtyLineConfig?.();
+function huaweiAaaOf(router: Router): HuaweiAaaService | undefined {
+  return (router as unknown as AaaCapableRouter).getHuaweiAaaService?.();
+}
+
+function vtyStoreOf(router: Router): VtyLineConfigStore | undefined {
+  return (router as unknown as { _getVtyLineConfig?: () => VtyLineConfigStore })._getVtyLineConfig?.();
 }
 
 export class AaaAuthenticator {
@@ -45,6 +43,8 @@ export class AaaAuthenticator {
   async authenticate(username: string, password: string, methodListName?: string): Promise<AaaAuthenticationOutcome> {
     const sec = getSecurityConfig(this.router);
     if (!sec.aaaNewModel) {
+      const huawei = await this.tryHuaweiAaa(username, password);
+      if (huawei) return huawei;
       return { accepted: this.localAuthenticate(username, password), method: 'local', listName: 'default' };
     }
     const wanted = methodListName ?? this.activeAuthenticationListName();
@@ -61,13 +61,14 @@ export class AaaAuthenticator {
     return lists.find((m) => m.listName === wanted) ?? lists.find((m) => m.listName === 'default');
   }
 
+  /**
+   * IOS's `login authentication <list-name>` isn't captured on
+   * VtyLineConfig (only the `aaa`/`local`/`password`/`none` mode is), so a
+   * line in AAA mode always resolves the `default` method list until that
+   * field exists — this at least reflects the real `login` field instead
+   * of a name the model never had.
+   */
   private activeAuthenticationListName(): string {
-    const store = vtyStoreOf(this.router);
-    if (store) {
-      for (const line of store.all()) {
-        if (line.loginMode === 'aaa' && line.aaaAuthenticationList) return line.aaaAuthenticationList;
-      }
-    }
     return 'default';
   }
 
@@ -75,9 +76,66 @@ export class AaaAuthenticator {
     const store = vtyStoreOf(this.router);
     if (!store) return null;
     for (const line of store.all()) {
-      if (line.password !== null) return line.password;
+      if (line.linePassword !== null) return line.linePassword;
     }
     return null;
+  }
+
+  /**
+   * Huawei VRP domain-based AAA — `authentication-mode aaa` on the active
+   * VTY line routes the login through `domain <name> → authentication-scheme
+   * → authentication-mode {radius|local|...}`, resolving a RADIUS template
+   * via `radius-server group <template>` when the scheme calls for it.
+   * Returns undefined (not `{accepted:false,...}`) when AAA mode isn't
+   * active on any VTY line, so the caller falls back to plain local auth
+   * exactly as before this existed.
+   */
+  private async tryHuaweiAaa(username: string, password: string): Promise<AaaAuthenticationOutcome | undefined> {
+    const store = vtyStoreOf(this.router);
+    const aaaLine = store?.all().find((line) => line.authenticationMode === 'aaa');
+    if (!aaaLine) return undefined;
+    const aaa = huaweiAaaOf(this.router);
+    if (!aaa) return undefined;
+
+    const at = username.indexOf('@');
+    const domainName = at >= 0 ? username.slice(at + 1) : 'default';
+    const localName = at >= 0 ? username.slice(0, at) : username;
+    const domain = aaa.domains.get(domainName) ?? aaa.domains.get('default');
+    const scheme = domain?.authenticationScheme
+      ? aaa.authenticationSchemes.get(domain.authenticationScheme)
+      : undefined;
+    const modes = scheme?.mode ?? ['local'];
+
+    for (const mode of modes) {
+      if (mode === 'radius') {
+        const verdict = await this.tryHuaweiRadius(aaa, domain?.radiusServerGroup, localName, password);
+        if (verdict === 'accept') return { accepted: true, method: 'radius', listName: domainName };
+        if (verdict === 'reject') return { accepted: false, method: 'radius', listName: domainName };
+      } else if (mode === 'local' || mode === 'local-case') {
+        return { accepted: this.localAuthenticate(localName, password), method: 'local', listName: domainName };
+      } else if (mode === 'none') {
+        return { accepted: true, method: 'none', listName: domainName };
+      }
+      // 'hwtacacs' isn't modeled here yet — falls through to the next mode.
+    }
+    return { accepted: this.localAuthenticate(localName, password), method: 'local', listName: domainName };
+  }
+
+  private async tryHuaweiRadius(
+    aaa: HuaweiAaaService, templateName: string | undefined, username: string, password: string,
+  ): Promise<MethodVerdict> {
+    if (!templateName) return 'continue';
+    const template = aaa.radiusTemplates.get(templateName);
+    if (!template?.authentication?.ip) return 'continue';
+    const client = radiusClientOf(this.router);
+    if (!client) return 'continue';
+    client.addServer(template.authentication.ip, template.sharedKey ?? '', {
+      port: template.authentication.port,
+      timeoutMs: (template.timeout ?? 5) * 1000,
+      retransmit: template.retransmit,
+    });
+    const accepted = await client.authenticate(username, password, template.authentication.ip);
+    return accepted ? 'accept' : 'reject';
   }
 
   private async runMethodChain(sec: CiscoSecurityConfig, methods: string[], username: string, password: string): Promise<{ accepted: boolean; method: string }> {
