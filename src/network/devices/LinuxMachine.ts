@@ -2386,9 +2386,18 @@ export abstract class LinuxMachine extends EndHost
     // (run() returning a bare string, not a Promise) still work from this
     // bypass path; genuinely async commands (ping, traceroute, dhclient)
     // cannot — same limitation they already had once migrated.
+    //
+    // Only take this fast path for a plain, unredirected invocation: a
+    // naive whitespace tokenizer has no idea `<`/`>`/`|`/`;`/`&` are shell
+    // syntax, so `xxd < /tmp/file` (as produced by a vim `:%!xxd` filter)
+    // would otherwise become `xxd` called with the literal argument `<`.
+    // Anything with shell metacharacters falls through to the real bash
+    // interpreter below, which parses redirection correctly and still
+    // reaches registry commands via `_registryCommandHook`.
+    const hasShellSyntax = /[<>|;&]/.test(trimmed);
     const head = trimmed.split(/\s+/)[0];
     const cmd = this.commands.get(head);
-    if (cmd && cmd.needsNetworkContext) {
+    if (!hasShellSyntax && cmd && cmd.needsNetworkContext) {
       const args = LinuxMachine.tokenizeArgs(trimmed).slice(1);
       const result = cmd.run(this.buildCommandContext(), args);
       if (typeof result === 'string') return result;

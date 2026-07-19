@@ -56,6 +56,18 @@ function compileVimPattern(pattern: string, ignoreCase: boolean): RegExp {
   for (let i = 0; i < pattern.length; i++) {
     const c = pattern[i];
     if (c === '\\') {
+      // \%xHH — a specific byte value (2 hex digits), e.g. \%x00 for NUL.
+      if (pattern[i + 1] === '%' && pattern[i + 2] === 'x' && /^[0-9a-fA-F]{2}$/.test(pattern.slice(i + 3, i + 5))) {
+        out += `\\x${pattern.slice(i + 3, i + 5)}`;
+        i += 4;
+        continue;
+      }
+      // \%uHHHH — a specific Unicode codepoint (4 hex digits), e.g. \%ufeff for a BOM.
+      if (pattern[i + 1] === '%' && pattern[i + 2] === 'u' && /^[0-9a-fA-F]{4}$/.test(pattern.slice(i + 3, i + 7))) {
+        out += `\\u${pattern.slice(i + 3, i + 7)}`;
+        i += 6;
+        continue;
+      }
       const next = pattern[i + 1];
       i++;
       switch (next) {
@@ -71,6 +83,7 @@ function compileVimPattern(pattern: string, ignoreCase: boolean): RegExp {
         case '.': out += '\\.'; break;
         case '\\': out += '\\\\'; break;
         case '/': out += '/'; break;
+        case 'r': out += '\\r'; break; // carriage return
         default: out += next !== undefined ? (/[a-zA-Z0-9]/.test(next) ? next : '\\' + next) : '\\\\';
       }
       continue;
@@ -234,6 +247,15 @@ export class VimEngine {
   private isMacroReplay = false;
   private _registersOutput = '';
 
+  // `fileformat` — autodetected from the presence of any \r\n pair in the
+  // file as loaded (real vim's heuristic). A CRLF-terminated line has its
+  // trailing \r stripped from the in-memory buffer, same as real vim; a
+  // *stray* \r not immediately followed by \n (corruption from a botched
+  // conversion) is left in place, exactly where `\r` search/substitution
+  // is meant to find and clean it up. Only affects how lines are rejoined
+  // on save — never auto-strips existing buffer content.
+  private _fileFormat: 'unix' | 'dos' = 'unix';
+
   constructor(
     private readonly fs: EditorFsContext,
     public readonly filePath: string,
@@ -242,8 +264,12 @@ export class VimEngine {
     public readonly variant: VimVariant = 'vim',
     owner = 'user',
   ) {
+    this._fileFormat = initialContent.includes('\r\n') ? 'dos' : 'unix';
     const body = initialContent.endsWith('\n') ? initialContent.slice(0, -1) : initialContent;
-    this.linesArr = body.length === 0 && initialContent.length === 0 ? [''] : body.split('\n');
+    const rawLines = body.length === 0 && initialContent.length === 0 ? [''] : body.split('\n');
+    this.linesArr = this._fileFormat === 'dos'
+      ? rawLines.map((l) => (l.endsWith('\r') ? l.slice(0, -1) : l))
+      : rawLines;
     this.originalDiskLines = [...this.linesArr];
     this.owner = owner;
     this._message = isNewFile
@@ -294,6 +320,7 @@ export class VimEngine {
   get lineNumbersShown(): boolean { return this.showLineNumbers; }
   get hlsearch(): boolean { return this.hlsearchEnabled; }
   get shellOutput(): string { return this._shellOutput; }
+  get fileFormat(): 'unix' | 'dos' { return this._fileFormat; }
   get canUndo(): boolean { return this.undoStack.length > 0; }
   get canRedo(): boolean { return this.redoStack.length > 0; }
   /** Text register content, `null` if empty/unset. Named registers, the unnamed register ("), and "/. */
@@ -1436,6 +1463,21 @@ export class VimEngine {
       this._mode = 'normal';
       return;
     }
+    if (trimmed === 'set fileformat?' || trimmed === 'set ff?') {
+      this._message = `fileformat=${this._fileFormat}`;
+      this._mode = 'normal';
+      return;
+    }
+    const ffSet = trimmed.match(/^set (?:fileformat|ff)=(unix|dos)$/);
+    if (ffSet) {
+      // Only changes how the file is written on the next save — matches
+      // real vim: existing buffer content (including any stray \r left
+      // over from corruption) is untouched until explicitly edited out.
+      this._fileFormat = ffSet[1] as 'unix' | 'dos';
+      this._message = '';
+      this._mode = 'normal';
+      return;
+    }
     if (trimmed === '$') {
       this.gotoLine(this.linesArr.length - 1);
       this._message = '';
@@ -1459,7 +1501,10 @@ export class VimEngine {
       this._message = "E45: 'readonly' option is set (add ! to override)";
       return false;
     }
-    const ok = this.fs.writeFile(path, `${this.content}\n`);
+    const body = this._fileFormat === 'dos'
+      ? `${this.linesArr.join('\r\n')}\r\n`
+      : `${this.content}\n`;
+    const ok = this.fs.writeFile(path, body);
     if (!ok) {
       this._message = `E212: Can't open file for writing`;
       return false;

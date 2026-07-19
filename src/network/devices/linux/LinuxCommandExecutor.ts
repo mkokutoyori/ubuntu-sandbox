@@ -4373,7 +4373,15 @@ export class LinuxCommandExecutor {
           }
         }
 
-        const registryResult = this._registryCommandHook?.(cmd, args);
+        // `LinuxCommand.run()` has no dedicated stdin channel — registry
+        // commands that want piped content (e.g. `xxd` backing a vim
+        // `:%!xxd` filter) detect it the same way the async network-runner
+        // path already hands it to them: as a trailing positional argument.
+        // `stdin` was popped off `args` above for the switch cases here
+        // that consume it directly (`cat`, ...); re-append it so a registry
+        // command reached only through this default branch still sees it.
+        const registryArgs = stdin !== undefined ? [...args, stdin] : args;
+        const registryResult = this._registryCommandHook?.(cmd, registryArgs);
         if (registryResult) return registryResult;
 
         return { output: `${cmd}: command not found`, exitCode: 127 };
