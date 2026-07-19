@@ -1270,6 +1270,20 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
       return '';
     });
 
+    // reset acl counter { all | name <name> | <number> } — zero ACE match counters
+    t.registerGreedy('reset acl counter', 'Reset ACL match counters', (args) => {
+      const router = getRouter();
+      if (!args[0] || args[0].toLowerCase() === 'all') {
+        router.resetAllAclCounters();
+        return '';
+      }
+      const ref = args[0].toLowerCase() === 'name' ? args[1] : args[0];
+      if (!ref) return 'Error: Incomplete command.';
+      const numRef = /^\d+$/.test(ref) ? parseInt(ref, 10) : ref;
+      router.resetAclCounters(numRef);
+      return '';
+    });
+
     t.registerGreedy('reset dhcp', 'Reset DHCP statistics / bindings', (_args) => {
       return '';
     });

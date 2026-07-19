@@ -194,6 +194,23 @@ export class ACLEngine {
     return this.accessLists.find(a => a.id === id);
   }
 
+  /** Zero every entry's match counter for one ACL (`reset acl counter <N>`). */
+  resetCounters(aclRef: number | string): boolean {
+    const acl = typeof aclRef === 'number'
+      ? this.accessLists.find(a => a.id === aclRef)
+      : this.accessLists.find(a => a.name === aclRef);
+    if (!acl) return false;
+    for (const entry of acl.entries) entry.matchCount = 0;
+    return true;
+  }
+
+  /** Zero every entry's match counter across all ACLs (`reset acl counter all`). */
+  resetAllCounters(): void {
+    for (const acl of this.accessLists) {
+      for (const entry of acl.entries) entry.matchCount = 0;
+    }
+  }
+
   private static nextSequence(acl: AccessList): number {
     if (acl.entries.length === 0) return 10;
     const maxSeq = acl.entries.reduce((m, e) => Math.max(m, e.sequence ?? 0), 0);
@@ -391,4 +408,33 @@ export class ACLEngine {
 
   /** @internal Direct access to bindings for CLI shells */
   getInterfaceACLBindingsInternal(): Map<string, InterfaceACLBinding> { return this.interfaceACLBindings; }
+}
+
+function formatPortSpecTokens(spec: PortSpec): string[] {
+  if (spec.op === 'range') return ['range', String(spec.port), String(spec.endPort ?? spec.port)];
+  return [spec.op, String(spec.port)];
+}
+
+/**
+ * Render a VRP `display acl` rule line — action, protocol, source/destination
+ * (with wildcard), ports, and a trailing `(N matches)` once traffic has hit
+ * the entry. Shared by the router and switch shells so both surfaces show
+ * the same fields the engine actually evaluates on.
+ */
+export function formatHuaweiAclEntry(entry: ACLEntry, opts: { showCounts?: boolean } = {}): string {
+  const parts: string[] = [entry.action];
+  if (entry.protocol && entry.protocol !== 'ip') parts.push(entry.protocol);
+  if (entry.srcIP.toString() !== '0.0.0.0') {
+    parts.push('source', entry.srcIP.toString(), entry.srcWildcard.toString());
+  }
+  if (entry.dstIP && entry.dstWildcard && entry.dstIP.toString() !== '0.0.0.0') {
+    parts.push('destination', entry.dstIP.toString(), entry.dstWildcard.toString());
+  }
+  if (entry.srcPortSpec) parts.push('source-port', ...formatPortSpecTokens(entry.srcPortSpec));
+  if (entry.dstPortSpec) parts.push('destination-port', ...formatPortSpecTokens(entry.dstPortSpec));
+  let line = parts.join(' ');
+  if (opts.showCounts !== false && entry.matchCount > 0) {
+    line += ` (${entry.matchCount} matche${entry.matchCount === 1 ? '' : 's'})`;
+  }
+  return line;
 }

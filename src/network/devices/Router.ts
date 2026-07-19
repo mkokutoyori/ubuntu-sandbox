@@ -3234,6 +3234,8 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
   _resequenceNamedACL(name: string, start: number, step: number) { return this.aclEngine.resequenceNamedACL(name, start, step); }
   _findNamedACL(name: string) { return this.aclEngine.findByName(name); }
   _findNumberedACL(id: number) { return this.aclEngine.findById(id); }
+  resetAclCounters(aclRef: number | string): boolean { return this.aclEngine.resetCounters(aclRef); }
+  resetAllAclCounters(): void { this.aclEngine.resetAllCounters(); }
 
   // ─── DHCP Server Public API ────────────────────────────────────
 

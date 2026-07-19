@@ -40,6 +40,8 @@ import {
   registerHuaweiCommonSecurity, registerHuaweiCommonSecurityDisplay,
 } from './huawei/HuaweiCommonSecurity';
 import { buildDhcpPoolCommands } from './huawei/HuaweiDhcpCommands';
+import { parseHuaweiPortSpec } from './huawei/HuaweiAclCommands';
+import { formatHuaweiAclEntry } from '../router/ACLEngine';
 import { vrrpVirtualMac, effectivePriority as vrrpEffectivePriority } from '../../vrrp/types';
 
 type VRPSwitchMode =
@@ -1623,6 +1625,27 @@ export class HuaweiSwitchShell implements ISwitchShell {
     return [`acl ${kind} ${a.key}`, ...a.rules.map(r => ` ${r}`)].join('\n');
   }
 
+  /** Operational `display acl` — rule list rendered from the engine that
+   * actually evaluates traffic (protocol/ports/match counts), unlike
+   * `renderAcl`'s verbatim echo of the configured command text. */
+  private renderAclOperational(key: string | null): string {
+    if (!key || !this.swRef) return '';
+    const a = this.acls.get(key);
+    if (!a) return `Error: The ACL ${key} does not exist.`;
+    const engine = this.swRef.getVaclEngine();
+    const num = parseInt(key, 10);
+    const acl = !isNaN(num) ? engine.findById(num) : engine.findByName(key);
+    const kind = a.type === 'adv' ? 'Advanced' : 'Basic';
+    if (!acl || acl.entries.length === 0) {
+      return `${kind} ACL ${key}, 0 rule(s)`;
+    }
+    const lines = [`${kind} ACL ${key}, ${acl.entries.length} rule(s)`, `ACL's step is 5`];
+    acl.entries.forEach((entry, idx) => {
+      lines.push(` rule ${idx * 5} ${formatHuaweiAclEntry(entry)}`);
+    });
+    return lines.join('\n');
+  }
+
   private parseVrpVlanTokens(args: string[]): number[] {
     const ids: number[] = [];
     for (let i = 0; i < args.length; i++) {
@@ -1695,7 +1718,15 @@ export class HuaweiSwitchShell implements ISwitchShell {
       if (!dst) return;
       dstIP = dst.ip; dstWc = dst.wc;
     }
-    const opts = { protocol, srcIP, srcWildcard: srcWc, dstIP, dstWildcard: dstWc };
+    const spi = args.findIndex(a => a.toLowerCase() === 'source-port');
+    const srcPortSpec = spi >= 0 ? parseHuaweiPortSpec(args, spi + 1)?.spec : undefined;
+    const dpi = args.findIndex(a => a.toLowerCase() === 'destination-port');
+    const dstPortSpec = dpi >= 0 ? parseHuaweiPortSpec(args, dpi + 1)?.spec : undefined;
+    const opts: Parameters<typeof engine.addAccessListEntry>[2] = {
+      protocol, srcIP, srcWildcard: srcWc, dstIP, dstWildcard: dstWc,
+    };
+    if (srcPortSpec) { opts.srcPortSpec = srcPortSpec; if (srcPortSpec.op === 'eq') opts.srcPort = srcPortSpec.port; }
+    if (dstPortSpec) { opts.dstPortSpec = dstPortSpec; if (dstPortSpec.op === 'eq') opts.dstPort = dstPortSpec.port; }
     if (!isNaN(num)) engine.addAccessListEntry(num, action, opts);
     else engine.addNamedAccessListEntry(aclKey, 'extended', action, opts);
   }
@@ -2012,9 +2043,23 @@ export class HuaweiSwitchShell implements ISwitchShell {
       if (this.acls.size === 0) return 'Info: No ACL is configured.';
       const sel = (args[0] ?? 'all').toLowerCase();
       if (sel === 'all') {
-        return [...this.acls.keys()].map(k => this.renderAcl(k)).join('\n');
+        return [...this.acls.keys()].map(k => this.renderAclOperational(k)).join('\n');
       }
-      return this.renderAcl(this.acls.has(args[0]) ? args[0] : sel);
+      return this.renderAclOperational(this.acls.has(args[0]) ? args[0] : sel);
+    });
+
+    // reset acl counter { all | name <name> | <number> }
+    trie.registerGreedy('reset acl counter', 'Reset ACL match counters', (args) => {
+      if (!this.swRef) return '';
+      const engine = this.swRef.getVaclEngine();
+      if (!args[0] || args[0].toLowerCase() === 'all') {
+        engine.resetAllCounters();
+        return '';
+      }
+      const ref = args[0].toLowerCase() === 'name' ? args[1] : args[0];
+      if (!ref) return 'Error: Incomplete command.';
+      engine.resetCounters(/^\d+$/.test(ref) ? parseInt(ref, 10) : ref);
+      return '';
     });
 
     // Eth-Trunk + counters.
@@ -2232,12 +2277,33 @@ export class HuaweiSwitchShell implements ISwitchShell {
       'speed', 'duplex', 'negotiation', 'mtu', 'jumboframe', 'flow-control',
       'loopback-detect', 'port-security', 'storm-control',
       'broadcast-suppression', 'port-mirroring',
-      'qos', 'traffic-policy', 'traffic-filter', 'am',
+      'qos', 'traffic-policy', 'am',
       'mac-limit',
     ]) {
       trie.registerGreedy(kw, `Interface ${kw} configuration`, (args) =>
         record(`${kw} ${args.join(' ')}`.trim()));
     }
+
+    // `traffic-filter inbound|outbound acl <number>` binds a real numbered
+    // ACL to this port; the switch dataplane consults it on ingress/egress.
+    trie.registerGreedy('traffic-filter', 'Apply ACL to this port', (args) => {
+      if (!this.selectedInterface || !this.swRef) return 'Error: Incomplete command.';
+      const direction = args[0]?.toLowerCase();
+      if (direction !== 'inbound' && direction !== 'outbound') return 'Error: Expected inbound or outbound.';
+      if (args[1]?.toLowerCase() !== 'acl' || !args[2]) return 'Error: Expected "acl".';
+      const aclNum = parseInt(args[2], 10);
+      if (isNaN(aclNum)) return 'Error: Invalid ACL number.';
+      const dir = direction === 'inbound' ? 'in' : 'out';
+      this.swRef.getVaclEngine().setInterfaceACL(this.selectedInterface, dir, aclNum);
+      return record(`traffic-filter ${args.join(' ')}`.trim());
+    });
+    trie.registerGreedy('undo traffic-filter', 'Remove ACL from this port', (args) => {
+      if (!this.selectedInterface || !this.swRef) return 'Error: Incomplete command.';
+      const direction = args[0]?.toLowerCase();
+      const dir = direction === 'outbound' ? 'out' : 'in';
+      this.swRef.getVaclEngine().removeInterfaceACL(this.selectedInterface, dir);
+      return '';
+    });
   }
 
   /** MST region sub-view command tree ([host-mst-region]). */

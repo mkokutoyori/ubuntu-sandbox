@@ -16,8 +16,29 @@
 import { IPAddress, SubnetMask } from '../../../core/types';
 import type { Router } from '../../Router';
 import type { CommandTrie } from '../CommandTrie';
+import type { PortOperator, PortSpec } from '../../router/ACLEngine';
+import { formatHuaweiAclEntry } from '../../router/ACLEngine';
 
 const normalizeWildcard = (w: string): string => (w === '0' ? '0.0.0.0' : w);
+
+/** Parse a VRP port-spec (`eq N`, `gt N`, `lt N`, `neq N`, `range N M`) starting at `offset`. */
+export function parseHuaweiPortSpec(
+  args: string[], offset: number,
+): { spec: PortSpec; consumed: number } | null {
+  const op = args[offset]?.toLowerCase();
+  if (op === 'eq' || op === 'neq' || op === 'gt' || op === 'lt') {
+    const port = parseInt(args[offset + 1] ?? '', 10);
+    if (isNaN(port)) return null;
+    return { spec: { op: op as PortOperator, port }, consumed: 2 };
+  }
+  if (op === 'range') {
+    const a = parseInt(args[offset + 1] ?? '', 10);
+    const b = parseInt(args[offset + 2] ?? '', 10);
+    if (isNaN(a) || isNaN(b)) return null;
+    return { spec: { op: 'range', port: a, endPort: b }, consumed: 3 };
+  }
+  return null;
+}
 
 export type HuaweiACLMode = 'acl-basic' | 'acl-advanced';
 
@@ -197,10 +218,8 @@ export function buildHuaweiAdvancedACLCommands(
     let dstIP = '0.0.0.0';
     let dstWild = '255.255.255.255';
     let protocol: string | undefined;
-    let srcPortOp: string | undefined;
-    let srcPort: string | undefined;
-    let dstPortOp: string | undefined;
-    let dstPort: string | undefined;
+    let srcPortSpec: PortSpec | undefined;
+    let dstPortSpec: PortSpec | undefined;
 
     const keywords = new Set(['source', 'destination', 'source-port', 'destination-port',
       'time-range', 'logging', 'precedence', 'tos', 'dscp', 'fragment', 'icmp-type']);
@@ -222,13 +241,11 @@ export function buildHuaweiAdvancedACLCommands(
           dstIP = args[i + 1]; dstWild = normalizeWildcard(args[i + 2]); i += 3;
         } else { i++; }
       } else if (kw === 'source-port') {
-        srcPortOp = args[i + 1]?.toLowerCase();
-        srcPort = args[i + 2];
-        i += srcPortOp === 'range' ? 4 : 3;
+        const parsed = parseHuaweiPortSpec(args, i + 1);
+        if (parsed) { srcPortSpec = parsed.spec; i += 1 + parsed.consumed; } else { i++; }
       } else if (kw === 'destination-port') {
-        dstPortOp = args[i + 1]?.toLowerCase();
-        dstPort = args[i + 2];
-        i += dstPortOp === 'range' ? 4 : 3;
+        const parsed = parseHuaweiPortSpec(args, i + 1);
+        if (parsed) { dstPortSpec = parsed.spec; i += 1 + parsed.consumed; } else { i++; }
       } else {
         i++;
       }
@@ -242,8 +259,8 @@ export function buildHuaweiAdvancedACLCommands(
       dstWildcard: new SubnetMask(dstWild),
     };
     if (ruleId !== undefined) opts.sequence = ruleId;
-    if (srcPortOp && srcPort) { opts.srcPortOp = srcPortOp; opts.srcPort = srcPort; }
-    if (dstPortOp && dstPort) { opts.dstPortOp = dstPortOp; opts.dstPort = dstPort; }
+    if (srcPortSpec) { opts.srcPortSpec = srcPortSpec; if (srcPortSpec.op === 'eq') opts.srcPort = srcPortSpec.port; }
+    if (dstPortSpec) { opts.dstPortSpec = dstPortSpec; if (dstPortSpec.op === 'eq') opts.dstPort = dstPortSpec.port; }
 
     if (aclName) {
       getRouter().addNamedAccessListEntry(aclName, 'extended', action as 'permit' | 'deny', opts);
@@ -289,21 +306,6 @@ export function registerHuaweiACLInterfaceCommands(
   });
 }
 
-function formatACLEntry(entry: any): string {
-  let ruleStr = entry.action;
-  const srcStr = entry.srcIP?.toString();
-  const srcWild = entry.srcWildcard?.toString();
-  if (srcStr && srcStr !== '0.0.0.0') {
-    ruleStr += ` source ${srcStr} ${srcWild}`;
-  }
-  const dstStr = entry.dstIP?.toString();
-  const dstWild = entry.dstWildcard?.toString();
-  if (dstStr && dstStr !== '0.0.0.0') {
-    ruleStr += ` destination ${dstStr} ${dstWild}`;
-  }
-  return ruleStr;
-}
-
 export function registerHuaweiACLDisplayCommands(
   trie: CommandTrie,
   getRouter: () => Router,
@@ -325,7 +327,7 @@ export function registerHuaweiACLDisplayCommands(
       const type = acl.type === 'extended' ? 'Advanced' : 'Basic';
       const lines = [`${type} ACL ${name}, ${acl.entries.length} rule(s)`, `ACL's step is 5`];
       acl.entries.forEach((entry, idx) => {
-        lines.push(` rule ${idx * 5} ${formatACLEntry(entry)}`);
+        lines.push(` rule ${idx * 5} ${formatHuaweiAclEntry(entry)}`);
       });
       return lines.join('\n');
     }
@@ -348,7 +350,7 @@ export function registerHuaweiACLDisplayCommands(
 
     acl.entries.forEach((entry, idx) => {
       const ruleNum = idx * 5;
-      lines.push(` rule ${ruleNum} ${formatACLEntry(entry)}`);
+      lines.push(` rule ${ruleNum} ${formatHuaweiAclEntry(entry)}`);
     });
 
     return lines.join('\n');
@@ -367,7 +369,7 @@ function formatAllACLs(router: Router): string {
     lines.push(`ACL's step is 5`);
     acl.entries.forEach((entry, idx) => {
       const ruleNum = idx * 5;
-      lines.push(` rule ${ruleNum} ${formatACLEntry(entry)}`);
+      lines.push(` rule ${ruleNum} ${formatHuaweiAclEntry(entry)}`);
     });
   }
   lines.push(`Total ${acls.length} ACL(s)`);
@@ -389,7 +391,7 @@ export function runningConfigACL(router: Router): string[] {
     }
     acl.entries.forEach((entry, idx) => {
       const ruleNum = idx * 5;
-      lines.push(` rule ${ruleNum} ${formatACLEntry(entry)}`);
+      lines.push(` rule ${ruleNum} ${formatHuaweiAclEntry(entry, { showCounts: false })}`);
     });
   }
 
