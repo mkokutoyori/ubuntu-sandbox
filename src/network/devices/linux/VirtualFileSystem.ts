@@ -123,6 +123,15 @@ export class VirtualFileSystem {
     this.createCharDev('/dev/zero', 'zero');
     this.createCharDev('/dev/urandom', 'urandom');
 
+    // devpts — /dev/pts/N slave nodes are materialised per-session by
+    // whoever opens a pty (SSH accept, local terminal); ptmx is the
+    // always-present cloning device real Linux seeds at boot.
+    this.mkdirp('/dev/pts', 0o755, 0, 0);
+    this.createCharDev('/dev/pts/ptmx', 'ptmx');
+    // The local console VT is a static device node present from boot,
+    // unlike pty slaves which come and go with sessions.
+    this.createCharDev('/dev/tty1', 'tty');
+
     // Create essential system files
     this.createFileAt('/etc/hostname', 'localhost\n', 0o644, 0, 0);
     this.createFileAt('/etc/crontab',
@@ -148,7 +157,7 @@ export class VirtualFileSystem {
       'DISTRIB_ID=Ubuntu\nDISTRIB_RELEASE=22.04\n' +
       'DISTRIB_CODENAME=jammy\nDISTRIB_DESCRIPTION="Ubuntu 22.04.4 LTS"\n',
       0o644, 0, 0);
-    this.createFileAt('/etc/sudoers', 'root ALL=(ALL:ALL) ALL\n%sudo ALL=(ALL:ALL) ALL\n', 0o440, 0, 0);
+    this.createFileAt('/etc/sudoers', 'root ALL=(ALL:ALL) ALL\n%sudo ALL=(ALL:ALL) ALL\n\n#includedir /etc/sudoers.d\n', 0o440, 0, 0);
     this.createFileAt('/etc/resolv.conf', '', 0o644, 0, 0);
 
     // UFW default config files

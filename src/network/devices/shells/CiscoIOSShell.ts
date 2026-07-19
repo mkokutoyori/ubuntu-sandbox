@@ -402,7 +402,7 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       // (unlike Huawei VRP, which distinguishes the two). Mirror it here
       // purely to satisfy the shared VtySnapshot shape.
       terminalDebugging: this.terminalMonitor,
-      privilegeLevel: this.mode === 'user' ? 1 : 15,
+      privilegeLevel: this.currentPrivilegeLevel,
       historySize: 10,
       cmdHistory: this.cmdHistory,
     };
@@ -411,6 +411,7 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
   /** Apply a session's snapshot onto this shell instance. */
   applyVtyState(s: import('./vty/CliShellSession').VtySnapshot): void {
     this.mode = s.mode as CiscoShellMode;
+    this.currentPrivilegeLevel = s.privilegeLevel;
     this.selectedInterface = s.selectedInterface;
     this.selectedRoutingProto = s.selectedRoutingProto as typeof this.selectedRoutingProto;
     this.selectedTrack = s.selectedTrack;

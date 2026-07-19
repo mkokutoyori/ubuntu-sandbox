@@ -457,6 +457,16 @@ export function showRunningConfig(router: Router): string {
   if (enablePassword) {
     lines.push(`enable password ${renderPasswordField(enablePassword.value, enablePassword.algo, serviceEncryption)}`);
   }
+  const levelStore = router as unknown as {
+    listEnableSecretLevels?: () => ReadonlyArray<{ level: number; value: string; algo: 'plain' | 'md5' | 'sha256' | 'scrypt' | 'type-7' }>;
+    listEnablePasswordLevels?: () => ReadonlyArray<{ level: number; value: string; algo: 'plain' | 'type-7' }>;
+  };
+  for (const e of levelStore.listEnableSecretLevels?.() ?? []) {
+    lines.push(`enable secret level ${e.level} ${renderSecretField(e.value, e.algo)}`);
+  }
+  for (const e of levelStore.listEnablePasswordLevels?.() ?? []) {
+    lines.push(`enable password level ${e.level} ${renderPasswordField(e.value, e.algo, serviceEncryption)}`);
+  }
   for (const [name, on] of router.getServiceFlags()) {
     lines.push(`${on ? '' : 'no '}service ${name}`);
   }

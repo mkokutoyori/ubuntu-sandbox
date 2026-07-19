@@ -58,6 +58,15 @@ const PRIVILEGED_ONLY_SHOW: ReadonlySet<string> = new Set([
 export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
   // ─── State ───────────────────────────────────────────────────────
   protected mode: string = 'user';
+  /**
+   * Real 0-15 privilege level (real IOS model). `mode` stays a simpler
+   * user/privileged/config-* FSM for trie selection and prompt rendering
+   * (`#` iff level 15, `>` otherwise — matching real IOS exactly, where
+   * even privilege 7 still shows `>`), but this field is the single
+   * source of truth for `show privilege`, `enable`/`enable N` escalation,
+   * and `privilege exec level N <command>` gating.
+   */
+  protected currentPrivilegeLevel: number = 1;
   /** Recent commands for `show history` (shared switch + router). */
   protected cmdHistory: string[] = [];
   protected deviceRef: TDevice | null = null;
@@ -258,9 +267,17 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     ctx?: InteractionPlanContext,
   ): CommandInteractionPlan | null {
     const mode = ctx?.mode ?? 'privileged';
-    if (mode !== 'privileged') return null;
     const line = commandLine.trim();
     if (!line) return null;
+
+    if (mode === 'user') {
+      const um = this.userTrie.match(line);
+      if (um.status === 'ok' && um.node?.action && um.matchedKeywords[0]?.toLowerCase() === 'enable') {
+        return this.enableInteractionPlan(um.args, ctx?.device);
+      }
+      return null;
+    }
+    if (mode !== 'privileged') return null;
 
     const m = this.privilegedTrie.match(line);
     if (m.status !== 'ok' || !m.node) return null;
@@ -284,6 +301,43 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       }
     }
     return null;
+  }
+
+  /**
+   * `enable` / `enable N` — a real IOS "Password:" prompt gated by
+   * `enable secret` (level 15) or `enable secret|password level N`
+   * (intermediate levels), with `enable secret` winning silently when
+   * both exist at the same level (real IOS behaviour — no warning). When
+   * nothing is configured for the target level, real IOS asks nothing
+   * and grants immediately — modeled here by returning null, which lets
+   * the terminal fall through to the underlying `enable` trie handler
+   * (the same one non-interactive callers like `device.executeCommand()`
+   * hit directly).
+   */
+  private enableInteractionPlan(args: string[], deviceCtx: unknown): CommandInteractionPlan | null {
+    const lvl = args[0] ? parseInt(args[0], 10) : 15;
+    if (!Number.isFinite(lvl) || lvl < 0 || lvl > 15) return null;
+    const dev = deviceCtx as {
+      getEnableSecretForLevel?: (l: number) => { value: string; algo: string } | null;
+      getEnablePasswordForLevel?: (l: number) => { value: string; algo: string } | null;
+    } | undefined;
+    const secret = dev?.getEnableSecretForLevel?.(lvl) ?? null;
+    const password = secret ? null : (dev?.getEnablePasswordForLevel?.(lvl) ?? null);
+    const gate = secret ?? password;
+    if (!gate) return null;
+    return {
+      steps: [
+        {
+          kind: 'password',
+          prompt: 'Password: ',
+          validate: (value) => {
+            if (value === gate.value) return { valid: true };
+            return { valid: false, errorMessage: '% Access denied', maxRetries: 0 };
+          },
+        },
+        { kind: 'run', run: async (rt) => { await rt.exec(`enable ${lvl}`); } },
+      ],
+    };
   }
 
   private eraseInteractionPlan(): CommandInteractionPlan {
@@ -628,6 +682,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     if (lower === 'logout' && (this.mode === 'user' || this.mode === 'privileged')) return 'Connection closed.';
     if (lower === 'disable' && this.mode === 'privileged') {
       this.mode = 'user';
+      this.currentPrivilegeLevel = 1;
       return '';
     }
 
@@ -715,7 +770,67 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     return null;
   }
 
+  /**
+   * `privilege exec level N <command>` — an intermediate-level session
+   * (mode stays 'user' for levels 1-14, real IOS never shows '#' below
+   * 15) additionally gets the exact privileged commands explicitly
+   * granted at or below its level. Dispatches through the privileged
+   * trie (the only one with the full parsing/behaviour for that
+   * command) so a granted command works identically to how level 15
+   * runs it — not a stub. Returns null when nothing is granted, so the
+   * caller falls back to the normal "command not found" error, exactly
+   * matching real IOS: a command outside your privilege level simply
+   * isn't in your visible command tree.
+   */
+  private tryGrantedPrivilegeCommand(cmdPart: string): string | null {
+    if (this.mode !== 'user' || this.currentPrivilegeLevel <= 1 || this.currentPrivilegeLevel >= 15) return null;
+    const rules = (this.d() as unknown as { _ciscoPrivilegeRules?: Map<string, number> })._ciscoPrivilegeRules;
+    if (!rules || rules.size === 0) return null;
+    const lower = cmdPart.trim().toLowerCase();
+    let matched = false;
+    for (const [key, level] of rules) {
+      if (!key.startsWith('exec ')) continue;
+      if (level > this.currentPrivilegeLevel) continue;
+      const target = key.slice(5);
+      if (lower === target || lower.startsWith(target + ' ')) { matched = true; break; }
+    }
+    if (!matched) return null;
+    const privResult = this.privilegedTrie.match(cmdPart);
+    if (privResult.status === 'ok') {
+      return privResult.node?.action ? privResult.node.action(privResult.args, cmdPart) : '';
+    }
+    return null;
+  }
+
+  /**
+   * `show running-config`/`show startup-config`/`show tech-support`/
+   * `show archive` are privileged-only by design (`PRIVILEGED_ONLY_SHOW`)
+   * — deliberately never copied into the user trie. At level 1 that's
+   * fine (the user trie's own "not a real subcommand" handling already
+   * covers it), but at an intermediate level the user trie's generic
+   * `show <unrecognized>` fallback answers "% Incomplete command." (it
+   * assumes any unmatched show argument is just not-yet-fully-typed),
+   * which would leak the *existence* of the command. Real IOS shows the
+   * identical "unknown command" response for a privilege-gated command as
+   * for one that plain doesn't exist — this makes the simulator match.
+   */
+  private isPrivilegedOnlyShowCommand(cmdPart: string): boolean {
+    const m = /^show\s+(\S+)/i.exec(cmdPart.trim());
+    if (!m) return false;
+    const sub = m[1].toLowerCase();
+    for (const k of PRIVILEGED_ONLY_SHOW) {
+      if (k.startsWith(sub) || sub.startsWith(k)) return true;
+    }
+    return false;
+  }
+
   protected executeOnTrie(cmdPart: string): string {
+    if (this.mode === 'user' && this.currentPrivilegeLevel > 1 && this.currentPrivilegeLevel < 15) {
+      const granted = this.tryGrantedPrivilegeCommand(cmdPart);
+      if (granted !== null) return granted;
+      if (this.isPrivilegedOnlyShowCommand(cmdPart)) return CISCO_ERRORS.INVALID_INPUT;
+    }
+
     const trie = this.getActiveTrie();
     const result = trie.match(cmdPart);
 
@@ -927,7 +1042,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       return cfg.length > 0 ? `Building configuration...\n${cfg}\nend` : 'Building configuration...';
     });
     trie.register('show privilege', 'Display current privilege level', () =>
-      showPrivilege(this.mode === 'user' ? 1 : 15));
+      showPrivilege(this.currentPrivilegeLevel));
     trie.register('show history', 'Display command history', () =>
       this.cmdHistory.slice(-this.terminalHistorySize).join('\n'));
     trie.register('clear history', 'Clear command history buffer', () => {
@@ -1109,7 +1224,16 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       if (!Number.isFinite(lvl) || lvl < 0 || lvl > 15) {
         return "% Invalid input detected at '^' marker.";
       }
-      this.mode = 'privileged';
+      // Authentication itself (real IOS "Password:" prompt against
+      // `enable secret` / `enable password level N`) happens BEFORE this
+      // handler runs, via interactionPlanFor()'s `enable` plan — this is
+      // only ever reached once the password has already been verified
+      // (or none was configured for the target level, matching real IOS's
+      // "no password set = no gate" behaviour). Direct, non-interactive
+      // callers (device.executeCommand('enable') in tests) go straight
+      // here too, which is correct: nothing could have prompted them.
+      this.currentPrivilegeLevel = lvl;
+      this.mode = lvl === 15 ? 'privileged' : 'user';
       return '';
     });
 
@@ -1128,6 +1252,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
 
     this.privilegedTrie.register('disable', 'Return to user EXEC mode', () => {
       this.mode = 'user';
+      this.currentPrivilegeLevel = 1;
       return '';
     });
 
@@ -2071,9 +2196,10 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       return '';
     });
     this.configTrie.registerGreedy('enable secret', 'Set enable secret', (args) => {
-      const dev = this.d() as unknown as { _setEnableSecret?: (s: string, algo: 'plain' | 'md5' | 'sha256' | 'scrypt' | 'type-7') => void };
+      const dev = this.d() as unknown as { _setEnableSecretForLevel?: (level: number, s: string, algo: 'plain' | 'md5' | 'sha256' | 'scrypt' | 'type-7') => void };
       let algo: 'plain' | 'md5' | 'sha256' | 'scrypt' | 'type-7' = 'md5';
       let secret = '';
+      let level = 15;
       // Cleartext forms (0, level N, or bare) are what `security passwords
       // min-length` validates — a pasted hash (5/7/8/9) is exempt, same as
       // `username ... secret` (CiscoSecurityCommands.ts).
@@ -2084,6 +2210,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       else if (args[0] === '8') { algo = 'sha256'; secret = args.slice(1).join(' '); }
       else if (args[0] === '9') { algo = 'scrypt'; secret = args.slice(1).join(' '); }
       else if (args[0] === 'level' && /^\d+$/.test(args[1] ?? '')) {
+        level = parseInt(args[1], 10);
         secret = args.slice(2).join(' '); plaintextEntered = secret;
       } else { secret = args.join(' '); plaintextEntered = secret; }
       if (secret === '') return '% Incomplete command.';
@@ -2091,20 +2218,24 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       if (plaintextEntered !== undefined && minLength && plaintextEntered.length < minLength) {
         return `Password too short - must be at least ${minLength} characters. Password configuration failed`;
       }
-      dev._setEnableSecret?.(secret, algo);
+      dev._setEnableSecretForLevel?.(level, secret, algo);
       return '';
     });
     this.configTrie.registerGreedy('enable password', 'Set enable password', (args) => {
       const dev = this.d() as unknown as {
-        _setEnablePassword?: (p: string, algo: 'plain' | 'type-7') => void;
+        _setEnablePasswordForLevel?: (level: number, p: string, algo: 'plain' | 'type-7') => void;
         getServiceFlags?: () => ReadonlyMap<string, boolean>;
       };
       let algo: 'plain' | 'type-7' = 'plain';
       let password = '';
+      let level = 15;
       let plaintextEntered: string | undefined;
       if (args[0] === '0') { algo = 'plain'; password = args.slice(1).join(' '); plaintextEntered = password; }
       else if (args[0] === '7') { algo = 'type-7'; password = args.slice(1).join(' '); }
-      else { password = args.join(' '); plaintextEntered = password; }
+      else if (args[0] === 'level' && /^\d+$/.test(args[1] ?? '')) {
+        level = parseInt(args[1], 10);
+        password = args.slice(2).join(' '); plaintextEntered = password;
+      } else { password = args.join(' '); plaintextEntered = password; }
       if (password === '') return '% Incomplete command.';
       const minLength = getSecurityConfig(this.d()).passwords.minLength;
       if (plaintextEntered !== undefined && minLength && plaintextEntered.length < minLength) {
@@ -2112,9 +2243,9 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       }
       if (algo === 'plain' && dev.getServiceFlags?.().get('password-encryption') === true) {
         const salt = parseInt(_md5Hex(`cisco-type7:${password}`).slice(0, 1), 16);
-        dev._setEnablePassword?.(_encryptType7(password, salt), 'type-7');
+        dev._setEnablePasswordForLevel?.(level, _encryptType7(password, salt), 'type-7');
       } else {
-        dev._setEnablePassword?.(password, algo);
+        dev._setEnablePasswordForLevel?.(level, password, algo);
       }
       return '';
     });

@@ -56,6 +56,45 @@ export abstract class Equipment {
     this._enablePassword = value === '' ? null : { value, algo };
   }
 
+  // Per-level `enable secret level N` / `enable password level N` (N != 15
+  // — level 15 always uses the fields above, matching real IOS where the
+  // bare/unqualified form and `level 15` are the same thing).
+  private _enableSecretLevels: Map<number, { value: string; algo: 'plain' | 'md5' | 'sha256' | 'scrypt' | 'type-7' }> = new Map();
+  private _enablePasswordLevels: Map<number, { value: string; algo: 'plain' | 'type-7' }> = new Map();
+
+  getEnableSecretForLevel(level: number): { value: string; algo: 'plain' | 'md5' | 'sha256' | 'scrypt' | 'type-7' } | null {
+    if (level === 15) return this.getEnableSecret();
+    return this._enableSecretLevels.get(level) ?? null;
+  }
+  _setEnableSecretForLevel(level: number, value: string, algo: 'plain' | 'md5' | 'sha256' | 'scrypt' | 'type-7'): void {
+    if (level === 15) { this._setEnableSecret(value, algo); return; }
+    if (value === '') this._enableSecretLevels.delete(level);
+    else this._enableSecretLevels.set(level, { value, algo });
+  }
+
+  getEnablePasswordForLevel(level: number): { value: string; algo: 'plain' | 'type-7' } | null {
+    if (level === 15) return this.getEnablePassword();
+    return this._enablePasswordLevels.get(level) ?? null;
+  }
+  _setEnablePasswordForLevel(level: number, value: string, algo: 'plain' | 'type-7'): void {
+    if (level === 15) { this._setEnablePassword(value, algo); return; }
+    if (value === '') this._enablePasswordLevels.delete(level);
+    else this._enablePasswordLevels.set(level, { value, algo });
+  }
+
+  /** All configured per-level (non-15) enable password entries — used by `show running-config`. */
+  listEnablePasswordLevels(): ReadonlyArray<{ level: number; value: string; algo: 'plain' | 'type-7' }> {
+    return [...this._enablePasswordLevels.entries()]
+      .sort(([a], [b]) => a - b)
+      .map(([level, v]) => ({ level, ...v }));
+  }
+  /** All configured per-level (non-15) enable secret entries — used by `show running-config`. */
+  listEnableSecretLevels(): ReadonlyArray<{ level: number; value: string; algo: 'plain' | 'md5' | 'sha256' | 'scrypt' | 'type-7' }> {
+    return [...this._enableSecretLevels.entries()]
+      .sort(([a], [b]) => a - b)
+      .map(([level, v]) => ({ level, ...v }));
+  }
+
   getUptimeMs(): number { return Math.max(0, Date.now() - this.bootedAtMs); }
   getBootedAtMs(): number { return this.bootedAtMs; }
 

@@ -58,6 +58,117 @@ export class CiscoTerminalSession extends CLITerminalSession {
   getSessionType(): SessionType { return 'cisco'; }
   getTheme(): TerminalTheme { return CISCO_THEME; }
 
+  /**
+   * Real Cisco console login gate: when `line console 0` is configured
+   * with `login local`, every new console connection (this terminal
+   * window opening = plugging into the physical console) must
+   * authenticate before reaching a command prompt — "User Access
+   * Verification" / "Username:" / "Password:", 3 failed attempts closes
+   * the line. A factory-default device (no `line console 0 / login`
+   * configured at all) skips this entirely, preserving the existing
+   * "double-click opens straight to a prompt" behaviour every other test
+   * in the suite already depends on.
+   */
+  override async init(): Promise<void> {
+    await super.init();
+    this.maybeStartConsoleLogin();
+  }
+
+  private maybeStartConsoleLogin(): void {
+    const shell = (this.device as unknown as { getShell?: () => unknown }).getShell?.();
+    const cfg = (shell as {
+      _getConsoleLineConfig?: () => { login: 'password' | 'local' | 'none' | null } | null;
+    } | undefined)?._getConsoleLineConfig?.();
+    // Scope: `login local` (multi-account Username:/Password:) only — a
+    // bare `login` (single shared line password, no username prompt) is a
+    // real, distinct IOS mode not exercised by this scenario; left as a
+    // disclosed gap rather than faked.
+    if (!cfg || cfg.login !== 'local') return;
+    this.startFlowFromSteps(this.buildConsoleLoginSteps(), '');
+  }
+
+  private verifyConsoleLogin(username: string, password: string): boolean {
+    const dev = this.device as unknown as {
+      getCredentialStore?: () => { authenticate: (u: string, p: string) => boolean };
+    };
+    return dev.getCredentialStore?.().authenticate(username, password) ?? false;
+  }
+
+  private lookupAccountPrivilege(username: string): number {
+    const dev = this.device as unknown as {
+      getCredentialStore?: () => { get: (u: string) => { privilege: number } | undefined };
+    };
+    return dev.getCredentialStore?.().get(username)?.privilege ?? 1;
+  }
+
+  /**
+   * "User Access Verification" console login, real IOS semantics: prompt
+   * Username: then Password:, `% Login invalid` on any mismatch (no
+   * distinction between "no such user" and "wrong password" — a security
+   * property, not an oversight) looping back to Username: up to 3 times,
+   * then `% Bad passwords` and the line closes. Built with the richer
+   * text/password/branch/execute step vocabulary (not the vendor-neutral
+   * CommandInteractionPlan) because the retry loop needs real branching —
+   * mirrors the existing outbound-SSH interactive flow's construction.
+   */
+  private buildConsoleLoginSteps(): InteractiveStep[] {
+    return [
+      /* 0 */ { type: 'output', outputLines: ['User Access Verification', ''] },
+      /* 1 */ { type: 'text', prompt: 'Username: ', allowEmpty: true, storeAs: 'console_login_username' },
+      /* 2 */ {
+        type: 'password',
+        prompt: 'Password: ',
+        mask: 'hidden',
+        storeAs: 'console_login_password',
+        validation: (pwd, ctx) => {
+          const username = (ctx.values.get('console_login_username') ?? '').trim();
+          const ok = this.verifyConsoleLogin(username, pwd);
+          const attempts = parseInt(ctx.values.get('console_login_attempts') ?? '0', 10) + (ok ? 0 : 1);
+          ctx.values.set('console_login_attempts', String(attempts));
+          ctx.values.set('console_login_ok', ok ? '1' : '0');
+          if (ok) ctx.values.set('console_login_account', username);
+          // Always advance -- looping/closing is driven explicitly by the
+          // branch step below, not the engine's own retry mechanism.
+          return { valid: true };
+        },
+      },
+      /* 3 */ {
+        type: 'branch',
+        // On success, skip straight to the success handler. On ANY
+        // failure -- including the 3rd -- always show "% Login invalid"
+        // first (step 9); step 10 then decides whether to loop back to
+        // Username: or escalate to "% Bad passwords".
+        predicate: (ctx) => (ctx.values.get('console_login_ok') === '1' ? 4 : 9),
+      },
+      /* 4 */ {
+        type: 'execute',
+        action: async (ctx) => {
+          const username = ctx.values.get('console_login_account') ?? '';
+          const privilege = this.lookupAccountPrivilege(username);
+          if (this.vty) {
+            this.vty.state.mode = privilege === 15 ? 'privileged' : 'user';
+            this.vty.state.privilegeLevel = privilege;
+          }
+        },
+      },
+      /* 5 */ { type: 'branch', predicate: () => 11 },
+      /* 6 */ { type: 'output', outputLines: ['% Bad passwords'] },
+      /* 7 */ { type: 'execute', action: async () => { this._onRequestClose?.(); } },
+      /* 8 */ { type: 'branch', predicate: () => 11 },
+      /* 9 */ { type: 'output', outputLines: ['% Login invalid'] },
+      /* 10 */ {
+        type: 'branch',
+        predicate: (ctx) => {
+          const attempts = parseInt(ctx.values.get('console_login_attempts') ?? '0', 10);
+          return attempts >= 3 ? 6 : 1;
+        },
+      },
+      // Steps 5 and 8 branch to index 11 == steps.length, ending the flow
+      // immediately (InteractiveFlowEngine.isComplete is currentIndex >=
+      // steps.length) without an extra no-op step.
+    ];
+  }
+
   protected override prepareAsRemoteUser(_user: string): void {
     if (this.vty) {
       this.vty.state.mode = 'privileged';
@@ -160,7 +271,7 @@ export class CiscoTerminalSession extends CLITerminalSession {
    * mode is supplied here so plans stay privileged-EXEC-only.
    */
   protected override interactionPlanContext() {
-    return { mode: this.vty?.state.mode ?? 'user' };
+    return { mode: this.vty?.state.mode ?? 'user', device: this.device };
   }
 
   private debugJob: AsyncJobHandle | null = null;

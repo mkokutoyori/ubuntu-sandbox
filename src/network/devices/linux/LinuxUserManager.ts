@@ -14,6 +14,7 @@
 
 import { VirtualFileSystem } from './VirtualFileSystem';
 import { uptimeHeader } from './system/SystemInfo';
+import { loadSudoPolicy } from './iam/SudoPolicyEngine';
 import type { IEventBus } from '@/events/EventBus';
 import { GecosInfo } from './iam/GecosInfo';
 import {
@@ -375,7 +376,7 @@ export class LinuxUserManager {
     return undefined;
   }
 
-  usermod(username: string, opts: { s?: string; d?: string; m?: boolean; aG?: string; L?: boolean; U?: boolean; g?: string }): string {
+  usermod(username: string, opts: { s?: string; d?: string; m?: boolean; aG?: string; G?: string; L?: boolean; U?: boolean; g?: string }): string {
     const user = this.users.get(username);
     if (!user) return `usermod: user '${username}' does not exist`;
 
@@ -396,6 +397,33 @@ export class LinuxUserManager {
     if (opts.U && user.locked) {
       user.unlock();
       this.publish({ topic: 'linux.iam.user.lock-state-changed', payload: { deviceId: this.deviceId, username, uid: user.uid, locked: false } });
+    }
+
+    if (opts.G !== undefined) {
+      // `-G` (without `-a`) *replaces* the supplementary-group list: drop
+      // membership from every group not named here (the primary group is
+      // untouched — it isn't a supplementary membership at all).
+      const wanted = new Set(opts.G.split(',').map((g) => g.trim()).filter(Boolean));
+      for (const grp of this.groups.values()) {
+        if (grp.gid === user.gid) continue;
+        if (grp.hasMember(username) && !wanted.has(grp.name) && grp.removeMember(username)) {
+          changed.push('groups');
+          this.publish({
+            topic: 'linux.iam.group.membership-changed',
+            payload: { deviceId: this.deviceId, groupName: grp.name, gid: grp.gid, username, action: 'removed' },
+          });
+        }
+      }
+      for (const gName of wanted) {
+        const grp = this.groups.get(gName);
+        if (grp && grp.addMember(username)) {
+          changed.push('groups');
+          this.publish({
+            topic: 'linux.iam.group.membership-changed',
+            payload: { deviceId: this.deviceId, groupName: grp.name, gid: grp.gid, username, action: 'added' },
+          });
+        }
+      }
     }
 
     if (opts.aG) {
@@ -587,6 +615,10 @@ export class LinuxUserManager {
    */
   checkPassword(username: string, password: string): boolean {
     const account = this.users.get(username);
+    // `usermod -L` / `passwd -l` prefixes the shadow hash with `!` —
+    // no password, however correct, authenticates against it until
+    // unlocked. Distinct from (and checked ahead of) the faillock tally.
+    if (account?.locked) return false;
     // pam_faillock denies every attempt — even the correct password — once
     // an account has tripped the lockout threshold, until it's reset.
     if (account && this.isAccountLockedOut(username)) return false;
@@ -1054,26 +1086,19 @@ export class LinuxUserManager {
     return '';
   }
 
+  /** Real sudoers-rule resolution (aliases, host/runas matching, fail-
+   *  closed on a broken chain) — not a substring search over raw files. */
   sudoList(username: string): string {
     const user = this.users.get(username);
     if (!user) return `User ${username} is not allowed to run sudo`;
-    const groups = this.getUserGroups(username);
-    const isSudo = groups.some(g => g.name === 'sudo');
-    if (isSudo || username === 'root') {
-      return `User ${username} may run the following commands on this host:\n    (ALL : ALL) ALL`;
+    const hostname = (this.vfs.readFile('/etc/hostname') ?? 'localhost').trim();
+    const actor = { user: username, groups: this.getUserGroups(username).map((g) => g.name) };
+    const load = loadSudoPolicy(this.vfs);
+    if (!load.ok || !load.engine || !load.engine.hasAnyAccess(actor, hostname, [])) {
+      return `User ${username} is not allowed to run sudo`;
     }
-    // Check sudoers.d
-    const sudoersDir = this.vfs.listDirectory('/etc/sudoers.d');
-    if (sudoersDir) {
-      for (const entry of sudoersDir) {
-        if (entry.name === '.' || entry.name === '..') continue;
-        const content = this.vfs.readFile(`/etc/sudoers.d/${entry.name}`);
-        if (content && content.includes(username)) {
-          return `User ${username} may run the following commands on this host:\n    ${content.trim()}`;
-        }
-      }
-    }
-    return `User ${username} is not allowed to run sudo`;
+    const lines = load.engine.renderMatchingRules(actor, hostname, []);
+    return `User ${username} may run the following commands on ${hostname}:\n${lines.map((l) => `    ${l}`).join('\n')}`;
   }
 
   who(): string {

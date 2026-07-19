@@ -44,7 +44,7 @@ import {
 } from '../core/types';
 
 // Linux kernel / userspace
-import { LinuxCommandExecutor } from './linux/LinuxCommandExecutor';
+import { LinuxCommandExecutor, type SudoAuthorization } from './linux/LinuxCommandExecutor';
 import { sampleVmstat } from './linux/system/Vmstat';
 import { sampleMpstat, mpstatBanner, type MpstatArgs } from './linux/system/Mpstat';
 import { sampleIostatCpu, sampleIostatDevices, iostatBanner, type IostatArgs } from './linux/system/Iostat';
@@ -252,6 +252,11 @@ export abstract class LinuxMachine extends EndHost
     this.sessionTable.attachUtmp(utmpSync);
     this.utmpSync = utmpSync;
     this.executor.setUtmpSync(utmpSync);
+    // Real Linux establishes the tty1 console login at boot (agetty/login),
+    // not lazily on the first `who`/`w`/`last` invocation — materialising
+    // it here keeps /var/log/wtmp's entry count stable across the boot
+    // sequence instead of growing as a side effect of a monitoring command.
+    this.ensureLocalConsoleSession();
     const logindSync = new LogindStateSync(this.executor.vfs);
     logindSync.bootstrap();
     this.logindSync = logindSync;
@@ -819,6 +824,8 @@ export abstract class LinuxMachine extends EndHost
         user, uid, sshdPid: 0,
         fromIp, fromHost,
       });
+      this.materializePtsNode(session.tty, uid, gid);
+      this.executor.lastlog.record(user, fromIp, session.tty);
       const sshdMasterPid = this.executor.processMgr.list({ comm: 'sshd' })
         .find((p) => p.ppid === 1)?.pid ?? 1;
       const sshdChild = this.executor.processMgr.spawn({
@@ -1023,7 +1030,9 @@ export abstract class LinuxMachine extends EndHost
   private ensureLocalConsoleSession(): void {
     const user = this.executor.userMgr.currentUser;
     const uid = this.executor.userMgr.getUser(user)?.uid ?? 0;
+    const existed = this.sessionTable.list().some((s) => s.tty === 'tty1');
     this.sessionTable.ensureConsoleSession(user, uid);
+    if (!existed) this.executor.lastlog.record(user, '', 'tty1');
   }
 
   /**
@@ -1076,6 +1085,23 @@ export abstract class LinuxMachine extends EndHost
     return null;
   }
 
+  /** Materialise `/dev/pts/N` for a newly opened pty session — `ls
+   *  /dev/pts/` (excluding ptmx) is real Linux's own way of counting
+   *  active pseudo-terminals, and `who`/`w` must agree with it. */
+  private materializePtsNode(tty: string, uid: number, gid: number): void {
+    if (!tty.startsWith('pts/')) return;
+    // The devpts filesystem, not the logging-in user, creates the slave
+    // node — real Linux never requires write access to /dev/pts itself
+    // to get a pty. Create as root, then hand ownership to the session.
+    const inode = this.executor.vfs.createFileAt(`/dev/${tty}`, '', 0o620, 0, 0);
+    if (inode) this.executor.vfs.chown(`/dev/${tty}`, uid, gid);
+  }
+
+  private removePtsNode(tty: string): void {
+    if (!tty.startsWith('pts/')) return;
+    this.executor.vfs.deleteFile(`/dev/${tty}`);
+  }
+
   private buildLoginctlAction(): import('./linux/network/loginctlFormatter').LoginctlSessionAction {
     const findSession = (sessionId: string) => {
       const sessions = this.sessionTable.list();
@@ -1093,6 +1119,7 @@ export abstract class LinuxMachine extends EndHost
       if (s.shellPid) this.executor.processMgr.kill(s.shellPid, signal);
       if (s.sshdPid) this.executor.processMgr.kill(s.sshdPid, signal);
       this.sessionTable.close(s.tty, 'admin');
+      this.removePtsNode(s.tty);
       this.dropLogindSession(sessionId, s.uid);
       this.emitSessionClosedLog(s.user, sshdPid, sessionId);
       return { ok: true };
@@ -1704,9 +1731,14 @@ export abstract class LinuxMachine extends EndHost
     if (!trimmed) return '';
 
     // Session-table views (`w`, `who`, `last`) override the legacy
-    // user-manager output because the session table is the live truth.
-    const sessionView = this.renderSessionView(trimmed);
-    if (sessionView !== null) return sessionView;
+    // user-manager output because the session table is the live truth —
+    // but only for a bare invocation. `who | wc -l` etc. must still go
+    // through the bash interpreter's real pipe/redirect machinery, or
+    // the pipe/flag tokens after `who` get fed to who's own arg parser.
+    if (!LinuxMachine.hasCompositeSyntax(trimmed) && !this.hasShellConstructs(trimmed)) {
+      const sessionView = this.renderSessionView(trimmed);
+      if (sessionView !== null) return sessionView;
+    }
 
     if (!this.containsNetworkCommand(trimmed)) {
       return this.executor.execute(trimmed);
@@ -1821,8 +1853,17 @@ export abstract class LinuxMachine extends EndHost
     run: () => Promise<string> | string,
   ): Promise<string> {
     const userMgr = this.executor.userMgr;
-    if (isSudo && !this.executor.canSudo()) {
-      return `${userMgr.currentUser} is not in the sudoers file. This incident will be reported.`;
+    let auth: SudoAuthorization | null = null;
+    if (isSudo) {
+      auth = this.executor.authorizeSudo(firstCmd, args, 'root');
+      if (auth.reason === 'not-in-sudoers' || auth.reason === 'unknown-target-user') {
+        this.executor.writeSudoAuditLine('not-in-sudoers', auth, [firstCmd, ...args].join(' '));
+        return `${auth.invokingUser} is not in the sudoers file. This incident will be reported.`;
+      }
+      if (auth.reason === 'command-not-allowed') {
+        this.executor.writeSudoAuditLine('command-not-allowed', auth, [firstCmd, ...args].join(' '));
+        return `Sorry, user ${auth.invokingUser} is not allowed to execute '${[firstCmd, ...args].join(' ')}' as ${auth.runasUser} on ${auth.hostname}.`;
+      }
     }
     const savedUser = isSudo
       ? { user: userMgr.currentUser, uid: userMgr.currentUid, gid: userMgr.currentGid }
@@ -1831,6 +1872,7 @@ export abstract class LinuxMachine extends EndHost
       userMgr.currentUser = 'root';
       userMgr.currentUid = 0;
       userMgr.currentGid = 0;
+      this.executor.writeSudoAuditLine('success', auth!, [firstCmd, ...args].join(' '));
     }
     try {
       const actor = {
@@ -3141,6 +3183,14 @@ export abstract class LinuxMachine extends EndHost
     if (session.disposed) return this.writeFileFromEditor(path, content);
     const absPath = this.executor.vfs.normalizePath(path, session.cwd);
     return this.executor.vfs.writeFile(absPath, content, session.uid, session.gid, session.umask);
+  }
+
+  /** Force a path to root:root 0440 — visudo's own guarantee for every
+   *  sudoers-family file it installs, independent of the editing
+   *  session's umask. */
+  setSudoersFilePermissions(path: string): void {
+    this.executor.vfs.chown(path, 0, 0);
+    this.executor.vfs.chmod(path, 0o440);
   }
 
   /** Per-session variant of deleteFileFromEditor (used by editor swap/lock file cleanup). */

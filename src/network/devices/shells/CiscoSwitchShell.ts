@@ -158,7 +158,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       terminalWidth: this.terminalWidth,
       terminalMonitor: this.terminalMonitor,
       terminalDebugging: this.terminalMonitor,
-      privilegeLevel: this.mode === 'user' ? 1 : 15,
+      privilegeLevel: this.currentPrivilegeLevel,
       historySize: this.terminalHistorySize,
       cmdHistory: [...this.cmdHistory],
     };
@@ -166,6 +166,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
 
   applyVtyState(s: import('./vty/CliShellSession').VtySnapshot): void {
     this.mode = s.mode as CLIMode;
+    this.currentPrivilegeLevel = s.privilegeLevel;
     this.selectedInterface = s.selectedInterface;
     this.selectedInterfaceRange = [...s.selectedInterfaceRange];
     this.selectedVlan = s.selectedVlan;

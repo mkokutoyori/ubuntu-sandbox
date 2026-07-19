@@ -38,7 +38,7 @@ function parseExpireDays(value: string | undefined): number | undefined {
 
 export function cmdUsermod(ctx: ShellContext, args: string[]): string {
   let s: string | undefined, d: string | undefined, m = false;
-  let aG: string | undefined, L = false, U = false;
+  let groupsList: string | undefined, appendGroups = false, L = false, U = false;
   let username = '';
 
   for (let i = 0; i < args.length; i++) {
@@ -46,8 +46,12 @@ export function cmdUsermod(ctx: ShellContext, args: string[]): string {
       case '-s': case '--shell':   s = args[++i]; break;
       case '-d': case '--home':    d = args[++i]; break;
       case '-m': case '--move-home': m = true; break;
-      case '-aG': aG = args[++i]; break;
-      case '-G': case '--groups':  aG = args[++i]; break;
+      // `-a` only ever modifies `-G`: append to the supplementary groups
+      // instead of replacing the whole list. `-aG` is the common combined
+      // short-flag form of `-a -G`.
+      case '-a': case '--append':  appendGroups = true; break;
+      case '-aG': groupsList = args[++i]; appendGroups = true; break;
+      case '-G': case '--groups':  groupsList = args[++i]; break;
       case '-L': case '--lock':    L = true; break;
       case '-U': case '--unlock':  U = true; break;
       default:
@@ -57,7 +61,11 @@ export function cmdUsermod(ctx: ShellContext, args: string[]): string {
   }
 
   if (!username) return 'usermod: missing username';
-  return ctx.userMgr.usermod(username, { s, d, m, aG, L, U });
+  return ctx.userMgr.usermod(username, {
+    s, d, m, L, U,
+    aG: appendGroups ? groupsList : undefined,
+    G: appendGroups ? undefined : groupsList,
+  });
 }
 
 export function cmdUserdel(ctx: ShellContext, args: string[]): string {
