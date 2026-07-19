@@ -24,7 +24,7 @@ const KEYWORDS = new Set([
 export const BUILTIN_FUNCS = new Set([
   'length', 'substr', 'index', 'split', 'sub', 'gsub', 'match', 'sprintf',
   'sin', 'cos', 'atan2', 'exp', 'log', 'sqrt', 'int', 'rand', 'srand',
-  'tolower', 'toupper', 'system', 'close', 'fflush', 'gensub',
+  'tolower', 'toupper', 'system', 'close', 'fflush', 'gensub', 'strtonum',
 ]);
 
 const THREE = ['**='];

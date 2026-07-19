@@ -1,6 +1,6 @@
 ============================================================
 Shell debug transcript — linux-pc-networking
-Generated: 2026-07-09T17:08:20.199Z
+Generated: 2026-07-18T20:38:33.702Z
 Engine: linux
 host=L-PC-NET-DBG (linux-pc) — focus: réseau (ip/ping/route/dns/sockets/firewall)
 Total commands: 302
@@ -154,7 +154,7 @@ $ [20/302]> ip address
   
   2: eth0: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
       link/ether 02:00:00:00:00:01 brd ff:ff:ff:ff:ff:ff
-      inet6 fe80::ff:fe00:1%eth0/64 scope link
+      inet6 fe80::ff:fe00:1/64 scope link
          valid_lft forever preferred_lft forever
   
   3: eth1: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
@@ -175,7 +175,7 @@ $ [21/302]> ip address show
   
   2: eth0: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
       link/ether 02:00:00:00:00:01 brd ff:ff:ff:ff:ff:ff
-      inet6 fe80::ff:fe00:1%eth0/64 scope link
+      inet6 fe80::ff:fe00:1/64 scope link
          valid_lft forever preferred_lft forever
   
   3: eth1: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
@@ -219,7 +219,7 @@ $ [24/302]> ip -6 address show
   
   2: eth0: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
       link/ether 02:00:00:00:00:01 brd ff:ff:ff:ff:ff:ff
-      inet6 fe80::ff:fe00:1%eth0/64 scope link
+      inet6 fe80::ff:fe00:1/64 scope link
          valid_lft forever preferred_lft forever
   
   3: eth1: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
@@ -234,7 +234,7 @@ $ [24/302]> ip -6 address show
 $ [25/302]> ip addr show eth0
   2: eth0: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
       link/ether 02:00:00:00:00:01 brd ff:ff:ff:ff:ff:ff
-      inet6 fe80::ff:fe00:1%eth0/64 scope link
+      inet6 fe80::ff:fe00:1/64 scope link
          valid_lft forever preferred_lft forever
 
 $ [26/302]> ip addr add 192.168.10.2/24 dev eth0
@@ -244,7 +244,7 @@ $ [27/302]> ip addr show eth0
   2: eth0: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
       link/ether 02:00:00:00:00:01 brd ff:ff:ff:ff:ff:ff
       inet 192.168.10.2/24 brd 192.168.10.255 scope global eth0
-      inet6 fe80::ff:fe00:1%eth0/64 scope link
+      inet6 fe80::ff:fe00:1/64 scope link
          valid_lft forever preferred_lft forever
 
 $ [28/302]> ip -br addr show eth0
@@ -262,7 +262,7 @@ $ [30/302]> ip addr show eth0
       link/ether 02:00:00:00:00:01 brd ff:ff:ff:ff:ff:ff
       inet 192.168.10.2/24 brd 192.168.10.255 scope global eth0
       inet 192.168.10.3/24 brd 192.168.10.255 scope global secondary eth0
-      inet6 fe80::ff:fe00:1%eth0/64 scope link
+      inet6 fe80::ff:fe00:1/64 scope link
          valid_lft forever preferred_lft forever
 
 $ [31/302]> ip addr del 192.168.10.3/24 dev eth0
@@ -272,7 +272,7 @@ $ [32/302]> ip addr show eth0
   2: eth0: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
       link/ether 02:00:00:00:00:01 brd ff:ff:ff:ff:ff:ff
       inet 192.168.10.2/24 brd 192.168.10.255 scope global eth0
-      inet6 fe80::ff:fe00:1%eth0/64 scope link
+      inet6 fe80::ff:fe00:1/64 scope link
          valid_lft forever preferred_lft forever
 
 $ [33/302]> ip addr add 10.0.0.1/8 dev eth0
@@ -283,7 +283,7 @@ $ [34/302]> ip addr show eth0
       link/ether 02:00:00:00:00:01 brd ff:ff:ff:ff:ff:ff
       inet 192.168.10.2/24 brd 192.168.10.255 scope global eth0
       inet 10.0.0.1/8 brd 10.255.255.255 scope global secondary eth0
-      inet6 fe80::ff:fe00:1%eth0/64 scope link
+      inet6 fe80::ff:fe00:1/64 scope link
          valid_lft forever preferred_lft forever
 
 $ [35/302]> ip addr flush dev eth0
@@ -292,7 +292,7 @@ $ [35/302]> ip addr flush dev eth0
 $ [36/302]> ip addr show eth0
   2: eth0: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
       link/ether 02:00:00:00:00:01 brd ff:ff:ff:ff:ff:ff
-      inet6 fe80::ff:fe00:1%eth0/64 scope link
+      inet6 fe80::ff:fe00:1/64 scope link
          valid_lft forever preferred_lft forever
 
 $ [37/302]> ip addr add 192.168.10.2/24 dev eth0
@@ -844,7 +844,7 @@ $ [136/302]> host example.com
   Host example.com not found: 5(REFUSED)
 
 $ [137/302]> host -t MX example.com
-  ;; connection timed out; no servers could be reached
+  Host example.com not found: 5(REFUSED)
 
 $ [138/302]> host 8.8.8.8
   Host 8.8.8.8 not found: 5(REFUSED)
@@ -899,7 +899,7 @@ $ [149/302]> ss -tlnp
   State      Recv-Q  Send-Q   Local Address:Port     Peer Address:Port  Process
   LISTEN     0       0        0.0.0.0:22             0.0.0.0:*          users:(("sshd",pid=985,fd=3))
   LISTEN     0       0        [::]:22                [::]:*             users:(("sshd",pid=985,fd=3))
-  LISTEN     0       0        127.0.0.53:53          0.0.0.0:*          users:(("systemd-resolved",pid=7,fd=3))
+  LISTEN     0       0        127.0.0.53:53          0.0.0.0:*          users:(("systemd-resolved",pid=28,fd=3))
 
 $ [150/302]> ss -a
   State      Recv-Q  Send-Q   Local Address:Port     Peer Address:Port  Process
@@ -943,7 +943,7 @@ $ [156/302]> netstat -tlnp
   Proto Recv-Q Send-Q Local Address           Foreign Address         State       PID/Program name
   tcp             0      0 0.0.0.0:22              0.0.0.0:*               LISTEN      985/sshd
   tcp6            0      0 :::22                   :::*                    LISTEN      985/sshd
-  tcp             0      0 127.0.0.53:53           0.0.0.0:*               LISTEN      7/systemd-resolved
+  tcp             0      0 127.0.0.53:53           0.0.0.0:*               LISTEN      28/systemd-resolved
 
 $ [157/302]> netstat -an | head
   Active Internet connections (servers and established)
@@ -1018,22 +1018,22 @@ $ [170/302]> curl http://hote_inexistant_xyz
   curl: (6) Could not resolve host: hote_inexistant_xyz
 
 $ [171/302]> wget http://192.168.10.1
-  --2026-07-09 17:08:23--  http://192.168.10.1
+  --2026-07-18 20:38:36--  http://192.168.10.1
   Resolving 192.168.10.1... failed: Temporary failure in name resolution.
   wget: unable to resolve host address '192.168.10.1'
 
 $ [172/302]> wget -q http://192.168.10.1
-  --2026-07-09 17:08:23--  http://192.168.10.1
+  --2026-07-18 20:38:36--  http://192.168.10.1
   Resolving 192.168.10.1... failed: Temporary failure in name resolution.
   wget: unable to resolve host address '192.168.10.1'
 
 $ [173/302]> wget -O /tmp/dl.html http://192.168.10.1
-  --2026-07-09 17:08:23--  http://192.168.10.1
+  --2026-07-18 20:38:36--  http://192.168.10.1
   Resolving 192.168.10.1... failed: Temporary failure in name resolution.
   wget: unable to resolve host address '192.168.10.1'
 
 $ [174/302]> wget --timeout=2 http://192.168.10.99
-  --2026-07-09 17:08:23--  http://192.168.10.99
+  --2026-07-18 20:38:36--  http://192.168.10.99
   Resolving 192.168.10.99... failed: Temporary failure in name resolution.
   wget: unable to resolve host address '192.168.10.99'
 
@@ -1078,106 +1078,52 @@ $ [186/302]> sysctl net.ipv4.cle_inexistante
 
 --- [187] § pare-feu — iptables / ufw ---
 $ [187/302]> iptables -L
-  Chain INPUT (policy ACCEPT)
-  target     prot opt source               destination
-  
-  Chain FORWARD (policy ACCEPT)
-  target     prot opt source               destination
-  
-  Chain OUTPUT (policy ACCEPT)
-  target     prot opt source               destination
+  iptables: Permission denied
 
 $ [188/302]> iptables -L -n
-  Chain INPUT (policy ACCEPT)
-  target     prot opt source               destination
-  
-  Chain FORWARD (policy ACCEPT)
-  target     prot opt source               destination
-  
-  Chain OUTPUT (policy ACCEPT)
-  target     prot opt source               destination
+  iptables: Permission denied
 
 $ [189/302]> iptables -L -v -n
-  Chain INPUT (policy ACCEPT)
-   pkts bytes target     prot opt in     out     source               destination
-  
-  Chain FORWARD (policy ACCEPT)
-   pkts bytes target     prot opt in     out     source               destination
-  
-  Chain OUTPUT (policy ACCEPT)
-   pkts bytes target     prot opt in     out     source               destination
+  iptables: Permission denied
 
 $ [190/302]> iptables -t nat -L
-  Chain PREROUTING (policy ACCEPT)
-  target     prot opt source               destination
-  
-  Chain INPUT (policy ACCEPT)
-  target     prot opt source               destination
-  
-  Chain OUTPUT (policy ACCEPT)
-  target     prot opt source               destination
-  
-  Chain POSTROUTING (policy ACCEPT)
-  target     prot opt source               destination
+  iptables: Permission denied
 
 $ [191/302]> iptables -S
-  -P INPUT ACCEPT
-  -P FORWARD ACCEPT
-  -P OUTPUT ACCEPT
+  iptables: Permission denied
 
 $ [192/302]> iptables -A INPUT -p tcp --dport 22 -j ACCEPT
-<empty>
+  iptables: Permission denied
 
 $ [193/302]> iptables -L INPUT -n
-  Chain INPUT (policy ACCEPT)
-  target     prot opt source               destination
-  ACCEPT     tcp  --  0.0.0.0/0            0.0.0.0/0 tcp dpt:22
+  iptables: Permission denied
 
 $ [194/302]> iptables -A INPUT -p icmp -j ACCEPT
-<empty>
+  iptables: Permission denied
 
 $ [195/302]> iptables -L INPUT -n --line-numbers
-  Chain INPUT (policy ACCEPT)
-  num   target     prot opt source               destination
-  1     ACCEPT     tcp  --  0.0.0.0/0            0.0.0.0/0 tcp dpt:22
-  2     ACCEPT     icmp --  0.0.0.0/0            0.0.0.0/0
+  iptables: Permission denied
 
 $ [196/302]> iptables -D INPUT -p icmp -j ACCEPT
-<empty>
+  iptables: Permission denied
 
 $ [197/302]> iptables -L INPUT -n
-  Chain INPUT (policy ACCEPT)
-  target     prot opt source               destination
-  ACCEPT     tcp  --  0.0.0.0/0            0.0.0.0/0 tcp dpt:22
+  iptables: Permission denied
 
 $ [198/302]> iptables -F
-<empty>
+  iptables: Permission denied
 
 $ [199/302]> iptables -L -n
-  Chain INPUT (policy ACCEPT)
-  target     prot opt source               destination
-  
-  Chain FORWARD (policy ACCEPT)
-  target     prot opt source               destination
-  
-  Chain OUTPUT (policy ACCEPT)
-  target     prot opt source               destination
+  iptables: Permission denied
 
 $ [200/302]> iptables -P INPUT DROP
-<empty>
+  iptables: Permission denied
 
 $ [201/302]> iptables -L -n
-  Chain INPUT (policy DROP)
-  target     prot opt source               destination
-  
-  Chain FORWARD (policy ACCEPT)
-  target     prot opt source               destination
-  
-  Chain OUTPUT (policy ACCEPT)
-  target     prot opt source               destination
+  iptables: Permission denied
 
 $ [202/302]> iptables -P INPUT ACCEPT
-<empty>
+  iptables: Permission denied
 
 $ [203/302]> ufw status
   ERROR: You need to be root to run this script
@@ -1198,10 +1144,10 @@ $ [208/302]> ufw status numbered
   ERROR: You need to be root to run this script
 
 $ [209/302]> iptables -Z
-<empty>
+  iptables: Permission denied
 
 $ [210/302]> iptables -A INPUT -j TRUC
-  iptables: No chain/target/match by that name.
+  iptables: Permission denied
 
 
 --- [211] § capture & ARP — tcpdump / arping ---
@@ -1254,11 +1200,11 @@ $ [218/302]> ssh-keygen -t rsa -b 2048 -f /tmp/id_rsa -N ""
 <empty>
 
 $ [219/302]> ls -l /tmp/id_rsa /tmp/id_rsa.pub
-  -rw------- 1 user user 77 Jul  9 17:08 /tmp/id_rsa
-  -rw-r--r-- 1 user user 38 Jul  9 17:08 /tmp/id_rsa.pub
+  -rw------- 1 user user 77 Jul 18 20:38 /tmp/id_rsa
+  -rw-r--r-- 1 user user 37 Jul 18 20:38 /tmp/id_rsa.pub
 
 $ [220/302]> cat /tmp/id_rsa.pub
-  ssh-rsa AAAA6osyojr8z18 user@linux-pc
+  ssh-rsa AAAArezlm0lr5i user@linux-pc
 
 $ [221/302]> ssh-keygen -t ed25519 -f /tmp/id_ed25519 -N ""
 <empty>
@@ -1267,7 +1213,7 @@ $ [222/302]> ssh-keygen -lf /tmp/id_rsa.pub
 <empty>
 
 $ [223/302]> ssh-keygen -y -f /tmp/id_rsa
-  ssh-ed25519 AAAA4tzpkqzmhvn user@localhost
+  ssh-ed25519 AAAAvcso5cp0dx user@localhost
 
 $ [224/302]> ssh -V
   usage: ssh [-options] destination [command]
@@ -1298,7 +1244,7 @@ $ [229/302]> dhclient -r eth0
 $ [230/302]> ip addr show eth0
   2: eth0: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
       link/ether 02:00:00:00:00:01 brd ff:ff:ff:ff:ff:ff
-      inet6 fe80::ff:fe00:1%eth0/64 scope link
+      inet6 fe80::ff:fe00:1/64 scope link
          valid_lft forever preferred_lft forever
 
 $ [231/302]> dhclient interface_inexistante_xyz
@@ -1322,7 +1268,7 @@ $ [236/302]> ip addr show eth0
   2: eth0: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
       link/ether 02:00:00:00:00:01 brd ff:ff:ff:ff:ff:ff
       inet 192.168.50.10/24 brd 192.168.50.255 scope global eth0
-      inet6 fe80::ff:fe00:1%eth0/64 scope link
+      inet6 fe80::ff:fe00:1/64 scope link
          valid_lft forever preferred_lft forever
 
 $ [237/302]> ip route
@@ -1404,7 +1350,7 @@ $ [252/302]> ip addr show | grep inet
       inet 127.0.0.1/8 brd 127.255.255.255 scope host lo
       inet6 ::1/128 scope host
       inet 192.168.50.10/24 brd 192.168.50.255 scope global eth0
-      inet6 fe80::ff:fe00:1%eth0/64 scope link
+      inet6 fe80::ff:fe00:1/64 scope link
 
 
 --- [253] § IPv6 — adresses & routes ---
@@ -1416,7 +1362,7 @@ $ [253/302]> ip -6 addr show
   
   2: eth0: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
       link/ether 02:00:00:00:00:01 brd ff:ff:ff:ff:ff:ff
-      inet6 fe80::ff:fe00:1%eth0/64 scope link
+      inet6 fe80::ff:fe00:1/64 scope link
          valid_lft forever preferred_lft forever
   
   3: eth1: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
@@ -1431,7 +1377,7 @@ $ [253/302]> ip -6 addr show
 $ [254/302]> ip -6 addr show eth0
   2: eth0: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
       link/ether 02:00:00:00:00:01 brd ff:ff:ff:ff:ff:ff
-      inet6 fe80::ff:fe00:1%eth0/64 scope link
+      inet6 fe80::ff:fe00:1/64 scope link
          valid_lft forever preferred_lft forever
 
 $ [255/302]> ip -6 route show
@@ -1446,7 +1392,7 @@ $ [257/302]> ip addr add 2001:db8::10/64 dev eth0
 $ [258/302]> ip -6 addr show eth0
   2: eth0: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
       link/ether 02:00:00:00:00:01 brd ff:ff:ff:ff:ff:ff
-      inet6 fe80::ff:fe00:1%eth0/64 scope link
+      inet6 fe80::ff:fe00:1/64 scope link
          valid_lft forever preferred_lft forever
       inet6 2001:db8::10/64 scope global
          valid_lft forever preferred_lft forever
@@ -1479,7 +1425,7 @@ $ [263/302]> ip addr del 2001:db8::10/64 dev eth0
 $ [264/302]> ip -6 addr show eth0
   2: eth0: <BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN group default qlen 1000
       link/ether 02:00:00:00:00:01 brd ff:ff:ff:ff:ff:ff
-      inet6 fe80::ff:fe00:1%eth0/64 scope link
+      inet6 fe80::ff:fe00:1/64 scope link
          valid_lft forever preferred_lft forever
       inet6 2001:db8::10/64 scope global
          valid_lft forever preferred_lft forever

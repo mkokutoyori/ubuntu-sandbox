@@ -268,13 +268,15 @@ export function cmdPidof(args: string[], ctx: ProcessCmdContext): KillResult {
 }
 
 export function cmdPgrep(args: string[], ctx: ProcessCmdContext): KillResult {
-  // pgrep [-l] [-u user] pattern
+  // pgrep [-l] [-x] [-u user] pattern
   let listLong = false;
+  let exact = false;
   let user: string | null = null;
   const patterns: string[] = [];
   for (let i = 0; i < args.length; i++) {
     const a = args[i];
     if (a === '-l') listLong = true;
+    else if (a === '-x') exact = true;
     else if (a === '-u') user = args[++i];
     else patterns.push(a);
   }
@@ -282,7 +284,7 @@ export function cmdPgrep(args: string[], ctx: ProcessCmdContext): KillResult {
     return { output: 'pgrep: no matching criteria specified', exitCode: 2 };
   }
   const pattern = patterns[0];
-  const pids = ctx.pm.pgrep(pattern);
+  const pids = ctx.pm.pgrep(pattern, exact);
   const filtered = pids
     .map(pid => ctx.pm.get(pid)!)
     .filter(p => (user ? p.user === user : true));
@@ -293,8 +295,10 @@ export function cmdPgrep(args: string[], ctx: ProcessCmdContext): KillResult {
 
 export function cmdPkill(args: string[], ctx: ProcessCmdContext): KillResult {
   let signal: Signal = 'SIGTERM';
+  let exact = false;
   const positional: string[] = [];
   for (const a of args) {
+    if (a === '-x') { exact = true; continue; }
     if (a.startsWith('-')) {
       const sig = parseSignalArg(a);
       if (sig) {
@@ -307,7 +311,7 @@ export function cmdPkill(args: string[], ctx: ProcessCmdContext): KillResult {
   if (positional.length === 0) {
     return { output: 'pkill: no matching criteria specified', exitCode: 2 };
   }
-  const count = ctx.pm.pkill(positional[0], signal);
+  const count = ctx.pm.pkill(positional[0], signal, exact);
   return { output: '', exitCode: count > 0 ? 0 : 1 };
 }
 

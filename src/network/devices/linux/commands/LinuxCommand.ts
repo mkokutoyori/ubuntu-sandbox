@@ -118,6 +118,21 @@ export interface LinuxCommand {
   ): Promise<{ output: string; exitCode: number; stderr?: string }>;
 
   /**
+   * Synchronous counterpart to `runWithStatus`, for commands whose logic
+   * has no genuine async step. `LinuxMachine`'s `_registryCommandHook` —
+   * the bridge a *script-invoked* command runs through (as opposed to one
+   * typed at the prompt, which goes through the async
+   * `setNetworkCommandRunner` path and already honours `runWithStatus`) —
+   * is itself synchronous and cannot await a Promise, so without this a
+   * script calling a registry command with only `runWithStatus` always
+   * observes exit code 0 regardless of the command's real outcome.
+   */
+  runWithStatusSync?(
+    ctx: LinuxCommandContext,
+    args: string[],
+  ): { output: string; exitCode: number; stderr?: string };
+
+  /**
    * Optional tab-completion callback. Called when the user presses TAB
    * while typing an argument to this command.
    *

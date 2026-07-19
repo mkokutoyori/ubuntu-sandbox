@@ -357,6 +357,12 @@ export class SocketTable {
     return this.getAll().filter(s => s.state === 'LISTEN');
   }
 
+  /** Sockets owned by a given process — used to project `/proc/<pid>/fd/`
+   *  entries that agree with the same socket's `/proc/net/{tcp,udp}` id. */
+  listByPid(pid: number): SocketEntry[] {
+    return this.getAll().filter(s => s.pid === pid);
+  }
+
   getEstablished(): SocketEntry[] {
     return this.getAll().filter(s => s.state === 'ESTABLISHED');
   }

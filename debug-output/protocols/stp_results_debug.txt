@@ -443,58 +443,240 @@ Total steps: 300
     Root port is Fa0/1, cost of root path is 19
     Hello Time 2 sec  Max Age 20 sec  Forward Delay 15 sec
   
-   Port FastEthernet0/1 of VLAN0001 is root forwarding
-     Port path cost 19, Port priority 128
-   Port FastEthernet0/2 of VLAN0001 is designated forwarding
-     Port path cost 19, Port priority 128
-   Port FastEthernet0/3 of VLAN0001 is disabled
-     Port path cost 19, Port priority 128
-   Port FastEthernet0/4 of VLAN0001 is disabled
-     Port path cost 19, Port priority 128
-   Port FastEthernet0/5 of VLAN0001 is disabled
-     Port path cost 19, Port priority 128
-   Port FastEthernet0/6 of VLAN0001 is disabled
-     Port path cost 19, Port priority 128
-   Port FastEthernet0/7 of VLAN0001 is disabled
-     Port path cost 19, Port priority 128
-   Port FastEthernet0/8 of VLAN0001 is disabled
-     Port path cost 19, Port priority 128
-   Port FastEthernet0/9 of VLAN0001 is disabled
-     Port path cost 19, Port priority 128
-   Port FastEthernet0/10 of VLAN0001 is disabled
-     Port path cost 19, Port priority 128
-   Port FastEthernet0/11 of VLAN0001 is disabled
-     Port path cost 19, Port priority 128
-   Port FastEthernet0/12 of VLAN0001 is disabled
-     Port path cost 19, Port priority 128
-   Port FastEthernet0/13 of VLAN0001 is disabled
-     Port path cost 19, Port priority 128
-   Port FastEthernet0/14 of VLAN0001 is disabled
-     Port path cost 19, Port priority 128
-   Port FastEthernet0/15 of VLAN0001 is disabled
-     Port path cost 19, Port priority 128
-   Port FastEthernet0/16 of VLAN0001 is disabled
-     Port path cost 19, Port priority 128
-   Port FastEthernet0/17 of VLAN0001 is disabled
-     Port path cost 19, Port priority 128
-   Port FastEthernet0/18 of VLAN0001 is disabled
-     Port path cost 19, Port priority 128
-   Port FastEthernet0/19 of VLAN0001 is disabled
-     Port path cost 19, Port priority 128
-   Port FastEthernet0/20 of VLAN0001 is disabled
-     Port path cost 19, Port priority 128
-   Port FastEthernet0/21 of VLAN0001 is disabled
-     Port path cost 19, Port priority 128
-   Port FastEthernet0/22 of VLAN0001 is disabled
-     Port path cost 19, Port priority 128
-   Port FastEthernet0/23 of VLAN0001 is disabled
-     Port path cost 19, Port priority 128
-   Port FastEthernet0/24 of VLAN0001 is disabled
-     Port path cost 19, Port priority 128
-   Port GigabitEthernet0/1 of VLAN0001 is disabled
-     Port path cost 19, Port priority 128
-   Port GigabitEthernet0/2 of VLAN0001 is disabled
-     Port path cost 19, Port priority 128
+   Port 1 (FastEthernet0/1) of VLAN0001 is root forwarding
+     Port path cost 19, Port priority 128, Port Identifier 128.1.
+     Designated root has priority 32768, address 0200.0000.000d
+     Designated bridge has priority 32768, address 0200.0000.000d
+     Designated port id is 128.3, designated path cost 0
+     Timers: message age 0, forward delay 0, hold 0
+     Number of transitions to forwarding state: 1
+     Link type is point-to-point by default
+     BPDU: sent 0, received 2
+   Port 2 (FastEthernet0/2) of VLAN0001 is designated forwarding
+     Port path cost 19, Port priority 128, Port Identifier 128.2.
+     Designated root has priority 32768, address 0200.0000.005f
+     Designated bridge has priority 32768, address 0200.0000.005f
+     Designated port id is 128.1, designated path cost 0
+     Timers: message age 0, forward delay 0, hold 0
+     Number of transitions to forwarding state: 1
+     Link type is point-to-point by default
+     BPDU: sent 2, received 0
+   Port 3 (FastEthernet0/3) of VLAN0001 is disabled
+     Port path cost 19, Port priority 128, Port Identifier 128.3.
+     Designated root has priority 32768, address 0200.0000.005f
+     Designated bridge has priority 32768, address 0200.0000.005f
+     Designated port id is 128.3, designated path cost 0
+     Timers: message age 0, forward delay 0, hold 0
+     Number of transitions to forwarding state: 0
+     Link type is point-to-point by default
+     BPDU: sent 0, received 0
+   Port 4 (FastEthernet0/4) of VLAN0001 is disabled
+     Port path cost 19, Port priority 128, Port Identifier 128.4.
+     Designated root has priority 32768, address 0200.0000.005f
+     Designated bridge has priority 32768, address 0200.0000.005f
+     Designated port id is 128.4, designated path cost 0
+     Timers: message age 0, forward delay 0, hold 0
+     Number of transitions to forwarding state: 0
+     Link type is point-to-point by default
+     BPDU: sent 0, received 0
+   Port 5 (FastEthernet0/5) of VLAN0001 is disabled
+     Port path cost 19, Port priority 128, Port Identifier 128.5.
+     Designated root has priority 32768, address 0200.0000.005f
+     Designated bridge has priority 32768, address 0200.0000.005f
+     Designated port id is 128.5, designated path cost 0
+     Timers: message age 0, forward delay 0, hold 0
+     Number of transitions to forwarding state: 0
+     Link type is point-to-point by default
+     BPDU: sent 0, received 0
+   Port 6 (FastEthernet0/6) of VLAN0001 is disabled
+     Port path cost 19, Port priority 128, Port Identifier 128.6.
+     Designated root has priority 32768, address 0200.0000.005f
+     Designated bridge has priority 32768, address 0200.0000.005f
+     Designated port id is 128.6, designated path cost 0
+     Timers: message age 0, forward delay 0, hold 0
+     Number of transitions to forwarding state: 0
+     Link type is point-to-point by default
+     BPDU: sent 0, received 0
+   Port 7 (FastEthernet0/7) of VLAN0001 is disabled
+     Port path cost 19, Port priority 128, Port Identifier 128.7.
+     Designated root has priority 32768, address 0200.0000.005f
+     Designated bridge has priority 32768, address 0200.0000.005f
+     Designated port id is 128.7, designated path cost 0
+     Timers: message age 0, forward delay 0, hold 0
+     Number of transitions to forwarding state: 0
+     Link type is point-to-point by default
+     BPDU: sent 0, received 0
+   Port 8 (FastEthernet0/8) of VLAN0001 is disabled
+     Port path cost 19, Port priority 128, Port Identifier 128.8.
+     Designated root has priority 32768, address 0200.0000.005f
+     Designated bridge has priority 32768, address 0200.0000.005f
+     Designated port id is 128.8, designated path cost 0
+     Timers: message age 0, forward delay 0, hold 0
+     Number of transitions to forwarding state: 0
+     Link type is point-to-point by default
+     BPDU: sent 0, received 0
+   Port 9 (FastEthernet0/9) of VLAN0001 is disabled
+     Port path cost 19, Port priority 128, Port Identifier 128.9.
+     Designated root has priority 32768, address 0200.0000.005f
+     Designated bridge has priority 32768, address 0200.0000.005f
+     Designated port id is 128.9, designated path cost 0
+     Timers: message age 0, forward delay 0, hold 0
+     Number of transitions to forwarding state: 0
+     Link type is point-to-point by default
+     BPDU: sent 0, received 0
+   Port 10 (FastEthernet0/10) of VLAN0001 is disabled
+     Port path cost 19, Port priority 128, Port Identifier 128.10.
+     Designated root has priority 32768, address 0200.0000.005f
+     Designated bridge has priority 32768, address 0200.0000.005f
+     Designated port id is 128.10, designated path cost 0
+     Timers: message age 0, forward delay 0, hold 0
+     Number of transitions to forwarding state: 0
+     Link type is point-to-point by default
+     BPDU: sent 0, received 0
+   Port 11 (FastEthernet0/11) of VLAN0001 is disabled
+     Port path cost 19, Port priority 128, Port Identifier 128.11.
+     Designated root has priority 32768, address 0200.0000.005f
+     Designated bridge has priority 32768, address 0200.0000.005f
+     Designated port id is 128.11, designated path cost 0
+     Timers: message age 0, forward delay 0, hold 0
+     Number of transitions to forwarding state: 0
+     Link type is point-to-point by default
+     BPDU: sent 0, received 0
+   Port 12 (FastEthernet0/12) of VLAN0001 is disabled
+     Port path cost 19, Port priority 128, Port Identifier 128.12.
+     Designated root has priority 32768, address 0200.0000.005f
+     Designated bridge has priority 32768, address 0200.0000.005f
+     Designated port id is 128.12, designated path cost 0
+     Timers: message age 0, forward delay 0, hold 0
+     Number of transitions to forwarding state: 0
+     Link type is point-to-point by default
+     BPDU: sent 0, received 0
+   Port 13 (FastEthernet0/13) of VLAN0001 is disabled
+     Port path cost 19, Port priority 128, Port Identifier 128.13.
+     Designated root has priority 32768, address 0200.0000.005f
+     Designated bridge has priority 32768, address 0200.0000.005f
+     Designated port id is 128.13, designated path cost 0
+     Timers: message age 0, forward delay 0, hold 0
+     Number of transitions to forwarding state: 0
+     Link type is point-to-point by default
+     BPDU: sent 0, received 0
+   Port 14 (FastEthernet0/14) of VLAN0001 is disabled
+     Port path cost 19, Port priority 128, Port Identifier 128.14.
+     Designated root has priority 32768, address 0200.0000.005f
+     Designated bridge has priority 32768, address 0200.0000.005f
+     Designated port id is 128.14, designated path cost 0
+     Timers: message age 0, forward delay 0, hold 0
+     Number of transitions to forwarding state: 0
+     Link type is point-to-point by default
+     BPDU: sent 0, received 0
+   Port 15 (FastEthernet0/15) of VLAN0001 is disabled
+     Port path cost 19, Port priority 128, Port Identifier 128.15.
+     Designated root has priority 32768, address 0200.0000.005f
+     Designated bridge has priority 32768, address 0200.0000.005f
+     Designated port id is 128.15, designated path cost 0
+     Timers: message age 0, forward delay 0, hold 0
+     Number of transitions to forwarding state: 0
+     Link type is point-to-point by default
+     BPDU: sent 0, received 0
+   Port 16 (FastEthernet0/16) of VLAN0001 is disabled
+     Port path cost 19, Port priority 128, Port Identifier 128.16.
+     Designated root has priority 32768, address 0200.0000.005f
+     Designated bridge has priority 32768, address 0200.0000.005f
+     Designated port id is 128.16, designated path cost 0
+     Timers: message age 0, forward delay 0, hold 0
+     Number of transitions to forwarding state: 0
+     Link type is point-to-point by default
+     BPDU: sent 0, received 0
+   Port 17 (FastEthernet0/17) of VLAN0001 is disabled
+     Port path cost 19, Port priority 128, Port Identifier 128.17.
+     Designated root has priority 32768, address 0200.0000.005f
+     Designated bridge has priority 32768, address 0200.0000.005f
+     Designated port id is 128.17, designated path cost 0
+     Timers: message age 0, forward delay 0, hold 0
+     Number of transitions to forwarding state: 0
+     Link type is point-to-point by default
+     BPDU: sent 0, received 0
+   Port 18 (FastEthernet0/18) of VLAN0001 is disabled
+     Port path cost 19, Port priority 128, Port Identifier 128.18.
+     Designated root has priority 32768, address 0200.0000.005f
+     Designated bridge has priority 32768, address 0200.0000.005f
+     Designated port id is 128.18, designated path cost 0
+     Timers: message age 0, forward delay 0, hold 0
+     Number of transitions to forwarding state: 0
+     Link type is point-to-point by default
+     BPDU: sent 0, received 0
+   Port 19 (FastEthernet0/19) of VLAN0001 is disabled
+     Port path cost 19, Port priority 128, Port Identifier 128.19.
+     Designated root has priority 32768, address 0200.0000.005f
+     Designated bridge has priority 32768, address 0200.0000.005f
+     Designated port id is 128.19, designated path cost 0
+     Timers: message age 0, forward delay 0, hold 0
+     Number of transitions to forwarding state: 0
+     Link type is point-to-point by default
+     BPDU: sent 0, received 0
+   Port 20 (FastEthernet0/20) of VLAN0001 is disabled
+     Port path cost 19, Port priority 128, Port Identifier 128.20.
+     Designated root has priority 32768, address 0200.0000.005f
+     Designated bridge has priority 32768, address 0200.0000.005f
+     Designated port id is 128.20, designated path cost 0
+     Timers: message age 0, forward delay 0, hold 0
+     Number of transitions to forwarding state: 0
+     Link type is point-to-point by default
+     BPDU: sent 0, received 0
+   Port 21 (FastEthernet0/21) of VLAN0001 is disabled
+     Port path cost 19, Port priority 128, Port Identifier 128.21.
+     Designated root has priority 32768, address 0200.0000.005f
+     Designated bridge has priority 32768, address 0200.0000.005f
+     Designated port id is 128.21, designated path cost 0
+     Timers: message age 0, forward delay 0, hold 0
+     Number of transitions to forwarding state: 0
+     Link type is point-to-point by default
+     BPDU: sent 0, received 0
+   Port 22 (FastEthernet0/22) of VLAN0001 is disabled
+     Port path cost 19, Port priority 128, Port Identifier 128.22.
+     Designated root has priority 32768, address 0200.0000.005f
+     Designated bridge has priority 32768, address 0200.0000.005f
+     Designated port id is 128.22, designated path cost 0
+     Timers: message age 0, forward delay 0, hold 0
+     Number of transitions to forwarding state: 0
+     Link type is point-to-point by default
+     BPDU: sent 0, received 0
+   Port 23 (FastEthernet0/23) of VLAN0001 is disabled
+     Port path cost 19, Port priority 128, Port Identifier 128.23.
+     Designated root has priority 32768, address 0200.0000.005f
+     Designated bridge has priority 32768, address 0200.0000.005f
+     Designated port id is 128.23, designated path cost 0
+     Timers: message age 0, forward delay 0, hold 0
+     Number of transitions to forwarding state: 0
+     Link type is point-to-point by default
+     BPDU: sent 0, received 0
+   Port 24 (FastEthernet0/24) of VLAN0001 is disabled
+     Port path cost 19, Port priority 128, Port Identifier 128.24.
+     Designated root has priority 32768, address 0200.0000.005f
+     Designated bridge has priority 32768, address 0200.0000.005f
+     Designated port id is 128.24, designated path cost 0
+     Timers: message age 0, forward delay 0, hold 0
+     Number of transitions to forwarding state: 0
+     Link type is point-to-point by default
+     BPDU: sent 0, received 0
+   Port 25 (GigabitEthernet0/1) of VLAN0001 is disabled
+     Port path cost 19, Port priority 128, Port Identifier 128.25.
+     Designated root has priority 32768, address 0200.0000.005f
+     Designated bridge has priority 32768, address 0200.0000.005f
+     Designated port id is 128.25, designated path cost 0
+     Timers: message age 0, forward delay 0, hold 0
+     Number of transitions to forwarding state: 0
+     Link type is point-to-point by default
+     BPDU: sent 0, received 0
+   Port 26 (GigabitEthernet0/2) of VLAN0001 is disabled
+     Port path cost 19, Port priority 128, Port Identifier 128.26.
+     Designated root has priority 32768, address 0200.0000.005f
+     Designated bridge has priority 32768, address 0200.0000.005f
+     Designated port id is 128.26, designated path cost 0
+     Timers: message age 0, forward delay 0, hold 0
+     Number of transitions to forwarding state: 0
+     Link type is point-to-point by default
+     BPDU: sent 0, received 0
 
 
 --- [55] § STP — rôles & états des ports (Huawei) ---
@@ -1192,11 +1374,11 @@ Total steps: 300
 --- [193] § STP — convergence sur panne de lien (HQ) ---
 [193/300] lhq lhq$ ping -c 1 10.1.1.11
   PING 10.1.1.11 (10.1.1.11) 56(84) bytes of data.
-  64 bytes from 10.1.1.11: icmp_seq=1 ttl=128 time=0.514 ms
+  64 bytes from 10.1.1.11: icmp_seq=1 ttl=128 time=0.454 ms
   
   --- 10.1.1.11 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.514/0.514/0.514/0.000 ms
+  rtt min/avg/max/mdev = 0.454/0.454/0.454/0.000 ms
 
 [194/300] swhq SW-HQ# show spanning-tree blockedports
   Name                 Blocked Interfaces List
@@ -1247,21 +1429,21 @@ Total steps: 300
 
 [202/300] lhq lhq$ ping -c 2 10.1.1.11
   PING 10.1.1.11 (10.1.1.11) 56(84) bytes of data.
-  64 bytes from 10.1.1.11: icmp_seq=1 ttl=128 time=0.512 ms
-  64 bytes from 10.1.1.11: icmp_seq=2 ttl=128 time=0.801 ms
+  64 bytes from 10.1.1.11: icmp_seq=1 ttl=128 time=0.448 ms
+  64 bytes from 10.1.1.11: icmp_seq=2 ttl=128 time=0.649 ms
   
   --- 10.1.1.11 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.512/0.656/0.801/0.145 ms
+  rtt min/avg/max/mdev = 0.448/0.548/0.649/0.101 ms
 
 [203/300] lhq lhq$ ping -c 2 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
-  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=0.829 ms
-  64 bytes from 10.3.3.10: icmp_seq=2 ttl=62 time=0.992 ms
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=1.036 ms
+  64 bytes from 10.3.3.10: icmp_seq=2 ttl=62 time=0.856 ms
   
   --- 10.3.3.10 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.829/0.910/0.992/0.082 ms
+  rtt min/avg/max/mdev = 0.856/0.946/1.036/0.090 ms
 
 [204/300] swhq SW-HQ# configure terminal
   Enter configuration commands, one per line.  End with CNTL/Z.
@@ -1293,12 +1475,12 @@ Total steps: 300
 
 [209/300] lhq lhq$ ping -c 2 10.1.1.11
   PING 10.1.1.11 (10.1.1.11) 56(84) bytes of data.
-  64 bytes from 10.1.1.11: icmp_seq=1 ttl=128 time=0.376 ms
-  64 bytes from 10.1.1.11: icmp_seq=2 ttl=128 time=0.631 ms
+  64 bytes from 10.1.1.11: icmp_seq=1 ttl=128 time=0.300 ms
+  64 bytes from 10.1.1.11: icmp_seq=2 ttl=128 time=0.635 ms
   
   --- 10.1.1.11 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.376/0.504/0.631/0.128 ms
+  rtt min/avg/max/mdev = 0.300/0.468/0.635/0.167 ms
 
 
 --- [210] § STP — convergence sur panne de lien (BR Huawei) ---
@@ -1401,13 +1583,13 @@ Total steps: 300
 [218/300] wbr wbr$ ping -n 2 10.2.2.11
   
   Pinging 10.2.2.11 with 32 bytes of data:
-  Reply from 10.2.2.11: bytes=32 time=7ms TTL=64
+  Reply from 10.2.2.11: bytes=32 time=<1ms TTL=64
   Reply from 10.2.2.11: bytes=32 time=<1ms TTL=64
   
   Ping statistics for 10.2.2.11:
       Packets: Sent = 2, Received = 2, Lost = 0 (0% loss),
   Approximate round trip times in milli-seconds:
-      Minimum = 0ms, Maximum = 7ms, Average = 4ms
+      Minimum = 0ms, Maximum = 1ms, Average = 1ms
 
 [219/300] swbr <SW-BR> system-view
   Enter system view, return user view with return command.
@@ -1530,58 +1712,240 @@ Total steps: 300
     Root port is Fa0/5, cost of root path is 38
     Hello Time 2 sec  Max Age 20 sec  Forward Delay 15 sec
   
-   Port FastEthernet0/1 of VLAN0001 is designated forwarding
-     Port path cost 19, Port priority 128
-   Port FastEthernet0/2 of VLAN0001 is designated forwarding
-     Port path cost 19, Port priority 128
-   Port FastEthernet0/3 of VLAN0001 is designated forwarding
-     Port path cost 19, Port priority 128
-   Port FastEthernet0/4 of VLAN0001 is designated forwarding
-     Port path cost 19, Port priority 128
-   Port FastEthernet0/5 of VLAN0001 is root forwarding
-     Port path cost 19, Port priority 128
-   Port FastEthernet0/6 of VLAN0001 is disabled
-     Port path cost 19, Port priority 128
-   Port FastEthernet0/7 of VLAN0001 is disabled
-     Port path cost 19, Port priority 128
-   Port FastEthernet0/8 of VLAN0001 is disabled
-     Port path cost 19, Port priority 128
-   Port FastEthernet0/9 of VLAN0001 is disabled
-     Port path cost 19, Port priority 128
-   Port FastEthernet0/10 of VLAN0001 is disabled
-     Port path cost 19, Port priority 128
-   Port FastEthernet0/11 of VLAN0001 is disabled
-     Port path cost 19, Port priority 128
-   Port FastEthernet0/12 of VLAN0001 is disabled
-     Port path cost 19, Port priority 128
-   Port FastEthernet0/13 of VLAN0001 is disabled
-     Port path cost 19, Port priority 128
-   Port FastEthernet0/14 of VLAN0001 is disabled
-     Port path cost 19, Port priority 128
-   Port FastEthernet0/15 of VLAN0001 is disabled
-     Port path cost 19, Port priority 128
-   Port FastEthernet0/16 of VLAN0001 is disabled
-     Port path cost 19, Port priority 128
-   Port FastEthernet0/17 of VLAN0001 is disabled
-     Port path cost 19, Port priority 128
-   Port FastEthernet0/18 of VLAN0001 is disabled
-     Port path cost 19, Port priority 128
-   Port FastEthernet0/19 of VLAN0001 is disabled
-     Port path cost 19, Port priority 128
-   Port FastEthernet0/20 of VLAN0001 is disabled
-     Port path cost 19, Port priority 128
-   Port FastEthernet0/21 of VLAN0001 is disabled
-     Port path cost 19, Port priority 128
-   Port FastEthernet0/22 of VLAN0001 is disabled
-     Port path cost 19, Port priority 128
-   Port FastEthernet0/23 of VLAN0001 is disabled
-     Port path cost 19, Port priority 128
-   Port FastEthernet0/24 of VLAN0001 is disabled
-     Port path cost 19, Port priority 128
-   Port GigabitEthernet0/1 of VLAN0001 is disabled
-     Port path cost 19, Port priority 128
-   Port GigabitEthernet0/2 of VLAN0001 is disabled
-     Port path cost 19, Port priority 128
+   Port 1 (FastEthernet0/1) of VLAN0001 is designated forwarding
+     Port path cost 19, Port priority 128, Port Identifier 128.1.
+     Designated root has priority 32768, address 0200.0000.000d
+     Designated bridge has priority 32768, address 0200.0000.000d
+     Designated port id is 128.0, designated path cost 0
+     Timers: message age 0, forward delay 0, hold 0
+     Number of transitions to forwarding state: 1
+     Link type is point-to-point by default
+     BPDU: sent 13, received 0
+   Port 2 (FastEthernet0/2) of VLAN0001 is designated forwarding
+     Port path cost 19, Port priority 128, Port Identifier 128.2.
+     Designated root has priority 32768, address 0200.0000.000d
+     Designated bridge has priority 32768, address 0200.0000.000d
+     Designated port id is 128.1, designated path cost 0
+     Timers: message age 0, forward delay 0, hold 0
+     Number of transitions to forwarding state: 1
+     Link type is point-to-point by default
+     BPDU: sent 12, received 0
+   Port 3 (FastEthernet0/3) of VLAN0001 is designated forwarding
+     Port path cost 19, Port priority 128, Port Identifier 128.3.
+     Designated root has priority 32768, address 0200.0000.000d
+     Designated bridge has priority 32768, address 0200.0000.000d
+     Designated port id is 128.2, designated path cost 0
+     Timers: message age 0, forward delay 0, hold 0
+     Number of transitions to forwarding state: 1
+     Link type is point-to-point by default
+     BPDU: sent 11, received 0
+   Port 4 (FastEthernet0/4) of VLAN0001 is designated forwarding
+     Port path cost 19, Port priority 128, Port Identifier 128.4.
+     Designated root has priority 28672, address 0200.0000.000d
+     Designated bridge has priority 28672, address 0200.0000.000d
+     Designated port id is 128.3, designated path cost 0
+     Timers: message age 0, forward delay 0, hold 0
+     Number of transitions to forwarding state: 2
+     Link type is point-to-point by default
+     BPDU: sent 3, received 2
+   Port 5 (FastEthernet0/5) of VLAN0001 is root forwarding
+     Port path cost 19, Port priority 128, Port Identifier 128.5.
+     Designated root has priority 24576, address 0200.0000.005f
+     Designated bridge has priority 32768, address 0200.0000.0079
+     Designated port id is 128.0, designated path cost 19
+     Timers: message age 0, forward delay 0, hold 0
+     Number of transitions to forwarding state: 1
+     Link type is point-to-point by default
+     BPDU: sent 7, received 1
+   Port 6 (FastEthernet0/6) of VLAN0001 is disabled
+     Port path cost 19, Port priority 128, Port Identifier 128.6.
+     Designated root has priority 32768, address 0200.0000.000d
+     Designated bridge has priority 32768, address 0200.0000.000d
+     Designated port id is 128.6, designated path cost 0
+     Timers: message age 0, forward delay 0, hold 0
+     Number of transitions to forwarding state: 0
+     Link type is point-to-point by default
+     BPDU: sent 0, received 0
+   Port 7 (FastEthernet0/7) of VLAN0001 is disabled
+     Port path cost 19, Port priority 128, Port Identifier 128.7.
+     Designated root has priority 32768, address 0200.0000.000d
+     Designated bridge has priority 32768, address 0200.0000.000d
+     Designated port id is 128.7, designated path cost 0
+     Timers: message age 0, forward delay 0, hold 0
+     Number of transitions to forwarding state: 0
+     Link type is point-to-point by default
+     BPDU: sent 0, received 0
+   Port 8 (FastEthernet0/8) of VLAN0001 is disabled
+     Port path cost 19, Port priority 128, Port Identifier 128.8.
+     Designated root has priority 32768, address 0200.0000.000d
+     Designated bridge has priority 32768, address 0200.0000.000d
+     Designated port id is 128.8, designated path cost 0
+     Timers: message age 0, forward delay 0, hold 0
+     Number of transitions to forwarding state: 0
+     Link type is point-to-point by default
+     BPDU: sent 0, received 0
+   Port 9 (FastEthernet0/9) of VLAN0001 is disabled
+     Port path cost 19, Port priority 128, Port Identifier 128.9.
+     Designated root has priority 32768, address 0200.0000.000d
+     Designated bridge has priority 32768, address 0200.0000.000d
+     Designated port id is 128.9, designated path cost 0
+     Timers: message age 0, forward delay 0, hold 0
+     Number of transitions to forwarding state: 0
+     Link type is point-to-point by default
+     BPDU: sent 0, received 0
+   Port 10 (FastEthernet0/10) of VLAN0001 is disabled
+     Port path cost 19, Port priority 128, Port Identifier 128.10.
+     Designated root has priority 32768, address 0200.0000.000d
+     Designated bridge has priority 32768, address 0200.0000.000d
+     Designated port id is 128.10, designated path cost 0
+     Timers: message age 0, forward delay 0, hold 0
+     Number of transitions to forwarding state: 0
+     Link type is point-to-point by default
+     BPDU: sent 0, received 0
+   Port 11 (FastEthernet0/11) of VLAN0001 is disabled
+     Port path cost 19, Port priority 128, Port Identifier 128.11.
+     Designated root has priority 32768, address 0200.0000.000d
+     Designated bridge has priority 32768, address 0200.0000.000d
+     Designated port id is 128.11, designated path cost 0
+     Timers: message age 0, forward delay 0, hold 0
+     Number of transitions to forwarding state: 0
+     Link type is point-to-point by default
+     BPDU: sent 0, received 0
+   Port 12 (FastEthernet0/12) of VLAN0001 is disabled
+     Port path cost 19, Port priority 128, Port Identifier 128.12.
+     Designated root has priority 32768, address 0200.0000.000d
+     Designated bridge has priority 32768, address 0200.0000.000d
+     Designated port id is 128.12, designated path cost 0
+     Timers: message age 0, forward delay 0, hold 0
+     Number of transitions to forwarding state: 0
+     Link type is point-to-point by default
+     BPDU: sent 0, received 0
+   Port 13 (FastEthernet0/13) of VLAN0001 is disabled
+     Port path cost 19, Port priority 128, Port Identifier 128.13.
+     Designated root has priority 32768, address 0200.0000.000d
+     Designated bridge has priority 32768, address 0200.0000.000d
+     Designated port id is 128.13, designated path cost 0
+     Timers: message age 0, forward delay 0, hold 0
+     Number of transitions to forwarding state: 0
+     Link type is point-to-point by default
+     BPDU: sent 0, received 0
+   Port 14 (FastEthernet0/14) of VLAN0001 is disabled
+     Port path cost 19, Port priority 128, Port Identifier 128.14.
+     Designated root has priority 32768, address 0200.0000.000d
+     Designated bridge has priority 32768, address 0200.0000.000d
+     Designated port id is 128.14, designated path cost 0
+     Timers: message age 0, forward delay 0, hold 0
+     Number of transitions to forwarding state: 0
+     Link type is point-to-point by default
+     BPDU: sent 0, received 0
+   Port 15 (FastEthernet0/15) of VLAN0001 is disabled
+     Port path cost 19, Port priority 128, Port Identifier 128.15.
+     Designated root has priority 32768, address 0200.0000.000d
+     Designated bridge has priority 32768, address 0200.0000.000d
+     Designated port id is 128.15, designated path cost 0
+     Timers: message age 0, forward delay 0, hold 0
+     Number of transitions to forwarding state: 0
+     Link type is point-to-point by default
+     BPDU: sent 0, received 0
+   Port 16 (FastEthernet0/16) of VLAN0001 is disabled
+     Port path cost 19, Port priority 128, Port Identifier 128.16.
+     Designated root has priority 32768, address 0200.0000.000d
+     Designated bridge has priority 32768, address 0200.0000.000d
+     Designated port id is 128.16, designated path cost 0
+     Timers: message age 0, forward delay 0, hold 0
+     Number of transitions to forwarding state: 0
+     Link type is point-to-point by default
+     BPDU: sent 0, received 0
+   Port 17 (FastEthernet0/17) of VLAN0001 is disabled
+     Port path cost 19, Port priority 128, Port Identifier 128.17.
+     Designated root has priority 32768, address 0200.0000.000d
+     Designated bridge has priority 32768, address 0200.0000.000d
+     Designated port id is 128.17, designated path cost 0
+     Timers: message age 0, forward delay 0, hold 0
+     Number of transitions to forwarding state: 0
+     Link type is point-to-point by default
+     BPDU: sent 0, received 0
+   Port 18 (FastEthernet0/18) of VLAN0001 is disabled
+     Port path cost 19, Port priority 128, Port Identifier 128.18.
+     Designated root has priority 32768, address 0200.0000.000d
+     Designated bridge has priority 32768, address 0200.0000.000d
+     Designated port id is 128.18, designated path cost 0
+     Timers: message age 0, forward delay 0, hold 0
+     Number of transitions to forwarding state: 0
+     Link type is point-to-point by default
+     BPDU: sent 0, received 0
+   Port 19 (FastEthernet0/19) of VLAN0001 is disabled
+     Port path cost 19, Port priority 128, Port Identifier 128.19.
+     Designated root has priority 32768, address 0200.0000.000d
+     Designated bridge has priority 32768, address 0200.0000.000d
+     Designated port id is 128.19, designated path cost 0
+     Timers: message age 0, forward delay 0, hold 0
+     Number of transitions to forwarding state: 0
+     Link type is point-to-point by default
+     BPDU: sent 0, received 0
+   Port 20 (FastEthernet0/20) of VLAN0001 is disabled
+     Port path cost 19, Port priority 128, Port Identifier 128.20.
+     Designated root has priority 32768, address 0200.0000.000d
+     Designated bridge has priority 32768, address 0200.0000.000d
+     Designated port id is 128.20, designated path cost 0
+     Timers: message age 0, forward delay 0, hold 0
+     Number of transitions to forwarding state: 0
+     Link type is point-to-point by default
+     BPDU: sent 0, received 0
+   Port 21 (FastEthernet0/21) of VLAN0001 is disabled
+     Port path cost 19, Port priority 128, Port Identifier 128.21.
+     Designated root has priority 32768, address 0200.0000.000d
+     Designated bridge has priority 32768, address 0200.0000.000d
+     Designated port id is 128.21, designated path cost 0
+     Timers: message age 0, forward delay 0, hold 0
+     Number of transitions to forwarding state: 0
+     Link type is point-to-point by default
+     BPDU: sent 0, received 0
+   Port 22 (FastEthernet0/22) of VLAN0001 is disabled
+     Port path cost 19, Port priority 128, Port Identifier 128.22.
+     Designated root has priority 32768, address 0200.0000.000d
+     Designated bridge has priority 32768, address 0200.0000.000d
+     Designated port id is 128.22, designated path cost 0
+     Timers: message age 0, forward delay 0, hold 0
+     Number of transitions to forwarding state: 0
+     Link type is point-to-point by default
+     BPDU: sent 0, received 0
+   Port 23 (FastEthernet0/23) of VLAN0001 is disabled
+     Port path cost 19, Port priority 128, Port Identifier 128.23.
+     Designated root has priority 32768, address 0200.0000.000d
+     Designated bridge has priority 32768, address 0200.0000.000d
+     Designated port id is 128.23, designated path cost 0
+     Timers: message age 0, forward delay 0, hold 0
+     Number of transitions to forwarding state: 0
+     Link type is point-to-point by default
+     BPDU: sent 0, received 0
+   Port 24 (FastEthernet0/24) of VLAN0001 is disabled
+     Port path cost 19, Port priority 128, Port Identifier 128.24.
+     Designated root has priority 32768, address 0200.0000.000d
+     Designated bridge has priority 32768, address 0200.0000.000d
+     Designated port id is 128.24, designated path cost 0
+     Timers: message age 0, forward delay 0, hold 0
+     Number of transitions to forwarding state: 0
+     Link type is point-to-point by default
+     BPDU: sent 0, received 0
+   Port 25 (GigabitEthernet0/1) of VLAN0001 is disabled
+     Port path cost 19, Port priority 128, Port Identifier 128.25.
+     Designated root has priority 32768, address 0200.0000.000d
+     Designated bridge has priority 32768, address 0200.0000.000d
+     Designated port id is 128.25, designated path cost 0
+     Timers: message age 0, forward delay 0, hold 0
+     Number of transitions to forwarding state: 0
+     Link type is point-to-point by default
+     BPDU: sent 0, received 0
+   Port 26 (GigabitEthernet0/2) of VLAN0001 is disabled
+     Port path cost 19, Port priority 128, Port Identifier 128.26.
+     Designated root has priority 32768, address 0200.0000.000d
+     Designated bridge has priority 32768, address 0200.0000.000d
+     Designated port id is 128.26, designated path cost 0
+     Timers: message age 0, forward delay 0, hold 0
+     Number of transitions to forwarding state: 0
+     Link type is point-to-point by default
+     BPDU: sent 0, received 0
 
 [244/300] dsw1 DSW-HQ-1# show spanning-tree summary totals
   Switch is in pvst mode
@@ -1628,27 +1992,27 @@ Total steps: 300
 
 [251/300] lhq lhq$ ping -c 1 10.1.1.11
   PING 10.1.1.11 (10.1.1.11) 56(84) bytes of data.
-  64 bytes from 10.1.1.11: icmp_seq=1 ttl=128 time=0.448 ms
+  64 bytes from 10.1.1.11: icmp_seq=1 ttl=128 time=0.364 ms
   
   --- 10.1.1.11 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.448/0.448/0.448/0.000 ms
+  rtt min/avg/max/mdev = 0.364/0.364/0.364/0.000 ms
 
 [252/300] lbr lbr$ ping -c 1 10.2.2.10
   PING 10.2.2.10 (10.2.2.10) 56(84) bytes of data.
-  64 bytes from 10.2.2.10: icmp_seq=1 ttl=128 time=0.329 ms
+  64 bytes from 10.2.2.10: icmp_seq=1 ttl=128 time=0.205 ms
   
   --- 10.2.2.10 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.329/0.329/0.329/0.000 ms
+  rtt min/avg/max/mdev = 0.205/0.205/0.205/0.000 ms
 
 [253/300] ldc ldc$ ping -c 1 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
-  64 bytes from 10.3.3.10: icmp_seq=1 ttl=64 time=0.362 ms
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=64 time=0.175 ms
   
   --- 10.3.3.10 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.362/0.362/0.362/0.000 ms
+  rtt min/avg/max/mdev = 0.175/0.175/0.175/0.000 ms
 
 [254/300] whq whq$ getmac
   Physical Address  Transport Name          
@@ -2064,8 +2428,8 @@ Total steps: 300
 
 [300/300] lhq lhq$ ping -c 1 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
-  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=0.858 ms
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=0.664 ms
   
   --- 10.3.3.10 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.858/0.858/0.858/0.000 ms
+  rtt min/avg/max/mdev = 0.664/0.664/0.664/0.000 ms

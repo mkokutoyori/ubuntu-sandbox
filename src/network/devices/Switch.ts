@@ -2300,6 +2300,9 @@ export abstract class Switch extends Equipment {
     return '';
   }
 
+  /** The vendor CLI shell (mirror of Router.getShell). */
+  getShell(): ISwitchShell { return this.shell; }
+
   writeMemory(): string {
     // NVRAM holds the rendered running-config TEXT — the same representation
     // `show startup-config` displays and `reload` re-applies. Real IOS stores
@@ -2310,6 +2313,12 @@ export abstract class Switch extends Equipment {
 
   getStartupConfig(): string | null {
     return this.startupConfig;
+  }
+
+  /** @internal Persist rendered config text into NVRAM (VRP `save` path —
+   *  mirror of Router._captureStartupConfig). */
+  _captureStartupConfig(text: string): void {
+    this.startupConfig = text;
   }
 
   /** @internal Erase NVRAM (`erase startup-config` / `write erase`). */

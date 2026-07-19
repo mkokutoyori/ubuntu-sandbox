@@ -126,6 +126,8 @@ import { LogindStateSync } from './linux/network/LogindStateSync';
 import type { TcpdumpDeps } from './linux/network/tcpdump/TcpdumpRunner';
 import { serializeCaptureFile } from './linux/network/tcpdump/CaptureFileFormat';
 import { decodeEthernetFrame, makeLoopbackIcmpFrame, makeTcpFrame, type CaptureFrame } from './linux/network/tcpdump/CaptureFrame';
+import { buildLinuxInteractionPlan } from './linux/interaction/LinuxInteractionPlanner';
+import type { CommandInteractionPlan, InteractionPlanContext } from '@/shell/interaction/CommandInteraction';
 
 /**
  * Minimal sshd-style glob matcher: `*` matches any sequence including
@@ -324,6 +326,9 @@ export abstract class LinuxMachine extends EndHost
     this.executor._registryCommandHook = (cmd, args) => {
       const registered = this.commands.get(cmd);
       if (!registered || !registered.needsNetworkContext) return null;
+      if (registered.runWithStatusSync) {
+        return registered.runWithStatusSync(this.buildCommandContext(), args);
+      }
       const result = registered.run(this.buildCommandContext(), args);
       if (result instanceof Promise) return null;
       return { output: result, exitCode: this.inferRegistryExitCode(cmd, result) };
@@ -1309,6 +1314,7 @@ export abstract class LinuxMachine extends EndHost
         list: () => this.listNetNamespaces(),
         exec: (name: string, cmdLine: string) => this.execInNamespace(name, cmdLine),
       },
+      sshServerConfig: () => this.getSshServerContext().effectiveSshdServerConfig(),
     };
   }
 
@@ -1877,42 +1883,37 @@ export abstract class LinuxMachine extends EndHost
 
       // A registry command bypasses LinuxCommandExecutor's dispatch(), so
       // the declarative privilege gate (and `sudo` elevation) that gate
-      // applies there must be re-applied here explicitly.
+      // applies there must be re-applied here explicitly. Likewise `$?`:
+      // dispatch() would have set it from the command's real exit code,
+      // so a status-aware command sets it here too instead of leaving
+      // whatever the previous command left behind (bare run() commands
+      // have no exit code to report and implicitly succeed, as before).
+      // A plain terminal view shows stdout and stderr together (no
+      // redirect has separated them here), matching what `run()` alone
+      // already did for commands — like tcpdump — whose stderr carries
+      // real content (its capture summary) that `runWithStatus`'s status
+      // field otherwise leaves stranded off `output`.
       return this.withSudoAndPrivilegeGate(
         firstCmd, cmdArgs, isSudo, cmd.privilege,
-        () => cmd.run(this.buildCommandContext(), cmdArgs),
+        async () => {
+          if (cmd.runWithStatusSync) {
+            const result = cmd.runWithStatusSync(this.buildCommandContext(), cmdArgs);
+            this.executor.lastExitCode = result.exitCode;
+            return [result.output, result.stderr].filter((s) => s).join('\n');
+          }
+          if (cmd.runWithStatus) {
+            const result = await cmd.runWithStatus(this.buildCommandContext(), cmdArgs);
+            this.executor.lastExitCode = result.exitCode;
+            return [result.output, result.stderr].filter((s) => s).join('\n');
+          }
+          this.executor.lastExitCode = 0;
+          return cmd.run(this.buildCommandContext(), cmdArgs);
+        },
       );
     }
 
     // 2. Commands that need special handling outside the registry
     switch (firstCmd) {
-      case 'sshd': {
-        const sshdArgs = noSudo.split(/\s+/).slice(1);
-        if (sshdArgs.includes('-t')) {
-          const raw = this.executor.vfs.readFile('/etc/ssh/sshd_config') ?? '';
-          const verdict = validateSshdConfig(raw);
-          return verdict.ok ? '' : verdict.errors.join('\n');
-        }
-        if (sshdArgs.includes('-T')) {
-          const cfg = this.getSshServerContext().effectiveSshdServerConfig();
-          const lines = [
-            `port ${cfg.ports[0] ?? 22}`,
-            `permitrootlogin ${cfg.permitRootLogin}`,
-            `passwordauthentication ${cfg.passwordAuthentication ? 'yes' : 'no'}`,
-            `pubkeyauthentication ${cfg.pubkeyAuthentication ? 'yes' : 'no'}`,
-            `kbdinteractiveauthentication ${cfg.kbdInteractiveAuthentication ? 'yes' : 'no'}`,
-            `maxauthtries ${cfg.maxAuthTries}`,
-            `maxsessions ${cfg.maxSessions}`,
-            `x11forwarding ${cfg.x11Forwarding ? 'yes' : 'no'}`,
-            `permitemptypasswords ${cfg.permitEmptyPasswords ? 'yes' : 'no'}`,
-            `allowtcpforwarding ${cfg.allowTcpForwarding}`,
-            `clientaliveinterval ${cfg.clientAliveIntervalSeconds}`,
-            `clientalivecountmax ${cfg.clientAliveCountMax}`,
-          ];
-          return lines.join('\n');
-        }
-        return 'usage: sshd [-t | -T]';
-      }
       case 'cat': {
         const parts = noSudo.split(/\s+/);
         const path = parts[1];
@@ -2412,9 +2413,18 @@ export abstract class LinuxMachine extends EndHost
     // (run() returning a bare string, not a Promise) still work from this
     // bypass path; genuinely async commands (ping, traceroute, dhclient)
     // cannot — same limitation they already had once migrated.
+    //
+    // Only take this fast path for a plain, unredirected invocation: a
+    // naive whitespace tokenizer has no idea `<`/`>`/`|`/`;`/`&` are shell
+    // syntax, so `xxd < /tmp/file` (as produced by a vim `:%!xxd` filter)
+    // would otherwise become `xxd` called with the literal argument `<`.
+    // Anything with shell metacharacters falls through to the real bash
+    // interpreter below, which parses redirection correctly and still
+    // reaches registry commands via `_registryCommandHook`.
+    const hasShellSyntax = /[<>|;&]/.test(trimmed);
     const head = trimmed.split(/\s+/)[0];
     const cmd = this.commands.get(head);
-    if (cmd && cmd.needsNetworkContext) {
+    if (!hasShellSyntax && cmd && cmd.needsNetworkContext) {
       const args = LinuxMachine.tokenizeArgs(trimmed).slice(1);
       const result = cmd.run(this.buildCommandContext(), args);
       if (typeof result === 'string') return result;
@@ -2644,6 +2654,24 @@ export abstract class LinuxMachine extends EndHost
     this.executor.setUserGecos(username, fullName, room, workPhone, homePhone, other);
   }
   canSudo(): boolean { return this.executor.canSudo(); }
+
+  /**
+   * Command-owned interactive flows (IoC): sudo/su/passwd/adduser declare
+   * their dialogue here, on the device — the terminal just renders it.
+   */
+  interactionPlanFor(
+    commandLine: string,
+    ctx?: InteractionPlanContext,
+  ): CommandInteractionPlan | null {
+    return buildLinuxInteractionPlan(
+      commandLine,
+      {
+        currentUser: ctx?.currentUser ?? this.getCurrentUser(),
+        currentUid: ctx?.currentUid ?? this.getCurrentUid(),
+      },
+      this,
+    );
+  }
 
   // ── Shell sessions (per-terminal isolation, §2 of terminal_gap.md) ─
 
@@ -3112,5 +3140,12 @@ export abstract class LinuxMachine extends EndHost
     if (session.disposed) return this.writeFileFromEditor(path, content);
     const absPath = this.executor.vfs.normalizePath(path, session.cwd);
     return this.executor.vfs.writeFile(absPath, content, session.uid, session.gid, session.umask);
+  }
+
+  /** Per-session variant of deleteFileFromEditor (used by editor swap/lock file cleanup). */
+  deleteFileFromEditorInSession(path: string, session: LinuxShellSession): boolean {
+    if (session.disposed) return this.deleteFileFromEditor(path);
+    const absPath = this.executor.vfs.normalizePath(path, session.cwd);
+    return this.executor.vfs.deleteFile(absPath);
   }
 }

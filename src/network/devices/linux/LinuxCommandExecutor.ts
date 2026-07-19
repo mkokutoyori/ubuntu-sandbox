@@ -147,7 +147,7 @@ const KNOWN_LINUX_COMMANDS: readonly string[] = [
   // Users and groups
   'id', 'whoami', 'groups', 'who', 'w', 'last', 'lastb', 'hostname', 'uname', 'sleep', 'kill',
   'useradd', 'adduser', 'userdel', 'deluser', 'usermod', 'passwd', 'chpasswd', 'chage',
-  'faillock', 'ausearch', 'aureport', 'auditctl',
+  'faillock', 'ausearch', 'aureport', 'auditctl', 'pwck', 'grpck', 'visudo',
   'groupadd', 'addgroup', 'groupmod', 'groupdel', 'gpasswd', 'getent', 'sudo', 'su',
   'login', 'logout',
   // Lookup
@@ -757,7 +757,12 @@ export class LinuxCommandExecutor {
     }
   }
 
-  /** `/proc/<pid>/fd/` — stdin/stdout/stderr plus any `OSProcess.openFiles`. */
+  /** `/proc/<pid>/fd/` — stdin/stdout/stderr, any `OSProcess.openFiles`,
+   *  and one entry per socket this process owns in the `SocketTable`
+   *  (`socket:[<id>]`, the same id `/proc/net/{tcp,udp}` renders as the
+   *  inode column) — the seam that lets `ss`/`/proc/net/tcp`/`/proc/pid/fd`
+   *  agree on a single socket's identity instead of rendering it three
+   *  independent ways. */
   private materializeProcFd(pid: number): void {
     const p = this.processMgr.get(pid);
     if (!p) return;
@@ -767,8 +772,14 @@ export class LinuxCommandExecutor {
     for (const n of [0, 1, 2]) {
       this.vfs.createSymlink(`${fdDir}/${n}`, stdTarget, p.uid, p.gid);
     }
+    let nextFd = 3;
     for (const f of p.openFiles ?? []) {
       this.vfs.createSymlink(`${fdDir}/${f.fd}`, f.path, p.uid, p.gid);
+      nextFd = Math.max(nextFd, f.fd + 1);
+    }
+    for (const sock of this.socketTable?.listByPid(pid) ?? []) {
+      this.vfs.createSymlink(`${fdDir}/${nextFd}`, `socket:[${sock.id}]`, p.uid, p.gid);
+      nextFd++;
     }
   }
 
@@ -1748,6 +1759,10 @@ export class LinuxCommandExecutor {
         }
       });
     } catch { /* background failures are silent */ }
+    // The job's own command (e.g. `nc -l` binding a socket) runs *after*
+    // syncProcPids() already materialized its fresh /proc/<pid>/fd/ — so
+    // anything it opens during that run is invisible until refreshed here.
+    this.materializeProcFd(proc.pid);
     if (exitCode === 127 && this.networkRunner) {
       const netArgv = simpleTokenize(cmdLine.replace(/^sudo\s+/, ''));
       const runner = this.networkRunner;
@@ -1804,17 +1819,35 @@ export class LinuxCommandExecutor {
     });
     this.cronEngine = new CronEngine({
       sources: [source],
-      runner: (command) => {
-        const output = this.execute(command);
-        return { output, exitCode: this.lastExitCode };
-      },
-      syslog: () => { void 0; },
+      runner: (command, ctx) => this.runWithEnv(command, ctx.env),
+      syslog: (tag, message) => this.logMgr.logDaemon(tag, message),
       deliverMail: () => { void 0; },
       homeFor: (user) => this.userMgr.getUser(user)?.home ?? `/home/${user}`,
       hostname: (this.vfs.readFile('/etc/hostname') ?? 'localhost').trim(),
       now: () => this.simulatedDate(),
     });
     return this.cronEngine;
+  }
+
+  /**
+   * Run a command with an explicit, isolated environment (`env` replaces,
+   * doesn't merge with, the caller's own) — used by cron, whose jobs run
+   * under a minimal environment, not the interactive session's. Sets an
+   * ambient override that every env-building call site consults, since
+   * direct-executable dispatch (`/path/to/script`) builds its nested
+   * interpreter via a different code path than `bash -c` does.
+   */
+  private runWithEnv(command: string, env: Record<string, string>): { output: string; exitCode: number } {
+    const savedOverride = this.envOverride;
+    const savedEnv = new Map(this.env); // undo any export leaking back — real subprocesses don't
+    this.envOverride = env;
+    try {
+      const output = this.execute(command);
+      return { output, exitCode: this.lastExitCode };
+    } finally {
+      this.envOverride = savedOverride;
+      this.env = savedEnv;
+    }
   }
 
   private tickCron(fromMs: number): void {
@@ -2040,8 +2073,12 @@ export class LinuxCommandExecutor {
       uid: this.userMgr.currentUid,
       gid: this.userMgr.currentGid,
       color: this.displayColor,
+      envOverride: this.envOverride ?? undefined,
     };
   }
+
+  /** Ambient environment override — see {@link runWithEnv}. */
+  private envOverride: Record<string, string> | null = null;
 
   displayColor = false;
 
@@ -2687,6 +2724,11 @@ export class LinuxCommandExecutor {
     let bind = false;
     let readOnly = false;
     let mountAll = false;
+    // `--fake` (also spelled `-f`): do everything except the actual mount
+    // syscall — validates fstab/target without mutating mount state.
+    // Real-world use: `mount --fake -a` before a reboot to catch a broken
+    // /etc/fstab without touching the live mount table.
+    let fake = false;
 
     for (let i = 0; i < args.length; i++) {
       const a = args[i];
@@ -2705,6 +2747,8 @@ export class LinuxCommandExecutor {
         options.push('rw');
       } else if (a === '-a' || a === '--all') {
         mountAll = true;
+      } else if (a === '--fake' || a === '-f') {
+        fake = true;
       } else if (a === '-l' || a === '-v' || a === '--make-private' || a === '-n') {
         continue;
       } else if (a.startsWith('-')) {
@@ -2726,6 +2770,7 @@ export class LinuxCommandExecutor {
         const parts = line.split(/\s+/);
         if (parts.length < 3) { errors.push(`mount: error: bad line in /etc/fstab: "${line}"`); continue; }
         const [src, tgt, fs] = parts;
+        if (fake) continue; // validate the line only — no mount syscall, no state change
         if (this.mountTable.find(tgt)) continue;
         if (!this.vfs.exists(tgt)) this.vfs.mkdirp(tgt, 0o755, 0, 0);
         const entry = this.mountTable.mount(new MountEntry({ source: src, target: tgt, fstype: fs, options: ['rw'] }));
@@ -2775,6 +2820,7 @@ export class LinuxCommandExecutor {
       return { output: `mount: ${positionals[0]}: error: special device does not exist (No such file or directory)`, exitCode: 32 };
     }
     if (!this.vfs.exists(target)) return { output: `mount: ${positionals[1]}: No such file or directory`, exitCode: 32 };
+    if (fake) return { output: '', exitCode: 0 }; // validated only — no mount syscall, no state change
     const entry = this.mountTable.mount(new MountEntry({
       source,
       target,
@@ -2961,6 +3007,7 @@ export class LinuxCommandExecutor {
 
   /** Build initial environment variables for the bash interpreter. */
   private buildEnvVars(): Record<string, string> {
+    if (this.envOverride) return { ...this.envOverride };
     const user = this.userMgr.currentUser;
     const home = this.userMgr.currentUid === 0 ? '/root' : `/home/${user}`;
     const hostname = (this.vfs.readFile('/etc/hostname') ?? 'localhost').trim();
@@ -4341,7 +4388,15 @@ export class LinuxCommandExecutor {
           }
         }
 
-        const registryResult = this._registryCommandHook?.(cmd, args);
+        // `LinuxCommand.run()` has no dedicated stdin channel — registry
+        // commands that want piped content (e.g. `xxd` backing a vim
+        // `:%!xxd` filter) detect it the same way the async network-runner
+        // path already hands it to them: as a trailing positional argument.
+        // `stdin` was popped off `args` above for the switch cases here
+        // that consume it directly (`cat`, ...); re-append it so a registry
+        // command reached only through this default branch still sees it.
+        const registryArgs = stdin !== undefined ? [...args, stdin] : args;
+        const registryResult = this._registryCommandHook?.(cmd, registryArgs);
         if (registryResult) return registryResult;
 
         return { output: `${cmd}: command not found`, exitCode: 127 };
@@ -6198,7 +6253,20 @@ function stripTrailingAmp(command: string): string {
   return command.replace(/\s*&\s*$/, '');
 }
 
+/** A backgrounded listener (`nc -l`/`ncat -l`) runs until killed, like a
+ *  real daemon — there's no literal duration to parse, unlike `sleep N`. */
+const PERSISTENT_LISTENER_DURATION_MS = 100 * 365 * 86_400_000;
+
+function isBackgroundListener(cmdLine: string): boolean {
+  const argv = simpleTokenize(cmdLine);
+  if (argv.length === 0) return false;
+  const head = basenameOf(argv[0]);
+  if (head !== 'nc' && head !== 'ncat') return false;
+  return argv.slice(1).some((a) => a === '-l' || (/^-[a-zA-Z]+$/.test(a) && a.includes('l')));
+}
+
 function parseBackgroundDurationMs(cmdLine: string): number {
+  if (isBackgroundListener(cmdLine)) return PERSISTENT_LISTENER_DURATION_MS;
   const m = /\bsleep\s+(\d+(?:\.\d+)?)\s*([smhd]?)\b/.exec(cmdLine);
   if (!m) return 0;
   const value = parseFloat(m[1]);

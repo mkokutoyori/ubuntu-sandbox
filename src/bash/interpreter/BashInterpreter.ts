@@ -181,6 +181,8 @@ export class BashInterpreter {
    * this lets a caller's `2>` redirection peel stderr off coherently.
    */
   private stderrParts: string[] = [];
+  /** Set by a bare `exec >> file 2>> errfile` — see visitSimpleCommandWithInput. */
+  private execRedirect: { stdout?: { path: string; append: boolean }; stderr?: { path: string; append: boolean } } | null = null;
   /** >0 while running a stage inside a multi-command pipeline — see `runPipelineStages`. */
   private pipelineDepth = 0;
   private functions: Map<string, Command>;
@@ -245,6 +247,8 @@ export class BashInterpreter {
       if (e instanceof ExitSignal) {
         exited = true;
         exitCode = e.exitCode;
+        this.env.lastExitCode = exitCode;
+        this.driveSync(this.fireExitTrap()); // exit always fires EXIT, even mid-signal-handler
       } else {
         throw e;
       }
@@ -319,7 +323,23 @@ export class BashInterpreter {
       }
     }
     yield* this.fireExitTrap();
-    return { output: this.output.join(''), exitCode: this.env.lastExitCode, stderr: this.stderrParts.join('') };
+    const output = this.output.join('');
+    const stderr = this.stderrParts.join('');
+    if (this.execRedirect && this.io) {
+      // Lines explicitly routed to fd 2 (e.g. `echo x >&2`) also land in
+      // the merged `output` view — strip them out so they aren't
+      // duplicated into the stdout target too.
+      const stderrLines = new Set(stderr.split('\n').filter((l) => l.length > 0));
+      const stdoutOnly = output.split('\n').filter((l) => !stderrLines.has(l)).join('\n');
+      if (this.execRedirect.stdout) {
+        this.io.writeFile(this.execRedirect.stdout.path, stdoutOnly, this.execRedirect.stdout.append);
+      }
+      if (this.execRedirect.stderr) {
+        this.io.writeFile(this.execRedirect.stderr.path, stderr, this.execRedirect.stderr.append);
+      }
+      return { output: '', exitCode: this.env.lastExitCode, stderr: '' };
+    }
+    return { output, exitCode: this.env.lastExitCode, stderr };
   }
 
   // ─── Expansion bridge (replay with memoization) ───────────────
@@ -538,6 +558,19 @@ export class BashInterpreter {
         try {
           if (cmd.type === 'SimpleCommand' && pipeInput) {
             yield* this.visitSimpleCommandWithInput(cmd, pipeInput);
+          } else if (pipeInput && (cmd.type === 'WhileClause' || cmd.type === 'UntilClause')) {
+            // `producer | while read line; do …; done` — feed the prior
+            // stage's stdout to the loop's `read` calls line-by-line, the
+            // same mechanism `visitWhile` already uses for `< file`.
+            const lines = pipeInput.split('\n');
+            if (lines[lines.length - 1] === '') lines.pop();
+            const savedLoopStdin = this.loopStdin;
+            this.loopStdin = lines;
+            try {
+              yield* this.visitCommand(cmd);
+            } finally {
+              this.loopStdin = savedLoopStdin;
+            }
           } else {
             yield* this.visitCommand(cmd);
           }
@@ -712,8 +745,13 @@ export class BashInterpreter {
       return;
     }
 
-    // If only assignments, no command to run
+    // If only assignments, no command to run — but a bare `> file` (no
+    // command, only a redirection) is real bash idiom for truncating or
+    // creating a file, and must still take effect.
     if (node.words.length === 0) {
+      if (node.redirections.length > 0 && this.io) {
+        yield* this.applyRedirections(node.redirections, '');
+      }
       this.env.lastExitCode = 0;
       return;
     }
@@ -721,6 +759,14 @@ export class BashInterpreter {
     // Command-position alias expansion happens before any resolution.
     const args = this.expandAliases(yield* this.expandWordsG(node.words));
     const cmdName = args[0];
+
+    // `exec >> file 2>> errfile` (no command, only redirections) rewires
+    // the shell's own stdout/stderr for the rest of the script.
+    // `exec cmd …` (a real command follows) is unrelated, not handled here.
+    if (cmdName === 'exec' && args.length === 1 && node.redirections.length > 0) {
+      yield* this.applyExecRedirections(node.redirections);
+      return;
+    }
 
     // Handle eval: re-parse and execute the joined args
     if (cmdName === 'eval') {
@@ -992,13 +1038,15 @@ export class BashInterpreter {
 
       try {
         if (redir.op === '>&') {
-          // `N>&M` duplicates fd N onto fd M. Numeric target → fd merge
-          // (e.g. `2>&1` keeps everything on stdout); only treat as a
-          // file-write if the target is not a digit.
+          // `N>&M` duplicates fd N onto fd M. Numeric target → fd merge;
+          // only treat as a file-write if the target is not a digit.
           if (/^\d+$/.test(target)) {
-            // Merge — output stays captured and flows to stdout below.
-            stderrHandled = true;
-            if (target === '2') dupToStderr = true;
+            // `2>&1` shares fd 1's fate: if fd 1 was already redirected
+            // earlier in this command (`> file 2>&1`), stderr follows it
+            // there; otherwise leave it merged into the terminal output.
+            // `1>&2`/`>&2` marks stderrHandled so a parent `2>` can peel it off.
+            if (target === '2') { stderrHandled = true; dupToStderr = true; }
+            else if (target === '1' && redir.fd === 2 && stdoutHandled) { stderrHandled = true; }
           } else {
             this.io.writeFile(path, capturedOutput, false);
             stdoutHandled = true;
@@ -1028,19 +1076,45 @@ export class BashInterpreter {
       }
     }
 
-    // Output not captured by any redirect goes to stdout
+    // Output not captured by any redirect goes to stdout. These three
+    // branches all mean "this content is actually reaching the terminal
+    // or the next pipeline stage, not a file" — so, like the no-redirect
+    // path elsewhere, it gets a trailing newline if missing. Skipping this
+    // (as file writes above correctly do, for byte-exact output) broke the
+    // next pipeline stage's stdin-vs-argument heuristic for single-line,
+    // no-trailing-newline output (e.g. `pgrep -x sshd 2>/dev/null | head`).
     if (!stdoutHandled && !stderrHandled && capturedOutput) {
-      this.output.push(capturedOutput);
+      this.output.push(ensureTrailingNewline(capturedOutput));
     } else if (!stdoutHandled && stderrHandled && !isError && capturedOutput) {
       // stdout wasn't redirected but stderr was — show stdout (unless this
       // was a `>&2` dup, in which case the content IS stderr).
-      this.output.push(capturedOutput);
+      this.output.push(ensureTrailingNewline(capturedOutput));
       if (dupToStderr) this.stderrParts.push(capturedOutput);
     } else if (stdoutHandled && !stderrHandled && isError && capturedOutput) {
       // stderr wasn't redirected but stdout was — show stderr
-      this.output.push(capturedOutput);
+      this.output.push(ensureTrailingNewline(capturedOutput));
       this.stderrParts.push(capturedOutput);
     }
+  }
+
+  /**
+   * `exec >> file 2>> errfile` — resolve each redirection target and
+   * remember it as the shell's own stdout/stderr for the remainder of
+   * this script; `runProgram` flushes accumulated output there instead
+   * of returning it as terminal text once the script finishes.
+   */
+  private *applyExecRedirections(redirections: Redirection[]): Effects<void> {
+    for (const redir of redirections) {
+      if (redir.op !== '>' && redir.op !== '>>') continue;
+      const target = yield* this.expandWordG(redir.target);
+      const path = this.io ? this.io.resolvePath(target) : target;
+      const append = redir.op === '>>';
+      const fd = redir.fd ?? 1;
+      this.execRedirect ??= {};
+      if (fd === 2) this.execRedirect.stderr = { path, append };
+      else this.execRedirect.stdout = { path, append };
+    }
+    this.env.lastExitCode = 0;
   }
 
   /**

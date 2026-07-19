@@ -45,6 +45,8 @@ import { netplanCommand } from './net/Netplan';
 import { networkctlCommand } from './net/Networkctl';
 import { nmcliCommand } from './net/Nmcli';
 import { ifupCommand, ifdownCommand } from './net/Ifupdown';
+import { sshdCommand } from './net/Sshd';
+import { xxdCommand } from './coreutils/Xxd';
 import { nftCommand } from './net/Nft';
 import { firewallCmdCommand } from './net/FirewallCmd';
 import { fail2banClientCommand } from './net/Fail2banClient';
@@ -60,6 +62,9 @@ import { groupaddCommand, groupmodCommand, groupdelCommand } from './iam/Group';
 import { faillockCommand } from './iam/Faillock';
 import { passwdCommand } from './iam/Passwd';
 import { lastlogCommand } from './iam/Lastlog';
+import { pwckCommand } from './iam/Pwck';
+import { grpckCommand } from './iam/Grpck';
+import { visudoCommand } from './iam/Visudo';
 import { ausearchCommand } from './audit/Ausearch';
 import { aureportCommand } from './audit/Aureport';
 import { auditctlCommand } from './audit/Auditctl';
@@ -125,6 +130,8 @@ export {
   nmcliCommand,
   ifupCommand,
   ifdownCommand,
+  sshdCommand,
+  xxdCommand,
   nftCommand,
   firewallCmdCommand,
   fail2banClientCommand,
@@ -143,6 +150,9 @@ export {
   faillockCommand,
   passwdCommand,
   lastlogCommand,
+  pwckCommand,
+  grpckCommand,
+  visudoCommand,
   ausearchCommand,
   aureportCommand,
   auditctlCommand,
@@ -215,6 +225,8 @@ export const CORE_LINUX_COMMANDS: readonly LinuxCommand[] = [
   nmcliCommand,
   ifupCommand,
   ifdownCommand,
+  sshdCommand,
+  xxdCommand,
   nftCommand,
   firewallCmdCommand,
   fail2banClientCommand,
@@ -233,6 +245,9 @@ export const CORE_LINUX_COMMANDS: readonly LinuxCommand[] = [
   faillockCommand,
   passwdCommand,
   lastlogCommand,
+  pwckCommand,
+  grpckCommand,
+  visudoCommand,
   ausearchCommand,
   aureportCommand,
   auditctlCommand,

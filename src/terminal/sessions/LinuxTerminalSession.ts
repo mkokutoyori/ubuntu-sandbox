@@ -53,10 +53,11 @@ import {
 } from './TerminalSession';
 import { createSessionForDevice } from './sessionFactory';
 import { LinuxMachine } from '@/network/devices/LinuxMachine';
+import { validateSudoersContent } from '@/network/devices/linux/iam/PwGrCheck';
 import type { LinuxShellSession } from '@/network/devices/linux/shell/LinuxShellSession';
 import { AnsiOutputFormatter, type IOutputFormatter } from '@/terminal/core/OutputFormatter';
 import { CompletionController, ReadlinePolicy, CyclingPolicy, LastWordSource, ghostRemainder } from '@/terminal/completion';
-import { LinuxFlowBuilder } from '@/terminal/flows/LinuxFlowBuilder';
+import { toInteractiveSteps } from '@/terminal/flows/planAdapter';
 import {
   parseReadInvocation as parseReadInvocationLib,
   performInteractiveRead as performInteractiveReadLib,
@@ -1410,6 +1411,10 @@ export class LinuxTerminalSession extends TerminalSession {
 
     this.addEchoLine(this.getPrompt(), cmd);
 
+    // A pending visudo "What now?" recovery prompt consumes the very next
+    // line typed (e/x/Q) before anything else is interpreted as a command.
+    if (this.tryVisudoPromptResponse(typed)) return;
+
     // Handle exit/logout
     if (trimmed === 'exit' || trimmed === 'logout') {
       // BRD SSH-04-R4/R5: when nested in an SSH session, exit/logout
@@ -1468,6 +1473,7 @@ export class LinuxTerminalSession extends TerminalSession {
     if (this.tryStartDstatStream(trimmed)) return;
     if (this.tryStartTcpdump(trimmed)) return;
     if (this.tryCrontabEdit(trimmed)) return;
+    if (this.tryVisudoEdit(trimmed)) return;
     if (await this.tryInteractiveRead(trimmed)) return;
 
     // Intercept editor commands — at top level OR embedded in a chain
@@ -1811,12 +1817,141 @@ export class LinuxTerminalSession extends TerminalSession {
     this.notify();
   }
 
+  private _pendingVisudoEdit: { targetPath: string; tmpPath: string } | null = null;
+  /** Set when a save was rejected for a syntax error — the exact real
+   *  visudo "What now?" recovery prompt, awaiting e/x/Q on the next line. */
+  private _pendingVisudoPrompt: { targetPath: string; tmpPath: string } | null = null;
+
+  /** Print real visudo's "What now?" recovery menu after a rejected save. */
+  private printVisudoWhatNow(errorLines: readonly string[]): void {
+    for (const line of errorLines) this.addLine(line);
+    this.addLine('What now?');
+    this.addLine('Options are:');
+    this.addLine("  (e)dit sudoers file again");
+    this.addLine('  e(x)it without saving changes to sudoers file');
+    this.addLine('  (Q)uit and save changes to sudoers file (DANGER!)');
+    this.addLine('');
+    this.addLine('What now? ');
+  }
+
+  /** Consumes the next typed line as the response to printVisudoWhatNow(). */
+  private tryVisudoPromptResponse(commandLine: string): boolean {
+    const pending = this._pendingVisudoPrompt;
+    if (!pending) return false;
+    const answer = commandLine.trim();
+    const dev = this.device;
+
+    if (answer === 'e') {
+      this._pendingVisudoPrompt = null;
+      this._pendingVisudoEdit = pending;
+      const content = (dev instanceof LinuxMachine && this.shell)
+        ? dev.readFileForEditorInSession(pending.tmpPath, this.shell) ?? ''
+        : '';
+      const editorVar = (this.shell?.env.get('VISUAL') || this.shell?.env.get('EDITOR') || 'vi').toLowerCase();
+      const editorCmd: 'nano' | 'vi' | 'vim' = editorVar.includes('nano') ? 'nano' : editorVar.includes('vim') ? 'vim' : 'vi';
+      this.openEditor(editorCmd, [pending.tmpPath]);
+      void content; // buffer already lives at tmpPath — openEditor re-reads it
+      return true;
+    }
+    if (answer === 'x') {
+      this._pendingVisudoPrompt = null;
+      this.addLine(`visudo: ${pending.targetPath} unchanged`);
+      this.notify();
+      return true;
+    }
+    if (answer === 'Q') {
+      this._pendingVisudoPrompt = null;
+      if (dev instanceof LinuxMachine && this.shell) {
+        const content = dev.readFileForEditorInSession(pending.tmpPath, this.shell) ?? '';
+        dev.writeFileFromEditorInSession(pending.targetPath, content, this.shell);
+      }
+      this.addLine(`visudo: ${pending.targetPath}: saved with a known syntax error (DANGER!)`);
+      this.notify();
+      return true;
+    }
+    // Any other input: invalid choice — real visudo re-prompts.
+    this.printVisudoWhatNow([]);
+    this.notify();
+    return true;
+  }
+
+  /**
+   * `visudo` (no `-c`) — real visudo edits a *temp copy* of the target
+   * file and only installs it if the saved content parses cleanly,
+   * guaranteeing /etc/sudoers is never left syntactically broken (which
+   * would lock every admin out of sudo). `-c`/`-c -f` stay on the normal
+   * LinuxCommand dispatch path (Visudo.ts) since they never touch the
+   * editor at all.
+   */
+  private tryVisudoEdit(commandLine: string): boolean {
+    const dev = this.device;
+    if (!(dev instanceof LinuxMachine) || !this.shell) return false;
+    const trimmedCmd = commandLine.trim();
+    const isSudo = trimmedCmd.startsWith('sudo ');
+    let toks = trimmedCmd.split(/\s+/);
+    if (isSudo) toks = toks.slice(1);
+    if (toks[0] !== 'visudo' || toks.includes('-c')) return false;
+
+    // Session-scoped, not device-global: after `sudo su -` in THIS
+    // terminal, `this.shell.user` is 'root' even though the device's
+    // legacy executor-wide current user (dev.getCurrentUser()) never
+    // changes — the same distinction every other check in this method
+    // already respects via the `InSession` VFS calls below.
+    const isRoot = this.shell.user === 'root';
+    if (!isRoot && !(isSudo && dev.canSudo())) {
+      this.addLine('visudo: you must be root to run visudo');
+      return true;
+    }
+
+    const fIdx = toks.indexOf('-f');
+    const targetArg = fIdx !== -1 && toks[fIdx + 1] ? toks[fIdx + 1] : '/etc/sudoers';
+    const targetPath = dev.resolveAbsolutePathInSession(targetArg, this.shell);
+    const existing = dev.readFileForEditorInSession(targetPath, this.shell) ?? '';
+
+    const tmpPath = `/tmp/visudo.${Math.floor(Math.random() * 1e6)}`;
+    dev.writeFileFromEditorInSession(tmpPath, existing, this.shell);
+    this._pendingVisudoEdit = { targetPath, tmpPath };
+
+    const editorVar = (this.shell.env.get('VISUAL') || this.shell.env.get('EDITOR') || 'vi').toLowerCase();
+    const editorCmd: 'nano' | 'vi' | 'vim' = editorVar.includes('nano') ? 'nano' : editorVar.includes('vim') ? 'vim' : 'vi';
+    this.openEditor(editorCmd, [tmpPath]);
+    return true;
+  }
+
+  private finishVisudoEdit(saved: boolean): void {
+    const pending = this._pendingVisudoEdit;
+    this._pendingVisudoEdit = null;
+    this.inputMode = { type: 'normal' };
+    const dev = this.device;
+    if (!saved || !(dev instanceof LinuxMachine) || !this.shell) {
+      this.addLine('visudo: no changes made');
+      this.notify();
+      return;
+    }
+    const content = dev.readFileForEditorInSession(pending!.tmpPath, this.shell) ?? '';
+    const result = validateSudoersContent(content, pending!.targetPath);
+    if (result.exitCode !== 0) {
+      // Real visudo never silently discards a rejected save — it asks
+      // what to do next (re-edit / discard / force-save anyway).
+      this._pendingVisudoPrompt = pending!;
+      this.printVisudoWhatNow(result.lines);
+    } else {
+      dev.writeFileFromEditorInSession(pending!.targetPath, content, this.shell);
+    }
+    this.notify();
+  }
+
   private openEditor(editorCmd: 'nano' | 'vi' | 'vim', args: string[]): void {
     let filePath = '';
     for (const arg of args) {
       if (!arg.startsWith('-') && !arg.startsWith('+')) { filePath = arg; break; }
     }
     if (!filePath) filePath = editorCmd === 'nano' ? 'New Buffer' : '';
+    // nano -v/--view: open read-only, no Write Out. nano -c/--constantshow:
+    // title bar shows the live cursor position. Both no-ops for vi/vim
+    // (which use their own :view / :set ruler commands for the same idea).
+    const readOnly = editorCmd === 'nano' && args.some((a) => a === '-v' || a === '--view');
+    const showPosition = editorCmd === 'nano' && args.some((a) => a === '-c' || a === '--constantshow');
 
     // Resolve against the per-terminal cwd when a shell session is owned
     // (terminal_gap.md §10.1) — falls back to the device's shared cwd for
@@ -1837,6 +1972,8 @@ export class LinuxTerminalSession extends TerminalSession {
       absolutePath,
       content: existingContent ?? '',
       isNewFile,
+      readOnly,
+      showPosition,
     };
     this.notify();
   }
@@ -1862,6 +1999,7 @@ export class LinuxTerminalSession extends TerminalSession {
   override editorExit(saved: boolean = true): void {
     if (this.hasActiveChild) { super.editorExit(saved); return; }
     if (this._pendingCrontabEdit) { this.finishCrontabEdit(saved); return; }
+    if (this._pendingVisudoEdit) { this.finishVisudoEdit(saved); return; }
     this.inputMode = { type: 'normal' };
     const tail = this._pendingChainAfterEditor;
     this._pendingChainAfterEditor = null;
@@ -1935,6 +2073,28 @@ export class LinuxTerminalSession extends TerminalSession {
     return head + rest;
   }
 
+  /**
+   * Command-owned interactive flows (IoC): the DEVICE declares the
+   * sudo/su/passwd/adduser dialogue via `interactionPlanFor`; this session
+   * renders it. The session's only contributions are its per-terminal
+   * identity and the subshell-entry patches (rman/sqlplus) below.
+   */
+  private buildDeviceFlowSteps(
+    command: string,
+    currentUser: string,
+    currentUid: number,
+  ): InteractiveStep[] | null {
+    const device = this.device as unknown as {
+      interactionPlanFor?: (
+        line: string,
+        ctx?: { currentUser?: string; currentUid?: number },
+      ) => import('@/shell/interaction/CommandInteraction').CommandInteractionPlan | null;
+    };
+    if (typeof device.interactionPlanFor !== 'function') return null;
+    const plan = device.interactionPlanFor(command, { currentUser, currentUid });
+    return plan ? toInteractiveSteps(plan) : null;
+  }
+
   private startInteractiveFlow(command: string): boolean {
     // Use the per-terminal shell session's identity, not the device-wide
     // executor's: `su`/`sudo -s` push a frame onto *this* terminal's shell
@@ -1947,7 +2107,7 @@ export class LinuxTerminalSession extends TerminalSession {
     const noSudo = command.startsWith('sudo ') ? command.slice(5).trim() : command;
     const cmdParts = noSudo.split(/\s+/);
     if (cmdParts[0] === 'rman' && command.startsWith('sudo ')) {
-      const steps = LinuxFlowBuilder.build(command, currentUser, currentUid, this.device);
+      const steps = this.buildDeviceFlowSteps(command, currentUser, currentUid);
       if (steps) {
         const rmanArgs = cmdParts.slice(1);
         const patchedSteps: InteractiveStep[] = steps.map(step => {
@@ -1966,7 +2126,7 @@ export class LinuxTerminalSession extends TerminalSession {
       }
     }
     if (cmdParts[0] === 'sqlplus' && command.startsWith('sudo ')) {
-      const steps = LinuxFlowBuilder.build(command, currentUser, currentUid, this.device);
+      const steps = this.buildDeviceFlowSteps(command, currentUser, currentUid);
       if (steps) {
         // Replace the generic execute step with sqlplus entry
         const sqlplusArgs = cmdParts.slice(1);
@@ -1986,7 +2146,7 @@ export class LinuxTerminalSession extends TerminalSession {
       }
     }
 
-    const steps = LinuxFlowBuilder.build(command, currentUser, currentUid, this.device);
+    const steps = this.buildDeviceFlowSteps(command, currentUser, currentUid);
     if (!steps) return false;
 
     this.startFlowFromSteps(steps, command);
