@@ -917,16 +917,45 @@ export function buildSecurityShowCommands(trie: CommandTrie, getRouter: () => Ro
 
   trie.register('show login', 'Display login config', () => {
     const s = sec();
-    const r = getRouter() as unknown as { getLoginBlocker?: () => { isBlocked: (ip: string) => boolean } | null };
+    const r = getRouter() as unknown as {
+      getLoginBlocker?: () => {
+        isBlocked: () => boolean;
+        remainingBlockSeconds: () => number;
+        windowRemainingSeconds: () => number;
+        currentWindowFailureCount: () => number;
+      } | null;
+      getSecurityAuditLog?: () => { entries: () => readonly { mnemonic: string }[] } | null;
+    };
     const blocker = r.getLoginBlocker?.();
-    const lines = [`A login delay of ${s.login.delay ?? 0} seconds is applied.`];
-    if (s.login.blockFor) {
-      lines.push(`Quiet-Mode access list ${s.login.quietModeAcl ?? 'None'}`);
-      lines.push(`Block-for: ${s.login.blockFor.seconds} sec, attempts ${s.login.blockFor.attempts}, within ${s.login.blockFor.withinSeconds} sec`);
-      lines.push(`Router ${blocker ? 'NOT' : 'NOT'} enabled to watch for login attacks`);
-    } else {
-      lines.push('No login failure tracking');
+    const totalFailures = r.getSecurityAuditLog?.()?.entries().filter(e => e.mnemonic === 'LOGIN_FAILED').length ?? 0;
+    // Real IOS applies a default 1-second inter-attempt delay once
+    // `login block-for` is active, unless `login delay` overrides it.
+    const delay = s.login.delay ?? (s.login.blockFor ? 1 : 0);
+    const lines = [`A login delay of ${delay} seconds is applied.`];
+    lines.push(s.login.quietModeAcl
+      ? `Quiet-Mode access list ${s.login.quietModeAcl} is applied.`
+      : 'No Quiet-Mode access list has been configured.');
+    lines.push('');
+    if (!s.login.blockFor) {
+      lines.push('Router NOT enabled to watch for login Attacks');
+      return lines.join('\n');
     }
+    const { seconds: blockSeconds, attempts, withinSeconds } = s.login.blockFor;
+    if (blocker?.isBlocked()) {
+      lines.push('Router presently in Quiet-Mode.');
+      lines.push(`Will remain in Quiet-Mode for ${blocker.remainingBlockSeconds()} more secs.`);
+      if (s.login.quietModeAcl) lines.push(`Permitted List: ${s.login.quietModeAcl}`);
+      return lines.join('\n');
+    }
+    lines.push('Router enabled to watch for login Attacks.');
+    lines.push(`If more than ${attempts} login failures occur in ${withinSeconds} seconds`);
+    lines.push(`or less, logins will be disabled for ${blockSeconds} seconds.`);
+    lines.push('');
+    lines.push('Router presently in Normal-Mode.');
+    lines.push('Current Watch Window');
+    lines.push(`    Time remaining: ${blocker?.windowRemainingSeconds() ?? 0} seconds`);
+    lines.push(`    Login failures for current window: ${blocker?.currentWindowFailureCount() ?? 0}`);
+    lines.push(`Total login failures: ${totalFailures}`);
     return lines.join('\n');
   });
 

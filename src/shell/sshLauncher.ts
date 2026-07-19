@@ -356,8 +356,20 @@ export function finalisePendingAuth(
 ): FinaliseAuthOutcome {
   if (!verifyCredentials(auth.target, auth.user, password)) {
     auth.attempts++;
-    // Best-effort: record the failure for auth.log realism.
+    // Best-effort: record the failure for auth.log realism -- this is also
+    // what feeds a device-wide `login block-for` LoginBlocker, so a failure
+    // recorded HERE (not just OpenSSH's own 3-attempts cap) can be the one
+    // that trips device-wide quiet-mode.
     tryRecordSshLogin(auth, false);
+    const blocker = (auth.target as unknown as {
+      getLoginBlocker?: () => { isBlocked: () => boolean; remainingBlockSeconds: () => number } | null;
+    }).getLoginBlocker?.();
+    if (blocker?.isBlocked()) {
+      return {
+        kind: 'refused',
+        message: `% Blocking new login for ${blocker.remainingBlockSeconds()} secs (quota exceeded)`,
+      };
+    }
     return { kind: 'bad-password' };
   }
 

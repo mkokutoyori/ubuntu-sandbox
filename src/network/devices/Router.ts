@@ -2410,6 +2410,13 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
           .map(p => p.getIPAddress()?.toString())
           .find((ip): ip is string => !!ip) ?? null,
         hasFreeLine: () => this.getSshSessionRegistry().hasFreeLine(),
+        loginBlocker: () => this.getLoginBlocker(),
+        quietModeAccessClass: () => {
+          const sec = (this as unknown as Record<symbol, CiscoSecurityConfig | undefined>)[
+            Symbol.for('CiscoSecurityConfig')
+          ];
+          return sec?.login.quietModeAcl ?? null;
+        },
       });
     }
     return this._vtyIncomingPolicy.admit(transport, sourceIp);
@@ -2815,11 +2822,26 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     return this.getSshHost().acceptsLogin(user);
   }
   recordSshLogin(
-    _user: string, _fromIp: string, _fromHost: string,
-    _accepted: boolean, _method?: 'password' | 'publickey' | 'keyboard-interactive',
+    user: string, fromIp: string, _fromHost: string,
+    accepted: boolean, _method?: 'password' | 'publickey' | 'keyboard-interactive',
   ): void {
-    // Routers log via syslog / info-center elsewhere — the audit hook
-    // is implemented per vendor when those subscribers wire in.
+    // Failures feed the same AAA event bus a native `CrossVendorSshHost
+    // .evaluate()` login would — required so LoginBlocker/SecurityAuditLog
+    // see failures from the interactive `ssh user@router` (bash) path too,
+    // not just the synchronous cross-vendor exec path.
+    if (!accepted) {
+      this.getCredentialStore().recordLoginFailure(user, fromIp, 'bad password', Date.now());
+      return;
+    }
+    // Successes are logged directly to the audit trail rather than through
+    // `credentialStore.recordLoginSuccess()` -- that publishes on the same
+    // bus topic SshSessionRegistry listens to for auto-opening a vty
+    // session, and every caller of this method (sshLauncher.ts,
+    // LinuxTerminalSession's cross-vendor ssh push, the cross-platform ssh
+    // exec paths) already manages its own session lifecycle explicitly.
+    // Going through the bus here would double-book the vty line.
+    this.getSecurityAuditLog().record('SEC_LOGIN', 5, 'LOGIN_SUCCESS',
+      `Login Success [user: ${user}] [Source: ${fromIp}] [localport: 22] [Reason: Login Authentication]`);
   }
   getSshBanner(): string { return this.sshBannerText; }
   getSshMotd(): string { return ''; }

@@ -2675,6 +2675,21 @@ export class LinuxTerminalSession extends TerminalSession {
       | undefined;
     if (!sshHost) return false;
 
+    const sourceIp = this.lookupSourceIp();
+    // `login block-for` device-wide quiet-mode: a new connection attempt
+    // while blocked (and not covered by `login quiet-mode access-class`)
+    // is refused immediately, before any password prompt -- same gate
+    // `sshLauncher.ts` applies for the LinuxBashShell-driven `ssh` path.
+    const admission = (target as unknown as {
+      vtyAdmissionVerdict?: (transport: 'ssh', ip: string) => { accept: boolean };
+    }).vtyAdmissionVerdict?.('ssh', sourceIp);
+    if (admission && !admission.accept) {
+      this.addLine(`ssh: connect to host ${host} port ${meta.port}: Connection refused`, 'error');
+      this.notify();
+      this.crossVendorPushTarget = null;
+      return true;
+    }
+
     const steps: InteractiveStep[] = [
       {
         type: 'password',
@@ -2689,7 +2704,7 @@ export class LinuxTerminalSession extends TerminalSession {
             requestedUser: user,
             requestedHost: host,
             requestedPort: meta.port,
-            sourceIp: this.lookupSourceIp(),
+            sourceIp,
             sourceHostname: this.device.getHostname() || '',
             command: null,
             offeredAuthMethods: ['password'],
@@ -2697,6 +2712,17 @@ export class LinuxTerminalSession extends TerminalSession {
           });
           const decision = sshHost.evaluate(request);
           if (decision.outcome !== 'accepted') {
+            // `sshHost.evaluate()` already recorded the failure on the AAA
+            // bus -- if that failure is the one that just tripped
+            // device-wide quiet-mode, show that instead of the generic
+            // refusal (real IOS: immediate message, connection closed).
+            const blocker = (target as unknown as {
+              getLoginBlocker?: () => { isBlocked: () => boolean; remainingBlockSeconds: () => number } | null;
+            }).getLoginBlocker?.();
+            if (blocker?.isBlocked()) {
+              this.addLine(`% Blocking new login for ${blocker.remainingBlockSeconds()} secs (quota exceeded)`, 'error');
+              return;
+            }
             this.addLine(`${user}@${host}: Permission denied (publickey,password).`, 'error');
             return;
           }

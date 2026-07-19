@@ -92,11 +92,29 @@ export class CiscoTerminalSession extends CLITerminalSession {
     return dev.getBanner?.(kind) ?? '';
   }
 
+  /**
+   * Real IOS: console failures/successes DO feed the same AAA login
+   * bookkeeping as remote lines (visible in `show login` / `show login
+   * failures`) -- but console access is never itself gated by `login
+   * block-for` quiet-mode (confirmed via Cisco's own documentation: quiet
+   * mode denies remote logins only, precisely so an administrator always
+   * retains physical access during a suspected brute-force attack). This
+   * method therefore always authenticates normally regardless of any
+   * device-wide quiet-mode state.
+   */
   private verifyConsoleLogin(username: string, password: string): boolean {
     const dev = this.device as unknown as {
-      getCredentialStore?: () => { authenticate: (u: string, p: string) => boolean };
+      getCredentialStore?: () => {
+        authenticate: (u: string, p: string) => boolean;
+        recordLoginSuccess: (n: string, from: string, method: 'password', at?: number) => void;
+        recordLoginFailure: (n: string, from: string, reason: string, at?: number) => void;
+      };
     };
-    return dev.getCredentialStore?.().authenticate(username, password) ?? false;
+    const store = dev.getCredentialStore?.();
+    const ok = store?.authenticate(username, password) ?? false;
+    if (ok) store?.recordLoginSuccess(username, 'console', 'password');
+    else store?.recordLoginFailure(username, 'console', 'bad password');
+    return ok;
   }
 
   private lookupAccountPrivilege(username: string): number {
