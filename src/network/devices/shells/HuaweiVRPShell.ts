@@ -37,6 +37,8 @@ import {
   type HuaweiDisplayState,
   registerDisplayCommands, displayCurrentConfig,
 } from './huawei/HuaweiDisplayCommands';
+import { huaweiInteractionPlanFor } from './huawei/HuaweiInteractionPlans';
+import type { CommandInteractionPlan } from '@/shell/interaction/CommandInteraction';
 import {
   type HuaweiShellMode, type HuaweiShellContext,
   buildSystemCommands, buildInterfaceCommands,
@@ -299,6 +301,23 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
   r(): Router {
     if (!this.routerRef) throw new Error('Router reference not set (BUG)');
     return this.routerRef;
+  }
+
+  /**
+   * Capture the current configuration as the device's startup snapshot —
+   * the state `display saved-configuration` renders and
+   * `reset saved-configuration` clears.
+   */
+  private captureSavedConfiguration(): void {
+    const text = displayCurrentConfig(
+      this.r(), this.dhcpEnabled, this.dhcpSnoopingEnabled, this.dhcpSelectGlobalSet,
+    );
+    this.r()._captureStartupConfig(text);
+  }
+
+  /** Command-owned interactive flows (IoC) — see HuaweiInteractionPlans. */
+  interactionPlanFor(commandLine: string): CommandInteractionPlan | null {
+    return huaweiInteractionPlanFor(commandLine);
   }
 
   setMode(mode: HuaweiShellMode): void { this.mode = mode; }
@@ -1291,9 +1310,20 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     t.registerGreedy('debugging isis', 'Enable IS-IS debugging', (_args) => '');
     t.registerGreedy('undo debugging isis', 'Disable IS-IS debugging', (_args) => '');
 
-    // save — persist configuration (Huawei equivalent of write memory)
+    // save — persist configuration (Huawei equivalent of write memory).
+    // Captures a REAL snapshot so `display saved-configuration` shows what
+    // was saved, not a mirror of the running config.
     t.register('save', 'Save current configuration', () => {
+      this.captureSavedConfiguration();
       return 'The current configuration will be written to the device.\nInfo: Please input the file name ( *.cfg, *.zip ) [vrpcfg.zip]:vrpcfg.zip\nNow saving the current configuration to the slot.\nSave the configuration successfully.';
+    });
+
+    // reset saved-configuration — clear the startup snapshot. The inline
+    // (vty) form assumes confirmation; the interactive Y/N dialogue is the
+    // interaction plan's job (huaweiInteractionPlanFor).
+    t.registerGreedy('reset saved-configuration', 'Clear the saved configuration', () => {
+      this.r()._eraseStartupConfig();
+      return 'Warning: The action will delete the saved configuration on the device.';
     });
 
     t.registerGreedy('telnet', 'Open Telnet session', (args) => {
@@ -1567,7 +1597,12 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     registerDhcpDebugCommands(t, () => this.r());
 
     t.register('save', 'Save current configuration', () => {
+      this.captureSavedConfiguration();
       return 'The current configuration will be written to the device.\nInfo: Please input the file name ( *.cfg, *.zip ) [vrpcfg.zip]:vrpcfg.zip\nNow saving the current configuration to the slot.\nSave the configuration successfully.';
+    });
+    t.registerGreedy('reset saved-configuration', 'Clear the saved configuration', () => {
+      this.r()._eraseStartupConfig();
+      return 'Warning: The action will delete the saved configuration on the device.';
     });
 
     registerHuaweiPolicySystemCommands(t, this);

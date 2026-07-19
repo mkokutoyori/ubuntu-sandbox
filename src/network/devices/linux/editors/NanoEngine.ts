@@ -58,16 +58,22 @@ export class NanoEngine {
     public readonly filePath: string,
     initialContent: string,
     isNewFile: boolean,
+    private readonly _readOnly = false,
   ) {
     const body = initialContent.endsWith('\n') ? initialContent.slice(0, -1) : initialContent;
     this.linesArr = body.length === 0 && initialContent.length === 0 ? [''] : body.split('\n');
-    this._statusMessage = isNewFile ? '[ New File ]' : '';
+    this._statusMessage = _readOnly
+      ? '[ View mode ]'
+      : isNewFile
+        ? '[ New File ]'
+        : `[ Read ${this.linesArr.length} line${this.linesArr.length === 1 ? '' : 's'} ]`;
     this.saveFileNameBuffer = filePath;
     this.lockPath = dotSwapPathFor(fs.resolvePath(filePath));
     // GNU nano creates a `.<file>.swp` lock file for the duration of the
     // editing session to prevent two nano instances from editing the same
     // file concurrently; removed on clean exit (see swapFilePath below).
-    this.fs.writeFile(this.lockPath, `nano lock: ${filePath}\n`);
+    // View mode (-v) never locks — it never intends to write.
+    if (!_readOnly) this.fs.writeFile(this.lockPath, `nano lock: ${filePath}\n`);
   }
 
   // ── Public state (read-only) ──────────────────────────────────────
@@ -87,6 +93,8 @@ export class NanoEngine {
   get searchQuery(): string { return this.searchQueryBuffer; }
   get swapFilePath(): string { return this.lockPath; }
   get swapFileExists(): boolean { return this.fs.exists(this.lockPath); }
+  /** True when opened with `-v` (view mode) — real nano refuses all edits and offers no Write Out. */
+  get isReadOnly(): boolean { return this._readOnly; }
   /** Real nano's regex-search toggle (Meta+R / Alt+R inside a search or replace prompt). */
   get regexSearchEnabled(): boolean { return this.useRegex; }
   get replaceSearchQuery(): string { return this.replaceSearchBuffer; }
@@ -118,6 +126,12 @@ export class NanoEngine {
 
   private applyEditKey(k: EditorKeyInput): void {
     if (k.ctrl) return this.applyEditCtrlKey(k);
+    // View mode (-v): navigation still works, but the buffer is immutable —
+    // real nano simply ignores keys that would modify it.
+    if (this._readOnly && (k.key === 'Enter' || k.key === 'Backspace' || k.key === 'Delete'
+      || (k.key.length === 1 && !k.alt))) {
+      return;
+    }
 
     switch (k.key) {
       case 'ArrowLeft':
@@ -195,6 +209,11 @@ export class NanoEngine {
 
   private applyEditCtrlKey(k: EditorKeyInput): void {
     const key = k.key.toLowerCase();
+    // View mode (-v): no Write Out, Cut, Paste, or Replace — real nano
+    // simply has no such shortcuts bound while read-only.
+    if (this._readOnly && (key === 'o' || key === 'k' || key === 'u' || key === '\\')) {
+      return;
+    }
     switch (key) {
       case 'o': // Write Out
         this.saveFileNameBuffer = this.filePath;

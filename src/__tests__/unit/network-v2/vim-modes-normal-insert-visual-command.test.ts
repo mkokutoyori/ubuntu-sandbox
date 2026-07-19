@@ -279,12 +279,12 @@ describe('Scénario 4 — COMMAND-LINE (ex commands)', () => {
   let fs: InMemoryEditorFsContext;
   beforeEach(() => { ({ vim, fs } = newEngine('one\ntwo\nthree\n')); });
 
-  it(':set number / :set nonumber toggle line-number display', () => {
-    expect(vim.lineNumbersShown).toBe(true);
-    exCmd(vim, 'set nonumber');
+  it(':set number / :set nonumber toggle line-number display (off by default, like real vim)', () => {
     expect(vim.lineNumbersShown).toBe(false);
     exCmd(vim, 'set number');
     expect(vim.lineNumbersShown).toBe(true);
+    exCmd(vim, 'set nonumber');
+    expect(vim.lineNumbersShown).toBe(false);
   });
 
   it(':set ignorecase makes subsequent searches case-insensitive', () => {

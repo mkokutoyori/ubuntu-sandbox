@@ -9,7 +9,6 @@
 import type { ICLIDevice } from '@/network';
 import { CLITerminalSession } from './CLITerminalSession';
 import { TerminalTheme, SessionType, withTimeout, DeviceOfflineError } from './TerminalSession';
-import { HuaweiFlowBuilder } from '@/terminal/flows/HuaweiFlowBuilder';
 import type { InteractiveStep } from '@/terminal/core/types';
 import { Router } from '@/network/devices/Router';
 import { Switch } from '@/network/devices/Switch';
@@ -147,29 +146,10 @@ export class HuaweiTerminalSession extends CLITerminalSession {
     ];
   }
 
-  /**
-   * Huawei VRP interactive commands:
-   * - save → asks Are you sure to continue? [Y/N]
-   * - reset saved-configuration → warns and asks [Y/N]
-   * - reboot → confirms reboot [Y/N]
-   */
-  protected buildInteractiveFlow(command: string): InteractiveStep[] | null {
-    const lower = command.toLowerCase().trim();
-
-    if (lower === 'save') {
-      return HuaweiFlowBuilder.saveConfiguration();
-    }
-
-    if (lower === 'reset saved-configuration') {
-      return HuaweiFlowBuilder.resetSavedConfiguration();
-    }
-
-    if (lower === 'reboot') {
-      return HuaweiFlowBuilder.rebootConfirmation();
-    }
-
-    return null;
-  }
+  // Interactive commands (save / reset saved-configuration / reboot) are
+  // declared by the VRP shells themselves (huaweiInteractionPlanFor) —
+  // the generic planner-driven buildInteractiveFlow in CLITerminalSession
+  // renders them. Nothing vendor-specific remains here.
 
   private debugJob: AsyncJobHandle | null = null;
   private debugUnsubscribe: (() => void) | null = null;

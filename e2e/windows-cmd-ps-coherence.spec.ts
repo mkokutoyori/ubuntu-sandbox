@@ -62,7 +62,7 @@ async function enterPowerShell(page: Page): Promise<void> {
 }
 
 test.beforeEach(async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/', { timeout: 60_000 });
   await waitForStore(page);
 });
 

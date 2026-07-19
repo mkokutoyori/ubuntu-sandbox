@@ -46,6 +46,10 @@ import { LoggingConfig } from '../inspection/config/LoggingConfig';
 import { isPathReachable } from '../linux/network/HostLookup';
 import { OutgoingSessionRegistry, renderSessions } from './OutgoingSessionRegistry';
 import { encryptType7 as _encryptType7, md5Hex as _md5Hex } from '@/crypto';
+import type {
+  CommandInteractionPlan,
+  InteractionPlanContext,
+} from '@/shell/interaction/CommandInteraction';
 
 const PRIVILEGED_ONLY_SHOW: ReadonlySet<string> = new Set([
   'running-config', 'startup-config', 'tech-support', 'archive',
@@ -238,6 +242,95 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
 
   /** Register device-specific commands on the tries (called from constructor) */
   protected abstract registerDeviceCommands(): void;
+
+  // ─── Command-owned interactive flows (IoC) ───────────────────────
+
+  /**
+   * Declare the interactive dialogue of the commands this shell owns.
+   * The terminal renders the plan; the plan's run steps execute the REAL
+   * device commands through the session's normal path. Matching goes
+   * through the privileged trie, so every IOS keyword abbreviation the
+   * device accepts ("era sta", "wr er", "cop run star") is honored — no
+   * string comparisons in the terminal layer.
+   */
+  interactionPlanFor(
+    commandLine: string,
+    ctx?: InteractionPlanContext,
+  ): CommandInteractionPlan | null {
+    const mode = ctx?.mode ?? 'privileged';
+    if (mode !== 'privileged') return null;
+    const line = commandLine.trim();
+    if (!line) return null;
+
+    const m = this.privilegedTrie.match(line);
+    if (m.status !== 'ok' || !m.node) return null;
+    const path = m.matchedKeywords.join(' ').toLowerCase();
+
+    if (path === 'erase startup-config' || path === 'write erase' || path === 'erase nvram:') {
+      return this.eraseInteractionPlan();
+    }
+    if (path === 'reload' && m.args.length === 0) {
+      return this.reloadInteractionPlan();
+    }
+    if (path === 'copy' && m.args.length === 2) {
+      const norm = (a: string): string => {
+        const t = a.toLowerCase();
+        if (t && 'running-config'.startsWith(t)) return 'running-config';
+        if (t && 'startup-config'.startsWith(t)) return 'startup-config';
+        return t;
+      };
+      if (norm(m.args[0]) === 'running-config' && norm(m.args[1]) === 'startup-config') {
+        return this.copyRunStartInteractionPlan();
+      }
+    }
+    return null;
+  }
+
+  private eraseInteractionPlan(): CommandInteractionPlan {
+    return {
+      steps: [
+        {
+          kind: 'confirmation',
+          prompt: 'Erasing the nvram filesystem will remove all configuration files! Continue? [confirm]',
+          defaultAnswer: 'yes',
+          storeAs: 'erase_confirmed',
+        },
+        // The device command performs the erase; its inline confirm text is
+        // dropped because this plan already rendered the prompt.
+        { kind: 'run', run: async (rt) => { await rt.exec('erase startup-config'); } },
+        { kind: 'output', lines: ['[OK]', 'Erase of nvram: complete'] },
+      ],
+    };
+  }
+
+  private reloadInteractionPlan(): CommandInteractionPlan {
+    return {
+      steps: [
+        {
+          kind: 'confirmation',
+          prompt: 'Proceed with reload? [confirm]',
+          defaultAnswer: 'yes',
+          storeAs: 'reload_confirmed',
+        },
+        { kind: 'run', run: async (rt) => { await rt.exec('reload'); } },
+      ],
+    };
+  }
+
+  private copyRunStartInteractionPlan(): CommandInteractionPlan {
+    return {
+      steps: [
+        {
+          kind: 'text',
+          prompt: 'Destination filename [startup-config]? ',
+          allowEmpty: true,
+          storeAs: 'destination_filename',
+        },
+        { kind: 'run', run: async (rt) => { await rt.exec('write memory'); } },
+        { kind: 'output', lines: ['Building configuration...', '', '[OK]'] },
+      ],
+    };
+  }
 
   protected getChassisProfile(): import('./cisco/CiscoCommonShow').CiscoChassisProfile {
     return 'switch-c3560';

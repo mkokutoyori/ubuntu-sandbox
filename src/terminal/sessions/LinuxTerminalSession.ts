@@ -57,7 +57,7 @@ import { validateSudoersContent } from '@/network/devices/linux/iam/PwGrCheck';
 import type { LinuxShellSession } from '@/network/devices/linux/shell/LinuxShellSession';
 import { AnsiOutputFormatter, type IOutputFormatter } from '@/terminal/core/OutputFormatter';
 import { CompletionController, ReadlinePolicy, CyclingPolicy, LastWordSource, ghostRemainder } from '@/terminal/completion';
-import { LinuxFlowBuilder } from '@/terminal/flows/LinuxFlowBuilder';
+import { toInteractiveSteps } from '@/terminal/flows/planAdapter';
 import {
   parseReadInvocation as parseReadInvocationLib,
   performInteractiveRead as performInteractiveReadLib,
@@ -1884,6 +1884,11 @@ export class LinuxTerminalSession extends TerminalSession {
       if (!arg.startsWith('-') && !arg.startsWith('+')) { filePath = arg; break; }
     }
     if (!filePath) filePath = editorCmd === 'nano' ? 'New Buffer' : '';
+    // nano -v/--view: open read-only, no Write Out. nano -c/--constantshow:
+    // title bar shows the live cursor position. Both no-ops for vi/vim
+    // (which use their own :view / :set ruler commands for the same idea).
+    const readOnly = editorCmd === 'nano' && args.some((a) => a === '-v' || a === '--view');
+    const showPosition = editorCmd === 'nano' && args.some((a) => a === '-c' || a === '--constantshow');
 
     // Resolve against the per-terminal cwd when a shell session is owned
     // (terminal_gap.md §10.1) — falls back to the device's shared cwd for
@@ -1904,6 +1909,8 @@ export class LinuxTerminalSession extends TerminalSession {
       absolutePath,
       content: existingContent ?? '',
       isNewFile,
+      readOnly,
+      showPosition,
     };
     this.notify();
   }
@@ -2003,6 +2010,28 @@ export class LinuxTerminalSession extends TerminalSession {
     return head + rest;
   }
 
+  /**
+   * Command-owned interactive flows (IoC): the DEVICE declares the
+   * sudo/su/passwd/adduser dialogue via `interactionPlanFor`; this session
+   * renders it. The session's only contributions are its per-terminal
+   * identity and the subshell-entry patches (rman/sqlplus) below.
+   */
+  private buildDeviceFlowSteps(
+    command: string,
+    currentUser: string,
+    currentUid: number,
+  ): InteractiveStep[] | null {
+    const device = this.device as unknown as {
+      interactionPlanFor?: (
+        line: string,
+        ctx?: { currentUser?: string; currentUid?: number },
+      ) => import('@/shell/interaction/CommandInteraction').CommandInteractionPlan | null;
+    };
+    if (typeof device.interactionPlanFor !== 'function') return null;
+    const plan = device.interactionPlanFor(command, { currentUser, currentUid });
+    return plan ? toInteractiveSteps(plan) : null;
+  }
+
   private startInteractiveFlow(command: string): boolean {
     // Use the per-terminal shell session's identity, not the device-wide
     // executor's: `su`/`sudo -s` push a frame onto *this* terminal's shell
@@ -2015,7 +2044,7 @@ export class LinuxTerminalSession extends TerminalSession {
     const noSudo = command.startsWith('sudo ') ? command.slice(5).trim() : command;
     const cmdParts = noSudo.split(/\s+/);
     if (cmdParts[0] === 'rman' && command.startsWith('sudo ')) {
-      const steps = LinuxFlowBuilder.build(command, currentUser, currentUid, this.device);
+      const steps = this.buildDeviceFlowSteps(command, currentUser, currentUid);
       if (steps) {
         const rmanArgs = cmdParts.slice(1);
         const patchedSteps: InteractiveStep[] = steps.map(step => {
@@ -2034,7 +2063,7 @@ export class LinuxTerminalSession extends TerminalSession {
       }
     }
     if (cmdParts[0] === 'sqlplus' && command.startsWith('sudo ')) {
-      const steps = LinuxFlowBuilder.build(command, currentUser, currentUid, this.device);
+      const steps = this.buildDeviceFlowSteps(command, currentUser, currentUid);
       if (steps) {
         // Replace the generic execute step with sqlplus entry
         const sqlplusArgs = cmdParts.slice(1);
@@ -2054,7 +2083,7 @@ export class LinuxTerminalSession extends TerminalSession {
       }
     }
 
-    const steps = LinuxFlowBuilder.build(command, currentUser, currentUid, this.device);
+    const steps = this.buildDeviceFlowSteps(command, currentUser, currentUid);
     if (!steps) return false;
 
     this.startFlowFromSteps(steps, command);

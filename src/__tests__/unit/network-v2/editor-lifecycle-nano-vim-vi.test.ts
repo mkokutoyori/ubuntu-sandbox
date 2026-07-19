@@ -208,7 +208,7 @@ describe('Scénario 1 — vim: cycle de vie complet', () => {
     press(vim, ':');
     typeText(vim, 'w');
     press(vim, 'Enter');
-    expect(vim.message).toMatch(/"\/tmp\/test-vim\.txt" 5L, \d+C written/);
+    expect(vim.message).toMatch(/"\/tmp\/test-vim\.txt" 5L, \d+B written/);
     expect(fs.readFile('/tmp/test-vim.txt')).toBe(EXPECTED_RESULT);
 
     press(vim, ':');

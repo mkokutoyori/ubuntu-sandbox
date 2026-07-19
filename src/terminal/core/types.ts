@@ -145,6 +145,10 @@ export interface EditorDirective extends BaseInputDirective {
   absolutePath: string;
   content: string;
   isNewFile: boolean;
+  /** `nano -v` / `nano --view`: buffer is immutable, no Write Out. */
+  readOnly?: boolean;
+  /** `nano -c` / `nano --constantshow`: title bar shows live cursor position. */
+  showPosition?: boolean;
 }
 
 /** Input blocked (booting, processing) */

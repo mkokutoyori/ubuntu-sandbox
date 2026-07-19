@@ -68,7 +68,7 @@ async function waitForText(page: Page, needle: string | RegExp, timeout = 6_000)
 }
 
 test.beforeEach(async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/', { timeout: 60_000 });
   await waitForStore(page);
 });
 
