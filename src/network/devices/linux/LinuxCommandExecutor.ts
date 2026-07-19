@@ -1230,6 +1230,25 @@ export class LinuxCommandExecutor {
     return { output: `${header}\n`, exitCode: 0 };
   }
 
+  /**
+   * `captureTcpHandshake` only writes into the calling machine's own
+   * `captureLog` — unlike `emitSshWire`'s `publishWireSegment` calls, it
+   * isn't routed through `CaptureRouter` to the peer, so a tcpdump running
+   * on the remote end never sees the SYN/SYN-ACK/ACK. Mirror it onto the
+   * peer's own captureLog too, the same way `Nc.ts` already does for its
+   * TCP banner grab.
+   */
+  private mirrorSshHandshakeCapture(
+    src: { ip: string; port: number },
+    dst: { ip: string; port: number },
+  ): void {
+    this.captureLog.captureTcpHandshake(src, dst);
+    const remote = findHostByAddress(dst.ip, { readFile: (p) => this.vfs.readFile(p) });
+    const remoteCap = (remote?.device as unknown as { executor?: { captureLog?: PacketCaptureLog } } | undefined)
+      ?.executor?.captureLog;
+    if (remoteCap && remoteCap !== this.captureLog) remoteCap.captureTcpHandshake(src, dst);
+  }
+
   private emitSshWire(srcIp: string, srcPort: number, dstIp: string, dstPort: number): void {
     ensureCaptureRouterInstalled();
     const enc = new TextEncoder();
@@ -4129,7 +4148,7 @@ export class LinuxCommandExecutor {
         if (sshpassResult.connection) {
           const srcPort = this.socketTable?.allocateEphemeralPort()
             ?? 49152 + Math.floor(Math.random() * 16000);
-          this.captureLog.captureTcpHandshake(
+          this.mirrorSshHandshakeCapture(
             { ip: sshpassResult.connection.localIp, port: srcPort },
             { ip: sshpassResult.connection.peerIp, port: sshpassResult.connection.peerPort },
           );
@@ -4154,7 +4173,7 @@ export class LinuxCommandExecutor {
             undefined, 'ssh',
           );
           const srcPort = entry?.localPort ?? 49152 + Math.floor(Math.random() * 16000);
-          this.captureLog.captureTcpHandshake(
+          this.mirrorSshHandshakeCapture(
             { ip: result.connection.localIp, port: srcPort },
             { ip: result.connection.peerIp, port: result.connection.peerPort },
           );
