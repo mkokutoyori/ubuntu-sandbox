@@ -429,7 +429,9 @@ export class CiscoSecurityConfig {
     for (const t of this.tacacsServers.values()) {
       lines.push(`tacacs server ${t.name}`);
       if (t.address) lines.push(` address ipv4 ${t.address}`);
+      if (t.port !== 49) lines.push(` port ${t.port}`);
       if (t.key) lines.push(` key ${t.key}`);
+      if (t.timeoutSec !== 5) lines.push(` timeout ${t.timeoutSec}`);
     }
     for (const g of this.aaaGroups.values()) {
       lines.push(`aaa group server ${g.kind} ${g.name}`);

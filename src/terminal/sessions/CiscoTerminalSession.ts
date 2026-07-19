@@ -43,6 +43,9 @@ export class CiscoTerminalSession extends CLITerminalSession {
    */
   vty: CliShellSession | null = null;
 
+  /** Authenticated username for this line -- feeds `aaa authorization commands`. */
+  private authenticatedUsername: string | null = null;
+
   constructor(id: string, device: ICLIDevice) {
     super(id, device);
     if (device instanceof Router || device instanceof Switch) {
@@ -101,20 +104,48 @@ export class CiscoTerminalSession extends CLITerminalSession {
    * retains physical access during a suspected brute-force attack). This
    * method therefore always authenticates normally regardless of any
    * device-wide quiet-mode state.
+   *
+   * Routes through `AaaAuthenticator` rather than the credential store
+   * directly -- when `aaa new-model` + an authentication method list are
+   * configured (Scénario 6 — TACACS+), this transparently tries the
+   * configured server group first, silently falling back to `local` on an
+   * unreachable server exactly as `authenticate()` already does; when AAA
+   * isn't configured, `authenticate()` degrades to the same bare
+   * credential-store check this method always performed, so existing
+   * local-only logins are unaffected. `lockedOut` signals the AAA method
+   * chain was fully exhausted (every method unreachable/not configured,
+   * nothing left to fall back to) -- real IOS's "% Authentication failed"
+   * lockout, distinct from an ordinary wrong-password reject.
+   *
+   * `getAaaAuthenticator` only exists on `Router` (TACACS+/RADIUS group
+   * AAA is not wired into `Switch`, matching the existing disclosed gap
+   * for other AAA config surfaces on switches) -- falls back to a bare
+   * credential-store check, identical to this method's behaviour before
+   * AAA integration existed, when it's absent.
    */
-  private verifyConsoleLogin(username: string, password: string): boolean {
+  private async verifyConsoleLogin(username: string, password: string): Promise<{ ok: boolean; privilege: number | null; lockedOut: boolean }> {
     const dev = this.device as unknown as {
       getCredentialStore?: () => {
         authenticate: (u: string, p: string) => boolean;
         recordLoginSuccess: (n: string, from: string, method: 'password', at?: number) => void;
         recordLoginFailure: (n: string, from: string, reason: string, at?: number) => void;
       };
+      getAaaAuthenticator?: () => {
+        authenticate: (u: string, p: string) => Promise<{ accepted: boolean; method: string; privLvl?: number | null }>;
+      };
     };
     const store = dev.getCredentialStore?.();
-    const ok = store?.authenticate(username, password) ?? false;
-    if (ok) store?.recordLoginSuccess(username, 'console', 'password');
+    const authenticator = dev.getAaaAuthenticator?.();
+    const outcome = authenticator
+      ? await authenticator.authenticate(username, password)
+      : { accepted: store?.authenticate(username, password) ?? false, method: 'local', privLvl: null as number | null };
+    if (outcome.accepted) store?.recordLoginSuccess(username, 'console', 'password');
     else store?.recordLoginFailure(username, 'console', 'bad password');
-    return ok;
+    return {
+      ok: outcome.accepted,
+      privilege: outcome.privLvl ?? null,
+      lockedOut: !outcome.accepted && outcome.method === 'exhausted',
+    };
   }
 
   private lookupAccountPrivilege(username: string): number {
@@ -143,42 +174,62 @@ export class CiscoTerminalSession extends CLITerminalSession {
     return [
       /* 0 */ { type: 'output', outputLines: [...preLines, 'User Access Verification', ''] },
       /* 1 */ { type: 'text', prompt: 'Username: ', allowEmpty: true, storeAs: 'console_login_username' },
-      /* 2 */ {
-        type: 'password',
-        prompt: 'Password: ',
-        mask: 'hidden',
-        storeAs: 'console_login_password',
-        validation: (pwd, ctx) => {
+      /* 2 */ { type: 'password', prompt: 'Password: ', mask: 'hidden', storeAs: 'console_login_password' },
+      /* 3 */ {
+        // `InteractiveStep.validation` is synchronous only, but AAA
+        // authentication (TACACS+ over the real TCP stack) is genuinely
+        // async -- so, like the outbound-SSH flow, the actual credential
+        // check happens here in an `execute` step (awaited properly) and
+        // the following `branch` step reads its result back out of the
+        // context, rather than inline in the password step's validation.
+        type: 'execute',
+        action: async (ctx) => {
           const username = (ctx.values.get('console_login_username') ?? '').trim();
-          const ok = this.verifyConsoleLogin(username, pwd);
-          const attempts = parseInt(ctx.values.get('console_login_attempts') ?? '0', 10) + (ok ? 0 : 1);
+          const password = ctx.values.get('console_login_password') ?? '';
+          const result = await this.verifyConsoleLogin(username, password);
+          const attempts = parseInt(ctx.values.get('console_login_attempts') ?? '0', 10) + (result.ok ? 0 : 1);
           ctx.values.set('console_login_attempts', String(attempts));
-          ctx.values.set('console_login_ok', ok ? '1' : '0');
-          if (ok) ctx.values.set('console_login_account', username);
-          // Always advance -- looping/closing is driven explicitly by the
-          // branch step below, not the engine's own retry mechanism.
-          return { valid: true };
+          ctx.values.set('console_login_ok', result.ok ? '1' : '0');
+          ctx.values.set('console_login_lockout', result.lockedOut ? '1' : '0');
+          if (result.ok) {
+            ctx.values.set('console_login_account', username);
+            if (result.privilege != null) ctx.values.set('console_login_privilege', String(result.privilege));
+          }
         },
       },
-      /* 3 */ {
-        type: 'branch',
-        // On success, skip straight to the success handler. On ANY
-        // failure -- including the 3rd -- always show "% Login invalid"
-        // first (step 9); step 10 then decides whether to loop back to
-        // Username: or escalate to "% Bad passwords".
-        predicate: (ctx) => (ctx.values.get('console_login_ok') === '1' ? 4 : 9),
-      },
       /* 4 */ {
+        type: 'branch',
+        // AAA method-chain exhaustion (unreachable server, no local
+        // fallback configured) skips the retry loop entirely -- real IOS
+        // shows "% Authentication failed" once and closes, it does not
+        // give the attacker 3 tries against a server that was never
+        // reachable. A plain reject (wrong password, whether local or via
+        // a reachable AAA server) still goes through the familiar 3-strikes
+        // "% Login invalid" / "% Bad passwords" loop.
+        predicate: (ctx) => {
+          if (ctx.values.get('console_login_lockout') === '1') return 12;
+          return ctx.values.get('console_login_ok') === '1' ? 5 : 7;
+        },
+      },
+      /* 5 */ {
         type: 'execute',
         action: async (ctx) => {
           const username = ctx.values.get('console_login_account') ?? '';
+          this.authenticatedUsername = username || null;
+          const grantedPrivilege = ctx.values.get('console_login_privilege');
           // Real IOS: a `privilege level N` configured on the line
           // OVERRIDES the authenticated user's own account privilege
           // (confirmed behaviour, not just a "default when unset") --
           // only fall back to the account's privilege when the line
-          // itself has no override configured.
+          // itself has no override configured. An AAA-granted privilege
+          // (TACACS+ authentication reply) is authoritative over BOTH --
+          // it is what the scenario's "niveau 15 direct (accordé par
+          // TACACS+)" describes, and real AAA authorization is meant to
+          // take priority over a line's static default.
           const linePrivilege = this.consoleLinePrivilegeOverride();
-          const privilege = linePrivilege ?? this.lookupAccountPrivilege(username);
+          const privilege = grantedPrivilege != null
+            ? parseInt(grantedPrivilege, 10)
+            : linePrivilege ?? this.lookupAccountPrivilege(username);
           if (this.vty) {
             this.vty.state.mode = privilege === 15 ? 'privileged' : 'user';
             this.vty.state.privilegeLevel = privilege;
@@ -190,21 +241,24 @@ export class CiscoTerminalSession extends CLITerminalSession {
           if (execBanner) for (const ln of execBanner.split('\n')) this.addLine(ln);
         },
       },
-      /* 5 */ { type: 'branch', predicate: () => 11 },
-      /* 6 */ { type: 'output', outputLines: ['% Bad passwords'] },
-      /* 7 */ { type: 'execute', action: async () => { this._onRequestClose?.(); } },
-      /* 8 */ { type: 'branch', predicate: () => 11 },
-      /* 9 */ { type: 'output', outputLines: ['% Login invalid'] },
-      /* 10 */ {
+      /* 6 */ { type: 'branch', predicate: () => 15 },
+      /* 7 */ { type: 'output', outputLines: ['% Login invalid'] },
+      /* 8 */ {
         type: 'branch',
         predicate: (ctx) => {
           const attempts = parseInt(ctx.values.get('console_login_attempts') ?? '0', 10);
-          return attempts >= 3 ? 6 : 1;
+          return attempts >= 3 ? 9 : 1;
         },
       },
-      // Steps 5 and 8 branch to index 11 == steps.length, ending the flow
-      // immediately (InteractiveFlowEngine.isComplete is currentIndex >=
-      // steps.length) without an extra no-op step.
+      /* 9 */ { type: 'output', outputLines: ['% Bad passwords'] },
+      /* 10 */ { type: 'execute', action: async () => { this._onRequestClose?.(); } },
+      /* 11 */ { type: 'branch', predicate: () => 15 },
+      /* 12 */ { type: 'output', outputLines: ['% Authentication failed'] },
+      /* 13 */ { type: 'execute', action: async () => { this._onRequestClose?.(); } },
+      /* 14 */ { type: 'branch', predicate: () => 15 },
+      // Steps 6, 11 and 14 branch to index 15 == steps.length, ending the
+      // flow immediately (InteractiveFlowEngine.isComplete is
+      // currentIndex >= steps.length) without an extra no-op step.
     ];
   }
 
@@ -223,6 +277,7 @@ export class CiscoTerminalSession extends CLITerminalSession {
 
   protected override prepareAsRemoteUser(user: string): void {
     this.isVtyRemoteSession = true;
+    this.authenticatedUsername = user || null;
     if (this.vty) {
       // Real IOS: a `privilege level N` configured on the VTY line
       // OVERRIDES the authenticated user's own account privilege (same
@@ -326,11 +381,32 @@ export class CiscoTerminalSession extends CLITerminalSession {
   ): Promise<string> {
     const dev = this.device;
     if (!dev.getIsPoweredOn()) throw new DeviceOfflineError(dev.getName());
+    const denial = await this.checkAaaCommandAuthorization(command);
+    if (denial !== null) return denial;
     if (this.vty && (dev instanceof Router || dev instanceof Switch)) {
       const p = dev.executeCommandInVty(command, this.vty);
       return timeoutMs != null ? withTimeout(p, timeoutMs) : p;
     }
     return super.executeOnDevice(command, timeoutMs);
+  }
+
+  /**
+   * `aaa authorization commands <N> default group X local` — real IOS
+   * consults the configured server group for every command typed at
+   * privilege level N before executing it, refusing with exactly `Command
+   * authorization failed.` (session stays connected) when the server
+   * denies it. Returns null when the command is authorized (or no such
+   * method list applies), in which case the caller proceeds normally.
+   */
+  private async checkAaaCommandAuthorization(command: string): Promise<string | null> {
+    const dev = this.device as unknown as {
+      getAaaAuthenticator?: () => { authorizeCommand: (u: string, c: string, p: number) => Promise<'allowed' | 'denied'> };
+    };
+    const authenticator = dev.getAaaAuthenticator?.();
+    if (!authenticator || !this.authenticatedUsername) return null;
+    const privilege = this.vty?.state.privilegeLevel ?? 1;
+    const verdict = await authenticator.authorizeCommand(this.authenticatedUsername, command.trim(), privilege);
+    return verdict === 'denied' ? 'Command authorization failed.' : null;
   }
 
   /**
@@ -440,7 +516,46 @@ export class CiscoTerminalSession extends CLITerminalSession {
   }
 
   protected override tryInterceptAsyncCommand(command: string): boolean {
-    return this.tryStartCiscoPing(command);
+    return this.tryStartCiscoPing(command) || this.tryStartTestAaa(command);
+  }
+
+  /**
+   * `test aaa group <name> <user> <password> legacy` — a genuine TACACS+/
+   * RADIUS round-trip against the named server group (not a method list:
+   * this bypasses `aaa authentication login` resolution entirely, exactly
+   * like real IOS's diagnostic `test aaa`). Modeled as an async foreground
+   * command (like `ping`) rather than a synchronous CommandTrie entry
+   * because the underlying `AaaAuthenticator`/`TacacsClientAgent` call is a
+   * real Promise-based TCP exchange — `CommandAction` handlers must return
+   * a plain string synchronously, so they cannot await it.
+   */
+  private tryStartTestAaa(commandLine: string): boolean {
+    if (this.hasForegroundAsyncJob) return false;
+    const dev = this.device;
+    if (!(dev instanceof Router)) return false;
+    if (this.vty?.state.mode !== 'privileged') return false;
+    const toks = commandLine.trim().split(/\s+/);
+    if (toks[0] !== 'test' || toks[1] !== 'aaa' || toks[2] !== 'group') return false;
+    const [, , , groupName, username, password, method] = toks;
+    if (!groupName || !username || password === undefined || method !== 'legacy') return false;
+
+    const job = this.startAsyncCommand({
+      mode: 'foreground',
+      kind: 'streaming',
+      command: commandLine,
+      label: `test aaa group ${groupName}`,
+      run: async (ctx) => {
+        const authenticator = dev.getAaaAuthenticator();
+        const kind = authenticator.groupKind(groupName) === 'radius' ? 'radius' : 'TACACS+';
+        ctx.sink.line(`Attempting authentication test to server-group ${groupName} using ${kind}`);
+        const verdict = await authenticator.testGroupAuthentication(groupName, username, password);
+        if (ctx.cancelled()) return;
+        ctx.sink.line(verdict === 'accept'
+          ? 'User was successfully authenticated.'
+          : 'User was NOT successfully authenticated.');
+      },
+    });
+    return job !== null;
   }
 
   private tryStartCiscoPing(commandLine: string): boolean {

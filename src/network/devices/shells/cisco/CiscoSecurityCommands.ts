@@ -634,6 +634,22 @@ export function buildSecuritySubmodeCommands(
     if (s) s.key = args.join(' ');
     return '';
   });
+  tacacsTrie.registerGreedy('port', 'Tacacs port', (args) => {
+    const name = ctx.getTacacsServer?.();
+    if (!name) return '';
+    const s = sec().tacacsServers.get(name);
+    const n = parseInt(args[0], 10);
+    if (s && !isNaN(n)) s.port = n;
+    return '';
+  });
+  tacacsTrie.registerGreedy('timeout', 'Tacacs timeout', (args) => {
+    const name = ctx.getTacacsServer?.();
+    if (!name) return '';
+    const s = sec().tacacsServers.get(name);
+    const n = parseInt(args[0], 10);
+    if (s && !isNaN(n)) s.timeoutSec = n;
+    return '';
+  });
 
   aaaGroupTrie.registerGreedy('server', 'Add server', (args) => {
     const name = ctx.getAaaGroup?.();
