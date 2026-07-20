@@ -81,7 +81,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
   execute(sw: CiscoSwitch, input: string): string {
     const dbg = (sw as unknown as { getDebugService?: () => { subscribe(l: (line: string) => void): () => void; isStpEnabled(): boolean } }).getDebugService?.();
     this.attachDebugSource(dbg);
-    if (input.trim() === '') return this.drainDebugConsole();
+    if (input.trim() === '' && !this.isCollectingBanner()) return this.drainDebugConsole();
     const before = dbg?.isStpEnabled() ? new Map(sw._getSTPStates()) : null;
     let out = this.executeOnDevice(sw, input) as string;
     if (before) {
@@ -2702,6 +2702,16 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       `hostname ${sw.getHostname()}`,
       '!',
     ];
+
+    for (const kind of ['motd', 'login', 'exec', 'incoming'] as const) {
+      const text = (sw as unknown as { getBanner?: (k: string) => string }).getBanner?.(kind);
+      if (text) {
+        lines.push(text.includes('\n')
+          ? `banner ${kind} ^C\n${text}\n^C`
+          : `banner ${kind} ^C${text}^C`);
+        lines.push('!');
+      }
+    }
 
     const enableSecret = sw.getEnableSecret();
     if (enableSecret) lines.push(`enable secret ${renderSecretField(enableSecret.value, enableSecret.algo)}`);

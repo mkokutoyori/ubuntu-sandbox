@@ -606,6 +606,57 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
   // ─── Execute Loop (shared) ──────────────────────────────────────
 
   /**
+   * Multi-line banner entry state: `banner motd #` without a closing
+   * delimiter on the same line switches the console into verbatim
+   * collection until a line containing the delimiter arrives (IOS
+   * truncates at the FIRST occurrence — text before it is kept, the
+   * rest of that line is discarded).
+   */
+  private bannerCollector: {
+    type: 'motd' | 'login' | 'exec' | 'incoming';
+    delimiter: string;
+    lines: string[];
+  } | null = null;
+
+  /** True while a `banner …` command is collecting its multi-line body. */
+  isCollectingBanner(): boolean {
+    return this.bannerCollector !== null;
+  }
+
+  protected storeBanner(kind: 'motd' | 'login' | 'exec' | 'incoming', text: string): void {
+    const dev = this.d() as unknown as {
+      _setSshBanner?: (b: string) => void;
+      _setMotdBanner?: (b: string) => void;
+      _setLoginBanner?: (b: string) => void;
+      _setExecBanner?: (b: string) => void;
+      _setIncomingBanner?: (b: string) => void;
+    };
+    if (kind === 'motd') {
+      dev._setMotdBanner?.(text);
+      dev._setSshBanner?.(text);
+    } else if (kind === 'login') {
+      dev._setLoginBanner?.(text);
+    } else if (kind === 'exec') {
+      dev._setExecBanner?.(text);
+    } else {
+      dev._setIncomingBanner?.(text);
+    }
+  }
+
+  private collectBannerLine(rawLine: string): string {
+    const c = this.bannerCollector!;
+    const idx = rawLine.indexOf(c.delimiter);
+    if (idx === -1) {
+      c.lines.push(rawLine);
+      return '';
+    }
+    if (idx > 0) c.lines.push(rawLine.slice(0, idx));
+    this.bannerCollector = null;
+    this.storeBanner(c.type, c.lines.join('\n'));
+    return '';
+  }
+
+  /**
    * Core execute logic shared by both router and switch shells.
    * Handles: empty input, pipe filtering, ?, exit/end, do prefix,
    * show shortcut, trie matching, async support, error formatting.
@@ -630,6 +681,14 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
 
   protected executeOnDevice(device: TDevice, rawInput: string): string | Promise<string> {
     rawInput = this.applyLineEditing(rawInput);
+    // Multi-line banner entry: every line is verbatim content (leading
+    // spaces, empty lines, would-be commands) until the delimiter shows up.
+    if (this.bannerCollector) {
+      this.deviceRef = device;
+      const out = this.collectBannerLine(rawInput);
+      this.deviceRef = null;
+      return out;
+    }
     if (rawInput.endsWith('\t')) {
       const stem = rawInput.replace(/\s+$/, '');
       const completed = this.tabComplete(stem);
@@ -637,6 +696,10 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     }
     const trimmed = rawInput.trim();
     if (!trimmed) return '';
+    // IOS comment lines: a leading ! (separator or informational comment,
+    // as pasted from show running-config) is accepted silently at every
+    // prompt and never leaves the current sub-mode.
+    if (trimmed.startsWith('!')) return '';
     if (/^[\x00-\x1f]+$/.test(trimmed) && trimmed !== '\x03' && trimmed !== '\x1a') return '';
     if (!trimmed.endsWith('?') && this.terminalHistoryEnabled
         && this.terminalHistorySize > 0
@@ -737,16 +800,30 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
    * the interface sub-mode and enters line configuration. Used as a
    * fallback when the active sub-mode trie does not recognise the command.
    */
+  /**
+   * Global config verbs that pop out of a sub-mode when pasted there —
+   * IOS accepts any level-0 command from a sub-config mode and switches
+   * context implicitly (this is what makes pasting a full show
+   * running-config work even though the `!` separators don't `exit`).
+   */
+  private static readonly COMMON_GLOBAL_NAV = [
+    'interface', 'line', 'router', 'ip', 'hostname', 'banner',
+    'username', 'access-list', 'vlan', 'service', 'no',
+  ];
+
   private static readonly GLOBAL_NAV_BY_MODE: Record<string, string[]> = {
-    'config-if': ['interface', 'line'],
-    'config-subif': ['interface', 'vlan'],
-    'config-line': ['line', 'router'],
-    'config-router': ['interface', 'router'],
-    'config-router-ospf': ['interface', 'router'],
-    'config-router-ospfv3': ['interface', 'router'],
-    'config-vlan': ['interface', 'vlan', 'ip'],
+    'config-if': CiscoShellBase.COMMON_GLOBAL_NAV,
+    'config-subif': CiscoShellBase.COMMON_GLOBAL_NAV,
+    'config-line': CiscoShellBase.COMMON_GLOBAL_NAV,
+    'config-router': CiscoShellBase.COMMON_GLOBAL_NAV,
+    'config-router-ospf': CiscoShellBase.COMMON_GLOBAL_NAV,
+    'config-router-ospfv3': CiscoShellBase.COMMON_GLOBAL_NAV,
+    'config-vlan': CiscoShellBase.COMMON_GLOBAL_NAV,
     'config-vrf': ['*'],
-    'config-route-map': ['interface', 'vlan'],
+    'config-route-map': CiscoShellBase.COMMON_GLOBAL_NAV,
+    'config-std-nacl': CiscoShellBase.COMMON_GLOBAL_NAV,
+    'config-ext-nacl': CiscoShellBase.COMMON_GLOBAL_NAV,
+    'config-ipv6-nacl': CiscoShellBase.COMMON_GLOBAL_NAV,
   };
 
   /**
@@ -2035,35 +2112,37 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       dev._getHostsTable?.().remove(args[0]);
       return '';
     });
-    this.configTrie.registerGreedy('banner', 'Set a banner', (args) => {
-      const dev = this.d() as unknown as {
-        _setSshBanner?: (b: string) => void;
-        _setMotdBanner?: (b: string) => void;
-        _setLoginBanner?: (b: string) => void;
-        _setExecBanner?: (b: string) => void;
-        _setIncomingBanner?: (b: string) => void;
-      };
+    this.configTrie.registerGreedy('banner', 'Set a banner', (args, rawLine) => {
       const which = args[0]?.toLowerCase();
       if (!which || !['motd', 'login', 'exec', 'incoming'].includes(which)) {
         return "% Invalid input detected at '^' marker.";
       }
-      const body = args.slice(1).join(' ').trim();
-      if (body.length === 0) return CISCO_ERRORS.INCOMPLETE;
-      const delim = body[0];
-      const lastIdx = body.lastIndexOf(delim);
-      if (lastIdx <= 0) return "% Invalid input detected at '^' marker.";
-      const text = body.slice(1, lastIdx);
-      if (which === 'motd') {
-        dev._setMotdBanner?.(text);
-        dev._setSshBanner?.(text);
-      } else if (which === 'login') {
-        dev._setLoginBanner?.(text);
-      } else if (which === 'exec') {
-        dev._setExecBanner?.(text);
-      } else if (which === 'incoming') {
-        dev._setIncomingBanner?.(text);
+      // The delimiter is the first non-space character after the banner
+      // type; everything after it (spaces included) is content — split
+      // from the raw line, not the collapsed args.
+      const line = rawLine ?? `banner ${args.join(' ')}`;
+      const typePos = line.toLowerCase().indexOf(which);
+      const rest = line.slice(typePos + which.length).replace(/^\s+/, '');
+      if (rest.length === 0) return CISCO_ERRORS.INCOMPLETE;
+      // show running-config renders the delimiter as the two-character
+      // notation ^C (Ctrl-C); accept it back so the output re-pastes.
+      const delim = rest.startsWith('^C') ? '^C' : rest[0];
+      const body = rest.slice(delim.length);
+      const closeIdx = body.indexOf(delim);
+      if (closeIdx !== -1) {
+        // Inline form — content truncates at the FIRST delimiter
+        // occurrence, exactly like IOS.
+        this.storeBanner(which as 'motd' | 'login' | 'exec' | 'incoming', body.slice(0, closeIdx));
+        return '';
       }
-      return '';
+      // Multi-line form: collect subsequent input verbatim until a line
+      // containing the delimiter.
+      this.bannerCollector = {
+        type: which as 'motd' | 'login' | 'exec' | 'incoming',
+        delimiter: delim,
+        lines: body.length > 0 ? [body] : [],
+      };
+      return `Enter TEXT message.  End with the character '${delim}'.`;
     });
     this.configTrie.registerGreedy('no banner', 'Remove a banner', (args) => {
       const which = args[0]?.toLowerCase();

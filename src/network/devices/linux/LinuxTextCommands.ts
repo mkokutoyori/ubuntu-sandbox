@@ -978,7 +978,9 @@ export function cmdAwk(ctx: ShellContext, args: string[], stdin?: string): strin
       ctx.vfs.writeFile(abs, prior + w.content, ctx.uid, ctx.gid, 0o022);
     }
     if (result.error) return result.error;
-    return result.output.endsWith('\n') ? result.output.slice(0, -1) : result.output;
+    // POSIX awk newline-terminates every print — keep the trailing \n so
+    // `awk … > file` produces a properly terminated text file (wc -l).
+    return result.output;
   } catch {
     const legacyVars = new Map<string, string>(Object.entries(assignments));
     return executeAwk(sources.map(s => s.content).join('\n'), program, fieldSep ?? ' ', legacyVars);

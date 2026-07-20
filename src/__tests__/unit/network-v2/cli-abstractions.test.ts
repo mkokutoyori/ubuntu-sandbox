@@ -258,9 +258,11 @@ describe('cli-utils', () => {
       expect(result).toBe('line2 beta\nline4 gamma');
     });
 
-    it('should be case-insensitive', () => {
-      const result = applyPipeFilter(output, { type: 'include', pattern: 'ALPHA' });
-      expect(result).toBe('line1 alpha\nline3 alpha beta');
+    it('is case-sensitive like real IOS pipe regexes', () => {
+      // `| include ALPHA` does not match lowercase 'alpha' on real IOS.
+      expect(applyPipeFilter(output, { type: 'include', pattern: 'ALPHA' })).toBe('');
+      expect(applyPipeFilter(output, { type: 'include', pattern: 'alpha' }))
+        .toBe('line1 alpha\nline3 alpha beta');
     });
 
     it('should strip surrounding quotes from pattern', () => {

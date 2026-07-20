@@ -986,18 +986,38 @@ function tokenizeArith(expr: string, env: Environment): ArithToken[] {
     } else if ((ch === '+' || ch === '-' || ch === '*' || ch === '/' || ch === '%')
                && i + 1 < expr.length && expr[i + 1] === '=') {
       tokens.push({ type: 'op', value: ch + '=' }); i += 2;
+    } else if (ch === '<' && expr[i + 1] === '<' && expr[i + 2] === '=') {
+      tokens.push({ type: 'op', value: '<<=' }); i += 3;
+    } else if (ch === '<' && expr[i + 1] === '<') {
+      tokens.push({ type: 'op', value: '<<' }); i += 2;
     } else if (ch === '<' && i + 1 < expr.length && expr[i + 1] === '=') {
       tokens.push({ type: 'op', value: '<=' }); i += 2;
     } else if (ch === '<') {
       tokens.push({ type: 'op', value: '<' }); i++;
+    } else if (ch === '>' && expr[i + 1] === '>' && expr[i + 2] === '=') {
+      tokens.push({ type: 'op', value: '>>=' }); i += 3;
+    } else if (ch === '>' && expr[i + 1] === '>') {
+      tokens.push({ type: 'op', value: '>>' }); i += 2;
     } else if (ch === '>' && i + 1 < expr.length && expr[i + 1] === '=') {
       tokens.push({ type: 'op', value: '>=' }); i += 2;
     } else if (ch === '>') {
       tokens.push({ type: 'op', value: '>' }); i++;
     } else if (ch === '&' && i + 1 < expr.length && expr[i + 1] === '&') {
       tokens.push({ type: 'op', value: '&&' }); i += 2;
+    } else if (ch === '&' && i + 1 < expr.length && expr[i + 1] === '=') {
+      tokens.push({ type: 'op', value: '&=' }); i += 2;
+    } else if (ch === '&') {
+      tokens.push({ type: 'op', value: '&' }); i++;
     } else if (ch === '|' && i + 1 < expr.length && expr[i + 1] === '|') {
       tokens.push({ type: 'op', value: '||' }); i += 2;
+    } else if (ch === '|' && i + 1 < expr.length && expr[i + 1] === '=') {
+      tokens.push({ type: 'op', value: '|=' }); i += 2;
+    } else if (ch === '|') {
+      tokens.push({ type: 'op', value: '|' }); i++;
+    } else if (ch === '^' && i + 1 < expr.length && expr[i + 1] === '=') {
+      tokens.push({ type: 'op', value: '^=' }); i += 2;
+    } else if (ch === '^') {
+      tokens.push({ type: 'op', value: '^' }); i++;
     } else if ('+-*/%'.includes(ch)) {
       // Handle unary minus
       if (ch === '-' && (tokens.length === 0 || tokens[tokens.length - 1].type === 'op' || tokens[tokens.length - 1].type === 'lparen')) {
@@ -1051,7 +1071,9 @@ class ArithParser {
       const next = this.tokens[nameIdx + 1];
       if (next && next.type === 'op'
           && (next.value === '=' || next.value === '+=' || next.value === '-='
-              || next.value === '*=' || next.value === '/=' || next.value === '%=')) {
+              || next.value === '*=' || next.value === '/=' || next.value === '%='
+              || next.value === '<<=' || next.value === '>>=' || next.value === '&='
+              || next.value === '|=' || next.value === '^=')) {
         const op = next.value;
         this.pos = nameIdx + 2;
         const rhs = this.parseAssignment();
@@ -1064,6 +1086,11 @@ class ArithParser {
           case '*=': next$ = current * rhs;   break;
           case '/=': next$ = rhs === 0 ? 0 : Math.trunc(current / rhs); break;
           case '%=': next$ = rhs === 0 ? 0 : current - Math.trunc(current / rhs) * rhs; break;
+          case '<<=': next$ = current << rhs; break;
+          case '>>=': next$ = current >> rhs; break;
+          case '&=': next$ = current & rhs;   break;
+          case '|=': next$ = current | rhs;   break;
+          case '^=': next$ = current ^ rhs;   break;
           default:   next$ = rhs;
         }
         this.env.set(name, String(next$));
@@ -1098,12 +1125,39 @@ class ArithParser {
     return val;
   }
 
-  // logicalAnd: equality (&& equality)*
+  // logicalAnd: bitOr (&& bitOr)*
   private parseLogicalAnd(): number {
-    let val = this.parseEquality();
+    let val = this.parseBitOr();
     while (this.matchOp('&&')) {
-      const right = this.parseEquality();
+      const right = this.parseBitOr();
       val = (val !== 0 && right !== 0) ? 1 : 0;
+    }
+    return val;
+  }
+
+  // bitOr: bitXor (| bitXor)* — bash precedence: | above &&, below ^
+  private parseBitOr(): number {
+    let val = this.parseBitXor();
+    while (this.matchOp('|')) {
+      val = val | this.parseBitXor();
+    }
+    return val;
+  }
+
+  // bitXor: bitAnd (^ bitAnd)*
+  private parseBitXor(): number {
+    let val = this.parseBitAnd();
+    while (this.matchOp('^')) {
+      val = val ^ this.parseBitAnd();
+    }
+    return val;
+  }
+
+  // bitAnd: equality (& equality)*
+  private parseBitAnd(): number {
+    let val = this.parseEquality();
+    while (this.matchOp('&')) {
+      val = val & this.parseEquality();
     }
     return val;
   }
@@ -1121,20 +1175,33 @@ class ArithParser {
     return val;
   }
 
-  // relational: additive ((< | > | <= | >=) additive)*
+  // relational: shift ((< | > | <= | >=) shift)*
   private parseRelational(): number {
-    let val = this.parseAdditive();
+    let val = this.parseShift();
     while (this.pos < this.tokens.length && this.tokens[this.pos].type === 'op' &&
            ['<', '>', '<=', '>='].includes(this.tokens[this.pos].value)) {
       const op = this.tokens[this.pos].value;
       this.pos++;
-      const right = this.parseAdditive();
+      const right = this.parseShift();
       switch (op) {
         case '<': val = val < right ? 1 : 0; break;
         case '>': val = val > right ? 1 : 0; break;
         case '<=': val = val <= right ? 1 : 0; break;
         case '>=': val = val >= right ? 1 : 0; break;
       }
+    }
+    return val;
+  }
+
+  // shift: additive ((<< | >>) additive)*
+  private parseShift(): number {
+    let val = this.parseAdditive();
+    while (this.pos < this.tokens.length && this.tokens[this.pos].type === 'op' &&
+           (this.tokens[this.pos].value === '<<' || this.tokens[this.pos].value === '>>')) {
+      const op = this.tokens[this.pos].value;
+      this.pos++;
+      const right = this.parseAdditive();
+      val = op === '<<' ? val << right : val >> right;
     }
     return val;
   }

@@ -98,8 +98,8 @@ export function runScriptContent(
   aliases?: AliasTable,
   functions?: Map<string, import('@/bash/parser/ASTNode').Command>,
 ): ScriptResult {
-  // Strip shebang, then preprocess heredocs
-  const source = preprocessHeredocs(stripShebang(content));
+  // Strip shebang — heredoc bodies are collected natively by BashLexer.
+  const source = stripShebang(content);
 
   let interp: BashInterpreter | undefined;
   try {
@@ -162,7 +162,7 @@ export async function runScriptContentAsync(
   aliases?: AliasTable,
   functions?: Map<string, import('@/bash/parser/ASTNode').Command>,
 ): Promise<ScriptResult> {
-  const source = preprocessHeredocs(stripShebang(content));
+  const source = stripShebang(content);
 
   let interp: BashInterpreter | undefined;
   try {
@@ -275,74 +275,6 @@ function checkReadPermission(
  * Quoted delimiter  → single-quoted herestring (no expansion).
  * Unquoted delimiter → double-quoted herestring (expansion happens).
  */
-function preprocessHeredocs(source: string): string {
-  const lines = source.split('\n');
-  const result: string[] = [];
-  let i = 0;
-
-  while (i < lines.length) {
-    const line = lines[i];
-    // Match << or <<- followed by optional space and a delimiter word.
-    // Use (?<!<) lookbehind and (?!<) lookahead to avoid matching <<< (herestring).
-    // No end-of-line anchor: `cat << 'EOF' > file` is common and valid —
-    // whatever trails the delimiter (a redirection, another word) is kept
-    // verbatim after the `<<<` replacement below.
-    const heredocMatch = line.match(
-      /(?<!<)<<(-?)(?!<)\s*(?:'([^']+)'|"([^"]+)"|(\S+))/,
-    );
-
-    if (!heredocMatch) {
-      result.push(line);
-      i++;
-      continue;
-    }
-
-    const stripTabs = heredocMatch[1] === '-';
-    // Delimiter: group 2 = single-quoted, group 3 = double-quoted, group 4 = unquoted
-    const delimiter = heredocMatch[2] ?? heredocMatch[3] ?? heredocMatch[4];
-    const isQuoted = !!(heredocMatch[2] || heredocMatch[3]);
-
-    // Collect body lines until we hit the delimiter
-    const bodyLines: string[] = [];
-    i++;
-    while (i < lines.length) {
-      const bodyLine = stripTabs ? lines[i].replace(/^\t+/, '') : lines[i];
-      if (bodyLine.trim() === delimiter) {
-        i++;
-        break;
-      }
-      bodyLines.push(bodyLine);
-      i++;
-    }
-
-    const body = bodyLines.join('\n');
-
-    // Replace << ... with <<< 'body' or <<< "body", preserving whatever
-    // trailed the delimiter on the original line (e.g. `> file`).
-    const prefix = line.substring(0, heredocMatch.index!);
-    const suffix = line.substring(heredocMatch.index! + heredocMatch[0].length);
-    if (isQuoted) {
-      // Single-quoted herestring: no expansion, and no escape processing
-      // either — a literal backslash in the body must stay a single
-      // backslash, so only the quote character itself needs the
-      // close-quote/escape/reopen-quote trick.
-      const escaped = body.replace(/'/g, "'\\''");
-      result.push(prefix + "<<< '" + escaped + "'" + suffix);
-    } else {
-      // Double-quoted herestring: expansion will happen. An unquoted
-      // heredoc's own escaping rules (\$, \`, \\ are special; any other
-      // backslash is literal) already match double-quote expansion rules
-      // exactly, so backslashes pass through untouched — only the quote
-      // character itself needs escaping so it doesn't end the herestring
-      // early when re-lexed.
-      const escaped = body.replace(/"/g, '\\"');
-      result.push(prefix + '<<< "' + escaped + '"' + suffix);
-    }
-  }
-
-  return result.join('\n');
-}
-
 /** Remove shebang line if present. */
 function stripShebang(content: string): string {
   if (content.startsWith('#!')) {

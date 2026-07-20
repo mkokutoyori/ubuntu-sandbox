@@ -81,16 +81,18 @@ export function applyPipeFilter(output: string, filter: PipeFilter | null): stri
     pattern = pattern.slice(1, -1);
   }
 
-  const lowerPattern = pattern.toLowerCase();
+  // IOS pipe patterns are regular expressions (`| include ^!` anchors on
+  // line start); an invalid regex degrades to a literal substring match.
+  const matcher = buildPipeMatcher(pattern);
 
   if (filter.type === 'include' || filter.type === 'grep' || filter.type === 'findstr') {
-    return lines.filter(l => l.toLowerCase().includes(lowerPattern)).join('\n');
+    return lines.filter(matcher).join('\n');
   }
   if (filter.type === 'exclude') {
-    return lines.filter(l => !l.toLowerCase().includes(lowerPattern)).join('\n');
+    return lines.filter(l => !matcher(l)).join('\n');
   }
   if (filter.type === 'begin') {
-    const start = lines.findIndex(l => l.toLowerCase().includes(lowerPattern));
+    const start = lines.findIndex(matcher);
     return start === -1 ? '' : lines.slice(start).join('\n');
   }
   if (filter.type === 'section') {
@@ -113,6 +115,15 @@ export function applyPipeFilter(output: string, filter: PipeFilter | null): stri
   return output;
 }
 
+function buildPipeMatcher(pattern: string): (line: string) => boolean {
+  try {
+    const re = new RegExp(pattern);
+    return (line) => re.test(line);
+  } catch {
+    return (line) => line.includes(pattern);
+  }
+}
+
 function extractSections(lines: string[], pattern: string): string[] {
   let re: RegExp;
   try {
@@ -128,7 +139,23 @@ function extractSections(lines: string[], pattern: string): string[] {
     if (isTopLevel && re.test(line)) {
       out.push(line);
       i++;
-      while (i < lines.length && (/^\s/.test(lines[i]) || lines[i] === '')) {
+      if (/^banner \S+ \^C$/.test(line)) {
+        // A multi-line banner block runs to its closing ^C, not by
+        // indentation — its content sits in column 0.
+        while (i < lines.length) {
+          out.push(lines[i]);
+          const closed = lines[i] === '^C';
+          i++;
+          if (closed) break;
+        }
+      } else {
+        while (i < lines.length && (/^\s/.test(lines[i]) || lines[i] === '')) {
+          out.push(lines[i]);
+          i++;
+        }
+      }
+      // IOS includes the block-terminating ! in | section output.
+      if (i < lines.length && lines[i].trim() === '!') {
         out.push(lines[i]);
         i++;
       }

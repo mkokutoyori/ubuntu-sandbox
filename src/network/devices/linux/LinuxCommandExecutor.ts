@@ -4468,7 +4468,23 @@ export class LinuxCommandExecutor {
         }
         return { output: lines.join('\n'), exitCode: exit };
       }
-      case 'mktemp': return { output: '/tmp/tmp.' + Math.random().toString(36).slice(2, 12), exitCode: 0 };
+      case 'mktemp': {
+        // Real mktemp honours a template argument: the trailing run of
+        // X's is replaced by random characters, and the file is created.
+        const rand = (n: number) => Math.random().toString(36).slice(2, 2 + n).padEnd(n, '0');
+        const template = args.find((a) => !a.startsWith('-'));
+        let path: string;
+        if (template && /XXX/.test(template)) {
+          path = template.replace(/X{3,}(?!.*X{3})/, (m) => rand(m.length));
+          if (!path.startsWith('/')) path = this.vfs.normalizePath(path, this.cwd);
+        } else if (template) {
+          return { output: `mktemp: too few X's in template '${template}'`, exitCode: 1 };
+        } else {
+          path = '/tmp/tmp.' + rand(10);
+        }
+        this.vfs.writeFile(path, '', this.userMgr.currentUid, this.userMgr.currentGid, 0o077);
+        return { output: path, exitCode: 0 };
+      }
 
       default: {
         // Check if it's an executable script (./script.sh or /path/to/script)

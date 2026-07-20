@@ -230,7 +230,11 @@ export function showRunningConfig(router: Router): string {
   for (const kind of ['motd', 'login', 'exec', 'incoming'] as const) {
     const text = router.getBanner?.(kind);
     if (text) {
-      lines.push(`banner ${kind} ^${text}^`);
+      // IOS always renders the delimiter as ^C, whatever was typed.
+      // Multi-line content keeps its exact lines between the markers.
+      lines.push(text.includes('\n')
+        ? `banner ${kind} ^C\n${text}\n^C`
+        : `banner ${kind} ^C${text}^C`);
       lines.push('!');
     }
   }
@@ -410,9 +414,13 @@ export function showRunningConfig(router: Router): string {
     const cfg = ospfRun.getConfig();
     lines.push('!');
     lines.push(`router ospf ${cfg.processId}`);
+    if (cfg.routerId && cfg.routerId !== '0.0.0.0') {
+      lines.push(` router-id ${cfg.routerId}`);
+    }
     for (const n of cfg.networks) {
       lines.push(` network ${n.network} ${n.wildcard} area ${n.areaId}`);
     }
+    lines.push('!');
   }
 
   // Local AAA users (`username NAME privilege N secret …`).
@@ -576,7 +584,12 @@ export function showRunningConfig(router: Router): string {
     }
   }
 
+  // IOS closes the configuration with a separator before `end`, and its
+  // header reports the stored size in bytes.
+  if (lines[lines.length - 1] !== '!') lines.push('!');
   lines.push('end');
+  const body = lines.slice(4).join('\n');
+  lines[2] = `Current configuration : ${new TextEncoder().encode(body).length + 1} bytes`;
   return lines.join('\n');
 }
 
