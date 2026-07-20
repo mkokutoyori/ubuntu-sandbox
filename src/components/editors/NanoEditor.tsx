@@ -30,7 +30,7 @@ function shortcutsForMode(engine: NanoEngine): readonly [readonly Shortcut[], re
   switch (engine.mode) {
     case 'search':
       return [
-        [['^G', 'Help'], ['^W', 'Search'], ['M-C', 'Case Sens'], ['M-R', 'Regexp'], ['^R', 'Bck/Fwd']],
+        [['^G', 'Help'], ['^W', 'Search'], ['M-C', 'Case Sens'], ['M-R', 'Regexp']],
         [['^C', 'Cancel'], ['M-B', 'Backwards']],
       ];
     case 'replace-search':
@@ -50,8 +50,8 @@ function shortcutsForMode(engine: NanoEngine): readonly [readonly Shortcut[], re
       ];
     case 'save-prompt':
       return [
-        [['^G', 'Help'], ['M-D', 'DOS Format'], ['M-A', 'Append'], ['M-B', 'Backup File']],
-        [['^C', 'Cancel'], ['M-M', 'Mac Format'], ['M-P', 'Prepend']],
+        [['^G', 'Help']],
+        [['^C', 'Cancel']],
       ];
     case 'exit-save-prompt':
       return [
@@ -63,13 +63,28 @@ function shortcutsForMode(engine: NanoEngine): readonly [readonly Shortcut[], re
         [['^G', 'Help']],
         [['^C', 'Cancel']],
       ];
+    case 'execute-prompt':
+      return [
+        [['^G', 'Help']],
+        [['^C', 'Cancel']],
+      ];
+    case 'read-file-prompt':
+      return [
+        [['^G', 'Help']],
+        [['^C', 'Cancel']],
+      ];
+    case 'help':
+      return [
+        [['^X', 'Exit Help']],
+        [],
+      ];
     case 'edit':
     default:
       if (engine.isReadOnly) {
-        // View mode: no Write Out, Cut, Paste, or Replace — nothing that
-        // could touch the buffer is bound.
+        // View mode: no Write Out, Cut, Paste, Replace, Read File,
+        // Execute, or Justify — nothing that could touch the buffer.
         return [
-          [['^G', 'Help'], ['^W', 'Where Is'], ['^T', 'Execute']],
+          [['^G', 'Help'], ['^W', 'Where Is']],
           [['^X', 'Exit'], ['^_', 'Go To Line']],
         ];
       }
@@ -103,7 +118,8 @@ export const NanoEditor: React.FC<NanoEditorProps> = ({
   useEffect(() => {
     if (engine.mode === 'save-prompt' || engine.mode === 'exit-save-prompt' || engine.mode === 'replace-confirm') {
       saveInputRef.current?.focus();
-    } else if (engine.mode === 'search' || engine.mode === 'replace-search' || engine.mode === 'replace-with' || engine.mode === 'goto-line') {
+    } else if (engine.mode === 'search' || engine.mode === 'replace-search' || engine.mode === 'replace-with'
+      || engine.mode === 'goto-line' || engine.mode === 'execute-prompt' || engine.mode === 'read-file-prompt') {
       searchInputRef.current?.focus();
     } else {
       textareaRef.current?.focus();
@@ -186,11 +202,11 @@ export const NanoEditor: React.FC<NanoEditorProps> = ({
         <textarea
           ref={textareaRef}
           data-testid="nano-textarea"
-          value={engine.displayContent}
+          value={engine.mode === 'help' ? engine.helpText : engine.displayContent}
           onChange={() => { /* content is engine-authoritative; keys drive all mutation */ }}
           onKeyDown={handleEditKeyDown}
-          onPaste={handlePaste}
-          onMouseUp={handleEditMouseUp}
+          onPaste={engine.mode === 'help' ? undefined : handlePaste}
+          onMouseUp={engine.mode === 'help' ? undefined : handleEditMouseUp}
           readOnly
           className="absolute inset-0 w-full h-full outline-none resize-none p-1"
           style={{
@@ -224,6 +240,48 @@ export const NanoEditor: React.FC<NanoEditorProps> = ({
             <input
               ref={saveInputRef}
               value={engine.saveFileName}
+              onChange={() => { /* engine-authoritative */ }}
+              onKeyDown={handlePromptKeyDown}
+              onPaste={handlePaste}
+              className="flex-1 bg-transparent outline-none"
+              style={{
+                color: '#ffffff',
+                caretColor: '#ffffff',
+                fontFamily: 'inherit',
+                fontSize: 'inherit',
+              }}
+              spellCheck={false}
+              autoComplete="off"
+            />
+          </div>
+        )}
+        {engine.mode === 'execute-prompt' && (
+          <div className="flex items-center px-1">
+            <span style={{ color: '#d3d7cf' }}>Execute Command: </span>
+            <input
+              ref={searchInputRef}
+              value={engine.executeCommandQuery}
+              onChange={() => { /* engine-authoritative */ }}
+              onKeyDown={handlePromptKeyDown}
+              onPaste={handlePaste}
+              className="flex-1 bg-transparent outline-none"
+              style={{
+                color: '#ffffff',
+                caretColor: '#ffffff',
+                fontFamily: 'inherit',
+                fontSize: 'inherit',
+              }}
+              spellCheck={false}
+              autoComplete="off"
+            />
+          </div>
+        )}
+        {engine.mode === 'read-file-prompt' && (
+          <div className="flex items-center px-1">
+            <span style={{ color: '#d3d7cf' }}>File to insert: </span>
+            <input
+              ref={searchInputRef}
+              value={engine.readFileQuery}
               onChange={() => { /* engine-authoritative */ }}
               onKeyDown={handlePromptKeyDown}
               onPaste={handlePaste}

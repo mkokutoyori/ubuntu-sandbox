@@ -68,6 +68,8 @@ describe('Scénario — ^X puis Y (exit-save) échoue en écriture : ne PAS quit
     ctrl(nano, 'x');
     expect(nano.mode).toBe('exit-save-prompt');
     press(nano, 'y');
+    expect(nano.mode).toBe('save-prompt'); // real nano always chains to "File Name to Write:"
+    press(nano, 'Enter');
     expect(nano.exited).toBe(false);
     expect(nano.mode).toBe('edit');
     expect(nano.statusMessage).toBe('[ Error writing /etc/sudoers ]');
@@ -80,6 +82,7 @@ describe('Scénario — ^X puis Y (exit-save) échoue en écriture : ne PAS quit
     typeText(nano, 'z');
     ctrl(nano, 'x');
     press(nano, 'y');
+    press(nano, 'Enter');
     expect(nano.exited).toBe(true);
     expect(nano.savedOnExit).toBe(true);
   });
@@ -113,6 +116,7 @@ describe('Scénario — permission refusée réelle (LinuxPC + LinuxEditorFsCont
     typeText(nano, 'tmpfs /mnt/ramtest tmpfs defaults 0 0');
     ctrl(nano, 'x');
     press(nano, 'y');
+    press(nano, 'Enter');
 
     expect(nano.exited).toBe(false);
     expect(nano.statusMessage).toBe('[ Error writing /etc/fstab ]');

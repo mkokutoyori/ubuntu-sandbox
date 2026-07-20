@@ -64,11 +64,15 @@ test.describe('Scénario (e2e) — nano et échec d\'écriture (permission refus
     await page.keyboard.type('tmpfs /mnt/ramtest tmpfs defaults 0 0');
     await page.keyboard.press('Control+x');
     await page.keyboard.press('y');
+    // Real nano always chains to "File Name to Write:" here, exactly
+    // like a plain ^O -- it never writes directly.
+    const status = page.locator('[data-testid="nano-status-message"]');
+    await expect(status).toContainText('File Name to Write');
+    await page.keyboard.press('Enter');
 
     // Real nano stays in the buffer on a write failure — the editor
     // overlay must NOT have closed.
     await expect(titlebar).toBeVisible();
-    const status = page.locator('[data-testid="nano-status-message"]');
     await expect(status).toContainText('Error writing /etc/fstab');
   });
 });

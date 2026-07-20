@@ -4,7 +4,11 @@ import { dotSwapPathFor } from './editorPaths';
 
 export type NanoMode =
   | 'edit' | 'save-prompt' | 'exit-save-prompt' | 'search'
-  | 'replace-search' | 'replace-with' | 'replace-confirm' | 'goto-line';
+  | 'replace-search' | 'replace-with' | 'replace-confirm' | 'goto-line'
+  | 'help' | 'execute-prompt' | 'read-file-prompt';
+
+/** Column width `^J` (Justify) wraps a paragraph to. */
+const JUSTIFY_WIDTH = 80;
 
 /**
  * Lines a PageUp/PageDown jumps by. Real nano ties this to the terminal
@@ -67,6 +71,12 @@ export class NanoEngine {
   private _savedOnExit = false;
   private saveFileNameBuffer: string;
   private gotoLineBuffer = '';
+  private executeCmdBuffer = '';
+  private readFileBuffer = '';
+  /** Set by ^X→Y: the save-prompt this opens must exit on a successful write, not just return to editing. */
+  private exitAfterSave = false;
+  private caseSensitive = false;
+  private searchDir: 'forward' | 'backward' = 'forward';
   private searchQueryBuffer = '';
   private lastSearchTerm = '';
   // Up/Down history recall in the Search: prompt, scoped to this session.
@@ -156,6 +166,40 @@ export class NanoEngine {
   get savedOnExit(): boolean { return this._savedOnExit; }
   get saveFileName(): string { return this.saveFileNameBuffer; }
   get gotoLineQuery(): string { return this.gotoLineBuffer; }
+  get executeCommandQuery(): string { return this.executeCmdBuffer; }
+  get readFileQuery(): string { return this.readFileBuffer; }
+  /** Real nano's M-C toggle inside a search/replace prompt (default: case-insensitive). */
+  get caseSensitiveSearch(): boolean { return this.caseSensitive; }
+  /** Real nano's M-B toggle inside the search prompt (default: forward). */
+  get searchDirection(): 'forward' | 'backward' { return this.searchDir; }
+  /** A compact reference of the bindings this engine actually implements — shown by ^G. */
+  get helpText(): string {
+    return [
+      'GNU nano Help Text',
+      '',
+      'The nano editor is a small, free text editor.',
+      '',
+      'Key bindings:',
+      '  ^G  Display this help text',
+      '  ^X  Exit / close a prompt',
+      '  ^O  Write the current buffer to disk',
+      '  ^R  Insert another file at the cursor',
+      '  ^T  Insert the output of a shell command',
+      '  ^W  Search for text (M-C case sensitive, M-R regexp, M-B backwards)',
+      '  ^\\  Search and replace text',
+      '  ^K  Cut the current line',
+      '  ^U  Paste the last cut text',
+      '  ^J  Justify the current paragraph',
+      '  ^_  Go to a specific line and column',
+      '  ^C  Show the current cursor position',
+      '  ^Y  Scroll up one page',
+      '  ^V  Scroll down one page',
+      '  M-U Undo the last action',
+      '  M-E Redo the last undone action',
+      '',
+      'Press ^X to close this help screen.',
+    ].join('\n');
+  }
   get searchQuery(): string { return this.searchQueryBuffer; }
   get swapFilePath(): string { return this.lockPath; }
   get swapFileExists(): boolean { return this.fs.exists(this.lockPath); }
@@ -180,6 +224,9 @@ export class NanoEngine {
       case 'replace-with': return this.applyReplaceWithKey(k);
       case 'replace-confirm': return this.applyReplaceConfirmKey(k);
       case 'goto-line': return this.applyGotoLineKey(k);
+      case 'help': return this.applyHelpKey(k);
+      case 'execute-prompt': return this.applyExecutePromptKey(k);
+      case 'read-file-prompt': return this.applyReadFilePromptKey(k);
     }
   }
 
@@ -243,6 +290,12 @@ export class NanoEngine {
         return;
       case 'goto-line':
         this.gotoLineBuffer += normalized.split('\n')[0];
+        return;
+      case 'execute-prompt':
+        this.executeCmdBuffer += normalized.split('\n')[0];
+        return;
+      case 'read-file-prompt':
+        this.readFileBuffer += normalized.split('\n')[0];
         return;
       default:
         return;
@@ -433,9 +486,11 @@ export class NanoEngine {
 
   private applyEditCtrlKey(k: EditorKeyInput): void {
     const key = k.key.toLowerCase();
-    // View mode (-v): no Write Out, Cut, Paste, or Replace — real nano
-    // simply has no such shortcuts bound while read-only.
-    if (this._readOnly && (key === 'o' || key === 'k' || key === 'u' || key === '\\')) {
+    // View mode (-v): no Write Out, Cut, Paste, Replace, Justify, Read
+    // File or Execute Command — real nano has none of these bound while
+    // read-only, since every one of them would mutate the buffer.
+    if (this._readOnly && (key === 'o' || key === 'k' || key === 'u' || key === '\\'
+      || key === 'j' || key === 'r' || key === 't')) {
       return;
     }
     switch (key) {
@@ -485,19 +540,30 @@ export class NanoEngine {
         this._mode = 'replace-search';
         this.lastActionWasCut = false;
         return;
-      case 'g': { // cursor position
-        const total = this.linesArr.length;
-        const pct = total > 0 ? Math.round(((this._cursorLine + 1) / total) * 100) : 100;
-        this._statusMessage = `[ line ${this._cursorLine + 1}/${total} (${pct}%), col ${this._cursorCol + 1} ]`;
+      case 'g': // Get Help
+        this._mode = 'help';
         this.lastActionWasCut = false;
         return;
-      }
-      case 'c': {
+      case 'c': { // Cur Pos
         const total = this.linesArr.length;
         this._statusMessage = `[ line ${this._cursorLine + 1}/${total}, col ${this._cursorCol + 1} ]`;
         this.lastActionWasCut = false;
         return;
       }
+      case 'j': // Justify
+        this.justifyParagraph();
+        this.lastActionWasCut = false;
+        return;
+      case 'r': // Read File (insert another file's content at the cursor)
+        this.readFileBuffer = '';
+        this._mode = 'read-file-prompt';
+        this.lastActionWasCut = false;
+        return;
+      case 't': // Execute Command (insert a shell command's output at the cursor)
+        this.executeCmdBuffer = '';
+        this._mode = 'execute-prompt';
+        this.lastActionWasCut = false;
+        return;
       case 'y': // Prev Page
         this.pageUp();
         this.lastActionWasCut = false;
@@ -546,17 +612,24 @@ export class NanoEngine {
   private applySavePromptKey(k: EditorKeyInput): void {
     if (k.key === 'Enter') {
       const ok = this.fs.writeFile(this.saveFileNameBuffer, this.serialize());
+      const wasExitFlow = this.exitAfterSave;
+      this.exitAfterSave = false;
       this._mode = 'edit';
       if (!ok) {
         this._statusMessage = `[ Error writing ${this.saveFileNameBuffer} ]`;
         return;
       }
       this._modified = false;
+      if (wasExitFlow) {
+        this.finishExit(true);
+        return;
+      }
       const n = this.linesArr.length;
       this._statusMessage = `[ Wrote ${n} line${n === 1 ? '' : 's'} ]`;
       return;
     }
     if (k.key === 'Escape' || (k.ctrl && k.key.toLowerCase() === 'c')) {
+      this.exitAfterSave = false;
       this._statusMessage = 'Cancelled';
       this._mode = 'edit';
       return;
@@ -565,7 +638,7 @@ export class NanoEngine {
       this.saveFileNameBuffer = this.saveFileNameBuffer.slice(0, -1);
       return;
     }
-    if (k.key.length === 1) {
+    if (!k.ctrl && !k.alt && k.key.length === 1) {
       this.saveFileNameBuffer += k.key;
     }
   }
@@ -575,14 +648,11 @@ export class NanoEngine {
   private applyExitSavePromptKey(k: EditorKeyInput): void {
     const key = k.key.toLowerCase();
     if (!k.ctrl && key === 'y') {
-      const ok = this.fs.writeFile(this.filePath, this.serialize());
-      if (!ok) {
-        this._mode = 'edit';
-        this._statusMessage = `[ Error writing ${this.filePath} ]`;
-        return;
-      }
-      this._modified = false;
-      this.finishExit(true);
+      // Real nano always chains to "File Name to Write:" here, exactly
+      // like a plain ^O — it never writes directly.
+      this.exitAfterSave = true;
+      this.saveFileNameBuffer = this.filePath;
+      this._mode = 'save-prompt';
       return;
     }
     if (!k.ctrl && key === 'n') {
@@ -611,7 +681,7 @@ export class NanoEngine {
       this.gotoLineBuffer = this.gotoLineBuffer.slice(0, -1);
       return;
     }
-    if (k.key.length === 1) {
+    if (!k.ctrl && !k.alt && k.key.length === 1) {
       this.gotoLineBuffer += k.key;
     }
   }
@@ -630,11 +700,105 @@ export class NanoEngine {
     this.lastEditKind = null;
   }
 
+  // ── Help (^G) ────────────────────────────────────────────────────
+
+  private applyHelpKey(k: EditorKeyInput): void {
+    if (k.key === 'Escape' || (k.ctrl && k.key.toLowerCase() === 'x')) {
+      this._mode = 'edit';
+    }
+  }
+
+  // ── Execute Command (^T) — insert a shell command's output ───────
+
+  private applyExecutePromptKey(k: EditorKeyInput): void {
+    if (k.key === 'Enter') {
+      const output = this.fs.runShellCommand(this.executeCmdBuffer);
+      this._mode = 'edit';
+      const body = output.endsWith('\n') ? output.slice(0, -1) : output;
+      if (body.length > 0) this.pasteIntoBuffer(body);
+      return;
+    }
+    if (k.key === 'Escape' || (k.ctrl && k.key.toLowerCase() === 'c')) {
+      this._mode = 'edit';
+      return;
+    }
+    if (k.key === 'Backspace') {
+      this.executeCmdBuffer = this.executeCmdBuffer.slice(0, -1);
+      return;
+    }
+    if (!k.ctrl && !k.alt && k.key.length === 1) {
+      this.executeCmdBuffer += k.key;
+    }
+  }
+
+  // ── Read File (^R) — insert a file's content at the cursor ───────
+
+  private applyReadFilePromptKey(k: EditorKeyInput): void {
+    if (k.key === 'Enter') {
+      const content = this.fs.readFile(this.readFileBuffer);
+      this._mode = 'edit';
+      if (content === null) {
+        this._statusMessage = `[ Error reading ${this.readFileBuffer}: No such file or directory ]`;
+        return;
+      }
+      const body = content.endsWith('\n') ? content.slice(0, -1) : content;
+      if (body.length > 0) this.pasteIntoBuffer(body);
+      this._statusMessage = '';
+      return;
+    }
+    if (k.key === 'Escape' || (k.ctrl && k.key.toLowerCase() === 'c')) {
+      this._mode = 'edit';
+      return;
+    }
+    if (k.key === 'Backspace') {
+      this.readFileBuffer = this.readFileBuffer.slice(0, -1);
+      return;
+    }
+    if (!k.ctrl && !k.alt && k.key.length === 1) {
+      this.readFileBuffer += k.key;
+    }
+  }
+
+  // ── Justify (^J) — reflow the current paragraph to JUSTIFY_WIDTH ──
+
+  private justifyParagraph(): void {
+    if (this.line(this._cursorLine).trim() === '') return; // real nano: nothing to justify on a blank line
+    let start = this._cursorLine;
+    while (start > 0 && this.line(start - 1).trim() !== '') start--;
+    let end = this._cursorLine;
+    while (end < this.linesArr.length - 1 && this.line(end + 1).trim() !== '') end++;
+
+    const words = this.linesArr.slice(start, end + 1).join(' ').split(/\s+/).filter((w) => w.length > 0);
+    const wrapped: string[] = [];
+    let cur = '';
+    for (const w of words) {
+      if (cur.length === 0) { cur = w; continue; }
+      if (cur.length + 1 + w.length <= JUSTIFY_WIDTH) cur += ' ' + w;
+      else { wrapped.push(cur); cur = w; }
+    }
+    if (cur.length > 0) wrapped.push(cur);
+    if (wrapped.length === 0) wrapped.push('');
+
+    this.beginDiscreteEdit();
+    this.linesArr.splice(start, end - start + 1, ...wrapped);
+    this._cursorLine = start + wrapped.length - 1;
+    this._cursorCol = wrapped[wrapped.length - 1].length;
+    this._modified = true;
+  }
+
   // ── Search ───────────────────────────────────────────────────────
 
   private applySearchKey(k: EditorKeyInput): void {
     if (k.alt && k.key.toLowerCase() === 'r') {
       this.useRegex = !this.useRegex;
+      return;
+    }
+    if (k.alt && k.key.toLowerCase() === 'c') {
+      this.caseSensitive = !this.caseSensitive;
+      return;
+    }
+    if (k.alt && k.key.toLowerCase() === 'b') {
+      this.searchDir = this.searchDir === 'forward' ? 'backward' : 'forward';
       return;
     }
     if (k.key === 'Enter') {
@@ -678,13 +842,20 @@ export class NanoEngine {
       this.searchQueryBuffer = this.searchQueryBuffer.slice(0, -1);
       return;
     }
-    if (k.key.length === 1) {
+    if (!k.ctrl && !k.alt && k.key.length === 1) {
       this.searchQueryBuffer += k.key;
     }
   }
 
   private buildSearchRegex(query: string): RegExp {
-    return new RegExp(this.useRegex ? query : escapeRegExp(query));
+    // Real nano's search is case-insensitive by default (M-C toggles it).
+    return new RegExp(this.useRegex ? query : escapeRegExp(query), this.caseSensitive ? '' : 'i');
+  }
+
+  private setCursorFromFlatOffset(idx: number): void {
+    const before = this.content.slice(0, idx).split('\n');
+    this._cursorLine = before.length - 1;
+    this._cursorCol = before[before.length - 1].length;
   }
 
   private performSearch(query: string): void {
@@ -692,6 +863,28 @@ export class NanoEngine {
       + (this._cursorLine > 0 ? 1 : 0) + this._cursorCol;
     const text = this.content;
     const re = this.buildSearchRegex(query);
+
+    if (this.searchDir === 'backward') {
+      const globalRe = new RegExp(re.source, re.flags.includes('g') ? re.flags : re.flags + 'g');
+      const before = [...text.slice(0, flatOffset).matchAll(globalRe)];
+      let idx: number;
+      let wrapped = false;
+      if (before.length > 0) {
+        idx = before[before.length - 1].index!;
+      } else {
+        const all = [...text.matchAll(globalRe)];
+        if (all.length === 0) {
+          this._statusMessage = `[ "${query}" not found ]`;
+          return;
+        }
+        idx = all[all.length - 1].index!;
+        wrapped = true;
+      }
+      this.setCursorFromFlatOffset(idx);
+      this._statusMessage = wrapped ? '[ Search Wrapped ]' : '';
+      return;
+    }
+
     let m = text.slice(flatOffset + 1).match(re);
     let idx = m && m.index !== undefined ? flatOffset + 1 + m.index : -1;
     let wrapped = false;
@@ -704,9 +897,7 @@ export class NanoEngine {
       this._statusMessage = `[ "${query}" not found ]`;
       return;
     }
-    const before = text.slice(0, idx).split('\n');
-    this._cursorLine = before.length - 1;
-    this._cursorCol = before[before.length - 1].length;
+    this.setCursorFromFlatOffset(idx);
     this._statusMessage = wrapped ? '[ Search Wrapped ]' : '';
   }
 
@@ -715,6 +906,10 @@ export class NanoEngine {
   private applyReplaceSearchKey(k: EditorKeyInput): void {
     if (k.alt && k.key.toLowerCase() === 'r') {
       this.useRegex = !this.useRegex;
+      return;
+    }
+    if (k.alt && k.key.toLowerCase() === 'c') {
+      this.caseSensitive = !this.caseSensitive;
       return;
     }
     if (k.key === 'Enter') {
@@ -732,12 +927,16 @@ export class NanoEngine {
       this.replaceSearchBuffer = this.replaceSearchBuffer.slice(0, -1);
       return;
     }
-    if (k.key.length === 1) {
+    if (!k.ctrl && !k.alt && k.key.length === 1) {
       this.replaceSearchBuffer += k.key;
     }
   }
 
   private applyReplaceWithKey(k: EditorKeyInput): void {
+    if (k.alt && k.key.toLowerCase() === 'c') {
+      this.caseSensitive = !this.caseSensitive;
+      return;
+    }
     if (k.key === 'Enter') {
       this.startReplace();
       return;
@@ -750,7 +949,7 @@ export class NanoEngine {
       this.replaceWithBuffer = this.replaceWithBuffer.slice(0, -1);
       return;
     }
-    if (k.key.length === 1) {
+    if (!k.ctrl && !k.alt && k.key.length === 1) {
       this.replaceWithBuffer += k.key;
     }
   }

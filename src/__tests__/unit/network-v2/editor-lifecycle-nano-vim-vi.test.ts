@@ -82,10 +82,11 @@ describe('Scénario 1 — nano: cycle de vie complet', () => {
   });
 
   it('exit-save-prompt: Y saves and exits, N discards and exits, ^C cancels back to editing', () => {
-    // Y path
+    // Y path -- real nano chains to "File Name to Write:" before writing.
     typeText(nano, 'x');
     ctrl(nano, 'x');
     press(nano, 'y');
+    press(nano, 'Enter');
     expect(nano.exited).toBe(true);
     expect(nano.savedOnExit).toBe(true);
     expect(fs.readFile('/tmp/test-nano.txt')).toBe('x' + REFERENCE_FILE);
