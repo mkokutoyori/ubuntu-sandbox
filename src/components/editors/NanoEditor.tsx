@@ -20,6 +20,9 @@ interface NanoEditorProps {
   readOnly?: boolean;
   /** `nano -c`: title bar shows the live cursor position. */
   showPosition?: boolean;
+  /** `nano +LINE[,COLUMN] file`: initial cursor position (1-indexed). */
+  initialCursorLine?: number;
+  initialCursorCol?: number;
 }
 
 type Shortcut = readonly [string, string];
@@ -103,10 +106,15 @@ export const NanoEditor: React.FC<NanoEditorProps> = ({
   onExit,
   readOnly = false,
   showPosition = false,
+  initialCursorLine,
+  initialCursorCol,
 }) => {
   const engineRef = useRef<NanoEngine>();
   if (!engineRef.current) {
-    engineRef.current = new NanoEngine(fsContext, filePath, initialContent, isNewFile, readOnly);
+    engineRef.current = new NanoEngine(
+      fsContext, filePath, initialContent, isNewFile, readOnly,
+      initialCursorLine !== undefined ? { line: initialCursorLine, col: initialCursorCol } : undefined,
+    );
   }
   const engine = engineRef.current;
   const [, bump] = useReducer((x: number) => x + 1, 0);

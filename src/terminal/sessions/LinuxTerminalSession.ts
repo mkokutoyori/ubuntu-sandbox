@@ -2000,6 +2000,18 @@ export class LinuxTerminalSession extends TerminalSession {
     // (which use their own :view / :set ruler commands for the same idea).
     const readOnly = editorCmd === 'nano' && args.some((a) => a === '-v' || a === '--view');
     const showPosition = editorCmd === 'nano' && args.some((a) => a === '-c' || a === '--constantshow');
+    // `+LINE[,COLUMN]` (nano) / `+LINE` (vim/vi, no column form) opens the
+    // buffer with the cursor already positioned there. Real nano/vim take
+    // the LAST such argument if more than one is given.
+    let initialCursorLine: number | undefined;
+    let initialCursorCol: number | undefined;
+    for (const arg of args) {
+      const m = /^\+(\d+)(?:,(\d+))?$/.exec(arg);
+      if (m) {
+        initialCursorLine = parseInt(m[1], 10);
+        initialCursorCol = m[2] !== undefined ? parseInt(m[2], 10) : undefined;
+      }
+    }
 
     // No filename given: a genuinely unnamed buffer. Resolving '' against
     // the cwd would collapse to the cwd's OWN directory path (VFS
@@ -2018,6 +2030,8 @@ export class LinuxTerminalSession extends TerminalSession {
         isNewFile: true,
         readOnly,
         showPosition,
+        initialCursorLine,
+        initialCursorCol,
       };
       this.notify();
       return;
@@ -2044,6 +2058,8 @@ export class LinuxTerminalSession extends TerminalSession {
       isNewFile,
       readOnly,
       showPosition,
+      initialCursorLine,
+      initialCursorCol,
     };
     this.notify();
   }

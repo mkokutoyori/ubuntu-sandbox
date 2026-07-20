@@ -193,6 +193,8 @@ export const TerminalView: React.FC<TerminalViewProps> = ({ session }) => {
             isNewFile={editorMode.isNewFile}
             readOnly={editorMode.readOnly}
             showPosition={editorMode.showPosition}
+            initialCursorLine={editorMode.initialCursorLine}
+            initialCursorCol={editorMode.initialCursorCol}
             fsContext={fsContext}
             onExit={(saved: boolean) => session.editorExit(saved)}
           />
@@ -206,6 +208,7 @@ export const TerminalView: React.FC<TerminalViewProps> = ({ session }) => {
           initialContent={editorMode.content}
           isNewFile={editorMode.isNewFile}
           editorName={editorMode.editorType === 'vi' ? 'vi' : 'vim'}
+          initialCursorLine={editorMode.initialCursorLine}
           fsContext={fsContext}
           owner={owner}
           onExit={(saved: boolean) => session.editorExit(saved)}

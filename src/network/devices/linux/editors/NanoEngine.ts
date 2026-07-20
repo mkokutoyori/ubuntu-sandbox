@@ -114,6 +114,8 @@ export class NanoEngine {
     initialContent: string,
     isNewFile: boolean,
     private readonly _readOnly = false,
+    /** `nano +LINE[,COLUMN] file` — both 1-indexed, clamped to the buffer. */
+    initialCursor?: { line: number; col?: number },
   ) {
     const body = initialContent.endsWith('\n') ? initialContent.slice(0, -1) : initialContent;
     this.linesArr = body.length === 0 && initialContent.length === 0 ? [''] : body.split('\n');
@@ -132,6 +134,7 @@ export class NanoEngine {
     // lock is created until a real name exists (Write Out gives it one).
     this.lockPath = filePath === '' ? '' : dotSwapPathFor(fs.resolvePath(filePath));
     if (!_readOnly && this.lockPath !== '') this.fs.writeFile(this.lockPath, `nano lock: ${filePath}\n`);
+    if (initialCursor) this.gotoLineNumbers(initialCursor.line, initialCursor.col);
   }
 
   // ── Public state (read-only) ──────────────────────────────────────
@@ -870,10 +873,15 @@ export class NanoEngine {
     const [lineStr, colStr] = trimmed.split(',');
     const lineNum = parseInt(lineStr, 10);
     if (!Number.isFinite(lineNum) || lineNum < 1) return;
-    const targetLine = Math.min(lineNum, this.linesArr.length) - 1;
-    this._cursorLine = targetLine;
     const colNum = colStr !== undefined ? parseInt(colStr, 10) : NaN;
-    this._cursorCol = Number.isFinite(colNum) && colNum >= 1 ? this.clampCol(targetLine, colNum - 1) : 0;
+    this.gotoLineNumbers(lineNum, Number.isFinite(colNum) ? colNum : undefined);
+  }
+
+  /** 1-indexed line[,col], clamped to the buffer — shared by the ^_ prompt and the `+N[,C]` CLI argument. */
+  private gotoLineNumbers(line: number, col?: number): void {
+    const targetLine = Math.min(Math.max(1, line), this.linesArr.length) - 1;
+    this._cursorLine = targetLine;
+    this._cursorCol = col !== undefined && col >= 1 ? this.clampCol(targetLine, col - 1) : 0;
     this.lastEditKind = null;
   }
 

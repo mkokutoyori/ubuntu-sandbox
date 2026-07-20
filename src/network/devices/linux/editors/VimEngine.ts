@@ -330,6 +330,8 @@ export class VimEngine {
     isNewFile: boolean,
     public readonly variant: VimVariant = 'vim',
     owner = 'user',
+    /** `vim +LINE file` — 1-indexed, clamped to the buffer. */
+    initialCursor?: { line: number },
   ) {
     this._fileFormat = initialContent.includes('\r\n') ? 'dos' : 'unix';
     const body = initialContent.endsWith('\n') ? initialContent.slice(0, -1) : initialContent;
@@ -351,6 +353,7 @@ export class VimEngine {
     // real name exists via `:w <name>`.
     if (filePath === '') {
       this.swapPath = '';
+      if (initialCursor) this.gotoLine(initialCursor.line - 1);
       return;
     }
     const primarySwap = dotSwapPathFor(fs.resolvePath(filePath));
@@ -375,6 +378,7 @@ export class VimEngine {
         this._mode = 'binary-warning';
       }
     }
+    if (initialCursor) this.gotoLine(initialCursor.line - 1);
   }
 
   // ── Public state ─────────────────────────────────────────────────
