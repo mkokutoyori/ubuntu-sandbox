@@ -2951,6 +2951,28 @@ export abstract class EndHost extends Equipment {
     const ip = await this.resolveHostForCommand(targetStr);
     if (!ip) return { resolved: false };
     opts.onResolved?.(ip, targetStr !== ip.toString() ? targetStr : undefined);
+
+    // Loopback / one of the host's own addresses never goes through
+    // `resolveRoute()` — there's no next hop to ARP for, exactly like
+    // `executePingStream()` already special-cases this below. Without this,
+    // `executeTraceroute()` finds no route and returns zero hops, which the
+    // terminal layer reports as a bogus "Unable to resolve target system
+    // name" instead of the single, instant self-hop real tracert/traceroute
+    // print for 127.0.0.1/localhost.
+    if (ip.isLoopback() || this.getPortOwningIP(ip)) {
+      opts.onHop({
+        hop: opts.firstTtl ?? 1,
+        ip: ip.toString(),
+        timeout: false,
+        probes: [
+          { responded: true, rttMs: 0.02, ip: ip.toString() },
+          { responded: true, rttMs: 0.02, ip: ip.toString() },
+          { responded: true, rttMs: 0.02, ip: ip.toString() },
+        ],
+      });
+      return { resolved: true };
+    }
+
     await this.executeTraceroute(
       ip, opts.maxHops, opts.timeoutMs ?? 2000, opts.probesPerHop, opts.firstTtl,
       { onHop: opts.onHop, shouldStop: opts.shouldStop },
