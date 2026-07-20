@@ -124,11 +124,18 @@ export const NanoEditor: React.FC<NanoEditorProps> = ({
   const searchInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    if (engine.mode === 'save-prompt' || engine.mode === 'exit-save-prompt' || engine.mode === 'replace-confirm') {
+    if (engine.mode === 'save-prompt') {
+      saveInputRef.current?.focus();
+      const pos = engine.promptCursor;
+      saveInputRef.current?.setSelectionRange(pos, pos);
+    } else if (engine.mode === 'exit-save-prompt' || engine.mode === 'replace-confirm') {
+      // Hidden Y/N/A capture inputs — no text field, nothing to position.
       saveInputRef.current?.focus();
     } else if (engine.mode === 'search' || engine.mode === 'replace-search' || engine.mode === 'replace-with'
       || engine.mode === 'goto-line' || engine.mode === 'execute-prompt' || engine.mode === 'read-file-prompt') {
       searchInputRef.current?.focus();
+      const pos = engine.promptCursor;
+      searchInputRef.current?.setSelectionRange(pos, pos);
     } else {
       textareaRef.current?.focus();
       const pos = engine.displayCursorOffset;

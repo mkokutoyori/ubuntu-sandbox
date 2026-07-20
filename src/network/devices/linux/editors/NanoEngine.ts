@@ -78,6 +78,12 @@ export class NanoEngine {
   private gotoLineBuffer = '';
   private executeCmdBuffer = '';
   private readFileBuffer = '';
+  /** Cursor position within whichever single-line prompt field is
+   *  currently active (search/replace/save-name/goto-line/execute/
+   *  read-file) — only one prompt is ever open at once, so one shared
+   *  field suffices. Reset to the field's length wherever that field is
+   *  freshly populated (prompt opened, prefilled, history recall). */
+  private _promptCursor = 0;
   /** Set by ^X→Y: the save-prompt this opens must exit on a successful write, not just return to editing. */
   private exitAfterSave = false;
   private caseSensitive = false;
@@ -192,6 +198,8 @@ export class NanoEngine {
   get exited(): boolean { return this._exited; }
   get savedOnExit(): boolean { return this._savedOnExit; }
   get saveFileName(): string { return this.saveFileNameBuffer; }
+  /** Cursor offset within the currently active prompt field (search/replace/save-name/goto-line/execute/read-file). */
+  get promptCursor(): number { return this._promptCursor; }
   get gotoLineQuery(): string { return this.gotoLineBuffer; }
   get executeCommandQuery(): string { return this.executeCmdBuffer; }
   get readFileQuery(): string { return this.readFileBuffer; }
@@ -289,8 +297,8 @@ export class NanoEngine {
   }
 
   /**
-   * Insert pasted text at the cursor (edit mode) or append it to the
-   * active prompt field (search/replace/save-name — single-line, so
+   * Insert pasted text at the cursor (edit mode) or at the active
+   * prompt field's cursor (search/replace/save-name — single-line, so
    * embedded newlines are dropped past the first). No bracketed-paste
    * distinction is modeled: characters land exactly as if typed very
    * fast, so a literal Tab in the clipboard still inserts `\t` even
@@ -299,30 +307,31 @@ export class NanoEngine {
   applyPaste(text: string): void {
     if (this._exited || !text) return;
     const normalized = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+    const firstLine = normalized.split('\n')[0];
     switch (this._mode) {
       case 'edit':
         this.pasteIntoBuffer(normalized);
         return;
       case 'save-prompt':
-        this.saveFileNameBuffer += normalized.split('\n')[0];
+        this.insertIntoPromptField(() => this.saveFileNameBuffer, (v) => { this.saveFileNameBuffer = v; }, firstLine);
         return;
       case 'search':
-        this.searchQueryBuffer += normalized.split('\n')[0];
+        this.insertIntoPromptField(() => this.searchQueryBuffer, (v) => { this.searchQueryBuffer = v; }, firstLine);
         return;
       case 'replace-search':
-        this.replaceSearchBuffer += normalized.split('\n')[0];
+        this.insertIntoPromptField(() => this.replaceSearchBuffer, (v) => { this.replaceSearchBuffer = v; }, firstLine);
         return;
       case 'replace-with':
-        this.replaceWithBuffer += normalized.split('\n')[0];
+        this.insertIntoPromptField(() => this.replaceWithBuffer, (v) => { this.replaceWithBuffer = v; }, firstLine);
         return;
       case 'goto-line':
-        this.gotoLineBuffer += normalized.split('\n')[0];
+        this.insertIntoPromptField(() => this.gotoLineBuffer, (v) => { this.gotoLineBuffer = v; }, firstLine);
         return;
       case 'execute-prompt':
-        this.executeCmdBuffer += normalized.split('\n')[0];
+        this.insertIntoPromptField(() => this.executeCmdBuffer, (v) => { this.executeCmdBuffer = v; }, firstLine);
         return;
       case 'read-file-prompt':
-        this.readFileBuffer += normalized.split('\n')[0];
+        this.insertIntoPromptField(() => this.readFileBuffer, (v) => { this.readFileBuffer = v; }, firstLine);
         return;
       default:
         return;
@@ -528,6 +537,7 @@ export class NanoEngine {
     switch (key) {
       case 'o': // Write Out
         this.saveFileNameBuffer = this.filePath;
+        this._promptCursor = this.saveFileNameBuffer.length;
         this._mode = 'save-prompt';
         return;
       case 'x': // Exit
@@ -584,12 +594,14 @@ export class NanoEngine {
         return;
       case 'w': // Where Is (search) — prefilled with the last search term, like real nano
         this.searchQueryBuffer = this.lastSearchTerm;
+        this._promptCursor = this.searchQueryBuffer.length;
         this._mode = 'search';
         this.historyNavIndex = null;
         this.lastActionWasCut = false;
         return;
       case '\\': // Replace
         this.replaceSearchBuffer = this.lastSearchTerm;
+        this._promptCursor = this.replaceSearchBuffer.length;
         this._mode = 'replace-search';
         this.lastActionWasCut = false;
         return;
@@ -613,11 +625,13 @@ export class NanoEngine {
         return;
       case 'r': // Read File (insert another file's content at the cursor)
         this.readFileBuffer = '';
+        this._promptCursor = 0;
         this._mode = 'read-file-prompt';
         this.lastActionWasCut = false;
         return;
       case 't': // Execute Command (insert a shell command's output at the cursor)
         this.executeCmdBuffer = '';
+        this._promptCursor = 0;
         this._mode = 'execute-prompt';
         this.lastActionWasCut = false;
         return;
@@ -631,6 +645,7 @@ export class NanoEngine {
         return;
       case '_': // Go To Line
         this.gotoLineBuffer = '';
+        this._promptCursor = 0;
         this._mode = 'goto-line';
         this.lastActionWasCut = false;
         return;
@@ -696,6 +711,7 @@ export class NanoEngine {
     if (key === 'e') { this.performRedo(); this.lastActionWasCut = false; return; }
     if (key === 'g') { // Go To Line (M-G alias)
       this.gotoLineBuffer = '';
+      this._promptCursor = 0;
       this._mode = 'goto-line';
       this.lastActionWasCut = false;
       return;
@@ -787,6 +803,49 @@ export class NanoEngine {
     }
   }
 
+  // ── Shared single-line prompt field editing ───────────────────────
+
+  /**
+   * Left/Right/Home/End move `_promptCursor`; Backspace/Delete edit
+   * around it; a printable character (or a pasted string, via
+   * `applyPaste`) inserts at it. Shared by all seven single-line
+   * prompts (search/replace-search/replace-with/save-name/goto-line/
+   * execute/read-file) so cursor-aware editing isn't reimplemented
+   * seven times. Returns true when the key was handled — callers fall
+   * through to their own Enter/Escape/mode-specific handling otherwise.
+   */
+  private applyPromptFieldKey(k: EditorKeyInput, get: () => string, set: (v: string) => void): boolean {
+    const text = get();
+    if (k.key === 'ArrowLeft') { this._promptCursor = Math.max(0, this._promptCursor - 1); return true; }
+    if (k.key === 'ArrowRight') { this._promptCursor = Math.min(text.length, this._promptCursor + 1); return true; }
+    if (k.key === 'Home') { this._promptCursor = 0; return true; }
+    if (k.key === 'End') { this._promptCursor = text.length; return true; }
+    if (k.key === 'Delete') {
+      if (this._promptCursor < text.length) set(text.slice(0, this._promptCursor) + text.slice(this._promptCursor + 1));
+      return true;
+    }
+    if (k.key === 'Backspace') {
+      if (this._promptCursor > 0) {
+        set(text.slice(0, this._promptCursor - 1) + text.slice(this._promptCursor));
+        this._promptCursor--;
+      }
+      return true;
+    }
+    if (!k.ctrl && !k.alt && k.key.length === 1) {
+      set(text.slice(0, this._promptCursor) + k.key + text.slice(this._promptCursor));
+      this._promptCursor++;
+      return true;
+    }
+    return false;
+  }
+
+  /** Insert pasted text at the prompt field's cursor (newlines already stripped to the first line by the caller). */
+  private insertIntoPromptField(get: () => string, set: (v: string) => void, insert: string): void {
+    const text = get();
+    set(text.slice(0, this._promptCursor) + insert + text.slice(this._promptCursor));
+    this._promptCursor += insert.length;
+  }
+
   // ── Save prompt ──────────────────────────────────────────────────
 
   private applySavePromptKey(k: EditorKeyInput): void {
@@ -814,13 +873,7 @@ export class NanoEngine {
       this._mode = 'edit';
       return;
     }
-    if (k.key === 'Backspace') {
-      this.saveFileNameBuffer = this.saveFileNameBuffer.slice(0, -1);
-      return;
-    }
-    if (!k.ctrl && !k.alt && k.key.length === 1) {
-      this.saveFileNameBuffer += k.key;
-    }
+    this.applyPromptFieldKey(k, () => this.saveFileNameBuffer, (v) => { this.saveFileNameBuffer = v; });
   }
 
   // ── Exit-save (Y/N/^C) prompt ───────────────────────────────────
@@ -832,6 +885,7 @@ export class NanoEngine {
       // like a plain ^O — it never writes directly.
       this.exitAfterSave = true;
       this.saveFileNameBuffer = this.filePath;
+      this._promptCursor = this.saveFileNameBuffer.length;
       this._mode = 'save-prompt';
       return;
     }
@@ -857,13 +911,7 @@ export class NanoEngine {
       this._mode = 'edit';
       return;
     }
-    if (k.key === 'Backspace') {
-      this.gotoLineBuffer = this.gotoLineBuffer.slice(0, -1);
-      return;
-    }
-    if (!k.ctrl && !k.alt && k.key.length === 1) {
-      this.gotoLineBuffer += k.key;
-    }
+    this.applyPromptFieldKey(k, () => this.gotoLineBuffer, (v) => { this.gotoLineBuffer = v; });
   }
 
   /** Parses real nano's "line[,column]" goto-line syntax (both 1-indexed). Invalid/non-numeric input is a silent no-op. */
@@ -907,13 +955,7 @@ export class NanoEngine {
       this._mode = 'edit';
       return;
     }
-    if (k.key === 'Backspace') {
-      this.executeCmdBuffer = this.executeCmdBuffer.slice(0, -1);
-      return;
-    }
-    if (!k.ctrl && !k.alt && k.key.length === 1) {
-      this.executeCmdBuffer += k.key;
-    }
+    this.applyPromptFieldKey(k, () => this.executeCmdBuffer, (v) => { this.executeCmdBuffer = v; });
   }
 
   // ── Read File (^R) — insert a file's content at the cursor ───────
@@ -935,13 +977,7 @@ export class NanoEngine {
       this._mode = 'edit';
       return;
     }
-    if (k.key === 'Backspace') {
-      this.readFileBuffer = this.readFileBuffer.slice(0, -1);
-      return;
-    }
-    if (!k.ctrl && !k.alt && k.key.length === 1) {
-      this.readFileBuffer += k.key;
-    }
+    this.applyPromptFieldKey(k, () => this.readFileBuffer, (v) => { this.readFileBuffer = v; });
   }
 
   // ── Justify (^J) — reflow the current paragraph to JUSTIFY_WIDTH ──
@@ -1010,6 +1046,7 @@ export class NanoEngine {
         this.historyNavIndex--;
       }
       this.searchQueryBuffer = this.searchHistoryList[this.historyNavIndex];
+      this._promptCursor = this.searchQueryBuffer.length;
       return;
     }
     if (k.key === 'ArrowDown') {
@@ -1021,15 +1058,10 @@ export class NanoEngine {
         this.historyNavIndex = null;
         this.searchQueryBuffer = this.historyNavStash;
       }
+      this._promptCursor = this.searchQueryBuffer.length;
       return;
     }
-    if (k.key === 'Backspace') {
-      this.searchQueryBuffer = this.searchQueryBuffer.slice(0, -1);
-      return;
-    }
-    if (!k.ctrl && !k.alt && k.key.length === 1) {
-      this.searchQueryBuffer += k.key;
-    }
+    this.applyPromptFieldKey(k, () => this.searchQueryBuffer, (v) => { this.searchQueryBuffer = v; });
   }
 
   private buildSearchRegex(query: string): RegExp {
@@ -1101,6 +1133,7 @@ export class NanoEngine {
       if (!this.replaceSearchBuffer) { this._mode = 'edit'; return; }
       this.lastSearchTerm = this.replaceSearchBuffer;
       this.replaceWithBuffer = '';
+      this._promptCursor = 0;
       this._mode = 'replace-with';
       return;
     }
@@ -1108,13 +1141,7 @@ export class NanoEngine {
       this._mode = 'edit';
       return;
     }
-    if (k.key === 'Backspace') {
-      this.replaceSearchBuffer = this.replaceSearchBuffer.slice(0, -1);
-      return;
-    }
-    if (!k.ctrl && !k.alt && k.key.length === 1) {
-      this.replaceSearchBuffer += k.key;
-    }
+    this.applyPromptFieldKey(k, () => this.replaceSearchBuffer, (v) => { this.replaceSearchBuffer = v; });
   }
 
   private applyReplaceWithKey(k: EditorKeyInput): void {
@@ -1130,13 +1157,7 @@ export class NanoEngine {
       this._mode = 'edit';
       return;
     }
-    if (k.key === 'Backspace') {
-      this.replaceWithBuffer = this.replaceWithBuffer.slice(0, -1);
-      return;
-    }
-    if (!k.ctrl && !k.alt && k.key.length === 1) {
-      this.replaceWithBuffer += k.key;
-    }
+    this.applyPromptFieldKey(k, () => this.replaceWithBuffer, (v) => { this.replaceWithBuffer = v; });
   }
 
   private startReplace(): void {
