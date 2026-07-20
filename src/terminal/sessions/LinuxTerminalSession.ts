@@ -4096,8 +4096,15 @@ export function parseShellChain(
 /** Is this segment a `nano`/`vi`/`vim` invocation (with or without sudo)? */
 export function isEditorSegment(segment: string): boolean {
   const noSudo = segment.startsWith('sudo ') ? segment.slice(5).trimStart() : segment;
-  const head = noSudo.split(/\s+/, 1)[0];
-  return head === 'nano' || head === 'vi' || head === 'vim';
+  const parts = noSudo.split(/\s+/);
+  const head = parts[0];
+  if (head !== 'nano' && head !== 'vi' && head !== 'vim') return false;
+  // `--version`/`-V`/`--help`/`-h` print and exit — they never open the
+  // editor overlay, so let these fall through to the normal command path
+  // (which prints the banner via LinuxCommandExecutor) instead of being
+  // mistaken for "no filename given" (which would open an empty buffer).
+  if (parts.slice(1).some((a) => a === '--version' || a === '-V' || a === '--help' || a === '-h')) return false;
+  return true;
 }
 
 /** Connector gating: should this segment run given the previous exit code? */

@@ -4367,6 +4367,32 @@ export class LinuxCommandExecutor {
       case 'nano':
       case 'vi':
       case 'vim': {
+        // `--version`/`-V` and `--help`/`-h` print and exit — they never
+        // touch the filesystem, so check them before the "create file if
+        // missing" behaviour below.
+        if (cmd === 'nano' && (args.includes('--version') || args.includes('-V'))) {
+          return {
+            output:
+              ' GNU nano, version 6.2\n' +
+              ' (C) 1999-2021 the Nano development team and Chris Allegretta\n' +
+              ' Compiled options: --enable-utf8',
+            exitCode: 0,
+          };
+        }
+        if (cmd === 'nano' && (args.includes('--help') || args.includes('-h'))) {
+          return {
+            output:
+              'Usage:  nano [OPTIONS] [[+LINE[,COLUMN]] FILE]...\n\n' +
+              'Option           Long option          Meaning\n' +
+              '-h, -?           --help               Show this help text and exit\n' +
+              '-c               --constantshow       Constantly show the cursor position\n' +
+              '-l               --linenumbers        Show line numbers in front of the text\n' +
+              '-v               --view               View mode (read-only)\n' +
+              '-V               --version            Show version information and exit\n\n' +
+              '  +LINE[,COLUMN]  Start at line LINE, column COLUMN (default column 1)',
+            exitCode: 0,
+          };
+        }
         // `nano file` opens (or creates) the file in the editor. In batch
         // mode we honour the "create if missing" behaviour so that
         // subsequent SSH commands can write to it.
