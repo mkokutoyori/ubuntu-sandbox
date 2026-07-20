@@ -75,10 +75,6 @@ function shortcutsForMode(engine: NanoEngine): readonly [readonly Shortcut[], re
   }
 }
 
-function flatOffset(lines: readonly string[], line: number, col: number): number {
-  return lines.slice(0, line).join('\n').length + (line > 0 ? 1 : 0) + col;
-}
-
 export const NanoEditor: React.FC<NanoEditorProps> = ({
   filePath,
   initialContent,
@@ -106,7 +102,7 @@ export const NanoEditor: React.FC<NanoEditorProps> = ({
       searchInputRef.current?.focus();
     } else {
       textareaRef.current?.focus();
-      const pos = flatOffset(engine.lines, engine.cursorLine, engine.cursorCol);
+      const pos = engine.displayCursorOffset;
       textareaRef.current?.setSelectionRange(pos, pos);
     }
   });
@@ -123,6 +119,18 @@ export const NanoEditor: React.FC<NanoEditorProps> = ({
 
   const handleEditKeyDown = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => dispatch(e), [dispatch]);
   const handlePromptKeyDown = useCallback((e: React.KeyboardEvent<HTMLInputElement>) => dispatch(e), [dispatch]);
+
+  const handlePaste = useCallback((e: React.ClipboardEvent) => {
+    e.preventDefault();
+    engine.applyPaste(e.clipboardData.getData('text'));
+    bump();
+  }, [engine, bump]);
+
+  const handleEditMouseUp = useCallback((e: React.MouseEvent<HTMLTextAreaElement>) => {
+    const offset = e.currentTarget.selectionStart ?? 0;
+    engine.moveCursorToDisplayOffset(offset);
+    bump();
+  }, [engine, bump]);
 
   const [shortcutsRow1, shortcutsRow2] = shortcutsForMode(engine);
 
@@ -172,9 +180,12 @@ export const NanoEditor: React.FC<NanoEditorProps> = ({
       <div className="flex-1 relative overflow-hidden">
         <textarea
           ref={textareaRef}
+          data-testid="nano-textarea"
           value={engine.displayContent}
           onChange={() => { /* content is engine-authoritative; keys drive all mutation */ }}
           onKeyDown={handleEditKeyDown}
+          onPaste={handlePaste}
+          onMouseUp={handleEditMouseUp}
           readOnly
           className="absolute inset-0 w-full h-full outline-none resize-none p-1"
           style={{
@@ -210,6 +221,7 @@ export const NanoEditor: React.FC<NanoEditorProps> = ({
               value={engine.saveFileName}
               onChange={() => { /* engine-authoritative */ }}
               onKeyDown={handlePromptKeyDown}
+              onPaste={handlePaste}
               className="flex-1 bg-transparent outline-none"
               style={{
                 color: '#ffffff',
@@ -249,6 +261,7 @@ export const NanoEditor: React.FC<NanoEditorProps> = ({
               value={engine.searchQuery}
               onChange={() => { /* engine-authoritative */ }}
               onKeyDown={handlePromptKeyDown}
+              onPaste={handlePaste}
               className="flex-1 bg-transparent outline-none"
               style={{
                 color: '#ffffff',
@@ -271,6 +284,7 @@ export const NanoEditor: React.FC<NanoEditorProps> = ({
               value={engine.replaceSearchQuery}
               onChange={() => { /* engine-authoritative */ }}
               onKeyDown={handlePromptKeyDown}
+              onPaste={handlePaste}
               className="flex-1 bg-transparent outline-none"
               style={{
                 color: '#ffffff',
@@ -291,6 +305,7 @@ export const NanoEditor: React.FC<NanoEditorProps> = ({
               value={engine.replaceWithText}
               onChange={() => { /* engine-authoritative */ }}
               onKeyDown={handlePromptKeyDown}
+              onPaste={handlePaste}
               className="flex-1 bg-transparent outline-none"
               style={{
                 color: '#ffffff',

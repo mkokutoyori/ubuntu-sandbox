@@ -17,6 +17,21 @@ function escapeRegExp(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
+/** displayContent's rendering of a single raw character: `\t`/`\n` pass
+ *  through unchanged, control bytes (< 0x20, plus DEL) become `^X`. */
+function displayNotation(ch: string): string {
+  if (ch === '\t' || ch === '\n') return ch;
+  const code = ch.charCodeAt(0);
+  if (code < 0x20) return '^' + String.fromCharCode(code + 64);
+  if (code === 0x7f) return '^?';
+  return ch;
+}
+
+/** Width (1 or 2) that a single raw character occupies in displayContent. */
+function displayWidth(ch: string): number {
+  return displayNotation(ch).length;
+}
+
 /** Search `line` for the next match of `regex` at or after column `fromCol`. */
 function execFrom(line: string, regex: RegExp, fromCol: number): RegExpExecArray | null {
   const re = new RegExp(regex.source, regex.flags.includes('g') ? regex.flags : regex.flags + 'g');
@@ -100,14 +115,24 @@ export class NanoEngine {
    */
   get displayContent(): string {
     let out = '';
-    for (const ch of this.content) {
-      const code = ch.charCodeAt(0);
-      if (ch === '\t' || ch === '\n') out += ch;
-      else if (code < 0x20) out += '^' + String.fromCharCode(code + 64);
-      else if (code === 0x7f) out += '^?';
-      else out += ch;
-    }
+    for (const ch of this.content) out += displayNotation(ch);
     return out;
+  }
+  /**
+   * Flat offset into `displayContent` for the current cursor — the
+   * caret position the textarea must show. Differs from a plain raw
+   * offset whenever a control character before the cursor expanded to
+   * the two-character `^X` notation.
+   */
+  get displayCursorOffset(): number {
+    let offset = 0;
+    for (let i = 0; i < this._cursorLine; i++) {
+      for (const ch of this.line(i)) offset += displayWidth(ch);
+      offset += 1; // newline
+    }
+    const cur = this.line(this._cursorLine);
+    for (let i = 0; i < this._cursorCol; i++) offset += displayWidth(cur[i]);
+    return offset;
   }
   /** What gets written to disk: buffer content plus the trailing newline nano always restores on save. */
   private serialize(): string { return this.linesArr.join('\n') + '\n'; }
@@ -144,6 +169,91 @@ export class NanoEngine {
       case 'replace-with': return this.applyReplaceWithKey(k);
       case 'replace-confirm': return this.applyReplaceConfirmKey(k);
     }
+  }
+
+  /**
+   * Move the cursor to the raw (line, col) position corresponding to a
+   * flat offset into `displayContent` — the inverse of
+   * `displayCursorOffset`. Drives mouse-click cursor placement: the
+   * textarea shows `displayContent`, so a click's `selectionStart` is a
+   * display-space offset that must be mapped back through any `^X`
+   * control-char expansion before touching the buffer.
+   */
+  moveCursorToDisplayOffset(offset: number): void {
+    if (this._mode !== 'edit') return;
+    let remaining = offset;
+    for (let line = 0; line < this.linesArr.length; line++) {
+      const text = this.linesArr[line];
+      for (let col = 0; col < text.length; col++) {
+        const w = displayWidth(text[col]);
+        if (remaining < w) { this.setCursor(line, col); return; }
+        remaining -= w;
+      }
+      if (remaining === 0) { this.setCursor(line, text.length); return; }
+      remaining -= 1; // newline
+    }
+    const lastLine = Math.max(0, this.linesArr.length - 1);
+    this.setCursor(lastLine, this.line(lastLine).length);
+  }
+
+  private setCursor(line: number, col: number): void {
+    this._cursorLine = line;
+    this._cursorCol = col;
+    this.lastEditKind = null;
+  }
+
+  /**
+   * Insert pasted text at the cursor (edit mode) or append it to the
+   * active prompt field (search/replace/save-name — single-line, so
+   * embedded newlines are dropped past the first). No bracketed-paste
+   * distinction is modeled: characters land exactly as if typed very
+   * fast, so a literal Tab in the clipboard still inserts `\t` even
+   * though the Tab *key* is otherwise unbound in edit mode.
+   */
+  applyPaste(text: string): void {
+    if (this._exited || !text) return;
+    const normalized = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+    switch (this._mode) {
+      case 'edit':
+        this.pasteIntoBuffer(normalized);
+        return;
+      case 'save-prompt':
+        this.saveFileNameBuffer += normalized.split('\n')[0];
+        return;
+      case 'search':
+        this.searchQueryBuffer += normalized.split('\n')[0];
+        return;
+      case 'replace-search':
+        this.replaceSearchBuffer += normalized.split('\n')[0];
+        return;
+      case 'replace-with':
+        this.replaceWithBuffer += normalized.split('\n')[0];
+        return;
+      default:
+        return;
+    }
+  }
+
+  private pasteIntoBuffer(text: string): void {
+    if (this._readOnly) return;
+    this.beginDiscreteEdit();
+    for (const ch of text) {
+      if (ch === '\n') {
+        const cur = this.line(this._cursorLine);
+        const before = cur.slice(0, this._cursorCol);
+        const after = cur.slice(this._cursorCol);
+        this.linesArr.splice(this._cursorLine, 1, before, after);
+        this._cursorLine++;
+        this._cursorCol = 0;
+      } else {
+        const cur = this.line(this._cursorLine);
+        this.linesArr[this._cursorLine] = cur.slice(0, this._cursorCol) + ch + cur.slice(this._cursorCol);
+        this._cursorCol++;
+      }
+    }
+    this._modified = true;
+    this.lastActionWasCut = false;
+    this.lastEditKind = null;
   }
 
   private line(i: number): string { return this.linesArr[i] ?? ''; }
