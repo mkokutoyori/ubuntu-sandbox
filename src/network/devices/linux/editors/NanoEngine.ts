@@ -122,6 +122,8 @@ export class NanoEngine {
     private readonly _readOnly = false,
     /** `nano +LINE[,COLUMN] file` — both 1-indexed, clamped to the buffer. */
     initialCursor?: { line: number; col?: number },
+    /** `nano -l` / `--linenumbers`. */
+    private _showLineNumbers = false,
   ) {
     const body = initialContent.endsWith('\n') ? initialContent.slice(0, -1) : initialContent;
     this.linesArr = body.length === 0 && initialContent.length === 0 ? [''] : body.split('\n');
@@ -240,6 +242,8 @@ export class NanoEngine {
   get swapFileExists(): boolean { return this.fs.exists(this.lockPath); }
   /** True when opened with `-v` (view mode) — real nano refuses all edits and offers no Write Out. */
   get isReadOnly(): boolean { return this._readOnly; }
+  /** `nano -l`/`--linenumbers` at open, toggled at runtime by M-#. */
+  get lineNumbersShown(): boolean { return this._showLineNumbers; }
   /** Real nano's regex-search toggle (Meta+R / Alt+R inside a search or replace prompt). */
   get regexSearchEnabled(): boolean { return this.useRegex; }
   get replaceSearchQuery(): string { return this.replaceSearchBuffer; }
@@ -738,6 +742,14 @@ export class NanoEngine {
     if (k.key === '6') { // Copy Text — the marked region, or the current line without a mark
       this.copyMark();
       this.lastActionWasCut = false;
+      return;
+    }
+    // Toggle line numbers — a display setting, not a buffer edit. Real
+    // browsers don't shift-transform `key` when Alt is already held (a
+    // physical Alt+Shift+3 on a US layout reports key:'3', not '#'), so
+    // both the literal character and the raw shifted digit are accepted.
+    if (k.key === '#' || (k.shift && k.key === '3')) {
+      this._showLineNumbers = !this._showLineNumbers;
       return;
     }
   }

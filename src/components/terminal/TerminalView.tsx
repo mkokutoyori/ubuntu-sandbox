@@ -193,6 +193,7 @@ export const TerminalView: React.FC<TerminalViewProps> = ({ session }) => {
             isNewFile={editorMode.isNewFile}
             readOnly={editorMode.readOnly}
             showPosition={editorMode.showPosition}
+            showLineNumbers={editorMode.showLineNumbers}
             initialCursorLine={editorMode.initialCursorLine}
             initialCursorCol={editorMode.initialCursorCol}
             fsContext={fsContext}

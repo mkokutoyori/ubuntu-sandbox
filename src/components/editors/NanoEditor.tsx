@@ -20,6 +20,8 @@ interface NanoEditorProps {
   readOnly?: boolean;
   /** `nano -c`: title bar shows the live cursor position. */
   showPosition?: boolean;
+  /** `nano -l`/`--linenumbers`: line-number gutter shown at open. */
+  showLineNumbers?: boolean;
   /** `nano +LINE[,COLUMN] file`: initial cursor position (1-indexed). */
   initialCursorLine?: number;
   initialCursorCol?: number;
@@ -106,6 +108,7 @@ export const NanoEditor: React.FC<NanoEditorProps> = ({
   onExit,
   readOnly = false,
   showPosition = false,
+  showLineNumbers = false,
   initialCursorLine,
   initialCursorCol,
 }) => {
@@ -114,6 +117,7 @@ export const NanoEditor: React.FC<NanoEditorProps> = ({
     engineRef.current = new NanoEngine(
       fsContext, filePath, initialContent, isNewFile, readOnly,
       initialCursorLine !== undefined ? { line: initialCursorLine, col: initialCursorCol } : undefined,
+      showLineNumbers,
     );
   }
   const engine = engineRef.current;
@@ -212,8 +216,29 @@ export const NanoEditor: React.FC<NanoEditorProps> = ({
         </span>
       </div>
 
-      {/* ── Editor content area ── */}
-      <div className="flex-1 relative overflow-hidden">
+      {/* ── Editor content area (optional line-number gutter + textarea) ── */}
+      <div className="flex-1 flex overflow-hidden">
+        {engine.lineNumbersShown && engine.mode !== 'help' && (
+          <div
+            data-testid="nano-gutter"
+            className="select-none shrink-0 text-right"
+            style={{
+              backgroundColor: '#300a24',
+              color: '#585b70',
+              minWidth: `${String(engine.lines.length).length + 1}ch`,
+              paddingTop: '0.25rem',
+              paddingRight: '0.5em',
+              lineHeight: '1.35',
+              fontSize: 'inherit',
+              fontFamily: 'inherit',
+            }}
+          >
+            {engine.lines.map((_, i) => (
+              <div key={i} style={{ minHeight: '1.35em' }}>{i + 1}</div>
+            ))}
+          </div>
+        )}
+        <div className="flex-1 relative overflow-hidden">
         <textarea
           ref={textareaRef}
           data-testid="nano-textarea"
@@ -255,6 +280,7 @@ export const NanoEditor: React.FC<NanoEditorProps> = ({
             />
           );
         })()}
+        </div>
       </div>
 
       {/* ── Status message line (centered, above shortcuts) ── */}
