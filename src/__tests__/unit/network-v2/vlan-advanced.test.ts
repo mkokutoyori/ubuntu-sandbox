@@ -489,7 +489,13 @@ describe('V-H-03: Huawei port trunk allow-pass vlan all / none', () => {
     expect(cfg?.trunkAllowedVlans.size).toBe(0);
   });
 
-  it('display current-configuration shows all for default trunk', async () => {
+  it('display current-configuration shows vlan 1 for default trunk (VRP default, unlike Cisco)', async () => {
+    // Real VRP differs from Cisco IOS here: a freshly-trunked interface's
+    // `port trunk allow-pass vlan` starts at VLAN 1 only, not "all" —
+    // `port trunk allow-pass vlan <n>` then ADDS to that list. Corroborated
+    // by scenario-vrp-vlan-trunk-hybrid.test.ts, which already asserts
+    // `port trunk allow-pass vlan 1 10 20 30` after allowing 10/20/30 on a
+    // freshly-trunked port (VLAN 1 is still there from the default).
     const sw = new HuaweiSwitch('switch-huawei', 'SW1');
 
     await sw.executeCommand('system-view');
@@ -500,7 +506,7 @@ describe('V-H-03: Huawei port trunk allow-pass vlan all / none', () => {
 
     const config = await sw.executeCommand('display current-configuration interface GigabitEthernet0/0/0');
     expect(config).toContain('port link-type trunk');
-    expect(config).toContain('port trunk allow-pass vlan all');
+    expect(config).toContain('port trunk allow-pass vlan 1');
   });
 
   it('display current-configuration shows none when no VLANs allowed', async () => {
@@ -562,6 +568,11 @@ describe('V-H-04: Huawei trunk VLAN filtering — frame level', () => {
       await sw.executeCommand('quit');
       await sw.executeCommand('interface GigabitEthernet0/0/23');
       await sw.executeCommand('port link-type trunk');
+      // VRP's default trunk allow-pass list is VLAN 1 only — VLAN 10 must
+      // be explicitly allowed for this "VLAN is allowed" scenario to be
+      // meaningful (see the sibling "blocked"/"resumes" tests below, which
+      // already do this deliberately).
+      await sw.executeCommand('port trunk allow-pass vlan 10');
       await sw.executeCommand('return');
       // Huawei ports start in STP listening state; advance to forwarding for VLAN tests
       sw.setAllPortsSTPState('forwarding');
