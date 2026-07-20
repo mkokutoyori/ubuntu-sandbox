@@ -262,6 +262,19 @@ export const NanoEditor: React.FC<NanoEditorProps> = ({
           spellCheck={false}
           autoComplete="off"
         />
+        {engine.mode === 'edit' && (
+          <div
+            data-testid="nano-caret"
+            className="absolute pointer-events-none terminal-cursor"
+            style={{
+              top: `calc(0.25rem + ${engine.cursorLine} * 1.35em)`,
+              left: `calc(0.25rem + ${engine.displayColumnFor(engine.cursorLine, engine.cursorCol)}ch)`,
+              width: '2px',
+              height: '1.2em',
+              backgroundColor: '#ffffff',
+            }}
+          />
+        )}
         {engine.mode === 'replace-confirm' && engine.pendingReplaceMatch && (() => {
           const m = engine.pendingReplaceMatch;
           const startCol = engine.displayColumnFor(m.line, m.start);
