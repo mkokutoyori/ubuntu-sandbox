@@ -154,6 +154,19 @@ export class NanoEngine {
     for (let i = 0; i < this._cursorCol; i++) offset += displayWidth(cur[i]);
     return offset;
   }
+  /**
+   * Raw column `col` on `line`, translated into its column within that
+   * SAME line's rendered `displayContent` — i.e. how many `ch` units to
+   * the right of the line start it actually sits, accounting for any
+   * `^X` control-character expansion earlier on the line. Used to
+   * position the `pendingReplaceMatch` highlight over the textarea.
+   */
+  displayColumnFor(line: number, col: number): number {
+    const text = this.line(line);
+    let w = 0;
+    for (let i = 0; i < col && i < text.length; i++) w += displayWidth(text[i]);
+    return w;
+  }
   /** What gets written to disk: buffer content plus the trailing newline nano always restores on save. */
   private serialize(): string { return this.linesArr.join('\n') + '\n'; }
   get lines(): readonly string[] { return this.linesArr; }

@@ -222,6 +222,24 @@ export const NanoEditor: React.FC<NanoEditorProps> = ({
           spellCheck={false}
           autoComplete="off"
         />
+        {engine.mode === 'replace-confirm' && engine.pendingReplaceMatch && (() => {
+          const m = engine.pendingReplaceMatch;
+          const startCol = engine.displayColumnFor(m.line, m.start);
+          const endCol = engine.displayColumnFor(m.line, m.end);
+          return (
+            <div
+              data-testid="nano-replace-highlight"
+              className="absolute pointer-events-none"
+              style={{
+                top: `calc(0.25rem + ${m.line} * 1.35em)`,
+                left: `calc(0.25rem + ${startCol}ch)`,
+                width: `${Math.max(1, endCol - startCol)}ch`,
+                height: '1.35em',
+                backgroundColor: 'rgba(255, 255, 0, 0.35)',
+              }}
+            />
+          );
+        })()}
       </div>
 
       {/* ── Status message line (centered, above shortcuts) ── */}
