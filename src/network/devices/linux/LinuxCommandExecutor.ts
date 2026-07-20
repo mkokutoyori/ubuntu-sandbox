@@ -72,7 +72,7 @@ import { cmdPidstat } from './system/Pidstat';
 import { parseDstatArgs, DSTAT_USAGE, DSTAT_VERSION, DSTAT_LISTING } from './system/Dstat';
 import { MountTable, MountEntry } from './MountTable';
 import { SysfsTree } from './Sysfs';
-import { cmdIfconfig, cmdNetstat, cmdCurl, cmdWget, cmdTcpdump } from './LinuxNetCommands';
+import { cmdIfconfig, cmdNetstat, cmdCurl, cmdWget, cmdTcpdump, parseTcpdumpArgs } from './LinuxNetCommands';
 import { PacketCaptureLog } from './network/PacketCaptureLog';
 import { publishWireSegment } from './network/WireCaptureBus';
 import { ensureCaptureRouterInstalled } from './network/CaptureRouter';
@@ -330,6 +330,16 @@ export class LinuxCommandExecutor {
   getForwardingTable(): SshForwardingTable | null { return this.forwarding; }
   /** Captured TCP traffic — rendered by `tcpdump`. */
   readonly captureLog = new PacketCaptureLog();
+  /**
+   * `tcpdump -w <path>` unsubscribe handles, keyed by write path. `-w`
+   * writes a snapshot of `captureLog` at invocation time — with no
+   * subsequent traffic on the wire yet, that snapshot is empty. A real
+   * background `tcpdump -w` keeps appending to the file as packets arrive;
+   * this re-runs the same write on every new capture so a later
+   * `tcpdump -r <path>` sees everything captured since `-w` started,
+   * not a stale empty file.
+   */
+  private readonly tcpdumpWriteTargets = new Map<string, () => void>();
   /** Shared SSH session table — backs `who` / `w` / `last`. */
   private sessionTable: SshSessionTable | null = null;
   /** Reactive socket-table coherence for service-owned listening ports. */
@@ -4266,11 +4276,22 @@ export class LinuxCommandExecutor {
       }
       case 'telnet':
         return this.runTelnetClient(args);
-      case 'tcpdump':
-        return { output: cmdTcpdump(args, this.captureLog, {
-          read: (p) => this.vfs.readFile(p),
-          write: (p, c) => this.vfs.writeFile(p, c, this.userMgr.currentUid, this.userMgr.currentGid, this.umask),
-        }), exitCode: 0 };
+      case 'tcpdump': {
+        const fsAdapter = {
+          read: (p: string) => this.vfs.readFile(p),
+          write: (p: string, c: string) => this.vfs.writeFile(p, c, this.userMgr.currentUid, this.userMgr.currentGid, this.umask),
+        };
+        const output = cmdTcpdump(args, this.captureLog, fsAdapter);
+        const opts = parseTcpdumpArgs(args);
+        if (opts.writeFile) {
+          this.tcpdumpWriteTargets.get(opts.writeFile)?.();
+          const unsubscribe = this.captureLog.subscribe(() => {
+            cmdTcpdump(args, this.captureLog, fsAdapter);
+          });
+          this.tcpdumpWriteTargets.set(opts.writeFile, unsubscribe);
+        }
+        return { output, exitCode: 0 };
+      }
       case 'ssh-add':
         return this.handleSshAdd(args);
       case 'ssh-agent': {

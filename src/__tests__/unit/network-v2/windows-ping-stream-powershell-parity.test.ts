@@ -122,6 +122,24 @@ describe('tracert inside PowerShell streams hop-by-hop like cmd', () => {
   });
 });
 
+describe('`powershell <command>` one-shot invocation from cmd streams natively too', () => {
+  it('`powershell ping -n 3 192.168.1.20` typed directly at cmd streams progressively', async () => {
+    // No `enterPowerShell()` here — this is the ONE-SHOT `powershell <cmd>`
+    // form run straight from the root cmd.exe prompt (real powershell.exe
+    // spawns a fresh process, but ping's own stdout still streams through
+    // to the console as it arrives — it does not get buffered until the
+    // whole invocation finishes).
+    await type('powershell ping -n 3 192.168.1.20');
+
+    const early = texts(session).filter((t) => t.includes('Reply from 192.168.1.20')).length;
+    expect(early).toBeLessThan(3);
+
+    await waitFor(session, (l) => l.filter((t) => t.includes('Reply from 192.168.1.20')).length === 3);
+    await waitFor(session, (l) => l.some((t) => t.includes('Ping statistics')));
+    expect(session.shellMode).toBe('cmd');
+  });
+});
+
 describe('a non-native PowerShell cmdlet is unaffected by the streaming fix', () => {
   it('Test-Connection still renders as the PS table format (no cmd bleed-through)', async () => {
     await enterPowerShell();

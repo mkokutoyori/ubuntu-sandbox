@@ -50,6 +50,28 @@ describe('Windows tracert — real-time streaming through the async pipeline', (
     expect(lines.some((t) => t.includes('Trace complete'))).toBe(true);
     expect(session.hasForegroundAsyncJob).toBe(false);
   });
+
+  it('tracert localhost resolves immediately to a single loopback hop (real Windows: no route lookup for 127.0.0.1)', async () => {
+    session.setInput('tracert localhost');
+    session.handleKey(key('Enter'));
+
+    await waitFor(session, (l) => l.some((t) => t.includes('Trace complete')));
+    const lines = texts(session);
+    expect(lines.some((t) => /Unable to resolve target system name/.test(t))).toBe(false);
+    expect(lines.some((t) => t.includes('Tracing route to localhost'))).toBe(true);
+    expect(lines.some((t) => /127\.0\.0\.1/.test(t))).toBe(true);
+    expect(lines.some((t) => t.includes('Trace complete'))).toBe(true);
+  });
+
+  it('tracert 127.0.0.1 resolves immediately to a single loopback hop', async () => {
+    session.setInput('tracert 127.0.0.1');
+    session.handleKey(key('Enter'));
+
+    await waitFor(session, (l) => l.some((t) => t.includes('Trace complete')));
+    const lines = texts(session);
+    expect(lines.some((t) => /Unable to resolve target system name/.test(t))).toBe(false);
+    expect(lines.some((t) => /127\.0\.0\.1/.test(t))).toBe(true);
+  });
 });
 
 describe('Windows ping/tracert headers — host [ip] for named targets', () => {
