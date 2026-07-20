@@ -1383,6 +1383,19 @@ export class WindowsTerminalSession extends TerminalSession {
       return;
     }
 
+    // Real powershell.exe doesn't buffer a child process's stdout until
+    // the whole one-shot invocation finishes — ping.exe's replies still
+    // stream to the console as they arrive, exactly like `powershell ping
+    // -t` interactively or plain `ping` at cmd. Route native streaming
+    // commands through the SAME interceptors used by both other entry
+    // points instead of letting them fall into the generic
+    // `shell.processLine()` below, which awaits to completion and prints
+    // everything at once.
+    if (this.tryStartWinPingStream(command)) return;
+    if (this.tryStartWinTracertStream(command)) return;
+    if (this.tryStartWinPathpingStream(command)) return;
+    if (this.tryStartWinNetstatStream(command)) return;
+
     installDefaultShells();
     const shell = ShellFactory.create('powershell', {
       device: this.device,
