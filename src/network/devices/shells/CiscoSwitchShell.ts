@@ -2716,7 +2716,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     const enableSecret = sw.getEnableSecret();
     if (enableSecret) lines.push(`enable secret ${renderSecretField(enableSecret.value, enableSecret.algo)}`);
     const enablePassword = sw.getEnablePassword();
-    if (enablePassword) lines.push(`enable password ${renderPasswordField(enablePassword.value, enablePassword.algo, false)}`);
+    if (enablePassword) lines.push(`enable password ${renderPasswordField(enablePassword.value, enablePassword.algo, false, false)}`);
     if (enableSecret || enablePassword) lines.push('!');
 
     if (sw.getDomainName()) { lines.push(`ip domain-name ${sw.getDomainName()}`); lines.push('!'); }

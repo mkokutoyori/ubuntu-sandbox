@@ -11,7 +11,7 @@
 import { md5Crypt, ciscoType8, ciscoType9, encryptType7, md5Hex } from '@/crypto';
 
 export type SecretAlgo =
-  | 'plain' | 'md5' | 'sha256' | 'scrypt' | 'type-7'
+  | 'plain' | 'plain-password' | 'md5' | 'sha256' | 'scrypt' | 'type-7'
   | 'sha512' | 'cipher' | 'irreversible-cipher';
 
 /** Map a modular-crypt prefix to the Cisco "type" number IOS prints for it. */
@@ -47,17 +47,24 @@ export function renderSecretField(value: string, algo: SecretAlgo): string {
 
 /**
  * Render the `<type-number> <value>` suffix of an `enable password` / line
- * `password`. Plaintext is type-7 encoded when `service password-encryption`
- * is enabled; an already type-7 value is emitted verbatim.
+ * `password` / `username … password`. Plaintext is type-7 encoded when
+ * `service password-encryption` is enabled; an already type-7 value is
+ * emitted verbatim.
+ *
+ * `showZeroType` controls whether the unencrypted case is prefixed with an
+ * explicit `0 ` — real IOS shows it for `username … password 0 …` but
+ * omits it for `enable password` (default `true`; `enable password`
+ * call sites pass `false`).
  */
 export function renderPasswordField(
   value: string,
-  algo: 'plain' | 'type-7',
+  algo: 'plain' | 'plain-password' | 'type-7',
   serviceEncryption: boolean,
+  showZeroType: boolean = true,
 ): string {
   if (algo === 'type-7') return `7 ${value}`;
   if (serviceEncryption) return `7 ${encryptType7(value, deriveType7Salt(value))}`;
-  return `0 ${value}`;
+  return showZeroType ? `0 ${value}` : value;
 }
 
 /**

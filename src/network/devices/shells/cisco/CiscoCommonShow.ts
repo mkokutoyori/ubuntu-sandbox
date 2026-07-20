@@ -593,8 +593,35 @@ export function showNtpAssociations(dev?: ShowStateDevice): string {
   return [...header, ...rows].join('\n');
 }
 
-/** `show line` — the device's real default line inventory. */
-export function showLine(dev: ShowStateDevice): string {
+function formatLineTimeout(minutes: number | null, seconds: number | null): string {
+  const totalSeconds = (minutes ?? 10) * 60 + (seconds ?? 0);
+  const h = Math.floor(totalSeconds / 3600);
+  const m = Math.floor((totalSeconds % 3600) / 60);
+  const s = totalSeconds % 60;
+  return [h, m, s].map((n) => String(n).padStart(2, '0')).join(':');
+}
+
+/**
+ * `show line` — the device's real default line inventory, or (when a
+ * specific `vty <first> <last>` / `console <n>` is named) the real
+ * configured exec-timeout for that line, not a value disconnected from
+ * the running configuration.
+ */
+export function showLine(dev: ShowStateDevice, args: string[] = []): string {
+  const kind = args[0]?.toLowerCase();
+  if (kind === 'vty' && args[1] !== undefined) {
+    const first = Number.parseInt(args[1], 10);
+    const last = Number.parseInt(args[2] ?? args[1], 10);
+    const store = (dev as unknown as {
+      _getVtyLineConfig?: () => { get: (f: number, l: number) => { execTimeoutMinutes: number | null; execTimeoutSeconds: number | null } | undefined };
+    })._getVtyLineConfig?.();
+    const block = store?.get(first, last);
+    const rows = ['   Tty Line  Speed   Timeout'];
+    for (let i = first; i <= last; i++) {
+      rows.push(`     ${i}  VTY ${i}  -       ${formatLineTimeout(block?.execTimeoutMinutes ?? null, block?.execTimeoutSeconds ?? null)}`);
+    }
+    return rows.join('\n');
+  }
   const rows = [
     '   Tty Line Typ     Tx/Rx     A Roty Acc0 AccI  Uses  Noise Overruns  Int',
     `*    0    0 CTY               -    -    -    -      0     0   0/0       -`,
@@ -602,7 +629,6 @@ export function showLine(dev: ShowStateDevice): string {
   for (let i = 1; i <= 5; i++) {
     rows.push(`     ${i}    ${i} VTY               -    -    -    -      0     0   0/0       -`);
   }
-  void dev;
   return rows.join('\n');
 }
 

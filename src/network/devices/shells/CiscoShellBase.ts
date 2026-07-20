@@ -166,6 +166,14 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
   protected consoleLinePrivilegeLevel: number | null = null;
   protected consoleLineExecTimeoutMin: number | null = null;
   protected consoleLineExecTimeoutSec: number = 0;
+  protected consoleLineLoggingSynchronous: boolean = false;
+
+  // `line aux 0` — real storage for `no exec` / `transport input`, which
+  // used to be silently swallowed (any directive typed under the AUX
+  // sub-mode fell through the console/VTY branches and was dropped).
+  protected selectedAuxLine: number | null = null;
+  protected auxLineNoExec: boolean = false;
+  protected auxLineTransportInput: 'ssh' | 'telnet' | 'all' | 'none' | null = null;
 
   _getAliasRunningConfigLines(): string[] {
     return this.aliases.toRunningConfig();
@@ -179,8 +187,9 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     privilegeLevel: number | null;
     execTimeoutMin: number | null;
     execTimeoutSec: number;
+    loggingSynchronous: boolean;
   } | null {
-    if (this.consoleLinePassword == null && this.consoleLineLogin == null && this.consoleLinePrivilegeLevel == null && this.consoleLineExecTimeoutMin == null) return null;
+    if (this.consoleLinePassword == null && this.consoleLineLogin == null && this.consoleLinePrivilegeLevel == null && this.consoleLineExecTimeoutMin == null && !this.consoleLineLoggingSynchronous) return null;
     return {
       line: this.selectedConsoleLine ?? 0,
       password: this.consoleLinePassword,
@@ -189,6 +198,16 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       privilegeLevel: this.consoleLinePrivilegeLevel,
       execTimeoutMin: this.consoleLineExecTimeoutMin,
       execTimeoutSec: this.consoleLineExecTimeoutSec,
+      loggingSynchronous: this.consoleLineLoggingSynchronous,
+    };
+  }
+
+  _getAuxLineConfig(): { line: number; noExec: boolean; transportInput: 'ssh' | 'telnet' | 'all' | 'none' | null } | null {
+    if (!this.auxLineNoExec && this.auxLineTransportInput == null) return null;
+    return {
+      line: this.selectedAuxLine ?? 0,
+      noExec: this.auxLineNoExec,
+      transportInput: this.auxLineTransportInput,
     };
   }
   protected terminalMonitor = false;
@@ -277,6 +296,22 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       }
       return null;
     }
+
+    // Config-mode dialogue: `banner <kind> <delim>` with nothing after the
+    // delimiter opens real IOS's multi-line capture (lines accumulate
+    // until one contains the delimiter). The single-line
+    // `banner <kind> <delim>TEXT<delim>` form stays synchronous in the
+    // config-trie handler.
+    if (mode === 'config') {
+      const bm = /^banner\s+(motd|login|exec|incoming)\s+(\S)\s*$/i.exec(line);
+      if (bm) {
+        return this.bannerCaptureInteractionPlan(
+          bm[1].toLowerCase() as 'motd' | 'login' | 'exec' | 'incoming', bm[2], ctx?.device,
+        );
+      }
+      return null;
+    }
+
     if (mode !== 'privileged') return null;
 
     const m = this.privilegedTrie.match(line);
@@ -367,6 +402,55 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
           storeAs: 'reload_confirmed',
         },
         { kind: 'run', run: async (rt) => { await rt.exec('reload'); } },
+      ],
+    };
+  }
+
+  /** Apply a banner — single write path shared by the config-trie handler
+   *  and the multi-line capture plan (motd also feeds the SSH banner). */
+  protected setBanner(
+    kind: 'motd' | 'login' | 'exec' | 'incoming',
+    text: string,
+    target?: unknown,
+  ): void {
+    const dev = (target ?? this.deviceRef) as {
+      _setSshBanner?: (b: string) => void;
+      _setMotdBanner?: (b: string) => void;
+      _setLoginBanner?: (b: string) => void;
+      _setExecBanner?: (b: string) => void;
+      _setIncomingBanner?: (b: string) => void;
+    } | null;
+    if (!dev) return;
+    if (kind === 'motd') { dev._setMotdBanner?.(text); dev._setSshBanner?.(text); }
+    else if (kind === 'login') dev._setLoginBanner?.(text);
+    else if (kind === 'exec') dev._setExecBanner?.(text);
+    else if (kind === 'incoming') dev._setIncomingBanner?.(text);
+  }
+
+  private bannerCaptureInteractionPlan(
+    kind: 'motd' | 'login' | 'exec' | 'incoming',
+    delim: string,
+    device?: unknown,
+  ): CommandInteractionPlan {
+    return {
+      steps: [
+        { kind: 'output', lines: [`Enter TEXT message.  End with the character '${delim}'.`] },
+        {
+          kind: 'collect',
+          prompt: '',
+          storeAs: 'banner_body',
+          accept: (line, accumulated) => {
+            const idx = line.indexOf(delim);
+            if (idx < 0) return { done: false };
+            const finalChunk = line.slice(0, idx);
+            const parts = finalChunk.length > 0 ? [...accumulated, finalChunk] : [...accumulated];
+            return { done: true, body: parts.join('\n') };
+          },
+        },
+        {
+          kind: 'run',
+          run: async (rt) => { this.setBanner(kind, rt.values.get('banner_body') ?? '', device); },
+        },
       ],
     };
   }
@@ -623,26 +707,6 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     return this.bannerCollector !== null;
   }
 
-  protected storeBanner(kind: 'motd' | 'login' | 'exec' | 'incoming', text: string): void {
-    const dev = this.d() as unknown as {
-      _setSshBanner?: (b: string) => void;
-      _setMotdBanner?: (b: string) => void;
-      _setLoginBanner?: (b: string) => void;
-      _setExecBanner?: (b: string) => void;
-      _setIncomingBanner?: (b: string) => void;
-    };
-    if (kind === 'motd') {
-      dev._setMotdBanner?.(text);
-      dev._setSshBanner?.(text);
-    } else if (kind === 'login') {
-      dev._setLoginBanner?.(text);
-    } else if (kind === 'exec') {
-      dev._setExecBanner?.(text);
-    } else {
-      dev._setIncomingBanner?.(text);
-    }
-  }
-
   private collectBannerLine(rawLine: string): string {
     const c = this.bannerCollector!;
     const idx = rawLine.indexOf(c.delimiter);
@@ -652,7 +716,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     }
     if (idx > 0) c.lines.push(rawLine.slice(0, idx));
     this.bannerCollector = null;
-    this.storeBanner(c.type, c.lines.join('\n'));
+    this.setBanner(c.type, c.lines.join('\n'));
     return '';
   }
 
@@ -696,9 +760,9 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     }
     const trimmed = rawInput.trim();
     if (!trimmed) return '';
-    // IOS comment lines: a leading ! (separator or informational comment,
-    // as pasted from show running-config) is accepted silently at every
-    // prompt and never leaves the current sub-mode.
+    // IOS comment lines: `!` (optionally followed by text) is a silent
+    // no-op at EVERY prompt and never leaves the current sub-mode —
+    // pasting a show running-config must not spray "% Invalid input".
     if (trimmed.startsWith('!')) return '';
     if (/^[\x00-\x1f]+$/.test(trimmed) && trimmed !== '\x03' && trimmed !== '\x1a') return '';
     if (!trimmed.endsWith('?') && this.terminalHistoryEnabled
@@ -1171,8 +1235,8 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       showControllers(this.cs(), a.join(' ')));
     trie.registerGreedy('show environment', 'Display environment', () =>
       showEnvironment());
-    trie.registerGreedy('show line', 'Display TTY lines', () =>
-      showLine(this.cs()));
+    trie.registerGreedy('show line', 'Display TTY lines', (a) =>
+      showLine(this.cs(), a));
     trie.register('show ip ssh', 'Display SSH server status', () => showIpSsh());
     trie.register('show ip ssh known-hosts', 'Display learned SSH host keys', () => {
       const dev = this.d() as unknown as { _getSshKnownHosts?: () => { renderCisco: () => string } };
@@ -2132,7 +2196,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       if (closeIdx !== -1) {
         // Inline form — content truncates at the FIRST delimiter
         // occurrence, exactly like IOS.
-        this.storeBanner(which as 'motd' | 'login' | 'exec' | 'incoming', body.slice(0, closeIdx));
+        this.setBanner(which as 'motd' | 'login' | 'exec' | 'incoming', body.slice(0, closeIdx));
         return '';
       }
       // Multi-line form: collect subsequent input verbatim until a line
@@ -2300,6 +2364,31 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       dev._setEnableSecretForLevel?.(level, secret, algo);
       return '';
     });
+    // `enable algorithm-type {md5|scrypt|sha256} secret [level N] <pwd>` —
+    // explicit-algorithm form of `enable secret` (IOS 15.3+), always takes
+    // a cleartext password and hashes it with the named algorithm.
+    this.configTrie.registerGreedy('enable algorithm-type', 'Set enable secret with an explicit hash algorithm', (args) => {
+      const dev = this.d() as unknown as { _setEnableSecretForLevel?: (level: number, s: string, algo: 'plain' | 'md5' | 'sha256' | 'scrypt' | 'type-7') => void };
+      const algoName = args[0]?.toLowerCase();
+      const algoMap: Record<string, 'md5' | 'scrypt' | 'sha256'> = { md5: 'md5', scrypt: 'scrypt', sha256: 'sha256' };
+      const algo = algoMap[algoName ?? ''];
+      if (!algo) return "% Invalid input detected at '^' marker.";
+      if (args[1]?.toLowerCase() !== 'secret') return "% Invalid input detected at '^' marker.";
+      let level = 15;
+      let rest = args.slice(2);
+      if (rest[0]?.toLowerCase() === 'level' && /^\d+$/.test(rest[1] ?? '')) {
+        level = parseInt(rest[1], 10);
+        rest = rest.slice(2);
+      }
+      const secret = rest.join(' ');
+      if (secret === '') return CISCO_ERRORS.INCOMPLETE;
+      const minLength = getSecurityConfig(this.d()).passwords.minLength;
+      if (minLength && secret.length < minLength) {
+        return `Password too short - must be at least ${minLength} characters. Password configuration failed`;
+      }
+      dev._setEnableSecretForLevel?.(level, secret, algo);
+      return '';
+    });
     this.configTrie.registerGreedy('enable password', 'Set enable password', (args) => {
       const dev = this.d() as unknown as {
         _setEnablePasswordForLevel?: (level: number, p: string, algo: 'plain' | 'type-7') => void;
@@ -2458,9 +2547,15 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       } else if (kind === 'console' || kind === 'con') {
         this.selectedVtyRange = null;
         this.selectedConsoleLine = Number.parseInt(args[1] ?? '0', 10);
+        this.selectedAuxLine = null;
+      } else if (kind === 'aux') {
+        this.selectedVtyRange = null;
+        this.selectedConsoleLine = null;
+        this.selectedAuxLine = Number.parseInt(args[1] ?? '0', 10);
       } else {
         this.selectedVtyRange = null;
         this.selectedConsoleLine = null;
+        this.selectedAuxLine = null;
       }
       return '';
     });
@@ -2471,6 +2566,11 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       this.configLineTrie.registerGreedy(kw, `line ${kw}`, (args, raw) => {
         const range = this.selectedVtyRange;
         if (!range) {
+          if (this.selectedAuxLine != null) {
+            if (kw === 'exec') { this.auxLineNoExec = false; return ''; }
+            if (kw === 'no' && args[0]?.toLowerCase() === 'exec') { this.auxLineNoExec = true; return ''; }
+            return '';
+          }
           if (this.selectedConsoleLine == null) return '';
           if (kw === 'password') {
             if (!args[0]) return '% Incomplete command.';
@@ -2484,6 +2584,10 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
           if (kw === 'login') {
             const sub = args[0]?.toLowerCase();
             this.consoleLineLogin = sub === 'local' ? 'local' : 'password';
+            return '';
+          }
+          if (kw === 'logging' && args[0]?.toLowerCase() === 'synchronous') {
+            this.consoleLineLoggingSynchronous = true;
             return '';
           }
           if (kw === 'privilege' && args[0]?.toLowerCase() === 'level' && args[1]) {
@@ -2506,6 +2610,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
             }
             if (sub === 'password') { this.consoleLinePassword = null; return ''; }
             if (sub === 'privilege') { this.consoleLinePrivilegeLevel = null; return ''; }
+            if (sub === 'logging') { this.consoleLineLoggingSynchronous = false; return ''; }
           }
           return '';
         }
@@ -2524,7 +2629,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
         } else if (kw === 'logging' && args[0]?.toLowerCase() === 'synchronous') {
           update.loggingSynchronous = true;
         } else if (kw === 'privilege' && args[0]?.toLowerCase() === 'level' && args[1]) {
-          update.privilegeLevel = parseInt(args[1], 10);
+          update.privilege = parseInt(args[1], 10);
         } else if (kw === 'session-timeout' && args[0]) {
           update.sessionTimeoutMinutes = parseInt(args[0], 10);
         } else if (kw === 'history' && args[0]?.toLowerCase() === 'size' && args[1]) {
@@ -2618,7 +2723,12 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       if (proto !== 'all' && proto !== 'ssh' && proto !== 'telnet' && proto !== 'none') {
         return "% Invalid input detected at '^' marker.";
       }
-      if (dir === 'input' && typeof dev._setVtyTransportInput === 'function') {
+      if (dir !== 'input') return '';
+      if (this.selectedAuxLine != null) {
+        this.auxLineTransportInput = proto;
+        return '';
+      }
+      if (typeof dev._setVtyTransportInput === 'function') {
         dev._setVtyTransportInput(proto);
         const range = this.selectedVtyRange;
         if (range) dev._getVtyLineConfig?.().upsert({ first: range.first, last: range.last, transportInput: proto });

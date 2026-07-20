@@ -82,7 +82,8 @@ export function applyPipeFilter(output: string, filter: PipeFilter | null): stri
   }
 
   // IOS pipe patterns are regular expressions (`| include ^!` anchors on
-  // line start); an invalid regex degrades to a literal substring match.
+  // line start, `include foo|bar` alternates); an invalid regex degrades
+  // to a literal substring match.
   const matcher = buildPipeMatcher(pattern);
 
   if (filter.type === 'include' || filter.type === 'grep' || filter.type === 'findstr') {

@@ -2777,16 +2777,19 @@ export abstract class Switch extends Equipment {
     if (type === 'motd') return this.motdBannerText;
     if (type === 'login') return this.loginBannerText;
     if (type === 'exec') return this.execBannerText;
+    if (type === 'incoming') return this.incomingBannerText;
     return '';
   }
 
   protected motdBannerText: string = '';
   protected loginBannerText: string = '';
   protected execBannerText: string = '';
+  protected incomingBannerText: string = '';
 
   _setMotdBanner(text: string): void { this.motdBannerText = text; }
   _setLoginBanner(text: string): void { this.loginBannerText = text; }
   _setExecBanner(text: string): void { this.execBannerText = text; }
+  _setIncomingBanner(text: string): void { this.incomingBannerText = text; }
 
   async executeCommand(command: string): Promise<string> {
     if (!this.isPoweredOn) return '% Device is powered off';

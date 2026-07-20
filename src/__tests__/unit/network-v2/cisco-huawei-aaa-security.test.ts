@@ -365,12 +365,12 @@ describe('§H — LoginBlocker reacts to repeated login failures', () => {
     expect(blocker.isBlocked('10.0.0.2', now + 300)).toBe(true);
   });
 
-  test('a successful login from the same IP clears the counter', () => {
+  test('a successful login does not reset the rolling failure window', () => {
     store.recordLoginFailure('admin', '10.0.0.2', 'bad', now);
     store.recordLoginFailure('admin', '10.0.0.2', 'bad', now + 100);
     store.recordLoginSuccess('admin', '10.0.0.2', 'password', now + 200);
     store.recordLoginFailure('admin', '10.0.0.2', 'bad', now + 300);
-    expect(blocker.isBlocked('10.0.0.2', now + 400)).toBe(false);
+    expect(blocker.isBlocked('10.0.0.2', now + 400)).toBe(true);
   });
 
   test('failures older than the window are not counted', () => {
@@ -388,11 +388,11 @@ describe('§H — LoginBlocker reacts to repeated login failures', () => {
     expect(blocker.isBlocked('10.0.0.2', now + 61_000)).toBe(false);
   });
 
-  test('failures from a different IP are tracked independently', () => {
+  test('quiet-mode triggered by one source blocks every other source device-wide', () => {
     for (let i = 0; i < 3; i++) {
       store.recordLoginFailure('admin', '10.0.0.2', 'bad', now + i * 100);
     }
-    expect(blocker.isBlocked('10.0.0.3', now + 400)).toBe(false);
+    expect(blocker.isBlocked('10.0.0.3', now + 400)).toBe(true);
     expect(blocker.isBlocked('10.0.0.2', now + 400)).toBe(true);
   });
 });

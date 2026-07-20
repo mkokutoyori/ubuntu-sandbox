@@ -175,3 +175,48 @@ describe('Huawei save over SSH is interactive AND real', () => {
     expect(await router.executeCommand('display saved-configuration')).not.toContain('SSH-NOSAVE');
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════
+// Multi-line banner capture — same dialogue over SSH as in the UI
+// ═══════════════════════════════════════════════════════════════════
+
+describe('Cisco banner multi-line capture over SSH', () => {
+  it('banner motd # opens a capture; lines accumulate until the delimiter', async () => {
+    const router = new CiscoRouter('R1');
+    const shell = makeShell('cisco-ios', router);
+    await shell.processLine('enable');
+    await shell.processLine('configure terminal');
+
+    const open = await shell.processLine('banner motd #') as ShellLineResult;
+    expect(open.pendingInput).toBeDefined();
+
+    let r = await shell.handleInput!('Ligne un');
+    expect(r.pendingInput).toBeDefined();
+    r = await shell.handleInput!('Ligne deux');
+    expect(r.pendingInput).toBeDefined();
+    r = await shell.handleInput!('#');
+    expect(r.pendingInput).toBeUndefined();
+
+    const dev = router as unknown as { getBanner?: (k: string) => string };
+    expect(dev.getBanner?.('motd')).toBe('Ligne un\nLigne deux');
+  });
+
+  it('the single-line form stays synchronous (no capture)', async () => {
+    const router = new CiscoRouter('R1');
+    const shell = makeShell('cisco-ios', router);
+    await shell.processLine('enable');
+    await shell.processLine('configure terminal');
+    const res = await shell.processLine('banner motd #Bienvenue#') as ShellLineResult;
+    expect(res.pendingInput).toBeUndefined();
+    const dev = router as unknown as { getBanner?: (k: string) => string };
+    expect(dev.getBanner?.('motd')).toBe('Bienvenue');
+  });
+
+  it('outside config mode, banner is not planned (device error passes through)', async () => {
+    const router = new CiscoRouter('R1');
+    const shell = makeShell('cisco-ios', router);
+    await shell.processLine('enable');
+    const res = await shell.processLine('banner motd #') as ShellLineResult;
+    expect(res.pendingInput).toBeUndefined();
+  });
+});

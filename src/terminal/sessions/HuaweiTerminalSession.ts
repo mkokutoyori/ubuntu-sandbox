@@ -56,6 +56,22 @@ export class HuaweiTerminalSession extends CLITerminalSession {
     return new CyclingPolicy();
   }
 
+  /**
+   * `?` inline help must read the vty's own swapped-in mode, exactly like
+   * Tab completion and the prompt already do — otherwise, right after
+   * entering `system-view`, `interface ?` falls back to the device's
+   * shared (pre-swap) state and wrongly answers "Unrecognized command"
+   * even though the vty's own mode is correct and Tab-completion on the
+   * exact same input works.
+   */
+  protected override resolveCliHelp(currentInput: string): string {
+    const dev = this.device;
+    if (this.vty && (dev instanceof Router || dev instanceof Switch)) {
+      return dev.cliHelpForVty(currentInput, this.vty);
+    }
+    return super.resolveCliHelp(currentInput);
+  }
+
   protected override resolveCliTabCandidates(input: string): string[] {
     const dev = this.device;
     if (this.vty && (dev instanceof Router || dev instanceof Switch)) {

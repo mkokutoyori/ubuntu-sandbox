@@ -52,6 +52,7 @@ export interface VtyLineConfigInit {
   readonly authenticationMode?: 'password' | 'aaa' | 'none';
   readonly screenLengthLines?: number;
   readonly historyCommandSize?: number;
+  readonly loggingSynchronous?: boolean;
 }
 
 export class VtyLineConfig {
@@ -72,6 +73,7 @@ export class VtyLineConfig {
   readonly authenticationMode: 'password' | 'aaa' | 'none' | null;
   readonly screenLengthLines: number | null;
   readonly historyCommandSize: number | null;
+  readonly loggingSynchronous: boolean;
 
   constructor(init: VtyLineConfigInit) {
     this.first              = init.first;
@@ -91,6 +93,7 @@ export class VtyLineConfig {
     this.authenticationMode = init.authenticationMode ?? null;
     this.screenLengthLines  = init.screenLengthLines ?? null;
     this.historyCommandSize = init.historyCommandSize ?? null;
+    this.loggingSynchronous = init.loggingSynchronous ?? false;
     Object.freeze(this);
   }
 
@@ -122,6 +125,7 @@ export class VtyLineConfig {
       authenticationMode: patch.authenticationMode ?? this.authenticationMode ?? undefined,
       screenLengthLines:  patch.screenLengthLines  ?? this.screenLengthLines  ?? undefined,
       historyCommandSize: patch.historyCommandSize ?? this.historyCommandSize ?? undefined,
+      loggingSynchronous: patch.loggingSynchronous ?? this.loggingSynchronous ?? undefined,
     });
   }
 
@@ -142,6 +146,7 @@ export class VtyLineConfig {
     }
     if (this.privilege !== null) lines.push(` privilege level ${this.privilege}`);
     if (this.transportInput !== null) lines.push(` transport input ${this.transportInput}`);
+    if (this.loggingSynchronous) lines.push(' logging synchronous');
     return lines;
   }
 
