@@ -45,6 +45,11 @@ function displayWidth(ch: string): number {
   return displayNotation(ch).length;
 }
 
+/** Ctrl+Left/Right word-jump boundary: any non-whitespace character. */
+function isWordChar(ch: string | undefined): boolean {
+  return ch !== undefined && !/\s/.test(ch);
+}
+
 /** Search `line` for the next match of `regex` at or after column `fromCol`. */
 function execFrom(line: string, regex: RegExp, fromCol: number): RegExpExecArray | null {
   const re = new RegExp(regex.source, regex.flags.includes('g') ? regex.flags : regex.flags + 'g');
@@ -501,6 +506,11 @@ export class NanoEngine {
   }
 
   private applyEditCtrlKey(k: EditorKeyInput): void {
+    // Ctrl+Left/Right: word jump — pure navigation, always available
+    // (including view mode), so it's checked before the mnemonic switch
+    // below (which keys off the lowercased letter, not arrow names).
+    if (k.key === 'ArrowLeft') { this.jumpWordLeft(); return; }
+    if (k.key === 'ArrowRight') { this.jumpWordRight(); return; }
     const key = k.key.toLowerCase();
     // View mode (-v): no Write Out, Cut, Paste, Replace, Justify, Read
     // File or Execute Command — real nano has none of these bound while
@@ -611,6 +621,44 @@ export class NanoEngine {
     this.lastEditKind = null;
   }
 
+  /**
+   * One Ctrl+Left/Right press crosses exactly ONE boundary — either a
+   * word edge within the current line, or (only when already sitting
+   * at the line's very edge) into the adjacent line. Crossing both in
+   * a single press would skip past the last word of a line entirely.
+   */
+  private jumpWordLeft(): void {
+    if (this._cursorCol === 0) {
+      if (this._cursorLine === 0) return;
+      this._cursorLine--;
+      this._cursorCol = this.line(this._cursorLine).length;
+      this.lastEditKind = null;
+      return;
+    }
+    const text = this.line(this._cursorLine);
+    let col = this._cursorCol;
+    while (col > 0 && !isWordChar(text[col - 1])) col--;
+    while (col > 0 && isWordChar(text[col - 1])) col--;
+    this._cursorCol = col;
+    this.lastEditKind = null;
+  }
+
+  private jumpWordRight(): void {
+    const text = this.line(this._cursorLine);
+    if (this._cursorCol >= text.length) {
+      if (this._cursorLine >= this.linesArr.length - 1) return;
+      this._cursorLine++;
+      this._cursorCol = 0;
+      this.lastEditKind = null;
+      return;
+    }
+    let col = this._cursorCol;
+    while (col < text.length && isWordChar(text[col])) col++;
+    while (col < text.length && !isWordChar(text[col])) col++;
+    this._cursorCol = col;
+    this.lastEditKind = null;
+  }
+
   private applyEditAltKey(k: EditorKeyInput): void {
     const key = k.key.toLowerCase();
     if (key === 'u') { this.performUndo(); this.lastActionWasCut = false; return; }
@@ -618,6 +666,20 @@ export class NanoEngine {
     if (key === 'g') { // Go To Line (M-G alias)
       this.gotoLineBuffer = '';
       this._mode = 'goto-line';
+      this.lastActionWasCut = false;
+      return;
+    }
+    if (k.key === '\\') { // First Line
+      this._cursorLine = 0;
+      this._cursorCol = 0;
+      this.lastEditKind = null;
+      this.lastActionWasCut = false;
+      return;
+    }
+    if (k.key === '/') { // Last Line
+      this._cursorLine = this.linesArr.length - 1;
+      this._cursorCol = this.line(this._cursorLine).length;
+      this.lastEditKind = null;
       this.lastActionWasCut = false;
       return;
     }
