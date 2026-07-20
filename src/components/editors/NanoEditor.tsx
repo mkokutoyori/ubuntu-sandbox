@@ -126,6 +126,21 @@ export const NanoEditor: React.FC<NanoEditorProps> = ({
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const saveInputRef = useRef<HTMLInputElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
+  const caretRef = useRef<HTMLDivElement>(null);
+  const highlightRef = useRef<HTMLDivElement>(null);
+  const gutterRef = useRef<HTMLDivElement>(null);
+  // The textarea owns real, native scrolling (long buffers overflow its
+  // box and the browser scrolls it internally — that can't be delegated
+  // to an ancestor). The caret/highlight overlays and the line-number
+  // gutter are separate DOM nodes positioned from cursorLine/cursorCol
+  // alone, so a plain mouse-wheel scroll (which changes no engine state,
+  // triggers no re-render) used to leave them glued to their unscrolled
+  // position — floating disconnected from the text underneath. Tracked
+  // in a ref (not state) and applied as a `transform` written directly
+  // on scroll: going through setState here would re-run the selection
+  // sync effect below on every scroll tick and fight the user's manual
+  // scrolling by re-revealing the caret's real position each time.
+  const scrollRef = useRef({ top: 0, left: 0 });
 
   useEffect(() => {
     if (engine.mode === 'save-prompt') {
@@ -171,6 +186,15 @@ export const NanoEditor: React.FC<NanoEditorProps> = ({
     engine.moveCursorToDisplayOffset(offset);
     bump();
   }, [engine, bump]);
+
+  const handleEditScroll = useCallback((e: React.UIEvent<HTMLTextAreaElement>) => {
+    scrollRef.current = { top: e.currentTarget.scrollTop, left: e.currentTarget.scrollLeft };
+    const { top, left } = scrollRef.current;
+    const shift = `translate(${-left}px, ${-top}px)`;
+    if (caretRef.current) caretRef.current.style.transform = shift;
+    if (highlightRef.current) highlightRef.current.style.transform = shift;
+    if (gutterRef.current) gutterRef.current.style.transform = `translateY(${-top}px)`;
+  }, []);
 
   const [shortcutsRow1, shortcutsRow2] = shortcutsForMode(engine);
 
@@ -220,6 +244,7 @@ export const NanoEditor: React.FC<NanoEditorProps> = ({
       <div className="flex-1 flex overflow-hidden">
         {engine.lineNumbersShown && engine.mode !== 'help' && (
           <div
+            ref={gutterRef}
             data-testid="nano-gutter"
             className="select-none shrink-0 text-right"
             style={{
@@ -231,6 +256,7 @@ export const NanoEditor: React.FC<NanoEditorProps> = ({
               lineHeight: '1.35',
               fontSize: 'inherit',
               fontFamily: 'inherit',
+              transform: `translateY(${-scrollRef.current.top}px)`,
             }}
           >
             {engine.lines.map((_, i) => (
@@ -247,6 +273,7 @@ export const NanoEditor: React.FC<NanoEditorProps> = ({
           onKeyDown={handleEditKeyDown}
           onPaste={engine.mode === 'help' ? undefined : handlePaste}
           onMouseUp={engine.mode === 'help' ? undefined : handleEditMouseUp}
+          onScroll={handleEditScroll}
           readOnly
           className="absolute inset-0 w-full h-full outline-none resize-none p-1"
           style={{
@@ -264,6 +291,7 @@ export const NanoEditor: React.FC<NanoEditorProps> = ({
         />
         {engine.mode === 'edit' && (
           <div
+            ref={caretRef}
             data-testid="nano-caret"
             className="absolute pointer-events-none terminal-cursor"
             style={{
@@ -272,6 +300,7 @@ export const NanoEditor: React.FC<NanoEditorProps> = ({
               width: '2px',
               height: '1.2em',
               backgroundColor: '#ffffff',
+              transform: `translate(${-scrollRef.current.left}px, ${-scrollRef.current.top}px)`,
             }}
           />
         )}
@@ -281,6 +310,7 @@ export const NanoEditor: React.FC<NanoEditorProps> = ({
           const endCol = engine.displayColumnFor(m.line, m.end);
           return (
             <div
+              ref={highlightRef}
               data-testid="nano-replace-highlight"
               className="absolute pointer-events-none"
               style={{
@@ -289,6 +319,7 @@ export const NanoEditor: React.FC<NanoEditorProps> = ({
                 width: `${Math.max(1, endCol - startCol)}ch`,
                 height: '1.35em',
                 backgroundColor: 'rgba(255, 255, 0, 0.35)',
+                transform: `translate(${-scrollRef.current.left}px, ${-scrollRef.current.top}px)`,
               }}
             />
           );
