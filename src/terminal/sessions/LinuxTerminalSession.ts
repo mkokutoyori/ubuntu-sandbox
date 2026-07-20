@@ -1995,12 +1995,33 @@ export class LinuxTerminalSession extends TerminalSession {
     for (const arg of args) {
       if (!arg.startsWith('-') && !arg.startsWith('+')) { filePath = arg; break; }
     }
-    if (!filePath) filePath = editorCmd === 'nano' ? 'New Buffer' : '';
     // nano -v/--view: open read-only, no Write Out. nano -c/--constantshow:
     // title bar shows the live cursor position. Both no-ops for vi/vim
     // (which use their own :view / :set ruler commands for the same idea).
     const readOnly = editorCmd === 'nano' && args.some((a) => a === '-v' || a === '--view');
     const showPosition = editorCmd === 'nano' && args.some((a) => a === '-c' || a === '--constantshow');
+
+    // No filename given: a genuinely unnamed buffer. Resolving '' against
+    // the cwd would collapse to the cwd's OWN directory path (VFS
+    // normalizePath treats '' as "no extra segment"), so `^O`/`:w` would
+    // silently target the directory itself — skip resolution entirely and
+    // leave both paths empty; the engines already handle an empty
+    // filePath correctly (nano's Write Out prompt starts blank, vim's :w
+    // reports E32 until a real name is typed).
+    if (!filePath) {
+      this.inputMode = {
+        type: 'editor',
+        editorType: editorCmd,
+        filePath: '',
+        absolutePath: '',
+        content: '',
+        isNewFile: true,
+        readOnly,
+        showPosition,
+      };
+      this.notify();
+      return;
+    }
 
     // Resolve against the per-terminal cwd when a shell session is owned
     // (terminal_gap.md §10.1) — falls back to the device's shared cwd for

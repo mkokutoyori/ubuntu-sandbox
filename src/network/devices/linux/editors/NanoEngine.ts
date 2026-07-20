@@ -115,12 +115,15 @@ export class NanoEngine {
         ? '[ New File ]'
         : `[ Read ${this.linesArr.length} line${this.linesArr.length === 1 ? '' : 's'} ]`;
     this.saveFileNameBuffer = filePath;
-    this.lockPath = dotSwapPathFor(fs.resolvePath(filePath));
     // GNU nano creates a `.<file>.swp` lock file for the duration of the
     // editing session to prevent two nano instances from editing the same
     // file concurrently; removed on clean exit (see swapFilePath below).
-    // View mode (-v) never locks — it never intends to write.
-    if (!_readOnly) this.fs.writeFile(this.lockPath, `nano lock: ${filePath}\n`);
+    // View mode (-v) never locks — it never intends to write. A genuinely
+    // unnamed buffer (filePath === '') has no real file to protect yet —
+    // resolving '' would collapse to the cwd's own directory path — so no
+    // lock is created until a real name exists (Write Out gives it one).
+    this.lockPath = filePath === '' ? '' : dotSwapPathFor(fs.resolvePath(filePath));
+    if (!_readOnly && this.lockPath !== '') this.fs.writeFile(this.lockPath, `nano lock: ${filePath}\n`);
   }
 
   // ── Public state (read-only) ──────────────────────────────────────
@@ -1043,6 +1046,6 @@ export class NanoEngine {
   private finishExit(saved: boolean): void {
     this._exited = true;
     this._savedOnExit = saved;
-    this.fs.deleteFile(this.lockPath);
+    if (this.lockPath !== '') this.fs.deleteFile(this.lockPath);
   }
 }

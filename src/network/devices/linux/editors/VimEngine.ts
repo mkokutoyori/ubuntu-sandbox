@@ -339,10 +339,20 @@ export class VimEngine {
       : rawLines;
     this.originalDiskLines = [...this.linesArr];
     this.owner = owner;
-    this._message = isNewFile
-      ? `"${filePath}" [New File]`
-      : `"${filePath}" ${this.linesArr.length}L, ${initialContent.length}C`;
+    this._message = filePath === ''
+      ? ''
+      : isNewFile
+        ? `"${filePath}" [New File]`
+        : `"${filePath}" ${this.linesArr.length}L, ${initialContent.length}C`;
 
+    // A genuinely unnamed buffer (filePath === '', real vim's `vim` with
+    // no argument) has no real file yet — resolving '' would collapse to
+    // the cwd's own directory path — so no swap file is created until a
+    // real name exists via `:w <name>`.
+    if (filePath === '') {
+      this.swapPath = '';
+      return;
+    }
     const primarySwap = dotSwapPathFor(fs.resolvePath(filePath));
     if (this.fs.exists(primarySwap)) {
       const meta = parseSwapMeta(this.fs.readFile(primarySwap) ?? '');
@@ -1987,6 +1997,10 @@ export class VimEngine {
   }
 
   private writeFile(path: string, force: boolean): boolean {
+    if (path === '') {
+      this._message = 'E32: No file name';
+      return false;
+    }
     if (this._readOnly && !force) {
       this._message = "E45: 'readonly' option is set (add ! to override)";
       return false;
