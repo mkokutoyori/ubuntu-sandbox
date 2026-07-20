@@ -93,8 +93,11 @@ export class NanoEngine {
   private replaceWithBuffer = '';
   private replaceState: { regex: RegExp; replacement: string; currentLine: number; currentCol: number; totalReplaced: number } | null = null;
   private _pendingReplaceMatch: PendingReplaceMatch | null = null;
-  private cutBuffer: string[] = [];
+  private cutBuffer: { kind: 'lines'; lines: string[] } | { kind: 'chars'; text: string } | null = null;
   private lastActionWasCut = false;
+  /** Set by ^6/M-A (Set Mark); the region runs from here to the cursor. */
+  private markLine: number | null = null;
+  private markCol: number | null = null;
   private readonly lockPath: string;
 
   // Undo/redo (Alt+U / Alt+E — real nano's M-U/M-E), multi-level, with
@@ -532,26 +535,47 @@ export class NanoEngine {
           this.finishExit(true);
         }
         return;
-      case 'k': { // Cut line
+      case 'k': { // Cut line, or the marked region if a mark is active
+        const region = this.getMarkedRegion();
+        if (region) {
+          this.beginDiscreteEdit();
+          this.cutBuffer = { kind: 'chars', text: this.extractRegionText(region) };
+          this.deleteRegion(region);
+          this.clearMark();
+          this._modified = true;
+          this._statusMessage = 'Cut region';
+          this.lastActionWasCut = false; // a region cut is discrete, never accumulated
+          return;
+        }
         if (this._cursorLine < this.linesArr.length) {
           this.beginDiscreteEdit();
           const cut = this.linesArr[this._cursorLine];
-          this.cutBuffer = this.lastActionWasCut ? [...this.cutBuffer, cut] : [cut];
+          const prevLines = this.lastActionWasCut && this.cutBuffer?.kind === 'lines' ? this.cutBuffer.lines : [];
+          this.cutBuffer = { kind: 'lines', lines: [...prevLines, cut] };
           this.linesArr.splice(this._cursorLine, 1);
           if (this.linesArr.length === 0) this.linesArr.push('');
           this._cursorCol = 0;
           this._modified = true;
-          this._statusMessage = 'Cut 1 line';
+          const n = this.cutBuffer.lines.length;
+          this._statusMessage = `Cut ${n} line${n === 1 ? '' : 's'}`;
           this.lastActionWasCut = true;
         }
         return;
       }
       case 'u': // Paste (uncut)
-        if (this.cutBuffer.length > 0) {
-          this.beginDiscreteEdit();
-          this.linesArr.splice(this._cursorLine, 0, ...this.cutBuffer);
-          this._modified = true;
-          this._statusMessage = `Pasted ${this.cutBuffer.length} line(s)`;
+        if (this.cutBuffer) {
+          if (this.cutBuffer.kind === 'lines') {
+            this.beginDiscreteEdit();
+            const n = this.cutBuffer.lines.length;
+            this.linesArr.splice(this._cursorLine, 0, ...this.cutBuffer.lines);
+            this._cursorLine += n;
+            this._cursorCol = 0;
+            this._modified = true;
+            this._statusMessage = `Pasted ${n} line${n === 1 ? '' : 's'}`;
+          } else {
+            this.pasteIntoBuffer(this.cutBuffer.text);
+            this._statusMessage = 'Pasted region';
+          }
         }
         this.lastActionWasCut = false;
         return;
@@ -578,6 +602,10 @@ export class NanoEngine {
       }
       case 'j': // Justify
         this.justifyParagraph();
+        this.lastActionWasCut = false;
+        return;
+      case '6': // Mark Text (Set Mark) — toggles a mark at the cursor
+        this.toggleMark();
         this.lastActionWasCut = false;
         return;
       case 'r': // Read File (insert another file's content at the cursor)
@@ -682,6 +710,77 @@ export class NanoEngine {
       this.lastEditKind = null;
       this.lastActionWasCut = false;
       return;
+    }
+    if (key === 'a') { // Mark Text (M-A alias of ^6)
+      this.toggleMark();
+      this.lastActionWasCut = false;
+      return;
+    }
+    if (k.key === '6') { // Copy Text — the marked region, or the current line without a mark
+      this.copyMark();
+      this.lastActionWasCut = false;
+      return;
+    }
+  }
+
+  // ── Mark / region (^6, M-A, M-6) ─────────────────────────────────
+
+  private toggleMark(): void {
+    if (this.markLine !== null) {
+      this.clearMark();
+      this._statusMessage = 'Mark Unset';
+    } else {
+      this.markLine = this._cursorLine;
+      this.markCol = this._cursorCol;
+      this._statusMessage = 'Mark Set';
+    }
+  }
+
+  private clearMark(): void {
+    this.markLine = null;
+    this.markCol = null;
+  }
+
+  /** The marked region, ordered so `start` precedes `end` regardless of
+   *  which of the mark/cursor came first. `null` when no mark is set. */
+  private getMarkedRegion(): { startLine: number; startCol: number; endLine: number; endCol: number } | null {
+    if (this.markLine === null || this.markCol === null) return null;
+    const a = { line: this.markLine, col: this.markCol };
+    const b = { line: this._cursorLine, col: this._cursorCol };
+    const aFirst = a.line < b.line || (a.line === b.line && a.col <= b.col);
+    const [start, end] = aFirst ? [a, b] : [b, a];
+    return { startLine: start.line, startCol: start.col, endLine: end.line, endCol: end.col };
+  }
+
+  private extractRegionText(r: { startLine: number; startCol: number; endLine: number; endCol: number }): string {
+    if (r.startLine === r.endLine) return this.line(r.startLine).slice(r.startCol, r.endCol);
+    const parts: string[] = [this.line(r.startLine).slice(r.startCol)];
+    for (let l = r.startLine + 1; l < r.endLine; l++) parts.push(this.line(l));
+    parts.push(this.line(r.endLine).slice(0, r.endCol));
+    return parts.join('\n');
+  }
+
+  private deleteRegion(r: { startLine: number; startCol: number; endLine: number; endCol: number }): void {
+    if (r.startLine === r.endLine) {
+      const text = this.line(r.startLine);
+      this.linesArr[r.startLine] = text.slice(0, r.startCol) + text.slice(r.endCol);
+    } else {
+      const merged = this.line(r.startLine).slice(0, r.startCol) + this.line(r.endLine).slice(r.endCol);
+      this.linesArr.splice(r.startLine, r.endLine - r.startLine + 1, merged);
+    }
+    this._cursorLine = r.startLine;
+    this._cursorCol = r.startCol;
+  }
+
+  private copyMark(): void {
+    const region = this.getMarkedRegion();
+    if (region) {
+      this.cutBuffer = { kind: 'chars', text: this.extractRegionText(region) };
+      this.clearMark();
+      this._statusMessage = 'Copied region';
+    } else {
+      this.cutBuffer = { kind: 'lines', lines: [this.line(this._cursorLine)] };
+      this._statusMessage = 'Copied 1 line';
     }
   }
 
