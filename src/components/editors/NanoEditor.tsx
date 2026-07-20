@@ -58,6 +58,11 @@ function shortcutsForMode(engine: NanoEngine): readonly [readonly Shortcut[], re
         [['^G', 'Help'], ['Y', 'Yes']],
         [['N', 'No'], ['^C', 'Cancel']],
       ];
+    case 'goto-line':
+      return [
+        [['^G', 'Help']],
+        [['^C', 'Cancel']],
+      ];
     case 'edit':
     default:
       if (engine.isReadOnly) {
@@ -98,7 +103,7 @@ export const NanoEditor: React.FC<NanoEditorProps> = ({
   useEffect(() => {
     if (engine.mode === 'save-prompt' || engine.mode === 'exit-save-prompt' || engine.mode === 'replace-confirm') {
       saveInputRef.current?.focus();
-    } else if (engine.mode === 'search' || engine.mode === 'replace-search' || engine.mode === 'replace-with') {
+    } else if (engine.mode === 'search' || engine.mode === 'replace-search' || engine.mode === 'replace-with' || engine.mode === 'goto-line') {
       searchInputRef.current?.focus();
     } else {
       textareaRef.current?.focus();
@@ -303,6 +308,27 @@ export const NanoEditor: React.FC<NanoEditorProps> = ({
             <input
               ref={searchInputRef}
               value={engine.replaceWithText}
+              onChange={() => { /* engine-authoritative */ }}
+              onKeyDown={handlePromptKeyDown}
+              onPaste={handlePaste}
+              className="flex-1 bg-transparent outline-none"
+              style={{
+                color: '#ffffff',
+                caretColor: '#ffffff',
+                fontFamily: 'inherit',
+                fontSize: 'inherit',
+              }}
+              spellCheck={false}
+              autoComplete="off"
+            />
+          </div>
+        )}
+        {engine.mode === 'goto-line' && (
+          <div className="flex items-center px-1">
+            <span style={{ color: '#d3d7cf' }}>Enter line number, column number: </span>
+            <input
+              ref={searchInputRef}
+              value={engine.gotoLineQuery}
               onChange={() => { /* engine-authoritative */ }}
               onKeyDown={handlePromptKeyDown}
               onPaste={handlePaste}

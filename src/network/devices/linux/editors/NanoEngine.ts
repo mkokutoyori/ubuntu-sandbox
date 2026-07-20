@@ -4,7 +4,16 @@ import { dotSwapPathFor } from './editorPaths';
 
 export type NanoMode =
   | 'edit' | 'save-prompt' | 'exit-save-prompt' | 'search'
-  | 'replace-search' | 'replace-with' | 'replace-confirm';
+  | 'replace-search' | 'replace-with' | 'replace-confirm' | 'goto-line';
+
+/**
+ * Lines a PageUp/PageDown jumps by. Real nano ties this to the terminal
+ * window's actual row count; this headless engine has no live viewport,
+ * so — like VimEditor's own `visibleLineCount` assumption — a fixed
+ * value approximates "a screen's worth" well enough for chunked
+ * navigation through a long file.
+ */
+const PAGE_SIZE = 30;
 
 export interface PendingReplaceMatch {
   line: number;
@@ -57,6 +66,7 @@ export class NanoEngine {
   private _exited = false;
   private _savedOnExit = false;
   private saveFileNameBuffer: string;
+  private gotoLineBuffer = '';
   private searchQueryBuffer = '';
   private lastSearchTerm = '';
   // Up/Down history recall in the Search: prompt, scoped to this session.
@@ -145,6 +155,7 @@ export class NanoEngine {
   get exited(): boolean { return this._exited; }
   get savedOnExit(): boolean { return this._savedOnExit; }
   get saveFileName(): string { return this.saveFileNameBuffer; }
+  get gotoLineQuery(): string { return this.gotoLineBuffer; }
   get searchQuery(): string { return this.searchQueryBuffer; }
   get swapFilePath(): string { return this.lockPath; }
   get swapFileExists(): boolean { return this.fs.exists(this.lockPath); }
@@ -168,6 +179,7 @@ export class NanoEngine {
       case 'replace-search': return this.applyReplaceSearchKey(k);
       case 'replace-with': return this.applyReplaceWithKey(k);
       case 'replace-confirm': return this.applyReplaceConfirmKey(k);
+      case 'goto-line': return this.applyGotoLineKey(k);
     }
   }
 
@@ -228,6 +240,9 @@ export class NanoEngine {
         return;
       case 'replace-with':
         this.replaceWithBuffer += normalized.split('\n')[0];
+        return;
+      case 'goto-line':
+        this.gotoLineBuffer += normalized.split('\n')[0];
         return;
       default:
         return;
@@ -312,7 +327,7 @@ export class NanoEngine {
     if (k.alt) return this.applyEditAltKey(k);
     // View mode (-v): navigation still works, but the buffer is immutable —
     // real nano simply ignores keys that would modify it.
-    if (this._readOnly && (k.key === 'Enter' || k.key === 'Backspace' || k.key === 'Delete'
+    if (this._readOnly && (k.key === 'Enter' || k.key === 'Backspace' || k.key === 'Delete' || k.key === 'Tab'
       || (k.key.length === 1 && !k.alt))) {
       return;
     }
@@ -344,6 +359,21 @@ export class NanoEngine {
         this._cursorCol = this.line(this._cursorLine).length;
         this.lastEditKind = null;
         return;
+      case 'PageUp':
+        this.pageUp();
+        return;
+      case 'PageDown':
+        this.pageDown();
+        return;
+      case 'Tab': {
+        this.beginCoalescableEdit('type');
+        const cur = this.line(this._cursorLine);
+        this.linesArr[this._cursorLine] = cur.slice(0, this._cursorCol) + '\t' + cur.slice(this._cursorCol);
+        this._cursorCol++;
+        this._modified = true;
+        this.lastActionWasCut = false;
+        return;
+      }
       case 'Enter': {
         this.beginDiscreteEdit();
         const cur = this.line(this._cursorLine);
@@ -468,16 +498,47 @@ export class NanoEngine {
         this.lastActionWasCut = false;
         return;
       }
+      case 'y': // Prev Page
+        this.pageUp();
+        this.lastActionWasCut = false;
+        return;
+      case 'v': // Next Page
+        this.pageDown();
+        this.lastActionWasCut = false;
+        return;
+      case '_': // Go To Line
+        this.gotoLineBuffer = '';
+        this._mode = 'goto-line';
+        this.lastActionWasCut = false;
+        return;
       default:
         this.lastActionWasCut = false;
         return;
     }
   }
 
+  private pageUp(): void {
+    this._cursorLine = Math.max(0, this._cursorLine - PAGE_SIZE);
+    this._cursorCol = this.clampCol(this._cursorLine, this._cursorCol);
+    this.lastEditKind = null;
+  }
+
+  private pageDown(): void {
+    this._cursorLine = Math.min(this.linesArr.length - 1, this._cursorLine + PAGE_SIZE);
+    this._cursorCol = this.clampCol(this._cursorLine, this._cursorCol);
+    this.lastEditKind = null;
+  }
+
   private applyEditAltKey(k: EditorKeyInput): void {
     const key = k.key.toLowerCase();
     if (key === 'u') { this.performUndo(); this.lastActionWasCut = false; return; }
     if (key === 'e') { this.performRedo(); this.lastActionWasCut = false; return; }
+    if (key === 'g') { // Go To Line (M-G alias)
+      this.gotoLineBuffer = '';
+      this._mode = 'goto-line';
+      this.lastActionWasCut = false;
+      return;
+    }
   }
 
   // ── Save prompt ──────────────────────────────────────────────────
@@ -532,6 +593,41 @@ export class NanoEngine {
       this._statusMessage = '';
       this._mode = 'edit';
     }
+  }
+
+  // ── Go To Line (^_ / M-G) ────────────────────────────────────────
+
+  private applyGotoLineKey(k: EditorKeyInput): void {
+    if (k.key === 'Enter') {
+      this.performGotoLine(this.gotoLineBuffer);
+      this._mode = 'edit';
+      return;
+    }
+    if (k.key === 'Escape' || (k.ctrl && k.key.toLowerCase() === 'c')) {
+      this._mode = 'edit';
+      return;
+    }
+    if (k.key === 'Backspace') {
+      this.gotoLineBuffer = this.gotoLineBuffer.slice(0, -1);
+      return;
+    }
+    if (k.key.length === 1) {
+      this.gotoLineBuffer += k.key;
+    }
+  }
+
+  /** Parses real nano's "line[,column]" goto-line syntax (both 1-indexed). Invalid/non-numeric input is a silent no-op. */
+  private performGotoLine(input: string): void {
+    const trimmed = input.trim();
+    if (!trimmed) return;
+    const [lineStr, colStr] = trimmed.split(',');
+    const lineNum = parseInt(lineStr, 10);
+    if (!Number.isFinite(lineNum) || lineNum < 1) return;
+    const targetLine = Math.min(lineNum, this.linesArr.length) - 1;
+    this._cursorLine = targetLine;
+    const colNum = colStr !== undefined ? parseInt(colStr, 10) : NaN;
+    this._cursorCol = Number.isFinite(colNum) && colNum >= 1 ? this.clampCol(targetLine, colNum - 1) : 0;
+    this.lastEditKind = null;
   }
 
   // ── Search ───────────────────────────────────────────────────────
