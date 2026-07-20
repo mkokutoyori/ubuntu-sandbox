@@ -374,11 +374,15 @@ export class NanoEngine {
 
   private applySavePromptKey(k: EditorKeyInput): void {
     if (k.key === 'Enter') {
-      this.fs.writeFile(this.saveFileNameBuffer, this.serialize());
+      const ok = this.fs.writeFile(this.saveFileNameBuffer, this.serialize());
+      this._mode = 'edit';
+      if (!ok) {
+        this._statusMessage = `[ Error writing ${this.saveFileNameBuffer} ]`;
+        return;
+      }
       this._modified = false;
       const n = this.linesArr.length;
       this._statusMessage = `[ Wrote ${n} line${n === 1 ? '' : 's'} ]`;
-      this._mode = 'edit';
       return;
     }
     if (k.key === 'Escape' || (k.ctrl && k.key.toLowerCase() === 'c')) {
@@ -400,7 +404,12 @@ export class NanoEngine {
   private applyExitSavePromptKey(k: EditorKeyInput): void {
     const key = k.key.toLowerCase();
     if (!k.ctrl && key === 'y') {
-      this.fs.writeFile(this.filePath, this.serialize());
+      const ok = this.fs.writeFile(this.filePath, this.serialize());
+      if (!ok) {
+        this._mode = 'edit';
+        this._statusMessage = `[ Error writing ${this.filePath} ]`;
+        return;
+      }
       this._modified = false;
       this.finishExit(true);
       return;

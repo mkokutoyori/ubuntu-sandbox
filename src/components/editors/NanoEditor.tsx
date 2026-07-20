@@ -194,6 +194,7 @@ export const NanoEditor: React.FC<NanoEditorProps> = ({
 
       {/* ── Status message line (centered, above shortcuts) ── */}
       <div
+        data-testid="nano-status-message"
         className="text-center shrink-0"
         style={{
           minHeight: '1.35em',
