@@ -81,7 +81,7 @@ export const TerminalView: React.FC<TerminalViewProps> = ({ session }) => {
 
   useEffect(() => {
     if (effectiveMode.type === 'password') {
-      setTimeout(() => hiddenInputRef.current?.focus(), 10);
+      setTimeout(() => hiddenInputRef.current?.focus({ preventScroll: true }), 10);
     } else if (effectiveMode.type === 'interactive-text') {
       setTimeout(() => interactiveInputRef.current?.focus(), 10);
     } else if (effectiveMode.type === 'reverse-search') {
@@ -93,7 +93,7 @@ export const TerminalView: React.FC<TerminalViewProps> = ({ session }) => {
 
   // Focus input on click — use effectiveMode for consistency with rendering
   const handleClick = useCallback(() => {
-    if (effectiveMode.type === 'password') hiddenInputRef.current?.focus();
+    if (effectiveMode.type === 'password') hiddenInputRef.current?.focus({ preventScroll: true });
     else if (effectiveMode.type === 'interactive-text') interactiveInputRef.current?.focus();
     else if (effectiveMode.type === 'reverse-search') reverseSearchRef.current?.focus();
     else if (effectiveMode.type === 'booting') return;
@@ -314,7 +314,6 @@ export const TerminalView: React.FC<TerminalViewProps> = ({ session }) => {
                 borderWidth: 0,
               }}
               autoComplete="off"
-              autoFocus
             />
             {(inputMode as { promptText?: string }).promptText && (
               <span style={{ color: theme.textColor, whiteSpace: 'pre' }}>
@@ -364,11 +363,10 @@ export const TerminalView: React.FC<TerminalViewProps> = ({ session }) => {
         {!isDisconnected && !isPasswordMode && !isInteractiveText && !isBooting && !isPager && !isReverseSearch
           && (session.listAttachedStreams?.().length ?? 0) > 0 && (
           <input
-            ref={inputRef}
+            ref={(el) => { inputRef.current = el; el?.focus({ preventScroll: true }); }}
             type="text"
             className="opacity-0 absolute w-0 h-0"
             onKeyDown={handleKeyDown}
-            autoFocus
           />
         )}
 
@@ -411,10 +409,9 @@ export const TerminalView: React.FC<TerminalViewProps> = ({ session }) => {
         {/* Pager hidden input (captures keys) */}
         {isPager && !isBooting && (
           <input
-            ref={inputRef}
+            ref={(el) => { inputRef.current = el; el?.focus({ preventScroll: true }); }}
             className="opacity-0 absolute w-0 h-0"
             onKeyDown={handleKeyDown}
-            autoFocus
           />
         )}
 
