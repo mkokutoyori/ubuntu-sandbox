@@ -79,7 +79,6 @@ import { LinuxBashShell } from '@/shell/adapters/LinuxBashShell';
 import { ShellContext } from '@/shell/ShellContext';
 import { SqlPlusShell } from '@/shell/adapters/SqlPlusShell';
 import { RmanShell } from '@/shell/adapters/RmanShell';
-import { SshConnectionRequest } from '@/network/protocols/ssh/server/SshConnectionRequest';
 import { SftpSession } from '@/network/protocols/ssh/sftp/SftpSession';
 import { SshSession } from '@/network/protocols/ssh/session/SshSession';
 import { SshConnectOptionsBuilder } from '@/network/protocols/ssh/SshConnectOptions';
@@ -2244,23 +2243,6 @@ export class LinuxTerminalSession extends TerminalSession {
 
   /** Post-flow hook: sync device state and handle special actions (e.g. enter sqlplus). */
   protected override onFlowComplete(ctx: FlowContext): void {
-    const xvendor = ctx.metadata.get('xvendor_push') as string | undefined;
-    if (xvendor && this.crossVendorPushTarget) {
-      const { host, user } = JSON.parse(xvendor) as { host: string; user: string };
-      const target = this.crossVendorPushTarget;
-      this.crossVendorPushTarget = null;
-      const child = createSessionForDevice(target.device, `${this.id}>ssh`);
-      if (child) {
-        const clientIp = this.firstLocalIp() ?? '0.0.0.0';
-        const clientPort = 50_000 + (user.length * 7 % 10_000);
-        this.adoptRemoteChild(child, user, host, {
-          SSH_CONNECTION: `${clientIp} ${clientPort} ${host} 22`,
-          SSH_CLIENT: `${clientIp} ${clientPort} 22`,
-        });
-      }
-      return;
-    }
-    this.crossVendorPushTarget = null;
     const rmanArgs = ctx.metadata.get('enter_rman') as string | undefined;
     if (rmanArgs) {
       this.enterRman(JSON.parse(rmanArgs));
@@ -2683,100 +2665,20 @@ export class LinuxTerminalSession extends TerminalSession {
     // only when the SSH layer actually needs them (e.g. public-key auth succeeds
     // silently without ever asking for a password). `merged` carries
     // `hashKnownHosts` from CLI `-o` / ~/.ssh/config (analysis doc §1.6).
-    if (!merged.command) {
-      const handled = await this.tryEnterCrossVendorSsh(merged);
-      if (handled) return;
-    }
+    //
+    // Audit 03, constat CRITIQUE §1.b: non-Linux targets (Cisco/Huawei/
+    // Windows) used to go through `tryEnterCrossVendorSsh()`, which
+    // verified the password with a direct `sshHost.evaluate()` method
+    // call — zero bytes on the wire — even though these devices already
+    // run a real SshServerHandler on a real TcpStack.listen(22, ...)
+    // (Router.ts, WindowsPC.ts). Every target now goes through the same
+    // real SshSession/TcpStack pipeline Linux targets always used; the
+    // security policy that pre-check enforced (login block-for,
+    // quiet-mode ACL) is preserved via RouterSshServerContext's
+    // isClientBlocked/recordAuthFailure hooks, now reachable from a real
+    // auth exchange instead of a local call.
     await this.connectAndEnterSsh(merged);
   }
-
-  /**
-   * Cross-vendor SSH push (BRD SSH-04 extended): when the target IP belongs
-   * to a non-Linux device that exposes a {@link CrossVendorSshHost}, bypass
-   * the TCP/SshSession machinery (no TCP listener on routers / Windows in
-   * the simulator) and validate the password directly against the host's
-   * auth gate. On accept, push a {@link RemoteDeviceSubShell} configured
-   * with the vendor's prompt strategy so the user genuinely lands in
-   * `Router#`, `<HW>` or `C:\Users\…>`.
-   */
-  private async tryEnterCrossVendorSsh(
-    meta: { userAtHost: string; port: number },
-  ): Promise<boolean> {
-    const user = meta.userAtHost.includes('@')
-      ? meta.userAtHost.split('@')[0]
-      : this.currentUser;
-    const host = meta.userAtHost.includes('@')
-      ? meta.userAtHost.split('@')[1]
-      : meta.userAtHost;
-    const target = findEquipmentByIp(host);
-    if (!target || target instanceof LinuxMachine) return false;
-    const sshHost = (target as unknown as { getSshHost?: () => unknown }).getSshHost?.() as
-      | { evaluate: (req: SshConnectionRequest) => { outcome: string } }
-      | undefined;
-    if (!sshHost) return false;
-
-    const sourceIp = this.lookupSourceIp();
-    // `login block-for` device-wide quiet-mode: a new connection attempt
-    // while blocked (and not covered by `login quiet-mode access-class`)
-    // is refused immediately, before any password prompt -- same gate
-    // `sshLauncher.ts` applies for the LinuxBashShell-driven `ssh` path.
-    const admission = (target as unknown as {
-      vtyAdmissionVerdict?: (transport: 'ssh', ip: string) => { accept: boolean };
-    }).vtyAdmissionVerdict?.('ssh', sourceIp);
-    if (admission && !admission.accept) {
-      this.addLine(`ssh: connect to host ${host} port ${meta.port}: Connection refused`, 'error');
-      this.notify();
-      this.crossVendorPushTarget = null;
-      return true;
-    }
-
-    const steps: InteractiveStep[] = [
-      {
-        type: 'password',
-        prompt: `${user}@${host}'s password:`,
-        storeAs: 'ssh_password',
-      },
-      {
-        type: 'execute',
-        action: async (ctx: FlowContext) => {
-          const password = ctx.values.get('ssh_password') ?? '';
-          const request = SshConnectionRequest.create({
-            requestedUser: user,
-            requestedHost: host,
-            requestedPort: meta.port,
-            sourceIp,
-            sourceHostname: this.device.getHostname() || '',
-            command: null,
-            offeredAuthMethods: ['password'],
-            credentials: { password },
-          });
-          const decision = sshHost.evaluate(request);
-          if (decision.outcome !== 'accepted') {
-            // `sshHost.evaluate()` already recorded the failure on the AAA
-            // bus -- if that failure is the one that just tripped
-            // device-wide quiet-mode, show that instead of the generic
-            // refusal (real IOS: immediate message, connection closed).
-            const blocker = (target as unknown as {
-              getLoginBlocker?: () => { isBlocked: () => boolean; remainingBlockSeconds: () => number } | null;
-            }).getLoginBlocker?.();
-            if (blocker?.isBlocked()) {
-              this.addLine(`% Blocking new login for ${blocker.remainingBlockSeconds()} secs (quota exceeded)`, 'error');
-              return;
-            }
-            this.addLine(`${user}@${host}: Permission denied (publickey,password).`, 'error');
-            return;
-          }
-          ctx.metadata.set('xvendor_push', JSON.stringify({ host, user }));
-        },
-      },
-    ];
-
-    this.crossVendorPushTarget = { device: target };
-    this.startFlowFromSteps(steps, `ssh ${user}@${host}`);
-    return true;
-  }
-
-  private crossVendorPushTarget: { device: Equipment } | null = null;
 
   private lookupSourceIp(): string {
     const portsObj = (this.device as unknown as { ports?: Map<string, { getIPAddress: () => { toString(): string } | null }> }).ports;
@@ -2897,6 +2799,11 @@ export class LinuxTerminalSession extends TerminalSession {
             : `${user}@${host}: Permission denied (publickey,password).`;
         this.addLine(msg, 'error');
       }
+      // A failed connection attempt (bad auth, rejected host key, refused
+      // admission, …) must not linger: a real ssh client tears down its
+      // TCP connection on failure rather than leaving the vty/pty line it
+      // occupied on the server dangling until some other timeout fires.
+      session.disconnect();
       this.notify();
       return;
     }

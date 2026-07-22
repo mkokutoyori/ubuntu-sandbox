@@ -474,6 +474,14 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       execTarget: () => this as unknown as SshExecTarget,
       banner: () => this.sshBannerText || null,
       aaaAuthenticate: (n, p) => this.authenticateViaAaa(n, p),
+      // Reuse the exact admission/failure-tracking the cross-vendor bypass
+      // used to gate on its own (login block-for / quiet-mode ACL /
+      // LoginBlocker) so real-wire SSH enforces the same security policy a
+      // Cisco/Huawei device configures via CLI, instead of losing it when
+      // the client stops calling checkPassword() directly.
+      isClientBlocked: (ip) => !this.vtyAdmissionVerdict('ssh', ip).accept,
+      recordAuthFailure: (user, ip) => this.recordSshLogin(user, ip, '', false),
+      recordLogin: (user, ip) => this.recordSshLogin(user, ip, '', true),
     });
     return new SshServerHandler(ctx);
   }
