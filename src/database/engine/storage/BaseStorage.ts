@@ -16,6 +16,19 @@ export type CellValue = string | number | boolean | null | Date;
 /** A row is an array of cell values, ordered by column index. */
 export type StorageRow = CellValue[];
 
+/**
+ * Row-level change listener for transactional undo. The active session's
+ * TransactionManager registers itself around each statement it executes,
+ * so every mutation is attributed to the transaction that made it —
+ * which is what lets ROLLBACK revert only its own rows while other
+ * sessions keep theirs.
+ */
+export interface UndoSink {
+  recordInsert(schema: string, tableName: string, row: StorageRow): void;
+  recordDelete(schema: string, tableName: string, row: StorageRow): void;
+  recordUpdate(schema: string, tableName: string, before: StorageRow, after: StorageRow): void;
+}
+
 // ── Table metadata ──────────────────────────────────────────────────
 
 export interface ColumnMeta {
@@ -133,6 +146,8 @@ export interface SynonymMeta {
 export abstract class BaseStorage {
   protected tables: Map<string, Map<string, { meta: TableMeta; rows: StorageRow[]; epoch: number }>> = new Map();
   private static epochSource = 1;
+  /** Active row-change listener for transactional undo (see UndoSink). */
+  private undoSink: UndoSink | null = null;
   private readonly rowIndexes = new RowIndexCache(this.indexValueSemantics());
   /** Schema → Sequence name → Sequence state */
   protected sequences: Map<string, Map<string, SequenceMeta>> = new Map();
@@ -215,16 +230,31 @@ export abstract class BaseStorage {
 
   // ── Row operations ───────────────────────────────────────────────
 
+  /**
+   * Install the undo listener for subsequent row mutations and return
+   * the previous one so callers can scope it (set around a statement,
+   * restore in a finally).
+   */
+  setUndoSink(sink: UndoSink | null): UndoSink | null {
+    const prev = this.undoSink;
+    this.undoSink = sink;
+    return prev;
+  }
+
   insertRow(schema: string, tableName: string, row: StorageRow): void {
     const table = this.getTableData(schema, tableName);
     table.rows.push(row);
     table.meta.rowCount = table.rows.length;
+    this.undoSink?.recordInsert(schema, tableName, row);
   }
 
   insertRows(schema: string, tableName: string, rows: StorageRow[]): number {
     const table = this.getTableData(schema, tableName);
     table.rows.push(...rows);
     table.meta.rowCount = table.rows.length;
+    if (this.undoSink) {
+      for (const row of rows) this.undoSink.recordInsert(schema, tableName, row);
+    }
     return rows.length;
   }
 
@@ -235,10 +265,17 @@ export abstract class BaseStorage {
   deleteRows(schema: string, tableName: string, predicate: (row: StorageRow) => boolean): number {
     const table = this.getTableData(schema, tableName);
     const before = table.rows.length;
-    table.rows = table.rows.filter(row => !predicate(row));
+    const removedRows: StorageRow[] = [];
+    table.rows = table.rows.filter(row => {
+      if (predicate(row)) { removedRows.push(row); return false; }
+      return true;
+    });
     table.meta.rowCount = table.rows.length;
     const removed = before - table.rows.length;
     if (removed > 0) table.epoch = BaseStorage.epochSource++;
+    if (this.undoSink) {
+      for (const row of removedRows) this.undoSink.recordDelete(schema, tableName, row);
+    }
     return removed;
   }
 
@@ -247,8 +284,10 @@ export abstract class BaseStorage {
     let count = 0;
     for (let i = 0; i < table.rows.length; i++) {
       if (predicate(table.rows[i])) {
+        const before = table.rows[i];
         table.rows[i] = updater(table.rows[i]);
         table.epoch = BaseStorage.epochSource++;
+        this.undoSink?.recordUpdate(schema, tableName, before, table.rows[i]);
         count++;
       }
     }
@@ -257,6 +296,9 @@ export abstract class BaseStorage {
 
   truncateTable(schema: string, tableName: string): void {
     const table = this.getTableData(schema, tableName);
+    if (this.undoSink) {
+      for (const row of table.rows) this.undoSink.recordDelete(schema, tableName, row);
+    }
     table.rows = [];
     table.meta.rowCount = 0;
     table.epoch = BaseStorage.epochSource++;

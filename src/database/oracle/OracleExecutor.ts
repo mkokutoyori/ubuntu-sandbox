@@ -538,7 +538,16 @@ export class OracleExecutor extends BaseExecutor {
     }
     const isDdl = DDL_STATEMENT_TYPES.has(statement.type);
     if (isDdl && this.txn.isActive) this.commitActiveTransaction();
-    const out = this.dispatchStatement(statement);
+    // Attribute every row mutation of this statement to this session's
+    // transaction (row-level undo). Scoped save/restore keeps nested
+    // executions (PL/SQL calling back into SQL) on the right session.
+    const prevSink = this.storage.setUndoSink(this.txn);
+    let out: ResultSet;
+    try {
+      out = this.dispatchStatement(statement);
+    } finally {
+      this.storage.setUndoSink(prevSink);
+    }
     if (isDdl && this.txn.isActive) this.commitActiveTransaction();
     // SQL*Plus SET AUTOCOMMIT ON: every successful DML commits at once.
     const isDml = statement.type === 'InsertStatement' || statement.type === 'UpdateStatement'
