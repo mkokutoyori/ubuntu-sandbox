@@ -63,6 +63,26 @@ export interface CableInfo {
 }
 
 export class Cable {
+  /**
+   * Loop guard for the synchronous delivery chain. Delivery recurses
+   * through the whole topology in one call stack (transmit →
+   * receiveFrame → handleFrame → sendFrame → transmit …), so a physical
+   * L2 loop on switches with no STP agent used to recurse until
+   * `RangeError: Maximum call stack size exceeded`. Two static budgets
+   * bound one top-level send (a "cascade"):
+   *  - depth caps nested deliveries, which is what actually protects
+   *    the stack;
+   *  - cascade frames caps total deliveries, which is what stops a
+   *    mesh loop whose egress paths clone frames (depth alone would
+   *    explore an exponential number of paths).
+   * Both are far above anything a legitimate canvas topology produces;
+   * excess frames are dropped as `l2-loop-suppressed`.
+   */
+  private static deliveryDepth = 0;
+  private static cascadeFrames = 0;
+  static readonly MAX_SYNC_DELIVERY_DEPTH = 256;
+  static readonly MAX_CASCADE_FRAMES = 20_000;
+
   private readonly id: string;
   private portA: Port | null = null;
   private portB: Port | null = null;
@@ -299,6 +319,22 @@ export class Cable {
 
     const targetPort = (fromPort === this.portA) ? this.portB : this.portA;
 
+    // A send arriving at depth 0 opens a fresh cascade.
+    if (Cable.deliveryDepth === 0) Cable.cascadeFrames = 0;
+    if (Cable.deliveryDepth >= Cable.MAX_SYNC_DELIVERY_DEPTH
+        || Cable.cascadeFrames >= Cable.MAX_CASCADE_FRAMES) {
+      this.stats.framesLost++;
+      Logger.warn(this.id, 'cable:loop-guard',
+        `Cable ${this.id}: frame suppressed (L2 loop suspected — ` +
+        `${Cable.deliveryDepth >= Cable.MAX_SYNC_DELIVERY_DEPTH ? 'delivery depth' : 'cascade frame budget'} exhausted). ` +
+        `Check the topology for a switching loop without STP.`);
+      this.getBus().publish({
+        topic: 'cable.frame.lost',
+        payload: { cableId: this.id, reason: 'l2-loop-suppressed' },
+      });
+      return false;
+    }
+
     Logger.debug(this.id, 'cable:transmit',
       `${fromPort.getEquipmentId()}.${fromPort.getName()} → ${targetPort.getEquipmentId()}.${targetPort.getName()}`,
       { srcMAC: frame.srcMAC.toString(), dstMAC: frame.dstMAC.toString() });
@@ -322,7 +358,13 @@ export class Cable {
     // Phase 3: delivery stays synchronous to preserve current call-stack
     // semantics for tests. Phase 6 will migrate to scheduler-driven async
     // delivery (`scheduler.setTimeout(deliver, propagationMs)`).
-    targetPort.receiveFrame(frame);
+    Cable.deliveryDepth++;
+    Cable.cascadeFrames++;
+    try {
+      targetPort.receiveFrame(frame);
+    } finally {
+      Cable.deliveryDepth--;
+    }
     this.stats.framesTransmitted++;
 
     bus.publish({
