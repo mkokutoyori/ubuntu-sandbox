@@ -471,7 +471,9 @@ describe('tcpdump Command Suite', () => {
     it('44. should display snaplen parameters in initial configuration banner', async () => {
       const { pc1 } = setupLAN();
       const output = await pc1.executeCommand('tcpdump -c 0');
-      expect(output.toLowerCase()).toContain('capture size');
+      // Real tcpdump's banner says "snapshot length", not "capture size"
+      // (audit 05, constat A8) — pinned here so the wording can't drift back.
+      expect(output.toLowerCase()).toContain('snapshot length');
     });
 
     it('45. should show correct output structures when filtering out local loopback ping', async () => {

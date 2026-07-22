@@ -72,7 +72,7 @@ import { cmdPidstat } from './system/Pidstat';
 import { parseDstatArgs, DSTAT_USAGE, DSTAT_VERSION, DSTAT_LISTING } from './system/Dstat';
 import { MountTable, MountEntry } from './MountTable';
 import { SysfsTree } from './Sysfs';
-import { cmdIfconfig, cmdNetstat, cmdCurl, cmdWget, cmdTcpdump, parseTcpdumpArgs } from './LinuxNetCommands';
+import { cmdNetstat, cmdWget, cmdTcpdump, parseTcpdumpArgs } from './LinuxNetCommands';
 import { PacketCaptureLog } from './network/PacketCaptureLog';
 import { publishWireSegment } from './network/WireCaptureBus';
 import { ensureCaptureRouterInstalled } from './network/CaptureRouter';
@@ -4115,9 +4115,14 @@ export class LinuxCommandExecutor {
       case 'htop': return { output: cmdTop(args, this.processCmdContext()), exitCode: 0 };
 
       // ── Network commands ────────────────────────────────────────────
-      case 'ifconfig': return { output: cmdIfconfig(args, this.ipNetworkCtx), exitCode: 0 };
+      // `ifconfig` and `curl` are intentionally NOT cased here: both have
+      // `needsNetworkContext: true` in the registry, so leaving them out
+      // lets `default:` route through `_registryCommandHook` — the same
+      // registry implementation the typed/async path already uses (audit
+      // 05, constat A8). A `case` here used to shadow that hook with a
+      // second, independently-drifted implementation that only a script
+      // (`bash script.sh`) could reach.
       case 'netstat': return { output: cmdNetstat(args, this.ipNetworkCtx, this.isServer, this.socketTable, (p, pr) => this.resolveServiceName(p, pr)), exitCode: 0 };
-      case 'curl': return { output: cmdCurl(args), exitCode: 0 };
       case 'wget': return { output: cmdWget(args), exitCode: 0 };
       case 'dstat': {
         const parsed = parseDstatArgs(args);
