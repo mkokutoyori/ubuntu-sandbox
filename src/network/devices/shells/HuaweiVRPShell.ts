@@ -562,13 +562,17 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
         return '';
 
       case 'ambiguous':
-        return result.error || HUAWEI_ERRORS.AMBIGUOUS(cmdPart);
+        // Never use `result.error` here — CommandTrie's own `.error` is
+        // pre-formatted with Cisco's "%" wording (shared trie code, see
+        // its doc comment); VRP has its own "Error: ... found at '^'
+        // position." convention with a uniform caret line.
+        return HUAWEI_ERRORS.AMBIGUOUS(cmdPart, result.errorPos);
 
       case 'incomplete':
-        return result.error || HUAWEI_ERRORS.INCOMPLETE;
+        return HUAWEI_ERRORS.INCOMPLETE(cmdPart, result.errorPos);
 
       case 'invalid':
-        return result.error || HUAWEI_ERRORS.UNRECOGNIZED(cmdPart);
+        return HUAWEI_ERRORS.UNRECOGNIZED(cmdPart, result.errorPos);
 
       default:
         return HUAWEI_ERRORS.UNRECOGNIZED(cmdPart);
@@ -856,22 +860,22 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
    *   undo screen-width                   — restore default (80)
    */
   private registerScreenSizeCommands(t: CommandTrie): void {
-    t.registerGreedy('screen-length', 'Set terminal screen length', (args) => {
-      if (args.length === 0) return HUAWEI_ERRORS.INCOMPLETE;
+    t.registerGreedy('screen-length', 'Set terminal screen length', (args, rawLine) => {
+      if (args.length === 0) return HUAWEI_ERRORS.INCOMPLETE(rawLine);
       const head = args[0].toLowerCase();
       if (head === 'disable') { this.screenLength = 0; return ''; }
       const n = parseInt(head, 10);
       if (!Number.isFinite(n) || n < 0 || n > 512) {
-        return HUAWEI_ERRORS.UNRECOGNIZED(args.join(' '));
+        return HUAWEI_ERRORS.UNRECOGNIZED(rawLine, rawLine.length - args.join(' ').length);
       }
       this.screenLength = n;
       return '';
     });
-    t.registerGreedy('screen-width', 'Set terminal screen width', (args) => {
-      if (args.length === 0) return HUAWEI_ERRORS.INCOMPLETE;
+    t.registerGreedy('screen-width', 'Set terminal screen width', (args, rawLine) => {
+      if (args.length === 0) return HUAWEI_ERRORS.INCOMPLETE(rawLine);
       const n = parseInt(args[0], 10);
       if (!Number.isFinite(n) || n < 80 || n > 512) {
-        return HUAWEI_ERRORS.UNRECOGNIZED(args.join(' '));
+        return HUAWEI_ERRORS.UNRECOGNIZED(rawLine, rawLine.length - args.join(' ').length);
       }
       this.screenWidth = n;
       return '';

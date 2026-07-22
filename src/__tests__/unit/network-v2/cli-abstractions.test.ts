@@ -285,10 +285,16 @@ describe('cli-utils', () => {
   });
 
   describe('HUAWEI_ERRORS', () => {
-    it('should format error messages correctly', () => {
-      expect(HUAWEI_ERRORS.AMBIGUOUS('display')).toBe('Error: Ambiguous command "display"');
-      expect(HUAWEI_ERRORS.INCOMPLETE).toBe('Error: Incomplete command.');
-      expect(HUAWEI_ERRORS.UNRECOGNIZED('xyz')).toBe('Error: Unrecognized command "xyz"');
+    it('never uses Cisco\'s "%" prefix — VRP uses "Error: ... found at \'^\' position." uniformly', () => {
+      expect(HUAWEI_ERRORS.AMBIGUOUS('display', 0)).toBe('Error: Ambiguous command found at \'^\' position.\ndisplay\n^');
+      expect(HUAWEI_ERRORS.INCOMPLETE('sysname')).toBe('Error: Incomplete command found at \'^\' position.\nsysname\n       ^');
+      expect(HUAWEI_ERRORS.UNRECOGNIZED('xyz', 0)).toBe('Error: Unrecognized command found at \'^\' position.\nxyz\n^');
+    });
+
+    it('defaults the caret to the end of input when no position is given', () => {
+      expect(HUAWEI_ERRORS.INCOMPLETE('screen-length')).toBe(
+        'Error: Incomplete command found at \'^\' position.\nscreen-length\n             ^',
+      );
     });
   });
 

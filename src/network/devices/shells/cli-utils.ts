@@ -15,10 +15,24 @@ export const CISCO_ERRORS = {
   UNRECOGNIZED_HELP: '% Unrecognized command',
 } as const;
 
+/**
+ * Huawei VRP never uses Cisco's `%` prefix, and unlike IOS (which only
+ * shows a caret for "Invalid input"), VRP uniformly echoes the offending
+ * line with a `^` marker for ambiguous/incomplete/unrecognized commands
+ * alike — e.g. `Error: Unrecognized command found at '^' position.`
+ * followed by the input line and a caret under the failing token.
+ * `pos` defaults to the end of `input` (matches VRP's own behaviour for
+ * "expected more here" cases like a bare `screen-length`).
+ */
+function formatVrpPositionalError(reason: string, input: string, pos: number = input.length): string {
+  const marker = ' '.repeat(Math.max(0, pos)) + '^';
+  return `Error: ${reason} found at '^' position.\n${input}\n${marker}`;
+}
+
 export const HUAWEI_ERRORS = {
-  AMBIGUOUS: (cmd: string) => `Error: Ambiguous command "${cmd}"`,
-  INCOMPLETE: 'Error: Incomplete command.',
-  UNRECOGNIZED: (cmd: string) => `Error: Unrecognized command "${cmd}"`,
+  AMBIGUOUS: (input: string, pos?: number) => formatVrpPositionalError('Ambiguous command', input, pos),
+  INCOMPLETE: (input: string, pos?: number) => formatVrpPositionalError('Incomplete command', input, pos),
+  UNRECOGNIZED: (input: string, pos?: number) => formatVrpPositionalError('Unrecognized command', input, pos),
 } as const;
 
 // ─── Pipe Filter ───────────────────────────────────────────────────
