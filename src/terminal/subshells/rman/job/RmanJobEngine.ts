@@ -145,11 +145,24 @@ export class RmanJobEngine implements IRmanJobEngine {
       if (tsFilters   && !tsFilters.has(df.tablespace.toUpperCase())) return false;
       return true;
     });
-    const totalSize = isControlfile
+    const cumulative = params.cumulative === 'true';
+    const rawSize = isControlfile
       ? 9_650_176
       : isSpfile
         ? 4_096
         : (datafiles.reduce((acc, df) => acc + df.sizeBytes, 0) || 1_000_000);
+    // A LEVEL 1 backup only covers blocks changed since its reference
+    // backup, so it must be smaller than a LEVEL 0/FULL. Modelled as a
+    // fixed fraction of the full size (real Oracle's typical 5-15%
+    // range) rather than tracking actual changed blocks — enough to
+    // make "incremental is smaller" reliably demonstrable without a
+    // change-tracking simulation. CUMULATIVE spans back to the last
+    // LEVEL 0 (a longer window than a plain differential LEVEL 1), so
+    // it gets the larger end of that range.
+    const isIncrementalLevel1 = incLevel === 1 && !isControlfile && !isSpfile && !isArchivelog;
+    const totalSize = isIncrementalLevel1
+      ? Math.max(1, Math.round(rawSize * (cumulative ? 0.15 : 0.05)))
+      : rawSize;
 
     this._bus.emit({ type: 'BACKUP_PIECE_STARTED', jobId: job.id, channelId, what });
 
@@ -197,7 +210,7 @@ export class RmanJobEngine implements IRmanJobEngine {
       const ckp = ckpR.ok ? ckpR.value : Scn.ZERO;
       for (const df of datafiles) {
         const copyPath = `${basePath}.df${df.fileNo}`;
-        const writeR = this._ctx.vfs.writeFile(copyPath, new Uint8Array(0));
+        const writeR = this._ctx.vfs.writeFile(copyPath, new Uint8Array(0), df.sizeBytes);
         if (!writeR.ok) return writeR;
         const set = BackupSetFactory.createBackupSet({
           type: 'DATAFILECOPY', level: 0, path: copyPath,
@@ -240,12 +253,11 @@ export class RmanJobEngine implements IRmanJobEngine {
 
     for (let i = 1; i <= pieceCount; i++) {
       const path = pieceCount === 1 ? basePath : `${basePath}.p${i}`;
-      const writeResult = this._ctx.vfs.writeFile(path, new Uint8Array(0));
-      if (!writeResult.ok) return writeResult;
-
       const size = i === pieceCount
         ? (totalSize - pieceSize * (pieceCount - 1))
         : pieceSize;
+      const writeResult = this._ctx.vfs.writeFile(path, new Uint8Array(0), size);
+      if (!writeResult.ok) return writeResult;
 
       const set = BackupSetFactory.createBackupSet({
         type, level, path, sizeBytes: size, tag,

@@ -16,6 +16,20 @@ export function formatElapsed(ms: number): string {
   return `${pad(hh)}:${pad(mm)}:${pad(ss)}`;
 }
 
+/**
+ * Simulated backup throughput, used to derive a plausible "elapsed
+ * time" from a backup set's declared size — real RMAN's duration
+ * scales with the amount of data moved, so a LEVEL 1 incremental
+ * (a fraction of a LEVEL 0/FULL's size) must not report the same
+ * elapsed time as the backup it's incremental against.
+ */
+const SIMULATED_BACKUP_THROUGHPUT_BYTES_PER_SEC = 50 * 1_048_576; // 50 MB/s
+
+/** Derive an elapsed-time estimate (ms) from a backup set's size. */
+export function simulateBackupElapsedMs(sizeBytes: number): number {
+  return Math.max(1000, Math.round((sizeBytes / SIMULATED_BACKUP_THROUGHPUT_BYTES_PER_SEC) * 1000));
+}
+
 /** Format a byte count as "B" / "K" / "M" / "G". */
 export function formatSize(bytes: number): string {
   if (bytes >= 1_073_741_824) return `${(bytes / 1_073_741_824).toFixed(2)}G`;

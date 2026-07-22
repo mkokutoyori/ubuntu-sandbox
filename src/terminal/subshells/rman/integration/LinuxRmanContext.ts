@@ -21,7 +21,7 @@ import type { OracleDatabase } from '@/database/oracle/OracleDatabase';
 import { getRegisteredOracleDatabase } from '@/terminal/commands/database';
 
 interface FsCapableEquipment {
-  writeFileFromEditor(path: string, content: string): boolean;
+  writeFileFromEditor(path: string, content: string, declaredSizeBytes?: number): boolean;
   readFileForEditor?(path: string): string | null;
   readFile?(path: string): string | null;
   deleteFileFromEditor?(path: string): boolean;
@@ -113,9 +113,10 @@ export class LinuxRmanContext implements IRmanOracleContext {
     const read = (path: string): string | null =>
       dev.readFileForEditor?.(path) ?? dev.readFile?.(path) ?? null;
     return {
-      writeFile: (path, _data): Result<void, RmanError> => {
+      writeFile: (path, _data, declaredSizeBytes): Result<void, RmanError> => {
         try {
-          dev.writeFileFromEditor(path, `[ORACLE RMAN BACKUP PIECE - ${_data.length} bytes]`);
+          const size = declaredSizeBytes ?? _data.length;
+          dev.writeFileFromEditor(path, `[ORACLE RMAN BACKUP PIECE - ${size} bytes]`, size);
           return ok(undefined);
         } catch (e) {
           return err({ code: 'VFS_WRITE_ERROR', message: String(e), path });
