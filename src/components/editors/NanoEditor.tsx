@@ -20,6 +20,11 @@ interface NanoEditorProps {
   readOnly?: boolean;
   /** `nano -c`: title bar shows the live cursor position. */
   showPosition?: boolean;
+  /** `nano -l`/`--linenumbers`: line-number gutter shown at open. */
+  showLineNumbers?: boolean;
+  /** `nano +LINE[,COLUMN] file`: initial cursor position (1-indexed). */
+  initialCursorLine?: number;
+  initialCursorCol?: number;
 }
 
 type Shortcut = readonly [string, string];
@@ -30,7 +35,7 @@ function shortcutsForMode(engine: NanoEngine): readonly [readonly Shortcut[], re
   switch (engine.mode) {
     case 'search':
       return [
-        [['^G', 'Help'], ['^W', 'Search'], ['M-C', 'Case Sens'], ['M-R', 'Regexp'], ['^R', 'Bck/Fwd']],
+        [['^G', 'Help'], ['^W', 'Search'], ['M-C', 'Case Sens'], ['M-R', 'Regexp']],
         [['^C', 'Cancel'], ['M-B', 'Backwards']],
       ];
     case 'replace-search':
@@ -50,21 +55,41 @@ function shortcutsForMode(engine: NanoEngine): readonly [readonly Shortcut[], re
       ];
     case 'save-prompt':
       return [
-        [['^G', 'Help'], ['M-D', 'DOS Format'], ['M-A', 'Append'], ['M-B', 'Backup File']],
-        [['^C', 'Cancel'], ['M-M', 'Mac Format'], ['M-P', 'Prepend']],
+        [['^G', 'Help']],
+        [['^C', 'Cancel']],
       ];
     case 'exit-save-prompt':
       return [
         [['^G', 'Help'], ['Y', 'Yes']],
         [['N', 'No'], ['^C', 'Cancel']],
       ];
+    case 'goto-line':
+      return [
+        [['^G', 'Help']],
+        [['^C', 'Cancel']],
+      ];
+    case 'execute-prompt':
+      return [
+        [['^G', 'Help']],
+        [['^C', 'Cancel']],
+      ];
+    case 'read-file-prompt':
+      return [
+        [['^G', 'Help']],
+        [['^C', 'Cancel']],
+      ];
+    case 'help':
+      return [
+        [['^X', 'Exit Help']],
+        [],
+      ];
     case 'edit':
     default:
       if (engine.isReadOnly) {
-        // View mode: no Write Out, Cut, Paste, or Replace — nothing that
-        // could touch the buffer is bound.
+        // View mode: no Write Out, Cut, Paste, Replace, Read File,
+        // Execute, or Justify — nothing that could touch the buffer.
         return [
-          [['^G', 'Help'], ['^W', 'Where Is'], ['^T', 'Execute']],
+          [['^G', 'Help'], ['^W', 'Where Is']],
           [['^X', 'Exit'], ['^_', 'Go To Line']],
         ];
       }
@@ -75,10 +100,6 @@ function shortcutsForMode(engine: NanoEngine): readonly [readonly Shortcut[], re
   }
 }
 
-function flatOffset(lines: readonly string[], line: number, col: number): number {
-  return lines.slice(0, line).join('\n').length + (line > 0 ? 1 : 0) + col;
-}
-
 export const NanoEditor: React.FC<NanoEditorProps> = ({
   filePath,
   initialContent,
@@ -87,10 +108,17 @@ export const NanoEditor: React.FC<NanoEditorProps> = ({
   onExit,
   readOnly = false,
   showPosition = false,
+  showLineNumbers = false,
+  initialCursorLine,
+  initialCursorCol,
 }) => {
   const engineRef = useRef<NanoEngine>();
   if (!engineRef.current) {
-    engineRef.current = new NanoEngine(fsContext, filePath, initialContent, isNewFile, readOnly);
+    engineRef.current = new NanoEngine(
+      fsContext, filePath, initialContent, isNewFile, readOnly,
+      initialCursorLine !== undefined ? { line: initialCursorLine, col: initialCursorCol } : undefined,
+      showLineNumbers,
+    );
   }
   const engine = engineRef.current;
   const [, bump] = useReducer((x: number) => x + 1, 0);
@@ -98,15 +126,38 @@ export const NanoEditor: React.FC<NanoEditorProps> = ({
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const saveInputRef = useRef<HTMLInputElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
+  const caretRef = useRef<HTMLDivElement>(null);
+  const highlightRef = useRef<HTMLDivElement>(null);
+  const gutterRef = useRef<HTMLDivElement>(null);
+  // The textarea owns real, native scrolling (long buffers overflow its
+  // box and the browser scrolls it internally — that can't be delegated
+  // to an ancestor). The caret/highlight overlays and the line-number
+  // gutter are separate DOM nodes positioned from cursorLine/cursorCol
+  // alone, so a plain mouse-wheel scroll (which changes no engine state,
+  // triggers no re-render) used to leave them glued to their unscrolled
+  // position — floating disconnected from the text underneath. Tracked
+  // in a ref (not state) and applied as a `transform` written directly
+  // on scroll: going through setState here would re-run the selection
+  // sync effect below on every scroll tick and fight the user's manual
+  // scrolling by re-revealing the caret's real position each time.
+  const scrollRef = useRef({ top: 0, left: 0 });
 
   useEffect(() => {
-    if (engine.mode === 'save-prompt' || engine.mode === 'exit-save-prompt' || engine.mode === 'replace-confirm') {
+    if (engine.mode === 'save-prompt') {
       saveInputRef.current?.focus();
-    } else if (engine.mode === 'search' || engine.mode === 'replace-search' || engine.mode === 'replace-with') {
+      const pos = engine.promptCursor;
+      saveInputRef.current?.setSelectionRange(pos, pos);
+    } else if (engine.mode === 'exit-save-prompt' || engine.mode === 'replace-confirm') {
+      // Hidden Y/N/A capture inputs — no text field, nothing to position.
+      saveInputRef.current?.focus();
+    } else if (engine.mode === 'search' || engine.mode === 'replace-search' || engine.mode === 'replace-with'
+      || engine.mode === 'goto-line' || engine.mode === 'execute-prompt' || engine.mode === 'read-file-prompt') {
       searchInputRef.current?.focus();
+      const pos = engine.promptCursor;
+      searchInputRef.current?.setSelectionRange(pos, pos);
     } else {
       textareaRef.current?.focus();
-      const pos = flatOffset(engine.lines, engine.cursorLine, engine.cursorCol);
+      const pos = engine.displayCursorOffset;
       textareaRef.current?.setSelectionRange(pos, pos);
     }
   });
@@ -123,6 +174,27 @@ export const NanoEditor: React.FC<NanoEditorProps> = ({
 
   const handleEditKeyDown = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => dispatch(e), [dispatch]);
   const handlePromptKeyDown = useCallback((e: React.KeyboardEvent<HTMLInputElement>) => dispatch(e), [dispatch]);
+
+  const handlePaste = useCallback((e: React.ClipboardEvent) => {
+    e.preventDefault();
+    engine.applyPaste(e.clipboardData.getData('text'));
+    bump();
+  }, [engine, bump]);
+
+  const handleEditMouseUp = useCallback((e: React.MouseEvent<HTMLTextAreaElement>) => {
+    const offset = e.currentTarget.selectionStart ?? 0;
+    engine.moveCursorToDisplayOffset(offset);
+    bump();
+  }, [engine, bump]);
+
+  const handleEditScroll = useCallback((e: React.UIEvent<HTMLTextAreaElement>) => {
+    scrollRef.current = { top: e.currentTarget.scrollTop, left: e.currentTarget.scrollLeft };
+    const { top, left } = scrollRef.current;
+    const shift = `translate(${-left}px, ${-top}px)`;
+    if (caretRef.current) caretRef.current.style.transform = shift;
+    if (highlightRef.current) highlightRef.current.style.transform = shift;
+    if (gutterRef.current) gutterRef.current.style.transform = `translateY(${-top}px)`;
+  }, []);
 
   const [shortcutsRow1, shortcutsRow2] = shortcutsForMode(engine);
 
@@ -168,13 +240,40 @@ export const NanoEditor: React.FC<NanoEditorProps> = ({
         </span>
       </div>
 
-      {/* ── Editor content area ── */}
-      <div className="flex-1 relative overflow-hidden">
+      {/* ── Editor content area (optional line-number gutter + textarea) ── */}
+      <div className="flex-1 flex overflow-hidden">
+        {engine.lineNumbersShown && engine.mode !== 'help' && (
+          <div
+            ref={gutterRef}
+            data-testid="nano-gutter"
+            className="select-none shrink-0 text-right"
+            style={{
+              backgroundColor: '#300a24',
+              color: '#585b70',
+              minWidth: `${String(engine.lines.length).length + 1}ch`,
+              paddingTop: '0.25rem',
+              paddingRight: '0.5em',
+              lineHeight: '1.35',
+              fontSize: 'inherit',
+              fontFamily: 'inherit',
+              transform: `translateY(${-scrollRef.current.top}px)`,
+            }}
+          >
+            {engine.lines.map((_, i) => (
+              <div key={i} style={{ minHeight: '1.35em' }}>{i + 1}</div>
+            ))}
+          </div>
+        )}
+        <div className="flex-1 relative overflow-hidden">
         <textarea
           ref={textareaRef}
-          value={engine.displayContent}
+          data-testid="nano-textarea"
+          value={engine.mode === 'help' ? engine.helpText : engine.displayContent}
           onChange={() => { /* content is engine-authoritative; keys drive all mutation */ }}
           onKeyDown={handleEditKeyDown}
+          onPaste={engine.mode === 'help' ? undefined : handlePaste}
+          onMouseUp={engine.mode === 'help' ? undefined : handleEditMouseUp}
+          onScroll={handleEditScroll}
           readOnly
           className="absolute inset-0 w-full h-full outline-none resize-none p-1"
           style={{
@@ -190,10 +289,47 @@ export const NanoEditor: React.FC<NanoEditorProps> = ({
           spellCheck={false}
           autoComplete="off"
         />
+        {engine.mode === 'edit' && (
+          <div
+            ref={caretRef}
+            data-testid="nano-caret"
+            className="absolute pointer-events-none terminal-cursor"
+            style={{
+              top: `calc(0.25rem + ${engine.cursorLine} * 1.35em)`,
+              left: `calc(0.25rem + ${engine.displayColumnFor(engine.cursorLine, engine.cursorCol)}ch)`,
+              width: '2px',
+              height: '1.2em',
+              backgroundColor: '#ffffff',
+              transform: `translate(${-scrollRef.current.left}px, ${-scrollRef.current.top}px)`,
+            }}
+          />
+        )}
+        {engine.mode === 'replace-confirm' && engine.pendingReplaceMatch && (() => {
+          const m = engine.pendingReplaceMatch;
+          const startCol = engine.displayColumnFor(m.line, m.start);
+          const endCol = engine.displayColumnFor(m.line, m.end);
+          return (
+            <div
+              ref={highlightRef}
+              data-testid="nano-replace-highlight"
+              className="absolute pointer-events-none"
+              style={{
+                top: `calc(0.25rem + ${m.line} * 1.35em)`,
+                left: `calc(0.25rem + ${startCol}ch)`,
+                width: `${Math.max(1, endCol - startCol)}ch`,
+                height: '1.35em',
+                backgroundColor: 'rgba(255, 255, 0, 0.35)',
+                transform: `translate(${-scrollRef.current.left}px, ${-scrollRef.current.top}px)`,
+              }}
+            />
+          );
+        })()}
+        </div>
       </div>
 
       {/* ── Status message line (centered, above shortcuts) ── */}
       <div
+        data-testid="nano-status-message"
         className="text-center shrink-0"
         style={{
           minHeight: '1.35em',
@@ -209,6 +345,49 @@ export const NanoEditor: React.FC<NanoEditorProps> = ({
               value={engine.saveFileName}
               onChange={() => { /* engine-authoritative */ }}
               onKeyDown={handlePromptKeyDown}
+              onPaste={handlePaste}
+              className="flex-1 bg-transparent outline-none"
+              style={{
+                color: '#ffffff',
+                caretColor: '#ffffff',
+                fontFamily: 'inherit',
+                fontSize: 'inherit',
+              }}
+              spellCheck={false}
+              autoComplete="off"
+            />
+          </div>
+        )}
+        {engine.mode === 'execute-prompt' && (
+          <div className="flex items-center px-1">
+            <span style={{ color: '#d3d7cf' }}>Execute Command: </span>
+            <input
+              ref={searchInputRef}
+              value={engine.executeCommandQuery}
+              onChange={() => { /* engine-authoritative */ }}
+              onKeyDown={handlePromptKeyDown}
+              onPaste={handlePaste}
+              className="flex-1 bg-transparent outline-none"
+              style={{
+                color: '#ffffff',
+                caretColor: '#ffffff',
+                fontFamily: 'inherit',
+                fontSize: 'inherit',
+              }}
+              spellCheck={false}
+              autoComplete="off"
+            />
+          </div>
+        )}
+        {engine.mode === 'read-file-prompt' && (
+          <div className="flex items-center px-1">
+            <span style={{ color: '#d3d7cf' }}>File to insert: </span>
+            <input
+              ref={searchInputRef}
+              value={engine.readFileQuery}
+              onChange={() => { /* engine-authoritative */ }}
+              onKeyDown={handlePromptKeyDown}
+              onPaste={handlePaste}
               className="flex-1 bg-transparent outline-none"
               style={{
                 color: '#ffffff',
@@ -248,6 +427,7 @@ export const NanoEditor: React.FC<NanoEditorProps> = ({
               value={engine.searchQuery}
               onChange={() => { /* engine-authoritative */ }}
               onKeyDown={handlePromptKeyDown}
+              onPaste={handlePaste}
               className="flex-1 bg-transparent outline-none"
               style={{
                 color: '#ffffff',
@@ -270,6 +450,7 @@ export const NanoEditor: React.FC<NanoEditorProps> = ({
               value={engine.replaceSearchQuery}
               onChange={() => { /* engine-authoritative */ }}
               onKeyDown={handlePromptKeyDown}
+              onPaste={handlePaste}
               className="flex-1 bg-transparent outline-none"
               style={{
                 color: '#ffffff',
@@ -290,6 +471,28 @@ export const NanoEditor: React.FC<NanoEditorProps> = ({
               value={engine.replaceWithText}
               onChange={() => { /* engine-authoritative */ }}
               onKeyDown={handlePromptKeyDown}
+              onPaste={handlePaste}
+              className="flex-1 bg-transparent outline-none"
+              style={{
+                color: '#ffffff',
+                caretColor: '#ffffff',
+                fontFamily: 'inherit',
+                fontSize: 'inherit',
+              }}
+              spellCheck={false}
+              autoComplete="off"
+            />
+          </div>
+        )}
+        {engine.mode === 'goto-line' && (
+          <div className="flex items-center px-1">
+            <span style={{ color: '#d3d7cf' }}>Enter line number, column number: </span>
+            <input
+              ref={searchInputRef}
+              value={engine.gotoLineQuery}
+              onChange={() => { /* engine-authoritative */ }}
+              onKeyDown={handlePromptKeyDown}
+              onPaste={handlePaste}
               className="flex-1 bg-transparent outline-none"
               style={{
                 color: '#ffffff',

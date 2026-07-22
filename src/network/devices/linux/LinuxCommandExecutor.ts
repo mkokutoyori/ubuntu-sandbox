@@ -72,7 +72,7 @@ import { cmdPidstat } from './system/Pidstat';
 import { parseDstatArgs, DSTAT_USAGE, DSTAT_VERSION, DSTAT_LISTING } from './system/Dstat';
 import { MountTable, MountEntry } from './MountTable';
 import { SysfsTree } from './Sysfs';
-import { cmdIfconfig, cmdNetstat, cmdCurl, cmdWget, cmdTcpdump } from './LinuxNetCommands';
+import { cmdIfconfig, cmdNetstat, cmdCurl, cmdWget, cmdTcpdump, parseTcpdumpArgs } from './LinuxNetCommands';
 import { PacketCaptureLog } from './network/PacketCaptureLog';
 import { publishWireSegment } from './network/WireCaptureBus';
 import { ensureCaptureRouterInstalled } from './network/CaptureRouter';
@@ -330,6 +330,16 @@ export class LinuxCommandExecutor {
   getForwardingTable(): SshForwardingTable | null { return this.forwarding; }
   /** Captured TCP traffic — rendered by `tcpdump`. */
   readonly captureLog = new PacketCaptureLog();
+  /**
+   * `tcpdump -w <path>` unsubscribe handles, keyed by write path. `-w`
+   * writes a snapshot of `captureLog` at invocation time — with no
+   * subsequent traffic on the wire yet, that snapshot is empty. A real
+   * background `tcpdump -w` keeps appending to the file as packets arrive;
+   * this re-runs the same write on every new capture so a later
+   * `tcpdump -r <path>` sees everything captured since `-w` started,
+   * not a stale empty file.
+   */
+  private readonly tcpdumpWriteTargets = new Map<string, () => void>();
   /** Shared SSH session table — backs `who` / `w` / `last`. */
   private sessionTable: SshSessionTable | null = null;
   /** Reactive socket-table coherence for service-owned listening ports. */
@@ -4266,11 +4276,22 @@ export class LinuxCommandExecutor {
       }
       case 'telnet':
         return this.runTelnetClient(args);
-      case 'tcpdump':
-        return { output: cmdTcpdump(args, this.captureLog, {
-          read: (p) => this.vfs.readFile(p),
-          write: (p, c) => this.vfs.writeFile(p, c, this.userMgr.currentUid, this.userMgr.currentGid, this.umask),
-        }), exitCode: 0 };
+      case 'tcpdump': {
+        const fsAdapter = {
+          read: (p: string) => this.vfs.readFile(p),
+          write: (p: string, c: string) => this.vfs.writeFile(p, c, this.userMgr.currentUid, this.userMgr.currentGid, this.umask),
+        };
+        const output = cmdTcpdump(args, this.captureLog, fsAdapter);
+        const opts = parseTcpdumpArgs(args);
+        if (opts.writeFile) {
+          this.tcpdumpWriteTargets.get(opts.writeFile)?.();
+          const unsubscribe = this.captureLog.subscribe(() => {
+            cmdTcpdump(args, this.captureLog, fsAdapter);
+          });
+          this.tcpdumpWriteTargets.set(opts.writeFile, unsubscribe);
+        }
+        return { output, exitCode: 0 };
+      }
       case 'ssh-add':
         return this.handleSshAdd(args);
       case 'ssh-agent': {
@@ -4346,6 +4367,32 @@ export class LinuxCommandExecutor {
       case 'nano':
       case 'vi':
       case 'vim': {
+        // `--version`/`-V` and `--help`/`-h` print and exit — they never
+        // touch the filesystem, so check them before the "create file if
+        // missing" behaviour below.
+        if (cmd === 'nano' && (args.includes('--version') || args.includes('-V'))) {
+          return {
+            output:
+              ' GNU nano, version 6.2\n' +
+              ' (C) 1999-2021 the Nano development team and Chris Allegretta\n' +
+              ' Compiled options: --enable-utf8',
+            exitCode: 0,
+          };
+        }
+        if (cmd === 'nano' && (args.includes('--help') || args.includes('-h'))) {
+          return {
+            output:
+              'Usage:  nano [OPTIONS] [[+LINE[,COLUMN]] FILE]...\n\n' +
+              'Option           Long option          Meaning\n' +
+              '-h, -?           --help               Show this help text and exit\n' +
+              '-c               --constantshow       Constantly show the cursor position\n' +
+              '-l               --linenumbers        Show line numbers in front of the text\n' +
+              '-v               --view               View mode (read-only)\n' +
+              '-V               --version            Show version information and exit\n\n' +
+              '  +LINE[,COLUMN]  Start at line LINE, column COLUMN (default column 1)',
+            exitCode: 0,
+          };
+        }
         // `nano file` opens (or creates) the file in the editor. In batch
         // mode we honour the "create if missing" behaviour so that
         // subsequent SSH commands can write to it.
@@ -4468,7 +4515,23 @@ export class LinuxCommandExecutor {
         }
         return { output: lines.join('\n'), exitCode: exit };
       }
-      case 'mktemp': return { output: '/tmp/tmp.' + Math.random().toString(36).slice(2, 12), exitCode: 0 };
+      case 'mktemp': {
+        // Real mktemp honours a template argument: the trailing run of
+        // X's is replaced by random characters, and the file is created.
+        const rand = (n: number) => Math.random().toString(36).slice(2, 2 + n).padEnd(n, '0');
+        const template = args.find((a) => !a.startsWith('-'));
+        let path: string;
+        if (template && /XXX/.test(template)) {
+          path = template.replace(/X{3,}(?!.*X{3})/, (m) => rand(m.length));
+          if (!path.startsWith('/')) path = this.vfs.normalizePath(path, this.cwd);
+        } else if (template) {
+          return { output: `mktemp: too few X's in template '${template}'`, exitCode: 1 };
+        } else {
+          path = '/tmp/tmp.' + rand(10);
+        }
+        this.vfs.writeFile(path, '', this.userMgr.currentUid, this.userMgr.currentGid, 0o077);
+        return { output: path, exitCode: 0 };
+      }
 
       default: {
         // Check if it's an executable script (./script.sh or /path/to/script)

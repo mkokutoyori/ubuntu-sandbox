@@ -166,6 +166,23 @@ export class WindowsTerminalSession extends TerminalSession {
   }
 
   /**
+   * True when the current input line is being driven from either the
+   * root cmd.exe loop or the PowerShell sub-shell — the two contexts
+   * where a NATIVE Windows binary (ping, tracert, pathping, netstat)
+   * behaves identically on real Windows and should stream identically
+   * here too. False for every other sub-shell (sqlplus, rman, sftp,
+   * nested SSH, …), where a bare `ping` typed inside them is not a
+   * native-command invocation at all.
+   *
+   * This is the SINGLE gate the streaming interceptors below share —
+   * exactly one implementation of "is native-command streaming valid
+   * right now", reused instead of re-derived per command per shell.
+   */
+  private isNativeCommandStreamContext(): boolean {
+    return !this.activeSubShell || this.shellMode === 'powershell';
+  }
+
+  /**
    * Shell stack depth — used by TerminalView to decide whether to show the CMD banner.
    * Returns an array-like with a length property for compatibility.
    */
@@ -374,7 +391,7 @@ export class WindowsTerminalSession extends TerminalSession {
 
   private tryStartWinPingStream(commandLine: string): boolean {
     if (this.hasForegroundAsyncJob) return false;
-    if (this.shellMode !== 'cmd' || this.activeSubShell) return false;
+    if (!this.isNativeCommandStreamContext()) return false;
     const dev = this.device;
     if (!(dev instanceof WindowsPC)) return false;
     const toks = commandLine.trim().split(/\s+/);
@@ -421,7 +438,7 @@ export class WindowsTerminalSession extends TerminalSession {
 
   private tryStartWinTracertStream(commandLine: string): boolean {
     if (this.hasForegroundAsyncJob) return false;
-    if (this.shellMode !== 'cmd' || this.activeSubShell) return false;
+    if (!this.isNativeCommandStreamContext()) return false;
     const dev = this.device;
     if (!(dev instanceof WindowsPC)) return false;
     const toks = commandLine.trim().split(/\s+/);
@@ -468,7 +485,7 @@ export class WindowsTerminalSession extends TerminalSession {
   }
 
   private tryStartWinNetstatStream(commandLine: string): boolean {
-    if (this.shellMode !== 'cmd' || this.activeSubShell) return false;
+    if (!this.isNativeCommandStreamContext()) return false;
     const dev = this.device;
     if (!(dev instanceof WindowsPC) || !this.shell) return false;
     if (/[|<>&]/.test(commandLine)) return false;
@@ -488,7 +505,7 @@ export class WindowsTerminalSession extends TerminalSession {
 
   private tryStartWinPathpingStream(commandLine: string): boolean {
     if (this.hasForegroundAsyncJob) return false;
-    if (this.shellMode !== 'cmd' || this.activeSubShell) return false;
+    if (!this.isNativeCommandStreamContext()) return false;
     const dev = this.device;
     if (!(dev instanceof WindowsPC)) return false;
     if (/[|<>&]/.test(commandLine)) return false;
@@ -1366,6 +1383,19 @@ export class WindowsTerminalSession extends TerminalSession {
       return;
     }
 
+    // Real powershell.exe doesn't buffer a child process's stdout until
+    // the whole one-shot invocation finishes — ping.exe's replies still
+    // stream to the console as they arrive, exactly like `powershell ping
+    // -t` interactively or plain `ping` at cmd. Route native streaming
+    // commands through the SAME interceptors used by both other entry
+    // points instead of letting them fall into the generic
+    // `shell.processLine()` below, which awaits to completion and prints
+    // everything at once.
+    if (this.tryStartWinPingStream(command)) return;
+    if (this.tryStartWinTracertStream(command)) return;
+    if (this.tryStartWinPathpingStream(command)) return;
+    if (this.tryStartWinNetstatStream(command)) return;
+
     installDefaultShells();
     const shell = ShellFactory.create('powershell', {
       device: this.device,
@@ -1527,6 +1557,28 @@ export class WindowsTerminalSession extends TerminalSession {
         this.subShellHistory = [...this.subShellHistory.slice(-199), line];
       }
 
+      // Native commands (ping/tracert/pathping/netstat) stream identically
+      // whether they're typed at cmd.exe or inside powershell.exe on real
+      // Windows — reuse the SAME interceptors the root cmd loop uses
+      // instead of a PowerShell-specific reimplementation. PS-only
+      // constructs (Test-Connection -Continuous, Get-Content -Wait, …)
+      // keep their own checks right below, unaffected.
+      if (this.tryStartWinPingStream(line)) {
+        this.notify();
+        return true;
+      }
+      if (this.tryStartWinTracertStream(line)) {
+        this.notify();
+        return true;
+      }
+      if (this.tryStartWinPathpingStream(line)) {
+        this.notify();
+        return true;
+      }
+      if (this.tryStartWinNetstatStream(line)) {
+        this.notify();
+        return true;
+      }
       if (this.tryStartTestConnectionContinuous(line)) {
         this.notify();
         return true;

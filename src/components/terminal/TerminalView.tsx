@@ -81,7 +81,7 @@ export const TerminalView: React.FC<TerminalViewProps> = ({ session }) => {
 
   useEffect(() => {
     if (effectiveMode.type === 'password') {
-      setTimeout(() => hiddenInputRef.current?.focus(), 10);
+      setTimeout(() => hiddenInputRef.current?.focus({ preventScroll: true }), 10);
     } else if (effectiveMode.type === 'interactive-text') {
       setTimeout(() => interactiveInputRef.current?.focus(), 10);
     } else if (effectiveMode.type === 'reverse-search') {
@@ -93,7 +93,7 @@ export const TerminalView: React.FC<TerminalViewProps> = ({ session }) => {
 
   // Focus input on click — use effectiveMode for consistency with rendering
   const handleClick = useCallback(() => {
-    if (effectiveMode.type === 'password') hiddenInputRef.current?.focus();
+    if (effectiveMode.type === 'password') hiddenInputRef.current?.focus({ preventScroll: true });
     else if (effectiveMode.type === 'interactive-text') interactiveInputRef.current?.focus();
     else if (effectiveMode.type === 'reverse-search') reverseSearchRef.current?.focus();
     else if (effectiveMode.type === 'booting') return;
@@ -193,6 +193,9 @@ export const TerminalView: React.FC<TerminalViewProps> = ({ session }) => {
             isNewFile={editorMode.isNewFile}
             readOnly={editorMode.readOnly}
             showPosition={editorMode.showPosition}
+            showLineNumbers={editorMode.showLineNumbers}
+            initialCursorLine={editorMode.initialCursorLine}
+            initialCursorCol={editorMode.initialCursorCol}
             fsContext={fsContext}
             onExit={(saved: boolean) => session.editorExit(saved)}
           />
@@ -206,6 +209,7 @@ export const TerminalView: React.FC<TerminalViewProps> = ({ session }) => {
           initialContent={editorMode.content}
           isNewFile={editorMode.isNewFile}
           editorName={editorMode.editorType === 'vi' ? 'vi' : 'vim'}
+          initialCursorLine={editorMode.initialCursorLine}
           fsContext={fsContext}
           owner={owner}
           onExit={(saved: boolean) => session.editorExit(saved)}
@@ -298,9 +302,21 @@ export const TerminalView: React.FC<TerminalViewProps> = ({ session }) => {
               value={session.getPasswordBuf()}
               onChange={(e) => session.setPasswordBuf(e.target.value)}
               onKeyDown={handleKeyDown}
-              className="absolute overflow-hidden"
+              className="overflow-hidden"
               style={{
-                position: 'absolute',
+                // `fixed` (not `absolute`) deliberately: this input sits
+                // inside a long scrollable output list. Typing into it
+                // moves its native caret, and Chromium reveals a moving
+                // caret by scrolling every ancestor up to and including
+                // `overflow:hidden` ones that were never meant to scroll
+                // (see TerminalModal's wrapper around this component) —
+                // `preventScroll` on focus() doesn't cover that, only the
+                // initial focus. `fixed` positioning takes it out of the
+                // scrollable-ancestor chain entirely, so there is nothing
+                // left for the browser to scroll to "reveal" it.
+                position: 'fixed',
+                top: 0,
+                left: 0,
                 width: '1px',
                 height: '1px',
                 padding: 0,
@@ -310,7 +326,6 @@ export const TerminalView: React.FC<TerminalViewProps> = ({ session }) => {
                 borderWidth: 0,
               }}
               autoComplete="off"
-              autoFocus
             />
             {(inputMode as { promptText?: string }).promptText && (
               <span style={{ color: theme.textColor, whiteSpace: 'pre' }}>
@@ -360,11 +375,10 @@ export const TerminalView: React.FC<TerminalViewProps> = ({ session }) => {
         {!isDisconnected && !isPasswordMode && !isInteractiveText && !isBooting && !isPager && !isReverseSearch
           && (session.listAttachedStreams?.().length ?? 0) > 0 && (
           <input
-            ref={inputRef}
+            ref={(el) => { inputRef.current = el; el?.focus({ preventScroll: true }); }}
             type="text"
             className="opacity-0 absolute w-0 h-0"
             onKeyDown={handleKeyDown}
-            autoFocus
           />
         )}
 
@@ -407,10 +421,9 @@ export const TerminalView: React.FC<TerminalViewProps> = ({ session }) => {
         {/* Pager hidden input (captures keys) */}
         {isPager && !isBooting && (
           <input
-            ref={inputRef}
+            ref={(el) => { inputRef.current = el; el?.focus({ preventScroll: true }); }}
             className="opacity-0 absolute w-0 h-0"
             onKeyDown={handleKeyDown}
-            autoFocus
           />
         )}
 

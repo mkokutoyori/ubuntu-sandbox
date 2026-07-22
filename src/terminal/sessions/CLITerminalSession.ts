@@ -182,6 +182,24 @@ export abstract class CLITerminalSession extends TerminalSession {
 
   // ── Key handling ────────────────────────────────────────────────
 
+  /**
+   * An interactive SSH/Telnet hop (`ssh -l admin 10.0.0.2`, then typing
+   * commands on the remote device) attaches a child session via
+   * `adoptRemoteChild`, exactly like Linux/Windows do. Those two already
+   * route every key to `this.foreground` once a child exists — CLI
+   * (Cisco/Huawei) lacked the same override, so keys kept being handled by
+   * `this` (the LOCAL session): the visible prompt/banner came from the
+   * remote child (`getPrompt()`/`currentInputMode` already delegate), but
+   * `onEnter()`/`showInlineHelp()` ran locally, silently applying typed
+   * commands — including config changes — to the wrong device. One override
+   * here fixes it for both vendors without duplicating per-device logic.
+   */
+  handleKey(e: KeyEvent): boolean {
+    if (this.disposed) return false;
+    if (this.hasActiveChild) return this.foreground.handleKey(e);
+    return super.handleKey(e);
+  }
+
   protected handleModeKey(e: KeyEvent): boolean {
     // Pager mode
     if (this.pagerLines) {
@@ -262,6 +280,8 @@ export abstract class CLITerminalSession extends TerminalSession {
 
   private async executeCommand(cmd: string): Promise<void> {
     const trimmed = cmd.trim();
+    this.flushDeferredAsyncQueue();
+    this.onCommandActivity();
     this.addEchoLine(this.prompt, cmd);
 
     if (trimmed) {

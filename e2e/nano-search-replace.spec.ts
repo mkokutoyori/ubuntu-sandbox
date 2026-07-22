@@ -73,6 +73,9 @@ test.describe('Scénario 3 (e2e) — nano Ctrl+W / Ctrl+\\', () => {
     await page.keyboard.press('Control+x');
     await expect(page.getByText('Save modified buffer?')).toBeVisible();
     await page.keyboard.press('y');
+    // Real nano always chains to "File Name to Write:" here.
+    await expect(page.getByText('File Name to Write')).toBeVisible();
+    await page.keyboard.press('Enter');
     await typeCmd(page, 'cat /tmp/nano-replace.txt');
     const transcript = await modalText(page);
     const catOutput = transcript.slice(transcript.lastIndexOf('cat /tmp/nano-replace.txt'));
@@ -97,6 +100,9 @@ test.describe('Scénario 3 (e2e) — nano Ctrl+W / Ctrl+\\', () => {
     await page.keyboard.press('Control+x');
     await expect(page.getByText('Save modified buffer?')).toBeVisible();
     await page.keyboard.press('y');
+    // Real nano always chains to "File Name to Write:" here.
+    await expect(page.getByText('File Name to Write')).toBeVisible();
+    await page.keyboard.press('Enter');
     await typeCmd(page, 'wc -l < /tmp/nano-regex.txt');
     const transcript = await modalText(page);
     const wcOutput = transcript.slice(transcript.lastIndexOf('wc -l < /tmp/nano-regex.txt'));

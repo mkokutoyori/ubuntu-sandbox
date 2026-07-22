@@ -58,6 +58,15 @@ const PRIVILEGED_ONLY_SHOW: ReadonlySet<string> = new Set([
 export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
   // ─── State ───────────────────────────────────────────────────────
   protected mode: string = 'user';
+  /**
+   * Real 0-15 privilege level (real IOS model). `mode` stays a simpler
+   * user/privileged/config-* FSM for trie selection and prompt rendering
+   * (`#` iff level 15, `>` otherwise — matching real IOS exactly, where
+   * even privilege 7 still shows `>`), but this field is the single
+   * source of truth for `show privilege`, `enable`/`enable N` escalation,
+   * and `privilege exec level N <command>` gating.
+   */
+  protected currentPrivilegeLevel: number = 1;
   /** Recent commands for `show history` (shared switch + router). */
   protected cmdHistory: string[] = [];
   protected deviceRef: TDevice | null = null;
@@ -157,6 +166,14 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
   protected consoleLinePrivilegeLevel: number | null = null;
   protected consoleLineExecTimeoutMin: number | null = null;
   protected consoleLineExecTimeoutSec: number = 0;
+  protected consoleLineLoggingSynchronous: boolean = false;
+
+  // `line aux 0` — real storage for `no exec` / `transport input`, which
+  // used to be silently swallowed (any directive typed under the AUX
+  // sub-mode fell through the console/VTY branches and was dropped).
+  protected selectedAuxLine: number | null = null;
+  protected auxLineNoExec: boolean = false;
+  protected auxLineTransportInput: 'ssh' | 'telnet' | 'all' | 'none' | null = null;
 
   _getAliasRunningConfigLines(): string[] {
     return this.aliases.toRunningConfig();
@@ -170,8 +187,9 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     privilegeLevel: number | null;
     execTimeoutMin: number | null;
     execTimeoutSec: number;
+    loggingSynchronous: boolean;
   } | null {
-    if (this.consoleLinePassword == null && this.consoleLineLogin == null && this.consoleLinePrivilegeLevel == null && this.consoleLineExecTimeoutMin == null) return null;
+    if (this.consoleLinePassword == null && this.consoleLineLogin == null && this.consoleLinePrivilegeLevel == null && this.consoleLineExecTimeoutMin == null && !this.consoleLineLoggingSynchronous) return null;
     return {
       line: this.selectedConsoleLine ?? 0,
       password: this.consoleLinePassword,
@@ -180,6 +198,16 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       privilegeLevel: this.consoleLinePrivilegeLevel,
       execTimeoutMin: this.consoleLineExecTimeoutMin,
       execTimeoutSec: this.consoleLineExecTimeoutSec,
+      loggingSynchronous: this.consoleLineLoggingSynchronous,
+    };
+  }
+
+  _getAuxLineConfig(): { line: number; noExec: boolean; transportInput: 'ssh' | 'telnet' | 'all' | 'none' | null } | null {
+    if (!this.auxLineNoExec && this.auxLineTransportInput == null) return null;
+    return {
+      line: this.selectedAuxLine ?? 0,
+      noExec: this.auxLineNoExec,
+      transportInput: this.auxLineTransportInput,
     };
   }
   protected terminalMonitor = false;
@@ -258,9 +286,33 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     ctx?: InteractionPlanContext,
   ): CommandInteractionPlan | null {
     const mode = ctx?.mode ?? 'privileged';
-    if (mode !== 'privileged') return null;
     const line = commandLine.trim();
     if (!line) return null;
+
+    if (mode === 'user') {
+      const um = this.userTrie.match(line);
+      if (um.status === 'ok' && um.node?.action && um.matchedKeywords[0]?.toLowerCase() === 'enable') {
+        return this.enableInteractionPlan(um.args, ctx?.device);
+      }
+      return null;
+    }
+
+    // Config-mode dialogue: `banner <kind> <delim>` with nothing after the
+    // delimiter opens real IOS's multi-line capture (lines accumulate
+    // until one contains the delimiter). The single-line
+    // `banner <kind> <delim>TEXT<delim>` form stays synchronous in the
+    // config-trie handler.
+    if (mode === 'config') {
+      const bm = /^banner\s+(motd|login|exec|incoming)\s+(\S)\s*$/i.exec(line);
+      if (bm) {
+        return this.bannerCaptureInteractionPlan(
+          bm[1].toLowerCase() as 'motd' | 'login' | 'exec' | 'incoming', bm[2], ctx?.device,
+        );
+      }
+      return null;
+    }
+
+    if (mode !== 'privileged') return null;
 
     const m = this.privilegedTrie.match(line);
     if (m.status !== 'ok' || !m.node) return null;
@@ -284,6 +336,43 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       }
     }
     return null;
+  }
+
+  /**
+   * `enable` / `enable N` — a real IOS "Password:" prompt gated by
+   * `enable secret` (level 15) or `enable secret|password level N`
+   * (intermediate levels), with `enable secret` winning silently when
+   * both exist at the same level (real IOS behaviour — no warning). When
+   * nothing is configured for the target level, real IOS asks nothing
+   * and grants immediately — modeled here by returning null, which lets
+   * the terminal fall through to the underlying `enable` trie handler
+   * (the same one non-interactive callers like `device.executeCommand()`
+   * hit directly).
+   */
+  private enableInteractionPlan(args: string[], deviceCtx: unknown): CommandInteractionPlan | null {
+    const lvl = args[0] ? parseInt(args[0], 10) : 15;
+    if (!Number.isFinite(lvl) || lvl < 0 || lvl > 15) return null;
+    const dev = deviceCtx as {
+      getEnableSecretForLevel?: (l: number) => { value: string; algo: string } | null;
+      getEnablePasswordForLevel?: (l: number) => { value: string; algo: string } | null;
+    } | undefined;
+    const secret = dev?.getEnableSecretForLevel?.(lvl) ?? null;
+    const password = secret ? null : (dev?.getEnablePasswordForLevel?.(lvl) ?? null);
+    const gate = secret ?? password;
+    if (!gate) return null;
+    return {
+      steps: [
+        {
+          kind: 'password',
+          prompt: 'Password: ',
+          validate: (value) => {
+            if (value === gate.value) return { valid: true };
+            return { valid: false, errorMessage: '% Access denied', maxRetries: 0 };
+          },
+        },
+        { kind: 'run', run: async (rt) => { await rt.exec(`enable ${lvl}`); } },
+      ],
+    };
   }
 
   private eraseInteractionPlan(): CommandInteractionPlan {
@@ -313,6 +402,55 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
           storeAs: 'reload_confirmed',
         },
         { kind: 'run', run: async (rt) => { await rt.exec('reload'); } },
+      ],
+    };
+  }
+
+  /** Apply a banner — single write path shared by the config-trie handler
+   *  and the multi-line capture plan (motd also feeds the SSH banner). */
+  protected setBanner(
+    kind: 'motd' | 'login' | 'exec' | 'incoming',
+    text: string,
+    target?: unknown,
+  ): void {
+    const dev = (target ?? this.deviceRef) as {
+      _setSshBanner?: (b: string) => void;
+      _setMotdBanner?: (b: string) => void;
+      _setLoginBanner?: (b: string) => void;
+      _setExecBanner?: (b: string) => void;
+      _setIncomingBanner?: (b: string) => void;
+    } | null;
+    if (!dev) return;
+    if (kind === 'motd') { dev._setMotdBanner?.(text); dev._setSshBanner?.(text); }
+    else if (kind === 'login') dev._setLoginBanner?.(text);
+    else if (kind === 'exec') dev._setExecBanner?.(text);
+    else if (kind === 'incoming') dev._setIncomingBanner?.(text);
+  }
+
+  private bannerCaptureInteractionPlan(
+    kind: 'motd' | 'login' | 'exec' | 'incoming',
+    delim: string,
+    device?: unknown,
+  ): CommandInteractionPlan {
+    return {
+      steps: [
+        { kind: 'output', lines: [`Enter TEXT message.  End with the character '${delim}'.`] },
+        {
+          kind: 'collect',
+          prompt: '',
+          storeAs: 'banner_body',
+          accept: (line, accumulated) => {
+            const idx = line.indexOf(delim);
+            if (idx < 0) return { done: false };
+            const finalChunk = line.slice(0, idx);
+            const parts = finalChunk.length > 0 ? [...accumulated, finalChunk] : [...accumulated];
+            return { done: true, body: parts.join('\n') };
+          },
+        },
+        {
+          kind: 'run',
+          run: async (rt) => { this.setBanner(kind, rt.values.get('banner_body') ?? '', device); },
+        },
       ],
     };
   }
@@ -552,6 +690,37 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
   // ─── Execute Loop (shared) ──────────────────────────────────────
 
   /**
+   * Multi-line banner entry state: `banner motd #` without a closing
+   * delimiter on the same line switches the console into verbatim
+   * collection until a line containing the delimiter arrives (IOS
+   * truncates at the FIRST occurrence — text before it is kept, the
+   * rest of that line is discarded).
+   */
+  private bannerCollector: {
+    type: 'motd' | 'login' | 'exec' | 'incoming';
+    delimiter: string;
+    lines: string[];
+  } | null = null;
+
+  /** True while a `banner …` command is collecting its multi-line body. */
+  isCollectingBanner(): boolean {
+    return this.bannerCollector !== null;
+  }
+
+  private collectBannerLine(rawLine: string): string {
+    const c = this.bannerCollector!;
+    const idx = rawLine.indexOf(c.delimiter);
+    if (idx === -1) {
+      c.lines.push(rawLine);
+      return '';
+    }
+    if (idx > 0) c.lines.push(rawLine.slice(0, idx));
+    this.bannerCollector = null;
+    this.setBanner(c.type, c.lines.join('\n'));
+    return '';
+  }
+
+  /**
    * Core execute logic shared by both router and switch shells.
    * Handles: empty input, pipe filtering, ?, exit/end, do prefix,
    * show shortcut, trie matching, async support, error formatting.
@@ -576,6 +745,14 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
 
   protected executeOnDevice(device: TDevice, rawInput: string): string | Promise<string> {
     rawInput = this.applyLineEditing(rawInput);
+    // Multi-line banner entry: every line is verbatim content (leading
+    // spaces, empty lines, would-be commands) until the delimiter shows up.
+    if (this.bannerCollector) {
+      this.deviceRef = device;
+      const out = this.collectBannerLine(rawInput);
+      this.deviceRef = null;
+      return out;
+    }
     if (rawInput.endsWith('\t')) {
       const stem = rawInput.replace(/\s+$/, '');
       const completed = this.tabComplete(stem);
@@ -583,6 +760,10 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     }
     const trimmed = rawInput.trim();
     if (!trimmed) return '';
+    // IOS comment lines: `!` (optionally followed by text) is a silent
+    // no-op at EVERY prompt and never leaves the current sub-mode —
+    // pasting a show running-config must not spray "% Invalid input".
+    if (trimmed.startsWith('!')) return '';
     if (/^[\x00-\x1f]+$/.test(trimmed) && trimmed !== '\x03' && trimmed !== '\x1a') return '';
     if (!trimmed.endsWith('?') && this.terminalHistoryEnabled
         && this.terminalHistorySize > 0
@@ -628,6 +809,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     if (lower === 'logout' && (this.mode === 'user' || this.mode === 'privileged')) return 'Connection closed.';
     if (lower === 'disable' && this.mode === 'privileged') {
       this.mode = 'user';
+      this.currentPrivilegeLevel = 1;
       return '';
     }
 
@@ -682,16 +864,30 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
    * the interface sub-mode and enters line configuration. Used as a
    * fallback when the active sub-mode trie does not recognise the command.
    */
+  /**
+   * Global config verbs that pop out of a sub-mode when pasted there —
+   * IOS accepts any level-0 command from a sub-config mode and switches
+   * context implicitly (this is what makes pasting a full show
+   * running-config work even though the `!` separators don't `exit`).
+   */
+  private static readonly COMMON_GLOBAL_NAV = [
+    'interface', 'line', 'router', 'ip', 'hostname', 'banner',
+    'username', 'access-list', 'vlan', 'service', 'no',
+  ];
+
   private static readonly GLOBAL_NAV_BY_MODE: Record<string, string[]> = {
-    'config-if': ['interface', 'line'],
-    'config-subif': ['interface', 'vlan'],
-    'config-line': ['line', 'router'],
-    'config-router': ['interface', 'router'],
-    'config-router-ospf': ['interface', 'router'],
-    'config-router-ospfv3': ['interface', 'router'],
-    'config-vlan': ['interface', 'vlan', 'ip'],
+    'config-if': CiscoShellBase.COMMON_GLOBAL_NAV,
+    'config-subif': CiscoShellBase.COMMON_GLOBAL_NAV,
+    'config-line': CiscoShellBase.COMMON_GLOBAL_NAV,
+    'config-router': CiscoShellBase.COMMON_GLOBAL_NAV,
+    'config-router-ospf': CiscoShellBase.COMMON_GLOBAL_NAV,
+    'config-router-ospfv3': CiscoShellBase.COMMON_GLOBAL_NAV,
+    'config-vlan': CiscoShellBase.COMMON_GLOBAL_NAV,
     'config-vrf': ['*'],
-    'config-route-map': ['interface', 'vlan'],
+    'config-route-map': CiscoShellBase.COMMON_GLOBAL_NAV,
+    'config-std-nacl': CiscoShellBase.COMMON_GLOBAL_NAV,
+    'config-ext-nacl': CiscoShellBase.COMMON_GLOBAL_NAV,
+    'config-ipv6-nacl': CiscoShellBase.COMMON_GLOBAL_NAV,
   };
 
   /**
@@ -715,7 +911,67 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     return null;
   }
 
+  /**
+   * `privilege exec level N <command>` — an intermediate-level session
+   * (mode stays 'user' for levels 1-14, real IOS never shows '#' below
+   * 15) additionally gets the exact privileged commands explicitly
+   * granted at or below its level. Dispatches through the privileged
+   * trie (the only one with the full parsing/behaviour for that
+   * command) so a granted command works identically to how level 15
+   * runs it — not a stub. Returns null when nothing is granted, so the
+   * caller falls back to the normal "command not found" error, exactly
+   * matching real IOS: a command outside your privilege level simply
+   * isn't in your visible command tree.
+   */
+  private tryGrantedPrivilegeCommand(cmdPart: string): string | null {
+    if (this.mode !== 'user' || this.currentPrivilegeLevel <= 1 || this.currentPrivilegeLevel >= 15) return null;
+    const rules = (this.d() as unknown as { _ciscoPrivilegeRules?: Map<string, number> })._ciscoPrivilegeRules;
+    if (!rules || rules.size === 0) return null;
+    const lower = cmdPart.trim().toLowerCase();
+    let matched = false;
+    for (const [key, level] of rules) {
+      if (!key.startsWith('exec ')) continue;
+      if (level > this.currentPrivilegeLevel) continue;
+      const target = key.slice(5);
+      if (lower === target || lower.startsWith(target + ' ')) { matched = true; break; }
+    }
+    if (!matched) return null;
+    const privResult = this.privilegedTrie.match(cmdPart);
+    if (privResult.status === 'ok') {
+      return privResult.node?.action ? privResult.node.action(privResult.args, cmdPart) : '';
+    }
+    return null;
+  }
+
+  /**
+   * `show running-config`/`show startup-config`/`show tech-support`/
+   * `show archive` are privileged-only by design (`PRIVILEGED_ONLY_SHOW`)
+   * — deliberately never copied into the user trie. At level 1 that's
+   * fine (the user trie's own "not a real subcommand" handling already
+   * covers it), but at an intermediate level the user trie's generic
+   * `show <unrecognized>` fallback answers "% Incomplete command." (it
+   * assumes any unmatched show argument is just not-yet-fully-typed),
+   * which would leak the *existence* of the command. Real IOS shows the
+   * identical "unknown command" response for a privilege-gated command as
+   * for one that plain doesn't exist — this makes the simulator match.
+   */
+  private isPrivilegedOnlyShowCommand(cmdPart: string): boolean {
+    const m = /^show\s+(\S+)/i.exec(cmdPart.trim());
+    if (!m) return false;
+    const sub = m[1].toLowerCase();
+    for (const k of PRIVILEGED_ONLY_SHOW) {
+      if (k.startsWith(sub) || sub.startsWith(k)) return true;
+    }
+    return false;
+  }
+
   protected executeOnTrie(cmdPart: string): string {
+    if (this.mode === 'user' && this.currentPrivilegeLevel > 1 && this.currentPrivilegeLevel < 15) {
+      const granted = this.tryGrantedPrivilegeCommand(cmdPart);
+      if (granted !== null) return granted;
+      if (this.isPrivilegedOnlyShowCommand(cmdPart)) return CISCO_ERRORS.INVALID_INPUT;
+    }
+
     const trie = this.getActiveTrie();
     const result = trie.match(cmdPart);
 
@@ -927,7 +1183,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       return cfg.length > 0 ? `Building configuration...\n${cfg}\nend` : 'Building configuration...';
     });
     trie.register('show privilege', 'Display current privilege level', () =>
-      showPrivilege(this.mode === 'user' ? 1 : 15));
+      showPrivilege(this.currentPrivilegeLevel));
     trie.register('show history', 'Display command history', () =>
       this.cmdHistory.slice(-this.terminalHistorySize).join('\n'));
     trie.register('clear history', 'Clear command history buffer', () => {
@@ -979,8 +1235,8 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       showControllers(this.cs(), a.join(' ')));
     trie.registerGreedy('show environment', 'Display environment', () =>
       showEnvironment());
-    trie.registerGreedy('show line', 'Display TTY lines', () =>
-      showLine(this.cs()));
+    trie.registerGreedy('show line', 'Display TTY lines', (a) =>
+      showLine(this.cs(), a));
     trie.register('show ip ssh', 'Display SSH server status', () => showIpSsh());
     trie.register('show ip ssh known-hosts', 'Display learned SSH host keys', () => {
       const dev = this.d() as unknown as { _getSshKnownHosts?: () => { renderCisco: () => string } };
@@ -1109,7 +1365,16 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       if (!Number.isFinite(lvl) || lvl < 0 || lvl > 15) {
         return "% Invalid input detected at '^' marker.";
       }
-      this.mode = 'privileged';
+      // Authentication itself (real IOS "Password:" prompt against
+      // `enable secret` / `enable password level N`) happens BEFORE this
+      // handler runs, via interactionPlanFor()'s `enable` plan — this is
+      // only ever reached once the password has already been verified
+      // (or none was configured for the target level, matching real IOS's
+      // "no password set = no gate" behaviour). Direct, non-interactive
+      // callers (device.executeCommand('enable') in tests) go straight
+      // here too, which is correct: nothing could have prompted them.
+      this.currentPrivilegeLevel = lvl;
+      this.mode = lvl === 15 ? 'privileged' : 'user';
       return '';
     });
 
@@ -1128,6 +1393,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
 
     this.privilegedTrie.register('disable', 'Return to user EXEC mode', () => {
       this.mode = 'user';
+      this.currentPrivilegeLevel = 1;
       return '';
     });
 
@@ -1910,35 +2176,37 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       dev._getHostsTable?.().remove(args[0]);
       return '';
     });
-    this.configTrie.registerGreedy('banner', 'Set a banner', (args) => {
-      const dev = this.d() as unknown as {
-        _setSshBanner?: (b: string) => void;
-        _setMotdBanner?: (b: string) => void;
-        _setLoginBanner?: (b: string) => void;
-        _setExecBanner?: (b: string) => void;
-        _setIncomingBanner?: (b: string) => void;
-      };
+    this.configTrie.registerGreedy('banner', 'Set a banner', (args, rawLine) => {
       const which = args[0]?.toLowerCase();
       if (!which || !['motd', 'login', 'exec', 'incoming'].includes(which)) {
         return "% Invalid input detected at '^' marker.";
       }
-      const body = args.slice(1).join(' ').trim();
-      if (body.length === 0) return CISCO_ERRORS.INCOMPLETE;
-      const delim = body[0];
-      const lastIdx = body.lastIndexOf(delim);
-      if (lastIdx <= 0) return "% Invalid input detected at '^' marker.";
-      const text = body.slice(1, lastIdx);
-      if (which === 'motd') {
-        dev._setMotdBanner?.(text);
-        dev._setSshBanner?.(text);
-      } else if (which === 'login') {
-        dev._setLoginBanner?.(text);
-      } else if (which === 'exec') {
-        dev._setExecBanner?.(text);
-      } else if (which === 'incoming') {
-        dev._setIncomingBanner?.(text);
+      // The delimiter is the first non-space character after the banner
+      // type; everything after it (spaces included) is content — split
+      // from the raw line, not the collapsed args.
+      const line = rawLine ?? `banner ${args.join(' ')}`;
+      const typePos = line.toLowerCase().indexOf(which);
+      const rest = line.slice(typePos + which.length).replace(/^\s+/, '');
+      if (rest.length === 0) return CISCO_ERRORS.INCOMPLETE;
+      // show running-config renders the delimiter as the two-character
+      // notation ^C (Ctrl-C); accept it back so the output re-pastes.
+      const delim = rest.startsWith('^C') ? '^C' : rest[0];
+      const body = rest.slice(delim.length);
+      const closeIdx = body.indexOf(delim);
+      if (closeIdx !== -1) {
+        // Inline form — content truncates at the FIRST delimiter
+        // occurrence, exactly like IOS.
+        this.setBanner(which as 'motd' | 'login' | 'exec' | 'incoming', body.slice(0, closeIdx));
+        return '';
       }
-      return '';
+      // Multi-line form: collect subsequent input verbatim until a line
+      // containing the delimiter.
+      this.bannerCollector = {
+        type: which as 'motd' | 'login' | 'exec' | 'incoming',
+        delimiter: delim,
+        lines: body.length > 0 ? [body] : [],
+      };
+      return `Enter TEXT message.  End with the character '${delim}'.`;
     });
     this.configTrie.registerGreedy('no banner', 'Remove a banner', (args) => {
       const which = args[0]?.toLowerCase();
@@ -2071,9 +2339,10 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       return '';
     });
     this.configTrie.registerGreedy('enable secret', 'Set enable secret', (args) => {
-      const dev = this.d() as unknown as { _setEnableSecret?: (s: string, algo: 'plain' | 'md5' | 'sha256' | 'scrypt' | 'type-7') => void };
+      const dev = this.d() as unknown as { _setEnableSecretForLevel?: (level: number, s: string, algo: 'plain' | 'md5' | 'sha256' | 'scrypt' | 'type-7') => void };
       let algo: 'plain' | 'md5' | 'sha256' | 'scrypt' | 'type-7' = 'md5';
       let secret = '';
+      let level = 15;
       // Cleartext forms (0, level N, or bare) are what `security passwords
       // min-length` validates — a pasted hash (5/7/8/9) is exempt, same as
       // `username ... secret` (CiscoSecurityCommands.ts).
@@ -2084,6 +2353,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       else if (args[0] === '8') { algo = 'sha256'; secret = args.slice(1).join(' '); }
       else if (args[0] === '9') { algo = 'scrypt'; secret = args.slice(1).join(' '); }
       else if (args[0] === 'level' && /^\d+$/.test(args[1] ?? '')) {
+        level = parseInt(args[1], 10);
         secret = args.slice(2).join(' '); plaintextEntered = secret;
       } else { secret = args.join(' '); plaintextEntered = secret; }
       if (secret === '') return '% Incomplete command.';
@@ -2091,20 +2361,49 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       if (plaintextEntered !== undefined && minLength && plaintextEntered.length < minLength) {
         return `Password too short - must be at least ${minLength} characters. Password configuration failed`;
       }
-      dev._setEnableSecret?.(secret, algo);
+      dev._setEnableSecretForLevel?.(level, secret, algo);
+      return '';
+    });
+    // `enable algorithm-type {md5|scrypt|sha256} secret [level N] <pwd>` —
+    // explicit-algorithm form of `enable secret` (IOS 15.3+), always takes
+    // a cleartext password and hashes it with the named algorithm.
+    this.configTrie.registerGreedy('enable algorithm-type', 'Set enable secret with an explicit hash algorithm', (args) => {
+      const dev = this.d() as unknown as { _setEnableSecretForLevel?: (level: number, s: string, algo: 'plain' | 'md5' | 'sha256' | 'scrypt' | 'type-7') => void };
+      const algoName = args[0]?.toLowerCase();
+      const algoMap: Record<string, 'md5' | 'scrypt' | 'sha256'> = { md5: 'md5', scrypt: 'scrypt', sha256: 'sha256' };
+      const algo = algoMap[algoName ?? ''];
+      if (!algo) return "% Invalid input detected at '^' marker.";
+      if (args[1]?.toLowerCase() !== 'secret') return "% Invalid input detected at '^' marker.";
+      let level = 15;
+      let rest = args.slice(2);
+      if (rest[0]?.toLowerCase() === 'level' && /^\d+$/.test(rest[1] ?? '')) {
+        level = parseInt(rest[1], 10);
+        rest = rest.slice(2);
+      }
+      const secret = rest.join(' ');
+      if (secret === '') return CISCO_ERRORS.INCOMPLETE;
+      const minLength = getSecurityConfig(this.d()).passwords.minLength;
+      if (minLength && secret.length < minLength) {
+        return `Password too short - must be at least ${minLength} characters. Password configuration failed`;
+      }
+      dev._setEnableSecretForLevel?.(level, secret, algo);
       return '';
     });
     this.configTrie.registerGreedy('enable password', 'Set enable password', (args) => {
       const dev = this.d() as unknown as {
-        _setEnablePassword?: (p: string, algo: 'plain' | 'type-7') => void;
+        _setEnablePasswordForLevel?: (level: number, p: string, algo: 'plain' | 'type-7') => void;
         getServiceFlags?: () => ReadonlyMap<string, boolean>;
       };
       let algo: 'plain' | 'type-7' = 'plain';
       let password = '';
+      let level = 15;
       let plaintextEntered: string | undefined;
       if (args[0] === '0') { algo = 'plain'; password = args.slice(1).join(' '); plaintextEntered = password; }
       else if (args[0] === '7') { algo = 'type-7'; password = args.slice(1).join(' '); }
-      else { password = args.join(' '); plaintextEntered = password; }
+      else if (args[0] === 'level' && /^\d+$/.test(args[1] ?? '')) {
+        level = parseInt(args[1], 10);
+        password = args.slice(2).join(' '); plaintextEntered = password;
+      } else { password = args.join(' '); plaintextEntered = password; }
       if (password === '') return '% Incomplete command.';
       const minLength = getSecurityConfig(this.d()).passwords.minLength;
       if (plaintextEntered !== undefined && minLength && plaintextEntered.length < minLength) {
@@ -2112,9 +2411,9 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       }
       if (algo === 'plain' && dev.getServiceFlags?.().get('password-encryption') === true) {
         const salt = parseInt(_md5Hex(`cisco-type7:${password}`).slice(0, 1), 16);
-        dev._setEnablePassword?.(_encryptType7(password, salt), 'type-7');
+        dev._setEnablePasswordForLevel?.(level, _encryptType7(password, salt), 'type-7');
       } else {
-        dev._setEnablePassword?.(password, algo);
+        dev._setEnablePasswordForLevel?.(level, password, algo);
       }
       return '';
     });
@@ -2248,9 +2547,15 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       } else if (kind === 'console' || kind === 'con') {
         this.selectedVtyRange = null;
         this.selectedConsoleLine = Number.parseInt(args[1] ?? '0', 10);
+        this.selectedAuxLine = null;
+      } else if (kind === 'aux') {
+        this.selectedVtyRange = null;
+        this.selectedConsoleLine = null;
+        this.selectedAuxLine = Number.parseInt(args[1] ?? '0', 10);
       } else {
         this.selectedVtyRange = null;
         this.selectedConsoleLine = null;
+        this.selectedAuxLine = null;
       }
       return '';
     });
@@ -2261,6 +2566,11 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       this.configLineTrie.registerGreedy(kw, `line ${kw}`, (args, raw) => {
         const range = this.selectedVtyRange;
         if (!range) {
+          if (this.selectedAuxLine != null) {
+            if (kw === 'exec') { this.auxLineNoExec = false; return ''; }
+            if (kw === 'no' && args[0]?.toLowerCase() === 'exec') { this.auxLineNoExec = true; return ''; }
+            return '';
+          }
           if (this.selectedConsoleLine == null) return '';
           if (kw === 'password') {
             if (!args[0]) return '% Incomplete command.';
@@ -2274,6 +2584,10 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
           if (kw === 'login') {
             const sub = args[0]?.toLowerCase();
             this.consoleLineLogin = sub === 'local' ? 'local' : 'password';
+            return '';
+          }
+          if (kw === 'logging' && args[0]?.toLowerCase() === 'synchronous') {
+            this.consoleLineLoggingSynchronous = true;
             return '';
           }
           if (kw === 'privilege' && args[0]?.toLowerCase() === 'level' && args[1]) {
@@ -2296,6 +2610,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
             }
             if (sub === 'password') { this.consoleLinePassword = null; return ''; }
             if (sub === 'privilege') { this.consoleLinePrivilegeLevel = null; return ''; }
+            if (sub === 'logging') { this.consoleLineLoggingSynchronous = false; return ''; }
           }
           return '';
         }
@@ -2314,7 +2629,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
         } else if (kw === 'logging' && args[0]?.toLowerCase() === 'synchronous') {
           update.loggingSynchronous = true;
         } else if (kw === 'privilege' && args[0]?.toLowerCase() === 'level' && args[1]) {
-          update.privilegeLevel = parseInt(args[1], 10);
+          update.privilege = parseInt(args[1], 10);
         } else if (kw === 'session-timeout' && args[0]) {
           update.sessionTimeoutMinutes = parseInt(args[0], 10);
         } else if (kw === 'history' && args[0]?.toLowerCase() === 'size' && args[1]) {
@@ -2408,7 +2723,12 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       if (proto !== 'all' && proto !== 'ssh' && proto !== 'telnet' && proto !== 'none') {
         return "% Invalid input detected at '^' marker.";
       }
-      if (dir === 'input' && typeof dev._setVtyTransportInput === 'function') {
+      if (dir !== 'input') return '';
+      if (this.selectedAuxLine != null) {
+        this.auxLineTransportInput = proto;
+        return '';
+      }
+      if (typeof dev._setVtyTransportInput === 'function') {
         dev._setVtyTransportInput(proto);
         const range = this.selectedVtyRange;
         if (range) dev._getVtyLineConfig?.().upsert({ first: range.first, last: range.last, transportInput: proto });

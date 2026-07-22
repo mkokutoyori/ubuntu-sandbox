@@ -18,6 +18,8 @@ interface VimEditorProps {
   fsContext: EditorFsContext;
   owner?: string;
   onExit: (saved: boolean) => void;
+  /** `vim +LINE file`: initial cursor line (1-indexed). */
+  initialCursorLine?: number;
 }
 
 function flatOffset(lines: readonly string[], line: number, col: number): number {
@@ -41,10 +43,14 @@ export const VimEditor: React.FC<VimEditorProps> = ({
   fsContext,
   owner,
   onExit,
+  initialCursorLine,
 }) => {
   const engineRef = useRef<VimEngine>();
   if (!engineRef.current) {
-    engineRef.current = new VimEngine(fsContext, filePath, initialContent, isNewFile, editorName, owner ?? 'user');
+    engineRef.current = new VimEngine(
+      fsContext, filePath, initialContent, isNewFile, editorName, owner ?? 'user',
+      initialCursorLine !== undefined ? { line: initialCursorLine } : undefined,
+    );
   }
   const engine = engineRef.current;
   const [, bump] = useReducer((x: number) => x + 1, 0);

@@ -67,9 +67,10 @@ describe('enable password with service password-encryption', () => {
     expect(config).not.toContain('enable password 0 weakpass');
   });
 
-  it('leaves the password as cleartext type 0 when encryption is off', async () => {
+  it('leaves the password as cleartext when encryption is off (real IOS omits the type-0 digit for enable password)', async () => {
     const r = await configured(['enable password weakpass']);
     const config = await r.executeCommand('show running-config');
-    expect(config).toContain('enable password 0 weakpass');
+    expect(config).toContain('enable password weakpass');
+    expect(config).not.toContain('enable password 0 weakpass');
   });
 });

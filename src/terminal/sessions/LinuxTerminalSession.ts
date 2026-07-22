@@ -58,6 +58,7 @@ import type { LinuxShellSession } from '@/network/devices/linux/shell/LinuxShell
 import { AnsiOutputFormatter, type IOutputFormatter } from '@/terminal/core/OutputFormatter';
 import { CompletionController, ReadlinePolicy, CyclingPolicy, LastWordSource, ghostRemainder } from '@/terminal/completion';
 import { toInteractiveSteps } from '@/terminal/flows/planAdapter';
+import { analyzeBashInput } from '@/bash/incompleteInput';
 import {
   parseReadInvocation as parseReadInvocationLib,
   performInteractiveRead as performInteractiveReadLib,
@@ -138,6 +139,15 @@ export class LinuxTerminalSession extends TerminalSession {
   private readonly subShellCompletion = new CompletionController(new CyclingPolicy());
   /** Active sub-shell (SQL*Plus, or any future REPL). Null when in normal bash mode. */
   private activeSubShell: ISubShell | null = null;
+
+  /**
+   * Accumulated physical lines of a not-yet-complete command (open quote,
+   * trailing `\`, dangling connector, open block, or here-document). Null
+   * when no continuation is in progress. Drives the PS2 `>` prompt.
+   */
+  private _continuationBuffer: string | null = null;
+  /** PS2 continuation prompt — real bash default. */
+  private readonly ps2Prompt = '> ';
 
   /**
    * Top of the active shell stack — for IShellBase introspection. When
@@ -406,6 +416,9 @@ export class LinuxTerminalSession extends TerminalSession {
   getPrompt(): string {
     if (this.hasActiveChild) return this.foreground.getPrompt();
     if (this.activeSubShell) return this.activeSubShell.getPrompt();
+    // PS2 continuation prompt while accumulating an incomplete command
+    // (open quote, trailing `\`, dangling connector, open block, heredoc).
+    if (this._continuationBuffer !== null) return this.ps2Prompt;
     const hostname = this.device.getHostname() || 'localhost';
     const user = this.currentUser;
     const homeDir = user === 'root' ? '/root' : `/home/${user}`;
@@ -787,6 +800,36 @@ export class LinuxTerminalSession extends TerminalSession {
     this.input = '';
     this._inputBuf = '';
     this.tabSuggestions = null;
+
+    // Interactive line continuation (PS2): only on the local root bash,
+    // never inside a sub-shell / SSH device shell / active flow. Accumulate
+    // physical lines until the command is lexically complete, echoing each
+    // at the current prompt exactly like real bash.
+    if (!this.activeSubShell && !this.isFlowActive) {
+      const accumulated = this._continuationBuffer !== null
+        ? `${this._continuationBuffer}\n${cmd}`
+        : cmd;
+      const analysis = analyzeBashInput(accumulated);
+      if (!analysis.complete) {
+        this.addEchoLine(this.getPrompt(), cmd);
+        this._continuationBuffer = accumulated;
+        this.updatePrompt?.();
+        this.notify();
+        return;
+      }
+      if (this._continuationBuffer !== null) {
+        // Final line of a multi-line command: echo it, then run the whole
+        // accumulated text without re-echoing (executeCommand echoes the
+        // first line; the continuation lines were already echoed live).
+        this.addEchoLine(this.getPrompt(), cmd);
+        this._continuationBuffer = null;
+        this.updatePrompt?.();
+        const doneMulti = this.executeCommand(accumulated, { echo: false });
+        this.notify();
+        return doneMulti;
+      }
+    }
+
     // The 'input' record event is emitted by addEchoLine inside
     // executeCommand — recording here too would duplicate every typed
     // command in the session transcript.
@@ -1405,11 +1448,13 @@ export class LinuxTerminalSession extends TerminalSession {
     return true;
   }
 
-  private async executeCommand(cmd: string): Promise<void> {
+  private async executeCommand(cmd: string, opts?: { echo?: boolean }): Promise<void> {
     const typed = cmd.trim();
     const trimmed = this.resolveActionLine(typed);
 
-    this.addEchoLine(this.getPrompt(), cmd);
+    // Multi-line commands assembled by the PS2 continuation loop already
+    // echoed each physical line live; re-echoing here would duplicate them.
+    if (opts?.echo !== false) this.addEchoLine(this.getPrompt(), cmd);
 
     // A pending visudo "What now?" recovery prompt consumes the very next
     // line typed (e/x/Q) before anything else is interpreted as a command.
@@ -1950,12 +1995,49 @@ export class LinuxTerminalSession extends TerminalSession {
     for (const arg of args) {
       if (!arg.startsWith('-') && !arg.startsWith('+')) { filePath = arg; break; }
     }
-    if (!filePath) filePath = editorCmd === 'nano' ? 'New Buffer' : '';
     // nano -v/--view: open read-only, no Write Out. nano -c/--constantshow:
     // title bar shows the live cursor position. Both no-ops for vi/vim
     // (which use their own :view / :set ruler commands for the same idea).
     const readOnly = editorCmd === 'nano' && args.some((a) => a === '-v' || a === '--view');
     const showPosition = editorCmd === 'nano' && args.some((a) => a === '-c' || a === '--constantshow');
+    const showLineNumbers = editorCmd === 'nano' && args.some((a) => a === '-l' || a === '--linenumbers');
+    // `+LINE[,COLUMN]` (nano) / `+LINE` (vim/vi, no column form) opens the
+    // buffer with the cursor already positioned there. Real nano/vim take
+    // the LAST such argument if more than one is given.
+    let initialCursorLine: number | undefined;
+    let initialCursorCol: number | undefined;
+    for (const arg of args) {
+      const m = /^\+(\d+)(?:,(\d+))?$/.exec(arg);
+      if (m) {
+        initialCursorLine = parseInt(m[1], 10);
+        initialCursorCol = m[2] !== undefined ? parseInt(m[2], 10) : undefined;
+      }
+    }
+
+    // No filename given: a genuinely unnamed buffer. Resolving '' against
+    // the cwd would collapse to the cwd's OWN directory path (VFS
+    // normalizePath treats '' as "no extra segment"), so `^O`/`:w` would
+    // silently target the directory itself — skip resolution entirely and
+    // leave both paths empty; the engines already handle an empty
+    // filePath correctly (nano's Write Out prompt starts blank, vim's :w
+    // reports E32 until a real name is typed).
+    if (!filePath) {
+      this.inputMode = {
+        type: 'editor',
+        editorType: editorCmd,
+        filePath: '',
+        absolutePath: '',
+        content: '',
+        isNewFile: true,
+        readOnly,
+        showPosition,
+        showLineNumbers,
+        initialCursorLine,
+        initialCursorCol,
+      };
+      this.notify();
+      return;
+    }
 
     // Resolve against the per-terminal cwd when a shell session is owned
     // (terminal_gap.md §10.1) — falls back to the device's shared cwd for
@@ -1978,6 +2060,9 @@ export class LinuxTerminalSession extends TerminalSession {
       isNewFile,
       readOnly,
       showPosition,
+      showLineNumbers,
+      initialCursorLine,
+      initialCursorCol,
     };
     this.notify();
   }
@@ -2630,6 +2715,21 @@ export class LinuxTerminalSession extends TerminalSession {
       | undefined;
     if (!sshHost) return false;
 
+    const sourceIp = this.lookupSourceIp();
+    // `login block-for` device-wide quiet-mode: a new connection attempt
+    // while blocked (and not covered by `login quiet-mode access-class`)
+    // is refused immediately, before any password prompt -- same gate
+    // `sshLauncher.ts` applies for the LinuxBashShell-driven `ssh` path.
+    const admission = (target as unknown as {
+      vtyAdmissionVerdict?: (transport: 'ssh', ip: string) => { accept: boolean };
+    }).vtyAdmissionVerdict?.('ssh', sourceIp);
+    if (admission && !admission.accept) {
+      this.addLine(`ssh: connect to host ${host} port ${meta.port}: Connection refused`, 'error');
+      this.notify();
+      this.crossVendorPushTarget = null;
+      return true;
+    }
+
     const steps: InteractiveStep[] = [
       {
         type: 'password',
@@ -2644,7 +2744,7 @@ export class LinuxTerminalSession extends TerminalSession {
             requestedUser: user,
             requestedHost: host,
             requestedPort: meta.port,
-            sourceIp: this.lookupSourceIp(),
+            sourceIp,
             sourceHostname: this.device.getHostname() || '',
             command: null,
             offeredAuthMethods: ['password'],
@@ -2652,6 +2752,17 @@ export class LinuxTerminalSession extends TerminalSession {
           });
           const decision = sshHost.evaluate(request);
           if (decision.outcome !== 'accepted') {
+            // `sshHost.evaluate()` already recorded the failure on the AAA
+            // bus -- if that failure is the one that just tripped
+            // device-wide quiet-mode, show that instead of the generic
+            // refusal (real IOS: immediate message, connection closed).
+            const blocker = (target as unknown as {
+              getLoginBlocker?: () => { isBlocked: () => boolean; remainingBlockSeconds: () => number } | null;
+            }).getLoginBlocker?.();
+            if (blocker?.isBlocked()) {
+              this.addLine(`% Blocking new login for ${blocker.remainingBlockSeconds()} secs (quota exceeded)`, 'error');
+              return;
+            }
             this.addLine(`${user}@${host}: Permission denied (publickey,password).`, 'error');
             return;
           }
@@ -3985,8 +4096,15 @@ export function parseShellChain(
 /** Is this segment a `nano`/`vi`/`vim` invocation (with or without sudo)? */
 export function isEditorSegment(segment: string): boolean {
   const noSudo = segment.startsWith('sudo ') ? segment.slice(5).trimStart() : segment;
-  const head = noSudo.split(/\s+/, 1)[0];
-  return head === 'nano' || head === 'vi' || head === 'vim';
+  const parts = noSudo.split(/\s+/);
+  const head = parts[0];
+  if (head !== 'nano' && head !== 'vi' && head !== 'vim') return false;
+  // `--version`/`-V`/`--help`/`-h` print and exit — they never open the
+  // editor overlay, so let these fall through to the normal command path
+  // (which prints the banner via LinuxCommandExecutor) instead of being
+  // mistaken for "no filename given" (which would open an empty buffer).
+  if (parts.slice(1).some((a) => a === '--version' || a === '-V' || a === '--help' || a === '-h')) return false;
+  return true;
 }
 
 /** Connector gating: should this segment run given the previous exit code? */

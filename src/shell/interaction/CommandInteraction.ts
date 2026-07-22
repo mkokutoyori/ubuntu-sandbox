@@ -60,7 +60,20 @@ export type InteractionStep =
       storeAs?: string;
       validate?: (value: string, values: ReadonlyMap<string, string>) => InteractionValidation;
     }
-  | { kind: 'run'; run: (rt: InteractionRuntime) => Promise<void> };
+  | { kind: 'run'; run: (rt: InteractionRuntime) => Promise<void> }
+  | {
+      /**
+       * Multi-line capture: keep prompting (with `prompt`, usually empty —
+       * IOS banner capture shows a bare line) and feed every entered line
+       * to `accept` until it reports completion. The final `body` is
+       * stored under `storeAs`. Used for banner delimiters, heredoc-style
+       * input, and any other "type lines until a terminator" dialogue.
+       */
+      kind: 'collect';
+      prompt?: string;
+      storeAs: string;
+      accept: (line: string, accumulated: readonly string[]) => { done: boolean; body?: string };
+    };
 
 export interface CommandInteractionPlan {
   steps: InteractionStep[];
@@ -72,6 +85,15 @@ export interface InteractionPlanContext {
   currentUid?: number;
   /** CLI mode for network equipment ('user' | 'privileged' | config modes…). */
   mode?: string;
+  /**
+   * The live device instance, opaque at this vendor-neutral layer (cast by
+   * the specific planner that knows its own device type). Needed by plans
+   * that must read persistent device state (e.g. a configured enable
+   * secret) while BUILDING the plan — before any `run` step has executed,
+   * so the shell's own transient execute()-scoped device reference isn't
+   * set yet.
+   */
+  device?: unknown;
 }
 
 /**

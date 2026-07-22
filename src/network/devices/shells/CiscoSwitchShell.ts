@@ -81,7 +81,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
   execute(sw: CiscoSwitch, input: string): string {
     const dbg = (sw as unknown as { getDebugService?: () => { subscribe(l: (line: string) => void): () => void; isStpEnabled(): boolean } }).getDebugService?.();
     this.attachDebugSource(dbg);
-    if (input.trim() === '') return this.drainDebugConsole();
+    if (input.trim() === '' && !this.isCollectingBanner()) return this.drainDebugConsole();
     const before = dbg?.isStpEnabled() ? new Map(sw._getSTPStates()) : null;
     let out = this.executeOnDevice(sw, input) as string;
     if (before) {
@@ -158,7 +158,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       terminalWidth: this.terminalWidth,
       terminalMonitor: this.terminalMonitor,
       terminalDebugging: this.terminalMonitor,
-      privilegeLevel: this.mode === 'user' ? 1 : 15,
+      privilegeLevel: this.currentPrivilegeLevel,
       historySize: this.terminalHistorySize,
       cmdHistory: [...this.cmdHistory],
     };
@@ -166,6 +166,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
 
   applyVtyState(s: import('./vty/CliShellSession').VtySnapshot): void {
     this.mode = s.mode as CLIMode;
+    this.currentPrivilegeLevel = s.privilegeLevel;
     this.selectedInterface = s.selectedInterface;
     this.selectedInterfaceRange = [...s.selectedInterfaceRange];
     this.selectedVlan = s.selectedVlan;
@@ -2702,10 +2703,20 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       '!',
     ];
 
+    for (const kind of ['motd', 'login', 'exec', 'incoming'] as const) {
+      const text = (sw as unknown as { getBanner?: (k: string) => string }).getBanner?.(kind);
+      if (text) {
+        lines.push(text.includes('\n')
+          ? `banner ${kind} ^C\n${text}\n^C`
+          : `banner ${kind} ^C${text}^C`);
+        lines.push('!');
+      }
+    }
+
     const enableSecret = sw.getEnableSecret();
     if (enableSecret) lines.push(`enable secret ${renderSecretField(enableSecret.value, enableSecret.algo)}`);
     const enablePassword = sw.getEnablePassword();
-    if (enablePassword) lines.push(`enable password ${renderPasswordField(enablePassword.value, enablePassword.algo, false)}`);
+    if (enablePassword) lines.push(`enable password ${renderPasswordField(enablePassword.value, enablePassword.algo, false, false)}`);
     if (enableSecret || enablePassword) lines.push('!');
 
     if (sw.getDomainName()) { lines.push(`ip domain-name ${sw.getDomainName()}`); lines.push('!'); }

@@ -288,7 +288,7 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
 
   execute(router: Router, rawInput: string): string | Promise<string> {
     this.attachDebugSource((router as unknown as { getDebugService?: () => { subscribe(l: (line: string) => void): () => void } }).getDebugService?.());
-    if (rawInput.trim() === '') return this.drainDebugConsole();
+    if (rawInput.trim() === '' && !this.isCollectingBanner()) return this.drainDebugConsole();
     return this.executeOnDevice(router, rawInput);
   }
 
@@ -402,7 +402,7 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       // (unlike Huawei VRP, which distinguishes the two). Mirror it here
       // purely to satisfy the shared VtySnapshot shape.
       terminalDebugging: this.terminalMonitor,
-      privilegeLevel: this.mode === 'user' ? 1 : 15,
+      privilegeLevel: this.currentPrivilegeLevel,
       historySize: 10,
       cmdHistory: this.cmdHistory,
     };
@@ -411,6 +411,7 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
   /** Apply a session's snapshot onto this shell instance. */
   applyVtyState(s: import('./vty/CliShellSession').VtySnapshot): void {
     this.mode = s.mode as CiscoShellMode;
+    this.currentPrivilegeLevel = s.privilegeLevel;
     this.selectedInterface = s.selectedInterface;
     this.selectedRoutingProto = s.selectedRoutingProto as typeof this.selectedRoutingProto;
     this.selectedTrack = s.selectedTrack;
@@ -873,7 +874,13 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       const isViewModifier = last === 'accounting' || last === 'stats' || last === 'switchport';
       const ifPart = isViewModifier ? args.slice(0, -1).join(' ') : args.join(' ');
       const ifName = resolveInterfaceName(getRouter(), ifPart);
-      if (!ifName) return `% Invalid input detected at '^' marker.\nshow interface ${args.join(' ')}\n     ^`;
+      if (!ifName) {
+        const line = `show interface ${args.join(' ')}`;
+        // `ifPart` (the invalid argument) always starts right after the
+        // fixed "show interface " prefix, regardless of the view modifier.
+        const marker = ' '.repeat('show interface '.length) + '^';
+        return `% Invalid input detected at '^' marker.\n${line}\n${marker}`;
+      }
       if (last === 'accounting') return Show.showInterfaceAccounting(getRouter(), ifName);
       if (last === 'stats') return Show.showInterfaceStats(getRouter(), ifName);
       if (last === 'switchport') return Show.showInterfaceSwitchport(getRouter(), ifName);

@@ -337,7 +337,22 @@ export async function cmdPing(ctx: WinCommandContext, args: string[]): Promise<s
 
   const results = await ctx.executePingSequence(targetIP, parsed.count, parsed.timeoutMs, parsed.ttl);
   const hostname = parsed.targetStr !== targetIP.toString() ? parsed.targetStr : undefined;
-  return formatPingOutput(targetIP, parsed.count, parsed.size, results, hostname, parsed);
+
+  // `-r`/`-s` record the REAL forward path. Derive it once from a short
+  // traceroute rather than fabricating repeated copies of the target IP.
+  let routeHops: string[] = [];
+  if ((parsed.recordRoute || parsed.timestamp) && results.some(r => r.success)) {
+    const budget = Math.max(parsed.recordRoute ?? 0, parsed.timestamp ?? 0, 1);
+    const hops = await ctx.executeTraceroute(targetIP, Math.min(budget + 1, 9), 200);
+    routeHops = hops
+      .filter(h => !h.timeout && h.ip)
+      .map(h => h.ip as string);
+    if (routeHops[routeHops.length - 1] !== targetIP.toString()) {
+      routeHops.push(targetIP.toString());
+    }
+  }
+
+  return formatPingOutput(targetIP, parsed.count, parsed.size, results, hostname, parsed, routeHops);
 }
 
 function formatPingOutput(
@@ -347,6 +362,7 @@ function formatPingOutput(
   results: PingResult[],
   hostname: string | undefined,
   opts: ParsedWinPing,
+  routeHops: string[] = [],
 ): string {
   const lines: string[] = [formatWinPingHeader(targetIP, size, hostname)];
   if (results.length === 0) {
@@ -356,20 +372,22 @@ function formatPingOutput(
   }
   lines.push(...formatWinPingStats(targetIP.toString(), count, results));
 
-  if (opts.recordRoute) {
+  // `-r N` / `-s N` display the recorded route / timestamps for the real
+  // hops (capped at the requested count), not repeated copies of the
+  // target. Windows shows nothing here when the path could not be traced.
+  if (opts.recordRoute && routeHops.length > 0) {
+    const shown = routeHops.slice(0, opts.recordRoute);
     lines.push('');
     lines.push('Route:');
-    for (let i = 0; i < opts.recordRoute; i++) {
-      lines.push(`    ${targetIP}`);
-    }
+    for (const hop of shown) lines.push(`    ${hop}`);
   }
 
-  if (opts.timestamp) {
+  if (opts.timestamp && routeHops.length > 0) {
+    const shown = routeHops.slice(0, opts.timestamp);
     lines.push('');
     lines.push('Timestamp:');
-    for (let i = 0; i < opts.timestamp; i++) {
-      lines.push(`    ${targetIP} : ${Date.now() + i * 10}`);
-    }
+    const base = Date.now();
+    shown.forEach((hop, i) => lines.push(`    ${hop} : ${base + i * 10}`));
   }
 
   return lines.join('\n');

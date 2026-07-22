@@ -85,7 +85,13 @@ export interface MatchResult {
   args: string[];
   /** Error message (if ambiguous or invalid) */
   error?: string;
-  /** For invalid input: position of the error in the input */
+  /**
+   * Character offset of the error in the raw input (ambiguous/incomplete/
+   * invalid) — Cisco's own `error` string only uses this for `invalid`
+   * (its own caret marker), but Huawei VRP's caret convention is uniform
+   * across all three failure kinds, so callers building VRP wording need
+   * it for ambiguous/incomplete too.
+   */
   errorPos?: number;
   /** Matched keywords for ? completion context */
   matchedKeywords: string[];
@@ -392,6 +398,7 @@ export class CommandTrie {
           args,
           matchedKeywords,
           error: `% Ambiguous command: "${token}" (matches: ${matchNames})`,
+          errorPos: input.indexOf(token),
         };
       }
 
@@ -436,15 +443,15 @@ export class CommandTrie {
 
     // Check if there are required params not yet supplied
     if (node.params.length > 0 && args.length < node.params.filter(p => !p.optional).length) {
-      return { status: 'incomplete', node, args, matchedKeywords, error: '% Incomplete command.' };
+      return { status: 'incomplete', node, args, matchedKeywords, error: '% Incomplete command.', errorPos: input.trimEnd().length };
     }
 
     // Node exists but has no action and has children → incomplete
     if (node.children.size > 0) {
-      return { status: 'incomplete', node, args, matchedKeywords, error: '% Incomplete command.' };
+      return { status: 'incomplete', node, args, matchedKeywords, error: '% Incomplete command.', errorPos: input.trimEnd().length };
     }
 
-    return { status: 'incomplete', node, args, matchedKeywords, error: '% Incomplete command.' };
+    return { status: 'incomplete', node, args, matchedKeywords, error: '% Incomplete command.', errorPos: input.trimEnd().length };
   }
 
   // ─── Help & Completion ──────────────────────────────────────────

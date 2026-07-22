@@ -356,8 +356,20 @@ export function finalisePendingAuth(
 ): FinaliseAuthOutcome {
   if (!verifyCredentials(auth.target, auth.user, password)) {
     auth.attempts++;
-    // Best-effort: record the failure for auth.log realism.
+    // Best-effort: record the failure for auth.log realism -- this is also
+    // what feeds a device-wide `login block-for` LoginBlocker, so a failure
+    // recorded HERE (not just OpenSSH's own 3-attempts cap) can be the one
+    // that trips device-wide quiet-mode.
     tryRecordSshLogin(auth, false);
+    const blocker = (auth.target as unknown as {
+      getLoginBlocker?: () => { isBlocked: () => boolean; remainingBlockSeconds: () => number } | null;
+    }).getLoginBlocker?.();
+    if (blocker?.isBlocked()) {
+      return {
+        kind: 'refused',
+        message: `% Blocking new login for ${blocker.remainingBlockSeconds()} secs (quota exceeded)`,
+      };
+    }
     return { kind: 'bad-password' };
   }
 
@@ -447,19 +459,39 @@ function buildLoginBanner(auth: PendingSshAuth): string[] {
     banner.push(`Warning: Permanently added '${auth.host}' (ssh-ed25519) to the list of known hosts.`);
     auth.knownHostsTracker?.add(key);
   }
-  // Device-specific MOTD (Linux servers ship one; Windows / routers do not).
-  const motd = (auth.target as unknown as { getSshMotd?: () => string }).getSshMotd?.();
-  if (motd) {
+  const target = auth.target as unknown as {
+    getSshMotd?: () => string;
+    sshBanner?: () => string;
+    getLastSshLoginFor?: (u: string) => { at: Date; from: string } | null;
+    getBanner?: (kind: string) => string;
+  };
+  // Cisco/Huawei: the real `banner motd` (mirrored into sshBannerText by
+  // `banner motd` itself) — takes priority over the generic per-OS MOTD
+  // concept below, which those device types don't otherwise populate.
+  const ciscoMotd = target.sshBanner?.() ?? '';
+  if (ciscoMotd) {
+    for (const ln of ciscoMotd.replace(/\n+$/, '').split('\n')) {
+      if (ln.length > 0) banner.push(ln);
+    }
+  } else {
+    // Device-specific MOTD (Linux servers ship one; Windows / routers do not).
+    const motd = target.getSshMotd?.() ?? '';
     for (const ln of motd.replace(/\n+$/, '').split('\n')) {
       if (ln.length > 0) banner.push(ln);
     }
   }
   // "Last login: " — best-effort, ISO date if the device exposes one.
   // OpenSSH format: "Last login: Mon Nov 18 14:23:01 2024 from 10.0.0.1"
-  const last = (auth.target as unknown as { getLastSshLoginFor?: (u: string) => { at: Date; from: string } | null })
-    .getLastSshLoginFor?.(auth.user);
+  const last = target.getLastSshLoginFor?.(auth.user);
   if (last) {
     banner.push(`Last login: ${formatLoginDate(last.at)} from ${last.from}`);
+  }
+  // Real IOS/VRP: `banner exec` is shown on every successful EXEC session
+  // start, independent of the client tooling used to reach it.
+  const execBanner = target.getBanner?.('exec') ?? '';
+  if (execBanner) {
+    if (banner.length > 0) banner.push('');
+    for (const ln of execBanner.replace(/\n+$/, '').split('\n')) banner.push(ln);
   }
   return banner;
 }

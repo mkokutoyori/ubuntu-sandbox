@@ -622,12 +622,13 @@ export function runningConfigACL(router: Router): string[] {
     }
   }
 
-  // Named ACLs
+  // Named ACLs — entries carry their sequence number, as IOS renders them.
   for (const acl of acls) {
     if (acl.name) {
       lines.push(`ip access-list ${acl.type} ${acl.name}`);
       for (const entry of acl.entries) {
-        lines.push(` ${formatACLEntry(acl.type, entry).replace(/ \(\d+ match(es)?\)/, '')}`);
+        const seq = entry.sequence !== undefined ? `${entry.sequence} ` : '';
+        lines.push(` ${seq}${formatACLEntry(acl.type, entry).replace(/ \(\d+ match(es)?\)/, '')}`);
       }
     }
   }

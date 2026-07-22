@@ -20,7 +20,7 @@ import type { CommandInteractionPlan } from '@/shell/interaction/CommandInteract
 import type { ISwitchShell } from './ISwitchShell';
 import type { Switch } from '../Switch';
 import { MACAddress, IPAddress, SubnetMask, type PortViolationMode } from '../../core/types';
-import { parsePipeFilter, applyPipeFilter, resolveHuaweiNav } from './cli-utils';
+import { parsePipeFilter, applyPipeFilter, resolveHuaweiNav, HUAWEI_ERRORS } from './cli-utils';
 import {
   displayClock, displayCpuUsage, displayMemoryUsage, displayUsers,
   displayDevice, displayHistoryCommand, displayAlarm, displayElabel,
@@ -437,6 +437,9 @@ export class HuaweiSwitchShell implements ISwitchShell {
   execute(sw: Switch, input: string): string {
     const trimmed = input.trim();
     if (!trimmed) return '';
+    // VRP comment/separator lines: `#` is a silent no-op in every view
+    // (config-file section separator) — pasting a config must not error.
+    if (trimmed.startsWith('#')) return '';
     if (!trimmed.endsWith('?')) this.history.push(trimmed);
 
     // Handle ? for help
@@ -478,19 +481,22 @@ export class HuaweiSwitchShell implements ISwitchShell {
         break;
 
       case 'ambiguous':
-        output = `Error: Ambiguous command "${cmd}"`;
+        // Not `result.error` — CommandTrie's own `.error` is pre-formatted
+        // with Cisco's "%" wording (shared trie code); VRP has its own
+        // "Error: ... found at '^' position." convention with a caret line.
+        output = HUAWEI_ERRORS.AMBIGUOUS(cmd, result.errorPos);
         break;
 
       case 'incomplete':
-        output = 'Error: Incomplete command.';
+        output = HUAWEI_ERRORS.INCOMPLETE(cmd, result.errorPos);
         break;
 
       case 'invalid':
-        output = `Error: Unrecognized command "${cmd}"`;
+        output = HUAWEI_ERRORS.UNRECOGNIZED(cmd, result.errorPos);
         break;
 
       default:
-        output = `Error: Unrecognized command "${cmd}"`;
+        output = HUAWEI_ERRORS.UNRECOGNIZED(cmd);
     }
 
     this.swRef = null;

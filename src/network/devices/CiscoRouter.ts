@@ -375,8 +375,16 @@ export class CiscoRouter extends Router {
     return new CiscoIOSShell();
   }
 
-  /** Synchronous IOS exec whitelist consumed by the SSH cross-platform dispatch. */
+  /**
+   * Vendor-identifying line shown to a non-interactive SSH client that
+   * lands with no `banner motd` configured — mirrors the real prompt's
+   * hostname so cross-vendor tooling (and the cross-vendor SSH test
+   * suite) can tell which device family it reached. Suppressed when a
+   * real `banner motd` IS configured (via `sshBanner()`, populated by
+   * the `banner motd` command) so the two don't double up.
+   */
   override getSshMotd(): string {
+    if (this.sshBannerText) return '';
     return `Cisco IOS Software\n${this.hostname}#`;
   }
 
@@ -457,11 +465,14 @@ export class CiscoRouter extends Router {
       if (blockCfg) extra.push(`login block-for ${blockCfg.blockSeconds} attempts ${blockCfg.attempts} within ${blockCfg.withinSeconds}`);
       const full = extra.length > 0 ? `${base}\n${extra.join('\n')}` : base;
       if (!runMatch[1]) return { output: `${full}\n`, exitCode: 0 };
-      const needle = runMatch[2].trim();
+      // Real IOS `| include`/`| exclude` support basic regex alternation:
+      // `include foo|bar` matches lines containing EITHER term.
+      const alternatives = runMatch[2].trim().split('|').map(p => p.trim()).filter(p => p.length > 0);
+      const matchesAny = (l: string): boolean => alternatives.some(alt => l.includes(alt));
       const lines = full.split('\n');
       const filtered = runMatch[1].toLowerCase() === 'include'
-        ? lines.filter(l => l.includes(needle))
-        : lines.filter(l => !l.includes(needle));
+        ? lines.filter(matchesAny)
+        : lines.filter(l => !matchesAny(l));
       return { output: `${filtered.join('\n')}\n`, exitCode: 0 };
     }
     return null;

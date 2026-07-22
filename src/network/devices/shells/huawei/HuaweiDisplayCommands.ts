@@ -641,6 +641,26 @@ export function displayCurrentConfig(
     }
   }
 
+  const routingExtras = (router as unknown as { getHuaweiRoutingExtras?: () => import('../../router/routing/HuaweiRoutingExtras').HuaweiRoutingExtras }).getHuaweiRoutingExtras?.();
+  if (routingExtras) {
+    const rl = routingExtras.asRunningConfigLines();
+    if (rl.length > 0) { lines.push('#'); lines.push(...rl); }
+  }
+
+  const bfd = (router as unknown as { getHuaweiBfdService?: () => import('../../router/bfd/HuaweiBfdService').HuaweiBfdService }).getHuaweiBfdService?.();
+  if (bfd) {
+    const bl = bfd.asRunningConfigLines();
+    if (bl.length > 0) { lines.push('#'); lines.push(...bl); }
+  }
+
+  const aaaService = (router as unknown as { getHuaweiAaaService?: () => import('../../router/aaa/HuaweiAaaService').HuaweiAaaService }).getHuaweiAaaService?.();
+  if (aaaService) {
+    const al = aaaService.asRunningConfigLines();
+    if (al.length > 0) lines.push(...al);
+  }
+
+  appendManagementConfig(lines, router);
+
   lines.push('#');
   return lines.join('\n');
 }
@@ -869,26 +889,6 @@ export function displayRip(router: Router): string {
   lines.push(`  Routes: ${ripRoutes.size}`);
   for (const [key, info] of ripRoutes) {
     lines.push(`    ${key} cost ${info.metric} via ${info.learnedFrom} age ${info.age}s${info.garbageCollect ? ' [garbage-collect]' : ''}`);
-  }
-
-  appendManagementConfig(lines, router);
-
-  const routingExtras = (router as unknown as { getHuaweiRoutingExtras?: () => import('../../router/routing/HuaweiRoutingExtras').HuaweiRoutingExtras }).getHuaweiRoutingExtras?.();
-  if (routingExtras) {
-    const rl = routingExtras.asRunningConfigLines();
-    if (rl.length > 0) { lines.push('#'); lines.push(...rl); }
-  }
-
-  const bfd = (router as unknown as { getHuaweiBfdService?: () => import('../../router/bfd/HuaweiBfdService').HuaweiBfdService }).getHuaweiBfdService?.();
-  if (bfd) {
-    const bl = bfd.asRunningConfigLines();
-    if (bl.length > 0) { lines.push('#'); lines.push(...bl); }
-  }
-
-  const aaa = (router as unknown as { getHuaweiAaaService?: () => import('../../router/aaa/HuaweiAaaService').HuaweiAaaService }).getHuaweiAaaService?.();
-  if (aaa) {
-    const al = aaa.asRunningConfigLines();
-    if (al.length > 0) { lines.push('#'); lines.push(...al); }
   }
 
   return lines.join('\n');
