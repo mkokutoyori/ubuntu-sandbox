@@ -302,9 +302,21 @@ export const TerminalView: React.FC<TerminalViewProps> = ({ session }) => {
               value={session.getPasswordBuf()}
               onChange={(e) => session.setPasswordBuf(e.target.value)}
               onKeyDown={handleKeyDown}
-              className="absolute overflow-hidden"
+              className="overflow-hidden"
               style={{
-                position: 'absolute',
+                // `fixed` (not `absolute`) deliberately: this input sits
+                // inside a long scrollable output list. Typing into it
+                // moves its native caret, and Chromium reveals a moving
+                // caret by scrolling every ancestor up to and including
+                // `overflow:hidden` ones that were never meant to scroll
+                // (see TerminalModal's wrapper around this component) —
+                // `preventScroll` on focus() doesn't cover that, only the
+                // initial focus. `fixed` positioning takes it out of the
+                // scrollable-ancestor chain entirely, so there is nothing
+                // left for the browser to scroll to "reveal" it.
+                position: 'fixed',
+                top: 0,
+                left: 0,
                 width: '1px',
                 height: '1px',
                 padding: 0,

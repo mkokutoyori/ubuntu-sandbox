@@ -5,16 +5,29 @@ import { test, expect, type Page } from '@playwright/test';
  * mot de passe) dans un terminal Linux avec assez de scrollback casse le
  * rendu : la moitié de l'écran du terminal devient noire.
  *
- * Cause réelle : le champ mot de passe (et 2 autres inputs "cachés" —
- * pager, capture de flux `tail -f`) portait à la fois l'attribut JSX
- * natif `autoFocus` ET un `useEffect` qui refait le focus plus tard.
- * `autoFocus` tire en premier, SANS `preventScroll`, et le navigateur
- * fait défiler un ancêtre `overflow-hidden` (le wrapper autour de
- * TerminalView dans TerminalModal.tsx, qui n'a jamais eu vocation à
- * défiler) de plusieurs centaines de pixels pour "révéler" cet input
- * de 1×1px caché par `clip`. Le contenu réel se retrouve décalé hors
- * champ pendant qu'un fond `fixed` noir à 60% reste ancré au viewport,
- * exposant du noir.
+ * Cause réelle (deux déclencheurs distincts, même symptôme) :
+ *
+ * 1. Le champ mot de passe (et 2 autres inputs "cachés" — pager, capture
+ *    de flux `tail -f`) portait à la fois l'attribut JSX natif
+ *    `autoFocus` ET un `useEffect` qui refait le focus plus tard.
+ *    `autoFocus` tire en premier, SANS `preventScroll`.
+ * 2. Même après avoir corrigé (1), SAISIR du texte dans le champ mot de
+ *    passe (une vraie frappe native, contrairement au pager/tail -f qui
+ *    ne font que forwarder les touches sans jamais laisser le navigateur
+ *    modifier une vraie valeur) redéclenche le même bug : Chromium
+ *    révèle le curseur de saisie qui se déplace en faisant défiler les
+ *    ancêtres — `preventScroll` ne couvre que l'appel `.focus()` initial,
+ *    pas ce défilement déclenché par la frappe elle-même.
+ *
+ * Dans les deux cas, le navigateur fait défiler un ancêtre
+ * `overflow-hidden` (le wrapper autour de TerminalView dans
+ * TerminalModal.tsx, qui n'a jamais eu vocation à défiler) de plusieurs
+ * centaines de pixels pour "révéler" cet input de 1×1px caché par
+ * `clip`. Le contenu réel se retrouve décalé hors champ pendant qu'un
+ * fond `fixed` noir à 60% reste ancré au viewport, exposant du noir.
+ * Fix définitif : `position: fixed` sur le champ mot de passe — il sort
+ * complètement de la chaîne d'ancêtres défilables, donc plus rien à
+ * "révéler" en faisant défiler quoi que ce soit.
  */
 
 async function waitForStore(page: Page): Promise<void> {
@@ -102,5 +115,34 @@ test.describe('Scénario (e2e) — sudo su avec scrollback ne doit pas casser le
       return results;
     });
     expect(stray).toEqual([]);
+  });
+
+  test('taper le mot de passe (vraie frappe, pas juste l\'ouverture du prompt) ne casse pas non plus le rendu', async ({ page }) => {
+    await typeCmd(page, 'seq 1 60');
+    await typeCmd(page, 'sudo su');
+    await expect(page.getByText('password for user')).toBeVisible({ timeout: 5_000 });
+
+    // A real native keystroke into the password field — unlike focusing
+    // it, this moves the browser's own text-insertion caret, which is
+    // the SECOND, separate trigger for the same class of bug.
+    await page.keyboard.type('secret', { delay: 30 });
+    await page.waitForTimeout(300);
+
+    const stray = await page.evaluate(() => {
+      const pwInput = document.querySelector('input[type="password"]');
+      const results: Array<{ cls: string; scrollTop: number }> = [];
+      let el: HTMLElement | null = pwInput as HTMLElement | null;
+      let depth = 0;
+      while (el && depth < 20) {
+        if (el.scrollTop > 0 && !el.className.toString().includes('overflow-auto')) {
+          results.push({ cls: el.className.toString().slice(0, 80), scrollTop: el.scrollTop });
+        }
+        el = el.parentElement;
+        depth++;
+      }
+      return results;
+    });
+    expect(stray).toEqual([]);
+    expect(await page.locator('input[type="password"]').inputValue()).toBe('secret');
   });
 });
