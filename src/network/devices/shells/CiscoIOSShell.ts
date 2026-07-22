@@ -874,7 +874,13 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       const isViewModifier = last === 'accounting' || last === 'stats' || last === 'switchport';
       const ifPart = isViewModifier ? args.slice(0, -1).join(' ') : args.join(' ');
       const ifName = resolveInterfaceName(getRouter(), ifPart);
-      if (!ifName) return `% Invalid input detected at '^' marker.\nshow interface ${args.join(' ')}\n     ^`;
+      if (!ifName) {
+        const line = `show interface ${args.join(' ')}`;
+        // `ifPart` (the invalid argument) always starts right after the
+        // fixed "show interface " prefix, regardless of the view modifier.
+        const marker = ' '.repeat('show interface '.length) + '^';
+        return `% Invalid input detected at '^' marker.\n${line}\n${marker}`;
+      }
       if (last === 'accounting') return Show.showInterfaceAccounting(getRouter(), ifName);
       if (last === 'stats') return Show.showInterfaceStats(getRouter(), ifName);
       if (last === 'switchport') return Show.showInterfaceSwitchport(getRouter(), ifName);

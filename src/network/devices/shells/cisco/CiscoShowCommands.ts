@@ -124,7 +124,11 @@ function formatArpTimeout(totalSec: number): string {
 export function showInterface(router: { _getPortsInternal: () => Map<string, import('../../../hardware/Port').Port> }, ifName: string): string {
   const ports = router._getPortsInternal();
   const port = ports.get(ifName);
-  if (!port) return `% Invalid input detected at \'^\' marker.\nshow interface ${ifName}\n     ^`;
+  if (!port) {
+    const line = `show interface ${ifName}`;
+    const marker = ' '.repeat(line.indexOf(ifName)) + '^';
+    return `% Invalid input detected at '^' marker.\n${line}\n${marker}`;
+  }
 
   const isUp = port.getIsUp();
   const connected = port.isConnected();
