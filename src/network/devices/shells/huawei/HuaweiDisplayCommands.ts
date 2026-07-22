@@ -1471,14 +1471,26 @@ export function registerDisplayCommands(
     const ex = (getRouter() as unknown as { getHuaweiRoutingExtras?: () => import('../../router/routing/HuaweiRoutingExtras').HuaweiRoutingExtras }).getHuaweiRoutingExtras?.();
     const bgp = ex?.getBgp();
     if (!bgp) return 'Info: BGP is not running.';
+    // Peering/session state comes from the real BGPEngine (same engine
+    // Cisco routers use) — the facade above only supplies configured
+    // metadata (router-id, peer list) it doesn't model. Audit 02:
+    // `display bgp peer` used to fabricate "Idle"/0 regardless of the
+    // real session state.
+    const e = getRouter().getBGPEngine();
+    getRouter().convergeDynamicRouting();
+    const byId = new Map(e.getNeighbors().map((n) => [n.id, n]));
+    const established = [...byId.values()].filter((n) => n.state === 'Established').length;
     const lines = [
       `BGP local router ID : ${bgp.routerId ?? '0.0.0.0'}`,
       `Local AS number : ${bgp.asn}`,
-      `Total number of peers : ${bgp.peers.size}              Peers in established state : 0`,
+      `Total number of peers : ${bgp.peers.size}              Peers in established state : ${established}`,
       '  Peer            V          AS  MsgRcvd  MsgSent  OutQ  Up/Down       State PrefRcv',
     ];
-    for (const [, p] of bgp.peers) {
-      lines.push(`  ${p.ip.padEnd(15)}  4    ${String(p.asNumber ?? bgp.asn).padEnd(5)}     0        0     0  00:00:00          Idle       0`);
+    for (const [ip, p] of bgp.peers) {
+      const v = byId.get(ip);
+      const upDown = v && v.isUp ? `${v.uptimeSec}s` : '00:00:00';
+      const state = v ? v.state : 'Idle';
+      lines.push(`  ${ip.padEnd(15)}  4    ${String(p.asNumber ?? bgp.asn).padEnd(5)}     0        0     0  ${upDown.padEnd(8)}      ${state}       0`);
     }
     return lines.join('\n');
   });
@@ -1487,13 +1499,24 @@ export function registerDisplayCommands(
     const ex = (getRouter() as unknown as { getHuaweiRoutingExtras?: () => import('../../router/routing/HuaweiRoutingExtras').HuaweiRoutingExtras }).getHuaweiRoutingExtras?.();
     const bgp = ex?.getBgp();
     if (!bgp) return 'Info: BGP is not running.';
+    // Real Loc-RIB (learned + originated routes), not just the
+    // locally-configured `network` statements — audit 02: this used to
+    // list configured networks verbatim with a fabricated next-hop
+    // (0.0.0.0) regardless of whether they were ever actually learned
+    // or reachable.
+    const e = getRouter().getBGPEngine();
+    getRouter().convergeDynamicRouting();
+    const table = e.getBgpTable();
     const lines = [
       `BGP Local router ID : ${bgp.routerId ?? '0.0.0.0'}`,
-      ' Total Number of Routes: ' + bgp.networks.length,
+      ' Total Number of Routes: ' + table.length,
       ' Network            NextHop         MED        LocPrf    PrefVal Path/Ogn',
     ];
-    for (const n of bgp.networks) {
-      lines.push(` ${(n.ip + '/' + n.mask).padEnd(19)}0.0.0.0         0          100       0       i`);
+    for (const r of table) {
+      const prefix = `${r.network}/${r.mask.toCIDR()}`;
+      const nextHop = String(r.nextHop ?? '0.0.0.0');
+      const path = r.asPath.length ? `${r.asPath.join(' ')} i` : 'i';
+      lines.push(` ${prefix.padEnd(19)}${nextHop.padEnd(16)}0          ${String(r.localPref).padEnd(10)}${String(r.weight).padEnd(8)}${path}`);
     }
     return lines.join('\n');
   });
