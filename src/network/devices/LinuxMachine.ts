@@ -2032,6 +2032,28 @@ export abstract class LinuxMachine extends EndHost
     return null;
   }
 
+  /** IPv6 counterpart of `resolveHostnameOverWire` — `ping6`/`ping -6`
+   *  previously only accepted literal addresses, so `/etc/hosts` entries
+   *  like `::1 localhost ip6-localhost` never resolved. */
+  private async resolveHostname6OverWire(name: string): Promise<IPv6Address | null> {
+    try { return new IPv6Address(name); } catch { void 0; }
+
+    const r = this.executor.nss.lookup<NssHostEntry[]>(
+      'hosts', s => s.gethostbyname?.(name, 10),
+    );
+    if (r.status === 'SUCCESS' && r.entry) {
+      for (const h of r.entry) {
+        if (h.addressFamily !== 10) continue;
+        try { return new IPv6Address(h.address); } catch { void 0; }
+      }
+    }
+    return null;
+  }
+
+  protected override async resolveHost6ForCommand(targetStr: string): Promise<IPv6Address | null> {
+    return this.resolveHostname6OverWire(targetStr);
+  }
+
   // ─── LinuxNetKernel façade (closes over EndHost protected members) ──
 
   private getIfIndex(name: string): number {
@@ -2219,6 +2241,9 @@ export abstract class LinuxMachine extends EndHost
       },
       resolveHostname: (name: string): Promise<IPAddress | null> => {
         return this.resolveHostnameOverWire(name);
+      },
+      resolveHostname6: (name: string): Promise<IPv6Address | null> => {
+        return this.resolveHostname6OverWire(name);
       },
       resolveHostnameSync: (name: string): IPAddress | null => {
         try { return new IPAddress(name); } catch { /* not a literal address */ }

@@ -334,6 +334,15 @@ export abstract class EndHost extends Equipment {
   /** Default TTL for outgoing packets (Linux=64, Windows=128) */
   protected abstract readonly defaultTTL: number;
   protected abstract resolveHostForCommand(targetStr: string): Promise<IPAddress | null>;
+  /**
+   * IPv6 counterpart of `resolveHostForCommand` — default is a literal-only
+   * parse (matches the historical `ping6`/`ping -6` behavior). Overridden
+   * by `LinuxMachine` to also consult `/etc/hosts`/DNS via NSS, the same
+   * way the IPv4 path already does.
+   */
+  protected async resolveHost6ForCommand(targetStr: string): Promise<IPv6Address | null> {
+    try { return new IPv6Address(targetStr); } catch { return null; }
+  }
   /** Default Hop Limit for IPv6 (typically same as TTL) */
   protected get defaultHopLimit(): number { return this.defaultTTL; }
 
@@ -3936,18 +3945,23 @@ export abstract class EndHost extends Equipment {
     return { resolved: true };
   }
 
-  ping6StreamInSession(
-    targetIP: IPv6Address,
+  async ping6StreamInSession(
+    targetStr: string,
     opts: {
       count: number;
       timeoutMs?: number;
       intervalMs?: number;
+      onResolved?: (ip: IPv6Address) => void;
       onResult: (result: PingResult) => void;
       shouldStop: () => boolean;
       sleep: (ms: number) => Promise<void>;
     },
-  ): Promise<{ resolved: boolean }> {
-    return this.executePing6Stream(targetIP, opts);
+  ): Promise<{ resolved: boolean; reason?: 'name' | 'unreachable' }> {
+    const ip = await this.resolveHost6ForCommand(targetStr);
+    if (!ip) return { resolved: false, reason: 'name' };
+    opts.onResolved?.(ip);
+    const outcome = await this.executePing6Stream(ip, opts);
+    return outcome.resolved ? { resolved: true } : { resolved: false, reason: 'unreachable' };
   }
 
   // ─── Router Solicitation ────────────────────────────────────────

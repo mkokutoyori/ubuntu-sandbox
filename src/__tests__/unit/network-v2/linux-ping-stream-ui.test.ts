@@ -165,4 +165,23 @@ describe('Linux ping -6 — the IPv6 path streams in real time too, not just IPv
     await waitFor(session, (l) => l.some((t) => t.includes('Network is unreachable')), 4000);
     expect(texts(session).some((t) => t.includes('Network is unreachable'))).toBe(true);
   });
+
+  it('resolves localhost from /etc/hosts in the interactive streaming path too', async () => {
+    session.setInput('ping -6 -c 1 localhost');
+    session.handleKey(key('Enter'));
+
+    await waitFor(session, (l) => l.some((t) => t.includes('ping statistics')), 3000);
+    const lines = texts(session);
+    expect(lines.some((t) => t.startsWith('PING localhost(::1)'))).toBe(true);
+    expect(lines.some((t) => t.includes('bytes from ::1'))).toBe(true);
+    expect(lines.some((t) => t.includes('Name or service not known'))).toBe(false);
+  });
+
+  it('an unresolvable IPv6 hostname still reports "Name or service not known"', async () => {
+    session.setInput('ping -6 -c 1 not-a-real-host');
+    session.handleKey(key('Enter'));
+
+    await waitFor(session, (l) => l.some((t) => t.includes('Name or service not known')), 3000);
+    expect(texts(session).some((t) => t.includes('not-a-real-host: Name or service not known'))).toBe(true);
+  });
 });

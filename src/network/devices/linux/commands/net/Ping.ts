@@ -375,14 +375,13 @@ async function runPing(
   }
 
   if (parsed.v6 || rawTarget.includes(':')) {
-    let targetIP6: IPv6Address;
-    try {
-      targetIP6 = new IPv6Address(rawTarget);
-    } catch {
+    const targetIP6 = await ctx.net.resolveHostname6(rawTarget);
+    if (!targetIP6) {
       return `${cmdName}: ${rawTarget}: Name or service not known`;
     }
     const results = await ctx.net.ping6Sequence(targetIP6, parsed.count, parsed.timeoutMs);
-    return ctx.fmt.formatPing6Output(targetIP6, parsed.count, results, parsed.size);
+    const isHostname6 = rawTarget !== targetIP6.toString();
+    return ctx.fmt.formatPing6Output(targetIP6, parsed.count, results, parsed.size, isHostname6 ? rawTarget : undefined);
   }
 
   const targetIP = await ctx.net.resolveHostname(rawTarget);

@@ -10,7 +10,7 @@
  */
 
 import { Equipment, type HostCapableDevice } from '@/network';
-import { IPAddress, IPv6Address } from '@/network/core/types';
+import { IPAddress } from '@/network/core/types';
 import { parsePingArgs } from '@/network/devices/linux/commands/net/Ping';
 import { parseTracerouteArgs } from '@/network/devices/linux/commands/net/Traceroute';
 import { parseMtrArgs, MtrHopStats, formatMtrFrame, MTR_USAGE, MTR_VERSION, type MtrHopProbe } from '@/network/devices/linux/Mtr';
@@ -900,29 +900,25 @@ export class LinuxTerminalSession extends TerminalSession {
     };
 
     if (parsed.v6) {
-      let targetIP6: IPv6Address;
-      try {
-        targetIP6 = new IPv6Address(parsed.targetStr.replace(/^['"]|['"]$/g, '').trim());
-      } catch {
-        return false; // malformed literal — fall through to runPing's own error message
-      }
       const job = this.startAsyncCommand({
         mode: 'foreground',
         kind: 'streaming',
         command: commandLine,
-        prepare: (ctx) => { ctx.sink.line(formatPing6Header(targetIP6, parsed.size)); return true; },
         run: async (ctx) => {
-          const outcome = await dev.ping6StreamInSession(targetIP6, {
+          const outcome = await dev.ping6StreamInSession(parsed.targetStr, {
             count: streamCount,
             timeoutMs: parsed.timeoutMs,
             intervalMs: parsed.intervalMs,
+            onResolved: (ip) => { targetLabel = ip.toString(); ctx.sink.line(formatPing6Header(ip, parsed.size, parsed.targetStr !== ip.toString() ? parsed.targetStr : undefined)); },
             onResult: (r) => { results.push(r); const line = formatPingReplyLine(r, parsed.size); if (line !== null) ctx.sink.line(line); },
             shouldStop: () => ctx.cancelled() || deadlineHit(),
             sleep: (ms) => ctx.delay(ms),
           });
           if (ctx.cancelled()) return;
           if (!outcome.resolved && results.length === 0) {
-            ctx.sink.error('connect: Network is unreachable');
+            ctx.sink.error(outcome.reason === 'name'
+              ? `ping6: ${parsed.targetStr}: Name or service not known`
+              : 'connect: Network is unreachable');
             return;
           }
           emitStats(ctx);
