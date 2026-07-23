@@ -2484,9 +2484,54 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
   private _startupConfigSnapshot: string | null = null;
   _captureStartupConfig(snapshot: string): void { this._startupConfigSnapshot = snapshot; }
   _eraseStartupConfig(): void { this._startupConfigSnapshot = null; }
-  _restoreStartupConfig(): boolean {
-    return this._startupConfigSnapshot !== null;
+
+  /** Real rendered running-config text (`show running-config`), delegated
+   *  to the vendor shell since Cisco/Huawei render completely different
+   *  dialects (mirrors `getRunningConfigText` on `IRouterShell`). */
+  getRunningConfig(): string {
+    return this.shell.getRunningConfigText?.(this) ?? '';
   }
+
+  /** `write memory` / `save` — capture the live config text as NVRAM. */
+  writeMemory(): string {
+    this._startupConfigSnapshot = this.getRunningConfig();
+    return '[OK]';
+  }
+
+  /** @internal Re-apply NVRAM onto the live config (`copy startup-config
+   *  running-config`). Returns false when NVRAM is empty. */
+  _restoreStartupConfig(): boolean {
+    if (this._startupConfigSnapshot === null) return false;
+    this._applyConfigText(this._startupConfigSnapshot);
+    return true;
+  }
+
+  /** @internal Re-apply arbitrary saved config text onto live state — the
+   *  vendor shell owns the parsing since Cisco/Huawei config text differs
+   *  (interface naming, `hostname` vs `sysname`, `ip route` vs
+   *  `ip route-static`, …), mirroring `getRunningConfig`'s delegation. */
+  _applyConfigText(text: string): void {
+    this.shell.applyConfigText?.(this, text);
+  }
+
+  /**
+   * @internal Discard the unsaved slice of running-config that
+   * `_applyConfigText` knows how to replay (interface addressing/state and
+   * static routes) before a `reload` boots from NVRAM — a real router loses
+   * exactly this kind of in-memory-only change on power-cycle. Deliberately
+   * scoped to what gets rendered/re-applied above; ACL/NAT/OSPF/etc. object
+   * state is untouched here (see rapport 04 §5.9 for the narrower-than-full
+   * fidelity this mirrors from `Switch._applyConfigText`).
+   */
+  _resetConfigurableStateForReload(): void {
+    for (const ifName of [...this.ports.keys()]) {
+      this.unconfigureInterface(ifName);
+      this.setInterfaceDescription(ifName, '');
+      this.ports.get(ifName)?.setUp(true);
+    }
+    this.routingTable = this.routingTable.filter(r => r.type !== 'static' && r.type !== 'default');
+  }
+
   getStartupConfigSnapshot(): string | null { return this._startupConfigSnapshot; }
 
   private _routingTableLimit: { max: number; thresholdPct?: number } | null = null;

@@ -21,7 +21,7 @@ import type { Router } from '../Router';
 import type { IRouterShell } from './IRouterShell';
 import { CiscoShellBase } from './CiscoShellBase';
 import { CommandTrie } from './CommandTrie';
-import { IPAddress } from '../../core/types';
+import { IPAddress, SubnetMask } from '../../core/types';
 import { parsePingArgs, formatCiscoPing } from './cisco/ciscoPing';
 import type { PromptMap } from './PromptBuilder';
 import { CISCO_IOS_PROMPTS } from './PromptBuilder';
@@ -445,26 +445,79 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     return 'router-isr2911';
   }
 
-  /** Real saved configuration (null until first `write memory`). */
-  private startupConfig: string | null = null;
   private startupAliases: ReturnType<typeof this.aliases.snapshot> | null = null;
 
+  /** `show running-config` text — source for `write memory`/NVRAM (Router.getRunningConfig). */
+  getRunningConfigText(router: Router): string {
+    return Show.showRunningConfig(router);
+  }
+
+  /** Re-apply saved config text onto live router state (`copy start run`, `reload`). */
+  applyConfigText(router: Router, text: string): void {
+    let curIface: string | null = null;
+    for (const raw of text.split('\n')) {
+      const line = raw.trim();
+      if (!line || line === '!' ||
+          line.startsWith('Building config') || line.startsWith('Current configuration')) continue;
+      let g: RegExpMatchArray | null;
+      if (!/^\s/.test(raw)) {
+        curIface = null;
+        if ((g = line.match(/^hostname\s+(\S+)/))) {
+          router._setHostnameInternal(g[1]);
+        } else if ((g = line.match(/^interface\s+(\S+)/))) {
+          curIface = g[1];
+        } else if ((g = line.match(/^ip route\s+(\S+)\s+(\S+)\s+(\S+)/))) {
+          try {
+            const mask = new SubnetMask(g[2]);
+            const nextHop = new IPAddress(g[3]);
+            if (g[1] === '0.0.0.0' && g[2] === '0.0.0.0') router.setDefaultRoute(nextHop);
+            else router.addStaticRoute(new IPAddress(g[1]), mask, nextHop);
+          } catch { /* malformed saved line — skip like real IOS would reject it */ }
+        }
+        continue;
+      }
+      if (!curIface) continue;
+      if ((g = line.match(/^description\s+(.+)/))) {
+        router.setInterfaceDescription(curIface, g[1]);
+      } else if ((g = line.match(/^ip address\s+(\S+)\s+(\S+)(\s+secondary)?/))) {
+        try {
+          router.configureInterface(curIface, new IPAddress(g[1]), new SubnetMask(g[2]), !!g[3]);
+        } catch { /* malformed saved line — skip */ }
+      } else if (line === 'shutdown') {
+        router.getPort(curIface)?.setUp(false);
+      } else if (line === 'no shutdown') {
+        router.getPort(curIface)?.setUp(true);
+      }
+    }
+  }
+
   protected onSave(): string {
-    this.startupConfig = Show.showRunningConfig(this.d());
+    this.d().writeMemory();
     this.startupAliases = this.aliases.snapshot();
     return 'Building configuration...\n[OK]';
   }
 
   protected override onErase(): void {
     super.onErase();
-    this.startupConfig = null;
     this.startupAliases = null;
+  }
+
+  private reloadFromNvram(device: Router): void {
+    device._resetConfigurableStateForReload();
+    device._restoreStartupConfig();
   }
 
   protected override performImmediateReload(): string {
     const out = super.performImmediateReload();
+    this.reloadFromNvram(this.d());
     if (this.startupAliases) this.aliases.restore(this.startupAliases);
     return out;
+  }
+
+  protected override performScheduledReload(device: Router): void {
+    super.performScheduledReload(device);
+    this.reloadFromNvram(device);
+    if (this.startupAliases) this.aliases.restore(this.startupAliases);
   }
 
   protected override cmdExit(): string {
@@ -825,9 +878,9 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     trie.register('show ip interface brief', 'Display interface status summary', () => Show.showIpIntBrief(getRouter()));
     trie.register('show running-config', 'Display running configuration', () => Show.showRunningConfig(getRouter()));
     trie.register('show startup-config', 'Display saved configuration', () =>
-      this.startupConfig ?? '% startup-config is not present');
+      getRouter().getStartupConfigSnapshot() ?? '% startup-config is not present');
     trie.register('show configuration', 'Display saved configuration', () =>
-      this.startupConfig ?? '% startup-config is not present');
+      getRouter().getStartupConfigSnapshot() ?? '% startup-config is not present');
     trie.register('show ip rip database', 'Display RIP database', () => Show.showIpRipDatabase(getRouter()));
     // BGP/EIGRP/RIP-extras + show ip protocols come from the
     // RoutingConfigRepository (registerRoutingProtoShow), so they

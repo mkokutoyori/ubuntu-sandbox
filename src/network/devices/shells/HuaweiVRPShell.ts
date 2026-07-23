@@ -30,12 +30,12 @@ import { NetworkOsAccount, type AccountServiceType, type PasswordHashAlgorithm }
 import {
   registerHuaweiCommonSecurity, registerHuaweiCommonSecurityDisplay,
 } from './huawei/HuaweiCommonSecurity';
-import { IPAddress } from '../../core/types';
+import { IPAddress, SubnetMask } from '../../core/types';
 
 // Extracted command modules
 import {
   type HuaweiDisplayState,
-  registerDisplayCommands, displayCurrentConfig,
+  registerDisplayCommands, displayCurrentConfig, resolveHuaweiInterfaceName,
 } from './huawei/HuaweiDisplayCommands';
 import { huaweiInteractionPlanFor } from './huawei/HuaweiInteractionPlans';
 import type { CommandInteractionPlan } from '@/shell/interaction/CommandInteraction';
@@ -303,16 +303,52 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     return this.routerRef;
   }
 
+  /** `display current-configuration` text — source for `save` (Router.getRunningConfig). */
+  getRunningConfigText(router: Router): string {
+    return displayCurrentConfig(router, this.dhcpEnabled, this.dhcpSnoopingEnabled, this.dhcpSelectGlobalSet);
+  }
+
+  /** Re-apply saved config text onto live router state (VRP reboot). */
+  applyConfigText(router: Router, text: string): void {
+    let curIface: string | null = null;
+    for (const raw of text.split('\n')) {
+      const line = raw.trim();
+      if (!line || line === '#') { curIface = null; continue; }
+      let g: RegExpMatchArray | null;
+      if (!/^\s/.test(raw)) {
+        curIface = null;
+        if ((g = line.match(/^sysname\s+(\S+)/))) {
+          router._setHostnameInternal(g[1]);
+        } else if ((g = line.match(/^interface\s+(\S+)/))) {
+          curIface = resolveHuaweiInterfaceName(router, g[1]) ?? g[1];
+        } else if ((g = line.match(/^ip route-static\s+(\S+)\s+(\S+)\s+(\S+)/))) {
+          try {
+            const mask = /^\d+$/.test(g[2]) ? SubnetMask.fromCIDR(parseInt(g[2], 10)) : new SubnetMask(g[2]);
+            const nextHop = new IPAddress(g[3]);
+            if (g[1] === '0.0.0.0' && mask.toString() === '0.0.0.0') router.setDefaultRoute(nextHop);
+            else router.addStaticRoute(new IPAddress(g[1]), mask, nextHop);
+          } catch { /* malformed saved line — skip like real VRP would reject it */ }
+        }
+        continue;
+      }
+      if (!curIface) continue;
+      if ((g = line.match(/^description\s+(.+)/))) {
+        router.setInterfaceDescription(curIface, g[1]);
+      } else if ((g = line.match(/^ip address\s+(\S+)\s+(\S+)/))) {
+        try { router.configureInterface(curIface, new IPAddress(g[1]), new SubnetMask(g[2])); } catch { /* malformed */ }
+      } else if (line === 'shutdown') {
+        router.getPort(curIface)?.setUp(false);
+      }
+    }
+  }
+
   /**
    * Capture the current configuration as the device's startup snapshot —
    * the state `display saved-configuration` renders and
    * `reset saved-configuration` clears.
    */
   private captureSavedConfiguration(): void {
-    const text = displayCurrentConfig(
-      this.r(), this.dhcpEnabled, this.dhcpSnoopingEnabled, this.dhcpSelectGlobalSet,
-    );
-    this.r()._captureStartupConfig(text);
+    this.r().writeMemory();
   }
 
   /** Command-owned interactive flows (IoC) — see HuaweiInteractionPlans. */
@@ -327,6 +363,8 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     r.powerOn();
     this.mode = 'user';
     this.selectedInterface = null;
+    r._resetConfigurableStateForReload();
+    r._restoreStartupConfig();
     return 'Info: The system is rebooting ...\nSystem restart completed.';
   }
 
