@@ -167,6 +167,30 @@ export class GetADDomainControllerCmdlet implements ICmdlet {
   }
 }
 
+/** `Remove-ADDomainController` — accepts `-Identity` or a `Get-ADDomainController` object piped in (its `.Name`/`.HostName`). */
+export class RemoveADDomainControllerCmdlet implements ICmdlet {
+  readonly name = 'remove-addomaincontroller';
+  readonly displayName = 'Remove-ADDomainController';
+  readonly aliases = [] as const;
+  readonly parameters = ['Identity', 'Confirm'] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const ad = requireAd(ctx, 'Remove-ADDomainController');
+    let identity = identityOf(ctx);
+    if (!identity && ctx.pipeInput !== null && typeof ctx.pipeInput === 'object' && !Array.isArray(ctx.pipeInput)) {
+      const piped = ctx.pipeInput as Record<string, PSValue>;
+      identity = psValueToString(piped['Name'] ?? piped['HostName'] ?? '');
+    }
+    if (!identity) {
+      ctx.emitError('Remove-ADDomainController : Cannot process command because of one or more missing mandatory parameters: Identity.');
+      return null;
+    }
+    const res = ad.removeDomainController(identity);
+    if (!res.ok) ctx.emitError(`Remove-ADDomainController : ${res.message}`);
+    return null;
+  }
+}
+
 function dcToPSObject(c: AdComputerInfo): Record<string, PSValue> {
   return { Name: c.name, HostName: c.name, Enabled: c.enabled, DistinguishedName: c.dn };
 }
@@ -678,7 +702,60 @@ function forestToPSObject(f: AdForestInfo): Record<string, PSValue> {
     ForestMode: f.functionalLevel,
     Domains: f.domains.map(d => d.dnsName),
     RootDomain: f.domains.find(d => !d.parentDnsName)?.dnsName ?? '',
+    SchemaMaster: f.schemaMaster,
+    DomainNamingMaster: f.domainNamingMaster,
   };
+}
+
+// ── Get-ADDomain ─────────────────────────────────────────────────────────
+
+export class GetADDomainCmdlet implements ICmdlet {
+  readonly name = 'get-addomain';
+  readonly displayName = 'Get-ADDomain';
+  readonly aliases = [] as const;
+  readonly parameters = ['Identity'] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const ad = requireAd(ctx, 'Get-ADDomain');
+    const domain = ad.getDomain();
+    if (!domain) { ctx.emitError('Get-ADDomain : Unable to contact the server.'); return null; }
+    return {
+      DNSRoot: domain.dnsRoot,
+      NetBIOSName: domain.netBiosName,
+      DomainMode: domain.domainMode,
+      InfrastructureMaster: domain.infrastructureMaster,
+      PDCEmulator: domain.pdcEmulator,
+      RIDMaster: domain.ridMaster,
+    } as Record<string, PSValue>;
+  }
+}
+
+// ── Move-ADDirectoryServerOperationMasterRole (FSMO transfer/seizure) ────
+
+export class MoveADDirectoryServerOperationMasterRoleCmdlet implements ICmdlet {
+  readonly name = 'move-addirectoryserveroperationmasterrole';
+  readonly displayName = 'Move-ADDirectoryServerOperationMasterRole';
+  readonly aliases = [] as const;
+  readonly parameters = ['Identity', 'OperationMasterRole', 'Force', 'Confirm'] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const ad = requireAd(ctx, 'Move-ADDirectoryServerOperationMasterRole');
+    const identity = identityOf(ctx);
+    if (!identity) {
+      ctx.emitError('Move-ADDirectoryServerOperationMasterRole : Cannot process command because of one or more missing mandatory parameters: Identity.');
+      return null;
+    }
+    const rolesRaw = ctx.named['operationmasterrole'];
+    if (rolesRaw === undefined) {
+      ctx.emitError('Move-ADDirectoryServerOperationMasterRole : Cannot process command because of one or more missing mandatory parameters: OperationMasterRole.');
+      return null;
+    }
+    const roles = (Array.isArray(rolesRaw) ? rolesRaw : [rolesRaw]).map(psValueToString);
+    const force = ctx.named['force'] === true;
+    const res = ad.moveOperationMasterRole(identity, roles, force);
+    if (!res.ok) ctx.emitError(`Move-ADDirectoryServerOperationMasterRole : ${res.message}`);
+    return null;
+  }
 }
 
 // ── Trusts + cross-realm referrals (PRD-Windows-Server-Advanced.md §5 P9) ──

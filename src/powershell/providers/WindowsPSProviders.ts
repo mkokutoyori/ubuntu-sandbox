@@ -55,7 +55,7 @@ import type {
   IRoleProvider, WindowsFeatureInfo,
   ISmbProvider, SmbShareInfo, SmbSessionInfo,
   IAdProvider, AdUserInfo, AdGroupInfo, AdComputerInfo, AdOrgUnitInfo, AdOpResult, AdSiteInfo,
-  AdAttributeSchemaInfo, AdObjectClassSchemaInfo, AdForestInfo, AdTrustInfo,
+  AdAttributeSchemaInfo, AdObjectClassSchemaInfo, AdForestInfo, AdDomainInfo, AdTrustInfo,
   IComputerProvider, DomainMembershipInfo,
   IGpoProvider, GpoInfo,
   IIisProvider, IisOpResult, WebsiteInfo, AppPoolInfo, NewAppPoolOptions, WebModuleInfo,
@@ -396,6 +396,13 @@ class WindowsAdAdapter implements IAdProvider {
     return store.listDomainControllers().map(c => ({ name: c.name, dn: c.dn, enabled: c.enabled, servicePrincipalNames: c.servicePrincipalNames }));
   }
 
+  removeDomainController(name: string): AdOpResult {
+    const store = this.requireStore('Remove-ADDomainController');
+    const denied = this.requireAdmin('Remove-ADDomainController');
+    if (denied) return denied;
+    return store.removeComputer(name);
+  }
+
   newUser(sam: string, opts: { password: string; fullName?: string; path?: string; enabled?: boolean; department?: string; title?: string }): AdOpResult {
     const store = this.requireStore('New-ADUser');
     const denied = this.requireAdmin('New-ADUser');
@@ -538,12 +545,45 @@ class WindowsAdAdapter implements IAdProvider {
     return server.newADDomain(newDomainDnsName, netbiosName, parentDomainName, parentDcAddress, credentialUser, credentialPassword, safeModeAdminPassword);
   }
 
+  private fqdn(shortHostname: string): string {
+    const dnsName = this.pc.getDirectoryStore()?.dnsName;
+    if (!shortHostname) return '';
+    return dnsName ? `${shortHostname}.${dnsName}` : shortHostname;
+  }
+
   getForest(): AdForestInfo | null {
     this.requireRole('Get-ADForest');
     const server = this.pc as WindowsServer;
     const forest = typeof server.getForest === 'function' ? server.getForest() : null;
     if (!forest) return null;
-    return { functionalLevel: forest.functionalLevel, domains: forest.listDomains().map(d => ({ ...d })) };
+    const fsmo = forest.getFsmoRoles();
+    return {
+      functionalLevel: forest.functionalLevel, domains: forest.listDomains().map(d => ({ ...d })),
+      schemaMaster: this.fqdn(fsmo.schemaMaster), domainNamingMaster: this.fqdn(fsmo.domainNamingMaster),
+    };
+  }
+
+  getDomain(): AdDomainInfo | null {
+    this.requireRole('Get-ADDomain');
+    const store = this.pc.getDirectoryStore();
+    if (!store) return null;
+    return {
+      dnsRoot: store.dnsName, netBiosName: store.netbiosName, domainMode: 'Windows2016Domain',
+      infrastructureMaster: this.fqdn(store.getDomainFsmoRoleOwner('InfrastructureMaster')),
+      pdcEmulator: this.fqdn(store.getDomainFsmoRoleOwner('PDCEmulator')),
+      ridMaster: this.fqdn(store.getDomainFsmoRoleOwner('RIDMaster')),
+    };
+  }
+
+  moveOperationMasterRole(targetHostname: string, roles: string[], force: boolean): AdOpResult {
+    this.requireRole('Move-ADDirectoryServerOperationMasterRole');
+    const denied = this.requireAdmin('Move-ADDirectoryServerOperationMasterRole');
+    if (denied) return denied;
+    const server = this.pc as WindowsServer;
+    if (typeof server.moveOperationMasterRole !== 'function') {
+      return { ok: false, message: 'Move-ADDirectoryServerOperationMasterRole : This computer is not a domain controller.' };
+    }
+    return server.moveOperationMasterRole(targetHostname, roles, force);
   }
 
   newTrust(

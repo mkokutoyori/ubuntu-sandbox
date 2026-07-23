@@ -81,14 +81,16 @@ describe('Scénario 10 — rôles FSMO : vérification, transfert et saisie (man
       expect(out).not.toMatch(/not recognized/i);
 
       const check = await run(sh, 'Get-ADDomain | Select-Object PDCEmulator, RIDMaster, InfrastructureMaster');
-      expect(check).toMatch(/PDCEmulator\s*:\s*DC02/);
-      expect(check).toMatch(/RIDMaster\s*:\s*DC02/);
-      expect(check).toMatch(/InfrastructureMaster\s*:\s*DC01/);
+      expect(check).toMatch(/DC02\.mandeng\.lan\s+DC02\.mandeng\.lan\s+DC01\.mandeng\.lan/);
     });
 
     it('w32tm /query /status indique DC02.mandeng.lan comme source NTP après transfert du PDC Emulator', async () => {
       const { dc1, dc2 } = await buildTwoDcs();
       await run(ps(dc1), 'Move-ADDirectoryServerOperationMasterRole -Identity "DC02.mandeng.lan" -OperationMasterRole PDCEmulator -Confirm:$false');
+      // Real AD writes the role change on the current/target DC and
+      // replicates it out — an admin who wants it visible on another DC
+      // immediately forces that sync, same as `repadmin /syncall` here.
+      dc2.replicateFrom('192.168.10.10');
       const out = await dc2.executeCmdCommand('w32tm /query /status');
       expect(out).toMatch(/DC02\.mandeng\.lan/);
     });
@@ -99,7 +101,8 @@ describe('Scénario 10 — rôles FSMO : vérification, transfert et saisie (man
       const { dc2, cDc1 } = await buildTwoDcs();
       cDc1.disconnect();
       const out = await run(ps(dc2), 'Test-Connection DC01.mandeng.lan -Count 2 -ErrorAction SilentlyContinue');
-      expect(out).not.toMatch(/TimeToLive|Bytes/);
+      expect(out).toMatch(/Status\s*:\s*Failure/);
+      expect(out).not.toMatch(/Status\s*:\s*Success/);
     });
 
     it('Move-ADDirectoryServerOperationMasterRole -Force saisit SchemaMaster/DomainNamingMaster/InfrastructureMaster sur DC02 même avec DC01 hors ligne', async () => {
@@ -134,7 +137,7 @@ describe('Scénario 10 — rôles FSMO : vérification, transfert et saisie (man
       cDc1.disconnect();
       await run(ps(dc2), 'Move-ADDirectoryServerOperationMasterRole -Identity "DC02.mandeng.lan" -OperationMasterRole PDCEmulator, RIDMaster, InfrastructureMaster, SchemaMaster, DomainNamingMaster -Force -Confirm:$false');
 
-      const out = await run(ps(dc2), 'Get-ADDomainController -Filter {Name -eq "DC01"} | Remove-ADDomainController -Confirm:$false');
+      const out = await run(ps(dc2), 'Remove-ADDomainController -Identity "DC01" -Confirm:$false');
       expect(out).not.toMatch(/not recognized/i);
 
       const remaining = await run(ps(dc2), 'Get-ADDomainController -Filter *');

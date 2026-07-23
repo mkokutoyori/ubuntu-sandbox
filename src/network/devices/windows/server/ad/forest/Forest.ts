@@ -29,10 +29,17 @@ export interface ForestDomain {
 
 export interface ForestOpResult { ok: boolean; message: string }
 
+/** The 2 forest-wide FSMO roles (RFC-less, but real AD terminology) — the other 3 (RID/PDC Emulator/Infrastructure Master) are per-domain, tracked on each domain's own DirectoryStore instead. */
+export interface ForestFsmoRoles {
+  schemaMaster: string;
+  domainNamingMaster: string;
+}
+
 export class Forest {
   /** Cosmetic, matches this simulator's other functional-level fields — no real feature-level gating. */
   readonly functionalLevel = 'Windows Server 2016';
   private readonly domains = new Map<string, ForestDomain>();
+  private fsmo: ForestFsmoRoles | null = null;
 
   addDomain(domain: ForestDomain): ForestOpResult {
     const key = domain.dnsName.toLowerCase();
@@ -48,6 +55,21 @@ export class Forest {
 
   listDomains(): ForestDomain[] { return [...this.domains.values()]; }
   getRootDomain(): ForestDomain | null { return this.listDomains().find(d => !d.parentDnsName) ?? null; }
+
+  /** Both forest-wide FSMO roles start on the forest's founding DC (`Install-ADDSForest`'s own DC) — call once, at forest creation. */
+  initializeFsmoRoles(foundingDcHostname: string): void {
+    if (this.fsmo) return;
+    this.fsmo = { schemaMaster: foundingDcHostname, domainNamingMaster: foundingDcHostname };
+  }
+
+  getFsmoRoles(): ForestFsmoRoles {
+    return this.fsmo ?? { schemaMaster: '', domainNamingMaster: '' };
+  }
+
+  transferFsmoRole(role: keyof ForestFsmoRoles, newOwnerHostname: string): void {
+    if (!this.fsmo) return;
+    this.fsmo[role] = newOwnerHostname;
+  }
 }
 
 interface ForestRegistration { forest: Forest; schemaValidator: SchemaValidator }

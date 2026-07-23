@@ -23,6 +23,13 @@ async function setupTwoDcs(page: Page): Promise<{ dc1Id: string; dc2Id: string }
     const dc2 = store.getState().addDevice('windows-server', 500, 200);
     const dc1Inst = store.getState().deviceInstances.get(dc1.id) as Record<string, unknown>;
     const dc2Inst = store.getState().deviceInstances.get(dc2.id) as Record<string, unknown>;
+    // The scenario's commands target DC01/DC02 by name (-Server, -Identity,
+    // FSMO FQDNs) — match the device's real hostname to that, instead of
+    // the auto-generated "WinServer1/2" default.
+    (dc1Inst.setName as (n: string) => void).call(dc1Inst, 'DC01');
+    (dc1Inst.setHostname as (n: string) => void).call(dc1Inst, 'DC01');
+    (dc2Inst.setName as (n: string) => void).call(dc2Inst, 'DC02');
+    (dc2Inst.setHostname as (n: string) => void).call(dc2Inst, 'DC02');
     const p1 = (dc1Inst.getPortNames as () => string[])()[0];
     const p2 = (dc2Inst.getPortNames as () => string[])()[0];
     const exec1 = dc1Inst.executeCommand as (c: string) => Promise<string> | string;
@@ -35,6 +42,16 @@ async function setupTwoDcs(page: Page): Promise<{ dc1Id: string; dc2Id: string }
 }
 
 async function openTerminal(page: Page, id: string): Promise<void> {
+  // Once any terminal is open the app covers the canvas with a fixed
+  // full-screen overlay, so a device already behind it can't be
+  // double-clicked. Peek at the topology first (a real toggle the app
+  // provides for exactly this) — opening the new terminal then
+  // automatically brings the overlay back showing that device's session.
+  const desktopToggle = page.getByTitle('Show topology (terminals stay open)');
+  if (await desktopToggle.count() > 0) {
+    await desktopToggle.click();
+    await page.waitForTimeout(150);
+  }
   await page.locator(`[data-device-id="${id}"]`).first().dblclick({ timeout: 8_000 });
   await page.waitForTimeout(400);
 }
@@ -47,8 +64,10 @@ async function typeCmdIn(page: Page, deviceId: string, command: string): Promise
   await input.press('Enter');
   await page.waitForTimeout(300);
 }
-async function lastModalText(page: Page): Promise<string> {
-  return (await page.locator('[data-testid="terminal-modal"]').last().innerText());
+async function modalTextFor(page: Page, deviceId: string): Promise<string> {
+  const modal = page.locator(`[data-testid="terminal-modal"][data-device-id="${deviceId}"]`).first();
+  const target = (await modal.count()) > 0 ? modal : page.locator('[data-testid="terminal-modal"]').last();
+  return target.innerText();
 }
 
 async function buildTwoPromotedDcs(page: Page): Promise<{ dc1Id: string; dc2Id: string }> {
@@ -78,33 +97,30 @@ test.describe('Scénario 10 (e2e) — rôles FSMO : vérification, transfert, sa
   test('Get-ADForest et Get-ADDomain montrent DC01 titulaire des 5 rôles FSMO juste après la promotion', async ({ page }) => {
     const { dc1Id } = await buildTwoPromotedDcs(page);
 
-    await openTerminal(page, dc1Id);
     await typeCmdIn(page, dc1Id, 'Get-ADForest | Select-Object DomainNamingMaster, SchemaMaster');
     await typeCmdIn(page, dc1Id, 'Get-ADDomain | Select-Object InfrastructureMaster, PDCEmulator, RIDMaster');
     await page.waitForTimeout(300);
-    const text = await lastModalText(page);
+    const text = await modalTextFor(page, dc1Id);
     expect(text).toMatch(/DC01/);
   });
 
   test('Move-ADDirectoryServerOperationMasterRole transfère PDCEmulator et RIDMaster vers DC02', async ({ page }) => {
     const { dc1Id } = await buildTwoPromotedDcs(page);
 
-    await openTerminal(page, dc1Id);
     await typeCmdIn(page, dc1Id, 'Move-ADDirectoryServerOperationMasterRole -Identity "DC02.mandeng.lan" -OperationMasterRole PDCEmulator, RIDMaster -Confirm:$false');
     await typeCmdIn(page, dc1Id, 'Get-ADDomain | Select-Object PDCEmulator, RIDMaster');
     await page.waitForTimeout(300);
-    const text = await lastModalText(page);
+    const text = await modalTextFor(page, dc1Id);
     expect(text).toMatch(/DC02/);
   });
 
   test('Move-ADDirectoryServerOperationMasterRole -Force saisit les rôles restants sur DC02', async ({ page }) => {
     const { dc2Id } = await buildTwoPromotedDcs(page);
 
-    await openTerminal(page, dc2Id);
     await typeCmdIn(page, dc2Id, 'Move-ADDirectoryServerOperationMasterRole -Identity "DC02.mandeng.lan" -OperationMasterRole SchemaMaster, DomainNamingMaster, InfrastructureMaster -Force -Confirm:$false');
     await typeCmdIn(page, dc2Id, 'Get-ADForest | Select-Object DomainNamingMaster, SchemaMaster');
     await page.waitForTimeout(300);
-    const text = await lastModalText(page);
+    const text = await modalTextFor(page, dc2Id);
     expect(text).toMatch(/DC02/);
   });
 });

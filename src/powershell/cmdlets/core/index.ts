@@ -115,7 +115,7 @@ import {
   GetSmbShareCmdlet, NewSmbShareCmdlet, RemoveSmbShareCmdlet, GetSmbSessionCmdlet,
 } from './SmbCmdlets';
 import {
-  InstallADDSForestCmdlet, InstallADDSDomainControllerCmdlet, GetADDomainControllerCmdlet,
+  InstallADDSForestCmdlet, InstallADDSDomainControllerCmdlet, GetADDomainControllerCmdlet, RemoveADDomainControllerCmdlet,
   NewADUserCmdlet, GetADUserCmdlet, SetADUserCmdlet, RemoveADUserCmdlet,
   DisableADAccountCmdlet, EnableADAccountCmdlet,
   NewADGroupCmdlet, GetADGroupCmdlet, AddADGroupMemberCmdlet, RemoveADGroupMemberCmdlet,
@@ -123,7 +123,7 @@ import {
   NewADOrganizationalUnitCmdlet, GetADOrganizationalUnitCmdlet,
   NewADReplicationSiteCmdlet, GetADReplicationSiteCmdlet, NewADReplicationSubnetCmdlet,
   NewADAttributeCmdlet, NewADObjectClassCmdlet,
-  NewADDomainCmdlet, GetADForestCmdlet,
+  NewADDomainCmdlet, GetADForestCmdlet, GetADDomainCmdlet, MoveADDirectoryServerOperationMasterRoleCmdlet,
   NewADTrustCmdlet, GetADTrustCmdlet,
 } from './ActiveDirectoryCmdlets';
 import {
@@ -451,6 +451,7 @@ export function registerServerCmdlets(registry: CmdletRegistry): void {
   registry.register(new InstallADDSForestCmdlet());
   registry.register(new InstallADDSDomainControllerCmdlet());
   registry.register(new GetADDomainControllerCmdlet());
+  registry.register(new RemoveADDomainControllerCmdlet());
   registry.register(new NewADReplicationSiteCmdlet());
   registry.register(new GetADReplicationSiteCmdlet());
   registry.register(new NewADReplicationSubnetCmdlet());
@@ -474,6 +475,8 @@ export function registerServerCmdlets(registry: CmdletRegistry): void {
   registry.register(new GetADOrganizationalUnitCmdlet());
   registry.register(new NewADDomainCmdlet());
   registry.register(new GetADForestCmdlet());
+  registry.register(new GetADDomainCmdlet());
+  registry.register(new MoveADDirectoryServerOperationMasterRoleCmdlet());
   registry.register(new NewADTrustCmdlet());
   registry.register(new GetADTrustCmdlet());
 

@@ -143,6 +143,43 @@ export class DirectoryStore {
   /** Kerberos realm name (RFC 4120 §6.1: the DNS domain name, uppercased) — used by `KdcSession`/`KerberosClient`. */
   getRealm(): string { return this.dnsName.toUpperCase(); }
 
+  // ─── Domain-wide FSMO roles (RID/PDC Emulator/Infrastructure Master) ──
+  //
+  // Stored as real attributes on the domain root entry (`fSMORoleOwner`
+  // isn't split per-role on the real root object, but this simulator has
+  // no separate RID Manager/Infrastructure container objects to hang each
+  // role on individually — three attributes on the one root entry is the
+  // simplification). Being real attributes on a replicated entry, a role
+  // transfer performed on one DC becomes visible on a replication partner
+  // through the existing `replicateFrom`/`changedSince` pull, exactly
+  // like any other attribute change — no separate FSMO propagation path.
+
+  private static readonly FSMO_DOMAIN_ATTRS = {
+    RIDMaster: 'fsmoRidMaster',
+    PDCEmulator: 'fsmoPdcEmulator',
+    InfrastructureMaster: 'fsmoInfrastructureMaster',
+  } as const;
+
+  /** Called once at `Install-ADDSForest` — all 3 domain-level roles start on the founding DC. */
+  initializeDomainFsmoRoles(foundingDcHostname: string): void {
+    const root = this.tree.getByDn(this.tree.getRootDn());
+    if (!root) return;
+    this.tree.modifyEntry(root.dn, Object.values(DirectoryStore.FSMO_DOMAIN_ATTRS).map(attr => ({
+      op: 'replace' as const, type: attr, values: [foundingDcHostname],
+    })));
+  }
+
+  getDomainFsmoRoleOwner(role: keyof typeof DirectoryStore.FSMO_DOMAIN_ATTRS): string {
+    const root = this.tree.getByDn(this.tree.getRootDn());
+    return root ? firstOf(root.attributes.get(DirectoryStore.FSMO_DOMAIN_ATTRS[role].toLowerCase())) : '';
+  }
+
+  transferDomainFsmoRole(role: keyof typeof DirectoryStore.FSMO_DOMAIN_ATTRS, newOwnerHostname: string): void {
+    const root = this.tree.getByDn(this.tree.getRootDn());
+    if (!root) return;
+    this.tree.modifyEntry(root.dn, [{ op: 'replace', type: DirectoryStore.FSMO_DOMAIN_ATTRS[role], values: [newOwnerHostname] }]);
+  }
+
   /** The real DIT this store operates on — `LdapServerHandler` serves this same tree over TCP/389. */
   getTree(): DirectoryTree { return this.tree; }
 
@@ -450,6 +487,20 @@ export class DirectoryStore {
     for (const group of this.listGroupEntries()) {
       if ((group.attributes.get('member') ?? []).some(m => m.toLowerCase() === userDn.toLowerCase())) {
         this.tree.modifyEntry(group.dn, [{ op: 'delete', type: 'member', values: [userDn] }]);
+      }
+    }
+    const res = this.tree.deleteEntry(entry.dn);
+    return res.ok ? { ok: true, message: '' } : { ok: false, message: res.message };
+  }
+
+  /** `Remove-ADDomainController` / the AD-metadata-cleanup half of `ntdsutil` — deletes a (real or seized-from) DC's own computer account and its group memberships, same shape as `removeUser`. */
+  removeComputer(name: string): DirOpResult {
+    const entry = this.findComputerEntry(name);
+    if (!entry) return { ok: false, message: `Cannot find an object with identity: '${name}'.` };
+    const computerDn = formatDN(entry.dn);
+    for (const group of this.listGroupEntries()) {
+      if ((group.attributes.get('member') ?? []).some(m => m.toLowerCase() === computerDn.toLowerCase())) {
+        this.tree.modifyEntry(group.dn, [{ op: 'delete', type: 'member', values: [computerDn] }]);
       }
     }
     const res = this.tree.deleteEntry(entry.dn);

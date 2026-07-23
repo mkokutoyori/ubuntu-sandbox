@@ -56,6 +56,11 @@ export class WindowsServer extends WindowsPC {
 
   constructor(name: string = 'WinServer', x: number = 0, y: number = 0) {
     super('windows-server', name, x, y);
+    // Real Windows Server has no built-in non-admin "User" account — setup
+    // (OOBE) only creates/activates the local Administrator, who is the
+    // account logged in by default. WindowsPC's 'User' default is correct
+    // for a client SKU but wrong here, so override it post-construction.
+    this.getUserManager().setCurrentUser('Administrator');
   }
 
   override getWindowsEdition(): 'client' | 'server' { return 'server'; }
@@ -284,7 +289,9 @@ export class WindowsServer extends WindowsPC {
     this.directoryStore.promoteDomainController(this.getHostname(), safeModeAdminPassword);
     this.directoryStore.ensureKrbtgtPrincipal(randomSessionKey());
     this.directoryStore.newSite(DEFAULT_SITE_NAME);
-    createForest(domainName, netbios, this.directoryStore.getSchemaValidatorForSharing());
+    const forest = createForest(domainName, netbios, this.directoryStore.getSchemaValidatorForSharing());
+    forest.initializeFsmoRoles(this.getHostname());
+    this.directoryStore.initializeDomainFsmoRoles(this.getHostname());
     this.provisionSysvol(domainName);
     this.registerDcServices();
     this.provisionDomainDnsZone(domainName);
@@ -344,6 +351,37 @@ export class WindowsServer extends WindowsPC {
   getForest(): Forest | null {
     if (!this.directoryStore) return null;
     return getForestForDomain(this.directoryStore.dnsName);
+  }
+
+  /**
+   * `Move-ADDirectoryServerOperationMasterRole` — planned transfer (both
+   * DCs reachable) and forced seizure (`-Force`, old owner may be gone)
+   * are the same underlying operation in this simulator: real AD's only
+   * behavioral difference is whether the outgoing owner is asked to
+   * finish pending writes first, which this simulator has no queued
+   * writes to flush anyway. `targetHostname` may be short or FQDN; roles
+   * are matched case-insensitively against the 5 real FSMO role names.
+   */
+  moveOperationMasterRole(targetHostname: string, roles: string[], _force: boolean): AdDsOpResult {
+    if (!this.directoryStore) {
+      return { ok: false, message: 'Move-ADDirectoryServerOperationMasterRole : This computer is not a domain controller.' };
+    }
+    const forest = this.getForest();
+    const target = targetHostname.split('.')[0];
+    const forestRoles = new Set(['schemamaster', 'domainnamingmaster']);
+    const domainRoles = new Set(['ridmaster', 'pdcemulator', 'infrastructuremaster']);
+    for (const role of roles) {
+      const key = role.toLowerCase().replace(/\s+/g, '');
+      if (forestRoles.has(key)) {
+        forest?.transferFsmoRole(key === 'schemamaster' ? 'schemaMaster' : 'domainNamingMaster', target);
+      } else if (domainRoles.has(key)) {
+        const domainRole = key === 'ridmaster' ? 'RIDMaster' : key === 'pdcemulator' ? 'PDCEmulator' : 'InfrastructureMaster';
+        this.directoryStore.transferDomainFsmoRole(domainRole, target);
+      } else {
+        return { ok: false, message: `Move-ADDirectoryServerOperationMasterRole : "${role}" is not a valid operation master role.` };
+      }
+    }
+    return { ok: true, message: '' };
   }
 
   /**

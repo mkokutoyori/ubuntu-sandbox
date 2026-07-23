@@ -1793,6 +1793,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
           licensing: this.licensing,
         }, args);
       case 'nbtstat': return this.cmdNbtstat(args);
+      case 'w32tm':   return this.cmdW32tm(args);
       case 'wmic':    return this.cmdWmic(args);
       case 'reg':     return this.cmdReg(args);
       case 'nltest':  return cmdNltest({
@@ -2867,6 +2868,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
   private cmdNetdom(args: string[]): string {
     const sub = args[0]?.toLowerCase();
     if (sub === 'trust') return this.cmdNetdomTrust(args.slice(1));
+    if (sub === 'query' && args[1]?.toLowerCase() === 'fsmo') return this.cmdNetdomQueryFsmo();
     if (args.length === 0 || sub !== 'join') {
       return 'NETDOM JOIN /Domain:<Domain> /UserD:<User> /PasswordD:<Password> [/Server:<DC>]';
     }
@@ -2924,6 +2926,46 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     const result = server_.newADTrust(remoteRealm, server, direction, transitive, userD, passwordD);
     if (!result.ok) return `${result.message}\nThe command failed to complete successfully.`;
     return `The trust with '${remoteRealm}' has been successfully established.\nThe command completed successfully.`;
+  }
+
+  /**
+   * `w32tm /query /status` — real Windows time hierarchy has every
+   * non-PDCe domain member/DC sync to its domain's PDC Emulator (NT5DS);
+   * this simulator reports that same PDC Emulator FQDN as `Source`
+   * regardless of who's asking (including the PDCe itself), rather than
+   * modeling the forest-root-syncs-externally special case.
+   */
+  private cmdW32tm(args: string[]): string {
+    if (args[0]?.toLowerCase() !== '/query' || args[1]?.toLowerCase() !== '/status') {
+      return 'w32tm /query /status';
+    }
+    const store = this.getDirectoryStore();
+    const pdcShort = store?.getDomainFsmoRoleOwner('PDCEmulator') ?? '';
+    const source = store && pdcShort ? `${pdcShort}.${store.dnsName}` : 'Local CMOS Clock';
+    return [
+      'Leap Indicator: 0(no warning)',
+      'Stratum: 3 (secondary reference - syncd by (S)NTP)',
+      `Source: ${source}${store ? ',0x9' : ''}`,
+      'Poll Interval: 10 (1024s)',
+    ].join('\n');
+  }
+
+  /** `netdom query fsmo` — the 5 real FSMO role owners, server-only (a plain workstation has no directory to query). */
+  private cmdNetdomQueryFsmo(): string {
+    const store = this.getDirectoryStore();
+    if (!store) return 'This computer is not a domain controller.\nThe command failed to complete successfully.';
+    const server_ = this as unknown as { getForest?: () => { getFsmoRoles(): { schemaMaster: string; domainNamingMaster: string } } | null };
+    const forest = server_.getForest?.();
+    const fqdn = (short: string) => short ? `${short}.${store.dnsName}` : '';
+    const forestFsmo = forest?.getFsmoRoles() ?? { schemaMaster: '', domainNamingMaster: '' };
+    return [
+      `Schema owner          ${fqdn(forestFsmo.schemaMaster)}`,
+      `Domain role owner     ${fqdn(forestFsmo.domainNamingMaster)}`,
+      `PDC                   ${fqdn(store.getDomainFsmoRoleOwner('PDCEmulator'))}`,
+      `RID pool manager      ${fqdn(store.getDomainFsmoRoleOwner('RIDMaster'))}`,
+      `Infrastructure        ${fqdn(store.getDomainFsmoRoleOwner('InfrastructureMaster'))}`,
+      'The command completed successfully.',
+    ].join('\n');
   }
 
   // ─── OS Info ───────────────────────────────────────────────────

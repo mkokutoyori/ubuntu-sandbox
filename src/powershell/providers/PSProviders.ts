@@ -200,6 +200,8 @@ export interface IAdProvider {
   ): AdOpResult;
   /** `Get-ADDomainController` — every domain controller this DC currently knows about (itself, plus any replicated in). */
   listDomainControllers(): AdComputerInfo[];
+  /** `Remove-ADDomainController` — AD metadata cleanup for a DC that will never come back online (the `ntdsutil metadata cleanup` equivalent). */
+  removeDomainController(name: string): AdOpResult;
 
   newUser(sam: string, opts: { password: string; fullName?: string; path?: string; enabled?: boolean; department?: string; title?: string }): AdOpResult;
   getUser(identity: string): AdUserInfo | null;
@@ -241,6 +243,10 @@ export interface IAdProvider {
   ): AdOpResult;
   /** `Get-ADForest` — null if this server isn't a DC. */
   getForest(): AdForestInfo | null;
+  /** `Get-ADDomain` — null if this server isn't a DC. */
+  getDomain(): AdDomainInfo | null;
+  /** `Move-ADDirectoryServerOperationMasterRole -Identity <dc> -OperationMasterRole <roles> [-Force]`. */
+  moveOperationMasterRole(targetHostname: string, roles: string[], force: boolean): AdOpResult;
 
   /** `New-ADTrust`/`netdom trust` (PRD-Windows-Server-Advanced.md §5 P9) — a simple trust with the domain reached at `remoteDcAddress`. */
   newTrust(
@@ -256,6 +262,17 @@ export interface IAdProvider {
 export interface AdForestInfo {
   functionalLevel: string;
   domains: { dnsName: string; netbiosName: string; parentDnsName?: string }[];
+  schemaMaster: string;
+  domainNamingMaster: string;
+}
+
+export interface AdDomainInfo {
+  dnsRoot: string;
+  netBiosName: string;
+  domainMode: string;
+  infrastructureMaster: string;
+  pdcEmulator: string;
+  ridMaster: string;
 }
 
 export interface AdTrustInfo {
