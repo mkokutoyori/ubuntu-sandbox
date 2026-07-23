@@ -1663,7 +1663,12 @@ export class PSParser {
         // In hashtable key position, barewords are string literals
         const key = this.parseHashtableKey();
         this.expect(PSTokenType.ASSIGN);
-        const value = this.parseExpression();
+        const valuePos = this.pos_();
+        let value = this.parseExpression();
+        // A hashtable value may itself be a pipeline (`@{ X = $coll | Where-Object {...} }`,
+        // matching real PowerShell) — parseExpression() stops before `|`, so continue into
+        // a PipelineExpression here, same as parseAssignmentRHS() does for `$x = a | b`.
+        if (this.check(PSTokenType.PIPE)) value = this.continuePipeline(value, valuePos);
         pairs.push({ key, value });
         this.skipTerminators();
         if (this.check(PSTokenType.SEMICOLON)) { this.advance(); this.skipTerminators(); }

@@ -548,7 +548,11 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       onAccept: (socket) => {
         const store = this.getDirectoryStore();
         if (!store) { socket.close(); return; }
-        new KdcSessionHandler({ store, deviceId: this.getHostname(), bus: this.getBus() }).register(socket);
+        new KdcSessionHandler({
+          store, deviceId: this.getHostname(), bus: this.getBus(),
+          writeSecurityEvent: (eventId, entryType, message, data) =>
+            this.eventLog.writeEventLog('Security', 'Microsoft-Windows-Security-Auditing', eventId, entryType, message, data),
+        }).register(socket);
       },
     });
 
@@ -2791,11 +2795,32 @@ export class WindowsPC extends EndHost implements UserAccountHost {
   /** Adapts this device to `WinRunas.ts`'s narrow `RunasHost` contract. */
   private runasHost(): RunasHost {
     return {
-      getUser: (name) => this.userMgr.getUser(name),
+      getUser: (name) => this.userMgr.getUser(name) ?? this.getDomainUserForRunas(name),
       getCurrentUser: () => this.userMgr.currentUser,
       setCurrentUser: (name) => this.setCurrentUser(name),
       executeCmdCommand: (command) => this.executeCmdCommand(command),
     };
+  }
+
+  /**
+   * `runas /user:DOMAIN\sam` — the local WindowsUserManager only knows
+   * local accounts. When this device is itself the DC (its own
+   * DirectoryStore is right here, no network round-trip needed), a
+   * domain-qualified name matching its own domain is resolved against
+   * the real directory instead of being unconditionally "not recognized".
+   * A non-DC domain member has no local directory to consult synchronously
+   * (real Windows would round-trip to a DC here) — out of scope for now.
+   */
+  private getDomainUserForRunas(name: string): RunasUserLookup | undefined {
+    const backslash = name.indexOf('\\');
+    if (backslash === -1) return undefined;
+    const domainPart = name.slice(0, backslash).toUpperCase();
+    const sam = name.slice(backslash + 1);
+    const store = this.getDirectoryStore();
+    const ownNetbiosName = store?.netbiosName ?? this.domainMembership?.netbiosName;
+    if (!ownNetbiosName || domainPart !== ownNetbiosName.toUpperCase()) return undefined;
+    const u = store?.getUser(sam);
+    return u ? { name: sam, enabled: u.enabled } : undefined;
   }
 
   /**

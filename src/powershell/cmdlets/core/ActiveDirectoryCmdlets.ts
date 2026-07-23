@@ -21,12 +21,34 @@ import type {
 } from '@/powershell/providers/PSProviders';
 import { psValueToString } from '@/powershell/runtime/PSExpansion';
 import { parseCredentialArg } from './RemotingCmdlets';
+import { WindowsSecurityAudit, type SecurityEventSink } from '@/network/devices/windows/WindowsSecurityAudit';
 
 function requireAd(ctx: CmdletContext, cmdletName: string): IAdProvider {
   if (!ctx.providers.ad) {
     throw new PSRuntimeError(`${cmdletName} is not recognized as the name of a cmdlet, function, script file, or operable program`);
   }
   return ctx.providers.ad;
+}
+
+/** AD write cmdlets feed the same Security-log audit trail as local account management (WindowsSecurityAudit), so 4720/4738/4728/etc. are real for domain objects too, not just `net user`. */
+function auditSinkFor(ctx: CmdletContext): WindowsSecurityAudit | null {
+  const eventLog = ctx.providers.eventLog;
+  if (!eventLog) return null;
+  const sink: SecurityEventSink = {
+    writeEventLog: (logName, source, eventId, entryType, message, data) => {
+      eventLog.writeEntry(logName, source, eventId, entryType, message, data);
+      return '';
+    },
+  };
+  return new WindowsSecurityAudit(sink);
+}
+
+/** The acting user for the audit trail: the `-Credential "user:pass"` principal when delegated, else Administrator. */
+function subjectUserOf(ctx: CmdletContext): string {
+  const raw = ctx.named['credential'];
+  if (raw === undefined) return 'Administrator';
+  const { username } = parseCredentialArg(psValueToString(raw));
+  return username.includes('\\') ? username.split('\\').pop()! : username;
 }
 
 /** Unwraps a `ConvertTo-SecureString "x" -AsPlainText -Force` result (`{SecureString, Length}`) or accepts a plain string directly. */
@@ -47,7 +69,8 @@ function userToPSObject(u: AdUserInfo): Record<string, PSValue> {
   return {
     SamAccountName: u.sam, UserPrincipalName: u.upn, DistinguishedName: u.dn,
     Enabled: u.enabled, MemberOf: u.memberOf.join(', '), Name: u.fullName || u.sam,
-    ObjectClass: 'user',
+    ObjectClass: 'user', Department: u.department, Title: u.title,
+    ServicePrincipalNames: [...u.servicePrincipalNames],
   };
 }
 function groupToPSObject(g: AdGroupInfo): Record<string, PSValue> {
@@ -57,7 +80,10 @@ function groupToPSObject(g: AdGroupInfo): Record<string, PSValue> {
   };
 }
 function computerToPSObject(c: AdComputerInfo): Record<string, PSValue> {
-  return { Name: c.name, DistinguishedName: c.dn, Enabled: c.enabled, ObjectClass: 'computer' };
+  return {
+    Name: c.name, DistinguishedName: c.dn, Enabled: c.enabled, ObjectClass: 'computer',
+    ServicePrincipalNames: [...c.servicePrincipalNames],
+  };
 }
 function ouToPSObject(ou: AdOrgUnitInfo): Record<string, PSValue> {
   return { Name: ou.name, DistinguishedName: ou.dn, ObjectClass: 'organizationalUnit' };
@@ -150,7 +176,7 @@ function dcToPSObject(c: AdComputerInfo): Record<string, PSValue> {
 export class NewADUserCmdlet implements ICmdlet {
   readonly name = 'new-aduser';
   readonly aliases = [] as const;
-  readonly parameters = ['Name', 'SamAccountName', 'AccountPassword', 'Enabled', 'Path', 'DisplayName'] as const;
+  readonly parameters = ['Name', 'SamAccountName', 'AccountPassword', 'Enabled', 'Path', 'DisplayName', 'Department', 'Title', 'Credential'] as const;
 
   execute(ctx: CmdletContext): PSValue {
     const ad = requireAd(ctx, 'New-ADUser');
@@ -164,8 +190,11 @@ export class NewADUserCmdlet implements ICmdlet {
       : (ctx.named['name'] !== undefined ? psValueToString(ctx.named['name']) : undefined);
     const path = ctx.named['path'] !== undefined ? psValueToString(ctx.named['path']) : undefined;
     const enabled = ctx.named['enabled'] !== undefined ? ctx.named['enabled'] === true : undefined;
-    const res = ad.newUser(sam, { password, fullName, path, enabled });
+    const department = ctx.named['department'] !== undefined ? psValueToString(ctx.named['department']) : undefined;
+    const title = ctx.named['title'] !== undefined ? psValueToString(ctx.named['title']) : undefined;
+    const res = ad.newUser(sam, { password, fullName, path, enabled, department, title });
     if (!res.ok) { ctx.emitError(`New-ADUser : ${res.message}`); return null; }
+    auditSinkFor(ctx)?.accountCreated(sam, subjectUserOf(ctx));
     const u = ad.getUser(sam);
     return u ? userToPSObject(u) : null;
   }
@@ -186,22 +215,49 @@ export class GetADUserCmdlet implements ICmdlet {
   }
 }
 
+/** Pulls a named property (any casing) out of a `-Add`/`-Remove @{...}` hashtable argument. */
+function hashtableProp(ctx: CmdletContext, argKey: string, propName: string): string[] | undefined {
+  const raw = ctx.named[argKey];
+  if (raw === undefined || typeof raw !== 'object' || raw === null || Array.isArray(raw)) return undefined;
+  const h = raw as Record<string, PSValue>;
+  const key = Object.keys(h).find(k => k.toLowerCase() === propName.toLowerCase());
+  if (key === undefined) return undefined;
+  const v = h[key];
+  return (Array.isArray(v) ? v : [v]).map(psValueToString);
+}
+
 export class SetADUserCmdlet implements ICmdlet {
   readonly name = 'set-aduser';
   readonly aliases = [] as const;
-  readonly parameters = ['Identity', 'Enabled', 'DisplayName', 'AccountPassword'] as const;
+  readonly parameters = ['Identity', 'Enabled', 'DisplayName', 'AccountPassword', 'Department', 'Title', 'Add', 'Remove', 'Credential'] as const;
 
   execute(ctx: CmdletContext): PSValue {
     const ad = requireAd(ctx, 'Set-ADUser');
     const identity = identityOf(ctx);
     if (!identity) { ctx.emitError("Set-ADUser : Cannot process command because of one or more missing mandatory parameters: Identity."); return null; }
-    const opts: { enabled?: boolean; fullName?: string; password?: string } = {};
+    const opts: { enabled?: boolean; fullName?: string; password?: string; department?: string; title?: string; addSpns?: string[]; removeSpns?: string[] } = {};
     if (ctx.named['enabled'] !== undefined) opts.enabled = ctx.named['enabled'] === true;
     if (ctx.named['displayname'] !== undefined) opts.fullName = psValueToString(ctx.named['displayname']);
+    if (ctx.named['department'] !== undefined) opts.department = psValueToString(ctx.named['department']);
+    if (ctx.named['title'] !== undefined) opts.title = psValueToString(ctx.named['title']);
     const password = securePasswordOf(ctx, 'accountpassword');
     if (password !== undefined) opts.password = password;
+    const addSpns = hashtableProp(ctx, 'add', 'ServicePrincipalNames');
+    if (addSpns) opts.addSpns = addSpns;
+    const removeSpns = hashtableProp(ctx, 'remove', 'ServicePrincipalNames');
+    if (removeSpns) opts.removeSpns = removeSpns;
+
     const res = ad.setUser(identity, opts);
-    if (!res.ok) ctx.emitError(`Set-ADUser : ${res.message}`);
+    if (!res.ok) { ctx.emitError(`Set-ADUser : ${res.message}`); return null; }
+
+    const audit = auditSinkFor(ctx);
+    const subject = subjectUserOf(ctx);
+    if (opts.enabled === true) audit?.accountEnabled(identity, subject);
+    else if (opts.enabled === false) audit?.accountDisabled(identity, subject);
+    if (opts.password !== undefined) audit?.passwordReset(identity, subject);
+    if (opts.fullName !== undefined || opts.department !== undefined || opts.title !== undefined || opts.addSpns || opts.removeSpns) {
+      audit?.accountChanged(identity, subject);
+    }
     return null;
   }
 }
@@ -216,7 +272,42 @@ export class RemoveADUserCmdlet implements ICmdlet {
     const identity = identityOf(ctx);
     if (!identity) { ctx.emitError("Remove-ADUser : Cannot process command because of one or more missing mandatory parameters: Identity."); return null; }
     const res = ad.removeUser(identity);
-    if (!res.ok) ctx.emitError(`Remove-ADUser : ${res.message}`);
+    if (!res.ok) { ctx.emitError(`Remove-ADUser : ${res.message}`); return null; }
+    auditSinkFor(ctx)?.accountDeleted(identity, subjectUserOf(ctx));
+    return null;
+  }
+}
+
+export class DisableADAccountCmdlet implements ICmdlet {
+  readonly name = 'disable-adaccount';
+  readonly displayName = 'Disable-ADAccount';
+  readonly aliases = [] as const;
+  readonly parameters = ['Identity', 'Credential'] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const ad = requireAd(ctx, 'Disable-ADAccount');
+    const identity = identityOf(ctx);
+    if (!identity) { ctx.emitError("Disable-ADAccount : Cannot process command because of one or more missing mandatory parameters: Identity."); return null; }
+    const res = ad.setUser(identity, { enabled: false });
+    if (!res.ok) { ctx.emitError(`Disable-ADAccount : ${res.message}`); return null; }
+    auditSinkFor(ctx)?.accountDisabled(identity, subjectUserOf(ctx));
+    return null;
+  }
+}
+
+export class EnableADAccountCmdlet implements ICmdlet {
+  readonly name = 'enable-adaccount';
+  readonly displayName = 'Enable-ADAccount';
+  readonly aliases = [] as const;
+  readonly parameters = ['Identity', 'Credential'] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const ad = requireAd(ctx, 'Enable-ADAccount');
+    const identity = identityOf(ctx);
+    if (!identity) { ctx.emitError("Enable-ADAccount : Cannot process command because of one or more missing mandatory parameters: Identity."); return null; }
+    const res = ad.setUser(identity, { enabled: true });
+    if (!res.ok) { ctx.emitError(`Enable-ADAccount : ${res.message}`); return null; }
+    auditSinkFor(ctx)?.accountEnabled(identity, subjectUserOf(ctx));
     return null;
   }
 }
@@ -266,7 +357,7 @@ function membersOf(ctx: CmdletContext): string[] {
 export class AddADGroupMemberCmdlet implements ICmdlet {
   readonly name = 'add-adgroupmember';
   readonly aliases = [] as const;
-  readonly parameters = ['Identity', 'Members'] as const;
+  readonly parameters = ['Identity', 'Members', 'Credential'] as const;
 
   execute(ctx: CmdletContext): PSValue {
     const ad = requireAd(ctx, 'Add-ADGroupMember');
@@ -277,7 +368,11 @@ export class AddADGroupMemberCmdlet implements ICmdlet {
       return null;
     }
     const res = ad.addGroupMember(identity, members);
-    if (!res.ok) ctx.emitError(`Add-ADGroupMember : ${res.message}`);
+    if (!res.ok) { ctx.emitError(`Add-ADGroupMember : ${res.message}`); return null; }
+    const scope = ad.getGroup(identity)?.scope ?? 'DomainLocal';
+    const audit = auditSinkFor(ctx);
+    const subject = subjectUserOf(ctx);
+    for (const m of members) audit?.groupMemberAdded(identity, m, scope === 'DomainLocal' ? 'Local' : scope, subject);
     return null;
   }
 }
@@ -285,7 +380,7 @@ export class AddADGroupMemberCmdlet implements ICmdlet {
 export class RemoveADGroupMemberCmdlet implements ICmdlet {
   readonly name = 'remove-adgroupmember';
   readonly aliases = [] as const;
-  readonly parameters = ['Identity', 'Members', 'Confirm'] as const;
+  readonly parameters = ['Identity', 'Members', 'Confirm', 'Credential'] as const;
 
   execute(ctx: CmdletContext): PSValue {
     const ad = requireAd(ctx, 'Remove-ADGroupMember');
@@ -295,8 +390,12 @@ export class RemoveADGroupMemberCmdlet implements ICmdlet {
       ctx.emitError("Remove-ADGroupMember : Cannot process command because of one or more missing mandatory parameters: Identity Members.");
       return null;
     }
+    const scope = ad.getGroup(identity)?.scope ?? 'DomainLocal';
     const res = ad.removeGroupMember(identity, members);
-    if (!res.ok) ctx.emitError(`Remove-ADGroupMember : ${res.message}`);
+    if (!res.ok) { ctx.emitError(`Remove-ADGroupMember : ${res.message}`); return null; }
+    const audit = auditSinkFor(ctx);
+    const subject = subjectUserOf(ctx);
+    for (const m of members) audit?.groupMemberRemoved(identity, m, scope === 'DomainLocal' ? 'Local' : scope, subject);
     return null;
   }
 }
@@ -315,6 +414,37 @@ export class GetADComputerCmdlet implements ICmdlet {
     const c = ad.getComputer(identity);
     if (!c) { ctx.emitError(`Get-ADComputer : Cannot find an object with identity: '${identity}'.`); return null; }
     return computerToPSObject(c);
+  }
+}
+
+/** `Get-ADObject -Filter {ServicePrincipalName -like "*"}` — every user/computer carrying at least one SPN, the basis for duplicate-SPN detection scripts. `-Filter` is accepted but not deeply evaluated (matching this codebase's other AD `-Filter` cmdlets), since the one real use is enumerating SPN-bearing objects. */
+export class GetADObjectCmdlet implements ICmdlet {
+  readonly name = 'get-adobject';
+  readonly displayName = 'Get-ADObject';
+  readonly aliases = [] as const;
+  readonly parameters = ['Filter', 'Properties'] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const ad = requireAd(ctx, 'Get-ADObject');
+    return ad.listObjectsWithSpns().map(o => ({
+      Name: o.name, ServicePrincipalName: [...o.servicePrincipalNames],
+    } as Record<string, PSValue>)) as PSValue;
+  }
+}
+
+/** `Search-ADAccount -LockedOut` — accounts real AD locked out after LockoutThreshold (default 5) bad passwords, tracked by the KDC on every failed Kerberos pre-authentication. */
+export class SearchADAccountCmdlet implements ICmdlet {
+  readonly name = 'search-adaccount';
+  readonly displayName = 'Search-ADAccount';
+  readonly aliases = [] as const;
+  readonly parameters = ['LockedOut', 'AccountDisabled', 'AccountExpired'] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const ad = requireAd(ctx, 'Search-ADAccount');
+    if (ctx.named['lockedout'] !== true) return [];
+    return ad.listLockedOutUsers().map(u => ({
+      Name: u.name, SamAccountName: u.sam, LockedOut: true, BadLogonCount: u.badPwdCount,
+    } as Record<string, PSValue>)) as PSValue;
   }
 }
 

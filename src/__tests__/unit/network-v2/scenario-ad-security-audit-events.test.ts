@@ -31,6 +31,8 @@ async function promotedDc(): Promise<WindowsServer> {
   dc.setCurrentUser('Administrator');
   await run(ps(dc), 'Install-WindowsFeature -Name AD-Domain-Services -IncludeManagementTools -IncludeAllSubFeature -Restart:$false');
   await run(ps(dc), 'Install-ADDSForest -DomainName "mandeng.lan" -DomainNetBiosName "MANDENG" -SafeModeAdministratorPassword (ConvertTo-SecureString "DSRM@Mandeng2025!" -AsPlainText -Force) -Force:$true');
+  await run(ps(dc), 'New-ADOrganizationalUnit -Name "Mandeng" -Path "DC=mandeng,DC=lan"');
+  await run(ps(dc), 'New-ADOrganizationalUnit -Name "Utilisateurs" -Path "OU=Mandeng,DC=mandeng,DC=lan"');
   await run(ps(dc), 'New-ADGroup -Name "GRP-IT-Admin" -GroupScope Global -GroupCategory Security');
   return dc;
 }
@@ -147,7 +149,7 @@ describe('Scénario 9 — audit des événements de sécurité AD (mandeng.lan)'
     it('le rapport liste les sections CONNEXIONS ÉCHOUÉES, MODIFICATIONS DE COMPTES et GROUPES À PRIVILÈGES', async () => {
       const dc = await promotedDc();
       const sh = ps(dc);
-      await run(sh, [
+      const out = await run(sh, [
         'function Get-ADSecurityReport {',
         '  param([int]$HeuresPassees = 24)',
         '  $StartTime = (Get-Date).AddHours(-$HeuresPassees)',

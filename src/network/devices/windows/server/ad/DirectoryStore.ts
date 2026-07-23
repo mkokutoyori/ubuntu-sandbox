@@ -317,18 +317,21 @@ export class DirectoryStore {
 
   // ─── Users ──────────────────────────────────────────────────────────
 
-  newUser(sam: string, opts: { password: string; fullName?: string; ou?: string; enabled?: boolean }): DirOpResult {
+  newUser(sam: string, opts: { password: string; fullName?: string; ou?: string; enabled?: boolean; department?: string; title?: string }): DirOpResult {
     const containerDn = opts.ou ? this.ouDn(opts.ou) : this.usersOuDn;
     if (opts.ou && !this.tree.getByDn(containerDn)) {
       return { ok: false, message: `Cannot find an object with identity: '${opts.ou}'.` };
     }
-    const res = this.createUserEntry(sam, { password: opts.password, fullName: opts.fullName ?? '', containerDn, enabled: opts.enabled });
+    const res = this.createUserEntry(sam, {
+      password: opts.password, fullName: opts.fullName ?? '', containerDn, enabled: opts.enabled,
+      department: opts.department, title: opts.title,
+    });
     if (!res.ok) return res;
     this.addGroupMember('Domain Users', sam);
     return { ok: true, message: '' };
   }
 
-  private createUserEntry(sam: string, opts: { password: string; fullName: string; containerDn: DistinguishedName; enabled?: boolean }): DirOpResult {
+  private createUserEntry(sam: string, opts: { password: string; fullName: string; containerDn: DistinguishedName; enabled?: boolean; department?: string; title?: string }): DirOpResult {
     const enabled = opts.enabled ?? true;
     const res = this.tree.addEntry(this.cnDn(sam, opts.containerDn), compact({
       objectClass: ['top', 'person', 'organizationalPerson', 'user'],
@@ -338,6 +341,8 @@ export class DirectoryStore {
       userAccountControl: [String(enabled ? UAC.NORMAL_ACCOUNT : UAC.NORMAL_ACCOUNT | UAC.ACCOUNTDISABLE)],
       userPassword: [opts.password],
       displayName: opts.fullName ? [opts.fullName] : [],
+      department: opts.department ? [opts.department] : [],
+      title: opts.title ? [opts.title] : [],
     }));
     return res.ok ? { ok: true, message: '' } : { ok: false, message: 'An object with that name already exists.' };
   }
@@ -370,20 +375,72 @@ export class DirectoryStore {
       password: firstOf(entry.attributes.get('userpassword')),
       memberOf: (entry.attributes.get('memberof') ?? []).map(dnStr => this.samOfDn(dnStr)).filter((s): s is string => s !== null),
       fullName: firstOf(entry.attributes.get('displayname')),
+      department: firstOf(entry.attributes.get('department')),
+      title: firstOf(entry.attributes.get('title')),
+      servicePrincipalNames: entry.attributes.get('serviceprincipalname') ?? [],
     };
   }
 
-  setUser(sam: string, opts: { enabled?: boolean; fullName?: string; password?: string }): DirOpResult {
+  setUser(sam: string, opts: { enabled?: boolean; fullName?: string; password?: string; department?: string; title?: string; addSpns?: string[]; removeSpns?: string[] }): DirOpResult {
     const entry = this.findUserEntry(sam);
     if (!entry) return { ok: false, message: `Cannot find an object with identity: '${sam}'.` };
-    const changes: { op: 'replace'; type: string; values: string[] }[] = [];
+    const changes: { op: 'replace' | 'add' | 'delete'; type: string; values: string[] }[] = [];
     if (opts.enabled !== undefined) {
       changes.push({ op: 'replace', type: 'userAccountControl', values: [String(opts.enabled ? UAC.NORMAL_ACCOUNT : UAC.NORMAL_ACCOUNT | UAC.ACCOUNTDISABLE)] });
     }
     if (opts.fullName !== undefined) changes.push({ op: 'replace', type: 'displayName', values: opts.fullName ? [opts.fullName] : [] });
     if (opts.password !== undefined) changes.push({ op: 'replace', type: 'userPassword', values: [opts.password] });
+    if (opts.department !== undefined) changes.push({ op: 'replace', type: 'department', values: opts.department ? [opts.department] : [] });
+    if (opts.title !== undefined) changes.push({ op: 'replace', type: 'title', values: opts.title ? [opts.title] : [] });
+    if (opts.addSpns && opts.addSpns.length > 0) changes.push({ op: 'add', type: 'servicePrincipalName', values: opts.addSpns });
+    if (opts.removeSpns && opts.removeSpns.length > 0) changes.push({ op: 'delete', type: 'servicePrincipalName', values: opts.removeSpns });
     this.tree.modifyEntry(entry.dn, changes);
     return { ok: true, message: '' };
+  }
+
+  /** AD's Default Domain Policy LockoutThreshold default: 5 bad passwords locks the account (PRD-Windows-Server-Advanced §5 password policy). */
+  private static readonly LOCKOUT_THRESHOLD = 5;
+
+  /** A failed Kerberos pre-authentication (bad password) — increments badPwdCount and locks the account once the threshold is reached, matching real AD. */
+  recordBadPasswordAttempt(sam: string): void {
+    const entry = this.findUserEntry(sam);
+    if (!entry) return;
+    const count = Number(firstOf(entry.attributes.get('badpwdcount'))) || 0;
+    const next = count + 1;
+    const changes: { op: 'replace'; type: string; values: string[] }[] = [
+      { op: 'replace', type: 'badPwdCount', values: [String(next)] },
+    ];
+    if (next >= DirectoryStore.LOCKOUT_THRESHOLD) {
+      changes.push({ op: 'replace', type: 'lockoutTime', values: [String(Math.floor(Date.now() / 1000))] });
+    }
+    this.tree.modifyEntry(entry.dn, changes);
+  }
+
+  /** A successful logon resets the bad-password counter, matching real AD. */
+  resetBadPasswordCount(sam: string): void {
+    const entry = this.findUserEntry(sam);
+    if (!entry) return;
+    this.tree.modifyEntry(entry.dn, [{ op: 'replace', type: 'badPwdCount', values: [] }]);
+  }
+
+  isLockedOut(sam: string): boolean {
+    const entry = this.findUserEntry(sam);
+    return entry ? firstOf(entry.attributes.get('lockouttime')) !== '' : false;
+  }
+
+  /** `Search-ADAccount -LockedOut`. */
+  listLockedOutUsers(): Array<{ sam: string; name: string; badPwdCount: number }> {
+    return this.listUserEntries()
+      .filter(e => firstOf(e.attributes.get('lockouttime')) !== '')
+      .map(e => ({
+        sam: firstOf(e.attributes.get('samaccountname')),
+        name: firstOf(e.attributes.get('displayname')) || firstOf(e.attributes.get('samaccountname')),
+        badPwdCount: Number(firstOf(e.attributes.get('badpwdcount'))) || 0,
+      }));
+  }
+
+  private listUserEntries(): DirectoryEntry[] {
+    return this.tree.allDescendants(this.tree.getRootDn()).filter(e => hasObjectClass(e, 'user') && !hasObjectClass(e, 'computer'));
   }
 
   removeUser(sam: string): DirOpResult {
@@ -508,6 +565,7 @@ export class DirectoryStore {
       sAMAccountName: [`${name}$`],
       userAccountControl: [String(UAC.WORKSTATION_TRUST_ACCOUNT)],
       userPassword: [machineSecret],
+      servicePrincipalName: [`HOST/${name}`, `HOST/${name}.${this.dnsName}`],
     });
     if (!res.ok) return { ok: false, message: 'An object with that name already exists.' };
     this.addGroupMemberByDn('Domain Computers', this.computerDn(name));
@@ -536,6 +594,7 @@ export class DirectoryStore {
       sAMAccountName: [`${name}$`],
       userAccountControl: [String(UAC.SERVER_TRUST_ACCOUNT)],
       userPassword: [machineSecret],
+      servicePrincipalName: [`HOST/${name}`, `HOST/${name}.${this.dnsName}`],
     });
     return res.ok ? { ok: true, message: '' } : { ok: false, message: 'An object with that name already exists.' };
   }
@@ -560,7 +619,15 @@ export class DirectoryStore {
       dn: formatDN(entry.dn),
       machineSecret: firstOf(entry.attributes.get('userpassword')),
       enabled: isEnabledFromUac(entry.attributes.get('useraccountcontrol')),
+      servicePrincipalNames: entry.attributes.get('serviceprincipalname') ?? [],
     };
+  }
+
+  /** Every user/computer object carrying at least one SPN — `Get-ADObject -Filter {ServicePrincipalName -like "*"}`, the basis for cross-object duplicate-SPN detection. */
+  listObjectsWithSpns(): Array<{ name: string; servicePrincipalNames: string[] }> {
+    const users = this.listUsers().filter(u => u.servicePrincipalNames.length > 0).map(u => ({ name: u.sam, servicePrincipalNames: u.servicePrincipalNames }));
+    const computers = this.listComputers().filter(c => c.servicePrincipalNames.length > 0).map(c => ({ name: c.name, servicePrincipalNames: c.servicePrincipalNames }));
+    return [...users, ...computers];
   }
 
   checkComputerSecret(name: string, secret: string): boolean {

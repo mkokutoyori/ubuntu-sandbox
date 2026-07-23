@@ -18,6 +18,7 @@ export interface SecurityEventSink {
     logName: string, source: string, eventId: number,
     entryType: 'Information' | 'Warning' | 'Error' | 'SuccessAudit' | 'FailureAudit',
     message: string,
+    data?: Record<string, string>,
   ): string;
 }
 
@@ -36,6 +37,10 @@ export const SECURITY_EVENT = {
   ACCOUNT_LOCKED_OUT: 4740,
   GROUP_MEMBER_ADDED: 4732,
   GROUP_MEMBER_REMOVED: 4733,
+  GROUP_MEMBER_ADDED_GLOBAL: 4728,
+  GROUP_MEMBER_REMOVED_GLOBAL: 4729,
+  GROUP_MEMBER_ADDED_UNIVERSAL: 4756,
+  GROUP_MEMBER_REMOVED_UNIVERSAL: 4757,
   GROUP_CREATED: 4731,
   GROUP_DELETED: 4734,
   PROCESS_CREATED: 4688,
@@ -54,56 +59,74 @@ export class WindowsSecurityAudit {
 
   // ─── Account lifecycle ─────────────────────────────────────────────────
 
-  accountCreated(name: string): void {
-    this.success(SECURITY_EVENT.ACCOUNT_CREATED, `A user account was created.\n\nNew Account:\n\tAccount Name:\t${name}`);
+  accountCreated(name: string, subjectUserName = 'Administrator'): void {
+    this.success(SECURITY_EVENT.ACCOUNT_CREATED, `A user account was created.\n\nNew Account:\n\tAccount Name:\t${name}`,
+      { TargetUserName: name, SubjectUserName: subjectUserName });
   }
 
-  accountDeleted(name: string): void {
-    this.success(SECURITY_EVENT.ACCOUNT_DELETED, `A user account was deleted.\n\nTarget Account:\n\tAccount Name:\t${name}`);
+  accountDeleted(name: string, subjectUserName = 'Administrator'): void {
+    this.success(SECURITY_EVENT.ACCOUNT_DELETED, `A user account was deleted.\n\nTarget Account:\n\tAccount Name:\t${name}`,
+      { TargetUserName: name, SubjectUserName: subjectUserName });
   }
 
-  accountEnabled(name: string): void {
-    this.success(SECURITY_EVENT.ACCOUNT_ENABLED, `A user account was enabled.\n\nTarget Account:\n\tAccount Name:\t${name}`);
+  accountEnabled(name: string, subjectUserName = 'Administrator'): void {
+    this.success(SECURITY_EVENT.ACCOUNT_ENABLED, `A user account was enabled.\n\nTarget Account:\n\tAccount Name:\t${name}`,
+      { TargetUserName: name, SubjectUserName: subjectUserName });
   }
 
-  accountDisabled(name: string): void {
-    this.success(SECURITY_EVENT.ACCOUNT_DISABLED, `A user account was disabled.\n\nTarget Account:\n\tAccount Name:\t${name}`);
+  accountDisabled(name: string, subjectUserName = 'Administrator'): void {
+    this.success(SECURITY_EVENT.ACCOUNT_DISABLED, `A user account was disabled.\n\nTarget Account:\n\tAccount Name:\t${name}`,
+      { TargetUserName: name, SubjectUserName: subjectUserName });
   }
 
-  passwordReset(name: string): void {
-    this.success(SECURITY_EVENT.PASSWORD_RESET, `An attempt was made to reset an account's password.\n\nTarget Account:\n\tAccount Name:\t${name}`);
+  passwordReset(name: string, subjectUserName = 'Administrator'): void {
+    this.success(SECURITY_EVENT.PASSWORD_RESET, `An attempt was made to reset an account's password.\n\nTarget Account:\n\tAccount Name:\t${name}`,
+      { TargetUserName: name, SubjectUserName: subjectUserName });
   }
 
-  accountChanged(name: string): void {
-    this.success(SECURITY_EVENT.ACCOUNT_CHANGED, `A user account was changed.\n\nTarget Account:\n\tAccount Name:\t${name}`);
+  accountChanged(name: string, subjectUserName = 'Administrator'): void {
+    this.success(SECURITY_EVENT.ACCOUNT_CHANGED, `A user account was changed.\n\nTarget Account:\n\tAccount Name:\t${name}`,
+      { TargetUserName: name, SubjectUserName: subjectUserName });
   }
 
   // ─── Group lifecycle ───────────────────────────────────────────────────
 
-  groupCreated(group: string): void {
-    this.success(SECURITY_EVENT.GROUP_CREATED, `A security-enabled local group was created.\n\nGroup:\n\tGroup Name:\t${group}`);
+  groupCreated(group: string, subjectUserName = 'Administrator'): void {
+    this.success(SECURITY_EVENT.GROUP_CREATED, `A security-enabled local group was created.\n\nGroup:\n\tGroup Name:\t${group}`,
+      { TargetUserName: group, SubjectUserName: subjectUserName });
   }
 
-  groupDeleted(group: string): void {
-    this.success(SECURITY_EVENT.GROUP_DELETED, `A security-enabled local group was deleted.\n\nGroup:\n\tGroup Name:\t${group}`);
+  groupDeleted(group: string, subjectUserName = 'Administrator'): void {
+    this.success(SECURITY_EVENT.GROUP_DELETED, `A security-enabled local group was deleted.\n\nGroup:\n\tGroup Name:\t${group}`,
+      { TargetUserName: group, SubjectUserName: subjectUserName });
   }
 
-  groupMemberAdded(group: string, member: string): void {
-    this.success(SECURITY_EVENT.GROUP_MEMBER_ADDED, `A member was added to a security-enabled local group.\n\nMember:\t${member}\nGroup:\t${group}`);
+  groupMemberAdded(group: string, member: string, scope: 'Local' | 'Global' | 'Universal' = 'Local', subjectUserName = 'Administrator'): void {
+    const eventId = scope === 'Global' ? SECURITY_EVENT.GROUP_MEMBER_ADDED_GLOBAL
+      : scope === 'Universal' ? SECURITY_EVENT.GROUP_MEMBER_ADDED_UNIVERSAL
+      : SECURITY_EVENT.GROUP_MEMBER_ADDED;
+    this.success(eventId, `A member was added to a security-enabled ${scope.toLowerCase()} group.\n\nMember:\t${member}\nGroup:\t${group}`,
+      { TargetUserName: group, MemberName: member, SubjectUserName: subjectUserName });
   }
 
-  groupMemberRemoved(group: string, member: string): void {
-    this.success(SECURITY_EVENT.GROUP_MEMBER_REMOVED, `A member was removed from a security-enabled local group.\n\nMember:\t${member}\nGroup:\t${group}`);
+  groupMemberRemoved(group: string, member: string, scope: 'Local' | 'Global' | 'Universal' = 'Local', subjectUserName = 'Administrator'): void {
+    const eventId = scope === 'Global' ? SECURITY_EVENT.GROUP_MEMBER_REMOVED_GLOBAL
+      : scope === 'Universal' ? SECURITY_EVENT.GROUP_MEMBER_REMOVED_UNIVERSAL
+      : SECURITY_EVENT.GROUP_MEMBER_REMOVED;
+    this.success(eventId, `A member was removed from a security-enabled ${scope.toLowerCase()} group.\n\nMember:\t${member}\nGroup:\t${group}`,
+      { TargetUserName: group, MemberName: member, SubjectUserName: subjectUserName });
   }
 
   // ─── Logon / logoff ────────────────────────────────────────────────────
 
-  logonSuccess(name: string, logonType = 2): void {
-    this.success(SECURITY_EVENT.LOGON_SUCCESS, `An account was successfully logged on.\n\nLogon Type:\t\t${logonType}\nAccount Name:\t${name}`);
+  logonSuccess(name: string, logonType = 2, ipAddress?: string): void {
+    this.success(SECURITY_EVENT.LOGON_SUCCESS, `An account was successfully logged on.\n\nLogon Type:\t\t${logonType}\nAccount Name:\t${name}`,
+      { TargetUserName: name, ...(ipAddress ? { IpAddress: ipAddress } : {}) });
   }
 
-  logonFailure(name: string): void {
-    this.failure(SECURITY_EVENT.LOGON_FAILURE, `An account failed to log on.\n\nAccount For Which Logon Failed:\n\tAccount Name:\t${name}`);
+  logonFailure(name: string, ipAddress?: string): void {
+    this.failure(SECURITY_EVENT.LOGON_FAILURE, `An account failed to log on.\n\nAccount For Which Logon Failed:\n\tAccount Name:\t${name}`,
+      { TargetUserName: name, ...(ipAddress ? { IpAddress: ipAddress } : {}) });
   }
 
   logoff(name: string): void {
@@ -146,11 +169,11 @@ export class WindowsSecurityAudit {
 
   // ─── Internals ─────────────────────────────────────────────────────────
 
-  private success(eventId: number, message: string): void {
-    this.sink.writeEventLog(SECURITY_LOG, AUDIT_SOURCE, eventId, 'SuccessAudit', `${message}\n\n${SUBJECT}`);
+  private success(eventId: number, message: string, data?: Record<string, string>): void {
+    this.sink.writeEventLog(SECURITY_LOG, AUDIT_SOURCE, eventId, 'SuccessAudit', `${message}\n\n${SUBJECT}`, data);
   }
 
-  private failure(eventId: number, message: string): void {
-    this.sink.writeEventLog(SECURITY_LOG, AUDIT_SOURCE, eventId, 'FailureAudit', `${message}\n\n${SUBJECT}`);
+  private failure(eventId: number, message: string, data?: Record<string, string>): void {
+    this.sink.writeEventLog(SECURITY_LOG, AUDIT_SOURCE, eventId, 'FailureAudit', `${message}\n\n${SUBJECT}`, data);
   }
 }

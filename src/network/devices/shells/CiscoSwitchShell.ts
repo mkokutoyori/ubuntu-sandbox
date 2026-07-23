@@ -2709,9 +2709,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     for (const kind of ['motd', 'login', 'exec', 'incoming'] as const) {
       const text = (sw as unknown as { getBanner?: (k: string) => string }).getBanner?.(kind);
       if (text) {
-        lines.push(text.includes('\n')
-          ? `banner ${kind} ^C\n${text}\n^C`
-          : `banner ${kind} ^C${text}^C`);
+        lines.push(`banner ${kind} ^C\n${text}\n^C`);
         lines.push('!');
       }
     }

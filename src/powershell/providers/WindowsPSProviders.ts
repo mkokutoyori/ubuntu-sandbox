@@ -393,28 +393,38 @@ class WindowsAdAdapter implements IAdProvider {
 
   listDomainControllers(): AdComputerInfo[] {
     const store = this.requireStore('Get-ADDomainController');
-    return store.listDomainControllers().map(c => ({ name: c.name, dn: c.dn, enabled: c.enabled }));
+    return store.listDomainControllers().map(c => ({ name: c.name, dn: c.dn, enabled: c.enabled, servicePrincipalNames: c.servicePrincipalNames }));
   }
 
-  newUser(sam: string, opts: { password: string; fullName?: string; path?: string; enabled?: boolean }): AdOpResult {
+  newUser(sam: string, opts: { password: string; fullName?: string; path?: string; enabled?: boolean; department?: string; title?: string }): AdOpResult {
     const store = this.requireStore('New-ADUser');
     const denied = this.requireAdmin('New-ADUser');
     if (denied) return denied;
     return store.newUser(sam, {
       password: opts.password, fullName: opts.fullName, enabled: opts.enabled,
       ou: opts.path ? store.resolveIdentity(opts.path) : undefined,
+      department: opts.department, title: opts.title,
     });
   }
   getUser(identity: string): AdUserInfo | null {
     const store = this.requireStore('Get-ADUser');
     const u = store.getUser(store.resolveIdentity(identity));
-    return u ? { sam: u.sam, upn: u.upn, dn: u.dn, enabled: u.enabled, memberOf: u.memberOf, fullName: u.fullName } : null;
+    return u ? {
+      sam: u.sam, upn: u.upn, dn: u.dn, enabled: u.enabled, memberOf: u.memberOf, fullName: u.fullName,
+      department: u.department, title: u.title, servicePrincipalNames: u.servicePrincipalNames,
+    } : null;
   }
-  setUser(identity: string, opts: { enabled?: boolean; fullName?: string; password?: string }): AdOpResult {
+  setUser(identity: string, opts: { enabled?: boolean; fullName?: string; password?: string; department?: string; title?: string; addSpns?: string[]; removeSpns?: string[] }): AdOpResult {
     const store = this.requireStore('Set-ADUser');
     const denied = this.requireAdmin('Set-ADUser');
     if (denied) return denied;
     return store.setUser(store.resolveIdentity(identity), opts);
+  }
+  listObjectsWithSpns(): Array<{ name: string; servicePrincipalNames: string[] }> {
+    return this.requireStore('Get-ADObject').listObjectsWithSpns();
+  }
+  listLockedOutUsers(): Array<{ sam: string; name: string; badPwdCount: number }> {
+    return this.requireStore('Search-ADAccount').listLockedOutUsers();
   }
   removeUser(identity: string): AdOpResult {
     const store = this.requireStore('Remove-ADUser');
@@ -461,7 +471,7 @@ class WindowsAdAdapter implements IAdProvider {
     const store = this.requireStore('Get-ADComputer');
     const name = store.resolveIdentity(identity).replace(/\$$/, '');
     const c = store.getComputer(name);
-    return c ? { name: c.name, dn: c.dn, enabled: c.enabled } : null;
+    return c ? { name: c.name, dn: c.dn, enabled: c.enabled, servicePrincipalNames: c.servicePrincipalNames } : null;
   }
 
   setComputerAllowedToDelegateTo(identity: string, targetServiceNames: string[]): AdOpResult {
@@ -912,10 +922,11 @@ class WindowsEventLogAdapter implements IEventLogProvider {
       eventId: e.eventId,
       category: e.category,
       message: e.message,
+      data: e.data,
     }));
   }
-  writeEntry(logName: string, source: string, eventId: number, entryType: string, message: string): void {
-    this.log.writeEventLog(logName, source, eventId, entryType as 'Information' | 'Warning' | 'Error' | 'SuccessAudit' | 'FailureAudit', message);
+  writeEntry(logName: string, source: string, eventId: number, entryType: string, message: string, data?: Record<string, string>): void {
+    this.log.writeEventLog(logName, source, eventId, entryType as 'Information' | 'Warning' | 'Error' | 'SuccessAudit' | 'FailureAudit', message, data);
   }
   clearLog(logName: string): string { return this.log.clearEventLog(logName); }
   newLog(logName: string, source: string): string { return this.log.newEventLog(logName, source); }

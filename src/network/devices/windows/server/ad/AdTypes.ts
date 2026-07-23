@@ -16,6 +16,9 @@ export interface AdUser {
   password: string;
   memberOf: string[];
   fullName: string;
+  department: string;
+  title: string;
+  servicePrincipalNames: string[];
 }
 
 export interface AdGroup {
@@ -57,6 +60,7 @@ export interface AdComputer {
   enabled: boolean;
   /** IP the computer account last joined/logged on from — diagnostic only. */
   lastKnownIp?: string;
+  servicePrincipalNames: string[];
 }
 
 export interface AdOrgUnit {

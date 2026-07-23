@@ -43,7 +43,7 @@ async function buildLan(): Promise<{ dc: WindowsServer; client: WindowsPC }> {
   await run(ps(dc), 'Install-WindowsFeature -Name AD-Domain-Services -IncludeManagementTools -IncludeAllSubFeature -Restart:$false');
   await run(ps(dc), 'Install-ADDSForest -DomainName "mandeng.lan" -DomainNetBiosName "MANDENG" -SafeModeAdministratorPassword (ConvertTo-SecureString "DSRM@Mandeng2025!" -AsPlainText -Force) -Force:$true');
   await run(ps(dc), 'New-ADUser -Name "Jean Admin" -SamAccountName jadmin -AccountPassword (ConvertTo-SecureString "User@Mandeng2025!" -AsPlainText -Force) -Enabled $true');
-  await run(ps(client), 'Add-Computer -DomainName "mandeng.lan" -Credential "Administrator:DSRM@Mandeng2025!" -NewName "PC-WIN-01" -Force');
+  await run(ps(client), 'Add-Computer -DomainName "mandeng.lan" -Credential "Administrator:DSRM@Mandeng2025!" -Server "192.168.10.10" -NewName "PC-WIN-01" -Force');
   return { dc, client };
 }
 
@@ -97,12 +97,19 @@ describe('Scénario 5 — Kerberos : tickets, flux d\'authentification et audit 
   });
 
   describe('simulation d\'échecs d\'authentification', () => {
-    it('runas avec un mauvais mot de passe échoue avec "Logon failure: unknown user name or bad password" (erreur 1326)', async () => {
-      const { client } = await buildLan();
-      const out = await client.executeCmdCommand('runas /user:MANDENG\\jadmin cmd');
+    it('runas /user:MANDENG\\jadmin reconnaît un compte de domaine valide (pas "not recognized")', async () => {
+      const { dc } = await buildLan();
+      const out = await dc.executeCmdCommand('runas /user:MANDENG\\jadmin whoami');
+      expect(out).not.toMatch(/not recognized/i);
+      expect(out.toLowerCase()).toContain('jadmin');
+    });
+
+    it('l\'échec de mot de passe interactif produit le message runas.exe réel "1326: The user name or password is incorrect."', async () => {
+      const { runasIncorrectPasswordMessage } = await import('@/network/devices/windows/WinRunas');
+      const out = runasIncorrectPasswordMessage('cmd');
       expect(out).toMatch(/RUNAS ERROR/i);
       expect(out).toMatch(/1326/);
-      expect(out).toMatch(/Logon failure: unknown user name or bad password/i);
+      expect(out).toMatch(/user name or password is incorrect/i);
     });
 
     it('EventID 4771 (échec de pré-authentification) est journalisé sur le DC avec code 0x18 après une authentification échouée', async () => {

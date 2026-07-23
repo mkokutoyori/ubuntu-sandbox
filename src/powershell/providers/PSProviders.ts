@@ -89,6 +89,7 @@ export interface EventLogEntryInfo {
   eventId: number;
   category: string;
   message: string;
+  data?: Record<string, string>;
 }
 
 export interface NetworkAdapterInfo {
@@ -178,11 +179,12 @@ export interface ISmbProvider {
 
 export interface AdUserInfo {
   sam: string; upn: string; dn: string; enabled: boolean; memberOf: string[]; fullName: string;
+  department: string; title: string; servicePrincipalNames: string[];
 }
 export interface AdGroupInfo {
   sam: string; dn: string; scope: 'DomainLocal' | 'Global' | 'Universal'; members: string[];
 }
-export interface AdComputerInfo { name: string; dn: string; enabled: boolean }
+export interface AdComputerInfo { name: string; dn: string; enabled: boolean; servicePrincipalNames: string[] }
 export interface AdOrgUnitInfo { name: string; dn: string; gpLinks: string[] }
 export interface AdOpResult { ok: boolean; message: string }
 
@@ -199,10 +201,14 @@ export interface IAdProvider {
   /** `Get-ADDomainController` — every domain controller this DC currently knows about (itself, plus any replicated in). */
   listDomainControllers(): AdComputerInfo[];
 
-  newUser(sam: string, opts: { password: string; fullName?: string; path?: string; enabled?: boolean }): AdOpResult;
+  newUser(sam: string, opts: { password: string; fullName?: string; path?: string; enabled?: boolean; department?: string; title?: string }): AdOpResult;
   getUser(identity: string): AdUserInfo | null;
-  setUser(identity: string, opts: { enabled?: boolean; fullName?: string; password?: string }): AdOpResult;
+  setUser(identity: string, opts: { enabled?: boolean; fullName?: string; password?: string; department?: string; title?: string; addSpns?: string[]; removeSpns?: string[] }): AdOpResult;
   removeUser(identity: string): AdOpResult;
+  /** Every user/computer object carrying at least one SPN — for cross-object duplicate-SPN detection (`Get-ADObject -Filter {ServicePrincipalName -like "*"}`). */
+  listObjectsWithSpns(): Array<{ name: string; servicePrincipalNames: string[] }>;
+  /** `Search-ADAccount -LockedOut`. */
+  listLockedOutUsers(): Array<{ sam: string; name: string; badPwdCount: number }>;
 
   newGroup(sam: string, scope: AdGroupInfo['scope'], path?: string): AdOpResult;
   getGroup(identity: string): AdGroupInfo | null;
@@ -909,7 +915,7 @@ export interface IVpnProvider {
 export interface IEventLogProvider {
   listLogs(): Array<{ logName: string; entries: number; maxSizeKB: number }>;
   getEntries(logName: string, opts?: { newest?: number; entryType?: string; source?: string }): EventLogEntryInfo[];
-  writeEntry(logName: string, source: string, eventId: number, entryType: string, message: string): void;
+  writeEntry(logName: string, source: string, eventId: number, entryType: string, message: string, data?: Record<string, string>): void;
   clearLog(logName: string): string;
   newLog(logName: string, source: string): string;
   limitLog(logName: string, maxSizeKB: number): void;

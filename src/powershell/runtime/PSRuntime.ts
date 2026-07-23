@@ -2457,18 +2457,37 @@ export class PSRuntime {
       case 'array':   return Array.isArray(val) ? val : [val];
       case 'xml': {
         const xmlStr = String(val ?? '');
+        const parseAttrs = (attrsStr: string): Record<string, string> => {
+          const attrs: Record<string, string> = {};
+          const attrRe = /([\w:.-]+)\s*=\s*"([^"]*)"/g;
+          let am: RegExpExecArray | null;
+          while ((am = attrRe.exec(attrsStr)) !== null) attrs[am[1]] = am[2];
+          return attrs;
+        };
         const parseXML = (s: string): Record<string, PSValue> => {
           const node: Record<string, PSValue> = {
             OuterXml: s,
             InnerText: s.replace(/<[^>]*>/g, '').trim(),
           };
-          const childRe = /<([\w:.-]+)(?:\s[^>]*)?>([^]*?)<\/\1>/g;
+          const childRe = /<([\w:.-]+)((?:\s+[\w:.-]+\s*=\s*"[^"]*")*)\s*(?:\/>|>([^]*?)<\/\1>)/g;
           let m: RegExpExecArray | null;
           while ((m = childRe.exec(s)) !== null) {
-            const [, tag, content] = m;
-            node[tag] = /<[\w:.-]/.test(content)
-              ? parseXML(content) as unknown as PSValue
-              : content;
+            const [, tag, attrsStr, content] = m;
+            const attrs = parseAttrs(attrsStr);
+            const hasAttrs = Object.keys(attrs).length > 0;
+            let childNode: PSValue;
+            if (content === undefined) {
+              childNode = hasAttrs ? (attrs as unknown as PSValue) : '';
+            } else if (/<[\w:.-]/.test(content)) {
+              childNode = parseXML(content) as unknown as PSValue;
+            } else if (hasAttrs) {
+              childNode = { ...attrs, '#text': content } as unknown as PSValue;
+            } else {
+              childNode = content;
+            }
+            if (node[tag] === undefined) node[tag] = childNode;
+            else if (Array.isArray(node[tag])) (node[tag] as PSValue[]).push(childNode);
+            else node[tag] = [node[tag], childNode];
           }
           return node;
         };

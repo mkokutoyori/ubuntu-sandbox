@@ -234,12 +234,7 @@ export function showRunningConfig(router: Router): string {
   for (const kind of ['motd', 'login', 'exec', 'incoming'] as const) {
     const text = router.getBanner?.(kind);
     if (text) {
-      // Real IOS always re-encodes the banner with ^C as the delimiter in
-      // show running-config, whatever the operator typed; multi-line
-      // content is rendered in block form with its exact lines intact.
-      lines.push(text.includes('\n')
-        ? `banner ${kind} ^C\n${text}\n^C`
-        : `banner ${kind} ^C${text}^C`);
+      lines.push(`banner ${kind} ^C\n${text}\n^C`);
       lines.push('!');
     }
   }
