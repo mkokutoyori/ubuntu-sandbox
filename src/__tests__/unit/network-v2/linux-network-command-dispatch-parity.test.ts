@@ -7,22 +7,27 @@
  * typed directly, or appears with shell composition at the top level)
  * always calls the registry implementation; the synchronous switch in
  * `dispatch()` — reached whenever a script file is executed via
- * `bash script.sh`/`sh script.sh`, since that nested path never goes
- * through the async pipeline — used to have its own explicit
- * `case 'curl'`/`case 'ifconfig'`/`case 'tcpdump'` calling a second,
- * independently-drifted legacy implementation. For curl and ifconfig
- * that legacy path ignored the real topology / silently no-op'd on
- * arguments; removing those two `case`s lets the switch's own
- * `default:` branch (`_registryCommandHook`) reach the same registry
- * command that the typed path already used — one implementation,
- * both call sites.
+ * `bash script.sh`/`sh script.sh` on an irreducibly synchronous nested
+ * call — used to have its own explicit `case 'curl'`/`case 'ifconfig'`/
+ * `case 'tcpdump'` calling a second, independently-drifted legacy
+ * implementation. For curl and ifconfig that legacy path ignored the
+ * real topology / silently no-op'd on arguments; removing those two
+ * `case`s lets the switch's own `default:` branch
+ * (`_registryCommandHook`) reach the same registry command that the
+ * typed path already used — one implementation, both call sites.
  *
  * `tcpdump`'s registry implementation is genuinely asynchronous (real
  * capture-window delays), so it cannot be served by the synchronous
- * `_registryCommandHook` — its switch `case` is intentionally kept to
- * avoid turning a working (if divergently-worded) scripted `tcpdump`
- * into "command not found". Its only fixed divergence is the banner
- * wording bug identified by the audit.
+ * `_registryCommandHook` — its switch `case` is intentionally kept for
+ * the irreducibly synchronous fallback context, wired to the same
+ * conformant wording as the typed path. Since the SSH wire-fidelity
+ * refactor's Phase 2, a top-level `bash script.sh`/`./script.sh`/
+ * `run-parts DIR` invocation itself now goes through the async
+ * dispatcher (`LinuxMachine.containsNetworkCommand`'s `SCRIPT_FILE_HEAD_RE`),
+ * so in that (now much more common) case the scripted `tcpdump` reaches
+ * the *same* async `networkRunner`/`runWithStatus` path as the typed
+ * one — genuinely waiting out the real capture window rather than only
+ * matching its wording.
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';
@@ -112,5 +117,12 @@ describe('tcpdump: scripted invocation keeps working and uses conformant wording
     const scripted = await pc1.executeCommand('bash /tmp/__dispatch_test.sh');
     expect(scripted).toContain('snapshot length');
     expect(scripted).not.toContain('capture size');
-  });
+    // Two real capture windows back-to-back (`-c 1` with no traffic on an
+    // uncabled PC waits out the full 3s CAPTURE_DEADLINE_WITH_TARGET_MS
+    // each) — now that `bash script.sh` genuinely awaits network commands
+    // instead of taking the synchronous captureLog-only shortcut (SSH
+    // wire-fidelity refactor, Phase 2), the scripted call incurs the same
+    // real wait as the typed one, so the default 5s test timeout no
+    // longer covers both calls.
+  }, 10000);
 });
