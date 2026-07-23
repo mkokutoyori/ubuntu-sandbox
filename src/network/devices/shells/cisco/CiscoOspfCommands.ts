@@ -212,11 +212,13 @@ export function buildConfigRouterOSPFCommands(trie: CommandTrie, ctx: CiscoShell
       ospf.setAreaType(areaId, 'nssa');
       return '';
     } else if (subCmd === 'range') {
-      // area <id> range <network> <mask>
+      // area <id> range <network> <mask> [not-advertise]
       if (args.length < 4) return '% Incomplete command.';
       const extra = ctx.r()._getOSPFExtraConfig();
       if (!extra.areaRanges.has(areaId)) extra.areaRanges.set(areaId, []);
       extra.areaRanges.get(areaId)!.push({ network: args[2], mask: args[3] });
+      const advertise = !args.some(a => a.toLowerCase() === 'not-advertise');
+      ospf.addAreaRange(areaId, args[2], args[3], advertise);
       return '';
     } else if (subCmd === 'virtual-link') {
       if (args.length < 3) return '% Incomplete command.';
@@ -2384,12 +2386,16 @@ function getOSPFRouteCode(router: Router, net: string, cidr: number, routeEntry?
   if (routeEntry?._metricType || routeEntry?._isDefault || routeEntry?.routeType || routeEntry?._isStubDefault) {
     // Stub area default route
     if (routeEntry._isStubDefault && isDefault) return 'O*IA';
-    const mt = routeEntry._metricType ?? 2;
+    // Real OSPFEngine routes (routeType 'external-type1'/'external-type2', from
+    // processExternalRoutes()) don't carry a separate `_metricType` field — the
+    // type is baked into routeType itself.
+    const isType1External = routeEntry.routeType === 'type1-external' || routeEntry.routeType === 'external-type1';
+    const mt = routeEntry._metricType ?? (isType1External ? 1 : 2);
     if (isDefault && (routeEntry._metricType || routeEntry.routeType?.includes('external'))) {
       return mt === 1 ? 'O*E1' : 'O*E2';
     }
-    if (routeEntry.routeType === 'type1-external') return 'O E1';
-    if (routeEntry.routeType === 'type2-external') return 'O E2';
+    if (routeEntry.routeType === 'type1-external' || routeEntry.routeType === 'external-type1') return 'O E1';
+    if (routeEntry.routeType === 'type2-external' || routeEntry.routeType === 'external-type2') return 'O E2';
     if (isDefault && routeEntry.routeType === 'inter-area') return 'O*IA';
     if (routeEntry.routeType === 'inter-area') return 'O IA';
   }
