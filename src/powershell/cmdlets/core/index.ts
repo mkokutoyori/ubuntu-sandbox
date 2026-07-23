@@ -155,7 +155,7 @@ import {
   NewNpsConnectionRequestPolicyCmdlet, GetNpsConnectionRequestPolicyCmdlet, RemoveNpsConnectionRequestPolicyCmdlet,
   SetNpsAccountingConfigurationCmdlet,
 } from './NpsCmdlets';
-import { NewGPOCmdlet, GetGPOCmdlet, NewGPLinkCmdlet } from './GroupPolicyCmdlets';
+import { NewGPOCmdlet, GetGPOCmdlet, NewGPLinkCmdlet, SetGPInheritanceCmdlet, GetGPInheritanceCmdlet } from './GroupPolicyCmdlets';
 import {
   NewWebsiteCmdlet, GetWebsiteCmdlet, StartWebsiteCmdlet, StopWebsiteCmdlet, RemoveWebsiteCmdlet,
   NewWebBindingCmdlet,
@@ -538,6 +538,8 @@ export function registerServerCmdlets(registry: CmdletRegistry): void {
   registry.register(new NewGPOCmdlet());
   registry.register(new GetGPOCmdlet());
   registry.register(new NewGPLinkCmdlet());
+  registry.register(new SetGPInheritanceCmdlet());
+  registry.register(new GetGPInheritanceCmdlet());
 
   // ── Web Server / IIS role (PRD-Windows-Server.md §5 P11) ────────────────────
   registry.register(new NewWebsiteCmdlet());

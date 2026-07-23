@@ -552,6 +552,12 @@ class WindowsAdAdapter implements IAdProvider {
     if (denied) return denied;
     return store.setUser(store.resolveIdentity(identity), opts);
   }
+  listUsers(): AdUserInfo[] {
+    return this.requireStore('Get-ADUser').listUsers().map(u => ({
+      sam: u.sam, upn: u.upn, dn: u.dn, sid: u.sid, enabled: u.enabled, memberOf: u.memberOf, fullName: u.fullName,
+      department: u.department, title: u.title, servicePrincipalNames: u.servicePrincipalNames,
+    }));
+  }
   listObjectsWithSpns(): Array<{ name: string; servicePrincipalNames: string[] }> {
     return this.requireStore('Get-ADObject').listObjectsWithSpns();
   }
@@ -575,6 +581,9 @@ class WindowsAdAdapter implements IAdProvider {
     const store = this.requireStore('Get-ADGroup');
     const g = store.getGroup(store.resolveIdentity(identity));
     return g ? { sam: g.sam, dn: g.dn, scope: g.scope, members: g.members } : null;
+  }
+  listGroups(): AdGroupInfo[] {
+    return this.requireStore('Get-ADGroup').listGroups().map(g => ({ sam: g.sam, dn: g.dn, scope: g.scope, members: g.members }));
   }
   addGroupMember(groupIdentity: string, members: string[]): AdOpResult {
     const store = this.requireStore('Add-ADGroupMember');
@@ -604,6 +613,9 @@ class WindowsAdAdapter implements IAdProvider {
     const name = store.resolveIdentity(identity).replace(/\$$/, '');
     const c = store.getComputer(name);
     return c ? { name: c.name, dn: c.dn, enabled: c.enabled, servicePrincipalNames: c.servicePrincipalNames } : null;
+  }
+  listComputers(): AdComputerInfo[] {
+    return this.requireStore('Get-ADComputer').listComputers().map(c => ({ name: c.name, dn: c.dn, enabled: c.enabled, servicePrincipalNames: c.servicePrincipalNames }));
   }
 
   setComputerAllowedToDelegateTo(identity: string, targetServiceNames: string[]): AdOpResult {
@@ -1893,7 +1905,10 @@ class WindowsDiskAdapter implements IDiskProvider {
 
 interface JoinableDevice {
   resolveHostnameSync(name: string): { toString(): string } | null;
-  joinDomainNow(domainName: string, dcAddress: string, credentialUser: string, credentialPassword: string): AdOpResult;
+  joinDomainNow(
+    domainName: string, dcAddress: string, credentialUser: string, credentialPassword: string,
+    opts?: { ouPath?: string; newName?: string },
+  ): AdOpResult;
   getDomainMembership(): DomainMembershipInfo | null;
 }
 
@@ -1902,12 +1917,12 @@ class WindowsComputerAdapter implements IComputerProvider {
 
   private device(): JoinableDevice { return this.pc as unknown as JoinableDevice; }
 
-  join(domainName: string, credential: { username: string; password: string }, server?: string): AdOpResult {
+  join(domainName: string, credential: { username: string; password: string }, server?: string, opts?: { ouPath?: string; newName?: string }): AdOpResult {
     const dcAddress = server ?? this.pc.resolveHostnameSync(domainName)?.toString();
     if (!dcAddress) {
       return { ok: false, message: `Computer '${this.pc.getHostname()}' failed to join domain '${domainName}': The specified domain either does not exist or could not be contacted.` };
     }
-    return this.device().joinDomainNow(domainName, dcAddress, credential.username, credential.password);
+    return this.device().joinDomainNow(domainName, dcAddress, credential.username, credential.password, opts);
   }
 
   getDomainInfo(): DomainMembershipInfo | null {
@@ -1948,6 +1963,14 @@ class WindowsGpoAdapter implements IGpoProvider {
 
   getDomainDn(): string {
     return this.requireDc('New-GPLink').getDomainDn();
+  }
+
+  setGpInheritance(targetDn: string, blocked: boolean): AdOpResult {
+    return this.requireDc('Set-GPInheritance').setGpInheritance(targetDn, blocked);
+  }
+
+  getGpInheritance(targetDn: string): { dn: string; gpoInheritanceBlocked: boolean; gpoLinks: string[] } | null {
+    return this.requireDc('Get-GPInheritance').getGpInheritance(targetDn);
   }
 }
 

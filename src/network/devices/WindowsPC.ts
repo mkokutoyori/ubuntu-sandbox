@@ -801,19 +801,27 @@ export class WindowsPC extends EndHost implements UserAccountHost {
    * dialogue against the DC at `dcAddress` (no DNS SRV discovery yet,
    * P7 dependency — callers resolve the DC address themselves).
    */
-  joinDomainNow(domainName: string, dcAddress: string, credentialUser: string, credentialPassword: string): DomainJoinResult {
+  joinDomainNow(
+    domainName: string, dcAddress: string, credentialUser: string, credentialPassword: string,
+    opts: { ouPath?: string; newName?: string } = {},
+  ): DomainJoinResult {
     if (this.domainMembership) {
       return { ok: false, message: `The computer '${this.getHostname()}' is already joined to a domain.` };
     }
+    const computerName = opts.newName || this.getHostname();
     const result = joinDomain({
       tcpStack: this.getTcpStack(),
-      computerName: this.getHostname(),
+      computerName,
       domainName,
       dcAddress,
       credentialUser,
       credentialPassword,
+      ouPath: opts.ouPath,
     });
-    if (result.ok && result.membership) this.domainMembership = result.membership;
+    if (result.ok && result.membership) {
+      this.domainMembership = result.membership;
+      if (opts.newName) this.setHostname(opts.newName);
+    }
     return result;
   }
 
@@ -1509,6 +1517,10 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     const ownHostname = typeof this.hostname === 'string' ? this.hostname.toLowerCase() : '';
     if (lower === 'localhost' || (ownHostname && lower === ownHostname)) {
       return new IPAddress('127.0.0.1');
+    }
+    const [dnsIp] = this.resolveDnsSync(name);
+    if (dnsIp) {
+      try { return new IPAddress(dnsIp); } catch { return null; }
     }
     return null;
   }

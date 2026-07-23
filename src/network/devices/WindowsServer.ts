@@ -563,7 +563,10 @@ export class WindowsServer extends WindowsPC {
     dns.addPrimaryZone(domainName);
     const hostname = this.getHostname();
     const ownIp = this.getInterfaces().map(p => p.getIPAddress()).find((ip): ip is NonNullable<typeof ip> => ip !== null);
-    if (ownIp) dns.addARecord(domainName, hostname, ownIp.toString());
+    if (ownIp) {
+      dns.addARecord(domainName, hostname, ownIp.toString());
+      dns.addARecord(domainName, '@', ownIp.toString());
+    }
     const dcTarget = `${hostname}.${domainName}`;
     dns.addSrvRecord(domainName, '_ldap._tcp.dc._msdcs', { priority: 0, weight: 100, port: 389, target: dcTarget });
     dns.addSrvRecord(domainName, '_kerberos._tcp.dc._msdcs', { priority: 0, weight: 100, port: 88, target: dcTarget });

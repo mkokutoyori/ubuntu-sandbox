@@ -31,12 +31,18 @@ async function setupDcAndClient(page: Page): Promise<{ dcId: string; clientId: s
     const execClient = clientInst.executeCommand as (c: string) => Promise<string> | string;
     await Promise.resolve(execDc.call(dcInst, `netsh interface ip set address name="${pDc}" static 192.168.10.10 255.255.255.0`));
     await Promise.resolve(execClient.call(clientInst, `netsh interface ip set address name="${pClient}" static 192.168.10.30 255.255.255.0`));
+    await Promise.resolve(execClient.call(clientInst, `netsh interface ip set dns name="${pClient}" static 192.168.10.10`));
     store.getState().addConnection(dc.id, pDc, client.id, pClient, 'ethernet');
     return { dcId: dc.id, clientId: client.id };
   });
 }
 
 async function openTerminal(page: Page, id: string): Promise<void> {
+  const desktopToggle = page.getByTitle('Show topology (terminals stay open)');
+  if (await desktopToggle.count() > 0) {
+    await desktopToggle.click();
+    await page.waitForTimeout(150);
+  }
   await page.locator(`[data-device-id="${id}"]`).first().dblclick({ timeout: 8_000 });
   await page.waitForTimeout(400);
 }
@@ -49,8 +55,10 @@ async function typeCmdIn(page: Page, deviceId: string, command: string): Promise
   await input.press('Enter');
   await page.waitForTimeout(300);
 }
-async function lastModalText(page: Page): Promise<string> {
-  return (await page.locator('[data-testid="terminal-modal"]').last().innerText());
+async function modalTextFor(page: Page, deviceId: string): Promise<string> {
+  const modal = page.locator(`[data-testid="terminal-modal"][data-device-id="${deviceId}"]`).first();
+  const target = (await modal.count()) > 0 ? modal : page.locator('[data-testid="terminal-modal"]').last();
+  return target.innerText();
 }
 
 test.describe('Scénario 4 (e2e) — GPO : création, liaison, héritage', () => {
@@ -66,6 +74,7 @@ test.describe('Scénario 4 (e2e) — GPO : création, liaison, héritage', () =>
     await openTerminal(page, dcId);
     await typeCmdIn(page, dcId, 'powershell');
     await typeCmdIn(page, dcId, 'Install-WindowsFeature -Name AD-Domain-Services -IncludeManagementTools -IncludeAllSubFeature -Restart:$false');
+    await typeCmdIn(page, dcId, 'Install-WindowsFeature DNS');
     await typeCmdIn(page, dcId, 'Install-ADDSForest -DomainName "mandeng.lan" -DomainNetBiosName "MANDENG" -SafeModeAdministratorPassword (ConvertTo-SecureString "DSRM@Mandeng2025!" -AsPlainText -Force) -Force:$true');
     await typeCmdIn(page, dcId, 'New-ADOrganizationalUnit -Name "Mandeng" -Path "DC=mandeng,DC=lan"');
     await typeCmdIn(page, dcId, 'New-ADOrganizationalUnit -Name "Ordinateurs" -Path "OU=Mandeng,DC=mandeng,DC=lan"');
@@ -84,12 +93,12 @@ test.describe('Scénario 4 (e2e) — GPO : création, liaison, héritage', () =>
     await typeCmdIn(page, clientId, 'cmd');
     await typeCmdIn(page, clientId, 'gpupdate /force');
     await page.waitForTimeout(300);
-    const updateText = await lastModalText(page);
+    const updateText = await modalTextFor(page, clientId);
     expect(updateText).toMatch(/completed successfully/i);
 
     await typeCmdIn(page, clientId, 'gpresult /R');
     await page.waitForTimeout(300);
-    const text = await lastModalText(page);
+    const text = await modalTextFor(page, clientId);
     expect(text).toContain('MANDENG-Security-Baseline');
     expect(text).toContain('MANDENG-Postes-Config');
   });
@@ -100,13 +109,14 @@ test.describe('Scénario 4 (e2e) — GPO : création, liaison, héritage', () =>
     await openTerminal(page, dcId);
     await typeCmdIn(page, dcId, 'powershell');
     await typeCmdIn(page, dcId, 'Install-WindowsFeature -Name AD-Domain-Services -IncludeManagementTools -IncludeAllSubFeature -Restart:$false');
+    await typeCmdIn(page, dcId, 'Install-WindowsFeature DNS');
     await typeCmdIn(page, dcId, 'Install-ADDSForest -DomainName "mandeng.lan" -DomainNetBiosName "MANDENG" -SafeModeAdministratorPassword (ConvertTo-SecureString "DSRM@Mandeng2025!" -AsPlainText -Force) -Force:$true');
     await typeCmdIn(page, dcId, 'New-ADOrganizationalUnit -Name "Mandeng" -Path "DC=mandeng,DC=lan"');
     await typeCmdIn(page, dcId, 'New-ADOrganizationalUnit -Name "ServiceAccounts" -Path "OU=Mandeng,DC=mandeng,DC=lan"');
     await typeCmdIn(page, dcId, 'Set-GPInheritance -Target "OU=ServiceAccounts,OU=Mandeng,DC=mandeng,DC=lan" -IsBlocked Yes');
     await typeCmdIn(page, dcId, '(Get-GPInheritance -Target "OU=ServiceAccounts,OU=Mandeng,DC=mandeng,DC=lan").GpoInheritanceBlocked');
     await page.waitForTimeout(300);
-    const text = await lastModalText(page);
+    const text = await modalTextFor(page, dcId);
     expect(text).not.toMatch(/not recognized/i);
   });
 
@@ -116,6 +126,7 @@ test.describe('Scénario 4 (e2e) — GPO : création, liaison, héritage', () =>
     await openTerminal(page, dcId);
     await typeCmdIn(page, dcId, 'powershell');
     await typeCmdIn(page, dcId, 'Install-WindowsFeature -Name AD-Domain-Services -IncludeManagementTools -IncludeAllSubFeature -Restart:$false');
+    await typeCmdIn(page, dcId, 'Install-WindowsFeature DNS');
     await typeCmdIn(page, dcId, 'Install-ADDSForest -DomainName "mandeng.lan" -DomainNetBiosName "MANDENG" -SafeModeAdministratorPassword (ConvertTo-SecureString "DSRM@Mandeng2025!" -AsPlainText -Force) -Force:$true');
     await typeCmdIn(page, dcId, 'New-ADOrganizationalUnit -Name "Mandeng" -Path "DC=mandeng,DC=lan"');
     await typeCmdIn(page, dcId, 'New-ADOrganizationalUnit -Name "Ordinateurs" -Path "OU=Mandeng,DC=mandeng,DC=lan"');
@@ -135,7 +146,7 @@ test.describe('Scénario 4 (e2e) — GPO : création, liaison, héritage', () =>
     await page.waitForTimeout(300);
     await typeCmdIn(page, clientId, 'gpresult /R');
     await page.waitForTimeout(300);
-    const text = await lastModalText(page);
+    const text = await modalTextFor(page, clientId);
     expect(text).not.toContain('MANDENG-Postes-Config');
   });
 });

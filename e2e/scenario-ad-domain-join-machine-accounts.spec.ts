@@ -31,6 +31,7 @@ async function setupDcAndClient(page: Page): Promise<{ dcId: string; clientId: s
     const execClient = clientInst.executeCommand as (c: string) => Promise<string> | string;
     await Promise.resolve(execDc.call(dcInst, `netsh interface ip set address name="${pDc}" static 192.168.10.10 255.255.255.0`));
     await Promise.resolve(execClient.call(clientInst, `netsh interface ip set address name="${pClient}" static 192.168.10.30 255.255.255.0`));
+    await Promise.resolve(execClient.call(clientInst, `netsh interface ip set dns name="${pClient}" static 192.168.10.10`));
     store.getState().addConnection(dc.id, pDc, client.id, pClient, 'ethernet');
     return { dcId: dc.id, clientId: client.id };
   });
@@ -73,6 +74,7 @@ test.describe('Scénario 3 (e2e) — jonction au domaine et compte machine PC-WI
     await openTerminal(page, dcId);
     await typeCmdIn(page, dcId, 'powershell');
     await typeCmdIn(page, dcId, 'Install-WindowsFeature -Name AD-Domain-Services -IncludeManagementTools -IncludeAllSubFeature -Restart:$false');
+    await typeCmdIn(page, dcId, 'Install-WindowsFeature DNS');
     await typeCmdIn(page, dcId, 'Install-ADDSForest -DomainName "mandeng.lan" -DomainNetBiosName "MANDENG" -SafeModeAdministratorPassword (ConvertTo-SecureString "DSRM@Mandeng2025!" -AsPlainText -Force) -Force:$true');
     await typeCmdIn(page, dcId, 'New-ADOrganizationalUnit -Name "Mandeng" -Path "DC=mandeng,DC=lan"');
     await typeCmdIn(page, dcId, 'New-ADOrganizationalUnit -Name "Ordinateurs" -Path "OU=Mandeng,DC=mandeng,DC=lan"');
@@ -83,6 +85,8 @@ test.describe('Scénario 3 (e2e) — jonction au domaine et compte machine PC-WI
     await typeCmdIn(page, clientId, 'powershell');
     await typeCmdIn(page, clientId, 'Add-Computer -DomainName "mandeng.lan" -Credential "Administrator:DSRM@Mandeng2025!" -OUPath "OU=Postes,OU=Ordinateurs,OU=Mandeng,DC=mandeng,DC=lan" -NewName "PC-WIN-01" -Force');
     await page.waitForTimeout(500);
+    const clientText = await modalTextFor(page, clientId);
+    expect(clientText).not.toContain('failed to join domain');
 
     await typeCmdIn(page, dcId, 'Get-ADComputer -Filter {Name -eq "PC-WIN-01"} -Properties *');
     await page.waitForTimeout(300);

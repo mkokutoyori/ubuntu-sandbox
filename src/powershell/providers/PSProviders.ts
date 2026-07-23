@@ -214,6 +214,7 @@ export interface IAdProvider {
 
   newUser(sam: string, opts: { password: string; fullName?: string; path?: string; enabled?: boolean; department?: string; title?: string; actingSam?: string }): AdOpResult;
   getUser(identity: string): AdUserInfo | null;
+  listUsers(): AdUserInfo[];
   setUser(identity: string, opts: { enabled?: boolean; fullName?: string; password?: string; department?: string; title?: string; addSpns?: string[]; removeSpns?: string[]; actingSam?: string }): AdOpResult;
   removeUser(identity: string): AdOpResult;
   /** Every user/computer object carrying at least one SPN — for cross-object duplicate-SPN detection (`Get-ADObject -Filter {ServicePrincipalName -like "*"}`). */
@@ -223,10 +224,12 @@ export interface IAdProvider {
 
   newGroup(sam: string, scope: AdGroupInfo['scope'], path?: string): AdOpResult;
   getGroup(identity: string): AdGroupInfo | null;
+  listGroups(): AdGroupInfo[];
   addGroupMember(groupIdentity: string, members: string[]): AdOpResult;
   removeGroupMember(groupIdentity: string, members: string[]): AdOpResult;
 
   getComputer(identity: string): AdComputerInfo | null;
+  listComputers(): AdComputerInfo[];
   /** `Set-ADComputer -Identity <name> -AllowedToDelegateTo <svc1,svc2,...>` (PRD-Windows-Server-Advanced.md §5 P10) — the `msDS-AllowedToDelegateTo` list S4U2Proxy checks. */
   setComputerAllowedToDelegateTo(identity: string, targetServiceNames: string[]): AdOpResult;
 
@@ -367,7 +370,7 @@ export interface IComputerProvider {
    * (depends on the DNS Server role, P7); when omitted, the domain name
    * itself is resolved as a hostname.
    */
-  join(domainName: string, credential: { username: string; password: string }, server?: string): AdOpResult;
+  join(domainName: string, credential: { username: string; password: string }, server?: string, opts?: { ouPath?: string; newName?: string }): AdOpResult;
   /** This machine's domain-join state, or null while in a workgroup. */
   getDomainInfo(): DomainMembershipInfo | null;
 }
@@ -383,6 +386,8 @@ export interface IGpoProvider {
   /** `New-GPLink -Target` accepts a distinguished name (domain root or an OU's DN, e.g. from `Get-ADOrganizationalUnit`). */
   newGPLink(gpoName: string, targetDn: string): AdOpResult;
   getDomainDn(): string;
+  setGpInheritance(targetDn: string, blocked: boolean): AdOpResult;
+  getGpInheritance(targetDn: string): { dn: string; gpoInheritanceBlocked: boolean; gpoLinks: string[] } | null;
 }
 
 // ── Web Server / IIS role (PRD-Windows-Server.md §5 P11) ────────────────────

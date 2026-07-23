@@ -321,11 +321,9 @@ export class DirectoryStore {
   newGPLink(gpoName: string, targetDn: string): DirOpResult {
     const gpo = this.findGpoEntry(gpoName);
     if (!gpo) return { ok: false, message: `Cannot find a GPO with name "${gpoName}".` };
-    let target: DistinguishedName;
-    try { target = parseDN(targetDn); } catch { return { ok: false, message: `"${targetDn}" is not a valid distinguished name.` }; }
-    const targetEntry = this.tree.getByDn(target);
+    const targetEntry = this.resolveTargetEntry(targetDn);
     if (!targetEntry) return { ok: false, message: `Cannot find an object with distinguished name: '${targetDn}'.` };
-    this.tree.modifyEntry(target, [{ op: 'add', type: 'gPLink', values: [formatDN(gpo.dn)] }]);
+    this.tree.modifyEntry(targetEntry.dn, [{ op: 'add', type: 'gPLink', values: [formatDN(gpo.dn)] }]);
     return { ok: true, message: '' };
   }
 
@@ -334,17 +332,17 @@ export class DirectoryStore {
    * then GPOs linked to the computer's own OU (more specific — its
    * settings override the domain's on conflicting keys). Only direct
    * links are honored (no OU-hierarchy walk beyond the computer's
-   * immediate container), matching this simulator's flat OU placement
-   * (P6 domain join always places computers in the Computers OU).
+   * immediate container).
    */
   resultantSetOfPolicy(computerName?: string): { appliedGpoNames: string[]; settings: GpoSettings } {
-    const domainLinked = this.linkedGposFor(this.tree.getRootDn());
-    let ouLinked: Gpo[] = [];
+    let ouEntry: DirectoryEntry | null = null;
     if (computerName) {
       const computer = this.findComputerEntry(computerName);
-      const parentDn = computer ? computer.dn.slice(1) : null;
-      if (parentDn) ouLinked = this.linkedGposFor(parentDn);
+      if (computer) ouEntry = this.tree.getByDn(computer.dn.slice(1));
     }
+    const inheritanceBlocked = ouEntry ? firstOf(ouEntry.attributes.get('gpoptions')) === '1' : false;
+    const domainLinked = inheritanceBlocked ? [] : this.linkedGposFor(this.tree.getRootDn());
+    const ouLinked = ouEntry ? this.linkedGposFor(ouEntry.dn) : [];
     const ordered = [...domainLinked, ...ouLinked];
     const merged: GpoSettings = {};
     for (const gpo of ordered) {
@@ -353,6 +351,23 @@ export class DirectoryStore {
       if (gpo.settings.startupScript !== undefined) merged.startupScript = gpo.settings.startupScript;
     }
     return { appliedGpoNames: ordered.map(g => g.name), settings: merged };
+  }
+
+  setGpInheritance(targetDn: string, blocked: boolean): DirOpResult {
+    const entry = this.resolveTargetEntry(targetDn);
+    if (!entry) return { ok: false, message: `Cannot find an object with distinguished name: '${targetDn}'.` };
+    this.tree.modifyEntry(entry.dn, [{ op: 'replace', type: 'gPOptions', values: [blocked ? '1' : '0'] }]);
+    return { ok: true, message: '' };
+  }
+
+  getGpInheritance(targetDn: string): { dn: string; gpoInheritanceBlocked: boolean; gpoLinks: string[] } | null {
+    const entry = this.resolveTargetEntry(targetDn);
+    if (!entry) return null;
+    return {
+      dn: formatDN(entry.dn),
+      gpoInheritanceBlocked: firstOf(entry.attributes.get('gpoptions')) === '1',
+      gpoLinks: entry.attributes.get('gplink') ?? [],
+    };
   }
 
   private linkedGposFor(dn: DistinguishedName): Gpo[] {
@@ -887,7 +902,7 @@ export class DirectoryStore {
     return false;
   }
 
-  private resolveAclTargetEntry(rawDn: string): DirectoryEntry | null {
+  private resolveTargetEntry(rawDn: string): DirectoryEntry | null {
     try {
       const parsed = parseDN(rawDn);
       const direct = this.tree.getByDn(parsed);
@@ -897,13 +912,13 @@ export class DirectoryStore {
   }
 
   getAcl(dn: string): AdAccessRule[] | null {
-    const entry = this.resolveAclTargetEntry(dn);
+    const entry = this.resolveTargetEntry(dn);
     if (!entry) return null;
     return this.acls.get(formatDN(entry.dn).toLowerCase()) ?? [];
   }
 
   setAcl(dn: string, rules: AdAccessRule[]): DirOpResult {
-    const entry = this.resolveAclTargetEntry(dn);
+    const entry = this.resolveTargetEntry(dn);
     if (!entry) return { ok: false, message: `Cannot find path '${dn}' because it does not exist.` };
     const resolved = rules.map(r => ({ ...r, identitySam: this.resolveSidToSam(r.identitySam) }));
     this.acls.set(formatDN(entry.dn).toLowerCase(), resolved);

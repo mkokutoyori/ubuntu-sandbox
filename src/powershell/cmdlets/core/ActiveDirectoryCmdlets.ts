@@ -66,6 +66,49 @@ function identityOf(ctx: CmdletContext): string {
   return psValueToString(ctx.named['identity'] ?? ctx.positional[0] ?? '');
 }
 
+interface AdFilterClause { prop: string; op: string; value: string }
+
+function parseAdFilterClause(raw: PSValue): AdFilterClause | null {
+  const block = raw as unknown as { type?: string; body?: { statements?: unknown[] } };
+  if (!block || block.type !== 'ScriptBlock') return null;
+  const stmt = block.body?.statements?.[0] as { pipeline?: { commands?: unknown[] } } | undefined;
+  const cmd = stmt?.pipeline?.commands?.[0] as {
+    name?: { name?: string };
+    parameters?: Array<{ name?: string }>;
+    arguments?: Array<{ value?: unknown; raw?: string }>;
+  } | undefined;
+  const prop = cmd?.name?.name;
+  const op = cmd?.parameters?.[0]?.name;
+  const arg = cmd?.arguments?.[0];
+  if (!prop || !op || !arg) return null;
+  const value = arg.value !== undefined && arg.value !== null ? String(arg.value) : (arg.raw ?? '');
+  return { prop, op: op.toLowerCase(), value };
+}
+
+function matchesAdFilterClause(record: Record<string, PSValue>, clause: AdFilterClause): boolean {
+  const key = Object.keys(record).find(k => k.toLowerCase() === clause.prop.toLowerCase());
+  if (key === undefined) return true;
+  const actual = psValueToString(record[key]).toLowerCase();
+  const expected = clause.value.toLowerCase();
+  switch (clause.op) {
+    case 'eq': return actual === expected;
+    case 'ne': return actual !== expected;
+    case 'like': {
+      const pattern = expected.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*').replace(/\?/g, '.');
+      return new RegExp(`^${pattern}$`).test(actual);
+    }
+    default: return true;
+  }
+}
+
+function filterAdObjects<T extends Record<string, PSValue>>(items: T[], filterRaw: PSValue | undefined): T[] {
+  if (filterRaw === undefined) return items;
+  if (typeof filterRaw !== 'object' || filterRaw === null) return items;
+  const clause = parseAdFilterClause(filterRaw);
+  if (!clause) return items;
+  return items.filter(item => matchesAdFilterClause(item, clause));
+}
+
 function userToPSObject(u: AdUserInfo): Record<string, PSValue> {
   return {
     SamAccountName: u.sam, UserPrincipalName: u.upn, DistinguishedName: u.dn, SID: u.sid,
@@ -233,17 +276,23 @@ export class GetADUserCmdlet implements ICmdlet {
 
   execute(ctx: CmdletContext): PSValue {
     const ad = requireAd(ctx, 'Get-ADUser');
+    const requested = stringArrayOf(ctx, 'properties').map(p => p.toLowerCase());
+    const withPasswordPolicy = (identity: string, obj: Record<string, PSValue>): Record<string, PSValue> => {
+      if (requested.includes('passwordneverexpires')) {
+        const effective = ad.getResultantPasswordPolicy(identity) ?? ad.getDefaultDomainPasswordPolicy();
+        obj.PasswordNeverExpires = effective.maxPasswordAgeDays === 0;
+      }
+      return obj;
+    };
+    if (ctx.named['filter'] !== undefined) {
+      return filterAdObjects(ad.listUsers().map(userToPSObject), ctx.named['filter'])
+        .map(obj => withPasswordPolicy(obj.SamAccountName as string, obj)) as PSValue;
+    }
     const identity = identityOf(ctx);
     if (!identity) { ctx.emitError("Get-ADUser : Cannot process command because of one or more missing mandatory parameters: Identity."); return null; }
     const u = ad.getUser(identity);
     if (!u) { ctx.emitError(`Get-ADUser : Cannot find an object with identity: '${identity}'.`); return null; }
-    const obj = userToPSObject(u);
-    const requested = stringArrayOf(ctx, 'properties').map(p => p.toLowerCase());
-    if (requested.includes('passwordneverexpires')) {
-      const effective = ad.getResultantPasswordPolicy(identity) ?? ad.getDefaultDomainPasswordPolicy();
-      obj.PasswordNeverExpires = effective.maxPasswordAgeDays === 0;
-    }
-    return obj;
+    return withPasswordPolicy(identity, userToPSObject(u));
   }
 }
 
@@ -373,6 +422,9 @@ export class GetADGroupCmdlet implements ICmdlet {
 
   execute(ctx: CmdletContext): PSValue {
     const ad = requireAd(ctx, 'Get-ADGroup');
+    if (ctx.named['filter'] !== undefined) {
+      return filterAdObjects(ad.listGroups().map(groupToPSObject), ctx.named['filter']) as PSValue;
+    }
     const identity = identityOf(ctx);
     if (!identity) { ctx.emitError("Get-ADGroup : Cannot process command because of one or more missing mandatory parameters: Identity."); return null; }
     const g = ad.getGroup(identity);
@@ -438,10 +490,18 @@ export class RemoveADGroupMemberCmdlet implements ICmdlet {
 export class GetADComputerCmdlet implements ICmdlet {
   readonly name = 'get-adcomputer';
   readonly aliases = [] as const;
-  readonly parameters = ['Identity', 'Filter'] as const;
+  readonly parameters = ['Identity', 'Filter', 'SearchBase'] as const;
 
   execute(ctx: CmdletContext): PSValue {
     const ad = requireAd(ctx, 'Get-ADComputer');
+    if (ctx.named['filter'] !== undefined) {
+      let items = filterAdObjects(ad.listComputers().map(computerToPSObject), ctx.named['filter']);
+      if (ctx.named['searchbase'] !== undefined) {
+        const base = psValueToString(ctx.named['searchbase']).toLowerCase();
+        items = items.filter(o => (o.DistinguishedName as string).toLowerCase().includes(base));
+      }
+      return items as PSValue;
+    }
     const identity = identityOf(ctx);
     if (!identity) { ctx.emitError("Get-ADComputer : Cannot process command because of one or more missing mandatory parameters: Identity."); return null; }
     const c = ad.getComputer(identity);

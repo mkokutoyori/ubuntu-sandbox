@@ -31,12 +31,18 @@ async function setupDcAndClient(page: Page): Promise<{ dcId: string; clientId: s
     const execClient = clientInst.executeCommand as (c: string) => Promise<string> | string;
     await Promise.resolve(execDc.call(dcInst, `netsh interface ip set address name="${pDc}" static 192.168.10.10 255.255.255.0`));
     await Promise.resolve(execClient.call(clientInst, `netsh interface ip set address name="${pClient}" static 192.168.10.30 255.255.255.0`));
+    await Promise.resolve(execClient.call(clientInst, `netsh interface ip set dns name="${pClient}" static 192.168.10.10`));
     store.getState().addConnection(dc.id, pDc, client.id, pClient, 'ethernet');
     return { dcId: dc.id, clientId: client.id };
   });
 }
 
 async function openTerminal(page: Page, id: string): Promise<void> {
+  const desktopToggle = page.getByTitle('Show topology (terminals stay open)');
+  if (await desktopToggle.count() > 0) {
+    await desktopToggle.click();
+    await page.waitForTimeout(150);
+  }
   await page.locator(`[data-device-id="${id}"]`).first().dblclick({ timeout: 8_000 });
   await page.waitForTimeout(400);
 }
@@ -49,14 +55,17 @@ async function typeCmdIn(page: Page, deviceId: string, command: string): Promise
   await input.press('Enter');
   await page.waitForTimeout(300);
 }
-async function lastModalText(page: Page): Promise<string> {
-  return (await page.locator('[data-testid="terminal-modal"]').last().innerText());
+async function modalTextFor(page: Page, deviceId: string): Promise<string> {
+  const modal = page.locator(`[data-testid="terminal-modal"][data-device-id="${deviceId}"]`).first();
+  const target = (await modal.count()) > 0 ? modal : page.locator('[data-testid="terminal-modal"]').last();
+  return target.innerText();
 }
 
 async function promoteAndCreateUser(page: Page, dcId: string): Promise<void> {
   await openTerminal(page, dcId);
   await typeCmdIn(page, dcId, 'powershell');
   await typeCmdIn(page, dcId, 'Install-WindowsFeature -Name AD-Domain-Services -IncludeManagementTools -IncludeAllSubFeature -Restart:$false');
+  await typeCmdIn(page, dcId, 'Install-WindowsFeature DNS');
   await typeCmdIn(page, dcId, 'Install-ADDSForest -DomainName "mandeng.lan" -DomainNetBiosName "MANDENG" -SafeModeAdministratorPassword (ConvertTo-SecureString "DSRM@Mandeng2025!" -AsPlainText -Force) -Force:$true');
   await typeCmdIn(page, dcId, 'New-ADUser -Name "Jean Admin" -SamAccountName jadmin -AccountPassword (ConvertTo-SecureString "User@Mandeng2025!" -AsPlainText -Force) -Enabled $true');
   await page.waitForTimeout(500);
@@ -77,14 +86,14 @@ test.describe('Scénario 5 (e2e) — Kerberos : tickets, authentification et aud
     await typeCmdIn(page, clientId, 'powershell');
     await typeCmdIn(page, clientId, 'Add-Computer -DomainName "mandeng.lan" -Credential "Administrator:DSRM@Mandeng2025!" -NewName "PC-WIN-01" -Force');
     await page.waitForTimeout(500);
+    await typeCmdIn(page, clientId, 'cmd');
 
     // logon domaine (déclenche l'échange Kerberos AS réel côté simulateur)
     await typeCmdIn(page, clientId, 'runas /user:MANDENG\\jadmin cmd');
     await page.waitForTimeout(300);
-    await typeCmdIn(page, clientId, 'cmd');
     await typeCmdIn(page, clientId, 'klist');
     await page.waitForTimeout(300);
-    const text = await lastModalText(page);
+    const text = await modalTextFor(page, clientId);
     expect(text).toContain('krbtgt/MANDENG.LAN');
   });
 
@@ -99,7 +108,7 @@ test.describe('Scénario 5 (e2e) — Kerberos : tickets, authentification et aud
     await typeCmdIn(page, clientId, 'cmd');
     await typeCmdIn(page, clientId, 'runas /user:MANDENG\\jadmin cmd');
     await page.waitForTimeout(300);
-    const text = await lastModalText(page);
+    const text = await modalTextFor(page, clientId);
     expect(text).toMatch(/RUNAS ERROR/i);
     expect(text).toMatch(/1326/);
   });
@@ -112,7 +121,7 @@ test.describe('Scénario 5 (e2e) — Kerberos : tickets, authentification et aud
     await typeCmdIn(page, dcId, 'Set-ADUser -Identity svc-oracle -Add @{ServicePrincipalNames="oracle/srv-oracle.mandeng.lan","oracle/srv-oracle.mandeng.lan:1521"}');
     await typeCmdIn(page, dcId, 'Get-ADUser -Identity "svc-oracle" -Properties ServicePrincipalNames | Select-Object -ExpandProperty ServicePrincipalNames');
     await page.waitForTimeout(300);
-    const text = await lastModalText(page);
+    const text = await modalTextFor(page, dcId);
     expect(text).toContain('oracle/srv-oracle.mandeng.lan');
   });
 });
