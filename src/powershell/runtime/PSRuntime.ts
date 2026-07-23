@@ -2318,7 +2318,9 @@ export class PSRuntime {
 
     const emittedValues: PSValue[] = [];
     const prevErrCount = this.errorObjects.length;
-    const ctx = this.buildCmdletContext(positional, cmdletNamed, pipeInput, env, emittedValues, silentlyCont, stopOnError);
+    const cmdletDisplayName = cmdlet.displayName ?? this.titleCase(cmdlet.name);
+    const ctx = this.buildCmdletContext(
+      positional, cmdletNamed, pipeInput, env, emittedValues, silentlyCont, stopOnError, cmdletDisplayName);
     let result: PSValue;
     try {
       result = cmdlet.execute(ctx);
@@ -2364,6 +2366,7 @@ export class PSRuntime {
     emittedValues: PSValue[],
     silentlyContinue: boolean = false,
     stopOnError: boolean = false,
+    cmdletDisplayName: string = 'Write-Error',
   ): CmdletContext {
     const self = this;
 
@@ -2402,17 +2405,32 @@ export class PSRuntime {
 
       emit: (val: PSValue) => emittedValues.push(val),
 
-      emitError: (msg: string) => {
+      emitError: (rawMsg: string) => {
+        // Many call sites already hand-embed "<Cmdlet> : " (mirroring the
+        // legacy engine's hardcoded strings). Strip it so the canonical
+        // prefix added below — derived once from the actually-dispatched
+        // cmdlet — is never duplicated.
+        const msg = rawMsg.replace(/^[A-Za-z][\w]*(?:-[A-Za-z][\w]*)+\s*:\s*/, '');
+        const category = 'NotSpecified';
+        const exceptionType = 'WriteErrorException';
+        const fullyQualifiedErrorId = 'Microsoft.PowerShell.Commands.WriteErrorException';
         const errObj = {
           Exception: { Message: msg },
-          CategoryInfo: { Category: 'NotSpecified' },
+          CategoryInfo: { Category: category },
           TargetObject: null,
+          FullyQualifiedErrorId: fullyQualifiedErrorId,
         } as Record<string, PSValue>;
         self.errorObjects.push(errObj);
         const prevGlobalErrors = (env.get('Error') as PSValue[] | null) ?? [];
         env.set('Error', [errObj, ...prevGlobalErrors]);
         if (stopOnError) throw new PSRuntimeError(msg);
-        if (!silentlyContinue) self.outputLines.push(`ERROR: ${msg}`);
+        if (!silentlyContinue) {
+          self.outputLines.push(
+            `${cmdletDisplayName} : ${msg}`,
+            `    + CategoryInfo          : ${category}: (:) [${cmdletDisplayName}], ${exceptionType}`,
+            `    + FullyQualifiedErrorId : ${fullyQualifiedErrorId}`,
+          );
+        }
       },
 
       invokeBlock: (
