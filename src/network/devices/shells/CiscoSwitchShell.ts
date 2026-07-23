@@ -1345,7 +1345,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
         this.stpMode = args[1];
         const m = args[1].toLowerCase();
         this.d().getStpAgent().setMode(
-          m === 'rapid-pvst' || m === 'mst' ? 'rstp' : 'stp');
+          m === 'mst' ? 'mstp' : m === 'rapid-pvst' ? 'rstp' : 'stp');
       }
       if (args[0]?.toLowerCase() === 'vlan' && args[2]) {
         const vlan = parseInt(args[1] ?? '', 10);
@@ -1672,11 +1672,14 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
         idx += 1;
         const port = ports.get(name);
         if (!port || !port.getIsUp() || !port.isConnected()) continue;
-        const role = agent.getPortRole(name);
+        // CIST (0) spans every region port regardless of VLAN mapping;
+        // a named MSTI only lists ports actually carrying one of its VLANs.
+        if (id !== 0 && !agent.portCarriesVlan(name, id)) continue;
+        const role = agent.getPortRoleForInstance(id, name);
         const roleLabel = role === 'root' ? 'Root' : role === 'alternate' ? 'Altn'
           : role === 'backup' ? 'Back' : 'Desg';
-        const sts = sw._getSTPStates().get(name) === 'forwarding' ? 'FWD' : 'BLK';
-        const cost = agent.getPortCost(name);
+        const sts = agent.getForwardStateForInstance(id, name) === 'forwarding' ? 'FWD' : 'BLK';
+        const cost = agent.getPortCostForInstance(id, name);
         const linkType = agent.getPortLinkType(name) === 'shared' ? 'Shr' : 'P2p';
         block.push(`${this.abbreviateInterface(name).padEnd(17)}${roleLabel.padEnd(6)}${sts.padEnd(5)}${String(cost).padEnd(10)}${`128.${idx}`.padEnd(10)}${linkType}`);
       }

@@ -5,7 +5,7 @@ import {
   type BridgeId, type StpBpdu, type StpConfig, type StpPortInfo, type StpPortRole,
   type StpPortGuards, type MstRegion,
   createDefaultStpConfig, compareBridge, defaultPathCost, defaultPathCostLong,
-  defaultPortGuards, createDefaultMstRegion,
+  defaultPortGuards, createDefaultMstRegion, parseStpVlanList,
   ETHERTYPE_STP, STP_BRIDGE_MAC,
 } from './types';
 import { StpVlanInstance, type StpInstanceAgent, type StpForwardState } from './StpVlanInstance';
@@ -75,23 +75,59 @@ export class StpAgent extends ReactiveAgentBase implements StpInstanceAgent {
   forwardDelaySec(vlan: number): number { return this.getVlanForwardDelaySec(vlan); }
   maxAgeSec(vlan: number): number { return this.getVlanMaxAgeSec(vlan); }
   isRootInconsistent(portName: string): boolean { return this.rootInconsistent.has(portName); }
-  onInstanceForwardState(vlan: number, portName: string, state: StpForwardState): void {
+  onInstanceForwardState(key: number, portName: string, state: StpForwardState): void {
     if (state === 'forwarding') {
       this.forwardingTransitionCounts.set(portName, (this.forwardingTransitionCounts.get(portName) ?? 0) + 1);
     }
-    this.host.onForwardStateChanged(portName, state, vlan);
+    // Fan out to every real VLAN this instance carries — the data plane
+    // gates forwarding per actual 802.1Q VLAN, not per (simulator-internal)
+    // instance key, and several VLANs can share one MSTI's fate.
+    for (const vlan of this.vlansForInstanceKey(key)) {
+      this.host.onForwardStateChanged(portName, state, vlan);
+    }
   }
   onInstanceTopologyChange(_vlan: number): void { this.notifyTopologyChange(); }
   sendProposal(vlan: number, portName: string): void { this.sendBpdu(portName, vlan); }
 
-  private cst(): StpVlanInstance { return this.instances.get(1)!; }
+  /** CIST = instance 0 under real MSTP; the legacy single tree = "VLAN 1" otherwise. */
+  private cstKey(): number { return this.config.mode === 'mstp' ? 0 : 1; }
+
+  private cst(): StpVlanInstance { return this.instanceForKey(this.cstKey()); }
 
   private vkey(vlan: number, portName: string): string { return `${vlan}:${portName}`; }
 
-  private instanceFor(vlan: number): StpVlanInstance {
-    let inst = this.instances.get(vlan);
-    if (!inst) { inst = new StpVlanInstance(vlan, this); this.instances.set(vlan, inst); }
+  /**
+   * Resolves a VLAN to the spanning-tree instance that actually carries it.
+   * Under `stp`/`rstp` (PVST+-style) each VLAN is its own instance (identity
+   * mapping). Under `mstp`, VLANs sharing an MSTI (per MstRegion) share one
+   * live instance, and anything not explicitly mapped falls back to CIST (0).
+   */
+  private instanceKeyForVlan(vlan: number): number {
+    if (this.config.mode !== 'mstp') return vlan;
+    for (const [instanceId, vlanSpec] of this.mstRegion.instances) {
+      if (parseStpVlanList(vlanSpec).includes(vlan)) return instanceId;
+    }
+    return 0;
+  }
+
+  private instanceForKey(key: number): StpVlanInstance {
+    let inst = this.instances.get(key);
+    if (!inst) { inst = new StpVlanInstance(key, this); this.instances.set(key, inst); }
     return inst;
+  }
+
+  private instanceForVlan(vlan: number): StpVlanInstance {
+    return this.instanceForKey(this.instanceKeyForVlan(vlan));
+  }
+
+  /** All VLANs (as actually carried by some port) that resolve to the given instance key. */
+  private vlansForInstanceKey(key: number): number[] {
+    if (this.config.mode !== 'mstp') return [key];
+    const seen = new Set<number>();
+    for (const port of this.host.getPorts()) {
+      for (const vlan of this.portVlans(port.getName())) seen.add(vlan);
+    }
+    return [...seen].filter(v => this.instanceKeyForVlan(v) === key);
   }
 
   private portVlans(portName: string): number[] {
@@ -104,34 +140,60 @@ export class StpAgent extends ReactiveAgentBase implements StpInstanceAgent {
   private ensurePortInstances(): void {
     for (const port of this.host.getPorts()) {
       if (!port.getIsUp() || !port.isConnected()) continue;
-      for (const vlan of this.portVlans(port.getName())) this.instanceFor(vlan);
+      for (const vlan of this.portVlans(port.getName())) this.instanceForVlan(vlan);
     }
   }
 
   getActiveStpVlans(): number[] {
     return [...this.instances.keys()].sort((a, b) => a - b);
   }
+  getRootBridgeForInstance(key: number): BridgeId {
+    return this.instanceForKey(key).getRootBridge();
+  }
+  getRootPortForInstance(key: number): string | null {
+    return this.instanceForKey(key).getRootPort();
+  }
+  getRootPathCostForInstance(key: number): number {
+    return this.instanceForKey(key).getRootPathCost();
+  }
+  getPortInfoForInstance(key: number, portName: string): StpPortInfo | null {
+    return this.instanceForKey(key).portInfo.get(portName) ?? null;
+  }
+  isRootForInstance(key: number): boolean {
+    return this.instanceForKey(key).isRoot();
+  }
+  getPortRoleForInstance(key: number, portName: string): StpPortRole {
+    return this.instanceForKey(key).getPortRole(portName);
+  }
+  getForwardStateForInstance(key: number, portName: string): StpForwardState {
+    return this.instanceForKey(key).getForwardState(portName);
+  }
+  getPortCostForInstance(key: number, portName: string): number {
+    const known = this.instanceForKey(key).portInfo.get(portName)?.cost;
+    if (known !== undefined) return known;
+    return this.costForPort(this.host.getPort(portName));
+  }
+
   getRootBridgeForVlan(vlan: number): BridgeId {
-    return (this.instances.get(vlan) ?? this.cst()).getRootBridge();
+    return this.getRootBridgeForInstance(this.instanceKeyForVlan(vlan));
   }
   getRootPortForVlan(vlan: number): string | null {
-    return (this.instances.get(vlan) ?? this.cst()).getRootPort();
+    return this.getRootPortForInstance(this.instanceKeyForVlan(vlan));
   }
   getRootPathCostForVlan(vlan: number): number {
-    return (this.instances.get(vlan) ?? this.cst()).getRootPathCost();
+    return this.getRootPathCostForInstance(this.instanceKeyForVlan(vlan));
   }
   getPortInfoForVlan(vlan: number, portName: string): StpPortInfo | null {
-    return (this.instances.get(vlan) ?? this.cst()).portInfo.get(portName) ?? null;
+    return this.getPortInfoForInstance(this.instanceKeyForVlan(vlan), portName);
   }
   isRootForVlan(vlan: number): boolean {
-    const inst = this.instances.get(vlan);
-    return inst ? inst.isRoot() : true;
+    return this.isRootForInstance(this.instanceKeyForVlan(vlan));
   }
   getPortRoleForVlan(vlan: number, portName: string): StpPortRole {
-    return (this.instances.get(vlan) ?? this.cst()).getPortRole(portName);
+    return this.getPortRoleForInstance(this.instanceKeyForVlan(vlan), portName);
   }
   getForwardStateForVlan(vlan: number, portName: string): StpForwardState {
-    return (this.instances.get(vlan) ?? this.cst()).getForwardState(portName);
+    return this.getForwardStateForInstance(this.instanceKeyForVlan(vlan), portName);
   }
 
   override start(): void {
@@ -160,16 +222,17 @@ export class StpAgent extends ReactiveAgentBase implements StpInstanceAgent {
   getRootPort(): string | null { return this.cst().getRootPort(); }
   getRootPathCost(): number { return this.cst().getRootPathCost(); }
   isRoot(): boolean { return this.cst().isRoot(); }
-  ownBridgeId(vlan = 1): BridgeId {
-    return { priority: this.getVlanPriority(vlan), mac: this.config.baseMac };
+  ownBridgeId(key = this.cstKey()): BridgeId {
+    const priority = this.config.mode === 'mstp'
+      ? this.getMstInstancePriority(key)
+      : this.getVlanPriority(key);
+    return { priority, mac: this.config.baseMac };
   }
 
   getPortRole(portName: string): StpPortRole { return this.cst().getPortRole(portName); }
 
   getPortCost(portName: string): number {
-    const known = this.cst().portInfo.get(portName)?.cost;
-    if (known !== undefined) return known;
-    return this.costForPort(this.host.getPort(portName));
+    return this.getPortCostForInstance(this.cstKey(), portName);
   }
 
   costForPort(port: import('../hardware/Port').Port | undefined): number {
@@ -184,7 +247,10 @@ export class StpAgent extends ReactiveAgentBase implements StpInstanceAgent {
     return this.mstInstancePriority.get(instanceId) ?? 32768;
   }
   setMstInstancePriority(instanceId: number, priority: number): void {
-    this.mstInstancePriority.set(instanceId, priority);
+    this.mstInstancePriority.set(instanceId, Math.floor(priority / 4096) * 4096);
+    if (this.config.mode !== 'mstp') return;
+    this.instanceForKey(instanceId).runElection();
+    this.emitBpduOnAllPorts();
   }
 
   getPortLinkType(portName: string): 'p2p' | 'shared' {
@@ -196,8 +262,9 @@ export class StpAgent extends ReactiveAgentBase implements StpInstanceAgent {
     return this.getPortLinkType(portName) === 'p2p';
   }
 
-  portCarriesVlan(portName: string, vlan: number): boolean {
-    return this.portVlans(portName).includes(vlan);
+  portCarriesVlan(portName: string, key: number): boolean {
+    if (this.config.mode !== 'mstp') return this.portVlans(portName).includes(key);
+    return this.portVlans(portName).some(v => this.instanceKeyForVlan(v) === key);
   }
 
   getMstRegion(): MstRegion { return this.mstRegion; }
@@ -205,9 +272,11 @@ export class StpAgent extends ReactiveAgentBase implements StpInstanceAgent {
   setMstRevision(rev: number): void { this.mstRegion.revision = rev; }
   mapMstInstance(instanceId: number, vlans: string): void {
     this.mstRegion.instances.set(instanceId, vlans);
+    this.recomputeOnTopologyChange();
   }
   unmapMstInstance(instanceId: number): void {
     this.mstRegion.instances.delete(instanceId);
+    this.recomputeOnTopologyChange();
   }
 
   isTopologyChangeActive(): boolean { return this.tcFlagActive; }
@@ -238,7 +307,7 @@ export class StpAgent extends ReactiveAgentBase implements StpInstanceAgent {
     if (priority < 0 || priority > 61440) return;
     this.vlanPriority.set(vlan, Math.floor(priority / 4096) * 4096);
     if (vlan === 1) { this.setBridgePriority(priority); return; }
-    this.instanceFor(vlan).runElection();
+    this.instanceForVlan(vlan).runElection();
     this.emitBpduOnAllPorts();
   }
   getVlanPriority(vlan: number): number {
@@ -427,13 +496,13 @@ export class StpAgent extends ReactiveAgentBase implements StpInstanceAgent {
     }
     if (payload.bpduType !== 'config') return;
 
-    const vlan = payload.vlan ?? 1;
-    const inst = this.instanceFor(vlan);
+    const key = payload.vlan ?? 1;
+    const inst = this.instanceForKey(key);
     this.getBus().publish({
       topic: 'stp.bpdu.received',
       payload: {
         deviceId: this.host.id, hostname: this.host.getHostname(),
-        port: portName, vlan,
+        port: portName, vlan: key,
         senderMac: payload.senderBridge.mac,
         rootMac: payload.rootBridge.mac,
       },
@@ -480,16 +549,16 @@ export class StpAgent extends ReactiveAgentBase implements StpInstanceAgent {
 
     inst.runElection();
 
-    if (this.config.mode === 'rstp' && payload.version === 2) {
+    if ((this.config.mode === 'rstp' || this.config.mode === 'mstp') && payload.version === 2) {
       if (payload.proposal && portName === inst.getRootPort()) {
-        this.pendingAgreement.add(this.vkey(vlan, portName));
+        this.pendingAgreement.add(this.vkey(key, portName));
         inst.jumpToForwarding(portName);
-        this.sendBpdu(portName, vlan);
+        this.sendBpdu(portName, key);
       }
       if (payload.agreement && inst.getPortRole(portName) === 'designated') {
         inst.jumpToForwarding(portName);
       }
-      if (vlan === 1) {
+      if (key === this.cstKey()) {
         if (payload.topologyChange && !this.tcFlagActive) {
           this.startTcWhile();
         }
@@ -499,7 +568,7 @@ export class StpAgent extends ReactiveAgentBase implements StpInstanceAgent {
       }
       return;
     }
-    if (vlan !== 1) return;
+    if (key !== this.cstKey()) return;
     if (payload.topologyChangeAck && portName === inst.getRootPort()) {
       this.stopTcnRetransmission();
     }
@@ -535,7 +604,7 @@ export class StpAgent extends ReactiveAgentBase implements StpInstanceAgent {
         isRoot: this.isRoot(),
       },
     });
-    if (this.config.mode === 'rstp' || this.isRoot()) {
+    if (this.config.mode !== 'stp' || this.isRoot()) {
       this.startTcWhile();
     } else {
       this.startTcnRetransmission();
@@ -619,38 +688,40 @@ export class StpAgent extends ReactiveAgentBase implements StpInstanceAgent {
     for (const port of this.host.getPorts()) {
       const name = port.getName();
       if (!port.getIsUp() || !port.isConnected()) continue;
-      for (const vlan of this.portVlans(name)) {
-        const inst = this.instanceFor(vlan);
+      const keys = new Set(this.portVlans(name).map(v => this.instanceKeyForVlan(v)));
+      for (const key of keys) {
+        const inst = this.instanceForKey(key);
         const role = inst.getPortRole(name);
         if (role !== 'designated' && !inst.isRoot()) {
           if (name === inst.getRootPort()) {
-            if (!(this.config.mode === 'rstp' && this.tcFlagActive)) continue;
+            if (!(this.config.mode !== 'stp' && this.tcFlagActive)) continue;
           } else if (role === 'alternate') continue;
         }
-        this.sendBpdu(name, vlan);
+        this.sendBpdu(name, key);
       }
     }
   }
 
-  private sendBpdu(portName: string, vlan = 1): void {
+  private sendBpdu(portName: string, key = 1): void {
     const port = this.host.getPort(portName);
     if (!port) return;
-    const adKey = this.vkey(vlan, portName);
+    const adKey = this.vkey(key, portName);
     if (this.advertising.has(adKey)) return;
-    const inst = this.instanceFor(vlan);
+    const inst = this.instanceForKey(key);
+    const rapid = this.config.mode !== 'stp';
     const bpdu: StpBpdu = {
-      type: 'stp', bpduType: 'config', vlan,
+      type: 'stp', bpduType: 'config', vlan: key,
       protocolId: 0x0000,
-      version: this.config.mode === 'rstp' ? 2 : 0,
+      version: rapid ? 2 : 0,
       flags: 0,
-      proposal: this.config.mode === 'rstp'
+      proposal: rapid
         && this.isPointToPoint(portName)
         && inst.getPortRole(portName) === 'designated'
         && inst.getForwardState(portName) !== 'forwarding',
       agreement: this.pendingAgreement.delete(adKey),
       rootBridge: inst.getRootBridge(),
       rootPathCost: inst.getRootPathCost(),
-      senderBridge: this.ownBridgeId(vlan),
+      senderBridge: this.ownBridgeId(key),
       portId: this.portIdFor(portName),
       messageAgeSec: 0,
       maxAgeSec: this.config.maxAgeSec,
@@ -673,7 +744,7 @@ export class StpAgent extends ReactiveAgentBase implements StpInstanceAgent {
       topic: 'stp.bpdu.sent',
       payload: {
         deviceId: this.host.id, hostname: this.host.getHostname(),
-        port: portName, vlan,
+        port: portName, vlan: key,
         rootMac: inst.getRootBridge().mac, rootPriority: inst.getRootBridge().priority,
         pathCost: inst.getRootPathCost(),
       },

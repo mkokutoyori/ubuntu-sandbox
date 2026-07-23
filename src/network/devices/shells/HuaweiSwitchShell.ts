@@ -85,8 +85,12 @@ export class HuaweiSwitchShell implements ISwitchShell {
   private swRef: Switch | null = null;
 
   private applyToStpAgent(fn: (a: import('@/network/stp/StpAgent').StpAgent) => void): void {
-    const ag = (this.swRef as unknown as { getStpAgent?: () => import('@/network/stp/StpAgent').StpAgent } | null)?.getStpAgent?.();
+    const ag = this.stpAgent();
     if (ag) fn(ag);
+  }
+
+  private stpAgent(): import('@/network/stp/StpAgent').StpAgent | undefined {
+    return (this.swRef as unknown as { getStpAgent?: () => import('@/network/stp/StpAgent').StpAgent } | null)?.getStpAgent?.();
   }
 
   private applyToLldpAgent(fn: (a: import('@/network/lldp/LldpAgent').LldpAgent) => void): void {
@@ -116,10 +120,6 @@ export class HuaweiSwitchShell implements ISwitchShell {
     bpduProtection: boolean;
     edgedPortDefault: boolean;
   } = { enabled: true, mode: 'mstp', priority: 32768, root: '', bpduProtection: false, edgedPortDefault: false };
-
-  private mstRegion: {
-    name: string; revision: number; instances: Map<number, string>;
-  } = { name: '', revision: 0, instances: new Map() };
 
   /** Per-interface STP config lines (rendered verbatim in `display this`). */
   private ifStp = new Map<string, string[]>();
@@ -2187,7 +2187,7 @@ export class HuaweiSwitchShell implements ISwitchShell {
             return 'Error: Wrong parameter found at \'^\' position.';
           }
           this.stp.mode = m;
-          this.applyToStpAgent(ag => ag.setMode(m === 'stp' ? 'stp' : 'rstp'));
+          this.applyToStpAgent(ag => ag.setMode(m));
           return '';
         }
         case 'priority': {
@@ -2211,6 +2211,18 @@ export class HuaweiSwitchShell implements ISwitchShell {
             return '';
           }
           return 'Error: Wrong parameter found at \'^\' position.';
+        case 'instance': {
+          const instId = parseInt(a[1], 10);
+          if (isNaN(instId) || a[2] !== 'priority') {
+            return 'Error: Wrong parameter found at \'^\' position.';
+          }
+          const p = parseInt(a[3], 10);
+          if (isNaN(p) || p < 0 || p > 61440 || p % 4096 !== 0) {
+            return 'Error: Wrong parameter found at \'^\' position.';
+          }
+          this.applyToStpAgent(ag => ag.setMstInstancePriority(instId, p));
+          return '';
+        }
         case 'bpdu-protection':
           this.stp.bpduProtection = true;
           return '';
@@ -2312,12 +2324,17 @@ export class HuaweiSwitchShell implements ISwitchShell {
     });
   }
 
-  /** MST region sub-view command tree ([host-mst-region]). */
+  /**
+   * MST region sub-view command tree ([host-mst-region]). The region
+   * (name/revision/instance→VLAN map) is owned by the shared StpAgent —
+   * the same bridge engine the CIST/MSTI election reads from — not by
+   * this CLI session, so the mapping actually affects the live topology.
+   */
   private buildMstRegionCommands(): void {
     const t = this.mstRegionTrie;
     t.registerGreedy('region-name', 'Set MST region name', (args) => {
       if (args.length < 1) return 'Error: Incomplete command.';
-      this.mstRegion.name = args[0];
+      this.applyToStpAgent(ag => ag.setMstName(args[0]));
       return '';
     });
     t.registerGreedy('instance', 'Map VLANs to an MST instance', (args) => {
@@ -2326,37 +2343,33 @@ export class HuaweiSwitchShell implements ISwitchShell {
       }
       const id = parseInt(args[0], 10);
       if (isNaN(id)) return 'Error: Wrong parameter found at \'^\' position.';
-      this.mstRegion.instances.set(id, args.slice(2).join(' '));
+      this.applyToStpAgent(ag => ag.mapMstInstance(id, args.slice(2).join(' ')));
       return '';
     });
     t.registerGreedy('revision-level', 'Set MST revision level', (args) => {
       const n = parseInt(args[0], 10);
-      if (!isNaN(n)) this.mstRegion.revision = n;
+      if (!isNaN(n)) this.applyToStpAgent(ag => ag.setMstRevision(n));
       return '';
     });
-    t.register('active region-configuration', 'Activate MST region', () => {
-      (this.mstRegion as unknown as { activated?: boolean; activatedAtMs?: number }).activated = true;
-      (this.mstRegion as unknown as { activatedAtMs?: number }).activatedAtMs = Date.now();
-      return 'Info: This operation may take a few seconds. Please wait for a moment...done.';
-    });
+    t.register('active region-configuration', 'Activate MST region', () =>
+      'Info: This operation may take a few seconds. Please wait for a moment...done.');
     t.register('check region-configuration', 'Check MST region', () => {
-      const region = this.mstRegion as unknown as { name?: string; revision?: number; vlanMap?: Map<number, number> };
+      const region = this.stpAgent()?.getMstRegion();
       const lines = [
-        `Region Name: ${region.name ?? ''}`,
-        `Revision Level: ${region.revision ?? 0}`,
+        `Region Name: ${region?.name ?? ''}`,
+        `Revision Level: ${region?.revision ?? 0}`,
         `Instance Vlans Mapped`,
       ];
-      if (region.vlanMap) {
-        for (const [instance, vlans] of region.vlanMap as unknown as Map<number, number[]>) {
-          lines.push(`${String(instance).padEnd(8)} ${Array.isArray(vlans) ? vlans.join(',') : vlans}`);
-        }
+      for (const [instance, vlans] of region?.instances ?? []) {
+        lines.push(`${String(instance).padEnd(8)} ${vlans}`);
       }
       return lines.join('\n');
     });
     t.register('display this', 'Display MST region configuration', () => {
+      const region = this.stpAgent()?.getMstRegion();
       const lines = ['stp region-configuration'];
-      if (this.mstRegion.name) lines.push(` region-name ${this.mstRegion.name}`);
-      for (const [id, v] of this.mstRegion.instances) {
+      if (region?.name) lines.push(` region-name ${region.name}`);
+      for (const [id, v] of region?.instances ?? []) {
         lines.push(` instance ${id} vlan ${v}`);
       }
       lines.push('#');
@@ -2378,16 +2391,17 @@ export class HuaweiSwitchShell implements ISwitchShell {
       '  Last topology change port         : -',
     ].join('\n'));
     trie.register('display stp region-configuration', 'Display MST region configuration', () => {
+      const region = this.stpAgent()?.getMstRegion();
       const lines = [
         'Oper configuration',
         `  Format selector      :0`,
-        `  Region name          :${this.mstRegion.name || (this.swRef?.getHostname() ?? '')}`,
-        `  Revision level       :${this.mstRegion.revision}`,
+        `  Region name          :${region?.name || (this.swRef?.getHostname() ?? '')}`,
+        `  Revision level       :${region?.revision ?? 0}`,
         '',
         '  Instance   VLANs Mapped',
         '  0          1 to 4094',
       ];
-      for (const [id, v] of this.mstRegion.instances) lines.push(`  ${String(id).padEnd(11)}${v}`);
+      for (const [id, v] of region?.instances ?? []) lines.push(`  ${String(id).padEnd(11)}${v}`);
       return lines.join('\n');
     });
     trie.registerGreedy('display lldp neighbor', 'Display LLDP neighbours', (args) => {
@@ -2445,7 +2459,7 @@ export class HuaweiSwitchShell implements ISwitchShell {
       if (!this.swRef || args.length < 1) return 'Error: Incomplete command.';
       const id = parseInt(args[0], 10);
       if (isNaN(id) || id < 0 || id > 4094) return 'Error: Wrong parameter found.';
-      if (id !== 0 && !this.mstRegion.instances.has(id)) {
+      if (id !== 0 && !this.stpAgent()?.getMstRegion().instances.has(id)) {
         return `Error: The instance ${id} does not exist.`;
       }
       return this.displayStpBrief(undefined, id);
@@ -2623,19 +2637,33 @@ export class HuaweiSwitchShell implements ISwitchShell {
     return [header, ...rows].join('\n');
   }
 
-  private displayStpBrief(only?: string, mstid = 0): string {
+  /**
+   * `display stp brief` / `display stp interface <if>` call this with no
+   * `mstid`, and keep reading the legacy mode-aware CST alias (`getPortRole`)
+   * unchanged. Only `display stp instance <id>` passes a real MSTI id, in
+   * which case the role/state are read from that instance specifically —
+   * otherwise every instance would echo the same CST-derived state.
+   */
+  private displayStpBrief(only?: string, mstid?: number): string {
     if (!this.swRef) return '';
-    const ag = (this.swRef as unknown as { getStpAgent?: () => import('@/network/stp/StpAgent').StpAgent }).getStpAgent?.();
+    const ag = this.stpAgent();
     const header = ' MSTID  Port                        Role  STP State     Protection';
-    const mst = String(mstid).padStart(6);
+    const mst = String(mstid ?? 0).padStart(6);
     const rows: string[] = [];
     for (const p of this.swRef.getPortNames()) {
       if (only && p !== only) continue;
-      const st = this.swRef.getSTPState(p);
+      // CIST (0) spans every region port regardless of VLAN mapping;
+      // a named MSTI only lists ports actually carrying one of its VLANs.
+      if (mstid !== undefined && mstid !== 0 && !(ag?.portCarriesVlan(p, mstid) ?? true)) continue;
+      const st = mstid !== undefined
+        ? (ag?.getForwardStateForInstance(mstid, p) ?? this.swRef.getSTPState(p))
+        : this.swRef.getSTPState(p);
       const state = st === 'forwarding' ? 'FORWARDING'
         : st === 'blocking' ? 'DISCARDING'
         : st === 'disabled' ? 'DISCARDING' : st.toUpperCase();
-      const r = ag?.getPortRole(p) ?? 'designated';
+      const r = mstid !== undefined
+        ? (ag?.getPortRoleForInstance(mstid, p) ?? 'designated')
+        : (ag?.getPortRole(p) ?? 'designated');
       const role = r === 'root' ? 'ROOT' : r === 'alternate' ? 'ALTE'
         : r === 'backup' ? 'BACK' : r === 'disabled' ? 'DISA' : 'DESI';
       const guards = ag?.getPortGuards(p);

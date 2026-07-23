@@ -21,7 +21,7 @@ export interface BridgeId {
   mac: string;
 }
 
-export type StpProtocolMode = 'stp' | 'rstp';
+export type StpProtocolMode = 'stp' | 'rstp' | 'mstp';
 
 export interface StpBpdu {
   type: 'stp';
@@ -78,6 +78,35 @@ export interface MstRegion {
 
 export function createDefaultMstRegion(): MstRegion {
   return { name: '', revision: 0, instances: new Map() };
+}
+
+/**
+ * Parses the VLAN membership spec stored per MST instance, accepting both
+ * Cisco's comma/hyphen syntax (`10,20-25`) and Huawei's space/"to" syntax
+ * (`10 to 25 30`) since both shells write into the same MstRegion.
+ */
+export function parseStpVlanList(spec: string): number[] {
+  const out = new Set<number>();
+  const cleaned = spec.replace(/^vlan\s+/i, '').replace(/,/g, ' ').trim();
+  if (!cleaned) return [];
+  const tokens = cleaned.split(/\s+/);
+  for (let i = 0; i < tokens.length; i++) {
+    const tok = tokens[i];
+    const hyphen = tok.match(/^(\d+)-(\d+)$/);
+    if (hyphen) {
+      for (let v = +hyphen[1]; v <= +hyphen[2]; v++) out.add(v);
+      continue;
+    }
+    if (/^\d+$/.test(tok)) {
+      if (tokens[i + 1]?.toLowerCase() === 'to' && /^\d+$/.test(tokens[i + 2] ?? '')) {
+        for (let v = +tok; v <= +tokens[i + 2]; v++) out.add(v);
+        i += 2;
+        continue;
+      }
+      out.add(+tok);
+    }
+  }
+  return [...out].sort((a, b) => a - b);
 }
 
 export interface StpPortInfo {
