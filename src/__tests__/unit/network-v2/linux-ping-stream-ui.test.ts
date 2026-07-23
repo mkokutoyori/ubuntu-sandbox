@@ -5,6 +5,7 @@ import { Cable } from '@/network/hardware/Cable';
 import { LinuxTerminalSession } from '@/terminal/sessions/LinuxTerminalSession';
 import type { KeyEvent } from '@/terminal/sessions/TerminalSession';
 import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
+import { IPv6Address } from '@/network/core/types';
 
 function key(k: string, opts: { ctrlKey?: boolean } = {}): KeyEvent {
   return { key: k, ctrlKey: opts.ctrlKey ?? false, altKey: false, metaKey: false, shiftKey: false };
@@ -78,5 +79,90 @@ describe('Linux ping — real-time streaming through the async pipeline', () => 
     await waitFor(session, (l) => l.some((t) => t.includes('Network is unreachable')), 4000);
     expect(texts(session).some((t) => t.includes('Network is unreachable'))).toBe(true);
     expect(texts(session).some((t) => t.includes('bytes from'))).toBe(false);
+  });
+
+  it('a bare ping with no -c is continuous like real Linux, not capped at 4 replies', async () => {
+    session.setInput('ping -i 0.02 192.168.1.20');
+    session.handleKey(key('Enter'));
+
+    // Real Linux ping only stops on -c/-w/Ctrl+C — wait well past where the
+    // old Windows-style "4 and done" default would have already finished
+    // and printed statistics, then confirm it's still running.
+    await waitFor(session, (l) => l.filter((t) => t.includes('bytes from 192.168.1.20')).length >= 8);
+    expect(session.hasForegroundAsyncJob).toBe(true);
+    expect(texts(session).some((t) => t.includes('ping statistics'))).toBe(false);
+
+    session.handleKey(key('c', { ctrlKey: true }));
+    await tick();
+    expect(session.hasForegroundAsyncJob).toBe(false);
+  });
+
+  it('-w deadline stops the ping after the given time even without -c', async () => {
+    session.setInput('ping -i 0.02 -w 0.2 192.168.1.20');
+    session.handleKey(key('Enter'));
+
+    await waitFor(session, (l) => l.some((t) => t.includes('ping statistics')), 3000);
+    expect(session.hasForegroundAsyncJob).toBe(false);
+    const lines = texts(session);
+    expect(lines.some((t) => t.includes('bytes from 192.168.1.20'))).toBe(true);
+    // -w is a deadline, not a packet cap — it must not have run forever nor
+    // stopped at exactly one packet: real ping keeps sending until the
+    // deadline elapses.
+    const replyCount = lines.filter((t) => t.includes('bytes from 192.168.1.20')).length;
+    expect(replyCount).toBeGreaterThan(1);
+  });
+});
+
+describe('Linux ping -6 — the IPv6 path streams in real time too, not just IPv4', () => {
+  beforeEach(async () => {
+    pc1.configureIPv6Interface('eth0', new IPv6Address('2001:db8::1'), 64);
+    pc2.configureIPv6Interface('eth0', new IPv6Address('2001:db8::2'), 64);
+  });
+
+  it('streams IPv6 replies progressively, then prints statistics', async () => {
+    session.setInput('ping -6 -c 3 -i 0.05 2001:db8::2');
+    session.handleKey(key('Enter'));
+
+    await waitFor(session, (l) => l.some((t) => t.includes('icmp_seq=1')));
+    expect(session.hasForegroundAsyncJob).toBe(true);
+
+    await waitFor(session, (l) => l.some((t) => t.includes('ping statistics')));
+    const lines = texts(session);
+    expect(lines.some((t) => t.startsWith('PING 2001:db8::2(2001:db8::2)'))).toBe(true);
+    expect(lines.filter((t) => t.includes('bytes from 2001:db8::2')).length).toBe(3);
+    expect(lines.some((t) => t.includes('3 packets transmitted, 3 received'))).toBe(true);
+    expect(session.hasForegroundAsyncJob).toBe(false);
+  });
+
+  it('a bare ping -6 with no -c is continuous, same as IPv4', async () => {
+    session.setInput('ping -6 -i 0.02 2001:db8::2');
+    session.handleKey(key('Enter'));
+
+    await waitFor(session, (l) => l.filter((t) => t.includes('bytes from 2001:db8::2')).length >= 8);
+    expect(session.hasForegroundAsyncJob).toBe(true);
+    expect(texts(session).some((t) => t.includes('ping statistics'))).toBe(false);
+
+    session.handleKey(key('c', { ctrlKey: true }));
+    await tick();
+    expect(session.hasForegroundAsyncJob).toBe(false);
+    expect(texts(session).some((t) => t === '^C')).toBe(true);
+  });
+
+  it('-w deadline stops an IPv6 ping too', async () => {
+    session.setInput('ping -6 -i 0.02 -w 0.2 2001:db8::2');
+    session.handleKey(key('Enter'));
+
+    await waitFor(session, (l) => l.some((t) => t.includes('ping statistics')), 3000);
+    expect(session.hasForegroundAsyncJob).toBe(false);
+    const replyCount = texts(session).filter((t) => t.includes('bytes from 2001:db8::2')).length;
+    expect(replyCount).toBeGreaterThan(1);
+  });
+
+  it('an unreachable IPv6 target reports real unreachability, not faked', async () => {
+    session.setInput('ping -6 -c 2 2001:db8:ffff::9');
+    session.handleKey(key('Enter'));
+
+    await waitFor(session, (l) => l.some((t) => t.includes('Network is unreachable')), 4000);
+    expect(texts(session).some((t) => t.includes('Network is unreachable'))).toBe(true);
   });
 });

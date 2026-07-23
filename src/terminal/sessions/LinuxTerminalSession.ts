@@ -10,7 +10,7 @@
  */
 
 import { Equipment, type HostCapableDevice } from '@/network';
-import { IPAddress } from '@/network/core/types';
+import { IPAddress, IPv6Address } from '@/network/core/types';
 import { parsePingArgs } from '@/network/devices/linux/commands/net/Ping';
 import { parseTracerouteArgs } from '@/network/devices/linux/commands/net/Traceroute';
 import { parseMtrArgs, MtrHopStats, formatMtrFrame, MTR_USAGE, MTR_VERSION, type MtrHopProbe } from '@/network/devices/linux/Mtr';
@@ -43,7 +43,7 @@ import {
 import { parseInvocation } from '@/network/devices/linux/network/tcpdump/TcpdumpCli';
 import { compileFilter } from '@/network/devices/linux/network/tcpdump/TcpdumpFilter';
 import { banner as tcpdumpBanner, footer as tcpdumpFooterLines, formatFrame as formatCaptureFrame } from '@/network/devices/linux/network/tcpdump/TcpdumpFormat';
-import { formatPingHeader, formatPingReplyLine, formatPingStats, formatTracerouteHeader, formatTracerouteHopLine } from '@/network/devices/linux/LinuxFormatHelpers';
+import { formatPingHeader, formatPing6Header, formatPingReplyLine, formatPingStats, formatTracerouteHeader, formatTracerouteHopLine } from '@/network/devices/linux/LinuxFormatHelpers';
 import type { PingResult } from '@/network/devices/EndHost';
 import type { AsyncJobContext } from '@/terminal/async';
 import { primaryShellKindFor } from '@/shell/shellKind';
@@ -881,7 +881,17 @@ export class LinuxTerminalSession extends TerminalSession {
     if (toks[0] !== 'ping') return false;
     if (/[|<>&]/.test(commandLine)) return false;
     const parsed = parsePingArgs(toks.slice(1), 'ping');
-    if (!parsed.targetStr || parsed.v6) return false;
+    if (!parsed.targetStr) return false;
+
+    // Real Linux ping has no Windows-style "-t" — it's continuous by
+    // default and only stops on `-c`, `-w`, or Ctrl+C. `parsePingArgs`
+    // defaults `count` to a finite number for the non-interactive
+    // `runPing()` path (which can't support a real Ctrl+C), but here — the
+    // real interactive terminal — an omitted `-c` means unbounded. Applies
+    // to `ping -6` too, not just IPv4.
+    const streamCount = parsed.countGiven ? parsed.count : 0;
+    const deadlineAtMs = parsed.deadlineMs !== undefined ? Date.now() + parsed.deadlineMs : null;
+    const deadlineHit = () => deadlineAtMs !== null && Date.now() >= deadlineAtMs;
 
     let targetLabel = parsed.targetStr;
     const results: PingResult[] = [];
@@ -889,19 +899,52 @@ export class LinuxTerminalSession extends TerminalSession {
       for (const line of formatPingStats(targetLabel, results.length, results)) ctx.sink.line(line);
     };
 
+    if (parsed.v6) {
+      let targetIP6: IPv6Address;
+      try {
+        targetIP6 = new IPv6Address(parsed.targetStr.replace(/^['"]|['"]$/g, '').trim());
+      } catch {
+        return false; // malformed literal — fall through to runPing's own error message
+      }
+      const job = this.startAsyncCommand({
+        mode: 'foreground',
+        kind: 'streaming',
+        command: commandLine,
+        prepare: (ctx) => { ctx.sink.line(formatPing6Header(targetIP6, parsed.size)); return true; },
+        run: async (ctx) => {
+          const outcome = await dev.ping6StreamInSession(targetIP6, {
+            count: streamCount,
+            timeoutMs: parsed.timeoutMs,
+            intervalMs: parsed.intervalMs,
+            onResult: (r) => { results.push(r); const line = formatPingReplyLine(r, parsed.size); if (line !== null) ctx.sink.line(line); },
+            shouldStop: () => ctx.cancelled() || deadlineHit(),
+            sleep: (ms) => ctx.delay(ms),
+          });
+          if (ctx.cancelled()) return;
+          if (!outcome.resolved && results.length === 0) {
+            ctx.sink.error('connect: Network is unreachable');
+            return;
+          }
+          emitStats(ctx);
+        },
+        onInterrupt: (ctx) => emitStats(ctx),
+      });
+      return job !== null;
+    }
+
     const job = this.startAsyncCommand({
       mode: 'foreground',
       kind: 'streaming',
       command: commandLine,
       run: async (ctx) => {
         const outcome = await dev.pingStreamInSession(parsed.targetStr, {
-          count: parsed.count,
+          count: streamCount,
           timeoutMs: parsed.timeoutMs,
           ttl: parsed.ttl,
           intervalMs: parsed.intervalMs,
           onResolved: (ip) => { targetLabel = ip.toString(); ctx.sink.line(formatPingHeader(ip, parsed.size, parsed.targetStr !== ip.toString() ? parsed.targetStr : undefined)); },
           onResult: (r) => { results.push(r); const line = formatPingReplyLine(r, parsed.size); if (line !== null) ctx.sink.line(line); },
-          shouldStop: () => ctx.cancelled(),
+          shouldStop: () => ctx.cancelled() || deadlineHit(),
           sleep: (ms) => ctx.delay(ms),
         });
         if (ctx.cancelled()) return;

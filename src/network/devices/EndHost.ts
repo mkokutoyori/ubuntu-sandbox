@@ -3869,6 +3869,87 @@ export abstract class EndHost extends Equipment {
     return results;
   }
 
+  /**
+   * Real-time streaming IPv6 ping — the `ping6`/`ping -6` counterpart of
+   * `executePingStream()`, with the same `count<=0` = unbounded convention
+   * so the interactive terminal can offer genuine "continuous until
+   * Ctrl+C" behavior for IPv6 too, not just IPv4.
+   */
+  protected async executePing6Stream(
+    targetIP: IPv6Address,
+    opts: {
+      count: number;
+      timeoutMs?: number;
+      intervalMs?: number;
+      onResult: (result: PingResult) => void;
+      shouldStop: () => boolean;
+      sleep: (ms: number) => Promise<void>;
+    },
+  ): Promise<{ resolved: boolean }> {
+    const { count, timeoutMs = 2000, intervalMs = 1000, onResult, shouldStop, sleep } = opts;
+    const infinite = count <= 0;
+    const isLast = (seq: number) => !infinite && seq >= count;
+
+    if (targetIP.isLoopback()) {
+      for (let seq = 1; (infinite || seq <= count) && !shouldStop(); seq++) {
+        onResult({ success: true, rttMs: 0.01, ttl: this.defaultHopLimit, seq, bytes: 64, fromIP: '::1' });
+        if (isLast(seq)) break;
+        await sleep(intervalMs);
+      }
+      return { resolved: true };
+    }
+
+    for (const [, port] of this.ports) {
+      if (port.getIPv6Addresses().some((e) => e.address.equals(targetIP))) {
+        for (let seq = 1; (infinite || seq <= count) && !shouldStop(); seq++) {
+          onResult({ success: true, rttMs: 0.01, ttl: this.defaultHopLimit, seq, bytes: 64, fromIP: targetIP.toString() });
+          if (isLast(seq)) break;
+          await sleep(intervalMs);
+        }
+        return { resolved: true };
+      }
+    }
+
+    const route = this.resolveIPv6Route(targetIP);
+    if (!route) return { resolved: false };
+
+    const portName = route.port.getName();
+    let nextHopMAC: MACAddress;
+    try {
+      nextHopMAC = await this.resolveNDP(portName, route.nextHopIP, timeoutMs);
+    } catch {
+      return { resolved: false };
+    }
+
+    for (let seq = 1; (infinite || seq <= count) && !shouldStop(); seq++) {
+      let result: PingResult;
+      try {
+        result = await this.sendPing6(portName, targetIP, nextHopMAC, seq, timeoutMs);
+      } catch (err: unknown) {
+        const errorMsg = err instanceof Error ? err.message : String(err);
+        result = { success: false, rttMs: 0, ttl: 0, seq, bytes: 0, fromIP: '', error: errorMsg };
+      }
+      onResult(result);
+      if (isLast(seq) || shouldStop()) break;
+      await sleep(intervalMs);
+    }
+    return { resolved: true };
+  }
+
+  ping6StreamInSession(
+    targetIP: IPv6Address,
+    opts: {
+      count: number;
+      timeoutMs?: number;
+      intervalMs?: number;
+      onResult: (result: PingResult) => void;
+      shouldStop: () => boolean;
+      sleep: (ms: number) => Promise<void>;
+    },
+  ): Promise<{ resolved: boolean }> {
+    return this.executePing6Stream(targetIP, opts);
+  }
+
   // ─── Router Solicitation ────────────────────────────────────────
 
   /**
