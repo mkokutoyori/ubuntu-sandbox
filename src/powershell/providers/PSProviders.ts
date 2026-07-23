@@ -262,6 +262,41 @@ export interface IAdProvider {
   listReplicationConnections(): AdReplicationConnectionInfo[];
   /** `Get-ADReplicationFailure -Scope Forest` — every replication partner this DC currently has a persistent failure with (empty in a healthy lab). */
   listReplicationFailures(): AdReplicationFailureInfo[];
+
+  /** `Get-ADDefaultDomainPasswordPolicy`. */
+  getDefaultDomainPasswordPolicy(): AdPasswordPolicyInfo;
+  /** `Set-ADDefaultDomainPasswordPolicy` — only the given fields change. */
+  setDefaultDomainPasswordPolicy(patch: Partial<AdPasswordPolicyInfo>): AdOpResult;
+  /** `New-ADFineGrainedPasswordPolicy`. */
+  newFineGrainedPasswordPolicy(name: string, precedence: number, settings: Partial<AdPasswordPolicyInfo>, description?: string): AdOpResult;
+  /** `Get-ADFineGrainedPasswordPolicy -Identity <name>`. */
+  getFineGrainedPasswordPolicy(name: string): AdFineGrainedPasswordPolicyInfo | null;
+  /** `Get-ADFineGrainedPasswordPolicy -Filter *`: every PSO in the domain. */
+  listFineGrainedPasswordPolicies(): AdFineGrainedPasswordPolicyInfo[];
+  /** `Add-ADFineGrainedPasswordPolicySubject` — subjects may be user or group SAM names. */
+  addFineGrainedPasswordPolicySubject(name: string, subjects: string[]): AdOpResult;
+  /** `Get-ADFineGrainedPasswordPolicySubject -Identity <name>`. */
+  listFineGrainedPasswordPolicySubjects(name: string): string[];
+  /** `Get-ADUserResultantPasswordPolicy` — null when no PSO applies (Default Domain Policy governs implicitly). */
+  getResultantPasswordPolicy(userIdentity: string): AdFineGrainedPasswordPolicyInfo | null;
+}
+
+export interface AdPasswordPolicyInfo {
+  minPasswordLength: number;
+  passwordHistoryCount: number;
+  maxPasswordAgeDays: number;
+  minPasswordAgeDays: number;
+  lockoutThreshold: number;
+  lockoutDurationMinutes: number;
+  lockoutObservationWindowMinutes: number;
+  complexityEnabled: boolean;
+  reversibleEncryptionEnabled: boolean;
+}
+
+export interface AdFineGrainedPasswordPolicyInfo extends AdPasswordPolicyInfo {
+  name: string;
+  precedence: number;
+  description: string;
 }
 
 export interface AdReplicationConnectionInfo {

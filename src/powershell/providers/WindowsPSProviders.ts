@@ -56,7 +56,7 @@ import type {
   ISmbProvider, SmbShareInfo, SmbSessionInfo,
   IAdProvider, AdUserInfo, AdGroupInfo, AdComputerInfo, AdOrgUnitInfo, AdOpResult, AdSiteInfo,
   AdAttributeSchemaInfo, AdObjectClassSchemaInfo, AdForestInfo, AdDomainInfo, AdTrustInfo,
-  AdReplicationConnectionInfo, AdReplicationFailureInfo,
+  AdReplicationConnectionInfo, AdReplicationFailureInfo, AdPasswordPolicyInfo, AdFineGrainedPasswordPolicyInfo,
   IComputerProvider, DomainMembershipInfo,
   IGpoProvider, GpoInfo,
   IIisProvider, IisOpResult, WebsiteInfo, AppPoolInfo, NewAppPoolOptions, WebModuleInfo,
@@ -409,6 +409,84 @@ class WindowsAdAdapter implements IAdProvider {
         replicateFromDirectoryServer: `${c.name}.${store.dnsName}`,
         interSiteTransportProtocol: 'RPC',
       }));
+  }
+
+  private toPolicyInfo(p: { minPasswordLength?: number; passwordHistoryLength?: number; maxPasswordAge?: number; minPasswordAge?: number; lockoutThreshold?: number; lockoutDurationMinutes?: number; lockoutWindowMinutes?: number; complexityEnabled?: boolean; reversibleEncryptionEnabled?: boolean }): AdPasswordPolicyInfo {
+    return {
+      minPasswordLength: p.minPasswordLength ?? 7,
+      passwordHistoryCount: p.passwordHistoryLength ?? 24,
+      maxPasswordAgeDays: p.maxPasswordAge ?? 42,
+      minPasswordAgeDays: p.minPasswordAge ?? 1,
+      lockoutThreshold: p.lockoutThreshold ?? 5,
+      lockoutDurationMinutes: p.lockoutDurationMinutes ?? 30,
+      lockoutObservationWindowMinutes: p.lockoutWindowMinutes ?? 30,
+      complexityEnabled: p.complexityEnabled ?? true,
+      reversibleEncryptionEnabled: p.reversibleEncryptionEnabled ?? false,
+    };
+  }
+
+  private fromPolicyPatch(patch: Partial<AdPasswordPolicyInfo>): {
+    minPasswordLength?: number; passwordHistoryLength?: number; maxPasswordAge?: number; minPasswordAge?: number;
+    lockoutThreshold?: number; lockoutDurationMinutes?: number; lockoutWindowMinutes?: number;
+    complexityEnabled?: boolean; reversibleEncryptionEnabled?: boolean;
+  } {
+    const out: ReturnType<WindowsAdAdapter['fromPolicyPatch']> = {};
+    if (patch.minPasswordLength !== undefined) out.minPasswordLength = patch.minPasswordLength;
+    if (patch.passwordHistoryCount !== undefined) out.passwordHistoryLength = patch.passwordHistoryCount;
+    if (patch.maxPasswordAgeDays !== undefined) out.maxPasswordAge = patch.maxPasswordAgeDays;
+    if (patch.minPasswordAgeDays !== undefined) out.minPasswordAge = patch.minPasswordAgeDays;
+    if (patch.lockoutThreshold !== undefined) out.lockoutThreshold = patch.lockoutThreshold;
+    if (patch.lockoutDurationMinutes !== undefined) out.lockoutDurationMinutes = patch.lockoutDurationMinutes;
+    if (patch.lockoutObservationWindowMinutes !== undefined) out.lockoutWindowMinutes = patch.lockoutObservationWindowMinutes;
+    if (patch.complexityEnabled !== undefined) out.complexityEnabled = patch.complexityEnabled;
+    if (patch.reversibleEncryptionEnabled !== undefined) out.reversibleEncryptionEnabled = patch.reversibleEncryptionEnabled;
+    return out;
+  }
+
+  private toPsoInfo(pso: { name: string; precedence: number; description: string; settings: Parameters<WindowsAdAdapter['toPolicyInfo']>[0] }): AdFineGrainedPasswordPolicyInfo {
+    return { name: pso.name, precedence: pso.precedence, description: pso.description, ...this.toPolicyInfo(pso.settings) };
+  }
+
+  getDefaultDomainPasswordPolicy(): AdPasswordPolicyInfo {
+    const store = this.requireStore('Get-ADDefaultDomainPasswordPolicy');
+    return this.toPolicyInfo(store.getDefaultDomainPasswordPolicy());
+  }
+
+  setDefaultDomainPasswordPolicy(patch: Partial<AdPasswordPolicyInfo>): AdOpResult {
+    const store = this.requireStore('Set-ADDefaultDomainPasswordPolicy');
+    return store.setDefaultDomainPasswordPolicy(this.fromPolicyPatch(patch));
+  }
+
+  newFineGrainedPasswordPolicy(name: string, precedence: number, settings: Partial<AdPasswordPolicyInfo>, description?: string): AdOpResult {
+    const store = this.requireStore('New-ADFineGrainedPasswordPolicy');
+    return store.newFineGrainedPasswordPolicy(name, precedence, this.fromPolicyPatch(settings), description);
+  }
+
+  getFineGrainedPasswordPolicy(name: string): AdFineGrainedPasswordPolicyInfo | null {
+    const store = this.requireStore('Get-ADFineGrainedPasswordPolicy');
+    const pso = store.getFineGrainedPasswordPolicy(name);
+    return pso ? this.toPsoInfo(pso) : null;
+  }
+
+  listFineGrainedPasswordPolicies(): AdFineGrainedPasswordPolicyInfo[] {
+    const store = this.requireStore('Get-ADFineGrainedPasswordPolicy');
+    return store.listFineGrainedPasswordPolicies().map(pso => this.toPsoInfo(pso));
+  }
+
+  addFineGrainedPasswordPolicySubject(name: string, subjects: string[]): AdOpResult {
+    const store = this.requireStore('Add-ADFineGrainedPasswordPolicySubject');
+    return store.addFineGrainedPasswordPolicySubject(name, subjects);
+  }
+
+  listFineGrainedPasswordPolicySubjects(name: string): string[] {
+    const store = this.requireStore('Get-ADFineGrainedPasswordPolicySubject');
+    return store.listFineGrainedPasswordPolicySubjects(name);
+  }
+
+  getResultantPasswordPolicy(userIdentity: string): AdFineGrainedPasswordPolicyInfo | null {
+    const store = this.requireStore('Get-ADUserResultantPasswordPolicy');
+    const pso = store.getResultantPasswordPolicy(userIdentity);
+    return pso ? this.toPsoInfo(pso) : null;
   }
 
   listReplicationFailures(): AdReplicationFailureInfo[] {

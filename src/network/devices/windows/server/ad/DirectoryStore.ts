@@ -18,7 +18,7 @@
 import { DirectoryTree, type DirectoryEntry, type EntryReplMeta } from './ldap/DirectoryTree';
 import { parseDN, formatDN, leafValue, type DistinguishedName } from './ldap/LdapDN';
 import type { LdapBindCheck } from './ldap/LdapServer';
-import type { AdUser, AdGroup, AdComputer, AdOrgUnit, Gpo, GpoSettings } from './AdTypes';
+import type { AdUser, AdGroup, AdComputer, AdOrgUnit, Gpo, GpoSettings, GpoAccountPolicy, AdFineGrainedPasswordPolicy } from './AdTypes';
 import { generateId } from '@/network/core/types';
 import {
   type HighWatermarkVector, emptyHighWatermarkVector, recordUsn, cloneHighWatermarkVector,
@@ -67,6 +67,7 @@ export class DirectoryStore {
   private readonly usersOuDn: DistinguishedName;
   private readonly computersOuDn: DistinguishedName;
   private readonly policiesDn: DistinguishedName;
+  private readonly pswdSettingsDn: DistinguishedName;
   /** This DC's stable replication identity (PRD-Windows-Server-Advanced.md §5 P4, MS-DRSR's invocationId) — one per `DirectoryStore` instance, for its whole lifetime. */
   private readonly invocationId = `invocation-${generateId()}`;
   private localUsn = 0;
@@ -100,6 +101,7 @@ export class DirectoryStore {
     this.usersOuDn = [...parseDN('CN=Users'), ...rootDn];
     this.computersOuDn = [...parseDN('CN=Computers'), ...rootDn];
     this.policiesDn = [...parseDN('CN=Policies'), ...parseDN('CN=System'), ...rootDn];
+    this.pswdSettingsDn = [...parseDN('CN=Password Settings Container'), ...parseDN('CN=System'), ...rootDn];
     this.sites = new SiteRegistry(this.tree);
     this.schema = new SchemaPartition(this.tree, this.schemaValidator);
     this.trustRegistry = new TrustRegistry(this.tree);
@@ -218,6 +220,7 @@ export class DirectoryStore {
     this.tree.addEntry(this.ouDn('Domain Controllers'), { objectClass: ['top', 'organizationalUnit'], ou: ['Domain Controllers'] });
     this.tree.addEntry([...parseDN('CN=System'), ...this.tree.getRootDn()], { objectClass: ['top', 'container'], cn: ['System'] });
     this.tree.addEntry(this.policiesDn, { objectClass: ['top', 'container'], cn: ['Policies'] });
+    this.tree.addEntry(this.pswdSettingsDn, { objectClass: ['top', 'container'], cn: ['Password Settings Container'] });
 
     this.createGroupEntry('Domain Admins', 'Global', this.usersOuDn);
     this.createGroupEntry('Domain Users', 'Global', this.usersOuDn);
@@ -350,6 +353,108 @@ export class DirectoryStore {
       .map(gpoDn => { try { return this.tree.getByDn(parseDN(gpoDn)); } catch { return null; } })
       .filter((e): e is DirectoryEntry => e !== null)
       .map(e => this.projectGpo(e));
+  }
+
+  // ─── Password policy: Default Domain Policy + Fine-Grained (PSO) ────
+  //
+  // The Default Domain Password Policy is real Windows Server's own
+  // account-policy settings on the "Default Domain Policy" GPO — not a
+  // separate store, matching where real AD actually keeps it (Computer
+  // Configuration > Windows Settings > Security Settings > Account
+  // Policies). FGPPs (`msDS-PasswordSettings`) are real entries under a
+  // "Password Settings Container" sibling of the Policies container,
+  // replicating like any other object; each PSO's settings blob reuses
+  // the same `GpoAccountPolicy` shape as the domain policy's.
+
+  getDefaultDomainPasswordPolicy(): GpoAccountPolicy {
+    return this.getGpo('Default Domain Policy')?.settings.accountPolicy ?? {};
+  }
+
+  setDefaultDomainPasswordPolicy(patch: GpoAccountPolicy): DirOpResult {
+    const gpo = this.getGpo('Default Domain Policy');
+    if (!gpo) return { ok: false, message: 'Cannot find the Default Domain Policy GPO.' };
+    return this.setGpoSettings('Default Domain Policy', { accountPolicy: { ...gpo.settings.accountPolicy, ...patch } });
+  }
+
+  private findPsoEntry(name: string): DirectoryEntry | null {
+    return this.tree.getByDn(this.cnDn(name, this.pswdSettingsDn));
+  }
+
+  newFineGrainedPasswordPolicy(name: string, precedence: number, settings: GpoAccountPolicy, description?: string): DirOpResult {
+    const res = this.tree.addEntry(this.cnDn(name, this.pswdSettingsDn), {
+      objectClass: ['top', 'msDS-PasswordSettings'],
+      cn: [name],
+      'msDS-PasswordSettingsPrecedence': [String(precedence)],
+      'msDS-PSOSettings': [JSON.stringify(settings)],
+      ...(description ? { description: [description] } : {}),
+    });
+    return res.ok ? { ok: true, message: '' } : { ok: false, message: `A password settings object named "${name}" already exists.` };
+  }
+
+  getFineGrainedPasswordPolicy(name: string): AdFineGrainedPasswordPolicy | null {
+    const entry = this.findPsoEntry(name);
+    return entry ? this.projectPso(entry) : null;
+  }
+
+  listFineGrainedPasswordPolicies(): AdFineGrainedPasswordPolicy[] {
+    return this.tree.allDescendants(this.pswdSettingsDn).filter(e => hasObjectClass(e, 'msDS-PasswordSettings')).map(e => this.projectPso(e));
+  }
+
+  private projectPso(entry: DirectoryEntry): AdFineGrainedPasswordPolicy {
+    const settingsJson = firstOf(entry.attributes.get('msds-psosettings'));
+    return {
+      name: firstOf(entry.attributes.get('cn')),
+      precedence: Number(firstOf(entry.attributes.get('msds-passwordsettingsprecedence')) || '0'),
+      description: firstOf(entry.attributes.get('description')),
+      settings: settingsJson ? JSON.parse(settingsJson) as GpoAccountPolicy : {},
+    };
+  }
+
+  /** `Add-ADFineGrainedPasswordPolicySubject` — subjects may be users or groups (real AD's `msDS-PSOAppliesTo` accepts either). */
+  addFineGrainedPasswordPolicySubject(name: string, subjectSams: string[]): DirOpResult {
+    const entry = this.findPsoEntry(name);
+    if (!entry) return { ok: false, message: `Cannot find a password settings object with identity: '${name}'.` };
+    const dns: string[] = [];
+    for (const sam of subjectSams) {
+      const subject = this.findUserEntry(sam) ?? this.findGroupEntry(sam);
+      if (!subject) return { ok: false, message: `Cannot find an object with identity: '${sam}'.` };
+      dns.push(formatDN(subject.dn));
+    }
+    this.tree.modifyEntry(entry.dn, [{ op: 'add', type: 'msDS-PSOAppliesTo', values: dns }]);
+    return { ok: true, message: '' };
+  }
+
+  listFineGrainedPasswordPolicySubjects(name: string): string[] {
+    const entry = this.findPsoEntry(name);
+    if (!entry) return [];
+    return (entry.attributes.get('msds-psoappliesto') ?? []).map(dnStr => this.samOfDn(dnStr)).filter((s): s is string => s !== null);
+  }
+
+  /**
+   * `Get-ADUserResultantPasswordPolicy` — the PSO with the LOWEST
+   * Precedence among every PSO the user is a subject of, directly or via
+   * group membership (real AD's own tie-breaking rule). Null when no PSO
+   * applies — the Default Domain Policy governs implicitly, matching
+   * real AD returning nothing in that case rather than that policy
+   * itself.
+   */
+  getResultantPasswordPolicy(userSam: string): AdFineGrainedPasswordPolicy | null {
+    const user = this.findUserEntry(userSam);
+    if (!user) return null;
+    const userDn = formatDN(user.dn).toLowerCase();
+    const groupDns = new Set((user.attributes.get('memberof') ?? []).map(d => d.toLowerCase()));
+    const applicable = this.listPsoEntries().filter(entry => {
+      const subjects = entry.attributes.get('msds-psoappliesto') ?? [];
+      return subjects.some(dn => dn.toLowerCase() === userDn || groupDns.has(dn.toLowerCase()));
+    });
+    if (applicable.length === 0) return null;
+    applicable.sort((a, b) =>
+      Number(firstOf(a.attributes.get('msds-passwordsettingsprecedence'))) - Number(firstOf(b.attributes.get('msds-passwordsettingsprecedence'))));
+    return this.projectPso(applicable[0]);
+  }
+
+  private listPsoEntries(): DirectoryEntry[] {
+    return this.tree.allDescendants(this.pswdSettingsDn).filter(e => hasObjectClass(e, 'msDS-PasswordSettings'));
   }
 
   // ─── Users ──────────────────────────────────────────────────────────

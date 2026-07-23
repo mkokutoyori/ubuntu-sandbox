@@ -123,6 +123,10 @@ import {
   NewADOrganizationalUnitCmdlet, GetADOrganizationalUnitCmdlet,
   NewADReplicationSiteCmdlet, GetADReplicationSiteCmdlet, NewADReplicationSubnetCmdlet,
   GetADReplicationConnectionCmdlet, GetADReplicationFailureCmdlet,
+  GetADDefaultDomainPasswordPolicyCmdlet, SetADDefaultDomainPasswordPolicyCmdlet,
+  NewADFineGrainedPasswordPolicyCmdlet, AddADFineGrainedPasswordPolicySubjectCmdlet,
+  GetADFineGrainedPasswordPolicyCmdlet, GetADFineGrainedPasswordPolicySubjectCmdlet,
+  GetADUserResultantPasswordPolicyCmdlet,
   NewADAttributeCmdlet, NewADObjectClassCmdlet,
   NewADDomainCmdlet, GetADForestCmdlet, GetADDomainCmdlet, MoveADDirectoryServerOperationMasterRoleCmdlet,
   NewADTrustCmdlet, GetADTrustCmdlet,
@@ -458,6 +462,13 @@ export function registerServerCmdlets(registry: CmdletRegistry): void {
   registry.register(new NewADReplicationSubnetCmdlet());
   registry.register(new GetADReplicationConnectionCmdlet());
   registry.register(new GetADReplicationFailureCmdlet());
+  registry.register(new GetADDefaultDomainPasswordPolicyCmdlet());
+  registry.register(new SetADDefaultDomainPasswordPolicyCmdlet());
+  registry.register(new NewADFineGrainedPasswordPolicyCmdlet());
+  registry.register(new AddADFineGrainedPasswordPolicySubjectCmdlet());
+  registry.register(new GetADFineGrainedPasswordPolicyCmdlet());
+  registry.register(new GetADFineGrainedPasswordPolicySubjectCmdlet());
+  registry.register(new GetADUserResultantPasswordPolicyCmdlet());
   registry.register(new NewADAttributeCmdlet());
   registry.register(new NewADObjectClassCmdlet());
   registry.register(new NewADUserCmdlet());

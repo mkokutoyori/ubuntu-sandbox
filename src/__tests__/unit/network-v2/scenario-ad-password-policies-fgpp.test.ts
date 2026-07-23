@@ -61,9 +61,9 @@ describe('Scénario 6 — politique de mots de passe et FGPP (mandeng.lan)', () 
         '-ComplexityEnabled $true',
       ].join(' '));
 
+      // Select-Object with 4+ properties renders as a table, not a Key : Value list.
       const out = await run(sh, 'Get-ADDefaultDomainPasswordPolicy | Select-Object MinPasswordLength, MaxPasswordAge, LockoutThreshold, ComplexityEnabled');
-      expect(out).toMatch(/MinPasswordLength\s*:\s*12/);
-      expect(out).toMatch(/90/); // MaxPasswordAge = 90 jours
+      expect(out).toMatch(/12\s+90\s+5\s+True/);
     });
   });
 

@@ -18,6 +18,7 @@ import type { PSValue } from '@/powershell/runtime/PSEnvironment';
 import type {
   IAdProvider, AdUserInfo, AdGroupInfo, AdComputerInfo, AdOrgUnitInfo, AdSiteInfo,
   AdAttributeSchemaInfo, AdObjectClassSchemaInfo, AdForestInfo, AdTrustInfo,
+  AdPasswordPolicyInfo, AdFineGrainedPasswordPolicyInfo,
 } from '@/powershell/providers/PSProviders';
 import { psValueToString } from '@/powershell/runtime/PSExpansion';
 import { parseCredentialArg } from './RemotingCmdlets';
@@ -235,7 +236,13 @@ export class GetADUserCmdlet implements ICmdlet {
     if (!identity) { ctx.emitError("Get-ADUser : Cannot process command because of one or more missing mandatory parameters: Identity."); return null; }
     const u = ad.getUser(identity);
     if (!u) { ctx.emitError(`Get-ADUser : Cannot find an object with identity: '${identity}'.`); return null; }
-    return userToPSObject(u);
+    const obj = userToPSObject(u);
+    const requested = stringArrayOf(ctx, 'properties').map(p => p.toLowerCase());
+    if (requested.includes('passwordneverexpires')) {
+      const effective = ad.getResultantPasswordPolicy(identity) ?? ad.getDefaultDomainPasswordPolicy();
+      obj.PasswordNeverExpires = effective.maxPasswordAgeDays === 0;
+    }
+    return obj;
   }
 }
 
@@ -853,4 +860,193 @@ function trustToPSObject(t: AdTrustInfo): Record<string, PSValue> {
     TrustAttributes: t.transitive ? 'transitive' : 'nonTransitive',
     ForestTransitive: t.transitive,
   };
+}
+
+// ── Password policy: Default Domain Policy + Fine-Grained (PSO) ─────────────
+
+/** Unwraps a `New-TimeSpan -Days N` result's `.TotalDays`, or a plain number given directly. */
+function timeSpanDays(ctx: CmdletContext, key: string): number | undefined {
+  const raw = ctx.named[key];
+  if (raw === undefined) return undefined;
+  if (typeof raw === 'object' && raw !== null && !Array.isArray(raw) && 'TotalDays' in (raw as Record<string, PSValue>)) {
+    return Number((raw as Record<string, PSValue>).TotalDays);
+  }
+  return Number(psValueToString(raw));
+}
+/** Unwraps a `New-TimeSpan -Minutes N` result's `.TotalMinutes`, or a plain number given directly. */
+function timeSpanMinutes(ctx: CmdletContext, key: string): number | undefined {
+  const raw = ctx.named[key];
+  if (raw === undefined) return undefined;
+  if (typeof raw === 'object' && raw !== null && !Array.isArray(raw) && 'TotalMinutes' in (raw as Record<string, PSValue>)) {
+    return Number((raw as Record<string, PSValue>).TotalMinutes);
+  }
+  return Number(psValueToString(raw));
+}
+
+function passwordPolicyPatchFrom(ctx: CmdletContext): Partial<AdPasswordPolicyInfo> {
+  const patch: Partial<AdPasswordPolicyInfo> = {};
+  if (ctx.named['minpasswordlength'] !== undefined) patch.minPasswordLength = Number(psValueToString(ctx.named['minpasswordlength']));
+  if (ctx.named['passwordhistorycount'] !== undefined) patch.passwordHistoryCount = Number(psValueToString(ctx.named['passwordhistorycount']));
+  const maxAge = timeSpanDays(ctx, 'maxpasswordage'); if (maxAge !== undefined) patch.maxPasswordAgeDays = maxAge;
+  const minAge = timeSpanDays(ctx, 'minpasswordage'); if (minAge !== undefined) patch.minPasswordAgeDays = minAge;
+  if (ctx.named['lockoutthreshold'] !== undefined) patch.lockoutThreshold = Number(psValueToString(ctx.named['lockoutthreshold']));
+  const lockDur = timeSpanMinutes(ctx, 'lockoutduration'); if (lockDur !== undefined) patch.lockoutDurationMinutes = lockDur;
+  const lockWin = timeSpanMinutes(ctx, 'lockoutobservationwindow'); if (lockWin !== undefined) patch.lockoutObservationWindowMinutes = lockWin;
+  if (ctx.named['complexityenabled'] !== undefined) patch.complexityEnabled = ctx.named['complexityenabled'] === true;
+  if (ctx.named['reversibleencryptionenabled'] !== undefined) patch.reversibleEncryptionEnabled = ctx.named['reversibleencryptionenabled'] === true;
+  return patch;
+}
+
+function policyToPSObject(p: AdPasswordPolicyInfo): Record<string, PSValue> {
+  return {
+    MinPasswordLength: p.minPasswordLength,
+    PasswordHistoryCount: p.passwordHistoryCount,
+    MaxPasswordAge: p.maxPasswordAgeDays,
+    MinPasswordAge: p.minPasswordAgeDays,
+    LockoutThreshold: p.lockoutThreshold,
+    LockoutDuration: p.lockoutDurationMinutes,
+    LockoutObservationWindow: p.lockoutObservationWindowMinutes,
+    ComplexityEnabled: p.complexityEnabled,
+    ReversibleEncryptionEnabled: p.reversibleEncryptionEnabled,
+  };
+}
+
+function psoToPSObject(p: AdFineGrainedPasswordPolicyInfo): Record<string, PSValue> {
+  return { Name: p.name, Precedence: p.precedence, Description: p.description, ...policyToPSObject(p) };
+}
+
+export class GetADDefaultDomainPasswordPolicyCmdlet implements ICmdlet {
+  readonly name = 'get-addefaultdomainpasswordpolicy';
+  readonly displayName = 'Get-ADDefaultDomainPasswordPolicy';
+  readonly aliases = [] as const;
+  readonly parameters = ['Identity'] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const ad = requireAd(ctx, 'Get-ADDefaultDomainPasswordPolicy');
+    return policyToPSObject(ad.getDefaultDomainPasswordPolicy());
+  }
+}
+
+export class SetADDefaultDomainPasswordPolicyCmdlet implements ICmdlet {
+  readonly name = 'set-addefaultdomainpasswordpolicy';
+  readonly displayName = 'Set-ADDefaultDomainPasswordPolicy';
+  readonly aliases = [] as const;
+  readonly parameters = [
+    'Identity', 'MinPasswordLength', 'PasswordHistoryCount', 'MaxPasswordAge', 'MinPasswordAge',
+    'LockoutThreshold', 'LockoutDuration', 'LockoutObservationWindow', 'ComplexityEnabled', 'ReversibleEncryptionEnabled',
+  ] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const ad = requireAd(ctx, 'Set-ADDefaultDomainPasswordPolicy');
+    const res = ad.setDefaultDomainPasswordPolicy(passwordPolicyPatchFrom(ctx));
+    if (!res.ok) ctx.emitError(`Set-ADDefaultDomainPasswordPolicy : ${res.message}`);
+    return null;
+  }
+}
+
+export class NewADFineGrainedPasswordPolicyCmdlet implements ICmdlet {
+  readonly name = 'new-adfinegrainedpasswordpolicy';
+  readonly displayName = 'New-ADFineGrainedPasswordPolicy';
+  readonly aliases = [] as const;
+  readonly parameters = [
+    'Name', 'Precedence', 'MinPasswordLength', 'PasswordHistoryCount', 'MaxPasswordAge', 'MinPasswordAge',
+    'LockoutThreshold', 'LockoutDuration', 'LockoutObservationWindow', 'ComplexityEnabled', 'ReversibleEncryptionEnabled', 'Description',
+  ] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const ad = requireAd(ctx, 'New-ADFineGrainedPasswordPolicy');
+    const name = psValueToString(ctx.named['name'] ?? ctx.positional[0] ?? '');
+    if (!name) {
+      ctx.emitError('New-ADFineGrainedPasswordPolicy : Cannot process command because of one or more missing mandatory parameters: Name.');
+      return null;
+    }
+    const precedence = Number(psValueToString(ctx.named['precedence'] ?? ''));
+    if (!Number.isFinite(precedence) || ctx.named['precedence'] === undefined) {
+      ctx.emitError('New-ADFineGrainedPasswordPolicy : Cannot process command because of one or more missing mandatory parameters: Precedence.');
+      return null;
+    }
+    const description = ctx.named['description'] !== undefined ? psValueToString(ctx.named['description']) : undefined;
+    const res = ad.newFineGrainedPasswordPolicy(name, precedence, passwordPolicyPatchFrom(ctx), description);
+    if (!res.ok) { ctx.emitError(`New-ADFineGrainedPasswordPolicy : ${res.message}`); return null; }
+    const pso = ad.getFineGrainedPasswordPolicy(name);
+    return pso ? psoToPSObject(pso) : null;
+  }
+}
+
+/** `Add-ADFineGrainedPasswordPolicySubject` — subjects may be users or groups. */
+export class AddADFineGrainedPasswordPolicySubjectCmdlet implements ICmdlet {
+  readonly name = 'add-adfinegrainedpasswordpolicysubject';
+  readonly displayName = 'Add-ADFineGrainedPasswordPolicySubject';
+  readonly aliases = [] as const;
+  readonly parameters = ['Identity', 'Subjects'] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const ad = requireAd(ctx, 'Add-ADFineGrainedPasswordPolicySubject');
+    const identity = identityOf(ctx);
+    if (!identity) {
+      ctx.emitError('Add-ADFineGrainedPasswordPolicySubject : Cannot process command because of one or more missing mandatory parameters: Identity.');
+      return null;
+    }
+    const subjects = stringArrayOf(ctx, 'subjects');
+    if (subjects.length === 0) {
+      ctx.emitError('Add-ADFineGrainedPasswordPolicySubject : Cannot process command because of one or more missing mandatory parameters: Subjects.');
+      return null;
+    }
+    const res = ad.addFineGrainedPasswordPolicySubject(identity, subjects);
+    if (!res.ok) ctx.emitError(`Add-ADFineGrainedPasswordPolicySubject : ${res.message}`);
+    return null;
+  }
+}
+
+export class GetADFineGrainedPasswordPolicyCmdlet implements ICmdlet {
+  readonly name = 'get-adfinegrainedpasswordpolicy';
+  readonly displayName = 'Get-ADFineGrainedPasswordPolicy';
+  readonly aliases = [] as const;
+  readonly parameters = ['Identity', 'Filter'] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const ad = requireAd(ctx, 'Get-ADFineGrainedPasswordPolicy');
+    const identity = identityOf(ctx);
+    if (identity) {
+      const pso = ad.getFineGrainedPasswordPolicy(identity);
+      if (!pso) { ctx.emitError(`Get-ADFineGrainedPasswordPolicy : Cannot find an object with identity: '${identity}'.`); return null; }
+      return psoToPSObject(pso);
+    }
+    return ad.listFineGrainedPasswordPolicies().map(psoToPSObject) as PSValue;
+  }
+}
+
+export class GetADFineGrainedPasswordPolicySubjectCmdlet implements ICmdlet {
+  readonly name = 'get-adfinegrainedpasswordpolicysubject';
+  readonly displayName = 'Get-ADFineGrainedPasswordPolicySubject';
+  readonly aliases = [] as const;
+  readonly parameters = ['Identity'] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const ad = requireAd(ctx, 'Get-ADFineGrainedPasswordPolicySubject');
+    const identity = identityOf(ctx);
+    if (!identity) {
+      ctx.emitError('Get-ADFineGrainedPasswordPolicySubject : Cannot process command because of one or more missing mandatory parameters: Identity.');
+      return null;
+    }
+    return ad.listFineGrainedPasswordPolicySubjects(identity).map(n => ({ Name: n } as Record<string, PSValue>)) as PSValue;
+  }
+}
+
+export class GetADUserResultantPasswordPolicyCmdlet implements ICmdlet {
+  readonly name = 'get-aduserresultantpasswordpolicy';
+  readonly displayName = 'Get-ADUserResultantPasswordPolicy';
+  readonly aliases = [] as const;
+  readonly parameters = ['Identity'] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const ad = requireAd(ctx, 'Get-ADUserResultantPasswordPolicy');
+    const identity = identityOf(ctx);
+    if (!identity) {
+      ctx.emitError('Get-ADUserResultantPasswordPolicy : Cannot process command because of one or more missing mandatory parameters: Identity.');
+      return null;
+    }
+    const pso = ad.getResultantPasswordPolicy(identity);
+    return pso ? psoToPSObject(pso) : null;
+  }
 }

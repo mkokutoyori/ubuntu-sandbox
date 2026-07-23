@@ -543,6 +543,7 @@ export class WindowsServer extends WindowsPC {
         minPasswordLength: 7, passwordHistoryLength: 24,
         maxPasswordAge: 42, minPasswordAge: 1,
         lockoutThreshold: 5, lockoutDurationMinutes: 30, lockoutWindowMinutes: 30,
+        complexityEnabled: true, reversibleEncryptionEnabled: false,
       },
     });
     store.newGPLink('Default Domain Policy', store.getDomainDn());
