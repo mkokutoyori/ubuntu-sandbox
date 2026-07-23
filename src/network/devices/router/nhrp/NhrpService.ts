@@ -75,6 +75,40 @@ export class NhrpService {
     }
   }
 
+  /** Mark an NHS as registered once a real Registration Reply confirms it. */
+  markNhsRegistered(ifName: string, address: string, registered: boolean): void {
+    const nhs = this.nhsServers.find(n => n.ifName === ifName && n.address === address);
+    if (nhs) nhs.registered = registered;
+  }
+
+  /**
+   * Install (or refresh) a dynamically-learned cache entry — populated by a
+   * real Registration Request received from a spoke, or a real Resolution
+   * Reply received from an NHS. Distinct from `addMapping()`, which is the
+   * CLI's own static `ip nhrp map` configuration.
+   */
+  registerDynamic(ifName: string, targetAddress: string, nbmaAddress: string, holdtimeSec: number): NhrpCacheEntry {
+    for (let i = this.cache.length - 1; i >= 0; i--) {
+      const e = this.cache[i];
+      if (e.ifName === ifName && e.targetAddress === targetAddress && e.type === 'dynamic') {
+        this.cache.splice(i, 1);
+      }
+    }
+    const now = Date.now();
+    const entry: NhrpCacheEntry = {
+      ifName, targetAddress, targetPrefixLen: 32, nbmaAddress,
+      type: 'dynamic', flags: ['D'], registeredAtMs: now,
+      expiresAtMs: now + holdtimeSec * 1000,
+    };
+    this.cache.push(entry);
+    return entry;
+  }
+
+  /** Real Resolution Request/Reply lookup: does this NHS already know the target's NBMA address? */
+  lookupBinding(ifName: string, targetAddress: string): NhrpCacheEntry | undefined {
+    return this.cache.find(e => e.ifName === ifName && e.targetAddress === targetAddress);
+  }
+
   removeInterface(ifName: string): void {
     this.perInterface.delete(ifName);
     for (let i = this.mappings.length - 1; i >= 0; i--) {

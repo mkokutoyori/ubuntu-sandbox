@@ -107,6 +107,8 @@ import { inspectAndRewriteFtpAlg } from './router/nat/FtpAlg';
 import { RouterDebugService } from './router/diag/RouterDebugService';
 import { NhrpService } from './router/nhrp/NhrpService';
 import { DmvpnService } from './router/nhrp/DmvpnService';
+import { NhrpEngine } from '../nhrp/NhrpEngine';
+import { IP_PROTO_NHRP, type NhrpPacket } from '../nhrp/types';
 import { RouterManagementService } from './router/management/RouterManagementService';
 import { SnmpService } from './router/management/SnmpService';
 import { EemService } from './router/eem/EemService';
@@ -1281,6 +1283,15 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     // EIGRP runs directly over IP (proto 88, RFC 7868 §4.2).
     if (ipPkt.protocol === IP_PROTO_EIGRP) {
       this.dynamicRouting.receiveEigrpPacket(inPort, ipPkt);
+      return;
+    }
+
+    // NHRP runs directly over IP (proto 54, RFC 2332 §5.2).
+    if (ipPkt.protocol === IP_PROTO_NHRP) {
+      const nhrpPkt = ipPkt.payload as { type?: string };
+      if (nhrpPkt?.type === 'nhrp') {
+        this.receiveNhrpPacket(inPort, ipPkt.sourceIP.toString(), ipPkt.payload as NhrpPacket);
+      }
       return;
     }
 
@@ -2564,6 +2575,31 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
   getDmvpnService(): DmvpnService {
     if (!this._dmvpnService) this._dmvpnService = new DmvpnService(this.getNhrpService());
     return this._dmvpnService;
+  }
+
+  private _nhrpEngine: NhrpEngine | null = null;
+
+  getNhrpEngine(): NhrpEngine {
+    if (!this._nhrpEngine) {
+      this._nhrpEngine = new NhrpEngine(
+        {
+          id: this.id,
+          name: this.name,
+          getPorts: () => this.ports,
+          sendFrame: (iface, frame) => { this.sendFrame(iface, frame); },
+          getArpEntry: (ip) => this.arpTable.get(ip),
+        },
+        this.getNhrpService(),
+        this.getDmvpnService(),
+        () => this.getBus(),
+      );
+    }
+    return this._nhrpEngine;
+  }
+
+  /** NHRP packets arriving from the wire (proto 54) — the only path into the engine. */
+  receiveNhrpPacket(inPort: string, srcIp: string, pkt: NhrpPacket): void {
+    this.getNhrpEngine().processPacket(inPort, srcIp, pkt);
   }
 
   private _managementService: RouterManagementService | null = null;
