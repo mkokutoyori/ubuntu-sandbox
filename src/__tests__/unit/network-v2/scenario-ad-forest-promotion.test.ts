@@ -8,7 +8,7 @@
  * partagés, des services AD critiques, et des événements de promotion.
  */
 import { describe, it, expect, beforeEach } from 'vitest';
-import { resetCounters } from '@/network/core/types';
+import { resetCounters, IPAddress, SubnetMask } from '@/network/core/types';
 import { WindowsServer } from '@/network/devices/WindowsServer';
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';
@@ -72,6 +72,7 @@ describe('Scénario 1 — installation et promotion d\'un contrôleur de domaine
     async function promotedDc(): Promise<WindowsServer> {
       const dc = new WindowsServer('DC01');
       dc.setCurrentUser('Administrator');
+      dc.getPorts()[0].configureIP(new IPAddress('192.168.10.10'), new SubnetMask('255.255.255.0'));
       await run(ps(dc), 'Install-WindowsFeature -Name AD-Domain-Services -IncludeManagementTools -IncludeAllSubFeature -Restart:$false');
       await run(ps(dc), 'Install-ADDSForest -DomainName "mandeng.lan" -DomainNetBiosName "MANDENG" -SafeModeAdministratorPassword (ConvertTo-SecureString "DSRM@Mandeng2025!" -AsPlainText -Force) -Force:$true');
       return dc;

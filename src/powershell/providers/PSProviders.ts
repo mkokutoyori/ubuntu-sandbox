@@ -199,13 +199,14 @@ export interface AdOpResult { ok: boolean; message: string }
 
 export interface IAdProvider {
   /** `Install-ADDSForest` — promotes this server to a new forest's first DC. Fails if already promoted. */
-  installForest(domainName: string, netbiosName: string | undefined, safeModeAdminPassword: string): AdOpResult;
+  installForest(domainName: string, netbiosName: string | undefined, safeModeAdminPassword: string, opts?: { installDns?: boolean }): AdOpResult;
   /** Whether this server has already been promoted (`Install-ADDSForest` succeeded). */
   isForestInstalled(): boolean;
   /** `Install-ADDSDomainController` (PRD-Windows-Server-Advanced.md §5 P5) — promotes this server as an additional DC of a domain that already exists at `sourceDcAddress`, via a real initial replication sync. */
   installDomainController(
     domainName: string, netbiosName: string | undefined, sourceDcAddress: string,
     credentialUser: string, credentialPassword: string, safeModeAdminPassword: string,
+    opts?: { installDns?: boolean },
   ): AdOpResult;
   /** `Get-ADDomainController` — every domain controller this DC currently knows about (itself, plus any replicated in). */
   listDomainControllers(): AdComputerInfo[];
@@ -252,6 +253,7 @@ export interface IAdProvider {
   newDomain(
     newDomainDnsName: string, netbiosName: string | undefined, parentDomainName: string, parentDcAddress: string,
     credentialUser: string, credentialPassword: string, safeModeAdminPassword: string,
+    opts?: { installDns?: boolean },
   ): AdOpResult;
   /** `Get-ADForest` — null if this server isn't a DC. */
   getForest(): AdForestInfo | null;

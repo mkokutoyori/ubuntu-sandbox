@@ -66,6 +66,10 @@ function identityOf(ctx: CmdletContext): string {
   return psValueToString(ctx.named['identity'] ?? ctx.positional[0] ?? '');
 }
 
+function installDnsOf(ctx: CmdletContext): boolean {
+  return ctx.named['installdns'] !== false;
+}
+
 interface AdFilterClause { prop: string; op: string; value: string }
 
 function parseAdFilterClause(raw: PSValue): AdFilterClause | null {
@@ -138,7 +142,7 @@ function ouToPSObject(ou: AdOrgUnitInfo): Record<string, PSValue> {
 export class InstallADDSForestCmdlet implements ICmdlet {
   readonly name = 'install-addsforest';
   readonly aliases = [] as const;
-  readonly parameters = ['DomainName', 'DomainNetbiosName', 'SafeModeAdministratorPassword', 'Force'] as const;
+  readonly parameters = ['DomainName', 'DomainNetbiosName', 'SafeModeAdministratorPassword', 'InstallDns', 'Force'] as const;
 
   execute(ctx: CmdletContext): PSValue {
     const ad = requireAd(ctx, 'Install-ADDSForest');
@@ -153,7 +157,7 @@ export class InstallADDSForestCmdlet implements ICmdlet {
       return null;
     }
     const netbiosName = ctx.named['domainnetbiosname'] !== undefined ? psValueToString(ctx.named['domainnetbiosname']) : undefined;
-    const res = ad.installForest(domainName, netbiosName, password);
+    const res = ad.installForest(domainName, netbiosName, password, { installDns: installDnsOf(ctx) });
     if (!res.ok) { ctx.emitError(res.message); return null; }
     return { Message: 'Success.', Context: 'DCPromo', RebootRequired: false, Status: 0 } as Record<string, PSValue>;
   }
@@ -164,7 +168,7 @@ export class InstallADDSForestCmdlet implements ICmdlet {
 export class InstallADDSDomainControllerCmdlet implements ICmdlet {
   readonly name = 'install-addsdomaincontroller';
   readonly aliases = [] as const;
-  readonly parameters = ['DomainName', 'DomainNetbiosName', 'Credential', 'Server', 'SafeModeAdministratorPassword', 'Force'] as const;
+  readonly parameters = ['DomainName', 'DomainNetbiosName', 'Credential', 'Server', 'SafeModeAdministratorPassword', 'InstallDns', 'Force'] as const;
 
   execute(ctx: CmdletContext): PSValue {
     const ad = requireAd(ctx, 'Install-ADDSDomainController');
@@ -190,7 +194,7 @@ export class InstallADDSDomainControllerCmdlet implements ICmdlet {
     }
     const { username, password: credentialPassword } = parseCredentialArg(credentialRaw);
     const netbiosName = ctx.named['domainnetbiosname'] !== undefined ? psValueToString(ctx.named['domainnetbiosname']) : undefined;
-    const res = ad.installDomainController(domainName, netbiosName, server, username, credentialPassword, password);
+    const res = ad.installDomainController(domainName, netbiosName, server, username, credentialPassword, password, { installDns: installDnsOf(ctx) });
     if (!res.ok) { ctx.emitError(res.message); return null; }
     return { Message: 'Success.', Context: 'DCPromo', RebootRequired: false, Status: 0 } as Record<string, PSValue>;
   }
@@ -775,7 +779,7 @@ export class NewADObjectClassCmdlet implements ICmdlet {
 export class NewADDomainCmdlet implements ICmdlet {
   readonly name = 'new-addomain';
   readonly aliases = [] as const;
-  readonly parameters = ['NewDomainName', 'DomainNetbiosName', 'ParentDomainName', 'Credential', 'Server', 'SafeModeAdministratorPassword'] as const;
+  readonly parameters = ['NewDomainName', 'DomainNetbiosName', 'ParentDomainName', 'Credential', 'Server', 'SafeModeAdministratorPassword', 'InstallDns'] as const;
 
   execute(ctx: CmdletContext): PSValue {
     const ad = requireAd(ctx, 'New-ADDomain');
@@ -806,7 +810,7 @@ export class NewADDomainCmdlet implements ICmdlet {
     }
     const { username, password: credentialPassword } = parseCredentialArg(credentialRaw);
     const netbiosName = ctx.named['domainnetbiosname'] !== undefined ? psValueToString(ctx.named['domainnetbiosname']) : undefined;
-    const res = ad.newDomain(newDomainName, netbiosName, parentDomainName, server, username, credentialPassword, password);
+    const res = ad.newDomain(newDomainName, netbiosName, parentDomainName, server, username, credentialPassword, password, { installDns: installDnsOf(ctx) });
     if (!res.ok) { ctx.emitError(res.message); return null; }
     return { Message: 'Success.', Context: 'DCPromo', RebootRequired: false, Status: 0 } as Record<string, PSValue>;
   }

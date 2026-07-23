@@ -487,6 +487,7 @@ export class PSLexer {
         }
         word += this.ch(); this.advance();
       }
+      if (!this.eof() && this.ch() === ':') this.advance();
       return psToken(PSTokenType.PARAMETER, word.toLowerCase(), start);
     }
 

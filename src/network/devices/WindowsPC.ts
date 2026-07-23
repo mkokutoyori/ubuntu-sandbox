@@ -2869,8 +2869,16 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     return runRunasNonInteractive(this.runasHost(), args);
   }
 
-  /** Runs `command` as `userName` — called by `WindowsTerminalSession` once the password has already been verified via `checkPassword`. */
-  async runAsUserVerified(userName: string, command: string): Promise<string> {
+  /** Runs `command` as `userName` — called by `WindowsTerminalSession` once the password has already been verified via `checkPassword`/`tryDomainAuth`. A domain-qualified `userName` also acquires a real Kerberos TGT, so `klist` sees it afterward — acquired only once `runAsUser` (and its internal `setCurrentUser` impersonate/revert, which always drops any cached ticket) has fully returned, matching `logonDomain`'s cache-survives-the-call contract. */
+  async runAsUserVerified(userName: string, command: string, password?: string): Promise<string> {
+    if (password !== undefined && this.domainMembership) {
+      const parsed = parseDomainQualifiedUser(userName, this.domainMembership);
+      if (parsed) {
+        const output = await runAsUser(this.runasHost(), parsed.sam, command);
+        this.acquireKerberosTgt(parsed.sam, password);
+        return output;
+      }
+    }
     return runAsUser(this.runasHost(), userName, command);
   }
 

@@ -60,6 +60,15 @@ async function modalTextFor(page: Page, deviceId: string): Promise<string> {
   const target = (await modal.count()) > 0 ? modal : page.locator('[data-testid="terminal-modal"]').last();
   return target.innerText();
 }
+async function typePasswordIn(page: Page, deviceId: string, password: string): Promise<void> {
+  const modal = page.locator(`[data-testid="terminal-modal"][data-device-id="${deviceId}"]`).first();
+  const target = (await modal.count()) > 0 ? modal : page.locator('[data-testid="terminal-modal"]').last();
+  const input = target.locator('input[type="password"]').last();
+  await input.focus();
+  await input.fill(password);
+  await input.press('Enter');
+  await page.waitForTimeout(300);
+}
 
 async function promoteAndCreateUser(page: Page, dcId: string): Promise<void> {
   await openTerminal(page, dcId);
@@ -90,6 +99,7 @@ test.describe('Scénario 5 (e2e) — Kerberos : tickets, authentification et aud
 
     // logon domaine (déclenche l'échange Kerberos AS réel côté simulateur)
     await typeCmdIn(page, clientId, 'runas /user:MANDENG\\jadmin cmd');
+    await typePasswordIn(page, clientId, 'User@Mandeng2025!');
     await page.waitForTimeout(300);
     await typeCmdIn(page, clientId, 'klist');
     await page.waitForTimeout(300);
@@ -107,6 +117,7 @@ test.describe('Scénario 5 (e2e) — Kerberos : tickets, authentification et aud
     await page.waitForTimeout(500);
     await typeCmdIn(page, clientId, 'cmd');
     await typeCmdIn(page, clientId, 'runas /user:MANDENG\\jadmin cmd');
+    await typePasswordIn(page, clientId, 'WrongPassword!');
     await page.waitForTimeout(300);
     const text = await modalTextFor(page, clientId);
     expect(text).toMatch(/RUNAS ERROR/i);

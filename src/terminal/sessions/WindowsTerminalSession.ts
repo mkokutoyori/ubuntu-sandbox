@@ -217,6 +217,9 @@ export class WindowsTerminalSession extends TerminalSession {
         && (this.inputMode.type === 'password' || this.inputMode.type === 'interactive-text')) {
       return this.inputMode;
     }
+    if ((this.pendingSshPush || this.pendingRunas) && this.inputMode.type === 'password') {
+      return this.inputMode;
+    }
     // A sub-shell that asked for a password challenge takes priority over
     // the normal interactive-text input — the host must mask keystrokes.
     if (this.activeSubShell && this.subShellPendingInput) {
@@ -1183,11 +1186,16 @@ export class WindowsTerminalSession extends TerminalSession {
     const dev = device as unknown as {
       checkPassword?: (u: string, p: string) => boolean;
       userMgr?: { checkPassword?: (u: string, p: string) => boolean };
+      tryDomainAuth?: (u: string, p: string) => { ok: boolean; sam: string; groups: string[] } | null;
       getSshHost?: () => {
         evaluate?: (req: unknown) => { outcome: string };
       };
       firstConfiguredIp?: () => string | null;
     };
+    if (typeof dev.tryDomainAuth === 'function') {
+      const domainResult = dev.tryDomainAuth(user, password);
+      if (domainResult !== null) return domainResult.ok;
+    }
     if (typeof dev.checkPassword === 'function') {
       return dev.checkPassword(user, password);
     }
@@ -1251,10 +1259,13 @@ export class WindowsTerminalSession extends TerminalSession {
     }
 
     const dev = this.device as unknown as RunasUserSource;
-    const validation = validateRunasUser(dev, userName);
-    if (validation.ok === false) {
-      this.addLine(validation.error, 'error');
-      return true;
+    const domainQualified = userName.includes('\\') || userName.includes('@');
+    if (!domainQualified) {
+      const validation = validateRunasUser(dev, userName);
+      if (validation.ok === false) {
+        this.addLine(validation.error, 'error');
+        return true;
+      }
     }
 
     if (saveCred) {
@@ -1320,8 +1331,8 @@ export class WindowsTerminalSession extends TerminalSession {
       vault.saveRunasCredential?.(pending.userName, password);
     }
 
-    const dev = this.device as unknown as { runAsUserVerified?: (u: string, c: string) => Promise<string> };
-    const result = await dev.runAsUserVerified?.(pending.userName, pending.command) ?? '';
+    const dev = this.device as unknown as { runAsUserVerified?: (u: string, c: string, p?: string) => Promise<string> };
+    const result = await dev.runAsUserVerified?.(pending.userName, pending.command, password) ?? '';
     if (result) this.emitWindowsOutput(result);
     this.notify();
   }
@@ -1590,6 +1601,12 @@ export class WindowsTerminalSession extends TerminalSession {
       if (this.tryStartGetCounter(line)) {
         this.notify();
         return true;
+      }
+      if (line.trim() === 'runas' || line.trim().toLowerCase().startsWith('runas ')) {
+        if (parseRunasArgs(line.split(/\s+/).slice(1)).ok) {
+          void this.tryStartRunasInteractive(line).then(() => this.notify());
+          return true;
+        }
       }
 
       const maybePromise = this.activeSubShell.processLine(line);

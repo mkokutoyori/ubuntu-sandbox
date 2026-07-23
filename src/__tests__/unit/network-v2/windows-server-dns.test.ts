@@ -205,10 +205,10 @@ describe('AD-integrated DNS zone auto-provisioned at DC promotion', () => {
     expect(records).toContain('389');
   });
 
-  it('does not create a zone when the DNS role is not installed at promotion time', async () => {
+  it('does not create a zone when -InstallDns:$false opts out at promotion time', async () => {
     const { dns: dc } = await buildLan();
     await run(ps(dc), 'Install-WindowsFeature AD-Domain-Services');
-    await run(ps(dc), 'Install-ADDSForest -DomainName lab.local -SafeModeAdministratorPassword (ConvertTo-SecureString "P@ssw0rd" -AsPlainText -Force)');
+    await run(ps(dc), 'Install-ADDSForest -DomainName lab.local -SafeModeAdministratorPassword (ConvertTo-SecureString "P@ssw0rd" -AsPlainText -Force) -InstallDns:$false');
     expect(dc.getDirectoryStore()).not.toBeNull();
     expect(dc.getDnsServerRole()).toBeNull();
   });

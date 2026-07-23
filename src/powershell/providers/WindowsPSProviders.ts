@@ -290,15 +290,7 @@ class WindowsRoleAdapter implements IRoleProvider {
 class WindowsSmbAdapter implements ISmbProvider {
   constructor(private readonly pc: WindowsPC) {}
 
-  /**
-   * `New-SmbShare`/`Get-SmbShare`/`Remove-SmbShare` only exist once the
-   * FS-FileServer role is installed (PRD-Windows-Server.md §8 acceptance
-   * criterion 2) — checked live on every call (not baked in at provider
-   * construction) so installing the role mid-session takes effect
-   * immediately. `net share`/the wire-level SMB server are NOT gated this
-   * way: real Windows shares admin shares and serves SMB on every SKU
-   * regardless of any role.
-   */
+  /** `New-SmbShare`/`Remove-SmbShare` only exist once the FS-FileServer role is installed (PRD-Windows-Server.md §8 acceptance criterion 2) — checked live on every call. `Get-SmbShare`/`Get-SmbSession` (and `net share`) are not gated this way, matching real Windows. */
   private requireRole(): void {
     if (!this.pc.getRoleManager()?.isInstalled('FS-FileServer')) {
       throw new Error('New-SmbShare is not recognized as the name of a cmdlet, function, script file, or operable program');
@@ -310,11 +302,9 @@ class WindowsSmbAdapter implements ISmbProvider {
   }
 
   listShares(): SmbShareInfo[] {
-    this.requireRole();
     return this.pc.smbShares.list().map(s => this.toShareInfo(this.pc.smbShares.toView(s)));
   }
   getShare(name: string): SmbShareInfo | null {
-    this.requireRole();
     const s = this.pc.smbShares.get(name);
     return s ? this.toShareInfo(this.pc.smbShares.toView(s)) : null;
   }
@@ -332,7 +322,6 @@ class WindowsSmbAdapter implements ISmbProvider {
     return this.pc.smbShares.remove(name);
   }
   listSessions(): SmbSessionInfo[] {
-    this.requireRole();
     return this.pc.smbSessions.list().map(s => this.pc.smbSessions.toView(s));
   }
 }
@@ -362,7 +351,7 @@ class WindowsAdAdapter implements IAdProvider {
     return this.isAdmin() ? null : { ok: false, message: `${cmdletName} : Access is denied.` };
   }
 
-  installForest(domainName: string, netbiosName: string | undefined, safeModeAdminPassword: string): AdOpResult {
+  installForest(domainName: string, netbiosName: string | undefined, safeModeAdminPassword: string, opts?: { installDns?: boolean }): AdOpResult {
     this.requireRole('Install-ADDSForest');
     const denied = this.requireAdmin('Install-ADDSForest');
     if (denied) return denied;
@@ -370,7 +359,7 @@ class WindowsAdAdapter implements IAdProvider {
     if (typeof server.installADDSForest !== 'function') {
       return { ok: false, message: 'Install-ADDSForest : This computer cannot be promoted to a domain controller.' };
     }
-    return server.installADDSForest(domainName, netbiosName, safeModeAdminPassword);
+    return server.installADDSForest(domainName, netbiosName, safeModeAdminPassword, opts);
   }
 
   isForestInstalled(): boolean {
@@ -381,6 +370,7 @@ class WindowsAdAdapter implements IAdProvider {
   installDomainController(
     domainName: string, netbiosName: string | undefined, sourceDcAddress: string,
     credentialUser: string, credentialPassword: string, safeModeAdminPassword: string,
+    opts?: { installDns?: boolean },
   ): AdOpResult {
     this.requireRole('Install-ADDSDomainController');
     const denied = this.requireAdmin('Install-ADDSDomainController');
@@ -389,7 +379,7 @@ class WindowsAdAdapter implements IAdProvider {
     if (typeof server.installADDSDomainController !== 'function') {
       return { ok: false, message: 'Install-ADDSDomainController : This computer cannot be promoted to a domain controller.' };
     }
-    return server.installADDSDomainController(domainName, netbiosName, sourceDcAddress, credentialUser, credentialPassword, safeModeAdminPassword);
+    return server.installADDSDomainController(domainName, netbiosName, sourceDcAddress, credentialUser, credentialPassword, safeModeAdminPassword, opts);
   }
 
   listDomainControllers(): AdComputerInfo[] {
@@ -671,6 +661,7 @@ class WindowsAdAdapter implements IAdProvider {
   newDomain(
     newDomainDnsName: string, netbiosName: string | undefined, parentDomainName: string, parentDcAddress: string,
     credentialUser: string, credentialPassword: string, safeModeAdminPassword: string,
+    opts?: { installDns?: boolean },
   ): AdOpResult {
     this.requireRole('New-ADDomain');
     const denied = this.requireAdmin('New-ADDomain');
@@ -679,7 +670,7 @@ class WindowsAdAdapter implements IAdProvider {
     if (typeof server.newADDomain !== 'function') {
       return { ok: false, message: 'New-ADDomain : This computer cannot be promoted to a domain controller.' };
     }
-    return server.newADDomain(newDomainDnsName, netbiosName, parentDomainName, parentDcAddress, credentialUser, credentialPassword, safeModeAdminPassword);
+    return server.newADDomain(newDomainDnsName, netbiosName, parentDomainName, parentDcAddress, credentialUser, credentialPassword, safeModeAdminPassword, opts);
   }
 
   private fqdn(shortHostname: string): string {
