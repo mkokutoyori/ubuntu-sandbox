@@ -104,7 +104,8 @@ describe('Install-WindowsFeature / Uninstall-WindowsFeature on a Windows Server'
   });
 
   it('a non-elevated user is denied and no service is created', async () => {
-    const srv = new WindowsServer('SRV1'); // default current user is 'User' (non-admin)
+    const srv = new WindowsServer('SRV1'); // Windows Server defaults to Administrator; switch to a non-admin user
+    srv.setCurrentUser('bob');
     const sh = ps(srv);
     const out = await run(sh, 'Install-WindowsFeature DNS');
     expect(out).toMatch(/access is denied/i);

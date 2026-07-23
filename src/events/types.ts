@@ -266,7 +266,7 @@ export interface CableFrameDeliveredPayload extends CableRef {
 }
 
 export interface CableFrameLostPayload extends CableRef {
-  reason: 'simulated-loss' | 'cable-down' | 'no-peer';
+  reason: 'simulated-loss' | 'cable-down' | 'no-peer' | 'l2-loop-suppressed';
 }
 
 // ──────────────────────────────────────────────────────────────────────────

@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-ipsec-vpn
-Generated: 2026-07-18T20:53:41.749Z
+Generated: 2026-07-23T14:44:56.206Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=IKEv1/IKEv2/IPsec/crypto-map/VTI/DMVPN/PKI
 Total steps: 370
@@ -901,26 +901,20 @@ Total steps: 370
           N - NATed, L - Local, X - No Socket
   
   Interface: Tunnel100, IPv4 NHRP Details
-  Type: Hub, NHRP Peers: 1, Phase: 3
+  Type: Hub, NHRP Peers: 0, Phase: 3
   
    # Ent  Peer NBMA Addr    Peer Tunnel Add State  UpDn Tm  Attrb
    ----- --------------- --------------- ----- -------- -----
-        1 10.0.0.2        172.20.0.2      UP    00:00:00  S
 
 [235/370] r1 R1# show dmvpn detail
   Legend: Attrb --> S - Static, D - Dynamic, I - Incomplete
           N - NATed, L - Local, X - No Socket
   
   Interface: Tunnel100, IPv4 NHRP Details
-  Type: Hub, NHRP Peers: 1, Phase: 3
+  Type: Hub, NHRP Peers: 0, Phase: 3
   
    # Ent  Peer NBMA Addr    Peer Tunnel Add State  UpDn Tm  Attrb
    ----- --------------- --------------- ----- -------- -----
-        1 10.0.0.2        172.20.0.2      UP    00:00:00  S
-     Type: Hub, NHS Status: E --> 1
-     IKE: established
-     IPSEC: up
-     pkts: snt: 0 rcv: 0  bytes: snt: 0 rcv: 0
 
 
 --- [236] § PKI / trustpoint ---
@@ -969,7 +963,7 @@ Total steps: 370
     Certificate Serial Number: 0000000000001002
     Subject: CN=R1.lab.local
     Issuer: CN=http://10.0.0.5:80
-    Validity: 2026-07-18T20:53:41.767Z to 2027-07-18T20:53:41.767Z
+    Validity: 2026-07-23T14:44:56.232Z to 2027-07-23T14:44:56.232Z
   CA Certificate (Trustpoint CA1):
     Status: Available
     Certificate Serial Number: 0000000000001001
@@ -1056,7 +1050,7 @@ Total steps: 370
 [263/370] r1 R1# show running-config
   Building configuration...
   
-  Current configuration:
+  Current configuration : 3529 bytes
   !
   hostname R1
   !
@@ -1255,7 +1249,7 @@ Total steps: 370
        Received 0 broadcasts (0 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       3 packets output, 192 bytes, 0 underruns
+       4 packets output, 294 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
   GigabitEthernet0/2 is down, line protocol is down
@@ -1525,7 +1519,7 @@ Total steps: 370
 [298/370] r1 R1# show ntp status
   Clock is unsynchronized, stratum 16, reference is .INIT.
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
-  reference time is EE066655.C6A7EF9D (20:53:41.776 UTC Sat Jul 18 2026)
+  reference time is EE0CA768.3EF9DB22 (14:44:56.246 UTC Thu Jul 23 2026)
   clock offset is 0.00 msec
 
 [299/370] r1 R1# show ntp associations
@@ -1534,7 +1528,7 @@ Total steps: 370
   No NTP associations configured.
 
 [300/370] r1 R1# show clock
-  *20:53:41.000 UTC Sat Jul 18 2026
+  *14:44:56.000 UTC Thu Jul 23 2026
 
 [301/370] r1 R1# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
@@ -1651,7 +1645,7 @@ Total steps: 370
        Received 0 broadcasts (0 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       3 packets output, 192 bytes, 0 underruns
+       4 packets output, 294 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
@@ -1673,7 +1667,7 @@ Total steps: 370
        Received 0 broadcasts (0 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       3 packets output, 192 bytes, 0 underruns
+       4 packets output, 294 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
@@ -1736,7 +1730,7 @@ Total steps: 370
   ------------------ show running-config ------------------
   Building configuration...
   
-  Current configuration:
+  Current configuration : 3529 bytes
   !
   hostname R1
   !
@@ -1944,7 +1938,7 @@ Total steps: 370
        Received 0 broadcasts (0 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       3 packets output, 192 bytes, 0 underruns
+       4 packets output, 294 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
   GigabitEthernet0/2 is down, line protocol is down
@@ -2103,24 +2097,32 @@ Total steps: 370
 [325/370] r1 R1# show running-config | section interface
   interface GigabitEthernet0/0
    ip address 192.168.1.1 255.255.255.0
+  !
   interface GigabitEthernet0/1
    ip address 10.0.0.1 255.255.255.252
+  !
   interface GigabitEthernet0/2
+  !
   interface GigabitEthernet0/3
+  !
   interface Loopback0
    ip address 1.1.1.1 255.255.255.255
+  !
   interface Tunnel0
    ip address 172.16.0.1 255.255.255.252
    tunnel mode ipsec ipv4
    tunnel source GigabitEthernet0/1
    tunnel destination 10.0.0.2
+  !
   interface Tunnel1
    ip address 172.16.0.5 255.255.255.252
    tunnel mode gre ip
    tunnel source GigabitEthernet0/1
    tunnel destination 10.0.0.2
+  !
   interface Virtual-Template1
    tunnel mode ipsec ipv4
+  !
   interface Tunnel100
    ip address 172.20.0.1 255.255.255.0
    ip nhrp network-id 100
@@ -2134,6 +2136,7 @@ Total steps: 370
    tunnel mode gre multipoint
    tunnel source GigabitEthernet0/1
    tunnel key 100
+  !
 
 [326/370] r1 R1# show running-config | begin line
 <empty>
@@ -2141,7 +2144,7 @@ Total steps: 370
 [327/370] r1 R1# show running-config | exclude !
   Building configuration...
   
-  Current configuration:
+  Current configuration : 3529 bytes
   hostname R1
   service dhcp
   interface GigabitEthernet0/0
@@ -2410,33 +2413,33 @@ Total steps: 370
 
 [364/370] r1 R1(config)# ip ?
     cef              Enable CEF
-    http             http
+    http             Hypertext Transfer Protocol
     source-route     IP source-route
     name-server      Configure DNS name servers
     domain-lookup    Enable DNS lookups
-    bootp            bootp
+    bootp            Bootstrap Protocol
     finger           Enable finger service
     gratuitous-arps  Enable gratuitous ARP
     community-list   Define BGP community list
-    as-path          as-path
+    as-path          BGP autonomous-system path filter
     domain-name      Set domain name
     domain           IP domain configuration
     host             Configure a static host entry
     ssh              SSH config
-    dhcp             dhcp
+    dhcp             Dynamic Host Configuration Protocol
     route            Establish static routes
     default-network  Configure default-network
-    local            local
-    pim              pim
+    local            Local settings
+    pim              Protocol Independent Multicast
     prefix-list      Build a prefix list
     sla              Configure an IP SLA operation
-    access-list      access-list
-    nat              nat
+    access-list      
+    nat              Network Address Translation
     vrf              Define a VRF instance
     routing          Enable IP routing
     flow-export      Legacy NetFlow export
     flow-cache       NetFlow cache timeout
-    route-cache      route-cache
+    route-cache      
 
 [365/370] r1 R1(config)# router ?
     rip    Enter RIP routing protocol configuration
@@ -2445,15 +2448,15 @@ Total steps: 370
     ospf   Enter OSPF routing protocol configuration
 
 [366/370] r1 R1(config)# crypto ?
-    isakmp       isakmp
-    ipsec        ipsec
+    isakmp       Internet Security Association and Key Management Protocol
+    ipsec        IP Security
     keyring      Define an ISAKMP keyring
     map          Define a crypto map entry
     dynamic-map  Define a dynamic crypto map
-    ikev2        ikev2
-    gdoi         gdoi
+    ikev2        Internet Key Exchange version 2
+    gdoi         Group Domain of Interpretation
     key          Key management
-    pki          pki
+    pki          Public Key Infrastructure
     <cr>         
 
 [367/370] r1 R1(config)# no ?
@@ -2478,7 +2481,7 @@ Total steps: 370
     track        Remove a tracked object
     access-list  Remove an access list
     key          Key management
-    crypto       crypto
+    crypto       Encryption and key management
     event        Embedded Event Manager
     interface    Remove an interface
     vlan         Remove a VLAN
@@ -2488,7 +2491,7 @@ Total steps: 370
 <empty>
 
 [369/370] r1 R1# show running-config | count !
-  19
+  20
 
 [370/370] r1 R1# write memory
   Building configuration...

@@ -43,9 +43,10 @@ export class ReplicationSignalStore {
     });
   }
 
-  recordServed(changesSent: number): void {
+  recordServed(entry: ReplicationLogEntry): void {
+    this.log.set([...this.log.get(), entry].slice(-LOG_CAPACITY));
     const stats = this.stats.get();
-    this.stats.set({ ...stats, served: stats.served + 1, changesServed: stats.changesServed + changesSent });
+    this.stats.set({ ...stats, served: stats.served + 1, changesServed: stats.changesServed + entry.applied });
   }
 }
 

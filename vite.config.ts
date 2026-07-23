@@ -57,6 +57,26 @@ export default defineConfig(({ mode }) => ({
           statements: 85,
           branches: 75,
         },
+        // Measured via `vitest run --coverage src/__tests__/unit/database/
+        // src/__tests__/unit/terminal/subshells/rman/` (Oracle's own unit
+        // suites, excluding the debug/*.debug.test.ts transcript dumps):
+        // database/oracle ~86.6/69.05/93.66/89.67 (stmts/branches/funcs/lines),
+        // database/engine's weakest subdir (catalog) ~73.38/61.16/80.39/79.04.
+        // Thresholds are set with margin below those numbers so the full CI
+        // suite (which exercises strictly more code paths than this subset)
+        // clears them comfortably.
+        'src/database/oracle/**': {
+          lines: 85,
+          functions: 85,
+          statements: 80,
+          branches: 65,
+        },
+        'src/database/engine/**': {
+          lines: 75,
+          functions: 75,
+          statements: 70,
+          branches: 55,
+        },
       },
     },
   },

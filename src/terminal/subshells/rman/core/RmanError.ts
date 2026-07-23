@@ -16,6 +16,9 @@ export type RmanError =
   | { code: 'RMAN_06023'; message: string }   // no backup found to restore
   | { code: 'RMAN_06403'; message: string }   // database must be mounted (not open)
   | { code: 'RMAN_04014'; message: string }   // oracle instance is not started
+  | { code: 'RMAN_06172'; message: string }   // no autobackup found or specified handle is not a valid copy
+  | { code: 'RMAN_06054'; message: string }   // media recovery requesting unknown archived log
+  | { code: 'RMAN_06026'; message: string }   // no backup set found within the SET UNTIL bound
   // Catalog
   | { code: 'CATALOG_READ_ERROR';   message: string }
   | { code: 'CATALOG_WRITE_ERROR';  message: string }

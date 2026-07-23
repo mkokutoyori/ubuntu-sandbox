@@ -177,6 +177,10 @@ export interface LinuxNetKernel {
    */
   resolveHostname(name: string): Promise<IPAddress | null>;
 
+  /** IPv6 counterpart of `resolveHostname` — same NSS `hosts` lookup,
+   *  filtered to AF_INET6 records, for `ping6`/`ping -6`. */
+  resolveHostname6(name: string): Promise<IPv6Address | null>;
+
   /**
    * Synchronous variant of the same NSS `hosts: files dns` lookup —
    * `curl`/`wget` (PRD-Windows-Server.md §5 P11) need a real hostname

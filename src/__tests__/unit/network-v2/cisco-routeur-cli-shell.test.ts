@@ -1261,7 +1261,7 @@ describe('Cisco IOS CLI Terminal & Mode Transitions', () => {
       await r.executeCommand('banner motd #WELCOME_TO_CISCO#');
       await r.executeCommand('end');
       const running = await r.executeCommand('show running-config');
-      expect(running).toContain('banner motd ^CWELCOME_TO_CISCO^C');
+      expect(running).toContain('banner motd ^C\nWELCOME_TO_CISCO\n^C');
     });
 
     it('148. should negate MOTD banner via no banner motd', async () => {
@@ -1290,7 +1290,7 @@ describe('Cisco IOS CLI Terminal & Mode Transitions', () => {
       await r.executeCommand('banner login #AUTHORISED_USERS_ONLY#');
       await r.executeCommand('end');
       const running = await r.executeCommand('show running-config');
-      expect(running).toContain('banner login ^CAUTHORISED_USERS_ONLY^C');
+      expect(running).toContain('banner login ^C\nAUTHORISED_USERS_ONLY\n^C');
     });
 
     it('151. should negate login banner via no banner login', async () => {
@@ -1319,7 +1319,7 @@ describe('Cisco IOS CLI Terminal & Mode Transitions', () => {
       await r.executeCommand('banner exec #EXEC_SESSION_STARTED#');
       await r.executeCommand('end');
       const running = await r.executeCommand('show running-config');
-      expect(running).toContain('banner exec ^CEXEC_SESSION_STARTED^C');
+      expect(running).toContain('banner exec ^C\nEXEC_SESSION_STARTED\n^C');
     });
 
     it('154. should negate exec banner via no banner exec', async () => {
@@ -1341,7 +1341,7 @@ describe('Cisco IOS CLI Terminal & Mode Transitions', () => {
       expect(output.trim()).toBe('');
       await r.executeCommand('end');
       const running = await r.executeCommand('show running-config');
-      expect(running).toContain('banner motd ^CWELCOME_PERCENT^C');
+      expect(running).toContain('banner motd ^C\nWELCOME_PERCENT\n^C');
     });
 
     it('156. should support using various delimiter characters in banners configuration (e.g. $ instead of #)', async () => {
@@ -1400,7 +1400,7 @@ describe('Cisco IOS CLI Terminal & Mode Transitions', () => {
       await r.executeCommand('end');
       await r.executeCommand('write memory');
       const startup = await r.executeCommand('show startup-config');
-      expect(startup).toContain('banner motd ^CBOOT_BANNER^C');
+      expect(startup).toContain('banner motd ^C\nBOOT_BANNER\n^C');
     });
 
     it('162. should support configuring incoming session banners via banner incoming', async () => {
@@ -1418,7 +1418,7 @@ describe('Cisco IOS CLI Terminal & Mode Transitions', () => {
       await r.executeCommand('banner incoming #INCOMING_ALERT#');
       await r.executeCommand('end');
       const running = await r.executeCommand('show running-config');
-      expect(running).toContain('banner incoming ^CINCOMING_ALERT^C');
+      expect(running).toContain('banner incoming ^C\nINCOMING_ALERT\n^C');
     });
 
     it('164. should negate incoming banner via no banner incoming', async () => {
@@ -1682,7 +1682,7 @@ describe('Cisco IOS CLI Terminal & Mode Transitions', () => {
       await r.executeCommand('banner motd #HELP?#');
       await r.executeCommand('end');
       const running = await r.executeCommand('show running-config');
-      expect(running).toContain('banner motd ^CHELP?^C');
+      expect(running).toContain('banner motd ^C\nHELP?\n^C');
     });
 
     it('191. should handle escaped characters safely in hostname definitions (e.g. hostname CORE\\_R1)', async () => {
@@ -2572,7 +2572,7 @@ describe('Cisco IOS CLI Terminal & Mode Transitions', () => {
       expect(output.trim()).toBe('');
       await r.executeCommand('end');
       const running = await r.executeCommand('show running-config');
-      expect(running).toContain('banner motd ^CWELCOME\\nLINE_TWO^C');
+      expect(running).toContain('banner motd ^C\nWELCOME\\nLINE_TWO\n^C');
     });
 
     it('286. should preserve double backslashes literally inside configuration parameters (e.g. host description containing server\\\\share)', async () => {

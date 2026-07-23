@@ -18,7 +18,7 @@
 import { DirectoryTree, type DirectoryEntry, type EntryReplMeta } from './ldap/DirectoryTree';
 import { parseDN, formatDN, leafValue, type DistinguishedName } from './ldap/LdapDN';
 import type { LdapBindCheck } from './ldap/LdapServer';
-import type { AdUser, AdGroup, AdComputer, AdOrgUnit, Gpo, GpoSettings } from './AdTypes';
+import type { AdUser, AdGroup, AdComputer, AdOrgUnit, Gpo, GpoSettings, GpoAccountPolicy, AdFineGrainedPasswordPolicy, AdAccessRule } from './AdTypes';
 import { generateId } from '@/network/core/types';
 import {
   type HighWatermarkVector, emptyHighWatermarkVector, recordUsn, cloneHighWatermarkVector,
@@ -61,12 +61,18 @@ function hasObjectClass(entry: DirectoryEntry, oc: string): boolean {
 function compact(attrs: Record<string, string[]>): Record<string, string[]> {
   return Object.fromEntries(Object.entries(attrs).filter(([, v]) => v.length > 0));
 }
+function hash32(seed: string, salt: number): number {
+  let h = (salt * 0x9e3779b1) >>> 0;
+  for (let i = 0; i < seed.length; i++) h = (Math.imul(h ^ seed.charCodeAt(i), 0x01000193)) >>> 0;
+  return h;
+}
 
 export class DirectoryStore {
   private readonly tree: DirectoryTree;
   private readonly usersOuDn: DistinguishedName;
   private readonly computersOuDn: DistinguishedName;
   private readonly policiesDn: DistinguishedName;
+  private readonly pswdSettingsDn: DistinguishedName;
   /** This DC's stable replication identity (PRD-Windows-Server-Advanced.md §5 P4, MS-DRSR's invocationId) — one per `DirectoryStore` instance, for its whole lifetime. */
   private readonly invocationId = `invocation-${generateId()}`;
   private localUsn = 0;
@@ -76,6 +82,9 @@ export class DirectoryStore {
   private readonly schemaValidator: SchemaValidator;
   private readonly schema: SchemaPartition;
   private readonly trustRegistry: TrustRegistry;
+  private readonly domainSidPrefix: string;
+  private nextRid = 1000;
+  private readonly acls = new Map<string, AdAccessRule[]>();
 
   /**
    * `opts.skipSeed` (PRD-Windows-Server-Advanced.md §5 P5): an additional
@@ -97,9 +106,11 @@ export class DirectoryStore {
     this.tree = new DirectoryTree(rootDn, { objectClass: ['top', 'domain', 'domainDNS'] }, {
       invocationId: this.invocationId, nextUsn: () => ++this.localUsn,
     }, this.schemaValidator);
+    this.domainSidPrefix = `S-1-5-21-${hash32(this.dnsName, 1)}-${hash32(this.dnsName, 2)}-${hash32(this.dnsName, 3)}`;
     this.usersOuDn = [...parseDN('CN=Users'), ...rootDn];
     this.computersOuDn = [...parseDN('CN=Computers'), ...rootDn];
     this.policiesDn = [...parseDN('CN=Policies'), ...parseDN('CN=System'), ...rootDn];
+    this.pswdSettingsDn = [...parseDN('CN=Password Settings Container'), ...parseDN('CN=System'), ...rootDn];
     this.sites = new SiteRegistry(this.tree);
     this.schema = new SchemaPartition(this.tree, this.schemaValidator);
     this.trustRegistry = new TrustRegistry(this.tree);
@@ -143,6 +154,43 @@ export class DirectoryStore {
   /** Kerberos realm name (RFC 4120 §6.1: the DNS domain name, uppercased) — used by `KdcSession`/`KerberosClient`. */
   getRealm(): string { return this.dnsName.toUpperCase(); }
 
+  // ─── Domain-wide FSMO roles (RID/PDC Emulator/Infrastructure Master) ──
+  //
+  // Stored as real attributes on the domain root entry (`fSMORoleOwner`
+  // isn't split per-role on the real root object, but this simulator has
+  // no separate RID Manager/Infrastructure container objects to hang each
+  // role on individually — three attributes on the one root entry is the
+  // simplification). Being real attributes on a replicated entry, a role
+  // transfer performed on one DC becomes visible on a replication partner
+  // through the existing `replicateFrom`/`changedSince` pull, exactly
+  // like any other attribute change — no separate FSMO propagation path.
+
+  private static readonly FSMO_DOMAIN_ATTRS = {
+    RIDMaster: 'fsmoRidMaster',
+    PDCEmulator: 'fsmoPdcEmulator',
+    InfrastructureMaster: 'fsmoInfrastructureMaster',
+  } as const;
+
+  /** Called once at `Install-ADDSForest` — all 3 domain-level roles start on the founding DC. */
+  initializeDomainFsmoRoles(foundingDcHostname: string): void {
+    const root = this.tree.getByDn(this.tree.getRootDn());
+    if (!root) return;
+    this.tree.modifyEntry(root.dn, Object.values(DirectoryStore.FSMO_DOMAIN_ATTRS).map(attr => ({
+      op: 'replace' as const, type: attr, values: [foundingDcHostname],
+    })));
+  }
+
+  getDomainFsmoRoleOwner(role: keyof typeof DirectoryStore.FSMO_DOMAIN_ATTRS): string {
+    const root = this.tree.getByDn(this.tree.getRootDn());
+    return root ? firstOf(root.attributes.get(DirectoryStore.FSMO_DOMAIN_ATTRS[role].toLowerCase())) : '';
+  }
+
+  transferDomainFsmoRole(role: keyof typeof DirectoryStore.FSMO_DOMAIN_ATTRS, newOwnerHostname: string): void {
+    const root = this.tree.getByDn(this.tree.getRootDn());
+    if (!root) return;
+    this.tree.modifyEntry(root.dn, [{ op: 'replace', type: DirectoryStore.FSMO_DOMAIN_ATTRS[role], values: [newOwnerHostname] }]);
+  }
+
   /** The real DIT this store operates on — `LdapServerHandler` serves this same tree over TCP/389. */
   getTree(): DirectoryTree { return this.tree; }
 
@@ -181,6 +229,7 @@ export class DirectoryStore {
     this.tree.addEntry(this.ouDn('Domain Controllers'), { objectClass: ['top', 'organizationalUnit'], ou: ['Domain Controllers'] });
     this.tree.addEntry([...parseDN('CN=System'), ...this.tree.getRootDn()], { objectClass: ['top', 'container'], cn: ['System'] });
     this.tree.addEntry(this.policiesDn, { objectClass: ['top', 'container'], cn: ['Policies'] });
+    this.tree.addEntry(this.pswdSettingsDn, { objectClass: ['top', 'container'], cn: ['Password Settings Container'] });
 
     this.createGroupEntry('Domain Admins', 'Global', this.usersOuDn);
     this.createGroupEntry('Domain Users', 'Global', this.usersOuDn);
@@ -272,11 +321,9 @@ export class DirectoryStore {
   newGPLink(gpoName: string, targetDn: string): DirOpResult {
     const gpo = this.findGpoEntry(gpoName);
     if (!gpo) return { ok: false, message: `Cannot find a GPO with name "${gpoName}".` };
-    let target: DistinguishedName;
-    try { target = parseDN(targetDn); } catch { return { ok: false, message: `"${targetDn}" is not a valid distinguished name.` }; }
-    const targetEntry = this.tree.getByDn(target);
+    const targetEntry = this.resolveTargetEntry(targetDn);
     if (!targetEntry) return { ok: false, message: `Cannot find an object with distinguished name: '${targetDn}'.` };
-    this.tree.modifyEntry(target, [{ op: 'add', type: 'gPLink', values: [formatDN(gpo.dn)] }]);
+    this.tree.modifyEntry(targetEntry.dn, [{ op: 'add', type: 'gPLink', values: [formatDN(gpo.dn)] }]);
     return { ok: true, message: '' };
   }
 
@@ -285,17 +332,17 @@ export class DirectoryStore {
    * then GPOs linked to the computer's own OU (more specific — its
    * settings override the domain's on conflicting keys). Only direct
    * links are honored (no OU-hierarchy walk beyond the computer's
-   * immediate container), matching this simulator's flat OU placement
-   * (P6 domain join always places computers in the Computers OU).
+   * immediate container).
    */
   resultantSetOfPolicy(computerName?: string): { appliedGpoNames: string[]; settings: GpoSettings } {
-    const domainLinked = this.linkedGposFor(this.tree.getRootDn());
-    let ouLinked: Gpo[] = [];
+    let ouEntry: DirectoryEntry | null = null;
     if (computerName) {
       const computer = this.findComputerEntry(computerName);
-      const parentDn = computer ? computer.dn.slice(1) : null;
-      if (parentDn) ouLinked = this.linkedGposFor(parentDn);
+      if (computer) ouEntry = this.tree.getByDn(computer.dn.slice(1));
     }
+    const inheritanceBlocked = ouEntry ? firstOf(ouEntry.attributes.get('gpoptions')) === '1' : false;
+    const domainLinked = inheritanceBlocked ? [] : this.linkedGposFor(this.tree.getRootDn());
+    const ouLinked = ouEntry ? this.linkedGposFor(ouEntry.dn) : [];
     const ordered = [...domainLinked, ...ouLinked];
     const merged: GpoSettings = {};
     for (const gpo of ordered) {
@@ -304,6 +351,23 @@ export class DirectoryStore {
       if (gpo.settings.startupScript !== undefined) merged.startupScript = gpo.settings.startupScript;
     }
     return { appliedGpoNames: ordered.map(g => g.name), settings: merged };
+  }
+
+  setGpInheritance(targetDn: string, blocked: boolean): DirOpResult {
+    const entry = this.resolveTargetEntry(targetDn);
+    if (!entry) return { ok: false, message: `Cannot find an object with distinguished name: '${targetDn}'.` };
+    this.tree.modifyEntry(entry.dn, [{ op: 'replace', type: 'gPOptions', values: [blocked ? '1' : '0'] }]);
+    return { ok: true, message: '' };
+  }
+
+  getGpInheritance(targetDn: string): { dn: string; gpoInheritanceBlocked: boolean; gpoLinks: string[] } | null {
+    const entry = this.resolveTargetEntry(targetDn);
+    if (!entry) return null;
+    return {
+      dn: formatDN(entry.dn),
+      gpoInheritanceBlocked: firstOf(entry.attributes.get('gpoptions')) === '1',
+      gpoLinks: entry.attributes.get('gplink') ?? [],
+    };
   }
 
   private linkedGposFor(dn: DistinguishedName): Gpo[] {
@@ -315,29 +379,142 @@ export class DirectoryStore {
       .map(e => this.projectGpo(e));
   }
 
+  // ─── Password policy: Default Domain Policy + Fine-Grained (PSO) ────
+  //
+  // The Default Domain Password Policy is real Windows Server's own
+  // account-policy settings on the "Default Domain Policy" GPO — not a
+  // separate store, matching where real AD actually keeps it (Computer
+  // Configuration > Windows Settings > Security Settings > Account
+  // Policies). FGPPs (`msDS-PasswordSettings`) are real entries under a
+  // "Password Settings Container" sibling of the Policies container,
+  // replicating like any other object; each PSO's settings blob reuses
+  // the same `GpoAccountPolicy` shape as the domain policy's.
+
+  getDefaultDomainPasswordPolicy(): GpoAccountPolicy {
+    return this.getGpo('Default Domain Policy')?.settings.accountPolicy ?? {};
+  }
+
+  setDefaultDomainPasswordPolicy(patch: GpoAccountPolicy): DirOpResult {
+    const gpo = this.getGpo('Default Domain Policy');
+    if (!gpo) return { ok: false, message: 'Cannot find the Default Domain Policy GPO.' };
+    return this.setGpoSettings('Default Domain Policy', { accountPolicy: { ...gpo.settings.accountPolicy, ...patch } });
+  }
+
+  private findPsoEntry(name: string): DirectoryEntry | null {
+    return this.tree.getByDn(this.cnDn(name, this.pswdSettingsDn));
+  }
+
+  newFineGrainedPasswordPolicy(name: string, precedence: number, settings: GpoAccountPolicy, description?: string): DirOpResult {
+    const res = this.tree.addEntry(this.cnDn(name, this.pswdSettingsDn), {
+      objectClass: ['top', 'msDS-PasswordSettings'],
+      cn: [name],
+      'msDS-PasswordSettingsPrecedence': [String(precedence)],
+      'msDS-PSOSettings': [JSON.stringify(settings)],
+      ...(description ? { description: [description] } : {}),
+    });
+    return res.ok ? { ok: true, message: '' } : { ok: false, message: `A password settings object named "${name}" already exists.` };
+  }
+
+  getFineGrainedPasswordPolicy(name: string): AdFineGrainedPasswordPolicy | null {
+    const entry = this.findPsoEntry(name);
+    return entry ? this.projectPso(entry) : null;
+  }
+
+  listFineGrainedPasswordPolicies(): AdFineGrainedPasswordPolicy[] {
+    return this.tree.allDescendants(this.pswdSettingsDn).filter(e => hasObjectClass(e, 'msDS-PasswordSettings')).map(e => this.projectPso(e));
+  }
+
+  private projectPso(entry: DirectoryEntry): AdFineGrainedPasswordPolicy {
+    const settingsJson = firstOf(entry.attributes.get('msds-psosettings'));
+    return {
+      name: firstOf(entry.attributes.get('cn')),
+      precedence: Number(firstOf(entry.attributes.get('msds-passwordsettingsprecedence')) || '0'),
+      description: firstOf(entry.attributes.get('description')),
+      settings: settingsJson ? JSON.parse(settingsJson) as GpoAccountPolicy : {},
+    };
+  }
+
+  /** `Add-ADFineGrainedPasswordPolicySubject` — subjects may be users or groups (real AD's `msDS-PSOAppliesTo` accepts either). */
+  addFineGrainedPasswordPolicySubject(name: string, subjectSams: string[]): DirOpResult {
+    const entry = this.findPsoEntry(name);
+    if (!entry) return { ok: false, message: `Cannot find a password settings object with identity: '${name}'.` };
+    const dns: string[] = [];
+    for (const sam of subjectSams) {
+      const subject = this.findUserEntry(sam) ?? this.findGroupEntry(sam);
+      if (!subject) return { ok: false, message: `Cannot find an object with identity: '${sam}'.` };
+      dns.push(formatDN(subject.dn));
+    }
+    this.tree.modifyEntry(entry.dn, [{ op: 'add', type: 'msDS-PSOAppliesTo', values: dns }]);
+    return { ok: true, message: '' };
+  }
+
+  listFineGrainedPasswordPolicySubjects(name: string): string[] {
+    const entry = this.findPsoEntry(name);
+    if (!entry) return [];
+    return (entry.attributes.get('msds-psoappliesto') ?? []).map(dnStr => this.samOfDn(dnStr)).filter((s): s is string => s !== null);
+  }
+
+  /**
+   * `Get-ADUserResultantPasswordPolicy` — the PSO with the LOWEST
+   * Precedence among every PSO the user is a subject of, directly or via
+   * group membership (real AD's own tie-breaking rule). Null when no PSO
+   * applies — the Default Domain Policy governs implicitly, matching
+   * real AD returning nothing in that case rather than that policy
+   * itself.
+   */
+  getResultantPasswordPolicy(userSam: string): AdFineGrainedPasswordPolicy | null {
+    const user = this.findUserEntry(userSam);
+    if (!user) return null;
+    const userDn = formatDN(user.dn).toLowerCase();
+    const groupDns = new Set((user.attributes.get('memberof') ?? []).map(d => d.toLowerCase()));
+    const applicable = this.listPsoEntries().filter(entry => {
+      const subjects = entry.attributes.get('msds-psoappliesto') ?? [];
+      return subjects.some(dn => dn.toLowerCase() === userDn || groupDns.has(dn.toLowerCase()));
+    });
+    if (applicable.length === 0) return null;
+    applicable.sort((a, b) =>
+      Number(firstOf(a.attributes.get('msds-passwordsettingsprecedence'))) - Number(firstOf(b.attributes.get('msds-passwordsettingsprecedence'))));
+    return this.projectPso(applicable[0]);
+  }
+
+  private listPsoEntries(): DirectoryEntry[] {
+    return this.tree.allDescendants(this.pswdSettingsDn).filter(e => hasObjectClass(e, 'msDS-PasswordSettings'));
+  }
+
   // ─── Users ──────────────────────────────────────────────────────────
 
-  newUser(sam: string, opts: { password: string; fullName?: string; ou?: string; enabled?: boolean }): DirOpResult {
+  newUser(sam: string, opts: { password: string; fullName?: string; ou?: string; enabled?: boolean; department?: string; title?: string; actingSam?: string }): DirOpResult {
     const containerDn = opts.ou ? this.ouDn(opts.ou) : this.usersOuDn;
     if (opts.ou && !this.tree.getByDn(containerDn)) {
       return { ok: false, message: `Cannot find an object with identity: '${opts.ou}'.` };
     }
-    const res = this.createUserEntry(sam, { password: opts.password, fullName: opts.fullName ?? '', containerDn, enabled: opts.enabled });
+    if (opts.actingSam && !this.hasPermission(opts.actingSam, formatDN(containerDn), 'CreateChild')) {
+      return { ok: false, message: 'Access is denied.' };
+    }
+    const res = this.createUserEntry(sam, {
+      password: opts.password, fullName: opts.fullName ?? '', containerDn, enabled: opts.enabled,
+      department: opts.department, title: opts.title,
+    });
     if (!res.ok) return res;
     this.addGroupMember('Domain Users', sam);
     return { ok: true, message: '' };
   }
 
-  private createUserEntry(sam: string, opts: { password: string; fullName: string; containerDn: DistinguishedName; enabled?: boolean }): DirOpResult {
+  private nextObjectSid(): string { return `${this.domainSidPrefix}-${this.nextRid++}`; }
+
+  private createUserEntry(sam: string, opts: { password: string; fullName: string; containerDn: DistinguishedName; enabled?: boolean; department?: string; title?: string }): DirOpResult {
     const enabled = opts.enabled ?? true;
     const res = this.tree.addEntry(this.cnDn(sam, opts.containerDn), compact({
       objectClass: ['top', 'person', 'organizationalPerson', 'user'],
       cn: [sam],
       sAMAccountName: [sam],
       userPrincipalName: [`${sam}@${this.dnsName}`],
+      objectSid: [this.nextObjectSid()],
       userAccountControl: [String(enabled ? UAC.NORMAL_ACCOUNT : UAC.NORMAL_ACCOUNT | UAC.ACCOUNTDISABLE)],
       userPassword: [opts.password],
       displayName: opts.fullName ? [opts.fullName] : [],
+      department: opts.department ? [opts.department] : [],
+      title: opts.title ? [opts.title] : [],
     }));
     return res.ok ? { ok: true, message: '' } : { ok: false, message: 'An object with that name already exists.' };
   }
@@ -365,25 +542,89 @@ export class DirectoryStore {
       sam: firstOf(entry.attributes.get('samaccountname')),
       upn: firstOf(entry.attributes.get('userprincipalname')),
       dn: formatDN(entry.dn),
+      sid: firstOf(entry.attributes.get('objectsid')),
       ou: dnEqualsOu(containerDn, this.usersOuDn) ? 'Users' : firstOf(entry.attributes.get('ou')) || leafOuName(containerDn),
       enabled: isEnabledFromUac(entry.attributes.get('useraccountcontrol')),
       password: firstOf(entry.attributes.get('userpassword')),
       memberOf: (entry.attributes.get('memberof') ?? []).map(dnStr => this.samOfDn(dnStr)).filter((s): s is string => s !== null),
       fullName: firstOf(entry.attributes.get('displayname')),
+      department: firstOf(entry.attributes.get('department')),
+      title: firstOf(entry.attributes.get('title')),
+      servicePrincipalNames: entry.attributes.get('serviceprincipalname') ?? [],
     };
   }
 
-  setUser(sam: string, opts: { enabled?: boolean; fullName?: string; password?: string }): DirOpResult {
+  setUser(sam: string, opts: { enabled?: boolean; fullName?: string; password?: string; department?: string; title?: string; addSpns?: string[]; removeSpns?: string[]; actingSam?: string }): DirOpResult {
     const entry = this.findUserEntry(sam);
     if (!entry) return { ok: false, message: `Cannot find an object with identity: '${sam}'.` };
-    const changes: { op: 'replace'; type: string; values: string[] }[] = [];
+    if (opts.actingSam) {
+      const targetDn = formatDN(entry.dn);
+      if (opts.password !== undefined && !this.hasPermission(opts.actingSam, targetDn, 'ExtendedRight')) {
+        return { ok: false, message: 'Access is denied.' };
+      }
+      const changesOtherThanPassword = opts.enabled !== undefined || opts.fullName !== undefined || opts.department !== undefined
+        || opts.title !== undefined || (opts.addSpns?.length ?? 0) > 0 || (opts.removeSpns?.length ?? 0) > 0;
+      if (changesOtherThanPassword && !this.hasPermission(opts.actingSam, targetDn, 'WriteProperty')) {
+        return { ok: false, message: 'Access is denied.' };
+      }
+    }
+    const changes: { op: 'replace' | 'add' | 'delete'; type: string; values: string[] }[] = [];
     if (opts.enabled !== undefined) {
       changes.push({ op: 'replace', type: 'userAccountControl', values: [String(opts.enabled ? UAC.NORMAL_ACCOUNT : UAC.NORMAL_ACCOUNT | UAC.ACCOUNTDISABLE)] });
     }
     if (opts.fullName !== undefined) changes.push({ op: 'replace', type: 'displayName', values: opts.fullName ? [opts.fullName] : [] });
     if (opts.password !== undefined) changes.push({ op: 'replace', type: 'userPassword', values: [opts.password] });
+    if (opts.department !== undefined) changes.push({ op: 'replace', type: 'department', values: opts.department ? [opts.department] : [] });
+    if (opts.title !== undefined) changes.push({ op: 'replace', type: 'title', values: opts.title ? [opts.title] : [] });
+    if (opts.addSpns && opts.addSpns.length > 0) changes.push({ op: 'add', type: 'servicePrincipalName', values: opts.addSpns });
+    if (opts.removeSpns && opts.removeSpns.length > 0) changes.push({ op: 'delete', type: 'servicePrincipalName', values: opts.removeSpns });
     this.tree.modifyEntry(entry.dn, changes);
     return { ok: true, message: '' };
+  }
+
+  /** AD's Default Domain Policy LockoutThreshold default: 5 bad passwords locks the account (PRD-Windows-Server-Advanced §5 password policy). */
+  private static readonly LOCKOUT_THRESHOLD = 5;
+
+  /** A failed Kerberos pre-authentication (bad password) — increments badPwdCount and locks the account once the threshold is reached, matching real AD. */
+  recordBadPasswordAttempt(sam: string): void {
+    const entry = this.findUserEntry(sam);
+    if (!entry) return;
+    const count = Number(firstOf(entry.attributes.get('badpwdcount'))) || 0;
+    const next = count + 1;
+    const changes: { op: 'replace'; type: string; values: string[] }[] = [
+      { op: 'replace', type: 'badPwdCount', values: [String(next)] },
+    ];
+    if (next >= DirectoryStore.LOCKOUT_THRESHOLD) {
+      changes.push({ op: 'replace', type: 'lockoutTime', values: [String(Math.floor(Date.now() / 1000))] });
+    }
+    this.tree.modifyEntry(entry.dn, changes);
+  }
+
+  /** A successful logon resets the bad-password counter, matching real AD. */
+  resetBadPasswordCount(sam: string): void {
+    const entry = this.findUserEntry(sam);
+    if (!entry) return;
+    this.tree.modifyEntry(entry.dn, [{ op: 'replace', type: 'badPwdCount', values: [] }]);
+  }
+
+  isLockedOut(sam: string): boolean {
+    const entry = this.findUserEntry(sam);
+    return entry ? firstOf(entry.attributes.get('lockouttime')) !== '' : false;
+  }
+
+  /** `Search-ADAccount -LockedOut`. */
+  listLockedOutUsers(): Array<{ sam: string; name: string; badPwdCount: number }> {
+    return this.listUserEntries()
+      .filter(e => firstOf(e.attributes.get('lockouttime')) !== '')
+      .map(e => ({
+        sam: firstOf(e.attributes.get('samaccountname')),
+        name: firstOf(e.attributes.get('displayname')) || firstOf(e.attributes.get('samaccountname')),
+        badPwdCount: Number(firstOf(e.attributes.get('badpwdcount'))) || 0,
+      }));
+  }
+
+  private listUserEntries(): DirectoryEntry[] {
+    return this.tree.allDescendants(this.tree.getRootDn()).filter(e => hasObjectClass(e, 'user') && !hasObjectClass(e, 'computer'));
   }
 
   removeUser(sam: string): DirOpResult {
@@ -393,6 +634,20 @@ export class DirectoryStore {
     for (const group of this.listGroupEntries()) {
       if ((group.attributes.get('member') ?? []).some(m => m.toLowerCase() === userDn.toLowerCase())) {
         this.tree.modifyEntry(group.dn, [{ op: 'delete', type: 'member', values: [userDn] }]);
+      }
+    }
+    const res = this.tree.deleteEntry(entry.dn);
+    return res.ok ? { ok: true, message: '' } : { ok: false, message: res.message };
+  }
+
+  /** `Remove-ADDomainController` / the AD-metadata-cleanup half of `ntdsutil` — deletes a (real or seized-from) DC's own computer account and its group memberships, same shape as `removeUser`. */
+  removeComputer(name: string): DirOpResult {
+    const entry = this.findComputerEntry(name);
+    if (!entry) return { ok: false, message: `Cannot find an object with identity: '${name}'.` };
+    const computerDn = formatDN(entry.dn);
+    for (const group of this.listGroupEntries()) {
+      if ((group.attributes.get('member') ?? []).some(m => m.toLowerCase() === computerDn.toLowerCase())) {
+        this.tree.modifyEntry(group.dn, [{ op: 'delete', type: 'member', values: [computerDn] }]);
       }
     }
     const res = this.tree.deleteEntry(entry.dn);
@@ -508,6 +763,7 @@ export class DirectoryStore {
       sAMAccountName: [`${name}$`],
       userAccountControl: [String(UAC.WORKSTATION_TRUST_ACCOUNT)],
       userPassword: [machineSecret],
+      servicePrincipalName: [`HOST/${name}`, `HOST/${name}.${this.dnsName}`],
     });
     if (!res.ok) return { ok: false, message: 'An object with that name already exists.' };
     this.addGroupMemberByDn('Domain Computers', this.computerDn(name));
@@ -536,6 +792,7 @@ export class DirectoryStore {
       sAMAccountName: [`${name}$`],
       userAccountControl: [String(UAC.SERVER_TRUST_ACCOUNT)],
       userPassword: [machineSecret],
+      servicePrincipalName: [`HOST/${name}`, `HOST/${name}.${this.dnsName}`],
     });
     return res.ok ? { ok: true, message: '' } : { ok: false, message: 'An object with that name already exists.' };
   }
@@ -560,7 +817,15 @@ export class DirectoryStore {
       dn: formatDN(entry.dn),
       machineSecret: firstOf(entry.attributes.get('userpassword')),
       enabled: isEnabledFromUac(entry.attributes.get('useraccountcontrol')),
+      servicePrincipalNames: entry.attributes.get('serviceprincipalname') ?? [],
     };
+  }
+
+  /** Every user/computer object carrying at least one SPN — `Get-ADObject -Filter {ServicePrincipalName -like "*"}`, the basis for cross-object duplicate-SPN detection. */
+  listObjectsWithSpns(): Array<{ name: string; servicePrincipalNames: string[] }> {
+    const users = this.listUsers().filter(u => u.servicePrincipalNames.length > 0).map(u => ({ name: u.sam, servicePrincipalNames: u.servicePrincipalNames }));
+    const computers = this.listComputers().filter(c => c.servicePrincipalNames.length > 0).map(c => ({ name: c.name, servicePrincipalNames: c.servicePrincipalNames }));
+    return [...users, ...computers];
   }
 
   checkComputerSecret(name: string, secret: string): boolean {
@@ -604,6 +869,60 @@ export class DirectoryStore {
       password: secret, fullName: 'Key Distribution Center Service Account',
       containerDn: this.usersOuDn, enabled: false,
     });
+  }
+
+  private resolveSidToSam(identity: string): string {
+    if (!identity.startsWith('S-1-5-')) return identity;
+    const [entry] = this.tree.search(this.tree.getRootDn(), 'sub', { kind: 'equalityMatch', attr: 'objectSid', value: identity });
+    return entry ? firstOf(entry.attributes.get('samaccountname')) : identity;
+  }
+
+  private isDomainAdmin(sam: string): boolean {
+    if (sam.toLowerCase() === 'administrator') return true;
+    const entry = this.findUserEntry(sam);
+    if (!entry) return false;
+    const domainAdminsDn = formatDN(this.cnDn('Domain Admins', this.usersOuDn)).toLowerCase();
+    return (entry.attributes.get('memberof') ?? []).some(dn => dn.toLowerCase() === domainAdminsDn);
+  }
+
+  hasPermission(subjectSam: string, targetDn: string, right: string): boolean {
+    if (this.isDomainAdmin(subjectSam)) return true;
+    let dn: DistinguishedName;
+    try { dn = parseDN(targetDn); } catch { return false; }
+    const rootLength = this.tree.getRootDn().length;
+    while (dn.length >= rootLength) {
+      const acl = this.acls.get(formatDN(dn).toLowerCase());
+      if (acl?.some(ace =>
+        ace.identitySam.toLowerCase() === subjectSam.toLowerCase() && ace.accessControlType === 'Allow' && ace.rights === right)) {
+        return true;
+      }
+      if (dn.length === rootLength) break;
+      dn = dn.slice(1);
+    }
+    return false;
+  }
+
+  private resolveTargetEntry(rawDn: string): DirectoryEntry | null {
+    try {
+      const parsed = parseDN(rawDn);
+      const direct = this.tree.getByDn(parsed);
+      if (direct) return direct;
+    } catch { /* not a valid DN */ }
+    return this.tree.getByDn(this.ouDn(this.resolveIdentity(rawDn)));
+  }
+
+  getAcl(dn: string): AdAccessRule[] | null {
+    const entry = this.resolveTargetEntry(dn);
+    if (!entry) return null;
+    return this.acls.get(formatDN(entry.dn).toLowerCase()) ?? [];
+  }
+
+  setAcl(dn: string, rules: AdAccessRule[]): DirOpResult {
+    const entry = this.resolveTargetEntry(dn);
+    if (!entry) return { ok: false, message: `Cannot find path '${dn}' because it does not exist.` };
+    const resolved = rules.map(r => ({ ...r, identitySam: this.resolveSidToSam(r.identitySam) }));
+    this.acls.set(formatDN(entry.dn).toLowerCase(), resolved);
+    return { ok: true, message: '' };
   }
 
   // ─── Identity resolution / LDAP bind ────────────────────────────────

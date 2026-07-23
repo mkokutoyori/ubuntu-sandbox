@@ -22,6 +22,8 @@ export interface EventLogEntry {
   eventId: number;
   category: string;
   message: string;
+  /** Structured EventData fields (TargetUserName, SubjectUserName, IpAddress, Status, …) as real Windows Security events carry — surfaced via Get-WinEvent's ToXml(). */
+  data?: Record<string, string>;
 }
 
 export interface EventLogMetadata {
@@ -249,7 +251,7 @@ export class PSEventLogProvider {
     }
   }
 
-  writeEventLog(logName: string, source: string, eventId: number, entryType: EntryType, message: string): string {
+  writeEventLog(logName: string, source: string, eventId: number, entryType: EntryType, message: string, data?: Record<string, string>): string {
     const key = logName.toLowerCase();
     if (!this.logs.has(key)) return `Write-EventLog : Cannot open log "${logName}". The log does not exist.`;
     const meta = this.logs.get(key)!;
@@ -262,6 +264,7 @@ export class PSEventLogProvider {
       eventId,
       category: '(0)',
       message,
+      data,
     });
     this.materialize();
     if (this.bus && this.deviceId) {

@@ -115,14 +115,20 @@ import {
   GetSmbShareCmdlet, NewSmbShareCmdlet, RemoveSmbShareCmdlet, GetSmbSessionCmdlet,
 } from './SmbCmdlets';
 import {
-  InstallADDSForestCmdlet, InstallADDSDomainControllerCmdlet, GetADDomainControllerCmdlet,
-  NewADUserCmdlet, GetADUserCmdlet, SetADUserCmdlet, RemoveADUserCmdlet,
+  InstallADDSForestCmdlet, InstallADDSDomainControllerCmdlet, GetADDomainControllerCmdlet, RemoveADDomainControllerCmdlet,
+  NewADUserCmdlet, GetADUserCmdlet, SetADUserCmdlet, RemoveADUserCmdlet, SetADAccountPasswordCmdlet,
+  DisableADAccountCmdlet, EnableADAccountCmdlet,
   NewADGroupCmdlet, GetADGroupCmdlet, AddADGroupMemberCmdlet, RemoveADGroupMemberCmdlet,
-  GetADComputerCmdlet, SetADComputerCmdlet,
+  GetADComputerCmdlet, SetADComputerCmdlet, GetADObjectCmdlet, SearchADAccountCmdlet,
   NewADOrganizationalUnitCmdlet, GetADOrganizationalUnitCmdlet,
   NewADReplicationSiteCmdlet, GetADReplicationSiteCmdlet, NewADReplicationSubnetCmdlet,
+  GetADReplicationConnectionCmdlet, GetADReplicationFailureCmdlet,
+  GetADDefaultDomainPasswordPolicyCmdlet, SetADDefaultDomainPasswordPolicyCmdlet,
+  NewADFineGrainedPasswordPolicyCmdlet, AddADFineGrainedPasswordPolicySubjectCmdlet,
+  GetADFineGrainedPasswordPolicyCmdlet, GetADFineGrainedPasswordPolicySubjectCmdlet,
+  GetADUserResultantPasswordPolicyCmdlet,
   NewADAttributeCmdlet, NewADObjectClassCmdlet,
-  NewADDomainCmdlet, GetADForestCmdlet,
+  NewADDomainCmdlet, GetADForestCmdlet, GetADDomainCmdlet, MoveADDirectoryServerOperationMasterRoleCmdlet,
   NewADTrustCmdlet, GetADTrustCmdlet,
 } from './ActiveDirectoryCmdlets';
 import {
@@ -149,7 +155,7 @@ import {
   NewNpsConnectionRequestPolicyCmdlet, GetNpsConnectionRequestPolicyCmdlet, RemoveNpsConnectionRequestPolicyCmdlet,
   SetNpsAccountingConfigurationCmdlet,
 } from './NpsCmdlets';
-import { NewGPOCmdlet, GetGPOCmdlet, NewGPLinkCmdlet } from './GroupPolicyCmdlets';
+import { NewGPOCmdlet, GetGPOCmdlet, NewGPLinkCmdlet, SetGPInheritanceCmdlet, GetGPInheritanceCmdlet } from './GroupPolicyCmdlets';
 import {
   NewWebsiteCmdlet, GetWebsiteCmdlet, StartWebsiteCmdlet, StopWebsiteCmdlet, RemoveWebsiteCmdlet,
   NewWebBindingCmdlet,
@@ -450,25 +456,42 @@ export function registerServerCmdlets(registry: CmdletRegistry): void {
   registry.register(new InstallADDSForestCmdlet());
   registry.register(new InstallADDSDomainControllerCmdlet());
   registry.register(new GetADDomainControllerCmdlet());
+  registry.register(new RemoveADDomainControllerCmdlet());
   registry.register(new NewADReplicationSiteCmdlet());
   registry.register(new GetADReplicationSiteCmdlet());
   registry.register(new NewADReplicationSubnetCmdlet());
+  registry.register(new GetADReplicationConnectionCmdlet());
+  registry.register(new GetADReplicationFailureCmdlet());
+  registry.register(new GetADDefaultDomainPasswordPolicyCmdlet());
+  registry.register(new SetADDefaultDomainPasswordPolicyCmdlet());
+  registry.register(new NewADFineGrainedPasswordPolicyCmdlet());
+  registry.register(new AddADFineGrainedPasswordPolicySubjectCmdlet());
+  registry.register(new GetADFineGrainedPasswordPolicyCmdlet());
+  registry.register(new GetADFineGrainedPasswordPolicySubjectCmdlet());
+  registry.register(new GetADUserResultantPasswordPolicyCmdlet());
   registry.register(new NewADAttributeCmdlet());
   registry.register(new NewADObjectClassCmdlet());
   registry.register(new NewADUserCmdlet());
   registry.register(new GetADUserCmdlet());
   registry.register(new SetADUserCmdlet());
+  registry.register(new SetADAccountPasswordCmdlet());
   registry.register(new RemoveADUserCmdlet());
+  registry.register(new DisableADAccountCmdlet());
+  registry.register(new EnableADAccountCmdlet());
   registry.register(new NewADGroupCmdlet());
   registry.register(new GetADGroupCmdlet());
   registry.register(new AddADGroupMemberCmdlet());
   registry.register(new RemoveADGroupMemberCmdlet());
   registry.register(new GetADComputerCmdlet());
   registry.register(new SetADComputerCmdlet());
+  registry.register(new GetADObjectCmdlet());
+  registry.register(new SearchADAccountCmdlet());
   registry.register(new NewADOrganizationalUnitCmdlet());
   registry.register(new GetADOrganizationalUnitCmdlet());
   registry.register(new NewADDomainCmdlet());
   registry.register(new GetADForestCmdlet());
+  registry.register(new GetADDomainCmdlet());
+  registry.register(new MoveADDirectoryServerOperationMasterRoleCmdlet());
   registry.register(new NewADTrustCmdlet());
   registry.register(new GetADTrustCmdlet());
 
@@ -515,6 +538,8 @@ export function registerServerCmdlets(registry: CmdletRegistry): void {
   registry.register(new NewGPOCmdlet());
   registry.register(new GetGPOCmdlet());
   registry.register(new NewGPLinkCmdlet());
+  registry.register(new SetGPInheritanceCmdlet());
+  registry.register(new GetGPInheritanceCmdlet());
 
   // ── Web Server / IIS role (PRD-Windows-Server.md §5 P11) ────────────────────
   registry.register(new NewWebsiteCmdlet());

@@ -65,6 +65,7 @@ Vendor-agnostic shell layer: `IShell`/`IShellBase`, `AbstractShell`, `ShellFacto
 
 - `engine/` — vendor-agnostic SQL engine scaffolding: `lexer/`, `parser/` (AST), `executor/`, `catalog/`, `storage/`, `types/`.
 - `oracle/` — Oracle DBMS engine built on the engine layer: `OracleLexer`/`OracleParser`/`OracleExecutor`/`OracleCatalog`/`OracleStorage`/`OracleDatabase`/`OracleInstance`, plus subsystems for `asm/`, `awr/`, `dataguard/`, `flashback/`, `lock/`, `multitenant/`, `plan/`, `metadata/`, `packages/`, `commands/`, `actors/`, `demo/`.
+  - `multitenant/` and `dataguard/` are honest state/bookkeeping facades, not physically-isolated engines: `PluggableDatabase` tracks CON_ID/name/open-mode but `OracleStorage` has no CON_ID notion at all — every PDB shares one schema/table namespace, so `ALTER SESSION SET CONTAINER` only swaps the session label (see the comment at `OracleDatabase.ts` around the `ALTER SESSION SET CONTAINER` handler). A "create a table in PDB1, confirm it's absent from PDB2" lab will silently fail. `DataGuardConfiguration.switchover()` likewise just swaps two `role` fields — there is no real redo transport/apply. Don't build pedagogical scenarios that assume real cross-PDB isolation or physical standby replication.
 
 ### Event/timing infra (`src/events/`)
 

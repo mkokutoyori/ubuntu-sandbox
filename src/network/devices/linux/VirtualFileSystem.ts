@@ -569,7 +569,15 @@ export class VirtualFileSystem {
     return this.checkAccess(parent, 'w', uid, gid);
   }
 
-  writeFile(path: string, content: string, uid: number, gid: number, umask: number, append = false): boolean {
+  /**
+   * `declaredSizeBytes`, when given, overrides the inode's reported
+   * `size` instead of the actual `content.length` — for callers that
+   * track a real logical size out-of-band from the (much smaller or
+   * empty) physical placeholder they store, e.g. RMAN backup pieces
+   * whose true size can be gigabytes. `ls -l`/`du`/`stat` all read
+   * `inode.size`, so this is the only override point needed.
+   */
+  writeFile(path: string, content: string, uid: number, gid: number, umask: number, append = false, declaredSizeBytes?: number): boolean {
     // Handle special devices
     const inode = this.resolveInode(path);
     if (inode?.type === 'chardev') {
@@ -588,7 +596,7 @@ export class VirtualFileSystem {
       } else {
         inode.content = content;
       }
-      inode.size = inode.content.length;
+      inode.size = declaredSizeBytes ?? inode.content.length;
       inode.mtime = Date.now();
       this.emitWrite({
         path: this.canonicalKey(path),
@@ -614,6 +622,7 @@ export class VirtualFileSystem {
       const perms = 0o666 & ~umask;
       const newInode = this.createFileAt(path, content, perms, uid, gid);
       if (newInode !== null) {
+        if (declaredSizeBytes !== undefined) newInode.size = declaredSizeBytes;
         this.emitWrite({
           path: this.canonicalKey(path),
           previous: '',

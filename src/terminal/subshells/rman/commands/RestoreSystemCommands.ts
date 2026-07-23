@@ -22,7 +22,7 @@ export class RestoreSystemCommand implements IRmanCommand<string[]> {
   readonly name = 'RESTORE SYSTEM';
   constructor(private readonly target: RestoreSystemTarget) {}
 
-  execute(args: string[], { ctx }: RmanCommandContext): Result<string[], RmanError> {
+  execute(args: string[], { ctx, catalog }: RmanCommandContext): Result<string[], RmanError> {
     const inst = ctx.getInstanceState?.();
     // RESTORE CONTROLFILE / SPFILE require NOMOUNT or MOUNT, NOT OPEN.
     if (inst === 'OPEN') {
@@ -30,6 +30,20 @@ export class RestoreSystemCommand implements IRmanCommand<string[]> {
         code: 'RMAN_06403',
         message: 'database must be NOMOUNT or MOUNT to restore the control file',
       });
+    }
+
+    if (this.target === 'CONTROLFILE_AUTOBACKUP' || this.target === 'SPFILE_AUTOBACKUP') {
+      const snap = catalog.listAll();
+      if (snap.ok === false) return snap;
+      const autobackup = snap.value.sets.find(
+        s => s.type === 'CONTROLFILE' && s.tag.label.toUpperCase() === 'AUTOBACKUP',
+      );
+      if (!autobackup) {
+        return err({
+          code: 'RMAN_06172',
+          message: 'no autobackup found or specified handle is not a valid copy of the controlfile',
+        });
+      }
     }
 
     if (this.target === 'CONTROLFILE_AUTOBACKUP') {

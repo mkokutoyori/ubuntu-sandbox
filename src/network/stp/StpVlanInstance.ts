@@ -239,14 +239,15 @@ export class StpVlanInstance {
       this.applyForwardState(portName, 'forwarding');
       return;
     }
-    if (this.agent.getMode() === 'rstp' && portName === this.rootPort
+    const rapid = this.agent.getMode() !== 'stp';
+    if (rapid && portName === this.rootPort
       && this.agent.isPointToPoint(portName)) {
       this.applyForwardState(portName, 'forwarding');
       return;
     }
     this.applyForwardState(portName, 'listening');
     this.scheduleTransition(portName, 'learning');
-    if (this.agent.getMode() === 'rstp' && this.agent.isPointToPoint(portName)) {
+    if (rapid && this.agent.isPointToPoint(portName)) {
       this.agent.sendProposal(this.vlanId, portName);
     }
   }

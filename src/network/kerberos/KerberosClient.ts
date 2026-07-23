@@ -54,7 +54,11 @@ export interface AsExchangeResult {
 
 export type TgsExchangeResult = AsExchangeResult;
 
-const TICKET_REQUEST_LIFETIME_SECONDS = 8 * 3600;
+// A real Kerberos client requests a `till` far beyond any realistic KDC
+// policy maximum (Windows itself typically asks for the ASN.1 "never
+// expires" sentinel) — the KDC's own ticket-lifetime policy, not the
+// client's request, is what actually governs the granted endtime.
+const TICKET_REQUEST_LIFETIME_SECONDS = 24 * 3600;
 
 export class KerberosClient {
   private nextNonce = 1;

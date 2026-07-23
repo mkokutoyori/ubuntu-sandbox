@@ -28,7 +28,8 @@ import {
 import { deriveInterrealmKey, referralPrincipal } from './crossRealm';
 import { getDefaultEventBus, type IEventBus } from '@/events/EventBus';
 
-const TICKET_LIFETIME_SECONDS = 8 * 3600; // real Kerberos policy default-ish (10h in AD; kept simple here)
+const TICKET_LIFETIME_SECONDS = 10 * 3600; // AD's default domain Kerberos policy: "Maximum lifetime for user ticket" = 10 hours
+const RENEWABLE_LIFETIME_SECONDS = 7 * 24 * 3600; // AD's default: "Maximum lifetime for user ticket renewal" = 7 days
 const CLOCK_SKEW_SECONDS = 5 * 60; // RFC 4120 §5.2.7.2's usual 5-minute default
 
 export interface KdcContext {
@@ -37,6 +38,13 @@ export interface KdcContext {
   deviceId?: string;
   /** Event bus to publish `kerberos.*` events on (§5 P12) — a `KerberosSignalRefreshActor` subscribing elsewhere is what actually feeds a `KerberosSignalStore`; defaults to the process-wide default bus. */
   bus?: IEventBus;
+  /** Writes the real Windows Security-log entry (4768/4769/4771/4772) an AS/TGS exchange produces on a real DC — optional so a KDC used purely for the protocol engine (no device-level event log) still works. */
+  writeSecurityEvent?: (eventId: number, entryType: 'SuccessAudit' | 'FailureAudit', message: string, data?: Record<string, string>) => void;
+}
+
+/** Kerberos error codes as the two-hex-digit Status/SubStatus AD's Security log actually shows (Get-WinEvent's `Status`/`SubStatus` EventData fields), not the bare RFC 4120 error-code integer. */
+function kerberosStatusHex(errorCode: number): string {
+  return `0x${errorCode.toString(16)}`;
 }
 
 export class KdcSessionHandler {
@@ -69,11 +77,15 @@ export class KdcSessionHandler {
     return this.ctx.bus ?? getDefaultEventBus();
   }
 
-  /** Sends the KRB-ERROR and, unless it's the expected first-round PREAUTH_REQUIRED (part of every normal AS exchange, not a real failure), publishes an `as.failed` event (§5 P12). */
+  /** Sends the KRB-ERROR and, unless it's the expected first-round PREAUTH_REQUIRED (part of every normal AS exchange, not a real failure), publishes an `as.failed` event (§5 P12) and writes the real Security-log entry (4771 for a bad password, 4772 otherwise). */
   private failAs(socket: TcpSocket, req: KdcReq, cname: string, errorCode: number, eText?: string): void {
     this.sendError(socket, req, errorCode, eText);
     if (errorCode === KrbErrorCode.KDC_ERR_PREAUTH_REQUIRED) return;
     this.bus().publish({ topic: 'kerberos.as.failed', payload: { ...this.kdcRef(), cname, errorCode } });
+    const eventId = errorCode === KrbErrorCode.KDC_ERR_PREAUTH_FAILED ? 4771 : 4772;
+    this.ctx.writeSecurityEvent?.(eventId, 'FailureAudit',
+      `Kerberos pre-authentication failed.\n\nAccount Information:\n\tSecurity ID:\t\t${cname}\n\tAccount Name:\t\t${cname}\n\nStatus:\t\t\t${kerberosStatusHex(errorCode)}`,
+      { TargetUserName: cname, Status: kerberosStatusHex(errorCode) });
   }
 
   /** Publishes a `tgs.failed` event (§5 P12) alongside the KRB-ERROR already sent by `sendError`. */
@@ -111,9 +123,11 @@ export class KdcSessionHandler {
       return;
     }
     if (!this.verifyPreAuth(paEncTs.value, clientKey)) {
+      if (!sam.endsWith('$')) this.ctx.store.recordBadPasswordAttempt(sam);
       this.failAs(socket, req, cnameStr, KrbErrorCode.KDC_ERR_PREAUTH_FAILED, 'Pre-authentication information was invalid');
       return;
     }
+    if (!sam.endsWith('$')) this.ctx.store.resetBadPasswordCount(sam);
 
     const krbtgtSecret = this.ctx.store.getUserSecret('krbtgt');
     if (krbtgtSecret === null) {
@@ -126,11 +140,12 @@ export class KdcSessionHandler {
     const sessionKeyValue = new TextEncoder().encode(sessionKey);
     const now = Math.floor(Date.now() / 1000);
     const endtime = Math.min(req.reqBody.till, now + TICKET_LIFETIME_SECONDS);
-    const flags = { ...NO_TICKET_FLAGS, initial: true, preAuthent: true };
+    const renewTill = now + RENEWABLE_LIFETIME_SECONDS;
+    const flags = { ...NO_TICKET_FLAGS, initial: true, preAuthent: true, renewable: true, forwardable: true };
 
     const encTicketPart: EncTicketPart = {
       flags, key: { keyType: AES256_CTS_HMAC_SHA1_96, keyValue: sessionKeyValue },
-      crealm: realm, cname, authtime: now, starttime: now, endtime,
+      crealm: realm, cname, authtime: now, starttime: now, endtime, renewTill,
     };
     const ticket: Ticket = {
       tktVno: 5, realm, sname: req.reqBody.sname,
@@ -139,7 +154,7 @@ export class KdcSessionHandler {
 
     const encKdcRepPart: EncKdcRepPart = {
       key: { keyType: AES256_CTS_HMAC_SHA1_96, keyValue: sessionKeyValue },
-      nonce: req.reqBody.nonce, flags, authtime: now, starttime: now, endtime,
+      nonce: req.reqBody.nonce, flags, authtime: now, starttime: now, endtime, renewTill,
       srealm: realm, sname: req.reqBody.sname,
     };
     const rep: KdcRep = {
@@ -151,6 +166,9 @@ export class KdcSessionHandler {
     };
     socket.send(encodeKdcRep(rep));
     this.bus().publish({ topic: 'kerberos.as.succeeded', payload: { ...this.kdcRef(), cname: cnameStr } });
+    this.ctx.writeSecurityEvent?.(4768, 'SuccessAudit',
+      `A Kerberos authentication ticket (TGT) was requested.\n\nAccount Information:\n\tAccount Name:\t\t${cnameStr}\n\tSupplied Realm Name:\t${realm}\n\nResult Code:\t\t0x0`,
+      { TargetUserName: cnameStr, Status: '0x0' });
   }
 
   /** RFC 4120 §5.2.7.2: decrypt PA-ENC-TIMESTAMP with the client's key and check it's within the allowed clock skew. */

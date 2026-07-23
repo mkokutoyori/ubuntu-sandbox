@@ -87,7 +87,7 @@ import { KerberosTicketCache } from '@/network/kerberos/KerberosTicketCache';
 import { KerberosSignalStore } from '@/network/kerberos/observables';
 import { KerberosSignalRefreshActor } from '@/network/kerberos/actors/KerberosSignalRefreshActor';
 import {
-  ReplicationServerHandler, AD_REPLICATION_PORT, pullReplication,
+  ReplicationServerHandler, AD_REPLICATION_PORT, pullReplication, notifySyncNow,
   type ReplicationPullResult, type ReplicationLogEntry,
 } from './windows/server/ad/replication/ReplicationSession';
 import { ReplicationSignalStore } from './windows/server/ad/replication/observables';
@@ -108,6 +108,7 @@ import { pullGroupPolicy } from './windows/domain/GpoPullClient';
 import { dialHttp as dialHttpClient, parseHttpUrl } from '@/network/http/HttpClient';
 import type { GpoSettings } from './windows/server/ad/AdTypes';
 import { cmdNltest, cmdDcdiag, cmdKlist } from './windows/WinDomainDiag';
+import { cmdRepadmin, type RepadminContext } from './windows/WinRepadmin';
 import { cmdDnscmd } from './windows/WinDnscmd';
 import { cmdCertreq, cmdCertutil } from './windows/WinCertReq';
 import { WindowsCertStore } from './windows/CertStore';
@@ -548,7 +549,11 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       onAccept: (socket) => {
         const store = this.getDirectoryStore();
         if (!store) { socket.close(); return; }
-        new KdcSessionHandler({ store, deviceId: this.getHostname(), bus: this.getBus() }).register(socket);
+        new KdcSessionHandler({
+          store, deviceId: this.getHostname(), bus: this.getBus(),
+          writeSecurityEvent: (eventId, entryType, message, data) =>
+            this.eventLog.writeEventLog('Security', 'Microsoft-Windows-Security-Auditing', eventId, entryType, message, data),
+        }).register(socket);
       },
     });
 
@@ -560,7 +565,8 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       onAccept: (socket) => {
         const store = this.getDirectoryStore();
         if (!store) { socket.close(); return; }
-        new ReplicationServerHandler(store, this.getHostname(), this.getBus()).register(socket);
+        const ownIp = this.getInterfaces().map(p => p.getIPAddress()).find((ip): ip is NonNullable<typeof ip> => ip !== null)?.toString();
+        new ReplicationServerHandler(store, this.getHostname(), this.getBus(), ownIp, (partnerIp) => this.replicateFrom(partnerIp)).register(socket);
       },
     });
 
@@ -654,7 +660,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     const siteRelation: 'intra-site' | 'inter-site' =
       ownSite !== null && partnerSite !== null && ownSite !== partnerSite ? 'inter-site' : 'intra-site';
     const logEntry: ReplicationLogEntry = {
-      timestamp: Math.floor(Date.now() / 1000), partnerAddress: partnerIp, applied: result.applied, ok: result.ok, siteRelation,
+      timestamp: Math.floor(Date.now() / 1000), partnerAddress: partnerIp, applied: result.applied, ok: result.ok, siteRelation, direction: 'inbound',
     };
     this.replicationLog.push(logEntry);
     this.getBus().publish(
@@ -795,19 +801,27 @@ export class WindowsPC extends EndHost implements UserAccountHost {
    * dialogue against the DC at `dcAddress` (no DNS SRV discovery yet,
    * P7 dependency — callers resolve the DC address themselves).
    */
-  joinDomainNow(domainName: string, dcAddress: string, credentialUser: string, credentialPassword: string): DomainJoinResult {
+  joinDomainNow(
+    domainName: string, dcAddress: string, credentialUser: string, credentialPassword: string,
+    opts: { ouPath?: string; newName?: string } = {},
+  ): DomainJoinResult {
     if (this.domainMembership) {
       return { ok: false, message: `The computer '${this.getHostname()}' is already joined to a domain.` };
     }
+    const computerName = opts.newName || this.getHostname();
     const result = joinDomain({
       tcpStack: this.getTcpStack(),
-      computerName: this.getHostname(),
+      computerName,
       domainName,
       dcAddress,
       credentialUser,
       credentialPassword,
+      ouPath: opts.ouPath,
     });
-    if (result.ok && result.membership) this.domainMembership = result.membership;
+    if (result.ok && result.membership) {
+      this.domainMembership = result.membership;
+      if (opts.newName) this.setHostname(opts.newName);
+    }
     return result;
   }
 
@@ -1504,6 +1518,10 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     if (lower === 'localhost' || (ownHostname && lower === ownHostname)) {
       return new IPAddress('127.0.0.1');
     }
+    const [dnsIp] = this.resolveDnsSync(name);
+    if (dnsIp) {
+      try { return new IPAddress(dnsIp); } catch { return null; }
+    }
     return null;
   }
 
@@ -1789,6 +1807,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
           licensing: this.licensing,
         }, args);
       case 'nbtstat': return this.cmdNbtstat(args);
+      case 'w32tm':   return this.cmdW32tm(args);
       case 'wmic':    return this.cmdWmic(args);
       case 'reg':     return this.cmdReg(args);
       case 'nltest':  return cmdNltest({
@@ -1807,7 +1826,25 @@ export class WindowsPC extends EndHost implements UserAccountHost {
             kdc: this.svcMgr.getService('Kdc')?.state === 'Running',
           },
           sysvolShareExists: this.smbShares.get('SYSVOL') !== undefined,
+          replicationHealthy: this.getReplicationSignals().log.get().every(e => e.ok),
         });
+      }
+      case 'repadmin': {
+        const store = this.getDirectoryStore();
+        if (!store) return "'repadmin' requires this computer to be a domain controller.";
+        const ctx: RepadminContext = {
+          hostname: this.hostname,
+          fqdn: `${this.hostname}.${store.dnsName}`,
+          domainDn: store.getDomainDn(),
+          log: this.getReplicationSignals().log.get(),
+          knownDcFqdns: store.listDomainControllers()
+            .filter(c => c.name.toLowerCase() !== this.hostname.toLowerCase())
+            .map(c => `${c.name}.${store.dnsName}`),
+          resolveIpToName: (ip) => this.reverseLookupClient(ip),
+          pullFrom: (ip) => this.replicateFrom(ip),
+          pushTo: (ip) => notifySyncNow(this.getTcpStack(), ip),
+        };
+        return cmdRepadmin(ctx, args);
       }
       case 'klist':   return cmdKlist({ ticketCache: this.kerberosTicketCache });
       case 'netdom':  return this.cmdNetdom(args);
@@ -2791,11 +2828,32 @@ export class WindowsPC extends EndHost implements UserAccountHost {
   /** Adapts this device to `WinRunas.ts`'s narrow `RunasHost` contract. */
   private runasHost(): RunasHost {
     return {
-      getUser: (name) => this.userMgr.getUser(name),
+      getUser: (name) => this.userMgr.getUser(name) ?? this.getDomainUserForRunas(name),
       getCurrentUser: () => this.userMgr.currentUser,
       setCurrentUser: (name) => this.setCurrentUser(name),
       executeCmdCommand: (command) => this.executeCmdCommand(command),
     };
+  }
+
+  /**
+   * `runas /user:DOMAIN\sam` — the local WindowsUserManager only knows
+   * local accounts. When this device is itself the DC (its own
+   * DirectoryStore is right here, no network round-trip needed), a
+   * domain-qualified name matching its own domain is resolved against
+   * the real directory instead of being unconditionally "not recognized".
+   * A non-DC domain member has no local directory to consult synchronously
+   * (real Windows would round-trip to a DC here) — out of scope for now.
+   */
+  private getDomainUserForRunas(name: string): RunasUserLookup | undefined {
+    const backslash = name.indexOf('\\');
+    if (backslash === -1) return undefined;
+    const domainPart = name.slice(0, backslash).toUpperCase();
+    const sam = name.slice(backslash + 1);
+    const store = this.getDirectoryStore();
+    const ownNetbiosName = store?.netbiosName ?? this.domainMembership?.netbiosName;
+    if (!ownNetbiosName || domainPart !== ownNetbiosName.toUpperCase()) return undefined;
+    const u = store?.getUser(sam);
+    return u ? { name: sam, enabled: u.enabled } : undefined;
   }
 
   /**
@@ -2811,8 +2869,16 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     return runRunasNonInteractive(this.runasHost(), args);
   }
 
-  /** Runs `command` as `userName` — called by `WindowsTerminalSession` once the password has already been verified via `checkPassword`. */
-  async runAsUserVerified(userName: string, command: string): Promise<string> {
+  /** Runs `command` as `userName` — called by `WindowsTerminalSession` once the password has already been verified via `checkPassword`/`tryDomainAuth`. A domain-qualified `userName` also acquires a real Kerberos TGT, so `klist` sees it afterward — acquired only once `runAsUser` (and its internal `setCurrentUser` impersonate/revert, which always drops any cached ticket) has fully returned, matching `logonDomain`'s cache-survives-the-call contract. */
+  async runAsUserVerified(userName: string, command: string, password?: string): Promise<string> {
+    if (password !== undefined && this.domainMembership) {
+      const parsed = parseDomainQualifiedUser(userName, this.domainMembership);
+      if (parsed) {
+        const output = await runAsUser(this.runasHost(), parsed.sam, command);
+        this.acquireKerberosTgt(parsed.sam, password);
+        return output;
+      }
+    }
     return runAsUser(this.runasHost(), userName, command);
   }
 
@@ -2842,6 +2908,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
   private cmdNetdom(args: string[]): string {
     const sub = args[0]?.toLowerCase();
     if (sub === 'trust') return this.cmdNetdomTrust(args.slice(1));
+    if (sub === 'query' && args[1]?.toLowerCase() === 'fsmo') return this.cmdNetdomQueryFsmo();
     if (args.length === 0 || sub !== 'join') {
       return 'NETDOM JOIN /Domain:<Domain> /UserD:<User> /PasswordD:<Password> [/Server:<DC>]';
     }
@@ -2899,6 +2966,46 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     const result = server_.newADTrust(remoteRealm, server, direction, transitive, userD, passwordD);
     if (!result.ok) return `${result.message}\nThe command failed to complete successfully.`;
     return `The trust with '${remoteRealm}' has been successfully established.\nThe command completed successfully.`;
+  }
+
+  /**
+   * `w32tm /query /status` — real Windows time hierarchy has every
+   * non-PDCe domain member/DC sync to its domain's PDC Emulator (NT5DS);
+   * this simulator reports that same PDC Emulator FQDN as `Source`
+   * regardless of who's asking (including the PDCe itself), rather than
+   * modeling the forest-root-syncs-externally special case.
+   */
+  private cmdW32tm(args: string[]): string {
+    if (args[0]?.toLowerCase() !== '/query' || args[1]?.toLowerCase() !== '/status') {
+      return 'w32tm /query /status';
+    }
+    const store = this.getDirectoryStore();
+    const pdcShort = store?.getDomainFsmoRoleOwner('PDCEmulator') ?? '';
+    const source = store && pdcShort ? `${pdcShort}.${store.dnsName}` : 'Local CMOS Clock';
+    return [
+      'Leap Indicator: 0(no warning)',
+      'Stratum: 3 (secondary reference - syncd by (S)NTP)',
+      `Source: ${source}${store ? ',0x9' : ''}`,
+      'Poll Interval: 10 (1024s)',
+    ].join('\n');
+  }
+
+  /** `netdom query fsmo` — the 5 real FSMO role owners, server-only (a plain workstation has no directory to query). */
+  private cmdNetdomQueryFsmo(): string {
+    const store = this.getDirectoryStore();
+    if (!store) return 'This computer is not a domain controller.\nThe command failed to complete successfully.';
+    const server_ = this as unknown as { getForest?: () => { getFsmoRoles(): { schemaMaster: string; domainNamingMaster: string } } | null };
+    const forest = server_.getForest?.();
+    const fqdn = (short: string) => short ? `${short}.${store.dnsName}` : '';
+    const forestFsmo = forest?.getFsmoRoles() ?? { schemaMaster: '', domainNamingMaster: '' };
+    return [
+      `Schema owner          ${fqdn(forestFsmo.schemaMaster)}`,
+      `Domain role owner     ${fqdn(forestFsmo.domainNamingMaster)}`,
+      `PDC                   ${fqdn(store.getDomainFsmoRoleOwner('PDCEmulator'))}`,
+      `RID pool manager      ${fqdn(store.getDomainFsmoRoleOwner('RIDMaster'))}`,
+      `Infrastructure        ${fqdn(store.getDomainFsmoRoleOwner('InfrastructureMaster'))}`,
+      'The command completed successfully.',
+    ].join('\n');
   }
 
   // ─── OS Info ───────────────────────────────────────────────────

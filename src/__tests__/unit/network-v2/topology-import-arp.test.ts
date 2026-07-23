@@ -26,7 +26,7 @@ const TOPOLOGY: TopologyExport = {
 describe('JSON import → ARP works after ping', () => {
   it('PC4 pings PC5 → arp shows PC5 entry', async () => {
     EquipmentRegistry.resetInstance();
-    const { deviceInstances } = importTopology(TOPOLOGY);
+    const { deviceInstances } = await importTopology(TOPOLOGY);
 
     const pc4 = Array.from(deviceInstances.values()).find(d => d.getName() === 'PC4') as LinuxPC;
     const pc5 = Array.from(deviceInstances.values()).find(d => d.getName() === 'PC5') as LinuxPC;
@@ -42,7 +42,7 @@ describe('JSON import → ARP works after ping', () => {
 
   it('Importing populates connected routes (host can reach its own subnet peer)', async () => {
     EquipmentRegistry.resetInstance();
-    const { deviceInstances } = importTopology(TOPOLOGY);
+    const { deviceInstances } = await importTopology(TOPOLOGY);
     const pc4 = Array.from(deviceInstances.values()).find(d => d.getName() === 'PC4') as LinuxPC;
     const routeOut = await pc4.executeCommand('route -n');
     expect(routeOut).toContain('192.168.2.0');

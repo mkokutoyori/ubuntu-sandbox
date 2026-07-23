@@ -31,7 +31,7 @@ import { WindowsWsusRole } from './windows/server/wsus/WsusRole';
 import { WindowsPrintServerRole } from './windows/server/print/PrintServerRole';
 import { randomSessionKey } from '@/network/kerberos/crypto';
 import { dialLdap } from './windows/server/ad/ldap/LdapClient';
-import { pullReplication } from './windows/server/ad/replication/ReplicationSession';
+import { pullReplication, notifySyncNow } from './windows/server/ad/replication/ReplicationSession';
 import { createForest, joinForestAsChildDomain, getForestForDomain, type Forest } from './windows/server/ad/forest/Forest';
 import { mirroredDirection, type TrustDirection, type TrustInfo, type TrustRecord } from './windows/server/ad/forest/TrustRelationship';
 
@@ -56,6 +56,11 @@ export class WindowsServer extends WindowsPC {
 
   constructor(name: string = 'WinServer', x: number = 0, y: number = 0) {
     super('windows-server', name, x, y);
+    // Real Windows Server has no built-in non-admin "User" account — setup
+    // (OOBE) only creates/activates the local Administrator, who is the
+    // account logged in by default. WindowsPC's 'User' default is correct
+    // for a client SKU but wrong here, so override it post-construction.
+    this.getUserManager().setCurrentUser('Administrator');
   }
 
   override getWindowsEdition(): 'client' | 'server' { return 'server'; }
@@ -272,7 +277,7 @@ export class WindowsServer extends WindowsPC {
    * real TCP/389 LDAP listener (already registered at boot, gated on
    * `getDirectoryStore()` being non-null).
    */
-  installADDSForest(domainName: string, netbiosName: string | undefined, safeModeAdminPassword: string): AdDsOpResult {
+  installADDSForest(domainName: string, netbiosName: string | undefined, safeModeAdminPassword: string, opts: { installDns?: boolean } = {}): AdDsOpResult {
     if (!this.roleManager.isInstalled('AD-Domain-Services')) {
       return { ok: false, message: 'Install-ADDSForest : The Active Directory Domain Services role is not installed on this computer.' };
     }
@@ -284,11 +289,15 @@ export class WindowsServer extends WindowsPC {
     this.directoryStore.promoteDomainController(this.getHostname(), safeModeAdminPassword);
     this.directoryStore.ensureKrbtgtPrincipal(randomSessionKey());
     this.directoryStore.newSite(DEFAULT_SITE_NAME);
-    createForest(domainName, netbios, this.directoryStore.getSchemaValidatorForSharing());
+    const forest = createForest(domainName, netbios, this.directoryStore.getSchemaValidatorForSharing());
+    forest.initializeFsmoRoles(this.getHostname());
+    this.directoryStore.initializeDomainFsmoRoles(this.getHostname());
     this.provisionSysvol(domainName);
     this.registerDcServices();
+    if (opts.installDns !== false) this.roleManager.install('DNS');
     this.provisionDomainDnsZone(domainName);
     this.provisionDefaultDomainPolicy();
+    this.logDirectoryServiceStartup();
     return { ok: true, message: '' };
   }
 
@@ -305,6 +314,7 @@ export class WindowsServer extends WindowsPC {
   newADDomain(
     newDomainDnsName: string, netbiosName: string | undefined, parentDomainName: string, parentDcAddress: string,
     credentialUser: string, credentialPassword: string, safeModeAdminPassword: string,
+    opts: { installDns?: boolean } = {},
   ): AdDsOpResult {
     if (!this.roleManager.isInstalled('AD-Domain-Services')) {
       return { ok: false, message: 'New-ADDomain : The Active Directory Domain Services role is not installed on this computer.' };
@@ -335,8 +345,10 @@ export class WindowsServer extends WindowsPC {
     this.directoryStore.newSite(DEFAULT_SITE_NAME);
     this.provisionSysvol(newDomainDnsName);
     this.registerDcServices();
+    if (opts.installDns !== false) this.roleManager.install('DNS');
     this.provisionDomainDnsZone(newDomainDnsName);
     this.provisionDefaultDomainPolicy();
+    this.logDirectoryServiceStartup();
     return { ok: true, message: '' };
   }
 
@@ -344,6 +356,37 @@ export class WindowsServer extends WindowsPC {
   getForest(): Forest | null {
     if (!this.directoryStore) return null;
     return getForestForDomain(this.directoryStore.dnsName);
+  }
+
+  /**
+   * `Move-ADDirectoryServerOperationMasterRole` — planned transfer (both
+   * DCs reachable) and forced seizure (`-Force`, old owner may be gone)
+   * are the same underlying operation in this simulator: real AD's only
+   * behavioral difference is whether the outgoing owner is asked to
+   * finish pending writes first, which this simulator has no queued
+   * writes to flush anyway. `targetHostname` may be short or FQDN; roles
+   * are matched case-insensitively against the 5 real FSMO role names.
+   */
+  moveOperationMasterRole(targetHostname: string, roles: string[], _force: boolean): AdDsOpResult {
+    if (!this.directoryStore) {
+      return { ok: false, message: 'Move-ADDirectoryServerOperationMasterRole : This computer is not a domain controller.' };
+    }
+    const forest = this.getForest();
+    const target = targetHostname.split('.')[0];
+    const forestRoles = new Set(['schemamaster', 'domainnamingmaster']);
+    const domainRoles = new Set(['ridmaster', 'pdcemulator', 'infrastructuremaster']);
+    for (const role of roles) {
+      const key = role.toLowerCase().replace(/\s+/g, '');
+      if (forestRoles.has(key)) {
+        forest?.transferFsmoRole(key === 'schemamaster' ? 'schemaMaster' : 'domainNamingMaster', target);
+      } else if (domainRoles.has(key)) {
+        const domainRole = key === 'ridmaster' ? 'RIDMaster' : key === 'pdcemulator' ? 'PDCEmulator' : 'InfrastructureMaster';
+        this.directoryStore.transferDomainFsmoRole(domainRole, target);
+      } else {
+        return { ok: false, message: `Move-ADDirectoryServerOperationMasterRole : "${role}" is not a valid operation master role.` };
+      }
+    }
+    return { ok: true, message: '' };
   }
 
   /**
@@ -426,6 +469,7 @@ export class WindowsServer extends WindowsPC {
   installADDSDomainController(
     domainName: string, netbiosName: string | undefined, sourceDcAddress: string,
     credentialUser: string, credentialPassword: string, safeModeAdminPassword: string,
+    opts: { installDns?: boolean } = {},
   ): AdDsOpResult {
     if (!this.roleManager.isInstalled('AD-Domain-Services')) {
       return { ok: false, message: 'Install-ADDSDomainController : The Active Directory Domain Services role is not installed on this computer.' };
@@ -477,7 +521,18 @@ export class WindowsServer extends WindowsPC {
     this.directoryStore = store;
     this.provisionSysvol(domainName);
     this.registerDcServices();
+    if (opts.installDns !== false) this.roleManager.install('DNS');
     this.provisionDomainDnsZone(domainName);
+    this.logDirectoryServiceStartup();
+    /**
+     * Real DCPromo urgently replicates the new DC's own computer object
+     * back out (a critical-object push, distinct from the initial sync
+     * above) so the rest of the domain learns about it immediately rather
+     * than waiting for the source DC's next scheduled cycle. Best-effort:
+     * a source DC that doesn't support the push notification (unlikely —
+     * this simulator's DCs all do) just stays unaware until it next pulls.
+     */
+    notifySyncNow(this.getTcpStack(), sourceDcAddress);
     return { ok: true, message: '' };
   }
 
@@ -496,6 +551,7 @@ export class WindowsServer extends WindowsPC {
         minPasswordLength: 7, passwordHistoryLength: 24,
         maxPasswordAge: 42, minPasswordAge: 1,
         lockoutThreshold: 5, lockoutDurationMinutes: 30, lockoutWindowMinutes: 30,
+        complexityEnabled: true, reversibleEncryptionEnabled: false,
       },
     });
     store.newGPLink('Default Domain Policy', store.getDomainDn());
@@ -514,14 +570,30 @@ export class WindowsServer extends WindowsPC {
     if (dns.getZone(domainName)) return;
     dns.addPrimaryZone(domainName);
     const hostname = this.getHostname();
-    const ownIp = this.getInterfaces().map(p => p.getIPAddress()).find((ip): ip is NonNullable<typeof ip> => ip !== null);
-    if (ownIp) dns.addARecord(domainName, hostname, ownIp.toString());
+    const iface = this.getInterfaces().find(p => p.getIPAddress() !== null);
+    const ownIp = iface?.getIPAddress() ?? null;
+    if (ownIp) {
+      dns.addARecord(domainName, hostname, ownIp.toString());
+      dns.addARecord(domainName, '@', ownIp.toString());
+    }
     const dcTarget = `${hostname}.${domainName}`;
     dns.addSrvRecord(domainName, '_ldap._tcp.dc._msdcs', { priority: 0, weight: 100, port: 389, target: dcTarget });
     dns.addSrvRecord(domainName, '_kerberos._tcp.dc._msdcs', { priority: 0, weight: 100, port: 88, target: dcTarget });
+    const mask = iface?.getSubnetMask() ?? null;
+    if (ownIp && mask) {
+      const octets = ownIp.getOctets();
+      const networkOctets = Math.floor(mask.toCIDR() / 8);
+      if (networkOctets > 0 && networkOctets < 4) {
+        const reverseZone = `${octets.slice(0, networkOctets).reverse().join('.')}.in-addr.arpa`;
+        if (!dns.getZone(reverseZone)) {
+          dns.addPrimaryZone(reverseZone);
+          dns.addPtrRecord(reverseZone, octets.slice(networkOctets).join('.'), dcTarget);
+        }
+      }
+    }
   }
 
-  /** Real DC promotion registers `NTDS`/`Netlogon`/`Kdc` with the SCM (PRD §5 P6) — `dcdiag`/`nltest` read their state. */
+  /** Real DC promotion registers `NTDS`/`Netlogon`/`Kdc`/`ADWS` with the SCM (PRD §5 P6) — `dcdiag`/`nltest` read their state. */
   private registerDcServices(): void {
     const svcMgr = this.getServiceManager();
     svcMgr.addService('NTDS', 'Active Directory Domain Services', 'AD DS Domain Controller service',
@@ -530,15 +602,25 @@ export class WindowsServer extends WindowsPC {
       { dependencies: ['NTDS'], account: 'NT AUTHORITY\\SYSTEM' });
     svcMgr.addService('Kdc', 'Kerberos Key Distribution Center', 'Issues session tickets and temporary session keys used in the Windows Kerberos SSO scheme',
       { dependencies: ['NTDS'], account: 'NT AUTHORITY\\SYSTEM' });
+    svcMgr.addService('ADWS', 'Active Directory Web Services', 'Provides a web service interface to Active Directory domains',
+      { dependencies: ['NTDS'], account: 'NT AUTHORITY\\NETWORK SERVICE', processName: 'Microsoft.ActiveDirectory.WebServices.exe' });
   }
 
-  /** Minimal SYSVOL: real DC promotion auto-shares `C:\Windows\SYSVOL\sysvol\<domain>` as `\\<dc>\SYSVOL` (Domain Admins-writable, everyone-readable) — no GPO/FRS/DFSR replication content, per PRD §2.2 scope. */
+  private logDirectoryServiceStartup(): void {
+    this.eventLog.newEventLog('Directory Service', 'NTDS General');
+    this.eventLog.writeEventLog(
+      'Directory Service', 'NTDS General', 1004, 'Information',
+      'Active Directory Domain Services Startup Complete.',
+    );
+  }
+
+  /** Minimal SYSVOL: real DC promotion auto-shares `C:\Windows\SYSVOL\sysvol\<domain>` as `\\<dc>\SYSVOL`, and `...\<domain>\SCRIPTS` as `\\<dc>\NETLOGON` (both Domain Admins-writable, everyone-readable) — no GPO/FRS/DFSR replication content, per PRD §2.2 scope. */
   private provisionSysvol(domainName: string): void {
     const path = `C:\\Windows\\SYSVOL\\sysvol\\${domainName}`;
-    this.getFileSystem().mkdirp(path);
-    this.smbShares.add('SYSVOL', path, {
-      description: 'Logon server share',
-      permissions: new Map([['Everyone', 'Read'], ['Domain Admins', 'Full']]),
-    });
+    const scriptsPath = `${path}\\SCRIPTS`;
+    this.getFileSystem().mkdirp(scriptsPath);
+    const permissions = new Map([['Everyone', 'Read'], ['Domain Admins', 'Full']]);
+    this.smbShares.add('SYSVOL', path, { description: 'Logon server share', permissions });
+    this.smbShares.add('NETLOGON', scriptsPath, { description: 'Logon server share', permissions });
   }
 }

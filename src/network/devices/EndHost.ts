@@ -334,6 +334,15 @@ export abstract class EndHost extends Equipment {
   /** Default TTL for outgoing packets (Linux=64, Windows=128) */
   protected abstract readonly defaultTTL: number;
   protected abstract resolveHostForCommand(targetStr: string): Promise<IPAddress | null>;
+  /**
+   * IPv6 counterpart of `resolveHostForCommand` — default is a literal-only
+   * parse (matches the historical `ping6`/`ping -6` behavior). Overridden
+   * by `LinuxMachine` to also consult `/etc/hosts`/DNS via NSS, the same
+   * way the IPv4 path already does.
+   */
+  protected async resolveHost6ForCommand(targetStr: string): Promise<IPv6Address | null> {
+    try { return new IPv6Address(targetStr); } catch { return null; }
+  }
   /** Default Hop Limit for IPv6 (typically same as TTL) */
   protected get defaultHopLimit(): number { return this.defaultTTL; }
 
@@ -3867,6 +3876,92 @@ export abstract class EndHost extends Equipment {
       }
     }
     return results;
+  }
+
+  /**
+   * Real-time streaming IPv6 ping — the `ping6`/`ping -6` counterpart of
+   * `executePingStream()`, with the same `count<=0` = unbounded convention
+   * so the interactive terminal can offer genuine "continuous until
+   * Ctrl+C" behavior for IPv6 too, not just IPv4.
+   */
+  protected async executePing6Stream(
+    targetIP: IPv6Address,
+    opts: {
+      count: number;
+      timeoutMs?: number;
+      intervalMs?: number;
+      onResult: (result: PingResult) => void;
+      shouldStop: () => boolean;
+      sleep: (ms: number) => Promise<void>;
+    },
+  ): Promise<{ resolved: boolean }> {
+    const { count, timeoutMs = 2000, intervalMs = 1000, onResult, shouldStop, sleep } = opts;
+    const infinite = count <= 0;
+    const isLast = (seq: number) => !infinite && seq >= count;
+
+    if (targetIP.isLoopback()) {
+      for (let seq = 1; (infinite || seq <= count) && !shouldStop(); seq++) {
+        onResult({ success: true, rttMs: 0.01, ttl: this.defaultHopLimit, seq, bytes: 64, fromIP: '::1' });
+        if (isLast(seq)) break;
+        await sleep(intervalMs);
+      }
+      return { resolved: true };
+    }
+
+    for (const [, port] of this.ports) {
+      if (port.getIPv6Addresses().some((e) => e.address.equals(targetIP))) {
+        for (let seq = 1; (infinite || seq <= count) && !shouldStop(); seq++) {
+          onResult({ success: true, rttMs: 0.01, ttl: this.defaultHopLimit, seq, bytes: 64, fromIP: targetIP.toString() });
+          if (isLast(seq)) break;
+          await sleep(intervalMs);
+        }
+        return { resolved: true };
+      }
+    }
+
+    const route = this.resolveIPv6Route(targetIP);
+    if (!route) return { resolved: false };
+
+    const portName = route.port.getName();
+    let nextHopMAC: MACAddress;
+    try {
+      nextHopMAC = await this.resolveNDP(portName, route.nextHopIP, timeoutMs);
+    } catch {
+      return { resolved: false };
+    }
+
+    for (let seq = 1; (infinite || seq <= count) && !shouldStop(); seq++) {
+      let result: PingResult;
+      try {
+        result = await this.sendPing6(portName, targetIP, nextHopMAC, seq, timeoutMs);
+      } catch (err: unknown) {
+        const errorMsg = err instanceof Error ? err.message : String(err);
+        result = { success: false, rttMs: 0, ttl: 0, seq, bytes: 0, fromIP: '', error: errorMsg };
+      }
+      onResult(result);
+      if (isLast(seq) || shouldStop()) break;
+      await sleep(intervalMs);
+    }
+    return { resolved: true };
+  }
+
+  async ping6StreamInSession(
+    targetStr: string,
+    opts: {
+      count: number;
+      timeoutMs?: number;
+      intervalMs?: number;
+      onResolved?: (ip: IPv6Address) => void;
+      onResult: (result: PingResult) => void;
+      shouldStop: () => boolean;
+      sleep: (ms: number) => Promise<void>;
+    },
+  ): Promise<{ resolved: boolean; reason?: 'name' | 'unreachable' }> {
+    const ip = await this.resolveHost6ForCommand(targetStr);
+    if (!ip) return { resolved: false, reason: 'name' };
+    opts.onResolved?.(ip);
+    const outcome = await this.executePing6Stream(ip, opts);
+    return outcome.resolved ? { resolved: true } : { resolved: false, reason: 'unreachable' };
   }
 
   // ─── Router Solicitation ────────────────────────────────────────

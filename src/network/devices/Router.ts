@@ -107,6 +107,8 @@ import { inspectAndRewriteFtpAlg } from './router/nat/FtpAlg';
 import { RouterDebugService } from './router/diag/RouterDebugService';
 import { NhrpService } from './router/nhrp/NhrpService';
 import { DmvpnService } from './router/nhrp/DmvpnService';
+import { NhrpEngine } from '../nhrp/NhrpEngine';
+import { IP_PROTO_NHRP, type NhrpPacket } from '../nhrp/types';
 import { RouterManagementService } from './router/management/RouterManagementService';
 import { SnmpService } from './router/management/SnmpService';
 import { EemService } from './router/eem/EemService';
@@ -474,6 +476,14 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       execTarget: () => this as unknown as SshExecTarget,
       banner: () => this.sshBannerText || null,
       aaaAuthenticate: (n, p) => this.authenticateViaAaa(n, p),
+      // Reuse the exact admission/failure-tracking the cross-vendor bypass
+      // used to gate on its own (login block-for / quiet-mode ACL /
+      // LoginBlocker) so real-wire SSH enforces the same security policy a
+      // Cisco/Huawei device configures via CLI, instead of losing it when
+      // the client stops calling checkPassword() directly.
+      isClientBlocked: (ip) => !this.vtyAdmissionVerdict('ssh', ip).accept,
+      recordAuthFailure: (user, ip) => this.recordSshLogin(user, ip, '', false),
+      recordLogin: (user, ip) => this.recordSshLogin(user, ip, '', true),
     });
     return new SshServerHandler(ctx);
   }
@@ -1273,6 +1283,15 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     // EIGRP runs directly over IP (proto 88, RFC 7868 §4.2).
     if (ipPkt.protocol === IP_PROTO_EIGRP) {
       this.dynamicRouting.receiveEigrpPacket(inPort, ipPkt);
+      return;
+    }
+
+    // NHRP runs directly over IP (proto 54, RFC 2332 §5.2).
+    if (ipPkt.protocol === IP_PROTO_NHRP) {
+      const nhrpPkt = ipPkt.payload as { type?: string };
+      if (nhrpPkt?.type === 'nhrp') {
+        this.receiveNhrpPacket(inPort, ipPkt.sourceIP.toString(), ipPkt.payload as NhrpPacket);
+      }
       return;
     }
 
@@ -2476,9 +2495,54 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
   private _startupConfigSnapshot: string | null = null;
   _captureStartupConfig(snapshot: string): void { this._startupConfigSnapshot = snapshot; }
   _eraseStartupConfig(): void { this._startupConfigSnapshot = null; }
-  _restoreStartupConfig(): boolean {
-    return this._startupConfigSnapshot !== null;
+
+  /** Real rendered running-config text (`show running-config`), delegated
+   *  to the vendor shell since Cisco/Huawei render completely different
+   *  dialects (mirrors `getRunningConfigText` on `IRouterShell`). */
+  getRunningConfig(): string {
+    return this.shell.getRunningConfigText?.(this) ?? '';
   }
+
+  /** `write memory` / `save` — capture the live config text as NVRAM. */
+  writeMemory(): string {
+    this._startupConfigSnapshot = this.getRunningConfig();
+    return '[OK]';
+  }
+
+  /** @internal Re-apply NVRAM onto the live config (`copy startup-config
+   *  running-config`). Returns false when NVRAM is empty. */
+  _restoreStartupConfig(): boolean {
+    if (this._startupConfigSnapshot === null) return false;
+    this._applyConfigText(this._startupConfigSnapshot);
+    return true;
+  }
+
+  /** @internal Re-apply arbitrary saved config text onto live state — the
+   *  vendor shell owns the parsing since Cisco/Huawei config text differs
+   *  (interface naming, `hostname` vs `sysname`, `ip route` vs
+   *  `ip route-static`, …), mirroring `getRunningConfig`'s delegation. */
+  _applyConfigText(text: string): void {
+    this.shell.applyConfigText?.(this, text);
+  }
+
+  /**
+   * @internal Discard the unsaved slice of running-config that
+   * `_applyConfigText` knows how to replay (interface addressing/state and
+   * static routes) before a `reload` boots from NVRAM — a real router loses
+   * exactly this kind of in-memory-only change on power-cycle. Deliberately
+   * scoped to what gets rendered/re-applied above; ACL/NAT/OSPF/etc. object
+   * state is untouched here (see rapport 04 §5.9 for the narrower-than-full
+   * fidelity this mirrors from `Switch._applyConfigText`).
+   */
+  _resetConfigurableStateForReload(): void {
+    for (const ifName of [...this.ports.keys()]) {
+      this.unconfigureInterface(ifName);
+      this.setInterfaceDescription(ifName, '');
+      this.ports.get(ifName)?.setUp(true);
+    }
+    this.routingTable = this.routingTable.filter(r => r.type !== 'static' && r.type !== 'default');
+  }
+
   getStartupConfigSnapshot(): string | null { return this._startupConfigSnapshot; }
 
   private _routingTableLimit: { max: number; thresholdPct?: number } | null = null;
@@ -2511,6 +2575,31 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
   getDmvpnService(): DmvpnService {
     if (!this._dmvpnService) this._dmvpnService = new DmvpnService(this.getNhrpService());
     return this._dmvpnService;
+  }
+
+  private _nhrpEngine: NhrpEngine | null = null;
+
+  getNhrpEngine(): NhrpEngine {
+    if (!this._nhrpEngine) {
+      this._nhrpEngine = new NhrpEngine(
+        {
+          id: this.id,
+          name: this.name,
+          getPorts: () => this.ports,
+          sendFrame: (iface, frame) => { this.sendFrame(iface, frame); },
+          getArpEntry: (ip) => this.arpTable.get(ip),
+        },
+        this.getNhrpService(),
+        this.getDmvpnService(),
+        () => this.getBus(),
+      );
+    }
+    return this._nhrpEngine;
+  }
+
+  /** NHRP packets arriving from the wire (proto 54) — the only path into the engine. */
+  receiveNhrpPacket(inPort: string, srcIp: string, pkt: NhrpPacket): void {
+    this.getNhrpEngine().processPacket(inPort, srcIp, pkt);
   }
 
   private _managementService: RouterManagementService | null = null;

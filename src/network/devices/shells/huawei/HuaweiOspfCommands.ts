@@ -394,6 +394,9 @@ export function buildOSPFAreaViewCommands(
     const extra = ctx.r()._getOSPFExtraConfig();
     if (!extra.areaRanges.has(areaId)) extra.areaRanges.set(areaId, []);
     extra.areaRanges.get(areaId)!.push({ network: args[0], mask: args[1] });
+    const ospf = ctx.r()._getOSPFEngineInternal();
+    const advertise = !args.some(a => a.toLowerCase() === 'not-advertise' || a.toLowerCase() === 'suppress-vlink');
+    ospf?.addAreaRange(areaId, args[0], args[1], advertise);
     return '';
   });
 

@@ -72,7 +72,7 @@ import { cmdPidstat } from './system/Pidstat';
 import { parseDstatArgs, DSTAT_USAGE, DSTAT_VERSION, DSTAT_LISTING } from './system/Dstat';
 import { MountTable, MountEntry } from './MountTable';
 import { SysfsTree } from './Sysfs';
-import { cmdIfconfig, cmdNetstat, cmdCurl, cmdWget, cmdTcpdump, parseTcpdumpArgs } from './LinuxNetCommands';
+import { cmdNetstat, cmdWget, cmdTcpdump, parseTcpdumpArgs } from './LinuxNetCommands';
 import { PacketCaptureLog } from './network/PacketCaptureLog';
 import { publishWireSegment } from './network/WireCaptureBus';
 import { ensureCaptureRouterInstalled } from './network/CaptureRouter';
@@ -2165,7 +2165,7 @@ export class LinuxCommandExecutor {
     if (inode && inode.type === 'directory') this.cwd = pwd;
   }
 
-  ctx(): ShellContext {
+  ctx(outputPiped = false): ShellContext {
     return {
       vfs: this.vfs,
       userMgr: this.userMgr,
@@ -2174,6 +2174,7 @@ export class LinuxCommandExecutor {
       uid: this.userMgr.currentUid,
       gid: this.userMgr.currentGid,
       color: this.displayColor,
+      isPiped: outputPiped,
       envOverride: this.envOverride ?? undefined,
     };
   }
@@ -2350,7 +2351,7 @@ export class LinuxCommandExecutor {
         trimmed,
         'bash',
         [],
-        (argv, env, background) => this.dispatchFromInterpreter(argv, env, background),
+        (argv, env, background, outputPiped) => this.dispatchFromInterpreter(argv, env, background, outputPiped),
         initialVars,
         io,
         { pid: this.currentBashPid(), ppid: this.shellPpid, initialExitCode: this.lastExitCode, daemonMode },
@@ -2798,6 +2799,7 @@ export class LinuxCommandExecutor {
     argv: string[],
     env?: Record<string, string>,
     background?: boolean,
+    outputPiped?: boolean,
   ): { output: string; exitCode: number; backgroundPid?: number } {
     this._cmdEnv = env;
     if (env && env['PWD'] && env['PWD'] !== this.cwd && this.vfs.resolveInode(env['PWD'])) {
@@ -2955,7 +2957,7 @@ export class LinuxCommandExecutor {
 
     let result: { output: string; exitCode: number };
     try {
-      result = this.dispatch(actualCmd, actualArgs, stdin, isSudo);
+      result = this.dispatch(actualCmd, actualArgs, stdin, isSudo, outputPiped);
     } catch (e) {
       if (e instanceof DaemonParkSignal || e instanceof ExitSignal) throw e;
       result = { output: `${actualCmd}: error`, exitCode: 1 };
@@ -3242,7 +3244,7 @@ export class LinuxCommandExecutor {
       if (!this.vfs.exists(path)) return false;
       const result = runScriptContent(
         `. ${path}`, 'bash', [],
-        (argv, env, background) => this.dispatchFromInterpreter(argv, env, background),
+        (argv, env, background, outputPiped) => this.dispatchFromInterpreter(argv, env, background, outputPiped),
         vars, this.buildIOContext(),
         { pid: this.currentBashPid(), ppid: this.shellPpid, initialExitCode: 0 },
         this.aliases, this.functions,
@@ -3468,8 +3470,8 @@ export class LinuxCommandExecutor {
     return capacityMb;
   }
 
-  private dispatch(cmd: string, args: string[], stdin?: string, isSudo = false): { output: string; exitCode: number } {
-    const c = this.ctx();
+  private dispatch(cmd: string, args: string[], stdin?: string, isSudo = false, outputPiped = false): { output: string; exitCode: number } {
+    const c = this.ctx(outputPiped);
     if (!cmd.startsWith('/') && !cmd.startsWith('.')) this.currentCommandHead = cmd;
 
     // A registered LinuxCommand's own `privilege` field is authoritative
@@ -4264,9 +4266,14 @@ export class LinuxCommandExecutor {
       case 'htop': return { output: cmdTop(args, this.processCmdContext()), exitCode: 0 };
 
       // ── Network commands ────────────────────────────────────────────
-      case 'ifconfig': return { output: cmdIfconfig(args, this.ipNetworkCtx), exitCode: 0 };
+      // `ifconfig` and `curl` are intentionally NOT cased here: both have
+      // `needsNetworkContext: true` in the registry, so leaving them out
+      // lets `default:` route through `_registryCommandHook` — the same
+      // registry implementation the typed/async path already uses (audit
+      // 05, constat A8). A `case` here used to shadow that hook with a
+      // second, independently-drifted implementation that only a script
+      // (`bash script.sh`) could reach.
       case 'netstat': return { output: cmdNetstat(args, this.ipNetworkCtx, this.isServer, this.socketTable, (p, pr) => this.resolveServiceName(p, pr)), exitCode: 0 };
-      case 'curl': return { output: cmdCurl(args), exitCode: 0 };
       case 'wget': return { output: cmdWget(args), exitCode: 0 };
       case 'dstat': {
         const parsed = parseDstatArgs(args);

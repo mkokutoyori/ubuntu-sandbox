@@ -13,6 +13,10 @@ export interface AuditSetting {
   failure: boolean;
 }
 
+interface AuditEntry extends AuditSetting {
+  displayName: string;
+}
+
 const DEFAULT_SUBCATEGORIES: Record<string, AuditSetting> = {
   'registry':     { success: false, failure: false },
   'file system':  { success: false, failure: false },
@@ -20,9 +24,14 @@ const DEFAULT_SUBCATEGORIES: Record<string, AuditSetting> = {
   'logoff':       { success: true,  failure: false },
 };
 
+function settingLabel(s: AuditSetting): string {
+  return s.success && s.failure ? 'Success and Failure'
+    : s.success ? 'Success' : s.failure ? 'Failure' : 'No Auditing';
+}
+
 export class WindowsAuditPolicy {
-  private subcategories = new Map<string, AuditSetting>(
-    Object.entries(DEFAULT_SUBCATEGORIES).map(([k, v]) => [k, { ...v }]),
+  private subcategories = new Map<string, AuditEntry>(
+    Object.entries(DEFAULT_SUBCATEGORIES).map(([k, v]) => [k, { ...v, displayName: k }]),
   );
 
   isEnabled(subcategory: string, kind: 'success' | 'failure'): boolean {
@@ -31,9 +40,10 @@ export class WindowsAuditPolicy {
 
   set(subcategory: string, opts: { success?: boolean; failure?: boolean }): void {
     const key = subcategory.toLowerCase();
-    const current = this.subcategories.get(key) ?? { success: false, failure: false };
+    const current = this.subcategories.get(key) ?? { success: false, failure: false, displayName: subcategory };
     if (opts.success !== undefined) current.success = opts.success;
     if (opts.failure !== undefined) current.failure = opts.failure;
+    current.displayName = subcategory;
     this.subcategories.set(key, current);
   }
 
@@ -41,16 +51,25 @@ export class WindowsAuditPolicy {
     return this.subcategories.get(subcategory.toLowerCase());
   }
 
+  /** Every subcategory this policy currently knows about (defaults plus anything `auditpol /set` has touched) — backs `auditpol /get /category:*`. */
+  listAll(): AuditEntry[] {
+    return [...this.subcategories.values()];
+  }
+
   formatGet(subcategory: string): string {
     const s = this.get(subcategory);
     if (!s) return `The subcategory "${subcategory}" was not found.`;
-    const setting = s.success && s.failure ? 'Success and Failure'
-      : s.success ? 'Success' : s.failure ? 'Failure' : 'No Auditing';
     return [
       'System audit policy',
       'Category/Subcategory                     Setting',
-      `  ${subcategory.padEnd(40)}${setting}`,
+      `  ${subcategory.padEnd(40)}${settingLabel(s)}`,
     ].join('\n');
+  }
+
+  formatGetAll(): string {
+    const lines = ['System audit policy', 'Category/Subcategory                     Setting'];
+    for (const s of this.listAll()) lines.push(`  ${s.displayName.padEnd(40)}${settingLabel(s)}`);
+    return lines.join('\n');
   }
 }
 
@@ -82,6 +101,7 @@ export function cmdAuditpol(policy: WindowsAuditPolicy, args: string[]): string 
   }
 
   if (sub === '/get') {
+    if (opts['category'] !== undefined) return policy.formatGetAll();
     const subcategory = opts['subcategory'];
     if (!subcategory) return 'The category was not found.';
     return policy.formatGet(subcategory);

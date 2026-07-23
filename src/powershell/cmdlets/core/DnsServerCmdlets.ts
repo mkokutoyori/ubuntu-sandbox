@@ -25,7 +25,7 @@ function requireDns(ctx: CmdletContext, cmdletName: string): IDnsServerProvider 
 }
 
 function zoneToPSObject(z: DnsZoneInfo): Record<string, PSValue> {
-  return { ZoneName: z.name, ZoneType: 'Primary', RecordCount: z.recordCount, DynamicUpdate: 'None' };
+  return { ZoneName: z.name, ZoneType: 'Primary', RecordCount: z.recordCount, DynamicUpdate: 'None', IsDsIntegrated: true };
 }
 function recordToPSObject(r: DnsRecordInfo): Record<string, PSValue> {
   return { HostName: r.name, RecordType: r.type, TimeToLive: r.ttl, RecordData: r.text };

@@ -29,9 +29,17 @@ import { BackupSetFactory } from '../catalog/BackupSetFactory';
 import { RmanTag } from '../values/RmanTag';
 import { Scn } from '../values/Scn';
 import { generatePieceName } from '../core/pureUtils';
+import { implicitToDate } from '@/database/oracle/functions/valueUtils';
 
 export class RmanJobEngine implements IRmanJobEngine {
   private readonly _cancelled = new Set<string>();
+  // Set once an actual RESTORE has put datafiles back at an older
+  // checkpoint; only then does the following RECOVER genuinely need
+  // archivelogs to catch back up to the current SCN. A RECOVER invoked
+  // on its own (no preceding RESTORE this session) has no known gap to
+  // bridge, matching the many real-world call sites that recover a
+  // still-current datafile after a routine offline/online cycle.
+  private _pendingRecoveryGap = false;
 
   constructor(
     private readonly _bus:     RmanEventBus,
@@ -145,11 +153,24 @@ export class RmanJobEngine implements IRmanJobEngine {
       if (tsFilters   && !tsFilters.has(df.tablespace.toUpperCase())) return false;
       return true;
     });
-    const totalSize = isControlfile
+    const cumulative = params.cumulative === 'true';
+    const rawSize = isControlfile
       ? 9_650_176
       : isSpfile
         ? 4_096
         : (datafiles.reduce((acc, df) => acc + df.sizeBytes, 0) || 1_000_000);
+    // A LEVEL 1 backup only covers blocks changed since its reference
+    // backup, so it must be smaller than a LEVEL 0/FULL. Modelled as a
+    // fixed fraction of the full size (real Oracle's typical 5-15%
+    // range) rather than tracking actual changed blocks — enough to
+    // make "incremental is smaller" reliably demonstrable without a
+    // change-tracking simulation. CUMULATIVE spans back to the last
+    // LEVEL 0 (a longer window than a plain differential LEVEL 1), so
+    // it gets the larger end of that range.
+    const isIncrementalLevel1 = incLevel === 1 && !isControlfile && !isSpfile && !isArchivelog;
+    const totalSize = isIncrementalLevel1
+      ? Math.max(1, Math.round(rawSize * (cumulative ? 0.15 : 0.05)))
+      : rawSize;
 
     this._bus.emit({ type: 'BACKUP_PIECE_STARTED', jobId: job.id, channelId, what });
 
@@ -197,7 +218,7 @@ export class RmanJobEngine implements IRmanJobEngine {
       const ckp = ckpR.ok ? ckpR.value : Scn.ZERO;
       for (const df of datafiles) {
         const copyPath = `${basePath}.df${df.fileNo}`;
-        const writeR = this._ctx.vfs.writeFile(copyPath, new Uint8Array(0));
+        const writeR = this._ctx.vfs.writeFile(copyPath, new Uint8Array(0), df.sizeBytes);
         if (!writeR.ok) return writeR;
         const set = BackupSetFactory.createBackupSet({
           type: 'DATAFILECOPY', level: 0, path: copyPath,
@@ -240,12 +261,11 @@ export class RmanJobEngine implements IRmanJobEngine {
 
     for (let i = 1; i <= pieceCount; i++) {
       const path = pieceCount === 1 ? basePath : `${basePath}.p${i}`;
-      const writeResult = this._ctx.vfs.writeFile(path, new Uint8Array(0));
-      if (!writeResult.ok) return writeResult;
-
       const size = i === pieceCount
         ? (totalSize - pieceSize * (pieceCount - 1))
         : pieceSize;
+      const writeResult = this._ctx.vfs.writeFile(path, new Uint8Array(0), size);
+      if (!writeResult.ok) return writeResult;
 
       const set = BackupSetFactory.createBackupSet({
         type, level, path, sizeBytes: size, tag,
@@ -305,6 +325,25 @@ export class RmanJobEngine implements IRmanJobEngine {
     }
     if (sets.length === 0) {
       return err({ code: 'RMAN_06023', message: 'No backup found to restore' });
+    }
+
+    // SET UNTIL SCN/TIME (PITR) — only backup sets checkpointed at or
+    // before the requested bound are eligible; a later set would restore
+    // data past the point-in-time the operator asked to recover to.
+    if (params.untilScn !== undefined || params.untilTime !== undefined) {
+      const untilScn  = params.untilScn !== undefined ? Number(params.untilScn) : undefined;
+      const untilTime = params.untilTime !== undefined ? implicitToDate(params.untilTime) : undefined;
+      sets = sets.filter(s => {
+        if (untilScn !== undefined) return s.pieces[0].checkpointScn.value <= untilScn;
+        if (untilTime) return s.completionTime <= untilTime.getTime();
+        return true;
+      });
+      if (sets.length === 0) {
+        return err({
+          code: 'RMAN_06026',
+          message: 'no backup or copy of the database is available to satisfy the requested SET UNTIL bound',
+        });
+      }
     }
 
     // PREVIEW / VALIDATE — emit a progress line and skip the actual restore.
@@ -370,6 +409,7 @@ export class RmanJobEngine implements IRmanJobEngine {
         fileNo: df.fileNo, elapsedMs: 5_000,
       });
     }
+    this._pendingRecoveryGap = true;
     return ok(undefined);
   }
 
@@ -441,6 +481,16 @@ export class RmanJobEngine implements IRmanJobEngine {
     // pour chaque log appliqué pendant le RECOVER. On synthétise un set
     // raisonnable autour des SCN from/to.
     const arcPaths = this._ctx.getArchivelogPaths?.() ?? [];
+    // A RESTORE left the datafiles at an older checkpoint; without any
+    // archivelog to replay, there is nothing to bridge the gap with, and
+    // a real RMAN aborts media recovery rather than silently declaring
+    // the (still-stale) datafiles current.
+    if (this._pendingRecoveryGap && arcPaths.length === 0) {
+      return err({
+        code: 'RMAN_06054',
+        message: 'media recovery requesting unknown archived log for thread 1 with sequence 1',
+      });
+    }
     if (arcPaths.length > 0) {
       const baseSeq = 1;
       for (let i = 0; i < arcPaths.length; i++) {
@@ -454,6 +504,7 @@ export class RmanJobEngine implements IRmanJobEngine {
       }
     }
     this._bus.emit({ type: 'RECOVER_COMPLETED', jobId: job.id, toScn:   to.ok   ? to.value   : Scn.ZERO, elapsedMs: 3_000 });
+    this._pendingRecoveryGap = false;
     return ok(undefined);
   }
 

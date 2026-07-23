@@ -24,6 +24,10 @@ export interface IRouterShell {
   attachLoggingToBus?(bus: import('@/events/EventBus').IEventBus, deviceId: string): void;
   /** The shell's logging config — source of the `terminal monitor` syslog stream. */
   getLoggingConfig?(): import('../inspection/config/LoggingConfig').LoggingConfig;
+  /** Render the vendor's `show running-config` text (source for `write memory`). */
+  getRunningConfigText?(router: Router): string;
+  /** Re-apply a saved config text onto live router state (`copy start run`, `reload`). */
+  applyConfigText?(router: Router, text: string): void;
   /**
    * Command-owned interactive flows (IoC): the shell declares which
    * commands are interactive and what their dialogue is. Terminals render

@@ -27,6 +27,7 @@ import { dialKdc, buildApReq } from '@/network/kerberos/KerberosClient';
 import { KU_AP_REQ_AUTHENTICATOR } from '@/network/kerberos/crypto';
 import { principalName, PrincipalNameType } from '@/network/kerberos/types';
 import { discoverDcHostname, rootDnOf } from './DcHostnameDiscovery';
+import { parseDN, leafValue } from '../server/ad/ldap/LdapDN';
 import type { DomainMembership } from './DomainTypes';
 
 export interface DomainJoinResult { ok: boolean; message: string; membership?: DomainMembership }
@@ -42,6 +43,7 @@ export function joinDomain(opts: {
   dcAddress: string;
   credentialUser: string;
   credentialPassword: string;
+  ouPath?: string;
 }): DomainJoinResult {
   const networkPathNotFound: DomainJoinResult = {
     ok: false,
@@ -78,7 +80,14 @@ export function joinDomain(opts: {
     return badCredential;
   }
 
-  const computerDn = `CN=${opts.computerName},CN=Computers,${rootDnOf(opts.domainName)}`;
+  const targetContainer = (() => {
+    if (!opts.ouPath) return 'CN=Computers';
+    try {
+      const leaf = leafValue(parseDN(opts.ouPath));
+      return leaf ? `OU=${leaf}` : 'CN=Computers';
+    } catch { return 'CN=Computers'; }
+  })();
+  const computerDn = `CN=${opts.computerName},${targetContainer},${rootDnOf(opts.domainName)}`;
   const machineSecret = randomMachineSecret();
   const add = ldap.add(computerDn, [
     { type: 'objectClass', values: ['top', 'person', 'organizationalPerson', 'user', 'computer'] },

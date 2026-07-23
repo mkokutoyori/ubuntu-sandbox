@@ -36,6 +36,14 @@ interface ReplicationPullResponse {
   responderInvocationId: string;
   changes: ReplicatedObject[];
 }
+/** `repadmin /syncall ... /P` (push mode): the source DC notifies a partner to pull from it right now, instead of waiting for that partner's own schedule. */
+interface ReplicationSyncNotify {
+  kind: 'syncNotify';
+}
+interface ReplicationSyncNotifyAck {
+  kind: 'syncNotifyAck';
+  ok: boolean;
+}
 
 export class ReplicationServerHandler {
   /**
@@ -43,18 +51,31 @@ export class ReplicationServerHandler {
    * omitted keeps behavior identical to before this phase. This handler
    * only publishes `replication.served`; a `ReplicationSignalRefreshActor`
    * subscribing elsewhere is what feeds a `ReplicationSignalStore`.
+   * `ownIp` lets it annotate the served entry's site relation the same way
+   * `replicateFrom` does on the puller side — omitted, it just skips that
+   * (defaults to intra-site).
    */
   constructor(
     private readonly store: DirectoryStore,
     private readonly deviceId?: string,
     private readonly bus: IEventBus = getDefaultEventBus(),
+    private readonly ownIp?: string,
+    /** `repadmin /syncall ... /P` (push mode) handling — called with the notifying partner's address so this DC can pull from it right away. Omitted, syncNotify messages are ignored (this DC doesn't support being pushed to). */
+    private readonly onSyncNotify?: (partnerIp: string) => void,
   ) {}
 
   register(socket: TcpSocket): void {
     socket.onData((data) => {
       if (!(data instanceof Uint8Array)) return;
-      let msg: ReplicationPullRequest;
-      try { msg = JSON.parse(new TextDecoder().decode(data)) as ReplicationPullRequest; } catch { return; }
+      let msg: ReplicationPullRequest | ReplicationSyncNotify;
+      try { msg = JSON.parse(new TextDecoder().decode(data)) as ReplicationPullRequest | ReplicationSyncNotify; } catch { return; }
+
+      if (msg.kind === 'syncNotify') {
+        this.onSyncNotify?.(socket.remoteIp);
+        const ack: ReplicationSyncNotifyAck = { kind: 'syncNotifyAck', ok: true };
+        socket.send(new TextEncoder().encode(JSON.stringify(ack)));
+        return;
+      }
       if (msg.kind !== 'pullRequest') return;
 
       const requesterVector = decodeHighWatermarkVector(msg.requesterVector);
@@ -68,9 +89,18 @@ export class ReplicationServerHandler {
       };
       socket.send(new TextEncoder().encode(JSON.stringify(response)));
 
+      const partnerAddress = socket.remoteIp;
+      const partnerSite = this.store.siteForIp(partnerAddress);
+      const ownSite = this.ownIp ? this.store.siteForIp(this.ownIp) : null;
+      const siteRelation: 'intra-site' | 'inter-site' =
+        ownSite !== null && partnerSite !== null && ownSite !== partnerSite ? 'inter-site' : 'intra-site';
+
       this.bus.publish({
         topic: 'replication.served',
-        payload: { deviceId: this.deviceId ?? this.store.dnsName, invocationId: this.store.getInvocationId(), changesSent: changes.length },
+        payload: {
+          deviceId: this.deviceId ?? this.store.dnsName, invocationId: this.store.getInvocationId(),
+          changesSent: changes.length, partnerAddress, siteRelation,
+        },
       });
     });
   }
@@ -90,6 +120,10 @@ export interface ReplicationLogEntry {
   readonly applied: number;
   readonly ok: boolean;
   readonly siteRelation: 'intra-site' | 'inter-site';
+  /** 'inbound': this DC pulled from partnerAddress. 'outbound': this DC served a pull request from partnerAddress. Optional for callers predating this field (defaults to 'inbound', the only direction until §5 P12's served-side tracking). */
+  readonly direction?: 'inbound' | 'outbound';
+  /** Set when `ok` is false — the reason the pull failed (`Get-ADReplicationFailure`'s LastError). */
+  readonly error?: string;
 }
 
 /**
@@ -116,4 +150,27 @@ export function pullReplication(tcpStack: TcpStack, partnerIp: string, localStor
   if (!response || response.kind !== 'pullResponse') return { ok: false, error: 'no reply from replication partner', applied: 0 };
   for (const change of response.changes) localStore.applyReplicatedEntry(change.dn, change.attributes, change.stamp);
   return { ok: true, applied: response.changes.length };
+}
+
+/**
+ * `repadmin /syncall ... /P` (push mode): dial `partnerIp`'s TCP/135 and
+ * tell it to pull from us right now, instead of pulling changes ourselves.
+ * The partner's `ReplicationServerHandler.onSyncNotify` hook is what
+ * actually performs that pull.
+ */
+export function notifySyncNow(tcpStack: TcpStack, partnerIp: string): { ok: boolean; error?: string } {
+  const socket = tcpStack.connect(partnerIp, AD_REPLICATION_PORT);
+  if (!socket || socket.state !== 'established') {
+    return { ok: false, error: "A local error occurred (Can't contact the replication partner)" };
+  }
+  let ack: ReplicationSyncNotifyAck | null = null;
+  const unsubscribe = socket.onData((data) => {
+    if (!(data instanceof Uint8Array)) return;
+    try { ack = JSON.parse(new TextDecoder().decode(data)) as ReplicationSyncNotifyAck; } catch { /* ignore malformed */ }
+  });
+  const notify: ReplicationSyncNotify = { kind: 'syncNotify' };
+  socket.send(new TextEncoder().encode(JSON.stringify(notify)));
+  unsubscribe();
+  if (!ack || (ack as ReplicationSyncNotifyAck).kind !== 'syncNotifyAck') return { ok: false, error: 'no reply from replication partner' };
+  return { ok: true };
 }

@@ -55,7 +55,8 @@ import type {
   IRoleProvider, WindowsFeatureInfo,
   ISmbProvider, SmbShareInfo, SmbSessionInfo,
   IAdProvider, AdUserInfo, AdGroupInfo, AdComputerInfo, AdOrgUnitInfo, AdOpResult, AdSiteInfo,
-  AdAttributeSchemaInfo, AdObjectClassSchemaInfo, AdForestInfo, AdTrustInfo,
+  AdAttributeSchemaInfo, AdObjectClassSchemaInfo, AdForestInfo, AdDomainInfo, AdTrustInfo,
+  AdReplicationConnectionInfo, AdReplicationFailureInfo, AdPasswordPolicyInfo, AdFineGrainedPasswordPolicyInfo, AdAccessRuleInfo,
   IComputerProvider, DomainMembershipInfo,
   IGpoProvider, GpoInfo,
   IIisProvider, IisOpResult, WebsiteInfo, AppPoolInfo, NewAppPoolOptions, WebModuleInfo,
@@ -289,15 +290,7 @@ class WindowsRoleAdapter implements IRoleProvider {
 class WindowsSmbAdapter implements ISmbProvider {
   constructor(private readonly pc: WindowsPC) {}
 
-  /**
-   * `New-SmbShare`/`Get-SmbShare`/`Remove-SmbShare` only exist once the
-   * FS-FileServer role is installed (PRD-Windows-Server.md §8 acceptance
-   * criterion 2) — checked live on every call (not baked in at provider
-   * construction) so installing the role mid-session takes effect
-   * immediately. `net share`/the wire-level SMB server are NOT gated this
-   * way: real Windows shares admin shares and serves SMB on every SKU
-   * regardless of any role.
-   */
+  /** `New-SmbShare`/`Remove-SmbShare` only exist once the FS-FileServer role is installed (PRD-Windows-Server.md §8 acceptance criterion 2) — checked live on every call. `Get-SmbShare`/`Get-SmbSession` (and `net share`) are not gated this way, matching real Windows. */
   private requireRole(): void {
     if (!this.pc.getRoleManager()?.isInstalled('FS-FileServer')) {
       throw new Error('New-SmbShare is not recognized as the name of a cmdlet, function, script file, or operable program');
@@ -309,11 +302,9 @@ class WindowsSmbAdapter implements ISmbProvider {
   }
 
   listShares(): SmbShareInfo[] {
-    this.requireRole();
     return this.pc.smbShares.list().map(s => this.toShareInfo(this.pc.smbShares.toView(s)));
   }
   getShare(name: string): SmbShareInfo | null {
-    this.requireRole();
     const s = this.pc.smbShares.get(name);
     return s ? this.toShareInfo(this.pc.smbShares.toView(s)) : null;
   }
@@ -331,7 +322,6 @@ class WindowsSmbAdapter implements ISmbProvider {
     return this.pc.smbShares.remove(name);
   }
   listSessions(): SmbSessionInfo[] {
-    this.requireRole();
     return this.pc.smbSessions.list().map(s => this.pc.smbSessions.toView(s));
   }
 }
@@ -361,7 +351,7 @@ class WindowsAdAdapter implements IAdProvider {
     return this.isAdmin() ? null : { ok: false, message: `${cmdletName} : Access is denied.` };
   }
 
-  installForest(domainName: string, netbiosName: string | undefined, safeModeAdminPassword: string): AdOpResult {
+  installForest(domainName: string, netbiosName: string | undefined, safeModeAdminPassword: string, opts?: { installDns?: boolean }): AdOpResult {
     this.requireRole('Install-ADDSForest');
     const denied = this.requireAdmin('Install-ADDSForest');
     if (denied) return denied;
@@ -369,7 +359,7 @@ class WindowsAdAdapter implements IAdProvider {
     if (typeof server.installADDSForest !== 'function') {
       return { ok: false, message: 'Install-ADDSForest : This computer cannot be promoted to a domain controller.' };
     }
-    return server.installADDSForest(domainName, netbiosName, safeModeAdminPassword);
+    return server.installADDSForest(domainName, netbiosName, safeModeAdminPassword, opts);
   }
 
   isForestInstalled(): boolean {
@@ -380,6 +370,7 @@ class WindowsAdAdapter implements IAdProvider {
   installDomainController(
     domainName: string, netbiosName: string | undefined, sourceDcAddress: string,
     credentialUser: string, credentialPassword: string, safeModeAdminPassword: string,
+    opts?: { installDns?: boolean },
   ): AdOpResult {
     this.requireRole('Install-ADDSDomainController');
     const denied = this.requireAdmin('Install-ADDSDomainController');
@@ -388,33 +379,180 @@ class WindowsAdAdapter implements IAdProvider {
     if (typeof server.installADDSDomainController !== 'function') {
       return { ok: false, message: 'Install-ADDSDomainController : This computer cannot be promoted to a domain controller.' };
     }
-    return server.installADDSDomainController(domainName, netbiosName, sourceDcAddress, credentialUser, credentialPassword, safeModeAdminPassword);
+    return server.installADDSDomainController(domainName, netbiosName, sourceDcAddress, credentialUser, credentialPassword, safeModeAdminPassword, opts);
   }
 
   listDomainControllers(): AdComputerInfo[] {
     const store = this.requireStore('Get-ADDomainController');
-    return store.listDomainControllers().map(c => ({ name: c.name, dn: c.dn, enabled: c.enabled }));
+    return store.listDomainControllers().map(c => ({ name: c.name, dn: c.dn, enabled: c.enabled, servicePrincipalNames: c.servicePrincipalNames }));
   }
 
-  newUser(sam: string, opts: { password: string; fullName?: string; path?: string; enabled?: boolean }): AdOpResult {
+  listReplicationConnections(): AdReplicationConnectionInfo[] {
+    const store = this.requireStore('Get-ADReplicationConnection');
+    const server = this.pc as WindowsServer;
+    const selfName = server.getHostname().toLowerCase();
+    return store.listDomainControllers()
+      .filter(c => c.name.toLowerCase() !== selfName)
+      .map(c => ({
+        name: `${c.name}-connection`,
+        autoGenerated: true,
+        replicateFromDirectoryServer: `${c.name}.${store.dnsName}`,
+        interSiteTransportProtocol: 'RPC',
+      }));
+  }
+
+  private toPolicyInfo(p: { minPasswordLength?: number; passwordHistoryLength?: number; maxPasswordAge?: number; minPasswordAge?: number; lockoutThreshold?: number; lockoutDurationMinutes?: number; lockoutWindowMinutes?: number; complexityEnabled?: boolean; reversibleEncryptionEnabled?: boolean }): AdPasswordPolicyInfo {
+    return {
+      minPasswordLength: p.minPasswordLength ?? 7,
+      passwordHistoryCount: p.passwordHistoryLength ?? 24,
+      maxPasswordAgeDays: p.maxPasswordAge ?? 42,
+      minPasswordAgeDays: p.minPasswordAge ?? 1,
+      lockoutThreshold: p.lockoutThreshold ?? 5,
+      lockoutDurationMinutes: p.lockoutDurationMinutes ?? 30,
+      lockoutObservationWindowMinutes: p.lockoutWindowMinutes ?? 30,
+      complexityEnabled: p.complexityEnabled ?? true,
+      reversibleEncryptionEnabled: p.reversibleEncryptionEnabled ?? false,
+    };
+  }
+
+  private fromPolicyPatch(patch: Partial<AdPasswordPolicyInfo>): {
+    minPasswordLength?: number; passwordHistoryLength?: number; maxPasswordAge?: number; minPasswordAge?: number;
+    lockoutThreshold?: number; lockoutDurationMinutes?: number; lockoutWindowMinutes?: number;
+    complexityEnabled?: boolean; reversibleEncryptionEnabled?: boolean;
+  } {
+    const out: ReturnType<WindowsAdAdapter['fromPolicyPatch']> = {};
+    if (patch.minPasswordLength !== undefined) out.minPasswordLength = patch.minPasswordLength;
+    if (patch.passwordHistoryCount !== undefined) out.passwordHistoryLength = patch.passwordHistoryCount;
+    if (patch.maxPasswordAgeDays !== undefined) out.maxPasswordAge = patch.maxPasswordAgeDays;
+    if (patch.minPasswordAgeDays !== undefined) out.minPasswordAge = patch.minPasswordAgeDays;
+    if (patch.lockoutThreshold !== undefined) out.lockoutThreshold = patch.lockoutThreshold;
+    if (patch.lockoutDurationMinutes !== undefined) out.lockoutDurationMinutes = patch.lockoutDurationMinutes;
+    if (patch.lockoutObservationWindowMinutes !== undefined) out.lockoutWindowMinutes = patch.lockoutObservationWindowMinutes;
+    if (patch.complexityEnabled !== undefined) out.complexityEnabled = patch.complexityEnabled;
+    if (patch.reversibleEncryptionEnabled !== undefined) out.reversibleEncryptionEnabled = patch.reversibleEncryptionEnabled;
+    return out;
+  }
+
+  private toPsoInfo(pso: { name: string; precedence: number; description: string; settings: Parameters<WindowsAdAdapter['toPolicyInfo']>[0] }): AdFineGrainedPasswordPolicyInfo {
+    return { name: pso.name, precedence: pso.precedence, description: pso.description, ...this.toPolicyInfo(pso.settings) };
+  }
+
+  getAcl(dn: string): AdAccessRuleInfo[] | null {
+    const store = this.requireStore('Get-ACL');
+    return store.getAcl(dn);
+  }
+
+  setAcl(dn: string, rules: AdAccessRuleInfo[]): AdOpResult {
+    const store = this.requireStore('Set-ACL');
+    return store.setAcl(dn, rules);
+  }
+
+  getDefaultDomainPasswordPolicy(): AdPasswordPolicyInfo {
+    const store = this.requireStore('Get-ADDefaultDomainPasswordPolicy');
+    return this.toPolicyInfo(store.getDefaultDomainPasswordPolicy());
+  }
+
+  setDefaultDomainPasswordPolicy(patch: Partial<AdPasswordPolicyInfo>): AdOpResult {
+    const store = this.requireStore('Set-ADDefaultDomainPasswordPolicy');
+    return store.setDefaultDomainPasswordPolicy(this.fromPolicyPatch(patch));
+  }
+
+  newFineGrainedPasswordPolicy(name: string, precedence: number, settings: Partial<AdPasswordPolicyInfo>, description?: string): AdOpResult {
+    const store = this.requireStore('New-ADFineGrainedPasswordPolicy');
+    return store.newFineGrainedPasswordPolicy(name, precedence, this.fromPolicyPatch(settings), description);
+  }
+
+  getFineGrainedPasswordPolicy(name: string): AdFineGrainedPasswordPolicyInfo | null {
+    const store = this.requireStore('Get-ADFineGrainedPasswordPolicy');
+    const pso = store.getFineGrainedPasswordPolicy(name);
+    return pso ? this.toPsoInfo(pso) : null;
+  }
+
+  listFineGrainedPasswordPolicies(): AdFineGrainedPasswordPolicyInfo[] {
+    const store = this.requireStore('Get-ADFineGrainedPasswordPolicy');
+    return store.listFineGrainedPasswordPolicies().map(pso => this.toPsoInfo(pso));
+  }
+
+  addFineGrainedPasswordPolicySubject(name: string, subjects: string[]): AdOpResult {
+    const store = this.requireStore('Add-ADFineGrainedPasswordPolicySubject');
+    return store.addFineGrainedPasswordPolicySubject(name, subjects);
+  }
+
+  listFineGrainedPasswordPolicySubjects(name: string): string[] {
+    const store = this.requireStore('Get-ADFineGrainedPasswordPolicySubject');
+    return store.listFineGrainedPasswordPolicySubjects(name);
+  }
+
+  getResultantPasswordPolicy(userIdentity: string): AdFineGrainedPasswordPolicyInfo | null {
+    const store = this.requireStore('Get-ADUserResultantPasswordPolicy');
+    const pso = store.getResultantPasswordPolicy(userIdentity);
+    return pso ? this.toPsoInfo(pso) : null;
+  }
+
+  listReplicationFailures(): AdReplicationFailureInfo[] {
+    const store = this.requireStore('Get-ADReplicationFailure');
+    const server = this.pc as WindowsServer;
+    const selfFqdn = `${server.getHostname()}.${store.dnsName}`;
+    const byPartner = new Map<string, { first: number; count: number; lastError: string }>();
+    for (const e of server.getReplicationSignals().log.get()) {
+      if (e.ok) continue;
+      const err = e.error ?? 'unspecified replication error';
+      const existing = byPartner.get(e.partnerAddress);
+      if (existing) { existing.count += 1; existing.lastError = err; }
+      else byPartner.set(e.partnerAddress, { first: e.timestamp, count: 1, lastError: err });
+    }
+    return [...byPartner.entries()].map(([partner, info]) => ({
+      server: selfFqdn,
+      partner,
+      firstFailureTime: new Date(info.first * 1000).toUTCString(),
+      failureCount: info.count,
+      lastError: info.lastError,
+      failureType: 'LinkFailure',
+    }));
+  }
+
+  removeDomainController(name: string): AdOpResult {
+    const store = this.requireStore('Remove-ADDomainController');
+    const denied = this.requireAdmin('Remove-ADDomainController');
+    if (denied) return denied;
+    return store.removeComputer(name);
+  }
+
+  newUser(sam: string, opts: { password: string; fullName?: string; path?: string; enabled?: boolean; department?: string; title?: string; actingSam?: string }): AdOpResult {
     const store = this.requireStore('New-ADUser');
     const denied = this.requireAdmin('New-ADUser');
     if (denied) return denied;
     return store.newUser(sam, {
       password: opts.password, fullName: opts.fullName, enabled: opts.enabled,
       ou: opts.path ? store.resolveIdentity(opts.path) : undefined,
+      department: opts.department, title: opts.title, actingSam: opts.actingSam,
     });
   }
   getUser(identity: string): AdUserInfo | null {
     const store = this.requireStore('Get-ADUser');
     const u = store.getUser(store.resolveIdentity(identity));
-    return u ? { sam: u.sam, upn: u.upn, dn: u.dn, enabled: u.enabled, memberOf: u.memberOf, fullName: u.fullName } : null;
+    return u ? {
+      sam: u.sam, upn: u.upn, dn: u.dn, sid: u.sid, enabled: u.enabled, memberOf: u.memberOf, fullName: u.fullName,
+      department: u.department, title: u.title, servicePrincipalNames: u.servicePrincipalNames,
+    } : null;
   }
-  setUser(identity: string, opts: { enabled?: boolean; fullName?: string; password?: string }): AdOpResult {
+  setUser(identity: string, opts: { enabled?: boolean; fullName?: string; password?: string; department?: string; title?: string; addSpns?: string[]; removeSpns?: string[]; actingSam?: string }): AdOpResult {
     const store = this.requireStore('Set-ADUser');
     const denied = this.requireAdmin('Set-ADUser');
     if (denied) return denied;
     return store.setUser(store.resolveIdentity(identity), opts);
+  }
+  listUsers(): AdUserInfo[] {
+    return this.requireStore('Get-ADUser').listUsers().map(u => ({
+      sam: u.sam, upn: u.upn, dn: u.dn, sid: u.sid, enabled: u.enabled, memberOf: u.memberOf, fullName: u.fullName,
+      department: u.department, title: u.title, servicePrincipalNames: u.servicePrincipalNames,
+    }));
+  }
+  listObjectsWithSpns(): Array<{ name: string; servicePrincipalNames: string[] }> {
+    return this.requireStore('Get-ADObject').listObjectsWithSpns();
+  }
+  listLockedOutUsers(): Array<{ sam: string; name: string; badPwdCount: number }> {
+    return this.requireStore('Search-ADAccount').listLockedOutUsers();
   }
   removeUser(identity: string): AdOpResult {
     const store = this.requireStore('Remove-ADUser');
@@ -433,6 +571,9 @@ class WindowsAdAdapter implements IAdProvider {
     const store = this.requireStore('Get-ADGroup');
     const g = store.getGroup(store.resolveIdentity(identity));
     return g ? { sam: g.sam, dn: g.dn, scope: g.scope, members: g.members } : null;
+  }
+  listGroups(): AdGroupInfo[] {
+    return this.requireStore('Get-ADGroup').listGroups().map(g => ({ sam: g.sam, dn: g.dn, scope: g.scope, members: g.members }));
   }
   addGroupMember(groupIdentity: string, members: string[]): AdOpResult {
     const store = this.requireStore('Add-ADGroupMember');
@@ -461,7 +602,10 @@ class WindowsAdAdapter implements IAdProvider {
     const store = this.requireStore('Get-ADComputer');
     const name = store.resolveIdentity(identity).replace(/\$$/, '');
     const c = store.getComputer(name);
-    return c ? { name: c.name, dn: c.dn, enabled: c.enabled } : null;
+    return c ? { name: c.name, dn: c.dn, enabled: c.enabled, servicePrincipalNames: c.servicePrincipalNames } : null;
+  }
+  listComputers(): AdComputerInfo[] {
+    return this.requireStore('Get-ADComputer').listComputers().map(c => ({ name: c.name, dn: c.dn, enabled: c.enabled, servicePrincipalNames: c.servicePrincipalNames }));
   }
 
   setComputerAllowedToDelegateTo(identity: string, targetServiceNames: string[]): AdOpResult {
@@ -517,6 +661,7 @@ class WindowsAdAdapter implements IAdProvider {
   newDomain(
     newDomainDnsName: string, netbiosName: string | undefined, parentDomainName: string, parentDcAddress: string,
     credentialUser: string, credentialPassword: string, safeModeAdminPassword: string,
+    opts?: { installDns?: boolean },
   ): AdOpResult {
     this.requireRole('New-ADDomain');
     const denied = this.requireAdmin('New-ADDomain');
@@ -525,7 +670,13 @@ class WindowsAdAdapter implements IAdProvider {
     if (typeof server.newADDomain !== 'function') {
       return { ok: false, message: 'New-ADDomain : This computer cannot be promoted to a domain controller.' };
     }
-    return server.newADDomain(newDomainDnsName, netbiosName, parentDomainName, parentDcAddress, credentialUser, credentialPassword, safeModeAdminPassword);
+    return server.newADDomain(newDomainDnsName, netbiosName, parentDomainName, parentDcAddress, credentialUser, credentialPassword, safeModeAdminPassword, opts);
+  }
+
+  private fqdn(shortHostname: string): string {
+    const dnsName = this.pc.getDirectoryStore()?.dnsName;
+    if (!shortHostname) return '';
+    return dnsName ? `${shortHostname}.${dnsName}` : shortHostname;
   }
 
   getForest(): AdForestInfo | null {
@@ -533,7 +684,34 @@ class WindowsAdAdapter implements IAdProvider {
     const server = this.pc as WindowsServer;
     const forest = typeof server.getForest === 'function' ? server.getForest() : null;
     if (!forest) return null;
-    return { functionalLevel: forest.functionalLevel, domains: forest.listDomains().map(d => ({ ...d })) };
+    const fsmo = forest.getFsmoRoles();
+    return {
+      functionalLevel: forest.functionalLevel, domains: forest.listDomains().map(d => ({ ...d })),
+      schemaMaster: this.fqdn(fsmo.schemaMaster), domainNamingMaster: this.fqdn(fsmo.domainNamingMaster),
+    };
+  }
+
+  getDomain(): AdDomainInfo | null {
+    this.requireRole('Get-ADDomain');
+    const store = this.pc.getDirectoryStore();
+    if (!store) return null;
+    return {
+      dnsRoot: store.dnsName, netBiosName: store.netbiosName, domainMode: 'Windows2016Domain',
+      infrastructureMaster: this.fqdn(store.getDomainFsmoRoleOwner('InfrastructureMaster')),
+      pdcEmulator: this.fqdn(store.getDomainFsmoRoleOwner('PDCEmulator')),
+      ridMaster: this.fqdn(store.getDomainFsmoRoleOwner('RIDMaster')),
+    };
+  }
+
+  moveOperationMasterRole(targetHostname: string, roles: string[], force: boolean): AdOpResult {
+    this.requireRole('Move-ADDirectoryServerOperationMasterRole');
+    const denied = this.requireAdmin('Move-ADDirectoryServerOperationMasterRole');
+    if (denied) return denied;
+    const server = this.pc as WindowsServer;
+    if (typeof server.moveOperationMasterRole !== 'function') {
+      return { ok: false, message: 'Move-ADDirectoryServerOperationMasterRole : This computer is not a domain controller.' };
+    }
+    return server.moveOperationMasterRole(targetHostname, roles, force);
   }
 
   newTrust(
@@ -912,10 +1090,11 @@ class WindowsEventLogAdapter implements IEventLogProvider {
       eventId: e.eventId,
       category: e.category,
       message: e.message,
+      data: e.data,
     }));
   }
-  writeEntry(logName: string, source: string, eventId: number, entryType: string, message: string): void {
-    this.log.writeEventLog(logName, source, eventId, entryType as 'Information' | 'Warning' | 'Error' | 'SuccessAudit' | 'FailureAudit', message);
+  writeEntry(logName: string, source: string, eventId: number, entryType: string, message: string, data?: Record<string, string>): void {
+    this.log.writeEventLog(logName, source, eventId, entryType as 'Information' | 'Warning' | 'Error' | 'SuccessAudit' | 'FailureAudit', message, data);
   }
   clearLog(logName: string): string { return this.log.clearEventLog(logName); }
   newLog(logName: string, source: string): string { return this.log.newEventLog(logName, source); }
@@ -1717,7 +1896,10 @@ class WindowsDiskAdapter implements IDiskProvider {
 
 interface JoinableDevice {
   resolveHostnameSync(name: string): { toString(): string } | null;
-  joinDomainNow(domainName: string, dcAddress: string, credentialUser: string, credentialPassword: string): AdOpResult;
+  joinDomainNow(
+    domainName: string, dcAddress: string, credentialUser: string, credentialPassword: string,
+    opts?: { ouPath?: string; newName?: string },
+  ): AdOpResult;
   getDomainMembership(): DomainMembershipInfo | null;
 }
 
@@ -1726,12 +1908,12 @@ class WindowsComputerAdapter implements IComputerProvider {
 
   private device(): JoinableDevice { return this.pc as unknown as JoinableDevice; }
 
-  join(domainName: string, credential: { username: string; password: string }, server?: string): AdOpResult {
+  join(domainName: string, credential: { username: string; password: string }, server?: string, opts?: { ouPath?: string; newName?: string }): AdOpResult {
     const dcAddress = server ?? this.pc.resolveHostnameSync(domainName)?.toString();
     if (!dcAddress) {
       return { ok: false, message: `Computer '${this.pc.getHostname()}' failed to join domain '${domainName}': The specified domain either does not exist or could not be contacted.` };
     }
-    return this.device().joinDomainNow(domainName, dcAddress, credential.username, credential.password);
+    return this.device().joinDomainNow(domainName, dcAddress, credential.username, credential.password, opts);
   }
 
   getDomainInfo(): DomainMembershipInfo | null {
@@ -1772,6 +1954,14 @@ class WindowsGpoAdapter implements IGpoProvider {
 
   getDomainDn(): string {
     return this.requireDc('New-GPLink').getDomainDn();
+  }
+
+  setGpInheritance(targetDn: string, blocked: boolean): AdOpResult {
+    return this.requireDc('Set-GPInheritance').setGpInheritance(targetDn, blocked);
+  }
+
+  getGpInheritance(targetDn: string): { dn: string; gpoInheritanceBlocked: boolean; gpoLinks: string[] } | null {
+    return this.requireDc('Get-GPInheritance').getGpInheritance(targetDn);
   }
 }
 

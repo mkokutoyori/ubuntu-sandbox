@@ -618,8 +618,33 @@ function expandArrayAccess(
     // IFS's first char (defaulting to space). For `[@]` we use the
     // ARRAY_SEP sentinel so expandWords can split element-wise without
     // re-triggering IFS splitting on whitespace inside an element.
-    const joined = subscript === '@' ? arr.join(ARRAY_SEP) : arr.join(' ');
-    return trailing ? applyTrailingModifier(joined, trailing, env, name) : joined;
+    const sep = subscript === '@' ? ARRAY_SEP : ' ';
+    if (trailing) {
+      // `${arr[@]:off[:len]}` slices the element list, not the joined
+      // string. `:-`/`:=`/`:+`/`:?` are default-value modifiers, not
+      // slices, hence the lookahead.
+      const slice = parseSliceModifier(trailing);
+      if (slice) {
+        const off = evalSubscript(slice.offset, env);
+        if (!Number.isFinite(off)) return '';
+        const start = off < 0 ? Math.max(arr.length + off, 0) : Math.min(off, arr.length);
+        let sliced = arr.slice(start);
+        if (slice.length !== undefined) {
+          const len = evalSubscript(slice.length, env);
+          if (!Number.isFinite(len)) return '';
+          sliced = len < 0 ? sliced.slice(0, Math.max(sliced.length + len, 0)) : sliced.slice(0, len);
+        }
+        return sliced.join(sep);
+      }
+      // Default-value family judges the array as a whole (`${arr[@]:-x}`
+      // expands to x only when the array is unset or empty).
+      if (/^(:?[-=+?])/.test(trailing)) {
+        return applyTrailingModifier(arr.join(sep), trailing, env, name, arr.length === 0);
+      }
+      // Pattern/case/replace operators apply per element, as bash does.
+      return arr.map(el => applyTrailingModifier(el, trailing, env, name)).join(sep);
+    }
+    return arr.join(sep);
   }
   if (assoc) {
     // Substitute simple `$name` references in the key before lookup.
@@ -631,16 +656,53 @@ function expandArrayAccess(
     if (trailing) return applyTrailingModifier(value, trailing, env, name, elem === undefined);
     return value;
   }
-  const idx = Number.parseInt(subscript, 10);
+  const idx = evalSubscript(subscript, env);
   if (!Number.isFinite(idx)) return '';
   const elem = env.getArrayElement(name, idx);
+  // A trailing modifier still applies when the element is missing, so
+  // `${arr[9]:-default}` falls back exactly like the assoc path above.
+  if (trailing) return applyTrailingModifier(elem ?? '', trailing, env, name, elem === undefined);
   if (elem === undefined) {
     if (arr === undefined && env.get(name) === undefined && isNounsetActive(env)) {
       throw new BashRuntimeError(`${name}[${subscript}]: unbound variable`);
     }
     return '';
   }
-  return trailing ? applyTrailingModifier(elem, trailing, env, name) : elem;
+  return elem;
+}
+
+/**
+ * Indexed-array subscripts are arithmetic contexts in bash: `$i`, `i`,
+ * `i+1` and `-1` are all legal. Falls back to a plain integer parse when
+ * the expression engine rejects the text.
+ */
+function evalSubscript(subscript: string, env: Environment): number {
+  try {
+    return Number(evaluateArithmetic(subscript, env));
+  } catch {
+    return Number.parseInt(subscript, 10);
+  }
+}
+
+/**
+ * Split a `:offset[:length]` slice modifier. Returns null for the
+ * default-value family (`:-` `:=` `:+` `:?`) and non-slice modifiers.
+ * The second `:` is found at paren depth 0 so arithmetic offsets like
+ * `:(x-1):2` survive.
+ */
+function parseSliceModifier(mod: string): { offset: string; length?: string } | null {
+  if (!/^:(?![-=+?])/.test(mod)) return null;
+  const body = mod.slice(1);
+  let depth = 0;
+  for (let i = 0; i < body.length; i++) {
+    const ch = body[i];
+    if (ch === '(') depth++;
+    else if (ch === ')') depth--;
+    else if (ch === ':' && depth === 0) {
+      return { offset: body.slice(0, i), length: body.slice(i + 1) };
+    }
+  }
+  return { offset: body };
 }
 
 /**

@@ -28,6 +28,7 @@ function makeCtx(): IRmanOracleContext {
     ],
     getSpfileParam: () => undefined,
     getInstanceState: () => 'MOUNT',
+    getArchivelogPaths: () => ['/u01/backup/arch/arch_1_1.arc'],
   } as unknown as IRmanOracleContext;
 }
 

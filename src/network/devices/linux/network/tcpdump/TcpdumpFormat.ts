@@ -8,7 +8,7 @@ export function banner(opt: TcpdumpOptions): string[] {
     lines.push('tcpdump: verbose output suppressed, use -v[v]... for full protocol decode');
   }
   lines.push(
-    `listening on ${opt.iface}, link-type ${opt.linkType} (Ethernet), capture size ${opt.snaplen} bytes`,
+    `listening on ${opt.iface}, link-type ${opt.linkType} (Ethernet), snapshot length ${opt.snaplen} bytes`,
   );
   return lines;
 }

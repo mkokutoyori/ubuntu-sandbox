@@ -6,6 +6,13 @@ import { isValidIPv4 } from '@/network/core/ip';
 
 const IPUTILS_VERSION = 'ping utility, iputils-s20221126, https://github.com/iputils/iputils/';
 const DEFAULT_SIZE = 56;
+// This default is only actually used by the non-interactive `runPing()`
+// below, which loops `parsed.count` times synchronously and returns — it
+// cannot support real "continuous until Ctrl+C" (there's no interactive
+// context to interrupt it, so 0/infinite would hang forever). The
+// interactive terminal path (`LinuxTerminalSession.tryStartPingStream`)
+// overrides this to the real Linux "continuous by default" behavior
+// itself, using `countGiven` to tell "no -c" apart from an explicit one.
 const DEFAULT_COUNT = 4;
 const DEFAULT_TIMEOUT_MS = 500;
 const DEFAULT_INTERVAL_MS = 1000;
@@ -22,6 +29,7 @@ Options:
   -c count         Stop after sending count ECHO_REQUEST packets.
   -s packetsize    Specifies the number of data bytes to be sent.
   -t ttl           Set the IP Time to Live.
+  -w deadline      Time to wait before exiting, regardless of packet count.
   -W timeout       Time to wait for a response, in seconds.
   -i interval      Wait interval seconds between sending each packet.
   -I interface     Set source address to specified interface address.
@@ -41,10 +49,16 @@ Options:
 
 export interface ParsedPingArgs {
   count: number;
+  /** True once `-c` has been explicitly given — lets callers that support
+   *  real unbounded pinging (the interactive terminal) tell "no -c" apart
+   *  from a defaulted `count`, instead of treating both the same way. */
+  countGiven: boolean;
   ttl?: number;
   size: number;
   timeoutMs: number;
   intervalMs: number;
+  /** `-w deadline` — stop after this many milliseconds, regardless of `-c`. */
+  deadlineMs?: number;
   targetStr: string;
   /** True once a destination positional argument has been seen — distinguishes "omitted" from "given as an empty string". */
   targetGiven: boolean;
@@ -76,6 +90,7 @@ function isBroadcastAddress(ip: string): boolean {
 export function parsePingArgs(args: string[], cmdName: 'ping' | 'ping6' = 'ping'): ParsedPingArgs {
   const result: ParsedPingArgs = {
     count: DEFAULT_COUNT,
+    countGiven: false,
     size: DEFAULT_SIZE,
     timeoutMs: DEFAULT_TIMEOUT_MS,
     intervalMs: DEFAULT_INTERVAL_MS,
@@ -118,7 +133,7 @@ export function parsePingArgs(args: string[], cmdName: 'ping' | 'ping6' = 'ping'
       if (v <= 0) {
         result.parseError = `ping: invalid argument: '${next}' (must be > 0)`; return result;
       }
-      result.count = v; i++; continue;
+      result.count = v; result.countGiven = true; i++; continue;
     }
 
     if (a === '-s') {
@@ -161,6 +176,15 @@ export function parsePingArgs(args: string[], cmdName: 'ping' | 'ping6' = 'ping'
         result.parseError = `ping: invalid argument: '${next}'`; return result;
       }
       result.intervalMs = Math.round(v * 1000); i++; continue;
+    }
+
+    if (a === '-w') {
+      if (!next) { result.parseError = 'ping: option requires an argument -- w\n' + PING_USAGE; return result; }
+      const v = parseFloat(next);
+      if (isNaN(v) || !/^[\d.]+$/.test(next)) {
+        result.parseError = `ping: invalid argument: '${next}'`; return result;
+      }
+      result.deadlineMs = Math.round(v * 1000); i++; continue;
     }
 
     if (a === '-I') {
@@ -351,14 +375,13 @@ async function runPing(
   }
 
   if (parsed.v6 || rawTarget.includes(':')) {
-    let targetIP6: IPv6Address;
-    try {
-      targetIP6 = new IPv6Address(rawTarget);
-    } catch {
+    const targetIP6 = await ctx.net.resolveHostname6(rawTarget);
+    if (!targetIP6) {
       return `${cmdName}: ${rawTarget}: Name or service not known`;
     }
     const results = await ctx.net.ping6Sequence(targetIP6, parsed.count, parsed.timeoutMs);
-    return ctx.fmt.formatPing6Output(targetIP6, parsed.count, results, parsed.size);
+    const isHostname6 = rawTarget !== targetIP6.toString();
+    return ctx.fmt.formatPing6Output(targetIP6, parsed.count, results, parsed.size, isHostname6 ? rawTarget : undefined);
   }
 
   const targetIP = await ctx.net.resolveHostname(rawTarget);
@@ -435,7 +458,7 @@ function formatPingOutput(
 }
 
 const PING_FLAGS_LIST = [
-  '-c', '-s', '-t', '-W', '-i', '-I', '-p', '-q', '-v', '-n',
+  '-c', '-s', '-t', '-w', '-W', '-i', '-I', '-p', '-q', '-v', '-n',
   '-D', '-b', '-M', '-f', '-L', '-V', '-h', '-4', '-6',
 ];
 
@@ -451,12 +474,13 @@ export const pingCommand: LinuxCommand = {
   name: 'ping',
   needsNetworkContext: true,
   manSection: 8,
-  usage: 'ping [-aAbBdDfhLnOqrRUvV64] [-c count] [-i interval] [-I interface] [-M pmtudisc_opt] [-p pattern] [-s packetsize] [-t ttl] [-W timeout] destination',
+  usage: 'ping [-aAbBdDfhLnOqrRUvV64] [-c count] [-i interval] [-I interface] [-M pmtudisc_opt] [-p pattern] [-s packetsize] [-t ttl] [-w deadline] [-W timeout] destination',
   help: 'Send ICMP ECHO_REQUEST packets to network hosts.',
   options: [
     { flag: '-c', description: 'Stop after sending count packets.', takesArg: true, argName: 'count' },
     { flag: '-s', description: 'Specifies the number of data bytes to be sent (default 56).', takesArg: true, argName: 'packetsize' },
     { flag: '-t', description: 'Set the IP Time to Live.', takesArg: true, argName: 'ttl' },
+    { flag: '-w', description: 'Stop after deadline seconds, regardless of packets sent/received.', takesArg: true, argName: 'deadline' },
     { flag: '-W', description: 'Time to wait for a response, in seconds.', takesArg: true, argName: 'timeout' },
     { flag: '-i', description: 'Wait interval seconds between packets (default 1).', takesArg: true, argName: 'interval' },
     { flag: '-I', description: 'Bind to a specific interface address.', takesArg: true, argName: 'interface' },

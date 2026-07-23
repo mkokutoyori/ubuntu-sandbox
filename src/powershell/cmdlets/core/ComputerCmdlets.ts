@@ -14,7 +14,7 @@ import { parseCredentialArg } from './RemotingCmdlets';
 export class AddComputerCmdlet implements ICmdlet {
   readonly name = 'add-computer';
   readonly aliases = [] as const;
-  readonly parameters = ['DomainName', 'Credential', 'Server', 'Restart', 'Force'] as const;
+  readonly parameters = ['DomainName', 'Credential', 'Server', 'OUPath', 'NewName', 'Restart', 'Force'] as const;
 
   execute(ctx: CmdletContext): PSValue {
     const computer = ctx.providers.computer;
@@ -34,8 +34,10 @@ export class AddComputerCmdlet implements ICmdlet {
     }
     const credential = parseCredentialArg(credentialRaw);
     const server = ctx.named['server'] !== undefined ? psValueToString(ctx.named['server']) : undefined;
+    const ouPath = ctx.named['oupath'] !== undefined ? psValueToString(ctx.named['oupath']) : undefined;
+    const newName = ctx.named['newname'] !== undefined ? psValueToString(ctx.named['newname']) : undefined;
 
-    const res = computer.join(domainName, credential, server);
+    const res = computer.join(domainName, credential, server, { ouPath, newName });
     if (!res.ok) { ctx.emitError(`Add-Computer : ${res.message}`); return null; }
     return null;
   }

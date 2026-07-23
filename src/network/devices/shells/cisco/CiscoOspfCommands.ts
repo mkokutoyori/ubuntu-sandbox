@@ -212,11 +212,13 @@ export function buildConfigRouterOSPFCommands(trie: CommandTrie, ctx: CiscoShell
       ospf.setAreaType(areaId, 'nssa');
       return '';
     } else if (subCmd === 'range') {
-      // area <id> range <network> <mask>
+      // area <id> range <network> <mask> [not-advertise]
       if (args.length < 4) return '% Incomplete command.';
       const extra = ctx.r()._getOSPFExtraConfig();
       if (!extra.areaRanges.has(areaId)) extra.areaRanges.set(areaId, []);
       extra.areaRanges.get(areaId)!.push({ network: args[2], mask: args[3] });
+      const advertise = !args.some(a => a.toLowerCase() === 'not-advertise');
+      ospf.addAreaRange(areaId, args[2], args[3], advertise);
       return '';
     } else if (subCmd === 'virtual-link') {
       if (args.length < 3) return '% Incomplete command.';
@@ -1060,43 +1062,24 @@ export function registerOSPFInterfaceCommands(configIfTrie: CommandTrie, ctx: Ci
       svc.addMapping(ifName, '224.0.0.0', args[2], { multicast: true });
     }
     else if (sub === 'map' && args[1] && args[2]) {
+      // Static NBMA binding only — real Cisco NHRP doesn't consider a peer
+      // "up" just because a static map was typed; that requires an actual
+      // Registration/Resolution Reply (see NhrpEngine).
       svc.addMapping(ifName, args[1], args[2], { static: true });
-      const dmvpn = ctx.r().getDmvpnService();
-      const profile = dmvpn.listProfiles().find(p => p.ifName === ifName);
-      if (profile) {
-        const alreadyHave = dmvpn.listSessions().some(
-          s => s.ifName === ifName && s.peerTunnelAddress === args[1]
-        );
-        if (!alreadyHave) {
-          dmvpn.registerSession({
-            ifName,
-            peerNbmaAddress: args[2],
-            peerTunnelAddress: args[1],
-            role: profile.role,
-            state: 'UP',
-            attribute: 'S',
-          });
-        }
-      }
     }
     else if (sub === 'nhs' && args[1]) {
       svc.addNhsServer(ifName, args[1]);
-      const dmvpn = ctx.r().getDmvpnService();
-      const profile = dmvpn.listProfiles().find(p => p.ifName === ifName);
-      if (profile && profile.role === 'spoke') {
-        const alreadyHave = dmvpn.listSessions().some(
-          s => s.ifName === ifName && s.peerTunnelAddress === args[1]
-        );
-        if (!alreadyHave) {
-          dmvpn.registerSession({
-            ifName,
-            peerNbmaAddress: args[1],
-            peerTunnelAddress: args[1],
-            role: 'spoke',
-            state: 'UP',
-            attribute: 'S',
-          });
-        }
+      // Real RFC 2332 §5.2.3 registration: send a Registration Request to
+      // the configured NHS now (over IP protocol 54, via NhrpEngine) rather
+      // than fabricating a DMVPN session directly. The tunnel interface
+      // itself carries no cable — `tunnel source` names the real,
+      // NBMA-cabled physical interface the packet must actually go out.
+      // The NHS marks the spoke's binding "up" only once the real reply lands.
+      const ports = ctx.r()._getPortsInternal();
+      const tunnelIp = ports.get(ifName)?.getIPAddress()?.toString();
+      const physicalIfName = (ctx.r()._getOSPFExtraConfig().pendingIfConfig.get(ifName) as { tunnelSource?: string } | undefined)?.tunnelSource;
+      if (tunnelIp && physicalIfName && ports.has(physicalIfName)) {
+        ctx.r().getNhrpEngine().sendRegistrationRequest(physicalIfName, ifName, tunnelIp, args[1]);
       }
     }
     else if (sub === 'shortcut') svc.configure(ifName, { shortcut: true });
@@ -2384,12 +2367,16 @@ function getOSPFRouteCode(router: Router, net: string, cidr: number, routeEntry?
   if (routeEntry?._metricType || routeEntry?._isDefault || routeEntry?.routeType || routeEntry?._isStubDefault) {
     // Stub area default route
     if (routeEntry._isStubDefault && isDefault) return 'O*IA';
-    const mt = routeEntry._metricType ?? 2;
+    // Real OSPFEngine routes (routeType 'external-type1'/'external-type2', from
+    // processExternalRoutes()) don't carry a separate `_metricType` field — the
+    // type is baked into routeType itself.
+    const isType1External = routeEntry.routeType === 'type1-external' || routeEntry.routeType === 'external-type1';
+    const mt = routeEntry._metricType ?? (isType1External ? 1 : 2);
     if (isDefault && (routeEntry._metricType || routeEntry.routeType?.includes('external'))) {
       return mt === 1 ? 'O*E1' : 'O*E2';
     }
-    if (routeEntry.routeType === 'type1-external') return 'O E1';
-    if (routeEntry.routeType === 'type2-external') return 'O E2';
+    if (routeEntry.routeType === 'type1-external' || routeEntry.routeType === 'external-type1') return 'O E1';
+    if (routeEntry.routeType === 'type2-external' || routeEntry.routeType === 'external-type2') return 'O E2';
     if (isDefault && routeEntry.routeType === 'inter-area') return 'O*IA';
     if (routeEntry.routeType === 'inter-area') return 'O IA';
   }

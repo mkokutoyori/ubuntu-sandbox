@@ -38,13 +38,14 @@ async function exec(line: string): Promise<string> {
 describe('-ErrorAction SilentlyContinue / Ignore', () => {
   it('Get-Process -Name <missing> -EA SilentlyContinue → no ERROR line', async () => {
     const out = await exec('Get-Process -Name notepad -ErrorAction SilentlyContinue');
-    expect(out).not.toMatch(/^ERROR:/m);
+    expect(out).not.toMatch(/^Get-Process :/m);
     expect(out).not.toMatch(/Cannot find a process/i);
   });
 
   it('Get-Process -Name <missing> -EA Ignore → no ERROR line', async () => {
     const out = await exec('Get-Process -Name notepad -ErrorAction Ignore');
-    expect(out).not.toMatch(/^ERROR:/m);
+    expect(out).not.toMatch(/^Get-Process :/m);
+    expect(out).not.toMatch(/Cannot find a process/i);
   });
 
   it('Get-Process -Name <missing> (no -EA) → ERROR line visible (default Continue)', async () => {

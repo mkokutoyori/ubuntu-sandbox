@@ -30,12 +30,12 @@ import { NetworkOsAccount, type AccountServiceType, type PasswordHashAlgorithm }
 import {
   registerHuaweiCommonSecurity, registerHuaweiCommonSecurityDisplay,
 } from './huawei/HuaweiCommonSecurity';
-import { IPAddress } from '../../core/types';
+import { IPAddress, SubnetMask } from '../../core/types';
 
 // Extracted command modules
 import {
   type HuaweiDisplayState,
-  registerDisplayCommands, displayCurrentConfig,
+  registerDisplayCommands, displayCurrentConfig, resolveHuaweiInterfaceName,
 } from './huawei/HuaweiDisplayCommands';
 import { huaweiInteractionPlanFor } from './huawei/HuaweiInteractionPlans';
 import type { CommandInteractionPlan } from '@/shell/interaction/CommandInteraction';
@@ -303,16 +303,52 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     return this.routerRef;
   }
 
+  /** `display current-configuration` text — source for `save` (Router.getRunningConfig). */
+  getRunningConfigText(router: Router): string {
+    return displayCurrentConfig(router, this.dhcpEnabled, this.dhcpSnoopingEnabled, this.dhcpSelectGlobalSet);
+  }
+
+  /** Re-apply saved config text onto live router state (VRP reboot). */
+  applyConfigText(router: Router, text: string): void {
+    let curIface: string | null = null;
+    for (const raw of text.split('\n')) {
+      const line = raw.trim();
+      if (!line || line === '#') { curIface = null; continue; }
+      let g: RegExpMatchArray | null;
+      if (!/^\s/.test(raw)) {
+        curIface = null;
+        if ((g = line.match(/^sysname\s+(\S+)/))) {
+          router._setHostnameInternal(g[1]);
+        } else if ((g = line.match(/^interface\s+(\S+)/))) {
+          curIface = resolveHuaweiInterfaceName(router, g[1]) ?? g[1];
+        } else if ((g = line.match(/^ip route-static\s+(\S+)\s+(\S+)\s+(\S+)/))) {
+          try {
+            const mask = /^\d+$/.test(g[2]) ? SubnetMask.fromCIDR(parseInt(g[2], 10)) : new SubnetMask(g[2]);
+            const nextHop = new IPAddress(g[3]);
+            if (g[1] === '0.0.0.0' && mask.toString() === '0.0.0.0') router.setDefaultRoute(nextHop);
+            else router.addStaticRoute(new IPAddress(g[1]), mask, nextHop);
+          } catch { /* malformed saved line — skip like real VRP would reject it */ }
+        }
+        continue;
+      }
+      if (!curIface) continue;
+      if ((g = line.match(/^description\s+(.+)/))) {
+        router.setInterfaceDescription(curIface, g[1]);
+      } else if ((g = line.match(/^ip address\s+(\S+)\s+(\S+)/))) {
+        try { router.configureInterface(curIface, new IPAddress(g[1]), new SubnetMask(g[2])); } catch { /* malformed */ }
+      } else if (line === 'shutdown') {
+        router.getPort(curIface)?.setUp(false);
+      }
+    }
+  }
+
   /**
    * Capture the current configuration as the device's startup snapshot —
    * the state `display saved-configuration` renders and
    * `reset saved-configuration` clears.
    */
   private captureSavedConfiguration(): void {
-    const text = displayCurrentConfig(
-      this.r(), this.dhcpEnabled, this.dhcpSnoopingEnabled, this.dhcpSelectGlobalSet,
-    );
-    this.r()._captureStartupConfig(text);
+    this.r().writeMemory();
   }
 
   /** Command-owned interactive flows (IoC) — see HuaweiInteractionPlans. */
@@ -327,6 +363,8 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     r.powerOn();
     this.mode = 'user';
     this.selectedInterface = null;
+    r._resetConfigurableStateForReload();
+    r._restoreStartupConfig();
     return 'Info: The system is rebooting ...\nSystem restart completed.';
   }
 
@@ -1215,13 +1253,18 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
       const asn = parseInt(args[0] ?? '', 10);
       if (isNaN(asn)) return 'Error: Invalid AS number';
       getRouter().getHuaweiRoutingExtras().ensureBgp(asn);
+      getRouter().getBGPEngine().enable({ asn });
       this.bgpAsn = asn;
       this.mode = 'bgp';
       return '';
     });
     t.registerGreedy('undo bgp', 'Remove BGP', (args) => {
       const asn = parseInt(args[0] ?? '', 10);
-      if (!isNaN(asn)) getRouter().getHuaweiRoutingExtras().removeBgp();
+      if (!isNaN(asn)) {
+        getRouter().getHuaweiRoutingExtras().removeBgp();
+        getRouter().getBGPEngine().disable();
+        getRouter().convergeDynamicRouting();
+      }
       return '';
     });
     t.registerGreedy('isis', 'Configure IS-IS routing', (args) => {
@@ -1568,13 +1611,18 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
       const asn = parseInt(args[0] ?? '', 10);
       if (isNaN(asn)) return 'Error: Invalid AS number';
       this.r().getHuaweiRoutingExtras().ensureBgp(asn);
+      this.r().getBGPEngine().enable({ asn });
       this.bgpAsn = asn;
       this.mode = 'bgp';
       return '';
     });
     t.registerGreedy('undo bgp', 'Remove BGP', (args) => {
       const asn = parseInt(args[0] ?? '', 10);
-      if (!isNaN(asn)) this.r().getHuaweiRoutingExtras().removeBgp();
+      if (!isNaN(asn)) {
+        this.r().getHuaweiRoutingExtras().removeBgp();
+        this.r().getBGPEngine().disable();
+        this.r().convergeDynamicRouting();
+      }
       return '';
     });
     t.registerGreedy('bfd', 'BFD configuration / session', (args) => {
@@ -2444,13 +2492,23 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     const t = this.bgpTrie;
     const ex = () => this.r().getHuaweiRoutingExtras();
     const bgp = () => this.bgpAsn !== null ? ex().ensureBgp(this.bgpAsn) : null;
+    // Real engine driven alongside the config facade (asRunningConfigLines
+    // reads the facade; peering/routes read the engine — see
+    // HuaweiDisplayCommands.ts's `display bgp peer`/`display bgp
+    // routing-table`, audit 02).
+    const bgpEng = () => this.r().getBGPEngine();
+    const converge = () => this.r().convergeDynamicRouting();
     t.registerGreedy('router-id', 'Set BGP router-id', (args) => {
       const b = bgp(); if (b && args[0]) b.routerId = args[0];
+      if (args[0]) bgpEng().getConfig().routerId = args[0];
       return '';
     });
     t.registerGreedy('network', 'Advertise a network', (args) => {
       const b = bgp(); if (!b || !args[0]) return '';
-      b.networks.push({ ip: args[0], mask: args[1] ?? '255.255.255.0' });
+      const mask = args[1] ?? '255.255.255.0';
+      b.networks.push({ ip: args[0], mask });
+      bgpEng().getConfig().networks.push({ network: args[0], mask });
+      converge();
       return '';
     });
     t.registerGreedy('aggregate', 'Aggregate routes', (args) => {
@@ -2467,9 +2525,15 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     t.registerGreedy('peer', 'Configure a BGP peer', (args, raw) => {
       const b = bgp(); if (!b || !args[0]) return '';
       const peer = b.peers.get(args[0]) ?? { ip: args[0], rawLines: [] };
+      // Real engine session config — a VRP peer is active for IPv4
+      // unicast as soon as it's configured under [bgp] (no separate
+      // "activate" step like Cisco's address-family mode).
+      const ec = bgpEng().getConfig();
+      let bn = ec.neighbors.get(args[0]);
+      if (!bn) { bn = { ip: args[0], activated: true }; ec.neighbors.set(args[0], bn); }
       for (let i = 1; i < args.length; i++) {
         const a = args[i];
-        if (a === 'as-number' && args[i + 1]) { peer.asNumber = parseInt(args[i + 1], 10); i++; }
+        if (a === 'as-number' && args[i + 1]) { peer.asNumber = parseInt(args[i + 1], 10); bn.remoteAs = peer.asNumber; i++; }
         else if (a === 'description' && args[i + 1]) { peer.description = args.slice(i + 1).join(' '); i = args.length; }
         else if (a === 'group' && args[i + 1]) { peer.groupName = args[i + 1]; i++; }
         else if (a === 'connect-interface' && args[i + 1]) { peer.connectInterface = args[i + 1]; i++; }
@@ -2478,6 +2542,7 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
       const line = raw ?? `peer ${args.join(' ')}`;
       if (!peer.rawLines.includes(line)) peer.rawLines.push(line);
       b.peers.set(args[0], peer);
+      converge();
       return '';
     });
     t.registerGreedy('import-route', 'Import routes', (args) => {

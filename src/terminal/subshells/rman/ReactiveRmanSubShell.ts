@@ -18,7 +18,7 @@ import type { IRmanOracleContext } from './integration/IRmanOracleContext';
 import { RmanSession } from './session/RmanSession';
 import { RmanSessionOptionsBuilder } from './session/RmanSessionOptionsBuilder';
 import { rmanErrorMessage, type RmanError } from './core/RmanError';
-import { formatOracleDate } from './core/pureUtils';
+import { formatOracleDate, formatElapsed, simulateBackupElapsedMs } from './core/pureUtils';
 import { LinuxRmanContext } from './integration/LinuxRmanContext';
 import { RmanLoggerActor } from './actors/RmanLoggerActor';
 import { OracleInstanceWatcherActor } from './actors/OracleInstanceWatcherActor';
@@ -173,7 +173,7 @@ export class ReactiveRmanSubShell implements ISubShell {
         this._push(`piece handle=${e.piece.path} tag=${e.piece.tag.label}`);
         break;
       case 'BACKUP_SET_COMPLETE':
-        this._push('channel ORA_DISK_1: backup set complete, elapsed time: 00:00:15');
+        this._push(`channel ORA_DISK_1: backup set complete, elapsed time: ${formatElapsed(simulateBackupElapsedMs(e.sizeBytes))}`);
         break;
       case 'RESTORE_DATAFILE_STARTED':
         this._push(`channel ${e.channelId}: restoring datafile ${String(e.fileNo).padStart(5, '0')} to ${e.to}`);

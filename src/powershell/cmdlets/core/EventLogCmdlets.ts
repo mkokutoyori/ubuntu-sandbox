@@ -26,6 +26,18 @@ function shortEventTime(d: Date): string {
   return `${p2(d.getMonth() + 1)}/${p2(d.getDate())} ${p2(d.getHours())}:${p2(d.getMinutes())}`;
 }
 
+function xmlEscape(s: string): string {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+/** Real Windows events surface their structured payload as `<EventData><Data Name="...">value</Data>...</EventData>` — this is what `[xml]$_.ToXml()` scripts (Get-ADSecurityReport-style correlation) parse. */
+function buildEventXml(e: EventLogEntryInfo): string {
+  const dataXml = Object.entries(e.data ?? {})
+    .map(([k, v]) => `<Data Name="${xmlEscape(k)}">${xmlEscape(v)}</Data>`)
+    .join('');
+  return `<Event><System><EventID>${e.eventId}</EventID><TimeCreated SystemTime="${e.timeGenerated.toISOString()}"/><Provider Name="${xmlEscape(e.source)}"/></System><EventData>${dataXml}</EventData></Event>`;
+}
+
 function entryToPSObject(e: EventLogEntryInfo): Record<string, PSValue> {
   return {
     Index:         e.index,
@@ -159,10 +171,17 @@ export class LimitEventLogCmdlet implements ICmdlet {
 
 // ── Get-WinEvent (modern API — same data behind it for the simulator) ─────
 
+function hashtableGet(h: Record<string, PSValue>, key: string): PSValue {
+  if (key in h) return h[key];
+  const found = Object.keys(h).find(k => k.toLowerCase() === key.toLowerCase());
+  return found !== undefined ? h[found] : undefined;
+}
+
 export class GetWinEventCmdlet implements ICmdlet {
   readonly name = 'get-winevent';
   readonly displayName = 'Get-WinEvent';
   readonly aliases = [] as const;
+  readonly parameters = ['LogName', 'FilterHashtable', 'MaxEvents', 'ListLog', 'ListProvider'] as const;
 
   execute(ctx: CmdletContext): PSValue {
     const log = requireEventLog(ctx);
@@ -173,10 +192,41 @@ export class GetWinEventCmdlet implements ICmdlet {
         MaximumSizeInBytes: l.maxSizeKB * 1024,
       } as Record<string, PSValue>)) as PSValue;
     }
-    const logName = psValueToString(ctx.named['logname'] ?? ctx.positional[0] ?? '');
-    if (!logName) { ctx.emitError('Get-WinEvent requires -LogName or -ListLog'); return null; }
-    const max = ctx.named['maxevents'] ? Number(ctx.named['maxevents']) : undefined;
-    const entries = log.getEntries(logName, { newest: max });
+
+    const filter = ctx.named['filterhashtable'];
+    let logName: string;
+    let ids: number[] | null = null;
+    let startTime: Date | null = null;
+    let endTime: Date | null = null;
+    let filterMaxEvents: number | undefined;
+
+    if (filter !== undefined && filter !== null && typeof filter === 'object' && !Array.isArray(filter) && !(filter instanceof Date)) {
+      const f = filter as Record<string, PSValue>;
+      logName = psValueToString(hashtableGet(f, 'LogName') ?? '');
+      const idVal = hashtableGet(f, 'Id');
+      if (idVal !== undefined) ids = (Array.isArray(idVal) ? idVal : [idVal]).map(v => Number(v));
+      const st = hashtableGet(f, 'StartTime');
+      if (st instanceof Date) startTime = st;
+      const et = hashtableGet(f, 'EndTime');
+      if (et instanceof Date) endTime = et;
+      const me = hashtableGet(f, 'MaxEvents');
+      if (me !== undefined) filterMaxEvents = Number(me);
+    } else {
+      logName = psValueToString(ctx.named['logname'] ?? ctx.positional[0] ?? '');
+    }
+    if (!logName) { ctx.emitError('Get-WinEvent requires -LogName, -FilterHashtable, or -ListLog'); return null; }
+
+    const max = ctx.named['maxevents'] !== undefined ? Number(ctx.named['maxevents']) : filterMaxEvents;
+    let entries = log.getEntries(logName, {});
+    if (ids) entries = entries.filter(e => ids!.includes(e.eventId));
+    if (startTime) entries = entries.filter(e => e.timeGenerated >= startTime!);
+    if (endTime) entries = entries.filter(e => e.timeGenerated <= endTime!);
+    if (max !== undefined) entries = entries.slice(0, max);
+
+    if (entries.length === 0) {
+      ctx.emitError('No events were found that match the specified selection criteria.');
+      return [];
+    }
     return entries.map(e => ({
       LogName:        logName,
       Id:             e.eventId,
@@ -185,6 +235,7 @@ export class GetWinEventCmdlet implements ICmdlet {
       TimeCreated:    e.timeGenerated,
       Message:        e.message,
       RecordId:       e.index,
+      ToXml:          () => buildEventXml(e),
     } as Record<string, PSValue>)) as PSValue;
   }
 }

@@ -42,7 +42,7 @@ export function runScript(
   ctx: ShellContext,
   scriptPath: string,
   scriptArgs: string[],
-  executeCommand: (args: string[], env?: Record<string, string>, background?: boolean) => { output: string; exitCode: number; backgroundPid?: number },
+  executeCommand: (args: string[], env?: Record<string, string>, background?: boolean, outputPiped?: boolean) => { output: string; exitCode: number; backgroundPid?: number },
   aliases?: AliasTable,
   functions?: Map<string, import('@/bash/parser/ASTNode').Command>,
   invocation: 'direct' | 'interpreter' = 'direct',
@@ -91,7 +91,7 @@ export function runScriptContent(
   content: string,
   scriptName: string,
   scriptArgs: string[],
-  executeCommand: (args: string[], env?: Record<string, string>, background?: boolean) => { output: string; exitCode: number; backgroundPid?: number },
+  executeCommand: (args: string[], env?: Record<string, string>, background?: boolean, outputPiped?: boolean) => { output: string; exitCode: number; backgroundPid?: number },
   variables?: Record<string, string>,
   io?: IOContext,
   identity?: { pid?: number; ppid?: number; initialExitCode?: number; daemonMode?: boolean },
@@ -110,7 +110,7 @@ export function runScriptContent(
     const ast = parser.parse(tokens);
 
     interp = new BashInterpreter({
-      executeCommand: (args, env, background) => executeCommand(args, env, background),
+      executeCommand: (args, env, background, outputPiped) => executeCommand(args, env, background, outputPiped),
       variables: variables ?? {},
       scriptName,
       positionalArgs: scriptArgs,
@@ -201,7 +201,7 @@ export async function runScriptContentAsync(
   content: string,
   scriptName: string,
   scriptArgs: string[],
-  executeCommand: (args: string[], env?: Record<string, string>, background?: boolean) =>
+  executeCommand: (args: string[], env?: Record<string, string>, background?: boolean, outputPiped?: boolean) =>
     { output: string; exitCode: number; stderr?: string; backgroundPid?: number }
     | Promise<{ output: string; exitCode: number; stderr?: string; backgroundPid?: number }>,
   variables?: Record<string, string>,
@@ -221,7 +221,7 @@ export async function runScriptContentAsync(
     const ast = parser.parse(tokens);
 
     interp = new BashInterpreter({
-      executeCommand: (args, env, background) => executeCommand(args, env, background),
+      executeCommand: (args, env, background, outputPiped) => executeCommand(args, env, background, outputPiped),
       variables: variables ?? {},
       scriptName,
       positionalArgs: scriptArgs,

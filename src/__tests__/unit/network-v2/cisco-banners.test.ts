@@ -183,7 +183,7 @@ describe("Scénario 3 — show running-config affiche toujours ^C...^C comme dé
     await r.executeCommand('banner motd #WELCOME#');
     await r.executeCommand('end');
     const rc = await r.executeCommand('show running-config');
-    expect(rc).toContain('banner motd ^CWELCOME^C');
+    expect(rc).toContain('banner motd ^C\nWELCOME\n^C');
     expect(rc).not.toContain('banner motd #WELCOME#');
   });
 });

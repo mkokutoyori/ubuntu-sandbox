@@ -132,10 +132,13 @@ function formatPingOutput(target: IPAddress, count: number, results: PingResult[
   return renderPingBody(formatPingHeader(target, size, hostname), String(target), count, results, size);
 }
 
-function formatPing6Output(target: IPv6Address, count: number, results: PingResult[], size: number = 56, hostname?: string): string {
+export function formatPing6Header(target: IPv6Address, size: number = 56, hostname?: string): string {
   const displayName = hostname ?? target.toString();
-  const header = `PING ${displayName}(${target}) ${size} data bytes`;
-  return renderPingBody(header, String(target), count, results, size);
+  return `PING ${displayName}(${target}) ${size} data bytes`;
+}
+
+function formatPing6Output(target: IPv6Address, count: number, results: PingResult[], size: number = 56, hostname?: string): string {
+  return renderPingBody(formatPing6Header(target, size, hostname), String(target), count, results, size);
 }
 
 /** Per-packet lines + statistics block, shared by ping and ping6. */

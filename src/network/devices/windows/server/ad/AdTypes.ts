@@ -11,11 +11,24 @@ export interface AdUser {
   readonly sam: string;
   readonly upn: string;
   readonly dn: string;
+  readonly sid: string;
   ou: string;
   enabled: boolean;
   password: string;
   memberOf: string[];
   fullName: string;
+  department: string;
+  title: string;
+  servicePrincipalNames: string[];
+}
+
+export interface AdAccessRule {
+  identitySam: string;
+  rights: string;
+  accessControlType: 'Allow' | 'Deny';
+  objectType: string;
+  inheritanceType: string;
+  inheritedObjectType: string;
 }
 
 export interface AdGroup {
@@ -25,7 +38,7 @@ export interface AdGroup {
   members: string[];
 }
 
-/** Subset of `WindowsAccountsPolicyState` a GPO can carry (PRD-Windows-Server.md §5 P10 — "politique de mots de passe et de verrouillage du domaine"). */
+/** Subset of `WindowsAccountsPolicyState` a GPO can carry (PRD-Windows-Server.md §5 P10 — "politique de mots de passe et de verrouillage du domaine"). `maxPasswordAge`/`minPasswordAge` are in days, `lockoutDurationMinutes`/`lockoutWindowMinutes` in minutes — matching how `New-TimeSpan` values get unwrapped by the cmdlets that set these. */
 export interface GpoAccountPolicy {
   minPasswordLength?: number;
   maxPasswordAge?: number;
@@ -34,6 +47,16 @@ export interface GpoAccountPolicy {
   lockoutThreshold?: number;
   lockoutDurationMinutes?: number;
   lockoutWindowMinutes?: number;
+  complexityEnabled?: boolean;
+  reversibleEncryptionEnabled?: boolean;
+}
+
+/** A Fine-Grained Password Policy (`msDS-PasswordSettings`, PRD-Windows-Server-Advanced.md §5 P10) — the same account-policy shape as a GPO's, plus the precedence that resolves conflicts between PSOs applying to the same account (lowest wins) and the direct/group subjects it applies to. */
+export interface AdFineGrainedPasswordPolicy {
+  readonly name: string;
+  precedence: number;
+  description: string;
+  settings: GpoAccountPolicy;
 }
 
 export interface GpoSettings {
@@ -57,6 +80,7 @@ export interface AdComputer {
   enabled: boolean;
   /** IP the computer account last joined/logged on from — diagnostic only. */
   lastKnownIp?: string;
+  servicePrincipalNames: string[];
 }
 
 export interface AdOrgUnit {

@@ -12,38 +12,63 @@
  *    created after the named one, and raises ORA-01086 when the name was
  *    never established in this session.
  *
- * Undo is modelled as full row snapshots per table — sufficient for the
- * simulator's single-session-at-a-time write model.
+ * Undo is modelled as a row-level undo log: the executor registers this
+ * manager as the storage's UndoSink around each statement it runs, so
+ * every mutation is attributed to the transaction that made it. ROLLBACK
+ * reverse-applies only this session's records — concurrent writers on
+ * the same table keep their uncommitted rows (the old full-table
+ * snapshot restore silently destroyed them). Reader visibility (READ
+ * COMMITTED) is served by the TransactionCoordinator, which starts from
+ * physical rows and reverse-applies every *other* active writer's log.
  */
 
-import type { StorageRow } from '../../engine/storage/BaseStorage';
+import type { StorageRow, UndoSink } from '../../engine/storage/BaseStorage';
 import { OracleError } from '../../engine/types/DatabaseError';
-import type { TransactionCoordinator, CommittedImageProvider } from './TransactionCoordinator';
+import type { TransactionCoordinator } from './TransactionCoordinator';
 
-/** The slice of the storage layer needed to capture/restore row snapshots. */
+/** The slice of the storage layer needed to record and apply row undo. */
 export interface SnapshotableStorage {
-  getSchemas(): string[];
-  getTableNames(schema: string): string[];
   getRows(schema: string, tableName: string): StorageRow[];
   tableExists(schema: string, name: string): boolean;
-  truncateTable(schema: string, tableName: string): void;
   insertRow(schema: string, tableName: string, row: StorageRow): void;
+  deleteRows(schema: string, tableName: string, predicate: (row: StorageRow) => boolean): number;
+  updateRows(schema: string, tableName: string, predicate: (row: StorageRow) => boolean, updater: (row: StorageRow) => StorageRow): number;
+  setUndoSink(sink: UndoSink | null): UndoSink | null;
 }
 
-/** Snapshot of table rows for transaction undo: schema -> table -> rows copy. */
-interface TransactionSnapshot {
-  tables: Map<string, Map<string, StorageRow[]>>;
-}
+/** One attributed row change; `seq` is a global order across sessions. */
+export type UndoRecord =
+  | { seq: number; schema: string; table: string; kind: 'insert'; row: StorageRow }
+  | { seq: number; schema: string; table: string; kind: 'delete'; row: StorageRow }
+  | { seq: number; schema: string; table: string; kind: 'update'; before: StorageRow; after: StorageRow };
 
-function rowsEqual(a: StorageRow[], b: StorageRow[] | undefined): boolean {
-  if (!b) return a.length === 0;
+/** Global mutation order, shared by every session of every instance. */
+let undoSeqSource = 1;
+
+export function rowEquals(a: StorageRow, b: StorageRow): boolean {
   if (a.length !== b.length) return false;
   for (let i = 0; i < a.length; i++) {
-    const ra = a[i], rb = b[i];
-    if (ra.length !== rb.length) return false;
-    for (let j = 0; j < ra.length; j++) if (ra[j] !== rb[j]) return false;
+    const va = a[i], vb = b[i];
+    if (va instanceof Date || vb instanceof Date) {
+      const ta = va instanceof Date ? va.getTime() : va;
+      const tb = vb instanceof Date ? vb.getTime() : vb;
+      if (ta !== tb) return false;
+    } else if (va !== vb) return false;
   }
   return true;
+}
+
+/** Reverse-apply one undo record on an in-memory row set (for readers). */
+export function reverseApplyInMemory(rows: StorageRow[], rec: UndoRecord): void {
+  if (rec.kind === 'insert') {
+    const idx = rows.findIndex(r => rowEquals(r, rec.row));
+    if (idx >= 0) rows.splice(idx, 1);
+  } else if (rec.kind === 'delete') {
+    rows.push([...rec.row]);
+  } else {
+    const idx = rows.findIndex(r => rowEquals(r, rec.after));
+    if (idx >= 0) rows[idx] = [...rec.before];
+  }
 }
 
 /** Lifecycle notifications, used by the executor to publish oracle.transaction.* events. */
@@ -53,10 +78,13 @@ export interface TransactionObserver {
   onRollback(txId: number): void;
 }
 
-export class TransactionManager implements CommittedImageProvider {
-  private snapshot: TransactionSnapshot | null = null;
-  private savepoints: Map<string, TransactionSnapshot> = new Map();
+export class TransactionManager implements UndoSink {
+  private undoLog: UndoRecord[] = [];
+  /** Savepoint name → undo-log length at creation time. */
+  private savepoints: Map<string, number> = new Map();
   private active = false;
+  /** True while this manager is reverse-applying its own log. */
+  private applyingUndo = false;
   /** Monotonic per session; bumped on each implicit BEGIN. */
   private txIdCounter = 0;
   private txId = 0;
@@ -73,20 +101,54 @@ export class TransactionManager implements CommittedImageProvider {
   /** Valid while `isActive`; keeps the last id afterwards (matches event payloads). */
   get activeTxId(): number { return this.txId; }
 
-  committedImage(schema: string, tableName: string): StorageRow[] | null {
-    if (!this.active || !this.snapshot) return null;
-    const rows = this.snapshot.tables.get(schema)?.get(tableName);
-    return rows ? rows.map(r => [...r]) : null;
+  // ── UndoSink — row changes attributed to this session ─────────────
+
+  recordInsert(schema: string, tableName: string, row: StorageRow): void {
+    if (!this.active || this.applyingUndo) return;
+    this.undoLog.push({
+      seq: undoSeqSource++, schema: schema.toUpperCase(), table: tableName.toUpperCase(),
+      kind: 'insert', row: [...row],
+    });
   }
 
+  recordDelete(schema: string, tableName: string, row: StorageRow): void {
+    if (!this.active || this.applyingUndo) return;
+    this.undoLog.push({
+      seq: undoSeqSource++, schema: schema.toUpperCase(), table: tableName.toUpperCase(),
+      kind: 'delete', row: [...row],
+    });
+  }
+
+  recordUpdate(schema: string, tableName: string, before: StorageRow, after: StorageRow): void {
+    if (!this.active || this.applyingUndo) return;
+    this.undoLog.push({
+      seq: undoSeqSource++, schema: schema.toUpperCase(), table: tableName.toUpperCase(),
+      kind: 'update', before: [...before], after: [...after],
+    });
+  }
+
+  /** This session's uncommitted changes for one table (for the coordinator). */
+  undoRecordsFor(schema: string, tableName: string): readonly UndoRecord[] {
+    if (!this.active || this.undoLog.length === 0) return [];
+    const s = schema.toUpperCase(), t = tableName.toUpperCase();
+    return this.undoLog.filter(r => r.schema === s && r.table === t);
+  }
+
+  /**
+   * The rows this session should see for a table, or null to read the
+   * physical rows directly (no other writer has uncommitted changes).
+   */
   visibleRows(schema: string, tableName: string): StorageRow[] | null {
-    return this.coordinator?.committedImageFor(this, schema, tableName) ?? null;
+    return this.coordinator?.committedImageFor(
+      this, schema, tableName,
+      () => this.storage.getRows(schema, tableName),
+    ) ?? null;
   }
 
   /** Begin an implicit transaction on first DML; no-op when already active. */
   begin(): void {
     if (this.active) return;
-    this.snapshot = this.captureSnapshot();
+    this.undoLog = [];
     this.active = true;
     this.txId = ++this.txIdCounter;
     this.startedAt = performance.now();
@@ -98,7 +160,7 @@ export class TransactionManager implements CommittedImageProvider {
   commit(): boolean {
     const wasActive = this.active;
     const startedAt = this.startedAt;
-    this.snapshot = null;
+    this.undoLog = [];
     this.savepoints.clear();
     this.active = false;
     this.coordinator?.unregisterWriter(this);
@@ -106,11 +168,11 @@ export class TransactionManager implements CommittedImageProvider {
     return wasActive;
   }
 
-  /** End the transaction restoring the pre-transaction row state. */
+  /** End the transaction reverting only this session's changes. */
   rollback(): boolean {
-    if (this.snapshot) this.restoreSnapshot(this.snapshot);
+    this.applyUndo(0);
     const wasActive = this.active;
-    this.snapshot = null;
+    this.undoLog = [];
     this.savepoints.clear();
     this.active = false;
     this.coordinator?.unregisterWriter(this);
@@ -125,11 +187,12 @@ export class TransactionManager implements CommittedImageProvider {
    */
   rollbackToSavepoint(name: string): void {
     const key = name.toUpperCase();
-    const snap = this.savepoints.get(key);
-    if (!snap) {
+    const pos = this.savepoints.get(key);
+    if (pos === undefined) {
       throw new OracleError(1086, `savepoint '${key}' never established in this session or is invalid`);
     }
-    this.restoreSnapshot(snap);
+    this.applyUndo(pos);
+    this.undoLog.length = pos;
     const names = Array.from(this.savepoints.keys());
     for (let i = names.indexOf(key) + 1; i < names.length; i++) {
       this.savepoints.delete(names[i]);
@@ -144,28 +207,27 @@ export class TransactionManager implements CommittedImageProvider {
     this.begin();
     const key = name.toUpperCase();
     this.savepoints.delete(key);
-    this.savepoints.set(key, this.captureSnapshot());
+    this.savepoints.set(key, this.undoLog.length);
   }
 
   private autonomousStack: {
-    snapshot: TransactionSnapshot | null;
-    savepoints: Map<string, TransactionSnapshot>;
+    undoLog: UndoRecord[];
+    savepoints: Map<string, number>;
     active: boolean;
     txId: number;
     startedAt: number;
-    entry: TransactionSnapshot;
   }[] = [];
 
   enterAutonomous(): void {
     this.autonomousStack.push({
-      snapshot: this.snapshot,
+      undoLog: this.undoLog,
       savepoints: this.savepoints,
       active: this.active,
       txId: this.txId,
       startedAt: this.startedAt,
-      entry: this.captureSnapshot(),
     });
-    this.snapshot = null;
+    if (this.active) this.coordinator?.unregisterWriter(this);
+    this.undoLog = [];
     this.savepoints = new Map();
     this.active = false;
   }
@@ -174,9 +236,7 @@ export class TransactionManager implements CommittedImageProvider {
     const saved = this.autonomousStack.pop();
     if (!saved) return;
     if (this.active) this.rollback();
-    if (saved.snapshot) this.rebaseSnapshot(saved.snapshot, saved.entry);
-    for (const sp of saved.savepoints.values()) this.rebaseSnapshot(sp, saved.entry);
-    this.snapshot = saved.snapshot;
+    this.undoLog = saved.undoLog;
     this.savepoints = saved.savepoints;
     this.active = saved.active;
     this.txId = saved.txId;
@@ -184,44 +244,45 @@ export class TransactionManager implements CommittedImageProvider {
     if (this.active) this.coordinator?.registerWriter(this);
   }
 
-  private rebaseSnapshot(target: TransactionSnapshot, entry: TransactionSnapshot): void {
-    for (const schema of this.storage.getSchemas()) {
-      for (const tableName of this.storage.getTableNames(schema)) {
-        const current = this.storage.getRows(schema, tableName);
-        const before = entry.tables.get(schema)?.get(tableName);
-        if (rowsEqual(current, before)) continue;
-        let tableMap = target.tables.get(schema);
-        if (!tableMap) { tableMap = new Map(); target.tables.set(schema, tableMap); }
-        tableMap.set(tableName, current.map(r => [...r]));
-      }
-    }
-  }
-
-  /** Deep-copy current row state of all tables for undo. */
-  private captureSnapshot(): TransactionSnapshot {
-    const snap: TransactionSnapshot = { tables: new Map() };
-    for (const schema of this.storage.getSchemas()) {
-      const tableMap = new Map<string, StorageRow[]>();
-      for (const tableName of this.storage.getTableNames(schema)) {
-        const rows = this.storage.getRows(schema, tableName);
-        tableMap.set(tableName, rows.map(r => [...r]));
-      }
-      snap.tables.set(schema, tableMap);
-    }
-    return snap;
-  }
-
-  /** Restore row state from a snapshot. Tables created after the snapshot keep their rows. */
-  private restoreSnapshot(snap: TransactionSnapshot): void {
-    for (const [schema, tableMap] of snap.tables) {
-      for (const [tableName, rows] of tableMap) {
-        if (this.storage.tableExists(schema, tableName)) {
-          this.storage.truncateTable(schema, tableName);
-          for (const row of rows) {
-            this.storage.insertRow(schema, tableName, [...row]);
-          }
+  /**
+   * Reverse-apply this session's undo records down to (excluding) log
+   * position `downTo`, newest first. The undo sink is suspended so the
+   * reverting mutations are never themselves recorded — neither in this
+   * log nor in another session's (a rollback can run while another
+   * session's statement scope holds the sink, e.g. ALTER SYSTEM KILL
+   * SESSION).
+   */
+  private applyUndo(downTo: number): void {
+    if (this.undoLog.length <= downTo) return;
+    this.applyingUndo = true;
+    const prevSink = this.storage.setUndoSink(null);
+    try {
+      for (let i = this.undoLog.length - 1; i >= downTo; i--) {
+        const rec = this.undoLog[i];
+        if (!this.storage.tableExists(rec.schema, rec.table)) continue;
+        if (rec.kind === 'insert') {
+          let removed = false;
+          this.storage.deleteRows(rec.schema, rec.table, r => {
+            if (removed || !rowEquals(r, rec.row)) return false;
+            removed = true;
+            return true;
+          });
+        } else if (rec.kind === 'delete') {
+          this.storage.insertRow(rec.schema, rec.table, [...rec.row]);
+        } else {
+          let restored = false;
+          this.storage.updateRows(rec.schema, rec.table,
+            r => {
+              if (restored || !rowEquals(r, rec.after)) return false;
+              restored = true;
+              return true;
+            },
+            () => [...rec.before]);
         }
       }
+    } finally {
+      this.storage.setUndoSink(prevSink);
+      this.applyingUndo = false;
     }
   }
 }

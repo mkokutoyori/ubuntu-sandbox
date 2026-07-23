@@ -79,3 +79,38 @@ export class NewGPLinkCmdlet implements ICmdlet {
     return null;
   }
 }
+
+export class SetGPInheritanceCmdlet implements ICmdlet {
+  readonly name = 'set-gpinheritance';
+  readonly displayName = 'Set-GPInheritance';
+  readonly aliases = [] as const;
+  readonly parameters = ['Target', 'IsBlocked'] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const gpo = requireGpo(ctx, 'Set-GPInheritance');
+    const target = psValueToString(ctx.named['target'] ?? '');
+    if (!target) { ctx.emitError('Set-GPInheritance : Cannot process command because of one or more missing mandatory parameters: Target.'); return null; }
+    const blocked = /^(yes|true)$/i.test(psValueToString(ctx.named['isblocked'] ?? ''));
+    const res = gpo.setGpInheritance(target, blocked);
+    if (!res.ok) { ctx.emitError(`Set-GPInheritance : ${res.message}`); return null; }
+    return { Target: target, GpoInheritanceBlocked: blocked } as Record<string, PSValue>;
+  }
+}
+
+export class GetGPInheritanceCmdlet implements ICmdlet {
+  readonly name = 'get-gpinheritance';
+  readonly displayName = 'Get-GPInheritance';
+  readonly aliases = [] as const;
+  readonly parameters = ['Target'] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const gpo = requireGpo(ctx, 'Get-GPInheritance');
+    const target = psValueToString(ctx.named['target'] ?? '');
+    if (!target) { ctx.emitError('Get-GPInheritance : Cannot process command because of one or more missing mandatory parameters: Target.'); return null; }
+    const res = gpo.getGpInheritance(target);
+    if (!res) { ctx.emitError(`Get-GPInheritance : Cannot find an object with distinguished name: '${target}'.`); return null; }
+    return {
+      Path: res.dn, GpoInheritanceBlocked: res.gpoInheritanceBlocked, GpoLinks: res.gpoLinks.join('; '),
+    } as Record<string, PSValue>;
+  }
+}

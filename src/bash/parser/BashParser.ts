@@ -742,6 +742,16 @@ export class BashParser {
         modifier: opMatch[2], position: pos,
       };
     }
+    // `${arr[expr]}` and trailing-modifier chains (`[0]:-def`, `[@]:1:2`):
+    // carry the whole subscript-plus-tail as the modifier so the runtime's
+    // expandArrayAccess serves the unquoted path exactly like the quoted one.
+    const arrayMatch = content.match(/^([A-Za-z_][A-Za-z_0-9]*)(\[.+)$/s);
+    if (arrayMatch) {
+      return {
+        type: 'VariableRef', name: arrayMatch[1], braced: true,
+        modifier: arrayMatch[2], position: pos,
+      };
+    }
     return { type: 'VariableRef', name: content, braced: true, position: pos };
   }
 

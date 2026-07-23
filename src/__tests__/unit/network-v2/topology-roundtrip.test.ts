@@ -19,7 +19,7 @@ describe('topology round-trip: enriched state survives export → import', () =>
     await pc.executeCommand('ifconfig eth1 down');
 
     const exp = exportTopology('t', new Map([[pc.getId(), pc]]), []);
-    const roundtrip = importTopology(exp);
+    const roundtrip = await importTopology(exp);
     const restored = Array.from(roundtrip.deviceInstances.values())[0];
 
     expect(restored.getPort('eth1')!.getIsUp()).toBe(false);
@@ -33,7 +33,7 @@ describe('topology round-trip: enriched state survives export → import', () =>
     port.setDescriptionText('Uplink to ISP');
 
     const exp = exportTopology('t', new Map([[router.getId(), router]]), []);
-    const r = importTopology(exp);
+    const r = await importTopology(exp);
     const restored = Array.from(r.deviceInstances.values())[0];
 
     expect(restored.getPort('GigabitEthernet0/0')!.getDescriptionText()).toBe('Uplink to ISP');
@@ -47,7 +47,7 @@ describe('topology round-trip: enriched state survives export → import', () =>
     router.configureInterface('GigabitEthernet0/0', new IPAddress('10.0.1.1'), new SubnetMask('255.255.255.0'), true);
 
     const exp = exportTopology('t', new Map([[router.getId(), router]]), []);
-    const r = importTopology(exp);
+    const r = await importTopology(exp);
     const restored = Array.from(r.deviceInstances.values())[0];
     const sec = restored.getPort('GigabitEthernet0/0')!.getSecondaryIPs();
 
@@ -62,7 +62,7 @@ describe('topology round-trip: enriched state survives export → import', () =>
     await pc.executeCommand('arp -s 192.168.1.99 aa:bb:cc:dd:ee:ff');
 
     const exp = exportTopology('t', new Map([[pc.getId(), pc]]), []);
-    const r = importTopology(exp);
+    const r = await importTopology(exp);
     const restored = Array.from(r.deviceInstances.values())[0] as LinuxPC;
 
     const arp = await restored.executeCommand('arp -n');
@@ -77,7 +77,7 @@ describe('topology round-trip: enriched state survives export → import', () =>
     await srv.executeCommand('bash -c "echo nameserver 8.8.8.8 > /etc/resolv.conf"');
 
     const exp = exportTopology('t', new Map([[srv.getId(), srv]]), []);
-    const r = importTopology(exp);
+    const r = await importTopology(exp);
     const restored = Array.from(r.deviceInstances.values())[0] as LinuxServer;
 
     const hosts = await restored.executeCommand('cat /etc/hosts');
@@ -96,7 +96,7 @@ describe('topology round-trip: enriched state survives export → import', () =>
     sw.setSwitchportMode('FastEthernet0/2', 'trunk');
 
     const exp = exportTopology('t', new Map([[sw.getId(), sw]]), []);
-    const r = importTopology(exp);
+    const r = await importTopology(exp);
     const restored = Array.from(r.deviceInstances.values())[0] as CiscoSwitch;
 
     expect(restored.getVLAN(10)?.name).toBe('Engineering');
@@ -114,7 +114,7 @@ describe('topology round-trip: enriched state survives export → import', () =>
     sw.setSwitchportAccessVlan(portName, 100);
 
     const exp = exportTopology('t', new Map([[sw.getId(), sw]]), []);
-    const r = importTopology(exp);
+    const r = await importTopology(exp);
     const restored = Array.from(r.deviceInstances.values())[0] as HuaweiSwitch;
 
     expect(restored.getVLAN(100)?.name).toBe('mgmt');
@@ -142,7 +142,7 @@ describe('topology round-trip: enriched state survives export → import', () =>
     const exp = exportTopology('t', instances, connections);
 
     EquipmentRegistry.resetInstance();
-    const r = importTopology(exp);
+    const r = await importTopology(exp);
     const restoredPc = Array.from(r.deviceInstances.values()).find(d => d.getName() === 'PC1') as LinuxPC;
 
     const ping = await restoredPc.executeCommand('ping -c 1 -W 1 192.168.1.2');

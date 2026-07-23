@@ -192,7 +192,7 @@ describe('Scénario 2 — # : délimiteur de bannière vs caractère de prompt',
         await r.executeCommand(`banner motd ${delim}Bienvenue Mandeng${delim}`);
         await r.executeCommand('end');
         const run = await r.executeCommand('show running-config');
-        expect(run).toContain('banner motd ^CBienvenue Mandeng^C');
+        expect(run).toContain('banner motd ^C\nBienvenue Mandeng\n^C');
       }
     });
 
@@ -209,7 +209,7 @@ describe('Scénario 2 — # : délimiteur de bannière vs caractère de prompt',
 
       const out = await r.executeCommand('show running-config | section banner');
       expect(out).toContain('banner motd ^C\nMessage de bienvenue Mandeng\nSite de Douala\n^C');
-      expect(out).toContain('banner login ^CAuthentification requise^C');
+      expect(out).toContain('banner login ^C\nAuthentification requise\n^C');
     });
 
     it('le simulateur accepte ^C comme délimiteur : la sortie de show run se recolle telle quelle', async () => {
@@ -257,15 +257,15 @@ describe('Scénario 2 — # : délimiteur de bannière vs caractère de prompt',
       expect(parsed.content).toBe(r.getBanner('motd'));
     });
 
-    it('cas inline : banner motd ^Ctexte^C reparsé donne le même contenu que le stockage', async () => {
+    it('cas inline : banner motd ^Ctexte^C (format d\'un fichier de config écrit à la main) reparsé donne le contenu attendu', async () => {
       const r = new CiscoRouter('Router');
       await r.executeCommand('enable');
       await r.executeCommand('configure terminal');
       await r.executeCommand('banner motd $Bienvenue$');
       await r.executeCommand('end');
-      const section = await r.executeCommand('show running-config | section banner');
-      const header = section.split('\n').find((l) => l.startsWith('banner motd'))!;
-      const parsed = parseBannerCommand(header, []);
+      expect(r.getBanner('motd')).toBe('Bienvenue');
+
+      const parsed = parseBannerCommand('banner motd ^CBienvenue^C', []);
       expect(parsed.inline).toBe(true);
       expect(parsed.delimiter).toBe('^C');
       expect(parsed.content).toBe('Bienvenue');
@@ -285,7 +285,7 @@ describe('Scénario 2 — # : délimiteur de bannière vs caractère de prompt',
       // ^C systématique dans show run
       await r.executeCommand('do show running-config | include banner');
       const run = await r.executeCommand('do show running-config');
-      expect(run).toContain('banner motd ^CAvertissement Mandeng^C');
+      expect(run).toContain('banner motd ^C\nAvertissement Mandeng\n^C');
 
       // Troncature à la première occurrence du délimiteur dans le contenu
       await r.executeCommand('banner motd #');

@@ -89,6 +89,7 @@ export interface EventLogEntryInfo {
   eventId: number;
   category: string;
   message: string;
+  data?: Record<string, string>;
 }
 
 export interface NetworkAdapterInfo {
@@ -177,39 +178,59 @@ export interface ISmbProvider {
 // ── AD DS (Active Directory Domain Services) ────────────────────────────────
 
 export interface AdUserInfo {
-  sam: string; upn: string; dn: string; enabled: boolean; memberOf: string[]; fullName: string;
+  sam: string; upn: string; dn: string; sid: string; enabled: boolean; memberOf: string[]; fullName: string;
+  department: string; title: string; servicePrincipalNames: string[];
+}
+
+export interface AdAccessRuleInfo {
+  identitySam: string;
+  rights: string;
+  accessControlType: 'Allow' | 'Deny';
+  objectType: string;
+  inheritanceType: string;
+  inheritedObjectType: string;
 }
 export interface AdGroupInfo {
   sam: string; dn: string; scope: 'DomainLocal' | 'Global' | 'Universal'; members: string[];
 }
-export interface AdComputerInfo { name: string; dn: string; enabled: boolean }
+export interface AdComputerInfo { name: string; dn: string; enabled: boolean; servicePrincipalNames: string[] }
 export interface AdOrgUnitInfo { name: string; dn: string; gpLinks: string[] }
 export interface AdOpResult { ok: boolean; message: string }
 
 export interface IAdProvider {
   /** `Install-ADDSForest` — promotes this server to a new forest's first DC. Fails if already promoted. */
-  installForest(domainName: string, netbiosName: string | undefined, safeModeAdminPassword: string): AdOpResult;
+  installForest(domainName: string, netbiosName: string | undefined, safeModeAdminPassword: string, opts?: { installDns?: boolean }): AdOpResult;
   /** Whether this server has already been promoted (`Install-ADDSForest` succeeded). */
   isForestInstalled(): boolean;
   /** `Install-ADDSDomainController` (PRD-Windows-Server-Advanced.md §5 P5) — promotes this server as an additional DC of a domain that already exists at `sourceDcAddress`, via a real initial replication sync. */
   installDomainController(
     domainName: string, netbiosName: string | undefined, sourceDcAddress: string,
     credentialUser: string, credentialPassword: string, safeModeAdminPassword: string,
+    opts?: { installDns?: boolean },
   ): AdOpResult;
   /** `Get-ADDomainController` — every domain controller this DC currently knows about (itself, plus any replicated in). */
   listDomainControllers(): AdComputerInfo[];
+  /** `Remove-ADDomainController` — AD metadata cleanup for a DC that will never come back online (the `ntdsutil metadata cleanup` equivalent). */
+  removeDomainController(name: string): AdOpResult;
 
-  newUser(sam: string, opts: { password: string; fullName?: string; path?: string; enabled?: boolean }): AdOpResult;
+  newUser(sam: string, opts: { password: string; fullName?: string; path?: string; enabled?: boolean; department?: string; title?: string; actingSam?: string }): AdOpResult;
   getUser(identity: string): AdUserInfo | null;
-  setUser(identity: string, opts: { enabled?: boolean; fullName?: string; password?: string }): AdOpResult;
+  listUsers(): AdUserInfo[];
+  setUser(identity: string, opts: { enabled?: boolean; fullName?: string; password?: string; department?: string; title?: string; addSpns?: string[]; removeSpns?: string[]; actingSam?: string }): AdOpResult;
   removeUser(identity: string): AdOpResult;
+  /** Every user/computer object carrying at least one SPN — for cross-object duplicate-SPN detection (`Get-ADObject -Filter {ServicePrincipalName -like "*"}`). */
+  listObjectsWithSpns(): Array<{ name: string; servicePrincipalNames: string[] }>;
+  /** `Search-ADAccount -LockedOut`. */
+  listLockedOutUsers(): Array<{ sam: string; name: string; badPwdCount: number }>;
 
   newGroup(sam: string, scope: AdGroupInfo['scope'], path?: string): AdOpResult;
   getGroup(identity: string): AdGroupInfo | null;
+  listGroups(): AdGroupInfo[];
   addGroupMember(groupIdentity: string, members: string[]): AdOpResult;
   removeGroupMember(groupIdentity: string, members: string[]): AdOpResult;
 
   getComputer(identity: string): AdComputerInfo | null;
+  listComputers(): AdComputerInfo[];
   /** `Set-ADComputer -Identity <name> -AllowedToDelegateTo <svc1,svc2,...>` (PRD-Windows-Server-Advanced.md §5 P10) — the `msDS-AllowedToDelegateTo` list S4U2Proxy checks. */
   setComputerAllowedToDelegateTo(identity: string, targetServiceNames: string[]): AdOpResult;
 
@@ -232,9 +253,14 @@ export interface IAdProvider {
   newDomain(
     newDomainDnsName: string, netbiosName: string | undefined, parentDomainName: string, parentDcAddress: string,
     credentialUser: string, credentialPassword: string, safeModeAdminPassword: string,
+    opts?: { installDns?: boolean },
   ): AdOpResult;
   /** `Get-ADForest` — null if this server isn't a DC. */
   getForest(): AdForestInfo | null;
+  /** `Get-ADDomain` — null if this server isn't a DC. */
+  getDomain(): AdDomainInfo | null;
+  /** `Move-ADDirectoryServerOperationMasterRole -Identity <dc> -OperationMasterRole <roles> [-Force]`. */
+  moveOperationMasterRole(targetHostname: string, roles: string[], force: boolean): AdOpResult;
 
   /** `New-ADTrust`/`netdom trust` (PRD-Windows-Server-Advanced.md §5 P9) — a simple trust with the domain reached at `remoteDcAddress`. */
   newTrust(
@@ -245,11 +271,81 @@ export interface IAdProvider {
   getTrust(remoteRealm: string): AdTrustInfo | null;
   /** `Get-ADTrust` with no `-Identity`: every trust this DC knows about. */
   listTrusts(): AdTrustInfo[];
+
+  /** `Get-ADReplicationConnection -Filter *` — this DC's connection objects to its replication partners (auto-generated only; no manual/KCC-computed topology modeled). */
+  listReplicationConnections(): AdReplicationConnectionInfo[];
+  /** `Get-ADReplicationFailure -Scope Forest` — every replication partner this DC currently has a persistent failure with (empty in a healthy lab). */
+  listReplicationFailures(): AdReplicationFailureInfo[];
+
+  getAcl(dn: string): AdAccessRuleInfo[] | null;
+  setAcl(dn: string, rules: AdAccessRuleInfo[]): AdOpResult;
+
+  /** `Get-ADDefaultDomainPasswordPolicy`. */
+  getDefaultDomainPasswordPolicy(): AdPasswordPolicyInfo;
+  /** `Set-ADDefaultDomainPasswordPolicy` — only the given fields change. */
+  setDefaultDomainPasswordPolicy(patch: Partial<AdPasswordPolicyInfo>): AdOpResult;
+  /** `New-ADFineGrainedPasswordPolicy`. */
+  newFineGrainedPasswordPolicy(name: string, precedence: number, settings: Partial<AdPasswordPolicyInfo>, description?: string): AdOpResult;
+  /** `Get-ADFineGrainedPasswordPolicy -Identity <name>`. */
+  getFineGrainedPasswordPolicy(name: string): AdFineGrainedPasswordPolicyInfo | null;
+  /** `Get-ADFineGrainedPasswordPolicy -Filter *`: every PSO in the domain. */
+  listFineGrainedPasswordPolicies(): AdFineGrainedPasswordPolicyInfo[];
+  /** `Add-ADFineGrainedPasswordPolicySubject` — subjects may be user or group SAM names. */
+  addFineGrainedPasswordPolicySubject(name: string, subjects: string[]): AdOpResult;
+  /** `Get-ADFineGrainedPasswordPolicySubject -Identity <name>`. */
+  listFineGrainedPasswordPolicySubjects(name: string): string[];
+  /** `Get-ADUserResultantPasswordPolicy` — null when no PSO applies (Default Domain Policy governs implicitly). */
+  getResultantPasswordPolicy(userIdentity: string): AdFineGrainedPasswordPolicyInfo | null;
+}
+
+export interface AdPasswordPolicyInfo {
+  minPasswordLength: number;
+  passwordHistoryCount: number;
+  maxPasswordAgeDays: number;
+  minPasswordAgeDays: number;
+  lockoutThreshold: number;
+  lockoutDurationMinutes: number;
+  lockoutObservationWindowMinutes: number;
+  complexityEnabled: boolean;
+  reversibleEncryptionEnabled: boolean;
+}
+
+export interface AdFineGrainedPasswordPolicyInfo extends AdPasswordPolicyInfo {
+  name: string;
+  precedence: number;
+  description: string;
+}
+
+export interface AdReplicationConnectionInfo {
+  name: string;
+  autoGenerated: boolean;
+  replicateFromDirectoryServer: string;
+  interSiteTransportProtocol: string;
+}
+
+export interface AdReplicationFailureInfo {
+  server: string;
+  partner: string;
+  firstFailureTime: string;
+  failureCount: number;
+  lastError: string;
+  failureType: string;
 }
 
 export interface AdForestInfo {
   functionalLevel: string;
   domains: { dnsName: string; netbiosName: string; parentDnsName?: string }[];
+  schemaMaster: string;
+  domainNamingMaster: string;
+}
+
+export interface AdDomainInfo {
+  dnsRoot: string;
+  netBiosName: string;
+  domainMode: string;
+  infrastructureMaster: string;
+  pdcEmulator: string;
+  ridMaster: string;
 }
 
 export interface AdTrustInfo {
@@ -276,7 +372,7 @@ export interface IComputerProvider {
    * (depends on the DNS Server role, P7); when omitted, the domain name
    * itself is resolved as a hostname.
    */
-  join(domainName: string, credential: { username: string; password: string }, server?: string): AdOpResult;
+  join(domainName: string, credential: { username: string; password: string }, server?: string, opts?: { ouPath?: string; newName?: string }): AdOpResult;
   /** This machine's domain-join state, or null while in a workgroup. */
   getDomainInfo(): DomainMembershipInfo | null;
 }
@@ -292,6 +388,8 @@ export interface IGpoProvider {
   /** `New-GPLink -Target` accepts a distinguished name (domain root or an OU's DN, e.g. from `Get-ADOrganizationalUnit`). */
   newGPLink(gpoName: string, targetDn: string): AdOpResult;
   getDomainDn(): string;
+  setGpInheritance(targetDn: string, blocked: boolean): AdOpResult;
+  getGpInheritance(targetDn: string): { dn: string; gpoInheritanceBlocked: boolean; gpoLinks: string[] } | null;
 }
 
 // ── Web Server / IIS role (PRD-Windows-Server.md §5 P11) ────────────────────
@@ -909,7 +1007,7 @@ export interface IVpnProvider {
 export interface IEventLogProvider {
   listLogs(): Array<{ logName: string; entries: number; maxSizeKB: number }>;
   getEntries(logName: string, opts?: { newest?: number; entryType?: string; source?: string }): EventLogEntryInfo[];
-  writeEntry(logName: string, source: string, eventId: number, entryType: string, message: string): void;
+  writeEntry(logName: string, source: string, eventId: number, entryType: string, message: string, data?: Record<string, string>): void;
   clearLog(logName: string): string;
   newLog(logName: string, source: string): string;
   limitLog(logName: string, maxSizeKB: number): void;

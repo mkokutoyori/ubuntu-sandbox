@@ -26,6 +26,8 @@ export interface ReplicationPullFailedPayload extends ReplicationDcRef {
 
 export interface ReplicationServedPayload extends ReplicationDcRef {
   changesSent: number;
+  partnerAddress: string;
+  siteRelation: 'intra-site' | 'inter-site';
 }
 
 export type ReplicationDomainEvent =
