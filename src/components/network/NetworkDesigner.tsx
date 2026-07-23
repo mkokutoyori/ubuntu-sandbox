@@ -74,7 +74,7 @@ export function NetworkDesigner() {
   const handleImport = useCallback(async () => {
     try {
       const data = await openTopologyFile();
-      const result = importTopology(data);
+      const result = await importTopology(data);
 
       // Clear current state first (disconnect existing cables). clearAll()
       // now publishes `registry.cleared` which causes the TerminalManager
@@ -111,7 +111,7 @@ export function NetworkDesigner() {
     }
   }, [projectName, deviceInstances, connections]);
 
-  const handleOpen = useCallback(() => {
+  const handleOpen = useCallback(async () => {
     const saved = listSavedTopologies();
     if (saved.length === 0) {
       alert('No saved topologies in browser storage. Use "Save" first, or "Import" to load a JSON file.');
@@ -137,7 +137,7 @@ export function NetworkDesigner() {
       return;
     }
     try {
-      const result = importTopology(topology);
+      const result = await importTopology(topology);
       clearAll();
       useNetworkStore.setState({
         deviceInstances: result.deviceInstances,
