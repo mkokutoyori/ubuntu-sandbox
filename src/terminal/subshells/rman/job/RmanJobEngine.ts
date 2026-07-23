@@ -29,9 +29,17 @@ import { BackupSetFactory } from '../catalog/BackupSetFactory';
 import { RmanTag } from '../values/RmanTag';
 import { Scn } from '../values/Scn';
 import { generatePieceName } from '../core/pureUtils';
+import { implicitToDate } from '@/database/oracle/functions/valueUtils';
 
 export class RmanJobEngine implements IRmanJobEngine {
   private readonly _cancelled = new Set<string>();
+  // Set once an actual RESTORE has put datafiles back at an older
+  // checkpoint; only then does the following RECOVER genuinely need
+  // archivelogs to catch back up to the current SCN. A RECOVER invoked
+  // on its own (no preceding RESTORE this session) has no known gap to
+  // bridge, matching the many real-world call sites that recover a
+  // still-current datafile after a routine offline/online cycle.
+  private _pendingRecoveryGap = false;
 
   constructor(
     private readonly _bus:     RmanEventBus,
@@ -319,6 +327,25 @@ export class RmanJobEngine implements IRmanJobEngine {
       return err({ code: 'RMAN_06023', message: 'No backup found to restore' });
     }
 
+    // SET UNTIL SCN/TIME (PITR) — only backup sets checkpointed at or
+    // before the requested bound are eligible; a later set would restore
+    // data past the point-in-time the operator asked to recover to.
+    if (params.untilScn !== undefined || params.untilTime !== undefined) {
+      const untilScn  = params.untilScn !== undefined ? Number(params.untilScn) : undefined;
+      const untilTime = params.untilTime !== undefined ? implicitToDate(params.untilTime) : undefined;
+      sets = sets.filter(s => {
+        if (untilScn !== undefined) return s.pieces[0].checkpointScn.value <= untilScn;
+        if (untilTime) return s.completionTime <= untilTime.getTime();
+        return true;
+      });
+      if (sets.length === 0) {
+        return err({
+          code: 'RMAN_06026',
+          message: 'no backup or copy of the database is available to satisfy the requested SET UNTIL bound',
+        });
+      }
+    }
+
     // PREVIEW / VALIDATE — emit a progress line and skip the actual restore.
     if (params.preview === 'true' || params.validate === 'true') {
       const kind = params.preview === 'true' ? 'preview' : 'validate';
@@ -382,6 +409,7 @@ export class RmanJobEngine implements IRmanJobEngine {
         fileNo: df.fileNo, elapsedMs: 5_000,
       });
     }
+    this._pendingRecoveryGap = true;
     return ok(undefined);
   }
 
@@ -453,6 +481,16 @@ export class RmanJobEngine implements IRmanJobEngine {
     // pour chaque log appliqué pendant le RECOVER. On synthétise un set
     // raisonnable autour des SCN from/to.
     const arcPaths = this._ctx.getArchivelogPaths?.() ?? [];
+    // A RESTORE left the datafiles at an older checkpoint; without any
+    // archivelog to replay, there is nothing to bridge the gap with, and
+    // a real RMAN aborts media recovery rather than silently declaring
+    // the (still-stale) datafiles current.
+    if (this._pendingRecoveryGap && arcPaths.length === 0) {
+      return err({
+        code: 'RMAN_06054',
+        message: 'media recovery requesting unknown archived log for thread 1 with sequence 1',
+      });
+    }
     if (arcPaths.length > 0) {
       const baseSeq = 1;
       for (let i = 0; i < arcPaths.length; i++) {
@@ -466,6 +504,7 @@ export class RmanJobEngine implements IRmanJobEngine {
       }
     }
     this._bus.emit({ type: 'RECOVER_COMPLETED', jobId: job.id, toScn:   to.ok   ? to.value   : Scn.ZERO, elapsedMs: 3_000 });
+    this._pendingRecoveryGap = false;
     return ok(undefined);
   }
 

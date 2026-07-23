@@ -8,6 +8,11 @@ import type { RmanOperation } from '../core/types';
 
 let _jobCounter = 1;
 
+interface RestoreOpts {
+  tag?: string; preview?: boolean; validate?: boolean;
+  untilScn?: number; untilTime?: string;
+}
+
 export const JobBuilder = {
   backupDatabase(opts: {
     tag?: string; format?: string; compressed?: boolean;
@@ -151,31 +156,37 @@ export const JobBuilder = {
     ], params);
   },
 
-  restoreDatabase(opts: { tag?: string; preview?: boolean; validate?: boolean } = {}): RmanJob {
+  restoreDatabase(opts: RestoreOpts = {}): RmanJob {
     const params: Record<string, string> = {};
     if (opts.tag)      params.tag      = opts.tag;
     if (opts.preview)  params.preview  = 'true';
     if (opts.validate) params.validate = 'true';
+    if (opts.untilScn !== undefined)  params.untilScn  = String(opts.untilScn);
+    if (opts.untilTime !== undefined) params.untilTime = opts.untilTime;
     return _make('RESTORE_DATABASE', [
       { name: 'start_restore', pct: 10, message: 'channel ORA_DISK_1: starting datafile backup set restore' },
     ], Object.keys(params).length ? params : undefined);
   },
 
-  restoreTablespace(ts: string, opts: { tag?: string; preview?: boolean; validate?: boolean } = {}): RmanJob {
+  restoreTablespace(ts: string, opts: RestoreOpts = {}): RmanJob {
     const params: Record<string, string> = { tablespace: ts.toUpperCase() };
     if (opts.tag)      params.tag      = opts.tag;
     if (opts.preview)  params.preview  = 'true';
     if (opts.validate) params.validate = 'true';
+    if (opts.untilScn !== undefined)  params.untilScn  = String(opts.untilScn);
+    if (opts.untilTime !== undefined) params.untilTime = opts.untilTime;
     return _make('RESTORE_DATABASE', [
       { name: 'start_restore', pct: 10, message: `channel ORA_DISK_1: starting tablespace ${ts.toUpperCase()} restore` },
     ], params);
   },
 
-  restoreDatafile(fileNo: number, opts: { tag?: string; preview?: boolean; validate?: boolean } = {}): RmanJob {
+  restoreDatafile(fileNo: number, opts: RestoreOpts = {}): RmanJob {
     const params: Record<string, string> = { fileNo: String(fileNo) };
     if (opts.tag)      params.tag      = opts.tag;
     if (opts.preview)  params.preview  = 'true';
     if (opts.validate) params.validate = 'true';
+    if (opts.untilScn !== undefined)  params.untilScn  = String(opts.untilScn);
+    if (opts.untilTime !== undefined) params.untilTime = opts.untilTime;
     return _make('RESTORE_DATABASE', [
       { name: 'start_restore', pct: 10, message: `channel ORA_DISK_1: starting datafile ${fileNo} restore` },
     ], params);

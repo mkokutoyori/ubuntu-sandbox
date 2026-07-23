@@ -19,16 +19,18 @@ import { JobBuilder } from '../job/JobBuilder';
 export class RestoreCommand implements IRmanCommand<void> {
   readonly name = 'RESTORE';
 
-  execute(args: string[], { engine }: RmanCommandContext): Result<void, RmanError> {
+  execute(args: string[], { engine, setUntil }: RmanCommandContext): Result<void, RmanError> {
     const scope = (args[0] ?? 'DATABASE').toUpperCase();
     const trailing = (scope === 'DATABASE' ? args[1] : args[2]) ?? '';
     const tagMatch = trailing.match(/\bFROM\s+TAG\s+'([^']+)'/i);
     const preview  = /\bPREVIEW\b/i.test(trailing);
     const validate = /\bVALIDATE\b/i.test(trailing);
-    const opts = {
+    const opts: { tag?: string; preview: boolean; validate: boolean; untilScn?: number; untilTime?: string } = {
       tag: tagMatch?.[1].toUpperCase(),
       preview, validate,
     };
+    if (setUntil?.untilScn !== undefined) opts.untilScn = setUntil.untilScn;
+    if (setUntil?.untilTime) opts.untilTime = setUntil.untilTime;
 
     if (scope === 'DATABASE') {
       return engine.run(JobBuilder.restoreDatabase(opts));

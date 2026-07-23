@@ -29,6 +29,7 @@ function ctx(state: 'OPEN' | 'MOUNT' | 'NOMOUNT' | 'SHUTDOWN'): IRmanOracleConte
     getSpfileParam: () => undefined,
     getInstanceState: () => state,
     getControlFilePath: () => '/u01/oradata/ORCL/control01.ctl',
+    getArchivelogPaths: () => ['/u01/backup/arch/arch_1_1.arc'],
   } as unknown as IRmanOracleContext;
 }
 
@@ -103,6 +104,18 @@ describe('CONTROLFILE AUTOBACKUP — auto-trigger', () => {
 describe('RESTORE CONTROLFILE FROM AUTOBACKUP', () => {
   beforeEach(() => { BackupKey._reset(); DeviceCatalogRegistry._reset(); });
 
+  /** Seeds a shared catalog with a real CONTROLFILE/AUTOBACKUP backup set,
+   *  the way a real operator would before ever attempting the restore. */
+  function seedAutobackup(catalog: ReturnType<typeof DeviceCatalogRegistry.get>): void {
+    const sBackup = new RmanSession(
+      new RmanSessionOptionsBuilder().withCatalog(catalog).build(), ctx('OPEN'),
+    );
+    sBackup.connect();
+    sBackup.processLine('CONFIGURE CONTROLFILE AUTOBACKUP ON');
+    sBackup.processLine('BACKUP DATABASE');
+    sBackup.dispose();
+  }
+
   it('rejects when instance is OPEN', () => {
     const s = new RmanSession(new RmanSessionOptionsBuilder().build(), ctx('OPEN'));
     s.connect();
@@ -111,8 +124,21 @@ describe('RESTORE CONTROLFILE FROM AUTOBACKUP', () => {
     if (r.ok === false) expect(r.error.code).toBe('RMAN_06403');
   });
 
-  it('succeeds when instance is NOMOUNT and emits the canonical recipe', () => {
+  it('fails with RMAN-06172 when no autobackup has ever been taken', () => {
     const s = new RmanSession(new RmanSessionOptionsBuilder().build(), ctx('NOMOUNT'));
+    s.connect();
+    const r = s.processLine('RESTORE CONTROLFILE FROM AUTOBACKUP');
+    expect(r.ok).toBe(false);
+    if (r.ok === false) {
+      expect(r.error.code).toBe('RMAN_06172');
+      expect(r.error.message).toMatch(/no autobackup found/i);
+    }
+  });
+
+  it('succeeds when instance is NOMOUNT and emits the canonical recipe', () => {
+    const catalog = DeviceCatalogRegistry.get('nomount-recipe');
+    seedAutobackup(catalog);
+    const s = new RmanSession(new RmanSessionOptionsBuilder().withCatalog(catalog).build(), ctx('NOMOUNT'));
     s.connect();
     const r = s.processLine('RESTORE CONTROLFILE FROM AUTOBACKUP');
     expect(r.ok).toBe(true);
@@ -126,7 +152,9 @@ describe('RESTORE CONTROLFILE FROM AUTOBACKUP', () => {
   });
 
   it('succeeds when MOUNT', () => {
-    const s = new RmanSession(new RmanSessionOptionsBuilder().build(), ctx('MOUNT'));
+    const catalog = DeviceCatalogRegistry.get('mount-recipe');
+    seedAutobackup(catalog);
+    const s = new RmanSession(new RmanSessionOptionsBuilder().withCatalog(catalog).build(), ctx('MOUNT'));
     s.connect();
     const r = s.processLine('RESTORE CONTROLFILE FROM AUTOBACKUP');
     expect(r.ok).toBe(true);
@@ -153,11 +181,21 @@ describe('RESTORE CONTROLFILE FROM AUTOBACKUP', () => {
   });
 
   it('RESTORE SPFILE FROM AUTOBACKUP works in NOMOUNT', () => {
-    const s = new RmanSession(new RmanSessionOptionsBuilder().build(), ctx('NOMOUNT'));
+    const catalog = DeviceCatalogRegistry.get('spfile-recipe');
+    seedAutobackup(catalog);
+    const s = new RmanSession(new RmanSessionOptionsBuilder().withCatalog(catalog).build(), ctx('NOMOUNT'));
     s.connect();
     const r = s.processLine('RESTORE SPFILE FROM AUTOBACKUP');
     expect(r.ok).toBe(true);
     if (r.ok) expect(r.value.join('\n')).toMatch(/SPFILE restore complete/i);
+  });
+
+  it('RESTORE SPFILE FROM AUTOBACKUP also fails with RMAN-06172 without one', () => {
+    const s = new RmanSession(new RmanSessionOptionsBuilder().build(), ctx('NOMOUNT'));
+    s.connect();
+    const r = s.processLine('RESTORE SPFILE FROM AUTOBACKUP');
+    expect(r.ok).toBe(false);
+    if (r.ok === false) expect(r.error.code).toBe('RMAN_06172');
   });
 });
 
