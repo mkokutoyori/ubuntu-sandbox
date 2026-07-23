@@ -48,6 +48,8 @@ export interface DcdiagContext {
   isDc: boolean;
   servicesRunning: { ntds: boolean; netlogon: boolean; kdc: boolean };
   sysvolShareExists: boolean;
+  /** No replication attempt on record counts as healthy (a lone forest-root DC has nothing to replicate yet), matching real dcdiag's Replications test only failing on an actual recorded failure. */
+  replicationHealthy: boolean;
 }
 
 export function cmdDcdiag(ctx: DcdiagContext): string {
@@ -75,6 +77,7 @@ export function cmdDcdiag(ctx: DcdiagContext): string {
     `   Testing server: Default-First-Site-Name\\${ctx.hostname}`,
     test('Advertising', ctx.servicesRunning.netlogon),
     test('NetLogons', ctx.servicesRunning.netlogon),
+    test('Replications', ctx.replicationHealthy),
     test('SysVolCheck', ctx.sysvolShareExists),
     test('KdcEvent', ctx.servicesRunning.kdc),
     '',

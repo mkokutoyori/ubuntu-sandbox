@@ -31,7 +31,7 @@ import { WindowsWsusRole } from './windows/server/wsus/WsusRole';
 import { WindowsPrintServerRole } from './windows/server/print/PrintServerRole';
 import { randomSessionKey } from '@/network/kerberos/crypto';
 import { dialLdap } from './windows/server/ad/ldap/LdapClient';
-import { pullReplication } from './windows/server/ad/replication/ReplicationSession';
+import { pullReplication, notifySyncNow } from './windows/server/ad/replication/ReplicationSession';
 import { createForest, joinForestAsChildDomain, getForestForDomain, type Forest } from './windows/server/ad/forest/Forest';
 import { mirroredDirection, type TrustDirection, type TrustInfo, type TrustRecord } from './windows/server/ad/forest/TrustRelationship';
 
@@ -516,6 +516,15 @@ export class WindowsServer extends WindowsPC {
     this.provisionSysvol(domainName);
     this.registerDcServices();
     this.provisionDomainDnsZone(domainName);
+    /**
+     * Real DCPromo urgently replicates the new DC's own computer object
+     * back out (a critical-object push, distinct from the initial sync
+     * above) so the rest of the domain learns about it immediately rather
+     * than waiting for the source DC's next scheduled cycle. Best-effort:
+     * a source DC that doesn't support the push notification (unlikely —
+     * this simulator's DCs all do) just stays unaware until it next pulls.
+     */
+    notifySyncNow(this.getTcpStack(), sourceDcAddress);
     return { ok: true, message: '' };
   }
 

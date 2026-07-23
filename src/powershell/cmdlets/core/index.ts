@@ -122,6 +122,7 @@ import {
   GetADComputerCmdlet, SetADComputerCmdlet, GetADObjectCmdlet, SearchADAccountCmdlet,
   NewADOrganizationalUnitCmdlet, GetADOrganizationalUnitCmdlet,
   NewADReplicationSiteCmdlet, GetADReplicationSiteCmdlet, NewADReplicationSubnetCmdlet,
+  GetADReplicationConnectionCmdlet, GetADReplicationFailureCmdlet,
   NewADAttributeCmdlet, NewADObjectClassCmdlet,
   NewADDomainCmdlet, GetADForestCmdlet, GetADDomainCmdlet, MoveADDirectoryServerOperationMasterRoleCmdlet,
   NewADTrustCmdlet, GetADTrustCmdlet,
@@ -455,6 +456,8 @@ export function registerServerCmdlets(registry: CmdletRegistry): void {
   registry.register(new NewADReplicationSiteCmdlet());
   registry.register(new GetADReplicationSiteCmdlet());
   registry.register(new NewADReplicationSubnetCmdlet());
+  registry.register(new GetADReplicationConnectionCmdlet());
+  registry.register(new GetADReplicationFailureCmdlet());
   registry.register(new NewADAttributeCmdlet());
   registry.register(new NewADObjectClassCmdlet());
   registry.register(new NewADUserCmdlet());

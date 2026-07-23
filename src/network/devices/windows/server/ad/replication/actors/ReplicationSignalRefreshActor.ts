@@ -29,18 +29,24 @@ export class ReplicationSignalRefreshActor {
       this.bus.subscribeWhere('replication.pull.completed', isOurs, (e) => {
         const entry: ReplicationLogEntry = {
           timestamp: Math.floor(Date.now() / 1000), partnerAddress: e.payload.partnerAddress,
-          applied: e.payload.applied, ok: true, siteRelation: e.payload.siteRelation,
+          applied: e.payload.applied, ok: true, siteRelation: e.payload.siteRelation, direction: 'inbound',
         };
         this.store.recordPull(entry);
       }),
       this.bus.subscribeWhere('replication.pull.failed', isOurs, (e) => {
         const entry: ReplicationLogEntry = {
           timestamp: Math.floor(Date.now() / 1000), partnerAddress: e.payload.partnerAddress,
-          applied: 0, ok: false, siteRelation: e.payload.siteRelation,
+          applied: 0, ok: false, siteRelation: e.payload.siteRelation, direction: 'inbound', error: e.payload.error,
         };
         this.store.recordPull(entry);
       }),
-      this.bus.subscribeWhere('replication.served', isOurs, (e) => this.store.recordServed(e.payload.changesSent)),
+      this.bus.subscribeWhere('replication.served', isOurs, (e) => {
+        const entry: ReplicationLogEntry = {
+          timestamp: Math.floor(Date.now() / 1000), partnerAddress: e.payload.partnerAddress,
+          applied: e.payload.changesSent, ok: true, siteRelation: e.payload.siteRelation, direction: 'outbound',
+        };
+        this.store.recordServed(entry);
+      }),
     );
   }
 

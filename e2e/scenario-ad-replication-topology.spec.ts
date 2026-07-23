@@ -23,6 +23,13 @@ async function setupTwoDcs(page: Page): Promise<{ dc1Id: string; dc2Id: string }
     const dc2 = store.getState().addDevice('windows-server', 500, 200);
     const dc1Inst = store.getState().deviceInstances.get(dc1.id) as Record<string, unknown>;
     const dc2Inst = store.getState().deviceInstances.get(dc2.id) as Record<string, unknown>;
+    // The scenario's commands target DC01/DC02 by name (-Server, -Identity)
+    // — match the device's real hostname to that, instead of the
+    // auto-generated "WinServer1/2" default.
+    (dc1Inst.setName as (n: string) => void).call(dc1Inst, 'DC01');
+    (dc1Inst.setHostname as (n: string) => void).call(dc1Inst, 'DC01');
+    (dc2Inst.setName as (n: string) => void).call(dc2Inst, 'DC02');
+    (dc2Inst.setHostname as (n: string) => void).call(dc2Inst, 'DC02');
     const p1 = (dc1Inst.getPortNames as () => string[])()[0];
     const p2 = (dc2Inst.getPortNames as () => string[])()[0];
     const exec1 = dc1Inst.executeCommand as (c: string) => Promise<string> | string;
@@ -35,6 +42,16 @@ async function setupTwoDcs(page: Page): Promise<{ dc1Id: string; dc2Id: string }
 }
 
 async function openTerminal(page: Page, id: string): Promise<void> {
+  // Once any terminal is open the app covers the canvas with a fixed
+  // full-screen overlay, so a device already behind it can't be
+  // double-clicked. Peek at the topology first (a real toggle the app
+  // provides for exactly this) — opening the new terminal then
+  // automatically brings the overlay back showing that device's session.
+  const desktopToggle = page.getByTitle('Show topology (terminals stay open)');
+  if (await desktopToggle.count() > 0) {
+    await desktopToggle.click();
+    await page.waitForTimeout(150);
+  }
   await page.locator(`[data-device-id="${id}"]`).first().dblclick({ timeout: 8_000 });
   await page.waitForTimeout(400);
 }
@@ -47,8 +64,10 @@ async function typeCmdIn(page: Page, deviceId: string, command: string): Promise
   await input.press('Enter');
   await page.waitForTimeout(300);
 }
-async function lastModalText(page: Page): Promise<string> {
-  return (await page.locator('[data-testid="terminal-modal"]').last().innerText());
+async function modalTextFor(page: Page, deviceId: string): Promise<string> {
+  const modal = page.locator(`[data-testid="terminal-modal"][data-device-id="${deviceId}"]`).first();
+  const target = (await modal.count()) > 0 ? modal : page.locator('[data-testid="terminal-modal"]').last();
+  return target.innerText();
 }
 
 test.describe('Scénario 7 (e2e) — réplication AD entre DC01 et DC02', () => {
@@ -74,7 +93,7 @@ test.describe('Scénario 7 (e2e) — réplication AD entre DC01 et DC02', () => 
     await page.waitForTimeout(500);
     await typeCmdIn(page, dc2Id, 'Get-ADDomainController -Filter *');
     await page.waitForTimeout(300);
-    const text = await lastModalText(page);
+    const text = await modalTextFor(page, dc2Id);
     expect(text).toContain('DC01');
     expect(text).toContain('DC02');
   });
@@ -94,11 +113,10 @@ test.describe('Scénario 7 (e2e) — réplication AD entre DC01 et DC02', () => 
     await typeCmdIn(page, dc2Id, 'Install-ADDSDomainController -DomainName "mandeng.lan" -Credential "Administrator:DSRM@Mandeng2025!" -Server "192.168.10.10" -SafeModeAdministratorPassword (ConvertTo-SecureString "DSRM@Mandeng2025!" -AsPlainText -Force) -Force:$true');
     await page.waitForTimeout(500);
 
-    await openTerminal(page, dc1Id);
     await typeCmdIn(page, dc1Id, 'cmd');
     await typeCmdIn(page, dc1Id, 'repadmin /replsummary');
     await page.waitForTimeout(300);
-    const text = await lastModalText(page);
+    const text = await modalTextFor(page, dc1Id);
     expect(text).toMatch(/Fails\s*0/);
   });
 
@@ -119,16 +137,14 @@ test.describe('Scénario 7 (e2e) — réplication AD entre DC01 et DC02', () => 
     await typeCmdIn(page, dc2Id, 'Install-ADDSDomainController -DomainName "mandeng.lan" -Credential "Administrator:DSRM@Mandeng2025!" -Server "192.168.10.10" -SafeModeAdministratorPassword (ConvertTo-SecureString "DSRM@Mandeng2025!" -AsPlainText -Force) -Force:$true');
     await page.waitForTimeout(500);
 
-    await openTerminal(page, dc1Id);
     await typeCmdIn(page, dc1Id, 'New-ADUser -Name "Test-Replication" -SamAccountName "test-repl" -Path "OU=Utilisateurs,OU=Mandeng,DC=mandeng,DC=lan" -Enabled $false -Server "DC01.mandeng.lan"');
     await typeCmdIn(page, dc1Id, 'cmd');
     await typeCmdIn(page, dc1Id, 'repadmin /syncall DC01 /AdeP');
     await page.waitForTimeout(500);
 
-    await openTerminal(page, dc2Id);
     await typeCmdIn(page, dc2Id, 'Get-ADUser "test-repl" -Server "DC02.mandeng.lan" -ErrorAction SilentlyContinue');
     await page.waitForTimeout(300);
-    const text = await lastModalText(page);
+    const text = await modalTextFor(page, dc2Id);
     expect(text).toContain('test-repl');
   });
 });

@@ -87,7 +87,7 @@ import { KerberosTicketCache } from '@/network/kerberos/KerberosTicketCache';
 import { KerberosSignalStore } from '@/network/kerberos/observables';
 import { KerberosSignalRefreshActor } from '@/network/kerberos/actors/KerberosSignalRefreshActor';
 import {
-  ReplicationServerHandler, AD_REPLICATION_PORT, pullReplication,
+  ReplicationServerHandler, AD_REPLICATION_PORT, pullReplication, notifySyncNow,
   type ReplicationPullResult, type ReplicationLogEntry,
 } from './windows/server/ad/replication/ReplicationSession';
 import { ReplicationSignalStore } from './windows/server/ad/replication/observables';
@@ -108,6 +108,7 @@ import { pullGroupPolicy } from './windows/domain/GpoPullClient';
 import { dialHttp as dialHttpClient, parseHttpUrl } from '@/network/http/HttpClient';
 import type { GpoSettings } from './windows/server/ad/AdTypes';
 import { cmdNltest, cmdDcdiag, cmdKlist } from './windows/WinDomainDiag';
+import { cmdRepadmin, type RepadminContext } from './windows/WinRepadmin';
 import { cmdDnscmd } from './windows/WinDnscmd';
 import { cmdCertreq, cmdCertutil } from './windows/WinCertReq';
 import { WindowsCertStore } from './windows/CertStore';
@@ -564,7 +565,8 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       onAccept: (socket) => {
         const store = this.getDirectoryStore();
         if (!store) { socket.close(); return; }
-        new ReplicationServerHandler(store, this.getHostname(), this.getBus()).register(socket);
+        const ownIp = this.getInterfaces().map(p => p.getIPAddress()).find((ip): ip is NonNullable<typeof ip> => ip !== null)?.toString();
+        new ReplicationServerHandler(store, this.getHostname(), this.getBus(), ownIp, (partnerIp) => this.replicateFrom(partnerIp)).register(socket);
       },
     });
 
@@ -658,7 +660,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     const siteRelation: 'intra-site' | 'inter-site' =
       ownSite !== null && partnerSite !== null && ownSite !== partnerSite ? 'inter-site' : 'intra-site';
     const logEntry: ReplicationLogEntry = {
-      timestamp: Math.floor(Date.now() / 1000), partnerAddress: partnerIp, applied: result.applied, ok: result.ok, siteRelation,
+      timestamp: Math.floor(Date.now() / 1000), partnerAddress: partnerIp, applied: result.applied, ok: result.ok, siteRelation, direction: 'inbound',
     };
     this.replicationLog.push(logEntry);
     this.getBus().publish(
@@ -1812,7 +1814,25 @@ export class WindowsPC extends EndHost implements UserAccountHost {
             kdc: this.svcMgr.getService('Kdc')?.state === 'Running',
           },
           sysvolShareExists: this.smbShares.get('SYSVOL') !== undefined,
+          replicationHealthy: this.getReplicationSignals().log.get().every(e => e.ok),
         });
+      }
+      case 'repadmin': {
+        const store = this.getDirectoryStore();
+        if (!store) return "'repadmin' requires this computer to be a domain controller.";
+        const ctx: RepadminContext = {
+          hostname: this.hostname,
+          fqdn: `${this.hostname}.${store.dnsName}`,
+          domainDn: store.getDomainDn(),
+          log: this.getReplicationSignals().log.get(),
+          knownDcFqdns: store.listDomainControllers()
+            .filter(c => c.name.toLowerCase() !== this.hostname.toLowerCase())
+            .map(c => `${c.name}.${store.dnsName}`),
+          resolveIpToName: (ip) => this.reverseLookupClient(ip),
+          pullFrom: (ip) => this.replicateFrom(ip),
+          pushTo: (ip) => notifySyncNow(this.getTcpStack(), ip),
+        };
+        return cmdRepadmin(ctx, args);
       }
       case 'klist':   return cmdKlist({ ticketCache: this.kerberosTicketCache });
       case 'netdom':  return this.cmdNetdom(args);
