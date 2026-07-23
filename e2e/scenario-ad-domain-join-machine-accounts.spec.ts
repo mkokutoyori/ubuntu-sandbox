@@ -37,6 +37,11 @@ async function setupDcAndClient(page: Page): Promise<{ dcId: string; clientId: s
 }
 
 async function openTerminal(page: Page, id: string): Promise<void> {
+  const desktopToggle = page.getByTitle('Show topology (terminals stay open)');
+  if (await desktopToggle.count() > 0) {
+    await desktopToggle.click();
+    await page.waitForTimeout(150);
+  }
   await page.locator(`[data-device-id="${id}"]`).first().dblclick({ timeout: 8_000 });
   await page.waitForTimeout(400);
 }
@@ -49,8 +54,10 @@ async function typeCmdIn(page: Page, deviceId: string, command: string): Promise
   await input.press('Enter');
   await page.waitForTimeout(300);
 }
-async function lastModalText(page: Page): Promise<string> {
-  return (await page.locator('[data-testid="terminal-modal"]').last().innerText());
+async function modalTextFor(page: Page, deviceId: string): Promise<string> {
+  const modal = page.locator(`[data-testid="terminal-modal"][data-device-id="${deviceId}"]`).first();
+  const target = (await modal.count()) > 0 ? modal : page.locator('[data-testid="terminal-modal"]').last();
+  return target.innerText();
 }
 
 test.describe('Scénario 3 (e2e) — jonction au domaine et compte machine PC-WIN-01', () => {
@@ -77,10 +84,9 @@ test.describe('Scénario 3 (e2e) — jonction au domaine et compte machine PC-WI
     await typeCmdIn(page, clientId, 'Add-Computer -DomainName "mandeng.lan" -Credential "Administrator:DSRM@Mandeng2025!" -OUPath "OU=Postes,OU=Ordinateurs,OU=Mandeng,DC=mandeng,DC=lan" -NewName "PC-WIN-01" -Force');
     await page.waitForTimeout(500);
 
-    await openTerminal(page, dcId);
     await typeCmdIn(page, dcId, 'Get-ADComputer -Filter {Name -eq "PC-WIN-01"} -Properties *');
     await page.waitForTimeout(300);
-    const text = await lastModalText(page);
+    const text = await modalTextFor(page, dcId);
     expect(text).toContain('PC-WIN-01');
     expect(text).toContain('OU=Postes');
   });
