@@ -2515,9 +2515,11 @@ export class OSPFEngine implements IProtocolEngine {
       forwardingAddress: nssaLsa.forwardingAddress,
       externalRouteTag: nssaLsa.externalRouteTag,
     };
-    lsa.checksum = this.computeLSAChecksum(lsa);
-    // Type 5 goes directly into external LSDB and is flooded everywhere
-    this.lsdb.external.set(makeLSDBKey(5, lsa.linkStateId, lsa.advertisingRouter), lsa);
+    // installLSA() recomputes the real Fletcher-16 checksum (this.computeLSAChecksum()
+    // is a simplified placeholder every other origination path overwrites the same
+    // way) — every receiving router's verifyOSPFLSAChecksum() would otherwise reject
+    // this LSA on arrival and the translated route would silently never propagate.
+    this.installLSA(OSPF_BACKBONE_AREA, lsa);
     this.floodLSA(OSPF_BACKBONE_AREA, lsa, null);
     return lsa;
   }
@@ -2617,6 +2619,14 @@ export class OSPFEngine implements IProtocolEngine {
       if (ifName === excludeIface) continue;
       if (iface.areaId !== areaId && lsa.lsType !== 5) continue;
       if (iface.passive) continue;
+      // RFC 2328 §12.4.5 / RFC 3101 §3.4: AS-external-LSAs (Type 5) are never
+      // flooded into stub, totally-stubby, or NSSA areas — that's the whole
+      // point of those area types. Type 7 already carries the NSSA-internal
+      // equivalent; a stub/totally-stubby area gets only the default route.
+      if (lsa.lsType === 5) {
+        const ifaceAreaType = this.config.areas.get(iface.areaId)?.type;
+        if (ifaceAreaType === 'stub' || ifaceAreaType === 'totally-stubby' || ifaceAreaType === 'nssa') continue;
+      }
 
       for (const [, neighbor] of iface.neighbors) {
         if (neighbor.state === 'Full' || neighbor.state === 'Exchange' || neighbor.state === 'Loading') {
@@ -2670,6 +2680,15 @@ export class OSPFEngine implements IProtocolEngine {
         if (lsa.lsAge >= OSPF_MAX_AGE) continue;
         this.floodLSA(areaId, lsa, null, true); // force past MinLSInterval
       }
+    }
+    // Type-5 (AS-external) LSAs live in the AS-wide external LSDB, not in any
+    // area's LSDB — they need their own reflood pass, or a late-forming
+    // adjacency (still converging when the LSA was first originated) never
+    // gets the redistributed/default route at all.
+    for (const [, lsa] of this.lsdb.external) {
+      if (lsa.advertisingRouter !== this.config.routerId) continue;
+      if (lsa.lsAge >= OSPF_MAX_AGE) continue;
+      this.floodLSA(OSPF_BACKBONE_AREA, lsa, null, true); // force past MinLSInterval
     }
   }
 
@@ -3062,7 +3081,7 @@ export class OSPFEngine implements IProtocolEngine {
     while (candidates.length > 0) {
       candidates.sort((a, b) => a.distance - b.distance);
       const best = candidates.shift()!;
-      tree.set(best.id, best);
+      tree.set(OSPFEngine.spfVertexKey(best.type, best.id), best);
       this.addCandidatesFromVertex(best, areaId, areaDB, tree, candidates);
     }
     // ── End Dijkstra ─────────────────────────────────────────────────────────
@@ -3374,7 +3393,7 @@ export class OSPFEngine implements IProtocolEngine {
             }
           }
           if (!networkLSA) continue;
-          if (tree.has(drIP)) continue;
+          if (tree.has(OSPFEngine.spfVertexKey('network', drIP))) continue;
 
           const newDist = vertex.distance + link.metric;
           const nextHop = vertex.distance === 0 ? null : vertex.nextHop;
@@ -3445,8 +3464,21 @@ export class OSPFEngine implements IProtocolEngine {
     }
   }
 
+  /**
+   * SPF tree keys are per-vertex-type: a router vertex is keyed by its
+   * Router ID, a network (transit-segment) vertex by its DR's IP. These are
+   * separate ID namespaces per RFC 2328 §16.1 — but when a router's
+   * auto-detected Router ID equals an IP it's also DR for (common on a
+   * single-subnet router with one interface), the bare strings collide.
+   * Only network-vertex keys need the qualifier: router lookups elsewhere
+   * (ABR/ASBR by Router ID) never need to see a network vertex.
+   */
+  private static spfVertexKey(type: 'router' | 'network', id: string): string {
+    return type === 'network' ? `net:${id}` : id;
+  }
+
   private addOrUpdateCandidate(candidates: SPFVertex[], newVertex: SPFVertex): void {
-    const existing = candidates.find(c => c.id === newVertex.id);
+    const existing = candidates.find(c => c.id === newVertex.id && c.type === newVertex.type);
     if (existing) {
       if (newVertex.distance < existing.distance) {
         existing.distance = newVertex.distance;

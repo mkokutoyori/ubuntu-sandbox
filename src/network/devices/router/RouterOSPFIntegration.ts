@@ -550,6 +550,14 @@ export class RouterOSPFIntegration {
       }
     }
 
+    // Each router self-originates real external LSAs for its own
+    // redistribute/default-information-originate config (RFC 3101 §2.4)
+    // before the reflood pass below, so the fresh LSA reaches every
+    // already-Full neighbor in the same synchronous convergence pass.
+    for (const peer of allPeers) {
+      peer.originateRedistributedRoutes();
+    }
+
     // Propagate every router's (possibly updated) self-originated LSAs over
     // real LSU frames so newer instances supersede any stale copy held by a
     // peer that converged earlier — e.g. a router joining an already-converged
@@ -1243,151 +1251,21 @@ export class RouterOSPFIntegration {
     const myAreas = new Set(this.ospfEngine.getConfig().areas.keys());
     const isABR = myAreas.size > 1;
 
-    // ── External routes (default-information originate, redistribute static/connected) ──
-    for (const peer of allPeers) {
-      if (peer === this || !peer.ospfEngine) continue;
-      const rExtra = peer.extraConfig;
+    // External routes (default-information originate, redistribute
+    // static/connected/rip) are no longer fabricated here — every router
+    // self-originates real Type-5/Type-7 LSAs in originateRedistributedRoutes()
+    // (called from exchangeAndCompute() before SPF), and OSPFEngine's own
+    // processExternalRoutes()/getRoutes() derive every router's E1/E2 route
+    // from those LSAs, same as it would for a real ASBR. NSSA Type-7→Type-5
+    // translation likewise happens for real, via installLSA() on the ABR.
 
-      // default-information originate → inject default route as external
-      if (peer.ospfEngine.getConfig().defaultInformationOriginate) {
-        const hasDefault = peer.ctx.getRoutingTable().some(rt =>
-          rt.type === 'default' || (rt.type === 'static' &&
-            rt.network.toString() === '0.0.0.0' && rt.mask.toString() === '0.0.0.0'));
-        if (hasDefault) {
-          const nh = this.findNextHopTo(peer);
-          if (nh) {
-            const metricType = rExtra.defaultInfoMetricType ?? 2;
-            const cost = metricType === 1 ? 1 + (nh.cost || 0) : 1;
-            routes.push({
-              network: '0.0.0.0', mask: '0.0.0.0',
-              nextHop: nh.nextHop, iface: nh.iface,
-              cost, routeType: metricType === 1 ? 'type1-external' : 'type2-external',
-              areaId: '0', advertisingRouter: peer.ospfEngine.getRouterId(),
-              _metricType: metricType, _isDefault: true,
-            });
-          }
-        }
-      }
-
-      // redistribute static → inject static routes as external
-      if (rExtra.redistributeStatic) {
-        for (const rt of peer.ctx.getRoutingTable()) {
-          if (rt.type !== 'static') continue;
-          if (rt.network.toString() === '0.0.0.0') continue;
-          const nh = this.findNextHopTo(peer);
-          if (nh) {
-            const metricType = rExtra.redistributeStatic.metricType ?? 2;
-            const cost = metricType === 1 ? 20 + (nh.cost || 0) : 20;
-            routes.push({
-              network: rt.network.toString(), mask: rt.mask.toString(),
-              nextHop: nh.nextHop, iface: nh.iface,
-              cost, routeType: metricType === 1 ? 'type1-external' : 'type2-external',
-              areaId: '0', advertisingRouter: peer.ospfEngine.getRouterId(),
-              _metricType: metricType,
-            });
-          }
-        }
-      }
-
-      if (rExtra.redistributeRip) {
-        for (const rt of peer.ctx.getRoutingTable()) {
-          if (rt.type !== 'rip') continue;
-          const nh = this.findNextHopTo(peer);
-          if (nh) {
-            const metricType = rExtra.redistributeRip.metricType ?? 2;
-            const base = rExtra.redistributeRip.metric ?? 20;
-            const cost = metricType === 1 ? base + (nh.cost || 0) : base;
-            routes.push({
-              network: rt.network.toString(), mask: rt.mask.toString(),
-              nextHop: nh.nextHop, iface: nh.iface,
-              cost, routeType: metricType === 1 ? 'type1-external' : 'type2-external',
-              areaId: '0', advertisingRouter: peer.ospfEngine.getRouterId(),
-              _metricType: metricType,
-            });
-          }
-        }
-      }
-
-      // redistribute connected → inject connected routes as external
-      if (rExtra.redistributeConnected) {
-        for (const rt of peer.ctx.getRoutingTable()) {
-          if (rt.type !== 'connected') continue;
-          const ospfIface = peer.ospfEngine.getInterface(rt.iface);
-          if (ospfIface) continue;
-          const nh = this.findNextHopTo(peer);
-          if (nh) {
-            routes.push({
-              network: rt.network.toString(), mask: rt.mask.toString(),
-              nextHop: nh.nextHop, iface: nh.iface,
-              cost: 20, routeType: 'type2-external',
-              areaId: '0', advertisingRouter: peer.ospfEngine.getRouterId(),
-              _metricType: 2,
-            });
-          }
-        }
-      }
-    }
-
-    // ── Inter-area routes (O IA) ──
-    for (const peer of allPeers) {
-      if (peer === this || !peer.ospfEngine) continue;
-      const rAreas = new Set(peer.ospfEngine.getConfig().areas.keys());
-      const rIsABR = rAreas.size > 1;
-
-      if (rIsABR) {
-        const rRoutes = peer.ospfEngine.getRoutes();
-        const rExtra = peer.extraConfig;
-        for (const rt of rRoutes) {
-          if (myAreas.has(rt.areaId)) continue;
-          const nh = this.findNextHopTo(peer);
-          if (!nh) continue;
-
-          let shouldAdvertise = true;
-          if (rExtra.areaRanges.has(rt.areaId)) {
-            const ranges = rExtra.areaRanges.get(rt.areaId)!;
-            for (const range of ranges) {
-              if (this.ipInSubnet(rt.network, range.network, range.mask)) {
-                shouldAdvertise = false;
-              }
-            }
-          }
-          if (!shouldAdvertise) continue;
-
-          routes.push({
-            network: rt.network, mask: rt.mask,
-            nextHop: nh.nextHop, iface: nh.iface,
-            cost: rt.cost + (nh.cost || 0),
-            routeType: 'inter-area', areaId: rt.areaId,
-            advertisingRouter: peer.ospfEngine.getRouterId(),
-          });
-        }
-
-        // Advertise summarized ranges
-        if (rExtra.areaRanges) {
-          for (const [areaId, ranges] of rExtra.areaRanges) {
-            if (myAreas.has(areaId)) continue;
-            const rRoutes2 = peer.ospfEngine.getRoutes();
-            for (const range of ranges) {
-              const hasMatch = rRoutes2.some(
-                rt => rt.areaId === areaId && this.ipInSubnet(rt.network, range.network, range.mask)
-              );
-              if (hasMatch) {
-                const nh = this.findNextHopTo(peer);
-                if (nh) {
-                  routes.push({
-                    network: range.network, mask: range.mask,
-                    nextHop: nh.nextHop, iface: nh.iface,
-                    cost: (nh.cost || 0) + 1,
-                    routeType: 'inter-area', areaId,
-                    advertisingRouter: peer.ospfEngine.getRouterId(),
-                  });
-                }
-              }
-            }
-          }
-        }
-      }
-    }
+    // Inter-area routes (O IA) are no longer fabricated here either: every
+    // ABR already self-originates real Type-3/Type-4 Summary LSAs from
+    // originateSummariesAsABR() (called automatically inside its own
+    // runSPF() whenever isABR()), area ranges included — the CLI's
+    // `area <id> range` handler calls the engine's own addAreaRange()
+    // directly (CiscoOspfCommands.ts). Every router derives its own O IA
+    // route from those real LSAs via buildRoutesFromTree(), same as a real ABR.
 
     // ── Virtual link: propagate routes through transit area ──
     for (const peer of allPeers) {
@@ -1468,41 +1346,66 @@ export class RouterOSPFIntegration {
       }
     }
 
-    // ── NSSA: Convert external routes from NSSA ASBR to Type 5 for backbone ──
-    for (const peer of allPeers) {
-      if (peer === this || !peer.ospfEngine) continue;
-      const rExtra = peer.extraConfig;
-      const rAreas = peer.ospfEngine.getConfig().areas;
+    // NSSA Type-7→Type-5 conversion is handled for real by installLSA() on
+    // the ABR (see originateRedistributedRoutes()); nothing to fabricate here.
 
-      for (const [areaId, area] of rAreas) {
-        if (area.type !== 'nssa') continue;
-        if (!rExtra.redistributeStatic) continue;
+    return routes;
+  }
 
-        for (const abr of allPeers) {
-          if (!abr.ospfEngine) continue;
-          const abrAreas = abr.ospfEngine.getConfig().areas;
-          if (!abrAreas.has(areaId) || abrAreas.size <= 1) continue;
-          if (!myAreas.has('0') && !myAreas.has('0.0.0.0')) continue;
+  /**
+   * Self-originate real Type-5/Type-7 LSAs for this router's own
+   * redistribution config (`redistribute static/connected/rip`,
+   * `default-information originate`). OSPFEngine.redistributeExternalRoute()
+   * already picks Type-7 vs Type-5 per area (RFC 3101 §2.4); every other
+   * router then derives its own E1/E2 route from the flooded LSA via the
+   * engine's normal SPF/processExternalRoutes() path — no cross-router
+   * object introspection needed.
+   */
+  private originateRedistributedRoutes(): void {
+    if (!this.ospfEngine) return;
+    // No active interfaces yet (e.g. `redistribute` typed before any
+    // `network` statement matched one): redistributeExternalRoute() would
+    // fall back to an area-less Type-5, which then never gets superseded
+    // once the router actually joins an NSSA area. Nothing meaningful to
+    // redistribute onto yet — the next autoConverge (post-`network`) retries.
+    if (this.ospfEngine.getInterfaces().size === 0) return;
+    const extra = this.extraConfig;
 
-          for (const rt of peer.ctx.getRoutingTable()) {
-            if (rt.type !== 'static') continue;
-            if (rt.network.toString() === '0.0.0.0') continue;
-            const nh = this.findNextHopTo(abr);
-            if (nh) {
-              routes.push({
-                network: rt.network.toString(), mask: rt.mask.toString(),
-                nextHop: nh.nextHop, iface: nh.iface,
-                cost: 20, routeType: 'type2-external',
-                areaId: '0', advertisingRouter: peer.ospfEngine.getRouterId(),
-                _metricType: 2,
-              });
-            }
-          }
-        }
+    if (this.ospfEngine.getConfig().defaultInformationOriginate) {
+      const hasDefault = this.ctx.getRoutingTable().some(rt =>
+        rt.type === 'default' || (rt.type === 'static' &&
+          rt.network.toString() === '0.0.0.0' && rt.mask.toString() === '0.0.0.0'));
+      if (hasDefault) {
+        const metricType = (extra.defaultInfoMetricType ?? 2) as 1 | 2;
+        this.ospfEngine.redistributeExternalRoute('0.0.0.0', '0.0.0.0', 1, metricType);
       }
     }
 
-    return routes;
+    if (extra.redistributeStatic) {
+      const metricType = (extra.redistributeStatic.metricType ?? 2) as 1 | 2;
+      for (const rt of this.ctx.getRoutingTable()) {
+        if (rt.type !== 'static') continue;
+        if (rt.network.toString() === '0.0.0.0') continue;
+        this.ospfEngine.redistributeExternalRoute(rt.network.toString(), rt.mask.toString(), 20, metricType);
+      }
+    }
+
+    if (extra.redistributeRip) {
+      const metricType = (extra.redistributeRip.metricType ?? 2) as 1 | 2;
+      const metric = extra.redistributeRip.metric ?? 20;
+      for (const rt of this.ctx.getRoutingTable()) {
+        if (rt.type !== 'rip') continue;
+        this.ospfEngine.redistributeExternalRoute(rt.network.toString(), rt.mask.toString(), metric, metricType);
+      }
+    }
+
+    if (extra.redistributeConnected) {
+      for (const rt of this.ctx.getRoutingTable()) {
+        if (rt.type !== 'connected') continue;
+        if (this.ospfEngine.getInterface(rt.iface)) continue; // already an OSPF interface
+        this.ospfEngine.redistributeExternalRoute(rt.network.toString(), rt.mask.toString(), 20, 2);
+      }
+    }
   }
 
   // ── Next-Hop Resolution ──
