@@ -116,7 +116,7 @@ import {
 } from './SmbCmdlets';
 import {
   InstallADDSForestCmdlet, InstallADDSDomainControllerCmdlet, GetADDomainControllerCmdlet, RemoveADDomainControllerCmdlet,
-  NewADUserCmdlet, GetADUserCmdlet, SetADUserCmdlet, RemoveADUserCmdlet,
+  NewADUserCmdlet, GetADUserCmdlet, SetADUserCmdlet, RemoveADUserCmdlet, SetADAccountPasswordCmdlet,
   DisableADAccountCmdlet, EnableADAccountCmdlet,
   NewADGroupCmdlet, GetADGroupCmdlet, AddADGroupMemberCmdlet, RemoveADGroupMemberCmdlet,
   GetADComputerCmdlet, SetADComputerCmdlet, GetADObjectCmdlet, SearchADAccountCmdlet,
@@ -474,6 +474,7 @@ export function registerServerCmdlets(registry: CmdletRegistry): void {
   registry.register(new NewADUserCmdlet());
   registry.register(new GetADUserCmdlet());
   registry.register(new SetADUserCmdlet());
+  registry.register(new SetADAccountPasswordCmdlet());
   registry.register(new RemoveADUserCmdlet());
   registry.register(new DisableADAccountCmdlet());
   registry.register(new EnableADAccountCmdlet());

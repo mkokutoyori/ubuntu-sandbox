@@ -110,6 +110,18 @@ describe('Scénario 8 — délégation de contrôle sur des OUs (mandeng.lan)', 
     it('preseau peut créer un utilisateur dans OU=Reseau (périmètre délégué)', async () => {
       const dc = await buildLan();
       const sh = ps(dc);
+      const OUReseau = 'OU=Reseau,OU=Utilisateurs,OU=Mandeng,DC=mandeng,DC=lan';
+      await run(sh, [
+        '$UserPreseau = Get-ADUser "preseau"',
+        '$UserSID = [System.Security.Principal.SecurityIdentifier]$UserPreseau.SID',
+        `$ADOU = Get-ADOrganizationalUnit "${OUReseau}"`,
+        '$Path = "AD:\\$($ADOU.DistinguishedName)"',
+        '$ACL = Get-ACL -Path $Path',
+        '$ACE_Create = New-Object System.DirectoryServices.ActiveDirectoryAccessRule($UserSID, "CreateChild", "Allow", [GUID]"bf967aba-0de6-11d0-a285-00aa003049e2", "None", [GUID]::Empty)',
+        '$ACL.AddAccessRule($ACE_Create)',
+        'Set-ACL -Path $Path -AclObject $ACL',
+      ].join('\n'));
+
       const out = await run(sh, [
         '$Cred = "preseau:User@Mandeng2025!"',
         'New-ADUser -Name "Test Delegation" -SamAccountName "test-deleg" -Path "OU=Reseau,OU=Utilisateurs,OU=Mandeng,DC=mandeng,DC=lan" -Enabled $false -Credential $Cred -Server "DC01.mandeng.lan"',
@@ -132,6 +144,17 @@ describe('Scénario 8 — délégation de contrôle sur des OUs (mandeng.lan)', 
     it('jadmin peut réinitialiser le mot de passe d\'un utilisateur dans OU=Audit mais ne peut pas changer son displayName', async () => {
       const dc = await buildLan();
       const sh = ps(dc);
+      const OUAudit = 'OU=Audit,OU=Utilisateurs,OU=Mandeng,DC=mandeng,DC=lan';
+      await run(sh, [
+        '$UserJadmin = Get-ADUser "jadmin"',
+        '$JadminSID = [System.Security.Principal.SecurityIdentifier]$UserJadmin.SID',
+        `$ADOU_Audit = Get-ADOrganizationalUnit "${OUAudit}"`,
+        '$PathAudit = "AD:\\$($ADOU_Audit.DistinguishedName)"',
+        '$ACL_Audit = Get-ACL -Path $PathAudit',
+        '$ACE_ResetPwd = New-Object System.DirectoryServices.ActiveDirectoryAccessRule($JadminSID, "ExtendedRight", "Allow", [GUID]"00299570-246d-11d0-a768-00aa006e0529", "Descendents", [GUID]"bf967aba-0de6-11d0-a285-00aa003049e2")',
+        '$ACL_Audit.AddAccessRule($ACE_ResetPwd)',
+        'Set-ACL -Path $PathAudit -AclObject $ACL_Audit',
+      ].join('\n'));
       await run(sh, 'New-ADUser -Name "Marie Audit" -SamAccountName maudit -Path "OU=Audit,OU=Utilisateurs,OU=Mandeng,DC=mandeng,DC=lan" -AccountPassword (ConvertTo-SecureString "x" -AsPlainText -Force) -Enabled $true');
 
       const resetOut = await run(sh, [

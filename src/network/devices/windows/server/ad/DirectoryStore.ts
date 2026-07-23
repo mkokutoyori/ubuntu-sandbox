@@ -18,7 +18,7 @@
 import { DirectoryTree, type DirectoryEntry, type EntryReplMeta } from './ldap/DirectoryTree';
 import { parseDN, formatDN, leafValue, type DistinguishedName } from './ldap/LdapDN';
 import type { LdapBindCheck } from './ldap/LdapServer';
-import type { AdUser, AdGroup, AdComputer, AdOrgUnit, Gpo, GpoSettings, GpoAccountPolicy, AdFineGrainedPasswordPolicy } from './AdTypes';
+import type { AdUser, AdGroup, AdComputer, AdOrgUnit, Gpo, GpoSettings, GpoAccountPolicy, AdFineGrainedPasswordPolicy, AdAccessRule } from './AdTypes';
 import { generateId } from '@/network/core/types';
 import {
   type HighWatermarkVector, emptyHighWatermarkVector, recordUsn, cloneHighWatermarkVector,
@@ -61,6 +61,11 @@ function hasObjectClass(entry: DirectoryEntry, oc: string): boolean {
 function compact(attrs: Record<string, string[]>): Record<string, string[]> {
   return Object.fromEntries(Object.entries(attrs).filter(([, v]) => v.length > 0));
 }
+function hash32(seed: string, salt: number): number {
+  let h = (salt * 0x9e3779b1) >>> 0;
+  for (let i = 0; i < seed.length; i++) h = (Math.imul(h ^ seed.charCodeAt(i), 0x01000193)) >>> 0;
+  return h;
+}
 
 export class DirectoryStore {
   private readonly tree: DirectoryTree;
@@ -77,6 +82,9 @@ export class DirectoryStore {
   private readonly schemaValidator: SchemaValidator;
   private readonly schema: SchemaPartition;
   private readonly trustRegistry: TrustRegistry;
+  private readonly domainSidPrefix: string;
+  private nextRid = 1000;
+  private readonly acls = new Map<string, AdAccessRule[]>();
 
   /**
    * `opts.skipSeed` (PRD-Windows-Server-Advanced.md §5 P5): an additional
@@ -98,6 +106,7 @@ export class DirectoryStore {
     this.tree = new DirectoryTree(rootDn, { objectClass: ['top', 'domain', 'domainDNS'] }, {
       invocationId: this.invocationId, nextUsn: () => ++this.localUsn,
     }, this.schemaValidator);
+    this.domainSidPrefix = `S-1-5-21-${hash32(this.dnsName, 1)}-${hash32(this.dnsName, 2)}-${hash32(this.dnsName, 3)}`;
     this.usersOuDn = [...parseDN('CN=Users'), ...rootDn];
     this.computersOuDn = [...parseDN('CN=Computers'), ...rootDn];
     this.policiesDn = [...parseDN('CN=Policies'), ...parseDN('CN=System'), ...rootDn];
@@ -459,10 +468,13 @@ export class DirectoryStore {
 
   // ─── Users ──────────────────────────────────────────────────────────
 
-  newUser(sam: string, opts: { password: string; fullName?: string; ou?: string; enabled?: boolean; department?: string; title?: string }): DirOpResult {
+  newUser(sam: string, opts: { password: string; fullName?: string; ou?: string; enabled?: boolean; department?: string; title?: string; actingSam?: string }): DirOpResult {
     const containerDn = opts.ou ? this.ouDn(opts.ou) : this.usersOuDn;
     if (opts.ou && !this.tree.getByDn(containerDn)) {
       return { ok: false, message: `Cannot find an object with identity: '${opts.ou}'.` };
+    }
+    if (opts.actingSam && !this.hasPermission(opts.actingSam, formatDN(containerDn), 'CreateChild')) {
+      return { ok: false, message: 'Access is denied.' };
     }
     const res = this.createUserEntry(sam, {
       password: opts.password, fullName: opts.fullName ?? '', containerDn, enabled: opts.enabled,
@@ -473,6 +485,8 @@ export class DirectoryStore {
     return { ok: true, message: '' };
   }
 
+  private nextObjectSid(): string { return `${this.domainSidPrefix}-${this.nextRid++}`; }
+
   private createUserEntry(sam: string, opts: { password: string; fullName: string; containerDn: DistinguishedName; enabled?: boolean; department?: string; title?: string }): DirOpResult {
     const enabled = opts.enabled ?? true;
     const res = this.tree.addEntry(this.cnDn(sam, opts.containerDn), compact({
@@ -480,6 +494,7 @@ export class DirectoryStore {
       cn: [sam],
       sAMAccountName: [sam],
       userPrincipalName: [`${sam}@${this.dnsName}`],
+      objectSid: [this.nextObjectSid()],
       userAccountControl: [String(enabled ? UAC.NORMAL_ACCOUNT : UAC.NORMAL_ACCOUNT | UAC.ACCOUNTDISABLE)],
       userPassword: [opts.password],
       displayName: opts.fullName ? [opts.fullName] : [],
@@ -512,6 +527,7 @@ export class DirectoryStore {
       sam: firstOf(entry.attributes.get('samaccountname')),
       upn: firstOf(entry.attributes.get('userprincipalname')),
       dn: formatDN(entry.dn),
+      sid: firstOf(entry.attributes.get('objectsid')),
       ou: dnEqualsOu(containerDn, this.usersOuDn) ? 'Users' : firstOf(entry.attributes.get('ou')) || leafOuName(containerDn),
       enabled: isEnabledFromUac(entry.attributes.get('useraccountcontrol')),
       password: firstOf(entry.attributes.get('userpassword')),
@@ -523,9 +539,20 @@ export class DirectoryStore {
     };
   }
 
-  setUser(sam: string, opts: { enabled?: boolean; fullName?: string; password?: string; department?: string; title?: string; addSpns?: string[]; removeSpns?: string[] }): DirOpResult {
+  setUser(sam: string, opts: { enabled?: boolean; fullName?: string; password?: string; department?: string; title?: string; addSpns?: string[]; removeSpns?: string[]; actingSam?: string }): DirOpResult {
     const entry = this.findUserEntry(sam);
     if (!entry) return { ok: false, message: `Cannot find an object with identity: '${sam}'.` };
+    if (opts.actingSam) {
+      const targetDn = formatDN(entry.dn);
+      if (opts.password !== undefined && !this.hasPermission(opts.actingSam, targetDn, 'ExtendedRight')) {
+        return { ok: false, message: 'Access is denied.' };
+      }
+      const changesOtherThanPassword = opts.enabled !== undefined || opts.fullName !== undefined || opts.department !== undefined
+        || opts.title !== undefined || (opts.addSpns?.length ?? 0) > 0 || (opts.removeSpns?.length ?? 0) > 0;
+      if (changesOtherThanPassword && !this.hasPermission(opts.actingSam, targetDn, 'WriteProperty')) {
+        return { ok: false, message: 'Access is denied.' };
+      }
+    }
     const changes: { op: 'replace' | 'add' | 'delete'; type: string; values: string[] }[] = [];
     if (opts.enabled !== undefined) {
       changes.push({ op: 'replace', type: 'userAccountControl', values: [String(opts.enabled ? UAC.NORMAL_ACCOUNT : UAC.NORMAL_ACCOUNT | UAC.ACCOUNTDISABLE)] });
@@ -827,6 +854,60 @@ export class DirectoryStore {
       password: secret, fullName: 'Key Distribution Center Service Account',
       containerDn: this.usersOuDn, enabled: false,
     });
+  }
+
+  private resolveSidToSam(identity: string): string {
+    if (!identity.startsWith('S-1-5-')) return identity;
+    const [entry] = this.tree.search(this.tree.getRootDn(), 'sub', { kind: 'equalityMatch', attr: 'objectSid', value: identity });
+    return entry ? firstOf(entry.attributes.get('samaccountname')) : identity;
+  }
+
+  private isDomainAdmin(sam: string): boolean {
+    if (sam.toLowerCase() === 'administrator') return true;
+    const entry = this.findUserEntry(sam);
+    if (!entry) return false;
+    const domainAdminsDn = formatDN(this.cnDn('Domain Admins', this.usersOuDn)).toLowerCase();
+    return (entry.attributes.get('memberof') ?? []).some(dn => dn.toLowerCase() === domainAdminsDn);
+  }
+
+  hasPermission(subjectSam: string, targetDn: string, right: string): boolean {
+    if (this.isDomainAdmin(subjectSam)) return true;
+    let dn: DistinguishedName;
+    try { dn = parseDN(targetDn); } catch { return false; }
+    const rootLength = this.tree.getRootDn().length;
+    while (dn.length >= rootLength) {
+      const acl = this.acls.get(formatDN(dn).toLowerCase());
+      if (acl?.some(ace =>
+        ace.identitySam.toLowerCase() === subjectSam.toLowerCase() && ace.accessControlType === 'Allow' && ace.rights === right)) {
+        return true;
+      }
+      if (dn.length === rootLength) break;
+      dn = dn.slice(1);
+    }
+    return false;
+  }
+
+  private resolveAclTargetEntry(rawDn: string): DirectoryEntry | null {
+    try {
+      const parsed = parseDN(rawDn);
+      const direct = this.tree.getByDn(parsed);
+      if (direct) return direct;
+    } catch { /* not a valid DN */ }
+    return this.tree.getByDn(this.ouDn(this.resolveIdentity(rawDn)));
+  }
+
+  getAcl(dn: string): AdAccessRule[] | null {
+    const entry = this.resolveAclTargetEntry(dn);
+    if (!entry) return null;
+    return this.acls.get(formatDN(entry.dn).toLowerCase()) ?? [];
+  }
+
+  setAcl(dn: string, rules: AdAccessRule[]): DirOpResult {
+    const entry = this.resolveAclTargetEntry(dn);
+    if (!entry) return { ok: false, message: `Cannot find path '${dn}' because it does not exist.` };
+    const resolved = rules.map(r => ({ ...r, identitySam: this.resolveSidToSam(r.identitySam) }));
+    this.acls.set(formatDN(entry.dn).toLowerCase(), resolved);
+    return { ok: true, message: '' };
   }
 
   // ─── Identity resolution / LDAP bind ────────────────────────────────

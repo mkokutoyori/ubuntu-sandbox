@@ -68,7 +68,7 @@ function identityOf(ctx: CmdletContext): string {
 
 function userToPSObject(u: AdUserInfo): Record<string, PSValue> {
   return {
-    SamAccountName: u.sam, UserPrincipalName: u.upn, DistinguishedName: u.dn,
+    SamAccountName: u.sam, UserPrincipalName: u.upn, DistinguishedName: u.dn, SID: u.sid,
     Enabled: u.enabled, MemberOf: u.memberOf.join(', '), Name: u.fullName || u.sam,
     ObjectClass: 'user', Department: u.department, Title: u.title,
     ServicePrincipalNames: [...u.servicePrincipalNames],
@@ -217,7 +217,8 @@ export class NewADUserCmdlet implements ICmdlet {
     const enabled = ctx.named['enabled'] !== undefined ? ctx.named['enabled'] === true : undefined;
     const department = ctx.named['department'] !== undefined ? psValueToString(ctx.named['department']) : undefined;
     const title = ctx.named['title'] !== undefined ? psValueToString(ctx.named['title']) : undefined;
-    const res = ad.newUser(sam, { password, fullName, path, enabled, department, title });
+    const actingSam = ctx.named['credential'] !== undefined ? subjectUserOf(ctx) : undefined;
+    const res = ad.newUser(sam, { password, fullName, path, enabled, department, title, actingSam });
     if (!res.ok) { ctx.emitError(`New-ADUser : ${res.message}`); return null; }
     auditSinkFor(ctx)?.accountCreated(sam, subjectUserOf(ctx));
     const u = ad.getUser(sam);
@@ -266,7 +267,7 @@ export class SetADUserCmdlet implements ICmdlet {
     const ad = requireAd(ctx, 'Set-ADUser');
     const identity = identityOf(ctx);
     if (!identity) { ctx.emitError("Set-ADUser : Cannot process command because of one or more missing mandatory parameters: Identity."); return null; }
-    const opts: { enabled?: boolean; fullName?: string; password?: string; department?: string; title?: string; addSpns?: string[]; removeSpns?: string[] } = {};
+    const opts: { enabled?: boolean; fullName?: string; password?: string; department?: string; title?: string; addSpns?: string[]; removeSpns?: string[]; actingSam?: string } = {};
     if (ctx.named['enabled'] !== undefined) opts.enabled = ctx.named['enabled'] === true;
     if (ctx.named['displayname'] !== undefined) opts.fullName = psValueToString(ctx.named['displayname']);
     if (ctx.named['department'] !== undefined) opts.department = psValueToString(ctx.named['department']);
@@ -277,6 +278,7 @@ export class SetADUserCmdlet implements ICmdlet {
     if (addSpns) opts.addSpns = addSpns;
     const removeSpns = hashtableProp(ctx, 'remove', 'ServicePrincipalNames');
     if (removeSpns) opts.removeSpns = removeSpns;
+    if (ctx.named['credential'] !== undefined) opts.actingSam = subjectUserOf(ctx);
 
     const res = ad.setUser(identity, opts);
     if (!res.ok) { ctx.emitError(`Set-ADUser : ${res.message}`); return null; }
@@ -526,6 +528,32 @@ export class SetADComputerCmdlet implements ICmdlet {
     const targets = stringArrayOf(ctx, 'allowedtodelegateto');
     const res = ad.setComputerAllowedToDelegateTo(identity, targets);
     if (!res.ok) { ctx.emitError(`Set-ADComputer : ${res.message}`); return null; }
+    return null;
+  }
+}
+
+export class SetADAccountPasswordCmdlet implements ICmdlet {
+  readonly name = 'set-adaccountpassword';
+  readonly displayName = 'Set-ADAccountPassword';
+  readonly aliases = [] as const;
+  readonly parameters = ['Identity', 'Reset', 'NewPassword', 'OldPassword', 'Credential'] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const ad = requireAd(ctx, 'Set-ADAccountPassword');
+    const identity = identityOf(ctx);
+    if (!identity) {
+      ctx.emitError('Set-ADAccountPassword : Cannot process command because of one or more missing mandatory parameters: Identity.');
+      return null;
+    }
+    const newPassword = securePasswordOf(ctx, 'newpassword');
+    if (!newPassword) {
+      ctx.emitError('Set-ADAccountPassword : Cannot process command because of one or more missing mandatory parameters: NewPassword.');
+      return null;
+    }
+    const actingSam = ctx.named['credential'] !== undefined ? subjectUserOf(ctx) : undefined;
+    const res = ad.setUser(identity, { password: newPassword, actingSam });
+    if (!res.ok) { ctx.emitError(`Set-ADAccountPassword : ${res.message}`); return null; }
+    auditSinkFor(ctx)?.passwordReset(identity, subjectUserOf(ctx));
     return null;
   }
 }

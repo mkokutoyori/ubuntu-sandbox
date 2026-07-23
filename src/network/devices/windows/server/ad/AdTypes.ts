@@ -11,6 +11,7 @@ export interface AdUser {
   readonly sam: string;
   readonly upn: string;
   readonly dn: string;
+  readonly sid: string;
   ou: string;
   enabled: boolean;
   password: string;
@@ -19,6 +20,15 @@ export interface AdUser {
   department: string;
   title: string;
   servicePrincipalNames: string[];
+}
+
+export interface AdAccessRule {
+  identitySam: string;
+  rights: string;
+  accessControlType: 'Allow' | 'Deny';
+  objectType: string;
+  inheritanceType: string;
+  inheritedObjectType: string;
 }
 
 export interface AdGroup {

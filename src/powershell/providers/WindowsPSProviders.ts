@@ -56,7 +56,7 @@ import type {
   ISmbProvider, SmbShareInfo, SmbSessionInfo,
   IAdProvider, AdUserInfo, AdGroupInfo, AdComputerInfo, AdOrgUnitInfo, AdOpResult, AdSiteInfo,
   AdAttributeSchemaInfo, AdObjectClassSchemaInfo, AdForestInfo, AdDomainInfo, AdTrustInfo,
-  AdReplicationConnectionInfo, AdReplicationFailureInfo, AdPasswordPolicyInfo, AdFineGrainedPasswordPolicyInfo,
+  AdReplicationConnectionInfo, AdReplicationFailureInfo, AdPasswordPolicyInfo, AdFineGrainedPasswordPolicyInfo, AdAccessRuleInfo,
   IComputerProvider, DomainMembershipInfo,
   IGpoProvider, GpoInfo,
   IIisProvider, IisOpResult, WebsiteInfo, AppPoolInfo, NewAppPoolOptions, WebModuleInfo,
@@ -447,6 +447,16 @@ class WindowsAdAdapter implements IAdProvider {
     return { name: pso.name, precedence: pso.precedence, description: pso.description, ...this.toPolicyInfo(pso.settings) };
   }
 
+  getAcl(dn: string): AdAccessRuleInfo[] | null {
+    const store = this.requireStore('Get-ACL');
+    return store.getAcl(dn);
+  }
+
+  setAcl(dn: string, rules: AdAccessRuleInfo[]): AdOpResult {
+    const store = this.requireStore('Set-ACL');
+    return store.setAcl(dn, rules);
+  }
+
   getDefaultDomainPasswordPolicy(): AdPasswordPolicyInfo {
     const store = this.requireStore('Get-ADDefaultDomainPasswordPolicy');
     return this.toPolicyInfo(store.getDefaultDomainPasswordPolicy());
@@ -518,25 +528,25 @@ class WindowsAdAdapter implements IAdProvider {
     return store.removeComputer(name);
   }
 
-  newUser(sam: string, opts: { password: string; fullName?: string; path?: string; enabled?: boolean; department?: string; title?: string }): AdOpResult {
+  newUser(sam: string, opts: { password: string; fullName?: string; path?: string; enabled?: boolean; department?: string; title?: string; actingSam?: string }): AdOpResult {
     const store = this.requireStore('New-ADUser');
     const denied = this.requireAdmin('New-ADUser');
     if (denied) return denied;
     return store.newUser(sam, {
       password: opts.password, fullName: opts.fullName, enabled: opts.enabled,
       ou: opts.path ? store.resolveIdentity(opts.path) : undefined,
-      department: opts.department, title: opts.title,
+      department: opts.department, title: opts.title, actingSam: opts.actingSam,
     });
   }
   getUser(identity: string): AdUserInfo | null {
     const store = this.requireStore('Get-ADUser');
     const u = store.getUser(store.resolveIdentity(identity));
     return u ? {
-      sam: u.sam, upn: u.upn, dn: u.dn, enabled: u.enabled, memberOf: u.memberOf, fullName: u.fullName,
+      sam: u.sam, upn: u.upn, dn: u.dn, sid: u.sid, enabled: u.enabled, memberOf: u.memberOf, fullName: u.fullName,
       department: u.department, title: u.title, servicePrincipalNames: u.servicePrincipalNames,
     } : null;
   }
-  setUser(identity: string, opts: { enabled?: boolean; fullName?: string; password?: string; department?: string; title?: string; addSpns?: string[]; removeSpns?: string[] }): AdOpResult {
+  setUser(identity: string, opts: { enabled?: boolean; fullName?: string; password?: string; department?: string; title?: string; addSpns?: string[]; removeSpns?: string[]; actingSam?: string }): AdOpResult {
     const store = this.requireStore('Set-ADUser');
     const denied = this.requireAdmin('Set-ADUser');
     if (denied) return denied;

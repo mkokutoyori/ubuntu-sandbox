@@ -13,6 +13,14 @@ import { parseCredentialArg } from './RemotingCmdlets';
 
 // ─── New-Object ───────────────────────────────────────────────────────────
 
+function newObjectCtorArgs(ctx: CmdletContext): PSValue[] {
+  const named = ctx.named['argumentlist'];
+  if (named !== undefined) return Array.isArray(named) ? named : [named];
+  const positional = ctx.positional.slice(1);
+  if (positional.length === 1 && Array.isArray(positional[0])) return positional[0];
+  return positional;
+}
+
 export class NewObjectCmdlet implements ICmdlet {
   readonly name = 'new-object';
   readonly parameters = ['TypeName', 'ArgumentList', 'Property', 'ComObject', 'Strict'] as const;
@@ -42,9 +50,20 @@ export class NewObjectCmdlet implements ICmdlet {
       return s as unknown as PSValue;
     }
     if (tname.includes('pscredential')) {
-      const args = (ctx.named['argumentlist'] ?? ctx.positional.slice(1)) as PSValue[];
-      const user = psValueToString(Array.isArray(args) ? args[0] : args ?? '');
+      const args = newObjectCtorArgs(ctx);
+      const user = psValueToString(args[0] ?? '');
       return { UserName: user, Password: null } as Record<string, PSValue>;
+    }
+    if (tname.includes('activedirectoryaccessrule')) {
+      const args = newObjectCtorArgs(ctx);
+      return {
+        IdentityReference: psValueToString(args[0] ?? ''),
+        ActiveDirectoryRights: psValueToString(args[1] ?? ''),
+        AccessControlType: psValueToString(args[2] ?? 'Allow'),
+        ObjectType: psValueToString(args[3] ?? '00000000-0000-0000-0000-000000000000'),
+        InheritanceType: psValueToString(args[4] ?? 'None'),
+        InheritedObjectType: psValueToString(args[5] ?? '00000000-0000-0000-0000-000000000000'),
+      } as Record<string, PSValue>;
     }
     // psobject / pscustomobject (and the generic fallback) honour -Property,
     // which seeds the new object's NoteProperties from a hashtable.

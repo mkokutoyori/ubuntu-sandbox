@@ -740,6 +740,10 @@ export class SetItemCmdlet implements ICmdlet {
 
 // ─── Get-Acl / Set-Acl ──────────────────────────────────────────────────────
 
+function stripAdPathPrefix(path: string): string {
+  return path.replace(/^ad:\\?/i, '').replace(/^\\+/, '');
+}
+
 export class GetAclCmdlet implements ICmdlet {
   readonly name = 'get-acl';
   readonly parameters = ['Path', 'LiteralPath', 'InputObject', 'Audit', 'Filter', 'Include', 'Exclude'] as const;
@@ -747,6 +751,29 @@ export class GetAclCmdlet implements ICmdlet {
 
   execute(ctx: CmdletContext): PSValue {
     const path = psValueToString(ctx.named['path'] ?? ctx.positional[0] ?? '');
+    if (/^ad:/i.test(path)) {
+      const ad = ctx.providers.ad;
+      if (!ad) { ctx.emitError("Get-Acl : Cannot find drive. A drive with the name 'AD' does not exist."); return null; }
+      const dn = stripAdPathPrefix(path);
+      const rules = ad.getAcl(dn);
+      if (rules === null) { ctx.emitError(`Get-Acl : Cannot find path '${path}' because it does not exist.`); return null; }
+      const accessArr: PSValue[] = rules.map(r => ({
+        IdentityReference: r.identitySam,
+        ActiveDirectoryRights: r.rights,
+        AccessControlType: r.accessControlType,
+        ObjectType: r.objectType,
+        InheritanceType: r.inheritanceType,
+        InheritedObjectType: r.inheritedObjectType,
+        IsInherited: false,
+      } as unknown as PSValue));
+      const result: Record<string, PSValue> = {
+        Path: path,
+        Owner: 'MANDENG\\Domain Admins',
+        Access: accessArr as PSValue,
+        AddAccessRule: ((ace: PSValue) => { accessArr.push(ace); return null; }) as unknown as PSValue,
+      };
+      return result;
+    }
     const fs = ctx.providers.filesystem;
     if (!fs || !path) { ctx.emitError("Get-Acl : Cannot bind argument to parameter 'Path' because it is an empty string."); return null; }
     if (!fs.exists(path)) { ctx.emitError(`Get-Acl : Cannot find path '${path}' because it does not exist.`); return null; }
@@ -755,7 +782,6 @@ export class GetAclCmdlet implements ICmdlet {
       ctx.emitError(`Get-Acl : Cannot retrieve ACL for '${path}'.`);
       return null;
     }
-    // Match the columns Format-List would render for a real ACL.
     return {
       Path:  path,
       Owner: acl.owner,
@@ -776,9 +802,33 @@ export class SetAclCmdlet implements ICmdlet {
   readonly aliases = [] as const;
 
   execute(ctx: CmdletContext): PSValue {
-    // Real Set-Acl takes a SecurityDescriptor argument — too complex to
-    // simulate without parsing the full PSObject. We forward to the legacy
-    // executor, which has a dedicated handler.
+    const path = psValueToString(ctx.named['path'] ?? ctx.positional[0] ?? '');
+    if (/^ad:/i.test(path)) {
+      const ad = ctx.providers.ad;
+      if (!ad) { ctx.emitError("Set-Acl : Cannot find drive. A drive with the name 'AD' does not exist."); return null; }
+      const aclObj = ctx.named['aclobject'];
+      if (typeof aclObj !== 'object' || aclObj === null || Array.isArray(aclObj)) {
+        ctx.emitError("Set-Acl : Cannot process argument because the value of argument 'AclObject' is not valid.");
+        return null;
+      }
+      const access = (aclObj as Record<string, PSValue>)['Access'];
+      const accessArr = Array.isArray(access) ? access : [];
+      const rules = accessArr.map(a => {
+        const rec = a as unknown as Record<string, PSValue>;
+        return {
+          identitySam: psValueToString(rec['IdentityReference'] ?? ''),
+          rights: psValueToString(rec['ActiveDirectoryRights'] ?? ''),
+          accessControlType: psValueToString(rec['AccessControlType'] ?? 'Allow') === 'Deny' ? 'Deny' as const : 'Allow' as const,
+          objectType: psValueToString(rec['ObjectType'] ?? '00000000-0000-0000-0000-000000000000'),
+          inheritanceType: psValueToString(rec['InheritanceType'] ?? 'None'),
+          inheritedObjectType: psValueToString(rec['InheritedObjectType'] ?? '00000000-0000-0000-0000-000000000000'),
+        };
+      });
+      const dn = stripAdPathPrefix(path);
+      const res = ad.setAcl(dn, rules);
+      if (!res.ok) ctx.emitError(`Set-Acl : ${res.message}`);
+      return null;
+    }
     throw new PSRuntimeError('Set-Acl is not recognized in this provider context');
   }
 }

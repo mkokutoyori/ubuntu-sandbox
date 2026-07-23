@@ -178,8 +178,17 @@ export interface ISmbProvider {
 // ── AD DS (Active Directory Domain Services) ────────────────────────────────
 
 export interface AdUserInfo {
-  sam: string; upn: string; dn: string; enabled: boolean; memberOf: string[]; fullName: string;
+  sam: string; upn: string; dn: string; sid: string; enabled: boolean; memberOf: string[]; fullName: string;
   department: string; title: string; servicePrincipalNames: string[];
+}
+
+export interface AdAccessRuleInfo {
+  identitySam: string;
+  rights: string;
+  accessControlType: 'Allow' | 'Deny';
+  objectType: string;
+  inheritanceType: string;
+  inheritedObjectType: string;
 }
 export interface AdGroupInfo {
   sam: string; dn: string; scope: 'DomainLocal' | 'Global' | 'Universal'; members: string[];
@@ -203,9 +212,9 @@ export interface IAdProvider {
   /** `Remove-ADDomainController` — AD metadata cleanup for a DC that will never come back online (the `ntdsutil metadata cleanup` equivalent). */
   removeDomainController(name: string): AdOpResult;
 
-  newUser(sam: string, opts: { password: string; fullName?: string; path?: string; enabled?: boolean; department?: string; title?: string }): AdOpResult;
+  newUser(sam: string, opts: { password: string; fullName?: string; path?: string; enabled?: boolean; department?: string; title?: string; actingSam?: string }): AdOpResult;
   getUser(identity: string): AdUserInfo | null;
-  setUser(identity: string, opts: { enabled?: boolean; fullName?: string; password?: string; department?: string; title?: string; addSpns?: string[]; removeSpns?: string[] }): AdOpResult;
+  setUser(identity: string, opts: { enabled?: boolean; fullName?: string; password?: string; department?: string; title?: string; addSpns?: string[]; removeSpns?: string[]; actingSam?: string }): AdOpResult;
   removeUser(identity: string): AdOpResult;
   /** Every user/computer object carrying at least one SPN — for cross-object duplicate-SPN detection (`Get-ADObject -Filter {ServicePrincipalName -like "*"}`). */
   listObjectsWithSpns(): Array<{ name: string; servicePrincipalNames: string[] }>;
@@ -262,6 +271,9 @@ export interface IAdProvider {
   listReplicationConnections(): AdReplicationConnectionInfo[];
   /** `Get-ADReplicationFailure -Scope Forest` — every replication partner this DC currently has a persistent failure with (empty in a healthy lab). */
   listReplicationFailures(): AdReplicationFailureInfo[];
+
+  getAcl(dn: string): AdAccessRuleInfo[] | null;
+  setAcl(dn: string, rules: AdAccessRuleInfo[]): AdOpResult;
 
   /** `Get-ADDefaultDomainPasswordPolicy`. */
   getDefaultDomainPasswordPolicy(): AdPasswordPolicyInfo;
