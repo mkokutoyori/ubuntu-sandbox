@@ -433,8 +433,16 @@ export abstract class LinuxMachine extends EndHost
         if (denial) return Promise.resolve(denial);
       }
       const ctx = this.buildCommandContext();
+      if (cmd.runWithStatusSync) return Promise.resolve(cmd.runWithStatusSync(ctx, args));
       if (cmd.runWithStatus) return cmd.runWithStatus(ctx, args);
-      return Promise.resolve(cmd.run(ctx, args)).then((output) => ({ output, exitCode: 0 }));
+      // Match `_registryCommandHook`'s exit-code inference (used when this
+      // same registry command is reached via the synchronous script
+      // dispatch default case) so `$?`/`||` chaining behaves identically
+      // regardless of which of the two bridges happened to run it.
+      return Promise.resolve(cmd.run(ctx, args)).then((output) => ({
+        output,
+        exitCode: this.inferRegistryExitCode(argv[0], output),
+      }));
     });
     this.executor.setNetworkCommandNamePredicate((name) => {
       const cmd = this.commands.get(name);
@@ -1585,8 +1593,23 @@ export abstract class LinuxMachine extends EndHost
     if (this.commands.hasNetworkCommandIn(input)) return true;
     if (input.includes('/var/lib/dhcp/')) return true;
     const words = input.split(/[\s;|&"'`()]+/);
-    return words.some(w => w === 'ps' || w === 'man' || w === 'sshd');
+    if (words.some(w => w === 'ps' || w === 'man' || w === 'sshd')) return true;
+    // `bash script.sh` / `./script.sh` / `run-parts DIR` at the top of the
+    // line: a network command (`ssh`, `curl`, …) may be hiding inside the
+    // script file's content, invisible to the string scan above — treat
+    // the whole line as network-possible so it is routed through the
+    // async dispatcher instead of silently taking the synchronous path.
+    return LinuxMachine.SCRIPT_FILE_HEAD_RE.test(input);
   }
+
+  /**
+   * Matches a top-of-line `bash`/`sh` file invocation (no `-c`), a direct
+   * `./script`/`/path/script` execution, or `run-parts DIR` — the three
+   * forms where {@link containsNetworkCommand}'s literal-token scan cannot
+   * see whether a network command is hiding inside the invoked file.
+   */
+  private static readonly SCRIPT_FILE_HEAD_RE =
+    /^\s*(?:sudo\s+)?(?:bash|sh)\s+(?!-[a-zA-Z]*c\b)\S|^\s*(?:sudo\s+)?(?:\.\/|\/)\S|^\s*(?:sudo\s+)?run-parts\s+\S/;
 
   private async runShellScript(script: string): Promise<string> {
     const collected: Array<{ line: string; runAs?: string }> = [];
@@ -1703,6 +1726,7 @@ export abstract class LinuxMachine extends EndHost
     if (/(^|\s|;|\||&)(bash|sh)(\s+-[a-zA-Z]*c\b|\s+-[a-zA-Z]*c$)/.test(input)) return true;
     if (/^\s*(timeout|env|nohup|setsid|nice)\s/.test(input)) return true;
     if (/^\s*su\s+([^\s]+\s+)?-[a-zA-Z]*c\b/.test(input)) return true;
+    if (LinuxMachine.SCRIPT_FILE_HEAD_RE.test(input)) return true;
     return false;
   }
 

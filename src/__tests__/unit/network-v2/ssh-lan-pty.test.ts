@@ -11,6 +11,16 @@
  *  - T8     : Closing the shell channel emits a `channel_closed` event.
  *  - T9     : Inline `ssh -t host cmd` prints the OpenSSH-style
  *             "Pseudo-terminal will be allocated…" notice.
+ *  - T10/T11: The shell channel is already genuinely stateful across
+ *             separate `runLine()` calls — `cd`/`export` on one call are
+ *             visible on the next. This works today because `getShell()`
+ *             (Linux/Windows/Router) ignores its own `cwd` argument and
+ *             delegates to the device's persistent executor/shell object,
+ *             not because of any per-channel bookkeeping in
+ *             `SshServerHandler`. Locked in here since the SSH refactor
+ *             (docs/audit/03-transport-services.md, 04-equipements-data-plane.md)
+ *             relies on this channel being safe to drive a real interactive
+ *             terminal session.
  *
  * Reference: SSH-IMPLEMENTATION-ANALYSIS.md §5 P4.
  */
@@ -120,6 +130,32 @@ describe('SSH LAN — PTY shell channel (`ssh -t`)', () => {
   });
 
   // ─── inline-command notice ────────────────────────────────────
+
+  // T10
+  it('T10 — the shell channel persists cwd across separate runLine() calls', async () => {
+    const session = await openSshSession(lan.pc1, PC2_IP);
+    const channelResult = session.openShellChannel();
+    if (!isOk(channelResult)) throw new Error('shell channel failed');
+    const channel = channelResult.value;
+    await channel.runLine('cd /tmp');
+    const pwd = await channel.runLine('pwd');
+    expect(pwd.stdout.trim()).toBe('/tmp');
+    channel.close();
+    session.disconnect();
+  });
+
+  // T11
+  it('T11 — the shell channel persists exported environment variables across runLine() calls', async () => {
+    const session = await openSshSession(lan.pc1, PC2_IP);
+    const channelResult = session.openShellChannel();
+    if (!isOk(channelResult)) throw new Error('shell channel failed');
+    const channel = channelResult.value;
+    await channel.runLine('export SSH_CHANNEL_PROBE=bar');
+    const echo = await channel.runLine('echo $SSH_CHANNEL_PROBE');
+    expect(echo.stdout.trim()).toBe('bar');
+    channel.close();
+    session.disconnect();
+  });
 
   // T9
   it('T9 — `ssh -t host cmd` prints the "Pseudo-terminal will be allocated" notice', async () => {

@@ -59,7 +59,7 @@ import { HardwareProfile } from '../host/hardware';
 import { HostLifecycle } from '../host/lifecycle';
 import { HostClock } from '../host/lifecycle/HostClock';
 import { SystemIdentity } from '../host/identity';
-import { runScript, runScriptContent, runScriptContentAsync, type ScriptResult } from '@/bash/runtime/ScriptRunner';
+import { runScript, runScriptAsync, runScriptContent, runScriptContentAsync, type ScriptResult } from '@/bash/runtime/ScriptRunner';
 import type { BashInterpreter } from '@/bash/interpreter/BashInterpreter';
 import { ExitSignal, DaemonParkSignal } from '@/bash/errors/BashError';
 import { AliasTable } from '@/bash/runtime/AliasTable';
@@ -2490,6 +2490,39 @@ export class LinuxCommandExecutor {
       const suPending = this.trySuNetworkCommand(argv, env);
       if (suPending) return suPending;
     }
+    // A `bash script.sh` / `./script.sh` / `run-parts dir` reached through
+    // this (already async-capable) entry point may contain a network
+    // command invisible to the caller's own string scan — route these
+    // script-invoking forms to their async twins instead of the
+    // synchronous `dispatchFromInterpreter` so any `ssh`/`curl`/… inside
+    // the script file is genuinely awaited (see Phase 2 of the SSH
+    // wire-fidelity refactor). Deep, irreducibly synchronous nested calls
+    // never reach `dispatchMaybeNetwork` and keep using the unchanged sync
+    // `case 'bash':`/`'sh':`/`'run-parts':`/default-script handling.
+    //
+    // Deliberately NOT applied when `argv[0] === 'sudo'`: the real sudo
+    // authorization/audit/user-switch logic lives in the synchronous
+    // `dispatch()` (~2813 `if (cmdArgs[0] === 'sudo')`), which recurses
+    // into `dispatch()` itself under the elevated user — stripping `sudo`
+    // here and jumping straight to the async twins would silently skip
+    // that policy check entirely. `sudo bash script.sh` therefore still
+    // takes the pre-existing synchronous path (a known, narrower residual
+    // gap) rather than risk bypassing sudoers enforcement.
+    if (!background && argv.length > 0) {
+      const cmd0 = argv[0];
+      const rest = argv.slice(1);
+      if (cmd0 === 'bash' || cmd0 === 'sh') {
+        return this.runBashOrShAsync(cmd0, rest);
+      }
+      if (cmd0 === 'run-parts') {
+        return this.handleRunPartsAsync(rest);
+      }
+      if (cmd0.startsWith('./') || cmd0.startsWith('/')) {
+        return this.runDirectScriptAsync(cmd0, rest).then(
+          (r) => r ?? this.dispatchFromInterpreter(argv, env, background),
+        );
+      }
+    }
     return this.dispatchFromInterpreter(argv, env, background);
   }
 
@@ -2625,6 +2658,140 @@ export class LinuxCommandExecutor {
     } finally {
       this.bashPids.pop();
     }
+  }
+
+  /**
+   * Async twin of {@link runScriptProcess}: same PID bookkeeping, but its
+   * `bridge` calls {@link dispatchMaybeNetwork} (already async-capable —
+   * the mechanism that already makes `ping`/`traceroute` genuinely wire-real
+   * at the top level) instead of the synchronous `dispatchFromInterpreter`.
+   * Used when a script is reached through the async dispatch path
+   * (`bash script.sh`, `./script.sh`, `run-parts`, or one of these nested
+   * inside another script) so a network command anywhere inside the script
+   * file is correctly awaited instead of silently discarded.
+   */
+  private async runScriptProcessAsync(
+    command: string,
+    run: (
+      identity: { pid: number; ppid: number },
+      bridge: (argv: string[], env?: Record<string, string>, background?: boolean) =>
+        { output: string; exitCode: number; stderr?: string } | Promise<{ output: string; exitCode: number; stderr?: string }>,
+    ) => Promise<ScriptResult>,
+  ): Promise<{ output: string; exitCode: number }> {
+    const ppid = this.currentBashPid();
+    const proc = this.processMgr.spawn({
+      command,
+      comm: 'bash',
+      user: this.userMgr.currentUser,
+      uid: this.userMgr.currentUid,
+      gid: this.userMgr.currentGid,
+      ppid,
+      tty: 'pts/0',
+      cwd: this.cwd,
+    });
+    const killedCode = () =>
+      128 + (SIGNAL_NUMBERS[this.processMgr.lastKillSignal(proc.pid) ?? 'SIGTERM'] ?? 15);
+    const bridge = async (argv: string[], env?: Record<string, string>, background?: boolean) => {
+      if (!this.processMgr.get(proc.pid)) throw new ExitSignal(killedCode());
+      const result = await this.dispatchMaybeNetwork(argv, env, background);
+      if (!this.processMgr.get(proc.pid)) throw new ExitSignal(killedCode());
+      return result;
+    };
+    this.bashPids.push(proc.pid);
+    try {
+      const result = await run({ pid: proc.pid, ppid }, bridge);
+      if (result.parked) {
+        // Same reasoning as the sync version — see runScriptProcess.
+        if (this.processMgr.get(proc.pid)) this.processMgr.kill(proc.pid, 'SIGKILL', { silent: true });
+        throw new DaemonParkSignal(result.output, result.interp);
+      }
+      if (this.processMgr.get(proc.pid)) this.processMgr.exit(proc.pid, result.exitCode);
+      return { output: result.output, exitCode: result.exitCode };
+    } finally {
+      this.bashPids.pop();
+    }
+  }
+
+  /**
+   * Pure parse of `bash`/`sh` argv — shared by the synchronous `case 'bash':`/
+   * `case 'sh':` in the switch and {@link runBashOrShAsync}, so the two
+   * entry points can never silently diverge on flag handling (`-l`, `-i`,
+   * `-c`, combined bundles like `-lc`).
+   */
+  private static parseBashOrShArgs(
+    cmd: string,
+    args: string[],
+  ): { arg0: string; cmdString: string | null; scriptArgv: string[]; login: boolean; interactive: boolean } {
+    let i = 0;
+    let login = false;
+    let interactive = false;
+    let cmdString: string | null = null;
+    while (i < args.length && args[i].startsWith('-') && args[i] !== '-') {
+      const flags = args[i].slice(1);
+      if (flags.includes('l')) login = true;
+      if (flags.includes('i')) interactive = true;
+      if (flags.includes('c')) {
+        cmdString = args[i + 1] ?? '';
+        i += 2;
+        break;
+      }
+      i++;
+    }
+    const arg0 = login ? '-bash' : cmd;
+    return { arg0, cmdString, scriptArgv: args.slice(i), login, interactive };
+  }
+
+  /**
+   * Async twin of the synchronous `case 'bash':`/`case 'sh':` dispatch —
+   * reached only via {@link dispatchMaybeNetwork} when a `bash`/`sh`
+   * invocation is encountered on the async path (top-level, or nested
+   * inside another script/wrapper already running async). Without this,
+   * a network command (`ssh`, `curl`, …) inside the script file's content
+   * would silently resolve to "command not found" while its real network
+   * operation kept running detached in the background — see Phase 2 of
+   * the SSH wire-fidelity refactor.
+   */
+  private async runBashOrShAsync(
+    cmd: string,
+    args: string[],
+  ): Promise<{ output: string; exitCode: number; stderr?: string }> {
+    const parsed = LinuxCommandExecutor.parseBashOrShArgs(cmd, args);
+    const startupVars = cmd === 'bash'
+      ? this.runBashStartupFiles(parsed.login, parsed.interactive)
+      : this.buildEnvVars();
+    if (parsed.cmdString !== null) {
+      return this.runScriptProcessAsync(`${cmd} -c ${parsed.cmdString}`, (identity, bridge) =>
+        runScriptContentAsync(
+          parsed.cmdString!, parsed.arg0, parsed.scriptArgv, bridge,
+          startupVars, this.buildIOContext(),
+          { ...identity, daemonMode: this.daemonMode }, this.aliases, this.functions,
+        ));
+    }
+    if (parsed.scriptArgv.length > 0) {
+      return this.runScriptProcessAsync(`${cmd} ${parsed.scriptArgv.join(' ')}`, (identity, bridge) =>
+        runScriptAsync(this.ctx(), parsed.scriptArgv[0], parsed.scriptArgv.slice(1), bridge, this.aliases, this.functions, 'interpreter', identity));
+    }
+    return { output: '', exitCode: 0 };
+  }
+
+  /**
+   * Async twin of the `default:` branch's direct-executable-script handling
+   * (`./script.sh`, `/path/to/script.sh`) — reached via
+   * {@link dispatchMaybeNetwork} on the async path, for the same reason as
+   * {@link runBashOrShAsync}. Returns `null` when `cmd` isn't a script-path
+   * form or the file doesn't exist, so the caller can fall through to the
+   * normal (synchronous) dispatch.
+   */
+  private async runDirectScriptAsync(
+    cmd: string,
+    args: string[],
+  ): Promise<{ output: string; exitCode: number; stderr?: string } | null> {
+    if (!cmd.startsWith('./') && !cmd.startsWith('/')) return null;
+    const absPath = this.vfs.normalizePath(cmd, this.cwd);
+    if (!this.vfs.exists(absPath)) return null;
+    const commandLine = ['/bin/bash', absPath, ...args].join(' ');
+    return this.runScriptProcessAsync(commandLine, (identity, bridge) =>
+      runScriptAsync(this.ctx(), cmd, args, bridge, this.aliases, this.functions, 'direct', identity));
   }
 
   private dispatchFromInterpreter(
@@ -3821,39 +3988,21 @@ export class LinuxCommandExecutor {
       // Script execution
       case 'bash':
       case 'sh': {
-        const execCmd = (argv: string[], env?: Record<string, string>) =>
-          this.dispatchFromInterpreter(argv, env);
-        // Parse the leading option group(s). bash accepts combined flags
-        // such as `-lc` (login + command); `-l` makes $0 a login `-bash`.
-        let i = 0;
-        let login = false;
-        let interactive = false;
-        let cmdString: string | null = null;
-        while (i < args.length && args[i].startsWith('-') && args[i] !== '-') {
-          const flags = args[i].slice(1);
-          if (flags.includes('l')) login = true;
-          if (flags.includes('i')) interactive = true;
-          if (flags.includes('c')) {
-            cmdString = args[i + 1] ?? '';
-            i += 2;
-            break;
-          }
-          i++;
-        }
-        const arg0 = login ? '-bash' : cmd;
-        const startupVars = cmd === 'bash' ? this.runBashStartupFiles(login, interactive) : this.buildEnvVars();
-        if (cmdString !== null) {
-          return this.runScriptProcess(`${cmd} -c ${cmdString}`, (identity, bridge) =>
+        const parsed = LinuxCommandExecutor.parseBashOrShArgs(cmd, args);
+        const startupVars = cmd === 'bash'
+          ? this.runBashStartupFiles(parsed.login, parsed.interactive)
+          : this.buildEnvVars();
+        if (parsed.cmdString !== null) {
+          return this.runScriptProcess(`${cmd} -c ${parsed.cmdString}`, (identity, bridge) =>
             runScriptContent(
-              cmdString!, arg0, args.slice(i), bridge,
+              parsed.cmdString!, parsed.arg0, parsed.scriptArgv, bridge,
               startupVars, this.buildIOContext(),
               { ...identity, daemonMode: this.daemonMode }, this.aliases, this.functions,
             ));
         }
-        if (i < args.length) {
-          const scriptArgv = args.slice(i);
-          return this.runScriptProcess(`${cmd} ${scriptArgv.join(' ')}`, (identity, bridge) =>
-            runScript(c, scriptArgv[0], scriptArgv.slice(1), bridge, this.aliases, this.functions, 'interpreter', identity));
+        if (parsed.scriptArgv.length > 0) {
+          return this.runScriptProcess(`${cmd} ${parsed.scriptArgv.join(' ')}`, (identity, bridge) =>
+            runScript(c, parsed.scriptArgv[0], parsed.scriptArgv.slice(1), bridge, this.aliases, this.functions, 'interpreter', identity));
         }
         return { output: '', exitCode: 0 };
       }
@@ -4710,9 +4859,31 @@ export class LinuxCommandExecutor {
    * part. The filename ruleset is the LSB one (`[a-zA-Z0-9_-]+`, no dots
    * so `*.dpkg-old`/`*.swp` are skipped) unless overridden by `--regex`.
    */
-  private handleRunParts(args: string[]): { output: string; exitCode: number } {
+  /**
+   * Shared flag-parsing/validation core of `run-parts`, factored out so the
+   * synchronous {@link handleRunParts} and its async twin
+   * {@link handleRunPartsAsync} can never silently diverge on option
+   * handling. Returns either a terminal `result` (usage/error/`--list`/
+   * `--test` output — nothing left to execute) or an `execute` plan with
+   * everything the two execution loops need.
+   */
+  private parseRunPartsInvocation(
+    args: string[],
+  ):
+    | { kind: 'result'; output: string; exitCode: number }
+    | {
+        kind: 'execute';
+        entries: { name: string; inode: INode }[];
+        absDir: string;
+        scriptArgs: string[];
+        umaskOverride: number | null;
+        childEnv: Record<string, string>;
+        verbose: boolean;
+        report: boolean;
+        exitOnError: boolean;
+      } {
     const USAGE = LinuxCommandExecutor.RUN_PARTS_USAGE;
-    const invalid = (msg: string) => ({ output: `run-parts: ${msg}`, exitCode: 1 });
+    const invalid = (msg: string) => ({ kind: 'result' as const, output: `run-parts: ${msg}`, exitCode: 1 });
 
     let test = false, list = false, reverse = false, verbose = false, report = false, exitOnError = false;
     const scriptArgs: string[] = [];
@@ -4747,8 +4918,8 @@ export class LinuxCommandExecutor {
           case '--verbose': verbose = true; break;
           case '--report': report = true; break;
           case '--exit-on-error': exitOnError = true; break;
-          case '--help': return { output: USAGE, exitCode: 0 };
-          case '--version': return { output: 'run-parts (Ubuntu Sandbox) 5.0', exitCode: 0 };
+          case '--help': return { kind: 'result', output: USAGE, exitCode: 0 };
+          case '--version': return { kind: 'result', output: 'run-parts (Ubuntu Sandbox) 5.0', exitCode: 0 };
           case '--arg': {
             const v = valueFor(inline, idx, 'arg');
             if (v === null) return invalid("option '--arg' requires an argument");
@@ -4788,9 +4959,9 @@ export class LinuxCommandExecutor {
               scriptArgs.push(v);
               break;
             }
-            case 'h': return { output: USAGE, exitCode: 0 };
+            case 'h': return { kind: 'result', output: USAGE, exitCode: 0 };
             default:
-              return { output: `run-parts: invalid option -- '${letters[li]}'\n${USAGE}`, exitCode: 1 };
+              return { kind: 'result', output: `run-parts: invalid option -- '${letters[li]}'\n${USAGE}`, exitCode: 1 };
           }
         }
       } else {
@@ -4803,7 +4974,7 @@ export class LinuxCommandExecutor {
     if (dirArg === null) {
       // No operand at all → bare usage; an operand that was swallowed by a
       // preceding option leaves nothing to run.
-      return { output: `run-parts: error: missing operand\n${USAGE}`, exitCode: 1 };
+      return { kind: 'result', output: `run-parts: error: missing operand\n${USAGE}`, exitCode: 1 };
     }
 
     // Resolve and validate DIRECTORY (follows symlinks like the real tool).
@@ -4814,13 +4985,13 @@ export class LinuxCommandExecutor {
     const absDir = this.vfs.normalizePath(dirArg, baseCwd);
     const dirInode = this.vfs.resolveInode(absDir);
     if (!dirInode) {
-      return { output: `run-parts: failed to open directory ${dirArg}: No such file or directory`, exitCode: 1 };
+      return { kind: 'result', output: `run-parts: failed to open directory ${dirArg}: No such file or directory`, exitCode: 1 };
     }
     if (dirInode.type !== 'directory') {
-      return { output: `run-parts: ${dirArg}: Not a directory`, exitCode: 1 };
+      return { kind: 'result', output: `run-parts: ${dirArg}: Not a directory`, exitCode: 1 };
     }
     if (!this.checkPermission(dirInode, 'r') || !this.checkPermission(dirInode, 'x')) {
-      return { output: `run-parts: failed to open directory ${dirArg}: Permission denied`, exitCode: 1 };
+      return { kind: 'result', output: `run-parts: failed to open directory ${dirArg}: Permission denied`, exitCode: 1 };
     }
 
     // Compile the filename filter once. A bad --regex is a hard error.
@@ -4830,7 +5001,7 @@ export class LinuxCommandExecutor {
         ? new RegExp(`^(?:${regexSrc})$`)
         : /^[a-zA-Z0-9_-]+$/;
     } catch {
-      return { output: `run-parts: invalid regex: ${regexSrc}`, exitCode: 1 };
+      return { kind: 'result', output: `run-parts: invalid regex: ${regexSrc}`, exitCode: 1 };
     }
 
     // Display paths keep the caller's spelling of DIRECTORY (relative or
@@ -4843,7 +5014,7 @@ export class LinuxCommandExecutor {
 
     // --list: every valid filename, executable or not.
     if (list) {
-      return { output: entries.map((e) => `${displayBase}/${e.name}`).join('\n'), exitCode: 0 };
+      return { kind: 'result', output: entries.map((e) => `${displayBase}/${e.name}`).join('\n'), exitCode: 0 };
     }
 
     // --test: only the files that *would* run (valid name + executable).
@@ -4853,7 +5024,7 @@ export class LinuxCommandExecutor {
         return !!resolved && resolved.type !== 'directory'
           && (resolved.permissions & 0o111) !== 0 && this.checkPermission(resolved, 'x');
       });
-      return { output: runnable.map((e) => `${displayBase}/${e.name}`).join('\n'), exitCode: 0 };
+      return { kind: 'result', output: runnable.map((e) => `${displayBase}/${e.name}`).join('\n'), exitCode: 0 };
     }
 
     // Execute. Children inherit the invoker's exported environment (the
@@ -4861,6 +5032,19 @@ export class LinuxCommandExecutor {
     // their cwd is the invoker's PWD and never leaks back to the parent.
     const childEnv = { ...(this._cmdEnv ?? this.buildEnvVars()) };
     childEnv['PWD'] = baseCwd;
+    return { kind: 'execute', entries, absDir, scriptArgs, umaskOverride, childEnv, verbose, report, exitOnError };
+  }
+
+  /**
+   * Run the entries from a `parseRunPartsInvocation` execute-plan through
+   * the synchronous {@link runPartsRunScript}, honoring `--exit-on-error`
+   * and `--verbose`/`--report` output shaping. Shared tail of
+   * {@link handleRunParts}.
+   */
+  private runRunPartsPlan(
+    plan: Extract<ReturnType<LinuxCommandExecutor['parseRunPartsInvocation']>, { kind: 'execute' }>,
+  ): { output: string; exitCode: number } {
+    const { entries, absDir, scriptArgs, umaskOverride, childEnv, verbose, report, exitOnError } = plan;
     const stdoutChunks: string[] = [];
     const stderrChunks: string[] = [];
     let exitCode = 0;
@@ -4893,6 +5077,51 @@ export class LinuxCommandExecutor {
     return { output: stdout, exitCode, stderr } as { output: string; exitCode: number };
   }
 
+  private handleRunParts(args: string[]): { output: string; exitCode: number } {
+    const plan = this.parseRunPartsInvocation(args);
+    if (plan.kind === 'result') return { output: plan.output, exitCode: plan.exitCode };
+    return this.runRunPartsPlan(plan);
+  }
+
+  /**
+   * Async twin of {@link handleRunParts} — reached via
+   * {@link dispatchMaybeNetwork} on the async path, for the same reason as
+   * {@link runBashOrShAsync}/{@link runDirectScriptAsync}: a network command
+   * inside one of the directory's scripts must be genuinely awaited instead
+   * of silently discarded. Shares {@link parseRunPartsInvocation} with the
+   * sync path so flag handling can never diverge.
+   */
+  private async handleRunPartsAsync(args: string[]): Promise<{ output: string; exitCode: number; stderr?: string }> {
+    const plan = this.parseRunPartsInvocation(args);
+    if (plan.kind === 'result') return { output: plan.output, exitCode: plan.exitCode };
+    const { entries, absDir, scriptArgs, umaskOverride, childEnv, verbose, report, exitOnError } = plan;
+    const stdoutChunks: string[] = [];
+    const stderrChunks: string[] = [];
+    let exitCode = 0;
+    for (const e of entries) {
+      const absPath = `${absDir}/${e.name}`;
+      const resolved = this.vfs.resolveInode(absPath); // follow symlinks
+      if (!resolved || resolved.type === 'directory') continue; // broken symlink / dir
+      const hasExecBit = (resolved.permissions & 0o111) !== 0;
+      if (!hasExecBit) continue; // not marked executable → silently skipped
+      if (!this.checkPermission(resolved, 'x')) {
+        stderrChunks.push(`run-parts: failed to run ${absPath}: Permission denied`);
+        if (exitOnError) { exitCode = 126; break; }
+        continue;
+      }
+
+      if (verbose) stderrChunks.push(`run-parts: running ${absPath}`);
+      const r = await this.runPartsRunScriptAsync(absPath, scriptArgs, umaskOverride, childEnv);
+      if (r.stdout) stdoutChunks.push(r.stdout);
+      if (r.stderr) stderrChunks.push(r.stderr);
+      if (exitOnError && r.exitCode !== 0) { exitCode = r.exitCode; break; }
+    }
+
+    const stderr = stderrChunks.join('\n');
+    const stdout = report ? '' : stdoutChunks.join('\n');
+    return { output: stdout, exitCode, stderr };
+  }
+
   /**
    * Run one run-parts child in isolation: a fresh $$ pid, /dev/null stdin,
    * the requested umask, and a copy of the exported environment. The
@@ -4914,6 +5143,51 @@ export class LinuxCommandExecutor {
       let scriptResult: ScriptResult = { output: '', exitCode: 0 };
       this.runScriptProcess(`/bin/bash ${absPath}`, (identity, bridge) => {
         scriptResult = runScriptContent(
+          content,
+          absPath,
+          scriptArgs,
+          bridge,
+          childEnv,
+          this.buildIOContext(),
+          { ...identity, initialExitCode: 0 },
+          this.aliases,
+          this.functions,
+        );
+        return scriptResult;
+      });
+      return {
+        stdout: (scriptResult.output ?? '').replace(/\n$/, ''),
+        stderr: (scriptResult.stderr ?? '').replace(/\n$/, ''),
+        exitCode: scriptResult.exitCode ?? 0,
+      };
+    } finally {
+      this.umask = savedUmask;
+    }
+  }
+
+  /**
+   * Async twin of {@link runPartsRunScript}: same isolation (fresh $$ pid,
+   * per-child umask/env), but runs through {@link runScriptProcessAsync}/
+   * {@link runScriptContentAsync} so a network command in the child script
+   * is genuinely awaited instead of silently discarded — see Phase 2 of the
+   * SSH wire-fidelity refactor.
+   */
+  private async runPartsRunScriptAsync(
+    absPath: string,
+    scriptArgs: string[],
+    umaskOverride: number | null,
+    childEnv: Record<string, string>,
+  ): Promise<{ stdout: string; stderr: string; exitCode: number }> {
+    const content = this.vfs.readFile(absPath);
+    if (content === null) return { stdout: '', stderr: '', exitCode: 127 };
+    if (content.includes('\u0000')) return { stdout: '', stderr: '', exitCode: 126 }; // binary, not a script
+
+    const savedUmask = this.umask;
+    if (umaskOverride !== null) this.umask = umaskOverride;
+    try {
+      let scriptResult: ScriptResult = { output: '', exitCode: 0 };
+      await this.runScriptProcessAsync(`/bin/bash ${absPath}`, async (identity, bridge) => {
+        scriptResult = await runScriptContentAsync(
           content,
           absPath,
           scriptArgs,

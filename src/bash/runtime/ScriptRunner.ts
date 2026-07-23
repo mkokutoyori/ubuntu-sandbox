@@ -145,6 +145,54 @@ export function runScriptContent(
 }
 
 /**
+ * Async twin of {@link runScript}: same file-existence/permission checks,
+ * but the final execution step goes through {@link runScriptContentAsync}
+ * so a network command inside the script file (`ssh`, `curl`, …) is
+ * genuinely awaited instead of silently discarded by a synchronous caller.
+ */
+export async function runScriptAsync(
+  ctx: ShellContext,
+  scriptPath: string,
+  scriptArgs: string[],
+  executeCommand: (args: string[], env?: Record<string, string>, background?: boolean) =>
+    { output: string; exitCode: number; stderr?: string; backgroundPid?: number }
+    | Promise<{ output: string; exitCode: number; stderr?: string; backgroundPid?: number }>,
+  aliases?: AliasTable,
+  functions?: Map<string, import('@/bash/parser/ASTNode').Command>,
+  invocation: 'direct' | 'interpreter' = 'direct',
+  identity?: { pid?: number; ppid?: number; initialExitCode?: number },
+): Promise<ScriptResult> {
+  const absPath = ctx.vfs.normalizePath(scriptPath, ctx.cwd);
+
+  const inode = ctx.vfs.resolveInode(absPath);
+  if (!inode) {
+    return { output: `bash: ${scriptPath}: No such file or directory\n`, exitCode: 127 };
+  }
+
+  if (inode.type === 'directory') {
+    return { output: `bash: ${scriptPath}: Is a directory\n`, exitCode: 126 };
+  }
+
+  const permitted = invocation === 'interpreter'
+    ? checkReadPermission(inode, ctx.uid, ctx.gid, ctx.userMgr)
+    : checkExecutePermission(inode, ctx.uid, ctx.gid, ctx.userMgr);
+  if (!permitted) {
+    return { output: `bash: ${scriptPath}: Permission denied\n`, exitCode: 126 };
+  }
+
+  const content = ctx.vfs.readFile(absPath);
+  if (content === null) {
+    return { output: `bash: ${scriptPath}: No such file or directory\n`, exitCode: 127 };
+  }
+
+  const io = buildIOContext(ctx);
+  return runScriptContentAsync(
+    content, scriptPath, scriptArgs, executeCommand,
+    buildEnvVars(ctx), io, identity, aliases, functions,
+  );
+}
+
+/**
  * Async twin of {@link runScriptContent}: drives the same interpreter core
  * through its async driver so external commands may return Promises
  * (network commands that traverse the simulated wire).
