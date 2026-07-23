@@ -64,6 +64,7 @@ export type ExternalCommandFn = (
   argv: string[],
   env?: Record<string, string>,
   background?: boolean,
+  outputPiped?: boolean,
 ) => ExternalCommandResult | string | Promise<ExternalCommandResult | string>;
 
 /** A request the evaluation core yields to its driver. */
@@ -71,6 +72,15 @@ export interface ExternalRequest {
   argv: string[];
   env?: Record<string, string>;
   background?: boolean;
+  /**
+   * True when this command's stdout is not a terminal — it feeds a later
+   * pipeline stage, or is redirected to a file (`>`/`>>`). Real coreutils
+   * (`ls`, …) call `isatty(STDOUT_FILENO)` and change their formatting
+   * accordingly (e.g. `ls` drops multi-column layout); this is that
+   * signal, computed here since only the interpreter walks the
+   * Pipeline/Redirection AST.
+   */
+  outputPiped?: boolean;
 }
 
 /** The sans-IO evaluation type: yields external requests, receives results. */
@@ -185,6 +195,13 @@ export class BashInterpreter {
   private execRedirect: { stdout?: { path: string; append: boolean }; stderr?: { path: string; append: boolean } } | null = null;
   /** >0 while running a stage inside a multi-command pipeline — see `runPipelineStages`. */
   private pipelineDepth = 0;
+  /**
+   * True while running any stage of a pipeline *except the last* — see
+   * `runPipelineStages`. Unlike `pipelineDepth`, this excludes the final
+   * stage: its stdout is the pipeline's own stdout (the terminal, unless
+   * the whole pipeline is itself redirected), not a pipe into anything.
+   */
+  private nonLastPipelineStage = false;
   private functions: Map<string, Command>;
   /** Command aliases — shared with the owning shell when one is passed. */
   readonly aliases: AliasTable;
@@ -265,7 +282,8 @@ export class BashInterpreter {
     while (step.done !== true) {
       let feed: ExternalCommandResult;
       try {
-        const raw = this.executeCommand(step.value.argv, step.value.env, step.value.background);
+        const raw = this.executeCommand(
+          step.value.argv, step.value.env, step.value.background, step.value.outputPiped);
         if (raw instanceof Promise) {
           feed = {
             output: `bash: ${step.value.argv[0]}: cannot run an asynchronous command in a synchronous shell\n`,
@@ -291,7 +309,8 @@ export class BashInterpreter {
     while (step.done !== true) {
       let feed: ExternalCommandResult;
       try {
-        feed = normalizeResult(await this.executeCommand(step.value.argv, step.value.env, step.value.background));
+        feed = normalizeResult(await this.executeCommand(
+          step.value.argv, step.value.env, step.value.background, step.value.outputPiped));
       } catch (e) {
         if (e instanceof ExitSignal || e instanceof DaemonParkSignal) {
           step = gen.throw(e);
@@ -555,6 +574,12 @@ export class BashInterpreter {
         // pipefail, the aggregate) does.
         const isLast = i === node.commands.length - 1;
         if (!isLast) this.errexitSuppress++;
+        // A non-last stage's stdout always feeds this pipe (non-tty); the
+        // last stage inherits whatever the ambient context already was
+        // (e.g. still non-tty if this whole pipeline is itself a non-last
+        // stage of an outer pipeline, or redirected).
+        const savedNonLastStage = this.nonLastPipelineStage;
+        if (!isLast) this.nonLastPipelineStage = true;
         try {
           if (cmd.type === 'SimpleCommand' && pipeInput) {
             yield* this.visitSimpleCommandWithInput(cmd, pipeInput);
@@ -575,6 +600,7 @@ export class BashInterpreter {
             yield* this.visitCommand(cmd);
           }
         } finally {
+          this.nonLastPipelineStage = savedNonLastStage;
           if (!isLast) this.errexitSuppress--;
         }
         stageCodes.push(this.env.lastExitCode);
@@ -807,7 +833,12 @@ export class BashInterpreter {
       const envSnapshot = Object.fromEntries(this.env.getAll());
       const background = this.pendingBackground || undefined;
       this.pendingBackground = false;
-      const result = normalizeResult(yield { argv: fullArgs, env: envSnapshot, background });
+      // Stdout specifically (not a `2>`-only redirect, which leaves fd 1
+      // attached to the terminal) is what real isatty(STDOUT_FILENO) sees.
+      const stdoutRedirected = node.redirections.some(r =>
+        (r.op === '>' || r.op === '>>' || r.op === '>&') && (r.fd === undefined || r.fd === 1));
+      const outputPiped = stdoutRedirected || this.nonLastPipelineStage;
+      const result = normalizeResult(yield { argv: fullArgs, env: envSnapshot, background, outputPiped });
       if (result.backgroundPid !== undefined) {
         this.env.set('!', String(result.backgroundPid));
       }

@@ -39,6 +39,10 @@ export interface ShellContext {
   uid: number;
   gid: number;
   color?: boolean;
+  /** True when this command's stdout is not a terminal — piped into a
+   *  later command or redirected to a file (`>`/`>>`). Mirrors real
+   *  coreutils' `isatty(STDOUT_FILENO)` check. */
+  isPiped?: boolean;
   /** When set, a script run through this context (e.g. a cron job) uses
    *  this exact environment instead of the interactive session's. */
   envOverride?: Record<string, string>;
@@ -62,7 +66,10 @@ export function cmdLs(ctx: ShellContext, args: string[]): string {
   let recursive = false;
   let dirOnly = false;
   let classify = false;   // -F: append indicator (/ @ * |)
-  let onePerLine = false;  // -1: force single column
+  // -1 forces single column explicitly; a non-tty stdout (piped or
+  // redirected) does the same implicitly, matching real coreutils'
+  // isatty(STDOUT_FILENO) check.
+  let onePerLine = ctx.isPiped === true;
   let useColor = ctx.color === true;
   const paths: string[] = [];
 
