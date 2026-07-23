@@ -78,6 +78,11 @@ export const TerminalView: React.FC<TerminalViewProps> = ({ session }) => {
   // Focus management — use currentInputMode (polymorphic) for all session types.
   // This stays in sync with the rendering logic which also reads currentInputMode.
   const effectiveMode = session.currentInputMode;
+  // A foreground stream (tail -f, tcpdump, …) swaps in the hidden capture
+  // input below. Tracked as a dependency (not just read inline) so the
+  // focus effect only re-runs when this actually flips, not on every
+  // streamed line — see the ref on that input for why that distinction matters.
+  const hasAttachedStream = (session.listAttachedStreams?.().length ?? 0) > 0;
 
   useEffect(() => {
     if (effectiveMode.type === 'password') {
@@ -86,10 +91,14 @@ export const TerminalView: React.FC<TerminalViewProps> = ({ session }) => {
       setTimeout(() => interactiveInputRef.current?.focus(), 10);
     } else if (effectiveMode.type === 'reverse-search') {
       setTimeout(() => reverseSearchRef.current?.focus(), 30);
+    } else if (effectiveMode.type === 'pager') {
+      inputRef.current?.focus({ preventScroll: true });
+    } else if (effectiveMode.type === 'normal' && hasAttachedStream) {
+      inputRef.current?.focus({ preventScroll: true });
     } else if (effectiveMode.type === 'normal') {
       setTimeout(() => inputRef.current?.focus(), 30);
     }
-  }, [effectiveMode.type]);
+  }, [effectiveMode.type, hasAttachedStream]);
 
   // Focus input on click — use effectiveMode for consistency with rendering
   const handleClick = useCallback(() => {
@@ -371,11 +380,16 @@ export const TerminalView: React.FC<TerminalViewProps> = ({ session }) => {
 
         {/* Hidden capture input while a foreground stream (e.g. `tail -f`)
             holds the tty — the prompt stays invisible but Ctrl+C still
-            reaches the session. */}
+            reaches the session. Focusing happens in the effect above, keyed
+            off `hasAttachedStream` — NOT in this ref callback: an inline
+            arrow function ref re-runs on every render (i.e. on every
+            streamed line), which was stealing focus from other terminals
+            on each new packet/line even when the user had since clicked
+            elsewhere. */}
         {!isDisconnected && !isPasswordMode && !isInteractiveText && !isBooting && !isPager && !isReverseSearch
-          && (session.listAttachedStreams?.().length ?? 0) > 0 && (
+          && hasAttachedStream && (
           <input
-            ref={(el) => { inputRef.current = el; el?.focus({ preventScroll: true }); }}
+            ref={inputRef}
             type="text"
             className="opacity-0 absolute w-0 h-0"
             onKeyDown={handleKeyDown}
@@ -384,7 +398,7 @@ export const TerminalView: React.FC<TerminalViewProps> = ({ session }) => {
 
         {/* Normal input line — hidden while a foreground stream holds the tty. */}
         {!isDisconnected && !isPasswordMode && !isInteractiveText && !isBooting && !isPager && !isReverseSearch
-          && (session.listAttachedStreams?.().length ?? 0) === 0 && (
+          && !hasAttachedStream && (
           <div className="flex items-center" style={{ minHeight: sessionType === 'windows' ? '1.25em' : '1.35em' }}>
             <PromptRenderer session={session} sessionType={sessionType} theme={theme} />
             <div className="relative flex-1">
@@ -418,10 +432,12 @@ export const TerminalView: React.FC<TerminalViewProps> = ({ session }) => {
           </div>
         )}
 
-        {/* Pager hidden input (captures keys) */}
+        {/* Pager hidden input (captures keys). Focusing happens in the
+            effect above (keyed off `effectiveMode.type`), not in this ref
+            callback — same reasoning as the stream-capture input. */}
         {isPager && !isBooting && (
           <input
-            ref={(el) => { inputRef.current = el; el?.focus({ preventScroll: true }); }}
+            ref={inputRef}
             className="opacity-0 absolute w-0 h-0"
             onKeyDown={handleKeyDown}
           />
