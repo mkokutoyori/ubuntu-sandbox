@@ -598,6 +598,9 @@ export class LinuxSshServerContext implements ISshServerContext {
         if (!this.config.pubkeyAuthentication) return false;
         const userEntry = this.userManager.getUser(user);
         if (!userEntry) return false;
+        if (this.sshdConfig.strictModes && this.firstStrictModesViolation(userEntry.uid, userEntry.home) !== null) {
+          return false;
+        }
         const path = AUTHORIZED_KEYS_PATH(userEntry.home);
         const content = this.vfs.readFile(path);
         if (!content) return false;
@@ -648,5 +651,29 @@ export class LinuxSshServerContext implements ISshServerContext {
       }
     }
     return true;
+  }
+
+  /**
+   * StrictModes (`man 5 sshd_config`): refuse a pubkey login when $HOME or
+   * ~/.ssh are group/world-writable, or authorized_keys has any group/other
+   * access at all — mirrors OpenSSH's stock check (0o022 mask on
+   * $HOME/~/.ssh) plus the stricter, universally-taught "must be 0600" rule
+   * on authorized_keys (0o077 mask). Returns the first offending path, or
+   * null when nothing fails.
+   */
+  private firstStrictModesViolation(userUid: number, home: string): string | null {
+    for (const path of [home, `${home}/.ssh`]) {
+      const inode = this.vfs.resolveInode(path, true);
+      if (!inode) continue;
+      if (inode.uid !== userUid && inode.uid !== 0) return path;
+      if ((inode.permissions & 0o022) !== 0) return path;
+    }
+    const akPath = AUTHORIZED_KEYS_PATH(home);
+    const ak = this.vfs.resolveInode(akPath, true);
+    if (ak) {
+      if (ak.uid !== userUid && ak.uid !== 0) return akPath;
+      if ((ak.permissions & 0o077) !== 0) return akPath;
+    }
+    return null;
   }
 }

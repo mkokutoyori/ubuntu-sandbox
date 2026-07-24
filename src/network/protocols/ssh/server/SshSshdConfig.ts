@@ -54,6 +54,8 @@ export interface SshdConfig extends SshServerConfig {
   readonly permitUserEnvironment: boolean;
   readonly forceCommand: string | null;
   readonly chrootDirectory: string | null;
+  /** StrictModes yes (default) — refuse a pubkey login when $HOME/~/.ssh/authorized_keys have unsafe ownership or permissions. */
+  readonly strictModes: boolean;
   readonly matches: readonly SshdMatchBlock[];
 }
 
@@ -135,6 +137,7 @@ export const DEFAULT_SSHD_CONFIG: SshdConfig = Object.freeze({
   permitUserEnvironment: false,
   forceCommand: null,
   chrootDirectory: null,
+  strictModes: true,
   matches: Object.freeze([]),
 });
 
@@ -183,6 +186,7 @@ const DIRECTIVE_PARSERS: Record<string, (value: string) => Partial<SshdConfig>> 
   syslogfacility: (v) => ({ syslogFacility: v.trim().toUpperCase() }),
   forcecommand: (v) => ({ forceCommand: v.trim() }),
   chrootdirectory: (v) => ({ chrootDirectory: v.trim() }),
+  strictmodes: (v) => ({ strictModes: parseBool(v) }),
   kbdinteractiveauthentication: (v) => ({ kbdInteractiveAuthentication: parseBool(v) }),
   x11forwarding: (v) => ({ x11Forwarding: parseBool(v) }),
   allowtcpforwarding: (v) => {
@@ -305,6 +309,7 @@ export function serializeSshdConfig(cfg: SshdConfig): string {
     `X11Forwarding ${cfg.x11Forwarding ? 'yes' : 'no'}`,
     `AllowTcpForwarding ${cfg.allowTcpForwarding}`,
     `PermitUserEnvironment ${cfg.permitUserEnvironment ? 'yes' : 'no'}`,
+    `StrictModes ${cfg.strictModes ? 'yes' : 'no'}`,
     `MaxStartups 10:30:100`,
   ];
   if (cfg.allowUsers.length > 0) lines.push(`AllowUsers ${cfg.allowUsers.join(' ')}`);
