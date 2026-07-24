@@ -24,6 +24,7 @@ import { cronAllowed } from './cron/CronPermissions';
 import { CronEngine } from './cron/CronEngine';
 import { SystemCron } from './cron/SystemCron';
 import { deliverLocalMessage } from '@/network/smtp/localDelivery';
+import { parseMailArgs, sendMail, parseMailbox, formatMailboxSummary, type MailCommandDeps } from './commands/net/mail/MailCommand';
 import { LinuxIptablesManager } from './LinuxIptablesManager';
 import { LinuxFirewallManager } from './LinuxFirewallManager';
 import { LinuxLogManager } from './LinuxLogManager';
@@ -186,6 +187,7 @@ const KNOWN_LINUX_COMMANDS: readonly string[] = [
   // Archives / packages
   'tar', 'gzip', 'gunzip', 'zcat', 'zip', 'unzip', 'bzip2', 'bunzip2', 'xz', 'unxz',
   'apt', 'apt-get', 'apt-cache', 'dpkg', 'snap',
+  'mail', 'mailx', 'sendmail',
 ];
 
 /** Fast membership test for {@link KNOWN_LINUX_COMMANDS}. */
@@ -3994,6 +3996,9 @@ export class LinuxCommandExecutor {
 
       // Crontab
       case 'crontab': return this.handleCrontab(args, stdin);
+      case 'mail':
+      case 'mailx':
+      case 'sendmail': return this.handleMail(args, stdin);
       case 'run-parts': return this.handleRunParts(args);
 
       // Script execution
@@ -4848,6 +4853,34 @@ export class LinuxCommandExecutor {
     if (this.serviceMgr.isActive('cron')) {
       this.logMgr.logDaemon('cron', `(${user}) DELETE (crontabs/${user})`);
     }
+  }
+
+  handleMail(args: string[], stdin?: string): { output: string; exitCode: number } {
+    const parsed = parseMailArgs(args);
+    const hostname = (this.vfs.readFile('/etc/hostname') ?? 'localhost').trim();
+    if (parsed.readMode) {
+      const mailbox = this.vfs.readFile(`/var/mail/${this.userMgr.currentUser}`) ?? '';
+      return { output: formatMailboxSummary(parseMailbox(mailbox)), exitCode: 0 };
+    }
+    const deps: MailCommandDeps = {
+      vfs: this.vfs,
+      hostname,
+      senderUser: this.userMgr.currentUser,
+      senderUid: this.userMgr.currentUid,
+      senderGid: this.userMgr.currentGid,
+      isLocalRecipient: (address) => {
+        const at = address.indexOf('@');
+        if (at === -1) return true;
+        return address.slice(at + 1).toLowerCase() === hostname.toLowerCase();
+      },
+      resolveRecipientOwner: (localPart) => {
+        const entry = this.userMgr.getUser(localPart);
+        return entry ? { uid: entry.uid, gid: entry.gid } : undefined;
+      },
+    };
+    const body = stdin !== undefined ? stdin.replace(/\r?\n$/, '') : '';
+    sendMail(deps, parsed.recipients, parsed.subject, body);
+    return { output: '', exitCode: 0 };
   }
 
 
