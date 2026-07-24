@@ -39,15 +39,26 @@ const UAC = {
   SERVER_TRUST_ACCOUNT: 0x2000,
 } as const;
 
-/** Real AD groupType bit-flag values (security groups only — no distribution-group support). */
-const GROUP_TYPE: Record<AdGroup['scope'], number> = {
-  Global: -2147483646,
-  DomainLocal: -2147483644,
-  Universal: -2147483640,
+/** Real AD groupType bit-flag values: a scope bit (2/4/8) plus the top SECURITY_ENABLED bit (0x80000000) when the group is a security group — a Distribution group carries the same scope bit without that top bit set (docs/PRD-Exchange.md §1.2 point 3/§2.1 P3-préalable). */
+const GROUP_SCOPE_BIT: Record<AdGroup['scope'], number> = {
+  Global: 0x00000002,
+  DomainLocal: 0x00000004,
+  Universal: 0x00000008,
 };
-const SCOPE_OF_GROUP_TYPE = new Map<number, AdGroup['scope']>(
-  (Object.keys(GROUP_TYPE) as AdGroup['scope'][]).map(scope => [GROUP_TYPE[scope], scope]),
+const SCOPE_OF_BIT = new Map<number, AdGroup['scope']>(
+  (Object.keys(GROUP_SCOPE_BIT) as AdGroup['scope'][]).map(scope => [GROUP_SCOPE_BIT[scope], scope]),
 );
+const SECURITY_ENABLED_BIT = 0x80000000;
+
+function computeGroupType(scope: AdGroup['scope'], category: AdGroup['category']): number {
+  const bit = GROUP_SCOPE_BIT[scope];
+  return category === 'Security' ? (bit | SECURITY_ENABLED_BIT) : bit;
+}
+function decodeGroupType(groupType: number): { scope: AdGroup['scope']; category: AdGroup['category'] } {
+  const category: AdGroup['category'] = (groupType & SECURITY_ENABLED_BIT) !== 0 ? 'Security' : 'Distribution';
+  const scope = SCOPE_OF_BIT.get(groupType & 0x0000000e) ?? 'Global';
+  return { scope, category };
+}
 
 function firstOf(values: string[] | undefined): string { return values?.[0] ?? ''; }
 function isEnabledFromUac(values: string[] | undefined): boolean {
@@ -687,21 +698,21 @@ export class DirectoryStore {
 
   // ─── Groups ─────────────────────────────────────────────────────────
 
-  newGroup(sam: string, scope: AdGroup['scope'] = 'Global', ou?: string): DirOpResult {
+  newGroup(sam: string, scope: AdGroup['scope'] = 'Global', ou?: string, category: AdGroup['category'] = 'Security'): DirOpResult {
     const containerDn = ou ? this.ouDn(ou) : this.usersOuDn;
     if (ou && !this.tree.getByDn(containerDn)) {
       return { ok: false, message: `Cannot find an object with identity: '${ou}'.` };
     }
-    const res = this.createGroupEntry(sam, scope, containerDn);
+    const res = this.createGroupEntry(sam, scope, containerDn, category);
     return res.ok ? { ok: true, message: '' } : { ok: false, message: 'An object with that name already exists.' };
   }
 
-  private createGroupEntry(sam: string, scope: AdGroup['scope'], containerDn: DistinguishedName): DirOpResult {
+  private createGroupEntry(sam: string, scope: AdGroup['scope'], containerDn: DistinguishedName, category: AdGroup['category'] = 'Security'): DirOpResult {
     return this.tree.addEntry(this.cnDn(sam, containerDn), {
       objectClass: ['top', 'group'],
       cn: [sam],
       sAMAccountName: [sam],
-      groupType: [String(GROUP_TYPE[scope])],
+      groupType: [String(computeGroupType(scope, category))],
     });
   }
 
@@ -724,10 +735,12 @@ export class DirectoryStore {
 
   private projectGroup(entry: DirectoryEntry): AdGroup {
     const groupType = Number(firstOf(entry.attributes.get('grouptype')));
+    const { scope, category } = decodeGroupType(groupType);
     return {
       sam: firstOf(entry.attributes.get('samaccountname')),
       dn: formatDN(entry.dn),
-      scope: SCOPE_OF_GROUP_TYPE.get(groupType) ?? 'Global',
+      scope,
+      category,
       members: (entry.attributes.get('member') ?? []).map(dnStr => this.samOfDn(dnStr)).filter((s): s is string => s !== null),
     };
   }

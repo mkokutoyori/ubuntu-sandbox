@@ -17,6 +17,7 @@ import type { WindowsPC } from '@/network/devices/WindowsPC';
 import type { ServiceStartType } from '@/network/devices/windows/WindowsServiceManager';
 import type { WindowsServer } from '@/network/devices/WindowsServer';
 import type { DirectoryStore } from '@/network/devices/windows/server/ad/DirectoryStore';
+import { MAIL_FOLDER_NAMES, type Mailbox as MailboxRecord } from '@/network/devices/windows/server/exchange/MailboxStore';
 import { RemoteAccessVpnClient } from '@/network/ipsec/RemoteAccessVpnClient';
 import { PSRegistryProvider, WINDOWS_CLIENT_PRODUCT_IDENTITY, WINDOWS_SERVER_PRODUCT_IDENTITY } from '@/network/devices/windows/PSRegistryProvider';
 import { PSEventLogProvider } from '@/network/devices/windows/PSEventLogProvider';
@@ -60,6 +61,9 @@ import type {
   IComputerProvider, DomainMembershipInfo,
   IGpoProvider, GpoInfo,
   IIisProvider, IisOpResult, WebsiteInfo, AppPoolInfo, NewAppPoolOptions, WebModuleInfo,
+  IExchangeProvider, ExchangeOpResult, ExchangeServerInfo,
+  MailboxOpResult, MailboxInfo, MailboxStatisticsInfo, MailFolderName,
+  DistributionGroupInfo, GalEntryInfo,
   IAdcsProvider, AdcsOpResult, CaTemplateInfo, CertificateRequestResultInfo,
   IPkiProvider, IssuedCertInfo,
   IDfsProvider, DfsOpResult, DfsTargetInfo, DfsFolderInfo, DfsrSyncResultInfo,
@@ -561,19 +565,19 @@ class WindowsAdAdapter implements IAdProvider {
     return store.removeUser(store.resolveIdentity(identity));
   }
 
-  newGroup(sam: string, scope: AdGroupInfo['scope'], path?: string): AdOpResult {
+  newGroup(sam: string, scope: AdGroupInfo['scope'], path?: string, category?: AdGroupInfo['category']): AdOpResult {
     const store = this.requireStore('New-ADGroup');
     const denied = this.requireAdmin('New-ADGroup');
     if (denied) return denied;
-    return store.newGroup(sam, scope, path ? store.resolveIdentity(path) : undefined);
+    return store.newGroup(sam, scope, path ? store.resolveIdentity(path) : undefined, category);
   }
   getGroup(identity: string): AdGroupInfo | null {
     const store = this.requireStore('Get-ADGroup');
     const g = store.getGroup(store.resolveIdentity(identity));
-    return g ? { sam: g.sam, dn: g.dn, scope: g.scope, members: g.members } : null;
+    return g ? { sam: g.sam, dn: g.dn, scope: g.scope, category: g.category, members: g.members } : null;
   }
   listGroups(): AdGroupInfo[] {
-    return this.requireStore('Get-ADGroup').listGroups().map(g => ({ sam: g.sam, dn: g.dn, scope: g.scope, members: g.members }));
+    return this.requireStore('Get-ADGroup').listGroups().map(g => ({ sam: g.sam, dn: g.dn, scope: g.scope, category: g.category, members: g.members }));
   }
   addGroupMember(groupIdentity: string, members: string[]): AdOpResult {
     const store = this.requireStore('Add-ADGroupMember');
@@ -2001,6 +2005,139 @@ class WindowsIisAdapter implements IIisProvider {
   listGlobalModules(): WebModuleInfo[] { return this.requireRole('Get-WebGlobalModule').listGlobalModules(); }
 }
 
+// ── Exchange Server adapter (docs/PRD-Exchange.md §2.1 P1) ─────────────────
+
+class WindowsExchangeAdapter implements IExchangeProvider {
+  constructor(private readonly pc: WindowsPC) {}
+
+  /** `Install-ExchangeServer` never needs an org to already exist — every other Exchange cmdlet does, and fails as "not recognized" (mimics the Exchange Management Shell module never having been loaded), matching docs/PRD-Exchange.md §1.3/§8. */
+  private requireOrg(cmdletName: string): void {
+    if (this.pc.getExchangeOrganizationName() === null) {
+      throw new Error(`${cmdletName} is not recognized as the name of a cmdlet, function, script file, or operable program`);
+    }
+  }
+
+  installExchangeServer(organizationName: string, roles: readonly string[]): ExchangeOpResult {
+    return this.pc.installExchangeServer(organizationName, roles);
+  }
+
+  getExchangeServer(hostname?: string): ExchangeServerInfo | null {
+    this.requireOrg('Get-ExchangeServer');
+    const record = this.pc.getExchangeServer(hostname);
+    const orgName = this.pc.getExchangeOrganizationName();
+    if (!record || !orgName) return null;
+    return { hostname: record.hostname, roles: [...record.roles], organizationName: orgName, installedAt: record.installedAt };
+  }
+
+  listExchangeServers(): ExchangeServerInfo[] {
+    this.requireOrg('Get-ExchangeServer');
+    const orgName = this.pc.getExchangeOrganizationName();
+    if (!orgName) return [];
+    return this.pc.listExchangeServers().map((record) => ({
+      hostname: record.hostname, roles: [...record.roles], organizationName: orgName, installedAt: record.installedAt,
+    }));
+  }
+
+  private mailboxToInfo(mailbox: MailboxRecord): MailboxInfo {
+    return {
+      identity: mailbox.adIdentity, primarySmtpAddress: mailbox.primarySmtpAddress,
+      proxyAddresses: [...mailbox.proxyAddresses], quotaBytes: mailbox.quotaBytes,
+    };
+  }
+
+  enableMailbox(identity: string): MailboxOpResult {
+    this.requireOrg('Enable-Mailbox');
+    return this.pc.enableMailbox(identity);
+  }
+
+  newMailbox(name: string, password: string): MailboxOpResult {
+    this.requireOrg('New-Mailbox');
+    return this.pc.newMailbox(name, password);
+  }
+
+  getMailbox(identity: string): MailboxInfo | null {
+    this.requireOrg('Get-Mailbox');
+    const mailbox = this.pc.getMailboxStore()?.get(identity) ?? null;
+    return mailbox ? this.mailboxToInfo(mailbox) : null;
+  }
+
+  listMailboxes(): MailboxInfo[] {
+    this.requireOrg('Get-Mailbox');
+    return (this.pc.getMailboxStore()?.list() ?? []).map((m) => this.mailboxToInfo(m));
+  }
+
+  setMailboxQuota(identity: string, quotaBytes: number | null): MailboxOpResult {
+    this.requireOrg('Set-Mailbox');
+    const store = this.pc.getMailboxStore();
+    if (!store) return { ok: false, message: 'Set-Mailbox : Exchange Server has not been installed on this computer.' };
+    return store.setQuota(identity, quotaBytes);
+  }
+
+  getMailboxStatistics(identity: string): MailboxStatisticsInfo | null {
+    this.requireOrg('Get-MailboxStatistics');
+    const store = this.pc.getMailboxStore();
+    const mailbox = store?.get(identity) ?? null;
+    if (!store || !mailbox) return null;
+    const folderItemCounts = Object.fromEntries(
+      MAIL_FOLDER_NAMES.map((f) => [f, mailbox.folders[f].length]),
+    ) as Record<MailFolderName, number>;
+    return {
+      identity: mailbox.adIdentity, totalItemSize: store.totalSizeBytes(mailbox),
+      itemCount: store.totalItemCount(mailbox), folderItemCounts,
+    };
+  }
+
+  disableMailbox(identity: string): MailboxOpResult {
+    this.requireOrg('Disable-Mailbox');
+    return this.pc.disableMailbox(identity);
+  }
+
+  removeMailbox(identity: string): MailboxOpResult {
+    this.requireOrg('Remove-Mailbox');
+    return this.pc.removeMailbox(identity);
+  }
+
+  newDistributionGroup(identity: string, type: 'Distribution' | 'Security'): ExchangeOpResult {
+    this.requireOrg('New-DistributionGroup');
+    return this.pc.newDistributionGroup(identity, type === 'Security' ? 'SecurityMailEnabled' : 'Distribution');
+  }
+
+  setDistributionGroupPrimarySmtpAddress(identity: string, address: string): ExchangeOpResult {
+    this.requireOrg('Set-DistributionGroup');
+    return this.pc.setDistributionGroupPrimarySmtpAddress(identity, address);
+  }
+
+  getDistributionGroup(identity: string): DistributionGroupInfo | null {
+    this.requireOrg('Get-DistributionGroup');
+    const group = this.pc.getDistributionGroupStore()?.get(identity) ?? null;
+    return group ? { identity: group.adGroupSam, type: group.type, primarySmtpAddress: group.primarySmtpAddress } : null;
+  }
+
+  listDistributionGroups(): DistributionGroupInfo[] {
+    this.requireOrg('Get-DistributionGroup');
+    return (this.pc.getDistributionGroupStore()?.list() ?? []).map((g) => ({
+      identity: g.adGroupSam, type: g.type, primarySmtpAddress: g.primarySmtpAddress,
+    }));
+  }
+
+  addDistributionGroupMember(identity: string, member: string): ExchangeOpResult {
+    this.requireOrg('Add-DistributionGroupMember');
+    return this.pc.addDistributionGroupMember(identity, member);
+  }
+
+  getDistributionGroupMembers(identity: string): readonly string[] | null {
+    this.requireOrg('Get-DistributionGroupMember');
+    return this.pc.getDistributionGroupMembers(identity);
+  }
+
+  getGlobalAddressList(): GalEntryInfo[] {
+    this.requireOrg('Get-GlobalAddressList');
+    return this.pc.getGlobalAddressList().map((e) => ({
+      displayName: e.displayName, samAccountName: e.samAccountName, primarySmtpAddress: e.primarySmtpAddress, kind: e.kind,
+    }));
+  }
+}
+
 // ── DFS Namespaces + DFSR adapter (PRD-Windows-Server-Advanced.md §5 P16) ──
 
 class WindowsDfsAdapter implements IDfsProvider {
@@ -2362,6 +2499,7 @@ export function createWindowsPSProviders(
     nps:            pc.getRoleManager() ? new WindowsNpsAdapter(pc) : null,
     gpo:            new WindowsGpoAdapter(pc),
     iis:            pc.getRoleManager() ? new WindowsIisAdapter(pc) : null,
+    exchange:       pc.getRoleManager() ? new WindowsExchangeAdapter(pc) : null,
     adcs:           pc.getRoleManager() ? new WindowsAdcsAdapter(pc) : null,
     pki:            new WindowsPkiAdapter(pc),
     dfs:            pc.getRoleManager() ? new WindowsDfsAdapter(pc) : null,

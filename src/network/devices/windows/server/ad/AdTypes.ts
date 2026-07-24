@@ -35,6 +35,7 @@ export interface AdGroup {
   readonly sam: string;
   readonly dn: string;
   scope: 'DomainLocal' | 'Global' | 'Universal';
+  category: 'Security' | 'Distribution';
   members: string[];
 }
 

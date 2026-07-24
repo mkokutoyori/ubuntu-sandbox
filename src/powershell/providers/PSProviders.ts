@@ -191,7 +191,7 @@ export interface AdAccessRuleInfo {
   inheritedObjectType: string;
 }
 export interface AdGroupInfo {
-  sam: string; dn: string; scope: 'DomainLocal' | 'Global' | 'Universal'; members: string[];
+  sam: string; dn: string; scope: 'DomainLocal' | 'Global' | 'Universal'; category: 'Security' | 'Distribution'; members: string[];
 }
 export interface AdComputerInfo { name: string; dn: string; enabled: boolean; servicePrincipalNames: string[] }
 export interface AdOrgUnitInfo { name: string; dn: string; gpLinks: string[] }
@@ -223,7 +223,7 @@ export interface IAdProvider {
   /** `Search-ADAccount -LockedOut`. */
   listLockedOutUsers(): Array<{ sam: string; name: string; badPwdCount: number }>;
 
-  newGroup(sam: string, scope: AdGroupInfo['scope'], path?: string): AdOpResult;
+  newGroup(sam: string, scope: AdGroupInfo['scope'], path?: string, category?: AdGroupInfo['category']): AdOpResult;
   getGroup(identity: string): AdGroupInfo | null;
   listGroups(): AdGroupInfo[];
   addGroupMember(groupIdentity: string, members: string[]): AdOpResult;
@@ -431,6 +431,68 @@ export interface IIisProvider {
   listAppPools(): AppPoolInfo[];
   /** `Get-WebGlobalModule` — the static module registry already relevant to this role's own pipeline. */
   listGlobalModules(): WebModuleInfo[];
+}
+
+// ── Exchange Server (docs/PRD-Exchange.md §2.1 P1) ──────────────────────────
+
+export interface ExchangeOpResult { ok: boolean; message: string }
+export interface ExchangeServerInfo {
+  readonly hostname: string;
+  readonly roles: readonly string[];
+  readonly organizationName: string;
+  readonly installedAt: number;
+}
+
+export type MailFolderName = 'Inbox' | 'Sent Items' | 'Drafts' | 'Deleted Items' | 'Junk Email';
+export interface MailboxOpResult { ok: boolean; message: string }
+export interface MailboxInfo {
+  readonly identity: string;
+  readonly primarySmtpAddress: string;
+  readonly proxyAddresses: readonly string[];
+  readonly quotaBytes: number | null;
+}
+export interface MailboxStatisticsInfo {
+  readonly identity: string;
+  readonly totalItemSize: number;
+  readonly itemCount: number;
+  readonly folderItemCounts: Readonly<Record<MailFolderName, number>>;
+}
+
+export interface IExchangeProvider {
+  installExchangeServer(organizationName: string, roles: readonly string[]): ExchangeOpResult;
+  getExchangeServer(hostname?: string): ExchangeServerInfo | null;
+  listExchangeServers(): ExchangeServerInfo[];
+
+  enableMailbox(identity: string): MailboxOpResult;
+  newMailbox(name: string, password: string): MailboxOpResult;
+  getMailbox(identity: string): MailboxInfo | null;
+  listMailboxes(): MailboxInfo[];
+  setMailboxQuota(identity: string, quotaBytes: number | null): MailboxOpResult;
+  getMailboxStatistics(identity: string): MailboxStatisticsInfo | null;
+  disableMailbox(identity: string): MailboxOpResult;
+  removeMailbox(identity: string): MailboxOpResult;
+
+  newDistributionGroup(identity: string, type: 'Distribution' | 'Security'): ExchangeOpResult;
+  setDistributionGroupPrimarySmtpAddress(identity: string, address: string): ExchangeOpResult;
+  getDistributionGroup(identity: string): DistributionGroupInfo | null;
+  listDistributionGroups(): DistributionGroupInfo[];
+  addDistributionGroupMember(identity: string, member: string): ExchangeOpResult;
+  getDistributionGroupMembers(identity: string): readonly string[] | null;
+
+  getGlobalAddressList(): GalEntryInfo[];
+}
+
+export interface GalEntryInfo {
+  readonly displayName: string;
+  readonly samAccountName: string;
+  readonly primarySmtpAddress: string;
+  readonly kind: 'Mailbox' | 'DistributionGroup' | 'SecurityMailEnabled';
+}
+
+export interface DistributionGroupInfo {
+  readonly identity: string;
+  readonly type: 'Distribution' | 'SecurityMailEnabled';
+  readonly primarySmtpAddress: string;
 }
 
 // ── AD CS (Certificate Services) role (PRD-Windows-Server-Advanced.md §5 P13) ──
@@ -1045,6 +1107,7 @@ export interface PSProviders {
   readonly nps:            INpsProvider            | null;
   readonly gpo:            IGpoProvider            | null;
   readonly iis:            IIisProvider            | null;
+  readonly exchange:       IExchangeProvider       | null;
   readonly adcs:           IAdcsProvider           | null;
   readonly pki:            IPkiProvider            | null;
   readonly dfs:            IDfsProvider            | null;

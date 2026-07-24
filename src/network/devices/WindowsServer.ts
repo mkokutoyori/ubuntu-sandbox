@@ -33,6 +33,10 @@ import { randomSessionKey } from '@/network/kerberos/crypto';
 import { dialLdap } from './windows/server/ad/ldap/LdapClient';
 import { pullReplication, notifySyncNow } from './windows/server/ad/replication/ReplicationSession';
 import { createForest, joinForestAsChildDomain, getForestForDomain, type Forest } from './windows/server/ad/forest/Forest';
+import { getExchangeOrganization, getOrCreateExchangeOrganization, type ExchangeServerRecord } from './windows/server/exchange/ExchangeOrganization';
+import { MailboxStore, type MailboxOpResult, type DeliverResult } from './windows/server/exchange/MailboxStore';
+import { DistributionGroupStore, deliverExpanded, type DistributionGroupOpResult, type DistributionGroupType } from './windows/server/exchange/DistributionGroupStore';
+import { buildGlobalAddressList, resolveGalRecipient, type GalEntry } from './windows/server/exchange/GlobalAddressList';
 import { mirroredDirection, type TrustDirection, type TrustInfo, type TrustRecord } from './windows/server/ad/forest/TrustRelationship';
 
 export interface AdDsOpResult { ok: boolean; message: string }
@@ -53,6 +57,7 @@ export class WindowsServer extends WindowsPC {
   private clusterServiceInstance: ClusterService | null = null;
   private wsusRoleInstance: WindowsWsusRole | null = null;
   private printServerRoleInstance: WindowsPrintServerRole | null = null;
+  private exchangeOrgName: string | null = null;
 
   constructor(name: string = 'WinServer', x: number = 0, y: number = 0) {
     super('windows-server', name, x, y);
@@ -300,6 +305,179 @@ export class WindowsServer extends WindowsPC {
     this.logDirectoryServiceStartup();
     this.auditPolicy.seedDefaults('domain-controller');
     return { ok: true, message: '' };
+  }
+
+  /**
+   * `Install-ExchangeServer -Roles Mailbox -OrganizationName "..."`
+   * (docs/PRD-Exchange.md §2.1 P1) — condenses the real multi-step
+   * `setup.exe /mode:Install /role:Mailbox` process (schema extension,
+   * domain prep, binary install) into a single cmdlet, mirroring how
+   * `installADDSForest` above condenses DC promotion. Requires this
+   * server to already be domain-joined (member server or DC) — a real
+   * Exchange install extends the AD schema and needs a domain to extend.
+   * All servers sharing the same `-OrganizationName` join one shared
+   * `ExchangeOrganization` (one org per forest, as in a real deployment).
+   */
+  installExchangeServer(organizationName: string, roles: readonly string[] = ['Mailbox']): AdDsOpResult {
+    if (this.exchangeOrgName !== null) {
+      return { ok: false, message: 'Install-ExchangeServer : Setup has already been run on this computer.' };
+    }
+    if (!this.getDomainMembership() && !this.directoryStore) {
+      return { ok: false, message: 'Install-ExchangeServer : This computer must be joined to an Active Directory domain before Exchange Server can be installed.' };
+    }
+    const org = getOrCreateExchangeOrganization(organizationName);
+    org.servers.set(this.getHostname(), { hostname: this.getHostname(), roles: new Set(roles), installedAt: Date.now() });
+    this.exchangeOrgName = organizationName;
+    return { ok: true, message: '' };
+  }
+
+  getExchangeOrganizationName(): string | null { return this.exchangeOrgName; }
+
+  getExchangeServer(hostname?: string): ExchangeServerRecord | null {
+    if (this.exchangeOrgName === null) return null;
+    const org = getExchangeOrganization(this.exchangeOrgName);
+    return org?.servers.get(hostname ?? this.getHostname()) ?? null;
+  }
+
+  listExchangeServers(): ExchangeServerRecord[] {
+    if (this.exchangeOrgName === null) return [];
+    const org = getExchangeOrganization(this.exchangeOrgName);
+    return org ? [...org.servers.values()] : [];
+  }
+
+  /**
+   * `Enable-Mailbox`/`New-Mailbox`/`Get-Mailbox`/`Set-Mailbox`/
+   * `Get-MailboxStatistics`/`Disable-Mailbox`/`Remove-Mailbox`
+   * (docs/PRD-Exchange.md §2.1 P2) — the `MailboxStore` behind these
+   * lives on the shared `ExchangeOrganization`, not per-server, so any
+   * server in the org sees the same mailboxes (mirrors how `Get-
+   * ExchangeServer` already works, § 2.1 P1).
+   */
+  getMailboxStore(): MailboxStore | null {
+    if (this.exchangeOrgName === null) return null;
+    return getExchangeOrganization(this.exchangeOrgName)?.mailboxes ?? null;
+  }
+
+  enableMailbox(identity: string): MailboxOpResult {
+    const store = this.getMailboxStore();
+    if (!store) return { ok: false, message: 'Enable-Mailbox : Exchange Server has not been installed on this computer.' };
+    if (!this.directoryStore) return { ok: false, message: 'Enable-Mailbox : This computer is not configured as a domain controller.' };
+    const user = this.directoryStore.getUser(identity);
+    if (!user) return { ok: false, message: `Enable-Mailbox : The operation couldn't be performed because object '${identity}' couldn't be found.` };
+    return store.enable(user.sam, `${user.sam}@${this.directoryStore.dnsName}`);
+  }
+
+  newMailbox(sam: string, password: string): MailboxOpResult {
+    const store = this.getMailboxStore();
+    if (!store) return { ok: false, message: 'New-Mailbox : Exchange Server has not been installed on this computer.' };
+    if (!this.directoryStore) return { ok: false, message: 'New-Mailbox : This computer is not configured as a domain controller.' };
+    const userRes = this.directoryStore.newUser(sam, { password });
+    if (!userRes.ok) return { ok: false, message: `New-Mailbox : ${userRes.message}` };
+    return store.enable(sam, `${sam}@${this.directoryStore.dnsName}`);
+  }
+
+  disableMailbox(identity: string): MailboxOpResult {
+    const store = this.getMailboxStore();
+    if (!store) return { ok: false, message: 'Disable-Mailbox : Exchange Server has not been installed on this computer.' };
+    const sam = this.directoryStore?.resolveIdentity(identity) ?? identity;
+    return store.disable(sam);
+  }
+
+  removeMailbox(identity: string): MailboxOpResult {
+    const disableRes = this.disableMailbox(identity);
+    if (!disableRes.ok) return disableRes;
+    const removeRes = this.directoryStore?.removeUser(identity);
+    if (removeRes && !removeRes.ok) return { ok: false, message: `Remove-Mailbox : ${removeRes.message}` };
+    return { ok: true, message: '' };
+  }
+
+  /**
+   * `New-DistributionGroup`/`Set-DistributionGroup`/`Add-
+   * DistributionGroupMember`/`Get-DistributionGroupMember`
+   * (docs/PRD-Exchange.md §2.1 P3) — mail-enables an AD group that
+   * already carries the matching `GroupCategory` (§ P3-préalable), it
+   * never creates the AD group itself (mirrors `Enable-Mailbox`, not
+   * `New-Mailbox`, for groups). `-Type Security` mail-enables an
+   * existing `Security` group; the default `Distribution` type requires
+   * an existing `Distribution` group.
+   */
+  getDistributionGroupStore(): DistributionGroupStore | null {
+    if (this.exchangeOrgName === null) return null;
+    return getExchangeOrganization(this.exchangeOrgName)?.distributionGroups ?? null;
+  }
+
+  newDistributionGroup(sam: string, type: DistributionGroupType = 'Distribution'): DistributionGroupOpResult {
+    const store = this.getDistributionGroupStore();
+    if (!store) return { ok: false, message: 'New-DistributionGroup : Exchange Server has not been installed on this computer.' };
+    if (!this.directoryStore) return { ok: false, message: 'New-DistributionGroup : This computer is not configured as a domain controller.' };
+    const group = this.directoryStore.getGroup(sam);
+    if (!group) return { ok: false, message: `New-DistributionGroup : The operation couldn't be performed because object '${sam}' couldn't be found.` };
+    const expectedCategory = type === 'SecurityMailEnabled' ? 'Security' : 'Distribution';
+    if (group.category !== expectedCategory) {
+      return { ok: false, message: `New-DistributionGroup : '${sam}' is a ${group.category} group and cannot be mail-enabled as ${type === 'SecurityMailEnabled' ? 'a mail-enabled security group' : 'a distribution group'}.` };
+    }
+    return store.mailEnable(group.sam, `${group.sam}@${this.directoryStore.dnsName}`, type);
+  }
+
+  setDistributionGroupPrimarySmtpAddress(identity: string, address: string): DistributionGroupOpResult {
+    const store = this.getDistributionGroupStore();
+    if (!store) return { ok: false, message: 'Set-DistributionGroup : Exchange Server has not been installed on this computer.' };
+    return store.setPrimarySmtpAddress(identity, address);
+  }
+
+  addDistributionGroupMember(identity: string, memberSam: string): DistributionGroupOpResult {
+    const store = this.getDistributionGroupStore();
+    if (!store) return { ok: false, message: 'Add-DistributionGroupMember : Exchange Server has not been installed on this computer.' };
+    if (!store.get(identity)) return { ok: false, message: `Add-DistributionGroupMember : The operation couldn't be performed because object '${identity}' couldn't be found.` };
+    const res = this.directoryStore?.addGroupMember(identity, memberSam);
+    if (!res) return { ok: false, message: 'Add-DistributionGroupMember : This computer is not configured as a domain controller.' };
+    if (!res.ok) return { ok: false, message: `Add-DistributionGroupMember : ${res.message}` };
+    return { ok: true, message: '' };
+  }
+
+  getDistributionGroupMembers(identity: string): string[] | null {
+    const store = this.getDistributionGroupStore();
+    if (!store || !store.get(identity)) return null;
+    return this.directoryStore?.getGroup(identity)?.members ?? [];
+  }
+
+  /**
+   * `Get-GlobalAddressList` (docs/PRD-Exchange.md §2.1 P4) — derived
+   * dynamically from the current mailboxes/distribution groups on every
+   * call, never a separately maintained copy (a disabled mailbox drops
+   * out immediately, no resync step).
+   */
+  getGlobalAddressList(): GalEntry[] {
+    const mailboxStore = this.getMailboxStore();
+    const groupStore = this.getDistributionGroupStore();
+    if (!mailboxStore || !groupStore) return [];
+    return buildGlobalAddressList(mailboxStore, groupStore);
+  }
+
+  /**
+   * Resolves a `To:` recipient the way a real Exchange/Outlook client
+   * does: a literal SMTP address passes through unchanged, anything
+   * else (display name/SAM account name) is resolved against the GAL —
+   * `null` when the name is unknown or ambiguous (§2.1 P4).
+   */
+  resolveRecipientAddress(query: string): string | null {
+    const resolution = resolveGalRecipient(query, this.getGlobalAddressList());
+    if (resolution.kind === 'literal-address') return resolution.address;
+    if (resolution.kind === 'resolved') return resolution.entry.primarySmtpAddress;
+    return null;
+  }
+
+  deliverToRecipient(recipientQuery: string, from: string, subject: string, rawMessage: string, receivedAt: number): DeliverResult[] {
+    const groupStore = this.getDistributionGroupStore();
+    const mailboxStore = this.getMailboxStore();
+    if (!groupStore || !mailboxStore) return [{ delivered: false, reason: 'not-found' }];
+    const recipientAddress = this.resolveRecipientAddress(recipientQuery);
+    if (recipientAddress === null) return [{ delivered: false, reason: 'not-found' }];
+    return deliverExpanded(
+      groupStore, mailboxStore,
+      (sam) => this.directoryStore?.getGroup(sam)?.members ?? [],
+      recipientAddress, from, subject, rawMessage, receivedAt,
+    );
   }
 
   /**

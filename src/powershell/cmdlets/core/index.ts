@@ -164,6 +164,14 @@ import {
 } from './WebAdminCmdlets';
 import { NewSelfSignedCertificateCmdlet } from './PkiCmdlets';
 import {
+  InstallExchangeServerCmdlet, GetExchangeServerCmdlet,
+  EnableMailboxCmdlet, NewMailboxCmdlet, GetMailboxCmdlet, SetMailboxCmdlet,
+  GetMailboxStatisticsCmdlet, DisableMailboxCmdlet, RemoveMailboxCmdlet,
+  NewDistributionGroupCmdlet, SetDistributionGroupCmdlet, GetDistributionGroupCmdlet,
+  AddDistributionGroupMemberCmdlet, GetDistributionGroupMemberCmdlet,
+  GetGlobalAddressListCmdlet,
+} from './ExchangeCmdlets';
+import {
   NewDfsnRootCmdlet, NewDfsnFolderCmdlet, NewDfsnFolderTargetCmdlet, GetDfsnFolderCmdlet,
   NewDfsReplicationGroupCmdlet, SyncDfsReplicationGroupCmdlet,
 } from './DfsCmdlets';
@@ -494,6 +502,23 @@ export function registerServerCmdlets(registry: CmdletRegistry): void {
   registry.register(new MoveADDirectoryServerOperationMasterRoleCmdlet());
   registry.register(new NewADTrustCmdlet());
   registry.register(new GetADTrustCmdlet());
+
+  // ── Exchange Server (docs/PRD-Exchange.md §2.1 P1/P2) ───────────────────────
+  registry.register(new InstallExchangeServerCmdlet());
+  registry.register(new GetExchangeServerCmdlet());
+  registry.register(new EnableMailboxCmdlet());
+  registry.register(new NewMailboxCmdlet());
+  registry.register(new GetMailboxCmdlet());
+  registry.register(new SetMailboxCmdlet());
+  registry.register(new GetMailboxStatisticsCmdlet());
+  registry.register(new DisableMailboxCmdlet());
+  registry.register(new RemoveMailboxCmdlet());
+  registry.register(new NewDistributionGroupCmdlet());
+  registry.register(new SetDistributionGroupCmdlet());
+  registry.register(new GetDistributionGroupCmdlet());
+  registry.register(new AddDistributionGroupMemberCmdlet());
+  registry.register(new GetDistributionGroupMemberCmdlet());
+  registry.register(new GetGlobalAddressListCmdlet());
 
   // ── AD CS (PRD-Windows-Server-Advanced.md §5 P13) ───────────────────────────
   registry.register(new InstallAdcsCertificationAuthorityCmdlet());

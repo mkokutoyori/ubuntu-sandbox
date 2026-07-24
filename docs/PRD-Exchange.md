@@ -149,6 +149,104 @@ reste est additif.
    § 2.2 en s'inspirant des exclusions déjà pratiquées ailleurs dans ce
    dépôt (GUI exclue, protocoles legacy binaires exclus).
 
+### 1.3 Précédents architecturaux exacts (grounding)
+
+Cette sous-section fixe, avec fichiers et lignes précis, les patrons que
+chaque phase doit suivre — pour qu'aucune implémentation ne réinvente un
+mécanisme déjà résolu ailleurs dans ce dépôt.
+
+**Cmdlets PowerShell** (`src/powershell/cmdlets/ICmdlet.ts`) : chaque
+cmdlet est une classe implémentant `ICmdlet` (`name`, `aliases`,
+`parameters`, `execute(ctx: CmdletContext): PSValue`). Le registre
+(`src/powershell/runtime/PSCmdletRegistry.ts`) est une `Map<string,
+ICmdlet>` remplie une seule fois au démarrage — **toutes les cmdlets sont
+toujours enregistrées**, y compris `*-Mailbox`/`*-ExchangeServer` avant
+même `Install-ExchangeServer`. La disponibilité n'est donc **jamais**
+une question d'enregistrement conditionnel, mais un garde-fou exécuté à
+**chaque appel**, à l'intérieur d'`execute()`.
+
+**Le patron à deux niveaux `requireX`/`requireXStore`** (précédent exact :
+`requireAd`/`WindowsAdAdapter.requireRole`/`requireStore`,
+`ActiveDirectoryCmdlets.ts:27-32` et `WindowsPSProviders.ts:334-347`) :
+1. Niveau rôle/fonctionnalité (`RoleManager.isInstalled(...)`) : absent →
+   message littéral `"<Cmdlet> is not recognized as the name of a
+   cmdlet, function, script file, or operable program"` (mime un module
+   PowerShell non chargé).
+2. Niveau configuration (le rôle est installé mais jamais initialisé,
+   ex. `directoryStore === null` avant `Install-ADDSForest`) → un message
+   *différent*, spécifique au produit (ex. `"Unable to find a default
+   server with Active Directory Web Services running."`), jamais
+   `"not recognized"`.
+
+Exchange suit exactement ce même schéma à deux niveaux : `Install-
+ExchangeServer` (P1) ne nécessite que le niveau 1 (un rôle/fonctionnalité
+« Exchange Mailbox Role » installable, cf. § 4.0) ; **toute autre**
+cmdlet Exchange (`Get-Mailbox`, `New-TransportRule`, etc., P2-P12)
+nécessite le niveau 2 — un champ privé `exchangeOrganization:
+ExchangeOrganization | null` sur `WindowsServer`, exactement comme
+`directoryStore: DirectoryStore | null` (`WindowsServer.ts`, posé par
+`installADDSForest()`, vérifié par toutes les méthodes AD suivantes).
+
+**`WindowsServer` — patron d'attache d'un rôle applicatif** (précédent
+le plus proche structurellement : le rôle IIS, `getIisRole()`,
+`WindowsServer.ts:141-151`) : un champ privé paresseux + accesseur public
+gaté sur `roleManager.isInstalled(...)` :
+```ts
+getIisRole(): WindowsIisRole | null {
+  if (!this.roleManager.isInstalled('Web-Server')) { /* stop + null */ }
+  if (!this.iisRoleInstance) { this.iisRoleInstance = new WindowsIisRole(this, ...); this.iisRoleInstance.start(); }
+  return this.iisRoleInstance;
+}
+```
+`WindowsIisRole` (`src/network/devices/windows/server/iis/WindowsIisRole.ts`)
+est une classe autonome (pas un sous-type de device), injectée avec le
+device hôte par constructeur, qui instancie elle-même le moteur de
+protocole sous-jacent par service (`new Http1ServerSession(this.host.
+getTcpStack(), site.port, handler)`). C'est le patron exact pour P1/P5 :
+une classe `ExchangeOrganization` (ou `WindowsExchangeMailboxRole`)
+possédée par `WindowsServer`, instanciant elle-même `SmtpServer`
+(réutilisé, jamais réimplémenté, § 0.2) pour ses connecteurs.
+
+**Cmdlets liées au rôle** (précédent : `WebAdminCmdlets.ts`, `requireIis`
++ `ctx.providers.iis` + `WindowsIisAdapter` dans `WindowsPSProviders.ts`) :
+chaque nouvelle cmdlet Exchange suit `requireExchange(ctx, cmdletName)` →
+`ctx.providers.exchange` → un `WindowsExchangeAdapter` qui re-vérifie
+`roleManager.isInstalled(...)` **et** `exchangeOrganization !== null` à
+chaque appel (jamais mis en cache côté provider).
+
+**`AdUser`/`AdGroup` — état exact** (`src/network/devices/windows/server/
+ad/AdTypes.ts:10-39`) : `AdUser` n'a **aucun** champ `mail`/
+`proxyAddresses` (recherche exhaustive, zéro résultat) — P2/P4 doivent
+soit étendre `AdUser`, soit stocker l'adresse mail dans la structure
+`Mailbox` elle-même (§ 4.1) sans toucher `AdTypes.ts`, au choix de
+l'implémentation, mais **documenté explicitement** dans le code selon
+l'option retenue. `AdGroup` n'a que `scope` (`DomainLocal`/`Global`/
+`Universal`) — confirmé par le commentaire de code existant
+`DirectoryStore.ts:42` : *« Real AD groupType bit-flag values (security
+groups only — no distribution-group support) »* — **aucune** dimension
+Sécurité/Distribution n'existe, y compris implicitement ; P3 crée ce
+champ de toutes pièces.
+
+**`localDelivery.ts` — API exacte à envelopper (P2)** :
+`deliverLocalMessage(fs, recipientAddress, entry: MboxEntry, owner, eventBus?):
+boolean`, publie déjà l'événement `smtp.delivery.local` sur `eventBus` —
+`MailboxStore.deliver()` peut soit continuer d'appeler cette fonction
+pour le dossier `Inbox` (option la plus fidèle à § 0.2 « aucune seconde
+implémentation »), soit s'abonner à `smtp.delivery.local` plutôt que
+d'être appelée en direct par `SmtpServerSession` — choix d'implémentation
+à trancher en P2, les deux respectent § 0.2.
+
+**HTTP pour Autodiscover (P8)** : `Http1ServerSession`
+(`src/network/http/http1/Http1ServerSession.ts`) — constructeur
+`(tcpStack, port, handler: (req: HttpMessage) => HttpMessage,
+eventBus?)`, `.start()`/`.stop()`. Pas de table de routes : IIS route
+lui-même à l'intérieur du handler selon `req.target`, patron à reproduire
+tel quel pour `/autodiscover/autodiscover.xml`. Le vrai Autodiscover est
+HTTPS uniquement → utiliser `HttpsServerSession`
+(`src/network/http/https/HttpsServerSession.ts`) avec un certificat du
+`WindowsCertStore` de la même façon qu'IIS le fait déjà pour ses
+bindings HTTPS (`WindowsIisRole.ts:148-152`, `buildHttpsServerConfig`).
+
 ---
 
 ## 2. Objectifs
@@ -369,6 +467,34 @@ même locale, traverse le même Transport Rules Agent.
 
 ## 4. Modèle de données
 
+### 4.0 `ExchangeOrganization` / `ExchangeServer` (P1)
+
+```ts
+interface ExchangeServer {
+  readonly hostname: string;           // nom du WindowsServer hôte
+  readonly roles: ReadonlySet<'Mailbox'>;
+  readonly installedAt: number;        // epoch seconds
+}
+
+interface ExchangeOrganization {
+  readonly name: string;               // -OrganizationName, ex. "Mandeng"
+  readonly acceptedDomains: ReadonlySet<string>; // dérivés des zones DNS déjà gérées (§ 3)
+  readonly servers: Map<string, ExchangeServer>; // clé = hostname
+}
+```
+
+Un `WindowsServer` porte au plus un `exchangeOrganization:
+ExchangeOrganization | null` (posé par `installExchangeServer()`,
+jamais `undefined` implicite — même discipline que `directoryStore`,
+§ 1.3). Plusieurs `WindowsServer` d'un même AD partagent la **même**
+organisation logique (un seul nom d'organisation par forêt, comme un
+vrai Exchange) ; `Get-ExchangeServer` sans argument doit énumérer tous
+les serveurs du rôle Mailbox connus de l'organisation, pas seulement le
+serveur local — nécessite un point de partage entre instances
+`WindowsServer` (au choix de l'implémentation P1 : via `DirectoryStore`
+existant, déjà partagé entre DC d'une forêt, ou un registre statique
+équivalent à `EquipmentRegistry`, § conventions du dépôt).
+
 ### 4.1 `Mailbox` / `MailboxStore` (P2)
 
 ```ts
@@ -456,6 +582,68 @@ interface MailboxDatabaseCopy {
 }
 ```
 
+### 4.6 `GlobalAddressList` (P4)
+
+```ts
+interface GalEntry {
+  readonly displayName: string;
+  readonly samAccountName: string;      // pour résolution par nom d'ouverture de session
+  readonly primarySmtpAddress: string;
+  readonly kind: 'Mailbox' | 'DistributionGroup' | 'SecurityMailEnabled';
+}
+```
+
+`Get-GlobalAddressList` retourne la liste dérivée dynamiquement des
+boîtes activées (P2) et des groupes mail-activés (P3) — jamais une copie
+maintenue séparément (une désactivation de boîte doit immédiatement
+sortir l'entrée du GAL sans étape de synchronisation additionnelle). La
+résolution d'adresse au moment de l'envoi (§ 2.1 P4) consomme cette même
+liste, pas une structure parallèle.
+
+### 4.7 Réponse Autodiscover (P8, MS-OXDSCLI — forme HTTP/XML)
+
+```ts
+interface AutodiscoverResponse {
+  readonly smtpAddress: string;
+  readonly displayName: string;
+  readonly mailboxServer: string;       // hostname du ExchangeServer hébergeant la boîte
+  readonly protocol: 'Exchange';
+}
+```
+
+Sérialisée en XML minimal fidèle à la forme réelle de la réponse
+`Autodiscover` (espace de noms `http://schemas.microsoft.com/exchange/
+autodiscover/outlook/responseschema/2006a`, éléments `<Account><Protocol>
+<Server>`/`<LoginName>`) — champs suffisants pour vérifier qu'une requête
+avec une adresse SMTP donnée pointe vers le bon serveur (critère
+d'acceptation § 8), pas une reproduction exhaustive de tous les éléments
+optionnels du schéma réel.
+
+### 4.8 Résultats de diagnostic (P12)
+
+```ts
+interface ServiceHealthCheck {
+  readonly serviceName: string;         // ex. "MSExchangeTransport"
+  readonly status: 'Running' | 'Stopped';
+  readonly expected: boolean;           // ce service doit tourner pour ce rôle
+}
+
+interface MailflowTestResult {
+  readonly success: boolean;
+  readonly fromMailbox: string;
+  readonly toMailbox: string;
+  readonly latencyMs: number;
+  readonly failureReason?: string;
+}
+```
+
+`Test-ServiceHealth` réutilise le modèle de service Windows déjà livré
+(`WindowsServiceManager`, § 2.1 P12) — pas un second registre de
+services. `Test-Mailflow` effectue une **vraie** remise via le pipeline
+complet (SMTP → Transport Rule → `MailboxStore.deliver()`, § 3) et
+mesure le résultat réel, jamais un stub qui répond systématiquement
+`success: true`.
+
 ---
 
 ## 5. Plan de mise en œuvre (TDD, par phases)
@@ -489,6 +677,30 @@ interface MailboxDatabaseCopy {
 11. **P12** en tout dernier, diagnostics qui dépendent de tout le reste
     pour avoir quelque chose à diagnostiquer.
 
+### 5.1 Table récapitulative des phases
+
+| Phase | Contenu | Dépend de |
+|---|---|---|
+| **P1 — Bootstrap** | `Install-ExchangeServer`/`Get-ExchangeServer`, `ExchangeOrganization`/`ExchangeServer` (§ 4.0), garde-fou niveau rôle (§ 1.3) | `WindowsServer`/`RoleManager` existants |
+| **P3-préalable — `GroupCategory`** | `New-ADGroup -GroupCategory Security\|Distribution`, non-régression du comportement par défaut | `ActiveDirectoryCmdlets.ts`, `DirectoryStore.ts` existants |
+| **P2 — Magasin de boîtes structuré** | `MailboxStore` (§ 4.1), `Enable-Mailbox`/`New-Mailbox`/`Get-Mailbox`/`Set-Mailbox`/`Get-MailboxStatistics`/`Disable-Mailbox`/`Remove-Mailbox`, point d'entrée unique de remise | P1, `localDelivery.ts` (§ 0.2) |
+| **P4 — Carnet d'adresses global** | `Get-GlobalAddressList` (§ 4.6), résolution d'adresse à l'envoi, `proxyAddresses` | P2 |
+| **P5 — Connecteurs de transport nommés** | `*-ReceiveConnector`/`*-SendConnector` (§ 4.4), habillage de `SmtpServer`/`relay.ts` | P1, moteur SMTP existant (§ 0.2) |
+| **P3 — Groupes de distribution** | `New-DistributionGroup`/`Set-DistributionGroup`/`Add-DistributionGroupMember`/`Get-DistributionGroupMember` (§ 4.2), expansion d'enveloppe à la remise | P3-préalable, P2 |
+| **P6 — Règles de flux (Transport Rules)** | `New-TransportRule` (§ 4.3), hook dans `SmtpServerSession` avant remise/relais | P2 |
+| **P7 — File d'attente vue Exchange** | `Get-Queue`/`Retry-Queue`/`Suspend-Queue`/`Resume-Queue`, formatage sur `queue.ts` existant | P6, `queue.ts` existant (§ 0.2) |
+| **P9 — Permissions et délégation** | `Add-MailboxPermission`/`Add-RecipientPermission`, ACL AD déjà livré | P2 |
+| **P10 — Journalisation** | `New-JournalRule`, cas particulier de Transport Rule système | P6 |
+| **P8 — Autodiscover** | Endpoint HTTP/XML MS-OXDSCLI (§ 4.7), `Http1ServerSession`/`HttpsServerSession` | P1 |
+| **P11 — Database Availability Group** | `*-DatabaseAvailabilityGroup`/`Add-MailboxDatabaseCopy` (§ 4.5), réplication déclenchée explicitement | P2 |
+| **P12 — Diagnostics** | `Get-ExchangeServer`/`Test-ServiceHealth`/`Test-Mailflow` (§ 4.8) | P1-P11 |
+
+Chaque phase suit le cycle rouge → vert → refactor. Aucune suite
+existante (`smtp-*.test.ts`, `scenario-ad-*.test.ts`) ne doit changer de
+comportement observable, à l'exception ciblée du correctif
+`GroupCategory` (P3-préalable) qui ajoute un paramètre optionnel à
+valeur par défaut préservant le comportement actuel de `New-ADGroup`.
+
 ---
 
 ## 6. Stratégie de test
@@ -515,6 +727,110 @@ interface MailboxDatabaseCopy {
   testé, seulement l'orchestrer différemment en amont/aval.
 - **Test de non-régression AD** : idem pour les suites `scenario-ad-
   *.test.ts` existantes après le correctif `GroupCategory` de P3.
+
+### 6.1 Critères unitaires détaillés, par phase
+
+1. **P1** : `Get-ExchangeServer` échoue avec `"is not recognized..."`
+   avant le rôle Mailbox installé (niveau 1, § 1.3) ; `Install-
+   ExchangeServer` sur un serveur non joint au domaine échoue avec un
+   message spécifique (niveau 2), jamais `"not recognized"` ; après
+   installation réussie, `Get-ExchangeServer` liste le serveur avec le
+   bon `OrganizationName` ; une deuxième `Install-ExchangeServer` sur le
+   même serveur échoue proprement (« already installed »), pas une
+   double installation silencieuse.
+2. **P3-préalable** : `New-ADGroup` sans `-GroupCategory` produit
+   toujours un groupe `Security` (comportement actuel préservé, non-
+   régression explicite) ; `-GroupCategory Distribution` produit un
+   groupe dont l'attribut est bien lisible par `Get-ADGroup` ensuite ;
+   valeur invalide (ni `Security` ni `Distribution`) rejetée avec un
+   message d'erreur clair, pas une valeur par défaut silencieuse.
+3. **P2** : `Enable-Mailbox` sur un compte AD inexistant échoue
+   proprement ; sur un compte existant, crée les 5 dossiers standard
+   vides ; `New-Mailbox` crée le compte AD **et** la boîte en un appel ;
+   `Get-Mailbox` introuvable pour un compte non mail-activé ; `Set-
+   Mailbox -Quota` appliqué puis vérifié par `Get-Mailbox` ; un message
+   dépassant le quota est rejeté au niveau SMTP (réutilise le rejet
+   `552` déjà livré, § 0.2 `extensions.ts`), pas silencieusement
+   accepté puis tronqué ; `Disable-Mailbox` retire la boîte mais
+   préserve le compte AD sous-jacent, `Remove-Mailbox` retire les deux.
+4. **P4** : chaque boîte activée en P2 apparaît dans `Get-
+   GlobalAddressList` avec son adresse SMTP primaire dérivée ; une boîte
+   désactivée disparaît immédiatement du GAL sans étape de
+   resynchronisation ; l'envoi à un nom d'affichage résolu contre le
+   GAL aboutit à la même remise qu'un envoi à l'adresse SMTP littérale
+   équivalente ; un nom d'affichage ambigu (aucune correspondance ou
+   plusieurs) produit une erreur de résolution explicite.
+5. **P5** : `Get-ReceiveConnector`/`Get-SendConnector` reflètent l'état
+   réel de `SmtpServer`/`relay.ts` (pas une configuration parallèle
+   jamais consultée par le moteur réel) ; `New-ReceiveConnector` avec une
+   restriction d'IP source rejette effectivement une connexion hors
+   plage au niveau TCP/SMTP ; `New-SendConnector -AddressSpaces
+   partner.example` route réellement les messages vers ce domaine par ce
+   connecteur plutôt que par la résolution MX par défaut.
+6. **P3** : un message envoyé à l'adresse d'un groupe de distribution de
+   3 membres produit 3 remises indépendantes, chacune visible séparément
+   par `Get-MailboxStatistics` ; un membre retiré via `Remove-
+   DistributionGroupMember` (ou équivalent) ne reçoit plus les messages
+   suivants ; un groupe de sécurité mail-activé (`-Type Security`)
+   distribue au courrier exactement comme un groupe de distribution pur.
+7. **P6** : une règle avec condition `SubjectContains` et action
+   `Reject` fait échouer la remise au niveau SMTP (réponse de rejet
+   réelle, pas une remise suivie d'une suppression silencieuse) ; une
+   règle `AppendDisclaimer` modifie réellement le corps du message
+   remis dans `Inbox` ; une règle `RedirectTo` empêche la remise
+   originale et ne délivre qu'à la nouvelle adresse ; plusieurs règles
+   s'appliquent dans l'ordre de `priority` croissante ; une règle
+   `enabled: false` n'a aucun effet observable.
+8. **P7** : `Get-Queue` reflète exactement le contenu de `queue.ts`
+   interrogé directement (même nombre d'entrées, mêmes destinataires en
+   attente) ; `Suspend-Queue` empêche réellement tout traitement
+   ultérieur de cette entrée jusqu'à `Resume-Queue` ; `Retry-Queue`
+   déclenche une tentative immédiate sans attendre le prochain délai
+   programmé.
+9. **P8** : une requête HTTP vers `/autodiscover/autodiscover.xml` avec
+   une adresse SMTP d'une boîte existante renvoie un XML dont
+   `mailboxServer` correspond au bon `ExchangeServer` ; une adresse SMTP
+   inconnue de l'organisation renvoie une erreur/réponse négative
+   explicite, jamais un XML de succès avec un serveur arbitraire ; après
+   un déplacement de boîte simulé (si modélisé) vers un autre serveur,
+   la réponse suit le déplacement.
+10. **P9** : un utilisateur sans permission ne peut pas inspecter le
+    contenu d'une boîte tierce ; après `Add-MailboxPermission
+    -AccessRights FullAccess`, il le peut ; `Add-RecipientPermission
+    -AccessRights SendAs` permet une remise réelle portant l'adresse de
+    la boîte déléguée comme expéditeur, vérifiable dans l'en-tête `From`
+    du message reçu ; le retrait de la permission (`Remove-*Permission`)
+    révoque l'accès immédiatement.
+11. **P10** : chaque message qui transite (peu importe l'expéditeur/
+    destinataire) produit une copie invisible dans la boîte de
+    journalisation configurée par `New-JournalRule -Scope Global` ; le
+    destinataire original ne voit **aucune** trace de la copie (pas de
+    BCC visible dans les en-têtes qu'il reçoit) ; une règle de
+    journalisation n'est pas modifiable/désactivable par une cmdlet
+    `Transport Rule` ordinaire (protection du système).
+12. **P11** : deux serveurs dans le même DAG, une boîte modifiée sur le
+    serveur actif, avant synchronisation déclenchée →
+    `Get-MailboxDatabaseCopyStatus` sur le passif montre
+    `copyQueueLength > 0` et un statut cohérent (`Resynchronizing` ou
+    équivalent) ; après `Update-MailboxDatabaseCopy` (ou l'intervalle
+    fixe documenté), le passif reflète l'état à jour
+    (`copyQueueLength === 0`, `status: 'Healthy'`) ; ajout d'un second
+    serveur au DAG (`Add-DatabaseAvailabilityGroupServer`) sans copie de
+    base associée n'affecte aucune boîte existante.
+13. **P12** : `Test-ServiceHealth` détecte un service Exchange attendu
+    mais arrêté (`status: 'Stopped'`, `expected: true`) et le distingue
+    d'un service correctement arrêté parce que non pertinent pour ce
+    rôle (`expected: false`) ; `Test-Mailflow` entre deux boîtes du même
+    serveur réussit en conditions normales et échoue explicitement
+    (`success: false`, `failureReason` renseigné) si la boîte cible est
+    désactivée ou le quota dépassé — jamais un `success: true` de
+    façade indépendant de l'état réel du pipeline.
+14. **Non-régression globale** : la suite complète `smtp-*.test.ts`
+    passe sans modification après chaque phase (aucune phase ne change
+    le comportement du moteur SMTP générique, seulement son
+    orchestration) ; la suite `scenario-ad-*.test.ts` passe sans
+    modification après P3-préalable, à l'exception explicite du nouveau
+    comportement `GroupCategory` lui-même.
 
 ---
 

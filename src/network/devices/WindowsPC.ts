@@ -2854,6 +2854,63 @@ export class WindowsPC extends EndHost implements UserAccountHost {
   getIisRole(): import('./windows/server/iis/WindowsIisRole').WindowsIisRole | null { return null; }
 
   /**
+   * Exchange organization membership (docs/PRD-Exchange.md §2.1 P1) —
+   * null until `Install-ExchangeServer` on a `WindowsServer`; always null
+   * on a client, overridden by `WindowsServer`.
+   */
+  getExchangeOrganizationName(): string | null { return null; }
+
+  installExchangeServer(_organizationName: string, _roles?: readonly string[]): { ok: boolean; message: string } {
+    return { ok: false, message: 'Install-ExchangeServer : Exchange Server setup cannot run on this computer.' };
+  }
+
+  getExchangeServer(_hostname?: string): import('./windows/server/exchange/ExchangeOrganization').ExchangeServerRecord | null { return null; }
+
+  listExchangeServers(): import('./windows/server/exchange/ExchangeOrganization').ExchangeServerRecord[] { return []; }
+
+  getMailboxStore(): import('./windows/server/exchange/MailboxStore').MailboxStore | null { return null; }
+
+  enableMailbox(_identity: string): { ok: boolean; message: string } {
+    return { ok: false, message: 'Enable-Mailbox : Exchange Server has not been installed on this computer.' };
+  }
+
+  newMailbox(_sam: string, _password: string): { ok: boolean; message: string } {
+    return { ok: false, message: 'New-Mailbox : Exchange Server has not been installed on this computer.' };
+  }
+
+  disableMailbox(_identity: string): { ok: boolean; message: string } {
+    return { ok: false, message: 'Disable-Mailbox : Exchange Server has not been installed on this computer.' };
+  }
+
+  removeMailbox(_identity: string): { ok: boolean; message: string } {
+    return { ok: false, message: 'Remove-Mailbox : Exchange Server has not been installed on this computer.' };
+  }
+
+  getDistributionGroupStore(): import('./windows/server/exchange/DistributionGroupStore').DistributionGroupStore | null { return null; }
+
+  newDistributionGroup(_sam: string, _type?: 'Distribution' | 'SecurityMailEnabled'): { ok: boolean; message: string } {
+    return { ok: false, message: 'New-DistributionGroup : Exchange Server has not been installed on this computer.' };
+  }
+
+  setDistributionGroupPrimarySmtpAddress(_identity: string, _address: string): { ok: boolean; message: string } {
+    return { ok: false, message: 'Set-DistributionGroup : Exchange Server has not been installed on this computer.' };
+  }
+
+  addDistributionGroupMember(_identity: string, _memberSam: string): { ok: boolean; message: string } {
+    return { ok: false, message: 'Add-DistributionGroupMember : Exchange Server has not been installed on this computer.' };
+  }
+
+  getDistributionGroupMembers(_identity: string): string[] | null { return null; }
+
+  deliverToRecipient(_recipientAddress: string, _from: string, _subject: string, _rawMessage: string, _receivedAt: number): import('./windows/server/exchange/MailboxStore').DeliverResult[] {
+    return [{ delivered: false, reason: 'not-found' }];
+  }
+
+  getGlobalAddressList(): import('./windows/server/exchange/GlobalAddressList').GalEntry[] { return []; }
+
+  resolveRecipientAddress(_query: string): string | null { return null; }
+
+  /**
    * AD CS (Certificate Services) role (PRD-Windows-Server-Advanced.md §5
    * P13) — null until `Install-WindowsFeature AD-Certificate` on a
    * `WindowsServer`; always null on a client, overridden by `WindowsServer`.
