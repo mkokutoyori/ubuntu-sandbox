@@ -1,11 +1,3 @@
-/**
- * SMTP/ESMTP (RFC 5321 §2-4) — TCP glue for the control channel server
- * side, mirroring `FtpServer.ts`. Sends the unprompted `220` banner on
- * accept, then dispatches every subsequent line to a per-connection
- * `SmtpServerSession` — except while a `DATA` transaction is open, when
- * the *next* full write is instead treated as the raw message blob and
- * handed to `handleDataBody()`.
- */
 import type { TcpStack, TcpSocket, TcpListener } from '@/network/tcp/TcpStack';
 import { SmtpServerSession, type SmtpServerConfig } from './SmtpServerSession';
 import { decodeCommand, encodeReply, reply } from './replies';

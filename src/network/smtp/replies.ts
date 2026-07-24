@@ -1,14 +1,3 @@
-/**
- * SMTP/ESMTP (RFC 5321 §4.2) — command/reply wire codec. A reply's code
- * is always exactly 3 digits; a multi-line reply's non-final lines are
- * `code-text` (hyphen), the final line is `code text` (space) — the same
- * convention already used by `network/ftp/replies.ts` for RFC 959 §4.2.
- * From P4 on, an enhanced status code (RFC 3463/5248) is carried as a
- * separate `SmtpReply.enhancedCode` field but rendered on the wire as a
- * token prefixed onto the first line's text (e.g. `250 2.1.0 Sender ok`),
- * exactly like a real server — `encodeReply`/`decodeReply` handle that
- * translation so callers never string-concatenate it themselves.
- */
 import type { SmtpCommand, SmtpReply } from './types';
 
 const CRLF = '\r\n';
