@@ -7,6 +7,7 @@ import {
   type AuthMechanism, toBase64, fromBase64, decodePlainResponse, generateCramMd5Challenge, decodeCramMd5Response, computeCramMd5Digest,
 } from './auth';
 import { buildSubmissionContext, formatSenderLine, insertSenderHeader } from './submission';
+import { evaluateRcpt } from './relayPolicy';
 
 export interface SmtpServerConfig {
   readonly hostname: string;
@@ -19,6 +20,7 @@ export interface SmtpServerConfig {
   readonly users?: ReadonlyMap<string, string>;
   readonly authenticate?: (username: string, password: string) => boolean;
   readonly submissionMode?: boolean;
+  readonly localDomains?: ReadonlySet<string>;
 }
 
 const CRLF = '\r\n';
@@ -135,6 +137,9 @@ export class SmtpServerSession {
     if (this.state !== 'mail-set' && this.state !== 'rcpt-set') return replyEnhanced(503, ENHANCED.BAD_SEQUENCE, 'Need MAIL command first.');
     const to = parseRcptToArgument(cmd.argument);
     if (to === null) return replyEnhanced(501, ENHANCED.SYNTAX_ERROR_ARGS, 'Syntax error in RCPT command.');
+    if (this.config.localDomains && evaluateRcpt(to, this.config.localDomains, this.authActive) === 'deny-relay') {
+      return replyEnhanced(550, ENHANCED.RELAY_DENIED, 'Relaying denied.');
+    }
     this.envelopeTo.push(to);
     this.state = 'rcpt-set';
     return replyEnhanced(250, ENHANCED.DEST_VALID, 'Recipient ok');
