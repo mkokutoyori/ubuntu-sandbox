@@ -656,3 +656,75 @@ export class ResumeQueueCmdlet implements ICmdlet {
     return null;
   }
 }
+
+export class AddMailboxPermissionCmdlet implements ICmdlet {
+  readonly name = 'add-mailboxpermission';
+  readonly displayName = 'Add-MailboxPermission';
+  readonly aliases = [] as const;
+  readonly parameters = ['Identity', 'User', 'AccessRights'] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const exchange = requireExchange(ctx, 'Add-MailboxPermission');
+    const identity = identityFrom(ctx);
+    const user = psValueToString(ctx.named['user'] ?? '');
+    if (!identity || !user) {
+      ctx.emitError('Add-MailboxPermission : Cannot process command because of one or more missing mandatory parameters: Identity, User.');
+      return null;
+    }
+    const res = exchange.addMailboxPermission(identity, user);
+    if (!res.ok) { ctx.emitError(res.message); return null; }
+    return { Identity: identity, User: user, AccessRights: 'FullAccess' } as Record<string, PSValue>;
+  }
+}
+
+export class GetMailboxPermissionCmdlet implements ICmdlet {
+  readonly name = 'get-mailboxpermission';
+  readonly displayName = 'Get-MailboxPermission';
+  readonly aliases = [] as const;
+  readonly parameters = ['Identity'] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const exchange = requireExchange(ctx, 'Get-MailboxPermission');
+    const identity = identityFrom(ctx);
+    if (!identity) { ctx.emitError('Get-MailboxPermission : Cannot process command because of one or more missing mandatory parameters: Identity.'); return null; }
+    return exchange.getMailboxPermissionTrustees(identity).map((user) => ({
+      Identity: identity, User: user, AccessRights: 'FullAccess',
+    } as Record<string, PSValue>));
+  }
+}
+
+export class AddRecipientPermissionCmdlet implements ICmdlet {
+  readonly name = 'add-recipientpermission';
+  readonly displayName = 'Add-RecipientPermission';
+  readonly aliases = [] as const;
+  readonly parameters = ['Identity', 'Trustee', 'AccessRights'] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const exchange = requireExchange(ctx, 'Add-RecipientPermission');
+    const identity = identityFrom(ctx);
+    const trustee = psValueToString(ctx.named['trustee'] ?? '');
+    if (!identity || !trustee) {
+      ctx.emitError('Add-RecipientPermission : Cannot process command because of one or more missing mandatory parameters: Identity, Trustee.');
+      return null;
+    }
+    const res = exchange.addRecipientPermission(identity, trustee);
+    if (!res.ok) { ctx.emitError(res.message); return null; }
+    return { Identity: identity, Trustee: trustee, AccessRights: 'SendAs' } as Record<string, PSValue>;
+  }
+}
+
+export class GetRecipientPermissionCmdlet implements ICmdlet {
+  readonly name = 'get-recipientpermission';
+  readonly displayName = 'Get-RecipientPermission';
+  readonly aliases = [] as const;
+  readonly parameters = ['Identity'] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const exchange = requireExchange(ctx, 'Get-RecipientPermission');
+    const identity = identityFrom(ctx);
+    if (!identity) { ctx.emitError('Get-RecipientPermission : Cannot process command because of one or more missing mandatory parameters: Identity.'); return null; }
+    return exchange.getRecipientPermissionTrustees(identity).map((trustee) => ({
+      Identity: identity, Trustee: trustee, AccessRights: 'SendAs',
+    } as Record<string, PSValue>));
+  }
+}

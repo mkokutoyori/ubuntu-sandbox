@@ -2221,6 +2221,26 @@ class WindowsExchangeAdapter implements IExchangeProvider {
     queue.resume(identity);
     return { ok: true, message: '' };
   }
+
+  addMailboxPermission(identity: string, user: string): ExchangeOpResult {
+    this.requireOrg('Add-MailboxPermission');
+    return this.pc.addMailboxPermission(identity, user);
+  }
+
+  addRecipientPermission(identity: string, trustee: string): ExchangeOpResult {
+    this.requireOrg('Add-RecipientPermission');
+    return this.pc.addRecipientPermission(identity, trustee);
+  }
+
+  getMailboxPermissionTrustees(identity: string): string[] {
+    this.requireOrg('Get-MailboxPermission');
+    return this.pc.getMailboxPermissions(identity, 'FullAccess');
+  }
+
+  getRecipientPermissionTrustees(identity: string): string[] {
+    this.requireOrg('Get-RecipientPermission');
+    return this.pc.getMailboxPermissions(identity, 'SendAs');
+  }
 }
 
 // ── DFS Namespaces + DFSR adapter (PRD-Windows-Server-Advanced.md §5 P16) ──

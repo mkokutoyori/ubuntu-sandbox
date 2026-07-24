@@ -173,6 +173,7 @@ import {
   NewReceiveConnectorCmdlet, GetReceiveConnectorCmdlet, NewSendConnectorCmdlet, GetSendConnectorCmdlet,
   NewTransportRuleCmdlet, GetTransportRuleCmdlet,
   GetQueueCmdlet, RetryQueueCmdlet, SuspendQueueCmdlet, ResumeQueueCmdlet,
+  AddMailboxPermissionCmdlet, GetMailboxPermissionCmdlet, AddRecipientPermissionCmdlet, GetRecipientPermissionCmdlet,
 } from './ExchangeCmdlets';
 import {
   NewDfsnRootCmdlet, NewDfsnFolderCmdlet, NewDfsnFolderTargetCmdlet, GetDfsnFolderCmdlet,
@@ -532,6 +533,10 @@ export function registerServerCmdlets(registry: CmdletRegistry): void {
   registry.register(new RetryQueueCmdlet());
   registry.register(new SuspendQueueCmdlet());
   registry.register(new ResumeQueueCmdlet());
+  registry.register(new AddMailboxPermissionCmdlet());
+  registry.register(new GetMailboxPermissionCmdlet());
+  registry.register(new AddRecipientPermissionCmdlet());
+  registry.register(new GetRecipientPermissionCmdlet());
 
   // ── AD CS (PRD-Windows-Server-Advanced.md §5 P13) ───────────────────────────
   registry.register(new InstallAdcsCertificationAuthorityCmdlet());

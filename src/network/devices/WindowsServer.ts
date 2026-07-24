@@ -34,7 +34,7 @@ import { dialLdap } from './windows/server/ad/ldap/LdapClient';
 import { pullReplication, notifySyncNow } from './windows/server/ad/replication/ReplicationSession';
 import { createForest, joinForestAsChildDomain, getForestForDomain, type Forest } from './windows/server/ad/forest/Forest';
 import { getExchangeOrganization, getOrCreateExchangeOrganization, type ExchangeServerRecord } from './windows/server/exchange/ExchangeOrganization';
-import { MailboxStore, type MailboxOpResult, type DeliverResult } from './windows/server/exchange/MailboxStore';
+import { MailboxStore, type MailboxOpResult, type DeliverResult, type StoredMailItem } from './windows/server/exchange/MailboxStore';
 import { DistributionGroupStore, deliverExpanded, type DistributionGroupOpResult, type DistributionGroupType } from './windows/server/exchange/DistributionGroupStore';
 import { buildGlobalAddressList, resolveGalRecipient, type GalEntry } from './windows/server/exchange/GlobalAddressList';
 import { parseBinding, ipAllowedByRanges, selectSendConnector, type ReceiveConnectorDef, type SendConnectorDef } from './windows/server/exchange/TransportConnector';
@@ -464,6 +464,78 @@ export class WindowsServer extends WindowsPC {
   }
 
   /**
+   * `Add-MailboxPermission`/`Add-RecipientPermission` (docs/PRD-Exchange.md
+   * §2.1 P9) — reuses the AD ACL model already shipped for OU delegation
+   * (`DirectoryStore.getAcl`/`setAcl` on the mailbox owner's own AD user
+   * DN), not a second permission mechanism. `FullAccess` gates
+   * `getMailboxContentsAsUser()`; `SendAs` gates real MAIL FROM
+   * impersonation on an authenticated Receive Connector session
+   * (`evaluateSendAsViolation()`, wired into `newReceiveConnector` above).
+   * The mailbox owner always implicitly holds both rights on their own
+   * mailbox, matching real Exchange defaults.
+   */
+  private grantMailboxRight(cmdletName: string, identity: string, trusteeIdentity: string, rights: 'FullAccess' | 'SendAs'): AdDsOpResult {
+    const store = this.getMailboxStore();
+    if (!store || !this.directoryStore) return { ok: false, message: `${cmdletName} : Exchange Server has not been installed on this computer.` };
+    const mailbox = store.get(identity);
+    if (!mailbox) return { ok: false, message: `${cmdletName} : The operation couldn't be performed because object '${identity}' couldn't be found.` };
+    const targetUser = this.directoryStore.getUser(mailbox.adIdentity);
+    if (!targetUser) return { ok: false, message: `${cmdletName} : The operation couldn't be performed because object '${identity}' couldn't be found.` };
+    const trusteeSam = this.directoryStore.resolveIdentity(trusteeIdentity);
+    if (!this.directoryStore.getUser(trusteeSam)) return { ok: false, message: `${cmdletName} : Couldn't find object "${trusteeIdentity}".` };
+    const existing = this.directoryStore.getAcl(targetUser.dn) ?? [];
+    if (existing.some((r) => r.identitySam.toLowerCase() === trusteeSam.toLowerCase() && r.rights === rights)) {
+      return { ok: false, message: `${cmdletName} : The permission entry '${trusteeSam}: ${rights}' already exists on object "${identity}".` };
+    }
+    this.directoryStore.setAcl(targetUser.dn, [
+      ...existing, { identitySam: trusteeSam, rights, accessControlType: 'Allow', objectType: 'Mailbox', inheritanceType: 'None' },
+    ]);
+    return { ok: true, message: '' };
+  }
+
+  addMailboxPermission(identity: string, user: string): AdDsOpResult {
+    return this.grantMailboxRight('Add-MailboxPermission', identity, user, 'FullAccess');
+  }
+
+  addRecipientPermission(identity: string, trustee: string): AdDsOpResult {
+    return this.grantMailboxRight('Add-RecipientPermission', identity, trustee, 'SendAs');
+  }
+
+  getMailboxPermissions(identity: string, rights: 'FullAccess' | 'SendAs'): string[] {
+    const store = this.getMailboxStore();
+    const mailbox = store?.get(identity);
+    if (!mailbox || !this.directoryStore) return [];
+    const targetUser = this.directoryStore.getUser(mailbox.adIdentity);
+    if (!targetUser) return [];
+    return (this.directoryStore.getAcl(targetUser.dn) ?? [])
+      .filter((r) => r.rights === rights && r.accessControlType === 'Allow')
+      .map((r) => r.identitySam);
+  }
+
+  userHasMailboxAccess(identity: string, userSam: string, rights: 'FullAccess' | 'SendAs'): boolean {
+    const store = this.getMailboxStore();
+    const mailbox = store?.get(identity);
+    if (!mailbox || !this.directoryStore) return false;
+    const resolvedUser = this.directoryStore.resolveIdentity(userSam);
+    if (resolvedUser.toLowerCase() === mailbox.adIdentity.toLowerCase()) return true;
+    return this.getMailboxPermissions(identity, rights).some((sam) => sam.toLowerCase() === resolvedUser.toLowerCase());
+  }
+
+  getMailboxContentsAsUser(identity: string, requestingUserSam: string): readonly StoredMailItem[] | null {
+    if (!this.userHasMailboxAccess(identity, requestingUserSam, 'FullAccess')) return null;
+    return this.getMailboxStore()?.get(identity)?.folders.Inbox ?? null;
+  }
+
+  private evaluateSendAsViolation(delivered: SmtpAcceptedMessage): string | null {
+    if (!delivered.authIdentity || !this.directoryStore) return null;
+    const mailbox = this.getMailboxStore()?.getByAddress(delivered.envelope.from);
+    if (!mailbox) return null;
+    const authSam = this.directoryStore.resolveIdentity(delivered.authIdentity);
+    if (this.userHasMailboxAccess(mailbox.adIdentity, authSam, 'SendAs')) return null;
+    return "5.7.1 Client does not have permissions to send as this sender";
+  }
+
+  /**
    * `New-DistributionGroup`/`Set-DistributionGroup`/`Add-
    * DistributionGroupMember`/`Get-DistributionGroupMember`
    * (docs/PRD-Exchange.md §2.1 P3) — mail-enables an AD group that
@@ -634,11 +706,20 @@ export class WindowsServer extends WindowsPC {
       if (!parsed) return { ok: false, message: `New-ReceiveConnector : '${binding}' is not a valid binding.` };
       const server = new SmtpServer(
         this.getTcpStack(),
-        { hostname: this.getHostname(), eventBus: this.getBus(), localDomains },
+        {
+          hostname: this.getHostname(), eventBus: this.getBus(), localDomains,
+          allowPlainTextAuth: def.authMechanisms.includes('BasicAuth'),
+          authenticate: (username, password) => {
+            const store = this.directoryStore;
+            return store ? store.checkPassword(store.resolveIdentity(username), password) : false;
+          },
+        },
         parsed.port,
         {
           remoteIpAllowed: def.remoteIpRanges.length === 0 ? undefined : (ip) => ipAllowedByRanges(ip, def.remoteIpRanges),
           beforeMessageAccepted: (delivered) => {
+            const sendAsViolation = this.evaluateSendAsViolation(delivered);
+            if (sendAsViolation) return { reject: sendAsViolation };
             const outcome = this.evaluateForTransportRules(delivered);
             return outcome.reject ? { reject: outcome.reject.message } : undefined;
           },

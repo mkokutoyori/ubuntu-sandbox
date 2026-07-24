@@ -2940,6 +2940,20 @@ export class WindowsPC extends EndHost implements UserAccountHost {
 
   getAutodiscoverResponse(_emailAddress: string): import('./windows/server/exchange/Autodiscover').AutodiscoverResponse | null { return null; }
 
+  addMailboxPermission(_identity: string, _user: string): { ok: boolean; message: string } {
+    return { ok: false, message: 'Add-MailboxPermission : Exchange Server has not been installed on this computer.' };
+  }
+
+  addRecipientPermission(_identity: string, _trustee: string): { ok: boolean; message: string } {
+    return { ok: false, message: 'Add-RecipientPermission : Exchange Server has not been installed on this computer.' };
+  }
+
+  getMailboxPermissions(_identity: string, _rights: 'FullAccess' | 'SendAs'): string[] { return []; }
+
+  userHasMailboxAccess(_identity: string, _userSam: string, _rights: 'FullAccess' | 'SendAs'): boolean { return false; }
+
+  getMailboxContentsAsUser(_identity: string, _requestingUserSam: string): readonly import('./windows/server/exchange/MailboxStore').StoredMailItem[] | null { return null; }
+
   /**
    * AD CS (Certificate Services) role (PRD-Windows-Server-Advanced.md §5
    * P13) — null until `Install-WindowsFeature AD-Certificate` on a

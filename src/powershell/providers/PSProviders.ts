@@ -496,6 +496,11 @@ export interface IExchangeProvider {
   retryQueue(identity: string): ExchangeOpResult;
   suspendQueue(identity: string): ExchangeOpResult;
   resumeQueue(identity: string): ExchangeOpResult;
+
+  addMailboxPermission(identity: string, user: string): ExchangeOpResult;
+  addRecipientPermission(identity: string, trustee: string): ExchangeOpResult;
+  getMailboxPermissionTrustees(identity: string): string[];
+  getRecipientPermissionTrustees(identity: string): string[];
 }
 
 export interface QueueInfo {

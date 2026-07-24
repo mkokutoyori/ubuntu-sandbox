@@ -50,7 +50,7 @@ export class SmtpServerSession {
   private cramChallenge: string | null = null;
   authIdentity: string | null = null;
   authMechanism: AuthMechanism | null = null;
-  lastDelivered: { envelope: MailEnvelope; rawMessage: string; message: MimeMessage; dsnRequests: ReadonlyMap<string, DsnRequest> } | null = null;
+  lastDelivered: { envelope: MailEnvelope; rawMessage: string; message: MimeMessage; dsnRequests: ReadonlyMap<string, DsnRequest>; authIdentity: string | null } | null = null;
 
   constructor(private readonly config: SmtpServerConfig, private readonly remoteIp: string = '0.0.0.0') {}
 
@@ -204,6 +204,7 @@ export class SmtpServerSession {
       rawMessage,
       message: splitHeadersAndBody(rawMessage),
       dsnRequests: new Map(this.envelopeToDsn),
+      authIdentity: this.authIdentity,
     };
     this.resetTransaction();
     this.state = 'greeted';
