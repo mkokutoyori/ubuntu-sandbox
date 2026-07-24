@@ -8,6 +8,7 @@ import {
 } from './auth';
 import { buildSubmissionContext, formatSenderLine, insertSenderHeader } from './submission';
 import { evaluateRcpt } from './relayPolicy';
+import { parseRcptDsnParams, type DsnRequest } from './dsn';
 
 export interface SmtpServerConfig {
   readonly hostname: string;
@@ -32,6 +33,7 @@ export class SmtpServerSession {
   private state: SmtpSessionState = 'connected';
   private envelopeFrom: string | null = null;
   private envelopeTo: string[] = [];
+  private envelopeToDsn: Map<string, DsnRequest> = new Map();
   private envelopeSize: number | undefined;
   private envelopeBodyType: '7BIT' | '8BITMIME' | undefined;
   private usedEhlo = false;
@@ -44,7 +46,7 @@ export class SmtpServerSession {
   private cramChallenge: string | null = null;
   authIdentity: string | null = null;
   authMechanism: AuthMechanism | null = null;
-  lastDelivered: { envelope: MailEnvelope; rawMessage: string; message: MimeMessage } | null = null;
+  lastDelivered: { envelope: MailEnvelope; rawMessage: string; message: MimeMessage; dsnRequests: ReadonlyMap<string, DsnRequest> } | null = null;
 
   constructor(private readonly config: SmtpServerConfig, private readonly remoteIp: string = '0.0.0.0') {}
 
@@ -141,6 +143,7 @@ export class SmtpServerSession {
       return replyEnhanced(550, ENHANCED.RELAY_DENIED, 'Relaying denied.');
     }
     this.envelopeTo.push(to);
+    this.envelopeToDsn.set(to, parseRcptDsnParams(cmd.argument));
     this.state = 'rcpt-set';
     return replyEnhanced(250, ENHANCED.DEST_VALID, 'Recipient ok');
   }
@@ -187,6 +190,7 @@ export class SmtpServerSession {
       envelope: buildEnvelope(this.envelopeFrom ?? '', this.envelopeTo),
       rawMessage,
       message: splitHeadersAndBody(rawMessage),
+      dsnRequests: new Map(this.envelopeToDsn),
     };
     this.resetTransaction();
     this.state = 'greeted';
@@ -347,6 +351,7 @@ export class SmtpServerSession {
   private resetTransaction(): void {
     this.envelopeFrom = null;
     this.envelopeTo = [];
+    this.envelopeToDsn = new Map();
     this.envelopeSize = undefined;
     this.envelopeBodyType = undefined;
   }
