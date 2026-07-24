@@ -6,6 +6,7 @@ import { buildCapabilities, formatCapabilityLines, parseMailFromExtensionParams,
 import {
   type AuthMechanism, toBase64, fromBase64, decodePlainResponse, generateCramMd5Challenge, decodeCramMd5Response, computeCramMd5Digest,
 } from './auth';
+import { buildSubmissionContext, formatSenderLine, insertSenderHeader } from './submission';
 
 export interface SmtpServerConfig {
   readonly hostname: string;
@@ -17,6 +18,7 @@ export interface SmtpServerConfig {
   readonly tlsSupported?: boolean;
   readonly users?: ReadonlyMap<string, string>;
   readonly authenticate?: (username: string, password: string) => boolean;
+  readonly submissionMode?: boolean;
 }
 
 const CRLF = '\r\n';
@@ -112,6 +114,9 @@ export class SmtpServerSession {
   private handleMail(cmd: SmtpCommand): SmtpReply {
     if (this.state === 'connected') return replyEnhanced(503, ENHANCED.BAD_SEQUENCE, 'Send HELO/EHLO first.');
     if (this.state !== 'greeted') return replyEnhanced(503, ENHANCED.BAD_SEQUENCE, 'Mail transaction already in progress; send RSET first.');
+    if (this.config.submissionMode && !this.authActive) {
+      return replyEnhanced(530, ENHANCED.AUTH_REQUIRED, 'Authentication required for mail submission.');
+    }
     const from = parseMailFromArgument(cmd.argument);
     if (from === null) return replyEnhanced(501, ENHANCED.SYNTAX_ERROR_ARGS, 'Syntax error in MAIL command.');
     const ext = parseMailFromExtensionParams(cmd.argument);
@@ -156,7 +161,16 @@ export class SmtpServerSession {
       return replyEnhanced(554, ENHANCED.CONTENT_7BIT_VIOLATION, 'Transaction failed: message contains 8-bit data but 7BIT was declared.');
     }
 
-    const rawMessage = prependReceivedHeader(unstuffed, {
+    let withSender = unstuffed;
+    if (this.config.submissionMode && this.authActive && this.authIdentity) {
+      const declaredFrom = splitHeadersAndBody(unstuffed).headers.get('From') ?? '';
+      const ctx = buildSubmissionContext(this.authIdentity, declaredFrom);
+      if (ctx.senderHeaderAdded) {
+        withSender = insertSenderHeader(unstuffed, formatSenderLine(this.authIdentity, this.config.hostname));
+      }
+    }
+
+    const rawMessage = prependReceivedHeader(withSender, {
       fromHelo: this.heloDomain ?? 'unknown',
       fromIp: this.remoteIp,
       by: this.config.hostname,

@@ -46,7 +46,11 @@ export class SmtpServer {
   }
 
   private handleConnection(socket: TcpSocket): void {
-    const sessionConfig: SmtpServerConfig = { ...this.config, tlsSupported: !!this.tlsConfig };
+    const sessionConfig: SmtpServerConfig = {
+      ...this.config,
+      tlsSupported: !!this.tlsConfig,
+      submissionMode: this.port === SMTP_SUBMISSION_PORT,
+    };
     const session = new SmtpServerSession(sessionConfig, socket.remoteIp);
     let awaitingDataBody = false;
     let idleTimer: TimerHandle | null = null;
