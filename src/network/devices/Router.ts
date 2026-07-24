@@ -3254,6 +3254,13 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     iface: string, port: Port, myIP: IPAddress, targetIP: IPAddress,
     dstMAC: MACAddress, seq: number, timeoutMs: number,
   ): Promise<{ success: boolean; rttMs: number; ttl: number; seq: number; fromIP: string }> {
+    // Line protocol down — the probe fails immediately instead of burning a
+    // full timeout waiting for a reply the severed link can never carry
+    // (docs/PRD-Link-State.md §2.1 P4).
+    if (!port.isOperationallyUp()) {
+      throw new Error(`Destination unreachable from ${myIP}`);
+    }
+
     this.pingIdCounter++;
     const id = this.pingIdCounter;
 
