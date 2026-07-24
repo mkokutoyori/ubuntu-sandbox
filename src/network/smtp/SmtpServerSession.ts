@@ -9,6 +9,8 @@ import {
 import { buildSubmissionContext, formatSenderLine, insertSenderHeader } from './submission';
 import { evaluateRcpt } from './relayPolicy';
 import { parseRcptDsnParams, type DsnRequest } from './dsn';
+import type { IEventBus } from '@/events/EventBus';
+import { randomSmtpConnectionId } from './events';
 
 export interface SmtpServerConfig {
   readonly hostname: string;
@@ -22,6 +24,7 @@ export interface SmtpServerConfig {
   readonly authenticate?: (username: string, password: string) => boolean;
   readonly submissionMode?: boolean;
   readonly localDomains?: ReadonlySet<string>;
+  readonly eventBus?: IEventBus;
 }
 
 const CRLF = '\r\n';
@@ -29,6 +32,7 @@ const CRLF = '\r\n';
 export class SmtpServerSession {
   result: 'open' | 'closed' = 'open';
   heloDomain: string | null = null;
+  readonly connectionId = randomSmtpConnectionId();
 
   private state: SmtpSessionState = 'connected';
   private envelopeFrom: string | null = null;
@@ -59,6 +63,7 @@ export class SmtpServerSession {
   }
 
   handle(cmd: SmtpCommand): readonly SmtpReply[] {
+    this.config.eventBus?.publish({ topic: 'smtp.command.received', payload: { connectionId: this.connectionId, verb: cmd.verb } });
     switch (cmd.verb) {
       case 'HELO': return [this.handleHelo(cmd)];
       case 'EHLO': return [this.handleEhlo(cmd)];
@@ -115,18 +120,26 @@ export class SmtpServerSession {
     return this.usedEhlo && (this.config.pipeliningEnabled ?? false);
   }
 
+  private rejectMail(argument: string | undefined, reason: string, code: number, enhancedCode: string, message: string): SmtpReply {
+    this.config.eventBus?.publish({
+      topic: 'smtp.mail.rejected', payload: { connectionId: this.connectionId, envelopeFrom: argument ?? '', reason },
+    });
+    return replyEnhanced(code, enhancedCode, message);
+  }
+
   private handleMail(cmd: SmtpCommand): SmtpReply {
-    if (this.state === 'connected') return replyEnhanced(503, ENHANCED.BAD_SEQUENCE, 'Send HELO/EHLO first.');
-    if (this.state !== 'greeted') return replyEnhanced(503, ENHANCED.BAD_SEQUENCE, 'Mail transaction already in progress; send RSET first.');
+    if (this.state === 'connected') return this.rejectMail(cmd.argument, 'not-greeted', 503, ENHANCED.BAD_SEQUENCE, 'Send HELO/EHLO first.');
+    if (this.state !== 'greeted') return this.rejectMail(cmd.argument, 'transaction-in-progress', 503, ENHANCED.BAD_SEQUENCE, 'Mail transaction already in progress; send RSET first.');
     if (this.config.submissionMode && !this.authActive) {
-      return replyEnhanced(530, ENHANCED.AUTH_REQUIRED, 'Authentication required for mail submission.');
+      return this.rejectMail(cmd.argument, 'auth-required', 530, ENHANCED.AUTH_REQUIRED, 'Authentication required for mail submission.');
     }
     const from = parseMailFromArgument(cmd.argument);
-    if (from === null) return replyEnhanced(501, ENHANCED.SYNTAX_ERROR_ARGS, 'Syntax error in MAIL command.');
+    if (from === null) return this.rejectMail(cmd.argument, 'syntax-error', 501, ENHANCED.SYNTAX_ERROR_ARGS, 'Syntax error in MAIL command.');
     const ext = parseMailFromExtensionParams(cmd.argument);
     if (ext.size !== undefined && this.config.maxMessageSize !== undefined && ext.size > this.config.maxMessageSize) {
-      return replyEnhanced(552, ENHANCED.MESSAGE_TOO_LARGE, 'Message size exceeds fixed maximum message size.');
+      return this.rejectMail(cmd.argument, 'size-exceeded', 552, ENHANCED.MESSAGE_TOO_LARGE, 'Message size exceeds fixed maximum message size.');
     }
+    this.config.eventBus?.publish({ topic: 'smtp.mail.accepted', payload: { connectionId: this.connectionId, envelopeFrom: from } });
     this.envelopeFrom = from;
     this.envelopeTo = [];
     this.envelopeSize = ext.size;
@@ -264,7 +277,7 @@ export class SmtpServerSession {
     this.awaitingAuthContinuation = false;
     const creds = decodePlainResponse(b64);
     if (!creds) return replyEnhanced(501, ENHANCED.SYNTAX_ERROR_ARGS, 'Cannot decode response.');
-    if (!this.checkCredentials(creds.authcid, creds.password)) return replyEnhanced(535, ENHANCED.AUTH_CREDENTIALS_INVALID, 'Authentication credentials invalid.');
+    if (!this.checkCredentials(creds.authcid, creds.password)) return this.failAuth('PLAIN', 'invalid-credentials');
     return this.completeAuth('PLAIN', creds.authcid);
   }
 
@@ -293,7 +306,7 @@ export class SmtpServerSession {
     this.awaitingAuthContinuation = false;
     this.authLoginUsername = null;
     if (password === null) return replyEnhanced(501, ENHANCED.SYNTAX_ERROR_ARGS, 'Cannot decode response.');
-    if (!this.checkCredentials(username, password)) return replyEnhanced(535, ENHANCED.AUTH_CREDENTIALS_INVALID, 'Authentication credentials invalid.');
+    if (!this.checkCredentials(username, password)) return this.failAuth('LOGIN', 'invalid-credentials');
     return this.completeAuth('LOGIN', username);
   }
 
@@ -313,7 +326,7 @@ export class SmtpServerSession {
     if (!decoded) return replyEnhanced(501, ENHANCED.SYNTAX_ERROR_ARGS, 'Cannot decode response.');
     const password = this.config.users?.get(decoded.username) ?? null;
     if (password === null || computeCramMd5Digest(challenge, password) !== decoded.digest) {
-      return replyEnhanced(535, ENHANCED.AUTH_CREDENTIALS_INVALID, 'Authentication credentials invalid.');
+      return this.failAuth('CRAM-MD5', 'invalid-credentials');
     }
     return this.completeAuth('CRAM-MD5', decoded.username);
   }
@@ -345,7 +358,13 @@ export class SmtpServerSession {
     this.authActive = true;
     this.authIdentity = identity;
     this.authMechanism = mechanism;
+    this.config.eventBus?.publish({ topic: 'smtp.auth.succeeded', payload: { connectionId: this.connectionId, mechanism } });
     return replyEnhanced(235, ENHANCED.AUTH_SUCCEEDED, 'Authentication successful.');
+  }
+
+  private failAuth(mechanism: AuthMechanism, reason: string): SmtpReply {
+    this.config.eventBus?.publish({ topic: 'smtp.auth.failed', payload: { connectionId: this.connectionId, mechanism, reason } });
+    return replyEnhanced(535, ENHANCED.AUTH_CREDENTIALS_INVALID, 'Authentication credentials invalid.');
   }
 
   private resetTransaction(): void {

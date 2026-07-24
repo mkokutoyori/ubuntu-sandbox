@@ -1,3 +1,5 @@
+import type { IEventBus } from '@/events/EventBus';
+
 export interface MboxEntry {
   readonly envelopeFrom: string;
   readonly receivedAt: number;
@@ -51,7 +53,10 @@ export function deliverLocalMessage(
   recipientAddress: string,
   entry: MboxEntry,
   owner: { uid: number; gid: number },
+  eventBus?: IEventBus,
 ): boolean {
   const path = mailboxPathFor(recipientAddress);
-  return fs.writeFile(path, formatMboxEntry(entry), owner.uid, owner.gid, 0o022, true);
+  const ok = fs.writeFile(path, formatMboxEntry(entry), owner.uid, owner.gid, 0o022, true);
+  if (ok) eventBus?.publish({ topic: 'smtp.delivery.local', payload: { recipient: recipientAddress } });
+  return ok;
 }

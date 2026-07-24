@@ -1,4 +1,5 @@
 import type { TcpStack } from '@/network/tcp/TcpStack';
+import type { IEventBus } from '@/events/EventBus';
 import { SmtpClientSession } from './SmtpClientSession';
 
 export interface MxTarget {
@@ -39,6 +40,13 @@ export async function resolveRelayCandidates(
   return [{ target: { fallbackToAddress: true }, hostname: domain }];
 }
 
+function reportOutcome(eventBus: IEventBus | undefined, recipient: string, attempt: RelayAttempt): RelayAttempt {
+  if (attempt.outcome === 'delivered') eventBus?.publish({ topic: 'smtp.delivery.relayed', payload: { recipient } });
+  else if (attempt.outcome === 'deferred') eventBus?.publish({ topic: 'smtp.delivery.deferred', payload: { recipient, reason: attempt.detail ?? '' } });
+  else eventBus?.publish({ topic: 'smtp.delivery.bounced', payload: { recipient, reason: attempt.detail ?? '' } });
+  return attempt;
+}
+
 export async function relayToRecipient(
   tcpStack: TcpStack,
   localIp: string,
@@ -47,9 +55,10 @@ export async function relayToRecipient(
   envelopeFrom: string,
   recipient: string,
   rawMessage: string,
+  eventBus?: IEventBus,
 ): Promise<RelayAttempt> {
   const domain = domainOf(recipient);
-  if (!domain) return { target: { fallbackToAddress: true }, outcome: 'bounced', detail: 'Recipient has no domain.' };
+  if (!domain) return reportOutcome(eventBus, recipient, { target: { fallbackToAddress: true }, outcome: 'bounced', detail: 'Recipient has no domain.' });
 
   const candidates = await resolveRelayCandidates(lookup, domain);
   let lastDetail = 'No MX/A record reachable.';
@@ -65,22 +74,22 @@ export async function relayToRecipient(
     client.sendCommand({ verb: 'EHLO', argument: heloDomain });
 
     const mail = client.sendCommand({ verb: 'MAIL', argument: `FROM:<${envelopeFrom}>` });
-    if (!mail || mail.code >= 500) { client.close(); return { target: candidate.target, outcome: 'bounced', host: candidate.hostname, detail: mail?.lines.join(' ') }; }
-    if (mail.code >= 400) { client.close(); return { target: candidate.target, outcome: 'deferred', host: candidate.hostname, detail: mail.lines.join(' ') }; }
+    if (!mail || mail.code >= 500) { client.close(); return reportOutcome(eventBus, recipient, { target: candidate.target, outcome: 'bounced', host: candidate.hostname, detail: mail?.lines.join(' ') }); }
+    if (mail.code >= 400) { client.close(); return reportOutcome(eventBus, recipient, { target: candidate.target, outcome: 'deferred', host: candidate.hostname, detail: mail.lines.join(' ') }); }
 
     const rcpt = client.sendCommand({ verb: 'RCPT', argument: `TO:<${recipient}>` });
-    if (!rcpt || rcpt.code >= 500) { client.close(); return { target: candidate.target, outcome: 'bounced', host: candidate.hostname, detail: rcpt?.lines.join(' ') }; }
-    if (rcpt.code >= 400) { client.close(); return { target: candidate.target, outcome: 'deferred', host: candidate.hostname, detail: rcpt.lines.join(' ') }; }
+    if (!rcpt || rcpt.code >= 500) { client.close(); return reportOutcome(eventBus, recipient, { target: candidate.target, outcome: 'bounced', host: candidate.hostname, detail: rcpt?.lines.join(' ') }); }
+    if (rcpt.code >= 400) { client.close(); return reportOutcome(eventBus, recipient, { target: candidate.target, outcome: 'deferred', host: candidate.hostname, detail: rcpt.lines.join(' ') }); }
 
     const dataReply = client.sendCommand({ verb: 'DATA' });
-    if (!dataReply || dataReply.code !== 354) { client.close(); return { target: candidate.target, outcome: 'deferred', host: candidate.hostname }; }
+    if (!dataReply || dataReply.code !== 354) { client.close(); return reportOutcome(eventBus, recipient, { target: candidate.target, outcome: 'deferred', host: candidate.hostname }); }
 
     const final = client.sendDataBody(rawMessage);
     client.close();
-    if (final && final.code >= 200 && final.code < 300) return { target: candidate.target, outcome: 'delivered', host: candidate.hostname };
-    if (final && final.code >= 500) return { target: candidate.target, outcome: 'bounced', host: candidate.hostname, detail: final.lines.join(' ') };
-    return { target: candidate.target, outcome: 'deferred', host: candidate.hostname };
+    if (final && final.code >= 200 && final.code < 300) return reportOutcome(eventBus, recipient, { target: candidate.target, outcome: 'delivered', host: candidate.hostname });
+    if (final && final.code >= 500) return reportOutcome(eventBus, recipient, { target: candidate.target, outcome: 'bounced', host: candidate.hostname, detail: final.lines.join(' ') });
+    return reportOutcome(eventBus, recipient, { target: candidate.target, outcome: 'deferred', host: candidate.hostname });
   }
 
-  return { target: { fallbackToAddress: true }, outcome: 'deferred', detail: lastDetail };
+  return reportOutcome(eventBus, recipient, { target: { fallbackToAddress: true }, outcome: 'deferred', detail: lastDetail });
 }

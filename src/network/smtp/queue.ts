@@ -1,5 +1,6 @@
 import type { TcpStack } from '@/network/tcp/TcpStack';
 import type { IScheduler, TimerHandle } from '@/events/Scheduler';
+import type { IEventBus } from '@/events/EventBus';
 import { relayToRecipient, type DnsLookup } from './relay';
 
 export interface QueuedDelivery {
@@ -42,6 +43,7 @@ export interface DeliveryQueueDeps {
   readonly schedule?: RetrySchedule;
   readonly onDelivered?: (entry: QueuedDelivery) => void;
   readonly onExpired?: (entry: QueuedDelivery) => void;
+  readonly eventBus?: IEventBus;
 }
 
 export class DeliveryQueue {
@@ -105,11 +107,13 @@ export class DeliveryQueue {
       if (hasExpired(entry, now)) {
         this.remove(entry);
         this.deps.onExpired?.(entry);
+        this.deps.eventBus?.publish({ topic: 'smtp.queue.expired', payload: { recipient: entry.recipient } });
         continue;
       }
 
       const attempt = await relayToRecipient(
         this.deps.tcpStack, this.deps.localIp, this.deps.lookup, entry.heloDomain, entry.envelopeFrom, entry.recipient, entry.rawMessage,
+        this.deps.eventBus,
       );
 
       if (attempt.outcome === 'delivered') {
@@ -120,15 +124,18 @@ export class DeliveryQueue {
       if (attempt.outcome === 'bounced') {
         this.remove(entry);
         this.deps.onExpired?.(entry);
+        this.deps.eventBus?.publish({ topic: 'smtp.queue.expired', payload: { recipient: entry.recipient } });
         continue;
       }
 
       entry.attempts += 1;
       entry.lastError = attempt.detail;
       entry.nextAttemptAt = this.deps.scheduler.now() + computeNextAttemptDelay(entry.attempts, schedule);
+      this.deps.eventBus?.publish({ topic: 'smtp.queue.retried', payload: { recipient: entry.recipient, attempt: entry.attempts } });
       if (hasExpired(entry, entry.nextAttemptAt)) {
         this.remove(entry);
         this.deps.onExpired?.(entry);
+        this.deps.eventBus?.publish({ topic: 'smtp.queue.expired', payload: { recipient: entry.recipient } });
       }
     }
 

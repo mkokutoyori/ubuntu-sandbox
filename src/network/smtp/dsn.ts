@@ -1,3 +1,5 @@
+import type { IEventBus } from '@/events/EventBus';
+
 const CRLF = '\r\n';
 
 export type DsnNotifyCondition = 'SUCCESS' | 'FAILURE' | 'DELAY' | 'NEVER';
@@ -94,6 +96,7 @@ export function buildDsnForFailedDelivery(
   rawFailureReason: string,
   dsnRequest: DsnRequest,
   originalMessageHeaders?: string,
+  eventBus?: IEventBus,
 ): DsnDispatch | null {
   if (!shouldGenerateDsn(originalEnvelopeFrom, dsnRequest.notify)) return null;
   const report: DsnReport = {
@@ -103,6 +106,7 @@ export function buildDsnForFailedDelivery(
     diagnosticCode: `smtp; ${rawFailureReason}`,
     originalEnvelopeId: dsnRequest.orcpt,
   };
+  eventBus?.publish({ topic: 'smtp.dsn.generated', payload: { recipient, reason: rawFailureReason } });
   return {
     envelopeFrom: '',
     envelopeTo: dsnRequest.orcpt ?? originalEnvelopeFrom,
