@@ -40,9 +40,12 @@ import { buildGlobalAddressList, resolveGalRecipient, type GalEntry } from './wi
 import { parseBinding, ipAllowedByRanges, selectSendConnector, type ReceiveConnectorDef, type SendConnectorDef } from './windows/server/exchange/TransportConnector';
 import { TransportRuleStore, evaluateTransportRules, type TransportRule, type EvaluatedMessage, type TransportRuleOutcome } from './windows/server/exchange/TransportRuleEngine';
 import { createDnsLookupAdapter } from './windows/server/exchange/DnsLookupAdapter';
+import { parseAutodiscoverRequestXml, renderAutodiscoverSuccessXml, renderAutodiscoverErrorXml, type AutodiscoverResponse } from './windows/server/exchange/Autodiscover';
 import { SmtpServer, type SmtpAcceptedMessage } from '@/network/smtp/SmtpServer';
 import { DeliveryQueue } from '@/network/smtp/queue';
 import { domainOf } from '@/network/smtp/relay';
+import { Http1ServerSession } from '@/network/http/http1/Http1ServerSession';
+import { createResponse, type HttpMessage } from '@/network/http/semantics/types';
 import { IPAddress } from '@/network/core/types';
 import { mirroredDirection, type TrustDirection, type TrustInfo, type TrustRecord } from './windows/server/ad/forest/TrustRelationship';
 
@@ -50,6 +53,9 @@ export interface AdDsOpResult { ok: boolean; message: string }
 
 /** Real DC promotion auto-creates this site (PRD-Windows-Server-Advanced.md §5 P6) — matches the name `WinDomainDiag.cmdNltest` has always reported. */
 const DEFAULT_SITE_NAME = 'Default-First-Site-Name';
+
+/** MS-OXDSCLI Autodiscover well-known virtual directory port (docs/PRD-Exchange.md §2.1 P8) — HTTP form, see §0.2 scoping note. */
+const AUTODISCOVER_PORT = 80;
 
 export class WindowsServer extends WindowsPC {
   private readonly roleManager: RoleManager = new RoleManager(this.getServiceManager());
@@ -68,6 +74,7 @@ export class WindowsServer extends WindowsPC {
   private readonly receiveConnectors = new Map<string, { def: ReceiveConnectorDef; servers: SmtpServer[] }>();
   private readonly sendConnectors = new Map<string, SendConnectorDef>();
   private deliveryQueue: DeliveryQueue | null = null;
+  private autodiscoverServer: Http1ServerSession | null = null;
 
   constructor(name: string = 'WinServer', x: number = 0, y: number = 0) {
     super('windows-server', name, x, y);
@@ -338,7 +345,62 @@ export class WindowsServer extends WindowsPC {
     const org = getOrCreateExchangeOrganization(organizationName);
     org.servers.set(this.getHostname(), { hostname: this.getHostname(), roles: new Set(roles), installedAt: Date.now() });
     this.exchangeOrgName = organizationName;
+    this.startAutodiscoverService();
     return { ok: true, message: '' };
+  }
+
+  /**
+   * MS-OXDSCLI Autodiscover (docs/PRD-Exchange.md §2.1 P8, § 4.7) — real
+   * Exchange setup auto-provisions the `/autodiscover/autodiscover.xml`
+   * virtual directory (no admin cmdlet creates it), so this starts
+   * automatically once `Install-ExchangeServer` has run, exactly like a
+   * real CAS role. HTTP form only (§ 0.2 scoping note) via the already
+   * real, tested `Http1ServerSession` — no second HTTP engine.
+   */
+  private startAutodiscoverService(): void {
+    if (this.autodiscoverServer) return;
+    this.autodiscoverServer = new Http1ServerSession(
+      this.getTcpStack(), AUTODISCOVER_PORT, (req) => this.handleAutodiscoverHttp(req), this.getBus(),
+    );
+    this.autodiscoverServer.start();
+  }
+
+  /**
+   * Resolves a real MS-OXDSCLI request against the GAL (§ 4.6) — a
+   * mailbox not found in the GAL, or the org not installed, yields
+   * `null` (rendered as a real `<Error>` response by the HTTP handler).
+   * `mailboxServer` is this queried server's own hostname: `MailboxStore`
+   * is a shared org-wide registry (§ grounding, `ExchangeOrganization.ts`),
+   * not partitioned per-server database, so this is a documented
+   * simplification for a multi-server org — a real deployment's
+   * Autodiscover redirects to the actual mailbox database's server.
+   */
+  getAutodiscoverResponse(emailAddress: string): AutodiscoverResponse | null {
+    if (this.exchangeOrgName === null) return null;
+    const entry = this.getGlobalAddressList().find(
+      (e) => e.kind === 'Mailbox' && e.primarySmtpAddress.toLowerCase() === emailAddress.toLowerCase(),
+    );
+    if (!entry) return null;
+    const user = this.directoryStore?.getUser(entry.samAccountName) ?? null;
+    return {
+      smtpAddress: entry.primarySmtpAddress,
+      displayName: user?.fullName || entry.samAccountName,
+      mailboxServer: this.getHostname(),
+      protocol: 'Exchange',
+    };
+  }
+
+  private handleAutodiscoverHttp(req: HttpMessage): HttpMessage {
+    const body = req.body ? new TextDecoder().decode(req.body) : '';
+    const email = parseAutodiscoverRequestXml(body);
+    const response = email ? this.getAutodiscoverResponse(email) : null;
+    const xml = response
+      ? renderAutodiscoverSuccessXml(response)
+      : renderAutodiscoverErrorXml("The email address can't be found.");
+    const res = createResponse(200, 'OK');
+    res.headers.set('Content-Type', 'text/xml; charset=utf-8');
+    res.body = new TextEncoder().encode(xml);
+    return res;
   }
 
   getExchangeOrganizationName(): string | null { return this.exchangeOrgName; }
