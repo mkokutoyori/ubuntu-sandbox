@@ -728,3 +728,41 @@ export class GetRecipientPermissionCmdlet implements ICmdlet {
     } as Record<string, PSValue>));
   }
 }
+
+export class NewJournalRuleCmdlet implements ICmdlet {
+  readonly name = 'new-journalrule';
+  readonly displayName = 'New-JournalRule';
+  readonly aliases = [] as const;
+  readonly parameters = ['JournalEmailAddress', 'Scope'] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const exchange = requireExchange(ctx, 'New-JournalRule');
+    const journalEmailAddress = psValueToString(ctx.named['journalemailaddress'] ?? '');
+    if (!journalEmailAddress) {
+      ctx.emitError('New-JournalRule : Cannot process command because of one or more missing mandatory parameters: JournalEmailAddress.');
+      return null;
+    }
+    const scope = ctx.named['scope'] !== undefined ? psValueToString(ctx.named['scope']) : 'Global';
+    if (scope.toLowerCase() !== 'global') {
+      ctx.emitError(`New-JournalRule : Cannot validate argument on parameter 'Scope'. The argument "${scope}" does not belong to the set "Global".`);
+      return null;
+    }
+    const res = exchange.newJournalRule(journalEmailAddress);
+    if (!res.ok) { ctx.emitError(res.message); return null; }
+    const rule = exchange.getJournalRule();
+    return rule ? transportRuleToPSObject(rule) : null;
+  }
+}
+
+export class GetJournalRuleCmdlet implements ICmdlet {
+  readonly name = 'get-journalrule';
+  readonly displayName = 'Get-JournalRule';
+  readonly aliases = [] as const;
+  readonly parameters = [] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const exchange = requireExchange(ctx, 'Get-JournalRule');
+    const rule = exchange.getJournalRule();
+    return rule ? transportRuleToPSObject(rule) : [];
+  }
+}

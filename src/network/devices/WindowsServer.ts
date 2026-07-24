@@ -794,6 +794,31 @@ export class WindowsServer extends WindowsPC {
     return this.getTransportRuleStore()?.list() ?? [];
   }
 
+  /**
+   * `New-JournalRule`/`Get-JournalRule` (docs/PRD-Exchange.md §2.1 P10) —
+   * journaling is a system, admin-non-modifiable case of a Transport Rule
+   * (§0.2 no second mechanism): empty conditions (matches every message,
+   * "Scope Global") plus a single `BlindCopyTo` action to the journal
+   * mailbox, `system: true` distinguishing it from ordinary rules. Real
+   * Exchange allows exactly one Global journal rule per organization.
+   */
+  newJournalRule(journalEmailAddress: string): AdDsOpResult {
+    const store = this.getTransportRuleStore();
+    if (!store) return { ok: false, message: 'New-JournalRule : Exchange Server has not been installed on this computer.' };
+    if (store.list().some((r) => r.system)) {
+      return { ok: false, message: 'New-JournalRule : A journal rule with scope Global already exists for this organization.' };
+    }
+    return store.newRule({
+      name: 'Journal Rule (Global)', priority: 0, conditions: [],
+      actions: [{ kind: 'BlindCopyTo', address: journalEmailAddress }],
+      enabled: true, system: true,
+    });
+  }
+
+  getJournalRule(): TransportRule | null {
+    return this.getTransportRuleStore()?.list().find((r) => r.system) ?? null;
+  }
+
   private evaluateForTransportRules(delivered: SmtpAcceptedMessage): TransportRuleOutcome {
     const rules = this.listTransportRules();
     const contentType = delivered.message.headers.get('Content-Type') ?? '';

@@ -501,6 +501,9 @@ export interface IExchangeProvider {
   addRecipientPermission(identity: string, trustee: string): ExchangeOpResult;
   getMailboxPermissionTrustees(identity: string): string[];
   getRecipientPermissionTrustees(identity: string): string[];
+
+  newJournalRule(journalEmailAddress: string): ExchangeOpResult;
+  getJournalRule(): TransportRuleInfo | null;
 }
 
 export interface QueueInfo {

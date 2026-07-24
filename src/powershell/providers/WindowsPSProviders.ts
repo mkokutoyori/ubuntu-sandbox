@@ -2241,6 +2241,16 @@ class WindowsExchangeAdapter implements IExchangeProvider {
     this.requireOrg('Get-RecipientPermission');
     return this.pc.getMailboxPermissions(identity, 'SendAs');
   }
+
+  newJournalRule(journalEmailAddress: string): ExchangeOpResult {
+    this.requireOrg('New-JournalRule');
+    return this.pc.newJournalRule(journalEmailAddress);
+  }
+
+  getJournalRule(): TransportRuleInfo | null {
+    this.requireOrg('Get-JournalRule');
+    return this.pc.getJournalRule();
+  }
 }
 
 // ── DFS Namespaces + DFSR adapter (PRD-Windows-Server-Advanced.md §5 P16) ──
