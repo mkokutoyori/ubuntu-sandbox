@@ -396,6 +396,20 @@ export class RouterOSPFIntegration {
    * via cables, exchange LSAs, and compute/install routes.
    * Called after network commands and cable connects.
    */
+  /**
+   * A port lost its carrier: the OSPF interface goes down, taking its
+   * adjacencies with it, and the SPF routes learned through it are
+   * withdrawn. Symmetrical with {@link autoConverge}, which re-activates
+   * the interface when the cable comes back
+   * (docs/PRD-Link-State.md §2.1 P7).
+   */
+  onPortDown(portName: string): void {
+    if (!this.ospfEngine) return;
+    if (!this.ospfEngine.getInterface(portName)) return;
+    this.ospfEngine.deactivateInterface(portName);
+    this.installRoutes(this.ospfEngine.getRoutes());
+  }
+
   autoConverge(): void {
     if (!this.ospfEngine && !this.ospfv3Engine) return;
     // OSPFv3-only mode: skip OSPFv2 steps, jump straight to v3

@@ -502,6 +502,21 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
   }
 
   /** Register link-change handlers on all ports to trigger OSPF convergence and DPD */
+  /**
+   * True when a routing-table entry's egress interface can actually carry
+   * traffic. Virtual interfaces (Tunnel, Loopback) need no cable; a
+   * physical one needs carrier, so a route over a severed link is neither
+   * used for forwarding nor shown by `show ip route`, exactly as IOS drops
+   * it when the line protocol goes down (docs/PRD-Link-State.md §2.1 P7).
+   */
+  isRouteInterfaceUsable(iface: string): boolean {
+    if (/^(Tunnel|Loopback)/i.test(iface)) return true;
+    const dotIdx = iface.indexOf('.');
+    const physIface = dotIdx > 0 ? iface.slice(0, dotIdx) : iface;
+    const port = this.ports.get(physIface);
+    return !port || port.hasCarrier();
+  }
+
   private _setupPortMonitoring(): void {
     for (const [name, port] of this.ports) {
       port.onLinkChange((state) => {
@@ -509,6 +524,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
           this._ospfAutoConverge();
         } else {
           this.ipsecEngine?.onPortDown(name);
+          this.ospfIntegration.onPortDown(name);
         }
       });
     }
@@ -841,21 +857,13 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     const destInt = destIP.toUint32();
 
     for (const route of this.routingTable) {
-      // Skip routes through disconnected physical interfaces (like real IOS behavior)
-      // Virtual interfaces (Tunnel, Loopback) don't require cable connectivity
-      const isVirtual = /^(Tunnel|Loopback)/i.test(route.iface);
-      if (!isVirtual) {
-        const dotIdx = route.iface.indexOf('.');
-        const physIface = dotIdx > 0 ? route.iface.slice(0, dotIdx) : route.iface;
-        const port = this.ports.get(physIface);
-        if (port && !port.isConnected()) {
-          // Interface went down — clear any IPSec SAs using this interface
-          // (mirrors IOS: "line protocol down" triggers SA teardown)
-          if (this.ipsecEngine) {
-            this.ipsecEngine.clearSAsForInterface(route.iface);
-          }
-          continue;
+      if (!this.isRouteInterfaceUsable(route.iface)) {
+        // Interface went down — clear any IPSec SAs using this interface
+        // (mirrors IOS: "line protocol down" triggers SA teardown)
+        if (this.ipsecEngine) {
+          this.ipsecEngine.clearSAsForInterface(route.iface);
         }
+        continue;
       }
 
       const netInt = route.network.toUint32();
