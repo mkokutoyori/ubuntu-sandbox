@@ -169,6 +169,7 @@ import {
   GetMailboxStatisticsCmdlet, DisableMailboxCmdlet, RemoveMailboxCmdlet,
   NewDistributionGroupCmdlet, SetDistributionGroupCmdlet, GetDistributionGroupCmdlet,
   AddDistributionGroupMemberCmdlet, GetDistributionGroupMemberCmdlet,
+  GetGlobalAddressListCmdlet,
 } from './ExchangeCmdlets';
 import {
   NewDfsnRootCmdlet, NewDfsnFolderCmdlet, NewDfsnFolderTargetCmdlet, GetDfsnFolderCmdlet,
@@ -517,6 +518,7 @@ export function registerServerCmdlets(registry: CmdletRegistry): void {
   registry.register(new GetDistributionGroupCmdlet());
   registry.register(new AddDistributionGroupMemberCmdlet());
   registry.register(new GetDistributionGroupMemberCmdlet());
+  registry.register(new GetGlobalAddressListCmdlet());
 
   // ── AD CS (PRD-Windows-Server-Advanced.md §5 P13) ───────────────────────────
   registry.register(new InstallAdcsCertificationAuthorityCmdlet());

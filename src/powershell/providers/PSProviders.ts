@@ -478,6 +478,15 @@ export interface IExchangeProvider {
   listDistributionGroups(): DistributionGroupInfo[];
   addDistributionGroupMember(identity: string, member: string): ExchangeOpResult;
   getDistributionGroupMembers(identity: string): readonly string[] | null;
+
+  getGlobalAddressList(): GalEntryInfo[];
+}
+
+export interface GalEntryInfo {
+  readonly displayName: string;
+  readonly samAccountName: string;
+  readonly primarySmtpAddress: string;
+  readonly kind: 'Mailbox' | 'DistributionGroup' | 'SecurityMailEnabled';
 }
 
 export interface DistributionGroupInfo {

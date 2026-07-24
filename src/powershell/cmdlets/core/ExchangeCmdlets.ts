@@ -2,7 +2,7 @@ import type { ICmdlet } from '../ICmdlet';
 import type { CmdletContext } from '../CmdletContext';
 import { PSRuntimeError } from '@/powershell/runtime/PSRuntime';
 import type { PSValue } from '@/powershell/runtime/PSEnvironment';
-import type { IExchangeProvider, ExchangeServerInfo, MailboxInfo, MailboxStatisticsInfo, DistributionGroupInfo } from '@/powershell/providers/PSProviders';
+import type { IExchangeProvider, ExchangeServerInfo, MailboxInfo, MailboxStatisticsInfo, DistributionGroupInfo, GalEntryInfo } from '@/powershell/providers/PSProviders';
 import { psValueToString } from '@/powershell/runtime/PSExpansion';
 
 function requireExchange(ctx: CmdletContext, cmdletName: string): IExchangeProvider {
@@ -365,5 +365,26 @@ export class GetDistributionGroupMemberCmdlet implements ICmdlet {
     }
     for (const m of members) ctx.emit({ Name: m, SamAccountName: m } as Record<string, PSValue>);
     return null;
+  }
+}
+
+function galEntryToPSObject(e: GalEntryInfo): Record<string, PSValue> {
+  return {
+    DisplayName: e.displayName,
+    Name: e.samAccountName,
+    PrimarySmtpAddress: e.primarySmtpAddress,
+    RecipientType: e.kind,
+  };
+}
+
+export class GetGlobalAddressListCmdlet implements ICmdlet {
+  readonly name = 'get-globaladdresslist';
+  readonly displayName = 'Get-GlobalAddressList';
+  readonly aliases = [] as const;
+  readonly parameters = [] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const exchange = requireExchange(ctx, 'Get-GlobalAddressList');
+    return exchange.getGlobalAddressList().map(galEntryToPSObject);
   }
 }

@@ -36,6 +36,7 @@ import { createForest, joinForestAsChildDomain, getForestForDomain, type Forest 
 import { getExchangeOrganization, getOrCreateExchangeOrganization, type ExchangeServerRecord } from './windows/server/exchange/ExchangeOrganization';
 import { MailboxStore, type MailboxOpResult, type DeliverResult } from './windows/server/exchange/MailboxStore';
 import { DistributionGroupStore, deliverExpanded, type DistributionGroupOpResult, type DistributionGroupType } from './windows/server/exchange/DistributionGroupStore';
+import { buildGlobalAddressList, resolveGalRecipient, type GalEntry } from './windows/server/exchange/GlobalAddressList';
 import { mirroredDirection, type TrustDirection, type TrustInfo, type TrustRecord } from './windows/server/ad/forest/TrustRelationship';
 
 export interface AdDsOpResult { ok: boolean; message: string }
@@ -440,10 +441,38 @@ export class WindowsServer extends WindowsPC {
     return this.directoryStore?.getGroup(identity)?.members ?? [];
   }
 
-  deliverToRecipient(recipientAddress: string, from: string, subject: string, rawMessage: string, receivedAt: number): DeliverResult[] {
+  /**
+   * `Get-GlobalAddressList` (docs/PRD-Exchange.md §2.1 P4) — derived
+   * dynamically from the current mailboxes/distribution groups on every
+   * call, never a separately maintained copy (a disabled mailbox drops
+   * out immediately, no resync step).
+   */
+  getGlobalAddressList(): GalEntry[] {
+    const mailboxStore = this.getMailboxStore();
+    const groupStore = this.getDistributionGroupStore();
+    if (!mailboxStore || !groupStore) return [];
+    return buildGlobalAddressList(mailboxStore, groupStore);
+  }
+
+  /**
+   * Resolves a `To:` recipient the way a real Exchange/Outlook client
+   * does: a literal SMTP address passes through unchanged, anything
+   * else (display name/SAM account name) is resolved against the GAL —
+   * `null` when the name is unknown or ambiguous (§2.1 P4).
+   */
+  resolveRecipientAddress(query: string): string | null {
+    const resolution = resolveGalRecipient(query, this.getGlobalAddressList());
+    if (resolution.kind === 'literal-address') return resolution.address;
+    if (resolution.kind === 'resolved') return resolution.entry.primarySmtpAddress;
+    return null;
+  }
+
+  deliverToRecipient(recipientQuery: string, from: string, subject: string, rawMessage: string, receivedAt: number): DeliverResult[] {
     const groupStore = this.getDistributionGroupStore();
     const mailboxStore = this.getMailboxStore();
     if (!groupStore || !mailboxStore) return [{ delivered: false, reason: 'not-found' }];
+    const recipientAddress = this.resolveRecipientAddress(recipientQuery);
+    if (recipientAddress === null) return [{ delivered: false, reason: 'not-found' }];
     return deliverExpanded(
       groupStore, mailboxStore,
       (sam) => this.directoryStore?.getGroup(sam)?.members ?? [],

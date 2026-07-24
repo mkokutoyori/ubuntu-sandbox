@@ -63,7 +63,7 @@ import type {
   IIisProvider, IisOpResult, WebsiteInfo, AppPoolInfo, NewAppPoolOptions, WebModuleInfo,
   IExchangeProvider, ExchangeOpResult, ExchangeServerInfo,
   MailboxOpResult, MailboxInfo, MailboxStatisticsInfo, MailFolderName,
-  DistributionGroupInfo,
+  DistributionGroupInfo, GalEntryInfo,
   IAdcsProvider, AdcsOpResult, CaTemplateInfo, CertificateRequestResultInfo,
   IPkiProvider, IssuedCertInfo,
   IDfsProvider, DfsOpResult, DfsTargetInfo, DfsFolderInfo, DfsrSyncResultInfo,
@@ -2128,6 +2128,13 @@ class WindowsExchangeAdapter implements IExchangeProvider {
   getDistributionGroupMembers(identity: string): readonly string[] | null {
     this.requireOrg('Get-DistributionGroupMember');
     return this.pc.getDistributionGroupMembers(identity);
+  }
+
+  getGlobalAddressList(): GalEntryInfo[] {
+    this.requireOrg('Get-GlobalAddressList');
+    return this.pc.getGlobalAddressList().map((e) => ({
+      displayName: e.displayName, samAccountName: e.samAccountName, primarySmtpAddress: e.primarySmtpAddress, kind: e.kind,
+    }));
   }
 }
 
