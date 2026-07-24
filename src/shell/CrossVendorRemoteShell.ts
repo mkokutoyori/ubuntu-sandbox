@@ -39,6 +39,14 @@ export interface CrossVendorRemoteShellOptions {
   readonly sshClient?: string;
   /** Optional teardown hook (close SSH transport, log entry, …). */
   readonly onClose?: () => void;
+  /**
+   * Liveness of the underlying transport, consulted before each command.
+   * Wired to the very same wire probe that opened the session, so a link
+   * pulled mid-session surfaces as a broken pipe instead of the shell
+   * quietly going on driving the remote object (docs/PRD-Link-State.md
+   * §3.3). Omitted means "never check", preserving prior behaviour.
+   */
+  readonly probeAlive?: () => boolean;
 }
 
 export class CrossVendorRemoteShell implements IShell {
@@ -53,6 +61,7 @@ export class CrossVendorRemoteShell implements IShell {
    *  decide "is the inner host POSIX or Windows or a router?". */
   readonly primaryKind: string;
   private readonly onClose: () => void;
+  private readonly probeAlive?: () => boolean;
   private closeFired = false;
 
   /** Bottom = primary login shell; top = active child. */
@@ -70,6 +79,7 @@ export class CrossVendorRemoteShell implements IShell {
     this.remoteHost = opts.remoteHost;
     this.primaryKind = opts.primaryKind;
     this.onClose = opts.onClose ?? (() => undefined);
+    this.probeAlive = opts.probeAlive;
 
     const primary = ShellFactory.create(opts.primaryKind, {
       device: opts.device,
@@ -110,7 +120,26 @@ export class CrossVendorRemoteShell implements IShell {
     return [`logout`, `Connection to ${this.remoteHost} closed.`];
   }
 
+  /**
+   * OpenSSH's behaviour when the transport dies under an open session:
+   * the client reports a broken pipe and the session ends, dropping the
+   * user back on the local shell.
+   */
+  private brokenPipe(): ShellLineResult | null {
+    if (this.stack.length === 0) return null;
+    if (!this.probeAlive || this.probeAlive()) return null;
+    while (this.stack.length) {
+      const s = this.stack.pop()!;
+      s.deactivate();
+      s.dispose();
+    }
+    this.fireClose();
+    return { output: ['client_loop: send disconnect: Broken pipe'], exit: true };
+  }
+
   async processLine(line: string): Promise<ShellLineResult> {
+    const dead = this.brokenPipe();
+    if (dead) return dead;
     const result = await this.top.processLine(line);
     return this.applyChildOrPassThrough(result);
   }
@@ -121,6 +150,8 @@ export class CrossVendorRemoteShell implements IShell {
    * shell is at the top of the stack.
    */
   async handleInput(value: string): Promise<ShellLineResult> {
+    const dead = this.brokenPipe();
+    if (dead) return dead;
     if (typeof this.top.handleInput !== 'function') return { output: [] };
     const result = await this.top.handleInput(value);
     return this.applyChildOrPassThrough(result);

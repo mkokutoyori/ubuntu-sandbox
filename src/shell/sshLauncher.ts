@@ -118,6 +118,9 @@ export interface PendingSshAuth {
   sourceHostname?: string;
   /** The launching device — see {@link SshLaunchOptions.sourceDevice}. */
   sourceDevice?: Equipment;
+  /** Carried across the password round-trip so the established session
+   *  can keep probing the very same wire it was opened on. */
+  wireProbe?: SshLaunchOptions['wireProbe'];
 }
 
 export type SshLaunchInterpretation =
@@ -257,6 +260,7 @@ export async function tryInterpretSshLaunch(
         sourceIp: opts.sourceIp,
         sourceHostname: opts.sourceHostname,
         sourceDevice: opts.sourceDevice,
+        wireProbe: opts.wireProbe,
       },
     };
   }
@@ -277,6 +281,7 @@ export async function tryInterpretSshLaunch(
       sourceIp: opts.sourceIp,
       sourceHostname: opts.sourceHostname,
       sourceDevice: opts.sourceDevice,
+      wireProbe: opts.wireProbe,
     },
   };
 }
@@ -415,9 +420,23 @@ export function finalisePendingAuth(
     primaryKind: auth.primaryKind,
     sshConnection,
     sshClient,
+    probeAlive: livenessProbeFor(auth),
     onClose: () => { if (session) registry?.close(session.id, 'logout'); },
   });
   return { kind: 'success', shell, banner };
+}
+
+/**
+ * Re-probe the established session's transport on the same wire that
+ * opened it. Returns undefined when the launcher had no probe to begin
+ * with, leaving such sessions exactly as they were.
+ */
+function livenessProbeFor(auth: PendingSshAuth): (() => boolean) | undefined {
+  const probe = auth.wireProbe;
+  if (!probe) return undefined;
+  const host = IPAddress.isValid(auth.host) ? auth.host : firstConfiguredIp(auth.target);
+  if (!host) return undefined;
+  return () => probe(host, auth.port) === 'open';
 }
 
 function firstConfiguredIp(dev: Equipment): string | undefined {

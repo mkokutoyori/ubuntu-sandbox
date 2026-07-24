@@ -34,8 +34,10 @@ export function isPathReachable(srcIp: string, dstIp: string): boolean {
   if (startPorts.length === 0) return true;
   // Topologies that wire ports without a Cable (legacy tests) are
   // treated as reachable — the simulator falls back to the old
-  // registry-only behaviour when no cable plant exists.
-  const anyCable = startPorts.some(p => p.getCable() !== null);
+  // registry-only behaviour when no cable plant exists. A port that was
+  // cabled and then unplugged does not qualify: otherwise pulling the
+  // last cable would make everything look reachable again.
+  const anyCable = startPorts.some(p => p.getCable() !== null || p.wasEverCabled());
   if (!anyCable) return true;
 
   return findReachableHost(srcIp, dstIp) !== null;

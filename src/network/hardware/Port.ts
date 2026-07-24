@@ -63,6 +63,7 @@ export class Port {
   private readonly mac: MACAddress;
   private readonly type: ConnectionType;
   private cable: Cable | null = null;
+  private everCabled: boolean = false;
   // IPv4 configuration
   private ipAddress: IPAddress | null = null;
   private subnetMask: SubnetMask | null = null;
@@ -611,6 +612,17 @@ export class Port {
   }
 
   /**
+   * True once a cable has ever been attached to this port. Distinguishes
+   * "unplugged" from "never wired": topology helpers fall back to
+   * registry-only reachability for fixtures built without a cable plant,
+   * and that fallback must not resurrect a link the user just pulled
+   * (docs/PRD-Link-State.md §2.1 P6).
+   */
+  wasEverCabled(): boolean {
+    return this.everCabled;
+  }
+
+  /**
    * True when the interface can actually carry traffic — line state,
    * admin state and carrier all agree. This is what forwarding, routing
    * and every `ip`/`show interfaces` style view should consult, rather
@@ -659,6 +671,7 @@ export class Port {
 
   connectCable(cable: Cable): void {
     this.cable = cable;
+    this.everCabled = true;
     Logger.debug(this.equipmentId, 'port:cable-connect', `${this.name}: cable connected`);
     this.notifyLinkChange('up');
   }
@@ -668,6 +681,7 @@ export class Port {
    *  _ospfAutoConverge (or similar) fires and tries to deliver packets. */
   _setCableNoNotify(cable: Cable): void {
     this.cable = cable;
+    this.everCabled = true;
     Logger.debug(this.equipmentId, 'port:cable-connect', `${this.name}: cable connected`);
   }
 
