@@ -2926,6 +2926,16 @@ export class WindowsPC extends EndHost implements UserAccountHost {
 
   listSendConnectors(): import('./windows/server/exchange/TransportConnector').SendConnectorDef[] { return []; }
 
+  getTransportRuleStore(): import('./windows/server/exchange/TransportRuleEngine').TransportRuleStore | null { return null; }
+
+  newTransportRule(_rule: import('./windows/server/exchange/TransportRuleEngine').TransportRule): { ok: boolean; message: string } {
+    return { ok: false, message: 'New-TransportRule : Exchange Server has not been installed on this computer.' };
+  }
+
+  getTransportRule(_name: string): import('./windows/server/exchange/TransportRuleEngine').TransportRule | null { return null; }
+
+  listTransportRules(): import('./windows/server/exchange/TransportRuleEngine').TransportRule[] { return []; }
+
   /**
    * AD CS (Certificate Services) role (PRD-Windows-Server-Advanced.md §5
    * P13) — null until `Install-WindowsFeature AD-Certificate` on a

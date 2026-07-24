@@ -24,6 +24,8 @@ export interface SmtpServerOptions {
   readonly onMessageAccepted?: (delivered: SmtpAcceptedMessage) => void;
   /** Receive Connector source-IP restriction (docs/PRD-Exchange.md §4.4) — a connection from an IP this predicate rejects is closed before any protocol interaction, never gets a banner. */
   readonly remoteIpAllowed?: (ip: string) => boolean;
+  /** Transport Rule categorizer stage (docs/PRD-Exchange.md §2.1 P6) — runs before the final DATA reply is written, so a policy rejection replaces the accept reply with a real `550`, never a silent post-accept drop. */
+  readonly beforeMessageAccepted?: (delivered: SmtpAcceptedMessage) => { reject?: string } | void;
 }
 
 export class SmtpServer {
@@ -34,6 +36,7 @@ export class SmtpServer {
   private readonly implicitTls: boolean;
   private readonly onMessageAccepted?: (delivered: SmtpAcceptedMessage) => void;
   private readonly remoteIpAllowed?: (ip: string) => boolean;
+  private readonly beforeMessageAccepted?: (delivered: SmtpAcceptedMessage) => { reject?: string } | void;
 
   constructor(
     private readonly tcpStack: TcpStack,
@@ -47,6 +50,7 @@ export class SmtpServer {
     this.implicitTls = opts.implicitTls ?? false;
     this.onMessageAccepted = opts.onMessageAccepted;
     this.remoteIpAllowed = opts.remoteIpAllowed;
+    this.beforeMessageAccepted = opts.beforeMessageAccepted;
   }
 
   start(): void {
@@ -157,7 +161,16 @@ export class SmtpServer {
 
       if (awaitingDataBody) {
         awaitingDataBody = false;
-        writeReply(session.handleDataBody(text));
+        const dataReply = session.handleDataBody(text);
+        if (session.lastDelivered && this.beforeMessageAccepted) {
+          const verdict = this.beforeMessageAccepted(session.lastDelivered);
+          if (verdict?.reject) {
+            writeReply(reply(550, verdict.reject));
+            if (session.result !== 'closed') armIdle();
+            return;
+          }
+        }
+        writeReply(dataReply);
         if (session.lastDelivered) this.onMessageAccepted?.(session.lastDelivered);
         if (session.result !== 'closed') armIdle();
         return;

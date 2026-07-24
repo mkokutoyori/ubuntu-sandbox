@@ -4,7 +4,7 @@ import { PSRuntimeError } from '@/powershell/runtime/PSRuntime';
 import type { PSValue } from '@/powershell/runtime/PSEnvironment';
 import type {
   IExchangeProvider, ExchangeServerInfo, MailboxInfo, MailboxStatisticsInfo, DistributionGroupInfo, GalEntryInfo,
-  ReceiveConnectorInfo, SendConnectorInfo,
+  ReceiveConnectorInfo, SendConnectorInfo, TransportRuleInfo, TransportRuleConditionInfo, TransportRuleActionInfo,
 } from '@/powershell/providers/PSProviders';
 import { psValueToString } from '@/powershell/runtime/PSExpansion';
 
@@ -499,5 +499,84 @@ export class GetSendConnectorCmdlet implements ICmdlet {
     }
     const connectors = exchange.listSendConnectors().map(sendConnectorToPSObject);
     return connectors.length === 1 ? connectors[0] : connectors;
+  }
+}
+
+function transportRuleToPSObject(r: TransportRuleInfo): Record<string, PSValue> {
+  return {
+    Name: r.name,
+    Priority: r.priority,
+    State: r.enabled ? 'Enabled' : 'Disabled',
+    Conditions: r.conditions.map((c) => (c.value !== undefined ? `${c.field}:${c.value}` : c.field)).join(', '),
+    Actions: r.actions.map((a) => a.kind).join(', '),
+  };
+}
+
+export class NewTransportRuleCmdlet implements ICmdlet {
+  readonly name = 'new-transportrule';
+  readonly displayName = 'New-TransportRule';
+  readonly aliases = [] as const;
+  readonly parameters = [
+    'Name', 'Priority', 'From', 'SentTo', 'SubjectContainsWords', 'HasAttachment',
+    'RejectMessageReasonText', 'ApplyHtmlDisclaimerText', 'RedirectMessageTo', 'BlindCopyTo', 'Enabled',
+  ] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const exchange = requireExchange(ctx, 'New-TransportRule');
+    const name = psValueToString(ctx.named['name'] ?? ctx.positional[0] ?? '');
+    if (!name) { ctx.emitError('New-TransportRule : Cannot process command because of one or more missing mandatory parameters: Name.'); return null; }
+
+    const conditions: TransportRuleConditionInfo[] = [];
+    if (ctx.named['from'] !== undefined) conditions.push({ field: 'From', value: psValueToString(ctx.named['from']) });
+    if (ctx.named['sentto'] !== undefined) conditions.push({ field: 'To', value: psValueToString(ctx.named['sentto']) });
+    const subjectWords = stringArrayFrom(ctx.named['subjectcontainswords']);
+    if (subjectWords.length > 0) conditions.push({ field: 'SubjectContains', value: subjectWords[0] });
+    if (ctx.named['hasattachment'] === true) conditions.push({ field: 'HasAttachment' });
+
+    const actions: TransportRuleActionInfo[] = [];
+    if (ctx.named['rejectmessagereasontext'] !== undefined) {
+      actions.push({ kind: 'Reject', message: psValueToString(ctx.named['rejectmessagereasontext']) });
+    }
+    if (ctx.named['applyhtmldisclaimertext'] !== undefined) {
+      actions.push({ kind: 'AppendDisclaimer', text: psValueToString(ctx.named['applyhtmldisclaimertext']) });
+    }
+    if (ctx.named['redirectmessageto'] !== undefined) {
+      actions.push({ kind: 'RedirectTo', address: psValueToString(ctx.named['redirectmessageto']) });
+    }
+    for (const address of stringArrayFrom(ctx.named['blindcopyto'])) {
+      actions.push({ kind: 'BlindCopyTo', address });
+    }
+
+    const priority = ctx.named['priority'] !== undefined
+      ? Number(psValueToString(ctx.named['priority']))
+      : exchange.listTransportRules().length;
+    const enabled = ctx.named['enabled'] === undefined ? true : ctx.named['enabled'] === true;
+
+    const res = exchange.newTransportRule({ name, priority, conditions, actions, enabled });
+    if (!res.ok) { ctx.emitError(res.message); return null; }
+    const rule = exchange.getTransportRule(name);
+    return rule ? transportRuleToPSObject(rule) : null;
+  }
+}
+
+export class GetTransportRuleCmdlet implements ICmdlet {
+  readonly name = 'get-transportrule';
+  readonly displayName = 'Get-TransportRule';
+  readonly aliases = [] as const;
+  readonly parameters = ['Identity'] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const exchange = requireExchange(ctx, 'Get-TransportRule');
+    const identity = identityFrom(ctx);
+    if (identity) {
+      const rule = exchange.getTransportRule(identity);
+      if (!rule) {
+        ctx.emitError(`Get-TransportRule : The operation couldn't be performed because object '${identity}' couldn't be found.`);
+        return null;
+      }
+      return transportRuleToPSObject(rule);
+    }
+    const rules = exchange.listTransportRules().map(transportRuleToPSObject);
+    return rules.length === 1 ? rules[0] : rules;
   }
 }

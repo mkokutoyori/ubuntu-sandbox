@@ -63,6 +63,51 @@ describe('SmtpServerOptions.onMessageAccepted (docs/PRD-Exchange.md §3 — real
   });
 });
 
+describe('SmtpServerOptions.beforeMessageAccepted (docs/PRD-Exchange.md §2.1 P6 — real Transport Rule rejection)', () => {
+  it('a rejection replaces the accept reply with a real 550, and onMessageAccepted never fires', () => {
+    const { pc, srv } = buildTopology();
+    const accepted: SmtpAcceptedMessage[] = [];
+    const server = new SmtpServer(srv.getTcpStack(), { hostname: 'mail.example.com' }, SMTP_PORT, {
+      beforeMessageAccepted: () => ({ reject: 'Blocked by policy' }),
+      onMessageAccepted: (delivered) => accepted.push(delivered),
+    });
+    server.start();
+
+    const client = new SmtpClientSession(pc.getTcpStack(), '10.0.1.10', '10.0.1.2');
+    client.connect();
+    client.sendCommand({ verb: 'EHLO', argument: 'client.example.org' });
+    client.sendCommand({ verb: 'MAIL', argument: 'FROM:<alice@example.org>' });
+    client.sendCommand({ verb: 'RCPT', argument: 'TO:<bob@example.org>' });
+    client.sendCommand({ verb: 'DATA' });
+    const final = client.sendDataBody('Subject: hi\r\n\r\nBody');
+
+    expect(final?.code).toBe(550);
+    expect(final?.lines.join(' ')).toContain('Blocked by policy');
+    expect(accepted).toHaveLength(0);
+  });
+
+  it('a message the hook does not reject still gets accepted and delivered normally', () => {
+    const { pc, srv } = buildTopology();
+    const accepted: SmtpAcceptedMessage[] = [];
+    const server = new SmtpServer(srv.getTcpStack(), { hostname: 'mail.example.com' }, SMTP_PORT, {
+      beforeMessageAccepted: () => undefined,
+      onMessageAccepted: (delivered) => accepted.push(delivered),
+    });
+    server.start();
+
+    const client = new SmtpClientSession(pc.getTcpStack(), '10.0.1.10', '10.0.1.2');
+    client.connect();
+    client.sendCommand({ verb: 'EHLO', argument: 'client.example.org' });
+    client.sendCommand({ verb: 'MAIL', argument: 'FROM:<alice@example.org>' });
+    client.sendCommand({ verb: 'RCPT', argument: 'TO:<bob@example.org>' });
+    client.sendCommand({ verb: 'DATA' });
+    const final = client.sendDataBody('Subject: hi\r\n\r\nBody');
+
+    expect(final?.code).toBe(250);
+    expect(accepted).toHaveLength(1);
+  });
+});
+
 describe('SmtpServerOptions.remoteIpAllowed (docs/PRD-Exchange.md §4.4 — Receive Connector IP restriction)', () => {
   it('closes the connection before any banner when the source IP is rejected', () => {
     const { pc, srv } = buildTopology();

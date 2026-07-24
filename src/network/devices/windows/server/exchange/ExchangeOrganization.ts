@@ -1,5 +1,6 @@
 import { MailboxStore } from './MailboxStore';
 import { DistributionGroupStore } from './DistributionGroupStore';
+import { TransportRuleStore } from './TransportRuleEngine';
 
 export interface ExchangeServerRecord {
   readonly hostname: string;
@@ -12,6 +13,7 @@ export interface ExchangeOrganization {
   readonly servers: Map<string, ExchangeServerRecord>;
   readonly mailboxes: MailboxStore;
   readonly distributionGroups: DistributionGroupStore;
+  readonly transportRules: TransportRuleStore;
 }
 
 const organizations = new Map<string, ExchangeOrganization>();
@@ -27,7 +29,7 @@ export function getExchangeOrganization(name: string): ExchangeOrganization | un
 export function getOrCreateExchangeOrganization(name: string): ExchangeOrganization {
   let org = organizations.get(name);
   if (!org) {
-    org = { name, servers: new Map(), mailboxes: new MailboxStore(), distributionGroups: new DistributionGroupStore() };
+    org = { name, servers: new Map(), mailboxes: new MailboxStore(), distributionGroups: new DistributionGroupStore(), transportRules: new TransportRuleStore() };
     organizations.set(name, org);
   }
   return org;

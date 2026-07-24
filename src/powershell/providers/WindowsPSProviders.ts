@@ -63,7 +63,7 @@ import type {
   IIisProvider, IisOpResult, WebsiteInfo, AppPoolInfo, NewAppPoolOptions, WebModuleInfo,
   IExchangeProvider, ExchangeOpResult, ExchangeServerInfo,
   MailboxOpResult, MailboxInfo, MailboxStatisticsInfo, MailFolderName,
-  DistributionGroupInfo, GalEntryInfo, ReceiveConnectorInfo, SendConnectorInfo,
+  DistributionGroupInfo, GalEntryInfo, ReceiveConnectorInfo, SendConnectorInfo, TransportRuleInfo,
   IAdcsProvider, AdcsOpResult, CaTemplateInfo, CertificateRequestResultInfo,
   IPkiProvider, IssuedCertInfo,
   IDfsProvider, DfsOpResult, DfsTargetInfo, DfsFolderInfo, DfsrSyncResultInfo,
@@ -2165,6 +2165,21 @@ class WindowsExchangeAdapter implements IExchangeProvider {
   listSendConnectors(): SendConnectorInfo[] {
     this.requireOrg('Get-SendConnector');
     return this.pc.listSendConnectors();
+  }
+
+  newTransportRule(rule: TransportRuleInfo): ExchangeOpResult {
+    this.requireOrg('New-TransportRule');
+    return this.pc.newTransportRule(rule);
+  }
+
+  getTransportRule(name: string): TransportRuleInfo | null {
+    this.requireOrg('Get-TransportRule');
+    return this.pc.getTransportRule(name);
+  }
+
+  listTransportRules(): TransportRuleInfo[] {
+    this.requireOrg('Get-TransportRule');
+    return this.pc.listTransportRules();
   }
 }
 

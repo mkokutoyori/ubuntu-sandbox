@@ -487,6 +487,27 @@ export interface IExchangeProvider {
   newSendConnector(def: SendConnectorInfo): ExchangeOpResult;
   getSendConnector(name: string): SendConnectorInfo | null;
   listSendConnectors(): SendConnectorInfo[];
+
+  newTransportRule(rule: TransportRuleInfo): ExchangeOpResult;
+  getTransportRule(name: string): TransportRuleInfo | null;
+  listTransportRules(): TransportRuleInfo[];
+}
+
+export type TransportRuleConditionInfo = {
+  readonly field: 'From' | 'To' | 'SubjectContains' | 'HasAttachment';
+  readonly value?: string;
+};
+export type TransportRuleActionInfo =
+  | { readonly kind: 'Reject'; readonly message: string }
+  | { readonly kind: 'AppendDisclaimer'; readonly text: string }
+  | { readonly kind: 'RedirectTo'; readonly address: string }
+  | { readonly kind: 'BlindCopyTo'; readonly address: string };
+export interface TransportRuleInfo {
+  readonly name: string;
+  readonly priority: number;
+  readonly conditions: readonly TransportRuleConditionInfo[];
+  readonly actions: readonly TransportRuleActionInfo[];
+  readonly enabled: boolean;
 }
 
 export interface ReceiveConnectorInfo {

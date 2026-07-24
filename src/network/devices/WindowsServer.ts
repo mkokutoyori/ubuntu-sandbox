@@ -38,6 +38,7 @@ import { MailboxStore, type MailboxOpResult, type DeliverResult } from './window
 import { DistributionGroupStore, deliverExpanded, type DistributionGroupOpResult, type DistributionGroupType } from './windows/server/exchange/DistributionGroupStore';
 import { buildGlobalAddressList, resolveGalRecipient, type GalEntry } from './windows/server/exchange/GlobalAddressList';
 import { parseBinding, ipAllowedByRanges, type ReceiveConnectorDef, type SendConnectorDef } from './windows/server/exchange/TransportConnector';
+import { TransportRuleStore, evaluateTransportRules, type TransportRule, type EvaluatedMessage, type TransportRuleOutcome } from './windows/server/exchange/TransportRuleEngine';
 import { SmtpServer, type SmtpAcceptedMessage } from '@/network/smtp/SmtpServer';
 import { mirroredDirection, type TrustDirection, type TrustInfo, type TrustRecord } from './windows/server/ad/forest/TrustRelationship';
 
@@ -509,6 +510,10 @@ export class WindowsServer extends WindowsPC {
         parsed.port,
         {
           remoteIpAllowed: def.remoteIpRanges.length === 0 ? undefined : (ip) => ipAllowedByRanges(ip, def.remoteIpRanges),
+          beforeMessageAccepted: (delivered) => {
+            const outcome = this.evaluateForTransportRules(delivered);
+            return outcome.reject ? { reject: outcome.reject.message } : undefined;
+          },
           onMessageAccepted: (delivered) => this.handleAcceptedMessage(delivered),
         },
       );
@@ -552,10 +557,57 @@ export class WindowsServer extends WindowsPC {
     return [...this.sendConnectors.values()];
   }
 
+  /**
+   * `New-TransportRule`/`Get-TransportRule` (docs/PRD-Exchange.md §2.1
+   * P6) — evaluated at the categorizer stage, before the SMTP DATA reply
+   * is finalized (`beforeMessageAccepted`, wired above) and again at the
+   * actual delivery stage (`handleAcceptedMessage`, for the disclaimer/
+   * redirect/BCC outcomes that only matter once a message is genuinely
+   * being delivered). A `Reject` rule never reaches delivery at all —
+   * the SMTP session already returned a real `550` to the client.
+   */
+  getTransportRuleStore(): TransportRuleStore | null {
+    if (this.exchangeOrgName === null) return null;
+    return getExchangeOrganization(this.exchangeOrgName)?.transportRules ?? null;
+  }
+
+  newTransportRule(rule: TransportRule): AdDsOpResult {
+    const store = this.getTransportRuleStore();
+    if (!store) return { ok: false, message: 'New-TransportRule : Exchange Server has not been installed on this computer.' };
+    return store.newRule(rule);
+  }
+
+  getTransportRule(name: string): TransportRule | null {
+    return this.getTransportRuleStore()?.get(name) ?? null;
+  }
+
+  listTransportRules(): TransportRule[] {
+    return this.getTransportRuleStore()?.list() ?? [];
+  }
+
+  private evaluateForTransportRules(delivered: SmtpAcceptedMessage): TransportRuleOutcome {
+    const rules = this.listTransportRules();
+    const contentType = delivered.message.headers.get('Content-Type') ?? '';
+    const message: EvaluatedMessage = {
+      from: delivered.envelope.from,
+      to: delivered.envelope.to,
+      subject: delivered.message.headers.get('Subject') ?? '',
+      hasAttachment: contentType.toLowerCase().includes('multipart'),
+      body: delivered.rawMessage,
+    };
+    return evaluateTransportRules(rules, message);
+  }
+
   private handleAcceptedMessage(delivered: SmtpAcceptedMessage): void {
+    const outcome = this.evaluateForTransportRules(delivered);
+    if (outcome.reject) return;
     const subject = delivered.message.headers.get('Subject') ?? '';
-    for (const recipient of delivered.envelope.to) {
-      this.deliverToRecipient(recipient, delivered.envelope.from, subject, delivered.rawMessage, Date.now());
+    const recipients = outcome.redirectTo ? [outcome.redirectTo] : delivered.envelope.to;
+    for (const recipient of recipients) {
+      this.deliverToRecipient(recipient, delivered.envelope.from, subject, outcome.finalBody, Date.now());
+    }
+    for (const bcc of outcome.blindCopyTo) {
+      this.deliverToRecipient(bcc, delivered.envelope.from, subject, outcome.finalBody, Date.now());
     }
   }
 
