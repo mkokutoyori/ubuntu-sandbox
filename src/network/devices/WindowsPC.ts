@@ -2796,6 +2796,21 @@ export class WindowsPC extends EndHost implements UserAccountHost {
   getIisRole(): import('./windows/server/iis/WindowsIisRole').WindowsIisRole | null { return null; }
 
   /**
+   * Exchange organization membership (docs/PRD-Exchange.md §2.1 P1) —
+   * null until `Install-ExchangeServer` on a `WindowsServer`; always null
+   * on a client, overridden by `WindowsServer`.
+   */
+  getExchangeOrganizationName(): string | null { return null; }
+
+  installExchangeServer(_organizationName: string, _roles?: readonly string[]): { ok: boolean; message: string } {
+    return { ok: false, message: 'Install-ExchangeServer : Exchange Server setup cannot run on this computer.' };
+  }
+
+  getExchangeServer(_hostname?: string): import('./windows/server/exchange/ExchangeOrganization').ExchangeServerRecord | null { return null; }
+
+  listExchangeServers(): import('./windows/server/exchange/ExchangeOrganization').ExchangeServerRecord[] { return []; }
+
+  /**
    * AD CS (Certificate Services) role (PRD-Windows-Server-Advanced.md §5
    * P13) — null until `Install-WindowsFeature AD-Certificate` on a
    * `WindowsServer`; always null on a client, overridden by `WindowsServer`.

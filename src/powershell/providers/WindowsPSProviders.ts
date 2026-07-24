@@ -60,6 +60,7 @@ import type {
   IComputerProvider, DomainMembershipInfo,
   IGpoProvider, GpoInfo,
   IIisProvider, IisOpResult, WebsiteInfo, AppPoolInfo, NewAppPoolOptions, WebModuleInfo,
+  IExchangeProvider, ExchangeOpResult, ExchangeServerInfo,
   IAdcsProvider, AdcsOpResult, CaTemplateInfo, CertificateRequestResultInfo,
   IPkiProvider, IssuedCertInfo,
   IDfsProvider, DfsOpResult, DfsTargetInfo, DfsFolderInfo, DfsrSyncResultInfo,
@@ -2001,6 +2002,40 @@ class WindowsIisAdapter implements IIisProvider {
   listGlobalModules(): WebModuleInfo[] { return this.requireRole('Get-WebGlobalModule').listGlobalModules(); }
 }
 
+// ── Exchange Server adapter (docs/PRD-Exchange.md §2.1 P1) ─────────────────
+
+class WindowsExchangeAdapter implements IExchangeProvider {
+  constructor(private readonly pc: WindowsPC) {}
+
+  /** `Install-ExchangeServer` never needs an org to already exist — every other Exchange cmdlet does, and fails as "not recognized" (mimics the Exchange Management Shell module never having been loaded), matching docs/PRD-Exchange.md §1.3/§8. */
+  private requireOrg(cmdletName: string): void {
+    if (this.pc.getExchangeOrganizationName() === null) {
+      throw new Error(`${cmdletName} is not recognized as the name of a cmdlet, function, script file, or operable program`);
+    }
+  }
+
+  installExchangeServer(organizationName: string, roles: readonly string[]): ExchangeOpResult {
+    return this.pc.installExchangeServer(organizationName, roles);
+  }
+
+  getExchangeServer(hostname?: string): ExchangeServerInfo | null {
+    this.requireOrg('Get-ExchangeServer');
+    const record = this.pc.getExchangeServer(hostname);
+    const orgName = this.pc.getExchangeOrganizationName();
+    if (!record || !orgName) return null;
+    return { hostname: record.hostname, roles: [...record.roles], organizationName: orgName, installedAt: record.installedAt };
+  }
+
+  listExchangeServers(): ExchangeServerInfo[] {
+    this.requireOrg('Get-ExchangeServer');
+    const orgName = this.pc.getExchangeOrganizationName();
+    if (!orgName) return [];
+    return this.pc.listExchangeServers().map((record) => ({
+      hostname: record.hostname, roles: [...record.roles], organizationName: orgName, installedAt: record.installedAt,
+    }));
+  }
+}
+
 // ── DFS Namespaces + DFSR adapter (PRD-Windows-Server-Advanced.md §5 P16) ──
 
 class WindowsDfsAdapter implements IDfsProvider {
@@ -2362,6 +2397,7 @@ export function createWindowsPSProviders(
     nps:            pc.getRoleManager() ? new WindowsNpsAdapter(pc) : null,
     gpo:            new WindowsGpoAdapter(pc),
     iis:            pc.getRoleManager() ? new WindowsIisAdapter(pc) : null,
+    exchange:       pc.getRoleManager() ? new WindowsExchangeAdapter(pc) : null,
     adcs:           pc.getRoleManager() ? new WindowsAdcsAdapter(pc) : null,
     pki:            new WindowsPkiAdapter(pc),
     dfs:            pc.getRoleManager() ? new WindowsDfsAdapter(pc) : null,

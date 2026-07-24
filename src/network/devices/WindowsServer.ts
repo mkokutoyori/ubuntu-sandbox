@@ -33,6 +33,7 @@ import { randomSessionKey } from '@/network/kerberos/crypto';
 import { dialLdap } from './windows/server/ad/ldap/LdapClient';
 import { pullReplication, notifySyncNow } from './windows/server/ad/replication/ReplicationSession';
 import { createForest, joinForestAsChildDomain, getForestForDomain, type Forest } from './windows/server/ad/forest/Forest';
+import { getExchangeOrganization, getOrCreateExchangeOrganization, type ExchangeServerRecord } from './windows/server/exchange/ExchangeOrganization';
 import { mirroredDirection, type TrustDirection, type TrustInfo, type TrustRecord } from './windows/server/ad/forest/TrustRelationship';
 
 export interface AdDsOpResult { ok: boolean; message: string }
@@ -53,6 +54,7 @@ export class WindowsServer extends WindowsPC {
   private clusterServiceInstance: ClusterService | null = null;
   private wsusRoleInstance: WindowsWsusRole | null = null;
   private printServerRoleInstance: WindowsPrintServerRole | null = null;
+  private exchangeOrgName: string | null = null;
 
   constructor(name: string = 'WinServer', x: number = 0, y: number = 0) {
     super('windows-server', name, x, y);
@@ -300,6 +302,44 @@ export class WindowsServer extends WindowsPC {
     this.logDirectoryServiceStartup();
     this.auditPolicy.seedDefaults('domain-controller');
     return { ok: true, message: '' };
+  }
+
+  /**
+   * `Install-ExchangeServer -Roles Mailbox -OrganizationName "..."`
+   * (docs/PRD-Exchange.md §2.1 P1) — condenses the real multi-step
+   * `setup.exe /mode:Install /role:Mailbox` process (schema extension,
+   * domain prep, binary install) into a single cmdlet, mirroring how
+   * `installADDSForest` above condenses DC promotion. Requires this
+   * server to already be domain-joined (member server or DC) — a real
+   * Exchange install extends the AD schema and needs a domain to extend.
+   * All servers sharing the same `-OrganizationName` join one shared
+   * `ExchangeOrganization` (one org per forest, as in a real deployment).
+   */
+  installExchangeServer(organizationName: string, roles: readonly string[] = ['Mailbox']): AdDsOpResult {
+    if (this.exchangeOrgName !== null) {
+      return { ok: false, message: 'Install-ExchangeServer : Setup has already been run on this computer.' };
+    }
+    if (!this.getDomainMembership() && !this.directoryStore) {
+      return { ok: false, message: 'Install-ExchangeServer : This computer must be joined to an Active Directory domain before Exchange Server can be installed.' };
+    }
+    const org = getOrCreateExchangeOrganization(organizationName);
+    org.servers.set(this.getHostname(), { hostname: this.getHostname(), roles: new Set(roles), installedAt: Date.now() });
+    this.exchangeOrgName = organizationName;
+    return { ok: true, message: '' };
+  }
+
+  getExchangeOrganizationName(): string | null { return this.exchangeOrgName; }
+
+  getExchangeServer(hostname?: string): ExchangeServerRecord | null {
+    if (this.exchangeOrgName === null) return null;
+    const org = getExchangeOrganization(this.exchangeOrgName);
+    return org?.servers.get(hostname ?? this.getHostname()) ?? null;
+  }
+
+  listExchangeServers(): ExchangeServerRecord[] {
+    if (this.exchangeOrgName === null) return [];
+    const org = getExchangeOrganization(this.exchangeOrgName);
+    return org ? [...org.servers.values()] : [];
   }
 
   /**

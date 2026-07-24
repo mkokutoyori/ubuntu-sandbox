@@ -433,6 +433,22 @@ export interface IIisProvider {
   listGlobalModules(): WebModuleInfo[];
 }
 
+// ── Exchange Server (docs/PRD-Exchange.md §2.1 P1) ──────────────────────────
+
+export interface ExchangeOpResult { ok: boolean; message: string }
+export interface ExchangeServerInfo {
+  readonly hostname: string;
+  readonly roles: readonly string[];
+  readonly organizationName: string;
+  readonly installedAt: number;
+}
+
+export interface IExchangeProvider {
+  installExchangeServer(organizationName: string, roles: readonly string[]): ExchangeOpResult;
+  getExchangeServer(hostname?: string): ExchangeServerInfo | null;
+  listExchangeServers(): ExchangeServerInfo[];
+}
+
 // ── AD CS (Certificate Services) role (PRD-Windows-Server-Advanced.md §5 P13) ──
 
 export interface AdcsOpResult { ok: boolean; message: string }
@@ -1045,6 +1061,7 @@ export interface PSProviders {
   readonly nps:            INpsProvider            | null;
   readonly gpo:            IGpoProvider            | null;
   readonly iis:            IIisProvider            | null;
+  readonly exchange:       IExchangeProvider       | null;
   readonly adcs:           IAdcsProvider           | null;
   readonly pki:            IPkiProvider            | null;
   readonly dfs:            IDfsProvider            | null;
