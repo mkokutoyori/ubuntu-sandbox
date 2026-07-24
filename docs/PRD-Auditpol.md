@@ -1,6 +1,6 @@
 # PRD — Politique d'audit avancée Windows : `auditpol.exe` (catalogue de catégories/sous-catégories et portée causale sur la génération d'événements de sécurité)
 
-**Version** : 1.0
+**Version** : 1.1
 **Date** : 2026-07-24
 **Projet** : Ubuntu Sandbox — Module Windows Server / Audit de sécurité
 **Auteur** : Claude Code
@@ -10,9 +10,22 @@ introduites avec Windows Vista/Server 2008 en remplacement des 9 réglages
 de « Basic Audit Policy » historiques de `secpol.msc`), et les EventIDs du
 fournisseur `Microsoft-Windows-Security-Auditing` que chaque sous-catégorie
 conditionne (catalogue Microsoft « Advanced security audit policy
-settings »). Ce PRD est un document de complétion : il porte sur un
-sous-système **déjà présent et partiellement câblé** dans ce dépôt
-(`WindowsAuditPolicy.ts`), pas sur une brique greenfield.
+settings »), ainsi que les réglages globaux LSA exposés par
+`auditpol /get|/set /option:` (`CrashOnAuditFail`, `FullPrivilegeAuditing`,
+`AuditBaseObjects`, `AuditBaseDirectories`), la politique d'audit par
+utilisateur (`/set /user:`), et l'audit global de ressource — « Global
+Object Access Auditing » (`/resourceSACL`). Ce PRD est un document de
+complétion : il porte sur un sous-système **déjà présent et partiellement
+câblé** dans ce dépôt (`WindowsAuditPolicy.ts`), pas sur une brique
+greenfield.
+
+> **v1.1** : élargit le périmètre initial (catalogue + portée causale,
+> v1.0) à quatre fonctionnalités supplémentaires de `auditpol.exe` non
+> couvertes en v1.0 : options globales LSA (P10), politique d'audit par
+> utilisateur (P11), audit global de ressource / `/resourceSACL` (P12,
+> **sorti des non-objectifs de v1.0**, § 2.2), et descripteur de sécurité
+> de la politique elle-même via `/sd` (P13), plus `/get /r` et les
+> variantes de `/list` (P14).
 
 ---
 
@@ -99,6 +112,9 @@ production dans ce dépôt.
 | `src/network/devices/windows/WindowsEventLogProjection.ts` (fichier entier) | Émission de 7036/7034/7031/7045 (Système), 5152/5156/5158/5159/5160 (WFP/Tcpip) | **Aucune référence à `WindowsAuditPolicy` dans tout le fichier** — ces événements sont soit hors du périmètre de l'audit avancé sur un vrai Windows (7036/7045 sont des événements SCM du journal Système, non gatés par `auditpol`, ce qui est correct), soit devraient l'être et ne le sont pas (5152/5156/5158 sont des événements `Security` du fournisseur WFP, gatés en réalité par la sous-catégorie « Filtering Platform Connection »/« Filtering Platform Packet Drop », absente du catalogue actuel) |
 | `docs/PRD-Windows-Server.md:46` | Inventaire du module Utilisateurs/sécurité | Cite déjà `WindowsAuditPolicy.ts` dans la liste des fichiers « Local uniquement (SAM) » — confirme que ce fichier est un composant reconnu de l'architecture existante, pas un ajout hors plan |
 | `src/powershell/cmdlets/core/GroupPolicyCmdlets.ts` | `Set-GPRegistryValue`, GPO génériques | **Aucune mention** d'« Advanced Audit Policy » — sur un vrai Windows, la politique d'audit avancée se déploie typiquement par GPO domaine (`Computer Configuration\Policies\Windows Settings\Security Settings\Advanced Audit Policy Configuration`) plutôt que par `auditpol` local machine par machine ; ce chemin de déploiement n'existe pas ici |
+| `WindowsAuditPolicy.ts` (fichier entier) | Surface `/option`, `/user`, `/resourceSACL`, `/sd`, `/r` | **Absence totale** : aucune structure de données ni sous-commande pour les réglages globaux LSA, la politique par utilisateur, l'audit global de ressource, ou le descripteur de sécurité de la politique — ces quatre familles de fonctionnalités réelles de `auditpol.exe` n'ont aucune trace dans le code, contrairement au catalogue de sous-catégories qui existe au moins partiellement |
+| `src/network/devices/windows/PSEventLogProvider.ts:139-142` | `maxSizeKB`/`overflow` du journal `Security` | Le journal `Security` est déjà modélisé avec une taille max (`131072` KB) et une politique de rétention (`'OverwriteOlder'`) — **socle réutilisable** pour implémenter le comportement réel de `CrashOnAuditFail` (§ 2.1 P10), qui dépend précisément de ces deux notions (journal plein + rétention « ne pas écraser ») |
+| `src/network/devices/windows/WindowsUserManager.ts` | Comptes locaux (`users` map, mots de passe, verrouillage) | Pas de notion de SID stable exposée en dehors du nom de compte — la politique d'audit par utilisateur réelle (`/set /user:<SID ou nom>`) s'adresse par SID en priorité ; ce dépôt devra soit accepter le nom de compte comme alias (comportement réel accepté par `auditpol` quand il peut résoudre le nom), soit introduire une notion de SID stable (§ 4.5) |
 
 ### 1.2 Constats-clés
 
@@ -132,6 +148,24 @@ production dans ce dépôt.
 7. **Aucune intégration GPO** — la politique d'audit avancée est
    déployée par domaine dans la réalité, pas configurée poste par poste
    via une CLI locale à chaque fois.
+8. **Aucun réglage global LSA** (`/option:CrashOnAuditFail`,
+   `FullPrivilegeAuditing`, `AuditBaseObjects`, `AuditBaseDirectories`) —
+   ces quatre options, distinctes des sous-catégories, n'ont ni structure
+   de données ni sous-commande `/option` du tout.
+9. **Aucune politique d'audit par utilisateur** (`/set /user:<compte>
+   /category:… /include|/exclude`) — impossible d'auditer plus finement
+   un compte spécifique (ou de l'exclure) indépendamment du réglage
+   machine global, alors que c'est une fonctionnalité réelle et
+   fréquemment utilisée en investigation ciblée.
+10. **Aucun audit global de ressource** (« Global Object Access
+    Auditing », `/resourceSACL`) — le mécanisme permettant d'auditer
+    rétroactivement tous les objets d'un type donné (fichiers, clés de
+    registre…) sans poser de SACL sur chacun individuellement n'existe
+    pas non plus.
+11. **Aucun descripteur de sécurité sur la politique elle-même**
+    (`/sd`/`/get /sd`) — qui a le droit de lire/modifier la politique
+    d'audit est actuellement une question binaire (§ P3, futur
+    `isAdmin`), jamais une véritable ACL SDDL comme sur un vrai Windows.
 
 ---
 
@@ -202,6 +236,71 @@ production dans ce dépôt.
   `WindowsEventLogProjection`'s émissions de 5152/5156/5158 (actuellement
   inconditionnelles, § 1.1) — seul point de la couche WFP qui appartient
   réellement à l'audit avancé.
+- **P10 — Options globales LSA (`/option`)** : `auditpol /get
+  /option:CrashOnAuditFail|FullPrivilegeAuditing|AuditBaseObjects|
+  AuditBaseDirectories` et `/set /option:<nom> /value:enable|disable`,
+  avec leur sémantique réelle branchée sur le code existant :
+  - `CrashOnAuditFail` : quand activé, si le journal `Security` est plein
+    (`entries.length` atteint la limite dérivée de `maxSizeKB`, §1.1) et
+    que sa rétention est `'DoNotOverwrite'`, toute opération qui devrait
+    générer un événement d'audit **échoue et bloque la session courante**
+    avec le message réel `STOP: C0000244 {Audit Failed}` — jusqu'à ce
+    qu'un administrateur vide le journal (`Clear-EventLog`/`wevtutil cl`)
+    ou désactive l'option. Reproduit fidèlement le comportement réel sans
+    simuler un vrai arrêt machine : la session Terminal reste utilisable
+    en tant qu'administrateur pour la remédiation (équivalent du mode sans
+    échec réel), mais toute commande non-administrative est rejetée tant
+    que la condition persiste.
+  - `FullPrivilegeAuditing` : quand activé, étend « Sensitive Privilege
+    Use » à l'usage de `SeBackupPrivilege`/`SeRestorePrivilege` (exclus
+    par défaut pour éviter le bruit pendant les sauvegardes) — pure
+    donnée de configuration consommée par un futur portage causal de
+    4673/4674 (dépendance déjà notée en P5).
+  - `AuditBaseObjects`/`AuditBaseDirectories` : options héritées
+    (application automatique d'une SACL par défaut aux objets noyau de
+    base) — stockées et restituées fidèlement par `/get`/`/set`, sans
+    branchement causal supplémentaire (aucun consommateur identifié dans
+    ce dépôt, cohérent avec l'absence de modélisation des objets noyau
+    nommés).
+- **P11 — Politique d'audit par utilisateur (`/set /user:`)** :
+  `auditpol /set /user:<compte> /category:"<Catégorie>" /include|/exclude
+  [/success:enable|disable] [/failure:enable|disable]`, `/remove
+  /user:<compte>` (ou `/allusers`), et `/list /user` (énumération des
+  comptes ayant une entrée par-utilisateur). Résolution du `<compte>` par
+  nom via `WindowsUserManager` (§ 1.1) plutôt que par SID à ce stade — un
+  vrai `auditpol` accepte les deux formes, la simulation peut se limiter
+  au nom tant qu'aucun consommateur n'exige un SID stable. Sémantique de
+  fusion à respecter dans `isEnabled()` : `/include` = audité si la
+  politique machine **ou** la règle par-utilisateur le demande (union),
+  `/exclude` = jamais audité pour ce compte quelle que soit la politique
+  machine (soustraction prioritaire).
+- **P12 — Audit global de ressource, `/resourceSACL`** (fait sortir cette
+  fonctionnalité des non-objectifs de la v1.0, § 2.2) : `/resourceSACL
+  /set /type:<Type> [/success] [/failure] [/user:<compte>]`, `/remove
+  /type:<Type> [/user:<compte>]`, `/clear /type:<Type>`, `/view
+  [/type:<Type>] [/user:<compte>]`. Contrairement à une SACL posée sur un
+  objet précis (`Get-Acl`/`Set-Acl`, hors-scope, § 2.2), `/resourceSACL`
+  pose une SACL **par défaut, globale, par type de ressource**
+  (`File`, `Key`, `Service`, `Kernel` au minimum) appliquée
+  rétroactivement à tous les objets de ce type sans les modifier
+  individuellement — un mécanisme d'investigation légitimement distinct,
+  et entièrement du ressort d'`auditpol` plutôt que du fournisseur ACL
+  PowerShell.
+- **P13 — Descripteur de sécurité de la politique (`/sd`)** : `/get /sd`
+  et `/set /sd:<SDDL>` pour définir qui peut lire/modifier la politique
+  d'audit elle-même, via une chaîne SDDL réelle plutôt qu'un booléen
+  `isAdmin` unique. Vient en complément de P3 (pas en remplacement) :
+  `isAdmin` reste le contrôle par défaut tant qu'aucun `/sd` personnalisé
+  n'a été posé, exactement comme sur un vrai Windows où le SD par défaut
+  de la politique d'audit équivaut à « Administrateurs uniquement ».
+- **P14 — `/get /r` et compléments `/list`** : `/get /r` produit le même
+  format CSV que `/backup /file:` (§ 4.3) mais directement sur la sortie
+  standard, sans fichier — utile pour un script qui veut consommer l'état
+  courant sans étape d'écriture disque intermédiaire. `/list
+  /subcategory:<nom-de-catégorie>` liste les sous-catégories d'**une**
+  catégorie précise (par opposition à `/list /subcategory:*`, déjà prévu
+  en P7, qui les liste toutes) ; `/list /category:*` liste les 9 noms de
+  catégories seuls.
 
 ### 2.2 Non-objectifs
 
@@ -227,9 +326,16 @@ production dans ce dépôt.
   « Directory Service Changes » et « Directory Service Access » au niveau
   global sont dans le périmètre P1 ; le filtrage fin par classe d'objet
   n'a pas de consommateur dans ce dépôt aujourd'hui.
-- **`/resourceSACL`** (gestion programmatique des SACL globales,
-  fonctionnalité rarement utilisée même sur un vrai Windows) : non
-  couvert, cohérent avec le non-objectif SACL ci-dessus.
+- **SACL par objet individuel via `/resourceSACL`** : ne pas confondre
+  avec P12 (§ 2.1), qui couvre le réglage **global par type de
+  ressource**. `/resourceSACL` ne donne jamais de prise sur un objet
+  précis (un fichier nommé, une clé de registre nommée) — cela reste du
+  ressort du non-objectif SACL par objet ci-dessus, quel que soit l'état
+  de P12.
+- **Options `/option` sans consommateur identifié au-delà de P10** :
+  au-delà des quatre options réelles couvertes par P10, `auditpol` n'a
+  pas d'autres réglages globaux documentés par Microsoft à ce jour — rien
+  n'est volontairement laissé de côté ici.
 
 ---
 
@@ -246,26 +352,43 @@ WindowsAuditCategoryCatalog.ts (nouveau)
 WindowsAuditPolicy.ts (existant, étendu)
   - set()/get() valident contre le catalogue (P2)
   - formatGetAll() regroupe par catégorie (P1)
-  - backup()/restore()/clear() (P7)
+  - backup()/restore()/clear() (P7), getReport() pour /get /r (P14)
   - seedDefaults(profile: 'client' | 'server' | 'domain-controller') (P6)
+  - options: Record<GlobalOptionName, boolean> + get/setOption() (P10)
+  - perUser: Map<account, PerUserAuditEntry[]> + include/exclude (P11)
+  - resourceSacl: Map<ResourceType, ResourceSaclEntry> (P12)
+  - securityDescriptor: string (SDDL) + get/setSecurityDescriptor() (P13)
         │
         ▼
-cmdAuditpol(policy, args, isAdmin) (signature étendue, P3)
+cmdAuditpol(policy, args, isAdmin, callerAccount) (signature étendue,
+  P3/P11/P13 — callerAccount nécessaire pour évaluer /sd et pour que
+  /set /user:<compte-courant> ait un sens en investigation locale)
         │
         ├──▶ WindowsSecurityAuditProjection (existant, étendu)
-        │      chaque handler consulte désormais isEnabled() avec la
-        │      vraie sous-catégorie (P4/P5)
+        │      chaque handler consulte désormais isEnabled(subcat,
+        │      kind, account?) — la politique par utilisateur (P11)
+        │      élargit la signature d'isEnabled() avec un paramètre de
+        │      compte optionnel, rétrocompatible avec les deux appels
+        │      existants qui ne le passent pas
         │
-        └──▶ WindowsEventLogProjection (existant, étendu uniquement
-               pour les 2 sous-catégories WFP concernées, P9 — le reste
-               du fichier, purement journal Système, reste non gaté,
-               fidèle au vrai Windows)
+        ├──▶ WindowsEventLogProjection (existant, étendu uniquement
+        │      pour les 2 sous-catégories WFP concernées, P9 — le reste
+        │      du fichier, purement journal Système, reste non gaté,
+        │      fidèle au vrai Windows)
+        │
+        └──▶ PSEventLogProvider (existant, étendu) — writeEventLog()
+               consulte options.CrashOnAuditFail + l'état plein/rétention
+               du journal Security avant d'écrire (P10) ; en cas de
+               blocage, renvoie un signal que cmdAuditpol/le shell
+               traduisent en rejet des commandes non-administratives
 ```
 
-Aucun nouveau canal de bus événementiel : le portage causal (P4/P5/P9) ne
-fait qu'ajouter des gardes de lecture (`if (!policy.isEnabled(...))
-return;`) dans des handlers déjà abonnés au bus existant — même pattern
-que celui déjà en place pour `registry`/`file system` (§ 1.1).
+Aucun nouveau canal de bus événementiel pour P4/P5/P9 (mêmes gardes de
+lecture que la v1.0). P10 (CrashOnAuditFail) et P11 (politique par
+utilisateur) sont les deux seuls points de cette extension qui touchent
+une signature de méthode existante (`writeEventLog`, `isEnabled`) plutôt
+que de se contenter d'ajouter des données à côté — à traiter avec le plus
+de soin lors de l'implémentation (§ 7).
 
 ---
 
@@ -327,6 +450,77 @@ DC01,System,Logon,{0CCE9215-69AE-11D9-BED3-505054503030},Success and Failure,,3
 (`Setting Value` : 0 = No Auditing, 1 = Success, 2 = Failure, 3 = Success
 and Failure — encodage réel `auditpol`.)
 
+### 4.4 Options globales LSA (`AuditGlobalOptions`, P10)
+
+```ts
+interface AuditGlobalOptions {
+  CrashOnAuditFail: boolean;       // défaut réel : false
+  FullPrivilegeAuditing: boolean;  // défaut réel : false
+  AuditBaseObjects: boolean;       // défaut réel : false
+  AuditBaseDirectories: boolean;   // défaut réel : false
+}
+```
+
+Sortie `auditpol /get /option:CrashOnAuditFail` réelle à reproduire :
+
+```
+System audit policy
+Option                                   Value
+CrashOnAuditFail                         Disabled
+```
+
+### 4.5 Politique d'audit par utilisateur (`PerUserAuditEntry`, P11)
+
+```ts
+interface PerUserAuditEntry {
+  account: string;      // nom de compte (§ 1.1 — pas de SID stable requis en P11)
+  category: string;     // nom de catégorie ou sous-catégorie
+  mode: 'include' | 'exclude';
+  success?: boolean;
+  failure?: boolean;
+}
+```
+
+Sémantique de fusion consommée par `isEnabled(subcat, kind, account?)` :
+
+```
+exclude(account, subcat, kind) présent  → false (priorité absolue)
+sinon include(account, subcat, kind) présent → true
+sinon → réglage machine global (comportement v1.0 inchangé)
+```
+
+### 4.6 Audit global de ressource (`ResourceSaclEntry`, P12)
+
+```ts
+type ResourceType = 'File' | 'Key' | 'Service' | 'Kernel';
+
+interface ResourceSaclEntry {
+  type: ResourceType;
+  success: boolean;
+  failure: boolean;
+  perUser?: Map<string, { success: boolean; failure: boolean }>;
+}
+```
+
+`/resourceSACL /view /type:File` réel à reproduire :
+
+```
+Resource SACLs for File:
+No entries found.
+```
+
+(ou la liste des entrées `perUser`/globale une fois posées par `/set`).
+
+### 4.7 Descripteur de sécurité de la politique (`securityDescriptor`, P13)
+
+Stocké comme chaîne SDDL brute (`string`), au même titre que les SDDL déjà
+manipulées ailleurs dans ce dépôt pour les ACL AD (§ 1.1,
+`ActiveDirectoryCmdlets.ts`) — aucun nouveau parseur SDDL à écrire si un
+parseur existant peut être réutilisé ; sinon, une évaluation minimale
+(propriétaire + une liste d'ACE `(A;;RCWDWO;;;<SID>)`) suffit pour statuer
+oui/non sur « ce compte a-t-il le droit de lire/modifier la politique ? »
+sans reproduire l'intégralité de la sémantique SDDL.
+
 ---
 
 ## 5. Plan de mise en œuvre (TDD, par phases)
@@ -354,6 +548,25 @@ and Failure — encodage réel `auditpol`.)
 7. **P7** : `/backup`/`/restore` d'abord (symétriques, se testent l'un
    par l'autre par aller-retour), puis `/clear`.
 8. **P8** : dernier, dépend de P1-P6 stabilisés.
+9. **P10 (options)** : implémenter les quatre options comme pur stockage
+   `/get`/`/set` d'abord (aucun risque de régression, indépendant du
+   reste) ; le branchement causal de `CrashOnAuditFail` sur
+   `PSEventLogProvider.writeEventLog()` vient dans un second temps,
+   derrière un test dédié qui remplit délibérément le journal `Security`
+   pour vérifier le blocage puis la remédiation — à isoler du reste de la
+   suite pour ne pas risquer de laisser un journal artificiellement plein
+   contaminer d'autres tests (réinitialisation systématique en
+   `afterEach`).
+10. **P11 (par utilisateur)** avant P4 si possible, car P4 modifie déjà
+    la signature de `isEnabled()` (ajout du paramètre `kind`) — autant
+    y ajouter le paramètre `account?` de P11 dans le même changement de
+    signature plutôt que deux migrations successives de tous les appelants.
+11. **P12 (`/resourceSACL`)** et **P13 (`/sd`)** : indépendants l'un de
+    l'autre et du reste, peuvent se faire en parallèle après P3 (P13
+    réutilise le concept de gate de privilège posé par P3).
+12. **P14** : dernier, pur confort (`/get /r` réutilise `backup()` de P7
+    en changeant seulement la destination ; les variantes de `/list`
+    réutilisent le catalogue de P1).
 
 ---
 
@@ -374,6 +587,30 @@ and Failure — encodage réel `auditpol`.)
   `src/__tests__/unit/network-v2/` après P4/P6 pour détecter toute suite
   tierce (hors les 9 scénarios Windows et les 3 fichiers cités en § 5.4)
   qui dépendrait implicitement du comportement inconditionnel actuel.
+- **P10 (CrashOnAuditFail)** : test dédié en 3 temps — (1) remplir le
+  journal `Security` jusqu'à la limite avec rétention `DoNotOverwrite` et
+  l'option activée, vérifier qu'une commande non-administrative
+  ultérieure est rejetée avec le message `STOP: C0000244` ; (2) vérifier
+  qu'une commande administrative de remédiation (`Clear-EventLog`)
+  débloque immédiatement l'état ; (3) vérifier qu'avec l'option
+  désactivée, le même remplissage n'a aucun effet bloquant (seule la
+  rotation normale du journal s'applique).
+- **P11 (par utilisateur)** : test de fusion — sous-catégorie machine
+  désactivée + `/include` sur un compte → événement généré pour ce
+  compte, absent pour les autres ; sous-catégorie machine activée +
+  `/exclude` sur un compte → événement absent pour ce compte, présent
+  pour les autres.
+- **P12/`/resourceSACL`** : test de portée — poser `/resourceSACL /set
+  /type:File /success` doit couvrir un fichier créé **après coup**
+  également (pas seulement ceux déjà existants au moment du `/set`),
+  fidèle à la sémantique « SACL par défaut appliquée au type », pas
+  « SACL posée sur les objets existants ».
+- **P13 (`/sd`)** : test de gate — un utilisateur non listé dans le SDDL
+  posé ne peut ni lire ni modifier la politique même s'il est par
+  ailleurs administrateur local, tant que le SDDL ne l'inclut pas
+  explicitement (ou implicitement via le groupe Administrateurs) —
+  vérifie que P13 prend effectivement le pas sur le simple `isAdmin` de
+  P3 une fois posé.
 
 ---
 
@@ -403,13 +640,39 @@ and Failure — encodage réel `auditpol`.)
   complexe que le reste du plan ; à traiter en dernier et à cadrer
   précisément avant de commencer (peut nécessiter son propre sous-PRD si
   le besoin de fidélité s'avère élevé).
-- **`/resourceSACL` et Basic Audit Policy** : exclus explicitement (§
-  2.2) — à rappeler si une future demande cite spécifiquement l'un de ces
-  deux mécanismes, pour éviter une extension de périmètre non planifiée.
+- **Basic Audit Policy et SACL par objet individuel** : exclus
+  explicitement (§ 2.2) — à rappeler si une future demande cite
+  spécifiquement l'un de ces deux mécanismes, pour éviter une extension
+  de périmètre non planifiée.
 - **Format `/backup` CSV** : les GUID réels des sous-catégories Microsoft
   doivent être reproduits fidèlement (§ 4.3) pour qu'un CSV exporté par
   ce simulateur reste comparable à un vrai `auditpol /backup`, un
   critère de fidélité facile à négliger en cours d'implémentation.
+- **`CrashOnAuditFail` — ce qu'« halt » signifie dans un simulateur
+  navigateur** (P10) : un vrai Windows s'arrête complètement (écran
+  bleu, plus aucune interaction possible avant redémarrage en admin). Ce
+  dépôt n'a ni redémarrage ni écran bleu à simuler ; le choix retenu
+  (§ 2.1 P10 — rejeter les commandes non-administratives jusqu'à
+  remédiation) est une adaptation délibérée, pas une fidélité totale, et
+  doit être présenté comme tel dans toute documentation utilisateur
+  future pour éviter une attente de comportement plus dramatique.
+- **Changement de signature `isEnabled()`** (P4 + P11, § 5) : les deux
+  seuls appelants existants (`onServiceAccountChanged`,
+  `onAclChanged`, § 1.1) doivent rester fonctionnels sans passer le
+  nouveau paramètre `account?` — à traiter en paramètre optionnel dès le
+  premier changement, pas en deux passes séparées qui casseraient la
+  compatibilité une première fois puis la répareraient.
+- **Portée de `/resourceSACL`** (P12) : le risque principal est
+  d'implémenter par erreur une portée « objets existants au moment du
+  `/set` » au lieu de la portée réelle « type de ressource, y compris les
+  objets créés après coup » — la différence est significative pour la
+  valeur d'investigation de la fonctionnalité et facile à rater sans le
+  test dédié de § 6.
+- **Fidélité du SDDL (P13)** : implémenter un évaluateur SDDL minimal
+  (§ 4.7) plutôt qu'un parseur complet est un choix de portée assumé ;
+  si une extension future exige des ACE plus complexes (masques
+  d'héritage, ACE conditionnelles), ce sera un chantier séparé plutôt
+  qu'une extension ad hoc de ce mini-évaluateur.
 
 ---
 
@@ -436,3 +699,19 @@ and Failure — encodage réel `auditpol`.)
 - La suite complète `src/__tests__/unit/network-v2/` passe sans
   régression après chaque phase P1-P6 (vérifié phase par phase, pas
   seulement en fin de plan).
+- `auditpol /get /option:CrashOnAuditFail` puis `/set
+  /option:CrashOnAuditFail /value:enable` persistent et se relisent
+  correctement ; remplir le journal `Security` (rétention
+  `DoNotOverwrite`) déclenche ensuite le blocage documenté en § 2.1 P10,
+  levé par une remédiation administrative.
+- `auditpol /set /user:bob /category:"Logon" /exclude
+  /success:enable /failure:enable` supprime les 4624/4625 du compte
+  `bob` spécifiquement, sans affecter les connexions des autres comptes.
+- `auditpol /resourceSACL /set /type:File /success` fait apparaître un
+  4663 pour un fichier créé **après** la commande, sans qu'aucune SACL
+  n'ait été posée sur ce fichier précis.
+- `auditpol /get /sd` puis `/set /sd:<SDDL>` avec un SDDL excluant
+  l'administrateur courant fait échouer son prochain `auditpol /set`
+  avec un message d'accès refusé, alors qu'il passait avant ce réglage.
+- `auditpol /get /r` produit une sortie identique (hors métadonnées de
+  fichier) à `auditpol /backup /file:X` suivi d'une lecture de `X`.
