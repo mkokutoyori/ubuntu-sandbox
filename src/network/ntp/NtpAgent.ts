@@ -19,6 +19,8 @@ export interface NtpHost {
   getPort(name: string): import('../hardware/Port').Port | undefined;
   getPorts(): import('../hardware/Port').Port[];
   sendFrame(portName: string, frame: EthernetFrame): void;
+  /** ARP-aware send (queues on a cold cache instead of broadcasting) — falls back to broadcast when absent (mirrors `TcpHost`). */
+  sendIpv4FrameArpAware?(outPortName: string, ipPkt: IPv4Packet, nextHopIP: IPAddress): void;
 }
 
 export class NtpAgent {
@@ -418,14 +420,20 @@ export class NtpAgent {
       sourceIP: srcIp, destinationIP: dstIp, payload: udp,
     };
     ipPkt.headerChecksum = computeIPv4Checksum(ipPkt);
-    const frame: EthernetFrame = {
-      srcMAC: port.getMAC(), dstMAC: MACAddress.broadcast(),
-      etherType: ETHERTYPE_IPV4, payload: ipPkt,
-    };
     const key = `${portName}|${dstIp.toString()}`;
     if (this.emitting.has(key)) return;
     this.emitting.add(key);
-    try { this.host.sendFrame(portName, frame); }
+    try {
+      if (this.host.sendIpv4FrameArpAware) {
+        this.host.sendIpv4FrameArpAware(portName, ipPkt, dstIp);
+      } else {
+        const frame: EthernetFrame = {
+          srcMAC: port.getMAC(), dstMAC: MACAddress.broadcast(),
+          etherType: ETHERTYPE_IPV4, payload: ipPkt,
+        };
+        this.host.sendFrame(portName, frame);
+      }
+    }
     finally { this.emitting.delete(key); }
   }
 

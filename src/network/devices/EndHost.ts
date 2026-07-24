@@ -614,6 +614,10 @@ export abstract class EndHost extends Equipment {
           : (port.getGlobalIPv6() || port.getLinkLocalIPv6());
         return src ? src.toString() : null;
       },
+      sendIpv4FrameArpAware: (outPortName: string, ipPkt: IPv4Packet, nextHopIP: IPAddress) =>
+        this.sendIpv4FrameArpAware(outPortName, ipPkt, nextHopIP),
+      sendIpv6FrameNdpAware: (outPortName: string, ipPkt: IPv6Packet, nextHopIP: IPv6Address) =>
+        this.sendIpv6FrameNdpAware(outPortName, ipPkt, nextHopIP),
     };
     this.tcpv2 = new TcpStack(hostBase, () => this.getBus(), () => this.getScheduler());
     this.tcpv2.start();
@@ -1829,6 +1833,51 @@ export abstract class EndHost extends Equipment {
   }
 
   /**
+   * ARP-aware IPv4 frame send — the same "cached? send now : queue +
+   * resolve" model `sendUdpDatagram`/router forwarding already use,
+   * instead of blasting straight to the broadcast MAC on a cold ARP
+   * cache (audit 03, MAJEUR: transversal ARP shortcut). `nextHopIP` is
+   * the on-link address whose MAC actually needs resolving — the
+   * destination itself for a directly-connected peer, or the gateway
+   * for anything a caller has already resolved a route for.
+   */
+  public sendIpv4FrameArpAware(outPortName: string, ipPkt: IPv4Packet, nextHopIP: IPAddress): void {
+    const port = this.getPort(outPortName);
+    if (!port) return;
+    const cached = this.arpTable.get(nextHopIP.toString());
+    if (cached) {
+      this.sendFrame(outPortName, {
+        srcMAC: port.getMAC(), dstMAC: cached.mac,
+        etherType: ETHERTYPE_IPV4, payload: ipPkt,
+      });
+    } else {
+      this.fwdQueueAndResolve(ipPkt, outPortName, nextHopIP, port);
+    }
+  }
+
+  /**
+   * NDP-aware IPv6 frame send — same rationale as {@link sendIpv4FrameArpAware}.
+   */
+  public sendIpv6FrameNdpAware(outPortName: string, ipPkt: IPv6Packet, nextHopIP: IPv6Address): void {
+    const port = this.getPort(outPortName);
+    if (!port) return;
+    const cached = this.neighborCache.get(nextHopIP.toString());
+    if (cached) {
+      this.sendFrame(outPortName, {
+        srcMAC: port.getMAC(), dstMAC: cached.mac,
+        etherType: ETHERTYPE_IPV6, payload: ipPkt,
+      });
+      return;
+    }
+    void this.resolveNDP(outPortName, nextHopIP).then((mac) => {
+      this.sendFrame(outPortName, {
+        srcMAC: port.getMAC(), dstMAC: mac,
+        etherType: ETHERTYPE_IPV6, payload: ipPkt,
+      });
+    }).catch(() => {});
+  }
+
+  /**
    * Return the apparent source IP the peer at `toIP` would see after MASQUERADE.
    * Used by IPSecEngine.getApparentSourceIP().
    */
@@ -2917,6 +2966,37 @@ export abstract class EndHost extends Equipment {
     });
   }
 
+  /**
+   * IPv6/NDP equivalent of `resolveArpSync()` — needed for the same reason:
+   * `tcpConnectOutcome6()`/`tcpProbeSyncIPv6()` check `socket.state`
+   * synchronously right after `connect()` returns, with no `await` anywhere
+   * in between. `resolveNDP()` is `async` (its `.then()` continuation can
+   * only run on a later microtask), so on a cold neighbor cache the SYN
+   * itself wouldn't even be on the wire yet at the point those callers
+   * inspect the socket — this sends the NS (and, since frame delivery in
+   * this simulator is synchronous end-to-end, absorbs the NA reply) before
+   * that check ever happens, exactly like the ARP warm-up already does.
+   */
+  private resolveNdpSync(targetIP: IPv6Address): void {
+    const route = this.resolveIPv6Route(targetIP);
+    if (!route) return;
+    const nextHopIpStr = route.nextHopIP.toString();
+    if (this.neighborCache.get(nextHopIpStr)) return;
+    const port = route.port;
+    const srcIP = route.nextHopIP.isLinkLocal()
+      ? port.getLinkLocalIPv6()
+      : (port.getGlobalIPv6() || port.getLinkLocalIPv6());
+    if (!srcIP) return;
+    const ns = createNeighborSolicitation(route.nextHopIP, port.getMAC());
+    const nsPkt = createIPv6Packet(
+      srcIP, route.nextHopIP.toSolicitedNodeMulticast(), IP_PROTO_ICMPV6, 255, ns, 24,
+    );
+    this.sendFrame(port.getName(), {
+      srcMAC: port.getMAC(), dstMAC: route.nextHopIP.toSolicitedNodeMulticast().toMulticastMAC(),
+      etherType: ETHERTYPE_IPV6, payload: nsPkt,
+    });
+  }
+
   tcpProbeSync(targetIP: IPAddress, port: number): boolean {
     const socket = this.tcpv2.connect(targetIP.toString(), port);
     if (!socket) return false;
@@ -2937,11 +3017,13 @@ export abstract class EndHost extends Equipment {
   }
 
   tcpConnectOutcome6(targetIP: IPv6Address, port: number): 'open' | 'refused' | 'timeout' {
+    this.resolveNdpSync(targetIP);
     return this.tcpv2.connectOutcome(targetIP.toString(), port);
   }
 
   tcpProbeSyncIPv6(targetAddr: string, port: number): boolean {
     const bareTarget = targetAddr.split('%')[0];
+    this.resolveNdpSync(new IPv6Address(bareTarget));
     return this.tcpv2.connectOutcome(bareTarget, port) === 'open';
   }
 

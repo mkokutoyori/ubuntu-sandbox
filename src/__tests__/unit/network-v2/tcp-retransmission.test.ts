@@ -48,6 +48,15 @@ function buildPair() {
   cable.connect(cli.getPort('eth0')!, srv.getPort('eth0')!);
   cli.getPort('eth0')!.configureIP(new IPAddress('10.0.0.1'), new SubnetMask('255.255.255.0'));
   srv.getPort('eth0')!.configureIP(new IPAddress('10.0.0.2'), new SubnetMask('255.255.255.0'));
+  // Pre-warm ARP both ways (a real link would already have these from a
+  // prior exchange) so the lossy-cable scenarios below exercise TCP-level
+  // segment loss/retransmission specifically, not the separate, single-shot,
+  // non-retrying ARP-request-queue that `sendIpv4FrameArpAware` now goes
+  // through on a cold cache (PRD audit #26) — that queue's own fixed 2s
+  // timeout has nothing to do with TCP's RTO and would otherwise eat the
+  // "lost exactly once" RNG slot these tests are built around.
+  cli.addStaticARP(new IPAddress('10.0.0.2'), srv.getPort('eth0')!.getMAC(), 'eth0');
+  srv.addStaticARP(new IPAddress('10.0.0.1'), cli.getPort('eth0')!.getMAC(), 'eth0');
   const scheduler = new VirtualTimeScheduler();
   cli.setScheduler(scheduler);
   srv.setScheduler(scheduler);

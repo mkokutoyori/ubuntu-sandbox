@@ -42,6 +42,13 @@ export interface TcpHost {
   resolveMac6?(nextHopIp: string): MACAddress | null;
   resolveRoute6?(targetIp: string): { iface: string; nextHopIp: string } | null;
   localAddress6?(iface: string, remoteIp: string): string | null;
+  /**
+   * Preferred send path (PRD audit #26): queues on a cold ARP cache and
+   * resolves the real next-hop MAC instead of falling back to broadcast.
+   * When absent, shipSegment() keeps the old resolveMac-or-broadcast path.
+   */
+  sendIpv4FrameArpAware?(outPortName: string, ipPkt: IPv4Packet, nextHopIP: IPAddress): void;
+  sendIpv6FrameNdpAware?(outPortName: string, ipPkt: IPv6Packet, nextHopIP: IPv6Address): void;
 }
 
 export interface TcpAcceptHandler {
@@ -1338,22 +1345,13 @@ export class TcpStack {
   }
 
   private shipSegment(
-    egress: { name: string; port: import('../hardware/Port').Port },
+    egress: { name: string; port: import('../hardware/Port').Port; nextHopIp?: string },
     srcIp: string, dstIp: string, seg: TcpSegment,
   ): void {
     const family = ipFamilyOf(dstIp);
     const l3Packet = family === 'ipv6'
       ? this.buildIpv6Segment(srcIp, dstIp, seg)
       : this.buildIpv4Segment(srcIp, dstIp, seg);
-    const resolvedMac = family === 'ipv6'
-      ? (this.host.resolveMac6?.(dstIp) ?? null)
-      : (this.host.resolveMac?.(dstIp) ?? null);
-    const eth: EthernetFrame = {
-      srcMAC: egress.port.getMAC(),
-      dstMAC: resolvedMac ?? MACAddress.broadcast(),
-      etherType: family === 'ipv6' ? ETHERTYPE_IPV6 : ETHERTYPE_IPV4,
-      payload: l3Packet,
-    };
     this.getBus().publish({
       topic: 'tcp.segment.sent',
       payload: {
@@ -1365,6 +1363,25 @@ export class TcpStack {
         payloadSize: seg.payload === undefined ? 0 : (typeof seg.payload === 'string' ? seg.payload.length : 1),
       },
     });
+    const nextHopIp = egress.nextHopIp ?? dstIp;
+    if (family === 'ipv6') {
+      if (this.host.sendIpv6FrameNdpAware) {
+        this.host.sendIpv6FrameNdpAware(egress.name, l3Packet as IPv6Packet, new IPv6Address(nextHopIp));
+        return;
+      }
+    } else if (this.host.sendIpv4FrameArpAware) {
+      this.host.sendIpv4FrameArpAware(egress.name, l3Packet as IPv4Packet, new IPAddress(nextHopIp));
+      return;
+    }
+    const resolvedMac = family === 'ipv6'
+      ? (this.host.resolveMac6?.(dstIp) ?? null)
+      : (this.host.resolveMac?.(dstIp) ?? null);
+    const eth: EthernetFrame = {
+      srcMAC: egress.port.getMAC(),
+      dstMAC: resolvedMac ?? MACAddress.broadcast(),
+      etherType: family === 'ipv6' ? ETHERTYPE_IPV6 : ETHERTYPE_IPV4,
+      payload: l3Packet,
+    };
     this.host.sendFrame(egress.name, eth);
   }
 
@@ -1450,7 +1467,7 @@ export class TcpStack {
 
   private resolveEgress(
     targetIp: string,
-  ): { name: string; port: import('../hardware/Port').Port; srcIp: string } | null {
+  ): { name: string; port: import('../hardware/Port').Port; srcIp: string; nextHopIp: string } | null {
     if (ipFamilyOf(targetIp) === 'ipv6') return this.resolveEgress6(targetIp);
 
     if (this.host.resolveRoute) {
@@ -1459,7 +1476,7 @@ export class TcpStack {
         const port = this.host.getPort(route.iface);
         const src = port?.getIPAddress();
         if (port && src && port.getIsUp()) {
-          return { name: port.getName(), port, srcIp: src.toString() };
+          return { name: port.getName(), port, srcIp: src.toString(), nextHopIp: route.nextHopIp };
         }
       }
     }
@@ -1474,12 +1491,12 @@ export class TcpStack {
       for (let i = 0; i < 4; i++) {
         if ((local[i] & maskBits[i]) !== (target[i] & maskBits[i])) { same = false; break; }
       }
-      if (same) return { name: port.getName(), port, srcIp: ip.toString() };
+      if (same) return { name: port.getName(), port, srcIp: ip.toString(), nextHopIp: targetIp };
     }
     for (const port of this.host.getPorts()) {
       const ip = port.getIPAddress();
       if (ip && port.getIsUp() && port.isConnected()) {
-        return { name: port.getName(), port, srcIp: ip.toString() };
+        return { name: port.getName(), port, srcIp: ip.toString(), nextHopIp: targetIp };
       }
     }
     return null;
@@ -1487,7 +1504,7 @@ export class TcpStack {
 
   private resolveEgress6(
     targetIp: string,
-  ): { name: string; port: import('../hardware/Port').Port; srcIp: string } | null {
+  ): { name: string; port: import('../hardware/Port').Port; srcIp: string; nextHopIp: string } | null {
     if (!this.host.resolveRoute6 || !this.host.localAddress6) return null;
     const route = this.host.resolveRoute6(targetIp);
     if (!route) return null;
@@ -1495,6 +1512,6 @@ export class TcpStack {
     if (!port || !port.getIsUp()) return null;
     const srcIp = this.host.localAddress6(route.iface, targetIp);
     if (!srcIp) return null;
-    return { name: port.getName(), port, srcIp };
+    return { name: port.getName(), port, srcIp, nextHopIp: route.nextHopIp };
   }
 }

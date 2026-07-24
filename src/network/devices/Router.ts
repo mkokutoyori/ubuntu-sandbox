@@ -386,6 +386,8 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       getPorts: () => this.getPorts(),
       sendFrame: (p: string, f: EthernetFrame) => { this.sendFrame(p, f); },
       resolveMac: (nextHopIp: string) => this.arpTable.get(nextHopIp)?.mac ?? null,
+      sendIpv4FrameArpAware: (p: string, ipPkt: IPv4Packet, nextHopIP: IPAddress) =>
+        this.sendIpv4FrameArpAware(p, ipPkt, nextHopIP),
     };
     this.tcpv2 = new TcpStack(tcpHost, () => this.getBus(),
       () => this.getRouterScheduler());
@@ -1865,6 +1867,25 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
           etherType: ETHERTYPE_IPV4, payload: q.frame,
         });
       }
+    }
+  }
+
+  /**
+   * ARP-aware send for control-plane agents (NTP/SNMP/Syslog/NetFlow/RADIUS,
+   * this router's own TCP stack) — queues on a cold ARP cache and resolves
+   * the real next-hop MAC instead of broadcasting (PRD audit #26).
+   */
+  public sendIpv4FrameArpAware(outPortName: string, ipPkt: IPv4Packet, nextHopIP: IPAddress): void {
+    const port = this.ports.get(outPortName);
+    if (!port) return;
+    const cached = this.arpTable.get(nextHopIP.toString());
+    if (cached) {
+      this.sendFrame(outPortName, {
+        srcMAC: port.getMAC(), dstMAC: cached.mac,
+        etherType: ETHERTYPE_IPV4, payload: ipPkt,
+      });
+    } else {
+      this.queueAndResolve(ipPkt, outPortName, nextHopIP, port);
     }
   }
 

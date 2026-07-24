@@ -20,6 +20,8 @@ export interface NetFlowHost {
   getPort(name: string): import('../hardware/Port').Port | undefined;
   getPorts(): import('../hardware/Port').Port[];
   sendFrame(portName: string, frame: EthernetFrame): void;
+  /** ARP-aware send (queues on a cold cache instead of broadcasting) — falls back to broadcast when absent (mirrors `TcpHost`). */
+  sendIpv4FrameArpAware?(outPortName: string, ipPkt: IPv4Packet, nextHopIP: IPAddress): void;
 }
 
 interface ActiveFlow extends NetFlowV5Record {
@@ -233,12 +235,16 @@ export class NetFlowAgent {
       payload: udp,
     };
     ipPkt.headerChecksum = computeIPv4Checksum(ipPkt);
-    const eth: EthernetFrame = {
-      srcMAC: egress.port.getMAC(),
-      dstMAC: MACAddress.broadcast(),
-      etherType: ETHERTYPE_IPV4, payload: ipPkt,
-    };
-    this.host.sendFrame(egress.name, eth);
+    if (this.host.sendIpv4FrameArpAware) {
+      this.host.sendIpv4FrameArpAware(egress.name, ipPkt, new IPAddress(collector.ip));
+    } else {
+      const eth: EthernetFrame = {
+        srcMAC: egress.port.getMAC(),
+        dstMAC: MACAddress.broadcast(),
+        etherType: ETHERTYPE_IPV4, payload: ipPkt,
+      };
+      this.host.sendFrame(egress.name, eth);
+    }
     collector.exportedPackets++;
     collector.exportedFlows += chunk.length;
     collector.lastExportMs = Date.now();

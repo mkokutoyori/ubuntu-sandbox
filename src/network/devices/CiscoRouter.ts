@@ -55,6 +55,7 @@ import { VxlanAgent } from '../vxlan/VxlanAgent';
 import { UDP_PORT_VXLAN } from '../vxlan/types';
 import { TcpStack } from '../tcp/TcpStack';
 import type { EthernetFrame, IPv4Packet, UDPPacket } from '../core/types';
+import type { IPAddress } from '../core/types';
 import { IP_PROTO_UDP, IP_PROTO_TCP } from '../core/types';
 import type { NeighborDTO } from './inspection/DeviceStateView';
 import type { IEventBus } from '@/events/EventBus';
@@ -146,6 +147,8 @@ export class CiscoRouter extends Router {
       sendFrame: (p: string, f: EthernetFrame) => { this.sendFrame(p, f); },
       resolveMac: (ip: string) => this._getArpTableInternal().get(ip)?.mac ?? null,
       resolveRoute: (ip: string) => this.resolveRouteForHost(ip),
+      sendIpv4FrameArpAware: (p: string, ipPkt: IPv4Packet, nextHopIP: IPAddress) =>
+        this.sendIpv4FrameArpAware(p, ipPkt, nextHopIP),
     };
     this.cdpAgent = new CdpAgent(hostBase, () => this.getBus());
     this.lldpAgent = new LldpAgent(hostBase, () => this.getBus());

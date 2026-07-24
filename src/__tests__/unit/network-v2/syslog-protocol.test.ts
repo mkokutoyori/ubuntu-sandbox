@@ -79,8 +79,12 @@ describe('Syslog — wire format', () => {
   it('forwarded logs ride UDP/514 with a syslog payload', async () => {
     const bus = new EventBus();
     const r = new CiscoRouter('R1');
+    // A real peer at .99 so the now ARP-aware SyslogAgent (PRD audit #26)
+    // can actually resolve a next-hop MAC instead of a fictitious address
+    // that would just queue on a cold ARP cache and never reach the wire.
+    const collector = new CiscoRouter('SYSLOG-SRV');
     const sw = new CiscoSwitch('switch-cisco', 'SW', 4);
-    r.setEventBus(bus); sw.setEventBus(bus);
+    r.setEventBus(bus); collector.setEventBus(bus); sw.setEventBus(bus);
     const cable = new Cable('c');
     cable.setEventBus(bus);
 
@@ -99,7 +103,9 @@ describe('Syslog — wire format', () => {
       }
     });
     cable.connect(r.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/1')!);
+    new Cable('c2').connect(collector.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/2')!);
     r.getPort('GigabitEthernet0/0')!.configureIP(new IPAddress('10.0.0.1'), new SubnetMask('255.255.255.0'));
+    collector.getPort('GigabitEthernet0/0')!.configureIP(new IPAddress('10.0.0.99'), new SubnetMask('255.255.255.0'));
     r.getSyslogAgent().addServer('10.0.0.99');
     Logger.info(r.id, 'sys:restart', 'Configuration changed by console');
 

@@ -27,6 +27,8 @@ export interface SnmpHost {
   sendFrame(portName: string, frame: EthernetFrame): void;
   getSysDescr(): string;
   getSysObjectId(): string;
+  /** ARP-aware send (queues on a cold cache instead of broadcasting) — falls back to broadcast when absent (mirrors `TcpHost`). */
+  sendIpv4FrameArpAware?(outPortName: string, ipPkt: IPv4Packet, nextHopIP: IPAddress): void;
 }
 
 interface PendingRequest {
@@ -339,12 +341,16 @@ export class SnmpAgent {
       payload: udp,
     };
     ipPkt.headerChecksum = computeIPv4Checksum(ipPkt);
-    const eth: EthernetFrame = {
-      srcMAC: port.getMAC(),
-      dstMAC: MACAddress.broadcast(),
-      etherType: ETHERTYPE_IPV4, payload: ipPkt,
-    };
-    this.host.sendFrame(portName, eth);
+    if (this.host.sendIpv4FrameArpAware) {
+      this.host.sendIpv4FrameArpAware(portName, ipPkt, dstIp);
+    } else {
+      const eth: EthernetFrame = {
+        srcMAC: port.getMAC(),
+        dstMAC: MACAddress.broadcast(),
+        etherType: ETHERTYPE_IPV4, payload: ipPkt,
+      };
+      this.host.sendFrame(portName, eth);
+    }
     this.getBus().publish({
       topic: 'snmp.packet.sent',
       payload: {

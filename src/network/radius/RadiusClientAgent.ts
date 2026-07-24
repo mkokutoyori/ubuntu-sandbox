@@ -34,6 +34,8 @@ export interface RadiusClientHost {
   resolveMac?(ip: string): MACAddress | null;
   /** Real RIB lookup (LPM) — falls back to same-subnet/first-up-port heuristics when unset. */
   resolveRoute?(targetIp: string): { iface: string; nextHopIp: string } | null;
+  /** ARP-aware send (queues on a cold cache instead of broadcasting) — falls back to broadcast when absent (mirrors `TcpHost`). */
+  sendIpv4FrameArpAware?(outPortName: string, ipPkt: IPv4Packet, nextHopIP: IPAddress): void;
 }
 
 type RadiusAuthMethod = 'pap' | 'chap';
@@ -341,11 +343,6 @@ export class RadiusClientAgent {
       payload: udp,
     };
     ipPkt.headerChecksum = computeIPv4Checksum(ipPkt);
-    const eth: EthernetFrame = {
-      srcMAC: egress.port.getMAC(),
-      dstMAC: this.host.resolveMac?.(server.ip) ?? MACAddress.broadcast(),
-      etherType: ETHERTYPE_IPV4, payload: ipPkt,
-    };
     this.getBus().publish({
       topic: 'radius.packet.sent',
       payload: {
@@ -354,7 +351,16 @@ export class RadiusClientAgent {
         identifier: pending.identifier, username: pending.username,
       },
     });
-    this.host.sendFrame(egress.name, eth);
+    if (this.host.sendIpv4FrameArpAware) {
+      this.host.sendIpv4FrameArpAware(egress.name, ipPkt, new IPAddress(egress.nextHopIp));
+    } else {
+      const eth: EthernetFrame = {
+        srcMAC: egress.port.getMAC(),
+        dstMAC: this.host.resolveMac?.(server.ip) ?? MACAddress.broadcast(),
+        etherType: ETHERTYPE_IPV4, payload: ipPkt,
+      };
+      this.host.sendFrame(egress.name, eth);
+    }
   }
 
   private armEapTimeout(server: RadiusServerConfig, pending: PendingEapRound): void {
@@ -451,11 +457,6 @@ export class RadiusClientAgent {
       payload: udp,
     };
     ipPkt.headerChecksum = computeIPv4Checksum(ipPkt);
-    const eth: EthernetFrame = {
-      srcMAC: egress.port.getMAC(),
-      dstMAC: this.host.resolveMac?.(server.ip) ?? MACAddress.broadcast(),
-      etherType: ETHERTYPE_IPV4, payload: ipPkt,
-    };
     this.getBus().publish({
       topic: 'radius.packet.sent',
       payload: {
@@ -464,7 +465,16 @@ export class RadiusClientAgent {
         identifier: pending.identifier, username: pending.username,
       },
     });
-    this.host.sendFrame(egress.name, eth);
+    if (this.host.sendIpv4FrameArpAware) {
+      this.host.sendIpv4FrameArpAware(egress.name, ipPkt, new IPAddress(egress.nextHopIp));
+    } else {
+      const eth: EthernetFrame = {
+        srcMAC: egress.port.getMAC(),
+        dstMAC: this.host.resolveMac?.(server.ip) ?? MACAddress.broadcast(),
+        etherType: ETHERTYPE_IPV4, payload: ipPkt,
+      };
+      this.host.sendFrame(egress.name, eth);
+    }
   }
 
   private armMsChapTimeout(server: RadiusServerConfig, pending: PendingMsChapRound): void {
@@ -781,11 +791,6 @@ export class RadiusClientAgent {
       payload: udp,
     };
     ipPkt.headerChecksum = computeIPv4Checksum(ipPkt);
-    const eth: EthernetFrame = {
-      srcMAC: egress.port.getMAC(),
-      dstMAC: this.host.resolveMac?.(server.ip) ?? MACAddress.broadcast(),
-      etherType: ETHERTYPE_IPV4, payload: ipPkt,
-    };
     // Published before the actual send: delivery is synchronous, so a
     // multi-round exchange (e.g. an Access-Challenge round-trip) can run to
     // completion *inside* this call — publishing after would report this
@@ -798,19 +803,28 @@ export class RadiusClientAgent {
         identifier: pending.identifier, username: pending.username,
       },
     });
-    this.host.sendFrame(egress.name, eth);
+    if (this.host.sendIpv4FrameArpAware) {
+      this.host.sendIpv4FrameArpAware(egress.name, ipPkt, new IPAddress(egress.nextHopIp));
+    } else {
+      const eth: EthernetFrame = {
+        srcMAC: egress.port.getMAC(),
+        dstMAC: this.host.resolveMac?.(server.ip) ?? MACAddress.broadcast(),
+        etherType: ETHERTYPE_IPV4, payload: ipPkt,
+      };
+      this.host.sendFrame(egress.name, eth);
+    }
   }
 
-  private resolveEgress(targetIp: string): { name: string; port: import('../hardware/Port').Port } | null {
+  private resolveEgress(targetIp: string): { name: string; port: import('../hardware/Port').Port; nextHopIp: string } | null {
     if (this.config.sourceInterface) {
       const p = this.host.getPort(this.config.sourceInterface);
-      if (p) return { name: this.config.sourceInterface, port: p };
+      if (p) return { name: this.config.sourceInterface, port: p, nextHopIp: targetIp };
     }
     if (this.host.resolveRoute) {
       const route = this.host.resolveRoute(targetIp);
       if (route) {
         const port = this.host.getPort(route.iface);
-        if (port && port.getIsUp()) return { name: route.iface, port };
+        if (port && port.getIsUp()) return { name: route.iface, port, nextHopIp: route.nextHopIp };
       }
     }
     const target = targetIp.split('.').map(Number);
@@ -824,11 +838,11 @@ export class RadiusClientAgent {
       for (let i = 0; i < 4; i++) {
         if ((local[i] & maskBits[i]) !== (target[i] & maskBits[i])) { same = false; break; }
       }
-      if (same) return { name: port.getName(), port };
+      if (same) return { name: port.getName(), port, nextHopIp: targetIp };
     }
     for (const port of this.host.getPorts()) {
       if (port.getIPAddress() && port.getIsUp() && port.isConnected()) {
-        return { name: port.getName(), port };
+        return { name: port.getName(), port, nextHopIp: targetIp };
       }
     }
     return null;
