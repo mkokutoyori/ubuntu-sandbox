@@ -11,6 +11,7 @@ export interface SmtpServerConfig {
   readonly maxMessageSize?: number;
   readonly pipeliningEnabled?: boolean;
   readonly eightBitMimeEnabled?: boolean;
+  readonly tlsSupported?: boolean;
 }
 
 const CRLF = '\r\n';
@@ -27,6 +28,7 @@ export class SmtpServerSession {
   private usedEhlo = false;
   private tlsActive = false;
   private authActive = false;
+  private pendingTlsUpgrade = false;
   lastDelivered: { envelope: MailEnvelope; rawMessage: string; message: MimeMessage } | null = null;
 
   constructor(private readonly config: SmtpServerConfig, private readonly remoteIp: string = '0.0.0.0') {}
@@ -55,7 +57,8 @@ export class SmtpServerSession {
       }
       case 'VRFY': return [this.handleVrfy(cmd)];
       case 'EXPN': return [this.handleVrfy(cmd)];
-      case 'HELP': return [reply(214, 'Commands: HELO EHLO MAIL RCPT DATA RSET NOOP QUIT VRFY EXPN HELP')];
+      case 'STARTTLS': return [this.handleStartTls(cmd)];
+      case 'HELP': return [reply(214, 'Commands: HELO EHLO MAIL RCPT DATA RSET NOOP QUIT VRFY EXPN STARTTLS HELP')];
       default: return [replyEnhanced(500, ENHANCED.SYNTAX_ERROR_COMMAND, `Command not recognized: '${cmd.verb}'`)];
     }
   }
@@ -168,6 +171,32 @@ export class SmtpServerSession {
   private handleVrfy(_cmd: SmtpCommand): SmtpReply {
     if (!this.config.verifyEnabled) return replyEnhanced(502, ENHANCED.COMMAND_NOT_IMPLEMENTED, 'VRFY/EXPN disabled for security reasons.');
     return replyEnhanced(252, ENHANCED.DEST_VALID, 'Cannot VRFY user, but will accept message and attempt delivery.');
+  }
+
+  private handleStartTls(cmd: SmtpCommand): SmtpReply {
+    if (cmd.argument) return replyEnhanced(501, ENHANCED.SYNTAX_ERROR_ARGS, 'Syntax error (no parameters allowed).');
+    if (!this.config.tlsSupported) return replyEnhanced(454, ENHANCED.SERVICE_NOT_AVAILABLE, 'TLS not available.');
+    if (this.tlsActive) return replyEnhanced(503, ENHANCED.BAD_SEQUENCE, 'TLS already active.');
+    this.pendingTlsUpgrade = true;
+    return replyEnhanced(220, ENHANCED.SERVICE_READY, 'Ready to start TLS');
+  }
+
+  consumeTlsUpgradeSignal(): boolean {
+    const v = this.pendingTlsUpgrade;
+    this.pendingTlsUpgrade = false;
+    return v;
+  }
+
+  markTlsActive(): void {
+    this.tlsActive = true;
+    this.usedEhlo = false;
+    this.heloDomain = null;
+    this.state = 'connected';
+    this.resetTransaction();
+  }
+
+  isTlsActive(): boolean {
+    return this.tlsActive;
   }
 
   private resetTransaction(): void {
