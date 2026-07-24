@@ -502,6 +502,7 @@ export function computeIfaceFlags(info: IpInterfaceInfo): string[] {
   if (isLoopback) {
     flags.push('LOOPBACK');
   } else {
+    if (info.isUp && !info.isConnected) flags.push('NO-CARRIER');
     flags.push('BROADCAST');
   }
   if (info.isUp) flags.push('UP');

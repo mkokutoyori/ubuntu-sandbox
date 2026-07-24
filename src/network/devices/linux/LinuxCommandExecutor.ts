@@ -632,6 +632,11 @@ export class LinuxCommandExecutor {
   private registerSysfsFiles(): void {
     const tree = new SysfsTree(() => this.hardware, {
       liveMac: (iface) => this.ipNetworkCtx?.getInterfaceInfo(iface)?.mac ?? null,
+      liveLink: (iface) => {
+        const info = this.ipNetworkCtx?.getInterfaceInfo(iface);
+        if (!info) return null;
+        return { carrier: info.isConnected, operUp: info.isUp && info.isConnected };
+      },
     });
     for (const leaf of tree.leaves()) {
       const slash = leaf.path.lastIndexOf('/');

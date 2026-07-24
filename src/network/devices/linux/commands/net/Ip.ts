@@ -134,7 +134,7 @@ export function buildIpCtx(
         cidr: mask ? mask.toCIDR() : null,
         mtu: port.getMTU(),
         isUp: port.getIsUp(),
-        isConnected: port.isConnected(),
+        isConnected: port.hasCarrier(),
         isDHCP: net.isDHCPConfigured(name),
         counters: {
           framesIn: counters.framesIn,

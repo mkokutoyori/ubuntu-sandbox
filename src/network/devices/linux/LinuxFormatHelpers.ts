@@ -72,7 +72,7 @@ function formatInterface(port: Port): string {
     cidr: mask ? mask.toCIDR() : null,
     mtu: port.getMTU(),
     isUp: port.getIsUp(),
-    isConnected: port.isConnected(),
+    isConnected: port.hasCarrier(),
     isDHCP: false,
     counters: port.getCounters(),
     ipv6: port.getIPv6Addresses().map(entry => ({
