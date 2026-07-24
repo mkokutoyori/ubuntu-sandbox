@@ -341,6 +341,22 @@ export class TcpStack {
     return count;
   }
 
+  /**
+   * Tear down every socket whose peer `isReachable` now rejects — the
+   * simulator's equivalent of a link going down under established
+   * connections. Listeners are untouched: a server keeps its bound port
+   * across a cable failure (docs/PRD-Link-State.md §2.1 P5).
+   */
+  abortUnreachableSockets(isReachable: (remoteIp: string) => boolean): number {
+    let count = 0;
+    for (const sock of Array.from(this.sockets.values())) {
+      if (isReachable(sock.remoteIp)) continue;
+      this._teardown(sock, 'shutdown');
+      count++;
+    }
+    return count;
+  }
+
   setSocketOwner(socket: TcpSocket, pid: number): void {
     socket.ownerPid = pid;
   }

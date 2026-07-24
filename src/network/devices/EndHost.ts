@@ -2153,6 +2153,37 @@ export abstract class EndHost extends Equipment {
    */
   public getTcpStack(): TcpStack { return this.tcpv2; }
 
+  protected addPort(port: Port): void {
+    super.addPort(port);
+    port.onLinkChange((state) => {
+      if (state === 'down') this.abortSessionsBrokenByLinkLoss();
+    });
+  }
+
+  /** True when a peer address still has a usable egress interface. */
+  private canReachPeer(remoteIp: string): boolean {
+    if (remoteIp === '' || remoteIp.includes(':')) return true;
+    let addr: IPAddress;
+    try {
+      addr = new IPAddress(remoteIp);
+    } catch {
+      return true;
+    }
+    if (addr.isLoopback() || this.getPortOwningIP(addr)) return true;
+    const route = this.resolveRoute(addr);
+    return route !== null && route.port.isOperationallyUp();
+  }
+
+  /**
+   * A link went down: every established connection that can no longer
+   * reach its peer is torn down, the way a real stack drops sessions
+   * whose path disappeared. Listeners keep their bound ports
+   * (docs/PRD-Link-State.md §2.1 P5).
+   */
+  protected abortSessionsBrokenByLinkLoss(): number {
+    return this.tcpv2.abortUnreachableSockets((ip) => this.canReachPeer(ip));
+  }
+
   /**
    * PRD-TCP.md P2 — genuinely waits for the handshake to resolve instead
    * of judging it in the same synchronous tick. A SYN lost on a lossy
