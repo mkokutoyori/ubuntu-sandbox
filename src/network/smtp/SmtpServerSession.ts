@@ -2,10 +2,12 @@ import type { SmtpCommand, SmtpReply, SmtpSessionState, MailEnvelope, MimeMessag
 import { reply, replyEnhanced, ENHANCED } from './replies';
 import { parseMailFromArgument, parseRcptToArgument, buildEnvelope, unstuffDotLines, splitHeadersAndBody } from './envelope';
 import { determineProtocolLabel, prependReceivedHeader } from './trace';
+import { buildCapabilities, formatCapabilityLines } from './extensions';
 
 export interface SmtpServerConfig {
   readonly hostname: string;
   readonly verifyEnabled?: boolean;
+  readonly allowPlainTextAuth?: boolean;
 }
 
 const CRLF = '\r\n';
@@ -68,7 +70,16 @@ export class SmtpServerSession {
     this.usedEhlo = true;
     this.resetTransaction();
     this.state = 'greeted';
-    return replyEnhanced(250, ENHANCED.OK, `${this.config.hostname} Hello ${this.heloDomain}`);
+    const caps = this.currentCapabilities();
+    return reply(250, `${this.config.hostname} Hello ${this.heloDomain}`, ...formatCapabilityLines(caps));
+  }
+
+  private currentCapabilities() {
+    return buildCapabilities({
+      tlsActive: this.tlsActive,
+      authActive: this.authActive,
+      allowPlainAuth: this.config.allowPlainTextAuth ?? false,
+    });
   }
 
   private handleMail(cmd: SmtpCommand): SmtpReply {

@@ -22,3 +22,12 @@ export interface MimeMessage {
   readonly headers: ReadonlyMap<string, string>;
   readonly body: string;
 }
+
+export interface EsmtpCapabilities {
+  readonly size?: number;
+  readonly eightBitMime: boolean;
+  readonly pipelining: boolean;
+  readonly enhancedStatusCodes: boolean;
+  readonly startTls: boolean;
+  readonly authMechanisms: readonly ('PLAIN' | 'LOGIN' | 'CRAM-MD5')[];
+}
