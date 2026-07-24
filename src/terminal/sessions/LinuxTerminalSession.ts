@@ -1536,6 +1536,10 @@ export class LinuxTerminalSession extends TerminalSession {
 
     this.pushHistory(typed);
 
+    // A command typed on a remote whose link has since been pulled never
+    // reaches it — the session is already dead (docs/PRD-Link-State.md §3.3).
+    if (this.breakRemoteSessionIfLinkLost()) return;
+
     // Intercept `tail -f` / `tail -F` — open a streaming follow on the
     // VFS through the unified async runtime; appended bytes flow into the
     // terminal until Ctrl+C cancels the foreground job.
@@ -2797,6 +2801,17 @@ export class LinuxTerminalSession extends TerminalSession {
       builder.addIdentityFile(id);
     }
 
+    // No usable path to the host — a real client fails here, before any
+    // key exchange or password prompt (docs/PRD-Link-State.md §2.1 P6).
+    const reachable = this.remoteLivenessProbe(host);
+    if (reachable && !reachable()) {
+      this.addLine(`ssh: connect to host ${host} port ${meta.port}: No route to host`, 'error');
+      session.disconnect();
+      this.pendingSshIO = null;
+      this.notify();
+      return;
+    }
+
     let result: Awaited<ReturnType<typeof session.connect>> | null = null;
     let cancelled = false;
     try {
@@ -2929,6 +2944,7 @@ export class LinuxTerminalSession extends TerminalSession {
         this.activeSubShell = new SshInteractiveSubShell(
           session, channelResult.value, user, host, `/home/${user}`, onSessionEnd,
           linuxRemoteDevice.getSshHostname(), linuxRemoteDevice,
+          this.remoteLivenessProbe(host),
         );
         this._inputBuf = '';
         this.notify();
@@ -3664,6 +3680,23 @@ export class LinuxTerminalSession extends TerminalSession {
    * is dispatched against the remote `LinuxMachine.executeCommand`,
    * editors open on the remote, tab completion uses the remote VFS.
    */
+  /**
+   * A probe that re-tests the path to `host` from THIS device — the one
+   * that opened the session — so an interactive remote shell notices a
+   * pulled cable instead of going on driving the remote in memory
+   * (docs/PRD-Link-State.md §3.3).
+   */
+  private remoteLivenessProbe(host: string): (() => boolean) | undefined {
+    const probe = (this.device as unknown as {
+      tcpConnectOutcome?: (ip: IPAddress, port: number) => string;
+    }).tcpConnectOutcome;
+    if (typeof probe !== 'function') return undefined;
+    const device = this.device;
+    const ip = IPAddress.tryParse(host);
+    if (!ip) return undefined;
+    return () => probe.call(device, ip, 22) === 'open';
+  }
+
   pushRemoteDevice(
     remote: HostCapableDevice,
     user: string,

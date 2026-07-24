@@ -25,6 +25,7 @@
  */
 
 import { Equipment, type HostCapableDevice } from '@/network';
+import { IPAddress } from '@/network/core/types';
 import { SessionInputHost as SessionInputHostCtor } from './SessionInputHost';
 import { TerminalAsyncRuntime } from '@/terminal/async';
 import type { AsyncJobContext, AsyncJobHandle, AsyncJobSpec } from '@/terminal/async';
@@ -511,6 +512,42 @@ export abstract class TerminalSession {
     quiet = false,
   ): string[] {
     return composeSshLoginBanner(device, user, sourceIp, sourceHost, quiet);
+  }
+
+  /**
+   * True when the remote this session is attached to is still reachable
+   * over the wire. Probed from the parent — the machine that opened the
+   * session — through the very same TCP path the login used, so pulling
+   * a cable is noticed rather than assumed away. A session that is not a
+   * remote child, or whose label is not an address we can probe, is
+   * always reported alive (docs/PRD-Link-State.md §3.3).
+   */
+  protected isRemoteLinkAlive(): boolean {
+    const parent = this._parent;
+    const label = this._remoteLabel;
+    if (parent === null || label === null) return true;
+    const host = label.includes('@') ? label.slice(label.indexOf('@') + 1) : label;
+    const probe = (parent.device as unknown as {
+      tcpConnectOutcome?: (ip: unknown, port: number) => string;
+    }).tcpConnectOutcome;
+    if (typeof probe !== 'function') return true;
+    const ip = IPAddress.tryParse(host);
+    if (!ip) return true;
+    return probe.call(parent.device, ip, 22) === 'open';
+  }
+
+  /**
+   * OpenSSH's reaction when the transport dies under an open session.
+   * Returns true once the session has been torn down, so the caller
+   * abandons the command the user just typed.
+   */
+  protected breakRemoteSessionIfLinkLost(): boolean {
+    if (this._parent === null) return false;
+    if (this.isRemoteLinkAlive()) return false;
+    this.addLine('client_loop: send disconnect: Broken pipe');
+    this.detachFromHost();
+    this.dispose();
+    return true;
   }
 
   endRemoteSession(): boolean {

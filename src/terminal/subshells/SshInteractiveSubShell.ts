@@ -202,6 +202,10 @@ export class SshInteractiveSubShell implements ISubShell {
      *  this session needs to open the next hop from. Undefined disables
      *  nested-ssh support (falls through to the generic passthrough). */
     private readonly remoteDevice?: LinuxMachine,
+    /** Liveness of the transport, probed before each command on the same
+     *  wire the session was opened on. Omitted means "never check"
+     *  (docs/PRD-Link-State.md §3.3). */
+    private readonly probeAlive?: () => boolean,
   ) {
     this.cwd = initialCwd === '~' ? `/home/${remoteUser}` : initialCwd;
   }
@@ -235,6 +239,15 @@ export class SshInteractiveSubShell implements ISubShell {
     if (this.nestedHop) {
       const result = await this.nestedHop.processLine(line, onProgress);
       return this.afterNestedResult(result);
+    }
+
+    if (this.probeAlive && !this.probeAlive()) {
+      this.session.disconnect();
+      return {
+        output: ['client_loop: send disconnect: Broken pipe'],
+        exit: true,
+        prompt: '',
+      };
     }
 
     if (this.inFlight) {
