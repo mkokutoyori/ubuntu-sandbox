@@ -2960,6 +2960,24 @@ export class WindowsPC extends EndHost implements UserAccountHost {
 
   getJournalRule(): import('./windows/server/exchange/TransportRuleEngine').TransportRule | null { return null; }
 
+  newDatabaseAvailabilityGroup(_name: string): { ok: boolean; message: string } {
+    return { ok: false, message: 'New-DatabaseAvailabilityGroup : Exchange Server has not been installed on this computer.' };
+  }
+
+  addDatabaseAvailabilityGroupServer(_dagName: string, _server: string): { ok: boolean; message: string } {
+    return { ok: false, message: 'Add-DatabaseAvailabilityGroupServer : Exchange Server has not been installed on this computer.' };
+  }
+
+  addMailboxDatabaseCopy(_dagName: string, _database: string, _server: string): { ok: boolean; message: string } {
+    return { ok: false, message: 'Add-MailboxDatabaseCopy : Exchange Server has not been installed on this computer.' };
+  }
+
+  updateMailboxDatabaseCopy(_dagName: string, _database: string, _server: string): { ok: boolean; message: string } {
+    return { ok: false, message: 'Update-MailboxDatabaseCopy : Exchange Server has not been installed on this computer.' };
+  }
+
+  getMailboxDatabaseCopyStatus(_dagName: string, _database?: string): import('./windows/server/exchange/DatabaseAvailabilityGroup').MailboxDatabaseCopy[] { return []; }
+
   /**
    * AD CS (Certificate Services) role (PRD-Windows-Server-Advanced.md §5
    * P13) — null until `Install-WindowsFeature AD-Certificate` on a

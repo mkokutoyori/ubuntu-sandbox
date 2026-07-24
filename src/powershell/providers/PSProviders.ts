@@ -504,6 +504,21 @@ export interface IExchangeProvider {
 
   newJournalRule(journalEmailAddress: string): ExchangeOpResult;
   getJournalRule(): TransportRuleInfo | null;
+
+  newDatabaseAvailabilityGroup(name: string): ExchangeOpResult;
+  addDatabaseAvailabilityGroupServer(dagName: string, server: string): ExchangeOpResult;
+  addMailboxDatabaseCopy(dagName: string, database: string, server: string): ExchangeOpResult;
+  updateMailboxDatabaseCopy(dagName: string, database: string, server: string): ExchangeOpResult;
+  getMailboxDatabaseCopyStatus(dagName: string, database?: string): MailboxDatabaseCopyInfo[];
+}
+
+export type DatabaseCopyStatus = 'Mounted' | 'Healthy' | 'FailedAndSuspended' | 'Resynchronizing';
+export interface MailboxDatabaseCopyInfo {
+  readonly database: string;
+  readonly server: string;
+  readonly status: DatabaseCopyStatus;
+  readonly copyQueueLength: number;
+  readonly lastSyncedAt: number;
 }
 
 export interface QueueInfo {

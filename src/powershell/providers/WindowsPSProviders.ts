@@ -64,7 +64,7 @@ import type {
   IIisProvider, IisOpResult, WebsiteInfo, AppPoolInfo, NewAppPoolOptions, WebModuleInfo,
   IExchangeProvider, ExchangeOpResult, ExchangeServerInfo,
   MailboxOpResult, MailboxInfo, MailboxStatisticsInfo, MailFolderName,
-  DistributionGroupInfo, GalEntryInfo, ReceiveConnectorInfo, SendConnectorInfo, TransportRuleInfo, QueueInfo,
+  DistributionGroupInfo, GalEntryInfo, ReceiveConnectorInfo, SendConnectorInfo, TransportRuleInfo, QueueInfo, MailboxDatabaseCopyInfo,
   IAdcsProvider, AdcsOpResult, CaTemplateInfo, CertificateRequestResultInfo,
   IPkiProvider, IssuedCertInfo,
   IDfsProvider, DfsOpResult, DfsTargetInfo, DfsFolderInfo, DfsrSyncResultInfo,
@@ -2250,6 +2250,31 @@ class WindowsExchangeAdapter implements IExchangeProvider {
   getJournalRule(): TransportRuleInfo | null {
     this.requireOrg('Get-JournalRule');
     return this.pc.getJournalRule();
+  }
+
+  newDatabaseAvailabilityGroup(name: string): ExchangeOpResult {
+    this.requireOrg('New-DatabaseAvailabilityGroup');
+    return this.pc.newDatabaseAvailabilityGroup(name);
+  }
+
+  addDatabaseAvailabilityGroupServer(dagName: string, server: string): ExchangeOpResult {
+    this.requireOrg('Add-DatabaseAvailabilityGroupServer');
+    return this.pc.addDatabaseAvailabilityGroupServer(dagName, server);
+  }
+
+  addMailboxDatabaseCopy(dagName: string, database: string, server: string): ExchangeOpResult {
+    this.requireOrg('Add-MailboxDatabaseCopy');
+    return this.pc.addMailboxDatabaseCopy(dagName, database, server);
+  }
+
+  updateMailboxDatabaseCopy(dagName: string, database: string, server: string): ExchangeOpResult {
+    this.requireOrg('Update-MailboxDatabaseCopy');
+    return this.pc.updateMailboxDatabaseCopy(dagName, database, server);
+  }
+
+  getMailboxDatabaseCopyStatus(dagName: string, database?: string): MailboxDatabaseCopyInfo[] {
+    this.requireOrg('Get-MailboxDatabaseCopyStatus');
+    return this.pc.getMailboxDatabaseCopyStatus(dagName, database);
   }
 }
 

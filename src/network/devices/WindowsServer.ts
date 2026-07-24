@@ -41,6 +41,7 @@ import { parseBinding, ipAllowedByRanges, selectSendConnector, type ReceiveConne
 import { TransportRuleStore, evaluateTransportRules, type TransportRule, type EvaluatedMessage, type TransportRuleOutcome } from './windows/server/exchange/TransportRuleEngine';
 import { createDnsLookupAdapter } from './windows/server/exchange/DnsLookupAdapter';
 import { parseAutodiscoverRequestXml, renderAutodiscoverSuccessXml, renderAutodiscoverErrorXml, type AutodiscoverResponse } from './windows/server/exchange/Autodiscover';
+import { DatabaseAvailabilityGroup, type MailboxDatabaseCopy } from './windows/server/exchange/DatabaseAvailabilityGroup';
 import { SmtpServer, type SmtpAcceptedMessage } from '@/network/smtp/SmtpServer';
 import { DeliveryQueue } from '@/network/smtp/queue';
 import { domainOf } from '@/network/smtp/relay';
@@ -843,6 +844,62 @@ export class WindowsServer extends WindowsPC {
     for (const bcc of outcome.blindCopyTo) {
       this.deliverToRecipient(bcc, delivered.envelope.from, subject, outcome.finalBody, Date.now());
     }
+    this.recordDagChanges();
+  }
+
+  /**
+   * `New-DatabaseAvailabilityGroup`/`Add-DatabaseAvailabilityGroupServer`/
+   * `Add-MailboxDatabaseCopy`/`Update-MailboxDatabaseCopy`/`Get-
+   * MailboxDatabaseCopyStatus` (docs/PRD-Exchange.md §2.1 P11) —
+   * explicitly-triggered replication, the same design choice already made
+   * for AD (`PRD-Repadmin.md §0.2`, no continuous log shipping). Every
+   * accepted delivery advances every DAG's change generation
+   * (`recordDagChanges()` above); `Update-MailboxDatabaseCopy` is the only
+   * thing that catches a copy back up.
+   */
+  private getDagRegistry(): Map<string, DatabaseAvailabilityGroup> | null {
+    if (this.exchangeOrgName === null) return null;
+    return getExchangeOrganization(this.exchangeOrgName)?.databaseAvailabilityGroups ?? null;
+  }
+
+  private recordDagChanges(): void {
+    const registry = this.getDagRegistry();
+    if (!registry) return;
+    for (const dag of registry.values()) dag.recordChange();
+  }
+
+  newDatabaseAvailabilityGroup(name: string): AdDsOpResult {
+    const registry = this.getDagRegistry();
+    if (!registry) return { ok: false, message: 'New-DatabaseAvailabilityGroup : Exchange Server has not been installed on this computer.' };
+    if (registry.has(name.toLowerCase())) return { ok: false, message: `New-DatabaseAvailabilityGroup : A DAG named '${name}' already exists.` };
+    registry.set(name.toLowerCase(), new DatabaseAvailabilityGroup(name));
+    return { ok: true, message: '' };
+  }
+
+  getDatabaseAvailabilityGroup(name: string): DatabaseAvailabilityGroup | null {
+    return this.getDagRegistry()?.get(name.toLowerCase()) ?? null;
+  }
+
+  addDatabaseAvailabilityGroupServer(dagName: string, server: string): AdDsOpResult {
+    const dag = this.getDatabaseAvailabilityGroup(dagName);
+    if (!dag) return { ok: false, message: `Add-DatabaseAvailabilityGroupServer : The operation couldn't be performed because object '${dagName}' couldn't be found.` };
+    return dag.addServer(server);
+  }
+
+  addMailboxDatabaseCopy(dagName: string, database: string, server: string): AdDsOpResult {
+    const dag = this.getDatabaseAvailabilityGroup(dagName);
+    if (!dag) return { ok: false, message: `Add-MailboxDatabaseCopy : The operation couldn't be performed because object '${dagName}' couldn't be found.` };
+    return dag.addDatabaseCopy(database, server, Date.now());
+  }
+
+  updateMailboxDatabaseCopy(dagName: string, database: string, server: string): AdDsOpResult {
+    const dag = this.getDatabaseAvailabilityGroup(dagName);
+    if (!dag) return { ok: false, message: `Update-MailboxDatabaseCopy : The operation couldn't be performed because object '${dagName}' couldn't be found.` };
+    return dag.updateCopy(database, server, Date.now());
+  }
+
+  getMailboxDatabaseCopyStatus(dagName: string, database?: string): MailboxDatabaseCopy[] {
+    return this.getDatabaseAvailabilityGroup(dagName)?.listCopyStatuses(database) ?? [];
   }
 
   /**

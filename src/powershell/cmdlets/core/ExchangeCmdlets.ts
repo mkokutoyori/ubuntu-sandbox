@@ -5,6 +5,7 @@ import type { PSValue } from '@/powershell/runtime/PSEnvironment';
 import type {
   IExchangeProvider, ExchangeServerInfo, MailboxInfo, MailboxStatisticsInfo, DistributionGroupInfo, GalEntryInfo,
   ReceiveConnectorInfo, SendConnectorInfo, TransportRuleInfo, TransportRuleConditionInfo, TransportRuleActionInfo, QueueInfo,
+  MailboxDatabaseCopyInfo,
 } from '@/powershell/providers/PSProviders';
 import { psValueToString } from '@/powershell/runtime/PSExpansion';
 
@@ -764,5 +765,112 @@ export class GetJournalRuleCmdlet implements ICmdlet {
     const exchange = requireExchange(ctx, 'Get-JournalRule');
     const rule = exchange.getJournalRule();
     return rule ? transportRuleToPSObject(rule) : [];
+  }
+}
+
+export class NewDatabaseAvailabilityGroupCmdlet implements ICmdlet {
+  readonly name = 'new-databaseavailabilitygroup';
+  readonly displayName = 'New-DatabaseAvailabilityGroup';
+  readonly aliases = [] as const;
+  readonly parameters = ['Name'] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const exchange = requireExchange(ctx, 'New-DatabaseAvailabilityGroup');
+    const name = psValueToString(ctx.named['name'] ?? ctx.positional[0] ?? '');
+    if (!name) { ctx.emitError('New-DatabaseAvailabilityGroup : Cannot process command because of one or more missing mandatory parameters: Name.'); return null; }
+    const res = exchange.newDatabaseAvailabilityGroup(name);
+    if (!res.ok) { ctx.emitError(res.message); return null; }
+    return { Name: name } as Record<string, PSValue>;
+  }
+}
+
+export class AddDatabaseAvailabilityGroupServerCmdlet implements ICmdlet {
+  readonly name = 'add-databaseavailabilitygroupserver';
+  readonly displayName = 'Add-DatabaseAvailabilityGroupServer';
+  readonly aliases = [] as const;
+  readonly parameters = ['Identity', 'MailboxServer'] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const exchange = requireExchange(ctx, 'Add-DatabaseAvailabilityGroupServer');
+    const identity = identityFrom(ctx);
+    const mailboxServer = psValueToString(ctx.named['mailboxserver'] ?? '');
+    if (!identity || !mailboxServer) {
+      ctx.emitError('Add-DatabaseAvailabilityGroupServer : Cannot process command because of one or more missing mandatory parameters: Identity, MailboxServer.');
+      return null;
+    }
+    const res = exchange.addDatabaseAvailabilityGroupServer(identity, mailboxServer);
+    if (!res.ok) { ctx.emitError(res.message); return null; }
+    return null;
+  }
+}
+
+export class AddMailboxDatabaseCopyCmdlet implements ICmdlet {
+  readonly name = 'add-mailboxdatabasecopy';
+  readonly displayName = 'Add-MailboxDatabaseCopy';
+  readonly aliases = [] as const;
+  readonly parameters = ['DatabaseAvailabilityGroup', 'Database', 'MailboxServer'] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const exchange = requireExchange(ctx, 'Add-MailboxDatabaseCopy');
+    const dag = psValueToString(ctx.named['databaseavailabilitygroup'] ?? '');
+    const database = psValueToString(ctx.named['database'] ?? '');
+    const mailboxServer = psValueToString(ctx.named['mailboxserver'] ?? '');
+    if (!dag || !database || !mailboxServer) {
+      ctx.emitError('Add-MailboxDatabaseCopy : Cannot process command because of one or more missing mandatory parameters: DatabaseAvailabilityGroup, Database, MailboxServer.');
+      return null;
+    }
+    const res = exchange.addMailboxDatabaseCopy(dag, database, mailboxServer);
+    if (!res.ok) { ctx.emitError(res.message); return null; }
+    return null;
+  }
+}
+
+export class UpdateMailboxDatabaseCopyCmdlet implements ICmdlet {
+  readonly name = 'update-mailboxdatabasecopy';
+  readonly displayName = 'Update-MailboxDatabaseCopy';
+  readonly aliases = [] as const;
+  readonly parameters = ['DatabaseAvailabilityGroup', 'Database', 'MailboxServer'] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const exchange = requireExchange(ctx, 'Update-MailboxDatabaseCopy');
+    const dag = psValueToString(ctx.named['databaseavailabilitygroup'] ?? '');
+    const database = psValueToString(ctx.named['database'] ?? '');
+    const mailboxServer = psValueToString(ctx.named['mailboxserver'] ?? '');
+    if (!dag || !database || !mailboxServer) {
+      ctx.emitError('Update-MailboxDatabaseCopy : Cannot process command because of one or more missing mandatory parameters: DatabaseAvailabilityGroup, Database, MailboxServer.');
+      return null;
+    }
+    const res = exchange.updateMailboxDatabaseCopy(dag, database, mailboxServer);
+    if (!res.ok) { ctx.emitError(res.message); return null; }
+    return null;
+  }
+}
+
+function databaseCopyToPSObject(c: MailboxDatabaseCopyInfo): Record<string, PSValue> {
+  return {
+    Database: c.database,
+    MailboxServer: c.server,
+    Status: c.status,
+    CopyQueueLength: c.copyQueueLength,
+    LastSyncedAt: c.lastSyncedAt,
+  };
+}
+
+export class GetMailboxDatabaseCopyStatusCmdlet implements ICmdlet {
+  readonly name = 'get-mailboxdatabasecopystatus';
+  readonly displayName = 'Get-MailboxDatabaseCopyStatus';
+  readonly aliases = [] as const;
+  readonly parameters = ['DatabaseAvailabilityGroup', 'Database'] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const exchange = requireExchange(ctx, 'Get-MailboxDatabaseCopyStatus');
+    const dag = psValueToString(ctx.named['databaseavailabilitygroup'] ?? '');
+    if (!dag) {
+      ctx.emitError('Get-MailboxDatabaseCopyStatus : Cannot process command because of one or more missing mandatory parameters: DatabaseAvailabilityGroup.');
+      return null;
+    }
+    const database = ctx.named['database'] !== undefined ? psValueToString(ctx.named['database']) : undefined;
+    const copies = exchange.getMailboxDatabaseCopyStatus(dag, database).map(databaseCopyToPSObject);
+    return copies.length === 1 ? copies[0] : copies;
   }
 }
