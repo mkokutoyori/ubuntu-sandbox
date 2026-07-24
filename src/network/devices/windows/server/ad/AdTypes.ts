@@ -59,10 +59,14 @@ export interface AdFineGrainedPasswordPolicy {
   settings: GpoAccountPolicy;
 }
 
+/** Advanced Audit Policy Configuration a GPO carries (PRD-Auditpol.md §2.1 P8) — keyed by real subcategory name, applied on top of the local `auditpol` state by every `gpupdate`, matching real Windows' "GPO wins over local" precedence. */
+export type GpoAuditPolicy = Record<string, { success?: boolean; failure?: boolean }>;
+
 export interface GpoSettings {
   accountPolicy?: GpoAccountPolicy;
   logonBanner?: { title: string; text: string };
   startupScript?: string;
+  auditPolicy?: GpoAuditPolicy;
 }
 
 /** `Gpo { id; name; links; settings }` — the exact minimal model from PRD-Windows-Server.md §4.4. */

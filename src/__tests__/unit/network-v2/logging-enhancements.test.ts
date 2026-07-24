@@ -108,6 +108,9 @@ describe('Logging — unified device.syslog.entry across all device types', () =
       action: 'Block', direction: 'Inbound', protocol: 'TCP',
       localPort: '9999', remotePort: 'Any', description: 'test',
     });
+    // Filtering Platform Packet Drop is off by default on real Windows —
+    // auditpol must enable it before 5152 is generated (PRD-Auditpol.md §2.1 P9).
+    win.auditPolicy.set('Filtering Platform Packet Drop', { success: true, failure: true });
     bus.publish({
       topic: 'windows.firewall.drop',
       payload: {
@@ -240,6 +243,9 @@ describe('Logging — Cisco show logging buffers TCP/SSH events', () => {
       enabled: true, action: 'Block', direction: 'Inbound',
       protocol: 'TCP', localPort: '22', remotePort: 'Any', description: 'test',
     });
+    // Filtering Platform Packet Drop is off by default on real Windows —
+    // auditpol must enable it before 5152 is generated (PRD-Auditpol.md §2.1 P9).
+    win.auditPolicy.set('Filtering Platform Packet Drop', { success: true, failure: true });
 
     cli.getTcpStack().connect('10.0.0.2', 22);
     const security = win.eventLog.getEntriesStructured('Security') ?? [];

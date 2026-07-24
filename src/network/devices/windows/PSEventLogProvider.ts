@@ -101,6 +101,9 @@ function buildSecurityLog(next: () => number): EventLogEntry[] {
   ];
 }
 
+/** Assumed average serialized size of one entry, used to derive a fillable entry-count cap from `maxSizeKB` (CrashOnAuditFail, PRD-Auditpol.md §2.1 P10). */
+const AVG_ENTRY_BYTES = 500;
+
 // ─── Provider ────────────────────────────────────────────────────────────────
 
 /** Directory holding the materialised `.evtx` log files. */
@@ -312,11 +315,27 @@ export class PSEventLogProvider {
     return '';
   }
 
-  limitEventLog(logName: string): string {
-    // Silently accept — size limits are not enforced in simulation.
+  limitEventLog(logName: string, opts: { maximumSizeKB?: number; overflowAction?: EventLogMetadata['overflow'] } = {}): string {
     const key = logName.toLowerCase();
-    if (!this.logs.has(key)) return `Limit-EventLog : No log with name "${logName}" was found.`;
+    const meta = this.logs.get(key);
+    if (!meta) return `Limit-EventLog : No log with name "${logName}" was found.`;
+    if (opts.maximumSizeKB !== undefined) meta.maxSizeKB = opts.maximumSizeKB;
+    if (opts.overflowAction !== undefined) meta.overflow = opts.overflowAction;
     return '';
+  }
+
+  /**
+   * True when `logName` has reached its (derived) entry-count cap AND its
+   * retention policy forbids overwriting — the two preconditions real
+   * Windows checks before halting on `CrashOnAuditFail`
+   * (PRD-Auditpol.md §2.1 P10).
+   */
+  isFullAndProtected(logName: string): boolean {
+    const meta = this.logs.get(logName.toLowerCase());
+    if (!meta) return false;
+    if (meta.overflow !== 'DoNotOverwrite') return false;
+    const maxEntries = Math.max(1, Math.floor((meta.maxSizeKB * 1024) / AVG_ENTRY_BYTES));
+    return meta.entries.length >= maxEntries;
   }
 
   // ─── Get-WinEvent ─────────────────────────────────────────────────

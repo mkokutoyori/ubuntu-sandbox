@@ -10,6 +10,7 @@
  */
 
 import type { IEventBus, Unsubscribe } from '@/events/EventBus';
+import type { WindowsAuditPolicy } from './WindowsAuditPolicy';
 import type {
   WindowsServiceEventPayload, WindowsServiceCrashedPayload, WindowsServiceRecoveryCriticalPayload,
   WindowsServiceCreatedPayload,
@@ -46,6 +47,7 @@ export class WindowsEventLogProjection {
     bus: IEventBus,
     private readonly sink: WindowsEventLogSink,
     private readonly deviceId: string,
+    private readonly auditPolicy?: WindowsAuditPolicy,
   ) {
     this.subscriptions.push(
       bus.subscribe('windows.service.started', (e) => this.onService(e.payload)),
@@ -62,6 +64,10 @@ export class WindowsEventLogProjection {
       bus.subscribe('port.link.up', (e) => this.onLinkUp(e.payload)),
       bus.subscribe('port.link.down', (e) => this.onLinkDown(e.payload)),
     );
+  }
+
+  private gated(subcategory: string, kind: 'success' | 'failure'): boolean {
+    return this.auditPolicy ? this.auditPolicy.isEnabled(subcategory, kind) : true;
   }
 
   private onPortProxyAdded(p: {
@@ -128,6 +134,7 @@ export class WindowsEventLogProjection {
   }): void {
     if (p.deviceId !== this.deviceId) return;
     if (!p.passive) return;
+    if (!this.gated('Filtering Platform Connection', 'success')) return;
     this.sink.writeEventLog(
       'Security', 'Microsoft-Windows-Security-Auditing',
       WFP_CONNECTION_ALLOWED, 'SuccessAudit',
@@ -143,6 +150,7 @@ export class WindowsEventLogProjection {
     protocol: string; direction: 'Inbound' | 'Outbound';
   }): void {
     if (p.deviceId !== this.deviceId) return;
+    if (!this.gated('Filtering Platform Packet Drop', 'failure')) return;
     this.sink.writeEventLog(
       'Security', 'Microsoft-Windows-Security-Auditing',
       WFP_PACKET_BLOCKED, 'FailureAudit',

@@ -291,6 +291,7 @@ export class DirectoryStore {
     const accountPolicyJson = firstOf(entry.attributes.get('gpoaccountpolicy'));
     const logonBannerJson = firstOf(entry.attributes.get('gpologonbanner'));
     const startupScript = firstOf(entry.attributes.get('gpostartupscript'));
+    const auditPolicyJson = firstOf(entry.attributes.get('gpoauditpolicy'));
     const gpoDn = formatDN(entry.dn);
     return {
       id: firstOf(entry.attributes.get('cn')),
@@ -302,6 +303,7 @@ export class DirectoryStore {
         accountPolicy: accountPolicyJson ? JSON.parse(accountPolicyJson) : undefined,
         logonBanner: logonBannerJson ? JSON.parse(logonBannerJson) : undefined,
         startupScript: startupScript || undefined,
+        auditPolicy: auditPolicyJson ? JSON.parse(auditPolicyJson) : undefined,
       },
     };
   }
@@ -313,6 +315,7 @@ export class DirectoryStore {
     if (settings.accountPolicy !== undefined) changes.push({ op: 'replace', type: 'gpoAccountPolicy', values: [JSON.stringify(settings.accountPolicy)] });
     if (settings.logonBanner !== undefined) changes.push({ op: 'replace', type: 'gpoLogonBanner', values: [JSON.stringify(settings.logonBanner)] });
     if (settings.startupScript !== undefined) changes.push({ op: 'replace', type: 'gpoStartupScript', values: [settings.startupScript] });
+    if (settings.auditPolicy !== undefined) changes.push({ op: 'replace', type: 'gpoAuditPolicy', values: [JSON.stringify(settings.auditPolicy)] });
     this.tree.modifyEntry(entry.dn, changes);
     return { ok: true, message: '' };
   }
@@ -349,6 +352,7 @@ export class DirectoryStore {
       if (gpo.settings.accountPolicy !== undefined) merged.accountPolicy = { ...merged.accountPolicy, ...gpo.settings.accountPolicy };
       if (gpo.settings.logonBanner !== undefined) merged.logonBanner = gpo.settings.logonBanner;
       if (gpo.settings.startupScript !== undefined) merged.startupScript = gpo.settings.startupScript;
+      if (gpo.settings.auditPolicy !== undefined) merged.auditPolicy = { ...merged.auditPolicy, ...gpo.settings.auditPolicy };
     }
     return { appliedGpoNames: ordered.map(g => g.name), settings: merged };
   }

@@ -389,7 +389,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     );
     this.eventLogProjection?.dispose();
     this.eventLog.attachBus(bus, this.id);
-    this.eventLogProjection = new WindowsEventLogProjection(bus, this.eventLog, this.id);
+    this.eventLogProjection = new WindowsEventLogProjection(bus, this.eventLog, this.id, this.auditPolicy);
     this.servicePortProjection?.dispose();
     this.servicePortProjection = new WindowsServicePortProjection(bus, this.id, this.socketTable);
     this.portProxySocketProjection = new PortProxySocketProjection(bus, this.id, this.socketTable);
@@ -935,12 +935,12 @@ export class WindowsPC extends EndHost implements UserAccountHost {
    * directory's RSoP directly (no need to dial itself over the wire).
    */
   gpupdateForce(): { ok: boolean; message: string } {
-    if (!this.domainMembership) {
+    const localStore = this.getDirectoryStore();
+    if (!this.domainMembership && !localStore) {
       return { ok: false, message: 'gpupdate : This computer is not joined to a domain.' };
     }
     let appliedGpoNames: string[];
     let settings: GpoSettings;
-    const localStore = this.getDirectoryStore();
     if (localStore) {
       const rsop = localStore.resultantSetOfPolicy(this.getHostname());
       appliedGpoNames = rsop.appliedGpoNames;
@@ -954,6 +954,11 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     if (settings.accountPolicy) this.accountsPolicy.applyGpoOverrides(settings.accountPolicy);
     if (settings.logonBanner !== undefined) this.gpoLogonBanner = settings.logonBanner;
     if (settings.startupScript !== undefined) this.gpoStartupScript = settings.startupScript;
+    if (settings.auditPolicy !== undefined) {
+      for (const [subcategory, setting] of Object.entries(settings.auditPolicy)) {
+        this.auditPolicy.set(subcategory, setting);
+      }
+    }
     this.gpoAppliedNames = appliedGpoNames;
     this.gpoLastAppliedAt = new Date();
     return { ok: true, message: '' };
@@ -1645,6 +1650,11 @@ export class WindowsPC extends EndHost implements UserAccountHost {
 
   // ─── Terminal ──────────────────────────────────────────────────
 
+  /** CrashOnAuditFail (PRD-Auditpol.md §2.1 P10): once enabled, a full Security log with DoNotOverwrite retention halts every non-administrative command until an admin clears the log or disables the option. */
+  private isAuditFailBlocked(): boolean {
+    return this.auditPolicy.getOption('CrashOnAuditFail') === true && this.eventLog.isFullAndProtected('Security');
+  }
+
   async executeCommand(command: string): Promise<string> {
     return this.executeCmdCommand(command);
   }
@@ -1659,6 +1669,10 @@ export class WindowsPC extends EndHost implements UserAccountHost {
 
     trimmed = trimmed.trim();
     if (!trimmed) return '';
+
+    if (this.isAuditFailBlocked() && !this.userMgr.isCurrentUserAdmin()) {
+      return 'STOP: C0000244 {Audit Failed}\nAn attempt to generate a security audit failed.\nAn administrator must clear the Security event log or disable CrashOnAuditFail to continue.';
+    }
 
     // Strip stderr redirects like "2>&1", "2> nul", "2>nul" – in simulation all output is stdout
     trimmed = trimmed.replace(/\s+2>&1\s*$/i, '').replace(/\s+2>\s*(?:nul|&1)\s*$/i, '').trim();

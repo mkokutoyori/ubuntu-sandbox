@@ -154,6 +154,9 @@ describe('Scénario 4 — pare-feu local vs ACL réseau', () => {
 
     it('netsh advfirewall firewall add rule action=block localport=22 → Connection timed out + event 5152', async () => {
       const { adminPc, winSrv } = await buildWindowsLan();
+      // Filtering Platform Packet Drop is off by default on real Windows —
+      // auditpol must enable it before 5152 is generated (PRD-Auditpol.md §2.1 P9).
+      winSrv.auditPolicy.set('Filtering Platform Packet Drop', { success: true, failure: true });
       const created = await winSrv.executeCommand(
         'netsh advfirewall firewall add rule name="Block-SSH" dir=in action=block protocol=TCP localport=22',
       );

@@ -37,10 +37,12 @@ function parseGpoSettings(attrs: Array<{ type: string; values: string[] }>): Gpo
   const accountPolicyJson = get('gpoAccountPolicy');
   const logonBannerJson = get('gpoLogonBanner');
   const startupScript = get('gpoStartupScript');
+  const auditPolicyJson = get('gpoAuditPolicy');
   return {
     accountPolicy: accountPolicyJson ? JSON.parse(accountPolicyJson) : undefined,
     logonBanner: logonBannerJson ? JSON.parse(logonBannerJson) : undefined,
     startupScript: startupScript || undefined,
+    auditPolicy: auditPolicyJson ? JSON.parse(auditPolicyJson) : undefined,
   };
 }
 
@@ -48,6 +50,7 @@ function mergeSettings(target: GpoSettings, source: GpoSettings): void {
   if (source.accountPolicy !== undefined) target.accountPolicy = { ...target.accountPolicy, ...source.accountPolicy };
   if (source.logonBanner !== undefined) target.logonBanner = source.logonBanner;
   if (source.startupScript !== undefined) target.startupScript = source.startupScript;
+  if (source.auditPolicy !== undefined) target.auditPolicy = { ...target.auditPolicy, ...source.auditPolicy };
 }
 
 export function pullGroupPolicy(tcpStack: TcpStack, membership: DomainMembership, hostname: string): GpoPullResult {
