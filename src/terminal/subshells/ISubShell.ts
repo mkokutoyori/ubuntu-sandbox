@@ -60,8 +60,29 @@ export interface ISubShell extends IShellBase {
    * Process a completed line of input (after Enter).
    * Returns output to display and whether the sub-shell has exited.
    * May be sync or async (e.g. PowerShell network commands are async).
+   *
+   * @param onProgress Optional. When provided, a sub-shell whose command
+   * streams output over time (e.g. a real-wire `ping` over an SSH shell
+   * channel) MAY call this repeatedly with one line of text at a time
+   * *before* its returned promise settles, instead of batching everything
+   * into the final `SubShellResult.output`. Sub-shells that don't stream
+   * simply ignore the parameter — the host always renders `output` too.
    */
-  processLine(line: string): SubShellResult | Promise<SubShellResult>;
+  processLine(
+    line: string,
+    onProgress?: (text: string) => void,
+  ): SubShellResult | Promise<SubShellResult>;
+
+  /**
+   * Optional: interrupt (Ctrl+C) the sub-shell's currently in-flight
+   * `processLine()` call, e.g. to stop a remote streaming job over the
+   * wire. Returns true if something was actually interrupted — the host
+   * then leaves its own "^C" echo to the sub-shell's own output instead
+   * of printing its own. Sub-shells without a cancellable in-flight
+   * command omit this; the host falls back to its default local-only
+   * "clear input, echo ^C" behaviour.
+   */
+  interruptForeground?(): boolean;
 
   /**
    * Tab-completion candidates for the current input line. The owning

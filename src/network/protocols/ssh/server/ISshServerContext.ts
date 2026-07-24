@@ -12,6 +12,7 @@ import type { ISftpFileSystem } from '../sftp/ISftpFileSystem';
 import type { SshHostKey } from '../SshHostKey';
 import type { SshUserContext } from '../SshUserContext';
 import type { ISshServerEventBus } from './SshServerEvent';
+import type { SshInteractiveShell } from './SshInteractiveShell';
 export type { SshUserContext };
 
 export interface SshServerConfig {
@@ -29,6 +30,8 @@ export interface SshServerConfig {
 
 export interface ILinuxShell {
   execute(line: string): Promise<{ stdout: string; stderr: string; exitCode: number }>;
+  /** Release any per-session resources (e.g. a real LinuxShellSession's `-bash` process table entry). */
+  dispose?(): void;
 }
 
 export interface ISshServerContext {
@@ -36,7 +39,21 @@ export interface ISshServerContext {
   readonly config: Readonly<SshServerConfig>;
   readonly auth: ISshAuthContext;
   getFilesystem(userCtx: SshUserContext): ISftpFileSystem;
-  getShell(userCtx: SshUserContext, cwd: string): ILinuxShell;
+  /**
+   * @param opts.interactive True for a persistent `shell_open`/`shell_input`
+   * channel (a real pty — colorized output, hung-up on close); false/omitted
+   * for a one-shot `exec` (no pty — no color, exits gracefully). Only
+   * Linux's implementation currently distinguishes the two.
+   */
+  getShell(userCtx: SshUserContext, cwd: string, opts?: { interactive?: boolean }): ILinuxShell;
+  /**
+   * Optional per-channel real-time job runtime (streaming `ping`, Ctrl+C
+   * interrupt). SshServerHandler constructs one per `shell_open` and tries
+   * it before falling back to `getShell().execute()` for every line. Only
+   * Linux implements this; Cisco/Huawei/Windows remote shells are
+   * unaffected and always use the plain one-shot `getShell()` path.
+   */
+  createInteractiveShell?(userCtx: SshUserContext): SshInteractiveShell | null;
   getMotd(): string;
   getLastLogin(user: string): string | null;
   recordLogin(user: string, fromIp: string): void;

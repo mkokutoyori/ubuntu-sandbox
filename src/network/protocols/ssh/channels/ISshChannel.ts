@@ -30,9 +30,17 @@ export interface ISshShellChannel extends ISshChannel {
   /**
    * Dispatch a single line of shell input to the server's persistent
    * shell session for this channel. Resolves with the captured output.
-   * Server-side state (cwd, env) is preserved between calls.
+   * Server-side state (cwd, env) is preserved between calls. When the
+   * line starts a real-time streaming job server-side (e.g. `ping`),
+   * interim output arrives via `onData` before this promise resolves —
+   * it only resolves once the job completes or is interrupted.
    */
   runLine(line: string): Promise<ExecResult>;
+  /**
+   * Send a signal to the channel's currently-running foreground job
+   * (Ctrl+C ⇒ 'SIGINT'). No-op server-side if nothing is running.
+   */
+  sendSignal(signal: 'SIGINT'): void;
 }
 
 export interface ISshExecChannel extends ISshChannel {

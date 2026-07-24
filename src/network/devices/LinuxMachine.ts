@@ -1519,6 +1519,7 @@ export abstract class LinuxMachine extends EndHost
       // Route incoming SSH exec commands through the full pipeline so
       // `ip`, `arp`, `ping`, `systemctl`, etc. are available.
       (line: string) => this.executeCommand(line),
+      { device: this },
     );
     // Reactive: the SSH module subscribes to the events that concern
     // it on the shared bus (instead of the legacy onLifecycle callback).
@@ -2859,12 +2860,23 @@ export abstract class LinuxMachine extends EndHost
     return session;
   }
 
-  /** Tear down a shell session — kills its `-bash` and frees its pty slot. */
-  closeShellSession(sessionOrId: LinuxShellSession | string): void {
+  /**
+   * Tear down a shell session and frees its pty slot.
+   * @param opts.graceful The `-bash` process exits normally (real exit
+   * status, no signal) instead of being hung up with SIGHUP. Default:
+   * hang up (matches closing a real terminal window). Pass
+   * `{ graceful: true }` for a session that ran to completion on its
+   * own — e.g. a one-shot `ssh host cmd` exec, where the shell simply
+   * finishes and exits rather than being interrupted.
+   */
+  closeShellSession(sessionOrId: LinuxShellSession | string, opts?: { graceful?: boolean }): void {
     const id = typeof sessionOrId === 'string' ? sessionOrId : sessionOrId.id;
     const s = this.shellSessions.get(id);
     if (!s) return;
-    try { this.executor.processMgr.kill(s.shellPid, 'SIGHUP'); } catch { /* ignore */ }
+    try {
+      if (opts?.graceful) this.executor.processMgr.exit(s.shellPid, 0);
+      else this.executor.processMgr.kill(s.shellPid, 'SIGHUP');
+    } catch { /* ignore */ }
     this.tty.release(s.tty);
     s.dispose();
     this.shellSessions.delete(id);
@@ -2879,14 +2891,20 @@ export abstract class LinuxMachine extends EndHost
    * Like `executeCommand`, but uses the per-terminal session as the swap-in
    * state holder. Calls are serialised per device so the executor's
    * mutation window is never observed by another concurrent terminal.
+   *
+   * @param opts.color Whether to colorize output (`ls`, etc.) the way a
+   * real pty does. Default true (matches every existing caller — a live
+   * terminal window). Pass `{ color: false }` for a non-interactive
+   * context (e.g. one-shot `ssh host cmd` exec, which has no pty and so
+   * real coreutils auto-detect no-tty and disable color).
    */
-  executeCommandInSession(command: string, session: LinuxShellSession): Promise<string> {
+  executeCommandInSession(command: string, session: LinuxShellSession, opts?: { color?: boolean }): Promise<string> {
     // Chain on the per-device queue: subsequent commands wait their turn.
     return this.sessionQueue.run(async () => {
       if (!this.isPoweredOn) return 'Device is powered off';
       if (session.disposed) return '';
       return this.sessionSwap.within(session, async () => {
-        this.executor.displayColor = true;
+        this.executor.displayColor = opts?.color ?? true;
         try {
           return await this.executeCommand(command);
         } finally {

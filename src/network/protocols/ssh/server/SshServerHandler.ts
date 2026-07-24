@@ -23,7 +23,8 @@ import type { SftpRequestPayload } from '../sftp/ISftpCommand';
 import { SftpWireSession } from '../sftp/SftpWireSession';
 import { encodeSftpWirePacket, decodeSftpWirePacket } from '../sftp/SftpWireCodec';
 import { SshUserContext } from '../SshUserContext';
-import type { ISshServerContext } from './ISshServerContext';
+import type { ILinuxShell, ISshServerContext } from './ISshServerContext';
+import type { SshInteractiveShell } from './SshInteractiveShell';
 import {
   type ISshServerEventBus,
   SshServerEventBus,
@@ -38,6 +39,15 @@ interface OpenChannelInfo {
   readonly userCtx: SshUserContext;
   cwd: string;
   readonly openedAt: number;
+  /** Real-time job runtime (streaming ping, Ctrl+C) — shell channels only. */
+  interactiveShell?: SshInteractiveShell | null;
+  /**
+   * Persistent per-channel shell (real per-session identity/cwd — see
+   * LinuxSshServerContext.getShell()), created once at shell_open and
+   * reused for every shell_input line so cwd/su-stack/user genuinely
+   * survive across the channel's lifetime, and disposed when it closes.
+   */
+  shell?: ILinuxShell;
 }
 
 const PREAUTH_COUNT = new WeakMap<object, { value: number }>();
@@ -168,6 +178,10 @@ export class SshServerHandler {
       timers.clearAll();
       keepaliveTimer = null;
       decPreauth();
+      for (const info of channels.values()) {
+        info.interactiveShell?.dispose();
+        info.shell?.dispose?.();
+      }
       channels.clear();
       sftpWireSessions.clear();
       this.eventBus.emit({
@@ -315,6 +329,8 @@ export class SshServerHandler {
               durationMs: Date.now() - info.openedAt,
             });
           }
+          info?.interactiveShell?.dispose();
+          info?.shell?.dispose?.();
           channels.delete(channelId);
           sftpWireSessions.delete(channelId);
           break;
@@ -338,6 +354,9 @@ export class SshServerHandler {
           const cwd =
             (channelId !== undefined && channels.get(channelId)?.cwd) ||
             userCtx.homeDirectory;
+          // A fresh, self-contained session per exec call (real ssh
+          // exec-mode is its own one-shot session too) — disposed right
+          // after so it doesn't leak a phantom `-bash` process-table entry.
           const shell = this.ctx.getShell(userCtx, cwd);
           // Real sshd treats every exec as a session: emit open/close so the
           // syslogger produces `session opened`/`session closed` lines.
@@ -350,6 +369,7 @@ export class SshServerHandler {
           const userForClose = userCtx;
           void shell.execute(command).then((result) => {
             conn.write(JSON.stringify(result));
+            shell.dispose?.();
             this.eventBus.emit({
               kind: 'channel_closed',
               user: userForClose.username,
@@ -374,6 +394,13 @@ export class SshServerHandler {
             userCtx,
             cwd,
             openedAt: Date.now(),
+            interactiveShell: this.ctx.createInteractiveShell?.(userCtx) ?? null,
+            // One real per-channel shell (session-isolated identity/cwd),
+            // created once here and reused for every shell_input line —
+            // see LinuxSshServerContext.getShell(). `interactive: true`
+            // since this is a real pty-like session (colorized output,
+            // hung up on close), unlike a one-shot `exec`.
+            shell: this.ctx.getShell(userCtx, cwd, { interactive: true }),
           });
           this.eventBus.emit({
             kind: 'channel_opened',
@@ -391,17 +418,41 @@ export class SshServerHandler {
                 stdout: '',
                 stderr: 'not authenticated',
                 exitCode: 255,
+                channelId: parsed.channelId,
               }),
             );
             return;
           }
           const channelId = parsed.channelId as number;
           const info = channels.get(channelId);
-          const cwd = info?.cwd ?? userCtx.homeDirectory;
           const line = (parsed.data as string | undefined) ?? '';
-          const shell = this.ctx.getShell(userCtx, cwd);
+
+          // Try the real-time job runtime first (e.g. `ping`): output
+          // streams over the wire as `shell_output` pushes while the job
+          // runs, and the final `shell_input` reply (empty stdout/stderr)
+          // is sent only once the job completes or is Ctrl+C-interrupted.
+          const started = info?.interactiveShell?.tryStartStreaming(line, {
+            onChunk: (text) => {
+              try {
+                conn.write(JSON.stringify({ op: 'shell_output', channelId, chunk: text }));
+              } catch { /* socket closed mid-job */ }
+            },
+            onDone: () => {
+              try {
+                conn.write(JSON.stringify({ stdout: '', stderr: '', exitCode: 0, channelId }));
+              } catch { /* socket closed mid-job */ }
+            },
+          }) ?? false;
+          if (started) break;
+
+          // Reuse the channel's own persistent shell (real per-session
+          // identity/cwd) rather than calling getShell() fresh — a fresh
+          // call would allocate a brand-new session every line, losing
+          // cwd/su-stack continuity. Falls back to a fresh one-shot shell
+          // only if shell_input somehow arrives without a prior shell_open.
+          const shell = info?.shell ?? this.ctx.getShell(userCtx, info?.cwd ?? userCtx.homeDirectory);
           void shell.execute(line).then((result) => {
-            conn.write(JSON.stringify(result));
+            conn.write(JSON.stringify({ ...result, channelId }));
           });
           break;
         }
@@ -422,8 +473,18 @@ export class SshServerHandler {
             // wtmp; Windows turns it into a 4634 (Logoff) Security event.
             this.ctx.recordLogout?.(userCtx.username, clientIp);
           }
+          info?.interactiveShell?.dispose();
+          info?.shell?.dispose?.();
           channels.delete(channelId);
           conn.write(JSON.stringify({ ok: true, channelId }));
+          break;
+        }
+
+        case 'shell_signal': {
+          // Ctrl+C over the wire: interrupt the channel's running
+          // foreground job, if any (no-op otherwise).
+          const channelId = parsed.channelId as number;
+          channels.get(channelId)?.interactiveShell?.interruptForeground();
           break;
         }
 

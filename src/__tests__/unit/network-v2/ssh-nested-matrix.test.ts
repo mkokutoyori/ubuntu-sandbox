@@ -9,6 +9,7 @@ import { WindowsTerminalSession } from '@/terminal/sessions/WindowsTerminalSessi
 import { LinuxTerminalSession } from '@/terminal/sessions/LinuxTerminalSession';
 import { CiscoTerminalSession } from '@/terminal/sessions/CiscoTerminalSession';
 import { HuaweiTerminalSession } from '@/terminal/sessions/HuaweiTerminalSession';
+import { SshInteractiveSubShell } from '@/terminal/subshells/SshInteractiveSubShell';
 import type { TerminalSession, KeyEvent } from '@/terminal/sessions/TerminalSession';
 import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
 
@@ -131,28 +132,28 @@ describe('SSH is a transparent transport for every host vendor', () => {
   });
 
   describe('Linux host', () => {
-    it('Linux -> Linux lands on a real LinuxTerminalSession', async () => {
+    it('Linux -> Linux lands on the real-wire SshInteractiveSubShell (not the in-memory bypass)', async () => {
       const { linuxA } = await buildLab();
       const host = new LinuxTerminalSession('h', linuxA);
       await host.init?.();
       await sshLogin(host, 'ssh user@10.0.0.4', 'admin');
-      expect(host.foreground).not.toBe(host);
-      expect(host.foreground).toBeInstanceOf(LinuxTerminalSession);
-      expect(host.foreground.isRemoteChild).toBe(true);
+      // Linux↔Linux drives the interactive session over the real,
+      // authenticated SSH channel — no child session is pushed, so
+      // `foreground` stays the host itself; the sub-shell is the tell.
+      expect(host.foreground).toBe(host);
+      expect((host as unknown as { activeSubShell: unknown }).activeSubShell)
+        .toBeInstanceOf(SshInteractiveSubShell);
     });
 
-    it('Linux -> Linux streams ping reply-by-reply over SSH', async () => {
+    it('Linux -> Linux streams ping reply-by-reply over a real SSH shell channel', async () => {
       const { linuxA } = await buildLab();
       const host = new LinuxTerminalSession('h', linuxA);
       await host.init?.();
       await sshLogin(host, 'ssh user@10.0.0.4', 'admin');
       runOnForeground(host, 'ping 10.0.0.3');
-      await tick();
-      expect(host.foreground.hasForegroundAsyncJob).toBe(true);
       await waitFor(host, (l) => l.some((t) => /bytes from 10\.0\.0\.3/.test(t)));
       host.handleKey(key('c', { ctrlKey: true }));
-      await tick();
-      expect(host.foreground.hasForegroundAsyncJob).toBe(false);
+      await waitFor(host, (l) => l.some((t) => /ping statistics/.test(t)));
     });
 
     it('Linux -> Win lands on a real WindowsTerminalSession', async () => {

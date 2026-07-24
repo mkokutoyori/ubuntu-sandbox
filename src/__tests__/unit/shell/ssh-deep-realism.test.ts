@@ -45,8 +45,12 @@ async function buildLan() {
   return { linuxA, linuxSrv, winA, winB };
 }
 
+// Sets both `.input` (top-level / pushed-child dispatch) and `._inputBuf`
+// (active-sub-shell dispatch, e.g. SshInteractiveSubShell) since this
+// single helper drives commands both before and after an SSH connect.
 async function typeRoot(t: TerminalSession, line: string): Promise<void> {
   t.setInput(line);
+  t.setInputBuf(line);
   t.handleKey(key('Enter'));
   await flush();
 }
@@ -68,7 +72,11 @@ async function winSshLogin(t: WindowsTerminalSession, line: string, pw: string):
 
 async function linuxSshLogin(t: LinuxTerminalSession, line: string, pw: string): Promise<void> {
   await typeRoot(t, line);
-  for (let i = 0; i < 4 && t.currentInputMode.type !== 'normal'; i++) {
+  // Once connected, an active SshInteractiveSubShell reports
+  // 'interactive-text' for "idle, ready for the next line" too — stop on
+  // isInsideSshSession as well, not just the mode string, or this would
+  // keep "answering" a prompt that isn't there anymore.
+  for (let i = 0; i < 4 && !t.isInsideSshSession && t.currentInputMode.type !== 'normal'; i++) {
     if (t.currentInputMode.type === 'password') {
       t.setPasswordBuf(pw);
     } else if (t.currentInputMode.type === 'interactive-text') {

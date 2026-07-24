@@ -504,7 +504,14 @@ export abstract class TerminalSession {
     for (const line of banner) child.addLine(line);
   }
 
-  private composeLoginBanner(
+  /**
+   * Compose the post-auth banner (issue.net + motd + "Last login: …") and
+   * record the login for lastlog/auth-log purposes. `protected` so a
+   * subclass can call it directly for a remote session that isn't pushed
+   * as a full child (e.g. SshInteractiveSubShell — LinuxTerminalSession's
+   * real-wire interactive shell), not just from `adoptRemoteChild`.
+   */
+  protected composeLoginBanner(
     device: unknown,
     user: string,
     sourceIp: string,

@@ -106,9 +106,17 @@ async function waitFor(
   }
 }
 
-/** Type a command in normal (bash) mode and press Enter. */
+/**
+ * Type a command in normal (bash) mode and press Enter. Sets both
+ * `.input` (read by top-level/pushed-child dispatch) and `._inputBuf`
+ * (read by active-sub-shell dispatch, e.g. SshInteractiveSubShell) since
+ * this single helper drives commands both before and after an SSH
+ * connect, and which buffer is "live" depends on which mechanism is
+ * currently handling the session.
+ */
 async function typeNormal(session: LinuxTerminalSession, cmd: string) {
   session.setInput(cmd);
+  session.setInputBuf(cmd);
   session.handleKey(key('Enter'));
   await flush();
 }
