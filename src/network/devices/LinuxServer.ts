@@ -22,6 +22,8 @@ import { RadiusClientAgent } from '../radius/RadiusClientAgent';
 import { RadiusdService, CLIENTS_CONF_PATH, USERS_FILE_PATH } from './linux/freeradius/RadiusdService';
 import type { LinuxCommandContext } from './linux/commands/LinuxCommandContext';
 import type { OperationResult } from './linux/LinuxServiceManager';
+import { SmtpServer, SMTP_PORT, SMTP_SUBMISSION_PORT, SMTP_SUBMISSION_TLS_PORT } from '../smtp/SmtpServer';
+import { selfSignedSmtpCert } from '../smtp/starttls';
 
 /** Dedicated UDP port for the `radtest` probe client's replies — see `radtestClient`'s doc comment. */
 const RADTEST_SOURCE_PORT = 49999;
@@ -35,6 +37,12 @@ export class LinuxServer extends LinuxMachine {
   private readonly radiusd: RadiusdService;
   /** Backs the `radtest` CLI tool (freeradius-utils) — a one-shot probe client, not persistent NAS config. */
   private readonly radtestClient: RadiusClientAgent;
+  /** MTA-to-MTA relay reception + local delivery (RFC 5321), port 25. */
+  private readonly smtpServer: SmtpServer;
+  /** Message submission (RFC 6409) — AUTH mandatory, same engine as port 25. */
+  private readonly smtpSubmissionServer: SmtpServer;
+  /** smtps (RFC 8314) — implicit TLS from the first byte, no STARTTLS. */
+  private readonly smtpImplicitTlsServer: SmtpServer;
 
   constructor(
     type: DeviceType = 'linux-server',
@@ -93,6 +101,16 @@ export class LinuxServer extends LinuxMachine {
     this.udpBind(RADTEST_SOURCE_PORT, (dgram) => {
       if (dgram.sourceIP instanceof IPAddress) this.radtestClient.handleUdp(dgram.inPort, dgram.sourceIP, dgram.udp);
     }, 'radtest');
+
+    const smtpCert = selfSignedSmtpCert(`CN=${this.getHostname()}`);
+    const smtpTls = { serverCert: smtpCert.cert, serverPrivateKey: smtpCert.keyPair.privateKey };
+    const smtpConfig = { hostname: this.getHostname(), eventBus: this.getBus() };
+    this.smtpServer = new SmtpServer(this.getTcpStack(), smtpConfig, SMTP_PORT, { tls: smtpTls });
+    this.smtpServer.start();
+    this.smtpSubmissionServer = new SmtpServer(this.getTcpStack(), smtpConfig, SMTP_SUBMISSION_PORT, { tls: smtpTls });
+    this.smtpSubmissionServer.start();
+    this.smtpImplicitTlsServer = new SmtpServer(this.getTcpStack(), smtpConfig, SMTP_SUBMISSION_TLS_PORT, { tls: smtpTls, implicitTls: true });
+    this.smtpImplicitTlsServer.start();
 
     // Wire Oracle bootstrap so `sqlplus` from the bash interpreter
     // actually boots the instance (pmon/smon/lgwr appear in ps -ef).
@@ -217,6 +235,10 @@ export class LinuxServer extends LinuxMachine {
   getRadiusServer(): RadiusServerAgent { return this.radiusServer; }
   getRadiusTcpServer(): RadiusTcpServer { return this.radiusTcpServer; }
   getRadiusd(): RadiusdService { return this.radiusd; }
+
+  getSmtpServer(): SmtpServer { return this.smtpServer; }
+  getSmtpSubmissionServer(): SmtpServer { return this.smtpSubmissionServer; }
+  getSmtpImplicitTlsServer(): SmtpServer { return this.smtpImplicitTlsServer; }
 
   /** Expose a background process in `ps` output (used by Oracle DBMS). */
   registerProcess(pid: number, user: string, command: string): void {

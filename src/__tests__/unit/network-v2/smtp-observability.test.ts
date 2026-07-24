@@ -1,7 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { IPAddress, SubnetMask, resetCounters } from '@/network/core/types';
 import { LinuxPC } from '@/network/devices/LinuxPC';
-import { LinuxServer } from '@/network/devices/LinuxServer';
 import { Cable } from '@/network/hardware/Cable';
 import { GenericSwitch } from '@/network/devices/GenericSwitch';
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
@@ -31,7 +30,7 @@ function buildTopology(config: Partial<SmtpServerConfig> = {}, opts: SmtpServerO
   bus.subscribeAll((e) => events.push(e));
 
   const pc = new LinuxPC('linux-pc', 'PC1');
-  const srv = new LinuxServer('linux-server', 'MAIL1');
+  const srv = new LinuxPC('linux-pc', 'MAIL1');
   pc.configureInterface('eth0', new IPAddress('10.0.1.2'), new SubnetMask('255.255.255.0'));
   srv.configureInterface('eth0', new IPAddress('10.0.1.10'), new SubnetMask('255.255.255.0'));
   new Cable('c1').connect(pc.getPort('eth0')!, srv.getPort('eth0')!);
@@ -106,7 +105,7 @@ describe('SMTP observability — delivery/queue/DSN events across modules', () =
     bus.subscribeAll((e) => events.push(e));
 
     const pc = new LinuxPC('linux-pc', 'SENDER');
-    const mx = new LinuxServer('linux-server', 'MX');
+    const mx = new LinuxPC('linux-pc', 'MX');
     const sw = new GenericSwitch('switch-generic', 'SW1', 8, 0, 0);
     pc.configureInterface('eth0', new IPAddress('10.0.1.2'), new SubnetMask('255.255.255.0'));
     mx.configureInterface('eth0', new IPAddress('10.0.1.10'), new SubnetMask('255.255.255.0'));
@@ -168,7 +167,7 @@ describe('SmtpSignalStore aggregate metrics (§2.1.15)', () => {
     subscribeSmtpObservables(bus, store);
 
     const pc = new LinuxPC('linux-pc', 'PC1');
-    const srv = new LinuxServer('linux-server', 'MAIL1');
+    const srv = new LinuxPC('linux-pc', 'MAIL1');
     pc.configureInterface('eth0', new IPAddress('10.0.1.2'), new SubnetMask('255.255.255.0'));
     srv.configureInterface('eth0', new IPAddress('10.0.1.10'), new SubnetMask('255.255.255.0'));
     new Cable('c1').connect(pc.getPort('eth0')!, srv.getPort('eth0')!);

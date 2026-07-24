@@ -35,11 +35,25 @@ export class SmtpClientSession {
     return this.repliesBuffer[0] ?? null;
   }
 
+  /** RFC 8314 — smtps (port 465): TLS starts immediately, before any plaintext banner is ever sent. */
+  connectImplicitTls(): SmtpReply | null {
+    this.repliesBuffer = [];
+    const socket = this.tcpStack.connect(this.targetIp, this.port, {
+      onData: (data) => this.handleIncomingData(data),
+    });
+    if (!socket || socket.state !== 'established' || !this.tlsConfig) return null;
+    this.socket = socket;
+    this.controlTls = new TlsClientSession(this.tlsConfig);
+    this.controlTlsHandshakePending = true;
+    socket.write(encodeFlight(this.controlTls.start()));
+    return this.repliesBuffer[0] ?? null;
+  }
+
   private handleIncomingData(data: unknown): void {
     if (this.controlTlsHandshakePending && this.controlTls) {
       const flight = stepHandshake(this.controlTls, String(data));
-      if (flight) this.socket!.write(flight);
       if (this.controlTls.result !== null) this.controlTlsHandshakePending = false;
+      if (flight) this.socket!.write(flight);
       return;
     }
     if (this.controlTls?.result === 'success') {

@@ -1,7 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { IPAddress, SubnetMask, resetCounters } from '@/network/core/types';
 import { LinuxPC } from '@/network/devices/LinuxPC';
-import { LinuxServer } from '@/network/devices/LinuxServer';
 import { Cable } from '@/network/hardware/Cable';
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';
@@ -16,7 +15,7 @@ beforeEach(() => {
 
 function buildTopology() {
   const pc = new LinuxPC('linux-pc', 'PC1');
-  const srv = new LinuxServer('linux-server', 'MAIL1');
+  const srv = new LinuxPC('linux-pc', 'MAIL1');
   pc.configureInterface('eth0', new IPAddress('10.0.1.2'), new SubnetMask('255.255.255.0'));
   srv.configureInterface('eth0', new IPAddress('10.0.1.10'), new SubnetMask('255.255.255.0'));
   new Cable('c1').connect(pc.getPort('eth0')!, srv.getPort('eth0')!);

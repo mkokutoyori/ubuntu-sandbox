@@ -16,6 +16,8 @@ export interface SmtpServerOptions {
   readonly limits?: SmtpProtocolLimits;
   readonly scheduler?: IScheduler;
   readonly tls?: TlsServerConfig;
+  /** RFC 8314 — smtps (port 465): the connection is TLS from the very first byte, no STARTTLS negotiation. */
+  readonly implicitTls?: boolean;
 }
 
 export class SmtpServer {
@@ -23,6 +25,7 @@ export class SmtpServer {
   private readonly limits: SmtpProtocolLimits;
   private readonly scheduler: IScheduler;
   private readonly tlsConfig?: TlsServerConfig;
+  private readonly implicitTls: boolean;
 
   constructor(
     private readonly tcpStack: TcpStack,
@@ -33,6 +36,7 @@ export class SmtpServer {
     this.limits = opts.limits ?? DEFAULT_PROTOCOL_LIMITS;
     this.scheduler = opts.scheduler ?? getDefaultScheduler();
     this.tlsConfig = opts.tls;
+    this.implicitTls = opts.implicitTls ?? false;
   }
 
   start(): void {
@@ -90,7 +94,19 @@ export class SmtpServer {
       }, timeoutMs);
     };
 
-    writeReply(session.greeting());
+    let greetingSent = false;
+    const sendGreeting = (): void => {
+      if (greetingSent) return;
+      greetingSent = true;
+      writeReply(session.greeting());
+    };
+
+    if (this.implicitTls && this.tlsConfig) {
+      tls = new TlsServerSession(this.tlsConfig);
+      wireState = 'tls-handshake';
+    } else {
+      sendGreeting();
+    }
     armIdle();
 
     unsubscribe = socket.onData((data) => {
@@ -106,6 +122,7 @@ export class SmtpServer {
             topic: 'smtp.starttls.established',
             payload: { connectionId: session.connectionId, negotiatedCipherSuite: tls.negotiatedCipherSuite },
           });
+          sendGreeting();
         } else if (tls.result === 'reject') {
           unsubscribe();
           socket.close();

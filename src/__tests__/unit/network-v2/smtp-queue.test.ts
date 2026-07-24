@@ -1,7 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { IPAddress, SubnetMask, resetCounters } from '@/network/core/types';
 import { LinuxPC } from '@/network/devices/LinuxPC';
-import { LinuxServer } from '@/network/devices/LinuxServer';
 import { Cable } from '@/network/hardware/Cable';
 import { GenericSwitch } from '@/network/devices/GenericSwitch';
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
@@ -21,7 +20,7 @@ beforeEach(() => {
 
 function buildTopology() {
   const pc = new LinuxPC('linux-pc', 'SENDER');
-  const mx = new LinuxServer('linux-server', 'MX');
+  const mx = new LinuxPC('linux-pc', 'MX');
   const sw = new GenericSwitch('switch-generic', 'SW1', 8, 0, 0);
 
   pc.configureInterface('eth0', new IPAddress('10.0.1.2'), new SubnetMask('255.255.255.0'));

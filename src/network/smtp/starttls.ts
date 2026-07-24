@@ -4,6 +4,19 @@ import { TlsClientSession, type TlsClientConfig } from '@/network/tls/TlsClientS
 import type { TlsRecord } from '@/network/tls/recordLayer';
 import { encodeRecords, decodeRecords } from '@/network/http/https/TlsRecordWire';
 import { encryptApplicationData, decryptApplicationData } from '@/network/http/https/ApplicationDataCipher';
+import { PkiKeyPair } from '@/network/pki/PkiKeyPair';
+import { tbsPayload, type X509Certificate } from '@/network/pki/X509Certificate';
+
+export function selfSignedSmtpCert(subject: string): { cert: X509Certificate; keyPair: PkiKeyPair } {
+  const keyPair = PkiKeyPair.generate('rsa');
+  const fields = {
+    version: 3 as const, serialNumber: '1', subject, issuer: subject,
+    notBefore: Date.now() - 1000, notAfter: Date.now() + 365 * 24 * 3600 * 1000,
+    publicKey: keyPair.publicKey, signatureAlgorithm: 'sha256WithRSAEncryption' as const,
+  };
+  const signature = PkiKeyPair.sign(keyPair.privateKey, tbsPayload(fields));
+  return { cert: { ...fields, signature }, keyPair };
+}
 
 export function bytesToBinaryString(bytes: Uint8Array): string {
   let out = '';
