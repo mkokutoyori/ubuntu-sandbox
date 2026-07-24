@@ -110,6 +110,12 @@ import { ScpSession } from '../../protocols/ssh/scp/ScpSession';
 import { SftpInteractiveSession } from '../../protocols/ssh/sftp/SftpInteractiveSession';
 import { SftpCommandScript } from '../../protocols/ssh/sftp/SftpCommandScript';
 import type { ISftpFileSystem } from '../../protocols/ssh/sftp/ISftpFileSystem';
+import { WireSftpFileSystem } from '../../protocols/ssh/sftp/WireSftpFileSystem';
+import { SshSession } from '../../protocols/ssh/session/SshSession';
+import { SilentSshInteractionHandler } from '../../protocols/ssh/session/ISshInteractionHandler';
+import { SshConnectOptionsBuilder } from '../../protocols/ssh/SshConnectOptions';
+import { isOk } from '../../protocols/ssh/Result';
+import type { TcpConnector } from '@/network/tcp/types';
 import { SshKnownHostEntry } from './network/SshKnownHostEntry';
 import { SshForwardingTable } from './network/SshForwardingTable';
 import { md5Hex, sha1Hex, sha256Hex } from '@/crypto/hash';
@@ -388,6 +394,15 @@ export class LinuxCommandExecutor {
   private wireProbe: ((ip: string, port: number) => 'open' | 'refused' | 'timeout') | null = null;
   setWireProbe(probe: ((ip: string, port: number) => 'open' | 'refused' | 'timeout') | null): void {
     this.wireProbe = probe;
+  }
+  /**
+   * Real TCP connector — injected by the owning machine (`EndHost.tcpConnect`).
+   * Used by `scp`/`sftp` to open a genuine wire SFTP channel to the remote
+   * host when real credentials are available (audit 03, MAJEUR §4).
+   */
+  private tcpConnector: ((host: string, port: number) => Promise<unknown>) | null = null;
+  setTcpConnector(connector: ((host: string, port: number) => Promise<unknown>) | null): void {
+    this.tcpConnector = connector;
   }
   /** PID of the interactive -bash; backs `$$` and `ps -p $$`. */
   private shellPid = 0;
@@ -1058,6 +1073,147 @@ export class LinuxCommandExecutor {
     // Only rsync falls through to here — scp/sftp both return above.
     const summary = `sent 128 bytes  received 32 bytes  160.00 bytes/sec\ntotal size is 1024  speedup is 6.40`;
     return { output: summary, exitCode: 0 };
+  }
+
+  /**
+   * Real-wire counterpart to `runSshTransport`, reached only when the
+   * caller offers a real password (`sshpass -p <pw> scp|sftp ...`) —
+   * `LinuxMachine` routes that specific invocation through the async
+   * network-command path, since opening a genuine authenticated
+   * `SshSession` requires `await`, which the synchronous `execute()`
+   * pipeline `runSshTransport` normally runs under cannot provide.
+   *
+   * Audit 03, MAJEUR §4: when a real credential is available, the
+   * transfer now goes through a real `SshSession` + `SshSftpChannel`
+   * (`WireSftpFileSystem`) instead of the direct VFS-to-VFS copy —
+   * bytes actually cross `TcpSocket.send()`/`Port`/`Cable`. When no
+   * such credential is offered (the overwhelming majority of existing
+   * scp/sftp usage, which relies on `verifyOfferedPassword`'s
+   * "trust when nothing was offered" convenience — there is no real
+   * password to authenticate with in that case), or when the wire
+   * auth itself fails, this falls back unchanged to the same
+   * `resolveRemoteSftpFs`/`resolveRemoteSftpFsFromDevice` bypass
+   * `runSshTransport` already uses, so behavior for every passwordless
+   * scp/sftp scenario is unaffected.
+   */
+  async runSshTransportAsync(
+    cmd: 'scp' | 'sftp',
+    args: string[],
+    offeredPassword: string,
+  ): Promise<{ output: string; exitCode: number }> {
+    const positional = args.filter(a => !a.startsWith('-'));
+    const dest = positional.find(p => /[@:]/.test(p)) ?? positional[0];
+    if (cmd === 'scp' && positional.length < 2) {
+      return { output: 'usage: scp [-options] source ... target', exitCode: 1 };
+    }
+    if (!dest) {
+      return {
+        output: cmd === 'sftp'
+          ? 'usage: sftp [-options] [user@]host[:path]'
+          : 'usage: scp [-options] source ... target',
+        exitCode: 1,
+      };
+    }
+    const hostPart = dest.replace(/^([\w.-]+@)?/, '').split(':')[0];
+    const userMatch = positional.map(p => /^([\w.-]+)@/.exec(p)).find((m): m is RegExpExecArray => m !== null);
+    const remoteUser = userMatch ? userMatch[1] : this.userMgr.currentUser;
+
+    const probeArgs: string[] = [];
+    const pIdx = args.indexOf('-P');
+    if (pIdx >= 0 && args[pIdx + 1]) probeArgs.push('-p', args[pIdx + 1]);
+    for (let i = 0; i < args.length; i++) {
+      if (args[i] === '-o' && args[i + 1]) { probeArgs.push('-o', args[i + 1]); i++; }
+      else if (args[i] === '-i' && args[i + 1]) { probeArgs.push('-i', args[i + 1]); i++; }
+    }
+    if (cmd === 'sftp') probeArgs.push('-s', 'sftp');
+    probeArgs.push(`${remoteUser}@${hostPart}`, 'hostname');
+    const probe = runSshClient({ ...this.buildSshClientOpts(probeArgs, undefined, offeredPassword) });
+    if (probe.exitCode !== 0) {
+      return { output: `${cmd}: ${probe.output}`, exitCode: probe.exitCode };
+    }
+
+    const wireFs = await this.tryOpenWireSftpFs(hostPart, remoteUser, offeredPassword);
+
+    if (cmd === 'scp') {
+      const localFs = new VfsSftpFileSystem(this.vfs, {
+        uid: this.userMgr.currentUid, gid: this.userMgr.currentGid, umask: 0o022,
+      });
+      const session = new ScpSession({
+        args,
+        local: { fs: localFs, cwd: this.cwd },
+        resolveRemote: (host) => wireFs ?? this.resolveRemoteSftpFs(host, remoteUser),
+      });
+      return session.run();
+    }
+
+    // sftp
+    const bIdx = args.indexOf('-b');
+    let stdin = '';
+    if (bIdx >= 0) {
+      const batchPath = args[bIdx + 1];
+      if (!batchPath) return { output: 'sftp: missing argument to -b', exitCode: 1 };
+      const body = this.vfs.readFile(this.vfs.normalizePath(batchPath, this.cwd));
+      if (body === null) {
+        return { output: `Couldn't open ${batchPath}: No such file or directory`, exitCode: 1 };
+      }
+      stdin = body;
+    }
+    let remoteFs = wireFs;
+    let found: ReturnType<typeof findHostByAddress> = null;
+    if (!remoteFs) {
+      found = findHostByAddress(hostPart, { readFile: (p) => this.vfs.readFile(p) });
+      remoteFs = this.resolveRemoteSftpFsFromDevice(found?.device, remoteUser);
+    }
+    if (!remoteFs) return { output: `sftp: ${hostPart}: no route to host`, exitCode: 1 };
+    // Chroot decoration only applies to the direct in-memory resolution —
+    // over the real wire, any chroot the remote sshd enforces already
+    // happens server-side, inside its own getFilesystem() dispatch.
+    if (found) {
+      const remoteChroot = this.readChrootDirectory(found.device, remoteUser, this.firstConfiguredIp());
+      if (remoteChroot) remoteFs = new ChrootedSftpFileSystem(remoteFs, remoteChroot);
+    }
+    const session = new SftpInteractiveSession({
+      local: new VfsSftpFileSystem(this.vfs, {
+        uid: this.userMgr.currentUid, gid: this.userMgr.currentGid, umask: 0o022,
+      }),
+      remote: remoteFs,
+      initialLocalCwd: this.cwd,
+    });
+    session.run(SftpCommandScript.parse(stdin));
+    return { output: `Connected to ${hostPart}.\n${session.transcript}\nsftp> `, exitCode: 0 };
+  }
+
+  /**
+   * Attempts a genuine authenticated SSH connection + SFTP channel to
+   * `host` using the exact password already vetted by the probe in
+   * `runSshTransportAsync` (or `runSshTransport`'s own policy gate) —
+   * returns null (never throws) whenever real wire auth isn't possible
+   * (no injected `tcpConnector`, connection refused, or the password
+   * doesn't match over the real pipeline), letting the caller fall
+   * back to the direct in-memory resolution.
+   */
+  private async tryOpenWireSftpFs(
+    host: string, user: string, password: string,
+  ): Promise<ISftpFileSystem | null> {
+    if (!this.tcpConnector) return null;
+    const connector = this.tcpConnector;
+    const session = new SshSession({
+      tcpConnector: ((h, p) => connector(h, p)) as unknown as TcpConnector,
+      vfs: this.vfs as never,
+      localUser: this.userMgr.currentUser,
+      localUid: this.userMgr.currentUid,
+      localGid: this.userMgr.currentGid,
+      knownHostsPath: `${this.sshHomeDir()}/.ssh/known_hosts`,
+      interactionHandler: new SilentSshInteractionHandler(password),
+    });
+    const result = await session.connect(
+      SshConnectOptionsBuilder.create()
+        .host(host).user(user).port(22).strictHostKeyChecking('accept-new').build(),
+    );
+    if (!isOk(result)) { session.disconnect(); return null; }
+    const channelResult = session.openSftpChannel();
+    if (!isOk(channelResult)) { session.disconnect(); return null; }
+    return new WireSftpFileSystem(channelResult.value);
   }
 
   /**

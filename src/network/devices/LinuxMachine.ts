@@ -317,6 +317,7 @@ export abstract class LinuxMachine extends EndHost
       try { return this.tcpConnectOutcome(new IPAddress(ip), port); }
       catch { return 'timeout'; }
     });
+    this.executor.setTcpConnector((host, port) => this.tcpConnect(host, port));
 
     // 4. Command registry
     this.commands = new LinuxCommandRegistry();
@@ -1593,6 +1594,7 @@ export abstract class LinuxMachine extends EndHost
   private containsNetworkCommand(input: string): boolean {
     if (this.commands.hasNetworkCommandIn(input)) return true;
     if (input.includes('/var/lib/dhcp/')) return true;
+    if (LinuxMachine.SSHPASS_TRANSFER_RE.test(input)) return true;
     const words = input.split(/[\s;|&"'`()]+/);
     if (words.some(w => w === 'ps' || w === 'man' || w === 'sshd')) return true;
     // `bash script.sh` / `./script.sh` / `run-parts DIR` at the top of the
@@ -1602,6 +1604,17 @@ export abstract class LinuxMachine extends EndHost
     // async dispatcher instead of silently taking the synchronous path.
     return LinuxMachine.SCRIPT_FILE_HEAD_RE.test(input);
   }
+
+  /**
+   * `sshpass -p <pw> scp|sftp ...`: the only way scp/sftp can offer a
+   * real credential (audit 03, MAJEUR §4) — routed through the async
+   * network-command path because opening a genuinely authenticated
+   * SshSession for the real-wire transfer needs `await`, which the
+   * synchronous `execute()` pipeline `runSshTransport` normally runs
+   * under cannot provide. Bare `scp`/`sftp` (no sshpass, the overwhelming
+   * majority of existing usage) is untouched and stays on the sync path.
+   */
+  private static readonly SSHPASS_TRANSFER_RE = /^sshpass\s+-p\s+\S+\s+(scp|sftp)\b/;
 
   /**
    * Matches a top-of-line `bash`/`sh` file invocation (no `-c`), a direct
@@ -1992,6 +2005,21 @@ export abstract class LinuxMachine extends EndHost
       case 'rm': {
         if (noSudo.includes('/var/lib/dhcp/dhclient')) return '';
         return null;
+      }
+      case 'sshpass': {
+        const match = LinuxMachine.SSHPASS_TRANSFER_RE.exec(noSudo);
+        if (!match) return null;
+        const tokenized = LinuxMachine.tokenizeArgsDetailed(noSudo);
+        if (tokenized.unterminatedQuote) {
+          return 'bash: syntax error: unexpected end of file (unterminated quote)';
+        }
+        // tokens: sshpass -p <pw> scp|sftp <...args>
+        const password = tokenized.tokens[2];
+        const wrappedCmd = match[1] as 'scp' | 'sftp';
+        const wrappedArgs = tokenized.tokens.slice(4);
+        const result = await this.executor.runSshTransportAsync(wrappedCmd, wrappedArgs, password);
+        this.executor.lastExitCode = result.exitCode;
+        return result.output;
       }
       default: return null;
     }
