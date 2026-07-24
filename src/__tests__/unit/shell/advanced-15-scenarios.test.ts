@@ -417,23 +417,26 @@ function topShellKind(t: WindowsTerminalSession | LinuxTerminalSession): string 
 
 describe('Deep shell nesting — 4 to 5 levels', () => {
   // ── #D1 — Win cmd → SSH Linux → ssh Linux, nesting and unwinding cleanly ──
-  test('§D1 — Win→SSH→Linux→SSH→Linux: two real SSH hops nest and unwind cleanly (sqlplus over the wire is a documented no-op)', async () => {
+  test('§D1 — Win→SSH→Linux→SSH→Linux: two REAL nested SSH hops nest and unwind cleanly (sqlplus over the wire is a documented no-op)', async () => {
     const { winA } = await buildLan();
     const t = new WindowsTerminalSession('t', winA);
     await t.init();
     // L1 → L2 (cmd → SSH bash on linuxSrv)
     await winSshLogin(t, 'ssh alice@10.0.0.3', 'alice');
     expect(t.foreground.getPrompt()).toMatch(/alice@linuxSrv/);
-    // L2 → L3 (bash → SSH bash on linuxA) — real password challenge.
+    // L2 → L3 (bash → SSH bash on linuxA) — a REAL second hop: linuxSrv
+    // opens its own genuine SshSession to linuxA (SshInteractiveSubShell's
+    // recursive nested-hop support), real password challenge included.
     await typeSshSub(t, 'ssh alice@10.0.0.1', 'alice');
     expect(t.foreground.getPrompt()).toMatch(/alice@linuxA/);
-    // sqlplus: known, documented limitation of the real-wire SSH session
-    // (see SshInteractiveSubShell.ts) — no client-side stand-in exists to
-    // push sqlplus's own REPL sub-shell over the wire, so the line just
-    // runs remotely as a plain bash command; no frame is pushed.
+    // sqlplus: still a known, documented limitation — it's a multi-turn
+    // REPL, not a single password challenge like ssh/su, so there's no
+    // client-side stand-in to push its own sub-shell over the wire; the
+    // line just runs remotely as a plain bash command, no frame pushed.
     await typeSub(t, 'sqlplus / as sysdba');
     expect(t.foreground.getPrompt()).toMatch(/alice@linuxA/);
-    // Unwind the two real SSH hops.
+    // Unwind: first exit pops the nested hop (linuxA -> linuxSrv), second
+    // pops the first hop (linuxSrv -> Windows cmd).
     await typeSub(t, 'exit');
     expect(t.foreground.getPrompt()).toMatch(/alice@linuxSrv/);
     await typeSub(t, 'exit');
@@ -1545,7 +1548,7 @@ describe('Root-cause shell/session integrity', () => {
     expect(t.foreground.getPrompt()).toMatch(/^C:\\Users\\/);
   });
 
-  test('§RC2 — Linux→Huawei→Linux : shell ownership never leaks (sqlplus/further-nested-ssh over the real-wire hop are documented no-ops)', async () => {
+  test('§RC2 — Linux→Huawei→Linux : shell ownership never leaks (sqlplus/exec-mode-nested-ssh over the real-wire hop are documented no-ops)', async () => {
     const { linuxA, huawei } = await buildLan();
 
     huawei.setHostname('HW');
@@ -1597,11 +1600,11 @@ describe('Root-cause shell/session integrity', () => {
 
     expect(t.foreground.getPrompt()).toMatch(/@linuxSrv/);
 
-    // Nested ssh to a further target (Windows here) from within a
-    // real-wire Linux SSH session is the same documented limitation as
-    // sqlplus above (SshInteractiveSubShell.ts): it runs remotely as a
-    // plain bash line rather than pushing a new interactive frame, so it
-    // cannot reach a real Windows cmd/PowerShell session from here.
+    // Exec-mode nested ssh ("ssh host cmd", a trailing command) is out of
+    // scope for the real second-hop support (SshInteractiveSubShell only
+    // intercepts the bare interactive form "ssh [user@]host"); this still
+    // runs remotely as a plain bash line via the existing device-batch ssh
+    // command, not a new interactive frame.
     await typeSub(t, 'ssh user@10.0.0.5 mkdir C:\\RC2');
 
     expect(t.foreground.getPrompt()).toMatch(/@linuxSrv/);

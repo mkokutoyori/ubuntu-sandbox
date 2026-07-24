@@ -22,6 +22,13 @@
  * T4: LinuxTerminalSession.connectAndEnterSsh() lands Linux targets on
  *     SshInteractiveSubShell (not the in-memory bypass), and driving it
  *     through real keystrokes streams ping and honours Ctrl+C.
+ * T5: a bare `ssh user@host` typed INSIDE an already-connected real-wire
+ *     session is a REAL second hop, not a documented no-op: the middle
+ *     device opens its own genuine SshSession to the target
+ *     (SshInteractiveSubShell.startNestedHop()), a wrong password is
+ *     rejected and retried, the correct one lands on hop2's own prompt,
+ *     ping streams there too (recursive delegation), Ctrl+C interrupts
+ *     it, and `exit` pops back to hop1 without disturbing it.
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';
@@ -148,4 +155,47 @@ describe('SSH interactive shell — real-wire streaming + Ctrl+C', () => {
     host.handleKey(key('c', { ctrlKey: true }));
     await waitFor(() => host.lines.some((l) => /ping statistics/.test(l.text)));
   }, 15000);
+
+  it('T5 — nested ssh from inside a real-wire session is a real second hop (retry, streaming ping, Ctrl+C, exit)', async () => {
+    const host = new LinuxTerminalSession('term-1', lan.pc1);
+    await host.init?.();
+    const activeSubShell = () => (host as unknown as { activeSubShell: unknown }).activeSubShell as SshInteractiveSubShell;
+    const currentPrompt = () => activeSubShell().getPrompt();
+
+    // Hop 1: pc1 -> pc2.
+    host.setInput(`ssh user@${PC2_IP}`);
+    host.handleKey(key('Enter'));
+    for (let i = 0; i < 40 && host.currentInputMode.type !== 'password'; i++) await tick();
+    host.setPasswordBuf('admin');
+    host.handleKey(key('Enter'));
+    await waitFor(() => activeSubShell() instanceof SshInteractiveSubShell);
+    await waitFor(() => currentPrompt().includes('PC2'));
+
+    // Hop 2 (nested, typed INSIDE hop1): pc2 -> pc3, wrong password first.
+    host.setInputBuf(`ssh user@${PC3_IP}`);
+    host.handleKey(key('Enter'));
+    await waitFor(() => host.currentInputMode.type === 'password');
+    host.setPasswordBuf('totally-wrong');
+    host.handleKey(key('Enter'));
+    await waitFor(() => host.lines.some((l) => /Permission denied/.test(l.text)));
+    // Real ssh retries: the same nested-connect flow re-prompts.
+    await waitFor(() => host.currentInputMode.type === 'password');
+    host.setPasswordBuf('admin');
+    host.handleKey(key('Enter'));
+    await waitFor(() => currentPrompt().includes('PC3'));
+    expect(currentPrompt()).toMatch(/user@PC3/);
+
+    // Streaming ping recursively works at the nested hop too.
+    host.setInputBuf(`ping ${PC2_IP}`);
+    host.handleKey(key('Enter'));
+    await waitFor(() => host.lines.some((l) => /bytes from/.test(l.text)));
+    host.handleKey(key('c', { ctrlKey: true }));
+    await waitFor(() => host.lines.some((l) => /ping statistics/.test(l.text)));
+
+    // exit pops the nested hop back to hop1, without disturbing it.
+    host.setInputBuf('exit');
+    host.handleKey(key('Enter'));
+    await tick();
+    expect(currentPrompt()).toMatch(/user@PC2/);
+  }, 20000);
 });

@@ -28,6 +28,7 @@ import { Equipment, type HostCapableDevice } from '@/network';
 import { SessionInputHost as SessionInputHostCtor } from './SessionInputHost';
 import { TerminalAsyncRuntime } from '@/terminal/async';
 import type { AsyncJobContext, AsyncJobHandle, AsyncJobSpec } from '@/terminal/async';
+import { composeSshLoginBanner } from '@/network/protocols/ssh/loginBanner';
 import { InteractiveFlowEngine } from '@/terminal/core/InteractiveFlow';
 import { PromiseInputBroker as PromiseInputBrokerCtor, runFlowOnBroker as runFlowOnBrokerFn } from '@/shell/input';
 import type { IOutputFormatter } from '@/terminal/core/OutputFormatter';
@@ -176,17 +177,6 @@ export function withTimeout<T>(
   });
 }
 
-const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-function formatLoginDate(d: Date): string {
-  const dow = DAYS[d.getDay()];
-  const mon = MONTHS[d.getMonth()];
-  const day = d.getDate().toString().padStart(2, ' ');
-  const hh = d.getHours().toString().padStart(2, '0');
-  const mm = d.getMinutes().toString().padStart(2, '0');
-  const ss = d.getSeconds().toString().padStart(2, '0');
-  return `${dow} ${mon} ${day} ${hh}:${mm}:${ss} ${d.getFullYear()}`;
-}
 
 // ─── Device availability guard ───────────────────────────────────
 
@@ -510,6 +500,8 @@ export abstract class TerminalSession {
    * subclass can call it directly for a remote session that isn't pushed
    * as a full child (e.g. SshInteractiveSubShell — LinuxTerminalSession's
    * real-wire interactive shell), not just from `adoptRemoteChild`.
+   * Delegates to the shared `composeSshLoginBanner()` (also used by
+   * SshInteractiveSubShell for a *nested* ssh's own banner).
    */
   protected composeLoginBanner(
     device: unknown,
@@ -518,41 +510,7 @@ export abstract class TerminalSession {
     sourceHost: string,
     quiet = false,
   ): string[] {
-    const dev = device as {
-      sshBanner?: () => string;
-      getSshMotd?: () => string;
-      getLastSshLoginFor?: (u: string) => { at: Date; from: string } | null;
-      recordSshLogin?: (u: string, ip: string, host: string, ok: boolean, m?: 'password' | 'publickey') => void;
-      getBanner?: (kind: string) => string;
-    };
-    const lines: string[] = [];
-    if (!quiet) {
-      const issueNet = dev.sshBanner?.() ?? '';
-      for (const ln of issueNet.replace(/\n+$/, '').split('\n')) {
-        if (ln.length > 0) lines.push(ln);
-      }
-      const motd = dev.getSshMotd?.() ?? '';
-      for (const ln of motd.replace(/\n+$/, '').split('\n')) {
-        if (ln.length > 0) lines.push(ln);
-      }
-      const last = dev.getLastSshLoginFor?.(user) ?? null;
-      if (last) {
-        if (lines.length > 0) lines.push('');
-        lines.push(`Last login: ${formatLoginDate(last.at)} from ${last.from}`);
-      }
-    }
-    dev.recordSshLogin?.(user, sourceIp, sourceHost, true, 'password');
-    // Real IOS: `banner exec` is shown on every successful EXEC session
-    // start (unlike `banner login`, which SSH2 never sends — it
-    // authenticates before any banner exchange). Applies regardless of
-    // `quiet`, matching that it's tied to the exec session, not the SSH
-    // transport-level banner exchange.
-    const execBanner = dev.getBanner?.('exec') ?? '';
-    if (execBanner) {
-      if (lines.length > 0) lines.push('');
-      for (const ln of execBanner.replace(/\n+$/, '').split('\n')) lines.push(ln);
-    }
-    return lines;
+    return composeSshLoginBanner(device, user, sourceIp, sourceHost, quiet);
   }
 
   endRemoteSession(): boolean {
