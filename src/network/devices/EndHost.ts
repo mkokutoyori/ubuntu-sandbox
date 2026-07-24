@@ -2584,6 +2584,15 @@ export abstract class EndHost extends Equipment {
     const myIP = port.getIPAddress();
     if (!myIP) throw new Error('No IP configured');
 
+    // No carrier means the kernel fails the send outright with EHOSTUNREACH
+    // rather than waiting for a reply that can never come — real ping then
+    // prints "From <src> icmp_seq=N Destination Host Unreachable" for every
+    // probe, which is the visible failure a plain timeout never produces
+    // (docs/PRD-Link-State.md §2.1 P3).
+    if (!port.isOperationallyUp()) {
+      throw new Error(`Destination unreachable from ${myIP}`);
+    }
+
     this.pingIdCounter++;
     const id = this.pingIdCounter;
 
@@ -3820,6 +3829,10 @@ export abstract class EndHost extends Equipment {
       : (port.getGlobalIPv6() || port.getLinkLocalIPv6());
 
     if (!srcIP) throw new Error('No IPv6 address');
+
+    if (!port.isOperationallyUp()) {
+      throw new Error(`Destination unreachable from ${srcIP}`);
+    }
 
     this.ping6IdCounter++;
     const id = this.ping6IdCounter;
