@@ -600,6 +600,26 @@ export class Port {
 
   isAdminDown(): boolean { return this.adminDown; }
 
+  /**
+   * Physical carrier — a cable is attached and the link itself is up.
+   * The simulator's equivalent of Linux's `NO-CARRIER` flag / Cisco's
+   * "line protocol is down": unplugging a cable never touches
+   * {@link getIsUp}, which stays the internal line state.
+   */
+  hasCarrier(): boolean {
+    return this.cable !== null && this.cable.getIsUp();
+  }
+
+  /**
+   * True when the interface can actually carry traffic — line state,
+   * admin state and carrier all agree. This is what forwarding, routing
+   * and every `ip`/`show interfaces` style view should consult, rather
+   * than {@link getIsUp} alone (docs/PRD-Link-State.md §3.1).
+   */
+  isOperationallyUp(): boolean {
+    return this.isUp && !this.adminDown && this.hasCarrier();
+  }
+
   setAdminDown(down: boolean): void {
     if (this.adminDown === down) return;
     this.adminDown = down;
@@ -654,6 +674,11 @@ export class Port {
   /** Fire link-up handlers. Used by Cable.connect after both ends are wired. */
   _notifyLinkUp(): void {
     this.notifyLinkChange('up');
+  }
+
+  /** Fire link handlers after the cable's own up/down state changed. */
+  _notifyCarrierChange(state: 'up' | 'down'): void {
+    this.notifyLinkChange(state);
   }
 
   disconnectCable(): void {

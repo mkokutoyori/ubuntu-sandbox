@@ -275,8 +275,12 @@ export class Cable {
   getIsUp(): boolean { return this.isUp; }
 
   setUp(up: boolean): void {
+    if (this.isUp === up) return;
     this.isUp = up;
     Logger.info(this.id, 'cable:state', `Cable ${this.id}: ${up ? 'up' : 'down'}`);
+    const state = up ? 'up' : 'down';
+    this.portA?._notifyCarrierChange(state);
+    this.portB?._notifyCarrierChange(state);
   }
 
   // ─── Frame Transmission ────────────────────────────────────────
