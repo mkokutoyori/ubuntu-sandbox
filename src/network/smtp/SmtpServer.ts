@@ -26,7 +26,7 @@ export class SmtpServer {
   }
 
   private handleConnection(socket: TcpSocket): void {
-    const session = new SmtpServerSession(this.config);
+    const session = new SmtpServerSession(this.config, socket.remoteIp);
     let awaitingDataBody = false;
 
     socket.write(encodeReply(session.greeting()));

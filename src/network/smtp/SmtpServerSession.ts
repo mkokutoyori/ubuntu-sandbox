@@ -1,6 +1,7 @@
 import type { SmtpCommand, SmtpReply, SmtpSessionState, MailEnvelope, MimeMessage } from './types';
 import { reply } from './replies';
 import { parseMailFromArgument, parseRcptToArgument, buildEnvelope, unstuffDotLines, splitHeadersAndBody } from './envelope';
+import { determineProtocolLabel, prependReceivedHeader } from './trace';
 
 export interface SmtpServerConfig {
   readonly hostname: string;
@@ -16,9 +17,12 @@ export class SmtpServerSession {
   private state: SmtpSessionState = 'connected';
   private envelopeFrom: string | null = null;
   private envelopeTo: string[] = [];
+  private usedEhlo = false;
+  private tlsActive = false;
+  private authActive = false;
   lastDelivered: { envelope: MailEnvelope; rawMessage: string; message: MimeMessage } | null = null;
 
-  constructor(private readonly config: SmtpServerConfig) {}
+  constructor(private readonly config: SmtpServerConfig, private readonly remoteIp: string = '0.0.0.0') {}
 
   greeting(): SmtpReply {
     return reply(220, `${this.config.hostname} Ubuntu Sandbox SMTP server ready.`);
@@ -52,6 +56,7 @@ export class SmtpServerSession {
   private handleHelo(cmd: SmtpCommand): SmtpReply {
     if (!cmd.argument) return reply(501, 'Syntax error in parameters.');
     this.heloDomain = cmd.argument.trim();
+    this.usedEhlo = false;
     this.resetTransaction();
     this.state = 'greeted';
     return reply(250, `${this.config.hostname} Hello ${this.heloDomain}`);
@@ -60,6 +65,7 @@ export class SmtpServerSession {
   private handleEhlo(cmd: SmtpCommand): SmtpReply {
     if (!cmd.argument) return reply(501, 'Syntax error in parameters.');
     this.heloDomain = cmd.argument.trim();
+    this.usedEhlo = true;
     this.resetTransaction();
     this.state = 'greeted';
     return reply(250, `${this.config.hostname} Hello ${this.heloDomain}`);
@@ -96,7 +102,14 @@ export class SmtpServerSession {
     const lines = rawBlob.split(CRLF);
     const termIdx = lines.indexOf('.');
     const bodyLines = termIdx === -1 ? lines : lines.slice(0, termIdx);
-    const rawMessage = unstuffDotLines(bodyLines.join(CRLF));
+    const unstuffed = unstuffDotLines(bodyLines.join(CRLF));
+    const rawMessage = prependReceivedHeader(unstuffed, {
+      fromHelo: this.heloDomain ?? 'unknown',
+      fromIp: this.remoteIp,
+      by: this.config.hostname,
+      withProtocol: determineProtocolLabel(this.usedEhlo, this.tlsActive, this.authActive),
+      timestamp: Date.now(),
+    });
 
     this.lastDelivered = {
       envelope: buildEnvelope(this.envelopeFrom ?? '', this.envelopeTo),
