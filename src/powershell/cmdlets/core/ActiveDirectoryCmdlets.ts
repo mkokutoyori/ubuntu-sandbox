@@ -123,7 +123,7 @@ function userToPSObject(u: AdUserInfo): Record<string, PSValue> {
 }
 function groupToPSObject(g: AdGroupInfo): Record<string, PSValue> {
   return {
-    SamAccountName: g.sam, DistinguishedName: g.dn, GroupScope: g.scope,
+    SamAccountName: g.sam, DistinguishedName: g.dn, GroupScope: g.scope, GroupCategory: g.category,
     Members: g.members.join(', '), ObjectClass: 'group',
   };
 }
@@ -403,7 +403,7 @@ export class EnableADAccountCmdlet implements ICmdlet {
 export class NewADGroupCmdlet implements ICmdlet {
   readonly name = 'new-adgroup';
   readonly aliases = [] as const;
-  readonly parameters = ['Name', 'GroupScope', 'Path'] as const;
+  readonly parameters = ['Name', 'GroupScope', 'GroupCategory', 'Path'] as const;
 
   execute(ctx: CmdletContext): PSValue {
     const ad = requireAd(ctx, 'New-ADGroup');
@@ -411,8 +411,18 @@ export class NewADGroupCmdlet implements ICmdlet {
     if (!sam) { ctx.emitError("New-ADGroup : Cannot process command because of one or more missing mandatory parameters: Name."); return null; }
     const scopeRaw = ctx.named['groupscope'] !== undefined ? psValueToString(ctx.named['groupscope']) : 'Global';
     const scope = (['DomainLocal', 'Global', 'Universal'] as const).find(s => s.toLowerCase() === scopeRaw.toLowerCase()) ?? 'Global';
+    let category: 'Security' | 'Distribution' = 'Security';
+    if (ctx.named['groupcategory'] !== undefined) {
+      const categoryRaw = psValueToString(ctx.named['groupcategory']);
+      const matched = (['Security', 'Distribution'] as const).find(c => c.toLowerCase() === categoryRaw.toLowerCase());
+      if (!matched) {
+        ctx.emitError(`New-ADGroup : Cannot validate argument on parameter 'GroupCategory'. The argument "${categoryRaw}" does not belong to the set "Security,Distribution".`);
+        return null;
+      }
+      category = matched;
+    }
     const path = ctx.named['path'] !== undefined ? psValueToString(ctx.named['path']) : undefined;
-    const res = ad.newGroup(sam, scope, path);
+    const res = ad.newGroup(sam, scope, path, category);
     if (!res.ok) { ctx.emitError(`New-ADGroup : ${res.message}`); return null; }
     const g = ad.getGroup(sam);
     return g ? groupToPSObject(g) : null;

@@ -191,7 +191,7 @@ export interface AdAccessRuleInfo {
   inheritedObjectType: string;
 }
 export interface AdGroupInfo {
-  sam: string; dn: string; scope: 'DomainLocal' | 'Global' | 'Universal'; members: string[];
+  sam: string; dn: string; scope: 'DomainLocal' | 'Global' | 'Universal'; category: 'Security' | 'Distribution'; members: string[];
 }
 export interface AdComputerInfo { name: string; dn: string; enabled: boolean; servicePrincipalNames: string[] }
 export interface AdOrgUnitInfo { name: string; dn: string; gpLinks: string[] }
@@ -223,7 +223,7 @@ export interface IAdProvider {
   /** `Search-ADAccount -LockedOut`. */
   listLockedOutUsers(): Array<{ sam: string; name: string; badPwdCount: number }>;
 
-  newGroup(sam: string, scope: AdGroupInfo['scope'], path?: string): AdOpResult;
+  newGroup(sam: string, scope: AdGroupInfo['scope'], path?: string, category?: AdGroupInfo['category']): AdOpResult;
   getGroup(identity: string): AdGroupInfo | null;
   listGroups(): AdGroupInfo[];
   addGroupMember(groupIdentity: string, members: string[]): AdOpResult;

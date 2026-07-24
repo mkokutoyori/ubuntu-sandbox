@@ -562,19 +562,19 @@ class WindowsAdAdapter implements IAdProvider {
     return store.removeUser(store.resolveIdentity(identity));
   }
 
-  newGroup(sam: string, scope: AdGroupInfo['scope'], path?: string): AdOpResult {
+  newGroup(sam: string, scope: AdGroupInfo['scope'], path?: string, category?: AdGroupInfo['category']): AdOpResult {
     const store = this.requireStore('New-ADGroup');
     const denied = this.requireAdmin('New-ADGroup');
     if (denied) return denied;
-    return store.newGroup(sam, scope, path ? store.resolveIdentity(path) : undefined);
+    return store.newGroup(sam, scope, path ? store.resolveIdentity(path) : undefined, category);
   }
   getGroup(identity: string): AdGroupInfo | null {
     const store = this.requireStore('Get-ADGroup');
     const g = store.getGroup(store.resolveIdentity(identity));
-    return g ? { sam: g.sam, dn: g.dn, scope: g.scope, members: g.members } : null;
+    return g ? { sam: g.sam, dn: g.dn, scope: g.scope, category: g.category, members: g.members } : null;
   }
   listGroups(): AdGroupInfo[] {
-    return this.requireStore('Get-ADGroup').listGroups().map(g => ({ sam: g.sam, dn: g.dn, scope: g.scope, members: g.members }));
+    return this.requireStore('Get-ADGroup').listGroups().map(g => ({ sam: g.sam, dn: g.dn, scope: g.scope, category: g.category, members: g.members }));
   }
   addGroupMember(groupIdentity: string, members: string[]): AdOpResult {
     const store = this.requireStore('Add-ADGroupMember');
